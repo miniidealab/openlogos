@@ -1,0 +1,440 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="OpenLogos — AI 时代的开源软件研发方法论" lang="zh">
+  <section class="hero">
+    <div class="hero-container">
+      <div class="hero-badge">开源项目</div>
+      <h1>告别 Vibe Coding<br />用科学方法构建软件</h1>
+      <p class="hero-subtitle">
+        OpenLogos 是一套面向 AI 时代的开源软件研发方法论。
+        三层推进模型 — 为什么做、做什么、如何做 — 让 AI 从猜测机器变成精准工具。
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/miniidea/openlogos" class="btn btn-primary" target="_blank" rel="noopener">
+          GitHub 仓库
+        </a>
+        <a href="#quickstart" class="btn btn-secondary">
+          快速开始
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="philosophy" id="features">
+    <div class="section-container">
+      <h2 class="section-title">Vibe Coding 的问题</h2>
+      <p class="section-subtitle">
+        当前 AI 编程的主流模式是一上来就让 AI 写代码。结果？歧义爆炸、黑盒累积、项目不可维护。
+      </p>
+
+      <div class="cards">
+        <div class="card">
+          <div class="card-icon">WHY</div>
+          <h3>Phase 1: 需求层</h3>
+          <p>先搞清楚要解决什么问题。用户故事 + GIVEN/WHEN/THEN 验收条件，从源头消除歧义。</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">WHAT</div>
+          <h3>Phase 2: 产品设计层</h3>
+          <p>设计解决方案，产出功能规格和 HTML 原型。每个功能都追溯到真实用户需求。</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">HOW</div>
+          <h3>Phase 3: 技术实现层</h3>
+          <p>场景驱动 + 测试先行的 API 编排。AI 在完整上下文中生成高质量代码。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="workflow">
+    <div class="section-container">
+      <h2 class="section-title">场景驱动，测试先行</h2>
+      <p class="section-subtitle">Phase 3 将技术实现分解为 5 个精确步骤。</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h4>场景建模</h4>
+            <p>业务场景 → 时序图 → API 自然浮现</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h4>API 与 DB 设计</h4>
+            <p>OpenAPI YAML 规格 → 从 API 结构推导数据库 Schema</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h4>编排测试设计</h4>
+            <p>写代码之前先设计 API 编排测试 — 正常、异常、边界用例</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h4>AI 驱动代码生成</h4>
+            <p>有了完整上下文（原型 + 场景 + API + DB + 测试），AI 生成的代码质量远超直接编码</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">5</div>
+          <div class="step-content">
+            <h4>编排验收</h4>
+            <p>运行测试编排验收部署后的代码 — 全部通过 = 场景完成</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="quickstart" id="quickstart">
+    <div class="section-container">
+      <h2 class="section-title">快速开始</h2>
+      <div class="code-block">
+        <div class="code-header">终端</div>
+        <pre><code><span class="comment"># 安装 CLI 工具</span>
+npm install -g @miniidea/openlogos
+
+<span class="comment"># 初始化项目</span>
+openlogos init my-project
+
+<span class="comment"># 按方法论开始构建</span>
+<span class="comment"># Phase 1: 写需求 → Phase 2: 做设计 → Phase 3: 实现</span></code></pre>
+      </div>
+
+      <div class="compatibility">
+        <h3>兼容你的 AI 工具</h3>
+        <div class="tool-list">
+          <div class="tool">Cursor</div>
+          <div class="tool">Claude Code</div>
+          <div class="tool">OpenCode</div>
+          <div class="tool tool-planned">GitHub Copilot</div>
+          <div class="tool tool-planned">Windsurf</div>
+        </div>
+        <p class="tool-note">Skills 是平台无关的 Markdown 文件。任何支持项目级 prompt 注入的 AI 工具都可以使用。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="section-container">
+      <h2>准备好用正确的方式构建软件了吗？</h2>
+      <p>加入社区，贡献 Skills，一起打磨方法论。</p>
+      <div class="hero-actions">
+        <a href="https://github.com/miniidea/openlogos" class="btn btn-primary" target="_blank" rel="noopener">
+          GitHub 开始使用
+        </a>
+        <a href="https://runlogos.com" class="btn btn-secondary" target="_blank" rel="noopener">
+          RunLogos — 专业工具
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    padding: 10rem 2rem 6rem;
+    text-align: center;
+  }
+
+  .hero-container {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .hero-badge {
+    display: inline-block;
+    padding: 0.3rem 1rem;
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+    border-radius: 100px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-bottom: 2rem;
+  }
+
+  h1 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1.2rem;
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    margin-bottom: 2.5rem;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.75rem 1.75rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: var(--color-primary);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--color-primary-hover);
+    color: white;
+  }
+
+  .btn-secondary {
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--color-text-muted);
+    color: var(--color-text);
+  }
+
+  .section-container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 0 2rem;
+  }
+
+  .philosophy,
+  .workflow,
+  .quickstart,
+  .cta {
+    padding: 6rem 0;
+  }
+
+  .philosophy {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .section-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+
+  .section-subtitle {
+    color: var(--color-text-muted);
+    text-align: center;
+    max-width: 640px;
+    margin: 0 auto 3rem;
+    font-size: 1.1rem;
+    line-height: 1.7;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 2rem;
+  }
+
+  .card-icon {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--color-primary);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+  }
+
+  .card h3 {
+    font-size: 1.15rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .card p {
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .workflow {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .steps {
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+  }
+
+  .step-number {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--color-primary);
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .step-content h4 {
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .step-content p {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+  }
+
+  .quickstart {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .code-block {
+    max-width: 640px;
+    margin: 0 auto 3rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .code-header {
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+
+  pre {
+    padding: 1.5rem;
+    overflow-x: auto;
+  }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+
+  .comment {
+    color: var(--color-text-muted);
+    opacity: 0.6;
+  }
+
+  .compatibility {
+    text-align: center;
+  }
+
+  .compatibility h3 {
+    font-size: 1.2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .tool-list {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+
+  .tool {
+    padding: 0.5rem 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .tool-planned {
+    opacity: 0.5;
+    border-style: dashed;
+  }
+
+  .tool-note {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+  }
+
+  .cta {
+    border-top: 1px solid var(--color-border);
+    text-align: center;
+  }
+
+  .cta h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+  }
+
+  .cta p {
+    color: var(--color-text-muted);
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+  }
+
+  @media (max-width: 768px) {
+    .hero {
+      padding: 8rem 1.5rem 4rem;
+    }
+
+    h1 {
+      font-size: 2.25rem;
+    }
+
+    .cards {
+      grid-template-columns: 1fr;
+    }
+
+    .hero-subtitle {
+      font-size: 1.05rem;
+    }
+  }
+</style>

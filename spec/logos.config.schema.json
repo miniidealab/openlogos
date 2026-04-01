@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openlogos.ai/schemas/logos.config.json",
+  "title": "OpenLogos Project Configuration",
+  "description": "logos.config.json 是 OpenLogos 项目的核心配置文件，定义项目的基本信息和文档模块结构。",
+  "type": "object",
+  "required": ["name", "documents"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "项目名称"
+    },
+    "description": {
+      "type": "string",
+      "description": "项目描述"
+    },
+    "maxOpenTabs": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 20,
+      "description": "RunLogos 中最大打开标签页数（仅 RunLogos 使用）"
+    },
+    "modules": {
+      "type": "array",
+      "description": "代码模块定义（保留字段，供 RunLogos 使用）",
+      "items": {
+        "type": "object"
+      }
+    },
+    "fileModules": {
+      "type": "object",
+      "description": "文件级模块映射（保留字段，供 RunLogos 使用）"
+    },
+    "documents": {
+      "type": "object",
+      "description": "文档模块定义。每个 key 是模块标识符，value 定义模块的标签、路径和文件匹配模式。",
+      "additionalProperties": {
+        "$ref": "#/definitions/DocumentModule"
+      }
+    }
+  },
+  "definitions": {
+    "DocumentModule": {
+      "type": "object",
+      "required": ["label", "path", "pattern"],
+      "properties": {
+        "label": {
+          "$ref": "#/definitions/I18nLabel",
+          "description": "模块显示名称（支持多语言）"
+        },
+        "path": {
+          "type": "string",
+          "description": "模块根目录的相对路径（相对于 logos.config.json 所在目录）"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "文件匹配的 glob 模式"
+        }
+      }
+    },
+    "I18nLabel": {
+      "type": "object",
+      "required": ["en"],
+      "properties": {
+        "en": {
+          "type": "string",
+          "description": "英文标签"
+        },
+        "zh": {
+          "type": "string",
+          "description": "中文标签"
+        }
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "name": "My SaaS Project",
+      "description": "A SaaS product following OpenLogos methodology",
+      "documents": {
+        "prd": {
+          "label": { "en": "Product Docs", "zh": "产品文档" },
+          "path": "./resources/prd",
+          "pattern": "**/*.{md,html,htm,pdf}"
+        },
+        "api": {
+          "label": { "en": "API Docs", "zh": "API 文档" },
+          "path": "./resources/api",
+          "pattern": "**/*.{yaml,yml,json}"
+        },
+        "scenario": {
+          "label": { "en": "Scenarios", "zh": "业务场景" },
+          "path": "./resources/scenario",
+          "pattern": "**/*.json"
+        },
+        "database": {
+          "label": { "en": "Database", "zh": "数据库" },
+          "path": "./resources/database",
+          "pattern": "**/*.sql"
+        }
+      }
+    }
+  ]
+}

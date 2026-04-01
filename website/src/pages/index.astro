@@ -1,0 +1,443 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="OpenLogos — Open-source Software Engineering Methodology for the AI Era">
+  <section class="hero">
+    <div class="hero-container">
+      <div class="hero-badge">Open Source</div>
+      <h1>Stop Vibe Coding.<br />Start Building Right.</h1>
+      <p class="hero-subtitle">
+        OpenLogos is an open-source software engineering methodology for the AI era.
+        A structured approach — Why, What, How — that turns AI from a guessing machine
+        into a precision tool.
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/miniidea/openlogos" class="btn btn-primary" target="_blank" rel="noopener">
+          View on GitHub
+        </a>
+        <a href="#quickstart" class="btn btn-secondary">
+          Quick Start
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="philosophy" id="features">
+    <div class="section-container">
+      <h2 class="section-title">The Problem with Vibe Coding</h2>
+      <p class="section-subtitle">
+        Most AI coding today is "vibe coding" — jump straight to code and hope for the best.
+        The result? Ambiguity explosion, black-box accumulation, and unmaintainable projects.
+      </p>
+
+      <div class="cards">
+        <div class="card">
+          <div class="card-icon">WHY</div>
+          <h3>Phase 1: Requirements</h3>
+          <p>Understand the problem before solving it. User stories with GIVEN/WHEN/THEN acceptance criteria eliminate ambiguity from the start.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">WHAT</div>
+          <h3>Phase 2: Product Design</h3>
+          <p>Design the solution with feature specs and HTML prototypes. Every feature traces back to a real user need.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">HOW</div>
+          <h3>Phase 3: Implementation</h3>
+          <p>Scenario-driven development with test-first API orchestration. AI generates code with minimal ambiguity.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="workflow">
+    <div class="section-container">
+      <h2 class="section-title">Scenario-Driven, Test-First</h2>
+      <p class="section-subtitle">Phase 3 breaks implementation into 5 precise steps.</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h4>Scenario Modeling</h4>
+            <p>Business scenarios → sequence diagrams → APIs naturally emerge</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h4>API & DB Design</h4>
+            <p>OpenAPI YAML specs → database schema derived from API structure</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h4>Test Orchestration</h4>
+            <p>Design API orchestration tests before writing code — normal, exception, boundary</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h4>AI Code Generation</h4>
+            <p>With full context (prototype + scenarios + API + DB + tests), AI generates high-quality code</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">5</div>
+          <div class="step-content">
+            <h4>Orchestration Acceptance</h4>
+            <p>Run test orchestrations against deployed code — all pass = scenario complete</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="quickstart" id="quickstart">
+    <div class="section-container">
+      <h2 class="section-title">Quick Start</h2>
+      <div class="code-block">
+        <div class="code-header">Terminal</div>
+        <pre><code><span class="comment"># Install the CLI</span>
+npm install -g @miniidea/openlogos
+
+<span class="comment"># Initialize your project</span>
+openlogos init my-project
+
+<span class="comment"># Start building — follow the methodology</span>
+<span class="comment"># Phase 1: Write requirements → Phase 2: Design → Phase 3: Implement</span></code></pre>
+      </div>
+
+      <div class="compatibility">
+        <h3>Works with your AI tools</h3>
+        <div class="tool-list">
+          <div class="tool">Cursor</div>
+          <div class="tool">Claude Code</div>
+          <div class="tool">OpenCode</div>
+          <div class="tool tool-planned">GitHub Copilot</div>
+          <div class="tool tool-planned">Windsurf</div>
+        </div>
+        <p class="tool-note">Skills are platform-agnostic Markdown. Any AI tool that supports project-level prompts works.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="section-container">
+      <h2>Ready to build software the right way?</h2>
+      <p>Join the community. Contribute skills. Shape the methodology.</p>
+      <div class="hero-actions">
+        <a href="https://github.com/miniidea/openlogos" class="btn btn-primary" target="_blank" rel="noopener">
+          Get Started on GitHub
+        </a>
+        <a href="https://runlogos.com" class="btn btn-secondary" target="_blank" rel="noopener">
+          RunLogos — The Pro Tool
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    padding: 10rem 2rem 6rem;
+    text-align: center;
+  }
+
+  .hero-container {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .hero-badge {
+    display: inline-block;
+    padding: 0.3rem 1rem;
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+    border-radius: 100px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 2rem;
+  }
+
+  h1 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1.2rem;
+    color: var(--color-text-muted);
+    line-height: 1.7;
+    margin-bottom: 2.5rem;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.75rem 1.75rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: var(--color-primary);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--color-primary-hover);
+    color: white;
+  }
+
+  .btn-secondary {
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--color-text-muted);
+    color: var(--color-text);
+  }
+
+  .section-container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 0 2rem;
+  }
+
+  .philosophy,
+  .workflow,
+  .quickstart,
+  .cta {
+    padding: 6rem 0;
+  }
+
+  .philosophy {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .section-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+
+  .section-subtitle {
+    color: var(--color-text-muted);
+    text-align: center;
+    max-width: 640px;
+    margin: 0 auto 3rem;
+    font-size: 1.1rem;
+    line-height: 1.7;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 2rem;
+  }
+
+  .card-icon {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--color-primary);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+  }
+
+  .card h3 {
+    font-size: 1.15rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .card p {
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .workflow {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .steps {
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+  }
+
+  .step-number {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--color-primary);
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .step-content h4 {
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .step-content p {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+  }
+
+  .quickstart {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .code-block {
+    max-width: 640px;
+    margin: 0 auto 3rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .code-header {
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+
+  pre {
+    padding: 1.5rem;
+    overflow-x: auto;
+  }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+
+  .comment {
+    color: var(--color-text-muted);
+    opacity: 0.6;
+  }
+
+  .compatibility {
+    text-align: center;
+  }
+
+  .compatibility h3 {
+    font-size: 1.2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .tool-list {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+
+  .tool {
+    padding: 0.5rem 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .tool-planned {
+    opacity: 0.5;
+    border-style: dashed;
+  }
+
+  .tool-note {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+  }
+
+  .cta {
+    border-top: 1px solid var(--color-border);
+    text-align: center;
+  }
+
+  .cta h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+  }
+
+  .cta p {
+    color: var(--color-text-muted);
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+  }
+
+  @media (max-width: 768px) {
+    .hero {
+      padding: 8rem 1.5rem 4rem;
+    }
+
+    h1 {
+      font-size: 2.25rem;
+    }
+
+    .cards {
+      grid-template-columns: 1fr;
+    }
+
+    .hero-subtitle {
+      font-size: 1.05rem;
+    }
+  }
+</style>
