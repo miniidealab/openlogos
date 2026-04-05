@@ -8,7 +8,7 @@ The `openlogos` CLI provides commands for project initialization, synchronizatio
 ## Installation
 
 ```bash
-npm install -g @miniidea/openlogos
+npm install -g @miniidealab/openlogos
 ```
 
 ## Commands

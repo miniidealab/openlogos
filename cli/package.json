@@ -1,10 +1,10 @@
 {
-  "name": "@miniidea/openlogos",
-  "version": "0.1.0",
+  "name": "@miniidealab/openlogos",
+  "version": "0.2.0",
   "description": "CLI tool for the OpenLogos software engineering methodology",
   "type": "module",
   "bin": {
-    "openlogos": "./dist/index.js"
+    "openlogos": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -23,13 +23,16 @@
   ],
   "author": "MiniIdea",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "homepage": "https://openlogos.ai",
   "bugs": {
     "url": "https://github.com/miniidealab/openlogos/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/miniidealab/openlogos.git",
+    "url": "git+https://github.com/miniidealab/openlogos.git",
     "directory": "cli"
   },
   "engines": {

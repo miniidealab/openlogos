@@ -11,7 +11,7 @@ description: Get up and running with OpenLogos in under 10 minutes.
 ## Install
 
 ```bash
-npm install -g @miniidea/openlogos
+npm install -g @miniidealab/openlogos
 ```
 
 ## Initialize a Project

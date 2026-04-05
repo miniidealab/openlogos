@@ -19,7 +19,7 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 ## Project Structure
 - `spec/` — Methodology specifications (the "source code" of OpenLogos)
 - `skills/` — AI Skills (platform-agnostic Markdown)
-- `cli/` — `@miniidea/openlogos` CLI tool (TypeScript + ESM)
+- `cli/` — `@miniidealab/openlogos` CLI tool (TypeScript + ESM)
 - `website/` — openlogos.ai static site (Astro 5)
 - `examples/` — Demo projects
 - `logos/` — OpenLogos methodology assets for this project itself (dogfooding)

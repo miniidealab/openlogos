@@ -5,11 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-05
+
+### Changed
+
+- CLI 以 **`@miniidealab/openlogos`** 在 npm 公开发布，包作用域与 GitHub 组织 [miniidealab](https://github.com/miniidealab/openlogos) 一致；`package.json` 增加 `publishConfig.access: public`，便于作用域包默认公开安装。
+
 ## [0.1.0] - 2026-04-04
 
 ### Added
 
-**CLI Tool (`@miniidea/openlogos`)**
+**CLI Tool (`@miniidealab/openlogos`)**
 - `openlogos init [name]` — Initialize project structure with directory scaffolding, `logos.config.json`, `logos-project.yaml`, and AI instruction files (`AGENTS.md` / `CLAUDE.md`)
 - `openlogos sync` — Regenerate AI instruction files from current config
 - `openlogos status` — Display project phase progress and suggest next steps
@@ -50,4 +56,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.2.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.2.0
 [0.1.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.1.0
