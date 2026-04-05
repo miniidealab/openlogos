@@ -2,139 +2,303 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 ---
 
-<BaseLayout title="OpenLogos — Open-source Software Engineering Methodology for the AI Era">
+<BaseLayout title="OpenLogos — Stop Vibe Coding. Start Building Right.">
+  <!-- Hero -->
   <section class="hero">
+    <div class="hero-glow"></div>
     <div class="hero-container">
-      <div class="hero-badge">Open Source</div>
-      <h1>Stop Vibe Coding.<br />Start Building Right.</h1>
+      <div class="hero-badge">Open Source · Apache 2.0</div>
+      <h1>Stop Vibe Coding.<br/><span class="neon-text">Start Building Right.</span></h1>
       <p class="hero-subtitle">
         OpenLogos is an open-source software engineering methodology for the AI era.
-        A structured approach — Why, What, How — that turns AI from a guessing machine
-        into a precision tool.
+        It turns AI coding tools from guessing machines into precision instruments —
+        built on <strong>four core principles</strong>.
       </p>
+      <div class="hero-pillars">
+        <a href="/concepts/three-layer-model" class="pillar pillar-amber">
+          <span class="pillar-dot"></span>WHY → WHAT → HOW
+        </a>
+        <a href="/concepts/scenario-test-first" class="pillar pillar-green">
+          <span class="pillar-dot"></span>Scenario + Test-First
+        </a>
+        <a href="/concepts/documents-as-context" class="pillar pillar-blue">
+          <span class="pillar-dot"></span>Documents as Context
+        </a>
+        <a href="/concepts/engineering-foundation" class="pillar pillar-purple">
+          <span class="pillar-dot"></span>Engineering Foundation
+        </a>
+      </div>
       <div class="hero-actions">
-        <a href="https://github.com/miniidea/openlogos" class="btn btn-primary" target="_blank" rel="noopener">
-          View on GitHub
+        <a href="/getting-started/quick-start" class="btn btn-ghost">
+          Get Started
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
-        <a href="#quickstart" class="btn btn-secondary">
-          Quick Start
+        <a href="https://github.com/miniidealab/openlogos" class="btn btn-ghost" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          GitHub
+        </a>
+      </div>
+      <div class="hero-install">
+        <code>npx @miniidea/openlogos init my-project</code>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem Statement -->
+  <section class="problem" id="features">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-badge">The Problem</span>
+        <h2>Most AI coding today is "Vibe Coding"</h2>
+        <p class="section-subtitle">
+          Jump straight to code and hope for the best. The result? Ambiguity explosion,
+          black-box accumulation, and unmaintainable projects that collapse at scale.
+        </p>
+      </div>
+
+      <div class="problem-grid">
+        <div class="problem-card">
+          <div class="problem-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16 4L18.5 12.5H27L20.25 17.5L22.75 26L16 21L9.25 26L11.75 17.5L5 12.5H13.5L16 4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M16 4L18.5 12.5H27L20.25 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+              <circle cx="8" cy="8" r="1.5" fill="currentColor" opacity="0.3"/>
+              <circle cx="25" cy="6" r="1" fill="currentColor" opacity="0.25"/>
+              <circle cx="6" cy="22" r="1" fill="currentColor" opacity="0.2"/>
+              <circle cx="27" cy="24" r="1.5" fill="currentColor" opacity="0.15"/>
+              <path d="M3 16L5 14M29 16L27 14M16 29L16 27" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.25"/>
+            </svg>
+          </div>
+          <h3>Ambiguity Explosion</h3>
+          <p>Without clear requirements, AI guesses what you want. Every guess compounds uncertainty.</p>
+        </div>
+        <div class="problem-card">
+          <div class="problem-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="6" y="10" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M6 14h20" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M11 6L16 10L21 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="16" cy="20" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M16 22.5V24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <rect x="10" y="18" width="12" height="6" rx="1" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" opacity="0.3"/>
+            </svg>
+          </div>
+          <h3>Black-Box Accumulation</h3>
+          <p>AI generates code you don't understand. Over time, your codebase becomes opaque.</p>
+        </div>
+        <div class="problem-card">
+          <div class="problem-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16 6C11 6 7 10 7 15C7 20 11 24 16 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M16 24C21 24 25 20 25 15C25 10 21 6 16 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3 3" opacity="0.4"/>
+              <path d="M16 24L13 27" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M13 27L16 28.5L19 27" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M19 27L16 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M12 15L15 18L21 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3" stroke-dasharray="2 2"/>
+              <line x1="16" y1="3" x2="16" y2="5" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
+              <line x1="26" y1="15" x2="28" y2="15" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
+              <line x1="4" y1="15" x2="6" y2="15" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.3"/>
+            </svg>
+          </div>
+          <h3>Endless Rework</h3>
+          <p>No specs means no definition of "done." You iterate forever without converging.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Principles -->
+  <section class="principles" id="principles">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-badge">Core Principles</span>
+        <h2>Four pillars that make AI<br/><span class="gradient-text">actually reliable</span></h2>
+        <p class="section-subtitle">
+          OpenLogos is built on battle-tested software engineering theory, re-compiled for the AI era.
+          Each principle reinforces the others.
+        </p>
+      </div>
+
+      <div class="principles-grid">
+        <a href="/concepts/three-layer-model" class="principle-card principle-layers">
+          <div class="principle-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="2" y="2" width="24" height="6" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="11" width="24" height="6" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="20" width="24" height="6" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M14 8v3m14 17v3" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/></svg>
+          </div>
+          <h3>WHY → WHAT → HOW</h3>
+          <p>Three progressive phases. Each layer's output feeds the next. Skip one and ambiguity explodes.</p>
+          <span class="principle-link">Learn more <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </a>
+
+        <a href="/concepts/scenario-test-first" class="principle-card principle-scenario">
+          <div class="principle-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="12" stroke="currentColor" stroke-width="1.5"/><path d="M9 14l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Scenario-Driven + Test-First</h3>
+          <p>One scenario ID traces from requirements to code. Tests define "done" before a line is written. Quality is a number, not a feeling.</p>
+          <span class="principle-link">Learn more <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </a>
+
+        <a href="/concepts/documents-as-context" class="principle-card principle-docs">
+          <div class="principle-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 3h12l4 4v18a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/><path d="M8 12h12M8 16h12M8 20h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <h3>Documents as Context</h3>
+          <p>In Vibe Coding, AI's context is a black box. In OpenLogos, every decision is an open document — reviewable, reproducible, cumulative.</p>
+          <span class="principle-link">Learn more <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </a>
+
+        <a href="/concepts/engineering-foundation" class="principle-card principle-eng">
+          <div class="principle-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M14 3v22M3 14h22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="14" r="5" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="14" r="11" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/></svg>
+          </div>
+          <h3>Engineering Foundation</h3>
+          <p>Not invented from scratch. Built on 40 years of proven theory — BDD, TDD, DDD, Stage-Gate — recompiled for AI execution.</p>
+          <span class="principle-link">Learn more <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </a>
       </div>
     </div>
   </section>
 
-  <section class="philosophy" id="features">
+  <!-- Workflow -->
+  <section class="workflow" id="workflow">
     <div class="section-container">
-      <h2 class="section-title">The Problem with Vibe Coding</h2>
-      <p class="section-subtitle">
-        Most AI coding today is "vibe coding" — jump straight to code and hope for the best.
-        The result? Ambiguity explosion, black-box accumulation, and unmaintainable projects.
-      </p>
-
-      <div class="cards">
-        <div class="card">
-          <div class="card-icon">WHY</div>
-          <h3>Phase 1: Requirements</h3>
-          <p>Understand the problem before solving it. User stories with GIVEN/WHEN/THEN acceptance criteria eliminate ambiguity from the start.</p>
-        </div>
-        <div class="card">
-          <div class="card-icon">WHAT</div>
-          <h3>Phase 2: Product Design</h3>
-          <p>Design the solution with feature specs and HTML prototypes. Every feature traces back to a real user need.</p>
-        </div>
-        <div class="card">
-          <div class="card-icon">HOW</div>
-          <h3>Phase 3: Implementation</h3>
-          <p>Scenario-driven development with test-first API orchestration. AI generates code with minimal ambiguity.</p>
-        </div>
+      <div class="section-header">
+        <span class="section-badge">How It Works</span>
+        <h2>Say one sentence. AI does the rest.</h2>
+        <p class="section-subtitle">
+          OpenLogos encodes methodology as AI Skills — Markdown files that guide
+          your AI tool through each development phase automatically.
+        </p>
       </div>
-    </div>
-  </section>
 
-  <section class="workflow">
-    <div class="section-container">
-      <h2 class="section-title">Scenario-Driven, Test-First</h2>
-      <p class="section-subtitle">Phase 3 breaks implementation into 5 precise steps.</p>
+      <div class="scenarios">
+        <div class="scenario">
+          <div class="scenario-number">01</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">"Help me initialize a new project"</div>
+            <p>AI reads AGENTS.md, runs <code>openlogos init</code>, scaffolds the entire project structure with configuration, Skills, and directory hierarchy.</p>
+          </div>
+        </div>
 
-      <div class="steps">
-        <div class="step">
-          <div class="step-number">1</div>
-          <div class="step-content">
-            <h4>Scenario Modeling</h4>
-            <p>Business scenarios → sequence diagrams → APIs naturally emerge</p>
+        <div class="scenario">
+          <div class="scenario-number">02</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">"Help me write the requirements document"</div>
+            <p>AI detects Phase 1, loads the <code>prd-writer</code> Skill, interviews you about pain points and scenarios, generates a structured requirements doc with GIVEN/WHEN/THEN.</p>
           </div>
         </div>
-        <div class="step">
-          <div class="step-number">2</div>
-          <div class="step-content">
-            <h4>API & DB Design</h4>
-            <p>OpenAPI YAML specs → database schema derived from API structure</p>
+
+        <div class="scenario">
+          <div class="scenario-number">03</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">"Design the API for this scenario"</div>
+            <p>AI loads <code>api-designer</code> Skill, reads the sequence diagram, generates OpenAPI YAML spec with request/response schemas and error codes.</p>
           </div>
         </div>
-        <div class="step">
-          <div class="step-number">3</div>
-          <div class="step-content">
-            <h4>Test Orchestration</h4>
-            <p>Design API orchestration tests before writing code — normal, exception, boundary</p>
+
+        <div class="scenario">
+          <div class="scenario-number">04</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">"Write test cases and generate code"</div>
+            <p>AI designs test cases first (test-first!), then generates implementation code with full context — prototype + scenarios + API + DB + tests.</p>
           </div>
         </div>
-        <div class="step">
-          <div class="step-number">4</div>
-          <div class="step-content">
-            <h4>AI Code Generation</h4>
-            <p>With full context (prototype + scenarios + API + DB + tests), AI generates high-quality code</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-number">5</div>
-          <div class="step-content">
-            <h4>Orchestration Acceptance</h4>
-            <p>Run test orchestrations against deployed code — all pass = scenario complete</p>
+
+        <div class="scenario">
+          <div class="scenario-number">05</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">"Verify the test results"</div>
+            <p>Runs <code>openlogos verify</code> — three-layer traceability checks pass rate, design-time coverage, and acceptance criteria. Gate pass = scenario done.</p>
           </div>
         </div>
       </div>
     </div>
   </section>
 
+  <!-- Compatibility -->
+  <section class="compat">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-badge">Compatibility</span>
+        <h2>Works with your AI tools</h2>
+        <p class="section-subtitle">
+          Skills are platform-agnostic Markdown files. Any AI tool that can read project files works with OpenLogos.
+        </p>
+      </div>
+
+      <div class="tools-grid">
+        <div class="tool-card tool-supported">
+          <div class="tool-name">Cursor</div>
+          <span class="tool-status">Supported</span>
+        </div>
+        <div class="tool-card tool-supported">
+          <div class="tool-name">Claude Code</div>
+          <span class="tool-status">Supported</span>
+        </div>
+        <div class="tool-card tool-supported">
+          <div class="tool-name">OpenCode</div>
+          <span class="tool-status">Supported</span>
+        </div>
+        <div class="tool-card tool-planned">
+          <div class="tool-name">GitHub Copilot</div>
+          <span class="tool-status">Compatible</span>
+        </div>
+        <div class="tool-card tool-planned">
+          <div class="tool-name">Windsurf</div>
+          <span class="tool-status">Compatible</span>
+        </div>
+        <div class="tool-card tool-planned">
+          <div class="tool-name">Any AI Tool</div>
+          <span class="tool-status">Via Markdown</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
   <section class="quickstart" id="quickstart">
     <div class="section-container">
-      <h2 class="section-title">Quick Start</h2>
-      <div class="code-block">
-        <div class="code-header">Terminal</div>
-        <pre><code><span class="comment"># Install the CLI</span>
-npm install -g @miniidea/openlogos
-
-<span class="comment"># Initialize your project</span>
-openlogos init my-project
-
-<span class="comment"># Start building — follow the methodology</span>
-<span class="comment"># Phase 1: Write requirements → Phase 2: Design → Phase 3: Implement</span></code></pre>
+      <div class="section-header">
+        <span class="section-badge">Quick Start</span>
+        <h2>Up and running in 2 minutes</h2>
       </div>
 
-      <div class="compatibility">
-        <h3>Works with your AI tools</h3>
-        <div class="tool-list">
-          <div class="tool">Cursor</div>
-          <div class="tool">Claude Code</div>
-          <div class="tool">OpenCode</div>
-          <div class="tool tool-planned">GitHub Copilot</div>
-          <div class="tool tool-planned">Windsurf</div>
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span class="terminal-title">Terminal</span>
         </div>
-        <p class="tool-note">Skills are platform-agnostic Markdown. Any AI tool that supports project-level prompts works.</p>
+        <pre class="terminal-body"><code><span class="t-comment"># Install the CLI</span>
+<span class="t-prompt">$</span> npm install -g @miniidea/openlogos
+
+<span class="t-comment"># Initialize your project</span>
+<span class="t-prompt">$</span> openlogos init my-project
+<span class="t-output">✓ Created logos/logos.config.json</span>
+<span class="t-output">✓ Created logos/logos-project.yaml</span>
+<span class="t-output">✓ Created AGENTS.md</span>
+<span class="t-output">✓ Project "my-project" initialized</span>
+
+<span class="t-comment"># Open in your AI tool and start building</span>
+<span class="t-prompt">$</span> cursor my-project</code></pre>
       </div>
     </div>
   </section>
 
+  <!-- CTA -->
   <section class="cta">
     <div class="section-container">
-      <h2>Ready to build software the right way?</h2>
-      <p>Join the community. Contribute skills. Shape the methodology.</p>
+      <div class="cta-glow"></div>
+      <h2>Ready to build software<br/><span class="gradient-text">the right way?</span></h2>
+      <p>Join the community. Contribute skills. Shape the future of AI-assisted development.</p>
       <div class="hero-actions">
-        <a href="https://github.com/miniidea/openlogos" class="btn btn-primary" target="_blank" rel="noopener">
-          Get Started on GitHub
+        <a href="/getting-started/quick-start" class="btn btn-primary">
+          Read the Docs
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
-        <a href="https://runlogos.com" class="btn btn-secondary" target="_blank" rel="noopener">
-          RunLogos — The Pro Tool
+        <a href="https://github.com/miniidealab/openlogos" class="btn btn-ghost" target="_blank" rel="noopener">
+          Star on GitHub
         </a>
       </div>
     </div>
@@ -142,302 +306,643 @@ openlogos init my-project
 </BaseLayout>
 
 <style>
+  /* Hero */
   .hero {
-    padding: 10rem 2rem 6rem;
+    position: relative;
+    padding: 9rem 1.5rem 5rem;
     text-align: center;
+    overflow: hidden;
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 600px;
+    background: radial-gradient(ellipse, var(--color-primary-glow) 0%, transparent 70%);
+    pointer-events: none;
   }
 
   .hero-container {
-    max-width: 720px;
+    position: relative;
+    max-width: 760px;
     margin: 0 auto;
   }
 
   .hero-badge {
     display: inline-block;
-    padding: 0.3rem 1rem;
+    padding: 0.35rem 1rem;
     border: 1px solid var(--color-accent);
     color: var(--color-accent);
     border-radius: 100px;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     margin-bottom: 2rem;
   }
 
   h1 {
-    font-size: 3.5rem;
-    font-weight: 800;
-    line-height: 1.1;
-    letter-spacing: -0.03em;
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 900;
+    line-height: 1.08;
+    letter-spacing: -0.04em;
     margin-bottom: 1.5rem;
   }
 
+  .gradient-text {
+    background: linear-gradient(135deg, #0eb677 0%, #2dd4bf 50%, #34d399 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .neon-text {
+    display: inline-block;
+    color: transparent;
+    background: var(--color-bg);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-stroke: 1.5px #34d399;
+    text-shadow:
+      0 0 8px rgba(52, 211, 153, 0.5),
+      0 0 20px rgba(52, 211, 153, 0.3),
+      0 0 40px rgba(52, 211, 153, 0.15);
+    filter: brightness(1.1);
+    animation: neon-pulse 3s ease-in-out infinite alternate;
+  }
+
+  @keyframes neon-pulse {
+    from {
+      text-shadow:
+        0 0 6px rgba(52, 211, 153, 0.4),
+        0 0 16px rgba(52, 211, 153, 0.25),
+        0 0 32px rgba(52, 211, 153, 0.1);
+    }
+    to {
+      text-shadow:
+        0 0 10px rgba(52, 211, 153, 0.6),
+        0 0 24px rgba(52, 211, 153, 0.4),
+        0 0 48px rgba(52, 211, 153, 0.2),
+        0 0 72px rgba(14, 182, 119, 0.1);
+    }
+  }
+
   .hero-subtitle {
-    font-size: 1.2rem;
+    font-size: 1.15rem;
     color: var(--color-text-muted);
-    line-height: 1.7;
+    line-height: 1.75;
     margin-bottom: 2.5rem;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-subtitle strong {
+    color: var(--color-text-secondary);
+    font-weight: 600;
   }
 
   .hero-actions {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     justify-content: center;
     flex-wrap: wrap;
+    margin-bottom: 2rem;
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
-    padding: 0.75rem 1.75rem;
-    border-radius: 8px;
-    font-size: 0.95rem;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
     font-weight: 600;
+    font-family: var(--font-sans);
     transition: all 0.2s;
+    cursor: pointer;
+    border: none;
   }
 
   .btn-primary {
     background: var(--color-primary);
     color: white;
+    box-shadow: 0 0 20px var(--color-primary-glow);
   }
 
   .btn-primary:hover {
     background: var(--color-primary-hover);
     color: white;
+    box-shadow: 0 0 30px rgba(14, 182, 119, 0.25);
+    transform: translateY(-1px);
   }
 
-  .btn-secondary {
+  .btn-ghost {
+    background: var(--color-surface);
+    color: var(--color-text);
     border: 1px solid var(--color-border);
-    color: var(--color-text);
   }
 
-  .btn-secondary:hover {
-    border-color: var(--color-text-muted);
+  .btn-ghost:hover {
+    background: var(--color-surface-raised);
+    border-color: var(--color-border-hover);
     color: var(--color-text);
+    transform: translateY(-1px);
   }
 
+  .hero-install {
+    display: inline-block;
+    margin-top: 0.5rem;
+  }
+
+  .hero-install code {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    padding: 0.5rem 1.25rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+  }
+
+  .hero-pillars {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+  }
+
+  .pillar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4rem 0.875rem;
+    border-radius: 100px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: transform 0.15s, box-shadow 0.2s;
+    white-space: nowrap;
+  }
+
+  .pillar:hover {
+    transform: translateY(-1px);
+  }
+
+  .pillar-amber {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fbbf24 !important;
+  }
+  .pillar-amber:hover { box-shadow: 0 2px 12px rgba(245, 158, 11, 0.2); color: #fcd34d !important; }
+
+  .pillar-green {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #34d399 !important;
+  }
+  .pillar-green:hover { box-shadow: 0 2px 12px rgba(16, 185, 129, 0.2); color: #6ee7b7 !important; }
+
+  .pillar-blue {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: #60a5fa !important;
+  }
+  .pillar-blue:hover { box-shadow: 0 2px 12px rgba(59, 130, 246, 0.2); color: #93bbfd !important; }
+
+  .pillar-purple {
+    background: rgba(168, 85, 247, 0.15);
+    border-color: rgba(168, 85, 247, 0.3);
+    color: #c084fc !important;
+  }
+  .pillar-purple:hover { box-shadow: 0 2px 12px rgba(168, 85, 247, 0.2); color: #d8b4fe !important; }
+
+  .pillar-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .pillar-amber .pillar-dot { background: #fbbf24; }
+  .pillar-green .pillar-dot  { background: #34d399; }
+  .pillar-blue .pillar-dot   { background: #60a5fa; }
+  .pillar-purple .pillar-dot { background: #c084fc; }
+
+  /* Sections common */
   .section-container {
     max-width: var(--max-width);
     margin: 0 auto;
-    padding: 0 2rem;
+    padding: 0 1.5rem;
   }
 
-  .philosophy,
-  .workflow,
-  .quickstart,
-  .cta {
-    padding: 6rem 0;
-  }
-
-  .philosophy {
-    border-top: 1px solid var(--color-border);
-  }
-
-  .section-title {
-    font-size: 2.2rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-bottom: 1rem;
+  .section-header {
     text-align: center;
+    margin-bottom: 3.5rem;
+  }
+
+  .section-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+  }
+
+  .section-header h2 {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 1rem;
   }
 
   .section-subtitle {
     color: var(--color-text-muted);
-    text-align: center;
-    max-width: 640px;
-    margin: 0 auto 3rem;
-    font-size: 1.1rem;
+    max-width: 600px;
+    margin: 0 auto;
+    font-size: 1.05rem;
     line-height: 1.7;
   }
 
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.5rem;
-  }
-
-  .card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    padding: 2rem;
-  }
-
-  .card-icon {
-    display: inline-block;
-    padding: 0.3rem 0.8rem;
-    background: rgba(59, 130, 246, 0.1);
-    color: var(--color-primary);
-    border-radius: 6px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    margin-bottom: 1rem;
-  }
-
-  .card h3 {
-    font-size: 1.15rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .card p {
-    color: var(--color-text-muted);
-    font-size: 0.95rem;
-    line-height: 1.6;
-  }
-
-  .workflow {
+  /* Problem section */
+  .problem {
+    padding: 6rem 0;
     border-top: 1px solid var(--color-border);
   }
 
-  .steps {
-    max-width: 640px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 1.25rem;
   }
 
-  .step {
-    display: flex;
-    align-items: flex-start;
-    gap: 1.25rem;
-    padding: 1.25rem;
+  .problem-card {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-radius: 10px;
+    border-radius: 14px;
+    padding: 2rem;
+    transition: border-color 0.2s;
   }
 
-  .step-number {
-    flex-shrink: 0;
-    width: 36px;
-    height: 36px;
+  .problem-card:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  .problem-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(59, 130, 246, 0.15);
-    color: var(--color-primary);
-    border-radius: 8px;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: rgba(14, 182, 119, 0.08);
+    border: 1px solid rgba(14, 182, 119, 0.15);
+    color: #0eb677;
+    margin-bottom: 1.25rem;
+  }
+
+  .problem-card h3 {
+    font-size: 1.1rem;
     font-weight: 700;
-    font-size: 0.9rem;
+    margin-bottom: 0.625rem;
+    letter-spacing: -0.01em;
   }
 
-  .step-content h4 {
-    font-size: 1rem;
-    margin-bottom: 0.3rem;
-  }
-
-  .step-content p {
+  .problem-card p {
     color: var(--color-text-muted);
-    font-size: 0.9rem;
+    font-size: 0.925rem;
+    line-height: 1.6;
   }
 
-  .quickstart {
+  /* Core Principles */
+  .principles {
+    padding: 6rem 0;
     border-top: 1px solid var(--color-border);
   }
 
-  .code-block {
-    max-width: 640px;
-    margin: 0 auto 3rem;
+  .principles-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+  }
+
+  .principle-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: 2rem;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+  }
+
+  .principle-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .principle-layers:hover {
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.08);
+  }
+
+  .principle-scenario:hover {
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.08);
+  }
+
+  .principle-docs:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.08);
+  }
+
+  .principle-eng:hover {
+    border-color: rgba(168, 85, 247, 0.4);
+    box-shadow: 0 0 30px rgba(168, 85, 247, 0.08);
+  }
+
+  .principle-icon {
+    margin-bottom: 1.25rem;
+    color: var(--color-text-muted);
+  }
+
+  .principle-layers .principle-icon { color: var(--color-warning); }
+  .principle-scenario .principle-icon { color: var(--color-accent); }
+  .principle-docs .principle-icon { color: var(--color-primary); }
+  .principle-eng .principle-icon { color: #a855f7; }
+
+  .principle-card h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 0.625rem;
+    letter-spacing: -0.01em;
+    color: var(--color-text);
+  }
+
+  .principle-card p {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.65;
+    flex: 1;
+  }
+
+  .principle-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 1.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    transition: color 0.2s;
+  }
+
+  .principle-card:hover .principle-link {
+    color: var(--color-text);
+  }
+
+  /* Workflow / Scenarios */
+  .workflow {
+    padding: 6rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .scenarios {
+    max-width: 700px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .scenario {
+    display: flex;
+    gap: 1.5rem;
+    padding: 1.5rem;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: 12px;
-    overflow: hidden;
+    transition: border-color 0.2s;
   }
 
-  .code-header {
+  .scenario:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  .scenario-number {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary-glow);
+    color: var(--color-primary);
+    border-radius: 10px;
+    font-weight: 800;
+    font-size: 0.85rem;
+    font-family: var(--font-mono);
+  }
+
+  .scenario-body {
+    flex: 1;
+  }
+
+  .scenario-prompt {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.375rem;
+    color: var(--color-text);
+  }
+
+  .scenario-body p {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .scenario-body code {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    background: var(--color-surface-raised);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    color: var(--color-text-secondary);
+  }
+
+  /* Compatibility */
+  .compat {
+    padding: 6rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .tool-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    text-align: center;
+    transition: border-color 0.2s;
+  }
+
+  .tool-card:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  .tool-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .tool-status {
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .tool-supported .tool-status {
+    color: var(--color-accent);
+  }
+
+  .tool-planned .tool-status {
+    color: var(--color-text-muted);
+  }
+
+  .tool-planned {
+    opacity: 0.65;
+    border-style: dashed;
+  }
+
+  /* Quick Start */
+  .quickstart {
+    padding: 6rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .terminal {
+    max-width: 640px;
+    margin: 0 auto;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     padding: 0.75rem 1.25rem;
     border-bottom: 1px solid var(--color-border);
-    font-size: 0.8rem;
-    color: var(--color-text-muted);
-    font-weight: 600;
+    background: var(--color-surface-raised);
   }
 
-  pre {
+  .terminal-dots {
+    display: flex;
+    gap: 6px;
+  }
+
+  .terminal-dots span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-border-hover);
+  }
+
+  .terminal-title {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+
+  .terminal-body {
     padding: 1.5rem;
     overflow-x: auto;
   }
 
-  code {
-    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
-    font-size: 0.9rem;
-    line-height: 1.7;
-  }
-
-  .comment {
-    color: var(--color-text-muted);
-    opacity: 0.6;
-  }
-
-  .compatibility {
-    text-align: center;
-  }
-
-  .compatibility h3 {
-    font-size: 1.2rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .tool-list {
-    display: flex;
-    justify-content: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-bottom: 1rem;
-  }
-
-  .tool {
-    padding: 0.5rem 1.25rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .tool-planned {
-    opacity: 0.5;
-    border-style: dashed;
-  }
-
-  .tool-note {
-    color: var(--color-text-muted);
+  .terminal-body code {
+    font-family: var(--font-mono);
     font-size: 0.85rem;
+    line-height: 1.8;
   }
 
+  .t-comment { color: #6b7280; }
+  .t-prompt { color: var(--color-accent); font-weight: 600; }
+  .t-output { color: var(--color-text-muted); }
+
+  /* CTA */
   .cta {
+    position: relative;
+    padding: 6rem 0;
     border-top: 1px solid var(--color-border);
     text-align: center;
+    overflow: hidden;
+  }
+
+  .cta-glow {
+    position: absolute;
+    bottom: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(ellipse, var(--color-primary-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta .section-container {
+    position: relative;
   }
 
   .cta h2 {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 0.75rem;
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 1rem;
   }
 
   .cta p {
     color: var(--color-text-muted);
     margin-bottom: 2rem;
-    font-size: 1.1rem;
+    font-size: 1.05rem;
   }
 
+  /* Responsive */
   @media (max-width: 768px) {
     .hero {
-      padding: 8rem 1.5rem 4rem;
+      padding: 7rem 1.5rem 4rem;
     }
 
-    h1 {
-      font-size: 2.25rem;
-    }
-
-    .cards {
+    .problem-grid,
+    .tools-grid,
+    .principles-grid {
       grid-template-columns: 1fr;
     }
 
-    .hero-subtitle {
-      font-size: 1.05rem;
+    .scenario {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .scenario-number {
+      width: 36px;
+      height: 36px;
     }
   }
 </style>

@@ -15,6 +15,7 @@ dist/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -26,6 +27,9 @@ npm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Review comments
+*.comments.json
 
 # OS
 Thumbs.db

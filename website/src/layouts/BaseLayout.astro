@@ -7,7 +7,7 @@ interface Props {
 
 const {
   title,
-  description = 'OpenLogos - AI 时代的开源软件研发方法论',
+  description = 'OpenLogos — Open-source software engineering methodology for the AI era',
   lang = 'en'
 } = Astro.props;
 ---
@@ -19,18 +19,67 @@ const {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <title>{title}</title>
   </head>
   <body>
     <header class="site-header">
       <nav class="nav-container">
-        <a href="/" class="logo">OpenLogos</a>
+        <a href="/" class="logo">
+          <img src="/favicon.svg" alt="OpenLogos" width="28" height="28" />
+          OpenLogos
+        </a>
         <div class="nav-links">
-          <a href="/#features">Features</a>
-          <a href="/#quickstart">Quick Start</a>
-          <a href="https://github.com/miniidea/openlogos" target="_blank" rel="noopener">GitHub</a>
+          <div class="nav-dropdown">
+            <button class="nav-dropdown-trigger" aria-expanded="false" aria-haspopup="true">
+              Concepts
+              <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="nav-dropdown-menu">
+              <a href="/concepts/three-layer-model" class="dropdown-item">
+                <span class="dropdown-dot dot-amber"></span>
+                <div>
+                  <div class="dropdown-label">WHY → WHAT → HOW</div>
+                  <div class="dropdown-desc">Three-layer progression model</div>
+                </div>
+              </a>
+              <a href="/concepts/scenario-test-first" class="dropdown-item">
+                <span class="dropdown-dot dot-green"></span>
+                <div>
+                  <div class="dropdown-label">Scenario + Test-First</div>
+                  <div class="dropdown-desc">Traceable scenarios, tests before code</div>
+                </div>
+              </a>
+              <a href="/concepts/documents-as-context" class="dropdown-item">
+                <span class="dropdown-dot dot-blue"></span>
+                <div>
+                  <div class="dropdown-label">Documents as Context</div>
+                  <div class="dropdown-desc">Explicit, reviewable AI context</div>
+                </div>
+              </a>
+              <a href="/concepts/engineering-foundation" class="dropdown-item">
+                <span class="dropdown-dot dot-purple"></span>
+                <div>
+                  <div class="dropdown-label">Engineering Foundation</div>
+                  <div class="dropdown-desc">BDD, TDD, DDD, Stage-Gate</div>
+                </div>
+              </a>
+            </div>
+          </div>
+          <a href="/getting-started">Docs</a>
+          <a href="/getting-started/quick-start" class="nav-cta">Quick Start</a>
+          <a href="https://github.com/miniidealab/openlogos" target="_blank" rel="noopener">GitHub</a>
           <a href="/zh" class="lang-switch">中文</a>
         </div>
+        <button class="mobile-menu-btn" aria-label="Menu">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
       </nav>
     </header>
 
@@ -45,26 +94,51 @@ const {
           <p class="footer-copyright">&copy; 2026 MiniIdea. Licensed under Apache 2.0.</p>
         </div>
         <div class="footer-links">
-          <a href="https://runlogos.com" target="_blank" rel="noopener">RunLogos</a>
-          <a href="https://miniidealab.com" target="_blank" rel="noopener">MiniIdea</a>
-          <a href="https://github.com/miniidea/openlogos" target="_blank" rel="noopener">GitHub</a>
+          <a href="/concepts/three-layer-model">Concepts</a>
+          <a href="/getting-started">Docs</a>
+          <a href="/getting-started/quick-start">Quick Start</a>
+          <a href="https://github.com/miniidealab/openlogos" target="_blank" rel="noopener">GitHub</a>
         </div>
       </div>
     </footer>
+
+    <script>
+      const btn = document.querySelector('.mobile-menu-btn');
+      const links = document.querySelector('.nav-links');
+      btn?.addEventListener('click', () => links?.classList.toggle('open'));
+
+      const dropdown = document.querySelector('.nav-dropdown');
+      const trigger = document.querySelector('.nav-dropdown-trigger');
+      const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+      trigger?.addEventListener('click', (e) => {
+        if (!isMobile()) return;
+        e.stopPropagation();
+        dropdown?.classList.toggle('open');
+      });
+      document.addEventListener('click', () => dropdown?.classList.remove('open'));
+    </script>
   </body>
 </html>
 
 <style is:global>
   :root {
-    --color-bg: #0a0a0b;
-    --color-surface: #141416;
-    --color-border: #2a2a2e;
-    --color-text: #e4e4e7;
+    --color-bg: #09090b;
+    --color-surface: #131316;
+    --color-surface-raised: #1a1a1f;
+    --color-border: #27272a;
+    --color-border-hover: #3f3f46;
+    --color-text: #fafafa;
+    --color-text-secondary: #d4d4d8;
     --color-text-muted: #a1a1aa;
-    --color-primary: #3b82f6;
-    --color-primary-hover: #2563eb;
+    --color-primary: #0eb677;
+    --color-primary-hover: #0a9960;
+    --color-primary-glow: rgba(14, 182, 119, 0.15);
     --color-accent: #10b981;
+    --color-accent-glow: rgba(16, 185, 129, 0.15);
+    --color-warning: #f59e0b;
     --max-width: 1120px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   }
 
   * {
@@ -74,16 +148,18 @@ const {
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-sans);
     background: var(--color-bg);
     color: var(--color-text);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   a {
     color: var(--color-primary);
     text-decoration: none;
+    transition: color 0.2s;
   }
 
   a:hover {
@@ -98,15 +174,15 @@ const {
     left: 0;
     right: 0;
     z-index: 100;
-    background: rgba(10, 10, 11, 0.8);
-    backdrop-filter: blur(12px);
+    background: rgba(9, 9, 11, 0.85);
+    backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--color-border);
   }
 
   .nav-container {
     max-width: var(--max-width);
     margin: 0 auto;
-    padding: 0 2rem;
+    padding: 0 1.5rem;
     height: 64px;
     display: flex;
     align-items: center;
@@ -114,25 +190,29 @@ const {
   }
 
   .logo {
-    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 1.15rem;
     font-weight: 700;
     color: var(--color-text);
     letter-spacing: -0.02em;
   }
 
   .logo:hover {
-    color: var(--color-primary);
+    color: #0eb677;
   }
 
   .nav-links {
     display: flex;
-    gap: 2rem;
+    gap: 1.75rem;
     align-items: center;
   }
 
   .nav-links a {
     color: var(--color-text-muted);
-    font-size: 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 500;
     transition: color 0.2s;
   }
 
@@ -140,16 +220,144 @@ const {
     color: var(--color-text);
   }
 
+  /* Dropdown */
+  .nav-dropdown {
+    position: relative;
+  }
+
+  .nav-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.2s;
+  }
+
+  .nav-dropdown-trigger:hover,
+  .nav-dropdown.open .nav-dropdown-trigger {
+    color: var(--color-text);
+  }
+
+  .dropdown-chevron {
+    transition: transform 0.2s;
+  }
+
+  .nav-dropdown.open .dropdown-chevron,
+  .nav-dropdown:hover .dropdown-chevron {
+    transform: rotate(180deg);
+  }
+
+  .nav-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    width: 280px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 0.5rem;
+    padding-top: calc(0.5rem + 12px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .nav-dropdown:hover .nav-dropdown-menu,
+  .nav-dropdown.open .nav-dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .nav-dropdown:hover .nav-dropdown-trigger {
+    color: var(--color-text);
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: 8px;
+    transition: background 0.15s;
+    color: var(--color-text) !important;
+  }
+
+  .dropdown-item:hover {
+    background: var(--color-surface-raised);
+    color: var(--color-text) !important;
+  }
+
+  .dropdown-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 0.4rem;
+  }
+
+  .dot-amber  { background: #f59e0b; }
+  .dot-green  { background: #10b981; }
+  .dot-blue   { background: #3b82f6; }
+  .dot-purple { background: #a855f7; }
+
+  .dropdown-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .dropdown-desc {
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+    line-height: 1.4;
+    margin-top: 0.125rem;
+  }
+
+  .nav-cta {
+    padding: 0.3rem 0.875rem !important;
+    background: var(--color-primary);
+    color: white !important;
+    border-radius: 7px;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    transition: background 0.2s, transform 0.2s;
+  }
+
+  .nav-cta:hover {
+    background: var(--color-primary-hover);
+    color: white !important;
+    transform: translateY(-1px);
+  }
+
   .lang-switch {
-    padding: 0.25rem 0.75rem;
+    padding: 0.25rem 0.625rem;
     border: 1px solid var(--color-border);
     border-radius: 6px;
-    font-size: 0.85rem;
+    font-size: 0.8rem !important;
+  }
+
+  .mobile-menu-btn {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
   }
 
   .site-footer {
     border-top: 1px solid var(--color-border);
-    padding: 3rem 2rem;
+    padding: 3rem 1.5rem;
   }
 
   .footer-container {
@@ -162,14 +370,14 @@ const {
 
   .footer-tagline {
     color: var(--color-text-muted);
-    font-size: 0.9rem;
-    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+    margin-bottom: 0.375rem;
   }
 
   .footer-copyright {
     color: var(--color-text-muted);
     font-size: 0.8rem;
-    opacity: 0.7;
+    opacity: 0.6;
   }
 
   .footer-links {
@@ -182,9 +390,70 @@ const {
     font-size: 0.85rem;
   }
 
+  .footer-links a:hover {
+    color: var(--color-text);
+  }
+
   @media (max-width: 768px) {
     .nav-links {
-      gap: 1rem;
+      display: none;
+      position: absolute;
+      top: 64px;
+      left: 0;
+      right: 0;
+      flex-direction: column;
+      gap: 0;
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      padding: 0.5rem 0;
+    }
+
+    .nav-links.open {
+      display: flex;
+    }
+
+    .nav-links a {
+      padding: 0.75rem 1.5rem;
+      width: 100%;
+    }
+
+    .nav-dropdown {
+      width: 100%;
+    }
+
+    .nav-dropdown-trigger {
+      padding: 0.75rem 1.5rem;
+      width: 100%;
+    }
+
+    .nav-dropdown-menu {
+      position: static;
+      transform: none;
+      width: 100%;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      background: var(--color-surface-raised);
+      padding: 0.25rem 0.5rem 0.25rem 1.5rem;
+      opacity: 1;
+      visibility: visible;
+      display: none;
+    }
+
+    .nav-dropdown.open .nav-dropdown-menu {
+      display: block;
+      transform: none;
+    }
+
+    .nav-cta {
+      margin: 0.25rem 1.5rem !important;
+      width: auto !important;
+      text-align: center;
+      justify-content: center;
+    }
+
+    .mobile-menu-btn {
+      display: block;
     }
 
     .footer-container {

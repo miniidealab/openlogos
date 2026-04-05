@@ -6,7 +6,7 @@
 
 ### 报告问题
 
-在 [GitHub Issues](https://github.com/miniidea/openlogos/issues) 中提交，请包含：
+在 [GitHub Issues](https://github.com/miniidealab/openlogos/issues) 中提交，请包含：
 
 - 问题的清晰描述
 - 复现步骤（如适用）

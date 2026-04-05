@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://openlogos.ai/schemas/logos.config.json",
   "title": "OpenLogos Project Configuration",
-  "description": "logos.config.json 是 OpenLogos 项目的核心配置文件，定义项目的基本信息和文档模块结构。",
+  "description": "logos.config.json 是 OpenLogos 项目的核心配置文件（位于 logos/ 目录下），定义项目的基本信息和文档模块结构。",
   "type": "object",
   "required": ["name", "documents"],
   "properties": {
@@ -31,11 +31,32 @@
       "type": "object",
       "description": "文件级模块映射（保留字段，供 RunLogos 使用）"
     },
+    "locale": {
+      "type": "string",
+      "enum": ["en", "zh"],
+      "default": "en",
+      "description": "CLI and RunLogos display language"
+    },
     "documents": {
       "type": "object",
       "description": "文档模块定义。每个 key 是模块标识符，value 定义模块的标签、路径和文件匹配模式。",
       "additionalProperties": {
         "$ref": "#/definitions/DocumentModule"
+      }
+    },
+    "verify": {
+      "type": "object",
+      "description": "测试验收配置（可选）。配置 openlogos verify 的行为。",
+      "properties": {
+        "result_path": {
+          "type": "string",
+          "default": "logos/resources/verify/test-results.jsonl",
+          "description": "测试结果 JSONL 文件路径（相对项目根目录）"
+        },
+        "test_command": {
+          "type": "string",
+          "description": "测试命令（可选）。配置后 openlogos verify 会先执行此命令再读取结果"
+        }
       }
     }
   },
@@ -80,6 +101,7 @@
     {
       "name": "My SaaS Project",
       "description": "A SaaS product following OpenLogos methodology",
+      "locale": "en",
       "documents": {
         "prd": {
           "label": { "en": "Product Docs", "zh": "产品文档" },
@@ -91,6 +113,11 @@
           "path": "./resources/api",
           "pattern": "**/*.{yaml,yml,json}"
         },
+        "test": {
+          "label": { "en": "Test Cases", "zh": "测试用例" },
+          "path": "./resources/test",
+          "pattern": "**/*.md"
+        },
         "scenario": {
           "label": { "en": "Scenarios", "zh": "业务场景" },
           "path": "./resources/scenario",
@@ -100,7 +127,15 @@
           "label": { "en": "Database", "zh": "数据库" },
           "path": "./resources/database",
           "pattern": "**/*.sql"
+        },
+        "verify": {
+          "label": { "en": "Verify Reports", "zh": "验收报告" },
+          "path": "./resources/verify",
+          "pattern": "**/*.{jsonl,md}"
         }
+      },
+      "verify": {
+        "result_path": "logos/resources/verify/test-results.jsonl"
       }
     }
   ]

@@ -1,11 +1,11 @@
 # AI Assistant Instructions
 
 This project follows the **OpenLogos** methodology.
-Read `logos-project.yaml` first to understand the project resource index.
+Read `logos/logos-project.yaml` first to understand the project resource index.
 
 ## Project Context
-- Config: `logos.config.json`
-- Resource Index: `logos-project.yaml`
+- Config: `logos/logos.config.json`
+- Resource Index: `logos/logos-project.yaml`
 - Tech Stack: Next.js 15, TypeScript, Supabase, Paddle
 
 ## Methodology Rules
@@ -13,7 +13,7 @@ Read `logos-project.yaml` first to understand the project resource index.
 2. Follow the Why → What → How progression
 3. All API designs must originate from scenario sequence diagrams
 4. All code changes must have corresponding API orchestration tests
-5. Use the Delta change workflow for iterations (see changes/ directory)
+5. Use the Delta change workflow for iterations (see logos/changes/ directory)
 
 ## Active Skills
 - `project-init` — Project initialization and structure setup
@@ -27,7 +27,7 @@ Read `logos-project.yaml` first to understand the project resource index.
 
 ## Conventions
 - 遵循 OpenLogos 三层推进模型（Why → What → How）
-- 每次变更必须先创建 changes/ 变更提案
+- 每次变更必须先创建 logos/changes/ 变更提案
 - 所有 API 路径以 /api/ 开头
 - 数据库金额字段使用 INTEGER 存储分值
 - 时间字段统一使用 TIMESTAMPTZ

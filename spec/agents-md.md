@@ -1,6 +1,6 @@
 # AGENTS.md 生成规范
 
-> 版本：0.1.0
+> 版本：0.3.0
 >
 > 本文档定义 AGENTS.md 的内容结构、生成规则和多平台适配机制。AGENTS.md 是面向 AI 助手的指令文件，让 AI 工具打开项目就知道该遵循什么规范。
 
@@ -14,11 +14,11 @@ AGENTS.md 放在项目根目录。当 AI 工具（Cursor、Claude Code、OpenCod
 # AI Assistant Instructions
 
 This project follows the **OpenLogos** methodology.
-Read `logos-project.yaml` first to understand the project resource index.
+Read `logos/logos-project.yaml` first to understand the project resource index.
 
 ## Project Context
-- Config: `logos.config.json`
-- Resource Index: `logos-project.yaml`
+- Config: `logos/logos.config.json`
+- Resource Index: `logos/logos-project.yaml`
 - Tech Stack: [从 logos-project.yaml 读取]
 
 ## Methodology Rules
@@ -26,13 +26,32 @@ Read `logos-project.yaml` first to understand the project resource index.
 2. Follow the Why → What → How progression
 3. All API designs must originate from scenario sequence diagrams
 4. All code changes must have corresponding API orchestration tests
-5. Use the Delta change workflow for iterations (see changes/ directory)
+5. Use the Delta change workflow for iterations (see logos/changes/ directory)
+
+## Interaction Guidelines
+When the user's request is vague or they ask "what should I do next":
+1. Scan `logos/resources/` to determine the current project phase
+2. Suggest the specific next step based on what's missing
+3. Provide a ready-to-use prompt the user can directly say
+4. Never start generating documents without confirming key information
+
+Phase detection logic:
+- `logos/resources/prd/1-product-requirements/` is empty → suggest Phase 1 (prd-writer)
+- requirements exist but `2-product-design/` is empty → suggest Phase 2 (product-designer)
+- design exists but `3-technical-plan/1-architecture/` is empty → suggest Phase 3 Step 0 (architecture-designer)
+- architecture exists but `3-technical-plan/2-scenario-implementation/` is empty → suggest Phase 3 Step 1 (scenario-architect)
+- scenarios exist but `logos/resources/api/` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
+- API exists but `logos/resources/test/` is empty → suggest Phase 3 Step 3a (test-writer)
+- test cases exist but `logos/resources/scenario/` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
+- All above exist → suggest Phase 3 Step 4 (code generation)
+- code generated but `logos/resources/verify/` is empty → suggest Phase 3 Step 5 (run tests then `openlogos verify`)
 
 ## Active Skills
 - [列出项目中启用的 Skills 及其路径]
 
 ## Conventions
 - [从 logos-project.yaml 的 conventions 段读取]
+- When writing Markdown files that contain triple-backtick code blocks inside other code blocks, use 4-backtick fences (````) for the outer block
 ```
 
 ## 生成规则
@@ -57,6 +76,7 @@ AGENTS.md 的内容从以下文件中自动提取：
 3. All API designs must originate from scenario sequence diagrams
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations
+6. All generated test code must include an OpenLogos reporter (see spec/test-results.md)
 
 ### 生成时机
 

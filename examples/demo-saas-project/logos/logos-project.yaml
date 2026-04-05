@@ -12,12 +12,12 @@ tech_stack:
   payment: "Paddle"
 
 resource_index:
-  - path: resources/prd/1-product-requirements/01-requirements.md
+  - path: logos/resources/prd/1-product-requirements/01-requirements.md
     desc: 产品核心需求文档。涉及产品定位、目标用户、功能需求时必读。
 
 conventions:
   - "遵循 OpenLogos 三层推进模型（Why → What → How）"
-  - "每次变更必须先创建 changes/ 变更提案"
+  - "每次变更必须先创建 logos/changes/ 变更提案"
   - "所有 API 路径以 /api/ 开头"
   - "数据库金额字段使用 INTEGER 存储分值"
   - "时间字段统一使用 TIMESTAMPTZ"
