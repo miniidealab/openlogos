@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { syncLogosProjectName, sync } from '../src/commands/sync.js';
@@ -67,8 +67,13 @@ describe('S08 Scenario Tests — sync command', () => {
     cleanup();
   });
 
-  it('ST-S08-01: sync regenerates AGENTS.md and CLAUDE.md', () => {
+  it('ST-S08-01: sync regenerates AGENTS.md, CLAUDE.md and deploys skills (cursor)', () => {
     scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'cursor';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
 
     sync();
 
@@ -76,15 +81,23 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(existsSync(join(root, 'CLAUDE.md'))).toBe(true);
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('Phase detection logic');
+    expect(agents).toContain('## Active Skills');
+
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).not.toContain('## Active Skills');
+
+    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
+    expect(mdcFiles.length).toBe(12);
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('AGENTS.md updated');
     expect(allLogs).toContain('Sync complete');
+    expect(allLogs).toContain('12 skills synced to .cursor/rules/');
   });
 
   it('ST-S08-02: sync updates yaml name when mismatched', () => {
     scaffoldProject(root, { name: 'new-name' });
-    // Manually set yaml to old name to create mismatch
     const yamlPath = join(root, 'logos', 'logos-project.yaml');
     writeFileSync(yamlPath, 'project:\n  name: "old-name"\n  description: ""\n');
 
@@ -97,9 +110,55 @@ describe('S08 Scenario Tests — sync command', () => {
   });
 
   it('ST-S08-03: uninitialized project → error exit', () => {
-    // no scaffolding — empty directory
     expect(() => sync()).toThrow('process.exit(1)');
     const allErrors = con.errors.join('\n');
     expect(allErrors).toContain('logos.config.json not found');
+  });
+
+  it('ST-S08-04: sync with claude-code deploys to logos/skills/', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'claude-code';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    const skillDirs = readdirSync(join(root, 'logos', 'skills'));
+    expect(skillDirs.length).toBe(12);
+
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('## Active Skills');
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).not.toContain('## Active Skills');
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('12 skills synced to logos/skills/');
+  });
+
+  it('ST-S08-05: sync defaults to cursor when aiTool not in config', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    sync();
+
+    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+  });
+
+  it('ST-S08-06: sync with other → both files include Active Skills', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'other';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('## Active Skills');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('## Active Skills');
   });
 });

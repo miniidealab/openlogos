@@ -1,9 +1,0 @@
-{
-  "scenario": "S01",
-  "name": "auth-register-login",
-  "description": "Documentation-only orchestration sketch: client registers, then uses JWT for /tasks.",
-  "steps": [
-    { "action": "POST", "path": "/auth/register", "body": { "email": "user@example.com", "password": "password12" } },
-    { "action": "POST", "path": "/auth/login", "body": { "email": "user@example.com", "password": "password12" } }
-  ]
-}

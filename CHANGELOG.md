@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-05
+
+### Added
+
+- **AI Coding Tool Selection** — `openlogos init` now prompts users to choose their AI coding tool (Cursor / Claude Code / Other), stored as `aiTool` in `logos.config.json`
+- **Automatic Skills Deployment** — 12 AI Skills are bundled in the npm package and deployed during `init`:
+  - **Cursor**: deployed as `.cursor/rules/*.mdc` with frontmatter metadata
+  - **Claude Code / Other**: deployed as `logos/skills/*/SKILL.md`
+- **Active Skills in AI Instruction Files** — `AGENTS.md` and `CLAUDE.md` now include an `## Active Skills` section listing all deployed skills (visibility follows tool selection rules)
+- **Skills Sync** — `openlogos sync` now re-deploys skills and refreshes Active Skills section based on `aiTool` config
+
+### Changed
+
+- `openlogos sync` refactored to reuse `createAgentsMd()` from init module, eliminating duplicated AGENTS.md template
+- Test suite expanded from 76 to 95 cases covering AI tool selection, skills deployment, and Active Skills generation
+
 ## [0.2.0] - 2026-04-05
 
 ### Changed
@@ -56,5 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.3.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.0
 [0.2.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.2.0
 [0.1.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.1.0

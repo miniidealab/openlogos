@@ -47,7 +47,17 @@ Phase detection logic:
 - code generated but `logos/resources/verify/` is empty → suggest Phase 3 Step 5 (run tests then `openlogos verify`)
 
 ## Active Skills
-- [列出项目中启用的 Skills 及其路径]
+[根据 `logos.config.json` 的 `aiTool` 字段动态生成]
+
+当 aiTool = "cursor" 时，列出 `.cursor/rules/` 下部署的 `.mdc` 文件：
+- `skills/prd-writer` — `.cursor/rules/prd-writer.mdc`
+- `skills/product-designer` — `.cursor/rules/product-designer.mdc`
+- ...（共 12 项）
+
+当 aiTool = "claude-code" 或 "other" 时，列出 `logos/skills/` 下部署的 `SKILL.md` 文件：
+- `skills/prd-writer` — `logos/skills/prd-writer/SKILL.md`
+- `skills/product-designer` — `logos/skills/product-designer/SKILL.md`
+- ...（共 12 项）
 
 ## Conventions
 - [从 logos-project.yaml 的 conventions 段读取]
@@ -63,7 +73,7 @@ AGENTS.md 的内容从以下文件中自动提取：
 | 字段 | 来源 |
 |------|------|
 | Tech Stack | `logos-project.yaml` → `tech_stack` |
-| Active Skills | 扫描项目中的 `SKILL.md` 文件 |
+| Active Skills | `logos.config.json` → `aiTool` 字段决定路径前缀 + 扫描项目中已部署的 Skills |
 | Conventions | `logos-project.yaml` → `conventions` |
 | Methodology Rules | 固定内容（OpenLogos 核心规则） |
 
@@ -80,20 +90,20 @@ AGENTS.md 的内容从以下文件中自动提取：
 
 ### 生成时机
 
-- `openlogos init`：初始化项目时首次生成
-- `openlogos sync`：手动触发重新生成（当项目配置变化时）
+- `openlogos init`：初始化项目时首次生成（含 Active Skills 段，Skills 同步部署）
+- `openlogos sync`：手动触发重新生成（当项目配置变化时，同时重新部署 Skills 并刷新 Active Skills 段）
 - `project-init` Skill：AI 初始化项目时生成
 
 ## 多平台适配
 
 不同 AI 工具使用不同的指令文件名，但内容一致：
 
-| 工具 | 指令文件 | 处理方式 |
-|------|---------|---------|
-| **Cursor** | `AGENTS.md`（原生支持） | 直接读取 |
-| **Claude Code** | `CLAUDE.md` | CLI 同步生成 |
-| **OpenCode** | `AGENTS.md` | 直接读取 |
-| **GitHub Copilot** | `.github/copilot-instructions.md` | CLI 同步生成（规划中） |
+| 工具 | 指令文件 | Skills 部署位置 | 处理方式 |
+|------|---------|---------------|---------|
+| **Cursor** | `AGENTS.md`（原生支持） | `.cursor/rules/*.mdc` | `init` / `sync` 自动部署 |
+| **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署 |
+| **OpenCode** | `AGENTS.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署 |
+| **GitHub Copilot** | `.github/copilot-instructions.md` | 规划中 | Phase 1.5 |
 
 `openlogos sync` 命令会同时生成所有需要的指令文件，确保不同 AI 工具看到的指令一致。
 

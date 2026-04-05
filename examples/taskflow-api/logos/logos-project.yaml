@@ -1,38 +1,12 @@
 project:
-  name: "TaskFlow API"
-  description: "OpenLogos reference demo — minimal task API with auth (SQLite + Hono)"
+  name: "taskflow-api"
+  description: ""
   methodology: "OpenLogos"
 
-tech_stack:
-  runtime: "Node.js >= 18"
-  framework: "Hono 4"
-  language: "TypeScript (ESM)"
-  database: "SQLite (better-sqlite3 + Drizzle ORM)"
-  testing: "Vitest + OpenLogos JSONL reporter"
+tech_stack: {}
 
-resource_index:
-  - path: logos/resources/prd/1-product-requirements/01-requirements.md
-    desc: Product requirements and acceptance criteria (S01 auth, S02 tasks).
-  - path: logos/resources/prd/2-product-design/1-feature-specs/00-api-surface.md
-    desc: API surface and resource model (Phase 2, API-first).
-  - path: logos/resources/prd/3-technical-plan/1-architecture/00-overview.md
-    desc: Architecture and security overview (Phase 3 Step 0).
-  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/S01-auth.md
-    desc: S01 sequence diagram — register and login.
-  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/S02-task-crud.md
-    desc: S02 sequence diagram — task CRUD with JWT.
-  - path: logos/resources/api/openapi.yaml
-    desc: OpenAPI 3.0 specification (Phase 3 Step 2).
-  - path: logos/resources/database/schema.sql
-    desc: SQLite DDL aligned with Drizzle schema.
-  - path: logos/resources/test/S01-auth-test-cases.md
-    desc: Unit and scenario tests for S01.
-  - path: logos/resources/test/S02-task-crud-test-cases.md
-    desc: Unit and scenario tests for S02.
-  - path: logos/resources/scenario/S01-auth-orchestration.json
-    desc: Minimal API orchestration descriptor for documentation.
+resource_index: []
 
 conventions:
-  - "Follow OpenLogos Why → What → How progression"
-  - "Use logos/changes/ for iterative deltas when evolving this demo"
-  - "Test case IDs must match pattern UT|ST-Sxx-yy in *-test-cases.md and JSONL output"
+  - "Follow the OpenLogos three-layer progression (Why → What → How)"
+  - "Every change must start with a logos/changes/ change proposal"

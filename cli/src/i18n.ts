@@ -27,6 +27,13 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.nameChoice2': '  2. "{name}"     ← from {source}',
     'init.namePrompt': 'Which name would you like to use? [1/2] (default: 1): ',
     'init.langPrompt': 'Your choice [1/2] (default: 1): ',
+    'init.aiToolHeader': 'Choose AI coding tool / 选择 AI 编码工具:',
+    'init.aiToolCursor': '  1. Cursor (default)',
+    'init.aiToolClaudeCode': '  2. Claude Code',
+    'init.aiToolOther': '  3. Other',
+    'init.aiToolPrompt': 'Your choice [1/2/3] (default: 1): ',
+    'init.skillsDeployed': '{count} skills deployed to {target}',
+    'init.skillsSynced': '{count} skills synced to {target}',
 
     // status
     'phase.1': 'Phase 1 · Requirements (WHY)',
@@ -114,6 +121,13 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.nameChoice2': '  2. "{name}"     ← 来自 {source}',
     'init.namePrompt': '使用哪个名称？[1/2]（默认 1）：',
     'init.langPrompt': '请选择 [1/2]（默认 1）：',
+    'init.aiToolHeader': '选择 AI 编码工具:',
+    'init.aiToolCursor': '  1. Cursor（默认）',
+    'init.aiToolClaudeCode': '  2. Claude Code',
+    'init.aiToolOther': '  3. 其他',
+    'init.aiToolPrompt': '请选择 [1/2/3]（默认: 1）: ',
+    'init.skillsDeployed': '{count} 个 Skills 已部署到 {target}',
+    'init.skillsSynced': '{count} 个 Skills 已同步到 {target}',
 
     // status
     'phase.1': 'Phase 1 · 需求文档 (WHY)',

@@ -1,35 +1,53 @@
 {
-  "name": "TaskFlow API",
+  "name": "taskflow-api",
   "locale": "en",
-  "description": "Reference REST API demo following OpenLogos methodology",
+  "description": "",
   "documents": {
     "prd": {
-      "label": { "en": "Product Docs", "zh": "产品文档" },
+      "label": {
+        "en": "Product Docs",
+        "zh": "产品文档"
+      },
       "path": "./resources/prd",
       "pattern": "**/*.{md,html,htm,pdf}"
     },
     "api": {
-      "label": { "en": "API Docs", "zh": "API 文档" },
+      "label": {
+        "en": "API Docs",
+        "zh": "API 文档"
+      },
       "path": "./resources/api",
       "pattern": "**/*.{yaml,yml,json}"
     },
     "test": {
-      "label": { "en": "Test Cases", "zh": "测试用例" },
+      "label": {
+        "en": "Test Cases",
+        "zh": "测试用例"
+      },
       "path": "./resources/test",
       "pattern": "**/*.md"
     },
     "scenario": {
-      "label": { "en": "Scenarios", "zh": "业务场景" },
+      "label": {
+        "en": "Scenarios",
+        "zh": "业务场景"
+      },
       "path": "./resources/scenario",
       "pattern": "**/*.json"
     },
     "database": {
-      "label": { "en": "Database", "zh": "数据库" },
+      "label": {
+        "en": "Database",
+        "zh": "数据库"
+      },
       "path": "./resources/database",
       "pattern": "**/*.sql"
     },
     "verify": {
-      "label": { "en": "Verify Reports", "zh": "验收报告" },
+      "label": {
+        "en": "Verify Reports",
+        "zh": "验收报告"
+      },
       "path": "./resources/verify",
       "pattern": "**/*.{jsonl,md}"
     }

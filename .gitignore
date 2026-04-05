@@ -33,3 +33,6 @@ npm-debug.log*
 
 # OS
 Thumbs.db
+
+# OpenLogos project-level methodology assets (local only)
+logos/

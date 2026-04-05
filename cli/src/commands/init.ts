@@ -1,7 +1,10 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync } from 'node:fs';
+import { join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
+
+export type AiTool = 'cursor' | 'claude-code' | 'other';
 
 type NameSource = 'argument' | 'package.json' | 'Cargo.toml' | 'pyproject.toml' | 'directory';
 
@@ -101,6 +104,119 @@ async function chooseLocale(): Promise<Locale> {
   return answer === '2' ? 'zh' : 'en';
 }
 
+async function chooseAiTool(locale: Locale): Promise<AiTool> {
+  if (!isTTY()) return 'cursor';
+
+  console.log(`\n${t(locale, 'init.aiToolHeader')}`);
+  console.log(t(locale, 'init.aiToolCursor'));
+  console.log(t(locale, 'init.aiToolClaudeCode'));
+  console.log(t(locale, 'init.aiToolOther') + '\n');
+
+  const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
+  if (answer === '2') return 'claude-code';
+  if (answer === '3') return 'other';
+  return 'cursor';
+}
+
+export const SKILL_NAMES = [
+  'project-init',
+  'prd-writer',
+  'product-designer',
+  'architecture-designer',
+  'scenario-architect',
+  'api-designer',
+  'db-designer',
+  'test-writer',
+  'test-orchestrator',
+  'code-reviewer',
+  'change-writer',
+  'merge-executor',
+] as const;
+
+const SKILL_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
+  'project-init': { en: 'Project initialization and structure setup', zh: '项目初始化与结构搭建' },
+  'prd-writer': { en: 'Requirements document authoring', zh: '需求文档编写' },
+  'product-designer': { en: 'Product design and prototyping', zh: '产品设计与原型' },
+  'architecture-designer': { en: 'Technical architecture and technology selection', zh: '技术架构与技术选型' },
+  'scenario-architect': { en: 'Business scenario modeling and sequence diagrams', zh: '业务场景建模与时序图' },
+  'api-designer': { en: 'OpenAPI specification design', zh: 'OpenAPI 规格设计' },
+  'db-designer': { en: 'Database schema design', zh: '数据库 Schema 设计' },
+  'test-writer': { en: 'Unit test + scenario test case design (Step 3a, all projects)', zh: '单元测试 + 场景测试用例设计（Step 3a）' },
+  'test-orchestrator': { en: 'API orchestration test design (Step 3b, API projects only)', zh: 'API 编排测试设计（Step 3b，仅 API 项目）' },
+  'code-reviewer': { en: 'Code review and compliance checking', zh: '代码审查与规范检查' },
+  'change-writer': { en: 'Change proposal writing and impact analysis', zh: '变更提案编写与影响分析' },
+  'merge-executor': { en: 'Delta merge execution via MERGE_PROMPT.md', zh: '通过 MERGE_PROMPT.md 执行 Delta 合并' },
+};
+
+export function findSkillsSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+
+  // npm package layout: <pkg>/dist/commands/init.js → <pkg>/skills/
+  const packageSkills = join(currentDir, '..', '..', 'skills');
+  if (existsSync(packageSkills)) return packageSkills;
+
+  // dev layout: cli/src/commands/init.ts → <repo>/skills/
+  const devSkills = join(currentDir, '..', '..', '..', 'skills');
+  if (existsSync(devSkills)) return devSkills;
+
+  return null;
+}
+
+export function deploySkills(
+  root: string,
+  aiTool: AiTool,
+  skillsSource?: string,
+): { target: string; count: number } | null {
+  const source = skillsSource ?? findSkillsSource();
+  if (!source || !existsSync(source)) return null;
+
+  let count = 0;
+
+  if (aiTool === 'cursor') {
+    const targetDir = join(root, '.cursor', 'rules');
+    mkdirSync(targetDir, { recursive: true });
+    for (const name of SKILL_NAMES) {
+      const src = join(source, name, 'SKILL.md');
+      if (existsSync(src)) {
+        const content = readFileSync(src, 'utf-8');
+        const desc = SKILL_DESCRIPTIONS[name]?.en ?? name;
+        const mdc = `---\ndescription: "OpenLogos — ${desc}"\nalwaysApply: false\n---\n\n${content}`;
+        writeFileSync(join(targetDir, `${name}.mdc`), mdc);
+        count++;
+      }
+    }
+    return { target: '.cursor/rules/', count };
+  }
+
+  const targetDir = join(root, 'logos', 'skills');
+  for (const name of SKILL_NAMES) {
+    const skillDir = join(targetDir, name);
+    mkdirSync(skillDir, { recursive: true });
+    const src = join(source, name, 'SKILL.md');
+    if (existsSync(src)) {
+      copyFileSync(src, join(skillDir, 'SKILL.md'));
+      count++;
+    }
+  }
+  return { target: 'logos/skills/', count };
+}
+
+function shouldIncludeActiveSkills(aiTool: AiTool, target: 'agents' | 'claude'): boolean {
+  if (aiTool === 'cursor') return target === 'agents';
+  if (aiTool === 'claude-code') return target === 'claude';
+  return true;
+}
+
+function generateActiveSkillsSection(locale: Locale): string {
+  let section = '';
+  for (const name of SKILL_NAMES) {
+    const desc = SKILL_DESCRIPTIONS[name]?.[locale] ?? SKILL_DESCRIPTIONS[name]?.en ?? name;
+    section += `- \`skills/${name}/\` — ${desc}\n`;
+  }
+  return section;
+}
+
 const DIRECTORIES = [
   'logos/resources/prd/1-product-requirements',
   'logos/resources/prd/2-product-design/1-feature-specs',
@@ -116,10 +232,11 @@ const DIRECTORIES = [
   'logos/changes/archive',
 ];
 
-export function createLogosConfig(name: string, locale: Locale): string {
+export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool = 'cursor'): string {
   return JSON.stringify({
     name,
     locale,
+    aiTool,
     description: '',
     documents: {
       prd: {
@@ -173,8 +290,10 @@ ${conventionsForYaml(locale)}
 `;
 }
 
-export function createAgentsMd(locale: Locale): string {
-  return `# AI Assistant Instructions
+export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude'): string {
+  const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
+
+  let content = `# AI Assistant Instructions
 
 This project follows the **OpenLogos** methodology.
 Read \`logos/logos-project.yaml\` first to understand the project resource index.
@@ -208,10 +327,20 @@ Phase detection logic:
 - test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
 - All above exist → suggest Phase 3 Step 4 (code generation)
 - code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)
+`;
 
+  if (includeSkills) {
+    content += `
+## Active Skills
+${generateActiveSkillsSection(locale)}`;
+  }
+
+  content += `
 ## Conventions
 ${conventionsForAgentsMd(locale)}
 `;
+
+  return content;
 }
 
 export async function init(name?: string) {
@@ -224,6 +353,7 @@ export async function init(name?: string) {
   }
 
   const locale = await chooseLocale();
+  const aiTool = await chooseAiTool(locale);
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
 
   const sourceLabel: Record<NameSource, string> = {
@@ -243,17 +373,22 @@ export async function init(name?: string) {
     console.log(`  ✓ ${dir}/`);
   }
 
-  writeFileSync(join(root, 'logos', 'logos.config.json'), createLogosConfig(projectName, locale));
+  writeFileSync(join(root, 'logos', 'logos.config.json'), createLogosConfig(projectName, locale, aiTool));
   console.log(`  ✓ logos/logos.config.json`);
 
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents'));
   console.log(`  ✓ AGENTS.md`);
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude'));
   console.log(`  ✓ CLAUDE.md`);
+
+  const deployResult = deploySkills(root, aiTool);
+  if (deployResult && deployResult.count > 0) {
+    console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
+  }
 
   const isAutoDetected = nameSource !== 'argument';
   const nameHint = isAutoDetected

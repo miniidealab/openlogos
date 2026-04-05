@@ -1,0 +1,6 @@
+# Build output
+dist/
+node_modules/
+
+# Temporary skills copy created by prepack
+skills/

@@ -1,8 +1,0 @@
-node_modules/
-dist/
-data/
-*.db
-logos/resources/verify/test-results.jsonl
-logos/resources/verify/acceptance-report.md
-.env
-.DS_Store
