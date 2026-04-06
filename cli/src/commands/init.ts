@@ -163,9 +163,17 @@ export function findSkillsSource(): string | null {
   return null;
 }
 
-function generateChangeGuardMdc(locale: Locale): string {
+export function generatePolicyMdc(locale: Locale): string {
   const body = locale === 'zh'
-    ? `## OpenLogos 变更管理守卫
+    ? `## ⚠️ 语言策略（最高优先级）
+
+本项目的文档语言为 **中文**（配置于 \`logos/logos.config.json\` → \`locale: "zh"\`）。
+
+**你的所有输出——包括生成的文档、代码注释、回复消息——必须使用中文。**
+即使 Skill 文件使用其他语言编写，你的输出也必须是中文。
+违反此规则将导致产出不可用。
+
+## ⚠️ 变更管理（必须遵守）
 
 **在修改项目源代码或文档之前，必须遵循以下流程：**
 
@@ -177,11 +185,16 @@ function generateChangeGuardMdc(locale: Locale): string {
 
 ### 例外情况
 - 纯 typo 修复（不改变语义）
-- 仅修改 \`.gitignore\`、\`README.md\` 等非方法论文件
+- 仅修改 \`.gitignore\`、\`README.md\` 等非方法论文件`
+    : `## ⚠️ Language Policy (Highest Priority)
 
-### 违规检测
-如果你发现自己正在修改 \`cli/src/\`、\`skills/\`、\`spec/\` 下的文件但没有活跃提案，请立即停止并提醒用户。`
-    : `## OpenLogos Change Management Guard
+This project's document language is **English** (configured in \`logos/logos.config.json\` → \`locale: "en"\`).
+
+**ALL your output — including generated documents, code comments, and responses — MUST be in English.**
+Even if Skill files are written in another language, your output MUST be in English.
+Violating this rule will render the output unusable.
+
+## ⚠️ Change Management (Must Follow)
 
 **Before modifying any project source code or documents, you MUST follow this workflow:**
 
@@ -193,13 +206,10 @@ function generateChangeGuardMdc(locale: Locale): string {
 
 ### Exceptions
 - Pure typo fixes (no semantic change)
-- Changes to non-methodology files only (\`.gitignore\`, \`README.md\`, etc.)
-
-### Violation Detection
-If you find yourself modifying files under \`cli/src/\`, \`skills/\`, or \`spec/\` without an active proposal, stop immediately and remind the user.`;
+- Changes to non-methodology files only (\`.gitignore\`, \`README.md\`, etc.)`;
 
   return `---
-description: "OpenLogos — Change Management Guard (always active)"
+description: "OpenLogos — Project Policy: Language & Change Management (always active)"
 alwaysApply: true
 ---
 
@@ -241,7 +251,7 @@ export function deploySkills(
         count++;
       }
     }
-    writeFileSync(join(targetDir, 'change-guard.mdc'), generateChangeGuardMdc(locale));
+    writeFileSync(join(targetDir, 'openlogos-policy.mdc'), generatePolicyMdc(locale));
     return { target: '.cursor/rules/', count };
   }
 

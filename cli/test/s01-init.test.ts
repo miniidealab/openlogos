@@ -227,26 +227,30 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     }
   });
 
-  it('UT-S01-23d: deploySkills cursor deploys change-guard.mdc with alwaysApply', () => {
+  it('UT-S01-23d: deploySkills cursor deploys openlogos-policy.mdc with alwaysApply', () => {
     const { root, cleanup } = makeTempRoot();
     try {
       deploySkills(root, 'cursor', 'en');
-      const guardPath = join(root, '.cursor', 'rules', 'change-guard.mdc');
-      expect(existsSync(guardPath)).toBe(true);
-      const content = readFileSync(guardPath, 'utf-8');
+      const policyPath = join(root, '.cursor', 'rules', 'openlogos-policy.mdc');
+      expect(existsSync(policyPath)).toBe(true);
+      const content = readFileSync(policyPath, 'utf-8');
       expect(content).toContain('alwaysApply: true');
-      expect(content).toContain('Change Management Guard');
+      expect(content).toContain('Language Policy (Highest Priority)');
+      expect(content).toContain('MUST be in English');
+      expect(content).toContain('Change Management (Must Follow)');
     } finally {
       cleanup();
     }
   });
 
-  it('UT-S01-23e: deploySkills cursor zh deploys Chinese change-guard', () => {
+  it('UT-S01-23e: deploySkills cursor zh deploys Chinese policy', () => {
     const { root, cleanup } = makeTempRoot();
     try {
       deploySkills(root, 'cursor', 'zh');
-      const content = readFileSync(join(root, '.cursor', 'rules', 'change-guard.mdc'), 'utf-8');
-      expect(content).toContain('变更管理守卫');
+      const content = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
+      expect(content).toContain('语言策略（最高优先级）');
+      expect(content).toContain('必须使用中文');
+      expect(content).toContain('变更管理（必须遵守）');
     } finally {
       cleanup();
     }
@@ -370,10 +374,11 @@ describe('S01 Scenario Tests — init command', () => {
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
     expect(mdcFiles.length).toBe(13);
-    expect(existsSync(join(root, '.cursor', 'rules', 'change-guard.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
 
-    const guardContent = readFileSync(join(root, '.cursor', 'rules', 'change-guard.mdc'), 'utf-8');
-    expect(guardContent).toContain('alwaysApply: true');
+    const policyContent = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
+    expect(policyContent).toContain('alwaysApply: true');
+    expect(policyContent).toContain('Language Policy');
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('✓');
