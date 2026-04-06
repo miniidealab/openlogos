@@ -36,6 +36,16 @@
 
 Read scenario definitions from the Phase 1 requirements document, Phase 2 product design document, and Phase 3 Step 0 technical architecture summary. **Do not reinvent scenarios**—directly reuse existing numbers and descriptions. Participant naming should be consistent with the system components in the architecture diagram.
 
+**Scenario Granularity Pre-Check (before drawing any sequence diagram):**
+
+Before proceeding, verify that the scenario definitions from Phase 1 have proper granularity. Check for these anti-patterns:
+
+- **One-API scenarios**: If a scenario's main path only has 1-2 steps (e.g., "Create Task" = just `POST /api/tasks`), it is too fine-grained
+- **CRUD fragmentation**: If the scenario list contains separate "Create X", "Read X", "Update X", "Delete X" scenarios for the same entity, they should be merged into goal-driven scenarios
+- **No business goal**: If a scenario's outcome is just "data was written/read", it lacks a real user goal
+
+**If any anti-pattern is detected**: Stop and recommend returning to Phase 1 to re-organize scenarios by business goals before drawing sequence diagrams. Drawing sequence diagrams for overly fine-grained scenarios will propagate the problem to API design, test cases, and code.
+
 Confirm the following for each scenario:
 - **Scenario number**: Reuse Phase 1's `S01`, `S02`... (or Phase 2 sub-scenarios `S01.1`)
 - **Participants**: Identify which system components are involved from Phase 2's interaction flows

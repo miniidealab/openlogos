@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-04-06
+
+### Improved
+
+- **Scenario Granularity Guard** — Three-layer defense against AI defining single CRUD operations as standalone scenarios:
+  - `prd-writer` Skill: added "Scenario Granularity Self-Check" with 4 mandatory tests (Single-API, CRUD, Business Value, Step Count) and correct vs anti-pattern examples in Step 3
+  - `scenario-architect` Skill: added "Scenario Granularity Pre-Check" in Step 1 — refuses to draw sequence diagrams for overly fine-grained scenarios
+  - `product-designer` Skill: added granularity check reminder in Step 1 to catch CRUD fragmentation before product design
+
 ## [0.3.4] - 2026-04-06
 
 ### Improved
@@ -117,6 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.3.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.5
 [0.3.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.4
 [0.3.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.3
 [0.3.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.2

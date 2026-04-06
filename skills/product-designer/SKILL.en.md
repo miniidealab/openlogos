@@ -40,6 +40,8 @@ Read the Phase 1 requirements document and extract:
 - Constraints and boundaries → determine product type
 - `tech_stack` in `logos-project.yaml` → confirm technical form
 
+**Scenario Granularity Check**: While reading the scenario list, watch for signs that scenarios are actually single CRUD operations (e.g., "Create Task", "Get Task List", "Update Task", "Delete Task" as 4 separate scenarios). If detected, recommend returning to Phase 1 to re-organize scenarios by business goals before proceeding with product design. Designing interactions for CRUD-level "scenarios" will produce shallow specs that don't reflect real user workflows.
+
 Output the product type determination and rationale for the prototype strategy selection.
 
 ### Step 2: Design Information Architecture
