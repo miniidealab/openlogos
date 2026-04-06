@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, type AiTool } from './init.js';
+import { createAgentsMd, deploySkills, type AiTool, type Lifecycle } from './init.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -36,19 +36,20 @@ export function sync() {
   const projectName = config.name || 'Unnamed Project';
   const locale = readLocale(root);
   const aiTool: AiTool = config.aiTool || 'cursor';
+  const lifecycle: Lifecycle = config.lifecycle || 'initial';
 
   const namesynced = syncLogosProjectName(root, projectName);
   if (namesynced) {
     console.log(`  ✓ logos-project.yaml name synced to "${projectName}"`);
   }
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents'));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', lifecycle));
   console.log('  ✓ AGENTS.md updated');
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude'));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude', lifecycle));
   console.log('  ✓ CLAUDE.md updated');
 
-  const deployResult = deploySkills(root, aiTool, locale);
+  const deployResult = deploySkills(root, aiTool, locale, lifecycle);
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
   }

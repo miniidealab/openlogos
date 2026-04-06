@@ -7,6 +7,7 @@ import { change } from './commands/change.js';
 import { merge } from './commands/merge.js';
 import { archive } from './commands/archive.js';
 import { verify } from './commands/verify.js';
+import { launch } from './commands/launch.js';
 
 const HELP = `
 openlogos - CLI tool for the OpenLogos methodology
@@ -19,6 +20,7 @@ Commands:
   sync               Regenerate AI instruction files (AGENTS.md, CLAUDE.md)
   status             Show current project phase and suggest next steps
   verify             Verify test results against test case specs
+  launch             Activate change management after first development cycle
   change <slug>      Create a change proposal for iterative updates
   merge <slug>       Generate MERGE_PROMPT.md for AI to execute delta merging
   archive <slug>     Archive a completed change proposal
@@ -39,7 +41,7 @@ Examples:
 Learn more: https://openlogos.ai
 `;
 
-const VERSION = '0.3.2';
+const VERSION = '0.3.3';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -74,6 +76,9 @@ async function main() {
       break;
     case 'merge':
       merge(args[1]);
+      break;
+    case 'launch':
+      launch();
       break;
     case 'archive':
       archive(args[1]);

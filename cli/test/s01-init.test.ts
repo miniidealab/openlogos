@@ -10,6 +10,7 @@ import {
   createAgentsMd,
   findSkillsSource,
   deploySkills,
+  generatePolicyMdc,
   SKILL_NAMES,
   init,
 } from '../src/commands/init.js';
@@ -78,6 +79,7 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(parsed.name).toBe('test');
     expect(parsed.locale).toBe('en');
     expect(parsed.aiTool).toBe('cursor');
+    expect(parsed.lifecycle).toBe('initial');
     expect(parsed.documents.prd).toBeDefined();
     expect(parsed.verify.result_path).toBeDefined();
   });
@@ -167,16 +169,62 @@ describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
     expect(output).toContain('"zh"');
   });
 
-  it('UT-S01-29: en locale includes Change Management section', () => {
-    const output = createAgentsMd('en', 'cursor', 'agents');
+  it('UT-S01-29: en locale active lifecycle includes enforced Change Management', () => {
+    const output = createAgentsMd('en', 'cursor', 'agents', 'active');
     expect(output).toContain('Change Management (Must Follow)');
     expect(output).toContain('openlogos change');
   });
 
-  it('UT-S01-30: zh locale includes Chinese Change Management section', () => {
-    const output = createAgentsMd('zh', 'cursor', 'agents');
+  it('UT-S01-30: zh locale active lifecycle includes enforced Change Management', () => {
+    const output = createAgentsMd('zh', 'cursor', 'agents', 'active');
     expect(output).toContain('变更管理（必须遵守）');
     expect(output).toContain('openlogos change');
+  });
+
+  it('UT-S01-31: initial lifecycle shows soft Change Management in AGENTS.md', () => {
+    const output = createAgentsMd('en', 'cursor', 'agents', 'initial');
+    expect(output).toContain('Initial Development');
+    expect(output).toContain('openlogos launch');
+    expect(output).not.toContain('Must Follow');
+  });
+
+  it('UT-S01-32: zh initial lifecycle shows soft Change Management', () => {
+    const output = createAgentsMd('zh', 'cursor', 'agents', 'initial');
+    expect(output).toContain('初始开发期');
+    expect(output).toContain('openlogos launch');
+    expect(output).not.toContain('必须遵守');
+  });
+});
+
+describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
+  it('UT-S01-33: initial lifecycle policy has soft change management', () => {
+    const content = generatePolicyMdc('en', 'initial');
+    expect(content).toContain('alwaysApply: true');
+    expect(content).toContain('Language Policy (Highest Priority)');
+    expect(content).toContain('Initial Development');
+    expect(content).toContain('openlogos launch');
+    expect(content).not.toContain('stop coding immediately');
+  });
+
+  it('UT-S01-34: active lifecycle policy has enforced change management', () => {
+    const content = generatePolicyMdc('en', 'active');
+    expect(content).toContain('Language Policy (Highest Priority)');
+    expect(content).toContain('Change Management (Must Follow)');
+    expect(content).toContain('stop coding immediately');
+  });
+
+  it('UT-S01-35: zh initial lifecycle policy', () => {
+    const content = generatePolicyMdc('zh', 'initial');
+    expect(content).toContain('语言策略（最高优先级）');
+    expect(content).toContain('初始开发期');
+    expect(content).not.toContain('立即停止编码');
+  });
+
+  it('UT-S01-36: zh active lifecycle policy', () => {
+    const content = generatePolicyMdc('zh', 'active');
+    expect(content).toContain('语言策略（最高优先级）');
+    expect(content).toContain('变更管理（必须遵守）');
+    expect(content).toContain('立即停止编码');
   });
 });
 
@@ -227,7 +275,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     }
   });
 
-  it('UT-S01-23d: deploySkills cursor deploys openlogos-policy.mdc with alwaysApply', () => {
+  it('UT-S01-23d: deploySkills cursor deploys openlogos-policy.mdc (initial lifecycle)', () => {
     const { root, cleanup } = makeTempRoot();
     try {
       deploySkills(root, 'cursor', 'en');
@@ -236,21 +284,32 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const content = readFileSync(policyPath, 'utf-8');
       expect(content).toContain('alwaysApply: true');
       expect(content).toContain('Language Policy (Highest Priority)');
-      expect(content).toContain('MUST be in English');
-      expect(content).toContain('Change Management (Must Follow)');
+      expect(content).toContain('Initial Development');
     } finally {
       cleanup();
     }
   });
 
-  it('UT-S01-23e: deploySkills cursor zh deploys Chinese policy', () => {
+  it('UT-S01-23d2: deploySkills cursor active lifecycle has enforced policy', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      deploySkills(root, 'cursor', 'en', 'active');
+      const content = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
+      expect(content).toContain('Change Management (Must Follow)');
+      expect(content).not.toContain('Initial Development');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-23e: deploySkills cursor zh initial lifecycle policy', () => {
     const { root, cleanup } = makeTempRoot();
     try {
       deploySkills(root, 'cursor', 'zh');
       const content = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
       expect(content).toContain('语言策略（最高优先级）');
       expect(content).toContain('必须使用中文');
-      expect(content).toContain('变更管理（必须遵守）');
+      expect(content).toContain('初始开发期');
     } finally {
       cleanup();
     }
@@ -284,7 +343,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-26: deploySkills returns null when source missing', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      const result = deploySkills(root, 'cursor', 'en', '/nonexistent/path');
+      const result = deploySkills(root, 'cursor', 'en', 'initial', '/nonexistent/path');
       expect(result).toBeNull();
     } finally {
       cleanup();

@@ -163,17 +163,26 @@ export function findSkillsSource(): string | null {
   return null;
 }
 
-export function generatePolicyMdc(locale: Locale): string {
-  const body = locale === 'zh'
+export function generatePolicyMdc(locale: Locale, lifecycle: Lifecycle = 'initial'): string {
+  const langSection = locale === 'zh'
     ? `## ⚠️ 语言策略（最高优先级）
 
 本项目的文档语言为 **中文**（配置于 \`logos/logos.config.json\` → \`locale: "zh"\`）。
 
 **你的所有输出——包括生成的文档、代码注释、回复消息——必须使用中文。**
 即使 Skill 文件使用其他语言编写，你的输出也必须是中文。
-违反此规则将导致产出不可用。
+违反此规则将导致产出不可用。`
+    : `## ⚠️ Language Policy (Highest Priority)
 
-## ⚠️ 变更管理（必须遵守）
+This project's document language is **English** (configured in \`logos/logos.config.json\` → \`locale: "en"\`).
+
+**ALL your output — including generated documents, code comments, and responses — MUST be in English.**
+Even if Skill files are written in another language, your output MUST be in English.
+Violating this rule will render the output unusable.`;
+
+  const changeMgmtSection = lifecycle === 'active'
+    ? (locale === 'zh'
+      ? `## ⚠️ 变更管理（必须遵守）
 
 **在修改项目源代码或文档之前，必须遵循以下流程：**
 
@@ -186,15 +195,7 @@ export function generatePolicyMdc(locale: Locale): string {
 ### 例外情况
 - 纯 typo 修复（不改变语义）
 - 仅修改 \`.gitignore\`、\`README.md\` 等非方法论文件`
-    : `## ⚠️ Language Policy (Highest Priority)
-
-This project's document language is **English** (configured in \`logos/logos.config.json\` → \`locale: "en"\`).
-
-**ALL your output — including generated documents, code comments, and responses — MUST be in English.**
-Even if Skill files are written in another language, your output MUST be in English.
-Violating this rule will render the output unusable.
-
-## ⚠️ Change Management (Must Follow)
+      : `## ⚠️ Change Management (Must Follow)
 
 **Before modifying any project source code or documents, you MUST follow this workflow:**
 
@@ -206,14 +207,33 @@ Violating this rule will render the output unusable.
 
 ### Exceptions
 - Pure typo fixes (no semantic change)
-- Changes to non-methodology files only (\`.gitignore\`, \`README.md\`, etc.)`;
+- Changes to non-methodology files only (\`.gitignore\`, \`README.md\`, etc.)`)
+    : (locale === 'zh'
+      ? `## 变更管理（当前：初始开发期）
+
+本项目处于 **初始开发阶段**（\`logos/logos.config.json\` → \`lifecycle: "initial"\`）。
+
+在初始开发期：
+- 按照 Phase 1 → 2 → 3 的顺序逐步**创建**文档，无需变更提案
+- 使用 \`openlogos status\` 查看当前进度和下一步建议
+- 首轮开发完成后，运行 \`openlogos launch\` 激活变更管理`
+      : `## Change Management (Current: Initial Development)
+
+This project is in the **initial development phase** (\`logos/logos.config.json\` → \`lifecycle: "initial"\`).
+
+During initial development:
+- Follow the Phase 1 → 2 → 3 progression to CREATE documents — no change proposals needed
+- Use \`openlogos status\` to check progress and get next-step suggestions
+- After the first full cycle is complete, run \`openlogos launch\` to activate change management`);
 
   return `---
 description: "OpenLogos — Project Policy: Language & Change Management (always active)"
 alwaysApply: true
 ---
 
-${body}
+${langSection}
+
+${changeMgmtSection}
 `;
 }
 
@@ -231,6 +251,7 @@ export function deploySkills(
   root: string,
   aiTool: AiTool,
   locale: Locale = 'en',
+  lifecycle: Lifecycle = 'initial',
   skillsSource?: string,
 ): { target: string; count: number } | null {
   const source = skillsSource ?? findSkillsSource();
@@ -251,7 +272,7 @@ export function deploySkills(
         count++;
       }
     }
-    writeFileSync(join(targetDir, 'openlogos-policy.mdc'), generatePolicyMdc(locale));
+    writeFileSync(join(targetDir, 'openlogos-policy.mdc'), generatePolicyMdc(locale, lifecycle));
     return { target: '.cursor/rules/', count };
   }
 
@@ -298,11 +319,14 @@ const DIRECTORIES = [
   'logos/changes/archive',
 ];
 
+export type Lifecycle = 'initial' | 'active';
+
 export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool = 'cursor'): string {
   return JSON.stringify({
     name,
     locale,
     aiTool,
+    lifecycle: 'initial' as Lifecycle,
     description: '',
     documents: {
       prd: {
@@ -356,7 +380,7 @@ ${conventionsForYaml(locale)}
 `;
 }
 
-export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude'): string {
+export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude', lifecycle: Lifecycle = 'initial'): string {
   const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
 
   const langPolicy = locale === 'zh'
@@ -416,8 +440,9 @@ Phase detection logic:
 ${generateActiveSkillsSection(locale)}`;
   }
 
-  const changeMgmt = locale === 'zh'
-    ? `## ⚠️ 变更管理（必须遵守）
+  const changeMgmt = lifecycle === 'active'
+    ? (locale === 'zh'
+      ? `## ⚠️ 变更管理（必须遵守）
 
 **修改任何源代码或 Skill 文件之前，必须先创建变更提案：**
 
@@ -429,7 +454,7 @@ ${generateActiveSkillsSection(locale)}`;
 唯一例外：纯 typo 修复、README 等非方法论文件的修改。
 **跳过此步骤将违反 OpenLogos 核心方法论。**
 `
-    : `## ⚠️ Change Management (Must Follow)
+      : `## ⚠️ Change Management (Must Follow)
 
 **Before modifying ANY source code or Skill files, you MUST create a change proposal first:**
 
@@ -440,7 +465,18 @@ ${generateActiveSkillsSection(locale)}`;
 
 Only exception: pure typo fixes and non-methodology files (README, .gitignore, etc.).
 **Skipping this step violates the core OpenLogos methodology.**
-`;
+`)
+    : (locale === 'zh'
+      ? `## 变更管理（当前：初始开发期）
+
+本项目正处于首轮开发阶段，按 Phase 推进即可，无需变更提案。
+首轮开发完成后运行 \`openlogos launch\` 激活变更管理。
+`
+      : `## Change Management (Current: Initial Development)
+
+This project is in its first development cycle — follow the Phase progression, no change proposals needed.
+After the first cycle is complete, run \`openlogos launch\` to activate change management.
+`);
 
   content += `
 ${changeMgmt}
@@ -487,13 +523,13 @@ export async function init(name?: string) {
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents'));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', 'initial'));
   console.log(`  ✓ AGENTS.md`);
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude'));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude', 'initial'));
   console.log(`  ✓ CLAUDE.md`);
 
-  const deployResult = deploySkills(root, aiTool, locale);
+  const deployResult = deploySkills(root, aiTool, locale, 'initial');
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
   }

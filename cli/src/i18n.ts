@@ -104,6 +104,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.aiHint': 'Tell AI: "Read logos/changes/{slug}/MERGE_PROMPT.md and execute merge"',
     'merge.archiveHint': 'After merge, run `openlogos archive {slug}` to archive the proposal.',
 
+    // launch
+    'launch.done': '✓ Change management activated! Lifecycle is now "active".',
+    'launch.hint1': '  From now on, modifications to existing documents require a change proposal.',
+    'launch.hint2': '  Run `openlogos change <slug>` to start a new change proposal.',
+    'launch.rulesUpdated': 'AI rules updated in {target}',
+    'launch.alreadyActive': 'Change management is already active (lifecycle: "active").',
+    'launch.suggest': 'Run `openlogos launch` to activate change management for future iterations.',
+
     // archive
     'archive.done': '✓ Change proposal \'{slug}\' archived.',
     'archive.path': '  logos/changes/{slug}/ → logos/changes/archive/{slug}/',
@@ -197,6 +205,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.deltaCount': '  - Delta 文件：{count} 个',
     'merge.aiHint': '对 AI 说：「读取 logos/changes/{slug}/MERGE_PROMPT.md 并执行合并」',
     'merge.archiveHint': '合并完成后，运行 `openlogos archive {slug}` 归档提案。',
+
+    // launch
+    'launch.done': '✓ 变更管理已激活！lifecycle 已切换为 "active"。',
+    'launch.hint1': '  从现在起，修改已有文档必须先创建变更提案。',
+    'launch.hint2': '  运行 `openlogos change <slug>` 创建新的变更提案。',
+    'launch.rulesUpdated': 'AI 规则已更新到 {target}',
+    'launch.alreadyActive': '变更管理已处于激活状态（lifecycle: "active"）。',
+    'launch.suggest': '运行 `openlogos launch` 激活变更管理，开始迭代开发。',
 
     // archive
     'archive.done': '✓ 变更提案 \'{slug}\' 已归档。',

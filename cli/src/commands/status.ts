@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
+import type { Lifecycle } from './init.js';
 
 interface PhaseStatus {
   key: string;
@@ -109,7 +110,16 @@ export function status() {
 
   const firstIncomplete = phases.find(p => !p.done);
   if (!firstIncomplete) {
+    let lifecycle: Lifecycle = 'initial';
+    try {
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      lifecycle = config.lifecycle || 'initial';
+    } catch { /* ignore */ }
+
     console.log(`\n🎉 ${t(locale, 'status.allDone')}`);
+    if (lifecycle === 'initial') {
+      console.log(`   → ${t(locale, 'launch.suggest')}`);
+    }
     console.log(t(locale, 'status.allDoneHint') + '\n');
   } else {
     console.log(`\n💡 ${t(locale, 'status.suggestNext', { label: firstIncomplete.label })}`);
