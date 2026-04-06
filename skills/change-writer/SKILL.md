@@ -99,6 +99,7 @@
 ## Phase 3: 技术变更
 - [ ] 更新 S0x 的时序图
 - [ ] 更新 API YAML
+- [ ] **验证 API YAML** — `logos/resources/api/` 下所有文件必须为有效 YAML 且符合 OpenAPI 3.x 规范（所有包含 `:` 或特殊字符的 `description`/`summary` 值必须用双引号包裹）
 - [ ] 更新 DB DDL
 - [ ] 更新编排测试用例
 - [ ] 实现代码变更

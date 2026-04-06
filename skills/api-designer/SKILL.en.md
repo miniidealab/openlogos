@@ -188,6 +188,22 @@ If gaps are found, supplement them before outputting the final version.
 - Error responses uniformly reference `$ref: '#/components/schemas/ErrorResponse'`
 - Every endpoint's `description` must annotate the source sequence diagram step
 
+## YAML Formatting Rules (MUST Follow)
+
+YAML is whitespace- and character-sensitive. AI-generated YAML frequently breaks due to unquoted special characters. **Strictly follow these rules:**
+
+1. **Always double-quote `description` and `summary` values** — any string containing `:`, `→`, `#`, `&`, `*`, `!`, `>`, `|`, `%`, `@`, `` ` ``, `{`, `}`, `[`, or `]` MUST be wrapped in `"..."`.
+   ```yaml
+   # ❌ WRONG — colon + arrow breaks YAML parsing
+   description: Source: S05 Step 1 → Step 4.
+
+   # ✅ CORRECT
+   description: "Source: S05 Step 1 → Step 4."
+   ```
+2. **Always quote response status code keys** — use `'201'` not `201` to prevent YAML interpreting them as integers.
+3. **Self-check after generation** — after generating each YAML file, mentally re-parse it to verify no unquoted special characters exist. Pay special attention to `description` fields that reference scenario steps (they always contain `:`).
+4. **When in doubt, quote it** — quoting a safe string is harmless; leaving a dangerous string unquoted breaks the entire file.
+
 ## Best Practices
 
 - **APIs emerge from sequence diagrams**: If an API cannot be traced back to a sequence diagram, it most likely should not exist. Design sequence diagrams first, then APIs — not the other way around

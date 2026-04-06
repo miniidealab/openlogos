@@ -99,6 +99,7 @@ Automatically break down the task checklist based on the change type and impact 
 ## Phase 3: Technical Changes
 - [ ] Update sequence diagram for S0x
 - [ ] Update API YAML
+- [ ] **Validate API YAML** — all files in `logos/resources/api/` must be valid YAML and valid OpenAPI 3.x (all `description`/`summary` values containing `:` or special chars must be double-quoted)
 - [ ] Update DB DDL
 - [ ] Update orchestration test cases
 - [ ] Implement code changes

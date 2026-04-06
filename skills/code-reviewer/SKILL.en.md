@@ -32,7 +32,11 @@ For projects without APIs (pure CLI / libraries), API consistency checks can be 
 
 ### Step 1: Load Specification Context
 
-Read the following files to establish a "reference baseline" for the code review:
+**Pre-check — YAML Validity (before anything else):**
+
+Before loading API specs, validate that all `logos/resources/api/*.yaml` files are syntactically valid YAML and conform to the OpenAPI 3.x schema. If any file fails parsing (e.g., unquoted special characters in `description` fields), report it as a **Critical** blocker immediately — do not proceed with the rest of the review until YAML errors are fixed.
+
+**Then** read the following files to establish a "reference baseline" for the code review:
 
 - **API YAML** (`logos/resources/api/*.yaml`): Extract endpoint inventory, record each endpoint's path, method, request body schema, response schema, and status codes
 - **Scenario Sequence Diagrams** (`logos/resources/prd/3-technical-plan/2-scenario-implementation/`): Extract all EX exception case IDs and expected behaviors
@@ -64,6 +68,7 @@ Compare code implementation against API YAML specification endpoint by endpoint:
 | Response Fields | Whether JSON field names and types returned by code match YAML `responses.schema` | Critical |
 | Status Codes | Whether HTTP status codes returned in normal and error cases match YAML definitions | Critical |
 | Error Response Format | Whether error responses follow the unified `{ code, message, details? }` format | Warning |
+| YAML Validity | All `logos/resources/api/*.yaml` files parse as valid YAML and valid OpenAPI 3.x — unquoted special characters (`:`, `→`, `#`) in `description`/`summary` values are a common failure mode | Critical |
 
 **Output format**:
 

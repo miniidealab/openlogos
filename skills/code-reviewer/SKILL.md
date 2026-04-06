@@ -32,7 +32,11 @@
 
 ### Step 1: 加载规格上下文
 
-读取以下文件，建立代码审查的"参照基准"：
+**前置检查 — YAML 有效性（优先于一切）：**
+
+在加载 API 规格之前，先验证所有 `logos/resources/api/*.yaml` 文件是否为有效 YAML 且符合 OpenAPI 3.x 规范。如果任何文件解析失败（例如 `description` 字段中特殊字符未加引号），立即报告为 **Critical** 阻塞项——在 YAML 错误修复前不进行后续审查。
+
+**然后**读取以下文件，建立代码审查的"参照基准"：
 
 - **API YAML**（`logos/resources/api/*.yaml`）：提取端点清单，记录每个端点的路径、方法、请求体 schema、响应 schema、状态码
 - **场景时序图**（`logos/resources/prd/3-technical-plan/2-scenario-implementation/`）：提取所有 EX 异常用例编号和预期行为
@@ -64,6 +68,7 @@
 | 响应字段 | 代码返回的 JSON 字段名和类型是否与 YAML 中 `responses.schema` 一致 | Critical |
 | 状态码 | 正常和异常情况下返回的 HTTP 状态码是否与 YAML 定义一致 | Critical |
 | 错误响应格式 | 错误响应是否遵循 `{ code, message, details? }` 统一格式 | Warning |
+| YAML 有效性 | `logos/resources/api/*.yaml` 所有文件是否为有效 YAML 且符合 OpenAPI 3.x 规范——`description`/`summary` 值中未加引号的特殊字符（`:`、`→`、`#`）是常见故障点 | Critical |
 
 **输出格式**：
 

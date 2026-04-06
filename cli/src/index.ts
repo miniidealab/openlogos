@@ -41,7 +41,7 @@ Examples:
 Learn more: https://openlogos.ai
 `;
 
-const VERSION = '0.3.3';
+const VERSION = '0.3.4';
 
 async function main() {
   const args = process.argv.slice(2);

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-04-06
+
+### Improved
+
+- **YAML Validation Guard** — Three-layer defense against AI-generated YAML formatting errors in OpenAPI specs:
+  - `api-designer` Skill: added "YAML Formatting Rules (MUST Follow)" section — enforces double-quoting `description`/`summary` values, quoting status code keys, and self-check after generation
+  - `code-reviewer` Skill: added pre-review YAML validity check (Critical blocker) and "YAML Validity" checklist item
+  - `change-writer` Skill: `tasks.md` Phase 3 template now includes a "Validate API YAML" task whenever API specs are modified
+
 ## [0.3.3] - 2026-04-06
 
 ### Added
@@ -108,6 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.3.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.4
 [0.3.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.3
 [0.3.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.2
 [0.3.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.1
