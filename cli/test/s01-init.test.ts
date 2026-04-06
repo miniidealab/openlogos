@@ -152,6 +152,34 @@ describe('S01 Unit Tests — createAgentsMd Active Skills', () => {
   });
 });
 
+describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
+  it('UT-S01-27: en locale includes English language policy', () => {
+    const output = createAgentsMd('en', 'cursor', 'agents');
+    expect(output).toContain('## Language Policy');
+    expect(output).toContain('MUST be in **English**');
+    expect(output).toContain('"en"');
+  });
+
+  it('UT-S01-28: zh locale includes Chinese language policy', () => {
+    const output = createAgentsMd('zh', 'cursor', 'agents');
+    expect(output).toContain('## Language Policy');
+    expect(output).toContain('必须使用中文');
+    expect(output).toContain('"zh"');
+  });
+
+  it('UT-S01-29: en locale includes Change Management section', () => {
+    const output = createAgentsMd('en', 'cursor', 'agents');
+    expect(output).toContain('Change Management (Must Follow)');
+    expect(output).toContain('openlogos change');
+  });
+
+  it('UT-S01-30: zh locale includes Chinese Change Management section', () => {
+    const output = createAgentsMd('zh', 'cursor', 'agents');
+    expect(output).toContain('变更管理（必须遵守）');
+    expect(output).toContain('openlogos change');
+  });
+});
+
 describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-22: findSkillsSource finds skills directory', () => {
     const source = findSkillsSource();
@@ -159,10 +187,10 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     expect(existsSync(join(source!, 'prd-writer', 'SKILL.md'))).toBe(true);
   });
 
-  it('UT-S01-23: deploySkills cursor deploys .mdc files', () => {
+  it('UT-S01-23: deploySkills cursor deploys .mdc files (default en)', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      const result = deploySkills(root, 'cursor');
+      const result = deploySkills(root, 'cursor', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('.cursor/rules/');
       expect(result!.count).toBe(12);
@@ -176,10 +204,58 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     }
   });
 
+  it('UT-S01-23b: deploySkills cursor en uses SKILL.en.md content', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      deploySkills(root, 'cursor', 'en');
+      const content = readFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), 'utf-8');
+      expect(content).toContain('Trigger Conditions');
+      expect(content).not.toContain('触发条件');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-23c: deploySkills cursor zh uses SKILL.md (Chinese)', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      deploySkills(root, 'cursor', 'zh');
+      const content = readFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), 'utf-8');
+      expect(content).toContain('触发条件');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-23d: deploySkills cursor deploys change-guard.mdc with alwaysApply', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      deploySkills(root, 'cursor', 'en');
+      const guardPath = join(root, '.cursor', 'rules', 'change-guard.mdc');
+      expect(existsSync(guardPath)).toBe(true);
+      const content = readFileSync(guardPath, 'utf-8');
+      expect(content).toContain('alwaysApply: true');
+      expect(content).toContain('Change Management Guard');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-23e: deploySkills cursor zh deploys Chinese change-guard', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      deploySkills(root, 'cursor', 'zh');
+      const content = readFileSync(join(root, '.cursor', 'rules', 'change-guard.mdc'), 'utf-8');
+      expect(content).toContain('变更管理守卫');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('UT-S01-24: deploySkills claude-code deploys SKILL.md files', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      const result = deploySkills(root, 'claude-code');
+      const result = deploySkills(root, 'claude-code', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('logos/skills/');
       expect(result!.count).toBe(12);
@@ -192,7 +268,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-25: deploySkills other deploys to logos/skills/', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      const result = deploySkills(root, 'other');
+      const result = deploySkills(root, 'other', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('logos/skills/');
       expect(result!.count).toBe(12);
@@ -204,7 +280,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-26: deploySkills returns null when source missing', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      const result = deploySkills(root, 'cursor', '/nonexistent/path');
+      const result = deploySkills(root, 'cursor', 'en', '/nonexistent/path');
       expect(result).toBeNull();
     } finally {
       cleanup();
@@ -293,7 +369,11 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
-    expect(mdcFiles.length).toBe(12);
+    expect(mdcFiles.length).toBe(13);
+    expect(existsSync(join(root, '.cursor', 'rules', 'change-guard.mdc'))).toBe(true);
+
+    const guardContent = readFileSync(join(root, '.cursor', 'rules', 'change-guard.mdc'), 'utf-8');
+    expect(guardContent).toContain('alwaysApply: true');
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('✓');

@@ -163,9 +163,64 @@ export function findSkillsSource(): string | null {
   return null;
 }
 
+function generateChangeGuardMdc(locale: Locale): string {
+  const body = locale === 'zh'
+    ? `## OpenLogos 变更管理守卫
+
+**在修改项目源代码或文档之前，必须遵循以下流程：**
+
+1. 确认 \`logos/changes/\` 下是否已有对应的 active 变更提案
+2. 如果没有，**立即停止编码**，先运行 \`openlogos change <slug>\` 创建提案
+3. 按照 change-writer Skill 填写 \`proposal.md\` 和 \`tasks.md\`
+4. 提案经用户 review 通过后才能开始代码实现
+5. 实现完成后运行 \`openlogos merge <slug>\` 和 \`openlogos archive <slug>\`
+
+### 例外情况
+- 纯 typo 修复（不改变语义）
+- 仅修改 \`.gitignore\`、\`README.md\` 等非方法论文件
+
+### 违规检测
+如果你发现自己正在修改 \`cli/src/\`、\`skills/\`、\`spec/\` 下的文件但没有活跃提案，请立即停止并提醒用户。`
+    : `## OpenLogos Change Management Guard
+
+**Before modifying any project source code or documents, you MUST follow this workflow:**
+
+1. Check if there is an active change proposal under \`logos/changes/\`
+2. If NOT, **stop coding immediately** and run \`openlogos change <slug>\` to create a proposal
+3. Fill in \`proposal.md\` and \`tasks.md\` following the change-writer Skill
+4. Only proceed with implementation after the user has reviewed and approved the proposal
+5. After implementation, run \`openlogos merge <slug>\` and \`openlogos archive <slug>\`
+
+### Exceptions
+- Pure typo fixes (no semantic change)
+- Changes to non-methodology files only (\`.gitignore\`, \`README.md\`, etc.)
+
+### Violation Detection
+If you find yourself modifying files under \`cli/src/\`, \`skills/\`, or \`spec/\` without an active proposal, stop immediately and remind the user.`;
+
+  return `---
+description: "OpenLogos — Change Management Guard (always active)"
+alwaysApply: true
+---
+
+${body}
+`;
+}
+
+function resolveSkillFile(sourceDir: string, skillName: string, locale: Locale): string | null {
+  if (locale === 'en') {
+    const enPath = join(sourceDir, skillName, 'SKILL.en.md');
+    if (existsSync(enPath)) return enPath;
+  }
+  const defaultPath = join(sourceDir, skillName, 'SKILL.md');
+  if (existsSync(defaultPath)) return defaultPath;
+  return null;
+}
+
 export function deploySkills(
   root: string,
   aiTool: AiTool,
+  locale: Locale = 'en',
   skillsSource?: string,
 ): { target: string; count: number } | null {
   const source = skillsSource ?? findSkillsSource();
@@ -177,15 +232,16 @@ export function deploySkills(
     const targetDir = join(root, '.cursor', 'rules');
     mkdirSync(targetDir, { recursive: true });
     for (const name of SKILL_NAMES) {
-      const src = join(source, name, 'SKILL.md');
-      if (existsSync(src)) {
-        const content = readFileSync(src, 'utf-8');
+      const srcPath = resolveSkillFile(source, name, locale);
+      if (srcPath) {
+        const content = readFileSync(srcPath, 'utf-8');
         const desc = SKILL_DESCRIPTIONS[name]?.en ?? name;
         const mdc = `---\ndescription: "OpenLogos — ${desc}"\nalwaysApply: false\n---\n\n${content}`;
         writeFileSync(join(targetDir, `${name}.mdc`), mdc);
         count++;
       }
     }
+    writeFileSync(join(targetDir, 'change-guard.mdc'), generateChangeGuardMdc(locale));
     return { target: '.cursor/rules/', count };
   }
 
@@ -193,9 +249,9 @@ export function deploySkills(
   for (const name of SKILL_NAMES) {
     const skillDir = join(targetDir, name);
     mkdirSync(skillDir, { recursive: true });
-    const src = join(source, name, 'SKILL.md');
-    if (existsSync(src)) {
-      copyFileSync(src, join(skillDir, 'SKILL.md'));
+    const srcPath = resolveSkillFile(source, name, locale);
+    if (srcPath) {
+      copyFileSync(srcPath, join(skillDir, 'SKILL.md'));
       count++;
     }
   }
@@ -293,6 +349,20 @@ ${conventionsForYaml(locale)}
 export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude'): string {
   const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
 
+  const langPolicy = locale === 'zh'
+    ? `## Language Policy
+本项目的文档语言配置于 \`logos/logos.config.json\` 的 \`locale\` 字段（当前值：\`"zh"\`）。
+- 所有生成的文档、注释和 AI 回复**必须使用中文**
+- Skill 文件可能使用任何语言编写，但你的输出必须遵循 locale 设置
+- 生成文档前请先检查 \`logos/logos.config.json\`
+`
+    : `## Language Policy
+This project's document language is configured in \`logos/logos.config.json\` → \`locale\` field (current value: \`"en"\`).
+- ALL generated documents, comments, and AI responses MUST be in **English**
+- Skill files may be written in any language, but your output MUST follow the locale setting
+- Check \`logos/logos.config.json\` before generating any document
+`;
+
   let content = `# AI Assistant Instructions
 
 This project follows the **OpenLogos** methodology.
@@ -302,6 +372,7 @@ Read \`logos/logos-project.yaml\` first to understand the project resource index
 - Config: \`logos/logos.config.json\`
 - Resource Index: \`logos/logos-project.yaml\`
 
+${langPolicy}
 ## Methodology Rules
 1. Never write code without first completing the design documents
 2. Follow the Why → What → How progression
@@ -335,7 +406,34 @@ Phase detection logic:
 ${generateActiveSkillsSection(locale)}`;
   }
 
+  const changeMgmt = locale === 'zh'
+    ? `## ⚠️ 变更管理（必须遵守）
+
+**修改任何源代码或 Skill 文件之前，必须先创建变更提案：**
+
+1. 运行 \`openlogos change <slug>\` 创建提案目录
+2. 使用 change-writer Skill 填写 \`proposal.md\` + \`tasks.md\`
+3. 用户确认后再开始编码
+4. 完成后运行 \`openlogos merge <slug>\` → \`openlogos archive <slug>\`
+
+唯一例外：纯 typo 修复、README 等非方法论文件的修改。
+**跳过此步骤将违反 OpenLogos 核心方法论。**
+`
+    : `## ⚠️ Change Management (Must Follow)
+
+**Before modifying ANY source code or Skill files, you MUST create a change proposal first:**
+
+1. Run \`openlogos change <slug>\` to create the proposal directory
+2. Fill in \`proposal.md\` + \`tasks.md\` using the change-writer Skill
+3. Only proceed with implementation after user approval
+4. After completion, run \`openlogos merge <slug>\` → \`openlogos archive <slug>\`
+
+Only exception: pure typo fixes and non-methodology files (README, .gitignore, etc.).
+**Skipping this step violates the core OpenLogos methodology.**
+`;
+
   content += `
+${changeMgmt}
 ## Conventions
 ${conventionsForAgentsMd(locale)}
 `;
@@ -385,7 +483,7 @@ export async function init(name?: string) {
   writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude'));
   console.log(`  ✓ CLAUDE.md`);
 
-  const deployResult = deploySkills(root, aiTool);
+  const deployResult = deploySkills(root, aiTool, locale);
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
   }

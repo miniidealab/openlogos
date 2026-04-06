@@ -1,6 +1,7 @@
 {
   "name": "taskflow-api",
   "locale": "en",
+  "aiTool": "cursor",
   "description": "",
   "documents": {
     "prd": {

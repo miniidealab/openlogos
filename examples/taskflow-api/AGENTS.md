@@ -33,6 +33,20 @@ Phase detection logic:
 - All above exist → suggest Phase 3 Step 4 (code generation)
 - code generated but `logos/resources/verify/` is empty → suggest Phase 3 Step 5 (run tests then `openlogos verify`)
 
+## Active Skills
+- `skills/project-init/` — Project initialization and structure setup
+- `skills/prd-writer/` — Requirements document authoring
+- `skills/product-designer/` — Product design and prototyping
+- `skills/architecture-designer/` — Technical architecture and technology selection
+- `skills/scenario-architect/` — Business scenario modeling and sequence diagrams
+- `skills/api-designer/` — OpenAPI specification design
+- `skills/db-designer/` — Database schema design
+- `skills/test-writer/` — Unit test + scenario test case design (Step 3a, all projects)
+- `skills/test-orchestrator/` — API orchestration test design (Step 3b, API projects only)
+- `skills/code-reviewer/` — Code review and compliance checking
+- `skills/change-writer/` — Change proposal writing and impact analysis
+- `skills/merge-executor/` — Delta merge execution via MERGE_PROMPT.md
+
 ## Conventions
 - Follow the OpenLogos three-layer progression (Why → What → How)
 - Every change must start with a logos/changes/ change proposal

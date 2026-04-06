@@ -88,7 +88,8 @@ describe('S08 Scenario Tests — sync command', () => {
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
-    expect(mdcFiles.length).toBe(12);
+    expect(mdcFiles.length).toBe(13);
+    expect(existsSync(join(root, '.cursor', 'rules', 'change-guard.mdc'))).toBe(true);
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('AGENTS.md updated');
@@ -144,6 +145,22 @@ describe('S08 Scenario Tests — sync command', () => {
     sync();
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+  });
+
+  it('ST-S08-05b: sync generates Language Policy section for en locale', () => {
+    scaffoldProject(root, { locale: 'en' });
+    sync();
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('## Language Policy');
+    expect(agents).toContain('MUST be in **English**');
+  });
+
+  it('ST-S08-05c: sync generates Language Policy section for zh locale', () => {
+    scaffoldProject(root, { locale: 'zh' });
+    sync();
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('## Language Policy');
+    expect(agents).toContain('必须使用中文');
   });
 
   it('ST-S08-06: sync with other → both files include Active Skills', () => {

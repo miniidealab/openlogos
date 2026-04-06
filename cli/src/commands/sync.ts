@@ -48,7 +48,7 @@ export function sync() {
   writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude'));
   console.log('  ✓ CLAUDE.md updated');
 
-  const deployResult = deploySkills(root, aiTool);
+  const deployResult = deploySkills(root, aiTool, locale);
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
   }
