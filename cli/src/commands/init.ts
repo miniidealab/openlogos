@@ -546,8 +546,31 @@ This project is in its first development cycle — follow the Phase progression,
 After the first cycle is complete, run \`openlogos launch\` to activate change management.
 `);
 
+  const cliRule = locale === 'zh'
+    ? `## ⚠️ openlogos CLI 规则
+
+运行任何 \`openlogos\` 命令之前，**必须先 cd 到项目根目录**（即 \`logos/logos.config.json\` 所在目录）。
+在子目录（如 \`src/\`、\`src-tauri/\`）下直接运行会导致 \`logos.config.json not found\` 错误。
+
+正确写法：
+\`\`\`bash
+cd <项目根目录> && openlogos <command>
+\`\`\`
+`
+    : `## ⚠️ openlogos CLI Rule
+
+Before running any \`openlogos\` command, you **MUST cd to the project root** (the directory containing \`logos/logos.config.json\`).
+Running from a subdirectory (e.g. \`src/\`, \`src-tauri/\`) will cause a \`logos.config.json not found\` error.
+
+Correct usage:
+\`\`\`bash
+cd <project-root> && openlogos <command>
+\`\`\`
+`;
+
   content += `
 ${changeMgmt}
+${cliRule}
 ## Conventions
 ${conventionsForAgentsMd(locale)}
 `;
