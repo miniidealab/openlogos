@@ -518,10 +518,18 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allErrors).toContain('already exists');
   });
 
-  it('ST-S01-05: non-TTY environment skips language and aiTool selection', async () => {
+  it('ST-S01-05: non-TTY without --locale exits with error', async () => {
     process.stdin.isTTY = undefined as unknown as boolean;
 
-    await init('ci-project');
+    await expect(init('ci-project')).rejects.toThrow('process.exit(1)');
+    const allErrors = con.errors.join('\n');
+    expect(allErrors).toContain('--locale is required');
+  });
+
+  it('ST-S01-05b: non-TTY with --locale and --ai-tool succeeds', async () => {
+    process.stdin.isTTY = undefined as unknown as boolean;
+
+    await init('ci-project', { locale: 'en', aiTool: 'cursor' });
 
     const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
     expect(config.locale).toBe('en');
@@ -529,6 +537,19 @@ describe('S01 Scenario Tests — init command', () => {
     expect(config.aiTool).toBe('cursor');
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+  });
+
+  it('ST-S01-05c: non-TTY with --locale zh auto-detects claude-code from env', async () => {
+    process.stdin.isTTY = undefined as unknown as boolean;
+    process.env.CLAUDE_CODE = '1';
+
+    await init('ci-project', { locale: 'zh' });
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.locale).toBe('zh');
+    expect(config.aiTool).toBe('claude-code');
+
+    delete process.env.CLAUDE_CODE;
   });
 
   it('ST-S01-06: name conflict — user selects package.json name', async () => {

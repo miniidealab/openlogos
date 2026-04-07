@@ -97,6 +97,27 @@ CREATE TABLE users (
 );
 ```
 
+**Example (SQLite — using `@comment` structured annotations)**:
+
+```sql
+-- Users table (source: auth.yaml → register, login)
+CREATE TABLE users (
+  -- @comment User unique identifier, UUID v4 string
+  id TEXT PRIMARY KEY NOT NULL,
+  -- @comment User email, normalized to lowercase
+  email TEXT NOT NULL UNIQUE,
+  -- @comment Argon2id password hash, stores hash only
+  password_hash TEXT NOT NULL,
+  -- @comment Creation time, ISO 8601 format
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- @comment Last update time
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+-- @table-comment users Users table storing core registered user information
+```
+
+> **SQLite Comment Convention**: SQLite does not support `COMMENT ON` syntax. You MUST use `-- @comment` preceding annotations (for columns) and `-- @table-comment <table> <description>` trailing annotations (for tables). See `spec/sql-comment-convention.md` for details.
+
 ### Step 4: Design Table Relationships
 
 Design foreign keys based on entity relationships in the API:
@@ -158,29 +179,42 @@ Organize the DDL file in the following order:
 3. Association tables (tables with foreign key dependencies after)
 4. Indexes
 5. Security policies (RLS / Policy)
-6. Table and field comments (PostgreSQL uses `COMMENT ON`)
+6. Table and field comments:
+   - PostgreSQL: use `COMMENT ON TABLE` / `COMMENT ON COLUMN`
+   - MySQL: use inline `COMMENT`
+   - SQLite: use `-- @comment` (columns) + `-- @table-comment` (tables), see SQLite comment rules below
 
 Add a comment above each DDL block noting the source API endpoint.
+
+**SQLite Comment Rules (MUST Follow)**:
+
+When `tech_stack.database` is SQLite, you MUST use the following structured comment format:
+
+1. **Column comments**: write `-- @comment <description>` on the line **immediately above** the column definition
+   - **No blank lines** allowed between `-- @comment` and the column (blank lines break the association)
+   - Multi-line: consecutive `-- @comment` lines are concatenated automatically
+2. **Table comments**: write `-- @table-comment <table_name> <description>` on the line **immediately after** `CREATE TABLE ... ();`
+3. Constraint lines (`FOREIGN KEY`, standalone `CHECK`, `UNIQUE`) do **not** need `-- @comment`
 
 ## Output Specification
 
 - File format: SQL (dialect determined by `tech_stack.database`)
 - Storage location: `logos/resources/database/`
 - Single file output: `schema.sql` (simple projects); or split by domain: `auth.sql`, `billing.sql` (complex projects)
-- Every table must have a comment (PostgreSQL: `COMMENT ON TABLE`; MySQL: `COMMENT = '...'`)
-- Every field must have a comment (PostgreSQL: `COMMENT ON COLUMN`; MySQL: `COMMENT '...'` after field definition)
+- Every table must have a comment (PostgreSQL: `COMMENT ON TABLE`; MySQL: `COMMENT = '...'`; SQLite: `-- @table-comment`)
+- Every field must have a comment (PostgreSQL: `COMMENT ON COLUMN`; MySQL: `COMMENT '...'` after field definition; SQLite: `-- @comment`)
 - Add a SQL comment above each DDL block noting the source API endpoint
 
 ## Database Dialect Quick Reference
 
-| Feature | PostgreSQL | MySQL |
-|---------|-----------|-------|
-| UUID Primary Key | `UUID DEFAULT gen_random_uuid()` | `CHAR(36) DEFAULT (UUID())` or use `BINARY(16)` |
-| Timestamp Type | `TIMESTAMPTZ` | `DATETIME` / `TIMESTAMP` (mind timezone handling) |
-| JSON Support | `JSONB` (indexable) | `JSON` (limited functionality) |
-| Row-Level Security | RLS (`ENABLE ROW LEVEL SECURITY`) | Not supported; must be implemented at the application layer |
-| Table Comment | `COMMENT ON TABLE t IS '...'` | `CREATE TABLE t (...) COMMENT = '...'` |
-| Column Comment | `COMMENT ON COLUMN t.c IS '...'` | `col_name TYPE COMMENT '...'` |
+| Feature | PostgreSQL | MySQL | SQLite |
+|---------|-----------|-------|--------|
+| UUID Primary Key | `UUID DEFAULT gen_random_uuid()` | `CHAR(36) DEFAULT (UUID())` or `BINARY(16)` | `TEXT PRIMARY KEY NOT NULL` (app-generated UUID) |
+| Timestamp Type | `TIMESTAMPTZ` | `DATETIME` / `TIMESTAMP` (mind timezone handling) | `TEXT` (ISO 8601 string) |
+| JSON Support | `JSONB` (indexable) | `JSON` (limited functionality) | `TEXT` (app-layer JSON serialization) |
+| Row-Level Security | RLS (`ENABLE ROW LEVEL SECURITY`) | Not supported; application layer | Not supported; application layer |
+| Table Comment | `COMMENT ON TABLE t IS '...'` | `CREATE TABLE t (...) COMMENT = '...'` | `-- @table-comment t description` |
+| Column Comment | `COMMENT ON COLUMN t.c IS '...'` | `col_name TYPE COMMENT '...'` | `-- @comment description` (preceding line) |
 
 ## Best Practices
 
@@ -206,6 +240,14 @@ Add a comment above each DDL block noting the source API endpoint.
 - **Timestamp type**: use `TIMESTAMP` (automatic timezone conversion) or `DATETIME` (stored as-is)
 - **Character set**: specify `CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci` when creating tables
 - **Engine**: always use `ENGINE=InnoDB`
+
+### SQLite-Specific
+
+- **Primary key**: `TEXT PRIMARY KEY NOT NULL` (app-generated UUID v4) or `INTEGER PRIMARY KEY AUTOINCREMENT`
+- **Timestamp type**: use `TEXT` with ISO 8601 strings, default `DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
+- **Foreign keys**: must execute `PRAGMA foreign_keys = ON;` at connection time
+- **Comments**: MUST use `-- @comment` / `-- @table-comment` structured annotations (see `spec/sql-comment-convention.md`)
+- **No triggers**: `updated_at` must be refreshed at the application layer; do not rely on `ON UPDATE` triggers
 
 ## Recommended Prompts
 

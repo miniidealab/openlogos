@@ -92,6 +92,27 @@ CREATE TABLE users (
 );
 ```
 
+**示例（SQLite — 使用 `@comment` 结构化注释）**：
+
+```sql
+-- 用户表（来源：auth.yaml → register, login）
+CREATE TABLE users (
+  -- @comment 用户唯一标识，UUID v4 字符串
+  id TEXT PRIMARY KEY NOT NULL,
+  -- @comment 用户邮箱，已归一化为小写
+  email TEXT NOT NULL UNIQUE,
+  -- @comment Argon2id 密码哈希，仅存哈希
+  password_hash TEXT NOT NULL,
+  -- @comment 创建时间，ISO 8601 格式
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  -- @comment 最后更新时间
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+-- @table-comment users 用户表，存储注册用户的核心信息
+```
+
+> **SQLite 注释约定**：SQLite 不支持 `COMMENT ON` 语法，必须使用 `-- @comment` 前置注释（字段）和 `-- @table-comment <表名> <描述>` 后置注释（表）。规则详见 `spec/sql-comment-convention.md`。
+
 ### Step 4: 设计表间关联
 
 根据 API 中的实体关系设计外键：
@@ -153,29 +174,42 @@ CREATE INDEX idx_projects_owner ON projects(owner_id);
 3. 关联表（有外键依赖的表后建）
 4. 索引
 5. 安全策略（RLS / Policy）
-6. 表和字段注释（PostgreSQL 使用 `COMMENT ON`）
+6. 表和字段注释：
+   - PostgreSQL：使用 `COMMENT ON TABLE` / `COMMENT ON COLUMN`
+   - MySQL：使用内联 `COMMENT`
+   - SQLite：使用 `-- @comment`（字段）+ `-- @table-comment`（表），详见下方 SQLite 注释规则
 
 每段 DDL 上方用注释标注来源 API 端点。
+
+**SQLite 注释规则（MUST Follow）**：
+
+当 `tech_stack.database` 为 SQLite 时，必须使用以下结构化注释格式：
+
+1. **字段注释**：在字段定义行的**紧邻上方**写 `-- @comment <描述>`
+   - 与字段之间**不允许空行**（空行会断开关联）
+   - 多行注释：连续多个 `-- @comment` 行自动拼接
+2. **表注释**：在 `CREATE TABLE ... ();` 语句**紧邻下方**写 `-- @table-comment <表名> <描述>`
+3. 约束行（`FOREIGN KEY`、独立 `CHECK`、`UNIQUE`）**不需要** `-- @comment`
 
 ## 输出规范
 
 - 文件格式：SQL（方言由 `tech_stack.database` 决定）
 - 存放位置：`logos/resources/database/`
 - 单文件输出：`schema.sql`（简单项目）；或按领域分文件：`auth.sql`、`billing.sql`（复杂项目）
-- 每张表必须有注释（PostgreSQL: `COMMENT ON TABLE`；MySQL: `COMMENT = '...'`）
-- 每个字段必须有注释（PostgreSQL: `COMMENT ON COLUMN`；MySQL: 字段定义后 `COMMENT '...'`）
+- 每张表必须有注释（PostgreSQL: `COMMENT ON TABLE`；MySQL: `COMMENT = '...'`；SQLite: `-- @table-comment`）
+- 每个字段必须有注释（PostgreSQL: `COMMENT ON COLUMN`；MySQL: 字段定义后 `COMMENT '...'`；SQLite: `-- @comment`）
 - 每段 DDL 上方用 SQL 注释标注来源 API 端点
 
 ## 数据库方言差异速查
 
-| 特性 | PostgreSQL | MySQL |
-|------|-----------|-------|
-| UUID 主键 | `UUID DEFAULT gen_random_uuid()` | `CHAR(36) DEFAULT (UUID())` 或使用 `BINARY(16)` |
-| 时间类型 | `TIMESTAMPTZ` | `DATETIME` / `TIMESTAMP`（注意时区处理） |
-| JSON 支持 | `JSONB`（可索引） | `JSON`（功能受限） |
-| 行级安全 | RLS (`ENABLE ROW LEVEL SECURITY`) | 不支持，需在应用层实现 |
-| 表注释 | `COMMENT ON TABLE t IS '...'` | `CREATE TABLE t (...) COMMENT = '...'` |
-| 字段注释 | `COMMENT ON COLUMN t.c IS '...'` | `col_name TYPE COMMENT '...'` |
+| 特性 | PostgreSQL | MySQL | SQLite |
+|------|-----------|-------|--------|
+| UUID 主键 | `UUID DEFAULT gen_random_uuid()` | `CHAR(36) DEFAULT (UUID())` 或 `BINARY(16)` | `TEXT PRIMARY KEY NOT NULL`（应用层生成 UUID） |
+| 时间类型 | `TIMESTAMPTZ` | `DATETIME` / `TIMESTAMP`（注意时区处理） | `TEXT`（ISO 8601 字符串） |
+| JSON 支持 | `JSONB`（可索引） | `JSON`（功能受限） | `TEXT`（应用层 JSON 序列化） |
+| 行级安全 | RLS (`ENABLE ROW LEVEL SECURITY`) | 不支持，需在应用层实现 | 不支持，需在应用层实现 |
+| 表注释 | `COMMENT ON TABLE t IS '...'` | `CREATE TABLE t (...) COMMENT = '...'` | `-- @table-comment t 描述` |
+| 字段注释 | `COMMENT ON COLUMN t.c IS '...'` | `col_name TYPE COMMENT '...'` | `-- @comment 描述`（紧邻字段上方） |
 
 ## 实践经验
 
@@ -201,6 +235,14 @@ CREATE INDEX idx_projects_owner ON projects(owner_id);
 - **时间类型**：使用 `TIMESTAMP`（自动时区转换）或 `DATETIME`（原样存储）
 - **字符集**：建表时指定 `CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
 - **引擎**：一律使用 `ENGINE=InnoDB`
+
+### SQLite 特有
+
+- **主键**：`TEXT PRIMARY KEY NOT NULL`（应用层生成 UUID v4）或 `INTEGER PRIMARY KEY AUTOINCREMENT`
+- **时间类型**：使用 `TEXT` 存储 ISO 8601 字符串，默认值 `DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
+- **外键**：须在连接时执行 `PRAGMA foreign_keys = ON;`
+- **注释**：必须使用 `-- @comment` / `-- @table-comment` 结构化注释（见 `spec/sql-comment-convention.md`）
+- **无触发器**：`updated_at` 须在应用层刷新，不依赖 `ON UPDATE` 触发器
 
 ## 推荐提示词
 

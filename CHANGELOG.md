@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-07
+
+### Added
+
+- **SQLite Structured Comment Convention** — New `-- @comment` / `-- @table-comment` annotation format for SQLite DDL, providing machine-parseable table and column metadata equivalent to PostgreSQL's `COMMENT ON` and MySQL's inline `COMMENT`:
+  - `spec/sql-comment-convention.md` — Full specification with parsing algorithm and examples
+  - `parseSqlComments()` — New CLI library function (`cli/src/lib/sql-comments.ts`) that extracts `SchemaMetadata` from annotated SQL files
+  - `db-designer` Skill updated with SQLite comment rules, dialect quick reference table expanded to 3 columns, and SQLite-specific best practices section
+  - 13 new unit tests for the SQL comment parser
+- **Test suite expanded** from 125 to 140 cases
+
 ## [0.4.3] - 2026-04-07
 
 ### Fixed
@@ -171,6 +182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.5.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.0
 [0.4.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.3
 [0.4.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.2
 [0.4.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.1
