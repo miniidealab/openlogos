@@ -93,18 +93,22 @@ async function resolveProjectName(locale: Locale, root: string, explicitName?: s
   return { name: explicitName, source: 'argument' };
 }
 
-function detectLocaleFromEnv(): Locale {
-  const lang = process.env.LANG || process.env.LC_ALL || process.env.LANGUAGE || '';
-  return lang.startsWith('zh') ? 'zh' : 'en';
-}
-
 function detectAiToolFromEnv(): AiTool {
   if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_CODE) return 'claude-code';
   return 'cursor';
 }
 
 async function chooseLocale(): Promise<Locale> {
-  if (!isTTY()) return detectLocaleFromEnv();
+  if (!isTTY()) {
+    console.error('Error: --locale is required in non-interactive mode.');
+    console.error('');
+    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <cursor|claude-code|other>] [name]');
+    console.error('');
+    console.error('Ask the user to choose a language first:');
+    console.error('  --locale en    English');
+    console.error('  --locale zh    中文');
+    process.exit(1);
+  }
 
   console.log('\nChoose language / 选择语言:');
   console.log('  1. English (default)');

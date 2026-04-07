@@ -5,11 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-04-07
+
+### Fixed
+
+- **`openlogos init` forced language selection in non-TTY** — In non-interactive mode (e.g. Claude Code), `init` now **exits with an error** if `--locale` is not provided, printing a clear usage hint. This forces the AI to ask the user for language preference before retrying with `--locale <en|zh>`. AI tool is still auto-detected from `CLAUDE_PLUGIN_ROOT`/`CLAUDE_CODE` env vars.
+
 ## [0.4.2] - 2026-04-07
 
 ### Fixed
 
-- **`openlogos init` non-TTY smart defaults** — When running via Claude Code's Bash tool (non-TTY), `init` now auto-detects locale from `LANG`/`LC_ALL` env var (e.g. `zh_CN` → `zh`) and AI tool from `CLAUDE_PLUGIN_ROOT`/`CLAUDE_CODE` env var. Plugin `/openlogos:init` command hardcodes `--ai-tool claude-code` and asks user only for language preference.
+- **`openlogos init` non-TTY smart defaults** — Auto-detects locale from `LANG`/`LC_ALL` env var and AI tool from env vars (superseded by 0.4.3 approach).
 
 ## [0.4.1] - 2026-04-07
 
@@ -165,6 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.4.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.3
 [0.4.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.2
 [0.4.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.1
 [0.4.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.0
