@@ -1,6 +1,9 @@
 {
   "name": "miniidealab-openlogos",
-  "owner": "MiniIdeaLab",
+  "owner": {
+    "name": "MiniIdeaLab",
+    "email": "hi@miniidealab.com"
+  },
   "description": "Official OpenLogos plugin marketplace — structured AI-driven development methodology",
   "plugins": [
     {
