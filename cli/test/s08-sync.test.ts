@@ -91,10 +91,13 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(mdcFiles.length).toBe(13);
     expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
 
+    expect(existsSync(join(root, 'logos', 'spec', 'test-results.md'))).toBe(true);
+
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('AGENTS.md updated');
     expect(allLogs).toContain('Sync complete');
     expect(allLogs).toContain('12 skills synced to .cursor/rules/');
+    expect(allLogs).toContain('specs synced');
   });
 
   it('ST-S08-02: sync updates yaml name when mismatched', () => {

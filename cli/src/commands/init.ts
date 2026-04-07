@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
@@ -175,6 +175,34 @@ export function findSkillsSource(): string | null {
   if (existsSync(devSkills)) return devSkills;
 
   return null;
+}
+
+export function findSpecSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+
+  const packageSpec = join(currentDir, '..', '..', 'spec');
+  if (existsSync(packageSpec)) return packageSpec;
+
+  const devSpec = join(currentDir, '..', '..', '..', 'spec');
+  if (existsSync(devSpec)) return devSpec;
+
+  return null;
+}
+
+export function deploySpecs(root: string): { count: number } | null {
+  const source = findSpecSource();
+  if (!source || !existsSync(source)) return null;
+
+  const targetDir = join(root, 'logos', 'spec');
+  mkdirSync(targetDir, { recursive: true });
+
+  const files = readdirSync(source).filter(f => f.endsWith('.md'));
+  for (const file of files) {
+    copyFileSync(join(source, file), join(targetDir, file));
+  }
+
+  return { count: files.length };
 }
 
 export function generatePolicyMdc(locale: Locale, lifecycle: Lifecycle = 'initial'): string {
@@ -485,7 +513,7 @@ ${langPolicy}
 3. All API designs must originate from scenario sequence diagrams
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations (see logos/changes/ directory)
-6. All generated test code must include an OpenLogos reporter (see spec/test-results.md)
+6. All generated test code must include an OpenLogos reporter (see logos/spec/test-results.md)
 
 ## Interaction Guidelines
 When the user's request is vague or they ask "what should I do next":
@@ -623,6 +651,11 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   const deployResult = deploySkills(root, aiTool, locale, 'initial');
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
+  }
+
+  const specResult = deploySpecs(root);
+  if (specResult && specResult.count > 0) {
+    console.log(`  ✓ ${specResult.count} specs deployed to logos/spec/`);
   }
 
   const isAutoDetected = nameSource !== 'argument';

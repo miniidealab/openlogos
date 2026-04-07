@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, type AiTool, type Lifecycle } from './init.js';
+import { createAgentsMd, deploySkills, deploySpecs, type AiTool, type Lifecycle } from './init.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -52,6 +52,11 @@ export function sync() {
   const deployResult = deploySkills(root, aiTool, locale, lifecycle);
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
+  }
+
+  const specResult = deploySpecs(root);
+  if (specResult && specResult.count > 0) {
+    console.log(`  ✓ ${specResult.count} specs synced to logos/spec/`);
   }
 
   console.log('\nSync complete.\n');

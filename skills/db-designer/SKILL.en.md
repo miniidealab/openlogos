@@ -111,7 +111,7 @@ CREATE TABLE users (
 -- @table-comment users Users table storing core registered user information
 ```
 
-> **SQLite Comment Convention**: SQLite does not support `COMMENT ON` syntax. You MUST use `-- @comment` preceding annotations (for columns) and `-- @table-comment <table> <description>` trailing annotations (for tables). See `spec/sql-comment-convention.md` for details.
+> **SQLite Comment Convention**: SQLite does not support `COMMENT ON` syntax. You MUST use `-- @comment` preceding annotations (for columns) and `-- @table-comment <table> <description>` trailing annotations (for tables). See `logos/spec/sql-comment-convention.md` for details.
 
 ### Step 4: Design Table Relationships
 
@@ -241,7 +241,7 @@ When `tech_stack.database` is SQLite, you MUST use the following structured comm
 - **Primary key**: `TEXT PRIMARY KEY NOT NULL` (app-generated UUID v4) or `INTEGER PRIMARY KEY AUTOINCREMENT`
 - **Timestamp type**: use `TEXT` with ISO 8601 strings, default `DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
 - **Foreign keys**: must execute `PRAGMA foreign_keys = ON;` at connection time
-- **Comments**: MUST use `-- @comment` / `-- @table-comment` structured annotations (see `spec/sql-comment-convention.md`)
+- **Comments**: MUST use `-- @comment` / `-- @table-comment` structured annotations (see `logos/spec/sql-comment-convention.md`)
 - **No triggers**: `updated_at` must be refreshed at the application layer; do not rely on `ON UPDATE` triggers
 
 ## Recommended Prompts

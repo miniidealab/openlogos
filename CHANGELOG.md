@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-04-07
+
+### Fixed
+
+- **Deploy spec/ documents to user projects** — `openlogos init` and `sync` now deploy all methodology spec files (7 files including `test-results.md`, `sql-comment-convention.md`, etc.) to `logos/spec/`. Previously, CLAUDE.md and Skills referenced `spec/test-results.md` but the file was never deployed, causing AI to guess incorrect formats (e.g. `"passed"` instead of `"pass"`). All references updated from `spec/` to `logos/spec/`. npm package now includes `spec/` directory.
+
 ## [0.5.0] - 2026-04-07
 
 ### Added
@@ -182,6 +188,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.5.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.1
 [0.5.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.0
 [0.4.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.3
 [0.4.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.2

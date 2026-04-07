@@ -130,7 +130,7 @@ Orchestration behavior for different strategies:
 - **Concurrency testing**: Key scenarios should account for concurrent situations (e.g., two users registering with the same email simultaneously)
 - **Check the external dependency list first**: Before starting orchestration design, read `external_dependencies` from `logos-project.yaml`; proactively remind the user to add any undeclared external calls
 - **Do not decide mock strategies on your own**: Test strategies are determined during S12 technical architecture design (Phase 3 Step 0, architecture-designer); the orchestration test phase only consumes them — do not modify them unilaterally
-- **Relationship with `openlogos verify`**: API orchestration tests can also produce JSONL results in the same format as `spec/test-results.md`. After orchestration tests run, results are also written to `logos/resources/verify/test-results.jsonl`, and `openlogos verify` reads them uniformly to determine acceptance
+- **Relationship with `openlogos verify`**: API orchestration tests can also produce JSONL results in the same format as `logos/spec/test-results.md`. After orchestration tests run, results are also written to `logos/resources/verify/test-results.jsonl`, and `openlogos verify` reads them uniformly to determine acceptance
 
 ## Recommended Prompts
 

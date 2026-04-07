@@ -130,7 +130,7 @@
 - **并发测试**：关键场景需要考虑并发情况（如：两人同时注册同一邮箱）
 - **外部依赖先查清单**：开始设计编排前先读 `logos-project.yaml` 的 `external_dependencies`，没有声明的外部调用要主动提醒用户补充
 - **mock 策略不要自行决定**：测试策略由 S12 技术架构设计（Phase 3 Step 0, architecture-designer）确定，编排测试阶段只负责消费，不要擅自更改
-- **与 `openlogos verify` 的关系**：API 编排测试也可产出与 `spec/test-results.md` 相同格式的 JSONL 结果。编排测试运行后，结果同样写入 `logos/resources/verify/test-results.jsonl`，`openlogos verify` 统一读取并判定验收
+- **与 `openlogos verify` 的关系**：API 编排测试也可产出与 `logos/spec/test-results.md` 相同格式的 JSONL 结果。编排测试运行后，结果同样写入 `logos/resources/verify/test-results.jsonl`，`openlogos verify` 统一读取并判定验收
 
 ## 推荐提示词
 

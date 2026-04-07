@@ -141,7 +141,7 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 
 ## 输出规范
 
-- `logos/logos.config.json`：有效的 JSON，符合 `spec/logos.config.schema.json`
+- `logos/logos.config.json`：有效的 JSON，符合 `logos/spec/logos.config.schema.json`
 - `logos/logos-project.yaml`：有效的 YAML
 - `AGENTS.md` / `CLAUDE.md`：Markdown 格式，位于项目根目录
 - `logos/` 下所有目录已创建，空目录包含 `.gitkeep`

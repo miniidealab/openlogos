@@ -229,7 +229,7 @@ Test case IDs (`UT-S01-01`, `ST-S01-01`) serve as a **binding contract** between
 - `openlogos verify` maps execution results back to test case specifications via IDs, automatically determining acceptance
 - When modifying case IDs, the corresponding IDs in the test code must be updated simultaneously
 
-See `spec/test-results.md` for the detailed JSONL format definition and reporter code templates for each language.
+See `logos/spec/test-results.md` for the detailed JSONL format definition and reporter code templates for each language.
 
 ## Best Practices
 

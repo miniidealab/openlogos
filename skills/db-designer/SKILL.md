@@ -111,7 +111,7 @@ CREATE TABLE users (
 -- @table-comment users 用户表，存储注册用户的核心信息
 ```
 
-> **SQLite 注释约定**：SQLite 不支持 `COMMENT ON` 语法，必须使用 `-- @comment` 前置注释（字段）和 `-- @table-comment <表名> <描述>` 后置注释（表）。规则详见 `spec/sql-comment-convention.md`。
+> **SQLite 注释约定**：SQLite 不支持 `COMMENT ON` 语法，必须使用 `-- @comment` 前置注释（字段）和 `-- @table-comment <表名> <描述>` 后置注释（表）。规则详见 `logos/spec/sql-comment-convention.md`。
 
 ### Step 4: 设计表间关联
 
@@ -241,7 +241,7 @@ CREATE INDEX idx_projects_owner ON projects(owner_id);
 - **主键**：`TEXT PRIMARY KEY NOT NULL`（应用层生成 UUID v4）或 `INTEGER PRIMARY KEY AUTOINCREMENT`
 - **时间类型**：使用 `TEXT` 存储 ISO 8601 字符串，默认值 `DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
 - **外键**：须在连接时执行 `PRAGMA foreign_keys = ON;`
-- **注释**：必须使用 `-- @comment` / `-- @table-comment` 结构化注释（见 `spec/sql-comment-convention.md`）
+- **注释**：必须使用 `-- @comment` / `-- @table-comment` 结构化注释（见 `logos/spec/sql-comment-convention.md`）
 - **无触发器**：`updated_at` 须在应用层刷新，不依赖 `ON UPDATE` 触发器
 
 ## 推荐提示词

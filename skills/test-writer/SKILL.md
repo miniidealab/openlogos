@@ -224,7 +224,7 @@
 - `openlogos verify` 通过 ID 将运行结果映射回测试用例规格，自动判定验收
 - 修改用例 ID 时必须同步修改测试代码中的 ID
 
-详细的 JSONL 格式定义和各语言 reporter 代码模板见 `spec/test-results.md`。
+详细的 JSONL 格式定义和各语言 reporter 代码模板见 `logos/spec/test-results.md`。
 
 ## 实践经验
 

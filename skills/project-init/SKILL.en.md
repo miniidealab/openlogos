@@ -141,7 +141,7 @@ Report to the user which files and directories were created, and provide next-st
 
 ## Output Specification
 
-- `logos/logos.config.json`: Valid JSON, conforming to `spec/logos.config.schema.json`
+- `logos/logos.config.json`: Valid JSON, conforming to `logos/spec/logos.config.schema.json`
 - `logos/logos-project.yaml`: Valid YAML
 - `AGENTS.md` / `CLAUDE.md`: Markdown format, located in the project root directory
 - All directories under `logos/` are created; empty directories contain `.gitkeep`

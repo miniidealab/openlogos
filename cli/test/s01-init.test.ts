@@ -478,8 +478,15 @@ describe('S01 Scenario Tests — init command', () => {
     expect(policyContent).toContain('alwaysApply: true');
     expect(policyContent).toContain('Language Policy');
 
+    expect(existsSync(join(root, 'logos', 'spec', 'test-results.md'))).toBe(true);
+    expect(existsSync(join(root, 'logos', 'spec', 'sql-comment-convention.md'))).toBe(true);
+
+    const agents2 = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents2).toContain('logos/spec/test-results.md');
+
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('✓');
+    expect(allLogs).toContain('specs deployed');
     expect(allLogs).toContain('Next steps');
     expect(allLogs).toContain('12 skills deployed to .cursor/rules/');
   });

@@ -1,6 +1,6 @@
 {
   "name": "@miniidealab/openlogos",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "CLI tool for the OpenLogos software engineering methodology",
   "type": "module",
   "bin": {
@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepack": "npm run build && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true})\"",
-    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true})\"",
+    "prepack": "npm run build && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true})\"",
+    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true})\"",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "lint": "eslint src/",
@@ -42,7 +42,8 @@
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "spec"
   ],
   "devDependencies": {
     "@eslint/js": "^9.39.4",
