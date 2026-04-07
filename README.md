@@ -150,8 +150,13 @@ Claude Code 用户可以通过原生插件获得最佳体验。插件提供：
 |------|------|
 | `/openlogos:status` | 查看当前 Phase 进度和下一步建议 |
 | `/openlogos:next` | 获取下一步操作的详细引导和可用提示词 |
-| `/openlogos:change <slug>` | 创建变更提案（项目 active 后使用） |
-| `/openlogos:launch` | 将项目从初始开发切换为 active，激活变更管理 |
+| `/openlogos:init [name]` | 初始化新项目（调用 CLI） |
+| `/openlogos:sync` | 重新生成 AI 指令文件和 Skills |
+| `/openlogos:change <slug>` | 创建变更提案 |
+| `/openlogos:merge <slug>` | 生成变更合并指令（MERGE_PROMPT.md） |
+| `/openlogos:archive <slug>` | 归档已完成的变更提案 |
+| `/openlogos:verify` | 运行测试验收并生成三层追溯报告 |
+| `/openlogos:launch` | 激活变更管理（初始开发完成后使用） |
 
 #### 工作流示例
 

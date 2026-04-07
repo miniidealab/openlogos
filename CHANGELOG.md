@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Claude Code Native Plugin** — Full-featured plugin for Claude Code with one-command installation:
   - **12 AI Skills** with auto-discovery: Claude Code automatically activates the right skill based on project phase and task context
-  - **4 Slash Commands**: `/openlogos:status`, `/openlogos:next`, `/openlogos:change`, `/openlogos:launch`
+  - **9 Slash Commands**: all CLI commands wrapped as plugin commands (`init`, `sync`, `status`, `verify`, `change`, `merge`, `archive`, `launch`) plus `next` for guided workflow
   - **SessionStart Hook**: automatically detects project phase, locale, and lifecycle on every session start
   - **change-reviewer Agent**: read-only subagent that reviews change proposals for completeness and methodology compliance
 - **Plugin Marketplace** — `.claude-plugin/marketplace.json` at repo root enables `miniidealab/openlogos` as a Claude Code marketplace
