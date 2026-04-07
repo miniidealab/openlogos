@@ -98,7 +98,7 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
 
   it('UT-S01-09: createAgentsMd includes Phase detection logic', () => {
     const output = createAgentsMd('en');
-    expect(output).toContain('Phase detection logic:');
+    expect(output).toContain('Phase detection logic');
     expect(output).toContain('prd-writer');
     expect(output).toContain('product-designer');
   });
@@ -155,16 +155,16 @@ describe('S01 Unit Tests — createAgentsMd Active Skills', () => {
 });
 
 describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
-  it('UT-S01-27: en locale includes English language policy', () => {
+  it('UT-S01-27: en locale includes English language policy with highest priority', () => {
     const output = createAgentsMd('en', 'cursor', 'agents');
-    expect(output).toContain('## Language Policy');
-    expect(output).toContain('MUST be in **English**');
+    expect(output).toContain('Language Policy (Highest Priority)');
+    expect(output).toContain('MUST be in English');
     expect(output).toContain('"en"');
   });
 
-  it('UT-S01-28: zh locale includes Chinese language policy', () => {
+  it('UT-S01-28: zh locale includes Chinese language policy with highest priority', () => {
     const output = createAgentsMd('zh', 'cursor', 'agents');
-    expect(output).toContain('## Language Policy');
+    expect(output).toContain('语言策略（最高优先级）');
     expect(output).toContain('必须使用中文');
     expect(output).toContain('"zh"');
   });
@@ -225,6 +225,45 @@ describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
     expect(content).toContain('语言策略（最高优先级）');
     expect(content).toContain('变更管理（必须遵守）');
     expect(content).toContain('立即停止编码');
+  });
+});
+
+describe('S01 Unit Tests — Claude Code Skill Binding', () => {
+  it('UT-S01-37: claude-code CLAUDE.md has Skill paths in Phase detection', () => {
+    const output = createAgentsMd('en', 'claude-code', 'claude');
+    expect(output).toContain('logos/skills/prd-writer/SKILL.md');
+    expect(output).toContain('logos/skills/scenario-architect/SKILL.md');
+    expect(output).toContain('read');
+    expect(output).toContain('follow');
+  });
+
+  it('UT-S01-38: claude-code CLAUDE.md has auto-load instruction in Active Skills', () => {
+    const output = createAgentsMd('en', 'claude-code', 'claude');
+    expect(output).toContain('MUST first read the corresponding Skill file');
+  });
+
+  it('UT-S01-39: cursor AGENTS.md has Skill paths in Phase detection', () => {
+    const output = createAgentsMd('en', 'cursor', 'agents');
+    expect(output).toContain('logos/skills/prd-writer/SKILL.md');
+    expect(output).toContain('follow its steps');
+  });
+
+  it('UT-S01-40: cursor CLAUDE.md does NOT have Skill paths (plain detection)', () => {
+    const output = createAgentsMd('en', 'cursor', 'claude');
+    expect(output).not.toContain('logos/skills/prd-writer/SKILL.md');
+    expect(output).toContain('Phase detection logic:');
+  });
+
+  it('UT-S01-41: zh locale claude-code has Chinese Skill binding', () => {
+    const output = createAgentsMd('zh', 'claude-code', 'claude');
+    expect(output).toContain('logos/skills/prd-writer/SKILL.md');
+    expect(output).toContain('必须先读取');
+  });
+
+  it('UT-S01-42: no aiTool defaults to plain Phase detection', () => {
+    const output = createAgentsMd('en');
+    expect(output).toContain('Phase detection logic:');
+    expect(output).not.toContain('logos/skills/prd-writer/SKILL.md');
   });
 });
 

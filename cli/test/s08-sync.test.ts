@@ -151,16 +151,30 @@ describe('S08 Scenario Tests — sync command', () => {
     scaffoldProject(root, { locale: 'en' });
     sync();
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
-    expect(agents).toContain('## Language Policy');
-    expect(agents).toContain('MUST be in **English**');
+    expect(agents).toContain('Language Policy (Highest Priority)');
+    expect(agents).toContain('MUST be in English');
   });
 
   it('ST-S08-05c: sync generates Language Policy section for zh locale', () => {
     scaffoldProject(root, { locale: 'zh' });
     sync();
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
-    expect(agents).toContain('## Language Policy');
+    expect(agents).toContain('语言策略（最高优先级）');
     expect(agents).toContain('必须使用中文');
+  });
+
+  it('ST-S08-07: sync with claude-code generates Skill binding in CLAUDE.md', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'claude-code';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
+    expect(claude).toContain('MUST first read the corresponding Skill file');
   });
 
   it('ST-S08-06: sync with other → both files include Active Skills', () => {

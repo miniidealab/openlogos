@@ -304,6 +304,60 @@ function generateActiveSkillsSection(locale: Locale): string {
   return section;
 }
 
+function skillPath(name: string): string {
+  return `logos/skills/${name}/SKILL.md`;
+}
+
+function generatePhaseDetectionPlain(locale: Locale): string {
+  if (locale === 'zh') {
+    return `Phase 检测逻辑：
+- \`logos/resources/prd/1-product-requirements/\` 为空 → 建议 Phase 1（prd-writer）
+- 需求存在但 \`2-product-design/\` 为空 → 建议 Phase 2（product-designer）
+- 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → 建议 Phase 3 Step 0（architecture-designer）
+- 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → 建议 Phase 3 Step 1（scenario-architect）
+- 场景存在但 \`logos/resources/api/\` 为空 → 建议 Phase 3 Step 2（api-designer + db-designer）
+- API 存在但 \`logos/resources/test/\` 为空 → 建议 Phase 3 Step 3a（test-writer）
+- 测试用例存在但 \`logos/resources/scenario/\` 为空 → 建议 Phase 3 Step 3b（test-orchestrator，仅 API 项目）
+- 以上全部完成 → 建议 Phase 3 Step 4（代码生成）
+- 代码已生成但 \`logos/resources/verify/\` 为空 → 建议 Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
+  }
+  return `Phase detection logic:
+- \`logos/resources/prd/1-product-requirements/\` is empty → suggest Phase 1 (prd-writer)
+- requirements exist but \`2-product-design/\` is empty → suggest Phase 2 (product-designer)
+- design exists but \`3-technical-plan/1-architecture/\` is empty → suggest Phase 3 Step 0 (architecture-designer)
+- architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → suggest Phase 3 Step 1 (scenario-architect)
+- scenarios exist but \`logos/resources/api/\` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
+- API exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 3a (test-writer)
+- test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
+- All above exist → suggest Phase 3 Step 4 (code generation)
+- code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
+}
+
+function generatePhaseDetectionWithSkills(locale: Locale): string {
+  if (locale === 'zh') {
+    return `Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件并按其步骤执行）：
+- \`logos/resources/prd/1-product-requirements/\` 为空 → Phase 1 → **读取 \`${skillPath('prd-writer')}\` 并按其步骤执行**
+- 需求存在但 \`2-product-design/\` 为空 → Phase 2 → **读取 \`${skillPath('product-designer')}\` 并按其步骤执行**
+- 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → Phase 3 Step 0 → **读取 \`${skillPath('architecture-designer')}\` 并按其步骤执行**
+- 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → Phase 3 Step 1 → **读取 \`${skillPath('scenario-architect')}\` 并按其步骤执行**
+- 场景存在但 \`logos/resources/api/\` 为空 → Phase 3 Step 2 → **读取 \`${skillPath('api-designer')}\` 和 \`${skillPath('db-designer')}\` 并按其步骤执行**
+- API 存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 3a → **读取 \`${skillPath('test-writer')}\` 并按其步骤执行**
+- 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 3b → **读取 \`${skillPath('test-orchestrator')}\` 并按其步骤执行**（仅 API 项目）
+- 以上全部完成 → Phase 3 Step 4（代码生成）→ **读取 \`${skillPath('code-reviewer')}\` 进行代码审查**
+- 代码已生成但 \`logos/resources/verify/\` 为空 → Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
+  }
+  return `Phase detection logic (**when a phase is detected, you MUST read the corresponding Skill file and follow its steps**):
+- \`logos/resources/prd/1-product-requirements/\` is empty → Phase 1 → **read \`${skillPath('prd-writer')}\` and follow its steps**
+- requirements exist but \`2-product-design/\` is empty → Phase 2 → **read \`${skillPath('product-designer')}\` and follow its steps**
+- design exists but \`3-technical-plan/1-architecture/\` is empty → Phase 3 Step 0 → **read \`${skillPath('architecture-designer')}\` and follow its steps**
+- architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → Phase 3 Step 1 → **read \`${skillPath('scenario-architect')}\` and follow its steps**
+- scenarios exist but \`logos/resources/api/\` is empty → Phase 3 Step 2 → **read \`${skillPath('api-designer')}\` and \`${skillPath('db-designer')}\` and follow their steps**
+- API exists but \`logos/resources/test/\` is empty → Phase 3 Step 3a → **read \`${skillPath('test-writer')}\` and follow its steps**
+- test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 3b → **read \`${skillPath('test-orchestrator')}\` and follow its steps** (API projects only)
+- All above exist → Phase 3 Step 4 (code generation) → **read \`${skillPath('code-reviewer')}\` for code review**
+- code generated but \`logos/resources/verify/\` is empty → Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
+}
+
 const DIRECTORIES = [
   'logos/resources/prd/1-product-requirements',
   'logos/resources/prd/2-product-design/1-feature-specs',
@@ -384,17 +438,21 @@ export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents
   const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
 
   const langPolicy = locale === 'zh'
-    ? `## Language Policy
-本项目的文档语言配置于 \`logos/logos.config.json\` 的 \`locale\` 字段（当前值：\`"zh"\`）。
-- 所有生成的文档、注释和 AI 回复**必须使用中文**
-- Skill 文件可能使用任何语言编写，但你的输出必须遵循 locale 设置
-- 生成文档前请先检查 \`logos/logos.config.json\`
+    ? `## ⚠️ 语言策略（最高优先级）
+
+本项目的文档语言为 **中文**（配置于 \`logos/logos.config.json\` → \`locale: "zh"\`）。
+
+**你的所有输出——包括生成的文档、代码注释、回复消息——必须使用中文。**
+即使 Skill 文件使用其他语言编写，你的输出也必须是中文。
+违反此规则将导致产出不可用。
 `
-    : `## Language Policy
-This project's document language is configured in \`logos/logos.config.json\` → \`locale\` field (current value: \`"en"\`).
-- ALL generated documents, comments, and AI responses MUST be in **English**
-- Skill files may be written in any language, but your output MUST follow the locale setting
-- Check \`logos/logos.config.json\` before generating any document
+    : `## ⚠️ Language Policy (Highest Priority)
+
+This project's document language is **English** (configured in \`logos/logos.config.json\` → \`locale: "en"\`).
+
+**ALL your output — including generated documents, code comments, and responses — MUST be in English.**
+Even if Skill files are written in another language, your output MUST be in English.
+Violating this rule will render the output unusable.
 `;
 
   let content = `# AI Assistant Instructions
@@ -422,21 +480,17 @@ When the user's request is vague or they ask "what should I do next":
 3. Provide a ready-to-use prompt the user can directly say
 4. Never start generating documents without confirming key information
 
-Phase detection logic:
-- \`logos/resources/prd/1-product-requirements/\` is empty → suggest Phase 1 (prd-writer)
-- requirements exist but \`2-product-design/\` is empty → suggest Phase 2 (product-designer)
-- design exists but \`3-technical-plan/1-architecture/\` is empty → suggest Phase 3 Step 0 (architecture-designer)
-- architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → suggest Phase 3 Step 1 (scenario-architect)
-- scenarios exist but \`logos/resources/api/\` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
-- API exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 3a (test-writer)
-- test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
-- All above exist → suggest Phase 3 Step 4 (code generation)
-- code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)
+${includeSkills ? generatePhaseDetectionWithSkills(locale) : generatePhaseDetectionPlain(locale)}
 `;
 
   if (includeSkills) {
+    const skillAutoLoadInstr = locale === 'zh'
+      ? `**重要**：当你识别到当前 Phase 后，必须先读取对应的 Skill 文件（使用上方 Phase 检测逻辑中指定的路径），按 Skill 中定义的步骤逐步执行。不要跳过 Skill 文件直接生成内容。\n`
+      : `**IMPORTANT**: When you identify the current Phase, you MUST first read the corresponding Skill file (using the path specified in the Phase detection logic above) and follow its steps sequentially. Do NOT skip the Skill file and generate content directly.\n`;
+
     content += `
 ## Active Skills
+${skillAutoLoadInstr}
 ${generateActiveSkillsSection(locale)}`;
   }
 
