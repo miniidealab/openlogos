@@ -17,6 +17,8 @@ Usage:
 
 Commands:
   init [name]        Initialize a new OpenLogos project structure
+                       --locale <en|zh>            Set language (skip prompt)
+                       --ai-tool <cursor|claude-code|other>  Set AI tool (skip prompt)
   sync               Regenerate AI instruction files (AGENTS.md, CLAUDE.md)
   status             Show current project phase and suggest next steps
   verify             Verify test results against test case specs
@@ -41,7 +43,7 @@ Examples:
 Learn more: https://openlogos.ai
 `;
 
-const VERSION = '0.4.0';
+const VERSION = '0.4.1';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -59,9 +61,22 @@ async function main() {
   const command = args[0];
 
   switch (command) {
-    case 'init':
-      await init(args[1]);
+    case 'init': {
+      const initArgs = args.slice(1);
+      let initName: string | undefined;
+      const initOpts: { locale?: string; aiTool?: string } = {};
+      for (let i = 0; i < initArgs.length; i++) {
+        if (initArgs[i] === '--locale' && initArgs[i + 1]) {
+          initOpts.locale = initArgs[++i];
+        } else if (initArgs[i] === '--ai-tool' && initArgs[i + 1]) {
+          initOpts.aiTool = initArgs[++i];
+        } else if (!initArgs[i].startsWith('--')) {
+          initName = initArgs[i];
+        }
+      }
+      await init(initName, Object.keys(initOpts).length > 0 ? initOpts : undefined);
       break;
+    }
     case 'sync':
       sync();
       break;

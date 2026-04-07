@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-07
+
+### Fixed
+
+- **`openlogos init` non-TTY default issue** — When running via Claude Code's Bash tool (non-TTY), `init` silently defaulted to `en` + `cursor` without prompting. Added `--locale <en|zh>` and `--ai-tool <cursor|claude-code|other>` CLI flags to allow explicit selection. Plugin `/openlogos:init` command updated to ask the user both questions before running the command with flags.
+
 ## [0.4.0] - 2026-04-07
 
 ### Added
@@ -153,6 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[0.4.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.1
 [0.4.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.0
 [0.3.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.6
 [0.3.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.3.5

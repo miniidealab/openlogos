@@ -541,7 +541,7 @@ ${conventionsForAgentsMd(locale)}
   return content;
 }
 
-export async function init(name?: string) {
+export async function init(name?: string, options?: { locale?: string; aiTool?: string }) {
   const root = process.cwd();
 
   if (existsSync(join(root, 'logos', 'logos.config.json'))) {
@@ -550,8 +550,8 @@ export async function init(name?: string) {
     process.exit(1);
   }
 
-  const locale = await chooseLocale();
-  const aiTool = await chooseAiTool(locale);
+  const locale: Locale = options?.locale === 'zh' ? 'zh' : options?.locale === 'en' ? 'en' : await chooseLocale();
+  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : await chooseAiTool(locale);
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
 
   const sourceLabel: Record<NameSource, string> = {
