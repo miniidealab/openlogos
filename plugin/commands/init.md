@@ -1,36 +1,30 @@
 ---
-description: Initialize a new OpenLogos project with directory structure, config files, and AI instruction files
+description: "Initialize OpenLogos project — MUST ask language preference first, then run init"
 ---
 
-Initialize a new OpenLogos project in the current directory.
+**STOP — do NOT run any command yet.**
 
-**Before running the command, you MUST ask the user two questions:**
+You MUST ask the user this question first and WAIT for their answer:
 
-1. **Language / 语言**: Ask the user to choose:
-   - `en` — English (default)
-   - `zh` — 中文
+> 请选择语言 / Choose language:
+> 1. English
+> 2. 中文
 
-2. **AI Tool**: Ask the user which AI tool they are using:
-   - `cursor` — Cursor IDE (default)
-   - `claude-code` — Claude Code CLI
-   - `other` — Other AI tools
+After the user replies, determine the locale value:
+- User says 1 or "English" → locale is `en`
+- User says 2 or "中文" → locale is `zh`
 
-Wait for the user to answer both questions before proceeding.
-
-**Then run the init command with explicit flags:**
+Then run this exact command:
 
 ```
-openlogos init --locale <LOCALE> --ai-tool <AI_TOOL> $ARGUMENTS
+openlogos init --locale <LOCALE> --ai-tool claude-code $ARGUMENTS
 ```
 
-- Replace `<LOCALE>` with the user's language choice (`en` or `zh`).
-- Replace `<AI_TOOL>` with the user's AI tool choice (`cursor`, `claude-code`, or `other`).
-- If `$ARGUMENTS` is not empty, append it as the project name.
+Replace `<LOCALE>` with `en` or `zh` based on the user's answer. If `$ARGUMENTS` is provided, append it as the project name.
 
-If the `openlogos` CLI is not found, tell the user to install it first:
+If `openlogos` command is not found, tell the user:
 ```
 npm install -g @miniidealab/openlogos
 ```
-Then run the init command again with the flags.
 
-After init completes, remind the user that the OpenLogos plugin is already installed and they can start working immediately with `/openlogos:next`.
+After init completes, suggest running `/openlogos:next` for guidance.

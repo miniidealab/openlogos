@@ -93,8 +93,18 @@ async function resolveProjectName(locale: Locale, root: string, explicitName?: s
   return { name: explicitName, source: 'argument' };
 }
 
+function detectLocaleFromEnv(): Locale {
+  const lang = process.env.LANG || process.env.LC_ALL || process.env.LANGUAGE || '';
+  return lang.startsWith('zh') ? 'zh' : 'en';
+}
+
+function detectAiToolFromEnv(): AiTool {
+  if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_CODE) return 'claude-code';
+  return 'cursor';
+}
+
 async function chooseLocale(): Promise<Locale> {
-  if (!isTTY()) return 'en';
+  if (!isTTY()) return detectLocaleFromEnv();
 
   console.log('\nChoose language / 选择语言:');
   console.log('  1. English (default)');
@@ -105,7 +115,7 @@ async function chooseLocale(): Promise<Locale> {
 }
 
 async function chooseAiTool(locale: Locale): Promise<AiTool> {
-  if (!isTTY()) return 'cursor';
+  if (!isTTY()) return detectAiToolFromEnv();
 
   console.log(`\n${t(locale, 'init.aiToolHeader')}`);
   console.log(t(locale, 'init.aiToolCursor'));
