@@ -1,0 +1,12 @@
+{
+  "name": "miniidealab-openlogos",
+  "owner": "MiniIdeaLab",
+  "description": "Official OpenLogos plugin marketplace — structured AI-driven development methodology",
+  "plugins": [
+    {
+      "name": "openlogos",
+      "description": "OpenLogos methodology plugin with 12 AI skills, slash commands, hooks, and a change-reviewer agent for structured Why → What → How development",
+      "source": "./plugin"
+    }
+  ]
+}

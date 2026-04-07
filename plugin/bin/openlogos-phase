@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# OpenLogos Phase Detector — lightweight shell script for Claude Code plugin hooks.
+# Reads logos/logos.config.json and scans logos/resources/ to determine current phase.
+#
+# When called from SessionStart hook: outputs JSON with systemMessage + additionalContext.
+# When called directly (e.g. from commands): outputs plain text.
+#
+# Usage:
+#   ./openlogos-phase              → JSON output (for hooks)
+#   ./openlogos-phase --plain      → plain text output (for commands / terminal)
+
+set -euo pipefail
+
+MODE="json"
+if [ "${1:-}" = "--plain" ]; then
+  MODE="plain"
+fi
+
+has_files() {
+  local dir="$1"
+  [ -d "$dir" ] && find "$dir" -type f ! -name '.gitkeep' -maxdepth 3 2>/dev/null | head -1 | grep -q .
+}
+
+CONFIG="logos/logos.config.json"
+
+if [ ! -f "$CONFIG" ]; then
+  if [ "$MODE" = "json" ]; then
+    echo '{"systemMessage":"Not an OpenLogos project"}'
+  else
+    echo "⚠ This is not an OpenLogos project (logos/logos.config.json not found)."
+    echo "Run \`openlogos init\` to initialize."
+  fi
+  exit 0
+fi
+
+LOCALE="en"
+LIFECYCLE="initial"
+PROJECT_NAME=""
+
+if command -v python3 &>/dev/null; then
+  LOCALE=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
+  LIFECYCLE=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('lifecycle','initial'))" 2>/dev/null || echo "initial")
+  PROJECT_NAME=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('name',''))" 2>/dev/null || echo "")
+elif command -v node &>/dev/null; then
+  LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
+  LIFECYCLE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.lifecycle||'initial')" 2>/dev/null || echo "initial")
+  PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
+fi
+
+P1="logos/resources/prd/1-product-requirements"
+P2="logos/resources/prd/2-product-design"
+P3_ARCH="logos/resources/prd/3-technical-plan/1-architecture"
+P3_SCEN="logos/resources/prd/3-technical-plan/2-scenario-implementation"
+P_API="logos/resources/api"
+P_TEST="logos/resources/test"
+P_SCENARIO="logos/resources/scenario"
+P_VERIFY="logos/resources/verify"
+
+PHASE=""
+SKILL=""
+SKILL_DESC=""
+
+if ! has_files "$P1"; then
+  PHASE="Phase 1: Product Requirements"
+  SKILL="prd-writer"
+  SKILL_DESC="Write product requirements documents"
+elif ! has_files "$P2"; then
+  PHASE="Phase 2: Product Design"
+  SKILL="product-designer"
+  SKILL_DESC="Create product design specifications"
+elif ! has_files "$P3_ARCH"; then
+  PHASE="Phase 3 Step 0: Architecture Design"
+  SKILL="architecture-designer"
+  SKILL_DESC="Design technical architecture"
+elif ! has_files "$P3_SCEN"; then
+  PHASE="Phase 3 Step 1: Scenario Implementation"
+  SKILL="scenario-architect"
+  SKILL_DESC="Model business scenarios as sequence diagrams"
+elif ! has_files "$P_API"; then
+  PHASE="Phase 3 Step 2: API & Database Design"
+  SKILL="api-designer"
+  SKILL_DESC="Design OpenAPI specifications (also run db-designer)"
+elif ! has_files "$P_TEST"; then
+  PHASE="Phase 3 Step 3a: Test Cases"
+  SKILL="test-writer"
+  SKILL_DESC="Write test case documents"
+elif ! has_files "$P_SCENARIO"; then
+  PHASE="Phase 3 Step 3b: Orchestration Tests"
+  SKILL="test-orchestrator"
+  SKILL_DESC="Design API orchestration test scenarios"
+elif ! has_files "$P_VERIFY"; then
+  PHASE="Phase 3 Step 4-5: Code Generation & Verification"
+  SKILL="code-reviewer"
+  SKILL_DESC="Generate code and run verification"
+else
+  PHASE="All phases complete"
+  SKILL=""
+fi
+
+# Build language policy text
+if [ "$LOCALE" = "zh" ]; then
+  LANG_POLICY="Language Policy: ALL output MUST be in Chinese (中文)."
+else
+  LANG_POLICY="Language Policy: ALL output MUST be in English."
+fi
+
+# Build change management text
+if [ "$LIFECYCLE" = "active" ]; then
+  CHANGE_MGMT="Change Management: ACTIVE — create a change proposal before modifying source code. Run openlogos change <slug> or /openlogos:change."
+else
+  CHANGE_MGMT="Change Management: Initial development — follow Phase progression, no change proposals needed."
+  if [ "$PHASE" = "All phases complete" ]; then
+    CHANGE_MGMT="$CHANGE_MGMT Run openlogos launch to activate change management."
+  fi
+fi
+
+# Build status line for systemMessage (user-visible, keep short)
+if [ -n "$SKILL" ]; then
+  STATUS_LINE="📊 OpenLogos: $PHASE → use $SKILL skill"
+else
+  STATUS_LINE="📊 OpenLogos: $PHASE"
+fi
+
+# Build full context for additionalContext (Claude-visible)
+CONTEXT="=== OpenLogos Project Context ===
+Project: $PROJECT_NAME
+Locale: $LOCALE
+Lifecycle: $LIFECYCLE
+Current Phase: $PHASE"
+
+if [ -n "$SKILL" ]; then
+  CONTEXT="$CONTEXT
+Suggested Skill: $SKILL ($SKILL_DESC)"
+fi
+
+CONTEXT="$CONTEXT
+$LANG_POLICY
+$CHANGE_MGMT
+=== End OpenLogos Context ==="
+
+if [ "$MODE" = "json" ]; then
+  # Escape special characters for JSON
+  CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || printf '%s' "$CONTEXT" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.stringify(d)))" 2>/dev/null)
+
+  cat <<ENDJSON
+{
+  "systemMessage": "$STATUS_LINE",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": $CONTEXT_ESCAPED
+  }
+}
+ENDJSON
+else
+  echo ""
+  echo "$CONTEXT"
+  echo ""
+fi

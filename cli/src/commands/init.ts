@@ -598,4 +598,15 @@ export async function init(name?: string) {
   if (nameHint) console.log(nameHint);
   console.log(t(locale, 'init.step2'));
   console.log(t(locale, 'init.step3') + '\n');
+
+  if (aiTool === 'claude-code') {
+    const pluginMsg = locale === 'zh'
+      ? `💡 Claude Code 用户推荐安装原生插件以获得最佳体验：
+  /plugin marketplace add miniidealab/openlogos
+  /plugin install openlogos@miniidealab-openlogos`
+      : `💡 Claude Code users: install the native plugin for the best experience:
+  /plugin marketplace add miniidealab/openlogos
+  /plugin install openlogos@miniidealab-openlogos`;
+    console.log(pluginMsg + '\n');
+  }
 }
