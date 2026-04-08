@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-04-08
+
+### Added
+
+- **OpenCode as first-class AI tool** — `openlogos init` now offers OpenCode as a dedicated option (option 3) alongside Cursor and Claude Code, instead of grouping it under "Other". OpenCode deploys Skills to `logos/skills/` and includes Active Skills in `AGENTS.md` (which OpenCode reads on startup).
+
 ## [0.5.3] - 2026-04-08
 
 ### Added

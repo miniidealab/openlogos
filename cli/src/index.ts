@@ -18,7 +18,7 @@ Usage:
 Commands:
   init [name]        Initialize a new OpenLogos project structure
                        --locale <en|zh>            Set language (skip prompt)
-                       --ai-tool <cursor|claude-code|other>  Set AI tool (skip prompt)
+                       --ai-tool <cursor|claude-code|opencode|other>  Set AI tool (skip prompt)
   sync               Regenerate AI instruction files (AGENTS.md, CLAUDE.md)
   status             Show current project phase and suggest next steps
   verify             Verify test results against test case specs
@@ -43,7 +43,7 @@ Examples:
 Learn more: https://openlogos.ai
 `;
 
-const VERSION = '0.5.3';
+const VERSION = '0.5.4';
 
 async function main() {
   const args = process.argv.slice(2);

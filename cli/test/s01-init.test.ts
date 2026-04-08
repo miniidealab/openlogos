@@ -135,6 +135,16 @@ describe('S01 Unit Tests — createAgentsMd Active Skills', () => {
     expect(output).not.toContain('## Active Skills');
   });
 
+  it('UT-S01-17b: opencode → AGENTS.md includes Active Skills', () => {
+    const output = createAgentsMd('en', 'opencode', 'agents');
+    expect(output).toContain('## Active Skills');
+  });
+
+  it('UT-S01-18b: opencode → CLAUDE.md does NOT include Active Skills', () => {
+    const output = createAgentsMd('en', 'opencode', 'claude');
+    expect(output).not.toContain('## Active Skills');
+  });
+
   it('UT-S01-19: other → both include Active Skills', () => {
     const agents = createAgentsMd('en', 'other', 'agents');
     const claude = createAgentsMd('en', 'other', 'claude');
@@ -603,9 +613,28 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('12 skills deployed to logos/skills/');
   });
 
+  it('ST-S01-07b: choose OpenCode → deploys to logos/skills/, Active Skills in AGENTS.md', async () => {
+    process.stdin.isTTY = true;
+    readlineAnswers = ['1', '3']; // English, OpenCode
+
+    await init('oc-project');
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.aiTool).toBe('opencode');
+
+    expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    const skillDirs = readdirSync(join(root, 'logos', 'skills'));
+    expect(skillDirs.length).toBe(12);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('## Active Skills');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).not.toContain('## Active Skills');
+  });
+
   it('ST-S01-08: choose Other → both files include Active Skills', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '3']; // English, Other
+    readlineAnswers = ['1', '4']; // English, Other (now option 4)
 
     await init('other-project');
 

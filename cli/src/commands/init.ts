@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 
-export type AiTool = 'cursor' | 'claude-code' | 'other';
+export type AiTool = 'cursor' | 'claude-code' | 'opencode' | 'other';
 
 type NameSource = 'argument' | 'package.json' | 'Cargo.toml' | 'pyproject.toml' | 'directory';
 
@@ -102,7 +102,7 @@ async function chooseLocale(): Promise<Locale> {
   if (!isTTY()) {
     console.error('Error: --locale is required in non-interactive mode.');
     console.error('');
-    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <cursor|claude-code|other>] [name]');
+    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <cursor|claude-code|opencode|other>] [name]');
     console.error('');
     console.error('Ask the user to choose a language first:');
     console.error('  --locale en    English');
@@ -124,11 +124,13 @@ async function chooseAiTool(locale: Locale): Promise<AiTool> {
   console.log(`\n${t(locale, 'init.aiToolHeader')}`);
   console.log(t(locale, 'init.aiToolCursor'));
   console.log(t(locale, 'init.aiToolClaudeCode'));
+  console.log(t(locale, 'init.aiToolOpenCode'));
   console.log(t(locale, 'init.aiToolOther') + '\n');
 
   const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
   if (answer === '2') return 'claude-code';
-  if (answer === '3') return 'other';
+  if (answer === '3') return 'opencode';
+  if (answer === '4') return 'other';
   return 'cursor';
 }
 
@@ -328,6 +330,7 @@ export function deploySkills(
 function shouldIncludeActiveSkills(aiTool: AiTool, target: 'agents' | 'claude'): boolean {
   if (aiTool === 'cursor') return target === 'agents';
   if (aiTool === 'claude-code') return target === 'claude';
+  if (aiTool === 'opencode') return target === 'agents';
   return true;
 }
 
@@ -631,7 +634,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   }
 
   const locale: Locale = options?.locale === 'zh' ? 'zh' : options?.locale === 'en' ? 'en' : await chooseLocale();
-  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : await chooseAiTool(locale);
+  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'opencode' ? 'opencode' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : await chooseAiTool(locale);
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
 
   const sourceLabel: Record<NameSource, string> = {

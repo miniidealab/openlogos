@@ -30,8 +30,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.aiToolHeader': 'Choose AI coding tool / 选择 AI 编码工具:',
     'init.aiToolCursor': '  1. Cursor (default)',
     'init.aiToolClaudeCode': '  2. Claude Code',
-    'init.aiToolOther': '  3. Other',
-    'init.aiToolPrompt': 'Your choice [1/2/3] (default: 1): ',
+    'init.aiToolOpenCode': '  3. OpenCode',
+    'init.aiToolOther': '  4. Other',
+    'init.aiToolPrompt': 'Your choice [1/2/3/4] (default: 1): ',
     'init.skillsDeployed': '{count} skills deployed to {target}',
     'init.skillsSynced': '{count} skills synced to {target}',
 
@@ -132,8 +133,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.aiToolHeader': '选择 AI 编码工具:',
     'init.aiToolCursor': '  1. Cursor（默认）',
     'init.aiToolClaudeCode': '  2. Claude Code',
-    'init.aiToolOther': '  3. 其他',
-    'init.aiToolPrompt': '请选择 [1/2/3]（默认: 1）: ',
+    'init.aiToolOpenCode': '  3. OpenCode',
+    'init.aiToolOther': '  4. 其他',
+    'init.aiToolPrompt': '请选择 [1/2/3/4]（默认: 1）: ',
     'init.skillsDeployed': '{count} 个 Skills 已部署到 {target}',
     'init.skillsSynced': '{count} 个 Skills 已同步到 {target}',
 
