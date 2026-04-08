@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, deploySpecs, type AiTool, type Lifecycle } from './init.js';
+import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, type AiTool, type Lifecycle } from './init.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -73,6 +73,18 @@ export function sync() {
   const deployResult = deploySkills(root, aiTool, locale, lifecycle);
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
+  }
+
+  if (aiTool === 'opencode') {
+    const pluginResult = deployOpenCodePlugin(root, locale);
+    if (pluginResult) {
+      console.log(`  ✓ ${t(locale, 'init.opencodePluginSynced', { target: pluginResult.target })}`);
+      if (pluginResult.config.created) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeConfigCreated')}`);
+      } else if (pluginResult.config.updated) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
+      }
+    }
   }
 
   const specResult = deploySpecs(root);

@@ -142,6 +142,28 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(allLogs).toContain('12 skills synced to logos/skills/');
   });
 
+  it('ST-S08-04b: sync with opencode deploys plugin and merges opencode config', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'opencode';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    writeFileSync(join(root, 'opencode.json'), JSON.stringify({ "$schema": "https://opencode.ai/config.json", permission: { read: 'allow' } }, null, 2));
+
+    sync();
+
+    expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
+    const opencodeConfig = JSON.parse(readFileSync(join(root, 'opencode.json'), 'utf-8'));
+    expect(opencodeConfig.permission.read).toBe('allow'); // preserve existing
+    expect(opencodeConfig.permission.bash).toBe('ask');   // fill missing defaults
+    expect(opencodeConfig.permission.skill).toBe('allow');
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('OpenCode plugin synced');
+  });
+
   it('ST-S08-05: sync defaults to cursor when aiTool not in config', () => {
     scaffoldProject(root, { locale: 'en' });
 

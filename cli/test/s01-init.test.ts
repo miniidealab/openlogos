@@ -630,6 +630,11 @@ describe('S01 Scenario Tests — init command', () => {
     expect(agents).toContain('## Active Skills');
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).not.toContain('## Active Skills');
+
+    expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
+    const opencodeConfig = JSON.parse(readFileSync(join(root, 'opencode.json'), 'utf-8'));
+    expect(opencodeConfig.permission.bash).toBe('ask');
+    expect(opencodeConfig.permission.skill).toBe('allow');
   });
 
   it('ST-S01-08: choose Other → both files include Active Skills', async () => {

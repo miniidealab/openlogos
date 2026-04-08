@@ -183,9 +183,9 @@ Claude Code 用户可以通过原生插件获得最佳体验。插件提供：
 
 > **不安装插件也能用**：`openlogos init` 选择 Claude Code 时会自动生成 `CLAUDE.md`，提供基础方法论指导。插件是增强体验，不是必须。
 
-### OpenCode 原生插件（规划实现中）
+### OpenCode 原生插件（单包自动部署）
 
-OpenCode 当前可通过 `AGENTS.md` + `logos/skills/` 兼容使用。为对齐 Claude Code 的体验，OpenLogos 将提供 OpenCode 原生插件模式（命令桥接 + hook 生命周期注入 + npm 分发）。
+OpenCode 当前可通过 `AGENTS.md` + `logos/skills/` 兼容使用。为对齐 Claude Code 的体验，OpenLogos 提供 OpenCode 原生插件模式（命令桥接 + hook 生命周期注入），并采用**单包策略**：只安装 `@miniidealab/openlogos`，无需额外插件包。
 
 #### 使用方式（两种）
 
@@ -193,17 +193,25 @@ OpenCode 当前可通过 `AGENTS.md` + `logos/skills/` 兼容使用。为对齐 
    - 运行 `openlogos init` 并选择 OpenCode
    - 使用生成的 `AGENTS.md` 与 `logos/skills/` 推进流程
 
-2. **原生插件模式（推荐，待插件发布）**
-   - 在项目根 `opencode.json` 中配置 `plugin`
-   - 或在 `.opencode/plugins/` 放置本地插件
+2. **原生插件模式（推荐）**
+   - 运行 `openlogos init` 并选择 OpenCode（或后续执行 `openlogos sync`）
+   - CLI 会自动部署 `.opencode/plugins/openlogos.js`
+   - 同时创建/补齐 `opencode.json` 的推荐权限默认值（不覆盖你已有配置）
    - 通过插件直接触发 OpenLogos 工作流命令，并在会话启动自动注入当前 Phase 上下文
 
-#### 预期配置示例（发布后）
+#### 自动生成的配置示例（参考）
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@miniidealab/opencode-plugin-openlogos"]
+  "permission": {
+    "bash": "ask",
+    "edit": "ask",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "skill": "allow"
+  }
 }
 ```
 

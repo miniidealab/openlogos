@@ -20,7 +20,7 @@
 
 ### 模式 B：原生插件模式（推荐）
 
-- 输入：`opencode.json` 的 `plugin` 配置，或 `.opencode/plugins/` 本地插件
+- 输入：`openlogos init/sync` 自动生成的 `.opencode/plugins/openlogos.js` 与 `opencode.json`
 - 适用：希望获得命令入口、自动 Phase 注入、统一工作流控制
 - 特点：体验增强，便于分发与版本管理
 
@@ -42,12 +42,12 @@ openlogos/
 
 ## 构建与发布边界
 
-1. `plugin-opencode/` 作为独立 npm 包边界，不与 `cli/` 共享运行时依赖。
+1. 插件模板随 `@miniidealab/openlogos`（CLI 单包）一起发布，不单独发布插件 npm 包。
 2. 插件只负责“命令路由 + hook 注入 + 结果格式化”，不复制 CLI 业务逻辑。
 3. 版本策略：
-   - 插件小版本可独立发布（兼容既有 CLI 输出格式）
-   - 当依赖 CLI 新参数/新输出时，升级插件 minor 并声明最低 CLI 版本
-4. 发布产物只包含插件运行所需文件（`dist/` + `package.json` + `README`），不打包仓库其他目录。
+   - 插件模板版本与 CLI 版本保持同步
+   - 当依赖 CLI 新参数/新输出时，在同一 CLI 版本内联动升级
+4. 发布产物包含 `opencode-plugin-template/`，由 `init/sync` 自动部署到用户项目。
 
 ## 事件模型（MVP）
 
@@ -147,17 +147,9 @@ MVP 至少覆盖以下事件：
 
 ## 发布建议
 
-1. npm 包名建议：`@miniidealab/opencode-plugin-openlogos`
-2. 在 `README.md` 提供最小安装示例：
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@miniidealab/opencode-plugin-openlogos"]
-}
-```
-
-3. 对外文档明确：原生插件为推荐路径，`AGENTS.md` 为兼容路径
+1. 仅发布 `@miniidealab/openlogos`，不拆独立 OpenCode 插件包。
+2. `openlogos init --ai-tool opencode` 与 `openlogos sync` 自动部署插件模板到 `.opencode/plugins/`。
+3. 对外文档明确：原生插件为推荐路径，`AGENTS.md` 为兼容路径（降级兜底）。
 
 ## 权限与安全策略
 

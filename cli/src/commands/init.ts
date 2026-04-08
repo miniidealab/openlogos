@@ -192,6 +192,93 @@ export function findSpecSource(): string | null {
   return null;
 }
 
+export function findOpenCodePluginTemplateSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+
+  // npm package layout: <pkg>/dist/commands/init.js → <pkg>/opencode-plugin-template/
+  const packageTemplate = join(currentDir, '..', '..', 'opencode-plugin-template');
+  if (existsSync(packageTemplate)) return packageTemplate;
+
+  // dev layout: cli/src/commands/init.ts → <repo>/plugin-opencode/template/
+  const devTemplate = join(currentDir, '..', '..', '..', 'plugin-opencode', 'template');
+  if (existsSync(devTemplate)) return devTemplate;
+
+  return null;
+}
+
+function mergeOpenCodeConfig(root: string) {
+  const configPath = join(root, 'opencode.json');
+  const defaultConfig: Record<string, unknown> = {
+    '$schema': 'https://opencode.ai/config.json',
+    permission: {
+      bash: 'ask',
+      edit: 'ask',
+      read: 'allow',
+      glob: 'allow',
+      grep: 'allow',
+      skill: 'allow',
+    },
+  };
+
+  if (!existsSync(configPath)) {
+    writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
+    return { created: true, updated: true };
+  }
+
+  let changed = false;
+  let data: Record<string, unknown> = {};
+  try {
+    data = JSON.parse(readFileSync(configPath, 'utf-8'));
+  } catch {
+    // invalid json: keep file intact and skip merge
+    return { created: false, updated: false };
+  }
+
+  if (!data['$schema']) {
+    data['$schema'] = 'https://opencode.ai/config.json';
+    changed = true;
+  }
+
+  const permission = (data.permission && typeof data.permission === 'object' && !Array.isArray(data.permission))
+    ? data.permission as Record<string, unknown>
+    : {};
+  const defaults = defaultConfig.permission as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!(key in permission)) {
+      permission[key] = value;
+      changed = true;
+    }
+  }
+
+  data.permission = permission;
+
+  if (changed) {
+    writeFileSync(configPath, JSON.stringify(data, null, 2));
+  }
+  return { created: false, updated: changed };
+}
+
+export function deployOpenCodePlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean } } | null {
+  const source = findOpenCodePluginTemplateSource();
+  if (!source || !existsSync(source)) return null;
+
+  const pluginTargetDir = join(root, '.opencode', 'plugins');
+  mkdirSync(pluginTargetDir, { recursive: true });
+
+  const sourceFile = join(source, 'openlogos.js');
+  if (!existsSync(sourceFile)) return null;
+
+  copyFileSync(sourceFile, join(pluginTargetDir, 'openlogos.js'));
+  const configResult = mergeOpenCodeConfig(root);
+
+  return {
+    target: locale === 'zh' ? '.opencode/plugins/openlogos.js + opencode.json' : '.opencode/plugins/openlogos.js + opencode.json',
+    config: configResult,
+  };
+}
+
 export function deploySpecs(root: string): { count: number } | null {
   const source = findSpecSource();
   if (!source || !existsSync(source)) return null;
@@ -669,6 +756,18 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   const deployResult = deploySkills(root, aiTool, locale, 'initial');
   if (deployResult && deployResult.count > 0) {
     console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
+  }
+
+  if (aiTool === 'opencode') {
+    const pluginResult = deployOpenCodePlugin(root, locale);
+    if (pluginResult) {
+      console.log(`  ✓ ${t(locale, 'init.opencodePluginDeployed', { target: pluginResult.target })}`);
+      if (pluginResult.config.created) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeConfigCreated')}`);
+      } else if (pluginResult.config.updated) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
+      }
+    }
   }
 
   const specResult = deploySpecs(root);

@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepack": "npm run build && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true})\"",
-    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true})\"",
+    "prepack": "npm run build && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true});require('fs').cpSync('../plugin-opencode/template','./opencode-plugin-template',{recursive:true})\"",
+    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true});require('fs').rmSync('./opencode-plugin-template',{recursive:true,force:true})\"",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "lint": "eslint src/",
@@ -43,7 +43,8 @@
   "files": [
     "dist",
     "skills",
-    "spec"
+    "spec",
+    "opencode-plugin-template"
   ],
   "devDependencies": {
     "@eslint/js": "^9.39.4",

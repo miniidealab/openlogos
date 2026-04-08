@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **OpenCode Native Plugin MVP (draft)** — Added `plugin-opencode/` as a native OpenCode plugin prototype:
+- **OpenCode Native Plugin MVP (draft)** — Added `plugin-opencode/` as a native OpenCode plugin prototype (single-package strategy):
   - Command bridge for `/openlogos:*` to existing CLI commands (`status`, `change`, `merge`, `archive`, `verify`, etc.)
   - Session lifecycle hook prototype for initial context injection
+  - Distributed via `@miniidealab/openlogos` and auto-deployed by `init/sync` (no separate plugin package)
   - Local/npm usage examples (`examples/opencode.json`, `.opencode/plugins/openlogos-local.js`)
   - Unit tests for command parsing and hook dispatch
 - **OpenCode plugin spec** — Added `spec/opencode-plugin.md` to document architecture, command contract, hook strategy, error codes, and security boundaries.

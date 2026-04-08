@@ -29,16 +29,11 @@ npm test
 
 查看 `examples/opencode.json` 与 `examples/.opencode/plugins/openlogos-local.js`。
 
-## npm 分发方案（Phase 4）
+## 分发策略（单包）
 
-- 包名：`@miniidealab/opencode-plugin-openlogos`
-- 版本策略：
-  - patch：文档/错误提示/兼容修复
-  - minor：新增 hook、命令、配置能力
-  - major：命令契约或事件行为不兼容变更
-- 发布流程（建议）：
-  1. 在 `plugin-opencode/` 更新版本号与变更说明
-  2. 执行 `npm test`
-  3. 执行 `npm publish --access public`
-  4. 在仓库 `CHANGELOG.md` 同步发布记录与升级说明
+- 不单独发布 OpenCode 插件 npm 包
+- 插件模板由 `@miniidealab/openlogos` 一并发布
+- 用户执行 `openlogos init --ai-tool opencode` 或 `openlogos sync` 时自动部署到：
+  - `.opencode/plugins/openlogos.js`
+  - `opencode.json`（补齐推荐权限默认值）
 

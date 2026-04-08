@@ -35,6 +35,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.aiToolPrompt': 'Your choice [1/2/3/4] (default: 1): ',
     'init.skillsDeployed': '{count} skills deployed to {target}',
     'init.skillsSynced': '{count} skills synced to {target}',
+    'init.opencodePluginDeployed': 'OpenCode plugin deployed to {target}',
+    'init.opencodePluginSynced': 'OpenCode plugin synced to {target}',
+    'init.opencodeConfigCreated': 'opencode.json created with recommended permission defaults',
+    'init.opencodeConfigUpdated': 'opencode.json merged with missing recommended permission defaults',
 
     // status
     'phase.1': 'Phase 1 · Requirements (WHY)',
@@ -138,6 +142,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.aiToolPrompt': '请选择 [1/2/3/4]（默认: 1）: ',
     'init.skillsDeployed': '{count} 个 Skills 已部署到 {target}',
     'init.skillsSynced': '{count} 个 Skills 已同步到 {target}',
+    'init.opencodePluginDeployed': 'OpenCode 插件已部署到 {target}',
+    'init.opencodePluginSynced': 'OpenCode 插件已同步到 {target}',
+    'init.opencodeConfigCreated': '已创建 opencode.json，并写入推荐权限默认值',
+    'init.opencodeConfigUpdated': '已为 opencode.json 补齐缺失的推荐权限默认值',
 
     // status
     'phase.1': 'Phase 1 · 需求文档 (WHY)',
