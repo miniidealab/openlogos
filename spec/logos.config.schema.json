@@ -132,6 +132,11 @@
           "label": { "en": "Verify Reports", "zh": "验收报告" },
           "path": "./resources/verify",
           "pattern": "**/*.{jsonl,md}"
+        },
+        "changes": {
+          "label": { "en": "Change Proposals", "zh": "变更提案" },
+          "path": "./changes",
+          "pattern": "**/*.{md,json}"
         }
       },
       "verify": {

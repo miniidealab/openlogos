@@ -43,6 +43,27 @@ export function sync() {
     console.log(`  ✓ logos-project.yaml name synced to "${projectName}"`);
   }
 
+  const requiredDocs: Record<string, { label: { en: string; zh: string }; path: string; pattern: string }> = {
+    changes: {
+      label: { en: 'Change Proposals', zh: '变更提案' },
+      path: './changes',
+      pattern: '**/*.{md,json}',
+    },
+  };
+
+  if (!config.documents) config.documents = {};
+  let configUpdated = false;
+  for (const [key, value] of Object.entries(requiredDocs)) {
+    if (!config.documents[key]) {
+      config.documents[key] = value;
+      configUpdated = true;
+      console.log(`  ✓ documents.${key} added to logos.config.json`);
+    }
+  }
+  if (configUpdated) {
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+  }
+
   writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', lifecycle));
   console.log('  ✓ AGENTS.md updated');
 

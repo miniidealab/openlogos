@@ -449,6 +449,11 @@ export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool =
         path: './resources/verify',
         pattern: '**/*.{jsonl,md}',
       },
+      changes: {
+        label: { en: 'Change Proposals', zh: '变更提案' },
+        path: './changes',
+        pattern: '**/*.{md,json}',
+      },
     },
     verify: {
       result_path: 'logos/resources/verify/test-results.jsonl',

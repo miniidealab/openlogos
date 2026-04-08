@@ -81,6 +81,8 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(parsed.aiTool).toBe('cursor');
     expect(parsed.lifecycle).toBe('initial');
     expect(parsed.documents.prd).toBeDefined();
+    expect(parsed.documents.changes).toBeDefined();
+    expect(parsed.documents.changes.path).toBe('./changes');
     expect(parsed.verify.result_path).toBeDefined();
   });
 

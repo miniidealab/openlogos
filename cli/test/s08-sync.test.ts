@@ -195,4 +195,44 @@ describe('S08 Scenario Tests — sync command', () => {
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).toContain('## Active Skills');
   });
+
+  it('ST-S08-08: sync adds missing documents.changes to existing config', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(config.documents.changes).toBeUndefined();
+
+    sync();
+
+    const updated = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(updated.documents.changes).toBeDefined();
+    expect(updated.documents.changes.path).toBe('./changes');
+    expect(updated.documents.changes.label.en).toBe('Change Proposals');
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('documents.changes added');
+  });
+
+  it('ST-S08-09: sync preserves existing documents.changes if already present', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.documents.changes = {
+      label: { en: 'My Changes', zh: '我的变更' },
+      path: './my-changes',
+      pattern: '**/*.md',
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    const updated = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(updated.documents.changes.path).toBe('./my-changes');
+    expect(updated.documents.changes.label.en).toBe('My Changes');
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).not.toContain('documents.changes added');
+  });
 });

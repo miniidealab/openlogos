@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-04-08
+
+### Added
+
+- **`documents.changes` in logos.config.json** — `openlogos init` now includes a `changes` document module (`./changes`, `**/*.{md,json}`) in the generated config, so RunLogos can discover and display change proposals. `openlogos sync` incrementally backfills this entry for existing projects without overwriting user customizations.
+
 ## [0.5.2] - 2026-04-07
 
 ### Added
