@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { scanDeltas } from '../src/commands/merge.js';
@@ -108,7 +108,7 @@ describe('S09 Scenario Tests — change command', () => {
     cleanup();
   });
 
-  it('ST-S09-01: create a change proposal with all expected files', () => {
+  it('ST-S09-01: create a change proposal with all expected files and guard', () => {
     change('add-feature');
 
     const changePath = join(root, 'logos', 'changes', 'add-feature');
@@ -119,9 +119,16 @@ describe('S09 Scenario Tests — change command', () => {
     expect(existsSync(join(changePath, 'deltas', 'database'))).toBe(true);
     expect(existsSync(join(changePath, 'deltas', 'scenario'))).toBe(true);
 
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    expect(existsSync(guardPath)).toBe(true);
+    const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+    expect(guard.activeChange).toBe('add-feature');
+    expect(guard.createdAt).toBeTruthy();
+
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('proposal.md');
     expect(allLogs).toContain('tasks.md');
+    expect(allLogs).toContain('.openlogos-guard');
   });
 
   it('ST-S09-02: reject when proposal already exists', () => {
@@ -242,10 +249,14 @@ describe('S09 Scenario Tests — archive command', () => {
     cleanup();
   });
 
-  it('ST-S09-08: archive moves proposal to archive directory', () => {
+  it('ST-S09-08: archive moves proposal to archive directory and removes guard', () => {
     const changePath = join(root, 'logos', 'changes', 'done-feature');
     mkdirSync(changePath, { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Done');
+
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'done-feature', createdAt: '2026-01-01T00:00:00Z' }));
+    expect(existsSync(guardPath)).toBe(true);
 
     archive('done-feature');
 
@@ -253,6 +264,22 @@ describe('S09 Scenario Tests — archive command', () => {
     const archivedPath = join(root, 'logos', 'changes', 'archive', 'done-feature');
     expect(existsSync(archivedPath)).toBe(true);
     expect(existsSync(join(archivedPath, 'proposal.md'))).toBe(true);
+    expect(existsSync(guardPath)).toBe(false);
+  });
+
+  it('ST-S09-11: archive preserves guard file if it belongs to a different change', () => {
+    const changePath = join(root, 'logos', 'changes', 'old-feature');
+    mkdirSync(changePath, { recursive: true });
+    writeFileSync(join(changePath, 'proposal.md'), '# Old');
+
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'other-feature', createdAt: '2026-01-01T00:00:00Z' }));
+
+    archive('old-feature');
+
+    expect(existsSync(guardPath)).toBe(true);
+    const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+    expect(guard.activeChange).toBe('other-feature');
   });
 
   it('ST-S09-09: error when proposal does not exist', () => {

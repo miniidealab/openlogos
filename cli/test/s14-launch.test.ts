@@ -55,7 +55,8 @@ describe('S14 Scenario Tests — launch command', () => {
     launch();
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
-    expect(agents).toContain('Change Management (Must Follow)');
+    expect(agents).toContain('Change Management (Enforced)');
+    expect(agents).toContain('.openlogos-guard');
     expect(agents).not.toContain('Initial Development');
   });
 
@@ -73,7 +74,8 @@ describe('S14 Scenario Tests — launch command', () => {
     const policyPath = join(root, '.cursor', 'rules', 'openlogos-policy.mdc');
     expect(existsSync(policyPath)).toBe(true);
     const policy = readFileSync(policyPath, 'utf-8');
-    expect(policy).toContain('Must Follow');
+    expect(policy).toContain('Enforced');
+    expect(policy).toContain('.openlogos-guard');
     expect(policy).not.toContain('Initial Development');
   });
 

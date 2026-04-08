@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-04-07
+
+### Added
+
+- **Change Guard Mechanism** — New `logos/.openlogos-guard` lock file to enforce change management workflow in `lifecycle: "active"` projects:
+  - `openlogos change <slug>` now automatically creates the guard file with `activeChange` and `createdAt`
+  - `openlogos archive <slug>` automatically removes the guard file (only if it matches the archived slug)
+  - SessionStart Hook (`openlogos-phase`) detects guard state and reports it — shows active change slug or warns that no proposal exists
+  - AGENTS.md/CLAUDE.md and Cursor policy `.mdc` upgraded from "Must Follow" to "Enforced" with behavioral constraints: AI must not modify code directly when discovering bugs, must verify guard file before editing, and must wait for user approval
+
 ## [0.5.1] - 2026-04-07
 
 ### Fixed

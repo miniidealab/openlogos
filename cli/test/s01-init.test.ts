@@ -169,23 +169,29 @@ describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
     expect(output).toContain('"zh"');
   });
 
-  it('UT-S01-29: en locale active lifecycle includes enforced Change Management', () => {
+  it('UT-S01-29: en locale active lifecycle includes enforced Change Management with guard', () => {
     const output = createAgentsMd('en', 'cursor', 'agents', 'active');
-    expect(output).toContain('Change Management (Must Follow)');
+    expect(output).toContain('Change Management (Enforced)');
+    expect(output).toContain('.openlogos-guard');
     expect(output).toContain('openlogos change');
+    expect(output).toContain('Behavioral Constraints');
+    expect(output).toContain('do NOT modify code directly');
   });
 
-  it('UT-S01-30: zh locale active lifecycle includes enforced Change Management', () => {
+  it('UT-S01-30: zh locale active lifecycle includes enforced Change Management with guard', () => {
     const output = createAgentsMd('zh', 'cursor', 'agents', 'active');
-    expect(output).toContain('变更管理（必须遵守）');
+    expect(output).toContain('变更管理（强制执行）');
+    expect(output).toContain('.openlogos-guard');
     expect(output).toContain('openlogos change');
+    expect(output).toContain('行为约束');
+    expect(output).toContain('禁止直接修改代码');
   });
 
   it('UT-S01-31: initial lifecycle shows soft Change Management in AGENTS.md', () => {
     const output = createAgentsMd('en', 'cursor', 'agents', 'initial');
     expect(output).toContain('Initial Development');
     expect(output).toContain('openlogos launch');
-    expect(output).not.toContain('Must Follow');
+    expect(output).not.toContain('Enforced');
   });
 
   it('UT-S01-32: zh initial lifecycle shows soft Change Management', () => {
@@ -206,11 +212,11 @@ describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
     expect(content).not.toContain('stop coding immediately');
   });
 
-  it('UT-S01-34: active lifecycle policy has enforced change management', () => {
+  it('UT-S01-34: active lifecycle policy has enforced change management with guard', () => {
     const content = generatePolicyMdc('en', 'active');
     expect(content).toContain('Language Policy (Highest Priority)');
-    expect(content).toContain('Change Management (Must Follow)');
-    expect(content).toContain('stop coding immediately');
+    expect(content).toContain('Change Management (Enforced)');
+    expect(content).toContain('.openlogos-guard');
   });
 
   it('UT-S01-35: zh initial lifecycle policy', () => {
@@ -220,11 +226,11 @@ describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
     expect(content).not.toContain('立即停止编码');
   });
 
-  it('UT-S01-36: zh active lifecycle policy', () => {
+  it('UT-S01-36: zh active lifecycle policy with guard', () => {
     const content = generatePolicyMdc('zh', 'active');
     expect(content).toContain('语言策略（最高优先级）');
-    expect(content).toContain('变更管理（必须遵守）');
-    expect(content).toContain('立即停止编码');
+    expect(content).toContain('变更管理（强制执行）');
+    expect(content).toContain('.openlogos-guard');
   });
 });
 
@@ -329,12 +335,13 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     }
   });
 
-  it('UT-S01-23d2: deploySkills cursor active lifecycle has enforced policy', () => {
+  it('UT-S01-23d2: deploySkills cursor active lifecycle has enforced policy with guard', () => {
     const { root, cleanup } = makeTempRoot();
     try {
       deploySkills(root, 'cursor', 'en', 'active');
       const content = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
-      expect(content).toContain('Change Management (Must Follow)');
+      expect(content).toContain('Change Management (Enforced)');
+      expect(content).toContain('.openlogos-guard');
       expect(content).not.toContain('Initial Development');
     } finally {
       cleanup();

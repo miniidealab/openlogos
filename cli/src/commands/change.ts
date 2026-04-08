@@ -45,6 +45,14 @@ export function change(slug?: string) {
 
   console.log(`  ✓ logos/changes/${slug}/deltas/`);
 
+  const guardPath = join(root, 'logos', '.openlogos-guard');
+  const guard = JSON.stringify({
+    activeChange: slug,
+    createdAt: new Date().toISOString(),
+  }, null, 2);
+  writeFileSync(guardPath, guard);
+  console.log(`  ✓ logos/.openlogos-guard`);
+
   console.log(`\n${t(locale, 'change.done')}`);
   console.log(t(locale, 'change.step1', { slug }));
   console.log(t(locale, 'change.step2'));

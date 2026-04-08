@@ -43,7 +43,7 @@ Examples:
 Learn more: https://openlogos.ai
 `;
 
-const VERSION = '0.5.1';
+const VERSION = '0.5.2';
 
 async function main() {
   const args = process.argv.slice(2);

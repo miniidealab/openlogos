@@ -224,32 +224,26 @@ Violating this rule will render the output unusable.`;
 
   const changeMgmtSection = lifecycle === 'active'
     ? (locale === 'zh'
-      ? `## ⚠️ 变更管理（必须遵守）
+      ? `## ⛔ 变更管理（强制执行）
 
-**在修改项目源代码或文档之前，必须遵循以下流程：**
+本项目使用 \`logos/.openlogos-guard\` 锁文件来追踪活跃变更。
+- **有 guard 文件** → 可以修改代码，但只能在该提案范围内修改
+- **无 guard 文件** → **禁止修改任何源代码**，必须先运行 \`openlogos change <slug>\`
 
-1. 确认 \`logos/changes/\` 下是否已有对应的 active 变更提案
-2. 如果没有，**立即停止编码**，先运行 \`openlogos change <slug>\` 创建提案
-3. 按照 change-writer Skill 填写 \`proposal.md\` 和 \`tasks.md\`
-4. 提案经用户 review 通过后才能开始代码实现
-5. 实现完成后运行 \`openlogos merge <slug>\` 和 \`openlogos archive <slug>\`
+### 行为约束
+- 发现 bug/问题时：只输出分析和方案，**禁止直接修改代码**
+- 修改代码前：先确认 guard 文件存在且修改在提案范围内
+- 唯一例外：纯 typo 修复、\`.gitignore\`/\`README.md\` 等非方法论文件`
+      : `## ⛔ Change Management (Enforced)
 
-### 例外情况
-- 纯 typo 修复（不改变语义）
-- 仅修改 \`.gitignore\`、\`README.md\` 等非方法论文件`
-      : `## ⚠️ Change Management (Must Follow)
+This project uses \`logos/.openlogos-guard\` lock file to track active changes.
+- **Guard file exists** → you may modify code, but only within the scope of that proposal
+- **No guard file** → **modifying source code is FORBIDDEN** — run \`openlogos change <slug>\` first
 
-**Before modifying any project source code or documents, you MUST follow this workflow:**
-
-1. Check if there is an active change proposal under \`logos/changes/\`
-2. If NOT, **stop coding immediately** and run \`openlogos change <slug>\` to create a proposal
-3. Fill in \`proposal.md\` and \`tasks.md\` following the change-writer Skill
-4. Only proceed with implementation after the user has reviewed and approved the proposal
-5. After implementation, run \`openlogos merge <slug>\` and \`openlogos archive <slug>\`
-
-### Exceptions
-- Pure typo fixes (no semantic change)
-- Changes to non-methodology files only (\`.gitignore\`, \`README.md\`, etc.)`)
+### Behavioral Constraints
+- When you discover a bug/issue: only output analysis and proposed fix — do NOT modify code directly
+- Before modifying code: verify the guard file exists and changes are within the proposal scope
+- Only exception: pure typo fixes, \`.gitignore\`/\`README.md\` and other non-methodology files`)
     : (locale === 'zh'
       ? `## 变更管理（当前：初始开发期）
 
@@ -538,29 +532,45 @@ ${generateActiveSkillsSection(locale)}`;
 
   const changeMgmt = lifecycle === 'active'
     ? (locale === 'zh'
-      ? `## ⚠️ 变更管理（必须遵守）
+      ? `## ⛔ 变更管理（强制执行）
 
-**修改任何源代码或 Skill 文件之前，必须先创建变更提案：**
+### Guard 机制
+本项目使用 \`logos/.openlogos-guard\` 锁文件来追踪活跃变更。
+- **有 guard 文件** → 可以修改代码，但 **只能在该提案范围内** 修改
+- **无 guard 文件** → **禁止修改任何源代码**，必须先运行 \`openlogos change <slug>\`
 
-1. 运行 \`openlogos change <slug>\` 创建提案目录
+### 变更流程
+1. 运行 \`openlogos change <slug>\` 创建提案（自动写入 guard 文件）
 2. 使用 change-writer Skill 填写 \`proposal.md\` + \`tasks.md\`
-3. 用户确认后再开始编码
-4. 完成后运行 \`openlogos merge <slug>\` → \`openlogos archive <slug>\`
+3. **等待用户确认后** 再开始编码
+4. 完成后运行 \`openlogos merge <slug>\` → \`openlogos archive <slug>\`（自动删除 guard 文件）
 
-唯一例外：纯 typo 修复、README 等非方法论文件的修改。
-**跳过此步骤将违反 OpenLogos 核心方法论。**
+### 行为约束
+- **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
+- **修改代码前**：先确认 guard 文件存在且当前修改在提案范围内
+- **唯一例外**：纯 typo 修复（不改变语义）、\`.gitignore\`/\`README.md\` 等非方法论文件
+
+**违反此规则将破坏项目的变更可追溯性。**
 `
-      : `## ⚠️ Change Management (Must Follow)
+      : `## ⛔ Change Management (Enforced)
 
-**Before modifying ANY source code or Skill files, you MUST create a change proposal first:**
+### Guard Mechanism
+This project uses \`logos/.openlogos-guard\` lock file to track active changes.
+- **Guard file exists** → you may modify code, but **only within the scope of that proposal**
+- **No guard file** → **modifying source code is FORBIDDEN** — run \`openlogos change <slug>\` first
 
-1. Run \`openlogos change <slug>\` to create the proposal directory
+### Change Workflow
+1. Run \`openlogos change <slug>\` to create a proposal (automatically writes guard file)
 2. Fill in \`proposal.md\` + \`tasks.md\` using the change-writer Skill
-3. Only proceed with implementation after user approval
-4. After completion, run \`openlogos merge <slug>\` → \`openlogos archive <slug>\`
+3. **Wait for user approval** before writing any code
+4. After completion, run \`openlogos merge <slug>\` → \`openlogos archive <slug>\` (auto-removes guard file)
 
-Only exception: pure typo fixes and non-methodology files (README, .gitignore, etc.).
-**Skipping this step violates the core OpenLogos methodology.**
+### Behavioral Constraints
+- **When you discover a bug/issue**: only output analysis and proposed fix — **do NOT modify code directly** — wait for the user to decide whether to create a change proposal
+- **Before modifying code**: verify the guard file exists and your changes are within the proposal scope
+- **Only exception**: pure typo fixes (no semantic change), \`.gitignore\`/\`README.md\` and other non-methodology files
+
+**Violating this rule will break the project's change traceability.**
 `)
     : (locale === 'zh'
       ? `## 变更管理（当前：初始开发期）

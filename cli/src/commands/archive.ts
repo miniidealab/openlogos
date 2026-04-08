@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
 
@@ -38,6 +38,19 @@ export function archive(slug?: string) {
 
   mkdirSync(archiveDir, { recursive: true });
   renameSync(changePath, archivePath);
+
+  const guardPath = join(root, 'logos', '.openlogos-guard');
+  if (existsSync(guardPath)) {
+    try {
+      const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+      if (guard.activeChange === slug) {
+        unlinkSync(guardPath);
+        console.log(`  ✓ logos/.openlogos-guard removed`);
+      }
+    } catch {
+      unlinkSync(guardPath);
+    }
+  }
 
   console.log(`\n${t(locale, 'archive.done', { slug })}`);
   console.log(`${t(locale, 'archive.path', { slug })}\n`);

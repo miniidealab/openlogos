@@ -104,9 +104,28 @@ else
   LANG_POLICY="Language Policy: ALL output MUST be in English."
 fi
 
+# Detect guard file for active lifecycle
+GUARD_FILE="logos/.openlogos-guard"
+GUARD_STATUS=""
+ACTIVE_CHANGE=""
+
+if [ "$LIFECYCLE" = "active" ] && [ -f "$GUARD_FILE" ]; then
+  if command -v python3 &>/dev/null; then
+    ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    ACTIVE_CHANGE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); console.log(d.activeChange||'')" 2>/dev/null || echo "")
+  fi
+fi
+
 # Build change management text
 if [ "$LIFECYCLE" = "active" ]; then
-  CHANGE_MGMT="Change Management: ACTIVE — create a change proposal before modifying source code. Run openlogos change <slug> or /openlogos:change."
+  if [ -n "$ACTIVE_CHANGE" ]; then
+    GUARD_STATUS="🔓 Active change: $ACTIVE_CHANGE — modify files within the scope of this proposal only."
+    CHANGE_MGMT="Change Management: ACTIVE — guard file detected. Active change proposal: '$ACTIVE_CHANGE'. Only modify files within the scope of logos/changes/$ACTIVE_CHANGE/proposal.md. When done, run openlogos merge $ACTIVE_CHANGE then openlogos archive $ACTIVE_CHANGE."
+  else
+    GUARD_STATUS="⛔ NO active change proposal. You MUST run openlogos change <slug> before modifying any code."
+    CHANGE_MGMT="Change Management: ACTIVE — ⛔ NO guard file found. Before modifying ANY source code, you MUST first run openlogos change <slug> to create a change proposal. Direct code changes without a proposal are FORBIDDEN."
+  fi
 else
   CHANGE_MGMT="Change Management: Initial development — follow Phase progression, no change proposals needed."
   if [ "$PHASE" = "All phases complete" ]; then
@@ -115,7 +134,9 @@ else
 fi
 
 # Build status line for systemMessage (user-visible, keep short)
-if [ -n "$SKILL" ]; then
+if [ -n "$GUARD_STATUS" ]; then
+  STATUS_LINE="📊 OpenLogos: $PHASE | $GUARD_STATUS"
+elif [ -n "$SKILL" ]; then
   STATUS_LINE="📊 OpenLogos: $PHASE → use $SKILL skill"
 else
   STATUS_LINE="📊 OpenLogos: $PHASE"
