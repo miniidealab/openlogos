@@ -28,11 +28,20 @@ npm-debug.log*
 # TypeScript
 *.tsbuildinfo
 
+# Rust / Tauri（示例与子项目构建产物，勿提交）
+**/src-tauri/target/
+
+# Claude Code 本地覆盖（含本机路径与权限，勿提交）
+**/.claude/settings.local.json
+
 # Review comments
 *.comments.json
 
 # OS
 Thumbs.db
 
-# OpenLogos project-level methodology assets (local only, root level only)
-/logos/
+# OpenLogos 根目录 logos/ 下的本地方法论资产默认不纳入本仓库（与 init 后的用户项目区分）
+# 例外：本仓库维护的变更提案位于 logos/changes/，必须可提交（故用 /logos/* 以便 negation 生效）
+/logos/*
+!/logos/changes/
+!/logos/changes/**

@@ -1,0 +1,162 @@
+{
+  "scenario": "S01",
+  "title": "新用户注册并开始使用",
+  "domain": "auth",
+  "external_dependencies": [],
+  "orchestrations": [
+    {
+      "id": "OT-S01-01",
+      "title": "正常路径：首次启动，完整注册流程",
+      "source": "ST-S01-01",
+      "preconditions": ["users 表为空"],
+      "teardown": "DELETE FROM users WHERE username = 'xiaoli'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "Step 2: 检测本地是否存在账号",
+          "command": "check_has_user",
+          "params": {},
+          "expected_ok": true,
+          "expected_result": { "has_user": false },
+          "assert": "result.has_user === false"
+        },
+        {
+          "seq": 2,
+          "step": "Step 9-15: 注册新用户",
+          "command": "register",
+          "params": {
+            "username": "xiaoli",
+            "password": "Pass1234"
+          },
+          "expected_ok": true,
+          "assert": [
+            "result.username === 'xiaoli'",
+            "typeof result.user_id === 'number'",
+            "result.user_id > 0"
+          ],
+          "extract": {
+            "user_id": "result.user_id",
+            "username": "result.username"
+          }
+        },
+        {
+          "seq": 3,
+          "step": "Step 16: 验证 users 表写入正确",
+          "description": "直接查询 DB 验证密码以 bcrypt 哈希存储",
+          "db_assert": {
+            "query": "SELECT username, password FROM users WHERE username = 'xiaoli'",
+            "assert": [
+              "rows.length === 1",
+              "rows[0].username === 'xiaoli'",
+              "rows[0].password.startsWith('$2b$')"
+            ]
+          }
+        },
+        {
+          "seq": 4,
+          "step": "Step 2 复查: 注册后 check_has_user 返回 true",
+          "command": "check_has_user",
+          "params": {},
+          "expected_ok": true,
+          "assert": "result.has_user === true"
+        }
+      ]
+    },
+    {
+      "id": "OT-S01-02",
+      "title": "异常路径：用户名已存在（EX-10.1）",
+      "source": "ST-S01-05",
+      "preconditions": ["users 表已有 username='xiaoli' 的记录"],
+      "setup": "INSERT INTO users (username, password) VALUES ('xiaoli', '$2b$12$placeholder')",
+      "teardown": "DELETE FROM users WHERE username = 'xiaoli'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "Step 9: 尝试注册已存在的用户名",
+          "command": "register",
+          "params": {
+            "username": "xiaoli",
+            "password": "Pass1234"
+          },
+          "expected_ok": false,
+          "expected_error": {
+            "code": "USERNAME_EXISTS",
+            "message": "该用户名已被使用，请换一个"
+          },
+          "assert": [
+            "error.code === 'USERNAME_EXISTS'",
+            "error.message === '该用户名已被使用，请换一个'"
+          ]
+        },
+        {
+          "seq": 2,
+          "step": "验证 users 表无新增记录",
+          "db_assert": {
+            "query": "SELECT COUNT(*) as count FROM users WHERE username = 'xiaoli'",
+            "assert": "rows[0].count === 1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "OT-S01-03",
+      "title": "边界用例：用户名长度恰好 2 字符（下边界合法）",
+      "source": "UT-S01-01",
+      "preconditions": ["users 表无 username='ab' 的记录"],
+      "teardown": "DELETE FROM users WHERE username = 'ab'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "注册用户名长度为 2 的账号",
+          "command": "register",
+          "params": {
+            "username": "ab",
+            "password": "Pass1234"
+          },
+          "expected_ok": true,
+          "assert": "result.username === 'ab'"
+        }
+      ]
+    },
+    {
+      "id": "OT-S01-04",
+      "title": "边界用例：用户名长度恰好 20 字符（上边界合法）",
+      "source": "UT-S01-02",
+      "preconditions": ["users 表无 username='abcdefghij0123456789' 的记录"],
+      "teardown": "DELETE FROM users WHERE username = 'abcdefghij0123456789'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "注册用户名长度为 20 的账号",
+          "command": "register",
+          "params": {
+            "username": "abcdefghij0123456789",
+            "password": "Pass1234"
+          },
+          "expected_ok": true,
+          "assert": "result.username === 'abcdefghij0123456789'"
+        }
+      ]
+    },
+    {
+      "id": "OT-S01-05",
+      "title": "边界用例：密码长度恰好 8 位（下边界合法）",
+      "source": "UT-S01-06",
+      "preconditions": ["users 表无 username='boundary_user' 的记录"],
+      "teardown": "DELETE FROM users WHERE username = 'boundary_user'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "注册密码长度为 8 的账号",
+          "command": "register",
+          "params": {
+            "username": "boundary_user",
+            "password": "Pass1234"
+          },
+          "expected_ok": true,
+          "assert": "result.username === 'boundary_user'"
+        }
+      ]
+    }
+  ]
+}

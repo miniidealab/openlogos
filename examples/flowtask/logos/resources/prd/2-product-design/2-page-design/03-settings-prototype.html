@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlowTask — 账号设置</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-primary: #18181B;
+    --color-on-primary: #FFFFFF;
+    --color-secondary: #3F3F46;
+    --color-accent: #2563EB;
+    --color-background: #FAFAFA;
+    --color-foreground: #09090B;
+    --color-muted: #E8ECF0;
+    --color-border: #E4E4E7;
+    --color-destructive: #DC2626;
+    --color-success: #16A34A;
+    --color-surface: #FFFFFF;
+    --radius: 8px;
+    --transition: 150ms ease;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--color-background);
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; color: var(--color-foreground);
+  }
+
+  /* macOS 窗口 */
+  .window {
+    background: var(--color-surface);
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+    width: 520px;
+    overflow: hidden;
+  }
+  .titlebar {
+    background: #F5F5F5;
+    border-bottom: 1px solid var(--color-border);
+    padding: 12px 16px;
+    display: flex; align-items: center; gap: 8px;
+    user-select: none;
+  }
+  .traffic-lights { display: flex; gap: 6px; }
+  .tl {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 0.5px solid rgba(0,0,0,0.1);
+  }
+  .tl-red { background: #FF5F57; }
+  .tl-yellow { background: #FEBC2E; }
+  .tl-green { background: #28C840; }
+  .titlebar-label {
+    flex: 1; text-align: center;
+    font-size: 12px; font-weight: 500; color: #71717A;
+    margin-right: 54px;
+  }
+
+  /* 页面头部 */
+  .page-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .btn-back {
+    background: none; border: none;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    color: var(--color-accent);
+    cursor: pointer;
+    transition: background var(--transition);
+  }
+  .btn-back:hover { background: var(--color-muted); }
+  .page-title { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+
+  .page-body { padding: 20px 24px 24px; }
+
+  /* 用户信息卡片 */
+  .user-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    background: var(--color-background);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    border: 1px solid var(--color-border);
+  }
+  .avatar-lg {
+    width: 44px; height: 44px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px; font-weight: 600;
+    flex-shrink: 0;
+    letter-spacing: 0;
+  }
+  .user-info-text .username {
+    font-size: 14px; font-weight: 600; color: var(--color-foreground);
+  }
+  .user-info-text .user-sub {
+    font-size: 12px; color: #A1A1AA; margin-top: 2px;
+  }
+
+  /* 分区标题 */
+  .section-title {
+    font-size: 11px; font-weight: 600; color: #A1A1AA;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin-bottom: 10px;
+  }
+  .section-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .section-card-body { padding: 18px 20px; }
+
+  /* 成功提示条 */
+  .success-bar {
+    background: #F0FDF4;
+    border: 1px solid #BBF7D0;
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 13px; color: var(--color-success);
+    margin-bottom: 14px;
+    display: none; align-items: center; gap: 8px;
+  }
+  .success-bar.show { display: flex; }
+
+  /* 表单 */
+  .form-group { margin-bottom: 13px; }
+  .form-group:last-child { margin-bottom: 0; }
+  label {
+    display: block; font-size: 12px; font-weight: 500;
+    color: var(--color-secondary); margin-bottom: 4px;
+  }
+  .input-wrap { position: relative; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 9px 36px 9px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 14px; color: var(--color-foreground);
+    background: var(--color-surface);
+    outline: none; font-family: inherit;
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+  input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  }
+  input.error { border-color: var(--color-destructive); }
+  input.error:focus { box-shadow: 0 0 0 3px rgba(220,38,38,0.1); }
+
+  .toggle-pw {
+    position: absolute; right: 10px; top: 50%;
+    transform: translateY(-50%);
+    background: none; border: none;
+    color: #A1A1AA; cursor: pointer;
+    padding: 2px; display: flex; align-items: center;
+    transition: color var(--transition);
+  }
+  .toggle-pw:hover { color: var(--color-secondary); }
+
+  .error-msg {
+    font-size: 12px; color: var(--color-destructive);
+    margin-top: 4px; display: none; align-items: center; gap: 4px;
+  }
+  .error-msg.show { display: flex; }
+
+  /* 按钮 */
+  .btn-row { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .btn-primary {
+    padding: 9px 22px;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border: none; border-radius: var(--radius);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: inherit;
+    display: flex; align-items: center; gap: 8px;
+    transition: opacity var(--transition);
+    position: relative;
+  }
+  .btn-primary:hover:not(:disabled) { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .spinner {
+    display: none;
+    width: 13px; height: 13px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  .btn-primary.loading .spinner { display: block; }
+  .btn-primary.loading .btn-label { opacity: 0.8; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar">
+    <div class="traffic-lights">
+      <div class="tl tl-red"></div>
+      <div class="tl tl-yellow"></div>
+      <div class="tl tl-green"></div>
+    </div>
+    <div class="titlebar-label">FlowTask — 账号设置</div>
+  </div>
+
+  <div class="page-header">
+    <button class="btn-back" onclick="history.back()" title="返回">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+    <div class="page-title">账号设置</div>
+  </div>
+
+  <div class="page-body">
+    <!-- 用户信息 -->
+    <div class="user-card">
+      <div class="avatar-lg">小</div>
+      <div class="user-info-text">
+        <div class="username">xiaoli</div>
+        <div class="user-sub">本地账号 · 数据仅存储在此设备</div>
+      </div>
+    </div>
+
+    <!-- 修改密码 S04 -->
+    <div class="section-title">修改密码</div>
+    <div class="section-card">
+      <div class="section-card-body">
+        <div class="success-bar" id="success-bar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          密码修改成功
+        </div>
+
+        <div class="form-group">
+          <label>当前密码</label>
+          <div class="input-wrap">
+            <input type="password" id="cur-pw" placeholder="输入当前密码" autocomplete="current-password">
+            <button class="toggle-pw" type="button" onclick="togglePw('cur-pw', this)" aria-label="显示/隐藏密码">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="error-msg" id="cur-pw-err">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>新密码</label>
+          <div class="input-wrap">
+            <input type="password" id="new-pw" placeholder="至少 8 位字符" autocomplete="new-password">
+            <button class="toggle-pw" type="button" onclick="togglePw('new-pw', this)" aria-label="显示/隐藏密码">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="error-msg" id="new-pw-err">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>确认新密码</label>
+          <div class="input-wrap">
+            <input type="password" id="confirm-pw" placeholder="再次输入新密码" autocomplete="new-password">
+            <button class="toggle-pw" type="button" onclick="togglePw('confirm-pw', this)" aria-label="显示/隐藏密码">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="error-msg" id="confirm-pw-err">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span></span>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-primary" id="save-btn" onclick="savePassword()">
+            <div class="spinner"></div>
+            <span class="btn-label">保存修改</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const CURRENT_PASSWORD = 'Pass1234';
+
+  function togglePw(id, btn) {
+    const input = document.getElementById(id);
+    const isText = input.type === 'text';
+    input.type = isText ? 'password' : 'text';
+    btn.innerHTML = isText
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
+      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+  }
+
+  function clearErrors() {
+    ['cur-pw', 'new-pw', 'confirm-pw'].forEach(id => {
+      document.getElementById(id).classList.remove('error');
+    });
+    ['cur-pw-err', 'new-pw-err', 'confirm-pw-err'].forEach(id => {
+      const el = document.getElementById(id);
+      el.querySelector('span').textContent = '';
+      el.classList.remove('show');
+    });
+  }
+
+  function showError(inputId, errId, msg) {
+    document.getElementById(inputId).classList.add('error');
+    const err = document.getElementById(errId);
+    err.querySelector('span').textContent = msg;
+    err.classList.add('show');
+  }
+
+  function savePassword() {
+    clearErrors();
+    document.getElementById('success-bar').classList.remove('show');
+
+    const cur = document.getElementById('cur-pw').value;
+    const nw = document.getElementById('new-pw').value;
+    const confirm = document.getElementById('confirm-pw').value;
+    let valid = true;
+
+    if (!cur) {
+      showError('cur-pw', 'cur-pw-err', '请输入当前密码');
+      valid = false;
+    } else if (cur !== CURRENT_PASSWORD) {
+      showError('cur-pw', 'cur-pw-err', '当前密码不正确');
+      document.getElementById('cur-pw').value = '';
+      valid = false;
+    }
+
+    if (valid && nw.length < 8) {
+      showError('new-pw', 'new-pw-err', '密码至少需要 8 位字符');
+      valid = false;
+    }
+
+    if (valid && nw === cur) {
+      showError('new-pw', 'new-pw-err', '新密码不能与当前密码相同');
+      valid = false;
+    }
+
+    if (valid && nw !== confirm) {
+      showError('confirm-pw', 'confirm-pw-err', '两次输入的密码不一致');
+      valid = false;
+    }
+
+    if (!valid) {
+      document.querySelector('.error').focus();
+      return;
+    }
+
+    const btn = document.getElementById('save-btn');
+    btn.classList.add('loading');
+    btn.disabled = true;
+
+    setTimeout(() => {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      ['cur-pw', 'new-pw', 'confirm-pw'].forEach(id => {
+        document.getElementById(id).value = '';
+        document.getElementById(id).type = 'password';
+      });
+      document.querySelectorAll('.toggle-pw').forEach(b => {
+        b.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+      });
+      const bar = document.getElementById('success-bar');
+      bar.classList.add('show');
+      setTimeout(() => bar.classList.remove('show'), 3000);
+    }, 700);
+  }
+</script>
+</body>
+</html>

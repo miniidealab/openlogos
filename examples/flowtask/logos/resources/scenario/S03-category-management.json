@@ -1,0 +1,266 @@
+{
+  "scenario": "S03",
+  "title": "用户按分类整理任务",
+  "domain": "categories",
+  "external_dependencies": [],
+  "orchestrations": [
+
+    {
+      "id": "OT-S03-01",
+      "title": "正常路径：创建新分类",
+      "source": "ST-S03-01",
+      "preconditions": ["已登录 user_id=1，categories 表无 name='工作' 的记录"],
+      "teardown": "DELETE FROM categories WHERE name='工作' AND user_id=1",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S03.1 Step 5-8: create_category",
+          "command": "create_category",
+          "params": { "user_id": 1, "name": "工作" },
+          "expected_ok": true,
+          "assert": [
+            "result.id > 0",
+            "result.name === '工作'"
+          ],
+          "extract": { "category_id": "result.id" }
+        },
+        {
+          "seq": 2,
+          "step": "验证 DB 写入",
+          "db_assert": {
+            "query": "SELECT name FROM categories WHERE id = {{category_id}}",
+            "assert": "rows[0].name === '工作'"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S03-02",
+      "title": "异常路径：分类名称重复（DB 层兜底 EX-6.1）",
+      "source": "ST-S03-09",
+      "preconditions": ["categories 表已有 user_id=1, name='工作'"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S03.1 Step 6: create_category 触发 UNIQUE 约束",
+          "command": "create_category",
+          "params": { "user_id": 1, "name": "工作" },
+          "expected_ok": false,
+          "expected_error": {
+            "code": "CATEGORY_EXISTS",
+            "message": "该分类名称已存在"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S03-03",
+      "title": "边界用例：不同用户可以有同名分类（UT-S03-06）",
+      "source": "UT-S03-06",
+      "preconditions": [
+        "user_id=1 已有 name='工作' 的分类",
+        "user_id=2 无 name='工作' 的分类"
+      ],
+      "teardown": "DELETE FROM categories WHERE name='工作' AND user_id=2",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "用户 2 创建同名分类",
+          "command": "create_category",
+          "params": { "user_id": 2, "name": "工作" },
+          "expected_ok": true,
+          "assert": "result.name === '工作'"
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S03-04",
+      "title": "边界用例：分类名称 1 字符（下边界 UT-S03-02）",
+      "source": "UT-S03-02",
+      "preconditions": ["已登录 user_id=1"],
+      "teardown": "DELETE FROM categories WHERE name='A' AND user_id=1",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "create_category 名称 1 字符",
+          "command": "create_category",
+          "params": { "user_id": 1, "name": "A" },
+          "expected_ok": true,
+          "assert": "result.name === 'A'"
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S03-05",
+      "title": "边界用例：分类名称 20 字符（上边界 UT-S03-03）",
+      "source": "UT-S03-03",
+      "preconditions": ["已登录 user_id=1"],
+      "teardown": "DELETE FROM categories WHERE length(name)=20 AND user_id=1",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "create_category 名称 20 字符",
+          "command": "create_category",
+          "params": { "user_id": 1, "name": "AAAAAAAAAAAAAAAAAAAA" },
+          "expected_ok": true,
+          "assert": "result.name.length === 20"
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S03-06",
+      "title": "正常路径：删除无任务的分类（ST-S03-04）",
+      "source": "ST-S03-04",
+      "preconditions": ["categories 表有 id={{category_id}}，该分类下无任务"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "创建测试分类",
+          "command": "create_category",
+          "params": { "user_id": 1, "name": "临时分类" },
+          "expected_ok": true,
+          "extract": { "category_id": "result.id" }
+        },
+        {
+          "seq": 2,
+          "step": "S03.3 Step 5-8: delete_category",
+          "command": "delete_category",
+          "params": { "category_id": "{{category_id}}" },
+          "expected_ok": true,
+          "assert": "result.success === true"
+        },
+        {
+          "seq": 3,
+          "step": "验证 DB 记录已删除",
+          "db_assert": {
+            "query": "SELECT COUNT(*) as count FROM categories WHERE id = {{category_id}}",
+            "assert": "rows[0].count === 0"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S03-07",
+      "title": "正常路径：删除有任务的分类，任务 category_id 置 NULL（ST-S03-05 + UT-S03-08）",
+      "source": "ST-S03-05",
+      "preconditions": ["已登录 user_id=1"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "创建测试分类",
+          "command": "create_category",
+          "params": { "user_id": 1, "name": "待删分类" },
+          "expected_ok": true,
+          "extract": { "category_id": "result.id" }
+        },
+        {
+          "seq": 2,
+          "step": "创建关联任务 1",
+          "command": "create_task",
+          "params": { "user_id": 1, "name": "任务A", "category_id": "{{category_id}}", "note": null },
+          "expected_ok": true,
+          "extract": { "task_id_1": "result.id" }
+        },
+        {
+          "seq": 3,
+          "step": "创建关联任务 2",
+          "command": "create_task",
+          "params": { "user_id": 1, "name": "任务B", "category_id": "{{category_id}}", "note": null },
+          "expected_ok": true,
+          "extract": { "task_id_2": "result.id" }
+        },
+        {
+          "seq": 4,
+          "step": "S03.3 Step 5-8: delete_category",
+          "command": "delete_category",
+          "params": { "category_id": "{{category_id}}" },
+          "expected_ok": true,
+          "assert": "result.success === true"
+        },
+        {
+          "seq": 5,
+          "step": "验证分类已删除",
+          "db_assert": {
+            "query": "SELECT COUNT(*) as count FROM categories WHERE id = {{category_id}}",
+            "assert": "rows[0].count === 0"
+          }
+        },
+        {
+          "seq": 6,
+          "step": "验证关联任务 category_id 已置 NULL（ON DELETE SET NULL）",
+          "db_assert": {
+            "query": "SELECT category_id FROM tasks WHERE id IN ({{task_id_1}}, {{task_id_2}})",
+            "assert": "rows.every(r => r.category_id === null)"
+          }
+        },
+        {
+          "seq": 7,
+          "step": "验证任务记录本身保留",
+          "db_assert": {
+            "query": "SELECT COUNT(*) as count FROM tasks WHERE id IN ({{task_id_1}}, {{task_id_2}})",
+            "assert": "rows[0].count === 2"
+          }
+        }
+      ],
+      "teardown": "DELETE FROM tasks WHERE name IN ('任务A','任务B') AND user_id=1"
+    },
+
+    {
+      "id": "OT-S03-08",
+      "title": "异常路径：删除不存在的分类（并发场景 ST-S03-10）",
+      "source": "ST-S03-10",
+      "preconditions": ["categories 表无 id=99999 的记录"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S03.3: delete_category 分类不存在",
+          "command": "delete_category",
+          "params": { "category_id": 99999 },
+          "expected_ok": false,
+          "expected_error": { "code": "CATEGORY_NOT_FOUND" }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S03-09",
+      "title": "正常路径：创建分类后在 login 返回的 categories 中可见",
+      "source": "S03.1 Step 9 + login",
+      "preconditions": ["已有账号 username='xiaoli'"],
+      "teardown": "DELETE FROM categories WHERE name='验证分类' AND user_id=(SELECT id FROM users WHERE username='xiaoli')",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "login 获取 user_id",
+          "command": "login",
+          "params": { "username": "xiaoli", "password": "Pass1234" },
+          "expected_ok": true,
+          "extract": { "user_id": "result.user_id" }
+        },
+        {
+          "seq": 2,
+          "step": "create_category",
+          "command": "create_category",
+          "params": { "user_id": "{{user_id}}", "name": "验证分类" },
+          "expected_ok": true,
+          "extract": { "category_id": "result.id" }
+        },
+        {
+          "seq": 3,
+          "step": "重新 login，验证 categories 包含新分类",
+          "command": "login",
+          "params": { "username": "xiaoli", "password": "Pass1234" },
+          "expected_ok": true,
+          "assert": "result.categories.some(c => c.id === {{category_id}} && c.name === '验证分类')"
+        }
+      ]
+    }
+
+  ]
+}

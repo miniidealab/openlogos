@@ -1,0 +1,208 @@
+# FlowTask — 认证域 Tauri IPC 命令规格
+# 数据库：SQLite (tauri-plugin-sql)
+# 更新时间：2026/04/07
+#
+# 说明：本项目为 Tauri 2 桌面应用，无 HTTP 服务。
+# "API" 指 Tauri IPC 命令（前端通过 invoke(command, params) 调用 Rust 后端）。
+
+spec_version: "1.0"
+domain: auth
+description: "认证域命令：账号检测、注册、登录、修改密码"
+
+components:
+  schemas:
+    UserSession:
+      type: object
+      description: "登录成功后返回的用户会话信息"
+      required:
+        - user_id
+        - username
+      properties:
+        user_id:
+          type: integer
+          description: "用户主键 ID"
+        username:
+          type: string
+          description: "用户名"
+
+    TaskItem:
+      type: object
+      description: "任务记录（登录时随用户数据一并返回）"
+      required:
+        - id
+        - name
+        - done
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          maxLength: 100
+        category_id:
+          type: integer
+          nullable: true
+        note:
+          type: string
+          maxLength: 500
+          nullable: true
+        done:
+          type: boolean
+        created_at:
+          type: string
+          description: "ISO 8601 时间字符串"
+        updated_at:
+          type: string
+
+    CategoryItem:
+      type: object
+      description: "分类记录（登录时随用户数据一并返回）"
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          maxLength: 20
+
+    CommandError:
+      type: object
+      description: "Tauri 命令统一错误结构（Rust Err 侧序列化）"
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: "机器可读错误码"
+        message:
+          type: string
+          description: "人类可读错误描述"
+
+commands:
+
+  check_has_user:
+    summary: "检测本地是否存在账号"
+    description: "来源：S01 Step 2 / S02.1 Step 2。应用启动时调用，决定显示注册页还是登录页。"
+    params: {}
+    returns:
+      type: object
+      required:
+        - has_user
+      properties:
+        has_user:
+          type: boolean
+          description: "true = 本地有账号，显示登录页；false = 无账号，显示注册页"
+    errors: []
+
+  register:
+    summary: "注册新用户"
+    description: "来源：S01 Step 9 → Step 15。校验用户名唯一性，bcrypt 加密密码后写入 users 表。"
+    params:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 2
+          maxLength: 20
+          description: "用户名，2-20 字符"
+        password:
+          type: string
+          minLength: 8
+          description: "原始密码，Rust 侧进行 bcrypt 哈希（cost=12），不落盘"
+    returns:
+      $ref: "#/components/schemas/UserSession"
+    errors:
+      - code: "USERNAME_EXISTS"
+        source: "EX-10.1"
+        message: "该用户名已被使用，请换一个"
+        trigger: "来源：S01 Step 10 查询到用户名已存在"
+      - code: "DB_WRITE_ERROR"
+        source: "EX-13.1"
+        message: "注册失败，请重试"
+        trigger: "来源：S01 Step 13 INSERT 操作失败"
+
+  login:
+    summary: "用户登录"
+    description: "来源：S02.1 Step 8 → Step 14。验证用户名和密码，登录成功后一并返回任务列表和分类列表，减少前端二次请求。"
+    params:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: "用户名"
+        password:
+          type: string
+          description: "原始密码，Rust 侧使用 bcrypt::verify 验证"
+    returns:
+      type: object
+      required:
+        - user_id
+        - username
+        - tasks
+        - categories
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        tasks:
+          type: array
+          description: "该用户的全部任务（含已完成），前端按 done 字段分区显示"
+          items:
+            $ref: "#/components/schemas/TaskItem"
+        categories:
+          type: array
+          description: "该用户的全部分类"
+          items:
+            $ref: "#/components/schemas/CategoryItem"
+    errors:
+      - code: "INVALID_CREDENTIALS"
+        source: "EX-10.1 / EX-11.1"
+        message: "用户名或密码错误"
+        trigger: "来源：S02.1 Step 10 用户名不存在 或 Step 11 bcrypt 验证失败。两种情况返回同一错误码，避免信息泄露。"
+
+  change_password:
+    summary: "修改账号密码"
+    description: "来源：S04 Step 5 → Step 12。验证当前密码后，bcrypt 哈希新密码并更新 users 表。"
+    params:
+      type: object
+      required:
+        - user_id
+        - current_password
+        - new_password
+      properties:
+        user_id:
+          type: integer
+          description: "当前登录用户 ID，来自 Zustand Store"
+        current_password:
+          type: string
+          description: "当前密码明文，Rust 侧使用 bcrypt::verify 验证"
+        new_password:
+          type: string
+          minLength: 8
+          description: "新密码明文，Rust 侧进行 bcrypt 哈希后存储"
+    returns:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: "固定返回 true，失败时抛出 Err"
+    errors:
+      - code: "WRONG_PASSWORD"
+        source: "EX-8.1"
+        message: "当前密码不正确"
+        trigger: "来源：S04 Step 8 bcrypt::verify 返回 false"
+      - code: "DB_WRITE_ERROR"
+        source: "EX-10.1"
+        message: "保存失败，请重试"
+        trigger: "来源：S04 Step 10 UPDATE 操作失败"

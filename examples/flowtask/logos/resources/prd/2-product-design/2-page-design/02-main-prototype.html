@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlowTask — 任务主界面</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-primary: #18181B;
+    --color-on-primary: #FFFFFF;
+    --color-secondary: #3F3F46;
+    --color-accent: #2563EB;
+    --color-background: #FAFAFA;
+    --color-foreground: #09090B;
+    --color-muted: #E8ECF0;
+    --color-border: #E4E4E7;
+    --color-destructive: #DC2626;
+    --color-success: #16A34A;
+    --color-surface: #FFFFFF;
+    --color-sidebar: #F4F4F5;
+    --radius: 8px;
+    --transition: 150ms ease;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--color-background);
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; color: var(--color-foreground);
+  }
+
+  /* macOS 窗口 */
+  .app-window {
+    background: var(--color-surface);
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+    width: 860px;
+    height: 580px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .titlebar {
+    background: #F5F5F5;
+    border-bottom: 1px solid var(--color-border);
+    padding: 12px 16px;
+    display: flex; align-items: center; gap: 8px;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .traffic-lights { display: flex; gap: 6px; }
+  .tl {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 0.5px solid rgba(0,0,0,0.1);
+  }
+  .tl-red { background: #FF5F57; }
+  .tl-yellow { background: #FEBC2E; }
+  .tl-green { background: #28C840; }
+  .titlebar-label {
+    flex: 1; text-align: center;
+    font-size: 12px; font-weight: 500; color: #71717A;
+    margin-right: 54px;
+  }
+
+  .app-body { display: flex; flex: 1; overflow: hidden; }
+
+  /* 侧边栏 */
+  .sidebar {
+    width: 180px;
+    background: var(--color-sidebar);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 14px 16px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #A1A1AA;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .category-item {
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-secondary);
+    cursor: pointer;
+    border-radius: 6px;
+    margin: 1px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background var(--transition), color var(--transition);
+  }
+  .category-item:hover { background: var(--color-muted); }
+  .category-item.active {
+    background: var(--color-surface);
+    color: var(--color-foreground);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .category-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: #A1A1AA;
+    background: var(--color-muted);
+    border-radius: 10px;
+    padding: 1px 6px;
+    min-width: 18px;
+    text-align: center;
+  }
+  .category-item.active .category-count {
+    background: var(--color-border);
+    color: var(--color-secondary);
+  }
+  .sidebar-footer {
+    margin-top: auto;
+    padding: 12px 8px;
+    border-top: 1px solid var(--color-border);
+  }
+  .btn-manage-cat {
+    width: 100%;
+    padding: 7px 10px;
+    background: none;
+    border: 1.5px dashed var(--color-border);
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-weight: 500;
+    color: #A1A1AA;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: inherit;
+  }
+  .btn-manage-cat:hover { border-color: var(--color-accent); color: var(--color-accent); }
+
+  /* 主内容区 */
+  .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .main-header {
+    padding: 14px 20px 12px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .main-title { font-size: 16px; font-weight: 700; letter-spacing: -0.2px; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .btn-icon {
+    width: 32px; height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background var(--transition);
+    color: #71717A;
+  }
+  .btn-icon:hover { background: var(--color-muted); color: var(--color-foreground); }
+  .user-avatar {
+    width: 28px; height: 28px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0;
+  }
+
+  .task-list { flex: 1; overflow-y: auto; padding: 10px 16px; }
+
+  /* 任务卡片 */
+  .task-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    position: relative;
+    background: var(--color-surface);
+  }
+  .task-card:hover {
+    border-color: #D4D4D8;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .task-card:hover .task-delete { opacity: 1; }
+  .task-card.done { opacity: 0.45; }
+  .task-card.done .task-name { text-decoration: line-through; color: #A1A1AA; }
+
+  .task-check {
+    width: 17px; height: 17px;
+    border: 1.5px solid var(--color-border);
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+    transition: all var(--transition);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .task-check:hover { border-color: var(--color-accent); }
+  .task-check.checked {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+  .task-check.checked svg { display: block; }
+  .task-check svg { display: none; }
+
+  .task-body { flex: 1; min-width: 0; }
+  .task-name { font-size: 13px; font-weight: 500; color: var(--color-foreground); margin-bottom: 3px; }
+  .task-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .task-tag {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 20px;
+    background: var(--color-muted);
+    color: var(--color-secondary);
+    border: 1px solid var(--color-border);
+  }
+  .task-note { font-size: 11px; color: #A1A1AA; }
+  .task-delete {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: #D4D4D8;
+    cursor: pointer;
+    padding: 2px;
+    transition: color var(--transition), opacity var(--transition);
+    flex-shrink: 0;
+    display: flex; align-items: center;
+  }
+  .task-delete:hover { color: var(--color-destructive); }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #A1A1AA;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 14px 0 6px;
+  }
+
+  /* 空状态 */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #A1A1AA;
+    display: none;
+  }
+  .empty-state.show { display: block; }
+  .empty-icon { margin-bottom: 12px; }
+  .empty-text { font-size: 13px; }
+
+  /* FAB 按钮 */
+  .fab {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 40px; height: 40px;
+    background: var(--color-primary);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform var(--transition), box-shadow var(--transition);
+    line-height: 1;
+  }
+  .fab:hover { transform: scale(1.06); box-shadow: 0 6px 16px rgba(0,0,0,0.2); }
+
+  /* 任务面板 */
+  .task-panel {
+    width: 272px;
+    border-left: 1px solid var(--color-border);
+    background: var(--color-surface);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .task-panel.open { transform: translateX(0); }
+  .panel-header {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-title { font-size: 14px; font-weight: 600; }
+  .btn-close-panel {
+    background: none; border: none;
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    color: #A1A1AA; cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+    font-size: 16px;
+  }
+  .btn-close-panel:hover { background: var(--color-muted); color: var(--color-foreground); }
+  .panel-body { padding: 14px 16px; flex: 1; overflow-y: auto; }
+  .panel-form-group { margin-bottom: 12px; }
+  .panel-label {
+    font-size: 12px; font-weight: 500; color: var(--color-secondary);
+    margin-bottom: 4px; display: block;
+  }
+  .panel-input, .panel-select, .panel-textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    color: var(--color-foreground);
+    background: var(--color-surface);
+    outline: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    font-family: inherit;
+  }
+  .panel-input:focus, .panel-select:focus, .panel-textarea:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  }
+  .panel-input.error { border-color: var(--color-destructive); }
+  .panel-input.error:focus { box-shadow: 0 0 0 3px rgba(220,38,38,0.1); }
+  .panel-textarea { resize: vertical; min-height: 72px; }
+  .panel-error {
+    font-size: 11px; color: var(--color-destructive);
+    margin-top: 3px; display: none; align-items: center; gap: 3px;
+  }
+  .panel-error.show { display: flex; }
+  .panel-footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    gap: 8px;
+  }
+  .btn-save {
+    flex: 1;
+    padding: 8px;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity var(--transition);
+  }
+  .btn-save:hover { opacity: 0.85; }
+  .btn-cancel {
+    padding: 8px 14px;
+    background: var(--color-muted);
+    color: var(--color-secondary);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background var(--transition);
+  }
+  .btn-cancel:hover { background: var(--color-border); }
+
+  /* 分类管理弹窗 */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.25);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--color-surface);
+    border-radius: 12px;
+    width: 340px;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-title { font-size: 14px; font-weight: 600; }
+  .modal-body { padding: 16px 18px; }
+  .cat-add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .cat-input {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    outline: none;
+    font-family: inherit;
+    color: var(--color-foreground);
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+  .cat-input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+  }
+  .btn-add-cat {
+    padding: 8px 14px;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity var(--transition);
+  }
+  .btn-add-cat:hover { opacity: 0.85; }
+  .cat-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-foreground);
+  }
+  .cat-list-item:last-child { border-bottom: none; }
+  .btn-del-cat {
+    background: none; border: none;
+    color: #D4D4D8; cursor: pointer;
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    transition: color var(--transition), background var(--transition);
+    font-size: 14px;
+  }
+  .btn-del-cat:hover { color: var(--color-destructive); background: #FEF2F2; }
+  .cat-error {
+    font-size: 12px; color: var(--color-destructive);
+    margin-bottom: 8px; display: none;
+  }
+  .cat-error.show { display: block; }
+
+  /* 确认对话框 */
+  .confirm-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.25);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+  .confirm-overlay.show { display: flex; }
+  .confirm-box {
+    background: var(--color-surface);
+    border-radius: 10px;
+    padding: 22px 22px 18px;
+    width: 300px;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.12);
+  }
+  .confirm-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .confirm-msg { font-size: 13px; color: #71717A; margin-bottom: 18px; line-height: 1.55; }
+  .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-confirm-cancel {
+    padding: 7px 14px;
+    background: var(--color-muted);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    color: var(--color-secondary);
+    transition: background var(--transition);
+  }
+  .btn-confirm-cancel:hover { background: var(--color-border); }
+  .btn-confirm-ok {
+    padding: 7px 14px;
+    background: var(--color-destructive);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity var(--transition);
+  }
+  .btn-confirm-ok:hover { opacity: 0.88; }
+
+  .relative { position: relative; }
+</style>
+</head>
+<body>
+<div class="app-window">
+  <div class="titlebar">
+    <div class="traffic-lights">
+      <div class="tl tl-red"></div>
+      <div class="tl tl-yellow"></div>
+      <div class="tl tl-green"></div>
+    </div>
+    <div class="titlebar-label">FlowTask</div>
+  </div>
+  <div class="app-body">
+    <!-- 侧边栏 S03 -->
+    <div class="sidebar">
+      <div class="sidebar-header">分类</div>
+      <div class="category-item active" onclick="filterCat('all', this)">
+        全部 <span class="category-count" id="count-all">4</span>
+      </div>
+      <div id="cat-sidebar"></div>
+      <div class="sidebar-footer">
+        <button class="btn-manage-cat" onclick="openCatModal()">+ 管理分类</button>
+      </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="main-content relative">
+      <div class="main-header">
+        <div class="main-title" id="main-title">全部任务</div>
+        <div class="header-actions">
+          <button class="btn-icon" onclick="window.location='03-settings-prototype.html'" title="账号设置">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+          <div class="user-avatar" title="xiaoli">小</div>
+        </div>
+      </div>
+      <div class="task-list" id="task-list"></div>
+      <button class="fab" onclick="openPanel(null)" title="新建任务">+</button>
+    </div>
+
+    <!-- 任务面板 S02 -->
+    <div class="task-panel" id="task-panel">
+      <div class="panel-header">
+        <div class="panel-title" id="panel-title">新建任务</div>
+        <button class="btn-close-panel" onclick="closePanel()">×</button>
+      </div>
+      <div class="panel-body">
+        <div class="panel-form-group">
+          <label class="panel-label">任务名称 <span style="color:var(--color-destructive)">*</span></label>
+          <input class="panel-input" id="task-name" placeholder="输入任务名称">
+          <div class="panel-error" id="task-name-err">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            任务名称不能为空
+          </div>
+        </div>
+        <div class="panel-form-group">
+          <label class="panel-label">分类</label>
+          <select class="panel-select" id="task-cat">
+            <option value="">无分类</option>
+          </select>
+        </div>
+        <div class="panel-form-group">
+          <label class="panel-label">备注</label>
+          <textarea class="panel-textarea" id="task-note" placeholder="添加备注（可选）"></textarea>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn-cancel" onclick="closePanel()">取消</button>
+        <button class="btn-save" onclick="saveTask()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 分类管理弹窗 S03 -->
+<div class="modal-overlay" id="cat-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">管理分类</div>
+      <button class="btn-close-panel" onclick="closeCatModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="cat-add-row">
+        <input class="cat-input" id="new-cat-input" placeholder="输入分类名称">
+        <button class="btn-add-cat" onclick="addCategory()">添加</button>
+      </div>
+      <div class="cat-error" id="cat-error"></div>
+      <div id="cat-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 确认对话框 -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="confirm-title" id="confirm-title">确认删除</div>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-actions">
+      <button class="btn-confirm-cancel" onclick="closeConfirm()">取消</button>
+      <button class="btn-confirm-ok" id="confirm-ok-btn">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let tasks = [
+  { id: 1, name: '完成项目报告', cat: '工作', note: '周五前提交', done: false },
+  { id: 2, name: '购买生活用品', cat: '生活', note: '', done: false },
+  { id: 3, name: '阅读《深度工作》第三章', cat: '学习', note: '', done: false },
+  { id: 4, name: '回复客户邮件', cat: '工作', note: '', done: true },
+];
+let categories = ['工作', '生活', '学习'];
+let currentCat = 'all';
+let editingId = null;
+let confirmCallback = null;
+
+function renderSidebar() {
+  const el = document.getElementById('cat-sidebar');
+  el.innerHTML = categories.map(c => {
+    const cnt = tasks.filter(t => t.cat === c && !t.done).length;
+    return `<div class="category-item ${currentCat === c ? 'active' : ''}" onclick="filterCat('${c}', this)">
+      ${c} <span class="category-count">${cnt}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('count-all').textContent = tasks.filter(t => !t.done).length;
+}
+
+function renderTasks() {
+  const list = document.getElementById('task-list');
+  const filtered = currentCat === 'all' ? tasks : tasks.filter(t => t.cat === currentCat);
+  const active = filtered.filter(t => !t.done);
+  const done = filtered.filter(t => t.done);
+
+  let html = '';
+  if (active.length === 0 && done.length === 0) {
+    html = `<div class="empty-state show">
+      <div class="empty-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#D4D4D8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+      </div>
+      <div class="empty-text">还没有任务，点击 + 开始添加</div>
+    </div>`;
+  } else {
+    active.forEach(t => { html += taskCard(t); });
+    if (done.length > 0) {
+      html += `<div class="section-label">已完成 (${done.length})</div>`;
+      done.forEach(t => { html += taskCard(t); });
+    }
+  }
+  list.innerHTML = html;
+}
+
+function taskCard(t) {
+  return `<div class="task-card ${t.done ? 'done' : ''}" onclick="openPanel(${t.id})">
+    <div class="task-check ${t.done ? 'checked' : ''}" onclick="event.stopPropagation(); toggleDone(${t.id})">
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="task-body">
+      <div class="task-name">${t.name}</div>
+      <div class="task-meta">
+        ${t.cat ? `<span class="task-tag">${t.cat}</span>` : ''}
+        ${t.note ? `<span class="task-note">${t.note}</span>` : ''}
+      </div>
+    </div>
+    <button class="task-delete" onclick="event.stopPropagation(); confirmDelete(${t.id})">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+      </svg>
+    </button>
+  </div>`;
+}
+
+function filterCat(cat, el) {
+  currentCat = cat;
+  document.querySelectorAll('.category-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('main-title').textContent = cat === 'all' ? '全部任务' : cat;
+  renderTasks();
+}
+
+function toggleDone(id) {
+  const t = tasks.find(t => t.id === id);
+  if (t) t.done = !t.done;
+  renderSidebar();
+  renderTasks();
+}
+
+function openPanel(id) {
+  editingId = id;
+  const panel = document.getElementById('task-panel');
+  const nameInput = document.getElementById('task-name');
+  const catSelect = document.getElementById('task-cat');
+  const noteInput = document.getElementById('task-note');
+
+  catSelect.innerHTML = '<option value="">无分类</option>' +
+    categories.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  if (id) {
+    const t = tasks.find(t => t.id === id);
+    document.getElementById('panel-title').textContent = '编辑任务';
+    nameInput.value = t.name;
+    catSelect.value = t.cat || '';
+    noteInput.value = t.note || '';
+  } else {
+    document.getElementById('panel-title').textContent = '新建任务';
+    nameInput.value = '';
+    catSelect.value = '';
+    noteInput.value = '';
+  }
+  document.getElementById('task-name-err').classList.remove('show');
+  nameInput.classList.remove('error');
+  panel.classList.add('open');
+  setTimeout(() => nameInput.focus(), 230);
+}
+
+function closePanel() {
+  document.getElementById('task-panel').classList.remove('open');
+  editingId = null;
+}
+
+function saveTask() {
+  const name = document.getElementById('task-name').value.trim();
+  if (!name) {
+    document.getElementById('task-name').classList.add('error');
+    document.getElementById('task-name-err').classList.add('show');
+    return;
+  }
+  const cat = document.getElementById('task-cat').value;
+  const note = document.getElementById('task-note').value.trim();
+
+  if (editingId) {
+    const t = tasks.find(t => t.id === editingId);
+    t.name = name; t.cat = cat; t.note = note;
+  } else {
+    tasks.unshift({ id: Date.now(), name, cat, note, done: false });
+  }
+  closePanel();
+  renderSidebar();
+  renderTasks();
+}
+
+function confirmDelete(id) {
+  const t = tasks.find(t => t.id === id);
+  document.getElementById('confirm-title').textContent = '确认删除';
+  document.getElementById('confirm-msg').textContent = `确认删除任务"${t.name}"？此操作不可恢复。`;
+  confirmCallback = () => {
+    tasks = tasks.filter(t => t.id !== id);
+    closePanel();
+    renderSidebar();
+    renderTasks();
+  };
+  document.getElementById('confirm-overlay').classList.add('show');
+  document.getElementById('confirm-ok-btn').onclick = () => { confirmCallback(); closeConfirm(); };
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-overlay').classList.remove('show');
+  confirmCallback = null;
+}
+
+function openCatModal() {
+  renderCatList();
+  document.getElementById('new-cat-input').value = '';
+  document.getElementById('cat-error').classList.remove('show');
+  document.getElementById('cat-modal').classList.add('show');
+}
+function closeCatModal() {
+  document.getElementById('cat-modal').classList.remove('show');
+  renderSidebar();
+  renderTasks();
+}
+function renderCatList() {
+  document.getElementById('cat-list').innerHTML = categories.map(c => {
+    const cnt = tasks.filter(t => t.cat === c).length;
+    return `<div class="cat-list-item">
+      <span>${c}</span>
+      <button class="btn-del-cat" onclick="deleteCategory('${c}', ${cnt})">×</button>
+    </div>`;
+  }).join('') || '<div style="color:#A1A1AA;font-size:13px;padding:8px 0">暂无分类</div>';
+}
+function addCategory() {
+  const name = document.getElementById('new-cat-input').value.trim();
+  const errEl = document.getElementById('cat-error');
+  if (!name) { errEl.textContent = '分类名称不能为空'; errEl.classList.add('show'); return; }
+  if (categories.includes(name)) { errEl.textContent = '该分类名称已存在'; errEl.classList.add('show'); return; }
+  errEl.classList.remove('show');
+  categories.push(name);
+  document.getElementById('new-cat-input').value = '';
+  renderCatList();
+  const catSelect = document.getElementById('task-cat');
+  catSelect.innerHTML = '<option value="">无分类</option>' +
+    categories.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+function deleteCategory(name, cnt) {
+  const msg = cnt > 0
+    ? `该分类下有 ${cnt} 个任务，删除后这些任务将变为未分类，是否继续？`
+    : `确认删除分类"${name}"？`;
+  document.getElementById('confirm-title').textContent = '删除分类';
+  document.getElementById('confirm-msg').textContent = msg;
+  confirmCallback = () => {
+    categories = categories.filter(c => c !== name);
+    tasks.forEach(t => { if (t.cat === name) t.cat = ''; });
+    if (currentCat === name) currentCat = 'all';
+    renderCatList();
+  };
+  document.getElementById('confirm-overlay').classList.add('show');
+  document.getElementById('confirm-ok-btn').onclick = () => { confirmCallback(); closeConfirm(); };
+}
+
+renderSidebar();
+renderTasks();
+</script>
+</body>
+</html>

@@ -1,0 +1,323 @@
+{
+  "scenario": "S02",
+  "title": "用户登录并管理当日任务",
+  "domain": "auth + tasks",
+  "external_dependencies": [],
+  "orchestrations": [
+
+    {
+      "id": "OT-S02-01",
+      "title": "正常路径：已有账号，登录成功并加载任务列表",
+      "source": "ST-S02-01",
+      "preconditions": [
+        "users 表有 username='xiaoli'，密码 'Pass1234' 的 bcrypt 哈希",
+        "tasks 表有该用户 2 条 done=0 的任务"
+      ],
+      "teardown": "DELETE FROM tasks WHERE user_id = (SELECT id FROM users WHERE username='xiaoli'); DELETE FROM users WHERE username='xiaoli'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.1 Step 2: check_has_user 返回 true",
+          "command": "check_has_user",
+          "params": {},
+          "expected_ok": true,
+          "assert": "result.has_user === true"
+        },
+        {
+          "seq": 2,
+          "step": "S02.1 Step 8-14: login",
+          "command": "login",
+          "params": { "username": "xiaoli", "password": "Pass1234" },
+          "expected_ok": true,
+          "assert": [
+            "result.username === 'xiaoli'",
+            "result.user_id > 0",
+            "Array.isArray(result.tasks)",
+            "result.tasks.length === 2",
+            "Array.isArray(result.categories)"
+          ],
+          "extract": {
+            "user_id": "result.user_id",
+            "task_id_0": "result.tasks[0].id"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-02",
+      "title": "异常路径：用户名不存在（EX-10.1）",
+      "source": "ST-S02-09",
+      "preconditions": ["users 表无 username='notexist' 的记录"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.1 Step 8: login 用户名不存在",
+          "command": "login",
+          "params": { "username": "notexist", "password": "Pass1234" },
+          "expected_ok": false,
+          "expected_error": {
+            "code": "INVALID_CREDENTIALS",
+            "message": "用户名或密码错误"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-03",
+      "title": "异常路径：密码错误（EX-11.1）",
+      "source": "ST-S02-10",
+      "preconditions": ["users 表有 username='xiaoli'"],
+      "teardown": "DELETE FROM users WHERE username='xiaoli'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.1 Step 8: login 密码错误",
+          "command": "login",
+          "params": { "username": "xiaoli", "password": "WrongPass" },
+          "expected_ok": false,
+          "expected_error": {
+            "code": "INVALID_CREDENTIALS",
+            "message": "用户名或密码错误"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-04",
+      "title": "正常路径：创建有分类和备注的任务",
+      "source": "ST-S02-02",
+      "preconditions": ["已登录，user_id=1，categories 表有 id=1, name='工作'"],
+      "teardown": "DELETE FROM tasks WHERE name='完成周报'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.2 Step 5-8: create_task",
+          "command": "create_task",
+          "params": {
+            "user_id": "{{user_id}}",
+            "name": "完成周报",
+            "category_id": 1,
+            "note": "本周进展"
+          },
+          "expected_ok": true,
+          "assert": [
+            "result.id > 0",
+            "result.name === '完成周报'",
+            "result.category_id === 1",
+            "result.note === '本周进展'",
+            "result.done === false"
+          ],
+          "extract": { "task_id": "result.id" }
+        },
+        {
+          "seq": 2,
+          "step": "验证 DB 写入",
+          "db_assert": {
+            "query": "SELECT name, category_id, note, done FROM tasks WHERE id = {{task_id}}",
+            "assert": [
+              "rows[0].name === '完成周报'",
+              "rows[0].done === 0"
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-05",
+      "title": "正常路径：创建无分类无备注的任务",
+      "source": "ST-S02-03",
+      "preconditions": ["已登录"],
+      "teardown": "DELETE FROM tasks WHERE name='买牛奶'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.2 Step 5-8: create_task 无分类无备注",
+          "command": "create_task",
+          "params": {
+            "user_id": "{{user_id}}",
+            "name": "买牛奶",
+            "category_id": null,
+            "note": null
+          },
+          "expected_ok": true,
+          "assert": [
+            "result.category_id === null",
+            "result.note === null",
+            "result.done === false"
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-06",
+      "title": "正常路径：标记任务完成",
+      "source": "ST-S02-04",
+      "preconditions": ["tasks 表有 id={{task_id}}, done=0"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.3a Step 2-5: update_task_status done=true",
+          "command": "update_task_status",
+          "params": { "task_id": "{{task_id}}", "done": true },
+          "expected_ok": true,
+          "assert": [
+            "result.task_id === {{task_id}}",
+            "result.done === true"
+          ]
+        },
+        {
+          "seq": 2,
+          "step": "验证 DB done=1",
+          "db_assert": {
+            "query": "SELECT done FROM tasks WHERE id = {{task_id}}",
+            "assert": "rows[0].done === 1"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-07",
+      "title": "正常路径：取消任务完成状态",
+      "source": "ST-S02-05",
+      "preconditions": ["tasks 表有 id={{task_id}}, done=1"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.3a: update_task_status done=false",
+          "command": "update_task_status",
+          "params": { "task_id": "{{task_id}}", "done": false },
+          "expected_ok": true,
+          "assert": "result.done === false"
+        },
+        {
+          "seq": 2,
+          "step": "验证 DB done=0",
+          "db_assert": {
+            "query": "SELECT done FROM tasks WHERE id = {{task_id}}",
+            "assert": "rows[0].done === 0"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-08",
+      "title": "正常路径：编辑任务名称和备注",
+      "source": "ST-S02-06",
+      "preconditions": ["tasks 表有 id={{task_id}}, name='旧名称'"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.3b Step 5-8: update_task",
+          "command": "update_task",
+          "params": {
+            "task_id": "{{task_id}}",
+            "name": "新名称",
+            "category_id": null,
+            "note": "新备注"
+          },
+          "expected_ok": true,
+          "assert": [
+            "result.name === '新名称'",
+            "result.note === '新备注'"
+          ]
+        },
+        {
+          "seq": 2,
+          "step": "验证 DB 更新",
+          "db_assert": {
+            "query": "SELECT name, note FROM tasks WHERE id = {{task_id}}",
+            "assert": [
+              "rows[0].name === '新名称'",
+              "rows[0].note === '新备注'"
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-09",
+      "title": "正常路径：删除任务",
+      "source": "ST-S02-07",
+      "preconditions": ["tasks 表有 id={{task_id}}"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.3c Step 4-7: delete_task",
+          "command": "delete_task",
+          "params": { "task_id": "{{task_id}}" },
+          "expected_ok": true,
+          "assert": "result.success === true"
+        },
+        {
+          "seq": 2,
+          "step": "验证 DB 记录已删除",
+          "db_assert": {
+            "query": "SELECT COUNT(*) as count FROM tasks WHERE id = {{task_id}}",
+            "assert": "rows[0].count === 0"
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-10",
+      "title": "异常路径：删除不存在的任务（并发场景 EX-6.1）",
+      "source": "ST-S02-13",
+      "preconditions": ["tasks 表无 id=99999 的记录"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "S02.3c: delete_task 任务不存在",
+          "command": "delete_task",
+          "params": { "task_id": 99999 },
+          "expected_ok": false,
+          "expected_error": { "code": "TASK_NOT_FOUND" }
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-11",
+      "title": "边界用例：任务名称长度 1 字符（下边界）",
+      "source": "UT-S02-06",
+      "preconditions": ["已登录"],
+      "teardown": "DELETE FROM tasks WHERE name='A'",
+      "steps": [
+        {
+          "seq": 1,
+          "step": "create_task 名称 1 字符",
+          "command": "create_task",
+          "params": { "user_id": "{{user_id}}", "name": "A" },
+          "expected_ok": true,
+          "assert": "result.name === 'A'"
+        }
+      ]
+    },
+
+    {
+      "id": "OT-S02-12",
+      "title": "边界用例：update_task 目标不存在（并发场景）",
+      "source": "tasks.yaml → update_task → TASK_NOT_FOUND",
+      "preconditions": ["tasks 表无 id=99998 的记录"],
+      "steps": [
+        {
+          "seq": 1,
+          "step": "update_task 任务不存在",
+          "command": "update_task",
+          "params": { "task_id": 99998, "name": "测试" },
+          "expected_ok": false,
+          "expected_error": { "code": "TASK_NOT_FOUND" }
+        }
+      ]
+    }
+
+  ]
+}

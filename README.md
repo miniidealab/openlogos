@@ -53,17 +53,18 @@ openlogos init my-project
 2. 在 Cursor 中配置 `.cursor/rules/` 引用这些 Skills
 3. 或在 Claude Code 中通过 `CLAUDE.md` 引用
 
-### 方式三：参考可运行示例（TaskFlow API）
+### 方式三：参考可运行示例（FlowTask 桌面应用）
 
 ```bash
 git clone https://github.com/miniidealab/openlogos.git
-cd openlogos/examples/taskflow-api
-npm install
-cd ../../cli && npm install && npm run build && cd ../examples/taskflow-api
-npm test && npm run verify
+cd openlogos/examples/flowtask
+pnpm install
+pnpm tauri dev    # 开发调试；发布构建见示例 README
+# 可选：在仓库根构建 CLI 后，于本目录执行 openlogos verify
+# cd ../../cli && npm install && npm run build && cd ../examples/flowtask && openlogos verify
 ```
 
-详见 [examples/README.md](examples/README.md)（含 **TaskFlow** 与占位 demo 的说明）。
+详见 [examples/README.md](examples/README.md)（含 **FlowTask** 与占位 demo 的说明）。
 
 ## 仓库结构
 
@@ -94,7 +95,7 @@ openlogos/
 │
 ├── cli/            # openlogos CLI 工具
 ├── plugin/         # Claude Code 原生插件
-├── examples/       # 示例项目（taskflow-api 为可运行参考实现）
+├── examples/       # 示例项目（flowtask 为可运行桌面端参考实现）
 └── website/        # openlogos.ai 官网源码
 ```
 

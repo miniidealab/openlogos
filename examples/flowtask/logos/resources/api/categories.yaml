@@ -1,0 +1,93 @@
+# FlowTask — 分类域 Tauri IPC 命令规格
+# 数据库：SQLite (tauri-plugin-sql)
+# 更新时间：2026/04/07
+
+spec_version: "1.0"
+domain: categories
+description: "分类域命令：创建分类、删除分类（列表通过 login 命令一并返回，无独立查询命令）"
+
+components:
+  schemas:
+    CategoryItem:
+      type: object
+      description: "分类记录"
+      required:
+        - id
+        - user_id
+        - name
+      properties:
+        id:
+          type: integer
+          description: "分类主键 ID"
+        user_id:
+          type: integer
+          description: "所属用户 ID"
+        name:
+          type: string
+          maxLength: 20
+          description: "分类名称，同一用户下唯一"
+        created_at:
+          type: string
+          description: "创建时间，ISO 8601 字符串"
+
+    CommandError:
+      $ref: "auth.yaml#/components/schemas/CommandError"
+
+# 说明：分类列表不需要独立的 list_categories 命令。
+# login 命令（auth.yaml）已在登录时一并返回 categories[]，
+# 写入 Zustand Store 后各组件直接读取，无需额外 invoke。
+
+commands:
+
+  create_category:
+    summary: "创建新分类"
+    description: "来源：S03.1 Step 5 → Step 8。客户端已做唯一性预检，数据库层 UNIQUE 约束作为最终保障。"
+    params:
+      type: object
+      required:
+        - user_id
+        - name
+      properties:
+        user_id:
+          type: integer
+          description: "当前登录用户 ID，来自 Zustand Store"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: "分类名称（同一用户下唯一，前端已做重复预检）"
+    returns:
+      $ref: "#/components/schemas/CategoryItem"
+    errors:
+      - code: "CATEGORY_EXISTS"
+        source: "EX-6.1"
+        message: "该分类名称已存在"
+        trigger: "来源：S03.1 Step 6 INSERT 违反 UNIQUE(user_id, name) 约束"
+      - code: "DB_WRITE_ERROR"
+        source: "EX-6.1（写入失败）"
+        message: "创建失败，请重试"
+        trigger: "数据库其他写入异常"
+
+  delete_category:
+    summary: "删除分类"
+    description: "来源：S03.3 Step 5 → Step 8。物理删除，数据库通过 ON DELETE SET NULL 自动将关联任务的 category_id 置空。"
+    params:
+      type: object
+      required:
+        - category_id
+      properties:
+        category_id:
+          type: integer
+          description: "目标分类 ID"
+    returns:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    errors:
+      - code: "CATEGORY_NOT_FOUND"
+        source: "EX-6.1"
+        message: "分类不存在（静默处理）"
+        trigger: "来源：S03.3 Step 6 DELETE 影响行数为 0，前端静默处理，结果最终一致"

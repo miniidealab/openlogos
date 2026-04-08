@@ -1,0 +1,177 @@
+# FlowTask — 任务域 Tauri IPC 命令规格
+# 数据库：SQLite (tauri-plugin-sql)
+# 更新时间：2026/04/07
+
+spec_version: "1.0"
+domain: tasks
+description: "任务域命令：创建、更新内容、更新完成状态、删除"
+
+components:
+  schemas:
+    TaskItem:
+      type: object
+      description: "任务完整记录"
+      required:
+        - id
+        - user_id
+        - name
+        - done
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          description: "任务主键 ID"
+        user_id:
+          type: integer
+          description: "所属用户 ID"
+        category_id:
+          type: integer
+          nullable: true
+          description: "所属分类 ID，null 表示无分类"
+        name:
+          type: string
+          maxLength: 100
+          description: "任务名称"
+        note:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: "备注"
+        done:
+          type: boolean
+          description: "完成状态，false = 未完成，true = 已完成"
+        created_at:
+          type: string
+          description: "创建时间，ISO 8601 字符串"
+        updated_at:
+          type: string
+          description: "最后更新时间，ISO 8601 字符串"
+
+    CommandError:
+      $ref: "auth.yaml#/components/schemas/CommandError"
+
+commands:
+
+  create_task:
+    summary: "创建新任务"
+    description: "来源：S02.2 Step 5 → Step 8。将新任务写入 tasks 表，done 默认为 false。"
+    params:
+      type: object
+      required:
+        - user_id
+        - name
+      properties:
+        user_id:
+          type: integer
+          description: "当前登录用户 ID，来自 Zustand Store"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: "任务名称（必填，前端已校验非空）"
+        category_id:
+          type: integer
+          nullable: true
+          description: "分类 ID，null 表示无分类"
+        note:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: "备注（可选）"
+    returns:
+      $ref: "#/components/schemas/TaskItem"
+    errors:
+      - code: "DB_WRITE_ERROR"
+        source: "EX-6.1"
+        message: "保存失败，请重试"
+        trigger: "来源：S02.2 Step 6 INSERT 操作失败"
+
+  update_task:
+    summary: "更新任务内容"
+    description: "来源：S02.3b Step 5 → Step 8。更新任务的名称、分类、备注字段，同步更新 updated_at。"
+    params:
+      type: object
+      required:
+        - task_id
+        - name
+      properties:
+        task_id:
+          type: integer
+          description: "目标任务 ID"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: "更新后的任务名称"
+        category_id:
+          type: integer
+          nullable: true
+          description: "更新后的分类 ID，null 表示无分类"
+        note:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: "更新后的备注"
+    returns:
+      $ref: "#/components/schemas/TaskItem"
+    errors:
+      - code: "TASK_NOT_FOUND"
+        source: "EX-6.1（编辑场景）"
+        message: "任务不存在"
+        trigger: "UPDATE 影响行数为 0，任务已被删除（并发场景）"
+
+  update_task_status:
+    summary: "切换任务完成状态"
+    description: "来源：S02.3a Step 2 → Step 5。专用于切换 done 字段，与更新内容分离，保持职责单一。"
+    params:
+      type: object
+      required:
+        - task_id
+        - done
+      properties:
+        task_id:
+          type: integer
+          description: "目标任务 ID"
+        done:
+          type: boolean
+          description: "目标状态：true = 标记完成，false = 取消完成"
+    returns:
+      type: object
+      required:
+        - task_id
+        - done
+      properties:
+        task_id:
+          type: integer
+        done:
+          type: boolean
+    errors:
+      - code: "TASK_NOT_FOUND"
+        source: "EX（并发）"
+        message: "任务不存在"
+        trigger: "UPDATE 影响行数为 0"
+
+  delete_task:
+    summary: "删除任务"
+    description: "来源：S02.3c Step 4 → Step 7。物理删除，不可恢复。WHERE 条件同时包含 user_id 防止越权。"
+    params:
+      type: object
+      required:
+        - task_id
+      properties:
+        task_id:
+          type: integer
+          description: "目标任务 ID"
+    returns:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+    errors:
+      - code: "TASK_NOT_FOUND"
+        source: "EX-6.1"
+        message: "任务不存在（静默处理）"
+        trigger: "来源：S02.3c Step 6 DELETE 影响行数为 0，前端静默处理，结果最终一致"

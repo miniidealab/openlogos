@@ -1,20 +1,20 @@
 # OpenLogos examples
 
-## TaskFlow API (`taskflow-api/`)
+## FlowTask（`flowtask/`）
 
-**Official runnable demo** — JWT auth + per-user tasks on **Hono**, **SQLite**, **Drizzle**, **Vitest**.
+**可运行的桌面端 Demo** — Tauri 2 + React + TypeScript + Vite，本地 SQLite，完整 `logos/resources/`（PRD → 场景 → OpenAPI 规格 → DDL → 测试与编排 → verify）。
 
-Use it to:
+用于：
 
-- See a complete `logos/resources/` tree (PRD → OpenAPI → DDL → test specs → verify).
-- Run `npm test` and `npm run verify` after building the CLI (`cli/` → `npm run build`).
+- 对照方法论在**非 HTTP 服务**项目中的落地方式（Tauri Commands 替代 REST）。
+- 本地运行应用与阅读设计文档。
 
-Start here: [taskflow-api/README.md](./taskflow-api/README.md).
+环境要求：Node.js ≥ 18、pnpm、Rust/cargo 及 [Tauri 前置依赖](https://tauri.app/start/prerequisites/)。
 
-This demo is the intended **source of truth** for excerpts on the marketing **Tour** page ([S18 scenario](../../logos/resources/prd/3-technical-plan/2-scenario-implementation/S18-tour.md)).
+从这里开始：[flowtask/README.md](./flowtask/README.md)。
 
-## Demo SaaS project (`demo-saas-project/`)
+若希望单独分享一个更小克隆体积的仓库，可自行将 `examples/flowtask` 拆出为独立 GitHub 仓库（与本 monorepo 需自行保持同步）。
 
-Lightweight **placeholder** (config + `AGENTS.md` only) for a fictional Next.js/SaaS stack. For a full methodology walkthrough, use **TaskFlow** above.
+## Demo SaaS project（`demo-saas-project/`）
 
-You can mirror TaskFlow to a standalone GitHub repository (e.g. `openlogos-demo-taskflow`) if you want a smaller clone URL for workshops.
+轻量 **占位**（配置 + `AGENTS.md`），虚构 Next.js/SaaS 技术栈。完整可运行示例请使用上方的 **FlowTask**。

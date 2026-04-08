@@ -6,7 +6,12 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 ## Project Context
 - Config: `logos/logos.config.json`
 - Resource Index: `logos/logos-project.yaml`
-- Tech Stack: Node.js + TypeScript (CLI), Astro 5 (Website), Markdown (Skills & Specs)
+
+## Language Policy
+本项目的文档语言配置于 `logos/logos.config.json` 的 `locale` 字段（当前值：`"zh"`）。
+- 所有生成的文档、注释和 AI 回复**必须使用中文**
+- Skill 文件可能使用任何语言编写，但你的输出必须遵循 locale 设置
+- 生成文档前请先检查 `logos/logos.config.json`
 
 ## Methodology Rules
 1. Never write code without first completing the design documents
@@ -15,14 +20,6 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations (see logos/changes/ directory)
 6. All generated test code must include an OpenLogos reporter (see spec/test-results.md)
-
-## Project Structure
-- `spec/` — Methodology specifications (the "source code" of OpenLogos)
-- `skills/` — AI Skills (platform-agnostic Markdown)
-- `cli/` — `@miniidealab/openlogos` CLI tool (TypeScript + ESM)
-- `website/` — openlogos.ai static site (Astro 5)
-- `examples/` — Demo projects
-- `logos/` — OpenLogos methodology assets for this project itself (dogfooding)
 
 ## Interaction Guidelines
 When the user's request is vague or they ask "what should I do next":
@@ -43,25 +40,31 @@ Phase detection logic:
 - code generated but `logos/resources/verify/` is empty → suggest Phase 3 Step 5 (run tests then `openlogos verify`)
 
 ## Active Skills
-- `skills/project-init/` — Project initialization and structure setup
-- `skills/prd-writer/` — Requirements document authoring
-- `skills/product-designer/` — Product design and prototyping
-- `skills/architecture-designer/` — Technical architecture and technology selection
-- `skills/scenario-architect/` — Business scenario modeling and sequence diagrams
-- `skills/api-designer/` — OpenAPI specification design
-- `skills/db-designer/` — Database schema design
-- `skills/test-writer/` — Unit test + scenario test case design (Step 3a, all projects)
-- `skills/test-orchestrator/` — API orchestration test design (Step 3b, API projects only)
-- `skills/code-reviewer/` — Code review and compliance checking
-- `skills/change-writer/` — Change proposal writing and impact analysis
-- `skills/merge-executor/` — Delta merge execution via MERGE_PROMPT.md
+- `skills/project-init/` — 项目初始化与结构搭建
+- `skills/prd-writer/` — 需求文档编写
+- `skills/product-designer/` — 产品设计与原型
+- `skills/architecture-designer/` — 技术架构与技术选型
+- `skills/scenario-architect/` — 业务场景建模与时序图
+- `skills/api-designer/` — OpenAPI 规格设计
+- `skills/db-designer/` — 数据库 Schema 设计
+- `skills/test-writer/` — 单元测试 + 场景测试用例设计（Step 3a）
+- `skills/test-orchestrator/` — API 编排测试设计（Step 3b，仅 API 项目）
+- `skills/code-reviewer/` — 代码审查与规范检查
+- `skills/change-writer/` — 变更提案编写与影响分析
+- `skills/merge-executor/` — 通过 MERGE_PROMPT.md 执行 Delta 合并
+
+## ⚠️ 变更管理（必须遵守）
+
+**修改任何源代码或 Skill 文件之前，必须先创建变更提案：**
+
+1. 运行 `openlogos change <slug>` 创建提案目录
+2. 使用 change-writer Skill 填写 `proposal.md` + `tasks.md`
+3. 用户确认后再开始编码
+4. 完成后运行 `openlogos merge <slug>` → `openlogos archive <slug>`
+
+唯一例外：纯 typo 修复、README 等非方法论文件的修改。
+**跳过此步骤将违反 OpenLogos 核心方法论。**
 
 ## Conventions
 - 遵循 OpenLogos 三层推进模型（Why → What → How）
 - 每次变更必须先创建 logos/changes/ 变更提案
-- CLI 代码位于 cli/，使用 TypeScript + ESM
-- 官网代码位于 website/，使用 Astro 静态输出
-- 所有 Skill 使用 Markdown 格式，放在 skills/{skill-name}/SKILL.md
-- 所有规范文档放在 spec/，是方法论的「源码」
-- Commit 类型：feat | improve | fix | docs | refactor
-- Markdown 嵌套代码块：当文档内容包含 ``` 代码围栏时，外层必须使用 4 个反引号（````），内层保持 3 个
