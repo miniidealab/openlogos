@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **OpenCode Native Plugin MVP (draft)** — Added `plugin-opencode/` as a native OpenCode plugin prototype:
+  - Command bridge for `/openlogos:*` to existing CLI commands (`status`, `change`, `merge`, `archive`, `verify`, etc.)
+  - Session lifecycle hook prototype for initial context injection
+  - Local/npm usage examples (`examples/opencode.json`, `.opencode/plugins/openlogos-local.js`)
+  - Unit tests for command parsing and hook dispatch
+- **OpenCode plugin spec** — Added `spec/opencode-plugin.md` to document architecture, command contract, hook strategy, error codes, and security boundaries.
+
 ## [0.5.4] - 2026-04-08
 
 ### Added

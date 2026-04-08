@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "@miniidealab/opencode-plugin-openlogos"
+  ],
+  "permission": {
+    "bash": "ask",
+    "edit": "ask",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "skill": "allow"
+  }
+}

@@ -59,6 +59,10 @@ Phase detection logic:
 - `skills/product-designer` — `logos/skills/product-designer/SKILL.md`
 - ...（共 12 项）
 
+当 aiTool = "opencode" 时：
+- **兼容模式**：继续使用 `AGENTS.md` + `logos/skills/*/SKILL.md`
+- **原生插件模式（推荐）**：通过 `opencode.json` 的 `plugin` 字段或 `.opencode/plugins/` 加载 OpenLogos 插件；`AGENTS.md` 作为兜底指令保留
+
 ## Conventions
 - [从 logos-project.yaml 的 conventions 段读取]
 - When writing Markdown files that contain triple-backtick code blocks inside other code blocks, use 4-backtick fences (````) for the outer block
@@ -102,10 +106,11 @@ AGENTS.md 的内容从以下文件中自动提取：
 |------|---------|---------------|---------|
 | **Cursor** | `AGENTS.md`（原生支持） | `.cursor/rules/*.mdc` | `init` / `sync` 自动部署 |
 | **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署 |
-| **OpenCode** | `AGENTS.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署 |
+| **OpenCode（兼容模式）** | `AGENTS.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署 |
+| **OpenCode（原生插件模式）** | `opencode.json` + `.opencode/plugins/` | 插件内置/按需加载 | 由插件负责命令桥接与会话注入，`AGENTS.md` 作为兜底 |
 | **GitHub Copilot** | `.github/copilot-instructions.md` | 规划中 | Phase 1.5 |
 
-`openlogos sync` 命令会同时生成所有需要的指令文件，确保不同 AI 工具看到的指令一致。
+`openlogos sync` 命令会同时生成所有需要的指令文件，确保不同 AI 工具看到的指令一致。对于 OpenCode 原生插件模式，`sync` 仍保留 `AGENTS.md` 作为降级路径，避免插件不可用时流程中断。
 
 ## 与 logos-project.yaml 的关系
 
