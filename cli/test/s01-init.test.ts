@@ -105,6 +105,20 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(output).toContain('product-designer');
   });
 
+  it('UT-S01-09b: createAgentsMd includes Step 4 batch execution rules in English', () => {
+    const output = createAgentsMd('en');
+    expect(output).toContain('Step 4 execution rules (large tasks)');
+    expect(output).toContain('UT/ST case IDs');
+    expect(output).toContain('test-results.jsonl');
+  });
+
+  it('UT-S01-09c: createAgentsMd includes Step 4 batch execution rules in Chinese', () => {
+    const output = createAgentsMd('zh');
+    expect(output).toContain('Step 4 执行规则（大任务）');
+    expect(output).toContain('UT/ST 用例 ID');
+    expect(output).toContain('test-results.jsonl');
+  });
+
   it('UT-S01-10: createAgentsMd switches conventions by locale', () => {
     const en = createAgentsMd('en');
     const zh = createAgentsMd('zh');

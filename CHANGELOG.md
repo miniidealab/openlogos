@@ -5,13 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.6] - 2026-04-09
-
-### Fixed
-
-- **OpenCode slash command discovery** — OpenCode 1.x lists `/` commands from `.opencode/commands/*.md`, not from plugin `tui.command.execute`. `init`/`sync` now deploys Markdown command definitions (e.g. `/openlogos-status`, `/openlogos-sync`) that run `openlogos` via OpenCode’s `` !`…` `` shell injection, so the TUI no longer shows "No matching items" for `openlogos`.
-
 ## [Unreleased]
+
+## [0.5.7] - 2026-04-09
 
 ### Added
 
@@ -22,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Local/npm usage examples (`examples/opencode.json`, `.opencode/plugins/openlogos-local.js`)
   - Unit tests for command parsing and hook dispatch
 - **OpenCode plugin spec** — Added `spec/opencode-plugin.md` to document architecture, command contract, hook strategy, error codes, and security boundaries.
+
+### Changed
+
+- **Phase 3 Step 4 交付规则强化（业务与测试闭环）** — `spec/workflow.md` 明确 Step 4 必须同时交付业务代码、UT/ST 测试代码与 OpenLogos reporter；允许大任务分批，但每批必须闭环，且需先声明本批 UT/ST 用例 ID；并新增 Step 5 前置门禁，Step 4 未完成不得进入验收。
+- **分批执行 reporter 规范补充** — `spec/test-results.md` 新增“分批闭环执行约定”：强调用例 ID 与 `logos/resources/test/*.md` 对齐、每批完整测试前清空结果文件、重复 ID 以最后一次结果为准。
+- **AI 指令模板可复用化** — `spec/agents-md.md`、`cli/src/commands/init.ts`、`AGENTS.md`、`CLAUDE.md` 同步加入 Step 4 分批执行规则与可直接复用提示词，避免 AI 在大任务中只写业务不写测试。
+- **测试覆盖补强** — `cli/test/s01-init.test.ts` 增加中英文场景下 Step 4 分批规则生成断言，确保 `createAgentsMd()` 输出包含闭环约束文案。
+
+## [0.5.6] - 2026-04-09
+
+### Fixed
+
+- **OpenCode slash command discovery** — OpenCode 1.x lists `/` commands from `.opencode/commands/*.md`, not from plugin `tui.command.execute`. `init`/`sync` now deploys Markdown command definitions (e.g. `/openlogos-status`, `/openlogos-sync`) that run `openlogos` via OpenCode’s `` !`…` `` shell injection, so the TUI no longer shows "No matching items" for `openlogos`.
 
 ## [0.5.4] - 2026-04-08
 
@@ -228,6 +237,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.5.7...HEAD
+[0.5.7]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.7
+[0.5.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.6
+[0.5.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.4
+[0.5.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.3
+[0.5.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.2
 [0.5.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.1
 [0.5.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.0
 [0.4.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.4.3

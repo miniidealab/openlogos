@@ -80,6 +80,15 @@ logos/resources/verify/test-results.jsonl
 
 reporter 在写入前应确保 `logos/resources/verify/` 目录存在（`mkdir -p` 等效操作）。
 
+### 分批闭环执行约定（大任务）
+
+当 Phase 3 Step 4 采用“分批生成”时，reporter 仍按一次完整测试运行的口径输出结果，并遵循以下约束：
+
+1. **用例 ID 对齐**：每一批开始前先声明本批覆盖的 `UT-xx` / `ST-xx`，测试代码中写入的 `id` 必须与 `logos/resources/test/*.md` 完全一致
+2. **清空策略一致**：无论是否分批，执行“本批完整测试”前都必须先清空结果文件，避免混入旧批次数据
+3. **重复 ID 判定**：同一 `id` 在同次运行中出现多条记录（如重试）时，`openlogos verify` 仍以最后一条为准
+4. **批次可独立验收**：建议每一批产出后立即运行测试并校验 JSONL，可在批次内尽早发现“只写业务未写测试”或 ID 不匹配问题
+
 ## AI 生成 reporter 代码模板
 
 以下是各语言的 reporter 参考实现。AI 在 Phase 3 Step 4（代码生成）时，应根据项目的 `tech_stack` 选择对应语言的模板，嵌入到测试代码中。

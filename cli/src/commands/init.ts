@@ -496,6 +496,28 @@ function generatePhaseDetectionWithSkills(locale: Locale): string {
 - code generated but \`logos/resources/verify/\` is empty → Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
 }
 
+function generateStep4ExecutionRules(locale: Locale): string {
+  if (locale === 'zh') {
+    return `Step 4 执行规则（大任务）：
+1. 大任务可按场景/子模块分批实现，但每一批必须闭环
+2. 每一批必须同时包含：业务代码 + UT/ST 测试代码 + OpenLogos reporter
+3. 输出代码前，先列出本批覆盖的 UT/ST 用例 ID，并确保与 \`logos/resources/test/*.md\` 对齐
+4. 不允许将全部测试推迟到最终批次统一补写
+
+Step 4 分批执行提示词（可直接复用）：
+- \`请按 Phase 3 Step 4 执行本次实现。若任务较大可分批，但每批必须同时交付：（1）业务代码，（2）对应 UT/ST 测试代码，（3）写入 logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。输出代码前请先列出本批覆盖的 UT/ST 用例 ID。\``;
+  }
+
+  return `Step 4 execution rules (large tasks):
+1. Large implementation can be split by scenario/module, but each batch must be closed-loop
+2. Each batch must include business code + UT/ST test code + OpenLogos reporter
+3. Before generating code, list the UT/ST case IDs covered in this batch and keep IDs aligned with \`logos/resources/test/*.md\`
+4. Do not postpone all tests to the final batch
+
+Ready-to-use prompt for Step 4 batch execution:
+- \`Please execute Phase 3 Step 4 for this scope. If the task is large, split into batches, but each batch must deliver: (1) business code, (2) matching UT/ST test code, (3) OpenLogos reporter writing to logos/resources/verify/test-results.jsonl. Before outputting code, list the UT/ST IDs covered in this batch.\``;
+}
+
 const DIRECTORIES = [
   'logos/resources/prd/1-product-requirements',
   'logos/resources/prd/2-product-design/1-feature-specs',
@@ -624,6 +646,8 @@ When the user's request is vague or they ask "what should I do next":
 4. Never start generating documents without confirming key information
 
 ${includeSkills ? generatePhaseDetectionWithSkills(locale) : generatePhaseDetectionPlain(locale)}
+
+${generateStep4ExecutionRules(locale)}
 `;
 
   if (includeSkills) {

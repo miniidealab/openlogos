@@ -46,6 +46,15 @@ Phase detection logic:
 - All above exist → suggest Phase 3 Step 4 (code generation)
 - code generated but `logos/resources/verify/` is empty → suggest Phase 3 Step 5 (run tests then `openlogos verify`)
 
+Step 4 execution rules (large tasks):
+1. Large implementation can be split by scenario/module, but each batch must be closed-loop
+2. Each batch must include business code + UT/ST test code + OpenLogos reporter
+3. Before generating code, list the UT/ST case IDs covered in this batch and keep IDs aligned with `logos/resources/test/*.md`
+4. Do not postpone all tests to the final batch
+
+Ready-to-use prompt for Step 4 batch execution:
+`Please execute Phase 3 Step 4 for this scope. If the task is large, split into batches, but each batch must deliver: (1) business code, (2) matching UT/ST test code, (3) OpenLogos reporter writing to logos/resources/verify/test-results.jsonl. Before outputting code, list the UT/ST IDs covered in this batch.`
+
 ## Active Skills
 [根据 `logos.config.json` 的 `aiTool` 字段动态生成]
 
