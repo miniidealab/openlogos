@@ -8,7 +8,7 @@
 
 ## 什么是 OpenLogos？
 
-OpenLogos 是一套开源的软件研发方法论，专为 AI 时代打造，由拥有 20 余年经验的软件研发专家沉淀而成。它将成熟的软件工程方法论编码为可执行的 AI Skills，使开发者能在 AI 编程工具（Cursor、Claude Code 等）中直接使用这套方法论。
+OpenLogos 是一套开源的软件研发方法论，专为 AI 时代打造，由拥有 20 余年经验的软件研发专家沉淀而成。它将成熟的软件工程方法论编码为可执行的 AI Skills，使开发者能在 AI 编程工具（Cursor、Claude Code、OpenCode 等）中直接使用这套方法论。
 
 **核心立场：反 Vibe Coding。** 不是一上来就让 AI 写代码，而是分层推进——先搞清楚为什么做，再设计做什么，最后决定如何做。AI 是强大的执行者，但它需要清晰的指令和约束。
 
@@ -94,6 +94,7 @@ openlogos/
 │   └── merge-executor/        # 变更合并执行
 │
 ├── cli/            # openlogos CLI 工具
+├── docs/           # 用户文档（如 OpenCode 使用指南）
 ├── plugin/         # Claude Code 原生插件
 ├── examples/       # 示例项目（flowtask 为可运行桌面端参考实现）
 └── website/        # openlogos.ai 官网源码
@@ -183,37 +184,16 @@ Claude Code 用户可以通过原生插件获得最佳体验。插件提供：
 
 > **不安装插件也能用**：`openlogos init` 选择 Claude Code 时会自动生成 `CLAUDE.md`，提供基础方法论指导。插件是增强体验，不是必须。
 
-### OpenCode 原生插件（单包自动部署）
+### OpenCode（完整指南）
 
-OpenCode 当前可通过 `AGENTS.md` + `logos/skills/` 兼容使用。为对齐 Claude Code 的体验，OpenLogos 提供 OpenCode 原生插件模式（命令桥接 + hook 生命周期注入），并采用**单包策略**：只安装 `@miniidealab/openlogos`，无需额外插件包。
+**→ 详见 [docs/opencode.md](docs/opencode.md)**（初始化、`AGENTS.md`、本地插件、`/openlogos:` 命令、sync、常见问题）。
 
-#### 使用方式（两种）
+概要：
 
-1. **兼容模式（当前已可用）**
-   - 运行 `openlogos init` 并选择 OpenCode
-   - 使用生成的 `AGENTS.md` 与 `logos/skills/` 推进流程
-
-2. **原生插件模式（推荐）**
-   - 运行 `openlogos init` 并选择 OpenCode（或后续执行 `openlogos sync`）
-   - CLI 会自动部署 `.opencode/plugins/openlogos.js`
-   - 同时创建/补齐 `opencode.json` 的推荐权限默认值（不覆盖你已有配置）
-   - 通过插件直接触发 OpenLogos 工作流命令，并在会话启动自动注入当前 Phase 上下文
-
-#### 自动生成的配置示例（参考）
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "bash": "ask",
-    "edit": "ask",
-    "read": "allow",
-    "glob": "allow",
-    "grep": "allow",
-    "skill": "allow"
-  }
-}
-```
+- `openlogos init --ai-tool opencode --locale zh [name]`（或交互选 **3. OpenCode**）
+- 主读 **`AGENTS.md`**，Skills 在 **`logos/skills/`**；CLI 会部署 **`.opencode/plugins/openlogos.js`** 并创建/合并 **`opencode.json`**
+- 会话启动自动注入 **`openlogos status`** 摘要；对话中可用 **`/openlogos:status`**、**`/openlogos:sync`** 等桥接 CLI
+- 升级或改配置后请在项目根执行 **`openlogos sync`** 以刷新插件与指令文件
 
 ## 渐进式采纳
 
@@ -235,6 +215,7 @@ OpenCode 当前可通过 `AGENTS.md` + `logos/skills/` 兼容使用。为对齐 
 
 ## 链接
 
+- OpenCode 使用指南：[docs/opencode.md](docs/opencode.md)
 - 官网：[openlogos.ai](https://openlogos.ai)
 - 商业工具：[RunLogos](https://runlogos.com)
 - GitHub：[github.com/miniidealab/openlogos](https://github.com/miniidealab/openlogos)
