@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-04-09
+
+### Fixed
+
+- **npm 包展示 README** — `@miniidealab/openlogos` 自 `cli/` 目录发布，此前包根目录缺少 `README.md`，导致 npm 项目页提示 “This package does not have a README”。现已新增 `cli/README.md`（安装说明、常用命令、文档与 CHANGELOG 链接），并列入 `package.json` 的 `files` 字段，确保打入发布 tarball。
+
 ### Added
 
 - **示例 money-log（OpenCode 集成演示）** — 在 `examples/money-log/` 纳入轻记账 Electron 小应用，含 `.opencode/plugins/`、`.opencode/commands/` 与完整 `logos/resources/`；与 `examples/flowtask/`（Claude Code 演示）在文档中对位说明，并更新根 `README.md`、`examples/README.md` 与 `docs/opencode.md` 入口。
@@ -241,7 +247,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.5.7...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.5.8...HEAD
+[0.5.8]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.8
 [0.5.7]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.7
 [0.5.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.6
 [0.5.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.4
