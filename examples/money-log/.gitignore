@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build / pack
+dist/
+release/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Python（.opencode/skills 下可选脚本）
+**/__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+npm-debug.log*

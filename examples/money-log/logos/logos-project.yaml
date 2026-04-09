@@ -1,0 +1,35 @@
+project:
+  name: "money-log"
+  description: "轻记账 - 面向职场人群的轻量级桌面记账工具"
+  methodology: "OpenLogos"
+
+tech_stack:
+  framework: "Electron 41"
+  frontend: "React 18 + TypeScript"
+  build: "Vite"
+  ui: "Tailwind CSS + 自定义组件"
+  state: "Zustand"
+  database: "SQLite (better-sqlite3)"
+  packager: "electron-builder"
+
+resource_index:
+  - name: "需求文档"
+    path: "logos/resources/prd/1-product-requirements/01-requirements.md"
+  - name: "产品设计"
+    path: "logos/resources/prd/2-product-design/"
+  - name: "技术架构"
+    path: "logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md"
+  - name: "场景建模"
+    path: "logos/resources/prd/3-technical-plan/2-scenario-implementation/"
+  - name: "API 设计"
+    path: "logos/resources/api/local-api.yaml"
+  - name: "数据库设计"
+    path: "logos/resources/database/schema.sql"
+  - name: "测试用例"
+    path: "logos/resources/test/"
+  - name: "代码实现"
+    path: "src/"
+
+conventions:
+  - "遵循 OpenLogos 三层推进模型（Why → What → How）"
+  - "每次变更必须先创建 logos/changes/ 变更提案"

@@ -1,0 +1,511 @@
+openapi: 3.1.0
+info:
+  title: 轻记账 - 本地 API
+  description: "轻记账桌面应用的本地 IPC API 规格，用于主进程与渲染进程通信"
+  version: 1.0.0
+
+servers:
+  - url: ipc://main
+    description: Electron Main Process
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "机器可读的错误码（如 RECORD_SAVE_FAILED）"
+        message:
+          type: string
+          description: "人类可读的错误描述"
+
+    Record:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: "记录 ID"
+        amount:
+          type: number
+          description: "金额（单位：元）"
+        category_id:
+          type: integer
+          description: "分类 ID"
+        category_name:
+          type: string
+          description: "分类名称"
+        created_at:
+          type: string
+          format: date-time
+          description: "创建时间"
+        remark:
+          type: string
+          description: "备注"
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: "分类 ID"
+        name:
+          type: string
+          description: "分类名称"
+        icon:
+          type: string
+          description: "分类图标"
+        is_default:
+          type: boolean
+          description: "是否为预设分类"
+        created_at:
+          type: string
+          format: date-time
+          description: "创建时间"
+
+    Statistics:
+      type: object
+      properties:
+        total:
+          type: number
+          description: "总支出"
+        daily:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              amount:
+                type: number
+          description: "每日支出"
+        by_category:
+          type: array
+          items:
+            type: object
+            properties:
+              category_id:
+                type: integer
+              category_name:
+                type: string
+              amount:
+                type: number
+              percent:
+                type: number
+          description: "按分类汇总"
+
+paths:
+  /ipc/records/save:
+    post:
+      operationId: saveRecord
+      summary: 保存记账记录
+      description: "来源：S01 Step 8 → Step 15"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, category_id]
+              properties:
+                amount:
+                  type: number
+                  minimum: 0.01
+                  maximum: 999999
+                  description: "金额（需大于0）"
+                category_id:
+                  type: integer
+                  description: "分类 ID"
+                remark:
+                  type: string
+                  maxLength: 200
+                  description: "备注（可选）"
+      responses:
+        '200':
+          description: "保存成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  id:
+                    type: integer
+        '400':
+          description: "参数错误（EX-8.1, EX-8.2）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: "数据库写入失败（EX-11.1）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ipc/records/list:
+    get:
+      operationId: getRecords
+      summary: 获取记账记录列表
+      description: "获取指定时间范围内的记账记录"
+      parameters:
+        - name: start_date
+          in: query
+          schema:
+            type: string
+          description: "开始日期（ISO 8601）"
+        - name: end_date
+          in: query
+          schema:
+            type: string
+          description: "结束日期（ISO 8601）"
+        - name: category_id
+          in: query
+          schema:
+            type: integer
+          description: "分类 ID（可选）"
+      responses:
+        '200':
+          description: "获取成功"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Record'
+
+  /ipc/statistics:
+    get:
+      operationId: getStatistics
+      summary: 获取统计数据
+      description: "来源：S02 Step 1 → Step 8"
+      parameters:
+        - name: time_range
+          in: query
+          schema:
+            type: string
+            enum: [week, month, custom]
+          description: "时间范围"
+        - name: month
+          in: query
+          schema:
+            type: string
+          description: "月份（YYYY-MM）"
+        - name: start_date
+          in: query
+          schema:
+            type: string
+          description: "自定义开始日期"
+        - name: end_date
+          in: query
+          schema:
+            type: string
+          description: "自定义结束日期"
+        - name: category_id
+          in: query
+          schema:
+            type: integer
+          description: "分类 ID（可选）"
+      responses:
+        '200':
+          description: "获取成功"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statistics'
+        '400':
+          description: "时间范围无效（EX-9.1）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ipc/categories/list:
+    get:
+      operationId: getCategories
+      summary: 获取分类列表
+      description: "来源：S03 Step 1 → Step 8"
+      responses:
+        '200':
+          description: "获取成功"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+  /ipc/categories/add:
+    post:
+      operationId: addCategory
+      summary: 新增分类
+      description: "来源：S03 Step 12 → Step 19"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 20
+                  description: "分类名称"
+      responses:
+        '200':
+          description: "新增成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  id:
+                    type: integer
+        '400':
+          description: "参数错误（EX-12.1, EX-12.2）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ipc/categories/update:
+    put:
+      operationId: updateCategory
+      summary: 更新分类
+      description: "来源：S03 Step 23 → Step 30"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: integer
+                  description: "分类 ID"
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 20
+                  description: "分类名称"
+      responses:
+        '200':
+          description: "更新成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /ipc/categories/delete:
+    delete:
+      operationId: deleteCategory
+      summary: 删除分类
+      description: "来源：S03 Step 34 → Step 41"
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: "分类 ID"
+      responses:
+        '200':
+          description: "删除成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          description: "预设分类不可删除（EX-12.3）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ipc/settings/get:
+    get:
+      operationId: getSetting
+      summary: 获取设置项
+      description: "来源：S04 Step 1 → Step 6"
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+          description: "设置键名"
+      responses:
+        '200':
+          description: "获取成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: string
+
+  /ipc/settings/set:
+    post:
+      operationId: setSetting
+      summary: 设置设置项
+      description: "设置或更新一个设置项"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value]
+              properties:
+                key:
+                  type: string
+                  description: "设置键名"
+                value:
+                  type: string
+                  description: "设置值"
+      responses:
+        '200':
+          description: "设置成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /ipc/auth/verify-password:
+    post:
+      operationId: verifyPassword
+      summary: 验证密码
+      description: "来源：S04 Step 11 → Step 22"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+                  description: "6位数字密码"
+      responses:
+        '200':
+          description: "验证成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+        '401':
+          description: "密码错误（EX-11.1）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ipc/auth/set-password:
+    post:
+      operationId: setPassword
+      summary: 设置密码
+      description: "来源：S04 Step 27 → Step 36"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+                  description: "6位数字密码"
+      responses:
+        '200':
+          description: "设置成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          description: "密码不符合要求（EX-27.1, EX-27.2）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ipc/auth/disable-password:
+    post:
+      operationId: disablePassword
+      summary: 关闭密码锁
+      description: "来源：S04 Step 40 → Step 51"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  description: "原密码"
+      responses:
+        '200':
+          description: "关闭成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '401':
+          description: "密码错误（EX-43.1）"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /ipc/app/reset:
+    post:
+      operationId: resetApp
+      summary: 重置应用
+      description: "来源：S04 Step 55 → Step 62，清除所有数据"
+      responses:
+        '200':
+          description: "重置成功"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean

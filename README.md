@@ -53,7 +53,9 @@ openlogos init my-project
 2. 在 Cursor 中配置 `.cursor/rules/` 引用这些 Skills
 3. 或在 Claude Code 中通过 `CLAUDE.md` 引用
 
-### 方式三：参考可运行示例（FlowTask 桌面应用）
+### 方式三：参考可运行示例（桌面小应用）
+
+**FlowTask（Tauri）** — 侧重 **Claude Code** 集成演示：
 
 ```bash
 git clone https://github.com/miniidealab/openlogos.git
@@ -64,7 +66,17 @@ pnpm tauri dev    # 开发调试；发布构建见示例 README
 # cd ../../cli && npm install && npm run build && cd ../examples/flowtask && openlogos verify
 ```
 
-详见 [examples/README.md](examples/README.md)（含 **FlowTask** 与占位 demo 的说明）。
+**轻记账 Money Log（Electron）** — 侧重 **OpenCode** 集成演示：
+
+```bash
+git clone https://github.com/miniidealab/openlogos.git
+cd openlogos/examples/money-log
+npm install
+npm run dev
+# OpenCode 使用说明见 docs/opencode.md
+```
+
+详见 [examples/README.md](examples/README.md)（**FlowTask** 与 **Money Log** 对位说明）。
 
 ## 仓库结构
 
@@ -96,7 +108,7 @@ openlogos/
 ├── cli/            # openlogos CLI 工具
 ├── docs/           # 用户文档（如 OpenCode 使用指南）
 ├── plugin/         # Claude Code 原生插件
-├── examples/       # 示例项目（flowtask 为可运行桌面端参考实现）
+├── examples/       # 示例项目（flowtask=Claude Code 桌面演示，money-log=OpenCode 桌面演示）
 └── website/        # openlogos.ai 官网源码
 ```
 

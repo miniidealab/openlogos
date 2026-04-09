@@ -2,7 +2,8 @@
 
 一款本地优先的个人桌面任务管理工具，支持 macOS 和 Windows。数据完全存储在本地 SQLite，无需网络连接，保护用户隐私。
 
-> 本项目是 [OpenLogos](https://github.com/miniidealab/openlogos) 方法论的 Demo 项目，完整展示了从需求 → 设计 → 架构 → 编码的 AI 辅助研发全流程。
+> 本项目是 [OpenLogos](https://github.com/miniidealab/openlogos) monorepo 中的 **Claude Code 集成官方演示**（小型桌面应用），完整展示了从需求 → 设计 → 架构 → 编码的 AI 辅助研发全流程。  
+> 若你使用 **OpenCode** 并希望对照含 `.opencode/commands/` 的同类示例，请优先参考同目录下的 [money-log](../money-log/README.md)（Electron）。
 
 ---
 
@@ -110,7 +111,8 @@ Phase 3  技术架构        logos/resources/prd/3-technical-plan/1-architecture
 
 ### 如何用 OpenLogos 研发这个项目
 
-**前置条件**：安装 [Claude Code](https://claude.ai/code) 和 OpenLogos CLI
+**推荐前置条件**：安装 [Claude Code](https://claude.ai/code) 与 OpenLogos CLI（本示例的定位即 **Claude Code + 插件 / CLAUDE.md** 工作流）。  
+使用 **OpenCode** 的读者可直接阅读仓库内 `AGENTS.md`，或改用官方 OpenCode 演示示例 [money-log](../money-log/README.md)。
 
 ```bash
 # 1. 初始化 OpenLogos 项目

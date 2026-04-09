@@ -13,6 +13,14 @@ openlogos --version   # 确认 ≥ 0.5.6
 
 ---
 
+## 可运行完整示例（推荐）
+
+仓库内 **[examples/money-log](../examples/money-log/README.md)**（轻记账）为 **OpenCode + OpenLogos** 官方集成演示：已包含 `opencode.json`、`.opencode/plugins/openlogos.js`、`.opencode/commands/openlogos-*.md` 与完整 `logos/resources/`。在 monorepo 中进入该目录后执行 `npm install` 与 `npm run dev` 即可本地运行桌面应用，并在该根目录启动 OpenCode 对照本文操作。
+
+若你使用 **Claude Code** 并希望对照另一类小桌面应用，见 **[examples/flowtask](../examples/flowtask/README.md)**（Tauri）。
+
+---
+
 ## 1. 前置条件
 
 | 项 | 说明 |

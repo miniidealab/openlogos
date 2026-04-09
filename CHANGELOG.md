@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **示例 money-log（OpenCode 集成演示）** — 在 `examples/money-log/` 纳入轻记账 Electron 小应用，含 `.opencode/plugins/`、`.opencode/commands/` 与完整 `logos/resources/`；与 `examples/flowtask/`（Claude Code 演示）在文档中对位说明，并更新根 `README.md`、`examples/README.md` 与 `docs/opencode.md` 入口。
+
 ## [0.5.7] - 2026-04-09
 
 ### Added
