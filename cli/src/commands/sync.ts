@@ -84,6 +84,9 @@ export function sync() {
       } else if (pluginResult.config.updated) {
         console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
       }
+      if (pluginResult.commandCount > 0) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
+      }
     }
   }
 

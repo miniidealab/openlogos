@@ -155,6 +155,7 @@ describe('S08 Scenario Tests — sync command', () => {
     sync();
 
     expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'commands', 'openlogos-status.md'))).toBe(true);
     const opencodeConfig = JSON.parse(readFileSync(join(root, 'opencode.json'), 'utf-8'));
     expect(opencodeConfig.permission.read).toBe('allow'); // preserve existing
     expect(opencodeConfig.permission.bash).toBe('ask');   // fill missing defaults
@@ -162,6 +163,7 @@ describe('S08 Scenario Tests — sync command', () => {
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('OpenCode plugin synced');
+    expect(allLogs).toContain('slash commands');
   });
 
   it('ST-S08-05: sync defaults to cursor when aiTool not in config', () => {

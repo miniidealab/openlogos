@@ -13,17 +13,18 @@ cd plugin-opencode
 npm test
 ```
 
-## 命令支持
+## TUI 斜杠命令（OpenCode `/` 补全）
 
-- `/openlogos:status`
-- `/openlogos:next`（当前兼容映射到 `openlogos status`）
-- `/openlogos:init [name]`
-- `/openlogos:sync`
-- `/openlogos:change <slug>`
-- `/openlogos:merge <slug>`
-- `/openlogos:archive <slug>`
-- `/openlogos:verify`
-- `/openlogos:launch`
+OpenCode 的 `/` 列表来自 `.opencode/commands/*.md`，**不是**插件里的 `tui.command.execute` 字符串。init/sync 会部署：
+
+- `/openlogos-status`、`/openlogos-next`、`/openlogos-sync`、`/openlogos-verify`、`/openlogos-launch`
+- `/openlogos-change <slug>`、`/openlogos-merge <slug>`、`/openlogos-archive <slug>`
+- `/openlogos-init`（说明文档，建议在终端用带 `--locale` 的 init）
+
+## 插件钩子（补充）
+
+- `session.created`：注入 `openlogos status`
+- `tui.command.execute`：若 OpenCode 仍向插件转发部分输入，可解析旧式 `/openlogos:*`（**TUI 补全请以 `commands/` 为准**）
 
 ## 示例配置
 
@@ -35,5 +36,6 @@ npm test
 - 插件模板由 `@miniidealab/openlogos` 一并发布
 - 用户执行 `openlogos init --ai-tool opencode` 或 `openlogos sync` 时自动部署到：
   - `.opencode/plugins/openlogos.js`
+  - `.opencode/commands/*.md`（TUI 斜杠命令）
   - `opencode.json`（补齐推荐权限默认值）
 

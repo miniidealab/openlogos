@@ -39,6 +39,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.opencodePluginSynced': 'OpenCode plugin synced to {target}',
     'init.opencodeConfigCreated': 'opencode.json created with recommended permission defaults',
     'init.opencodeConfigUpdated': 'opencode.json merged with missing recommended permission defaults',
+    'init.opencodeCommandsDeployed': 'OpenCode slash commands deployed to .opencode/commands/ ({count} files)',
 
     // status
     'phase.1': 'Phase 1 · Requirements (WHY)',
@@ -146,6 +147,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.opencodePluginSynced': 'OpenCode 插件已同步到 {target}',
     'init.opencodeConfigCreated': '已创建 opencode.json，并写入推荐权限默认值',
     'init.opencodeConfigUpdated': '已为 opencode.json 补齐缺失的推荐权限默认值',
+    'init.opencodeCommandsDeployed': 'OpenCode 斜杠命令已部署到 .opencode/commands/（{count} 个文件）',
 
     // status
     'phase.1': 'Phase 1 · 需求文档 (WHY)',

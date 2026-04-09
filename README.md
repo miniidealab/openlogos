@@ -186,14 +186,14 @@ Claude Code 用户可以通过原生插件获得最佳体验。插件提供：
 
 ### OpenCode（完整指南）
 
-**→ 详见 [docs/opencode.md](docs/opencode.md)**（初始化、`AGENTS.md`、本地插件、`/openlogos:` 命令、sync、常见问题）。
+**→ 详见 [docs/opencode.md](docs/opencode.md)**（初始化、`AGENTS.md`、本地插件、**TUI 斜杠命令**、sync、常见问题）。
 
 概要：
 
 - `openlogos init --ai-tool opencode --locale zh [name]`（或交互选 **3. OpenCode**）
-- 主读 **`AGENTS.md`**，Skills 在 **`logos/skills/`**；CLI 会部署 **`.opencode/plugins/openlogos.js`** 并创建/合并 **`opencode.json`**
-- 会话启动自动注入 **`openlogos status`** 摘要；对话中可用 **`/openlogos:status`**、**`/openlogos:sync`** 等桥接 CLI
-- 升级或改配置后请在项目根执行 **`openlogos sync`** 以刷新插件与指令文件
+- 主读 **`AGENTS.md`**，Skills 在 **`logos/skills/`**；CLI 会部署 **`.opencode/plugins/openlogos.js`**、**`.opencode/commands/*.md`**（TUI 里输入 `/` 可见，如 **`/openlogos-status`**），并创建/合并 **`opencode.json`**
+- 会话启动由插件注入 **`openlogos status`** 摘要；执行 CLI 请用 **`/openlogos-status`**、**`/openlogos-sync`** 等（OpenCode 的 `/` 列表来自 `commands/`，**不是** `/openlogos:` 前缀）
+- 升级或改配置后请在项目根执行 **`openlogos sync`** 并**重启 OpenCode**
 
 ## 渐进式采纳
 

@@ -632,9 +632,13 @@ describe('S01 Scenario Tests — init command', () => {
     expect(claude).not.toContain('## Active Skills');
 
     expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'commands', 'openlogos-status.md'))).toBe(true);
     const opencodeConfig = JSON.parse(readFileSync(join(root, 'opencode.json'), 'utf-8'));
     expect(opencodeConfig.permission.bash).toBe('ask');
     expect(opencodeConfig.permission.skill).toBe('allow');
+
+    const allLogsOc = con.logs.join('\n');
+    expect(allLogsOc).toContain('slash commands');
   });
 
   it('ST-S01-08: choose Other → both files include Active Skills', async () => {

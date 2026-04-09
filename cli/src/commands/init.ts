@@ -260,7 +260,7 @@ function mergeOpenCodeConfig(root: string) {
   return { created: false, updated: changed };
 }
 
-export function deployOpenCodePlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean } } | null {
+export function deployOpenCodePlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean }; commandCount: number } | null {
   const source = findOpenCodePluginTemplateSource();
   if (!source || !existsSync(source)) return null;
 
@@ -273,9 +273,21 @@ export function deployOpenCodePlugin(root: string, locale: Locale = 'en'): { tar
   copyFileSync(sourceFile, join(pluginTargetDir, 'openlogos.js'));
   const configResult = mergeOpenCodeConfig(root);
 
+  let commandCount = 0;
+  const commandsSourceDir = join(source, 'commands');
+  if (existsSync(commandsSourceDir)) {
+    const commandsTargetDir = join(root, '.opencode', 'commands');
+    mkdirSync(commandsTargetDir, { recursive: true });
+    for (const file of readdirSync(commandsSourceDir).filter(f => f.endsWith('.md'))) {
+      copyFileSync(join(commandsSourceDir, file), join(commandsTargetDir, file));
+      commandCount++;
+    }
+  }
+
   return {
     target: locale === 'zh' ? '.opencode/plugins/openlogos.js + opencode.json' : '.opencode/plugins/openlogos.js + opencode.json',
     config: configResult,
+    commandCount,
   };
 }
 
@@ -766,6 +778,9 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
         console.log(`  ✓ ${t(locale, 'init.opencodeConfigCreated')}`);
       } else if (pluginResult.config.updated) {
         console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
+      }
+      if (pluginResult.commandCount > 0) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
       }
     }
   }

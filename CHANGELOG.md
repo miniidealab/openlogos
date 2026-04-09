@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-04-09
+
+### Fixed
+
+- **OpenCode slash command discovery** — OpenCode 1.x lists `/` commands from `.opencode/commands/*.md`, not from plugin `tui.command.execute`. `init`/`sync` now deploys Markdown command definitions (e.g. `/openlogos-status`, `/openlogos-sync`) that run `openlogos` via OpenCode’s `` !`…` `` shell injection, so the TUI no longer shows "No matching items" for `openlogos`.
+
 ## [Unreleased]
 
 ### Added
