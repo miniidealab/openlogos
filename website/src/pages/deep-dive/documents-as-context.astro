@@ -1,0 +1,291 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ConceptNav from '../../components/ConceptNav.astro';
+---
+
+<BaseLayout title="Documents as Context — OpenLogos" description="In Vibe Coding, AI's context is a black box. In OpenLogos, every decision is an open document.">
+  <ConceptNav current="documents-as-context" />
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-tag tag-blue">Core Principle</div>
+      <h1>Your AI sees everything.<br/><span class="gradient-text">Not just what you said.</span></h1>
+      <p class="hero-desc">In Vibe Coding, AI's context is a black box — you don't know what it assumed. In OpenLogos, every decision lives in a document. Reviewable. Reproducible. Cumulative. This is Harness Engineering's <em>memory &amp; state layer</em> — made explicit.</p>
+    </div>
+  </section>
+
+  <!-- Black Box vs Open Book -->
+  <section class="contrast-section">
+    <div class="container-wide">
+      <div class="section-label">The Contrast</div>
+      <h2 class="section-title">Black box vs. open book</h2>
+
+      <div class="contrast-grid">
+        <div class="contrast-col contrast-vibe">
+          <div class="contrast-header">
+            <span class="contrast-badge badge-red">Vibe Coding</span>
+          </div>
+          <div class="contrast-body">
+            <div class="prompt-box">
+              <div class="prompt-label">You say:</div>
+              <div class="prompt-text">"Build a login feature"</div>
+            </div>
+            <div class="brain-box">
+              <div class="brain-label">AI thinks (hidden):</div>
+              <div class="brain-item unknown">Requirements? <span>Guessing...</span></div>
+              <div class="brain-item unknown">UI design? <span>Guessing...</span></div>
+              <div class="brain-item unknown">API structure? <span>Guessing...</span></div>
+              <div class="brain-item unknown">Edge cases? <span>Guessing...</span></div>
+              <div class="brain-item unknown">Error handling? <span>Guessing...</span></div>
+            </div>
+            <div class="outcome outcome-bad">
+              <span class="outcome-icon">⚠</span>
+              Output varies wildly. Every session starts from zero. Decisions are lost.
+            </div>
+          </div>
+        </div>
+
+        <div class="contrast-col contrast-logos">
+          <div class="contrast-header">
+            <span class="contrast-badge badge-green">OpenLogos</span>
+          </div>
+          <div class="contrast-body">
+            <div class="prompt-box">
+              <div class="prompt-label">You say:</div>
+              <div class="prompt-text">"Build a login feature"</div>
+            </div>
+            <div class="brain-box">
+              <div class="brain-label">AI reads (explicit):</div>
+              <div class="brain-item known"><span class="check">✓</span> Requirements doc (Phase 1)</div>
+              <div class="brain-item known"><span class="check">✓</span> Product design (Phase 2)</div>
+              <div class="brain-item known"><span class="check">✓</span> Sequence diagram S03</div>
+              <div class="brain-item known"><span class="check">✓</span> OpenAPI YAML + DB schema</div>
+              <div class="brain-item known"><span class="check">✓</span> Test cases (12 scenarios)</div>
+            </div>
+            <div class="outcome outcome-good">
+              <span class="outcome-icon">✓</span>
+              Output is consistent. Context accumulates. Decisions are preserved.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- The logos/ Directory -->
+  <section class="tree-section">
+    <div class="container">
+      <div class="section-label">The Context Store</div>
+      <h2 class="section-title">Everything lives in <code>logos/</code></h2>
+      <p class="section-desc">A structured directory where every phase's output becomes the next phase's input — all in human-readable formats.</p>
+
+      <div class="tree-card">
+        <div class="tree-line"><span class="tree-folder">logos/</span></div>
+        <div class="tree-line l1"><span class="tree-file">logos.config.json</span> <span class="tree-note">Project config</span></div>
+        <div class="tree-line l1"><span class="tree-file">logos-project.yaml</span> <span class="tree-note">AI collaboration index</span></div>
+        <div class="tree-line l1"><span class="tree-folder">resources/</span></div>
+        <div class="tree-line l2"><span class="tree-folder">prd/</span></div>
+        <div class="tree-line l3 phase-marker phase-1"><span class="tree-folder">1-product-requirements/</span> <span class="tree-note">Phase 1 · WHY</span></div>
+        <div class="tree-line l3 phase-marker phase-2"><span class="tree-folder">2-product-design/</span> <span class="tree-note">Phase 2 · WHAT</span></div>
+        <div class="tree-line l4 phase-marker phase-2"><span class="tree-folder">1-feature-specs/</span></div>
+        <div class="tree-line l4 phase-marker phase-2"><span class="tree-folder">2-page-design/</span></div>
+        <div class="tree-line l3 phase-marker phase-3"><span class="tree-folder">3-technical-plan/</span> <span class="tree-note">Phase 3 · HOW</span></div>
+        <div class="tree-line l4 phase-marker phase-3"><span class="tree-folder">1-architecture/</span></div>
+        <div class="tree-line l4 phase-marker phase-3"><span class="tree-folder">2-scenario-implementation/</span></div>
+        <div class="tree-line l2 phase-marker phase-3"><span class="tree-folder">api/</span> <span class="tree-note">OpenAPI YAML specs</span></div>
+        <div class="tree-line l2 phase-marker phase-3"><span class="tree-folder">database/</span> <span class="tree-note">SQL DDL / schema</span></div>
+        <div class="tree-line l2 phase-marker phase-3"><span class="tree-folder">test/</span> <span class="tree-note">Test case specs (Markdown)</span></div>
+        <div class="tree-line l2 phase-marker phase-3"><span class="tree-folder">scenario/</span> <span class="tree-note">API orchestration tests (JSON)</span></div>
+        <div class="tree-line l2 phase-marker phase-3"><span class="tree-folder">verify/</span> <span class="tree-note">Acceptance reports</span></div>
+        <div class="tree-line l1 phase-marker phase-delta"><span class="tree-folder">changes/</span> <span class="tree-note">Delta change proposals</span></div>
+        <div class="tree-line l2 phase-marker phase-delta"><span class="tree-folder">&lt;slug&gt;/</span> <span class="tree-note">Active proposal</span></div>
+        <div class="tree-line l3 phase-marker phase-delta"><span class="tree-file">proposal.md</span> <span class="tree-note">Impact analysis + summary</span></div>
+        <div class="tree-line l3 phase-marker phase-delta"><span class="tree-file">tasks.md</span> <span class="tree-note">Phase-based task checklist</span></div>
+        <div class="tree-line l3 phase-marker phase-delta"><span class="tree-folder">deltas/</span> <span class="tree-note">Changed artifacts per task</span></div>
+        <div class="tree-line l2 phase-marker phase-delta"><span class="tree-folder">archive/</span> <span class="tree-note">Completed proposals</span></div>
+        <div class="tree-line l1 phase-marker phase-skill"><span class="tree-folder">skills/</span> <span class="tree-note">AI Skills (SKILL.md per skill)</span></div>
+        <div class="tree-line l2 phase-marker phase-skill"><span class="tree-folder">prd-writer/</span></div>
+        <div class="tree-line l2 phase-marker phase-skill"><span class="tree-folder">product-designer/</span></div>
+        <div class="tree-line l2 phase-marker phase-skill"><span class="tree-folder">scenario-architect/</span></div>
+        <div class="tree-line l2 phase-marker phase-skill"><span class="tree-folder">code-implementor/</span></div>
+        <div class="tree-line l2 phase-marker phase-skill"><span class="tree-folder">api-designer/</span> <span class="tree-note">… 13 built-in skills</span></div>
+        <div class="tree-line l1"><span class="tree-folder">spec/</span> <span class="tree-note">Methodology specifications</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Three Values -->
+  <section class="values-section">
+    <div class="container">
+      <div class="section-label">Why It Matters</div>
+      <h2 class="section-title">Three properties that change everything</h2>
+
+      <div class="values-grid">
+        <div class="value-card">
+          <div class="value-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.5"/><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" stroke="currentColor" stroke-width="1.5"/></svg>
+          </div>
+          <h3>Reviewable</h3>
+          <p>Every piece of information AI uses is written in Markdown, YAML, or JSON. You can read, audit, and correct any assumption before code is generated.</p>
+        </div>
+
+        <div class="value-card">
+          <div class="value-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 4v16h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M4 16l4-4 4 4 8-8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Reproducible</h3>
+          <p>Same documents → same context → consistent AI output. Switch AI tools, switch team members — the result stays predictable because the context is explicit.</p>
+        </div>
+
+        <div class="value-card">
+          <div class="value-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v4m0 12v4m-7-10H1m22 0h-4M5.6 5.6l2.8 2.8m7.2 7.2l2.8 2.8m0-12.8l-2.8 2.8M8.4 15.6l-2.8 2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <h3>Cumulative</h3>
+          <p>Documents are project knowledge assets. Decisions never get lost. New team members read the docs and understand the full history — no tribal knowledge needed.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AGENTS.md -->
+  <section class="agents-section">
+    <div class="container">
+      <div class="section-label">The Navigator</div>
+      <h2 class="section-title">AGENTS.md — AI's GPS</h2>
+      <p class="section-desc">When AI opens your project, it reads <code>AGENTS.md</code> first. This file tells it where you are, what to read, and what rules to follow.</p>
+
+      <div class="agents-card">
+        <div class="agents-header">AGENTS.md</div>
+        <div class="agents-body">
+          <div class="agents-line"><span class="agents-key">Phase detection:</span> Scans <code>logos/resources/</code> to find current phase</div>
+          <div class="agents-line"><span class="agents-key">Next step:</span> Suggests what to do next based on what's missing</div>
+          <div class="agents-line"><span class="agents-key">Active skills:</span> Lists which AI Skills to load for each task</div>
+          <div class="agents-line"><span class="agents-key">Rules:</span> "Never write code without design docs" — enforced automatically</div>
+        </div>
+      </div>
+
+      <div class="agents-insight">
+        The AI doesn't need you to explain the project every time. It reads the docs, detects the phase, loads the right Skill, and gets to work — with full context.
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>Explore the foundation</h2>
+      <p>See the engineering theory behind the methodology.</p>
+      <div class="cta-actions">
+        <a href="/getting-started/quick-start" class="btn btn-primary">Quick Start</a>
+        <a href="/deep-dive/engineering-foundation" class="btn btn-ghost">Next: Engineering Foundation →</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 800px; margin: 0 auto; padding: 0 1.5rem; }
+  .container-wide { max-width: 900px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .page-hero { padding: 5rem 1.5rem 3rem; text-align: center; }
+  .hero-tag { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 1.5rem; }
+  .tag-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 1rem; }
+  .gradient-text { background: linear-gradient(135deg, #3b82f6, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.1rem; line-height: 1.7; max-width: 600px; margin: 0 auto; }
+
+  .section-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-primary); margin-bottom: 0.75rem; text-align: center; }
+  .section-title { font-size: clamp(1.5rem, 3.5vw, 2rem); font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.75rem; text-align: center; }
+  .section-title code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color-surface); padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid var(--color-border); }
+  .section-desc { color: var(--color-text-muted); font-size: 1rem; line-height: 1.7; text-align: center; max-width: 560px; margin: 0 auto 3rem; }
+  .section-desc code { font-family: var(--font-mono); font-size: 0.88em; background: var(--color-surface); padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid var(--color-border); }
+
+  /* Contrast */
+  .contrast-section { padding: 2rem 0 4rem; }
+  .contrast-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+
+  .contrast-col { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; }
+  .contrast-header { padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--color-border); text-align: center; }
+  .contrast-badge { font-size: 0.75rem; font-weight: 700; padding: 0.2rem 0.625rem; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .badge-red { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+  .badge-green { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .contrast-body { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+
+  .prompt-box { padding: 0.75rem 1rem; background: var(--color-surface-raised); border-radius: 8px; }
+  .prompt-label { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.25rem; }
+  .prompt-text { font-size: 0.92rem; font-weight: 500; }
+
+  .brain-box { display: flex; flex-direction: column; gap: 0.375rem; }
+  .brain-label { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.25rem; }
+  .brain-item { font-size: 0.85rem; padding: 0.375rem 0.75rem; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+  .brain-item.unknown { background: rgba(239, 68, 68, 0.06); color: var(--color-text-muted); }
+  .brain-item.unknown span { font-size: 0.75rem; color: #ef4444; font-weight: 500; }
+  .brain-item.known { background: rgba(16, 185, 129, 0.06); color: var(--color-text-secondary); }
+  .brain-item .check { color: #10b981; font-weight: 700; margin-right: 0.5rem; }
+
+  .outcome { padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; align-items: flex-start; gap: 0.5rem; line-height: 1.5; }
+  .outcome-icon { flex-shrink: 0; font-weight: 700; }
+  .outcome-bad { background: rgba(239, 68, 68, 0.06); color: var(--color-text-muted); border: 1px solid rgba(239, 68, 68, 0.15); }
+  .outcome-good { background: rgba(16, 185, 129, 0.06); color: var(--color-text-secondary); border: 1px solid rgba(16, 185, 129, 0.15); }
+
+  /* Tree */
+  .tree-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .tree-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.5rem 2rem; font-family: var(--font-mono); font-size: 0.85rem; line-height: 2; }
+  .tree-line { color: var(--color-text-secondary); }
+  .tree-line.l1 { padding-left: 1.5rem; }
+  .tree-line.l2 { padding-left: 3rem; }
+  .tree-line.l3 { padding-left: 4.5rem; }
+  .tree-line.l4 { padding-left: 6rem; }
+  .tree-folder { color: var(--color-primary); font-weight: 500; }
+  .tree-file { color: var(--color-text-muted); }
+  .tree-note { color: var(--color-text-muted); opacity: 0.6; font-size: 0.75rem; margin-left: 0.75rem; font-family: var(--font-sans); }
+  .phase-marker.phase-1 { border-left: 2px solid #f59e0b; padding-left: calc(4.5rem - 2px); }
+  .phase-marker.phase-2 { border-left: 2px solid #3b82f6; }
+  .tree-line.l3.phase-marker.phase-2 { padding-left: calc(4.5rem - 2px); }
+  .tree-line.l4.phase-marker.phase-2 { padding-left: calc(6rem - 2px); }
+  .phase-marker.phase-3 { border-left: 2px solid #10b981; }
+  .tree-line.l2.phase-marker.phase-3 { padding-left: calc(3rem - 2px); }
+  .tree-line.l3.phase-marker.phase-3 { padding-left: calc(4.5rem - 2px); }
+  .tree-line.l4.phase-marker.phase-3 { padding-left: calc(6rem - 2px); }
+  .phase-marker.phase-delta { border-left: 2px solid #a855f7; }
+  .tree-line.l1.phase-marker.phase-delta { padding-left: calc(1.5rem - 2px); }
+  .tree-line.l2.phase-marker.phase-delta { padding-left: calc(3rem - 2px); }
+  .tree-line.l3.phase-marker.phase-delta { padding-left: calc(4.5rem - 2px); }
+  .phase-marker.phase-skill { border-left: 2px solid #0ea5e9; }
+  .tree-line.l1.phase-marker.phase-skill { padding-left: calc(1.5rem - 2px); }
+  .tree-line.l2.phase-marker.phase-skill { padding-left: calc(3rem - 2px); }
+
+  /* Values */
+  .values-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .values-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+  .value-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; }
+  .value-icon { color: var(--color-primary); margin-bottom: 1rem; }
+  .value-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.625rem; }
+  .value-card p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.6; }
+
+  /* AGENTS.md */
+  .agents-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .agents-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; margin-bottom: 1.5rem; }
+  .agents-header { padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--color-border); font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; color: var(--color-primary); background: var(--color-surface-raised); }
+  .agents-body { padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 0.625rem; }
+  .agents-line { font-size: 0.88rem; color: var(--color-text-secondary); }
+  .agents-key { font-weight: 600; color: var(--color-text); margin-right: 0.375rem; }
+  .agents-line code { font-family: var(--font-mono); font-size: 0.82rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 4px; }
+  .agents-insight { padding: 1rem 1.25rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.65; text-align: center; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section p { color: var(--color-text-muted); margin-bottom: 2rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 3rem 1.5rem 2rem; }
+    .contrast-grid, .values-grid { grid-template-columns: 1fr; }
+    .tree-card { font-size: 0.78rem; padding: 1rem 1.25rem; }
+  }
+</style>

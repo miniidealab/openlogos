@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>轻记账 - 本地 API - API Docs</title>
+    <link rel="icon" type="image/png" href="image/favicon.png">
+    <link rel="apple-touch-icon" href="image/favicon_io/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="image/favicon_io/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="image/favicon_io/favicon-16x16.png">
+    <style>
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #141414;
+            --bg-card: #161616;
+            --text-primary: #e5e5e5;
+            --text-secondary: #a0a0a0;
+            --border-color: #2a2a2a;
+            --accent-color: #006239;
+            --font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                        "Microsoft YaHei", "PingFang SC",
+                        "Hiragino Sans GB", Roboto, "Helvetica Neue",
+                        Arial, sans-serif;
+            --font-family-mono: ui-monospace, "SF Mono", Monaco, "Cascadia Mono",
+                        Consolas, "Liberation Mono", "Courier New",
+                        "Microsoft YaHei", monospace;
+            --error-color: #ef4444;
+            --success-color: #10b981;
+        }
+        
+        body {
+            font-family: var(--font-family-base);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .html-doc-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 32px;
+        }
+        
+        .html-doc-header {
+            grid-column: 1 / -1;
+            padding-bottom: 24px;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+        
+        .html-doc-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+        
+        .html-doc-description {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+        
+        .html-doc-description p {
+            margin-bottom: 12px;
+        }
+        
+        .html-doc-description p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .html-doc-description strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        
+        .html-doc-description code {
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: var(--font-family-mono);
+            font-size: 14px;
+            color: var(--accent-color);
+        }
+        
+        .html-doc-description ul,
+        .html-doc-description ol {
+            margin: 12px 0;
+            padding-left: 24px;
+        }
+        
+        .html-doc-description li {
+            margin: 4px 0;
+        }
+        
+        .html-doc-description h1,
+        .html-doc-description h2,
+        .html-doc-description h3,
+        .html-doc-description h4 {
+            color: var(--text-primary);
+            margin-top: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .html-doc-description h1 {
+            font-size: 24px;
+        }
+        
+        .html-doc-description h2 {
+            font-size: 20px;
+        }
+        
+        .html-doc-description h3 {
+            font-size: 18px;
+        }
+        
+        .html-doc-description h4 {
+            font-size: 16px;
+        }
+        
+        .html-doc-description blockquote {
+            border-left: 4px solid var(--accent-color);
+            padding-left: 16px;
+            margin: 12px 0;
+            color: var(--text-secondary);
+        }
+        
+        .html-doc-description pre {
+            background: var(--bg-tertiary);
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        
+        .html-doc-description pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-primary);
+        }
+        
+        .html-doc-description a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+        
+        .html-doc-description a:hover {
+            text-decoration: underline;
+        }
+        
+        .html-doc-description table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+        }
+        
+        .html-doc-description table th,
+        .html-doc-description table td {
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            text-align: left;
+        }
+        
+        .html-doc-description table th {
+            background: var(--bg-secondary);
+            font-weight: 600;
+        }
+        
+        .html-doc-description hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 16px 0;
+        }
+        
+        .html-doc-meta {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .html-doc-info-section,
+        .html-doc-servers-section {
+            margin-top: 24px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .html-doc-servers-section {
+            padding: 12px 16px;
+        }
+        
+        .html-doc-info-section h2,
+        .html-doc-servers-section h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-family: var(--font-family-base);
+        }
+        
+        .html-doc-servers-section h2 {
+            margin-bottom: 8px;
+        }
+        
+        .html-doc-info-content {
+            display: grid;
+            gap: 10px;
+        }
+        
+        .info-item {
+            font-size: 14px;
+            color: var(--text-primary);
+            line-height: 1.6;
+            font-family: var(--font-family-base);
+        }
+        
+        .info-item strong {
+            color: var(--text-primary);
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        
+        .info-item ul {
+            margin: 4px 0 0 20px;
+            padding: 0;
+        }
+        
+        .info-item li {
+            margin: 2px 0;
+        }
+        
+        .info-item a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+        
+        .info-item a:hover {
+            text-decoration: underline;
+        }
+        
+        .html-doc-servers-content ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .html-doc-servers-content li {
+            margin-bottom: 6px;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .html-doc-servers-content li:last-child {
+            margin-bottom: 0;
+        }
+        
+        .html-doc-servers-content li > div:first-child {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+            font-family: var(--font-family-mono);
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .html-doc-servers-content li > div:last-child {
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-family: var(--font-family-base);
+            line-height: 1.4;
+        }
+        
+        .html-doc-nav {
+            position: sticky;
+            top: 24px;
+            height: fit-content;
+            max-height: calc(100vh - 48px);
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        
+        .html-doc-nav h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+        
+        .html-doc-toc {
+            list-style: none;
+        }
+        
+        .html-doc-toc ul {
+            list-style: none;
+            margin-left: 16px;
+            margin-top: 8px;
+        }
+        
+        .toc-tag {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .toc-tag:first-child {
+            margin-top: 0;
+        }
+        
+        .html-doc-toc a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 13px;
+            display: block;
+            padding: 4px 0;
+            transition: color 0.2s;
+        }
+        
+        .html-doc-toc a:hover {
+            color: var(--accent-color);
+        }
+        
+        .html-doc-main {
+            min-width: 0;
+        }
+        
+        .html-doc-tag-section {
+            margin-bottom: 48px;
+        }
+        
+        .html-doc-tag-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .html-doc-api {
+            margin-bottom: 48px;
+            padding: 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        
+        /* 复用现有的API详情样式 */
+        .api-detail-view {
+            max-width: 100%;
+        }
+        
+        .api-header {
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .api-method-path {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .api-method {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: var(--font-family-mono);
+            text-transform: uppercase;
+        }
+        
+        .api-method.get { background: #10b981; color: white; }
+        .api-method.post { background: #3b82f6; color: white; }
+        .api-method.put { background: #f59e0b; color: white; }
+        .api-method.delete { background: #ef4444; color: white; }
+        .api-method.patch { background: #8b5cf6; color: white; }
+        .api-method.head,
+        .api-method.options { background: var(--text-secondary); color: white; }
+        
+        .api-path-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: var(--font-family-mono);
+        }
+        
+        .api-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        .api-tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        
+        .api-tag {
+            padding: 4px 10px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+        
+        .detail-section {
+            margin-bottom: 32px;
+        }
+        
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            padding: 8px 0;
+            margin-bottom: 16px;
+        }
+        
+        .section-content {
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .section-content.markdown-content {
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .section-content.markdown-content p {
+            margin-bottom: 12px;
+        }
+        
+        .section-content.markdown-content p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .section-content.markdown-content strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        
+        .section-content.markdown-content code {
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: var(--font-family-mono);
+            font-size: 14px;
+            color: var(--accent-color);
+        }
+        
+        .section-content.markdown-content pre {
+            background: var(--bg-tertiary);
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        
+        .section-content.markdown-content pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-primary);
+        }
+        
+        .section-content.markdown-content ul,
+        .section-content.markdown-content ol {
+            margin: 12px 0;
+            padding-left: 24px;
+        }
+        
+        .section-content.markdown-content li {
+            margin: 4px 0;
+        }
+        
+        .section-content.markdown-content h1,
+        .section-content.markdown-content h2,
+        .section-content.markdown-content h3,
+        .section-content.markdown-content h4 {
+            color: var(--text-primary);
+            margin-top: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .section-content.markdown-content h1 {
+            font-size: 24px;
+        }
+        
+        .section-content.markdown-content h2 {
+            font-size: 20px;
+        }
+        
+        .section-content.markdown-content h3 {
+            font-size: 18px;
+        }
+        
+        .section-content.markdown-content h4 {
+            font-size: 16px;
+        }
+        
+        .section-content.markdown-content blockquote {
+            border-left: 4px solid var(--accent-color);
+            padding-left: 16px;
+            margin: 12px 0;
+            color: var(--text-secondary);
+        }
+        
+        .section-content.markdown-content a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+        
+        .section-content.markdown-content a:hover {
+            text-decoration: underline;
+        }
+        
+        .section-content.markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+        }
+        
+        .section-content.markdown-content table th,
+        .section-content.markdown-content table td {
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            text-align: left;
+        }
+        
+        .section-content.markdown-content table th {
+            background: var(--bg-secondary);
+            font-weight: 600;
+        }
+        
+        .section-content.markdown-content hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 16px 0;
+        }
+        
+        .param-group {
+            margin-bottom: 24px;
+        }
+        
+        .param-group-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+        
+        .param-tree {
+            font-family: var(--font-family-base);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        .param-tree-node {
+            margin: 4px 0;
+        }
+        
+        .param-tree-node-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            cursor: default;
+            user-select: none;
+            position: relative;
+        }
+        
+        .param-tree-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            line-height: 16px;
+            text-align: center;
+            font-size: 10px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        
+        .param-tree-toggle-placeholder {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+        
+        .param-tree-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: var(--font-family-mono);
+            font-size: 13px;
+            padding: 4px 10px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            flex-shrink: 0;
+            display: inline-block;
+        }
+        
+        .param-tree-type {
+            color: var(--text-secondary);
+            font-family: var(--font-family-mono);
+            font-size: 12px;
+            flex-shrink: 0;
+            margin-left: 8px;
+        }
+        
+        .param-tree-description-inline {
+            color: var(--text-secondary);
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        
+        .param-tree-connector {
+            flex: 1;
+            min-width: 20px;
+            position: relative;
+            margin: 0 8px;
+        }
+        
+        .param-tree-required {
+            flex-shrink: 0;
+        }
+        
+        .param-tree-details {
+            margin-left: 24px;
+            margin-top: 4px;
+            padding-left: 8px;
+            border-left: 2px solid var(--border-color);
+        }
+        
+        .param-tree-description {
+            color: var(--text-secondary);
+            font-size: 12px;
+            line-height: 1.5;
+            margin-bottom: 4px;
+        }
+        
+        .param-tree-constraints {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        
+        .param-tree-example {
+            font-size: 12px;
+            margin-top: 4px;
+            color: var(--text-secondary);
+        }
+        
+        .param-tree-children {
+            margin-left: 24px;
+            border-left: 1px solid var(--border-color);
+            padding-left: 12px;
+            margin-top: 4px;
+            margin-bottom: 4px;
+        }
+        
+        .param-required {
+            padding: 2px 6px;
+            background: var(--error-color);
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .param-optional {
+            padding: 2px 6px;
+            background: var(--text-secondary);
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .response-item {
+            margin-bottom: 16px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+        }
+        
+        .response-status {
+            display: inline-block;
+            padding: 4px 10px;
+            background: var(--success-color);
+            color: white;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        
+        .response-status.error {
+            background: var(--error-color);
+        }
+        
+        .response-description {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        
+        .example-code {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            position: relative;
+        }
+        
+        .example-label {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: var(--font-family-base);
+            font-weight: 500;
+            z-index: 1;
+        }
+        
+        .example-code pre {
+            margin: 0;
+            font-family: var(--font-family-mono);
+            font-size: 12px;
+            color: var(--text-primary);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        code {
+            font-family: var(--font-family-mono);
+            font-size: 12px;
+        }
+        
+        /* Security 认证组样式 */
+        .security-group {
+            margin-bottom: 24px;
+        }
+        
+        .security-group-title {
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            transition: background 0.2s;
+            margin-bottom: 4px;
+        }
+        
+        .security-group-title:hover {
+            background: var(--bg-hover);
+        }
+        
+        .security-group-toggle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        
+        .security-group-title.collapsed .security-group-toggle {
+            transform: rotate(-90deg);
+        }
+        
+        .security-group-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: var(--font-family-base);
+            font-size: 14px;
+        }
+        
+        .security-group-content {
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: 0 0 6px 6px;
+            margin-top: 4px;
+        }
+        
+        .security-type {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            font-family: var(--font-family-base);
+        }
+        
+        .security-description {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            line-height: 1.6;
+            font-family: var(--font-family-base);
+        }
+        
+        .security-header-name {
+            display: inline-block;
+            padding: 4px 8px;
+            background: var(--accent-color);
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: var(--font-family-mono);
+            cursor: pointer;
+            transition: opacity 0.2s;
+            margin: 0 2px;
+        }
+        
+        .security-header-name:hover {
+            opacity: 0.8;
+        }
+        
+        .security-example {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .security-example-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-right: 8px;
+            font-family: var(--font-family-base);
+        }
+        
+        .security-example-value {
+            display: inline-block;
+            padding: 6px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: var(--font-family-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+        
+        .security-scheme-description {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            font-family: var(--font-family-base);
+        }
+        
+        .security-scopes {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+        
+        .security-scopes-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-right: 8px;
+            font-family: var(--font-family-base);
+        }
+        
+        .security-scopes-list {
+            font-size: 12px;
+            color: var(--text-primary);
+            font-family: var(--font-family-base);
+        }
+        
+        .security-scopes-list code {
+            padding: 2px 6px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            font-family: var(--font-family-mono);
+            font-size: 11px;
+            margin: 0 2px;
+        }
+        
+        .security-oidc-url {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+        
+        .security-oidc-url-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-right: 8px;
+            font-family: var(--font-family-base);
+        }
+        
+        .security-oidc-url-value {
+            display: block;
+            margin-top: 8px;
+            padding: 8px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: var(--font-family-mono);
+            font-size: 12px;
+            color: var(--text-primary);
+            word-break: break-all;
+        }
+        
+        @media (max-width: 1024px) {
+            .html-doc-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .html-doc-nav {
+                position: static;
+                max-height: none;
+            }
+        }
+        
+    </style>
+</head>
+<body>
+    <div class="html-doc-container">
+        <header class="html-doc-header">
+            <h1 class="html-doc-title">轻记账 - 本地 API</h1>
+            <div class="html-doc-description"><p>轻记账桌面应用的本地 IPC API 规格，用于主进程与渲染进程通信</p>
+</div>
+            <div class="html-doc-meta">
+                <span>Version: 1.0.0</span>
+            </div>
+            
+            <div class="html-doc-servers-section"><h2>Servers</h2><div class="html-doc-servers-content"><ul style="list-style: none; padding: 0; margin: 0;"><li><div style="font-weight: 600; color: var(--text-primary); margin-bottom: 2px; font-family: var(--font-family-mono); font-size: 13px; line-height: 1.4;">ipc://main</div><div style="color: var(--text-secondary); font-size: 12px; line-height: 1.4;">Electron Main Process</div></li></ul></div></div>
+        </header>
+        
+        <nav class="html-doc-nav">
+            <h2>Contents</h2>
+            <ul class="html-doc-toc">
+            <li class="toc-tag">无描述</li>
+            <ul class="toc-apis">
+                <li><a href="#api-post--ipc-app-reset">POST 重置应用</a></li>
+                <li><a href="#api-post--ipc-auth-disable-password">POST 关闭密码锁</a></li>
+                <li><a href="#api-post--ipc-auth-set-password">POST 设置密码</a></li>
+                <li><a href="#api-post--ipc-auth-verify-password">POST 验证密码</a></li>
+                <li><a href="#api-post--ipc-categories-add">POST 新增分类</a></li>
+                <li><a href="#api-delete--ipc-categories-delete">DELETE 删除分类</a></li>
+                <li><a href="#api-get--ipc-categories-list">GET 获取分类列表</a></li>
+                <li><a href="#api-put--ipc-categories-update">PUT 更新分类</a></li>
+                <li><a href="#api-get--ipc-records-list">GET 获取记账记录列表</a></li>
+                <li><a href="#api-post--ipc-records-save">POST 保存记账记录</a></li>
+                <li><a href="#api-get--ipc-settings-get">GET 获取设置项</a></li>
+                <li><a href="#api-post--ipc-settings-set">POST 设置设置项</a></li>
+                <li><a href="#api-get--ipc-statistics">GET 获取统计数据</a></li>
+            </ul>
+
+            </ul>
+        </nav>
+        
+        <main class="html-doc-main">
+        <section class="html-doc-tag-section">
+            <h2 class="html-doc-tag-title">无描述</h2>
+            <div class="html-doc-api" id="api-post--ipc-app-reset">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method post">POST</span>
+                        <span class="api-path-text">/ipc/app/reset</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">重置应用</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S04 Step 55 → Step 62，清除所有数据</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="color: var(--text-tertiary); padding: 12px;">无</div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">重置成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-8ca7cmmnl"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-post--ipc-auth-disable-password">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method post">POST</span>
+                        <span class="api-path-text">/ipc/auth/disable-password</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">关闭密码锁</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S04 Step 40 → Step 51</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="margin-bottom: 16px;"><div style="margin-bottom: 8px; font-size: 13px;"><strong>Content-Type:</strong> <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px;">application/json</code> <span style="color: #f93e3e; font-size: 12px;">(required)</span></div><div class="param-tree"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-ue1q01t8a"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">password</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">原密码</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">关闭成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-ctci3wnmm"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="response-item"><div class="response-status error">401</div><div class="response-description">密码错误（EX-43.1）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-ckt190wb4"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-w7s09edhs"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-post--ipc-auth-set-password">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method post">POST</span>
+                        <span class="api-path-text">/ipc/auth/set-password</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">设置密码</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S04 Step 27 → Step 36</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="margin-bottom: 16px;"><div style="margin-bottom: 8px; font-size: 13px;"><strong>Content-Type:</strong> <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px;">application/json</code> <span style="color: #f93e3e; font-size: 12px;">(required)</span></div><div class="param-tree"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-n5i3rvdy1"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">password</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">6位数字密码</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div><div class="param-tree-details"><div class="param-tree-constraints"><span style="color: var(--text-tertiary); font-size: 11px;">minLen: 6; maxLen: 6</span></div></div></div></div></div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">设置成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-wga18j6qs"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="response-item"><div class="response-status error">400</div><div class="response-description">密码不符合要求（EX-27.1, EX-27.2）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-rqtgwnmgg"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-cyi4787yn"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-post--ipc-auth-verify-password">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method post">POST</span>
+                        <span class="api-path-text">/ipc/auth/verify-password</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">验证密码</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S04 Step 11 → Step 22</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="margin-bottom: 16px;"><div style="margin-bottom: 8px; font-size: 13px;"><strong>Content-Type:</strong> <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px;">application/json</code> <span style="color: #f93e3e; font-size: 12px;">(required)</span></div><div class="param-tree"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-4kwtlnh8o"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">password</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">6位数字密码</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div><div class="param-tree-details"><div class="param-tree-constraints"><span style="color: var(--text-tertiary); font-size: 11px;">minLen: 6; maxLen: 6</span></div></div></div></div></div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">验证成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-6zdbp0thd"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">valid</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="response-item"><div class="response-status error">401</div><div class="response-description">密码错误（EX-11.1）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-rssfuknl9"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-wb84j8110"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-post--ipc-categories-add">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method post">POST</span>
+                        <span class="api-path-text">/ipc/categories/add</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">新增分类</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S03 Step 12 → Step 19</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="margin-bottom: 16px;"><div style="margin-bottom: 8px; font-size: 13px;"><strong>Content-Type:</strong> <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px;">application/json</code> <span style="color: #f93e3e; font-size: 12px;">(required)</span></div><div class="param-tree"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-vq511s7ow"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">name</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">分类名称</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div><div class="param-tree-details"><div class="param-tree-constraints"><span style="color: var(--text-tertiary); font-size: 11px;">minLen: 1; maxLen: 20</span></div></div></div></div></div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">新增成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-2sqjvau6o"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-s1npaczpe"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">id</span><span class="param-tree-type">integer</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="response-item"><div class="response-status error">400</div><div class="response-description">参数错误（EX-12.1, EX-12.2）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-eydfay1t4"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-oaggtjc41"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-delete--ipc-categories-delete">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method delete">DELETE</span>
+                        <span class="api-path-text">/ipc/categories/delete</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">删除分类</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S03 Step 34 → Step 41</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-m7mzq4jgh"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">分类 ID</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="color: var(--text-tertiary); padding: 12px;">无</div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">删除成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-v0oyhkkry"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="response-item"><div class="response-status error">400</div><div class="response-description">预设分类不可删除（EX-12.3）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-26nvg1ruk"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-u144wgaup"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-get--ipc-categories-list">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method get">GET</span>
+                        <span class="api-path-text">/ipc/categories/list</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">获取分类列表</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S03 Step 1 → Step 8</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="color: var(--text-tertiary); padding: 12px;">无</div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">获取成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-9hjdyfl8f"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">分类 ID</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-yv72fjroy"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">name</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">分类名称</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-zmizyqib3"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">icon</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">分类图标</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-5e5nn1m2u"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">is_default</span><span class="param-tree-type">boolean</span><span class="param-tree-description-inline">是否为预设分类</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512705-316tytjam"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">created_at</span><span class="param-tree-type">string (date-time)</span><span class="param-tree-description-inline">创建时间</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-put--ipc-categories-update">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method put">PUT</span>
+                        <span class="api-path-text">/ipc/categories/update</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">更新分类</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S03 Step 23 → Step 30</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="margin-bottom: 16px;"><div style="margin-bottom: 8px; font-size: 13px;"><strong>Content-Type:</strong> <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px;">application/json</code> <span style="color: #f93e3e; font-size: 12px;">(required)</span></div><div class="param-tree"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-iqbomehqk"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">分类 ID</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-vgzbkmbg8"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">name</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">分类名称</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div><div class="param-tree-details"><div class="param-tree-constraints"><span style="color: var(--text-tertiary); font-size: 11px;">minLen: 1; maxLen: 20</span></div></div></div></div></div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">更新成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-eso8v4beb"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-get--ipc-records-list">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method get">GET</span>
+                        <span class="api-path-text">/ipc/records/list</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">获取记账记录列表</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>获取指定时间范围内的记账记录</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-v8pahp2h4"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">start_date</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">开始日期（ISO 8601）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-cluhscron"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">end_date</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">结束日期（ISO 8601）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-ykggcig55"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">category_id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">分类 ID（可选）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="color: var(--text-tertiary); padding: 12px;">无</div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">获取成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-vw707kdgk"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">记录 ID</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-htcorkafs"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">amount</span><span class="param-tree-type">number</span><span class="param-tree-description-inline">金额（单位：元）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-fan0o8jzy"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">category_id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">分类 ID</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-3fee6nm61"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">category_name</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">分类名称</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-drqknfwy5"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">created_at</span><span class="param-tree-type">string (date-time)</span><span class="param-tree-description-inline">创建时间</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-tclplk88q"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">remark</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">备注</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-post--ipc-records-save">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method post">POST</span>
+                        <span class="api-path-text">/ipc/records/save</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">保存记账记录</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S01 Step 8 → Step 15</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="margin-bottom: 16px;"><div style="margin-bottom: 8px; font-size: 13px;"><strong>Content-Type:</strong> <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px;">application/json</code> <span style="color: #f93e3e; font-size: 12px;">(required)</span></div><div class="param-tree"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-bcfosr69x"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">amount</span><span class="param-tree-type">number</span><span class="param-tree-description-inline">金额（需大于0）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div><div class="param-tree-details"><div class="param-tree-constraints"><span style="color: var(--text-tertiary); font-size: 11px;">min: 0.01; max: 999999</span></div></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-urevlwaed"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">category_id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">分类 ID</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-jxp3hfs6u"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">remark</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">备注（可选）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div><div class="param-tree-details"><div class="param-tree-constraints"><span style="color: var(--text-tertiary); font-size: 11px;">maxLen: 200</span></div></div></div></div></div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">保存成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-gnvrho3sg"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-msc2rzxqg"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">id</span><span class="param-tree-type">integer</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="response-item"><div class="response-status error">400</div><div class="response-description">参数错误（EX-8.1, EX-8.2）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-qz58mv3ue"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-zb5ngsope"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div><div class="response-item"><div class="response-status error">500</div><div class="response-description">数据库写入失败（EX-11.1）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-4zvb01j2p"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-hk3m35aug"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-get--ipc-settings-get">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method get">GET</span>
+                        <span class="api-path-text">/ipc/settings/get</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">获取设置项</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S04 Step 1 → Step 6</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-p2owh41is"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">key</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">设置键名</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="color: var(--text-tertiary); padding: 12px;">无</div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">获取成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-tuphyalhn"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">key</span><span class="param-tree-type">string</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-rr5wu1axo"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">value</span><span class="param-tree-type">string</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-post--ipc-settings-set">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method post">POST</span>
+                        <span class="api-path-text">/ipc/settings/set</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">设置设置项</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>设置或更新一个设置项</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="margin-bottom: 16px;"><div style="margin-bottom: 8px; font-size: 13px;"><strong>Content-Type:</strong> <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px;">application/json</code> <span style="color: #f93e3e; font-size: 12px;">(required)</span></div><div class="param-tree"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-w37yesgp7"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">key</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">设置键名</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-0kg6x5xvs"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">value</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">设置值</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">设置成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-7z2f6lwk9"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">success</span><span class="param-tree-type">boolean</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div></div></div>            </div>
+            <div class="html-doc-api" id="api-get--ipc-statistics">
+
+            <div class="api-detail-view">
+                <div class="api-header">
+                    <div class="api-method-path">
+                        <span class="api-method get">GET</span>
+                        <span class="api-path-text">/ipc/statistics</span>
+                        
+                    </div>
+                    <div class="api-meta"><div class="api-meta-item">获取统计数据</div></div>
+                    
+                </div>
+        
+                    <div class="detail-section">
+                        <div class="section-title">接口说明</div>
+                        <div class="section-content markdown-content"><p>来源：S02 Step 1 → Step 8</p>
+</div>
+                    </div>
+                <div class="detail-section"><div class="section-title">请求参数</div><div class="param-group"><div class="param-group-title">Path 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Query 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-q2f30nph3"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">time_range</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">时间范围</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div><div class="param-tree-details"><div class="param-tree-constraints"><span style="color: var(--text-tertiary); font-size: 11px;">enum: week, month, custom</span></div></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-z8osz3vox"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">month</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">月份（YYYY-MM）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-5pxipa96m"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">start_date</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">自定义开始日期</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-v8xi9urqn"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">end_date</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">自定义结束日期</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-iyln2chj2"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">category_id</span><span class="param-tree-type">integer</span><span class="param-tree-description-inline">分类 ID（可选）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="param-group"><div class="param-group-title">Header 参数</div><div class="param-tree api-params-tree" style="margin-top: 8px;"></div></div><div class="param-group"><div class="param-group-title">Body 参数</div><div style="color: var(--text-tertiary); padding: 12px;">无</div></div></div><div class="detail-section"><div class="section-title">响应</div><div class="response-item"><div class="response-status ">200</div><div class="response-description">获取成功</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-s2yr2x96q"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">total</span><span class="param-tree-type">number</span><span class="param-tree-description-inline">总支出</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-d1jxkzqjh"><span class="param-tree-toggle" data-node-id="param-node-1775782512706-d1jxkzqjh">▼</span><span class="param-tree-name">daily</span><span class="param-tree-type">array[object]</span><span class="param-tree-description-inline">每日支出</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div><div class="param-tree-children" id="param-node-1775782512706-d1jxkzqjh-children" style="display: block;"><div class="param-tree-node" style="padding-left: 20px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-vt4dr25m8"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">date</span><span class="param-tree-type">string</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 20px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-imvgoiv7y"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">amount</span><span class="param-tree-type">number</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-siskfemmm"><span class="param-tree-toggle" data-node-id="param-node-1775782512706-siskfemmm">▼</span><span class="param-tree-name">by_category</span><span class="param-tree-type">array[object]</span><span class="param-tree-description-inline">按分类汇总</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div><div class="param-tree-children" id="param-node-1775782512706-siskfemmm-children" style="display: block;"><div class="param-tree-node" style="padding-left: 20px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-z9z3hzax5"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">category_id</span><span class="param-tree-type">integer</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 20px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-r8mh716nf"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">category_name</span><span class="param-tree-type">string</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 20px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-j0s33y3b7"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">amount</span><span class="param-tree-type">number</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div><div class="param-tree-node" style="padding-left: 20px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-40dupzrx8"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">percent</span><span class="param-tree-type">number</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-optional">无</span></span></div></div></div></div></div></div><div class="response-item"><div class="response-status error">400</div><div class="response-description">时间范围无效（EX-9.1）</div><div style="margin-top: 8px; margin-bottom: 8px;"><strong>Content-Type:</strong> application/json</div><div class="param-tree" style="margin-top: 8px;"><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-v8hlr2p2o"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">code</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">机器可读的错误码（如 RECORD_SAVE_FAILED）</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div><div class="param-tree-node" style="padding-left: 0px;"><div class="param-tree-node-header" data-node-id="param-node-1775782512706-ziy8iztx9"><span class="param-tree-toggle-placeholder"></span><span class="param-tree-name">message</span><span class="param-tree-type">string</span><span class="param-tree-description-inline">人类可读的错误描述</span><span class="param-tree-connector"></span><span class="param-tree-required"><span class="param-required">必需</span></span></div></div></div></div></div></div>            </div>
+        </section>
+
+        </main>
+    </div>
+    
+    <script>
+        // 目录导航功能
+        document.querySelectorAll('.html-doc-toc a').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = link.getAttribute('href').substring(1);
+                const target = document.getElementById(targetId);
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Green background with rounded corners -->
+  <rect width="32" height="32" rx="7" fill="#5db82e"/>
+
+  <!-- Left "i" — dot -->
+  <ellipse cx="11.5" cy="7.5" rx="3" ry="2.2" fill="white"/>
+  <!-- Left "i" — stem -->
+  <rect x="8.8" y="11.5" width="5.4" height="13" rx="2.7" fill="white"/>
+
+  <!-- Right "i" — dot (slightly smaller, offset for natural feel) -->
+  <ellipse cx="20.5" cy="7.5" rx="2.8" ry="2.2" fill="white"/>
+  <!-- Right "i" — stem -->
+  <rect x="17.8" y="11.5" width="5.4" height="13" rx="2.7" fill="white"/>
+</svg>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tasks - IPC Command Docs</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+    --bg: #0a0a0a; --bg2: #141414; --bg3: #1a1a1a; --bg-card: #161616;
+    --text: #e5e5e5; --text2: #a0a0a0; --text3: #666;
+    --border: #2a2a2a; --accent: #006239; --accent-light: #00804a;
+    --error: #ef4444; --success: #10b981; --primary: #6366f1;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", Monaco, Consolas, "Courier New", monospace;
+}
+body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; }
+.doc-container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+.doc-header { padding-bottom: 24px; border-bottom: 2px solid var(--border); margin-bottom: 24px; }
+.doc-header h1 { font-size: 32px; font-weight: 700; display: inline; margin-right: 12px; }
+.doc-version { display: inline-block; padding: 2px 10px; font-size: 12px; background: var(--bg3); color: var(--text3); border-radius: 4px; vertical-align: middle; }
+.doc-meta { font-size: 14px; color: var(--text2); margin-top: 8px; }
+.doc-layout { display: grid; grid-template-columns: 260px 1fr; gap: 32px; }
+.doc-nav { position: sticky; top: 24px; height: fit-content; max-height: calc(100vh - 48px); overflow-y: auto; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; }
+.doc-nav h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+.doc-nav h3 { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 16px; margin-bottom: 8px; }
+.doc-nav h3:first-child { margin-top: 0; }
+.doc-nav ul { list-style: none; }
+.doc-nav li { margin: 2px 0; }
+.doc-nav a { color: var(--text2); text-decoration: none; font-size: 13px; display: block; padding: 4px 8px; border-radius: 4px; transition: all .15s; }
+.doc-nav a:hover { color: var(--text); background: var(--bg2); }
+.doc-main { min-width: 0; }
+.doc-section { margin-bottom: 48px; }
+.doc-section > h2 { font-size: 24px; font-weight: 600; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.doc-card { margin-bottom: 32px; padding: 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; }
+.doc-cmd-name { font-size: 20px; font-weight: 700; font-family: var(--mono); margin-bottom: 6px; }
+.doc-summary { font-size: 14px; color: var(--text2); margin-bottom: 4px; line-height: 1.5; }
+.doc-desc { font-size: 13px; color: var(--text3); line-height: 1.6; padding: 10px 14px; background: var(--bg2); border-radius: 6px; margin-top: 8px; border-left: 3px solid var(--border); }
+.doc-subsection { margin-top: 20px; }
+.doc-subsection h4 { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.doc-props-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.doc-props-table th { padding: 8px 14px; text-align: left; font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .3px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+.doc-props-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+.doc-props-table tr:last-child td { border-bottom: none; }
+.doc-props-table tr:hover td { background: var(--bg2); }
+.doc-props-table code { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+.doc-props-table .center { text-align: center; }
+.doc-type-badge { display: inline-block; padding: 1px 8px; font-size: 11px; font-weight: 500; color: var(--primary); background: rgba(99,102,241,.1); border-radius: 4px; font-family: var(--mono); }
+.doc-constraints { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+.doc-required { color: var(--error); font-size: 8px; }
+.doc-ref-link { display: inline-block; padding: 4px 10px; font-size: 12px; font-weight: 500; color: var(--primary); background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.2); border-radius: 4px; font-family: var(--mono); }
+.doc-ref-inline { font-size: 12px; font-weight: 500; color: var(--primary); font-family: var(--mono); }
+.doc-schema-desc { font-size: 12px; color: var(--text3); margin-bottom: 10px; line-height: 1.4; }
+.doc-errors { display: flex; flex-direction: column; gap: 8px; }
+.doc-error-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--bg-card); border-left: 3px solid var(--error); }
+.doc-error-code { font-size: 12px; font-weight: 600; color: var(--error); font-family: var(--mono); padding: 1px 8px; background: rgba(239,68,68,.1); border-radius: 4px; }
+.doc-error-source { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+.doc-error-msg { font-size: 13px; color: var(--text); line-height: 1.5; margin-top: 6px; }
+.doc-error-trigger { font-size: 12px; color: var(--text3); margin-top: 4px; font-style: italic; }
+@media (max-width: 900px) {
+    .doc-layout { grid-template-columns: 1fr; }
+    .doc-nav { position: static; max-height: none; }
+}
+</style>
+</head>
+<body>
+<div class="doc-container">
+  <header class="doc-header">
+    <h1>tasks</h1>
+    <span class="doc-version">v1.0</span>
+    <p class="doc-meta">4 commands · 1 schemas</p>
+  </header>
+  <div class="doc-layout">
+    <nav class="doc-nav">
+      <h2>Contents</h2>
+      <h3>Commands</h3><ul><li><a href="#cmd-create-task">create_task — Create new task</a></li><li><a href="#cmd-update-task">update_task — Update task content</a></li><li><a href="#cmd-update-task-status">update_task_status — Toggle completion</a></li><li><a href="#cmd-delete-task">delete_task — Delete task</a></li></ul><h3>Schemas</h3><ul><li><a href="#schema-TaskItem">TaskItem</a></li></ul>
+    </nav>
+    <main class="doc-main">
+      <section class="doc-section"><h2>Commands</h2><div class="doc-card" id="cmd-create-task"><h3 class="doc-cmd-name">create_task</h3><p class="doc-summary">Create new task</p><div class="doc-desc">Source: S02.2 Step 5 → Step 8. Inserts a new row into the tasks table; done defaults to false.</div><div class="doc-subsection">
+            <h4>Params</h4>
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>user_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Current signed-in user ID, from the Zustand store</td>
+            </tr><tr>
+                <td><code>name</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 100, minLen: 1</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Task title (required; validated non-empty on the frontend)</td>
+            </tr><tr>
+                <td><code>category_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"></td>
+                <td>Category ID; null means no category</td>
+            </tr><tr>
+                <td><code>note</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 500</span></td>
+                <td class="center"></td>
+                <td>Note (optional)</td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection">
+            <h4>Returns <span class="doc-ref-inline">→ TaskItem</span></h4>
+            <p class="doc-schema-desc">Full task record</p>
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Task primary key ID</td>
+            </tr><tr>
+                <td><code>user_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Owning user ID</td>
+            </tr><tr>
+                <td><code>category_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"></td>
+                <td>Owning category ID; null means no category</td>
+            </tr><tr>
+                <td><code>name</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 100</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Task title</td>
+            </tr><tr>
+                <td><code>note</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 500</span></td>
+                <td class="center"></td>
+                <td>Note</td>
+            </tr><tr>
+                <td><code>done</code></td>
+                <td><span class="doc-type-badge">boolean</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Completion: false = incomplete, true = complete</td>
+            </tr><tr>
+                <td><code>created_at</code></td>
+                <td><span class="doc-type-badge">string</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Created at (ISO 8601 string)</td>
+            </tr><tr>
+                <td><code>updated_at</code></td>
+                <td><span class="doc-type-badge">string</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Last updated at (ISO 8601 string)</td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection"><h4>Errors</h4><div class="doc-errors"><div class="doc-error-card"><span class="doc-error-code">DB_WRITE_ERROR</span> <span class="doc-error-source">EX-6.1</span><div class="doc-error-msg">Save failed; please retry</div><div class="doc-error-trigger">Source: S02.2 Step 6 INSERT failed</div></div></div></div></div><div class="doc-card" id="cmd-update-task"><h3 class="doc-cmd-name">update_task</h3><p class="doc-summary">Update task content</p><div class="doc-desc">Source: S02.3b Step 5 → Step 8. Updates name, category, and note; also refreshes updated_at.</div><div class="doc-subsection">
+            <h4>Params</h4>
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>task_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Target task ID</td>
+            </tr><tr>
+                <td><code>name</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 100, minLen: 1</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Updated task title</td>
+            </tr><tr>
+                <td><code>category_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"></td>
+                <td>Updated category ID; null means no category</td>
+            </tr><tr>
+                <td><code>note</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 500</span></td>
+                <td class="center"></td>
+                <td>Updated note</td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection">
+            <h4>Returns <span class="doc-ref-inline">→ TaskItem</span></h4>
+            <p class="doc-schema-desc">Full task record</p>
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Task primary key ID</td>
+            </tr><tr>
+                <td><code>user_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Owning user ID</td>
+            </tr><tr>
+                <td><code>category_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"></td>
+                <td>Owning category ID; null means no category</td>
+            </tr><tr>
+                <td><code>name</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 100</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Task title</td>
+            </tr><tr>
+                <td><code>note</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 500</span></td>
+                <td class="center"></td>
+                <td>Note</td>
+            </tr><tr>
+                <td><code>done</code></td>
+                <td><span class="doc-type-badge">boolean</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Completion: false = incomplete, true = complete</td>
+            </tr><tr>
+                <td><code>created_at</code></td>
+                <td><span class="doc-type-badge">string</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Created at (ISO 8601 string)</td>
+            </tr><tr>
+                <td><code>updated_at</code></td>
+                <td><span class="doc-type-badge">string</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Last updated at (ISO 8601 string)</td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection"><h4>Errors</h4><div class="doc-errors"><div class="doc-error-card"><span class="doc-error-code">TASK_NOT_FOUND</span> <span class="doc-error-source">EX-6.1 (edit flow)</span><div class="doc-error-msg">Task not found</div><div class="doc-error-trigger">UPDATE affected 0 rows; task was removed (concurrent use)</div></div></div></div></div><div class="doc-card" id="cmd-update-task-status"><h3 class="doc-cmd-name">update_task_status</h3><p class="doc-summary">Toggle task completion</p><div class="doc-desc">Source: S02.3a Step 2 → Step 5. Only toggles done, separate from content updates (single responsibility).</div><div class="doc-subsection">
+            <h4>Params</h4>
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>task_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Target task ID</td>
+            </tr><tr>
+                <td><code>done</code></td>
+                <td><span class="doc-type-badge">boolean</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Target state: true = mark complete, false = mark incomplete</td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection">
+            <h4>Returns</h4>
+            
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>task_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td></td>
+            </tr><tr>
+                <td><code>done</code></td>
+                <td><span class="doc-type-badge">boolean</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td></td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection"><h4>Errors</h4><div class="doc-errors"><div class="doc-error-card"><span class="doc-error-code">TASK_NOT_FOUND</span> <span class="doc-error-source">EX (concurrent)</span><div class="doc-error-msg">Task not found</div><div class="doc-error-trigger">UPDATE affected 0 rows</div></div></div></div></div><div class="doc-card" id="cmd-delete-task"><h3 class="doc-cmd-name">delete_task</h3><p class="doc-summary">Delete task</p><div class="doc-desc">Source: S02.3c Step 4 → Step 7. Hard delete; not recoverable. WHERE includes user_id to prevent cross-user access.</div><div class="doc-subsection">
+            <h4>Params</h4>
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>task_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Target task ID</td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection">
+            <h4>Returns</h4>
+            
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>success</code></td>
+                <td><span class="doc-type-badge">boolean</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td></td>
+            </tr></tbody></table>
+        </div><div class="doc-subsection"><h4>Errors</h4><div class="doc-errors"><div class="doc-error-card"><span class="doc-error-code">TASK_NOT_FOUND</span> <span class="doc-error-source">EX-6.1</span><div class="doc-error-msg">Task not found (handled silently)</div><div class="doc-error-trigger">Source: S02.3c Step 6 DELETE affected 0 rows; frontend ignores; state converges</div></div></div></div></div></section><section class="doc-section"><h2>Schemas</h2><div class="doc-card" id="schema-TaskItem"><h3 class="doc-cmd-name">TaskItem</h3><p class="doc-summary">Full task record</p><span class="doc-type-badge">object</span><div class="doc-subsection">
+            <h4>Properties</h4>
+            <table class="doc-props-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody><tr>
+                <td><code>id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Task primary key ID</td>
+            </tr><tr>
+                <td><code>user_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Owning user ID</td>
+            </tr><tr>
+                <td><code>category_id</code></td>
+                <td><span class="doc-type-badge">integer</span></td>
+                <td class="center"></td>
+                <td>Owning category ID; null means no category</td>
+            </tr><tr>
+                <td><code>name</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 100</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Task title</td>
+            </tr><tr>
+                <td><code>note</code></td>
+                <td><span class="doc-type-badge">string</span> <span class="doc-constraints">maxLen: 500</span></td>
+                <td class="center"></td>
+                <td>Note</td>
+            </tr><tr>
+                <td><code>done</code></td>
+                <td><span class="doc-type-badge">boolean</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Completion: false = incomplete, true = complete</td>
+            </tr><tr>
+                <td><code>created_at</code></td>
+                <td><span class="doc-type-badge">string</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Created at (ISO 8601 string)</td>
+            </tr><tr>
+                <td><code>updated_at</code></td>
+                <td><span class="doc-type-badge">string</span></td>
+                <td class="center"><span class="doc-required">●</span></td>
+                <td>Last updated at (ISO 8601 string)</td>
+            </tr></tbody></table>
+        </div></div></section>
+    </main>
+  </div>
+</div>
+<script>
+document.querySelectorAll('.doc-nav a').forEach(link => {
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    const t = document.getElementById(link.getAttribute('href').substring(1));
+    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+</script>
+</body>
+</html>

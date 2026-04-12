@@ -3,13 +3,19 @@ interface Props {
   title: string;
   description?: string;
   lang?: string;
+  ogImage?: string;
 }
 
+const SITE_URL = 'https://openlogos.ai';
 const {
   title,
   description = 'OpenLogos — Open-source software engineering methodology for the AI era',
-  lang = 'en'
+  lang = 'en',
+  ogImage = '/og-image.png'
 } = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, SITE_URL).href;
+const ogImageURL = new URL(ogImage, SITE_URL).href;
 ---
 
 <!doctype html>
@@ -19,6 +25,24 @@ const {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonicalURL} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImageURL} />
+    <meta property="og:site_name" content="OpenLogos" />
+    <meta property="og:locale" content={lang === 'zh' ? 'zh_CN' : 'en_US'} />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageURL} />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -38,28 +62,28 @@ const {
               <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="nav-dropdown-menu">
-              <a href="/concepts/three-layer-model" class="dropdown-item">
+              <a href="/deep-dive/three-layer-model" class="dropdown-item">
                 <span class="dropdown-dot dot-amber"></span>
                 <div>
                   <div class="dropdown-label">WHY → WHAT → HOW</div>
                   <div class="dropdown-desc">Three-layer progression model</div>
                 </div>
               </a>
-              <a href="/concepts/scenario-test-first" class="dropdown-item">
+              <a href="/deep-dive/scenario-test-first" class="dropdown-item">
                 <span class="dropdown-dot dot-green"></span>
                 <div>
                   <div class="dropdown-label">Scenario + Test-First</div>
                   <div class="dropdown-desc">Traceable scenarios, tests before code</div>
                 </div>
               </a>
-              <a href="/concepts/documents-as-context" class="dropdown-item">
+              <a href="/deep-dive/documents-as-context" class="dropdown-item">
                 <span class="dropdown-dot dot-blue"></span>
                 <div>
                   <div class="dropdown-label">Documents as Context</div>
                   <div class="dropdown-desc">Explicit, reviewable AI context</div>
                 </div>
               </a>
-              <a href="/concepts/engineering-foundation" class="dropdown-item">
+              <a href="/deep-dive/engineering-foundation" class="dropdown-item">
                 <span class="dropdown-dot dot-purple"></span>
                 <div>
                   <div class="dropdown-label">Engineering Foundation</div>
@@ -68,10 +92,11 @@ const {
               </a>
             </div>
           </div>
+          <a href="/tour">Tour</a>
+          <a href="/runlogos">RunLogos</a>
           <a href="/getting-started">Docs</a>
           <a href="/getting-started/quick-start" class="nav-cta">Quick Start</a>
           <a href="https://github.com/miniidealab/openlogos" target="_blank" rel="noopener">GitHub</a>
-          <a href="/zh" class="lang-switch">中文</a>
         </div>
         <button class="mobile-menu-btn" aria-label="Menu">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -89,15 +114,39 @@ const {
 
     <footer class="site-footer">
       <div class="footer-container">
-        <div class="footer-brand">
-          <p class="footer-tagline">OpenLogos — Open-source software engineering methodology for the AI era</p>
-          <p class="footer-copyright">&copy; 2026 MiniIdea. Licensed under Apache 2.0.</p>
-        </div>
-        <div class="footer-links">
-          <a href="/concepts/three-layer-model">Concepts</a>
-          <a href="/getting-started">Docs</a>
-          <a href="/getting-started/quick-start">Quick Start</a>
+        <span class="footer-copyright">
+          &copy; 2026
+          <a href="https://miniidealab.com" target="_blank" rel="noopener" class="footer-miniidea">
+            <img src="/miniidea-logo.svg" alt="miniidea" width="16" height="16" class="miniidea-logo" />
+            miniidea
+          </a>
+          · Licensed under <a href="https://github.com/miniidealab/openlogos/blob/master/LICENSE" target="_blank" rel="noopener" class="footer-license-link">Apache 2.0</a>
+        </span>
+        <div class="footer-right">
           <a href="https://github.com/miniidealab/openlogos" target="_blank" rel="noopener">GitHub</a>
+          <a href="/deep-dive/three-layer-model">Concepts</a>
+          <a href="/tour">Tour</a>
+          <a href="/getting-started">Docs</a>
+          <a href="/about">About</a>
+          <!-- Language switcher hidden until Chinese version is ready
+          <div class="lang-switcher" id="langSwitcher">
+            <button class="lang-switcher-btn" id="langToggle" aria-label="Switch language" aria-expanded="false">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <span id="langLabel">{lang === 'zh' ? '简体中文' : 'English'}</span>
+              <svg class="lang-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="lang-menu" id="langMenu">
+              <a href="/" class={`lang-option ${lang === 'en' ? 'active' : ''}`}>
+                English
+                {lang === 'en' && <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 8l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>}
+              </a>
+              <a href="/zh" class={`lang-option ${lang === 'zh' ? 'active' : ''}`}>
+                简体中文
+                {lang === 'zh' && <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 8l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>}
+              </a>
+            </div>
+          </div>
+          -->
         </div>
       </div>
     </footer>
@@ -115,7 +164,18 @@ const {
         e.stopPropagation();
         dropdown?.classList.toggle('open');
       });
-      document.addEventListener('click', () => dropdown?.classList.remove('open'));
+      document.addEventListener('click', (e) => {
+        dropdown?.classList.remove('open');
+        const switcher = document.getElementById('langSwitcher');
+        if (switcher && !switcher.contains(e.target as Node)) {
+          switcher.classList.remove('open');
+        }
+      });
+
+      document.getElementById('langToggle')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('langSwitcher')?.classList.toggle('open');
+      });
     </script>
   </body>
 </html>
@@ -339,13 +399,6 @@ const {
     transform: translateY(-1px);
   }
 
-  .lang-switch {
-    padding: 0.25rem 0.625rem;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-size: 0.8rem !important;
-  }
-
   .mobile-menu-btn {
     display: none;
     background: none;
@@ -357,7 +410,7 @@ const {
 
   .site-footer {
     border-top: 1px solid var(--color-border);
-    padding: 3rem 1.5rem;
+    padding: 1.5rem;
   }
 
   .footer-container {
@@ -368,30 +421,142 @@ const {
     align-items: center;
   }
 
-  .footer-tagline {
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
-    margin-bottom: 0.375rem;
-  }
-
   .footer-copyright {
     color: var(--color-text-muted);
     font-size: 0.8rem;
     opacity: 0.6;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
   }
 
-  .footer-links {
+  .footer-miniidea {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--color-text-muted) !important;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+
+  .footer-miniidea:hover {
+    opacity: 0.8;
+    color: var(--color-text) !important;
+  }
+
+  .miniidea-logo {
+    border-radius: 3px;
+  }
+
+  .footer-license-link {
+    color: var(--color-text-muted) !important;
+    text-decoration: underline;
+    text-decoration-color: rgba(161, 161, 170, 0.3);
+    text-underline-offset: 2px;
+  }
+
+  .footer-license-link:hover {
+    color: var(--color-text) !important;
+    text-decoration-color: rgba(161, 161, 170, 0.6);
+  }
+
+  .footer-right {
     display: flex;
+    align-items: center;
     gap: 1.5rem;
   }
 
-  .footer-links a {
+  .footer-right > a {
     color: var(--color-text-muted);
     font-size: 0.85rem;
+    white-space: nowrap;
   }
 
-  .footer-links a:hover {
+  .footer-right > a:hover {
     color: var(--color-text);
+  }
+
+  /* Language Switcher - in footer */
+  .lang-switcher {
+    position: relative;
+  }
+
+  .lang-switcher-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 100px;
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .lang-switcher-btn:hover {
+    border-color: var(--color-border-hover);
+    color: var(--color-text);
+  }
+
+  .lang-chevron {
+    transition: transform 0.2s;
+  }
+
+  .lang-switcher.open .lang-chevron {
+    transform: rotate(180deg);
+  }
+
+  .lang-menu {
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    right: 0;
+    min-width: 150px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 0.325rem;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .lang-switcher.open .lang-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+
+  .lang-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.45rem 0.7rem;
+    border-radius: 7px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--color-text-muted) !important;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .lang-option:hover {
+    background: var(--color-surface-raised);
+    color: var(--color-text) !important;
+  }
+
+  .lang-option.active {
+    color: var(--color-text) !important;
+    font-weight: 600;
+  }
+
+  .lang-option.active svg {
+    color: var(--color-primary);
   }
 
   @media (max-width: 768px) {
@@ -459,7 +624,13 @@ const {
     .footer-container {
       flex-direction: column;
       text-align: center;
-      gap: 1.5rem;
+      gap: 1rem;
+    }
+
+    .footer-right {
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
     }
   }
 </style>

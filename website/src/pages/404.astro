@@ -1,0 +1,122 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="404 — Page Not Found | OpenLogos">
+  <section class="not-found">
+    <div class="container">
+      <div class="glow"></div>
+      <div class="error-code">404</div>
+      <h1>Page not found</h1>
+      <p>The page you're looking for doesn't exist or has been moved.</p>
+      <div class="actions">
+        <a href="/" class="btn btn-primary">
+          Back to Home
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="/getting-started" class="btn btn-ghost">Read the Docs</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .not-found {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 64px - 73px);
+    text-align: center;
+    padding: 2rem 1.5rem;
+    overflow: hidden;
+  }
+
+  .container {
+    position: relative;
+    max-width: 520px;
+  }
+
+  .glow {
+    position: absolute;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 400px;
+    height: 300px;
+    background: radial-gradient(ellipse, var(--color-primary-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .error-code {
+    font-family: var(--font-mono);
+    font-size: clamp(6rem, 20vw, 10rem);
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: transparent;
+    -webkit-text-stroke: 1.5px var(--color-border-hover);
+    opacity: 0.5;
+    margin-bottom: 1rem;
+  }
+
+  h1 {
+    font-size: clamp(1.5rem, 4vw, 2rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.75rem;
+  }
+
+  p {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+    line-height: 1.7;
+    margin-bottom: 2rem;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    transition: all 0.2s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-primary {
+    background: var(--color-primary);
+    color: white !important;
+    box-shadow: 0 0 20px var(--color-primary-glow);
+  }
+
+  .btn-primary:hover {
+    background: var(--color-primary-hover);
+    color: white !important;
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    background: var(--color-surface);
+    color: var(--color-text) !important;
+    border: 1px solid var(--color-border);
+  }
+
+  .btn-ghost:hover {
+    background: var(--color-surface-raised);
+    border-color: var(--color-border-hover);
+    color: var(--color-text) !important;
+    transform: translateY(-1px);
+  }
+</style>

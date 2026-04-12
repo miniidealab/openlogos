@@ -1,0 +1,960 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="About — OpenLogos" description="The story behind OpenLogos — an open-source software engineering methodology for the AI era, created by a developer with 21 years of experience.">
+
+  <!-- Hero -->
+  <section class="about-hero">
+    <div class="container">
+      <div class="hero-tag">About</div>
+      <h1>OpenLogos defines the spec.<br/><span class="accent">RunLogos makes it actionable.</span></h1>
+      <p class="hero-desc">
+        An open-source software engineering methodology born from 21 years of building production systems —
+        re-compiled for the AI era.
+      </p>
+    </div>
+  </section>
+
+  <!-- Origin Story -->
+  <section class="story-section">
+    <div class="container">
+      <div class="section-label">The Story</div>
+      <h2>Why OpenLogos exists</h2>
+
+      <div class="story-grid">
+        <div class="story-card">
+          <div class="story-number">01</div>
+          <h3>The Vibe Coding problem</h3>
+          <p>
+            AI writes code faster than ever — but projects are turning into black boxes.
+            Developers jump straight to code, skip requirements, skip design, skip tests.
+            The result? Ambiguity explosion, endless rework, and codebases no one understands.
+          </p>
+        </div>
+
+        <div class="story-card">
+          <div class="story-number">02</div>
+          <h3>21 years of engineering wisdom</h3>
+          <p>
+            From building China's #1 API Gateway at Alibaba Cloud to architecting
+            Feixin's messaging infrastructure for millions of users — decades of
+            front-line software engineering taught one lesson: <strong>great software needs great process</strong>.
+          </p>
+        </div>
+
+        <div class="story-card">
+          <div class="story-number">03</div>
+          <h3>A methodology is born</h3>
+          <p>
+            While building RunLogos, the pattern became clear: BDD, TDD, DDD, Stage-Gate —
+            these proven engineering methods could be encoded as AI-executable Skills.
+            OpenLogos was born to make this accessible to every developer, for free.
+          </p>
+        </div>
+
+        <div class="story-card">
+          <div class="story-number">04</div>
+          <h3>Harnessed engineering for AI</h3>
+          <p>
+            OpenLogos aligns with the emerging "harnessed engineering" movement — AI does the heavy lifting,
+            but engineers maintain control through structured methodology.
+            It's the counter-thesis to vibe coding, and it works.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OpenLogos & RunLogos -->
+  <section class="ecosystem-section">
+    <div class="container">
+      <div class="section-label">The Ecosystem</div>
+      <h2>Two projects, one mission</h2>
+      <p class="section-desc">
+        LOGOS is a product ecosystem composed of two complementary projects under the
+        <a href="https://miniidealab.com" target="_blank" rel="noopener">miniidea</a> brand.
+      </p>
+
+      <div class="ecosystem-grid">
+        <div class="eco-card eco-openlogos">
+          <div class="eco-header">
+            <img src="/favicon.svg" alt="OpenLogos" width="32" height="32" />
+            <div>
+              <h3>OpenLogos</h3>
+              <span class="eco-badge eco-badge-oss">Open Source · Apache 2.0</span>
+            </div>
+          </div>
+          <p class="eco-tagline">The methodology</p>
+          <p>
+            An open-source software engineering methodology that encodes proven engineering practices
+            as AI-executable Skills. Platform-agnostic Markdown files that work with any AI coding tool.
+          </p>
+          <ul class="eco-features">
+            <li>13 built-in AI Skills covering the full development lifecycle</li>
+            <li>CLI tool (<code>openlogos</code>) for project scaffolding and verification</li>
+            <li>Specifications for project structure, workflow, and test results</li>
+            <li>Works with Claude Code, OpenCode, Cursor, and more</li>
+          </ul>
+          <div class="eco-links">
+            <a href="https://github.com/miniidealab/openlogos" target="_blank" rel="noopener">GitHub</a>
+            <a href="/getting-started">Documentation</a>
+            <span class="eco-domain">openlogos.ai</span>
+          </div>
+        </div>
+
+        <div class="eco-card eco-runlogos">
+          <div class="eco-header">
+            <div class="runlogos-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="7" fill="#3b82f6"/><path d="M10 10l6 6-6 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 22h5" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <h3>RunLogos</h3>
+              <span class="eco-badge eco-badge-commercial">Commercial · Desktop App</span>
+            </div>
+          </div>
+          <p class="eco-tagline">The tool</p>
+          <p>
+            The best-practice implementation of OpenLogos — a desktop application that brings
+            the methodology to life with visual editing, scenario orchestration, and automated verification.
+          </p>
+          <ul class="eco-features">
+            <li>Unified project dashboard: docs, API, DB, scenarios in one panel</li>
+            <li>Visual API editor and SQL designer</li>
+            <li>Scenario runner for end-to-end API chain verification</li>
+            <li>Highlight-to-comment for structured AI prompt generation</li>
+          </ul>
+          <div class="eco-links">
+            <a href="https://runlogos.com" target="_blank" rel="noopener">Website</a>
+            <span class="eco-domain">runlogos.com · Coming Soon</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="precedents">
+        <p class="precedents-label">This model has strong industry precedents:</p>
+        <div class="precedents-grid">
+          <div class="precedent">
+            <span class="precedent-open">OpenAPI</span>
+            <span class="precedent-arrow">→</span>
+            <span class="precedent-commercial">SwaggerHub</span>
+          </div>
+          <div class="precedent">
+            <span class="precedent-open">Kubernetes</span>
+            <span class="precedent-arrow">→</span>
+            <span class="precedent-commercial">OpenShift</span>
+          </div>
+          <div class="precedent">
+            <span class="precedent-open">GraphQL</span>
+            <span class="precedent-arrow">→</span>
+            <span class="precedent-commercial">Apollo Studio</span>
+          </div>
+          <div class="precedent">
+            <span class="precedent-open">Scrum / Agile</span>
+            <span class="precedent-arrow">→</span>
+            <span class="precedent-commercial">Jira / Linear</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Vision -->
+  <section class="vision-section">
+    <div class="container">
+      <div class="vision-card">
+        <div class="section-label">Vision</div>
+        <h2>The de facto development paradigm<br/>for the AI era</h2>
+        <p>
+          As AI coding tools become mainstream, the gap between "AI writes code" and
+          "AI builds great software" will only widen. OpenLogos bridges that gap with
+          a structured, open methodology that any developer can adopt and any AI tool can follow.
+        </p>
+        <div class="vision-pillars">
+          <div class="vision-pillar">
+            <div class="vision-pillar-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z"/></svg>
+            </div>
+            <h4>Community-driven</h4>
+            <p>OpenLogos is maintained by the open-source community. Skills, specs, and tooling evolve through real-world usage and contributions.</p>
+          </div>
+          <div class="vision-pillar">
+            <div class="vision-pillar-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <h4>Enterprise-ready</h4>
+            <p>RunLogos provides enterprise-grade tooling — visual dashboards, team collaboration, and advanced verification — built on the open methodology.</p>
+          </div>
+          <div class="vision-pillar">
+            <div class="vision-pillar-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <h4>Dual flywheel</h4>
+            <p>Better methodology → larger community → stronger tooling demand → tool revenue funds methodology evolution. A self-reinforcing cycle.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Behind the Project -->
+  <section class="founder-section">
+    <div class="container">
+      <div class="section-label">Behind the Project</div>
+      <h2>Built by a developer who's been there</h2>
+
+      <div class="founder-grid">
+        <div class="founder-photo-wrap">
+          <img src="/about/founder.jpg" alt="Founder of miniidea and OpenLogos" class="founder-photo" />
+        </div>
+        <div class="founder-bio">
+          <p class="founder-intro">
+            Solo developer. 21 years of code. Based in Beijing.
+            Building tools that make developers' lives smoother — and now, a methodology that makes AI coding actually reliable.
+          </p>
+
+          <div class="career-timeline">
+            <div class="career-item">
+              <div class="career-dot"></div>
+              <div class="career-content">
+                <span class="career-period">2016 – 2026</span>
+                <h4>Alibaba Cloud · API Gateway</h4>
+                <p>Product lead. Built it from zero to China's #1 API gateway — processing billions of API calls per day across 30+ global regions.</p>
+              </div>
+            </div>
+            <div class="career-item">
+              <div class="career-dot"></div>
+              <div class="career-content">
+                <span class="career-period">Earlier career</span>
+                <h4>Feixin · Server Architecture</h4>
+                <p>Lead server architect at China's dominant IM platform, designing infrastructure that kept millions of users connected at peak.</p>
+              </div>
+            </div>
+            <div class="career-item">
+              <div class="career-dot"></div>
+              <div class="career-content">
+                <span class="career-period">2026 – Present</span>
+                <h4>miniidea · Indie Developer</h4>
+                <p>Founded miniidea. Shipped <a href="https://tools.top" target="_blank" rel="noopener">Tools.Top</a> (40+ dev tools), created OpenLogos, and building RunLogos.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="founder-philosophy">
+            <blockquote>
+              "The best tool is invisible. Great tools don't demand your attention — they quietly remove friction and get out of your way. OpenLogos follows the same principle: it doesn't fight your AI tool, it makes your AI tool better."
+            </blockquote>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Community -->
+  <section class="community-section">
+    <div class="container">
+      <div class="section-label">Community</div>
+      <h2>Join the conversation</h2>
+      <p class="section-desc">OpenLogos is open source and community-driven. Here's how to get involved.</p>
+
+      <div class="community-grid">
+        <a href="https://github.com/miniidealab/openlogos" target="_blank" rel="noopener" class="community-card">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          <h3>GitHub</h3>
+          <p>Source code, issues, and contributions.</p>
+          <span class="community-link">github.com/miniidealab/openlogos</span>
+        </a>
+
+        <a href="https://x.com/openlogos_ai" target="_blank" rel="noopener" class="community-card">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          <h3>X / Twitter</h3>
+          <p>Product updates and announcements.</p>
+          <span class="community-link">@openlogos_ai</span>
+        </a>
+
+        <a href="https://youtube.com/@openlogos" target="_blank" rel="noopener" class="community-card">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+          <h3>YouTube</h3>
+          <p>Tutorials, demos, and deep dives.</p>
+          <span class="community-link">@openlogos</span>
+        </a>
+
+        <a href="https://miniidealab.com" target="_blank" rel="noopener" class="community-card">
+          <img src="/miniidea-logo.svg" alt="miniidea" width="28" height="28" style="border-radius: 6px;" />
+          <h3>miniidea</h3>
+          <p>The parent brand behind OpenLogos and RunLogos.</p>
+          <span class="community-link">miniidealab.com</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="about-cta">
+    <div class="container">
+      <div class="cta-glow"></div>
+      <h2>Ready to stop vibe coding?</h2>
+      <p>Try OpenLogos in 2 minutes. No signup, no installation complexity — just better AI-assisted development.</p>
+      <div class="cta-actions">
+        <a href="/getting-started/quick-start" class="btn btn-primary">
+          Quick Start
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="https://github.com/miniidealab/openlogos" class="btn btn-ghost" target="_blank" rel="noopener">
+          Star on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+  }
+
+  .section-desc {
+    color: var(--color-text-muted);
+    max-width: 600px;
+    font-size: 1.05rem;
+    line-height: 1.7;
+  }
+
+  .accent {
+    color: var(--color-primary);
+  }
+
+  /* Hero */
+  .about-hero {
+    padding: 9rem 1.5rem 4rem;
+    text-align: center;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    padding: 0.35rem 1rem;
+    border: 1px solid var(--color-primary);
+    color: var(--color-primary);
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 2rem;
+  }
+
+  .about-hero h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+  }
+
+  .hero-desc {
+    color: var(--color-text-muted);
+    font-size: 1.15rem;
+    line-height: 1.75;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* Story */
+  .story-section {
+    padding: 5rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .story-section h2 {
+    font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 2.5rem;
+  }
+
+  .story-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+  }
+
+  .story-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: 2rem;
+    transition: border-color 0.2s;
+  }
+
+  .story-card:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  .story-number {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--color-primary);
+    margin-bottom: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .story-card h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.625rem;
+    letter-spacing: -0.01em;
+  }
+
+  .story-card p {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.65;
+  }
+
+  .story-card strong {
+    color: var(--color-text-secondary);
+  }
+
+  /* Ecosystem */
+  .ecosystem-section {
+    padding: 5rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .ecosystem-section h2 {
+    font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.75rem;
+  }
+
+  .ecosystem-section .section-desc {
+    margin-bottom: 2.5rem;
+  }
+
+  .ecosystem-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 3rem;
+  }
+
+  .eco-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: 2rem;
+    transition: border-color 0.2s;
+  }
+
+  .eco-openlogos:hover {
+    border-color: rgba(14, 182, 119, 0.4);
+  }
+
+  .eco-runlogos:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+  }
+
+  .eco-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .eco-header img, .runlogos-icon svg {
+    border-radius: 8px;
+  }
+
+  .eco-header h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 0.125rem;
+  }
+
+  .eco-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 100px;
+  }
+
+  .eco-badge-oss {
+    background: rgba(14, 182, 119, 0.15);
+    color: #34d399;
+  }
+
+  .eco-badge-commercial {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+  }
+
+  .eco-tagline {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    margin-bottom: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .eco-card > p:not(.eco-tagline) {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.65;
+    margin-bottom: 1rem;
+  }
+
+  .eco-features {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 1.25rem;
+  }
+
+  .eco-features li {
+    position: relative;
+    padding-left: 1.25rem;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin-bottom: 0.375rem;
+  }
+
+  .eco-features li::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: var(--color-primary);
+    font-weight: 700;
+  }
+
+  .eco-runlogos .eco-features li::before {
+    color: #60a5fa;
+  }
+
+  .eco-features code {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    background: var(--color-surface-raised);
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+  }
+
+  .eco-links {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .eco-links a {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .eco-domain {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    opacity: 0.6;
+    margin-left: auto;
+  }
+
+  /* Precedents */
+  .precedents {
+    text-align: center;
+  }
+
+  .precedents-label {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .precedents-grid {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .precedent {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+
+  .precedent-open {
+    color: var(--color-primary);
+  }
+
+  .precedent-arrow {
+    color: var(--color-text-muted);
+    opacity: 0.4;
+  }
+
+  .precedent-commercial {
+    color: var(--color-text-muted);
+  }
+
+  /* Vision */
+  .vision-section {
+    padding: 5rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .vision-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    padding: 3rem;
+    text-align: center;
+  }
+
+  .vision-card h2 {
+    font-size: clamp(1.5rem, 3.5vw, 2rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 1rem;
+  }
+
+  .vision-card > p {
+    color: var(--color-text-muted);
+    font-size: 1rem;
+    line-height: 1.7;
+    max-width: 640px;
+    margin: 0 auto 2.5rem;
+  }
+
+  .vision-pillars {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    text-align: left;
+  }
+
+  .vision-pillar-icon {
+    color: var(--color-primary);
+    margin-bottom: 0.75rem;
+  }
+
+  .vision-pillar h4 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 0.375rem;
+  }
+
+  .vision-pillar p {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  /* Founder */
+  .founder-section {
+    padding: 5rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .founder-section h2 {
+    font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 2.5rem;
+  }
+
+  .founder-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 3rem;
+    align-items: start;
+  }
+
+  .founder-photo-wrap {
+    position: sticky;
+    top: 96px;
+  }
+
+  .founder-photo {
+    width: 100%;
+    border-radius: 16px;
+    border: 1px solid var(--color-border);
+    filter: grayscale(15%);
+  }
+
+  .founder-intro {
+    font-size: 1.1rem;
+    line-height: 1.75;
+    color: var(--color-text-secondary);
+    margin-bottom: 2rem;
+    font-weight: 500;
+  }
+
+  .career-timeline {
+    position: relative;
+    padding-left: 1.5rem;
+    border-left: 2px solid var(--color-border);
+    margin-bottom: 2rem;
+  }
+
+  .career-item {
+    position: relative;
+    padding-bottom: 1.75rem;
+  }
+
+  .career-item:last-child {
+    padding-bottom: 0;
+  }
+
+  .career-dot {
+    position: absolute;
+    left: -1.75rem;
+    top: 0.35rem;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    border: 2px solid var(--color-bg);
+  }
+
+  .career-period {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .career-content h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0.25rem 0 0.375rem;
+  }
+
+  .career-content p {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .founder-philosophy blockquote {
+    border-left: 3px solid var(--color-primary);
+    padding: 1rem 0 1rem 1.5rem;
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.7;
+    font-style: italic;
+  }
+
+  /* Community */
+  .community-section {
+    padding: 5rem 0;
+    border-top: 1px solid var(--color-border);
+    text-align: center;
+  }
+
+  .community-section h2 {
+    font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.75rem;
+  }
+
+  .community-section .section-desc {
+    margin: 0 auto 2.5rem;
+  }
+
+  .community-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    text-align: left;
+  }
+
+  .community-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: border-color 0.2s, transform 0.2s;
+    color: inherit !important;
+  }
+
+  .community-card:hover {
+    border-color: var(--color-border-hover);
+    transform: translateY(-2px);
+    color: inherit !important;
+  }
+
+  .community-card svg, .community-card img {
+    color: var(--color-text-muted);
+  }
+
+  .community-card h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  .community-card p {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    flex: 1;
+  }
+
+  .community-link {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--color-primary) !important;
+  }
+
+  /* CTA */
+  .about-cta {
+    position: relative;
+    padding: 5rem 0;
+    border-top: 1px solid var(--color-border);
+    text-align: center;
+    overflow: hidden;
+  }
+
+  .about-cta .container {
+    position: relative;
+  }
+
+  .cta-glow {
+    position: absolute;
+    bottom: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(ellipse, var(--color-primary-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .about-cta h2 {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 1rem;
+  }
+
+  .about-cta p {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+    margin-bottom: 2rem;
+    max-width: 520px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .cta-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    transition: all 0.2s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-primary {
+    background: var(--color-primary);
+    color: white !important;
+    box-shadow: 0 0 20px var(--color-primary-glow);
+  }
+
+  .btn-primary:hover {
+    background: var(--color-primary-hover);
+    color: white !important;
+    box-shadow: 0 0 30px rgba(14, 182, 119, 0.25);
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    background: var(--color-surface);
+    color: var(--color-text) !important;
+    border: 1px solid var(--color-border);
+  }
+
+  .btn-ghost:hover {
+    background: var(--color-surface-raised);
+    border-color: var(--color-border-hover);
+    color: var(--color-text) !important;
+    transform: translateY(-1px);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .about-hero {
+      padding: 7rem 1.5rem 3rem;
+    }
+
+    .story-grid,
+    .ecosystem-grid,
+    .vision-pillars {
+      grid-template-columns: 1fr;
+    }
+
+    .founder-grid {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+
+    .founder-photo-wrap {
+      position: static;
+      max-width: 240px;
+      margin: 0 auto;
+    }
+
+    .community-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .vision-card {
+      padding: 2rem 1.5rem;
+    }
+
+    .precedents-grid {
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .community-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

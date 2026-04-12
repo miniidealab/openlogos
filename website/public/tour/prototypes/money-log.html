@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Money-Log - Desktop Prototype</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #0F172A;
+            --secondary: #1E3A8A;
+            --cta: #CA8A04;
+            --background: #F8FAFC;
+            --surface: #FFFFFF;
+            --text: #020617;
+            --text-muted: #64748B;
+            --border: #E2E8F0;
+            --success: #10B981;
+            --danger: #EF4444;
+        }
+        
+        body {
+            font-family: 'Fira Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px;
+            gap: 16px;
+        }
+        
+        h1 {
+            color: #fff;
+            font-size: 18px;
+            font-weight: 500;
+        }
+        
+        .prototype-nav {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .prototype-nav a {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            text-decoration: none;
+            color: #fff;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        
+        .prototype-nav a:hover {
+            background: rgba(255,255,255,0.2);
+            border-color: var(--cta);
+            color: var(--cta);
+        }
+        
+        .prototype-container {
+            background: var(--surface);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        
+        .window-title {
+            background: var(--primary);
+            padding: 10px 16px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .window-title::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff5f56;
+        }
+        
+        .window-title::after {
+            content: '';
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ffbd2e;
+        }
+        
+        .page-header {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text);
+            padding: 20px 24px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .page-header::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: var(--cta);
+            border-radius: 2px;
+        }
+        
+        .page-content {
+            padding: 24px;
+        }
+        
+        /* Navigation Tabs */
+        .nav-tabs {
+            display: flex;
+            background: var(--primary);
+            padding: 0 16px;
+            gap: 4px;
+        }
+        
+        .nav-tab {
+            padding: 14px 20px;
+            color: rgba(255,255,255,0.6);
+            font-size: 14px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .nav-tab:hover {
+            color: #fff;
+        }
+        
+        .nav-tab.active {
+            color: #fff;
+            border-bottom-color: var(--cta);
+        }
+        
+        /* S01: Log page */
+        .accounting-page {
+            width: 700px;
+        }
+        
+        .category-section {
+            margin-bottom: 24px;
+        }
+        
+        .section-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+        
+        .category-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .category-tag {
+            padding: 12px 20px;
+            border-radius: 8px;
+            background: var(--background);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 100px;
+            justify-content: center;
+        }
+        
+        .category-tag:hover {
+            border-color: var(--secondary);
+            background: #f1f5f9;
+        }
+        
+        .category-tag.selected {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3);
+        }
+        
+        .category-tag .icon {
+            font-size: 18px;
+        }
+        
+        .amount-section {
+            margin-bottom: 24px;
+        }
+        
+        .amount-card {
+            background: var(--background);
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid var(--border);
+        }
+        
+        .amount-input-wrapper {
+            display: flex;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--surface);
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            transition: all 0.2s;
+        }
+        
+        .amount-input-wrapper:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+        }
+        
+        .currency-symbol {
+            font-size: 28px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-right: 12px;
+            font-family: 'Fira Code', monospace;
+        }
+        
+        .amount-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 36px;
+            font-weight: 600;
+            color: var(--text);
+            font-family: 'Fira Code', monospace;
+            background: transparent;
+        }
+        
+        .amount-input::placeholder {
+            color: #cbd5e1;
+        }
+        
+        .record-btn {
+            width: 100%;
+            padding: 16px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 16px;
+        }
+        
+        .record-btn:hover:not(:disabled) {
+            background: var(--secondary);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3);
+        }
+        
+        .record-btn:disabled {
+            background: #cbd5e1;
+            color: #94a3b8;
+            cursor: not-allowed;
+        }
+        
+        .today-summary {
+            margin-top: 20px;
+            padding: 16px 20px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: 10px;
+            font-size: 14px;
+            color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .today-summary .label {
+            opacity: 0.8;
+        }
+        
+        .today-summary .amount {
+            font-size: 20px;
+            font-weight: 700;
+            font-family: 'Fira Code', monospace;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: var(--primary);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        .toast.success {
+            background: var(--success);
+        }
+        
+        .toast.error {
+            background: var(--danger);
+        }
+        
+        /* S02: Statistics page */
+        .stats-page {
+            width: 700px;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .time-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            color: var(--text-muted);
+        }
+        
+        .time-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        
+        .time-btn.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+        
+        .month-select {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            margin-left: auto;
+            background: var(--surface);
+            color: var(--text);
+        }
+        
+        .category-filter {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        
+        .category-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: var(--background);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        
+        .category-chip:hover {
+            border-color: var(--secondary);
+        }
+        
+        .category-chip.selected {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+        
+        .category-chip input {
+            display: none;
+        }
+        
+        .chart-area {
+            background: var(--background);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+        }
+        
+        .chart-title {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .bar-chart {
+            height: 180px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 8px;
+        }
+        
+        .bar-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+        
+        .bar {
+            width: 100%;
+            max-width: 48px;
+            background: linear-gradient(180deg, var(--cta) 0%, #a67c00 100%);
+            border-radius: 6px 6px 0 0;
+            transition: all 0.3s;
+            position: relative;
+        }
+        
+        .bar::after {
+            content: attr(data-amount);
+            position: absolute;
+            top: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .bar:hover::after {
+            opacity: 1;
+        }
+        
+        .bar-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            text-align: center;
+        }
+        
+        .stats-list {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .stats-item {
+            display: flex;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+        }
+        
+        .stats-item:hover {
+            background: var(--background);
+        }
+        
+        .stats-item:last-child {
+            border-bottom: none;
+        }
+        
+        .stats-item.total {
+            background: var(--primary);
+            color: #fff;
+        }
+        
+        .stats-icon {
+            font-size: 22px;
+            margin-right: 16px;
+            width: 32px;
+            text-align: center;
+        }
+        
+        .stats-name {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .stats-amount {
+            font-size: 15px;
+            font-weight: 600;
+            margin-right: 20px;
+            font-family: 'Fira Code', monospace;
+            min-width: 100px;
+            text-align: right;
+        }
+        
+        .stats-percent {
+            width: 80px;
+            height: 8px;
+            background: rgba(0,0,0,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .stats-item:not(.total) .stats-percent {
+            background: #e2e8f0;
+        }
+        
+        .stats-percent-fill {
+            height: 100%;
+            background: var(--cta);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .stats-item.total .stats-percent {
+            display: none;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 40px;
+            color: var(--text-muted);
+        }
+        
+        .empty-state-icon {
+            font-size: 56px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        
+        /* S03: Category management */
+        .category-manage-page {
+            width: 700px;
+        }
+        
+        .category-group-title {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 20px 0 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .category-group-title:first-child {
+            margin-top: 0;
+        }
+        
+        .category-list-item {
+            display: flex;
+            align-items: center;
+            padding: 14px 18px;
+            background: var(--background);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+        
+        .category-list-item:hover {
+            background: #f1f5f9;
+        }
+        
+        .category-list-item.custom {
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+        
+        .category-list-item .icon {
+            font-size: 20px;
+            margin-right: 14px;
+            width: 28px;
+            text-align: center;
+        }
+        
+        .category-list-item .name {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .category-list-item .count {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-right: 16px;
+        }
+        
+        .category-list-item .action {
+            font-size: 13px;
+            color: var(--secondary);
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .category-list-item .action:hover {
+            background: rgba(30, 58, 138, 0.1);
+        }
+        
+        .category-list-item .action.danger {
+            color: var(--danger);
+        }
+        
+        .category-list-item .action.danger:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .category-list-item .action.disabled {
+            color: #cbd5e1;
+            cursor: not-allowed;
+        }
+        
+        .add-category-btn {
+            width: 100%;
+            padding: 14px;
+            border: 2px dashed var(--border);
+            background: transparent;
+            border-radius: 10px;
+            color: var(--secondary);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .add-category-btn:hover {
+            border-color: var(--secondary);
+            background: rgba(30, 58, 138, 0.05);
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 100;
+        }
+        
+        .modal-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .modal {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            width: 380px;
+            transform: scale(0.95);
+            transition: transform 0.2s;
+        }
+        
+        .modal-overlay.show .modal {
+            transform: scale(1);
+        }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--text);
+        }
+        
+        .modal-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 8px;
+            transition: border-color 0.2s;
+        }
+        
+        .modal-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+        }
+        
+        .modal-error {
+            color: var(--danger);
+            font-size: 12px;
+            margin-bottom: 12px;
+            min-height: 18px;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+        
+        .modal-btn.cancel {
+            background: var(--background);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        
+        .modal-btn.cancel:hover {
+            background: #e2e8f0;
+        }
+        
+        .modal-btn.confirm {
+            background: var(--primary);
+            color: #fff;
+        }
+        
+        .modal-btn.confirm:hover {
+            background: var(--secondary);
+        }
+        
+        .modal-btn.danger {
+            background: var(--danger);
+            color: #fff;
+        }
+        
+        /* S04: Unlock page */
+        .lock-page {
+            width: 700px;
+            padding: 48px;
+            text-align: center;
+            background: linear-gradient(180deg, var(--primary) 0%, #0f172a 100%);
+        }
+        
+        .lock-icon {
+            width: 80px;
+            height: 80px;
+            background: rgba(202, 138, 4, 0.2);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 36px;
+        }
+        
+        .lock-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        
+        .lock-subtitle {
+            font-size: 14px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 40px;
+        }
+        
+        .lock-input-wrapper {
+            margin-bottom: 20px;
+        }
+        
+        .lock-hint {
+            font-size: 14px;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 16px;
+        }
+        
+        .password-dots {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .password-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.3);
+            transition: all 0.2s;
+        }
+        
+        .password-dot.filled {
+            background: var(--cta);
+            border-color: var(--cta);
+        }
+        
+        .lock-error {
+            color: var(--danger);
+            font-size: 14px;
+            margin-bottom: 16px;
+            min-height: 20px;
+        }
+        
+        .lock-error.shake {
+            animation: shake 0.3s;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
+        }
+        
+        .forgot-link {
+            color: var(--cta);
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: underline;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        
+        .forgot-link:hover {
+            opacity: 1;
+        }
+        
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            max-width: 280px;
+            margin: 32px auto 0;
+        }
+        
+        .keypad-btn {
+            padding: 20px;
+            font-size: 24px;
+            font-weight: 500;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            border-radius: 12px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .keypad-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .keypad-btn:active {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .keypad-btn.delete {
+            font-size: 18px;
+        }
+        
+        /* Settings Page */
+        .settings-page {
+            width: 700px;
+        }
+        
+        .setting-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 20px;
+            background: var(--background);
+            border-radius: 10px;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        
+        .setting-item:hover {
+            background: #f1f5f9;
+        }
+        
+        .setting-item-content {
+            flex: 1;
+        }
+        
+        .setting-item-title {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text);
+        }
+        
+        .setting-item-desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        
+        .toggle-switch {
+            width: 48px;
+            height: 26px;
+            background: #cbd5e1;
+            border-radius: 13px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        
+        .toggle-switch.on {
+            background: var(--success);
+        }
+        
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            background: #fff;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .toggle-switch.on::after {
+            transform: translateX(22px);
+        }
+        
+        .link-btn {
+            color: var(--secondary);
+            font-size: 14px;
+            cursor: pointer;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        .link-btn:hover {
+            background: rgba(30, 58, 138, 0.1);
+        }
+        
+        /* Confirm Dialog */
+        .confirm-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 200;
+        }
+        
+        .confirm-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .confirm-dialog {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 24px;
+            width: 340px;
+            text-align: center;
+        }
+        
+        .confirm-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        
+        .confirm-message {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        
+        .confirm-actions {
+            display: flex;
+            gap: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Money-Log - Desktop Prototype</h1>
+    
+    <div class="prototype-nav">
+        <a href="#s01">S01 Log Page</a>
+        <a href="#s02">S02 Statistics</a>
+        <a href="#s03">S03 Categories</a>
+        <a href="#s04-lock">S04 Unlock</a>
+        <a href="#s04-settings">S04 Passcode</a>
+    </div>
+    
+    <!-- S01: Log page -->
+    <div class="prototype-container" id="s01">
+        <div class="nav-tabs">
+            <div class="nav-tab active">Log</div>
+            <div class="nav-tab">Stats</div>
+            <div class="nav-tab">Settings</div>
+        </div>
+        <div class="window-title"></div>
+        <div class="page-header">Quick Log</div>
+        <div class="page-content">
+            <div class="category-section">
+                <div class="section-label">Select Category</div>
+                <div class="category-list" id="categoryList">
+                    <div class="category-tag selected" data-id="1"><span class="icon">🍜</span>Dining</div>
+                    <div class="category-tag" data-id="2"><span class="icon">🚗</span>Transport</div>
+                    <div class="category-tag" data-id="3"><span class="icon">🛒</span>Shopping</div>
+                    <div class="category-tag" data-id="4"><span class="icon">🎮</span>Entertainment</div>
+                    <div class="category-tag" data-id="5"><span class="icon">🏠</span>Housing</div>
+                    <div class="category-tag" data-id="6"><span class="icon">💊</span>Medical</div>
+                    <div class="category-tag" data-id="7"><span class="icon">📱</span>Telecom</div>
+                    <div class="category-tag" data-id="8"><span class="icon">📦</span>Other</div>
+                </div>
+            </div>
+            
+            <div class="amount-section">
+                <div class="section-label">Amount</div>
+                <div class="amount-card">
+                    <div class="amount-input-wrapper">
+                        <span class="currency-symbol">¥</span>
+                        <input type="text" class="amount-input" id="amountInput" placeholder="0.00" autocomplete="off">
+                    </div>
+                    <button class="record-btn" id="recordBtn" disabled>Log it</button>
+                </div>
+            </div>
+            
+            <div class="today-summary">
+                <span class="label">Today</span>
+                <span class="amount" id="todayTotal">¥120.00</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- S02: Statistics page -->
+    <div class="prototype-container" id="s02" style="margin-top: 20px;">
+        <div class="nav-tabs">
+            <div class="nav-tab">Log</div>
+            <div class="nav-tab active">Stats</div>
+            <div class="nav-tab">Settings</div>
+        </div>
+        <div class="window-title"></div>
+        <div class="page-header">Spending Stats</div>
+        <div class="page-content">
+            <div class="filter-bar">
+                <button class="time-btn" data-range="week">This week</button>
+                <button class="time-btn active" data-range="month">This month</button>
+                <button class="time-btn" data-range="custom">Custom</button>
+                <select class="month-select" id="monthSelect">
+                    <option>April 2026</option>
+                    <option>March 2026</option>
+                    <option>February 2026</option>
+                </select>
+            </div>
+            
+            <div class="category-filter">
+                <label class="category-chip selected">
+                    <input type="radio" name="statsCategory" value="all" checked>
+                    All
+                </label>
+                <label class="category-chip">
+                    <input type="radio" name="statsCategory" value="1">
+                    Dining
+                </label>
+                <label class="category-chip">
+                    <input type="radio" name="statsCategory" value="2">
+                    Transport
+                </label>
+                <label class="category-chip">
+                    <input type="radio" name="statsCategory" value="3">
+                    Shopping
+                </label>
+            </div>
+            
+            <div class="chart-area">
+                <div class="chart-title">April spending trend</div>
+                <div class="bar-chart">
+                    <div class="bar-item">
+                        <div class="bar" style="height: 60px;" data-amount="35"></div>
+                        <div class="bar-label">Mon</div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" style="height: 100px;" data-amount="68"></div>
+                        <div class="bar-label">Tue</div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" style="height: 45px;" data-amount="28"></div>
+                        <div class="bar-label">Wed</div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" style="height: 85px;" data-amount="52"></div>
+                        <div class="bar-label">Thu</div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" style="height: 120px;" data-amount="85"></div>
+                        <div class="bar-label">Fri</div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" style="height: 95px;" data-amount="62"></div>
+                        <div class="bar-label">Sat</div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" style="height: 50px;" data-amount="30"></div>
+                        <div class="bar-label">Sun</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stats-list">
+                <div class="stats-item">
+                    <span class="stats-icon">🍜</span>
+                    <span class="stats-name">Dining</span>
+                    <span class="stats-amount">¥800.00</span>
+                    <div class="stats-percent"><div class="stats-percent-fill" style="width: 32%;"></div></div>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-icon">🛒</span>
+                    <span class="stats-name">Shopping</span>
+                    <span class="stats-amount">¥1,500.00</span>
+                    <div class="stats-percent"><div class="stats-percent-fill" style="width: 60%;"></div></div>
+                </div>
+                <div class="stats-item">
+                    <span class="stats-icon">🚗</span>
+                    <span class="stats-name">Transport</span>
+                    <span class="stats-amount">¥200.00</span>
+                    <div class="stats-percent"><div class="stats-percent-fill" style="width: 8%;"></div></div>
+                </div>
+                <div class="stats-item total">
+                    <span class="stats-icon"></span>
+                    <span class="stats-name">Total</span>
+                    <span class="stats-amount">¥2,500.00</span>
+                    <div class="stats-percent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- S03: Category management -->
+    <div class="prototype-container" id="s03" style="margin-top: 20px;">
+        <div class="nav-tabs">
+            <div class="nav-tab">Log</div>
+            <div class="nav-tab">Stats</div>
+            <div class="nav-tab active">Settings</div>
+        </div>
+        <div class="window-title"></div>
+        <div class="page-header">Category Management</div>
+        <div class="page-content">
+            <div class="category-group-title">Preset categories</div>
+            <div class="category-list">
+                <div class="category-list-item">
+                    <span class="icon">🍜</span>
+                    <span class="name">Dining</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+                <div class="category-list-item">
+                    <span class="icon">🚗</span>
+                    <span class="name">Transport</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+                <div class="category-list-item">
+                    <span class="icon">🛒</span>
+                    <span class="name">Shopping</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+                <div class="category-list-item">
+                    <span class="icon">🎮</span>
+                    <span class="name">Entertainment</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+                <div class="category-list-item">
+                    <span class="icon">🏠</span>
+                    <span class="name">Housing</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+                <div class="category-list-item">
+                    <span class="icon">💊</span>
+                    <span class="name">Medical</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+                <div class="category-list-item">
+                    <span class="icon">📱</span>
+                    <span class="name">Telecom</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+                <div class="category-list-item">
+                    <span class="icon">📦</span>
+                    <span class="name">Other</span>
+                    <span class="action disabled">Cannot delete</span>
+                </div>
+            </div>
+            
+            <div class="category-group-title">Custom categories</div>
+            <div class="category-list" id="customCategoryList">
+                <div class="category-list-item custom">
+                    <span class="icon">☕</span>
+                    <span class="name">Coffee</span>
+                    <span class="count">3 entries</span>
+                    <span class="action">Edit</span>
+                    <span class="action danger" onclick="showDeleteConfirm('Coffee')">Delete</span>
+                </div>
+            </div>
+            
+            <button class="add-category-btn" onclick="showAddModal()">
+                <span>+</span> Add category
+            </button>
+        </div>
+    </div>
+    
+    <!-- S04: Unlock page -->
+    <div class="prototype-container" id="s04-lock" style="margin-top: 20px;">
+        <div class="window-title">Passcode lock — Unlock</div>
+        <div class="lock-page">
+            <div class="lock-icon">🔒</div>
+            <div class="lock-title">Money-Log</div>
+            <div class="lock-subtitle">Enter passcode to unlock</div>
+            
+            <div class="lock-input-wrapper">
+                <div class="password-dots" id="passwordDots">
+                    <div class="password-dot"></div>
+                    <div class="password-dot"></div>
+                    <div class="password-dot"></div>
+                    <div class="password-dot"></div>
+                    <div class="password-dot"></div>
+                    <div class="password-dot"></div>
+                </div>
+            </div>
+            
+            <div class="lock-error" id="lockError"></div>
+            
+            <div class="keypad">
+                <button class="keypad-btn" onclick="inputDigit('1')">1</button>
+                <button class="keypad-btn" onclick="inputDigit('2')">2</button>
+                <button class="keypad-btn" onclick="inputDigit('3')">3</button>
+                <button class="keypad-btn" onclick="inputDigit('4')">4</button>
+                <button class="keypad-btn" onclick="inputDigit('5')">5</button>
+                <button class="keypad-btn" onclick="inputDigit('6')">6</button>
+                <button class="keypad-btn" onclick="inputDigit('7')">7</button>
+                <button class="keypad-btn" onclick="inputDigit('8')">8</button>
+                <button class="keypad-btn" onclick="inputDigit('9')">9</button>
+                <button class="keypad-btn" onclick="clearPassword()">C</button>
+                <button class="keypad-btn" onclick="inputDigit('0')">0</button>
+                <button class="keypad-btn delete" onclick="deleteDigit()">⌫</button>
+            </div>
+            
+            <div class="forgot-link" onclick="showForgotConfirm()">Forgot passcode?</div>
+        </div>
+    </div>
+    
+    <!-- S04: Passcode settings -->
+    <div class="prototype-container" id="s04-settings" style="margin-top: 20px;">
+        <div class="nav-tabs">
+            <div class="nav-tab">Log</div>
+            <div class="nav-tab">Stats</div>
+            <div class="nav-tab active">Settings</div>
+        </div>
+        <div class="window-title"></div>
+        <div class="page-header">Passcode Lock</div>
+        <div class="page-content">
+            <div class="setting-item">
+                <div class="setting-item-content">
+                    <div class="setting-item-title">Enable passcode lock</div>
+                    <div class="setting-item-desc">Require passcode when opening the app</div>
+                </div>
+                <div class="toggle-switch on" id="passwordToggle" onclick="togglePasswordLock()"></div>
+            </div>
+            
+            <div class="setting-item">
+                <div class="setting-item-content">
+                    <div class="setting-item-title">Change passcode</div>
+                </div>
+                <span class="link-btn" onclick="showChangePasswordModal()">Change</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+    
+    <!-- Generic modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-title" id="modalTitle">Add category</div>
+            <input type="text" class="modal-input" id="modalInput" placeholder="Enter category name">
+            <div class="modal-error" id="modalError"></div>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="closeModal()">Cancel</button>
+                <button class="modal-btn confirm" id="modalConfirmBtn" onclick="confirmModal()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Confirm dialog -->
+    <div class="confirm-overlay" id="confirmOverlay">
+        <div class="confirm-dialog">
+            <div class="confirm-title" id="confirmTitle">Confirm delete</div>
+            <div class="confirm-message" id="confirmMessage"></div>
+            <div class="confirm-actions">
+                <button class="modal-btn cancel" onclick="closeConfirm()">Cancel</button>
+                <button class="modal-btn danger" onclick="confirmAction()">Delete</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // ===== S01: Log page =====
+        let selectedCategory = '1';
+        let amount = '';
+        
+        document.querySelectorAll('#categoryList .category-tag').forEach(tag => {
+            tag.addEventListener('click', () => {
+                document.querySelectorAll('#categoryList .category-tag').forEach(t => t.classList.remove('selected'));
+                tag.classList.add('selected');
+                selectedCategory = tag.dataset.id;
+                updateRecordBtn();
+            });
+        });
+        
+        document.getElementById('amountInput').addEventListener('input', (e) => {
+            let value = e.target.value.replace(/[^0-9.]/g, '');
+            let parts = value.split('.');
+            if (parts.length > 2) value = parts[0] + '.' + parts.slice(1).join('');
+            if (parts[1] && parts[1].length > 2) value = parts[0] + '.' + parts[1].substring(0, 2);
+            e.target.value = value;
+            amount = value;
+            updateRecordBtn();
+        });
+        
+        function updateRecordBtn() {
+            const btn = document.getElementById('recordBtn');
+            btn.disabled = !selectedCategory || !amount || parseFloat(amount) === 0;
+        }
+        
+        document.getElementById('recordBtn').addEventListener('click', () => {
+            if (selectedCategory && amount && parseFloat(amount) > 0) {
+                showToast('Logged ✓', 'success');
+                document.getElementById('amountInput').value = '';
+                amount = '';
+                updateRecordBtn();
+            }
+        });
+        
+        // ===== Toast =====
+        function showToast(message, type = '') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast show ' + type;
+            setTimeout(() => toast.classList.remove('show'), 1500);
+        }
+        
+        // ===== S02: Statistics page =====
+        document.querySelectorAll('.time-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+        
+        document.querySelectorAll('.category-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('selected'));
+                chip.classList.add('selected');
+                chip.querySelector('input').checked = true;
+            });
+        });
+        
+        // ===== S03: Category management =====
+        let modalCallback = null;
+        let confirmCallback = null;
+        let deleteTarget = null;
+        
+        function showAddModal() {
+            document.getElementById('modalTitle').textContent = 'Add category';
+            document.getElementById('modalInput').value = '';
+            document.getElementById('modalError').textContent = '';
+            document.getElementById('modalConfirmBtn').className = 'modal-btn confirm';
+            document.getElementById('modalConfirmBtn').textContent = 'Save';
+            document.getElementById('modalOverlay').classList.add('show');
+            document.getElementById('modalInput').placeholder = 'Enter category name';
+            document.getElementById('modalInput').focus();
+            
+            modalCallback = () => {
+                const name = document.getElementById('modalInput').value.trim();
+                if (!name) {
+                    document.getElementById('modalError').textContent = 'Enter a category name';
+                    return;
+                }
+                if (['Dining', 'Transport', 'Shopping', 'Entertainment', 'Housing', 'Medical', 'Telecom', 'Other'].includes(name)) {
+                    document.getElementById('modalError').textContent = 'Category name already exists';
+                    return;
+                }
+                const icons = ['☕', '🎁', '📚', '👔', '✈️', '🎁', '💄', '🎵'];
+                const icon = icons[Math.floor(Math.random() * icons.length)];
+                const list = document.getElementById('customCategoryList');
+                list.innerHTML += `
+                    <div class="category-list-item custom">
+                        <span class="icon">${icon}</span>
+                        <span class="name">${name}</span>
+                        <span class="count">0 entries</span>
+                        <span class="action">Edit</span>
+                        <span class="action danger" onclick="showDeleteConfirm('${name}')">Delete</span>
+                    </div>
+                `;
+                closeModal();
+                showToast('Category added', 'success');
+            };
+        }
+        
+        function showDeleteConfirm(name) {
+            deleteTarget = name;
+            document.getElementById('confirmTitle').textContent = 'Confirm delete';
+            document.getElementById('confirmMessage').textContent = `Are you sure you want to delete the category "${name}"? Records under it will be moved to "Other".`;
+            document.getElementById('confirmOverlay').classList.add('show');
+            
+            confirmCallback = () => {
+                const items = document.querySelectorAll('#customCategoryList .category-list-item');
+                items.forEach(item => {
+                    if (item.querySelector('.name').textContent === deleteTarget) {
+                        item.remove();
+                    }
+                });
+                closeConfirm();
+                showToast('Category deleted', 'success');
+            };
+        }
+        
+        function confirmModal() {
+            if (modalCallback) modalCallback();
+        }
+        
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('show');
+            modalCallback = null;
+        }
+        
+        function closeConfirm() {
+            document.getElementById('confirmOverlay').classList.remove('show');
+            confirmCallback = null;
+        }
+        
+        function confirmAction() {
+            if (confirmCallback) confirmCallback();
+        }
+        
+        // ===== S04: Passcode lock =====
+        let currentPassword = '';
+        const correctPassword = '123456';
+        
+        function inputDigit(digit) {
+            if (currentPassword.length < 6) {
+                currentPassword += digit;
+                updatePasswordDots();
+                checkPassword();
+            }
+        }
+        
+        function deleteDigit() {
+            currentPassword = currentPassword.slice(0, -1);
+            updatePasswordDots();
+            document.getElementById('lockError').textContent = '';
+        }
+        
+        function clearPassword() {
+            currentPassword = '';
+            updatePasswordDots();
+            document.getElementById('lockError').textContent = '';
+        }
+        
+        function updatePasswordDots() {
+            const dots = document.querySelectorAll('#passwordDots .password-dot');
+            dots.forEach((dot, i) => {
+                dot.classList.toggle('filled', i < currentPassword.length);
+            });
+        }
+        
+        function checkPassword() {
+            if (currentPassword.length === 6) {
+                if (currentPassword === correctPassword) {
+                    showToast('Unlocked ✓', 'success');
+                    setTimeout(() => {
+                        clearPassword();
+                    }, 1000);
+                } else {
+                    document.getElementById('lockError').textContent = 'Wrong passcode';
+                    document.getElementById('lockError').classList.add('shake');
+                    setTimeout(() => {
+                        document.getElementById('lockError').classList.remove('shake');
+                        clearPassword();
+                    }, 500);
+                }
+            }
+        }
+        
+        function showForgotConfirm() {
+            document.getElementById('confirmTitle').textContent = 'Forgot passcode';
+            document.getElementById('confirmMessage').textContent = 'Resetting your passcode will erase all data. Continue?';
+            document.getElementById('confirmOverlay').classList.add('show');
+            
+            confirmCallback = () => {
+                closeConfirm();
+                showToast('All data cleared', 'success');
+                clearPassword();
+            };
+        }
+        
+        function togglePasswordLock() {
+            const toggle = document.getElementById('passwordToggle');
+            toggle.classList.toggle('on');
+            if (toggle.classList.contains('on')) {
+                showToast('Passcode lock on', 'success');
+            } else {
+                showToast('Passcode lock off', 'success');
+            }
+        }
+        
+        function showChangePasswordModal() {
+            document.getElementById('modalTitle').textContent = 'Change passcode';
+            document.getElementById('modalInput').value = '';
+            document.getElementById('modalInput').placeholder = 'Enter new passcode (6 digits)';
+            document.getElementById('modalError').textContent = '';
+            document.getElementById('modalConfirmBtn').textContent = 'Confirm';
+            document.getElementById('modalOverlay').classList.add('show');
+            
+            modalCallback = () => {
+                showToast('Passcode updated', 'success');
+                closeModal();
+            };
+        }
+        
+        // Click overlay to close modal
+        document.getElementById('modalOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('modalOverlay')) closeModal();
+        });
+        document.getElementById('confirmOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('confirmOverlay')) closeConfirm();
+        });
+    </script>
+</body>
+</html>

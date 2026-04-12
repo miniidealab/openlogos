@@ -119,6 +119,15 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(output).toContain('test-results.jsonl');
   });
 
+  it('UT-S01-09d: createAgentsMd includes document post-edit verification (zh + en)', () => {
+    const zh = createAgentsMd('zh');
+    expect(zh).toContain('文档修改后的验证（强制）');
+    expect(zh).toContain('从磁盘重新读取');
+    const en = createAgentsMd('en');
+    expect(en).toContain('Document Edit Verification (Required)');
+    expect(en).toContain('re-read the affected span');
+  });
+
   it('UT-S01-10: createAgentsMd switches conventions by locale', () => {
     const en = createAgentsMd('en');
     const zh = createAgentsMd('zh');
@@ -166,7 +175,7 @@ describe('S01 Unit Tests — createAgentsMd Active Skills', () => {
     expect(claude).toContain('## Active Skills');
   });
 
-  it('UT-S01-20: Active Skills section lists all 12 skills', () => {
+  it('UT-S01-20: Active Skills section lists all 13 skills', () => {
     const output = createAgentsMd('en', 'cursor', 'agents');
     for (const name of SKILL_NAMES) {
       expect(output).toContain(`skills/${name}/`);
@@ -312,7 +321,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const result = deploySkills(root, 'cursor', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('.cursor/rules/');
-      expect(result!.count).toBe(12);
+      expect(result!.count).toBe(13);
       expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
 
       const content = readFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), 'utf-8');
@@ -393,7 +402,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const result = deploySkills(root, 'claude-code', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('logos/skills/');
-      expect(result!.count).toBe(12);
+      expect(result!.count).toBe(13);
       expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     } finally {
       cleanup();
@@ -406,7 +415,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const result = deploySkills(root, 'other', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('logos/skills/');
-      expect(result!.count).toBe(12);
+      expect(result!.count).toBe(13);
     } finally {
       cleanup();
     }
@@ -478,9 +487,9 @@ describe('S01 Scenario Tests — init command', () => {
     cleanup();
   });
 
-  it('ST-S01-01: full init with explicit project name (Cursor default)', async () => {
+  it('ST-S01-01: full init with explicit project name (Claude Code default)', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '1']; // English, Cursor
+    readlineAnswers = ['1', '3']; // English, Cursor (option 3)
 
     await init('my-project');
 
@@ -504,7 +513,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
-    expect(mdcFiles.length).toBe(13);
+    expect(mdcFiles.length).toBe(14);
     expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
 
     const policyContent = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
@@ -521,12 +530,12 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('✓');
     expect(allLogs).toContain('specs deployed');
     expect(allLogs).toContain('Next steps');
-    expect(allLogs).toContain('12 skills deployed to .cursor/rules/');
+    expect(allLogs).toContain('13 skills deployed to .cursor/rules/');
   });
 
   it('ST-S01-02: auto-detect project name from directory', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '1']; // English, Cursor
+    readlineAnswers = ['1', '3']; // English, Cursor (option 3)
 
     await init();
 
@@ -538,7 +547,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-03: choose Chinese locale', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['2', '1']; // Chinese, Cursor
+    readlineAnswers = ['2', '3']; // Chinese, Cursor (option 3)
 
     await init('zh-test');
 
@@ -595,7 +604,7 @@ describe('S01 Scenario Tests — init command', () => {
   it('ST-S01-06: name conflict — user selects package.json name', async () => {
     process.stdin.isTTY = true;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'old-name' }));
-    readlineAnswers = ['1', '1', '2']; // English, Cursor, choose package.json name
+    readlineAnswers = ['1', '3', '2']; // English, Cursor (option 3), choose package.json name
 
     await init('new-name');
 
@@ -607,7 +616,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-07: choose Claude Code → deploys to logos/skills/', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '2']; // English, Claude Code
+    readlineAnswers = ['1', '1']; // English, Claude Code (option 1, default)
 
     await init('cc-project');
 
@@ -616,7 +625,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     const skillDirs = readdirSync(join(root, 'logos', 'skills'));
-    expect(skillDirs.length).toBe(12);
+    expect(skillDirs.length).toBe(13);
 
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).toContain('## Active Skills');
@@ -624,12 +633,12 @@ describe('S01 Scenario Tests — init command', () => {
     expect(agents).not.toContain('## Active Skills');
 
     const allLogs = con.logs.join('\n');
-    expect(allLogs).toContain('12 skills deployed to logos/skills/');
+    expect(allLogs).toContain('13 skills deployed to logos/skills/');
   });
 
   it('ST-S01-07b: choose OpenCode → deploys to logos/skills/, Active Skills in AGENTS.md', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '3']; // English, OpenCode
+    readlineAnswers = ['1', '2']; // English, OpenCode (option 2)
 
     await init('oc-project');
 
@@ -638,7 +647,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     const skillDirs = readdirSync(join(root, 'logos', 'skills'));
-    expect(skillDirs.length).toBe(12);
+    expect(skillDirs.length).toBe(13);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('## Active Skills');
@@ -657,7 +666,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-08: choose Other → both files include Active Skills', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '4']; // English, Other (now option 4)
+    readlineAnswers = ['1', '4']; // English, Other (option 4)
 
     await init('other-project');
 
@@ -674,7 +683,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-09: Chinese locale with Claude Code', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['2', '2']; // Chinese, Claude Code
+    readlineAnswers = ['2', '1']; // Chinese, Claude Code (option 1, default)
 
     await init('zh-cc');
 

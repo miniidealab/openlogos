@@ -28,6 +28,9 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations (see logos/changes/ directory)
 
+## Document Edit Verification
+[Fixed locale-specific paragraph — re-read from disk after Markdown/text spec edits]
+
 ## Interaction Guidelines
 When the user's request is vague or they ask "what should I do next":
 1. Scan `logos/resources/` to determine the current project phase
@@ -61,12 +64,12 @@ Ready-to-use prompt for Step 4 batch execution:
 当 aiTool = "cursor" 时，列出 `.cursor/rules/` 下部署的 `.mdc` 文件：
 - `skills/prd-writer` — `.cursor/rules/prd-writer.mdc`
 - `skills/product-designer` — `.cursor/rules/product-designer.mdc`
-- ...（共 12 项）
+- ...（共 13 项）
 
 当 aiTool = "claude-code" 或 "other" 时，列出 `logos/skills/` 下部署的 `SKILL.md` 文件：
 - `skills/prd-writer` — `logos/skills/prd-writer/SKILL.md`
 - `skills/product-designer` — `logos/skills/product-designer/SKILL.md`
-- ...（共 12 项）
+- ...（共 13 项）
 
 当 aiTool = "opencode" 时：
 - **兼容模式**：继续使用 `AGENTS.md` + `logos/skills/*/SKILL.md`
@@ -76,6 +79,8 @@ Ready-to-use prompt for Step 4 batch execution:
 - [从 logos-project.yaml 的 conventions 段读取]
 - When writing Markdown files that contain triple-backtick code blocks inside other code blocks, use 4-backtick fences (````) for the outer block
 ```
+
+`createAgentsMd`（`cli/src/commands/init.ts`）在 **Interaction Guidelines** 与 **Active Skills**（若存在）之间插入 **Document Edit Verification** 固定段落：每次写入或修改 Markdown / 文本类规格后，须从磁盘读回修改片段并展示原文；禁止仅以概括性文字作为唯一交付；纯 typo 可仅展示受影响行或等价 diff。文案随 `locale`（`zh` / `en`）切换。
 
 ## 生成规则
 
@@ -100,6 +105,7 @@ AGENTS.md 的内容从以下文件中自动提取：
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations
 6. All generated test code must include an OpenLogos reporter (see spec/test-results.md)
+7. After editing Markdown / text specs, re-read from disk and show excerpts to the user (see 「文档修改后的验证」生成段)
 
 ### 生成时机
 

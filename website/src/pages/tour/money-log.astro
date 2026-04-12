@@ -1,0 +1,892 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TourNav from '../../components/TourNav.astro';
+
+const mermaidS01 = `sequenceDiagram
+    participant U as User
+    participant UI as React UI
+    participant Store as Zustand Store
+    participant IPC as IPC Bridge
+    participant DB as SQLite Database
+
+    U->>UI: Step 1: Select category
+    UI->>UI: Step 2: Update selection — highlight active
+    UI->>U: Step 3: Show selected state
+
+    U->>UI: Step 4: Enter amount via keyboard
+    UI->>UI: Step 5: Validate format — filter invalid chars
+    UI->>UI: Step 6: Enable/disable button by validity
+    UI->>U: Step 7: Display amount
+
+    U->>UI: Step 8: Click "Log" button
+    UI->>Store: Step 9: Submit {amount, category_id}
+    Store->>IPC: Step 10: saveRecord(amount, category_id)
+    IPC->>DB: Step 11: INSERT INTO records
+    DB-->>IPC: Step 12: Return write result
+    IPC-->>Store: Step 13: Return success/failure
+    Store-->>UI: Step 14: Update state
+    UI->>U: Step 15: Show "Recorded" toast
+
+    UI->>UI: Step 16: Clear amount input
+    UI->>UI: Step 17: Keep category selected
+    UI->>U: Step 18: Ready for next entry`;
+
+const mermaidArch = `graph TB
+    subgraph Renderer["Renderer Process (React)"]
+        UI["React Components<br/>UI Layer"]
+        State["Zustand Store<br/>State Management"]
+        IPC["IPC Bridge<br/>Process Communication"]
+    end
+
+    subgraph Client["Client (Electron Main Process)"]
+        Main["Main Process<br/>Backend Logic"]
+        DB["SQLite Database<br/>Local Storage"]
+        Store["electron-store<br/>Config Storage"]
+    end
+
+    UI --> State
+    State --> IPC
+    IPC --> Main
+    Main --> DB
+    Main --> Store`;
+
+const codeDatabase = `<div class="code-snippet"><div class="code-header"><span class="code-file">src/main/database.js</span><span class="code-lang">JavaScript</span></div><pre><code><span class="hl-kw">class</span> <span class="hl-ty">DatabaseManager</span> {
+  <span class="hl-cmt">// S01 Steps 10-13: Save a new expense record</span>
+  <span class="hl-fn">saveRecord</span>(amount, category_id, remark = <span class="hl-kw">null</span>, created_at = <span class="hl-kw">null</span>) {
+    <span class="hl-kw">const</span> amountInCents = <span class="hl-ty">Math</span>.<span class="hl-fn">round</span>(amount * <span class="hl-num">100</span>);
+    <span class="hl-kw">const</span> timestamp = created_at || <span class="hl-kw">new</span> <span class="hl-ty">Date</span>().<span class="hl-fn">toISOString</span>();
+    <span class="hl-kw">this</span>.db.<span class="hl-fn">run</span>(
+      <span class="hl-str">\`INSERT INTO records (amount, category_id, remark, created_at)
+       VALUES (?, ?, ?, ?)\`</span>,
+      [amountInCents, category_id, remark, timestamp]
+    );
+    <span class="hl-kw">const</span> result = <span class="hl-kw">this</span>.db.<span class="hl-fn">exec</span>(<span class="hl-str">'SELECT last_insert_rowid() as id'</span>);
+    <span class="hl-kw">this</span>.<span class="hl-fn">save</span>();
+    <span class="hl-kw">return</span> result[<span class="hl-num">0</span>].values[<span class="hl-num">0</span>][<span class="hl-num">0</span>];
+  }
+}</code></pre></div>`;
+
+const codeTestML = `<div class="code-snippet"><div class="code-header"><span class="code-file">src/__tests__/S01.test.ts</span><span class="code-lang">TypeScript</span></div><pre><code><span class="hl-fn">describe</span>(<span class="hl-str">'S01: Quick Logging - Unit Tests'</span>, () =&gt; {
+  <span class="hl-fn">describe</span>(<span class="hl-str">'UT-S01-01: Amount is required'</span>, () =&gt; {
+    <span class="hl-fn">it</span>(<span class="hl-str">'should reject empty amount'</span>, <span class="hl-kw">async</span> () =&gt; {
+      <span class="hl-kw">const</span> data = {};
+      <span class="hl-kw">const</span> hasAmount = data.amount !== <span class="hl-kw">undefined</span>;
+      <span class="hl-fn">expect</span>(hasAmount).<span class="hl-fn">toBe</span>(<span class="hl-kw">false</span>);
+    });
+  });
+
+  <span class="hl-fn">describe</span>(<span class="hl-str">'UT-S01-10: Amount truncated to 2 decimals'</span>, () =&gt; {
+    <span class="hl-fn">it</span>(<span class="hl-str">'should auto-truncate to 2 decimal places'</span>, () =&gt; {
+      <span class="hl-kw">const</span> amount = <span class="hl-num">12.345</span>;
+      <span class="hl-kw">const</span> formatted = <span class="hl-ty">Math</span>.<span class="hl-fn">floor</span>(amount * <span class="hl-num">100</span>) / <span class="hl-num">100</span>;
+      <span class="hl-fn">expect</span>(formatted).<span class="hl-fn">toBe</span>(<span class="hl-num">12.34</span>);
+    });
+  });
+});
+
+<span class="hl-fn">describe</span>(<span class="hl-str">'S01: Quick Logging - Scenario Tests'</span>, () =&gt; {
+  <span class="hl-fn">describe</span>(<span class="hl-str">'ST-S01-01: Full logging flow'</span>, () =&gt; {
+    <span class="hl-fn">it</span>(<span class="hl-str">'should correctly convert amount to cents'</span>, () =&gt; {
+      <span class="hl-kw">const</span> amount = <span class="hl-num">35.5</span>;
+      <span class="hl-kw">const</span> amountInCents = <span class="hl-ty">Math</span>.<span class="hl-fn">round</span>(amount * <span class="hl-num">100</span>);
+      <span class="hl-fn">expect</span>(amountInCents).<span class="hl-fn">toBe</span>(<span class="hl-num">3550</span>);
+    });
+  });
+});</code></pre></div>`;
+---
+
+<BaseLayout title="Money-Log · OpenCode Workflow — OpenLogos Tour" description="See how an Electron expense tracker was built from requirements to verified code using OpenLogos + OpenCode.">
+  <TourNav current="money-log" />
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-badge badge-opencode">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        OpenCode Workflow
+      </div>
+      <h1>Money-Log</h1>
+      <p class="hero-desc">A lightweight desktop expense tracker built with <strong>Electron + React + TypeScript</strong>. Same OpenLogos methodology, different AI tool and tech stack.</p>
+      <div class="hero-tech">
+        <span class="tech-tag">Electron</span>
+        <span class="tech-tag">React 18</span>
+        <span class="tech-tag">TypeScript</span>
+        <span class="tech-tag">SQLite</span>
+        <span class="tech-tag">Zustand</span>
+        <span class="tech-tag">Tailwind CSS</span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num">4</span> Scenarios</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">73</span> Test Cases</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">100%</span> Coverage</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">Gate 3.5: PASS</div>
+      </div>
+      <div class="opencode-highlight">
+        <div class="oc-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l3 3-3 3"/><line x1="15" y1="15" x2="18" y2="15"/></svg>
+        </div>
+        <div>
+          <strong>OpenCode Integration</strong>
+          <span>Uses <code>.opencode/plugins/openlogos.js</code> with <code>commands/</code> <code>hooks/</code> for methodology-driven development in the terminal.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 1: WHY -->
+  <section class="phase-section" id="phase1">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-amber">1</div>
+        <div>
+          <div class="phase-tag tag-amber">WHY</div>
+          <h2>Requirements — Who needs this and why?</h2>
+        </div>
+      </div>
+      <p class="phase-source">Source: <code>logos/resources/prd/1-product-requirements/01-requirements.md</code></p>
+
+      <div class="artifact-card">
+        <h3>User Persona & Pain Points</h3>
+        <div class="doc-excerpt">
+          <p><strong>Working professionals, age 24-50</strong> — monthly income 5K-30K CNY. No active bookkeeping habit, only passively check Alipay/WeChat transaction history. Need quick recording, categorized spending, and consumption trend insights.</p>
+          <div class="pain-points">
+            <div class="pain"><span class="pain-id">P01</span> Cannot remember where money went — transaction records are scattered, no category summaries</div>
+            <div class="pain"><span class="pain-id">P02</span> Want to track expenses but existing apps are too complex → give up after a week</div>
+            <div class="pain"><span class="pain-id">P03</span> Manual monthly tallying by category is too tedious</div>
+            <div class="pain"><span class="pain-id">P04</span> Shared desktop — no data protection for financial records</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>Scenario Overview</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Scenario</th><th>Trigger</th><th>Pain</th><th>Priority</th></tr></thead>
+            <tbody>
+              <tr><td>S01</td><td>Quick expense logging</td><td>User opens app to record</td><td>P02</td><td class="p0">P0</td></tr>
+              <tr><td>S02</td><td>View statistics report</td><td>User enters statistics page</td><td>P01, P03</td><td class="p0">P0</td></tr>
+              <tr><td>S03</td><td>Manage expense categories</td><td>User manages categories</td><td>P01</td><td class="p1">P1</td></tr>
+              <tr><td>S04</td><td>Set password lock</td><td>User enables/disables lock</td><td>P04</td><td class="p1">P1</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>Acceptance Criteria — S01: Quick Expense Logging</h3>
+        <div class="ac-list">
+          <div class="ac-item ac-normal">
+            <div class="ac-label">Normal</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> User has opened the app, all categories are displayed</div>
+              <div><strong>WHEN</strong> User selects "Dining", enters "35.5", clicks "Log"</div>
+              <div><strong>THEN</strong> Shows "Recorded", category stays on "Dining", amount clears, ready for next entry</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">Exception</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> User has opened the app</div>
+              <div><strong>WHEN</strong> No category selected, user enters amount and clicks "Log"</div>
+              <div><strong>THEN</strong> Button is disabled or shows "Please select a category"</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">Exception</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> User selected "Entertainment" category</div>
+              <div><strong>WHEN</strong> User enters "abc" or "-50", clicks "Log"</div>
+              <div><strong>THEN</strong> Shows "Please enter a valid amount", does not save</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 2: WHAT -->
+  <section class="phase-section" id="phase2">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-blue">2</div>
+        <div>
+          <div class="phase-tag tag-blue">WHAT</div>
+          <h2>Product Design — What will users see and do?</h2>
+        </div>
+      </div>
+      <p class="phase-source">Source: <code>logos/resources/prd/2-product-design/1-feature-specs/01-main-design.md</code></p>
+
+      <div class="artifact-card">
+        <h3>Page Architecture</h3>
+        <div class="code-block">
+          <pre><code>┌─────────────────────────────────────────┐
+│            Money-Log Logo               │
+├─────────────────────────────────────────┤
+│                                         │
+│   ┌─────────┐ ┌─────────┐ ┌─────────┐  │
+│   │  Log    │ │  Stats  │ │ Settings│  │
+│   │(default)│ │         │ │         │  │
+│   └─────────┘ └─────────┘ └─────────┘  │
+│                                         │
+│  ┌─────────────────────────────────┐    │
+│  │      [Page Content Area]        │    │
+│  │                                 │    │
+│  └─────────────────────────────────┘    │
+│                                         │
+└─────────────────────────────────────────┘
+
+Window: 800 x 600 px (min: 600 x 500)
+3 tabs: Log / Statistics / Settings</code></pre>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>UI Prototype — Desktop App</h3>
+        <p class="phase-source">Source: <code>logos/resources/prd/2-product-design/2-page-design/01-prototype.html</code></p>
+        <div class="prototype-single">
+          <iframe src="/tour/prototypes/money-log.html" loading="lazy"></iframe>
+        </div>
+        <p class="artifact-note">Interactive HTML prototype with all 3 tabs (Log / Statistics / Settings) — designed before any code is written.</p>
+      </div>
+
+      <div class="artifact-card">
+        <h3>S01 Interaction — Quick Logging Flow</h3>
+        <div class="doc-excerpt">
+          <ol class="interaction-steps">
+            <li>App opens → display default logging page with category grid (8 preset categories with emoji icons)</li>
+            <li>User taps a category → highlight selected, others dim</li>
+            <li>User enters amount using numeric keyboard → real-time validation, filter non-numeric chars</li>
+            <li>User optionally adds a remark (max 200 chars)</li>
+            <li>Click "Log" → save to SQLite → show "Recorded" toast → clear amount, keep category</li>
+          </ol>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Validation</th></tr></thead>
+            <tbody>
+              <tr><td>Category</td><td>Icon grid selection</td><td>Yes</td><td>Must select one</td></tr>
+              <tr><td>Amount</td><td>Numeric input</td><td>Yes</td><td>&gt; 0, max 999999.99</td></tr>
+              <tr><td>Remark</td><td>Text input</td><td>No</td><td>Max 200 chars</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 3: HOW -->
+  <section class="phase-section" id="phase3">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-green">3</div>
+        <div>
+          <div class="phase-tag tag-green">HOW</div>
+          <h2>Implementation — From architecture to verified code</h2>
+        </div>
+      </div>
+
+      <!-- Step 0: Architecture -->
+      <div class="step-section">
+        <div class="step-badge">Step 0</div>
+        <h3>Architecture Overview</h3>
+        <p class="phase-source">Source: <code>logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md</code></p>
+        <div class="artifact-card">
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidArch} />
+          </div>
+          <p class="artifact-note">UI in Renderer (React + Zustand), data in Main Process (better-sqlite3). IPC bridge handles all communication. Password lock config stored in electron-store separately from expense data.</p>
+        </div>
+      </div>
+
+      <!-- Step 1: Sequence Diagram -->
+      <div class="step-section">
+        <div class="step-badge">Step 1</div>
+        <h3>Scenario → Sequence Diagram</h3>
+        <p class="phase-source">Source: <code>logos/resources/prd/3-technical-plan/2-scenario-implementation/S01-快速记账.md</code></p>
+        <div class="artifact-card">
+          <h4>S01: Quick Expense Logging — Sequence Diagram</h4>
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidS01} />
+          </div>
+
+          <div class="step-desc-section">
+            <h4>Steps</h4>
+            <ol class="step-desc-list">
+              <li><strong>User</strong> taps a category label (e.g. "Dining").</li>
+              <li><strong>React UI</strong> updates selected state, visually highlighting the current category.</li>
+              <li><strong>UI</strong> shows selection feedback to user.</li>
+              <li><strong>User</strong> enters amount via keyboard.</li>
+              <li><strong>React UI</strong> validates input format, filtering non-numeric characters.</li>
+              <li><strong>React UI</strong> enables/disables the "Log" button based on input validity (disabled when no category selected or amount is 0).</li>
+              <li><strong>UI</strong> displays the entered amount in real time.</li>
+              <li><strong>User</strong> clicks the "Log" button to submit.</li>
+              <li><strong>Zustand Store</strong> receives expense data <code>amount, category_id</code>.</li>
+              <li><strong>Store</strong> calls <code>saveRecord()</code> via IPC to the main process.</li>
+              <li><strong>SQLite</strong> executes <code>INSERT INTO records</code>.</li>
+              <li><strong>Database</strong> returns write result (success or error).</li>
+              <li><strong>IPC</strong> returns result to Store.</li>
+              <li><strong>Store</strong> updates state, notifying UI.</li>
+              <li><strong>UI</strong> shows "Recorded" toast notification.</li>
+              <li><strong>React UI</strong> clears the amount input field for the next entry.</li>
+              <li><strong>React UI</strong> keeps category selected to reduce repeated selection.</li>
+              <li><strong>UI</strong> enters ready state, waiting for the next expense entry.</li>
+            </ol>
+          </div>
+
+          <div class="seq-exceptions">
+            <h5>Exception Cases</h5>
+            <div class="seq-ex"><span class="ex-id">EX-8.1</span> No category selected → button disabled</div>
+            <div class="seq-ex"><span class="ex-id">EX-8.2</span> Amount is 0 or empty → button disabled</div>
+            <div class="seq-ex"><span class="ex-id">EX-11.1</span> DB write failure → show error toast, keep input</div>
+            <div class="seq-ex"><span class="ex-id">EX-11.2</span> Amount exceeds 2 decimal places → auto-truncate to 2</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: API + DB -->
+      <div class="step-section">
+        <div class="step-badge">Step 2</div>
+        <h3>API Specs + DB Schema</h3>
+        <div class="artifact-card">
+          <h4>API Specification — Electron IPC Channels</h4>
+          <p class="phase-source">Source: <code>logos/resources/api/local-api.yaml</code></p>
+          <div class="doc-frame">
+            <iframe src="/tour/docs/money-log-api.html" loading="lazy"></iframe>
+          </div>
+        </div>
+        <div class="artifact-card">
+          <h4>Database Schema — SQLite Tables</h4>
+          <p class="phase-source">Source: <code>logos/resources/database/schema.yaml</code></p>
+          <div class="doc-frame doc-frame-short">
+            <iframe src="/tour/docs/money-log-db.html" loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Test Cases -->
+      <div class="step-section">
+        <div class="step-badge">Step 3</div>
+        <h3>Test Case Design (before code!)</h3>
+        <p class="phase-source">Source: <code>logos/resources/test/S01-test-cases.md</code></p>
+        <div class="artifact-card">
+          <h4>S01 Test Cases — Unit Tests (excerpt)</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Description</th><th>Input</th><th>Expected</th></tr></thead>
+              <tbody>
+                <tr><td><code>UT-S01-01</code></td><td>Amount is required</td><td><code>&#123;&#125;</code></td><td>400: missing required field</td></tr>
+                <tr><td><code>UT-S01-02</code></td><td>Amount must be &gt; 0</td><td><code>&#123;amount: 0&#125;</code></td><td>400: amount must be &gt; 0</td></tr>
+                <tr><td><code>UT-S01-05</code></td><td>Category ID must exist in DB</td><td><code>category_id: 999</code></td><td>400: category not found</td></tr>
+                <tr><td><code>UT-S01-06</code></td><td>Remark max 200 chars</td><td><code>"a".repeat(201)</code></td><td>400: remark too long</td></tr>
+                <tr><td><code>UT-S01-10</code></td><td>Amount truncated to 2 decimals</td><td><code>12.345</code></td><td>Stored as <code>12.34</code></td></tr>
+                <tr><td><code>UT-S01-11</code></td><td>Non-numeric chars filtered</td><td><code>"abc"</code></td><td>Filtered to empty</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>S01 Scenario Tests (excerpt)</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Description</th><th>Covers</th></tr></thead>
+              <tbody>
+                <tr><td><code>ST-S01-01</code></td><td>Full logging flow: select → enter → save → toast</td><td>Steps 1-18</td></tr>
+                <tr><td><code>ST-S01-02</code></td><td>Consecutive logs with same category</td><td>Steps 1-18</td></tr>
+                <tr><td><code>ST-S01-05</code></td><td>Invalid amount format rejected</td><td>EX-5.1</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="test-scale-note">
+            <strong>73 total test cases</strong> across S01-S04, covering expense logging, statistics, category management, and password lock — all designed before writing a single line of implementation code.
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: Code Generation -->
+      <div class="step-section">
+        <div class="step-badge">Step 4</div>
+        <h3>Code Generation — Design-driven implementation via OpenCode</h3>
+        <p class="phase-source">Source: <code>src/main/database.js</code> · <code>src/renderer/pages/</code> · <code>src/__tests__/</code></p>
+        <div class="artifact-card">
+          <div class="codegen-workflow">
+            <div class="workflow-badge opencode-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              OpenCode — Terminal-first AI Coding
+            </div>
+            <p class="workflow-desc">OpenCode reads the sequence diagram and API spec via slash commands, then generates Electron main process + React frontend + Vitest tests in batch. Each batch closes the loop: business code → test code → OpenLogos reporter.</p>
+          </div>
+          <h4>Data Layer — Electron Main Process <span class="code-maps-to">→ maps to S01 Steps 10-13</span></h4>
+          <Fragment set:html={codeDatabase} />
+          <h4>Unit + Scenario Tests <span class="code-maps-to">→ verifies S01 acceptance criteria</span></h4>
+          <Fragment set:html={codeTestML} />
+          <div class="codegen-stats">
+            <div class="cg-stat"><span class="cg-num">4</span><span class="cg-label">React Pages</span></div>
+            <div class="cg-stat"><span class="cg-num">1</span><span class="cg-label">Zustand Store</span></div>
+            <div class="cg-stat"><span class="cg-num">73</span><span class="cg-label">Test Cases</span></div>
+            <div class="cg-stat"><span class="cg-num">S01–S04</span><span class="cg-label">Full Coverage</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5: Verify -->
+      <div class="step-section">
+        <div class="step-badge">Step 5</div>
+        <h3><code>openlogos verify</code> — Automated Acceptance</h3>
+        <p class="phase-source">Source: <code>logos/resources/verify/acceptance-report.md</code></p>
+        <div class="artifact-card verify-card">
+          <div class="verify-header">
+            <div class="verify-badge">Gate 3.5: PASS</div>
+            <span class="verify-date">Generated on 2026-04-09</span>
+          </div>
+          <div class="verify-stats">
+            <div class="verify-stat">
+              <span class="vs-num">73</span>
+              <span class="vs-label">Defined</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">73</span>
+              <span class="vs-label">Executed</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">73</span>
+              <span class="vs-label">Passed</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">0</span>
+              <span class="vs-label">Failed</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">100%</span>
+              <span class="vs-label">Coverage</span>
+            </div>
+          </div>
+          <div class="verify-trace">
+            <h4>Design-time Coverage Assertions</h4>
+            <div class="trace-items">
+              <div class="trace-row"><span class="trace-check">&#10003;</span> Phase 1 normal acceptance criteria: all covered</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> Phase 1 exception acceptance criteria: all covered</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> EX exception cases: all covered</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> API required fields: all covered</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> DB UNIQUE/CHECK constraints: all covered</div>
+              <div class="trace-row trace-more">… across S01-S04 test cases</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Delta Change -->
+  <section class="delta-section">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-purple">&#916;</div>
+        <div>
+          <div class="phase-tag tag-purple">DELTA</div>
+          <h2>Change Tracking — Every iteration is impact-aware</h2>
+        </div>
+      </div>
+
+      <div class="delta-intro">
+        <p>Traditional AI coding ("vibe coding") fixes the code but forgets the design doc, the API spec, and the test cases. Over time, documentation drifts from reality and becomes useless. OpenLogos solves this with a <strong>structured delta workflow</strong> — every change, no matter how small, must evaluate its ripple effect across the entire artifact chain.</p>
+      </div>
+
+      <div class="delta-workflow">
+        <div class="dw-step"><div class="dw-num">1</div><div class="dw-text"><strong>proposal.md</strong><span>Reason, type, impact scope, summary</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">2</div><div class="dw-text"><strong>tasks.md</strong><span>Phase-based task checklist</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">3</div><div class="dw-text"><strong>Delta files</strong><span>Produce changes per task</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">4</div><div class="dw-text"><strong>Merge</strong><span><code>openlogos merge</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">5</div><div class="dw-text"><strong>Code + Test</strong><span>Implement &amp; verify</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">6</div><div class="dw-text"><strong>Archive</strong><span>Close the proposal</span></div></div>
+      </div>
+
+      <div class="artifact-card delta-propagation-card">
+        <h3>Change Propagation Rules</h3>
+        <p class="propagation-desc">The change type determines the minimum update scope. A seemingly small feature request can cascade through the entire chain:</p>
+        <div class="propagation-table">
+          <div class="prop-row prop-row-header">
+            <div class="prop-type-col">Change Type</div>
+            <div class="prop-chain-col">Minimum Updates Required</div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-req">Requirement</span></div>
+            <div class="prop-chain-col"><span class="prop-tag active">Req</span><span class="prop-arrow">→</span><span class="prop-tag active">Design</span><span class="prop-arrow">→</span><span class="prop-tag active">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-design">Design</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">Req</span><span class="prop-arrow">→</span><span class="prop-tag active">Design</span><span class="prop-arrow">→</span><span class="prop-tag active">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-iface">Interface</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">Req</span><span class="prop-arrow">→</span><span class="prop-tag skip">Design</span><span class="prop-arrow">→</span><span class="prop-tag skip">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-code">Code-level</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">Req</span><span class="prop-arrow">→</span><span class="prop-tag skip">Design</span><span class="prop-arrow">→</span><span class="prop-tag skip">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag skip">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag skip">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="delta-example-title">Real Example — Feature: Add Remark to Expense Logging</h3>
+      <p class="phase-source">Source: <code>logos/changes/archive/每天记账增加备注功能/proposal.md</code></p>
+
+      <div class="artifact-card delta-card">
+        <h4>Add remark field to expense logging</h4>
+        <div class="delta-meta">
+          <span class="delta-type delta-feature">Feature</span>
+          <span class="delta-scope">S01 — Quick Logging</span>
+        </div>
+        <div class="doc-excerpt">
+          <p><strong>Request:</strong> Users need to add notes to expenses (e.g. "hotpot dinner", "taxi to hospital"). The DB column <code>remark</code> already exists — but the front-end UI had no input field, and the IPC channel didn't pass the parameter through.</p>
+        </div>
+        <h4 class="impact-title">Impact Analysis</h4>
+        <div class="impact-matrix">
+          <div class="im-row"><span class="im-layer">Requirements</span><span class="im-badge im-skip">No change</span><span class="im-detail">Original requirement already mentions optional remark</span></div>
+          <div class="im-row"><span class="im-layer">Product Design</span><span class="im-badge im-affected">Affected</span><span class="im-detail">Add remark textarea below amount input in the quick-log panel</span></div>
+          <div class="im-row"><span class="im-layer">Sequence Diagram</span><span class="im-badge im-affected">Affected</span><span class="im-detail">S01 Step 7 updated: user fills remark → passed to IPC</span></div>
+          <div class="im-row"><span class="im-layer">API Spec</span><span class="im-badge im-affected">Affected</span><span class="im-detail"><code>save-record</code> channel — add <code>remark</code> param (string, optional, max 200 chars)</span></div>
+          <div class="im-row"><span class="im-layer">DB Schema</span><span class="im-badge im-skip">No change</span><span class="im-detail"><code>records.remark</code> column already exists (TEXT, nullable)</span></div>
+          <div class="im-row"><span class="im-layer">Test Cases</span><span class="im-badge im-affected">Affected</span><span class="im-detail">Add UT-S01-12 (remark max 200 chars), update ST-S01-01 to include remark flow</span></div>
+          <div class="im-row"><span class="im-layer">Code</span><span class="im-badge im-affected">Affected</span><span class="im-detail">Renderer: add textarea component. Main process: pass remark to DB insert</span></div>
+        </div>
+        <div class="impact-verdict">
+          <strong>Verdict:</strong> Design-level change — cascades from product design through scenario, API, test, and code. Requirements and DB schema are unaffected. Without impact analysis, a developer would likely just add the UI field and forget to update the sequence diagram, API spec, and test cases.
+        </div>
+      </div>
+
+      <h3 class="delta-example-title">More Archived Proposals</h3>
+      <p class="phase-source">Money-Log has <strong>8 archived change proposals</strong> — each following the same structured delta workflow.</p>
+
+      <div class="delta-grid">
+        <div class="artifact-card delta-card delta-card-compact">
+          <h4>Fix: password not persisted</h4>
+          <div class="delta-meta">
+            <span class="delta-type delta-bugfix">Bug Fix</span>
+            <span class="delta-scope">S04</span>
+          </div>
+          <p class="delta-compact-desc">Code-level fix — <code>electron-store</code> write not awaited before close.</p>
+        </div>
+        <div class="artifact-card delta-card delta-card-compact">
+          <h4>Monthly spending detail view</h4>
+          <div class="delta-meta">
+            <span class="delta-type delta-feature">Feature</span>
+            <span class="delta-scope">S02</span>
+          </div>
+          <p class="delta-compact-desc">Design-level — new list view under statistics chart.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <h2>Want to try it yourself?</h2>
+      <p>Clone the repo and run Money-Log locally, or start your own project with OpenLogos.</p>
+      <div class="cta-actions">
+        <a href="https://github.com/miniidealab/openlogos/tree/main/examples/money-log" target="_blank" rel="noopener" class="btn btn-primary">View on GitHub →</a>
+        <a href="/tour/flowtask" class="btn btn-ghost">← FlowTask · Claude Code</a>
+      </div>
+      <div class="cta-secondary">
+        <a href="/getting-started/quick-start">Quick Start Guide</a>
+        <span class="cta-divider">·</span>
+        <a href="/tour">Back to Tour Overview</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 860px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Hero */
+  .page-hero { padding: 3rem 1.5rem 3rem; text-align: center; }
+  .hero-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.75rem; border-radius: 100px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; margin-bottom: 1.5rem; }
+  .badge-opencode { background: rgba(14, 165, 233, 0.12); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 0.75rem; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.05rem; line-height: 1.7; max-width: 580px; margin: 0 auto 1.5rem; }
+  .hero-desc strong { color: var(--color-text-secondary); }
+  .hero-tech { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.375rem; margin-bottom: 1.5rem; }
+  .tech-tag { font-size: 0.68rem; font-weight: 500; padding: 0.175rem 0.5rem; border-radius: 4px; background: var(--color-surface-raised); border: 1px solid var(--color-border); color: var(--color-text-muted); }
+  .hero-stats { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1.5rem; }
+  .stat-num { font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .stat-sep { opacity: 0.3; }
+  .pass { font-family: var(--font-mono); font-weight: 700; color: #0eb677; }
+
+  .opencode-highlight { display: flex; align-items: flex-start; gap: 0.75rem; max-width: 520px; margin: 0 auto; padding: 1rem 1.25rem; background: rgba(14, 165, 233, 0.06); border: 1px solid rgba(14, 165, 233, 0.15); border-radius: 12px; text-align: left; }
+  .oc-icon { flex-shrink: 0; color: #0ea5e9; margin-top: 0.1rem; }
+  .opencode-highlight strong { display: block; font-size: 0.82rem; font-weight: 700; color: #0ea5e9; margin-bottom: 0.25rem; }
+  .opencode-highlight span { font-size: 0.78rem; color: var(--color-text-muted); line-height: 1.5; }
+  .opencode-highlight code { font-family: var(--font-mono); font-size: 0.72rem; background: rgba(14, 165, 233, 0.08); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  /* Phase Sections */
+  .phase-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .phase-header { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 0.5rem; }
+  .phase-marker { flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 800; font-family: var(--font-mono); }
+  .marker-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
+  .marker-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
+  .marker-green { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+  .marker-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
+  .phase-tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 0.375rem; }
+  .tag-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+  .tag-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+  .tag-green { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .tag-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+  .phase-header h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+  .phase-source { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 1.5rem; opacity: 0.7; }
+  .phase-source strong { color: var(--color-text-secondary); opacity: 1; }
+  .phase-source code { font-family: var(--font-mono); font-size: 0.72rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 3px; }
+
+  /* Artifact Cards */
+  .artifact-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.75rem; margin-bottom: 1.25rem; }
+  .artifact-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .artifact-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.625rem; margin-top: 1rem; }
+  .artifact-card h4:first-child { margin-top: 0; }
+  .artifact-note { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 0.75rem; line-height: 1.5; font-style: italic; }
+
+  /* Doc excerpts */
+  .doc-excerpt { font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.65; }
+  .doc-excerpt p { margin-bottom: 0.75rem; }
+  .doc-excerpt strong { color: var(--color-text); }
+  .doc-excerpt code { font-family: var(--font-mono); font-size: 0.78rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  .pain-points { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+  .pain { font-size: 0.82rem; color: var(--color-text-muted); padding: 0.5rem 0.75rem; background: var(--color-surface-raised); border-radius: 8px; border-left: 3px solid var(--color-border); }
+  .pain-id { font-family: var(--font-mono); font-weight: 700; color: #f59e0b; margin-right: 0.5rem; font-size: 0.75rem; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { text-align: left; padding: 0.5rem 0.75rem; background: var(--color-surface-raised); font-weight: 600; font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--color-border); }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); }
+  td code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .p0 { font-weight: 700; color: #ef4444; }
+  .p1 { font-weight: 600; color: #f59e0b; }
+
+  /* AC list */
+  .ac-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .ac-item { display: flex; gap: 0.75rem; padding: 0.75rem; border-radius: 8px; background: var(--color-surface-raised); }
+  .ac-label { flex-shrink: 0; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.15rem 0.4rem; border-radius: 4px; height: fit-content; margin-top: 0.1rem; }
+  .ac-normal .ac-label { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .ac-exception .ac-label { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+  .ac-content { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  .ac-content strong { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 0.75rem; }
+
+  /* Interaction steps */
+  .interaction-steps { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.375rem; }
+  .interaction-steps li { font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .prototype-single { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); background: #fafafa; margin-bottom: 1rem; }
+  .prototype-single iframe { width: 100%; height: 520px; border: none; background: #fafafa; }
+
+  /* Doc iframes */
+  .doc-frame { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); margin-bottom: 0.5rem; }
+  .doc-frame iframe { width: 100%; height: 520px; border: none; }
+  .doc-frame-short iframe { height: 420px; }
+
+  /* Code blocks */
+  .code-block { background: #0d0d10; border: 1px solid var(--color-border); border-radius: 10px; padding: 1rem 1.25rem; overflow-x: auto; }
+  .code-block pre { margin: 0; }
+  .code-block code { font-family: var(--font-mono); font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.6; white-space: pre; }
+
+  /* Step sections */
+  .step-section { margin-bottom: 2rem; }
+  .step-badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 5px; font-size: 0.68rem; font-weight: 700; font-family: var(--font-mono); background: rgba(16, 185, 129, 0.08); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.15); margin-bottom: 0.5rem; }
+  .step-section > h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.25rem; }
+
+  /* Dual artifact */
+  .dual-artifact { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+
+  /* Sequence diagram */
+  .sequence-diagram { font-size: 0.82rem; }
+  .seq-participants { display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .seq-p { padding: 0.3rem 0.625rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+  .seq-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; }
+  .seq-step { display: flex; gap: 0.625rem; align-items: flex-start; font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .seq-step code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .seq-num { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.08); padding: 0.15rem 0.4rem; border-radius: 4px; min-width: 2.5rem; text-align: center; }
+  .seq-exceptions { border-top: 1px solid var(--color-border); padding-top: 1rem; }
+  .seq-exceptions h5 { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.625rem; }
+  .seq-ex { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 0.375rem; }
+  .ex-id { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #ef4444; margin-right: 0.375rem; }
+
+  /* Test scale note */
+  .test-scale-note { margin-top: 1rem; padding: 0.75rem 1rem; background: rgba(14, 182, 119, 0.06); border: 1px solid rgba(14, 182, 119, 0.15); border-radius: 8px; font-size: 0.82rem; color: var(--color-text-secondary); }
+  .test-scale-note strong { color: #0eb677; }
+
+  /* Code generation */
+  .codegen-workflow { margin-bottom: 1.25rem; }
+  .workflow-badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.85rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.75rem; }
+  .claude-badge { background: linear-gradient(135deg, #d4a574 0%, #c4956a 100%); color: #fff; }
+  .opencode-badge { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+  .workflow-desc { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  :global(.code-snippet) { background: #1e1e2e; border-radius: 8px; overflow: hidden; margin-bottom: 1.25rem; }
+  :global(.code-snippet .code-header) { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.875rem; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.08); }
+  :global(.code-snippet .code-file) { font-family: var(--font-mono); font-size: 0.72rem; color: #a6adc8; }
+  :global(.code-snippet .code-lang) { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #585b70; }
+  :global(.code-snippet pre) { margin: 0; padding: 1rem 0.875rem; overflow-x: auto; }
+  :global(.code-snippet code) { font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.65; color: #cdd6f4; }
+  :global(.code-snippet .hl-kw) { color: #cba6f7; }
+  :global(.code-snippet .hl-str) { color: #a6e3a1; }
+  :global(.code-snippet .hl-cmt) { color: #6c7086; font-style: italic; }
+  :global(.code-snippet .hl-fn) { color: #89b4fa; }
+  :global(.code-snippet .hl-ty) { color: #f9e2af; }
+  :global(.code-snippet .hl-attr) { color: #fab387; }
+  :global(.code-snippet .hl-num) { color: #fab387; }
+  .code-maps-to { font-size: 0.72rem; font-weight: 500; color: var(--color-text-muted); margin-left: 0.5rem; }
+  .codegen-stats { display: flex; gap: 1rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--color-border); }
+  .cg-stat { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 80px; }
+  .cg-num { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--color-text); }
+  .cg-label { font-size: 0.7rem; color: var(--color-text-muted); margin-top: 0.15rem; }
+
+  /* Verify */
+  .verify-card { border-color: rgba(14, 182, 119, 0.2); }
+  .verify-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+  .verify-badge { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 800; color: #0eb677; background: rgba(14, 182, 119, 0.1); border: 1px solid rgba(14, 182, 119, 0.25); padding: 0.375rem 0.875rem; border-radius: 8px; }
+  .verify-date { font-size: 0.72rem; color: var(--color-text-muted); }
+  .verify-stats { display: flex; gap: 1.5rem; margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+  .verify-stat { display: flex; flex-direction: column; }
+  .vs-num { font-size: 1.25rem; font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .vs-num.green { color: #0eb677; }
+  .vs-label { font-size: 0.68rem; color: var(--color-text-muted); font-weight: 500; }
+  .verify-trace h4 { font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .trace-items { display: flex; flex-direction: column; gap: 0.25rem; }
+  .trace-row { font-size: 0.78rem; color: var(--color-text-secondary); }
+  .trace-check { color: #0eb677; font-weight: 700; margin-right: 0.25rem; }
+  .trace-more { color: var(--color-text-muted); font-style: italic; margin-top: 0.25rem; }
+
+  /* Delta */
+  .delta-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .delta-intro { margin-bottom: 2rem; }
+  .delta-intro p { color: var(--color-text-secondary); font-size: 0.92rem; line-height: 1.75; }
+
+  .delta-workflow { display: flex; align-items: flex-start; gap: 0; flex-wrap: wrap; margin-bottom: 2rem; padding: 1.25rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; justify-content: center; }
+  .dw-step { display: flex; align-items: flex-start; gap: 0.5rem; }
+  .dw-num { width: 22px; height: 22px; border-radius: 50%; background: #a855f7; color: white; font-size: 0.68rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .dw-text { display: flex; flex-direction: column; }
+  .dw-text strong { font-size: 0.78rem; color: var(--color-text); }
+  .dw-text span { font-size: 0.68rem; color: var(--color-text-muted); }
+  .dw-text code { font-size: 0.65rem; }
+  .dw-arrow { color: var(--color-text-muted); font-size: 0.9rem; padding: 0 0.375rem; margin-top: 2px; }
+
+  .delta-propagation-card { margin-bottom: 2rem; }
+  .propagation-desc { font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 1rem; line-height: 1.6; }
+  .propagation-table { display: flex; flex-direction: column; gap: 0.5rem; }
+  .prop-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; }
+  .prop-row-header { font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 0.25rem; border-bottom: 1px solid var(--color-border); }
+  .prop-type-col { width: 100px; flex-shrink: 0; }
+  .prop-chain-col { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+  .prop-badge { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 4px; display: inline-block; }
+  .prop-req { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .prop-design { background: rgba(168, 85, 247, 0.1); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.2); }
+  .prop-iface { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.2); }
+  .prop-code { background: rgba(14, 182, 119, 0.1); color: #0eb677; border: 1px solid rgba(14, 182, 119, 0.2); }
+  .prop-tag { font-size: 0.62rem; font-weight: 600; padding: 0.125rem 0.4rem; border-radius: 3px; }
+  .prop-tag.active { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .prop-tag.skip { background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); opacity: 0.5; }
+  .prop-arrow { color: var(--color-text-muted); font-size: 0.65rem; }
+
+  .delta-example-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; margin-top: 2rem; }
+
+  .delta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 0.5rem; }
+  .delta-card { border-left: 3px solid #a855f7; }
+  .delta-card h4 { font-size: 0.9rem; }
+  .delta-card-compact { padding: 1rem; }
+  .delta-compact-desc { font-size: 0.78rem; color: var(--color-text-secondary); margin: 0; }
+  .delta-meta { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .delta-type { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .delta-feature { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.2); }
+  .delta-bugfix { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .delta-scope { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.4rem; border-radius: 4px; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+
+  .impact-title { font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 1.25rem; margin-bottom: 0.75rem; }
+  .impact-matrix { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+  .im-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.625rem; border-radius: 6px; background: var(--color-surface-raised); }
+  .im-layer { font-size: 0.75rem; font-weight: 600; color: var(--color-text); width: 120px; flex-shrink: 0; }
+  .im-badge { font-size: 0.62rem; font-weight: 700; padding: 0.125rem 0.5rem; border-radius: 4px; flex-shrink: 0; text-align: center; min-width: 68px; }
+  .im-skip { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+  .im-affected { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .im-detail { font-size: 0.75rem; color: var(--color-text-secondary); }
+  .impact-verdict { padding: 0.75rem; background: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.6; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section > .container > p { color: var(--color-text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; text-decoration: none; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+  .cta-secondary { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  .cta-secondary a { color: var(--color-text-muted); font-size: 0.85rem; }
+  .cta-secondary a:hover { color: var(--color-text); }
+  .cta-divider { color: var(--color-text-muted); opacity: 0.3; }
+
+  /* Mermaid diagram */
+  .mermaid-wrap { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; overflow-x: auto; }
+  .mermaid-wrap .mermaid { display: flex; justify-content: center; }
+  .mermaid-wrap .mermaid svg { max-width: 100%; height: auto; }
+  .mermaid-wrap .mermaid .cluster-label { transform: translateY(6px); }
+  .mermaid-wrap .mermaid .cluster-label .nodeLabel { padding: 4px 8px 0; }
+
+  /* Step descriptions */
+  .step-desc-section { margin-bottom: 1.25rem; }
+  .step-desc-section h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .step-desc-list { padding-left: 1.5rem; display: flex; flex-direction: column; gap: 0.375rem; counter-reset: step-counter; list-style: none; }
+  .step-desc-list li { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; padding-left: 0.25rem; counter-increment: step-counter; position: relative; }
+  .step-desc-list li::before { content: counter(step-counter) "."; position: absolute; left: -1.5rem; width: 1.25rem; text-align: right; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: var(--color-text-muted); }
+  .step-desc-list li strong { color: var(--color-text); font-weight: 600; }
+  .step-desc-list li code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 2rem 1.5rem 2rem; }
+    .dual-artifact { grid-template-columns: 1fr; }
+    .delta-grid { grid-template-columns: 1fr; }
+    .hero-stats { flex-wrap: wrap; }
+    .verify-stats { gap: 1rem; }
+  }
+</style>
+
+<script is:inline src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script is:inline>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#131316',
+      primaryColor: '#1a3a2a',
+      primaryTextColor: '#fafafa',
+      primaryBorderColor: '#0eb677',
+      lineColor: '#71717a',
+      secondaryColor: '#1a1a1f',
+      tertiaryColor: '#27272a',
+      noteTextColor: '#d4d4d8',
+      noteBkgColor: '#1a1a1f',
+      noteBorderColor: '#3f3f46',
+      actorBkg: '#0eb677',
+      actorTextColor: '#fff',
+      actorBorder: '#0a9960',
+      actorLineColor: '#3f3f46',
+      signalColor: '#d4d4d8',
+      signalTextColor: '#d4d4d8',
+      sequenceNumberColor: '#fff',
+      fontSize: '13px'
+    },
+    sequence: {
+      actorMargin: 60,
+      messageMargin: 30
+    },
+    flowchart: {
+      padding: 16,
+      subGraphTitleMargin: { top: 8, bottom: 4 }
+    }
+  });
+</script>

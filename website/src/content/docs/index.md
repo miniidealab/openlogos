@@ -8,6 +8,6 @@ Welcome to the OpenLogos documentation. OpenLogos is an open-source methodology 
 ## Where to start
 
 - **[Quick Start](/getting-started/quick-start)** — Get up and running in under 10 minutes
-- **[Core Concepts](/concepts/three-layer-model)** — Understand the WHY → WHAT → HOW model
+- **[Core Concepts](/concepts/three-layer-model)** — Understand the WHY → WHAT → HOW model (also available as [interactive deep dives](/deep-dive/three-layer-model))
 - **[CLI Reference](/cli)** — All 7 commands documented
-- **[Skills Reference](/skills)** — All 12 AI Skills explained
+- **[Skills Reference](/skills)** — All 13 AI Skills explained

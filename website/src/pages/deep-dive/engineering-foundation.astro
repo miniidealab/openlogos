@@ -1,0 +1,361 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ConceptNav from '../../components/ConceptNav.astro';
+---
+
+<BaseLayout title="Engineering Foundation — OpenLogos" description="A Harness Engineering best practice for software development. Built on 40+ years of proven theory — BDD, TDD, DDD, Stage-Gate — recompiled for an era where AI agents write the code.">
+  <ConceptNav current="engineering-foundation" />
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-tag tag-purple">Core Principle</div>
+      <h1>Harness Engineering,<br/><span class="gradient-text">grounded in software giants.</span></h1>
+      <p class="hero-desc">The industry has evolved from Prompt Engineering to Context Engineering to Harness Engineering. OpenLogos is a Harness Engineering best practice for software development — built on 40+ years of battle-tested theory, recompiled for an era where AI agents write the code.</p>
+    </div>
+  </section>
+
+  <!-- What is Harness Engineering -->
+  <section class="harness-section">
+    <div class="container-wide">
+      <div class="section-label">What is Harness Engineering</div>
+      <h2 class="section-title">Agent = Model + Harness</h2>
+      <p class="section-desc">Everything outside the model — system prompts, tool integration, file systems, orchestration logic, constraints — is the Harness. Good harness engineering makes AI agents reliable, traceable, and controllable.</p>
+
+      <!-- Three-layer evolution -->
+      <div class="evolution-track">
+        <div class="evo-step">
+          <div class="evo-badge">Layer 1</div>
+          <h4>Prompt Engineering</h4>
+          <p>How to <em>say it clearly</em> — instruction design and expression.</p>
+        </div>
+        <div class="evo-arrow">&rarr;</div>
+        <div class="evo-step">
+          <div class="evo-badge">Layer 2</div>
+          <h4>Context Engineering</h4>
+          <p>How to <em>deliver the right information</em> — context selection and delivery.</p>
+        </div>
+        <div class="evo-arrow">&rarr;</div>
+        <div class="evo-step highlighted">
+          <div class="evo-badge active">Layer 3</div>
+          <h4>Harness Engineering</h4>
+          <p>How to make AI <em>execute reliably</em> — orchestration, guardrails, and sustained operation.</p>
+        </div>
+      </div>
+
+      <!-- Six-layer mapping -->
+      <div class="harness-map">
+        <h3 class="harness-map-title">How OpenLogos implements each Harness layer</h3>
+        <div class="harness-map-grid">
+          <div class="hm-card">
+            <div class="hm-layer">1. Information Boundary</div>
+            <div class="hm-desc">Role definition &amp; scope</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos:</span>
+              <code>AGENTS.md</code> + <code>logos-project.yaml</code> — AI's GPS that defines project rules, current phase, and what to read.
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">2. Tool System</div>
+            <div class="hm-desc">External interaction &amp; capabilities</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos:</span>
+              14 AI Skills (<code>SKILL.md</code>) — platform-agnostic Markdown files that guide AI through each development phase.
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">3. Execution Orchestration</div>
+            <div class="hm-desc">Multi-step sequencing &amp; scheduling</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos:</span>
+              WHY &rarr; WHAT &rarr; HOW three-layer progression + Stage-Gate quality gates between phases.
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">4. Memory &amp; State</div>
+            <div class="hm-desc">Intermediate results &amp; persistent context</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos:</span>
+              <code>logos/</code> directory — Documents as Context. Every phase's output becomes the next phase's input.
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">5. Evaluation &amp; Observation</div>
+            <div class="hm-desc">Verification &amp; quality measurement</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos:</span>
+              <code>openlogos verify</code> — three-layer traceability + <code>test-results.jsonl</code> automated acceptance.
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">6. Constraints &amp; Recovery</div>
+            <div class="hm-desc">Error handling &amp; change control</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos:</span>
+              Delta change management — <code>change proposal</code> &rarr; <code>merge</code> &rarr; <code>archive</code>. Safe, auditable iteration.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Theory Map -->
+  <section class="theory-section">
+    <div class="container-wide">
+      <div class="section-label">The Foundations</div>
+      <h2 class="section-title">The engineering theory behind the Harness</h2>
+      <p class="section-desc">OpenLogos's Harness is built on established engineering theory. Each pillar powers a specific layer of the Harness. Nothing is arbitrary.</p>
+
+      <div class="theory-grid">
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">BDD</span>
+            <span class="origin-year">2006 · Dan North</span>
+          </div>
+          <h3>Behavior-Driven Development</h3>
+          <p>GIVEN/WHEN/THEN acceptance criteria. User-facing scenarios as the source of truth.</p>
+          <div class="theory-maps">
+            <span class="maps-label">Maps to:</span>
+            <span class="maps-target">Phase 1 requirements, scenario structure</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">TDD</span>
+            <span class="origin-year">2003 · Kent Beck</span>
+          </div>
+          <h3>Test-Driven Development</h3>
+          <p>Tests before code. Red → Green → Refactor. The test defines the contract.</p>
+          <div class="theory-maps">
+            <span class="maps-label">Maps to:</span>
+            <span class="maps-target">Phase 3 Step 3 test-first, <code>openlogos verify</code></span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">DDD</span>
+            <span class="origin-year">2003 · Eric Evans</span>
+          </div>
+          <h3>Domain-Driven Design</h3>
+          <p>Ubiquitous language. Bounded contexts. Domain model drives architecture.</p>
+          <div class="theory-maps">
+            <span class="maps-label">Maps to:</span>
+            <span class="maps-target">Phase 3 Step 0 architecture, scenario modeling</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">Stage-Gate</span>
+            <span class="origin-year">1986 · Robert Cooper</span>
+          </div>
+          <h3>Stage-Gate Process</h3>
+          <p>Quality gates between phases. Each gate has pass/fail criteria before proceeding.</p>
+          <div class="theory-maps">
+            <span class="maps-label">Maps to:</span>
+            <span class="maps-target">Three-layer progression gates, Gate 3.5 acceptance</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">Docs-as-Code</span>
+            <span class="origin-year">2014 · Write the Docs</span>
+          </div>
+          <h3>Documentation as Code</h3>
+          <p>Version-controlled docs. Treat documentation with the same rigor as source code.</p>
+          <div class="theory-maps">
+            <span class="maps-label">Maps to:</span>
+            <span class="maps-target">Documents as Context, <code>logos/</code> directory</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">Skills</span>
+            <span class="origin-year">AI-native pattern</span>
+          </div>
+          <h3>Executable Methodology</h3>
+          <p>Methodology encoded as Markdown files that AI agents read and execute automatically.</p>
+          <div class="theory-maps">
+            <span class="maps-label">Maps to:</span>
+            <span class="maps-target">AI Skills (<code>SKILL.md</code>), <code>AGENTS.md</code></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Theory Matters -->
+  <section class="why-section">
+    <div class="container">
+      <div class="section-label">Why It Matters</div>
+      <h2 class="section-title">Theory is not overhead — it's leverage</h2>
+
+      <div class="why-grid">
+        <div class="why-card">
+          <div class="why-number">01</div>
+          <h3>Predictability</h3>
+          <p>These practices have been validated across millions of projects over decades. When you apply them to AI-assisted development, you get predictable results — not random walks.</p>
+        </div>
+
+        <div class="why-card">
+          <div class="why-number">02</div>
+          <h3>Composability</h3>
+          <p>BDD + TDD + DDD + Stage-Gate compose naturally. BDD defines the scenarios, TDD verifies them, DDD models them, Stage-Gate ensures quality between phases. OpenLogos wires them together.</p>
+        </div>
+
+        <div class="why-card">
+          <div class="why-number">03</div>
+          <h3>Teachability</h3>
+          <p>AI agents can learn from established patterns far more effectively than ad-hoc instructions. When you say "use GIVEN/WHEN/THEN," AI understands the pattern because it appears in millions of training samples.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Not Waterfall -->
+  <section class="myth-section">
+    <div class="container">
+      <div class="section-label">Common Questions</div>
+      <h2 class="section-title">Addressing the skeptics</h2>
+
+      <div class="myth-grid">
+        <div class="myth-card">
+          <h3>"Isn't this just waterfall?"</h3>
+          <p>No. Waterfall sequences <em>all requirements</em> before <em>any design</em> before <em>any code</em>. OpenLogos sequences per <strong>scenario</strong>. S01 can be in Phase 3 while S04 is still in Phase 1. The phases are a progression model, not a schedule.</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"AI is supposed to be fast. This adds process."</h3>
+          <p>A 5-minute prompt that produces garbage you debug for 3 hours isn't fast. A 30-minute structured process that produces correct, tested, traceable code in one shot <em>is</em> fast. Speed is measured in shipped features, not generated tokens.</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"This is overengineering for small projects."</h3>
+          <p>OpenLogos scales down gracefully. A solo project might skip the HTML prototype phase. A weekend hack might compress Phase 1 + 2 into one doc. The methodology is a toolkit — use what you need.</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"Why not just use Agile?"</h3>
+          <p>Agile assumes human developers who can hold context in their heads. AI doesn't have a head — it needs context <em>written down</em>. OpenLogos is Agile-compatible but context-explicit, because that's what AI requires.</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"What's the difference between Harness Engineering and OpenLogos?"</h3>
+          <p>Harness Engineering is the <strong>discipline</strong> — it defines what a well-engineered AI agent system needs: boundaries, tools, orchestration, memory, evaluation, and constraints. OpenLogos is a <strong>best-practice implementation</strong> of that discipline, specifically for software development. Harness Engineering is the theory, OpenLogos is the practice.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>Ready to try it yourself?</h2>
+      <p>Two commands. Five minutes. A project built the right way from day one.</p>
+      <div class="cta-actions">
+        <a href="/getting-started/quick-start" class="btn btn-primary">Quick Start</a>
+        <a href="https://github.com/miniidealab/openlogos" class="btn btn-ghost" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 800px; margin: 0 auto; padding: 0 1.5rem; }
+  .container-wide { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .page-hero { padding: 5rem 1.5rem 3rem; text-align: center; }
+  .hero-tag { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 1.5rem; }
+  .tag-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 1rem; }
+  .gradient-text { background: linear-gradient(135deg, #a855f7, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.1rem; line-height: 1.7; max-width: 600px; margin: 0 auto; }
+
+  .section-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-primary); margin-bottom: 0.75rem; text-align: center; }
+  .section-title { font-size: clamp(1.5rem, 3.5vw, 2rem); font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.75rem; text-align: center; }
+  .section-desc { color: var(--color-text-muted); font-size: 1rem; line-height: 1.7; text-align: center; max-width: 560px; margin: 0 auto 3rem; }
+
+  /* Harness Section */
+  .harness-section { padding: 2rem 0 4rem; border-bottom: 1px solid var(--color-border); }
+
+  .evolution-track { display: flex; align-items: stretch; gap: 0; margin-bottom: 3.5rem; }
+  .evo-step { flex: 1; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.5rem; text-align: center; transition: border-color 0.2s; }
+  .evo-step.highlighted { border-color: #a855f7; box-shadow: 0 0 24px rgba(168, 85, 247, 0.12); }
+  .evo-badge { display: inline-block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; margin-bottom: 0.75rem; background: var(--color-surface-raised); color: var(--color-text-muted); }
+  .evo-badge.active { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+  .evo-step h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.4rem; }
+  .evo-step p { font-size: 0.8rem; color: var(--color-text-muted); line-height: 1.5; }
+  .evo-step em { color: var(--color-text-secondary); font-style: normal; font-weight: 600; }
+  .evo-arrow { display: flex; align-items: center; padding: 0 0.5rem; color: var(--color-text-muted); font-size: 1.25rem; flex-shrink: 0; }
+
+  .harness-map { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 2rem; }
+  .harness-map-title { font-size: 1.1rem; font-weight: 700; text-align: center; margin-bottom: 1.5rem; letter-spacing: -0.02em; }
+  .harness-map-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+
+  .hm-card { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 1.25rem; transition: border-color 0.2s; }
+  .hm-card:hover { border-color: var(--color-border-hover); }
+  .hm-layer { font-size: 0.78rem; font-weight: 700; color: #a855f7; margin-bottom: 0.15rem; }
+  .hm-desc { font-size: 0.72rem; color: var(--color-text-muted); margin-bottom: 0.75rem; }
+  .hm-impl { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  .hm-label { font-weight: 600; color: var(--color-primary); }
+  .hm-impl code { font-family: var(--font-mono); font-size: 0.76rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 4px; }
+
+  /* Theory Grid */
+  .theory-section { padding: 2rem 0 4rem; }
+  .theory-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+
+  .theory-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.75rem; display: flex; flex-direction: column; transition: border-color 0.2s; }
+  .theory-card:hover { border-color: var(--color-border-hover); }
+
+  .theory-origin { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+  .origin-badge { font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.5rem; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; letter-spacing: 0.04em; }
+  .origin-year { font-size: 0.72rem; color: var(--color-text-muted); }
+
+  .theory-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .theory-card > p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.6; flex: 1; }
+
+  .theory-maps { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); font-size: 0.8rem; }
+  .maps-label { color: var(--color-text-muted); font-weight: 500; }
+  .maps-target { color: var(--color-text-secondary); margin-left: 0.25rem; }
+  .maps-target code { font-family: var(--font-mono); font-size: 0.78rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  /* Why Grid */
+  .why-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .why-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+
+  .why-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; }
+  .why-number { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 800; color: var(--color-primary); margin-bottom: 0.75rem; }
+  .why-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .why-card p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.65; }
+
+  /* Myth Grid */
+  .myth-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .myth-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+
+  .myth-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; }
+  .myth-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--color-text); }
+  .myth-card p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.65; }
+  .myth-card strong { color: var(--color-text-secondary); }
+  .myth-card em { font-style: italic; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section p { color: var(--color-text-muted); margin-bottom: 2rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 3rem 1.5rem 2rem; }
+    .theory-grid, .why-grid, .myth-grid { grid-template-columns: 1fr; }
+    .evolution-track { flex-direction: column; }
+    .evo-arrow { justify-content: center; transform: rotate(90deg); padding: 0.25rem 0; }
+    .harness-map-grid { grid-template-columns: 1fr; }
+  }
+</style>

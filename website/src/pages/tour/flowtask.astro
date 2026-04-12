@@ -1,0 +1,865 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TourNav from '../../components/TourNav.astro';
+
+const mermaidS01 = `sequenceDiagram
+    participant U as User
+    participant FE as React Frontend
+    participant BE as Tauri Commands (Rust)
+    participant DB as SQLite
+
+    U->>FE: Step 1: Open app
+    FE->>BE: Step 2: invoke('check_has_user')
+    BE->>DB: Step 3: SELECT COUNT(*) FROM users
+    DB-->>BE: Step 4: return count = 0
+    BE-->>FE: Step 5: return { has_user: false }
+    FE-->>U: Step 6: Render Register page
+
+    U->>FE: Step 7: Fill username, password, confirm & click Register
+    FE->>FE: Step 8: Validate — name 2-20 chars, pwd ≥8, match
+    Note over FE: Fail → EX-8.1 / EX-8.2 / EX-8.3
+
+    FE->>BE: Step 9: invoke('register', { username, password })
+    BE->>DB: Step 10: SELECT id FROM users WHERE username = ?
+    DB-->>BE: Step 11: return empty (username available)
+    Note over BE: Taken → EX-10.1
+
+    BE->>BE: Step 12: bcrypt::hash(password, cost=12)
+    BE->>DB: Step 13: INSERT INTO users (username, password)
+    DB-->>BE: Step 14: return new user { id, username, created_at }
+    Note over BE: Write fail → EX-13.1
+
+    BE-->>FE: Step 15: return { user_id, username }
+    FE->>FE: Step 16: Write Zustand Store { currentUser }
+    FE-->>U: Step 17: Redirect to Task View (empty state)`;
+
+const mermaidArch = `graph TB
+    subgraph FE["Frontend (React 18 + TypeScript)"]
+        Pages["React Components\nUI Pages"]
+        Store["Zustand Store\nGlobal State"]
+        IPC["Tauri IPC\nFrontend-Backend Bridge"]
+    end
+
+    subgraph BE["Backend (Rust Commands)"]
+        Commands["auth · task · category\nAuth / Task CRUD / Category CRUD / bcrypt"]
+    end
+
+    subgraph DB["Data Layer"]
+        SQLite[("SQLite\nLocal File Storage")]
+    end
+
+    Pages --> Store
+    Store --> IPC
+    IPC --> Commands
+    Commands --> SQLite`;
+
+const codeBackend = `<div class="code-snippet"><div class="code-header"><span class="code-file">src-tauri/src/lib.rs</span><span class="code-lang">Rust</span></div><pre><code><span class="hl-cmt">// ── S01 Step 9-15: register ───────────────────────</span>
+<span class="hl-attr">#[tauri::command]</span>
+<span class="hl-kw">async fn</span> <span class="hl-fn">register</span>(
+    params: <span class="hl-ty">RegisterParams</span>,
+    pool: tauri::<span class="hl-ty">State</span>&lt;'_, <span class="hl-ty">SqlitePool</span>&gt;,
+) -&gt; <span class="hl-ty">CmdResult</span>&lt;<span class="hl-ty">UserSession</span>&gt; {
+    <span class="hl-kw">let</span> row = sqlx::<span class="hl-fn">query</span>(<span class="hl-str">"SELECT COUNT(*) as count FROM users WHERE username = ?"</span>)
+        .<span class="hl-fn">bind</span>(&amp;params.username).<span class="hl-fn">fetch_one</span>(pool.<span class="hl-fn">inner</span>()).<span class="hl-kw">await</span>
+        .<span class="hl-fn">map_err</span>(|_| <span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"DB_ERROR"</span>, <span class="hl-str">"Query failed"</span>))?;
+    <span class="hl-kw">if</span> row.<span class="hl-fn">get</span>::&lt;<span class="hl-ty">i64</span>, _&gt;(<span class="hl-str">"count"</span>) &gt; <span class="hl-num">0</span> {
+        <span class="hl-kw">return</span> <span class="hl-ty">Err</span>(<span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"USERNAME_EXISTS"</span>, <span class="hl-str">"Username taken"</span>));
+    }
+    <span class="hl-kw">let</span> pw_hash = <span class="hl-fn">hash</span>(&amp;params.password, DEFAULT_COST)
+        .<span class="hl-fn">map_err</span>(|_| <span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"HASH_ERROR"</span>, <span class="hl-str">"Hash failed"</span>))?;
+    <span class="hl-kw">let</span> result = sqlx::<span class="hl-fn">query</span>(<span class="hl-str">"INSERT INTO users (username, password) VALUES (?, ?)"</span>)
+        .<span class="hl-fn">bind</span>(&amp;params.username).<span class="hl-fn">bind</span>(&amp;pw_hash)
+        .<span class="hl-fn">execute</span>(pool.<span class="hl-fn">inner</span>()).<span class="hl-kw">await</span>
+        .<span class="hl-fn">map_err</span>(|_| <span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"DB_WRITE_ERROR"</span>, <span class="hl-str">"Write failed"</span>))?;
+    <span class="hl-ty">Ok</span>(<span class="hl-ty">UserSession</span> {
+        user_id: result.<span class="hl-fn">last_insert_rowid</span>(),
+        username: params.username,
+        tasks: <span class="hl-fn">vec!</span>[], categories: <span class="hl-fn">vec!</span>[],
+    })
+}</code></pre></div>`;
+
+const codeTest = `<div class="code-snippet"><div class="code-header"><span class="code-file">src-tauri/tests/orchestration.rs</span><span class="code-lang">Rust</span></div><pre><code><span class="hl-attr">#[tokio::test]</span>
+<span class="hl-kw">async fn</span> <span class="hl-fn">ot_s01_01_register_success</span>() {
+    <span class="hl-kw">let</span> pool = <span class="hl-fn">setup_db</span>().<span class="hl-kw">await</span>;
+    <span class="hl-kw">let</span> session = <span class="hl-fn">cmd_register</span>(<span class="hl-str">"xiaoli"</span>.<span class="hl-fn">into</span>(), <span class="hl-str">"Pass1234"</span>.<span class="hl-fn">into</span>(), &amp;pool)
+        .<span class="hl-kw">await</span>.<span class="hl-fn">expect</span>(<span class="hl-str">"register should succeed"</span>);
+    <span class="hl-fn">assert_eq!</span>(session.username, <span class="hl-str">"xiaoli"</span>);
+    <span class="hl-fn">assert!</span>(session.user_id &gt; <span class="hl-num">0</span>);
+    <span class="hl-fn">assert!</span>(session.tasks.<span class="hl-fn">is_empty</span>());
+}
+
+<span class="hl-attr">#[tokio::test]</span>
+<span class="hl-kw">async fn</span> <span class="hl-fn">ot_s01_02_register_username_exists</span>() {
+    <span class="hl-kw">let</span> pool = <span class="hl-fn">setup_db</span>().<span class="hl-kw">await</span>;
+    <span class="hl-fn">cmd_register</span>(<span class="hl-str">"xiaoli"</span>.<span class="hl-fn">into</span>(), <span class="hl-str">"Pass1234"</span>.<span class="hl-fn">into</span>(), &amp;pool).<span class="hl-kw">await</span>.<span class="hl-fn">unwrap</span>();
+    <span class="hl-kw">let</span> err = <span class="hl-fn">cmd_register</span>(<span class="hl-str">"xiaoli"</span>.<span class="hl-fn">into</span>(), <span class="hl-str">"Other123"</span>.<span class="hl-fn">into</span>(), &amp;pool)
+        .<span class="hl-kw">await</span>.<span class="hl-fn">expect_err</span>(<span class="hl-str">"duplicate should fail"</span>);
+    <span class="hl-fn">assert_eq!</span>(err.code, <span class="hl-str">"USERNAME_EXISTS"</span>);
+}</code></pre></div>`;
+---
+
+<BaseLayout title="FlowTask · Claude Code Workflow — OpenLogos Tour" description="See how a Tauri desktop app was built from requirements to verified code using OpenLogos + Claude Code.">
+  <TourNav current="flowtask" />
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-badge badge-claude">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Claude Code Workflow
+      </div>
+      <h1>FlowTask</h1>
+      <p class="hero-desc">A local-first desktop task manager built with <strong>Tauri 2 + React + Rust</strong>. Every artifact below was generated through the OpenLogos methodology using Claude Code.</p>
+      <div class="hero-tech">
+        <span class="tech-tag">Tauri 2</span>
+        <span class="tech-tag">React 18</span>
+        <span class="tech-tag">Rust</span>
+        <span class="tech-tag">SQLite</span>
+        <span class="tech-tag">TypeScript</span>
+        <span class="tech-tag">Zustand</span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num">4</span> Scenarios</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">18</span> Test Cases</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">100%</span> Coverage</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">Gate 3.5: PASS</div>
+      </div>
+      <div class="claude-highlight">
+        <div class="cc-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div>
+          <strong>Claude Code Integration</strong>
+          <span>Uses native <code>.claude-plugin</code> with <code>skills/</code> <code>commands/</code> <code>hooks/</code> for methodology-driven development via conversational AI coding.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 1: WHY -->
+  <section class="phase-section" id="phase1">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-amber">1</div>
+        <div>
+          <div class="phase-tag tag-amber">WHY</div>
+          <h2>Requirements — Who needs this and why?</h2>
+        </div>
+      </div>
+      <p class="phase-source">Source: <code>logos/resources/prd/1-product-requirements/01-requirements.md</code></p>
+
+      <div class="artifact-card">
+        <h3>User Persona & Pain Points</h3>
+        <div class="doc-excerpt">
+          <p><strong>Xiao Li, 28, Freelancer</strong> — juggles multiple projects, with tasks scattered across sticky notes, phone memos, and notebooks. Frequently misses deadlines because there's no single place to track everything.</p>
+          <div class="pain-points">
+            <div class="pain"><span class="pain-id">P01</span> Tasks scattered across multiple locations → hard to find, easy to miss</div>
+            <div class="pain"><span class="pain-id">P02</span> No categories → can't distinguish work/life/study tasks → constant confusion</div>
+            <div class="pain"><span class="pain-id">P03</span> No account system → no sense of personal space on shared devices</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>Scenario Overview</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Scenario</th><th>Trigger</th><th>Pain</th><th>Priority</th></tr></thead>
+            <tbody>
+              <tr><td>S01</td><td>New user registers and starts using</td><td>First app launch</td><td>P01, P03</td><td class="p0">P0</td></tr>
+              <tr><td>S02</td><td>Login and manage today's tasks</td><td>Registered user opens app</td><td>P01, P02</td><td class="p0">P0</td></tr>
+              <tr><td>S03</td><td>Organize tasks by category</td><td>User wants to classify tasks</td><td>P02</td><td class="p1">P1</td></tr>
+              <tr><td>S04</td><td>Change account password</td><td>User wants to change password</td><td>P03</td><td class="p1">P1</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>Acceptance Criteria — S01: Register</h3>
+        <div class="ac-list">
+          <div class="ac-item ac-normal">
+            <div class="ac-label">Normal</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> User opens app for the first time, no local account exists</div>
+              <div><strong>WHEN</strong> User enters username (2-20 chars) and password (≥8 chars), clicks "Register"</div>
+              <div><strong>THEN</strong> System creates local account, auto-logs in, redirects to task view with empty-state guidance</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">Exception</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> Username "xiaoli" already exists locally</div>
+              <div><strong>WHEN</strong> User tries to register with "xiaoli"</div>
+              <div><strong>THEN</strong> Shows "This username is taken, please choose another"</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">Exception</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> User is on register page</div>
+              <div><strong>WHEN</strong> Password is fewer than 8 characters</div>
+              <div><strong>THEN</strong> Shows "Password must be at least 8 characters"</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 2: WHAT -->
+  <section class="phase-section" id="phase2">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-blue">2</div>
+        <div>
+          <div class="phase-tag tag-blue">WHAT</div>
+          <h2>Product Design — What will users see and do?</h2>
+        </div>
+      </div>
+      <p class="phase-source">Source: <code>logos/resources/prd/2-product-design/1-feature-specs/01-feature-specs.md</code></p>
+
+      <div class="artifact-card">
+        <h3>Information Architecture</h3>
+        <div class="code-block">
+          <pre><code>FlowTask
+├── Auth Module
+│   ├── Register Page (first launch)
+│   └── Login Page (returning user)
+└── Main App (after login)
+    ├── Task View (default)
+    │   ├── Category Sidebar
+    │   ├── Task List
+    │   └── Create/Edit Task Panel
+    └── Account Settings
+        └── Change Password Form</code></pre>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>UI Prototype — Register & Main View</h3>
+        <p class="phase-source">Source: <code>logos/resources/prd/2-product-design/2-page-design/</code></p>
+        <div class="prototype-grid">
+          <div class="prototype-frame">
+            <div class="proto-label">Register / Login</div>
+            <iframe src="/tour/prototypes/flowtask-auth.html" loading="lazy"></iframe>
+          </div>
+          <div class="prototype-frame">
+            <div class="proto-label">Task View (Main)</div>
+            <iframe src="/tour/prototypes/flowtask-main.html" loading="lazy"></iframe>
+          </div>
+        </div>
+        <p class="artifact-note">Interactive HTML prototypes generated during Product Design phase — every page is designed before any code is written.</p>
+      </div>
+
+      <div class="artifact-card">
+        <h3>S01 Interaction Spec — Register Flow</h3>
+        <div class="doc-excerpt">
+          <ol class="interaction-steps">
+            <li>App launches, detects no local account → display Register page</li>
+            <li>Register page contains: username input, password input, confirm password input, register button, "Already have an account? Log in" link</li>
+            <li>Real-time validation: username 2-20 chars, password ≥8 chars, passwords match</li>
+            <li>Submit success → create local account (password encrypted) → auto-login → redirect to Task View</li>
+            <li>Task View first entry shows empty state: "No tasks yet, click + to create your first task"</li>
+          </ol>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Validation</th></tr></thead>
+            <tbody>
+              <tr><td>Username</td><td>Text input</td><td>Yes</td><td>2-20 characters</td></tr>
+              <tr><td>Password</td><td>Password input</td><td>Yes</td><td>≥ 8 characters</td></tr>
+              <tr><td>Confirm Password</td><td>Password input</td><td>Yes</td><td>Must match password</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 3: HOW -->
+  <section class="phase-section" id="phase3">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-green">3</div>
+        <div>
+          <div class="phase-tag tag-green">HOW</div>
+          <h2>Implementation — From architecture to verified code</h2>
+        </div>
+      </div>
+
+      <!-- Step 0: Architecture -->
+      <div class="step-section">
+        <div class="step-badge">Step 0</div>
+        <h3>Architecture Overview</h3>
+        <p class="phase-source">Source: <code>logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md</code></p>
+        <div class="artifact-card">
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidArch} />
+          </div>
+          <p class="artifact-note">Business logic (forms, state, routing) in TypeScript; Rust handles only DB reads/writes and bcrypt encryption — minimizing Rust code while staying frontend-developer-friendly.</p>
+        </div>
+      </div>
+
+      <!-- Step 1: Sequence Diagram -->
+      <div class="step-section">
+        <div class="step-badge">Step 1</div>
+        <h3>Scenario → Sequence Diagram</h3>
+        <p class="phase-source">Source: <code>logos/resources/prd/3-technical-plan/2-scenario-implementation/S01-register.md</code></p>
+        <div class="artifact-card">
+          <h4>S01: User Registration — Sequence Diagram</h4>
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidS01} />
+          </div>
+
+          <div class="step-desc-section">
+            <h4>Steps</h4>
+            <ol class="step-desc-list">
+              <li><strong>User</strong> opens FlowTask desktop app.</li>
+              <li><strong>React FE</strong> calls <code>invoke('check_has_user')</code> to ask Rust if any account exists locally.</li>
+              <li><strong>Tauri Rust</strong> queries SQLite: <code>SELECT COUNT(*) FROM users</code>.</li>
+              <li><strong>SQLite</strong> returns <code>count = 0</code> — no local account.</li>
+              <li><strong>Rust</strong> returns <code>has_user: false</code> to FE.</li>
+              <li><strong>React FE</strong> renders Register page (if account exists, show Login instead).</li>
+              <li><strong>User</strong> fills username, password, confirm password, clicks "Register".</li>
+              <li><strong>React FE</strong> validates: username 2-20 chars, password ≥8, passwords match. On failure → show error, skip backend call. → EX-8.1 / EX-8.2 / EX-8.3</li>
+              <li><strong>React FE</strong> calls <code>invoke('register')</code> passing raw password to Rust (IPC, no network).</li>
+              <li><strong>Rust</strong> checks username uniqueness: <code>SELECT id FROM users WHERE username = ?</code>.</li>
+              <li><strong>SQLite</strong> returns empty — username available. → EX-10.1 (if taken)</li>
+              <li><strong>Rust</strong> hashes password with bcrypt (cost=12). Raw password never stored.</li>
+              <li><strong>Rust</strong> writes user: <code>INSERT INTO users</code>. → EX-13.1 (if write fails)</li>
+              <li><strong>SQLite</strong> returns new user record (id, username, created_at).</li>
+              <li><strong>Rust</strong> returns session to FE.</li>
+              <li><strong>React FE</strong> writes to Zustand Store, establishing login session (no token needed for desktop app).</li>
+              <li><strong>React FE</strong> redirects to Task View with empty-state guidance.</li>
+            </ol>
+          </div>
+
+          <div class="seq-exceptions">
+            <h5>Exception Cases</h5>
+            <div class="seq-ex"><span class="ex-id">EX-8.1</span> Username empty or wrong length → show error, skip backend</div>
+            <div class="seq-ex"><span class="ex-id">EX-8.2</span> Password &lt; 8 chars → show error, skip backend</div>
+            <div class="seq-ex"><span class="ex-id">EX-8.3</span> Passwords do not match → show error, skip backend</div>
+            <div class="seq-ex"><span class="ex-id">EX-10.1</span> Username taken → return <code>USERNAME_EXISTS</code></div>
+            <div class="seq-ex"><span class="ex-id">EX-13.1</span> DB write failure → return <code>DB_WRITE_ERROR</code></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: API + DB -->
+      <div class="step-section">
+        <div class="step-badge">Step 2</div>
+        <h3>API Specs + DB Schema</h3>
+        <div class="artifact-card">
+          <h4>API Specification — Tauri IPC Commands</h4>
+          <p class="phase-source">Source: <code>logos/resources/api/tasks.yaml</code></p>
+          <div class="doc-frame">
+            <iframe src="/tour/docs/flowtask-api.html" loading="lazy"></iframe>
+          </div>
+        </div>
+        <div class="artifact-card">
+          <h4>Database Schema — SQLite Tables</h4>
+          <p class="phase-source">Source: <code>logos/resources/database/schema.yaml</code></p>
+          <div class="doc-frame doc-frame-short">
+            <iframe src="/tour/docs/flowtask-db.html" loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Test Cases -->
+      <div class="step-section">
+        <div class="step-badge">Step 3</div>
+        <h3>Test Case Design (before code!)</h3>
+        <p class="phase-source">Source: <code>logos/resources/test/S01-test-cases.md</code></p>
+        <div class="artifact-card">
+          <h4>S01 Test Cases — Unit Tests (excerpt)</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Description</th><th>Input</th><th>Expected</th></tr></thead>
+              <tbody>
+                <tr><td><code>UT-S01-01</code></td><td>Username exactly 2 chars (lower boundary)</td><td><code>"ab"</code></td><td>Pass</td></tr>
+                <tr><td><code>UT-S01-03</code></td><td>Username 1 char (below boundary)</td><td><code>"a"</code></td><td>Error: 2-20 chars required</td></tr>
+                <tr><td><code>UT-S01-06</code></td><td>Password exactly 8 chars (lower boundary)</td><td><code>"Pass1234"</code></td><td>Pass</td></tr>
+                <tr><td><code>UT-S01-07</code></td><td>Password 7 chars (below boundary)</td><td><code>"Pass123"</code></td><td>Error: ≥ 8 chars required</td></tr>
+                <tr><td><code>UT-S01-11</code></td><td>Duplicate username → DB UNIQUE constraint</td><td><code>"xiaoli"</code> (exists)</td><td><code>USERNAME_EXISTS</code></td></tr>
+                <tr><td><code>UT-S01-14</code></td><td>Password stored as bcrypt hash</td><td><code>"Pass1234"</code></td><td>Starts with <code>$2b$</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>S01 Test Cases — Scenario Tests (excerpt)</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Description</th><th>Covers</th></tr></thead>
+              <tbody>
+                <tr><td><code>ST-S01-01</code></td><td>Full register flow: launch → register → task view</td><td>Steps 1-17</td></tr>
+                <tr><td><code>ST-S01-02</code></td><td>Empty username → frontend intercept</td><td>EX-8.1</td></tr>
+                <tr><td><code>ST-S01-05</code></td><td>Duplicate username → backend error</td><td>EX-10.1</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: Code Generation -->
+      <div class="step-section">
+        <div class="step-badge">Step 4</div>
+        <h3>Code Generation — Design-driven implementation via Claude Code</h3>
+        <p class="phase-source">Source: <code>src-tauri/src/lib.rs</code> · <code>src/pages/</code> · <code>src-tauri/tests/orchestration.rs</code></p>
+        <div class="artifact-card">
+          <div class="codegen-workflow">
+            <div class="workflow-badge claude-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Claude Code — Conversational AI Coding
+            </div>
+            <p class="workflow-desc">Every Tauri command is annotated with the scenario step it implements. Claude Code reads the sequence diagram and API spec, then generates backend + frontend + tests in closed-loop batches.</p>
+          </div>
+          <h4>Backend — Rust Tauri Command <span class="code-maps-to">→ maps to S01 Steps 9-15</span></h4>
+          <Fragment set:html={codeBackend} />
+          <h4>Orchestration Test <span class="code-maps-to">→ verifies S01 end-to-end</span></h4>
+          <Fragment set:html={codeTest} />
+          <div class="codegen-stats">
+            <div class="cg-stat"><span class="cg-num">10</span><span class="cg-label">Tauri Commands</span></div>
+            <div class="cg-stat"><span class="cg-num">6</span><span class="cg-label">React Pages</span></div>
+            <div class="cg-stat"><span class="cg-num">18</span><span class="cg-label">Orchestration Tests</span></div>
+            <div class="cg-stat"><span class="cg-num">S01–S04</span><span class="cg-label">Full Coverage</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5: Verify -->
+      <div class="step-section">
+        <div class="step-badge">Step 5</div>
+        <h3><code>openlogos verify</code> — Automated Acceptance</h3>
+        <p class="phase-source">Source: <code>logos/resources/verify/acceptance-report.md</code></p>
+        <div class="artifact-card verify-card">
+          <div class="verify-header">
+            <div class="verify-badge">Gate 3.5: PASS</div>
+            <span class="verify-date">Generated on 2026-04-07</span>
+          </div>
+          <div class="verify-stats">
+            <div class="verify-stat">
+              <span class="vs-num">18</span>
+              <span class="vs-label">Defined</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">18</span>
+              <span class="vs-label">Executed</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">18</span>
+              <span class="vs-label">Passed</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">0</span>
+              <span class="vs-label">Failed</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">100%</span>
+              <span class="vs-label">Coverage</span>
+            </div>
+          </div>
+          <div class="verify-trace">
+            <h4>AC Traceability (excerpt)</h4>
+            <div class="trace-items">
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S01-AC-001</code> Register returns UserSession with user_id → <code>UT-S01-01</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S01-AC-002</code> Duplicate username returns USERNAME_EXISTS → <code>UT-S01-02</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S02-AC-005</code> Create task returns complete TaskItem → <code>UT-S02-05</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S03-AC-003</code> Delete category sets task.category_id to null → <code>UT-S03-03</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S04-AC-001</code> Change password returns success=true → <code>UT-S04-01</code> PASS</div>
+              <div class="trace-row trace-more">… 13 more, all PASS</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Delta Change -->
+  <section class="delta-section">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-purple">&#916;</div>
+        <div>
+          <div class="phase-tag tag-purple">DELTA</div>
+          <h2>Change Tracking — Every iteration is impact-aware</h2>
+        </div>
+      </div>
+
+      <div class="delta-intro">
+        <p>Traditional AI coding ("vibe coding") fixes the code but forgets the design doc, the API spec, and the test cases. Over time, documentation drifts from reality and becomes useless. OpenLogos solves this with a <strong>structured delta workflow</strong> — every change, no matter how small, must evaluate its ripple effect across the entire artifact chain.</p>
+      </div>
+
+      <div class="delta-workflow">
+        <div class="dw-step"><div class="dw-num">1</div><div class="dw-text"><strong>proposal.md</strong><span>Reason, type, impact scope, summary</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">2</div><div class="dw-text"><strong>tasks.md</strong><span>Phase-based task checklist</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">3</div><div class="dw-text"><strong>Delta files</strong><span>Produce changes per task</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">4</div><div class="dw-text"><strong>Merge</strong><span><code>openlogos merge</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">5</div><div class="dw-text"><strong>Code + Test</strong><span>Implement &amp; verify</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">6</div><div class="dw-text"><strong>Archive</strong><span>Close the proposal</span></div></div>
+      </div>
+
+      <div class="artifact-card delta-propagation-card">
+        <h3>Change Propagation Rules</h3>
+        <p class="propagation-desc">The change type determines the minimum update scope. A seemingly small feature request can cascade through the entire chain:</p>
+        <div class="propagation-table">
+          <div class="prop-row prop-row-header">
+            <div class="prop-type-col">Change Type</div>
+            <div class="prop-chain-col">Minimum Updates Required</div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-req">Requirement</span></div>
+            <div class="prop-chain-col"><span class="prop-tag active">Req</span><span class="prop-arrow">→</span><span class="prop-tag active">Design</span><span class="prop-arrow">→</span><span class="prop-tag active">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-design">Design</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">Req</span><span class="prop-arrow">→</span><span class="prop-tag active">Design</span><span class="prop-arrow">→</span><span class="prop-tag active">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-iface">Interface</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">Req</span><span class="prop-arrow">→</span><span class="prop-tag skip">Design</span><span class="prop-arrow">→</span><span class="prop-tag skip">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-code">Code-level</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">Req</span><span class="prop-arrow">→</span><span class="prop-tag skip">Design</span><span class="prop-arrow">→</span><span class="prop-tag skip">Scenario</span><span class="prop-arrow">→</span><span class="prop-tag skip">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag skip">Test</span><span class="prop-arrow">→</span><span class="prop-tag active">Code</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="delta-example-title">Real Example — Code-level Fix</h3>
+      <p class="phase-source">Source: <code>logos/changes/archive/fix-register-redirect/proposal.md</code></p>
+
+      <div class="artifact-card delta-card">
+        <h4>fix-register-redirect</h4>
+        <div class="delta-meta">
+          <span class="delta-type delta-bugfix">Bug Fix</span>
+          <span class="delta-scope">S01 — Register Flow</span>
+        </div>
+        <div class="doc-excerpt">
+          <p><strong>Problem:</strong> After registration, the app didn't redirect to Task View. User was stuck on the Register page.</p>
+          <p><strong>Root cause:</strong> <code>useEffect</code> condition required <code>view === "loading"</code>, but after register, <code>view</code> was <code>"register"</code> — redirect never fired.</p>
+        </div>
+        <h4 class="impact-title">Impact Analysis</h4>
+        <div class="impact-matrix">
+          <div class="im-row"><span class="im-layer">Requirements</span><span class="im-badge im-skip">No change</span><span class="im-detail">Requirement correctly specifies redirect</span></div>
+          <div class="im-row"><span class="im-layer">Product Design</span><span class="im-badge im-skip">No change</span><span class="im-detail">Design is correct as-is</span></div>
+          <div class="im-row"><span class="im-layer">Sequence Diagram</span><span class="im-badge im-skip">No change</span><span class="im-detail">S01 Steps 16→17 already define redirect</span></div>
+          <div class="im-row"><span class="im-layer">API Spec</span><span class="im-badge im-skip">No change</span><span class="im-detail">Tauri IPC commands unchanged</span></div>
+          <div class="im-row"><span class="im-layer">DB Schema</span><span class="im-badge im-skip">No change</span><span class="im-detail">No schema modifications</span></div>
+          <div class="im-row"><span class="im-layer">Test Cases</span><span class="im-badge im-skip">No change</span><span class="im-detail">Existing ST-S01-01 covers this path</span></div>
+          <div class="im-row"><span class="im-layer">Code</span><span class="im-badge im-affected">Affected</span><span class="im-detail"><code>App.tsx</code> — extend redirect condition to cover register &amp; login views</span></div>
+        </div>
+        <div class="impact-verdict">
+          <strong>Verdict:</strong> Code-level fix only. The bug was a missing condition branch — all upstream artifacts (requirements, design, API, DB) are correct. Defensively also covers the S02 login redirect path.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <h2>Want to try it yourself?</h2>
+      <p>Clone the repo and run FlowTask locally, or start your own project with OpenLogos.</p>
+      <div class="cta-actions">
+        <a href="https://github.com/miniidealab/openlogos/tree/main/examples/flowtask" target="_blank" rel="noopener" class="btn btn-primary">View on GitHub →</a>
+        <a href="/tour/money-log" class="btn btn-ghost">Next: Money-Log · OpenCode →</a>
+      </div>
+      <div class="cta-secondary">
+        <a href="/getting-started/quick-start">Quick Start Guide</a>
+        <span class="cta-divider">·</span>
+        <a href="/tour">Back to Tour Overview</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 860px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Hero */
+  .page-hero { padding: 3rem 1.5rem 3rem; text-align: center; }
+  .hero-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.75rem; border-radius: 100px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; margin-bottom: 1.5rem; }
+  .badge-claude { background: rgba(217, 119, 6, 0.12); color: #d97706; border: 1px solid rgba(217, 119, 6, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 0.75rem; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.05rem; line-height: 1.7; max-width: 580px; margin: 0 auto 1.5rem; }
+  .hero-desc strong { color: var(--color-text-secondary); }
+  .hero-tech { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.375rem; margin-bottom: 1.5rem; }
+  .tech-tag { font-size: 0.68rem; font-weight: 500; padding: 0.175rem 0.5rem; border-radius: 4px; background: var(--color-surface-raised); border: 1px solid var(--color-border); color: var(--color-text-muted); }
+  .hero-stats { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1.5rem; }
+  .claude-highlight { display: flex; align-items: flex-start; gap: 0.75rem; max-width: 520px; margin: 0 auto; padding: 1rem 1.25rem; background: rgba(217, 119, 6, 0.06); border: 1px solid rgba(217, 119, 6, 0.15); border-radius: 12px; text-align: left; }
+  .cc-icon { flex-shrink: 0; color: #d97706; margin-top: 0.1rem; }
+  .claude-highlight strong { display: block; font-size: 0.82rem; font-weight: 700; color: #d97706; margin-bottom: 0.25rem; }
+  .claude-highlight span { font-size: 0.78rem; color: var(--color-text-muted); line-height: 1.5; }
+  .claude-highlight code { font-family: var(--font-mono); font-size: 0.72rem; background: rgba(217, 119, 6, 0.08); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .stat-num { font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .stat-sep { opacity: 0.3; }
+  .pass { font-family: var(--font-mono); font-weight: 700; color: #0eb677; }
+
+  /* Phase Sections */
+  .phase-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .phase-header { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 0.5rem; }
+  .phase-marker { flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 800; font-family: var(--font-mono); }
+  .marker-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
+  .marker-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
+  .marker-green { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+  .marker-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
+  .phase-tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 0.375rem; }
+  .tag-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+  .tag-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+  .tag-green { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .tag-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+  .phase-header h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+  .phase-source { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 1.5rem; opacity: 0.7; }
+  .phase-source code { font-family: var(--font-mono); font-size: 0.72rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 3px; }
+
+  /* Artifact Cards */
+  .artifact-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.75rem; margin-bottom: 1.25rem; }
+  .artifact-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .artifact-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.625rem; margin-top: 1rem; }
+  .artifact-card h4:first-child { margin-top: 0; }
+  .artifact-note { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 0.75rem; line-height: 1.5; font-style: italic; }
+
+  /* Doc excerpts */
+  .doc-excerpt { font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.65; }
+  .doc-excerpt p { margin-bottom: 0.75rem; }
+  .doc-excerpt strong { color: var(--color-text); }
+
+  .pain-points { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+  .pain { font-size: 0.82rem; color: var(--color-text-muted); padding: 0.5rem 0.75rem; background: var(--color-surface-raised); border-radius: 8px; border-left: 3px solid var(--color-border); }
+  .pain-id { font-family: var(--font-mono); font-weight: 700; color: #f59e0b; margin-right: 0.5rem; font-size: 0.75rem; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { text-align: left; padding: 0.5rem 0.75rem; background: var(--color-surface-raised); font-weight: 600; font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--color-border); }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); }
+  td code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .p0 { font-weight: 700; color: #ef4444; }
+  .p1 { font-weight: 600; color: #f59e0b; }
+
+  /* AC list */
+  .ac-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .ac-item { display: flex; gap: 0.75rem; padding: 0.75rem; border-radius: 8px; background: var(--color-surface-raised); }
+  .ac-label { flex-shrink: 0; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.15rem 0.4rem; border-radius: 4px; height: fit-content; margin-top: 0.1rem; }
+  .ac-normal .ac-label { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .ac-exception .ac-label { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+  .ac-content { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  .ac-content strong { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 0.75rem; }
+
+  /* Interaction steps */
+  .interaction-steps { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.375rem; }
+  .interaction-steps li { font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .prototype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  .prototype-frame { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); background: #fafafa; }
+  .proto-label { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 0.75rem; background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border); }
+  .prototype-frame iframe, .prototype-single iframe { width: 100%; border: none; background: #fafafa; }
+  .prototype-frame iframe { height: 420px; }
+  .prototype-single { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); background: #fafafa; margin-bottom: 1rem; }
+  .prototype-single iframe { height: 520px; }
+
+  /* Doc iframes */
+  .doc-frame { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); margin-bottom: 0.5rem; }
+  .doc-frame iframe { width: 100%; height: 520px; border: none; }
+  .doc-frame-short iframe { height: 420px; }
+
+  /* Code blocks */
+  .code-block { background: #0d0d10; border: 1px solid var(--color-border); border-radius: 10px; padding: 1rem 1.25rem; overflow-x: auto; }
+  .code-block pre { margin: 0; }
+  .code-block code { font-family: var(--font-mono); font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.6; white-space: pre; }
+
+  /* Step sections */
+  .step-section { margin-bottom: 2rem; }
+  .step-badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 5px; font-size: 0.68rem; font-weight: 700; font-family: var(--font-mono); background: rgba(16, 185, 129, 0.08); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.15); margin-bottom: 0.5rem; }
+  .step-section > h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.25rem; }
+
+  /* Dual artifact */
+  .dual-artifact { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+
+  /* Sequence diagram (text) */
+  .sequence-diagram { font-size: 0.82rem; }
+  .seq-participants { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .seq-p { padding: 0.3rem 0.625rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+  .seq-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; }
+  .seq-step { display: flex; gap: 0.625rem; align-items: flex-start; font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .seq-step code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .seq-num { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.08); padding: 0.15rem 0.4rem; border-radius: 4px; min-width: 2rem; text-align: center; }
+  .seq-exceptions { border-top: 1px solid var(--color-border); padding-top: 1rem; }
+  .seq-exceptions h5 { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.625rem; }
+  .seq-ex { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 0.375rem; padding-left: 0.25rem; }
+  .seq-ex code { font-family: var(--font-mono); font-size: 0.72rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .ex-id { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #ef4444; margin-right: 0.375rem; }
+
+  /* Code generation */
+  .codegen-workflow { margin-bottom: 1.25rem; }
+  .workflow-badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.85rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.75rem; }
+  .claude-badge { background: linear-gradient(135deg, #d4a574 0%, #c4956a 100%); color: #fff; }
+  .opencode-badge { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+  .workflow-desc { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  :global(.code-snippet) { background: #1e1e2e; border-radius: 8px; overflow: hidden; margin-bottom: 1.25rem; }
+  :global(.code-snippet .code-header) { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.875rem; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.08); }
+  :global(.code-snippet .code-file) { font-family: var(--font-mono); font-size: 0.72rem; color: #a6adc8; }
+  :global(.code-snippet .code-lang) { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #585b70; }
+  :global(.code-snippet pre) { margin: 0; padding: 1rem 0.875rem; overflow-x: auto; }
+  :global(.code-snippet code) { font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.65; color: #cdd6f4; }
+  :global(.code-snippet .hl-kw) { color: #cba6f7; }
+  :global(.code-snippet .hl-str) { color: #a6e3a1; }
+  :global(.code-snippet .hl-cmt) { color: #6c7086; font-style: italic; }
+  :global(.code-snippet .hl-fn) { color: #89b4fa; }
+  :global(.code-snippet .hl-ty) { color: #f9e2af; }
+  :global(.code-snippet .hl-attr) { color: #fab387; }
+  :global(.code-snippet .hl-num) { color: #fab387; }
+  .code-maps-to { font-size: 0.72rem; font-weight: 500; color: var(--color-text-muted); margin-left: 0.5rem; }
+  .codegen-stats { display: flex; gap: 1rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--color-border); }
+  .cg-stat { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 80px; }
+  .cg-num { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--color-text); }
+  .cg-label { font-size: 0.7rem; color: var(--color-text-muted); margin-top: 0.15rem; }
+
+  /* Verify */
+  .verify-card { border-color: rgba(14, 182, 119, 0.2); }
+  .verify-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+  .verify-badge { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 800; color: #0eb677; background: rgba(14, 182, 119, 0.1); border: 1px solid rgba(14, 182, 119, 0.25); padding: 0.375rem 0.875rem; border-radius: 8px; }
+  .verify-date { font-size: 0.72rem; color: var(--color-text-muted); }
+  .verify-stats { display: flex; gap: 1.5rem; margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+  .verify-stat { display: flex; flex-direction: column; }
+  .vs-num { font-size: 1.25rem; font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .vs-num.green { color: #0eb677; }
+  .vs-label { font-size: 0.68rem; color: var(--color-text-muted); font-weight: 500; }
+  .verify-trace h4 { font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .trace-items { display: flex; flex-direction: column; gap: 0.25rem; }
+  .trace-row { font-size: 0.78rem; color: var(--color-text-secondary); font-family: var(--font-mono); }
+  .trace-row code { font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .trace-check { color: #0eb677; font-weight: 700; margin-right: 0.25rem; }
+  .trace-more { color: var(--color-text-muted); font-style: italic; font-family: var(--font-sans); margin-top: 0.25rem; }
+
+  /* Delta */
+  .delta-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .delta-intro { margin-bottom: 2rem; }
+  .delta-intro p { color: var(--color-text-secondary); font-size: 0.92rem; line-height: 1.75; }
+
+  .delta-workflow { display: flex; align-items: flex-start; gap: 0; flex-wrap: wrap; margin-bottom: 2rem; padding: 1.25rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; justify-content: center; }
+  .dw-step { display: flex; align-items: flex-start; gap: 0.5rem; }
+  .dw-num { width: 22px; height: 22px; border-radius: 50%; background: #a855f7; color: white; font-size: 0.68rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .dw-text { display: flex; flex-direction: column; }
+  .dw-text strong { font-size: 0.78rem; color: var(--color-text); }
+  .dw-text span { font-size: 0.68rem; color: var(--color-text-muted); }
+  .dw-text code { font-size: 0.65rem; }
+  .dw-arrow { color: var(--color-text-muted); font-size: 0.9rem; padding: 0 0.375rem; margin-top: 2px; }
+
+  .delta-propagation-card { margin-bottom: 2rem; }
+  .propagation-desc { font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 1rem; line-height: 1.6; }
+  .propagation-table { display: flex; flex-direction: column; gap: 0.5rem; }
+  .prop-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; }
+  .prop-row-header { font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 0.25rem; border-bottom: 1px solid var(--color-border); }
+  .prop-type-col { width: 100px; flex-shrink: 0; }
+  .prop-chain-col { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+  .prop-badge { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 4px; display: inline-block; }
+  .prop-req { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .prop-design { background: rgba(168, 85, 247, 0.1); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.2); }
+  .prop-iface { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.2); }
+  .prop-code { background: rgba(14, 182, 119, 0.1); color: #0eb677; border: 1px solid rgba(14, 182, 119, 0.2); }
+  .prop-tag { font-size: 0.62rem; font-weight: 600; padding: 0.125rem 0.4rem; border-radius: 3px; }
+  .prop-tag.active { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .prop-tag.skip { background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); opacity: 0.5; }
+  .prop-arrow { color: var(--color-text-muted); font-size: 0.65rem; }
+
+  .delta-example-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; margin-top: 2rem; }
+
+  .delta-card { border-left: 3px solid #a855f7; }
+  .delta-meta { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
+  .delta-type { font-size: 0.68rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; }
+  .delta-bugfix { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .delta-scope { font-size: 0.68rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+
+  .impact-title { font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 1.25rem; margin-bottom: 0.75rem; }
+  .impact-matrix { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+  .im-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.625rem; border-radius: 6px; background: var(--color-surface-raised); }
+  .im-layer { font-size: 0.75rem; font-weight: 600; color: var(--color-text); width: 120px; flex-shrink: 0; }
+  .im-badge { font-size: 0.62rem; font-weight: 700; padding: 0.125rem 0.5rem; border-radius: 4px; flex-shrink: 0; text-align: center; min-width: 68px; }
+  .im-skip { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+  .im-affected { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .im-detail { font-size: 0.75rem; color: var(--color-text-secondary); }
+  .impact-verdict { padding: 0.75rem; background: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.6; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section > .container > p { color: var(--color-text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; text-decoration: none; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+  .cta-secondary { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  .cta-secondary a { color: var(--color-text-muted); font-size: 0.85rem; }
+  .cta-secondary a:hover { color: var(--color-text); }
+  .cta-divider { color: var(--color-text-muted); opacity: 0.3; }
+
+  /* Mermaid diagram */
+  .mermaid-wrap { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; overflow-x: auto; }
+  .mermaid-wrap .mermaid { display: flex; justify-content: center; }
+  .mermaid-wrap .mermaid svg { max-width: 100%; height: auto; }
+  .mermaid-wrap .mermaid .cluster-label { transform: translateY(6px); }
+  .mermaid-wrap .mermaid .cluster-label .nodeLabel { padding: 4px 8px 0; }
+
+  /* Step descriptions */
+  .step-desc-section { margin-bottom: 1.25rem; }
+  .step-desc-section h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .step-desc-list { padding-left: 1.5rem; display: flex; flex-direction: column; gap: 0.375rem; counter-reset: step-counter; list-style: none; }
+  .step-desc-list li { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; padding-left: 0.25rem; counter-increment: step-counter; position: relative; }
+  .step-desc-list li::before { content: counter(step-counter) "."; position: absolute; left: -1.5rem; width: 1.25rem; text-align: right; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: var(--color-text-muted); }
+  .step-desc-list li strong { color: var(--color-text); font-weight: 600; }
+  .step-desc-list li code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 2rem 1.5rem 2rem; }
+    .dual-artifact { grid-template-columns: 1fr; }
+    .prototype-grid { grid-template-columns: 1fr; }
+    .hero-stats { flex-wrap: wrap; }
+    .verify-stats { gap: 1rem; }
+  }
+</style>
+
+<script is:inline src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script is:inline>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#131316',
+      primaryColor: '#1a3a2a',
+      primaryTextColor: '#fafafa',
+      primaryBorderColor: '#0eb677',
+      lineColor: '#71717a',
+      secondaryColor: '#1a1a1f',
+      tertiaryColor: '#27272a',
+      noteTextColor: '#d4d4d8',
+      noteBkgColor: '#1a1a1f',
+      noteBorderColor: '#3f3f46',
+      actorBkg: '#0eb677',
+      actorTextColor: '#fff',
+      actorBorder: '#0a9960',
+      actorLineColor: '#3f3f46',
+      signalColor: '#d4d4d8',
+      signalTextColor: '#d4d4d8',
+      sequenceNumberColor: '#fff',
+      fontSize: '13px'
+    },
+    sequence: {
+      actorMargin: 60,
+      messageMargin: 30
+    },
+    flowchart: {
+      padding: 16,
+      subGraphTitleMargin: { top: 8, bottom: 4 }
+    }
+  });
+</script>

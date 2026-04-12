@@ -91,7 +91,7 @@ reporter 在写入前应确保 `logos/resources/verify/` 目录存在（`mkdir -
 
 ## AI 生成 reporter 代码模板
 
-以下是各语言的 reporter 参考实现。AI 在 Phase 3 Step 4（代码生成）时，应根据项目的 `tech_stack` 选择对应语言的模板，嵌入到测试代码中。
+以下是各语言的 reporter 参考实现。AI 在 Phase 3 Step 4（代码生成，由 `code-implementor` Skill 驱动）时，应根据项目的 `tech_stack` 选择对应语言的模板，嵌入到测试代码中。
 
 ### TypeScript (vitest / jest)
 

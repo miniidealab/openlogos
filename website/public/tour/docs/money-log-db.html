@@ -1,0 +1,152 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Schema Design Document</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:1100px;margin:40px auto;padding:20px 32px;color:#e5e5e5;background:#0a0a0a;line-height:1.6;}
+h1{font-size:22px;font-weight:700;margin:0 0 6px;padding:0;border:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#e5e5e5;}
+blockquote{margin:0 0 20px;padding:5px 12px;border-left:3px solid #334155;background:#141414;border-radius:0 4px 4px 0;color:#a0a0a0;font-size:14px;line-height:1.6;}
+.title-area{margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #2a2a2a;}
+h2{font-size:13px;font-weight:700;color:#888;margin:24px 0 8px;text-transform:uppercase;letter-spacing:.06em;}
+pre{background:#141414;border:1px solid #2a2a2a;padding:14px 18px;border-radius:6px;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#a0a0a0;}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:0;}
+th,td{border:1px solid #2a2a2a;padding:7px 11px;text-align:left;}
+th{background:#1a1a1a;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#888;}
+td{color:#ccc;}
+tr:hover td{background:#1a1a1a;}
+.badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:11px;font-weight:700;margin-right:3px;}
+.pk{background:rgba(180,83,9,.15);color:#f59e0b;border:1px solid rgba(180,83,9,.3);}
+.ai{background:rgba(99,102,241,.12);color:#818cf8;border:1px solid rgba(99,102,241,.25);}
+.fk{background:rgba(29,111,168,.12);color:#60a5fa;border:1px solid rgba(29,111,168,.25);}
+.chk{background:rgba(146,64,14,.12);color:#fbbf24;border:1px solid rgba(146,64,14,.25);}
+.idx{background:rgba(22,101,52,.12);color:#4ade80;border:1px solid rgba(22,101,52,.25);}
+.type{font-family:monospace;color:#818cf8;}
+.mono{font-family:monospace;font-size:12px;color:#a0a0a0;}
+.comment-cell{color:#888;}.constraint-cell{font-size:12px;line-height:1.8;}
+.table-section{margin-bottom:60px;padding-bottom:40px;border-bottom:1px dashed #2a2a2a;}
+.table-section:last-child{border-bottom:none;}
+.toc{margin-bottom:48px;padding:16px 20px;background:#141414;border:1px solid #2a2a2a;border-radius:6px;}
+.toc h2{margin:0 0 10px;color:#e5e5e5;}
+.toc ul{margin:0;padding-left:20px;column-count:2;column-gap:32px;}
+.toc li{margin:3px 0;font-size:13.5px;}
+.toc a{color:#818cf8;text-decoration:none;}
+.toc a:hover{text-decoration:underline;}
+.footer{margin-top:48px;border-top:1px solid #2a2a2a;padding-top:12px;font-size:12px;color:#666;}</style></head><body>
+<div class="toc"><h2>Tables</h2><ul><li><a href="#table-categories">categories</a> — <span style="color:#888;font-size:12.5px;">Expense category table; built-in categories cannot be deleted; custom categories can be added, edited, or removed</span></li><li><a href="#table-records">records</a> — <span style="color:#888;font-size:12.5px;">Expense records table; stores each user expense entry</span></li><li><a href="#table-settings">settings</a> — <span style="color:#888;font-size:12.5px;">User settings table; stores passcode lock and other preferences</span></li><li><a href="#table-password_salt">password_salt</a> — <span style="color:#888;font-size:12.5px;">Password salt table; stores the salt for each password</span></li></ul></div>
+<div class="table-section" id="table-categories"><div class="title-area"><h1>categories</h1><blockquote>Expense category table; built-in categories cannot be deleted; custom categories can be added, edited, or removed</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+Categories table (source: categories API)
+-------------------------------------------------------
+@table-comment categories Expense category table; built-in categories cannot be deleted; custom categories can be added, edited, or removed</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span><span class="badge ai">AI</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Unique category identifier; auto-increment primary key</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>name</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Category name; unique constraint</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>icon</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>YES</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Category icon emoji (optional)</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>is_default</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">0</td>
+                    <td class="comment-cell">Whether built-in category (0 = custom, 1 = built-in)</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>created_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))</td>
+                    <td class="comment-cell">Created at, ISO 8601 format</td>
+                </tr></tbody></table><h2>Indexes</h2><table><thead><tr><th>Name</th><th>Type</th><th>Fields</th></tr></thead><tbody><tr><td class="mono">-</td><td><span class="badge idx">UNIQUE</span></td><td class="mono">name</td></tr></tbody></table></div><div class="table-section" id="table-records"><div class="title-area"><h1>records</h1><blockquote>Expense records table; stores each user expense entry</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+Expense records table (source: records API)
+-------------------------------------------------------
+@table-comment records Expense records table; stores each user expense entry</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span><span class="badge ai">AI</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Unique record identifier; auto-increment primary key</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>amount</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Amount in yuan, stored as integer hundredths of a yuan to avoid floating-point precision issues</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>category_id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge fk">FK</span> <code style="font-size:11.5px;">→ categories(id)</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Category ID; foreign key to categories</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>created_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))</td>
+                    <td class="comment-cell">Created at, ISO 8601 format</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>remark</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>YES</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Note (optional, max 200 characters)</td>
+                </tr></tbody></table><h2>Indexes</h2><table><thead><tr><th>Name</th><th>Type</th><th>Fields</th></tr></thead><tbody><tr><td class="mono">idx_records_created_at</td><td><span class="badge idx">INDEX</span></td><td class="mono">created_at</td></tr><tr><td class="mono">idx_records_category_id</td><td><span class="badge idx">INDEX</span></td><td class="mono">category_id</td></tr></tbody></table></div><div class="table-section" id="table-settings"><div class="title-area"><h1>settings</h1><blockquote>User settings table; stores passcode lock and other preferences</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+Settings table (source: settings API)
+-------------------------------------------------------
+@table-comment settings User settings table; stores passcode lock and other preferences</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td></td>
+                    <td><strong>value</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Setting value (password-related values stored hashed)</td>
+                </tr></tbody></table></div><div class="table-section" id="table-password_salt"><div class="title-area"><h1>password_salt</h1><blockquote>Password salt table; stores the salt for each password</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+Password-related auxiliary table (optional; for password history, etc.)
+-------------------------------------------------------
+@table-comment password_salt Password salt table; stores the salt for each password</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge chk">CHECK</span> <code style="font-size:11.5px;">id = 1</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Salt identifier; currently only a single password is supported</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>salt</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">Random salt, Base64-encoded</td>
+                </tr></tbody></table></div>
+<div class="footer">Generated by RunLogos · 2026/4/10</div>
+</body></html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Schema Design Document</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:1100px;margin:40px auto;padding:20px 32px;color:#1a1a1a;background:#fff;line-height:1.6;}
+h1{font-size:22px;font-weight:700;margin:0 0 6px;padding:0;border:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+blockquote{margin:0 0 20px;padding:5px 12px;border-left:3px solid #4a80e0;background:#f0f5ff;border-radius:0 4px 4px 0;color:#444;font-size:14px;line-height:1.6;}
+.title-area{margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e5e5;}
+h2{font-size:13px;font-weight:700;color:#666;margin:24px 0 8px;text-transform:uppercase;letter-spacing:.06em;}
+pre{background:#f6f6f6;border:1px solid #e0e0e0;padding:14px 18px;border-radius:6px;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#333;}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:0;}
+th,td{border:1px solid #e5e5e5;padding:7px 11px;text-align:left;}
+th{background:#f5f5f5;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
+tr:hover td{background:#fafafa;}
+.badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:11px;font-weight:700;margin-right:3px;}
+.pk{background:#fef3e2;color:#b45309;border:1px solid #f9ca82;}
+.ai{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;}
+.fk{background:#eff8ff;color:#1d6fa8;border:1px solid #bde0f9;}
+.chk{background:#fffbeb;color:#92400e;border:1px solid #fcd34d;}
+.idx{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;}
+.type{font-family:monospace;color:#1d4ed8;}
+.mono{font-family:monospace;font-size:12px;}
+.comment-cell{color:#555;}.constraint-cell{font-size:12px;line-height:1.8;}
+.table-section{margin-bottom:60px;padding-bottom:40px;border-bottom:1px dashed #ddd;}
+.table-section:last-child{border-bottom:none;}
+.toc{margin-bottom:48px;padding:16px 20px;background:#f8f8f8;border:1px solid #e5e5e5;border-radius:6px;}
+.toc h2{margin:0 0 10px;}
+.toc ul{margin:0;padding-left:20px;column-count:2;column-gap:32px;}
+.toc li{margin:3px 0;font-size:13.5px;}
+.toc a{color:#1d4ed8;text-decoration:none;}
+.toc a:hover{text-decoration:underline;}
+.footer{margin-top:48px;border-top:1px solid #e5e5e5;padding-top:12px;font-size:12px;color:#999;}</style></head><body>
+<div class="toc"><h2>Tables</h2><ul><li><a href="#table-users">users</a> — <span style="color:#666;font-size:12.5px;">用户基础信息表，存储本地账号数据，密码以 bcrypt 哈希形式存储</span></li><li><a href="#table-categories">categories</a> — <span style="color:#666;font-size:12.5px;">任务分类表，存储用户自定义分类，同一用户下名称唯一</span></li><li><a href="#table-tasks">tasks</a> — <span style="color:#666;font-size:12.5px;">任务表，存储用户任务，支持完成状态切换和分类关联</span></li></ul></div>
+<div class="table-section" id="table-users"><div class="title-area"><h1>users</h1><blockquote>用户基础信息表，存储本地账号数据，密码以 bcrypt 哈希形式存储</blockquote></div><h2>Design Notes</h2><pre>============================================================
+@table-comment users 用户基础信息表，存储本地账号数据，密码以 bcrypt 哈希形式存储
+来源：auth.yaml → register, login, change_password
+============================================================</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span><span class="badge ai">AI</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">用户主键，自增整数</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>username</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">用户名，2-20 字符，全局唯一，用于登录身份识别</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>password</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">禁止存储明文密码</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>created_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(datetime('now'))</td>
+                    <td class="comment-cell">账号创建时间，TEXT 存储 ISO 8601 格式，如 '2026-04-07T10:30:00'</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>updated_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(datetime('now'))</td>
+                    <td class="comment-cell">每次 UPDATE 须在 SQL 中手动设置为 datetime('now')</td>
+                </tr></tbody></table><h2>Indexes</h2><table><thead><tr><th>Name</th><th>Type</th><th>Fields</th></tr></thead><tbody><tr><td class="mono">-</td><td><span class="badge idx">UNIQUE</span></td><td class="mono">username</td></tr></tbody></table></div><div class="table-section" id="table-categories"><div class="title-area"><h1>categories</h1><blockquote>任务分类表，存储用户自定义分类，同一用户下名称唯一</blockquote></div><h2>Design Notes</h2><pre>用户名唯一索引（S02.1 Step 9：按 username 查询用户，已由 UNIQUE 约束自动创建）
+
+============================================================
+@table-comment categories 任务分类表，存储用户自定义分类，同一用户下名称唯一
+来源：categories.yaml → create_category, delete_category
+============================================================</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span><span class="badge ai">AI</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">分类主键，自增整数</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>user_id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge fk">FK</span> <code style="font-size:11.5px;">→ users(id) ON DELETE CASCADE</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">ON DELETE CASCADE：用户删除时其下所有分类跟随删除</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>name</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell"><span class="badge chk">CHECK</span> <code style="font-size:11.5px;">length(name) &gt;= 1 AND length(name) &lt;= 20</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">分类名称，1-20 字符，同一用户下不可重复</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>created_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(datetime('now'))</td>
+                    <td class="comment-cell">分类创建时间，TEXT 存储 ISO 8601 格式</td>
+                </tr></tbody></table><h2>Indexes</h2><table><thead><tr><th>Name</th><th>Type</th><th>Fields</th></tr></thead><tbody><tr><td class="mono">idx_categories_user_id</td><td><span class="badge idx">INDEX</span></td><td class="mono">user_id</td></tr><tr><td class="mono">-</td><td><span class="badge idx">UNIQUE</span></td><td class="mono">user_id, name</td></tr></tbody></table></div><div class="table-section" id="table-tasks"><div class="title-area"><h1>tasks</h1><blockquote>任务表，存储用户任务，支持完成状态切换和分类关联</blockquote></div><h2>Design Notes</h2><pre>============================================================
+@table-comment tasks 任务表，存储用户任务，支持完成状态切换和分类关联
+来源：tasks.yaml → create_task, update_task, update_task_status, delete_task
+============================================================</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span><span class="badge ai">AI</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">任务主键，自增整数</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>user_id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge fk">FK</span> <code style="font-size:11.5px;">→ users(id) ON DELETE CASCADE</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">ON DELETE CASCADE：用户删除时其下所有任务跟随删除</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>category_id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge fk">FK</span> <code style="font-size:11.5px;">→ categories(id)</code></td>
+                    <td>YES</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">ON DELETE SET NULL：分类删除时任务保留，该字段自动置为 NULL</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>name</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell"><span class="badge chk">CHECK</span> <code style="font-size:11.5px;">length(name) &gt;= 1 AND length(name) &lt;= 100</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">任务名称，1-100 字符，必填</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>note</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell"><span class="badge chk">CHECK</span> <code style="font-size:11.5px;">note IS  OR length(note) &lt;= 500</code></td>
+                    <td>YES</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">任务备注，可为 NULL，最多 500 字符</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>done</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge chk">CHECK</span> <code style="font-size:11.5px;">done IN (0, 1)</code></td>
+                    <td>NO</td>
+                    <td class="mono">0</td>
+                    <td class="comment-cell">使用 INTEGER(0/1) 表示布尔值，SQLite 无原生 BOOLEAN 类型</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>created_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(datetime('now'))</td>
+                    <td class="comment-cell">任务创建时间，TEXT 存储 ISO 8601 格式</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>updated_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(datetime('now'))</td>
+                    <td class="comment-cell">每次 UPDATE 须在 SQL 中手动设置为 datetime('now')</td>
+                </tr></tbody></table><h2>Indexes</h2><table><thead><tr><th>Name</th><th>Type</th><th>Fields</th></tr></thead><tbody><tr><td class="mono">idx_tasks_user_id</td><td><span class="badge idx">INDEX</span></td><td class="mono">user_id</td></tr><tr><td class="mono">idx_tasks_user_done</td><td><span class="badge idx">INDEX</span></td><td class="mono">user_id, done</td></tr></tbody></table></div>
+<div class="footer">Generated by RunLogos · 2026/4/10</div>
+</body></html>

@@ -1,0 +1,178 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ConceptNav from '../../components/ConceptNav.astro';
+---
+
+<BaseLayout title="Three-Layer Progression Model — OpenLogos" description="WHY → WHAT → HOW: the structured progression that eliminates ambiguity in AI-assisted development.">
+  <ConceptNav current="three-layer-model" />
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-tag tag-amber">Core Principle</div>
+      <h1>WHY → WHAT → HOW</h1>
+      <p class="hero-desc">Every layer's output feeds the next. Skip one and ambiguity explodes exponentially. This is Harness Engineering's <em>execution orchestration layer</em> — made concrete.</p>
+    </div>
+  </section>
+
+  <section class="flow-section">
+    <div class="container">
+      <div class="flow">
+        <div class="flow-card flow-why">
+          <div class="flow-phase">Phase 1</div>
+          <div class="flow-tag tag-amber">WHY</div>
+          <h2>Requirements & Motivation</h2>
+          <p>Understand the problem before solving it. Who needs this? What pain does it solve? What does "done" look like?</p>
+          <div class="flow-outputs">
+            <h4>Key Outputs</h4>
+            <ul>
+              <li>User persona & pain point analysis (causal chains)</li>
+              <li>Scenario identification with priority (S01, S02...)</li>
+              <li>GIVEN/WHEN/THEN acceptance criteria per scenario</li>
+              <li>"Won't do" list to bound scope</li>
+            </ul>
+          </div>
+          <div class="flow-gate">Gate 1: Every P0 scenario has acceptance criteria</div>
+        </div>
+
+        <div class="flow-arrow">
+          <svg width="32" height="48" viewBox="0 0 32 48"><path d="M16 0v40m-8-8l8 8 8-8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Output feeds input</span>
+        </div>
+
+        <div class="flow-card flow-what">
+          <div class="flow-phase">Phase 2</div>
+          <div class="flow-tag tag-blue">WHAT</div>
+          <h2>Product Design</h2>
+          <p>Design the solution. For each scenario, define what users see, how they interact, and what state changes.</p>
+          <div class="flow-outputs">
+            <h4>Key Outputs</h4>
+            <ul>
+              <li>Information architecture & navigation</li>
+              <li>Feature specifications per scenario</li>
+              <li>HTML prototypes (AI-generated)</li>
+              <li>UI-level GIVEN/WHEN/THEN (buttons, forms, states)</li>
+            </ul>
+          </div>
+          <div class="flow-gate">Gate 2: Every P0 scenario has interaction specs + prototype</div>
+        </div>
+
+        <div class="flow-arrow">
+          <svg width="32" height="48" viewBox="0 0 32 48"><path d="M16 0v40m-8-8l8 8 8-8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Output feeds input</span>
+        </div>
+
+        <div class="flow-card flow-how">
+          <div class="flow-phase">Phase 3</div>
+          <div class="flow-tag tag-green">HOW</div>
+          <h2>Implementation</h2>
+          <p>Build the solution in 5 precise steps. Scenario-driven, test-first. AI generates code with full context.</p>
+          <div class="flow-steps">
+            <div class="step-item"><span class="step-num">0</span> Architecture overview & tech stack</div>
+            <div class="step-item"><span class="step-num">1</span> Scenario → Sequence diagram → APIs emerge</div>
+            <div class="step-item"><span class="step-num">2</span> API specs (OpenAPI YAML) → DB schema</div>
+            <div class="step-item"><span class="step-num">3</span> Test case design (before code!)</div>
+            <div class="step-item"><span class="step-num">4</span> AI code generation with full context</div>
+            <div class="step-item"><span class="step-num">5</span> <code>openlogos verify</code> → automated acceptance</div>
+          </div>
+          <div class="flow-gate">Gate 3.5: All tests pass, 100% coverage, AC traced</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="insight-section">
+    <div class="container">
+      <div class="insight-grid">
+        <div class="insight-card">
+          <h3>Why not just start coding?</h3>
+          <p>When AI works without context, every decision is a guess. With 10 decisions per feature, that's 2<sup>10</sup> = 1,024 possible paths. Most of them are wrong. The three-layer model collapses this exponential space into one deliberate path.</p>
+        </div>
+        <div class="insight-card">
+          <h3>Isn't this waterfall?</h3>
+          <p>No. Waterfall means you finish all requirements before starting any design. OpenLogos works <strong>per scenario</strong> — you can take S01 through all three phases while S02 is still in Phase 1. The layers are a progression model, not a schedule.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>Ready to try it?</h2>
+      <p>Run <code>openlogos init</code> and let AI guide you through each phase.</p>
+      <div class="cta-actions">
+        <a href="/getting-started/quick-start" class="btn btn-primary">Quick Start</a>
+        <a href="/deep-dive/scenario-test-first" class="btn btn-ghost">Next: Scenario-Driven →</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 800px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .page-hero { padding: 5rem 1.5rem 3rem; text-align: center; }
+  .hero-tag { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 1.5rem; }
+  .tag-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
+  .tag-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
+  .tag-green { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 1rem; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.15rem; line-height: 1.7; max-width: 560px; margin: 0 auto; }
+
+  .flow-section { padding: 2rem 0 4rem; }
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+  .flow-card {
+    width: 100%;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    padding: 2.5rem;
+    transition: box-shadow 0.3s;
+  }
+  .flow-why:hover { box-shadow: 0 0 40px rgba(245, 158, 11, 0.06); }
+  .flow-what:hover { box-shadow: 0 0 40px rgba(59, 130, 246, 0.06); }
+  .flow-how:hover { box-shadow: 0 0 40px rgba(16, 185, 129, 0.06); }
+
+  .flow-phase { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; }
+  .flow-tag { display: inline-block; padding: 0.2rem 0.625rem; border-radius: 5px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 1rem; }
+  .flow-card h2 { font-size: 1.35rem; font-weight: 800; margin-bottom: 0.625rem; letter-spacing: -0.02em; }
+  .flow-card > p { color: var(--color-text-muted); font-size: 0.95rem; line-height: 1.65; margin-bottom: 1.5rem; }
+
+  .flow-outputs h4, .flow-steps h4 { font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.75rem; }
+  .flow-outputs ul { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+  .flow-outputs li { font-size: 0.9rem; color: var(--color-text-secondary); padding-left: 1.25rem; position: relative; }
+  .flow-outputs li::before { content: '→'; position: absolute; left: 0; color: var(--color-text-muted); }
+
+  .flow-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
+  .step-item { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; color: var(--color-text-secondary); }
+  .step-num { flex-shrink: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.7rem; font-weight: 700; font-family: var(--font-mono); color: var(--color-text-muted); }
+  .step-item code { font-family: var(--font-mono); font-size: 0.82rem; background: var(--color-surface-raised); padding: 0.125rem 0.375rem; border-radius: 4px; }
+
+  .flow-gate { margin-top: 1.5rem; padding: 0.75rem 1rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.82rem; color: var(--color-text-muted); font-weight: 500; }
+
+  .flow-arrow { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; color: var(--color-text-muted); opacity: 0.4; padding: 0.5rem 0; }
+  .flow-arrow span { font-size: 0.7rem; letter-spacing: 0.04em; }
+
+  .insight-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .insight-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+  .insight-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; }
+  .insight-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .insight-card p { color: var(--color-text-muted); font-size: 0.9rem; line-height: 1.65; }
+  .insight-card strong { color: var(--color-text-secondary); }
+
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section > .container > p { color: var(--color-text-muted); margin-bottom: 2rem; }
+  .cta-section code { font-family: var(--font-mono); font-size: 0.85rem; background: var(--color-surface); padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid var(--color-border); }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 3rem 1.5rem 2rem; }
+    .insight-grid { grid-template-columns: 1fr; }
+  }
+</style>

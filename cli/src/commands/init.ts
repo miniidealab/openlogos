@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 
-export type AiTool = 'cursor' | 'claude-code' | 'opencode' | 'other';
+export type AiTool = 'claude-code' | 'opencode' | 'cursor' | 'other';
 
 type NameSource = 'argument' | 'package.json' | 'Cargo.toml' | 'pyproject.toml' | 'directory';
 
@@ -95,14 +95,14 @@ async function resolveProjectName(locale: Locale, root: string, explicitName?: s
 
 function detectAiToolFromEnv(): AiTool {
   if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_CODE) return 'claude-code';
-  return 'cursor';
+  return 'claude-code';
 }
 
 async function chooseLocale(): Promise<Locale> {
   if (!isTTY()) {
     console.error('Error: --locale is required in non-interactive mode.');
     console.error('');
-    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <cursor|claude-code|opencode|other>] [name]');
+    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|cursor|other>] [name]');
     console.error('');
     console.error('Ask the user to choose a language first:');
     console.error('  --locale en    English');
@@ -122,16 +122,16 @@ async function chooseAiTool(locale: Locale): Promise<AiTool> {
   if (!isTTY()) return detectAiToolFromEnv();
 
   console.log(`\n${t(locale, 'init.aiToolHeader')}`);
-  console.log(t(locale, 'init.aiToolCursor'));
   console.log(t(locale, 'init.aiToolClaudeCode'));
   console.log(t(locale, 'init.aiToolOpenCode'));
+  console.log(t(locale, 'init.aiToolCursor'));
   console.log(t(locale, 'init.aiToolOther') + '\n');
 
   const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
-  if (answer === '2') return 'claude-code';
-  if (answer === '3') return 'opencode';
+  if (answer === '2') return 'opencode';
+  if (answer === '3') return 'cursor';
   if (answer === '4') return 'other';
-  return 'cursor';
+  return 'claude-code';
 }
 
 export const SKILL_NAMES = [
@@ -144,6 +144,7 @@ export const SKILL_NAMES = [
   'db-designer',
   'test-writer',
   'test-orchestrator',
+  'code-implementor',
   'code-reviewer',
   'change-writer',
   'merge-executor',
@@ -159,6 +160,7 @@ const SKILL_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
   'db-designer': { en: 'Database schema design', zh: '数据库 Schema 设计' },
   'test-writer': { en: 'Unit test + scenario test case design (Step 3a, all projects)', zh: '单元测试 + 场景测试用例设计（Step 3a）' },
   'test-orchestrator': { en: 'API orchestration test design (Step 3b, API projects only)', zh: 'API 编排测试设计（Step 3b，仅 API 项目）' },
+  'code-implementor': { en: 'Code and test code generation with spec fidelity (Step 4)', zh: '基于规格链的代码与测试代码生成（Step 4）' },
   'code-reviewer': { en: 'Code review and compliance checking', zh: '代码审查与规范检查' },
   'change-writer': { en: 'Change proposal writing and impact analysis', zh: '变更提案编写与影响分析' },
   'merge-executor': { en: 'Delta merge execution via MERGE_PROMPT.md', zh: '通过 MERGE_PROMPT.md 执行 Delta 合并' },
@@ -456,7 +458,7 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - 场景存在但 \`logos/resources/api/\` 为空 → 建议 Phase 3 Step 2（api-designer + db-designer）
 - API 存在但 \`logos/resources/test/\` 为空 → 建议 Phase 3 Step 3a（test-writer）
 - 测试用例存在但 \`logos/resources/scenario/\` 为空 → 建议 Phase 3 Step 3b（test-orchestrator，仅 API 项目）
-- 以上全部完成 → 建议 Phase 3 Step 4（代码生成）
+- 以上全部完成 → 建议 Phase 3 Step 4（code-implementor）
 - 代码已生成但 \`logos/resources/verify/\` 为空 → 建议 Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
   }
   return `Phase detection logic:
@@ -467,7 +469,7 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - scenarios exist but \`logos/resources/api/\` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
 - API exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 3a (test-writer)
 - test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
-- All above exist → suggest Phase 3 Step 4 (code generation)
+- All above exist → suggest Phase 3 Step 4 (code-implementor)
 - code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
 }
 
@@ -481,7 +483,7 @@ function generatePhaseDetectionWithSkills(locale: Locale): string {
 - 场景存在但 \`logos/resources/api/\` 为空 → Phase 3 Step 2 → **读取 \`${skillPath('api-designer')}\` 和 \`${skillPath('db-designer')}\` 并按其步骤执行**
 - API 存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 3a → **读取 \`${skillPath('test-writer')}\` 并按其步骤执行**
 - 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 3b → **读取 \`${skillPath('test-orchestrator')}\` 并按其步骤执行**（仅 API 项目）
-- 以上全部完成 → Phase 3 Step 4（代码生成）→ **读取 \`${skillPath('code-reviewer')}\` 进行代码审查**
+- 以上全部完成 → Phase 3 Step 4 → **读取 \`${skillPath('code-implementor')}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer')}\` 进行代码审查）
 - 代码已生成但 \`logos/resources/verify/\` 为空 → Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
   }
   return `Phase detection logic (**when a phase is detected, you MUST read the corresponding Skill file and follow its steps**):
@@ -492,7 +494,7 @@ function generatePhaseDetectionWithSkills(locale: Locale): string {
 - scenarios exist but \`logos/resources/api/\` is empty → Phase 3 Step 2 → **read \`${skillPath('api-designer')}\` and \`${skillPath('db-designer')}\` and follow their steps**
 - API exists but \`logos/resources/test/\` is empty → Phase 3 Step 3a → **read \`${skillPath('test-writer')}\` and follow its steps**
 - test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 3b → **read \`${skillPath('test-orchestrator')}\` and follow its steps** (API projects only)
-- All above exist → Phase 3 Step 4 (code generation) → **read \`${skillPath('code-reviewer')}\` for code review**
+- All above exist → Phase 3 Step 4 → **read \`${skillPath('code-implementor')}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer')}\` for code review)
 - code generated but \`logos/resources/verify/\` is empty → Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
 }
 
@@ -516,6 +518,32 @@ Step 4 分批执行提示词（可直接复用）：
 
 Ready-to-use prompt for Step 4 batch execution:
 - \`Please execute Phase 3 Step 4 for this scope. If the task is large, split into batches, but each batch must deliver: (1) business code, (2) matching UT/ST test code, (3) OpenLogos reporter writing to logos/resources/verify/test-results.jsonl. Before outputting code, list the UT/ST IDs covered in this batch.\``;
+}
+
+function generateDocumentPostEditVerify(locale: Locale): string {
+  if (locale === 'zh') {
+    return `## 文档修改后的验证（强制）
+
+每次**写入或修改** Markdown / 文本类规格文档（例如 \`logos/resources/\`、\`logos/changes/\`、\`logos/spec/\` 或项目根 \`spec/\` 下的 \`.md\`，以及根目录 \`AGENTS.md\` / \`CLAUDE.md\`）后：
+
+1. **必须**用当前环境可用的方式**从磁盘重新读取**本次修改涉及的片段（例如 Read 工具、或终端 \`sed\` / \`rg\`），向用户展示**文件中的实际原文**（可省略无关段落并标注 \`...\`）。
+2. **禁止**仅以自然语言概括「已改为……」作为唯一交付物，而不附带可对照的原文佐证。
+3. **例外**：纯 typo 或单字符标点修改时，至少读回**受影响的那一行**，或展示等价的 diff 片段。
+
+**目的**：避免工具声称已保存、但实际未落盘或路径错误导致内容「丢失」而不自知。
+`;
+  }
+
+  return `## Document Edit Verification (Required)
+
+After every **write or modify** operation on Markdown / text specification files (e.g. \`.md\` under \`logos/resources/\`, \`logos/changes/\`, \`logos/spec/\` or project-root \`spec/\`, plus root \`AGENTS.md\` / \`CLAUDE.md\`):
+
+1. You **MUST** re-read the affected span **from disk** using whatever means the environment provides (e.g. Read tool, or terminal \`sed\` / \`rg\`), and show the user the **actual file text** (you may omit unrelated parts with \`...\`).
+2. You **MUST NOT** deliver only a prose summary like "it now says…" without verifiable on-disk excerpts.
+3. **Exception**: for pure typos or single-character punctuation fixes, at minimum re-read and show **the affected line** or an equivalent diff hunk.
+
+**Rationale**: avoid silent failures when the model believes the file was saved but the write did not land or the wrong path was used.
+`;
 }
 
 const DIRECTORIES = [
@@ -648,6 +676,8 @@ When the user's request is vague or they ask "what should I do next":
 ${includeSkills ? generatePhaseDetectionWithSkills(locale) : generatePhaseDetectionPlain(locale)}
 
 ${generateStep4ExecutionRules(locale)}
+
+${generateDocumentPostEditVerify(locale)}
 `;
 
   if (includeSkills) {

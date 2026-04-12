@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Schema Design Document</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:1100px;margin:40px auto;padding:20px 32px;color:#1a1a1a;background:#fff;line-height:1.6;}
+h1{font-size:22px;font-weight:700;margin:0 0 6px;padding:0;border:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+blockquote{margin:0 0 20px;padding:5px 12px;border-left:3px solid #4a80e0;background:#f0f5ff;border-radius:0 4px 4px 0;color:#444;font-size:14px;line-height:1.6;}
+.title-area{margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e5e5;}
+h2{font-size:13px;font-weight:700;color:#666;margin:24px 0 8px;text-transform:uppercase;letter-spacing:.06em;}
+pre{background:#f6f6f6;border:1px solid #e0e0e0;padding:14px 18px;border-radius:6px;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#333;}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:0;}
+th,td{border:1px solid #e5e5e5;padding:7px 11px;text-align:left;}
+th{background:#f5f5f5;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
+tr:hover td{background:#fafafa;}
+.badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:11px;font-weight:700;margin-right:3px;}
+.pk{background:#fef3e2;color:#b45309;border:1px solid #f9ca82;}
+.ai{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;}
+.fk{background:#eff8ff;color:#1d6fa8;border:1px solid #bde0f9;}
+.chk{background:#fffbeb;color:#92400e;border:1px solid #fcd34d;}
+.idx{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;}
+.type{font-family:monospace;color:#1d4ed8;}
+.mono{font-family:monospace;font-size:12px;}
+.comment-cell{color:#555;}.constraint-cell{font-size:12px;line-height:1.8;}
+.table-section{margin-bottom:60px;padding-bottom:40px;border-bottom:1px dashed #ddd;}
+.table-section:last-child{border-bottom:none;}
+.toc{margin-bottom:48px;padding:16px 20px;background:#f8f8f8;border:1px solid #e5e5e5;border-radius:6px;}
+.toc h2{margin:0 0 10px;}
+.toc ul{margin:0;padding-left:20px;column-count:2;column-gap:32px;}
+.toc li{margin:3px 0;font-size:13.5px;}
+.toc a{color:#1d4ed8;text-decoration:none;}
+.toc a:hover{text-decoration:underline;}
+.footer{margin-top:48px;border-top:1px solid #e5e5e5;padding-top:12px;font-size:12px;color:#999;}</style></head><body>
+<div class="toc"><h2>Tables</h2><ul><li><a href="#table-categories">categories</a> — <span style="color:#666;font-size:12.5px;">支出分类表，预设分类不可删除，自定义分类可增删改</span></li><li><a href="#table-records">records</a> — <span style="color:#666;font-size:12.5px;">记账记录表，存储用户每笔支出</span></li><li><a href="#table-settings">settings</a> — <span style="color:#666;font-size:12.5px;">用户配置表，存储密码锁等设置</span></li><li><a href="#table-password_salt">password_salt</a> — <span style="color:#666;font-size:12.5px;">密码盐值表，存储每个密码的盐</span></li></ul></div>
+<div class="table-section" id="table-categories"><div class="title-area"><h1>categories</h1><blockquote>支出分类表，预设分类不可删除，自定义分类可增删改</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+分类表（来源：categories API）
+-------------------------------------------------------
+@table-comment categories 支出分类表，预设分类不可删除，自定义分类可增删改</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span><span class="badge ai">AI</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">分类唯一标识，自增主键</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>name</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">分类名称，唯一约束</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>icon</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>YES</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">分类图标emoji（可选）</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>is_default</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">0</td>
+                    <td class="comment-cell">是否为预设分类（0-自定义，1-预设）</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>created_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))</td>
+                    <td class="comment-cell">创建时间，ISO 8601 格式</td>
+                </tr></tbody></table><h2>Indexes</h2><table><thead><tr><th>Name</th><th>Type</th><th>Fields</th></tr></thead><tbody><tr><td class="mono">-</td><td><span class="badge idx">UNIQUE</span></td><td class="mono">name</td></tr></tbody></table></div><div class="table-section" id="table-records"><div class="title-area"><h1>records</h1><blockquote>记账记录表，存储用户每笔支出</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+记账记录表（来源：records API）
+-------------------------------------------------------
+@table-comment records 记账记录表，存储用户每笔支出</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span><span class="badge ai">AI</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">记录唯一标识，自增主键</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>amount</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">金额（单位：元，存分值避免浮点精度问题）</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>category_id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge fk">FK</span> <code style="font-size:11.5px;">→ categories(id)</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">分类 ID，外键关联 categories</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>created_at</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))</td>
+                    <td class="comment-cell">创建时间，ISO 8601 格式</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>remark</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>YES</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">备注（可选，最长200字符）</td>
+                </tr></tbody></table><h2>Indexes</h2><table><thead><tr><th>Name</th><th>Type</th><th>Fields</th></tr></thead><tbody><tr><td class="mono">idx_records_created_at</td><td><span class="badge idx">INDEX</span></td><td class="mono">created_at</td></tr><tr><td class="mono">idx_records_category_id</td><td><span class="badge idx">INDEX</span></td><td class="mono">category_id</td></tr></tbody></table></div><div class="table-section" id="table-settings"><div class="title-area"><h1>settings</h1><blockquote>用户配置表，存储密码锁等设置</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+设置表（来源：settings API）
+-------------------------------------------------------
+@table-comment settings 用户配置表，存储密码锁等设置</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td></td>
+                    <td><strong>value</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">设置值（密码相关存哈希后的值）</td>
+                </tr></tbody></table></div><div class="table-section" id="table-password_salt"><div class="title-area"><h1>password_salt</h1><blockquote>密码盐值表，存储每个密码的盐</blockquote></div><h2>Design Notes</h2><pre>-------------------------------------------------------
+密码相关辅助表（可选，用于存储密码历史等）
+-------------------------------------------------------
+@table-comment password_salt 密码盐值表，存储每个密码的盐</pre><h2>Fields</h2><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Constraints</th><th>Nullable</th><th>Default</th><th>Comment</th></tr></thead><tbody><tr>
+                    <td><span class="badge pk">PK</span></td>
+                    <td><strong>id</strong></td>
+                    <td class="type">INTEGER</td>
+                    <td class="constraint-cell"><span class="badge chk">CHECK</span> <code style="font-size:11.5px;">id = 1</code></td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">盐值标识符，目前只支持单密码</td>
+                </tr><tr>
+                    <td></td>
+                    <td><strong>salt</strong></td>
+                    <td class="type">TEXT</td>
+                    <td class="constraint-cell">-</td>
+                    <td>NO</td>
+                    <td class="mono">-</td>
+                    <td class="comment-cell">随机盐值，base64编码</td>
+                </tr></tbody></table></div>
+<div class="footer">Generated by RunLogos · 2026/4/10</div>
+</body></html>

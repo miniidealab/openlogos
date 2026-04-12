@@ -1,0 +1,290 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TourNav from '../../components/TourNav.astro';
+---
+
+<BaseLayout title="Tour — See OpenLogos in Action" description="Two real projects, two AI tools, one methodology. See the full WHY→WHAT→HOW journey from requirements to verified code.">
+  <TourNav current="overview" />
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-tag">Interactive Tour</div>
+      <h1>See OpenLogos in Action</h1>
+      <p class="hero-desc">One methodology. Two AI tools. Two real projects — from requirements to <code>Gate 3.5: PASS</code>.</p>
+    </div>
+  </section>
+
+  <section class="proposition-section">
+    <div class="container">
+      <div class="proposition-card">
+        <div class="proposition-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <h2>One Methodology, Any AI Tool</h2>
+        <p>OpenLogos doesn't depend on a specific AI coding assistant. Whether you use <strong>Claude Code</strong> or <strong>OpenCode</strong>, the same WHY → WHAT → HOW progression produces consistent, traceable, verified results. These two real projects prove it.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="projects-section">
+    <div class="container">
+      <h2 class="section-title">Two Projects, Two Workflows</h2>
+      <p class="section-desc">Each project was built from scratch using OpenLogos — same methodology, different tools and tech stacks.</p>
+
+      <div class="project-grid">
+        <a href="/tour/flowtask" class="project-card project-claude">
+          <div class="project-header">
+            <div class="tool-badge badge-claude">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Claude Code
+            </div>
+            <div class="gate-badge">Gate 3.5: PASS</div>
+          </div>
+          <h3>FlowTask</h3>
+          <p class="project-desc">Local-first desktop task manager. Register, login, create/manage tasks with categories, change password.</p>
+          <div class="project-tech">
+            <span class="tech-tag">Tauri 2</span>
+            <span class="tech-tag">React 18</span>
+            <span class="tech-tag">Rust</span>
+            <span class="tech-tag">SQLite</span>
+          </div>
+          <div class="project-stats">
+            <div class="stat">
+              <span class="stat-num">4</span>
+              <span class="stat-label">Scenarios</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num">18</span>
+              <span class="stat-label">Test Cases</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num">100%</span>
+              <span class="stat-label">Coverage</span>
+            </div>
+          </div>
+          <div class="project-cta">
+            View Claude Code Workflow →
+          </div>
+        </a>
+
+        <a href="/tour/money-log" class="project-card project-opencode">
+          <div class="project-header">
+            <div class="tool-badge badge-opencode">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              OpenCode
+            </div>
+            <div class="gate-badge">Gate 3.5: PASS</div>
+          </div>
+          <h3>Money-Log</h3>
+          <p class="project-desc">Lightweight desktop expense tracker. Quick logging, monthly statistics, categories, password lock.</p>
+          <div class="project-tech">
+            <span class="tech-tag">Electron</span>
+            <span class="tech-tag">React 18</span>
+            <span class="tech-tag">TypeScript</span>
+            <span class="tech-tag">SQLite</span>
+          </div>
+          <div class="project-stats">
+            <div class="stat">
+              <span class="stat-num">4</span>
+              <span class="stat-label">Scenarios</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num">73</span>
+              <span class="stat-label">Test Cases</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num">100%</span>
+              <span class="stat-label">Coverage</span>
+            </div>
+          </div>
+          <div class="project-cta">
+            View OpenCode Workflow →
+          </div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="highlights-section">
+    <div class="container">
+      <h2 class="section-title">What Makes This Different</h2>
+      <div class="highlight-grid">
+        <div class="highlight-card">
+          <div class="highlight-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <h3>Tool-Agnostic</h3>
+          <p>Same <code>logos/</code> directory structure, same Phase gates, same <code>openlogos verify</code> — regardless of which AI tool wrote the code.</p>
+        </div>
+        <div class="highlight-card">
+          <div class="highlight-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <h3>Verified Results</h3>
+          <p>Both projects pass Gate 3.5 with 100% test coverage. Every test case traces back to acceptance criteria defined in Phase 1.</p>
+        </div>
+        <div class="highlight-card">
+          <div class="highlight-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <h3>Full Traceability</h3>
+          <p>Every line of code links to a scenario, every scenario links to a requirement. The <code>logos/</code> directory is the single source of truth.</p>
+        </div>
+        <div class="highlight-card">
+          <div class="highlight-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+          </div>
+          <h3>Delta Change Tracking</h3>
+          <p>Post-launch iterations follow the same methodology via change proposals in <code>logos/changes/</code> — complete with impact analysis and test updates.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="flow-recap-section">
+    <div class="container">
+      <h2 class="section-title">The Journey: WHY → WHAT → HOW</h2>
+      <p class="section-desc">Both projects follow the exact same three-phase progression. Click into either project to see the real artifacts.</p>
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="step-marker marker-amber">1</div>
+          <div class="step-content">
+            <div class="step-tag tag-amber">WHY</div>
+            <h3>Requirements</h3>
+            <p>User personas, pain points, scenarios with GIVEN/WHEN/THEN acceptance criteria.</p>
+          </div>
+        </div>
+        <div class="flow-connector"></div>
+        <div class="flow-step">
+          <div class="step-marker marker-blue">2</div>
+          <div class="step-content">
+            <div class="step-tag tag-blue">WHAT</div>
+            <h3>Product Design</h3>
+            <p>Information architecture, feature specs, interaction flows, HTML prototypes.</p>
+          </div>
+        </div>
+        <div class="flow-connector"></div>
+        <div class="flow-step">
+          <div class="step-marker marker-green">3</div>
+          <div class="step-content">
+            <div class="step-tag tag-green">HOW</div>
+            <h3>Implementation</h3>
+            <p>Architecture → Sequence diagrams → API specs → Test cases → Code → <code>openlogos verify</code> PASS.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>Dive into a real project</h2>
+      <p>Pick your preferred AI tool and see the full methodology in action.</p>
+      <div class="cta-actions">
+        <a href="/tour/flowtask" class="btn btn-claude">FlowTask · Claude Code →</a>
+        <a href="/tour/money-log" class="btn btn-opencode">Money-Log · OpenCode →</a>
+      </div>
+      <div class="cta-secondary">
+        <a href="/getting-started/quick-start">Quick Start Guide</a>
+        <span class="cta-divider">·</span>
+        <a href="https://github.com/miniidealab/openlogos" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 900px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .page-hero { padding: 3rem 1.5rem 3rem; text-align: center; }
+  .hero-tag { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 1.5rem; background: rgba(14, 182, 119, 0.12); color: #0eb677; border: 1px solid rgba(14, 182, 119, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 1rem; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.15rem; line-height: 1.7; max-width: 600px; margin: 0 auto; }
+  .hero-desc code { font-family: var(--font-mono); font-size: 0.95rem; background: rgba(14, 182, 119, 0.1); color: #0eb677; padding: 0.125rem 0.5rem; border-radius: 4px; border: 1px solid rgba(14, 182, 119, 0.2); }
+
+  .section-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; text-align: center; margin-bottom: 0.5rem; }
+  .section-desc { color: var(--color-text-muted); font-size: 0.95rem; text-align: center; margin-bottom: 2.5rem; line-height: 1.6; }
+
+  /* Proposition */
+  .proposition-section { padding: 0 0 3rem; }
+  .proposition-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 2.5rem; text-align: center; max-width: 700px; margin: 0 auto; }
+  .proposition-icon { color: var(--color-primary); margin-bottom: 1.25rem; }
+  .proposition-card h2 { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.75rem; }
+  .proposition-card p { color: var(--color-text-muted); font-size: 0.95rem; line-height: 1.7; max-width: 540px; margin: 0 auto; }
+  .proposition-card strong { color: var(--color-text-secondary); }
+
+  /* Projects */
+  .projects-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .project-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+
+  .project-card { display: flex; flex-direction: column; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 2rem; transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s; text-decoration: none; color: var(--color-text); }
+  .project-claude:hover { border-color: rgba(217, 119, 6, 0.3); box-shadow: 0 0 40px rgba(217, 119, 6, 0.06); transform: translateY(-2px); }
+  .project-opencode:hover { border-color: rgba(14, 165, 233, 0.3); box-shadow: 0 0 40px rgba(14, 165, 233, 0.06); transform: translateY(-2px); }
+
+  .project-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+  .tool-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; }
+  .badge-claude { background: rgba(217, 119, 6, 0.12); color: #d97706; border: 1px solid rgba(217, 119, 6, 0.25); }
+  .badge-opencode { background: rgba(14, 165, 233, 0.12); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.25); }
+  .gate-badge { font-size: 0.68rem; font-weight: 600; font-family: var(--font-mono); color: #0eb677; background: rgba(14, 182, 119, 0.1); border: 1px solid rgba(14, 182, 119, 0.2); padding: 0.2rem 0.5rem; border-radius: 4px; }
+
+  .project-card h3 { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+  .project-desc { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.6; margin-bottom: 1.25rem; flex-grow: 1; }
+
+  .project-tech { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-bottom: 1.25rem; }
+  .tech-tag { font-size: 0.68rem; font-weight: 500; padding: 0.175rem 0.5rem; border-radius: 4px; background: var(--color-surface-raised); border: 1px solid var(--color-border); color: var(--color-text-muted); }
+
+  .project-stats { display: flex; gap: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); margin-bottom: 1.25rem; }
+  .stat { display: flex; flex-direction: column; }
+  .stat-num { font-size: 1.25rem; font-weight: 800; font-family: var(--font-mono); }
+  .stat-label { font-size: 0.68rem; color: var(--color-text-muted); font-weight: 500; }
+
+  .project-cta { font-size: 0.85rem; font-weight: 600; color: var(--color-primary); }
+
+  /* Highlights */
+  .highlights-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .highlight-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+  .highlight-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.75rem; }
+  .highlight-icon { color: var(--color-primary); margin-bottom: 0.75rem; opacity: 0.8; }
+  .highlight-card h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .highlight-card p { color: var(--color-text-muted); font-size: 0.85rem; line-height: 1.6; }
+  .highlight-card code { font-family: var(--font-mono); font-size: 0.78rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 3px; }
+
+  /* Flow recap */
+  .flow-recap-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .flow-steps { display: flex; flex-direction: column; gap: 0; max-width: 600px; margin: 0 auto; }
+  .flow-step { display: flex; gap: 1.25rem; align-items: flex-start; }
+  .step-marker { flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 800; font-family: var(--font-mono); }
+  .marker-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
+  .marker-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
+  .marker-green { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+  .step-content { padding-bottom: 1rem; }
+  .step-tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
+  .tag-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+  .tag-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+  .tag-green { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .step-content h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.375rem; }
+  .step-content p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.6; }
+  .step-content code { font-family: var(--font-mono); font-size: 0.8rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 3px; }
+  .flow-connector { width: 2px; height: 24px; background: var(--color-border); margin-left: 17px; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section > .container > p { color: var(--color-text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; text-decoration: none; }
+  .btn-claude { background: rgba(217, 119, 6, 0.12); color: #d97706; border: 1px solid rgba(217, 119, 6, 0.25); }
+  .btn-claude:hover { background: rgba(217, 119, 6, 0.2); color: #d97706; transform: translateY(-1px); }
+  .btn-opencode { background: rgba(14, 165, 233, 0.12); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.25); }
+  .btn-opencode:hover { background: rgba(14, 165, 233, 0.2); color: #0ea5e9; transform: translateY(-1px); }
+  .cta-secondary { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  .cta-secondary a { color: var(--color-text-muted); font-size: 0.85rem; }
+  .cta-secondary a:hover { color: var(--color-text); }
+  .cta-divider { color: var(--color-text-muted); opacity: 0.3; }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 2rem 1.5rem 2rem; }
+    .project-grid { grid-template-columns: 1fr; }
+    .highlight-grid { grid-template-columns: 1fr; }
+  }
+</style>

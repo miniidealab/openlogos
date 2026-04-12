@@ -38,7 +38,7 @@ Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件
 - 场景存在但 `logos/resources/api/` 为空 → Phase 3 Step 2 → **读取 `logos/skills/api-designer/SKILL.md` 和 `logos/skills/db-designer/SKILL.md` 并按其步骤执行**
 - API 存在但 `logos/resources/test/` 为空 → Phase 3 Step 3a → **读取 `logos/skills/test-writer/SKILL.md` 并按其步骤执行**
 - 测试用例存在但 `logos/resources/scenario/` 为空 → Phase 3 Step 3b → **读取 `logos/skills/test-orchestrator/SKILL.md` 并按其步骤执行**（仅 API 项目）
-- 以上全部完成 → Phase 3 Step 4（代码生成）→ **读取 `logos/skills/code-reviewer/SKILL.md` 进行代码审查**
+- 以上全部完成 → Phase 3 Step 4 → **读取 `logos/skills/code-implementor/SKILL.md` 并按其步骤执行**（完成后可用 `logos/skills/code-reviewer/SKILL.md` 进行代码审查）
 - 代码已生成但 `logos/resources/verify/` 为空 → Phase 3 Step 5（运行测试后 `openlogos verify`）
 
 ## Active Skills
@@ -52,6 +52,7 @@ Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件
 - `logos/skills/db-designer/` — 数据库 Schema 设计
 - `logos/skills/test-writer/` — 单元测试 + 场景测试用例设计（Step 3a）
 - `logos/skills/test-orchestrator/` — API 编排测试设计（Step 3b，仅 API 项目）
+- `logos/skills/code-implementor/` — 基于规格链的代码与测试代码生成（Step 4）
 - `logos/skills/code-reviewer/` — 代码审查与规范检查
 - `logos/skills/change-writer/` — 变更提案编写与影响分析
 - `logos/skills/merge-executor/` — 通过 MERGE_PROMPT.md 执行 Delta 合并

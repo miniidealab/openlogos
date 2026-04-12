@@ -88,7 +88,7 @@ describe('S08 Scenario Tests — sync command', () => {
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
-    expect(mdcFiles.length).toBe(13);
+    expect(mdcFiles.length).toBe(14);
     expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
 
     expect(existsSync(join(root, 'logos', 'spec', 'test-results.md'))).toBe(true);
@@ -96,7 +96,7 @@ describe('S08 Scenario Tests — sync command', () => {
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('AGENTS.md updated');
     expect(allLogs).toContain('Sync complete');
-    expect(allLogs).toContain('12 skills synced to .cursor/rules/');
+    expect(allLogs).toContain('13 skills synced to .cursor/rules/');
     expect(allLogs).toContain('specs synced');
   });
 
@@ -131,7 +131,7 @@ describe('S08 Scenario Tests — sync command', () => {
 
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     const skillDirs = readdirSync(join(root, 'logos', 'skills'));
-    expect(skillDirs.length).toBe(12);
+    expect(skillDirs.length).toBe(13);
 
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).toContain('## Active Skills');
@@ -139,7 +139,7 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(agents).not.toContain('## Active Skills');
 
     const allLogs = con.logs.join('\n');
-    expect(allLogs).toContain('12 skills synced to logos/skills/');
+    expect(allLogs).toContain('13 skills synced to logos/skills/');
   });
 
   it('ST-S08-04b: sync with opencode deploys plugin and merges opencode config', () => {

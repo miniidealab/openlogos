@@ -1,0 +1,94 @@
+---
+interface Props {
+  current: string;
+}
+
+const { current } = Astro.props;
+
+const items = [
+  { id: 'overview', label: 'Overview', href: '/tour', color: '#0eb677' },
+  { id: 'flowtask', label: 'FlowTask · Claude Code', href: '/tour/flowtask', color: '#d97706' },
+  { id: 'money-log', label: 'Money-Log · OpenCode', href: '/tour/money-log', color: '#0ea5e9' },
+];
+---
+
+<nav class="tour-nav" aria-label="Tour pages">
+  <div class="tour-nav-inner">
+    {items.map((item) => (
+      <a
+        href={item.href}
+        class={`tour-nav-item ${item.id === current ? 'active' : ''}`}
+        style={item.id === current ? `--nav-accent: ${item.color}` : ''}
+      >
+        <span class="tour-nav-dot" style={`background: ${item.color}`}></span>
+        {item.label}
+      </a>
+    ))}
+  </div>
+</nav>
+
+<style>
+  .tour-nav {
+    position: sticky;
+    top: 64px;
+    z-index: 50;
+    margin-top: 64px;
+    background: rgba(9, 9, 11, 0.9);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .tour-nav-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0.5rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tour-nav-inner::-webkit-scrollbar { display: none; }
+
+  .tour-nav-item {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    transition: color 0.2s, background 0.2s;
+    white-space: nowrap;
+  }
+
+  .tour-nav-item:hover {
+    color: var(--color-text);
+    background: var(--color-surface-raised);
+  }
+
+  .tour-nav-item.active {
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--nav-accent, #6366f1) 15%, var(--color-surface));
+    border: 1px solid color-mix(in srgb, var(--nav-accent, #6366f1) 30%, transparent);
+    font-weight: 600;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--nav-accent, transparent) 15%, transparent);
+  }
+
+  .tour-nav-dot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    opacity: 0.6;
+  }
+
+  .tour-nav-item.active .tour-nav-dot {
+    opacity: 1;
+  }
+</style>
