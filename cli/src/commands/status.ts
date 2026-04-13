@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
+import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
+import type { OutputFormat } from '../lib/json-output.js';
 import type { Lifecycle } from './init.js';
 
 interface PhaseStatus {
@@ -9,6 +11,27 @@ interface PhaseStatus {
   path: string;
   done: boolean;
   files: string[];
+}
+
+interface ProposalInfo {
+  name: string;
+  hasProposal: boolean;
+  hasTasks: boolean;
+  deltaCount: number;
+}
+
+export interface StatusData {
+  phases: Array<{ key: string; label: string; done: boolean; files: string[] }>;
+  active_proposals: Array<{
+    name: string;
+    has_proposal: boolean;
+    has_tasks: boolean;
+    delta_count: number;
+  }>;
+  current_phase: string | null;
+  suggestion: string;
+  all_done: boolean;
+  lifecycle: string;
 }
 
 export function listFiles(dir: string): string[] {
@@ -25,16 +48,8 @@ export function listFiles(dir: string): string[] {
   }
 }
 
-export function status() {
-  const root = process.cwd();
+export function collectStatusData(root: string): StatusData {
   const configPath = join(root, 'logos', 'logos.config.json');
-
-  if (!existsSync(configPath)) {
-    console.error('Error: logos/logos.config.json not found.');
-    console.error('Run `openlogos init` first to initialize the project.');
-    process.exit(1);
-  }
-
   const locale = readLocale(root);
 
   const phasePaths = [
@@ -62,23 +77,9 @@ export function status() {
     phase.done = phase.files.length > 0;
   }
 
-  console.log('\n📊 OpenLogos Project Status\n');
-  console.log('─'.repeat(50));
-
-  for (const phase of phases) {
-    const icon = phase.done ? '✅' : '🔲';
-    console.log(`${icon}  ${phase.label}`);
-    if (phase.done) {
-      for (const f of phase.files) {
-        console.log(`     └─ ${f}`);
-      }
-    }
-  }
-
-  console.log('─'.repeat(50));
-
+  // Collect active proposals
   const changesDir = join(root, 'logos', 'changes');
-  const activeProposals: { name: string; hasProposal: boolean; hasTasks: boolean; deltaCount: number }[] = [];
+  const activeProposals: ProposalInfo[] = [];
 
   if (existsSync(changesDir)) {
     for (const entry of readdirSync(changesDir)) {
@@ -95,35 +96,105 @@ export function status() {
     }
   }
 
-  if (activeProposals.length > 0) {
+  // Determine current phase and suggestion
+  const firstIncomplete = phases.find(p => !p.done);
+  const allDone = !firstIncomplete;
+
+  let lifecycle: Lifecycle = 'initial';
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    lifecycle = config.lifecycle || 'initial';
+  } catch { /* ignore */ }
+
+  let suggestion: string;
+  if (allDone) {
+    suggestion = lifecycle === 'initial'
+      ? t(locale, 'launch.suggest')
+      : t(locale, 'status.allDoneHint').trim();
+  } else {
+    const suggestKey = SUGGEST_KEYS[firstIncomplete!.key];
+    suggestion = suggestKey ? t(locale, suggestKey) : t(locale, 'suggest.fallback');
+  }
+
+  return {
+    phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, files: p.files })),
+    active_proposals: activeProposals.map(p => ({
+      name: p.name,
+      has_proposal: p.hasProposal,
+      has_tasks: p.hasTasks,
+      delta_count: p.deltaCount,
+    })),
+    current_phase: firstIncomplete ? firstIncomplete.key : null,
+    suggestion,
+    all_done: allDone,
+    lifecycle,
+  };
+}
+
+export function status(format: OutputFormat = 'text') {
+  const root = process.cwd();
+  const configPath = join(root, 'logos', 'logos.config.json');
+
+  if (!existsSync(configPath)) {
+    if (format === 'json') {
+      console.error(JSON.stringify(makeErrorEnvelope(
+        'status', 'PROJECT_NOT_INITIALIZED', 'logos/logos.config.json not found.',
+      )));
+      process.exit(1);
+    }
+    console.error('Error: logos/logos.config.json not found.');
+    console.error('Run `openlogos init` first to initialize the project.');
+    process.exit(1);
+  }
+
+  const data = collectStatusData(root);
+
+  if (format === 'json') {
+    console.log(JSON.stringify(makeEnvelope('status', data)));
+    return;
+  }
+
+  // Human-readable output (unchanged behavior)
+  const locale = readLocale(root);
+  const LINE = '─'.repeat(50);
+
+  console.log('\n📊 OpenLogos Project Status\n');
+  console.log(LINE);
+
+  for (const phase of data.phases) {
+    const icon = phase.done ? '✅' : '🔲';
+    console.log(`${icon}  ${phase.label}`);
+    if (phase.done) {
+      for (const f of phase.files) {
+        console.log(`     └─ ${f}`);
+      }
+    }
+  }
+
+  console.log(LINE);
+
+  if (data.active_proposals.length > 0) {
     console.log(`\n📝 ${t(locale, 'status.activeProposals')}`);
-    for (const p of activeProposals) {
+    for (const p of data.active_proposals) {
       const parts = [
-        p.hasProposal ? 'proposal.md ✓' : 'proposal.md ✗',
-        p.hasTasks ? 'tasks.md ✓' : 'tasks.md ✗',
-        `deltas: ${p.deltaCount} files`,
+        p.has_proposal ? 'proposal.md ✓' : 'proposal.md ✗',
+        p.has_tasks ? 'tasks.md ✓' : 'tasks.md ✗',
+        `deltas: ${p.delta_count} files`,
       ];
       console.log(`     └─ ${p.name} (${parts.join(' | ')})`);
     }
-    console.log('─'.repeat(50));
+    console.log(LINE);
   }
 
-  const firstIncomplete = phases.find(p => !p.done);
-  if (!firstIncomplete) {
-    let lifecycle: Lifecycle = 'initial';
-    try {
-      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-      lifecycle = config.lifecycle || 'initial';
-    } catch { /* ignore */ }
-
+  if (data.all_done) {
     console.log(`\n🎉 ${t(locale, 'status.allDone')}`);
-    if (lifecycle === 'initial') {
+    if (data.lifecycle === 'initial') {
       console.log(`   → ${t(locale, 'launch.suggest')}`);
     }
     console.log(t(locale, 'status.allDoneHint') + '\n');
   } else {
+    const firstIncomplete = data.phases.find(p => !p.done)!;
     console.log(`\n💡 ${t(locale, 'status.suggestNext', { label: firstIncomplete.label })}`);
-    const suggestKey = SUGGEST_KEYS[firstIncomplete.key];
-    console.log(`   → ${suggestKey ? t(locale, suggestKey) : t(locale, 'suggest.fallback')}\n`);
+    console.log(`   → ${data.suggestion}\n`);
   }
 }

@@ -8,6 +8,11 @@ import { merge } from './commands/merge.js';
 import { archive } from './commands/archive.js';
 import { verify } from './commands/verify.js';
 import { launch } from './commands/launch.js';
+import { detect } from './commands/detect.js';
+import { VERSION, parseFormat } from './lib/json-output.js';
+
+export { VERSION } from './lib/json-output.js';
+export type { OutputFormat } from './lib/json-output.js';
 
 const HELP = `
 openlogos - CLI tool for the OpenLogos methodology
@@ -26,24 +31,27 @@ Commands:
   change <slug>      Create a change proposal for iterative updates
   merge <slug>       Generate MERGE_PROMPT.md for AI to execute delta merging
   archive <slug>     Archive a completed change proposal
+  detect             Show CLI version and project detection info
 
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
+  --format <json>    Output in JSON format (supported: status, verify, detect)
 
 Examples:
   openlogos init my-saas-project
   openlogos sync
   openlogos status
+  openlogos status --format json
   openlogos verify
+  openlogos verify --format json
+  openlogos detect --format json
   openlogos change add-remember-me
   openlogos merge add-remember-me
   openlogos archive add-remember-me
 
 Learn more: https://openlogos.ai
 `;
-
-const VERSION = '0.5.6';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -59,6 +67,7 @@ async function main() {
   }
 
   const command = args[0];
+  const format = parseFormat(args);
 
   switch (command) {
     case 'init': {
@@ -81,10 +90,10 @@ async function main() {
       sync();
       break;
     case 'status':
-      status();
+      status(format);
       break;
     case 'verify':
-      verify();
+      verify(format);
       break;
     case 'change':
       change(args[1]);
@@ -97,6 +106,9 @@ async function main() {
       break;
     case 'archive':
       archive(args[1]);
+      break;
+    case 'detect':
+      detect(format);
       break;
     default:
       console.error(`Unknown command: ${command}`);

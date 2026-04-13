@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { readLocale, t } from '../i18n.js';
+import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
+import type { OutputFormat } from '../lib/json-output.js';
 
 export interface TestResult {
   id: string;
@@ -31,6 +33,44 @@ export interface AcTraceEntry {
   description: string;
   linkedCaseIds: string[];
   file: string;
+}
+
+export interface VerifyData {
+  summary: {
+    defined_count: number;
+    ut_count: number;
+    st_count: number;
+    executed_count: number;
+    passed_count: number;
+    failed_count: number;
+    skipped_count: number;
+    uncovered_count: number;
+    coverage_pct: number;
+    pass_rate_pct: number;
+  };
+  gate: {
+    result: 'PASS' | 'FAIL';
+    reason: string | null;
+  };
+  failed_cases: Array<{ id: string; error: string }>;
+  uncovered_cases: string[];
+  skipped_cases: string[];
+  checklist: {
+    total: number;
+    checked: number;
+    unchecked_items: Array<{ text: string; file: string }>;
+  };
+  ac_trace: {
+    total: number;
+    passed: number;
+    failed_criteria: Array<{
+      ac_id: string;
+      description: string;
+      linked_case_ids: string[];
+      status: string;
+    }>;
+  };
+  report_path: string;
 }
 
 export function parseJsonl(content: string): TestResult[] {
@@ -252,17 +292,8 @@ export function generateReport(
   return md;
 }
 
-export function verify() {
-  const root = process.cwd();
+export function collectVerifyData(root: string): VerifyData {
   const configPath = join(root, 'logos', 'logos.config.json');
-
-  if (!existsSync(configPath)) {
-    console.error('Error: logos/logos.config.json not found.');
-    console.error('Run `openlogos init` first to initialize the project.');
-    process.exit(1);
-  }
-
-  const locale = readLocale(root);
   let resultPath = DEFAULT_RESULT_PATH;
 
   try {
@@ -272,23 +303,9 @@ export function verify() {
     }
   } catch { /* use default */ }
 
-  console.log(`\n🔍 ${t(locale, 'verify.title')}\n`);
-  console.log(t(locale, 'verify.readingResults', { path: resultPath }));
-  console.log(t(locale, 'verify.readingCases'));
-
   const fullResultPath = join(root, resultPath);
-  if (!existsSync(fullResultPath)) {
-    console.error(`\nError: ${t(locale, 'verify.noResults', { path: resultPath })}`);
-    process.exit(1);
-  }
-
   const results = parseJsonl(readFileSync(fullResultPath, 'utf-8'));
   const { ids: defined, utCount, stCount } = extractDefinedIds(root);
-
-  if (defined.length === 0) {
-    console.error(`\nError: ${t(locale, 'verify.noCases')}`);
-    process.exit(1);
-  }
 
   const resultIds = new Set(results.map(r => r.id));
   const passed = results.filter(r => r.status === 'pass');
@@ -298,11 +315,11 @@ export function verify() {
   const coveredCount = defined.filter(id => resultIds.has(id)).length;
 
   const coveragePct = defined.length > 0
-    ? ((coveredCount / defined.length) * 100).toFixed(0)
-    : '0';
+    ? Math.round((coveredCount / defined.length) * 100)
+    : 0;
   const passRatePct = results.length > 0
-    ? ((passed.length / results.length) * 100).toFixed(0)
-    : '0';
+    ? Math.round((passed.length / results.length) * 100)
+    : 0;
 
   const checklist = extractChecklist(root);
   const acTrace = extractAcTrace(root);
@@ -318,81 +335,195 @@ export function verify() {
     && checklistUnchecked.length === 0 && acFailed.length === 0;
   const gateResult = isPass ? 'PASS' as const : 'FAIL' as const;
 
+  let gateReason: string | null = null;
+  if (!isPass) {
+    if (failed.length > 0) gateReason = 'failed_cases';
+    else if (uncovered.length > 0) gateReason = 'incomplete_coverage';
+    else if (checklistUnchecked.length > 0) gateReason = 'checklist_incomplete';
+    else gateReason = 'ac_trace_incomplete';
+  }
+
+  // Generate the acceptance report (side effect, same as before)
+  const reportPath = join(root, REPORT_DIR, 'acceptance-report.md');
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, generateReport(
+    defined, results, passed, failed, skipped, uncovered,
+    String(coveragePct), String(passRatePct), gateResult, checklist, acTrace, resultIds,
+  ));
+
+  const relReportPath = 'logos/resources/verify/acceptance-report.md';
+
+  return {
+    summary: {
+      defined_count: defined.length,
+      ut_count: utCount,
+      st_count: stCount,
+      executed_count: results.length,
+      passed_count: passed.length,
+      failed_count: failed.length,
+      skipped_count: skipped.length,
+      uncovered_count: uncovered.length,
+      coverage_pct: coveragePct,
+      pass_rate_pct: passRatePct,
+    },
+    gate: {
+      result: gateResult,
+      reason: gateReason,
+    },
+    failed_cases: failed.map(r => ({ id: r.id, error: r.error ?? 'unknown' })),
+    uncovered_cases: uncovered,
+    skipped_cases: skipped.map(r => r.id),
+    checklist: {
+      total: checklist.length,
+      checked: checklist.filter(c => c.checked).length,
+      unchecked_items: checklistUnchecked.map(c => ({ text: c.text, file: c.file })),
+    },
+    ac_trace: {
+      total: acTrace.length,
+      passed: acTrace.length - acFailed.length,
+      failed_criteria: acFailed.map(ac => ({
+        ac_id: ac.acId,
+        description: ac.description,
+        linked_case_ids: ac.linkedCaseIds,
+        status: ac.linkedCaseIds.length === 0 ? 'NO_LINKED_CASES' : 'FAIL',
+      })),
+    },
+    report_path: relReportPath,
+  };
+}
+
+export function verify(format: OutputFormat = 'text') {
+  const root = process.cwd();
+  const configPath = join(root, 'logos', 'logos.config.json');
+
+  if (!existsSync(configPath)) {
+    if (format === 'json') {
+      console.error(JSON.stringify(makeErrorEnvelope(
+        'verify', 'PROJECT_NOT_INITIALIZED', 'logos/logos.config.json not found.',
+      )));
+      process.exit(1);
+    }
+    console.error('Error: logos/logos.config.json not found.');
+    console.error('Run `openlogos init` first to initialize the project.');
+    process.exit(1);
+  }
+
+  const locale = readLocale(root);
+  let resultPath = DEFAULT_RESULT_PATH;
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (config.verify?.result_path) {
+      resultPath = config.verify.result_path;
+    }
+  } catch { /* use default */ }
+
+  const fullResultPath = join(root, resultPath);
+  if (!existsSync(fullResultPath)) {
+    if (format === 'json') {
+      console.error(JSON.stringify(makeErrorEnvelope(
+        'verify', 'NO_TEST_RESULTS', `No test results found at ${resultPath}.`,
+      )));
+      process.exit(1);
+    }
+    console.error(`\nError: ${t(locale, 'verify.noResults', { path: resultPath })}`);
+    process.exit(1);
+  }
+
+  const { ids: defined } = extractDefinedIds(root);
+  if (defined.length === 0) {
+    if (format === 'json') {
+      console.error(JSON.stringify(makeErrorEnvelope(
+        'verify', 'NO_TEST_CASES', 'No test case specs found in logos/resources/test/.',
+      )));
+      process.exit(1);
+    }
+    console.error(`\nError: ${t(locale, 'verify.noCases')}`);
+    process.exit(1);
+  }
+
+  const data = collectVerifyData(root);
+
+  if (format === 'json') {
+    console.log(JSON.stringify(makeEnvelope('verify', data)));
+    if (data.gate.result !== 'PASS') {
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Human-readable output (preserving original behavior)
+  console.log(`\n🔍 ${t(locale, 'verify.title')}\n`);
+  console.log(t(locale, 'verify.readingResults', { path: resultPath }));
+  console.log(t(locale, 'verify.readingCases'));
+
+  const { summary, gate, failed_cases, uncovered_cases, checklist, ac_trace } = data;
+
   console.log(`\n${LINE}`);
   console.log(`📊 ${t(locale, 'verify.summary')}`);
   console.log(LINE);
-  console.log(`  ${t(locale, 'verify.totalDefined', { count: String(defined.length), ut: String(utCount), st: String(stCount) })}`);
-  console.log(`  ${t(locale, 'verify.totalExecuted', { count: String(results.length) })}`);
-  console.log(`  ✅ ${t(locale, 'verify.passed', { count: String(passed.length) })}`);
-  console.log(`  ❌ ${t(locale, 'verify.failed', { count: String(failed.length) })}`);
-  console.log(`  ⏭️  ${t(locale, 'verify.skipped', { count: String(skipped.length) })}`);
+  console.log(`  ${t(locale, 'verify.totalDefined', { count: String(summary.defined_count), ut: String(summary.ut_count), st: String(summary.st_count) })}`);
+  console.log(`  ${t(locale, 'verify.totalExecuted', { count: String(summary.executed_count) })}`);
+  console.log(`  ✅ ${t(locale, 'verify.passed', { count: String(summary.passed_count) })}`);
+  console.log(`  ❌ ${t(locale, 'verify.failed', { count: String(summary.failed_count) })}`);
+  console.log(`  ⏭️  ${t(locale, 'verify.skipped', { count: String(summary.skipped_count) })}`);
   console.log(LINE);
-  console.log(`  ${t(locale, 'verify.coverage', { pct: coveragePct, covered: String(coveredCount), total: String(defined.length) })}`);
-  console.log(`  ${t(locale, 'verify.passRate', { pct: passRatePct, passed: String(passed.length), total: String(results.length) })}`);
+  console.log(`  ${t(locale, 'verify.coverage', { pct: String(summary.coverage_pct), covered: String(summary.defined_count - summary.uncovered_count), total: String(summary.defined_count) })}`);
+  console.log(`  ${t(locale, 'verify.passRate', { pct: String(summary.pass_rate_pct), passed: String(summary.passed_count), total: String(summary.executed_count) })}`);
   console.log(LINE);
 
-  if (failed.length > 0) {
+  if (failed_cases.length > 0) {
     console.log(`\n❌ ${t(locale, 'verify.failedCases')}`);
-    for (const r of failed) {
-      console.log(`  ${r.id}  ${r.error ?? ''}`);
+    for (const r of failed_cases) {
+      console.log(`  ${r.id}  ${r.error}`);
     }
   }
 
-  if (uncovered.length > 0) {
-    console.log(`\n⚠️  ${t(locale, 'verify.uncoveredCases', { count: String(uncovered.length) })}`);
-    for (const id of uncovered) {
+  if (uncovered_cases.length > 0) {
+    console.log(`\n⚠️  ${t(locale, 'verify.uncoveredCases', { count: String(uncovered_cases.length) })}`);
+    for (const id of uncovered_cases) {
       console.log(`  ${id}`);
     }
   }
 
-  if (checklist.length > 0) {
-    const checked = checklist.filter(c => c.checked).length;
+  if (checklist.total > 0) {
     console.log(`\n📋 ${t(locale, 'verify.checklistTitle')}`);
-    console.log(`  ${t(locale, 'verify.checklistSummary', { checked: String(checked), total: String(checklist.length) })}`);
-    if (checklistUnchecked.length > 0) {
-      console.log(`  ⚠️  ${t(locale, 'verify.checklistUnchecked', { count: String(checklistUnchecked.length) })}`);
-      for (const item of checklistUnchecked) {
+    console.log(`  ${t(locale, 'verify.checklistSummary', { checked: String(checklist.checked), total: String(checklist.total) })}`);
+    if (checklist.unchecked_items.length > 0) {
+      console.log(`  ⚠️  ${t(locale, 'verify.checklistUnchecked', { count: String(checklist.unchecked_items.length) })}`);
+      for (const item of checklist.unchecked_items) {
         console.log(`    - ${item.text}  (${item.file})`);
       }
     }
   }
 
-  if (acTrace.length > 0) {
-    const acPassed = acTrace.length - acFailed.length;
+  if (ac_trace.total > 0) {
     console.log(`\n🔗 ${t(locale, 'verify.acTitle')}`);
-    console.log(`  ${t(locale, 'verify.acSummary', { passed: String(acPassed), total: String(acTrace.length) })}`);
-    if (acFailed.length > 0) {
-      console.log(`  ⚠️  ${t(locale, 'verify.acFailed', { count: String(acFailed.length) })}`);
-      for (const ac of acFailed) {
-        const reason = ac.linkedCaseIds.length === 0 ? 'no linked cases' : 'case(s) not passing';
-        console.log(`    ${ac.acId}: ${ac.description}  (${reason})`);
+    console.log(`  ${t(locale, 'verify.acSummary', { passed: String(ac_trace.passed), total: String(ac_trace.total) })}`);
+    if (ac_trace.failed_criteria.length > 0) {
+      console.log(`  ⚠️  ${t(locale, 'verify.acFailed', { count: String(ac_trace.failed_criteria.length) })}`);
+      for (const ac of ac_trace.failed_criteria) {
+        const reason = ac.status === 'NO_LINKED_CASES' ? 'no linked cases' : 'case(s) not passing';
+        console.log(`    ${ac.ac_id}: ${ac.description}  (${reason})`);
       }
     }
   }
 
-  const reportPath = join(root, REPORT_DIR, 'acceptance-report.md');
-  mkdirSync(dirname(reportPath), { recursive: true });
-  writeFileSync(reportPath, generateReport(
-    defined, results, passed, failed, skipped, uncovered,
-    coveragePct, passRatePct, gateResult, checklist, acTrace, resultIds,
-  ));
-
-  if (isPass) {
+  if (gate.result === 'PASS') {
     console.log(`\n✅ ${t(locale, 'verify.gatePass')}`);
-  } else if (failed.length > 0) {
+  } else if (gate.reason === 'failed_cases') {
     console.log(`\n❌ ${t(locale, 'verify.gateFail')}`);
-  } else if (uncovered.length > 0) {
+  } else if (gate.reason === 'incomplete_coverage') {
     console.log(`\n❌ ${t(locale, 'verify.gateFailCoverage')}`);
-  } else if (checklistUnchecked.length > 0) {
+  } else if (gate.reason === 'checklist_incomplete') {
     console.log(`\n❌ ${t(locale, 'verify.gateFailChecklist')}`);
   } else {
     console.log(`\n❌ ${t(locale, 'verify.gateFailAc')}`);
   }
 
-  const relReportPath = 'logos/resources/verify/acceptance-report.md';
-  console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: relReportPath })}\n`);
+  console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}\n`);
 
-  if (!isPass) {
+  if (gate.result !== 'PASS') {
     process.exit(1);
   }
 }
