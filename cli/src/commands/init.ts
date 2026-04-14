@@ -300,7 +300,7 @@ export function deploySpecs(root: string): { count: number } | null {
   const targetDir = join(root, 'logos', 'spec');
   mkdirSync(targetDir, { recursive: true });
 
-  const files = readdirSync(source).filter(f => f.endsWith('.md'));
+  const files = readdirSync(source).filter(f => f.endsWith('.md') || f.endsWith('.json'));
   for (const file of files) {
     copyFileSync(join(source, file), join(targetDir, file));
   }
