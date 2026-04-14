@@ -121,6 +121,7 @@ describe('S11 Scenario Tests — status command', () => {
       'logos/resources/database',
       'logos/resources/test',
       'logos/resources/scenario',
+      'logos/resources/implementation',
       'logos/resources/verify',
     ];
     for (const d of dirs) {

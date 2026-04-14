@@ -84,6 +84,9 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(parsed.documents.changes).toBeDefined();
     expect(parsed.documents.changes.path).toBe('./changes');
     expect(parsed.verify.result_path).toBeDefined();
+    expect(parsed.sourceRoots).toBeDefined();
+    expect(parsed.sourceRoots.src).toEqual(['src']);
+    expect(parsed.sourceRoots.test).toEqual(['test']);
   });
 
   it('UT-S01-07b: createLogosConfig includes aiTool when provided', () => {

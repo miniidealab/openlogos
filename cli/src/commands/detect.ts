@@ -13,6 +13,7 @@ export interface DetectData {
     locale: string;
     lifecycle: string;
     description: string;
+    source_roots: { src: string[]; test: string[] } | null;
   } | null;
 }
 
@@ -28,6 +29,7 @@ export function collectDetectData(root: string): DetectData {
         locale: config.locale ?? 'en',
         lifecycle: config.lifecycle ?? 'initial',
         description: config.description ?? '',
+        source_roots: config.sourceRoots ?? null,
       };
     } catch { /* ignore malformed config */ }
   }
@@ -61,6 +63,9 @@ export function detect(format: OutputFormat = 'text') {
     console.log(`   Lifecycle:   ${data.project.lifecycle}`);
     if (data.project.description) {
       console.log(`   Description: ${data.project.description}`);
+    }
+    if (data.project.source_roots) {
+      console.log(`   Source roots: src=${data.project.source_roots.src.join(',')} test=${data.project.source_roots.test.join(',')}`);
     }
   } else {
     console.log(`📁 No OpenLogos project found in current directory.`);

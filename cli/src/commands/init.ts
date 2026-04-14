@@ -458,7 +458,7 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - 场景存在但 \`logos/resources/api/\` 为空 → 建议 Phase 3 Step 2（api-designer + db-designer）
 - API 存在但 \`logos/resources/test/\` 为空 → 建议 Phase 3 Step 3a（test-writer）
 - 测试用例存在但 \`logos/resources/scenario/\` 为空 → 建议 Phase 3 Step 3b（test-orchestrator，仅 API 项目）
-- 以上全部完成 → 建议 Phase 3 Step 4（code-implementor）
+- 编排测试存在但 \`logos/resources/implementation/\` 为空 → 建议 Phase 3 Step 4（code-implementor）
 - 代码已生成但 \`logos/resources/verify/\` 为空 → 建议 Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
   }
   return `Phase detection logic:
@@ -469,7 +469,7 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - scenarios exist but \`logos/resources/api/\` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
 - API exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 3a (test-writer)
 - test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
-- All above exist → suggest Phase 3 Step 4 (code-implementor)
+- orchestration tests exist but \`logos/resources/implementation/\` is empty → suggest Phase 3 Step 4 (code-implementor)
 - code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
 }
 
@@ -483,7 +483,7 @@ function generatePhaseDetectionWithSkills(locale: Locale): string {
 - 场景存在但 \`logos/resources/api/\` 为空 → Phase 3 Step 2 → **读取 \`${skillPath('api-designer')}\` 和 \`${skillPath('db-designer')}\` 并按其步骤执行**
 - API 存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 3a → **读取 \`${skillPath('test-writer')}\` 并按其步骤执行**
 - 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 3b → **读取 \`${skillPath('test-orchestrator')}\` 并按其步骤执行**（仅 API 项目）
-- 以上全部完成 → Phase 3 Step 4 → **读取 \`${skillPath('code-implementor')}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer')}\` 进行代码审查）
+- 编排测试存在但 \`logos/resources/implementation/\` 为空 → Phase 3 Step 4 → **读取 \`${skillPath('code-implementor')}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer')}\` 进行代码审查）
 - 代码已生成但 \`logos/resources/verify/\` 为空 → Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
   }
   return `Phase detection logic (**when a phase is detected, you MUST read the corresponding Skill file and follow its steps**):
@@ -494,7 +494,7 @@ function generatePhaseDetectionWithSkills(locale: Locale): string {
 - scenarios exist but \`logos/resources/api/\` is empty → Phase 3 Step 2 → **read \`${skillPath('api-designer')}\` and \`${skillPath('db-designer')}\` and follow their steps**
 - API exists but \`logos/resources/test/\` is empty → Phase 3 Step 3a → **read \`${skillPath('test-writer')}\` and follow its steps**
 - test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 3b → **read \`${skillPath('test-orchestrator')}\` and follow its steps** (API projects only)
-- All above exist → Phase 3 Step 4 → **read \`${skillPath('code-implementor')}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer')}\` for code review)
+- orchestration tests exist but \`logos/resources/implementation/\` is empty → Phase 3 Step 4 → **read \`${skillPath('code-implementor')}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer')}\` for code review)
 - code generated but \`logos/resources/verify/\` is empty → Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
 }
 
@@ -556,6 +556,7 @@ const DIRECTORIES = [
   'logos/resources/database',
   'logos/resources/test',
   'logos/resources/scenario',
+  'logos/resources/implementation',
   'logos/resources/verify',
   'logos/changes',
   'logos/changes/archive',
@@ -596,6 +597,11 @@ export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool =
         path: './resources/database',
         pattern: '**/*.sql',
       },
+      implementation: {
+        label: { en: 'Implementation', zh: '实现清单' },
+        path: './resources/implementation',
+        pattern: '**/*.md',
+      },
       verify: {
         label: { en: 'Verify Reports', zh: '验收报告' },
         path: './resources/verify',
@@ -606,6 +612,10 @@ export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool =
         path: './changes',
         pattern: '**/*.{md,json}',
       },
+    },
+    sourceRoots: {
+      src: ['src'],
+      test: ['test'],
     },
     verify: {
       result_path: 'logos/resources/verify/test-results.jsonl',

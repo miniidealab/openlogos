@@ -259,4 +259,40 @@ describe('S08 Scenario Tests — sync command', () => {
     const allLogs = con.logs.join('\n');
     expect(allLogs).not.toContain('documents.changes added');
   });
+
+  it('ST-S08-10: sync adds sourceRoots when missing from config', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const before = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(before.sourceRoots).toBeUndefined();
+
+    sync();
+
+    const after = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(after.sourceRoots).toBeDefined();
+    expect(after.sourceRoots.src).toEqual(['src']);
+    expect(after.sourceRoots.test).toEqual(['test']);
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('sourceRoots added');
+  });
+
+  it('ST-S08-11: sync preserves existing sourceRoots if already present', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.sourceRoots = { src: ['lib'], test: ['tests', 'spec'] };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    const after = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(after.sourceRoots.src).toEqual(['lib']);
+    expect(after.sourceRoots.test).toEqual(['tests', 'spec']);
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).not.toContain('sourceRoots added');
+  });
 });

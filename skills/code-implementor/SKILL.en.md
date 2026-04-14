@@ -54,12 +54,14 @@ test-writer writes no code; code-implementor designs no test cases; code-reviewe
 | Test case specs | `logos/resources/test/*-test-cases.md` | Verification targets — UT/ST IDs, expected inputs/outputs |
 | Orchestration tests | `logos/resources/scenario/*.json` | End-to-end verification targets (API projects) |
 | Project config | `logos/logos-project.yaml` | `tech_stack`, `external_dependencies` |
+| Source roots | `logos/logos.config.json` → `sourceRoots` | Output root directories for business code and test code |
 
 After loading, confirm:
 - Which scenarios are in scope (S01, S02...)
 - Which API endpoints and DB tables are involved
 - Total UT/ST case count
 - Technology stack confirmation (language, framework, test framework)
+- Source output directories confirmed (read `sourceRoots.src` and `sourceRoots.test`; default to `src/` and `test/` if absent)
 
 ### Step 2: Plan Batch Strategy
 
@@ -163,16 +165,18 @@ After each batch:
 1. **Prompt to run tests**: Tell the user the test command (e.g., `npm test`, `pytest`)
 2. **Prompt to check results**: Confirm `logos/resources/verify/test-results.jsonl` was generated
 3. **After all batches complete**: Guide the user to run `openlogos verify` for Gate 3.5 acceptance
+4. **Update sourceRoots**: If the actual source directories differ from `sourceRoots` in `logos.config.json`, update the config to reflect the real paths. For example, if business code is placed in `app/` instead of the default `src/`, update `sourceRoots.src` to `["app"]`
+5. **Write implementation manifest**: Create an implementation manifest file in `logos/resources/implementation/` (e.g., `implementation-manifest.md`) recording the scenarios, endpoints, and case IDs covered, marking Phase 3-4 as complete
 
 If the user wants a quality audit, suggest using the `code-reviewer` Skill.
 
 ## Output Specification
 
-- **Business code**: Output to the project source tree (directory structure follows architecture design conventions)
-- **Test code**: Output to the project test directory
+- **Business code**: Output to the directories specified by `sourceRoots.src` (default `src/`, as configured in `logos.config.json`)
+- **Test code**: Output to the directories specified by `sourceRoots.test` (default `test/`, as configured in `logos.config.json`)
 - **Reporter**: Embedded in test code (not a standalone file)
 - **JSONL results**: `logos/resources/verify/test-results.jsonl`
-- This Skill does not produce files under `logos/resources/` (code goes to the project source tree; JSONL is produced at test runtime)
+- **Implementation manifest**: `logos/resources/implementation/implementation-manifest.md` (created after all batches complete)
 
 ## Best Practices
 

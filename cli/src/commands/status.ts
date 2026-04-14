@@ -32,6 +32,7 @@ export interface StatusData {
   suggestion: string;
   all_done: boolean;
   lifecycle: string;
+  source_roots: { src: string[]; test: string[] } | null;
 }
 
 export function listFiles(dir: string): string[] {
@@ -61,6 +62,7 @@ export function collectStatusData(root: string): StatusData {
     join(root, 'logos/resources/database'),
     join(root, 'logos/resources/test'),
     join(root, 'logos/resources/scenario'),
+    join(root, 'logos/resources/implementation'),
     join(root, 'logos/resources/verify'),
   ];
 
@@ -101,9 +103,11 @@ export function collectStatusData(root: string): StatusData {
   const allDone = !firstIncomplete;
 
   let lifecycle: Lifecycle = 'initial';
+  let sourceRoots: { src: string[]; test: string[] } | null = null;
   try {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     lifecycle = config.lifecycle || 'initial';
+    sourceRoots = config.sourceRoots ?? null;
   } catch { /* ignore */ }
 
   let suggestion: string;
@@ -128,6 +132,7 @@ export function collectStatusData(root: string): StatusData {
     suggestion,
     all_done: allDone,
     lifecycle,
+    source_roots: sourceRoots,
   };
 }
 
@@ -172,6 +177,10 @@ export function status(format: OutputFormat = 'text') {
   }
 
   console.log(LINE);
+
+  if (data.source_roots) {
+    console.log(`\n📂 Source roots: src=[${data.source_roots.src.join(', ')}] test=[${data.source_roots.test.join(', ')}]`);
+  }
 
   if (data.active_proposals.length > 0) {
     console.log(`\n📝 ${t(locale, 'status.activeProposals')}`);

@@ -1,4 +1,4 @@
-export const VERSION = '0.5.9';
+export const VERSION = '0.6.0';
 
 export type OutputFormat = 'text' | 'json';
 

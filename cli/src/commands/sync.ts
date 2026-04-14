@@ -64,6 +64,13 @@ export function sync() {
     writeFileSync(configPath, JSON.stringify(config, null, 2));
   }
 
+  // Ensure sourceRoots exists (backfill for older projects)
+  if (!config.sourceRoots) {
+    config.sourceRoots = { src: ['src'], test: ['test'] };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    console.log('  ✓ sourceRoots added to logos.config.json');
+  }
+
   writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', lifecycle));
   console.log('  ✓ AGENTS.md updated');
 

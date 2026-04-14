@@ -50,10 +50,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'phase.3-2-db': 'Phase 3-2 · Database Design',
     'phase.3-3a': 'Phase 3-3a · Test Case Design (Unit + Scenario)',
     'phase.3-3b': 'Phase 3-3b · API Orchestration Tests',
+    'phase.3-4': 'Phase 3-4 · Code Implementation',
     'phase.3-5': 'Phase 3-5 · Test Acceptance (verify)',
     'status.activeProposals': 'Active Change Proposals',
     'status.allDone': 'All phases complete! Run `openlogos verify` to check test acceptance.',
-    'status.allDoneHint': '   → Or tell AI: "Implement S01 according to specs"',
+    'status.allDoneHint': '   → Or run `openlogos launch` to start iteration development',
     'status.suggestNext': 'Suggested next step: {label}',
     'suggest.phase1': 'Tell AI: "Help me write requirements"',
     'suggest.phase2': 'Tell AI: "Do product design based on requirements"',
@@ -63,6 +64,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'suggest.phase3-2-db': 'Tell AI: "Help me design the database"',
     'suggest.phase3-3a': 'Tell AI: "Help me design test cases"',
     'suggest.phase3-3b': 'Tell AI: "Help me design orchestration tests"',
+    'suggest.phase3-4': 'Tell AI: "Execute Phase 3 Step 4 — implement business code and tests"',
     'suggest.phase3-5': 'Run your tests, then run `openlogos verify`',
     'suggest.fallback': 'Continue improving documents',
 
@@ -158,10 +160,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'phase.3-2-db': 'Phase 3-2 · 数据库设计',
     'phase.3-3a': 'Phase 3-3a · 测试用例设计（单元 + 场景）',
     'phase.3-3b': 'Phase 3-3b · API 编排测试',
+    'phase.3-4': 'Phase 3-4 · 代码实现',
     'phase.3-5': 'Phase 3-5 · 测试验收（verify）',
     'status.activeProposals': '活跃变更提案',
     'status.allDone': '所有阶段已完成！运行 `openlogos verify` 查看测试验收结果。',
-    'status.allDoneHint': '   → 或对 AI 说：「按 S01 的规格帮我实现」',
+    'status.allDoneHint': '   → 或运行 `openlogos launch` 开始迭代开发',
     'status.suggestNext': '建议下一步：{label}',
     'suggest.phase1': '对 AI 说：「帮我写需求文档」',
     'suggest.phase2': '对 AI 说：「基于需求文档做产品设计」',
@@ -171,6 +174,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'suggest.phase3-2-db': '对 AI 说：「帮我设计数据库」',
     'suggest.phase3-3a': '对 AI 说：「帮我设计测试用例」',
     'suggest.phase3-3b': '对 AI 说：「帮我设计编排测试」',
+    'suggest.phase3-4': '对 AI 说：「请按 Phase 3 Step 4 执行代码实现」',
     'suggest.phase3-5': '运行测试后执行 `openlogos verify`',
     'suggest.fallback': '继续完善文档',
 
@@ -246,7 +250,7 @@ export function t(locale: Locale, key: string, vars?: Record<string, string>): s
 export const PHASE_KEYS = [
   'phase.1', 'phase.2', 'phase.3-0', 'phase.3-1',
   'phase.3-2-api', 'phase.3-2-db', 'phase.3-3a', 'phase.3-3b',
-  'phase.3-5',
+  'phase.3-4', 'phase.3-5',
 ] as const;
 
 export const SUGGEST_KEYS: Record<string, string> = {
@@ -258,6 +262,7 @@ export const SUGGEST_KEYS: Record<string, string> = {
   'phase.3-2-db': 'suggest.phase3-2-db',
   'phase.3-3a': 'suggest.phase3-3a',
   'phase.3-3b': 'suggest.phase3-3b',
+  'phase.3-4': 'suggest.phase3-4',
   'phase.3-5': 'suggest.phase3-5',
 };
 

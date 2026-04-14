@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { collectDetectData, detect } from '../src/commands/detect.js';
@@ -67,6 +67,18 @@ describe('JSON output — collectDetectData', () => {
     expect(data.project).not.toBeNull();
     expect(data.project!.name).toBe('my-app');
     expect(data.project!.locale).toBe('zh');
+    expect(data.project!.source_roots).toBeNull();
+  });
+
+  it('UT-JSON-07b: returns source_roots when config has sourceRoots', () => {
+    scaffoldProject(root, { name: 'my-app', locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.sourceRoots = { src: ['src', 'lib'], test: ['tests'] };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    const data = collectDetectData(root);
+    expect(data.project!.source_roots).toEqual({ src: ['src', 'lib'], test: ['tests'] });
   });
 
   it('UT-JSON-08: returns null project when no config', () => {
@@ -152,7 +164,7 @@ describe('JSON output — status --format json', () => {
     expect(con.logs).toHaveLength(1);
     const output = JSON.parse(con.logs[0]);
     expect(output.command).toBe('status');
-    expect(output.data.phases).toHaveLength(9);
+    expect(output.data.phases).toHaveLength(10);
     expect(output.data.all_done).toBe(false);
     expect(output.data.current_phase).toBe('phase.1');
   });
@@ -178,6 +190,7 @@ describe('JSON output — status --format json', () => {
       'logos/resources/database',
       'logos/resources/test',
       'logos/resources/scenario',
+      'logos/resources/implementation',
       'logos/resources/verify',
     ];
     for (const d of dirs) {
