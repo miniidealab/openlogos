@@ -53,7 +53,11 @@ openlogos detect --format json  # JSON 格式
     "name": "my-project",         // 项目名
     "locale": "zh",               // 语言设置
     "lifecycle": "active",        // "initial" | "active"
-    "description": "项目描述"      // 项目描述
+    "description": "项目描述",     // 项目描述
+    "source_roots": null | {      // 源代码根目录，null 表示未配置
+      "src": ["src"],             // 业务代码根目录列表
+      "test": ["test"]            // 测试代码根目录列表
+    }
   }
 }
 ```
@@ -69,6 +73,9 @@ openlogos detect --format json  # JSON 格式
 | `project.locale` | string | 是 | 项目语言设置 |
 | `project.lifecycle` | string | 是 | 项目生命周期阶段 |
 | `project.description` | string | 是 | 项目描述 |
+| `project.source_roots` | object \| null | 是 | 源代码根目录配置；未配置时为 null |
+| `project.source_roots.src` | string[] | 是 | 业务代码根目录列表 |
+| `project.source_roots.test` | string[] | 是 | 测试代码根目录列表 |
 
 ---
 
@@ -90,15 +97,17 @@ openlogos status --format json  # JSON 格式
       "key": "phase.1",
       "label": "Phase 1 · 需求文档 (WHY)",
       "done": true,
+      "skipped": false,
       "files": ["01-requirements.md"]
     },
     {
       "key": "phase.2",
       "label": "Phase 2 · 产品设计 (WHAT)",
       "done": false,
+      "skipped": false,
       "files": []
     }
-    // ... 所有 9 个 phase
+    // ... 所有 10 个 phase
   ],
   "active_proposals": [
     {
@@ -111,7 +120,11 @@ openlogos status --format json  # JSON 格式
   "current_phase": "phase.2",      // 第一个未完成 phase 的 key，若全部完成则为 null
   "suggestion": "对 AI 说：「基于需求文档做产品设计」",  // 建议的下一步操作
   "all_done": false,               // 是否所有 phase 都已完成
-  "lifecycle": "active"            // 项目生命周期
+  "lifecycle": "active",           // 项目生命周期
+  "source_roots": null | {         // 源代码根目录，null 表示未配置
+    "src": ["src"],
+    "test": ["test"]
+  }
 }
 ```
 
@@ -119,10 +132,11 @@ openlogos status --format json  # JSON 格式
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `phases` | array | 是 | 所有阶段的状态列表（固定 9 个元素） |
+| `phases` | array | 是 | 所有阶段的状态列表（固定 10 个元素） |
 | `phases[].key` | string | 是 | 阶段标识符（如 `phase.1`, `phase.3-2-api`） |
 | `phases[].label` | string | 是 | 阶段的本地化标签 |
 | `phases[].done` | boolean | 是 | 该阶段是否已完成（有文件 = true） |
+| `phases[].skipped` | boolean | 是 | 该阶段是否被跳过（空但后续阶段已完成） |
 | `phases[].files` | string[] | 是 | 该阶段目录下的文件列表 |
 | `active_proposals` | array | 是 | 活跃变更提案列表 |
 | `active_proposals[].name` | string | 是 | 提案目录名 |
@@ -131,8 +145,9 @@ openlogos status --format json  # JSON 格式
 | `active_proposals[].delta_count` | number | 是 | deltas 目录下的文件数 |
 | `current_phase` | string \| null | 是 | 当前应推进的阶段 key；全部完成时为 null |
 | `suggestion` | string | 是 | 建议的下一步操作（本地化文本） |
-| `all_done` | boolean | 是 | 是否全部阶段已完成 |
+| `all_done` | boolean | 是 | 是否全部阶段已完成（skipped 阶段不阻塞） |
 | `lifecycle` | string | 是 | 项目生命周期（`initial` 或 `active`） |
+| `source_roots` | object \| null | 是 | 源代码根目录配置；未配置时为 null |
 
 ---
 

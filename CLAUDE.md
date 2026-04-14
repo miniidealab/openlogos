@@ -38,7 +38,7 @@ Phase 检测逻辑：
 - 场景存在但 `logos/resources/api/` 为空 → 建议 Phase 3 Step 2（api-designer + db-designer）
 - API 存在但 `logos/resources/test/` 为空 → 建议 Phase 3 Step 3a（test-writer）
 - 测试用例存在但 `logos/resources/scenario/` 为空 → 建议 Phase 3 Step 3b（test-orchestrator，仅 API 项目）
-- 以上全部完成 → 建议 Phase 3 Step 4（code-implementor）
+- 编排测试存在但 `logos/resources/implementation/` 为空 → 建议 Phase 3 Step 4（code-implementor）
 - 代码已生成但 `logos/resources/verify/` 为空 → 建议 Phase 3 Step 5（运行测试后 `openlogos verify`）
 
 Step 4 执行规则（大任务）：

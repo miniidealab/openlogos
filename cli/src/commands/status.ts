@@ -10,6 +10,7 @@ interface PhaseStatus {
   label: string;
   path: string;
   done: boolean;
+  skipped: boolean;
   files: string[];
 }
 
@@ -21,7 +22,7 @@ interface ProposalInfo {
 }
 
 export interface StatusData {
-  phases: Array<{ key: string; label: string; done: boolean; files: string[] }>;
+  phases: Array<{ key: string; label: string; done: boolean; skipped: boolean; files: string[] }>;
   active_proposals: Array<{
     name: string;
     has_proposal: boolean;
@@ -71,12 +72,25 @@ export function collectStatusData(root: string): StatusData {
     label: t(locale, key),
     path: phasePaths[i],
     done: false,
+    skipped: false,
     files: [],
   }));
 
   for (const phase of phases) {
     phase.files = listFiles(phase.path);
     phase.done = phase.files.length > 0;
+  }
+
+  // Auto-detect skipped phases: if a phase is empty but a later phase
+  // is done, the empty one was intentionally skipped (e.g. CLI projects
+  // that don't need API/DB design).
+  const lastDoneIdx = phases.reduce(
+    (acc, p, i) => (p.done ? i : acc), -1,
+  );
+  for (let i = 0; i < lastDoneIdx; i++) {
+    if (!phases[i].done) {
+      phases[i].skipped = true;
+    }
   }
 
   // Collect active proposals
@@ -98,8 +112,8 @@ export function collectStatusData(root: string): StatusData {
     }
   }
 
-  // Determine current phase and suggestion
-  const firstIncomplete = phases.find(p => !p.done);
+  // Determine current phase and suggestion (skip over skipped phases)
+  const firstIncomplete = phases.find(p => !p.done && !p.skipped);
   const allDone = !firstIncomplete;
 
   let lifecycle: Lifecycle = 'initial';
@@ -121,7 +135,7 @@ export function collectStatusData(root: string): StatusData {
   }
 
   return {
-    phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, files: p.files })),
+    phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
     active_proposals: activeProposals.map(p => ({
       name: p.name,
       has_proposal: p.hasProposal,
@@ -167,6 +181,7 @@ export function status(format: OutputFormat = 'text') {
   console.log(LINE);
 
   for (const phase of data.phases) {
+    if (phase.skipped) continue;
     const icon = phase.done ? '✅' : '🔲';
     console.log(`${icon}  ${phase.label}`);
     if (phase.done) {
@@ -202,7 +217,7 @@ export function status(format: OutputFormat = 'text') {
     }
     console.log(t(locale, 'status.allDoneHint') + '\n');
   } else {
-    const firstIncomplete = data.phases.find(p => !p.done)!;
+    const firstIncomplete = data.phases.find(p => !p.done && !p.skipped)!;
     console.log(`\n💡 ${t(locale, 'status.suggestNext', { label: firstIncomplete.label })}`);
     console.log(`   → ${data.suggestion}\n`);
   }

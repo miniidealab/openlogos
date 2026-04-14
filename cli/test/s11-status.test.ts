@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
-import { listFiles, status } from '../src/commands/status.js';
+import { listFiles, collectStatusData, status } from '../src/commands/status.js';
 
 /* ========== Unit Tests ========== */
 
@@ -168,5 +168,205 @@ describe('S11 Scenario Tests — status command', () => {
       restore2();
       clean2();
     }
+  });
+});
+
+/* ========== Skipped Phase Tests ========== */
+
+describe('S11 Unit Tests — skipped phase detection', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+  });
+  afterEach(() => cleanup());
+
+  it('UT-S11-07: phases before lastDoneIdx are marked skipped when empty', () => {
+    // Phase 1 (idx 0) has files, Phase 3-2-api (idx 4) is empty,
+    // Phase 3-4 (idx 8, implementation) has files → 3-2-api should be skipped
+    const reqDir = join(root, 'logos/resources/prd/1-product-requirements');
+    mkdirSync(reqDir, { recursive: true });
+    writeFileSync(join(reqDir, '01-requirements.md'), '# Req');
+
+    const implDir = join(root, 'logos/resources/implementation');
+    mkdirSync(implDir, { recursive: true });
+    writeFileSync(join(implDir, 'main.ts'), 'code');
+
+    const data = collectStatusData(root);
+
+    // Phase 3-2-api (idx 4) should be skipped
+    const apiPhase = data.phases.find(p => p.key === 'phase.3-2-api')!;
+    expect(apiPhase.skipped).toBe(true);
+    expect(apiPhase.done).toBe(false);
+
+    // Phase 3-2-db (idx 5) should also be skipped
+    const dbPhase = data.phases.find(p => p.key === 'phase.3-2-db')!;
+    expect(dbPhase.skipped).toBe(true);
+
+    // Phase 1 (idx 0) should NOT be skipped (it's done)
+    const phase1 = data.phases.find(p => p.key === 'phase.1')!;
+    expect(phase1.skipped).toBe(false);
+    expect(phase1.done).toBe(true);
+
+    // Phase 3-5 (idx 9, verify) should NOT be skipped (it's after lastDoneIdx)
+    const verifyPhase = data.phases.find(p => p.key === 'phase.3-5')!;
+    expect(verifyPhase.skipped).toBe(false);
+  });
+
+  it('UT-S11-08: no phases skipped when progress is linear', () => {
+    // Phase 1 done, Phase 2 done, everything else empty → no skips
+    const reqDir = join(root, 'logos/resources/prd/1-product-requirements');
+    mkdirSync(reqDir, { recursive: true });
+    writeFileSync(join(reqDir, '01-requirements.md'), '# Req');
+
+    const designDir = join(root, 'logos/resources/prd/2-product-design');
+    mkdirSync(designDir, { recursive: true });
+    writeFileSync(join(designDir, '01-design.md'), '# Design');
+
+    const data = collectStatusData(root);
+
+    const skippedPhases = data.phases.filter(p => p.skipped);
+    expect(skippedPhases).toEqual([]);
+  });
+
+  it('UT-S11-09: all_done is true when remaining phases are skipped', () => {
+    // All phases done except 3-2-api and 3-2-db
+    const dirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/2-product-design',
+      'logos/resources/prd/3-technical-plan/1-architecture',
+      'logos/resources/prd/3-technical-plan/2-scenario-implementation',
+      // skip api (idx 4)
+      // skip database (idx 5)
+      'logos/resources/test',
+      'logos/resources/scenario',
+      'logos/resources/implementation',
+      'logos/resources/verify',
+    ];
+    for (const d of dirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'dummy.md'), 'content');
+    }
+
+    const data = collectStatusData(root);
+
+    expect(data.all_done).toBe(true);
+    expect(data.current_phase).toBeNull();
+
+    // API and DB should be skipped
+    expect(data.phases.find(p => p.key === 'phase.3-2-api')!.skipped).toBe(true);
+    expect(data.phases.find(p => p.key === 'phase.3-2-db')!.skipped).toBe(true);
+  });
+
+  it('UT-S11-10: firstIncomplete skips over skipped phases', () => {
+    // Phase 1, 2 done; 3-0 empty; 3-1, 3-3a done → 3-0 is skipped
+    // firstIncomplete should be 3-3b (or later), not 3-0
+    const filledDirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/2-product-design',
+      // 3-0 (architecture) empty → will be skipped
+      // 3-1 (scenario) empty → will be skipped
+      // 3-2-api empty → will be skipped
+      // 3-2-db empty → will be skipped
+      'logos/resources/test',    // idx 6 (3-3a)
+      // 3-3b empty → NOT skipped (idx 7, after lastDoneIdx=6)
+    ];
+    for (const d of filledDirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'dummy.md'), 'content');
+    }
+
+    const data = collectStatusData(root);
+
+    // 3-0 through 3-2-db should be skipped (idx 2-5, all before lastDoneIdx=6)
+    expect(data.phases.find(p => p.key === 'phase.3-0')!.skipped).toBe(true);
+    expect(data.phases.find(p => p.key === 'phase.3-1')!.skipped).toBe(true);
+    expect(data.phases.find(p => p.key === 'phase.3-2-api')!.skipped).toBe(true);
+    expect(data.phases.find(p => p.key === 'phase.3-2-db')!.skipped).toBe(true);
+
+    // 3-3b should NOT be skipped (idx 7, >= lastDoneIdx=6)
+    expect(data.phases.find(p => p.key === 'phase.3-3b')!.skipped).toBe(false);
+
+    // current_phase should be 3-3b, not 3-0
+    expect(data.current_phase).toBe('phase.3-3b');
+  });
+});
+
+describe('S11 Scenario Tests — skipped phases in output', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+  let con: ReturnType<typeof captureConsole>;
+  let exitSpy: ReturnType<typeof mockProcessExit>;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+    restoreCwd = mockCwd(root);
+    con = captureConsole();
+    exitSpy = mockProcessExit();
+  });
+
+  afterEach(() => {
+    con.restore();
+    exitSpy.mockRestore();
+    restoreCwd();
+    cleanup();
+  });
+
+  it('ST-S11-06: skipped phases are hidden in text output', () => {
+    // Phase 1, 3-1, 3-3a, 3-4 done → 2, 3-0, 3-2-api, 3-2-db, 3-3b skipped
+    const filledDirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/3-technical-plan/2-scenario-implementation',
+      'logos/resources/test',
+      'logos/resources/implementation',
+    ];
+    for (const d of filledDirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'dummy.md'), 'content');
+    }
+
+    status();
+
+    const allLogs = con.logs.join('\n');
+    // Skipped phases should NOT appear
+    expect(allLogs).not.toContain('API Design');
+    expect(allLogs).not.toContain('API 设计');
+    expect(allLogs).not.toContain('Database Design');
+    expect(allLogs).not.toContain('数据库设计');
+
+    // Done phases should appear
+    expect(allLogs).toContain('✅');
+    // Remaining incomplete phases should appear
+    expect(allLogs).toContain('🔲');
+  });
+
+  it('ST-S11-07: suggestion points to correct phase when skips exist', () => {
+    // Phase 1 and 3-4 done; everything between is skipped
+    // 3-5 (verify) should be suggested, not 3-2-api
+    const filledDirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/implementation',
+    ];
+    for (const d of filledDirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'dummy.md'), 'content');
+    }
+
+    status();
+
+    const allLogs = con.logs.join('\n');
+    // The suggestion should mention verify, not API design
+    expect(allLogs).not.toContain('API');
+    // Should suggest 3-5 (verify) which is the first non-skipped incomplete
+    const hasVerifyHint = allLogs.includes('verify') || allLogs.includes('验收');
+    expect(hasVerifyHint).toBe(true);
   });
 });

@@ -58,6 +58,24 @@
           "description": "测试命令（可选）。配置后 openlogos verify 会先执行此命令再读取结果"
         }
       }
+    },
+    "sourceRoots": {
+      "type": "object",
+      "description": "源代码根目录配置。由 code-implementor skill 自动写入，或用户手动配置。",
+      "properties": {
+        "src": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["src"],
+          "description": "业务代码根目录列表（相对项目根目录）"
+        },
+        "test": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["test"],
+          "description": "测试代码根目录列表（相对项目根目录）"
+        }
+      }
     }
   },
   "definitions": {
