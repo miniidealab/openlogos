@@ -223,3 +223,16 @@ YAML 对空白和特殊字符敏感。AI 生成的 YAML 经常因为特殊字符
 - `基于时序图帮我生成 OpenAPI YAML`
 - `帮我设计 S01 相关的 API 规格`
 - `帮我把所有时序图中的跨系统调用提取为 API`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有 OpenAPI YAML 产出后，**必须**将新生成的文件追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/api/<文件名>.yaml
+    desc: <领域名称> API 规格（OpenAPI 3.x）。涉及 <相关端点> 的请求/响应结构、状态码、认证方式时必读。
+```
+
+**不执行此步骤将导致后续 test-writer/code-implementor 无法感知 API 规格文件，AI 将无法基于正确的接口定义编写测试和代码。**

@@ -252,3 +252,16 @@ CREATE INDEX idx_projects_owner ON projects(owner_id);
 - `基于 API 规格帮我推导数据库 DDL`
 - `帮我设计 S01 涉及的数据库表`
 - `帮我给现有表结构补充索引和 RLS 策略`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有数据库 DDL 产出后，**必须**将新生成的文件追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/database/<文件名>.sql
+    desc: 数据库完整 Schema（DDL）。涉及表结构、字段定义、索引策略、外键约束时必读。
+```
+
+**不执行此步骤将导致后续 code-implementor 无法感知数据库 Schema，AI 将无法生成与真实表结构一致的 ORM 代码和查询逻辑。**

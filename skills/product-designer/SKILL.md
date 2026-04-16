@@ -228,3 +228,18 @@ This directory has already been initialized as an OpenLogos project.
 - `帮我把所有场景的产品设计做出来`
 - `帮我设计 CLI 命令的交互流程`
 - `帮我设计 AI Skill 的对话流程`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有文档产出后，**必须**将新生成的文档追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/prd/2-product-design/1-feature-specs/<文件名>.md
+    desc: <功能规格/信息架构描述>。涉及 <相关场景> 的交互设计、功能规格时必读。
+  - path: logos/resources/prd/2-product-design/2-page-design/<文件名>.md
+    desc: <原型描述>。涉及 <相关场景> 的页面交互、对话脚本时必读。
+```
+
+**不执行此步骤将导致后续 AI 无法感知已完成的产品设计文档，影响场景建模和代码生成阶段的上下文质量。**

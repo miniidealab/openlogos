@@ -179,3 +179,20 @@ external_dependencies:
 - `基于产品设计帮我做技术选型`
 - `帮我画系统架构图`
 - `帮我确定技术栈并更新 logos-project.yaml`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有文档产出后，**必须**：
+
+1. 将架构文档追加写入 `logos/logos-project.yaml` 的 `resource_index`：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/prd/3-technical-plan/1-architecture/<文件名>.md
+    desc: 系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。
+```
+
+2. 同步更新 `logos/logos-project.yaml` 的 `tech_stack` 和 `external_dependencies` 字段（这是本 Skill 的核心产出之一）。
+
+**不执行此步骤将导致后续 AI 在场景建模和代码生成时无法读取架构决策，产生技术栈不一致的代码。**

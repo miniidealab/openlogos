@@ -40,6 +40,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.opencodeConfigCreated': 'opencode.json created with recommended permission defaults',
     'init.opencodeConfigUpdated': 'opencode.json merged with missing recommended permission defaults',
     'init.opencodeCommandsDeployed': 'OpenCode slash commands deployed to .opencode/commands/ ({count} files)',
+    'sync.indexAdded': '{count} new file(s) added to logos-project.yaml resource_index',
+    'sync.indexNoop': 'logos-project.yaml resource_index is already up to date',
 
     // status
     'phase.1': 'Phase 1 · Requirements (WHY)',
@@ -150,6 +152,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.opencodeConfigCreated': '已创建 opencode.json，并写入推荐权限默认值',
     'init.opencodeConfigUpdated': '已为 opencode.json 补齐缺失的推荐权限默认值',
     'init.opencodeCommandsDeployed': 'OpenCode 斜杠命令已部署到 .opencode/commands/（{count} 个文件）',
+    'sync.indexAdded': '{count} 个新文件已补录到 logos-project.yaml resource_index',
+    'sync.indexNoop': 'logos-project.yaml resource_index 已是最新，无需补录',
 
     // status
     'phase.1': 'Phase 1 · 需求文档 (WHY)',

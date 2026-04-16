@@ -196,3 +196,16 @@
 - `我要做一个 xxx 产品，帮我梳理需求`
 - `帮我把这些想法整理成结构化的需求文档`
 - `帮我给现有需求文档补充异常场景的验收条件`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有文档产出后，**必须**将新生成的文档追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/prd/1-product-requirements/<文件名>.md
+    desc: <产品名称>需求文档。涉及产品定位、痛点、核心场景、验收条件时必读。
+```
+
+**不执行此步骤将导致后续 AI 无法感知已完成的需求文档，影响整个开发链路的上下文质量。**

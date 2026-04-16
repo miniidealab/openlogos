@@ -222,3 +222,19 @@ sequenceDiagram
 - `帮我对所有 P0 场景做场景建模`
 - `帮我给 S03 补充异常用例的时序图`
 - `基于产品设计，帮我做技术场景建模`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有场景时序图产出后，**必须**将新生成的文档追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/00-scenario-overview.md
+    desc: 场景实现概览索引。涉及全量场景分类、参与方、实现文档映射关系时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/S01-<slug>.md
+    desc: S01 <场景名称>场景时序图。涉及 S01 实现细节、API 设计、异常分支时必读。
+  # 每个场景文件均需单独一条
+```
+
+**不执行此步骤将导致 api-designer/db-designer 等后续 Skill 无法感知时序图的存在，AI 将无法从正确的源头推导 API 设计。**

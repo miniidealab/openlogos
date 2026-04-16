@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
 import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, type AiTool, type Lifecycle } from './init.js';
+import { syncResourceIndex } from '../lib/sync-resource-index.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -41,6 +42,14 @@ export function sync() {
   const namesynced = syncLogosProjectName(root, projectName);
   if (namesynced) {
     console.log(`  ✓ logos-project.yaml name synced to "${projectName}"`);
+  }
+
+  // ========== Step 2: 扫描并补录缺失的 resource_index 条目 ==========
+  const indexResult = syncResourceIndex(root, locale);
+  if (indexResult.added > 0) {
+    console.log(`  ✓ ${t(locale, 'sync.indexAdded', { count: String(indexResult.added) })}`);
+  } else {
+    console.log(`  ✓ ${t(locale, 'sync.indexNoop')}`);
   }
 
   const requiredDocs: Record<string, { label: { en: string; zh: string }; path: string; pattern: string }> = {

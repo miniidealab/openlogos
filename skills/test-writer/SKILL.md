@@ -245,3 +245,17 @@
 - `帮我设计 S01 的单元测试和场景测试`
 - `帮我给所有 P0 场景设计测试用例`
 - `帮我检查 S01 的测试覆盖度`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有测试用例文档产出后，**必须**将新生成的文件追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/test/S01-test-cases.md
+    desc: S01 <场景名称>测试用例。涉及 UT-S01（单元测试）与 ST-S01（场景测试）的实现与验收时必读。
+  # 每个场景的测试用例文件均需单独一条
+```
+
+**不执行此步骤将导致 code-implementor 无法感知测试用例规格，AI 在生成测试代码时无法与用例 ID 对齐，最终 `openlogos verify` 将报告覆盖度不足。**
