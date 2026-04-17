@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "openlogos",
-      "description": "OpenLogos methodology plugin with 12 AI skills, slash commands, hooks, and a change-reviewer agent for structured Why → What → How development",
+      "description": "OpenLogos methodology plugin with 13 AI skills (including code-implementor), slash commands, hooks, and a change-reviewer agent for structured Why → What → How development",
       "source": "./plugin"
     }
   ]
