@@ -9,6 +9,7 @@ import { archive } from './commands/archive.js';
 import { verify } from './commands/verify.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
+import { indexCommand } from './commands/index-cmd.js';
 import { VERSION, parseFormat } from './lib/json-output.js';
 
 export { VERSION } from './lib/json-output.js';
@@ -32,6 +33,7 @@ Commands:
   merge <slug>       Generate MERGE_PROMPT.md for AI to execute delta merging
   archive <slug>     Archive a completed change proposal
   detect             Show CLI version and project detection info
+  index              Generate an AI-ready prompt to rebuild resource_index with file-content-based desc
 
 Options:
   --help, -h         Show this help message
@@ -109,6 +111,9 @@ async function main() {
       break;
     case 'detect':
       detect(format);
+      break;
+    case 'index':
+      indexCommand();
       break;
     default:
       console.error(`Unknown command: ${command}`);

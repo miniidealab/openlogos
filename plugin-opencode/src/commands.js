@@ -11,7 +11,8 @@ export const COMMAND_MAP = {
   init: { cli: ["init"], args: "optionalName" },
   change: { cli: ["change"], args: "requiredSlug" },
   merge: { cli: ["merge"], args: "requiredSlug" },
-  archive: { cli: ["archive"], args: "requiredSlug" }
+  archive: { cli: ["archive"], args: "requiredSlug" },
+  index: { cli: ["index"], args: "none" }
 };
 
 export function parseOpenLogosCommand(rawCommand) {

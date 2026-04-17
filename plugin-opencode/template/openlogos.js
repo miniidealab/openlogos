@@ -17,6 +17,7 @@ const COMMANDS = {
   change: { cli: ["change"], args: "requiredSlug" },
   merge: { cli: ["merge"], args: "requiredSlug" },
   archive: { cli: ["archive"], args: "requiredSlug" },
+  index: { cli: ["index"], args: "none" },
 };
 
 function parse(raw) {
