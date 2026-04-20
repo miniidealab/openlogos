@@ -36,7 +36,9 @@ export function sync() {
   const config = JSON.parse(readFileSync(configPath, 'utf-8'));
   const projectName = config.name || 'Unnamed Project';
   const locale = readLocale(root);
-  const aiTool: AiTool = config.aiTool || 'cursor';
+  const rawAiTool = config.aiTool || 'cursor';
+  const aiTools: AiTool[] = Array.isArray(rawAiTool) ? rawAiTool : [rawAiTool];
+  const primaryAiTool: AiTool = aiTools[0];
   const lifecycle: Lifecycle = config.lifecycle || 'initial';
 
   const namesynced = syncLogosProjectName(root, projectName);
@@ -80,18 +82,20 @@ export function sync() {
     console.log('  ✓ sourceRoots added to logos.config.json');
   }
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', lifecycle));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, primaryAiTool, 'agents', lifecycle));
   console.log('  ✓ AGENTS.md updated');
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude', lifecycle));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, primaryAiTool, 'claude', lifecycle));
   console.log('  ✓ CLAUDE.md updated');
 
-  const deployResult = deploySkills(root, aiTool, locale, lifecycle);
-  if (deployResult && deployResult.count > 0) {
-    console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
+  for (const tool of aiTools) {
+    const deployResult = deploySkills(root, tool, locale, lifecycle);
+    if (deployResult && deployResult.count > 0) {
+      console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
+    }
   }
 
-  if (aiTool === 'opencode') {
+  if (aiTools.includes('opencode')) {
     const pluginResult = deployOpenCodePlugin(root, locale);
     if (pluginResult) {
       console.log(`  ✓ ${t(locale, 'init.opencodePluginSynced', { target: pluginResult.target })}`);

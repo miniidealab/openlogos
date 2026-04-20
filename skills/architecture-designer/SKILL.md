@@ -195,4 +195,24 @@ resource_index:
 
 2. 同步更新 `logos/logos-project.yaml` 的 `tech_stack` 和 `external_dependencies` 字段（这是本 Skill 的核心产出之一）。
 
-**不执行此步骤将导致后续 AI 在场景建模和代码生成时无法读取架构决策，产生技术栈不一致的代码。**
+3. **（强制）梳理并预写入场景清单**：
+
+   根据架构文档、需求文档和产品设计文档，整理出本项目的完整核心业务场景列表，向用户逐一确认后，将其写入 `logos/logos-project.yaml` 的 `scenarios` 字段：
+
+   ```yaml
+   scenarios:
+     - id: S01
+       name: <场景名称>
+     - id: S02
+       name: <场景名称>
+     # ...
+   ```
+
+   **确认要点**：
+   - 场景清单是否覆盖了所有核心用户旅程？
+   - 是否有遗漏的边界场景或管理后台场景？
+   - 场景编号是否按业务优先级排序？
+
+   此步骤产出的 `scenarios` 字段将作为 `scenario-architect` Skill 的输入基础，直接影响后续阶段的完成判断。**若此步骤跳过，`scenario-architect` Skill 开始时将强制要求补填。**
+
+**不执行收尾步骤将导致后续 AI 在场景建模和代码生成时无法读取架构决策，产生技术栈不一致的代码。**

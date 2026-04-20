@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 
-export type AiTool = 'claude-code' | 'opencode' | 'cursor' | 'other';
+export type AiTool = 'claude-code' | 'opencode' | 'cursor' | 'other' | 'all';
 
 type NameSource = 'argument' | 'package.json' | 'Cargo.toml' | 'pyproject.toml' | 'directory';
 
@@ -125,12 +125,14 @@ async function chooseAiTool(locale: Locale): Promise<AiTool> {
   console.log(t(locale, 'init.aiToolClaudeCode'));
   console.log(t(locale, 'init.aiToolOpenCode'));
   console.log(t(locale, 'init.aiToolCursor'));
-  console.log(t(locale, 'init.aiToolOther') + '\n');
+  console.log(t(locale, 'init.aiToolOther'));
+  console.log(t(locale, 'init.aiToolAll') + '\n');
 
   const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
   if (answer === '2') return 'opencode';
   if (answer === '3') return 'cursor';
   if (answer === '4') return 'other';
+  if (answer === '5') return 'all';
   return 'claude-code';
 }
 
@@ -429,6 +431,7 @@ export function deploySkills(
 }
 
 function shouldIncludeActiveSkills(aiTool: AiTool, target: 'agents' | 'claude'): boolean {
+  if (aiTool === 'all') return true;
   if (aiTool === 'cursor') return target === 'agents';
   if (aiTool === 'claude-code') return target === 'claude';
   if (aiTool === 'opencode') return target === 'agents';
@@ -558,6 +561,7 @@ const DIRECTORIES = [
   'logos/resources/scenario',
   'logos/resources/implementation',
   'logos/resources/verify',
+  'logos/resources/reference',
   'logos/changes',
   'logos/changes/archive',
 ];
@@ -565,10 +569,13 @@ const DIRECTORIES = [
 export type Lifecycle = 'initial' | 'active';
 
 export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool = 'cursor'): string {
+  const aiToolValue: AiTool | AiTool[] = aiTool === 'all'
+    ? ['claude-code', 'opencode', 'cursor']
+    : aiTool;
   return JSON.stringify({
     name,
     locale,
-    aiTool,
+    aiTool: aiToolValue,
     lifecycle: 'initial' as Lifecycle,
     description: '',
     documents: {
@@ -797,7 +804,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   }
 
   const locale: Locale = options?.locale === 'zh' ? 'zh' : options?.locale === 'en' ? 'en' : await chooseLocale();
-  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'opencode' ? 'opencode' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : await chooseAiTool(locale);
+  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'opencode' ? 'opencode' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : options?.aiTool === 'all' ? 'all' : await chooseAiTool(locale);
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
 
   const sourceLabel: Record<NameSource, string> = {
@@ -829,12 +836,16 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude', 'initial'));
   console.log(`  ✓ CLAUDE.md`);
 
-  const deployResult = deploySkills(root, aiTool, locale, 'initial');
-  if (deployResult && deployResult.count > 0) {
-    console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
+  const deployTools: AiTool[] = aiTool === 'all' ? ['claude-code', 'opencode', 'cursor'] : [aiTool];
+
+  for (const tool of deployTools) {
+    const deployResult = deploySkills(root, tool, locale, 'initial');
+    if (deployResult && deployResult.count > 0) {
+      console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
+    }
   }
 
-  if (aiTool === 'opencode') {
+  if (aiTool === 'opencode' || aiTool === 'all') {
     const pluginResult = deployOpenCodePlugin(root, locale);
     if (pluginResult) {
       console.log(`  ✓ ${t(locale, 'init.opencodePluginDeployed', { target: pluginResult.target })}`);
@@ -865,7 +876,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   console.log(t(locale, 'init.step2'));
   console.log(t(locale, 'init.step3') + '\n');
 
-  if (aiTool === 'claude-code') {
+  if (aiTool === 'claude-code' || aiTool === 'all') {
     const pluginMsg = locale === 'zh'
       ? `💡 Claude Code 用户推荐安装原生插件以获得最佳体验：
   /plugin marketplace add miniidealab/openlogos

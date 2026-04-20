@@ -1,7 +1,7 @@
 {
   "name": "openlogos",
   "description": "OpenLogos methodology plugin — structured AI-driven development with Why → What → How progression",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "MiniIdeaLab",
     "url": "https://github.com/miniidealab"

@@ -21,6 +21,92 @@ has_files() {
   [ -d "$dir" ] && find "$dir" -type f ! -name '.gitkeep' -maxdepth 3 2>/dev/null | head -1 | grep -q .
 }
 
+# 从 logos-project.yaml 读取 scenarios[].id 列表，空格分隔
+# 若字段不存在或解析失败，返回空字符串
+get_scenario_ids() {
+  local yaml_file="logos/logos-project.yaml"
+  if [ ! -f "$yaml_file" ]; then
+    echo ""
+    return
+  fi
+  if command -v python3 &>/dev/null; then
+    python3 - "$yaml_file" <<'PYEOF' 2>/dev/null || echo ""
+import sys, re
+path = sys.argv[1]
+content = open(path).read()
+# 简单解析 scenarios 块中的 id 字段（不依赖 PyYAML）
+in_scenarios = False
+ids = []
+for line in content.splitlines():
+    if re.match(r'^scenarios\s*:', line):
+        in_scenarios = True
+        continue
+    if in_scenarios:
+        # 遇到新的顶层字段则退出
+        if re.match(r'^[a-zA-Z]', line):
+            break
+        m = re.match(r'\s+-?\s*id\s*:\s*["\']?(\S+?)["\']?\s*$', line)
+        if m:
+            ids.append(m.group(1))
+print(' '.join(ids))
+PYEOF
+  elif command -v node &>/dev/null; then
+    node - "$yaml_file" <<'JSEOF' 2>/dev/null || echo ""
+const fs = require('fs');
+const content = fs.readFileSync(process.argv[1], 'utf-8');
+const ids = [];
+let inScenarios = false;
+for (const line of content.split('\n')) {
+  if (/^scenarios\s*:/.test(line)) { inScenarios = true; continue; }
+  if (inScenarios) {
+    if (/^[a-zA-Z]/.test(line)) break;
+    const m = line.match(/\s+-?\s*id\s*:\s*["']?(\S+?)["']?\s*$/);
+    if (m) ids.push(m[1]);
+  }
+}
+console.log(ids.join(' '));
+JSEOF
+  else
+    echo ""
+  fi
+}
+
+# 检查某个 phase 下所有已声明场景是否都有对应文件
+# 参数: $1=目录, $2=文件名 glob 模式(不含SXX前缀), $3=扩展名(如 .md 或 .yaml .yml)
+# 返回: 0=全部完成, 1=有缺失; 缺失的 ID 输出到 stdout
+check_scenarios_complete() {
+  local dir="$1"
+  local ext_pattern="$2"   # 例如 "*.md" 或 "*.yaml *.yml"
+  local scenario_ids
+  scenario_ids=$(get_scenario_ids)
+
+  if [ -z "$scenario_ids" ]; then
+    # 无 scenarios 声明，降级为旧逻辑
+    echo "__fallback__"
+    return 0
+  fi
+
+  local missing=""
+  for sid in $scenario_ids; do
+    local found=false
+    for pat in $ext_pattern; do
+      if find "$dir" -maxdepth 1 -name "${sid}-${pat}" 2>/dev/null | grep -q .; then
+        found=true
+        break
+      fi
+    done
+    if [ "$found" = "false" ]; then
+      missing="$missing $sid"
+    fi
+  done
+
+  if [ -n "$missing" ]; then
+    echo "$missing"
+    return 1
+  fi
+  return 0
+}
+
 CONFIG="logos/logos.config.json"
 
 if [ ! -f "$CONFIG" ]; then
@@ -73,28 +159,70 @@ elif ! has_files "$P3_ARCH"; then
   SKILL="architecture-designer"
   SKILL_DESC="Design technical architecture"
 elif ! has_files "$P3_SCEN"; then
-  PHASE="Phase 3 Step 1: Scenario Implementation"
+  PHASE="Phase 3 Step 1: Scenario Modeling"
   SKILL="scenario-architect"
   SKILL_DESC="Model business scenarios as sequence diagrams"
-elif ! has_files "$P_API"; then
-  PHASE="Phase 3 Step 2: API & Database Design"
-  SKILL="api-designer"
-  SKILL_DESC="Design OpenAPI specifications (also run db-designer)"
-elif ! has_files "$P_TEST"; then
-  PHASE="Phase 3 Step 3a: Test Cases"
-  SKILL="test-writer"
-  SKILL_DESC="Write test case documents"
-elif ! has_files "$P_SCENARIO"; then
-  PHASE="Phase 3 Step 3b: Orchestration Tests"
-  SKILL="test-orchestrator"
-  SKILL_DESC="Design API orchestration test scenarios"
-elif ! has_files "$P_VERIFY"; then
-  PHASE="Phase 3 Step 4-5: Code Generation & Verification"
-  SKILL="code-reviewer"
-  SKILL_DESC="Generate code and run verification"
 else
-  PHASE="All phases complete"
-  SKILL=""
+  # Phase 3-1 目录有文件，进一步检查场景完整性
+  _scen_missing=$(check_scenarios_complete "$P3_SCEN" "*.md")
+  if [ "$_scen_missing" = "__fallback__" ]; then
+    : # 无 scenarios 声明，视为完成，继续向下走
+  elif [ -n "$_scen_missing" ]; then
+    PHASE="Phase 3 Step 1: Scenario Modeling (incomplete: missing${_scen_missing})"
+    SKILL="scenario-architect"
+    SKILL_DESC="Complete remaining scenario sequence diagrams"
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if ! has_files "$P_API"; then
+    PHASE="Phase 3 Step 2: API & Database Design"
+    SKILL="api-designer"
+    SKILL_DESC="Design OpenAPI specifications (also run db-designer)"
+  else
+    # Phase 3-2 目录有文件，检查场景完整性
+    _api_missing=$(check_scenarios_complete "$P_API" "*.yaml *.yml")
+    if [ "$_api_missing" = "__fallback__" ]; then
+      : # 降级，继续
+    elif [ -n "$_api_missing" ]; then
+      PHASE="Phase 3 Step 2: API & Database Design (incomplete: missing${_api_missing})"
+      SKILL="api-designer"
+      SKILL_DESC="Complete remaining API designs"
+    fi
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if ! has_files "$P_TEST"; then
+    PHASE="Phase 3 Step 3a: Test Cases"
+    SKILL="test-writer"
+    SKILL_DESC="Write test case documents"
+  else
+    # Phase 3-3a 目录有文件，检查场景完整性
+    _test_missing=$(check_scenarios_complete "$P_TEST" "*.md")
+    if [ "$_test_missing" = "__fallback__" ]; then
+      : # 降级，继续
+    elif [ -n "$_test_missing" ]; then
+      PHASE="Phase 3 Step 3a: Test Cases (incomplete: missing${_test_missing})"
+      SKILL="test-writer"
+      SKILL_DESC="Complete remaining test case documents"
+    fi
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if ! has_files "$P_SCENARIO"; then
+    PHASE="Phase 3 Step 3b: Orchestration Tests"
+    SKILL="test-orchestrator"
+    SKILL_DESC="Design API orchestration test scenarios"
+  elif ! has_files "$P_VERIFY"; then
+    PHASE="Phase 3 Step 4-5: Code Generation & Verification"
+    SKILL="code-reviewer"
+    SKILL_DESC="Generate code and run verification"
+  else
+    PHASE="All phases complete"
+    SKILL=""
+  fi
 fi
 
 # Build language policy text

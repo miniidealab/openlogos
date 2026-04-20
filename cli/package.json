@@ -1,13 +1,13 @@
 {
   "name": "@miniidealab/openlogos",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "description": "CLI tool for the OpenLogos software engineering methodology",
   "type": "module",
   "bin": {
     "openlogos": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "npx tsc",
     "prepack": "npm run build && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true});require('fs').cpSync('../plugin-opencode/template','./opencode-plugin-template',{recursive:true})\"",
     "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true});require('fs').rmSync('./opencode-plugin-template',{recursive:true,force:true})\"",
     "dev": "tsc --watch",

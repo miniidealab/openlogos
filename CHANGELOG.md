@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-21
+
+### Added
+
+- **`init --ai-tool all`：一次初始化所有 AI 工具** — `openlogos init` 新增第 5 个选项「All（全部工具）」，选择后同时为 `claude-code`、`opencode`、`cursor` 部署 Skills、生成 AGENTS.md + CLAUDE.md（均含 Active Skills 段）并部署 OpenCode 插件。`logos.config.json` 的 `aiTool` 字段写入数组 `["claude-code", "opencode", "cursor"]`。`openlogos sync` 同步兼容数组格式，对每个工具依次执行部署。
+
+- **场景完整性校验（Scenario Completion Guard）** — `openlogos status` 的阶段完成判断全面升级：
+  - `logos-project.yaml` 新增 `scenarios` 顶层字段，作为项目场景清单的**单一真相来源**，格式为 `[{ id: "S01", name: "..." }]`。
+  - Phase 3-1（场景建模）、Phase 3-2（API 设计）、Phase 3-3a（测试用例）三个阶段，改为基于 `scenarios` 清单的逐场景文件校验（通过 `SXX-` 命名前缀匹配），有场景缺失时显示 `incomplete: missing SXX SXX` 并阻止进入下一阶段。
+  - 向后兼容：若 `scenarios` 字段不存在，降级回原有"目录有文件即完成"逻辑。
+
+- **`logos/resources/reference/` 目录** — `openlogos init` 新增创建 `reference` 资源目录，用于存放参考资料。
+
+### Changed
+
+- **`architecture-designer` Skill 收尾步骤强化** — 架构设计完成后，新增强制步骤：梳理核心业务场景列表，引导用户确认后预先写入 `logos-project.yaml` 的 `scenarios` 字段，为后续场景建模阶段提供输入基础。
+
+- **`scenario-architect` Skill 新增 Step 0（强制）** — 建模开始前必须先确认场景清单：若 `logos-project.yaml` 中无 `scenarios` 字段则要求用户补填并写入；若已有则展示清单确认无遗漏。每完成一个场景文件后提示剩余未完成数量。
+
+- **`spec/logos-project.md` 规范更新** — 新增 `scenarios` 字段完整定义，包含字段说明、命名规则约定（各阶段 `SXX-` 前缀规则）和完整示例。
+
+### Plugin (0.3.0)
+
+- `openlogos-phase` 脚本新增 `get_scenario_ids` 和 `check_scenarios_complete` 函数，实现基于 `logos-project.yaml` 的场景级完成校验，替代原有的目录级 `has_files` 判断。
+
 ## [0.5.8] - 2026-04-09
 
 ### Fixed

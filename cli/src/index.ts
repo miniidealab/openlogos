@@ -24,7 +24,7 @@ Usage:
 Commands:
   init [name]        Initialize a new OpenLogos project structure
                        --locale <en|zh>            Set language (skip prompt)
-                       --ai-tool <claude-code|opencode|cursor|other>  Set AI tool (skip prompt)
+                       --ai-tool <claude-code|opencode|cursor|other|all>  Set AI tool (skip prompt)
   sync               Regenerate AI instruction files (AGENTS.md, CLAUDE.md)
   status             Show current project phase and suggest next steps
   verify             Verify test results against test case specs

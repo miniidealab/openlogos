@@ -16,6 +16,7 @@
 |------|------|------|------|
 | `project` | object | 是 | 项目基本信息 |
 | `tech_stack` | object | 是 | 技术栈描述 |
+| `scenarios` | array | 否 | 场景清单（单一真相来源，Phase 3-1 前写入） |
 | `resource_index` | array | 是 | 资源索引列表 |
 | `conventions` | array | 否 | 项目约定 |
 
@@ -69,6 +70,29 @@
 |------|------|------|------|
 | `path` | string | 是 | 文件相对路径 |
 | `desc` | string | 是 | 一句话描述——告诉 AI 什么场景下需要读这个文件 |
+
+### scenarios
+
+数组，声明项目的**完整场景清单**。场景是 OpenLogos 方法论中最核心的设计元素，是后续各阶段产出物的组织单位。
+
+**写入时机**：
+1. 在 `architecture-designer` Skill 完成后，由 AI 引导用户确认场景清单并预先写入；
+2. 在 `scenario-architect` Skill 开始建模时，强制检查并补全。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `id` | string | 是 | 场景唯一编号，格式为 `S` + 两位数字，如 `S01`、`S02` |
+| `name` | string | 是 | 场景名称（一句话描述） |
+
+**命名规则约定**（各阶段产出物通过 `SXX` 前缀与场景关联，无需在 yaml 中声明路径）：
+
+| 阶段 | 产出物路径规则 | 示例 |
+|------|-------------|------|
+| Phase 3-1 场景建模 | `logos/resources/prd/3-technical-plan/2-scenario-implementation/SXX-*.md` | `S01-user-register.md` |
+| Phase 3-2 API 设计 | `logos/resources/api/SXX-*.yaml` 或 `SXX-*.yml` | `S01-user-register.yaml` |
+| Phase 3-3a 测试用例 | `logos/resources/test/SXX-*.md` | `S01-test-cases.md` |
+
+**完成判断规则**：只有 `scenarios` 中每个 `id` 在对应阶段都存在匹配文件，该阶段才视为完成。若 `scenarios` 字段缺失，则降级为旧的"目录有文件即完成"逻辑（向后兼容）。
 
 ### conventions
 

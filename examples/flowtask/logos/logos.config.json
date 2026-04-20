@@ -1,6 +1,6 @@
 {
     "name": "flowtask",
-    "locale": "zh",
+    "locale": "en",
     "aiTool": "claude-code",
     "lifecycle": "active",
     "description": "",
@@ -64,5 +64,8 @@
     },
     "verify": {
         "result_path": "logos/resources/verify/test-results.jsonl"
-    }
+    },
+    "agents": [],
+    "modules": [],
+    "fileModules": {}
 }
