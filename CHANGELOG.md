@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-04-21
+
+### Added
+
+- **`sync` 命令输出版本号** — `openlogos sync` 执行时在首行显示当前 CLI 版本（如 `Syncing project files... (openlogos v0.7.2)`），方便确认实际运行的版本。
+
 ## [0.7.1] - 2026-04-21
 
 ### Fixed

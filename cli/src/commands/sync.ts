@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
 import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, type AiTool, type Lifecycle } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
+import { VERSION } from '../lib/json-output.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -31,7 +32,7 @@ export function sync() {
     process.exit(1);
   }
 
-  console.log('\nSyncing project files...\n');
+  console.log(`\nSyncing project files... (openlogos v${VERSION})\n`);
 
   const config = JSON.parse(readFileSync(configPath, 'utf-8'));
   const projectName = config.name || 'Unnamed Project';
