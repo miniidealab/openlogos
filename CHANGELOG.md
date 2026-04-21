@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-04-21
+
+### Fixed
+
+- **`--version` 输出硬编码问题** — `VERSION` 常量改为从 `package.json` 动态读取，彻底消除版本号需要手动同步的隐患。
+
 ## [0.7.0] - 2026-04-21
 
 ### Added

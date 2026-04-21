@@ -1,4 +1,9 @@
-export const VERSION = '0.7.0';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+
+const _pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'));
+export const VERSION: string = _pkg.version;
 
 export type OutputFormat = 'text' | 'json';
 
