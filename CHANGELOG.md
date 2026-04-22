@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-04-22
+
+### Fixed
+
+- **`scenario-architect` Skill — mermaid 箭头行单行约束** — 修复 AI 在生成时序图时将较长步骤描述折行写入箭头行（如将 UI 按钮文字另起一行补充），导致 mermaid 引擎解析失败、markdown 渲染出错的问题。在 Skill 规范中新增强制约束：每条 `->>` / `-->>` 箭头的完整内容必须写在同一行；描述过长时应精简措辞而非拆行；补充细节统一放到时序图下方的"步骤说明"列表中。
+
 ## [0.7.2] - 2026-04-21
 
 ### Added
