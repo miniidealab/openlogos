@@ -1,234 +1,215 @@
 # OpenLogos
 
-**开源的 AI 时代软件研发方法论**
+[English](./README.en.md)
 
-> OpenLogos 定义研发规范，[RunLogos](https://runlogos.com) 让规范落地。
+**面向 AI 时代的开源软件研发方法论。**
 
----
+> OpenLogos 定义标准，RunLogos 让它更高效地落地。
 
 ## 什么是 OpenLogos？
 
-OpenLogos 是一套开源的软件研发方法论，专为 AI 时代打造，由拥有 20 余年经验的软件研发专家沉淀而成。它将成熟的软件工程方法论编码为可执行的 AI Skills，使开发者能在 AI 编程工具（Cursor、Claude Code、OpenCode 等）中直接使用这套方法论。
+OpenLogos 是一套面向 AI 时代的软件研发方法论，用来约束和引导 AI 参与真实软件项目的完整过程。
 
-**核心立场：反 Vibe Coding。** 不是一上来就让 AI 写代码，而是分层推进——先搞清楚为什么做，再设计做什么，最后决定如何做。AI 是强大的执行者，但它需要清晰的指令和约束。
+它反对直接把 AI 当作“代码自动生成器”使用，而是强调先明确：
 
-## 核心理念
+- 为什么做
+- 做什么
+- 如何做
 
-### 三层推进模型
+OpenLogos 把这套过程沉淀为可执行的规范、Skills、CLI 命令和验收规则，让 AI 在项目里沿着正确轨道推进，而不是把项目带向失控的 Vibe Coding。
 
+## OpenLogos 与 RunLogos
+
+**OpenLogos 定义标准。RunLogos 让标准更好落地。**
+
+- **OpenLogos** 是开源方法论，提供研发流程、AI Skills、CLI 工具和规范文档
+- **RunLogos** 是构建在 OpenLogos 之上的专业桌面工具，用来把 AI 生成的文档、API、DB、测试与变更结果变成可视化、可编辑、可编排、可调试的工作空间
+
+OpenLogos 可以独立工作，兼容多种 AI 编码工具。  
+RunLogos 则是它的效率增强层，适合需要更强可视化编辑、API 编排调试和结构化评审体验的团队或个人。
+
+了解更多：
+
+- OpenLogos 官网：[openlogos.ai](https://openlogos.ai)
+- RunLogos 国际站：[runlogos.com](https://runlogos.com)
+- RunLogos 中国站：[runlogos.cn](https://runlogos.cn)
+
+### RunLogos 站点选择
+
+- **`runlogos.com`**：面向国际用户
+- **`runlogos.cn`**：面向中国区用户
+
+两者对应同一产品体系，但会根据不同区域用户提供更合适的访问入口与信息。
+
+## 核心工作流
+
+```text
+WHY  -> 需求文档
+WHAT -> 产品设计
+HOW  -> 技术架构 -> 场景建模 -> API / DB -> 测试设计 -> 代码实现 -> 验收验证
 ```
-WHY  — 为什么做 → 需求文档（用户痛点、竞品分析、功能需求）
-WHAT — 做什么   → 产品设计（功能规格、HTML 原型、设计规范）
-HOW  — 如何做   → 技术实现（场景建模 → API → DB → 测试编排 → 代码）
+
+核心原则：
+
+- **反 Vibe Coding**：AI 负责执行，人负责判断
+- **场景驱动**：从真实业务场景推导实现方案
+- **测试先行**：测试不是补充材料，而是开发规格的一部分
+- **变更可追溯**：通过 proposal / merge / archive 管理迭代
+
+## 安装与前置条件
+
+### 第一步：安装 OpenLogos CLI
+
+需要 `Node.js >= 18`。
+
+```bash
+npm install -g @miniidealab/openlogos
+openlogos --version
 ```
 
-每一层的产出是下一层的输入。跳过任何一层都会导致后续工作的歧义指数级增长。
+CLI 包说明见 [cli/README.md](./cli/README.md)。
 
-### 场景驱动 + 测试先行
+### 第二步：安装宿主 AI 工具
 
-- **场景驱动**：从真实业务场景出发设计技术方案，时序图是场景到技术的桥梁
-- **测试先行**：写代码之前先设计 API 编排测试用例，编排既是开发规格也是验收标准
-
-### AI 的角色
-
-人做决策，AI 做执行。方法论确保 AI 的执行在正确的轨道上。
+OpenLogos 本身提供方法论、Skills、规范和 CLI，但 `agent` / 插件 / 命令面板是否可见，取决于你使用的宿主 AI 工具是否已正确安装并完成登录。
 
 ## 快速开始
 
-### 方式一：使用 CLI 工具（推荐）
-
 ```bash
-# 安装
-npm install -g @miniidealab/openlogos
-
-# 初始化项目
 openlogos init my-project
-
-# 开始开发——按方法论的三层推进模型逐步推进
+cd my-project
+openlogos status
+openlogos next
 ```
 
-### 方式二：手动集成
+一个典型流程通常是：
 
-1. 将 `skills/` 目录下的 SKILL.md 文件复制到你的项目中
-2. 在 Cursor 中配置 `.cursor/rules/` 引用这些 Skills
-3. 或在 Claude Code 中通过 `CLAUDE.md` 引用
+1. 用 `openlogos init` 初始化项目
+2. 让 AI 按当前 Phase 逐步补齐文档与设计
+3. 用 `openlogos status` / `openlogos next` 检查进度和下一步动作
+4. 按场景实现代码与测试，并写入 OpenLogos reporter
+5. 用 `openlogos verify` 生成验收结果
+6. 首轮开发完成后，用 `openlogos launch` 进入活跃迭代阶段
+7. 后续迭代通过 `openlogos change <slug>`、`merge`、`archive` 管理
 
-### 方式三：参考可运行示例（桌面小应用）
+## 支持的 AI 工具
 
-**FlowTask（Tauri）** — 侧重 **Claude Code** 集成演示：
+OpenLogos 当前已支持：
 
-```bash
-git clone https://github.com/miniidealab/openlogos.git
-cd openlogos/examples/flowtask
-pnpm install
-pnpm tauri dev    # 开发调试；发布构建见示例 README
-# 可选：在仓库根构建 CLI 后，于本目录执行 openlogos verify
-# cd ../../cli && npm install && npm run build && cd ../examples/flowtask && openlogos verify
-```
+| 工具 | 集成方式 |
+|------|----------|
+| Cursor | `AGENTS.md` + `.cursor/rules/` |
+| Claude Code | 原生插件或 `CLAUDE.md` |
+| OpenCode | 原生插件 + `.opencode/commands/`，或 `AGENTS.md` |
+| Codex | 原生插件模式（`.codex-plugin/` + `.codex/config.toml`）+ `AGENTS.md` 兜底 |
 
-**轻记账 Money Log（Electron）** — 侧重 **OpenCode** 集成演示：
+补充说明：
 
-```bash
-git clone https://github.com/miniidealab/openlogos.git
-cd openlogos/examples/money-log
-npm install
-npm run dev
-# OpenCode 使用说明见 docs/opencode.md
-```
+- Codex 已是一等集成能力，可自动部署 `.agents/skills/`、`.codex-plugin/` 和 `.codex/config.toml`
+- OpenLogos Skills 本身是平台无关的 Markdown 规范，因此也具备较强的跨工具兼容性
 
-详见 [examples/README.md](examples/README.md)（**FlowTask** 与 **Money Log** 对位说明）。
+### AI 工具安装前置条件
 
-## 仓库结构
+如果宿主 AI 工具本身没有安装好、没有登录成功，或者没有完全重启，OpenLogos 部署出来的 Skills / 插件 / agent 面板通常不会正常显示。
 
-```
-openlogos/
-├── spec/           # 核心规范（平台无关）
-│   ├── logos.config.schema.json
-│   ├── logos-project.md
-│   ├── directory-convention.md
-│   ├── workflow.md
-│   ├── change-management.md
-│   ├── agents-md.md
-│   └── test-results.md
-│
-├── skills/         # AI Skills（平台无关的 Markdown 定义）
-│   ├── project-init/          # 项目初始化引导
-│   ├── prd-writer/            # Phase 1 · 需求文档
-│   ├── product-designer/      # Phase 2 · 产品设计
-│   ├── architecture-designer/ # Phase 3-0 · 技术架构
-│   ├── scenario-architect/    # Phase 3-1 · 场景建模
-│   ├── api-designer/          # Phase 3-2 · API 设计
-│   ├── db-designer/           # Phase 3-2 · 数据库设计
-│   ├── test-writer/           # Phase 3-3a · 测试用例设计
-│   ├── test-orchestrator/     # Phase 3-3b · API 编排测试
-│   ├── code-reviewer/         # 代码评审
-│   ├── change-writer/         # 变更提案填写
-│   └── merge-executor/        # 变更合并执行
-│
-├── cli/            # openlogos CLI 工具
-├── docs/           # 用户文档（如 OpenCode 使用指南）
-├── plugin/         # Claude Code 原生插件
-├── examples/       # 示例项目（flowtask=Claude Code 桌面演示，money-log=OpenCode 桌面演示）
-└── website/        # openlogos.ai 官网源码
-```
+建议至少确认以下几点：
 
-### 采用 OpenLogos 后的项目结构
+| 工具 | 需要先满足的条件 |
+|------|------------------|
+| Cursor | 已安装 Cursor 桌面端；可正常打开项目；允许读取项目根目录下的 `AGENTS.md` 与 `.cursor/rules/`；若规则未生效，重启 Cursor 或重新打开项目窗口 |
+| Claude Code | 已安装 Claude Code；当前终端可正常启动；插件市场可用；安装或同步完成后重启 Claude Code，确保插件与 agent 面板重新加载 |
+| OpenCode | 已安装 OpenCode；终端中可执行 `opencode`；项目根目录启动；`openlogos sync` 后重启 OpenCode，确保 `.opencode/plugins/` 与 `.opencode/commands/` 被重新加载 |
+| Codex | 已安装 Codex CLI；当前终端可正常启动 `codex`；项目内允许读取 `.codex/config.toml` 与 `.codex-plugin/`；同步完成后重启会话，确保 hooks 与 `.agents/skills/` 生效 |
 
-运行 `openlogos init` 后，所有方法论资产收纳在 `logos/` 目录下，对项目结构零侵入：
+通用建议：
 
-```
-your-project/
-├── AGENTS.md               # AI 指令入口（根目录，AI 工具要求）
-├── logos/                   # OpenLogos 方法论资产
-│   ├── logos.config.json    # 项目配置
-│   ├── logos-project.yaml   # AI 协作索引
-│   ├── resources/           # 研发资源文档
-│   └── changes/             # 变更提案工作区
-└── src/                     # 你的源代码
-```
+- 先安装并确认 `openlogos` CLI：`npm install -g @miniidealab/openlogos`
+- 再安装对应 AI 工具本体，并确认命令可在当前终端环境中执行
+- 在项目根执行 `openlogos init` 或 `openlogos sync`
+- 最后完全退出并重新打开 AI 工具
 
-## AI 工具兼容性
+推荐顺序：
 
-OpenLogos Skills 的核心内容是平台无关的 Markdown 文档。只要 AI 工具支持项目级 prompt 注入，就可以使用。
+1. 安装 `openlogos` CLI
+2. 安装并登录宿主 AI 工具
+3. 在项目根执行 `openlogos init` 或 `openlogos sync`
+4. 完全重启宿主工具，检查 Skills / 插件 / agent 面板是否出现
 
-| 工具 | 适配方式 | 状态 |
-|------|---------|------|
-| **Cursor** | `AGENTS.md` + `.cursor/rules/` | 已支持 |
-| **Claude Code** | 原生插件（推荐）或 `CLAUDE.md` | 已支持 |
-| **OpenCode** | 原生插件（推荐）或 `AGENTS.md` 兼容模式 | 已支持 |
-| GitHub Copilot | 规划中 | Phase 1.5 |
-| Windsurf | 规划中 | Phase 1.5 |
+如果 agent / 插件面板仍不显示，优先检查：
 
-### Claude Code 插件（推荐）
+- AI 工具是否已登录
+- CLI 是否在当前终端 `PATH` 中
+- 是否在项目根目录启动
+- 同步后是否真正重启了工具
 
-Claude Code 用户可以通过原生插件获得最佳体验。插件提供：
-
-- **13 个 AI Skills 自动发现** — Claude 根据任务上下文自动激活正确的 Skill
-- **斜杠命令** — 无需切终端，在对话中直接操作
-- **SessionStart Hook** — 每次启动自动检测项目 Phase 并注入上下文
-- **change-reviewer 代理** — 只读审查变更提案的合规性
-
-#### 安装
-
-```bash
-# 1. 添加 OpenLogos 插件市场（一次性操作）
-/plugin marketplace add miniidealab/openlogos
-
-# 2. 安装插件
-/plugin install openlogos@miniidealab-openlogos
-```
-
-#### 可用命令
+## 核心 CLI 命令
 
 | 命令 | 说明 |
 |------|------|
-| `/openlogos:status` | 查看当前 Phase 进度和下一步建议 |
-| `/openlogos:next` | 获取下一步操作的详细引导和可用提示词 |
-| `/openlogos:init [name]` | 初始化新项目（调用 CLI） |
-| `/openlogos:sync` | 重新生成 AI 指令文件和 Skills |
-| `/openlogos:change <slug>` | 创建变更提案 |
-| `/openlogos:merge <slug>` | 生成变更合并指令（MERGE_PROMPT.md） |
-| `/openlogos:archive <slug>` | 归档已完成的变更提案 |
-| `/openlogos:verify` | 运行测试验收并生成三层追溯报告 |
-| `/openlogos:launch` | 激活变更管理（初始开发完成后使用） |
+| `openlogos init [name]` | 初始化项目 |
+| `openlogos sync` | 重新生成 AI 指令文件与 Skills |
+| `openlogos status` | 查看当前阶段进度 |
+| `openlogos next` | 输出下一步建议 |
+| `openlogos verify` | 生成测试验收报告 |
+| `openlogos launch` | 从首轮开发切换到活跃迭代 |
+| `openlogos change <slug>` | 创建变更提案 |
+| `openlogos merge <slug>` | 合并提案 deltas |
+| `openlogos archive <slug>` | 归档已完成提案 |
+| `openlogos module list/add/rename/remove` | 管理多模块项目 |
 
-#### 工作流示例
+注意：以上命令应在项目根目录执行，也就是 `logos/logos.config.json` 所在目录。
 
+## 可运行示例
+
+仓库内提供了两个完整示例：
+
+- [examples/flowtask](./examples/flowtask/README.md)：Tauri 桌面应用，侧重 Claude Code 集成
+- [examples/money-log](./examples/money-log/README.md)：Electron 桌面应用，侧重 OpenCode 集成
+
+总览见 [examples/README.md](./examples/README.md)。
+
+## 仓库结构
+
+```text
+openlogos/
+├── cli/              # OpenLogos CLI
+├── skills/           # 平台无关的 AI Skills
+├── spec/             # 方法论规范源码
+├── docs/             # 工具与使用文档
+├── plugin/           # Claude Code 插件
+├── plugin-codex/     # Codex 插件模板
+├── plugin-opencode/  # OpenCode 插件模板
+├── examples/         # 可运行示例项目
+└── website/          # 官网源码
 ```
-1. 启动 Claude Code → SessionStart Hook 自动检测 Phase
-2. 输入 /openlogos:next → Claude 告诉你"当前是 Phase 1，建议写需求文档"
-3. 说 "帮我写需求文档" → Claude 自动激活 prd-writer Skill，按步骤引导
-4. 需求写完后再次 /openlogos:next → 进入 Phase 2 产品设计
-5. 逐步推进到 Phase 3（架构 → 场景 → API → 测试 → 代码）
-6. 全部完成后 /openlogos:launch → 激活变更管理
-7. 后续修改用 /openlogos:change <slug> 创建变更提案
+
+## `openlogos init` 后的项目结构
+
+```text
+your-project/
+├── AGENTS.md
+├── CLAUDE.md                # 适用时生成
+├── logos/
+│   ├── logos.config.json
+│   ├── logos-project.yaml
+│   ├── resources/
+│   ├── changes/
+│   └── spec/
+└── src/
 ```
 
-#### 与 CLI 的关系
-
-| 场景 | 使用方式 |
-|------|---------|
-| 初始化新项目 | CLI: `openlogos init` |
-| 查看进度 | 插件: `/openlogos:status` 或 CLI: `openlogos status` |
-| Phase 推进（写文档） | 插件: 自动激活 Skill |
-| 创建变更提案 | 插件: `/openlogos:change` 或 CLI: `openlogos change` |
-| 运行测试验收 | CLI: `openlogos verify` |
-
-> **不安装插件也能用**：`openlogos init` 选择 Claude Code 时会自动生成 `CLAUDE.md`，提供基础方法论指导。插件是增强体验，不是必须。
-
-### OpenCode（完整指南）
-
-**→ 详见 [docs/opencode.md](docs/opencode.md)**（初始化、`AGENTS.md`、本地插件、**TUI 斜杠命令**、sync、常见问题）。
-
-概要：
-
-- `openlogos init --ai-tool opencode --locale zh [name]`（或交互选 **3. OpenCode**）
-- 主读 **`AGENTS.md`**，Skills 在 **`logos/skills/`**；CLI 会部署 **`.opencode/plugins/openlogos.js`**、**`.opencode/commands/*.md`**（TUI 里输入 `/` 可见，如 **`/openlogos-status`**），并创建/合并 **`opencode.json`**
-- 会话启动由插件注入 **`openlogos status`** 摘要；执行 CLI 请用 **`/openlogos-status`**、**`/openlogos-sync`** 等（OpenCode 的 `/` 列表来自 `commands/`，**不是** `/openlogos:` 前缀）
-- 升级或改配置后请在项目根执行 **`openlogos sync`** 并**重启 OpenCode**
-
-## 渐进式采纳
-
-不需要一次性全部采纳，按你的节奏逐步深入：
-
-1. **Level 1**：运行 `openlogos init`，规范化项目结构（5 分钟上手）
-2. **Level 2**：写代码前先完成需求文档和产品设计（文档驱动）
-3. **Level 3**：采用完整的场景驱动 + 测试先行流程（工程化）
-4. **Level 4**：全流程闭环 + Delta 变更管理（企业级）
+OpenLogos 会把方法论资产集中在 `logos/` 目录中，尽量减少对现有代码结构的侵入。
 
 ## 许可证
 
-- 代码和规范：[Apache License 2.0](./LICENSE)
-- 文档和教程：[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
-
-## 贡献
-
-欢迎参与贡献！请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md) 了解如何参与。
+- 代码与规范：[Apache License 2.0](./LICENSE)
+- 文档与教程：[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 
 ## 链接
 
-- OpenCode 使用指南：[docs/opencode.md](docs/opencode.md)
 - 官网：[openlogos.ai](https://openlogos.ai)
-- 商业工具：[RunLogos](https://runlogos.com)
+- RunLogos 国际站：[runlogos.com](https://runlogos.com)
+- RunLogos 中国站：[runlogos.cn](https://runlogos.cn)
+- OpenCode 指南：[docs/opencode.md](./docs/opencode.md)
+- CLI 说明：[cli/README.md](./cli/README.md)
 - GitHub：[github.com/miniidealab/openlogos](https://github.com/miniidealab/openlogos)
-- MiniIdea：[miniidealab.com](https://miniidealab.com)
