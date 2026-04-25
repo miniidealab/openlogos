@@ -2,6 +2,10 @@
 
 [中文](./README.md)
 
+<p align="center">
+  <img src="./logos/resources/reference/openlogos-index.png" alt="OpenLogos homepage preview" width="1200" />
+</p>
+
 **An open-source software development methodology for the AI era.**
 
 > OpenLogos defines the standards. RunLogos makes them land better.
@@ -179,8 +183,7 @@ openlogos/
 ├── plugin/           # Claude Code plugin
 ├── plugin-codex/     # Codex plugin templates
 ├── plugin-opencode/  # OpenCode plugin templates
-├── examples/         # Runnable example projects
-└── website/          # Website source
+└── examples/         # Runnable example projects
 ```
 
 ## Project Structure After `openlogos init`

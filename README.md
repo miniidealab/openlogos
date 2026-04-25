@@ -2,6 +2,10 @@
 
 [English](./README.en.md)
 
+<p align="center">
+  <img src="./logos/resources/reference/openlogos-index.png" alt="OpenLogos 首页展示图" width="1200" />
+</p>
+
 **面向 AI 时代的开源软件研发方法论。**
 
 > OpenLogos 定义标准，RunLogos 让它更高效地落地。
@@ -179,8 +183,7 @@ openlogos/
 ├── plugin/           # Claude Code 插件
 ├── plugin-codex/     # Codex 插件模板
 ├── plugin-opencode/  # OpenCode 插件模板
-├── examples/         # 可运行示例项目
-└── website/          # 官网源码
+└── examples/         # 可运行示例项目
 ```
 
 ## `openlogos init` 后的项目结构
