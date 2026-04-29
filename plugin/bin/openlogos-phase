@@ -125,12 +125,19 @@ PROJECT_NAME=""
 
 if command -v python3 &>/dev/null; then
   LOCALE=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
-  LIFECYCLE=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('lifecycle','initial'))" 2>/dev/null || echo "initial")
   PROJECT_NAME=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('name',''))" 2>/dev/null || echo "")
 elif command -v node &>/dev/null; then
   LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
-  LIFECYCLE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.lifecycle||'initial')" 2>/dev/null || echo "initial")
   PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
+fi
+
+# 从 logos-project.yaml 的 modules[].lifecycle 推导项目级 lifecycle
+# 任意模块标记为 launched 则项目为 launched
+YAML_FILE="logos/logos-project.yaml"
+if [ -f "$YAML_FILE" ]; then
+  if grep -q 'lifecycle\s*:\s*launched' "$YAML_FILE" 2>/dev/null; then
+    LIFECYCLE="launched"
+  fi
 fi
 
 P1="logos/resources/prd/1-product-requirements"
@@ -164,7 +171,7 @@ elif ! has_files "$P3_SCEN"; then
   SKILL_DESC="Model business scenarios as sequence diagrams"
 else
   # Phase 3-1 目录有文件，进一步检查场景完整性
-  _scen_missing=$(check_scenarios_complete "$P3_SCEN" "*.md")
+  _scen_missing=$(check_scenarios_complete "$P3_SCEN" "*.md" || true)
   if [ "$_scen_missing" = "__fallback__" ]; then
     : # 无 scenarios 声明，视为完成，继续向下走
   elif [ -n "$_scen_missing" ]; then
@@ -181,7 +188,7 @@ if [ -z "$PHASE" ]; then
     SKILL_DESC="Design OpenAPI specifications (also run db-designer)"
   else
     # Phase 3-2 目录有文件，检查场景完整性
-    _api_missing=$(check_scenarios_complete "$P_API" "*.yaml *.yml")
+    _api_missing=$(check_scenarios_complete "$P_API" "*.yaml *.yml" || true)
     if [ "$_api_missing" = "__fallback__" ]; then
       : # 降级，继续
     elif [ -n "$_api_missing" ]; then
@@ -199,7 +206,7 @@ if [ -z "$PHASE" ]; then
     SKILL_DESC="Write test case documents"
   else
     # Phase 3-3a 目录有文件，检查场景完整性
-    _test_missing=$(check_scenarios_complete "$P_TEST" "*.md")
+    _test_missing=$(check_scenarios_complete "$P_TEST" "*.md" || true)
     if [ "$_test_missing" = "__fallback__" ]; then
       : # 降级，继续
     elif [ -n "$_test_missing" ]; then
@@ -237,7 +244,7 @@ GUARD_FILE="logos/.openlogos-guard"
 GUARD_STATUS=""
 ACTIVE_CHANGE=""
 
-if [ "$LIFECYCLE" = "active" ] && [ -f "$GUARD_FILE" ]; then
+if [ "$LIFECYCLE" = "launched" ] && [ -f "$GUARD_FILE" ]; then
   if command -v python3 &>/dev/null; then
     ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
   elif command -v node &>/dev/null; then
@@ -246,10 +253,10 @@ if [ "$LIFECYCLE" = "active" ] && [ -f "$GUARD_FILE" ]; then
 fi
 
 # Build change management text
-if [ "$LIFECYCLE" = "active" ]; then
+if [ "$LIFECYCLE" = "launched" ]; then
   if [ -n "$ACTIVE_CHANGE" ]; then
     GUARD_STATUS="🔓 Active change: $ACTIVE_CHANGE — modify files within the scope of this proposal only."
-    CHANGE_MGMT="Change Management: ACTIVE — guard file detected. Active change proposal: '$ACTIVE_CHANGE'. Only modify files within the scope of logos/changes/$ACTIVE_CHANGE/proposal.md. openlogos merge and openlogos archive are human confirmation points: AI must not execute them without explicit user authorization. When coding is done, remind the user to explicitly authorize running: openlogos merge $ACTIVE_CHANGE (then after review: openlogos archive $ACTIVE_CHANGE). If the user explicitly requests execution (including via slash commands), AI may execute."
+    CHANGE_MGMT="Change Management: ACTIVE — guard file detected. Active change proposal: '$ACTIVE_CHANGE'. Only modify files within the scope of logos/changes/$ACTIVE_CHANGE/proposal.md. Full workflow: (1) produce deltas, (2) user authorizes openlogos merge, (3) AI auto-commits spec, (4) implement code per updated spec, (5) AI auto-commits code, (6) user runs openlogos verify — must PASS, (7) user authorizes openlogos archive, (8) AI auto-commits archive, (9) user confirms git push. openlogos merge / verify / archive and git push are human confirmation points: AI must not execute them without explicit user authorization."
   else
     GUARD_STATUS="⛔ NO active change proposal. You MUST run openlogos change <slug> before modifying any code."
     CHANGE_MGMT="Change Management: ACTIVE — ⛔ NO guard file found. Before modifying ANY source code, you MUST first run openlogos change <slug> to create a change proposal. Direct code changes without a proposal are FORBIDDEN."
