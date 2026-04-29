@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-29
+
+### Added
+
+- **变更流程新增 verify 验收节点** — 在 `merge`（规格落地）和 `archive`（归档）之间强制插入 `openlogos verify` 验收步骤，确保代码通过测试后才能归档，形成完整的质量闭环。
+
+- **变更流程新增 git commit/push 节点** — 在三个关键节点（merge 完成、代码实现完成、archive 完成）由 AI 自动提交 commit，`git push` 作为独立人类确认点放在 archive 之后，commit message 规范统一为 `docs/feat/fix/chore({slug}): ...`。
+
+- **确立 merge → 代码实现 → verify → archive 的正确顺序** — 规格先合并进主文档，代码按最新规格实现，verify 验收代码，通过后归档，符合"规格驱动代码"核心理念。
+
+### Changed
+
+- **AI 任务执行规范** — `change-writer` Skill 新增强制要求：每完成 `tasks.md` 中的一项任务后，AI 必须立即将该项从 `[ ]` 更新为 `[x]`，确保任务进度实时可追踪。
+
+- **`merge-executor` Skill 输出更新** — 合并完成后自动执行 `git add -A && git commit`（使用 `-A` 覆盖所有规格文件），并输出包含实现代码、verify、archive 三步的后续指引，替代原来直接提示 archive 的旧文案。
+
+- **全链路文档同步** — `AGENTS.md`、`CLAUDE.md`、`spec/change-management.md`、`spec/workflow.md`、`skills/`、`plugin/commands/`、`plugin-opencode/template/` 及 `cli/src/i18n.ts` 中所有涉及变更流程的描述统一更新为新的 10 步流程，消除旧流程残留。
+
 ## [0.8.2] - 2026-04-28
 
 ### Fixed
