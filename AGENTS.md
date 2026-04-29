@@ -119,4 +119,4 @@ cd <项目根目录> && openlogos <command>
 
 **违反此规则将导致用户无法通过插件更新机制获取最新的 Skill 文档和 hook 脚本。**
 
-发布完整流程见 `spec/release.md`。`npm publish` 是人类确认点，AI 不得自动执行。
+发布完整流程见 `RELEASING.md`。`npm publish` 是人类确认点，AI 不得自动执行。
