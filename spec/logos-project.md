@@ -83,6 +83,33 @@
 | `id` | string | 是 | 模块标识符，小写字母 + 连字符，如 `core`、`payment` |
 | `name` | string | 是 | 模块名称（中文或英文均可） |
 | `lifecycle` | string | 是 | 模块生命周期：`initial`（初始开发阶段，关注 phase 推进）或 `launched`（迭代开发阶段，关注变更提案） |
+| `skip_phases` | array | 否 | 声明本模块不需要的阶段，phase 检测时跳过对应目录。由 `architecture-designer` Skill 在技术选型后填写。 |
+
+`skip_phases` 允许值：
+
+| 值 | 跳过的检查 | 适用场景 |
+|----|-----------|---------|
+| `api` | `logos/resources/api/` | 无 HTTP API 的项目（桌面应用、CLI 工具、前端库） |
+| `database` | `logos/resources/database/` | 无数据库的项目（纯计算工具、无状态 CLI） |
+| `scenario` | `logos/resources/scenario/` | 无 API 编排测试的项目（通常与 `api` 同时跳过） |
+
+示例：
+
+```yaml
+modules:
+  - id: core
+    name: 核心功能
+    lifecycle: initial
+    skip_phases: [api, scenario]   # SQLite 桌面应用：有数据库，无 HTTP API
+```
+
+```yaml
+modules:
+  - id: core
+    name: 核心功能
+    lifecycle: initial
+    skip_phases: [api, database, scenario]   # 纯 CLI 工具：无数据库，无 HTTP API
+```
 
 ### resource_index
 

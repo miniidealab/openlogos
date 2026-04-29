@@ -134,9 +134,19 @@ fi
 # 从 logos-project.yaml 的 modules[].lifecycle 推导项目级 lifecycle
 # 任意模块标记为 launched 则项目为 launched
 YAML_FILE="logos/logos-project.yaml"
+SKIP_API=false
+SKIP_DATABASE=false
+SKIP_SCENARIO=false
+
 if [ -f "$YAML_FILE" ]; then
   if grep -q 'lifecycle\s*:\s*launched' "$YAML_FILE" 2>/dev/null; then
     LIFECYCLE="launched"
+  fi
+  # 读取第一个模块的 skip_phases（简单 grep，覆盖常见格式）
+  if grep -q 'skip_phases' "$YAML_FILE" 2>/dev/null; then
+    grep 'skip_phases' "$YAML_FILE" | grep -q 'api'      && SKIP_API=true
+    grep 'skip_phases' "$YAML_FILE" | grep -q 'database' && SKIP_DATABASE=true
+    grep 'skip_phases' "$YAML_FILE" | grep -q 'scenario' && SKIP_SCENARIO=true
   fi
 fi
 
@@ -182,7 +192,9 @@ else
 fi
 
 if [ -z "$PHASE" ]; then
-  if ! has_files "$P_API"; then
+  if [ "$SKIP_API" = "true" ]; then
+    : # skip api phase
+  elif ! has_files "$P_API"; then
     PHASE="Phase 3 Step 2: API & Database Design"
     SKILL="api-designer"
     SKILL_DESC="Design OpenAPI specifications (also run db-designer)"
@@ -218,11 +230,17 @@ if [ -z "$PHASE" ]; then
 fi
 
 if [ -z "$PHASE" ]; then
-  if ! has_files "$P_SCENARIO"; then
+  if [ "$SKIP_SCENARIO" = "true" ]; then
+    : # skip scenario/orchestration phase
+  elif ! has_files "$P_SCENARIO"; then
     PHASE="Phase 3 Step 3b: Orchestration Tests"
     SKILL="test-orchestrator"
     SKILL_DESC="Design API orchestration test scenarios"
-  elif ! has_files "$P_VERIFY"; then
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if ! has_files "$P_VERIFY"; then
     PHASE="Phase 3 Step 4-5: Code Generation & Verification"
     SKILL="code-reviewer"
     SKILL_DESC="Generate code and run verification"

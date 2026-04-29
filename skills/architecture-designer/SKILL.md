@@ -154,6 +154,28 @@ external_dependencies:
     test_config: "GET /api/test/latest-email?to={email}"
 ```
 
+**同时根据技术选型填写 `skip_phases`**，告知 phase 检测逻辑跳过本模块不需要的阶段：
+
+| 项目类型 | 建议 skip_phases |
+|---------|----------------|
+| 标准 Web / API 项目 | 不填（全走） |
+| 有本地数据库、无 HTTP API（SQLite 桌面应用、Electron） | `[api, scenario]` |
+| 无数据库、无 HTTP API（CLI 工具、前端库、纯计算工具） | `[api, database, scenario]` |
+| 有 HTTP API、无数据库（无状态代理服务） | `[database]` |
+
+```yaml
+modules:
+  - id: core
+    name: 核心功能
+    lifecycle: initial
+    skip_phases: [api, scenario]   # 根据实际技术选型填写，无需跳过时删除此行
+```
+
+**判断依据**：
+- 无 HTTP API → skip `api` 和 `scenario`（API 编排测试依赖 HTTP API）
+- 无任何数据库 → skip `database`
+- 有 SQLite / 本地数据库 → 保留 `database`（仍需设计 schema）
+
 ## 输出规范
 
 - 架构概要文档：`logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md`（架构文件全局唯一，后续修改始终在此文件上更新，不新建文件）

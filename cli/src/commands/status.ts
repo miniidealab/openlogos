@@ -27,6 +27,7 @@ export interface ModuleInfo {
   id: string;
   name: string;
   lifecycle: 'initial' | 'launched';
+  skip_phases?: string[];
 }
 
 interface ScenarioCoverage {
@@ -179,16 +180,33 @@ export function listFiles(dir: string): string[] {
   }
 }
 
+// skip_phases value → PHASE_KEY mapping
+const SKIP_PHASE_MAP: Record<string, string> = {
+  api:      'phase.3-2-api',
+  database: 'phase.3-2-db',
+  scenario: 'phase.3-3b',
+};
+
 function deriveModulePhaseProgress(
   root: string,
   moduleId: string,
   scenarios: Array<{ id: string }>,
+  skipPhases: string[] = [],
 ): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
   const progress: Record<string, PhaseProgressItem> = {};
+
+  // Build set of phase keys to skip from explicit skip_phases declaration
+  const explicitSkip = new Set(skipPhases.map(s => SKIP_PHASE_MAP[s]).filter(Boolean));
 
   for (let i = 0; i < PHASE_KEYS.length; i++) {
     const key = PHASE_KEYS[i];
     const dir = join(root, PHASE_SUBPATHS[i]);
+
+    // Explicitly skipped via skip_phases
+    if (explicitSkip.has(key)) {
+      progress[key] = { done: false, skipped: true };
+      continue;
+    }
 
     if (SCENARIO_PHASES.has(key)) {
       // Per-scenario coverage check
@@ -213,7 +231,8 @@ function deriveModulePhaseProgress(
     }
   }
 
-  // Mark skipped: empty phase before a done phase
+  // Fallback: mark skipped for empty phases that appear before a done phase
+  // (handles projects without skip_phases declared — backward compatibility)
   const keys = PHASE_KEYS;
   const lastDoneIdx = keys.reduce((acc, k, i) => (progress[k].done ? i : acc), -1);
   for (let i = 0; i < lastDoneIdx; i++) {
@@ -291,7 +310,7 @@ function buildModuleStatusItem(
   }
 
   // initial lifecycle
-  const { progress, currentPhase } = deriveModulePhaseProgress(root, mod.id, scenarios);
+  const { progress, currentPhase } = deriveModulePhaseProgress(root, mod.id, scenarios, mod.skip_phases ?? []);
   const currentPhaseLabel = currentPhase ? t(locale as Parameters<typeof t>[0], currentPhase) : null;
 
   let suggestion: string;
@@ -374,10 +393,11 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     try {
       const yaml = parseYaml(readFileSync(projectYamlPath, 'utf-8'));
       if (Array.isArray(yaml?.modules)) {
-        rawModules = (yaml.modules as Array<{ id: string; name: string; lifecycle?: string }>).map(m => ({
+        rawModules = (yaml.modules as Array<{ id: string; name: string; lifecycle?: string; skip_phases?: string[] }>).map(m => ({
           id: m.id,
           name: m.name,
           lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
+          skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
         }));
         // Derive project lifecycle from modules
         if (rawModules.some(m => m.lifecycle === 'launched')) {

@@ -775,6 +775,8 @@ modules:
   - id: core
     name: ${locale === 'zh' ? '核心功能' : 'Core'}
     lifecycle: initial
+    # skip_phases: [api, scenario]   # 由 architecture-designer Skill 在技术选型后填写
+    # 可选值: api（无 HTTP API）, database（无数据库）, scenario（无 API 编排测试）
 
 resource_index: []
 
