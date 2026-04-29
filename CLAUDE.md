@@ -126,3 +126,14 @@ cd <项目根目录> && openlogos <command>
 ## Conventions
 - 遵循 OpenLogos 三层推进模型（Why → What → How）
 - 每次变更必须先创建 logos/changes/ 变更提案
+
+## 📦 发布规则（强制执行）
+
+每次发布新版本时，必须同步更新以下两个文件的版本号：
+
+1. `cli/package.json` — CLI npm 包版本
+2. `plugin/.claude-plugin/plugin.json` — Claude Code 插件版本（**必须与 CLI 版本号完全一致**）
+
+**违反此规则将导致用户无法通过插件更新机制获取最新的 Skill 文档和 hook 脚本。**
+
+发布完整流程见 `spec/release.md`。`npm publish` 是人类确认点，AI 不得自动执行。
