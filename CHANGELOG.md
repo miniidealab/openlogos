@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-04-29
+
+### Added
+
+- **`skip_phases` 模块配置** — `logos-project.yaml` 的 `modules[]` 新增可选字段 `skip_phases`，允许值为 `api`、`database`、`scenario`。由 `architecture-designer` Skill 在技术选型后填写，无需用户手动配置。适用于无 HTTP API 的桌面应用、CLI 工具等项目类型。
+
+### Changed
+
+- **phase 检测逻辑升级** — CLI（`status`、`next`）和 plugin 脚本均支持 `skip_phases`：显式声明的阶段直接跳过，同时保留向后看兜底逻辑（后续阶段已有文件时自动跳过空目录），向后兼容旧项目。
+- **多模块隔离** — 全局 phase 跳过采用交集语义：只有所有 initial 模块都声明跳过某阶段，才在全局层面跳过，避免一个模块的 `skip_phases` 影响其他模块。
+- **`architecture-designer` Skill 更新** — Step 6 新增填写 `skip_phases` 的判断规则和示例，AI 在技术选型后自动推断并写入。
+- **`spec/logos-project.md` 更新** — 补充 `skip_phases` 字段说明、允许值表格和完整示例。
+
 ## [0.9.1] - 2026-04-29
 
 ### Fixed
