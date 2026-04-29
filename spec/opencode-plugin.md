@@ -78,12 +78,12 @@ MVP 至少覆盖以下事件：
 | `/openlogos:merge <slug>` | `openlogos merge <slug>` | 生成合并指令 |
 | `/openlogos:archive <slug>` | `openlogos archive <slug>` | 归档变更 |
 | `/openlogos:verify` | `openlogos verify` | 执行验收 |
-| `/openlogos:launch` | `openlogos launch` | 激活变更管理 |
+| `/openlogos:launch [module-id]` | `openlogos launch [module-id]` | 将指定模块标记为 launched，激活变更管理 |
 
 ### 命令参数契约（MVP）
 
-- 无参命令：`status`、`next`、`sync`、`verify`、`launch`
-- 可选参命令：`init [name]`
+- 无参命令：`status`、`next`、`sync`、`verify`
+- 可选参命令：`init [name]`、`launch [module-id]`
 - 必填参命令：`change <slug>`、`merge <slug>`、`archive <slug>`
 
 解析规则：

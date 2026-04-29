@@ -202,7 +202,7 @@ This directory has already been initialized as an OpenLogos project.
 
 - 功能规格：`logos/resources/prd/2-product-design/1-feature-specs/`
 - 原型：`logos/resources/prd/2-product-design/2-page-design/`
-- 设计文档与原型成对出现：`{序号}-{名称}-design.md` + `{序号}-{名称}-prototype.{ext}`
+- 设计文档与原型成对出现：`<module>-{序号}-{名称}-design.md` + `<module>-{序号}-{名称}-prototype.{ext}`（从 `logos-project.yaml` 的 `modules[]` 读取当前模块，默认为 `core`）
   - Web 应用：`.html`
   - CLI 工具：`-terminal.md`（终端交互模拟）
   - AI Skills：`-dialogue.md`（对话流程脚本）

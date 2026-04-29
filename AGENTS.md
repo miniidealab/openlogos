@@ -41,6 +41,13 @@ Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件
 - 编排测试存在但 `logos/resources/implementation/` 为空 → Phase 3 Step 4 → **读取 `logos/skills/code-implementor/SKILL.md` 并按其步骤执行**（完成后可用 `logos/skills/code-reviewer/SKILL.md` 进行代码审查）
 - 代码已生成但 `logos/resources/verify/` 为空 → Phase 3 Step 5（运行测试后 `openlogos verify`）
 
+文件命名规范（模块前缀）：
+- 所有设计文档遵循 `<module>-<序号>-<类型>.md` 格式，初始项目默认使用 `core-` 前缀
+- 场景实现文件：`<module>-SXX-<slug>.md`（如 `core-S01-cli-init.md`）
+- 测试用例文件：`<module>-SXX-test-cases.md`（如 `core-S01-test-cases.md`）
+- 场景编号全局唯一，由 `logos-project.yaml` 的 `scenario_counter.next_id` 维护，严禁不同模块从 S01 重新开始
+- 多模块状态：`openlogos status` 聚合展示所有模块（in-progress 置顶）；`openlogos next` 单模块直接建议，多模块并列列出，无 in-progress 时提示 `module add`
+
 Step 4 执行规则（大任务）：
 1. 大任务可按场景/子模块分批实现，但每一批必须闭环
 2. 每一批必须同时包含：业务代码 + UT/ST 测试代码 + OpenLogos reporter
@@ -64,19 +71,19 @@ Step 4 分批执行提示词（可直接复用）：
 ## Active Skills
 **重要**：当你识别到当前 Phase 后，必须先读取对应的 Skill 文件（使用上方 Phase 检测逻辑中指定的路径），按 Skill 中定义的步骤逐步执行。不要跳过 Skill 文件直接生成内容。
 
-- `skills/project-init/` — 项目初始化与结构搭建
-- `skills/prd-writer/` — 需求文档编写
-- `skills/product-designer/` — 产品设计与原型
-- `skills/architecture-designer/` — 技术架构与技术选型
-- `skills/scenario-architect/` — 业务场景建模与时序图
-- `skills/api-designer/` — OpenAPI 规格设计
-- `skills/db-designer/` — 数据库 Schema 设计
-- `skills/test-writer/` — 单元测试 + 场景测试用例设计（Step 3a）
-- `skills/test-orchestrator/` — API 编排测试设计（Step 3b，仅 API 项目）
-- `skills/code-implementor/` — 基于规格链的代码与测试代码生成（Step 4）
-- `skills/code-reviewer/` — 代码审查与规范检查
-- `skills/change-writer/` — 变更提案编写与影响分析
-- `skills/merge-executor/` — 通过 MERGE_PROMPT.md 执行 Delta 合并
+- `logos/skills/project-init/SKILL.md` — 项目初始化与结构搭建
+- `logos/skills/prd-writer/SKILL.md` — 需求文档编写
+- `logos/skills/product-designer/SKILL.md` — 产品设计与原型
+- `logos/skills/architecture-designer/SKILL.md` — 技术架构与技术选型
+- `logos/skills/scenario-architect/SKILL.md` — 业务场景建模与时序图
+- `logos/skills/api-designer/SKILL.md` — OpenAPI 规格设计
+- `logos/skills/db-designer/SKILL.md` — 数据库 Schema 设计
+- `logos/skills/test-writer/SKILL.md` — 单元测试 + 场景测试用例设计（Step 3a）
+- `logos/skills/test-orchestrator/SKILL.md` — API 编排测试设计（Step 3b，仅 API 项目）
+- `logos/skills/code-implementor/SKILL.md` — 基于规格链的代码与测试代码生成（Step 4）
+- `logos/skills/code-reviewer/SKILL.md` — 代码审查与规范检查
+- `logos/skills/change-writer/SKILL.md` — 变更提案编写与影响分析
+- `logos/skills/merge-executor/SKILL.md` — 通过 MERGE_PROMPT.md 执行 Delta 合并
 
 ## ⛔ 变更管理（强制执行）
 
@@ -88,8 +95,16 @@ Step 4 分批执行提示词（可直接复用）：
 ### 变更流程
 1. 运行 `openlogos change <slug>` 创建提案（自动写入 guard 文件）
 2. 使用 change-writer Skill 填写 `proposal.md` + `tasks.md`
-3. **等待用户确认后** 再开始编码
-4. 完成后运行 `openlogos merge <slug>` → `openlogos archive <slug>`（自动删除 guard 文件）
+3. **等待用户确认后** 再开始产出 delta
+4. delta 产出完成后提醒用户明确授权运行 `openlogos merge <slug>`
+5. merge 完成后 AI 自动 commit 规格文档（告知用户，无需确认）
+6. 按合并后的规格实现代码，完成后 AI 自动 commit 代码（告知用户，无需确认）
+7. 提醒用户运行 `openlogos verify` 验收
+8. 验收通过后提醒用户明确授权运行 `openlogos archive <slug>`（自动删除 guard 文件）
+9. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
+10. 提醒用户确认是否执行 `git push`（人类确认点）
+
+**`openlogos merge`、`openlogos verify`、`openlogos archive` 和 `git push` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案

@@ -66,7 +66,7 @@
 
    只有用户明确确认清单无误后，才进入 Step 1 开始建模。
 
-2. 确认清单后，告知用户当前已完成哪些场景（`SXX-*.md` 文件存在），还剩哪些场景待建模，然后按用户指示开始目标场景的建模。
+2. 确认清单后，告知用户当前已完成哪些场景（`<module>-SXX-*.md` 文件存在），还剩哪些场景待建模，然后按用户指示开始目标场景的建模。
 
 ---
 
@@ -241,8 +241,8 @@ sequenceDiagram
 
 ## 输出规范
 
-- **场景概览**：`logos/resources/prd/3-technical-plan/2-scenario-implementation/00-scenario-overview.md`
-- **场景文档**：`logos/resources/prd/3-technical-plan/2-scenario-implementation/{场景编号}-{场景名}.md`
+- **场景概览**：`logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md`
+- **场景文档**：`logos/resources/prd/3-technical-plan/2-scenario-implementation/<module>-{场景编号}-{场景名}.md`（从 `logos-project.yaml` 的 `modules[]` 读取当前模块，默认为 `core`；生成前必须读取 `scenario_counter.next_id` 取号，生成后立即将 `next_id` 加 1 写回）
 - 时序图使用 Mermaid 格式（可在 Markdown 中直接渲染）
 - 异常用例使用 `EX-N.M` 编号，全局唯一
 - 每个场景文档包含：时序图 + 步骤说明 + 异常用例
@@ -274,9 +274,9 @@ sequenceDiagram
 ```yaml
 resource_index:
   # ...已有条目...
-  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/00-scenario-overview.md
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md
     desc: 场景实现概览索引。涉及全量场景分类、参与方、实现文档映射关系时必读。
-  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/S01-<slug>.md
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-<slug>.md
     desc: S01 <场景名称>场景时序图。涉及 S01 实现细节、API 设计、异常分支时必读。
   # 每个场景文件均需单独一条
 ```

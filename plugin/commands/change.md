@@ -15,4 +15,5 @@ Create a new OpenLogos change proposal with the slug provided as argument: "$ARG
    - Fill in `proposal.md` with the change reason, scope, and summary
    - Fill in `tasks.md` with the implementation tasks
    - After approval, implement the changes
-   - Run `openlogos merge $ARGUMENTS` and `openlogos archive $ARGUMENTS` when done
+   - When ready to merge, explicitly request `/openlogos:merge $ARGUMENTS` to generate merge instructions
+   - After reviewing the merge, explicitly request `/openlogos:archive $ARGUMENTS` to archive the proposal

@@ -167,7 +167,7 @@ Guide the user to the next step based on project type:
 
 - **File format**: Markdown
 - **Location**: `logos/resources/test/`
-- **Naming convention**: `{scenario-number}-test-cases.md` (e.g., `S01-test-cases.md`)
+- **Naming convention**: `<module>-{scenario-number}-test-cases.md` (e.g., `core-S01-test-cases.md`; read current module from `modules[]` in `logos-project.yaml`, default is `core`)
 - Each file contains: Unit test cases (grouped by source) + Scenario test cases (happy path + exception paths)
 - Case IDs are globally unique: `UT-{scenario-number}-{sequence}` / `ST-{scenario-number}-{sequence}`
 

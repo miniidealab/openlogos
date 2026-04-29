@@ -156,7 +156,7 @@ external_dependencies:
 
 ## 输出规范
 
-- 架构概要文档：`logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md`
+- 架构概要文档：`logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md`（架构文件全局唯一，后续修改始终在此文件上更新，不新建文件）
 - 架构图使用 Mermaid 格式
 - 技术选型使用表格格式，每项必须有理由
 - 更新 `logos-project.yaml` 的 `tech_stack` 和 `external_dependencies` 字段

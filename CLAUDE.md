@@ -41,6 +41,13 @@ Phase 检测逻辑：
 - 编排测试存在但 `logos/resources/implementation/` 为空 → 建议 Phase 3 Step 4（code-implementor）
 - 代码已生成但 `logos/resources/verify/` 为空 → 建议 Phase 3 Step 5（运行测试后 `openlogos verify`）
 
+文件命名规范（模块前缀）：
+- 所有设计文档遵循 `<module>-<序号>-<类型>.md` 格式，初始项目默认使用 `core-` 前缀
+- 场景实现文件：`<module>-SXX-<slug>.md`（如 `core-S01-cli-init.md`）
+- 测试用例文件：`<module>-SXX-test-cases.md`（如 `core-S01-test-cases.md`）
+- 场景编号全局唯一，由 `logos-project.yaml` 的 `scenario_counter.next_id` 维护，严禁不同模块从 S01 重新开始
+- 多模块状态：`openlogos status` 聚合展示所有模块（in-progress 置顶）；`openlogos next` 单模块直接建议，多模块并列列出，无 in-progress 时提示 `module add`
+
 Step 4 执行规则（大任务）：
 1. 大任务可按场景/子模块分批实现，但每一批必须闭环
 2. 每一批必须同时包含：业务代码 + UT/ST 测试代码 + OpenLogos reporter
@@ -71,8 +78,16 @@ Step 4 分批执行提示词（可直接复用）：
 ### 变更流程
 1. 运行 `openlogos change <slug>` 创建提案（自动写入 guard 文件）
 2. 使用 change-writer Skill 填写 `proposal.md` + `tasks.md`
-3. **等待用户确认后** 再开始编码
-4. 完成后运行 `openlogos merge <slug>` → `openlogos archive <slug>`（自动删除 guard 文件）
+3. **等待用户确认后** 再开始产出 delta
+4. delta 产出完成后提醒用户明确授权运行 `openlogos merge <slug>`
+5. merge 完成后 AI 自动 commit 规格文档（告知用户，无需确认）
+6. 按合并后的规格实现代码，完成后 AI 自动 commit 代码（告知用户，无需确认）
+7. 提醒用户运行 `openlogos verify` 验收
+8. 验收通过后提醒用户明确授权运行 `openlogos archive <slug>`（自动删除 guard 文件）
+9. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
+10. 提醒用户确认是否执行 `git push`（人类确认点）
+
+**`openlogos merge`、`openlogos verify`、`openlogos archive` 和 `git push` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案

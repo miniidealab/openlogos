@@ -14,7 +14,7 @@ const RESULT_PATH = resolve(
   '..',
   'logos/resources/verify/test-results.jsonl',
 );
-const ID_RE = /\b(UT|ST)-S\d{2}-\d{2,3}\b/;
+const ID_RE = /\b(UT|ST)-S\d{2}-\d{2,3}[a-z]?\b/;
 
 export default class OpenLogosReporter implements Reporter {
   onInit() {

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 64" role="img" aria-label="RunLogos concept E: wordmark">
+  <text x="4" y="44" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="900" fill="#fafafa" letter-spacing="-0.05em">Run</text>
+  <text x="86" y="44" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="500" fill="#71717a" letter-spacing="-0.03em">Logos</text>
+  <rect x="248" y="18" width="8" height="8" rx="2" fill="#0eb677"/>
+  <path d="M248 34h8" stroke="#22d3ee" stroke-width="3" stroke-linecap="round"/>
+  <path d="M248 40h8" stroke="#22d3ee" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+</svg>

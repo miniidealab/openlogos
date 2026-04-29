@@ -116,9 +116,16 @@ Chain execution behavior rules:
 1. AI reads `tasks.md` and executes items sequentially
 2. After completing each task, report a summary of changes and automatically prompt "Continue to the next item?"
 3. After the user says "Continue" or provides adjustments, proceed to the next item
-4. After all tasks are completed, remind the user to run `openlogos merge <slug>`
+4. After all tasks are completed, remind the user to explicitly authorize running `openlogos merge <slug>`
 
 **Key principle**: Do not make the user manually track the task checklist — AI should proactively drive the process.
+
+**`openlogos merge` and `openlogos archive` are human confirmation points**:
+- AI must not execute these commands without explicit user authorization
+- When the user explicitly requests execution (including via `/openlogos:merge` or `/openlogos:archive` slash commands), AI may execute them
+- Must not be triggered implicitly in scenarios like "continue", "finish up", or "follow the process"
+
+AI is only responsible for driving content modifications and must not advance proposal state without explicit authorization.
 
 ## Output Specification
 

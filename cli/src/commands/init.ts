@@ -1,10 +1,10 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync, chmodSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 
-export type AiTool = 'claude-code' | 'opencode' | 'cursor' | 'other' | 'all';
+export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' | 'all';
 
 type NameSource = 'argument' | 'package.json' | 'Cargo.toml' | 'pyproject.toml' | 'directory';
 
@@ -102,7 +102,7 @@ async function chooseLocale(): Promise<Locale> {
   if (!isTTY()) {
     console.error('Error: --locale is required in non-interactive mode.');
     console.error('');
-    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|cursor|other>] [name]');
+    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|other|all>] [name]');
     console.error('');
     console.error('Ask the user to choose a language first:');
     console.error('  --locale en    English');
@@ -124,15 +124,17 @@ async function chooseAiTool(locale: Locale): Promise<AiTool> {
   console.log(`\n${t(locale, 'init.aiToolHeader')}`);
   console.log(t(locale, 'init.aiToolClaudeCode'));
   console.log(t(locale, 'init.aiToolOpenCode'));
+  console.log(t(locale, 'init.aiToolCodex'));
   console.log(t(locale, 'init.aiToolCursor'));
   console.log(t(locale, 'init.aiToolOther'));
   console.log(t(locale, 'init.aiToolAll') + '\n');
 
   const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
   if (answer === '2') return 'opencode';
-  if (answer === '3') return 'cursor';
-  if (answer === '4') return 'other';
-  if (answer === '5') return 'all';
+  if (answer === '3') return 'codex';
+  if (answer === '4') return 'cursor';
+  if (answer === '5') return 'other';
+  if (answer === '6') return 'all';
   return 'claude-code';
 }
 
@@ -209,6 +211,83 @@ export function findOpenCodePluginTemplateSource(): string | null {
   if (existsSync(devTemplate)) return devTemplate;
 
   return null;
+}
+
+export function findCodexPluginTemplateSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+
+  // npm package layout: <pkg>/dist/commands/init.js → <pkg>/codex-plugin-template/
+  const packageTemplate = join(currentDir, '..', '..', 'codex-plugin-template');
+  if (existsSync(packageTemplate)) return packageTemplate;
+
+  // dev layout: cli/src/commands/init.ts → <repo>/plugin-codex/
+  const devTemplate = join(currentDir, '..', '..', '..', 'plugin-codex');
+  if (existsSync(devTemplate)) return devTemplate;
+
+  return null;
+}
+
+function mergeCodexConfig(root: string): { created: boolean; updated: boolean } {
+  const configDir = join(root, '.codex');
+  const configPath = join(configDir, 'config.toml');
+
+  const pluginBlock = `\n[plugins.openlogos]\nenabled = true\n`;
+  const hookBlock = `\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = ".codex-plugin/hooks/session-start.sh"\ntimeout = 5\nasync = false\nstatusMessage = "Loading OpenLogos phase context..."\n`;
+
+  mkdirSync(configDir, { recursive: true });
+
+  if (!existsSync(configPath)) {
+    writeFileSync(configPath, pluginBlock + hookBlock);
+    return { created: true, updated: true };
+  }
+
+  const existing = readFileSync(configPath, 'utf-8');
+  let content = existing;
+  let changed = false;
+  const hasPluginBlock = content.includes('[plugins.openlogos]');
+  const hasOpenLogosHook = content.includes('command = ".codex-plugin/hooks/session-start.sh"');
+
+  if (!hasPluginBlock) {
+    content += pluginBlock;
+    changed = true;
+  }
+  if (!hasOpenLogosHook) {
+    content += hookBlock;
+    changed = true;
+  }
+
+  if (changed) {
+    writeFileSync(configPath, content);
+  }
+  return { created: false, updated: changed };
+}
+
+export function deployCodexPlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean } } | null {
+  const source = findCodexPluginTemplateSource();
+  if (!source || !existsSync(source)) return null;
+
+  const pluginDir = join(root, '.codex-plugin');
+  const hooksDir = join(pluginDir, 'hooks');
+  mkdirSync(hooksDir, { recursive: true });
+
+  const pluginJsonSrc = join(source, 'plugin.json');
+  const hookSrc = join(source, 'session-start.sh');
+
+  if (!existsSync(pluginJsonSrc) || !existsSync(hookSrc)) return null;
+
+  copyFileSync(pluginJsonSrc, join(pluginDir, 'plugin.json'));
+  const hookDest = join(hooksDir, 'session-start.sh');
+  copyFileSync(hookSrc, hookDest);
+  try { chmodSync(hookDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
+
+  const configResult = mergeCodexConfig(root);
+
+  const targetLabel = locale === 'zh'
+    ? '.codex-plugin/ + .codex/config.toml'
+    : '.codex-plugin/ + .codex/config.toml';
+
+  return { target: targetLabel, config: configResult };
 }
 
 function mergeOpenCodeConfig(root: string) {
@@ -310,7 +389,7 @@ export function deploySpecs(root: string): { count: number } | null {
   return { count: files.length };
 }
 
-export function generatePolicyMdc(locale: Locale, lifecycle: Lifecycle = 'initial'): string {
+export function generatePolicyMdc(locale: Locale, isLaunched: boolean = false): string {
   const langSection = locale === 'zh'
     ? `## ⚠️ 语言策略（最高优先级）
 
@@ -327,7 +406,7 @@ This project's document language is **English** (configured in \`logos/logos.con
 Even if Skill files are written in another language, your output MUST be in English.
 Violating this rule will render the output unusable.`;
 
-  const changeMgmtSection = lifecycle === 'active'
+  const changeMgmtSection = isLaunched
     ? (locale === 'zh'
       ? `## ⛔ 变更管理（强制执行）
 
@@ -392,7 +471,7 @@ export function deploySkills(
   root: string,
   aiTool: AiTool,
   locale: Locale = 'en',
-  lifecycle: Lifecycle = 'initial',
+  isLaunched: boolean = false,
   skillsSource?: string,
 ): { target: string; count: number } | null {
   const source = skillsSource ?? findSkillsSource();
@@ -413,8 +492,22 @@ export function deploySkills(
         count++;
       }
     }
-    writeFileSync(join(targetDir, 'openlogos-policy.mdc'), generatePolicyMdc(locale, lifecycle));
+    writeFileSync(join(targetDir, 'openlogos-policy.mdc'), generatePolicyMdc(locale, isLaunched));
     return { target: '.cursor/rules/', count };
+  }
+
+  if (aiTool === 'codex') {
+    const targetDir = join(root, '.agents', 'skills');
+    for (const name of SKILL_NAMES) {
+      const skillDir = join(targetDir, name);
+      mkdirSync(skillDir, { recursive: true });
+      const srcPath = resolveSkillFile(source, name, locale);
+      if (srcPath) {
+        copyFileSync(srcPath, join(skillDir, 'SKILL.md'));
+        count++;
+      }
+    }
+    return { target: '.agents/skills/', count };
   }
 
   const targetDir = join(root, 'logos', 'skills');
@@ -435,20 +528,29 @@ function shouldIncludeActiveSkills(aiTool: AiTool, target: 'agents' | 'claude'):
   if (aiTool === 'cursor') return target === 'agents';
   if (aiTool === 'claude-code') return target === 'claude';
   if (aiTool === 'opencode') return target === 'agents';
+  if (aiTool === 'codex') return target === 'agents';
   return true;
 }
 
-function generateActiveSkillsSection(locale: Locale): string {
+function skillBasePath(aiTool: AiTool | undefined, target: 'agents' | 'claude' | undefined): string {
+  if (aiTool === 'codex' && target === 'agents') {
+    return '.agents/skills';
+  }
+  return 'logos/skills';
+}
+
+function generateActiveSkillsSection(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude'): string {
   let section = '';
+  const basePath = skillBasePath(aiTool, target);
   for (const name of SKILL_NAMES) {
     const desc = SKILL_DESCRIPTIONS[name]?.[locale] ?? SKILL_DESCRIPTIONS[name]?.en ?? name;
-    section += `- \`skills/${name}/\` — ${desc}\n`;
+    section += `- \`${basePath}/${name}/SKILL.md\` — ${desc}\n`;
   }
   return section;
 }
 
-function skillPath(name: string): string {
-  return `logos/skills/${name}/SKILL.md`;
+function skillPath(name: string, aiTool?: AiTool, target?: 'agents' | 'claude'): string {
+  return `${skillBasePath(aiTool, target)}/${name}/SKILL.md`;
 }
 
 function generatePhaseDetectionPlain(locale: Locale): string {
@@ -462,7 +564,14 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - API 存在但 \`logos/resources/test/\` 为空 → 建议 Phase 3 Step 3a（test-writer）
 - 测试用例存在但 \`logos/resources/scenario/\` 为空 → 建议 Phase 3 Step 3b（test-orchestrator，仅 API 项目）
 - 编排测试存在但 \`logos/resources/implementation/\` 为空 → 建议 Phase 3 Step 4（code-implementor）
-- 代码已生成但 \`logos/resources/verify/\` 为空 → 建议 Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
+- 代码已生成但 \`logos/resources/verify/\` 为空 → 建议 Phase 3 Step 5（运行测试后 \`openlogos verify\`）
+
+文件命名规范（模块前缀）：
+- 所有设计文档遵循 \`<module>-<序号>-<类型>.md\` 格式，初始项目默认使用 \`core-\` 前缀
+- 场景实现文件：\`<module>-SXX-<slug>.md\`（如 \`core-S01-cli-init.md\`）
+- 测试用例文件：\`<module>-SXX-test-cases.md\`（如 \`core-S01-test-cases.md\`）
+- 场景编号全局唯一，由 \`logos-project.yaml\` 的 \`scenario_counter.next_id\` 维护，严禁不同模块从 S01 重新开始
+- 多模块状态：\`openlogos status\` 聚合展示所有模块（in-progress 置顶）；\`openlogos next\` 单模块直接建议，多模块并列列出，无 in-progress 时提示 \`module add\``;
   }
   return `Phase detection logic:
 - \`logos/resources/prd/1-product-requirements/\` is empty → suggest Phase 1 (prd-writer)
@@ -473,32 +582,53 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - API exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 3a (test-writer)
 - test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
 - orchestration tests exist but \`logos/resources/implementation/\` is empty → suggest Phase 3 Step 4 (code-implementor)
-- code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
+- code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)
+
+File naming convention (module prefix):
+- All design documents follow \`<module>-<number>-<type>.md\` format; default module is \`core-\` prefix
+- Scenario implementation files: \`<module>-SXX-<slug>.md\` (e.g. \`core-S01-cli-init.md\`)
+- Test case files: \`<module>-SXX-test-cases.md\` (e.g. \`core-S01-test-cases.md\`)
+- Scenario numbers are globally unique, maintained by \`scenario_counter.next_id\` in \`logos-project.yaml\`; never restart from S01 for a new module
+- Multi-module status: \`openlogos status\` shows all modules (in-progress first); \`openlogos next\` gives direct suggestion for single module, lists all for multiple, prompts \`module add\` when none in-progress`;
 }
 
-function generatePhaseDetectionWithSkills(locale: Locale): string {
+function generatePhaseDetectionWithSkills(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude'): string {
   if (locale === 'zh') {
     return `Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件并按其步骤执行）：
-- \`logos/resources/prd/1-product-requirements/\` 为空 → Phase 1 → **读取 \`${skillPath('prd-writer')}\` 并按其步骤执行**
-- 需求存在但 \`2-product-design/\` 为空 → Phase 2 → **读取 \`${skillPath('product-designer')}\` 并按其步骤执行**
-- 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → Phase 3 Step 0 → **读取 \`${skillPath('architecture-designer')}\` 并按其步骤执行**
-- 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → Phase 3 Step 1 → **读取 \`${skillPath('scenario-architect')}\` 并按其步骤执行**
-- 场景存在但 \`logos/resources/api/\` 为空 → Phase 3 Step 2 → **读取 \`${skillPath('api-designer')}\` 和 \`${skillPath('db-designer')}\` 并按其步骤执行**
-- API 存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 3a → **读取 \`${skillPath('test-writer')}\` 并按其步骤执行**
-- 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 3b → **读取 \`${skillPath('test-orchestrator')}\` 并按其步骤执行**（仅 API 项目）
-- 编排测试存在但 \`logos/resources/implementation/\` 为空 → Phase 3 Step 4 → **读取 \`${skillPath('code-implementor')}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer')}\` 进行代码审查）
-- 代码已生成但 \`logos/resources/verify/\` 为空 → Phase 3 Step 5（运行测试后 \`openlogos verify\`）`;
+- \`logos/resources/prd/1-product-requirements/\` 为空 → Phase 1 → **读取 \`${skillPath('prd-writer', aiTool, target)}\` 并按其步骤执行**
+- 需求存在但 \`2-product-design/\` 为空 → Phase 2 → **读取 \`${skillPath('product-designer', aiTool, target)}\` 并按其步骤执行**
+- 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → Phase 3 Step 0 → **读取 \`${skillPath('architecture-designer', aiTool, target)}\` 并按其步骤执行**
+- 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → Phase 3 Step 1 → **读取 \`${skillPath('scenario-architect', aiTool, target)}\` 并按其步骤执行**
+- 场景存在但 \`logos/resources/api/\` 为空 → Phase 3 Step 2 → **读取 \`${skillPath('api-designer', aiTool, target)}\` 和 \`${skillPath('db-designer', aiTool, target)}\` 并按其步骤执行**
+- API 存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 3a → **读取 \`${skillPath('test-writer', aiTool, target)}\` 并按其步骤执行**
+- 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 3b → **读取 \`${skillPath('test-orchestrator', aiTool, target)}\` 并按其步骤执行**（仅 API 项目）
+- 编排测试存在但 \`logos/resources/implementation/\` 为空 → Phase 3 Step 4 → **读取 \`${skillPath('code-implementor', aiTool, target)}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer', aiTool, target)}\` 进行代码审查）
+- 代码已生成但 \`logos/resources/verify/\` 为空 → Phase 3 Step 5（运行测试后 \`openlogos verify\`）
+
+文件命名规范（模块前缀）：
+- 所有设计文档遵循 \`<module>-<序号>-<类型>.md\` 格式，初始项目默认使用 \`core-\` 前缀
+- 场景实现文件：\`<module>-SXX-<slug>.md\`（如 \`core-S01-cli-init.md\`）
+- 测试用例文件：\`<module>-SXX-test-cases.md\`（如 \`core-S01-test-cases.md\`）
+- 场景编号全局唯一，由 \`logos-project.yaml\` 的 \`scenario_counter.next_id\` 维护，严禁不同模块从 S01 重新开始
+- 多模块状态：\`openlogos status\` 聚合展示所有模块（in-progress 置顶）；\`openlogos next\` 单模块直接建议，多模块并列列出，无 in-progress 时提示 \`module add\``;
   }
   return `Phase detection logic (**when a phase is detected, you MUST read the corresponding Skill file and follow its steps**):
-- \`logos/resources/prd/1-product-requirements/\` is empty → Phase 1 → **read \`${skillPath('prd-writer')}\` and follow its steps**
-- requirements exist but \`2-product-design/\` is empty → Phase 2 → **read \`${skillPath('product-designer')}\` and follow its steps**
-- design exists but \`3-technical-plan/1-architecture/\` is empty → Phase 3 Step 0 → **read \`${skillPath('architecture-designer')}\` and follow its steps**
-- architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → Phase 3 Step 1 → **read \`${skillPath('scenario-architect')}\` and follow its steps**
-- scenarios exist but \`logos/resources/api/\` is empty → Phase 3 Step 2 → **read \`${skillPath('api-designer')}\` and \`${skillPath('db-designer')}\` and follow their steps**
-- API exists but \`logos/resources/test/\` is empty → Phase 3 Step 3a → **read \`${skillPath('test-writer')}\` and follow its steps**
-- test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 3b → **read \`${skillPath('test-orchestrator')}\` and follow its steps** (API projects only)
-- orchestration tests exist but \`logos/resources/implementation/\` is empty → Phase 3 Step 4 → **read \`${skillPath('code-implementor')}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer')}\` for code review)
-- code generated but \`logos/resources/verify/\` is empty → Phase 3 Step 5 (run tests then \`openlogos verify\`)`;
+- \`logos/resources/prd/1-product-requirements/\` is empty → Phase 1 → **read \`${skillPath('prd-writer', aiTool, target)}\` and follow its steps**
+- requirements exist but \`2-product-design/\` is empty → Phase 2 → **read \`${skillPath('product-designer', aiTool, target)}\` and follow its steps**
+- design exists but \`3-technical-plan/1-architecture/\` is empty → Phase 3 Step 0 → **read \`${skillPath('architecture-designer', aiTool, target)}\` and follow its steps**
+- architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → Phase 3 Step 1 → **read \`${skillPath('scenario-architect', aiTool, target)}\` and follow its steps**
+- scenarios exist but \`logos/resources/api/\` is empty → Phase 3 Step 2 → **read \`${skillPath('api-designer', aiTool, target)}\` and \`${skillPath('db-designer', aiTool, target)}\` and follow their steps**
+- API exists but \`logos/resources/test/\` is empty → Phase 3 Step 3a → **read \`${skillPath('test-writer', aiTool, target)}\` and follow its steps**
+- test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 3b → **read \`${skillPath('test-orchestrator', aiTool, target)}\` and follow its steps** (API projects only)
+- orchestration tests exist but \`logos/resources/implementation/\` is empty → Phase 3 Step 4 → **read \`${skillPath('code-implementor', aiTool, target)}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer', aiTool, target)}\` for code review)
+- code generated but \`logos/resources/verify/\` is empty → Phase 3 Step 5 (run tests then \`openlogos verify\`)
+
+File naming convention (module prefix):
+- All design documents follow \`<module>-<number>-<type>.md\` format; default module is \`core-\` prefix
+- Scenario implementation files: \`<module>-SXX-<slug>.md\` (e.g. \`core-S01-cli-init.md\`)
+- Test case files: \`<module>-SXX-test-cases.md\` (e.g. \`core-S01-test-cases.md\`)
+- Scenario numbers are globally unique, maintained by \`scenario_counter.next_id\` in \`logos-project.yaml\`; never restart from S01 for a new module
+- Multi-module status: \`openlogos status\` shows all modules (in-progress first); \`openlogos next\` gives direct suggestion for single module, lists all for multiple, prompts \`module add\` when none in-progress`;
 }
 
 function generateStep4ExecutionRules(locale: Locale): string {
@@ -566,17 +696,17 @@ const DIRECTORIES = [
   'logos/changes/archive',
 ];
 
+/** @deprecated use isLaunched: boolean instead */
 export type Lifecycle = 'initial' | 'active';
 
 export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool = 'cursor'): string {
   const aiToolValue: AiTool | AiTool[] = aiTool === 'all'
-    ? ['claude-code', 'opencode', 'cursor']
+    ? ['claude-code', 'opencode', 'codex', 'cursor']
     : aiTool;
   return JSON.stringify({
     name,
     locale,
     aiTool: aiToolValue,
-    lifecycle: 'initial' as Lifecycle,
     description: '',
     documents: {
       prd: {
@@ -638,13 +768,21 @@ export function createLogosProject(name: string, locale: Locale): string {
 
 tech_stack: {}
 
+scenario_counter:
+  next_id: 1
+
+modules:
+  - id: core
+    name: ${locale === 'zh' ? '核心功能' : 'Core'}
+    lifecycle: initial
+
 resource_index: []
 
 ${conventionsForYaml(locale)}
 `;
 }
 
-export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude', lifecycle: Lifecycle = 'initial'): string {
+export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude', isLaunched: boolean = false): string {
   const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
 
   const langPolicy = locale === 'zh'
@@ -690,7 +828,7 @@ When the user's request is vague or they ask "what should I do next":
 3. Provide a ready-to-use prompt the user can directly say
 4. Never start generating documents without confirming key information
 
-${includeSkills ? generatePhaseDetectionWithSkills(locale) : generatePhaseDetectionPlain(locale)}
+${includeSkills ? generatePhaseDetectionWithSkills(locale, aiTool, target) : generatePhaseDetectionPlain(locale)}
 
 ${generateStep4ExecutionRules(locale)}
 
@@ -705,10 +843,10 @@ ${generateDocumentPostEditVerify(locale)}
     content += `
 ## Active Skills
 ${skillAutoLoadInstr}
-${generateActiveSkillsSection(locale)}`;
+${generateActiveSkillsSection(locale, aiTool, target)}`;
   }
 
-  const changeMgmt = lifecycle === 'active'
+  const changeMgmt = isLaunched
     ? (locale === 'zh'
       ? `## ⛔ 变更管理（强制执行）
 
@@ -720,8 +858,16 @@ ${generateActiveSkillsSection(locale)}`;
 ### 变更流程
 1. 运行 \`openlogos change <slug>\` 创建提案（自动写入 guard 文件）
 2. 使用 change-writer Skill 填写 \`proposal.md\` + \`tasks.md\`
-3. **等待用户确认后** 再开始编码
-4. 完成后运行 \`openlogos merge <slug>\` → \`openlogos archive <slug>\`（自动删除 guard 文件）
+3. **等待用户确认后** 再开始产出 delta
+4. delta 产出完成后提醒用户明确授权运行 \`openlogos merge <slug>\`
+5. merge 完成后 AI 自动 commit 规格文档（告知用户，无需确认）
+6. 按合并后的规格实现代码，完成后 AI 自动 commit 代码（告知用户，无需确认）
+7. 提醒用户运行 \`openlogos verify\` 验收
+8. 验收通过后提醒用户明确授权运行 \`openlogos archive <slug>\`（自动删除 guard 文件）
+9. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
+10. 提醒用户确认是否执行 \`git push\`（人类确认点）
+
+**\`openlogos merge\`、\`openlogos verify\`、\`openlogos archive\` 和 \`git push\` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
@@ -740,8 +886,16 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 ### Change Workflow
 1. Run \`openlogos change <slug>\` to create a proposal (automatically writes guard file)
 2. Fill in \`proposal.md\` + \`tasks.md\` using the change-writer Skill
-3. **Wait for user approval** before writing any code
-4. After completion, run \`openlogos merge <slug>\` → \`openlogos archive <slug>\` (auto-removes guard file)
+3. **Wait for user approval** before producing any delta
+4. After delta is complete, remind the user to explicitly authorize running \`openlogos merge <slug>\`
+5. After merge, AI automatically commits spec documents (inform user, no confirmation needed)
+6. Implement code per the updated specs; AI automatically commits code when done (inform user, no confirmation needed)
+7. Remind the user to run \`openlogos verify\` for acceptance
+8. After verification passes, remind the user to explicitly authorize running \`openlogos archive <slug>\` (auto-removes guard file)
+9. After archive, AI automatically commits the archive (inform user, no confirmation needed)
+10. Remind the user to confirm whether to run \`git push\` (human confirmation point)
+
+**\`openlogos merge\`, \`openlogos verify\`, \`openlogos archive\`, and \`git push\` are human confirmation points.** AI must not execute them without explicit user authorization. When the user explicitly requests execution (including via the corresponding slash commands), AI may execute them. Must not be triggered implicitly in scenarios like "continue" or "follow the process".
 
 ### Behavioral Constraints
 - **When you discover a bug/issue**: only output analysis and proposed fix — **do NOT modify code directly** — wait for the user to decide whether to create a change proposal
@@ -804,7 +958,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   }
 
   const locale: Locale = options?.locale === 'zh' ? 'zh' : options?.locale === 'en' ? 'en' : await chooseLocale();
-  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'opencode' ? 'opencode' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : options?.aiTool === 'all' ? 'all' : await chooseAiTool(locale);
+  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'opencode' ? 'opencode' : options?.aiTool === 'codex' ? 'codex' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : options?.aiTool === 'all' ? 'all' : await chooseAiTool(locale);
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
 
   const sourceLabel: Record<NameSource, string> = {
@@ -830,16 +984,16 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', 'initial'));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', false));
   console.log(`  ✓ AGENTS.md`);
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude', 'initial'));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude', false));
   console.log(`  ✓ CLAUDE.md`);
 
-  const deployTools: AiTool[] = aiTool === 'all' ? ['claude-code', 'opencode', 'cursor'] : [aiTool];
+  const deployTools: AiTool[] = aiTool === 'all' ? ['claude-code', 'opencode', 'codex', 'cursor'] : [aiTool];
 
   for (const tool of deployTools) {
-    const deployResult = deploySkills(root, tool, locale, 'initial');
+    const deployResult = deploySkills(root, tool, locale, false);
     if (deployResult && deployResult.count > 0) {
       console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
     }
@@ -856,6 +1010,18 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       }
       if (pluginResult.commandCount > 0) {
         console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
+      }
+    }
+  }
+
+  if (aiTool === 'codex' || aiTool === 'all') {
+    const codexResult = deployCodexPlugin(root, locale);
+    if (codexResult) {
+      console.log(`  ✓ ${t(locale, 'init.codexPluginDeployed', { target: codexResult.target })}`);
+      if (codexResult.config.created) {
+        console.log(`  ✓ ${t(locale, 'init.codexConfigCreated')}`);
+      } else if (codexResult.config.updated) {
+        console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
       }
     }
   }

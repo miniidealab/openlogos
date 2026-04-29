@@ -82,6 +82,30 @@ describe('S09 Unit Tests — i18n templates', () => {
     expect(output).toContain('logos/resources/prd');
     expect(output).toContain('Execution Requirements');
   });
+
+  it('UT-S09-07: mergePromptTemplate (en) contains new flow: commit, verify, then archive', () => {
+    const output = mergePromptTemplate('en', 'fix-bug', 'proposal content', []);
+    expect(output).toContain('git commit');
+    expect(output).toContain('docs(fix-bug): merge spec deltas');
+    expect(output).toContain('openlogos verify');
+    expect(output).toContain('openlogos archive fix-bug');
+    // archive must come after verify, not as the immediate next step
+    const verifyPos = output.indexOf('openlogos verify');
+    const archivePos = output.indexOf('openlogos archive fix-bug');
+    expect(verifyPos).toBeLessThan(archivePos);
+  });
+
+  it('UT-S09-08: mergePromptTemplate (zh) contains new flow: commit, verify, then archive', () => {
+    const output = mergePromptTemplate('zh', 'fix-bug', 'proposal content', []);
+    expect(output).toContain('git commit');
+    expect(output).toContain('docs(fix-bug): merge spec deltas');
+    expect(output).toContain('openlogos verify');
+    expect(output).toContain('openlogos archive fix-bug');
+    // archive must come after verify
+    const verifyPos = output.indexOf('openlogos verify');
+    const archivePos = output.indexOf('openlogos archive fix-bug');
+    expect(verifyPos).toBeLessThan(archivePos);
+  });
 });
 
 /* ========== Scenario Tests — change ========== */
@@ -138,6 +162,34 @@ describe('S09 Scenario Tests — change command', () => {
     expect(() => change('add-feature')).toThrow('process.exit(1)');
     const allErrors = con.errors.join('\n');
     expect(allErrors).toContain('already exists');
+  });
+
+  it('ST-S09-04b: reject when another active guard already exists', () => {
+    const activeChangePath = join(root, 'logos', 'changes', 'active-feature');
+    mkdirSync(activeChangePath, { recursive: true });
+
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    const originalGuard = JSON.stringify({ activeChange: 'active-feature', createdAt: '2026-01-01T00:00:00Z' });
+    writeFileSync(guardPath, originalGuard);
+
+    expect(() => change('new-feature')).toThrow('process.exit(1)');
+
+    const allErrors = con.errors.join('\n');
+    expect(allErrors).toContain('active-feature');
+    expect(allErrors).toContain('archive');
+    expect(existsSync(join(root, 'logos', 'changes', 'new-feature'))).toBe(false);
+    expect(readFileSync(guardPath, 'utf-8')).toBe(originalGuard);
+  });
+
+  it('ST-S09-04c: allow creating a new proposal when guard points to a stale change', () => {
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'stale-feature', createdAt: '2026-01-01T00:00:00Z' }));
+
+    change('new-feature');
+
+    expect(existsSync(join(root, 'logos', 'changes', 'new-feature', 'proposal.md'))).toBe(true);
+    const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+    expect(guard.activeChange).toBe('new-feature');
   });
 
   it('ST-S09-03: error when slug is missing', () => {

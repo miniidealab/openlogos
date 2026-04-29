@@ -16,7 +16,7 @@ export interface TestResult {
 const DEFAULT_RESULT_PATH = 'logos/resources/verify/test-results.jsonl';
 const TEST_CASES_DIR = 'logos/resources/test';
 const REPORT_DIR = 'logos/resources/verify';
-const ID_PATTERN = /\b(UT|ST)-S\d{2}-\d{2,3}\b/g;
+const ID_PATTERN = /\b(UT|ST)-S\d{2}-\d{2,3}[a-z]?\b/g;
 const CHECKLIST_PATTERN = /^- \[([ x])\] (.+)$/gm;
 const AC_TABLE_HEADER = /^## 四、验收条件追溯$/m;
 const AC_ROW_PATTERN = /^\|\s*(S\d{2}-AC-\d{2,3})\s*\|([^|]*)\|([^|]*)\|/gm;
@@ -173,7 +173,7 @@ export function extractAcTrace(root: string): AcTraceEntry[] {
         const acId = match[1].trim();
         const description = match[2].trim();
         const caseIdsRaw = match[3].trim();
-        const caseIdTest = /\b(UT|ST)-S\d{2}-\d{2,3}\b/;
+        const caseIdTest = /\b(UT|ST)-S\d{2}-\d{2,3}[a-z]?\b/;
         const linkedCaseIds = caseIdsRaw
           .split(/[,，]/)
           .map(s => s.trim())

@@ -16,6 +16,8 @@
 |------|------|------|------|
 | `project` | object | 是 | 项目基本信息 |
 | `tech_stack` | object | 是 | 技术栈描述 |
+| `scenario_counter` | object | 否 | 全局场景编号计数器（多模块项目必填） |
+| `modules` | array | 否 | 模块注册表（多模块项目必填） |
 | `scenarios` | array | 否 | 场景清单（单一真相来源，Phase 3-1 前写入） |
 | `resource_index` | array | 是 | 资源索引列表 |
 | `conventions` | array | 否 | 项目约定 |
@@ -62,6 +64,26 @@
 | `mock-callback` | 编排中主动调用模拟回调端点 | 支付回调、Webhook |
 | `mock-service` | 使用本地 mock 服务替代 | OAuth Provider、第三方 API |
 
+### scenario_counter
+
+对象，维护全局场景编号计数器。多模块项目必填，确保不同模块的场景编号全局唯一、不重复。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `next_id` | integer | 是 | 下一个场景的序号（整数），如 `19` 表示下一个场景从 `S19` 开始 |
+
+**使用规则**：AI 每次生成新场景前必须读取此字段取号，生成后立即将 `next_id` 加 1 并写回，严禁不同模块从 S01 重新开始编号。
+
+### modules
+
+数组，模块注册表。多模块项目必填，统一在此文件维护，不另建 `modules.yaml`。`openlogos init` 时自动写入 `core` 模块初始数据。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `id` | string | 是 | 模块标识符，小写字母 + 连字符，如 `core`、`payment` |
+| `name` | string | 是 | 模块名称（中文或英文均可） |
+| `lifecycle` | string | 是 | 模块生命周期：`initial`（初始开发阶段，关注 phase 推进）或 `launched`（迭代开发阶段，关注变更提案） |
+
 ### resource_index
 
 数组，每个元素描述一个关键资源文件：
@@ -84,13 +106,13 @@
 | `id` | string | 是 | 场景唯一编号，格式为 `S` + 两位数字，如 `S01`、`S02` |
 | `name` | string | 是 | 场景名称（一句话描述） |
 
-**命名规则约定**（各阶段产出物通过 `SXX` 前缀与场景关联，无需在 yaml 中声明路径）：
+**命名规则约定**（各阶段产出物通过 `<module>-SXX` 前缀与场景关联，无需在 yaml 中声明路径）：
 
 | 阶段 | 产出物路径规则 | 示例 |
 |------|-------------|------|
-| Phase 3-1 场景建模 | `logos/resources/prd/3-technical-plan/2-scenario-implementation/SXX-*.md` | `S01-user-register.md` |
+| Phase 3-1 场景建模 | `logos/resources/prd/3-technical-plan/2-scenario-implementation/<module>-SXX-*.md` | `core-S01-user-register.md` |
 | Phase 3-2 API 设计 | `logos/resources/api/SXX-*.yaml` 或 `SXX-*.yml` | `S01-user-register.yaml` |
-| Phase 3-3a 测试用例 | `logos/resources/test/SXX-*.md` | `S01-test-cases.md` |
+| Phase 3-3a 测试用例 | `logos/resources/test/<module>-SXX-*.md` | `core-S01-test-cases.md` |
 
 **完成判断规则**：只有 `scenarios` 中每个 `id` 在对应阶段都存在匹配文件，该阶段才视为完成。若 `scenarios` 字段缺失，则降级为旧的"目录有文件即完成"逻辑（向后兼容）。
 
@@ -114,6 +136,17 @@ tech_stack:
   auth: "Supabase Auth"
   payment: "Paddle"
 
+scenario_counter:
+  next_id: 6
+
+modules:
+  - id: core
+    name: 核心功能
+    lifecycle: launched
+  - id: payment
+    name: 支付模块
+    lifecycle: initial
+
 external_dependencies:
   - name: "邮件服务"
     provider: "SendGrid"
@@ -132,9 +165,9 @@ external_dependencies:
     test_config: "POST /api/test/simulate-payment-callback"
 
 resource_index:
-  - path: logos/resources/prd/1-product-requirements/01-requirements.md
+  - path: logos/resources/prd/1-product-requirements/core-01-requirements.md
     desc: 产品核心需求文档。涉及产品定位、目标用户、功能需求时必读。
-  - path: logos/resources/prd/2-product-design/1-feature-specs/01-information-architecture.md
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-00-information-architecture.md
     desc: 信息架构文档。涉及页面结构、导航设计时必读。
   - path: logos/resources/api/auth.yaml
     desc: 认证相关 API 规格。涉及登录、注册、OAuth 接口设计时必读。

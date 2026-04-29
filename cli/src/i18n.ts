@@ -30,10 +30,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.aiToolHeader': 'Choose AI coding tool / 选择 AI 编码工具:',
     'init.aiToolClaudeCode': '  1. Claude Code (default)',
     'init.aiToolOpenCode': '  2. OpenCode',
-    'init.aiToolCursor': '  3. Cursor',
-    'init.aiToolOther': '  4. Other',
-    'init.aiToolAll': '  5. All (deploy for all tools)',
-    'init.aiToolPrompt': 'Your choice [1/2/3/4/5] (default: 1): ',
+    'init.aiToolCodex': '  3. Codex',
+    'init.aiToolCursor': '  4. Cursor',
+    'init.aiToolOther': '  5. Other',
+    'init.aiToolAll': '  6. All (deploy for all tools)',
+    'init.aiToolPrompt': 'Your choice [1/2/3/4/5/6] (default: 1): ',
     'init.skillsDeployed': '{count} skills deployed to {target}',
     'init.skillsSynced': '{count} skills synced to {target}',
     'init.opencodePluginDeployed': 'OpenCode plugin deployed to {target}',
@@ -41,6 +42,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.opencodeConfigCreated': 'opencode.json created with recommended permission defaults',
     'init.opencodeConfigUpdated': 'opencode.json merged with missing recommended permission defaults',
     'init.opencodeCommandsDeployed': 'OpenCode slash commands deployed to .opencode/commands/ ({count} files)',
+    'init.codexPluginDeployed': 'Codex plugin deployed to {target}',
+    'init.codexPluginSynced': 'Codex plugin synced to {target}',
+    'init.codexConfigCreated': '.codex/config.toml created with plugin and hook configuration',
+    'init.codexConfigUpdated': '.codex/config.toml merged with plugin and hook configuration',
     'sync.indexAdded': '{count} new file(s) added to logos-project.yaml resource_index',
     'sync.indexNoop': 'logos-project.yaml resource_index is already up to date',
 
@@ -55,7 +60,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'phase.3-3b': 'Phase 3-3b · API Orchestration Tests',
     'phase.3-4': 'Phase 3-4 · Code Implementation',
     'phase.3-5': 'Phase 3-5 · Test Acceptance (verify)',
+    'status.modules': 'Modules',
     'status.activeProposals': 'Active Change Proposals',
+    'status.activeChange': 'Active Change',
+    'status.proposalStepLabel': 'Step',
+    'status.proposalStep.writing': 'writing — fill in proposal.md and tasks.md',
+    'status.proposalStep.implementing': 'implementing — start coding per tasks.md',
+    'status.proposalStep.in-progress': 'in progress — continue implementation, then merge',
+    'status.proposalStep.ready-to-merge': 'ready to merge — explicitly request `openlogos merge` to proceed',
     'status.allDone': 'All phases complete! Run `openlogos verify` to check test acceptance.',
     'status.allDoneHint': '   → Or run `openlogos launch` to start iteration development',
     'status.suggestNext': 'Suggested next step: {label}',
@@ -106,22 +118,50 @@ const messages: Record<Locale, Record<string, string>> = {
     'change.step1': '  1. Tell AI: "Help me fill in change proposal {slug}"',
     'change.step2': '  2. AI will analyze impact and fill in proposal.md + tasks.md',
     'change.step3': '  3. Then work through tasks.md, putting deltas in deltas/',
-    'change.step4': '  4. When done, run `openlogos merge {slug}` to generate merge instructions',
+    'change.step4': '  4. When done, explicitly request `openlogos merge {slug}` to generate merge instructions',
+    'change.guardConflict': 'Error: Active change proposal \'{activeChange}\' is still in progress.',
+    'change.guardConflictHint': 'Finish it and explicitly request `openlogos archive {activeChange}` before creating a new proposal.',
+    'change.guardInvalid': 'Error: logos/.openlogos-guard is invalid.',
+    'change.guardInvalidHint': 'Fix or remove the guard file before creating a new proposal.',
+    'change.moduleAuto': 'Module: {module} (auto-detected, only one module registered)',
+    'change.moduleDefault': 'Module: {module} (defaulted to core — use --module <id> to specify another)',
+    'change.moduleAssigned': 'Module: {module}',
+    'change.moduleNotFound': 'Error: Module \'{module}\' not found in logos-project.yaml.',
+    'change.moduleNotFoundHint': 'Run `openlogos module list` to see available modules.',
 
     // merge
     'merge.summary': 'Merge Summary:',
     'merge.proposal': '  - Change proposal: {slug}',
     'merge.deltaCount': '  - Delta files: {count}',
     'merge.aiHint': 'Tell AI: "Read logos/changes/{slug}/MERGE_PROMPT.md and execute merge"',
-    'merge.archiveHint': 'After merge, run `openlogos archive {slug}` to archive the proposal.',
+    'merge.archiveHint': 'After merge, implement code per updated specs, then run `openlogos verify`. After verification passes, explicitly request `openlogos archive {slug}`.',
 
     // launch
-    'launch.done': '✓ Change management activated! Lifecycle is now "active".',
+    'launch.done': '✓ Module "{module}" launched! Change management is now active.',
     'launch.hint1': '  From now on, modifications to existing documents require a change proposal.',
     'launch.hint2': '  Run `openlogos change <slug>` to start a new change proposal.',
     'launch.rulesUpdated': 'AI rules updated in {target}',
-    'launch.alreadyActive': 'Change management is already active (lifecycle: "active").',
+    'launch.moduleAlreadyLaunched': 'Module "{module}" is already launched. No action needed.',
+    'launch.multiModuleError': 'Multiple modules found ({modules}). Please specify: `openlogos launch <module-id>`',
+    'launch.moduleNotFound': 'Module "{module}" not found in logos-project.yaml.',
+    'launch.migrationAuto': 'Migrated: module "{module}" auto-marked as launched (was config.lifecycle: active).',
+    'launch.migrationWarn': 'Warning: config.lifecycle is "active" but no module is marked launched. Run `openlogos launch <module-id>` to migrate.',
     'launch.suggest': 'Run `openlogos launch` to activate change management for future iterations.',
+
+    // next
+    'next.title': 'Next Step',
+    'next.createChange': 'Create a change proposal before modifying any code',
+    'next.createChangeDetail': 'Run `openlogos change <slug>` to create a new change proposal and activate the guard.',
+    'next.fillProposal': 'Fill in proposal.md and tasks.md for the active change',
+    'next.fillProposalDetail': 'Tell AI: "Help me fill in change proposal {slug}" — AI will analyze impact and complete the proposal.',
+    'next.startCoding': 'Start implementing per tasks.md',
+    'next.startCodingDetail': 'Tell AI: "Execute tasks in logos/changes/{slug}/tasks.md" — implement code and write tests.',
+    'next.continueImpl': 'Continue implementation and run tests',
+    'next.continueImplDetail': 'When all tasks are done, explicitly request `openlogos merge {slug}` to generate merge instructions.',
+    'next.merge': 'Merge and archive the change proposal',
+    'next.mergeDetail': 'Explicitly request `openlogos merge {slug}`, implement code per updated specs, run `openlogos verify`, then explicitly request `openlogos archive {slug}`.',
+    'next.launch': 'Activate change management for future iterations',
+    'next.phaseDetail': 'Current phase: {phase}',
 
     // archive
     'archive.done': '✓ Change proposal \'{slug}\' archived.',
@@ -143,10 +183,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.aiToolHeader': '选择 AI 编码工具:',
     'init.aiToolClaudeCode': '  1. Claude Code（默认）',
     'init.aiToolOpenCode': '  2. OpenCode',
-    'init.aiToolCursor': '  3. Cursor',
-    'init.aiToolOther': '  4. 其他',
-    'init.aiToolAll': '  5. 全部（为所有工具初始化）',
-    'init.aiToolPrompt': '请选择 [1/2/3/4/5]（默认: 1）: ',
+    'init.aiToolCodex': '  3. Codex',
+    'init.aiToolCursor': '  4. Cursor',
+    'init.aiToolOther': '  5. 其他',
+    'init.aiToolAll': '  6. 全部（为所有工具初始化）',
+    'init.aiToolPrompt': '请选择 [1/2/3/4/5/6]（默认: 1）: ',
     'init.skillsDeployed': '{count} 个 Skills 已部署到 {target}',
     'init.skillsSynced': '{count} 个 Skills 已同步到 {target}',
     'init.opencodePluginDeployed': 'OpenCode 插件已部署到 {target}',
@@ -154,6 +195,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.opencodeConfigCreated': '已创建 opencode.json，并写入推荐权限默认值',
     'init.opencodeConfigUpdated': '已为 opencode.json 补齐缺失的推荐权限默认值',
     'init.opencodeCommandsDeployed': 'OpenCode 斜杠命令已部署到 .opencode/commands/（{count} 个文件）',
+    'init.codexPluginDeployed': 'Codex 插件已部署到 {target}',
+    'init.codexPluginSynced': 'Codex 插件已同步到 {target}',
+    'init.codexConfigCreated': '已创建 .codex/config.toml，并写入插件与 hook 配置',
+    'init.codexConfigUpdated': '已为 .codex/config.toml 补齐插件与 hook 配置',
     'sync.indexAdded': '{count} 个新文件已补录到 logos-project.yaml resource_index',
     'sync.indexNoop': 'logos-project.yaml resource_index 已是最新，无需补录',
 
@@ -168,7 +213,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'phase.3-3b': 'Phase 3-3b · API 编排测试',
     'phase.3-4': 'Phase 3-4 · 代码实现',
     'phase.3-5': 'Phase 3-5 · 测试验收（verify）',
+    'status.modules': '模块',
     'status.activeProposals': '活跃变更提案',
+    'status.activeChange': '活跃变更',
+    'status.proposalStepLabel': '当前步骤',
+    'status.proposalStep.writing': '填写提案 — 请完善 proposal.md 和 tasks.md',
+    'status.proposalStep.implementing': '待实现 — 按 tasks.md 开始编码',
+    'status.proposalStep.in-progress': '实现中 — 继续完成实现，完成后明确授权执行 merge',
+    'status.proposalStep.ready-to-merge': '可合并 — 明确授权执行 merge，再明确授权执行归档',
     'status.allDone': '所有阶段已完成！运行 `openlogos verify` 查看测试验收结果。',
     'status.allDoneHint': '   → 或运行 `openlogos launch` 开始迭代开发',
     'status.suggestNext': '建议下一步：{label}',
@@ -219,22 +271,50 @@ const messages: Record<Locale, Record<string, string>> = {
     'change.step1': '  1. 对 AI 说：「帮我填写变更提案 {slug}」',
     'change.step2': '  2. AI 将分析影响范围并填写 proposal.md + tasks.md',
     'change.step3': '  3. 然后按 tasks.md 逐项产出 delta 文件到 deltas/',
-    'change.step4': '  4. 完成后运行 `openlogos merge {slug}` 生成合并指令',
+    'change.step4': '  4. 完成后明确授权执行 `openlogos merge {slug}` 生成合并指令',
+    'change.guardConflict': 'Error: 当前活动变更提案 \'{activeChange}\' 尚未完成。',
+    'change.guardConflictHint': '请先完成该提案，并明确授权执行 `openlogos archive {activeChange}` 后再创建新提案。',
+    'change.guardInvalid': 'Error: logos/.openlogos-guard 内容无效。',
+    'change.guardInvalidHint': '请先修复或删除 guard 文件，再创建新提案。',
+    'change.moduleAuto': '归属模块：{module}（自动挂靠，当前只有一个模块）',
+    'change.moduleDefault': '归属模块：{module}（默认挂靠 core，可用 --module <id> 指定其他模块）',
+    'change.moduleAssigned': '归属模块：{module}',
+    'change.moduleNotFound': 'Error: 模块 \'{module}\' 在 logos-project.yaml 中不存在。',
+    'change.moduleNotFoundHint': '运行 `openlogos module list` 查看可用模块。',
 
     // merge
     'merge.summary': '合并摘要：',
     'merge.proposal': '  - 变更提案：{slug}',
     'merge.deltaCount': '  - Delta 文件：{count} 个',
     'merge.aiHint': '对 AI 说：「读取 logos/changes/{slug}/MERGE_PROMPT.md 并执行合并」',
-    'merge.archiveHint': '合并完成后，运行 `openlogos archive {slug}` 归档提案。',
+    'merge.archiveHint': '合并完成后，按更新后的规格实现代码，再运行 `openlogos verify` 验收。验收通过后，明确授权执行 `openlogos archive {slug}` 归档提案。',
 
     // launch
-    'launch.done': '✓ 变更管理已激活！lifecycle 已切换为 "active"。',
+    'launch.done': '✓ 模块 "{module}" 已 launch！变更管理已激活。',
     'launch.hint1': '  从现在起，修改已有文档必须先创建变更提案。',
     'launch.hint2': '  运行 `openlogos change <slug>` 创建新的变更提案。',
     'launch.rulesUpdated': 'AI 规则已更新到 {target}',
-    'launch.alreadyActive': '变更管理已处于激活状态（lifecycle: "active"）。',
+    'launch.moduleAlreadyLaunched': '模块 "{module}" 已处于 launched 状态，无需重复操作。',
+    'launch.multiModuleError': '存在多个模块（{modules}），请明确指定：`openlogos launch <module-id>`',
+    'launch.moduleNotFound': '模块 "{module}" 在 logos-project.yaml 中不存在。',
+    'launch.migrationAuto': '已迁移：模块 "{module}" 自动标记为 launched（原 config.lifecycle: active）。',
+    'launch.migrationWarn': '警告：config.lifecycle 为 "active" 但没有模块标记为 launched，请运行 `openlogos launch <module-id>` 完成迁移。',
     'launch.suggest': '运行 `openlogos launch` 激活变更管理，开始迭代开发。',
+
+    // next
+    'next.title': '下一步',
+    'next.createChange': '修改代码前必须先创建变更提案',
+    'next.createChangeDetail': '运行 `openlogos change <slug>` 创建变更提案并激活 guard。',
+    'next.fillProposal': '填写活跃变更的 proposal.md 和 tasks.md',
+    'next.fillProposalDetail': '对 AI 说：「帮我填写变更提案 {slug}」— AI 将分析影响范围并完善提案。',
+    'next.startCoding': '按 tasks.md 开始编码实现',
+    'next.startCodingDetail': '对 AI 说：「执行 logos/changes/{slug}/tasks.md 中的任务」— 实现代码并编写测试。',
+    'next.continueImpl': '继续实现并运行测试',
+    'next.continueImplDetail': '所有任务完成后，明确授权执行 `openlogos merge {slug}` 生成合并指令。',
+    'next.merge': '合并并归档变更提案',
+    'next.mergeDetail': '明确授权执行 `openlogos merge {slug}`，按更新后的规格实现代码，运行 `openlogos verify` 验收，验收通过后明确授权执行 `openlogos archive {slug}`。',
+    'next.launch': '激活变更管理，开始迭代开发',
+    'next.phaseDetail': '当前阶段：{phase}',
 
     // archive
     'archive.done': '✓ 变更提案 \'{slug}\' 已归档。',
@@ -274,10 +354,12 @@ export const SUGGEST_KEYS: Record<string, string> = {
 
 // --- Long-form templates ---
 
-export function proposalTemplate(locale: Locale, slug: string): string {
+export function proposalTemplate(locale: Locale, slug: string, module?: string): string {
+  const createdAt = new Date().toISOString().slice(0, 10);
+  const meta = module ? `\n> module: ${module} | created: ${createdAt}\n` : '';
   if (locale === 'zh') {
     return `# 变更提案：${slug}
-
+${meta}
 ## 变更原因
 [为什么要做这个变更？来源于哪个需求/反馈/Bug？]
 
@@ -297,7 +379,7 @@ export function proposalTemplate(locale: Locale, slug: string): string {
 `;
   }
   return `# Change Proposal: ${slug}
-
+${meta}
 ## Reason
 [Why is this change needed? Which requirement/feedback/bug triggered it?]
 
@@ -397,7 +479,9 @@ ${proposalContent}
 5. 保持主文档的原有格式和风格
 6. 如果主文档有"最后更新"时间戳，同步更新
 7. 所有变更完成后，列出修改清单
-8. 完成后提醒用户运行 \`openlogos archive ${slug}\`
+8. 所有变更合并完成后，自动执行 git commit（告知用户，无需确认）：
+   git add -A && git commit -m "docs(${slug}): merge spec deltas"
+   然后提示用户：按更新后的规格实现代码，代码完成后运行 \`openlogos verify\` 验收，验收通过后明确授权执行 \`openlogos archive ${slug}\`。
 `;
     return prompt;
   }
@@ -434,7 +518,9 @@ ${proposalContent}
 5. Preserve the original formatting and style of the main document
 6. If the main document has a "last updated" timestamp, update it
 7. After all changes are complete, list the modification summary
-8. Remind the user to run \`openlogos archive ${slug}\`
+8. After all changes are merged, automatically run git commit (inform user, no confirmation needed):
+   git add -A && git commit -m "docs(${slug}): merge spec deltas"
+   Then prompt the user: implement code per the updated specs, run \`openlogos verify\` after code is complete, and explicitly authorize \`openlogos archive ${slug}\` after verification passes.
 `;
   return prompt;
 }

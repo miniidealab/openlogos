@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { collectDetectData, detect } from '../src/commands/detect.js';
 import { collectStatusData, status } from '../src/commands/status.js';
@@ -373,5 +374,113 @@ describe('JSON output — verify --format json', () => {
     expect(() => verify('json')).toThrow('process.exit(1)');
     const errorOutput = JSON.parse(con.errors[0]);
     expect(errorOutput.error.code).toBe('NO_TEST_CASES');
+  });
+});
+
+describe('ST-JSON modules field contract', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+    restoreCwd = mockCwd(root);
+  });
+
+  afterEach(() => {
+    restoreCwd();
+    cleanup();
+  });
+
+  it('ST-JSON-15: status --format json omits modules when yaml has no modules[]', () => {
+    // scaffoldProject writes a yaml without modules[] key
+    const con = captureConsole();
+    status('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    expect('modules' in out.data).toBe(false);
+  });
+
+  it('ST-JSON-16: status --format json includes modules when yaml has modules[]', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: '核心', status: 'stable', loop_phase: null }] }),
+    );
+    const con = captureConsole();
+    status('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    expect(Array.isArray(out.data.modules)).toBe(true);
+    expect(out.data.modules[0].id).toBe('core');
+  });
+
+  it('ST-JSON-17: status --format json lifecycle is "initial" when all modules initial', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }] }),
+    );
+    const con = captureConsole();
+    status('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    expect(out.data.lifecycle).toBe('initial');
+    expect(out.data.lifecycle).not.toBe('active');
+  });
+
+  it('ST-JSON-18: status --format json lifecycle is "launched" when a module is launched', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }] }),
+    );
+    const con = captureConsole();
+    status('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    expect(out.data.lifecycle).toBe('launched');
+    expect(out.data.lifecycle).not.toBe('active');
+  });
+
+  it('ST-JSON-19: detect --format json lifecycle is derived from modules, not config', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }] }),
+    );
+    // Even if config has old lifecycle field, detect should derive from modules
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.lifecycle = 'active';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    const con = captureConsole();
+    detect('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    expect(out.data.project.lifecycle).toBe('launched');
+    expect(out.data.project.lifecycle).not.toBe('active');
+  });
+
+  it('ST-JSON-20: status --format json modules[] items have correct ModuleStatusItem fields', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }] }),
+    );
+    const con = captureConsole();
+    status('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    const mod = out.data.modules[0];
+    // Required fields per ModuleStatusItem spec
+    expect(mod).toHaveProperty('id');
+    expect(mod).toHaveProperty('name');
+    expect(mod).toHaveProperty('lifecycle');
+    expect(mod).toHaveProperty('current_phase');
+    expect(mod).toHaveProperty('current_phase_label');
+    expect(mod).toHaveProperty('phase_progress');
+    expect(mod).toHaveProperty('active_change');
+    expect(mod).toHaveProperty('suggestion');
+    // Old fields must not exist
+    expect(mod).not.toHaveProperty('status');
+    expect(mod).not.toHaveProperty('loop_phase');
   });
 });

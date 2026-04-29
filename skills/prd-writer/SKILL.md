@@ -172,7 +172,7 @@
 
 - 文件格式：Markdown
 - 存放位置：`logos/resources/prd/1-product-requirements/`
-- 文件命名：`{序号}-{英文名}.md`，如 `01-requirements.md`
+- 文件命名：`<module>-{序号}-{英文名}.md`，如 `core-01-requirements.md`（从 `logos-project.yaml` 的 `modules[]` 读取当前模块，默认为 `core`）
 - 每个场景必须可追溯到至少一个用户痛点
 - P0/P1 场景必须有 GIVEN/WHEN/THEN（≥1 正常 + ≥1 异常）
 - 场景编号全局唯一，将贯穿 Phase 2 和 Phase 3

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { syncLogosProjectName, sync } from '../src/commands/sync.js';
 
@@ -166,6 +167,63 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(allLogs).toContain('slash commands');
   });
 
+  it('ST-S08-04c: sync with codex deploys plugin assets and points AGENTS.md to .agents skills', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'hooks', 'session-start.sh'))).toBe(true);
+    expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
+    expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+  });
+
+  it('ST-S08-04d: sync with codex appends OpenLogos hook when another SessionStart hook already exists', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    mkdirSync(join(root, '.codex'), { recursive: true });
+    writeFileSync(
+      join(root, '.codex', 'config.toml'),
+      '[plugins.other]\nenabled = true\n\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "./other.sh"\n'
+    );
+
+    sync();
+
+    const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
+    expect(codexConfig).toContain('command = "./other.sh"');
+    expect(codexConfig).toContain('command = ".codex-plugin/hooks/session-start.sh"');
+  });
+
+  it('ST-S08-04e: sync with codex is idempotent when OpenLogos hook already exists', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+    sync();
+
+    const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
+    const hookMatches = codexConfig.match(/command = "\.codex-plugin\/hooks\/session-start\.sh"/g) ?? [];
+    expect(hookMatches).toHaveLength(1);
+  });
+
   it('ST-S08-05: sync defaults to cursor when aiTool not in config', () => {
     scaffoldProject(root, { locale: 'en' });
 
@@ -260,6 +318,20 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(allLogs).not.toContain('documents.changes added');
   });
 
+  it('ST-S08-10: sync with all includes codex assets', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = ['claude-code', 'opencode', 'codex', 'cursor'];
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+  });
+
   it('ST-S08-10: sync adds sourceRoots when missing from config', () => {
     scaffoldProject(root, { locale: 'en' });
 
@@ -294,5 +366,49 @@ describe('S08 Scenario Tests — sync command', () => {
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).not.toContain('sourceRoots added');
+  });
+
+  it('ST-S08-12: sync auto-migrates old config.lifecycle=active with single module', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.lifecycle = 'active';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }] }, { lineWidth: 0 }),
+    );
+
+    sync();
+
+    const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8'));
+    expect(yaml.modules[0].lifecycle).toBe('launched');
+    expect(con.logs.join('\n')).toContain('Migrated');
+  });
+
+  it('ST-S08-13: sync warns when old config.lifecycle=active with multiple modules', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.lifecycle = 'active';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'initial' },
+          { id: 'payment', name: 'Payment', lifecycle: 'initial' },
+        ],
+      }, { lineWidth: 0 }),
+    );
+
+    sync();
+
+    const allOutput = [...con.logs, ...con.errors].join('\n');
+    expect(allOutput).toContain('Warning');
   });
 });

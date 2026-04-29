@@ -4,7 +4,7 @@
 
 ## 1. 概述
 
-OpenLogos CLI 的 `status`、`verify`、`detect` 三个命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
+OpenLogos CLI 的 `status`、`next`、`verify`、`detect` 四个命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
 
 ### 1.1 通用约定
 
@@ -21,7 +21,7 @@ OpenLogos CLI 的 `status`、`verify`、`detect` 三个命令支持 `--format js
 
 ```jsonc
 {
-  "command": "<command-name>",   // "status" | "verify" | "detect"
+  "command": "<command-name>",   // "status" | "next" | "verify" | "detect" | "module list"
   "version": "<cli-version>",   // CLI 版本号，如 "0.5.9"
   "timestamp": "<ISO-8601>",    // 输出时间戳
   "data": { ... }               // 命令特定的数据负载
@@ -52,7 +52,7 @@ openlogos detect --format json  # JSON 格式
   "project": null | {             // null 表示当前目录不是 OpenLogos 项目
     "name": "my-project",         // 项目名
     "locale": "zh",               // 语言设置
-    "lifecycle": "active",        // "initial" | "active"
+    "lifecycle": "launched",        // "initial" | "launched"
     "description": "项目描述",     // 项目描述
     "source_roots": null | {      // 源代码根目录，null 表示未配置
       "src": ["src"],             // 业务代码根目录列表
@@ -98,7 +98,7 @@ openlogos status --format json  # JSON 格式
       "label": "Phase 1 · 需求文档 (WHY)",
       "done": true,
       "skipped": false,
-      "files": ["01-requirements.md"]
+      "files": ["core-01-requirements.md"]
     },
     {
       "key": "phase.2",
@@ -108,6 +108,43 @@ openlogos status --format json  # JSON 格式
       "files": []
     }
     // ... 所有 10 个 phase
+  ],
+  "modules": [                      // 模块注册表（来自 logos-project.yaml）
+    {
+      "id": "core",
+      "name": "核心功能",
+      "lifecycle": "initial",       // "initial" | "launched"
+      "current_phase": "phase.3-2-api",  // 当前推进阶段 key；launched 模块为 null
+      "current_phase_label": "Phase 3.2 · API 设计",
+      "phase_progress": {           // 各阶段进度；launched 模块为 null
+        "phase.1": { "done": true, "skipped": false },
+        "phase.3-1": {
+          "done": false, "skipped": false,
+          "scenario_coverage": { "total": 3, "covered": 2, "missing": ["S03"] }
+        }
+      },
+      "active_change": null,        // 仅 launched 模块有值
+      "suggestion": "对 AI 说：「设计 API」"
+    },
+    {
+      "id": "payment",
+      "name": "支付模块",
+      "lifecycle": "launched",
+      "current_phase": null,
+      "current_phase_label": null,
+      "phase_progress": null,
+      "active_change": {            // 当前活跃变更提案
+        "slug": "add-refund",
+        "proposal_step": "implementing",  // "writing"|"implementing"|"in-progress"|"ready-to-merge"
+        "proposal_step_label": "实现中",
+        "has_proposal": true,
+        "has_tasks": true,
+        "tasks_checked": 2,
+        "tasks_total": 5,
+        "delta_count": 1
+      },
+      "suggestion": "继续实现 add-refund，完成后明确授权执行 openlogos merge add-refund"
+    }
   ],
   "active_proposals": [
     {
@@ -120,7 +157,7 @@ openlogos status --format json  # JSON 格式
   "current_phase": "phase.2",      // 第一个未完成 phase 的 key，若全部完成则为 null
   "suggestion": "对 AI 说：「基于需求文档做产品设计」",  // 建议的下一步操作
   "all_done": false,               // 是否所有 phase 都已完成
-  "lifecycle": "active",           // 项目生命周期
+  "lifecycle": "launched",          // 项目生命周期，派生值："initial" | "launched"
   "source_roots": null | {         // 源代码根目录，null 表示未配置
     "src": ["src"],
     "test": ["test"]
@@ -138,6 +175,26 @@ openlogos status --format json  # JSON 格式
 | `phases[].done` | boolean | 是 | 该阶段是否已完成（有文件 = true） |
 | `phases[].skipped` | boolean | 是 | 该阶段是否被跳过（空但后续阶段已完成） |
 | `phases[].files` | string[] | 是 | 该阶段目录下的文件列表 |
+| `modules` | array | 否 | 模块注册表；`logos-project.yaml` 无 `modules[]` 时省略此字段（向下兼容） |
+| `modules[].id` | string | 是 | 模块标识符 |
+| `modules[].name` | string | 是 | 模块名称 |
+| `modules[].lifecycle` | string | 是 | 模块生命周期：`"initial"` 或 `"launched"` |
+| `modules[].current_phase` | string \| null | 是 | 当前推进阶段 key；`launched` 模块为 null |
+| `modules[].current_phase_label` | string \| null | 是 | 当前阶段本地化标签；`launched` 模块为 null |
+| `modules[].phase_progress` | object \| null | 是 | 各阶段进度 map（key = phase key）；`launched` 模块为 null |
+| `modules[].phase_progress[key].done` | boolean | 是 | 该阶段是否已完成 |
+| `modules[].phase_progress[key].skipped` | boolean | 是 | 该阶段是否被跳过 |
+| `modules[].phase_progress[key].scenario_coverage` | object \| undefined | 否 | 仅场景类阶段（`phase.3-1`、`phase.3-3a`）存在 |
+| `modules[].active_change` | object \| null | 是 | 当前活跃变更提案；`initial` 模块或无活跃提案时为 null |
+| `modules[].active_change.slug` | string | 是 | 提案 slug |
+| `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"implementing"` \| `"in-progress"` \| `"ready-to-merge"` |
+| `modules[].active_change.proposal_step_label` | string | 是 | 提案阶段本地化标签 |
+| `modules[].active_change.has_proposal` | boolean | 是 | 是否存在 proposal.md |
+| `modules[].active_change.has_tasks` | boolean | 是 | 是否存在 tasks.md |
+| `modules[].active_change.tasks_checked` | number | 是 | 已勾选任务数 |
+| `modules[].active_change.tasks_total` | number | 是 | 总任务数 |
+| `modules[].active_change.delta_count` | number | 是 | deltas 目录下的文件数 |
+| `modules[].suggestion` | string | 是 | 针对该模块的下一步建议（本地化文本） |
 | `active_proposals` | array | 是 | 活跃变更提案列表 |
 | `active_proposals[].name` | string | 是 | 提案目录名 |
 | `active_proposals[].has_proposal` | boolean | 是 | 是否存在 proposal.md |
@@ -146,7 +203,7 @@ openlogos status --format json  # JSON 格式
 | `current_phase` | string \| null | 是 | 当前应推进的阶段 key；全部完成时为 null |
 | `suggestion` | string | 是 | 建议的下一步操作（本地化文本） |
 | `all_done` | boolean | 是 | 是否全部阶段已完成（skipped 阶段不阻塞） |
-| `lifecycle` | string | 是 | 项目生命周期（`initial` 或 `active`） |
+| `lifecycle` | string | 是 | 项目生命周期（`initial` 或 `launched`，由模块状态派生） |
 | `source_roots` | object \| null | 是 | 源代码根目录配置；未配置时为 null |
 
 ---
@@ -274,7 +331,50 @@ openlogos verify --format json  # JSON 格式
 
 ---
 
-## 6. 完整用法示例
+## 6. `openlogos module list --format json`
+
+列出项目中注册的所有模块及其生命周期状态。
+
+### 6.1 用法
+
+```bash
+openlogos module list                # 人类可读格式
+openlogos module list --format json  # JSON 格式
+```
+
+### 6.2 JSON Schema（data 部分）
+
+```jsonc
+{
+  "modules": [
+    {
+      "id": "core",
+      "name": "核心功能",
+      "lifecycle": "initial"    // "initial" | "launched"
+    },
+    {
+      "id": "payment",
+      "name": "支付模块",
+      "lifecycle": "launched"
+    }
+  ]
+}
+```
+
+### 6.3 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `modules` | array | 是 | 模块列表（与 `logos-project.yaml` 中的顺序一致） |
+| `modules[].id` | string | 是 | 模块标识符（小写字母/数字/连字符） |
+| `modules[].name` | string | 是 | 模块名称 |
+| `modules[].lifecycle` | string | 是 | 模块生命周期：`"initial"` 或 `"launched"` |
+
+> 若项目未注册任何模块，`modules` 为空数组 `[]`，不报错。
+
+---
+
+## 7. 完整用法示例
 
 ```bash
 # 获取项目状态（机器可读）
@@ -285,6 +385,12 @@ openlogos detect --format json | jq '.data.cli.version'
 
 # 获取测试验收摘要
 openlogos verify --format json | jq '.data.gate.result'
+
+# 列出所有模块的生命周期
+openlogos module list --format json | jq '.data.modules[] | {id, lifecycle}'
+
+# 在脚本中检查是否有 launched 模块
+openlogos module list --format json | jq -e '.data.modules | any(.lifecycle == "launched")'
 
 # 在脚本中检查门禁结果
 if openlogos verify --format json 2>/dev/null | jq -e '.data.gate.result == "PASS"' > /dev/null; then

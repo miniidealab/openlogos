@@ -172,7 +172,7 @@ Because [reason] → leads to [pain point] → results in [consequence]
 
 - File format: Markdown
 - Storage location: `logos/resources/prd/1-product-requirements/`
-- File naming: `{sequence}-{english-name}.md`, e.g., `01-requirements.md`
+- File naming: `<module>-{sequence}-{english-name}.md`, e.g., `core-01-requirements.md` (read current module from `modules[]` in `logos-project.yaml`, default is `core`)
 - Every scenario must be traceable to at least one user pain point
 - P0/P1 scenarios must have GIVEN/WHEN/THEN (≥1 normal + ≥1 exception)
 - Scenario numbers are globally unique and will carry through Phase 2 and Phase 3

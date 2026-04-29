@@ -202,7 +202,7 @@ This directory has already been initialized as an OpenLogos project.
 
 - Feature specs: `logos/resources/prd/2-product-design/1-feature-specs/`
 - Prototypes: `logos/resources/prd/2-product-design/2-page-design/`
-- Design documents and prototypes appear in pairs: `{number}-{name}-design.md` + `{number}-{name}-prototype.{ext}`
+- Design documents and prototypes appear in pairs: `<module>-{number}-{name}-design.md` + `<module>-{number}-{name}-prototype.{ext}` (read current module from `modules[]` in `logos-project.yaml`, default is `core`)
   - Web Application: `.html`
   - CLI Tool: `-terminal.md` (terminal interaction simulation)
   - AI Skills: `-dialogue.md` (dialogue flow script)

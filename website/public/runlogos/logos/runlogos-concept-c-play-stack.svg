@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 72" role="img" aria-label="RunLogos concept C: play + stack">
+  <defs>
+    <linearGradient id="c-fill" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" style="stop-color:#38bdf8"/>
+      <stop offset="100%" style="stop-color:#0eb677"/>
+    </linearGradient>
+  </defs>
+  <!-- merged mark: triangle + bars as "running log" -->
+  <g transform="translate(6,8)">
+    <rect x="44" y="8" width="8" height="40" rx="2" fill="#3f3f46"/>
+    <rect x="56" y="16" width="8" height="32" rx="2" fill="#52525b"/>
+    <rect x="68" y="24" width="8" height="24" rx="2" fill="#71717a"/>
+    <path d="M8 12 L36 28 L8 44 Z" fill="url(#c-fill)"/>
+  </g>
+  <text x="96" y="48" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="800" fill="#fafafa" letter-spacing="-0.03em">RunLogos</text>
+</svg>

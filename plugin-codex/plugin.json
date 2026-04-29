@@ -1,0 +1,10 @@
+{
+  "name": "openlogos",
+  "version": "1.0.0",
+  "description": "OpenLogos methodology — Why→What→How structured AI-driven development",
+  "interface": {
+    "display_name": "OpenLogos",
+    "short_description": "Structured development: PRD → Design → Scenarios → API → Code",
+    "default_prompt": ["What should I do next in the OpenLogos workflow?"]
+  }
+}

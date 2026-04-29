@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import { VERSION, makeEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 
@@ -24,10 +25,24 @@ export function collectDetectData(root: string): DetectData {
   if (existsSync(configPath)) {
     try {
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+
+      // Derive lifecycle from modules
+      let lifecycle = 'initial';
+      const yamlPath = join(root, 'logos', 'logos-project.yaml');
+      if (existsSync(yamlPath)) {
+        try {
+          const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
+          if (Array.isArray(yaml?.modules) &&
+              (yaml.modules as Array<{ lifecycle?: string }>).some(m => m.lifecycle === 'launched')) {
+            lifecycle = 'launched';
+          }
+        } catch { /* ignore */ }
+      }
+
       project = {
         name: config.name ?? '',
         locale: config.locale ?? 'en',
-        lifecycle: config.lifecycle ?? 'initial',
+        lifecycle,
         description: config.description ?? '',
         source_roots: config.sourceRoots ?? null,
       };

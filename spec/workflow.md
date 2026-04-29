@@ -206,7 +206,7 @@ Phase 2 在 Phase 1 场景的基础上增加交互细节：
   - 来源：时序图 Step 序列（主路径）、EX 异常用例（异常路径）、Phase 1/2 验收条件
   - 关注：跨模块调用链的正确性、数据在 Step 间的传递、异常发生时的补偿/回滚逻辑
 
-**产出物**：测试用例规格文档（Markdown），存放在 `logos/resources/test/`，按场景分文件（如 `S01-test-cases.md`）。
+**产出物**：测试用例规格文档（Markdown），存放在 `logos/resources/test/`，按场景分文件（命名格式：`<module>-{场景编号}-test-cases.md`，如 `core-S01-test-cases.md`）。
 
 **Gate 3.3a**：核心场景的单元测试和场景测试用例已设计，覆盖所有 P0 场景的正常路径 + 核心 EX 异常路径。
 
@@ -293,5 +293,16 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 测试用例 + 编
 ## 迭代规则
 
 功能迭代**必须**按同样的分层工作流推进，使用 Delta 变更管理（详见 [change-management.md](./change-management.md)）。不允许跳过中间环节直接改代码。
+
+迭代变更遵循"规格驱动代码"原则，完整顺序为：
+
+```
+delta 产出 → merge（规格落地）→ 代码实现 → verify（验收代码）→ archive → git push
+```
+
+- **merge 之后才能写代码**：代码必须基于合并后的主文档实现，不允许基于 delta 草稿直接写代码
+- **verify 在代码实现之后**：verify 验收的是代码，不是规格文档
+- **verify 失败只修代码**：不需要重走 merge 流程
+- **git push 是人类确认点**：archive 完成后 AI 提示用户确认，不得自动推送
 
 迭代可能导致场景变更：新增场景、修改已有场景、废弃场景。所有变更通过 `logos/changes/` 提案管理，场景编号一旦分配不复用。

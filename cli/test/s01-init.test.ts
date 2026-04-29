@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import {
   readConfigName,
@@ -18,6 +19,7 @@ import { readLocale, t } from '../src/i18n.js';
 
 /* ---------- Readline mock setup ---------- */
 let readlineAnswers: string[] = [];
+const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 vi.mock('node:readline', () => ({
   createInterface: vi.fn(() => ({
     question: vi.fn((_prompt: string, cb: (answer: string) => void) => {
@@ -79,7 +81,7 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(parsed.name).toBe('test');
     expect(parsed.locale).toBe('en');
     expect(parsed.aiTool).toBe('cursor');
-    expect(parsed.lifecycle).toBe('initial');
+    expect(parsed.lifecycle).toBeUndefined();
     expect(parsed.documents.prd).toBeDefined();
     expect(parsed.documents.changes).toBeDefined();
     expect(parsed.documents.changes.path).toBe('./changes');
@@ -93,6 +95,12 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     const output = createLogosConfig('test', 'en', 'claude-code');
     const parsed = JSON.parse(output);
     expect(parsed.aiTool).toBe('claude-code');
+  });
+
+  it('UT-S01-07c: createLogosConfig includes codex in all mode', () => {
+    const output = createLogosConfig('test', 'en', 'all');
+    const parsed = JSON.parse(output);
+    expect(parsed.aiTool).toContain('codex');
   });
 
   it('UT-S01-08: createLogosProject includes project name and zh conventions', () => {
@@ -136,6 +144,31 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     const zh = createAgentsMd('zh');
     expect(en).toContain('Follow the OpenLogos');
     expect(zh).toContain('遵循 OpenLogos');
+  });
+
+  it('UT-S01-10b: createAgentsMd uses .agents skill paths for codex agents target', () => {
+    const output = createAgentsMd('en', 'codex', 'agents');
+    expect(output).toContain('.agents/skills/prd-writer/SKILL.md');
+    expect(output).not.toContain('logos/skills/prd-writer/SKILL.md');
+  });
+});
+
+describe('S01 Unit Tests — packaging and usage text', () => {
+  it('UT-S01-11: cli package.json includes codex plugin template in publish artifacts', async () => {
+    const pkgText = readFileSync(join(rootDir, 'cli', 'package.json'), 'utf-8');
+    const pkg = JSON.parse(pkgText);
+
+    expect(pkg.files).toContain('codex-plugin-template');
+    expect(pkg.scripts.prepack).toContain("../plugin-codex");
+    expect(pkg.scripts.postpack).toContain("./codex-plugin-template");
+  });
+
+  it('UT-S01-12: help text and non-interactive usage include codex', async () => {
+    const indexText = readFileSync(join(rootDir, 'cli', 'src', 'index.ts'), 'utf-8');
+    const initText = readFileSync(join(rootDir, 'cli', 'src', 'commands', 'init.ts'), 'utf-8');
+
+    expect(indexText).toContain('--ai-tool <claude-code|opencode|codex|cursor|other|all>');
+    expect(initText).toContain('--ai-tool <claude-code|opencode|codex|cursor|other|all>');
   });
 });
 
@@ -208,7 +241,7 @@ describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
   });
 
   it('UT-S01-29: en locale active lifecycle includes enforced Change Management with guard', () => {
-    const output = createAgentsMd('en', 'cursor', 'agents', 'active');
+    const output = createAgentsMd('en', 'cursor', 'agents', true);
     expect(output).toContain('Change Management (Enforced)');
     expect(output).toContain('.openlogos-guard');
     expect(output).toContain('openlogos change');
@@ -217,7 +250,7 @@ describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
   });
 
   it('UT-S01-30: zh locale active lifecycle includes enforced Change Management with guard', () => {
-    const output = createAgentsMd('zh', 'cursor', 'agents', 'active');
+    const output = createAgentsMd('zh', 'cursor', 'agents', true);
     expect(output).toContain('变更管理（强制执行）');
     expect(output).toContain('.openlogos-guard');
     expect(output).toContain('openlogos change');
@@ -226,14 +259,14 @@ describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
   });
 
   it('UT-S01-31: initial lifecycle shows soft Change Management in AGENTS.md', () => {
-    const output = createAgentsMd('en', 'cursor', 'agents', 'initial');
+    const output = createAgentsMd('en', 'cursor', 'agents', false);
     expect(output).toContain('Initial Development');
     expect(output).toContain('openlogos launch');
     expect(output).not.toContain('Enforced');
   });
 
   it('UT-S01-32: zh initial lifecycle shows soft Change Management', () => {
-    const output = createAgentsMd('zh', 'cursor', 'agents', 'initial');
+    const output = createAgentsMd('zh', 'cursor', 'agents', false);
     expect(output).toContain('初始开发期');
     expect(output).toContain('openlogos launch');
     expect(output).not.toContain('必须遵守');
@@ -242,7 +275,7 @@ describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
 
 describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
   it('UT-S01-33: initial lifecycle policy has soft change management', () => {
-    const content = generatePolicyMdc('en', 'initial');
+    const content = generatePolicyMdc('en', false);
     expect(content).toContain('alwaysApply: true');
     expect(content).toContain('Language Policy (Highest Priority)');
     expect(content).toContain('Initial Development');
@@ -251,21 +284,21 @@ describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
   });
 
   it('UT-S01-34: active lifecycle policy has enforced change management with guard', () => {
-    const content = generatePolicyMdc('en', 'active');
+    const content = generatePolicyMdc('en', true);
     expect(content).toContain('Language Policy (Highest Priority)');
     expect(content).toContain('Change Management (Enforced)');
     expect(content).toContain('.openlogos-guard');
   });
 
   it('UT-S01-35: zh initial lifecycle policy', () => {
-    const content = generatePolicyMdc('zh', 'initial');
+    const content = generatePolicyMdc('zh', false);
     expect(content).toContain('语言策略（最高优先级）');
     expect(content).toContain('初始开发期');
     expect(content).not.toContain('立即停止编码');
   });
 
   it('UT-S01-36: zh active lifecycle policy with guard', () => {
-    const content = generatePolicyMdc('zh', 'active');
+    const content = generatePolicyMdc('zh', true);
     expect(content).toContain('语言策略（最高优先级）');
     expect(content).toContain('变更管理（强制执行）');
     expect(content).toContain('.openlogos-guard');
@@ -492,7 +525,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-01: full init with explicit project name (Claude Code default)', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '3']; // English, Cursor (option 3)
+    readlineAnswers = ['1', '4']; // English, Cursor (option 4)
 
     await init('my-project');
 
@@ -538,7 +571,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-02: auto-detect project name from directory', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '3']; // English, Cursor (option 3)
+    readlineAnswers = ['1', '4']; // English, Cursor (option 4)
 
     await init();
 
@@ -550,7 +583,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-03: choose Chinese locale', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['2', '3']; // Chinese, Cursor (option 3)
+    readlineAnswers = ['2', '4']; // Chinese, Cursor (option 4)
 
     await init('zh-test');
 
@@ -607,7 +640,7 @@ describe('S01 Scenario Tests — init command', () => {
   it('ST-S01-06: name conflict — user selects package.json name', async () => {
     process.stdin.isTTY = true;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'old-name' }));
-    readlineAnswers = ['1', '3', '2']; // English, Cursor (option 3), choose package.json name
+    readlineAnswers = ['1', '4', '2']; // English, Cursor (option 4), choose package.json name
 
     await init('new-name');
 
@@ -669,7 +702,7 @@ describe('S01 Scenario Tests — init command', () => {
 
   it('ST-S01-08: choose Other → both files include Active Skills', async () => {
     process.stdin.isTTY = true;
-    readlineAnswers = ['1', '4']; // English, Other (option 4)
+    readlineAnswers = ['1', '5']; // English, Other (option 5)
 
     await init('other-project');
 
@@ -699,5 +732,33 @@ describe('S01 Scenario Tests — init command', () => {
 
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).toContain('需求文档编写');
+  });
+
+  it('ST-S01-10: init with codex deploys native plugin assets and binds AGENTS.md to .agents skills', async () => {
+    await init('codex-project', { locale: 'en', aiTool: 'codex' });
+
+    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'hooks', 'session-start.sh'))).toBe(true);
+    expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
+    expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+
+    const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
+    expect(codexConfig).toContain('[plugins.openlogos]');
+    expect(codexConfig).toContain('command = ".codex-plugin/hooks/session-start.sh"');
+  });
+
+  it('ST-S01-11: init with all includes codex assets and keeps shared logos skills for compatibility', async () => {
+    await init('all-project', { locale: 'en', aiTool: 'all' });
+
+    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
   });
 });

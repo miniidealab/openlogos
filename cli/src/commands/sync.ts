@@ -1,9 +1,11 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, type AiTool, type Lifecycle } from './init.js';
+import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, deployCodexPlugin, type AiTool } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
 import { VERSION } from '../lib/json-output.js';
+import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -40,7 +42,26 @@ export function sync() {
   const rawAiTool = config.aiTool || 'cursor';
   const aiTools: AiTool[] = Array.isArray(rawAiTool) ? rawAiTool : [rawAiTool];
   const primaryAiTool: AiTool = aiTools[0];
-  const lifecycle: Lifecycle = config.lifecycle || 'initial';
+
+  // Run migration for old projects (config.lifecycle === 'active' → mark module launched)
+  const migration = migrateProjectLifecycle(root);
+  if (migration.migrated && migration.autoMarked) {
+    console.log(`  ✓ ${t(locale, 'launch.migrationAuto', { module: migration.autoMarked })}`);
+  } else if (migration.migrated && migration.warned) {
+    console.error(`  ⚠ ${t(locale, 'launch.migrationWarn')}`);
+  }
+
+  // Derive isLaunched from modules
+  const yamlPath = join(root, 'logos', 'logos-project.yaml');
+  let isLaunched = false;
+  if (existsSync(yamlPath)) {
+    try {
+      const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
+      if (Array.isArray(yaml?.modules)) {
+        isLaunched = (yaml.modules as Array<{ lifecycle?: string }>).some(m => m.lifecycle === 'launched');
+      }
+    } catch { /* ignore */ }
+  }
 
   const namesynced = syncLogosProjectName(root, projectName);
   if (namesynced) {
@@ -83,14 +104,14 @@ export function sync() {
     console.log('  ✓ sourceRoots added to logos.config.json');
   }
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, primaryAiTool, 'agents', lifecycle));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, primaryAiTool, 'agents', isLaunched));
   console.log('  ✓ AGENTS.md updated');
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, primaryAiTool, 'claude', lifecycle));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, primaryAiTool, 'claude', isLaunched));
   console.log('  ✓ CLAUDE.md updated');
 
   for (const tool of aiTools) {
-    const deployResult = deploySkills(root, tool, locale, lifecycle);
+    const deployResult = deploySkills(root, tool, locale, isLaunched);
     if (deployResult && deployResult.count > 0) {
       console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
     }
@@ -107,6 +128,18 @@ export function sync() {
       }
       if (pluginResult.commandCount > 0) {
         console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
+      }
+    }
+  }
+
+  if (aiTools.includes('codex')) {
+    const codexResult = deployCodexPlugin(root, locale);
+    if (codexResult) {
+      console.log(`  ✓ ${t(locale, 'init.codexPluginSynced', { target: codexResult.target })}`);
+      if (codexResult.config.created) {
+        console.log(`  ✓ ${t(locale, 'init.codexConfigCreated')}`);
+      } else if (codexResult.config.updated) {
+        console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
       }
     }
   }

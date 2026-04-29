@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="RunLogos concept D: orbit orchestration">
+  <defs>
+    <linearGradient id="d-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#64748b"/>
+      <stop offset="50%" style="stop-color:#22d3ee"/>
+      <stop offset="100%" style="stop-color:#0eb677"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="38" fill="none" stroke="#27272a" stroke-width="6"/>
+  <circle cx="50" cy="50" r="38" fill="none" stroke="url(#d-ring)" stroke-width="6" stroke-dasharray="60 180" stroke-linecap="round" transform="rotate(-90 50 50)"/>
+  <circle cx="50" cy="22" r="6" fill="#22d3ee"/>
+  <circle cx="76" cy="62" r="6" fill="#0eb677"/>
+  <circle cx="24" cy="62" r="5" fill="#a1a1aa"/>
+  <text x="50" y="54" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="900" fill="#fafafa">R</text>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" role="img" aria-label="RunLogos concept A: execute + document">
+  <defs>
+    <linearGradient id="a-streak" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22d3ee"/>
+      <stop offset="100%" style="stop-color:#0eb677"/>
+    </linearGradient>
+  </defs>
+  <!-- icon: doc stack + motion streak -->
+  <g transform="translate(8,12)">
+    <rect x="8" y="4" width="36" height="44" rx="4" fill="#27272a" stroke="#3f3f46" stroke-width="1.5"/>
+    <rect x="4" y="0" width="36" height="44" rx="4" fill="#18181b" stroke="#52525b" stroke-width="1.5"/>
+    <path d="M12 12h20M12 20h16M12 28h20" stroke="#71717a" stroke-width="2" stroke-linecap="round"/>
+    <path d="M38 8 L52 24 L38 40" fill="none" stroke="url(#a-streak)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="52" cy="24" r="5" fill="#0eb677"/>
+  </g>
+  <text x="88" y="52" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="800" fill="#fafafa" letter-spacing="-0.04em">Run</text>
+  <text x="168" y="52" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="600" fill="#a1a1aa" letter-spacing="-0.02em">Logos</text>
+</svg>

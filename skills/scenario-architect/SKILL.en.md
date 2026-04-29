@@ -197,8 +197,8 @@ Summarize the technical implementation status of all scenarios:
 
 ## Output Specification
 
-- **Scenario overview**: `logos/resources/prd/3-technical-plan/2-scenario-implementation/00-scenario-overview.md`
-- **Scenario documents**: `logos/resources/prd/3-technical-plan/2-scenario-implementation/{scenario-number}-{scenario-name}.md`
+- **Scenario overview**: `logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md`
+- **Scenario documents**: `logos/resources/prd/3-technical-plan/2-scenario-implementation/<module>-{scenario-number}-{scenario-name}.md` (read current module from `modules[]` in `logos-project.yaml`, default is `core`; read `scenario_counter.next_id` before generating, increment and write back immediately after)
 - Sequence diagrams use Mermaid format (renderable directly in Markdown)
 - Exception cases use `EX-N.M` numbering, globally unique
 - Each scenario document contains: sequence diagram + step descriptions + exception cases

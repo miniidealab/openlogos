@@ -12,7 +12,7 @@ const COMMANDS = {
   next: { cli: ["status"], args: "none" },
   sync: { cli: ["sync"], args: "none" },
   verify: { cli: ["verify"], args: "none" },
-  launch: { cli: ["launch"], args: "none" },
+  launch: { cli: ["launch"], args: "optionalModuleId" },
   init: { cli: ["init"], args: "optionalName" },
   change: { cli: ["change"], args: "requiredSlug" },
   merge: { cli: ["merge"], args: "requiredSlug" },
@@ -33,6 +33,15 @@ function parse(raw) {
 
   if (spec.args === "none" && rest.length > 0) {
     return { matched: true, ok: false, code: "E_ARG_INVALID", message: `${name} 不接受参数` };
+  }
+  if (spec.args === "optionalModuleId") {
+    if (rest.length > 1) {
+      return { matched: true, ok: false, code: "E_ARG_INVALID", message: `${name} 只接受 0 或 1 个参数（module-id）` };
+    }
+    if (rest.length === 1 && !SLUG_RE.test(rest[0])) {
+      return { matched: true, ok: false, code: "E_ARG_INVALID", message: `${name} 的 module-id 必须为合法 slug（小写字母/数字/连字符）` };
+    }
+    return { matched: true, ok: true, name, cliArgs: [...spec.cli, ...rest] };
   }
   if (spec.args === "optionalName" && rest.length > 1) {
     return { matched: true, ok: false, code: "E_ARG_INVALID", message: "init 最多接受 1 个参数" };

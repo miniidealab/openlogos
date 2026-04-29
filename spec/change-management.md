@@ -10,6 +10,7 @@
 2. **影响分析先行**：在 `proposal.md` 中明确变更范围
 3. **按需传播**：不是每次都全链路更新，只更新受影响的环节
 4. **归档留痕**：变更完成后归档，保留完整历史
+5. **guard 互斥**：同一时间只允许一个活动提案；存在活动 guard 时，必须阻止新的 `openlogos change`
 
 ## 目录结构
 
@@ -31,6 +32,8 @@ project-root/
         └── archive/                  # 已完成变更的历史归档
             └── add-remember-me/
 ```
+
+> `logos/.openlogos-guard` 是活动提案锁文件。只要它指向 `logos/changes/` 下一个未归档提案，`openlogos change` 就必须拒绝创建新的提案，直到当前提案被 `openlogos archive` 归档后释放锁。
 
 ## 文件规范
 
@@ -102,31 +105,66 @@ Delta 文件的目录结构映射主文档目录：
 
 ## 变更工作流
 
+> **核心原则**：`openlogos merge`、`openlogos verify`、`openlogos archive` 和 `git push` 是人类确认点。AI 可提醒、解释、准备命令；未经用户明确授权不得执行。用户以明确请求或 slash command 授权时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+>
+> **规格驱动代码**：代码实现必须在规格合并进主文档（Step 6）之后才能开始，不允许基于 delta 草稿直接写代码。
+
 ```
 1. 创建变更提案（CLI）
    └── openlogos change {slug}
    └── 生成 logos/changes/{slug}/proposal.md + tasks.md + deltas/
+   └── 写入 logos/.openlogos-guard，锁定当前活动提案
 
 2. AI 辅助填写提案（change-writer Skill）
    └── AI 分析影响范围，填写 proposal.md 和 tasks.md
+   └── 等待用户确认提案内容后，才开始产出 delta
 
 3. 按 tasks.md 逐项产出 Delta 文件（各阶段 Skill）
    └── 每完成一项任务，将增量变更写入 deltas/ 对应子目录
+   └── AI 每完成一项任务后，立即将 tasks.md 中该项从 [ ] 更新为 [x]
 
 4. 审核变更提案
    └── 团队/自审 proposal.md 和 delta 文件
 
-5. 生成合并指令（CLI）
+5. 生成合并指令（CLI）【人类确认点】
    └── openlogos merge {slug}
    └── 扫描 deltas/，生成 MERGE_PROMPT.md
 
 6. AI 执行合并（merge-executor Skill）
-   └── AI 读取 MERGE_PROMPT.md，逐个 delta 合并到主文档
+   └── AI 读取 MERGE_PROMPT.md，逐个 delta 合并到主文档（logos/resources/）
+   └── 合并完成后，AI 自动 commit 规格文档变更（告知用户，无需确认）
+   └── commit message 格式：docs({slug}): merge spec deltas
 
-7. 归档变更（CLI）
+7. 实现代码（code-implementor Skill）
+   └── 按合并后的主文档实现业务代码 + 测试代码 + OpenLogos reporter
+   └── 代码实现完成后，AI 自动 commit 代码变更（告知用户，无需确认）
+   └── commit message 格式：feat/fix({slug}): implement changes
+
+8. 运行验收（CLI）【人类确认点】
+   └── 用户运行 openlogos verify，生成验收报告
+   └── 验收通过（PASS）→ 继续步骤 9
+   └── 验收失败（FAIL）→ 修复代码后重新运行，不需要重走 merge 流程
+
+9. 归档变更（CLI）【人类确认点】
    └── openlogos archive {slug}
    └── 将 logos/changes/{slug}/ 移入 logos/changes/archive/
+   └── 若当前 guard 指向该提案，则删除 logos/.openlogos-guard
+   └── 归档完成后，AI 自动 commit 归档变更（告知用户，无需确认）
+   └── commit message 格式：chore({slug}): archive change proposal
+
+10. 推送到远端（Git）【人类确认点】
+    └── AI 提示用户确认是否执行 git push
+    └── 用户明确授权后，AI 执行 git push
+    └── 未获授权不得自动推送
 ```
+
+### commit 粒度规则
+
+| 变更类型 | commit 策略 |
+|---------|------------|
+| 需求级 / 设计级变更 | 至少 3 个 commit：规格（Step 6）+ 代码（Step 7）+ 归档（Step 9） |
+| 接口级变更 | 至少 2 个 commit：规格+代码合并（Step 6-7）+ 归档（Step 9） |
+| 代码级修复 | 至少 2 个 commit：代码（Step 7）+ 归档（Step 9） |
 
 ## 变更传播规则
 
@@ -145,6 +183,18 @@ Delta 文件的目录结构映射主文档目录：
 - 分支合并时，`logos/changes/{change-name}/` 同步移入 `logos/changes/archive/`
 - 重大变更在文档顶部的"最后更新"时间戳中标注
 - `logos/changes/archive/` 提供完整变更历史
+
+### commit 时机与 message 规范
+
+AI 在以下三个节点自动提交（告知用户，无需确认）：
+
+| 节点 | commit message 格式 | 包含内容 |
+|------|-------------------|---------|
+| merge 完成后（Step 6） | `docs({slug}): merge spec deltas` | logos/resources/ 下的规格文档变更 |
+| 代码实现完成后（Step 7） | `feat/fix({slug}): implement changes` | 业务代码 + 测试代码 |
+| archive 完成后（Step 9） | `chore({slug}): archive change proposal` | logos/changes/archive/ 归档文件 |
+
+push 是独立的人类确认点（Step 10），AI 必须等待用户明确授权后才执行。
 
 ## MERGE_PROMPT.md 文件规范
 
@@ -175,7 +225,9 @@ Delta 文件的目录结构映射主文档目录：
 5. 保持主文档的原有格式和风格
 6. 如果主文档有"最后更新"时间戳，同步更新
 7. 所有变更完成后，列出修改清单
-8. 完成后提醒用户运行 `openlogos archive {slug}`
+8. 所有变更合并完成后，自动执行 git commit（告知用户，无需确认）：
+   `git add -A && git commit -m "docs({slug}): merge spec deltas"`
+   然后提示用户：按更新后的规格实现代码，代码完成后运行 `openlogos verify` 验收，验收通过后明确授权执行 `openlogos archive {slug}`。
 ```
 
 ## CLI 命令

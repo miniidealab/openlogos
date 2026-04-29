@@ -27,6 +27,7 @@ If MERGE_PROMPT.md does not exist, prompt the user to run `openlogos merge <slug
 3. Precisely locate the corresponding sections in the main document and execute the merge
 4. Maintain formatting and style consistency of the main document
 5. Output a change summary
+6. **Stop and wait for human confirmation** — After the merge is complete, the AI's role ends. Never run `openlogos archive` autonomously.
 
 ## Execution Steps
 
@@ -56,8 +57,36 @@ After all deltas have been processed, output:
 Merge complete:
 - [file path 1]: added x sections, modified y sections, deleted z sections
 - [file path 2]: ...
+```
 
-Please verify the changes are correct, then run `openlogos archive <slug>` to archive the proposal.
+Then AI **automatically runs git commit** (no user confirmation needed, but must inform user):
+
+```bash
+git add -A
+git commit -m "docs(<slug>): merge spec deltas"
+```
+
+> Use `git add -A` instead of `git add logos/resources/` to ensure all spec files touched by this merge (including spec/, skills/, CLAUDE.md, AGENTS.md, etc.) are included in the commit.
+
+Then prompt the user with next steps:
+
+```
+✅ Spec documents merged and committed. Next steps:
+
+Step 1: Implement code
+Implement business code + test code per the updated logos/resources/ specs.
+AI will automatically commit the code changes when done.
+
+Step 2: Run verification (after code is complete)
+Run in the project root:
+openlogos verify
+- PASS → proceed to Step 3
+- FAIL → fix the code and re-run verify (no need to re-run merge)
+
+Step 3: Archive (after verification passes)
+openlogos archive <slug>
+
+openlogos verify and openlogos archive are human confirmation points — AI must not execute them without explicit user authorization.
 ```
 
 ## Merge Principles

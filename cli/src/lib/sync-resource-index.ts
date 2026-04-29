@@ -68,19 +68,19 @@ interface DescRule {
 const RULES: DescRule[] = [
   // 1. 场景总览（放在场景文件之前，更具体）
   {
-    pattern: /logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/00-scenario-overview\.md$/,
+    pattern: /logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/(?:[a-z][a-z0-9-]*-)?00-scenario-overview\.md$/,
     zh: () => '场景实现概览索引。涉及全量场景分类、参与方、实现文档映射关系时必读。',
     en: () => 'Scenario overview index. Required when referencing scenario classification, participants, or document mapping.',
   },
-  // 2. 场景时序图：S01-cli-init.md → S01 场景时序图
+  // 2. 场景时序图：core-S01-cli-init.md → S01 场景时序图
   {
-    pattern: /logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/(S\d+)-(.+)\.md$/,
+    pattern: /logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/(?:[a-z][a-z0-9-]*-)?(S\d+)-(.+)\.md$/,
     zh: (m) => `${m[1]} 场景时序图。涉及 ${m[1]} 实现细节、API 设计、异常分支时必读。`,
     en: (m) => `${m[1]} sequence diagram. Required when working on ${m[1]} implementation, API design, or exception branches.`,
   },
-  // 3. 测试用例：S01-test-cases.md → S01 测试用例
+  // 3. 测试用例：core-S01-test-cases.md → S01 测试用例
   {
-    pattern: /logos\/resources\/test\/(S\d+)-test-cases\.md$/,
+    pattern: /logos\/resources\/test\/(?:[a-z][a-z0-9-]*-)?(S\d+)-test-cases\.md$/,
     zh: (m) => `${m[1]} 测试用例。涉及 ${m[1]} 单元测试与场景测试的实现与验收时必读。`,
     en: (m) => `${m[1]} test cases. Required when implementing or verifying ${m[1]} unit and scenario tests.`,
   },

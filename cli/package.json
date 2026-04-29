@@ -1,6 +1,6 @@
 {
   "name": "@miniidealab/openlogos",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "CLI tool for the OpenLogos software engineering methodology",
   "type": "module",
   "bin": {
@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "npx tsc",
-    "prepack": "npm run build && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true});require('fs').cpSync('../plugin-opencode/template','./opencode-plugin-template',{recursive:true})\"",
-    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true});require('fs').rmSync('./opencode-plugin-template',{recursive:true,force:true})\"",
+    "prepack": "npm run build && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true});require('fs').cpSync('../plugin-opencode/template','./opencode-plugin-template',{recursive:true});require('fs').cpSync('../plugin-codex','./codex-plugin-template',{recursive:true})\"",
+    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true});require('fs').rmSync('./opencode-plugin-template',{recursive:true,force:true});require('fs').rmSync('./codex-plugin-template',{recursive:true,force:true})\"",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "lint": "eslint src/",
@@ -45,7 +45,8 @@
     "dist",
     "skills",
     "spec",
-    "opencode-plugin-template"
+    "opencode-plugin-template",
+    "codex-plugin-template"
   ],
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -54,5 +55,8 @@
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.0",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "yaml": "^2.8.3"
   }
 }

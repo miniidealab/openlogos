@@ -167,7 +167,7 @@
 
 - **文件格式**：Markdown
 - **存放位置**：`logos/resources/test/`
-- **命名规则**：`{场景编号}-test-cases.md`（如 `S01-test-cases.md`）
+- **命名规则**：`<module>-{场景编号}-test-cases.md`（如 `core-S01-test-cases.md`；从 `logos-project.yaml` 的 `modules[]` 读取当前模块，默认为 `core`）
 - 每个文件包含：单元测试用例（按来源分组）+ 场景测试用例（主路径 + 异常路径）
 - 用例 ID 全局唯一：`UT-{场景编号}-{序号}` / `ST-{场景编号}-{序号}`
 
@@ -253,7 +253,7 @@
 ```yaml
 resource_index:
   # ...已有条目...
-  - path: logos/resources/test/S01-test-cases.md
+  - path: logos/resources/test/core-S01-test-cases.md
     desc: S01 <场景名称>测试用例。涉及 UT-S01（单元测试）与 ST-S01（场景测试）的实现与验收时必读。
   # 每个场景的测试用例文件均需单独一条
 ```

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-04-28
+
+### Fixed
+
+- 修复 `cli/src/commands/status.ts` 中未使用参数导致的发布前 lint 阻塞。
+
+### Changed
+
+- 将 npm 发布版本升级到 `0.8.2`，用于发布当前已通过测试和打包校验的 CLI 版本。
+
+## [0.8.0] - 2026-04-25
+
+### Added
+
+- **Codex 一等集成** — `openlogos init` / `sync` 新增 `codex` 作为一等 AI 工具选项，可自动部署 `.agents/skills/`、`.codex-plugin/` 和 `.codex/config.toml` 所需配置，并在生成的 AGENTS/CLAUDE 指令中输出与 Codex 目录结构一致的 Skill 路径。
+
+- **模块命名规范与模块管理命令** — CLI 与方法论文档全面支持 `<module>-<序号>-<类型>` 命名规则，新增 `openlogos module list/add/rename/remove` 与 `openlogos next`，并为多模块状态展示、场景编号全局唯一、`logos-project.yaml.modules[]` / `scenario_counter.next_id` 等能力提供实现与测试覆盖。
+
+### Changed
+
+- **结构化 JSON 输出升级** — `status --format json` / `next --format json` 补充多模块相关字段与活跃提案推进状态信息，`spec/cli-json-output.md` 同步更新，确保外部消费 CLI 输出时的契约与实现一致。
+
+- **资源与规范命名全面切换到 `core-` 前缀** — `logos/resources/`、Skills、spec 及相关测试夹具统一迁移到模块前缀命名，`sync-resource-index` 也已适配新的场景/测试文件匹配规则。
+
+### Fixed
+
+- **guard 互斥缺失** — `openlogos change` 现在会在已有活动 guard 时拒绝创建新提案，避免覆盖 `logos/.openlogos-guard`。
+
+- **`status` 模块区块标题 i18n 缺失** — 补充 `status.modules` 中英文词条，并增加文本模式回归测试，避免模块标题直接显示未翻译 key。
+
 ## [0.7.3] - 2026-04-22
 
 ### Fixed

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { listFiles, collectStatusData, status } from '../src/commands/status.js';
 
@@ -152,6 +153,21 @@ describe('S11 Scenario Tests — status command', () => {
     expect(allLogs).toContain('tasks.md ✓');
   });
 
+  it('ST-S11-04b: show localized modules header when modules are registered', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), `modules:
+  - id: core
+    name: 核心功能
+    status: in-progress
+    loop_phase: requirements
+`);
+
+    status();
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('Modules');
+    expect(allLogs).toContain('core (核心功能)');
+  });
+
   it('ST-S11-05: uninitialized project → error exit', () => {
     con.restore();
     restoreCwd();
@@ -168,6 +184,32 @@ describe('S11 Scenario Tests — status command', () => {
       restore2();
       clean2();
     }
+  });
+
+  it('ST-S11-06: status suggestion for active change does not use implicit auto-advance phrasing', () => {
+    // Set up launched module with active guard so status generates a merge suggestion
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] done');
+    const deltasDir = join(proposalDir, 'deltas', 'prd');
+    mkdirSync(deltasDir, { recursive: true });
+    writeFileSync(join(deltasDir, 'delta.md'), 'delta');
+
+    status();
+
+    const allLogs = con.logs.join('\n');
+    // must contain a merge suggestion
+    expect(allLogs).toContain('my-feature');
+    // must NOT use old implicit "run X then archive" phrasing
+    expect(allLogs).not.toMatch(/[Rr]un openlogos merge.+then.+archive/);
+    expect(allLogs).not.toMatch(/运行 openlogos merge.+然后.+archive/);
+    expect(allLogs).not.toMatch(/完成后运行 openlogos merge/);
   });
 });
 
@@ -368,5 +410,54 @@ describe('S11 Scenario Tests — skipped phases in output', () => {
     // Should suggest 3-5 (verify) which is the first non-skipped incomplete
     const hasVerifyHint = allLogs.includes('verify') || allLogs.includes('验收');
     expect(hasVerifyHint).toBe(true);
+  });
+});
+
+describe('S11 Unit Tests — lifecycle derivation from modules', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+    restoreCwd = mockCwd(root);
+  });
+
+  afterEach(() => {
+    restoreCwd();
+    cleanup();
+  });
+
+  it('UT-S11-LC-01: all modules initial → lifecycle=initial', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }] }, { lineWidth: 0 }),
+    );
+    const data = collectStatusData(root);
+    expect(data.lifecycle).toBe('initial');
+  });
+
+  it('UT-S11-LC-02: one module launched → lifecycle=launched', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'launched' },
+          { id: 'payment', name: 'Payment', lifecycle: 'initial' },
+        ],
+      }, { lineWidth: 0 }),
+    );
+    const data = collectStatusData(root);
+    expect(data.lifecycle).toBe('launched');
+  });
+
+  it('UT-S11-LC-03: no modules → lifecycle=initial', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ project: { name: 'test' } }, { lineWidth: 0 }),
+    );
+    const data = collectStatusData(root);
+    expect(data.lifecycle).toBe('initial');
   });
 });

@@ -156,7 +156,7 @@ external_dependencies:
 
 ## Output Specification
 
-- Architecture overview document: `logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md`
+- Architecture overview document: `logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md` (globally unique; always update this file in place, never create a new one)
 - Architecture diagrams use Mermaid format
 - Technology selections use table format, each item must include rationale
 - Update the `tech_stack` and `external_dependencies` fields in `logos-project.yaml`
