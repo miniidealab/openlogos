@@ -350,7 +350,8 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
   const projectYamlPath = join(root, 'logos', 'logos-project.yaml');
   let rawModules: ModuleInfo[] | undefined;
   let scenarios: Array<{ id: string }> = [];
-  // Aggregate skip_phases across all initial modules for the global phase view
+  // Global skip: only skip a phase if ALL initial modules declare it in skip_phases
+  // (intersection, not union — one module needing a phase is enough to keep it)
   const globalSkipPhaseKeys = new Set<string>();
 
   if (existsSync(projectYamlPath)) {
@@ -366,12 +367,14 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
         if (rawModules.some(m => m.lifecycle === 'launched')) {
           lifecycle = 'launched';
         }
-        // Collect skip_phases from initial modules only (launched modules use change proposals)
-        for (const m of rawModules) {
-          if (m.lifecycle === 'initial') {
-            for (const s of (m.skip_phases ?? [])) {
-              const key = SKIP_PHASE_MAP[s];
-              if (key) globalSkipPhaseKeys.add(key);
+        // Intersection: a phase key is globally skipped only if every initial module skips it
+        const initialModules = rawModules.filter(m => m.lifecycle === 'initial');
+        if (initialModules.length > 0) {
+          const allSkipValues = Object.keys(SKIP_PHASE_MAP);
+          for (const skipVal of allSkipValues) {
+            const phaseKey = SKIP_PHASE_MAP[skipVal];
+            if (initialModules.every(m => (m.skip_phases ?? []).includes(skipVal))) {
+              globalSkipPhaseKeys.add(phaseKey);
             }
           }
         }

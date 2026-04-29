@@ -528,4 +528,65 @@ describe('S11 Unit Tests — skip_phases in modules', () => {
     expect(data.suggestion).not.toMatch(/api.?designer/i);
     expect(data.suggestion).not.toMatch(/API 设计/);
   });
+
+  it('UT-S11-SP-03: multi-module — skip_phases on one module does not affect another module that needs the phase', () => {
+    // Module A: skip_phases:[api, scenario] (desktop tool)
+    // Module B: no skip_phases (web API)
+    // Global top-level phases should NOT skip api, because module B needs it
+    // Module A's phase_progress should skip api; module B's should not
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'desktop', name: 'Desktop', lifecycle: 'initial', skip_phases: ['api', 'scenario'] },
+          { id: 'api', name: 'API', lifecycle: 'initial' },
+        ],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+
+    // Top-level phases: api should NOT be skipped because module 'api' needs it
+    // (globalSkipPhaseKeys only includes phases skipped by ALL initial modules)
+    const apiPhase = data.phases.find(p => p.key === 'phase.3-2-api')!;
+    // api module needs it → should not be globally skipped
+    expect(apiPhase.skipped).toBe(false);
+
+    // Module-level: desktop module should skip api, api module should not
+    const desktopMod = data.modules?.find(m => m.id === 'desktop');
+    const apiMod = data.modules?.find(m => m.id === 'api');
+    if (desktopMod?.phase_progress) {
+      expect(desktopMod.phase_progress['phase.3-2-api'].skipped).toBe(true);
+    }
+    if (apiMod?.phase_progress) {
+      expect(apiMod.phase_progress['phase.3-2-api'].skipped).toBe(false);
+    }
+  });
+
+  it('UT-S11-SP-04: fallback skip — no skip_phases but later phase has files → api/db/scenario auto-skipped', () => {
+    // Phase 1 done, api empty, test done → api should be auto-skipped (fallback)
+    const p1Dir = join(root, 'logos/resources/prd/1-product-requirements');
+    const testDir = join(root, 'logos/resources/test');
+    mkdirSync(p1Dir, { recursive: true });
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(join(p1Dir, 'req.md'), 'content');
+    writeFileSync(join(testDir, 'cases.md'), 'content');
+
+    // No skip_phases declared
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+
+    // api phase should be auto-skipped because test (later phase) has files
+    const apiPhase = data.phases.find(p => p.key === 'phase.3-2-api')!;
+    expect(apiPhase.skipped).toBe(true);
+
+    // current_phase should not be api
+    expect(data.current_phase).not.toBe('phase.3-2-api');
+  });
 });

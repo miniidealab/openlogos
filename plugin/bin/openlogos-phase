@@ -231,6 +231,24 @@ PHASE=""
 SKILL=""
 SKILL_DESC=""
 
+# 向后看兜底逻辑：后续阶段已有文件时，自动跳过空的 api/database/scenario 目录
+# 与 CLI 的 lastDoneIdx 逻辑对应，向后兼容无 skip_phases 的旧项目
+if [ "$SKIP_API" = "false" ] && ! has_files "$P_API"; then
+  if has_files "$P_TEST" || has_files "$P_SCENARIO" || has_files "$P_VERIFY"; then
+    SKIP_API=true
+  fi
+fi
+if [ "$SKIP_DATABASE" = "false" ] && ! has_files "$P_DATABASE"; then
+  if has_files "$P_TEST" || has_files "$P_SCENARIO" || has_files "$P_VERIFY"; then
+    SKIP_DATABASE=true
+  fi
+fi
+if [ "$SKIP_SCENARIO" = "false" ] && ! has_files "$P_SCENARIO"; then
+  if has_files "$P_VERIFY"; then
+    SKIP_SCENARIO=true
+  fi
+fi
+
 if ! has_files "$P1"; then
   PHASE="Phase 1: Product Requirements"
   SKILL="prd-writer"
