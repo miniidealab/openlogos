@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-04-29
+
+### Fixed
+
+- **plugin/bin/openlogos-phase lifecycle 读取错误** — 修复脚本仍从已废弃的 `logos.config.json` 读取 `lifecycle` 字段的问题，改为从 `logos-project.yaml` 的 `modules[].lifecycle` 推导（任意模块标记为 `launched` 则项目为 `launched`），与 CLI 行为保持一致。
+- **plugin/bin/openlogos-phase 在 `set -euo pipefail` 下提前退出** — 修复 `check_scenarios_complete` 返回非零退出码时脚本被 `set -e` 终止的问题，所有调用处加 `|| true` 保护。
+- **plugin/bin/openlogos-phase change management 文案过时** — guard 检测条件从 `active` 更新为 `launched`，change management 提示语同步为新的 10 步流程（含 verify、git commit/push 节点）。
+
+### Changed
+
+- **AGENTS.md / CLAUDE.md 重新生成** — 通过 `openlogos sync` 重新部署，确保两个文件内容与当前配置一致。
+
 ## [0.9.0] - 2026-04-29
 
 ### Added
