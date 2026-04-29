@@ -339,6 +339,50 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
   const configPath = join(root, 'logos', 'logos.config.json');
   const locale = readLocale(root);
 
+  // ── Read YAML first so skip_phases is available before phase calculation ──
+  let lifecycle: 'initial' | 'launched' = 'initial';
+  let sourceRoots: { src: string[]; test: string[] } | null = null;
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    sourceRoots = config.sourceRoots ?? null;
+  } catch { /* ignore */ }
+
+  const projectYamlPath = join(root, 'logos', 'logos-project.yaml');
+  let rawModules: ModuleInfo[] | undefined;
+  let scenarios: Array<{ id: string }> = [];
+  // Aggregate skip_phases across all initial modules for the global phase view
+  const globalSkipPhaseKeys = new Set<string>();
+
+  if (existsSync(projectYamlPath)) {
+    try {
+      const yaml = parseYaml(readFileSync(projectYamlPath, 'utf-8'));
+      if (Array.isArray(yaml?.modules)) {
+        rawModules = (yaml.modules as Array<{ id: string; name: string; lifecycle?: string; skip_phases?: string[] }>).map(m => ({
+          id: m.id,
+          name: m.name,
+          lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
+          skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
+        }));
+        if (rawModules.some(m => m.lifecycle === 'launched')) {
+          lifecycle = 'launched';
+        }
+        // Collect skip_phases from initial modules only (launched modules use change proposals)
+        for (const m of rawModules) {
+          if (m.lifecycle === 'initial') {
+            for (const s of (m.skip_phases ?? [])) {
+              const key = SKIP_PHASE_MAP[s];
+              if (key) globalSkipPhaseKeys.add(key);
+            }
+          }
+        }
+      }
+      if (Array.isArray(yaml?.scenarios)) {
+        scenarios = yaml.scenarios as Array<{ id: string }>;
+      }
+    } catch { /* ignore */ }
+  }
+
+  // ── Build top-level phases, applying skip_phases ──
   const phasePaths = PHASE_SUBPATHS.map(p => join(root, p));
 
   const phases: PhaseStatus[] = PHASE_KEYS.map((key, i) => ({
@@ -346,15 +390,17 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     label: t(locale, key),
     path: phasePaths[i],
     done: false,
-    skipped: false,
+    skipped: globalSkipPhaseKeys.has(key), // pre-mark explicitly skipped phases
     files: [],
   }));
 
   for (const phase of phases) {
+    if (phase.skipped) continue; // don't scan explicitly skipped dirs
     phase.files = listFiles(phase.path);
     phase.done = phase.files.length > 0;
   }
 
+  // Fallback: also mark empty phases before the last done phase as skipped
   const lastDoneIdx = phases.reduce((acc, p, i) => (p.done ? i : acc), -1);
   for (let i = 0; i < lastDoneIdx; i++) {
     if (!phases[i].done) phases[i].skipped = true;
@@ -377,38 +423,6 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
 
   const firstIncomplete = phases.find(p => !p.done && !p.skipped);
   const allDone = !firstIncomplete;
-
-  let lifecycle: 'initial' | 'launched' = 'initial';
-  let sourceRoots: { src: string[]; test: string[] } | null = null;
-  try {
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-    sourceRoots = config.sourceRoots ?? null;
-  } catch { /* ignore */ }
-
-  // Read scenarios and raw modules from logos-project.yaml
-  const projectYamlPath = join(root, 'logos', 'logos-project.yaml');
-  let rawModules: ModuleInfo[] | undefined;
-  let scenarios: Array<{ id: string }> = [];
-  if (existsSync(projectYamlPath)) {
-    try {
-      const yaml = parseYaml(readFileSync(projectYamlPath, 'utf-8'));
-      if (Array.isArray(yaml?.modules)) {
-        rawModules = (yaml.modules as Array<{ id: string; name: string; lifecycle?: string; skip_phases?: string[] }>).map(m => ({
-          id: m.id,
-          name: m.name,
-          lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
-          skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
-        }));
-        // Derive project lifecycle from modules
-        if (rawModules.some(m => m.lifecycle === 'launched')) {
-          lifecycle = 'launched';
-        }
-      }
-      if (Array.isArray(yaml?.scenarios)) {
-        scenarios = yaml.scenarios as Array<{ id: string }>;
-      }
-    } catch { /* ignore */ }
-  }
 
   // Read guard
   let activeChange: string | null = null;

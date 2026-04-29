@@ -133,21 +133,88 @@ fi
 
 # 从 logos-project.yaml 的 modules[].lifecycle 推导项目级 lifecycle
 # 任意模块标记为 launched 则项目为 launched
+# skip_phases 只读取 lifecycle=initial 的模块，避免多模块时误跳过其他模块的阶段
 YAML_FILE="logos/logos-project.yaml"
 SKIP_API=false
 SKIP_DATABASE=false
 SKIP_SCENARIO=false
 
 if [ -f "$YAML_FILE" ]; then
-  if grep -q 'lifecycle\s*:\s*launched' "$YAML_FILE" 2>/dev/null; then
+  if grep -q 'lifecycle.*launched' "$YAML_FILE" 2>/dev/null; then
     LIFECYCLE="launched"
   fi
-  # 读取第一个模块的 skip_phases（简单 grep，覆盖常见格式）
-  if grep -q 'skip_phases' "$YAML_FILE" 2>/dev/null; then
-    grep 'skip_phases' "$YAML_FILE" | grep -q 'api'      && SKIP_API=true
-    grep 'skip_phases' "$YAML_FILE" | grep -q 'database' && SKIP_DATABASE=true
-    grep 'skip_phases' "$YAML_FILE" | grep -q 'scenario' && SKIP_SCENARIO=true
+
+  # 只从 initial 模块读取 skip_phases，用 awk 解析避免 heredoc 语法问题
+  _skip_result=""
+  if command -v python3 &>/dev/null; then
+    _py_script=$(mktemp /tmp/openlogos_skip_XXXXXX.py)
+    cat > "$_py_script" << 'PYEOF'
+import sys, re
+path = sys.argv[1]
+content = open(path).read()
+in_modules = False
+current_lifecycle = 'initial'
+current_skip = []
+all_skip = []
+for line in content.splitlines():
+    if re.match(r'^modules\s*:', line):
+        in_modules = True
+        continue
+    if in_modules:
+        if re.match(r'^[a-zA-Z]', line) and not re.match(r'^\s', line):
+            break
+        if re.match(r'\s+-\s+id\s*:', line):
+            if current_lifecycle == 'initial':
+                all_skip.extend(current_skip)
+            current_lifecycle = 'initial'
+            current_skip = []
+        m = re.search(r'lifecycle\s*:\s*(\S+)', line)
+        if m:
+            current_lifecycle = m.group(1).strip('"\'')
+        m = re.search(r'skip_phases\s*:\s*\[([^\]]*)\]', line)
+        if m:
+            current_skip = [s.strip().strip('"\'') for s in m.group(1).split(',') if s.strip()]
+if current_lifecycle == 'initial':
+    all_skip.extend(current_skip)
+print(' '.join(set(all_skip)))
+PYEOF
+    _skip_result=$(python3 "$_py_script" "$YAML_FILE" 2>/dev/null || echo "")
+    rm -f "$_py_script"
+  elif command -v node &>/dev/null; then
+    _js_script=$(mktemp /tmp/openlogos_skip_XXXXXX.js)
+    cat > "$_js_script" << 'JSEOF'
+const fs = require('fs');
+const content = fs.readFileSync(process.argv[2], 'utf-8');
+let inModules = false, curLifecycle = 'initial', curSkip = [], allSkip = [];
+for (const line of content.split('\n')) {
+  if (/^modules\s*:/.test(line)) { inModules = true; continue; }
+  if (inModules) {
+    if (/^[a-zA-Z]/.test(line) && !/^\s/.test(line)) break;
+    if (/\s+-\s+id\s*:/.test(line)) {
+      if (curLifecycle === 'initial') allSkip.push(...curSkip);
+      curLifecycle = 'initial'; curSkip = [];
+    }
+    const lm = line.match(/lifecycle\s*:\s*(\S+)/);
+    if (lm) curLifecycle = lm[1].replace(/['"]/g, '');
+    const sm = line.match(/skip_phases\s*:\s*\[([^\]]*)\]/);
+    if (sm) curSkip = sm[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean);
+  }
+}
+if (curLifecycle === 'initial') allSkip.push(...curSkip);
+console.log([...new Set(allSkip)].join(' '));
+JSEOF
+    _skip_result=$(node "$_js_script" "$YAML_FILE" 2>/dev/null || echo "")
+    rm -f "$_js_script"
+  else
+    # 降级：全文 grep（多模块时可能误判，但总比不跳过好）
+    grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'api'      && _skip_result="$_skip_result api"
+    grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'database' && _skip_result="$_skip_result database"
+    grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'scenario' && _skip_result="$_skip_result scenario"
   fi
+
+  echo "$_skip_result" | grep -q '\bapi\b'      && SKIP_API=true      || true
+  echo "$_skip_result" | grep -q '\bdatabase\b' && SKIP_DATABASE=true  || true
+  echo "$_skip_result" | grep -q '\bscenario\b' && SKIP_SCENARIO=true  || true
 fi
 
 P1="logos/resources/prd/1-product-requirements"
@@ -155,6 +222,7 @@ P2="logos/resources/prd/2-product-design"
 P3_ARCH="logos/resources/prd/3-technical-plan/1-architecture"
 P3_SCEN="logos/resources/prd/3-technical-plan/2-scenario-implementation"
 P_API="logos/resources/api"
+P_DATABASE="logos/resources/database"
 P_TEST="logos/resources/test"
 P_SCENARIO="logos/resources/scenario"
 P_VERIFY="logos/resources/verify"
@@ -208,6 +276,16 @@ if [ -z "$PHASE" ]; then
       SKILL="api-designer"
       SKILL_DESC="Complete remaining API designs"
     fi
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if [ "$SKIP_DATABASE" = "true" ]; then
+    : # skip database phase
+  elif ! has_files "$P_DATABASE"; then
+    PHASE="Phase 3 Step 2: Database Design"
+    SKILL="db-designer"
+    SKILL_DESC="Design database schema (DDL)"
   fi
 fi
 

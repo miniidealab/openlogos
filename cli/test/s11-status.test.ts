@@ -461,3 +461,71 @@ describe('S11 Unit Tests — lifecycle derivation from modules', () => {
     expect(data.lifecycle).toBe('initial');
   });
 });
+
+describe('S11 Unit Tests — skip_phases in modules', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+  });
+  afterEach(() => cleanup());
+
+  it('UT-S11-SP-01: skip_phases:[api,scenario] — top-level phases and current_phase skip api/scenario', () => {
+    // Phase 1 done, api dir empty, test dir done
+    const p1Dir = join(root, 'logos/resources/prd/1-product-requirements');
+    const testDir = join(root, 'logos/resources/test');
+    mkdirSync(p1Dir, { recursive: true });
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(join(p1Dir, 'req.md'), 'content');
+    writeFileSync(join(testDir, 'cases.md'), 'content');
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial', skip_phases: ['api', 'scenario'] }],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+
+    // api and scenario phases must be skipped
+    expect(data.phases.find(p => p.key === 'phase.3-2-api')!.skipped).toBe(true);
+    expect(data.phases.find(p => p.key === 'phase.3-3b')!.skipped).toBe(true);
+
+    // current_phase must NOT be phase.3-2-api
+    expect(data.current_phase).not.toBe('phase.3-2-api');
+    expect(data.current_phase).not.toBe('phase.3-3b');
+  });
+
+  it('UT-S11-SP-02: skip_phases:[api,scenario] — next suggestion does not recommend API design', () => {
+    // Phase 1, 2, 3-0, 3-1 done; api/scenario skipped → next should suggest test cases (3-3a)
+    const p1Dir = join(root, 'logos/resources/prd/1-product-requirements');
+    const p2Dir = join(root, 'logos/resources/prd/2-product-design');
+    const archDir = join(root, 'logos/resources/prd/3-technical-plan/1-architecture');
+    const scenDir = join(root, 'logos/resources/prd/3-technical-plan/2-scenario-implementation');
+    for (const d of [p1Dir, p2Dir, archDir, scenDir]) {
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, 'dummy.md'), 'content');
+    }
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial', skip_phases: ['api', 'database', 'scenario'] }],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+
+    // current_phase must not be api/database/scenario-related
+    expect(data.current_phase).not.toBe('phase.3-2-api');
+    expect(data.current_phase).not.toBe('phase.3-2-db');
+    expect(data.current_phase).not.toBe('phase.3-3b');
+
+    // suggestion must not mention API design
+    expect(data.suggestion).not.toMatch(/api.?designer/i);
+    expect(data.suggestion).not.toMatch(/API 设计/);
+  });
+});
