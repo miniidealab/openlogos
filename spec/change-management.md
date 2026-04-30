@@ -78,9 +78,9 @@ project-root/
 ## Phase 3: 编排与代码
 - [ ] 更新 API 编排测试用例
 - [ ] 实现代码变更
-- [ ] 部署到测试环境
-- [ ] 运行编排验收
 ```
+
+> **注意**：`openlogos verify` 是独立的 CLI 操作节点，不应写入 tasks.md 作为可勾选任务。verify 由面板的 verify 步骤触发，tasks.md 只追踪实现任务。
 
 ### deltas/ 目录
 

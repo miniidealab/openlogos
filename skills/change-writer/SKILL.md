@@ -85,6 +85,8 @@
 
 根据变更类型和影响范围，自动拆解任务清单。只列出需要更新的阶段：
 
+> **禁止在 tasks.md 中写入 verify / 验收 / 人工验证类条目**——这些属于 verify 步骤，不属于实现任务。`openlogos verify` 是独立的 CLI 操作节点，由面板的 verify 步骤触发；tasks.md 只追踪实现任务。
+
 ```markdown
 # 实现任务
 
