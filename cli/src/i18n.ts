@@ -93,6 +93,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'verify.passed': 'Passed:      {count}',
     'verify.failed': 'Failed:       {count}',
     'verify.skipped': 'Skipped:     {count}',
+    'verify.manual': 'Manual (excluded): {count}',
     'verify.coverage': 'Coverage:  {pct}%  ({covered}/{total})',
     'verify.passRate': 'Pass rate: {pct}%  ({passed}/{total})',
     'verify.gatePass': 'Gate 3.5: PASS',
@@ -246,6 +247,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'verify.passed': '通过：    {count}',
     'verify.failed': '失败：     {count}',
     'verify.skipped': '跳过：     {count}',
+    'verify.manual': '人工用例（已排除）：{count}',
     'verify.coverage': '覆盖度：{pct}%（{covered}/{total}）',
     'verify.passRate': '通过率：{pct}%（{passed}/{total}）',
     'verify.gatePass': 'Gate 3.5：PASS',
@@ -416,8 +418,6 @@ export function tasksTemplate(locale: Locale): string {
 ## Phase 3: 编排与代码
 - [ ] 更新 API 编排测试用例
 - [ ] 实现代码变更
-- [ ] 部署到测试环境
-- [ ] 运行编排验收
 `;
   }
   return `# Implementation Tasks
@@ -435,8 +435,6 @@ export function tasksTemplate(locale: Locale): string {
 ## Phase 3: Orchestration & Code
 - [ ] Update API orchestration test cases
 - [ ] Implement code changes
-- [ ] Deploy to test environment
-- [ ] Run orchestration acceptance
 `;
 }
 

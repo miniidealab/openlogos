@@ -93,7 +93,32 @@ describe('S13 Unit Tests — extractDefinedIds', () => {
 
   it('UT-S13-08: return empty when test dir does not exist', () => {
     const result = extractDefinedIds(root);
-    expect(result).toEqual({ ids: [], utCount: 0, stCount: 0 });
+    expect(result).toEqual({ ids: [], utCount: 0, stCount: 0, manualCount: 0 });
+  });
+
+  it('UT-S13-18: [manual] marked cases are excluded from defined ids', () => {
+    const testDir = join(root, 'logos/resources/test');
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(
+      join(testDir, 'S01-test-cases.md'),
+      '| UT-S01-01 | desc |\n| ST-S01-05 [manual] | manual desc |',
+    );
+    const { ids, manualCount } = extractDefinedIds(root);
+    expect(ids).toContain('UT-S01-01');
+    expect(ids).not.toContain('ST-S01-05');
+    expect(manualCount).toBe(1);
+  });
+
+  it('UT-S13-19: multiple [manual] cases counted correctly', () => {
+    const testDir = join(root, 'logos/resources/test');
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(
+      join(testDir, 'S01-test-cases.md'),
+      '| UT-S01-01 | desc |\n| UT-S01-02 | desc |\n| UT-S01-03 | desc |\n| ST-S01-04 [manual] | manual |\n| ST-S01-05 [manual] | manual |',
+    );
+    const { ids, manualCount } = extractDefinedIds(root);
+    expect(ids).toHaveLength(3);
+    expect(manualCount).toBe(2);
   });
 });
 
@@ -190,7 +215,7 @@ describe('S13 Unit Tests — generateReport', () => {
     ]);
     const report = generateReport(
       defined, results, results, [], [], [],
-      '100', '100', 'PASS', [], [], new Set(['UT-S01-01', 'ST-S01-01']),
+      '100', '100', 'PASS', [], [], new Set(['UT-S01-01', 'ST-S01-01']), 0,
     );
     expect(report).toContain('# Acceptance Report');
     expect(report).toContain('Defined cases | 2');
@@ -202,7 +227,7 @@ describe('S13 Unit Tests — generateReport', () => {
     const failResult = makeResults([{ id: 'UT-S01-01', status: 'fail', error: 'assert failed' }]);
     const report = generateReport(
       defined, failResult, [], failResult, [], [],
-      '100', '0', 'FAIL', [], [], new Set(['UT-S01-01']),
+      '100', '0', 'FAIL', [], [], new Set(['UT-S01-01']), 0,
     );
     expect(report).toContain('## Failed Cases');
     expect(report).toContain('UT-S01-01');
@@ -217,7 +242,7 @@ describe('S13 Unit Tests — generateReport', () => {
     ];
     const report = generateReport(
       [], [], [], [], [], [], '0', '0', 'FAIL',
-      checklist, [], new Set(),
+      checklist, [], new Set(), 0,
     );
     expect(report).toContain('## Design-time Coverage (Layer 1)');
     expect(report).toContain('✅');
@@ -235,11 +260,36 @@ describe('S13 Unit Tests — generateReport', () => {
     }];
     const report = generateReport(
       ['ST-S01-01'], results, results, [], [], [],
-      '100', '100', 'PASS', [], acTrace, new Set(['ST-S01-01']),
+      '100', '100', 'PASS', [], acTrace, new Set(['ST-S01-01']), 0,
     );
     expect(report).toContain('## Acceptance Criteria Traceability (Layer 3)');
     expect(report).toContain('✅ PASS');
     expect(report).toContain('S01-AC-01');
+  });
+
+  it('UT-S13-20: Summary table contains manual_count row', () => {
+    const report = generateReport(
+      [], [], [], [], [], [], '0', '0', 'PASS',
+      [], [], new Set(), 2,
+    );
+    expect(report).toContain('Manual cases (excluded) | 2');
+  });
+
+  it('UT-S13-21: AC with all-manual linked cases shows MANUAL status', () => {
+    // ST-S01-05 is a [manual] case — not in results
+    const results: TestResult[] = [];
+    const acTrace: AcTraceEntry[] = [{
+      acId: 'S01-AC-05',
+      description: '人工验证渲染',
+      linkedCaseIds: ['ST-S01-05'],
+      file: 'S01-test-cases.md',
+    }];
+    const report = generateReport(
+      [], results, [], [], [], [],
+      '100', '100', 'PASS', [], acTrace, new Set(), 1,
+    );
+    expect(report).toContain('🔵 MANUAL');
+    expect(report).toContain('S01-AC-05');
   });
 });
 
@@ -377,5 +427,68 @@ describe('S13 Scenario Tests — verify command', () => {
       restore2();
       clean2();
     }
+  });
+
+  it('ST-S13-07: [manual] cases excluded from coverage, Gate still PASS', () => {
+    const cases = `# Test Cases
+| UT-S01-01 | desc |
+| ST-S01-01 | desc |
+| ST-S01-05 [manual] | manual desc |
+
+## 三、覆盖度校验
+
+- [x] Condition A
+
+## 四、验收条件追溯
+
+| AC ID | 验收条件 | 覆盖用例 |
+|-------|---------|---------|
+| S01-AC-01 | normal | ST-S01-01 |
+| S01-AC-02 | unit | UT-S01-01 |
+`;
+    writeTestCases(cases);
+    writeResults([
+      '{"id":"UT-S01-01","status":"pass"}',
+      '{"id":"ST-S01-01","status":"pass"}',
+    ]);
+
+    verify();
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('Manual');
+    expect(allLogs).toContain('100%');
+    expect(allLogs).toContain('PASS');
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('ST-S13-08: AC with all-manual linked cases → MANUAL_PENDING, Gate PASS', () => {
+    const cases = `# Test Cases
+| UT-S01-01 | desc |
+| ST-S01-05 [manual] | manual desc |
+
+## 三、覆盖度校验
+
+- [x] Condition A
+
+## 四、验收条件追溯
+
+| AC ID | 验收条件 | 覆盖用例 |
+|-------|---------|---------|
+| S01-AC-01 | unit check | UT-S01-01 |
+| S01-AC-02 | manual verify | ST-S01-05 |
+`;
+    writeTestCases(cases);
+    writeResults([
+      '{"id":"UT-S01-01","status":"pass"}',
+    ]);
+
+    verify();
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('PASS');
+    expect(exitSpy).not.toHaveBeenCalled();
+
+    const report = readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf-8');
+    expect(report).toContain('🔵 MANUAL');
   });
 });

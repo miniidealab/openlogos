@@ -67,6 +67,22 @@ logos/resources/verify/test-results.jsonl
 - `error` 在 `status=fail` 时必须提供，其他状态可省略
 - 同一个 `id` 如果出现多次（如重试），`openlogos verify` 取**最后一次**的结果
 
+### `[manual]` 标记用例
+
+在 `test-cases.md` 中，无法自动化执行的用例（如需要真实 TTY/PTY 渲染、跨窗口操作、人工视觉验证的 ST 用例）应在 ID 后追加 `[manual]` 标记：
+
+```markdown
+| ST-S01-05 [manual] | 需要真实 PTY 渲染的交互测试 | ... |
+```
+
+`[manual]` 用例的行为规则：
+
+- **不写入 JSONL**：`[manual]` 用例不由自动化测试执行，不产出 JSONL 记录
+- **不计入 `defined_count`**：`openlogos verify` 扫描 test-cases.md 时跳过这类用例，不计入覆盖率分母
+- **不出现在 `uncovered_cases`**：不会因为缺少运行结果而报告为未覆盖
+- **单独计入 `manual_count`**：在 summary 中以独立字段展示，方便感知人工用例数量
+- **AC trace 中标记为 `MANUAL_PENDING`**：若某个验收条件（AC）关联的用例全部为 `[manual]`，该 AC 标记为 `🔵 MANUAL`（人工待验），不触发 Gate 3.5 失败
+
 ## 运行约定
 
 ### 清空策略

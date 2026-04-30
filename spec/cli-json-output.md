@@ -222,9 +222,10 @@ openlogos verify --format json  # JSON 格式
 ```jsonc
 {
   "summary": {
-    "defined_count": 10,          // 定义的测试用例总数
+    "defined_count": 10,          // 定义的测试用例总数（不含 [manual] 用例）
     "ut_count": 6,                // 单元测试用例数
     "st_count": 4,                // 场景测试用例数
+    "manual_count": 2,            // 标记为 [manual] 的用例数（已从 defined_count 中排除）
     "executed_count": 10,         // 已执行的测试用例数
     "passed_count": 8,            // 通过数
     "failed_count": 1,            // 失败数
