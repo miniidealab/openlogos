@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-04-30
+
+### Fixed
+
+- **回滚 `merge.ts` 中错误添加的 `spec/skills` delta 分类** — `DELTA_TO_RESOURCE` 映射表移除了 0.9.3 中错误引入的 `spec → logos/spec` 和 `skills → logos/skills` 映射。`spec/` 和 `skills/` 是 OpenLogos 自身源码，直接修改即可，不应走 delta/merge 流程，该映射在用户项目中无意义。
+
 ## [0.9.3] - 2026-04-30
 
 ### Fixed
@@ -373,7 +379,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.4
 [0.9.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.3
 [0.9.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.2
 [0.9.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.1
