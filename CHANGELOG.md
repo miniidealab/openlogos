@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-04-30
+
+### Added
+
+- **`[manual]` 测试用例标记机制** — 在 `test-cases.md` 中对无法自动化执行的用例（如需要真实 TTY/PTY 渲染、跨窗口操作、人工视觉验证的 ST 用例）追加 `[manual]` 标记。`openlogos verify` 跳过这类用例，不计入 `defined_count` 和覆盖率分母，不出现在 `uncovered_cases`，单独以 `manual_count` 字段展示。
+
+### Changed
+
+- **AC trace 支持 `MANUAL_PENDING` 状态** — 若某个验收条件（AC）关联的用例全部为 `[manual]`，标记为 `🔵 MANUAL`（人工待验），不触发 Gate 3.5 失败。混合自动化和 `[manual]` 的 AC，Gate 判定仅取决于自动化部分。
+- **`verify --format json` 新增 `manual_count` 字段** — `summary` 对象新增 `manual_count`，外部消费 CLI 输出时可感知人工用例数量。
+- **`test-writer` Skill 新增 `[manual]` 判断规则** — Step 3 明确列出需要加 `[manual]` 标记的场景类型（TTY/PTY、跨窗口、视觉验证、外部硬件），并在输出模板中补充示例。
+- **`tasks.md` 模板移除 verify 类条目**（`i18n.ts` tasksTemplate）— 与 `spec/change-management.md` 和 `skills/change-writer/SKILL.md` 保持一致。
+
 ## [0.9.4] - 2026-04-30
 
 ### Fixed
@@ -379,7 +392,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.5
 [0.9.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.4
 [0.9.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.3
 [0.9.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.2
