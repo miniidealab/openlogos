@@ -7,6 +7,8 @@ const DELTA_TO_RESOURCE: Record<string, string> = {
   'api': 'logos/resources/api',
   'database': 'logos/resources/database',
   'scenario': 'logos/resources/scenario',
+  'spec': 'logos/spec',
+  'skills': 'logos/skills',
 };
 
 interface DeltaFile {

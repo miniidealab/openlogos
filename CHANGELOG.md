@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-04-30
+
+### Fixed
+
+- **`openlogos merge` 支持 `spec/` 和 `skills/` delta 分类** — `DELTA_TO_RESOURCE` 映射表新增 `spec → logos/spec` 和 `skills → logos/skills`，修复 delta 文件放在这两个分类下时 merge 报"没有 delta 文件"的问题。
+
+### Changed
+
+- **`tasks.md` 模板移除 verify 类条目** — `logos/spec/change-management.md` 和 `logos/skills/change-writer/SKILL.md` 的 tasks.md 示例模板删除"部署到测试环境"和"运行编排验收"条目，并明确标注 `openlogos verify` 是独立 CLI 操作节点，不应写入 tasks.md 作为可勾选任务。
+
 ## [0.9.2] - 2026-04-29
 
 ### Added
@@ -363,7 +373,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.5.8...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.3
+[0.9.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.2
+[0.9.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.1
+[0.9.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.0
+[0.8.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.8.2
+[0.8.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.8.0
+[0.7.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.7.3
+[0.7.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.7.2
+[0.7.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.7.1
+[0.7.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.7.0
 [0.5.8]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.8
 [0.5.7]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.7
 [0.5.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.5.6
