@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'website/**'
+  workflow_dispatch:
 
 jobs:
   build:
