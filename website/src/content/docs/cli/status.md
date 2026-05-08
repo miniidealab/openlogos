@@ -3,19 +3,32 @@ title: "openlogos status"
 description: Display current project phase, deliverables, active change proposals, and suggested next steps.
 ---
 
-Show a dashboard of all 9 phases with completion status, list active change proposals, and suggest the next action.
+Show a dashboard of all 9 phases with completion status, list active change proposals, and suggest the next action. In multi-module projects, also shows per-module phase progress.
 
 ## Synopsis
 
 ```bash
-openlogos status
+openlogos status [--module <id>] [--format json]
 ```
 
-No arguments or options. Must be run from the project root.
+Must be run from the project root.
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--module <id>` | Filter output to a single module. Shows only that module's phase progress and suggestion. |
+| `--format json` | Output structured JSON instead of human-readable text. |
 
 ## What it checks
 
-The command scans 9 directories in `logos/resources/` to determine phase completion. A phase is **done** when its directory contains at least one non-`.gitkeep` file.
+The command scans 9 directories in `logos/resources/` to determine phase completion.
+
+**Single-module projects** — a phase is **done** when its directory contains at least one non-`.gitkeep` file.
+
+**Multi-module projects** — phase completion is module-aware:
+- **Scenario phases** (`phase.3-1`, `phase.3-3a`): done when every scenario belonging to the module has a matching `<moduleId>-SXX-*.md` file.
+- **All other phases**: done when the directory contains at least one file with a `<moduleId>-` prefix (e.g., `admin-01-requirements.md`). Files belonging to other modules are ignored.
 
 | Phase | Directory scanned |
 |-------|-------------------|
@@ -40,10 +53,9 @@ It also scans `logos/changes/` for active change proposals (excluding `archive/`
 
 ──────────────────────────────────────────────────
 ✅  Phase 1 · Requirements (WHY)
-     └─ 01-requirements.md
+     └─ core-01-requirements.md
 ✅  Phase 2 · Product Design (WHAT)
-     └─ 1-feature-specs/01-feature-specs.md
-     └─ 2-page-design/01-homepage-prototype.html
+     └─ 1-feature-specs/core-01-feature-specs.md
 🔲  Phase 3-0 · Architecture
 🔲  Phase 3-1 · Scenario Modeling
 🔲  Phase 3-2 · API Design
@@ -54,8 +66,48 @@ It also scans `logos/changes/` for active change proposals (excluding `archive/`
 🔲  Phase 3-5 · Test Acceptance (verify)
 ──────────────────────────────────────────────────
 
+🧩 Modules
+
+  🔄  core (Core)  [initial → Phase 3-0 · Architecture]
+       💡 Tell AI: "Help me design the technical architecture"
+
 💡 Suggested next step: Phase 3-0 · Architecture
    → Tell AI: "Help me design the technical architecture"
+```
+
+## Example output (multi-module)
+
+When multiple modules are registered, each module's phase progress is shown independently:
+
+```
+📊 OpenLogos Project Status
+
+──────────────────────────────────────────────────
+✅  Phase 1 · Requirements (WHY)
+✅  Phase 2 · Product Design (WHAT)
+✅  Phase 3-0 · Architecture
+...
+──────────────────────────────────────────────────
+
+🧩 Modules
+
+  ✅  core (Core)  [launched]
+       💡 Run openlogos change <slug> to create a new change proposal
+  🔄  admin (Admin)  [initial → Phase 1 · Requirements (WHY)]
+       💡 Tell AI: "Help me write requirements"
+```
+
+Use `--module admin` to focus on a single module:
+
+```bash
+openlogos status --module admin
+```
+
+```
+🧩 Modules
+
+  🔄  admin (Admin)  [initial → Phase 1 · Requirements (WHY)]
+       💡 Tell AI: "Help me write requirements"
 ```
 
 ## Example output (all done)
@@ -111,9 +163,11 @@ Each proposal shows:
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `logos/logos.config.json not found` | Not in project root | `cd` to project root, or run `openlogos init` first |
+| `Module 'admin' not found in logos-project.yaml` | `--module` value doesn't match any registered module | Run `openlogos module list` to see valid module IDs |
 
 ## Related commands
 
 - [`init`](/cli/init) — Create the project structure that `status` checks
+- [`module`](/cli/module) — Manage modules (list / add / rename / remove)
 - [`launch`](/cli/launch) — Activate change management (suggested when all phases are done)
 - [`verify`](/cli/verify) — Run the Phase 3-5 verification check

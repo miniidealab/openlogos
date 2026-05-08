@@ -129,32 +129,41 @@ AI collaboration index file — see [logos-project.yaml Specification](/specs/lo
 
 ## File Naming Conventions
 
+### Module Prefix Rule
+
+All design documents follow the `<module>-<number-or-name>.<ext>` naming pattern. The module prefix is the namespace that lets multiple modules coexist in the same directory without collision.
+
+- Single-module projects use `core-` as the default prefix (e.g., `core-01-requirements.md`)
+- Multi-module projects add new files with the new module's prefix alongside existing ones — no subdirectories needed
+
+`openlogos status` uses the `<moduleId>-` prefix to determine per-module phase completion. A phase is considered done for a module only when at least one file with that module's prefix exists in the phase directory.
+
 ### Document Files
 
-- Format: `{number}-{english-name}.md` — e.g., `01-requirements.md`
+- Format: `<module>-{number}-{english-name}.md` — e.g., `core-01-requirements.md`, `admin-01-requirements.md`
 - Numbers control display order
-- HTML prototypes: `{number}-{name}-prototype.html`
-- Design docs and prototypes appear in pairs: `03-homepage-design.md` + `03-homepage-prototype.html`
+- HTML prototypes: `<module>-{number}-{name}-prototype.html`
+
+### Scenario Files
+
+- Scenario implementation: `<module>-SXX-{english-name}.md` — e.g., `core-S01-user-register.md`, `admin-S08-dashboard.md`
+- Scenario numbers are **globally unique** across all modules, maintained by `scenario_counter.next_id` in `logos-project.yaml`
+- Test case specs: `<module>-SXX-test-cases.md` — e.g., `core-S01-test-cases.md`
 
 ### API Files
 
 - Split by domain: `auth.yaml`, `payment.yaml`, `license.yaml`
 - OpenAPI 3.0 YAML format
+- API files are typically shared across modules (no module prefix required)
 
 ### Database Files
 
-- Complete schema: `{project-name}.sql`
-- Or split by domain: `auth.sql`, `payment.sql`
-
-### Test Case Spec Files
-
-- Split by scenario: `S01-test-cases.md`, `S02-test-cases.md`
-- Markdown format containing both unit test and scenario test case designs
-- Each file corresponds to one scenario ID, covering all test levels for that scenario
+- Complete schema: `schema.sql` or split by domain: `auth.sql`, `payment.sql`
+- Database files are typically shared across modules (no module prefix required)
 
 ### Orchestration Test Files
 
-- Split by scenario: `user-auth.json`, `payment-flow.json`
+- Split by scenario: `S01-user-auth.json`, `S02-payment-flow.json`
 - JSON format defining API orchestration sequences
 
 ### Verification Files

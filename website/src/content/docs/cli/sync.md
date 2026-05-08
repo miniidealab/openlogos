@@ -16,12 +16,13 @@ No arguments or options. Must be run from the project root (where `logos/logos.c
 ## What it does
 
 1. **Syncs project name** in `logos-project.yaml` to match `logos.config.json`
-2. **Ensures `documents.changes`** section exists in `logos.config.json` (adds it if missing)
-3. **Regenerates `AGENTS.md`** based on current locale, AI tool, and lifecycle
-4. **Regenerates `CLAUDE.md`** based on current locale, AI tool, and lifecycle
-5. **Re-deploys Skills** to the appropriate target directory
-6. **Re-deploys specs** to `logos/spec/`
-7. **OpenCode only**: Re-deploys plugin, syncs `opencode.json` permissions, re-deploys slash commands
+2. **Backfills `scenarios[].module` field** in `logos-project.yaml` — for any scenario entry missing a `module` field, infers the owning module from file system (looks for `<moduleId>-SXX-*.md` in the scenario-implementation directory), falls back to `core`. Idempotent: entries that already have a `module` field are left unchanged.
+3. **Ensures `documents.changes`** section exists in `logos.config.json` (adds it if missing)
+4. **Regenerates `AGENTS.md`** based on current locale, AI tool, and lifecycle
+5. **Regenerates `CLAUDE.md`** based on current locale, AI tool, and lifecycle
+6. **Re-deploys Skills** to the appropriate target directory
+7. **Re-deploys specs** to `logos/spec/`
+8. **OpenCode only**: Re-deploys plugin, syncs `opencode.json` permissions, re-deploys slash commands
 
 ## Example output
 
@@ -29,6 +30,7 @@ No arguments or options. Must be run from the project root (where `logos/logos.c
 Syncing project files...
 
   ✓ logos-project.yaml name synced to "my-project"
+  ✓ 3 scenario(s) backfilled with module field in logos-project.yaml
   ✓ documents.changes added to logos.config.json
   ✓ AGENTS.md updated
   ✓ CLAUDE.md updated
@@ -37,6 +39,8 @@ Syncing project files...
 
 Sync complete.
 ```
+
+The `scenarios backfilled` line only appears when there are scenario entries without a `module` field. On subsequent runs it is silent (idempotent).
 
 ## When to use
 

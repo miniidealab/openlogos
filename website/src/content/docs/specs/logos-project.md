@@ -16,6 +16,9 @@ logos/logos-project.yaml
 ```yaml
 project:            # Project basics (required)
 tech_stack:         # Technology stack (required)
+scenario_counter:   # Global scenario ID counter (required for multi-module)
+modules:            # Module registry (required for multi-module)
+scenarios:          # Scenario list (optional, written before Phase 3-1)
 external_dependencies:  # External service dependencies (optional)
 resource_index:     # Resource file index (required)
 conventions:        # Project conventions (optional)
@@ -74,6 +77,49 @@ Array of key resource files that AI should know about:
 | `path` | string | Yes | File path relative to project root |
 | `desc` | string | Yes | One-line description — tells AI when to read this file |
 
+### scenario_counter
+
+Object that maintains a globally unique scenario ID counter. Required for multi-module projects to ensure scenario IDs never collide across modules.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `next_id` | integer | Yes | The next scenario number to use (e.g., `8` means the next scenario is `S08`) |
+
+AI must read this field before generating a new scenario, increment it immediately after, and write it back. Never restart numbering from `S01` in a new module.
+
+### modules
+
+Array of registered modules. Required for multi-module projects. `openlogos init` automatically writes the initial `core` module entry.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | Yes | Module identifier — lowercase letters, digits, hyphens (e.g., `core`, `admin`) |
+| `name` | string | Yes | Human-readable module name |
+| `lifecycle` | string | Yes | `initial` (phase-driven development) or `launched` (change-proposal-driven) |
+| `skip_phases` | array | No | Phases this module doesn't need. Written by `architecture-designer` Skill after tech stack selection. |
+
+`skip_phases` allowed values:
+
+| Value | Skips | When to use |
+|-------|-------|-------------|
+| `api` | `logos/resources/api/` | No HTTP API (desktop app, CLI tool, frontend library) |
+| `database` | `logos/resources/database/` | No database (stateless CLI, pure compute) |
+| `scenario` | `logos/resources/scenario/` | No API orchestration tests (usually paired with `api`) |
+
+### scenarios
+
+Array declaring the project's complete scenario list. Scenarios are the central organizing unit of the OpenLogos methodology — all phase deliverables are keyed to scenario IDs.
+
+**When to write**: After `architecture-designer` Skill completes, before `scenario-architect` Skill begins.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | Yes | Globally unique scenario ID, format `S` + two digits (e.g., `S01`, `S08`) |
+| `name` | string | Yes | One-line scenario description |
+| `module` | string | No | Owning module ID. Defaults to `core` when omitted. Required for multi-module projects so `openlogos status` can compute per-module phase progress correctly. |
+
+`openlogos sync` automatically backfills missing `module` fields by scanning `logos/resources/prd/3-technical-plan/2-scenario-implementation/` for `<moduleId>-SXX-*.md` files. Falls back to `core` when no match is found.
+
 ### conventions
 
 Array of project conventions (string format). Each element is one convention rule.
@@ -94,6 +140,31 @@ tech_stack:
   auth: "Supabase Auth"
   payment: "Paddle"
 
+scenario_counter:
+  next_id: 8
+
+modules:
+  - id: core
+    name: Core
+    lifecycle: launched
+  - id: admin
+    name: Admin
+    lifecycle: initial
+
+scenarios:
+  - id: S01
+    name: User Registration
+    module: core
+  - id: S02
+    name: Password Login
+    module: core
+  - id: S03
+    name: Forgot Password
+    module: core
+  - id: S08
+    name: Admin Dashboard
+    module: admin
+
 external_dependencies:
   - name: "Email Service"
     provider: "SendGrid"
@@ -112,9 +183,9 @@ external_dependencies:
     test_config: "POST /api/test/simulate-payment-callback"
 
 resource_index:
-  - path: logos/resources/prd/1-product-requirements/01-requirements.md
+  - path: logos/resources/prd/1-product-requirements/core-01-requirements.md
     desc: Core product requirements. Read when dealing with product positioning, target users, or feature requirements.
-  - path: logos/resources/prd/2-product-design/1-feature-specs/01-information-architecture.md
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-01-information-architecture.md
     desc: Information architecture document. Read when dealing with page structure or navigation design.
   - path: logos/resources/api/auth.yaml
     desc: Authentication API specs. Read when dealing with login, registration, or OAuth interfaces.
