@@ -57,6 +57,8 @@ Step 4 执行规则（大任务）：
 Step 4 分批执行提示词（可直接复用）：
 - `请按 Phase 3 Step 4 执行本次实现。若任务较大可分批，但每批必须同时交付：（1）业务代码，（2）对应 UT/ST 测试代码，（3）写入 logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。输出代码前请先列出本批覆盖的 UT/ST 用例 ID。`
 
+> ⚠️ **Reporter 是强制前置交付物**：在写任何测试用例代码之前，必须先在测试目录下创建共享 reporter 工具文件（如 `test/helpers/reporter.ts`），所有测试文件统一 import。没有 reporter，`openlogos verify` 无法读取结果，Gate 3.5 永远无法通过。
+
 ## 文档修改后的验证（强制）
 
 每次**写入或修改** Markdown / 文本类规格文档（例如 `logos/resources/`、`logos/changes/`、`logos/spec/` 或项目根 `spec/` 下的 `.md`，以及根目录 `AGENTS.md` / `CLAUDE.md`）后：

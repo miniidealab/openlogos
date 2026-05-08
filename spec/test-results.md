@@ -109,6 +109,21 @@ reporter 在写入前应确保 `logos/resources/verify/` 目录存在（`mkdir -
 
 以下是各语言的 reporter 参考实现。AI 在 Phase 3 Step 4（代码生成，由 `code-implementor` Skill 驱动）时，应根据项目的 `tech_stack` 选择对应语言的模板，嵌入到测试代码中。
 
+### 推荐：共享 reporter 文件模式
+
+**不要在每个测试文件里内联 reporter 代码**。多文件项目应创建一个共享工具文件，统一 import：
+
+```
+<test-root>/
+└── helpers/
+    └── reporter.ts    ← 所有测试文件从这里 import
+```
+
+这样做的好处：
+- 路径配置只有一处，不会因为文件位置不同导致写入路径错误
+- 新增测试文件时只需 import，不会遗漏 reporter
+- 清空策略（truncate）只在一处维护
+
 ### TypeScript (vitest / jest)
 
 ````typescript
