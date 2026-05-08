@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-05-08
+
+### Fixed
+
+- **多模块项目 phase 状态判断错误** — `openlogos status --module <新模块>` 对刚创建的模块不再错误返回 `current_phase: null, suggestion: "所有阶段已完成"`。
+  - 根因 1：非 scenario 类 phase（需求、设计、架构、API、数据库等）的 `done` 判断是"目录里有任何文件就算 done"，没有模块感知——新模块因为目录里存在其他模块的文件而被误判为全部完成。修复：多模块项目中改用 `<moduleId>-` 前缀过滤文件，单模块项目保持原逻辑（向后兼容）。
+  - 根因 2：`logos-project.yaml` 的 `scenarios` 列表没有模块归属字段，所有模块共用同一份 scenario 列表。修复：`scenarios` 新增可选 `module` 字段（缺省 `core`），`status` 按模块过滤 scenarios 后再计算 phase 进度。
+- **`openlogos sync` 自动补全 `scenarios[].module` 字段** — 对 `logos-project.yaml` 中没有 `module` 字段的 `scenarios` 条目，`sync` 命令根据文件系统中 `<moduleId>-SXX-*.md` 的存在情况自动推断归属模块，无法推断时默认填 `core`。幂等操作，已有 `module` 字段的条目不覆盖。
+
 ## [0.9.6] - 2026-05-08
 
 ### Added
