@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-05-08
+
+### Fixed
+
+- **加强 reporter 强制前置约束，防止测试代码遗漏 reporter** — `code-implementor` Skill Step 4 新增"Reporter 嵌入（强制前置）"小节，明确要求在写任何测试用例代码之前先创建共享 reporter 工具文件（`test/helpers/reporter.ts`），所有测试文件统一 import；Step 5 自检拆分为三条独立 reporter 检查项。`spec/test-results.md` 补充"推荐：共享 reporter 文件模式"说明。`CLAUDE.md` Step 4 提示词后新增 ⚠️ 警告块，将 reporter 提升为强制前置交付物。
+
 ## [0.9.7] - 2026-05-08
 
 ### Fixed

@@ -96,6 +96,21 @@ When Phase 3 Step 4 uses "batch generation", the reporter still outputs results 
 
 The following are reference implementations for each language. AI selects the appropriate template based on the project's `tech_stack` during Phase 3 Step 4 ([`code-implementor`](/skills/code-implementor) Skill) and embeds it into test code.
 
+### Recommended: Shared Reporter File Pattern
+
+**Do not inline reporter code in every test file.** Multi-file projects should create one shared utility file and import from it everywhere:
+
+```
+<test-root>/
+└── helpers/
+    └── reporter.ts    ← all test files import from here
+```
+
+Benefits:
+- Path configuration is in one place — no risk of wrong relative paths in nested test files
+- New test files only need to `import` — reporter is never accidentally omitted
+- Truncation logic is maintained in one place
+
 ### TypeScript (vitest / jest)
 
 ````typescript
