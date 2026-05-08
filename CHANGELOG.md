@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-05-08
+
+### Added
+
+- **Claude Code 插件自动部署** — `openlogos init` 和 `openlogos sync` 在选择 `claude-code` 或 `all` 时，自动将插件资产部署到用户项目的 `.claude/` 目录：
+  - `plugin/commands/*.md` → `.claude/commands/openlogos/`（10 个斜杠命令）
+  - `plugin/agents/*.md` → `.claude/agents/`（change-reviewer sub-agent）
+  - `plugin/bin/openlogos-phase` → `.claude/openlogos/bin/openlogos-phase`（SessionStart hook 脚本）
+  - `.claude/settings.json` 写入 SessionStart hook（幂等，不覆盖已有配置）
+  - 幂等保护：`.claude/commands/openlogos/` 已有文件时跳过，不覆盖用户自定义
+  - `claude-plugin-template/` 随 npm 包一起发布
+
+### Fixed
+
+- **`module add` 不再要求活跃变更提案** — `openlogos module add` 原本错误地要求 guard 文件存在才能执行，现已移除该限制。模块管理是项目结构层面的操作，维度高于变更提案，可随时自由执行。
+- **`module rename/remove` 改为警告而非阻塞** — 有活跃变更提案时，`rename` 和 `remove` 打印警告提示用户注意 delta 文件可能受影响，但不阻止操作继续执行。
+
 ## [0.9.5] - 2026-04-30
 
 ### Added

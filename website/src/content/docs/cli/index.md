@@ -34,6 +34,7 @@ openlogos --version
 | [`init`](/cli/init) | Initialize a new OpenLogos project structure |
 | [`sync`](/cli/sync) | Regenerate AI instruction files and Skills |
 | [`status`](/cli/status) | Show project phase and suggest next steps |
+| [`module`](/cli/module) | Manage project modules (list / add / rename / remove) |
 
 ### Verification & Launch
 

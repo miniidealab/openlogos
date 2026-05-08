@@ -58,12 +58,13 @@ export function scaffoldProject(
 }
 
 /**
- * Capture console.log / console.error output as string arrays.
- * Returns { logs, errors, restore }.
+ * Capture console.log / console.error / console.warn output as string arrays.
+ * Returns { logs, errors, warns, restore }.
  */
 export function captureConsole() {
   const logs: string[] = [];
   const errors: string[] = [];
+  const warns: string[] = [];
 
   const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
     logs.push(args.map(String).join(' '));
@@ -71,13 +72,19 @@ export function captureConsole() {
   const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
     errors.push(args.map(String).join(' '));
   });
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    warns.push(args.map(String).join(' '));
+    logs.push(args.map(String).join(' ')); // also mirror to logs for backward compat
+  });
 
   return {
     logs,
     errors,
+    warns,
     restore: () => {
       logSpy.mockRestore();
       errorSpy.mockRestore();
+      warnSpy.mockRestore();
     },
   };
 }

@@ -46,6 +46,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.codexPluginSynced': 'Codex plugin synced to {target}',
     'init.codexConfigCreated': '.codex/config.toml created with plugin and hook configuration',
     'init.codexConfigUpdated': '.codex/config.toml merged with plugin and hook configuration',
+    'init.claudePluginDeployed': 'Claude Code plugin deployed: {commandCount} commands, {agentCount} agents → .claude/',
+    'init.claudePluginSynced': 'Claude Code plugin synced: {commandCount} commands, {agentCount} agents → .claude/',
+    'init.claudePluginSkipped': 'Claude Code plugin already deployed (.claude/commands/openlogos/ exists), skipped',
+    'init.claudeHooksUpdated': '.claude/settings.json updated with SessionStart hook',
     'sync.indexAdded': '{count} new file(s) added to logos-project.yaml resource_index',
     'sync.indexNoop': 'logos-project.yaml resource_index is already up to date',
 
@@ -200,6 +204,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.codexPluginSynced': 'Codex 插件已同步到 {target}',
     'init.codexConfigCreated': '已创建 .codex/config.toml，并写入插件与 hook 配置',
     'init.codexConfigUpdated': '已为 .codex/config.toml 补齐插件与 hook 配置',
+    'init.claudePluginDeployed': 'Claude Code 插件已部署：{commandCount} 个命令，{agentCount} 个 agent → .claude/',
+    'init.claudePluginSynced': 'Claude Code 插件已同步：{commandCount} 个命令，{agentCount} 个 agent → .claude/',
+    'init.claudePluginSkipped': 'Claude Code 插件已存在（.claude/commands/openlogos/ 已有文件），跳过部署',
+    'init.claudeHooksUpdated': '.claude/settings.json 已写入 SessionStart hook',
     'sync.indexAdded': '{count} 个新文件已补录到 logos-project.yaml resource_index',
     'sync.indexNoop': 'logos-project.yaml resource_index 已是最新，无需补录',
 

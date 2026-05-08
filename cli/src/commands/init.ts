@@ -343,6 +343,150 @@ function mergeOpenCodeConfig(root: string) {
   return { created: false, updated: changed };
 }
 
+export function findClaudePluginTemplateSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+
+  // npm package layout: <pkg>/dist/commands/init.js → <pkg>/claude-plugin-template/
+  const packageTemplate = join(currentDir, '..', '..', 'claude-plugin-template');
+  if (existsSync(packageTemplate)) return packageTemplate;
+
+  // dev layout: cli/src/commands/init.ts → <repo>/plugin/
+  const devTemplate = join(currentDir, '..', '..', '..', 'plugin');
+  if (existsSync(devTemplate)) return devTemplate;
+
+  return null;
+}
+
+/**
+ * Merges the openlogos SessionStart hook into .claude/settings.json.
+ * Idempotent: only appends if the hook command is not already present.
+ * Returns whether the file was created or updated.
+ */
+function mergeClaudeSettings(root: string, binRelPath: string): { created: boolean; updated: boolean } {
+  const settingsDir = join(root, '.claude');
+  const settingsPath = join(settingsDir, 'settings.json');
+  mkdirSync(settingsDir, { recursive: true });
+
+  const hookEntry = {
+    type: 'command',
+    command: binRelPath,
+  };
+
+  if (!existsSync(settingsPath)) {
+    const initial = {
+      hooks: {
+        SessionStart: [{ hooks: [hookEntry] }],
+      },
+    };
+    writeFileSync(settingsPath, JSON.stringify(initial, null, 2));
+    return { created: true, updated: true };
+  }
+
+  let data: Record<string, unknown> = {};
+  try {
+    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+  } catch {
+    // Malformed JSON — leave file intact, skip merge
+    return { created: false, updated: false };
+  }
+
+  // Check if the hook command is already registered
+  const hooks = data['hooks'] as Record<string, unknown> | undefined;
+  const sessionStart = hooks?.['SessionStart'];
+  const alreadyRegistered = Array.isArray(sessionStart) &&
+    sessionStart.some((group: unknown) => {
+      if (typeof group !== 'object' || group === null) return false;
+      const g = group as Record<string, unknown>;
+      return Array.isArray(g['hooks']) &&
+        (g['hooks'] as unknown[]).some((h: unknown) => {
+          if (typeof h !== 'object' || h === null) return false;
+          return (h as Record<string, unknown>)['command'] === binRelPath;
+        });
+    });
+
+  if (alreadyRegistered) return { created: false, updated: false };
+
+  // Append the hook entry
+  if (!data['hooks'] || typeof data['hooks'] !== 'object') {
+    data['hooks'] = {};
+  }
+  const hooksObj = data['hooks'] as Record<string, unknown>;
+  if (!Array.isArray(hooksObj['SessionStart'])) {
+    hooksObj['SessionStart'] = [];
+  }
+  (hooksObj['SessionStart'] as unknown[]).push({ hooks: [hookEntry] });
+
+  writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+  return { created: false, updated: true };
+}
+
+export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
+  commandCount: number;
+  agentCount: number;
+  hooksUpdated: boolean;
+  skipped: boolean;
+} | null {
+  const source = findClaudePluginTemplateSource();
+  if (!source || !existsSync(source)) return null;
+
+  // Idempotency check: if commands dir already has files, skip deployment
+  const commandsTargetDir = join(root, '.claude', 'commands', 'openlogos');
+  if (existsSync(commandsTargetDir)) {
+    try {
+      const existing = readdirSync(commandsTargetDir).filter(f => f.endsWith('.md'));
+      if (existing.length > 0) {
+        return { commandCount: 0, agentCount: 0, hooksUpdated: false, skipped: true };
+      }
+    } catch { /* fall through to deploy */ }
+  }
+
+  // Deploy commands: plugin/commands/*.md → .claude/commands/openlogos/
+  let commandCount = 0;
+  const commandsSrcDir = join(source, 'commands');
+  if (existsSync(commandsSrcDir)) {
+    mkdirSync(commandsTargetDir, { recursive: true });
+    for (const file of readdirSync(commandsSrcDir).filter(f => f.endsWith('.md'))) {
+      copyFileSync(join(commandsSrcDir, file), join(commandsTargetDir, file));
+      commandCount++;
+    }
+  }
+
+  // Deploy agents: plugin/agents/*.md → .claude/agents/
+  let agentCount = 0;
+  const agentsSrcDir = join(source, 'agents');
+  if (existsSync(agentsSrcDir)) {
+    const agentsTargetDir = join(root, '.claude', 'agents');
+    mkdirSync(agentsTargetDir, { recursive: true });
+    for (const file of readdirSync(agentsSrcDir).filter(f => f.endsWith('.md'))) {
+      copyFileSync(join(agentsSrcDir, file), join(agentsTargetDir, file));
+      agentCount++;
+    }
+  }
+
+  // Deploy bin: plugin/bin/openlogos-phase → .claude/openlogos/bin/openlogos-phase
+  const binSrc = join(source, 'bin', 'openlogos-phase');
+  const binTargetDir = join(root, '.claude', 'openlogos', 'bin');
+  const binRelPath = '.claude/openlogos/bin/openlogos-phase';
+  if (existsSync(binSrc)) {
+    mkdirSync(binTargetDir, { recursive: true });
+    const binDest = join(binTargetDir, 'openlogos-phase');
+    copyFileSync(binSrc, binDest);
+    try { chmodSync(binDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
+  }
+
+  // Merge SessionStart hook into .claude/settings.json
+  const settingsResult = mergeClaudeSettings(root, binRelPath);
+
+  void locale; // locale reserved for future use
+  return {
+    commandCount,
+    agentCount,
+    hooksUpdated: settingsResult.updated,
+    skipped: false,
+  };
+}
+
 export function deployOpenCodePlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean }; commandCount: number } | null {
   const source = findOpenCodePluginTemplateSource();
   if (!source || !existsSync(source)) return null;
@@ -1028,6 +1172,20 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
     }
   }
 
+  if (aiTool === 'claude-code' || aiTool === 'all') {
+    const claudeResult = deployClaudeCodePlugin(root, locale);
+    if (claudeResult) {
+      if (claudeResult.skipped) {
+        console.log(`  ℹ ${t(locale, 'init.claudePluginSkipped')}`);
+      } else {
+        console.log(`  ✓ ${t(locale, 'init.claudePluginDeployed', { commandCount: String(claudeResult.commandCount), agentCount: String(claudeResult.agentCount) })}`);
+        if (claudeResult.hooksUpdated) {
+          console.log(`  ✓ ${t(locale, 'init.claudeHooksUpdated')}`);
+        }
+      }
+    }
+  }
+
   const specResult = deploySpecs(root);
   if (specResult && specResult.count > 0) {
     console.log(`  ✓ ${specResult.count} specs deployed to logos/spec/`);
@@ -1043,15 +1201,4 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   if (nameHint) console.log(nameHint);
   console.log(t(locale, 'init.step2'));
   console.log(t(locale, 'init.step3') + '\n');
-
-  if (aiTool === 'claude-code' || aiTool === 'all') {
-    const pluginMsg = locale === 'zh'
-      ? `💡 Claude Code 用户推荐安装原生插件以获得最佳体验：
-  /plugin marketplace add miniidealab/openlogos
-  /plugin install openlogos@miniidealab-openlogos`
-      : `💡 Claude Code users: install the native plugin for the best experience:
-  /plugin marketplace add miniidealab/openlogos
-  /plugin install openlogos@miniidealab-openlogos`;
-    console.log(pluginMsg + '\n');
-  }
 }

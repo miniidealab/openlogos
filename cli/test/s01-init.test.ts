@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
@@ -11,6 +11,8 @@ import {
   createAgentsMd,
   findSkillsSource,
   deploySkills,
+  deployClaudeCodePlugin,
+  findClaudePluginTemplateSource,
   generatePolicyMdc,
   SKILL_NAMES,
   init,
@@ -650,7 +652,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('old-name');
   });
 
-  it('ST-S01-07: choose Claude Code → deploys to logos/skills/', async () => {
+  it('ST-S01-07: choose Claude Code → deploys to logos/skills/ and .claude/ plugin assets', async () => {
     process.stdin.isTTY = true;
     readlineAnswers = ['1', '1']; // English, Claude Code (option 1, default)
 
@@ -670,6 +672,16 @@ describe('S01 Scenario Tests — init command', () => {
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('13 skills deployed to logos/skills/');
+
+    // Claude Code plugin assets
+    expect(existsSync(join(root, '.claude', 'commands', 'openlogos'))).toBe(true);
+    const commandFiles = readdirSync(join(root, '.claude', 'commands', 'openlogos')).filter(f => f.endsWith('.md'));
+    expect(commandFiles.length).toBeGreaterThan(0);
+    expect(existsSync(join(root, '.claude', 'agents'))).toBe(true);
+    expect(existsSync(join(root, '.claude', 'openlogos', 'bin', 'openlogos-phase'))).toBe(true);
+    expect(existsSync(join(root, '.claude', 'settings.json'))).toBe(true);
+    const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf-8'));
+    expect(settings.hooks?.SessionStart).toBeDefined();
   });
 
   it('ST-S01-07b: choose OpenCode → deploys to logos/skills/, Active Skills in AGENTS.md', async () => {
@@ -760,5 +772,108 @@ describe('S01 Scenario Tests — init command', () => {
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
+  });
+});
+
+/* ========== Unit Tests — deployClaudeCodePlugin ========== */
+
+describe('S01 Unit Tests — deployClaudeCodePlugin', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+  });
+  afterEach(() => cleanup());
+
+  it('UT-S01-27: deployClaudeCodePlugin deploys commands, agents, bin and settings.json', () => {
+    const source = findClaudePluginTemplateSource();
+    if (!source) return; // skip if template not available in this env
+
+    const result = deployClaudeCodePlugin(root, 'en');
+    expect(result).not.toBeNull();
+    expect(result!.skipped).toBe(false);
+    expect(result!.commandCount).toBeGreaterThan(0);
+    expect(result!.agentCount).toBeGreaterThan(0);
+    expect(result!.hooksUpdated).toBe(true);
+
+    // commands deployed to .claude/commands/openlogos/
+    expect(existsSync(join(root, '.claude', 'commands', 'openlogos'))).toBe(true);
+    const commandFiles = readdirSync(join(root, '.claude', 'commands', 'openlogos')).filter(f => f.endsWith('.md'));
+    expect(commandFiles.length).toBe(result!.commandCount);
+
+    // agents deployed to .claude/agents/
+    expect(existsSync(join(root, '.claude', 'agents'))).toBe(true);
+    const agentFiles = readdirSync(join(root, '.claude', 'agents')).filter(f => f.endsWith('.md'));
+    expect(agentFiles.length).toBe(result!.agentCount);
+
+    // bin deployed to .claude/openlogos/bin/
+    expect(existsSync(join(root, '.claude', 'openlogos', 'bin', 'openlogos-phase'))).toBe(true);
+
+    // settings.json written with SessionStart hook
+    expect(existsSync(join(root, '.claude', 'settings.json'))).toBe(true);
+    const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf-8'));
+    expect(settings.hooks?.SessionStart).toBeDefined();
+    const hooks = settings.hooks.SessionStart as Array<{ hooks: Array<{ command: string }> }>;
+    const hasHook = hooks.some(g => g.hooks?.some(h => h.command === '.claude/openlogos/bin/openlogos-phase'));
+    expect(hasHook).toBe(true);
+  });
+
+  it('UT-S01-28: deployClaudeCodePlugin is idempotent — skips when commands dir already has files', () => {
+    const source = findClaudePluginTemplateSource();
+    if (!source) return;
+
+    // First deploy
+    const first = deployClaudeCodePlugin(root, 'en');
+    expect(first).not.toBeNull();
+    expect(first!.skipped).toBe(false);
+
+    // Second deploy — should be skipped
+    const second = deployClaudeCodePlugin(root, 'en');
+    expect(second).not.toBeNull();
+    expect(second!.skipped).toBe(true);
+    expect(second!.commandCount).toBe(0);
+    expect(second!.agentCount).toBe(0);
+    expect(second!.hooksUpdated).toBe(false);
+  });
+
+  it('UT-S01-29: deployClaudeCodePlugin hooks are idempotent — does not duplicate SessionStart entry', () => {
+    const source = findClaudePluginTemplateSource();
+    if (!source) return;
+
+    // First deploy writes settings.json
+    deployClaudeCodePlugin(root, 'en');
+    const settingsAfterFirst = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf-8'));
+    const countAfterFirst = (settingsAfterFirst.hooks?.SessionStart as unknown[])?.length ?? 0;
+
+    // Manually remove commands dir so second deploy is not skipped, but settings already has hook
+    const commandsDir = join(root, '.claude', 'commands', 'openlogos');
+    rmSync(commandsDir, { recursive: true, force: true });
+
+    // Second deploy — commands re-deployed, but hook should NOT be duplicated
+    deployClaudeCodePlugin(root, 'en');
+    const settingsAfterSecond = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf-8'));
+    const countAfterSecond = (settingsAfterSecond.hooks?.SessionStart as unknown[])?.length ?? 0;
+
+    expect(countAfterSecond).toBe(countAfterFirst);
+  });
+
+  it('UT-S01-30: deployClaudeCodePlugin merges hook into existing settings.json without overwriting other keys', () => {
+    const source = findClaudePluginTemplateSource();
+    if (!source) return;
+
+    // Pre-create settings.json with existing content
+    mkdirSync(join(root, '.claude'), { recursive: true });
+    const existing = { permissions: { allow: ['Bash'] }, someOtherKey: 'value' };
+    writeFileSync(join(root, '.claude', 'settings.json'), JSON.stringify(existing, null, 2));
+
+    deployClaudeCodePlugin(root, 'en');
+
+    const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf-8'));
+    // Existing keys preserved
+    expect(settings.permissions?.allow).toEqual(['Bash']);
+    expect(settings.someOtherKey).toBe('value');
+    // Hook added
+    expect(settings.hooks?.SessionStart).toBeDefined();
   });
 });

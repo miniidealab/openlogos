@@ -85,33 +85,10 @@ Step 4 分批执行提示词（可直接复用）：
 - `logos/skills/change-writer/SKILL.md` — 变更提案编写与影响分析
 - `logos/skills/merge-executor/SKILL.md` — 通过 MERGE_PROMPT.md 执行 Delta 合并
 
-## ⛔ 变更管理（强制执行）
+## 变更管理（当前：初始开发期）
 
-### Guard 机制
-本项目使用 `logos/.openlogos-guard` 锁文件来追踪活跃变更。
-- **有 guard 文件** → 可以修改代码，但 **只能在该提案范围内** 修改
-- **无 guard 文件** → **禁止修改任何源代码**，必须先运行 `openlogos change <slug>`
-
-### 变更流程
-1. 运行 `openlogos change <slug>` 创建提案（自动写入 guard 文件）
-2. 使用 change-writer Skill 填写 `proposal.md` + `tasks.md`
-3. **等待用户确认后** 再开始产出 delta
-4. delta 产出完成后提醒用户明确授权运行 `openlogos merge <slug>`
-5. merge 完成后 AI 自动 commit 规格文档（告知用户，无需确认）
-6. 按合并后的规格实现代码，完成后 AI 自动 commit 代码（告知用户，无需确认）
-7. 提醒用户运行 `openlogos verify` 验收
-8. 验收通过后提醒用户明确授权运行 `openlogos archive <slug>`（自动删除 guard 文件）
-9. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
-10. 提醒用户确认是否执行 `git push`（人类确认点）
-
-**`openlogos merge`、`openlogos verify`、`openlogos archive` 和 `git push` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
-
-### 行为约束
-- **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
-- **修改代码前**：先确认 guard 文件存在且当前修改在提案范围内
-- **唯一例外**：纯 typo 修复（不改变语义）、`.gitignore`/`README.md` 等非方法论文件
-
-**违反此规则将破坏项目的变更可追溯性。**
+本项目正处于首轮开发阶段，按 Phase 推进即可，无需变更提案。
+首轮开发完成后运行 `openlogos launch` 激活变更管理。
 
 ## ⚠️ openlogos CLI 规则
 

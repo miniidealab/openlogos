@@ -26,12 +26,18 @@ function writeProjectYaml(root: string, data: Record<string, unknown>): void {
   writeFileSync(path, stringifyYaml(data, { lineWidth: 0 }));
 }
 
-function checkGuard(root: string): void {
+function warnIfActiveChange(root: string, operation: string): void {
   const guardPath = join(root, 'logos', '.openlogos-guard');
-  if (!existsSync(guardPath)) {
-    console.error('错误：当前没有活跃的变更提案（未找到 logos/.openlogos-guard）。');
-    console.error('请先运行 openlogos change <slug> 创建变更提案，再执行此操作。');
-    process.exit(1);
+  if (existsSync(guardPath)) {
+    try {
+      const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+      const slug = guard.activeChange ?? '(unknown)';
+      console.warn(`⚠  Warning: active change proposal "${slug}" detected.`);
+      console.warn(`   ${operation} may affect files referenced in the proposal's deltas or tasks.md.`);
+      console.warn(`   Review logos/changes/${slug}/tasks.md after this operation if needed.`);
+    } catch {
+      console.warn(`⚠  Warning: an active change proposal is in progress. Review it after ${operation}.`);
+    }
   }
 }
 
@@ -142,7 +148,6 @@ export function moduleList(format: OutputFormat = 'text'): void {
 export function moduleAdd(name: string | undefined): void {
   const root = process.cwd();
   checkConfig(root);
-  checkGuard(root);
 
   if (!name) {
     console.error('Usage: openlogos module add <name>');
@@ -172,13 +177,12 @@ export function moduleAdd(name: string | undefined): void {
   yaml.modules = modules;
   writeProjectYaml(root, yaml);
   console.log(`✓ Module "${name}" added to logos-project.yaml`);
-  console.log('  Remember to update the current change proposal tasks.md to record this operation.');
 }
 
 export function moduleRename(oldName: string | undefined, newName: string | undefined): void {
   const root = process.cwd();
   checkConfig(root);
-  checkGuard(root);
+  warnIfActiveChange(root, `renaming module "${oldName}" → "${newName}"`);
 
   if (!oldName || !newName) {
     console.error('Usage: openlogos module rename <old> <new>');
@@ -241,7 +245,7 @@ export function moduleRename(oldName: string | undefined, newName: string | unde
 export function moduleRemove(name: string | undefined): void {
   const root = process.cwd();
   checkConfig(root);
-  checkGuard(root);
+  warnIfActiveChange(root, `removing module "${name}"`);
 
   if (!name) {
     console.error('Usage: openlogos module remove <name>');

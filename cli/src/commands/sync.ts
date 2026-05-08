@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, deployCodexPlugin, type AiTool } from './init.js';
+import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, deployCodexPlugin, deployClaudeCodePlugin, type AiTool } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
 import { VERSION } from '../lib/json-output.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
@@ -140,6 +140,20 @@ export function sync() {
         console.log(`  ✓ ${t(locale, 'init.codexConfigCreated')}`);
       } else if (codexResult.config.updated) {
         console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
+      }
+    }
+  }
+
+  if (aiTools.includes('claude-code')) {
+    const claudeResult = deployClaudeCodePlugin(root, locale);
+    if (claudeResult) {
+      if (claudeResult.skipped) {
+        console.log(`  ℹ ${t(locale, 'init.claudePluginSkipped')}`);
+      } else {
+        console.log(`  ✓ ${t(locale, 'init.claudePluginSynced', { commandCount: String(claudeResult.commandCount), agentCount: String(claudeResult.agentCount) })}`);
+        if (claudeResult.hooksUpdated) {
+          console.log(`  ✓ ${t(locale, 'init.claudeHooksUpdated')}`);
+        }
       }
     }
   }

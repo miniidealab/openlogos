@@ -76,17 +76,28 @@ describe('S17 Unit Tests — module commands', () => {
 
   /* ---- moduleAdd ---- */
 
-  it('UT-S17-04: moduleAdd requires guard file', () => {
-    const exitSpy = mockProcessExit();
-    const { errors, restore } = captureConsole();
-    expect(() => moduleAdd('newmod')).toThrow();
+  it('UT-S17-04: moduleAdd works without a guard file', () => {
+    // No guard file — should succeed without error
+    const { logs, restore } = captureConsole();
+    moduleAdd('newmod');
     restore();
-    exitSpy.mockRestore();
-    expect(errors.some(e => e.includes('openlogos-guard'))).toBe(true);
+    const yaml = readYaml(root);
+    expect(yaml.modules.find((m: { id: string }) => m.id === 'newmod')).toBeDefined();
+    expect(logs.some(l => l.includes('added'))).toBe(true);
+  });
+
+  it('UT-S17-04b: moduleAdd works with a guard file (no warning expected)', () => {
+    writeGuard(root);
+    const { logs, restore } = captureConsole();
+    moduleAdd('newmod');
+    restore();
+    const yaml = readYaml(root);
+    expect(yaml.modules.find((m: { id: string }) => m.id === 'newmod')).toBeDefined();
+    // add does not warn about active change
+    expect(logs.join('\n')).not.toContain('Warning');
   });
 
   it('UT-S17-05: moduleAdd appends module to yaml', () => {
-    writeGuard(root);
     const { restore } = captureConsole();
     moduleAdd('payment');
     restore();
@@ -98,7 +109,6 @@ describe('S17 Unit Tests — module commands', () => {
   });
 
   it('UT-S17-06: moduleAdd rejects invalid name', () => {
-    writeGuard(root);
     const exitSpy = mockProcessExit();
     const { errors, restore } = captureConsole();
     expect(() => moduleAdd('Invalid_Name')).toThrow();
@@ -108,7 +118,6 @@ describe('S17 Unit Tests — module commands', () => {
   });
 
   it('UT-S17-07: moduleAdd rejects duplicate name', () => {
-    writeGuard(root);
     writeProjectYaml(root, {
       modules: [{ id: 'core', name: '核心功能', status: 'stable', loop_phase: null }],
     });
@@ -121,7 +130,6 @@ describe('S17 Unit Tests — module commands', () => {
   });
 
   it('UT-S17-08: moduleAdd requires name argument', () => {
-    writeGuard(root);
     const exitSpy = mockProcessExit();
     const { errors, restore } = captureConsole();
     expect(() => moduleAdd(undefined)).toThrow();
@@ -133,7 +141,6 @@ describe('S17 Unit Tests — module commands', () => {
   /* ---- moduleRename ---- */
 
   it('UT-S17-09: moduleRename updates id in yaml', () => {
-    writeGuard(root);
     writeProjectYaml(root, {
       modules: [{ id: 'oldname', name: '旧名', status: 'in-progress', loop_phase: 'requirements' }],
     });
@@ -145,8 +152,23 @@ describe('S17 Unit Tests — module commands', () => {
     expect(yaml.modules.find((m: { id: string }) => m.id === 'oldname')).toBeUndefined();
   });
 
-  it('UT-S17-10: moduleRename renames matching files in resources/', () => {
+  it('UT-S17-09b: moduleRename warns when active change proposal exists', () => {
     writeGuard(root);
+    writeProjectYaml(root, {
+      modules: [{ id: 'oldname', name: '旧名', lifecycle: 'initial' }],
+    });
+    const { logs, restore } = captureConsole();
+    moduleRename('oldname', 'newname');
+    restore();
+    // rename still succeeds
+    const yaml = readYaml(root);
+    expect(yaml.modules.find((m: { id: string }) => m.id === 'newname')).toBeDefined();
+    // and emits a warning
+    expect(logs.join('\n')).toContain('Warning');
+    expect(logs.join('\n')).toContain('test-change');
+  });
+
+  it('UT-S17-10: moduleRename renames matching files in resources/', () => {
     writeProjectYaml(root, {
       modules: [{ id: 'oldname', name: '旧名', status: 'in-progress', loop_phase: 'requirements' }],
     });
@@ -163,7 +185,6 @@ describe('S17 Unit Tests — module commands', () => {
   });
 
   it('UT-S17-10b: moduleRename updates cross-references inside files', () => {
-    writeGuard(root);
     writeProjectYaml(root, {
       modules: [{ id: 'oldname', name: '旧名', status: 'in-progress', loop_phase: 'requirements' }],
     });
@@ -183,7 +204,6 @@ describe('S17 Unit Tests — module commands', () => {
   });
 
   it('UT-S17-11: moduleRename rejects non-existent module', () => {
-    writeGuard(root);
     writeProjectYaml(root, { modules: [] });
     const exitSpy = mockProcessExit();
     const { errors, restore } = captureConsole();
@@ -194,7 +214,6 @@ describe('S17 Unit Tests — module commands', () => {
   });
 
   it('UT-S17-12: moduleRename rejects invalid new name', () => {
-    writeGuard(root);
     writeProjectYaml(root, {
       modules: [{ id: 'core', name: '核心', status: 'stable', loop_phase: null }],
     });
@@ -209,7 +228,6 @@ describe('S17 Unit Tests — module commands', () => {
   /* ---- moduleRemove ---- */
 
   it('UT-S17-13: moduleRemove protects core module', () => {
-    writeGuard(root);
     writeProjectYaml(root, {
       modules: [{ id: 'core', name: '核心', status: 'stable', loop_phase: null }],
     });
@@ -222,7 +240,6 @@ describe('S17 Unit Tests — module commands', () => {
   });
 
   it('UT-S17-14: moduleRemove rejects non-existent module', () => {
-    writeGuard(root);
     writeProjectYaml(root, { modules: [] });
     const exitSpy = mockProcessExit();
     const { errors, restore } = captureConsole();
@@ -230,6 +247,24 @@ describe('S17 Unit Tests — module commands', () => {
     restore();
     exitSpy.mockRestore();
     expect(errors.some(e => e.includes('not found'))).toBe(true);
+  });
+
+  it('UT-S17-14b: moduleRemove warns when active change proposal exists', () => {
+    writeGuard(root);
+    writeProjectYaml(root, {
+      modules: [{ id: 'payment', name: '支付', lifecycle: 'initial' }],
+    });
+    // Mock readline to auto-confirm
+    const { logs, restore } = captureConsole();
+    // moduleRemove uses readline — we just verify the warning fires before the prompt
+    // by checking that warnIfActiveChange ran (it logs to console.warn → captured in logs)
+    // We don't need to complete the readline interaction for this assertion
+    try {
+      moduleRemove('payment');
+    } catch { /* readline may throw in test env */ }
+    restore();
+    expect(logs.join('\n')).toContain('Warning');
+    expect(logs.join('\n')).toContain('test-change');
   });
 
   /* ---- moduleList --format json ---- */

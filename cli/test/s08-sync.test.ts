@@ -411,4 +411,53 @@ describe('S08 Scenario Tests — sync command', () => {
     const allOutput = [...con.logs, ...con.errors].join('\n');
     expect(allOutput).toContain('Warning');
   });
+
+  it('ST-S08-14: sync with claude-code deploys .claude/ plugin assets', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'claude-code';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    // commands deployed
+    expect(existsSync(join(root, '.claude', 'commands', 'openlogos'))).toBe(true);
+    const commandFiles = readdirSync(join(root, '.claude', 'commands', 'openlogos')).filter(f => f.endsWith('.md'));
+    expect(commandFiles.length).toBeGreaterThan(0);
+
+    // agents deployed
+    expect(existsSync(join(root, '.claude', 'agents'))).toBe(true);
+
+    // bin deployed
+    expect(existsSync(join(root, '.claude', 'openlogos', 'bin', 'openlogos-phase'))).toBe(true);
+
+    // settings.json has SessionStart hook
+    expect(existsSync(join(root, '.claude', 'settings.json'))).toBe(true);
+    const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf-8'));
+    expect(settings.hooks?.SessionStart).toBeDefined();
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('.claude/');
+  });
+
+  it('ST-S08-15: sync with claude-code skips plugin deploy when .claude/commands/openlogos/ already exists', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'claude-code';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    // Pre-create commands dir with a file to trigger idempotency skip
+    const commandsDir = join(root, '.claude', 'commands', 'openlogos');
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(join(commandsDir, 'status.md'), '# status');
+
+    sync();
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('already deployed');
+  });
 });

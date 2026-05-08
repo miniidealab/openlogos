@@ -31,6 +31,7 @@ openlogos --version
 | `openlogos change <slug>` | 创建变更提案（Delta 工作流） |
 | `openlogos merge` / `archive` | 合并与归档变更 |
 | `openlogos launch` | 从首轮开发切换到「活跃迭代」并强化变更管理 |
+| `openlogos module <sub>` | 管理项目模块（list / add / rename / remove） |
 
 **注意**：请在**项目根目录**（存在 `logos/logos.config.json`）下执行上述命令。
 

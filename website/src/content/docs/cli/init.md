@@ -22,7 +22,7 @@ openlogos init [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|cursor
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--locale` | `en`, `zh` | Interactive prompt | Set the document language (skips prompt) |
-| `--ai-tool` | `claude-code`, `opencode`, `cursor`, `other` | Interactive prompt | Set the AI coding tool (skips prompt) |
+| `--ai-tool` | `claude-code`, `opencode`, `codex`, `cursor`, `other`, `all` | Interactive prompt | Set the AI coding tool (skips prompt) |
 
 ## Interactive mode
 
@@ -112,12 +112,13 @@ The deployment target depends on the chosen AI tool:
 
 ### Tool-specific extras
 
-**Claude Code** — Prints a plugin installation hint:
-```
-💡 Claude Code users: install the native plugin for the best experience:
-  /plugin marketplace add miniidealab/openlogos
-  /plugin install openlogos@miniidealab-openlogos
-```
+**Claude Code** — When `--ai-tool` is `claude-code` or `all`, automatically deploys the Claude Code plugin:
+- `.claude/commands/openlogos/` — slash commands (status, next, change, merge, archive, verify, sync, launch, init, index)
+- `.claude/agents/change-reviewer.md` — change proposal reviewer sub-agent
+- `.claude/openlogos/bin/openlogos-phase` — SessionStart hook script
+- `.claude/settings.json` — registers the SessionStart hook (merged, not overwritten)
+
+Idempotent: if `.claude/commands/openlogos/` already has files, the deployment is skipped to preserve user customizations.
 
 **OpenCode** — Additionally deploys:
 - `.opencode/plugins/openlogos.js` — OpenCode plugin
