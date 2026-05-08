@@ -52,6 +52,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.claudeHooksUpdated': '.claude/settings.json updated with SessionStart hook',
     'sync.indexAdded': '{count} new file(s) added to logos-project.yaml resource_index',
     'sync.indexNoop': 'logos-project.yaml resource_index is already up to date',
+    'sync.scenariosModuleAdded': '{count} scenario(s) backfilled with module field in logos-project.yaml',
 
     // status
     'phase.1': 'Phase 1 · Requirements (WHY)',
@@ -210,6 +211,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'init.claudeHooksUpdated': '.claude/settings.json 已写入 SessionStart hook',
     'sync.indexAdded': '{count} 个新文件已补录到 logos-project.yaml resource_index',
     'sync.indexNoop': 'logos-project.yaml resource_index 已是最新，无需补录',
+    'sync.scenariosModuleAdded': '{count} 个 scenario 已补全 module 字段到 logos-project.yaml',
 
     // status
     'phase.1': 'Phase 1 · 需求文档 (WHY)',

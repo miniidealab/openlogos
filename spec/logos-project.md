@@ -132,6 +132,7 @@ modules:
 |------|------|------|------|
 | `id` | string | 是 | 场景唯一编号，格式为 `S` + 两位数字，如 `S01`、`S02` |
 | `name` | string | 是 | 场景名称（一句话描述） |
+| `module` | string | 否 | 所属模块 id，缺省为 `core`。多模块项目必填，用于 `openlogos status` 按模块计算 phase 进度。`openlogos sync` 会自动补全缺失的 `module` 字段。 |
 
 **命名规则约定**（各阶段产出物通过 `<module>-SXX` 前缀与场景关联，无需在 yaml 中声明路径）：
 

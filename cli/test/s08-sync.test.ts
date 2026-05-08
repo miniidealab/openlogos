@@ -3,7 +3,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 
 import { join } from 'node:path';
 import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
-import { syncLogosProjectName, sync } from '../src/commands/sync.js';
+import { syncLogosProjectName, sync, syncScenariosModuleField } from '../src/commands/sync.js';
 
 /* ========== Unit Tests ========== */
 
@@ -459,5 +459,140 @@ describe('S08 Scenario Tests — sync command', () => {
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('already deployed');
+  });
+});
+
+/* ========== Unit Tests — syncScenariosModuleField ========== */
+
+describe('S08 Unit Tests — syncScenariosModuleField', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+  });
+  afterEach(() => cleanup());
+
+  it('UT-S08-SM-01: backfills module field for scenarios without one, infers from file system', () => {
+    // core-S01-xxx.md exists → S01 should get module: core
+    const scenDir = join(root, 'logos/resources/prd/3-technical-plan/2-scenario-implementation');
+    mkdirSync(scenDir, { recursive: true });
+    writeFileSync(join(scenDir, 'core-S01-user-register.md'), '# S01');
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+        scenarios: [{ id: 'S01', name: '用户注册' }],
+      }, { lineWidth: 0 }),
+    );
+
+    const updated = syncScenariosModuleField(root);
+    expect(updated).toBe(1);
+
+    const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8'));
+    expect(yaml.scenarios[0].module).toBe('core');
+  });
+
+  it('UT-S08-SM-02: falls back to core when no matching file found', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'initial' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        scenarios: [{ id: 'S01', name: '用户注册' }],
+      }, { lineWidth: 0 }),
+    );
+
+    const updated = syncScenariosModuleField(root);
+    expect(updated).toBe(1);
+
+    const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8'));
+    expect(yaml.scenarios[0].module).toBe('core');
+  });
+
+  it('UT-S08-SM-03: does not overwrite existing module field (idempotent)', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+        scenarios: [{ id: 'S01', name: '用户注册', module: 'admin' }],
+      }, { lineWidth: 0 }),
+    );
+
+    const updated = syncScenariosModuleField(root);
+    expect(updated).toBe(0);
+
+    const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8'));
+    expect(yaml.scenarios[0].module).toBe('admin'); // unchanged
+  });
+
+  it('UT-S08-SM-04: infers correct module for multi-module project', () => {
+    const scenDir = join(root, 'logos/resources/prd/3-technical-plan/2-scenario-implementation');
+    mkdirSync(scenDir, { recursive: true });
+    writeFileSync(join(scenDir, 'core-S01-login.md'), '# S01');
+    writeFileSync(join(scenDir, 'admin-S02-dashboard.md'), '# S02');
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'initial' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        scenarios: [
+          { id: 'S01', name: '用户登录' },
+          { id: 'S02', name: '管理员看板' },
+        ],
+      }, { lineWidth: 0 }),
+    );
+
+    const updated = syncScenariosModuleField(root);
+    expect(updated).toBe(2);
+
+    const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8'));
+    expect(yaml.scenarios[0].module).toBe('core');
+    expect(yaml.scenarios[1].module).toBe('admin');
+  });
+
+  it('UT-S08-SM-05: returns 0 when no scenarios in yaml', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }] }, { lineWidth: 0 }),
+    );
+
+    const updated = syncScenariosModuleField(root);
+    expect(updated).toBe(0);
+  });
+
+  it('ST-S08-SM-06: sync command logs when scenarios module fields are backfilled', () => {
+    const scenDir = join(root, 'logos/resources/prd/3-technical-plan/2-scenario-implementation');
+    mkdirSync(scenDir, { recursive: true });
+    writeFileSync(join(scenDir, 'core-S01-login.md'), '# S01');
+
+    scaffoldProject(root, { locale: 'en' });
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        project: { name: 'test', description: '' },
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+        scenarios: [{ id: 'S01', name: 'Login' }],
+      }, { lineWidth: 0 }),
+    );
+
+    const restoreCwd = mockCwd(root);
+    const con = captureConsole();
+    const exitSpy = mockProcessExit();
+    try {
+      sync();
+      expect(con.logs.join('\n')).toContain('scenario');
+    } finally {
+      con.restore();
+      exitSpy.mockRestore();
+      restoreCwd();
+    }
   });
 });

@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
 import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, deployCodexPlugin, deployClaudeCodePlugin, type AiTool } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
@@ -22,6 +22,64 @@ export function syncLogosProjectName(root: string, projectName: string) {
     return true;
   }
   return false;
+}
+
+/**
+ * For each scenario in logos-project.yaml that lacks a `module` field,
+ * infer the owning module by scanning logos/resources/ for files matching
+ * `<moduleId>-<scenarioId>-*.md`. Falls back to 'core' when ambiguous.
+ * Idempotent: entries that already have a `module` field are left unchanged.
+ * Returns the number of entries that were updated.
+ */
+export function syncScenariosModuleField(root: string): number {
+  const yamlPath = join(root, 'logos', 'logos-project.yaml');
+  if (!existsSync(yamlPath)) return 0;
+
+  let yaml: Record<string, unknown>;
+  try {
+    yaml = parseYaml(readFileSync(yamlPath, 'utf-8')) ?? {};
+  } catch {
+    return 0;
+  }
+
+  const modules = Array.isArray(yaml.modules)
+    ? (yaml.modules as Array<{ id: string }>).map(m => m.id)
+    : ['core'];
+
+  const scenarios = Array.isArray(yaml.scenarios)
+    ? (yaml.scenarios as Array<{ id: string; module?: string }>)
+    : [];
+
+  if (scenarios.length === 0) return 0;
+
+  // Scan scenario-implementation dir for <moduleId>-<scenarioId>-*.md files
+  const scenImplDir = join(root, 'logos', 'resources', 'prd', '3-technical-plan', '2-scenario-implementation');
+  const scenImplFiles: string[] = [];
+  if (existsSync(scenImplDir)) {
+    try {
+      for (const f of readdirSync(scenImplDir)) {
+        if (statSync(join(scenImplDir, f)).isFile()) scenImplFiles.push(f);
+      }
+    } catch { /* ignore */ }
+  }
+
+  let updated = 0;
+  for (const scenario of scenarios) {
+    if (scenario.module !== undefined) continue; // already set, skip
+
+    // Find which module has a file matching <moduleId>-<scenarioId>-*.md
+    const matched = modules.find(modId =>
+      scenImplFiles.some(f => f.startsWith(`${modId}-${scenario.id}-`) || f.startsWith(`${modId}-${scenario.id}.`)),
+    );
+    scenario.module = matched ?? 'core';
+    updated++;
+  }
+
+  if (updated > 0) {
+    writeFileSync(yamlPath, stringifyYaml(yaml, { lineWidth: 0 }));
+  }
+
+  return updated;
 }
 
 export function sync() {
@@ -66,6 +124,12 @@ export function sync() {
   const namesynced = syncLogosProjectName(root, projectName);
   if (namesynced) {
     console.log(`  ✓ logos-project.yaml name synced to "${projectName}"`);
+  }
+
+  // ========== Step 1b: 补全 scenarios[].module 字段 ==========
+  const scenariosUpdated = syncScenariosModuleField(root);
+  if (scenariosUpdated > 0) {
+    console.log(`  ✓ ${t(locale, 'sync.scenariosModuleAdded', { count: String(scenariosUpdated) })}`);
   }
 
   // ========== Step 2: 扫描并补录缺失的 resource_index 条目 ==========

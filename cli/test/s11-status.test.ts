@@ -590,3 +590,210 @@ describe('S11 Unit Tests — skip_phases in modules', () => {
     expect(data.current_phase).not.toBe('phase.3-2-api');
   });
 });
+
+/* ========== Unit Tests — multi-module phase filtering ========== */
+
+describe('S11 Unit Tests — multi-module phase filtering', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+  });
+  afterEach(() => cleanup());
+
+  it('UT-S11-MM-01: new module with no files → current_phase is phase.1, not null', () => {
+    // core has files in all dirs; admin has none
+    const dirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/2-product-design',
+      'logos/resources/prd/3-technical-plan/1-architecture',
+      'logos/resources/api',
+      'logos/resources/database',
+      'logos/resources/implementation',
+      'logos/resources/verify',
+    ];
+    for (const d of dirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'core-dummy.md'), 'content');
+    }
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'launched' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        scenarios: [],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+    const adminMod = data.modules?.find(m => m.id === 'admin');
+    expect(adminMod).toBeDefined();
+    expect(adminMod!.current_phase).toBe('phase.1');
+    expect(adminMod!.suggestion).not.toContain('所有阶段已完成');
+    expect(adminMod!.suggestion).not.toContain('All phases complete');
+  });
+
+  it('UT-S11-MM-02: new module with admin- prefixed file in phase.1 dir → phase.1 done', () => {
+    const reqDir = join(root, 'logos/resources/prd/1-product-requirements');
+    mkdirSync(reqDir, { recursive: true });
+    writeFileSync(join(reqDir, 'admin-01-requirements.md'), '# Admin Requirements');
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'launched' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        scenarios: [],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+    const adminMod = data.modules?.find(m => m.id === 'admin');
+    expect(adminMod!.phase_progress!['phase.1'].done).toBe(true);
+    expect(adminMod!.current_phase).toBe('phase.2');
+  });
+
+  it('UT-S11-MM-03: core module files do not count toward admin module phase.1', () => {
+    const reqDir = join(root, 'logos/resources/prd/1-product-requirements');
+    mkdirSync(reqDir, { recursive: true });
+    // Only core- prefixed file
+    writeFileSync(join(reqDir, 'core-01-requirements.md'), '# Core Requirements');
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'launched' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        scenarios: [],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+    const adminMod = data.modules?.find(m => m.id === 'admin');
+    expect(adminMod!.phase_progress!['phase.1'].done).toBe(false);
+  });
+
+  it('UT-S11-MM-04: single-module project — any file in dir counts (backward compat)', () => {
+    const reqDir = join(root, 'logos/resources/prd/1-product-requirements');
+    mkdirSync(reqDir, { recursive: true });
+    // No module prefix — old-style file
+    writeFileSync(join(reqDir, '01-requirements.md'), '# Requirements');
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+        scenarios: [],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+    const coreMod = data.modules?.find(m => m.id === 'core');
+    expect(coreMod!.phase_progress!['phase.1'].done).toBe(true);
+  });
+
+  it('UT-S11-MM-05: scenarios with module field — each module only checks its own scenarios', () => {
+    const scenDir = join(root, 'logos/resources/prd/3-technical-plan/2-scenario-implementation');
+    mkdirSync(scenDir, { recursive: true });
+    // core has S01, admin has S02
+    writeFileSync(join(scenDir, 'core-S01-login.md'), '# S01');
+    // admin-S02 is missing → admin phase.3-1 should be done: false
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'initial' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        scenarios: [
+          { id: 'S01', name: '用户登录', module: 'core' },
+          { id: 'S02', name: '管理员看板', module: 'admin' },
+        ],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+    const coreMod = data.modules?.find(m => m.id === 'core');
+    const adminMod = data.modules?.find(m => m.id === 'admin');
+
+    // core: S01 covered → phase.3-1 done
+    expect(coreMod!.phase_progress!['phase.3-1'].done).toBe(true);
+    // admin: S02 missing → phase.3-1 not done
+    expect(adminMod!.phase_progress!['phase.3-1'].done).toBe(false);
+    expect(adminMod!.phase_progress!['phase.3-1'].scenario_coverage?.missing).toContain('S02');
+  });
+
+  it('UT-S11-MM-06: scenarios without module field default to core', () => {
+    const scenDir = join(root, 'logos/resources/prd/3-technical-plan/2-scenario-implementation');
+    mkdirSync(scenDir, { recursive: true });
+    writeFileSync(join(scenDir, 'core-S01-login.md'), '# S01');
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'initial' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        // No module field → defaults to core
+        scenarios: [{ id: 'S01', name: '用户登录' }],
+      }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+    const coreMod = data.modules?.find(m => m.id === 'core');
+    const adminMod = data.modules?.find(m => m.id === 'admin');
+
+    // S01 defaults to core → core phase.3-1 done
+    expect(coreMod!.phase_progress!['phase.3-1'].done).toBe(true);
+    // admin has no scenarios → phase.3-1 done: false (0 scenarios, coverage 0/0)
+    expect(adminMod!.phase_progress!['phase.3-1'].done).toBe(false);
+    expect(adminMod!.phase_progress!['phase.3-1'].scenario_coverage?.total).toBe(0);
+  });
+
+  it('UT-S11-MM-07: --module filter returns correct phase for new module', () => {
+    // All dirs have core- files; admin has none
+    const dirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/2-product-design',
+      'logos/resources/prd/3-technical-plan/1-architecture',
+      'logos/resources/api',
+      'logos/resources/database',
+      'logos/resources/implementation',
+      'logos/resources/verify',
+    ];
+    for (const d of dirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'core-dummy.md'), 'content');
+    }
+
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [
+          { id: 'core', name: 'Core', lifecycle: 'launched' },
+          { id: 'admin', name: 'Admin', lifecycle: 'initial' },
+        ],
+        scenarios: [],
+      }, { lineWidth: 0 }),
+    );
+
+    // Filter to admin only
+    const data = collectStatusData(root, 'admin');
+    expect(data.modules).toHaveLength(1);
+    expect(data.modules![0].id).toBe('admin');
+    expect(data.modules![0].current_phase).toBe('phase.1');
+  });
+});

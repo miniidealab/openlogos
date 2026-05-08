@@ -192,6 +192,7 @@ function deriveModulePhaseProgress(
   moduleId: string,
   scenarios: Array<{ id: string }>,
   skipPhases: string[] = [],
+  isMultiModule: boolean = false,
 ): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
   const progress: Record<string, PhaseProgressItem> = {};
 
@@ -226,7 +227,12 @@ function deriveModulePhaseProgress(
         scenario_coverage: { total: scenarios.length, covered: covered.length, missing },
       };
     } else {
-      const files = listFiles(dir);
+      // In multi-module projects, only count files with the module's prefix.
+      // In single-module projects, any file in the directory counts (backward compat).
+      const allFiles = listFiles(dir);
+      const files = isMultiModule
+        ? allFiles.filter(f => (f.split('/').pop() ?? f).startsWith(`${moduleId}-`))
+        : allFiles;
       progress[key] = { done: files.length > 0, skipped: false };
     }
   }
@@ -250,6 +256,7 @@ function buildModuleStatusItem(
   locale: string,
   guardActiveChange: string | null,
   guardModule: string | null,
+  isMultiModule: boolean = false,
 ): ModuleStatusItem {
   if (mod.lifecycle === 'launched') {
     let activeChange: ModuleStatusItem['active_change'] = null;
@@ -310,7 +317,7 @@ function buildModuleStatusItem(
   }
 
   // initial lifecycle
-  const { progress, currentPhase } = deriveModulePhaseProgress(root, mod.id, scenarios, mod.skip_phases ?? []);
+  const { progress, currentPhase } = deriveModulePhaseProgress(root, mod.id, scenarios, mod.skip_phases ?? [], isMultiModule);
   const currentPhaseLabel = currentPhase ? t(locale as Parameters<typeof t>[0], currentPhase) : null;
 
   let suggestion: string;
@@ -349,7 +356,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
 
   const projectYamlPath = join(root, 'logos', 'logos-project.yaml');
   let rawModules: ModuleInfo[] | undefined;
-  let scenarios: Array<{ id: string }> = [];
+  let scenarios: Array<{ id: string; module?: string }> = [];
   // Global skip: only skip a phase if ALL initial modules declare it in skip_phases
   // (intersection, not union — one module needing a phase is enough to keep it)
   const globalSkipPhaseKeys = new Set<string>();
@@ -380,7 +387,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
         }
       }
       if (Array.isArray(yaml?.scenarios)) {
-        scenarios = yaml.scenarios as Array<{ id: string }>;
+        scenarios = yaml.scenarios as Array<{ id: string; module?: string }>;
       }
     } catch { /* ignore */ }
   }
@@ -447,12 +454,15 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
   // Build module status items
   let modules: ModuleStatusItem[] | undefined;
   if (rawModules !== undefined) {
+    const isMultiModule = rawModules.length > 1;
     const filtered = filterModuleId
       ? rawModules.filter(m => m.id === filterModuleId)
       : rawModules;
-    modules = filtered.map(m =>
-      buildModuleStatusItem(root, m, scenarios, locale, activeChange, guardModule),
-    );
+    modules = filtered.map(m => {
+      // Only pass scenarios that belong to this module (module field defaults to 'core')
+      const moduleScenarios = scenarios.filter(s => (s.module ?? 'core') === m.id);
+      return buildModuleStatusItem(root, m, moduleScenarios, locale, activeChange, guardModule, isMultiModule);
+    });
   }
 
   let suggestion: string;
