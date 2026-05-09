@@ -94,15 +94,16 @@ Automatically break down the task checklist based on the change type and impact 
 # Implementation Tasks
 
 ## Phase 1: Document Changes
-- [ ] Output delta file to `deltas/prd/` — Update acceptance criteria for S0x in requirement documents
-- [ ] Output delta file to `deltas/prd/` — Add/modify scenario in the scenario overview table
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Update acceptance criteria for S0x in requirement documents
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Add/modify scenario in the scenario overview table
 
 ## Phase 2: Design Changes
-- [ ] Output delta file to `deltas/prd/` — Update interaction design for S0x in functional specs
-- [ ] Output delta file to `deltas/prd/` — Update prototypes
+- [ ] Output delta file to `deltas/prd/2-product-design/1-feature-specs/` — Update interaction design for S0x in functional specs
+- [ ] Output delta file to `deltas/prd/2-product-design/2-page-design/` — Update prototypes
 
 ## Phase 3: Technical Changes
-- [ ] Output delta file to `deltas/prd/` — Update sequence diagram for S0x
+- [ ] Output delta file to `deltas/prd/3-technical-plan/1-architecture/` — Update technical architecture
+- [ ] Output delta file to `deltas/prd/3-technical-plan/2-scenario-implementation/` — Update sequence diagram for S0x
 - [ ] Output delta file to `deltas/api/` — Update API YAML
 - [ ] **Validate API YAML** — all files in `logos/resources/api/` must be valid YAML and valid OpenAPI 3.x (all `description`/`summary` values containing `:` or special chars must be double-quoted)
 - [ ] Output delta file to `deltas/database/` — Update DB DDL
@@ -124,6 +125,16 @@ Delta files are written to the corresponding subdirectory under `logos/changes/<
 | `logos/resources/api/` | `deltas/api/` |
 | `logos/resources/database/` | `deltas/database/` |
 | `logos/resources/scenario/` | `deltas/scenario/` |
+
+`prd/` subdirectories map as follows:
+
+| Target main document subdirectory | Delta subdirectory |
+|---|---|
+| `logos/resources/prd/1-product-requirements/` | `deltas/prd/1-product-requirements/` |
+| `logos/resources/prd/2-product-design/1-feature-specs/` | `deltas/prd/2-product-design/1-feature-specs/` |
+| `logos/resources/prd/2-product-design/2-page-design/` | `deltas/prd/2-product-design/2-page-design/` |
+| `logos/resources/prd/3-technical-plan/1-architecture/` | `deltas/prd/3-technical-plan/1-architecture/` |
+| `logos/resources/prd/3-technical-plan/2-scenario-implementation/` | `deltas/prd/3-technical-plan/2-scenario-implementation/` |
 
 Code implementation (`src/`, `test/`) does **not** produce delta files — modify source files directly.
 

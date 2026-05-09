@@ -91,15 +91,16 @@
 # 实现任务
 
 ## Phase 1: 文档变更
-- [ ] 产出 delta 文件到 `deltas/prd/` — 更新需求文档中 S0x 的验收条件
-- [ ] 产出 delta 文件到 `deltas/prd/` — 在场景总览表中新增/修改场景
+- [ ] 产出 delta 文件到 `deltas/prd/1-product-requirements/` — 更新需求文档中 S0x 的验收条件
+- [ ] 产出 delta 文件到 `deltas/prd/1-product-requirements/` — 在场景总览表中新增/修改场景
 
 ## Phase 2: 设计变更
-- [ ] 产出 delta 文件到 `deltas/prd/` — 更新功能规格中 S0x 的交互设计
-- [ ] 产出 delta 文件到 `deltas/prd/` — 更新原型
+- [ ] 产出 delta 文件到 `deltas/prd/2-product-design/1-feature-specs/` — 更新功能规格中 S0x 的交互设计
+- [ ] 产出 delta 文件到 `deltas/prd/2-product-design/2-page-design/` — 更新原型
 
 ## Phase 3: 技术变更
-- [ ] 产出 delta 文件到 `deltas/prd/` — 更新 S0x 的时序图
+- [ ] 产出 delta 文件到 `deltas/prd/3-technical-plan/1-architecture/` — 更新技术架构
+- [ ] 产出 delta 文件到 `deltas/prd/3-technical-plan/2-scenario-implementation/` — 更新 S0x 的时序图
 - [ ] 产出 delta 文件到 `deltas/api/` — 更新 API YAML
 - [ ] **验证 API YAML** — `logos/resources/api/` 下所有文件必须为有效 YAML 且符合 OpenAPI 3.x 规范（所有包含 `:` 或特殊字符的 `description`/`summary` 值必须用双引号包裹）
 - [ ] 产出 delta 文件到 `deltas/database/` — 更新 DB DDL
@@ -121,6 +122,16 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 | `logos/resources/api/` | `deltas/api/` |
 | `logos/resources/database/` | `deltas/database/` |
 | `logos/resources/scenario/` | `deltas/scenario/` |
+
+`prd/` 下按子目录进一步对应：
+
+| 目标主文档子目录 | Delta 子目录 |
+|---|---|
+| `logos/resources/prd/1-product-requirements/` | `deltas/prd/1-product-requirements/` |
+| `logos/resources/prd/2-product-design/1-feature-specs/` | `deltas/prd/2-product-design/1-feature-specs/` |
+| `logos/resources/prd/2-product-design/2-page-design/` | `deltas/prd/2-product-design/2-page-design/` |
+| `logos/resources/prd/3-technical-plan/1-architecture/` | `deltas/prd/3-technical-plan/1-architecture/` |
+| `logos/resources/prd/3-technical-plan/2-scenario-implementation/` | `deltas/prd/3-technical-plan/2-scenario-implementation/` |
 
 代码实现（`src/`、`test/`）**不产出 delta**，直接修改源文件。
 

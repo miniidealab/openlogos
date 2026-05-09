@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.14] - 2026-05-10
+
+### Changed
+
+- **change-writer Skill 补充 prd/ 子目录的 delta 映射说明** — tasks.md 模板中各文档类任务标注精确的 delta 子目录（`deltas/prd/1-product-requirements/`、`deltas/prd/2-product-design/1-feature-specs/`、`deltas/prd/3-technical-plan/1-architecture/` 等）；Step 6 目录映射表新增 prd/ 子目录展开说明，消除 AI 将架构文档等放错目录的歧义。
+
 ## [0.9.13] - 2026-05-09
 
 ### Fixed
