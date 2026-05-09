@@ -78,13 +78,22 @@ Delta files use markers to indicate what should change in the target document:
 [This section should be deleted from the main document]
 ```
 
+## Empty delta behavior
+
+If `deltas/` is empty or contains no recognized files, the command exits cleanly with:
+
+```
+✓ No delta files in logos/changes/<slug>/deltas/ — nothing to merge.
+```
+
+This is not an error. An empty delta means the change proposal has no document updates to apply — the command exits with code 0. This is intentional: code-only changes (refactors, bug fixes that don't touch specs) are valid proposals that don't require a merge step.
+
 ## Errors
 
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `Missing change proposal name` | No slug provided | Provide a slug: `openlogos merge fix-redirect-bug` |
 | `Change proposal 'X' not found` | No directory at `logos/changes/<slug>/` | Check spelling, or create with `openlogos change` first |
-| `No delta files found` | `deltas/` is empty or only contains empty subdirectories | Add delta files to `deltas/prd/`, `deltas/api/`, etc. before running merge |
 | `logos/logos.config.json not found` | Not in project root | `cd` to project root |
 
 ## Related commands
