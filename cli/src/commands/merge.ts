@@ -71,9 +71,9 @@ export function merge(slug?: string) {
   const deltas = scanDeltas(deltasDir);
 
   if (deltas.length === 0) {
-    console.error(`Error: No delta files found in logos/changes/${slug}/deltas/.`);
-    console.error('Add delta files before running merge.');
-    process.exit(1);
+    const locale = readLocale(root);
+    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+    return;
   }
 
   const locale = readLocale(root);

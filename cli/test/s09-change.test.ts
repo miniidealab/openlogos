@@ -265,14 +265,15 @@ describe('S09 Scenario Tests — merge command', () => {
     expect(allErrors).toContain('not found');
   });
 
-  it('ST-S09-07: error when no delta files', () => {
+  it('ST-S09-07: no delta files → ok, nothing to merge', () => {
     const changePath = join(root, 'logos', 'changes', 'empty');
     mkdirSync(join(changePath, 'deltas', 'prd'), { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Empty');
 
-    expect(() => merge('empty')).toThrow('process.exit(1)');
-    const allErrors = con.errors.join('\n');
-    expect(allErrors).toContain('No delta files found');
+    merge('empty');
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('nothing to merge');
     expect(existsSync(join(changePath, 'MERGE_PROMPT.md'))).toBe(false);
   });
 });

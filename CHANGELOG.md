@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-05-09
+
+### Changed
+
+- **`openlogos merge` delta 为空时不再报错** — `deltas/` 目录为空时，命令直接输出 `✓ nothing to merge` 并正常退出（exit 0），不再以错误退出。空 delta 是合法状态，语义等同于 HTTP 204。
+
 ## [0.9.9] - 2026-05-09
 
 ### Changed
