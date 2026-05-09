@@ -262,14 +262,14 @@ describe('S01 Unit Tests — createAgentsMd Language Policy', () => {
 
   it('UT-S01-31: initial lifecycle shows soft Change Management in AGENTS.md', () => {
     const output = createAgentsMd('en', 'cursor', 'agents', false);
-    expect(output).toContain('Initial Development');
+    expect(output).toContain('Auto-detect');
     expect(output).toContain('openlogos launch');
     expect(output).not.toContain('Enforced');
   });
 
   it('UT-S01-32: zh initial lifecycle shows soft Change Management', () => {
     const output = createAgentsMd('zh', 'cursor', 'agents', false);
-    expect(output).toContain('初始开发期');
+    expect(output).toContain('自动判断');
     expect(output).toContain('openlogos launch');
     expect(output).not.toContain('必须遵守');
   });
@@ -280,7 +280,7 @@ describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
     const content = generatePolicyMdc('en', false);
     expect(content).toContain('alwaysApply: true');
     expect(content).toContain('Language Policy (Highest Priority)');
-    expect(content).toContain('Initial Development');
+    expect(content).toContain('Auto-detect');
     expect(content).toContain('openlogos launch');
     expect(content).not.toContain('stop coding immediately');
   });
@@ -295,7 +295,7 @@ describe('S01 Unit Tests — generatePolicyMdc lifecycle', () => {
   it('UT-S01-35: zh initial lifecycle policy', () => {
     const content = generatePolicyMdc('zh', false);
     expect(content).toContain('语言策略（最高优先级）');
-    expect(content).toContain('初始开发期');
+    expect(content).toContain('自动判断');
     expect(content).not.toContain('立即停止编码');
   });
 
@@ -402,7 +402,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const content = readFileSync(policyPath, 'utf-8');
       expect(content).toContain('alwaysApply: true');
       expect(content).toContain('Language Policy (Highest Priority)');
-      expect(content).toContain('Initial Development');
+      expect(content).toContain('Auto-detect');
     } finally {
       cleanup();
     }
@@ -428,7 +428,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const content = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
       expect(content).toContain('语言策略（最高优先级）');
       expect(content).toContain('必须使用中文');
-      expect(content).toContain('初始开发期');
+      expect(content).toContain('自动判断');
     } finally {
       cleanup();
     }

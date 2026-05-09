@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-05-09
+
+### Changed
+
+- **变更管理规则改为自动判断** — `createAgentsMd` 和 `generatePolicyMdc` 生成的初始开发期文案，从模糊的"按 Phase 推进即可"改为明确的判断依据：检查 `logos-project.yaml` 中是否存在 `lifecycle: launched` 的模块，存在则必须提案，否则不需要。AI 可自主判断，无需依赖人工提示。
+
 ## [0.9.10] - 2026-05-09
 
 ### Changed

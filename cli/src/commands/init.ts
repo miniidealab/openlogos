@@ -573,22 +573,22 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 - Before modifying code: verify the guard file exists and changes are within the proposal scope
 - Only exception: pure typo fixes, \`.gitignore\`/\`README.md\` and other non-methodology files`)
     : (locale === 'zh'
-      ? `## 变更管理（当前：初始开发期）
+      ? `## 变更管理（自动判断）
 
-本项目处于 **初始开发阶段**（\`logos/logos.config.json\` → \`lifecycle: "initial"\`）。
+**判断依据**：检查 \`logos-project.yaml\` 中是否存在 \`lifecycle: launched\` 的模块。
+- **存在任何 launched 模块** → 必须先创建变更提案，再修改任何代码或文档
+- **不存在任何 launched 模块** → 按 Phase 推进即可，无需变更提案
 
-在初始开发期：
-- 按照 Phase 1 → 2 → 3 的顺序逐步**创建**文档，无需变更提案
-- 使用 \`openlogos status\` 查看当前进度和下一步建议
-- 首轮开发完成后，运行 \`openlogos launch\` 激活变更管理`
-      : `## Change Management (Current: Initial Development)
+当前项目处于初始开发阶段，按照 Phase 1 → 2 → 3 的顺序逐步创建文档。
+首轮开发完成后，运行 \`openlogos launch\` 激活变更管理。`
+      : `## Change Management (Auto-detect)
 
-This project is in the **initial development phase** (\`logos/logos.config.json\` → \`lifecycle: "initial"\`).
+**How to determine**: Check \`logos-project.yaml\` for any module with \`lifecycle: launched\`.
+- **Any launched module exists** → you MUST create a change proposal before modifying any code or documents
+- **No launched modules** → follow the Phase progression, no change proposals needed
 
-During initial development:
-- Follow the Phase 1 → 2 → 3 progression to CREATE documents — no change proposals needed
-- Use \`openlogos status\` to check progress and get next-step suggestions
-- After the first full cycle is complete, run \`openlogos launch\` to activate change management`);
+This project is currently in initial development — follow the Phase 1 → 2 → 3 progression to create documents.
+After the first full cycle is complete, run \`openlogos launch\` to activate change management.`);
 
   return `---
 description: "OpenLogos — Project Policy: Language & Change Management (always active)"
@@ -1051,14 +1051,20 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 **Violating this rule will break the project's change traceability.**
 `)
     : (locale === 'zh'
-      ? `## 变更管理（当前：初始开发期）
+      ? `## 变更管理（自动判断）
 
-本项目正处于首轮开发阶段，按 Phase 推进即可，无需变更提案。
+**判断依据**：检查 \`logos-project.yaml\` 中是否存在 \`lifecycle: launched\` 的模块。
+- **存在任何 launched 模块** → 必须先创建变更提案（\`logos/changes/\`），再修改任何代码或文档
+- **不存在任何 launched 模块** → 按 Phase 推进即可，无需变更提案
+
 首轮开发完成后运行 \`openlogos launch\` 激活变更管理。
 `
-      : `## Change Management (Current: Initial Development)
+      : `## Change Management (Auto-detect)
 
-This project is in its first development cycle — follow the Phase progression, no change proposals needed.
+**How to determine**: Check \`logos-project.yaml\` for any module with \`lifecycle: launched\`.
+- **Any launched module exists** → you MUST create a change proposal (\`logos/changes/\`) before modifying any code or documents
+- **No launched modules** → follow the Phase progression, no change proposals needed
+
 After the first cycle is complete, run \`openlogos launch\` to activate change management.
 `);
 
