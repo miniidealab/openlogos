@@ -2,6 +2,14 @@ import { existsSync, mkdirSync, renameSync, readFileSync, unlinkSync } from 'nod
 import { join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
 
+function archiveDirName(slug: string): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+  return `${date}-${time}-${slug}`;
+}
+
 export function archive(slug?: string) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
@@ -29,10 +37,11 @@ export function archive(slug?: string) {
   }
 
   const archiveDir = join(root, 'logos', 'changes', 'archive');
-  const archivePath = join(archiveDir, slug);
+  const archiveDirname = archiveDirName(slug);
+  const archivePath = join(archiveDir, archiveDirname);
 
   if (existsSync(archivePath)) {
-    console.error(`Error: Archive '${slug}' already exists in logos/changes/archive/.`);
+    console.error(`Error: Archive '${archiveDirname}' already exists in logos/changes/archive/.`);
     process.exit(1);
   }
 
@@ -53,5 +62,5 @@ export function archive(slug?: string) {
   }
 
   console.log(`\n${t(locale, 'archive.done', { slug })}`);
-  console.log(`${t(locale, 'archive.path', { slug })}\n`);
+  console.log(`${t(locale, 'archive.path', { slug: archiveDirname })}\n`);
 }

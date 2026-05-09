@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { scanDeltas } from '../src/commands/merge.js';
@@ -301,7 +301,7 @@ describe('S09 Scenario Tests — archive command', () => {
     cleanup();
   });
 
-  it('ST-S09-08: archive moves proposal to archive directory and removes guard', () => {
+  it('ST-S09-08: archive moves proposal to timestamped archive directory and removes guard', () => {
     const changePath = join(root, 'logos', 'changes', 'done-feature');
     mkdirSync(changePath, { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Done');
@@ -313,9 +313,14 @@ describe('S09 Scenario Tests — archive command', () => {
     archive('done-feature');
 
     expect(existsSync(changePath)).toBe(false);
-    const archivedPath = join(root, 'logos', 'changes', 'archive', 'done-feature');
-    expect(existsSync(archivedPath)).toBe(true);
-    expect(existsSync(join(archivedPath, 'proposal.md'))).toBe(true);
+
+    // Archive dir name should match YYYYMMDD-HHmm-done-feature pattern
+    const archiveDir = join(root, 'logos', 'changes', 'archive');
+    const entries = readdirSync(archiveDir);
+    const archivedEntry = entries.find(e => e.endsWith('-done-feature'));
+    expect(archivedEntry).toBeDefined();
+    expect(archivedEntry).toMatch(/^\d{8}-\d{4}-done-feature$/);
+    expect(existsSync(join(archiveDir, archivedEntry!, 'proposal.md'))).toBe(true);
     expect(existsSync(guardPath)).toBe(false);
   });
 
@@ -329,6 +334,11 @@ describe('S09 Scenario Tests — archive command', () => {
 
     archive('old-feature');
 
+    // archived dir should have timestamp prefix
+    const archiveDir = join(root, 'logos', 'changes', 'archive');
+    const entries = readdirSync(archiveDir);
+    expect(entries.some(e => e.endsWith('-old-feature'))).toBe(true);
+
     expect(existsSync(guardPath)).toBe(true);
     const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
     expect(guard.activeChange).toBe('other-feature');
@@ -340,11 +350,20 @@ describe('S09 Scenario Tests — archive command', () => {
     expect(allErrors).toContain('not found');
   });
 
-  it('ST-S09-10: error when archive already exists', () => {
+  it('ST-S09-10: error when archive already exists with same timestamp', () => {
     const changePath = join(root, 'logos', 'changes', 'dup');
     mkdirSync(changePath, { recursive: true });
-    const archivePath = join(root, 'logos', 'changes', 'archive', 'dup');
-    mkdirSync(archivePath, { recursive: true });
+
+    // Compute the expected archive dir name the same way archive.ts does
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+    const time = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const expectedDirName = `${date}-${time}-dup`;
+
+    // Pre-create the archive entry with that exact name
+    const archiveDir = join(root, 'logos', 'changes', 'archive');
+    mkdirSync(join(archiveDir, expectedDirName), { recursive: true });
 
     expect(() => archive('dup')).toThrow('process.exit(1)');
     const allErrors = con.errors.join('\n');

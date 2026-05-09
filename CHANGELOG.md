@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-05-09
+
+### Changed
+
+- **`openlogos archive` 归档目录名加时间戳前缀** — 归档后的目录名格式从 `<slug>` 改为 `YYYYMMDD-HHmm-<slug>`（如 `20260509-1430-fix-login-bug`），方便在归档数量多时按时间快速定位历史提案。
+
 ## [0.9.8] - 2026-05-08
 
 ### Fixed
