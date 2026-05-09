@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-05-09
+
+### Changed
+
+- **change-writer Skill 新增 Step 6: 产出 Delta 文件** — 明确 delta 文件的目录映射（`deltas/prd/`、`deltas/api/`、`deltas/database/`、`deltas/scenario/`）、文件命名规范（与目标主文档同名）、文件格式（ADDED/MODIFIED/REMOVED 标记）及行为约束（禁止直接修改主文档）。同步更新 tasks.md 模板，文档类任务标注产出 delta 文件的目标子目录。
+
 ## [0.9.11] - 2026-05-09
 
 ### Changed

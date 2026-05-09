@@ -91,23 +91,67 @@
 # 实现任务
 
 ## Phase 1: 文档变更
-- [ ] 更新需求文档中 S0x 的验收条件
-- [ ] 在场景总览表中新增/修改场景
+- [ ] 产出 delta 文件到 `deltas/prd/` — 更新需求文档中 S0x 的验收条件
+- [ ] 产出 delta 文件到 `deltas/prd/` — 在场景总览表中新增/修改场景
 
 ## Phase 2: 设计变更
-- [ ] 更新功能规格中 S0x 的交互设计
-- [ ] 更新原型
+- [ ] 产出 delta 文件到 `deltas/prd/` — 更新功能规格中 S0x 的交互设计
+- [ ] 产出 delta 文件到 `deltas/prd/` — 更新原型
 
 ## Phase 3: 技术变更
-- [ ] 更新 S0x 的时序图
-- [ ] 更新 API YAML
+- [ ] 产出 delta 文件到 `deltas/prd/` — 更新 S0x 的时序图
+- [ ] 产出 delta 文件到 `deltas/api/` — 更新 API YAML
 - [ ] **验证 API YAML** — `logos/resources/api/` 下所有文件必须为有效 YAML 且符合 OpenAPI 3.x 规范（所有包含 `:` 或特殊字符的 `description`/`summary` 值必须用双引号包裹）
-- [ ] 更新 DB DDL
-- [ ] 更新编排测试用例
-- [ ] 实现代码变更
+- [ ] 产出 delta 文件到 `deltas/database/` — 更新 DB DDL
+- [ ] 产出 delta 文件到 `deltas/scenario/` — 更新编排测试用例
+- [ ] 实现代码变更（直接修改 `src/`，无需 delta）
 ```
 
-### Step 6: 引导后续操作（链式驱动）
+### Step 6: 产出 Delta 文件
+
+**触发时机**：tasks.md 填写完成、用户确认提案后，按任务清单逐项产出 delta 文件。
+
+#### 目录映射
+
+Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logos/resources/` 一一对应：
+
+| 目标主文档目录 | Delta 子目录 |
+|---|---|
+| `logos/resources/prd/` | `deltas/prd/` |
+| `logos/resources/api/` | `deltas/api/` |
+| `logos/resources/database/` | `deltas/database/` |
+| `logos/resources/scenario/` | `deltas/scenario/` |
+
+代码实现（`src/`、`test/`）**不产出 delta**，直接修改源文件。
+
+#### 文件命名
+
+与目标主文档**同名**（含子目录层级）。例如：
+- 目标：`logos/resources/api/core-api.yaml` → delta：`deltas/api/core-api.yaml`
+- 目标：`logos/resources/prd/1-product-requirements/core-01-requirements.md` → delta：`deltas/prd/1-product-requirements/core-01-requirements.md`
+
+#### 文件格式
+
+每个 delta 文件使用 `ADDED / MODIFIED / REMOVED` 标记，每个标记块对应主文档中的一个章节：
+
+```markdown
+## ADDED — [新增章节标题]
+[新增的完整内容]
+
+## MODIFIED — [修改章节标题]
+[修改后的完整内容，merge 时替换主文档中同名章节]
+
+## REMOVED — [删除章节标题]
+[说明删除原因，merge 时删除主文档中同名章节]
+```
+
+#### 行为规范
+
+- 每完成一个 delta 文件，立即将 `tasks.md` 中对应条目从 `[ ]` 更新为 `[x]`
+- **禁止直接修改 `logos/resources/` 下的主文档**——所有规格变更必须通过 delta 文件，由 `openlogos merge` 统一合并
+- 全部 delta 产出完成后，提醒用户明确授权运行 `openlogos merge <slug>`
+
+### Step 7: 引导后续操作（链式驱动）
 
 提供一条可直接执行的提示词，让用户一句话启动全部任务的链式执行：
 

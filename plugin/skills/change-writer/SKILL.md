@@ -94,23 +94,67 @@ Automatically break down the task checklist based on the change type and impact 
 # Implementation Tasks
 
 ## Phase 1: Document Changes
-- [ ] Update acceptance criteria for S0x in requirement documents
-- [ ] Add/modify scenario in the scenario overview table
+- [ ] Output delta file to `deltas/prd/` — Update acceptance criteria for S0x in requirement documents
+- [ ] Output delta file to `deltas/prd/` — Add/modify scenario in the scenario overview table
 
 ## Phase 2: Design Changes
-- [ ] Update interaction design for S0x in functional specs
-- [ ] Update prototypes
+- [ ] Output delta file to `deltas/prd/` — Update interaction design for S0x in functional specs
+- [ ] Output delta file to `deltas/prd/` — Update prototypes
 
 ## Phase 3: Technical Changes
-- [ ] Update sequence diagram for S0x
-- [ ] Update API YAML
+- [ ] Output delta file to `deltas/prd/` — Update sequence diagram for S0x
+- [ ] Output delta file to `deltas/api/` — Update API YAML
 - [ ] **Validate API YAML** — all files in `logos/resources/api/` must be valid YAML and valid OpenAPI 3.x (all `description`/`summary` values containing `:` or special chars must be double-quoted)
-- [ ] Update DB DDL
-- [ ] Update orchestration test cases
-- [ ] Implement code changes
+- [ ] Output delta file to `deltas/database/` — Update DB DDL
+- [ ] Output delta file to `deltas/scenario/` — Update orchestration test cases
+- [ ] Implement code changes (modify `src/` directly — no delta needed)
 ```
 
-### Step 6: Guide Follow-up Actions (Chain-driven)
+### Step 6: Output Delta Files
+
+**When to trigger**: After tasks.md is filled in and the user has confirmed the proposal, produce delta files item by item per the task checklist.
+
+#### Directory Mapping
+
+Delta files are written to the corresponding subdirectory under `logos/changes/<slug>/deltas/`, mirroring the `logos/resources/` structure:
+
+| Target main document directory | Delta subdirectory |
+|---|---|
+| `logos/resources/prd/` | `deltas/prd/` |
+| `logos/resources/api/` | `deltas/api/` |
+| `logos/resources/database/` | `deltas/database/` |
+| `logos/resources/scenario/` | `deltas/scenario/` |
+
+Code implementation (`src/`, `test/`) does **not** produce delta files — modify source files directly.
+
+#### File Naming
+
+Use the **same name** as the target main document (including subdirectory levels). For example:
+- Target: `logos/resources/api/core-api.yaml` → delta: `deltas/api/core-api.yaml`
+- Target: `logos/resources/prd/1-product-requirements/core-01-requirements.md` → delta: `deltas/prd/1-product-requirements/core-01-requirements.md`
+
+#### File Format
+
+Each delta file uses `ADDED / MODIFIED / REMOVED` markers, with each block corresponding to one section in the main document:
+
+```markdown
+## ADDED — [New section title]
+[Complete content to add]
+
+## MODIFIED — [Modified section title]
+[Complete updated content — replaces the same-named section in the main document during merge]
+
+## REMOVED — [Deleted section title]
+[Explain the reason for deletion — the same-named section will be removed from the main document during merge]
+```
+
+#### Behavioral Rules
+
+- After completing each delta file, immediately update the corresponding item in `tasks.md` from `[ ]` to `[x]`
+- **Do NOT directly modify documents under `logos/resources/`** — all spec changes must go through delta files and be merged via `openlogos merge`
+- After all deltas are produced, remind the user to explicitly authorize running `openlogos merge <slug>`
+
+### Step 7: Guide Follow-up Actions (Chain-driven)
 
 Provide a ready-to-use prompt that allows the user to kick off chain execution of all tasks with a single command:
 
