@@ -3,7 +3,7 @@ title: "openlogos archive"
 description: Move a completed change proposal to the archive directory.
 ---
 
-Move a finished change proposal from `logos/changes/<slug>/` to `logos/changes/archive/<slug>/`, and clean up the guard file if it matches.
+Move a finished change proposal from `logos/changes/<slug>/` to `logos/changes/archive/YYYYMMDD-HHmm-<slug>/`, and clean up the guard file if it matches.
 
 ## Synopsis
 
@@ -19,9 +19,12 @@ openlogos archive <slug>
 
 ## What it does
 
-1. Moves `logos/changes/<slug>/` → `logos/changes/archive/<slug>/`
-2. If `logos/.openlogos-guard` exists and its `activeChange` matches the slug, deletes the guard file
-3. The archived proposal retains all files (proposal.md, tasks.md, deltas/, MERGE_PROMPT.md)
+1. Generates a timestamped directory name: `YYYYMMDD-HHmm-<slug>` (e.g., `20260509-1430-fix-redirect-bug`)
+2. Moves `logos/changes/<slug>/` → `logos/changes/archive/YYYYMMDD-HHmm-<slug>/`
+3. If `logos/.openlogos-guard` exists and its `activeChange` matches the slug, deletes the guard file
+4. The archived proposal retains all files (proposal.md, tasks.md, deltas/, MERGE_PROMPT.md)
+
+The timestamp prefix makes it easy to find a specific proposal when the archive grows large — entries sort chronologically by default.
 
 ## Example output
 
@@ -29,7 +32,7 @@ openlogos archive <slug>
   ✓ logos/.openlogos-guard removed
 
 ✓ Change proposal 'fix-redirect-bug' archived.
-  logos/changes/fix-redirect-bug/ → logos/changes/archive/fix-redirect-bug/
+  logos/changes/fix-redirect-bug/ → logos/changes/archive/20260509-1430-fix-redirect-bug/
 ```
 
 ## Archive structure
@@ -38,7 +41,7 @@ After archiving, the full proposal history is preserved:
 
 ```
 logos/changes/archive/
-└── fix-redirect-bug/
+└── 20260509-1430-fix-redirect-bug/
     ├── proposal.md
     ├── tasks.md
     ├── MERGE_PROMPT.md
@@ -49,7 +52,7 @@ logos/changes/archive/
         └── scenario/
 ```
 
-This provides a complete audit trail of all changes made to the project.
+This provides a complete audit trail of all changes made to the project, sorted chronologically.
 
 ## Errors
 
