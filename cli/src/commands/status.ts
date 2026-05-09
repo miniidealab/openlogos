@@ -5,7 +5,7 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { parse as parseYaml } from 'yaml';
 
-export type ProposalStep = 'writing' | 'implementing' | 'in-progress' | 'ready-to-merge';
+export type ProposalStep = 'writing' | 'implementing' | 'in-progress' | 'ready-to-merge' | 'coding';
 
 interface PhaseStatus {
   key: string;
@@ -148,6 +148,9 @@ function allTasksChecked(content: string): boolean {
 }
 
 export function detectProposalStep(proposalDir: string): ProposalStep {
+  if (existsSync(join(proposalDir, 'MERGED'))) {
+    return 'coding';
+  }
   const proposalContent = existsSync(join(proposalDir, 'proposal.md'))
     ? readFileSync(join(proposalDir, 'proposal.md'), 'utf-8') : '';
   const tasksContent = existsSync(join(proposalDir, 'tasks.md'))

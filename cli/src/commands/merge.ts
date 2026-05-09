@@ -72,6 +72,7 @@ export function merge(slug?: string) {
 
   if (deltas.length === 0) {
     const locale = readLocale(root);
+    writeFileSync(join(changePath, 'MERGED'), '');
     console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
     return;
   }
