@@ -147,6 +147,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.deltaCount': '  - Delta files: {count}',
     'merge.aiHint': 'Tell AI: "Read logos/changes/{slug}/MERGE_PROMPT.md and execute merge"',
     'merge.noDelta': 'No delta files in logos/changes/{slug}/deltas/ — nothing to merge.',
+    'merge.alreadyMerged': 'Specs already merged for \'{slug}\' (SPEC_MERGED exists) — nothing to do.',
     'merge.archiveHint': 'Next, ask AI to execute logos/changes/{slug}/MERGE_PROMPT.md and write SPEC_MERGED after specs are actually merged. Then implement code, run `openlogos verify`, and explicitly request `openlogos archive {slug}` after verification passes.',
 
     // launch
@@ -323,6 +324,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.deltaCount': '  - Delta 文件：{count} 个',
     'merge.aiHint': '对 AI 说：「读取 logos/changes/{slug}/MERGE_PROMPT.md 并执行合并」',
     'merge.noDelta': 'logos/changes/{slug}/deltas/ 中没有 delta 文件，无需合并。',
+    'merge.alreadyMerged': '提案 \'{slug}\' 的规格已合并（SPEC_MERGED 存在），无需重复操作。',
     'merge.archiveHint': '下一步让 AI 执行 logos/changes/{slug}/MERGE_PROMPT.md，真正合并主规格后写入 SPEC_MERGED。之后再实现代码、运行 `openlogos verify`，验收通过后明确授权执行 `openlogos archive {slug}`。',
 
     // launch

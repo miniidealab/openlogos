@@ -73,17 +73,21 @@ export function merge(slug?: string) {
     process.exit(1);
   }
 
+  const locale = readLocale(root);
+
+  if (existsSync(join(changePath, 'SPEC_MERGED'))) {
+    console.log(`\n✓ ${t(locale, 'merge.alreadyMerged', { slug })}`);
+    return;
+  }
+
   const deltasDir = join(changePath, 'deltas');
   const deltas = scanDeltas(deltasDir);
 
   if (deltas.length === 0) {
-    const locale = readLocale(root);
     writeFileSync(join(changePath, 'SPEC_MERGED'), '');
     console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
     return;
   }
-
-  const locale = readLocale(root);
 
   const proposalPath = join(changePath, 'proposal.md');
   const proposalContent = existsSync(proposalPath)

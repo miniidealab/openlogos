@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.19] - 2026-05-13
+
+### Fixed
+
+- **修复 `openlogos merge` 幂等性问题** — 提案已存在 `SPEC_MERGED` 标记时，重复执行 `openlogos merge` 现在会提示"规格已合并，无需重复操作"并直接退出，不再覆盖 `MERGE_PROMPT.md`。
+
 ## [0.9.18] - 2026-05-13
 
 ### Changed
