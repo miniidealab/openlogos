@@ -83,29 +83,51 @@ Generate using the following template and write to `logos/changes/<slug>/proposa
 
 ### Step 5: Generate tasks.md
 
-Automatically break down the task checklist based on the change type and impact scope. Only list the phases that need updating:
+Automatically break down the task checklist using structured section format based on the change type and impact scope. See `spec/tasks-spec.md` for the full format specification.
+
+**Format rules**:
+- `## [delta] <description>` section: only list delta document output tasks, each item corresponds to one delta file
+- `## [code] <description>` section: only list code implementation tasks that directly modify source files — no delta output
+- Both sections are optional: code-only proposals have only `[code]`, spec-only proposals have only `[delta]`
+- **Never mix**: delta tasks must not appear in `[code]` section; code tasks must not appear in `[delta]` section
+
+**Requirement-level / Design-level change template** (delta + code):
 
 ```markdown
 # Implementation Tasks
 
-## Phase 1: Document Changes
-- [ ] Update acceptance criteria for S0x in requirement documents
-- [ ] Add/modify scenario in the scenario overview table
-
-## Phase 2: Design Changes
-- [ ] Update interaction design for S0x in functional specs
-- [ ] Update prototypes
-
-## Phase 3: Technical Changes
-- [ ] Update sequence diagram for S0x
-- [ ] Update API YAML
+## [delta] Spec Changes
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Update acceptance criteria for S0x
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Add/modify scenario in overview table
+- [ ] Output delta file to `deltas/prd/2-product-design/1-feature-specs/` — Update interaction design for S0x
+- [ ] Output delta file to `deltas/prd/2-product-design/2-page-design/` — Update prototypes
+- [ ] Output delta file to `deltas/prd/3-technical-plan/1-architecture/` — Update technical architecture
+- [ ] Output delta file to `deltas/prd/3-technical-plan/2-scenario-implementation/` — Update sequence diagram for S0x
+- [ ] Output delta file to `deltas/api/` — Update API YAML
 - [ ] **Validate API YAML** — all files in `logos/resources/api/` must be valid YAML and valid OpenAPI 3.x (all `description`/`summary` values containing `:` or special chars must be double-quoted)
-- [ ] Update DB DDL
-- [ ] Update orchestration test cases
-- [ ] Implement code changes
+- [ ] Output delta file to `deltas/database/` — Update DB DDL
+- [ ] Output delta file to `deltas/scenario/` — Update orchestration test cases
+
+## [code] Code Implementation
+- [ ] Implement business logic in src/xxx
+- [ ] Write corresponding tests
 ```
 
-### Step 6: Guide Follow-up Actions (Chain-driven)
+**Code-only fix template** (no delta):
+
+```markdown
+# Implementation Tasks
+
+## [code] Code Implementation
+- [ ] Fix the issue in src/xxx
+- [ ] Update corresponding tests
+```
+
+### Step 6: Output Delta Files
+
+**When to trigger**: After tasks.md is filled in and the user has confirmed the proposal, produce delta files item by item per the `[delta]` section task checklist.
+
+**Important**: Only execute tasks in the `[delta]` section. Tasks in the `[code]` section are executed after spec merge (SPEC_MERGED).
 
 When producing delta files, write them under `logos/changes/<slug>/deltas/` with paths that mirror `logos/resources/`:
 

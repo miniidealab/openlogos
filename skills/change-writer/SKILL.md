@@ -83,34 +83,53 @@
 
 ### Step 5: 生成 tasks.md
 
-根据变更类型和影响范围，自动拆解任务清单。只列出需要更新的阶段：
+根据变更类型和影响范围，使用结构化 section 格式生成任务清单。完整格式规范见 `spec/tasks-spec.md`。
 
 > **禁止在 tasks.md 中写入 verify / 验收 / 人工验证类条目**——这些属于 verify 步骤，不属于实现任务。`openlogos verify` 是独立的 CLI 操作节点，由面板的 verify 步骤触发；tasks.md 只追踪实现任务。
+
+**格式规则**：
+- `## [delta] <描述>` section：只列 delta 文档产出任务，每条对应一个 delta 文件
+- `## [code] <描述>` section：只列代码实现任务，直接修改源文件，不产出 delta
+- 两个 section 均为可选：纯代码提案只有 `[code]`，纯规格提案只有 `[delta]`
+- **严禁混用**：delta 任务不得写入 `[code]` section，代码任务不得写入 `[delta]` section
+
+**需求级 / 设计级变更模板**（有 delta + 有代码）：
 
 ```markdown
 # 实现任务
 
-## Phase 1: 文档变更
+## [delta] 规格变更
 - [ ] 产出 delta 文件到 `deltas/prd/1-product-requirements/` — 更新需求文档中 S0x 的验收条件
 - [ ] 产出 delta 文件到 `deltas/prd/1-product-requirements/` — 在场景总览表中新增/修改场景
-
-## Phase 2: 设计变更
 - [ ] 产出 delta 文件到 `deltas/prd/2-product-design/1-feature-specs/` — 更新功能规格中 S0x 的交互设计
 - [ ] 产出 delta 文件到 `deltas/prd/2-product-design/2-page-design/` — 更新原型
-
-## Phase 3: 技术变更
 - [ ] 产出 delta 文件到 `deltas/prd/3-technical-plan/1-architecture/` — 更新技术架构
 - [ ] 产出 delta 文件到 `deltas/prd/3-technical-plan/2-scenario-implementation/` — 更新 S0x 的时序图
 - [ ] 产出 delta 文件到 `deltas/api/` — 更新 API YAML
 - [ ] **验证 API YAML** — `logos/resources/api/` 下所有文件必须为有效 YAML 且符合 OpenAPI 3.x 规范（所有包含 `:` 或特殊字符的 `description`/`summary` 值必须用双引号包裹）
 - [ ] 产出 delta 文件到 `deltas/database/` — 更新 DB DDL
 - [ ] 产出 delta 文件到 `deltas/scenario/` — 更新编排测试用例
-- [ ] 实现代码变更（直接修改 `src/`，无需 delta）
+
+## [code] 代码实现
+- [ ] 实现 src/xxx 中的业务逻辑
+- [ ] 编写对应测试
+```
+
+**纯代码修复模板**（无 delta）：
+
+```markdown
+# 实现任务
+
+## [code] 代码实现
+- [ ] 修复 src/xxx 中的问题
+- [ ] 更新对应测试
 ```
 
 ### Step 6: 产出 Delta 文件
 
-**触发时机**：tasks.md 填写完成、用户确认提案后，按任务清单逐项产出 delta 文件。
+**触发时机**：tasks.md 填写完成、用户确认提案后，按 `[delta]` section 的任务清单逐项产出 delta 文件。
+
+**重要**：只执行 `[delta]` section 中的任务。`[code]` section 的任务在规格合并（SPEC_MERGED）后才开始执行。
 
 #### 目录映射
 

@@ -60,25 +60,25 @@ project-root/
 
 ### tasks.md
 
-实现任务清单，按 Phase 组织：
+实现任务清单，使用结构化 section 格式，每个 section 对应提案流程中的一个阶段。完整格式规范见 `spec/tasks-spec.md`。
 
 ```markdown
 # 实现任务
 
-## Phase 1: 文档变更
-- [ ] 更新需求文档的用户故事和验收条件
-- [ ] 更新产品设计文档的功能规格
+## [delta] 规格变更
+- [ ] 产出 delta 文件到 deltas/prd/1-product-requirements/ — 更新需求文档
+- [ ] 产出 delta 文件到 deltas/api/ — 更新 API YAML
 
-## Phase 2: 设计变更
-- [ ] 更新 HTML 原型
-- [ ] 更新场景时序图
-- [ ] 更新 API YAML
-- [ ] 更新 DB DDL
-
-## Phase 3: 编排与代码
-- [ ] 更新 API 编排测试用例
-- [ ] 实现代码变更
+## [code] 代码实现
+- [ ] 实现 src/xxx 中的业务逻辑
+- [ ] 编写对应测试
 ```
+
+Section 标记规则：
+- `## [delta]` — delta 文档产出任务，该 section 全部勾选后可进入 `ready-to-merge`
+- `## [code]` — 代码实现任务，直接修改源文件，不产出 delta
+- 纯代码提案可只有 `[code]` section（无 `[delta]`），CLI 会直接跳过 delta-writing 阶段
+- 旧格式（无 section 标记）向后兼容，降级为全局勾选判断
 
 > **注意**：`openlogos verify` 是独立的 CLI 操作节点，不应写入 tasks.md 作为可勾选任务。verify 由面板的 verify 步骤触发，tasks.md 只追踪实现任务。
 
