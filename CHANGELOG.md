@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.20] - 2026-05-13
+
+### Changed
+
+- **纯代码提案跳过 merge 阶段** — 新格式 tasks.md（含 `## [tag]` section）中，无 `[delta]` section 的提案不再经过 `ready-to-merge` / `merge-generated`，直接按 `[code]` section 勾选状态进入 `coding` 或 `ready-to-verify`。旧格式向后兼容。
+
 ## [0.9.19] - 2026-05-13
 
 ### Fixed

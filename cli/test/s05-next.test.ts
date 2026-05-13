@@ -348,7 +348,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(detectProposalStep(proposalDir)).toBe('delta-writing');
   });
 
-  it('UT-S05-13: no [delta] section (code-only proposal) → ready-to-merge directly', () => {
+  it('UT-S05-13: no [delta] section + [code] not done → coding (skips merge)', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
     writeFileSync(join(proposalDir, 'tasks.md'), [
@@ -358,7 +358,29 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [ ] 修复 src/xxx 中的问题',
     ].join('\n'));
 
-    expect(detectProposalStep(proposalDir)).toBe('ready-to-merge');
+    expect(detectProposalStep(proposalDir)).toBe('coding');
+  });
+
+  it('UT-S05-13b: no [delta] section + [code] all done → ready-to-verify (skips merge)', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 修复 src/xxx 中的问题',
+    ].join('\n'));
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-verify');
+  });
+
+  it('UT-S05-13c: no [delta] section + no [code] section → ready-to-verify (skips merge)', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    // 新格式但两个 section 都没有（极端情况）
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [other] 其他\n- [x] 某任务\n');
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-verify');
   });
 
   it('UT-S05-14: old format tasks (no section tags) falls back to global allTasksChecked', () => {

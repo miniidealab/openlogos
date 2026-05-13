@@ -239,12 +239,18 @@ export function detectProposalStep(proposalDir: string): ProposalStep {
   // 结构化 section 判断
   const sections = parseTaskSections(tasksContent);
   if (sections !== null) {
-    // 新格式：按 [delta] section 判断
     const delta = sections['delta'];
+    const code = sections['code'];
+
+    // 纯代码提案（新格式无 [delta] section）：完全跳过 merge 阶段
     if (!delta) {
-      // 无 [delta] section → 纯代码提案，直接跳过 delta-writing
-      return 'ready-to-merge';
+      if (!code || (code.total > 0 && code.checked === code.total)) {
+        return 'ready-to-verify';
+      }
+      return 'coding';
     }
+
+    // 有 [delta] section：按 delta 勾选状态判断
     if (delta.total > 0 && delta.checked === delta.total) {
       return 'ready-to-merge';
     }
