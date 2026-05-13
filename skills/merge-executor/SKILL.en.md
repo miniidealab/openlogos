@@ -62,6 +62,14 @@ git commit -m "docs(<slug>): merge spec deltas"
 
 > Use `git add -A` instead of `git add logos/resources/` to ensure all spec files touched by this merge (including spec/, skills/, CLAUDE.md, AGENTS.md, etc.) are included in the commit.
 
+After the commit succeeds, write the spec-merged marker:
+
+```bash
+touch logos/changes/<slug>/SPEC_MERGED
+```
+
+`SPEC_MERGED` means the deltas have actually been merged into the main specs. `openlogos status` should enter the `coding` step only after this marker exists. `MERGE_PROMPT_GENERATED` / `MERGE_PROMPT.md` only means merge instructions were generated; it does not mean the main specs are already merged.
+
 Then prompt the user with next steps:
 
 ```
@@ -93,7 +101,7 @@ openlogos verify and openlogos archive are human confirmation points — AI must
 ## Output Specification
 
 - Directly modify the main documents in `logos/resources/` (in-place editing)
-- Do not modify any files in `logos/changes/`
+- Do not modify files in `logos/changes/` except writing `logos/changes/<slug>/SPEC_MERGED`
 - Do not create new files during the merge (unless a delta specifies adding a completely new document)
 
 ## Best Practices

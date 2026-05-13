@@ -5,7 +5,14 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { parse as parseYaml } from 'yaml';
 
-export type ProposalStep = 'writing' | 'implementing' | 'in-progress' | 'ready-to-merge' | 'coding';
+export type ProposalStep =
+  | 'writing'
+  | 'delta-writing'
+  | 'ready-to-merge'
+  | 'merge-generated'
+  | 'coding'
+  | 'implementing'
+  | 'in-progress';
 
 interface PhaseStatus {
   key: string;
@@ -81,7 +88,7 @@ export interface StatusData {
   proposal_step: ProposalStep | null;
 }
 
-const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario'] as const;
+const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test'] as const;
 
 // Phase paths indexed by PHASE_KEYS order
 const PHASE_SUBPATHS = [
@@ -116,16 +123,26 @@ function isProposalTemplateFilled(content: string): boolean {
 function isTasksTemplateFilled(content: string): boolean {
   const normalized = content.trim();
   if (!normalized) return false;
-  return !normalized.includes('更新需求文档的场景和验收条件')
-    && !normalized.includes('更新产品设计文档的功能规格')
-    && !normalized.includes('更新原型')
-    && !normalized.includes('更新场景时序图')
-    && !normalized.includes('更新 API YAML')
-    && !normalized.includes('更新 DB DDL')
-    && !normalized.includes('更新 API 编排测试用例')
-    && !normalized.includes('实现代码变更')
-    && !normalized.includes('部署到测试环境')
-    && !normalized.includes('运行编排验收');
+  const placeholderLines = [
+    '- [ ] 更新需求文档的场景和验收条件',
+    '- [ ] 更新产品设计文档的功能规格',
+    '- [ ] 更新原型',
+    '- [ ] 更新场景时序图',
+    '- [ ] 更新 API YAML',
+    '- [ ] 更新 DB DDL',
+    '- [ ] 更新 API 编排测试用例',
+    '- [ ] 实现代码变更',
+    '- [ ] Update requirements scenarios and acceptance criteria',
+    '- [ ] Update product design feature specs',
+    '- [ ] Update prototypes',
+    '- [ ] Update scenario sequence diagrams',
+    '- [ ] Update API YAML',
+    '- [ ] Update DB DDL',
+    '- [ ] Update API orchestration test cases',
+    '- [ ] Implement code changes',
+  ];
+  const lines = new Set(normalized.split(/\r?\n/).map(line => line.trim()));
+  return !placeholderLines.some(line => lines.has(line));
 }
 
 function countMergeableDeltaFiles(proposalDir: string): number {
@@ -148,8 +165,11 @@ function allTasksChecked(content: string): boolean {
 }
 
 export function detectProposalStep(proposalDir: string): ProposalStep {
-  if (existsSync(join(proposalDir, 'MERGED'))) {
+  if (existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'))) {
     return 'coding';
+  }
+  if (existsSync(join(proposalDir, 'MERGE_PROMPT_GENERATED')) || existsSync(join(proposalDir, 'MERGE_PROMPT.md'))) {
+    return 'merge-generated';
   }
   const proposalContent = existsSync(join(proposalDir, 'proposal.md'))
     ? readFileSync(join(proposalDir, 'proposal.md'), 'utf-8') : '';
@@ -163,10 +183,7 @@ export function detectProposalStep(proposalDir: string): ProposalStep {
   if (mergeableDeltaCount > 0 && allTasksChecked(tasksContent)) {
     return 'ready-to-merge';
   }
-  if (mergeableDeltaCount > 0) {
-    return 'in-progress';
-  }
-  return 'implementing';
+  return 'delta-writing';
 }
 
 export function listFiles(dir: string): string[] {
@@ -292,10 +309,22 @@ function buildModuleStatusItem(
         suggestion = locale === 'zh'
           ? `明确授权执行 openlogos merge ${activeChange.slug}`
           : `Explicitly request: openlogos merge ${activeChange.slug}`;
+      } else if (activeChange.proposal_step === 'merge-generated') {
+        suggestion = locale === 'zh'
+          ? `让 AI 读取 logos/changes/${activeChange.slug}/MERGE_PROMPT.md 并执行规格合并；完成后写入 SPEC_MERGED`
+          : `Ask AI to read logos/changes/${activeChange.slug}/MERGE_PROMPT.md and merge specs; write SPEC_MERGED when done`;
+      } else if (activeChange.proposal_step === 'coding') {
+        suggestion = locale === 'zh'
+          ? `按已合并规格实现代码，完成后明确授权执行 openlogos verify`
+          : `Implement code from merged specs, then explicitly request: openlogos verify`;
+      } else if (activeChange.proposal_step === 'delta-writing' || activeChange.proposal_step === 'implementing' || activeChange.proposal_step === 'in-progress') {
+        suggestion = locale === 'zh'
+          ? `继续为 ${activeChange.slug} 产出 delta 文件，完成后明确授权执行 openlogos merge ${activeChange.slug}`
+          : `Continue writing delta files for ${activeChange.slug}, then explicitly request: openlogos merge ${activeChange.slug}`;
       } else {
         suggestion = locale === 'zh'
-          ? `继续实现 ${activeChange.slug}，完成后明确授权执行 openlogos merge ${activeChange.slug}`
-          : `Continue implementing ${activeChange.slug}, then explicitly request: openlogos merge ${activeChange.slug}`;
+          ? `继续完善 ${activeChange.slug}`
+          : `Continue working on ${activeChange.slug}`;
       }
     } else if (guardActiveChange && guardModule !== mod.id) {
       suggestion = locale === 'zh'

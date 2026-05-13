@@ -107,6 +107,18 @@ Automatically break down the task checklist based on the change type and impact 
 
 ### Step 6: Guide Follow-up Actions (Chain-driven)
 
+When producing delta files, write them under `logos/changes/<slug>/deltas/` with paths that mirror `logos/resources/`:
+
+| Target main document directory | Delta subdirectory |
+|---|---|
+| `logos/resources/prd/` | `deltas/prd/` |
+| `logos/resources/api/` | `deltas/api/` |
+| `logos/resources/database/` | `deltas/database/` |
+| `logos/resources/scenario/` | `deltas/scenario/` |
+| `logos/resources/test/` | `deltas/test/` |
+
+Preserve nested directories. Example: `logos/resources/prd/1-product-requirements/core-01-requirements.md` maps to `deltas/prd/1-product-requirements/core-01-requirements.md`; `logos/resources/test/core-S01-test-cases.md` maps to `deltas/test/core-S01-test-cases.md`.
+
 Provide a ready-to-use prompt that allows the user to kick off chain execution of all tasks with a single command:
 
 - **Requirement-level / Design-level changes** (multiple tasks): Suggest the user say "Follow tasks.md and help me progressively update all affected documents for S0x"

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.16] - 2026-05-13
+
+### Changed
+
+- **提案状态机扩展为五段式**：`writing` → `delta-writing` → `ready-to-merge` → `merge-generated` → `coding`，每个阶段语义明确，消除 `implementing`/`in-progress` 的歧义
+- **`openlogos merge` 递归扫描 delta**：支持 `deltas/prd/1-product-requirements/`、`deltas/prd/3-technical-plan/` 等嵌套子目录，嵌套路径正确映射到对应主文档目录；新增 `deltas/test/` 映射
+- **两段式 merge 标记**：`openlogos merge` 生成 `MERGE_PROMPT.md` 后写入 `MERGE_PROMPT_GENERATED`（表示"指令已生成"）；AI 执行完规格合并后写入 `SPEC_MERGED`（表示"规格已合并，可开始编码"）
+- **`next`/`status` 提示文案对齐状态机**：每个 proposal step 的下一步提示唯一且明确，`delta-writing` 阶段提示产出 delta，`merge-generated` 阶段提示执行 MERGE_PROMPT.md
+- **`isTasksTemplateFilled` 改为精确行匹配**：避免用户任务描述中包含占位符关键词时误判为未填写
+
+### Fixed
+
+- 有 delta 时 merge 后状态卡在 `ready-to-merge` 的问题（根因：状态机缺少 `merge-generated` 中间态）
+
 ## [0.9.15] - 2026-05-13
 
 ### Fixed

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { readLocale, t, mergePromptTemplate } from '../i18n.js';
 
 const DELTA_TO_RESOURCE: Record<string, string> = {
@@ -7,6 +7,7 @@ const DELTA_TO_RESOURCE: Record<string, string> = {
   'api': 'logos/resources/api',
   'database': 'logos/resources/database',
   'scenario': 'logos/resources/scenario',
+  'test': 'logos/resources/test',
 };
 
 interface DeltaFile {
@@ -26,15 +27,20 @@ export function scanDeltas(deltasDir: string): DeltaFile[] {
     const targetDir = DELTA_TO_RESOURCE[category];
     if (!targetDir) continue;
 
-    const files = readdirSync(categoryDir).filter(f => {
-      const full = join(categoryDir, f);
-      return statSync(full).isFile() && !f.startsWith('.');
-    });
+    const files = readdirSync(categoryDir, { recursive: true })
+      .map(f => String(f))
+      .filter(f => {
+        const full = join(categoryDir, f);
+        return statSync(full).isFile()
+          && !f.split(/[\\/]/).some(part => part.startsWith('.'))
+          && !f.endsWith('.gitkeep');
+      })
+      .sort();
 
     for (const file of files) {
       results.push({
         deltaPath: join(categoryDir, file),
-        targetDir,
+        targetDir: join(targetDir, dirname(file)),
         relativePath: `deltas/${category}/${file}`,
       });
     }
@@ -72,7 +78,7 @@ export function merge(slug?: string) {
 
   if (deltas.length === 0) {
     const locale = readLocale(root);
-    writeFileSync(join(changePath, 'MERGED'), '');
+    writeFileSync(join(changePath, 'SPEC_MERGED'), '');
     console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
     return;
   }
@@ -92,7 +98,7 @@ export function merge(slug?: string) {
 
   const promptPath = join(changePath, 'MERGE_PROMPT.md');
   writeFileSync(promptPath, promptContent);
-  writeFileSync(join(changePath, 'MERGED'), '');
+  writeFileSync(join(changePath, 'MERGE_PROMPT_GENERATED'), '');
 
   console.log(`\n📋 ${t(locale, 'merge.summary')}`);
   console.log(t(locale, 'merge.proposal', { slug }));

@@ -40,12 +40,16 @@ function buildModuleNextItem(
       let command: string | null = null;
       if (step === 'writing') {
         action = t(locale as Parameters<typeof t>[0], 'next.fillProposal');
-      } else if (step === 'implementing') {
-        action = t(locale as Parameters<typeof t>[0], 'next.startCoding');
-      } else if (step === 'in-progress') {
-        action = t(locale as Parameters<typeof t>[0], 'next.continueImpl');
-      } else {
+      } else if (step === 'delta-writing' || step === 'implementing' || step === 'in-progress') {
+        action = t(locale as Parameters<typeof t>[0], 'next.writeDeltas');
+      } else if (step === 'ready-to-merge') {
         action = t(locale as Parameters<typeof t>[0], 'next.merge');
+      } else if (step === 'merge-generated') {
+        action = t(locale as Parameters<typeof t>[0], 'next.executeMerge');
+      } else if (step === 'coding') {
+        action = t(locale as Parameters<typeof t>[0], 'next.startCoding');
+      } else {
+        action = t(locale as Parameters<typeof t>[0], 'next.fillProposal');
         command = null;
       }
       return {
@@ -165,20 +169,27 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
           command = null;
           detail = t(locale, 'next.fillProposalDetail', { slug });
           break;
+        case 'delta-writing':
         case 'implementing':
-          action = t(locale, 'next.startCoding');
-          command = null;
-          detail = t(locale, 'next.startCodingDetail', { slug });
-          break;
         case 'in-progress':
-          action = t(locale, 'next.continueImpl');
+          action = t(locale, 'next.writeDeltas');
           command = null;
-          detail = t(locale, 'next.continueImplDetail', { slug });
+          detail = t(locale, 'next.writeDeltasDetail', { slug });
           break;
         case 'ready-to-merge':
           action = t(locale, 'next.merge');
           command = null;
           detail = t(locale, 'next.mergeDetail', { slug });
+          break;
+        case 'merge-generated':
+          action = t(locale, 'next.executeMerge');
+          command = null;
+          detail = t(locale, 'next.executeMergeDetail', { slug });
+          break;
+        case 'coding':
+          action = t(locale, 'next.startCoding');
+          command = null;
+          detail = t(locale, 'next.startCodingDetail', { slug });
           break;
         default:
           action = t(locale, 'next.fillProposal');

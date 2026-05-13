@@ -159,15 +159,16 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(hasFillHint).toBe(true);
   });
 
-  it('UT-S05-06: proposal_step=implementing → suggest start coding', () => {
+  it('UT-S05-06: proposal_step=delta-writing → suggest writing deltas', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容，不是占位符');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [ ] task one');
 
     next();
     const out = con.logs.join('\n');
-    const hasCodingHint = out.includes('tasks') || out.includes('编码') || out.includes('implement');
-    expect(hasCodingHint).toBe(true);
+    expect(detectProposalStep(proposalDir)).toBe('delta-writing');
+    expect(out).toMatch(/delta|Delta/);
+    expect(out).not.toMatch(/编码实现|Implement Code/);
   });
 
   it('UT-S05-06b: stock tasks template still counts as writing', () => {
@@ -178,7 +179,15 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(detectProposalStep(proposalDir)).toBe('writing');
   });
 
-  it('UT-S05-07: proposal_step=in-progress → suggest continue and merge', () => {
+  it('UT-S05-06c: real task mentioning 实现代码变更 is not treated as stock template', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n- [x] 实现代码变更（直接修改 src，无需 delta）\n');
+
+    expect(detectProposalStep(proposalDir)).toBe('delta-writing');
+  });
+
+  it('UT-S05-07: proposal_step=delta-writing with partial delta tasks → suggest continuing deltas', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [ ] task one\n- [x] task two');
@@ -188,8 +197,8 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
     next();
     const out = con.logs.join('\n');
-    const hasMergeHint = out.includes('merge') || out.includes('合并');
-    expect(hasMergeHint).toBe(true);
+    expect(detectProposalStep(proposalDir)).toBe('delta-writing');
+    expect(out).toMatch(/delta|Delta/);
   });
 
   it('UT-S05-07b: unsupported delta folders do not make a proposal ready to merge', () => {
@@ -199,7 +208,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     mkdirSync(join(proposalDir, 'deltas', 'misc'), { recursive: true });
     writeFileSync(join(proposalDir, 'deltas', 'misc', 'delta1.md'), 'delta content');
 
-    expect(detectProposalStep(proposalDir)).toBe('implementing');
+    expect(detectProposalStep(proposalDir)).toBe('delta-writing');
   });
 
   it('UT-S05-08: proposal_step=ready-to-merge → suggest openlogos merge', () => {
@@ -216,6 +225,37 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     // must not use implicit "run X then Y" auto-advance phrasing
     expect(out).not.toMatch(/run `openlogos merge.+then `openlogos archive/);
     expect(out).not.toMatch(/运行 `openlogos merge.+然后 `openlogos archive/);
+  });
+
+  it('UT-S05-09: proposal_step=merge-generated → suggest executing MERGE_PROMPT', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT.md'), '# 合并指令');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT_GENERATED'), '');
+
+    expect(detectProposalStep(proposalDir)).toBe('merge-generated');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toContain('MERGE_PROMPT.md');
+    expect(out).not.toContain('openlogos merge my-feature');
+  });
+
+  it('UT-S05-10: proposal_step=coding after SPEC_MERGED → suggest code implementation, not merge', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT.md'), '# 合并指令');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT_GENERATED'), '');
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
+
+    expect(detectProposalStep(proposalDir)).toBe('coding');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/编码|implement/i);
+    expect(out).not.toContain('openlogos merge my-feature');
   });
 });
 

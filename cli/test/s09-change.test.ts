@@ -34,6 +34,29 @@ describe('S09 Unit Tests — scanDeltas', () => {
     expect(targets).toContain('logos/resources/api');
   });
 
+  it('UT-S09-01b: recursively scan nested prd and test deltas with target subdirectories', () => {
+    const deltasDir = join(root, 'deltas');
+    mkdirSync(join(deltasDir, 'prd', '1-product-requirements'), { recursive: true });
+    mkdirSync(join(deltasDir, 'prd', '2-product-design', '1-feature-specs'), { recursive: true });
+    mkdirSync(join(deltasDir, 'test'), { recursive: true });
+    writeFileSync(join(deltasDir, 'prd', '1-product-requirements', '01-req.md'), '# req');
+    writeFileSync(join(deltasDir, 'prd', '2-product-design', '1-feature-specs', '01-design.md'), '# design');
+    writeFileSync(join(deltasDir, 'test', 'S01-test-cases.md'), '# tests');
+
+    const results = scanDeltas(deltasDir);
+
+    expect(results.map(r => r.relativePath)).toEqual([
+      'deltas/prd/1-product-requirements/01-req.md',
+      'deltas/prd/2-product-design/1-feature-specs/01-design.md',
+      'deltas/test/S01-test-cases.md',
+    ]);
+    expect(results.map(r => r.targetDir)).toEqual([
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/2-product-design/1-feature-specs',
+      'logos/resources/test',
+    ]);
+  });
+
   it('UT-S09-02: ignore unknown category directories', () => {
     const deltasDir = join(root, 'deltas');
     mkdirSync(join(deltasDir, 'unknown'), { recursive: true });
@@ -251,12 +274,36 @@ describe('S09 Scenario Tests — merge command', () => {
     merge('fix-bug');
 
     expect(existsSync(join(changePath, 'MERGE_PROMPT.md'))).toBe(true);
+    expect(existsSync(join(changePath, 'MERGE_PROMPT_GENERATED'))).toBe(true);
+    expect(existsSync(join(changePath, 'MERGED'))).toBe(false);
+    expect(existsSync(join(changePath, 'SPEC_MERGED'))).toBe(false);
     const prompt = readFileSync(join(changePath, 'MERGE_PROMPT.md'), 'utf-8');
     expect(prompt).toContain('Fix Bug Proposal');
     expect(prompt).toContain('deltas/prd/update.md');
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('MERGE_PROMPT.md');
+  });
+
+  it('ST-S09-05b: merge prompt includes nested prd deltas instead of dropping them', () => {
+    const changePath = join(root, 'logos', 'changes', 'fix-flow');
+    mkdirSync(join(changePath, 'deltas', 'prd', '1-product-requirements'), { recursive: true });
+    mkdirSync(join(changePath, 'deltas', 'prd', '3-technical-plan', '2-scenario-implementation'), { recursive: true });
+    mkdirSync(join(changePath, 'deltas', 'test'), { recursive: true });
+    writeFileSync(join(changePath, 'proposal.md'), '# Fix Flow Proposal');
+    writeFileSync(join(changePath, 'deltas', 'prd', '1-product-requirements', '01-req.md'), '# req');
+    writeFileSync(join(changePath, 'deltas', 'prd', '3-technical-plan', '2-scenario-implementation', 'S01.md'), '# scenario');
+    writeFileSync(join(changePath, 'deltas', 'test', 'S01-test-cases.md'), '# tests');
+
+    merge('fix-flow');
+
+    const prompt = readFileSync(join(changePath, 'MERGE_PROMPT.md'), 'utf-8');
+    expect(prompt).toContain('deltas/prd/1-product-requirements/01-req.md');
+    expect(prompt).toContain('logos/resources/prd/1-product-requirements');
+    expect(prompt).toContain('deltas/prd/3-technical-plan/2-scenario-implementation/S01.md');
+    expect(prompt).toContain('logos/resources/prd/3-technical-plan/2-scenario-implementation');
+    expect(prompt).toContain('deltas/test/S01-test-cases.md');
+    expect(prompt).toContain('logos/resources/test');
   });
 
   it('ST-S09-06: error when proposal does not exist', () => {
@@ -275,6 +322,7 @@ describe('S09 Scenario Tests — merge command', () => {
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('nothing to merge');
     expect(existsSync(join(changePath, 'MERGE_PROMPT.md'))).toBe(false);
+    expect(existsSync(join(changePath, 'SPEC_MERGED'))).toBe(true);
   });
 });
 

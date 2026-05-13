@@ -122,6 +122,7 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 | `logos/resources/api/` | `deltas/api/` |
 | `logos/resources/database/` | `deltas/database/` |
 | `logos/resources/scenario/` | `deltas/scenario/` |
+| `logos/resources/test/` | `deltas/test/` |
 
 `prd/` 下按子目录进一步对应：
 
@@ -140,6 +141,7 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 与目标主文档**同名**（含子目录层级）。例如：
 - 目标：`logos/resources/api/core-api.yaml` → delta：`deltas/api/core-api.yaml`
 - 目标：`logos/resources/prd/1-product-requirements/core-01-requirements.md` → delta：`deltas/prd/1-product-requirements/core-01-requirements.md`
+- 目标：`logos/resources/test/core-S01-test-cases.md` → delta：`deltas/test/core-S01-test-cases.md`
 
 #### 文件格式
 

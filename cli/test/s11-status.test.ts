@@ -211,6 +211,67 @@ describe('S11 Scenario Tests — status command', () => {
     expect(allLogs).not.toMatch(/运行 openlogos merge.+然后.+archive/);
     expect(allLogs).not.toMatch(/完成后运行 openlogos merge/);
   });
+
+  it('ST-S11-06a: filled proposal/tasks without completed deltas is delta-writing', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [ ] write delta\n');
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+
+    expect(core.active_change!.proposal_step).toBe('delta-writing');
+    expect(core.suggestion).toMatch(/delta/i);
+  });
+
+  it('ST-S11-06b: generated merge prompt is a distinct merge-generated step', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] done');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT.md'), '# 合并指令');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT_GENERATED'), '');
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+
+    expect(core.active_change!.proposal_step).toBe('merge-generated');
+    expect(core.suggestion).toContain('MERGE_PROMPT.md');
+    expect(core.suggestion).not.toContain('openlogos merge my-feature');
+  });
+
+  it('ST-S11-06c: SPEC_MERGED advances proposal to coding', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] done');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT.md'), '# 合并指令');
+    writeFileSync(join(proposalDir, 'MERGE_PROMPT_GENERATED'), '');
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+
+    expect(core.active_change!.proposal_step).toBe('coding');
+    expect(core.suggestion).toMatch(/实现代码|Implement code/);
+    expect(core.suggestion).not.toContain('openlogos merge my-feature');
+  });
 });
 
 /* ========== Skipped Phase Tests ========== */

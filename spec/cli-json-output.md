@@ -135,15 +135,15 @@ openlogos status --format json  # JSON 格式
       "phase_progress": null,
       "active_change": {            // 当前活跃变更提案
         "slug": "add-refund",
-        "proposal_step": "implementing",  // "writing"|"implementing"|"in-progress"|"ready-to-merge"
-        "proposal_step_label": "实现中",
+        "proposal_step": "delta-writing",  // "writing"|"delta-writing"|"ready-to-merge"|"merge-generated"|"coding"
+        "proposal_step_label": "撰写 Delta",
         "has_proposal": true,
         "has_tasks": true,
         "tasks_checked": 2,
         "tasks_total": 5,
         "delta_count": 1
       },
-      "suggestion": "继续实现 add-refund，完成后明确授权执行 openlogos merge add-refund"
+      "suggestion": "继续为 add-refund 产出 delta 文件，完成后明确授权执行 openlogos merge add-refund"
     }
   ],
   "active_proposals": [
@@ -187,7 +187,7 @@ openlogos status --format json  # JSON 格式
 | `modules[].phase_progress[key].scenario_coverage` | object \| undefined | 否 | 仅场景类阶段（`phase.3-1`、`phase.3-3a`）存在 |
 | `modules[].active_change` | object \| null | 是 | 当前活跃变更提案；`initial` 模块或无活跃提案时为 null |
 | `modules[].active_change.slug` | string | 是 | 提案 slug |
-| `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"implementing"` \| `"in-progress"` \| `"ready-to-merge"` |
+| `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"delta-writing"` \| `"ready-to-merge"` \| `"merge-generated"` \| `"coding"`；`"implementing"` / `"in-progress"` 为旧版本兼容值 |
 | `modules[].active_change.proposal_step_label` | string | 是 | 提案阶段本地化标签 |
 | `modules[].active_change.has_proposal` | boolean | 是 | 是否存在 proposal.md |
 | `modules[].active_change.has_tasks` | boolean | 是 | 是否存在 tasks.md |
