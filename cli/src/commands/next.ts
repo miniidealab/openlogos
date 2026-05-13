@@ -48,6 +48,12 @@ function buildModuleNextItem(
         action = t(locale as Parameters<typeof t>[0], 'next.executeMerge');
       } else if (step === 'coding') {
         action = t(locale as Parameters<typeof t>[0], 'next.startCoding');
+      } else if (step === 'ready-to-verify') {
+        action = t(locale as Parameters<typeof t>[0], 'next.runVerify');
+      } else if (step === 'verify-passed') {
+        action = t(locale as Parameters<typeof t>[0], 'next.archive');
+      } else if (step === 'verify-failed') {
+        action = t(locale as Parameters<typeof t>[0], 'next.fixAndVerify');
       } else {
         action = t(locale as Parameters<typeof t>[0], 'next.fillProposal');
         command = null;

@@ -11,6 +11,9 @@ export type ProposalStep =
   | 'ready-to-merge'
   | 'merge-generated'
   | 'coding'
+  | 'ready-to-verify'
+  | 'verify-passed'
+  | 'verify-failed'
   | 'implementing'
   | 'in-progress';
 
@@ -198,8 +201,27 @@ function parseTaskSections(content: string): Record<string, { checked: number; t
 }
 
 export function detectProposalStep(proposalDir: string): ProposalStep {
+  if (existsSync(join(proposalDir, 'VERIFY_PASS'))) {
+    return 'verify-passed';
+  }
+  if (existsSync(join(proposalDir, 'VERIFY_FAIL'))) {
+    return 'verify-failed';
+  }
   if (existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'))) {
-    return 'coding';
+    // 规格已合并，判断 [code] section 是否全部完成
+    const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
+      ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
+    const sections = parseTaskSections(tasksContent);
+    if (sections !== null) {
+      const code = sections['code'];
+      if (!code || (code.total > 0 && code.checked === code.total)) {
+        // 无 [code] section 或 [code] 全勾 → 可以 verify
+        return 'ready-to-verify';
+      }
+      return 'coding';
+    }
+    // 旧格式：无 section 标记，直接进入 ready-to-verify
+    return 'ready-to-verify';
   }
   if (existsSync(join(proposalDir, 'MERGE_PROMPT_GENERATED')) || existsSync(join(proposalDir, 'MERGE_PROMPT.md'))) {
     return 'merge-generated';
@@ -365,8 +387,20 @@ function buildModuleStatusItem(
           : `Ask AI to read logos/changes/${activeChange.slug}/MERGE_PROMPT.md and merge specs; write SPEC_MERGED when done`;
       } else if (activeChange.proposal_step === 'coding') {
         suggestion = locale === 'zh'
-          ? `按已合并规格实现代码，完成后明确授权执行 openlogos verify`
-          : `Implement code from merged specs, then explicitly request: openlogos verify`;
+          ? `按已合并规格实现代码，完成后勾选 [code] section 所有任务`
+          : `Implement code from merged specs, then check off all [code] section tasks`;
+      } else if (activeChange.proposal_step === 'ready-to-verify') {
+        suggestion = locale === 'zh'
+          ? `代码已完成，明确授权执行 openlogos verify`
+          : `Code is done — explicitly request: openlogos verify`;
+      } else if (activeChange.proposal_step === 'verify-passed') {
+        suggestion = locale === 'zh'
+          ? `验收通过，明确授权执行 openlogos archive ${activeChange.slug}`
+          : `Verification passed — explicitly request: openlogos archive ${activeChange.slug}`;
+      } else if (activeChange.proposal_step === 'verify-failed') {
+        suggestion = locale === 'zh'
+          ? `验收未通过，修复问题后重新运行 openlogos verify`
+          : `Verification failed — fix the issues and run openlogos verify again`;
       } else if (activeChange.proposal_step === 'delta-writing' || activeChange.proposal_step === 'implementing' || activeChange.proposal_step === 'in-progress') {
         suggestion = locale === 'zh'
           ? `继续为 ${activeChange.slug} 产出 delta 文件，完成后明确授权执行 openlogos merge ${activeChange.slug}`

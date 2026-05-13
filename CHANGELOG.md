@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.18] - 2026-05-13
+
+### Changed
+
+- **提案全生命周期精确追踪** — 状态机扩展为完整八段式：`writing` → `delta-writing` → `ready-to-merge` → `merge-generated` → `coding` → `ready-to-verify` → `verify-passed` / `verify-failed`
+- **`[code]` section 驱动 coding → ready-to-verify 转换** — `SPEC_MERGED` 存在时，`[code]` section 全部勾选（或无 `[code]` section）→ `ready-to-verify`；否则保持 `coding`
+- **verify 写入提案标记文件** — `openlogos verify` 执行后自动读取 `.openlogos-guard`，通过写 `VERIFY_PASS`，失败写 `VERIFY_FAIL`，状态机据此精确感知验收结果
+- **新增三个状态的 next 提示** — `ready-to-verify` 提示运行 verify，`verify-passed` 提示归档，`verify-failed` 提示修复后重新 verify
+
 ## [0.9.17] - 2026-05-13
 
 ### Changed

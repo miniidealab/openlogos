@@ -242,12 +242,15 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(out).not.toContain('openlogos merge my-feature');
   });
 
-  it('UT-S05-10: proposal_step=coding after SPEC_MERGED → suggest code implementation, not merge', () => {
+  it('UT-S05-10: SPEC_MERGED + [code] section not done → coding', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
-    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n');
-    writeFileSync(join(proposalDir, 'MERGE_PROMPT.md'), '# 合并指令');
-    writeFileSync(join(proposalDir, 'MERGE_PROMPT_GENERATED'), '');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 实现 src/xxx',
+    ].join('\n'));
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
     expect(detectProposalStep(proposalDir)).toBe('coding');
@@ -256,6 +259,57 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     const out = con.logs.join('\n');
     expect(out).toMatch(/编码|implement/i);
     expect(out).not.toContain('openlogos merge my-feature');
+  });
+
+  it('UT-S05-10b: SPEC_MERGED + [code] section all done → ready-to-verify', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 实现 src/xxx',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-verify');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/verify/i);
+  });
+
+  it('UT-S05-10c: SPEC_MERGED + no [code] section → ready-to-verify', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n');
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-verify');
+  });
+
+  it('UT-S05-10d: VERIFY_PASS → verify-passed, suggest archive', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    expect(detectProposalStep(proposalDir)).toBe('verify-passed');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/archive/i);
+  });
+
+  it('UT-S05-10e: VERIFY_FAIL → verify-failed, suggest fix', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
+    writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
+
+    expect(detectProposalStep(proposalDir)).toBe('verify-failed');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/fix|修复/i);
   });
 
   it('UT-S05-11: structured [delta] section all checked → ready-to-merge', () => {

@@ -469,6 +469,25 @@ export function verify(format: OutputFormat = 'text') {
 
   const data = collectVerifyData(root);
 
+  // 写入提案目录标记文件（如果有活跃提案）
+  const guardPath = join(root, 'logos', '.openlogos-guard');
+  if (existsSync(guardPath)) {
+    try {
+      const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+      const slug = guard.activeChange;
+      if (slug) {
+        const proposalDir = join(root, 'logos', 'changes', slug);
+        if (existsSync(proposalDir)) {
+          if (data.gate.result === 'PASS') {
+            writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+          } else {
+            writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
+          }
+        }
+      }
+    } catch { /* guard 文件读取失败时静默跳过 */ }
+  }
+
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('verify', data)));
     if (data.gate.result !== 'PASS') {
