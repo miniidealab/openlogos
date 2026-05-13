@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.15] - 2026-05-13
+
+### Fixed
+
+- **修复有 delta 时 merge 后状态无法推进的问题** — `openlogos merge` 在有 delta 时，生成 `MERGE_PROMPT.md` 后同时写入 `MERGED` 标记文件，使 `detectProposalStep()` 能正确识别已合并状态并返回 `'coding'`，流程不再卡在"合并规格"步骤。
+
 ## [0.9.14] - 2026-05-10
 
 ### Changed

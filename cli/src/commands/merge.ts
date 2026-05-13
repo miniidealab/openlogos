@@ -92,6 +92,7 @@ export function merge(slug?: string) {
 
   const promptPath = join(changePath, 'MERGE_PROMPT.md');
   writeFileSync(promptPath, promptContent);
+  writeFileSync(join(changePath, 'MERGED'), '');
 
   console.log(`\n📋 ${t(locale, 'merge.summary')}`);
   console.log(t(locale, 'merge.proposal', { slug }));
