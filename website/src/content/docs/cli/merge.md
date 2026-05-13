@@ -19,8 +19,8 @@ openlogos merge <slug>
 
 ## What it does
 
-1. Scans `logos/changes/<slug>/deltas/` for files organized by category
-2. Maps each category to a target resource directory:
+1. Recursively scans `logos/changes/<slug>/deltas/` for files organized by category
+2. Maps each category to a target resource directory (preserving nested subdirectory paths):
 
 | Delta category | Target directory |
 |---------------|-----------------|
@@ -28,9 +28,13 @@ openlogos merge <slug>
 | `deltas/api/` | `logos/resources/api/` |
 | `deltas/database/` | `logos/resources/database/` |
 | `deltas/scenario/` | `logos/resources/scenario/` |
+| `deltas/test/` | `logos/resources/test/` |
+
+Nested paths are preserved. For example, `deltas/prd/3-technical-plan/1-architecture/core-arch.md` maps to `logos/resources/prd/3-technical-plan/1-architecture/core-arch.md`.
 
 3. Reads `proposal.md` content for context
 4. Generates `logos/changes/<slug>/MERGE_PROMPT.md` with structured merge instructions
+5. Writes a `MERGE_PROMPT_GENERATED` marker file to advance the proposal step to `merge-generated`
 
 ## Example output
 
@@ -80,13 +84,13 @@ Delta files use markers to indicate what should change in the target document:
 
 ## Empty delta behavior
 
-If `deltas/` is empty or contains no recognized files, the command exits cleanly with:
+If `deltas/` is empty or contains no recognized files, the command writes a `SPEC_MERGED` marker file and exits cleanly:
 
 ```
 ✓ No delta files in logos/changes/<slug>/deltas/ — nothing to merge.
 ```
 
-This is not an error. An empty delta means the change proposal has no document updates to apply — the command exits with code 0. This is intentional: code-only changes (refactors, bug fixes that don't touch specs) are valid proposals that don't require a merge step.
+This is not an error. Code-only changes (refactors, bug fixes that don't touch specs) are valid proposals that skip the merge step. The `SPEC_MERGED` marker advances the proposal step to `coding` so the workflow can continue.
 
 ## Errors
 

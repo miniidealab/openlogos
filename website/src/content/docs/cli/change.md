@@ -71,22 +71,22 @@ The guard file is used by AI instructions to enforce that code changes stay with
 ```markdown
 # Implementation Tasks
 
-## Phase 1: Document Changes
-- [ ] Update requirements scenarios and acceptance criteria
-- [ ] Update product design feature specs
+## [delta] Spec Changes
+- [ ] Output delta file to deltas/prd/1-product-requirements/ — Update requirements
+- [ ] Output delta file to deltas/api/ — Update API YAML
 
-## Phase 2: Design Changes
-- [ ] Update prototypes
-- [ ] Update scenario sequence diagrams
-- [ ] Update API YAML
-- [ ] Update DB DDL
-
-## Phase 3: Orchestration & Code
-- [ ] Update API orchestration test cases
-- [ ] Implement code changes
-- [ ] Deploy to test environment
-- [ ] Run orchestration acceptance
+## [code] Code Implementation
+- [ ] Implement business logic in src/xxx
+- [ ] Write corresponding tests
 ```
+
+The `[delta]` and `[code]` section tags are machine-readable. `openlogos status` uses them to track the proposal step:
+
+- `[delta]` section all checked → proposal advances to `ready-to-merge`
+- No `[delta]` section (code-only fix) → skips directly to `ready-to-merge`
+- `[code]` section all checked → proposal advances to `ready-to-verify`
+
+Keep delta tasks and code tasks strictly separated — never mix them in the same section.
 
 ## Example output
 

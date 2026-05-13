@@ -144,19 +144,28 @@ openlogos status --module admin
 
 ## Active change proposals
 
-When the lifecycle is `active` and there are open proposals in `logos/changes/`, they are displayed:
+When the lifecycle is `active` and there are open proposals in `logos/changes/`, the proposal step is shown:
 
 ```
 📝 Active Change Proposals
      └─ fix-redirect-bug (proposal.md ✓ | tasks.md ✓ | deltas: 3 files)
-     └─ add-analytics-export (proposal.md ✓ | tasks.md ✗ | deltas: 0 files)
 ──────────────────────────────────────────────────
 ```
 
-Each proposal shows:
-- Whether `proposal.md` exists (✓/✗)
-- Whether `tasks.md` exists (✓/✗)
-- Number of delta files in `deltas/`
+### Proposal steps
+
+The proposal step tracks where a change proposal is in its lifecycle:
+
+| Step | Meaning |
+|------|---------|
+| `writing` | `proposal.md` or `tasks.md` still contains template placeholders |
+| `delta-writing` | Proposal filled in; `[delta]` section tasks not yet all checked |
+| `ready-to-merge` | All `[delta]` section tasks checked (or no `[delta]` section) |
+| `merge-generated` | `openlogos merge` has run; `MERGE_PROMPT.md` generated |
+| `coding` | Specs merged (`SPEC_MERGED` exists); `[code]` section tasks not yet all checked |
+| `ready-to-verify` | All `[code]` section tasks checked (or no `[code]` section) |
+| `verify-passed` | `openlogos verify` passed; `VERIFY_PASS` marker written |
+| `verify-failed` | `openlogos verify` failed; `VERIFY_FAIL` marker written |
 
 ## Errors
 

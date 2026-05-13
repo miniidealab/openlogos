@@ -42,6 +42,21 @@ All four conditions must be met:
 
 If any condition fails, the command exits with code `1`.
 
+## Proposal lifecycle integration
+
+When there is an active change proposal (`.openlogos-guard` exists), `openlogos verify` automatically writes a marker file to the proposal directory after the gate result is determined:
+
+| Gate result | Marker written |
+|-------------|---------------|
+| PASS | `logos/changes/<slug>/VERIFY_PASS` |
+| FAIL | `logos/changes/<slug>/VERIFY_FAIL` |
+
+These markers advance the proposal step:
+- `VERIFY_PASS` → proposal step becomes `verify-passed` (ready to archive)
+- `VERIFY_FAIL` → proposal step becomes `verify-failed` (fix and re-run verify)
+
+`openlogos status` reads these markers to show the correct next action.
+
 ## Test results format (JSONL)
 
 Each line in `test-results.jsonl` is a JSON object:

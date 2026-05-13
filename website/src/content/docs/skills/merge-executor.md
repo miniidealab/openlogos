@@ -51,15 +51,23 @@ For each delta file in order:
 3. Execute the merge (ADDED / MODIFIED / REMOVED)
 4. Show a modification summary and wait for user confirmation
 
-### Step 3: Output Change Report
+### Step 3: Output Change Report and Write SPEC_MERGED
 
 ```
 Merge complete:
 - [file path 1]: added x sections, modified y sections, deleted z sections
 - [file path 2]: ...
-
-Please verify, then run `openlogos archive <slug>` to archive the proposal.
 ```
+
+After all deltas are merged and the spec commit is done, write the `SPEC_MERGED` marker:
+
+```bash
+touch logos/changes/<slug>/SPEC_MERGED
+```
+
+`SPEC_MERGED` signals that the deltas have been applied to the main specs. `openlogos status` reads this marker to advance the proposal step from `merge-generated` to `coding`. Without this marker, the proposal stays at `merge-generated` indefinitely.
+
+After writing `SPEC_MERGED`, remind the user to implement code per the `[code]` section in `tasks.md`.
 
 ## Merge Principles
 

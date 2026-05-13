@@ -73,25 +73,28 @@ The Skill scans all document layers to identify affected artifacts:
 
 ### tasks.md
 
-A phase-based checklist where only affected phases are listed:
+A structured checklist using section tags — only include sections relevant to the change:
 
 ```markdown
 # Implementation Tasks
 
-## Phase 1: Document Changes
-- [ ] Update acceptance criteria for S0x
-
-## Phase 2: Design Changes
-- [ ] Update interaction design for S0x
-
-## Phase 3: Technical Changes
-- [ ] Update sequence diagram for S0x
-- [ ] Update API YAML
+## [delta] Spec Changes
+- [ ] Output delta file to deltas/prd/1-product-requirements/ — Update acceptance criteria for S0x
+- [ ] Output delta file to deltas/prd/3-technical-plan/2-scenario-implementation/ — Update sequence diagram for S0x
+- [ ] Output delta file to deltas/api/ — Update API YAML
 - [ ] Validate API YAML (all special chars double-quoted)
-- [ ] Update DB DDL
-- [ ] Update test cases
-- [ ] Implement code changes
+- [ ] Output delta file to deltas/database/ — Update DB DDL
+
+## [code] Code Implementation
+- [ ] Implement code changes in src/xxx
+- [ ] Write corresponding tests
 ```
+
+Section tag rules:
+- `## [delta]` — delta output tasks only. All checked → `ready-to-merge`
+- `## [code]` — code implementation tasks only. All checked → `ready-to-verify`
+- Code-only fixes: only `[code]` section, no `[delta]` section (skips directly to `ready-to-merge`)
+- Keep delta tasks and code tasks strictly separated — never mix them
 
 ## Chain-Driven Execution
 

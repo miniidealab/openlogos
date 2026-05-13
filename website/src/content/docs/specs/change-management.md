@@ -75,27 +75,28 @@ The change description document. Must include:
 
 ### tasks.md
 
-Implementation task checklist, organized by phase:
+Implementation task checklist using structured section tags:
 
 ```markdown
 # Implementation Tasks
 
-## Phase 1: Document Changes
-- [ ] Update requirements document user stories and acceptance criteria
-- [ ] Update product design feature specs
+## [delta] Spec Changes
+- [ ] Output delta file to deltas/prd/1-product-requirements/ — Update requirements
+- [ ] Output delta file to deltas/api/ — Update API YAML
 
-## Phase 2: Design Changes
-- [ ] Update HTML prototypes
-- [ ] Update scenario sequence diagrams
-- [ ] Update API YAML
-- [ ] Update DB DDL
-
-## Phase 3: Implementation & Testing
-- [ ] Update API orchestration test cases
-- [ ] Implement code changes
-- [ ] Deploy to test environment
-- [ ] Run orchestration verification
+## [code] Code Implementation
+- [ ] Implement business logic in src/xxx
+- [ ] Write corresponding tests
 ```
+
+Section tag rules:
+- `## [delta]` — delta document output tasks only. All checked → `ready-to-merge`
+- `## [code]` — code implementation tasks only. All checked → `ready-to-verify`
+- Both sections are optional: code-only proposals have only `[code]`, spec-only proposals have only `[delta]`
+- No `[delta]` section → proposal skips directly to `ready-to-merge`
+- Old format (no section tags) → falls back to global all-checked logic for backward compatibility
+
+> **Note**: `openlogos verify` is a separate CLI step. Do not add verify/acceptance tasks to `tasks.md`.
 
 ### deltas/ Directory
 
@@ -112,7 +113,7 @@ Delta files use a tagged format to describe incremental modifications:
 [Reason for removal]
 ```
 
-The delta directory structure mirrors the main document directory:
+The delta directory structure mirrors the main document directory. `openlogos merge` recursively scans subdirectories, preserving nested paths:
 
 | Delta path | Corresponds to |
 |-----------|----------------|
@@ -120,6 +121,16 @@ The delta directory structure mirrors the main document directory:
 | `deltas/api/` | `logos/resources/api/` |
 | `deltas/database/` | `logos/resources/database/` |
 | `deltas/scenario/` | `logos/resources/scenario/` |
+| `deltas/test/` | `logos/resources/test/` |
+
+`prd/` subdirectories map directly:
+
+| Delta path | Corresponds to |
+|-----------|----------------|
+| `deltas/prd/1-product-requirements/` | `logos/resources/prd/1-product-requirements/` |
+| `deltas/prd/2-product-design/1-feature-specs/` | `logos/resources/prd/2-product-design/1-feature-specs/` |
+| `deltas/prd/3-technical-plan/1-architecture/` | `logos/resources/prd/3-technical-plan/1-architecture/` |
+| `deltas/prd/3-technical-plan/2-scenario-implementation/` | `logos/resources/prd/3-technical-plan/2-scenario-implementation/` |
 
 ## Change Workflow
 
@@ -127,27 +138,40 @@ The delta directory structure mirrors the main document directory:
 1. Create change proposal (CLI)
    └── openlogos change {slug}
    └── Generates logos/changes/{slug}/proposal.md + tasks.md + deltas/
+   └── Writes logos/.openlogos-guard
 
 2. AI-assisted proposal writing (change-writer Skill)
    └── AI analyzes impact scope, fills in proposal.md and tasks.md
+   └── [delta] section: delta output tasks | [code] section: code tasks
 
-3. Produce delta files per task (various phase Skills)
+3. Produce delta files per [delta] task
    └── For each completed task, write incremental changes to deltas/ subdirectories
+   └── Check off each [delta] task when done → proposal_step: ready-to-merge
 
-4. Review change proposal
-   └── Team/self-review of proposal.md and delta files
-
-5. Generate merge instructions (CLI)
+4. Generate merge instructions (CLI) [human confirmation point]
    └── openlogos merge {slug}
-   └── Scans deltas/, generates MERGE_PROMPT.md
+   └── Recursively scans deltas/, generates MERGE_PROMPT.md
+   └── Writes MERGE_PROMPT_GENERATED marker → proposal_step: merge-generated
 
-6. AI executes merge (merge-executor Skill)
-   └── AI reads MERGE_PROMPT.md, merges each delta into main documents
+5. AI executes merge (merge-executor Skill)
+   └── AI reads MERGE_PROMPT.md, merges each delta into logos/resources/
+   └── Commits spec documents, then writes SPEC_MERGED marker
+   └── proposal_step: coding
 
-7. Archive change (CLI)
+6. Implement code per [code] tasks
+   └── Check off each [code] task when done → proposal_step: ready-to-verify
+
+7. Run verification (CLI) [human confirmation point]
+   └── openlogos verify
+   └── Writes VERIFY_PASS or VERIFY_FAIL to proposal directory
+   └── proposal_step: verify-passed or verify-failed
+
+8. Archive change (CLI) [human confirmation point]
    └── openlogos archive {slug}
    └── Moves logos/changes/{slug}/ to logos/changes/archive/
 ```
+
+**Human confirmation points**: `openlogos merge`, `openlogos verify`, `openlogos archive`, and `git push`. AI must not execute these without explicit user authorization.
 
 ## Change Propagation Rules
 
