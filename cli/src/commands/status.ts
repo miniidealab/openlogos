@@ -164,6 +164,39 @@ function allTasksChecked(content: string): boolean {
   return total > 0 && checked === total;
 }
 
+/**
+ * 解析 tasks.md 中的结构化 section。
+ * 识别 `## [tag] ...` 格式的 section 标题，返回每个 tag 对应的 checked/total。
+ * 若文件中没有任何 `## [tag]` 标记，返回 null（表示旧格式，降级为全局判断）。
+ */
+function parseTaskSections(content: string): Record<string, { checked: number; total: number }> | null {
+  const lines = content.split(/\r?\n/);
+  const sectionPattern = /^## \[([a-z][a-z0-9-]*)\]/i;
+  let currentTag: string | null = null;
+  let hasAnyTag = false;
+  const sections: Record<string, { checked: number; total: number }> = {};
+
+  for (const line of lines) {
+    const match = line.match(sectionPattern);
+    if (match) {
+      currentTag = match[1].toLowerCase();
+      hasAnyTag = true;
+      if (!sections[currentTag]) {
+        sections[currentTag] = { checked: 0, total: 0 };
+      }
+    } else if (currentTag) {
+      if (/^- \[x\]/i.test(line)) {
+        sections[currentTag].checked++;
+        sections[currentTag].total++;
+      } else if (/^- \[ \]/.test(line)) {
+        sections[currentTag].total++;
+      }
+    }
+  }
+
+  return hasAnyTag ? sections : null;
+}
+
 export function detectProposalStep(proposalDir: string): ProposalStep {
   if (existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'))) {
     return 'coding';
@@ -180,6 +213,23 @@ export function detectProposalStep(proposalDir: string): ProposalStep {
   if (!isProposalTemplateFilled(proposalContent) || !isTasksTemplateFilled(tasksContent)) {
     return 'writing';
   }
+
+  // 结构化 section 判断
+  const sections = parseTaskSections(tasksContent);
+  if (sections !== null) {
+    // 新格式：按 [delta] section 判断
+    const delta = sections['delta'];
+    if (!delta) {
+      // 无 [delta] section → 纯代码提案，直接跳过 delta-writing
+      return 'ready-to-merge';
+    }
+    if (delta.total > 0 && delta.checked === delta.total) {
+      return 'ready-to-merge';
+    }
+    return 'delta-writing';
+  }
+
+  // 旧格式降级：全局判断（向后兼容）
   if (mergeableDeltaCount > 0 && allTasksChecked(tasksContent)) {
     return 'ready-to-merge';
   }

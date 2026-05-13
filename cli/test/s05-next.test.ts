@@ -257,6 +257,67 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(out).toMatch(/编码|implement/i);
     expect(out).not.toContain('openlogos merge my-feature');
   });
+
+  it('UT-S05-11: structured [delta] section all checked → ready-to-merge', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件到 deltas/api/ — 更新 API',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 实现代码',
+    ].join('\n'));
+    const deltasDir = join(proposalDir, 'deltas', 'api');
+    mkdirSync(deltasDir, { recursive: true });
+    writeFileSync(join(deltasDir, 'core-api.yaml'), 'delta content');
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-merge');
+  });
+
+  it('UT-S05-12: structured [delta] section partially checked → delta-writing', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件到 deltas/api/ — 更新 API',
+      '- [ ] 产出 delta 文件到 deltas/prd/ — 更新需求文档',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 实现代码',
+    ].join('\n'));
+
+    expect(detectProposalStep(proposalDir)).toBe('delta-writing');
+  });
+
+  it('UT-S05-13: no [delta] section (code-only proposal) → ready-to-merge directly', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 修复 src/xxx 中的问题',
+    ].join('\n'));
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-merge');
+  });
+
+  it('UT-S05-14: old format tasks (no section tags) falls back to global allTasksChecked', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    // 旧格式：无 section 标记，所有任务全勾 + 有 delta 文件 → ready-to-merge
+    writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n- [x] task two\n');
+    const deltasDir = join(proposalDir, 'deltas', 'prd');
+    mkdirSync(deltasDir, { recursive: true });
+    writeFileSync(join(deltasDir, 'delta1.md'), 'delta content');
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-merge');
+  });
 });
 
 describe('S05 Scenario Tests — next --format json', () => {

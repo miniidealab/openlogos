@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.17] - 2026-05-13
+
+### Changed
+
+- **tasks.md 结构化 section 格式** — 引入 `## [delta]` 和 `## [code]` section 标记，将 delta 任务与代码任务严格分离。`detectProposalStep()` 改为按 `[delta]` section 的勾选状态判断是否进入 `ready-to-merge`，不再依赖整个 tasks.md 的全局勾选
+- **纯代码提案不再卡住** — 无 `[delta]` section 的提案直接进入 `ready-to-merge`，无需手动运行 `openlogos merge` 跳出
+- **向后兼容** — 无 section 标记的旧格式 tasks.md 降级为原有全局勾选判断，已有提案不受影响
+- **新增 `spec/tasks-spec.md`** — 完整的 tasks.md 结构化格式规范文档
+- **tasks.md 模板更新** — CLI 生成的初始模板改为结构化格式
+
 ## [0.9.16] - 2026-05-13
 
 ### Changed

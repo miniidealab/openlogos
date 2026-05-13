@@ -86,12 +86,16 @@ describe('S09 Unit Tests — i18n templates', () => {
     expect(output).toContain('变更范围');
   });
 
-  it('UT-S09-05: tasksTemplate generates English template with phases', () => {
-    const output = tasksTemplate('en');
-    expect(output).toContain('# Implementation Tasks');
-    expect(output).toContain('Phase 1: Document Changes');
-    expect(output).toContain('Phase 2: Design Changes');
-    expect(output).toContain('Phase 3: Orchestration & Code');
+  it('UT-S09-05: tasksTemplate generates structured section template', () => {
+    const en = tasksTemplate('en');
+    expect(en).toContain('# Implementation Tasks');
+    expect(en).toContain('## [delta] Spec Changes');
+    expect(en).toContain('## [code] Code Implementation');
+
+    const zh = tasksTemplate('zh');
+    expect(zh).toContain('# 实现任务');
+    expect(zh).toContain('## [delta] 规格变更');
+    expect(zh).toContain('## [code] 代码实现');
   });
 
   it('UT-S09-06: mergePromptTemplate includes delta file mapping', () => {

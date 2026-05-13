@@ -431,35 +431,21 @@ export function tasksTemplate(locale: Locale): string {
   if (locale === 'zh') {
     return `# 实现任务
 
-## Phase 1: 文档变更
+## [delta] 规格变更
 - [ ] 更新需求文档的场景和验收条件
 - [ ] 更新产品设计文档的功能规格
 
-## Phase 2: 设计变更
-- [ ] 更新原型
-- [ ] 更新场景时序图
-- [ ] 更新 API YAML
-- [ ] 更新 DB DDL
-
-## Phase 3: 编排与代码
-- [ ] 更新 API 编排测试用例
+## [code] 代码实现
 - [ ] 实现代码变更
 `;
   }
   return `# Implementation Tasks
 
-## Phase 1: Document Changes
+## [delta] Spec Changes
 - [ ] Update requirements scenarios and acceptance criteria
 - [ ] Update product design feature specs
 
-## Phase 2: Design Changes
-- [ ] Update prototypes
-- [ ] Update scenario sequence diagrams
-- [ ] Update API YAML
-- [ ] Update DB DDL
-
-## Phase 3: Orchestration & Code
-- [ ] Update API orchestration test cases
+## [code] Code Implementation
 - [ ] Implement code changes
 `;
 }

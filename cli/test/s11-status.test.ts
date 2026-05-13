@@ -272,6 +272,51 @@ describe('S11 Scenario Tests — status command', () => {
     expect(core.suggestion).toMatch(/实现代码|Implement code/);
     expect(core.suggestion).not.toContain('openlogos merge my-feature');
   });
+
+  it('ST-S11-06d: structured [delta] section all checked → ready-to-merge', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件到 deltas/api/ — 更新 API',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 实现代码',
+    ].join('\n'));
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+    expect(core.active_change!.proposal_step).toBe('ready-to-merge');
+  });
+
+  it('ST-S11-06e: no [delta] section (code-only) → ready-to-merge directly', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 修复 src/xxx 中的问题',
+    ].join('\n'));
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+    expect(core.active_change!.proposal_step).toBe('ready-to-merge');
+  });
 });
 
 /* ========== Skipped Phase Tests ========== */
