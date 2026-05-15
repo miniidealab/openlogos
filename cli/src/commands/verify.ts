@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { execSync } from 'node:child_process';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -442,6 +443,24 @@ export function verify(format: OutputFormat = 'text') {
       resultPath = config.verify.result_path;
     }
   } catch { /* use default */ }
+
+  // 执行 pre_run_command（全量测试），确保 JSONL 包含完整结果
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (config.verify?.pre_run_command) {
+      const cmd = config.verify.pre_run_command as string;
+      if (format !== 'json') {
+        console.log(`\n⚙️  Running pre_run_command: ${cmd}`);
+      }
+      try {
+        execSync(cmd, { cwd: root, stdio: 'inherit' });
+      } catch {
+        if (format !== 'json') {
+          console.warn(`\n⚠️  pre_run_command exited with non-zero status. Continuing verify with existing results.`);
+        }
+      }
+    }
+  } catch { /* config 读取失败时静默跳过 */ }
 
   const fullResultPath = join(root, resultPath);
   if (!existsSync(fullResultPath)) {

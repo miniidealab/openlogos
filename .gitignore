@@ -33,6 +33,14 @@ npm-debug.log*
 
 # Claude Code 本地覆盖（含本机路径与权限，勿提交）
 **/.claude/settings.local.json
+.claude/
+
+# AI 工具本地配置（勿提交）
+.agents/
+.codex-plugin/
+.codex/
+.opencode/
+opencode.json
 
 # Review comments
 *.comments.json
