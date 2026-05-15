@@ -7,6 +7,21 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 - Config: `logos/logos.config.json`
 - Resource Index: `logos/logos-project.yaml`
 
+## ⚠️ 目录结构：源码 vs dogfooding（极易混淆，必读）
+
+本项目用自己的工具管理自己（dogfooding）。`logos/` 是 dogfooding 配置目录，**不是源码**。
+
+| 要修改的内容 | 正确路径（源码） | 错误路径（dogfooding 副本） |
+|---|---|---|
+| Skill 文档 | `skills/<skill-name>/SKILL.md` | ~~`logos/skills/<skill-name>/SKILL.md`~~ |
+| 规格文档 | `spec/<file>.md` | ~~`logos/spec/<file>.md`~~ |
+| CLI 源码 | `cli/src/` | — |
+
+**规则：**
+- 永远修改根目录下的 `skills/` 和 `spec/`，不要直接修改 `logos/` 下的副本
+- `logos/skills/` 和 `logos/spec/` 由 `openlogos sync` 从源码同步生成，手动修改会在下次 sync 时被覆盖
+- 修改源码后，提醒用户运行 `openlogos sync` 同步到 `logos/` 副本
+
 ## ⚠️ 语言策略（最高优先级）
 
 本项目的文档语言为 **中文**（配置于 `logos/logos.config.json` → `locale: "zh"`）。
