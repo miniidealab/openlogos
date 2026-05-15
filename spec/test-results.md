@@ -85,6 +85,33 @@ logos/resources/verify/test-results.jsonl
 
 ## 运行约定
 
+### `verify.pre_run_command`（推荐配置）
+
+在 `logos.config.json` 中配置 `verify.pre_run_command`，`openlogos verify` 执行前会自动运行该命令（全量测试），确保 `test-results.jsonl` 始终包含所有场景的结果：
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "npx vitest run"
+  }
+}
+```
+
+**为什么需要此配置**：reporter 每次运行测试时会清空 `test-results.jsonl`，若只跑部分场景的测试（如变更提案只涉及 S03），JSONL 将缺少其他场景（S01、S02）的结果，导致 `openlogos verify` 覆盖率不足而失败。配置此字段后，verify 会先跑全量测试再读取结果，覆盖率始终完整。
+
+常见框架对应命令：
+
+| 测试框架 | pre_run_command |
+|---------|----------------|
+| vitest | `npx vitest run` |
+| jest | `npx jest` |
+| pytest | `pytest` |
+| go test | `go test ./...` |
+| cargo test | `cargo test` |
+
+> `code-implementor` Skill 在生成测试代码后会自动检查并写入此字段，无需手动配置。
+
 ### 清空策略
 
 每次完整测试运行前，reporter 应**清空**（truncate）结果文件，确保文件只包含最近一次运行的结果。推荐方式：

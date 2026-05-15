@@ -202,7 +202,20 @@ Playwright E2E 测试使用 `test.afterEach` + fixture 捕获结果，参见 `lo
 2. **提示检查结果**：确认 `logos/resources/verify/test-results.jsonl` 已生成
 3. **所有批次完成后**：引导用户运行 `openlogos verify` 执行 Gate 3.5 验收
 4. **更新 sourceRoots**：如果实际使用的源码目录与 `logos.config.json` 中的 `sourceRoots` 不同，更新配置文件以反映实际路径。例如，如果业务代码放在 `app/` 而非默认的 `src/`，将 `sourceRoots.src` 更新为 `["app"]`
-5. **写入实现清单**：在 `logos/resources/implementation/` 目录下创建实现清单文件（如 `implementation-manifest.md`），记录本次实现覆盖的场景、端点、用例 ID 等信息，标记 Phase 3-4 完成
+5. **自动写入 `verify.pre_run_command`**：检查 `logos.config.json` 是否已有 `verify.pre_run_command` 字段。若没有，根据 `logos-project.yaml` 的 `tech_stack` 推断默认命令并写入，确保后续 `openlogos verify` 能自动跑全量测试：
+
+   | tech_stack 关键词 | 写入命令 |
+   |---|---|
+   | vitest | `npx vitest run` |
+   | jest | `npx jest` |
+   | pytest | `pytest` |
+   | go test | `go test ./...` |
+   | cargo test | `cargo test` |
+   | 无法推断 | 提示用户手动在 `logos.config.json` 的 `verify.pre_run_command` 字段填写测试命令 |
+
+   **为什么必须配置**：`openlogos-reporter` 每次运行测试时会清空 `test-results.jsonl`，若只跑部分场景的测试，JSONL 将缺少其他场景的结果，导致 `openlogos verify` 覆盖率不足而失败。配置 `pre_run_command` 后，`openlogos verify` 会在读取 JSONL 前自动执行全量测试，确保覆盖率完整。
+
+6. **写入实现清单**：在 `logos/resources/implementation/` 目录下创建实现清单文件（如 `implementation-manifest.md`），记录本次实现覆盖的场景、端点、用例 ID 等信息，标记 Phase 3-4 完成
 
 如果用户希望审查代码质量，引导使用 `code-reviewer` Skill。
 
