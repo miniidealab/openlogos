@@ -8,7 +8,7 @@ Create the standard OpenLogos project structure in the current directory. This i
 ## Synopsis
 
 ```bash
-openlogos init [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|cursor|other>]
+openlogos init [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|codex|cursor|other|all>]
 ```
 
 ## Arguments
@@ -38,10 +38,12 @@ Your choice [1/2] (default: 1): 1
 Choose AI coding tool / 选择 AI 编码工具:
   1. Claude Code (default)
   2. OpenCode
-  3. Cursor
-  4. Other
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
 
-Your choice [1/2/3/4] (default: 1):
+Your choice [1/2/3/4/5/6] (default: 1):
 ```
 
 ## Non-interactive mode (CI)
@@ -99,16 +101,19 @@ The deployment target depends on the chosen AI tool:
 |---------|--------------|-------|
 | Claude Code | `logos/skills/` (13 subdirectories with `SKILL.md`) | 13 |
 | OpenCode | `logos/skills/` (13 subdirectories with `SKILL.md`) | 13 |
+| Codex | `.agents/skills/` (13 subdirectories with `SKILL.md`) | 13 |
 | Cursor | `.cursor/rules/` (13 `.mdc` rule files + 1 policy file) | 14 |
 | Other | `logos/skills/` (13 subdirectories with `SKILL.md`) | 13 |
 
+When `--ai-tool all` is selected, OpenLogos deploys every concrete target: Claude Code, OpenCode, Codex, and Cursor. Shared instruction files (`AGENTS.md` and `CLAUDE.md`) are generated with multi-tool Skill path semantics.
+
 ### Spec files
 
-8 specification files are deployed to `logos/spec/`:
+13 specification files are deployed to `logos/spec/`:
 
 - `test-results.md` — JSONL format specification for test results
 - `sql-comment-convention.md` — SQL comment conventions
-- And 6 additional methodology specifications
+- And 11 additional methodology specifications
 
 ### Tool-specific extras
 
@@ -123,7 +128,12 @@ Idempotent: if `.claude/commands/openlogos/` already has files, the deployment i
 **OpenCode** — Additionally deploys:
 - `.opencode/plugins/openlogos.js` — OpenCode plugin
 - `opencode.json` — Permission defaults (`bash: "ask"`, `skill: "allow"`)
-- `.opencode/commands/` — 9 slash command files
+- `.opencode/commands/` — 10 slash command files
+
+**Codex** — When `--ai-tool` is `codex` or `all`, additionally deploys:
+- `.codex-plugin/plugin.json` — Codex plugin manifest
+- `.codex-plugin/hooks/session-start.sh` — SessionStart hook script
+- `.codex/config.toml` — plugin and hook configuration, merged without removing existing settings
 
 **Cursor** — Additionally deploys:
 - `.cursor/rules/openlogos-policy.mdc` — Always-applied policy rule

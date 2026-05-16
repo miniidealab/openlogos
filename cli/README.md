@@ -39,7 +39,7 @@ openlogos --version
 
 ## OpenCode 用户
 
-使用 OpenCode 时建议安装 **≥ 0.5.6**，以便获得 `.opencode/commands/` 斜杠命令模板与单包插件部署。说明见仓库内 **[OpenCode 使用指南](https://github.com/miniidealab/openlogos/blob/master/docs/opencode.md)**。
+使用 OpenCode 时建议安装 **最新版本的 OpenLogos CLI**，以便获得 `.opencode/commands/` 斜杠命令模板与单包插件部署。说明见仓库内 **[OpenCode 使用指南](https://github.com/miniidealab/openlogos/blob/master/docs/opencode.md)**。
 
 ---
 

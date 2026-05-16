@@ -20,9 +20,20 @@ No arguments or options. Must be run from the project root (where `logos/logos.c
 3. **Ensures `documents.changes`** section exists in `logos.config.json` (adds it if missing)
 4. **Regenerates `AGENTS.md`** based on current locale, AI tool, and lifecycle
 5. **Regenerates `CLAUDE.md`** based on current locale, AI tool, and lifecycle
-6. **Re-deploys Skills** to the appropriate target directory
+6. **Re-deploys Skills** to every configured target directory
 7. **Re-deploys specs** to `logos/spec/`
-8. **OpenCode only**: Re-deploys plugin, syncs `opencode.json` permissions, re-deploys slash commands
+8. **Tool plugins**: re-deploys configured OpenCode, Codex, and Claude Code plugin assets
+
+`aiTool` may be a single value, an array, or `all`. When it is an array or `all`, `sync` expands it and deploys every concrete tool target:
+
+| Tool | Skills target | Extra assets |
+|------|---------------|--------------|
+| Claude Code | `logos/skills/` | `.claude/commands/openlogos/`, `.claude/agents/`, `.claude/openlogos/bin/`, `.claude/settings.json` |
+| OpenCode | `logos/skills/` | `.opencode/plugins/openlogos.js`, `opencode.json`, `.opencode/commands/` |
+| Codex | `.agents/skills/` | `.codex-plugin/`, `.codex/config.toml` |
+| Cursor | `.cursor/rules/` | `.cursor/rules/openlogos-policy.mdc` |
+
+`AGENTS.md` and `CLAUDE.md` are regenerated with multi-tool semantics when more than one tool is configured, so their Active Skills paths match the deployed targets.
 
 ## Example output
 
@@ -35,7 +46,9 @@ Syncing project files...
   ✓ AGENTS.md updated
   ✓ CLAUDE.md updated
   ✓ 13 skills synced to logos/skills/
-  ✓ 8 specs synced to logos/spec/
+  ✓ 13 skills synced to .agents/skills/
+  ✓ 14 skills synced to .cursor/rules/
+  ✓ 13 specs synced to logos/spec/
 
 Sync complete.
 ```
@@ -47,6 +60,7 @@ The `scenarios backfilled` line only appears when there are scenario entries wit
 - After editing `logos/logos.config.json` (changing name, locale, or AI tool)
 - After upgrading the `openlogos` CLI to a new version (to get updated Skill content)
 - When switching AI tools mid-project (e.g., from Cursor to Claude Code)
+- When `aiTool` is changed to an array or `all` and you need every tool target refreshed
 - After running `openlogos launch` if you need to force-regenerate files
 
 ## Errors

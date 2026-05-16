@@ -8,23 +8,25 @@ Transition the project from `initial` lifecycle to `active` lifecycle. Once acti
 ## Synopsis
 
 ```bash
-openlogos launch
+openlogos launch [module-id]
 ```
 
-No arguments or options. Must be run from the project root.
+Must be run from the project root. If the project has exactly one module, the module id can be omitted.
 
 ## What it does
 
-1. Reads `logos/logos.config.json` and checks the current `lifecycle` value
-2. Sets `lifecycle` to `"active"` in `logos.config.json`
-3. Syncs `logos-project.yaml` project name
-4. Regenerates `AGENTS.md` and `CLAUDE.md` with change management rules
-5. Re-deploys Skills with active lifecycle context
+1. Reads `logos/logos-project.yaml` and marks the selected module as `launched`
+2. Syncs `logos-project.yaml` project name
+3. Regenerates `AGENTS.md` and `CLAUDE.md` with change management rules
+4. Re-deploys Skills with launched lifecycle context
+5. Re-deploys configured tool plugin assets for Claude Code, OpenCode, and Codex
+
+`launch` uses the same multi-tool expansion as `sync`: if `aiTool` is an array or `all`, all configured Skills and plugin targets are refreshed, not just the first tool.
 
 ## Example output
 
 ```
-✓ Change management activated! Lifecycle is now "active".
+✓ Module "core" launched! Change management is now active.
   From now on, modifications to existing documents require a change proposal.
   Run `openlogos change <slug>` to start a new change proposal.
   ✓ AI rules updated in logos/skills/
@@ -32,7 +34,7 @@ No arguments or options. Must be run from the project root.
 
 ## Before vs. after
 
-| Aspect | `initial` | `active` |
+| Aspect | `initial` | `launched` |
 |--------|-----------|----------|
 | Phase progression | Free — AI follows phases | Free — AI follows phases |
 | Modifying existing documents | Allowed directly | Requires a change proposal |
@@ -56,10 +58,10 @@ openlogos init → Phase 1 → 2 → 3 → openlogos verify
 
 ## Idempotency
 
-Running `launch` when lifecycle is already `active` is a no-op:
+Running `launch` when the selected module is already launched is a no-op:
 
 ```
-Change management is already active (lifecycle: "active").
+Module "core" is already launched. No action needed.
 ```
 
 ## Errors

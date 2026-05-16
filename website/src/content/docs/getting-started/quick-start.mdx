@@ -15,6 +15,7 @@ Get your first OpenLogos project up and running — from install to your first A
 - **An AI coding tool** — one of the following:
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (terminal-based)
   - [OpenCode](https://opencode.ai) (terminal-based)
+  - [Codex CLI](https://help.openai.com/en/collections/13193998-codex-cli) (terminal-based)
   - [Cursor](https://cursor.sh) (IDE with built-in AI)
 
 ## Step 1: Install
@@ -33,6 +34,8 @@ openlogos --version
 
 Run the init command — it will ask you to choose a language and AI tool:
 
+Choose **All** when you want one project to deploy Claude Code, OpenCode, Codex, and Cursor targets together.
+
 <Tabs>
 <TabItem label="Claude Code">
 ```
@@ -47,10 +50,12 @@ Your choice [1/2] (default: 1): 1
 Choose AI coding tool / 选择 AI 编码工具:
   1. Claude Code (default)
   2. OpenCode
-  3. Cursor
-  4. Other
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
 
-Your choice [1/2/3/4] (default: 1): 1
+Your choice [1/2/3/4/5/6] (default: 1): 1
 
 Creating OpenLogos project structure for "my-project"...
 
@@ -71,7 +76,7 @@ Creating OpenLogos project structure for "my-project"...
   ✓ AGENTS.md
   ✓ CLAUDE.md
   ✓ 13 skills deployed to logos/skills/
-  ✓ 8 specs deployed to logos/spec/
+  ✓ 13 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
@@ -96,10 +101,12 @@ Your choice [1/2] (default: 1): 1
 Choose AI coding tool / 选择 AI 编码工具:
   1. Claude Code (default)
   2. OpenCode
-  3. Cursor
-  4. Other
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
 
-Your choice [1/2/3/4] (default: 1): 2
+Your choice [1/2/3/4/5/6] (default: 1): 2
 
 Creating OpenLogos project structure for "my-project"...
 
@@ -122,8 +129,8 @@ Creating OpenLogos project structure for "my-project"...
   ✓ 13 skills deployed to logos/skills/
   ✓ OpenCode plugin deployed to .opencode/plugins/openlogos.js + opencode.json
   ✓ opencode.json created with recommended permission defaults
-  ✓ OpenCode slash commands deployed to .opencode/commands/ (9 files)
-  ✓ 8 specs deployed to logos/spec/
+  ✓ OpenCode slash commands deployed to .opencode/commands/ (10 files)
+  ✓ 13 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
@@ -144,10 +151,12 @@ Your choice [1/2] (default: 1): 1
 Choose AI coding tool / 选择 AI 编码工具:
   1. Claude Code (default)
   2. OpenCode
-  3. Cursor
-  4. Other
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
 
-Your choice [1/2/3/4] (default: 1): 3
+Your choice [1/2/3/4/5/6] (default: 1): 4
 
 Creating OpenLogos project structure for "my-project"...
 
@@ -168,7 +177,7 @@ Creating OpenLogos project structure for "my-project"...
   ✓ AGENTS.md
   ✓ CLAUDE.md
   ✓ 13 skills deployed to .cursor/rules/
-  ✓ 8 specs deployed to logos/spec/
+  ✓ 13 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
@@ -308,7 +317,7 @@ You now have a working OpenLogos project with a complete requirements document. 
 
 - **Understand the concepts** — Read the [Core Concepts](/concepts/three-layer-model) to understand the WHY → WHAT → HOW model, scenario-driven development, and test-first methodology.
 
-- **Explore the toolchain** — Check the [CLI Reference](/cli) for all 7 commands and the [Skills Reference](/skills) for all 13 AI Skills.
+- **Explore the toolchain** — Check the [CLI Reference](/cli) for all 12 top-level commands and the [Skills Reference](/skills) for all 13 AI Skills.
 
 :::tip[Go deeper: First AI Collaboration]
 Ready to go beyond Phase 1? The [First AI Collaboration](/getting-started/first-collaboration) guide walks you through the **complete journey** — from requirements to architecture, API design, test cases, code generation, and Gate 3.5 verification — building a real Short-Link service end-to-end.

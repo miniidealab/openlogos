@@ -3,7 +3,7 @@ title: AGENTS.md Specification
 description: Content structure, generation rules, and multi-platform adaptation for the AI instruction file.
 ---
 
-`AGENTS.md` is the AI instruction file placed at the project root. When an AI coding tool (Cursor, Claude Code, OpenCode, etc.) opens a project, it reads this file to understand the project's methodology, rules, and workflow.
+`AGENTS.md` is the AI instruction file placed at the project root. When an AI coding tool (Cursor, Claude Code, OpenCode, Codex, etc.) opens a project, it reads this file to understand the project's methodology, rules, and workflow.
 
 ## Content Structure
 
@@ -76,7 +76,9 @@ The Active Skills section is dynamically generated based on the `aiTool` field i
 | `cursor` | `.cursor/rules/*.mdc` | `skills/{name}/` → `.cursor/rules/{name}.mdc` |
 | `claude-code` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
 | `opencode` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
+| `codex` | `.agents/skills/*/SKILL.md` | `.agents/skills/{name}/SKILL.md` |
 | `other` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
+| `all` or array | All configured tool targets | Multi-tool Skill paths |
 
 All 13 built-in Skills are listed with descriptions.
 
@@ -109,6 +111,7 @@ Different AI tools use different instruction file names, but the content is cons
 | **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | Auto-deployed by `init` / `sync` |
 | **OpenCode (compat)** | `AGENTS.md` | `logos/skills/*/SKILL.md` | Auto-deployed by `init` / `sync` |
 | **OpenCode (plugin)** | `opencode.json` + `.opencode/plugins/` | Plugin-loaded | Plugin handles command bridging, `AGENTS.md` as fallback |
+| **Codex** | `AGENTS.md` + `.codex/config.toml` | `.agents/skills/*/SKILL.md` | Auto-deployed by `init` / `sync` |
 | **GitHub Copilot** | `.github/copilot-instructions.md` | Planned | Future release |
 
 `openlogos sync` generates all needed instruction files simultaneously, ensuring consistent instructions across AI tools.

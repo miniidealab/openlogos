@@ -46,6 +46,16 @@ AI 辅助发布时，必须按以下顺序执行：
 
 `npm publish` 是人类确认点，AI 不得自动执行。
 
+## 官网同步说明
+
+每次发布前，除了 CLI 包与插件版本号之外，还应同步检查并更新官网与文档入口中的过期表述，包括但不限于：
+
+- `website/src/content/docs/cli/index.md` 中的版本示例与命令总数
+- `website/src/content/docs/cli/init.md` 中的 AI 工具选择选项与安装说明
+- `website/src/content/docs/cli/sync.md` / `launch.md` 中的行为说明
+- `website/src/content/docs/getting-started/index.md` 与 `quick-start.mdx` 中的入门文案
+- 根目录 `README.md` / `README.en.md` 中的安装与版本说明
+
 ## commit message 规范
 
 | 场景 | 格式 |

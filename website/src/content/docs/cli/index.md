@@ -15,7 +15,7 @@ Verify:
 
 ```bash
 openlogos --version
-# 0.5.6
+# 0.9.21
 ```
 
 ## Global options
@@ -34,6 +34,9 @@ openlogos --version
 | [`init`](/cli/init) | Initialize a new OpenLogos project structure |
 | [`sync`](/cli/sync) | Regenerate AI instruction files and Skills |
 | [`status`](/cli/status) | Show project phase and suggest next steps |
+| [`next`](/cli/next) | Show the single most actionable next step |
+| [`detect`](/cli/detect) | Show CLI version and project detection information |
+| [`index`](/cli/index-command) | Generate an AI-ready prompt to rebuild `logos-project.yaml` resource index |
 | [`module`](/cli/module) | Manage project modules (list / add / rename / remove) |
 
 ### Verification & Launch
@@ -109,6 +112,7 @@ cd my-project
 # 2. Work through phases with AI
 #    Phase 1 → 2 → 3-0 → 3-1 → 3-2 → 3-3 (AI loads Skills automatically)
 openlogos status          # check progress at any time
+openlogos next            # ask for the single next action
 
 # 3. Implement code + test code (Phase 3-4)
 #    AI generates business code and test code from full specification chain

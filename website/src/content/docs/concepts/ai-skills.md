@@ -11,7 +11,7 @@ A Skill is a Markdown file (`SKILL.md`) stored in the project's `skills/` direct
 
 Key properties:
 
-- **Platform-agnostic**: Works with Claude Code, OpenCode, Cursor, or any tool that reads project files
+- **Platform-agnostic**: Works with Claude Code, OpenCode, Codex, Cursor, or any tool that reads project files
 - **Phase-aware**: Each Skill knows which phase it belongs to and what inputs it expects
 - **Guardrailed**: Skills enforce methodology rules (e.g., "do not generate code without test cases")
 - **Self-contained**: Each Skill includes its own instructions, output templates, and quality checks
@@ -66,6 +66,7 @@ The loading mechanism varies by platform:
 |----------|-----------|
 | Claude Code | Native `.claude/` plugin system |
 | OpenCode | `hooks/` and command integration |
+| Codex | `.agents/skills/` plus `.codex-plugin/` hook integration |
 | Cursor | `.cursor/rules/` auto-attached rules that reference Skills |
 | Other tools | `AGENTS.md` as the universal entry point |
 

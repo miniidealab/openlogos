@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.21] - 2026-05-16
+
+### Fixed
+
+- **`openlogos sync` 多工具技能同步一致性** — 当 `aiTool` 为数组或 `all` 时，`sync` 与 `launch` 现在会同步部署所有可部署工具的 Skills、插件资产与对应指令文件，`AGENTS.md` / `CLAUDE.md` 也按多工具语义生成，避免文件已部署但指令文件只覆盖单一工具的错配。
+
+### Changed
+
+- **官网与 CLI 文档同步更新** — 修正 `openlogos init` 的 AI 工具选择说明、CLI 命令总数、版本示例，以及 `sync` / `launch` 的多工具行为描述，确保对外文档与当前实现一致。
+
 ## [0.9.20] - 2026-05-13
 
 ### Changed

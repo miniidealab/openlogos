@@ -3,7 +3,7 @@ title: Introduction
 description: What OpenLogos is, the problem it solves, how it works, and what's included.
 ---
 
-**OpenLogos** is an open-source software engineering methodology for the AI era. It turns AI coding tools — Claude Code, OpenCode, Cursor, and others — from guessing machines into precision instruments by providing structured, explicit context at every stage of development.
+**OpenLogos** is an open-source software engineering methodology for the AI era. It turns AI coding tools — Claude Code, OpenCode, Codex, Cursor, and others — from guessing machines into precision instruments by providing structured, explicit context at every stage of development.
 
 ## The problem: Vibe Coding
 
@@ -65,7 +65,7 @@ You + AI coding tool
 ```
 
 1. You run `openlogos init` to create the project structure
-2. Open the project in your AI coding tool (Claude Code, OpenCode, Cursor, etc.)
+2. Open the project in your AI coding tool (Claude Code, OpenCode, Codex, Cursor, etc.)
 3. AI reads `AGENTS.md`, detects the current phase, and loads the appropriate Skill
 4. You collaborate with AI through each phase — it follows the Skill's structured process
 5. Each phase produces artifacts that become context for the next phase
@@ -86,18 +86,22 @@ Skills work with any AI tool that can read project files. No vendor lock-in. [Fu
 
 ## CLI
 
-The `openlogos` CLI provides 8 commands for project lifecycle management:
+The `openlogos` CLI provides 12 top-level commands for project lifecycle management:
 
 | Command | Purpose |
 |---------|---------|
 | `init` | Initialize project structure |
-| `sync` | Synchronize AGENTS.md with config |
+| `sync` | Synchronize instruction files, Skills, specs, and tool integrations |
 | `status` | Show current phase and progress |
+| `next` | Show the single most actionable next step |
 | `verify` | Validate test results against acceptance criteria (Gate 3.5) |
 | `launch` | Activate change management after verification passes |
 | `change` | Create a change proposal (delta) |
 | `merge` | Merge approved changes into main artifacts |
 | `archive` | Archive completed change proposals |
+| `detect` | Show CLI version and project detection information |
+| `index` | Generate an AI-ready prompt to rebuild the resource index |
+| `module` | Manage project modules |
 
 [Full CLI Reference →](/cli)
 
@@ -142,6 +146,7 @@ OpenLogos is tool-agnostic. Built-in integration support for:
 |----------|----------------------|
 | **Claude Code** | Native `.claude/` plugin system |
 | **OpenCode** | `hooks/` and command integration |
+| **Codex** | `.agents/skills/` plus `.codex-plugin/` hook integration |
 | **Cursor** | `.cursor/rules/` auto-attached rules |
 | **Other tools** | `AGENTS.md` as universal entry point |
 
