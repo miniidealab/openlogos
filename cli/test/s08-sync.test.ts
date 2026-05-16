@@ -332,6 +332,31 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
   });
 
+  it('ST-S08-10b: sync with all keeps skills for all deployable tools and generates shared docs', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = ['claude-code', 'opencode', 'codex', 'cursor'];
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    sync();
+
+    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('13 skills synced to .cursor/rules/');
+    expect(allLogs).toContain('13 skills synced to logos/skills/');
+  });
+
   it('ST-S08-10: sync adds sourceRoots when missing from config', () => {
     scaffoldProject(root, { locale: 'en' });
 

@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, deployOpenCodePlugin, deployCodexPlugin, type AiTool } from './init.js';
+import { createAgentsMd, deploySkills, deployOpenCodePlugin, deployCodexPlugin, expandAiTools, resolveDocsAiTool } from './init.js';
 import { syncLogosProjectName } from './sync.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
 
@@ -74,15 +74,15 @@ export function launch(moduleArg?: string) {
   }
 
   const isLaunched = true;
-  const rawAiTool = config.aiTool || 'cursor';
-  const aiTools: AiTool[] = Array.isArray(rawAiTool) ? rawAiTool : [rawAiTool];
-  const primaryAiTool: AiTool = aiTools[0];
+  const rawAiTool = config.aiTool ?? 'cursor';
+  const aiTools = expandAiTools(rawAiTool);
+  const docsAiTool = resolveDocsAiTool(rawAiTool);
   const projectName = config.name || 'Unnamed Project';
 
   syncLogosProjectName(root, projectName);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, primaryAiTool, 'agents', isLaunched));
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, primaryAiTool, 'claude', isLaunched));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, docsAiTool, 'agents', isLaunched));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, docsAiTool, 'claude', isLaunched));
 
   for (const tool of aiTools) {
     const deployResult = deploySkills(root, tool, locale, isLaunched);

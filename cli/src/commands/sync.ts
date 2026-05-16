@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, deployCodexPlugin, deployClaudeCodePlugin, type AiTool } from './init.js';
+import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, deployCodexPlugin, deployClaudeCodePlugin, expandAiTools, resolveDocsAiTool } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
 import { VERSION } from '../lib/json-output.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
@@ -97,9 +97,9 @@ export function sync() {
   const config = JSON.parse(readFileSync(configPath, 'utf-8'));
   const projectName = config.name || 'Unnamed Project';
   const locale = readLocale(root);
-  const rawAiTool = config.aiTool || 'cursor';
-  const aiTools: AiTool[] = Array.isArray(rawAiTool) ? rawAiTool : [rawAiTool];
-  const primaryAiTool: AiTool = aiTools[0];
+  const rawAiTool = config.aiTool ?? 'cursor';
+  const aiTools = expandAiTools(rawAiTool);
+  const docsAiTool = resolveDocsAiTool(rawAiTool);
 
   // Run migration for old projects (config.lifecycle === 'active' → mark module launched)
   const migration = migrateProjectLifecycle(root);
@@ -168,10 +168,10 @@ export function sync() {
     console.log('  ✓ sourceRoots added to logos.config.json');
   }
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, primaryAiTool, 'agents', isLaunched));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, docsAiTool, 'agents', isLaunched));
   console.log('  ✓ AGENTS.md updated');
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, primaryAiTool, 'claude', isLaunched));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, docsAiTool, 'claude', isLaunched));
   console.log('  ✓ CLAUDE.md updated');
 
   for (const tool of aiTools) {

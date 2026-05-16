@@ -229,6 +229,13 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
     expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
     expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
+
     const yaml = readProjectYaml(root);
     expect(yaml.modules[0].lifecycle).toBe('launched');
   });

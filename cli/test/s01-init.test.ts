@@ -767,11 +767,14 @@ describe('S01 Scenario Tests — init command', () => {
     await init('all-project', { locale: 'en', aiTool: 'all' });
 
     expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
   });
 });
 

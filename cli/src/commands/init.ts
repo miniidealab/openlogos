@@ -6,6 +6,40 @@ import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i
 
 export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' | 'all';
 
+const ALL_DEPLOYABLE_AI_TOOLS: Exclude<AiTool, 'all'>[] = ['claude-code', 'opencode', 'codex', 'cursor'];
+
+function isDeployableAiTool(value: unknown): value is Exclude<AiTool, 'all'> {
+  return value === 'claude-code'
+    || value === 'opencode'
+    || value === 'codex'
+    || value === 'cursor'
+    || value === 'other';
+}
+
+export function expandAiTools(rawAiTool: unknown): Exclude<AiTool, 'all'>[] {
+  const rawValues = Array.isArray(rawAiTool) ? rawAiTool : [rawAiTool];
+  const collected: Exclude<AiTool, 'all'>[] = [];
+
+  for (const value of rawValues) {
+    if (value === 'all') {
+      collected.push(...ALL_DEPLOYABLE_AI_TOOLS);
+      continue;
+    }
+
+    if (isDeployableAiTool(value)) {
+      collected.push(value);
+    }
+  }
+
+  const normalized = Array.from(new Set(collected));
+  return normalized.length > 0 ? normalized : ['cursor'];
+}
+
+export function resolveDocsAiTool(rawAiTool: unknown): AiTool {
+  const tools = expandAiTools(rawAiTool);
+  return tools.length === 1 ? tools[0] : 'all';
+}
+
 type NameSource = 'argument' | 'package.json' | 'Cargo.toml' | 'pyproject.toml' | 'directory';
 
 interface NameResult {
@@ -845,7 +879,7 @@ export type Lifecycle = 'initial' | 'active';
 
 export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool = 'cursor'): string {
   const aiToolValue: AiTool | AiTool[] = aiTool === 'all'
-    ? ['claude-code', 'opencode', 'codex', 'cursor']
+    ? ALL_DEPLOYABLE_AI_TOOLS
     : aiTool;
   return JSON.stringify({
     name,
@@ -1111,6 +1145,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
 
   const locale: Locale = options?.locale === 'zh' ? 'zh' : options?.locale === 'en' ? 'en' : await chooseLocale();
   const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'opencode' ? 'opencode' : options?.aiTool === 'codex' ? 'codex' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : options?.aiTool === 'all' ? 'all' : await chooseAiTool(locale);
+  const docsAiTool = resolveDocsAiTool(aiTool);
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
 
   const sourceLabel: Record<NameSource, string> = {
@@ -1136,13 +1171,13 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, aiTool, 'agents', false));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, docsAiTool, 'agents', false));
   console.log(`  ✓ AGENTS.md`);
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, aiTool, 'claude', false));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, docsAiTool, 'claude', false));
   console.log(`  ✓ CLAUDE.md`);
 
-  const deployTools: AiTool[] = aiTool === 'all' ? ['claude-code', 'opencode', 'codex', 'cursor'] : [aiTool];
+  const deployTools = expandAiTools(aiTool);
 
   for (const tool of deployTools) {
     const deployResult = deploySkills(root, tool, locale, false);
