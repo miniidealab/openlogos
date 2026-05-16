@@ -14,6 +14,8 @@ import {
   deployClaudeCodePlugin,
   findClaudePluginTemplateSource,
   generatePolicyMdc,
+  mergeAiToolConfig,
+  resolveDocsAiToolForTarget,
   SKILL_NAMES,
   init,
 } from '../src/commands/init.js';
@@ -153,6 +155,22 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(output).toContain('.agents/skills/prd-writer/SKILL.md');
     expect(output).not.toContain('logos/skills/prd-writer/SKILL.md');
   });
+
+  it('UT-S01-10c: resolveDocsAiToolForTarget keeps cursor+codex AGENTS.md on Codex skill paths', () => {
+    expect(resolveDocsAiToolForTarget(['cursor', 'codex'], 'agents')).toBe('codex');
+    expect(resolveDocsAiToolForTarget(['cursor', 'codex'], 'claude')).toBe('cursor');
+  });
+});
+
+describe('S01 Unit Tests — aiTool config merge', () => {
+  it('UT-S01-43: mergeAiToolConfig appends requested tool without duplicates', () => {
+    expect(mergeAiToolConfig('cursor', 'codex')).toEqual(['cursor', 'codex']);
+    expect(mergeAiToolConfig(['cursor', 'codex'], 'codex')).toEqual(['cursor', 'codex']);
+  });
+
+  it('UT-S01-44: mergeAiToolConfig expands all to every deployable target', () => {
+    expect(mergeAiToolConfig('cursor', 'all')).toEqual(['claude-code', 'opencode', 'codex', 'cursor']);
+  });
 });
 
 describe('S01 Unit Tests — packaging and usage text', () => {
@@ -170,6 +188,7 @@ describe('S01 Unit Tests — packaging and usage text', () => {
     const initText = readFileSync(join(rootDir, 'cli', 'src', 'commands', 'init.ts'), 'utf-8');
 
     expect(indexText).toContain('--ai-tool <claude-code|opencode|codex|cursor|other|all>');
+    expect(indexText).toContain('--aitool <claude-code|opencode|codex|cursor|other|all>');
     expect(initText).toContain('--ai-tool <claude-code|opencode|codex|cursor|other|all>');
   });
 });
@@ -603,6 +622,7 @@ describe('S01 Scenario Tests — init command', () => {
     await expect(init()).rejects.toThrow('process.exit(1)');
     const allErrors = con.errors.join('\n');
     expect(allErrors).toContain('already exists');
+    expect(allErrors).toContain('init --ai-tool <tool>');
   });
 
   it('ST-S01-05: non-TTY without --locale exits with error', async () => {
@@ -624,6 +644,14 @@ describe('S01 Scenario Tests — init command', () => {
     expect(config.aiTool).toBe('cursor');
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+  });
+
+  it('ST-S01-05d: invalid explicit --ai-tool exits with error', async () => {
+    process.stdin.isTTY = undefined as unknown as boolean;
+
+    await expect(init('ci-project', { locale: 'en', aiTool: 'ghost' })).rejects.toThrow('process.exit(1)');
+    const allErrors = con.errors.join('\n');
+    expect(allErrors).toContain('unsupported AI tool "ghost"');
   });
 
   it('ST-S01-05c: non-TTY with --locale zh auto-detects claude-code from env', async () => {
@@ -775,6 +803,84 @@ describe('S01 Scenario Tests — init command', () => {
     expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
+  });
+
+  it('ST-S01-12: existing cursor project can add codex target without rebuilding resources', async () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'cursor';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    mkdirSync(join(root, '.cursor', 'rules'), { recursive: true });
+    writeFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), '# existing cursor skill');
+    const resourcePath = join(root, 'logos', 'resources', 'prd', '1-product-requirements', 'core-01-existing.md');
+    writeFileSync(resourcePath, '# existing requirements');
+    const yamlPath = join(root, 'logos', 'logos-project.yaml');
+    writeFileSync(yamlPath, 'project:\n  name: "test-project"\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\ncustom: keep-me\n');
+
+    await init(undefined, { aiTool: 'codex' });
+
+    const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(updatedConfig.aiTool).toEqual(['cursor', 'codex']);
+    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
+    expect(readFileSync(resourcePath, 'utf-8')).toBe('# existing requirements');
+    expect(readFileSync(yamlPath, 'utf-8')).toContain('custom: keep-me');
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
+    expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).not.toContain('## Active Skills');
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('Adding AI tool target(s)');
+    expect(allLogs).toContain('13 skills synced to .agents/skills/');
+    expect(allLogs).toContain('Codex plugin synced');
+  });
+
+  it('ST-S01-13: existing project can add all targets and writes stable aiTool array', async () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'cursor';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    await init(undefined, { aiTool: 'all' });
+
+    const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(updatedConfig.aiTool).toEqual(['claude-code', 'opencode', 'codex', 'cursor']);
+    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.claude', 'commands', 'openlogos'))).toBe(true);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
+  });
+
+  it('ST-S01-14: adding codex twice is idempotent', async () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'cursor';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    await init(undefined, { aiTool: 'codex' });
+    await init(undefined, { aiTool: 'codex' });
+
+    const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+    expect(updatedConfig.aiTool).toEqual(['cursor', 'codex']);
+
+    const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
+    const hookMatches = codexConfig.match(/command = "\.codex-plugin\/hooks\/session-start\.sh"/g) ?? [];
+    expect(hookMatches).toHaveLength(1);
   });
 });
 

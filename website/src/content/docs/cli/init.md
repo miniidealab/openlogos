@@ -11,6 +11,12 @@ Create the standard OpenLogos project structure in the current directory. This i
 openlogos init [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|codex|cursor|other|all>]
 ```
 
+对于已经初始化过的 OpenLogos 项目，显式传入 `--ai-tool` 会让 `init` 进入目标工具补齐模式：
+
+```bash
+openlogos init --ai-tool codex
+```
+
 ## Arguments
 
 | Argument | Description | Default |
@@ -22,7 +28,8 @@ openlogos init [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|codex|
 | Option | Values | Default | Description |
 |--------|--------|---------|-------------|
 | `--locale` | `en`, `zh` | Interactive prompt | Set the document language (skips prompt) |
-| `--ai-tool` | `claude-code`, `opencode`, `codex`, `cursor`, `other`, `all` | Interactive prompt | Set the AI coding tool (skips prompt) |
+| `--ai-tool` | `claude-code`, `opencode`, `codex`, `cursor`, `other`, `all` | Interactive prompt | 为新项目设置 AI 编码工具，或为已初始化项目补齐目标工具 |
+| `--aitool` | Same as `--ai-tool` | Same as `--ai-tool` | `--ai-tool` 的等价别名 |
 
 ## Interactive mode
 
@@ -57,6 +64,28 @@ openlogos init my-project --locale en --ai-tool claude-code
 If `--locale` is omitted in non-TTY mode, the command exits with an error. If `--ai-tool` is omitted, it auto-detects:
 - If `CLAUDE_PLUGIN_ROOT` or `CLAUDE_CODE` env vars are set → `claude-code`
 - Otherwise → `claude-code` (default)
+
+## 为已初始化项目补齐 AI 工具目标
+
+如果 `logos/logos.config.json` 已存在，`openlogos init` 默认仍会拒绝重建项目。显式传入 `--ai-tool` 后，命令会改为执行增量补齐：
+
+```bash
+# 原本按 Cursor 初始化的项目，可以补齐 Codex 支持
+openlogos init --ai-tool codex
+
+# 补齐所有内置部署目标
+openlogos init --ai-tool all
+```
+
+目标工具补齐模式会：
+
+- 更新 `logos/logos.config.json`，将请求的目标工具合并到 `aiTool`
+- 基于当前工具集合和 lifecycle 状态重新生成 `AGENTS.md` 与 `CLAUDE.md`
+- 部署目标工具所需的 Skills、插件、hooks、斜杠命令和 rules
+- 同步方法论规格到 `logos/spec/`
+- 保留 `logos/resources/`、`logos/logos-project.yaml` 和现有项目文档
+
+重复执行是幂等的。例如连续运行两次 `openlogos init --ai-tool codex`，`aiTool` 中只会保留一个 `codex` 条目，也不会重复写入 Codex SessionStart hook。
 
 ## What it creates
 
@@ -154,7 +183,7 @@ If both an explicit name and a config file name exist and they differ, the CLI p
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `logos/logos.config.json already exists` | Directory already initialized | Use `openlogos sync` instead to update |
+| `logos/logos.config.json already exists` | 目录已初始化且没有请求目标工具 | 使用 `openlogos init --ai-tool <tool>` 补齐目标工具，或使用 `openlogos sync` 刷新当前配置 |
 | `--locale is required in non-interactive mode` | Running in CI without `--locale` | Add `--locale en` or `--locale zh` |
 
 ## Related commands

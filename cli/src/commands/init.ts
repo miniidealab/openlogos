@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readd
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
+import { parse as parseYaml } from 'yaml';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 
 export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' | 'all';
@@ -14,6 +15,11 @@ function isDeployableAiTool(value: unknown): value is Exclude<AiTool, 'all'> {
     || value === 'codex'
     || value === 'cursor'
     || value === 'other';
+}
+
+export function parseAiTool(value: unknown): AiTool | undefined {
+  if (value === 'all' || isDeployableAiTool(value)) return value;
+  return undefined;
 }
 
 export function expandAiTools(rawAiTool: unknown): Exclude<AiTool, 'all'>[] {
@@ -38,6 +44,36 @@ export function expandAiTools(rawAiTool: unknown): Exclude<AiTool, 'all'>[] {
 export function resolveDocsAiTool(rawAiTool: unknown): AiTool {
   const tools = expandAiTools(rawAiTool);
   return tools.length === 1 ? tools[0] : 'all';
+}
+
+export function resolveDocsAiToolForTarget(rawAiTool: unknown, target: 'agents' | 'claude'): AiTool {
+  const tools = expandAiTools(rawAiTool);
+  if (tools.length === 1) return tools[0];
+
+  if (target === 'agents') {
+    const needsSharedLogosSkills = tools.includes('claude-code')
+      || tools.includes('opencode')
+      || tools.includes('other');
+    if (tools.includes('codex') && !needsSharedLogosSkills) return 'codex';
+    return 'all';
+  }
+
+  if (tools.includes('claude-code')) return 'claude-code';
+  if (tools.includes('other')) return 'other';
+  return 'cursor';
+}
+
+export function mergeAiToolConfig(existingRawAiTool: unknown, requestedAiTool: AiTool): AiTool | Exclude<AiTool, 'all'>[] {
+  const existingTools = expandAiTools(existingRawAiTool ?? 'cursor');
+  const mergedTools = requestedAiTool === 'all'
+    ? [
+        ...ALL_DEPLOYABLE_AI_TOOLS,
+        ...existingTools.filter(tool => !ALL_DEPLOYABLE_AI_TOOLS.includes(tool)),
+      ]
+    : [...existingTools, ...expandAiTools(requestedAiTool)];
+
+  const uniqueTools = Array.from(new Set(mergedTools));
+  return uniqueTools.length === 1 ? uniqueTools[0] : uniqueTools;
 }
 
 type NameSource = 'argument' | 'package.json' | 'Cargo.toml' | 'pyproject.toml' | 'directory';
@@ -565,6 +601,88 @@ export function deploySpecs(root: string): { count: number } | null {
   }
 
   return { count: files.length };
+}
+
+function readProjectLaunched(root: string): boolean {
+  const yamlPath = join(root, 'logos', 'logos-project.yaml');
+  if (!existsSync(yamlPath)) return false;
+
+  try {
+    const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
+    if (Array.isArray(yaml?.modules)) {
+      return (yaml.modules as Array<{ lifecycle?: string }>).some(m => m.lifecycle === 'launched');
+    }
+  } catch { /* ignore invalid project index */ }
+
+  return false;
+}
+
+type DeployLogMode = 'deployed' | 'synced';
+
+export function deployAiToolAssets(
+  root: string,
+  aiTools: Exclude<AiTool, 'all'>[],
+  locale: Locale,
+  isLaunched: boolean,
+  mode: DeployLogMode = 'deployed',
+) {
+  const skillMessageKey = mode === 'synced' ? 'init.skillsSynced' : 'init.skillsDeployed';
+  const opencodeMessageKey = mode === 'synced' ? 'init.opencodePluginSynced' : 'init.opencodePluginDeployed';
+  const codexMessageKey = mode === 'synced' ? 'init.codexPluginSynced' : 'init.codexPluginDeployed';
+  const claudeMessageKey = mode === 'synced' ? 'init.claudePluginSynced' : 'init.claudePluginDeployed';
+
+  for (const tool of aiTools) {
+    const deployResult = deploySkills(root, tool, locale, isLaunched);
+    if (deployResult && deployResult.count > 0) {
+      console.log(`  ✓ ${t(locale, skillMessageKey, { count: String(deployResult.count), target: deployResult.target })}`);
+    }
+  }
+
+  if (aiTools.includes('opencode')) {
+    const pluginResult = deployOpenCodePlugin(root, locale);
+    if (pluginResult) {
+      console.log(`  ✓ ${t(locale, opencodeMessageKey, { target: pluginResult.target })}`);
+      if (pluginResult.config.created) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeConfigCreated')}`);
+      } else if (pluginResult.config.updated) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
+      }
+      if (pluginResult.commandCount > 0) {
+        console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
+      }
+    }
+  }
+
+  if (aiTools.includes('codex')) {
+    const codexResult = deployCodexPlugin(root, locale);
+    if (codexResult) {
+      console.log(`  ✓ ${t(locale, codexMessageKey, { target: codexResult.target })}`);
+      if (codexResult.config.created) {
+        console.log(`  ✓ ${t(locale, 'init.codexConfigCreated')}`);
+      } else if (codexResult.config.updated) {
+        console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
+      }
+    }
+  }
+
+  if (aiTools.includes('claude-code')) {
+    const claudeResult = deployClaudeCodePlugin(root, locale);
+    if (claudeResult) {
+      if (claudeResult.skipped) {
+        console.log(`  ℹ ${t(locale, 'init.claudePluginSkipped')}`);
+      } else {
+        console.log(`  ✓ ${t(locale, claudeMessageKey, { commandCount: String(claudeResult.commandCount), agentCount: String(claudeResult.agentCount) })}`);
+        if (claudeResult.hooksUpdated) {
+          console.log(`  ✓ ${t(locale, 'init.claudeHooksUpdated')}`);
+        }
+      }
+    }
+  }
+}
+
+function writeInstructionFiles(root: string, locale: Locale, rawAiTool: unknown, isLaunched: boolean) {
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', isLaunched));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', isLaunched));
 }
 
 export function generatePolicyMdc(locale: Locale, isLaunched: boolean = false): string {
@@ -1136,16 +1254,67 @@ ${conventionsForAgentsMd(locale)}
 
 export async function init(name?: string, options?: { locale?: string; aiTool?: string }) {
   const root = process.cwd();
+  const configPath = join(root, 'logos', 'logos.config.json');
 
-  if (existsSync(join(root, 'logos', 'logos.config.json'))) {
+  if (existsSync(configPath)) {
+    if (options?.aiTool !== undefined) {
+      const requestedAiTool = parseAiTool(options.aiTool);
+      if (!requestedAiTool) {
+        console.error(`Error: unsupported AI tool "${options.aiTool}".`);
+        console.error('Supported values: claude-code, opencode, codex, cursor, other, all');
+        process.exit(1);
+      }
+
+      let config: Record<string, unknown>;
+      try {
+        config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      } catch {
+        console.error('Error: failed to parse logos/logos.config.json.');
+        process.exit(1);
+      }
+
+      const locale: Locale = config.locale === 'zh' ? 'zh' : 'en';
+      const requestedTools = expandAiTools(requestedAiTool);
+      config.aiTool = mergeAiToolConfig(config.aiTool, requestedAiTool);
+      writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+      const isLaunched = readProjectLaunched(root);
+      console.log(`\nAdding AI tool target(s) to existing OpenLogos project: ${requestedTools.join(', ')}\n`);
+
+      writeInstructionFiles(root, locale, config.aiTool, isLaunched);
+      console.log('  ✓ AGENTS.md updated');
+      console.log('  ✓ CLAUDE.md updated');
+
+      deployAiToolAssets(root, requestedTools, locale, isLaunched, 'synced');
+
+      const specResult = deploySpecs(root);
+      if (specResult && specResult.count > 0) {
+        console.log(`  ✓ ${specResult.count} specs synced to logos/spec/`);
+      }
+
+      console.log('\nAI tool target update complete.\n');
+      return;
+    }
+
     console.error('Error: logos/logos.config.json already exists in current directory.');
     console.error('This directory has already been initialized as an OpenLogos project.');
+    console.error('Use `openlogos init --ai-tool <tool>` to add a target AI tool, or `openlogos sync` to refresh the current configuration.');
     process.exit(1);
   }
 
   const locale: Locale = options?.locale === 'zh' ? 'zh' : options?.locale === 'en' ? 'en' : await chooseLocale();
-  const aiTool: AiTool = options?.aiTool === 'claude-code' ? 'claude-code' : options?.aiTool === 'opencode' ? 'opencode' : options?.aiTool === 'codex' ? 'codex' : options?.aiTool === 'cursor' ? 'cursor' : options?.aiTool === 'other' ? 'other' : options?.aiTool === 'all' ? 'all' : await chooseAiTool(locale);
-  const docsAiTool = resolveDocsAiTool(aiTool);
+  let aiTool: AiTool;
+  if (options?.aiTool !== undefined) {
+    const parsedAiTool = parseAiTool(options.aiTool);
+    if (!parsedAiTool) {
+      console.error(`Error: unsupported AI tool "${options.aiTool}".`);
+      console.error('Supported values: claude-code, opencode, codex, cursor, other, all');
+      process.exit(1);
+    }
+    aiTool = parsedAiTool;
+  } else {
+    aiTool = await chooseAiTool(locale);
+  }
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
 
   const sourceLabel: Record<NameSource, string> = {
@@ -1171,61 +1340,14 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, docsAiTool, 'agents', false));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'agents'), 'agents', false));
   console.log(`  ✓ AGENTS.md`);
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, docsAiTool, 'claude', false));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'claude'), 'claude', false));
   console.log(`  ✓ CLAUDE.md`);
 
   const deployTools = expandAiTools(aiTool);
-
-  for (const tool of deployTools) {
-    const deployResult = deploySkills(root, tool, locale, false);
-    if (deployResult && deployResult.count > 0) {
-      console.log(`  ✓ ${t(locale, 'init.skillsDeployed', { count: String(deployResult.count), target: deployResult.target })}`);
-    }
-  }
-
-  if (aiTool === 'opencode' || aiTool === 'all') {
-    const pluginResult = deployOpenCodePlugin(root, locale);
-    if (pluginResult) {
-      console.log(`  ✓ ${t(locale, 'init.opencodePluginDeployed', { target: pluginResult.target })}`);
-      if (pluginResult.config.created) {
-        console.log(`  ✓ ${t(locale, 'init.opencodeConfigCreated')}`);
-      } else if (pluginResult.config.updated) {
-        console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
-      }
-      if (pluginResult.commandCount > 0) {
-        console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
-      }
-    }
-  }
-
-  if (aiTool === 'codex' || aiTool === 'all') {
-    const codexResult = deployCodexPlugin(root, locale);
-    if (codexResult) {
-      console.log(`  ✓ ${t(locale, 'init.codexPluginDeployed', { target: codexResult.target })}`);
-      if (codexResult.config.created) {
-        console.log(`  ✓ ${t(locale, 'init.codexConfigCreated')}`);
-      } else if (codexResult.config.updated) {
-        console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
-      }
-    }
-  }
-
-  if (aiTool === 'claude-code' || aiTool === 'all') {
-    const claudeResult = deployClaudeCodePlugin(root, locale);
-    if (claudeResult) {
-      if (claudeResult.skipped) {
-        console.log(`  ℹ ${t(locale, 'init.claudePluginSkipped')}`);
-      } else {
-        console.log(`  ✓ ${t(locale, 'init.claudePluginDeployed', { commandCount: String(claudeResult.commandCount), agentCount: String(claudeResult.agentCount) })}`);
-        if (claudeResult.hooksUpdated) {
-          console.log(`  ✓ ${t(locale, 'init.claudeHooksUpdated')}`);
-        }
-      }
-    }
-  }
+  deployAiToolAssets(root, deployTools, locale, false, 'deployed');
 
   const specResult = deploySpecs(root);
   if (specResult && specResult.count > 0) {

@@ -27,6 +27,7 @@ Commands:
   init [name]        Initialize a new OpenLogos project structure
                        --locale <en|zh>            Set language (skip prompt)
                        --ai-tool <claude-code|opencode|codex|cursor|other|all>  Set AI tool (skip prompt)
+                       --aitool <claude-code|opencode|codex|cursor|other|all>   Alias for --ai-tool
   sync               Regenerate AI instruction files (AGENTS.md, CLAUDE.md)
   status             Show current project phase and suggest next steps
                        --module <id>               Filter to a specific module
@@ -87,7 +88,7 @@ async function main() {
       for (let i = 0; i < initArgs.length; i++) {
         if (initArgs[i] === '--locale' && initArgs[i + 1]) {
           initOpts.locale = initArgs[++i];
-        } else if (initArgs[i] === '--ai-tool' && initArgs[i + 1]) {
+        } else if ((initArgs[i] === '--ai-tool' || initArgs[i] === '--aitool') && initArgs[i + 1]) {
           initOpts.aiTool = initArgs[++i];
         } else if (!initArgs[i].startsWith('--')) {
           initName = initArgs[i];

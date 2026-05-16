@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySkills, deploySpecs, deployOpenCodePlugin, deployCodexPlugin, deployClaudeCodePlugin, expandAiTools, resolveDocsAiTool } from './init.js';
+import { createAgentsMd, deploySpecs, deployAiToolAssets, expandAiTools, resolveDocsAiToolForTarget } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
 import { VERSION } from '../lib/json-output.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
@@ -99,7 +99,6 @@ export function sync() {
   const locale = readLocale(root);
   const rawAiTool = config.aiTool ?? 'cursor';
   const aiTools = expandAiTools(rawAiTool);
-  const docsAiTool = resolveDocsAiTool(rawAiTool);
 
   // Run migration for old projects (config.lifecycle === 'active' → mark module launched)
   const migration = migrateProjectLifecycle(root);
@@ -168,59 +167,13 @@ export function sync() {
     console.log('  ✓ sourceRoots added to logos.config.json');
   }
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, docsAiTool, 'agents', isLaunched));
+  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', isLaunched));
   console.log('  ✓ AGENTS.md updated');
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, docsAiTool, 'claude', isLaunched));
+  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', isLaunched));
   console.log('  ✓ CLAUDE.md updated');
 
-  for (const tool of aiTools) {
-    const deployResult = deploySkills(root, tool, locale, isLaunched);
-    if (deployResult && deployResult.count > 0) {
-      console.log(`  ✓ ${t(locale, 'init.skillsSynced', { count: String(deployResult.count), target: deployResult.target })}`);
-    }
-  }
-
-  if (aiTools.includes('opencode')) {
-    const pluginResult = deployOpenCodePlugin(root, locale);
-    if (pluginResult) {
-      console.log(`  ✓ ${t(locale, 'init.opencodePluginSynced', { target: pluginResult.target })}`);
-      if (pluginResult.config.created) {
-        console.log(`  ✓ ${t(locale, 'init.opencodeConfigCreated')}`);
-      } else if (pluginResult.config.updated) {
-        console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
-      }
-      if (pluginResult.commandCount > 0) {
-        console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
-      }
-    }
-  }
-
-  if (aiTools.includes('codex')) {
-    const codexResult = deployCodexPlugin(root, locale);
-    if (codexResult) {
-      console.log(`  ✓ ${t(locale, 'init.codexPluginSynced', { target: codexResult.target })}`);
-      if (codexResult.config.created) {
-        console.log(`  ✓ ${t(locale, 'init.codexConfigCreated')}`);
-      } else if (codexResult.config.updated) {
-        console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
-      }
-    }
-  }
-
-  if (aiTools.includes('claude-code')) {
-    const claudeResult = deployClaudeCodePlugin(root, locale);
-    if (claudeResult) {
-      if (claudeResult.skipped) {
-        console.log(`  ℹ ${t(locale, 'init.claudePluginSkipped')}`);
-      } else {
-        console.log(`  ✓ ${t(locale, 'init.claudePluginSynced', { commandCount: String(claudeResult.commandCount), agentCount: String(claudeResult.agentCount) })}`);
-        if (claudeResult.hooksUpdated) {
-          console.log(`  ✓ ${t(locale, 'init.claudeHooksUpdated')}`);
-        }
-      }
-    }
-  }
+  deployAiToolAssets(root, aiTools, locale, isLaunched, 'synced');
 
   const specResult = deploySpecs(root);
   if (specResult && specResult.count > 0) {

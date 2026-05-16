@@ -234,10 +234,28 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
-    expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
+    expect(claude).not.toContain('## Active Skills');
 
     const yaml = readProjectYaml(root);
     expect(yaml.modules[0].lifecycle).toBe('launched');
+  });
+
+  it('ST-S14-12b: cursor + codex launch keeps AGENTS.md on Codex skill paths', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+    });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = ['cursor', 'codex'];
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    launch();
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
+    expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).not.toContain('## Active Skills');
   });
 
   /* ---- Fix 3: migration auto-marked → rules still refreshed ---- */
