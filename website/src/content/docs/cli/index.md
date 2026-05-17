@@ -15,7 +15,7 @@ Verify:
 
 ```bash
 openlogos --version
-# 0.9.22
+# 0.9.23
 ```
 
 ## Global options

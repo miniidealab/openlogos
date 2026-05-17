@@ -31,7 +31,7 @@ openlogos detect
 ```
 
 ```
-OpenLogos CLI v0.9.22
+OpenLogos CLI v0.9.23
 Node.js v20.11.1
 
 Project detected:
