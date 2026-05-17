@@ -185,6 +185,28 @@ describe('S08 Scenario Tests — sync command', () => {
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
     expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+
+    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
+  });
+
+  it('ST-S08-04c2: sync repairs existing invalid Codex SKILL.md files', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    const skillDir = join(root, '.agents', 'skills', 'prd-writer');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '# Skill: PRD Writer\n\nOld invalid file');
+
+    sync();
+
+    const skill = readFileSync(join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
+    expect(skill).toContain('# Skill: PRD Writer');
   });
 
   it('ST-S08-04d: sync with codex appends OpenLogos hook when another SessionStart hook already exists', () => {

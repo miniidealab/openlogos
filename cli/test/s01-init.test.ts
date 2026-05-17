@@ -14,6 +14,7 @@ import {
   deployClaudeCodePlugin,
   findClaudePluginTemplateSource,
   generatePolicyMdc,
+  createCodexSkillContent,
   mergeAiToolConfig,
   resolveDocsAiToolForTarget,
   SKILL_NAMES,
@@ -453,6 +454,18 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     }
   });
 
+  it('UT-S01-23f: createCodexSkillContent adds required YAML frontmatter', () => {
+    const content = createCodexSkillContent('prd-writer', '# Skill: PRD Writer\n\nBody');
+
+    expect(content).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---\n\n# Skill: PRD Writer/);
+  });
+
+  it('UT-S01-23g: createCodexSkillContent preserves existing YAML frontmatter', () => {
+    const original = '---\nname: "custom"\ndescription: "custom desc"\n---\n\n# Body';
+
+    expect(createCodexSkillContent('prd-writer', original)).toBe(original);
+  });
+
   it('UT-S01-24: deploySkills claude-code deploys SKILL.md files', () => {
     const { root, cleanup } = makeTempRoot();
     try {
@@ -461,6 +474,21 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       expect(result!.target).toBe('logos/skills/');
       expect(result!.count).toBe(13);
       expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-24b: deploySkills codex writes Codex-compatible SKILL.md frontmatter', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      const result = deploySkills(root, 'codex', 'en');
+      expect(result).not.toBeNull();
+      expect(result!.target).toBe('.agents/skills/');
+      expect(result!.count).toBe(13);
+
+      const content = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+      expect(content).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---\n\n# Skill: PRD Writer/);
     } finally {
       cleanup();
     }
@@ -789,6 +817,9 @@ describe('S01 Scenario Tests — init command', () => {
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
     expect(codexConfig).toContain('[plugins.openlogos]');
     expect(codexConfig).toContain('command = ".codex-plugin/hooks/session-start.sh"');
+
+    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
   });
 
   it('ST-S01-11: init with all includes codex assets and keeps shared logos skills for compatibility', async () => {
@@ -798,6 +829,12 @@ describe('S01 Scenario Tests — init command', () => {
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+
+    const codexSkill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    expect(codexSkill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
+
+    const sharedSkill = readFileSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    expect(sharedSkill).not.toMatch(/^---\nname: "prd-writer"/);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('logos/skills/prd-writer/SKILL.md');
@@ -828,6 +865,9 @@ describe('S01 Scenario Tests — init command', () => {
     expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
     expect(readFileSync(resourcePath, 'utf-8')).toBe('# existing requirements');
     expect(readFileSync(yamlPath, 'utf-8')).toContain('custom: keep-me');
+
+    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
@@ -881,6 +921,10 @@ describe('S01 Scenario Tests — init command', () => {
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
     const hookMatches = codexConfig.match(/command = "\.codex-plugin\/hooks\/session-start\.sh"/g) ?? [];
     expect(hookMatches).toHaveLength(1);
+
+    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    const frontmatterMatches = skill.match(/^---$/gm) ?? [];
+    expect(frontmatterMatches).toHaveLength(2);
   });
 });
 

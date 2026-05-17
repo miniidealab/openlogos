@@ -763,6 +763,17 @@ function resolveSkillFile(sourceDir: string, skillName: string, locale: Locale):
   return null;
 }
 
+function hasYamlFrontmatter(content: string): boolean {
+  return /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(content);
+}
+
+export function createCodexSkillContent(skillName: string, content: string): string {
+  if (hasYamlFrontmatter(content)) return content;
+
+  const description = SKILL_DESCRIPTIONS[skillName]?.en ?? skillName;
+  return `---\nname: ${JSON.stringify(skillName)}\ndescription: ${JSON.stringify(description)}\n---\n\n${content}`;
+}
+
 export function deploySkills(
   root: string,
   aiTool: AiTool,
@@ -799,7 +810,8 @@ export function deploySkills(
       mkdirSync(skillDir, { recursive: true });
       const srcPath = resolveSkillFile(source, name, locale);
       if (srcPath) {
-        copyFileSync(srcPath, join(skillDir, 'SKILL.md'));
+        const content = readFileSync(srcPath, 'utf-8');
+        writeFileSync(join(skillDir, 'SKILL.md'), createCodexSkillContent(name, content));
         count++;
       }
     }

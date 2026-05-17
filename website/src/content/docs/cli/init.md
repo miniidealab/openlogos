@@ -164,6 +164,10 @@ Idempotent: if `.claude/commands/openlogos/` already has files, the deployment i
 - `.codex-plugin/hooks/session-start.sh` — SessionStart hook script
 - `.codex/config.toml` — plugin and hook configuration, merged without removing existing settings
 
+OpenLogos converts each Codex Skill in `.agents/skills/<name>/SKILL.md` into the native Codex Skill format by adding the required YAML frontmatter (`name` and `description`). This prevents Codex from skipping Skills with `missing YAML frontmatter` warnings.
+
+Codex may show `hook needs review before it can run` on first launch after plugin deployment. This is Codex's hook security review. Open `/hooks` in Codex and approve `.codex-plugin/hooks/session-start.sh` if you want OpenLogos phase context injected at session start.
+
 **Cursor** — Additionally deploys:
 - `.cursor/rules/openlogos-policy.mdc` — Always-applied policy rule
 

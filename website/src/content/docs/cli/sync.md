@@ -35,6 +35,10 @@ No arguments or options. Must be run from the project root (where `logos/logos.c
 
 `AGENTS.md` and `CLAUDE.md` are regenerated with multi-tool semantics when more than one tool is configured, so their Active Skills paths match the deployed targets.
 
+For Codex projects, `sync` rewrites `.agents/skills/<name>/SKILL.md` using the native Codex Skill format, including the required YAML frontmatter (`name` and `description`). If an older OpenLogos version produced invalid Codex Skills without frontmatter, running `openlogos sync` after upgrading repairs those files.
+
+Codex SessionStart hooks are also re-deployed idempotently. Codex may still require a one-time `/hooks` review before `.codex-plugin/hooks/session-start.sh` can run; that is expected Codex security behavior.
+
 ## Example output
 
 ```
