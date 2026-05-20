@@ -32,15 +32,18 @@ Phase 2: WHAT — 做什么
 └── 质量门禁 → Gate 2
 
 Phase 3: HOW — 如何做
-├── Step 0: 技术架构概要（整体架构、技术选型、部署拓扑）
+├── Step 0: 技术架构概要（整体架构、技术选型、部署约束）
 ├── Step 1: 场景 → 时序图 → API 浮现
 ├── Step 2: API 细节设计 → DB 推导
-├── Step 3: 测试设计（测试先行）
-│   ├── 3a: 单元测试 + 场景测试用例设计（所有项目）
-│   └── 3b: API 编排测试设计（仅 API 项目）
-├── Step 4: AI 驱动代码生成 + 测试代码
-├── Step 5: 测试验收（openlogos verify 自动化判定）
-└── 质量门禁 → Gate 3.0 ~ Gate 3.5
+├── Step 3: 部署方案设计（部署拓扑、环境配置、发布命令、回滚策略、冒烟测试方案）
+├── Step 4: 测试设计（测试先行）
+│   ├── 4a: 单元测试 + 场景测试用例设计（所有项目）
+│   └── 4b: API 编排测试设计（仅 API 项目）
+├── Step 5: AI 驱动代码生成 + 测试代码
+├── Step 6: 测试验收（openlogos verify 自动化判定）
+├── Step 7: 部署执行（人类确认后由 AI 按部署方案执行）
+├── Step 8: 部署后冒烟测试（openlogos smoke）
+└── 质量门禁 → Gate 3.0 ~ Gate 3.8
 ```
 
 ## 场景编号规则
@@ -154,7 +157,7 @@ Phase 2 在 Phase 1 场景的基础上增加交互细节：
 
 1. **系统架构图**：绘制整体架构拓扑（前端、后端、数据库、第三方服务、消息队列等），明确系统边界和交互方式
 2. **技术选型清单**：语言、框架、数据库、部署方式等核心决策，每项附选型理由
-3. **部署拓扑**：开发 / 测试 / 生产环境的部署方案
+3. **部署约束**：明确目标部署形态、运行环境边界、依赖服务类型；完整部署步骤不在本步骤展开
 4. **非功能性约束**：性能目标、安全要求、可扩展性、可观测性等
 5. **更新 `logos-project.yaml`**：将确定的技术栈写入 `tech_stack` 字段
 
@@ -188,11 +191,33 @@ Phase 2 在 Phase 1 场景的基础上增加交互细节：
 
 **Gate 3.2**：API YAML 和 DB DDL 完成，相互一致。
 
-### Step 3: 测试设计（测试先行）
+### Step 3: 部署方案设计
 
-在写代码之前，先设计完整的测试体系。测试设计分为两个子步骤，覆盖三层测试金字塔：
+部署方案是 Phase 3 HOW 链路的一等产物。只在架构概要中写“部署拓扑”不够，Initial 阶段必须在代码实现前形成可执行、可验证、可回滚的部署方案。
 
-#### Step 3a: 单元测试 + 场景测试用例设计（所有项目）
+**工作内容**：
+
+1. **目标环境**：明确本地、测试、预发、生产等环境的部署目标和用途
+2. **部署拓扑**：描述服务、数据库、对象存储、反向代理、域名、证书、第三方服务之间的关系
+3. **配置与密钥**：列出环境变量、密钥来源、不可提交配置和本地替代方案
+4. **构建与发布命令**：明确构建、迁移、启动、发布、重启命令
+5. **数据迁移策略**：说明 schema 迁移、初始化数据、迁移回滚方式
+6. **回滚策略**：明确应用回滚、配置回滚、数据回滚和失败中止条件
+7. **部署后检查清单**：定义健康检查、核心链路、日志和监控检查
+8. **冒烟测试方案**：设计部署后必须运行的 smoke 用例，供 `openlogos smoke` 执行
+
+**产出物**：
+
+- 部署方案文档：`logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`
+- 可选 smoke 用例文档：`logos/resources/test/smoke/core-smoke-test-cases.md`
+
+**Gate 3.3**：部署方案完成，包含部署步骤、回滚策略和冒烟测试方案。
+
+### Step 4: 测试设计（测试先行）
+
+在写代码之前，先设计完整的测试体系。测试设计分为两个子步骤，覆盖三层测试金字塔，并在需要部署时同步设计部署冒烟测试。
+
+#### Step 4a: 单元测试 + 场景测试用例设计（所有项目）
 
 **适用范围**：所有项目类型（API 服务、CLI 工具、前端应用、库等），不可跳过。
 
@@ -206,11 +231,18 @@ Phase 2 在 Phase 1 场景的基础上增加交互细节：
   - 来源：时序图 Step 序列（主路径）、EX 异常用例（异常路径）、Phase 1/2 验收条件
   - 关注：跨模块调用链的正确性、数据在 Step 间的传递、异常发生时的补偿/回滚逻辑
 
-**产出物**：测试用例规格文档（Markdown），存放在 `logos/resources/test/`，按场景分文件（命名格式：`<module>-{场景编号}-test-cases.md`，如 `core-S01-test-cases.md`）。
+- **部署冒烟测试用例**：仅在部署方案声明需要部署时设计
+  - 来源：部署方案中的健康检查、核心入口、迁移检查、静态资源检查、关键用户链路
+  - 关注：部署后的环境是否可用，不替代 UT/ST/API 编排测试
 
-**Gate 3.3a**：核心场景的单元测试和场景测试用例已设计，覆盖所有 P0 场景的正常路径 + 核心 EX 异常路径。
+**产出物**：
 
-#### Step 3b: API 编排测试设计（仅 API 项目）
+- 测试用例规格文档（Markdown），存放在 `logos/resources/test/`，按场景分文件
+- 部署冒烟测试用例（Markdown），建议存放在 `logos/resources/test/smoke/`
+
+**Gate 3.4a**：核心场景的单元测试和场景测试用例已设计；如需要部署，部署冒烟测试也已设计。
+
+#### Step 4b: API 编排测试设计（仅 API 项目）
 
 **适用范围**：涉及 API 的项目。纯 CLI 工具、前端库等不涉及 API 的项目可跳过此步骤。
 
@@ -222,23 +254,24 @@ Phase 2 在 Phase 1 场景的基础上增加交互细节：
 
 **产出物**：编排测试文件（JSON），存放在 `logos/resources/scenario/`。
 
-**Gate 3.3b**：编排覆盖所有正常流程 + 核心异常流程。
+**Gate 3.4b**：编排覆盖所有正常流程 + 核心异常流程。
 
-### Step 4: AI 驱动代码生成 + 测试代码（code-implementor Skill）
+### Step 5: AI 驱动代码生成 + 测试代码（code-implementor Skill）
 
-AI 面前已有完整上下文（原型 + 场景 + API + DB + 测试用例 + 编排），此时生成的代码质量远高于直接写代码。按场景逐个生成、逐个验证。使用 `code-implementor` Skill 引导 AI 加载完整规格上下文、按场景分批实现、并确保代码与规格严格一致。
+AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测试用例 + 编排），此时生成的代码质量远高于直接写代码。按场景逐个生成、逐个验证。使用 `code-implementor` Skill 引导 AI 加载完整规格上下文、按场景分批实现、并确保代码与规格严格一致。
 
 代码生成同时包括：
 - **业务代码**：按时序图 Step 逐步实现
-- **单元测试代码**：基于 Step 3a 的单元测试用例规格实现
-- **场景测试代码**：基于 Step 3a 的场景测试用例规格实现
+- **单元测试代码**：基于 Step 4a 的单元测试用例规格实现
+- **场景测试代码**：基于 Step 4a 的场景测试用例规格实现
+- **部署相关代码**：部署方案中要求的健康检查、迁移脚本、启动脚本或构建脚本
 - **OpenLogos reporter 集成**：测试代码内嵌标准 reporter，将用例结果写入 `logos/resources/verify/test-results.jsonl`（格式见 [test-results.md](./test-results.md)）
 
-**Step 4 标准交付（不可拆分）**：
+**Step 5 标准交付（不可拆分）**：
 
-- 仅提交业务代码，不提交对应测试代码，视为 **Step 4 未完成**
-- 仅提交测试代码，不包含对应业务实现，视为 **Step 4 未完成**
-- 交付必须满足“业务代码 + UT/ST 测试代码 + reporter”三要素齐备，方可进入 Gate 3.4
+- 仅提交业务代码，不提交对应测试代码，视为 **Step 5 未完成**
+- 仅提交测试代码，不包含对应业务实现，视为 **Step 5 未完成**
+- 交付必须满足“业务代码 + UT/ST 测试代码 + reporter”三要素齐备，方可进入 Gate 3.5
 
 **大任务分批规则（允许分批，但每批闭环）**：
 
@@ -247,21 +280,21 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 测试用例 + 编
 - 每一批开始前，应先声明本批覆盖的用例 ID（UT/ST），确保与 `logos/resources/test/*.md` 可追溯
 - 不允许将测试无限期后置到最终批次统一补写
 
-**Gate 3.4**：代码已审核，单元测试通过，已部署测试环境。
+**Gate 3.5**：代码已审核，单元测试通过，已具备部署方案要求的健康检查和启动能力。
 
-### Step 5: 测试验收
+### Step 6: 测试验收
 
 运行所有测试来验证代码，使用 `openlogos verify` 自动化判定验收结果。
 
-**进入 Step 5 的前置门禁**：
+**进入 Step 6 的前置门禁**：
 
-- 仅当 Step 4 达到“业务代码 + UT/ST 测试代码 + reporter”完整交付时，才允许进入 Step 5
-- 若发现“仅业务代码、无对应测试”或“测试代码缺少 reporter”，必须回到 Step 4 补齐后再执行验收
-- Step 5 不承担“补写测试代码”的职责；其职责是对已完成的 Step 4 产物做自动化判定
+- 仅当 Step 5 达到“业务代码 + UT/ST 测试代码 + reporter”完整交付时，才允许进入 Step 6
+- 若发现“仅业务代码、无对应测试”或“测试代码缺少 reporter”，必须回到 Step 5 补齐后再执行验收
+- Step 6 不承担“补写测试代码”的职责；其职责是对已完成的 Step 5 产物做自动化判定
 
 **验收流程**：
 
-1. AI 在 Step 4 生成测试代码时，内嵌 OpenLogos reporter（见 [test-results.md](./test-results.md)）
+1. AI 在 Step 5 生成测试代码时，内嵌 OpenLogos reporter（见 [test-results.md](./test-results.md)）
 2. 用户运行测试（`npm test`、`pytest` 等）→ reporter 自动将每个用例的结果写入 `logos/resources/verify/test-results.jsonl`（JSONL 格式）
 3. 用户运行 `openlogos verify` → CLI 读取 JSONL + `logos/resources/test/*.md` 中的用例 ID → 自动计算验收结果
 
@@ -276,7 +309,47 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 测试用例 + 编
 - 全部通过 → 生成 `logos/resources/verify/acceptance-report.md`，终端输出 PASS
 - 有失败或未覆盖 → 生成报告并列出问题项，终端输出 FAIL，退出码为 1
 
-**Gate 3.5**：`openlogos verify` 输出 PASS（所有用例通过 + 覆盖度 100%）。
+**Gate 3.6**：`openlogos verify` 输出 PASS（所有用例通过 + 覆盖度 100%）。
+
+### Step 7: 部署执行
+
+部署执行是高风险动作，必须由人类明确确认后才能发起。AI 不得因为 `openlogos verify` 通过而自动部署。
+
+**执行要求**：
+
+1. 用户明确授权执行部署
+2. AI 读取部署方案、当前提案、`[deploy]` 任务和已合并主规格
+3. AI 按部署方案逐项执行部署任务
+4. 每个关键命令执行前说明目的和影响范围
+5. 部署完成后生成 `logos/resources/verify/deployment-report.md`
+6. 若处于变更提案流程，写入 `logos/changes/<slug>/DEPLOY_DONE`
+
+**Gate 3.7**：部署完成，部署报告已生成，必要的部署标记已写入。
+
+### Step 8: 部署后冒烟测试
+
+冒烟测试使用独立 CLI 命令 `openlogos smoke`，不并入 `openlogos verify`。
+
+职责边界：
+
+- `openlogos verify`：验收代码实现是否满足 UT / ST / API 编排测试
+- `openlogos smoke`：验收部署后的环境是否可用
+
+`openlogos smoke` 应验证：
+
+- 服务健康检查可访问
+- 核心页面或 API 可访问
+- 数据库迁移已生效
+- 静态资源加载正常
+- 关键登录 / 初始化 / 主流程可用
+- 日志或监控中没有阻断性错误
+
+**产出物**：
+
+- `logos/resources/verify/smoke-results.jsonl`
+- `logos/resources/verify/smoke-report.md`
+
+**Gate 3.8**：`openlogos smoke` 输出 PASS。Initial 阶段只有在 Gate 3.8 通过后，`openlogos status` 才建议 `openlogos launch`。
 
 ## 场景的三级展开
 
@@ -297,12 +370,21 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 测试用例 + 编
 迭代变更遵循"规格驱动代码"原则，完整顺序为：
 
 ```
-delta 产出 → merge（规格落地）→ 代码实现 → verify（验收代码）→ archive → git push
+delta 产出
+→ merge（规格落地）
+→ 代码实现
+→ verify（验收代码）
+→ deploy（如需要部署，人类确认后执行）
+→ smoke（如已部署，运行部署后冒烟测试）
+→ archive
+→ git push
 ```
 
 - **merge 之后才能写代码**：代码必须基于合并后的主文档实现，不允许基于 delta 草稿直接写代码
 - **verify 在代码实现之后**：verify 验收的是代码，不是规格文档
-- **verify 失败只修代码**：不需要重走 merge 流程
+- **deploy 在 verify 通过之后**：部署必须由人类明确确认，AI 不得自动发起
+- **smoke 在部署之后**：冒烟测试验收部署环境，不替代 verify
+- **verify / deploy / smoke 失败只修对应产物**：不需要重走 merge 流程，除非发现规格本身错误
 - **git push 是人类确认点**：archive 完成后 AI 提示用户确认，不得自动推送
 
 迭代可能导致场景变更：新增场景、修改已有场景、废弃场景。所有变更通过 `logos/changes/` 提案管理，场景编号一旦分配不复用。

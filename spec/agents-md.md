@@ -27,6 +27,9 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 3. All API designs must originate from scenario sequence diagrams
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations (see logos/changes/ directory)
+6. All generated test code must include an OpenLogos reporter
+7. Deployment is a human confirmation point; AI must not deploy without explicit authorization
+8. If deployment is required, smoke tests must be designed with the test plan and run via `openlogos smoke` after deployment
 
 ## Document Edit Verification
 [Fixed locale-specific paragraph — re-read from disk after Markdown/text spec edits]
@@ -44,19 +47,26 @@ Phase detection logic:
 - design exists but `3-technical-plan/1-architecture/` is empty → suggest Phase 3 Step 0 (architecture-designer)
 - architecture exists but `3-technical-plan/2-scenario-implementation/` is empty → suggest Phase 3 Step 1 (scenario-architect)
 - scenarios exist but `logos/resources/api/` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
-- API exists but `logos/resources/test/` is empty → suggest Phase 3 Step 3a (test-writer)
-- test cases exist but `logos/resources/scenario/` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
-- All above exist → suggest Phase 3 Step 4 (code generation)
-- code generated but `logos/resources/verify/` is empty → suggest Phase 3 Step 5 (run tests then `openlogos verify`)
+- API/DB exists but `3-technical-plan/3-deployment/` is empty → suggest Phase 3 Step 3 (deployment-designer)
+- deployment plan exists but `logos/resources/test/` is empty → suggest Phase 3 Step 4a (test-writer)
+- test cases exist but `logos/resources/scenario/` is empty → suggest Phase 3 Step 4b (test-orchestrator, API projects only)
+- orchestration tests exist but `logos/resources/implementation/` is empty → suggest Phase 3 Step 5 (code-implementor)
+- code generated but `logos/resources/verify/acceptance-report.md` is missing or verify has not passed → suggest Phase 3 Step 6 (`openlogos verify`)
+- verify passed but deployment is required and `deployment-report.md` is missing → suggest Phase 3 Step 7 (deployment-executor, human confirmation required)
+- deployment done but `smoke-report.md` / `SMOKE_PASS` is missing → suggest Phase 3 Step 8 (`openlogos smoke`)
+- smoke passed → suggest `openlogos launch`
 
-Step 4 execution rules (large tasks):
+Step 5 execution rules (large tasks):
 1. Large implementation can be split by scenario/module, but each batch must be closed-loop
 2. Each batch must include business code + UT/ST test code + OpenLogos reporter
 3. Before generating code, list the UT/ST case IDs covered in this batch and keep IDs aligned with `logos/resources/test/*.md`
 4. Do not postpone all tests to the final batch
 
-Ready-to-use prompt for Step 4 batch execution:
-`Please execute Phase 3 Step 4 for this scope. If the task is large, split into batches, but each batch must deliver: (1) business code, (2) matching UT/ST test code, (3) OpenLogos reporter writing to logos/resources/verify/test-results.jsonl. Before outputting code, list the UT/ST IDs covered in this batch.`
+Deployment rules:
+1. AI must not run deployment commands unless the user explicitly authorizes deployment
+2. AI must read `logos/resources/prd/3-technical-plan/3-deployment/` before deployment
+3. Deployment completion must be followed by `openlogos smoke`
+4. Initial modules can be launched only after verify, deployment, and smoke gates pass, unless explicitly marked as not requiring deployment
 
 ## Active Skills
 [根据 `logos.config.json` 的 `aiTool` 字段动态生成]
@@ -105,7 +115,9 @@ AGENTS.md 的内容从以下文件中自动提取：
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations
 6. All generated test code must include an OpenLogos reporter (see spec/test-results.md)
-7. After editing Markdown / text specs, re-read from disk and show excerpts to the user (see 「文档修改后的验证」生成段)
+7. Deployment is a human confirmation point; AI must not deploy without explicit authorization
+8. If deployment is required, smoke tests must be designed and run via `openlogos smoke` after deployment
+9. After editing Markdown / text specs, re-read from disk and show excerpts to the user (see 「文档修改后的验证」生成段)
 
 ### 生成时机
 

@@ -1,21 +1,22 @@
 # Skill: Architecture Designer
 
-> 在逐场景的技术实现之前，建立项目的技术全局视图——系统架构、技术选型、部署拓扑和非功能性约束。确保后续的时序图、API 和代码生成在一致的架构约束下进行。
+> 在逐场景的技术实现之前，建立项目的技术全局视图：系统架构、技术选型、部署约束和非功能性约束。完整部署方案由 `deployment-designer` Skill 在 Phase 3 Step 3 产出。
 
 ## 触发条件
 
 - 用户要求设计技术架构、做技术选型或规划系统架构
 - 用户提到 "Phase 3 Step 0"、"架构设计"、"技术方案"
 - Phase 2 产品设计文档已完成，需要开始 Phase 3
-- 用户想要确定技术栈或部署方案
+- 用户想要确定技术栈或部署约束
 
 ## 核心能力
 
 1. 读取 Phase 1 需求文档和 Phase 2 产品设计文档，理解产品全貌
 2. 基于产品复杂度和场景特征，推荐适合的系统架构
 3. 为每项技术选型提供选型理由和替代方案对比
-4. 绘制系统架构图（Mermaid）和部署拓扑图
-5. 更新 `logos-project.yaml` 的 `tech_stack` 字段
+4. 绘制系统架构图（Mermaid）和部署约束图
+5. 明确部署方案的输入边界：运行环境、依赖服务、部署目标、外部服务测试策略
+6. 更新 `logos-project.yaml` 的 `tech_stack` 字段
 
 ## 与 Phase 1/2 的衔接
 
@@ -104,8 +105,10 @@ graph TB
 | 后端框架 | Hono | 轻量、边缘优先、TS 原生 | Express（生态）、Fastify（性能） |
 | 数据库 | PostgreSQL | 功能丰富、JSONB、RLS | MySQL（简单场景） |
 | 认证 | Supabase Auth | 开箱即用、RLS 集成 | NextAuth（自托管） |
-| 部署 | Vercel + Supabase | 零运维、自动扩容 | AWS（自主控制） |
+| 部署约束 | Vercel + Supabase | 零运维、自动扩容 | AWS（自主控制） |
 ```
+
+**注意**：本步骤只定义部署约束和部署目标，不写完整发布步骤。完整部署方案必须由 `deployment-designer` 输出到 `logos/resources/prd/3-technical-plan/3-deployment/`。
 
 **选型原则**：
 - 优先选择团队已熟悉的技术
@@ -176,12 +179,31 @@ modules:
 - 无任何数据库 → skip `database`
 - 有 SQLite / 本地数据库 → 保留 `database`（仍需设计 schema）
 
+### Step 7: 交接部署方案设计
+
+架构设计完成后，必须向后续 `deployment-designer` Skill 交接以下信息：
+
+- 技术栈：语言、框架、数据库、运行时、包管理器
+- 部署目标：本地、测试、预发、生产中的哪些环境需要覆盖
+- 运行依赖：数据库、缓存、对象存储、第三方服务、消息队列
+- 配置与密钥来源：环境变量、密钥管理方式、不可提交配置
+- 数据迁移方式：迁移工具、初始化数据、回滚要求
+- 健康检查入口：页面、API、CLI 命令或进程检查方式
+- smoke 设计输入：部署后必须验证的最小核心链路
+
+交接完成后，建议下一步提示：
+
+```text
+继续进入 Phase 3 Step 3：使用 deployment-designer 输出部署方案和 smoke 测试方案。
+```
+
 ## 输出规范
 
 - 架构概要文档：`logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md`（架构文件全局唯一，后续修改始终在此文件上更新，不新建文件）
 - 架构图使用 Mermaid 格式
 - 技术选型使用表格格式，每项必须有理由
 - 更新 `logos-project.yaml` 的 `tech_stack` 和 `external_dependencies` 字段
+- 如项目确定无需部署，必须在架构文档中说明原因，并建议在 `logos-project.yaml` 中设置对应模块的 `deployment_required: false`
 - 简单项目允许精简输出（不强制所有章节）
 
 ## 实践经验

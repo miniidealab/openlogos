@@ -4,7 +4,7 @@
 
 ## 1. 概述
 
-OpenLogos CLI 的 `status`、`next`、`verify`、`detect` 四个命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
+OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect` 五类命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
 
 ### 1.1 通用约定
 
@@ -21,10 +21,10 @@ OpenLogos CLI 的 `status`、`next`、`verify`、`detect` 四个命令支持 `--
 
 ```jsonc
 {
-  "command": "<command-name>",   // "status" | "next" | "verify" | "detect" | "module list"
-  "version": "<cli-version>",   // CLI 版本号，如 "0.5.9"
-  "timestamp": "<ISO-8601>",    // 输出时间戳
-  "data": { ... }               // 命令特定的数据负载
+  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "module list"
+  "version": "<cli-version>",
+  "timestamp": "<ISO-8601>",
+  "data": { ... }
 }
 ```
 
@@ -106,8 +106,29 @@ openlogos status --format json  # JSON 格式
       "done": false,
       "skipped": false,
       "files": []
+    },
+    {
+      "key": "phase.3-3-deployment",
+      "label": "Phase 3-3 · 部署方案",
+      "done": true,
+      "skipped": false,
+      "files": ["core-01-deployment-plan.md"]
+    },
+    {
+      "key": "phase.3-7-deploy",
+      "label": "Phase 3-7 · 部署执行",
+      "done": false,
+      "skipped": false,
+      "files": []
+    },
+    {
+      "key": "phase.3-8-smoke",
+      "label": "Phase 3-8 · 部署冒烟测试（smoke）",
+      "done": false,
+      "skipped": false,
+      "files": []
     }
-    // ... 所有 10 个 phase
+    // ... 所有 phase
   ],
   "modules": [                      // 模块注册表（来自 logos-project.yaml）
     {
@@ -135,7 +156,7 @@ openlogos status --format json  # JSON 格式
       "phase_progress": null,
       "active_change": {            // 当前活跃变更提案
         "slug": "add-refund",
-        "proposal_step": "delta-writing",  // "writing"|"delta-writing"|"ready-to-merge"|"merge-generated"|"coding"
+        "proposal_step": "delta-writing",  // 见 proposal_step 枚举
         "proposal_step_label": "撰写 Delta",
         "has_proposal": true,
         "has_tasks": true,
@@ -184,10 +205,10 @@ openlogos status --format json  # JSON 格式
 | `modules[].phase_progress` | object \| null | 是 | 各阶段进度 map（key = phase key）；`launched` 模块为 null |
 | `modules[].phase_progress[key].done` | boolean | 是 | 该阶段是否已完成 |
 | `modules[].phase_progress[key].skipped` | boolean | 是 | 该阶段是否被跳过 |
-| `modules[].phase_progress[key].scenario_coverage` | object \| undefined | 否 | 仅场景类阶段（`phase.3-1`、`phase.3-3a`）存在 |
+| `modules[].phase_progress[key].scenario_coverage` | object \| undefined | 否 | 仅场景类阶段（`phase.3-1`、`phase.3-4a`）存在 |
 | `modules[].active_change` | object \| null | 是 | 当前活跃变更提案；`initial` 模块或无活跃提案时为 null |
 | `modules[].active_change.slug` | string | 是 | 提案 slug |
-| `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"delta-writing"` \| `"ready-to-merge"` \| `"merge-generated"` \| `"coding"`；`"implementing"` / `"in-progress"` 为旧版本兼容值 |
+| `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"delta-writing"` \| `"ready-to-merge"` \| `"merge-generated"` \| `"coding"` \| `"ready-to-verify"` \| `"verify-passed"` \| `"verify-failed"` \| `"ready-to-deploy"` \| `"deploy-done"` \| `"ready-to-smoke"` \| `"smoke-passed"` \| `"smoke-failed"`；`"implementing"` / `"in-progress"` 为旧版本兼容值 |
 | `modules[].active_change.proposal_step_label` | string | 是 | 提案阶段本地化标签 |
 | `modules[].active_change.has_proposal` | boolean | 是 | 是否存在 proposal.md |
 | `modules[].active_change.has_tasks` | boolean | 是 | 是否存在 tasks.md |
@@ -306,7 +327,65 @@ openlogos verify --format json  # JSON 格式
 
 ---
 
-## 5. 错误处理
+## 5. `openlogos smoke --format json`
+
+冒烟测试用于验收部署后的目标环境是否可用，不并入 `openlogos verify`。
+
+### 5.1 用法
+
+```bash
+openlogos smoke                # 人类可读格式
+openlogos smoke --format json  # JSON 格式
+openlogos smoke --env staging
+openlogos smoke --env production --format json
+```
+
+### 5.2 JSON Schema（data 部分）
+
+```jsonc
+{
+  "environment": "staging",             // smoke 目标环境；未指定时为 null
+  "summary": {
+    "defined_count": 5,                 // 定义的 smoke 用例数
+    "executed_count": 5,                // 已执行 smoke 用例数
+    "passed_count": 5,
+    "failed_count": 0,
+    "skipped_count": 0,
+    "uncovered_count": 0,
+    "coverage_pct": 100,
+    "pass_rate_pct": 100
+  },
+  "gate": {
+    "result": "PASS",                  // "PASS" | "FAIL"
+    "reason": null                     // 失败原因分类
+  },
+  "failed_cases": [],
+  "uncovered_cases": [],
+  "skipped_cases": [],
+  "report_path": "logos/resources/verify/smoke-report.md",
+  "result_path": "logos/resources/verify/smoke-results.jsonl"
+}
+```
+
+### 5.3 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `environment` | string \| null | 是 | 目标环境，由 `--env` 指定 |
+| `summary.defined_count` | number | 是 | smoke 用例规格中定义的用例数 |
+| `summary.executed_count` | number | 是 | smoke 结果中实际执行的用例数 |
+| `gate.result` | string | 是 | `PASS` 或 `FAIL` |
+| `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` |
+| `failed_cases` | array | 是 | 失败 smoke 用例 |
+| `uncovered_cases` | array | 是 | 未覆盖 smoke 用例 ID |
+| `report_path` | string | 是 | smoke 报告路径 |
+| `result_path` | string | 是 | smoke 结果路径 |
+
+`openlogos smoke` 与 `openlogos verify` 共享 JSONL 结果思想，但读取的是 `smoke.result_path`，默认 `logos/resources/verify/smoke-results.jsonl`。冒烟测试用例建议存放在 `logos/resources/test/smoke/`。
+
+---
+
+## 6. 错误处理
 
 当命令因错误退出时（如项目未初始化、找不到文件等），JSON 模式下输出错误 JSON 到 **stderr** 并以非零退出码退出：
 
@@ -322,7 +401,7 @@ openlogos verify --format json  # JSON 格式
 }
 ```
 
-### 5.1 错误码
+### 6.1 错误码
 
 | 错误码 | 说明 |
 |--------|------|
@@ -332,18 +411,18 @@ openlogos verify --format json  # JSON 格式
 
 ---
 
-## 6. `openlogos module list --format json`
+## 7. `openlogos module list --format json`
 
 列出项目中注册的所有模块及其生命周期状态。
 
-### 6.1 用法
+### 7.1 用法
 
 ```bash
 openlogos module list                # 人类可读格式
 openlogos module list --format json  # JSON 格式
 ```
 
-### 6.2 JSON Schema（data 部分）
+### 7.2 JSON Schema（data 部分）
 
 ```jsonc
 {
@@ -362,7 +441,7 @@ openlogos module list --format json  # JSON 格式
 }
 ```
 
-### 6.3 字段说明
+### 7.3 字段说明
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -375,7 +454,7 @@ openlogos module list --format json  # JSON 格式
 
 ---
 
-## 7. 完整用法示例
+## 8. 完整用法示例
 
 ```bash
 # 获取项目状态（机器可读）

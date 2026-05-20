@@ -15,6 +15,7 @@
 3. 生成 `logos/logos-project.yaml` AI 协作索引
 4. 生成 `AGENTS.md` / `CLAUDE.md` AI 指令文件（根目录）
 5. 创建 `logos/changes/` 变更管理目录
+6. 创建部署方案与 smoke 测试所需目录
 
 ## 执行步骤
 
@@ -42,10 +43,15 @@ project-root/
     │   │   │   └── 2-page-design/
     │   │   └── 3-technical-plan/
     │   │       ├── 1-architecture/
-    │   │       └── 2-scenario-implementation/
+    │   │       ├── 2-scenario-implementation/
+    │   │       └── 3-deployment/
     │   ├── api/
     │   ├── database/
-    │   └── scenario/
+    │   ├── test/
+    │   │   └── smoke/
+    │   ├── scenario/
+    │   ├── implementation/
+    │   └── verify/
     └── changes/
 ```
 
@@ -66,6 +72,11 @@ project-root/
       "path": "./resources/api",
       "pattern": "**/*.{yaml,yml,json}"
     },
+    "test": {
+      "label": { "en": "Test Cases", "zh": "测试用例" },
+      "path": "./resources/test",
+      "pattern": "**/*.md"
+    },
     "scenario": {
       "label": { "en": "Scenarios", "zh": "业务场景" },
       "path": "./resources/scenario",
@@ -75,7 +86,24 @@ project-root/
       "label": { "en": "Database", "zh": "数据库" },
       "path": "./resources/database",
       "pattern": "**/*.sql"
+    },
+    "implementation": {
+      "label": { "en": "Implementation", "zh": "实现清单" },
+      "path": "./resources/implementation",
+      "pattern": "**/*.md"
+    },
+    "verify": {
+      "label": { "en": "Verify Reports", "zh": "验收报告" },
+      "path": "./resources/verify",
+      "pattern": "**/*.{jsonl,md}"
     }
+  },
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl"
+  },
+  "smoke": {
+    "result_path": "logos/resources/verify/smoke-results.jsonl",
+    "report_path": "logos/resources/verify/smoke-report.md"
   }
 }
 ```
@@ -124,12 +152,21 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 3. All API designs must originate from scenario sequence diagrams
 4. All code changes must have corresponding API orchestration tests
 5. Use the Delta change workflow for iterations (see logos/changes/ directory)
+6. Deployment is a human confirmation point; AI must not deploy without explicit authorization
+7. If deployment is required, smoke tests must be designed and run via `openlogos smoke` after deployment
 
 ## Conventions
 {从 logos-project.yaml 的 conventions 提取}
 ```
 
 同时生成 `CLAUDE.md`，内容与 AGENTS.md 一致。
+
+Phase 检测逻辑必须包含：
+
+- API/DB 完成但 `3-technical-plan/3-deployment/` 为空 → Phase 3 Step 3（deployment-designer）
+- 部署方案存在但 `logos/resources/test/` 为空 → Phase 3 Step 4a（test-writer）
+- verify 通过但部署未完成 → Phase 3 Step 7（deployment-executor，人类确认点）
+- 部署完成但 smoke 未通过 → Phase 3 Step 8（openlogos smoke，人类确认点）
 
 ### Step 6: 输出初始化报告
 
@@ -145,6 +182,9 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 - `logos/logos-project.yaml`：有效的 YAML
 - `AGENTS.md` / `CLAUDE.md`：Markdown 格式，位于项目根目录
 - `logos/` 下所有目录已创建，空目录包含 `.gitkeep`
+- 必须创建 `logos/resources/prd/3-technical-plan/3-deployment/`
+- 必须创建 `logos/resources/test/smoke/`
+- 必须创建 `logos/resources/verify/`
 
 ## 实践经验
 

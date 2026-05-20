@@ -20,9 +20,10 @@
 
 1. 理解用户描述的变更意图
 2. 扫描 `logos/resources/` 中的现有文档，定位受影响范围
-3. 根据变更传播规则判断变更类型（需求级 / 设计级 / 接口级 / 代码级）
-4. 生成符合规范的 proposal.md
-5. 按变更类型自动拆解 tasks.md
+3. 根据变更传播规则判断变更类型（需求级 / 设计级 / 接口级 / 部署级 / 代码级）
+4. 判断本次变更是否需要部署、是否需要数据迁移、是否需要 smoke 验证
+5. 生成符合规范的 proposal.md
+6. 按变更类型自动拆解 tasks.md
 
 ## 执行步骤
 
@@ -40,10 +41,11 @@
 
 1. 读取需求文档（`prd/1-product-requirements/`），检查相关场景定义
 2. 读取产品设计（`prd/2-product-design/`），检查相关功能规格和原型
-3. 读取技术方案（`prd/3-technical-plan/`），检查相关时序图
+3. 读取技术方案（`prd/3-technical-plan/`），检查相关架构、时序图、部署方案
 4. 读取 API 文档（`api/`），检查相关端点
 5. 读取 DB 文档（`database/`），检查相关表结构
 6. 读取编排测试（`scenario/`），检查相关测试用例
+7. 读取 smoke 测试用例（`test/smoke/`），检查部署后冒烟覆盖是否需要更新
 
 ### Step 3: 判断变更类型
 
@@ -51,10 +53,11 @@
 
 | 变更类型 | 最少需要更新 |
 |---------|------------|
-| 需求级变更 | 全链路（需求 → 设计 → 架构 → API/DB → 编排 → 代码） |
-| 设计级变更 | 原型 + 场景 + API/DB + 编排 + 代码 |
-| 接口级变更 | API/DB + 编排 + 代码 |
-| 代码级修复 | 代码 + 重新验收 |
+| 需求级变更 | 全链路（需求 → 设计 → 架构 → 部署 → API/DB → 测试 → 编排 → 代码） |
+| 设计级变更 | 原型 + 场景 + API/DB + 测试/编排 + 代码 + 部署影响分析 |
+| 接口级变更 | API/DB + 编排 + 代码 + 部署影响分析 |
+| 部署级变更 | 部署方案 + smoke 用例 + `[deploy]` 任务 |
+| 代码级修复 | 代码 + 重新验收 + 部署影响分析 |
 
 ### Step 4: 生成 proposal.md
 
@@ -67,15 +70,25 @@
 [为什么要做这个变更？来源于哪个需求/反馈/Bug？]
 
 ## 变更类型
-[需求级 / 设计级 / 接口级 / 代码级]
+[需求级 / 设计级 / 接口级 / 部署级 / 代码级]
 
 ## 变更范围
 - 影响的需求文档：[列表，精确到文件名和章节]
 - 影响的功能规格：[列表]
 - 影响的业务场景：[场景编号列表]
+- 影响的部署方案：[列表]
 - 影响的 API：[端点列表]
 - 影响的 DB 表：[表名列表]
 - 影响的编排测试：[列表]
+- 影响的 smoke 测试：[列表]
+
+## 部署影响
+- 是否需要部署：是 / 否
+- 部署原因：[说明为什么需要或不需要部署]
+- 影响环境：[本地 / 测试 / 预发 / 生产 / 无]
+- 是否涉及数据迁移：是 / 否
+- 是否需要回滚预案：是 / 否
+- 是否需要 smoke：是 / 否
 
 ## 变更概述
 [用 1-3 段话概述具体改什么]
@@ -85,13 +98,34 @@
 
 根据变更类型和影响范围，使用结构化 section 格式生成任务清单。完整格式规范见 `spec/tasks-spec.md`。
 
-> **禁止在 tasks.md 中写入 verify / 验收 / 人工验证类条目**——这些属于 verify 步骤，不属于实现任务。`openlogos verify` 是独立的 CLI 操作节点，由面板的 verify 步骤触发；tasks.md 只追踪实现任务。
+> **禁止在 tasks.md 中写入 verify / smoke / 人工验证类条目**——这些属于独立 CLI 操作节点。tasks.md 只追踪 delta、代码和部署执行任务。
 
 **格式规则**：
 - `## [delta] <描述>` section：只列 delta 文档产出任务，每条对应一个 delta 文件
 - `## [code] <描述>` section：只列代码实现任务，直接修改源文件，不产出 delta
-- 两个 section 均为可选：纯代码提案只有 `[code]`，纯规格提案只有 `[delta]`
+- `## [deploy] <描述>` section：只列部署执行任务，只能在 verify PASS 后、人类明确确认后执行
+- 不需要部署的提案不得创建 `[deploy]` section
+- 需要部署的提案必须在 `[delta]` section 中包含部署方案和 smoke 用例变更（如受影响）
 - **严禁混用**：delta 任务不得写入 `[code]` section，代码任务不得写入 `[delta]` section
+
+**需要部署的变更模板**：
+
+```markdown
+# 实现任务
+
+## [delta] 规格变更
+- [ ] 产出 delta 文件到 `deltas/prd/3-technical-plan/3-deployment/` — 更新部署方案
+- [ ] 产出 delta 文件到 `deltas/test/smoke/` — 更新部署后冒烟测试用例
+
+## [code] 代码实现
+- [ ] 实现 src/xxx 中的业务逻辑
+- [ ] 编写对应测试
+- [ ] 编写 smoke 测试代码或脚本
+
+## [deploy] 部署任务
+- [ ] 按部署方案部署到 staging
+- [ ] 确认迁移、配置、服务启动和回滚预案
+```
 
 **需求级 / 设计级变更模板**（有 delta + 有代码）：
 
@@ -152,8 +186,17 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 | `logos/resources/prd/2-product-design/2-page-design/` | `deltas/prd/2-product-design/2-page-design/` |
 | `logos/resources/prd/3-technical-plan/1-architecture/` | `deltas/prd/3-technical-plan/1-architecture/` |
 | `logos/resources/prd/3-technical-plan/2-scenario-implementation/` | `deltas/prd/3-technical-plan/2-scenario-implementation/` |
+| `logos/resources/prd/3-technical-plan/3-deployment/` | `deltas/prd/3-technical-plan/3-deployment/` |
+| `logos/resources/test/smoke/` | `deltas/test/smoke/` |
 
 代码实现（`src/`、`test/`）**不产出 delta**，直接修改源文件。
+
+部署相关行为规范：
+
+- 需要部署时，必须产出部署方案 delta
+- 需要部署且 smoke 覆盖受影响时，必须产出 smoke 测试用例 delta
+- 不允许把部署执行命令写入 `[code]` section
+- 不允许 AI 在 delta-writing 阶段执行部署命令
 
 #### 文件命名
 
@@ -203,6 +246,13 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 - AI 未经用户明确授权不得自行执行这两个命令
 - 用户明确要求执行（包括使用 `/openlogos:merge`、`/openlogos:archive` slash command）时，AI 可以代为执行
 - 不得在"顺手完成流程"、"按流程走完"、"继续"等隐式场景中自动触发
+
+merge 后的后续提示应按是否需要部署区分：
+
+- **不需要部署**：实现代码 → `openlogos verify` → `openlogos archive`
+- **需要部署**：实现代码 → `openlogos verify` → 用户明确授权部署 → `openlogos smoke` → `openlogos archive`
+
+**部署执行、`openlogos smoke` 也是人类确认点**。AI 未经用户明确授权不得自动部署或自动运行 smoke。
 
 AI 只负责驱动内容修改，不得在未获明确授权的情况下推进提案状态。
 

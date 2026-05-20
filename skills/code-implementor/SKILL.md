@@ -5,7 +5,7 @@
 ## 触发条件
 
 - 用户要求实现代码、生成代码或编写代码
-- 用户提到 "Phase 3 Step 4"、"代码生成"、"帮我实现 S01"
+- 用户提到 "Phase 3 Step 5"、"代码生成"、"帮我实现 S01"
 - 测试用例设计已完成（`logos/resources/test/` 非空），需要开始编码
 - 用户指定某个场景编号（如 S01）需要实现
 
@@ -17,7 +17,7 @@
 - `logos/resources/test/` 中包含测试用例规格（**必需**）
 - `logos/logos-project.yaml` 中包含 `tech_stack`（**必需**）
 
-如果时序图或测试用例目录为空，提示用户先完成 Phase 3 Step 1（scenario-architect）和 Step 3a（test-writer）。
+如果时序图或测试用例目录为空，提示用户先完成 Phase 3 Step 1（scenario-architect）和 Step 4a（test-writer）。
 
 ## 核心能力
 
@@ -33,9 +33,9 @@
 
 本 Skill 处于三者链条的中间位置：
 
-- **test-writer**（Step 3a）：设计测试用例**规格文档**（Markdown），定义 UT/ST ID——是"出卷人"
-- **code-implementor**（Step 4，本 Skill）：将所有规格转化为**可运行的业务代码和测试代码**——是"答卷人"
-- **code-reviewer**（Step 4 之后）：拿着规格**审计已生成的业务代码**，输出审查报告——是"阅卷人"
+- **test-writer**（Step 4a）：设计测试用例**规格文档**（Markdown），定义 UT/ST ID——是"出卷人"
+- **code-implementor**（Step 5，本 Skill）：将所有规格转化为**可运行的业务代码和测试代码**——是"答卷人"
+- **code-reviewer**（Step 5 之后）：拿着规格**审计已生成的业务代码**，输出审查报告——是"阅卷人"
 
 test-writer 不写代码；code-implementor 不设计用例；code-reviewer 不修改代码。三者形成 **设计 → 执行 → 审查** 闭环。
 

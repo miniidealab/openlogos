@@ -53,9 +53,33 @@
           "default": "logos/resources/verify/test-results.jsonl",
           "description": "测试结果 JSONL 文件路径（相对项目根目录）"
         },
-        "test_command": {
+        "pre_run_command": {
           "type": "string",
           "description": "测试命令（可选）。配置后 openlogos verify 会先执行此命令再读取结果"
+        },
+        "test_command": {
+          "type": "string",
+          "description": "旧字段，保留兼容。建议使用 pre_run_command"
+        }
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "description": "部署后冒烟测试配置（可选）。配置 openlogos smoke 的行为。",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "冒烟测试命令。openlogos smoke 会先执行此命令再读取结果"
+        },
+        "result_path": {
+          "type": "string",
+          "default": "logos/resources/verify/smoke-results.jsonl",
+          "description": "冒烟测试结果 JSONL 文件路径（相对项目根目录）"
+        },
+        "report_path": {
+          "type": "string",
+          "default": "logos/resources/verify/smoke-report.md",
+          "description": "冒烟测试报告输出路径（相对项目根目录）"
         }
       }
     },
@@ -158,7 +182,13 @@
         }
       },
       "verify": {
-        "result_path": "logos/resources/verify/test-results.jsonl"
+        "result_path": "logos/resources/verify/test-results.jsonl",
+        "pre_run_command": "npm test"
+      },
+      "smoke": {
+        "command": "npm run smoke",
+        "result_path": "logos/resources/verify/smoke-results.jsonl",
+        "report_path": "logos/resources/verify/smoke-report.md"
       }
     }
   ]

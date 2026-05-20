@@ -18,6 +18,7 @@
 | `tech_stack` | object | 是 | 技术栈描述 |
 | `scenario_counter` | object | 否 | 全局场景编号计数器（多模块项目必填） |
 | `modules` | array | 否 | 模块注册表（多模块项目必填） |
+| `deployment_gates` | object | 否 | Initial 阶段 launch 前的部署与 smoke 门禁声明 |
 | `scenarios` | array | 否 | 场景清单（单一真相来源，Phase 3-1 前写入） |
 | `resource_index` | array | 是 | 资源索引列表 |
 | `conventions` | array | 否 | 项目约定 |
@@ -41,6 +42,8 @@
 | `hosting` | 部署平台 | "Cloudflare Pages" |
 | `database` | 数据库 | "Supabase (PostgreSQL)" |
 | `auth` | 认证方案 | "Supabase Auth" |
+| `deployment` | 部署形态或发布方式 | "Docker Compose on VPS" |
+| `smoke` | 冒烟测试命令或策略 | "npm run smoke" |
 
 ### external_dependencies
 
@@ -84,6 +87,7 @@
 | `name` | string | 是 | 模块名称（中文或英文均可） |
 | `lifecycle` | string | 是 | 模块生命周期：`initial`（初始开发阶段，关注 phase 推进）或 `launched`（迭代开发阶段，关注变更提案） |
 | `skip_phases` | array | 否 | 声明本模块不需要的阶段，phase 检测时跳过对应目录。由 `architecture-designer` Skill 在技术选型后填写。 |
+| `deployment_required` | boolean | 否 | 是否需要部署执行门禁。软件项目默认 true；纯文档、纯库或明确无需部署的模块可设为 false。 |
 
 `skip_phases` 允许值：
 
@@ -92,6 +96,9 @@
 | `api` | `logos/resources/api/` | 无 HTTP API 的项目（桌面应用、CLI 工具、前端库） |
 | `database` | `logos/resources/database/` | 无数据库的项目（纯计算工具、无状态 CLI） |
 | `scenario` | `logos/resources/scenario/` | 无 API 编排测试的项目（通常与 `api` 同时跳过） |
+| `deployment` | 部署执行与 smoke 门禁 | 纯文档、无需发布运行环境的模块 |
+
+> `deployment` skip 只跳过部署执行与 smoke 门禁，不跳过部署方案设计。Initial 软件项目仍应说明为什么不需要部署。
 
 示例：
 
@@ -110,6 +117,27 @@ modules:
     lifecycle: initial
     skip_phases: [api, database, scenario]   # 纯 CLI 工具：无数据库，无 HTTP API
 ```
+
+### deployment_gates
+
+`deployment_gates` 用于声明 Initial 阶段 launch 前的部署门禁要求。字段可由 `deployment-designer` Skill 写入，供 `status` / `launch` 判断。
+
+```yaml
+deployment_gates:
+  core:
+    deployment_required: true
+    smoke_required: true
+    environments:
+      - staging
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `deployment_required` | boolean | 是 | 是否需要部署执行 |
+| `smoke_required` | boolean | 是 | 是否需要部署后冒烟测试 |
+| `environments` | array | 否 | 需要覆盖的部署环境 |
+
+若未声明 `deployment_gates`，软件模块默认需要部署方案；部署执行和 smoke 门禁由模块的 `deployment_required` 与部署方案内容共同决定。
 
 ### resource_index
 
@@ -140,7 +168,9 @@ modules:
 |------|-------------|------|
 | Phase 3-1 场景建模 | `logos/resources/prd/3-technical-plan/2-scenario-implementation/<module>-SXX-*.md` | `core-S01-user-register.md` |
 | Phase 3-2 API 设计 | `logos/resources/api/SXX-*.yaml` 或 `SXX-*.yml` | `S01-user-register.yaml` |
-| Phase 3-3a 测试用例 | `logos/resources/test/<module>-SXX-*.md` | `core-S01-test-cases.md` |
+| Phase 3-3 部署方案 | `logos/resources/prd/3-technical-plan/3-deployment/<module>-01-deployment-plan.md` | `core-01-deployment-plan.md` |
+| Phase 3-4a 测试用例 | `logos/resources/test/<module>-SXX-*.md` | `core-S01-test-cases.md` |
+| Phase 3-4a 冒烟测试 | `logos/resources/test/smoke/<module>-smoke-test-cases.md` | `core-smoke-test-cases.md` |
 
 **完成判断规则**：只有 `scenarios` 中每个 `id` 在对应阶段都存在匹配文件，该阶段才视为完成。若 `scenarios` 字段缺失，则降级为旧的"目录有文件即完成"逻辑（向后兼容）。
 
@@ -163,6 +193,8 @@ tech_stack:
   database: "Supabase (PostgreSQL)"
   auth: "Supabase Auth"
   payment: "Paddle"
+  deployment: "Vercel + Supabase"
+  smoke: "npm run smoke"
 
 scenario_counter:
   next_id: 6
@@ -174,6 +206,13 @@ modules:
   - id: payment
     name: 支付模块
     lifecycle: initial
+
+deployment_gates:
+  core:
+    deployment_required: true
+    smoke_required: true
+    environments:
+      - staging
 
 external_dependencies:
   - name: "邮件服务"
@@ -203,6 +242,10 @@ resource_index:
     desc: 数据库完整 Schema。涉及表结构、字段设计、RLS 策略时必读。
   - path: logos/resources/scenario/user-auth.json
     desc: 用户认证场景的 API 编排。涉及认证流程验收时必读。
+  - path: logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
+    desc: 核心模块部署方案。涉及部署拓扑、发布命令、回滚策略和 smoke 验证时必读。
+  - path: logos/resources/test/smoke/core-smoke-test-cases.md
+    desc: 核心模块部署后冒烟测试用例。涉及 openlogos smoke 或 launch 前门禁时必读。
 
 conventions:
   - "所有 API 路径以 /api/ 开头"

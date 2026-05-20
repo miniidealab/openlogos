@@ -1,23 +1,23 @@
 # Skill: Test Orchestrator
 
-> 基于业务场景和时序图设计 **API 编排测试**用例（Phase 3 Step 3b），覆盖正常/异常/边界场景，自动识别外部依赖并应用测试策略，作为端到端 API 验收标准。**仅适用于涉及 API 的项目。**
+> 基于业务场景和时序图设计 **API 编排测试**用例（Phase 3 Step 4b），覆盖正常/异常/边界场景，自动识别外部依赖并应用测试策略，作为端到端 API 验收标准。**仅适用于涉及 API 的项目。**
 
 ## 与 test-writer 的关系
 
-本 Skill 负责测试金字塔的**顶层**——API 编排测试（HTTP 请求级别），执行于 Phase 3 Step 3b。
+本 Skill 负责测试金字塔的**顶层**——API 编排测试（HTTP 请求级别），执行于 Phase 3 Step 4b。
 
-底层的单元测试和场景测试（函数调用级别）由 `test-writer` Skill 在 Step 3a 完成。Step 3a 是所有项目的必选步骤，Step 3b（本 Skill）仅在项目涉及 API 时执行。
+底层的单元测试和场景测试（函数调用级别）由 `test-writer` Skill 在 Step 4a 完成。Step 4a 是所有项目的必选步骤，Step 4b（本 Skill）仅在项目涉及 API 时执行。
 
 ## 触发条件
 
 - 用户要求设计 API 编排测试
-- 用户提到 "Phase 3 Step 3b"、"API 编排"、"编排测试"
-- Step 3a（test-writer）完成后，AI 引导用户继续进入 Step 3b
+- 用户提到 "Phase 3 Step 4b"、"API 编排"、"编排测试"
+- Step 4a（test-writer）完成后，AI 引导用户继续进入 Step 4b
 - 用户需要验收已部署的 API 代码
 
 ## 前置依赖
 
-- `logos/resources/test/` 中包含测试用例规格文档（Step 3a 已完成）
+- `logos/resources/test/` 中包含测试用例规格文档（Step 4a 已完成）
 - `logos/resources/prd/3-technical-plan/2-scenario-implementation/` 中包含场景时序图
 - `logos/resources/api/` 中包含 API 规格（OpenAPI YAML）
 - `logos-project.yaml` 中包含 `external_dependencies`（如有）
