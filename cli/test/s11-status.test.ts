@@ -120,16 +120,20 @@ describe('S11 Scenario Tests — status command', () => {
       'logos/resources/prd/3-technical-plan/2-scenario-implementation',
       'logos/resources/api',
       'logos/resources/database',
+      'logos/resources/prd/3-technical-plan/3-deployment',
       'logos/resources/test',
+      'logos/resources/test/smoke',
       'logos/resources/scenario',
       'logos/resources/implementation',
-      'logos/resources/verify',
     ];
     for (const d of dirs) {
       const dir = join(root, d);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'dummy.md'), 'content');
     }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
 
     status();
 
@@ -335,6 +339,76 @@ describe('S11 Scenario Tests — status command', () => {
     expect(core.suggestion).toMatch(/修复|fix/i);
   });
 
+  it('ST-S11-06c5: VERIFY_FAIL has priority over stale VERIFY_PASS and deployment markers', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+    writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+    expect(core.active_change!.proposal_step).toBe('verify-failed');
+  });
+
+  it('ST-S11-06c6: VERIFY_PASS with unchecked [deploy] section → ready-to-deploy and shows deploy tasks', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 执行 staging 部署',
+    ].join('\n'));
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+    expect(core.active_change!.proposal_step).toBe('ready-to-deploy');
+    expect(core.active_change!.deploy_tasks).toEqual([{ checked: false, text: '执行 staging 部署' }]);
+
+    status();
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('执行 staging 部署');
+  });
+
+  it('ST-S11-06c7: DEPLOY_DONE with smoke cases → ready-to-smoke, then SMOKE_PASS → smoke-passed', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
+    const proposalDir = join(root, 'logos', 'changes', 'my-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 执行 staging 部署',
+    ].join('\n'));
+    const smokeDir = join(root, 'logos/resources/test/smoke');
+    mkdirSync(smokeDir, { recursive: true });
+    writeFileSync(join(smokeDir, 'core-smoke-test-cases.md'), '| SMOKE-core-01 | health |');
+
+    expect(collectStatusData(root).modules!.find(m => m.id === 'core')!.active_change!.proposal_step).toBe('ready-to-smoke');
+
+    writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
+    expect(collectStatusData(root).modules!.find(m => m.id === 'core')!.active_change!.proposal_step).toBe('smoke-passed');
+  });
+
   it('ST-S11-06d: structured [delta] section all checked → ready-to-merge', () => {
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
@@ -416,7 +490,7 @@ describe('S11 Unit Tests — skipped phase detection', () => {
 
   it('UT-S11-07: phases before lastDoneIdx are marked skipped when empty', () => {
     // Phase 1 (idx 0) has files, Phase 3-2-api (idx 4) is empty,
-    // Phase 3-4 (idx 8, implementation) has files → 3-2-api should be skipped
+    // Phase 3-5 (implementation) has files → 3-2-api should be skipped
     const reqDir = join(root, 'logos/resources/prd/1-product-requirements');
     mkdirSync(reqDir, { recursive: true });
     writeFileSync(join(reqDir, '01-requirements.md'), '# Req');
@@ -441,8 +515,8 @@ describe('S11 Unit Tests — skipped phase detection', () => {
     expect(phase1.skipped).toBe(false);
     expect(phase1.done).toBe(true);
 
-    // Phase 3-5 (idx 9, verify) should NOT be skipped (it's after lastDoneIdx)
-    const verifyPhase = data.phases.find(p => p.key === 'phase.3-5')!;
+    // Phase 3-6 (verify) should NOT be skipped (it's after lastDoneIdx)
+    const verifyPhase = data.phases.find(p => p.key === 'phase.3-6')!;
     expect(verifyPhase.skipped).toBe(false);
   });
 
@@ -471,16 +545,20 @@ describe('S11 Unit Tests — skipped phase detection', () => {
       'logos/resources/prd/3-technical-plan/2-scenario-implementation',
       // skip api (idx 4)
       // skip database (idx 5)
+      'logos/resources/prd/3-technical-plan/3-deployment',
       'logos/resources/test',
+      'logos/resources/test/smoke',
       'logos/resources/scenario',
       'logos/resources/implementation',
-      'logos/resources/verify',
     ];
     for (const d of dirs) {
       const dir = join(root, d);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'dummy.md'), 'content');
     }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
 
     const data = collectStatusData(root);
 
@@ -493,8 +571,8 @@ describe('S11 Unit Tests — skipped phase detection', () => {
   });
 
   it('UT-S11-10: firstIncomplete skips over skipped phases', () => {
-    // Phase 1, 2 done; 3-0 empty; 3-1, 3-3a done → 3-0 is skipped
-    // firstIncomplete should be 3-3b (or later), not 3-0
+    // Phase 1, 2 done; deployment/test done → earlier missing phases are skipped where fallback allows.
+    // deployment is a required explicit phase and should not be skipped by fallback.
     const filledDirs = [
       'logos/resources/prd/1-product-requirements',
       'logos/resources/prd/2-product-design',
@@ -502,8 +580,7 @@ describe('S11 Unit Tests — skipped phase detection', () => {
       // 3-1 (scenario) empty → will be skipped
       // 3-2-api empty → will be skipped
       // 3-2-db empty → will be skipped
-      'logos/resources/test',    // idx 6 (3-3a)
-      // 3-3b empty → NOT skipped (idx 7, after lastDoneIdx=6)
+      'logos/resources/test',
     ];
     for (const d of filledDirs) {
       const dir = join(root, d);
@@ -513,17 +590,17 @@ describe('S11 Unit Tests — skipped phase detection', () => {
 
     const data = collectStatusData(root);
 
-    // 3-0 through 3-2-db should be skipped (idx 2-5, all before lastDoneIdx=6)
+    // 3-0 through 3-2-db should be skipped (all before test)
     expect(data.phases.find(p => p.key === 'phase.3-0')!.skipped).toBe(true);
     expect(data.phases.find(p => p.key === 'phase.3-1')!.skipped).toBe(true);
     expect(data.phases.find(p => p.key === 'phase.3-2-api')!.skipped).toBe(true);
     expect(data.phases.find(p => p.key === 'phase.3-2-db')!.skipped).toBe(true);
 
-    // 3-3b should NOT be skipped (idx 7, >= lastDoneIdx=6)
-    expect(data.phases.find(p => p.key === 'phase.3-3b')!.skipped).toBe(false);
+    // deployment should NOT be fallback-skipped even when later test files exist
+    expect(data.phases.find(p => p.key === 'phase.3-3-deployment')!.skipped).toBe(false);
 
-    // current_phase should be 3-3b, not 3-0
-    expect(data.current_phase).toBe('phase.3-3b');
+    // current_phase should be deployment, not 3-0
+    expect(data.current_phase).toBe('phase.3-3-deployment');
   });
 });
 
@@ -550,10 +627,11 @@ describe('S11 Scenario Tests — skipped phases in output', () => {
   });
 
   it('ST-S11-06: skipped phases are hidden in text output', () => {
-    // Phase 1, 3-1, 3-3a, 3-4 done → 2, 3-0, 3-2-api, 3-2-db, 3-3b skipped
+    // Phase 1, 3-1, 3-4a, 3-5 done → earlier optional API/DB phases skipped
     const filledDirs = [
       'logos/resources/prd/1-product-requirements',
       'logos/resources/prd/3-technical-plan/2-scenario-implementation',
+      'logos/resources/prd/3-technical-plan/3-deployment',
       'logos/resources/test',
       'logos/resources/implementation',
     ];
@@ -579,8 +657,7 @@ describe('S11 Scenario Tests — skipped phases in output', () => {
   });
 
   it('ST-S11-07: suggestion points to correct phase when skips exist', () => {
-    // Phase 1 and 3-4 done; everything between is skipped
-    // 3-5 (verify) should be suggested, not 3-2-api
+    // Phase 1 and implementation done; deployment remains explicit and should be suggested
     const filledDirs = [
       'logos/resources/prd/1-product-requirements',
       'logos/resources/implementation',
@@ -594,11 +671,10 @@ describe('S11 Scenario Tests — skipped phases in output', () => {
     status();
 
     const allLogs = con.logs.join('\n');
-    // The suggestion should mention verify, not API design
+    // The suggestion should mention deployment, not API design
     expect(allLogs).not.toContain('API');
-    // Should suggest 3-5 (verify) which is the first non-skipped incomplete
-    const hasVerifyHint = allLogs.includes('verify') || allLogs.includes('验收');
-    expect(hasVerifyHint).toBe(true);
+    const hasDeploymentHint = allLogs.includes('Deployment') || allLogs.includes('部署');
+    expect(hasDeploymentHint).toBe(true);
   });
 });
 
@@ -681,15 +757,15 @@ describe('S11 Unit Tests — skip_phases in modules', () => {
 
     // api and scenario phases must be skipped
     expect(data.phases.find(p => p.key === 'phase.3-2-api')!.skipped).toBe(true);
-    expect(data.phases.find(p => p.key === 'phase.3-3b')!.skipped).toBe(true);
+    expect(data.phases.find(p => p.key === 'phase.3-4b')!.skipped).toBe(true);
 
     // current_phase must NOT be phase.3-2-api
     expect(data.current_phase).not.toBe('phase.3-2-api');
-    expect(data.current_phase).not.toBe('phase.3-3b');
+    expect(data.current_phase).not.toBe('phase.3-4b');
   });
 
   it('UT-S11-SP-02: skip_phases:[api,scenario] — next suggestion does not recommend API design', () => {
-    // Phase 1, 2, 3-0, 3-1 done; api/scenario skipped → next should suggest test cases (3-3a)
+    // Phase 1, 2, 3-0, 3-1 done; api/scenario skipped → next should suggest deployment plan
     const p1Dir = join(root, 'logos/resources/prd/1-product-requirements');
     const p2Dir = join(root, 'logos/resources/prd/2-product-design');
     const archDir = join(root, 'logos/resources/prd/3-technical-plan/1-architecture');
@@ -711,7 +787,7 @@ describe('S11 Unit Tests — skip_phases in modules', () => {
     // current_phase must not be api/database/scenario-related
     expect(data.current_phase).not.toBe('phase.3-2-api');
     expect(data.current_phase).not.toBe('phase.3-2-db');
-    expect(data.current_phase).not.toBe('phase.3-3b');
+    expect(data.current_phase).not.toBe('phase.3-4b');
 
     // suggestion must not mention API design
     expect(data.suggestion).not.toMatch(/api.?designer/i);
@@ -800,14 +876,20 @@ describe('S11 Unit Tests — multi-module phase filtering', () => {
       'logos/resources/prd/3-technical-plan/1-architecture',
       'logos/resources/api',
       'logos/resources/database',
+      'logos/resources/prd/3-technical-plan/3-deployment',
+      'logos/resources/test',
+      'logos/resources/test/smoke',
+      'logos/resources/scenario',
       'logos/resources/implementation',
-      'logos/resources/verify',
     ];
     for (const d of dirs) {
       const dir = join(root, d);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'core-dummy.md'), 'content');
     }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
 
     writeFileSync(
       join(root, 'logos', 'logos-project.yaml'),
@@ -959,14 +1041,20 @@ describe('S11 Unit Tests — multi-module phase filtering', () => {
       'logos/resources/prd/3-technical-plan/1-architecture',
       'logos/resources/api',
       'logos/resources/database',
+      'logos/resources/prd/3-technical-plan/3-deployment',
+      'logos/resources/test',
+      'logos/resources/test/smoke',
+      'logos/resources/scenario',
       'logos/resources/implementation',
-      'logos/resources/verify',
     ];
     for (const d of dirs) {
       const dir = join(root, d);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'core-dummy.md'), 'content');
     }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
 
     writeFileSync(
       join(root, 'logos', 'logos-project.yaml'),

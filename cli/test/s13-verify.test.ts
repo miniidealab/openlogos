@@ -491,4 +491,52 @@ describe('S13 Scenario Tests — verify command', () => {
     const report = readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf-8');
     expect(report).toContain('🔵 MANUAL');
   });
+
+  it('ST-S13-09: Gate PASS writes VERIFY_PASS, clears VERIFY_FAIL, and prints deploy tasks', () => {
+    writeTestCases(CASES_ALL_PASS);
+    writeResults([
+      '{"id":"UT-S01-01","status":"pass"}',
+      '{"id":"ST-S01-01","status":"pass"}',
+    ]);
+    const proposalDir = join(root, 'logos', 'changes', 'deploy-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'deploy-feature', module: 'core' }));
+    writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 执行 staging 部署',
+    ].join('\n'));
+
+    verify();
+
+    expect(existsSync(join(proposalDir, 'VERIFY_PASS'))).toBe(true);
+    expect(existsSync(join(proposalDir, 'VERIFY_FAIL'))).toBe(false);
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('执行 staging 部署');
+    expect(allLogs).toMatch(/human|人类|Deployment is a human/i);
+  });
+
+  it('ST-S13-10: Gate FAIL clears stale deploy and smoke markers', () => {
+    writeTestCases(CASES_ALL_PASS);
+    writeResults([
+      '{"id":"UT-S01-01","status":"pass"}',
+      '{"id":"ST-S01-01","status":"fail","error":"timeout"}',
+    ]);
+    const proposalDir = join(root, 'logos', 'changes', 'deploy-feature');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'deploy-feature', module: 'core' }));
+    for (const marker of ['VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_PASS', 'SMOKE_FAIL']) {
+      writeFileSync(join(proposalDir, marker), '');
+    }
+
+    expect(() => verify()).toThrow('process.exit(1)');
+
+    expect(existsSync(join(proposalDir, 'VERIFY_FAIL'))).toBe(true);
+    expect(existsSync(join(proposalDir, 'VERIFY_PASS'))).toBe(false);
+    expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(false);
+    expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(false);
+    expect(existsSync(join(proposalDir, 'SMOKE_FAIL'))).toBe(false);
+  });
 });

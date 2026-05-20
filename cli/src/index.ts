@@ -8,6 +8,7 @@ import { change } from './commands/change.js';
 import { merge } from './commands/merge.js';
 import { archive } from './commands/archive.js';
 import { verify } from './commands/verify.js';
+import { smoke } from './commands/smoke.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
@@ -34,6 +35,8 @@ Commands:
   next               Show the single most actionable next step
                        --module <id>               Filter to a specific module
   verify             Verify test results against test case specs
+  smoke              Verify deployed environment against smoke test specs
+                       --env <name>                 Target environment label
   launch             Activate change management for a module after first development cycle
                        launch [module-id]          Specify module (auto-detects if only one exists)
   change <slug>      Create a change proposal for iterative updates
@@ -56,6 +59,7 @@ Examples:
   openlogos status --format json
   openlogos verify
   openlogos verify --format json
+  openlogos smoke --env staging
   openlogos detect --format json
   openlogos change add-remember-me
   openlogos merge add-remember-me
@@ -113,6 +117,11 @@ async function main() {
     case 'verify':
       verify(format);
       break;
+    case 'smoke': {
+      const envArg = args.includes('--env') ? args[args.indexOf('--env') + 1] : undefined;
+      smoke(format, envArg);
+      break;
+    }
     case 'change': {
       const restArgs = args.slice(1).filter(a => !a.startsWith('--'));
       const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;

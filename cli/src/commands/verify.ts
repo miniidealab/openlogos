@@ -1,9 +1,10 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
+import { getDeployTasks } from './status.js';
 
 export interface TestResult {
   id: string;
@@ -499,8 +500,16 @@ export function verify(format: OutputFormat = 'text') {
         if (existsSync(proposalDir)) {
           if (data.gate.result === 'PASS') {
             writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+            for (const marker of ['VERIFY_FAIL']) {
+              const markerPath = join(proposalDir, marker);
+              if (existsSync(markerPath)) rmSync(markerPath, { force: true });
+            }
           } else {
             writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
+            for (const marker of ['VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_PASS', 'SMOKE_FAIL']) {
+              const markerPath = join(proposalDir, marker);
+              if (existsSync(markerPath)) rmSync(markerPath, { force: true });
+            }
           }
         }
       }
@@ -591,5 +600,25 @@ export function verify(format: OutputFormat = 'text') {
 
   if (gate.result !== 'PASS') {
     process.exit(1);
+  }
+
+  if (existsSync(guardPath)) {
+    try {
+      const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+      const slug = guard.activeChange;
+      if (slug) {
+        const proposalDir = join(root, 'logos', 'changes', slug);
+        const deployTasks = existsSync(proposalDir) ? getDeployTasks(proposalDir) : [];
+        if (deployTasks.length > 0) {
+          console.log(`📦 ${t(locale, 'verify.deployTasksTitle')}`);
+          for (const task of deployTasks) {
+            const icon = task.checked ? 'x' : ' ';
+            console.log(`  - [${icon}] ${task.text}`);
+          }
+          console.log(`\n⚠️  ${t(locale, 'verify.deployHumanGate')}`);
+          console.log(`${t(locale, 'verify.deployAiHint')}\n`);
+        }
+      }
+    } catch { /* guard 文件读取失败时静默跳过 */ }
   }
 }

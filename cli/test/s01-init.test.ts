@@ -121,16 +121,16 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(output).toContain('product-designer');
   });
 
-  it('UT-S01-09b: createAgentsMd includes Step 4 batch execution rules in English', () => {
+  it('UT-S01-09b: createAgentsMd includes Step 5 batch execution rules in English', () => {
     const output = createAgentsMd('en');
-    expect(output).toContain('Step 4 execution rules (large tasks)');
+    expect(output).toContain('Step 5 execution rules (large tasks)');
     expect(output).toContain('UT/ST case IDs');
     expect(output).toContain('test-results.jsonl');
   });
 
-  it('UT-S01-09c: createAgentsMd includes Step 4 batch execution rules in Chinese', () => {
+  it('UT-S01-09c: createAgentsMd includes Step 5 batch execution rules in Chinese', () => {
     const output = createAgentsMd('zh');
-    expect(output).toContain('Step 4 执行规则（大任务）');
+    expect(output).toContain('Step 5 执行规则（大任务）');
     expect(output).toContain('UT/ST 用例 ID');
     expect(output).toContain('test-results.jsonl');
   });
@@ -233,7 +233,7 @@ describe('S01 Unit Tests — createAgentsMd Active Skills', () => {
     expect(claude).toContain('## Active Skills');
   });
 
-  it('UT-S01-20: Active Skills section lists all 13 skills', () => {
+  it('UT-S01-20: Active Skills section lists all 15 skills', () => {
     const output = createAgentsMd('en', 'cursor', 'agents');
     for (const name of SKILL_NAMES) {
       expect(output).toContain(`skills/${name}/`);
@@ -379,7 +379,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const result = deploySkills(root, 'cursor', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('.cursor/rules/');
-      expect(result!.count).toBe(13);
+      expect(result!.count).toBe(15);
       expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
 
       const content = readFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), 'utf-8');
@@ -472,7 +472,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const result = deploySkills(root, 'claude-code', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('logos/skills/');
-      expect(result!.count).toBe(13);
+      expect(result!.count).toBe(15);
       expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     } finally {
       cleanup();
@@ -485,7 +485,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const result = deploySkills(root, 'codex', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('.agents/skills/');
-      expect(result!.count).toBe(13);
+      expect(result!.count).toBe(15);
 
       const content = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
       expect(content).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---\n\n# Skill: PRD Writer/);
@@ -500,7 +500,7 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const result = deploySkills(root, 'other', 'en');
       expect(result).not.toBeNull();
       expect(result!.target).toBe('logos/skills/');
-      expect(result!.count).toBe(13);
+      expect(result!.count).toBe(15);
     } finally {
       cleanup();
     }
@@ -598,7 +598,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
-    expect(mdcFiles.length).toBe(14);
+    expect(mdcFiles.length).toBe(16);
     expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
 
     const policyContent = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
@@ -615,7 +615,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('✓');
     expect(allLogs).toContain('specs deployed');
     expect(allLogs).toContain('Next steps');
-    expect(allLogs).toContain('13 skills deployed to .cursor/rules/');
+    expect(allLogs).toContain('15 skills deployed to .cursor/rules/');
   });
 
   it('ST-S01-02: auto-detect project name from directory', async () => {
@@ -719,7 +719,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     const skillDirs = readdirSync(join(root, 'logos', 'skills'));
-    expect(skillDirs.length).toBe(13);
+    expect(skillDirs.length).toBe(15);
 
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).toContain('## Active Skills');
@@ -727,7 +727,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(agents).not.toContain('## Active Skills');
 
     const allLogs = con.logs.join('\n');
-    expect(allLogs).toContain('13 skills deployed to logos/skills/');
+    expect(allLogs).toContain('15 skills deployed to logos/skills/');
 
     // Claude Code plugin assets
     expect(existsSync(join(root, '.claude', 'commands', 'openlogos'))).toBe(true);
@@ -751,7 +751,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     const skillDirs = readdirSync(join(root, 'logos', 'skills'));
-    expect(skillDirs.length).toBe(13);
+    expect(skillDirs.length).toBe(15);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('## Active Skills');
@@ -877,7 +877,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('Adding AI tool target(s)');
-    expect(allLogs).toContain('13 skills synced to .agents/skills/');
+    expect(allLogs).toContain('15 skills synced to .agents/skills/');
     expect(allLogs).toContain('Codex plugin synced');
   });
 

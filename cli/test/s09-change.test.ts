@@ -66,6 +66,25 @@ describe('S09 Unit Tests — scanDeltas', () => {
     expect(results).toEqual([]);
   });
 
+  it('UT-S09-02b: scan methodology spec and skill deltas', () => {
+    const deltasDir = join(root, 'deltas');
+    mkdirSync(join(deltasDir, 'spec'), { recursive: true });
+    mkdirSync(join(deltasDir, 'skills', 'deployment-designer'), { recursive: true });
+    writeFileSync(join(deltasDir, 'spec', 'workflow.md'), '# workflow');
+    writeFileSync(join(deltasDir, 'skills', 'deployment-designer', 'SKILL.md'), '# skill');
+
+    const results = scanDeltas(deltasDir);
+
+    expect(results.map(r => r.relativePath)).toEqual([
+      'deltas/skills/deployment-designer/SKILL.md',
+      'deltas/spec/workflow.md',
+    ]);
+    expect(results.map(r => r.targetDir)).toEqual([
+      'skills/deployment-designer',
+      'spec',
+    ]);
+  });
+
   it('UT-S09-03: empty deltas directory returns empty array', () => {
     const deltasDir = join(root, 'deltas');
     mkdirSync(join(deltasDir, 'prd'), { recursive: true });

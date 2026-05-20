@@ -105,6 +105,25 @@ describe('S18 Unit Tests — sync-resource-index inferResourceDesc', () => {
     expect(desc).toContain('架构');
   });
 
+  it('UT-S18-10b: infers desc for deployment plan file (zh)', () => {
+    const desc = inferResourceDesc(
+      'logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md',
+      'zh',
+    );
+    expect(desc).not.toBeNull();
+    expect(desc).toContain('部署方案');
+    expect(desc).toContain('smoke');
+  });
+
+  it('UT-S18-10c: infers desc for smoke test cases (en)', () => {
+    const desc = inferResourceDesc(
+      'logos/resources/test/smoke/core-smoke-test-cases.md',
+      'en',
+    );
+    expect(desc).not.toBeNull();
+    expect(desc).toContain('smoke test cases');
+  });
+
   it('UT-S18-11: returns null for unrecognized path', () => {
     const desc = inferResourceDesc('some/random/file.txt', 'zh');
     expect(desc).toBeNull();

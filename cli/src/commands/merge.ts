@@ -8,6 +8,8 @@ const DELTA_TO_RESOURCE: Record<string, string> = {
   'database': 'logos/resources/database',
   'scenario': 'logos/resources/scenario',
   'test': 'logos/resources/test',
+  'spec': 'spec',
+  'skills': 'skills',
 };
 
 interface DeltaFile {
@@ -20,7 +22,7 @@ export function scanDeltas(deltasDir: string): DeltaFile[] {
   const results: DeltaFile[] = [];
   if (!existsSync(deltasDir)) return results;
 
-  for (const category of readdirSync(deltasDir)) {
+  for (const category of readdirSync(deltasDir).sort()) {
     const categoryDir = join(deltasDir, category);
     if (!statSync(categoryDir).isDirectory()) continue;
 

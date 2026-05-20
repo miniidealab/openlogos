@@ -216,11 +216,13 @@ export const SKILL_NAMES = [
   'scenario-architect',
   'api-designer',
   'db-designer',
+  'deployment-designer',
   'test-writer',
   'test-orchestrator',
   'code-implementor',
   'code-reviewer',
   'change-writer',
+  'deployment-executor',
   'merge-executor',
 ] as const;
 
@@ -232,11 +234,13 @@ const SKILL_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
   'scenario-architect': { en: 'Business scenario modeling and sequence diagrams', zh: '业务场景建模与时序图' },
   'api-designer': { en: 'OpenAPI specification design', zh: 'OpenAPI 规格设计' },
   'db-designer': { en: 'Database schema design', zh: '数据库 Schema 设计' },
-  'test-writer': { en: 'Unit test + scenario test case design (Step 3a, all projects)', zh: '单元测试 + 场景测试用例设计（Step 3a）' },
-  'test-orchestrator': { en: 'API orchestration test design (Step 3b, API projects only)', zh: 'API 编排测试设计（Step 3b，仅 API 项目）' },
-  'code-implementor': { en: 'Code and test code generation with spec fidelity (Step 4)', zh: '基于规格链的代码与测试代码生成（Step 4）' },
+  'deployment-designer': { en: 'Deployment plan and smoke strategy design (Step 3)', zh: '部署方案与 smoke 策略设计（Step 3）' },
+  'test-writer': { en: 'Unit test + scenario test case design (Step 4a, all projects)', zh: '单元测试 + 场景测试用例设计（Step 4a）' },
+  'test-orchestrator': { en: 'API orchestration test design (Step 4b, API projects only)', zh: 'API 编排测试设计（Step 4b，仅 API 项目）' },
+  'code-implementor': { en: 'Code and test code generation with spec fidelity (Step 5)', zh: '基于规格链的代码与测试代码生成（Step 5）' },
   'code-reviewer': { en: 'Code review and compliance checking', zh: '代码审查与规范检查' },
   'change-writer': { en: 'Change proposal writing and impact analysis', zh: '变更提案编写与影响分析' },
+  'deployment-executor': { en: 'Human-confirmed deployment execution after verify', zh: 'verify 通过后的人类确认部署执行' },
   'merge-executor': { en: 'Delta merge execution via MERGE_PROMPT.md', zh: '通过 MERGE_PROMPT.md 执行 Delta 合并' },
 };
 
@@ -869,10 +873,12 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → 建议 Phase 3 Step 0（architecture-designer）
 - 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → 建议 Phase 3 Step 1（scenario-architect）
 - 场景存在但 \`logos/resources/api/\` 为空 → 建议 Phase 3 Step 2（api-designer + db-designer）
-- API 存在但 \`logos/resources/test/\` 为空 → 建议 Phase 3 Step 3a（test-writer）
-- 测试用例存在但 \`logos/resources/scenario/\` 为空 → 建议 Phase 3 Step 3b（test-orchestrator，仅 API 项目）
-- 编排测试存在但 \`logos/resources/implementation/\` 为空 → 建议 Phase 3 Step 4（code-implementor）
-- 代码已生成但 \`logos/resources/verify/\` 为空 → 建议 Phase 3 Step 5（运行测试后 \`openlogos verify\`）
+- API / DB 设计完成后但 \`3-technical-plan/3-deployment/\` 为空 → 建议 Phase 3 Step 3（deployment-designer）
+- 部署方案存在但 \`logos/resources/test/\` 为空 → 建议 Phase 3 Step 4a（test-writer；如需部署需同时设计 smoke）
+- 测试用例存在但 \`logos/resources/scenario/\` 为空 → 建议 Phase 3 Step 4b（test-orchestrator，仅 API 项目）
+- 编排测试存在但 \`logos/resources/implementation/\` 为空 → 建议 Phase 3 Step 5（code-implementor）
+- 代码已生成但 \`logos/resources/verify/acceptance-report.md\` 不存在 → 建议 Phase 3 Step 6（运行测试后 \`openlogos verify\`）
+- 部署完成但 \`smoke-report.md\` / \`SMOKE_PASS\` 缺失 → 建议 Phase 3 Step 8（\`openlogos smoke\`）
 
 文件命名规范（模块前缀）：
 - 所有设计文档遵循 \`<module>-<序号>-<类型>.md\` 格式，初始项目默认使用 \`core-\` 前缀
@@ -887,10 +893,12 @@ function generatePhaseDetectionPlain(locale: Locale): string {
 - design exists but \`3-technical-plan/1-architecture/\` is empty → suggest Phase 3 Step 0 (architecture-designer)
 - architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → suggest Phase 3 Step 1 (scenario-architect)
 - scenarios exist but \`logos/resources/api/\` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
-- API exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 3a (test-writer)
-- test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 3b (test-orchestrator, API projects only)
-- orchestration tests exist but \`logos/resources/implementation/\` is empty → suggest Phase 3 Step 4 (code-implementor)
-- code generated but \`logos/resources/verify/\` is empty → suggest Phase 3 Step 5 (run tests then \`openlogos verify\`)
+- API / DB design is complete but \`3-technical-plan/3-deployment/\` is empty → suggest Phase 3 Step 3 (deployment-designer)
+- deployment plan exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 4a (test-writer; design smoke when deployment is required)
+- test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 4b (test-orchestrator, API projects only)
+- orchestration tests exist but \`logos/resources/implementation/\` is empty → suggest Phase 3 Step 5 (code-implementor)
+- code generated but \`logos/resources/verify/acceptance-report.md\` is missing → suggest Phase 3 Step 6 (run tests then \`openlogos verify\`)
+- deployment is done but \`smoke-report.md\` / \`SMOKE_PASS\` is missing → suggest Phase 3 Step 8 (\`openlogos smoke\`)
 
 File naming convention (module prefix):
 - All design documents follow \`<module>-<number>-<type>.md\` format; default module is \`core-\` prefix
@@ -908,10 +916,12 @@ function generatePhaseDetectionWithSkills(locale: Locale, aiTool?: AiTool, targe
 - 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → Phase 3 Step 0 → **读取 \`${skillPath('architecture-designer', aiTool, target)}\` 并按其步骤执行**
 - 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → Phase 3 Step 1 → **读取 \`${skillPath('scenario-architect', aiTool, target)}\` 并按其步骤执行**
 - 场景存在但 \`logos/resources/api/\` 为空 → Phase 3 Step 2 → **读取 \`${skillPath('api-designer', aiTool, target)}\` 和 \`${skillPath('db-designer', aiTool, target)}\` 并按其步骤执行**
-- API 存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 3a → **读取 \`${skillPath('test-writer', aiTool, target)}\` 并按其步骤执行**
-- 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 3b → **读取 \`${skillPath('test-orchestrator', aiTool, target)}\` 并按其步骤执行**（仅 API 项目）
-- 编排测试存在但 \`logos/resources/implementation/\` 为空 → Phase 3 Step 4 → **读取 \`${skillPath('code-implementor', aiTool, target)}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer', aiTool, target)}\` 进行代码审查）
-- 代码已生成但 \`logos/resources/verify/\` 为空 → Phase 3 Step 5（运行测试后 \`openlogos verify\`）
+- API / DB 设计完成后但 \`3-technical-plan/3-deployment/\` 为空 → Phase 3 Step 3 → **读取 \`${skillPath('deployment-designer', aiTool, target)}\` 并按其步骤执行**
+- 部署方案存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 4a → **读取 \`${skillPath('test-writer', aiTool, target)}\` 并按其步骤执行**（如需部署需同时设计 smoke）
+- 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 4b → **读取 \`${skillPath('test-orchestrator', aiTool, target)}\` 并按其步骤执行**（仅 API 项目）
+- 编排测试存在但 \`logos/resources/implementation/\` 为空 → Phase 3 Step 5 → **读取 \`${skillPath('code-implementor', aiTool, target)}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer', aiTool, target)}\` 进行代码审查）
+- 代码已生成但 \`logos/resources/verify/acceptance-report.md\` 不存在 → Phase 3 Step 6（运行测试后 \`openlogos verify\`）
+- 部署完成但 \`smoke-report.md\` / \`SMOKE_PASS\` 缺失 → Phase 3 Step 8（\`openlogos smoke\`，人类确认点）
 
 文件命名规范（模块前缀）：
 - 所有设计文档遵循 \`<module>-<序号>-<类型>.md\` 格式，初始项目默认使用 \`core-\` 前缀
@@ -926,10 +936,12 @@ function generatePhaseDetectionWithSkills(locale: Locale, aiTool?: AiTool, targe
 - design exists but \`3-technical-plan/1-architecture/\` is empty → Phase 3 Step 0 → **read \`${skillPath('architecture-designer', aiTool, target)}\` and follow its steps**
 - architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → Phase 3 Step 1 → **read \`${skillPath('scenario-architect', aiTool, target)}\` and follow its steps**
 - scenarios exist but \`logos/resources/api/\` is empty → Phase 3 Step 2 → **read \`${skillPath('api-designer', aiTool, target)}\` and \`${skillPath('db-designer', aiTool, target)}\` and follow their steps**
-- API exists but \`logos/resources/test/\` is empty → Phase 3 Step 3a → **read \`${skillPath('test-writer', aiTool, target)}\` and follow its steps**
-- test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 3b → **read \`${skillPath('test-orchestrator', aiTool, target)}\` and follow its steps** (API projects only)
-- orchestration tests exist but \`logos/resources/implementation/\` is empty → Phase 3 Step 4 → **read \`${skillPath('code-implementor', aiTool, target)}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer', aiTool, target)}\` for code review)
-- code generated but \`logos/resources/verify/\` is empty → Phase 3 Step 5 (run tests then \`openlogos verify\`)
+- API / DB design is complete but \`3-technical-plan/3-deployment/\` is empty → Phase 3 Step 3 → **read \`${skillPath('deployment-designer', aiTool, target)}\` and follow its steps**
+- deployment plan exists but \`logos/resources/test/\` is empty → Phase 3 Step 4a → **read \`${skillPath('test-writer', aiTool, target)}\` and follow its steps** (design smoke when deployment is required)
+- test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 4b → **read \`${skillPath('test-orchestrator', aiTool, target)}\` and follow its steps** (API projects only)
+- orchestration tests exist but \`logos/resources/implementation/\` is empty → Phase 3 Step 5 → **read \`${skillPath('code-implementor', aiTool, target)}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer', aiTool, target)}\` for code review)
+- code generated but \`logos/resources/verify/acceptance-report.md\` is missing → Phase 3 Step 6 (run tests then \`openlogos verify\`)
+- deployment is done but \`smoke-report.md\` / \`SMOKE_PASS\` is missing → Phase 3 Step 8 (\`openlogos smoke\`, human confirmation point)
 
 File naming convention (module prefix):
 - All design documents follow \`<module>-<number>-<type>.md\` format; default module is \`core-\` prefix
@@ -941,24 +953,24 @@ File naming convention (module prefix):
 
 function generateStep4ExecutionRules(locale: Locale): string {
   if (locale === 'zh') {
-    return `Step 4 执行规则（大任务）：
+    return `Step 5 执行规则（大任务）：
 1. 大任务可按场景/子模块分批实现，但每一批必须闭环
 2. 每一批必须同时包含：业务代码 + UT/ST 测试代码 + OpenLogos reporter
 3. 输出代码前，先列出本批覆盖的 UT/ST 用例 ID，并确保与 \`logos/resources/test/*.md\` 对齐
 4. 不允许将全部测试推迟到最终批次统一补写
 
-Step 4 分批执行提示词（可直接复用）：
-- \`请按 Phase 3 Step 4 执行本次实现。若任务较大可分批，但每批必须同时交付：（1）业务代码，（2）对应 UT/ST 测试代码，（3）写入 logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。输出代码前请先列出本批覆盖的 UT/ST 用例 ID。\``;
+Step 5 分批执行提示词（可直接复用）：
+- \`请按 Phase 3 Step 5 执行本次实现。若任务较大可分批，但每批必须同时交付：（1）业务代码，（2）对应 UT/ST 测试代码，（3）写入 logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。输出代码前请先列出本批覆盖的 UT/ST 用例 ID。\``;
   }
 
-  return `Step 4 execution rules (large tasks):
+  return `Step 5 execution rules (large tasks):
 1. Large implementation can be split by scenario/module, but each batch must be closed-loop
 2. Each batch must include business code + UT/ST test code + OpenLogos reporter
 3. Before generating code, list the UT/ST case IDs covered in this batch and keep IDs aligned with \`logos/resources/test/*.md\`
 4. Do not postpone all tests to the final batch
 
-Ready-to-use prompt for Step 4 batch execution:
-- \`Please execute Phase 3 Step 4 for this scope. If the task is large, split into batches, but each batch must deliver: (1) business code, (2) matching UT/ST test code, (3) OpenLogos reporter writing to logos/resources/verify/test-results.jsonl. Before outputting code, list the UT/ST IDs covered in this batch.\``;
+Ready-to-use prompt for Step 5 batch execution:
+- \`Please execute Phase 3 Step 5 for this scope. If the task is large, split into batches, but each batch must deliver: (1) business code, (2) matching UT/ST test code, (3) OpenLogos reporter writing to logos/resources/verify/test-results.jsonl. Before outputting code, list the UT/ST IDs covered in this batch.\``;
 }
 
 function generateDocumentPostEditVerify(locale: Locale): string {
@@ -993,9 +1005,11 @@ const DIRECTORIES = [
   'logos/resources/prd/2-product-design/2-page-design',
   'logos/resources/prd/3-technical-plan/1-architecture',
   'logos/resources/prd/3-technical-plan/2-scenario-implementation',
+  'logos/resources/prd/3-technical-plan/3-deployment',
   'logos/resources/api',
   'logos/resources/database',
   'logos/resources/test',
+  'logos/resources/test/smoke',
   'logos/resources/scenario',
   'logos/resources/implementation',
   'logos/resources/verify',
@@ -1065,6 +1079,10 @@ export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool =
     verify: {
       result_path: 'logos/resources/verify/test-results.jsonl',
     },
+    smoke: {
+      result_path: 'logos/resources/verify/smoke-results.jsonl',
+      report_path: 'logos/resources/verify/smoke-report.md',
+    },
   }, null, 2);
 }
 
@@ -1084,7 +1102,8 @@ modules:
     name: ${locale === 'zh' ? '核心功能' : 'Core'}
     lifecycle: initial
     # skip_phases: [api, scenario]   # 由 architecture-designer Skill 在技术选型后填写
-    # 可选值: api（无 HTTP API）, database（无数据库）, scenario（无 API 编排测试）
+    # 可选值: api（无 HTTP API）, database（无数据库）, scenario（无 API 编排测试）, deployment（无部署执行与 smoke 门禁）
+    # deployment_required: false   # 纯文档、纯库或明确无需部署的模块可设为 false
 
 resource_index: []
 
@@ -1172,12 +1191,14 @@ ${generateActiveSkillsSection(locale, aiTool, target)}`;
 4. delta 产出完成后提醒用户明确授权运行 \`openlogos merge <slug>\`
 5. merge 完成后 AI 自动 commit 规格文档（告知用户，无需确认）
 6. 按合并后的规格实现代码，完成后 AI 自动 commit 代码（告知用户，无需确认）
-7. 提醒用户运行 \`openlogos verify\` 验收
-8. 验收通过后提醒用户明确授权运行 \`openlogos archive <slug>\`（自动删除 guard 文件）
-9. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
-10. 提醒用户确认是否执行 \`git push\`（人类确认点）
+7. 提醒用户明确授权运行 \`openlogos verify\` 验收
+8. 如存在 \`[deploy]\` section，验收通过后提醒用户明确授权 AI 按部署方案执行部署
+9. 部署完成后提醒用户明确授权运行 \`openlogos smoke\`
+10. verify 通过且无部署任务，或部署完成且 smoke 通过后，提醒用户明确授权运行 \`openlogos archive <slug>\`（自动删除 guard 文件）
+11. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
+12. 提醒用户确认是否执行 \`git push\`（人类确认点）
 
-**\`openlogos merge\`、\`openlogos verify\`、\`openlogos archive\` 和 \`git push\` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+**\`openlogos merge\`、\`openlogos verify\`、部署执行、\`openlogos smoke\`、\`openlogos archive\` 和 \`git push\` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
@@ -1200,12 +1221,14 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 4. After delta is complete, remind the user to explicitly authorize running \`openlogos merge <slug>\`
 5. After merge, AI automatically commits spec documents (inform user, no confirmation needed)
 6. Implement code per the updated specs; AI automatically commits code when done (inform user, no confirmation needed)
-7. Remind the user to run \`openlogos verify\` for acceptance
-8. After verification passes, remind the user to explicitly authorize running \`openlogos archive <slug>\` (auto-removes guard file)
-9. After archive, AI automatically commits the archive (inform user, no confirmation needed)
-10. Remind the user to confirm whether to run \`git push\` (human confirmation point)
+7. Remind the user to explicitly authorize running \`openlogos verify\` for acceptance
+8. If a \`[deploy]\` section exists, after verification passes remind the user to explicitly authorize AI to deploy from the deployment plan
+9. After deployment, remind the user to explicitly authorize running \`openlogos smoke\`
+10. When verify passes with no deployment tasks, or deployment is done and smoke passes, remind the user to explicitly authorize running \`openlogos archive <slug>\` (auto-removes guard file)
+11. After archive, AI automatically commits the archive (inform user, no confirmation needed)
+12. Remind the user to confirm whether to run \`git push\` (human confirmation point)
 
-**\`openlogos merge\`, \`openlogos verify\`, \`openlogos archive\`, and \`git push\` are human confirmation points.** AI must not execute them without explicit user authorization. When the user explicitly requests execution (including via the corresponding slash commands), AI may execute them. Must not be triggered implicitly in scenarios like "continue" or "follow the process".
+**\`openlogos merge\`, \`openlogos verify\`, deployment execution, \`openlogos smoke\`, \`openlogos archive\`, and \`git push\` are human confirmation points.** AI must not execute them without explicit user authorization. When the user explicitly requests execution (including via the corresponding slash commands), AI may execute them. Must not be triggered implicitly in scenarios like "continue" or "follow the process".
 
 ### Behavioral Constraints
 - **When you discover a bug/issue**: only output analysis and proposed fix — **do NOT modify code directly** — wait for the user to decide whether to create a change proposal

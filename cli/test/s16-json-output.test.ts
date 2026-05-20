@@ -165,7 +165,7 @@ describe('JSON output — status --format json', () => {
     expect(con.logs).toHaveLength(1);
     const output = JSON.parse(con.logs[0]);
     expect(output.command).toBe('status');
-    expect(output.data.phases).toHaveLength(10);
+    expect(output.data.phases).toHaveLength(13);
     expect(output.data.all_done).toBe(false);
     expect(output.data.current_phase).toBe('phase.1');
   });
@@ -189,16 +189,20 @@ describe('JSON output — status --format json', () => {
       'logos/resources/prd/3-technical-plan/2-scenario-implementation',
       'logos/resources/api',
       'logos/resources/database',
+      'logos/resources/prd/3-technical-plan/3-deployment',
       'logos/resources/test',
+      'logos/resources/test/smoke',
       'logos/resources/scenario',
       'logos/resources/implementation',
-      'logos/resources/verify',
     ];
     for (const d of dirs) {
       const dir = join(root, d);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'dummy.md'), 'content');
     }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
 
     status('json');
     const output = JSON.parse(con.logs[0]);

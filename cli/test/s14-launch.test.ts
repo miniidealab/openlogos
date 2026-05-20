@@ -13,6 +13,13 @@ function readProjectYaml(root: string) {
   return parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8')) ?? {};
 }
 
+function writeLaunchGateReports(root: string, opts: { deploy?: boolean; smoke?: boolean } = {}) {
+  const verifyDir = join(root, 'logos', 'resources', 'verify');
+  writeFileSync(join(verifyDir, 'acceptance-report.md'), '# Acceptance Report\nPASS');
+  if (opts.deploy) writeFileSync(join(verifyDir, 'deployment-report.md'), '# Deployment Report\nDONE');
+  if (opts.smoke) writeFileSync(join(verifyDir, 'smoke-report.md'), '# Smoke Report\nPASS');
+}
+
 describe('S14 Scenario Tests — launch command (module-level)', () => {
   let root: string;
   let cleanup: () => void;
@@ -45,6 +52,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     config.aiTool = 'cursor';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
@@ -61,6 +69,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     config.aiTool = 'cursor';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
@@ -78,6 +87,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     config.aiTool = 'cursor';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
@@ -98,6 +108,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
         { id: 'payment', name: 'Payment', lifecycle: 'initial' },
       ],
     });
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch('core');
 
@@ -170,6 +181,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     config.aiTool = 'cursor';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
@@ -187,6 +199,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     config.lifecycle = 'active';
     config.aiTool = 'cursor';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     // After migration, core is already launched, so launch() should be a no-op
     launch();
@@ -223,6 +236,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     config.aiTool = ['cursor', 'opencode', 'codex'];
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
@@ -248,6 +262,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     config.aiTool = ['cursor', 'codex'];
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
@@ -269,6 +284,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     config.lifecycle = 'active';
     config.aiTool = 'cursor';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
@@ -290,10 +306,53 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     config.lifecycle = 'active';
     config.aiTool = 'cursor';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
 
     launch();
 
     const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
     expect('lifecycle' in updatedConfig).toBe(false);
+  });
+
+  it('ST-S14-15: launch requires verify report before marking initial module launched', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial', deployment_required: false }],
+    });
+
+    expect(() => launch()).toThrow('process.exit(1)');
+    expect(con.errors.join('\n')).toContain('verify');
+    const yaml = readProjectYaml(root);
+    expect(yaml.modules[0].lifecycle).toBe('initial');
+  });
+
+  it('ST-S14-16: deployment_required=false skips deploy and smoke launch gates', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial', deployment_required: false }],
+    });
+    writeLaunchGateReports(root);
+
+    launch();
+
+    const yaml = readProjectYaml(root);
+    expect(yaml.modules[0].lifecycle).toBe('launched');
+  });
+
+  it('ST-S14-17: deployment-required module cannot launch before deployment and smoke reports', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+    });
+    writeLaunchGateReports(root);
+
+    expect(() => launch()).toThrow('process.exit(1)');
+    expect(con.errors.join('\n')).toContain('deployment');
+
+    writeLaunchGateReports(root, { deploy: true });
+    expect(() => launch()).toThrow('process.exit(1)');
+    expect(con.errors.join('\n')).toContain('smoke');
+
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
+    launch();
+    const yaml = readProjectYaml(root);
+    expect(yaml.modules[0].lifecycle).toBe('launched');
   });
 });

@@ -36,28 +36,7 @@ function buildModuleNextItem(
   if (mod.lifecycle === 'launched') {
     if (mod.active_change) {
       const step = mod.active_change.proposal_step;
-      let action: string;
-      let command: string | null = null;
-      if (step === 'writing') {
-        action = t(locale as Parameters<typeof t>[0], 'next.fillProposal');
-      } else if (step === 'delta-writing' || step === 'implementing' || step === 'in-progress') {
-        action = t(locale as Parameters<typeof t>[0], 'next.writeDeltas');
-      } else if (step === 'ready-to-merge') {
-        action = t(locale as Parameters<typeof t>[0], 'next.merge');
-      } else if (step === 'merge-generated') {
-        action = t(locale as Parameters<typeof t>[0], 'next.executeMerge');
-      } else if (step === 'coding') {
-        action = t(locale as Parameters<typeof t>[0], 'next.startCoding');
-      } else if (step === 'ready-to-verify') {
-        action = t(locale as Parameters<typeof t>[0], 'next.runVerify');
-      } else if (step === 'verify-passed') {
-        action = t(locale as Parameters<typeof t>[0], 'next.archive');
-      } else if (step === 'verify-failed') {
-        action = t(locale as Parameters<typeof t>[0], 'next.fixAndVerify');
-      } else {
-        action = t(locale as Parameters<typeof t>[0], 'next.fillProposal');
-        command = null;
-      }
+      const { action, command } = actionForProposalStep(locale, step);
       return {
         id: mod.id, name: mod.name, lifecycle: 'launched',
         action, command, detail: mod.suggestion,
@@ -95,6 +74,39 @@ function buildModuleNextItem(
     detail: '',
     active_change: null, proposal_step: null,
   };
+}
+
+function actionForProposalStep(locale: string, step: ProposalStep | null): { action: string; command: string | null; detailKey: string } {
+  switch (step) {
+    case 'writing':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.fillProposal'), command: null, detailKey: 'next.fillProposalDetail' };
+    case 'delta-writing':
+    case 'implementing':
+    case 'in-progress':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.writeDeltas'), command: null, detailKey: 'next.writeDeltasDetail' };
+    case 'ready-to-merge':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.merge'), command: null, detailKey: 'next.mergeDetail' };
+    case 'merge-generated':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.executeMerge'), command: null, detailKey: 'next.executeMergeDetail' };
+    case 'coding':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.startCoding'), command: null, detailKey: 'next.startCodingDetail' };
+    case 'ready-to-verify':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.runVerify'), command: null, detailKey: 'next.runVerifyDetail' };
+    case 'verify-passed':
+    case 'deploy-done':
+    case 'smoke-passed':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.archive'), command: null, detailKey: 'next.archiveDetail' };
+    case 'ready-to-deploy':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.authorizeDeploy'), command: null, detailKey: 'next.authorizeDeployDetail' };
+    case 'ready-to-smoke':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.runSmoke'), command: null, detailKey: 'next.runSmokeDetail' };
+    case 'smoke-failed':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.fixAndSmoke'), command: null, detailKey: 'next.fixAndSmokeDetail' };
+    case 'verify-failed':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.fixAndVerify'), command: null, detailKey: 'next.fixAndVerifyDetail' };
+    default:
+      return { action: t(locale as Parameters<typeof t>[0], 'next.fillProposal'), command: null, detailKey: 'next.fillProposalDetail' };
+  }
 }
 
 export function next(format: OutputFormat = 'text', moduleId?: string) {
@@ -169,39 +181,10 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
       detail = t(locale, 'next.createChangeDetail');
     } else {
       const slug = data.active_change;
-      switch (data.proposal_step) {
-        case 'writing':
-          action = t(locale, 'next.fillProposal');
-          command = null;
-          detail = t(locale, 'next.fillProposalDetail', { slug });
-          break;
-        case 'delta-writing':
-        case 'implementing':
-        case 'in-progress':
-          action = t(locale, 'next.writeDeltas');
-          command = null;
-          detail = t(locale, 'next.writeDeltasDetail', { slug });
-          break;
-        case 'ready-to-merge':
-          action = t(locale, 'next.merge');
-          command = null;
-          detail = t(locale, 'next.mergeDetail', { slug });
-          break;
-        case 'merge-generated':
-          action = t(locale, 'next.executeMerge');
-          command = null;
-          detail = t(locale, 'next.executeMergeDetail', { slug });
-          break;
-        case 'coding':
-          action = t(locale, 'next.startCoding');
-          command = null;
-          detail = t(locale, 'next.startCodingDetail', { slug });
-          break;
-        default:
-          action = t(locale, 'next.fillProposal');
-          command = null;
-          detail = t(locale, 'next.fillProposalDetail', { slug });
-      }
+      const nextAction = actionForProposalStep(locale, data.proposal_step);
+      action = nextAction.action;
+      command = nextAction.command;
+      detail = t(locale, nextAction.detailKey, { slug });
     }
   } else if (data.all_done) {
     action = t(locale, 'next.launch');

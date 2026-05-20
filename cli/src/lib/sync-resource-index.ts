@@ -37,6 +37,7 @@ function scanCandidateFiles(root: string): string[] {
   scanDir(join(root, 'logos/resources/test'));
   scanDir(join(root, 'logos/resources/scenario'));
   scanDir(join(root, 'logos/resources/verify'));
+  scanDir(join(root, 'logos/resources/implementation'));
 
   // spec/
   scanDir(join(root, 'spec'));
@@ -84,11 +85,23 @@ const RULES: DescRule[] = [
     zh: (m) => `${m[1]} 测试用例。涉及 ${m[1]} 单元测试与场景测试的实现与验收时必读。`,
     en: (m) => `${m[1]} test cases. Required when implementing or verifying ${m[1]} unit and scenario tests.`,
   },
+  // 3b. 部署后冒烟测试用例
+  {
+    pattern: /logos\/resources\/test\/smoke\/(?:[a-z][a-z0-9-]*-)?([a-z][a-z0-9-]*)-smoke-test-cases\.md$/,
+    zh: (m) => `${m[1]} 模块部署后冒烟测试用例。涉及 openlogos smoke 或 launch 前门禁时必读。`,
+    en: (m) => `${m[1]} deployment smoke test cases. Required when running openlogos smoke or checking launch gates.`,
+  },
   // 4. 技术架构
   {
     pattern: /logos\/resources\/prd\/3-technical-plan\/1-architecture\/.+\.md$/,
     zh: () => '系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。',
     en: () => 'System architecture overview. Required when referencing tech stack, system components, or non-functional constraints.',
+  },
+  // 4b. 部署方案
+  {
+    pattern: /logos\/resources\/prd\/3-technical-plan\/3-deployment\/.+\.md$/,
+    zh: () => '部署方案。涉及部署拓扑、环境配置、发布命令、回滚策略和 smoke 验证时必读。',
+    en: () => 'Deployment plan. Required when referencing deployment topology, environment config, release commands, rollback strategy, or smoke checks.',
   },
   // 5. 功能规格
   {
@@ -129,8 +142,14 @@ const RULES: DescRule[] = [
   // 11. 验收报告
   {
     pattern: /logos\/resources\/verify\/.+\.md$/,
-    zh: () => '测试验收报告。涉及验收结果、覆盖度分析、Gate 判定时必读。',
-    en: () => 'Test acceptance report. Required when referencing test results, coverage analysis, or Gate decisions.',
+    zh: () => '验收报告。涉及 verify、部署或 smoke 结果、覆盖度分析、Gate 判定时必读。',
+    en: () => 'Verification report. Required when referencing verify, deployment, or smoke results, coverage analysis, or Gate decisions.',
+  },
+  // 11b. 实现清单
+  {
+    pattern: /logos\/resources\/implementation\/.+\.md$/,
+    zh: () => '实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。',
+    en: () => 'Implementation manifest. Required when referencing implemented scope, code paths, test coverage, or delivery summary.',
   },
   // 12. Skills（只匹配 SKILL.md）
   {

@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -14,6 +14,11 @@ export type ProposalStep =
   | 'ready-to-verify'
   | 'verify-passed'
   | 'verify-failed'
+  | 'ready-to-deploy'
+  | 'deploy-done'
+  | 'ready-to-smoke'
+  | 'smoke-passed'
+  | 'smoke-failed'
   | 'implementing'
   | 'in-progress';
 
@@ -38,6 +43,8 @@ export interface ModuleInfo {
   name: string;
   lifecycle: 'initial' | 'launched';
   skip_phases?: string[];
+  deployment_required?: boolean;
+  smoke_required?: boolean;
 }
 
 interface ScenarioCoverage {
@@ -68,6 +75,7 @@ export interface ModuleStatusItem {
     tasks_checked: number;
     tasks_total: number;
     delta_count: number;
+    deploy_tasks?: TaskItem[];
   } | null;
   suggestion: string;
 }
@@ -91,7 +99,7 @@ export interface StatusData {
   proposal_step: ProposalStep | null;
 }
 
-const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test'] as const;
+const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
 
 // Phase paths indexed by PHASE_KEYS order
 const PHASE_SUBPATHS = [
@@ -101,14 +109,23 @@ const PHASE_SUBPATHS = [
   'logos/resources/prd/3-technical-plan/2-scenario-implementation',
   'logos/resources/api',
   'logos/resources/database',
+  'logos/resources/prd/3-technical-plan/3-deployment',
   'logos/resources/test',
   'logos/resources/scenario',
   'logos/resources/implementation',
-  'logos/resources/verify',
+  'logos/resources/verify/acceptance-report.md',
+  'logos/resources/verify/deployment-report.md',
+  'logos/resources/verify/smoke-report.md',
 ];
 
 // Phases that require per-scenario file coverage
-const SCENARIO_PHASES = new Set(['phase.3-1', 'phase.3-3a']);
+const SCENARIO_PHASES = new Set(['phase.3-1', 'phase.3-4a']);
+
+const NON_FALLBACK_SKIP_PHASES = new Set([
+  'phase.3-3-deployment',
+  'phase.3-7-deploy',
+  'phase.3-8-smoke',
+]);
 
 function isProposalTemplateFilled(content: string): boolean {
   const normalized = content.trim();
@@ -172,7 +189,12 @@ function allTasksChecked(content: string): boolean {
  * 识别 `## [tag] ...` 格式的 section 标题，返回每个 tag 对应的 checked/total。
  * 若文件中没有任何 `## [tag]` 标记，返回 null（表示旧格式，降级为全局判断）。
  */
-function parseTaskSections(content: string): Record<string, { checked: number; total: number }> | null {
+export interface TaskItem {
+  checked: boolean;
+  text: string;
+}
+
+export function parseTaskSections(content: string): Record<string, { checked: number; total: number }> | null {
   const lines = content.split(/\r?\n/);
   const sectionPattern = /^## \[([a-z][a-z0-9-]*)\]/i;
   let currentTag: string | null = null;
@@ -200,12 +222,84 @@ function parseTaskSections(content: string): Record<string, { checked: number; t
   return hasAnyTag ? sections : null;
 }
 
-export function detectProposalStep(proposalDir: string): ProposalStep {
-  if (existsSync(join(proposalDir, 'VERIFY_PASS'))) {
-    return 'verify-passed';
+export function extractTaskSectionItems(content: string, tag: string): TaskItem[] {
+  const items: TaskItem[] = [];
+  const lines = content.split(/\r?\n/);
+  const sectionPattern = /^## \[([a-z][a-z0-9-]*)\]/i;
+  let inSection = false;
+
+  for (const line of lines) {
+    const sectionMatch = line.match(sectionPattern);
+    if (sectionMatch) {
+      inSection = sectionMatch[1].toLowerCase() === tag.toLowerCase();
+      continue;
+    }
+    if (!inSection) continue;
+
+    const itemMatch = line.match(/^- \[([ x])\] (.+)$/i);
+    if (itemMatch) {
+      items.push({
+        checked: itemMatch[1].toLowerCase() === 'x',
+        text: itemMatch[2].trim(),
+      });
+    }
   }
+
+  return items;
+}
+
+export function readTaskSectionItems(proposalDir: string, tag: string): TaskItem[] {
+  const tasksPath = join(proposalDir, 'tasks.md');
+  if (!existsSync(tasksPath)) return [];
+  return extractTaskSectionItems(readFileSync(tasksPath, 'utf-8'), tag);
+}
+
+export function getDeployTasks(proposalDir: string): TaskItem[] {
+  return readTaskSectionItems(proposalDir, 'deploy');
+}
+
+function getSectionSummary(
+  sections: Record<string, { checked: number; total: number }> | null,
+  tag: string,
+): { checked: number; total: number } | null {
+  return sections?.[tag] ?? null;
+}
+
+function hasSmokeCasesForProposal(proposalDir: string): boolean {
+  return listFiles(join(proposalDir, '..', '..', 'resources', 'test', 'smoke')).length > 0;
+}
+
+export function detectProposalStep(proposalDir: string): ProposalStep {
   if (existsSync(join(proposalDir, 'VERIFY_FAIL'))) {
     return 'verify-failed';
+  }
+  if (existsSync(join(proposalDir, 'VERIFY_PASS'))) {
+    const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
+      ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
+    const sections = parseTaskSections(tasksContent);
+    const deploy = getSectionSummary(sections, 'deploy');
+    const hasDeployTasks = Boolean(deploy && deploy.total > 0);
+
+    if (!hasDeployTasks) {
+      return 'verify-passed';
+    }
+
+    const deployDone = existsSync(join(proposalDir, 'DEPLOY_DONE'));
+    const deployTasksChecked = deploy!.checked === deploy!.total;
+    if (!deployDone || !deployTasksChecked) {
+      return 'ready-to-deploy';
+    }
+
+    if (existsSync(join(proposalDir, 'SMOKE_FAIL'))) {
+      return 'smoke-failed';
+    }
+    if (existsSync(join(proposalDir, 'SMOKE_PASS'))) {
+      return 'smoke-passed';
+    }
+    if (hasSmokeCasesForProposal(proposalDir)) {
+      return 'ready-to-smoke';
+    }
+    return 'deploy-done';
   }
   if (existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'))) {
     // 规格已合并，判断 [code] section 是否全部完成
@@ -267,6 +361,7 @@ export function detectProposalStep(proposalDir: string): ProposalStep {
 export function listFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   try {
+    if (statSync(dir).isFile()) return [basename(dir)];
     return readdirSync(dir, { recursive: true })
       .map(f => String(f))
       .filter(f => {
@@ -282,20 +377,30 @@ export function listFiles(dir: string): string[] {
 const SKIP_PHASE_MAP: Record<string, string> = {
   api:      'phase.3-2-api',
   database: 'phase.3-2-db',
-  scenario: 'phase.3-3b',
+  scenario: 'phase.3-4b',
 };
+
+function deriveExplicitSkipPhaseKeys(mod: ModuleInfo): Set<string> {
+  const explicitSkip = new Set((mod.skip_phases ?? []).map(s => SKIP_PHASE_MAP[s]).filter(Boolean));
+  if ((mod.skip_phases ?? []).includes('deployment') || mod.deployment_required === false) {
+    explicitSkip.add('phase.3-7-deploy');
+    explicitSkip.add('phase.3-8-smoke');
+  } else if (mod.smoke_required === false) {
+    explicitSkip.add('phase.3-8-smoke');
+  }
+  return explicitSkip;
+}
 
 function deriveModulePhaseProgress(
   root: string,
-  moduleId: string,
+  mod: ModuleInfo,
   scenarios: Array<{ id: string }>,
-  skipPhases: string[] = [],
   isMultiModule: boolean = false,
 ): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
   const progress: Record<string, PhaseProgressItem> = {};
 
   // Build set of phase keys to skip from explicit skip_phases declaration
-  const explicitSkip = new Set(skipPhases.map(s => SKIP_PHASE_MAP[s]).filter(Boolean));
+  const explicitSkip = deriveExplicitSkipPhaseKeys(mod);
 
   for (let i = 0; i < PHASE_KEYS.length; i++) {
     const key = PHASE_KEYS[i];
@@ -313,7 +418,7 @@ function deriveModulePhaseProgress(
       const covered: string[] = [];
       const missing: string[] = [];
       for (const s of scenarios) {
-        const pattern = `${moduleId}-${s.id}`;
+        const pattern = `${mod.id}-${s.id}`;
         const files = listFiles(dir);
         const found = files.some(f => f.includes(pattern) && (suffix === '' || f.includes(suffix)));
         if (found) covered.push(s.id);
@@ -329,7 +434,7 @@ function deriveModulePhaseProgress(
       // In single-module projects, any file in the directory counts (backward compat).
       const allFiles = listFiles(dir);
       const files = isMultiModule
-        ? allFiles.filter(f => (f.split('/').pop() ?? f).startsWith(`${moduleId}-`))
+        ? allFiles.filter(f => (f.split('/').pop() ?? f).startsWith(`${mod.id}-`))
         : allFiles;
       progress[key] = { done: files.length > 0, skipped: false };
     }
@@ -340,7 +445,7 @@ function deriveModulePhaseProgress(
   const keys = PHASE_KEYS;
   const lastDoneIdx = keys.reduce((acc, k, i) => (progress[k].done ? i : acc), -1);
   for (let i = 0; i < lastDoneIdx; i++) {
-    if (!progress[keys[i]].done) progress[keys[i]].skipped = true;
+    if (!progress[keys[i]].done && !NON_FALLBACK_SKIP_PHASES.has(keys[i])) progress[keys[i]].skipped = true;
   }
 
   const currentPhase = keys.find(k => !progress[k].done && !progress[k].skipped) ?? null;
@@ -368,6 +473,7 @@ function buildModuleStatusItem(
       const tasksContent = hasTasksFile ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
       const { checked, total } = countTasks(tasksContent);
       const deltaCount = countMergeableDeltaFiles(proposalDir);
+      const deployTasks = getDeployTasks(proposalDir);
 
       activeChange = {
         slug: guardActiveChange,
@@ -378,6 +484,7 @@ function buildModuleStatusItem(
         tasks_checked: checked,
         tasks_total: total,
         delta_count: deltaCount,
+        ...(deployTasks.length > 0 ? { deploy_tasks: deployTasks } : {}),
       };
     }
 
@@ -403,6 +510,26 @@ function buildModuleStatusItem(
         suggestion = locale === 'zh'
           ? `验收通过，明确授权执行 openlogos archive ${activeChange.slug}`
           : `Verification passed — explicitly request: openlogos archive ${activeChange.slug}`;
+      } else if (activeChange.proposal_step === 'ready-to-deploy') {
+        suggestion = locale === 'zh'
+          ? `验收通过且存在部署任务。部署是人类确认点，请明确授权 AI 按部署方案执行部署`
+          : `Verification passed with deployment tasks. Deployment is a human confirmation point — explicitly authorize AI to deploy from the deployment plan`;
+      } else if (activeChange.proposal_step === 'deploy-done') {
+        suggestion = locale === 'zh'
+          ? `部署已完成。若无需 smoke，可明确授权执行 openlogos archive ${activeChange.slug}`
+          : `Deployment is done. If smoke is not required, explicitly request: openlogos archive ${activeChange.slug}`;
+      } else if (activeChange.proposal_step === 'ready-to-smoke') {
+        suggestion = locale === 'zh'
+          ? `部署已完成，明确授权执行 openlogos smoke`
+          : `Deployment is done — explicitly request: openlogos smoke`;
+      } else if (activeChange.proposal_step === 'smoke-passed') {
+        suggestion = locale === 'zh'
+          ? `部署冒烟测试通过，明确授权执行 openlogos archive ${activeChange.slug}`
+          : `Smoke passed — explicitly request: openlogos archive ${activeChange.slug}`;
+      } else if (activeChange.proposal_step === 'smoke-failed') {
+        suggestion = locale === 'zh'
+          ? `部署冒烟测试未通过，修复部署环境或 smoke 问题后重新运行 openlogos smoke`
+          : `Smoke failed — fix the deployment environment or smoke checks, then run openlogos smoke again`;
       } else if (activeChange.proposal_step === 'verify-failed') {
         suggestion = locale === 'zh'
           ? `验收未通过，修复问题后重新运行 openlogos verify`
@@ -439,7 +566,7 @@ function buildModuleStatusItem(
   }
 
   // initial lifecycle
-  const { progress, currentPhase } = deriveModulePhaseProgress(root, mod.id, scenarios, mod.skip_phases ?? [], isMultiModule);
+  const { progress, currentPhase } = deriveModulePhaseProgress(root, mod, scenarios, isMultiModule);
   const currentPhaseLabel = currentPhase ? t(locale as Parameters<typeof t>[0], currentPhase) : null;
 
   let suggestion: string;
@@ -487,22 +614,33 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     try {
       const yaml = parseYaml(readFileSync(projectYamlPath, 'utf-8'));
       if (Array.isArray(yaml?.modules)) {
-        rawModules = (yaml.modules as Array<{ id: string; name: string; lifecycle?: string; skip_phases?: string[] }>).map(m => ({
+        rawModules = (yaml.modules as Array<{ id: string; name: string; lifecycle?: string; skip_phases?: string[]; deployment_required?: boolean }>).map(m => ({
           id: m.id,
           name: m.name,
           lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
           skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
+          deployment_required: typeof m.deployment_required === 'boolean'
+            ? m.deployment_required
+            : undefined,
         }));
+        const deploymentGates = yaml?.deployment_gates && typeof yaml.deployment_gates === 'object'
+          ? yaml.deployment_gates as Record<string, { deployment_required?: boolean; smoke_required?: boolean }>
+          : {};
+        for (const mod of rawModules) {
+          const gates = deploymentGates[mod.id];
+          if (gates) {
+            if (typeof gates.deployment_required === 'boolean') mod.deployment_required = gates.deployment_required;
+            if (typeof gates.smoke_required === 'boolean') mod.smoke_required = gates.smoke_required;
+          }
+        }
         if (rawModules.some(m => m.lifecycle === 'launched')) {
           lifecycle = 'launched';
         }
         // Intersection: a phase key is globally skipped only if every initial module skips it
         const initialModules = rawModules.filter(m => m.lifecycle === 'initial');
         if (initialModules.length > 0) {
-          const allSkipValues = Object.keys(SKIP_PHASE_MAP);
-          for (const skipVal of allSkipValues) {
-            const phaseKey = SKIP_PHASE_MAP[skipVal];
-            if (initialModules.every(m => (m.skip_phases ?? []).includes(skipVal))) {
+          for (const phaseKey of PHASE_KEYS) {
+            if (initialModules.every(m => deriveExplicitSkipPhaseKeys(m).has(phaseKey))) {
               globalSkipPhaseKeys.add(phaseKey);
             }
           }
@@ -535,7 +673,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
   // Fallback: also mark empty phases before the last done phase as skipped
   const lastDoneIdx = phases.reduce((acc, p, i) => (p.done ? i : acc), -1);
   for (let i = 0; i < lastDoneIdx; i++) {
-    if (!phases[i].done) phases[i].skipped = true;
+    if (!phases[i].done && !NON_FALLBACK_SKIP_PHASES.has(phases[i].key)) phases[i].skipped = true;
   }
 
   // Collect active proposals
@@ -684,6 +822,13 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
           console.log(`  🔄  ${m.id} (${m.name})  [launched]`);
           console.log(`       ${t(locale, 'status.activeChange')}: ${ac.slug}  →  ${ac.proposal_step_label}`);
           console.log(`       tasks: ${ac.tasks_checked}/${ac.tasks_total}  deltas: ${ac.delta_count}`);
+          if (ac.deploy_tasks && ac.deploy_tasks.length > 0) {
+            console.log(`       ${t(locale, 'status.deployTasks')}:`);
+            for (const task of ac.deploy_tasks) {
+              const taskIcon = task.checked ? '✓' : ' ';
+              console.log(`         - [${taskIcon}] ${task.text}`);
+            }
+          }
         } else {
           const blocked = data.active_change && data.active_change !== null;
           const icon = blocked ? '⏸️ ' : '✅';

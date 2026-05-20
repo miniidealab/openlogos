@@ -6,6 +6,38 @@ import { createAgentsMd, deploySkills, deployOpenCodePlugin, deployCodexPlugin, 
 import { syncLogosProjectName } from './sync.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
 
+function hasFile(path: string): boolean {
+  return existsSync(path);
+}
+
+function reportHasPass(path: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    return /\bPASS\b/.test(readFileSync(path, 'utf-8'));
+  } catch {
+    return false;
+  }
+}
+
+function moduleDeploymentRequired(yaml: Record<string, unknown>, mod: { id: string; deployment_required?: boolean; skip_phases?: string[] }): boolean {
+  if (mod.deployment_required === false) return false;
+  if (Array.isArray(mod.skip_phases) && mod.skip_phases.includes('deployment')) return false;
+  const gates = yaml.deployment_gates && typeof yaml.deployment_gates === 'object'
+    ? (yaml.deployment_gates as Record<string, { deployment_required?: boolean }>)
+    : {};
+  if (gates[mod.id]?.deployment_required === false) return false;
+  return true;
+}
+
+function moduleSmokeRequired(yaml: Record<string, unknown>, mod: { id: string; deployment_required?: boolean; skip_phases?: string[] }): boolean {
+  if (!moduleDeploymentRequired(yaml, mod)) return false;
+  const gates = yaml.deployment_gates && typeof yaml.deployment_gates === 'object'
+    ? (yaml.deployment_gates as Record<string, { smoke_required?: boolean }>)
+    : {};
+  if (gates[mod.id]?.smoke_required === false) return false;
+  return true;
+}
+
 export function launch(moduleArg?: string) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
@@ -34,7 +66,7 @@ export function launch(moduleArg?: string) {
   }
 
   const yaml = parseYaml(readFileSync(yamlPath, 'utf-8')) ?? {};
-  const modules: Array<{ id: string; name: string; lifecycle?: string }> =
+  const modules: Array<{ id: string; name: string; lifecycle?: string; deployment_required?: boolean; skip_phases?: string[] }> =
     Array.isArray(yaml.modules) ? yaml.modules : [];
 
   // Resolve target module id
@@ -61,6 +93,28 @@ export function launch(moduleArg?: string) {
   if (mod.lifecycle === 'launched' && migration.autoMarked !== targetId) {
     console.log(`\n${t(locale, 'launch.moduleAlreadyLaunched', { module: targetId })}\n`);
     return;
+  }
+
+  const verifyReportPath = join(root, 'logos', 'resources', 'verify', 'acceptance-report.md');
+  if (!reportHasPass(verifyReportPath)) {
+    console.error(t(locale, 'launch.verifyRequired', { module: targetId }));
+    process.exit(1);
+  }
+
+  if (moduleDeploymentRequired(yaml as Record<string, unknown>, mod)) {
+    const deploymentReportPath = join(root, 'logos', 'resources', 'verify', 'deployment-report.md');
+    if (!hasFile(deploymentReportPath)) {
+      console.error(t(locale, 'launch.deployRequired', { module: targetId }));
+      process.exit(1);
+    }
+  }
+
+  if (moduleSmokeRequired(yaml as Record<string, unknown>, mod)) {
+    const smokeReportPath = join(root, 'logos', 'resources', 'verify', 'smoke-report.md');
+    if (!reportHasPass(smokeReportPath)) {
+      console.error(t(locale, 'launch.smokeRequired', { module: targetId }));
+      process.exit(1);
+    }
   }
 
   // Mark module as launched

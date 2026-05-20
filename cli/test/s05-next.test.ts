@@ -50,16 +50,20 @@ describe('S05 Unit Tests — next command (initial lifecycle)', () => {
       'logos/resources/prd/3-technical-plan/2-scenario-implementation',
       'logos/resources/api',
       'logos/resources/database',
+      'logos/resources/prd/3-technical-plan/3-deployment',
       'logos/resources/test',
+      'logos/resources/test/smoke',
       'logos/resources/scenario',
       'logos/resources/implementation',
-      'logos/resources/verify',
     ];
     for (const d of dirs) {
       const dir = join(root, d);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'dummy.md'), 'content');
     }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
 
     next();
     const out = con.logs.join('\n');
@@ -310,6 +314,63 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     next();
     const out = con.logs.join('\n');
     expect(out).toMatch(/fix|修复/i);
+  });
+
+  it('UT-S05-10f: VERIFY_PASS + [deploy] section → ready-to-deploy, suggests human-authorized deployment', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 执行 staging 部署',
+    ].join('\n'));
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-deploy');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/deploy|部署/i);
+    expect(out).toMatch(/human|人类|授权/i);
+  });
+
+  it('UT-S05-10g: DEPLOY_DONE + smoke cases → ready-to-smoke, suggests openlogos smoke', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 执行 staging 部署',
+    ].join('\n'));
+    mkdirSync(join(root, 'logos/resources/test/smoke'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/smoke/core-smoke-test-cases.md'), '| SMOKE-core-01 | health |');
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-smoke');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toContain('openlogos smoke');
+  });
+
+  it('UT-S05-10h: SMOKE_PASS → smoke-passed, suggests archive', () => {
+    const proposalDir = setupLaunchedWithGuard('my-feature');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+    writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 执行 staging 部署',
+    ].join('\n'));
+
+    expect(detectProposalStep(proposalDir)).toBe('smoke-passed');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/archive/i);
   });
 
   it('UT-S05-11: structured [delta] section all checked → ready-to-merge', () => {
