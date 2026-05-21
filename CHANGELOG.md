@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.24] - 2026-05-21
+
+### Added
+
+- **新增部署 Phase 与部署状态流转** — Initial 阶段新增 `Phase 3-3 · 部署方案`，提案流程支持部署影响判断、部署 delta、`[deploy]` 任务、`ready-to-deploy` / `deploy-done` 状态，以及 verify 通过后的部署任务展示。
+- **新增 `openlogos smoke` 冒烟测试命令** — 支持部署后运行冒烟测试、生成 smoke 报告，并写入 `SMOKE_PASS` / `SMOKE_FAIL` 标记；`status` / `next` / `launch` 同步感知 `ready-to-smoke`、`smoke-passed` 和 `smoke-failed` 状态。
+- **新增部署设计与执行 Skill** — 增加 `deployment-designer` 和 `deployment-executor`，明确部署方案、回滚策略、部署后检查、冒烟测试方案，以及部署必须经过人类确认的执行边界。
+
+### Changed
+
+- **launch 前门禁加强** — `openlogos launch` 在进入迭代前检查 verify / deploy / smoke 状态；不需要部署的模块可通过 `deployment_required: false` 或 `skip_phases: [deployment]` 跳过部署与 smoke 门禁。
+- **方法论文档与 Skill 同步更新** — workflow、change-management、tasks、directory、agents、CLI JSON 输出等规范均补充部署 Phase、smoke 流程和人类确认点说明。
+
 ## [0.9.21] - 2026-05-16
 
 ### Fixed
