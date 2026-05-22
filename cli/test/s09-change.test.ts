@@ -7,6 +7,7 @@ import { change } from '../src/commands/change.js';
 import { merge } from '../src/commands/merge.js';
 import { archive } from '../src/commands/archive.js';
 import { proposalTemplate, tasksTemplate, mergePromptTemplate } from '../src/i18n.js';
+import { resolveProposalDeploymentDecision } from '../src/commands/status.js';
 
 /* ========== Unit Tests ========== */
 
@@ -225,6 +226,73 @@ describe('S09 Scenario Tests — change command', () => {
     expect(allLogs).toContain('proposal.md');
     expect(allLogs).toContain('tasks.md');
     expect(allLogs).toContain('.openlogos-guard');
+  });
+
+  it('ST-S09-12: fill proposal-level deployment decision after change creation', () => {
+    change('docs-only');
+
+    const changePath = join(root, 'logos', 'changes', 'docs-only');
+    writeFileSync(join(changePath, 'proposal.md'), [
+      '# 变更提案：docs-only',
+      '',
+      '## 变更原因',
+      '补充文档。',
+      '',
+      '## 变更类型',
+      '设计级',
+      '',
+      '## 变更范围',
+      '- 影响的需求文档：无',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：仅更新文档，不需要发布运行产物',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '记录提案级部署决策。',
+    ].join('\n'));
+    writeFileSync(join(changePath, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件到 deltas/prd/ — 更新文档',
+    ].join('\n'));
+
+    const decision = resolveProposalDeploymentDecision(changePath);
+
+    expect(decision).toMatchObject({
+      deployment_required: false,
+      smoke_required: false,
+      deployment_reason: '仅更新文档，不需要发布运行产物',
+      deployment_decision_source: 'proposal',
+      deployment_decision_conflict: false,
+    });
+  });
+
+  it('ST-S09-13: only merge-supported delta sections produce mergeable deltas', () => {
+    const changePath = join(root, 'logos', 'changes', 'delta-only');
+    mkdirSync(join(changePath, 'deltas', 'prd'), { recursive: true });
+    mkdirSync(join(changePath, 'deltas', 'spec'), { recursive: true });
+    mkdirSync(join(changePath, 'deltas', 'reference'), { recursive: true });
+    writeFileSync(join(changePath, 'proposal.md'), '# Delta Only');
+    writeFileSync(join(changePath, 'deltas', 'prd', 'update.md'), '# PRD delta');
+    writeFileSync(join(changePath, 'deltas', 'spec', 'workflow.md'), '# Spec delta');
+    writeFileSync(join(changePath, 'deltas', 'reference', 'todo.md'), '# Reference note');
+
+    const results = scanDeltas(join(changePath, 'deltas'));
+
+    expect(results.map(r => r.relativePath)).toEqual([
+      'deltas/prd/update.md',
+      'deltas/spec/workflow.md',
+    ]);
+    expect(results.map(r => r.targetDir)).toEqual([
+      'logos/resources/prd',
+      'spec',
+    ]);
   });
 
   it('ST-S09-02: reject when proposal already exists', () => {
