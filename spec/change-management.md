@@ -72,6 +72,12 @@ project-root/
 
 `## 部署影响` 是人工审核依据。CLI 的部署状态判断以 `tasks.md` 的 `[deploy]` section 和提案目录标记文件为准，不解析自由文本作为唯一依据。
 
+`## 部署影响` 同时也是提案级部署决策入口。CLI 应从该章节解析结构化决策，并与 `tasks.md` 的 `[deploy]` section 交叉校验：
+- `是否需要部署：否` 时，不得创建 `[deploy]` section；verify PASS 后下一步为 archive。
+- `是否需要部署：是` 时，必须创建 `[deploy]` section，并在 delta 阶段补齐部署方案影响；verify PASS 后下一步为人类确认部署。
+- `是否需要 smoke：是` 只在已部署后生效；smoke 仍由 `openlogos smoke` 独立执行。
+- 旧提案缺少结构化部署影响时，CLI 可回退到 `[deploy]` section 与模块级默认值，但必须标注兼容来源。
+
 ### tasks.md
 
 实现任务清单，使用结构化 section 格式，每个 section 对应提案流程中的一个阶段。完整格式规范见 `spec/tasks-spec.md`。
@@ -177,7 +183,7 @@ Delta 文件的目录结构映射主文档目录：
    └── 验收失败（FAIL）→ 修复代码后重新运行，不需要重走 merge 流程
 
 9. 部署执行（如需要）【人类确认点】
-   └── 仅当 VERIFY_PASS 存在且 tasks.md 有 [deploy] section 时进入
+   └── 仅当 VERIFY_PASS 存在、提案级 `是否需要部署：是` 且 tasks.md 有 [deploy] section 时进入
    └── 用户必须明确授权 AI 执行部署
    └── AI 必须读取合并后的部署方案文档和 [deploy] section
    └── 部署完成后生成 logos/resources/verify/deployment-report.md
@@ -185,11 +191,11 @@ Delta 文件的目录结构映射主文档目录：
    └── 部署失败时不得写入 DEPLOY_DONE，应输出失败点和回滚建议
 
 10. 运行部署后冒烟测试（CLI）【人类确认点】
-   └── 部署完成后运行 openlogos smoke
+   └── 仅当提案级 `是否需要 smoke：是` 且 DEPLOY_DONE 存在时运行 openlogos smoke
    └── openlogos smoke 读取 smoke 结果并生成 logos/resources/verify/smoke-report.md
    └── 冒烟通过写入 SMOKE_PASS
    └── 冒烟失败写入 SMOKE_FAIL
-   └── SMOKE_PASS 后才能归档提案；Initial 阶段还必须通过该门禁后才能 openlogos launch
+   └── SMOKE_PASS 后才能归档提案；无需 smoke 的提案在部署完成后可归档
 
 11. 归档变更（CLI）【人类确认点】
    └── openlogos archive {slug}
@@ -223,6 +229,15 @@ Delta 文件的目录结构映射主文档目录：
 | 接口级变更 | API/DB + 编排 + 代码 + 部署影响分析 | 设计不变，接口细节调整 |
 | 部署级变更 | 部署方案 + smoke 用例 + `[deploy]` 任务 | 发布平台、环境变量、迁移、回滚、健康检查变化 |
 | 代码级修复 | 代码 + 重新验收 + 部署影响分析 | Bug 修复，不涉及设计变更时仍需判断是否需要重新部署 |
+
+## 提案级部署决策优先级
+
+部署与 smoke 的判断顺序如下：
+1. 活跃提案存在时，优先读取 `proposal.md` 的 `## 部署影响`。
+2. `tasks.md` 的 `[deploy]` section 是部署执行任务的结构化证据，必须与 `proposal.md` 一致。
+3. `logos-project.yaml` 的模块级 `deployment_required` / `smoke_required` 是 Initial 阶段和历史提案的默认值，不得覆盖活跃提案的明确决策。
+4. 文档-only 或规格-only 提案声明无需部署时，即使模块默认需要部署，verify PASS 后也直接建议 archive。
+5. 部署决策缺失或冲突时，CLI 应输出警告，并采用保守策略：不自动部署，等待用户修正提案。
 
 ## Git 集成
 

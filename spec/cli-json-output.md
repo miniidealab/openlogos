@@ -162,7 +162,12 @@ openlogos status --format json  # JSON 格式
         "has_tasks": true,
         "tasks_checked": 2,
         "tasks_total": 5,
-        "delta_count": 1
+        "delta_count": 1,
+        "deployment_required": false,
+        "smoke_required": false,
+        "deployment_reason": "文档-only 提案，不需要发布运行产物",
+        "deployment_decision_source": "proposal",
+        "deployment_decision_conflict": false
       },
       "suggestion": "继续为 add-refund 产出 delta 文件，完成后明确授权执行 openlogos merge add-refund"
     }
@@ -215,6 +220,11 @@ openlogos status --format json  # JSON 格式
 | `modules[].active_change.tasks_checked` | number | 是 | 已勾选任务数 |
 | `modules[].active_change.tasks_total` | number | 是 | 总任务数 |
 | `modules[].active_change.delta_count` | number | 是 | deltas 目录下的文件数 |
+| `modules[].active_change.deployment_required` | boolean \| null | 是 | 活跃提案是否需要部署；无法判断时为 null |
+| `modules[].active_change.smoke_required` | boolean \| null | 是 | 活跃提案是否需要部署后 smoke；无法判断时为 null |
+| `modules[].active_change.deployment_reason` | string \| null | 是 | 来自 `proposal.md` 的部署原因或兼容推断说明 |
+| `modules[].active_change.deployment_decision_source` | string | 是 | `"proposal"` \| `"tasks"` \| `"module-default"` \| `"legacy-fallback"`，表示部署决策来源 |
+| `modules[].active_change.deployment_decision_conflict` | boolean | 是 | `proposal.md` 与 `[deploy]` section 是否冲突 |
 | `modules[].suggestion` | string | 是 | 针对该模块的下一步建议（本地化文本） |
 | `active_proposals` | array | 是 | 活跃变更提案列表 |
 | `active_proposals[].name` | string | 是 | 提案目录名 |

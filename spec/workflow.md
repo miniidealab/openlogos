@@ -315,6 +315,12 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测
 
 部署执行是高风险动作，必须由人类明确确认后才能发起。AI 不得因为 `openlogos verify` 通过而自动部署。
 
+部署执行只在以下条件同时满足时进入：
+- 活跃提案 `proposal.md` 声明需要部署
+- `tasks.md` 存在 `[deploy]` section
+- `openlogos verify` 已通过并写入 `VERIFY_PASS`
+- 用户明确授权 AI 按部署方案执行部署
+
 **执行要求**：
 
 1. 用户明确授权执行部署
@@ -344,6 +350,13 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测
 - 关键登录 / 初始化 / 主流程可用
 - 日志或监控中没有阻断性错误
 
+`openlogos smoke` 只在以下条件同时满足时进入：
+- 活跃提案声明 `是否需要 smoke：是`
+- 部署已完成并写入 `DEPLOY_DONE`
+- 用户明确授权运行 `openlogos smoke`
+
+提案声明无需部署或无需 smoke 时，verify PASS 或 deploy done 后应建议 archive，而不是展示 smoke 为下一步。
+
 **产出物**：
 
 - `logos/resources/verify/smoke-results.jsonl`
@@ -370,12 +383,13 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测
 迭代变更遵循"规格驱动代码"原则，完整顺序为：
 
 ```
-delta 产出
+proposal / tasks（明确是否需要部署）
+→ delta 产出
 → merge（规格落地）
 → 代码实现
 → verify（验收代码）
-→ deploy（如需要部署，人类确认后执行）
-→ smoke（如已部署，运行部署后冒烟测试）
+→ deploy（仅当提案级需要部署，人类确认后执行）
+→ smoke（仅当提案级需要 smoke 且已部署）
 → archive
 → git push
 ```

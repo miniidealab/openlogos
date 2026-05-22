@@ -30,6 +30,7 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 6. All generated test code must include an OpenLogos reporter
 7. Deployment is a human confirmation point; AI must not deploy without explicit authorization
 8. If deployment is required, smoke tests must be designed with the test plan and run via `openlogos smoke` after deployment
+9. For launched-project change proposals, deployment and smoke decisions must be made at proposal level. A module-level deployment gate is only a default and must not force deploy/smoke for a proposal that explicitly does not require deployment.
 
 ## Document Edit Verification
 [Fixed locale-specific paragraph — re-read from disk after Markdown/text spec edits]
@@ -117,7 +118,17 @@ AGENTS.md 的内容从以下文件中自动提取：
 6. All generated test code must include an OpenLogos reporter (see spec/test-results.md)
 7. Deployment is a human confirmation point; AI must not deploy without explicit authorization
 8. If deployment is required, smoke tests must be designed and run via `openlogos smoke` after deployment
-9. After editing Markdown / text specs, re-read from disk and show excerpts to the user (see 「文档修改后的验证」生成段)
+9. For launched-project change proposals, deployment and smoke decisions must be made at proposal level. A module-level deployment gate is only a default and must not force deploy/smoke for a proposal that explicitly does not require deployment.
+10. After editing Markdown / text specs, re-read from disk and show excerpts to the user (see 「文档修改后的验证」生成段)
+
+### 提案级部署门禁生成规则
+
+AGENTS.md / CLAUDE.md 的变更管理段必须强调：
+- `proposal.md` 的 `## 部署影响` 是活跃提案的部署决策入口。
+- 不需要部署的提案不得创建 `[deploy]` section。
+- verify PASS 且无需部署时，应提醒用户明确授权执行 `openlogos archive <slug>`。
+- 只有提案级需要部署时，才在 verify PASS 后提醒用户明确授权部署。
+- 只有提案级需要 smoke 且部署完成后，才提醒用户明确授权执行 `openlogos smoke`。
 
 ### 生成时机
 
