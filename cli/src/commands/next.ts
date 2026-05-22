@@ -16,6 +16,8 @@ export interface NextModuleItem {
   detail: string;
   active_change: string | null;
   proposal_step: ProposalStep | null;
+  deployment_decision_conflict?: boolean;
+  deployment_warnings?: string[];
 }
 
 export interface NextData {
@@ -28,13 +30,36 @@ export interface NextData {
 }
 
 function buildModuleNextItem(
-  mod: { id: string; name: string; lifecycle: 'initial' | 'launched'; suggestion: string; active_change: { slug: string; proposal_step: ProposalStep } | null },
+  mod: {
+    id: string;
+    name: string;
+    lifecycle: 'initial' | 'launched';
+    suggestion: string;
+    active_change: {
+      slug: string;
+      proposal_step: ProposalStep;
+      deployment_decision_conflict?: boolean;
+      deployment_warnings?: string[];
+    } | null;
+  },
   guardActiveChange: string | null,
   guardModule: string | null,
   locale: string,
 ): NextModuleItem {
   if (mod.lifecycle === 'launched') {
     if (mod.active_change) {
+      if (mod.active_change.deployment_decision_conflict) {
+        return {
+          id: mod.id, name: mod.name, lifecycle: 'launched',
+          action: locale === 'zh' ? '修正部署决策冲突' : 'Fix deployment decision conflict',
+          command: null,
+          detail: mod.active_change.deployment_warnings?.join(' ') || mod.suggestion,
+          active_change: mod.active_change.slug,
+          proposal_step: mod.active_change.proposal_step,
+          deployment_decision_conflict: true,
+          ...(mod.active_change.deployment_warnings ? { deployment_warnings: mod.active_change.deployment_warnings } : {}),
+        };
+      }
       const step = mod.active_change.proposal_step;
       const { action, command } = actionForProposalStep(locale, step);
       return {
@@ -161,7 +186,12 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
       {
         id: m.id, name: m.name, lifecycle: m.lifecycle,
         suggestion: m.suggestion,
-        active_change: m.active_change ? { slug: m.active_change.slug, proposal_step: m.active_change.proposal_step } : null,
+        active_change: m.active_change ? {
+          slug: m.active_change.slug,
+          proposal_step: m.active_change.proposal_step,
+          deployment_decision_conflict: m.active_change.deployment_decision_conflict,
+          deployment_warnings: m.active_change.deployment_warnings,
+        } : null,
       },
       data.active_change,
       guardModule,
@@ -181,10 +211,17 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
       detail = t(locale, 'next.createChangeDetail');
     } else {
       const slug = data.active_change;
-      const nextAction = actionForProposalStep(locale, data.proposal_step);
-      action = nextAction.action;
-      command = nextAction.command;
-      detail = t(locale, nextAction.detailKey, { slug });
+      const activeModule = data.modules?.find(m => m.active_change?.slug === slug);
+      if (activeModule?.active_change?.deployment_decision_conflict) {
+        action = locale === 'zh' ? '修正部署决策冲突' : 'Fix deployment decision conflict';
+        command = null;
+        detail = activeModule.active_change.deployment_warnings?.join(' ') || activeModule.suggestion;
+      } else {
+        const nextAction = actionForProposalStep(locale, data.proposal_step);
+        action = nextAction.action;
+        command = nextAction.command;
+        detail = t(locale, nextAction.detailKey, { slug });
+      }
     }
   } else if (data.all_done) {
     action = t(locale, 'next.launch');

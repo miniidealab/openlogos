@@ -487,4 +487,50 @@ describe('ST-JSON modules field contract', () => {
     expect(mod).not.toHaveProperty('status');
     expect(mod).not.toHaveProperty('loop_phase');
   });
+
+  it('ST-S11-10: status --format json active_change exposes deployment decision fields', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+        deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+      }),
+    );
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'docs-only', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'docs-only');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：docs-only',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：仅更新文档，不需要发布运行产物',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '补充文档。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    const con = captureConsole();
+    status('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    const active = out.data.modules[0].active_change;
+
+    expect(active).toMatchObject({
+      deployment_required: false,
+      smoke_required: false,
+      deployment_reason: '仅更新文档，不需要发布运行产物',
+      deployment_decision_source: 'proposal',
+      deployment_decision_conflict: false,
+    });
+  });
 });

@@ -152,6 +152,32 @@ describe('S09 Unit Tests — i18n templates', () => {
     const archivePos = output.indexOf('openlogos archive fix-bug');
     expect(verifyPos).toBeLessThan(archivePos);
   });
+
+  it('UT-S09-09: proposalTemplate includes structured deployment impact fields', () => {
+    const output = proposalTemplate('zh', 'deploy-gate');
+
+    expect(output).toContain('## 部署影响');
+    expect(output).toContain('是否需要部署：是 / 否');
+    expect(output).toContain('部署原因：');
+    expect(output).toContain('影响环境：');
+    expect(output).toContain('是否涉及数据迁移：是 / 否');
+    expect(output).toContain('是否需要回滚预案：是 / 否');
+    expect(output).toContain('是否需要 smoke：是 / 否');
+  });
+
+  it('UT-S09-10: scanDeltas ignores reference directories', () => {
+    const { root, cleanup } = makeTempRoot();
+    const deltasDir = join(root, 'deltas');
+    mkdirSync(join(deltasDir, 'reference'), { recursive: true });
+    writeFileSync(join(deltasDir, 'reference', 'todo.md'), '# todo');
+
+    try {
+      const results = scanDeltas(deltasDir);
+      expect(results).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 /* ========== Scenario Tests — change ========== */

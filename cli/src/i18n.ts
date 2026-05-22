@@ -474,6 +474,14 @@ ${meta}
 - 影响的 DB 表：[列表]
 - 影响的编排测试：[列表]
 
+## 部署影响
+- 是否需要部署：是 / 否
+- 部署原因：[说明为什么需要或不需要部署]
+- 影响环境：[本地 / 测试 / 预发 / 生产 / 无]
+- 是否涉及数据迁移：是 / 否
+- 是否需要回滚预案：是 / 否
+- 是否需要 smoke：是 / 否
+
 ## 变更概述
 [用 1-3 段话概述具体改什么]
 `;
@@ -493,6 +501,14 @@ ${meta}
 - Affected APIs: [list]
 - Affected DB tables: [list]
 - Affected orchestration tests: [list]
+
+## Deployment Impact
+- Deployment required: yes / no
+- Deployment reason: [Explain why deployment is or is not required]
+- Affected environments: [local / test / staging / production / none]
+- Data migration involved: yes / no
+- Rollback plan required: yes / no
+- Smoke required: yes / no
 
 ## Summary
 [Describe what will change in 1-3 paragraphs]

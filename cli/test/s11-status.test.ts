@@ -3,7 +3,13 @@ import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
-import { listFiles, collectStatusData, status } from '../src/commands/status.js';
+import {
+  listFiles,
+  collectStatusData,
+  status,
+  parseProposalDeploymentDecision,
+  resolveProposalDeploymentDecision,
+} from '../src/commands/status.js';
 
 /* ========== Unit Tests ========== */
 
@@ -65,6 +71,86 @@ describe('S11 Unit Tests — phase completion logic', () => {
   });
 });
 
+describe('S11 Unit Tests — proposal deployment decision', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+  });
+  afterEach(() => cleanup());
+
+  it('UT-S11-11: parses proposal.md deployment impact', () => {
+    const decision = parseProposalDeploymentDecision([
+      '# 变更提案：docs-only',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：仅更新文档，不产生运行产物',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '补充文档。',
+    ].join('\n'));
+
+    expect(decision).toEqual({
+      deployment_required: false,
+      smoke_required: false,
+      deployment_reason: '仅更新文档，不产生运行产物',
+    });
+  });
+
+  it('UT-S11-12: validates [deploy] section against proposal deployment decision', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'conflict');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：conflict',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：文档变更',
+      '- 是否需要 smoke：否',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+
+    const decision = resolveProposalDeploymentDecision(proposalDir);
+
+    expect(decision.deployment_decision_conflict).toBe(true);
+    expect(decision.deployment_warnings.join('\n')).toContain('[deploy]');
+  });
+
+  it('UT-S11-13: proposal deployment decision overrides module defaults', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'docs-only');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：docs-only',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：仅更新文档',
+      '- 是否需要 smoke：否',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
+
+    const decision = resolveProposalDeploymentDecision(proposalDir, {
+      deployment_required: true,
+      smoke_required: true,
+    });
+
+    expect(decision.deployment_required).toBe(false);
+    expect(decision.smoke_required).toBe(false);
+    expect(decision.deployment_decision_source).toBe('proposal');
+  });
+});
+
 /* ========== Scenario Tests ========== */
 
 describe('S11 Scenario Tests — status command', () => {
@@ -73,6 +159,52 @@ describe('S11 Scenario Tests — status command', () => {
   let restoreCwd: () => void;
   let con: ReturnType<typeof captureConsole>;
   let exitSpy: ReturnType<typeof mockProcessExit>;
+
+  function setupLaunchedProposal(slug: string, proposal: string, tasks = '# 实现任务\n') {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }));
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: slug, module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', slug);
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'tasks.md'), tasks);
+    return proposalDir;
+  }
+
+  const NO_DEPLOY_PROPOSAL = [
+    '# 变更提案：docs-only',
+    '',
+    '## 部署影响',
+    '- 是否需要部署：否',
+    '- 部署原因：仅更新文档，不需要发布运行产物',
+    '- 影响环境：无',
+    '- 是否涉及数据迁移：否',
+    '- 是否需要回滚预案：否',
+    '- 是否需要 smoke：否',
+    '',
+    '## 变更概述',
+    '补充文档。',
+  ].join('\n');
+
+  const DEPLOY_PROPOSAL = [
+    '# 变更提案：runtime-change',
+    '',
+    '## 部署影响',
+    '- 是否需要部署：是',
+    '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+    '- 影响环境：生产',
+    '- 是否涉及数据迁移：否',
+    '- 是否需要回滚预案：是',
+    '- 是否需要 smoke：是',
+    '',
+    '## 变更概述',
+    '修改运行时代码。',
+  ].join('\n');
 
   beforeEach(() => {
     ({ root, cleanup } = makeTempRoot());
@@ -473,6 +605,72 @@ describe('S11 Scenario Tests — status command', () => {
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
     expect(core.active_change!.proposal_step).toBe('ready-to-verify');
+  });
+
+  it('ST-S11-08: no-deploy proposal shows archive after verify PASS', () => {
+    const proposalDir = setupLaunchedProposal('docs-only', NO_DEPLOY_PROPOSAL);
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+
+    expect(core.active_change!.proposal_step).toBe('verify-passed');
+    expect(core.active_change!.deployment_required).toBe(false);
+    expect(core.suggestion).toContain('archive docs-only');
+  });
+
+  it('ST-S11-09: deploy proposal shows deployment tasks after verify PASS', () => {
+    const proposalDir = setupLaunchedProposal('runtime-change', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    const data = collectStatusData(root);
+    const core = data.modules!.find(m => m.id === 'core')!;
+
+    expect(core.active_change!.proposal_step).toBe('ready-to-deploy');
+    expect(core.active_change!.deployment_required).toBe(true);
+    expect(core.active_change!.deploy_tasks).toEqual([{ checked: false, text: '发布 npm 包' }]);
+
+    status();
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('发布 npm 包');
+  });
+
+  it('ST-S11-10: status JSON exposes proposal-level deployment decision', () => {
+    const proposalDir = setupLaunchedProposal('docs-only', NO_DEPLOY_PROPOSAL);
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.deployment_required).toBe(false);
+    expect(active.smoke_required).toBe(false);
+    expect(active.deployment_reason).toBe('仅更新文档，不需要发布运行产物');
+    expect(active.deployment_decision_source).toBe('proposal');
+    expect(active.deployment_decision_conflict).toBe(false);
+  });
+
+  it('ST-S11-EX-6.1: legacy proposal falls back to compatible deployment source', () => {
+    const proposalDir = setupLaunchedProposal('legacy-runtime', '# Old proposal', [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.proposal_step).toBe('ready-to-deploy');
+    expect(active.deployment_required).toBe(true);
+    expect(active.deployment_decision_source).toBe('tasks');
   });
 });
 

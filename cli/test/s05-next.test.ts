@@ -9,9 +9,57 @@ import { detectProposalStep } from '../src/commands/status.js';
 function writeLaunchedModule(root: string) {
   writeFileSync(
     join(root, 'logos', 'logos-project.yaml'),
-    stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }] }, { lineWidth: 0 }),
+    stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }),
   );
 }
+
+const NO_DEPLOY_PROPOSAL = [
+  '# 变更提案：docs-only',
+  '',
+  '## 部署影响',
+  '- 是否需要部署：否',
+  '- 部署原因：仅更新文档，不需要发布运行产物',
+  '- 影响环境：无',
+  '- 是否涉及数据迁移：否',
+  '- 是否需要回滚预案：否',
+  '- 是否需要 smoke：否',
+  '',
+  '## 变更概述',
+  '补充文档。',
+].join('\n');
+
+const DEPLOY_WITH_SMOKE_PROPOSAL = [
+  '# 变更提案：runtime-change',
+  '',
+  '## 部署影响',
+  '- 是否需要部署：是',
+  '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+  '- 影响环境：生产',
+  '- 是否涉及数据迁移：否',
+  '- 是否需要回滚预案：是',
+  '- 是否需要 smoke：是',
+  '',
+  '## 变更概述',
+  '修改运行时代码。',
+].join('\n');
+
+const DEPLOY_WITHOUT_SMOKE_PROPOSAL = [
+  '# 变更提案：runtime-change',
+  '',
+  '## 部署影响',
+  '- 是否需要部署：是',
+  '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+  '- 影响环境：生产',
+  '- 是否涉及数据迁移：否',
+  '- 是否需要回滚预案：是',
+  '- 是否需要 smoke：否',
+  '',
+  '## 变更概述',
+  '修改运行时代码。',
+].join('\n');
 
 describe('S05 Unit Tests — next command (initial lifecycle)', () => {
   let root: string;
@@ -455,6 +503,61 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
     expect(detectProposalStep(proposalDir)).toBe('ready-to-merge');
   });
+
+  it('UT-S05-15: no-deploy proposal with VERIFY_PASS suggests archive', () => {
+    const proposalDir = setupLaunchedWithGuard('docs-only');
+    writeFileSync(join(proposalDir, 'proposal.md'), NO_DEPLOY_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('verify-passed');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/archive/i);
+    expect(out).not.toMatch(/authorize deployment|授权执行部署/i);
+    expect(out).not.toContain('openlogos smoke');
+  });
+
+  it('UT-S05-16: deploy proposal with VERIFY_PASS suggests deployment authorization', () => {
+    const proposalDir = setupLaunchedWithGuard('runtime-change');
+    writeFileSync(join(proposalDir, 'proposal.md'), DEPLOY_WITH_SMOKE_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-deploy');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/authorize deployment|授权执行部署/i);
+  });
+
+  it('UT-S05-17: deploy done and smoke_required=false suggests archive', () => {
+    const proposalDir = setupLaunchedWithGuard('runtime-change');
+    writeFileSync(join(proposalDir, 'proposal.md'), DEPLOY_WITHOUT_SMOKE_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+    mkdirSync(join(root, 'logos/resources/test/smoke'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/smoke/core-smoke-test-cases.md'), '| SMOKE-core-01 | health |');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('deploy-done');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/archive/i);
+    expect(out).not.toContain('openlogos smoke');
+  });
 });
 
 describe('S05 Scenario Tests — next --format json', () => {
@@ -496,5 +599,71 @@ describe('S05 Scenario Tests — next --format json', () => {
     const parsed = JSON.parse(con.logs[0]);
     expect(parsed.data.active_change).toBeNull();
     expect(parsed.data.proposal_step).toBeNull();
+  });
+
+  it('ST-S05-03: documentation proposal after verify PASS does not enter deployment', () => {
+    writeLaunchedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'docs-only', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'docs-only');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), NO_DEPLOY_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/archive/i);
+    expect(out).not.toMatch(/部署任务|authorize deployment|授权执行部署/i);
+    expect(out).not.toContain('openlogos smoke');
+  });
+
+  it('ST-S05-04: runtime proposal after verify PASS enters deployment authorization', () => {
+    writeLaunchedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'runtime-change', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), DEPLOY_WITH_SMOKE_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/authorize deployment|授权执行部署/i);
+  });
+
+  it('ST-S05-EX-4.1: deployment decision conflict blocks deployment suggestion', () => {
+    writeLaunchedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'conflict', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'conflict');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), NO_DEPLOY_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toContain('部署决策冲突');
+    expect(out).toContain('proposal.md');
+    expect(out).toContain('tasks.md');
+    expect(out).not.toMatch(/authorize deployment|授权执行部署/i);
   });
 });

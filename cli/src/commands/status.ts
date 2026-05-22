@@ -47,6 +47,17 @@ export interface ModuleInfo {
   smoke_required?: boolean;
 }
 
+export type DeploymentDecisionSource = 'proposal' | 'tasks' | 'module-default' | 'legacy-fallback';
+
+export interface ProposalDeploymentDecision {
+  deployment_required: boolean | null;
+  smoke_required: boolean | null;
+  deployment_reason: string | null;
+  deployment_decision_source: DeploymentDecisionSource;
+  deployment_decision_conflict: boolean;
+  deployment_warnings: string[];
+}
+
 interface ScenarioCoverage {
   total: number;
   covered: number;
@@ -75,6 +86,12 @@ export interface ModuleStatusItem {
     tasks_checked: number;
     tasks_total: number;
     delta_count: number;
+    deployment_required: boolean | null;
+    smoke_required: boolean | null;
+    deployment_reason: string | null;
+    deployment_decision_source: DeploymentDecisionSource;
+    deployment_decision_conflict: boolean;
+    deployment_warnings?: string[];
     deploy_tasks?: TaskItem[];
   } | null;
   suggestion: string;
@@ -130,6 +147,12 @@ const NON_FALLBACK_SKIP_PHASES = new Set([
 function isProposalTemplateFilled(content: string): boolean {
   const normalized = content.trim();
   if (!normalized) return false;
+  const hasDeploymentSection = normalized.includes('## 部署影响');
+  const deploymentSectionFilled = !hasDeploymentSection || (
+    !normalized.includes('是 / 否')
+    && !normalized.includes('[说明为什么需要或不需要部署]')
+    && !normalized.includes('[本地 / 测试 / 预发 / 生产 / 无]')
+  );
   return normalized.includes('## 变更原因')
     && normalized.includes('## 变更类型')
     && normalized.includes('## 变更范围')
@@ -137,7 +160,8 @@ function isProposalTemplateFilled(content: string): boolean {
     && !normalized.includes('[为什么要做这个变更？')
     && !normalized.includes('[需求级 / 设计级 / 接口级 / 代码级]')
     && !normalized.includes('[列表]')
-    && !normalized.includes('[用 1-3 段话概述具体改什么]');
+    && !normalized.includes('[用 1-3 段话概述具体改什么]')
+    && deploymentSectionFilled;
 }
 
 function isTasksTemplateFilled(content: string): boolean {
@@ -258,6 +282,130 @@ export function getDeployTasks(proposalDir: string): TaskItem[] {
   return readTaskSectionItems(proposalDir, 'deploy');
 }
 
+function extractMarkdownSection(content: string, heading: string): string | null {
+  const lines = content.split(/\r?\n/);
+  const startIndex = lines.findIndex(line => line.trim() === `## ${heading}`);
+  if (startIndex < 0) return null;
+
+  const sectionLines: string[] = [];
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) break;
+    sectionLines.push(lines[i]);
+  }
+  return sectionLines.join('\n');
+}
+
+function parseChineseBoolean(section: string, label: string): boolean | null {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = section.match(new RegExp(`^-\\s*${escapedLabel}\\s*[：:]\\s*(是|否)(?=\\s|$)`, 'm'));
+  if (!match) return null;
+  return match[1] === '是';
+}
+
+function parseChineseField(section: string, label: string): string | null {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const value = section.match(new RegExp(`^-\\s*${escapedLabel}\\s*[：:]\\s*(.+)$`, 'm'))?.[1]?.trim();
+  return value ? value : null;
+}
+
+export function parseProposalDeploymentDecision(content: string): Pick<
+  ProposalDeploymentDecision,
+  'deployment_required' | 'smoke_required' | 'deployment_reason'
+> | null {
+  const section = extractMarkdownSection(content, '部署影响');
+  if (!section) return null;
+
+  const deploymentRequired = parseChineseBoolean(section, '是否需要部署');
+  const smokeRequired = parseChineseBoolean(section, '是否需要 smoke');
+  const deploymentReason = parseChineseField(section, '部署原因');
+
+  if (deploymentRequired === null && smokeRequired === null && deploymentReason === null) {
+    return null;
+  }
+
+  return {
+    deployment_required: deploymentRequired,
+    smoke_required: smokeRequired,
+    deployment_reason: deploymentReason,
+  };
+}
+
+function getDeploySectionSummary(tasksContent: string): { checked: number; total: number } | null {
+  return getSectionSummary(parseTaskSections(tasksContent), 'deploy');
+}
+
+function deploymentConflictWarning(deploymentRequired: boolean, hasDeploySection: boolean): string | null {
+  if (!deploymentRequired && hasDeploySection) {
+    return '部署决策冲突：proposal.md 声明无需部署，但 tasks.md 存在 [deploy] section。请先修正 proposal / tasks。';
+  }
+  if (deploymentRequired && !hasDeploySection) {
+    return '部署决策冲突：proposal.md 声明需要部署，但 tasks.md 缺少 [deploy] section。请先修正 proposal / tasks。';
+  }
+  return null;
+}
+
+function readProposalDeploymentDecision(
+  proposalDir: string,
+): Pick<ProposalDeploymentDecision, 'deployment_required' | 'smoke_required' | 'deployment_reason'> | null {
+  const proposalPath = join(proposalDir, 'proposal.md');
+  if (!existsSync(proposalPath)) return null;
+  return parseProposalDeploymentDecision(readFileSync(proposalPath, 'utf-8'));
+}
+
+export function resolveProposalDeploymentDecision(
+  proposalDir: string,
+  moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
+): ProposalDeploymentDecision {
+  const tasksPath = join(proposalDir, 'tasks.md');
+  const tasksContent = existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '';
+  const deploySection = getDeploySectionSummary(tasksContent);
+  const hasDeploySection = Boolean(deploySection && deploySection.total > 0);
+  const proposalDecision = readProposalDeploymentDecision(proposalDir);
+
+  if (proposalDecision && proposalDecision.deployment_required !== null) {
+    const warning = deploymentConflictWarning(proposalDecision.deployment_required, hasDeploySection);
+    return {
+      deployment_required: proposalDecision.deployment_required,
+      smoke_required: proposalDecision.smoke_required,
+      deployment_reason: proposalDecision.deployment_reason,
+      deployment_decision_source: 'proposal',
+      deployment_decision_conflict: warning !== null,
+      deployment_warnings: warning ? [warning] : [],
+    };
+  }
+
+  if (hasDeploySection) {
+    return {
+      deployment_required: true,
+      smoke_required: moduleDefaults.smoke_required ?? null,
+      deployment_reason: '历史提案依据 tasks.md 的 [deploy] section 回退判断需要部署。',
+      deployment_decision_source: 'tasks',
+      deployment_decision_conflict: false,
+      deployment_warnings: [],
+    };
+  }
+
+  if (moduleDefaults.deployment_required === false || moduleDefaults.smoke_required === false) {
+    return {
+      deployment_required: moduleDefaults.deployment_required ?? null,
+      smoke_required: moduleDefaults.smoke_required ?? null,
+      deployment_reason: '历史提案缺少结构化部署影响，使用模块级默认部署门禁。',
+      deployment_decision_source: 'module-default',
+      deployment_decision_conflict: false,
+      deployment_warnings: [],
+    };
+  }
+
+  return {
+    deployment_required: false,
+    smoke_required: false,
+    deployment_reason: '历史提案缺少结构化部署影响，依据无 [deploy] section 回退判断无需部署。',
+    deployment_decision_source: 'legacy-fallback',
+    deployment_decision_conflict: false,
+    deployment_warnings: [],
+  };
+}
+
 function getSectionSummary(
   sections: Record<string, { checked: number; total: number }> | null,
   tag: string,
@@ -269,19 +417,30 @@ function hasSmokeCasesForProposal(proposalDir: string): boolean {
   return listFiles(join(proposalDir, '..', '..', 'resources', 'test', 'smoke')).length > 0;
 }
 
-export function detectProposalStep(proposalDir: string): ProposalStep {
+export function detectProposalStep(
+  proposalDir: string,
+  moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
+): ProposalStep {
   if (existsSync(join(proposalDir, 'VERIFY_FAIL'))) {
     return 'verify-failed';
   }
   if (existsSync(join(proposalDir, 'VERIFY_PASS'))) {
     const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
       ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
-    const sections = parseTaskSections(tasksContent);
-    const deploy = getSectionSummary(sections, 'deploy');
+    const deploy = getDeploySectionSummary(tasksContent);
     const hasDeployTasks = Boolean(deploy && deploy.total > 0);
+    const deploymentDecision = resolveProposalDeploymentDecision(proposalDir, moduleDefaults);
+
+    if (deploymentDecision.deployment_decision_conflict) {
+      return 'verify-passed';
+    }
+
+    if (deploymentDecision.deployment_required !== true) {
+      return 'verify-passed';
+    }
 
     if (!hasDeployTasks) {
-      return 'verify-passed';
+      return 'ready-to-deploy';
     }
 
     const deployDone = existsSync(join(proposalDir, 'DEPLOY_DONE'));
@@ -295,6 +454,12 @@ export function detectProposalStep(proposalDir: string): ProposalStep {
     }
     if (existsSync(join(proposalDir, 'SMOKE_PASS'))) {
       return 'smoke-passed';
+    }
+    if (deploymentDecision.smoke_required === false) {
+      return 'deploy-done';
+    }
+    if (deploymentDecision.smoke_required === true) {
+      return 'ready-to-smoke';
     }
     if (hasSmokeCasesForProposal(proposalDir)) {
       return 'ready-to-smoke';
@@ -466,7 +631,17 @@ function buildModuleStatusItem(
 
     if (guardActiveChange && guardModule === mod.id) {
       const proposalDir = join(root, 'logos', 'changes', guardActiveChange);
-      const step = existsSync(proposalDir) ? detectProposalStep(proposalDir) : 'writing';
+      const deploymentDecision = existsSync(proposalDir)
+        ? resolveProposalDeploymentDecision(proposalDir, mod)
+        : {
+          deployment_required: null,
+          smoke_required: null,
+          deployment_reason: null,
+          deployment_decision_source: 'legacy-fallback' as const,
+          deployment_decision_conflict: false,
+          deployment_warnings: [],
+        };
+      const step = existsSync(proposalDir) ? detectProposalStep(proposalDir, mod) : 'writing';
       const stepLabel = t(locale as Parameters<typeof t>[0], `status.proposalStep.${step}`);
       const hasProposal = existsSync(join(proposalDir, 'proposal.md'));
       const hasTasksFile = existsSync(join(proposalDir, 'tasks.md'));
@@ -484,13 +659,25 @@ function buildModuleStatusItem(
         tasks_checked: checked,
         tasks_total: total,
         delta_count: deltaCount,
+        deployment_required: deploymentDecision.deployment_required,
+        smoke_required: deploymentDecision.smoke_required,
+        deployment_reason: deploymentDecision.deployment_reason,
+        deployment_decision_source: deploymentDecision.deployment_decision_source,
+        deployment_decision_conflict: deploymentDecision.deployment_decision_conflict,
+        ...(deploymentDecision.deployment_warnings.length > 0
+          ? { deployment_warnings: deploymentDecision.deployment_warnings }
+          : {}),
         ...(deployTasks.length > 0 ? { deploy_tasks: deployTasks } : {}),
       };
     }
 
     let suggestion: string;
     if (activeChange) {
-      if (activeChange.proposal_step === 'ready-to-merge') {
+      if (activeChange.deployment_decision_conflict) {
+        suggestion = locale === 'zh'
+          ? '部署决策冲突，请先修正 proposal.md 与 tasks.md 后再继续。'
+          : 'Deployment decision conflict — fix proposal.md and tasks.md before continuing.';
+      } else if (activeChange.proposal_step === 'ready-to-merge') {
         suggestion = locale === 'zh'
           ? `明确授权执行 openlogos merge ${activeChange.slug}`
           : `Explicitly request: openlogos merge ${activeChange.slug}`;
@@ -614,13 +801,23 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     try {
       const yaml = parseYaml(readFileSync(projectYamlPath, 'utf-8'));
       if (Array.isArray(yaml?.modules)) {
-        rawModules = (yaml.modules as Array<{ id: string; name: string; lifecycle?: string; skip_phases?: string[]; deployment_required?: boolean }>).map(m => ({
+        rawModules = (yaml.modules as Array<{
+          id: string;
+          name: string;
+          lifecycle?: string;
+          skip_phases?: string[];
+          deployment_required?: boolean;
+          smoke_required?: boolean;
+        }>).map(m => ({
           id: m.id,
           name: m.name,
           lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
           skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
           deployment_required: typeof m.deployment_required === 'boolean'
             ? m.deployment_required
+            : undefined,
+          smoke_required: typeof m.smoke_required === 'boolean'
+            ? m.smoke_required
             : undefined,
         }));
         const deploymentGates = yaml?.deployment_gates && typeof yaml.deployment_gates === 'object'
@@ -706,7 +903,11 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
       guardModule = guard.module || null;
       if (activeChange) {
         const proposalDir = join(root, 'logos', 'changes', activeChange);
-        proposalStep = existsSync(proposalDir) ? detectProposalStep(proposalDir) : 'writing';
+        const guardModuleDefaults = rawModules?.find(m => m.id === guardModule)
+          ?? (rawModules?.length === 1 ? rawModules[0] : undefined);
+        proposalStep = existsSync(proposalDir)
+          ? detectProposalStep(proposalDir, guardModuleDefaults)
+          : 'writing';
       }
     } catch { /* ignore */ }
   }
@@ -822,6 +1023,11 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
           console.log(`  🔄  ${m.id} (${m.name})  [launched]`);
           console.log(`       ${t(locale, 'status.activeChange')}: ${ac.slug}  →  ${ac.proposal_step_label}`);
           console.log(`       tasks: ${ac.tasks_checked}/${ac.tasks_total}  deltas: ${ac.delta_count}`);
+          if (ac.deployment_warnings) {
+            for (const warning of ac.deployment_warnings) {
+              console.log(`       ⚠ ${warning}`);
+            }
+          }
           if (ac.deploy_tasks && ac.deploy_tasks.length > 0) {
             console.log(`       ${t(locale, 'status.deployTasks')}:`);
             for (const task of ac.deploy_tasks) {
