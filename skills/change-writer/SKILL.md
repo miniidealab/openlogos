@@ -94,6 +94,8 @@
 [用 1-3 段话概述具体改什么]
 ```
 
+生成 `proposal.md` 后必须先保留部署决策结论，Step 5 生成 `tasks.md` 时必须与该结论一致。
+
 ### Step 5: 生成 tasks.md
 
 根据变更类型和影响范围，使用结构化 section 格式生成任务清单。完整格式规范见 `spec/tasks-spec.md`。
@@ -105,8 +107,22 @@
 - `## [code] <描述>` section：只列代码实现任务，直接修改源文件，不产出 delta
 - `## [deploy] <描述>` section：只列部署执行任务，只能在 verify PASS 后、人类明确确认后执行
 - 不需要部署的提案不得创建 `[deploy]` section
+- 需要部署的提案必须创建 `[deploy]` section
 - 需要部署的提案必须在 `[delta]` section 中包含部署方案和 smoke 用例变更（如受影响）
 - **严禁混用**：delta 任务不得写入 `[code]` section，代码任务不得写入 `[delta]` section
+
+**部署决策一致性自检（强制）**：
+
+生成 `proposal.md` 和 `tasks.md` 后，必须逐项检查：
+
+| 检查项 | 合法状态 |
+|---|---|
+| `proposal.md` 声明 `是否需要部署：否` | `tasks.md` 不存在 `[deploy]` section |
+| `proposal.md` 声明 `是否需要部署：是` | `tasks.md` 必须存在 `[deploy]` section |
+| `proposal.md` 声明 `是否需要 smoke：是` | `proposal.md` 必须同时声明 `是否需要部署：是` |
+| `proposal.md` 声明无需部署 | 不得在 `[code]` 或 `[delta]` 中写部署执行任务 |
+
+若自检失败，必须先修正 `proposal.md` 或 `tasks.md`，不得继续产出 delta。
 
 **需要部署的变更模板**：
 

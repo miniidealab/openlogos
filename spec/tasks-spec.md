@@ -62,6 +62,7 @@ CLI 的 `detectProposalStep()` 按以下规则判断各阶段是否完成：
 | `SPEC_MERGED` 存在，且 `[code]` section 未全部勾选 | → `coding` |
 | `SPEC_MERGED` 存在，且无 `[code]` section 或 `[code]` 全部勾选 | → `ready-to-verify` |
 | `VERIFY_FAIL` 存在 | → `verify-failed` |
+| `proposal.md` 与 `[deploy]` section 冲突 | → 阻塞态；CLI 输出 warning，不推进 deploy / smoke / archive |
 | `VERIFY_PASS` 存在，提案级无需部署，且无 `[deploy]` section | → `verify-passed` |
 | `VERIFY_PASS` 存在，提案级需要部署，且 `[deploy]` section 存在但 `DEPLOY_DONE` 不存在或 `[deploy]` 未全勾 | → `ready-to-deploy` |
 | `DEPLOY_DONE` 存在、`[deploy]` 全部勾选，且提案级无需 smoke | → `deploy-done` |
@@ -76,6 +77,7 @@ CLI 的 `detectProposalStep()` 按以下规则判断各阶段是否完成：
 3. 活跃提案的 `proposal.md` 部署决策高于模块级 `deployment_required` / `smoke_required`
 4. 重新运行 `openlogos verify` 且失败时，必须清理过期的 `VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL`
 5. 重新部署时，必须清理过期的 `SMOKE_PASS` / `SMOKE_FAIL`
+6. `proposal.md` 与 `[deploy]` section 冲突时，必须优先报告冲突，不得推进到 deploy / smoke / archive
 
 ## 部署与冒烟测试设计要求
 
@@ -94,6 +96,12 @@ CLI 的 `detectProposalStep()` 按以下规则判断各阶段是否完成：
 - verify PASS 后直接进入 `verify-passed`，下一步为 `openlogos archive <slug>`
 
 冒烟测试不写入 `[deploy]` section 作为可勾选任务。`[deploy]` 只表示部署执行完成；冒烟测试由 `openlogos smoke` 命令独立管理。
+
+**提案一致性要求**：
+
+- `proposal.md` 与 `tasks.md` 的部署结论必须一致
+- 生成 `proposal.md` 和 `tasks.md` 后应先执行一致性自检
+- 若自检失败，任务状态不得推进到 `delta-writing` 之后的阶段
 
 ## 向后兼容
 

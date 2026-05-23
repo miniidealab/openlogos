@@ -376,6 +376,19 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测
 
 三层验收条件逐层细化，最终在 Phase 3 的测试中变成可自动执行的验证：单元测试覆盖函数级正确性，场景测试覆盖跨模块流程，API 编排测试覆盖端到端调用链。测试结果通过标准化的 JSONL 格式（见 [test-results.md](./test-results.md)）输出，`openlogos verify` 自动读取并生成验收报告。不需要额外的追溯矩阵——**场景编号就是追溯链，用例 ID 就是验收锚点**。
 
+## 变更提案资料一致性
+
+变更提案的 `proposal.md` 和 `tasks.md` 必须保持部署决策一致：
+
+1. `proposal.md` 的 `## 部署影响` 是部署决策入口，必须明确是否需要部署、是否需要 smoke、影响环境和回滚要求。
+2. `tasks.md` 的 `[deploy]` section 是部署执行任务入口，只能在提案声明需要部署时存在。
+3. `proposal.md` 声明无需部署时，`tasks.md` 不得包含 `[deploy]` section。
+4. `proposal.md` 声明需要部署时，`tasks.md` 必须包含 `[deploy]` section。
+5. `proposal.md` 声明需要 smoke 时，必须同时声明需要部署；smoke 不得脱离部署单独存在。
+6. 部署决策冲突时，CLI 和 AI 都必须采用保守策略：提示修正提案资料，不继续执行部署、smoke 或归档主动作。
+
+该一致性约束应在 AI 填写提案时前置自检，并在 CLI 的 `status` / `next` 中作为运行时护栏。
+
 ## 迭代规则
 
 功能迭代**必须**按同样的分层工作流推进，使用 Delta 变更管理（详见 [change-management.md](./change-management.md)）。不允许跳过中间环节直接改代码。

@@ -238,6 +238,7 @@ Delta 文件的目录结构映射主文档目录：
 3. `logos-project.yaml` 的模块级 `deployment_required` / `smoke_required` 是 Initial 阶段和历史提案的默认值，不得覆盖活跃提案的明确决策。
 4. 文档-only 或规格-only 提案声明无需部署时，即使模块默认需要部署，verify PASS 后也直接建议 archive。
 5. 部署决策缺失或冲突时，CLI 应输出警告，并采用保守策略：不自动部署，等待用户修正提案。
+6. `deployment_decision_conflict=true` 时，deploy、smoke、archive 均不得作为主动作；用户必须先修正 `proposal.md` 或 `tasks.md`。
 
 ## Git 集成
 

@@ -167,7 +167,8 @@ openlogos status --format json  # JSON 格式
         "smoke_required": false,
         "deployment_reason": "文档-only 提案，不需要发布运行产物",
         "deployment_decision_source": "proposal",
-        "deployment_decision_conflict": false
+        "deployment_decision_conflict": false,
+        "deployment_decision_conflict_reason": null
       },
       "suggestion": "继续为 add-refund 产出 delta 文件，完成后明确授权执行 openlogos merge add-refund"
     }
@@ -225,6 +226,7 @@ openlogos status --format json  # JSON 格式
 | `modules[].active_change.deployment_reason` | string \| null | 是 | 来自 `proposal.md` 的部署原因或兼容推断说明 |
 | `modules[].active_change.deployment_decision_source` | string | 是 | `"proposal"` \| `"tasks"` \| `"module-default"` \| `"legacy-fallback"`，表示部署决策来源 |
 | `modules[].active_change.deployment_decision_conflict` | boolean | 是 | `proposal.md` 与 `[deploy]` section 是否冲突 |
+| `modules[].active_change.deployment_decision_conflict_reason` | string \| null | 否 | 冲突原因摘要；无冲突时为 null |
 | `modules[].suggestion` | string | 是 | 针对该模块的下一步建议（本地化文本） |
 | `active_proposals` | array | 是 | 活跃变更提案列表 |
 | `active_proposals[].name` | string | 是 | 提案目录名 |
@@ -236,6 +238,10 @@ openlogos status --format json  # JSON 格式
 | `all_done` | boolean | 是 | 是否全部阶段已完成（skipped 阶段不阻塞） |
 | `lifecycle` | string | 是 | 项目生命周期（`initial` 或 `launched`，由模块状态派生） |
 | `source_roots` | object \| null | 是 | 源代码根目录配置；未配置时为 null |
+
+### 3.4 冲突语义
+
+`deployment_decision_conflict=true` 表示 CLI 检测到活跃提案的 `proposal.md` 部署影响声明与 `tasks.md` 的 `[deploy]` section 不一致。客户端必须将其视为阻塞态，提示用户修正提案或任务清单，不得继续展示部署、smoke 或归档主动作。
 
 ---
 
