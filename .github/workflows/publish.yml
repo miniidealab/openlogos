@@ -13,7 +13,7 @@ jobs:
       run:
         working-directory: cli
     permissions:
-      contents: read
+      contents: write
       id-token: write
 
     steps:
@@ -34,7 +34,60 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Validate release version
+        working-directory: .
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const version = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+          const packageJson = JSON.parse(fs.readFileSync(path.join('cli', 'package.json'), 'utf8'));
+          const pluginJson = JSON.parse(fs.readFileSync(path.join('plugin', '.claude-plugin', 'plugin.json'), 'utf8'));
+          const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const header = `## [${version}]`;
+          if (packageJson.version !== version) {
+            throw new Error(`cli/package.json 版本 ${packageJson.version} 与 tag ${version} 不一致`);
+          }
+          if (pluginJson.version !== version) {
+            throw new Error(`plugin/.claude-plugin/plugin.json 版本 ${pluginJson.version} 与 tag ${version} 不一致`);
+          }
+          if (!changelog.includes(header)) {
+            throw new Error(`找不到 ${version} 对应的 CHANGELOG 条目`);
+          }
+          NODE
+
+      - name: Prepare release notes
+        working-directory: .
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const version = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+          const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const header = `## [${version}]`;
+          const start = changelog.indexOf(header);
+          if (start === -1) {
+            throw new Error(`找不到 ${version} 对应的 CHANGELOG 条目`);
+          }
+          const nextHeader = changelog.indexOf('\n## [', start + header.length);
+          const body = (nextHeader === -1 ? changelog.slice(start) : changelog.slice(start, nextHeader)).trim() + '\n';
+          fs.writeFileSync('release-notes.md', body);
+          NODE
+
+      - name: Pack CLI
+        run: rm -f miniidealab-openlogos-*.tgz && npm pack
+
       - name: Publish
-        run: npm publish --provenance --access public
+        run: npm publish miniidealab-openlogos-*.tgz --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            --latest \
+            cli/miniidealab-openlogos-*.tgz

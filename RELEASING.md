@@ -2,7 +2,7 @@
 
 > 版本：0.1.0
 
-本文档定义 OpenLogos 的版本发布流程，包括版本号规则、发布前检查清单和版本同步要求。
+本文档定义 OpenLogos 的版本发布流程，包括版本号规则、tag 驱动发布链路、发布前检查清单和版本同步要求。
 
 ## 版本号规则
 
@@ -20,9 +20,10 @@
 |------|------|------|
 | CLI（npm 包） | `cli/package.json` | 主版本，用户通过 npm 安装 |
 | Claude Code 插件 | `plugin/.claude-plugin/plugin.json` | 必须与 CLI 版本号保持一致 |
-| CHANGELOG | `CHANGELOG.md` | 记录每个版本的变更内容 |
+| CHANGELOG | `CHANGELOG.md` | 记录每个版本的变更内容，并作为 GitHub Release 说明来源 |
+| Git tag | `vX.Y.Z` | 发布入口，推送后触发 npm publish 和 GitHub Release |
 
-**版本同步规则：每次 CLI 发版时，`plugin/.claude-plugin/plugin.json` 的版本号必须同步更新为相同版本号。**
+**版本同步规则：每次 CLI 发版时，`cli/package.json`、`plugin/.claude-plugin/plugin.json`、`CHANGELOG.md` 对应版本章节和 `git tag vX.Y.Z` 必须保持一致。**
 
 原因：Claude Code 插件通过版本号判断是否需要更新。版本号不变，用户不会拉取到新的 Skill 文档、hook 脚本等插件内容。
 
@@ -34,17 +35,17 @@ AI 辅助发布时，必须按以下顺序执行：
 1. 确认所有变更提案已归档（logos/.openlogos-guard 不存在）
 2. 更新 cli/package.json 版本号
 3. 更新 plugin/.claude-plugin/plugin.json 版本号（与 CLI 保持一致）
-4. 更新 CHANGELOG.md（在 [Unreleased] 下新增版本条目）
+4. 更新 CHANGELOG.md（在 [Unreleased] 下新增版本条目，并补齐对应版本链接）
 5. 运行构建：npm run build（在 cli/ 目录）
 6. 运行测试：npm test（在 cli/ 目录）
-7. 打包验证：npm pack（在 cli/ 目录）
+7. 运行打包验证：npm pack（在 cli/ 目录）
 8. 提交：git add cli/package.json plugin/.claude-plugin/plugin.json CHANGELOG.md
 9. git commit -m "improve: 升级 CLI 版本到 x.y.z"
-10. git push
-11. 提示用户运行：cd cli && npm publish --otp=<验证码>
+10. 创建并推送 `vX.Y.Z` tag
+11. GitHub Actions 自动执行 npm publish 并创建 GitHub Release
 ```
 
-`npm publish` 是人类确认点，AI 不得自动执行。
+`git tag vX.Y.Z` 是发布入口；`npm publish` 和 GitHub Release 由 CI 自动执行。AI 不得手动跳过 tag 链路直接执行发布。
 
 ## 官网同步说明
 
@@ -55,6 +56,10 @@ AI 辅助发布时，必须按以下顺序执行：
 - `website/src/content/docs/cli/sync.md` / `launch.md` 中的行为说明
 - `website/src/content/docs/getting-started/index.md` 与 `quick-start.mdx` 中的入门文案
 - 根目录 `README.md` / `README.en.md` 中的安装与版本说明
+
+## 发布说明来源
+
+GitHub Release 的说明必须来自 `CHANGELOG.md` 中对应版本的章节正文，不得手工另写一套与变更记录不一致的内容。
 
 ## commit message 规范
 
