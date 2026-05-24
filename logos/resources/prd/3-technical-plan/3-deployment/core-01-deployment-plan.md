@@ -26,6 +26,7 @@ graph TB
 - CLI 构建：`cd cli && npm run build`
 - CLI 测试：`cd cli && npm test`
 - CLI 打包验证：`cd cli && npm pack`
+- 官网发布数据生成：`cd website && npm run generate:releases`
 - 官网构建：`cd website && npm run build`
 - 官网部署：`cd website && npm run deploy`
 - CLI 发布入口：更新 `cli/package.json`、`plugin/.claude-plugin/plugin.json`、`CHANGELOG.md` 后提交代码，创建并推送 `vX.Y.Z` tag；GitHub Actions 自动执行 npm publish 并创建 GitHub Release。
@@ -42,6 +43,8 @@ graph TB
 - `openlogos --version` 可用。
 - `openlogos init --locale zh --ai-tool all` 可生成资产。
 - 官网核心页面可访问。
+- 官网 `/releases` 页面可访问，并展示 npm latest 版本、发布时间和安装命令。
+- 官网首页存在最近发布动态入口，并能跳转 `/releases`。
 - 插件模板包含 Claude Code、OpenCode、Codex 资产。
 
 ## 八、冒烟测试方案
@@ -62,3 +65,10 @@ graph TB
 6. CLI 发布时必须保持 `cli/package.json`、`plugin/.claude-plugin/plugin.json`、`CHANGELOG.md` 和 Git tag `vX.Y.Z` 一致，GitHub Release 由同一 tag 自动生成。
 
 本提案 `proposal-level-deploy-gate` 会修改 CLI 运行时代码，因此后续实现验收通过后需要按本方案构建、测试、打包，并由用户决定是否发布 npm 包。
+
+## 十一、官网发布动态构建策略
+- 官网构建前必须执行发布数据生成脚本，从 npm registry 读取 `@miniidealab/openlogos` 的 `dist-tags`、`versions` 和 `time`。
+- 生成结果写入官网源码可导入的静态 JSON 文件，Astro 页面在构建时读取该文件。
+- 发布数据生成失败时应保留已提交的缓存数据；若缓存不存在，构建应失败，避免官网展示空白或伪造数据。
+- Cloudflare Pages 部署仍以 `website/dist/` 为部署产物，不引入运行时服务端依赖。
+- 回滚时通过 Cloudflare Pages 回滚到上一部署；如发布数据异常，可回滚到上一份静态 JSON 产物对应的部署版本。

@@ -1,0 +1,67 @@
+# core-02-docs-website-experience
+
+## 一、站点目标
+文档站承担 OpenLogos 的安装入口、方法论说明、命令索引、示例项目入口和版本发布说明。
+
+## 二、信息结构
+- 首页：产品定位、核心原则、安装入口和发布日志入口。
+- 发布日志：基于 npm registry 展示 `@miniidealab/openlogos` 全量版本说明、历史版本发布时间、安装命令、npm 元数据和发布归档链接。
+- 方法论：WHY → WHAT → HOW、阶段与门禁。
+- CLI：命令说明与使用示例。
+- Skills：各 Skill 的触发条件与职责。
+- 示例：可运行项目与真实实践。
+- RunLogos：OpenLogos 方法论与 RunLogos 工具关系。
+
+## 三、页面原则
+- 以工具说明为主，不做营销式英雄页。
+- 重点展示命令、阶段和文档索引。
+- 入口要能直接引导到 `openlogos init`、`status`、`next` 和 `sync`。
+
+## 四、发布日志页面设计
+### 4.1 首页发布日志入口
+- 位置：建议放在 Quick Start 前，作为“当前可安装版本 + 完整发布日志”的确认入口。
+- 内容：显示 npm latest 版本号、发布时间、安装命令、版本总数、最新 dist-tag 和“查看完整发布日志”入口。
+- 交互：安装命令以等宽代码块展示；链接分别指向 `/releases`、npm 包页面和 GitHub Release。
+- 状态：若构建期无法读取 npm 数据，页面必须显示本地缓存中的最近一次数据，不在前端展示空白区。
+- 信息密度：首页只做摘要，不展示最近 3 个版本列表，避免和 `/releases` 主页面重复。
+
+### 4.2 `/releases` 发布日志页
+- 页面目标：不是“最近动态页”，而是完整的 OpenLogos npm 发布日志页。
+- 文案语言：正式官网当前仅提供英文版本，代码实现阶段所有用户可见文案必须翻译为英文；中文原型仅作为结构、层级和信息密度参照。
+- 首屏信息：页面标题、latest 版本号、latest 发布时间、npm 包链接、GitHub Release 链接、安装命令、版本总数、registry 最后更新时间。
+- 主体：按发布时间倒序展示全部版本时间线，不只展示最近版本。
+- 每个版本项至少展示：版本号、发布时间、npm 版本链接、GitHub Release 链接、是否为 latest / old dist-tag、包 tarball 链接、gitHead、包大小、解压后大小、fileCount、Node.js engine、直接依赖、许可证。
+- 版本说明正文策略：npm registry 不提供逐版本自然语言 changelog，因此页面用“npm 发布元数据 + 外部说明链接”组成版本说明；不得生成虚构 bullet 作为版本说明。
+- 分组策略：版本按 minor 系列聚合，例如 `0.9.x`、`0.8.x`、`0.7.x`，每组内按发布时间倒序。每个组显示版本数量和时间范围。
+- 筛选与导航：桌面端左侧提供 sticky minor 系列索引；移动端改为横向滚动的系列筛选条。
+- 数据说明：页面应明确“发布时间和元数据来自 npm registry”；详细变更说明跳转 GitHub Release / changelog。
+- 视觉风格：按 `ui-ux-pro-max` 建议采用 Knowledge Base / Developer Tool 风格：深色、最小主义、清晰层级、开发者等宽字体、少量绿色与蓝色强调，不使用营销式 hero 或装饰性图形。
+- 响应式：桌面端左侧索引 + 右侧发布日志；移动端 latest 概览在上、系列筛选在下、时间线单列展示，文本不得溢出卡片。
+- 可访问性：链接不能只依赖颜色区分；hover / focus 必须有可见状态；版本卡片固定边界，hover 不改变布局尺寸。
+
+### 4.3 数据字段
+发布页面至少消费以下字段：
+- `packageName`
+- `latestVersion`
+- `updatedAt`
+- `versionCount`
+- `distTags`
+- `versions[].version`
+- `versions[].publishedAt`
+- `versions[].npmUrl`
+- `versions[].githubReleaseUrl`
+- `versions[].tarballUrl`
+- `versions[].gitHead`
+- `versions[].size`
+- `versions[].unpackedSize`
+- `versions[].fileCount`
+- `versions[].license`
+- `versions[].engines`
+- `versions[].dependencies`
+- `versions[].distTags`
+- `sourceUrl`
+
+### 4.4 页面原型
+- 原型文件：`logos/resources/prd/2-product-design/2-page-design/core-03-release-page-prototype.html`
+- 原型目标：给官网开发者提供 `/releases` 页面布局、信息密度、响应式行为和视觉层级参照。
+- 原型必须展示多个 minor 系列和全量时间线，而不是只展示最近版本。

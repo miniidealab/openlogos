@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenLogos Releases Prototype</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #131316;
+      --surface-2: #1a1a1f;
+      --border: #27272a;
+      --border-strong: #3f3f46;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --soft: #d4d4d8;
+      --green: #10b981;
+      --blue: #60a5fa;
+      --amber: #f59e0b;
+      --mono: "JetBrains Mono", "SF Mono", monospace;
+      --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    a { color: inherit; text-decoration: none; }
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 96px 24px 64px;
+    }
+    .crumb {
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 12px;
+      margin-bottom: 18px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) 360px;
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 28px;
+    }
+    .hero-main,
+    .install-panel,
+    .series-nav,
+    .release-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .hero-main { padding: 28px; }
+    h1 {
+      margin: 0 0 14px;
+      font-size: 44px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+    .lead {
+      max-width: 720px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 24px;
+    }
+    .metric {
+      padding: 12px;
+      background: #0f0f12;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .metric strong {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .install-panel {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .latest-badge {
+      align-self: flex-start;
+      padding: 4px 10px;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 999px;
+      color: #6ee7b7;
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(16, 185, 129, 0.1);
+    }
+    .version {
+      font-family: var(--mono);
+      font-size: 34px;
+      font-weight: 700;
+    }
+    .code {
+      display: block;
+      padding: 12px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #09090b;
+      color: var(--soft);
+      font-family: var(--mono);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: auto;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border-strong);
+      color: var(--soft);
+      font-size: 13px;
+      font-weight: 600;
+      transition: border-color 180ms, background 180ms, color 180ms;
+    }
+    .btn:hover,
+    .btn:focus-visible {
+      color: var(--text);
+      border-color: var(--green);
+      background: rgba(16, 185, 129, 0.08);
+      outline: none;
+    }
+    .content {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .series-nav {
+      position: sticky;
+      top: 88px;
+      padding: 14px;
+    }
+    .series-nav h2,
+    .timeline h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      color: var(--soft);
+      letter-spacing: 0;
+    }
+    .series-link {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 7px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .series-link:hover,
+    .series-link.active {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+    .series-link .count { color: var(--blue); }
+    .group {
+      margin-bottom: 28px;
+    }
+    .group-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .group-header h2 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 18px;
+    }
+    .group-header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .release-list {
+      display: grid;
+      gap: 12px;
+    }
+    .release-card {
+      padding: 18px;
+      transition: border-color 180ms, background 180ms;
+    }
+    .release-card:hover {
+      border-color: var(--border-strong);
+      background: #151519;
+    }
+    .release-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .release-title {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .release-title h3 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+    .tag {
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(96, 165, 250, 0.3);
+      color: #93c5fd;
+      font-family: var(--mono);
+      font-size: 11px;
+      background: rgba(96, 165, 250, 0.1);
+    }
+    .tag.latest {
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.1);
+    }
+    .date {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .meta {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #0f0f12;
+      min-width: 0;
+    }
+    .meta span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+    .meta strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--soft);
+    }
+    .release-note {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .release-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    @media (max-width: 880px) {
+      .page { padding: 84px 16px 48px; }
+      .hero,
+      .content { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+      .summary,
+      .meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .series-nav {
+        position: static;
+        overflow-x: auto;
+        display: flex;
+        gap: 8px;
+        padding: 10px;
+      }
+      .series-nav h2 { display: none; }
+      .series-link {
+        flex: 0 0 auto;
+        border: 1px solid var(--border);
+      }
+      .date { white-space: normal; }
+    }
+    @media (max-width: 520px) {
+      .summary,
+      .meta-grid { grid-template-columns: 1fr; }
+      .release-top { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="crumb">npm registry / @miniidealab/openlogos</div>
+    <section class="hero" aria-labelledby="release-title">
+      <div class="hero-main">
+        <h1 id="release-title">OpenLogos 发布日志</h1>
+        <p class="lead">
+          全量展示 npm registry 中的 OpenLogos CLI 发布记录。发布时间、版本数量、包元数据和 dist-tag 均来自 npm；详细变更说明跳转到 GitHub Release 或 changelog。
+        </p>
+        <div class="summary" aria-label="发布摘要">
+          <div class="metric"><span>当前 latest</span><strong>0.9.26</strong></div>
+          <div class="metric"><span>版本总数</span><strong>61</strong></div>
+          <div class="metric"><span>Registry 更新</span><strong>2026-05-24</strong></div>
+          <div class="metric"><span>数据源</span><strong>npm time</strong></div>
+        </div>
+      </div>
+      <aside class="install-panel" aria-label="安装当前版本">
+        <span class="latest-badge">latest</span>
+        <div class="version">v0.9.26</div>
+        <code class="code">npm install -g @miniidealab/openlogos</code>
+        <code class="code">npx @miniidealab/openlogos --version</code>
+        <div class="actions">
+          <a class="btn" href="#">npm package</a>
+          <a class="btn" href="#">GitHub Release</a>
+          <a class="btn" href="#">CHANGELOG</a>
+        </div>
+      </aside>
+    </section>
+
+    <section class="content">
+      <nav class="series-nav" aria-label="版本系列">
+        <h2>版本系列</h2>
+        <a class="series-link active" href="#series-09"><span>0.9.x</span><span class="count">27</span></a>
+        <a class="series-link" href="#series-08"><span>0.8.x</span><span class="count">3</span></a>
+        <a class="series-link" href="#series-07"><span>0.7.x</span><span class="count">4</span></a>
+        <a class="series-link" href="#series-06"><span>0.6.x</span><span class="count">7</span></a>
+        <a class="series-link" href="#series-05"><span>0.5.x</span><span class="count">8</span></a>
+      </nav>
+
+      <div class="timeline">
+        <section class="group" id="series-09">
+          <div class="group-header">
+            <h2>0.9.x</h2>
+            <p>2026-04-29 至 2026-05-24</p>
+          </div>
+          <div class="release-list">
+            <article class="release-card">
+              <div class="release-top">
+                <div class="release-title">
+                  <h3>v0.9.26</h3>
+                  <span class="tag latest">latest</span>
+                </div>
+                <time class="date">2026-05-24 01:58 UTC</time>
+              </div>
+              <div class="meta-grid">
+                <div class="meta"><span>Node.js</span><strong>&gt;=18.0.0</strong></div>
+                <div class="meta"><span>Tarball</span><strong>289 KB</strong></div>
+                <div class="meta"><span>Unpacked</span><strong>1.01 MB</strong></div>
+                <div class="meta"><span>Files</span><strong>163</strong></div>
+                <div class="meta"><span>License</span><strong>Apache-2.0</strong></div>
+                <div class="meta"><span>gitHead</span><strong>a536a6e...</strong></div>
+              </div>
+              <p class="release-note">
+                npm 元数据记录该版本的发布时间、包体积、入口、依赖和 gitHead。自然语言变更说明不由 npm registry 提供，需跳转 GitHub Release 或 changelog 查看。
+              </p>
+              <div class="release-links">
+                <a class="btn" href="#">npm version</a>
+                <a class="btn" href="#">tarball</a>
+                <a class="btn" href="#">GitHub Release</a>
+              </div>
+            </article>
+
+            <article class="release-card">
+              <div class="release-top">
+                <div class="release-title"><h3>v0.9.25</h3></div>
+                <time class="date">2026-05-23 01:22 UTC</time>
+              </div>
+              <div class="meta-grid">
+                <div class="meta"><span>dist-tag</span><strong>-</strong></div>
+                <div class="meta"><span>npm source</span><strong>time[0.9.25]</strong></div>
+                <div class="meta"><span>Release link</span><strong>v0.9.25</strong></div>
+              </div>
+              <p class="release-note">版本说明优先展示 npm 可验证元数据；详细说明通过 GitHub Release 对应版本补充。</p>
+              <div class="release-links">
+                <a class="btn" href="#">npm version</a>
+                <a class="btn" href="#">GitHub Release</a>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="group" id="series-08">
+          <div class="group-header">
+            <h2>0.8.x</h2>
+            <p>2026-04-25 至 2026-04-28</p>
+          </div>
+          <div class="release-list">
+            <article class="release-card">
+              <div class="release-top">
+                <div class="release-title"><h3>v0.8.2</h3></div>
+                <time class="date">2026-04-28 03:03 UTC</time>
+              </div>
+              <p class="release-note">较早版本同样保留 npm 发布时间、版本链接和外部变更说明入口。</p>
+              <div class="release-links">
+                <a class="btn" href="#">npm version</a>
+                <a class="btn" href="#">GitHub Release</a>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
