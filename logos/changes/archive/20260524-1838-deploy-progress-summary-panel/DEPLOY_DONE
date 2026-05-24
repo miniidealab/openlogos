@@ -1,0 +1,11 @@
+status=success
+version=0.9.27
+target=npm registry + GitHub Release
+package=@miniidealab/openlogos
+tag=v0.9.27
+workflow_run=26357950145
+workflow_attempt=3
+published_by=GitHub Actions
+verified_by=ai
+verified_at=2026-05-24
+release_url=https://github.com/miniidealab/openlogos/releases/tag/v0.9.27
