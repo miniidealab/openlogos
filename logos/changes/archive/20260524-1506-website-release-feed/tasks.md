@@ -13,5 +13,5 @@
 - [x] 更新官网导航、构建脚本和 smoke 测试覆盖
 
 ## [deploy] 部署任务
-- [ ] 构建并部署官网到 Cloudflare Pages
-- [ ] 按 smoke 用例确认发布动态页面、首页入口和 npm 数据展示可用
+- [x] 构建并部署官网到 Cloudflare Pages
+- [x] 按 smoke 用例确认发布动态页面、首页入口和 npm 数据展示可用
