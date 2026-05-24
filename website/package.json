@@ -4,9 +4,11 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "generate:releases": "node scripts/generate-releases.mjs",
+    "build": "npm run generate:releases && astro build",
     "preview": "astro preview",
-    "deploy": "astro build && npx wrangler pages deploy dist --project-name openlogos"
+    "smoke:releases": "node scripts/smoke-releases.mjs",
+    "deploy": "npm run build && npx wrangler pages deploy dist --project-name openlogos"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.38.2",

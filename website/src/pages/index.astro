@@ -1,5 +1,25 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+import releaseData from '../data/releases.json';
+
+function formatSummaryDate(value: string | null | undefined) {
+  if (!value) return 'Unknown';
+  return new Intl.DateTimeFormat('en', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(new Date(value));
+}
+
+const latestRelease = releaseData.versions.find((item) => item.version === releaseData.latestVersion) ?? releaseData.versions[0];
+const installCommand = `npm install -g ${releaseData.packageName}`;
+const verifyCommand = `npx ${releaseData.packageName} --version`;
+const distTagSummary = Object.entries(releaseData.distTags ?? {})
+  .map(([tag, version]) => `${tag}@${version}`)
+  .join(', ') || 'none';
 ---
 
 <BaseLayout title="OpenLogos — Stop Vibe Coding. Start Building Right.">
@@ -40,6 +60,41 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       </div>
       <div class="hero-install">
         <code>npx @miniidealab/openlogos init my-project</code>
+      </div>
+    </div>
+  </section>
+
+  <section class="release-summary" id="releases">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-badge">Release Feed</span>
+        <h2>Track every npm release</h2>
+        <p class="section-subtitle">
+          The site now exposes a complete release history page powered by npm registry metadata.
+          Use it to confirm the latest version, copy install commands, and review the full version timeline.
+        </p>
+      </div>
+
+      <div class="release-summary-grid">
+        <div class="summary-card summary-latest">
+          <span>latest</span>
+          <strong>v{releaseData.latestVersion}</strong>
+          <p>Published {formatSummaryDate(latestRelease?.publishedAt)}</p>
+        </div>
+        <div class="summary-card">
+          <span>versions</span>
+          <strong>{releaseData.versionCount}</strong>
+          <p>Latest dist-tag: {distTagSummary}</p>
+        </div>
+        <div class="summary-card">
+          <span>commands</span>
+          <strong>{installCommand}</strong>
+          <p><code>{verifyCommand}</code></p>
+        </div>
+        <div class="summary-card actions-card">
+          <a href="/releases" class="btn btn-primary">Open releases</a>
+          <a href={releaseData.npmPackageUrl} class="btn btn-ghost" target="_blank" rel="noopener">npm package</a>
+        </div>
       </div>
     </div>
   </section>
@@ -923,6 +978,64 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     font-size: 1.05rem;
   }
 
+  /* Release summary */
+  .release-summary {
+    padding: 6rem 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .release-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .summary-card {
+    min-width: 0;
+    padding: 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+  }
+
+  .summary-card span {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .summary-card strong {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--color-text);
+    font-size: 1rem;
+    font-family: var(--font-mono);
+    word-break: break-word;
+  }
+
+  .summary-card p {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  .summary-card code {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+  }
+
+  .actions-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+
   /* Responsive */
   @media (max-width: 768px) {
     .hero {
@@ -930,6 +1043,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     }
 
     .problem-grid,
+    .release-summary-grid,
     .tools-grid,
     .principles-grid {
       grid-template-columns: 1fr;

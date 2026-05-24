@@ -1,0 +1,1239 @@
+{
+  "packageName": "@miniidealab/openlogos",
+  "latestVersion": "0.9.26",
+  "updatedAt": "2026-05-24T01:58:33.768Z",
+  "generatedAt": "2026-05-24T01:58:33.768Z",
+  "versionCount": 61,
+  "distTags": {
+    "old": "0.9.8",
+    "latest": "0.9.26"
+  },
+  "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
+  "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
+  "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
+  "versions": [
+    {
+      "version": "0.9.26",
+      "publishedAt": "2026-05-24T01:58:33.634Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.26",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.26",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.26.tgz",
+      "gitHead": "a536a6e387754bcf37a27ab7eb9d5a91802d75d8",
+      "size": 289407,
+      "sizeLabel": "283 KB",
+      "unpackedSize": 1056894,
+      "unpackedSizeLabel": "1.0 MB",
+      "fileCount": 163,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ]
+    },
+    {
+      "version": "0.9.25",
+      "publishedAt": "2026-05-23T01:22:58.214Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.25",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.25",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.25.tgz",
+      "gitHead": "85c83f4fb57ded733213b211663578b4d7f33f04",
+      "size": 288235,
+      "sizeLabel": "281 KB",
+      "unpackedSize": 1052565,
+      "unpackedSizeLabel": "1.0 MB",
+      "fileCount": 163,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.24",
+      "publishedAt": "2026-05-21T02:04:40.817Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.24",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.24",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.24.tgz",
+      "gitHead": "f6d7f9d7c84029a2e15eea849dfcf58ae8f47871",
+      "size": 283119,
+      "sizeLabel": "276 KB",
+      "unpackedSize": 1028941,
+      "unpackedSizeLabel": "1005 KB",
+      "fileCount": 163,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.23",
+      "publishedAt": "2026-05-17T02:27:11.094Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.23",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.23",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.23.tgz",
+      "gitHead": "469e1614036cb0420ca857f39b37b84d4206e8f2",
+      "size": 262929,
+      "sizeLabel": "257 KB",
+      "unpackedSize": 942302,
+      "unpackedSizeLabel": "920 KB",
+      "fileCount": 157,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.22",
+      "publishedAt": "2026-05-17T01:34:54.686Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.22",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.22",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.22.tgz",
+      "gitHead": "6e6c077b3b17f13381550a3157886a68d978d0ac",
+      "size": 262648,
+      "sizeLabel": "256 KB",
+      "unpackedSize": 941168,
+      "unpackedSizeLabel": "919 KB",
+      "fileCount": 157,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.21",
+      "publishedAt": "2026-05-16T13:29:20.248Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.21",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.21",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.21.tgz",
+      "gitHead": "bfda450211c6f12535868f23f2e61c0e35827611",
+      "size": 261093,
+      "sizeLabel": "255 KB",
+      "unpackedSize": 935598,
+      "unpackedSizeLabel": "914 KB",
+      "fileCount": 157,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.20",
+      "publishedAt": "2026-05-13T12:44:59.927Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.20",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.20",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.20.tgz",
+      "gitHead": "fe30d16e6451b50b3d1a6964941c3daa9cfb8755",
+      "size": 262366,
+      "sizeLabel": "256 KB",
+      "unpackedSize": 929986,
+      "unpackedSizeLabel": "908 KB",
+      "fileCount": 157,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.19",
+      "publishedAt": "2026-05-13T11:59:40.285Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.19",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.19",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.19.tgz",
+      "gitHead": "61e1248a5a385917d020c80804f6dc5b2ed5e744",
+      "size": 262151,
+      "sizeLabel": "256 KB",
+      "unpackedSize": 929617,
+      "unpackedSizeLabel": "908 KB",
+      "fileCount": 157,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.18",
+      "publishedAt": "2026-05-13T10:16:56.311Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.18",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.18",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.18.tgz",
+      "gitHead": "9f5d37e497d027f8baacd05f006c3c7c4d8ade56",
+      "size": 262017,
+      "sizeLabel": "256 KB",
+      "unpackedSize": 929088,
+      "unpackedSizeLabel": "907 KB",
+      "fileCount": 157,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.17",
+      "publishedAt": "2026-05-13T09:52:59.990Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.17",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.17",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.17.tgz",
+      "gitHead": "e5877e3b33cb7017ac703e6b0a8f1a5fd027524f",
+      "size": 258403,
+      "sizeLabel": "252 KB",
+      "unpackedSize": 915560,
+      "unpackedSizeLabel": "894 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.16",
+      "publishedAt": "2026-05-13T07:36:08.241Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.16",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.16",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.16.tgz",
+      "gitHead": "6a8b6c82c8846cb73ba33f2a9476c4b52dfabcac",
+      "size": 257605,
+      "sizeLabel": "252 KB",
+      "unpackedSize": 912867,
+      "unpackedSizeLabel": "891 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.15",
+      "publishedAt": "2026-05-13T03:35:22.080Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.15",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.15",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.15.tgz",
+      "gitHead": "ab2630e5ca881ba42078b4735de5d572241e13ea",
+      "size": 255451,
+      "sizeLabel": "249 KB",
+      "unpackedSize": 904497,
+      "unpackedSizeLabel": "883 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.14",
+      "publishedAt": "2026-05-09T23:37:44.436Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.14",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.14",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.14.tgz",
+      "gitHead": "53487b82b6ee4073bfd9c1d239ba88a6c02e1362",
+      "size": 255441,
+      "sizeLabel": "249 KB",
+      "unpackedSize": 904380,
+      "unpackedSizeLabel": "883 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.13",
+      "publishedAt": "2026-05-09T13:25:28.669Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.13",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.13",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.13.tgz",
+      "gitHead": "c28eb9c2eb98a3fc4e9366ae6ae02c511f8b49d9",
+      "size": 255150,
+      "sizeLabel": "249 KB",
+      "unpackedSize": 902582,
+      "unpackedSizeLabel": "881 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.12",
+      "publishedAt": "2026-05-09T13:15:52.532Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.12",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.12",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.12.tgz",
+      "gitHead": "978fd10ab1b10e22a71755d972bd317e4815d6d5",
+      "size": 255073,
+      "sizeLabel": "249 KB",
+      "unpackedSize": 902261,
+      "unpackedSizeLabel": "881 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.11",
+      "publishedAt": "2026-05-09T11:19:23.424Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.11",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.11",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.11.tgz",
+      "gitHead": "59616eca0826b844de83edca924dce9040b48a27",
+      "size": 253839,
+      "sizeLabel": "248 KB",
+      "unpackedSize": 897858,
+      "unpackedSizeLabel": "877 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.10",
+      "publishedAt": "2026-05-09T05:28:00.813Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.10",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.10",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.10.tgz",
+      "gitHead": "6e54bb4db8bc89d03f469d25a04cbc174a0ce136",
+      "size": 253821,
+      "sizeLabel": "248 KB",
+      "unpackedSize": 897269,
+      "unpackedSizeLabel": "876 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.8",
+      "publishedAt": "2026-05-09T04:06:50.527Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.8",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.8",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.8.tgz",
+      "gitHead": "9d9125b8e92cc253ce5d91f1ba633b201623aeb3",
+      "size": 251311,
+      "sizeLabel": "245 KB",
+      "unpackedSize": 897061,
+      "unpackedSizeLabel": "876 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "old"
+      ]
+    },
+    {
+      "version": "0.9.9",
+      "publishedAt": "2026-05-09T04:03:07.472Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.9",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.9",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.9.tgz",
+      "gitHead": "9d9125b8e92cc253ce5d91f1ba633b201623aeb3",
+      "size": 251309,
+      "sizeLabel": "245 KB",
+      "unpackedSize": 897061,
+      "unpackedSizeLabel": "876 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.7",
+      "publishedAt": "2026-05-08T03:41:24.147Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.7",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.7",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.7.tgz",
+      "gitHead": "53d2b97d703b748b556a818e8a161e47db1efc34",
+      "size": 250325,
+      "sizeLabel": "244 KB",
+      "unpackedSize": 894312,
+      "unpackedSizeLabel": "873 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.6",
+      "publishedAt": "2026-05-08T02:22:30.721Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.6",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.6",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.6.tgz",
+      "gitHead": "83f1284c20f52c6fb7a5b379e8bf22446609e309",
+      "size": 248630,
+      "sizeLabel": "243 KB",
+      "unpackedSize": 887806,
+      "unpackedSizeLabel": "867 KB",
+      "fileCount": 156,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.5",
+      "publishedAt": "2026-04-30T08:43:24.680Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.5",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.5",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.5.tgz",
+      "gitHead": "bba8f6f9daa39683baf80898d6bc96b216b0ce42",
+      "size": 198395,
+      "sizeLabel": "194 KB",
+      "unpackedSize": 723127,
+      "unpackedSizeLabel": "706 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.4",
+      "publishedAt": "2026-04-30T05:35:15.400Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.4",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.4",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.4.tgz",
+      "gitHead": "8b1d86d613ade06c33d11ffe3630c5d012e660c5",
+      "size": 196662,
+      "sizeLabel": "192 KB",
+      "unpackedSize": 716931,
+      "unpackedSizeLabel": "700 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.3",
+      "publishedAt": "2026-04-30T05:05:57.236Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.3",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.3",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.3.tgz",
+      "gitHead": "e0620c28d36aac060a1ffd680239fcb6976be621",
+      "size": 196542,
+      "sizeLabel": "192 KB",
+      "unpackedSize": 716639,
+      "unpackedSizeLabel": "700 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.2",
+      "publishedAt": "2026-04-29T11:49:45.745Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.2.tgz",
+      "gitHead": "c65efc7e20bb03a63f6cd78cc66305d43b3c3428",
+      "size": 196505,
+      "sizeLabel": "192 KB",
+      "unpackedSize": 716541,
+      "unpackedSizeLabel": "700 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.1",
+      "publishedAt": "2026-04-29T10:46:16.349Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.1",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.1",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.1.tgz",
+      "gitHead": "ff321274d0e63828383d8476c5aee9402775630c",
+      "size": 194896,
+      "sizeLabel": "190 KB",
+      "unpackedSize": 711291,
+      "unpackedSizeLabel": "695 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.9.0",
+      "publishedAt": "2026-04-29T08:29:42.270Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.0.tgz",
+      "gitHead": "fe12208455542a86324f7861bb7ac4283f449615",
+      "size": 194894,
+      "sizeLabel": "190 KB",
+      "unpackedSize": 711291,
+      "unpackedSizeLabel": "695 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.8.2",
+      "publishedAt": "2026-04-28T03:03:37.305Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.8.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.8.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.8.2.tgz",
+      "gitHead": "7c16ed3e76a02f64cbb1699db47b3693e737a9e3",
+      "size": 192988,
+      "sizeLabel": "188 KB",
+      "unpackedSize": 705365,
+      "unpackedSizeLabel": "689 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.8.1",
+      "publishedAt": "2026-04-27T13:57:37.863Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.8.1",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.8.1",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.8.1.tgz",
+      "gitHead": "7c16ed3e76a02f64cbb1699db47b3693e737a9e3",
+      "size": 190663,
+      "sizeLabel": "186 KB",
+      "unpackedSize": 697807,
+      "unpackedSizeLabel": "681 KB",
+      "fileCount": 129,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.8.0",
+      "publishedAt": "2026-04-25T03:11:29.472Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.8.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.8.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.8.0.tgz",
+      "gitHead": "8b2c68000f99bad7d0ae5df56ac1c2cdaffb654b",
+      "size": 182055,
+      "sizeLabel": "178 KB",
+      "unpackedSize": 650546,
+      "unpackedSizeLabel": "635 KB",
+      "fileCount": 125,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": []
+    },
+    {
+      "version": "0.7.3",
+      "publishedAt": "2026-04-22T05:28:40.492Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.7.3",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.7.3",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.7.3.tgz",
+      "gitHead": "8b2c68000f99bad7d0ae5df56ac1c2cdaffb654b",
+      "size": 165494,
+      "sizeLabel": "162 KB",
+      "unpackedSize": 566738,
+      "unpackedSizeLabel": "553 KB",
+      "fileCount": 113,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.7.2",
+      "publishedAt": "2026-04-21T00:45:11.059Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.7.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.7.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.7.2.tgz",
+      "gitHead": "11720b0705f6336a69d3bbd9bd9373d2ef16396d",
+      "size": 165306,
+      "sizeLabel": "161 KB",
+      "unpackedSize": 566292,
+      "unpackedSizeLabel": "553 KB",
+      "fileCount": 113,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.7.1",
+      "publishedAt": "2026-04-21T00:40:33.705Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.7.1",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.7.1",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.7.1.tgz",
+      "gitHead": "2e280123104329c28abad9fa7f2275920f53de47",
+      "size": 165220,
+      "sizeLabel": "161 KB",
+      "unpackedSize": 566166,
+      "unpackedSizeLabel": "553 KB",
+      "fileCount": 113,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.7.0",
+      "publishedAt": "2026-04-20T23:12:39.656Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.7.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.7.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.7.0.tgz",
+      "gitHead": "52c9424042dde6ad2c7b15d7d75f022c1e0c80eb",
+      "size": 165119,
+      "sizeLabel": "161 KB",
+      "unpackedSize": 565614,
+      "unpackedSizeLabel": "552 KB",
+      "fileCount": 113,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.6.6",
+      "publishedAt": "2026-04-20T09:31:34.102Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.6.6",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.6.6",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.6.6.tgz",
+      "gitHead": "0c4a05d31d4f55e648a89c7119575c5412c841b1",
+      "size": 163836,
+      "sizeLabel": "160 KB",
+      "unpackedSize": 562002,
+      "unpackedSizeLabel": "549 KB",
+      "fileCount": 113,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.6.5",
+      "publishedAt": "2026-04-17T01:06:10.632Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.6.5",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.6.5",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.6.5.tgz",
+      "gitHead": "9fa92dc38cedef0297ad6af691e1d7bd4964cf4a",
+      "size": 163428,
+      "sizeLabel": "160 KB",
+      "unpackedSize": 560300,
+      "unpackedSizeLabel": "547 KB",
+      "fileCount": 113,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.6.4",
+      "publishedAt": "2026-04-16T02:13:43.414Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.6.4",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.6.4",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.6.4.tgz",
+      "gitHead": "1d1af7279a4568b51453ffda053ab0bcee66a5fd",
+      "size": 159565,
+      "sizeLabel": "156 KB",
+      "unpackedSize": 545085,
+      "unpackedSizeLabel": "532 KB",
+      "fileCount": 108,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.6.3",
+      "publishedAt": "2026-04-14T02:12:52.030Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.6.3",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.6.3",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.6.3.tgz",
+      "gitHead": "d9913651a70caa43973eab9ca05aff4d19d58041",
+      "size": 153666,
+      "sizeLabel": "150 KB",
+      "unpackedSize": 522992,
+      "unpackedSizeLabel": "511 KB",
+      "fileCount": 104,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.6.2",
+      "publishedAt": "2026-04-14T02:02:59.358Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.6.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.6.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.6.2.tgz",
+      "gitHead": "af421c1b3827d38e271ded61383742ae89d8a57f",
+      "size": 153667,
+      "sizeLabel": "150 KB",
+      "unpackedSize": 522992,
+      "unpackedSizeLabel": "511 KB",
+      "fileCount": 104,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.6.1",
+      "publishedAt": "2026-04-14T01:55:50.588Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.6.1",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.6.1",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.6.1.tgz",
+      "gitHead": "79b00be7b6bf3a03e754d82cd4ccfdf170d31659",
+      "size": 153653,
+      "sizeLabel": "150 KB",
+      "unpackedSize": 522934,
+      "unpackedSizeLabel": "511 KB",
+      "fileCount": 104,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.6.0",
+      "publishedAt": "2026-04-14T00:15:24.876Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.6.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.6.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.6.0.tgz",
+      "gitHead": "a2a11e74761925218753d8f275f5173eb3dee438",
+      "size": 152955,
+      "sizeLabel": "149 KB",
+      "unpackedSize": 520096,
+      "unpackedSizeLabel": "508 KB",
+      "fileCount": 104,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.10",
+      "publishedAt": "2026-04-13T13:31:21.239Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.10",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.10",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.10.tgz",
+      "gitHead": "251ace1ad07efbc3d594001fafadbf8cf9c05ad1",
+      "size": 151801,
+      "sizeLabel": "148 KB",
+      "unpackedSize": 515013,
+      "unpackedSizeLabel": "503 KB",
+      "fileCount": 104,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.9",
+      "publishedAt": "2026-04-12T03:34:22.604Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.9",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.9",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.9.tgz",
+      "gitHead": "fb39bb5cb9f5d1dcc7781bc40fa02bef8b36027e",
+      "size": 144323,
+      "sizeLabel": "141 KB",
+      "unpackedSize": 484038,
+      "unpackedSizeLabel": "473 KB",
+      "fileCount": 95,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.8",
+      "publishedAt": "2026-04-09T07:52:50.648Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.8",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.8",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.8.tgz",
+      "gitHead": "c439bfcb263a61be945747fd788f9d3c0920ca1d",
+      "size": 136489,
+      "sizeLabel": "133 KB",
+      "unpackedSize": 460626,
+      "unpackedSizeLabel": "450 KB",
+      "fileCount": 93,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.7",
+      "publishedAt": "2026-04-09T04:40:06.230Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.7",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.7",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.7.tgz",
+      "gitHead": "756671a31c103eba90279bf4dc407bdcef43fb3a",
+      "size": 135567,
+      "sizeLabel": "132 KB",
+      "unpackedSize": 458221,
+      "unpackedSizeLabel": "447 KB",
+      "fileCount": 92,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.6",
+      "publishedAt": "2026-04-09T01:10:25.184Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.6",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.6",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.6.tgz",
+      "gitHead": "a93ddf63fc420538f2a2099bc32aff591db8cc23",
+      "size": 133858,
+      "sizeLabel": "131 KB",
+      "unpackedSize": 453520,
+      "unpackedSizeLabel": "443 KB",
+      "fileCount": 92,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.5",
+      "publishedAt": "2026-04-09T00:59:49.329Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.5",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.5",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.5.tgz",
+      "gitHead": "1d6954ecc51456539b40c918c5ff8aea6a6fea24",
+      "size": 132427,
+      "sizeLabel": "129 KB",
+      "unpackedSize": 448885,
+      "unpackedSizeLabel": "438 KB",
+      "fileCount": 83,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.4",
+      "publishedAt": "2026-04-08T03:12:17.930Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.4",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.4",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.4.tgz",
+      "gitHead": "74be730a4c03a0005b4136d8546ea150a63fe42c",
+      "size": 126442,
+      "sizeLabel": "123 KB",
+      "unpackedSize": 427377,
+      "unpackedSizeLabel": "417 KB",
+      "fileCount": 81,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.3",
+      "publishedAt": "2026-04-08T02:42:15.675Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.3",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.3",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.3.tgz",
+      "gitHead": "5cc8d273e2581aedd52e9303505f6d950a3c5d3a",
+      "size": 126354,
+      "sizeLabel": "123 KB",
+      "unpackedSize": 426745,
+      "unpackedSizeLabel": "417 KB",
+      "fileCount": 81,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.5.0",
+      "publishedAt": "2026-04-07T11:51:17.410Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.5.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.5.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.5.0.tgz",
+      "gitHead": "43cc39ae48b34ed1230b8730d76e4b967107baca",
+      "size": 105405,
+      "sizeLabel": "103 KB",
+      "unpackedSize": 364302,
+      "unpackedSizeLabel": "356 KB",
+      "fileCount": 73,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.4.3",
+      "publishedAt": "2026-04-07T06:50:43.460Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.4.3",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.4.3",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.4.3.tgz",
+      "gitHead": "14d3257746f2b1955904ebed9ea574a1926a7bba",
+      "size": 102008,
+      "sizeLabel": "100 KB",
+      "unpackedSize": 352632,
+      "unpackedSizeLabel": "344 KB",
+      "fileCount": 65,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.4.1",
+      "publishedAt": "2026-04-07T06:36:14.578Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.4.1",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.4.1",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.4.1.tgz",
+      "gitHead": "6426119b8f5c2f530563524aa71f67202c054bb6",
+      "size": 101806,
+      "sizeLabel": "99 KB",
+      "unpackedSize": 351561,
+      "unpackedSizeLabel": "343 KB",
+      "fileCount": 65,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.4.0",
+      "publishedAt": "2026-04-07T03:14:52.700Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.4.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.4.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.4.0.tgz",
+      "gitHead": "71d0b276d49ad7eac4532faefddb2b7f92aabda9",
+      "size": 101331,
+      "sizeLabel": "99 KB",
+      "unpackedSize": 349335,
+      "unpackedSizeLabel": "341 KB",
+      "fileCount": 65,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.3.6",
+      "publishedAt": "2026-04-07T01:25:50.736Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.3.6",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.3.6",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.3.6.tgz",
+      "gitHead": "a596236779abccbdc846f8ac38211c91aa1cdd28",
+      "size": 101123,
+      "sizeLabel": "99 KB",
+      "unpackedSize": 348650,
+      "unpackedSizeLabel": "340 KB",
+      "fileCount": 65,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.3.5",
+      "publishedAt": "2026-04-06T14:04:34.493Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.3.5",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.3.5",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.3.5.tgz",
+      "gitHead": "6546e7e7d4ab17def628fa2ef1bd83dc3042d957",
+      "size": 100036,
+      "sizeLabel": "98 KB",
+      "unpackedSize": 342717,
+      "unpackedSizeLabel": "335 KB",
+      "fileCount": 65,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.3.4",
+      "publishedAt": "2026-04-06T12:15:08.199Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.3.4",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.3.4",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.3.4.tgz",
+      "gitHead": "b20443c747ca8cf483e00029e5535f3bab13b313",
+      "size": 97642,
+      "sizeLabel": "95 KB",
+      "unpackedSize": 336026,
+      "unpackedSizeLabel": "328 KB",
+      "fileCount": 65,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.3.3",
+      "publishedAt": "2026-04-06T11:24:16.673Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.3.3",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.3.3",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.3.3.tgz",
+      "gitHead": "14412d4e880609fda3e213a3aabf59c9a3a3ba4a",
+      "size": 96092,
+      "sizeLabel": "94 KB",
+      "unpackedSize": 332220,
+      "unpackedSizeLabel": "324 KB",
+      "fileCount": 65,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.3.2",
+      "publishedAt": "2026-04-06T10:57:41.488Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.3.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.3.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.3.2.tgz",
+      "gitHead": "a6482c6ffde116e6a8e99a19ea9132155b6d2ef7",
+      "size": 94347,
+      "sizeLabel": "92 KB",
+      "unpackedSize": 323195,
+      "unpackedSizeLabel": "316 KB",
+      "fileCount": 61,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.3.1",
+      "publishedAt": "2026-04-06T09:10:59.885Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.3.1",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.3.1",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.3.1.tgz",
+      "gitHead": "2b0e3f5e575b0bc72be73a3221704b2596b4a01f",
+      "size": 94184,
+      "sizeLabel": "92 KB",
+      "unpackedSize": 322564,
+      "unpackedSizeLabel": "315 KB",
+      "fileCount": 61,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.3.0",
+      "publishedAt": "2026-04-05T15:19:32.765Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.3.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.3.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.3.0.tgz",
+      "gitHead": "b387910f26f98e13ae2694bbfa7055eb944c5ca0",
+      "size": 59446,
+      "sizeLabel": "58 KB",
+      "unpackedSize": 212376,
+      "unpackedSizeLabel": "207 KB",
+      "fileCount": 49,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    },
+    {
+      "version": "0.2.0",
+      "publishedAt": "2026-04-05T11:45:49.523Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.2.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.2.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.2.0.tgz",
+      "gitHead": "c39c1850f50e8d32018e33c01264de9731ff84ed",
+      "size": 24447,
+      "sizeLabel": "24 KB",
+      "unpackedSize": 112946,
+      "unpackedSizeLabel": "110 KB",
+      "fileCount": 37,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {},
+      "distTags": []
+    }
+  ]
+}
