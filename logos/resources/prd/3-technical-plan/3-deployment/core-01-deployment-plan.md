@@ -50,6 +50,13 @@ graph TB
 ## 八、冒烟测试方案
 见 `logos/resources/test/smoke/core-smoke-test-cases.md`。
 
+部署进度摘要面板是 CLI 的展示能力，不改变部署拓扑、环境变量或发布命令本身。
+但是，本次发布后的检查清单必须增加一项：
+
+- `openlogos status --format json` 能输出 `deployment_progress` 和 `deployment_document`
+- `deployment_progress` 只统计当前提案 `tasks.md` 的 `[deploy]` section
+- `deployment_document` 必须指向当前提案的 `tasks.md`
+
 ## 九、门禁结论
 本项目需要发布与部署方案；CLI 发布由 tag 驱动，npm publish 与 GitHub Release 同步生成。部署执行和 smoke 必须由用户明确授权。
 
@@ -63,8 +70,9 @@ graph TB
 4. `openlogos smoke` 只在部署完成且提案级 `smoke_required: true` 时执行。
 5. 若 `proposal.md` 与 `[deploy]` section 冲突，先修正提案，不执行部署。
 6. CLI 发布时必须保持 `cli/package.json`、`plugin/.claude-plugin/plugin.json`、`CHANGELOG.md` 和 Git tag `vX.Y.Z` 一致，GitHub Release 由同一 tag 自动生成。
+7. `openlogos status --format json` 输出的 `deployment_progress` 与 `deployment_document` 仅用于展示当前提案 `tasks.md` 的部署进度，不代表部署拓扑或发布门禁发生变化。
 
-本提案 `proposal-level-deploy-gate` 会修改 CLI 运行时代码，因此后续实现验收通过后需要按本方案构建、测试、打包，并由用户决定是否发布 npm 包。
+本提案 `deploy-progress-summary-panel` 会修改 CLI 运行时代码，因此后续实现验收通过后需要按本方案构建、测试、打包，并由用户决定是否发布 npm 包。
 
 ## 十一、官网发布动态构建策略
 - 官网构建前必须执行发布数据生成脚本，从 npm registry 读取 `@miniidealab/openlogos` 的 `dist-tags`、`versions` 和 `time`。
