@@ -3,7 +3,7 @@ import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
-import { launch } from '../src/commands/launch.js';
+import { launch, moduleDeploymentRequired } from '../src/commands/launch.js';
 
 function writeProjectYaml(root: string, data: Record<string, unknown>) {
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml(data, { lineWidth: 0 }));
@@ -354,5 +354,29 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     launch();
     const yaml = readProjectYaml(root);
     expect(yaml.modules[0].lifecycle).toBe('launched');
+  });
+});
+
+describe('S14 Unit Tests — launch gate helpers', () => {
+  it('UT-S14-01: deployment_required 逻辑按模块与门禁配置判断是否需要部署', () => {
+    expect(moduleDeploymentRequired(
+      { deployment_gates: { core: { deployment_required: false } } },
+      { id: 'core' },
+    )).toBe(false);
+
+    expect(moduleDeploymentRequired(
+      { deployment_gates: { core: { deployment_required: true } } },
+      { id: 'core', deployment_required: false },
+    )).toBe(false);
+
+    expect(moduleDeploymentRequired(
+      { deployment_gates: { core: { deployment_required: true } } },
+      { id: 'core', skip_phases: ['deployment'] },
+    )).toBe(false);
+
+    expect(moduleDeploymentRequired(
+      { deployment_gates: { core: { deployment_required: true } } },
+      { id: 'core' },
+    )).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ export interface NextModuleItem {
   active_change: string | null;
   proposal_step: ProposalStep | null;
   deployment_decision_conflict?: boolean;
+  deployment_decision_conflict_reason?: string | null;
   deployment_warnings?: string[];
 }
 
@@ -39,6 +40,7 @@ function buildModuleNextItem(
       slug: string;
       proposal_step: ProposalStep;
       deployment_decision_conflict?: boolean;
+      deployment_decision_conflict_reason?: string | null;
       deployment_warnings?: string[];
     } | null;
   },
@@ -57,6 +59,7 @@ function buildModuleNextItem(
           active_change: mod.active_change.slug,
           proposal_step: mod.active_change.proposal_step,
           deployment_decision_conflict: true,
+          deployment_decision_conflict_reason: mod.active_change.deployment_decision_conflict_reason ?? null,
           ...(mod.active_change.deployment_warnings ? { deployment_warnings: mod.active_change.deployment_warnings } : {}),
         };
       }
@@ -190,6 +193,7 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
           slug: m.active_change.slug,
           proposal_step: m.active_change.proposal_step,
           deployment_decision_conflict: m.active_change.deployment_decision_conflict,
+          deployment_decision_conflict_reason: m.active_change.deployment_decision_conflict_reason,
           deployment_warnings: m.active_change.deployment_warnings,
         } : null,
       },
@@ -215,7 +219,11 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
       if (activeModule?.active_change?.deployment_decision_conflict) {
         action = locale === 'zh' ? '修正部署决策冲突' : 'Fix deployment decision conflict';
         command = null;
-        detail = activeModule.active_change.deployment_warnings?.join(' ') || activeModule.suggestion;
+        detail = activeModule.active_change.deployment_decision_conflict_reason
+          || activeModule.active_change.deployment_warnings?.join(' ')
+          || (locale === 'zh'
+            ? 'proposal.md 与 tasks.md 的部署决策不一致，请先修正。'
+            : 'proposal.md and tasks.md disagree on deployment decisions — fix them first.');
       } else {
         const nextAction = actionForProposalStep(locale, data.proposal_step);
         action = nextAction.action;

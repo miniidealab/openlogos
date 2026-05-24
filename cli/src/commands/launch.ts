@@ -19,7 +19,7 @@ function reportHasPass(path: string): boolean {
   }
 }
 
-function moduleDeploymentRequired(yaml: Record<string, unknown>, mod: { id: string; deployment_required?: boolean; skip_phases?: string[] }): boolean {
+export function moduleDeploymentRequired(yaml: Record<string, unknown>, mod: { id: string; deployment_required?: boolean; skip_phases?: string[] }): boolean {
   if (mod.deployment_required === false) return false;
   if (Array.isArray(mod.skip_phases) && mod.skip_phases.includes('deployment')) return false;
   const gates = yaml.deployment_gates && typeof yaml.deployment_gates === 'object'

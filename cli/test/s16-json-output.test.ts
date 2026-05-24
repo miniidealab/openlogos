@@ -11,7 +11,7 @@ import { VERSION, parseFormat, makeEnvelope, makeErrorEnvelope } from '../src/li
 /* ========== Unit Tests — json-output helpers ========== */
 
 describe('JSON output — parseFormat', () => {
-  it('UT-JSON-01: returns "json" when --format json is present', () => {
+  it('UT-S16-01: returns "json" when --format json is present', () => {
     expect(parseFormat(['status', '--format', 'json'])).toBe('json');
   });
 
@@ -109,7 +109,7 @@ describe('JSON output — detect command', () => {
     cleanup();
   });
 
-  it('ST-JSON-01: detect --format json outputs valid JSON envelope', () => {
+  it('ST-S16-01: detect --format json outputs valid JSON envelope', () => {
     scaffoldProject(root);
     detect('json');
     expect(con.logs).toHaveLength(1);
@@ -531,6 +531,53 @@ describe('ST-JSON modules field contract', () => {
       deployment_reason: '仅更新文档，不需要发布运行产物',
       deployment_decision_source: 'proposal',
       deployment_decision_conflict: false,
+      deployment_decision_conflict_reason: null,
     });
+  });
+
+  it('ST-S11-11: status --format json exposes conflict reason when proposal/tasks disagree', () => {
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+        deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+      }),
+    );
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'conflict', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'conflict');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：conflict',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：仅更新文档，不需要发布运行产物',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '补充文档。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    const con = captureConsole();
+    status('json');
+    con.restore();
+    const out = JSON.parse(con.logs[0]);
+    const active = out.data.modules[0].active_change;
+
+    expect(active.deployment_decision_conflict).toBe(true);
+    expect(active.deployment_decision_conflict_reason).toContain('部署决策冲突');
   });
 });

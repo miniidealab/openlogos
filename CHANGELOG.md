@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.27] - 2026-05-24
+
+### Changed
+
+- **发布版本提升到 0.9.27** — 本次发版包含 `deploy-progress-summary-panel` 的 CLI 适配、部署进度摘要字段和冲突态门禁加固。
+
+## [0.9.26] - 2026-05-24
+
+### Changed
+
+- **发布版本提升到 0.9.26** — 本次发版包含 `proposal-deploy-consistency-hardening` 的 CLI 适配与提案级部署门禁加固。
+
 ## [0.9.24] - 2026-05-21
 
 ### Added
@@ -534,7 +546,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.27...HEAD
+[0.9.27]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.27
+[0.9.26]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.26
 [0.9.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.5
 [0.9.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.4
 [0.9.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.3

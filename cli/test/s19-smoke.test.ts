@@ -185,4 +185,44 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(out).toMatch(/archive/i);
     expect(out).not.toContain('openlogos smoke');
   });
+
+  it('ST-S19-05: deployment decision conflict blocks smoke transition', () => {
+    writeLaunchedModule();
+    const proposalDir = join(root, 'logos', 'changes', 'conflict');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'conflict', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：conflict',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：仅更新文档，不需要发布运行产物',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '补充文档。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    const step = detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true });
+    expect(step).toBe('verify-passed');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toContain('部署决策冲突');
+    expect(out).not.toContain('openlogos smoke');
+    expect(out).not.toMatch(/archive/i);
+  });
 });

@@ -9,6 +9,8 @@ import {
   status,
   parseProposalDeploymentDecision,
   resolveProposalDeploymentDecision,
+  resolveDeploymentDocument,
+  resolveDeploymentProgress,
 } from '../src/commands/status.js';
 
 /* ========== Unit Tests ========== */
@@ -124,6 +126,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     const decision = resolveProposalDeploymentDecision(proposalDir);
 
     expect(decision.deployment_decision_conflict).toBe(true);
+    expect(decision.deployment_decision_conflict_reason).toContain('部署决策冲突');
     expect(decision.deployment_warnings.join('\n')).toContain('[deploy]');
   });
 
@@ -148,6 +151,45 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     expect(decision.deployment_required).toBe(false);
     expect(decision.smoke_required).toBe(false);
     expect(decision.deployment_decision_source).toBe('proposal');
+  });
+
+  it('UT-S11-14: deployment_progress only counts [deploy] section', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 实现 src/xxx',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+      '- [ ] 验证 staging',
+    ].join('\n'));
+
+    const progress = resolveDeploymentProgress(proposalDir);
+
+    expect(progress).toEqual({
+      checked: 1,
+      total: 2,
+      percent: 50,
+      status: 'pending',
+      label: '1/2',
+    });
+  });
+
+  it('UT-S11-15: deployment_document points to tasks.md', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
+
+    const document = resolveDeploymentDocument(root, 'runtime-change');
+
+    expect(document).toEqual({
+      path: 'logos/changes/runtime-change/tasks.md',
+      name: 'tasks.md',
+      exists: true,
+    });
   });
 });
 
@@ -653,6 +695,101 @@ describe('S11 Scenario Tests — status command', () => {
     expect(active.deployment_reason).toBe('仅更新文档，不需要发布运行产物');
     expect(active.deployment_decision_source).toBe('proposal');
     expect(active.deployment_decision_conflict).toBe(false);
+    expect(active.deployment_decision_conflict_reason).toBeNull();
+  });
+
+  it('ST-S11-12: status JSON exposes deployment progress and document entry', () => {
+    const proposalDir = setupLaunchedProposal('runtime-change', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 变更业务代码',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+      '- [ ] 通知 RunLogos',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.deployment_progress).toEqual({
+      checked: 1,
+      total: 2,
+      percent: 50,
+      status: 'pending',
+      label: '1/2',
+    });
+    expect(active.deployment_document).toEqual({
+      path: 'logos/changes/runtime-change/tasks.md',
+      name: 'tasks.md',
+      exists: true,
+    });
+  });
+
+  it('ST-S11-13: deployment progress ignores [code] section tasks', () => {
+    const proposalDir = setupLaunchedProposal('runtime-change', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 完成业务代码',
+      '- [ ] 补充测试',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.deployment_progress).toEqual({
+      checked: 1,
+      total: 1,
+      percent: 100,
+      status: 'done',
+      label: '1/1',
+    });
+  });
+
+  it('ST-S11-11: status JSON exposes conflict reason when proposal/tasks disagree', () => {
+    const proposalDir = setupLaunchedProposal('conflict', NO_DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.deployment_decision_conflict).toBe(true);
+    expect(active.deployment_decision_conflict_reason).toContain('proposal.md 声明无需部署');
+    expect(active.deployment_required).toBe(false);
+    expect(active.smoke_required).toBe(false);
+  });
+
+  it('ST-S11-EX-6.3: missing deploy section downgrades deployment progress to unavailable', () => {
+    const proposalDir = setupLaunchedProposal('needs-deploy-no-section', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 完成业务代码',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.deployment_decision_conflict).toBe(true);
+    expect(active.deployment_progress.status).toBe('unavailable');
+    expect(active.deployment_progress.label).toBe('0/0');
   });
 
   it('ST-S11-EX-6.1: legacy proposal falls back to compatible deployment source', () => {

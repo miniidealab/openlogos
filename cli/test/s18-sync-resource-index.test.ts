@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { makeTempRoot, scaffoldProject, mockCwd } from './helpers.js';
 import { inferResourceDesc } from '../src/lib/sync-resource-index.js';
+import { syncResourceIndex } from '../src/lib/sync-resource-index.js';
 
 describe('S18 Unit Tests — sync-resource-index inferResourceDesc', () => {
 
@@ -133,5 +137,35 @@ describe('S18 Unit Tests — sync-resource-index inferResourceDesc', () => {
     const desc = inferResourceDesc('spec/module-naming-convention.md', 'en');
     expect(desc).not.toBeNull();
     expect(desc).toContain('spec');
+  });
+});
+
+describe('S18 Scenario Tests — resource_index sync', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root, { locale: 'zh' });
+    restoreCwd = mockCwd(root);
+  });
+
+  afterEach(() => {
+    restoreCwd();
+    cleanup();
+  });
+
+  it('ST-S18-01: 补录 resource_index', () => {
+    const testDir = join(root, 'logos', 'resources', 'test');
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(join(testDir, 'core-S99-test-cases.md'), '# demo');
+
+    const result = syncResourceIndex(root, 'zh');
+    expect(result.added).toBeGreaterThan(0);
+
+    const yaml = readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8');
+    expect(yaml).toContain('path: logos/resources/test/core-S99-test-cases.md');
+    expect(yaml).toContain('测试用例');
   });
 });

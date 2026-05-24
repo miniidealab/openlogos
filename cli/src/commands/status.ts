@@ -55,7 +55,24 @@ export interface ProposalDeploymentDecision {
   deployment_reason: string | null;
   deployment_decision_source: DeploymentDecisionSource;
   deployment_decision_conflict: boolean;
+  deployment_decision_conflict_reason: string | null;
   deployment_warnings: string[];
+}
+
+export type DeploymentProgressStatus = 'pending' | 'done' | 'empty' | 'unavailable';
+
+export interface DeploymentProgress {
+  checked: number;
+  total: number;
+  percent: number;
+  status: DeploymentProgressStatus;
+  label: string;
+}
+
+export interface DeploymentDocument {
+  path: string;
+  name: 'tasks.md';
+  exists: boolean;
 }
 
 interface ScenarioCoverage {
@@ -91,6 +108,9 @@ export interface ModuleStatusItem {
     deployment_reason: string | null;
     deployment_decision_source: DeploymentDecisionSource;
     deployment_decision_conflict: boolean;
+    deployment_decision_conflict_reason: string | null;
+    deployment_progress: DeploymentProgress;
+    deployment_document: DeploymentDocument;
     deployment_warnings?: string[];
     deploy_tasks?: TaskItem[];
   } | null;
@@ -330,8 +350,20 @@ export function parseProposalDeploymentDecision(content: string): Pick<
   };
 }
 
+function getTaskSectionSummary(
+  tasksContent: string,
+  tag: string,
+): { summary: { checked: number; total: number } | null; present: boolean } {
+  const sections = parseTaskSections(tasksContent);
+  const present = sections !== null && Object.prototype.hasOwnProperty.call(sections, tag);
+  return {
+    summary: getSectionSummary(sections, tag),
+    present,
+  };
+}
+
 function getDeploySectionSummary(tasksContent: string): { checked: number; total: number } | null {
-  return getSectionSummary(parseTaskSections(tasksContent), 'deploy');
+  return getTaskSectionSummary(tasksContent, 'deploy').summary;
 }
 
 function deploymentConflictWarning(deploymentRequired: boolean, hasDeploySection: boolean): string | null {
@@ -342,6 +374,72 @@ function deploymentConflictWarning(deploymentRequired: boolean, hasDeploySection
     return '部署决策冲突：proposal.md 声明需要部署，但 tasks.md 缺少 [deploy] section。请先修正 proposal / tasks。';
   }
   return null;
+}
+
+export function resolveDeploymentProgress(proposalDir: string): DeploymentProgress {
+  const tasksPath = join(proposalDir, 'tasks.md');
+  if (!existsSync(tasksPath)) {
+    return {
+      checked: 0,
+      total: 0,
+      percent: 0,
+      status: 'unavailable',
+      label: '0/0',
+    };
+  }
+
+  let tasksContent: string;
+  try {
+    tasksContent = readFileSync(tasksPath, 'utf-8');
+  } catch {
+    return {
+      checked: 0,
+      total: 0,
+      percent: 0,
+      status: 'unavailable',
+      label: '0/0',
+    };
+  }
+
+  const { summary, present } = getTaskSectionSummary(tasksContent, 'deploy');
+  if (!present) {
+    return {
+      checked: 0,
+      total: 0,
+      percent: 0,
+      status: 'unavailable',
+      label: '0/0',
+    };
+  }
+
+  if (!summary || summary.total === 0) {
+    return {
+      checked: 0,
+      total: 0,
+      percent: 0,
+      status: 'empty',
+      label: '0/0',
+    };
+  }
+
+  const checked = summary.checked;
+  const total = summary.total;
+  return {
+    checked,
+    total,
+    percent: Math.round((checked / total) * 100),
+    status: checked >= total ? 'done' : 'pending',
+    label: `${checked}/${total}`,
+  };
+}
+
+export function resolveDeploymentDocument(root: string, proposalSlug: string): DeploymentDocument {
+  const relativePath = `logos/changes/${proposalSlug}/tasks.md`;
+  return {
+    path: relativePath,
+    name: 'tasks.md',
+    exists: existsSync(join(root, relativePath)),
+  };
 }
 
 function readProposalDeploymentDecision(
@@ -358,8 +456,8 @@ export function resolveProposalDeploymentDecision(
 ): ProposalDeploymentDecision {
   const tasksPath = join(proposalDir, 'tasks.md');
   const tasksContent = existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '';
-  const deploySection = getDeploySectionSummary(tasksContent);
-  const hasDeploySection = Boolean(deploySection && deploySection.total > 0);
+  const { summary: deploySection, present: hasDeploySection } = getTaskSectionSummary(tasksContent, 'deploy');
+  const hasDeployTasks = Boolean(deploySection && deploySection.total > 0);
   const proposalDecision = readProposalDeploymentDecision(proposalDir);
 
   if (proposalDecision && proposalDecision.deployment_required !== null) {
@@ -370,17 +468,19 @@ export function resolveProposalDeploymentDecision(
       deployment_reason: proposalDecision.deployment_reason,
       deployment_decision_source: 'proposal',
       deployment_decision_conflict: warning !== null,
+      deployment_decision_conflict_reason: warning,
       deployment_warnings: warning ? [warning] : [],
     };
   }
 
-  if (hasDeploySection) {
+  if (hasDeployTasks) {
     return {
       deployment_required: true,
       smoke_required: moduleDefaults.smoke_required ?? null,
       deployment_reason: '历史提案依据 tasks.md 的 [deploy] section 回退判断需要部署。',
       deployment_decision_source: 'tasks',
       deployment_decision_conflict: false,
+      deployment_decision_conflict_reason: null,
       deployment_warnings: [],
     };
   }
@@ -392,19 +492,21 @@ export function resolveProposalDeploymentDecision(
       deployment_reason: '历史提案缺少结构化部署影响，使用模块级默认部署门禁。',
       deployment_decision_source: 'module-default',
       deployment_decision_conflict: false,
+      deployment_decision_conflict_reason: null,
       deployment_warnings: [],
     };
   }
 
-  return {
-    deployment_required: false,
-    smoke_required: false,
-    deployment_reason: '历史提案缺少结构化部署影响，依据无 [deploy] section 回退判断无需部署。',
-    deployment_decision_source: 'legacy-fallback',
-    deployment_decision_conflict: false,
-    deployment_warnings: [],
-  };
-}
+    return {
+      deployment_required: false,
+      smoke_required: false,
+      deployment_reason: '历史提案缺少结构化部署影响，依据无 [deploy] section 回退判断无需部署。',
+      deployment_decision_source: 'legacy-fallback',
+      deployment_decision_conflict: false,
+      deployment_decision_conflict_reason: null,
+      deployment_warnings: [],
+    };
+  }
 
 function getSectionSummary(
   sections: Record<string, { checked: number; total: number }> | null,
@@ -634,13 +736,16 @@ function buildModuleStatusItem(
       const deploymentDecision = existsSync(proposalDir)
         ? resolveProposalDeploymentDecision(proposalDir, mod)
         : {
-          deployment_required: null,
-          smoke_required: null,
-          deployment_reason: null,
-          deployment_decision_source: 'legacy-fallback' as const,
-          deployment_decision_conflict: false,
-          deployment_warnings: [],
-        };
+            deployment_required: null,
+            smoke_required: null,
+            deployment_reason: null,
+            deployment_decision_source: 'legacy-fallback' as const,
+            deployment_decision_conflict: false,
+            deployment_decision_conflict_reason: null,
+            deployment_warnings: [],
+          };
+      const deploymentProgress = resolveDeploymentProgress(proposalDir);
+      const deploymentDocument = resolveDeploymentDocument(root, guardActiveChange);
       const step = existsSync(proposalDir) ? detectProposalStep(proposalDir, mod) : 'writing';
       const stepLabel = t(locale as Parameters<typeof t>[0], `status.proposalStep.${step}`);
       const hasProposal = existsSync(join(proposalDir, 'proposal.md'));
@@ -664,6 +769,9 @@ function buildModuleStatusItem(
         deployment_reason: deploymentDecision.deployment_reason,
         deployment_decision_source: deploymentDecision.deployment_decision_source,
         deployment_decision_conflict: deploymentDecision.deployment_decision_conflict,
+        deployment_decision_conflict_reason: deploymentDecision.deployment_decision_conflict_reason,
+        deployment_progress: deploymentProgress,
+        deployment_document: deploymentDocument,
         ...(deploymentDecision.deployment_warnings.length > 0
           ? { deployment_warnings: deploymentDecision.deployment_warnings }
           : {}),
@@ -1023,6 +1131,8 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
           console.log(`  🔄  ${m.id} (${m.name})  [launched]`);
           console.log(`       ${t(locale, 'status.activeChange')}: ${ac.slug}  →  ${ac.proposal_step_label}`);
           console.log(`       tasks: ${ac.tasks_checked}/${ac.tasks_total}  deltas: ${ac.delta_count}`);
+          console.log(`       deployment: ${ac.deployment_progress.status} ${ac.deployment_progress.label} (${ac.deployment_progress.percent}%)`);
+          console.log(`       document: ${ac.deployment_document.name} → ${ac.deployment_document.path}${ac.deployment_document.exists ? '' : ' (missing)'}`);
           if (ac.deployment_warnings) {
             for (const warning of ac.deployment_warnings) {
               console.log(`       ⚠ ${warning}`);

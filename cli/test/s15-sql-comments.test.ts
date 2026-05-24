@@ -185,3 +185,30 @@ CREATE UNIQUE INDEX idx_users_name ON users (name);`;
     expect(result.tables[0].columns).toHaveLength(1);
   });
 });
+
+describe('S15 Scenario Tests — SQL comment parsing', () => {
+  it('ST-S15-01: 提取表与字段元数据', () => {
+    const sql = `
+CREATE TABLE users (
+  -- @comment User unique identifier
+  id TEXT PRIMARY KEY NOT NULL,
+  -- @comment User email address
+  email TEXT NOT NULL UNIQUE,
+  -- @comment Account status
+  status TEXT NOT NULL DEFAULT 'active',
+  FOREIGN KEY (email) REFERENCES contacts (email)
+);
+-- @table-comment users Core user information table`;
+
+    const result = parseSqlComments(sql);
+
+    expect(result.tables).toHaveLength(1);
+    expect(result.tables[0].name).toBe('users');
+    expect(result.tables[0].comment).toBe('Core user information table');
+    expect(result.tables[0].columns).toEqual([
+      { name: 'id', comment: 'User unique identifier' },
+      { name: 'email', comment: 'User email address' },
+      { name: 'status', comment: 'Account status' },
+    ]);
+  });
+});

@@ -666,4 +666,54 @@ describe('S05 Scenario Tests — next --format json', () => {
     expect(out).toContain('tasks.md');
     expect(out).not.toMatch(/authorize deployment|授权执行部署/i);
   });
+
+  it('ST-S05-EX-4.2: next JSON exposes conflict action instead of deployment action', () => {
+    writeLaunchedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'conflict', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'conflict');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), NO_DEPLOY_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    next('json');
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.modules[0].action).toContain('Fix deployment decision conflict');
+    expect(parsed.data.modules[0].deployment_decision_conflict).toBe(true);
+    expect(parsed.data.modules[0].detail).toContain('proposal.md');
+    expect(parsed.data.proposal_step).toBe('verify-passed');
+  });
+
+  it('ST-S05-05: next JSON conflict detail prefers explicit reason', () => {
+    writeLaunchedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'conflict', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'conflict');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), NO_DEPLOY_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    next('json');
+    const parsed = JSON.parse(con.logs[0]);
+
+    expect(parsed.data.modules[0].action).toBe('Fix deployment decision conflict');
+    expect(parsed.data.modules[0].deployment_decision_conflict_reason).toContain('部署决策冲突');
+    expect(parsed.data.modules[0].detail).toContain('部署决策冲突');
+  });
 });

@@ -1,9 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { moduleList, moduleAdd, moduleRename, moduleRemove } from '../src/commands/module.js';
+
+const readlineState = vi.hoisted(() => ({ answers: [] as string[] }));
+
+vi.mock('node:readline', () => ({
+  createInterface: vi.fn(() => ({
+    question: (_prompt: string, cb: (answer: string) => void) => {
+      cb(readlineState.answers.shift() ?? '');
+    },
+    close: vi.fn(),
+  })),
+}));
 
 function writeProjectYaml(root: string, data: Record<string, unknown>) {
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml(data, { lineWidth: 0 }));
@@ -27,6 +38,7 @@ describe('S17 Unit Tests — module commands', () => {
     ({ root, cleanup } = makeTempRoot());
     scaffoldProject(root);
     restoreCwd = mockCwd(root);
+    readlineState.answers = [];
   });
 
   afterEach(() => {
@@ -325,5 +337,58 @@ describe('S17 Unit Tests — module commands', () => {
       restoreEmpty();
       emptyRoot.cleanup();
     }
+  });
+});
+
+describe('S17 Scenario Tests — module registry workflow', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+  let con: ReturnType<typeof captureConsole>;
+  let exitSpy: ReturnType<typeof mockProcessExit>;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+    restoreCwd = mockCwd(root);
+    con = captureConsole();
+    exitSpy = mockProcessExit();
+    readlineState.answers = [];
+  });
+
+  afterEach(() => {
+    con.restore();
+    exitSpy.mockRestore();
+    restoreCwd();
+    cleanup();
+  });
+
+  it('ST-S17-01: 管理模块注册表', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: '核心功能', lifecycle: 'initial' }],
+    });
+
+    const specDir = join(root, 'spec');
+    mkdirSync(specDir, { recursive: true });
+    writeFileSync(join(specDir, 'overview.md'), 'See payment-S01-test-cases.md for cross references.');
+
+    const resourceDir = join(root, 'logos', 'resources', 'test');
+    mkdirSync(resourceDir, { recursive: true });
+    writeFileSync(join(resourceDir, 'payment-S01-test-cases.md'), 'payment reference');
+
+    moduleAdd('payment');
+    moduleRename('payment', 'billing');
+
+    readlineState.answers = ['yes'];
+    moduleRemove('billing');
+
+    const yaml = readYaml(root);
+    expect(yaml.modules.map((m: { id: string }) => m.id)).toEqual(['core']);
+    expect(existsSync(join(resourceDir, 'billing-S01-test-cases.md'))).toBe(true);
+    expect(existsSync(join(resourceDir, 'payment-S01-test-cases.md'))).toBe(false);
+    expect(readFileSync(join(specDir, 'overview.md'), 'utf-8')).toContain('billing-S01-test-cases.md');
+    expect(con.logs.join('\n')).toContain('added');
+    expect(con.logs.join('\n')).toContain('Updated logos-project.yaml');
+    expect(con.logs.join('\n')).toContain('removed');
   });
 });

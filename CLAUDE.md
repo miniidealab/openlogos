@@ -7,21 +7,6 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 - Config: `logos/logos.config.json`
 - Resource Index: `logos/logos-project.yaml`
 
-## ⚠️ 目录结构：源码 vs dogfooding（极易混淆，必读）
-
-本项目用自己的工具管理自己（dogfooding）。`logos/` 是 dogfooding 配置目录，**不是源码**。
-
-| 要修改的内容 | 正确路径（源码） | 错误路径（dogfooding 副本） |
-|---|---|---|
-| Skill 文档 | `skills/<skill-name>/SKILL.md` | ~~`logos/skills/<skill-name>/SKILL.md`~~ |
-| 规格文档 | `spec/<file>.md` | ~~`logos/spec/<file>.md`~~ |
-| CLI 源码 | `cli/src/` | — |
-
-**规则：**
-- 永远修改根目录下的 `skills/` 和 `spec/`，不要直接修改 `logos/` 下的副本
-- `logos/skills/` 和 `logos/spec/` 由 `openlogos sync` 从源码同步生成，手动修改会在下次 sync 时被覆盖
-- 修改源码后，提醒用户运行 `openlogos sync` 同步到 `logos/` 副本
-
 ## ⚠️ 语言策略（最高优先级）
 
 本项目的文档语言为 **中文**（配置于 `logos/logos.config.json` → `locale: "zh"`）。
@@ -51,10 +36,12 @@ Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件
 - 设计存在但 `3-technical-plan/1-architecture/` 为空 → Phase 3 Step 0 → **读取 `logos/skills/architecture-designer/SKILL.md` 并按其步骤执行**
 - 架构存在但 `3-technical-plan/2-scenario-implementation/` 为空 → Phase 3 Step 1 → **读取 `logos/skills/scenario-architect/SKILL.md` 并按其步骤执行**
 - 场景存在但 `logos/resources/api/` 为空 → Phase 3 Step 2 → **读取 `logos/skills/api-designer/SKILL.md` 和 `logos/skills/db-designer/SKILL.md` 并按其步骤执行**
-- API 存在但 `logos/resources/test/` 为空 → Phase 3 Step 3a → **读取 `logos/skills/test-writer/SKILL.md` 并按其步骤执行**
-- 测试用例存在但 `logos/resources/scenario/` 为空 → Phase 3 Step 3b → **读取 `logos/skills/test-orchestrator/SKILL.md` 并按其步骤执行**（仅 API 项目）
-- 编排测试存在但 `logos/resources/implementation/` 为空 → Phase 3 Step 4 → **读取 `logos/skills/code-implementor/SKILL.md` 并按其步骤执行**（完成后可用 `logos/skills/code-reviewer/SKILL.md` 进行代码审查）
-- 代码已生成但 `logos/resources/verify/` 为空 → Phase 3 Step 5（运行测试后 `openlogos verify`）
+- API / DB 设计完成后但 `3-technical-plan/3-deployment/` 为空 → Phase 3 Step 3 → **读取 `logos/skills/deployment-designer/SKILL.md` 并按其步骤执行**
+- 部署方案存在但 `logos/resources/test/` 为空 → Phase 3 Step 4a → **读取 `logos/skills/test-writer/SKILL.md` 并按其步骤执行**（如需部署需同时设计 smoke）
+- 测试用例存在但 `logos/resources/scenario/` 为空 → Phase 3 Step 4b → **读取 `logos/skills/test-orchestrator/SKILL.md` 并按其步骤执行**（仅 API 项目）
+- 编排测试存在但 `logos/resources/implementation/` 为空 → Phase 3 Step 5 → **读取 `logos/skills/code-implementor/SKILL.md` 并按其步骤执行**（完成后可用 `logos/skills/code-reviewer/SKILL.md` 进行代码审查）
+- 代码已生成但 `logos/resources/verify/acceptance-report.md` 不存在 → Phase 3 Step 6（运行测试后 `openlogos verify`）
+- 部署完成但 `smoke-report.md` / `SMOKE_PASS` 缺失 → Phase 3 Step 8（`openlogos smoke`，人类确认点）
 
 文件命名规范（模块前缀）：
 - 所有设计文档遵循 `<module>-<序号>-<类型>.md` 格式，初始项目默认使用 `core-` 前缀
@@ -63,14 +50,14 @@ Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件
 - 场景编号全局唯一，由 `logos-project.yaml` 的 `scenario_counter.next_id` 维护，严禁不同模块从 S01 重新开始
 - 多模块状态：`openlogos status` 聚合展示所有模块（in-progress 置顶）；`openlogos next` 单模块直接建议，多模块并列列出，无 in-progress 时提示 `module add`
 
-Step 4 执行规则（大任务）：
+Step 5 执行规则（大任务）：
 1. 大任务可按场景/子模块分批实现，但每一批必须闭环
 2. 每一批必须同时包含：业务代码 + UT/ST 测试代码 + OpenLogos reporter
 3. 输出代码前，先列出本批覆盖的 UT/ST 用例 ID，并确保与 `logos/resources/test/*.md` 对齐
 4. 不允许将全部测试推迟到最终批次统一补写
 
-Step 4 分批执行提示词（可直接复用）：
-- `请按 Phase 3 Step 4 执行本次实现。若任务较大可分批，但每批必须同时交付：（1）业务代码，（2）对应 UT/ST 测试代码，（3）写入 logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。输出代码前请先列出本批覆盖的 UT/ST 用例 ID。`
+Step 5 分批执行提示词（可直接复用）：
+- `请按 Phase 3 Step 5 执行本次实现。若任务较大可分批，但每批必须同时交付：（1）业务代码，（2）对应 UT/ST 测试代码，（3）写入 logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。输出代码前请先列出本批覆盖的 UT/ST 用例 ID。`
 
 ## 文档修改后的验证（强制）
 
@@ -93,11 +80,13 @@ Step 4 分批执行提示词（可直接复用）：
 - `logos/skills/scenario-architect/SKILL.md` — 业务场景建模与时序图
 - `logos/skills/api-designer/SKILL.md` — OpenAPI 规格设计
 - `logos/skills/db-designer/SKILL.md` — 数据库 Schema 设计
-- `logos/skills/test-writer/SKILL.md` — 单元测试 + 场景测试用例设计（Step 3a）
-- `logos/skills/test-orchestrator/SKILL.md` — API 编排测试设计（Step 3b，仅 API 项目）
-- `logos/skills/code-implementor/SKILL.md` — 基于规格链的代码与测试代码生成（Step 4）
+- `logos/skills/deployment-designer/SKILL.md` — 部署方案与 smoke 策略设计（Step 3）
+- `logos/skills/test-writer/SKILL.md` — 单元测试 + 场景测试用例设计（Step 4a）
+- `logos/skills/test-orchestrator/SKILL.md` — API 编排测试设计（Step 4b，仅 API 项目）
+- `logos/skills/code-implementor/SKILL.md` — 基于规格链的代码与测试代码生成（Step 5）
 - `logos/skills/code-reviewer/SKILL.md` — 代码审查与规范检查
 - `logos/skills/change-writer/SKILL.md` — 变更提案编写与影响分析
+- `logos/skills/deployment-executor/SKILL.md` — verify 通过后的人类确认部署执行
 - `logos/skills/merge-executor/SKILL.md` — 通过 MERGE_PROMPT.md 执行 Delta 合并
 
 ## ⛔ 变更管理（强制执行）
@@ -114,12 +103,14 @@ Step 4 分批执行提示词（可直接复用）：
 4. delta 产出完成后提醒用户明确授权运行 `openlogos merge <slug>`
 5. merge 完成后 AI 自动 commit 规格文档（告知用户，无需确认）
 6. 按合并后的规格实现代码，完成后 AI 自动 commit 代码（告知用户，无需确认）
-7. 提醒用户运行 `openlogos verify` 验收
-8. 验收通过后提醒用户明确授权运行 `openlogos archive <slug>`（自动删除 guard 文件）
-9. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
-10. 提醒用户确认是否执行 `git push`（人类确认点）
+7. 提醒用户明确授权运行 `openlogos verify` 验收
+8. 如存在 `[deploy]` section，验收通过后提醒用户明确授权 AI 按部署方案执行部署
+9. 部署完成后提醒用户明确授权运行 `openlogos smoke`
+10. verify 通过且无部署任务，或部署完成且 smoke 通过后，提醒用户明确授权运行 `openlogos archive <slug>`（自动删除 guard 文件）
+11. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
+12. 提醒用户确认是否执行 `git push`（人类确认点）
 
-**`openlogos merge`、`openlogos verify`、`openlogos archive` 和 `git push` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+**`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
