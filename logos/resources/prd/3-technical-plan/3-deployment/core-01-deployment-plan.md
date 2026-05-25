@@ -46,6 +46,7 @@ graph TB
 - 官网 `/releases` 页面可访问，并展示 npm latest 版本、发布时间和安装命令。
 - 官网首页存在最近发布动态入口，并能跳转 `/releases`。
 - 插件模板包含 Claude Code、OpenCode、Codex 资产。
+- `openlogos detect --format json` 与 `openlogos status --format json` 在 launched 项目中可输出 `modules[]` 与 launched 生命周期，即使 `logos-project.yaml` 存在可恢复解析错误也不应回退成 `initial`。
 
 ## 八、冒烟测试方案
 见 `logos/resources/test/smoke/core-smoke-test-cases.md`。
