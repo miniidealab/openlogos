@@ -10,12 +10,15 @@ sequenceDiagram
     U->>C: Step 1: openlogos status
     C->>Y: Step 2: 读取资源目录、模块注册表与默认部署门禁
     C->>C: Step 3: 读取 guard 并定位活跃提案
+    C->>C: Step 3a: 检查模块 bootstrap 字段
     alt 存在活跃提案
         C->>P: Step 4: 读取 proposal.md、tasks.md、VERIFY/DEPLOY/SMOKE 标记
         C->>C: Step 5: 解析提案级部署决策、proposal_step 与 deploy section 进度
         C->>C: Step 6: 校验 proposal.md 与 tasks.md 的部署结论是否一致
         C->>C: Step 7: 计算 deployment_progress 与 deployment_document
-    else 无活跃提案
+    else bootstrap=skipped 且无活跃提案
+        C->>C: Step 4: Phase 1~3 显示为「文档基线已跳过（快速接入）」
+    else 无活跃提案（normal bootstrap）
         C->>C: Step 4: 按模块阶段计算进度
     end
     C-->>U: Step 8: 输出状态面板、JSON 字段与建议
@@ -24,8 +27,8 @@ sequenceDiagram
 ## 步骤说明
 1. **用户**执行 `openlogos status`。
 2. **CLI** 读取资源目录、模块和模块级部署门禁。
-3. **CLI** 读取 guard 判断是否存在活跃提案。
-4. **CLI** 在存在活跃提案时读取提案工作区。
+3. **CLI** 读取 guard 判断是否存在活跃提案；同时检查模块 `bootstrap` 字段。
+4. **CLI** 在存在活跃提案时读取提案工作区；`bootstrap: skipped` 且无活跃提案时，Phase 1~3 显示为「已跳过」。
 5. **CLI** 优先使用提案级部署决策计算提案步骤。
 6. **CLI** 校验 `proposal.md` 与 `tasks.md` 是否冲突。
 7. **CLI** 生成 `deployment_progress` 与 `deployment_document`，其中任务文档入口必须指向 `tasks.md`。
@@ -35,6 +38,11 @@ sequenceDiagram
 ### EX-2.1: 模块过滤不存在
 - **触发条件**：用户传入不存在的 `--module`。
 - **期望响应**：输出模块不存在错误。
+
+### EX-3.2: bootstrap=skipped 时 Phase 1~3 显示为已跳过
+- **触发条件**：模块 `bootstrap: skipped`，Phase 1~3 文档目录为空。
+- **期望响应**：Phase 1~3 显示为「文档基线已跳过（快速接入）」，不显示为未完成或错误；整体状态不受 Phase 1~3 缺失影响。
+- **副作用**：无。
 
 ### EX-6.1: 提案级部署决策缺失
 - **触发条件**：历史提案没有结构化 `## 部署影响`。

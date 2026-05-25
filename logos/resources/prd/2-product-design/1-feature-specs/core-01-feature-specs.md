@@ -1,14 +1,15 @@
 # core-01-feature-specs
 
 ## 一、核心能力列表
-1. 初始化 OpenLogos 项目。
-2. 同步 AI 工具资产与资源索引。
-3. 查看阶段进度与下一步建议。
-4. 创建、合并、归档变更提案。
-5. 执行 verify 与 smoke。
-6. 切换 launched 生命周期。
-7. 管理模块注册表。
-8. 解析 SQL 注释与输出 JSON。
+1. 初始化 OpenLogos 项目（全新项目）。
+2. 已有项目接入 OpenLogos（`adopt`，直接进入 launched 模式）。
+3. 同步 AI 工具资产与资源索引。
+4. 查看阶段进度与下一步建议。
+5. 创建、合并、归档变更提案。
+6. 执行 verify 与 smoke。
+7. 切换 launched 生命周期。
+8. 管理模块注册表。
+9. 解析 SQL 注释与输出 JSON。
 
 ## 二、规格边界
 ### 2.1 CLI 交互
@@ -36,6 +37,14 @@
 - 代码运行时、打包产物、发布脚本、插件模板或官网构建受影响的提案若声明需要部署，verify PASS 后必须进入部署授权流程。
 - 当 `proposal.md` 与 `tasks.md` 冲突时，CLI 必须在 status / next 中给出警告，并阻止“无需人工确认的自动部署”。
 - 冲突状态必须通过 `deployment_decision_conflict=true` 显式暴露，作为 CLI 和 RunLogos 的阻断信号；冲突未修正前不得展示 deploy、smoke 或 archive 作为主动作。
+
+### 2.6 bootstrap: skipped 行为约束
+
+- `adopt` 命令生成的 `logos-project.yaml` 中，模块 `bootstrap` 字段值为 `skipped`，`lifecycle` 直接为 `launched`。
+- `bootstrap: skipped` 模块不要求 Phase 1~3 文档存在；`status` 将其显示为「文档基线已跳过（快速接入）」，而非未完成。
+- `next` 在 `bootstrap: skipped` 且无活跃提案时，固定输出补文档引导，建议执行 `openlogos change add-baseline-docs`，不建议直接开始业务迭代。
+- `launch` 对 `bootstrap: skipped` 且 `lifecycle: launched` 的模块豁免 Phase 1~3 门禁检查。
+- 补文档提案（如 `add-baseline-docs`）归档后，`next` 恢复正常阶段建议逻辑。
 
 ## 三、功能验收摘要
 ### S01
@@ -73,3 +82,6 @@ resource_index 必须能反向索引当前真相源。
 
 ### S19
 smoke 必须验证部署后环境的最小可用链路，但只在提案级 `smoke_required: true` 且部署完成后进入。部署进度摘要仅能来自 `tasks.md` 的 `[deploy]` section，不能把 `[code]` section 误当作部署进度。
+
+### S20
+adopt 后必须生成完整 `logos/` 目录、`bootstrap: skipped` 标记和 AI 指令文件；`status` 必须将 Phase 1~3 显示为「已跳过」；`next` 必须输出补文档引导；`launch` 必须豁免 Phase 1~3 门禁。目录已存在 `logos/logos.config.json` 时必须拒绝重复执行并报错。

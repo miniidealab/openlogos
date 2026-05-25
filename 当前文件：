@@ -1,0 +1,173 @@
+[200~## 文档修改请求：变更提案：新增部署 Phase 与部署状态流转
+
+> 当前文件：`/Users/huangxianglong/gitlab/openlogos/logos/changes/add-deployment-phase/proposal.md`
+
+**请根据以下评论反馈修改文档，直接输出修改后的完整文档内容。**
+- **一致性审查**：修改完成后，请检查本次变更是否影响项目中的其他文档或代码。若涉及上下游文档（如需求文档、场景实现、数据库设计、API 定义等）的数据定义、流程描述或字段命名，请一并列出需要同步修改的文件及具体变更点，确保整个项目的数据一致性
+
+### 修改要求
+
+### 评论 1
+> Initial 阶段新增部署方案 Phase
+
+状态机变化也请帮我明确下
+
+---
+
+### 原文档
+
+```markdown
+# 变更提案：新增部署 Phase 与部署状态流转
+
+> module: core | created: 2026-05-20
+
+## 变更原因
+
+当前 OpenLogos 已经要求在技术架构中考虑部署拓扑，但部署仍然只是架构文档中的一个章节，不是独立 Phase，也不是变更流程中的一等产物。这会带来几个问题：
+
+1. Initial 阶段没有强制输出完整部署方案，代码实现完成后缺少可执行的部署依据。
+2. 变更提案没有明确判断“本次变更是否需要部署”，AI 无法在 delta-writing 阶段产出部署 delta。
+3. `openlogos merge`、`openlogos verify`、`openlogos status` 目前只感知规格、代码、测试验收和归档，无法在验收通过后展示待执行的部署任务。
+4. 部署属于高风险动作，必须作为人类确认点；AI 不能根据自己的判断自动发起部署。
+
+本变更来自方法论优化需求：为软件项目增加专属于部署的 Phase，并让提案、delta、merge、verify 后续状态和 AI 执行规则都能围绕部署形成闭环。
+
+## 变更类型
+
+设计级变更（方法论流程 + CLI 状态机 + Skill 模板 + 文档规范）
+
+## 变更范围
+- 影响的需求文档：无现有业务需求文档变更；新增方法论层面的部署 Phase 要求。
+- 影响的功能规格：无现有产品功能规格变更；需更新 CLI / AI Skill 的行为规范。
+- 影响的业务场景：无业务场景编号变更；涉及提案生命周期中的“验收后部署执行”流程。
+- 影响的 API：无。
+- 影响的 DB 表：无。
+- 影响的编排测试：无。
+- 影响的规范文档：
+  - `spec/workflow.md` — 新增 Phase 3.3 部署方案，并定义 verify 后的部署执行节点。
+  - `spec/directory-convention.md` — 新增 `logos/resources/prd/3-technical-plan/3-deployment/` 目录。
+  - `spec/change-management.md` — 提案增加部署影响判断；delta 增加部署方案变更；部署执行成为人类确认点。
+  - `spec/tasks-spec.md` — 新增 `[deploy]` section 语义和状态判断规则。
+  - `spec/agents-md.md` — 更新 AI 行为规则，明确部署不得由 AI 自动发起。
+  - `spec/cli-json-output.md` — 更新 `status` / `next` 输出中的部署状态字段。
+- 影响的 Skill 文档：
+  - `logos/skills/architecture-designer/SKILL.md` — 架构阶段只保留部署约束与拓扑输入，不再承载完整部署方案。
+  - `logos/skills/change-writer/SKILL.md` — 提案必须填写部署影响；需要部署时产出部署 delta 和 `[deploy]` 任务。
+  - `logos/skills/merge-executor/SKILL.md` — 合并部署 delta 后提示后续部署执行规则。
+  - `logos/skills/project-init/SKILL.md` — 初始化阶段加入部署 Phase 目录和提示。
+  - 新增 `logos/skills/deployment-designer/SKILL.md` — Initial 阶段输出部署方案。
+  - 新增 `logos/skills/deployment-executor/SKILL.md` — verify 通过后，按部署方案执行经人类确认的部署任务。
+- 影响的源码文件：
+  - `cli/src/commands/init.ts` — 初始化目录、AGENTS 模板、Skill 列表和 Phase 检测文案。
+  - `cli/src/commands/status.ts` — 新增部署 Phase 检测；新增 `ready-to-deploy` / `deploy-done` 提案状态判断。
+  - `cli/src/commands/next.ts` — 新增部署状态的下一步提示。
+  - `cli/src/commands/verify.ts` — verify 通过后展示部署任务；修正 PASS / FAIL 标记互斥。
+  - `cli/src/commands/merge.ts` — 确认部署 delta 被合并指令覆盖，并补齐方法论 delta 目录支持。
+  - `cli/src/i18n.ts` — 新增 Phase、部署状态、部署提示、模板字段的中英文文案。
+  - `cli/src/lib/sync-resource-index.ts` — 新增部署方案文档的 resource_index 描述规则。
+  - 测试文件：`cli/test/s01-init.test.ts`、`cli/test/s05-next.test.ts`、`cli/test/s11-status.test.ts`、`cli/test/s13-verify.test.ts`、`cli/test/s18-sync-resource-index.test.ts`。
+
+## 部署影响
+
+- 是否需要部署：否。
+- 部署原因：本提案定义 OpenLogos 的部署方法论与 CLI 行为，不对当前运行环境执行发布或部署。
+- 影响环境：无。
+- 是否涉及数据迁移：否。
+- 是否需要回滚预案：否。
+- 说明：后续若需要发布新的 npm 包或同步网站文档，应另行走发布 / 部署提案；本提案本身不得产生 `[deploy]` section，也不得在 verify 通过后触发部署执行。
+
+## 变更概述
+
+### 1. Initial 阶段新增部署方案 Phase
+
+新增专属于部署的 Phase，作为 Phase 3 HOW 链路的一等产物：
+
+- Phase 名称：`Phase 3-3 · 部署方案`
+- 主文档目录：`logos/resources/prd/3-technical-plan/3-deployment/`
+- 默认文件：`core-01-deployment-plan.md`
+- 建议位置：API / DB 设计完成后、测试设计前输出部署方案，因为部署方案需要知道服务形态、数据存储、配置项和发布路径。
+
+部署方案文档至少包含：
+- 部署目标环境：本地 / 测试 / 生产。
+- 部署拓扑：服务、数据库、对象存储、反向代理、域名、证书、第三方服务。
+- 构建与发布命令。
+- 环境变量与密钥来源。
+- 数据迁移策略。
+- 回滚策略。
+- 部署后检查清单。
+
+架构文档仍然保留“部署约束 / 部署拓扑输入”，但完整部署方案必须落到 `3-deployment/`。
+
+### 2. 变更提案必须判断部署影响
+
+`proposal.md` 模板新增 `## 部署影响`，用于明确本次提案是否需要部署。该字段是人工审核依据，不作为 CLI 状态机的唯一解析来源。
+
+需要部署时，`change-writer` 必须：
+- 在 `deltas/prd/3-technical-plan/3-deployment/` 产出部署 delta。
+- 在 `tasks.md` 中新增 `## [deploy] 部署任务` section。
+- 将部署任务写成 AI 可执行的具体步骤，但不允许 AI 自动执行。
+
+不需要部署时，`tasks.md` 不得创建 `[deploy]` section。
+
+### 3. `status` 的部署状态判断规则
+
+部署状态以 `tasks.md` 的 `[deploy]` section 和提案目录标记文件为准，避免解析自由文本导致误判。
+
+状态机扩展为：
+
+```text
+writing
+→ delta-writing
+→ ready-to-merge
+→ merge-generated
+→ coding
+→ ready-to-verify
+→ openlogos verify
+   ├─ FAIL → verify-failed
+   └─ PASS
+      ├─ 无 [deploy] section → verify-passed → archive
+      └─ 有 [deploy] section → ready-to-deploy → deploy-done → archive
+```
+
+具体判断规则：
+
+| 状态 | 判断依据 |
+|------|----------|
+| `verify-failed` | `VERIFY_FAIL` 存在。该状态优先级高于 `VERIFY_PASS` 和部署状态。 |
+| `verify-passed` | `VERIFY_PASS` 存在，且 `tasks.md` 中不存在 `[deploy]` section。 |
+| `ready-to-deploy` | `VERIFY_PASS` 存在，`[deploy]` section 存在且至少有 1 个任务，但 `DEPLOY_DONE` 不存在，或 `[deploy]` 任务尚未全部勾选。 |
+| `deploy-done` | `VERIFY_PASS` 存在，`[deploy]` section 存在且任务全部勾选，并且 `DEPLOY_DONE` 存在。 |
+
+`DEPLOY_DONE` 只能由 AI 在获得人类明确授权、按部署方案完成部署并回读关键结果后写入。若后续重新运行 `openlogos verify` 且失败，CLI 必须清除过期的 `VERIFY_PASS` 和 `DEPLOY_DONE`，避免旧部署状态继续生效。
+
+### 4. verify 通过后展示部署任务
+
+当活跃提案存在 `[deploy]` section 时，`openlogos verify` PASS 后必须展示部署任务清单，并提示：
+
+- 部署是人类确认点。
+- AI 不得自动执行部署。
+- 用户明确授权后，AI 必须读取合并后的部署方案文档和本次部署 delta，再逐项执行 `[deploy]` 任务。
+
+`openlogos status` 和 `openlogos next` 在 `ready-to-deploy` 时也必须展示同一批部署任务，避免用户不知道下一步要做什么。
+
+### 5. 部署执行 Skill
+
+新增 `deployment-executor` Skill，专门用于 verify 通过后的部署执行。该 Skill 的执行边界：
+
+- 触发前提：用户明确要求执行部署任务。
+- 必读输入：
+  - `logos/resources/prd/3-technical-plan/3-deployment/*.md`
+  - 当前提案 `proposal.md`
+  - 当前提案 `tasks.md` 的 `[deploy]` section
+  - 已合并后的部署相关主文档
+- 禁止行为：
+  - 未经人类确认自动发起部署。
+  - 跳过部署方案，凭经验执行命令。
+  - 自动执行涉及生产、远程服务器、密钥、发布、域名或数据迁移的命令。
+- 完成条件：
+  - `[deploy]` section 全部勾选。
+  - 写入 `logos/changes/<slug>/DEPLOY_DONE`。
+  - 输出部署结果摘要和后续归档提示。
+
+```[201~
+[200~代码已完成，明确授权执行 openlogos verify[201~
