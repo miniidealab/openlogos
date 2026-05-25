@@ -16,5 +16,5 @@
 - [x] 运行 `cd cli && npm test -- --run test/s16-json-output.test.ts test/s11-status.test.ts test/s17-module.test.ts`
 
 ## [deploy] 部署任务
-- [ ] 发布包含本修复的新版本 `@miniidealab/openlogos` npm 包
-- [ ] 在安装新版本 CLI 的环境中进入 `/Users/huangxianglong/gitlab/runlogos`，复跑 `openlogos detect --format json` 与 `openlogos status --format json`，确认 `lifecycle=launched` 且输出 `modules[]`
+- [x] 发布包含本修复的新版本 `@miniidealab/openlogos` npm 包
+- [x] 在安装新版本 CLI 的环境中进入 `/Users/huangxianglong/gitlab/runlogos`，复跑 `openlogos detect --format json` 与 `openlogos status --format json`，确认 `lifecycle=launched` 且输出 `modules[]`
