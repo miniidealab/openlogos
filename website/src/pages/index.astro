@@ -64,41 +64,6 @@ const distTagSummary = Object.entries(releaseData.distTags ?? {})
     </div>
   </section>
 
-  <section class="release-summary" id="releases">
-    <div class="section-container">
-      <div class="section-header">
-        <span class="section-badge">Release Feed</span>
-        <h2>Track every npm release</h2>
-        <p class="section-subtitle">
-          The site now exposes a complete release history page powered by npm registry metadata.
-          Use it to confirm the latest version, copy install commands, and review the full version timeline.
-        </p>
-      </div>
-
-      <div class="release-summary-grid">
-        <div class="summary-card summary-latest">
-          <span>latest</span>
-          <strong>v{releaseData.latestVersion}</strong>
-          <p>Published {formatSummaryDate(latestRelease?.publishedAt)}</p>
-        </div>
-        <div class="summary-card">
-          <span>versions</span>
-          <strong>{releaseData.versionCount}</strong>
-          <p>Latest dist-tag: {distTagSummary}</p>
-        </div>
-        <div class="summary-card">
-          <span>commands</span>
-          <strong>{installCommand}</strong>
-          <p><code>{verifyCommand}</code></p>
-        </div>
-        <div class="summary-card actions-card">
-          <a href="/releases" class="btn btn-primary">Open releases</a>
-          <a href={releaseData.npmPackageUrl} class="btn btn-ghost" target="_blank" rel="noopener">npm package</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- Problem Statement -->
   <section class="problem" id="features">
     <div class="section-container">
@@ -337,6 +302,41 @@ const distTagSummary = Object.entries(releaseData.distTags ?? {})
 
 <span class="t-comment"># Open in your AI tool and start building</span>
 <span class="t-prompt">$</span> cd my-project && claude</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="release-summary" id="releases">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-badge">Release Feed</span>
+        <h2>Track every npm release</h2>
+        <p class="section-subtitle">
+          The site now exposes a complete release history page powered by npm registry metadata.
+          Use it to confirm the latest version, copy install commands, and review the full version timeline.
+        </p>
+      </div>
+
+      <div class="release-summary-grid">
+        <div class="summary-card summary-latest">
+          <span>latest</span>
+          <strong>v{releaseData.latestVersion}</strong>
+          <p>Published {formatSummaryDate(latestRelease?.publishedAt)}</p>
+        </div>
+        <div class="summary-card">
+          <span>versions</span>
+          <strong>{releaseData.versionCount}</strong>
+          <p>Latest dist-tag: {distTagSummary}</p>
+        </div>
+        <div class="summary-card">
+          <span>commands</span>
+          <strong>{installCommand}</strong>
+          <p><code>{verifyCommand}</code></p>
+        </div>
+        <div class="summary-card actions-card">
+          <a href="/releases" class="btn btn-primary">Open releases</a>
+          <a href={releaseData.npmPackageUrl} class="btn btn-ghost" target="_blank" rel="noopener">npm package</a>
+        </div>
       </div>
     </div>
   </section>
