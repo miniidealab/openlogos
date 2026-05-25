@@ -72,7 +72,11 @@ describe('S13 Unit Tests — extractDefinedIds', () => {
     mkdirSync(testDir, { recursive: true });
     writeFileSync(
       join(testDir, 'S01-test-cases.md'),
-      'ST-S01-01 appears here\nST-S01-01 and again\nUT-S01-02 also\n',
+      [
+        '| ST-S01-01 | appears here |',
+        '| ST-S01-01 | and again |',
+        '| UT-S01-02 | also |',
+      ].join('\n'),
     );
     const { ids } = extractDefinedIds(root);
     expect(ids.filter(id => id === 'ST-S01-01')).toHaveLength(1);
@@ -84,7 +88,13 @@ describe('S13 Unit Tests — extractDefinedIds', () => {
     mkdirSync(testDir, { recursive: true });
     writeFileSync(
       join(testDir, 'S01-test-cases.md'),
-      'UT-S01-01 UT-S01-02 UT-S01-03 ST-S01-01 ST-S01-02',
+      [
+        '| UT-S01-01 | a |',
+        '| UT-S01-02 | b |',
+        '| UT-S01-03 | c |',
+        '| ST-S01-01 | d |',
+        '| ST-S01-02 | e |',
+      ].join('\n'),
     );
     const { utCount, stCount } = extractDefinedIds(root);
     expect(utCount).toBe(3);
@@ -119,6 +129,41 @@ describe('S13 Unit Tests — extractDefinedIds', () => {
     const { ids, manualCount } = extractDefinedIds(root);
     expect(ids).toHaveLength(3);
     expect(manualCount).toBe(2);
+  });
+
+  it('UT-S13-22: table first-column IDs support lowercase suffix and dots', () => {
+    const testDir = join(root, 'logos/resources/test');
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(
+      join(testDir, 'S01-test-cases.md'),
+      [
+        '| UT-S14-bootstrap-01 | desc |',
+        '| ST-S01-EX-adopt | desc |',
+        '| ST-S09-EX-5.1 | desc |',
+      ].join('\n'),
+    );
+    const { ids, utCount, stCount } = extractDefinedIds(root);
+    expect(ids).toContain('UT-S14-bootstrap-01');
+    expect(ids).toContain('ST-S01-EX-adopt');
+    expect(ids).toContain('ST-S09-EX-5.1');
+    expect(utCount).toBe(1);
+    expect(stCount).toBe(2);
+  });
+
+  it('UT-S13-23: [manual] in first column is excluded and counted', () => {
+    const testDir = join(root, 'logos/resources/test');
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(
+      join(testDir, 'S01-test-cases.md'),
+      [
+        '| UT-S01-01 | desc |',
+        '| ST-S01-EX-adopt [manual] | manual desc |',
+      ].join('\n'),
+    );
+    const { ids, manualCount } = extractDefinedIds(root);
+    expect(ids).toContain('UT-S01-01');
+    expect(ids).not.toContain('ST-S01-EX-adopt');
+    expect(manualCount).toBe(1);
   });
 });
 

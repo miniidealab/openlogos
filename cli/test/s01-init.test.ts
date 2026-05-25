@@ -653,6 +653,16 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allErrors).toContain('init --ai-tool <tool>');
   });
 
+  it('ST-S01-EX-adopt: logos/ 已存在且检测到已有项目时，提示改用 openlogos adopt', async () => {
+    mkdirSync(join(root, 'logos'), { recursive: true });
+    writeFileSync(join(root, 'logos', 'logos.config.json'), '{}');
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-project' }));
+
+    await expect(init()).rejects.toThrow('process.exit(1)');
+    const allErrors = con.errors.join('\n');
+    expect(allErrors).toContain('openlogos adopt');
+  });
+
   it('ST-S01-05: non-TTY without --locale exits with error', async () => {
     process.stdin.isTTY = undefined as unknown as boolean;
 

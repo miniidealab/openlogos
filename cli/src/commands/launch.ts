@@ -66,7 +66,7 @@ export function launch(moduleArg?: string) {
   }
 
   const yaml = parseYaml(readFileSync(yamlPath, 'utf-8')) ?? {};
-  const modules: Array<{ id: string; name: string; lifecycle?: string; deployment_required?: boolean; skip_phases?: string[] }> =
+  const modules: Array<{ id: string; name: string; lifecycle?: string; bootstrap?: string; deployment_required?: boolean; skip_phases?: string[] }> =
     Array.isArray(yaml.modules) ? yaml.modules : [];
 
   // Resolve target module id
@@ -88,6 +88,37 @@ export function launch(moduleArg?: string) {
   if (!mod) {
     console.error(t(locale, 'launch.moduleNotFound', { module: targetId }));
     process.exit(1);
+  }
+
+  const isBootstrapSkipped = mod.bootstrap === 'skipped';
+  if (isBootstrapSkipped) {
+    if (mod.lifecycle !== 'launched') {
+      mod.lifecycle = 'launched';
+      writeFileSync(yamlPath, stringifyYaml(yaml, { lineWidth: 0 }));
+    }
+
+    const rawAiTool = config.aiTool ?? 'cursor';
+    const aiTools = expandAiTools(rawAiTool);
+    const projectName = config.name || 'Unnamed Project';
+
+    syncLogosProjectName(root, projectName);
+    writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', true));
+    writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', true));
+
+    for (const tool of aiTools) {
+      const deployResult = deploySkills(root, tool, locale, true);
+      if (deployResult && deployResult.count > 0) {
+        console.log(`  ✓ ${t(locale, 'launch.rulesUpdated', { target: deployResult.target })}`);
+      }
+    }
+    if (aiTools.includes('opencode')) deployOpenCodePlugin(root, locale);
+    if (aiTools.includes('codex')) deployCodexPlugin(root, locale);
+
+    console.log(`\n${t(locale, 'launch.done', { module: targetId })}`);
+    console.log(t(locale, 'launch.hint1'));
+    console.log(t(locale, 'launch.hint2'));
+    console.log('');
+    return;
   }
 
   if (mod.lifecycle === 'launched' && migration.autoMarked !== targetId) {

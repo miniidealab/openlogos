@@ -11,6 +11,7 @@ export interface NextModuleItem {
   id: string;
   name: string;
   lifecycle: 'initial' | 'launched';
+  bootstrap?: 'normal' | 'skipped';
   action: string;
   command: string | null;
   detail: string;
@@ -35,6 +36,7 @@ function buildModuleNextItem(
     id: string;
     name: string;
     lifecycle: 'initial' | 'launched';
+    bootstrap?: 'normal' | 'skipped';
     suggestion: string;
     active_change: {
       slug: string;
@@ -85,8 +87,22 @@ function buildModuleNextItem(
       };
     }
 
+    if (mod.bootstrap === 'skipped') {
+      return {
+        id: mod.id, name: mod.name, lifecycle: 'launched',
+        bootstrap: mod.bootstrap,
+        action: locale === 'zh' ? '先补充项目基线文档' : 'Fill in baseline docs first',
+        command: 'openlogos change add-baseline-docs',
+        detail: locale === 'zh'
+          ? '建议先创建补文档提案，再开始业务迭代。'
+          : 'Create a baseline-docs change proposal before starting feature work.',
+        active_change: null, proposal_step: null,
+      };
+    }
+
     return {
       id: mod.id, name: mod.name, lifecycle: 'launched',
+      bootstrap: mod.bootstrap,
       action: t(locale as Parameters<typeof t>[0], 'next.createChange'),
       command: 'openlogos change <slug>',
       detail: mod.suggestion,
@@ -97,6 +113,7 @@ function buildModuleNextItem(
   // initial lifecycle — not affected by guard
   return {
     id: mod.id, name: mod.name, lifecycle: 'initial',
+    bootstrap: mod.bootstrap,
     action: mod.suggestion,
     command: null,
     detail: '',
@@ -187,7 +204,7 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
   if (data.modules && data.modules.length > 0) {
     moduleItems = data.modules.map(m => buildModuleNextItem(
       {
-        id: m.id, name: m.name, lifecycle: m.lifecycle,
+        id: m.id, name: m.name, lifecycle: m.lifecycle, bootstrap: m.bootstrap,
         suggestion: m.suggestion,
         active_change: m.active_change ? {
           slug: m.active_change.slug,
@@ -210,9 +227,20 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
 
   if (data.lifecycle === 'launched') {
     if (!data.active_change) {
-      action = t(locale, 'next.createChange');
-      command = 'openlogos change <slug>';
-      detail = t(locale, 'next.createChangeDetail');
+      const bootstrapModule = data.modules?.find(m => m.lifecycle === 'launched' && m.bootstrap === 'skipped');
+      if (bootstrapModule) {
+        action = locale === 'zh'
+          ? '先补充项目基线文档'
+          : 'Fill in the project baseline documents first';
+        command = 'openlogos change add-baseline-docs';
+        detail = locale === 'zh'
+          ? '建议先创建补文档提案，再开始业务迭代。'
+          : 'Create a baseline-docs change proposal before starting feature work.';
+      } else {
+        action = t(locale, 'next.createChange');
+        command = 'openlogos change <slug>';
+        detail = t(locale, 'next.createChangeDetail');
+      }
     } else {
       const slug = data.active_change;
       const activeModule = data.modules?.find(m => m.active_change?.slug === slug);
@@ -236,11 +264,27 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
     command = 'openlogos launch';
     detail = t(locale, 'launch.suggest');
   } else {
-    action = data.suggestion;
-    command = null;
-    detail = data.current_phase
-      ? t(locale, 'next.phaseDetail', { phase: data.current_phase })
-      : '';
+    const firstModule = data.modules?.find(m => m.bootstrap === 'skipped' || m.lifecycle === 'initial');
+    const bootstrapSkipped = firstModule?.bootstrap === 'skipped'
+      || firstModule?.phase_progress?.['phase.1']?.skip_reason === 'bootstrap-skipped'
+      || firstModule?.phase_progress?.['phase.2']?.skip_reason === 'bootstrap-skipped'
+      || firstModule?.phase_progress?.['phase.3-0']?.skip_reason === 'bootstrap-skipped';
+
+    if (bootstrapSkipped && !data.active_change) {
+      action = locale === 'zh'
+        ? '先补充项目基线文档'
+        : 'Fill in the project baseline documents first';
+      command = 'openlogos change add-baseline-docs';
+      detail = locale === 'zh'
+        ? '建议先创建补文档提案，再开始业务迭代。'
+        : 'Create a baseline-docs change proposal before starting feature work.';
+    } else {
+      action = data.suggestion;
+      command = null;
+      detail = data.current_phase
+        ? t(locale, 'next.phaseDetail', { phase: data.current_phase })
+        : '';
+    }
   }
 
   const result: NextData = {

@@ -18,11 +18,11 @@ export interface TestResult {
 const DEFAULT_RESULT_PATH = 'logos/resources/verify/test-results.jsonl';
 const TEST_CASES_DIR = 'logos/resources/test';
 const REPORT_DIR = 'logos/resources/verify';
-const ID_PATTERN = /\b(?:UT|ST)-[A-Z0-9]+(?:-[A-Z0-9.]+)*\b/g;
 const MANUAL_SUFFIX = /\[manual\]/i;
 const CHECKLIST_PATTERN = /^- \[([ x])\] (.+)$/gm;
 const AC_TABLE_HEADER = /^## 四、验收条件追溯$/m;
 const AC_ROW_PATTERN = /^\|\s*(S\d{2}-AC-\d{2,3})\s*\|([^|]*)\|([^|]*)\|/gm;
+const TABLE_CELL_ID_PATTERN = /^\s*(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*(?:\s*\[manual\])?\s*$/i;
 const LINE = '─'.repeat(50);
 
 export interface ChecklistItem {
@@ -106,18 +106,25 @@ export function extractDefinedIds(root: string): { ids: string[]; utCount: numbe
 
     for (const file of files) {
       const content = readFileSync(join(dir, file), 'utf-8');
-      let match: RegExpExecArray | null;
-      const re = new RegExp(ID_PATTERN.source, ID_PATTERN.flags);
-      while ((match = re.exec(content)) !== null) {
-        const id = match[0];
-        const afterId = content.slice(match.index + id.length, match.index + id.length + 20);
-        if (MANUAL_SUFFIX.test(afterId)) {
+      for (const line of content.split('\n')) {
+        if (!line.trim().startsWith('|')) continue;
+
+        const cells = line.split('|').map(cell => cell.trim());
+        const firstCell = cells[1] ?? '';
+        if (!TABLE_CELL_ID_PATTERN.test(firstCell)) continue;
+
+        const id = firstCell.replace(MANUAL_SUFFIX, '').replace(/\s+/g, ' ').trim();
+        const isManual = MANUAL_SUFFIX.test(firstCell) || MANUAL_SUFFIX.test(line);
+        if (isManual) {
           if (!manualSet.has(id)) {
             manualSet.add(id);
             manualCount++;
           }
-          idSet.delete(id); // 如果之前已加入 defined，移除
-        } else if (!manualSet.has(id)) {
+          idSet.delete(id);
+          continue;
+        }
+
+        if (!manualSet.has(id)) {
           idSet.add(id);
         }
       }
@@ -190,7 +197,7 @@ export function extractAcTrace(root: string): AcTraceEntry[] {
         const acId = match[1].trim();
         const description = match[2].trim();
         const caseIdsRaw = match[3].trim();
-        const caseIdTest = /\b(?:UT|ST)-[A-Z0-9]+(?:-[A-Z0-9.]+)*\b/;
+        const caseIdTest = /\b(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/;
         const linkedCaseIds = caseIdsRaw
           .split(/[,，]/)
           .map(s => s.trim())

@@ -295,6 +295,35 @@ describe('S09 Scenario Tests — change command', () => {
     ]);
   });
 
+  it('ST-S09-EX-5.1: 部署决策与 tasks 冲突时输出冲突警告', () => {
+    const changePath = join(root, 'logos', 'changes', 'conflict');
+    mkdirSync(changePath, { recursive: true });
+    writeFileSync(join(changePath, 'proposal.md'), [
+      '# 变更提案：conflict',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：仅更新文档，不需要发布运行产物',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '补充文档。',
+    ].join('\n'));
+    writeFileSync(join(changePath, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+
+    const decision = resolveProposalDeploymentDecision(changePath);
+    expect(decision.deployment_decision_conflict).toBe(true);
+    expect(decision.deployment_decision_conflict_reason).toContain('部署决策冲突');
+  });
+
   it('ST-S09-02: reject when proposal already exists', () => {
     const changePath = join(root, 'logos', 'changes', 'add-feature');
     mkdirSync(changePath, { recursive: true });

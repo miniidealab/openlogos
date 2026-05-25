@@ -14,7 +14,7 @@ const RESULT_PATH = resolve(
   '..',
   'logos/resources/verify/test-results.jsonl',
 );
-const ID_RE = /\b(?:UT|ST)-[A-Z0-9]+(?:-[A-Z0-9.]+)*\b/;
+const ID_RE = /\b(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/;
 
 export default class OpenLogosReporter implements Reporter {
   onInit() {
@@ -43,7 +43,8 @@ export default class OpenLogosReporter implements Reporter {
       }
       if (task.type !== 'test') continue;
 
-      const match = ID_RE.exec(task.name);
+      const nameForMatch = typeof task.fullName === 'string' ? task.fullName : task.name;
+      const match = ID_RE.exec(nameForMatch);
       if (!match) continue;
 
       const id = match[0];

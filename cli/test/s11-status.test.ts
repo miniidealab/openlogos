@@ -191,6 +191,29 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
       exists: true,
     });
   });
+
+  it('UT-S11-bootstrap-01: bootstrap=skipped 的 launched 模块在 JSON 中暴露 bootstrap 字段', () => {
+    scaffoldProject(root);
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }));
+
+    const data = collectStatusData(root);
+    expect(data.modules?.[0].bootstrap).toBe('skipped');
+    expect(data.phases.find(p => p.key === 'phase.1')?.skipped).toBe(true);
+  });
+
+  it('UT-S11-bootstrap-02: bootstrap=skipped 的 launched 模块建议补文档提案', () => {
+    scaffoldProject(root);
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }));
+
+    const data = collectStatusData(root);
+    expect(data.modules?.[0].suggestion).toContain('add-baseline-docs');
+  });
 });
 
 /* ========== Scenario Tests ========== */
@@ -808,6 +831,34 @@ describe('S11 Scenario Tests — status command', () => {
     expect(active.proposal_step).toBe('ready-to-deploy');
     expect(active.deployment_required).toBe(true);
     expect(active.deployment_decision_source).toBe('tasks');
+  });
+
+  it('ST-S11-EX-6.2: 部署决策冲突时 status 文本输出冲突警告并阻断流程', () => {
+    const proposalDir = setupLaunchedProposal('conflict-text', NO_DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status();
+    const out = [...con.logs, ...con.errors].join('\n');
+    expect(out).toContain('部署决策冲突');
+    expect(out).toContain('proposal.md');
+    expect(out).toContain('tasks.md');
+  });
+
+  it('ST-S11-bootstrap-01: 快速接入状态面板正确显示已跳过', () => {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }));
+
+    status();
+    const out = con.logs.join('\n');
+    expect(out).toContain('Fill in baseline docs first');
+    expect(out).toContain('openlogos change add-baseline-docs');
   });
 });
 

@@ -13,6 +13,7 @@ export interface ProjectYamlModule {
   id: string;
   name: string;
   lifecycle?: string;
+  bootstrap?: string;
   skip_phases?: string[];
   deployment_required?: boolean;
   smoke_required?: boolean;
@@ -98,6 +99,9 @@ function normalizeModule(raw: unknown): ProjectYamlModule | null {
 
   if (typeof record.lifecycle === 'string') {
     module.lifecycle = record.lifecycle;
+  }
+  if (typeof record.bootstrap === 'string') {
+    module.bootstrap = record.bootstrap;
   }
   const skipPhases = asStringArray(record.skip_phases);
   if (skipPhases) {

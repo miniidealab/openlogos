@@ -189,7 +189,7 @@ async function chooseLocale(): Promise<Locale> {
   return answer === '2' ? 'zh' : 'en';
 }
 
-async function chooseAiTool(locale: Locale): Promise<AiTool> {
+export async function chooseAiTool(locale: Locale): Promise<AiTool> {
   if (!isTTY()) return detectAiToolFromEnv();
 
   console.log(`\n${t(locale, 'init.aiToolHeader')}`);
@@ -1160,6 +1160,38 @@ ${conventionsForYaml(locale)}
 `;
 }
 
+export function createAdoptLogosProject(name: string, locale: Locale): string {
+  return `project:
+  name: "${name}"
+  description: ""
+  methodology: "OpenLogos"
+
+tech_stack: {}
+
+scenario_counter:
+  next_id: 1
+
+modules:
+  - id: core
+    name: ${locale === 'zh' ? '核心功能' : 'Core'}
+    lifecycle: launched
+    bootstrap: skipped
+    skip_phases: [api, database, scenario]
+    deployment_required: true
+
+deployment_gates:
+  core:
+    deployment_required: true
+    smoke_required: true
+    environments:
+      - staging
+
+resource_index: []
+
+${conventionsForYaml(locale)}
+`;
+}
+
 export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude', isLaunched: boolean = false): string {
   const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
 
@@ -1382,6 +1414,12 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
 
     console.error('Error: logos/logos.config.json already exists in current directory.');
     console.error('This directory has already been initialized as an OpenLogos project.');
+    const hasManifest = existsSync(join(root, 'package.json'))
+      || existsSync(join(root, 'Cargo.toml'))
+      || existsSync(join(root, 'pyproject.toml'));
+    if (hasManifest) {
+      console.error('Tip: If this is an existing project, use `openlogos adopt` instead.');
+    }
     console.error('Use `openlogos init --ai-tool <tool>` to add a target AI tool, or `openlogos sync` to refresh the current configuration.');
     process.exit(1);
   }

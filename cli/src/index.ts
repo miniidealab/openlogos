@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { init } from './commands/init.js';
+import { adopt } from './commands/adopt.js';
 import { sync } from './commands/sync.js';
 import { status } from './commands/status.js';
 import { next } from './commands/next.js';
@@ -29,6 +30,10 @@ Commands:
                        --locale <en|zh>            Set language (skip prompt)
                        --ai-tool <claude-code|opencode|codex|cursor|other|all>  Set AI tool (skip prompt)
                        --aitool <claude-code|opencode|codex|cursor|other|all>   Alias for --ai-tool
+  adopt [name]       Adopt an existing project into OpenLogos
+                       --locale <en|zh>            Set language (skip prompt)
+                       --ai-tool <claude-code|opencode|codex|cursor|other|all>  Set AI tool (skip prompt)
+                       --aitool <claude-code|opencode|codex|cursor|other|all>   Alias for --ai-tool
   sync               Regenerate AI instruction files (AGENTS.md, CLAUDE.md)
   status             Show current project phase and suggest next steps
                        --module <id>               Filter to a specific module
@@ -54,6 +59,7 @@ Options:
 
 Examples:
   openlogos init my-saas-project
+  openlogos adopt
   openlogos sync
   openlogos status
   openlogos status --format json
@@ -99,6 +105,22 @@ async function main() {
         }
       }
       await init(initName, Object.keys(initOpts).length > 0 ? initOpts : undefined);
+      break;
+    }
+    case 'adopt': {
+      const adoptArgs = args.slice(1);
+      let adoptName: string | undefined;
+      const adoptOpts: { locale?: string; aiTool?: string } = {};
+      for (let i = 0; i < adoptArgs.length; i++) {
+        if (adoptArgs[i] === '--locale' && adoptArgs[i + 1]) {
+          adoptOpts.locale = adoptArgs[++i];
+        } else if ((adoptArgs[i] === '--ai-tool' || adoptArgs[i] === '--aitool') && adoptArgs[i + 1]) {
+          adoptOpts.aiTool = adoptArgs[++i];
+        } else if (!adoptArgs[i].startsWith('--')) {
+          adoptName = adoptArgs[i];
+        }
+      }
+      await adopt(adoptName, Object.keys(adoptOpts).length > 0 ? adoptOpts : undefined);
       break;
     }
     case 'sync':

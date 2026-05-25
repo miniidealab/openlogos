@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.29] - 2026-05-25
+
 ### Added
 
 - **内置 `ui-ux-pro-max` Skill（vendor 自上游）** — Phase 2 处理 GUI 类产品（Web / Mobile / Desktop，含 Electron / Tauri / SwiftUI / Jetpack Compose / Qt 等）设计时，`product-designer` 自动调用 `ui-ux-pro-max` 拿到风格 / 配色 / 字体 / 组件库 / 反模式推荐（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。上游来自 [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)（MIT），约 668 KB。
@@ -559,7 +561,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.28...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.29...HEAD
+[0.9.29]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.29
 [0.9.28]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.28
 [0.9.27]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.27
 [0.9.26]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.26

@@ -16,6 +16,16 @@ function writeLaunchedModule(root: string) {
   );
 }
 
+function writeAdoptedModule(root: string) {
+  writeFileSync(
+    join(root, 'logos', 'logos-project.yaml'),
+    stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }),
+  );
+}
+
 const NO_DEPLOY_PROPOSAL = [
   '# 变更提案：docs-only',
   '',
@@ -163,6 +173,56 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     next();
     const out = con.logs.join('\n');
     expect(out).toContain('openlogos change');
+  });
+
+  it('UT-S05-bootstrap-01: adopt quick mode with no active proposal → suggest add-baseline-docs', () => {
+    writeAdoptedModule(root);
+
+    next();
+
+    const out = con.logs.join('\n');
+    expect(out).toContain('openlogos change add-baseline-docs');
+  });
+
+  it('UT-S05-bootstrap-02: adopt quick mode with active proposal → follows proposal flow', () => {
+    writeAdoptedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'baseline-docs', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'baseline-docs');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n[为什么要做这个变更？]');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
+
+    next();
+
+    const out = con.logs.join('\n');
+    expect(out).toContain('baseline-docs');
+    expect(out).not.toContain('openlogos change add-baseline-docs');
+  });
+
+  it('UT-S05-bootstrap-03: adopt quick mode still follows active proposal step when proposal is verify-passed', () => {
+    writeAdoptedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'runtime-change', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), DEPLOY_WITH_SMOKE_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    next();
+
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/authorize deployment|授权执行部署/i);
   });
 });
 
@@ -715,5 +775,17 @@ describe('S05 Scenario Tests — next --format json', () => {
     expect(parsed.data.modules[0].action).toBe('Fix deployment decision conflict');
     expect(parsed.data.modules[0].deployment_decision_conflict_reason).toContain('部署决策冲突');
     expect(parsed.data.modules[0].detail).toContain('部署决策冲突');
+  });
+
+  it('ST-S05-bootstrap-01: adopt quick mode with no active proposal returns baseline-docs guidance in JSON', () => {
+    writeAdoptedModule(root);
+
+    next('json');
+    const parsed = JSON.parse(con.logs[0]);
+
+    expect(parsed.data.command).toBe('openlogos change add-baseline-docs');
+    expect(String(parsed.data.action).toLowerCase()).toContain('baseline');
+    expect(parsed.data.modules[0].bootstrap).toBe('skipped');
+    expect(parsed.data.modules[0].command).toBe('openlogos change add-baseline-docs');
   });
 });

@@ -355,6 +355,30 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     const yaml = readProjectYaml(root);
     expect(yaml.modules[0].lifecycle).toBe('launched');
   });
+
+  it('ST-S14-bootstrap-01: bootstrap=skipped 的模块在缺少 verify/deploy/smoke 报告时也可 launch', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial', bootstrap: 'skipped' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    });
+
+    launch();
+
+    const yaml = readProjectYaml(root);
+    expect(yaml.modules[0].lifecycle).toBe('launched');
+  });
+
+  it('ST-S14-bootstrap-02: launched 的 bootstrap=skipped 模块再次 launch 仍保持通过', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    });
+
+    launch('core');
+
+    const yaml = readProjectYaml(root);
+    expect(yaml.modules[0].lifecycle).toBe('launched');
+  });
 });
 
 describe('S14 Unit Tests — launch gate helpers', () => {
@@ -378,5 +402,19 @@ describe('S14 Unit Tests — launch gate helpers', () => {
       { deployment_gates: { core: { deployment_required: true } } },
       { id: 'core' },
     )).toBe(true);
+  });
+
+  it('UT-S14-bootstrap-01: bootstrap=skipped 时仍按 deployment_gates 计算部署需求（仅豁免门禁，不改部署配置）', () => {
+    expect(moduleDeploymentRequired(
+      { deployment_gates: { core: { deployment_required: true } } },
+      { id: 'core', bootstrap: 'skipped' } as any,
+    )).toBe(true);
+  });
+
+  it('UT-S14-bootstrap-02: bootstrap=normal 且 skip_phases 含 deployment 时跳过部署需求', () => {
+    expect(moduleDeploymentRequired(
+      { deployment_gates: { core: { deployment_required: true } } },
+      { id: 'core', bootstrap: 'normal', skip_phases: ['deployment'] } as any,
+    )).toBe(false);
   });
 });
