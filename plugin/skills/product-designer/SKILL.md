@@ -34,6 +34,7 @@ Before executing this Skill, first determine the product type (inferred from the
 | **AI Skills / Conversational Product** | User interacts with AI via natural language | Dialogue flowchart + sample dialogue scripts | Dialogue steps, AI questioning strategy, deliverable format |
 | **Library / SDK** | Called by other programs | API usage examples (code snippets) | Public interfaces, parameter design, return values, error codes |
 | **Mobile Application** | Mobile UI | HTML pages (mobile viewport) | Gesture interaction, navigation patterns, offline state |
+| **Desktop Application** | Locally installed, has GUI, standalone window (Electron / Tauri / SwiftUI / Jetpack Compose / Qt / WPF / GTK, etc.) | HTML simulating desktop layout (with menu bar / toolbar / status bar) or stack-specific style guide | Window management, menu bar / context menu, keyboard shortcuts, system tray, multi-window coordination, file system interaction |
 | **Hybrid** | Combination of multiple deliverables | Select the corresponding format for each deliverable | Interaction handoffs between deliverables |
 
 ## Execution Steps
@@ -57,6 +58,7 @@ Design architecture at different levels based on the product type:
 - **CLI Tool**: Command tree structure, subcommand hierarchy, global options
 - **AI Skills**: Skill trigger relationships, dialogue step orchestration, deliverable dependency chain
 - **Library / SDK**: Module structure, public API grouping
+- **Desktop Application**: Window structure, menu / shortcut system, IPC design (main↔renderer process / native layers), local storage and file system
 
 ### Step 3: Refine Interaction Specifications Per Scenario
 
@@ -68,7 +70,30 @@ Building on the Phase 1 GIVEN/WHEN/THEN, refine down to the interaction element 
 
 ### Step 5: Generate Prototypes
 
-Generate prototypes in the format corresponding to the product type (see examples).
+#### Step 5a (GUI Products Only): Invoke ui-ux-pro-max to Get the Design System
+
+**When to apply**: Any product type whose deliverables include a graphical user interface (GUI)—
+- ✅ Trigger: Web Application / Mobile Application / Desktop Application (Electron / Tauri / SwiftUI / Jetpack Compose / Qt / WPF / GTK, etc.) / Hybrid products with GUI deliverables
+- ❌ Skip: Pure CLI Tool / Library / AI Skills / pure API service or any product type without GUI deliverables
+
+**Steps**:
+
+1. Extract keywords from the Phase 1 requirements document: product type (SaaS / e-commerce / dashboard / portfolio, etc.) + industry + style preferences
+2. Invoke `ui-ux-pro-max`:
+   ```bash
+   python3 logos/skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <style_keywords>" --design-system -p "<project_name>"
+   ```
+3. Consume the output: style + color palette + font pairing + landing page patterns + anti-patterns as the visual foundation for Step 5 prototype generation
+   - Web Application: implement the style guide in HTML
+   - Desktop / Mobile Application: produce a style guide per the corresponding tech stack (Electron / Tauri reuse react / shadcn / html-tailwind data; SwiftUI / Jetpack Compose / Flutter map directly to their stack data; other native stacks use stack-agnostic style/color/font recommendations)
+
+**Fallback**:
+
+If `python3` is unavailable, skip this step and inform the user: "Python 3 (required by ui-ux-pro-max) is not detected. The prototype will be generated using a generic style. Install Python 3 and retry to get professional design system recommendations." Continue with Step 5 using a generic style; do not block.
+
+#### Step 5b: Generate Prototypes per Product Type
+
+Generate prototypes in the format corresponding to the product type (see examples). For GUI products, build on the design system obtained in Step 5a; for non-GUI products, pick the prototype format directly by product type.
 
 ### Step 6: Output the Product Design Document
 

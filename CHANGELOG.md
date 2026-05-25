@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **内置 `ui-ux-pro-max` Skill（vendor 自上游）** — Phase 2 处理 GUI 类产品（Web / Mobile / Desktop，含 Electron / Tauri / SwiftUI / Jetpack Compose / Qt 等）设计时，`product-designer` 自动调用 `ui-ux-pro-max` 拿到风格 / 配色 / 字体 / 组件库 / 反模式推荐（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。上游来自 [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)（MIT），约 668 KB。
+- **`product-designer` 扩展桌面应用支持** — 产品类型表新增「桌面应用」行；Step 2「信息架构」补充窗口/菜单/IPC/文件系统维度；Step 5 拆分为 Step 5a（GUI 类产品调用 ui-ux-pro-max）+ Step 5b（按产品类型生成原型）。
+- **`openlogos init` 末尾非阻塞 Python 3 检测** — 若未检测到 `python3`，输出黄色友好提示与多 OS 安装命令；不阻塞主流程。
+- **`deploySkills` 支持多文件 skill** — `ui-ux-pro-max` 的 `data/` + `scripts/` 在所有 aiTool（claude-code / codex / cursor / opencode）下都会被完整拷贝到 `logos/skills/ui-ux-pro-max/`，确保 SKILL.md 中写死的 `python3 logos/skills/ui-ux-pro-max/scripts/...` 路径始终可用。
+
 ## [0.9.27] - 2026-05-24
 
 ### Changed

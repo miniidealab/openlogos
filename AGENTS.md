@@ -76,6 +76,7 @@ Step 5 分批执行提示词（可直接复用）：
 - `logos/skills/project-init/SKILL.md` — 项目初始化与结构搭建
 - `logos/skills/prd-writer/SKILL.md` — 需求文档编写
 - `logos/skills/product-designer/SKILL.md` — 产品设计与原型
+- `logos/skills/ui-ux-pro-max/SKILL.md` — UI/UX 设计智能（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。Phase 2 处理 GUI 类产品（Web / Mobile / Desktop）设计时由 product-designer 自动调用。
 - `logos/skills/architecture-designer/SKILL.md` — 技术架构与技术选型
 - `logos/skills/scenario-architect/SKILL.md` — 业务场景建模与时序图
 - `logos/skills/api-designer/SKILL.md` — OpenAPI 规格设计

@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readd
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
+import { execSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 
@@ -212,6 +213,7 @@ export const SKILL_NAMES = [
   'project-init',
   'prd-writer',
   'product-designer',
+  'ui-ux-pro-max',
   'architecture-designer',
   'scenario-architect',
   'api-designer',
@@ -226,10 +228,15 @@ export const SKILL_NAMES = [
   'merge-executor',
 ] as const;
 
+const MULTI_FILE_SKILLS = new Set<string>([
+  'ui-ux-pro-max',
+]);
+
 const SKILL_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
   'project-init': { en: 'Project initialization and structure setup', zh: '项目初始化与结构搭建' },
   'prd-writer': { en: 'Requirements document authoring', zh: '需求文档编写' },
   'product-designer': { en: 'Product design and prototyping', zh: '产品设计与原型' },
+  'ui-ux-pro-max': { en: 'UI/UX design intelligence (67 styles / 96 palettes / 57 font pairings / 25 charts / 13 stacks). Auto-invoked by product-designer in Phase 2 for GUI products (Web / Mobile / Desktop).', zh: 'UI/UX 设计智能（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。Phase 2 处理 GUI 类产品（Web / Mobile / Desktop）设计时由 product-designer 自动调用。' },
   'architecture-designer': { en: 'Technical architecture and technology selection', zh: '技术架构与技术选型' },
   'scenario-architect': { en: 'Business scenario modeling and sequence diagrams', zh: '业务场景建模与时序图' },
   'api-designer': { en: 'OpenAPI specification design', zh: 'OpenAPI 规格设计' },
@@ -778,6 +785,45 @@ export function createCodexSkillContent(skillName: string, content: string): str
   return `---\nname: ${JSON.stringify(skillName)}\ndescription: ${JSON.stringify(description)}\n---\n\n${content}`;
 }
 
+function copyDirRecursive(src: string, dest: string): void {
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    const srcPath = join(src, entry.name);
+    const destPath = join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else if (entry.isFile()) {
+      copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+function deployMultiFileSkillAssets(source: string, root: string): void {
+  const logosSkillsDir = join(root, 'logos', 'skills');
+  for (const name of MULTI_FILE_SKILLS) {
+    const srcDir = join(source, name);
+    if (!existsSync(srcDir)) continue;
+    copyDirRecursive(srcDir, join(logosSkillsDir, name));
+  }
+}
+
+function isPython3Available(): boolean {
+  try {
+    execSync('python3 --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function maybePrintPythonHint(locale: Locale): void {
+  if (isPython3Available()) return;
+  const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
+  console.log('');
+  console.log(yellow(t(locale, 'init.pythonMissingHeader')));
+  console.log(t(locale, 'init.pythonMissingBody'));
+}
+
 export function deploySkills(
   root: string,
   aiTool: AiTool,
@@ -787,6 +833,8 @@ export function deploySkills(
 ): { target: string; count: number } | null {
   const source = skillsSource ?? findSkillsSource();
   if (!source || !existsSync(source)) return null;
+
+  deployMultiFileSkillAssets(source, root);
 
   let count = 0;
 
@@ -856,7 +904,8 @@ function generateActiveSkillsSection(locale: Locale, aiTool?: AiTool, target?: '
   const basePath = skillBasePath(aiTool, target);
   for (const name of SKILL_NAMES) {
     const desc = SKILL_DESCRIPTIONS[name]?.[locale] ?? SKILL_DESCRIPTIONS[name]?.en ?? name;
-    section += `- \`${basePath}/${name}/SKILL.md\` — ${desc}\n`;
+    const skillBase = MULTI_FILE_SKILLS.has(name) ? 'logos/skills' : basePath;
+    section += `- \`${skillBase}/${name}/SKILL.md\` — ${desc}\n`;
   }
   return section;
 }
@@ -1399,4 +1448,6 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   if (nameHint) console.log(nameHint);
   console.log(t(locale, 'init.step2'));
   console.log(t(locale, 'init.step3') + '\n');
+
+  maybePrintPythonHint(locale);
 }

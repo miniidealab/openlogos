@@ -29,6 +29,7 @@
 | **AI Skills / 对话式产品** | 用户通过自然语言与 AI 交互 | 对话流程图 + 示例对话脚本 | 对话步骤、AI 提问策略、产出物格式 |
 | **库 / SDK** | 被其他程序调用 | API 使用示例（代码片段） | 公开接口、参数设计、返回值、错误码 |
 | **移动应用** | 手机端 UI | HTML 页面（移动视口） | 手势交互、导航模式、离线状态 |
+| **桌面应用** | 本地安装、含 GUI、独立窗口（Electron / Tauri / SwiftUI / Jetpack Compose / Qt / WPF / GTK 等） | HTML 模拟桌面布局（含菜单栏 / 工具栏 / 状态栏）或对应栈风格指南 | 窗口管理、菜单栏 / 上下文菜单、快捷键、系统托盘、多窗口协作、文件系统交互 |
 | **混合型** | 多种交付物组合 | 按交付物分别选择对应形式 | 各交付物间的交互衔接 |
 
 ## 执行步骤
@@ -52,6 +53,7 @@
 - **CLI 工具**：命令树结构、子命令层级、全局选项
 - **AI Skills**：Skill 触发关系、对话步骤编排、产出物依赖链
 - **库 / SDK**：模块结构、公开 API 分组
+- **桌面应用**：窗口结构、菜单 / 快捷键体系、IPC 设计（主进程↔渲染进程 / 各 native 层）、本地存储与文件系统
 
 ### Step 3: 逐场景细化交互规格
 
@@ -63,7 +65,30 @@
 
 ### Step 5: 生成原型
 
-根据产品类型生成对应形式的原型（见示例）。
+#### Step 5a（仅 GUI 类产品）：调用 ui-ux-pro-max 获取设计系统
+
+**适用条件**：凡产品交付物中包含图形用户界面（GUI）的产品类型——
+- ✅ 触发：Web 应用 / 移动应用 / 桌面应用（Electron / Tauri / SwiftUI / Jetpack Compose / Qt / WPF / GTK 等）/ 混合型中含 GUI 交付物的部分
+- ❌ 不触发：纯 CLI 工具 / Library / AI Skills / 纯 API 服务 等无 GUI 交付物的产品
+
+**执行步骤**：
+
+1. 从 Phase 1 需求文档提取关键词：产品类型（SaaS / e-commerce / dashboard / portfolio 等）+ 行业 + 风格倾向
+2. 调用 `ui-ux-pro-max`：
+   ```bash
+   python3 logos/skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <style_keywords>" --design-system -p "<项目名>"
+   ```
+3. 消费输出：风格 + 调色板 + 字体配对 + 登陆页模式 + 反模式清单作为 Step 5 生成原型的视觉基础
+   - Web 应用：用 HTML 实现风格指南
+   - 桌面 / 移动应用：按对应技术栈输出风格指南（Electron / Tauri 直接复用 react / shadcn / html-tailwind 数据；SwiftUI / Jetpack Compose / Flutter 直接命中对应 stack 数据；其余 native 栈使用 stack 无关的风格/配色/字体推荐）
+
+**降级路径**：
+
+检测不到 `python3` 时跳过本步并提示用户「检测到 ui-ux-pro-max 依赖的 Python 3 不可用。原型将使用通用风格生成。如需专业级设计系统建议，请安装 Python 3 后重试。」原型用通用风格继续生成，不阻塞 Step 5。
+
+#### Step 5b：根据产品类型生成对应形式的原型
+
+根据产品类型生成对应形式的原型（见示例）。GUI 类产品在 Step 5a 已获取设计系统的基础上落地视觉/交互；非 GUI 类产品直接按产品类型选择对应原型形式。
 
 ### Step 6: 输出产品设计文档
 

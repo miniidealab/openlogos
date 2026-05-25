@@ -50,3 +50,7 @@ Thumbs.db
 
 # OpenLogos 根目录 logos/：本仓 dogfooding 与变更提案均保留在本地，不提交到 GitHub
 /logos/
+
+# Python 编译产物（ui-ux-pro-max scripts/ 运行后生成）
+__pycache__/
+*.py[cod]
