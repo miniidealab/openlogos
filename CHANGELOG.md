@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`openlogos init` 末尾非阻塞 Python 3 检测** — 若未检测到 `python3`，输出黄色友好提示与多 OS 安装命令；不阻塞主流程。
 - **`deploySkills` 支持多文件 skill** — `ui-ux-pro-max` 的 `data/` + `scripts/` 在所有 aiTool（claude-code / codex / cursor / opencode）下都会被完整拷贝到 `logos/skills/ui-ux-pro-max/`，确保 SKILL.md 中写死的 `python3 logos/skills/ui-ux-pro-max/scripts/...` 路径始终可用。
 
+## [0.9.28] - 2026-05-25
+
+### Fixed
+
+- **修复 CLI JSON 在局部损坏 `logos-project.yaml` 时回退 `initial` 的问题** — `detect/status --format json` 现在会从 YAML AST 恢复 `modules[]`，继续输出 launched 生命周期与 `yaml_diagnostics`。
+
 ## [0.9.27] - 2026-05-24
 
 ### Changed
@@ -553,7 +559,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.27...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.28...HEAD
+[0.9.28]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.28
 [0.9.27]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.27
 [0.9.26]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.26
 [0.9.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.5
