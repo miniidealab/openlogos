@@ -3,7 +3,8 @@ import { basename, join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
-import { parse as parseYaml } from 'yaml';
+import { readProjectYaml } from '../lib/project-yaml.js';
+import type { YamlDiagnostics } from '../lib/project-yaml.js';
 
 export type ProposalStep =
   | 'writing'
@@ -134,6 +135,7 @@ export interface StatusData {
   source_roots: { src: string[]; test: string[] } | null;
   active_change: string | null;
   proposal_step: ProposalStep | null;
+  yaml_diagnostics: YamlDiagnostics | null;
 }
 
 const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
@@ -898,63 +900,51 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     sourceRoots = config.sourceRoots ?? null;
   } catch { /* ignore */ }
 
-  const projectYamlPath = join(root, 'logos', 'logos-project.yaml');
   let rawModules: ModuleInfo[] | undefined;
   let scenarios: Array<{ id: string; module?: string }> = [];
+  let yamlDiagnostics: YamlDiagnostics | null = null;
   // Global skip: only skip a phase if ALL initial modules declare it in skip_phases
   // (intersection, not union — one module needing a phase is enough to keep it)
   const globalSkipPhaseKeys = new Set<string>();
 
-  if (existsSync(projectYamlPath)) {
-    try {
-      const yaml = parseYaml(readFileSync(projectYamlPath, 'utf-8'));
-      if (Array.isArray(yaml?.modules)) {
-        rawModules = (yaml.modules as Array<{
-          id: string;
-          name: string;
-          lifecycle?: string;
-          skip_phases?: string[];
-          deployment_required?: boolean;
-          smoke_required?: boolean;
-        }>).map(m => ({
-          id: m.id,
-          name: m.name,
-          lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
-          skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
-          deployment_required: typeof m.deployment_required === 'boolean'
-            ? m.deployment_required
-            : undefined,
-          smoke_required: typeof m.smoke_required === 'boolean'
-            ? m.smoke_required
-            : undefined,
-        }));
-        const deploymentGates = yaml?.deployment_gates && typeof yaml.deployment_gates === 'object'
-          ? yaml.deployment_gates as Record<string, { deployment_required?: boolean; smoke_required?: boolean }>
-          : {};
-        for (const mod of rawModules) {
-          const gates = deploymentGates[mod.id];
-          if (gates) {
-            if (typeof gates.deployment_required === 'boolean') mod.deployment_required = gates.deployment_required;
-            if (typeof gates.smoke_required === 'boolean') mod.smoke_required = gates.smoke_required;
-          }
-        }
-        if (rawModules.some(m => m.lifecycle === 'launched')) {
-          lifecycle = 'launched';
-        }
-        // Intersection: a phase key is globally skipped only if every initial module skips it
-        const initialModules = rawModules.filter(m => m.lifecycle === 'initial');
-        if (initialModules.length > 0) {
-          for (const phaseKey of PHASE_KEYS) {
-            if (initialModules.every(m => deriveExplicitSkipPhaseKeys(m).has(phaseKey))) {
-              globalSkipPhaseKeys.add(phaseKey);
-            }
-          }
+  const projectYaml = readProjectYaml(root);
+  yamlDiagnostics = projectYaml.yaml_diagnostics;
+  if (Array.isArray(projectYaml.data?.modules)) {
+    rawModules = projectYaml.data.modules.map(m => ({
+      id: m.id,
+      name: m.name,
+      lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
+      skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
+      deployment_required: typeof m.deployment_required === 'boolean'
+        ? m.deployment_required
+        : undefined,
+      smoke_required: typeof m.smoke_required === 'boolean'
+        ? m.smoke_required
+        : undefined,
+    }));
+    const deploymentGates = projectYaml.data.deployment_gates ?? {};
+    for (const mod of rawModules) {
+      const gates = deploymentGates[mod.id];
+      if (gates) {
+        if (typeof gates.deployment_required === 'boolean') mod.deployment_required = gates.deployment_required;
+        if (typeof gates.smoke_required === 'boolean') mod.smoke_required = gates.smoke_required;
+      }
+    }
+    if (rawModules.some(m => m.lifecycle === 'launched')) {
+      lifecycle = 'launched';
+    }
+    // Intersection: a phase key is globally skipped only if every initial module skips it
+    const initialModules = rawModules.filter(m => m.lifecycle === 'initial');
+    if (initialModules.length > 0) {
+      for (const phaseKey of PHASE_KEYS) {
+        if (initialModules.every(m => deriveExplicitSkipPhaseKeys(m).has(phaseKey))) {
+          globalSkipPhaseKeys.add(phaseKey);
         }
       }
-      if (Array.isArray(yaml?.scenarios)) {
-        scenarios = yaml.scenarios as Array<{ id: string; module?: string }>;
-      }
-    } catch { /* ignore */ }
+    }
+  }
+  if (Array.isArray(projectYaml.data?.scenarios)) {
+    scenarios = projectYaml.data.scenarios;
   }
 
   // ── Build top-level phases, applying skip_phases ──
@@ -1061,6 +1051,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     source_roots: sourceRoots,
     active_change: activeChange,
     proposal_step: proposalStep,
+    yaml_diagnostics: yamlDiagnostics,
   };
 }
 
@@ -1082,17 +1073,15 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
 
   // Validate --module if provided
   if (moduleId) {
-    const yamlPath = join(root, 'logos', 'logos-project.yaml');
-    if (existsSync(yamlPath)) {
-      try {
-        const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
-        const mods = Array.isArray(yaml?.modules) ? yaml.modules as Array<{ id: string }> : [];
-        if (!mods.find(m => m.id === moduleId)) {
-          console.error(`Error: Module '${moduleId}' not found in logos-project.yaml.`);
-          console.error('Run `openlogos module list` to see available modules.');
-          process.exit(1);
-        }
-      } catch { /* ignore */ }
+    const projectYaml = readProjectYaml(root);
+    const mods = projectYaml.data?.modules ?? [];
+    if (!mods.find(m => m.id === moduleId)) {
+      console.error(`Error: Module '${moduleId}' not found in logos-project.yaml.`);
+      if (projectYaml.yaml_diagnostics) {
+        console.error(`YAML diagnostics: ${projectYaml.yaml_diagnostics.messages.join('; ')}`);
+      }
+      console.error('Run `openlogos module list` to see available modules.');
+      process.exit(1);
     }
   }
 

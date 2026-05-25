@@ -1,8 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse as parseYaml } from 'yaml';
 import { VERSION, makeEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
+import { readProjectYaml } from '../lib/project-yaml.js';
+import type { YamlDiagnostics } from '../lib/project-yaml.js';
+
+interface DetectModuleInfo {
+  id: string;
+  name: string;
+  lifecycle: 'initial' | 'launched';
+}
 
 export interface DetectData {
   cli: {
@@ -13,36 +20,40 @@ export interface DetectData {
     name: string;
     locale: string;
     lifecycle: string;
+    modules?: DetectModuleInfo[];
     description: string;
     source_roots: { src: string[]; test: string[] } | null;
   } | null;
+  yaml_diagnostics: YamlDiagnostics | null;
 }
 
 export function collectDetectData(root: string): DetectData {
   const configPath = join(root, 'logos', 'logos.config.json');
 
   let project: DetectData['project'] = null;
+  let yamlDiagnostics: YamlDiagnostics | null = null;
   if (existsSync(configPath)) {
     try {
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
 
       // Derive lifecycle from modules
       let lifecycle = 'initial';
-      const yamlPath = join(root, 'logos', 'logos-project.yaml');
-      if (existsSync(yamlPath)) {
-        try {
-          const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
-          if (Array.isArray(yaml?.modules) &&
-              (yaml.modules as Array<{ lifecycle?: string }>).some(m => m.lifecycle === 'launched')) {
-            lifecycle = 'launched';
-          }
-        } catch { /* ignore */ }
+      const projectYaml = readProjectYaml(root);
+      yamlDiagnostics = projectYaml.yaml_diagnostics;
+      const modules: DetectModuleInfo[] | undefined = projectYaml.data?.modules?.map(m => ({
+        id: m.id,
+        name: m.name,
+        lifecycle: m.lifecycle === 'launched' ? 'launched' : 'initial',
+      }));
+      if (modules?.some(m => m.lifecycle === 'launched')) {
+        lifecycle = 'launched';
       }
 
       project = {
         name: config.name ?? '',
         locale: config.locale ?? 'en',
         lifecycle,
+        ...(modules !== undefined ? { modules } : {}),
         description: config.description ?? '',
         source_roots: config.sourceRoots ?? null,
       };
@@ -55,6 +66,7 @@ export function collectDetectData(root: string): DetectData {
       node_version: process.version,
     },
     project,
+    yaml_diagnostics: yamlDiagnostics,
   };
 }
 

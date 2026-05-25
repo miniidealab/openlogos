@@ -87,6 +87,21 @@ describe('JSON output — collectDetectData', () => {
     expect(data.project).toBeNull();
     expect(data.cli.version).toBe(VERSION);
   });
+
+  it('UT-JSON-09: collectDetectData 在可恢复 YAML 损坏下仍返回 launched 生命周期', () => {
+    scaffoldProject(root, { name: 'recoverable-app', locale: 'zh' });
+    writeRecoverableProjectYaml(root);
+
+    const data = collectDetectData(root);
+
+    expect(data.project).not.toBeNull();
+    expect(data.project!.lifecycle).toBe('launched');
+    expect(data.project!.modules).toEqual([
+      { id: 'core', name: '核心功能', lifecycle: 'launched' },
+    ]);
+    expect(data.yaml_diagnostics?.parse_status).toBe('recovered');
+    expect(data.yaml_diagnostics?.messages.join('\n')).toContain('logos-project.yaml');
+  });
 });
 
 /* ========== Scenario Tests — detect command ========== */
@@ -378,6 +393,138 @@ describe('JSON output — verify --format json', () => {
     expect(() => verify('json')).toThrow('process.exit(1)');
     const errorOutput = JSON.parse(con.errors[0]);
     expect(errorOutput.error.code).toBe('NO_TEST_CASES');
+  });
+});
+
+function writeRecoverableProjectYaml(root: string) {
+  writeFileSync(join(root, 'logos', 'logos-project.yaml'), [
+    'project:',
+    '  name: recoverable-app',
+    'modules:',
+    '  - id: core',
+    '    name: 核心功能',
+    '    lifecycle: launched',
+    '    skip_phases: [api, database, scenario]',
+    'deployment_gates:',
+    '  core:',
+    '    deployment_required: true',
+    '    smoke_required: true',
+    'scenarios:',
+    '  - id: S16',
+    '    name: 输出机器可读 JSON',
+    '    module: core',
+    'resource_index:',
+    '  - path: logos/resources/test/core-S16-test-cases.md',
+    '    desc: 测试用例',
+    '  - logos/resources/test/core-S32-test-cases.md',
+    '    desc: 这里故意构造隐式 map key 错误，模拟 RunLogos 坏 YAML',
+    '',
+  ].join('\n'));
+}
+
+function writeUnrecoverableProjectYaml(root: string) {
+  writeFileSync(join(root, 'logos', 'logos-project.yaml'), [
+    'project:',
+    '  name: broken-app',
+    'modules:',
+    '  -',
+    '    name: 缺少 id 的模块',
+    'resource_index:',
+    '  - logos/resources/test/core-S16-test-cases.md',
+    '    desc: 这里故意构造隐式 map key 错误，且没有可用 modules',
+    '',
+  ].join('\n'));
+}
+
+describe('JSON output — recoverable logos-project.yaml diagnostics', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+  let con: ReturnType<typeof captureConsole>;
+  let exitSpy: ReturnType<typeof mockProcessExit>;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root, { name: 'recoverable-app', locale: 'zh' });
+    restoreCwd = mockCwd(root);
+    con = captureConsole();
+    exitSpy = mockProcessExit();
+  });
+
+  afterEach(() => {
+    con.restore();
+    exitSpy.mockRestore();
+    restoreCwd();
+    cleanup();
+  });
+
+  it('UT-JSON-10: collectStatusData 在可恢复 YAML 损坏下仍返回 modules', () => {
+    writeRecoverableProjectYaml(root);
+
+    const data = collectStatusData(root);
+
+    expect(data.lifecycle).toBe('launched');
+    expect(data.modules).toHaveLength(1);
+    expect(data.modules![0].id).toBe('core');
+    expect(data.modules![0].name).toBe('核心功能');
+    expect(data.modules![0].lifecycle).toBe('launched');
+    expect(data.yaml_diagnostics?.parse_status).toBe('recovered');
+  });
+
+  it('ST-JSON-21: detect --format json 在局部损坏 YAML 下仍暴露 launched 模块', () => {
+    writeRecoverableProjectYaml(root);
+
+    detect('json');
+
+    expect(con.logs).toHaveLength(1);
+    const output = JSON.parse(con.logs[0]);
+    expect(output.data.project.lifecycle).toBe('launched');
+    expect(output.data.project.modules[0]).toEqual({
+      id: 'core',
+      name: '核心功能',
+      lifecycle: 'launched',
+    });
+    expect(output.data.yaml_diagnostics.parse_status).toBe('recovered');
+  });
+
+  it('ST-JSON-22: status --format json 在局部损坏 YAML 下仍暴露 launched 模块', () => {
+    writeRecoverableProjectYaml(root);
+
+    status('json');
+
+    expect(con.logs).toHaveLength(1);
+    const output = JSON.parse(con.logs[0]);
+    expect(output.data.lifecycle).toBe('launched');
+    expect(output.data.modules[0].id).toBe('core');
+    expect(output.data.modules[0].lifecycle).toBe('launched');
+    expect(output.data.yaml_diagnostics.parse_status).toBe('recovered');
+  });
+
+  it('ST-JSON-23: detect/status --format json 在无法恢复 YAML 时返回诊断', () => {
+    writeUnrecoverableProjectYaml(root);
+
+    detect('json');
+    status('json');
+
+    const detectOutput = JSON.parse(con.logs[0]);
+    const statusOutput = JSON.parse(con.logs[1]);
+    expect(detectOutput.data.yaml_diagnostics.parse_status).toBe('error');
+    expect(detectOutput.data.yaml_diagnostics.messages.join('\n')).toContain('无法从 AST 恢复 modules');
+    expect(detectOutput.data.project).not.toHaveProperty('modules');
+    expect(statusOutput.data.yaml_diagnostics.parse_status).toBe('error');
+    expect(statusOutput.data.yaml_diagnostics.messages.join('\n')).toContain('无法从 AST 恢复 modules');
+    expect(statusOutput.data).not.toHaveProperty('modules');
+  });
+
+  it('ST-JSON-22b: status --module 校验使用可恢复 modules', () => {
+    writeRecoverableProjectYaml(root);
+
+    status('json', 'core');
+
+    const output = JSON.parse(con.logs[0]);
+    expect(output.data.modules).toHaveLength(1);
+    expect(output.data.modules[0].id).toBe('core');
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 });
 

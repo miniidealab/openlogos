@@ -24,3 +24,22 @@
 - `npm run generate:releases`
 - `npm run build`
 - `npm run smoke:releases`
+
+## fix-cli-panel-lifecycle-detection
+
+### 范围
+- 为 `detect --format json` 和 `status --format json` 增加 `logos-project.yaml` 容错读取
+- 在 YAML 局部损坏时恢复 `modules[]` 并派生 `lifecycle`
+- 为 JSON 输出补充 `yaml_diagnostics`
+
+### 覆盖任务
+- [x] 新增 `cli/src/lib/project-yaml.ts`，统一处理正常解析、可恢复解析和不可恢复解析
+- [x] 修改 `cli/src/commands/detect.ts`，输出 `project.modules`、`project.lifecycle` 和 `yaml_diagnostics`
+- [x] 修改 `cli/src/commands/status.ts`，在 `collectStatusData()` 和 `--module` 校验中使用容错读取
+- [x] 更新 `cli/test/s16-json-output.test.ts`，覆盖可恢复与不可恢复 YAML 两类 JSON 输出
+- [x] 更新 `cli/test/openlogos-reporter.ts` 与 `cli/src/commands/verify.ts`，兼容 `UT-JSON-*` / `ST-JSON-*` 用例 ID
+
+### 验证
+- `cd cli && npm test -- --run test/s16-json-output.test.ts test/s11-status.test.ts test/s17-module.test.ts`
+- `node /Users/huangxianglong/gitlab/openlogos/cli/dist/index.js detect --format json`
+- `node /Users/huangxianglong/gitlab/openlogos/cli/dist/index.js status --format json`
