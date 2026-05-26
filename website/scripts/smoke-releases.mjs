@@ -1,12 +1,13 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
+import { RELEASE_SUMMARY_FALLBACK_MESSAGE } from '../src/lib/releases-summary.mjs';
 
 const ROOT = process.cwd();
 const RESULT_PATH = resolve(ROOT, '../logos/resources/verify/smoke-results.jsonl');
 const DIST_DIR = resolve(ROOT, 'dist');
 const RELEASE_DATA_PATH = resolve(ROOT, 'src/data/releases.json');
-const WEBSITE_SMOKE_IDS = new Set(['SMOKE-core-03', 'SMOKE-core-06', 'SMOKE-core-07']);
+const WEBSITE_SMOKE_IDS = new Set(['SMOKE-core-03', 'SMOKE-core-07', 'SMOKE-core-08']);
 
 function removePreviousWebsiteResults() {
   mkdirSync(dirname(RESULT_PATH), { recursive: true });
@@ -63,28 +64,38 @@ try {
   assert(index.includes('Release Feed'), 'Home page missing release feed section');
   assert(index.includes(latestVersionText), 'Home page missing latest release version');
   assert(index.includes(versionCountText), 'Home page missing release count');
-  report('SMOKE-core-07', 'pass', 'home page links to releases');
+  report('SMOKE-core-08', 'pass', 'home page links to releases');
 } catch (error) {
-  report('SMOKE-core-07', 'fail', 'home page links to releases', String(error));
+  report('SMOKE-core-08', 'fail', 'home page links to releases', String(error));
   throw error;
 }
 
 try {
   const releases = readHtml('releases/index.html');
+  const versions = Array.isArray(releaseData.versions) ? releaseData.versions : [];
+  const versionsWithAnySummary = versions.filter((item) => item.valueSummary?.length > 0 || item.fixSummary?.length > 0);
+  const fallbackVersions = versions.filter((item) => item.summarySource === 'fallback');
   assert(releases.includes('OpenLogos Releases'), 'Release page missing title');
   assert(releases.includes('npm install -g @miniidealab/openlogos'), 'Release page missing install command');
   assert(releases.includes(latestVersionText), 'Release page missing latest version');
   assert(releases.includes('versions'), 'Release page missing version count label');
   assert(releases.includes(versionCountText), 'Release page missing version count value');
-  report('SMOKE-core-06', 'pass', 'release page shows latest and install command');
+  assert(versionsWithAnySummary.length > 0, 'Release data missing changelog summaries');
+  assert(fallbackVersions.length > 0, 'Release data missing fallback summary markers');
+  assert(releases.includes('What value changed'), 'Release page missing value summary heading');
+  assert(releases.includes('What got fixed'), 'Release page missing fix summary heading');
+  assert(releases.includes(RELEASE_SUMMARY_FALLBACK_MESSAGE), 'Release page missing fixed fallback summary text');
+  assert(releases.includes('CHANGELOG'), 'Release page missing changelog links');
+  report('SMOKE-core-07', 'pass', 'release page shows version summaries');
 } catch (error) {
-  report('SMOKE-core-06', 'fail', 'release page shows latest and install command', String(error));
+  report('SMOKE-core-07', 'fail', 'release page shows version summaries', String(error));
   throw error;
 }
 
 try {
   const releases = readHtml('releases/index.html');
   assert(releases.includes('GitHub Release'), 'Release page missing external links');
+  assert(releases.includes('structured CHANGELOG extraction') || releases.includes('structured from CHANGELOG'), 'Release page missing source explanation');
   report('SMOKE-core-03', 'pass', 'website build includes release history page');
 } catch (error) {
   report('SMOKE-core-03', 'fail', 'website build includes release history page', String(error));

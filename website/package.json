@@ -8,6 +8,7 @@
     "build": "npm run generate:releases && astro build",
     "preview": "astro preview",
     "smoke:releases": "node scripts/smoke-releases.mjs",
+    "test": "node --test test/*.test.mjs",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name openlogos"
   },
   "dependencies": {

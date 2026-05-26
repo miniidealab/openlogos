@@ -1,17 +1,102 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.9.26",
-  "updatedAt": "2026-05-24T01:58:33.768Z",
-  "generatedAt": "2026-05-24T01:58:33.768Z",
-  "versionCount": 61,
+  "latestVersion": "0.9.29",
+  "updatedAt": "2026-05-25T15:06:42.824Z",
+  "generatedAt": "2026-05-25T15:06:42.824Z",
+  "versionCount": 64,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.9.26"
+    "latest": "0.9.29"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.9.29",
+      "publishedAt": "2026-05-25T15:06:42.080Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.29",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.29",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.29.tgz",
+      "gitHead": null,
+      "size": 521537,
+      "sizeLabel": "509 KB",
+      "unpackedSize": 2138440,
+      "unpackedSizeLabel": "2.0 MB",
+      "fileCount": 231,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "内置 ui-ux-pro-max Skill（vendor 自上游） — Phase 2 处理 GUI 类产品（Web / Mobile / Desktop，含 Electron / Tauri / SwiftUI / Jetpack Compose / Qt 等）设计时，product-designer 自动调用 ui-ux-pro-max 拿到风格 / 配色 / 字体 / 组件库 / 反模式推荐（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。上游来自 ui-ux-pro-max-skill（MIT），约 668 KB。",
+        "product-designer 扩展桌面应用支持 — 产品类型表新增「桌面应用」行；Step 2「信息架构」补充窗口/菜单/IPC/文件系统维度；Step 5 拆分为 Step 5a（GUI 类产品调用 ui-ux-pro-max）+ Step 5b（按产品类型生成原型）。",
+        "openlogos init 末尾非阻塞 Python 3 检测 — 若未检测到 python3，输出黄色友好提示与多 OS 安装命令；不阻塞主流程。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.29, but fix summary entries are missing."
+    },
+    {
+      "version": "0.9.28",
+      "publishedAt": "2026-05-25T03:32:08.773Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.28",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.28",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.28.tgz",
+      "gitHead": null,
+      "size": 516608,
+      "sizeLabel": "505 KB",
+      "unpackedSize": 2113228,
+      "unpackedSizeLabel": "2.0 MB",
+      "fileCount": 227,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复 CLI JSON 在局部损坏 logos-project.yaml 时回退 initial 的问题 — detect/status --format json 现在会从 YAML AST 恢复 modules[]，继续输出 launched 生命周期与 yaml_diagnostics。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.28, but value summary entries are missing."
+    },
+    {
+      "version": "0.9.27",
+      "publishedAt": "2026-05-24T10:15:29.230Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.27",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.27",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.27.tgz",
+      "gitHead": null,
+      "size": 292851,
+      "sizeLabel": "286 KB",
+      "unpackedSize": 1062982,
+      "unpackedSizeLabel": "1.0 MB",
+      "fileCount": 163,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [
+        "发布版本提升到 0.9.27 — 本次发版包含 deploy-progress-summary-panel 的 CLI 适配、部署进度摘要字段和冲突态门禁加固。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.27, but fix summary entries are missing."
+    },
     {
       "version": "0.9.26",
       "publishedAt": "2026-05-24T01:58:33.634Z",
@@ -31,9 +116,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ]
+      "distTags": [],
+      "valueSummary": [
+        "发布版本提升到 0.9.26 — 本次发版包含 proposal-deploy-consistency-hardening 的 CLI 适配与提案级部署门禁加固。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.26, but fix summary entries are missing."
     },
     {
       "version": "0.9.25",
@@ -54,7 +143,11 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.9.25."
     },
     {
       "version": "0.9.24",
@@ -75,7 +168,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "新增部署 Phase 与部署状态流转 — Initial 阶段新增 Phase 3-3 · 部署方案，提案流程支持部署影响判断、部署 delta、[deploy] 任务、ready-to-deploy / deploy-done 状态，以及 verify 通过后的部署任务展示。",
+        "新增 openlogos smoke 冒烟测试命令 — 支持部署后运行冒烟测试、生成 smoke 报告，并写入 SMOKE_PASS / SMOKE_FAIL 标记；status / next / launch 同步感知 ready-to-smoke、smoke-passed 和 smoke-failed 状态。",
+        "新增部署设计与执行 Skill — 增加 deployment-designer 和 deployment-executor，明确部署方案、回滚策略、部署后检查、冒烟测试方案，以及部署必须经过人类确认的执行边界。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.24, but fix summary entries are missing."
     },
     {
       "version": "0.9.23",
@@ -96,7 +197,11 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.9.23."
     },
     {
       "version": "0.9.22",
@@ -117,7 +222,11 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.9.22."
     },
     {
       "version": "0.9.21",
@@ -138,7 +247,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "官网与 CLI 文档同步更新 — 修正 openlogos init 的 AI 工具选择说明、CLI 命令总数、版本示例，以及 sync / launch 的多工具行为描述，确保对外文档与当前实现一致。"
+      ],
+      "fixSummary": [
+        "openlogos sync 多工具技能同步一致性 — 当 aiTool 为数组或 all 时，sync 与 launch 现在会同步部署所有可部署工具的 Skills、插件资产与对应指令文件，AGENTS.md / CLAUDE.md 也按多工具语义生成，避免文件已部署但指令文件只覆盖单一工具的错配。"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.9.20",
@@ -159,7 +276,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "纯代码提案跳过 merge 阶段 — 新格式 tasks.md（含 ## [tag] section）中，无 [delta] section 的提案不再经过 ready-to-merge / merge-generated，直接按 [code] section 勾选状态进入 coding 或 ready-to-verify。旧格式向后兼容。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.20, but fix summary entries are missing."
     },
     {
       "version": "0.9.19",
@@ -180,7 +303,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复 openlogos merge 幂等性问题 — 提案已存在 SPEC_MERGED 标记时，重复执行 openlogos merge 现在会提示\"规格已合并，无需重复操作\"并直接退出，不再覆盖 MERGE_PROMPT.md。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.19, but value summary entries are missing."
     },
     {
       "version": "0.9.18",
@@ -201,7 +330,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "提案全生命周期精确追踪 — 状态机扩展为完整八段式：writing → delta-writing → ready-to-merge → merge-generated → coding → ready-to-verify → verify-passed / verify-failed",
+        "[code] section 驱动 coding → ready-to-verify 转换 — SPEC_MERGED 存在时，[code] section 全部勾选（或无 [code] section）→ ready-to-verify；否则保持 coding",
+        "verify 写入提案标记文件 — openlogos verify 执行后自动读取 .openlogos-guard，通过写 VERIFY_PASS，失败写 VERIFY_FAIL，状态机据此精确感知验收结果"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.18, but fix summary entries are missing."
     },
     {
       "version": "0.9.17",
@@ -222,7 +359,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "tasks.md 结构化 section 格式 — 引入 ## [delta] 和 ## [code] section 标记，将 delta 任务与代码任务严格分离。detectProposalStep() 改为按 [delta] section 的勾选状态判断是否进入 ready-to-merge，不再依赖整个 tasks.md 的全局勾选",
+        "纯代码提案不再卡住 — 无 [delta] section 的提案直接进入 ready-to-merge，无需手动运行 openlogos merge 跳出",
+        "向后兼容 — 无 section 标记的旧格式 tasks.md 降级为原有全局勾选判断，已有提案不受影响"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.17, but fix summary entries are missing."
     },
     {
       "version": "0.9.16",
@@ -243,7 +388,17 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "提案状态机扩展为五段式：writing → delta-writing → ready-to-merge → merge-generated → coding，每个阶段语义明确，消除 implementing/in-progress 的歧义",
+        "openlogos merge 递归扫描 delta：支持 deltas/prd/1-product-requirements/、deltas/prd/3-technical-plan/ 等嵌套子目录，嵌套路径正确映射到对应主文档目录；新增 deltas/test/ 映射",
+        "两段式 merge 标记：openlogos merge 生成 MERGE_PROMPT.md 后写入 MERGE_PROMPT_GENERATED（表示\"指令已生成\"）；AI 执行完规格合并后写入 SPEC_MERGED（表示\"规格已合并，可开始编码\"）"
+      ],
+      "fixSummary": [
+        "有 delta 时 merge 后状态卡在 ready-to-merge 的问题（根因：状态机缺少 merge-generated 中间态）"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.9.15",
@@ -264,7 +419,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复有 delta 时 merge 后状态无法推进的问题 — openlogos merge 在有 delta 时，生成 MERGE_PROMPT.md 后同时写入 MERGED 标记文件，使 detectProposalStep() 能正确识别已合并状态并返回 'coding'，流程不再卡在\"合并规格\"步骤。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.15, but value summary entries are missing."
     },
     {
       "version": "0.9.14",
@@ -285,7 +446,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "change-writer Skill 补充 prd/ 子目录的 delta 映射说明 — tasks.md 模板中各文档类任务标注精确的 delta 子目录（deltas/prd/1-product-requirements/、deltas/prd/2-product-design/1-feature-specs/、deltas/prd/3-technical-plan/1-architecture/ 等）；Step 6 目录映射表新增 prd/ 子目录展开说明，消除 AI 将架构文档等放错目录的歧义。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.14, but fix summary entries are missing."
     },
     {
       "version": "0.9.13",
@@ -306,7 +473,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复无 delta 时 merge 后状态无法推进的问题 — openlogos merge 在无 delta 时现在会写入 MERGED 标记文件；detectProposalStep() 检测到该文件后返回新增的 'coding' 状态，使流程正确推进到\"实现代码\"步骤，不再卡在 merge 阶段。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.13, but value summary entries are missing."
     },
     {
       "version": "0.9.12",
@@ -327,7 +500,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "change-writer Skill 新增 Step 6: 产出 Delta 文件 — 明确 delta 文件的目录映射（deltas/prd/、deltas/api/、deltas/database/、deltas/scenario/）、文件命名规范（与目标主文档同名）、文件格式（ADDED/MODIFIED/REMOVED 标记）及行为约束（禁止直接修改主文档）。同步更新 tasks.md 模板，文档类任务标注产出 delta 文件的目标子目录。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.12, but fix summary entries are missing."
     },
     {
       "version": "0.9.11",
@@ -348,7 +527,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "变更管理规则改为自动判断 — createAgentsMd 和 generatePolicyMdc 生成的初始开发期文案，从模糊的\"按 Phase 推进即可\"改为明确的判断依据：检查 logos-project.yaml 中是否存在 lifecycle: launched 的模块，存在则必须提案，否则不需要。AI 可自主判断，无需依赖人工提示。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.11, but fix summary entries are missing."
     },
     {
       "version": "0.9.10",
@@ -369,7 +554,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "openlogos merge delta 为空时不再报错 — deltas/ 目录为空时，命令直接输出 ✓ nothing to merge 并正常退出（exit 0），不再以错误退出。空 delta 是合法状态，语义等同于 HTTP 204。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.10, but fix summary entries are missing."
     },
     {
       "version": "0.9.8",
@@ -392,7 +583,13 @@
       },
       "distTags": [
         "old"
-      ]
+      ],
+      "valueSummary": [],
+      "fixSummary": [
+        "加强 reporter 强制前置约束，防止测试代码遗漏 reporter — code-implementor Skill Step 4 新增\"Reporter 嵌入（强制前置）\"小节，明确要求在写任何测试用例代码之前先创建共享 reporter 工具文件（test/helpers/reporter.ts），所有测试文件统一 import；Step 5 自检拆分为三条独立 reporter 检查项。spec/test-results.md 补充\"推荐：共享 reporter 文件模式\"说明。CLAUDE.md Step 4 提示词后新增 ⚠️ 警告块，将 reporter 提升为强制前置交付物。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.8, but value summary entries are missing."
     },
     {
       "version": "0.9.9",
@@ -413,7 +610,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "openlogos archive 归档目录名加时间戳前缀 — 归档后的目录名格式从 <slug> 改为 YYYYMMDD-HHmm-<slug>（如 20260509-1430-fix-login-bug），方便在归档数量多时按时间快速定位历史提案。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.9, but fix summary entries are missing."
     },
     {
       "version": "0.9.7",
@@ -434,7 +637,14 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "多模块项目 phase 状态判断错误 — openlogos status --module <新模块> 对刚创建的模块不再错误返回 current_phase: null, suggestion: \"所有阶段已完成\"。",
+        "openlogos sync 自动补全 scenarios[].module 字段 — 对 logos-project.yaml 中没有 module 字段的 scenarios 条目，sync 命令根据文件系统中 <moduleId>-SXX-*.md 的存在情况自动推断归属模块，无法推断时默认填 core。幂等操作，已有 module 字段的条目不覆盖。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.7, but value summary entries are missing."
     },
     {
       "version": "0.9.6",
@@ -455,7 +665,16 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "Claude Code 插件自动部署 — openlogos init 和 openlogos sync 在选择 claude-code 或 all 时，自动将插件资产部署到用户项目的 .claude/ 目录："
+      ],
+      "fixSummary": [
+        "module add 不再要求活跃变更提案 — openlogos module add 原本错误地要求 guard 文件存在才能执行，现已移除该限制。模块管理是项目结构层面的操作，维度高于变更提案，可随时自由执行。",
+        "module rename/remove 改为警告而非阻塞 — 有活跃变更提案时，rename 和 remove 打印警告提示用户注意 delta 文件可能受影响，但不阻止操作继续执行。"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.9.5",
@@ -476,7 +695,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "[manual] 测试用例标记机制 — 在 test-cases.md 中对无法自动化执行的用例（如需要真实 TTY/PTY 渲染、跨窗口操作、人工视觉验证的 ST 用例）追加 [manual] 标记。openlogos verify 跳过这类用例，不计入 defined_count 和覆盖率分母，不出现在 uncovered_cases，单独以 manual_count 字段展示。",
+        "AC trace 支持 MANUAL_PENDING 状态 — 若某个验收条件（AC）关联的用例全部为 [manual]，标记为 🔵 MANUAL（人工待验），不触发 Gate 3.5 失败。混合自动化和 [manual] 的 AC，Gate 判定仅取决于自动化部分。",
+        "verify --format json 新增 manual_count 字段 — summary 对象新增 manual_count，外部消费 CLI 输出时可感知人工用例数量。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.5, but fix summary entries are missing."
     },
     {
       "version": "0.9.4",
@@ -497,7 +724,13 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "回滚 merge.ts 中错误添加的 spec/skills delta 分类 — DELTA_TO_RESOURCE 映射表移除了 0.9.3 中错误引入的 spec → logos/spec 和 skills → logos/skills 映射。spec/ 和 skills/ 是 OpenLogos 自身源码，直接修改即可，不应走 delta/merge 流程，该映射在用户项目中无意义。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.4, but value summary entries are missing."
     },
     {
       "version": "0.9.3",
@@ -518,7 +751,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "tasks.md 模板移除 verify 类条目 — logos/spec/change-management.md 和 logos/skills/change-writer/SKILL.md 的 tasks.md 示例模板删除\"部署到测试环境\"和\"运行编排验收\"条目，并明确标注 openlogos verify 是独立 CLI 操作节点，不应写入 tasks.md 作为可勾选任务。"
+      ],
+      "fixSummary": [
+        "openlogos merge 支持 spec/ 和 skills/ delta 分类 — DELTA_TO_RESOURCE 映射表新增 spec → logos/spec 和 skills → logos/skills，修复 delta 文件放在这两个分类下时 merge 报\"没有 delta 文件\"的问题。"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.9.2",
@@ -539,7 +780,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "skip_phases 模块配置 — logos-project.yaml 的 modules[] 新增可选字段 skip_phases，允许值为 api、database、scenario。由 architecture-designer Skill 在技术选型后填写，无需用户手动配置。适用于无 HTTP API 的桌面应用、CLI 工具等项目类型。",
+        "phase 检测逻辑升级 — CLI（status、next）和 plugin 脚本均支持 skip_phases：显式声明的阶段直接跳过，同时保留向后看兜底逻辑（后续阶段已有文件时自动跳过空目录），向后兼容旧项目。",
+        "多模块隔离 — 全局 phase 跳过采用交集语义：只有所有 initial 模块都声明跳过某阶段，才在全局层面跳过，避免一个模块的 skip_phases 影响其他模块。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.2, but fix summary entries are missing."
     },
     {
       "version": "0.9.1",
@@ -560,7 +809,17 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "AGENTS.md / CLAUDE.md 重新生成 — 通过 openlogos sync 重新部署，确保两个文件内容与当前配置一致。"
+      ],
+      "fixSummary": [
+        "plugin/bin/openlogos-phase lifecycle 读取错误 — 修复脚本仍从已废弃的 logos.config.json 读取 lifecycle 字段的问题，改为从 logos-project.yaml 的 modules[].lifecycle 推导（任意模块标记为 launched 则项目为 launched），与 CLI 行为保持一致。",
+        "plugin/bin/openlogos-phase 在 set -euo pipefail 下提前退出 — 修复 check_scenarios_complete 返回非零退出码时脚本被 set -e 终止的问题，所有调用处加 || true 保护。",
+        "plugin/bin/openlogos-phase change management 文案过时 — guard 检测条件从 active 更新为 launched，change management 提示语同步为新的 10 步流程（含 verify、git commit/push 节点）。"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.9.0",
@@ -581,7 +840,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "变更流程新增 verify 验收节点 — 在 merge（规格落地）和 archive（归档）之间强制插入 openlogos verify 验收步骤，确保代码通过测试后才能归档，形成完整的质量闭环。",
+        "变更流程新增 git commit/push 节点 — 在三个关键节点（merge 完成、代码实现完成、archive 完成）由 AI 自动提交 commit，git push 作为独立人类确认点放在 archive 之后，commit message 规范统一为 docs/feat/fix/chore({slug}): ...。",
+        "确立 merge → 代码实现 → verify → archive 的正确顺序 — 规格先合并进主文档，代码按最新规格实现，verify 验收代码，通过后归档，符合\"规格驱动代码\"核心理念。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.9.0, but fix summary entries are missing."
     },
     {
       "version": "0.8.2",
@@ -602,7 +869,15 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "将 npm 发布版本升级到 0.8.2，用于发布当前已通过测试和打包校验的 CLI 版本。"
+      ],
+      "fixSummary": [
+        "修复 cli/src/commands/status.ts 中未使用参数导致的发布前 lint 阻塞。"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.8.1",
@@ -623,7 +898,11 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.8.1."
     },
     {
       "version": "0.8.0",
@@ -644,7 +923,18 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "Codex 一等集成 — openlogos init / sync 新增 codex 作为一等 AI 工具选项，可自动部署 .agents/skills/、.codex-plugin/ 和 .codex/config.toml 所需配置，并在生成的 AGENTS/CLAUDE 指令中输出与 Codex 目录结构一致的 Skill 路径。",
+        "模块命名规范与模块管理命令 — CLI 与方法论文档全面支持 <module>-<序号>-<类型> 命名规则，新增 openlogos module list/add/rename/remove 与 openlogos next，并为多模块状态展示、场景编号全局唯一、logos-project.yaml.modules[] / scenario_counter.next_id 等能力提供实现与测试覆盖。",
+        "结构化 JSON 输出升级 — status --format json / next --format json 补充多模块相关字段与活跃提案推进状态信息，spec/cli-json-output.md 同步更新，确保外部消费 CLI 输出时的契约与实现一致。"
+      ],
+      "fixSummary": [
+        "guard 互斥缺失 — openlogos change 现在会在已有活动 guard 时拒绝创建新提案，避免覆盖 logos/.openlogos-guard。",
+        "status 模块区块标题 i18n 缺失 — 补充 status.modules 中英文词条，并增加文本模式回归测试，避免模块标题直接显示未翻译 key。"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.7.3",
@@ -663,7 +953,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "scenario-architect Skill — mermaid 箭头行单行约束 — 修复 AI 在生成时序图时将较长步骤描述折行写入箭头行（如将 UI 按钮文字另起一行补充），导致 mermaid 引擎解析失败、markdown 渲染出错的问题。在 Skill 规范中新增强制约束：每条 ->> / -->> 箭头的完整内容必须写在同一行；描述过长时应精简措辞而非拆行；补充细节统一放到时序图下方的\"步骤说明\"列表中。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.7.3, but value summary entries are missing."
     },
     {
       "version": "0.7.2",
@@ -682,7 +978,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "sync 命令输出版本号 — openlogos sync 执行时在首行显示当前 CLI 版本（如 Syncing project files... (openlogos v0.7.2)），方便确认实际运行的版本。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.7.2, but fix summary entries are missing."
     },
     {
       "version": "0.7.1",
@@ -701,7 +1003,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "--version 输出硬编码问题 — VERSION 常量改为从 package.json 动态读取，彻底消除版本号需要手动同步的隐患。"
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.7.1, but value summary entries are missing."
     },
     {
       "version": "0.7.0",
@@ -720,7 +1028,15 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "init --ai-tool all：一次初始化所有 AI 工具 — openlogos init 新增第 5 个选项「All（全部工具）」，选择后同时为 claude-code、opencode、cursor 部署 Skills、生成 AGENTS.md + CLAUDE.md（均含 Active Skills 段）并部署 OpenCode 插件。logos.config.json 的 aiTool 字段写入数组 [\"claude-code\", \"opencode\", \"cursor\"]。openlogos sync 同步兼容数组格式，对每个工具依次执行部署。",
+        "场景完整性校验（Scenario Completion Guard） — openlogos status 的阶段完成判断全面升级：",
+        "logos/resources/reference/ 目录 — openlogos init 新增创建 reference 资源目录，用于存放参考资料。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.7.0, but fix summary entries are missing."
     },
     {
       "version": "0.6.6",
@@ -739,7 +1055,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.6."
     },
     {
       "version": "0.6.5",
@@ -758,7 +1078,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.5."
     },
     {
       "version": "0.6.4",
@@ -777,7 +1101,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.4."
     },
     {
       "version": "0.6.3",
@@ -796,7 +1124,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.3."
     },
     {
       "version": "0.6.2",
@@ -815,7 +1147,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.2."
     },
     {
       "version": "0.6.1",
@@ -834,7 +1170,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.1."
     },
     {
       "version": "0.6.0",
@@ -853,7 +1193,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.0."
     },
     {
       "version": "0.5.10",
@@ -872,7 +1216,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.5.10."
     },
     {
       "version": "0.5.9",
@@ -891,7 +1239,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.5.9."
     },
     {
       "version": "0.5.8",
@@ -910,7 +1262,15 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "示例 money-log（OpenCode 集成演示） — 在 examples/money-log/ 纳入轻记账 Electron 小应用，含 .opencode/plugins/、.opencode/commands/ 与完整 logos/resources/；与 examples/flowtask/（Claude Code 演示）在文档中对位说明，并更新根 README.md、examples/README.md 与 docs/opencode.md 入口。"
+      ],
+      "fixSummary": [
+        "npm 包展示 README — @miniidealab/openlogos 自 cli/ 目录发布，此前包根目录缺少 README.md，导致 npm 项目页提示 “This package does not have a README”。现已新增 cli/README.md（安装说明、常用命令、文档与 CHANGELOG 链接），并列入 package.json 的 files 字段，确保打入发布 tarball。"
+      ],
+      "summarySource": "changelog",
+      "summaryFallbackReason": null
     },
     {
       "version": "0.5.7",
@@ -929,7 +1289,15 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "OpenCode Native Plugin MVP (draft) — Added plugin-opencode/ as a native OpenCode plugin prototype (single-package strategy):",
+        "OpenCode plugin spec — Added spec/opencode-plugin.md to document architecture, command contract, hook strategy, error codes, and security boundaries.",
+        "Phase 3 Step 4 交付规则强化（业务与测试闭环） — spec/workflow.md 明确 Step 4 必须同时交付业务代码、UT/ST 测试代码与 OpenLogos reporter；允许大任务分批，但每批必须闭环，且需先声明本批 UT/ST 用例 ID；并新增 Step 5 前置门禁，Step 4 未完成不得进入验收。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.5.7, but fix summary entries are missing."
     },
     {
       "version": "0.5.6",
@@ -948,7 +1316,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "OpenCode slash command discovery — OpenCode 1.x lists / commands from .opencode/commands/*.md, not from plugin tui.command.execute. init/sync now deploys Markdown command definitions (e.g. /openlogos-status, /openlogos-sync) that run openlogos via OpenCode’s ` !… shell injection, so the TUI no longer shows \"No matching items\" for openlogos`."
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.5.6, but value summary entries are missing."
     },
     {
       "version": "0.5.5",
@@ -967,7 +1341,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.5.5."
     },
     {
       "version": "0.5.4",
@@ -986,7 +1364,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "OpenCode as first-class AI tool — openlogos init now offers OpenCode as a dedicated option (option 3) alongside Cursor and Claude Code, instead of grouping it under \"Other\". OpenCode deploys Skills to logos/skills/ and includes Active Skills in AGENTS.md (which OpenCode reads on startup)."
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.5.4, but fix summary entries are missing."
     },
     {
       "version": "0.5.3",
@@ -1005,7 +1389,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "documents.changes in logos.config.json — openlogos init now includes a changes document module (./changes, **/*.{md,json}) in the generated config, so RunLogos can discover and display change proposals. openlogos sync incrementally backfills this entry for existing projects without overwriting user customizations."
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.5.3, but fix summary entries are missing."
     },
     {
       "version": "0.5.0",
@@ -1024,7 +1414,14 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "SQLite Structured Comment Convention — New -- @comment / -- @table-comment annotation format for SQLite DDL, providing machine-parseable table and column metadata equivalent to PostgreSQL's COMMENT ON and MySQL's inline COMMENT:",
+        "Test suite expanded from 125 to 140 cases"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.5.0, but fix summary entries are missing."
     },
     {
       "version": "0.4.3",
@@ -1043,7 +1440,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "openlogos init forced language selection in non-TTY — In non-interactive mode (e.g. Claude Code), init now exits with an error if --locale is not provided, printing a clear usage hint. This forces the AI to ask the user for language preference before retrying with --locale <en|zh>. AI tool is still auto-detected from CLAUDE_PLUGIN_ROOT/CLAUDE_CODE env vars."
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.4.3, but value summary entries are missing."
     },
     {
       "version": "0.4.1",
@@ -1062,7 +1465,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "openlogos init non-TTY default issue — Added --locale <en|zh> and --ai-tool <cursor|claude-code|other> CLI flags for explicit selection in non-interactive environments."
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.4.1, but value summary entries are missing."
     },
     {
       "version": "0.4.0",
@@ -1081,7 +1490,15 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "Claude Code Native Plugin — Full-featured plugin for Claude Code with one-command installation:",
+        "Plugin Marketplace — .claude-plugin/marketplace.json at repo root enables miniidealab/openlogos as a Claude Code marketplace",
+        "Skill Build Script — scripts/build-plugin-skills.sh builds plugin skills from source with proper Claude Code frontmatter"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.4.0, but fix summary entries are missing."
     },
     {
       "version": "0.3.6",
@@ -1100,7 +1517,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.3.6, but value summary and fix summary entries are missing."
     },
     {
       "version": "0.3.5",
@@ -1119,7 +1540,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.3.5, but value summary and fix summary entries are missing."
     },
     {
       "version": "0.3.4",
@@ -1138,7 +1563,11 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.3.4, but value summary and fix summary entries are missing."
     },
     {
       "version": "0.3.3",
@@ -1157,7 +1586,15 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "Lifecycle-Aware Change Management — New lifecycle field in logos.config.json (\"initial\" / \"active\") controls change management enforcement:",
+        "openlogos launch Command — Transitions the project from initial development to active iteration; automatically regenerates AGENTS.md, CLAUDE.md, and .cursor/rules/openlogos-policy.mdc with enforced change management",
+        "Launch Hint in Status — openlogos status now suggests openlogos launch when all phases are complete and lifecycle is still \"initial\""
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.3.3, but fix summary entries are missing."
     },
     {
       "version": "0.3.2",
@@ -1176,7 +1613,14 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "Unified Policy Rule — change-guard.mdc upgraded to openlogos-policy.mdc (alwaysApply: true), combining Language Policy and Change Management in a single always-active rule",
+        "Language Policy now marked as \"Highest Priority\" with stronger enforcement wording, injected into every Cursor conversation to prevent locale drift"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.3.2, but fix summary entries are missing."
     },
     {
       "version": "0.3.1",
@@ -1195,7 +1639,15 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "English Skill Translations — All 12 AI Skills now have SKILL.en.md English versions; skills deployment follows the locale setting in logos.config.json",
+        "Language Policy in AGENTS.md — Generated AI instruction files now include a ## Language Policy section that explicitly instructs AI to follow the project's locale setting",
+        "Change Management Guard — Cursor projects automatically receive a change-guard.mdc rule (alwaysApply: true) that reminds AI of the change proposal workflow in every conversation"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.3.1, but fix summary entries are missing."
     },
     {
       "version": "0.3.0",
@@ -1214,7 +1666,15 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "AI Coding Tool Selection — openlogos init now prompts users to choose their AI coding tool (Cursor / Claude Code / Other), stored as aiTool in logos.config.json",
+        "Automatic Skills Deployment — 12 AI Skills are bundled in the npm package and deployed during init:",
+        "Active Skills in AI Instruction Files — AGENTS.md and CLAUDE.md now include an ## Active Skills section listing all deployed skills (visibility follows tool selection rules)"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.3.0, but fix summary entries are missing."
     },
     {
       "version": "0.2.0",
@@ -1233,7 +1693,13 @@
         "node": ">=18.0.0"
       },
       "dependencies": {},
-      "distTags": []
+      "distTags": [],
+      "valueSummary": [
+        "CLI 以 @miniidealab/openlogos 在 npm 公开发布，包作用域与 GitHub 组织 miniidealab 一致；package.json 增加 publishConfig.access: public，便于作用域包默认公开安装。"
+      ],
+      "fixSummary": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "CHANGELOG.md lists v0.2.0, but fix summary entries are missing."
     }
   ]
 }

@@ -1,10 +1,18 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import releaseData from '../data/releases.json';
+import { RELEASE_SUMMARY_FALLBACK_MESSAGE } from '../lib/releases-summary.mjs';
 
-type ReleaseVersion = typeof releaseData.versions[number];
+type RawReleaseVersion = typeof releaseData.versions[number];
+type ReleaseVersion = RawReleaseVersion & {
+  valueSummary?: string[];
+  fixSummary?: string[];
+  summarySource?: 'changelog' | 'fallback';
+  summaryFallbackReason?: string | null;
+};
 
-const latest = releaseData.versions.find((item) => item.version === releaseData.latestVersion) ?? releaseData.versions[0];
+const releaseVersions = releaseData.versions as ReleaseVersion[];
+const latest = releaseVersions.find((item) => item.version === releaseData.latestVersion) ?? releaseVersions[0];
 
 function formatDate(value: string | null | undefined, options: Intl.DateTimeFormatOptions = {}) {
   if (!value) return 'Unknown';
@@ -49,7 +57,22 @@ function groupVersions(versions: ReleaseVersion[]) {
   }));
 }
 
-const groups = groupVersions(releaseData.versions);
+function summaryItems(value: string[] | null | undefined) {
+  return Array.isArray(value) ? value.filter(Boolean).slice(0, 3) : [];
+}
+
+function isSummaryFallback(item: ReleaseVersion) {
+  return item.summarySource === 'fallback' || !item.summarySource;
+}
+
+function emptySummaryMessage(item: ReleaseVersion, kind: 'value' | 'fix') {
+  if (isSummaryFallback(item)) return RELEASE_SUMMARY_FALLBACK_MESSAGE;
+  return kind === 'value'
+    ? 'No structured value entries were found in CHANGELOG for this version.'
+    : 'No structured fix entries were found in CHANGELOG for this version.';
+}
+
+const groups = groupVersions(releaseVersions);
 const latestPublished = latest?.publishedAt ?? null;
 const installCommand = `npm install -g ${releaseData.packageName}`;
 const verifyCommand = `npx ${releaseData.packageName} --version`;
@@ -57,7 +80,7 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
 
 <BaseLayout
   title="OpenLogos Releases — npm Release History"
-  description="Full npm release history for the OpenLogos CLI, generated from npm registry metadata."
+  description="Full npm release history for the OpenLogos CLI, generated from npm registry metadata and structured CHANGELOG summaries."
 >
   <section class="release-hero">
     <div class="release-container">
@@ -67,7 +90,8 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
           <h1>OpenLogos Releases</h1>
           <p class="hero-copy">
             Complete npm release metadata for the OpenLogos CLI. Publish times, dist-tags, package links,
-            tarballs, engines, dependencies, file counts, and git heads are generated from npm registry data.
+            tarballs, engines, dependencies, file counts, and git heads come from npm registry data. Version value
+            and fix summaries are structured from the repository CHANGELOG when available.
           </p>
           <div class="hero-metrics" aria-label="Release summary">
             <div class="metric">
@@ -119,9 +143,10 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
 
       <div class="timeline">
         <div class="data-note">
-          <strong>No generated changelog text.</strong>
-          npm registry does not provide natural-language release notes for each version. This page shows
-          verifiable npm metadata and links to GitHub Releases or the repository changelog for human-written details.
+          <strong>Verifiable release sources.</strong>
+          Publish times and npm metadata come from npm registry. Version value and fix summaries come from
+          structured CHANGELOG extraction; missing sections use a fixed fallback and keep GitHub Release /
+          CHANGELOG links for full details.
         </div>
 
         {groups.map((group) => (
@@ -156,15 +181,51 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
                     <div class="meta"><span>gitHead</span><strong title={item.gitHead ?? undefined}>{shortHash(item.gitHead)}</strong></div>
                   </div>
 
+                  <div class="summary-blocks" aria-label={`Release summary for v${item.version}`}>
+                    <div class="summary-block">
+                      <h4>What value changed</h4>
+                      {summaryItems(item.valueSummary).length > 0 ? (
+                        <ul>
+                          {summaryItems(item.valueSummary).map((entry) => (
+                            <li>{entry}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p class="summary-empty">{emptySummaryMessage(item, 'value')}</p>
+                      )}
+                    </div>
+                    <div class="summary-block">
+                      <h4>What got fixed</h4>
+                      {summaryItems(item.fixSummary).length > 0 ? (
+                        <ul>
+                          {summaryItems(item.fixSummary).map((entry) => (
+                            <li>{entry}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p class="summary-empty">{emptySummaryMessage(item, 'fix')}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {isSummaryFallback(item) && (
+                    <p class="summary-fallback">
+                      <strong>{RELEASE_SUMMARY_FALLBACK_MESSAGE}</strong>
+                      {' '}{item.summaryFallbackReason ?? 'CHANGELOG.md does not contain a structured release summary for this version.'}
+                      {' '}Check GitHub Release or CHANGELOG for full details.
+                    </p>
+                  )}
+
                   <p class="release-note">
                     Dependencies: {formatMap(item.dependencies)}. Metadata and publish time come from npm registry.
-                    Release notes are linked externally rather than generated on this page.
+                    Release summaries are structured from CHANGELOG when available, never generated from npm metadata.
                   </p>
 
                   <div class="release-links">
                     <a href={item.npmUrl} target="_blank" rel="noopener">npm version</a>
                     <a href={item.tarballUrl ?? item.npmUrl} target="_blank" rel="noopener">tarball</a>
                     <a href={item.githubReleaseUrl} target="_blank" rel="noopener">GitHub Release</a>
+                    <a href={releaseData.changelogUrl} target="_blank" rel="noopener">CHANGELOG</a>
                   </div>
                 </article>
               ))}
@@ -498,6 +559,56 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
     line-height: 1.65;
   }
 
+  .summary-blocks {
+    display: grid;
+    gap: 0.75rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .summary-block {
+    padding: 0.875rem;
+    border: 1px solid var(--color-border);
+    border-radius: 7px;
+    background: #0b0b0e;
+  }
+
+  .summary-block h4 {
+    margin: 0 0 0.5rem;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0;
+  }
+
+  .summary-block ul {
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--color-text-muted);
+    font-size: 0.84rem;
+    line-height: 1.6;
+  }
+
+  .summary-block li + li {
+    margin-top: 0.35rem;
+  }
+
+  .summary-empty,
+  .summary-fallback {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.84rem;
+    line-height: 1.65;
+  }
+
+  .summary-fallback {
+    margin-bottom: 0.875rem;
+    padding: 0.75rem 0.875rem;
+    border: 1px solid rgba(96, 165, 250, 0.25);
+    border-radius: 7px;
+    background: rgba(96, 165, 250, 0.06);
+    color: var(--color-text-secondary);
+  }
+
   @media (max-width: 900px) {
     .hero-grid,
     .content-grid {
@@ -535,6 +646,10 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
       border: 1px solid var(--color-border);
     }
 
+    .summary-blocks {
+      gap: 0.625rem;
+    }
+
     time {
       white-space: normal;
     }
@@ -560,6 +675,10 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
     .hero-metrics,
     .meta-grid {
       grid-template-columns: 1fr;
+    }
+
+    .summary-block {
+      padding: 0.75rem;
     }
 
     .release-top,

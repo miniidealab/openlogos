@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { enrichReleaseVersions } from '../src/lib/releases-summary.mjs';
 
 const PACKAGE_NAME = '@miniidealab/openlogos';
 const REGISTRY_URL = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}`;
 const OUTPUT_PATH = resolve('src/data/releases.json');
+const CHANGELOG_PATH = resolve('../CHANGELOG.md');
 const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${PACKAGE_NAME}`;
 const GITHUB_RELEASE_BASE = 'https://github.com/miniidealab/openlogos/releases/tag';
 const CHANGELOG_URL = 'https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md';
@@ -108,6 +110,14 @@ function buildReleaseData(packument) {
   };
 }
 
+function readChangelog() {
+  try {
+    return readFileSync(CHANGELOG_PATH, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
   try {
     const response = await fetch(REGISTRY_URL, {
@@ -119,7 +129,9 @@ async function main() {
       throw new Error(`npm registry returned ${response.status}`);
     }
     const packument = await response.json();
+    const changelog = readChangelog();
     const data = buildReleaseData(packument);
+    data.versions = enrichReleaseVersions(data.versions, changelog ?? '');
     const sizePairs = await Promise.all(data.versions.map(async (item) => [item.version, await getTarballSize(item.tarballUrl)]));
     const sizeMap = new Map(sizePairs);
     for (const item of data.versions) {
@@ -134,6 +146,12 @@ async function main() {
     if (!cache) {
       console.error(`Failed to generate release data and no cache exists: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
+    }
+    const changelog = readChangelog();
+    if (Array.isArray(cache.versions)) {
+      cache.versions = enrichReleaseVersions(cache.versions, changelog ?? '');
+      mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
+      writeFileSync(OUTPUT_PATH, `${JSON.stringify(cache, null, 2)}\n`);
     }
     console.warn(`Failed to refresh release data; using existing cache at ${OUTPUT_PATH}.`);
     console.warn(error instanceof Error ? error.message : String(error));

@@ -43,3 +43,33 @@
 - `cd cli && npm test -- --run test/s16-json-output.test.ts test/s11-status.test.ts test/s17-module.test.ts`
 - `node /Users/huangxianglong/gitlab/openlogos/cli/dist/index.js detect --format json`
 - `node /Users/huangxianglong/gitlab/openlogos/cli/dist/index.js status --format json`
+
+## releases-version-value-clarity
+
+### 范围
+- 官网 `/releases` 页面版本价值摘要与问题修复摘要
+- `CHANGELOG.md` 结构化摘要提取
+- release 页面摘要缺失时的固定回退提示与外链
+- 官网发布动态 smoke 检查脚本
+
+### 覆盖任务
+- [x] 更新 `website/scripts/generate-releases.mjs`，构建期读取 `CHANGELOG.md` 并写入 `valueSummary`、`fixSummary`、`summarySource`、`summaryFallbackReason`
+- [x] 更新 `website/src/data/releases.json`，为每个版本提供可展示摘要字段
+- [x] 更新 `website/src/pages/releases.astro`，展示 `What value changed`、`What got fixed` 与回退说明
+- [x] 更新 `website/scripts/smoke-releases.mjs`，覆盖 `SMOKE-core-03`、`SMOKE-core-07`、`SMOKE-core-08`
+- [x] 新增 `website/test/releases-summary.test.mjs`，覆盖摘要解析与缺失分类回退
+
+### 产物
+- `website/src/lib/releases-summary.mjs`
+- `website/scripts/generate-releases.mjs`
+- `website/src/data/releases.json`
+- `website/src/pages/releases.astro`
+- `website/scripts/smoke-releases.mjs`
+- `website/test/releases-summary.test.mjs`
+- `website/package.json`
+
+### 验证
+- `cd website && npm test`
+- `cd website && npm run generate:releases`
+- `cd website && npm run build`
+- `cd website && npm run smoke:releases`
