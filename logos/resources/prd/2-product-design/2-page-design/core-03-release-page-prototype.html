@@ -285,10 +285,34 @@
       font-size: 12px;
       color: var(--soft);
     }
-    .release-note {
+    .release-summary {
       margin: 0 0 14px;
       color: var(--muted);
       font-size: 14px;
+    }
+    .summary-blocks {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .summary-block {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #0f0f12;
+    }
+    .summary-block h4 {
+      margin: 0 0 6px;
+      color: var(--soft);
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0;
+    }
+    .summary-block ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
     }
     .release-links {
       display: flex;
@@ -385,8 +409,24 @@
                 <div class="meta"><span>License</span><strong>Apache-2.0</strong></div>
                 <div class="meta"><span>gitHead</span><strong>a536a6e...</strong></div>
               </div>
-              <p class="release-note">
-                npm 元数据记录该版本的发布时间、包体积、入口、依赖和 gitHead。自然语言变更说明不由 npm registry 提供，需跳转 GitHub Release 或 changelog 查看。
+              <div class="summary-blocks" aria-label="版本价值与问题修复">
+                <div class="summary-block">
+                  <h4>版本价值</h4>
+                  <ul>
+                    <li>展示部署门禁与提案状态的可读摘要。</li>
+                    <li>补齐 release 页面信息层次，减少外链跳转成本。</li>
+                  </ul>
+                </div>
+                <div class="summary-block">
+                  <h4>问题修复</h4>
+                  <ul>
+                    <li>修复用户无法在页面内判断版本收益的问题。</li>
+                    <li>修复仅依赖 npm 元数据导致“有版本无说明”的体验缺口。</li>
+                  </ul>
+                </div>
+              </div>
+              <p class="release-summary">
+                npm 元数据记录该版本的发布时间、包体积、入口、依赖和 gitHead。版本价值与问题修复摘要来自 CHANGELOG，缺失时显示结构化回退提示。
               </p>
               <div class="release-links">
                 <a class="btn" href="#">npm version</a>
@@ -405,7 +445,21 @@
                 <div class="meta"><span>npm source</span><strong>time[0.9.25]</strong></div>
                 <div class="meta"><span>Release link</span><strong>v0.9.25</strong></div>
               </div>
-              <p class="release-note">版本说明优先展示 npm 可验证元数据；详细说明通过 GitHub Release 对应版本补充。</p>
+              <div class="summary-blocks">
+                <div class="summary-block">
+                  <h4>版本价值</h4>
+                  <ul>
+                    <li>继续完善文档站信息架构，保持首页与详情页分工清晰。</li>
+                  </ul>
+                </div>
+                <div class="summary-block">
+                  <h4>问题修复</h4>
+                  <ul>
+                    <li>为早期版本补充可读说明的展示框架。</li>
+                  </ul>
+                </div>
+              </div>
+              <p class="release-summary">版本说明优先展示 npm 可验证元数据；详细说明通过 GitHub Release 对应版本补充。</p>
               <div class="release-links">
                 <a class="btn" href="#">npm version</a>
                 <a class="btn" href="#">GitHub Release</a>
@@ -425,10 +479,14 @@
                 <div class="release-title"><h3>v0.8.2</h3></div>
                 <time class="date">2026-04-28 03:03 UTC</time>
               </div>
-              <p class="release-note">较早版本同样保留 npm 发布时间、版本链接和外部变更说明入口。</p>
+              <p class="release-summary">
+                Structured release summary is unavailable for this version.
+                Check GitHub Release or CHANGELOG for full details.
+              </p>
               <div class="release-links">
                 <a class="btn" href="#">npm version</a>
                 <a class="btn" href="#">GitHub Release</a>
+                <a class="btn" href="#">CHANGELOG</a>
               </div>
             </article>
           </div>

@@ -1,9 +1,4 @@
-# core-02-docs-website-experience
-
-## 一、站点目标
-文档站承担 OpenLogos 的安装入口、方法论说明、命令索引、示例项目入口和版本发布说明。
-
-## 二、信息结构
+## MODIFIED — 二、信息结构
 - 首页：产品定位、核心原则、安装入口和发布日志入口。
 - 发布日志：基于 npm registry 展示 `@miniidealab/openlogos` 全量版本说明、历史版本发布时间、安装命令、npm 元数据和发布归档链接；并基于 `CHANGELOG.md` 展示每版本“价值摘要 / 修复摘要”。
 - 方法论：WHY → WHAT → HOW、阶段与门禁。
@@ -12,12 +7,7 @@
 - 示例：可运行项目与真实实践。
 - RunLogos：OpenLogos 方法论与 RunLogos 工具关系。
 
-## 三、页面原则
-- 以工具说明为主，不做营销式英雄页。
-- 重点展示命令、阶段和文档索引。
-- 入口要能直接引导到 `openlogos init`、`status`、`next` 和 `sync`。
-
-## 四、发布日志页面设计
+## MODIFIED — 四、发布日志页面设计
 ### 4.1 首页发布日志入口
 - 位置：首页 release summary 不再放在 Hero 后方；调整为倒数第二个 section，位于 Quick Start 之后、CTA 之前。
 - 目的：保持首页首屏与主叙事聚焦 OpenLogos 理念，release note 仅作为次级辅助信息展示。

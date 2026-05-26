@@ -1,0 +1,104 @@
+## MODIFIED — 发布日志页面 HTML 原型
+
+```html
+<!-- 新增：版本摘要样式区块 -->
+<style>
+  .release-summary {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .summary-blocks {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .summary-block {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: #0f0f12;
+  }
+  .summary-block h4 {
+    margin: 0 0 6px;
+    color: var(--soft);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0;
+  }
+  .summary-block ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>
+
+<!-- 修改：版本卡片正文结构（以 v0.9.26 为主样例） -->
+<article class="release-card">
+  <div class="release-top">
+    <div class="release-title">
+      <h3>v0.9.26</h3>
+      <span class="tag latest">latest</span>
+    </div>
+    <time class="date">2026-05-24 01:58 UTC</time>
+  </div>
+  <div class="meta-grid">
+    <div class="meta"><span>Node.js</span><strong>&gt;=18.0.0</strong></div>
+    <div class="meta"><span>Tarball</span><strong>289 KB</strong></div>
+    <div class="meta"><span>Unpacked</span><strong>1.01 MB</strong></div>
+    <div class="meta"><span>Files</span><strong>163</strong></div>
+    <div class="meta"><span>License</span><strong>Apache-2.0</strong></div>
+    <div class="meta"><span>gitHead</span><strong>a536a6e...</strong></div>
+  </div>
+
+  <div class="summary-blocks" aria-label="版本价值与问题修复">
+    <div class="summary-block">
+      <h4>版本价值</h4>
+      <ul>
+        <li>展示部署门禁与提案状态的可读摘要。</li>
+        <li>补齐 release 页面信息层次，减少外链跳转成本。</li>
+      </ul>
+    </div>
+    <div class="summary-block">
+      <h4>问题修复</h4>
+      <ul>
+        <li>修复用户无法在页面内判断版本收益的问题。</li>
+        <li>修复仅依赖 npm 元数据导致“有版本无说明”的体验缺口。</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="release-summary">
+    发布时间与包元数据来自 npm registry；版本价值/修复摘要来自 CHANGELOG 结构化提取。
+    若当前版本缺少结构化摘要，展示固定回退提示并保留 GitHub Release/CHANGELOG 链接。
+  </p>
+
+  <div class="release-links">
+    <a class="btn" href="#">npm version</a>
+    <a class="btn" href="#">tarball</a>
+    <a class="btn" href="#">GitHub Release</a>
+  </div>
+</article>
+```
+
+## ADDED — 原型交互说明（版本摘要缺失回退）
+
+```html
+<!-- 新增：摘要缺失态样例 -->
+<article class="release-card">
+  <div class="release-top">
+    <div class="release-title"><h3>v0.8.2</h3></div>
+    <time class="date">2026-04-28 03:03 UTC</time>
+  </div>
+  <p class="release-summary">
+    Structured release summary is unavailable for this version.
+    Check GitHub Release or CHANGELOG for full details.
+  </p>
+  <div class="release-links">
+    <a class="btn" href="#">npm version</a>
+    <a class="btn" href="#">GitHub Release</a>
+    <a class="btn" href="#">CHANGELOG</a>
+  </div>
+</article>
+```
