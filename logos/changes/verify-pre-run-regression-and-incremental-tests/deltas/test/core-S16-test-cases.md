@@ -1,6 +1,4 @@
-# S16: 输出机器可读 JSON — 测试用例
-
-## 一、单元测试用例
+## MODIFIED — 一、单元测试用例
 | ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
 |----|------|------|---------|------|---------|
 | UT-S16-01 | 解析 format=json | parseFormat | CLI 参数 | --format json | 返回 json |
@@ -10,7 +8,7 @@
 | UT-JSON-12 | `collectVerifyData` 暴露两阶段预跑状态 | collectVerifyData | 配置 regression_command + incremental_command | verify helper | `pre_run.mode=two_phase`，包含阶段命令、合并策略与阶段结果路径 |
 | UT-JSON-13 | `collectVerifyData` 暴露覆盖不足诊断 | collectVerifyData | 未配置预跑命令且覆盖不足 | verify helper | `pre_run.mode=none`，包含局部测试诊断与配置建议 |
 
-## 二、场景测试用例
+## MODIFIED — 二、场景测试用例
 ### 2.1 主路径
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |----|------|-----------|---------|---------|---------|
@@ -26,7 +24,7 @@
 | ST-JSON-23 | detect/status --format json 在无法恢复 YAML 时返回诊断 | Step 1→5 | `logos-project.yaml` 整体损坏，无法恢复任何模块信息 | detect/status --format json | 返回明确 `yaml_diagnostics.parse_status=error` 与错误摘要，不得静默回退为“看起来正常” |
 | ST-JSON-26 | verify --format json 在覆盖不足且无预跑配置时返回诊断 | Step 1→5 | 未配置预跑命令且结果不完整 | verify --format json | `pre_run.mode=none`，`diagnostics` 与 `suggestions` 可供 RunLogos 展示 |
 
-## 三、覆盖度校验
+## ADDED — 三、覆盖度校验
 - [x] format=json envelope：已覆盖（UT-S16-01 / ST-S16-01）
 - [x] detect/status 容错：已覆盖（UT-JSON-09 / UT-JSON-10 / ST-JSON-21 / ST-JSON-22 / ST-JSON-23）
 - [x] verify 单阶段 pre_run 状态：已覆盖（UT-JSON-11 / ST-JSON-24）

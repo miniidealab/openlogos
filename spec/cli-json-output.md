@@ -334,6 +334,33 @@ openlogos verify --format json  # JSON 格式
       }
     ]
   },
+  "pre_run": {
+    "mode": "two_phase",          // "none" | "pre_run_command" | "two_phase"
+    "commands": [
+      {
+        "stage": "regression",    // "pre_run" | "regression" | "incremental"
+        "command": "npm test",
+        "status": "pass",         // "pass" | "fail" | "skipped"
+        "exit_code": 0,
+        "duration_ms": 1200
+      },
+      {
+        "stage": "incremental",
+        "command": "npm run test:changed",
+        "status": "pass",
+        "exit_code": 0,
+        "duration_ms": 600
+      }
+    ],
+    "result_paths": {
+      "final": "logos/resources/verify/test-results.jsonl",
+      "regression": "logos/resources/verify/test-results.regression.jsonl",
+      "incremental": "logos/resources/verify/test-results.incremental.jsonl"
+    },
+    "merge_strategy": "last-write-wins",
+    "diagnostics": [],
+    "suggestions": []
+  },
   "report_path": "logos/resources/verify/acceptance-report.md"
 }
 ```
@@ -363,6 +390,19 @@ openlogos verify --format json  # JSON 格式
 | `ac_trace.total` | number | 是 | 验收条件总数 |
 | `ac_trace.passed` | number | 是 | 通过的验收条件数 |
 | `ac_trace.failed_criteria` | array | 是 | 未通过的验收条件列表 |
+| `pre_run.mode` | string | 是 | verify 预跑模式：`"none"`、`"pre_run_command"` 或 `"two_phase"` |
+| `pre_run.commands` | array | 是 | 实际执行或跳过的命令阶段 |
+| `pre_run.commands[].stage` | string | 是 | `pre_run`、`regression` 或 `incremental` |
+| `pre_run.commands[].command` | string | 是 | 实际执行的命令文本 |
+| `pre_run.commands[].status` | string | 是 | `pass`、`fail` 或 `skipped` |
+| `pre_run.commands[].exit_code` | number | 否 | 命令退出码 |
+| `pre_run.commands[].duration_ms` | number | 否 | 命令执行时长 |
+| `pre_run.result_paths.final` | string | 是 | 最终验收读取的 JSONL 路径 |
+| `pre_run.result_paths.regression` | string \| null | 否 | 回归阶段结果路径 |
+| `pre_run.result_paths.incremental` | string \| null | 否 | 增量阶段结果路径 |
+| `pre_run.merge_strategy` | string \| null | 否 | 两阶段合并策略，当前为 `last-write-wins` |
+| `pre_run.diagnostics` | string[] | 是 | 可展示给用户的问题诊断 |
+| `pre_run.suggestions` | string[] | 是 | 可展示给用户的修复建议 |
 | `report_path` | string | 是 | 生成的验收报告路径 |
 
 ### 4.4 gate.reason 取值
@@ -374,6 +414,13 @@ openlogos verify --format json  # JSON 格式
 | `"incomplete_coverage"` | 存在未覆盖的测试用例 |
 | `"checklist_incomplete"` | 设计时覆盖度校验未完全确认 |
 | `"ac_trace_incomplete"` | 验收条件追溯未完全通过 |
+
+### 4.5 预跑状态兼容规则
+
+- 旧项目只配置 `verify.pre_run_command` 时，`pre_run.mode="pre_run_command"`。
+- 配置 `verify.regression_command` 或 `verify.incremental_command` 时，`pre_run.mode="two_phase"`。
+- 没有任何预跑命令时，`pre_run.mode="none"`。
+- 覆盖不足且 `pre_run.mode="none"` 时，必须输出局部测试诊断和配置建议。
 
 ---
 

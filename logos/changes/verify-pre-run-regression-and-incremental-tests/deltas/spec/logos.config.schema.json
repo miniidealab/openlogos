@@ -1,0 +1,65 @@
+## MODIFIED — verify 配置
+```json
+"verify": {
+  "type": "object",
+  "description": "测试验收配置（可选）。配置 openlogos verify 的行为。",
+  "properties": {
+    "result_path": {
+      "type": "string",
+      "default": "logos/resources/verify/test-results.jsonl",
+      "description": "最终测试结果 JSONL 文件路径（相对项目根目录）。两阶段模型合并后也写入此路径"
+    },
+    "pre_run_command": {
+      "type": "string",
+      "description": "兼容字段：单阶段测试命令。配置后 openlogos verify 会先执行此命令再读取结果"
+    },
+    "regression_command": {
+      "type": "string",
+      "description": "回归测试命令。配置后 openlogos verify 会在增量测试前执行"
+    },
+    "incremental_command": {
+      "type": "string",
+      "description": "增量测试命令。配置后 openlogos verify 会在回归测试后执行"
+    },
+    "regression_result_path": {
+      "type": "string",
+      "description": "回归阶段 JSONL 结果路径。未配置时 CLI 必须通过快照或等价机制保留阶段结果"
+    },
+    "incremental_result_path": {
+      "type": "string",
+      "description": "增量阶段 JSONL 结果路径。未配置时 CLI 必须通过快照或等价机制保留阶段结果"
+    },
+    "merge_results": {
+      "type": "string",
+      "enum": ["last-write-wins"],
+      "default": "last-write-wins",
+      "description": "两阶段结果合并策略。同一用例 ID 多次出现时，最后一次结果生效"
+    },
+    "test_command": {
+      "type": "string",
+      "description": "旧字段，保留兼容。建议使用 pre_run_command"
+    }
+  }
+}
+```
+
+## MODIFIED — examples
+```json
+"verify": {
+  "result_path": "logos/resources/verify/test-results.jsonl",
+  "pre_run_command": "npm test"
+}
+```
+
+两阶段示例：
+
+```json
+"verify": {
+  "result_path": "logos/resources/verify/test-results.jsonl",
+  "regression_command": "npm test",
+  "incremental_command": "npm run test:changed",
+  "regression_result_path": "logos/resources/verify/test-results.regression.jsonl",
+  "incremental_result_path": "logos/resources/verify/test-results.incremental.jsonl",
+  "merge_results": "last-write-wins"
+}
+```

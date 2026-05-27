@@ -1,11 +1,9 @@
-# core: 部署后冒烟测试用例
-
-## 一、冒烟测试范围
+## MODIFIED — 一、冒烟测试范围
 | 环境 | 覆盖范围 | 说明 |
 |------|----------|------|
 | staging | CLI、插件模板、官网构建、官网发布动态、官网 release note 双语摘要、提案级部署门禁、部署进度摘要面板、CLI JSON 容错输出、adopt 命令、verify 预执行模型 | 发布前最小检查；仅在提案级声明需要部署 / smoke 时执行 |
 
-## 二、冒烟测试用例
+## MODIFIED — 二、冒烟测试用例
 | ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
 |----|------|------|----------|----------|------|----------|
 | SMOKE-core-01 | CLI 包可安装并输出版本 | 部署方案 | staging | 包已发布或本地 pack 完成 | `openlogos --version` | 返回版本号 |
@@ -22,7 +20,7 @@
 | SMOKE-core-12 | verify 在无预跑配置且覆盖不足时输出诊断 | verify 预执行模型 | staging | 安装含本变更的 CLI，构造仅局部测试结果且缺少 verify 预跑配置的项目 | 执行 `openlogos verify --format json` | `pre_run.mode=none`，输出覆盖不足诊断与配置建议 |
 | SMOKE-core-13 | verify 两阶段预跑与合并结果可用 | verify 预执行模型 | staging | 安装含本变更的 CLI，构造包含 regression / incremental 配置的项目 | 执行 `openlogos verify --format json` | 返回 `pre_run.mode=two_phase`，阶段命令状态和最终合并结果可供客户端展示 |
 
-## 三、覆盖度校验
+## MODIFIED — 三、覆盖度校验
 - [x] CLI 健康检查：已覆盖
 - [x] 插件模板：已覆盖
 - [x] 官网构建：已覆盖
