@@ -2,7 +2,7 @@
 
 ## 一、核心能力列表
 1. 初始化 OpenLogos 项目（全新项目）。
-2. 已有项目接入 OpenLogos（`adopt`，直接进入 launched 模式）。
+2. 已有项目接入 OpenLogos（`adopt`，执行完整基础设施初始化，只跳过 Initial 文档门禁）。
 3. 同步 AI 工具资产与资源索引。
 4. 查看阶段进度与下一步建议。
 5. 创建、合并、归档变更提案。
@@ -39,13 +39,15 @@
 - 当 `proposal.md` 与 `tasks.md` 冲突时，CLI 必须在 status / next 中给出警告，并阻止“无需人工确认的自动部署”。
 - 冲突状态必须通过 `deployment_decision_conflict=true` 显式暴露，作为 CLI 和 RunLogos 的阻断信号；冲突未修正前不得展示 deploy、smoke 或 archive 作为主动作。
 
-### 2.6 bootstrap: skipped 行为约束
+### 2.6 bootstrap: adopted 行为约束
 
-- `adopt` 命令生成的 `logos-project.yaml` 中，模块 `bootstrap` 字段值为 `skipped`，`lifecycle` 直接为 `launched`。
-- `bootstrap: skipped` 模块不要求 Phase 1~3 文档存在；`status` 将其显示为「文档基线已跳过（快速接入）」，而非未完成。
-- `next` 在 `bootstrap: skipped` 且无活跃提案时，固定输出补文档引导，建议执行 `openlogos change add-baseline-docs`，不建议直接开始业务迭代。
-- `launch` 对 `bootstrap: skipped` 且 `lifecycle: launched` 的模块豁免 Phase 1~3 门禁检查。
-- 补文档提案（如 `add-baseline-docs`）归档后，`next` 恢复正常阶段建议逻辑。
+- `adopt` 命令生成的 `logos-project.yaml` 中，模块 `bootstrap` 字段值为 `adopted`，`lifecycle` 直接为 `launched`。
+- `bootstrap: adopted` 表示模块通过存量项目接入进入 OpenLogos；它不是“首轮方法论闭环已完成”，而是“完整 OpenLogos 基础设施已初始化，Initial 文档基线被接入流程豁免，后续应通过补文档提案补齐”。
+- `bootstrap: adopted` 模块不要求 Phase 1、Phase 2 和 Phase 3-0 文档存在；`status` 将其显示为「文档基线已跳过（存量项目接入）」，而非未完成。
+- `next` 在 `bootstrap: adopted` 且无活跃提案时，固定输出补文档引导，建议执行 `openlogos change add-baseline-docs`，不建议直接开始业务迭代。
+- `launch` 对 `bootstrap: adopted` 且 `lifecycle: launched` 的模块豁免 Initial 文档门禁检查。
+- CLI 必须继续兼容历史 `bootstrap: skipped`，读取时按 adopted 接入模式处理；但 `adopt` 新写入的项目必须使用 `bootstrap: adopted`。
+- 补文档提案（如 `add-baseline-docs`）归档后，`next` 恢复正常阶段建议逻辑。若后续需要表示基线已补齐，可由专门变更引入 `baseline_status`，本次不新增第三个状态维度。
 
 ### 2.7 verify 预执行模型
 - `openlogos verify` 必须在读取 JSONL 前处理 verify 预执行配置。
@@ -100,4 +102,4 @@ resource_index 必须能反向索引当前真相源。
 smoke 必须验证部署后环境的最小可用链路，但只在提案级 `smoke_required: true` 且部署完成后进入。部署进度摘要仅能来自 `tasks.md` 的 `[deploy]` section，不能把 `[code]` section 误当作部署进度。
 
 ### S20
-adopt 后必须生成完整 `logos/` 目录、`bootstrap: skipped` 标记和 AI 指令文件；同时应为可识别测试栈写入 verify 预跑配置，无法推断时输出 TODO。`status` 必须将 Phase 1~3 显示为「已跳过」；`next` 必须输出补文档引导；`launch` 必须豁免 Phase 1~3 门禁。目录已存在 `logos/logos.config.json` 时必须拒绝重复执行并报错。
+adopt 后必须生成完整 `logos/` 目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；生成的模块标记为 `bootstrap: adopted` 与 `lifecycle: launched`；同时应为可识别测试栈写入 verify 预跑配置，无法推断时输出 TODO。`status` 必须将 Initial 文档基线显示为「已跳过（存量项目接入）」；`next` 必须输出补文档引导；`launch` 必须豁免 Initial 文档门禁。目录已存在 `logos/logos.config.json` 时必须拒绝重复执行并报错。历史 `bootstrap: skipped` 项目必须保持兼容。
