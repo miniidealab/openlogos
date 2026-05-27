@@ -96,6 +96,13 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(parsed.sourceRoots.test).toEqual(['test']);
   });
 
+  it('UT-S01-07d: createLogosConfig preserves verify.result_path and default pre-run slot', () => {
+    const output = createLogosConfig('test', 'en');
+    const parsed = JSON.parse(output);
+    expect(parsed.verify.result_path).toBe('logos/resources/verify/test-results.jsonl');
+    expect(parsed.verify.pre_run_command).toBeUndefined();
+  });
+
   it('UT-S01-07b: createLogosConfig includes aiTool when provided', () => {
     const output = createLogosConfig('test', 'en', 'claude-code');
     const parsed = JSON.parse(output);
@@ -703,6 +710,19 @@ describe('S01 Scenario Tests — init command', () => {
     expect(config.aiTool).toBe('claude-code');
 
     delete process.env.CLAUDE_CODE;
+  });
+
+  it('ST-S01-05e: non-TTY with --locale and test script writes verify.pre_run_command', async () => {
+    process.stdin.isTTY = undefined as unknown as boolean;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'ci-project',
+      scripts: { test: 'vitest run' },
+    }));
+
+    await init('ci-project', { locale: 'en', aiTool: 'cursor' });
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.verify.pre_run_command).toBe('npm test');
   });
 
   it('ST-S01-06: name conflict — user selects package.json name', async () => {

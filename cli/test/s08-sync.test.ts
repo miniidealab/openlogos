@@ -507,6 +507,30 @@ describe('S08 Scenario Tests — sync command', () => {
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('already deployed');
   });
+
+  it('UT-S08-03: sync backfills verify.pre_run_command when test script is recognizable', () => {
+    scaffoldProject(root, { locale: 'en' });
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'sync-app',
+      scripts: { test: 'vitest run' },
+    }));
+
+    sync();
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.verify.pre_run_command).toBe('npm test');
+    expect(con.logs.join('\n')).toContain('verify pre-run config detected and written');
+  });
+
+  it('UT-S08-04: sync prints TODO when verify pre-run command cannot be inferred', () => {
+    scaffoldProject(root, { locale: 'en' });
+
+    sync();
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.verify.pre_run_command).toBeUndefined();
+    expect(con.logs.join('\n')).toContain('verify pre-run config could not be inferred');
+  });
 });
 
 /* ========== Unit Tests — syncScenariosModuleField ========== */

@@ -9,6 +9,8 @@ import {
   createAdoptLogosProject,
   createAgentsMd,
   chooseAiTool,
+  ensureVerifyPreRunConfig,
+  printVerifyPreRunBackfillResult,
   deployAiToolAssets,
   deploySpecs,
   expandAiTools,
@@ -121,8 +123,11 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   ensureDirectories(root);
   console.log('✓ 创建 logos/ 标准目录结构');
 
-  writeFileSync(configPath, createLogosConfig(projectName, locale, aiTool));
+  const config = JSON.parse(createLogosConfig(projectName, locale, aiTool)) as Record<string, unknown>;
+  const verifyBackfill = ensureVerifyPreRunConfig(root, config);
+  writeFileSync(configPath, JSON.stringify(config, null, 2));
   console.log('✓ 写入 logos.config.json');
+  printVerifyPreRunBackfillResult(locale, verifyBackfill, '');
 
   writeFileSync(yamlPath, createAdoptLogosProject(projectName, locale));
   console.log('✓ 写入 logos-project.yaml（bootstrap: skipped, lifecycle: launched）');

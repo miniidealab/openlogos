@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
@@ -8,11 +8,16 @@ import {
   extractChecklist,
   extractAcTrace,
   generateReport,
+  collectVerifyData,
+  buildInitialPreRunData,
+  runVerifyPreRun,
   verify,
   type TestResult,
   type ChecklistItem,
   type AcTraceEntry,
 } from '../src/commands/verify.js';
+import { readVerifyConfig } from '../src/lib/verify-config.js';
+import * as childProcess from 'node:child_process';
 
 /* ========== Unit Tests ========== */
 
@@ -26,20 +31,20 @@ describe('S13 Unit Tests — parseJsonl', () => {
     expect(results[1].error).toBe('timeout');
   });
 
-  it('UT-S13-02: skip malformed lines without throwing', () => {
+  it('UT-S13-30: skip malformed lines without throwing', () => {
     const input = '{"id":"UT-S01-01","status":"pass"}\nnot-json\n{"id":"ST-S01-01","status":"pass"}';
     const results = parseJsonl(input);
     expect(results).toHaveLength(2);
   });
 
-  it('UT-S13-03: last occurrence wins for duplicate IDs', () => {
+  it('UT-S13-31: last occurrence wins for duplicate IDs', () => {
     const input = '{"id":"UT-S01-01","status":"fail"}\n{"id":"UT-S01-01","status":"pass"}';
     const results = parseJsonl(input);
     expect(results).toHaveLength(1);
     expect(results[0].status).toBe('pass');
   });
 
-  it('UT-S13-04: ignore empty and whitespace-only lines', () => {
+  it('UT-S13-32: ignore empty and whitespace-only lines', () => {
     const input = '\n  \n{"id":"UT-S01-01","status":"pass"}\n\n';
     const results = parseJsonl(input);
     expect(results).toHaveLength(1);
@@ -55,7 +60,7 @@ describe('S13 Unit Tests — extractDefinedIds', () => {
   });
   afterEach(() => cleanup());
 
-  it('UT-S13-05: extract UT/ST IDs from test-cases.md', () => {
+  it('UT-S13-33: extract UT/ST IDs from test-cases.md', () => {
     const testDir = join(root, 'logos/resources/test');
     mkdirSync(testDir, { recursive: true });
     writeFileSync(
@@ -338,6 +343,129 @@ describe('S13 Unit Tests — generateReport', () => {
   });
 });
 
+describe('S13 Unit Tests — verify pre-run helpers', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root, { locale: 'en' });
+  });
+  afterEach(() => cleanup());
+
+  it('buildInitialPreRunData preserves single-stage mode', () => {
+    const data = buildInitialPreRunData({
+      resultPath: 'logos/resources/verify/test-results.jsonl',
+      preRunCommand: 'npm test',
+      mergeStrategy: 'last-write-wins',
+    });
+    expect(data.mode).toBe('pre_run_command');
+    expect(data.result_paths.final).toBe('logos/resources/verify/test-results.jsonl');
+  });
+
+  it('buildInitialPreRunData preserves two-phase mode', () => {
+    const data = buildInitialPreRunData({
+      resultPath: 'logos/resources/verify/test-results.jsonl',
+      regressionCommand: 'npm test',
+      incrementalCommand: 'npm run test:changed',
+      mergeStrategy: 'last-write-wins',
+    });
+    expect(data.mode).toBe('two_phase');
+    expect(data.merge_strategy).toBe('last-write-wins');
+    expect(data.result_paths.regression).toBeNull();
+  });
+
+  it('runVerifyPreRun returns none when no command exists', () => {
+    const data = runVerifyPreRun(root, readVerifyConfig(root), 'text');
+    expect(data.mode).toBe('none');
+    expect(data.commands).toHaveLength(0);
+  });
+
+  it('readVerifyConfig falls back to legacy test_command for single-stage verify', () => {
+    writeFileSync(join(root, 'logos', 'logos.config.json'), JSON.stringify({
+      name: 'test-project',
+      locale: 'en',
+      documents: {},
+      verify: {
+        result_path: 'logos/resources/verify/test-results.jsonl',
+        test_command: 'npm test',
+      },
+    }, null, 2));
+
+    const config = readVerifyConfig(root);
+    expect(config.preRunCommand).toBe('npm test');
+    expect(buildInitialPreRunData(config).mode).toBe('pre_run_command');
+  });
+
+  it('runVerifyPreRun executes pre_run_command before results are read', () => {
+    const command = `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.jsonl','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`;
+    const data = runVerifyPreRun(root, {
+      resultPath: 'logos/resources/verify/test-results.jsonl',
+      preRunCommand: command,
+      mergeStrategy: 'last-write-wins',
+    }, 'json');
+
+    expect(data.mode).toBe('pre_run_command');
+    expect(data.commands).toHaveLength(1);
+    expect(data.commands[0]).toMatchObject({ stage: 'pre_run', status: 'pass', exit_code: 0 });
+    expect(readFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), 'utf-8')).toContain('UT-S01-01');
+  });
+
+  it('runVerifyPreRun executes regression then incremental and merges last-write-wins', () => {
+    const regressionPath = 'logos/resources/verify/test-results.regression.jsonl';
+    const incrementalPath = 'logos/resources/verify/test-results.incremental.jsonl';
+    const regressionCommand = `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('${regressionPath}','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"fail\\\",\\\"error\\\":\\\"old\\\"}\\n{\\\"id\\\":\\\"ST-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`;
+    const incrementalCommand = `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('${incrementalPath}','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`;
+
+    const data = runVerifyPreRun(root, {
+      resultPath: 'logos/resources/verify/test-results.jsonl',
+      regressionCommand,
+      incrementalCommand,
+      regressionResultPath: regressionPath,
+      incrementalResultPath: incrementalPath,
+      mergeStrategy: 'last-write-wins',
+    }, 'json');
+
+    expect(data.mode).toBe('two_phase');
+    expect(data.commands.map(cmd => cmd.stage)).toEqual(['regression', 'incremental']);
+    expect(data.commands.every(cmd => cmd.status === 'pass')).toBe(true);
+
+    const merged = parseJsonl(readFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), 'utf-8'));
+    expect(merged.find(result => result.id === 'UT-S01-01')?.status).toBe('pass');
+    expect(merged.find(result => result.id === 'ST-S01-01')?.status).toBe('pass');
+  });
+
+  it('collectVerifyData adds diagnostics when coverage is incomplete without pre-run config', () => {
+    const testDir = join(root, 'logos/resources/test');
+    const verifyDir = join(root, 'logos/resources/verify');
+    mkdirSync(testDir, { recursive: true });
+    mkdirSync(verifyDir, { recursive: true });
+    writeFileSync(join(testDir, 'S01-test-cases.md'), '| UT-S01-01 | d |\n| ST-S01-01 | d |\n');
+    writeFileSync(join(verifyDir, 'test-results.jsonl'), '{"id":"UT-S01-01","status":"pass"}\n');
+
+    const data = collectVerifyData(root);
+    expect(data.gate.reason).toBe('incomplete_coverage');
+    expect(data.pre_run.mode).toBe('none');
+    expect(data.pre_run.diagnostics.join('\n')).toContain('partial test set');
+    expect(data.pre_run.suggestions.join('\n')).toContain('verify.pre_run_command');
+  });
+
+  it('collectVerifyData exposes pre_run state in JSON output data', () => {
+    writeFileSync(join(root, 'logos/resources/test', 'S01-test-cases.md'), '| UT-S01-01 | desc |\n');
+    writeFileSync(join(root, 'logos/resources/verify', 'test-results.jsonl'), '{"id":"UT-S01-01","status":"pass"}\n');
+
+    const preRun = buildInitialPreRunData({
+      resultPath: 'logos/resources/verify/test-results.jsonl',
+      preRunCommand: 'npm test',
+      mergeStrategy: 'last-write-wins',
+    });
+    const data = collectVerifyData(root, preRun);
+
+    expect(data.pre_run.mode).toBe('pre_run_command');
+    expect(data.pre_run.result_paths.final).toBe('logos/resources/verify/test-results.jsonl');
+  });
+});
+
 /* ========== Scenario Tests ========== */
 
 describe('S13 Scenario Tests — verify command', () => {
@@ -374,6 +502,13 @@ describe('S13 Scenario Tests — verify command', () => {
     writeFileSync(join(dir, 'test-results.jsonl'), lines.join('\n') + '\n');
   }
 
+  function updateVerifyConfig(values: Record<string, unknown>) {
+    const configPath = join(root, 'logos/logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.verify = { ...(config.verify ?? {}), ...values };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+  }
+
   const CASES_ALL_PASS = `# Test Cases
 | UT-S01-01 | desc |
 | ST-S01-01 | desc |
@@ -407,7 +542,7 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(existsSync(join(root, 'logos/resources/verify/acceptance-report.md'))).toBe(true);
   });
 
-  it('ST-S13-02: failed test → Gate FAIL', () => {
+  it('ST-S13-05: failed test → Gate FAIL', () => {
     writeTestCases(CASES_ALL_PASS);
     writeResults([
       '{"id":"UT-S01-01","status":"pass"}',
@@ -420,7 +555,40 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(allLogs).toContain('FAIL');
   });
 
-  it('ST-S13-03: uncovered cases → Gate FAIL', () => {
+  it('ST-S13-02: single-stage pre_run_command generates complete results before verify', () => {
+    writeTestCases(CASES_ALL_PASS);
+    updateVerifyConfig({
+      pre_run_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.jsonl','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n{\\\"id\\\":\\\"ST-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`,
+    });
+
+    verify();
+
+    const report = readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf-8');
+    expect(report).toContain('PASS');
+    const out = con.logs.join('\n');
+    expect(out).toContain('verify pre-run mode: single-stage');
+  });
+
+  it('ST-S13-03: two-phase verify merges regression and incremental results', () => {
+    writeTestCases(CASES_ALL_PASS);
+    updateVerifyConfig({
+      regression_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.regression.jsonl','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"fail\\\",\\\"error\\\":\\\"old\\\"}\\n')"` ,
+      incremental_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.incremental.jsonl','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n{\\\"id\\\":\\\"ST-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"` ,
+      regression_result_path: 'logos/resources/verify/test-results.regression.jsonl',
+      incremental_result_path: 'logos/resources/verify/test-results.incremental.jsonl',
+    });
+
+    verify();
+
+    const report = readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf-8');
+    expect(report).toContain('PASS');
+    const results = readFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), 'utf-8');
+    expect(results).toContain('"id":"UT-S01-01","status":"pass"');
+    const out = con.logs.join('\n');
+    expect(out).toContain('verify pre-run mode: two-phase');
+  });
+
+  it('ST-S13-04: uncovered cases without pre-run config → Gate FAIL', () => {
     const cases = `# Test Cases\n| UT-S01-01 | d |\n| ST-S01-01 | d |\n| UT-S01-02 | d |\n\n## 三、覆盖度校验\n\n- [x] ok\n`;
     writeTestCases(cases);
     writeResults([
@@ -434,7 +602,7 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(allLogs).toContain('UT-S01-02');
   });
 
-  it('ST-S13-04: unchecked checklist item → Gate FAIL', () => {
+  it('ST-S13-06: unchecked checklist item → Gate FAIL', () => {
     const cases = `# Test Cases\n| UT-S01-01 | d |\n\n## 三、覆盖度校验\n\n- [x] ok\n- [ ] not ok\n`;
     writeTestCases(cases);
     writeResults([

@@ -25,13 +25,13 @@
 - [x] 产出 delta 文件到 `deltas/test/smoke/core-smoke-test-cases.md` — 补充发布后 smoke 检查 verify 预跑配置与两阶段验收能力
 
 ## [code] 代码实现
-- [ ] 修改 `cli/src/commands/verify.ts` — 支持 `pre_run_command` 兼容路径、`regression_command` + `incremental_command` 两阶段执行、阶段结果合并、覆盖不足诊断和报告输出
-- [ ] 修改 `cli/src/commands/init.ts` — 为可识别测试栈写入或提示 `verify.pre_run_command` / `verify.regression_command`
-- [ ] 修改 `cli/src/commands/adopt.ts` — 接入已有项目时推断测试命令并写入 verify 预跑配置，无法推断时输出明确 TODO / 诊断
-- [ ] 修改 `cli/src/commands/sync.ts` — 对旧项目补齐缺失的 verify 预跑配置或输出可执行诊断，不静默跳过
-- [ ] 修改 `cli/src/i18n.ts` — 增加中英文 verify 预跑、覆盖不足诊断、配置补齐提示文案
-- [ ] 修改 `cli/src/index.ts` / 相关类型定义 — 确保新增 verify 配置和 JSON 输出字段可被 CLI 与客户端稳定消费
-- [ ] 更新 `cli/test/s01-init.test.ts`、`cli/test/s08-sync.test.ts`、`cli/test/s13-verify.test.ts`、`cli/test/s16-json-output.test.ts`、`cli/test/s20-adopt.test.ts` — 覆盖新增验收用例并写入 OpenLogos reporter
+- [x] 修改 `cli/src/commands/verify.ts` — 支持 `pre_run_command` 兼容路径、`regression_command` + `incremental_command` 两阶段执行、阶段结果合并、覆盖不足诊断和报告输出
+- [x] 修改 `cli/src/commands/init.ts` — 为可识别测试栈写入或提示 `verify.pre_run_command` / `verify.regression_command`
+- [x] 修改 `cli/src/commands/adopt.ts` — 接入已有项目时推断测试命令并写入 verify 预跑配置，无法推断时输出明确 TODO / 诊断
+- [x] 修改 `cli/src/commands/sync.ts` — 对旧项目补齐缺失的 verify 预跑配置或输出可执行诊断，不静默跳过
+- [x] 修改 `cli/src/i18n.ts` — 增加中英文 verify 预跑、覆盖不足诊断、配置补齐提示文案
+- [x] 修改 `cli/src/index.ts` / 相关类型定义 — 确保新增 verify 配置和 JSON 输出字段可被 CLI 与客户端稳定消费
+- [x] 更新 `cli/test/s01-init.test.ts`、`cli/test/s08-sync.test.ts`、`cli/test/s13-verify.test.ts`、`cli/test/s16-json-output.test.ts`、`cli/test/s20-adopt.test.ts` — 覆盖新增验收用例并写入 OpenLogos reporter
 
 ## [deploy] 部署任务
 - [ ] 按部署方案发布 CLI/npm 包或本提案指定的 staging 包产物

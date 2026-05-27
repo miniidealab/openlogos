@@ -125,6 +125,29 @@ describe('S20 Scenario Tests — adopt command', () => {
     expect(out).toContain('已 launch');
   });
 
+  it('UT-S20-07: adopt 可识别测试栈时写入 verify.pre_run_command', async () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'existing-app',
+      scripts: { test: 'vitest run' },
+    }));
+
+    await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.verify.pre_run_command).toBe('npm test');
+    expect(con.logs.join('\n')).toContain('verify 预跑配置');
+  });
+
+  it('UT-S20-08: adopt 无法推断测试命令时输出 TODO', async () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
+
+    await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.verify.pre_run_command).toBeUndefined();
+    expect(con.logs.join('\n')).toContain('无法推断 verify 预跑配置');
+  });
+
   it('ST-S20-EX-01: 已初始化项目拒绝重复接入', async () => {
     scaffoldProject(root, { locale: 'zh' });
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));

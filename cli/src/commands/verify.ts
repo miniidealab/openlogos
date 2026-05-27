@@ -1,9 +1,14 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
+import {
+  DEFAULT_VERIFY_RESULT_PATH,
+  readVerifyConfig,
+  type NormalizedVerifyConfig,
+} from '../lib/verify-config.js';
 import { getDeployTasks } from './status.js';
 
 export interface TestResult {
@@ -15,7 +20,7 @@ export interface TestResult {
   scenario?: string;
 }
 
-const DEFAULT_RESULT_PATH = 'logos/resources/verify/test-results.jsonl';
+const DEFAULT_RESULT_PATH = DEFAULT_VERIFY_RESULT_PATH;
 const TEST_CASES_DIR = 'logos/resources/test';
 const REPORT_DIR = 'logos/resources/verify';
 const MANUAL_SUFFIX = /\[manual\]/i;
@@ -36,6 +41,31 @@ export interface AcTraceEntry {
   description: string;
   linkedCaseIds: string[];
   file: string;
+}
+
+export type VerifyPreRunMode = 'none' | 'pre_run_command' | 'two_phase';
+export type VerifyPreRunStage = 'pre_run' | 'regression' | 'incremental';
+
+export interface VerifyPreRunCommandResult {
+  stage: VerifyPreRunStage;
+  command: string;
+  status: 'pass' | 'fail' | 'skipped';
+  exit_code?: number;
+  duration_ms?: number;
+  error?: string;
+}
+
+export interface VerifyPreRunData {
+  mode: VerifyPreRunMode;
+  commands: VerifyPreRunCommandResult[];
+  result_paths: {
+    final: string;
+    regression: string | null;
+    incremental: string | null;
+  };
+  merge_strategy: 'last-write-wins' | null;
+  diagnostics: string[];
+  suggestions: string[];
 }
 
 export interface VerifyData {
@@ -74,7 +104,173 @@ export interface VerifyData {
       status: string;
     }>;
   };
+  pre_run: VerifyPreRunData;
   report_path: string;
+}
+
+function commandExitCode(error: unknown): number | undefined {
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' ? status : undefined;
+  }
+  return undefined;
+}
+
+function commandErrorMessage(error: unknown): string | undefined {
+  if (error instanceof Error && error.message) return error.message.slice(0, 500);
+  if (error !== undefined && error !== null) return String(error).slice(0, 500);
+  return undefined;
+}
+
+function executeVerifyCommand(root: string, stage: VerifyPreRunStage, command: string, format: OutputFormat): VerifyPreRunCommandResult {
+  if (format !== 'json') {
+    console.log(`\n⚙️  Running verify.${stage === 'pre_run' ? 'pre_run_command' : `${stage}_command`}: ${command}`);
+  }
+
+  const start = Date.now();
+  try {
+    execSync(command, { cwd: root, stdio: format === 'json' ? 'pipe' : 'inherit' });
+    return {
+      stage,
+      command,
+      status: 'pass',
+      exit_code: 0,
+      duration_ms: Date.now() - start,
+    };
+  } catch (error) {
+    if (format !== 'json') {
+      console.warn(`\n⚠️  verify ${stage} command exited with non-zero status. Continuing verify with existing results.`);
+    }
+    return {
+      stage,
+      command,
+      status: 'fail',
+      exit_code: commandExitCode(error),
+      duration_ms: Date.now() - start,
+      error: commandErrorMessage(error),
+    };
+  }
+}
+
+function safeReadFile(path: string): string {
+  return existsSync(path) ? readFileSync(path, 'utf-8') : '';
+}
+
+function writeMergedResults(root: string, resultPath: string, contents: string[]): void {
+  const fullResultPath = join(root, resultPath);
+  mkdirSync(dirname(fullResultPath), { recursive: true });
+  const joined = contents
+    .map(content => content.trim())
+    .filter(Boolean)
+    .join('\n');
+  writeFileSync(fullResultPath, joined ? `${joined}\n` : '');
+}
+
+function stageSnapshotPath(root: string, stage: VerifyPreRunStage, resultPath: string): string {
+  return join(root, dirname(resultPath), `.openlogos-${stage}-${Date.now()}-${Math.random().toString(16).slice(2)}.jsonl`);
+}
+
+export function buildInitialPreRunData(config: NormalizedVerifyConfig): VerifyPreRunData {
+  const hasTwoPhase = Boolean(config.regressionCommand || config.incrementalCommand);
+  const mode: VerifyPreRunMode = hasTwoPhase
+    ? 'two_phase'
+    : config.preRunCommand ? 'pre_run_command' : 'none';
+  return {
+    mode,
+    commands: [],
+    result_paths: {
+      final: config.resultPath,
+      regression: config.regressionResultPath ?? null,
+      incremental: config.incrementalResultPath ?? null,
+    },
+    merge_strategy: mode === 'two_phase' ? config.mergeStrategy : null,
+    diagnostics: [],
+    suggestions: [],
+  };
+}
+
+function skippedCompatPreRunCommand(config: NormalizedVerifyConfig): VerifyPreRunCommandResult | null {
+  if (!config.preRunCommand || !(config.regressionCommand || config.incrementalCommand)) return null;
+  return {
+    stage: 'pre_run',
+    command: config.preRunCommand,
+    status: 'skipped',
+  };
+}
+
+export function runVerifyPreRun(root: string, config: NormalizedVerifyConfig, format: OutputFormat): VerifyPreRunData {
+  const preRun = buildInitialPreRunData(config);
+
+  if (preRun.mode === 'none') return preRun;
+
+  if (preRun.mode === 'pre_run_command' && config.preRunCommand) {
+    const resultPath = join(root, config.resultPath);
+    mkdirSync(dirname(resultPath), { recursive: true });
+    writeFileSync(resultPath, '');
+    preRun.commands.push(executeVerifyCommand(root, 'pre_run', config.preRunCommand, format));
+    return preRun;
+  }
+
+  const compatSkipped = skippedCompatPreRunCommand(config);
+  if (compatSkipped) {
+    preRun.commands.push(compatSkipped);
+    preRun.diagnostics.push(t(readLocale(root), 'verify.preRunCompatSkipped'));
+  }
+
+  const stageContents: string[] = [];
+  const fallbackSnapshots: string[] = [];
+  const runStage = (
+    stage: Extract<VerifyPreRunStage, 'regression' | 'incremental'>,
+    command: string | undefined,
+    stageResultPath: string | undefined,
+  ) => {
+    if (!command) return;
+    const effectiveStagePath = stageResultPath ?? config.resultPath;
+    const fullStagePath = join(root, effectiveStagePath);
+    mkdirSync(dirname(fullStagePath), { recursive: true });
+    writeFileSync(fullStagePath, '');
+    preRun.commands.push(executeVerifyCommand(root, stage, command, format));
+
+    const content = safeReadFile(fullStagePath);
+    if (content.trim()) stageContents.push(content);
+
+    if (!stageResultPath && existsSync(fullStagePath)) {
+      const snapshot = stageSnapshotPath(root, stage, config.resultPath);
+      mkdirSync(dirname(snapshot), { recursive: true });
+      copyFileSync(fullStagePath, snapshot);
+      fallbackSnapshots.push(snapshot);
+    }
+  };
+
+  runStage('regression', config.regressionCommand, config.regressionResultPath);
+  runStage('incremental', config.incrementalCommand, config.incrementalResultPath);
+  writeMergedResults(root, config.resultPath, stageContents);
+
+  for (const snapshot of fallbackSnapshots) {
+    if (existsSync(snapshot)) rmSync(snapshot, { force: true });
+  }
+
+  return preRun;
+}
+
+function addCoverageDiagnostics(root: string, data: VerifyData): VerifyData {
+  if (data.gate.reason === 'incomplete_coverage' && data.pre_run.mode === 'none') {
+    const locale = readLocale(root);
+    data.pre_run.diagnostics.push(t(locale, 'verify.coverageLocalDiag'));
+    data.pre_run.suggestions.push(
+      t(locale, 'verify.coverageLocalSuggestionPreRun'),
+      t(locale, 'verify.coverageLocalSuggestionTwoPhase'),
+    );
+  }
+  return data;
+}
+
+function ensureResultFileWhenPreRunFailed(fullResultPath: string, preRun: VerifyPreRunData): void {
+  if (existsSync(fullResultPath)) return;
+  const failedPreRun = preRun.commands.some(cmd => cmd.status === 'fail');
+  if (!failedPreRun) return;
+  mkdirSync(dirname(fullResultPath), { recursive: true });
+  writeFileSync(fullResultPath, '');
 }
 
 export function parseJsonl(content: string): TestResult[] {
@@ -318,16 +514,9 @@ export function generateReport(
   return md;
 }
 
-export function collectVerifyData(root: string): VerifyData {
-  const configPath = join(root, 'logos', 'logos.config.json');
-  let resultPath = DEFAULT_RESULT_PATH;
-
-  try {
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-    if (config.verify?.result_path) {
-      resultPath = config.verify.result_path;
-    }
-  } catch { /* use default */ }
+export function collectVerifyData(root: string, preRun?: VerifyPreRunData): VerifyData {
+  const config = readVerifyConfig(root);
+  const resultPath = config.resultPath;
 
   const fullResultPath = join(root, resultPath);
   const results = parseJsonl(readFileSync(fullResultPath, 'utf-8'));
@@ -382,7 +571,7 @@ export function collectVerifyData(root: string): VerifyData {
 
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
 
-  return {
+  return addCoverageDiagnostics(root, {
     summary: {
       defined_count: defined.length,
       ut_count: utCount,
@@ -422,8 +611,9 @@ export function collectVerifyData(root: string): VerifyData {
         void automatedIds; // used in filter above
       }),
     },
+    pre_run: preRun ?? buildInitialPreRunData(config),
     report_path: relReportPath,
-  };
+  });
 }
 
 export function verify(format: OutputFormat = 'text') {
@@ -443,34 +633,13 @@ export function verify(format: OutputFormat = 'text') {
   }
 
   const locale = readLocale(root);
-  let resultPath = DEFAULT_RESULT_PATH;
-
-  try {
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-    if (config.verify?.result_path) {
-      resultPath = config.verify.result_path;
-    }
-  } catch { /* use default */ }
-
-  // 执行 pre_run_command（全量测试），确保 JSONL 包含完整结果
-  try {
-    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-    if (config.verify?.pre_run_command) {
-      const cmd = config.verify.pre_run_command as string;
-      if (format !== 'json') {
-        console.log(`\n⚙️  Running pre_run_command: ${cmd}`);
-      }
-      try {
-        execSync(cmd, { cwd: root, stdio: 'inherit' });
-      } catch {
-        if (format !== 'json') {
-          console.warn(`\n⚠️  pre_run_command exited with non-zero status. Continuing verify with existing results.`);
-        }
-      }
-    }
-  } catch { /* config 读取失败时静默跳过 */ }
+  const config = readVerifyConfig(root);
+  const resultPath = config.resultPath;
+  const preRun = runVerifyPreRun(root, config, format);
 
   const fullResultPath = join(root, resultPath);
+  ensureResultFileWhenPreRunFailed(fullResultPath, preRun);
+
   if (!existsSync(fullResultPath)) {
     if (format === 'json') {
       console.error(JSON.stringify(makeErrorEnvelope(
@@ -494,7 +663,7 @@ export function verify(format: OutputFormat = 'text') {
     process.exit(1);
   }
 
-  const data = collectVerifyData(root);
+  const data = collectVerifyData(root, preRun);
 
   // 写入提案目录标记文件（如果有活跃提案）
   const guardPath = join(root, 'logos', '.openlogos-guard');
@@ -536,7 +705,7 @@ export function verify(format: OutputFormat = 'text') {
   console.log(t(locale, 'verify.readingResults', { path: resultPath }));
   console.log(t(locale, 'verify.readingCases'));
 
-  const { summary, gate, failed_cases, uncovered_cases, checklist, ac_trace } = data;
+  const { summary, gate, failed_cases, uncovered_cases, checklist, ac_trace, pre_run } = data;
 
   console.log(`\n${LINE}`);
   console.log(`📊 ${t(locale, 'verify.summary')}`);
@@ -604,6 +773,36 @@ export function verify(format: OutputFormat = 'text') {
   }
 
   console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}\n`);
+
+  if (pre_run.mode !== 'none' || pre_run.diagnostics.length > 0 || pre_run.suggestions.length > 0) {
+    if (pre_run.mode === 'pre_run_command') {
+      console.log(`⚙️  ${t(locale, 'verify.preRunModeSingle')}`);
+    } else if (pre_run.mode === 'two_phase') {
+      console.log(`⚙️  ${t(locale, 'verify.preRunModeTwoPhase')}`);
+    } else {
+      console.log(`⚙️  ${t(locale, 'verify.preRunModeNone')}`);
+    }
+    for (const cmd of pre_run.commands) {
+      const exit = cmd.exit_code === undefined ? 'n/a' : String(cmd.exit_code);
+      const duration = cmd.duration_ms === undefined ? 'n/a' : `${cmd.duration_ms}ms`;
+      console.log(`  ${t(locale, 'verify.preRunStageLine', {
+        status: cmd.status,
+        stage: cmd.stage,
+        command: cmd.command,
+        exit,
+        duration,
+      })}`);
+      if (cmd.error) {
+        console.log(`    ${cmd.error}`);
+      }
+    }
+    for (const line of pre_run.diagnostics) {
+      console.log(`  ⚠️  ${line}`);
+    }
+    for (const line of pre_run.suggestions) {
+      console.log(`  💡 ${line}`);
+    }
+  }
 
   if (gate.result !== 'PASS') {
     process.exit(1);

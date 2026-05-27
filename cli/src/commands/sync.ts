@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySpecs, deployAiToolAssets, expandAiTools, resolveDocsAiToolForTarget } from './init.js';
+import { createAgentsMd, deploySpecs, deployAiToolAssets, expandAiTools, resolveDocsAiToolForTarget, ensureVerifyPreRunConfig, printVerifyPreRunBackfillResult } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
 import { VERSION } from '../lib/json-output.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
@@ -166,6 +166,12 @@ export function sync() {
     writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log('  ✓ sourceRoots added to logos.config.json');
   }
+
+  const verifyBackfill = ensureVerifyPreRunConfig(root, config);
+  if (verifyBackfill.mutated) {
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+  }
+  printVerifyPreRunBackfillResult(locale, verifyBackfill);
 
   writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', isLaunched));
   console.log('  ✓ AGENTS.md updated');

@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { execSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
+import { backfillVerifyPreRunConfig } from '../lib/verify-config.js';
 
 export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' | 'all';
 
@@ -824,6 +825,26 @@ function maybePrintPythonHint(locale: Locale): void {
   console.log(t(locale, 'init.pythonMissingBody'));
 }
 
+export function ensureVerifyPreRunConfig(root: string, config: Record<string, unknown>): {
+  status: 'exists' | 'added' | 'todo';
+  command?: string;
+  mutated: boolean;
+} {
+  return backfillVerifyPreRunConfig(root, config);
+}
+
+export function printVerifyPreRunBackfillResult(
+  locale: Locale,
+  result: { status: 'exists' | 'added' | 'todo'; command?: string },
+  prefix = '  ',
+): void {
+  if (result.status === 'added' && result.command) {
+    console.log(`${prefix}✓ ${t(locale, 'verify.preRunConfigAdded', { command: result.command })}`);
+  } else if (result.status === 'todo') {
+    console.log(`${prefix}⚠ ${t(locale, 'verify.preRunConfigTodo')}`);
+  }
+}
+
 export function deploySkills(
   root: string,
   aiTool: AiTool,
@@ -1392,6 +1413,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       const locale: Locale = config.locale === 'zh' ? 'zh' : 'en';
       const requestedTools = expandAiTools(requestedAiTool);
       config.aiTool = mergeAiToolConfig(config.aiTool, requestedAiTool);
+      const verifyBackfill = ensureVerifyPreRunConfig(root, config);
       writeFileSync(configPath, JSON.stringify(config, null, 2));
 
       const isLaunched = readProjectLaunched(root);
@@ -1400,6 +1422,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       writeInstructionFiles(root, locale, config.aiTool, isLaunched);
       console.log('  ✓ AGENTS.md updated');
       console.log('  ✓ CLAUDE.md updated');
+      printVerifyPreRunBackfillResult(locale, verifyBackfill);
 
       deployAiToolAssets(root, requestedTools, locale, isLaunched, 'synced');
 
@@ -1456,8 +1479,11 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
     console.log(`  ✓ ${dir}/`);
   }
 
-  writeFileSync(join(root, 'logos', 'logos.config.json'), createLogosConfig(projectName, locale, aiTool));
+  const initialConfig = JSON.parse(createLogosConfig(projectName, locale, aiTool)) as Record<string, unknown>;
+  const verifyBackfill = ensureVerifyPreRunConfig(root, initialConfig);
+  writeFileSync(join(root, 'logos', 'logos.config.json'), JSON.stringify(initialConfig, null, 2));
   console.log(`  ✓ logos/logos.config.json`);
+  printVerifyPreRunBackfillResult(locale, verifyBackfill);
 
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);
