@@ -1,0 +1,451 @@
+## ADDED — 发布日志页面 HTML 原型
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenLogos Releases Prototype</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #131316;
+      --surface-2: #1a1a1f;
+      --border: #27272a;
+      --border-strong: #3f3f46;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --soft: #d4d4d8;
+      --green: #10b981;
+      --blue: #60a5fa;
+      --amber: #f59e0b;
+      --mono: "JetBrains Mono", "SF Mono", monospace;
+      --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    a { color: inherit; text-decoration: none; }
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 96px 24px 64px;
+    }
+    .crumb {
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 12px;
+      margin-bottom: 18px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) 360px;
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 28px;
+    }
+    .hero-main,
+    .install-panel,
+    .series-nav,
+    .release-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .hero-main { padding: 28px; }
+    h1 {
+      margin: 0 0 14px;
+      font-size: 44px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+    .lead {
+      max-width: 720px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 24px;
+    }
+    .metric {
+      padding: 12px;
+      background: #0f0f12;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .metric strong {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .install-panel {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .latest-badge {
+      align-self: flex-start;
+      padding: 4px 10px;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 999px;
+      color: #6ee7b7;
+      font-family: var(--mono);
+      font-size: 12px;
+      background: rgba(16, 185, 129, 0.1);
+    }
+    .version {
+      font-family: var(--mono);
+      font-size: 34px;
+      font-weight: 700;
+    }
+    .code {
+      display: block;
+      padding: 12px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #09090b;
+      color: var(--soft);
+      font-family: var(--mono);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: auto;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border-strong);
+      color: var(--soft);
+      font-size: 13px;
+      font-weight: 600;
+      transition: border-color 180ms, background 180ms, color 180ms;
+    }
+    .btn:hover,
+    .btn:focus-visible {
+      color: var(--text);
+      border-color: var(--green);
+      background: rgba(16, 185, 129, 0.08);
+      outline: none;
+    }
+    .content {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .series-nav {
+      position: sticky;
+      top: 88px;
+      padding: 14px;
+    }
+    .series-nav h2,
+    .timeline h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      color: var(--soft);
+      letter-spacing: 0;
+    }
+    .series-link {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 7px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .series-link:hover,
+    .series-link.active {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+    .series-link .count { color: var(--blue); }
+    .group {
+      margin-bottom: 28px;
+    }
+    .group-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .group-header h2 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 18px;
+    }
+    .group-header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .release-list {
+      display: grid;
+      gap: 12px;
+    }
+    .release-card {
+      padding: 18px;
+      transition: border-color 180ms, background 180ms;
+    }
+    .release-card:hover {
+      border-color: var(--border-strong);
+      background: #151519;
+    }
+    .release-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .release-title {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .release-title h3 {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+    .tag {
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .tag.latest {
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #86efac;
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .meta {
+      min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0f0f12;
+    }
+    .meta span {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .meta strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    .summary-blocks {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .summary-block {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0f0f12;
+    }
+    .summary-block h4 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      color: var(--blue);
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    .summary-block ul,
+    .summary-block ol {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--soft);
+      font-size: 13px;
+    }
+    .summary-secondary {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .summary-fallback {
+      margin: 0 0 14px;
+      color: #fbbf24;
+      font-size: 13px;
+    }
+    .release-note {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .release-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .release-links .btn {
+      min-height: 32px;
+      font-size: 12px;
+    }
+    .note {
+      margin-bottom: 24px;
+      padding: 12px 14px;
+      border: 1px solid rgba(96, 165, 250, 0.28);
+      border-radius: 8px;
+      background: rgba(96, 165, 250, 0.06);
+      color: var(--soft);
+      font-size: 13px;
+    }
+    @media (max-width: 960px) {
+      .hero,
+      .content,
+      .summary-blocks,
+      .meta-grid { grid-template-columns: 1fr; }
+      .page { padding-inline: 16px; }
+      .series-nav { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="crumb">npm registry / @miniidealab/openlogos</div>
+    <section class="hero" aria-labelledby="release-title">
+      <div class="hero-main">
+        <h1 id="release-title">OpenLogos Releases</h1>
+        <p class="lead">
+          Complete npm release metadata for the OpenLogos CLI. English summary is the primary surface;
+          Chinese original text stays available as secondary context for traceability.
+        </p>
+        <div class="summary">
+          <div class="metric"><span>latest</span><strong>v0.9.29</strong></div>
+          <div class="metric"><span>versions</span><strong>64</strong></div>
+          <div class="metric"><span>registry updated</span><strong>May 25, 2026</strong></div>
+          <div class="metric"><span>source</span><strong>npm time</strong></div>
+        </div>
+      </div>
+      <aside class="install-panel">
+        <span class="latest-badge">latest</span>
+        <div class="version">v0.9.29</div>
+        <p>Published May 25, 2026 03:06 PM UTC</p>
+        <code class="code">npm install -g @miniidealab/openlogos</code>
+        <div class="actions">
+          <a class="btn" href="#">npm package</a>
+          <a class="btn" href="#">GitHub Release</a>
+          <a class="btn" href="#">CHANGELOG</a>
+        </div>
+      </aside>
+    </section>
+    <div class="note">
+      English summary comes from maintained bilingual release data. Chinese original text is shown below each
+      summary as secondary content. If the English summary is missing, a fixed fallback message appears.
+    </div>
+    <section class="content" aria-label="Release timeline">
+      <aside class="series-nav">
+        <h2>Series</h2>
+        <a class="series-link active" href="#series-0-9"><span>0.9.x</span><span class="count">12</span></a>
+        <a class="series-link" href="#series-0-8"><span>0.8.x</span><span class="count">8</span></a>
+        <a class="series-link" href="#series-0-7"><span>0.7.x</span><span class="count">6</span></a>
+      </aside>
+      <div class="timeline">
+        <section class="group" id="series-0-9">
+          <div class="group-header">
+            <div>
+              <h2>0.9.x</h2>
+              <p>May 13, 2026 - May 25, 2026</p>
+            </div>
+            <span>12 versions</span>
+          </div>
+          <div class="release-list">
+            <article class="release-card">
+              <div class="release-top">
+                <div class="release-title">
+                  <h3>v0.9.29</h3>
+                  <span class="tag latest">latest</span>
+                </div>
+                <time>May 25, 2026</time>
+              </div>
+              <div class="meta-grid">
+                <div class="meta"><span>Node.js</span><strong>>=18.0.0</strong></div>
+                <div class="meta"><span>Tarball size</span><strong>509 KB</strong></div>
+                <div class="meta"><span>Files</span><strong>231</strong></div>
+              </div>
+              <div class="summary-blocks">
+                <div class="summary-block">
+                  <h4>What changed</h4>
+                  <ul>
+                    <li>Built-in ui-ux-pro-max skill vendor update.</li>
+                    <li>Expanded desktop app support in product-designer.</li>
+                  </ul>
+                  <div class="summary-secondary">
+                    原文：内置 ui-ux-pro-max Skill；product-designer 扩展桌面应用支持。
+                  </div>
+                </div>
+                <div class="summary-block">
+                  <h4>What got fixed</h4>
+                  <p class="summary-fallback">Structured release summary unavailable for this version.</p>
+                  <div class="summary-secondary">
+                    原文：CHANGELOG 仅提供 Added 段落。
+                  </div>
+                </div>
+              </div>
+              <p class="release-note">Metadata and publish time come from npm registry. Detailed notes link out to GitHub Release and CHANGELOG.</p>
+              <div class="release-links">
+                <a class="btn" href="#">npm version</a>
+                <a class="btn" href="#">tarball</a>
+                <a class="btn" href="#">GitHub Release</a>
+                <a class="btn" href="#">CHANGELOG</a>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+```
