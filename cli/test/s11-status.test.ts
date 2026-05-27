@@ -192,7 +192,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     });
   });
 
-  it('UT-S11-bootstrap-01: bootstrap=adopted 的 launched 模块在 JSON 中暴露 bootstrap 字段', () => {
+  it('UT-S11-bootstrap-01 / UT-S11-bootstrap-02: bootstrap=adopted 的 launched 模块在 JSON 中暴露 bootstrap 字段并跳过 Initial 基线', () => {
     scaffoldProject(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'adopted' }],
@@ -204,7 +204,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     expect(data.phases.find(p => p.key === 'phase.1')?.skipped).toBe(true);
   });
 
-  it('UT-S11-bootstrap-02: bootstrap=skipped 的 launched 模块按 adopted 接入模式建议补文档提案', () => {
+  it('UT-S11-bootstrap-03: bootstrap=skipped 的 launched 模块按 adopted 接入模式建议补文档提案', () => {
     scaffoldProject(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],

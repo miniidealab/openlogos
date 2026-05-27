@@ -192,7 +192,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S05-bootstrap-02: bootstrap=skipped legacy mode with no active proposal → suggest add-baseline-docs', () => {
+  it('UT-S05-bootstrap-02 / ST-S05-bootstrap-02: bootstrap=skipped legacy mode with no active proposal → suggest add-baseline-docs', () => {
     writeLegacySkippedModule(root);
 
     next();
@@ -201,7 +201,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S05-bootstrap-03: bootstrap=adopted with active proposal → follows proposal flow', () => {
+  it('UT-S05-bootstrap-03 / ST-S05-bootstrap-03: bootstrap=adopted with active proposal → follows proposal flow', () => {
     writeAdoptedModule(root);
     writeFileSync(
       join(root, 'logos', '.openlogos-guard'),
@@ -219,7 +219,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S05-bootstrap-04: bootstrap=skipped legacy mode still follows active proposal step when proposal is verify-passed', () => {
+  it('UT-S05-bootstrap-04 / ST-S05-bootstrap-04: bootstrap=skipped legacy mode still follows active proposal step when proposal is verify-passed', () => {
     writeLegacySkippedModule(root);
     writeFileSync(
       join(root, 'logos', '.openlogos-guard'),
