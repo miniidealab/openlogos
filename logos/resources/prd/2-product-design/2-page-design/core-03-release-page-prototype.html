@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -238,43 +238,36 @@
       letter-spacing: 0;
     }
     .tag {
-      padding: 2px 7px;
+      padding: 3px 8px;
       border-radius: 999px;
-      border: 1px solid rgba(96, 165, 250, 0.3);
-      color: #93c5fd;
+      border: 1px solid var(--border);
+      color: var(--muted);
       font-family: var(--mono);
       font-size: 11px;
-      background: rgba(96, 165, 250, 0.1);
     }
     .tag.latest {
       border-color: rgba(16, 185, 129, 0.35);
-      color: #6ee7b7;
-      background: rgba(16, 185, 129, 0.1);
-    }
-    .date {
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: 12px;
-      white-space: nowrap;
+      color: #86efac;
+      background: rgba(16, 185, 129, 0.08);
     }
     .meta-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
+      gap: 10px;
       margin-bottom: 14px;
     }
     .meta {
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      background: #0f0f12;
       min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0f0f12;
     }
     .meta span {
       display: block;
+      margin-bottom: 4px;
       color: var(--muted);
-      font-size: 11px;
-      margin-bottom: 3px;
+      font-size: 12px;
     }
     .meta strong {
       display: block;
@@ -282,35 +275,48 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       font-family: var(--mono);
-      font-size: 12px;
-      color: var(--soft);
-    }
-    .release-summary {
-      margin: 0 0 14px;
-      color: var(--muted);
-      font-size: 14px;
+      font-size: 13px;
     }
     .summary-blocks {
       display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }
     .summary-block {
       padding: 12px;
       border: 1px solid var(--border);
-      border-radius: 7px;
+      border-radius: 8px;
       background: #0f0f12;
     }
     .summary-block h4 {
-      margin: 0 0 6px;
-      color: var(--soft);
-      font-family: var(--mono);
+      margin: 0 0 8px;
       font-size: 12px;
+      color: var(--blue);
       letter-spacing: 0;
+      text-transform: uppercase;
     }
-    .summary-block ul {
+    .summary-block ul,
+    .summary-block ol {
       margin: 0;
       padding-left: 18px;
+      color: var(--soft);
+      font-size: 13px;
+    }
+    .summary-secondary {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .summary-fallback {
+      margin: 0 0 14px;
+      color: #fbbf24;
+      font-size: 13px;
+    }
+    .release-note {
+      margin: 0 0 14px;
       color: var(--muted);
       font-size: 13px;
     }
@@ -319,31 +325,26 @@
       flex-wrap: wrap;
       gap: 8px;
     }
-    @media (max-width: 880px) {
-      .page { padding: 84px 16px 48px; }
-      .hero,
-      .content { grid-template-columns: 1fr; }
-      h1 { font-size: 34px; }
-      .summary,
-      .meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .series-nav {
-        position: static;
-        overflow-x: auto;
-        display: flex;
-        gap: 8px;
-        padding: 10px;
-      }
-      .series-nav h2 { display: none; }
-      .series-link {
-        flex: 0 0 auto;
-        border: 1px solid var(--border);
-      }
-      .date { white-space: normal; }
+    .release-links .btn {
+      min-height: 32px;
+      font-size: 12px;
     }
-    @media (max-width: 520px) {
-      .summary,
+    .note {
+      margin-bottom: 24px;
+      padding: 12px 14px;
+      border: 1px solid rgba(96, 165, 250, 0.28);
+      border-radius: 8px;
+      background: rgba(96, 165, 250, 0.06);
+      color: var(--soft);
+      font-size: 13px;
+    }
+    @media (max-width: 960px) {
+      .hero,
+      .content,
+      .summary-blocks,
       .meta-grid { grid-template-columns: 1fr; }
-      .release-top { flex-direction: column; }
+      .page { padding-inline: 16px; }
+      .series-nav { position: static; }
     }
   </style>
 </head>
@@ -352,22 +353,23 @@
     <div class="crumb">npm registry / @miniidealab/openlogos</div>
     <section class="hero" aria-labelledby="release-title">
       <div class="hero-main">
-        <h1 id="release-title">OpenLogos 发布日志</h1>
+        <h1 id="release-title">OpenLogos Releases</h1>
         <p class="lead">
-          全量展示 npm registry 中的 OpenLogos CLI 发布记录。发布时间、版本数量、包元数据和 dist-tag 均来自 npm；详细变更说明跳转到 GitHub Release 或 changelog。
+          Complete npm release metadata for the OpenLogos CLI. English summary is the primary surface;
+          Chinese original text stays available as secondary context for traceability.
         </p>
-        <div class="summary" aria-label="发布摘要">
-          <div class="metric"><span>当前 latest</span><strong>0.9.26</strong></div>
-          <div class="metric"><span>版本总数</span><strong>61</strong></div>
-          <div class="metric"><span>Registry 更新</span><strong>2026-05-24</strong></div>
-          <div class="metric"><span>数据源</span><strong>npm time</strong></div>
+        <div class="summary">
+          <div class="metric"><span>latest</span><strong>v0.9.29</strong></div>
+          <div class="metric"><span>versions</span><strong>64</strong></div>
+          <div class="metric"><span>registry updated</span><strong>May 25, 2026</strong></div>
+          <div class="metric"><span>source</span><strong>npm time</strong></div>
         </div>
       </div>
-      <aside class="install-panel" aria-label="安装当前版本">
+      <aside class="install-panel">
         <span class="latest-badge">latest</span>
-        <div class="version">v0.9.26</div>
+        <div class="version">v0.9.29</div>
+        <p>Published May 25, 2026 03:06 PM UTC</p>
         <code class="code">npm install -g @miniidealab/openlogos</code>
-        <code class="code">npx @miniidealab/openlogos --version</code>
         <div class="actions">
           <a class="btn" href="#">npm package</a>
           <a class="btn" href="#">GitHub Release</a>
@@ -375,116 +377,63 @@
         </div>
       </aside>
     </section>
-
-    <section class="content">
-      <nav class="series-nav" aria-label="版本系列">
-        <h2>版本系列</h2>
-        <a class="series-link active" href="#series-09"><span>0.9.x</span><span class="count">27</span></a>
-        <a class="series-link" href="#series-08"><span>0.8.x</span><span class="count">3</span></a>
-        <a class="series-link" href="#series-07"><span>0.7.x</span><span class="count">4</span></a>
-        <a class="series-link" href="#series-06"><span>0.6.x</span><span class="count">7</span></a>
-        <a class="series-link" href="#series-05"><span>0.5.x</span><span class="count">8</span></a>
-      </nav>
-
+    <div class="note">
+      English summary comes from maintained bilingual release data. Chinese original text is shown below each
+      summary as secondary content. If the English summary is missing, a fixed fallback message appears.
+    </div>
+    <section class="content" aria-label="Release timeline">
+      <aside class="series-nav">
+        <h2>Series</h2>
+        <a class="series-link active" href="#series-0-9"><span>0.9.x</span><span class="count">12</span></a>
+        <a class="series-link" href="#series-0-8"><span>0.8.x</span><span class="count">8</span></a>
+        <a class="series-link" href="#series-0-7"><span>0.7.x</span><span class="count">6</span></a>
+      </aside>
       <div class="timeline">
-        <section class="group" id="series-09">
+        <section class="group" id="series-0-9">
           <div class="group-header">
-            <h2>0.9.x</h2>
-            <p>2026-04-29 至 2026-05-24</p>
+            <div>
+              <h2>0.9.x</h2>
+              <p>May 13, 2026 - May 25, 2026</p>
+            </div>
+            <span>12 versions</span>
           </div>
           <div class="release-list">
             <article class="release-card">
               <div class="release-top">
                 <div class="release-title">
-                  <h3>v0.9.26</h3>
+                  <h3>v0.9.29</h3>
                   <span class="tag latest">latest</span>
                 </div>
-                <time class="date">2026-05-24 01:58 UTC</time>
+                <time>May 25, 2026</time>
               </div>
               <div class="meta-grid">
-                <div class="meta"><span>Node.js</span><strong>&gt;=18.0.0</strong></div>
-                <div class="meta"><span>Tarball</span><strong>289 KB</strong></div>
-                <div class="meta"><span>Unpacked</span><strong>1.01 MB</strong></div>
-                <div class="meta"><span>Files</span><strong>163</strong></div>
-                <div class="meta"><span>License</span><strong>Apache-2.0</strong></div>
-                <div class="meta"><span>gitHead</span><strong>a536a6e...</strong></div>
-              </div>
-              <div class="summary-blocks" aria-label="版本价值与问题修复">
-                <div class="summary-block">
-                  <h4>版本价值</h4>
-                  <ul>
-                    <li>展示部署门禁与提案状态的可读摘要。</li>
-                    <li>补齐 release 页面信息层次，减少外链跳转成本。</li>
-                  </ul>
-                </div>
-                <div class="summary-block">
-                  <h4>问题修复</h4>
-                  <ul>
-                    <li>修复用户无法在页面内判断版本收益的问题。</li>
-                    <li>修复仅依赖 npm 元数据导致“有版本无说明”的体验缺口。</li>
-                  </ul>
-                </div>
-              </div>
-              <p class="release-summary">
-                npm 元数据记录该版本的发布时间、包体积、入口、依赖和 gitHead。版本价值与问题修复摘要来自 CHANGELOG，缺失时显示结构化回退提示。
-              </p>
-              <div class="release-links">
-                <a class="btn" href="#">npm version</a>
-                <a class="btn" href="#">tarball</a>
-                <a class="btn" href="#">GitHub Release</a>
-              </div>
-            </article>
-
-            <article class="release-card">
-              <div class="release-top">
-                <div class="release-title"><h3>v0.9.25</h3></div>
-                <time class="date">2026-05-23 01:22 UTC</time>
-              </div>
-              <div class="meta-grid">
-                <div class="meta"><span>dist-tag</span><strong>-</strong></div>
-                <div class="meta"><span>npm source</span><strong>time[0.9.25]</strong></div>
-                <div class="meta"><span>Release link</span><strong>v0.9.25</strong></div>
+                <div class="meta"><span>Node.js</span><strong>>=18.0.0</strong></div>
+                <div class="meta"><span>Tarball size</span><strong>509 KB</strong></div>
+                <div class="meta"><span>Files</span><strong>231</strong></div>
               </div>
               <div class="summary-blocks">
                 <div class="summary-block">
-                  <h4>版本价值</h4>
+                  <h4>What changed</h4>
                   <ul>
-                    <li>继续完善文档站信息架构，保持首页与详情页分工清晰。</li>
+                    <li>Built-in ui-ux-pro-max skill vendor update.</li>
+                    <li>Expanded desktop app support in product-designer.</li>
                   </ul>
+                  <div class="summary-secondary">
+                    原文：内置 ui-ux-pro-max Skill；product-designer 扩展桌面应用支持。
+                  </div>
                 </div>
                 <div class="summary-block">
-                  <h4>问题修复</h4>
-                  <ul>
-                    <li>为早期版本补充可读说明的展示框架。</li>
-                  </ul>
+                  <h4>What got fixed</h4>
+                  <p class="summary-fallback">Structured release summary unavailable for this version.</p>
+                  <div class="summary-secondary">
+                    原文：CHANGELOG 仅提供 Added 段落。
+                  </div>
                 </div>
               </div>
-              <p class="release-summary">版本说明优先展示 npm 可验证元数据；详细说明通过 GitHub Release 对应版本补充。</p>
+              <p class="release-note">Metadata and publish time come from npm registry. Detailed notes link out to GitHub Release and CHANGELOG.</p>
               <div class="release-links">
                 <a class="btn" href="#">npm version</a>
-                <a class="btn" href="#">GitHub Release</a>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="group" id="series-08">
-          <div class="group-header">
-            <h2>0.8.x</h2>
-            <p>2026-04-25 至 2026-04-28</p>
-          </div>
-          <div class="release-list">
-            <article class="release-card">
-              <div class="release-top">
-                <div class="release-title"><h3>v0.8.2</h3></div>
-                <time class="date">2026-04-28 03:03 UTC</time>
-              </div>
-              <p class="release-summary">
-                Structured release summary is unavailable for this version.
-                Check GitHub Release or CHANGELOG for full details.
-              </p>
-              <div class="release-links">
-                <a class="btn" href="#">npm version</a>
+                <a class="btn" href="#">tarball</a>
                 <a class="btn" href="#">GitHub Release</a>
                 <a class="btn" href="#">CHANGELOG</a>
               </div>

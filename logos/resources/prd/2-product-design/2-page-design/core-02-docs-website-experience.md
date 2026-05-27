@@ -5,7 +5,7 @@
 
 ## 二、信息结构
 - 首页：产品定位、核心原则、安装入口和发布日志入口。
-- 发布日志：基于 npm registry 展示 `@miniidealab/openlogos` 全量版本说明、历史版本发布时间、安装命令、npm 元数据和发布归档链接；并基于 `CHANGELOG.md` 展示每版本“价值摘要 / 修复摘要”。
+- 发布日志：基于 npm registry 展示 `@miniidealab/openlogos` 全量版本列表、历史发布时间、安装命令、npm 元数据和发布归档链接；每个版本的摘要采用英文优先、中文原文次级展示，帮助海外用户快速理解版本价值与修复内容，同时保留中文可追溯原文。
 - 方法论：WHY → WHAT → HOW、阶段与门禁。
 - CLI：命令说明与使用示例。
 - Skills：各 Skill 的触发条件与职责。
@@ -26,21 +26,21 @@
 
 ### 4.2 `/releases` 发布日志页
 - 页面目标：不是“最近动态页”，而是完整的 OpenLogos npm 发布日志页，并让用户在页内快速理解每个版本解决了什么问题、带来什么价值。
-- 文案语言：正式官网当前仅提供英文版本，代码实现阶段所有用户可见文案必须翻译为英文；中文原型仅作为结构、层级和信息密度参照。
+- 文案语言：官网 UI 继续保持英文；版本摘要改为英文优先、中文原文次级展示。中文原文只作为可折叠的 secondary content，不作为主展示文案。
+- 数据边界：英文摘要必须来自仓库内维护的结构化 bilingual summary table 或同等静态数据，不允许在构建或运行时调用外部翻译服务，也不允许由 AI 临时生成虚构说明。
 - 首屏信息：页面标题、latest 版本号、latest 发布时间、npm 包链接、GitHub Release 链接、安装命令、版本总数、registry 最后更新时间。
 - 主体：按发布时间倒序展示全部版本时间线，不只展示最近版本。
 - 每个版本项至少展示：版本号、发布时间、npm 版本链接、GitHub Release 链接、是否为 latest / old dist-tag、包 tarball 链接、gitHead、包大小、解压后大小、fileCount、Node.js engine、直接依赖、许可证。
-- 每个版本项新增“版本价值摘要（What value changed）”和“问题修复摘要（What got fixed）”：
-  - 价值摘要来源：`CHANGELOG.md` 对应版本章节的 `Added` / `Changed` / `Deprecated` / `Removed` / `Security`
-  - 修复摘要来源：`CHANGELOG.md` 对应版本章节的 `Fixed`
-  - 展示策略：每类摘要展示前 2-3 条高信号 bullet，并保留“查看完整说明”外链
-- 版本说明正文策略：
-  - npm registry 元数据继续作为事实源（发布时间、版本元数据）
-  - 人类可读摘要来自 `CHANGELOG.md` 结构化提取，不允许 AI 生成虚构说明
-  - 当 changelog 缺少对应版本或分类为空时，显示固定回退文案（例如“Structured release summary unavailable for this version”），并保留 GitHub Release / CHANGELOG 外链
+- 每个版本项新增双语摘要：
+  - 英文主摘要：`valueSummaryEn[]` / `fixSummaryEn[]`
+  - 中文原文：`valueSummary[]` / `fixSummary[]`
+  - 展示策略：英文 bullet 作为主展示；中文原文以 `details` / 次级块方式保留，便于对照与追溯。
+- 回退策略：
+  - 当某版本缺少英文摘要时，显示固定英文回退文案，并保留中文原文和 GitHub Release / CHANGELOG 外链。
+  - `summarySource` 与 `summaryFallbackReason` 继续用于标注结构化摘要是否可用，以及为何进入回退。
 - 分组策略：版本按 minor 系列聚合，例如 `0.9.x`、`0.8.x`、`0.7.x`，每组内按发布时间倒序。每个组显示版本数量和时间范围。
 - 筛选与导航：桌面端左侧提供 sticky minor 系列索引；移动端改为横向滚动的系列筛选条。
-- 数据说明：页面应明确“发布时间和 npm 元数据来自 npm registry；版本价值与修复摘要来自仓库 CHANGELOG（结构化提取）”；详细变更说明跳转 GitHub Release / changelog。
+- 数据说明：页面应明确“发布时间和 npm 元数据来自 npm registry；英文版本摘要来自仓库内维护的结构化 bilingual 数据；中文原文来自仓库 CHANGELOG（结构化提取）”；详细变更说明跳转 GitHub Release / CHANGELOG。
 - 视觉风格：按 `ui-ux-pro-max` 建议采用 Knowledge Base / Developer Tool 风格：深色、最小主义、清晰层级、开发者等宽字体、少量绿色与蓝色强调，不使用营销式 hero 或装饰性图形。
 - 响应式：桌面端左侧索引 + 右侧发布日志；移动端 latest 概览在上、系列筛选在下、时间线单列展示，文本不得溢出卡片。
 - 可访问性：链接不能只依赖颜色区分；hover / focus 必须有可见状态；版本卡片固定边界，hover 不改变布局尺寸。
@@ -65,13 +65,16 @@
 - `versions[].engines`
 - `versions[].dependencies`
 - `versions[].distTags`
-- `versions[].valueSummary[]`（来自 changelog 的价值摘要条目）
-- `versions[].fixSummary[]`（来自 changelog 的修复摘要条目）
-- `versions[].summarySource`（`changelog` / `fallback`）
-- `versions[].summaryFallbackReason`（当 `summarySource=fallback` 时必填）
+- `versions[].valueSummary[]`（中文原文摘要）
+- `versions[].fixSummary[]`（中文原文摘要）
+- `versions[].valueSummaryEn[]`（英文主展示摘要）
+- `versions[].fixSummaryEn[]`（英文主展示摘要）
+- `versions[].summarySource`
+- `versions[].summaryFallbackReason`
 - `sourceUrl`
 
 ### 4.4 页面原型
 - 原型文件：`logos/resources/prd/2-product-design/2-page-design/core-03-release-page-prototype.html`
 - 原型目标：给官网开发者提供 `/releases` 页面布局、信息密度、响应式行为和视觉层级参照。
 - 原型必须展示多个 minor 系列和全量时间线，而不是只展示最近版本。
+- 原型必须展示英文主摘要、中文原文次级块和英文摘要缺失时的固定回退态，确保双语策略在视觉上可直接验证。
