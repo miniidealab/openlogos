@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.31] - 2026-05-27
+
+### Changed
+
+- **adopt 接入模式语义收敛** — `openlogos adopt` 现在统一写入 `bootstrap: adopted`，并明确接入语义为“完整初始化基础设施，仅跳过 Initial 文档门禁”。
+- **bootstrap 历史值兼容归一** — 读取 `logos-project.yaml` 时会将历史 `bootstrap: skipped` 兼容映射为 adopted 接入模式，新写入不再产生 `skipped`。
+- **next/status/launch/detect 联动更新** — `next` 补文档建议、`status` 的 Initial 阶段展示、`launch` 门禁豁免与 `detect --format json` 输出均按 adopted 语义生效，并兼容历史 skipped 项目。
+
+### Fixed
+
+- **OpenLogos reporter 覆盖缺口修复** — 补齐 bootstrap 相关测试 ID 映射，`openlogos verify` 覆盖率恢复为 `100% (121/121)`。
+
 ## [0.9.30] - 2026-05-27
 
 ### Added
