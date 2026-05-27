@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.30] - 2026-05-27
+
+### Added
+
+- **verify 预执行模型** — `openlogos verify` 现在支持单阶段 `verify.pre_run_command` 兼容路径，以及 `verify.regression_command` + `verify.incremental_command` 两阶段预跑；阶段结果按 `last-write-wins` 合并，避免局部测试 JSONL 覆盖导致验收误判。
+- **verify JSON 预跑状态** — `openlogos verify --format json` 新增 `data.pre_run`，输出预跑模式、命令状态、结果路径、诊断和修复建议，方便 RunLogos 等客户端直接展示。
+- **init / adopt / sync 自动补齐 verify 预跑配置** — 常见 Node/Vitest、Jest、pytest、Go、Cargo 项目会自动写入全量测试命令；无法推断时输出明确 TODO 诊断。
+
+### Fixed
+
+- **覆盖不足诊断更明确** — 当项目未配置预跑命令且 JSONL 覆盖不完整时，CLI 会提示可能只运行了局部测试，并建议配置 `verify.pre_run_command` 或两阶段命令。
+
 ## [0.9.29] - 2026-05-25
 
 ### Added
@@ -561,7 +573,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.29...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.30...HEAD
+[0.9.30]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.30
 [0.9.29]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.29
 [0.9.28]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.28
 [0.9.27]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.27
