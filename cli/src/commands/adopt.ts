@@ -130,7 +130,7 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   printVerifyPreRunBackfillResult(locale, verifyBackfill, '');
 
   writeFileSync(yamlPath, createAdoptLogosProject(projectName, locale));
-  console.log('✓ 写入 logos-project.yaml（bootstrap: skipped, lifecycle: launched）');
+  console.log('✓ 写入 logos-project.yaml（bootstrap: adopted, lifecycle: launched）');
 
   writeInstructionFiles(root, locale, aiTool);
   console.log('✓ 写入 AGENTS.md / CLAUDE.md');
@@ -143,8 +143,9 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   }
 
   console.log('\n🎉 已有项目接入完成！\n');
-  console.log('项目已进入快速接入模式（bootstrap: skipped）：');
-  console.log('  · Phase 1~3 文档基线已跳过，不强制要求');
+  console.log('项目已进入存量项目接入模式（bootstrap: adopted）：');
+  console.log('  · OpenLogos 基础设施已完整初始化');
+  console.log('  · Initial 文档基线已跳过，不强制要求');
   console.log('  · 模块生命周期直接设为 launched\n');
   console.log('建议的下一步：先补充项目基线文档');
   console.log('  → openlogos change add-baseline-docs');

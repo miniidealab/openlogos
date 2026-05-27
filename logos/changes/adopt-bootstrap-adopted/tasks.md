@@ -16,16 +16,16 @@
 - [x] 产出 delta 文件到 `deltas/test/smoke/core-smoke-test-cases.md` — 更新 adopt 发布后 smoke：验证完整资产初始化与 `bootstrap=adopted`
 
 ## [code] 代码实现
-- [ ] 修改 `cli/src/commands/adopt.ts` — adopt 主流程复用/对齐 init 的完整基础设施初始化能力，新写入 `bootstrap: adopted`
-- [ ] 修改 `cli/src/commands/init.ts` — 更新 `createAdoptLogosProject()`、AI 指令模板、文案和必要的共享 helper
-- [ ] 修改 `cli/src/lib/project-yaml.ts` 与状态类型 — 规范化读取 `bootstrap`，新值为 `adopted`，历史 `skipped` 兼容为 adopted 接入模式
-- [ ] 修改 `cli/src/commands/next.ts` — `bootstrap=adopted` 无活跃提案时建议 `openlogos change add-baseline-docs`，并兼容旧 `skipped`
-- [ ] 修改 `cli/src/commands/status.ts` — `bootstrap=adopted` 时 Phase 1~3 显示为接入模式已跳过，JSON 输出暴露 `bootstrap: adopted`
-- [ ] 修改 `cli/src/commands/launch.ts` — `bootstrap=adopted` 时豁免 Initial 文档门禁，并兼容旧 `skipped`
-- [ ] 修改 `cli/src/commands/detect.ts` — 确保 JSON 输出保留新 bootstrap 语义，历史 `skipped` 不破坏生命周期派生
-- [ ] 更新 `cli/test/s20-adopt.test.ts` — 覆盖 adopt 完整初始化资产、`bootstrap=adopted` 写入、旧值兼容和 verify 预跑配置
-- [ ] 更新 `cli/test/s05-next.test.ts`、`cli/test/s11-status.test.ts`、`cli/test/s14-launch.test.ts`、`cli/test/s16-json-output.test.ts` — 覆盖 adopted/旧 skipped 双路径
-- [ ] 更新 OpenLogos reporter 覆盖的测试用例 ID，确保新增/修改 UT/ST 与 `logos/resources/test/*.md` 对齐
+- [x] 修改 `cli/src/commands/adopt.ts` — adopt 主流程复用/对齐 init 的完整基础设施初始化能力，新写入 `bootstrap: adopted`
+- [x] 修改 `cli/src/commands/init.ts` — 更新 `createAdoptLogosProject()`、AI 指令模板、文案和必要的共享 helper
+- [x] 修改 `cli/src/lib/project-yaml.ts` 与状态类型 — 规范化读取 `bootstrap`，新值为 `adopted`，历史 `skipped` 兼容为 adopted 接入模式
+- [x] 修改 `cli/src/commands/next.ts` — `bootstrap=adopted` 无活跃提案时建议 `openlogos change add-baseline-docs`，并兼容旧 `skipped`
+- [x] 修改 `cli/src/commands/status.ts` — `bootstrap=adopted` 时 Phase 1~3 显示为接入模式已跳过，JSON 输出暴露 `bootstrap: adopted`
+- [x] 修改 `cli/src/commands/launch.ts` — `bootstrap=adopted` 时豁免 Initial 文档门禁，并兼容旧 `skipped`
+- [x] 修改 `cli/src/commands/detect.ts` — 确保 JSON 输出保留新 bootstrap 语义，历史 `skipped` 不破坏生命周期派生
+- [x] 更新 `cli/test/s20-adopt.test.ts` — 覆盖 adopt 完整初始化资产、`bootstrap=adopted` 写入、旧值兼容和 verify 预跑配置
+- [x] 更新 `cli/test/s05-next.test.ts`、`cli/test/s11-status.test.ts`、`cli/test/s14-launch.test.ts`、`cli/test/s16-json-output.test.ts` — 覆盖 adopted/旧 skipped 双路径
+- [x] 更新 OpenLogos reporter 覆盖的测试用例 ID，确保新增/修改 UT/ST 与 `logos/resources/test/*.md` 对齐
 
 ## [deploy] 部署任务
 - [ ] 发布包含本变更的新版本 `@miniidealab/openlogos` npm 包

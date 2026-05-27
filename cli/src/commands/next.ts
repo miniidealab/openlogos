@@ -6,12 +6,13 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData } from './status.js';
 import type { ProposalStep } from './status.js';
+import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 
 export interface NextModuleItem {
   id: string;
   name: string;
   lifecycle: 'initial' | 'launched';
-  bootstrap?: 'normal' | 'skipped';
+  bootstrap?: 'normal' | 'adopted';
   action: string;
   command: string | null;
   detail: string;
@@ -36,7 +37,7 @@ function buildModuleNextItem(
     id: string;
     name: string;
     lifecycle: 'initial' | 'launched';
-    bootstrap?: 'normal' | 'skipped';
+    bootstrap?: 'normal' | 'adopted';
     suggestion: string;
     active_change: {
       slug: string;
@@ -87,7 +88,7 @@ function buildModuleNextItem(
       };
     }
 
-    if (mod.bootstrap === 'skipped') {
+    if (isAdoptedBootstrap(mod.bootstrap)) {
       return {
         id: mod.id, name: mod.name, lifecycle: 'launched',
         bootstrap: mod.bootstrap,
@@ -227,7 +228,7 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
 
   if (data.lifecycle === 'launched') {
     if (!data.active_change) {
-      const bootstrapModule = data.modules?.find(m => m.lifecycle === 'launched' && m.bootstrap === 'skipped');
+      const bootstrapModule = data.modules?.find(m => m.lifecycle === 'launched' && isAdoptedBootstrap(m.bootstrap));
       if (bootstrapModule) {
         action = locale === 'zh'
           ? '先补充项目基线文档'
@@ -264,13 +265,16 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
     command = 'openlogos launch';
     detail = t(locale, 'launch.suggest');
   } else {
-    const firstModule = data.modules?.find(m => m.bootstrap === 'skipped' || m.lifecycle === 'initial');
-    const bootstrapSkipped = firstModule?.bootstrap === 'skipped'
+    const firstModule = data.modules?.find(m => isAdoptedBootstrap(m.bootstrap) || m.lifecycle === 'initial');
+    const bootstrapAdopted = isAdoptedBootstrap(firstModule?.bootstrap)
+      || firstModule?.phase_progress?.['phase.1']?.skip_reason === 'bootstrap-adopted'
+      || firstModule?.phase_progress?.['phase.2']?.skip_reason === 'bootstrap-adopted'
+      || firstModule?.phase_progress?.['phase.3-0']?.skip_reason === 'bootstrap-adopted'
       || firstModule?.phase_progress?.['phase.1']?.skip_reason === 'bootstrap-skipped'
       || firstModule?.phase_progress?.['phase.2']?.skip_reason === 'bootstrap-skipped'
       || firstModule?.phase_progress?.['phase.3-0']?.skip_reason === 'bootstrap-skipped';
 
-    if (bootstrapSkipped && !data.active_change) {
+    if (bootstrapAdopted && !data.active_change) {
       action = locale === 'zh'
         ? '先补充项目基线文档'
         : 'Fill in the project baseline documents first';

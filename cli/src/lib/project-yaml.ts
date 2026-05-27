@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { parse as parseYaml, parseDocument } from 'yaml';
 
 export type YamlParseStatus = 'recovered' | 'error';
+export type BootstrapMode = 'normal' | 'adopted';
 
 export interface YamlDiagnostics {
   parse_status: YamlParseStatus;
@@ -13,7 +14,7 @@ export interface ProjectYamlModule {
   id: string;
   name: string;
   lifecycle?: string;
-  bootstrap?: string;
+  bootstrap?: BootstrapMode;
   skip_phases?: string[];
   deployment_required?: boolean;
   smoke_required?: boolean;
@@ -45,6 +46,14 @@ export interface ProjectYamlReadResult {
 type YamlNodeLike = {
   toJSON?: (...args: unknown[]) => unknown;
 };
+
+export function normalizeBootstrap(value: unknown): BootstrapMode {
+  return value === 'adopted' || value === 'skipped' ? 'adopted' : 'normal';
+}
+
+export function isAdoptedBootstrap(value: unknown): boolean {
+  return normalizeBootstrap(value) === 'adopted';
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -101,7 +110,7 @@ function normalizeModule(raw: unknown): ProjectYamlModule | null {
     module.lifecycle = record.lifecycle;
   }
   if (typeof record.bootstrap === 'string') {
-    module.bootstrap = record.bootstrap;
+    module.bootstrap = normalizeBootstrap(record.bootstrap);
   }
   const skipPhases = asStringArray(record.skip_phases);
   if (skipPhases) {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { detectProjectName } from '../src/commands/init.js';
 import { adopt } from '../src/commands/adopt.js';
@@ -76,7 +76,7 @@ describe('S20 Scenario Tests — adopt command', () => {
     cleanup();
   });
 
-  it('ST-S20-01: 已有项目快速接入，生成 bootstrap=skipped 与 lifecycle=launched', async () => {
+  it('ST-S20-01: 已有项目完整接入，生成 bootstrap=adopted 与 lifecycle=launched', async () => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
 
     await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
@@ -89,8 +89,10 @@ describe('S20 Scenario Tests — adopt command', () => {
     const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8')) as {
       modules?: Array<{ lifecycle?: string; bootstrap?: string }>;
     };
-    expect(yaml.modules?.[0].bootstrap).toBe('skipped');
+    expect(yaml.modules?.[0].bootstrap).toBe('adopted');
     expect(yaml.modules?.[0].lifecycle).toBe('launched');
+    expect(existsSync(join(root, 'logos', 'spec'))).toBe(true);
+    expect(existsSync(join(root, 'logos', 'skills'))).toBe(true);
   });
 
   it('ST-S20-02: adopt 后 next 输出补文档引导', async () => {
@@ -109,6 +111,7 @@ describe('S20 Scenario Tests — adopt command', () => {
     await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
 
     const data = collectStatusData(root);
+    expect(data.modules?.[0].bootstrap).toBe('adopted');
     expect(data.phases.find(p => p.key === 'phase.1')?.skipped).toBe(true);
     expect(data.phases.find(p => p.key === 'phase.2')?.skipped).toBe(true);
     expect(data.phases.find(p => p.key === 'phase.3-0')?.skipped).toBe(true);
@@ -170,7 +173,7 @@ describe('S20 Scenario Tests — adopt command', () => {
     expect(yaml.project?.name).toBe(basename(root));
   });
 
-  it('UT-S20-06: adopt 写入 bootstrap=skipped 与 lifecycle=launched', async () => {
+  it('UT-S20-06: adopt 写入 bootstrap=adopted 与 lifecycle=launched', async () => {
     const packagePath = join(root, 'package.json');
     if (existsSync(packagePath)) rmSync(packagePath);
 
@@ -179,7 +182,22 @@ describe('S20 Scenario Tests — adopt command', () => {
     const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8')) as {
       modules?: Array<{ lifecycle?: string; bootstrap?: string }>;
     };
-    expect(yaml.modules?.[0].bootstrap).toBe('skipped');
+    expect(yaml.modules?.[0].bootstrap).toBe('adopted');
     expect(yaml.modules?.[0].lifecycle).toBe('launched');
+  });
+
+  it('UT-S20-09 / ST-S20-06: 历史 bootstrap=skipped 兼容为 adopted 接入模式', () => {
+    scaffoldProject(root, { locale: 'zh' });
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: '核心功能', lifecycle: 'launched', bootstrap: 'skipped' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }));
+
+    const data = collectStatusData(root);
+    expect(data.modules?.[0].bootstrap).toBe('adopted');
+    expect(data.phases.find(p => p.key === 'phase.1')?.skipped).toBe(true);
+
+    next();
+    expect(con.logs.join('\n')).toContain('openlogos change add-baseline-docs');
   });
 });

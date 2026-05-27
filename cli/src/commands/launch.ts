@@ -5,6 +5,7 @@ import { readLocale, t } from '../i18n.js';
 import { createAgentsMd, deploySkills, deployOpenCodePlugin, deployCodexPlugin, expandAiTools, resolveDocsAiToolForTarget } from './init.js';
 import { syncLogosProjectName } from './sync.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
+import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 
 function hasFile(path: string): boolean {
   return existsSync(path);
@@ -90,8 +91,8 @@ export function launch(moduleArg?: string) {
     process.exit(1);
   }
 
-  const isBootstrapSkipped = mod.bootstrap === 'skipped';
-  if (isBootstrapSkipped) {
+  const isBootstrapAdopted = isAdoptedBootstrap(mod.bootstrap);
+  if (isBootstrapAdopted) {
     if (mod.lifecycle !== 'launched') {
       mod.lifecycle = 'launched';
       writeFileSync(yamlPath, stringifyYaml(yaml, { lineWidth: 0 }));

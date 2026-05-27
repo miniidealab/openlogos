@@ -1196,7 +1196,7 @@ modules:
   - id: core
     name: ${locale === 'zh' ? '核心功能' : 'Core'}
     lifecycle: launched
-    bootstrap: skipped
+    bootstrap: adopted
     skip_phases: [api, database, scenario]
     deployment_required: true
 

@@ -356,9 +356,9 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     expect(yaml.modules[0].lifecycle).toBe('launched');
   });
 
-  it('ST-S14-bootstrap-01: bootstrap=skipped 的模块在缺少 verify/deploy/smoke 报告时也可 launch', () => {
+  it('ST-S14-bootstrap-01: bootstrap=adopted 的模块在缺少 verify/deploy/smoke 报告时也可 launch', () => {
     writeProjectYaml(root, {
-      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial', bootstrap: 'skipped' }],
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial', bootstrap: 'adopted' }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
     });
 
@@ -404,10 +404,10 @@ describe('S14 Unit Tests — launch gate helpers', () => {
     )).toBe(true);
   });
 
-  it('UT-S14-bootstrap-01: bootstrap=skipped 时仍按 deployment_gates 计算部署需求（仅豁免门禁，不改部署配置）', () => {
+  it('UT-S14-bootstrap-01: bootstrap=adopted 时仍按 deployment_gates 计算部署需求（仅豁免门禁，不改部署配置）', () => {
     expect(moduleDeploymentRequired(
       { deployment_gates: { core: { deployment_required: true } } },
-      { id: 'core', bootstrap: 'skipped' } as any,
+      { id: 'core', bootstrap: 'adopted' } as any,
     )).toBe(true);
   });
 

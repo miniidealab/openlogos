@@ -2,13 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION, makeEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
-import { readProjectYaml } from '../lib/project-yaml.js';
-import type { YamlDiagnostics } from '../lib/project-yaml.js';
+import { readProjectYaml, isAdoptedBootstrap } from '../lib/project-yaml.js';
+import type { BootstrapMode, YamlDiagnostics } from '../lib/project-yaml.js';
 
 interface DetectModuleInfo {
   id: string;
   name: string;
   lifecycle: 'initial' | 'launched';
+  bootstrap?: BootstrapMode;
 }
 
 export interface DetectData {
@@ -44,6 +45,7 @@ export function collectDetectData(root: string): DetectData {
         id: m.id,
         name: m.name,
         lifecycle: m.lifecycle === 'launched' ? 'launched' : 'initial',
+        ...(isAdoptedBootstrap(m.bootstrap) ? { bootstrap: 'adopted' as const } : {}),
       }));
       if (modules?.some(m => m.lifecycle === 'launched')) {
         lifecycle = 'launched';

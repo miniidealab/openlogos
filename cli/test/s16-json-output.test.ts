@@ -97,7 +97,7 @@ describe('JSON output — collectDetectData', () => {
     expect(data.project).not.toBeNull();
     expect(data.project!.lifecycle).toBe('launched');
     expect(data.project!.modules).toEqual([
-      { id: 'core', name: '核心功能', lifecycle: 'launched' },
+      { id: 'core', name: '核心功能', lifecycle: 'launched', bootstrap: 'adopted' },
     ]);
     expect(data.yaml_diagnostics?.parse_status).toBe('recovered');
     expect(data.yaml_diagnostics?.messages.join('\n')).toContain('logos-project.yaml');
@@ -458,6 +458,7 @@ function writeRecoverableProjectYaml(root: string) {
     '  - id: core',
     '    name: 核心功能',
     '    lifecycle: launched',
+    '    bootstrap: skipped',
     '    skip_phases: [api, database, scenario]',
     'deployment_gates:',
     '  core:',
@@ -522,6 +523,7 @@ describe('JSON output — recoverable logos-project.yaml diagnostics', () => {
     expect(data.modules![0].id).toBe('core');
     expect(data.modules![0].name).toBe('核心功能');
     expect(data.modules![0].lifecycle).toBe('launched');
+    expect(data.modules![0].bootstrap).toBe('adopted');
     expect(data.yaml_diagnostics?.parse_status).toBe('recovered');
   });
 
@@ -537,6 +539,7 @@ describe('JSON output — recoverable logos-project.yaml diagnostics', () => {
       id: 'core',
       name: '核心功能',
       lifecycle: 'launched',
+      bootstrap: 'adopted',
     });
     expect(output.data.yaml_diagnostics.parse_status).toBe('recovered');
   });
@@ -551,6 +554,7 @@ describe('JSON output — recoverable logos-project.yaml diagnostics', () => {
     expect(output.data.lifecycle).toBe('launched');
     expect(output.data.modules[0].id).toBe('core');
     expect(output.data.modules[0].lifecycle).toBe('launched');
+    expect(output.data.modules[0].bootstrap).toBe('adopted');
     expect(output.data.yaml_diagnostics.parse_status).toBe('recovered');
   });
 

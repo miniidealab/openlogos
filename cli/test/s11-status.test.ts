@@ -192,19 +192,19 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     });
   });
 
-  it('UT-S11-bootstrap-01: bootstrap=skipped 的 launched 模块在 JSON 中暴露 bootstrap 字段', () => {
+  it('UT-S11-bootstrap-01: bootstrap=adopted 的 launched 模块在 JSON 中暴露 bootstrap 字段', () => {
     scaffoldProject(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
-      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'adopted' }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
     }, { lineWidth: 0 }));
 
     const data = collectStatusData(root);
-    expect(data.modules?.[0].bootstrap).toBe('skipped');
+    expect(data.modules?.[0].bootstrap).toBe('adopted');
     expect(data.phases.find(p => p.key === 'phase.1')?.skipped).toBe(true);
   });
 
-  it('UT-S11-bootstrap-02: bootstrap=skipped 的 launched 模块建议补文档提案', () => {
+  it('UT-S11-bootstrap-02: bootstrap=skipped 的 launched 模块按 adopted 接入模式建议补文档提案', () => {
     scaffoldProject(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
@@ -212,6 +212,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     }, { lineWidth: 0 }));
 
     const data = collectStatusData(root);
+    expect(data.modules?.[0].bootstrap).toBe('adopted');
     expect(data.modules?.[0].suggestion).toContain('add-baseline-docs');
   });
 });
@@ -849,7 +850,21 @@ describe('S11 Scenario Tests — status command', () => {
     expect(out).toContain('tasks.md');
   });
 
-  it('ST-S11-bootstrap-01: 快速接入状态面板正确显示已跳过', () => {
+  it('ST-S11-bootstrap-01: 存量项目接入状态面板正确显示已跳过', () => {
+    scaffoldProject(root, { locale: 'zh' });
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'adopted' }],
+      deployment_gates: { core: { deployment_required: true, smoke_required: true } },
+    }, { lineWidth: 0 }));
+
+    status();
+    const out = con.logs.join('\n');
+    expect(out).toContain('文档基线已跳过（存量项目接入）');
+    expect(out).toContain('openlogos change add-baseline-docs');
+  });
+
+  it('ST-S11-bootstrap-02: 历史 skipped 接入状态面板正确显示已跳过', () => {
+    scaffoldProject(root, { locale: 'zh' });
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
@@ -857,7 +872,7 @@ describe('S11 Scenario Tests — status command', () => {
 
     status();
     const out = con.logs.join('\n');
-    expect(out).toContain('Fill in baseline docs first');
+    expect(out).toContain('文档基线已跳过（存量项目接入）');
     expect(out).toContain('openlogos change add-baseline-docs');
   });
 });

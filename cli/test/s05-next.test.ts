@@ -17,10 +17,18 @@ function writeLaunchedModule(root: string) {
 }
 
 function writeAdoptedModule(root: string) {
+  writeBootstrapModule(root, 'adopted');
+}
+
+function writeLegacySkippedModule(root: string) {
+  writeBootstrapModule(root, 'skipped');
+}
+
+function writeBootstrapModule(root: string, bootstrap: 'adopted' | 'skipped') {
   writeFileSync(
     join(root, 'logos', 'logos-project.yaml'),
     stringifyYaml({
-      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
     }, { lineWidth: 0 }),
   );
@@ -175,7 +183,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).toContain('openlogos change');
   });
 
-  it('UT-S05-bootstrap-01: adopt quick mode with no active proposal → suggest add-baseline-docs', () => {
+  it('UT-S05-bootstrap-01: bootstrap=adopted with no active proposal → suggest add-baseline-docs', () => {
     writeAdoptedModule(root);
 
     next();
@@ -184,7 +192,16 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S05-bootstrap-02: adopt quick mode with active proposal → follows proposal flow', () => {
+  it('UT-S05-bootstrap-02: bootstrap=skipped legacy mode with no active proposal → suggest add-baseline-docs', () => {
+    writeLegacySkippedModule(root);
+
+    next();
+
+    const out = con.logs.join('\n');
+    expect(out).toContain('openlogos change add-baseline-docs');
+  });
+
+  it('UT-S05-bootstrap-03: bootstrap=adopted with active proposal → follows proposal flow', () => {
     writeAdoptedModule(root);
     writeFileSync(
       join(root, 'logos', '.openlogos-guard'),
@@ -202,8 +219,8 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S05-bootstrap-03: adopt quick mode still follows active proposal step when proposal is verify-passed', () => {
-    writeAdoptedModule(root);
+  it('UT-S05-bootstrap-04: bootstrap=skipped legacy mode still follows active proposal step when proposal is verify-passed', () => {
+    writeLegacySkippedModule(root);
     writeFileSync(
       join(root, 'logos', '.openlogos-guard'),
       JSON.stringify({ activeChange: 'runtime-change', module: 'core', createdAt: new Date().toISOString() }),
@@ -777,7 +794,7 @@ describe('S05 Scenario Tests — next --format json', () => {
     expect(parsed.data.modules[0].detail).toContain('部署决策冲突');
   });
 
-  it('ST-S05-bootstrap-01: adopt quick mode with no active proposal returns baseline-docs guidance in JSON', () => {
+  it('ST-S05-bootstrap-01: bootstrap=adopted with no active proposal returns baseline-docs guidance in JSON', () => {
     writeAdoptedModule(root);
 
     next('json');
@@ -785,7 +802,7 @@ describe('S05 Scenario Tests — next --format json', () => {
 
     expect(parsed.data.command).toBe('openlogos change add-baseline-docs');
     expect(String(parsed.data.action).toLowerCase()).toContain('baseline');
-    expect(parsed.data.modules[0].bootstrap).toBe('skipped');
+    expect(parsed.data.modules[0].bootstrap).toBe('adopted');
     expect(parsed.data.modules[0].command).toBe('openlogos change add-baseline-docs');
   });
 });

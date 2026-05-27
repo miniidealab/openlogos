@@ -3,8 +3,8 @@ import { basename, join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
-import { readProjectYaml } from '../lib/project-yaml.js';
-import type { YamlDiagnostics } from '../lib/project-yaml.js';
+import { readProjectYaml, isAdoptedBootstrap } from '../lib/project-yaml.js';
+import type { BootstrapMode, YamlDiagnostics } from '../lib/project-yaml.js';
 
 export type ProposalStep =
   | 'writing'
@@ -43,7 +43,7 @@ export interface ModuleInfo {
   id: string;
   name: string;
   lifecycle: 'initial' | 'launched';
-  bootstrap?: 'normal' | 'skipped';
+  bootstrap?: BootstrapMode;
   skip_phases?: string[];
   deployment_required?: boolean;
   smoke_required?: boolean;
@@ -94,7 +94,7 @@ export interface ModuleStatusItem {
   id: string;
   name: string;
   lifecycle: 'initial' | 'launched';
-  bootstrap?: 'normal' | 'skipped';
+  bootstrap?: BootstrapMode;
   current_phase: string | null;
   current_phase_label: string | null;
   phase_progress: Record<string, PhaseProgressItem> | null;
@@ -670,7 +670,7 @@ function deriveModulePhaseProgress(
   isMultiModule: boolean = false,
 ): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
   const progress: Record<string, PhaseProgressItem> = {};
-  const isBootstrapSkipped = mod.bootstrap === 'skipped';
+  const isBootstrapAdopted = isAdoptedBootstrap(mod.bootstrap);
 
   // Build set of phase keys to skip from explicit skip_phases declaration
   const explicitSkip = deriveExplicitSkipPhaseKeys(mod);
@@ -679,8 +679,8 @@ function deriveModulePhaseProgress(
     const key = PHASE_KEYS[i];
     const dir = join(root, PHASE_SUBPATHS[i]);
 
-    if (isBootstrapSkipped && (key === 'phase.1' || key === 'phase.2' || key === 'phase.3-0')) {
-      progress[key] = { done: false, skipped: true, skip_reason: 'bootstrap-skipped' };
+    if (isBootstrapAdopted && (key === 'phase.1' || key === 'phase.2' || key === 'phase.3-0')) {
+      progress[key] = { done: false, skipped: true, skip_reason: 'bootstrap-adopted' };
       continue;
     }
 
@@ -854,7 +854,7 @@ function buildModuleStatusItem(
         ? `当前提案 ${guardActiveChange}（归属 ${guardModule ?? '?'}）未完成，请先完成后再为此模块创建新提案`
         : `Active proposal ${guardActiveChange} (module: ${guardModule ?? '?'}) is in progress — finish it before creating a new proposal for this module`;
     } else {
-      suggestion = mod.bootstrap === 'skipped'
+      suggestion = isAdoptedBootstrap(mod.bootstrap)
         ? (locale === 'zh'
             ? '先补充项目基线文档（openlogos change add-baseline-docs）'
             : 'Fill in baseline docs first (openlogos change add-baseline-docs)')
@@ -884,12 +884,12 @@ function buildModuleStatusItem(
   if (!currentPhase) {
     suggestion = locale === 'zh' ? '所有阶段已完成' : 'All phases complete';
   } else if (
-    mod.bootstrap === 'skipped'
+    isAdoptedBootstrap(mod.bootstrap)
     && (currentPhase === 'phase.1' || currentPhase === 'phase.2' || currentPhase === 'phase.3-0')
   ) {
     suggestion = locale === 'zh'
-      ? '文档基线已跳过（快速接入）'
-      : 'Documentation baseline skipped (adopt quick mode)';
+      ? '文档基线已跳过（存量项目接入）'
+      : 'Documentation baseline skipped (adopted access mode)';
   } else {
     const suggestKey = SUGGEST_KEYS[currentPhase];
     suggestion = suggestKey
@@ -936,7 +936,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
       id: m.id,
       name: m.name,
       lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
-      bootstrap: m.bootstrap === 'skipped' ? 'skipped' : 'normal',
+      bootstrap: m.bootstrap ?? 'normal',
       skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
       deployment_required: typeof m.deployment_required === 'boolean'
         ? m.deployment_required
@@ -988,8 +988,8 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     phase.done = phase.files.length > 0;
   }
 
-  const bootstrapSkippedModules = rawModules?.filter(m => m.bootstrap === 'skipped') ?? [];
-  if (bootstrapSkippedModules.length > 0) {
+  const bootstrapAdoptedModules = rawModules?.filter(m => isAdoptedBootstrap(m.bootstrap)) ?? [];
+  if (bootstrapAdoptedModules.length > 0) {
     for (const phase of phases) {
       if (phase.key === 'phase.1' || phase.key === 'phase.2' || phase.key === 'phase.3-0') {
         phase.skipped = true;
@@ -1063,7 +1063,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     suggestion = lifecycle === 'launched'
       ? t(locale, 'status.allDoneHint').trim()
       : t(locale, 'launch.suggest');
-  } else if (bootstrapSkippedModules.length > 0 && !activeChange) {
+  } else if (bootstrapAdoptedModules.length > 0 && !activeChange) {
     suggestion = locale === 'zh'
       ? '先补充项目基线文档（openlogos change add-baseline-docs）'
       : 'Fill in baseline docs first (openlogos change add-baseline-docs)';
@@ -1137,8 +1137,17 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
     console.log('\n📊 OpenLogos Project Status\n');
     console.log(LINE);
 
+    const hasAdoptedModule = data.modules?.some(m => isAdoptedBootstrap(m.bootstrap)) ?? false;
     for (const phase of data.phases) {
-      if (phase.skipped) continue;
+      if (phase.skipped) {
+        if (hasAdoptedModule && (phase.key === 'phase.1' || phase.key === 'phase.2' || phase.key === 'phase.3-0')) {
+          const reason = locale === 'zh'
+            ? '文档基线已跳过（存量项目接入）'
+            : 'Documentation baseline skipped (adopted access mode)';
+          console.log(`⏭️  ${phase.label} — ${reason}`);
+        }
+        continue;
+      }
       const icon = phase.done ? '✅' : '🔲';
       console.log(`${icon}  ${phase.label}`);
       if (phase.done) {
