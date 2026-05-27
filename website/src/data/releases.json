@@ -40,8 +40,14 @@
         "openlogos init 末尾非阻塞 Python 3 检测 — 若未检测到 python3，输出黄色友好提示与多 OS 安装命令；不阻塞主流程。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Added the vendored ui-ux-pro-max skill for GUI product design guidance across web, mobile, and desktop products.",
+        "Expanded product-designer coverage for desktop apps, including window, menu, IPC, and filesystem design dimensions.",
+        "Added a non-blocking Python 3 check at the end of openlogos init with friendly multi-OS install guidance."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.29, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.29: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.28",
@@ -67,8 +73,12 @@
       "fixSummary": [
         "修复 CLI JSON 在局部损坏 logos-project.yaml 时回退 initial 的问题 — detect/status --format json 现在会从 YAML AST 恢复 modules[]，继续输出 launched 生命周期与 yaml_diagnostics。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "Fixed JSON status and detect output so partially damaged logos-project.yaml files can still recover launched module state and YAML diagnostics."
+      ],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.28, but value summary entries are missing."
+      "summaryFallbackReason": "v0.9.28: Chinese value summary entries are missing; English value summary entries are missing."
     },
     {
       "version": "0.9.27",
@@ -94,8 +104,12 @@
         "发布版本提升到 0.9.27 — 本次发版包含 deploy-progress-summary-panel 的 CLI 适配、部署进度摘要字段和冲突态门禁加固。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Released deploy-progress-summary-panel support, including CLI adaptation, deployment progress summary fields, and stronger conflict gates."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.27, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.27: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.26",
@@ -121,8 +135,12 @@
         "发布版本提升到 0.9.26 — 本次发版包含 proposal-deploy-consistency-hardening 的 CLI 适配与提案级部署门禁加固。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Released proposal-deploy-consistency-hardening support for CLI deployment gate consistency."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.26, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.26: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.25",
@@ -146,8 +164,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.9.25."
+      "summaryFallbackReason": "v0.9.25: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.24",
@@ -175,8 +195,14 @@
         "新增部署设计与执行 Skill — 增加 deployment-designer 和 deployment-executor，明确部署方案、回滚策略、部署后检查、冒烟测试方案，以及部署必须经过人类确认的执行边界。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Added deployment phases and deployment state transitions to the proposal lifecycle, including deploy tasks and ready-to-deploy states.",
+        "Added the openlogos smoke command for post-deployment smoke gates, smoke reports, and SMOKE_PASS or SMOKE_FAIL markers.",
+        "Added deployment-designer and deployment-executor skills for deployment planning, rollback strategy, smoke checks, and human-confirmed execution."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.24, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.24: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.23",
@@ -200,8 +226,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.9.23."
+      "summaryFallbackReason": "v0.9.23: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.22",
@@ -225,8 +253,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.9.22."
+      "summaryFallbackReason": "v0.9.22: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.21",
@@ -254,7 +284,13 @@
       "fixSummary": [
         "openlogos sync 多工具技能同步一致性 — 当 aiTool 为数组或 all 时，sync 与 launch 现在会同步部署所有可部署工具的 Skills、插件资产与对应指令文件，AGENTS.md / CLAUDE.md 也按多工具语义生成，避免文件已部署但指令文件只覆盖单一工具的错配。"
       ],
-      "summarySource": "changelog",
+      "valueSummaryEn": [
+        "Updated the website and CLI documentation so init, sync, launch, AI tool selection, and version examples match the current implementation."
+      ],
+      "fixSummaryEn": [
+        "Fixed multi-tool sync consistency so sync and launch deploy all selected AI tool skills, plugin assets, and instruction files together."
+      ],
+      "summarySource": "bilingual",
       "summaryFallbackReason": null
     },
     {
@@ -281,8 +317,12 @@
         "纯代码提案跳过 merge 阶段 — 新格式 tasks.md（含 ## [tag] section）中，无 [delta] section 的提案不再经过 ready-to-merge / merge-generated，直接按 [code] section 勾选状态进入 coding 或 ready-to-verify。旧格式向后兼容。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Allowed code-only proposals to skip the merge stage and move directly into coding or ready-to-verify based on the code task section."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.20, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.20: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.19",
@@ -308,8 +348,12 @@
       "fixSummary": [
         "修复 openlogos merge 幂等性问题 — 提案已存在 SPEC_MERGED 标记时，重复执行 openlogos merge 现在会提示\"规格已合并，无需重复操作\"并直接退出，不再覆盖 MERGE_PROMPT.md。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "Fixed openlogos merge idempotency so an already merged proposal exits cleanly instead of regenerating MERGE_PROMPT.md."
+      ],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.19, but value summary entries are missing."
+      "summaryFallbackReason": "v0.9.19: Chinese value summary entries are missing; English value summary entries are missing."
     },
     {
       "version": "0.9.18",
@@ -337,8 +381,14 @@
         "verify 写入提案标记文件 — openlogos verify 执行后自动读取 .openlogos-guard，通过写 VERIFY_PASS，失败写 VERIFY_FAIL，状态机据此精确感知验收结果"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Expanded the proposal lifecycle into an eight-step state machine from writing through verify-passed or verify-failed.",
+        "Made the [code] section drive the coding to ready-to-verify transition after SPEC_MERGED is present.",
+        "Added verify marker files and next/status guidance for ready-to-verify, verify-passed, and verify-failed states."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.18, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.18: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.17",
@@ -366,8 +416,14 @@
         "向后兼容 — 无 section 标记的旧格式 tasks.md 降级为原有全局勾选判断，已有提案不受影响"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Introduced structured [delta] and [code] task sections so specification work and code work are tracked separately.",
+        "Allowed proposals without a [delta] section to proceed without being stuck before merge.",
+        "Added spec/tasks-spec.md and refreshed the generated tasks template."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.17, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.17: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.16",
@@ -397,7 +453,15 @@
       "fixSummary": [
         "有 delta 时 merge 后状态卡在 ready-to-merge 的问题（根因：状态机缺少 merge-generated 中间态）"
       ],
-      "summarySource": "changelog",
+      "valueSummaryEn": [
+        "Expanded proposal states into writing, delta-writing, ready-to-merge, merge-generated, and coding.",
+        "Made openlogos merge recursively scan nested delta folders and map them back to the correct resource directories.",
+        "Added two-step merge markers that distinguish generated merge instructions from completed specification merges."
+      ],
+      "fixSummaryEn": [
+        "Fixed proposals with deltas getting stuck in ready-to-merge after merge instructions were generated."
+      ],
+      "summarySource": "bilingual",
       "summaryFallbackReason": null
     },
     {
@@ -424,8 +488,12 @@
       "fixSummary": [
         "修复有 delta 时 merge 后状态无法推进的问题 — openlogos merge 在有 delta 时，生成 MERGE_PROMPT.md 后同时写入 MERGED 标记文件，使 detectProposalStep() 能正确识别已合并状态并返回 'coding'，流程不再卡在\"合并规格\"步骤。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "Fixed delta proposals that could not advance after merge by writing a merge marker when openlogos merge runs."
+      ],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.15, but value summary entries are missing."
+      "summaryFallbackReason": "v0.9.15: Chinese value summary entries are missing; English value summary entries are missing."
     },
     {
       "version": "0.9.14",
@@ -451,8 +519,12 @@
         "change-writer Skill 补充 prd/ 子目录的 delta 映射说明 — tasks.md 模板中各文档类任务标注精确的 delta 子目录（deltas/prd/1-product-requirements/、deltas/prd/2-product-design/1-feature-specs/、deltas/prd/3-technical-plan/1-architecture/ 等）；Step 6 目录映射表新增 prd/ 子目录展开说明，消除 AI 将架构文档等放错目录的歧义。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Clarified change-writer delta path mapping for nested PRD, technical plan, and test resource directories."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.14, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.14: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.13",
@@ -478,8 +550,12 @@
       "fixSummary": [
         "修复无 delta 时 merge 后状态无法推进的问题 — openlogos merge 在无 delta 时现在会写入 MERGED 标记文件；detectProposalStep() 检测到该文件后返回新增的 'coding' 状态，使流程正确推进到\"实现代码\"步骤，不再卡在 merge 阶段。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "Fixed no-delta proposals so openlogos merge writes a marker and moves the workflow into coding."
+      ],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.13, but value summary entries are missing."
+      "summaryFallbackReason": "v0.9.13: Chinese value summary entries are missing; English value summary entries are missing."
     },
     {
       "version": "0.9.12",
@@ -505,8 +581,12 @@
         "change-writer Skill 新增 Step 6: 产出 Delta 文件 — 明确 delta 文件的目录映射（deltas/prd/、deltas/api/、deltas/database/、deltas/scenario/）、文件命名规范（与目标主文档同名）、文件格式（ADDED/MODIFIED/REMOVED 标记）及行为约束（禁止直接修改主文档）。同步更新 tasks.md 模板，文档类任务标注产出 delta 文件的目标子目录。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Added change-writer guidance for producing delta files, including target folders, naming rules, and allowed resource mappings."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.12, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.12: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.11",
@@ -532,8 +612,12 @@
         "变更管理规则改为自动判断 — createAgentsMd 和 generatePolicyMdc 生成的初始开发期文案，从模糊的\"按 Phase 推进即可\"改为明确的判断依据：检查 logos-project.yaml 中是否存在 lifecycle: launched 的模块，存在则必须提案，否则不需要。AI 可自主判断，无需依赖人工提示。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Changed change management rules to detect launched modules from logos-project.yaml instead of relying on manual user prompts."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.11, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.11: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.10",
@@ -559,8 +643,12 @@
         "openlogos merge delta 为空时不再报错 — deltas/ 目录为空时，命令直接输出 ✓ nothing to merge 并正常退出（exit 0），不再以错误退出。空 delta 是合法状态，语义等同于 HTTP 204。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Made empty delta directories a valid openlogos merge result, equivalent to a successful no-op merge."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.10, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.10: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.8",
@@ -588,8 +676,12 @@
       "fixSummary": [
         "加强 reporter 强制前置约束，防止测试代码遗漏 reporter — code-implementor Skill Step 4 新增\"Reporter 嵌入（强制前置）\"小节，明确要求在写任何测试用例代码之前先创建共享 reporter 工具文件（test/helpers/reporter.ts），所有测试文件统一 import；Step 5 自检拆分为三条独立 reporter 检查项。spec/test-results.md 补充\"推荐：共享 reporter 文件模式\"说明。CLAUDE.md Step 4 提示词后新增 ⚠️ 警告块，将 reporter 提升为强制前置交付物。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "Strengthened reporter requirements so generated tests must create a shared OpenLogos reporter before writing test cases."
+      ],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.8, but value summary entries are missing."
+      "summaryFallbackReason": "v0.9.8: Chinese value summary entries are missing; English value summary entries are missing."
     },
     {
       "version": "0.9.9",
@@ -615,8 +707,12 @@
         "openlogos archive 归档目录名加时间戳前缀 — 归档后的目录名格式从 <slug> 改为 YYYYMMDD-HHmm-<slug>（如 20260509-1430-fix-login-bug），方便在归档数量多时按时间快速定位历史提案。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Changed archive directory names to include a timestamp prefix for easier historical proposal lookup."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.9, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.9: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.7",
@@ -643,8 +739,13 @@
         "多模块项目 phase 状态判断错误 — openlogos status --module <新模块> 对刚创建的模块不再错误返回 current_phase: null, suggestion: \"所有阶段已完成\"。",
         "openlogos sync 自动补全 scenarios[].module 字段 — 对 logos-project.yaml 中没有 module 字段的 scenarios 条目，sync 命令根据文件系统中 <moduleId>-SXX-*.md 的存在情况自动推断归属模块，无法推断时默认填 core。幂等操作，已有 module 字段的条目不覆盖。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "Fixed phase detection for new modules so existing core documents no longer make new modules appear complete.",
+        "Added automatic sync backfill for missing scenarios[].module fields in logos-project.yaml."
+      ],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.7, but value summary entries are missing."
+      "summaryFallbackReason": "v0.9.7: Chinese value summary entries are missing; English value summary entries are missing."
     },
     {
       "version": "0.9.6",
@@ -673,7 +774,14 @@
         "module add 不再要求活跃变更提案 — openlogos module add 原本错误地要求 guard 文件存在才能执行，现已移除该限制。模块管理是项目结构层面的操作，维度高于变更提案，可随时自由执行。",
         "module rename/remove 改为警告而非阻塞 — 有活跃变更提案时，rename 和 remove 打印警告提示用户注意 delta 文件可能受影响，但不阻止操作继续执行。"
       ],
-      "summarySource": "changelog",
+      "valueSummaryEn": [
+        "Added automatic Claude Code plugin deployment for slash commands, agent files, hook scripts, and settings integration."
+      ],
+      "fixSummaryEn": [
+        "Fixed module add so it no longer requires an active change proposal.",
+        "Changed module rename and remove to warn during active proposals instead of blocking the command."
+      ],
+      "summarySource": "bilingual",
       "summaryFallbackReason": null
     },
     {
@@ -702,8 +810,14 @@
         "verify --format json 新增 manual_count 字段 — summary 对象新增 manual_count，外部消费 CLI 输出时可感知人工用例数量。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Added [manual] test case markers for cases that require human visual, TTY, window, or hardware verification.",
+        "Added manual-aware acceptance trace behavior and verify JSON manual_count output.",
+        "Updated test-writer guidance and task templates for manual case handling."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.5, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.5: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.4",
@@ -729,8 +843,12 @@
       "fixSummary": [
         "回滚 merge.ts 中错误添加的 spec/skills delta 分类 — DELTA_TO_RESOURCE 映射表移除了 0.9.3 中错误引入的 spec → logos/spec 和 skills → logos/skills 映射。spec/ 和 skills/ 是 OpenLogos 自身源码，直接修改即可，不应走 delta/merge 流程，该映射在用户项目中无意义。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "Rolled back the incorrect spec and skills delta category mapping from merge.ts."
+      ],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.4, but value summary entries are missing."
+      "summaryFallbackReason": "v0.9.4: Chinese value summary entries are missing; English value summary entries are missing."
     },
     {
       "version": "0.9.3",
@@ -758,7 +876,13 @@
       "fixSummary": [
         "openlogos merge 支持 spec/ 和 skills/ delta 分类 — DELTA_TO_RESOURCE 映射表新增 spec → logos/spec 和 skills → logos/skills，修复 delta 文件放在这两个分类下时 merge 报\"没有 delta 文件\"的问题。"
       ],
-      "summarySource": "changelog",
+      "valueSummaryEn": [
+        "Removed verify-style tasks from task templates so openlogos verify remains a separate workflow node."
+      ],
+      "fixSummaryEn": [
+        "Added merge support for spec and skills delta categories."
+      ],
+      "summarySource": "bilingual",
       "summaryFallbackReason": null
     },
     {
@@ -787,8 +911,14 @@
         "多模块隔离 — 全局 phase 跳过采用交集语义：只有所有 initial 模块都声明跳过某阶段，才在全局层面跳过，避免一个模块的 skip_phases 影响其他模块。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Added skip_phases module configuration for projects that intentionally skip API, database, or scenario phases.",
+        "Updated phase detection so skipped phases are respected globally and per module.",
+        "Updated architecture-designer and logos-project specs to document skip_phases usage."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.2, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.2: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.9.1",
@@ -818,7 +948,15 @@
         "plugin/bin/openlogos-phase 在 set -euo pipefail 下提前退出 — 修复 check_scenarios_complete 返回非零退出码时脚本被 set -e 终止的问题，所有调用处加 || true 保护。",
         "plugin/bin/openlogos-phase change management 文案过时 — guard 检测条件从 active 更新为 launched，change management 提示语同步为新的 10 步流程（含 verify、git commit/push 节点）。"
       ],
-      "summarySource": "changelog",
+      "valueSummaryEn": [
+        "Regenerated AGENTS.md and CLAUDE.md so generated guidance matches the current project configuration."
+      ],
+      "fixSummaryEn": [
+        "Fixed plugin lifecycle detection to derive launched state from logos-project.yaml instead of the old config lifecycle field.",
+        "Fixed the OpenLogos phase hook so failed scenario checks no longer terminate the script under strict shell settings.",
+        "Updated stale change management copy in plugin phase guidance."
+      ],
+      "summarySource": "bilingual",
       "summaryFallbackReason": null
     },
     {
@@ -847,8 +985,14 @@
         "确立 merge → 代码实现 → verify → archive 的正确顺序 — 规格先合并进主文档，代码按最新规格实现，verify 验收代码，通过后归档，符合\"规格驱动代码\"核心理念。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [
+        "Added the openlogos verify acceptance gate between merge and archive.",
+        "Added automated commit checkpoints and a separate human-confirmed git push step.",
+        "Aligned the workflow around merge, implementation, verify, and archive ordering."
+      ],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.9.0, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.9.0: Chinese fix summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.8.2",
@@ -876,7 +1020,13 @@
       "fixSummary": [
         "修复 cli/src/commands/status.ts 中未使用参数导致的发布前 lint 阻塞。"
       ],
-      "summarySource": "changelog",
+      "valueSummaryEn": [
+        "Raised the npm release version to 0.8.2 for the tested CLI package."
+      ],
+      "fixSummaryEn": [
+        "Fixed an unused parameter in cli/src/commands/status.ts that blocked release linting."
+      ],
+      "summarySource": "bilingual",
       "summaryFallbackReason": null
     },
     {
@@ -901,8 +1051,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.8.1."
+      "summaryFallbackReason": "v0.8.1: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.8.0",
@@ -933,8 +1085,10 @@
         "guard 互斥缺失 — openlogos change 现在会在已有活动 guard 时拒绝创建新提案，避免覆盖 logos/.openlogos-guard。",
         "status 模块区块标题 i18n 缺失 — 补充 status.modules 中英文词条，并增加文本模式回归测试，避免模块标题直接显示未翻译 key。"
       ],
-      "summarySource": "changelog",
-      "summaryFallbackReason": null
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.8.0: English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.7.3",
@@ -958,8 +1112,10 @@
       "fixSummary": [
         "scenario-architect Skill — mermaid 箭头行单行约束 — 修复 AI 在生成时序图时将较长步骤描述折行写入箭头行（如将 UI 按钮文字另起一行补充），导致 mermaid 引擎解析失败、markdown 渲染出错的问题。在 Skill 规范中新增强制约束：每条 ->> / -->> 箭头的完整内容必须写在同一行；描述过长时应精简措辞而非拆行；补充细节统一放到时序图下方的\"步骤说明\"列表中。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.7.3, but value summary entries are missing."
+      "summaryFallbackReason": "v0.7.3: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.7.2",
@@ -983,8 +1139,10 @@
         "sync 命令输出版本号 — openlogos sync 执行时在首行显示当前 CLI 版本（如 Syncing project files... (openlogos v0.7.2)），方便确认实际运行的版本。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.7.2, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.7.2: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.7.1",
@@ -1008,8 +1166,10 @@
       "fixSummary": [
         "--version 输出硬编码问题 — VERSION 常量改为从 package.json 动态读取，彻底消除版本号需要手动同步的隐患。"
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.7.1, but value summary entries are missing."
+      "summaryFallbackReason": "v0.7.1: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.7.0",
@@ -1035,8 +1195,10 @@
         "logos/resources/reference/ 目录 — openlogos init 新增创建 reference 资源目录，用于存放参考资料。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.7.0, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.7.0: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.6.6",
@@ -1058,8 +1220,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.6."
+      "summaryFallbackReason": "v0.6.6: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.6.5",
@@ -1081,8 +1245,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.5."
+      "summaryFallbackReason": "v0.6.5: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.6.4",
@@ -1104,8 +1270,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.4."
+      "summaryFallbackReason": "v0.6.4: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.6.3",
@@ -1127,8 +1295,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.3."
+      "summaryFallbackReason": "v0.6.3: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.6.2",
@@ -1150,8 +1320,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.2."
+      "summaryFallbackReason": "v0.6.2: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.6.1",
@@ -1173,8 +1345,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.1."
+      "summaryFallbackReason": "v0.6.1: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.6.0",
@@ -1196,8 +1370,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.6.0."
+      "summaryFallbackReason": "v0.6.0: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.10",
@@ -1219,8 +1395,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.5.10."
+      "summaryFallbackReason": "v0.5.10: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.9",
@@ -1242,8 +1420,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.5.9."
+      "summaryFallbackReason": "v0.5.9: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.8",
@@ -1269,8 +1449,10 @@
       "fixSummary": [
         "npm 包展示 README — @miniidealab/openlogos 自 cli/ 目录发布，此前包根目录缺少 README.md，导致 npm 项目页提示 “This package does not have a README”。现已新增 cli/README.md（安装说明、常用命令、文档与 CHANGELOG 链接），并列入 package.json 的 files 字段，确保打入发布 tarball。"
       ],
-      "summarySource": "changelog",
-      "summaryFallbackReason": null
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.5.8: English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.7",
@@ -1296,8 +1478,10 @@
         "Phase 3 Step 4 交付规则强化（业务与测试闭环） — spec/workflow.md 明确 Step 4 必须同时交付业务代码、UT/ST 测试代码与 OpenLogos reporter；允许大任务分批，但每批必须闭环，且需先声明本批 UT/ST 用例 ID；并新增 Step 5 前置门禁，Step 4 未完成不得进入验收。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.5.7, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.5.7: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.6",
@@ -1321,8 +1505,10 @@
       "fixSummary": [
         "OpenCode slash command discovery — OpenCode 1.x lists / commands from .opencode/commands/*.md, not from plugin tui.command.execute. init/sync now deploys Markdown command definitions (e.g. /openlogos-status, /openlogos-sync) that run openlogos via OpenCode’s ` !… shell injection, so the TUI no longer shows \"No matching items\" for openlogos`."
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.5.6, but value summary entries are missing."
+      "summaryFallbackReason": "v0.5.6: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.5",
@@ -1344,8 +1530,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md does not contain a section for v0.5.5."
+      "summaryFallbackReason": "v0.5.5: CHANGELOG.md does not contain a section; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.4",
@@ -1369,8 +1557,10 @@
         "OpenCode as first-class AI tool — openlogos init now offers OpenCode as a dedicated option (option 3) alongside Cursor and Claude Code, instead of grouping it under \"Other\". OpenCode deploys Skills to logos/skills/ and includes Active Skills in AGENTS.md (which OpenCode reads on startup)."
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.5.4, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.5.4: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.3",
@@ -1394,8 +1584,10 @@
         "documents.changes in logos.config.json — openlogos init now includes a changes document module (./changes, **/*.{md,json}) in the generated config, so RunLogos can discover and display change proposals. openlogos sync incrementally backfills this entry for existing projects without overwriting user customizations."
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.5.3, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.5.3: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.5.0",
@@ -1420,8 +1612,10 @@
         "Test suite expanded from 125 to 140 cases"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.5.0, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.5.0: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.4.3",
@@ -1445,8 +1639,10 @@
       "fixSummary": [
         "openlogos init forced language selection in non-TTY — In non-interactive mode (e.g. Claude Code), init now exits with an error if --locale is not provided, printing a clear usage hint. This forces the AI to ask the user for language preference before retrying with --locale <en|zh>. AI tool is still auto-detected from CLAUDE_PLUGIN_ROOT/CLAUDE_CODE env vars."
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.4.3, but value summary entries are missing."
+      "summaryFallbackReason": "v0.4.3: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.4.1",
@@ -1470,8 +1666,10 @@
       "fixSummary": [
         "openlogos init non-TTY default issue — Added --locale <en|zh> and --ai-tool <cursor|claude-code|other> CLI flags for explicit selection in non-interactive environments."
       ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.4.1, but value summary entries are missing."
+      "summaryFallbackReason": "v0.4.1: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.4.0",
@@ -1497,8 +1695,10 @@
         "Skill Build Script — scripts/build-plugin-skills.sh builds plugin skills from source with proper Claude Code frontmatter"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.4.0, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.4.0: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.3.6",
@@ -1520,8 +1720,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.3.6, but value summary and fix summary entries are missing."
+      "summaryFallbackReason": "v0.3.6: Chinese value summary entries are missing; Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.3.5",
@@ -1543,8 +1745,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.3.5, but value summary and fix summary entries are missing."
+      "summaryFallbackReason": "v0.3.5: Chinese value summary entries are missing; Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.3.4",
@@ -1566,8 +1770,10 @@
       "distTags": [],
       "valueSummary": [],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.3.4, but value summary and fix summary entries are missing."
+      "summaryFallbackReason": "v0.3.4: Chinese value summary entries are missing; Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.3.3",
@@ -1593,8 +1799,10 @@
         "Launch Hint in Status — openlogos status now suggests openlogos launch when all phases are complete and lifecycle is still \"initial\""
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.3.3, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.3.3: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.3.2",
@@ -1619,8 +1827,10 @@
         "Language Policy now marked as \"Highest Priority\" with stronger enforcement wording, injected into every Cursor conversation to prevent locale drift"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.3.2, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.3.2: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.3.1",
@@ -1646,8 +1856,10 @@
         "Change Management Guard — Cursor projects automatically receive a change-guard.mdc rule (alwaysApply: true) that reminds AI of the change proposal workflow in every conversation"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.3.1, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.3.1: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.3.0",
@@ -1673,8 +1885,10 @@
         "Active Skills in AI Instruction Files — AGENTS.md and CLAUDE.md now include an ## Active Skills section listing all deployed skills (visibility follows tool selection rules)"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.3.0, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.3.0: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     },
     {
       "version": "0.2.0",
@@ -1698,8 +1912,10 @@
         "CLI 以 @miniidealab/openlogos 在 npm 公开发布，包作用域与 GitHub 组织 miniidealab 一致；package.json 增加 publishConfig.access: public，便于作用域包默认公开安装。"
       ],
       "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
       "summarySource": "fallback",
-      "summaryFallbackReason": "CHANGELOG.md lists v0.2.0, but fix summary entries are missing."
+      "summaryFallbackReason": "v0.2.0: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
     }
   ]
 }

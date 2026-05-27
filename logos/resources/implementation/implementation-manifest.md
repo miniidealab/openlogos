@@ -73,3 +73,37 @@
 - `cd website && npm run generate:releases`
 - `cd website && npm run build`
 - `cd website && npm run smoke:releases`
+
+## releases-bilingual-release-notes
+
+### 范围
+- 官网 `/releases` 页面英文优先、中文原文次级展示
+- 维护型英文 release summary 静态数据
+- `CHANGELOG.md` 中文原文摘要提取与英文摘要合并
+- release 页面双语 smoke 检查
+
+### 覆盖任务
+- [x] 新增 `website/src/data/release-summaries-en.mjs`，维护确定性的英文价值摘要与修复摘要
+- [x] 更新 `website/src/lib/releases-summary.mjs`，生成 `valueSummaryEn`、`fixSummaryEn`、中文原文摘要、`summarySource` 和缺失原因
+- [x] 更新 `website/src/pages/releases.astro`，英文摘要主展示，中文原文通过 `details` 次级展示，缺失英文摘要时显示固定英文回退
+- [x] 更新 `website/scripts/smoke-releases.mjs`，覆盖英文价值摘要、英文修复摘要、中文原文与固定回退提示
+- [x] 更新 `website/test/releases-summary.test.mjs` 与 `website/test/helpers/openlogos-reporter.mjs`，写入 OpenLogos reporter 结果 `UT-S13-24`
+- [x] 更新 `logos/logos.config.json`，让 `openlogos verify` 预跑 CLI 测试后追加官网测试结果
+
+### 产物
+- `website/src/data/release-summaries-en.mjs`
+- `website/src/lib/releases-summary.mjs`
+- `website/src/data/releases.json`
+- `website/src/pages/releases.astro`
+- `website/scripts/smoke-releases.mjs`
+- `website/test/releases-summary.test.mjs`
+- `website/test/helpers/openlogos-reporter.mjs`
+- `logos/resources/test/core-S13-test-cases.md`
+- `logos/logos.config.json`
+
+### 验证
+- `cd website && npm test`
+- `cd website && npm run generate:releases`
+- `cd website && npm run build`
+- `cd website && npm run smoke:releases`
+- `cd cli && npm test && cd ../website && npm test`

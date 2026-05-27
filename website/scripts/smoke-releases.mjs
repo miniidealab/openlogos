@@ -73,29 +73,37 @@ try {
 try {
   const releases = readHtml('releases/index.html');
   const versions = Array.isArray(releaseData.versions) ? releaseData.versions : [];
-  const versionsWithAnySummary = versions.filter((item) => item.valueSummary?.length > 0 || item.fixSummary?.length > 0);
+  const versionsWithEnglishValue = versions.filter((item) => item.valueSummaryEn?.length > 0);
+  const versionsWithEnglishFix = versions.filter((item) => item.fixSummaryEn?.length > 0);
+  const versionsWithChineseOriginal = versions.filter((item) => item.valueSummary?.length > 0 || item.fixSummary?.length > 0);
   const fallbackVersions = versions.filter((item) => item.summarySource === 'fallback');
   assert(releases.includes('OpenLogos Releases'), 'Release page missing title');
   assert(releases.includes('npm install -g @miniidealab/openlogos'), 'Release page missing install command');
   assert(releases.includes(latestVersionText), 'Release page missing latest version');
   assert(releases.includes('versions'), 'Release page missing version count label');
   assert(releases.includes(versionCountText), 'Release page missing version count value');
-  assert(versionsWithAnySummary.length > 0, 'Release data missing changelog summaries');
+  assert(versionsWithEnglishValue.length > 0, 'Release data missing English value summaries');
+  assert(versionsWithEnglishFix.length > 0, 'Release data missing English fix summaries');
+  assert(versionsWithChineseOriginal.length > 0, 'Release data missing Chinese original summaries');
   assert(fallbackVersions.length > 0, 'Release data missing fallback summary markers');
-  assert(releases.includes('What value changed'), 'Release page missing value summary heading');
+  assert(releases.includes('What changed'), 'Release page missing value summary heading');
   assert(releases.includes('What got fixed'), 'Release page missing fix summary heading');
+  assert(releases.includes('Chinese original'), 'Release page missing Chinese original disclosure');
+  assert(releases.includes(versionsWithEnglishValue[0].valueSummaryEn[0]), 'Release page missing rendered English value summary');
+  assert(releases.includes(versionsWithEnglishFix[0].fixSummaryEn[0]), 'Release page missing rendered English fix summary');
   assert(releases.includes(RELEASE_SUMMARY_FALLBACK_MESSAGE), 'Release page missing fixed fallback summary text');
   assert(releases.includes('CHANGELOG'), 'Release page missing changelog links');
-  report('SMOKE-core-07', 'pass', 'release page shows version summaries');
+  report('SMOKE-core-07', 'pass', 'release page shows bilingual version summaries');
 } catch (error) {
-  report('SMOKE-core-07', 'fail', 'release page shows version summaries', String(error));
+  report('SMOKE-core-07', 'fail', 'release page shows bilingual version summaries', String(error));
   throw error;
 }
 
 try {
   const releases = readHtml('releases/index.html');
   assert(releases.includes('GitHub Release'), 'Release page missing external links');
-  assert(releases.includes('structured CHANGELOG extraction') || releases.includes('structured from CHANGELOG'), 'Release page missing source explanation');
+  assert(releases.includes('maintained bilingual release data'), 'Release page missing bilingual source explanation');
+  assert(releases.includes('structured CHANGELOG extraction'), 'Release page missing Chinese original source explanation');
   report('SMOKE-core-03', 'pass', 'website build includes release history page');
 } catch (error) {
   report('SMOKE-core-03', 'fail', 'website build includes release history page', String(error));

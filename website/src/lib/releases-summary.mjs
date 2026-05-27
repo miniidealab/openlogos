@@ -1,3 +1,5 @@
+import { RELEASE_SUMMARIES_EN } from '../data/release-summaries-en.mjs';
+
 const VALUE_SECTION_NAMES = new Set(['added', 'changed', 'deprecated', 'removed', 'security']);
 const FIX_SECTION_NAMES = new Set(['fixed']);
 
@@ -88,44 +90,79 @@ export function parseChangelogSummaries(content) {
   return summaries;
 }
 
-function summarizeVersion(version, summaries) {
+function summaryItems(value) {
+  return Array.isArray(value) ? value.filter(Boolean).slice(0, 3) : [];
+}
+
+function englishSummaryForVersion(version, englishSummaries) {
+  const record = englishSummaries?.[version] ?? {};
+  return {
+    valueSummaryEn: summaryItems(record.valueSummaryEn),
+    fixSummaryEn: summaryItems(record.fixSummaryEn),
+  };
+}
+
+function fallbackReason(version, changelogRecord, englishRecord) {
+  const missing = [];
+
+  if (!changelogRecord) {
+    missing.push('CHANGELOG.md does not contain a section');
+  } else {
+    if (changelogRecord.valueSummary.length === 0) missing.push('Chinese value summary entries are missing');
+    if (changelogRecord.fixSummary.length === 0) missing.push('Chinese fix summary entries are missing');
+  }
+
+  if (englishRecord.valueSummaryEn.length === 0) missing.push('English value summary entries are missing');
+  if (englishRecord.fixSummaryEn.length === 0) missing.push('English fix summary entries are missing');
+
+  if (missing.length === 0) return null;
+  return `v${version}: ${missing.join('; ')}.`;
+}
+
+function summarizeVersion(version, summaries, englishSummaries) {
   const record = summaries.get(version);
+  const englishRecord = englishSummaryForVersion(version, englishSummaries);
+  const reason = fallbackReason(version, record, englishRecord);
+
   if (!record) {
     return {
       valueSummary: [],
       fixSummary: [],
+      valueSummaryEn: englishRecord.valueSummaryEn,
+      fixSummaryEn: englishRecord.fixSummaryEn,
       summarySource: 'fallback',
-      summaryFallbackReason: `CHANGELOG.md does not contain a section for v${version}.`,
+      summaryFallbackReason: reason,
     };
   }
 
-  if (!record.hasStructuredSummary || record.valueSummary.length === 0 || record.fixSummary.length === 0) {
-    const missing = [];
-    if (record.valueSummary.length === 0) missing.push('value summary');
-    if (record.fixSummary.length === 0) missing.push('fix summary');
+  if (reason) {
     return {
       valueSummary: record.valueSummary.slice(0, 3),
       fixSummary: record.fixSummary.slice(0, 3),
+      valueSummaryEn: englishRecord.valueSummaryEn,
+      fixSummaryEn: englishRecord.fixSummaryEn,
       summarySource: 'fallback',
-      summaryFallbackReason: `CHANGELOG.md lists v${version}, but ${missing.join(' and ')} entries are missing.`,
+      summaryFallbackReason: reason,
     };
   }
 
   return {
     valueSummary: record.valueSummary.slice(0, 3),
     fixSummary: record.fixSummary.slice(0, 3),
-    summarySource: 'changelog',
+    valueSummaryEn: englishRecord.valueSummaryEn,
+    fixSummaryEn: englishRecord.fixSummaryEn,
+    summarySource: 'bilingual',
     summaryFallbackReason: null,
   };
 }
 
-export function enrichReleaseVersions(versions, changelogContent) {
+export function enrichReleaseVersions(versions, changelogContent, englishSummaries = RELEASE_SUMMARIES_EN) {
   const summaries = typeof changelogContent === 'string' && changelogContent.length > 0
     ? parseChangelogSummaries(changelogContent)
     : new Map();
 
   return versions.map((version) => ({
     ...version,
-    ...summarizeVersion(version.version, summaries),
+    ...summarizeVersion(version.version, summaries, englishSummaries),
   }));
 }

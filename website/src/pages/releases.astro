@@ -7,7 +7,9 @@ type RawReleaseVersion = typeof releaseData.versions[number];
 type ReleaseVersion = RawReleaseVersion & {
   valueSummary?: string[];
   fixSummary?: string[];
-  summarySource?: 'changelog' | 'fallback';
+  valueSummaryEn?: string[];
+  fixSummaryEn?: string[];
+  summarySource?: 'bilingual' | 'changelog' | 'fallback';
   summaryFallbackReason?: string | null;
 };
 
@@ -62,14 +64,15 @@ function summaryItems(value: string[] | null | undefined) {
 }
 
 function isSummaryFallback(item: ReleaseVersion) {
-  return item.summarySource === 'fallback' || !item.summarySource;
+  return item.summarySource !== 'bilingual';
 }
 
-function emptySummaryMessage(item: ReleaseVersion, kind: 'value' | 'fix') {
-  if (isSummaryFallback(item)) return RELEASE_SUMMARY_FALLBACK_MESSAGE;
-  return kind === 'value'
-    ? 'No structured value entries were found in CHANGELOG for this version.'
-    : 'No structured fix entries were found in CHANGELOG for this version.';
+function englishSummaryItems(item: ReleaseVersion, kind: 'value' | 'fix') {
+  return summaryItems(kind === 'value' ? item.valueSummaryEn : item.fixSummaryEn);
+}
+
+function chineseSummaryItems(item: ReleaseVersion, kind: 'value' | 'fix') {
+  return summaryItems(kind === 'value' ? item.valueSummary : item.fixSummary);
 }
 
 const groups = groupVersions(releaseVersions);
@@ -90,8 +93,8 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
           <h1>OpenLogos Releases</h1>
           <p class="hero-copy">
             Complete npm release metadata for the OpenLogos CLI. Publish times, dist-tags, package links,
-            tarballs, engines, dependencies, file counts, and git heads come from npm registry data. Version value
-            and fix summaries are structured from the repository CHANGELOG when available.
+            tarballs, engines, dependencies, file counts, and git heads come from npm registry data. English version
+            summaries come from maintained bilingual release data, with the Chinese CHANGELOG original kept for traceability.
           </p>
           <div class="hero-metrics" aria-label="Release summary">
             <div class="metric">
@@ -144,9 +147,9 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
       <div class="timeline">
         <div class="data-note">
           <strong>Verifiable release sources.</strong>
-          Publish times and npm metadata come from npm registry. Version value and fix summaries come from
-          structured CHANGELOG extraction; missing sections use a fixed fallback and keep GitHub Release /
-          CHANGELOG links for full details.
+          Publish times and npm metadata come from npm registry. English version summaries come from maintained
+          bilingual release data. Chinese original text comes from structured CHANGELOG extraction; missing English
+          sections use a fixed fallback and keep GitHub Release / CHANGELOG links for full details.
         </div>
 
         {groups.map((group) => (
@@ -183,27 +186,47 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
 
                   <div class="summary-blocks" aria-label={`Release summary for v${item.version}`}>
                     <div class="summary-block">
-                      <h4>What value changed</h4>
-                      {summaryItems(item.valueSummary).length > 0 ? (
+                      <h4>What changed</h4>
+                      {englishSummaryItems(item, 'value').length > 0 ? (
                         <ul>
-                          {summaryItems(item.valueSummary).map((entry) => (
+                          {englishSummaryItems(item, 'value').map((entry) => (
                             <li>{entry}</li>
                           ))}
                         </ul>
                       ) : (
-                        <p class="summary-empty">{emptySummaryMessage(item, 'value')}</p>
+                        <p class="summary-empty">{RELEASE_SUMMARY_FALLBACK_MESSAGE}</p>
+                      )}
+                      {chineseSummaryItems(item, 'value').length > 0 && (
+                        <details class="summary-original">
+                          <summary>Chinese original</summary>
+                          <ul>
+                            {chineseSummaryItems(item, 'value').map((entry) => (
+                              <li>{entry}</li>
+                            ))}
+                          </ul>
+                        </details>
                       )}
                     </div>
                     <div class="summary-block">
                       <h4>What got fixed</h4>
-                      {summaryItems(item.fixSummary).length > 0 ? (
+                      {englishSummaryItems(item, 'fix').length > 0 ? (
                         <ul>
-                          {summaryItems(item.fixSummary).map((entry) => (
+                          {englishSummaryItems(item, 'fix').map((entry) => (
                             <li>{entry}</li>
                           ))}
                         </ul>
                       ) : (
-                        <p class="summary-empty">{emptySummaryMessage(item, 'fix')}</p>
+                        <p class="summary-empty">{RELEASE_SUMMARY_FALLBACK_MESSAGE}</p>
+                      )}
+                      {chineseSummaryItems(item, 'fix').length > 0 && (
+                        <details class="summary-original">
+                          <summary>Chinese original</summary>
+                          <ul>
+                            {chineseSummaryItems(item, 'fix').map((entry) => (
+                              <li>{entry}</li>
+                            ))}
+                          </ul>
+                        </details>
                       )}
                     </div>
                   </div>
@@ -218,7 +241,8 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
 
                   <p class="release-note">
                     Dependencies: {formatMap(item.dependencies)}. Metadata and publish time come from npm registry.
-                    Release summaries are structured from CHANGELOG when available, never generated from npm metadata.
+                    English summaries come from maintained bilingual release data; Chinese originals come from CHANGELOG
+                    extraction and are never generated from npm metadata.
                   </p>
 
                   <div class="release-links">
@@ -590,6 +614,34 @@ const verifyCommand = `npx ${releaseData.packageName} --version`;
 
   .summary-block li + li {
     margin-top: 0.35rem;
+  }
+
+  .summary-original {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .summary-original summary {
+    min-height: 2.75rem;
+    padding-top: 0.75rem;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+
+  .summary-original summary:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .summary-original ul {
+    margin-top: 0.125rem;
+    padding-bottom: 0.125rem;
   }
 
   .summary-empty,
