@@ -2,8 +2,8 @@
  * OpenLogos vitest reporter — writes test results to JSONL
  * following the spec defined in spec/test-results.md.
  *
- * Extracts test case IDs from test names using the pattern:
- *   "UT-S01-01: description" or "ST-S01-01: description"
+ * Extracts test case IDs from test names using patterns such as:
+ *   "UT-S01-01: description" or "UT-S01-01 / ST-S01-01: description"
  */
 import type { Reporter, File as VitestFile, TaskResultPack } from 'vitest';
 import { appendFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -14,7 +14,7 @@ const RESULT_PATH = resolve(
   '..',
   'logos/resources/verify/test-results.jsonl',
 );
-const ID_RE = /\b(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/;
+const ID_RE = /\b(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/g;
 
 export default class OpenLogosReporter implements Reporter {
   onInit() {
@@ -44,10 +44,9 @@ export default class OpenLogosReporter implements Reporter {
       if (task.type !== 'test') continue;
 
       const nameForMatch = typeof task.fullName === 'string' ? task.fullName : task.name;
-      const match = ID_RE.exec(nameForMatch);
-      if (!match) continue;
+      const ids = [...new Set([...nameForMatch.matchAll(ID_RE)].map(match => match[0]))];
+      if (ids.length === 0) continue;
 
-      const id = match[0];
       const r = task.result;
       let status: 'pass' | 'fail' | 'skip' = 'skip';
       let error: string | undefined;
@@ -66,15 +65,17 @@ export default class OpenLogosReporter implements Reporter {
         }
       }
 
-      const record: Record<string, unknown> = {
-        id,
-        status,
-        timestamp: new Date().toISOString(),
-      };
-      if (durationMs !== undefined) record.duration_ms = Math.round(durationMs);
-      if (error) record.error = error.slice(0, 500);
+      for (const id of ids) {
+        const record: Record<string, unknown> = {
+          id,
+          status,
+          timestamp: new Date().toISOString(),
+        };
+        if (durationMs !== undefined) record.duration_ms = Math.round(durationMs);
+        if (error) record.error = error.slice(0, 500);
 
-      appendFileSync(RESULT_PATH, JSON.stringify(record) + '\n');
+        appendFileSync(RESULT_PATH, JSON.stringify(record) + '\n');
+      }
     }
   }
 }

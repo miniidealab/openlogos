@@ -397,7 +397,7 @@ describe('S13 Unit Tests — verify pre-run helpers', () => {
     expect(buildInitialPreRunData(config).mode).toBe('pre_run_command');
   });
 
-  it('runVerifyPreRun executes pre_run_command before results are read', () => {
+  it('UT-S13-02: runVerifyPreRun executes pre_run_command before results are read', () => {
     const command = `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.jsonl','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`;
     const data = runVerifyPreRun(root, {
       resultPath: 'logos/resources/verify/test-results.jsonl',
@@ -411,7 +411,7 @@ describe('S13 Unit Tests — verify pre-run helpers', () => {
     expect(readFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), 'utf-8')).toContain('UT-S01-01');
   });
 
-  it('runVerifyPreRun executes regression then incremental and merges last-write-wins', () => {
+  it('UT-S13-03: runVerifyPreRun executes regression then incremental and merges last-write-wins', () => {
     const regressionPath = 'logos/resources/verify/test-results.regression.jsonl';
     const incrementalPath = 'logos/resources/verify/test-results.incremental.jsonl';
     const regressionCommand = `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('${regressionPath}','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"fail\\\",\\\"error\\\":\\\"old\\\"}\\n{\\\"id\\\":\\\"ST-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`;
@@ -435,7 +435,7 @@ describe('S13 Unit Tests — verify pre-run helpers', () => {
     expect(merged.find(result => result.id === 'ST-S01-01')?.status).toBe('pass');
   });
 
-  it('collectVerifyData adds diagnostics when coverage is incomplete without pre-run config', () => {
+  it('UT-S13-04: collectVerifyData adds diagnostics when coverage is incomplete without pre-run config', () => {
     const testDir = join(root, 'logos/resources/test');
     const verifyDir = join(root, 'logos/resources/verify');
     mkdirSync(testDir, { recursive: true });
@@ -450,7 +450,7 @@ describe('S13 Unit Tests — verify pre-run helpers', () => {
     expect(data.pre_run.suggestions.join('\n')).toContain('verify.pre_run_command');
   });
 
-  it('collectVerifyData exposes pre_run state in JSON output data', () => {
+  it('UT-S13-05: collectVerifyData exposes pre_run state in JSON output data', () => {
     writeFileSync(join(root, 'logos/resources/test', 'S01-test-cases.md'), '| UT-S01-01 | desc |\n');
     writeFileSync(join(root, 'logos/resources/verify', 'test-results.jsonl'), '{"id":"UT-S01-01","status":"pass"}\n');
 

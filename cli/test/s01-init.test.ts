@@ -637,7 +637,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain(basename(root));
   });
 
-  it('ST-S01-03: choose Chinese locale', async () => {
+  it('chooses Chinese locale', async () => {
     process.stdin.isTTY = true;
     readlineAnswers = ['2', '4']; // Chinese, Cursor (option 4)
 
@@ -712,7 +712,7 @@ describe('S01 Scenario Tests — init command', () => {
     delete process.env.CLAUDE_CODE;
   });
 
-  it('ST-S01-05e: non-TTY with --locale and test script writes verify.pre_run_command', async () => {
+  it('ST-S01-03: non-TTY with --locale and test script writes verify.pre_run_command', async () => {
     process.stdin.isTTY = undefined as unknown as boolean;
     writeFileSync(join(root, 'package.json'), JSON.stringify({
       name: 'ci-project',
@@ -723,6 +723,16 @@ describe('S01 Scenario Tests — init command', () => {
 
     const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
     expect(config.verify.pre_run_command).toBe('npm test');
+  });
+
+  it('ST-S01-EX-03: non-TTY init without detectable test command prints verify pre-run TODO', async () => {
+    process.stdin.isTTY = undefined as unknown as boolean;
+
+    await init('ci-project', { locale: 'zh', aiTool: 'cursor' });
+
+    const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+    expect(config.verify.pre_run_command).toBeUndefined();
+    expect(con.logs.join('\n')).toContain('无法推断 verify 预跑配置');
   });
 
   it('ST-S01-06: name conflict — user selects package.json name', async () => {

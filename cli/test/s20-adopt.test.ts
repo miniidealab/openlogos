@@ -125,7 +125,7 @@ describe('S20 Scenario Tests — adopt command', () => {
     expect(out).toContain('已 launch');
   });
 
-  it('UT-S20-07: adopt 可识别测试栈时写入 verify.pre_run_command', async () => {
+  it('UT-S20-07 / ST-S20-05: adopt 可识别测试栈时写入 verify.pre_run_command', async () => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({
       name: 'existing-app',
       scripts: { test: 'vitest run' },
@@ -138,7 +138,7 @@ describe('S20 Scenario Tests — adopt command', () => {
     expect(con.logs.join('\n')).toContain('verify 预跑配置');
   });
 
-  it('UT-S20-08: adopt 无法推断测试命令时输出 TODO', async () => {
+  it('UT-S20-08 / ST-S20-EX-02: adopt 无法推断测试命令时输出 TODO', async () => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
 
     await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });

@@ -402,7 +402,7 @@ describe('JSON output — verify --format json', () => {
     expect(errorOutput.error.code).toBe('NO_TEST_CASES');
   });
 
-  it('ST-JSON-24: verify --format json exposes single-stage pre_run status', () => {
+  it('UT-JSON-11 / ST-JSON-24: verify --format json exposes single-stage pre_run status', () => {
     writeTestCases(CASES_ALL_PASS);
     updateVerifyConfig({
       pre_run_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.jsonl','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n{\\\"id\\\":\\\"ST-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`,
@@ -416,7 +416,7 @@ describe('JSON output — verify --format json', () => {
     expect(output.data.pre_run.result_paths.final).toBe('logos/resources/verify/test-results.jsonl');
   });
 
-  it('ST-JSON-25: verify --format json exposes two-phase status and merge strategy', () => {
+  it('UT-JSON-12 / ST-JSON-25: verify --format json exposes two-phase status and merge strategy', () => {
     writeTestCases(CASES_ALL_PASS);
     updateVerifyConfig({
       regression_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.regression.jsonl','{\\\"id\\\":\\\"UT-S01-01\\\",\\\"status\\\":\\\"pass\\\"}\\n')"`,
@@ -436,7 +436,7 @@ describe('JSON output — verify --format json', () => {
     expect(output.data.pre_run.result_paths.incremental).toBe('logos/resources/verify/test-results.incremental.jsonl');
   });
 
-  it('ST-JSON-26: verify --format json exposes diagnostics when coverage is incomplete without pre-run', () => {
+  it('UT-JSON-13 / ST-JSON-26: verify --format json exposes diagnostics when coverage is incomplete without pre-run', () => {
     const cases = `# Test Cases\n| UT-S01-01 | d |\n| ST-S01-01 | d |\n\n## 三、覆盖度校验\n\n- [x] ok\n`;
     writeTestCases(cases);
     writeResults(['{"id":"UT-S01-01","status":"pass"}']);
