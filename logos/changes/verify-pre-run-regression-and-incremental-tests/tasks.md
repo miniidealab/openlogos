@@ -34,6 +34,6 @@
 - [x] 更新 `cli/test/s01-init.test.ts`、`cli/test/s08-sync.test.ts`、`cli/test/s13-verify.test.ts`、`cli/test/s16-json-output.test.ts`、`cli/test/s20-adopt.test.ts` — 覆盖新增验收用例并写入 OpenLogos reporter
 
 ## [deploy] 部署任务
-- [ ] 按部署方案发布 CLI/npm 包或本提案指定的 staging 包产物
-- [ ] 重新构建并部署官网 / 文档站，使 verify 预执行模型、配置 schema 和 Skill 文档对外可见
-- [ ] 确认回滚点可用：CLI 可回退到上一 npm 版本，官网可回退到上一 Cloudflare Pages 成功部署
+- [x] 按部署方案发布 CLI/npm 包或本提案指定的 staging 包产物
+- [x] 重新构建并部署官网 / 文档站，使 verify 预执行模型、配置 schema 和 Skill 文档对外可见
+- [x] 确认回滚点可用：CLI 可回退到上一 npm 版本，官网可回退到上一 Cloudflare Pages 成功部署

@@ -1,17 +1,52 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.9.29",
-  "updatedAt": "2026-05-25T15:06:42.824Z",
-  "generatedAt": "2026-05-25T15:06:42.824Z",
-  "versionCount": 64,
+  "latestVersion": "0.9.30",
+  "updatedAt": "2026-05-27T10:42:03.902Z",
+  "generatedAt": "2026-05-27T10:42:03.902Z",
+  "versionCount": 65,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.9.29"
+    "latest": "0.9.30"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.9.30",
+      "publishedAt": "2026-05-27T10:42:03.506Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.9.30",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.30",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.30.tgz",
+      "gitHead": null,
+      "size": 531463,
+      "sizeLabel": "519 KB",
+      "unpackedSize": 2179385,
+      "unpackedSizeLabel": "2.1 MB",
+      "fileCount": 235,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "verify 预执行模型 — openlogos verify 现在支持单阶段 verify.pre_run_command 兼容路径，以及 verify.regression_command + verify.incremental_command 两阶段预跑；阶段结果按 last-write-wins 合并，避免局部测试 JSONL 覆盖导致验收误判。",
+        "verify JSON 预跑状态 — openlogos verify --format json 新增 data.pre_run，输出预跑模式、命令状态、结果路径、诊断和修复建议，方便 RunLogos 等客户端直接展示。",
+        "init / adopt / sync 自动补齐 verify 预跑配置 — 常见 Node/Vitest、Jest、pytest、Go、Cargo 项目会自动写入全量测试命令；无法推断时输出明确 TODO 诊断。"
+      ],
+      "fixSummary": [
+        "覆盖不足诊断更明确 — 当项目未配置预跑命令且 JSONL 覆盖不完整时，CLI 会提示可能只运行了局部测试，并建议配置 verify.pre_run_command 或两阶段命令。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.9.30: English value summary entries are missing; English fix summary entries are missing."
+    },
     {
       "version": "0.9.29",
       "publishedAt": "2026-05-25T15:06:42.080Z",
@@ -31,9 +66,7 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "内置 ui-ux-pro-max Skill（vendor 自上游） — Phase 2 处理 GUI 类产品（Web / Mobile / Desktop，含 Electron / Tauri / SwiftUI / Jetpack Compose / Qt 等）设计时，product-designer 自动调用 ui-ux-pro-max 拿到风格 / 配色 / 字体 / 组件库 / 反模式推荐（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。上游来自 ui-ux-pro-max-skill（MIT），约 668 KB。",
         "product-designer 扩展桌面应用支持 — 产品类型表新增「桌面应用」行；Step 2「信息架构」补充窗口/菜单/IPC/文件系统维度；Step 5 拆分为 Step 5a（GUI 类产品调用 ui-ux-pro-max）+ Step 5b（按产品类型生成原型）。",
