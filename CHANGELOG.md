@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-28
+
+### Added
+
+- **verify / smoke 沙箱执行标准化** — `openlogos verify` 与 `openlogos smoke` 统一支持 `sandbox_mode`、`sandbox_root` 和 `sandbox_deny_workspace_write`，并在 JSON 输出中暴露 `sandbox` 诊断。
+- **CLI 沙箱执行器** — 预跑命令与 smoke 命令可按配置进入隔离执行，`auto` 模式可降级，`always` 模式强制隔离。
+- **官网沙箱说明同步** — `openlogos.ai` 的 `verify` 文档补充 `--format json` 与沙箱配置说明，便于用户理解门禁输出。
+
+### Fixed
+
+- **防止测试命令误写工作区** — sandbox 执行链路会回收结果文件并限制工作区写入，降低 verify / smoke 误改仓库的风险。
+
 ## [0.9.31] - 2026-05-27
 
 ### Changed
