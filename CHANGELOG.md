@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-05-28
+
+### Fixed
+
+- **修复 tag 发布 workflow 配置错误** — `publish.yml` 不再在 `if` 条件中直接引用 `secrets`，改为显式凭据检查步骤，避免出现 “workflow file issue / jobs 为空” 导致 npm 发布链路中断。
+
 ## [0.10.0] - 2026-05-28
 
 ### Added
