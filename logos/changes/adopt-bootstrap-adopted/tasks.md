@@ -28,6 +28,6 @@
 - [x] 更新 OpenLogos reporter 覆盖的测试用例 ID，确保新增/修改 UT/ST 与 `logos/resources/test/*.md` 对齐
 
 ## [deploy] 部署任务
-- [ ] 发布包含本变更的新版本 `@miniidealab/openlogos` npm 包
-- [ ] 在干净存量项目目录执行 `openlogos adopt --locale zh --ai-tool all`，确认生成完整 `logos/`、AI tools 资产、`AGENTS.md` / `CLAUDE.md`，且 `logos-project.yaml` 写入 `bootstrap: adopted`
-- [ ] 在包含历史 `bootstrap: skipped` 的测试项目执行 `openlogos status --format json` 与 `openlogos next`，确认兼容补文档引导不回退
+- [x] 发布包含本变更的新版本 `@miniidealab/openlogos` npm 包
+- [x] 在干净存量项目目录执行 `openlogos adopt --locale zh --ai-tool all`，确认生成完整 `logos/`、AI tools 资产、`AGENTS.md` / `CLAUDE.md`，且 `logos-project.yaml` 写入 `bootstrap: adopted`
+- [x] 在包含历史 `bootstrap: skipped` 的测试项目执行 `openlogos status --format json` 与 `openlogos next`，确认兼容补文档引导不回退

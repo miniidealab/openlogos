@@ -1,62 +1,51 @@
 # 部署报告
 
-> 生成时间：2026-05-27 18:48:41 CST  
-> 提案：`verify-pre-run-regression-and-incremental-tests`  
-> 目标环境：生产 / npm registry + Cloudflare Pages  
+> 生成时间：2026-05-27 23:28:30 CST  
+> 提案：`adopt-bootstrap-adopted`  
+> 目标环境：npm registry
 > 状态：SUCCESS
 
 ## 摘要
 
-- CLI/npm 版本：`@miniidealab/openlogos@0.9.30`
-- npm latest：`0.9.30`
-- Git tag：`v0.9.30`
-- GitHub Release：`https://github.com/miniidealab/openlogos/releases/tag/v0.9.30`
-- GitHub Actions 发布 run：`https://github.com/miniidealab/openlogos/actions/runs/26506292434`
-- 官网部署地址：`https://d9e63d0c.openlogos.pages.dev`
-- 生产域名检查：`https://openlogos.ai/releases/`
-- 首页检查：`https://openlogos.ai/`
-- 部署命令：`cd website && npm run deploy`
-- 构建命令：`cd website && npm run build`
-- 发布数据生成：`cd website && npm run generate:releases`
+- CLI/npm 版本：`@miniidealab/openlogos@0.9.31`
+- npm latest：`0.9.31`
+- Git tag：`v0.9.31`
+- GitHub Release：`https://github.com/miniidealab/openlogos/releases/tag/v0.9.31`
+- GitHub Actions 发布 run：`https://github.com/miniidealab/openlogos/actions/runs/26520481571`
+- npm 发布结果：`+ @miniidealab/openlogos@0.9.31`
+- 部署命令：`git push origin refs/tags/v0.9.31`
+- 发布前命令：`cd cli && npm test`、`cd cli && npm pack --cache /private/tmp/openlogos-npm-cache`
 - 数据迁移：无
-- npm 包发布：通过 `v0.9.30` tag 触发 GitHub Actions 自动发布。
 
 ## 执行步骤
 
-1. CLI 发布前检查：`cd cli && npm run build`
-2. CLI 发布前测试：`cd cli && npm test`
-3. CLI 打包验证：`cd cli && npm pack --cache /private/tmp/openlogos-npm-cache`
-4. 推送 `master` 与 `v0.9.30` tag，由 GitHub Actions 发布 npm 包并创建 GitHub Release
-5. 生成官网发布数据：`cd website && npm run generate:releases`
-6. 构建官网：`cd website && npm run build`
-7. 发布到 Cloudflare Pages：`cd website && npm run deploy`
-8. 检查 Cloudflare Pages 最新生产部署
-9. 检查生产域名 `/` 与 `/releases/`
+1. 更新 `cli/package.json`、`plugin/.claude-plugin/plugin.json`、`CHANGELOG.md` 至 `0.9.31`
+2. 执行 `cd cli && npm test`
+3. 执行 `cd cli && npm pack --cache /private/tmp/openlogos-npm-cache`
+4. 提交发布准备变更
+5. 创建并推送 `v0.9.31` tag
+6. 等待 GitHub Actions 自动执行 npm publish 并创建 GitHub Release
+7. 在干净存量项目验证 `openlogos adopt --locale zh --ai-tool all`
+8. 在历史 `bootstrap: skipped` 项目验证 `openlogos status --format json` 与 `openlogos next`
 
 ## 结果
 
 - CLI 构建：PASS
 - CLI 测试：PASS
 - CLI 打包验证：PASS
-- npm latest：PASS，`npm view @miniidealab/openlogos version` 返回 `0.9.30`
-- GitHub Release：PASS，`v0.9.30` 已发布，非 draft / prerelease
-- GitHub Actions npm 发布：PASS，run `26506292434` 结论为 `success`
-- 官网构建：PASS，发布数据从 npm registry 生成 65 个版本
-- Cloudflare Pages 上传：PASS（上传 2 个文件，190 个文件复用）
-- Cloudflare Pages 部署：PASS，最新生产部署 ID `d9e63d0c-95a5-4963-926a-2149c20af158`
-- 部署预览 `/releases/`：PASS，HTTP 200
-- 生产域名 `/`：PASS，HTTP 200
-- 生产域名 `/releases/`：PASS，HTTP 200
+- GitHub Actions npm 发布：PASS，run `26520481571` 结论为 `success`
+- npm latest：PASS，`npm view @miniidealab/openlogos version` 返回 `0.9.31`
+- GitHub Release：PASS，`v0.9.31` 已发布，非 draft / prerelease
+- 干净存量项目 adopt：PASS，生成完整 `logos/`、`AGENTS.md`、`CLAUDE.md`、多工具资产，且 `bootstrap: adopted`
+- 历史 skipped 兼容：PASS，`status --format json` 与 `next --format json` 均按 adopted 语义工作
 
 ## 回滚点
 
-- CLI/npm：上一 npm 版本为 `0.9.29`，如 `0.9.30` 出现兼容问题，按部署方案通过发布补丁版本回滚客户端推荐版本。
-- GitHub Release：当前发布点为 `v0.9.30`，可追溯到提交 `55348ed`。
-- 官网：Cloudflare Pages 上一成功生产部署为 `64392121-4e79-4e5f-8dda-1a34399b89b6`，可回滚到 `https://64392121.openlogos.pages.dev`。
-- 旧项目降级路径：仍可保留 `verify.pre_run_command` 单阶段配置作为两阶段模型兼容问题的临时降级方案。
+- npm：上一稳定版本为 `0.9.30`，可通过发布补丁版本回滚客户端推荐版本。
+- GitHub Release：当前发布点为 `v0.9.31`，对应提交 `fdabdf4f42964a2d79182eb6c3a76c15b01dab7c`。
+- 发布回退：可通过推送后续补丁 tag 覆盖最新发布入口。
 
 ## 风险
 
-- 构建过程中仍存在既有 Astro `/404` 路由冲突 warning，但未影响本次部署结果。
-- GitHub Pages `Deploy Website` workflow 仍使用 Node `20.20.2`，与 Astro 6 的 Node `>=22.12.0` 要求不匹配；本次正式官网部署按部署方案走 Cloudflare Pages，未受该 workflow 影响。
-- Wrangler 提示当前 Git 工作区存在未提交变更；与本提案无关的 `logos/changes/homepage-release-summary-relocation/SPEC_MERGED` 删除状态未纳入本次部署。
+- 本地 `npm whoami` 在当前环境返回 `401 Unauthorized`，但 GitHub Actions 发布链路已成功完成。
+- 本地 `npx @miniidealab/openlogos@0.9.31` 受网络限制会回退/失败，因此采用仓库内 `cli/dist/index.js` 进行行为验证。

@@ -1,11 +1,4 @@
-# core: 部署后冒烟测试用例
-
-## 一、冒烟测试范围
-| 环境 | 覆盖范围 | 说明 |
-|------|----------|------|
-| staging | CLI、插件模板、官网构建、官网发布动态、官网 release note 双语摘要、提案级部署门禁、部署进度摘要面板、CLI JSON 容错输出、adopt 命令、verify 预执行模型 | 发布前最小检查；仅在提案级声明需要部署 / smoke 时执行 |
-
-## 二、冒烟测试用例
+## MODIFIED — 二、冒烟测试用例
 | ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
 |----|------|------|----------|----------|------|----------|
 | SMOKE-core-01 | CLI 包可安装并输出版本 | 部署方案 | staging | 包已发布或本地 pack 完成 | `openlogos --version` | 返回版本号 |
@@ -23,16 +16,3 @@
 | SMOKE-core-13 | verify 两阶段预跑与合并结果可用 | verify 预执行模型 | staging | 安装含本变更的 CLI，构造包含 regression / incremental 配置的项目 | 执行 `openlogos verify --format json` | 返回 `pre_run.mode=two_phase`，阶段命令状态和最终合并结果可供客户端展示 |
 | SMOKE-core-14 | 历史 skipped 项目在 next/status 中保持接入模式 | adopt 兼容性 | staging | 安装含本变更的 CLI，准备 bootstrap=skipped 的历史项目 | 执行 `openlogos status` 与 `openlogos next` | 输出与 bootstrap=adopted 一致的接入模式引导与阶段显示 |
 | SMOKE-core-15 | tag 发版后官网 release 与 tag 版本一致 | 官网发布动态同步门禁 | staging | 已完成一次 `vX.Y.Z` tag 发版并触发发布工作流 | 发布完成后访问 `/releases` 并检查 latest 版本 | 页面 latest 版本等于本次 tag 去前缀后的版本号；若不一致则判定发布失败 |
-
-## 三、覆盖度校验
-- [x] CLI 健康检查：已覆盖
-- [x] 插件模板：已覆盖
-- [x] 官网构建：已覆盖
-- [x] 官网发布动态：已覆盖
-- [x] 官网 release note 双语摘要：已覆盖
-- [x] 提案级部署门禁：已覆盖
-- [x] 部署进度摘要：已覆盖
-- [x] CLI JSON 容错输出：已覆盖
-- [x] 发布前最小链路：已覆盖
-- [x] adopt 命令：已覆盖
-- [x] verify 预执行模型：已覆盖

@@ -1,0 +1,22 @@
+## MODIFIED — 四、发布日志页面设计
+### 4.2 `/releases` 发布日志页
+- 页面目标：不是“最近动态页”，而是完整的 OpenLogos npm 发布日志页，并让用户在页内快速理解每个版本解决了什么问题、带来什么价值。
+- 文案语言：官网 UI 继续保持英文；版本摘要改为英文优先、中文原文次级展示。中文原文只作为可折叠的 secondary content，不作为主展示文案。
+- 数据边界：英文摘要必须来自仓库内维护的结构化 bilingual summary table 或同等静态数据，不允许在构建或运行时调用外部翻译服务，也不允许由 AI 临时生成虚构说明。
+- 首屏信息：页面标题、latest 版本号、latest 发布时间、npm 包链接、GitHub Release 链接、安装命令、版本总数、registry 最后更新时间。
+- 主体：按发布时间倒序展示全部版本时间线，不只展示最近版本。
+- 每个版本项至少展示：版本号、发布时间、npm 版本链接、GitHub Release 链接、是否为 latest / old dist-tag、包 tarball 链接、gitHead、包大小、解压后大小、fileCount、Node.js engine、直接依赖、许可证。
+- 每个版本项新增双语摘要：
+  - 英文主摘要：`valueSummaryEn[]` / `fixSummaryEn[]`
+  - 中文原文：`valueSummary[]` / `fixSummary[]`
+  - 展示策略：英文 bullet 作为主展示；中文原文以 `details` / 次级块方式保留，便于对照与追溯。
+- 回退策略：
+  - 当某版本缺少英文摘要时，显示固定英文回退文案，并保留中文原文和 GitHub Release / CHANGELOG 外链。
+  - `summarySource` 与 `summaryFallbackReason` 继续用于标注结构化摘要是否可用，以及为何进入回退。
+- 分组策略：版本按 minor 系列聚合，例如 `0.9.x`、`0.8.x`、`0.7.x`，每组内按发布时间倒序。每个组显示版本数量和时间范围。
+- 筛选与导航：桌面端左侧提供 sticky minor 系列索引；移动端改为横向滚动的系列筛选条。
+- 数据说明：页面应明确“发布时间和 npm 元数据来自 npm registry；英文版本摘要来自仓库内维护的结构化 bilingual 数据；中文原文来自仓库 CHANGELOG（结构化提取）”；详细变更说明跳转 GitHub Release / CHANGELOG。
+- 视觉风格：按 `ui-ux-pro-max` 建议采用 Knowledge Base / Developer Tool 风格：深色、最小主义、清晰层级、开发者等宽字体、少量绿色与蓝色强调，不使用营销式 hero 或装饰性图形。
+- 响应式：桌面端左侧索引 + 右侧发布日志；移动端 latest 概览在上、系列筛选在下、时间线单列展示，文本不得溢出卡片。
+- 可访问性：链接不能只依赖颜色区分；hover / focus 必须有可见状态；版本卡片固定边界，hover 不改变布局尺寸。
+- **发布一致性门禁**：由 tag 触发的正式发版中，`/releases` 页面必须在发布完成后展示本次 tag 对应版本；若页面 latest 版本仍落后于 tag 版本，则发布流程判定失败并阻断“发布完成”结论。
