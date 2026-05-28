@@ -7,9 +7,9 @@
 - [x] 产出 delta 文件到 `deltas/test/smoke/core-smoke-test-cases.md` — 增加“tag 发版后官网 release 同步成功”冒烟用例
 
 ## [code] 代码实现
-- [ ] 更新 `.github/workflows/publish.yml`，在 tag 发版后串联官网 release 数据生成与站点部署流程（含失败中断与日志）
-- [ ] 更新 `website/scripts/generate-releases.mjs` 或相关发布脚本，确保发布数据刷新失败时给出可诊断输出并支持重试
-- [ ] 补充/更新 CI 或脚本测试，覆盖 release 同步链路的关键分支（成功、数据源失败、回退）
+- [x] 更新 `.github/workflows/publish.yml`，在 tag 发版后串联官网 release 数据生成与站点部署流程（含失败中断与日志）
+- [x] 更新 `website/scripts/generate-releases.mjs` 或相关发布脚本，确保发布数据刷新失败时给出可诊断输出并支持重试
+- [x] 补充/更新 CI 或脚本测试，覆盖 release 同步链路的关键分支（成功、数据源失败、回退）
 
 ## [deploy] 部署任务
 - [ ] 按更新后的发布链路执行一次 staging 发版演练，确认 npm / GitHub Release / 官网 `/releases` 三者版本一致

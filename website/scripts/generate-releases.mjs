@@ -9,6 +9,7 @@ const CHANGELOG_PATH = resolve('../CHANGELOG.md');
 const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${PACKAGE_NAME}`;
 const GITHUB_RELEASE_BASE = 'https://github.com/miniidealab/openlogos/releases/tag';
 const CHANGELOG_URL = 'https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md';
+const DEFAULT_TIMEOUT_MS = 15000;
 
 function readCache() {
   if (!existsSync(OUTPUT_PATH)) return null;
@@ -37,9 +38,21 @@ function compareVersionsDesc(a, b) {
   return 0;
 }
 
-async function getTarballSize(tarballUrl) {
+function withTimeout(signal, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const composite = signal ? AbortSignal.any([signal, timeoutController.signal]) : timeoutController.signal;
+  return {
+    signal: composite,
+    dispose: () => clearTimeout(timer),
+  };
+}
+
+async function getTarballSize(tarballUrl, signal) {
+  if (!tarballUrl) return null;
+  const timeout = withTimeout(signal, DEFAULT_TIMEOUT_MS);
   try {
-    const response = await fetch(tarballUrl, { method: 'GET' });
+    const response = await fetch(tarballUrl, { method: 'GET', signal: timeout.signal });
     if (!response.ok) return null;
     const contentLength = response.headers.get('content-length');
     if (!contentLength) return null;
@@ -50,6 +63,8 @@ async function getTarballSize(tarballUrl) {
     return Number.isFinite(size) ? size : null;
   } catch {
     return null;
+  } finally {
+    timeout.dispose();
   }
 }
 
@@ -118,12 +133,19 @@ function readChangelog() {
   }
 }
 
-async function main() {
+export async function generateReleaseData(options = {}) {
+  const {
+    strict = false,
+    signal,
+    logger = console,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  } = options;
+
+  const timeout = withTimeout(signal, timeoutMs);
   try {
     const response = await fetch(REGISTRY_URL, {
-      headers: {
-        Accept: 'application/json',
-      },
+      headers: { Accept: 'application/json' },
+      signal: timeout.signal,
     });
     if (!response.ok) {
       throw new Error(`npm registry returned ${response.status}`);
@@ -132,7 +154,9 @@ async function main() {
     const changelog = readChangelog();
     const data = buildReleaseData(packument);
     data.versions = enrichReleaseVersions(data.versions, changelog ?? '');
-    const sizePairs = await Promise.all(data.versions.map(async (item) => [item.version, await getTarballSize(item.tarballUrl)]));
+    const sizePairs = await Promise.all(
+      data.versions.map(async (item) => [item.version, await getTarballSize(item.tarballUrl, timeout.signal)]),
+    );
     const sizeMap = new Map(sizePairs);
     for (const item of data.versions) {
       item.size = sizeMap.get(item.version) ?? null;
@@ -140,12 +164,21 @@ async function main() {
     }
     mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
     writeFileSync(OUTPUT_PATH, `${JSON.stringify(data, null, 2)}\n`);
-    console.log(`Generated ${OUTPUT_PATH} from npm registry (${data.versionCount} versions).`);
+    logger.log(`Generated ${OUTPUT_PATH} from npm registry (${data.versionCount} versions).`);
+    return {
+      ok: true,
+      fromCache: false,
+      strict,
+      data,
+    };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (strict) {
+      throw new Error(`Strict release data generation failed: ${message}`);
+    }
     const cache = readCache();
     if (!cache) {
-      console.error(`Failed to generate release data and no cache exists: ${error instanceof Error ? error.message : String(error)}`);
-      process.exit(1);
+      throw new Error(`Failed to generate release data and no cache exists: ${message}`);
     }
     const changelog = readChangelog();
     if (Array.isArray(cache.versions)) {
@@ -153,9 +186,42 @@ async function main() {
       mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
       writeFileSync(OUTPUT_PATH, `${JSON.stringify(cache, null, 2)}\n`);
     }
-    console.warn(`Failed to refresh release data; using existing cache at ${OUTPUT_PATH}.`);
-    console.warn(error instanceof Error ? error.message : String(error));
+    logger.warn(`Failed to refresh release data; using existing cache at ${OUTPUT_PATH}.`);
+    logger.warn(message);
+    return {
+      ok: true,
+      fromCache: true,
+      strict,
+      data: cache,
+      warning: message,
+    };
+  } finally {
+    timeout.dispose();
   }
 }
 
-await main();
+function parseCliArgs(argv) {
+  return {
+    strict: argv.includes('--strict'),
+  };
+}
+
+export async function main(argv = process.argv.slice(2), logger = console) {
+  const args = parseCliArgs(argv);
+  const result = await generateReleaseData({
+    strict: args.strict,
+    logger,
+  });
+  if (result.fromCache) {
+    logger.log('Release data generated from existing cache.');
+  }
+}
+
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : null;
+const selfPath = resolve(new URL(import.meta.url).pathname);
+if (invokedPath === selfPath) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

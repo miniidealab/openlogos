@@ -7,7 +7,7 @@ on:
 
 jobs:
   publish:
-    name: Build & Publish
+    name: Build, Publish, and Sync Website Releases
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -15,6 +15,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      actions: read
 
     steps:
       - uses: actions/checkout@v4
@@ -91,3 +92,55 @@ jobs:
             --notes-file release-notes.md \
             --latest \
             cli/miniidealab-openlogos-*.tgz
+
+      - name: Prepare website environment
+        working-directory: website
+        run: npm ci
+
+      - name: Generate release data (strict)
+        working-directory: website
+        run: npm run generate:releases -- --strict
+
+      - name: Build website (strict release data)
+        working-directory: website
+        run: npm run build
+
+      - name: Verify website latest version matches tag
+        working-directory: .
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const releaseVersion = (process.env.RELEASE_VERSION || '').replace(/^v/, '');
+          if (!releaseVersion) {
+            throw new Error('无法从 github.ref_name 解析 tag 版本');
+          }
+          const releaseDataPath = path.join('website', 'src', 'data', 'releases.json');
+          if (!fs.existsSync(releaseDataPath)) {
+            throw new Error(`缺少发布数据文件：${releaseDataPath}`);
+          }
+          const releaseData = JSON.parse(fs.readFileSync(releaseDataPath, 'utf8'));
+          if (releaseData.latestVersion !== releaseVersion) {
+            throw new Error(`官网发布数据 latestVersion=${releaseData.latestVersion} 与 tag=${releaseVersion} 不一致`);
+          }
+          console.log(`Website latestVersion matches tag: ${releaseVersion}`);
+          NODE
+
+      - name: Deploy website to Cloudflare Pages
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler pages deploy dist --project-name openlogos
+
+      - name: Fail when Cloudflare deploy secrets are missing
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN == '' || secrets.CLOUDFLARE_ACCOUNT_ID == '' }}
+        working-directory: .
+        run: |
+          echo "缺少 Cloudflare Pages 发布凭据（CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID）"
+          echo "为满足 tag 发版后官网同步门禁，本次发布失败。"
+          exit 1
