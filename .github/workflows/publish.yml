@@ -129,18 +129,22 @@ jobs:
           console.log(`Website latestVersion matches tag: ${releaseVersion}`);
           NODE
 
+      - name: Verify Cloudflare deploy secrets
+        id: verify_cf_secrets
+        working-directory: .
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID}" ]; then
+            echo "缺少 Cloudflare Pages 发布凭据（CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID）"
+            echo "为满足 tag 发版后官网同步门禁，本次发布失败。"
+            exit 1
+          fi
+
       - name: Deploy website to Cloudflare Pages
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
         working-directory: website
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler pages deploy dist --project-name openlogos
-
-      - name: Fail when Cloudflare deploy secrets are missing
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN == '' || secrets.CLOUDFLARE_ACCOUNT_ID == '' }}
-        working-directory: .
-        run: |
-          echo "缺少 Cloudflare Pages 发布凭据（CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID）"
-          echo "为满足 tag 发版后官网同步门禁，本次发布失败。"
-          exit 1
