@@ -79,6 +79,22 @@
           "default": "last-write-wins",
           "description": "两阶段结果合并策略。同一用例 ID 多次出现时，最后一次结果生效"
         },
+        "sandbox_mode": {
+          "type": "string",
+          "enum": ["off", "auto", "always"],
+          "default": "off",
+          "description": "verify 沙箱执行模式；auto 表示默认隔离，环境不支持时可降级并告警，always 表示必须隔离"
+        },
+        "sandbox_root": {
+          "type": "string",
+          "default": "/private/tmp",
+          "description": "verify 沙箱工作根目录。沙箱执行器应在此目录内运行命令"
+        },
+        "sandbox_deny_workspace_write": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否禁止 verify 预跑命令写入仓库工作区；true 时必须阻断工作区写入"
+        },
         "test_command": {
           "type": "string",
           "description": "旧字段，保留兼容。建议使用 pre_run_command"
@@ -102,6 +118,22 @@
           "type": "string",
           "default": "logos/resources/verify/smoke-report.md",
           "description": "冒烟测试报告输出路径（相对项目根目录）"
+        },
+        "sandbox_mode": {
+          "type": "string",
+          "enum": ["off", "auto", "always"],
+          "default": "off",
+          "description": "smoke 沙箱执行模式；auto 表示默认隔离，环境不支持时可降级并告警，always 表示必须隔离"
+        },
+        "sandbox_root": {
+          "type": "string",
+          "default": "/private/tmp",
+          "description": "smoke 沙箱工作根目录。沙箱执行器应在此目录内运行命令"
+        },
+        "sandbox_deny_workspace_write": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否禁止 smoke 命令写入仓库工作区；true 时必须阻断工作区写入"
         }
       }
     },
@@ -205,12 +237,18 @@
       },
       "verify": {
         "result_path": "logos/resources/verify/test-results.jsonl",
-        "pre_run_command": "npm test"
+        "pre_run_command": "npm test",
+        "sandbox_mode": "auto",
+        "sandbox_root": "/private/tmp",
+        "sandbox_deny_workspace_write": true
       },
       "smoke": {
         "command": "npm run smoke",
         "result_path": "logos/resources/verify/smoke-results.jsonl",
-        "report_path": "logos/resources/verify/smoke-report.md"
+        "report_path": "logos/resources/verify/smoke-report.md",
+        "sandbox_mode": "auto",
+        "sandbox_root": "/private/tmp",
+        "sandbox_deny_workspace_write": true
       }
     },
     {
@@ -222,7 +260,10 @@
         "incremental_command": "npm run test:changed",
         "regression_result_path": "logos/resources/verify/test-results.regression.jsonl",
         "incremental_result_path": "logos/resources/verify/test-results.incremental.jsonl",
-        "merge_results": "last-write-wins"
+        "merge_results": "last-write-wins",
+        "sandbox_mode": "auto",
+        "sandbox_root": "/private/tmp",
+        "sandbox_deny_workspace_write": true
       }
     }
   ]

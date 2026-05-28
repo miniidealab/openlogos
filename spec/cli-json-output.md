@@ -361,6 +361,15 @@ openlogos verify --format json  # JSON 格式
     "diagnostics": [],
     "suggestions": []
   },
+  "sandbox": {
+    "mode": "auto",               // "off" | "auto" | "always"
+    "root": "/private/tmp",
+    "isolated": true,
+    "workspace_write_denied": true,
+    "status": "pass",             // "pass" | "warn" | "fail" | "skipped"
+    "diagnostics": [],
+    "suggestions": []
+  },
   "report_path": "logos/resources/verify/acceptance-report.md"
 }
 ```
@@ -403,6 +412,13 @@ openlogos verify --format json  # JSON 格式
 | `pre_run.merge_strategy` | string \| null | 否 | 两阶段合并策略，当前为 `last-write-wins` |
 | `pre_run.diagnostics` | string[] | 是 | 可展示给用户的问题诊断 |
 | `pre_run.suggestions` | string[] | 是 | 可展示给用户的修复建议 |
+| `sandbox.mode` | string | 是 | verify 沙箱模式：`"off"`、`"auto"` 或 `"always"` |
+| `sandbox.root` | string | 是 | 沙箱根目录 |
+| `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
+| `sandbox.workspace_write_denied` | boolean | 是 | 是否拒绝写入仓库工作区 |
+| `sandbox.status` | string | 是 | 沙箱执行结果 |
+| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息 |
+| `sandbox.suggestions` | string[] | 是 | 沙箱修复建议 |
 | `report_path` | string | 是 | 生成的验收报告路径 |
 
 ### 4.4 gate.reason 取值
@@ -420,6 +436,9 @@ openlogos verify --format json  # JSON 格式
 - 旧项目只配置 `verify.pre_run_command` 时，`pre_run.mode="pre_run_command"`。
 - 配置 `verify.regression_command` 或 `verify.incremental_command` 时，`pre_run.mode="two_phase"`。
 - 没有任何预跑命令时，`pre_run.mode="none"`。
+- `sandbox_mode="off"` 时，`sandbox.status="skipped"`，并保持历史兼容行为。
+- `sandbox_mode="auto"` 时，环境支持隔离则 `sandbox.status="pass"`，不支持则 `sandbox.status="warn"` 并给出降级原因。
+- `sandbox_mode="always"` 时，若无法隔离则必须失败。
 - 覆盖不足且 `pre_run.mode="none"` 时，必须输出局部测试诊断和配置建议。
 
 ---
@@ -459,6 +478,15 @@ openlogos smoke --env production --format json
   "failed_cases": [],
   "uncovered_cases": [],
   "skipped_cases": [],
+  "sandbox": {
+    "mode": "auto",               // "off" | "auto" | "always"
+    "root": "/private/tmp",
+    "isolated": true,
+    "workspace_write_denied": true,
+    "status": "pass",             // "pass" | "warn" | "fail" | "skipped"
+    "diagnostics": [],
+    "suggestions": []
+  },
   "report_path": "logos/resources/verify/smoke-report.md",
   "result_path": "logos/resources/verify/smoke-results.jsonl"
 }
@@ -475,10 +503,23 @@ openlogos smoke --env production --format json
 | `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` |
 | `failed_cases` | array | 是 | 失败 smoke 用例 |
 | `uncovered_cases` | array | 是 | 未覆盖 smoke 用例 ID |
+| `sandbox.mode` | string | 是 | smoke 沙箱模式：`"off"`、`"auto"` 或 `"always"` |
+| `sandbox.root` | string | 是 | 沙箱根目录 |
+| `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
+| `sandbox.workspace_write_denied` | boolean | 是 | 是否拒绝写入仓库工作区 |
+| `sandbox.status` | string | 是 | 沙箱执行结果 |
+| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息 |
+| `sandbox.suggestions` | string[] | 是 | 沙箱修复建议 |
 | `report_path` | string | 是 | smoke 报告路径 |
 | `result_path` | string | 是 | smoke 结果路径 |
 
 `openlogos smoke` 与 `openlogos verify` 共享 JSONL 结果思想，但读取的是 `smoke.result_path`，默认 `logos/resources/verify/smoke-results.jsonl`。冒烟测试用例建议存放在 `logos/resources/test/smoke/`。
+
+### 5.4 兼容规则
+
+- `smoke.command` 仍按既有语义执行。
+- `sandbox_mode` / `sandbox_root` / `sandbox_deny_workspace_write` 仅影响执行环境，不改变 smoke 门禁定义。
+- 当沙箱失败时，`smoke` 仍应写入结果报告，但 JSON 输出必须明确失败原因。
 
 ---
 

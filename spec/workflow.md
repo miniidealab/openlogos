@@ -294,6 +294,62 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测
 - Step 6 不承担“补写测试代码”的职责；其职责是对已完成的 Step 5 产物做自动化判定
 - 项目应配置 verify 预跑命令；若无法推断，必须在交付说明中明确风险与手动配置方式
 
+**verify / smoke 沙箱执行标准**：
+
+`openlogos verify` 与 `openlogos smoke` 的命令执行属于运行时安全边界，不能只依赖 prompt 约束。CLI 必须支持在 `logos.config.json` 中配置沙箱策略，并在执行前置测试命令或 `smoke.command` 时按策略处理。
+
+配置入口：
+
+```json
+{
+  "verify": {
+    "sandbox_mode": "auto",
+    "sandbox_root": "/private/tmp",
+    "sandbox_deny_workspace_write": true
+  },
+  "smoke": {
+    "sandbox_mode": "auto",
+    "sandbox_root": "/private/tmp",
+    "sandbox_deny_workspace_write": true
+  }
+}
+```
+
+沙箱模式：
+
+| 模式 | 行为 |
+|------|------|
+| `off` | 关闭沙箱，保持历史行为 |
+| `auto` | 优先使用沙箱；环境不支持时降级并输出告警 |
+| `always` | 必须使用沙箱；无法隔离或检测到工作区写入时直接失败 |
+
+verify 顺序：
+1. 读取 `verify.sandbox_*` 与预跑命令配置。
+2. 若配置 `regression_command` / `incremental_command`，按两阶段模型执行。
+3. 若只配置 `pre_run_command`，按单阶段模型执行。
+4. 若 `sandbox_mode != "off"`，所有预跑命令必须通过沙箱执行器运行。
+5. 执行结束后，仅允许回收配置声明的结果文件到 `verify.result_path`、`verify.regression_result_path` 或 `verify.incremental_result_path`。
+6. 读取结果并计算 Gate 3.5。
+7. 文本与 JSON 输出必须暴露沙箱模式、是否隔离、失败原因和修复建议。
+
+smoke 顺序：
+1. 完成提案级部署决策、`DEPLOY_DONE` 与 smoke 门禁检查。
+2. 读取 `smoke.sandbox_*` 与 `smoke.command`。
+3. 若配置 `smoke.command` 且 `sandbox_mode != "off"`，通过沙箱执行器运行。
+4. 执行结束后，仅允许回收 `smoke.result_path` 指向的结果文件。
+5. 读取 smoke 用例与结果并计算 Gate 3.8。
+6. 文本与 JSON 输出必须暴露沙箱模式、是否隔离、失败原因和修复建议。
+
+工作区写入保护：
+- 当 `sandbox_deny_workspace_write=true` 时，沙箱执行器必须阻止预跑命令或 smoke 命令写入仓库根目录中的非白名单路径。
+- 白名单仅包含配置声明的结果文件、报告文件和 CLI 显式生成的门禁标记。
+- `always` 模式下，一旦检测到非白名单写入，命令必须失败。
+- `auto` 模式下，无法启用写入保护时必须输出告警，并在 JSON `sandbox.status` 中标记为 `warn`。
+
+兼容性：
+- 未配置 `sandbox_mode` 的历史项目等价于 `off`，不得破坏既有 verify / smoke 行为。
+- `init`、`adopt`、`sync` 可以为新项目补齐推荐配置，但不得覆盖用户已有沙箱配置。
+
 **验收流程**：
 
 1. AI 在 Step 5 生成测试代码时，内嵌 OpenLogos reporter（见 [test-results.md](./test-results.md)）

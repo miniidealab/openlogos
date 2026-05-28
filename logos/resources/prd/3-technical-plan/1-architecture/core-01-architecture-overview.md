@@ -26,6 +26,7 @@ OpenLogos 由 CLI、规范源码、Skills、插件模板、静态文档站和示
 - 阶段判断必须确定性。
 - 索引同步必须幂等。
 - 变更门禁必须可追溯。
+- 测试命令执行必须可选沙箱化，且沙箱结果必须可诊断、可降级、可强制失败。
 
 ## 六、项目索引目标
 `logos/logos-project.yaml` 应明确：
@@ -99,3 +100,26 @@ verify 预执行由 CLI 统一编排，RunLogos 等客户端只调用 `openlogos
 | sync 预跑配置补齐 | `cli/src/commands/sync.ts` | `cli/test/s08-sync.test.ts` |
 | adopt 预跑配置推断 | `cli/src/commands/adopt.ts` | `cli/test/s20-adopt.test.ts` |
 | verify JSON 预跑状态 | `cli/src/commands/verify.ts`、`cli/src/lib/json-output.ts` | `cli/test/s16-json-output.test.ts` |
+
+## 十、verify / smoke 沙箱执行架构
+OpenLogos CLI 需要在运行时层面支持测试命令隔离，避免外部测试脚本误写工作区。
+
+### 配置优先级
+1. `logos.config.json.verify.sandbox_mode` / `logos.config.json.smoke.sandbox_mode`
+2. `sandbox_root`
+3. `sandbox_deny_workspace_write`
+4. 既有预跑 / smoke 命令配置
+
+### 执行边界
+- `verify` 与 `smoke` 的沙箱执行是 CLI 责任，不由外部客户端复制。
+- 沙箱执行器只能回收配置声明的结果文件和报告文件。
+- `always` 模式下，任何非白名单写入都应视为安全违规并导致失败。
+- `auto` 模式下，若当前平台无法提供有效隔离，CLI 必须输出告警并在 JSON 中标记降级。
+
+### 实现映射补充
+| 能力 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| verify 沙箱执行与结果回收 | `cli/src/commands/verify.ts`、`cli/src/lib/sandbox.ts`（新增） | `cli/test/s13-verify.test.ts`、`cli/test/s16-json-output.test.ts` |
+| smoke 沙箱执行与结果回收 | `cli/src/commands/smoke.ts`、`website/scripts/smoke-releases.mjs` | `cli/test/s19-smoke.test.ts` |
+| verify / smoke 沙箱配置同步 | `cli/src/commands/init.ts`、`cli/src/commands/adopt.ts`、`cli/src/commands/sync.ts` | `cli/test/s01-init.test.ts`、`cli/test/s20-adopt.test.ts`、`cli/test/s08-sync.test.ts` |
+| 沙箱 JSON 诊断 | `cli/src/lib/json-output.ts`、`cli/src/commands/verify.ts`、`cli/src/commands/smoke.ts` | `cli/test/s16-json-output.test.ts` |

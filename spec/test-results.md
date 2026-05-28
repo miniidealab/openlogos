@@ -138,6 +138,20 @@ logos/resources/verify/test-results.jsonl
 4. 同一个用例 ID 多次出现时，最后一次结果生效。
 5. 若未配置阶段结果路径，CLI 必须用临时快照或等价机制避免第二阶段 reporter 清空第一阶段结果。
 
+### `verify.sandbox_mode` / `smoke.sandbox_mode`
+
+OpenLogos 的 JSONL reporter 仍然负责写入测试结果，但当 `verify` 或 `smoke` 开启沙箱模式时，reporter 和命令执行器的职责必须分离：
+
+- reporter 只写配置声明的结果文件；
+- CLI 负责在沙箱中执行测试命令；
+- CLI 负责回收结果文件并阻断仓库工作区的额外写入。
+
+### 新增约束
+- `verify.sandbox_mode="always"` 时，测试命令不得直接写入仓库根目录中的非白名单路径。
+- `smoke.sandbox_mode="always"` 时，`smoke.command` 不得直接写入仓库根目录中的非白名单路径。
+- 若测试脚本在沙箱内失败，CLI 必须保留失败输出，并在 JSON / 文本结果中暴露 `sandbox` 诊断。
+- 阶段化结果路径（`regression_result_path` / `incremental_result_path`）与沙箱隔离可以同时存在，二者不冲突。
+
 ### 覆盖不足诊断
 
 当项目没有配置 `pre_run_command`、`regression_command` 或 `incremental_command`，且 verify 发现覆盖不足时，CLI 必须诊断这可能是只运行了局部测试导致，并建议配置 verify 预跑命令。
@@ -152,6 +166,17 @@ logos/resources/verify/test-results.jsonl
 - 或者 reporter 的初始化阶段写入空文件
 
 两阶段模型下，回归阶段和增量阶段可以写入不同结果文件；如果两个阶段都写入默认 `result_path`，CLI 必须在阶段之间保留快照，确保最终合并结果不会丢失第一阶段覆盖。
+
+### reporter 输出建议
+```json
+{"id":"UT-S13-01","status":"pass","duration_ms":12,"timestamp":"2026-04-10T10:00:00Z"}
+```
+
+当启用沙箱时，reporter 不需要知道沙箱实现细节，但可在错误消息中保留命令上下文，便于 CLI 汇总诊断。
+
+### 兼容性
+- 现有 reporter 仍然按原格式工作，不需要新增字段。
+- CLI 新增的沙箱执行器不得改变 `test-results.jsonl` 的基本 schema。
 
 ### 目录创建
 
