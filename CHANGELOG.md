@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-05-28
+
+### Fixed
+
+- **修复 tag 发布链路的网站构建 Node 版本不兼容** — `publish.yml` 在网站构建阶段切换到 Node `22.12.0`，满足 Astro 6 的最低版本要求，避免发布后半段失败。
+
 ## [0.10.2] - 2026-05-28
 
 ### Fixed
