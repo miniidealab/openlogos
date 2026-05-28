@@ -1,8 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { normalizeSandboxConfig, type NormalizedSandboxConfig } from './sandbox.js';
 
 export const DEFAULT_VERIFY_RESULT_PATH = 'logos/resources/verify/test-results.jsonl';
 export const DEFAULT_VERIFY_MERGE_STRATEGY = 'last-write-wins';
+export const DEFAULT_SANDBOX_MODE = 'auto';
+export const DEFAULT_SANDBOX_ROOT = '/private/tmp';
+export const DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE = true;
 
 export interface VerifyConfig {
   result_path?: string;
@@ -13,6 +17,9 @@ export interface VerifyConfig {
   regression_result_path?: string;
   incremental_result_path?: string;
   merge_results?: string;
+  sandbox_mode?: 'off' | 'auto' | 'always';
+  sandbox_root?: string;
+  sandbox_deny_workspace_write?: boolean;
 }
 
 export interface NormalizedVerifyConfig {
@@ -23,6 +30,7 @@ export interface NormalizedVerifyConfig {
   regressionResultPath?: string;
   incrementalResultPath?: string;
   mergeStrategy: 'last-write-wins';
+  sandbox: NormalizedSandboxConfig;
 }
 
 export interface VerifyPreRunBackfillResult {
@@ -108,6 +116,7 @@ export function normalizeVerifyConfig(rawVerify: unknown): NormalizedVerifyConfi
     regressionResultPath: typeof verify.regression_result_path === 'string' ? verify.regression_result_path : undefined,
     incrementalResultPath: typeof verify.incremental_result_path === 'string' ? verify.incremental_result_path : undefined,
     mergeStrategy,
+    sandbox: normalizeSandboxConfig(verify),
   };
 }
 
@@ -121,6 +130,23 @@ export function hasVerifyPreRunConfig(rawVerify: unknown): boolean {
   return Boolean(verify.preRunCommand || verify.regressionCommand || verify.incrementalCommand);
 }
 
+function backfillSandboxDefaults(target: Record<string, unknown>): boolean {
+  let changed = false;
+  if (target.sandbox_mode === undefined) {
+    target.sandbox_mode = DEFAULT_SANDBOX_MODE;
+    changed = true;
+  }
+  if (target.sandbox_root === undefined) {
+    target.sandbox_root = DEFAULT_SANDBOX_ROOT;
+    changed = true;
+  }
+  if (target.sandbox_deny_workspace_write === undefined) {
+    target.sandbox_deny_workspace_write = DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE;
+    changed = true;
+  }
+  return changed;
+}
+
 export function backfillVerifyPreRunConfig(root: string, config: Record<string, unknown>): VerifyPreRunBackfillResult {
   const verify = asRecord(config.verify) ?? {};
   let mutated = false;
@@ -128,7 +154,16 @@ export function backfillVerifyPreRunConfig(root: string, config: Record<string, 
     verify.result_path = DEFAULT_VERIFY_RESULT_PATH;
     mutated = true;
   }
+  if (backfillSandboxDefaults(verify)) {
+    mutated = true;
+  }
   config.verify = verify;
+
+  const smoke = asRecord(config.smoke) ?? {};
+  if (backfillSandboxDefaults(smoke)) {
+    mutated = true;
+  }
+  config.smoke = smoke;
 
   if (hasVerifyPreRunConfig(verify)) {
     return { status: 'exists', mutated };

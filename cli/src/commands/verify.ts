@@ -1,6 +1,5 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { execSync } from 'node:child_process';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -9,6 +8,13 @@ import {
   readVerifyConfig,
   type NormalizedVerifyConfig,
 } from '../lib/verify-config.js';
+import {
+  buildInitialSandboxData,
+  normalizeSandboxConfig,
+  runSandboxedCommand,
+  type SandboxCommandResult,
+  type SandboxData,
+} from '../lib/sandbox.js';
 import { getDeployTasks } from './status.js';
 
 export interface TestResult {
@@ -57,7 +63,9 @@ export interface VerifyPreRunCommandResult {
 
 export interface VerifyPreRunData {
   mode: VerifyPreRunMode;
-  commands: VerifyPreRunCommandResult[];
+  commands: Array<VerifyPreRunCommandResult & {
+    sandbox?: SandboxData;
+  }>;
   result_paths: {
     final: string;
     regression: string | null;
@@ -105,51 +113,8 @@ export interface VerifyData {
     }>;
   };
   pre_run: VerifyPreRunData;
+  sandbox: SandboxData;
   report_path: string;
-}
-
-function commandExitCode(error: unknown): number | undefined {
-  if (error && typeof error === 'object' && 'status' in error) {
-    const status = (error as { status?: unknown }).status;
-    return typeof status === 'number' ? status : undefined;
-  }
-  return undefined;
-}
-
-function commandErrorMessage(error: unknown): string | undefined {
-  if (error instanceof Error && error.message) return error.message.slice(0, 500);
-  if (error !== undefined && error !== null) return String(error).slice(0, 500);
-  return undefined;
-}
-
-function executeVerifyCommand(root: string, stage: VerifyPreRunStage, command: string, format: OutputFormat): VerifyPreRunCommandResult {
-  if (format !== 'json') {
-    console.log(`\n⚙️  Running verify.${stage === 'pre_run' ? 'pre_run_command' : `${stage}_command`}: ${command}`);
-  }
-
-  const start = Date.now();
-  try {
-    execSync(command, { cwd: root, stdio: format === 'json' ? 'pipe' : 'inherit' });
-    return {
-      stage,
-      command,
-      status: 'pass',
-      exit_code: 0,
-      duration_ms: Date.now() - start,
-    };
-  } catch (error) {
-    if (format !== 'json') {
-      console.warn(`\n⚠️  verify ${stage} command exited with non-zero status. Continuing verify with existing results.`);
-    }
-    return {
-      stage,
-      command,
-      status: 'fail',
-      exit_code: commandExitCode(error),
-      duration_ms: Date.now() - start,
-      error: commandErrorMessage(error),
-    };
-  }
 }
 
 function safeReadFile(path: string): string {
@@ -164,10 +129,6 @@ function writeMergedResults(root: string, resultPath: string, contents: string[]
     .filter(Boolean)
     .join('\n');
   writeFileSync(fullResultPath, joined ? `${joined}\n` : '');
-}
-
-function stageSnapshotPath(root: string, stage: VerifyPreRunStage, resultPath: string): string {
-  return join(root, dirname(resultPath), `.openlogos-${stage}-${Date.now()}-${Math.random().toString(16).slice(2)}.jsonl`);
 }
 
 export function buildInitialPreRunData(config: NormalizedVerifyConfig): VerifyPreRunData {
@@ -198,17 +159,111 @@ function skippedCompatPreRunCommand(config: NormalizedVerifyConfig): VerifyPreRu
   };
 }
 
-export function runVerifyPreRun(root: string, config: NormalizedVerifyConfig, format: OutputFormat): VerifyPreRunData {
-  const preRun = buildInitialPreRunData(config);
+export interface RunVerifyPreRunResult {
+  preRun: VerifyPreRunData;
+  sandbox: SandboxData;
+}
 
-  if (preRun.mode === 'none') return preRun;
+function ensureRelativePath(path: string): string {
+  return path.replace(/^\/+/, '');
+}
+
+function appendSandboxDiagnostics(preRun: VerifyPreRunData, sandbox: SandboxData): void {
+  for (const line of sandbox.diagnostics) {
+    if (!preRun.diagnostics.includes(line)) preRun.diagnostics.push(line);
+  }
+  for (const line of sandbox.suggestions) {
+    if (!preRun.suggestions.includes(line)) preRun.suggestions.push(line);
+  }
+}
+
+function executeVerifyCommand(
+  root: string,
+  stage: VerifyPreRunStage,
+  command: string,
+  format: OutputFormat,
+  sandboxConfig: NormalizedVerifyConfig['sandbox'],
+  allowedWritePaths: string[],
+): { command: SandboxCommandResult; sandbox: SandboxData } {
+  if (format !== 'json') {
+    console.log(`\n⚙️  Running verify.${stage === 'pre_run' ? 'pre_run_command' : `${stage}_command`}: ${command}`);
+  }
+  return runSandboxedCommand({
+    root,
+    command,
+    format,
+    sandbox: sandboxConfig,
+    allowedWritePaths,
+  });
+}
+
+function toPreRunCommandResult(
+  stage: VerifyPreRunStage,
+  command: string,
+  result: SandboxCommandResult,
+  sandbox: SandboxData,
+): VerifyPreRunCommandResult & { sandbox: SandboxData } {
+  return {
+    stage,
+    command,
+    status: result.status,
+    exit_code: result.exit_code,
+    duration_ms: result.duration_ms,
+    error: result.error,
+    sandbox,
+  };
+}
+
+function mergeSandboxStatus(current: SandboxData, next: SandboxData): SandboxData {
+  const rank: Record<SandboxData['status'], number> = {
+    fail: 4,
+    warn: 3,
+    pass: 2,
+    skipped: 1,
+  };
+  const status = rank[next.status] > rank[current.status] ? next.status : current.status;
+  const diagnostics = Array.from(new Set([...current.diagnostics, ...next.diagnostics]));
+  const suggestions = Array.from(new Set([...current.suggestions, ...next.suggestions]));
+  return {
+    mode: current.mode,
+    root: next.isolated ? next.root : current.root,
+    isolated: current.isolated || next.isolated,
+    workspace_write_denied: current.workspace_write_denied,
+    status,
+    diagnostics,
+    suggestions,
+  };
+}
+
+export function runVerifyPreRunWithSandbox(root: string, config: NormalizedVerifyConfig, format: OutputFormat): RunVerifyPreRunResult {
+  const preRun = buildInitialPreRunData(config);
+  const sandboxConfig = config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' });
+  let sandbox = buildInitialSandboxData(sandboxConfig);
+  const allowPaths = new Set<string>([
+    config.resultPath,
+    'logos/resources/verify/acceptance-report.md',
+  ]);
+  if (config.regressionResultPath) allowPaths.add(config.regressionResultPath);
+  if (config.incrementalResultPath) allowPaths.add(config.incrementalResultPath);
+  const allowedWritePaths = Array.from(allowPaths).map(ensureRelativePath);
+
+  if (preRun.mode === 'none') {
+    return { preRun, sandbox };
+  }
 
   if (preRun.mode === 'pre_run_command' && config.preRunCommand) {
     const resultPath = join(root, config.resultPath);
     mkdirSync(dirname(resultPath), { recursive: true });
     writeFileSync(resultPath, '');
-    preRun.commands.push(executeVerifyCommand(root, 'pre_run', config.preRunCommand, format));
-    return preRun;
+    const stageResult = executeVerifyCommand(root, 'pre_run', config.preRunCommand, format, sandboxConfig, allowedWritePaths);
+    const normalized = toPreRunCommandResult('pre_run', config.preRunCommand, stageResult.command, stageResult.sandbox);
+    preRun.commands.push(normalized);
+    sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
+    if (normalized.status === 'fail' && format !== 'json') {
+      console.warn('\n⚠️  verify pre_run command exited with non-zero status. Continuing verify with existing results.');
+    }
+    appendSandboxDiagnostics(preRun, sandbox);
+    return { preRun, sandbox };
   }
 
   const compatSkipped = skippedCompatPreRunCommand(config);
@@ -218,7 +273,6 @@ export function runVerifyPreRun(root: string, config: NormalizedVerifyConfig, fo
   }
 
   const stageContents: string[] = [];
-  const fallbackSnapshots: string[] = [];
   const runStage = (
     stage: Extract<VerifyPreRunStage, 'regression' | 'incremental'>,
     command: string | undefined,
@@ -229,28 +283,27 @@ export function runVerifyPreRun(root: string, config: NormalizedVerifyConfig, fo
     const fullStagePath = join(root, effectiveStagePath);
     mkdirSync(dirname(fullStagePath), { recursive: true });
     writeFileSync(fullStagePath, '');
-    preRun.commands.push(executeVerifyCommand(root, stage, command, format));
+    const stageResult = executeVerifyCommand(root, stage, command, format, sandboxConfig, allowedWritePaths);
+    const normalized = toPreRunCommandResult(stage, command, stageResult.command, stageResult.sandbox);
+    preRun.commands.push(normalized);
+    sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
+    if (normalized.status === 'fail' && format !== 'json') {
+      console.warn(`\n⚠️  verify ${stage} command exited with non-zero status. Continuing verify with existing results.`);
+    }
 
     const content = safeReadFile(fullStagePath);
     if (content.trim()) stageContents.push(content);
-
-    if (!stageResultPath && existsSync(fullStagePath)) {
-      const snapshot = stageSnapshotPath(root, stage, config.resultPath);
-      mkdirSync(dirname(snapshot), { recursive: true });
-      copyFileSync(fullStagePath, snapshot);
-      fallbackSnapshots.push(snapshot);
-    }
   };
 
   runStage('regression', config.regressionCommand, config.regressionResultPath);
   runStage('incremental', config.incrementalCommand, config.incrementalResultPath);
   writeMergedResults(root, config.resultPath, stageContents);
+  appendSandboxDiagnostics(preRun, sandbox);
+  return { preRun, sandbox };
+}
 
-  for (const snapshot of fallbackSnapshots) {
-    if (existsSync(snapshot)) rmSync(snapshot, { force: true });
-  }
-
-  return preRun;
+export function runVerifyPreRun(root: string, config: NormalizedVerifyConfig, format: OutputFormat): VerifyPreRunData {
+  return runVerifyPreRunWithSandbox(root, config, format).preRun;
 }
 
 function addCoverageDiagnostics(root: string, data: VerifyData): VerifyData {
@@ -612,6 +665,7 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
       }),
     },
     pre_run: preRun ?? buildInitialPreRunData(config),
+    sandbox: buildInitialSandboxData(config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: relReportPath,
   });
 }
@@ -635,7 +689,9 @@ export function verify(format: OutputFormat = 'text') {
   const locale = readLocale(root);
   const config = readVerifyConfig(root);
   const resultPath = config.resultPath;
-  const preRun = runVerifyPreRun(root, config, format);
+  const preRunResult = runVerifyPreRunWithSandbox(root, config, format);
+  const preRun = preRunResult.preRun;
+  const sandbox = preRunResult.sandbox;
 
   const fullResultPath = join(root, resultPath);
   ensureResultFileWhenPreRunFailed(fullResultPath, preRun);
@@ -664,6 +720,17 @@ export function verify(format: OutputFormat = 'text') {
   }
 
   const data = collectVerifyData(root, preRun);
+  data.sandbox = sandbox;
+  if (sandbox.status === 'fail' && data.gate.result === 'PASS') {
+    data.gate.result = 'FAIL';
+    data.gate.reason = 'failed_cases';
+    if (data.failed_cases.length === 0) {
+      data.failed_cases.push({
+        id: 'sandbox',
+        error: sandbox.diagnostics[0] ?? 'verify sandbox failed',
+      });
+    }
+  }
 
   // 写入提案目录标记文件（如果有活跃提案）
   const guardPath = join(root, 'logos', '.openlogos-guard');
@@ -801,6 +868,26 @@ export function verify(format: OutputFormat = 'text') {
     }
     for (const line of pre_run.suggestions) {
       console.log(`  💡 ${line}`);
+    }
+  }
+
+  if (data.sandbox.mode !== 'off' || data.sandbox.status !== 'skipped') {
+    console.log('\n🧪 verify sandbox');
+    console.log(`  ${t(locale, 'verify.sandboxSummary', {
+      mode: data.sandbox.mode,
+      status: data.sandbox.status,
+      isolated: String(data.sandbox.isolated),
+      writeDenied: String(data.sandbox.workspace_write_denied),
+    })}`);
+    if (data.sandbox.diagnostics.length > 0) {
+      for (const line of data.sandbox.diagnostics) {
+        console.log(`  ⚠️  ${line}`);
+      }
+    }
+    if (data.sandbox.suggestions.length > 0) {
+      for (const line of data.sandbox.suggestions) {
+        console.log(`  💡 ${line}`);
+      }
     }
   }
 

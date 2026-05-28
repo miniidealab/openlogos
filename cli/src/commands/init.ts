@@ -5,7 +5,12 @@ import { createInterface } from 'node:readline';
 import { execSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
-import { backfillVerifyPreRunConfig } from '../lib/verify-config.js';
+import {
+  DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
+  DEFAULT_SANDBOX_MODE,
+  DEFAULT_SANDBOX_ROOT,
+  backfillVerifyPreRunConfig,
+} from '../lib/verify-config.js';
 
 export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' | 'all';
 
@@ -1148,10 +1153,16 @@ export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool =
     },
     verify: {
       result_path: 'logos/resources/verify/test-results.jsonl',
+      sandbox_mode: DEFAULT_SANDBOX_MODE,
+      sandbox_root: DEFAULT_SANDBOX_ROOT,
+      sandbox_deny_workspace_write: DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
     },
     smoke: {
       result_path: 'logos/resources/verify/smoke-results.jsonl',
       report_path: 'logos/resources/verify/smoke-report.md',
+      sandbox_mode: DEFAULT_SANDBOX_MODE,
+      sandbox_root: DEFAULT_SANDBOX_ROOT,
+      sandbox_deny_workspace_write: DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
     },
   }, null, 2);
 }

@@ -101,6 +101,12 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     const parsed = JSON.parse(output);
     expect(parsed.verify.result_path).toBe('logos/resources/verify/test-results.jsonl');
     expect(parsed.verify.pre_run_command).toBeUndefined();
+    expect(parsed.verify.sandbox_mode).toBe('auto');
+    expect(parsed.verify.sandbox_root).toBe('/private/tmp');
+    expect(parsed.verify.sandbox_deny_workspace_write).toBe(true);
+    expect(parsed.smoke.sandbox_mode).toBe('auto');
+    expect(parsed.smoke.sandbox_root).toBe('/private/tmp');
+    expect(parsed.smoke.sandbox_deny_workspace_write).toBe(true);
   });
 
   it('UT-S01-07b: createLogosConfig includes aiTool when provided', () => {

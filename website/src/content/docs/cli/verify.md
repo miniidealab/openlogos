@@ -9,9 +9,40 @@ Read test results from a JSONL file, compare against defined test case IDs in `l
 
 ```bash
 openlogos verify
+openlogos verify --format json
 ```
 
-No arguments or options. Must be run from the project root.
+Must be run from the project root.
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--format json` | Output machine-readable JSON envelope (includes `pre_run` and `sandbox` diagnostics). |
+
+## Sandbox execution (verify / smoke standardization)
+
+`openlogos verify` supports sandboxed pre-run execution through `logos/logos.config.json`:
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "npm test",
+    "sandbox_mode": "auto",
+    "sandbox_root": "/private/tmp",
+    "sandbox_deny_workspace_write": true
+  }
+}
+```
+
+Behavior:
+
+- `sandbox_mode: "off"`: keep historical behavior, no isolation.
+- `sandbox_mode: "auto"`: prefer isolation; if isolation is unavailable, downgrade with warning and keep command compatibility.
+- `sandbox_mode: "always"`: isolation is mandatory; if setup fails or non-whitelisted writes are detected, verify fails.
+
+When sandbox is enabled, pre-run commands only allow result-file write-back (`verify.result_path`, optional `regression_result_path`, `incremental_result_path`) plus report output.
 
 ## What it checks
 
@@ -165,6 +196,13 @@ The command generates `logos/resources/verify/acceptance-report.md` containing:
 - **Skipped cases** — IDs with `status: "skip"`
 - **Design-time coverage** — checklist assertion table with ✅/❌
 - **AC traceability** — acceptance criteria → linked test cases → runtime status
+
+## JSON output highlights
+
+With `--format json`, `data` includes:
+
+- `pre_run`: execution mode (`none` / `pre_run_command` / `two_phase`), command statuses, result paths, diagnostics and suggestions.
+- `sandbox`: sandbox mode, whether execution was isolated, workspace-write policy, status (`pass` / `warn` / `fail` / `skipped`), diagnostics and suggestions.
 
 ## Custom result path
 

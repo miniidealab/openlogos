@@ -463,6 +463,8 @@ describe('S13 Unit Tests — verify pre-run helpers', () => {
 
     expect(data.pre_run.mode).toBe('pre_run_command');
     expect(data.pre_run.result_paths.final).toBe('logos/resources/verify/test-results.jsonl');
+    expect(data.sandbox.mode).toBe('auto');
+    expect(data.sandbox.status).toBe('skipped');
   });
 });
 

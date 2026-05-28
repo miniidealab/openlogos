@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { execSync } from 'node:child_process';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
+import { normalizeSandboxConfig, runSandboxedCommand, buildInitialSandboxData, type SandboxData } from '../lib/sandbox.js';
 import { parseJsonl } from './verify.js';
 
 const DEFAULT_SMOKE_RESULT_PATH = 'logos/resources/verify/smoke-results.jsonl';
@@ -30,6 +30,7 @@ export interface SmokeData {
   failed_cases: Array<{ id: string; error: string }>;
   uncovered_cases: string[];
   skipped_cases: string[];
+  sandbox: SandboxData;
   report_path: string;
   result_path: string;
 }
@@ -96,7 +97,7 @@ function generateSmokeReport(data: SmokeData): string {
   return md;
 }
 
-export function collectSmokeData(root: string, environment?: string): SmokeData {
+export function collectSmokeData(root: string, environment?: string, sandbox?: SandboxData): SmokeData {
   const configPath = join(root, 'logos', 'logos.config.json');
   let resultPath = DEFAULT_SMOKE_RESULT_PATH;
   let reportPath = DEFAULT_SMOKE_REPORT_PATH;
@@ -142,6 +143,7 @@ export function collectSmokeData(root: string, environment?: string): SmokeData 
     failed_cases: failed.map(r => ({ id: r.id, error: r.error ?? 'unknown' })),
     uncovered_cases: uncovered,
     skipped_cases: skipped.map(r => r.id),
+    sandbox: sandbox ?? buildInitialSandboxData(normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: reportPath,
     result_path: resultPath,
   };
@@ -153,16 +155,25 @@ export function collectSmokeData(root: string, environment?: string): SmokeData 
   return data;
 }
 
-function readSmokeConfig(root: string): { command?: string; resultPath: string } {
+function readSmokeConfig(root: string): {
+  command?: string;
+  resultPath: string;
+  reportPath: string;
+  sandbox: ReturnType<typeof normalizeSandboxConfig>;
+} {
   const configPath = join(root, 'logos', 'logos.config.json');
   let resultPath = DEFAULT_SMOKE_RESULT_PATH;
+  let reportPath = DEFAULT_SMOKE_REPORT_PATH;
   let command: string | undefined;
+  let sandbox = normalizeSandboxConfig({});
   try {
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
     if (config.smoke?.result_path) resultPath = config.smoke.result_path;
+    if (config.smoke?.report_path) reportPath = config.smoke.report_path;
     if (config.smoke?.command) command = config.smoke.command;
+    sandbox = normalizeSandboxConfig(config.smoke);
   } catch { /* use defaults */ }
-  return { command, resultPath };
+  return { command, resultPath, reportPath, sandbox };
 }
 
 export function smoke(format: OutputFormat = 'text', environment?: string) {
@@ -182,13 +193,21 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
   }
 
   const locale = readLocale(root);
-  const { command, resultPath } = readSmokeConfig(root);
+  const { command, resultPath, reportPath, sandbox } = readSmokeConfig(root);
+  const allowedWritePaths = [resultPath, reportPath, 'logos/resources/verify/smoke-report.md'];
+  let sandboxData = buildInitialSandboxData(sandbox);
 
   if (command) {
     if (format !== 'json') console.log(`\n⚙️  Running smoke.command: ${command}`);
-    try {
-      execSync(command, { cwd: root, stdio: 'inherit' });
-    } catch {
+    const result = runSandboxedCommand({
+      root,
+      command,
+      format,
+      sandbox,
+      allowedWritePaths,
+    });
+    sandboxData = result.sandbox;
+    if (result.command.status === 'fail') {
       if (format !== 'json') {
         console.warn('\n⚠️  smoke.command exited with non-zero status. Continuing smoke with existing results.');
       }
@@ -218,7 +237,17 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
     process.exit(1);
   }
 
-  const data = collectSmokeData(root, environment);
+  const data = collectSmokeData(root, environment, sandboxData);
+  if (sandboxData.status === 'fail' && data.gate.result === 'PASS') {
+    data.gate.result = 'FAIL';
+    data.gate.reason = 'failed_cases';
+    if (data.failed_cases.length === 0) {
+      data.failed_cases.push({
+        id: 'sandbox',
+        error: sandboxData.diagnostics[0] ?? 'smoke sandbox failed',
+      });
+    }
+  }
 
   const guardPath = join(root, 'logos', '.openlogos-guard');
   if (existsSync(guardPath)) {
@@ -257,6 +286,17 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
   console.log(`  Skipped:  ${data.summary.skipped_count}`);
   console.log(`  Coverage: ${data.summary.coverage_pct}%`);
   console.log(`  Pass rate: ${data.summary.pass_rate_pct}%`);
+  if (data.sandbox.mode !== 'off' || data.sandbox.status !== 'skipped') {
+    console.log(`  ${t(locale, 'smoke.sandboxSummary', {
+      mode: data.sandbox.mode,
+      status: data.sandbox.status,
+      isolated: String(data.sandbox.isolated),
+      writeDenied: String(data.sandbox.workspace_write_denied),
+    })}`);
+    for (const line of data.sandbox.diagnostics) {
+      console.log(`    - ${line}`);
+    }
+  }
 
   if (data.failed_cases.length > 0) {
     console.log('\nFailed smoke cases:');

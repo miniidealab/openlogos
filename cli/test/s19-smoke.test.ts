@@ -144,6 +144,31 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(parsed.command).toBe('smoke');
     expect(parsed.data.environment).toBe('production');
     expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.sandbox).toBeDefined();
+    expect(parsed.data.sandbox.mode).toBe('auto');
+    expect(['pass', 'warn', 'skipped']).toContain(parsed.data.sandbox.status);
+  });
+
+  it('ST-S19-06: smoke always sandbox blocks non-whitelist write', () => {
+    writeSmokeCases();
+    writeSmokeResults([
+      '{"id":"SMOKE-core-01","status":"pass"}',
+      '{"id":"SMOKE-core-02","status":"pass"}',
+    ]);
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.smoke = {
+      ...(config.smoke ?? {}),
+      sandbox_mode: 'always',
+      command: `node -e "require('fs').writeFileSync('smoke-forbidden.txt','x')"`,
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    expect(() => smoke('json', 'staging')).toThrow('process.exit(1)');
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('FAIL');
+    expect(parsed.data.sandbox.mode).toBe('always');
+    expect(parsed.data.sandbox.status).toBe('fail');
   });
 
   it('ST-S19-04: deploy done with smoke_required=false allows archive', () => {

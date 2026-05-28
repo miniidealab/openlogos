@@ -334,6 +334,9 @@ describe('JSON output — verify --format json', () => {
     expect(output.data.gate.reason).toBeNull();
     expect(output.data.summary.coverage_pct).toBe(100);
     expect(output.data.summary.pass_rate_pct).toBe(100);
+    expect(output.data.sandbox).toBeDefined();
+    expect(output.data.sandbox.mode).toBe('auto');
+    expect(['pass', 'warn', 'skipped']).toContain(output.data.sandbox.status);
   });
 
   it('ST-JSON-10: verify --format json failed test → FAIL with reason', () => {
@@ -414,6 +417,8 @@ describe('JSON output — verify --format json', () => {
     expect(output.data.pre_run.mode).toBe('pre_run_command');
     expect(output.data.pre_run.commands[0]).toMatchObject({ stage: 'pre_run', status: 'pass', exit_code: 0 });
     expect(output.data.pre_run.result_paths.final).toBe('logos/resources/verify/test-results.jsonl');
+    expect(output.data.sandbox).toBeDefined();
+    expect(output.data.sandbox.mode).toBe('auto');
   });
 
   it('UT-JSON-12 / ST-JSON-25: verify --format json exposes two-phase status and merge strategy', () => {
@@ -447,6 +452,22 @@ describe('JSON output — verify --format json', () => {
     expect(output.data.pre_run.mode).toBe('none');
     expect(output.data.pre_run.diagnostics.join('\n')).toContain('partial test set');
     expect(output.data.pre_run.suggestions.join('\n')).toContain('verify.pre_run_command');
+  });
+
+  it('ST-JSON-27: verify --format json with sandbox always fails on non-whitelist write', () => {
+    writeTestCases(CASES_ALL_PASS);
+    updateVerifyConfig({
+      sandbox_mode: 'always',
+      pre_run_command: `node -e "require('fs').writeFileSync('forbidden.txt','x')"`,
+    });
+
+    expect(() => verify('json')).toThrow('process.exit(1)');
+
+    const output = JSON.parse(con.logs[0]);
+    expect(output.data.gate.result).toBe('FAIL');
+    expect(output.data.sandbox.mode).toBe('always');
+    expect(output.data.sandbox.status).toBe('fail');
+    expect(output.data.sandbox.diagnostics.join('\n')).toContain('非白名单写入');
   });
 });
 

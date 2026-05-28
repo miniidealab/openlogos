@@ -30,7 +30,19 @@ export function scaffoldProject(
     locale,
     description: '',
     documents: {},
-    verify: { result_path: 'logos/resources/verify/test-results.jsonl' },
+    verify: {
+      result_path: 'logos/resources/verify/test-results.jsonl',
+      sandbox_mode: 'auto',
+      sandbox_root: '/private/tmp',
+      sandbox_deny_workspace_write: true,
+    },
+    smoke: {
+      result_path: 'logos/resources/verify/smoke-results.jsonl',
+      report_path: 'logos/resources/verify/smoke-report.md',
+      sandbox_mode: 'auto',
+      sandbox_root: '/private/tmp',
+      sandbox_deny_workspace_write: true,
+    },
   };
 
   mkdirSync(join(root, 'logos'), { recursive: true });
