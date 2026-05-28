@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { generateReleaseData } from '../scripts/generate-releases.mjs';
 import { runReported } from './helpers/openlogos-reporter.mjs';
 
@@ -76,6 +79,8 @@ test('UT-S19-05: strict 模式下 registry 失败必须抛错，不允许回退�
 
 test('UT-S19-06: strict 模式下生成成功时 latestVersion 与 registry latest 一致', async () => runReported('UT-S19-06', async () => {
   const originalFetch = globalThis.fetch;
+  const tempDir = mkdtempSync(join(tmpdir(), 'openlogos-release-test-'));
+  const outputPath = join(tempDir, 'releases.json');
   globalThis.fetch = async (url, init = {}) => {
     const target = String(url);
     if (target.includes('registry.npmjs.org')) {
@@ -95,14 +100,19 @@ test('UT-S19-06: strict 模式下生成成功时 latestVersion 与 registry late
   try {
     const result = await generateReleaseData({
       strict: true,
+      outputPath,
       logger: { log() {}, warn() {} },
     });
+    const generated = JSON.parse(readFileSync(outputPath, 'utf-8'));
     assert.equal(result.fromCache, false);
     assert.equal(result.data.latestVersion, '9.9.9');
     assert.equal(result.data.versionCount, 1);
     assert.equal(result.data.versions[0].version, '9.9.9');
     assert.equal(result.data.versions[0].size, 2048);
+    assert.equal(generated.latestVersion, '9.9.9');
+    assert.equal(generated.versions[0].size, 2048);
   } finally {
     globalThis.fetch = originalFetch;
+    rmSync(tempDir, { recursive: true, force: true });
   }
 }));

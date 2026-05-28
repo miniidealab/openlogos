@@ -4,16 +4,16 @@ import { enrichReleaseVersions } from '../src/lib/releases-summary.mjs';
 
 const PACKAGE_NAME = '@miniidealab/openlogos';
 const REGISTRY_URL = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}`;
-const OUTPUT_PATH = resolve('src/data/releases.json');
+const DEFAULT_OUTPUT_PATH = resolve('src/data/releases.json');
 const CHANGELOG_PATH = resolve('../CHANGELOG.md');
 const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${PACKAGE_NAME}`;
 const GITHUB_RELEASE_BASE = 'https://github.com/miniidealab/openlogos/releases/tag';
 const CHANGELOG_URL = 'https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md';
 const DEFAULT_TIMEOUT_MS = 15000;
 
-function readCache() {
-  if (!existsSync(OUTPUT_PATH)) return null;
-  return JSON.parse(readFileSync(OUTPUT_PATH, 'utf-8'));
+function readCache(outputPath) {
+  if (!existsSync(outputPath)) return null;
+  return JSON.parse(readFileSync(outputPath, 'utf-8'));
 }
 
 function formatBytes(value) {
@@ -136,6 +136,7 @@ function readChangelog() {
 export async function generateReleaseData(options = {}) {
   const {
     strict = false,
+    outputPath = DEFAULT_OUTPUT_PATH,
     signal,
     logger = console,
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -162,9 +163,9 @@ export async function generateReleaseData(options = {}) {
       item.size = sizeMap.get(item.version) ?? null;
       item.sizeLabel = formatBytes(item.size);
     }
-    mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
-    writeFileSync(OUTPUT_PATH, `${JSON.stringify(data, null, 2)}\n`);
-    logger.log(`Generated ${OUTPUT_PATH} from npm registry (${data.versionCount} versions).`);
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, `${JSON.stringify(data, null, 2)}\n`);
+    logger.log(`Generated ${outputPath} from npm registry (${data.versionCount} versions).`);
     return {
       ok: true,
       fromCache: false,
@@ -176,17 +177,17 @@ export async function generateReleaseData(options = {}) {
     if (strict) {
       throw new Error(`Strict release data generation failed: ${message}`);
     }
-    const cache = readCache();
+    const cache = readCache(outputPath);
     if (!cache) {
       throw new Error(`Failed to generate release data and no cache exists: ${message}`);
     }
     const changelog = readChangelog();
     if (Array.isArray(cache.versions)) {
       cache.versions = enrichReleaseVersions(cache.versions, changelog ?? '');
-      mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
-      writeFileSync(OUTPUT_PATH, `${JSON.stringify(cache, null, 2)}\n`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, `${JSON.stringify(cache, null, 2)}\n`);
     }
-    logger.warn(`Failed to refresh release data; using existing cache at ${OUTPUT_PATH}.`);
+    logger.warn(`Failed to refresh release data; using existing cache at ${outputPath}.`);
     logger.warn(message);
     return {
       ok: true,
