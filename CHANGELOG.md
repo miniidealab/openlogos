@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-05-28
+
+### Fixed
+
+- **修复发布流水线中的沙箱测试跨平台问题** — `ST-JSON-27` 改为显式使用测试工作区内可写 `sandbox_root`，避免在 Linux runner 上因 `/private/tmp` 权限差异误报失败。
+
 ## [0.10.1] - 2026-05-28
 
 ### Fixed

@@ -456,8 +456,11 @@ describe('JSON output — verify --format json', () => {
 
   it('ST-JSON-27: verify --format json with sandbox always fails on non-whitelist write', () => {
     writeTestCases(CASES_ALL_PASS);
+    const sandboxRoot = join(root, '..', '.openlogos-sandbox-tests');
+    mkdirSync(sandboxRoot, { recursive: true });
     updateVerifyConfig({
       sandbox_mode: 'always',
+      sandbox_root: sandboxRoot,
       pre_run_command: `node -e "require('fs').writeFileSync('forbidden.txt','x')"`,
     });
 
