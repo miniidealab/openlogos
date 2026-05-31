@@ -96,7 +96,23 @@ Array of registered modules. Required for multi-module projects. `openlogos init
 | `id` | string | Yes | Module identifier — lowercase letters, digits, hyphens (e.g., `core`, `admin`) |
 | `name` | string | Yes | Human-readable module name |
 | `lifecycle` | string | Yes | `initial` (phase-driven development) or `launched` (change-proposal-driven) |
+| `bootstrap` | string | No | Onboarding mode: `normal` (default, full Phase 1→3) or `adopted` (existing project, initial doc baseline skipped). Written by `openlogos adopt`. Historical value `skipped` is read-compatible with `adopted`. |
 | `skip_phases` | array | No | Phases this module doesn't need. Written by `architecture-designer` Skill after tech stack selection. |
+| `deployment_required` | boolean | No | Whether this module requires deployment execution gates. Software projects default to `true`; pure docs or libraries can set `false`. |
+
+`bootstrap` field semantics:
+
+| Value | Meaning | Written by |
+|-------|---------|------------|
+| `normal` (or absent) | Full Phase 1→3 document baseline before iteration | `openlogos init` (default) |
+| `adopted` | Existing project onboarding; OpenLogos infra fully initialized but initial doc baseline skipped | `openlogos adopt` |
+| `skipped` | Historical compatibility value, read-equivalent to `adopted`, no longer written | Old `openlogos adopt` versions |
+
+When `bootstrap: adopted`:
+- `status`: Phase 1, 2, 3-0 missing docs don't report as errors — shows "Document baseline skipped (existing project onboarding)"
+- `next`: When no active proposal, suggests `openlogos change add-baseline-docs`
+- `launch`: Exempted from initial document gate checks
+- `detect/status --format json`: Outputs `bootstrap: "adopted"`
 
 `skip_phases` allowed values:
 
@@ -105,6 +121,7 @@ Array of registered modules. Required for multi-module projects. `openlogos init
 | `api` | `logos/resources/api/` | No HTTP API (desktop app, CLI tool, frontend library) |
 | `database` | `logos/resources/database/` | No database (stateless CLI, pure compute) |
 | `scenario` | `logos/resources/scenario/` | No API orchestration tests (usually paired with `api`) |
+| `deployment` | Deployment execution + smoke gates | Pure docs, no runtime environment needed |
 
 ### scenarios
 
@@ -123,6 +140,28 @@ Array declaring the project's complete scenario list. Scenarios are the central 
 ### conventions
 
 Array of project conventions (string format). Each element is one convention rule.
+
+### deployment_gates
+
+Declares deployment and smoke gate requirements for the initial phase (before `openlogos launch`). Written by the `deployment-designer` Skill, consumed by `status` / `launch`.
+
+```yaml
+deployment_gates:
+  core:
+    deployment_required: true
+    smoke_required: true
+    environments:
+      - staging
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `<module_id>` | object | Yes | Gate configuration per module |
+| `deployment_required` | boolean | Yes | Whether deployment execution is required before launch |
+| `smoke_required` | boolean | Yes | Whether smoke verification is required after deployment |
+| `environments` | array | No | Target deployment environments |
+
+If `deployment_gates` is not declared, software modules default to requiring a deployment plan; deployment execution and smoke gates are determined by the module's `deployment_required` field and deployment plan content.
 
 ## Complete Example
 

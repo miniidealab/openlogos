@@ -33,7 +33,7 @@ Read `logos/logos-project.yaml` first to understand the project resource index.
 [Dynamically generated based on aiTool setting]
 
 ## Change Management
-[Varies by lifecycle: initial vs active]
+[Varies by lifecycle: initial vs launched]
 
 ## Conventions
 [Read from logos-project.yaml conventions field]
@@ -80,7 +80,7 @@ The Active Skills section is dynamically generated based on the `aiTool` field i
 | `other` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
 | `all` or array | All configured tool targets | Multi-tool Skill paths |
 
-All 13 built-in Skills are listed with descriptions.
+All 16 built-in Skills are listed with descriptions.
 
 For tools that support Skill binding (Claude Code, Cursor), the Phase detection section includes direct file paths so the AI can read and execute the Skill file immediately.
 

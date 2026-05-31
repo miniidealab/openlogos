@@ -14,12 +14,12 @@ The Delta change management specification defines how OpenLogos projects handle 
 
 ## Lifecycle States
 
-Change management is activated when the project transitions from `initial` to `active` lifecycle (via `openlogos launch`). During the initial development phase, changes flow through the Phase progression without proposals.
+Change management is activated when the project transitions from `initial` to `launched` lifecycle (via `openlogos launch`). During the initial development phase, changes flow through the Phase progression without proposals.
 
 | Lifecycle | Behavior |
 |-----------|----------|
 | `initial` | Follow Phase 1 → 2 → 3 progression freely, no proposals needed |
-| `active` | All changes require a proposal via `openlogos change <slug>` before modifying code |
+| `launched` | All changes require a proposal via `openlogos change <slug>` before modifying code |
 
 ## Directory Structure
 

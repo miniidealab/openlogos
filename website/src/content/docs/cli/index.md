@@ -15,7 +15,7 @@ Verify:
 
 ```bash
 openlogos --version
-# 0.9.23
+# 0.10.3
 ```
 
 ## Global options
@@ -32,6 +32,7 @@ openlogos --version
 | Command | Description |
 |---------|-------------|
 | [`init`](/cli/init) | Initialize a new OpenLogos project structure |
+| [`adopt`](/cli/adopt) | Onboard an existing project (bootstrap: adopted) |
 | [`sync`](/cli/sync) | Regenerate AI instruction files and Skills |
 | [`status`](/cli/status) | Show project phase and suggest next steps |
 | [`next`](/cli/next) | Show the single most actionable next step |
@@ -43,7 +44,8 @@ openlogos --version
 
 | Command | Description |
 |---------|-------------|
-| [`verify`](/cli/verify) | Verify test results against test case specs (Gate 3.5) |
+| [`verify`](/cli/verify) | Verify test results against test case specs (Gate 3.6) |
+| [`smoke`](/cli/smoke) | Verify post-deployment health against smoke specs (Gate 3.8) |
 | [`launch`](/cli/launch) | Activate change management after verification passes |
 
 ### Change management (Delta workflow)
@@ -64,14 +66,14 @@ OpenLogos projects have two lifecycle states:
 │  openlogos     Phase 1 → 2 → 3    openlogos     openlogos    │
 │  init          (AI + Skills)       verify        launch       │
 │  ────────► ┌──────────────────┐ ──────────► ──────────►       │
-│            │   "initial"      │  Gate 3.5                     │
+│            │   "initial"      │  Gate 3.6                     │
 │            │ (No change       │   PASS                        │
 │            │  proposals       │                               │
 │            │  required)       │                               │
 │            └──────────────────┘                               │
 │                                                               │
 │            ┌──────────────────┐                               │
-│            │   "active"       │  ◄── openlogos change <slug>  │
+│            │   "launched"     │  ◄── openlogos change <slug>  │
 │            │ (Change          │  ──► openlogos merge <slug>   │
 │            │  proposals       │  ──► openlogos archive <slug> │
 │            │  required)       │                               │
@@ -79,12 +81,12 @@ OpenLogos projects have two lifecycle states:
 └───────────────────────────────────────────────────────────────┘
 ```
 
-- **`initial`** — First development cycle. AI follows the phase progression (Phase 1 → 2 → 3) freely, without requiring change proposals. Ends with `openlogos verify` (Gate 3.5 must PASS).
-- **`active`** — After `openlogos launch`. All modifications to existing documents must go through a change proposal (`change` → `merge` → `archive`).
+- **`initial`** — First development cycle. AI follows the phase progression (Phase 1 → 2 → 3) freely, without requiring change proposals. Ends with `openlogos verify` (Gate 3.6 must PASS).
+- **`launched`** — After `openlogos launch`. All modifications to existing documents must go through a change proposal (`change` → `merge` → `archive`).
 
 ## Phase progression
 
-The development lifecycle progresses through **11 phases**. The `status` command tracks 9 of them by scanning `logos/resources/` directories; Phase 3-4 produces code in the project source tree and is validated indirectly through Phase 3-5 verification.
+The development lifecycle progresses through **13 phases**. The `status` command tracks 11 of them by scanning `logos/resources/` directories; Phase 3-5 produces code in the project source tree and is validated indirectly through Phase 3-6 verification.
 
 | Phase | Directory | Suggested AI prompt |
 |-------|-----------|-------------------|
@@ -94,13 +96,15 @@ The development lifecycle progresses through **11 phases**. The `status` command
 | Phase 3-1 · Scenario Modeling | `logos/resources/prd/3-technical-plan/2-scenario-implementation/` | "Help me draw S01 sequence diagram" |
 | Phase 3-2 · API Design | `logos/resources/api/` | "Help me design the API" |
 | Phase 3-2 · DB Design | `logos/resources/database/` | "Help me design the database" |
-| Phase 3-3a · Test Cases | `logos/resources/test/` | "Help me design test cases" |
-| Phase 3-3b · Orchestration | `logos/resources/scenario/` | "Help me design orchestration tests" |
-| Phase 3-4 · Code Implementation | *(project source tree)* | "Implement S01 based on the specs" |
-| Phase 3-4 · Test Code | *(project source tree)* | "Write test code for S01 matching test-cases.md" |
-| Phase 3-5 · Verification | `logos/resources/verify/` | Run tests, then `openlogos verify` |
+| Phase 3-3 · Deployment Plan | `logos/resources/prd/3-technical-plan/3-deployment/` | "Help me design the deployment plan" |
+| Phase 3-4a · Test Cases | `logos/resources/test/` | "Help me design test cases" |
+| Phase 3-4b · Orchestration | `logos/resources/scenario/` | "Help me design orchestration tests" |
+| Phase 3-5 · Code Implementation | *(project source tree)* | "Implement S01 based on the specs" |
+| Phase 3-6 · Verification | `logos/resources/verify/` | Run tests, then `openlogos verify` |
+| Phase 3-7 · Deployment Execution | *(deployment report)* | Execute deployment with human authorization |
+| Phase 3-8 · Smoke Test | `logos/resources/verify/smoke-report.md` | `openlogos smoke` after deployment |
 
-Phase 3-4 is the core implementation step where AI generates **business code + test code** based on the full specification chain (sequence diagrams, API YAML, DB DDL, test case specs). Each batch of generated code must include an OpenLogos reporter that writes results to `logos/resources/verify/test-results.jsonl`. This phase does not have a dedicated `logos/resources/` directory because code output goes directly into the project source tree.
+Phase 3-5 is the core implementation step where AI generates **business code + test code** based on the full specification chain (sequence diagrams, API YAML, DB DDL, test case specs). Each batch of generated code must include an OpenLogos reporter that writes results to `logos/resources/verify/test-results.jsonl`. This phase does not have a dedicated `logos/resources/` directory because code output goes directly into the project source tree.
 
 ## Typical workflow
 
@@ -114,12 +118,12 @@ cd my-project
 openlogos status          # check progress at any time
 openlogos next            # ask for the single next action
 
-# 3. Implement code + test code (Phase 3-4)
+# 3. Implement code + test code (Phase 3-5)
 #    AI generates business code and test code from full specification chain
 #    Test reporter writes results to logos/resources/verify/test-results.jsonl
 
 # 4. After all phases complete, verify test coverage
-openlogos verify          # Gate 3.5 must PASS
+openlogos verify          # Gate 3.6 must PASS
 
 # 5. Activate change management for future iterations
 openlogos launch

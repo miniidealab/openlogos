@@ -3,7 +3,7 @@ title: "openlogos launch"
 description: Activate change management after the first development cycle is complete.
 ---
 
-Transition the project from `initial` lifecycle to `active` lifecycle. Once activated, all modifications to existing documents must go through a structured change proposal.
+Transition the project from `initial` lifecycle to `launched` lifecycle. Once launched, all modifications to existing documents must go through a structured change proposal.
 
 ## Synopsis
 

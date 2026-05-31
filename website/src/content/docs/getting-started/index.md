@@ -73,28 +73,31 @@ You + AI coding tool
 
 ## AI Skills
 
-Skills are platform-agnostic Markdown files (`SKILL.md`) that give AI operational instructions for each task. OpenLogos includes **13 built-in Skills**:
+Skills are platform-agnostic Markdown files (`SKILL.md`) that give AI operational instructions for each task. OpenLogos includes **16 built-in Skills**:
 
 | Phase | Skills |
 |-------|--------|
 | **WHY** (Requirements) | `project-init`, `prd-writer` |
-| **WHAT** (Design) | `product-designer` |
-| **HOW** (Implementation) | `architecture-designer`, `scenario-architect`, `api-designer`, `db-designer`, `test-writer`, `test-orchestrator`, `code-implementor`, `code-reviewer` |
+| **WHAT** (Design) | `product-designer`, `ui-ux-pro-max` |
+| **HOW** (Implementation) | `architecture-designer`, `scenario-architect`, `api-designer`, `db-designer`, `deployment-designer`, `test-writer`, `test-orchestrator`, `code-implementor`, `code-reviewer` |
+| **Deployment** | `deployment-executor` |
 | **Cross-phase** | `change-writer`, `merge-executor` |
 
 Skills work with any AI tool that can read project files. No vendor lock-in. [Full Skills Reference →](/skills)
 
 ## CLI
 
-The `openlogos` CLI provides 12 top-level commands for project lifecycle management:
+The `openlogos` CLI provides 14 top-level commands for project lifecycle management:
 
 | Command | Purpose |
 |---------|---------|
 | `init` | Initialize project structure |
+| `adopt` | Onboard an existing project (bootstrap: adopted) |
 | `sync` | Synchronize instruction files, Skills, specs, and tool integrations |
 | `status` | Show current phase and progress |
 | `next` | Show the single most actionable next step |
-| `verify` | Validate test results against acceptance criteria (Gate 3.5) |
+| `verify` | Validate test results against acceptance criteria (Gate 3.6) |
+| `smoke` | Validate post-deployment health (Gate 3.8) |
 | `launch` | Activate change management after verification passes |
 | `change` | Create a change proposal (delta) |
 | `merge` | Merge approved changes into main artifacts |

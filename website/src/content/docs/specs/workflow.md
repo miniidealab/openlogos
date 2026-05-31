@@ -36,12 +36,15 @@ Phase 3: HOW — How do we build it?
 ├── Step 0: Architecture overview (system architecture, tech stack, deployment)
 ├── Step 1: Scenario → Sequence diagram → APIs emerge
 ├── Step 2: API spec design → DB schema derivation
-├── Step 3: Test design (test-first)
-│   ├── 3a: Unit test + scenario test case design (all projects)
-│   └── 3b: API orchestration test design (API projects only)
-├── Step 4: Code generation + test code (code-implementor Skill)
-├── Step 5: Test verification (openlogos verify)
-└── Quality gates → Gate 3.0 ~ Gate 3.5
+├── Step 3: Deployment plan design (deployment-designer Skill)
+├── Step 4: Test design (test-first)
+│   ├── 4a: Unit test + scenario test case design (all projects)
+│   └── 4b: API orchestration test design (API projects only)
+├── Step 5: Code generation + test code (code-implementor Skill)
+├── Step 6: Test verification (openlogos verify)
+├── Step 7: Deployment execution (deployment-executor Skill, human authorization)
+├── Step 8: Smoke verification (openlogos smoke)
+└── Quality gates → Gate 3.0 ~ Gate 3.8
 ```
 
 ## Scenario ID Convention
@@ -189,11 +192,19 @@ Based on API endpoints that emerged from sequence diagrams, design detailed spec
 
 **Gate 3.2**: API YAML and DB DDL complete and mutually consistent.
 
-### Step 3: Test Design (Test-First)
+### Step 3: Deployment Plan Design
+
+Before test design, establish the deployment strategy. The [`deployment-designer`](/skills/deployment-designer) Skill produces a complete deployment plan covering topology, environment configuration, release commands, rollback strategy, and smoke test scope.
+
+**Output**: Deployment plan in `logos/resources/prd/3-technical-plan/3-deployment/` (e.g., `core-01-deployment-plan.md`).
+
+**Gate 3.3**: Deployment plan complete with environments, commands, rollback strategy, and smoke scope defined. `deployment_gates` written to `logos-project.yaml`.
+
+### Step 4: Test Design (Test-First)
 
 Before writing code, design the complete test system. Test design splits into two sub-steps covering the test pyramid:
 
-#### Step 3a: Unit Test + Scenario Test Case Design (All Projects)
+#### Step 4a: Unit Test + Scenario Test Case Design (All Projects)
 
 **Scope**: All project types (API services, CLI tools, frontend apps, libraries). Cannot be skipped.
 
@@ -209,9 +220,9 @@ Design two types of test cases per scenario:
 
 **Output**: Test case spec documents (Markdown) in `logos/resources/test/`, one file per scenario (e.g., `S01-test-cases.md`).
 
-**Gate 3.3a**: Unit and scenario test cases designed for core scenarios, covering all P0 happy paths + core EX exception paths.
+**Gate 3.4a**: Unit and scenario test cases designed for core scenarios, covering all P0 happy paths + core EX exception paths.
 
-#### Step 3b: API Orchestration Test Design (API Projects Only)
+#### Step 4b: API Orchestration Test Design (API Projects Only)
 
 **Scope**: Projects involving APIs. Pure CLI tools, frontend libraries without APIs can skip this step.
 
@@ -223,23 +234,23 @@ Design API orchestration test cases per scenario:
 
 **Output**: Orchestration test files (JSON) in `logos/resources/scenario/`.
 
-**Gate 3.3b**: Orchestration covers all happy paths + core exception paths.
+**Gate 3.4b**: Orchestration covers all happy paths + core exception paths.
 
-### Step 4: Code Generation + Test Code
+### Step 5: Code Generation + Test Code
 
 With full context available (prototypes + scenarios + API + DB + test cases + orchestration), AI-generated code quality is far superior to coding without context. Generate and verify scenario by scenario, driven by the [`code-implementor`](/skills/code-implementor) Skill.
 
 Code generation includes:
 
 - **Business code** — Implement step by step following the sequence diagram
-- **Unit test code** — Based on Step 3a unit test case specs
-- **Scenario test code** — Based on Step 3a scenario test case specs
+- **Unit test code** — Based on Step 4a unit test case specs
+- **Scenario test code** — Based on Step 4a scenario test case specs
 - **OpenLogos reporter** — Embedded in test code, writes results to `logos/resources/verify/test-results.jsonl` (see [Test Results Format](/specs/test-results))
 
-**Step 4 delivery standard (non-negotiable):**
+**Step 5 delivery standard (non-negotiable):**
 
-- Business code only, without corresponding test code → **Step 4 incomplete**
-- Test code only, without corresponding business code → **Step 4 incomplete**
+- Business code only, without corresponding test code → **Step 5 incomplete**
+- Test code only, without corresponding business code → **Step 5 incomplete**
 - Delivery must include all three: business code + UT/ST test code + reporter
 
 **Batch execution rules (batching allowed, each batch closed-loop):**
@@ -249,21 +260,21 @@ Code generation includes:
 - Before each batch, declare the UT/ST case IDs covered, ensuring traceability to `logos/resources/test/*.md`
 - Deferring all tests to a final batch is not allowed
 
-**Gate 3.4**: Code reviewed, unit tests pass, test environment deployed.
+**Gate 3.5**: Code reviewed, unit tests pass, test environment deployed.
 
-### Step 5: Test Verification
+### Step 6: Test Verification
 
 Run all tests to verify code, using `openlogos verify` for automated acceptance.
 
-**Prerequisites for entering Step 5:**
+**Prerequisites for entering Step 6:**
 
-- Only when Step 4 achieves complete delivery (business code + UT/ST test code + reporter) can Step 5 proceed
-- If "business code only, no tests" or "test code missing reporter" is discovered, return to Step 4 first
-- Step 5 does not write test code — its job is automated judgment of Step 4 deliverables
+- Only when Step 5 achieves complete delivery (business code + UT/ST test code + reporter) can Step 6 proceed
+- If "business code only, no tests" or "test code missing reporter" is discovered, return to Step 5 first
+- Step 6 does not write test code — its job is automated judgment of Step 5 deliverables
 
 **Verification flow:**
 
-1. AI embeds OpenLogos reporter in test code during Step 4 (see [Test Results Format](/specs/test-results))
+1. AI embeds OpenLogos reporter in test code during Step 5 (see [Test Results Format](/specs/test-results))
 2. User runs tests (`npm test`, `pytest`, etc.) → reporter writes each case result to `logos/resources/verify/test-results.jsonl`
 3. User runs `openlogos verify` → CLI reads JSONL + case IDs from `logos/resources/test/*.md` → calculates acceptance result
 
@@ -280,7 +291,31 @@ Run all tests to verify code, using `openlogos verify` for automated acceptance.
 - All pass → generates `logos/resources/verify/acceptance-report.md`, terminal outputs PASS
 - Failures or gaps → generates report listing issues, terminal outputs FAIL, exit code 1
 
-**Gate 3.5**: `openlogos verify` outputs PASS (all cases pass + 100% coverage).
+**Gate 3.6**: `openlogos verify` outputs PASS (all cases pass + 100% coverage).
+
+### Step 7: Deployment Execution
+
+After Gate 3.6 passes, execute deployment according to the deployment plan (Step 3). This step requires **explicit human authorization** — AI cannot auto-deploy.
+
+The [`deployment-executor`](/skills/deployment-executor) Skill handles this step:
+
+1. Confirm human authorization
+2. Read deployment plan and proposal `[deploy]` tasks
+3. Execute deployment commands step by step
+4. Generate deployment report (`logos/resources/verify/deployment-report.md`)
+5. Guide user to run `openlogos smoke`
+
+**Gate 3.7**: Deployment report generated, target environment accessible.
+
+### Step 8: Smoke Verification
+
+After deployment, validate the target environment's health using `openlogos smoke`. This is the final quality gate before archiving.
+
+1. `openlogos smoke` reads smoke results from `logos/resources/verify/smoke-results.jsonl`
+2. Compares against defined `SMOKE-*` case IDs in `logos/resources/test/smoke/*.md`
+3. Generates `logos/resources/verify/smoke-report.md`
+
+**Gate 3.8**: `openlogos smoke` outputs PASS (all smoke cases pass + 100% coverage).
 
 ## Three-Level Scenario Expansion
 

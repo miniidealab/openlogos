@@ -22,12 +22,12 @@ Must be run from the project root.
 
 ## What it checks
 
-The command scans 9 directories in `logos/resources/` to determine phase completion.
+The command scans 11 directories in `logos/resources/` to determine phase completion.
 
 **Single-module projects** — a phase is **done** when its directory contains at least one non-`.gitkeep` file.
 
 **Multi-module projects** — phase completion is module-aware:
-- **Scenario phases** (`phase.3-1`, `phase.3-3a`): done when every scenario belonging to the module has a matching `<moduleId>-SXX-*.md` file.
+- **Scenario phases** (`phase.3-1`, `phase.3-4a`): done when every scenario belonging to the module has a matching `<moduleId>-SXX-*.md` file.
 - **All other phases**: done when the directory contains at least one file with a `<moduleId>-` prefix (e.g., `admin-01-requirements.md`). Files belonging to other modules are ignored.
 
 | Phase | Directory scanned |
@@ -38,11 +38,13 @@ The command scans 9 directories in `logos/resources/` to determine phase complet
 | Phase 3-1 · Scenario Modeling | `logos/resources/prd/3-technical-plan/2-scenario-implementation/` |
 | Phase 3-2 · API Design | `logos/resources/api/` |
 | Phase 3-2 · DB Design | `logos/resources/database/` |
-| Phase 3-3a · Test Cases | `logos/resources/test/` |
-| Phase 3-3b · Orchestration | `logos/resources/scenario/` |
-| Phase 3-5 · Verification | `logos/resources/verify/` |
+| Phase 3-3 · Deployment Plan | `logos/resources/prd/3-technical-plan/3-deployment/` |
+| Phase 3-4a · Test Cases | `logos/resources/test/` |
+| Phase 3-4b · Orchestration | `logos/resources/scenario/` |
+| Phase 3-6 · Verification | `logos/resources/verify/` |
+| Phase 3-8 · Smoke Test | `logos/resources/verify/smoke-report.md` |
 
-**Note:** Phase 3-4 (Code Implementation + Test Code) is not tracked as a separate directory because code output goes into the project source tree. Its completion is validated indirectly through Phase 3-5 — when tests pass and `openlogos verify` reports Gate 3.5 PASS, Phase 3-4 is implicitly confirmed.
+**Note:** Phase 3-5 (Code Implementation + Test Code) is not tracked as a separate directory because code output goes into the project source tree. Its completion is validated indirectly through Phase 3-6 — when tests pass and `openlogos verify` reports Gate 3.6 PASS, Phase 3-5 is implicitly confirmed. Phase 3-7 (Deployment Execution) is tracked via the deployment report.
 
 It also scans `logos/changes/` for active change proposals (excluding `archive/`).
 
@@ -144,7 +146,7 @@ openlogos status --module admin
 
 ## Active change proposals
 
-When the lifecycle is `active` and there are open proposals in `logos/changes/`, the proposal step is shown:
+When the lifecycle is `launched` and there are open proposals in `logos/changes/`, the proposal step is shown:
 
 ```
 📝 Active Change Proposals

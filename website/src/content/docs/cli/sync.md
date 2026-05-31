@@ -49,9 +49,9 @@ Syncing project files...
   ✓ documents.changes added to logos.config.json
   ✓ AGENTS.md updated
   ✓ CLAUDE.md updated
-  ✓ 13 skills synced to logos/skills/
-  ✓ 13 skills synced to .agents/skills/
-  ✓ 14 skills synced to .cursor/rules/
+  ✓ 16 skills synced to logos/skills/
+  ✓ 16 skills synced to .agents/skills/
+  ✓ 17 skills synced to .cursor/rules/
   ✓ 13 specs synced to logos/spec/
 
 Sync complete.

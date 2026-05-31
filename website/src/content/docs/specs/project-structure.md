@@ -24,14 +24,18 @@ project-root/
 │   │   │   │   └── 2-page-design/         # Phase 2: Page designs + HTML prototypes
 │   │   │   └── 3-technical-plan/
 │   │   │       ├── 1-architecture/        # Phase 3: Architecture & tech stack
-│   │   │       └── 2-scenario-implementation/  # Phase 3: Scenario docs (sequence diagrams)
+│   │   │       ├── 2-scenario-implementation/  # Phase 3: Scenario docs (sequence diagrams)
+│   │   │       └── 3-deployment/          # Phase 3: Deployment plan + smoke strategy
 │   │   ├── api/                           # Phase 3: OpenAPI YAML
 │   │   ├── database/                      # Phase 3: SQL DDL
 │   │   ├── test/                          # Phase 3: Test case specs (Markdown)
+│   │   │   └── smoke/                     # Smoke test cases (post-deployment)
 │   │   ├── scenario/                      # Phase 3: API orchestration tests (JSON)
-│   │   └── verify/                        # Phase 3: Test results (JSONL + report)
+│   │   ├── implementation/                # Phase 3: Implementation manifest
+│   │   ├── verify/                        # Phase 3: Test results + reports (JSONL + Markdown)
+│   │   └── reference/                     # Reference materials (images, context)
 │   │
-│   ├── skills/                 # AI Skills (SKILL.md per skill, 13 built-in)
+│   ├── skills/                 # AI Skills (SKILL.md per skill, 16 built-in)
 │   │   ├── prd-writer/
 │   │   ├── product-designer/
 │   │   ├── code-implementor/
@@ -68,11 +72,14 @@ Stores all development resource documents — the project's current "source of t
 | `prd/2-product-design/2-page-design/` | Phase 2: WHAT | Page design docs + HTML prototypes |
 | `prd/3-technical-plan/1-architecture/` | Phase 3: HOW | Architecture overview, tech stack decisions |
 | `prd/3-technical-plan/2-scenario-implementation/` | Phase 3: HOW | Scenario docs (sequence diagrams + step descriptions) |
+| `prd/3-technical-plan/3-deployment/` | Phase 3: HOW | Deployment plan, environment config, rollback strategy, smoke scope |
 | `api/` | Phase 3: HOW | OpenAPI YAML spec files |
 | `database/` | Phase 3: HOW | SQL DDL design files |
 | `test/` | Phase 3: HOW | Unit + scenario test case specs (Markdown) |
+| `test/smoke/` | Phase 3: HOW | Post-deployment smoke test cases (Markdown) |
 | `scenario/` | Phase 3: HOW | API orchestration test cases (JSON, API projects only) |
-| `verify/` | Phase 3: HOW | Test results (JSONL) + acceptance report (Markdown) |
+| `implementation/` | Phase 3: HOW | Implementation manifest (code delivery tracking) |
+| `verify/` | Phase 3: HOW | Test results (JSONL), acceptance report, smoke report, deployment report |
 
 ### logos/changes/
 
@@ -119,7 +126,7 @@ Project configuration file defining document module paths and matching patterns:
 | `name` | string | Project name |
 | `locale` | `"en"` \| `"zh"` | Document language |
 | `aiTool` | string | Primary AI tool (`claude-code`, `opencode`, `cursor`, `other`) |
-| `lifecycle` | `"initial"` \| `"active"` | Project lifecycle state |
+| `lifecycle` | `"initial"` \| `"launched"` | Project lifecycle state (deprecated at project level; now per-module in logos-project.yaml) |
 | `documents` | object | Document module definitions (path + glob pattern) |
 | `verify.result_path` | string | Custom path for test results JSONL |
 
