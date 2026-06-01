@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-06-01
+
+### Added
+
+- **PreToolUse guard hook** — 新增 `.claude/openlogos/bin/guard-check` 脚本，在 Claude Code 调用 Edit/Write/Bash 工具前检查 `logos/.openlogos-guard` 是否存在。`launched` 生命周期项目在无活跃变更提案时，工具调用被 exit 2 硬性阻断，将变更管理从"提醒"升级为"强制执行"。支持白名单（`logos/changes/`、`CLAUDE.md`、`AGENTS.md` 等）和 initial lifecycle 豁免。
+- **官网文档全面同步** — 补齐 11 个缺失文档页（`adopt`、`smoke` 命令；`deployment-designer`、`deployment-executor`、`ui-ux-pro-max` Skills；`cli-json-output`、`codex-plugin`、`directory-convention`、`module-naming-convention`、`sql-comment-convention`、`tasks-spec` 规格）；修正版本号、命令数（12→14）、Skill 数（13→16）、Phase 体系（11→13 阶段）、lifecycle 术语（`active`→`launched`）；补全侧边栏导航。
+
 ## [0.10.3] - 2026-05-28
 
 ### Fixed
