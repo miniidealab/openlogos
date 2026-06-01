@@ -1,0 +1,362 @@
+---
+title: Adopt an Existing Project
+description: Bring OpenLogos into a project that already has code — initialize the methodology infrastructure and start iterating with full change traceability.
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Already have a running project? This guide walks you through onboarding OpenLogos without disrupting your existing codebase. You'll get the full methodology infrastructure — change management, AI Skills, verify gates — up and running in minutes.
+
+**Time required:** ~15 minutes to onboard, then iterate at your own pace.
+
+---
+
+## How this differs from Quick Start
+
+The [Quick Start](/getting-started/quick-start) assumes a brand-new project and walks you through Phase 1 → 2 → 3 from scratch. That's not your situation.
+
+When you adopt an existing project:
+
+| Aspect | New project (`init`) | Existing project (`adopt`) |
+|--------|---------------------|---------------------------|
+| Starting point | Empty directory | Code already exists |
+| Module lifecycle | `initial` (Phase-driven) | `launched` (Change-driven) |
+| Phase 1–3 documents | Required before coding | Optional — fill in gradually |
+| Change management | Activates after `launch` | **Active immediately** |
+| First suggested action | Write requirements | Create a baseline-docs proposal |
+
+The key difference: `adopt` sets your module to `lifecycle: launched` with `bootstrap: adopted` right away. You skip the initial document baseline requirement and jump straight into the iteration workflow.
+
+---
+
+## Step 1: Install OpenLogos CLI
+
+```bash
+npm install -g @miniidealab/openlogos
+openlogos --version
+```
+
+---
+
+## Step 2: Run `openlogos adopt`
+
+From your project root (where `package.json`, `Cargo.toml`, or `pyproject.toml` lives):
+
+```bash
+openlogos adopt
+```
+
+The CLI will ask two questions:
+
+```
+Choose language / 选择语言:
+  1. 中文 (default)
+  2. English
+
+Your choice [1/2] (default: 1): 2
+
+Choose AI coding tool / 选择 AI 编码工具:
+  1. Claude Code (default)
+  2. OpenCode
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
+
+Your choice [1/2/3/4/5/6] (default: 1): 1
+```
+
+Or pass flags to skip the prompts:
+
+```bash
+openlogos adopt --locale en --ai-tool claude-code
+```
+
+### What it creates
+
+```
+your-project/
+├── AGENTS.md                    ← AI instruction file (auto-generated)
+├── CLAUDE.md                    ← Claude Code instruction file
+│
+└── logos/
+    ├── logos.config.json        ← Project configuration
+    ├── logos-project.yaml       ← AI collaboration index
+    │                              (lifecycle: launched, bootstrap: adopted)
+    ├── resources/               ← Empty directories, ready to fill
+    │   ├── prd/
+    │   ├── api/
+    │   ├── database/
+    │   ├── test/
+    │   └── verify/
+    ├── skills/                  ← 16 AI Skills deployed
+    ├── spec/                    ← Methodology specifications
+    └── changes/                 ← Change proposal workspace
+```
+
+<Aside type="note">
+`adopt` also auto-detects your test command from `package.json` and configures `verify.pre_run_command` so `openlogos verify` knows how to run your tests.
+</Aside>
+
+---
+
+## Step 3: Configure `tech_stack` and `skip_phases`
+
+Open `logos/logos-project.yaml` and fill in your tech stack. This gives AI the context it needs to generate accurate code and docs.
+
+```yaml
+tech_stack:
+  language: TypeScript
+  framework: Next.js 15
+  database: PostgreSQL
+  hosting: Vercel
+  auth: NextAuth.js
+```
+
+If your project doesn't have an HTTP API or database, declare `skip_phases` to tell OpenLogos which phases to skip:
+
+```yaml
+modules:
+  - id: core
+    name: Core
+    lifecycle: launched
+    bootstrap: adopted
+    skip_phases: [api, database, scenario]  # CLI tool, no HTTP API
+```
+
+| Value | Skips | When to use |
+|-------|-------|-------------|
+| `api` | API design phase | Desktop app, CLI tool, library |
+| `database` | DB design phase | Stateless service, pure compute |
+| `scenario` | Orchestration tests | Usually paired with `api` |
+
+---
+
+## Step 4: Verify your test setup
+
+Check that `openlogos verify` can find and run your tests:
+
+```bash
+cat logos/logos.config.json
+```
+
+You should see a `verify` section:
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "npm test"
+  }
+}
+```
+
+If the `pre_run_command` is missing or wrong, edit it manually:
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "npm test",
+    "sandbox_mode": "auto"
+  }
+}
+```
+
+<Aside type="tip">
+For projects with separate regression and incremental test suites, use `regression_command` + `incremental_command` instead of `pre_run_command`. See the [verify docs](/cli/verify) for details.
+</Aside>
+
+---
+
+## Step 5: Check your project status
+
+```bash
+openlogos status
+```
+
+You'll see something like:
+
+```
+📊 OpenLogos Project Status
+
+⏭️  Phase 1 · Requirements — Document baseline skipped (existing project onboarding)
+⏭️  Phase 2 · Product Design — Document baseline skipped (existing project onboarding)
+⏭️  Phase 3-0 · Architecture — Document baseline skipped (existing project onboarding)
+
+🧩 Modules
+  ✅  core  [launched]
+       💡 Fill in baseline docs first (openlogos change add-baseline-docs)
+```
+
+The `⏭️` phases are skipped — that's expected. Your project is in `launched` lifecycle, which means **change management is active immediately**. Every code change from here on needs a change proposal.
+
+---
+
+## Step 6: Start with a baseline-docs proposal
+
+You don't need to write all your documentation at once. The recommended approach is to create a baseline proposal and fill in docs incrementally as you work on features.
+
+```bash
+openlogos change add-baseline-docs
+```
+
+This creates `logos/changes/add-baseline-docs/` with `proposal.md` and `tasks.md`. Tell AI:
+
+```
+Read logos/changes/add-baseline-docs/proposal.md and help me fill it in.
+The goal is to document what already exists in this project.
+```
+
+### What to document first
+
+Prioritize by what AI needs most to help you effectively:
+
+| Priority | Document | Why |
+|----------|----------|-----|
+| High | Architecture overview | Tech stack, system boundaries, key decisions |
+| High | Core scenario sequence diagrams | How the main flows actually work |
+| Medium | API spec (if applicable) | Existing endpoints and contracts |
+| Medium | Test case specs | What's already tested and how |
+| Low | Requirements doc | Business context, useful but not urgent |
+
+<Aside type="tip">
+You don't need to complete the baseline proposal before starting feature work. It's fine to have an open `add-baseline-docs` proposal running in parallel with feature proposals — just keep them scoped separately.
+</Aside>
+
+---
+
+## Step 7: Add the OpenLogos reporter to your tests
+
+For `openlogos verify` to work, your tests need to write results to `logos/resources/verify/test-results.jsonl`. Add the OpenLogos reporter to your test runner.
+
+<Tabs>
+<TabItem label="Vitest">
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    reporters: ['default', './logos/spec/openlogos-reporter.ts'],
+  },
+});
+```
+</TabItem>
+<TabItem label="Jest">
+```javascript
+// jest.config.js
+module.exports = {
+  reporters: ['default', './logos/spec/openlogos-reporter.js'],
+};
+```
+</TabItem>
+<TabItem label="pytest">
+```ini
+# pytest.ini
+[pytest]
+addopts = --openlogos-reporter
+```
+</TabItem>
+</Tabs>
+
+Then name your tests with OpenLogos IDs:
+
+```typescript
+it('UT-S01-01: should register user with valid email', () => { ... });
+it('ST-S01-01: full registration flow', () => { ... });
+```
+
+See [Test Results Format](/specs/test-results) for the full reporter spec and copy-paste templates.
+
+---
+
+## The iteration workflow from here
+
+Once adopted, every change follows the Delta workflow:
+
+<Steps>
+1. **Create a proposal**
+
+   ```bash
+   openlogos change my-feature
+   ```
+
+2. **Tell AI to fill in the proposal**
+
+   ```
+   Read logos/changes/my-feature/proposal.md and help me fill it in.
+   ```
+
+3. **Produce delta files** — updated specs, API changes, new test cases
+
+4. **Merge** (human confirmation point)
+
+   ```bash
+   openlogos merge my-feature
+   ```
+
+5. **Implement code + tests** — AI generates code based on merged specs
+
+6. **Verify** (human confirmation point)
+
+   ```bash
+   openlogos verify
+   ```
+
+7. **Archive**
+
+   ```bash
+   openlogos archive my-feature
+   ```
+</Steps>
+
+---
+
+## Common questions
+
+**Do I need to fill in all the Phase 1–3 docs before I can do anything?**
+
+No. With `bootstrap: adopted`, Phase 1–3 docs are optional. You can start iterating immediately. Fill them in gradually as you work — each feature proposal is a good opportunity to document the relevant scenarios and architecture decisions.
+
+**What if my project has multiple modules?**
+
+Run `openlogos module add <name>` to register additional modules. Each module tracks its own phase progress and lifecycle state independently.
+
+```bash
+openlogos module add payment
+openlogos module add admin
+```
+
+**Can I use `adopt` on a project that was already initialized with `init`?**
+
+No — `adopt` exits with an error if `logos/logos.config.json` already exists. If you initialized with `init` and want to switch to `launched` lifecycle, run `openlogos launch` instead.
+
+**What does `bootstrap: adopted` actually do?**
+
+It tells OpenLogos that this project skipped the initial document baseline. The effects:
+- `openlogos status` shows Phase 1–3 as `⏭️` (skipped) instead of ❌ (missing)
+- `openlogos next` suggests `openlogos change add-baseline-docs` instead of "write requirements"
+- `openlogos launch` doesn't require Phase 1–3 docs to be present
+
+**My test command is complex — how do I configure it?**
+
+Edit `logos/logos.config.json` directly:
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "docker compose up -d && npm test && docker compose down"
+  }
+}
+```
+
+---
+
+## Next steps
+
+- [CLI Reference: adopt](/cli/adopt) — Full command reference with all options
+- [Change Management](/specs/change-management) — How the Delta workflow works in detail
+- [Test Results Format](/specs/test-results) — Reporter templates for all major test frameworks
+- [First AI Collaboration](/getting-started/first-collaboration) — End-to-end walkthrough of a full feature cycle

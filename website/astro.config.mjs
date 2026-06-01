@@ -28,6 +28,7 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'getting-started' },
             { label: 'Quick Start', slug: 'getting-started/quick-start' },
+            { label: 'Adopt Existing Project', slug: 'getting-started/adopt-existing-project' },
             { label: 'First AI Collaboration', slug: 'getting-started/first-collaboration' },
           ],
         },
