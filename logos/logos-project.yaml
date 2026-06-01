@@ -1,0 +1,223 @@
+project:
+  name: "openlogos"
+  description: ""
+  methodology: "OpenLogos"
+
+tech_stack:
+  language: TypeScript
+  runtime: Node.js >=18
+  cli:
+    package: "@miniidealab/openlogos"
+    module_format: ESM
+    testing: Vitest
+    key_dependency: yaml ^2.8.3
+  website:
+    framework: Astro 6.x
+    docs_theme: "@astrojs/starlight"
+    hosting: Cloudflare Pages
+    release_data_pipeline: "npm run generate:releases -> npm run build -> npm run deploy"
+  plugin_templates:
+    - claude-plugin-template
+    - opencode-plugin-template
+    - codex-plugin-template
+  release_channels:
+    package_registry: npm
+    source_of_truth: GitHub tag + CHANGELOG.md
+    release_archive: GitHub Releases
+
+scenario_counter:
+  next_id: 21
+
+modules:
+  - id: core
+    name: 核心功能
+    lifecycle: launched
+    bootstrap: adopted
+    skip_phases: [api, database, scenario]
+    deployment_required: true
+
+scenarios:
+  - id: S01
+    name: 初始化 OpenLogos 项目
+    module: core
+  - id: S05
+    name: 查看下一步建议
+    module: core
+  - id: S08
+    name: 同步 AI 工具资产与资源索引
+    module: core
+  - id: S09
+    name: 创建、合并、归档变更提案
+    module: core
+  - id: S11
+    name: 查看阶段进度与活跃变更
+    module: core
+  - id: S13
+    name: 运行测试验收并生成报告
+    module: core
+  - id: S14
+    name: 切换到 launched 生命周期
+    module: core
+  - id: S15
+    name: 处理 SQL 注释规范
+    module: core
+  - id: S16
+    name: 输出机器可读 JSON
+    module: core
+  - id: S17
+    name: 管理模块注册表
+    module: core
+  - id: S18
+    name: 同步 resource_index
+    module: core
+  - id: S19
+    name: 执行部署后 smoke 门禁
+    module: core
+  - id: S20
+    name: 已有项目接入 OpenLogos
+    module: core
+
+release_workflows:
+  cli_tag_release:
+    name: CLI tag 驱动标准发版（GitHub Workflow 唯一入口）
+    status: standard
+    trigger:
+      - git push origin vX.Y.Z
+    automation:
+      workflow_file: .github/workflows/publish.yml
+      workflow_name: "Publish to npm"
+      trigger_event: push(tags: v*)
+      publish_policy: 禁止本地手工 npm publish，统一由 GitHub Actions 使用 NPM_TOKEN 发布
+    preconditions:
+      - 工作区已提交待发布改动（避免脏工作区干扰版本核对）
+      - cli/package.json、plugin/.claude-plugin/plugin.json、CHANGELOG.md 版本号与 tag 一致
+      - cd cli && npm test 通过
+      - cd cli && npm run build 通过
+      - GitHub Secrets 已配置：NPM_TOKEN、CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID
+    commands:
+      - git commit -m "chore(release): prepare vX.Y.Z"
+      - git tag vX.Y.Z
+      - git push origin master
+      - git push origin vX.Y.Z
+      - gh run list --workflow ".github/workflows/publish.yml" --limit 5
+      - gh run watch <run-id>
+      - npm view @miniidealab/openlogos version --json
+      - gh release view vX.Y.Z
+    outputs:
+      - "npm: @miniidealab/openlogos"
+      - GitHub Release: vX.Y.Z
+      - 官网 /releases 与发布 tag 同步
+    failure_diagnostics:
+      - 若 Actions run 显示 workflow 名为 `.github/workflows/publish.yml` 且 jobs 为空：优先检查 workflow 语法/触发条件是否导致配置失效
+      - 若 Publish 步骤失败：检查 NPM_TOKEN 权限、npm 包名权限与 provenance 设置
+      - 若官网同步步骤失败：检查 Cloudflare secrets、website 构建日志与 releases 数据生成
+      - 若 tag 已推送但发布失败：修复后使用新 patch 版本重新打 tag（禁止复用失败 tag）
+    references:
+      - logos/spec/release-process.md
+      - logos/resources/prd/3-technical-plan/1-architecture/core-03-release-and-versioning.md
+      - logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
+
+  website_release_sync:
+    name: 官网发布动态与文档站发布
+    status: standard
+    trigger:
+      - 由 cli_tag_release 的 publish workflow 在同一条流水线内执行
+      - 仅作为 tag 发布链路的组成步骤，不接受手工跳过
+    commands:
+      - cd website && npm run generate:releases
+      - cd website && npm run build
+      - cd website && npm run deploy
+    outputs:
+      - website/dist
+      - /releases 页面最新版本、发布时间与摘要
+    references:
+      - logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
+      - logos/resources/test/smoke/core-smoke-test-cases.md
+
+deployment_gates:
+  core:
+    deployment_required: true
+    smoke_required: true
+    environments:
+      - staging
+
+resource_index:
+  - path: logos/resources/prd/1-product-requirements/core-01-requirements.md
+    desc: 产品需求主文档。涉及命令行为、场景范围、验收条件与优先级时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-00-information-architecture.md
+    desc: 信息架构设计。涉及目录结构、文档组织和索引入口设计时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md
+    desc: 功能规格主文档。涉及 adopt/init 语义、status/next/launch 行为边界时必读。
+  - path: logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md
+    desc: CLI 交互体验设计。涉及命令输出文案、用户引导和状态反馈时必读。
+  - path: logos/resources/prd/2-product-design/2-page-design/core-02-docs-website-experience.md
+    desc: 文档站页面体验设计。涉及官网展示结构和发布动态入口时必读。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md
+    desc: 架构总览。涉及系统边界、技术栈、场景映射和门禁策略时必读。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-02-skip-phases-and-interfaces.md
+    desc: skip_phases 与阶段接口约束。涉及 phase 跳过策略和状态计算时必读。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-03-release-and-versioning.md
+    desc: 发版与版本一致性规则。涉及 tag、Release、版本同步要求时必读。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-04-openlogos-project-index-update.md
+    desc: logos-project 索引增强设计。涉及 index 字段扩展和维护策略时必读。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-05-baseline-gap-report.md
+    desc: 文档基线缺口报告。涉及 adopt 场景的补文档策略与风险识别时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md
+    desc: 场景总览与依赖图。涉及 S01~S20 覆盖范围、前后依赖关系时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md
+    desc: S01 时序文档。涉及 init 初始化流程、目录产物和配置写入时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md
+    desc: S05 时序文档。涉及 next 建议生成和接入模式引导时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md
+    desc: S08 时序文档。涉及 AI 工具资产同步与索引补录时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md
+    desc: S09 时序文档。涉及 change/merge/archive 生命周期和 guard 规则时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S11-status-progress.md
+    desc: S11 时序文档。涉及状态聚合、提案门禁和 bootstrap 展示语义时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S13-verify-results.md
+    desc: S13 时序文档。涉及 verify 执行、报告生成和失败诊断时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S14-launch-lifecycle.md
+    desc: S14 时序文档。涉及 launched 切换门禁、adopt 豁免与失败分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S15-sql-comment-convention.md
+    desc: S15 时序文档。涉及 SQL 注释规范开关与数据库适配时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md
+    desc: S16 时序文档。涉及 JSON 输出契约、容错恢复和诊断字段时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S17-module-management.md
+    desc: S17 时序文档。涉及模块注册表增删改与全局编号协同时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S18-resource-index-sync.md
+    desc: S18 时序文档。涉及 resource_index 扫描、补录和描述维护时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md
+    desc: S19 时序文档。涉及 smoke 门禁状态、报告产物和后续动作时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S20-adopt-existing-project.md
+    desc: S20 时序文档。涉及存量项目接入、bootstrap=adopted 和 launch 放行时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-99-traceability-matrix.md
+    desc: 追踪矩阵。涉及需求-设计-测试-实现映射核查时必读。
+  - path: logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
+    desc: 部署方案主文档。涉及 npm 发布、GitHub Release、官网部署与回滚策略时必读。
+  - path: logos/resources/test/core-S20-test-cases.md
+    desc: S20 测试用例。涉及 adopt 初始化完整性、状态兼容和门禁行为验收时必读。
+  - path: logos/resources/test/smoke/core-smoke-test-cases.md
+    desc: 核心 smoke 用例。涉及发布后最小可用性验证和官网 release 页面检查时必读。
+  - path: logos/resources/verify/acceptance-report.md
+    desc: 当前提案验收报告。涉及 verify 结论、覆盖度和风险判断时必读。
+  - path: logos/resources/verify/deployment-report.md
+    desc: 部署执行报告。涉及部署步骤、结果记录和异常处置时必读。
+  - path: logos/resources/verify/smoke-report.md
+    desc: 部署后冒烟报告。涉及 smoke 成败判定与失败定位时必读。
+  - path: logos/resources/implementation/implementation-manifest.md
+    desc: 实现清单。涉及代码落地路径、测试覆盖与交付边界时必读。
+  - path: logos/spec/logos-project.md
+    desc: logos-project.yaml 规范。涉及字段契约、枚举语义和完成判定时必读。
+  - path: logos/spec/release-process.md
+    desc: 标准发版流程。涉及版本同步、tag 发布、Release 创建与官网部署时必读。
+  - path: spec/pretooluse-guard.md
+    desc: PreToolUse guard hook 规格。涉及变更管理硬拦截机制、白名单规则、判定逻辑时必读。
+  - path: .claude/openlogos/bin/guard-check
+    desc: PreToolUse hook 脚本。涉及 Claude Code 工具拦截、guard 文件检测、白名单判定时必读。
+
+conventions:
+  - "场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号"
+  - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"
+  - "部署与 smoke 是否执行以活跃提案的部署影响与 tasks.md [deploy] section 为准"
+  - "遵循 OpenLogos 三层推进模型（Why → What → How）"
+  - "每次变更必须先创建 logos/changes/ 变更提案"

@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+# OpenLogos Guard Check — PreToolUse hook for Claude Code.
+# Blocks Edit/Write/Bash tool calls when the project is in "launched" lifecycle
+# but no active change proposal (logos/.openlogos-guard) exists.
+#
+# Input:  JSON on stdin  { "tool_name": "Edit"|"Write"|"Bash", "tool_input": { ... } }
+# Output: JSON on stdout { "reason": "..." }  (only when blocking)
+# Exit:   0 = allow,  2 = block
+
+set -euo pipefail
+
+# ── Read stdin ────────────────────────────────────────────────────────────────
+INPUT="$(cat)"
+TOOL_NAME="$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null \
+  || echo "$INPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')); process.stdout.write(d.tool_name||'')" 2>/dev/null \
+  || echo "")"
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+json_get() {
+  # json_get <json> <key>  — extract a string field with python3 or node
+  local json="$1" key="$2"
+  echo "$json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('$key',''))" 2>/dev/null \
+    || echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')); process.stdout.write((d.tool_input||{})['$key']||'')" 2>/dev/null \
+    || echo ""
+}
+
+block() {
+  # Emit JSON reason and exit 2 to block the tool call
+  local msg="$1"
+  printf '{"reason":"%s"}' "$msg"
+  exit 2
+}
+
+# ── Step 1: Check if logos project exists ────────────────────────────────────
+YAML_FILE="logos/logos-project.yaml"
+CONFIG_FILE="logos/logos.config.json"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+  # Not an OpenLogos project — allow everything
+  exit 0
+fi
+
+# ── Step 2: Determine lifecycle ───────────────────────────────────────────────
+# Check if any module has lifecycle: launched
+IS_LAUNCHED=0
+if [ -f "$YAML_FILE" ]; then
+  if python3 -c "
+import sys, re
+content = open('$YAML_FILE').read()
+in_modules = False
+for line in content.splitlines():
+    if re.match(r'^modules\s*:', line):
+        in_modules = True
+        continue
+    if in_modules:
+        if re.match(r'^[a-zA-Z]', line) and not re.match(r'^\s', line):
+            break
+        if re.search(r'lifecycle\s*:\s*[\"\'"]?launched[\"\'"]?', line):
+            sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
+    IS_LAUNCHED=1
+  elif node -e "
+const fs = require('fs');
+const content = fs.readFileSync('$YAML_FILE', 'utf-8');
+let inModules = false;
+for (const line of content.split('\n')) {
+  if (/^modules\s*:/.test(line)) { inModules = true; continue; }
+  if (inModules) {
+    if (/^[a-zA-Z]/.test(line) && !/^\s/.test(line)) break;
+    if (/lifecycle\s*:\s*[\"']?launched[\"']?/.test(line)) process.exit(0);
+  }
+}
+process.exit(1);
+" 2>/dev/null; then
+    IS_LAUNCHED=1
+  fi
+fi
+
+if [ "$IS_LAUNCHED" -eq 0 ]; then
+  # All modules are initial — allow everything
+  exit 0
+fi
+
+# ── Step 3: Check guard file ──────────────────────────────────────────────────
+GUARD_FILE="logos/.openlogos-guard"
+if [ -f "$GUARD_FILE" ]; then
+  # Active change proposal exists — allow
+  exit 0
+fi
+
+# ── Step 4: Check whitelist ───────────────────────────────────────────────────
+
+# Whitelist: path prefixes always allowed regardless of guard
+WHITELIST_PREFIXES=(
+  "logos/changes/"
+  "logos/.openlogos-guard"
+  "logos/logos-project.yaml"
+  ".claude/"
+  ".opencode/"
+  ".codex-plugin/"
+  ".cursor/"
+  "logos/skills/"
+  "logos/spec/"
+  ".gitignore"
+  "README"
+  "CLAUDE.md"
+  "AGENTS.md"
+  "opencode.json"
+  ".openlogos"
+)
+
+is_whitelisted_path() {
+  local path="$1"
+
+  # Use Python/Node to normalize both paths.
+  # Key challenge: on macOS /var is a symlink to /private/var.
+  # spawnSync passes cwd=/var/... but bash pwd returns /private/var/...
+  # We normalize by resolving the cwd symlink, then applying the same
+  # symlink substitution to the input path before computing relpath.
+  local rel_path=""
+  if command -v python3 &>/dev/null; then
+    rel_path="$(python3 - "$path" <<'PYEOF' 2>/dev/null
+import sys, os
+
+path = sys.argv[1]
+cwd = os.getcwd()  # /private/var/... (bash resolves symlinks)
+
+# Resolve cwd symlinks to get canonical form
+real_cwd = os.path.realpath(cwd)
+
+# For the input path, try to resolve symlinks on the directory part
+# (the file itself may not exist yet)
+path_dir = os.path.dirname(path)
+path_base = os.path.basename(path)
+try:
+    real_dir = os.path.realpath(path_dir) if os.path.exists(path_dir) else path_dir
+except Exception:
+    real_dir = path_dir
+real_path = os.path.join(real_dir, path_base)
+
+# Compute relative path
+try:
+    rel = os.path.relpath(real_path, real_cwd)
+    if rel.startswith('..'):
+        # Fallback: try without resolving path symlinks
+        rel2 = os.path.relpath(path, cwd)
+        if not rel2.startswith('..'):
+            rel = rel2
+except ValueError:
+    rel = path
+
+print(rel)
+PYEOF
+)"
+  elif command -v node &>/dev/null; then
+    rel_path="$(node -e "
+const path = require('path');
+const fs = require('fs');
+const p = process.argv[1];
+const cwd = process.cwd();
+// Resolve cwd symlinks
+let realCwd = cwd;
+try { realCwd = fs.realpathSync(cwd); } catch {}
+// Resolve directory part of path (file may not exist)
+const dir = path.dirname(p);
+const base = path.basename(p);
+let realDir = dir;
+try { realDir = fs.realpathSync(dir); } catch {}
+const realP = path.join(realDir, base);
+let rel = path.relative(realCwd, realP);
+if (rel.startsWith('..')) {
+  const rel2 = path.relative(cwd, p);
+  if (!rel2.startsWith('..')) rel = rel2;
+}
+process.stdout.write(rel);
+" "$path" 2>/dev/null)"
+  fi
+
+  # Fallback: simple bash stripping
+  if [ -z "$rel_path" ]; then
+    local norm="${path#/}"
+    local cwd_s
+    cwd_s="$(pwd)"
+    cwd_s="${cwd_s#/}"
+    rel_path="${norm#"$cwd_s/"}"
+  fi
+
+  for prefix in "${WHITELIST_PREFIXES[@]}"; do
+    if [[ "$rel_path" == "$prefix"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Whitelist: Bash command patterns that are always safe (read-only or openlogos CLI)
+BASH_SAFE_PATTERNS=(
+  "^openlogos "
+  "^openlogos$"
+  "^git (status|log|diff|show|branch|fetch|pull|stash|tag|describe|rev-parse|ls-files|shortlog|blame|remote)"
+  "^npm (test|run test|run build|run dev|run generate|run check|run lint|run typecheck|run start|pack)"
+  "^npx (vitest|jest|mocha|ts-node|tsc)"
+  "^vitest"
+  "^node --test"
+  "^ls |^ls$"
+  "^cat "
+  "^find "
+  "^grep "
+  "^head "
+  "^tail "
+  "^wc "
+  "^echo "
+  "^printf "
+  "^pwd$"
+  "^cd "
+  "^which "
+  "^type "
+  "^env$"
+  "^printenv"
+  "^python3 -c"
+  "^node -e"
+  "^node -p"
+  "^curl "
+  "^wget "
+  "^jq "
+  "^sort "
+  "^uniq "
+  "^awk "
+  "^sed [^-]"
+  "^tr "
+  "^cut "
+  "^diff "
+  "^test "
+  "^\\[ "
+  "^true$"
+  "^false$"
+  "^sleep "
+  "^date$"
+  "^date "
+  "^uname"
+  "^sw_vers"
+  "^nvm "
+  "^node --version"
+  "^npm --version"
+  "^openlogos --version"
+)
+
+# Bash write patterns that require a guard
+BASH_WRITE_PATTERNS=(
+  "sed -i"
+  " > "
+  " >> "
+  "| tee "
+  "^tee "
+  "^mv "
+  "^cp "
+  "^rm "
+  "^mkdir"
+  "^touch "
+  "^chmod "
+  "^chown "
+  "^npm install"
+  "^npm uninstall"
+  "^npm ci"
+  "^git push"
+  "^git commit"
+  "^git add"
+  "^git reset"
+  "^git checkout "
+  "^git restore"
+  "^git rm"
+  "^git stash pop"
+  "^git stash drop"
+  "^git tag "
+  "^git merge"
+  "^git rebase"
+  "^git cherry-pick"
+  "writeFileSync"
+  "mkdirSync"
+)
+
+# ── Handle by tool type ───────────────────────────────────────────────────────
+
+case "$TOOL_NAME" in
+  Edit|Write)
+    FILE_PATH="$(json_get "$INPUT" "file_path")"
+    if [ -z "$FILE_PATH" ]; then
+      exit 0  # Can't determine path — allow (fail open)
+    fi
+    if is_whitelisted_path "$FILE_PATH"; then
+      exit 0
+    fi
+    block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：$FILE_PATH\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再修改代码。"
+    ;;
+
+  Bash)
+    COMMAND="$(json_get "$INPUT" "command")"
+    if [ -z "$COMMAND" ]; then
+      exit 0
+    fi
+
+    # Trim leading whitespace
+    COMMAND_TRIMMED="${COMMAND#"${COMMAND%%[![:space:]]*}"}"
+
+    # Check safe patterns first
+    for pattern in "${BASH_SAFE_PATTERNS[@]}"; do
+      if echo "$COMMAND_TRIMMED" | grep -qE "$pattern" 2>/dev/null; then
+        exit 0
+      fi
+    done
+
+    # Check write patterns
+    NEEDS_BLOCK=0
+    for pattern in "${BASH_WRITE_PATTERNS[@]}"; do
+      if echo "$COMMAND_TRIMMED" | grep -qE "$pattern" 2>/dev/null; then
+        NEEDS_BLOCK=1
+        break
+      fi
+    done
+
+    if [ "$NEEDS_BLOCK" -eq 1 ]; then
+      # Check if the write target is whitelisted
+      # Extract potential file path from common patterns
+      WRITE_TARGET=""
+      if echo "$COMMAND_TRIMMED" | grep -qE " > |>> " 2>/dev/null; then
+        WRITE_TARGET="$(echo "$COMMAND_TRIMMED" | sed -E 's/.*[>]{1,2} *([^ ]+).*/\1/' 2>/dev/null || echo "")"
+      fi
+      if [ -n "$WRITE_TARGET" ] && is_whitelisted_path "$WRITE_TARGET"; then
+        exit 0
+      fi
+      block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(echo "$COMMAND_TRIMMED" | head -c 120)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
+    fi
+
+    # Default: allow (unknown commands pass through)
+    exit 0
+    ;;
+
+  *)
+    # Other tools (Read, Glob, Grep, etc.) — always allow
+    exit 0
+    ;;
+esac

@@ -446,6 +446,54 @@ export function findClaudePluginTemplateSource(): string | null {
 }
 
 /**
+ * Merges the openlogos PreToolUse guard hook into .claude/settings.json.
+ * Idempotent: only appends if the hook command is not already present.
+ */
+function mergeClaudePreToolUseGuard(root: string, guardRelPath: string): void {
+  const settingsPath = join(root, '.claude', 'settings.json');
+  if (!existsSync(settingsPath)) return; // SessionStart merge creates it first
+
+  let data: Record<string, unknown> = {};
+  try {
+    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+  } catch {
+    return; // Malformed JSON — skip
+  }
+
+  const hookEntry = { type: 'command', command: guardRelPath };
+
+  // Check if already registered under PreToolUse
+  const hooks = data['hooks'] as Record<string, unknown> | undefined;
+  const preToolUse = hooks?.['PreToolUse'];
+  const alreadyRegistered = Array.isArray(preToolUse) &&
+    preToolUse.some((group: unknown) => {
+      if (typeof group !== 'object' || group === null) return false;
+      const g = group as Record<string, unknown>;
+      return Array.isArray(g['hooks']) &&
+        (g['hooks'] as unknown[]).some((h: unknown) => {
+          if (typeof h !== 'object' || h === null) return false;
+          return (h as Record<string, unknown>)['command'] === guardRelPath;
+        });
+    });
+
+  if (alreadyRegistered) return;
+
+  if (!data['hooks'] || typeof data['hooks'] !== 'object') {
+    data['hooks'] = {};
+  }
+  const hooksObj = data['hooks'] as Record<string, unknown>;
+  if (!Array.isArray(hooksObj['PreToolUse'])) {
+    hooksObj['PreToolUse'] = [];
+  }
+  (hooksObj['PreToolUse'] as unknown[]).push({
+    matcher: 'Edit|Write|Bash',
+    hooks: [hookEntry],
+  });
+
+  writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+}
+
+/**
  * Merges the openlogos SessionStart hook into .claude/settings.json.
  * Idempotent: only appends if the hook command is not already present.
  * Returns whether the file was created or updated.
@@ -562,8 +610,21 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
     try { chmodSync(binDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
   }
 
+  // Deploy bin: plugin/bin/guard-check → .claude/openlogos/bin/guard-check
+  const guardSrc = join(source, 'bin', 'guard-check');
+  const guardRelPath = '.claude/openlogos/bin/guard-check';
+  if (existsSync(guardSrc)) {
+    mkdirSync(binTargetDir, { recursive: true });
+    const guardDest = join(binTargetDir, 'guard-check');
+    copyFileSync(guardSrc, guardDest);
+    try { chmodSync(guardDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
+  }
+
   // Merge SessionStart hook into .claude/settings.json
   const settingsResult = mergeClaudeSettings(root, binRelPath);
+
+  // Merge PreToolUse guard hook into .claude/settings.json
+  mergeClaudePreToolUseGuard(root, guardRelPath);
 
   void locale; // locale reserved for future use
   return {
