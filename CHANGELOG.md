@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-06-04
+
+### Fixed
+
+- **修复 proposal 模板占位符状态误判** — `openlogos status` 判断 `proposal.md` 是否仍为模板状态时，部署占位符检查限定到 `## 部署影响` section 的结构化字段值；正文其他章节合法引用 ``是 / 否`` 不再导致 `proposal_step` 被误判为 `writing`。新增 S11 回归测试覆盖正文引用和字段值占位符两个方向。
+
 ## [0.10.4] - 2026-06-01
 
 ### Added
