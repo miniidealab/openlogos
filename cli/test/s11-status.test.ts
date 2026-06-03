@@ -11,6 +11,7 @@ import {
   resolveProposalDeploymentDecision,
   resolveDeploymentDocument,
   resolveDeploymentProgress,
+  detectProposalStep,
 } from '../src/commands/status.js';
 
 /* ========== Unit Tests ========== */
@@ -190,6 +191,86 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
       name: 'tasks.md',
       exists: true,
     });
+  });
+
+  it('UT-S11-16: proposal 正文引用 `是 / 否` 不应影响模板完成判定', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'placeholder-in-body');
+    mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：placeholder-in-body',
+      '',
+      '## 变更原因',
+      '默认模板中的 `是 / 否` 占位符不应影响正文说明。',
+      '',
+      '## 变更类型',
+      '代码级修复',
+      '',
+      '## 变更范围',
+      '- status',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：本次只修改本地状态判定测试，不执行发布。',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '修复模板判定逻辑。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 修复 status',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
+
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-merge');
+  });
+
+  it('UT-S11-17: proposal 部署字段值仍为 `是 / 否` 时保持 writing', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'placeholder-in-deployment-field');
+    mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：placeholder-in-deployment-field',
+      '',
+      '## 变更原因',
+      '正文已填写。',
+      '',
+      '## 变更类型',
+      '代码级修复',
+      '',
+      '## 变更范围',
+      '- status',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是 / 否',
+      '- 部署原因：本次只验证模板状态。',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '修复模板判定逻辑。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 修复 status',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
+
+    expect(detectProposalStep(proposalDir)).toBe('writing');
   });
 
   it('UT-S11-bootstrap-01 / UT-S11-bootstrap-02: bootstrap=adopted 的 launched 模块在 JSON 中暴露 bootstrap 字段并跳过 Initial 基线', () => {
@@ -777,6 +858,49 @@ describe('S11 Scenario Tests — status command', () => {
       status: 'done',
       label: '1/1',
     });
+  });
+
+  it('ST-S11-14: proposal 正文引用 `是 / 否` 时仍可进入 ready-to-merge', () => {
+    const proposalDir = setupLaunchedProposal('placeholder-in-body', [
+      '# 变更提案：placeholder-in-body',
+      '',
+      '## 变更原因',
+      '默认模板中的 `是 / 否` 占位符不应影响正文说明。',
+      '',
+      '## 变更类型',
+      '代码级修复',
+      '',
+      '## 变更范围',
+      '- status',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：本次只修改本地状态判定测试，不执行发布。',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '修复模板判定逻辑。',
+    ].join('\n'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 修复 status',
+    ].join('\n'));
+    mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
+    writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.proposal_step).toBe('ready-to-merge');
+    expect(active.deployment_decision_conflict).toBe(false);
   });
 
   it('ST-S11-11: status JSON exposes conflict reason when proposal/tasks disagree', () => {

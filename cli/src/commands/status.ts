@@ -169,15 +169,44 @@ const NON_FALLBACK_SKIP_PHASES = new Set([
   'phase.3-8-smoke',
 ]);
 
+const DEPLOYMENT_BOOLEAN_TEMPLATE_FIELDS = [
+  '是否需要部署',
+  '是否涉及数据迁移',
+  '是否需要回滚预案',
+  '是否需要 smoke',
+];
+
+const DEPLOYMENT_FIELD_PLACEHOLDERS: Record<string, string> = {
+  部署原因: '[说明为什么需要或不需要部署]',
+  影响环境: '[本地 / 测试 / 预发 / 生产 / 无]',
+};
+
+function isTemplateBooleanChoice(value: string | null): boolean {
+  return value !== null && /^是\s*\/\s*否$/.test(value.trim());
+}
+
+function isDeploymentSectionTemplateFilled(content: string): boolean {
+  const section = extractMarkdownSection(content, '部署影响');
+  if (!section) return true;
+
+  for (const label of DEPLOYMENT_BOOLEAN_TEMPLATE_FIELDS) {
+    if (isTemplateBooleanChoice(parseChineseField(section, label))) {
+      return false;
+    }
+  }
+
+  for (const [label, placeholder] of Object.entries(DEPLOYMENT_FIELD_PLACEHOLDERS)) {
+    if (parseChineseField(section, label) === placeholder) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function isProposalTemplateFilled(content: string): boolean {
   const normalized = content.trim();
   if (!normalized) return false;
-  const hasDeploymentSection = normalized.includes('## 部署影响');
-  const deploymentSectionFilled = !hasDeploymentSection || (
-    !normalized.includes('是 / 否')
-    && !normalized.includes('[说明为什么需要或不需要部署]')
-    && !normalized.includes('[本地 / 测试 / 预发 / 生产 / 无]')
-  );
   return normalized.includes('## 变更原因')
     && normalized.includes('## 变更类型')
     && normalized.includes('## 变更范围')
@@ -186,7 +215,7 @@ function isProposalTemplateFilled(content: string): boolean {
     && !normalized.includes('[需求级 / 设计级 / 接口级 / 代码级]')
     && !normalized.includes('[列表]')
     && !normalized.includes('[用 1-3 段话概述具体改什么]')
-    && deploymentSectionFilled;
+    && isDeploymentSectionTemplateFilled(normalized);
 }
 
 function isTasksTemplateFilled(content: string): boolean {
