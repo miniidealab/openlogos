@@ -12,6 +12,7 @@
 9. 解析 SQL 注释与输出 JSON。
 10. 预执行 verify 的回归与增量测试，并输出机器可读预跑状态。
 11. 标准化 verify / smoke 沙箱执行策略，降低测试命令误写工作区风险。
+12. 初始化 / 接入时生成 Reference 默认分类目录。
 
 ## 二、规格边界
 ### 2.1 CLI 交互
@@ -81,9 +82,15 @@
   - smoke: `result_path`
 - 沙箱诊断必须进入 JSON 输出，供 RunLogos / CI 判断是否展示降级告警或失败原因。
 
+### 2.10 Reference 默认分类目录
+- `openlogos init` 与 `openlogos adopt` 创建标准目录结构时，必须保证 `logos/resources/reference/` 下存在以下子目录：`requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/`。
+- 每个 Reference 子目录必须写入 `.gitkeep`，保证空目录可以被版本控制保留。
+- `init` 与 `adopt` 应复用同一套标准目录定义，避免新项目初始化与已有项目接入产生目录差异。
+- `sync` 不负责回填 Reference 子目录；本能力限定在首次初始化或首次接入时生效。
+
 ## 三、功能验收摘要
 ### S01
-初始化后必须生成完整目录、配置和 AI 指令文件。
+初始化后必须生成完整目录、配置和 AI 指令文件；其中 `logos/resources/reference/` 必须默认包含 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录。
 
 ### S05
 next 必须输出最可执行建议，而不是多条并列建议；存在活跃提案时，next 必须优先读取提案级部署决策。无需部署的提案在 verify PASS 后建议 archive；需要部署的提案在 verify PASS 后建议由用户明确授权部署；部署决策冲突时建议修正 proposal / tasks，不建议部署、smoke 或归档。
@@ -119,4 +126,4 @@ resource_index 必须能反向索引当前真相源。
 smoke 必须验证部署后环境的最小可用链路，但只在提案级 `smoke_required: true` 且部署完成后进入。部署进度摘要仅能来自 `tasks.md` 的 `[deploy]` section，不能把 `[code]` section 误当作部署进度。若配置了 `smoke.sandbox_mode` 且存在 `smoke.command`，CLI 必须通过沙箱执行器运行 smoke 命令，并在文本与 JSON 输出中暴露沙箱诊断。
 
 ### S20
-adopt 后必须生成完整 `logos/` 目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；生成的模块标记为 `bootstrap: adopted` 与 `lifecycle: launched`；同时应为可识别测试栈写入 verify 预跑配置与推荐沙箱配置，无法推断时输出 TODO。`status` 必须将 Initial 文档基线显示为「已跳过（存量项目接入）」；`next` 必须输出补文档引导；`launch` 必须豁免 Initial 文档门禁。目录已存在 `logos/logos.config.json` 时必须拒绝重复执行并报错。历史 `bootstrap: skipped` 项目必须保持兼容。
+adopt 后必须生成完整 `logos/` 目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；生成的模块标记为 `bootstrap: adopted` 与 `lifecycle: launched`；`logos/resources/reference/` 必须默认包含 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；同时应为可识别测试栈写入 verify 预跑配置与推荐沙箱配置，无法推断时输出 TODO。`status` 必须将 Initial 文档基线显示为「已跳过（存量项目接入）」；`next` 必须输出补文档引导；`launch` 必须豁免 Initial 文档门禁。目录已存在 `logos/logos.config.json` 时必须拒绝重复执行并报错。历史 `bootstrap: skipped` 项目必须保持兼容。

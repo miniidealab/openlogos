@@ -106,3 +106,17 @@ graph TB
 - npm 包通过发布补丁版本回滚，必要时撤回客户端推荐版本。
 - 官网通过 Cloudflare Pages 回滚到上一成功部署。
 - 若两阶段模型存在兼容问题，旧项目仍可保留 `verify.pre_run_command` 单阶段路径作为临时降级方案。
+
+## 十三、Reference 子目录发布检查
+本提案会修改 CLI `init` / `adopt` 运行时生成的标准目录结构，因此需要执行 CLI/npm 发布，并在部署后检查初始化产物。
+
+发布前检查：
+- `cd cli && npm test` 覆盖 `openlogos init` 生成 `logos/resources/reference/requirement`、`todolist`、`code`、`image`、`temp`、`note`。
+- `cd cli && npm test` 覆盖 `openlogos adopt` 复用同一套 Reference 子目录结构。
+
+部署后检查：
+- 安装发布后的 CLI，执行 `openlogos init smoke --locale zh --ai-tool all` 后，确认 `logos/resources/reference/` 下存在 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/`。
+- 在已有项目接入 fixture 中执行 `openlogos adopt --locale zh --ai-tool cursor` 后，确认 Reference 子目录存在。
+
+回滚策略：
+- 若初始化目录结构变更影响发布版本，按既有 npm 补丁版本回滚策略修复；旧项目已生成的 Reference 子目录无需迁移。

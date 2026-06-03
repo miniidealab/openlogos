@@ -8,7 +8,7 @@ sequenceDiagram
     U->>C: Step 1: openlogos init my-project
     C->>C: Step 2: 检查项目是否已初始化
     C->>C: Step 3: 读取项目名、locale 与 aiTool
-    C->>C: Step 4: 创建 logos/ 标准目录
+    C->>C: Step 4: 创建 logos/ 标准目录与 Reference 子目录
     C->>C: Step 5: 检测测试栈与测试命令
     C->>C: Step 6: 写入 logos.config.json 与 logos-project.yaml
     C->>C: Step 7: 写入 AGENTS.md 与 CLAUDE.md
@@ -19,7 +19,7 @@ sequenceDiagram
 1. **用户**执行 `openlogos init`。
 2. **CLI** 校验当前目录是否已初始化。
 3. **CLI** 解析项目名、语言与 AI 工具配置。
-4. **CLI** 创建标准目录结构。
+4. **CLI** 创建标准目录结构；其中 `logos/resources/reference/` 下必须同时创建 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录，并写入 `.gitkeep`。
 5. **CLI** 检测常见测试栈与测试脚本。若可推断测试命令，准备写入 `verify.pre_run_command`；若无法推断，准备输出 TODO。
 6. **CLI** 写入配置和项目索引。不得覆盖用户显式传入或后续已有的 verify 预跑配置。
 7. **CLI** 写入 AI 指令文件。

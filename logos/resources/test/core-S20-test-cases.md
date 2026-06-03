@@ -20,7 +20,7 @@
 
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |----|------|-----------|---------|---------|---------|
-| ST-S20-01 | 已有项目完整接入 | Step 1→9 | 有 package.json，无 logos/ | 执行 adopt | 生成全部基础文件（含 Skills、插件模板、logos/spec/），bootstrap=adopted，lifecycle=launched，并在可识别测试栈时写入 verify 预跑配置 |
+| ST-S20-01 | 已有项目完整接入 | Step 1→9 | 有 package.json，无 logos/ | 执行 adopt | 生成全部基础文件（含 Skills、插件模板、logos/spec/）；`logos/resources/reference/` 下包含 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；bootstrap=adopted，lifecycle=launched，并在可识别测试栈时写入 verify 预跑配置 |
 | ST-S20-02 | 接入后 next 输出补文档引导 | S05 联动 | adopt 完成，无活跃提案 | 执行 next | 输出补文档引导，建议 change add-baseline-docs |
 | ST-S20-03 | 接入后 status 显示 Initial 基线已跳过 | S11 联动 | adopt 完成 | 执行 status | Initial 文档基线显示为「文档基线已跳过（存量项目接入）」，不报错 |
 | ST-S20-04 | 接入后 launch 豁免 Initial 门禁 | S14 联动 | adopt 完成，bootstrap=adopted，Initial 文档为空 | 执行 launch | 不检查 Initial 文档，直接放行 |
@@ -37,6 +37,7 @@
 ## 三、覆盖度校验
 
 - [x] adopt 命令主路径：已覆盖（ST-S20-01）
+- [x] Reference 默认子目录生成：已覆盖（ST-S20-01）
 - [x] bootstrap=adopted 标记写入：已覆盖（UT-S20-05/06、ST-S20-01）
 - [x] 历史 skipped 兼容：已覆盖（UT-S20-09、ST-S20-06）
 - [x] verify 预跑配置写入：已覆盖（UT-S20-07、ST-S20-05）
