@@ -350,10 +350,10 @@ function extractMarkdownSection(content: string, heading: string): string | null
 }
 
 function parseChineseBoolean(section: string, label: string): boolean | null {
-  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = section.match(new RegExp(`^-\\s*${escapedLabel}\\s*[：:]\\s*(是|否)(?=\\s|$)`, 'm'));
-  if (!match) return null;
-  return match[1] === '是';
+  const value = parseChineseField(section, label);
+  if (value === '是') return true;
+  if (value === '否') return false;
+  return null;
 }
 
 function parseChineseField(section: string, label: string): string | null {
@@ -371,7 +371,10 @@ export function parseProposalDeploymentDecision(content: string): Pick<
 
   const deploymentRequired = parseChineseBoolean(section, '是否需要部署');
   const smokeRequired = parseChineseBoolean(section, '是否需要 smoke');
-  const deploymentReason = parseChineseField(section, '部署原因');
+  const deploymentReasonValue = parseChineseField(section, '部署原因');
+  const deploymentReason = deploymentReasonValue === DEPLOYMENT_FIELD_PLACEHOLDERS['部署原因']
+    ? null
+    : deploymentReasonValue;
 
   if (deploymentRequired === null && smokeRequired === null && deploymentReason === null) {
     return null;

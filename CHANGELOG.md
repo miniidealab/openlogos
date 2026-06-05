@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-06-06
+
+### Fixed
+
+- **修复空提案部署占位符冲突误报** — `openlogos status --format json` 解析 `proposal.md` 的 `## 部署影响` 时，只有字段值精确为 `是` 或 `否` 才视为有效布尔决策；空模板中的 `是 / 否` 不再被误解析为 `true`，新建提案保持 `proposal_step=writing` 且不再输出 `deployment_decision_conflict=true`。
+
 ## [0.10.5] - 2026-06-04
 
 ### Fixed

@@ -273,6 +273,24 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     expect(detectProposalStep(proposalDir)).toBe('writing');
   });
 
+  it('UT-S11-18: proposal 部署字段模板值不解析为 true', () => {
+    const decision = parseProposalDeploymentDecision([
+      '# 变更提案：empty-template',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是 / 否',
+      '- 部署原因：[说明为什么需要或不需要部署]',
+      '- 影响环境：[本地 / 测试 / 预发 / 生产 / 无]',
+      '- 是否涉及数据迁移：是 / 否',
+      '- 是否需要回滚预案：是 / 否',
+      '- 是否需要 smoke：是 / 否',
+    ].join('\n'));
+
+    expect(decision?.deployment_required ?? null).toBeNull();
+    expect(decision?.smoke_required ?? null).toBeNull();
+    expect(decision?.deployment_reason ?? null).toBeNull();
+  });
+
   it('UT-S11-bootstrap-01 / UT-S11-bootstrap-02: bootstrap=adopted 的 launched 模块在 JSON 中暴露 bootstrap 字段并跳过 Initial 基线', () => {
     scaffoldProject(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
@@ -901,6 +919,51 @@ describe('S11 Scenario Tests — status command', () => {
 
     expect(active.proposal_step).toBe('ready-to-merge');
     expect(active.deployment_decision_conflict).toBe(false);
+  });
+
+  it('ST-S11-15: 空提案模板不显示部署决策冲突', () => {
+    setupLaunchedProposal('empty-template', [
+      '# 变更提案：empty-template',
+      '',
+      '## 变更原因',
+      '[为什么要做这个变更？来源于哪个需求/反馈/Bug？]',
+      '',
+      '## 变更类型',
+      '[需求级 / 设计级 / 接口级 / 代码级]',
+      '',
+      '## 变更范围',
+      '- 影响的需求文档：[列表]',
+      '- 影响的功能规格：[列表]',
+      '- 影响的业务场景：[列表]',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是 / 否',
+      '- 部署原因：[说明为什么需要或不需要部署]',
+      '- 影响环境：[本地 / 测试 / 预发 / 生产 / 无]',
+      '- 是否涉及数据迁移：是 / 否',
+      '- 是否需要回滚预案：是 / 否',
+      '- 是否需要 smoke：是 / 否',
+      '',
+      '## 变更概述',
+      '[用 1-3 段话概述具体改什么]',
+    ].join('\n'), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [ ] 更新需求文档的场景和验收条件',
+      '- [ ] 更新产品设计文档的功能规格',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 实现代码变更',
+    ].join('\n'));
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.proposal_step).toBe('writing');
+    expect(active.deployment_decision_conflict).toBe(false);
+    expect(active.deployment_decision_conflict_reason).toBeNull();
   });
 
   it('ST-S11-11: status JSON exposes conflict reason when proposal/tasks disagree', () => {

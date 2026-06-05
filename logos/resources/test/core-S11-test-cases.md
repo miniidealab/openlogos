@@ -11,6 +11,7 @@
 | UT-S11-15 | deployment_document 必须指向 tasks.md | status document resolver | 活跃提案存在 | proposal workspace | 返回 path/name/exists，且 name 固定为 tasks.md |
 | UT-S11-16 | proposal 正文引用 ``是 / 否`` 不应影响模板完成判定 | status proposal logic | proposal 部署字段已明确、正文包含 ``是 / 否``、delta 任务已完成 | status | proposal_step=ready-to-merge |
 | UT-S11-17 | proposal 部署字段值仍为 `是 / 否` 时保持 writing | status proposal logic | proposal 的部署影响字段仍保留模板占位符 | status | proposal_step=writing |
+| UT-S11-18 | proposal 部署字段模板值不解析为 true | deployment decision parser | `proposal.md` 的部署字段仍为 `是 / 否` | proposal content | deployment_required=null，smoke_required=null，不产生部署冲突 |
 | UT-S11-bootstrap-01 | bootstrap=adopted 时 Phase 1~3 不报错 | status 逻辑 | 模块 bootstrap=adopted，Phase 1~3 目录为空 | status | Phase 1~3 输出「已跳过」，不输出错误或未完成 |
 | UT-S11-bootstrap-02 | bootstrap=adopted JSON 输出含 bootstrap 字段 | status --format json | 模块 bootstrap=adopted | status --format json | JSON 中 modules[].bootstrap = adopted |
 | UT-S11-bootstrap-03 | bootstrap=skipped 历史兼容时 JSON 输出仍按接入模式处理 | status --format json | 模块 bootstrap=skipped | status --format json | JSON 中 modules[].bootstrap 至少按接入模式读取，不回退为 initial |
@@ -26,6 +27,7 @@
 | ST-S11-12 | status JSON 暴露部署进度摘要和任务文档入口 | Step 1→8 | 存在活跃提案且 `[deploy]` section 已填写 | status --format json | active_change 包含 deployment_progress、deployment_document，且进度只统计 deploy section |
 | ST-S11-13 | deploy 进度不受 `[code]` 任务影响 | Step 1→8 | `[code]` 与 `[deploy]` section 同时存在 | status --format json | deployment_progress 不统计 `[code]` 任务 |
 | ST-S11-14 | proposal 正文引用 ``是 / 否`` 时仍可进入 ready-to-merge | Step 1→8 | 活跃提案部署字段已明确、正文包含 ``是 / 否``、`[delta]` 已全勾且存在 delta 文件 | status --format json | active_change.proposal_step=ready-to-merge，且无部署决策冲突 |
+| ST-S11-15 | 空提案模板不显示部署决策冲突 | Step 1→8 | `openlogos change` 刚创建空提案，proposal/tasks 均未填写 | status --format json | proposal_step=writing，deployment_decision_conflict=false，不提示缺少 `[deploy]` section |
 | ST-S11-bootstrap-01 | 存量项目接入状态面板正确显示已跳过 | Step 1→8（接入模式分支） | adopt 完成，无活跃提案 | 执行 status | Phase 1~3 显示「文档基线已跳过（存量项目接入）」 |
 | ST-S11-bootstrap-02 | 历史 skipped 接入状态面板正确显示已跳过 | Step 1→8（接入模式分支） | bootstrap=skipped，且无活跃提案 | 执行 status | Phase 1~3 显示「文档基线已跳过（存量项目接入）」 |
 
