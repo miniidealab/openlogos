@@ -891,7 +891,14 @@ describe('S01 Scenario Tests — init command', () => {
       wrapperPath,
       [
         '#!/usr/bin/env bash',
-        `node "${join(rootDir, 'cli', 'dist', 'index.js')}" "$@"`,
+        'if [ "$1" = "status" ] && [ "$2" = "--format" ] && [ "$3" = "json" ]; then',
+        '  cat <<\'JSON\'',
+        '{"command":"status","version":"test","data":{"lifecycle":"launched","current_phase":null,"suggestion":"→ 或运行 `openlogos launch` 开始迭代开发","all_done":true,"active_change":null}}',
+        'JSON',
+        '  exit 0',
+        'fi',
+        'echo "unexpected openlogos args: $*" >&2',
+        'exit 1',
         '',
       ].join('\n'),
     );
