@@ -30,22 +30,28 @@ _node_parse() {
 
 if command -v python3 &>/dev/null; then
   LOCALE=$(python3 -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
-  LIFECYCLE=$(python3 -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('lifecycle','initial'))" 2>/dev/null || echo "initial")
+  CONFIG_LIFECYCLE=$(python3 -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('lifecycle',''))" 2>/dev/null || echo "")
   PROJECT_NAME=$(python3 -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('name',''))" 2>/dev/null || echo "")
+  STATUS_LIFECYCLE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('lifecycle',''))" 2>/dev/null || echo "")
   CURRENT_PHASE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('current_phase') or 'all-done')" 2>/dev/null || echo "unknown")
   SUGGESTION=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('suggestion','Run openlogos status for next steps'))" 2>/dev/null || echo "")
   ALL_DONE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('data',{}).get('all_done') else 'false')" 2>/dev/null || echo "false")
+  ACTIVE_CHANGE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('active_change') or '')" 2>/dev/null || echo "")
 elif command -v node &>/dev/null; then
   LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
-  LIFECYCLE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.lifecycle||'initial')" 2>/dev/null || echo "initial")
+  CONFIG_LIFECYCLE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.lifecycle||'')" 2>/dev/null || echo "")
   PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
+  STATUS_LIFECYCLE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).lifecycle||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
   CURRENT_PHASE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).current_phase||'all-done')}catch(e){console.log('unknown')}})" 2>/dev/null || echo "unknown")
   SUGGESTION=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).suggestion||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
   ALL_DONE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).all_done?'true':'false')}catch(e){console.log('false')}})" 2>/dev/null || echo "false")
+  ACTIVE_CHANGE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).active_change||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
 else
   echo "{}"
   exit 0
 fi
+
+LIFECYCLE="${STATUS_LIFECYCLE:-${CONFIG_LIFECYCLE:-initial}}"
 
 # Language policy
 if [ "$LOCALE" = "zh" ]; then
@@ -59,31 +65,37 @@ GUARD_FILE="logos/.openlogos-guard"
 CHANGE_MGMT=""
 GUARD_STATUS=""
 
-if [ "$LIFECYCLE" = "active" ] && [ -f "$GUARD_FILE" ]; then
-  if command -v python3 &>/dev/null; then
-    ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
-  elif command -v node &>/dev/null; then
-    ACTIVE_CHANGE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); console.log(d.activeChange||'')" 2>/dev/null || echo "")
-  else
-    ACTIVE_CHANGE=""
+if [ "$LIFECYCLE" = "launched" ] || [ "$LIFECYCLE" = "active" ]; then
+  if [ -z "${ACTIVE_CHANGE:-}" ] && [ -f "$GUARD_FILE" ]; then
+    if command -v python3 &>/dev/null; then
+      ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
+    elif command -v node &>/dev/null; then
+      ACTIVE_CHANGE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); console.log(d.activeChange||'')" 2>/dev/null || echo "")
+    else
+      ACTIVE_CHANGE=""
+    fi
   fi
 
-  if [ -n "$ACTIVE_CHANGE" ]; then
+  if [ -n "${ACTIVE_CHANGE:-}" ]; then
     GUARD_STATUS="🔓 Active change: $ACTIVE_CHANGE"
     CHANGE_MGMT="Change Management: ACTIVE — guard file detected. Active change proposal: '$ACTIVE_CHANGE'. Only modify files within the scope of logos/changes/$ACTIVE_CHANGE/proposal.md. openlogos merge and openlogos archive are human confirmation points: AI must not execute them without explicit user authorization. When coding is done, remind the user to explicitly authorize running: openlogos merge $ACTIVE_CHANGE (then after review: openlogos archive $ACTIVE_CHANGE). If the user explicitly requests execution (including via slash commands), AI may execute."
   else
     GUARD_STATUS="⛔ NO active change proposal"
     CHANGE_MGMT="Change Management: ACTIVE — ⛔ NO guard file found. Before modifying ANY source code, you MUST first run openlogos change <slug> to create a change proposal."
+    if [ "$LOCALE" = "zh" ]; then
+      SUGGESTION="运行 openlogos change <slug> 创建新提案"
+    else
+      SUGGESTION="Run openlogos change <slug> to create a new change proposal"
+    fi
   fi
-elif [ "$LIFECYCLE" = "active" ]; then
-  GUARD_STATUS="⛔ NO active change proposal"
-  CHANGE_MGMT="Change Management: ACTIVE — ⛔ NO guard file found. Before modifying ANY source code, you MUST first run openlogos change <slug> to create a change proposal."
 else
   CHANGE_MGMT="Change Management: Initial development — follow Phase progression, no change proposals needed."
 fi
 
 # Build system message
-if [ "$ALL_DONE" = "true" ]; then
+if [ "$ALL_DONE" = "true" ] && [ -n "$GUARD_STATUS" ]; then
+  STATUS_LINE="📊 OpenLogos: All phases complete | $GUARD_STATUS"
+elif [ "$ALL_DONE" = "true" ]; then
   STATUS_LINE="📊 OpenLogos: All phases complete"
 elif [ -n "$GUARD_STATUS" ]; then
   STATUS_LINE="📊 OpenLogos: $CURRENT_PHASE | $GUARD_STATUS"

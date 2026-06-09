@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import {
   readConfigName,
@@ -866,6 +867,54 @@ describe('S01 Scenario Tests — init command', () => {
 
     const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
     expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
+  });
+
+  it('ST-S01-10b: codex SessionStart hook uses status lifecycle for launched projects', async () => {
+    await init('codex-project', { locale: 'zh', aiTool: 'codex' });
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      [
+        'project:',
+        '  name: "codex-project"',
+        'modules:',
+        '  - id: core',
+        '    name: Core',
+        '    lifecycle: launched',
+        '',
+      ].join('\n'),
+    );
+
+    const binDir = join(root, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const wrapperPath = join(binDir, 'openlogos');
+    writeFileSync(
+      wrapperPath,
+      [
+        '#!/usr/bin/env bash',
+        `node "${join(rootDir, 'cli', 'dist', 'index.js')}" "$@"`,
+        '',
+      ].join('\n'),
+    );
+    execFileSync('chmod', ['755', wrapperPath]);
+
+    const output = execFileSync(
+      'bash',
+      [join(root, '.codex-plugin', 'hooks', 'session-start.sh')],
+      {
+        cwd: root,
+        env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ''}` },
+        encoding: 'utf-8',
+      },
+    );
+    const parsed = JSON.parse(output);
+    const context = parsed.hookSpecificOutput.additionalContext as string;
+
+    expect(context).toContain('Lifecycle: launched');
+    expect(context).toContain('Change Management: ACTIVE');
+    expect(context).toContain('openlogos change <slug>');
+    expect(context).not.toContain('Lifecycle: initial');
+    expect(context).not.toContain('no change proposals needed');
+    expect(parsed.systemMessage).toContain('NO active change proposal');
   });
 
   it('ST-S01-11: init with all includes codex assets and keeps shared logos skills for compatibility', async () => {

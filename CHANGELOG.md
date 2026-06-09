@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-06-09
+
+### Fixed
+
+- **修复 Codex SessionStart 生命周期注入误判** — Codex hook 现在优先读取 `openlogos status --format json` 的 `data.lifecycle` 和 `data.active_change`，确保 `logos-project.yaml` 中模块已 launched 时注入 `Lifecycle: launched`、`Change Management: ACTIVE` 和 `openlogos change <slug>`，不再因 `logos.config.json.lifecycle` 缺失误导模型跳过变更提案。
+- **修复 launched all-done 项目的下一步提示** — `openlogos status/next` 在项目已 launched 且所有阶段完成时，不再输出 `openlogos launch` 初始发布提示，改为引导创建补文档或业务迭代提案。
+
 ## [0.10.6] - 2026-06-06
 
 ### Fixed
@@ -634,7 +641,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.9.30...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.10.7...HEAD
+[0.10.7]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.7
+[0.10.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.6
+[0.10.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.5
+[0.10.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.4
+[0.10.3]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.3
+[0.10.2]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.2
+[0.10.1]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.1
+[0.10.0]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.0
+[0.9.31]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.31
 [0.9.30]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.30
 [0.9.29]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.29
 [0.9.28]: https://github.com/miniidealab/openlogos/releases/tag/v0.9.28
