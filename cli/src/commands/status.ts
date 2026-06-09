@@ -1093,7 +1093,9 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
   let suggestion: string;
   if (allDone) {
     suggestion = lifecycle === 'launched'
-      ? t(locale, 'status.allDoneHint').trim()
+      ? (locale === 'zh'
+          ? '运行 openlogos change <slug> 创建新提案'
+          : 'Run openlogos change <slug> to create a new change proposal')
       : t(locale, 'launch.suggest');
   } else if (bootstrapAdoptedModules.length > 0 && !activeChange) {
     suggestion = locale === 'zh'
@@ -1258,8 +1260,12 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
 
     if (data.all_done) {
       console.log(`\n🎉 ${t(locale, 'status.allDone')}`);
-      if (data.lifecycle === 'initial') console.log(`   → ${t(locale, 'launch.suggest')}`);
-      console.log(t(locale, 'status.allDoneHint') + '\n');
+      if (data.lifecycle === 'initial') {
+        console.log(`   → ${t(locale, 'launch.suggest')}`);
+        console.log(t(locale, 'status.allDoneHint') + '\n');
+      } else {
+        console.log('');
+      }
     } else {
       const firstIncomplete = data.phases.find(p => !p.done && !p.skipped)!;
       console.log(`\n💡 ${t(locale, 'status.suggestNext', { label: firstIncomplete.label })}`);

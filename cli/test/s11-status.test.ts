@@ -440,6 +440,41 @@ describe('S11 Scenario Tests — status command', () => {
     expect(hasVerifyHint).toBe(true);
   });
 
+  it('ST-S11-03b: launched + all phases complete does not suggest launch again', () => {
+    const dirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/2-product-design',
+      'logos/resources/prd/3-technical-plan/1-architecture',
+      'logos/resources/prd/3-technical-plan/2-scenario-implementation',
+      'logos/resources/api',
+      'logos/resources/database',
+      'logos/resources/prd/3-technical-plan/3-deployment',
+      'logos/resources/test',
+      'logos/resources/test/smoke',
+      'logos/resources/scenario',
+      'logos/resources/implementation',
+    ];
+    for (const d of dirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'dummy.md'), 'content');
+    }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }] }, { lineWidth: 0 }),
+    );
+
+    status();
+
+    const allLogs = con.logs.join('\n');
+    expect(allLogs).toContain('🎉');
+    expect(allLogs).toContain('openlogos change');
+    expect(allLogs).not.toContain('openlogos launch');
+  });
+
   it('ST-S11-04: show active change proposals', () => {
     const changePath = join(root, 'logos', 'changes', 'add-feature');
     mkdirSync(changePath, { recursive: true });
@@ -1303,6 +1338,41 @@ describe('S11 Unit Tests — lifecycle derivation from modules', () => {
     );
     const data = collectStatusData(root);
     expect(data.lifecycle).toBe('launched');
+  });
+
+  it('UT-S11-LC-02b: launched + all_done 的顶层 suggestion 不提示 launch', () => {
+    const dirs = [
+      'logos/resources/prd/1-product-requirements',
+      'logos/resources/prd/2-product-design',
+      'logos/resources/prd/3-technical-plan/1-architecture',
+      'logos/resources/prd/3-technical-plan/2-scenario-implementation',
+      'logos/resources/api',
+      'logos/resources/database',
+      'logos/resources/prd/3-technical-plan/3-deployment',
+      'logos/resources/test',
+      'logos/resources/test/smoke',
+      'logos/resources/scenario',
+      'logos/resources/implementation',
+    ];
+    for (const d of dirs) {
+      const dir = join(root, d);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'dummy.md'), 'content');
+    }
+    writeFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'PASS');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), 'DONE');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'PASS');
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }] }, { lineWidth: 0 }),
+    );
+
+    const data = collectStatusData(root);
+
+    expect(data.all_done).toBe(true);
+    expect(data.lifecycle).toBe('launched');
+    expect(data.suggestion).toContain('openlogos change');
+    expect(data.suggestion).not.toContain('openlogos launch');
   });
 
   it('UT-S11-LC-03: no modules → lifecycle=initial', () => {
