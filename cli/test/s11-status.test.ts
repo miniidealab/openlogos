@@ -291,6 +291,98 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
     expect(decision?.deployment_reason ?? null).toBeNull();
   });
 
+  it('UT-S11-19: DEPLOY_DONE 与 [deploy] 全勾共同决定离开 ready-to-deploy', () => {
+    const baseProposal = [
+      '# 变更提案：runtime-change',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是',
+      '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+      '- 是否需要 smoke：是',
+      '',
+      '## 变更概述',
+      '修改运行时代码。',
+    ].join('\n');
+
+    const markerOnlyDir = join(root, 'logos', 'changes', 'marker-only');
+    mkdirSync(markerOnlyDir, { recursive: true });
+    writeFileSync(join(markerOnlyDir, 'proposal.md'), baseProposal);
+    writeFileSync(join(markerOnlyDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(markerOnlyDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(markerOnlyDir, 'DEPLOY_DONE'), '');
+
+    const tasksOnlyDir = join(root, 'logos', 'changes', 'tasks-only');
+    mkdirSync(tasksOnlyDir, { recursive: true });
+    writeFileSync(join(tasksOnlyDir, 'proposal.md'), baseProposal);
+    writeFileSync(join(tasksOnlyDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(tasksOnlyDir, 'VERIFY_PASS'), '');
+
+    expect(detectProposalStep(markerOnlyDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-deploy');
+    expect(detectProposalStep(tasksOnlyDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-deploy');
+  });
+
+  it('UT-S11-20: DEPLOY_DONE 与 [deploy] 全勾且需要 smoke 时进入 ready-to-smoke', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'with-smoke');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：with-smoke',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是',
+      '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+      '- 是否需要 smoke：是',
+      '',
+      '## 变更概述',
+      '修改运行时代码。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-smoke');
+  });
+
+  it('UT-S11-21: DEPLOY_DONE 与 [deploy] 全勾且无需 smoke 时进入 deploy-done', () => {
+    const proposalDir = join(root, 'logos', 'changes', 'no-smoke');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：no-smoke',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是',
+      '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '修改运行时代码。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('deploy-done');
+  });
+
   it('UT-S11-bootstrap-01 / UT-S11-bootstrap-02: bootstrap=adopted 的 launched 模块在 JSON 中暴露 bootstrap 字段并跳过 Initial 基线', () => {
     scaffoldProject(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
@@ -999,6 +1091,49 @@ describe('S11 Scenario Tests — status command', () => {
     expect(active.proposal_step).toBe('writing');
     expect(active.deployment_decision_conflict).toBe(false);
     expect(active.deployment_decision_conflict_reason).toBeNull();
+  });
+
+  it('ST-S11-16: status 展示 deploy-done 受控落标后的状态', () => {
+    const proposalDir = setupLaunchedProposal('runtime-change', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+      '- [x] 同步官网',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.proposal_step).toBe('ready-to-smoke');
+    expect(active.deployment_progress).toEqual({
+      checked: 2,
+      total: 2,
+      percent: 100,
+      status: 'done',
+      label: '2/2',
+    });
+  });
+
+  it('ST-S11-17: deploy 进度完成但无 DEPLOY_DONE 不视为部署完成', () => {
+    const proposalDir = setupLaunchedProposal('runtime-change', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+      '- [x] 同步官网',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const active = output.data.modules[0].active_change;
+
+    expect(active.proposal_step).toBe('ready-to-deploy');
+    expect(active.deployment_progress.status).toBe('done');
   });
 
   it('ST-S11-11: status JSON exposes conflict reason when proposal/tasks disagree', () => {

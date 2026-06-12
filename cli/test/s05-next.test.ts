@@ -635,6 +635,46 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(out).toMatch(/archive/i);
     expect(out).not.toContain('openlogos smoke');
   });
+
+  it('UT-S05-18: deploy-done 后需要 smoke 时建议运行 smoke', () => {
+    const proposalDir = setupLaunchedWithGuard('runtime-change');
+    writeFileSync(join(proposalDir, 'proposal.md'), DEPLOY_WITH_SMOKE_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-smoke');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toContain('openlogos smoke');
+    expect(out).not.toMatch(/archive/i);
+  });
+
+  it('UT-S05-19: deploy-done 后无需 smoke 时建议 archive', () => {
+    const proposalDir = setupLaunchedWithGuard('runtime-change');
+    writeFileSync(join(proposalDir, 'proposal.md'), DEPLOY_WITHOUT_SMOKE_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('deploy-done');
+
+    next();
+    const out = con.logs.join('\n');
+    expect(out).toMatch(/archive/i);
+    expect(out).not.toContain('openlogos smoke');
+  });
 });
 
 describe('S05 Scenario Tests — next --format json', () => {
@@ -792,6 +832,33 @@ describe('S05 Scenario Tests — next --format json', () => {
     expect(parsed.data.modules[0].action).toBe('Fix deployment decision conflict');
     expect(parsed.data.modules[0].deployment_decision_conflict_reason).toContain('部署决策冲突');
     expect(parsed.data.modules[0].detail).toContain('部署决策冲突');
+  });
+
+  it('ST-S05-06: 部署完成且无需 smoke 后进入归档建议', () => {
+    writeLaunchedModule(root);
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'runtime-change', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), DEPLOY_WITHOUT_SMOKE_PROPOSAL);
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+
+    next('json');
+    const parsed = JSON.parse(con.logs[0]);
+
+    expect(parsed.data.proposal_step).toBe('deploy-done');
+    expect(parsed.data.action).toMatch(/archive|归档/i);
+    expect(parsed.data.modules[0].proposal_step).toBe('deploy-done');
+    expect(parsed.data.modules[0].action).toMatch(/archive|归档/i);
   });
 
   it('ST-S05-bootstrap-01: bootstrap=adopted with no active proposal returns baseline-docs guidance in JSON', () => {

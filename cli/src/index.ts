@@ -10,6 +10,7 @@ import { merge } from './commands/merge.js';
 import { archive } from './commands/archive.js';
 import { verify } from './commands/verify.js';
 import { smoke } from './commands/smoke.js';
+import { deployDone } from './commands/deploy-done.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
@@ -54,6 +55,8 @@ Commands:
   verify             Verify test results against test case specs
   smoke              Verify deployed environment against smoke test specs
                        --env <name>                 Target environment label
+  deploy-done        Mark the active change deployment as completed
+                       --env <name>                 Target environment label
   launch             Activate change management for a module after first development cycle
                        launch [module-id]          Specify module (auto-detects if only one exists)
   change <slug>      Create a change proposal for iterative updates
@@ -67,7 +70,7 @@ Commands:
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, verify, detect)
+  --format <json>    Output in JSON format (supported: status, next, verify, smoke, deploy-done, detect)
 
 Examples:
   openlogos init my-saas-project
@@ -78,6 +81,7 @@ Examples:
   openlogos verify
   openlogos verify --format json
   openlogos smoke --env staging
+  openlogos deploy-done --env staging
   openlogos detect --format json
   openlogos change add-remember-me
   openlogos merge add-remember-me
@@ -154,6 +158,11 @@ async function main() {
     case 'smoke': {
       const envArg = args.includes('--env') ? args[args.indexOf('--env') + 1] : undefined;
       smoke(format, envArg);
+      break;
+    }
+    case 'deploy-done': {
+      const envArg = args.includes('--env') ? args[args.indexOf('--env') + 1] : undefined;
+      deployDone(format, envArg);
       break;
     }
     case 'change': {

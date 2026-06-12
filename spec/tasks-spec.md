@@ -70,6 +70,28 @@ CLI 的 `detectProposalStep()` 按以下规则判断各阶段是否完成：
 | `SMOKE_FAIL` 存在 | → `smoke-failed` |
 | `SMOKE_PASS` 存在 | → `smoke-passed` |
 
+### deploy-done 命令与部署任务状态
+
+`openlogos deploy-done` 是部署完成状态的受控写入命令。部署动作仍由部署方案、人类授权和外部命令完成；`deploy-done` 只在部署已经成功后写入 OpenLogos 状态。
+
+规则：
+
+1. `deploy-done` 成功前必须存在 `VERIFY_PASS`，且不得存在 `VERIFY_FAIL`。
+2. `deploy-done` 成功前必须确认提案级 `deployment_required=true` 且部署决策无冲突。
+3. `deploy-done` 成功前必须存在非空 `[deploy]` section 和 `logos/resources/verify/deployment-report.md`。
+4. `deploy-done` 成功后必须把 `[deploy]` section 全部勾选并写入 `DEPLOY_DONE`。
+5. `deploy-done` 成功后必须清理旧的 `SMOKE_PASS` / `SMOKE_FAIL`。
+6. `DEPLOY_DONE` 不得由 AI skill 手写作为推荐路径；deployment-executor 应调用 `openlogos deploy-done`。
+
+状态判断补充：
+
+| tasks.md / 标记状态 | 判断结果 |
+|---|---|
+| `VERIFY_PASS` 存在、提案级需要部署、`[deploy]` 存在但缺少 `DEPLOY_DONE` | → `ready-to-deploy` |
+| `VERIFY_PASS` 存在、提案级需要部署、`DEPLOY_DONE` 存在但 `[deploy]` 未全勾 | → `ready-to-deploy` |
+| `VERIFY_PASS` 存在、`DEPLOY_DONE` 存在、`[deploy]` 全部勾选、提案级需要 smoke | → `ready-to-smoke` |
+| `VERIFY_PASS` 存在、`DEPLOY_DONE` 存在、`[deploy]` 全部勾选、提案级无需 smoke | → `deploy-done` |
+
 优先级规则：
 
 1. `VERIFY_FAIL` 高于 `VERIFY_PASS`、`DEPLOY_DONE` 和 `SMOKE_PASS`
@@ -78,6 +100,8 @@ CLI 的 `detectProposalStep()` 按以下规则判断各阶段是否完成：
 4. 重新运行 `openlogos verify` 且失败时，必须清理过期的 `VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL`
 5. 重新部署时，必须清理过期的 `SMOKE_PASS` / `SMOKE_FAIL`
 6. `proposal.md` 与 `[deploy]` section 冲突时，必须优先报告冲突，不得推进到 deploy / smoke / archive
+7. 重新执行 `openlogos deploy-done` 必须清理过期的 `SMOKE_PASS` / `SMOKE_FAIL`
+8. `openlogos smoke` 不得替代 `openlogos deploy-done` 写入 `DEPLOY_DONE`
 
 ## 部署与冒烟测试设计要求
 

@@ -279,6 +279,61 @@ openlogos status --format json  # JSON 格式
 
 ---
 
+## 4. `openlogos deploy-done --format json`
+
+### 4.1 用法
+
+```bash
+openlogos deploy-done
+openlogos deploy-done --env staging
+openlogos deploy-done --format json
+```
+
+### 4.2 JSON Schema（data 部分）
+
+```jsonc
+{
+  "slug": "add-feature",
+  "environment": "staging",
+  "marker_path": "logos/changes/add-feature/DEPLOY_DONE",
+  "deployment_report_path": "logos/resources/verify/deployment-report.md",
+  "deploy_tasks_checked": 3,
+  "deploy_tasks_total": 3,
+  "cleared_smoke_markers": ["SMOKE_PASS", "SMOKE_FAIL"],
+  "next_step": "ready-to-smoke"
+}
+```
+
+### 4.3 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `slug` | string | 是 | 当前活跃提案 slug |
+| `environment` | string \| null | 是 | `--env` 指定的部署环境标签；未指定时为 null |
+| `marker_path` | string | 是 | 写入的 `DEPLOY_DONE` marker 路径 |
+| `deployment_report_path` | string | 是 | 部署报告路径 |
+| `deploy_tasks_checked` | number | 是 | `deploy-done` 后 `[deploy]` section 已勾选任务数 |
+| `deploy_tasks_total` | number | 是 | `[deploy]` section 任务总数 |
+| `cleared_smoke_markers` | string[] | 是 | 本次清理的旧 smoke marker 名称 |
+| `next_step` | string | 是 | 下一步状态：`"ready-to-smoke"` 或 `"deploy-done"` |
+
+### 4.4 错误语义
+
+`deploy-done --format json` 的错误仍使用通用错误 envelope，错误码建议包括：
+
+- `PROJECT_NOT_INITIALIZED`
+- `NO_ACTIVE_CHANGE`
+- `CHANGE_NOT_FOUND`
+- `VERIFY_NOT_PASSED`
+- `DEPLOYMENT_DECISION_CONFLICT`
+- `DEPLOYMENT_NOT_REQUIRED`
+- `DEPLOY_TASKS_MISSING`
+- `DEPLOYMENT_REPORT_MISSING`
+
+任何错误分支都不得写入 `DEPLOY_DONE`，不得勾选 `[deploy]` 任务，也不得清理 smoke marker。
+
+---
+
 ## 4. `openlogos verify --format json`
 
 ### 4.1 用法

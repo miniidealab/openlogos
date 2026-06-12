@@ -93,12 +93,30 @@
 
 部署成功后：
 
+- 确认 `logos/resources/verify/deployment-report.md` 已写入并记录目标环境、执行命令摘要、回滚点和未解决风险
+- 执行受控命令写入部署完成状态：
+
+```bash
+openlogos deploy-done
+```
+
+如有目标环境：
+
+```bash
+openlogos deploy-done --env staging
+```
+
+`openlogos deploy-done` 负责：
+
 - 勾选当前提案 `tasks.md` 中的 `[deploy]` 任务
 - 写入 `logos/changes/<slug>/DEPLOY_DONE`
+- 清理过期的 `SMOKE_PASS` / `SMOKE_FAIL`
+- 输出下一步 smoke 或 archive 建议
 
 部署失败时：
 
-- 不得写入 `DEPLOY_DONE`
+- 不得执行 `openlogos deploy-done`
+- 不得手写 `DEPLOY_DONE`
 - 输出失败点和回滚建议
 - 以 `logos/resources/verify/deployment-report.md` 记录失败摘要
 
@@ -123,8 +141,9 @@ AI 不得自动运行 `openlogos smoke`，除非用户明确授权。
 - 未经用户明确确认自动部署
 - 跳过部署方案，凭经验执行命令
 - 自动执行涉及生产、远程服务器、密钥、发布、域名或数据迁移的命令
-- 部署失败后写入 `DEPLOY_DONE`
-- 部署后直接 archive，跳过 `openlogos smoke`
+- 部署失败后执行 `openlogos deploy-done`
+- 手写 `logos/changes/<slug>/DEPLOY_DONE` 作为推荐路径
+- 部署后直接 archive，跳过需要的 `openlogos smoke`
 
 ## 推荐提示词
 

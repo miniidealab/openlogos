@@ -6,6 +6,7 @@ import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit
 import { extractSmokeDefinedIds, smoke } from '../src/commands/smoke.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
+import { deployDone } from '../src/commands/deploy-done.js';
 
 describe('S19 Unit Tests — smoke cases', () => {
   let root: string;
@@ -326,5 +327,49 @@ describe('S19 Scenario Tests — smoke command', () => {
     const out = con.logs.join('\n');
     expect(out).toContain('部署决策冲突');
     expect(out).not.toContain('openlogos smoke');
+  });
+
+  it('ST-S19-07: 重新标记部署完成后旧 smoke 结论失效', () => {
+    writeLaunchedModule();
+    const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'runtime-change', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：runtime-change',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是',
+      '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+      '- 影响环境：生产',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：是',
+      '- 是否需要 smoke：是',
+      '',
+      '## 变更概述',
+      '修改运行时代码。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
+    writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), '# Deployment Report\n\nok\n');
+
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('smoke-passed');
+
+    deployDone('json', 'staging');
+
+    expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(false);
+    expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-smoke');
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.cleared_smoke_markers).toEqual(['SMOKE_PASS']);
   });
 });

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.9] - 2026-06-12
+
+### Added
+
+- **新增 `openlogos deploy-done` 受控落标命令** — 部署成功后可通过 CLI 校验 `VERIFY_PASS`、部署决策、`[deploy]` section 和部署报告，并统一勾选部署任务、写入 `DEPLOY_DONE`、清理旧 `SMOKE_PASS/SMOKE_FAIL`，避免部署完成状态依赖 AI 手写 marker。
+
+### Changed
+
+- **更新部署执行 Skill 与规范** — `deployment-executor` 部署成功后改为调用 `openlogos deploy-done`，同时补充 `deploy-done --format json` 输出契约、tasks 状态规范和发布后 smoke 覆盖。
+
 ## [0.10.8] - 2026-06-09
 
 ### Fixed
@@ -642,7 +652,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.10.8...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.10.9...HEAD
+[0.10.9]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.9
 [0.10.8]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.8
 [0.10.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.6
 [0.10.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.5
