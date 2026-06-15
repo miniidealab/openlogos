@@ -62,6 +62,14 @@
 
 `logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`
 
+**⚠️ Mermaid 部署拓扑图语法安全（强制）**：
+- 部署拓扑通常使用 Mermaid `graph` / `flowchart`，节点标签默认写成 `ID["标签文本"]`。
+- 含域名、URL、API 路径、端口、环境名、云服务名、中文、空格或 `<br/>` 的标签必须加双引号：`Pages["Cloudflare Pages"]`、`API["API :8787"]`、`Proxy["/voice/api 代理"]`。
+- 错误：`Proxy[/voice/api 代理]`，因为 `[/` 会触发 Mermaid 平行四边形形状语法，容易导致部署图渲染失败。
+- 多行标签使用 `<br/>`，整段文本仍放在同一对双引号内：`Worker["Cloudflare Worker<br/>staging"]`。
+- 子图名称含空格、中文或特殊字符时必须加引号：`subgraph "Staging Environment"`。
+- 只有明确要表达特定形状时才使用 Mermaid 形状语法；普通部署组件一律使用带引号的文本节点。
+
 文档结构：
 
 ```markdown
@@ -119,7 +127,7 @@ deployment_gates:
 
 - 部署方案：`logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`
 - 文档语言遵循项目 locale
-- Mermaid 可用于部署拓扑图
+- Mermaid 可用于部署拓扑图，且必须遵循上述节点标签与子图命名安全规则
 - 不执行任何部署命令
 
 ## 人类确认点

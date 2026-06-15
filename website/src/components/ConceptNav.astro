@@ -1,15 +1,18 @@
 ---
 interface Props {
   current: string;
+  lang?: string;
 }
 
-const { current } = Astro.props;
+const { current, lang = 'en' } = Astro.props;
+const isZh = lang === 'zh';
+const pre = isZh ? '/zh' : '';
 
 const items = [
-  { id: 'three-layer-model', label: 'WHY→WHAT→HOW', href: '/deep-dive/three-layer-model', color: '#f59e0b' },
-  { id: 'scenario-test-first', label: 'Scenario + Test-First', href: '/deep-dive/scenario-test-first', color: '#10b981' },
-  { id: 'documents-as-context', label: 'Documents as Context', href: '/deep-dive/documents-as-context', color: '#3b82f6' },
-  { id: 'engineering-foundation', label: 'Engineering Foundation', href: '/deep-dive/engineering-foundation', color: '#a855f7' },
+  { id: 'three-layer-model', label: 'WHY→WHAT→HOW', href: `${pre}/deep-dive/three-layer-model`, color: '#f59e0b' },
+  { id: 'scenario-test-first', label: isZh ? '场景驱动 + 测试先行' : 'Scenario + Test-First', href: `${pre}/deep-dive/scenario-test-first`, color: '#10b981' },
+  { id: 'documents-as-context', label: isZh ? '文档即上下文' : 'Documents as Context', href: `${pre}/deep-dive/documents-as-context`, color: '#3b82f6' },
+  { id: 'engineering-foundation', label: isZh ? '工程理论根基' : 'Engineering Foundation', href: `${pre}/deep-dive/engineering-foundation`, color: '#a855f7' },
 ];
 ---
 

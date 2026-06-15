@@ -1,0 +1,741 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import releaseData from '../../data/releases.json';
+
+const SUMMARY_FALLBACK_MESSAGE_ZH = '该版本暂无结构化的发布摘要。';
+
+type RawReleaseVersion = typeof releaseData.versions[number];
+type ReleaseVersion = RawReleaseVersion & {
+  valueSummary?: string[];
+  fixSummary?: string[];
+  valueSummaryEn?: string[];
+  fixSummaryEn?: string[];
+  summarySource?: 'bilingual' | 'changelog' | 'fallback';
+  summaryFallbackReason?: string | null;
+};
+
+const releaseVersions = releaseData.versions as ReleaseVersion[];
+const latest = releaseVersions.find((item) => item.version === releaseData.latestVersion) ?? releaseVersions[0];
+
+function formatDate(value: string | null | undefined, options: Intl.DateTimeFormatOptions = {}) {
+  if (!value) return '未知';
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+    ...options,
+  }).format(new Date(value));
+}
+
+function shortHash(value: string | null | undefined) {
+  return value ? `${value.slice(0, 10)}...` : '未提供';
+}
+
+function formatMap(value: Record<string, string> | null | undefined) {
+  const entries = Object.entries(value ?? {});
+  if (entries.length === 0) return '无';
+  return entries.map(([key, val]) => `${key} ${val}`).join(', ');
+}
+
+function minorKey(version: string) {
+  const [major, minor] = version.split('.');
+  return `${major}.${minor}.x`;
+}
+
+function groupVersions(versions: ReleaseVersion[]) {
+  const groups = new Map<string, ReleaseVersion[]>();
+  for (const version of versions) {
+    const key = minorKey(version.version);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)?.push(version);
+  }
+  return Array.from(groups.entries()).map(([key, items]) => ({
+    key,
+    items,
+    start: items.at(-1)?.publishedAt ?? null,
+    end: items[0]?.publishedAt ?? null,
+  }));
+}
+
+function summaryItems(value: string[] | null | undefined) {
+  return Array.isArray(value) ? value.filter(Boolean).slice(0, 3) : [];
+}
+
+function isSummaryFallback(item: ReleaseVersion) {
+  return item.summarySource !== 'bilingual';
+}
+
+function englishSummaryItems(item: ReleaseVersion, kind: 'value' | 'fix') {
+  return summaryItems(kind === 'value' ? item.valueSummaryEn : item.fixSummaryEn);
+}
+
+function chineseSummaryItems(item: ReleaseVersion, kind: 'value' | 'fix') {
+  return summaryItems(kind === 'value' ? item.valueSummary : item.fixSummary);
+}
+
+const groups = groupVersions(releaseVersions);
+const latestPublished = latest?.publishedAt ?? null;
+const installCommand = `npm install -g ${releaseData.packageName}`;
+const verifyCommand = `npx ${releaseData.packageName} --version`;
+---
+
+<BaseLayout
+  lang="zh"
+  title="OpenLogos 版本发布 — npm 发布历史"
+  description="OpenLogos CLI 的完整 npm 发布历史，由 npm registry 元数据与结构化 CHANGELOG 摘要生成。"
+>
+  <section class="release-hero">
+    <div class="release-container">
+      <div class="eyebrow">npm registry / {releaseData.packageName}</div>
+      <div class="hero-grid">
+        <div class="hero-main">
+          <h1>OpenLogos 版本发布</h1>
+          <p class="hero-copy">
+            OpenLogos CLI 的完整 npm 发布元数据。发布时间、dist-tags、包链接、tarball、引擎要求、依赖、文件数与
+            git head 均来自 npm registry 数据。中文版本摘要来自维护中的双语发布数据，并保留英文原文以便追溯。
+          </p>
+          <div class="hero-metrics" aria-label="发布概览">
+            <div class="metric">
+              <span>最新</span>
+              <strong>v{releaseData.latestVersion}</strong>
+            </div>
+            <div class="metric">
+              <span>版本数</span>
+              <strong>{releaseData.versionCount}</strong>
+            </div>
+            <div class="metric">
+              <span>registry 更新</span>
+              <strong>{formatDate(releaseData.updatedAt, { hour: undefined, minute: undefined, timeZoneName: undefined })}</strong>
+            </div>
+            <div class="metric">
+              <span>数据来源</span>
+              <strong>npm time</strong>
+            </div>
+          </div>
+        </div>
+
+        <aside class="install-panel" aria-label="最新版本安装命令">
+          <span class="latest-badge">latest</span>
+          <div class="latest-version">v{releaseData.latestVersion}</div>
+          <p>发布于 {formatDate(latestPublished)}</p>
+          <code>{installCommand}</code>
+          <code>{verifyCommand}</code>
+          <div class="actions">
+            <a href={releaseData.npmPackageUrl} target="_blank" rel="noopener">npm 包</a>
+            <a href={latest?.githubReleaseUrl} target="_blank" rel="noopener">GitHub Release</a>
+            <a href={releaseData.changelogUrl} target="_blank" rel="noopener">CHANGELOG</a>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="release-content">
+    <div class="release-container content-grid">
+      <aside class="series-nav" aria-label="版本系列">
+        <h2>版本系列</h2>
+        {groups.map((group, index) => (
+          <a class={index === 0 ? 'active' : ''} href={`#series-${group.key.replaceAll('.', '-')}`}>
+            <span>{group.key}</span>
+            <span>{group.items.length}</span>
+          </a>
+        ))}
+      </aside>
+
+      <div class="timeline">
+        <div class="data-note">
+          <strong>可验证的发布来源。</strong>
+          发布时间与 npm 元数据来自 npm registry。中文版本摘要来自维护中的双语发布数据，英文原文来自结构化 CHANGELOG
+          提取；若缺少对应章节则使用固定的占位文案，并保留 GitHub Release / CHANGELOG 链接以查看完整详情。
+        </div>
+
+        {groups.map((group) => (
+          <section class="series-group" id={`series-${group.key.replaceAll('.', '-')}`}>
+            <div class="group-header">
+              <div>
+                <h2>{group.key}</h2>
+                <p>{formatDate(group.start, { hour: undefined, minute: undefined, timeZoneName: undefined })} - {formatDate(group.end, { hour: undefined, minute: undefined, timeZoneName: undefined })}</p>
+              </div>
+              <span>{group.items.length} 个版本</span>
+            </div>
+
+            <div class="release-list">
+              {group.items.map((item) => (
+                <article class="release-card">
+                  <div class="release-top">
+                    <div class="release-title">
+                      <h3>v{item.version}</h3>
+                      {item.distTags.map((tag) => (
+                        <span class={`tag ${tag === 'latest' ? 'latest' : ''}`}>{tag}</span>
+                      ))}
+                    </div>
+                    <time datetime={item.publishedAt ?? undefined}>{formatDate(item.publishedAt)}</time>
+                  </div>
+
+                  <div class="meta-grid">
+                    <div class="meta"><span>Node.js</span><strong>{item.engines?.node ?? '未指定'}</strong></div>
+                    <div class="meta"><span>Tarball 大小</span><strong>{item.sizeLabel ?? '未提供'}</strong></div>
+                    <div class="meta"><span>解压后大小</span><strong>{item.unpackedSizeLabel ?? '未提供'}</strong></div>
+                    <div class="meta"><span>文件数</span><strong>{item.fileCount ?? '未提供'}</strong></div>
+                    <div class="meta"><span>许可证</span><strong>{item.license ?? '未提供'}</strong></div>
+                    <div class="meta"><span>gitHead</span><strong title={item.gitHead ?? undefined}>{shortHash(item.gitHead)}</strong></div>
+                  </div>
+
+                  <div class="summary-blocks" aria-label={`v${item.version} 发布摘要`}>
+                    <div class="summary-block">
+                      <h4>更新内容</h4>
+                      {chineseSummaryItems(item, 'value').length > 0 ? (
+                        <ul>
+                          {chineseSummaryItems(item, 'value').map((entry) => (
+                            <li>{entry}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p class="summary-empty">{SUMMARY_FALLBACK_MESSAGE_ZH}</p>
+                      )}
+                      {englishSummaryItems(item, 'value').length > 0 && (
+                        <details class="summary-original">
+                          <summary>英文原文</summary>
+                          <ul>
+                            {englishSummaryItems(item, 'value').map((entry) => (
+                              <li>{entry}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                    <div class="summary-block">
+                      <h4>修复内容</h4>
+                      {chineseSummaryItems(item, 'fix').length > 0 ? (
+                        <ul>
+                          {chineseSummaryItems(item, 'fix').map((entry) => (
+                            <li>{entry}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p class="summary-empty">{SUMMARY_FALLBACK_MESSAGE_ZH}</p>
+                      )}
+                      {englishSummaryItems(item, 'fix').length > 0 && (
+                        <details class="summary-original">
+                          <summary>英文原文</summary>
+                          <ul>
+                            {englishSummaryItems(item, 'fix').map((entry) => (
+                              <li>{entry}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  </div>
+
+                  {isSummaryFallback(item) && (
+                    <p class="summary-fallback">
+                      <strong>{SUMMARY_FALLBACK_MESSAGE_ZH}</strong>
+                      {' '}{item.summaryFallbackReason ?? 'CHANGELOG.md 中没有该版本的结构化发布摘要。'}
+                      {' '}请查看 GitHub Release 或 CHANGELOG 获取完整详情。
+                    </p>
+                  )}
+
+                  <p class="release-note">
+                    依赖：{formatMap(item.dependencies)}。元数据与发布时间来自 npm registry。
+                    中文摘要来自维护中的双语发布数据；英文原文来自 CHANGELOG 提取，绝不会由 npm 元数据生成。
+                  </p>
+
+                  <div class="release-links">
+                    <a href={item.npmUrl} target="_blank" rel="noopener">npm 版本</a>
+                    <a href={item.tarballUrl ?? item.npmUrl} target="_blank" rel="noopener">tarball</a>
+                    <a href={item.githubReleaseUrl} target="_blank" rel="noopener">GitHub Release</a>
+                    <a href={releaseData.changelogUrl} target="_blank" rel="noopener">CHANGELOG</a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .release-hero {
+    padding: 8.5rem 1.5rem 2rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .release-container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    margin-bottom: 1rem;
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 1.5rem;
+    align-items: stretch;
+  }
+
+  .hero-main,
+  .install-panel,
+  .series-nav,
+  .release-card,
+  .data-note {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+  }
+
+  .hero-main {
+    padding: 2rem;
+  }
+
+  h1 {
+    margin: 0 0 1rem;
+    font-size: 3rem;
+    line-height: 1.08;
+    letter-spacing: 0;
+  }
+
+  .hero-copy {
+    max-width: 720px;
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 1rem;
+    line-height: 1.75;
+  }
+
+  .hero-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.625rem;
+    margin-top: 1.5rem;
+  }
+
+  .metric {
+    min-width: 0;
+    padding: 0.75rem;
+    background: #0f0f12;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+  }
+
+  .metric span,
+  .meta span {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+  }
+
+  .metric strong,
+  .meta strong {
+    display: block;
+    overflow: hidden;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .install-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    padding: 1.375rem;
+  }
+
+  .latest-badge,
+  .tag {
+    align-self: flex-start;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid rgba(96, 165, 250, 0.3);
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.1);
+    color: #93c5fd;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+  }
+
+  .latest-badge,
+  .tag.latest {
+    border-color: rgba(16, 185, 129, 0.35);
+    background: rgba(16, 185, 129, 0.1);
+    color: #6ee7b7;
+  }
+
+  .latest-version {
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 800;
+  }
+
+  .install-panel p {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.86rem;
+  }
+
+  .install-panel code {
+    display: block;
+    overflow-x: auto;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: #09090b;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+
+  .actions,
+  .release-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: auto;
+  }
+
+  .actions a,
+  .release-links a {
+    display: inline-flex;
+    min-height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.75rem;
+    border: 1px solid var(--color-border-hover);
+    border-radius: 7px;
+    color: var(--color-text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+
+  .actions a:hover,
+  .actions a:focus-visible,
+  .release-links a:hover,
+  .release-links a:focus-visible {
+    border-color: var(--color-primary);
+    background: rgba(16, 185, 129, 0.08);
+    color: var(--color-text);
+    outline: none;
+  }
+
+  .release-content {
+    padding: 2rem 1.5rem 5rem;
+  }
+
+  .content-grid {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .series-nav {
+    position: sticky;
+    top: 88px;
+    padding: 0.875rem;
+  }
+
+  .series-nav h2 {
+    margin: 0 0 0.75rem;
+    color: var(--color-text-secondary);
+    font-size: 0.88rem;
+  }
+
+  .series-nav a {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem 0.625rem;
+    border-radius: 7px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+  }
+
+  .series-nav a:hover,
+  .series-nav a.active {
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+  }
+
+  .timeline {
+    min-width: 0;
+  }
+
+  .data-note {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.65;
+  }
+
+  .data-note strong {
+    color: var(--color-text-secondary);
+  }
+
+  .series-group {
+    margin-bottom: 2rem;
+  }
+
+  .group-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.875rem;
+    padding-bottom: 0.625rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .group-header h2 {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 1.15rem;
+  }
+
+  .group-header p,
+  .group-header span {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+  }
+
+  .release-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .release-card {
+    padding: 1.125rem;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .release-card:hover {
+    border-color: var(--color-border-hover);
+    background: #151519;
+  }
+
+  .release-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .release-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .release-title h3 {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 1.15rem;
+    letter-spacing: 0;
+  }
+
+  time {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    white-space: nowrap;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .meta {
+    min-width: 0;
+    padding: 0.625rem;
+    border: 1px solid var(--color-border);
+    border-radius: 7px;
+    background: #0f0f12;
+  }
+
+  .release-note {
+    margin: 0 0 0.875rem;
+    color: var(--color-text-muted);
+    font-size: 0.86rem;
+    line-height: 1.65;
+  }
+
+  .summary-blocks {
+    display: grid;
+    gap: 0.75rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .summary-block {
+    padding: 0.875rem;
+    border: 1px solid var(--color-border);
+    border-radius: 7px;
+    background: #0b0b0e;
+  }
+
+  .summary-block h4 {
+    margin: 0 0 0.5rem;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0;
+  }
+
+  .summary-block ul {
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--color-text-muted);
+    font-size: 0.84rem;
+    line-height: 1.6;
+  }
+
+  .summary-block li + li {
+    margin-top: 0.35rem;
+  }
+
+  .summary-original {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .summary-original summary {
+    min-height: 2.75rem;
+    padding-top: 0.75rem;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+
+  .summary-original summary:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .summary-original ul {
+    margin-top: 0.125rem;
+    padding-bottom: 0.125rem;
+  }
+
+  .summary-empty,
+  .summary-fallback {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.84rem;
+    line-height: 1.65;
+  }
+
+  .summary-fallback {
+    margin-bottom: 0.875rem;
+    padding: 0.75rem 0.875rem;
+    border: 1px solid rgba(96, 165, 250, 0.25);
+    border-radius: 7px;
+    background: rgba(96, 165, 250, 0.06);
+    color: var(--color-text-secondary);
+  }
+
+  @media (max-width: 900px) {
+    .hero-grid,
+    .content-grid {
+      grid-template-columns: 1fr;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+    }
+
+    .hero-metrics,
+    .meta-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .series-nav {
+      position: static;
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .series-nav::-webkit-scrollbar {
+      display: none;
+    }
+
+    .series-nav h2 {
+      display: none;
+    }
+
+    .series-nav a {
+      flex: 0 0 auto;
+      min-width: 7rem;
+      border: 1px solid var(--color-border);
+    }
+
+    .summary-blocks {
+      gap: 0.625rem;
+    }
+
+    time {
+      white-space: normal;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .release-hero {
+      padding: 7rem 1rem 1.5rem;
+    }
+
+    .release-content {
+      padding: 1.5rem 1rem 4rem;
+    }
+
+    .hero-main {
+      padding: 1.25rem;
+    }
+
+    h1 {
+      font-size: 2.1rem;
+    }
+
+    .hero-metrics,
+    .meta-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .summary-block {
+      padding: 0.75rem;
+    }
+
+    .release-top,
+    .group-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>

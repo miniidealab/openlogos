@@ -1,0 +1,934 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import TourNav from '../../../components/TourNav.astro';
+
+const mermaidS01 = `sequenceDiagram
+    participant U as User
+    participant UI as React UI
+    participant Store as Zustand Store
+    participant IPC as IPC Bridge
+    participant DB as SQLite Database
+
+    U->>UI: Step 1: Select category
+    UI->>UI: Step 2: Update selection — highlight active
+    UI->>U: Step 3: Show selected state
+
+    U->>UI: Step 4: Enter amount via keyboard
+    UI->>UI: Step 5: Validate format — filter invalid chars
+    UI->>UI: Step 6: Enable/disable button by validity
+    UI->>U: Step 7: Display amount
+
+    U->>UI: Step 8: Click "Log" button
+    UI->>Store: Step 9: Submit {amount, category_id}
+    Store->>IPC: Step 10: saveRecord(amount, category_id)
+    IPC->>DB: Step 11: INSERT INTO records
+    DB-->>IPC: Step 12: Return write result
+    IPC-->>Store: Step 13: Return success/failure
+    Store-->>UI: Step 14: Update state
+    UI->>U: Step 15: Show "Recorded" toast
+
+    UI->>UI: Step 16: Clear amount input
+    UI->>UI: Step 17: Keep category selected
+    UI->>U: Step 18: Ready for next entry`;
+
+const mermaidArch = `graph TB
+    subgraph Renderer["Renderer Process (React)"]
+        UI["React Components<br/>UI Layer"]
+        State["Zustand Store<br/>State Management"]
+        IPC["IPC Bridge<br/>Process Communication"]
+    end
+
+    subgraph Client["Client (Electron Main Process)"]
+        Main["Main Process<br/>Backend Logic"]
+        DB["SQLite Database<br/>Local Storage"]
+        Store["electron-store<br/>Config Storage"]
+    end
+
+    UI --> State
+    State --> IPC
+    IPC --> Main
+    Main --> DB
+    Main --> Store`;
+
+const codeDatabase = `<div class="code-snippet"><div class="code-header"><span class="code-file">src/main/database.js</span><span class="code-lang">JavaScript</span></div><pre><code><span class="hl-kw">class</span> <span class="hl-ty">DatabaseManager</span> {
+  <span class="hl-cmt">// S01 Steps 10-13: Save a new expense record</span>
+  <span class="hl-fn">saveRecord</span>(amount, category_id, remark = <span class="hl-kw">null</span>, created_at = <span class="hl-kw">null</span>) {
+    <span class="hl-kw">const</span> amountInCents = <span class="hl-ty">Math</span>.<span class="hl-fn">round</span>(amount * <span class="hl-num">100</span>);
+    <span class="hl-kw">const</span> timestamp = created_at || <span class="hl-kw">new</span> <span class="hl-ty">Date</span>().<span class="hl-fn">toISOString</span>();
+    <span class="hl-kw">this</span>.db.<span class="hl-fn">run</span>(
+      <span class="hl-str">\`INSERT INTO records (amount, category_id, remark, created_at)
+       VALUES (?, ?, ?, ?)\`</span>,
+      [amountInCents, category_id, remark, timestamp]
+    );
+    <span class="hl-kw">const</span> result = <span class="hl-kw">this</span>.db.<span class="hl-fn">exec</span>(<span class="hl-str">'SELECT last_insert_rowid() as id'</span>);
+    <span class="hl-kw">this</span>.<span class="hl-fn">save</span>();
+    <span class="hl-kw">return</span> result[<span class="hl-num">0</span>].values[<span class="hl-num">0</span>][<span class="hl-num">0</span>];
+  }
+}</code></pre></div>`;
+
+const codeTestML = `<div class="code-snippet"><div class="code-header"><span class="code-file">src/__tests__/S01.test.ts</span><span class="code-lang">TypeScript</span></div><pre><code><span class="hl-fn">describe</span>(<span class="hl-str">'S01: Quick Logging - Unit Tests'</span>, () =&gt; {
+  <span class="hl-fn">describe</span>(<span class="hl-str">'UT-S01-01: Amount is required'</span>, () =&gt; {
+    <span class="hl-fn">it</span>(<span class="hl-str">'should reject empty amount'</span>, <span class="hl-kw">async</span> () =&gt; {
+      <span class="hl-kw">const</span> data = {};
+      <span class="hl-kw">const</span> hasAmount = data.amount !== <span class="hl-kw">undefined</span>;
+      <span class="hl-fn">expect</span>(hasAmount).<span class="hl-fn">toBe</span>(<span class="hl-kw">false</span>);
+    });
+  });
+
+  <span class="hl-fn">describe</span>(<span class="hl-str">'UT-S01-10: Amount truncated to 2 decimals'</span>, () =&gt; {
+    <span class="hl-fn">it</span>(<span class="hl-str">'should auto-truncate to 2 decimal places'</span>, () =&gt; {
+      <span class="hl-kw">const</span> amount = <span class="hl-num">12.345</span>;
+      <span class="hl-kw">const</span> formatted = <span class="hl-ty">Math</span>.<span class="hl-fn">floor</span>(amount * <span class="hl-num">100</span>) / <span class="hl-num">100</span>;
+      <span class="hl-fn">expect</span>(formatted).<span class="hl-fn">toBe</span>(<span class="hl-num">12.34</span>);
+    });
+  });
+});
+
+<span class="hl-fn">describe</span>(<span class="hl-str">'S01: Quick Logging - Scenario Tests'</span>, () =&gt; {
+  <span class="hl-fn">describe</span>(<span class="hl-str">'ST-S01-01: Full logging flow'</span>, () =&gt; {
+    <span class="hl-fn">it</span>(<span class="hl-str">'should correctly convert amount to cents'</span>, () =&gt; {
+      <span class="hl-kw">const</span> amount = <span class="hl-num">35.5</span>;
+      <span class="hl-kw">const</span> amountInCents = <span class="hl-ty">Math</span>.<span class="hl-fn">round</span>(amount * <span class="hl-num">100</span>);
+      <span class="hl-fn">expect</span>(amountInCents).<span class="hl-fn">toBe</span>(<span class="hl-num">3550</span>);
+    });
+  });
+});</code></pre></div>`;
+---
+
+<BaseLayout title="Money-Log · OpenCode 工作流 — OpenLogos 实战导览" description="看一个 Electron 记账应用如何用 OpenLogos + OpenCode 从需求一路走到验证通过的代码。" lang="zh">
+  <TourNav current="money-log" lang="zh" />
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-badge badge-opencode">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        OpenCode 工作流
+      </div>
+      <h1>Money-Log</h1>
+      <p class="hero-desc">一个用 <strong>Electron + React + TypeScript</strong> 构建的轻量级桌面记账工具。同样的 OpenLogos 方法论，不同的 AI 工具与技术栈。</p>
+      <div class="hero-tech">
+        <span class="tech-tag">Electron</span>
+        <span class="tech-tag">React 18</span>
+        <span class="tech-tag">TypeScript</span>
+        <span class="tech-tag">SQLite</span>
+        <span class="tech-tag">Zustand</span>
+        <span class="tech-tag">Tailwind CSS</span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num">4</span> 场景</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">73</span> 测试用例</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">100%</span> 覆盖率</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">Gate 3.5: PASS</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">已部署</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">Smoke PASS</div>
+      </div>
+      <div class="opencode-highlight">
+        <div class="oc-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l3 3-3 3"/><line x1="15" y1="15" x2="18" y2="15"/></svg>
+        </div>
+        <div>
+          <strong>OpenCode 集成</strong>
+          <span>使用 <code>.opencode/plugins/openlogos.js</code>，配合 <code>commands/</code> <code>hooks/</code>，在终端里实现方法论驱动的开发。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 1: WHY -->
+  <section class="phase-section" id="phase1">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-amber">1</div>
+        <div>
+          <div class="phase-tag tag-amber">WHY</div>
+          <h2>需求 —— 谁需要它，为什么？</h2>
+        </div>
+      </div>
+      <p class="phase-source">来源：<code>logos/resources/prd/1-product-requirements/01-requirements.md</code></p>
+
+      <div class="artifact-card">
+        <h3>用户画像与痛点</h3>
+        <div class="doc-excerpt">
+          <p><strong>上班族，24-50 岁</strong> —— 月收入 5K-30K 元。没有主动记账的习惯，只会被动查看支付宝/微信的交易记录。需要快速记账、分类消费，以及消费趋势洞察。</p>
+          <div class="pain-points">
+            <div class="pain"><span class="pain-id">P01</span> 记不清钱花在哪 —— 交易记录分散，没有分类汇总</div>
+            <div class="pain"><span class="pain-id">P02</span> 想记账但现有应用太复杂 → 用一周就放弃</div>
+            <div class="pain"><span class="pain-id">P03</span> 每月按分类手动统计太繁琐</div>
+            <div class="pain"><span class="pain-id">P04</span> 共用电脑 —— 财务记录没有数据保护</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>场景概览</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>场景</th><th>触发</th><th>痛点</th><th>优先级</th></tr></thead>
+            <tbody>
+              <tr><td>S01</td><td>快速记账</td><td>用户打开应用记一笔</td><td>P02</td><td class="p0">P0</td></tr>
+              <tr><td>S02</td><td>查看统计报表</td><td>用户进入统计页</td><td>P01, P03</td><td class="p0">P0</td></tr>
+              <tr><td>S03</td><td>管理消费分类</td><td>用户管理分类</td><td>P01</td><td class="p1">P1</td></tr>
+              <tr><td>S04</td><td>设置密码锁</td><td>用户开启/关闭锁</td><td>P04</td><td class="p1">P1</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>验收标准 —— S01：快速记账</h3>
+        <div class="ac-list">
+          <div class="ac-item ac-normal">
+            <div class="ac-label">正常</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> 用户已打开应用，所有分类都已展示</div>
+              <div><strong>WHEN</strong> 用户选择「餐饮」，输入「35.5」，点击「记一笔」</div>
+              <div><strong>THEN</strong> 显示「已记录」，分类保持在「餐饮」，金额清空，准备记下一笔</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">异常</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> 用户已打开应用</div>
+              <div><strong>WHEN</strong> 未选择分类，用户输入金额并点击「记一笔」</div>
+              <div><strong>THEN</strong> 按钮置灰，或提示「请选择一个分类」</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">异常</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> 用户选择了「娱乐」分类</div>
+              <div><strong>WHEN</strong> 用户输入「abc」或「-50」，点击「记一笔」</div>
+              <div><strong>THEN</strong> 提示「请输入有效金额」，不保存</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Phase 2: WHAT -->
+  <section class="phase-section" id="phase2">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-blue">2</div>
+        <div>
+          <div class="phase-tag tag-blue">WHAT</div>
+          <h2>产品设计 —— 用户会看到什么、做什么？</h2>
+        </div>
+      </div>
+      <p class="phase-source">来源：<code>logos/resources/prd/2-product-design/1-feature-specs/01-main-design.md</code></p>
+
+      <div class="artifact-card">
+        <h3>页面架构</h3>
+        <div class="code-block">
+          <pre><code>┌─────────────────────────────────────────┐
+│            Money-Log Logo               │
+├─────────────────────────────────────────┤
+│                                         │
+│   ┌─────────┐ ┌─────────┐ ┌─────────┐  │
+│   │  Log    │ │  Stats  │ │ Settings│  │
+│   │(default)│ │         │ │         │  │
+│   └─────────┘ └─────────┘ └─────────┘  │
+│                                         │
+│  ┌─────────────────────────────────┐    │
+│  │      [Page Content Area]        │    │
+│  │                                 │    │
+│  └─────────────────────────────────┘    │
+│                                         │
+└─────────────────────────────────────────┘
+
+Window: 800 x 600 px (min: 600 x 500)
+3 tabs: Log / Statistics / Settings</code></pre>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>UI 原型 —— 桌面应用</h3>
+        <p class="phase-source">来源：<code>logos/resources/prd/2-product-design/2-page-design/01-prototype.html</code></p>
+        <div class="prototype-single">
+          <iframe src="/tour/prototypes/money-log.html" loading="lazy"></iframe>
+        </div>
+        <p class="artifact-note">包含全部 3 个标签页（记账 / 统计 / 设置）的交互式 HTML 原型 —— 在写任何代码之前就设计好了。</p>
+      </div>
+
+      <div class="artifact-card">
+        <h3>S01 交互 —— 快速记账流程</h3>
+        <div class="doc-excerpt">
+          <ol class="interaction-steps">
+            <li>应用打开 → 显示默认记账页，含分类网格（8 个带 emoji 图标的预设分类）</li>
+            <li>用户点选一个分类 → 高亮选中项，其余变暗</li>
+            <li>用户用数字键盘输入金额 → 实时校验，过滤非数字字符</li>
+            <li>用户可选地添加备注（最多 200 字符）</li>
+            <li>点击「记一笔」→ 保存到 SQLite → 显示「已记录」提示 → 清空金额，保留分类</li>
+          </ol>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>字段</th><th>类型</th><th>必填</th><th>校验</th></tr></thead>
+            <tbody>
+              <tr><td>分类</td><td>图标网格选择</td><td>是</td><td>必须选择一个</td></tr>
+              <tr><td>金额</td><td>数字输入</td><td>是</td><td>&gt; 0，最大 999999.99</td></tr>
+              <tr><td>备注</td><td>文本输入</td><td>否</td><td>最多 200 字符</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 3: HOW -->
+  <section class="phase-section" id="phase3">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-green">3</div>
+        <div>
+          <div class="phase-tag tag-green">HOW</div>
+          <h2>实现 —— 从架构到验证通过的代码</h2>
+        </div>
+      </div>
+
+      <!-- Step 0: Architecture -->
+      <div class="step-section">
+        <div class="step-badge">Step 0</div>
+        <h3>架构概览</h3>
+        <p class="phase-source">来源：<code>logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md</code></p>
+        <div class="artifact-card">
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidArch} />
+          </div>
+          <p class="artifact-note">UI 放在渲染进程（React + Zustand），数据放在主进程（better-sqlite3）。IPC 桥负责所有通信。密码锁配置存在 electron-store 中，与消费数据分开。</p>
+        </div>
+      </div>
+
+      <!-- Step 1: Sequence Diagram -->
+      <div class="step-section">
+        <div class="step-badge">Step 1</div>
+        <h3>场景 → 时序图</h3>
+        <p class="phase-source">来源：<code>logos/resources/prd/3-technical-plan/2-scenario-implementation/S01-快速记账.md</code></p>
+        <div class="artifact-card">
+          <h4>S01：快速记账 —— 时序图</h4>
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidS01} />
+          </div>
+
+          <div class="step-desc-section">
+            <h4>步骤</h4>
+            <ol class="step-desc-list">
+              <li><strong>用户</strong>点选一个分类标签（例如「餐饮」）。</li>
+              <li><strong>React UI</strong> 更新选中状态，将当前分类视觉高亮。</li>
+              <li><strong>UI</strong> 向用户展示选中反馈。</li>
+              <li><strong>用户</strong>通过键盘输入金额。</li>
+              <li><strong>React UI</strong> 校验输入格式，过滤非数字字符。</li>
+              <li><strong>React UI</strong> 根据输入是否有效启用/禁用「记一笔」按钮（未选分类或金额为 0 时禁用）。</li>
+              <li><strong>UI</strong> 实时显示已输入的金额。</li>
+              <li><strong>用户</strong>点击「记一笔」按钮提交。</li>
+              <li><strong>Zustand Store</strong> 接收消费数据 <code>amount, category_id</code>。</li>
+              <li><strong>Store</strong> 通过 IPC 调用主进程的 <code>saveRecord()</code>。</li>
+              <li><strong>SQLite</strong> 执行 <code>INSERT INTO records</code>。</li>
+              <li><strong>数据库</strong>返回写入结果（成功或错误）。</li>
+              <li><strong>IPC</strong> 将结果返回给 Store。</li>
+              <li><strong>Store</strong> 更新状态，通知 UI。</li>
+              <li><strong>UI</strong> 显示「已记录」提示。</li>
+              <li><strong>React UI</strong> 清空金额输入框，准备记下一笔。</li>
+              <li><strong>React UI</strong> 保留分类选中，减少重复选择。</li>
+              <li><strong>UI</strong> 进入就绪状态，等待下一笔记账。</li>
+            </ol>
+          </div>
+
+          <div class="seq-exceptions">
+            <h5>异常情况</h5>
+            <div class="seq-ex"><span class="ex-id">EX-8.1</span> 未选择分类 → 按钮禁用</div>
+            <div class="seq-ex"><span class="ex-id">EX-8.2</span> 金额为 0 或为空 → 按钮禁用</div>
+            <div class="seq-ex"><span class="ex-id">EX-11.1</span> 数据库写入失败 → 显示错误提示，保留输入</div>
+            <div class="seq-ex"><span class="ex-id">EX-11.2</span> 金额超过 2 位小数 → 自动截断为 2 位</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: API + DB -->
+      <div class="step-section">
+        <div class="step-badge">Step 2</div>
+        <h3>API 规格 + 数据库 Schema</h3>
+        <div class="artifact-card">
+          <h4>API 规格 —— Electron IPC 通道</h4>
+          <p class="phase-source">来源：<code>logos/resources/api/local-api.yaml</code></p>
+          <div class="doc-frame">
+            <iframe src="/tour/docs/money-log-api.html" loading="lazy"></iframe>
+          </div>
+        </div>
+        <div class="artifact-card">
+          <h4>数据库 Schema —— SQLite 表</h4>
+          <p class="phase-source">来源：<code>logos/resources/database/schema.yaml</code></p>
+          <div class="doc-frame doc-frame-short">
+            <iframe src="/tour/docs/money-log-db.html" loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Test Cases -->
+      <div class="step-section">
+        <div class="step-badge">Step 3</div>
+        <h3>测试用例设计（先于代码！）</h3>
+        <p class="phase-source">来源：<code>logos/resources/test/S01-test-cases.md</code></p>
+        <div class="artifact-card">
+          <h4>S01 测试用例 —— 单元测试（节选）</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>描述</th><th>输入</th><th>预期</th></tr></thead>
+              <tbody>
+                <tr><td><code>UT-S01-01</code></td><td>金额必填</td><td><code>&#123;&#125;</code></td><td>400：缺少必填字段</td></tr>
+                <tr><td><code>UT-S01-02</code></td><td>金额必须 &gt; 0</td><td><code>&#123;amount: 0&#125;</code></td><td>400：金额必须 &gt; 0</td></tr>
+                <tr><td><code>UT-S01-05</code></td><td>分类 ID 必须在数据库中存在</td><td><code>category_id: 999</code></td><td>400：分类不存在</td></tr>
+                <tr><td><code>UT-S01-06</code></td><td>备注最多 200 字符</td><td><code>"a".repeat(201)</code></td><td>400：备注过长</td></tr>
+                <tr><td><code>UT-S01-10</code></td><td>金额截断为 2 位小数</td><td><code>12.345</code></td><td>存储为 <code>12.34</code></td></tr>
+                <tr><td><code>UT-S01-11</code></td><td>过滤非数字字符</td><td><code>"abc"</code></td><td>过滤为空</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>S01 场景测试（节选）</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>描述</th><th>覆盖</th></tr></thead>
+              <tbody>
+                <tr><td><code>ST-S01-01</code></td><td>完整记账流程：选择 → 输入 → 保存 → 提示</td><td>Steps 1-18</td></tr>
+                <tr><td><code>ST-S01-02</code></td><td>同一分类连续记账</td><td>Steps 1-18</td></tr>
+                <tr><td><code>ST-S01-05</code></td><td>无效金额格式被拒绝</td><td>EX-5.1</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="test-scale-note">
+            <strong>共 73 条测试用例</strong>，覆盖 S01-S04，涵盖记账、统计、分类管理和密码锁 —— 全部在写下任何一行实现代码之前就设计好了。
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: Code Generation -->
+      <div class="step-section">
+        <div class="step-badge">Step 4</div>
+        <h3>代码生成 —— 经由 OpenCode 的设计驱动实现</h3>
+        <p class="phase-source">来源：<code>src/main/database.js</code> · <code>src/renderer/pages/</code> · <code>src/__tests__/</code></p>
+        <div class="artifact-card">
+          <div class="codegen-workflow">
+            <div class="workflow-badge opencode-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              OpenCode —— 终端优先的 AI 编程
+            </div>
+            <p class="workflow-desc">OpenCode 通过斜杠命令读取时序图和 API 规格，然后批量生成 Electron 主进程 + React 前端 + Vitest 测试。每个批次都闭环：业务代码 → 测试代码 → OpenLogos reporter。</p>
+          </div>
+          <h4>数据层 —— Electron 主进程 <span class="code-maps-to">→ 对应 S01 Steps 10-13</span></h4>
+          <Fragment set:html={codeDatabase} />
+          <h4>单元测试 + 场景测试 <span class="code-maps-to">→ 验证 S01 验收标准</span></h4>
+          <Fragment set:html={codeTestML} />
+          <div class="codegen-stats">
+            <div class="cg-stat"><span class="cg-num">4</span><span class="cg-label">React 页面</span></div>
+            <div class="cg-stat"><span class="cg-num">1</span><span class="cg-label">Zustand Store</span></div>
+            <div class="cg-stat"><span class="cg-num">73</span><span class="cg-label">测试用例</span></div>
+            <div class="cg-stat"><span class="cg-num">S01–S04</span><span class="cg-label">全覆盖</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5: Verify -->
+      <div class="step-section">
+        <div class="step-badge">Step 5</div>
+        <h3><code>openlogos verify</code> —— 自动化验收</h3>
+        <p class="phase-source">来源：<code>logos/resources/verify/acceptance-report.md</code></p>
+        <div class="artifact-card verify-card">
+          <div class="verify-header">
+            <div class="verify-badge">Gate 3.5: PASS</div>
+            <span class="verify-date">生成于 2026-04-09</span>
+          </div>
+          <div class="verify-stats">
+            <div class="verify-stat">
+              <span class="vs-num">73</span>
+              <span class="vs-label">已定义</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">73</span>
+              <span class="vs-label">已执行</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">73</span>
+              <span class="vs-label">已通过</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">0</span>
+              <span class="vs-label">失败</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">100%</span>
+              <span class="vs-label">覆盖率</span>
+            </div>
+          </div>
+          <div class="verify-trace">
+            <h4>设计期覆盖断言</h4>
+            <div class="trace-items">
+              <div class="trace-row"><span class="trace-check">&#10003;</span> Phase 1 正常验收标准：全部覆盖</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> Phase 1 异常验收标准：全部覆盖</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> EX 异常情况：全部覆盖</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> API 必填字段：全部覆盖</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> DB UNIQUE/CHECK 约束：全部覆盖</div>
+              <div class="trace-row trace-more">…… 横跨 S01-S04 测试用例</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="artifact-card deploy-card">
+        <div class="deploy-card-header">
+          <div>
+            <h3>部署与 smoke 门禁</h3>
+            <p>示例项目补齐部署完成标记，并通过部署后的最小健康检查。</p>
+          </div>
+          <div class="verify-badge">Gate 3.8: PASS</div>
+        </div>
+        <div class="deploy-grid">
+          <div class="deploy-item">
+            <span class="deploy-label">部署状态</span>
+            <strong>DEPLOY_DONE</strong>
+            <p>部署执行已完成，状态由 OpenLogos 受控记录。</p>
+          </div>
+          <div class="deploy-item">
+            <span class="deploy-label">Smoke 状态</span>
+            <strong>SMOKE_PASS</strong>
+            <p>部署后 smoke 用例通过，可追溯到 smoke 报告。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Delta Change -->
+  <section class="delta-section">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-purple">&#916;</div>
+        <div>
+          <div class="phase-tag tag-purple">DELTA</div>
+          <h2>变更追踪 —— 每次迭代都洞察影响范围</h2>
+        </div>
+      </div>
+
+      <div class="delta-intro">
+        <p>传统的 AI 编程（「vibe coding」）只改代码，却忘了设计文档、API 规格和测试用例。久而久之，文档与现实脱节，变得毫无用处。OpenLogos 用一套<strong>结构化的 delta 工作流</strong>解决这一问题 —— 任何变更，无论多小，都必须评估它在整条产物链上的连锁影响。</p>
+      </div>
+
+      <div class="delta-workflow">
+        <div class="dw-step"><div class="dw-num">1</div><div class="dw-text"><strong>proposal.md</strong><span>原因、类型、影响范围、概述</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">2</div><div class="dw-text"><strong>tasks.md</strong><span>按 Phase 划分的任务清单</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">3</div><div class="dw-text"><strong>Delta 文件</strong><span>逐任务产出变更</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">4</div><div class="dw-text"><strong>合并</strong><span><code>openlogos merge</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">5</div><div class="dw-text"><strong>代码 + 测试</strong><span>实现并验证</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">6</div><div class="dw-text"><strong>部署</strong><span><code>openlogos deploy-done</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">7</div><div class="dw-text"><strong>smoke</strong><span><code>openlogos smoke</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">8</div><div class="dw-text"><strong>归档</strong><span>关闭提案</span></div></div>
+      </div>
+
+      <div class="artifact-card delta-propagation-card">
+        <h3>变更传播规则</h3>
+        <p class="propagation-desc">变更类型决定了最小更新范围。一个看似微小的功能请求，可能会沿着整条链条层层传导：</p>
+        <div class="propagation-table">
+          <div class="prop-row prop-row-header">
+            <div class="prop-type-col">变更类型</div>
+            <div class="prop-chain-col">所需的最小更新</div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-req">需求</span></div>
+            <div class="prop-chain-col"><span class="prop-tag active">需求</span><span class="prop-arrow">→</span><span class="prop-tag active">设计</span><span class="prop-arrow">→</span><span class="prop-tag active">场景</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-design">设计</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">需求</span><span class="prop-arrow">→</span><span class="prop-tag active">设计</span><span class="prop-arrow">→</span><span class="prop-tag active">场景</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-iface">接口</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">需求</span><span class="prop-arrow">→</span><span class="prop-tag skip">设计</span><span class="prop-arrow">→</span><span class="prop-tag skip">场景</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-code">代码级</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">需求</span><span class="prop-arrow">→</span><span class="prop-tag skip">设计</span><span class="prop-arrow">→</span><span class="prop-tag skip">场景</span><span class="prop-arrow">→</span><span class="prop-tag skip">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag skip">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="delta-example-title">真实示例 —— 功能：为记账增加备注</h3>
+      <p class="phase-source">来源：<code>logos/changes/archive/每天记账增加备注功能/proposal.md</code></p>
+
+      <div class="artifact-card delta-card">
+        <h4>为记账增加备注字段</h4>
+        <div class="delta-meta">
+          <span class="delta-type delta-feature">功能</span>
+          <span class="delta-scope">S01 —— 快速记账</span>
+        </div>
+        <div class="doc-excerpt">
+          <p><strong>需求：</strong>用户需要给消费添加备注（例如「火锅聚餐」「打车去医院」）。数据库列 <code>remark</code> 已经存在 —— 但前端 UI 没有输入框，IPC 通道也没有把参数传进去。</p>
+        </div>
+        <h4 class="impact-title">影响分析</h4>
+        <div class="impact-matrix">
+          <div class="im-row"><span class="im-layer">需求</span><span class="im-badge im-skip">无变更</span><span class="im-detail">原始需求已提到可选的备注</span></div>
+          <div class="im-row"><span class="im-layer">产品设计</span><span class="im-badge im-affected">受影响</span><span class="im-detail">在快速记账面板的金额输入框下方加一个备注文本域</span></div>
+          <div class="im-row"><span class="im-layer">时序图</span><span class="im-badge im-affected">受影响</span><span class="im-detail">S01 Step 7 更新：用户填写备注 → 传给 IPC</span></div>
+          <div class="im-row"><span class="im-layer">API 规格</span><span class="im-badge im-affected">受影响</span><span class="im-detail"><code>save-record</code> 通道 —— 增加 <code>remark</code> 参数（字符串，可选，最多 200 字符）</span></div>
+          <div class="im-row"><span class="im-layer">数据库 Schema</span><span class="im-badge im-skip">无变更</span><span class="im-detail"><code>records.remark</code> 列已存在（TEXT，可空）</span></div>
+          <div class="im-row"><span class="im-layer">测试用例</span><span class="im-badge im-affected">受影响</span><span class="im-detail">新增 UT-S01-12（备注最多 200 字符），更新 ST-S01-01 以纳入备注流程</span></div>
+          <div class="im-row"><span class="im-layer">代码</span><span class="im-badge im-affected">受影响</span><span class="im-detail">渲染进程：增加文本域组件。主进程：将备注传入 DB 插入</span></div>
+        </div>
+        <div class="impact-verdict">
+          <strong>结论：</strong>设计级变更 —— 从产品设计开始，向下贯穿场景、API、测试和代码。需求和数据库 Schema 不受影响。如果没有影响分析，开发者很可能只是加了 UI 字段，却忘了更新时序图、API 规格和测试用例。
+        </div>
+      </div>
+
+      <h3 class="delta-example-title">更多已归档提案</h3>
+      <p class="phase-source">Money-Log 有 <strong>8 个已归档的变更提案</strong> —— 每一个都遵循相同的结构化 delta 工作流。</p>
+
+      <div class="delta-grid">
+        <div class="artifact-card delta-card delta-card-compact">
+          <h4>修复：密码未持久化</h4>
+          <div class="delta-meta">
+            <span class="delta-type delta-bugfix">Bug 修复</span>
+            <span class="delta-scope">S04</span>
+          </div>
+          <p class="delta-compact-desc">代码级修复 —— <code>electron-store</code> 的写入在关闭前未被 await。</p>
+        </div>
+        <div class="artifact-card delta-card delta-card-compact">
+          <h4>月度消费明细视图</h4>
+          <div class="delta-meta">
+            <span class="delta-type delta-feature">功能</span>
+            <span class="delta-scope">S02</span>
+          </div>
+          <p class="delta-compact-desc">设计级 —— 在统计图表下方新增列表视图。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <h2>想亲手试试？</h2>
+      <p>克隆仓库在本地运行 Money-Log，或用 OpenLogos 开启你自己的项目。</p>
+      <div class="cta-actions">
+        <a href="https://github.com/miniidealab/openlogos/tree/main/examples/money-log" target="_blank" rel="noopener" class="btn btn-primary">在 GitHub 上查看 →</a>
+        <a href="/zh/tour/flowtask" class="btn btn-ghost">← FlowTask · Claude Code</a>
+      </div>
+      <div class="cta-secondary">
+        <a href="/zh/getting-started/quick-start">快速开始指南</a>
+        <span class="cta-divider">·</span>
+        <a href="/zh/tour">返回导览总览</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 860px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Hero */
+  .page-hero { padding: 3rem 1.5rem 3rem; text-align: center; }
+  .hero-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.75rem; border-radius: 100px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; margin-bottom: 1.5rem; }
+  .badge-opencode { background: rgba(14, 165, 233, 0.12); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 0.75rem; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.05rem; line-height: 1.7; max-width: 580px; margin: 0 auto 1.5rem; }
+  .hero-desc strong { color: var(--color-text-secondary); }
+  .hero-tech { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.375rem; margin-bottom: 1.5rem; }
+  .tech-tag { font-size: 0.68rem; font-weight: 500; padding: 0.175rem 0.5rem; border-radius: 4px; background: var(--color-surface-raised); border: 1px solid var(--color-border); color: var(--color-text-muted); }
+  .hero-stats { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1.5rem; }
+  .stat-num { font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .stat-sep { opacity: 0.3; }
+  .pass { font-family: var(--font-mono); font-weight: 700; color: #0eb677; }
+
+  .opencode-highlight { display: flex; align-items: flex-start; gap: 0.75rem; max-width: 520px; margin: 0 auto; padding: 1rem 1.25rem; background: rgba(14, 165, 233, 0.06); border: 1px solid rgba(14, 165, 233, 0.15); border-radius: 12px; text-align: left; }
+  .oc-icon { flex-shrink: 0; color: #0ea5e9; margin-top: 0.1rem; }
+  .opencode-highlight strong { display: block; font-size: 0.82rem; font-weight: 700; color: #0ea5e9; margin-bottom: 0.25rem; }
+  .opencode-highlight span { font-size: 0.78rem; color: var(--color-text-muted); line-height: 1.5; }
+  .opencode-highlight code { font-family: var(--font-mono); font-size: 0.72rem; background: rgba(14, 165, 233, 0.08); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  /* Phase Sections */
+  .phase-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .phase-header { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 0.5rem; }
+  .phase-marker { flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 800; font-family: var(--font-mono); }
+  .marker-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
+  .marker-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
+  .marker-green { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+  .marker-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
+  .phase-tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 0.375rem; }
+  .tag-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+  .tag-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+  .tag-green { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .tag-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+  .phase-header h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+  .phase-source { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 1.5rem; opacity: 0.7; }
+  .phase-source strong { color: var(--color-text-secondary); opacity: 1; }
+  .phase-source code { font-family: var(--font-mono); font-size: 0.72rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 3px; }
+
+  /* Artifact Cards */
+  .artifact-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.75rem; margin-bottom: 1.25rem; }
+  .artifact-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .artifact-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.625rem; margin-top: 1rem; }
+  .artifact-card h4:first-child { margin-top: 0; }
+  .artifact-note { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 0.75rem; line-height: 1.5; font-style: italic; }
+
+  /* Doc excerpts */
+  .doc-excerpt { font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.65; }
+  .doc-excerpt p { margin-bottom: 0.75rem; }
+  .doc-excerpt strong { color: var(--color-text); }
+  .doc-excerpt code { font-family: var(--font-mono); font-size: 0.78rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  .pain-points { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+  .pain { font-size: 0.82rem; color: var(--color-text-muted); padding: 0.5rem 0.75rem; background: var(--color-surface-raised); border-radius: 8px; border-left: 3px solid var(--color-border); }
+  .pain-id { font-family: var(--font-mono); font-weight: 700; color: #f59e0b; margin-right: 0.5rem; font-size: 0.75rem; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { text-align: left; padding: 0.5rem 0.75rem; background: var(--color-surface-raised); font-weight: 600; font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--color-border); }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); }
+  td code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .p0 { font-weight: 700; color: #ef4444; }
+  .p1 { font-weight: 600; color: #f59e0b; }
+
+  /* AC list */
+  .ac-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .ac-item { display: flex; gap: 0.75rem; padding: 0.75rem; border-radius: 8px; background: var(--color-surface-raised); }
+  .ac-label { flex-shrink: 0; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.15rem 0.4rem; border-radius: 4px; height: fit-content; margin-top: 0.1rem; }
+  .ac-normal .ac-label { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .ac-exception .ac-label { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+  .ac-content { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  .ac-content strong { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 0.75rem; }
+
+  /* Interaction steps */
+  .interaction-steps { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.375rem; }
+  .interaction-steps li { font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .prototype-single { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); background: #fafafa; margin-bottom: 1rem; }
+  .prototype-single iframe { width: 100%; height: 520px; border: none; background: #fafafa; }
+
+  /* Doc iframes */
+  .doc-frame { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); margin-bottom: 0.5rem; }
+  .doc-frame iframe { width: 100%; height: 520px; border: none; }
+  .doc-frame-short iframe { height: 420px; }
+
+  /* Code blocks */
+  .code-block { background: #0d0d10; border: 1px solid var(--color-border); border-radius: 10px; padding: 1rem 1.25rem; overflow-x: auto; }
+  .code-block pre { margin: 0; }
+  .code-block code { font-family: var(--font-mono); font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.6; white-space: pre; }
+
+  /* Step sections */
+  .step-section { margin-bottom: 2rem; }
+  .step-badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 5px; font-size: 0.68rem; font-weight: 700; font-family: var(--font-mono); background: rgba(16, 185, 129, 0.08); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.15); margin-bottom: 0.5rem; }
+  .step-section > h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.25rem; }
+
+  /* Dual artifact */
+  .dual-artifact { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+
+  /* Sequence diagram */
+  .sequence-diagram { font-size: 0.82rem; }
+  .seq-participants { display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .seq-p { padding: 0.3rem 0.625rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+  .seq-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; }
+  .seq-step { display: flex; gap: 0.625rem; align-items: flex-start; font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .seq-step code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .seq-num { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.08); padding: 0.15rem 0.4rem; border-radius: 4px; min-width: 2.5rem; text-align: center; }
+  .seq-exceptions { border-top: 1px solid var(--color-border); padding-top: 1rem; }
+  .seq-exceptions h5 { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.625rem; }
+  .seq-ex { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 0.375rem; }
+  .ex-id { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #ef4444; margin-right: 0.375rem; }
+
+  /* Test scale note */
+  .test-scale-note { margin-top: 1rem; padding: 0.75rem 1rem; background: rgba(14, 182, 119, 0.06); border: 1px solid rgba(14, 182, 119, 0.15); border-radius: 8px; font-size: 0.82rem; color: var(--color-text-secondary); }
+  .test-scale-note strong { color: #0eb677; }
+
+  /* Code generation */
+  .codegen-workflow { margin-bottom: 1.25rem; }
+  .workflow-badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.85rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.75rem; }
+  .claude-badge { background: linear-gradient(135deg, #d4a574 0%, #c4956a 100%); color: #fff; }
+  .opencode-badge { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+  .workflow-desc { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  :global(.code-snippet) { background: #1e1e2e; border-radius: 8px; overflow: hidden; margin-bottom: 1.25rem; }
+  :global(.code-snippet .code-header) { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.875rem; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.08); }
+  :global(.code-snippet .code-file) { font-family: var(--font-mono); font-size: 0.72rem; color: #a6adc8; }
+  :global(.code-snippet .code-lang) { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #585b70; }
+  :global(.code-snippet pre) { margin: 0; padding: 1rem 0.875rem; overflow-x: auto; }
+  :global(.code-snippet code) { font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.65; color: #cdd6f4; }
+  :global(.code-snippet .hl-kw) { color: #cba6f7; }
+  :global(.code-snippet .hl-str) { color: #a6e3a1; }
+  :global(.code-snippet .hl-cmt) { color: #6c7086; font-style: italic; }
+  :global(.code-snippet .hl-fn) { color: #89b4fa; }
+  :global(.code-snippet .hl-ty) { color: #f9e2af; }
+  :global(.code-snippet .hl-attr) { color: #fab387; }
+  :global(.code-snippet .hl-num) { color: #fab387; }
+  .code-maps-to { font-size: 0.72rem; font-weight: 500; color: var(--color-text-muted); margin-left: 0.5rem; }
+  .codegen-stats { display: flex; gap: 1rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--color-border); }
+  .cg-stat { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 80px; }
+  .cg-num { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--color-text); }
+  .cg-label { font-size: 0.7rem; color: var(--color-text-muted); margin-top: 0.15rem; }
+
+  /* Verify */
+  .verify-card { border-color: rgba(14, 182, 119, 0.2); }
+  .verify-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+  .verify-badge { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 800; color: #0eb677; background: rgba(14, 182, 119, 0.1); border: 1px solid rgba(14, 182, 119, 0.25); padding: 0.375rem 0.875rem; border-radius: 8px; }
+  .verify-date { font-size: 0.72rem; color: var(--color-text-muted); }
+  .verify-stats { display: flex; gap: 1.5rem; margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+  .verify-stat { display: flex; flex-direction: column; }
+  .vs-num { font-size: 1.25rem; font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .vs-num.green { color: #0eb677; }
+  .vs-label { font-size: 0.68rem; color: var(--color-text-muted); font-weight: 500; }
+  .verify-trace h4 { font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .trace-items { display: flex; flex-direction: column; gap: 0.25rem; }
+  .trace-row { font-size: 0.78rem; color: var(--color-text-secondary); }
+  .trace-check { color: #0eb677; font-weight: 700; margin-right: 0.25rem; }
+  .trace-more { color: var(--color-text-muted); font-style: italic; margin-top: 0.25rem; }
+
+  .deploy-card { border-left: 3px solid #0eb677; margin-top: 1rem; }
+  .deploy-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
+  .deploy-card-header h3 { font-size: 1rem; font-weight: 800; margin-bottom: 0.25rem; }
+  .deploy-card-header p { color: var(--color-text-muted); font-size: 0.82rem; line-height: 1.6; margin: 0; }
+  .deploy-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+  .deploy-item { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.85rem; }
+  .deploy-label { display: block; color: var(--color-text-muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.25rem; }
+  .deploy-item strong { display: block; color: #0eb677; font-family: var(--font-mono); font-size: 0.9rem; margin-bottom: 0.25rem; }
+  .deploy-item p { color: var(--color-text-secondary); font-size: 0.76rem; line-height: 1.55; margin: 0; }
+
+  /* Delta */
+  .delta-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .delta-intro { margin-bottom: 2rem; }
+  .delta-intro p { color: var(--color-text-secondary); font-size: 0.92rem; line-height: 1.75; }
+
+  .delta-workflow { display: flex; align-items: flex-start; gap: 0; flex-wrap: wrap; margin-bottom: 2rem; padding: 1.25rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; justify-content: center; }
+  .dw-step { display: flex; align-items: flex-start; gap: 0.5rem; }
+  .dw-num { width: 22px; height: 22px; border-radius: 50%; background: #a855f7; color: white; font-size: 0.68rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .dw-text { display: flex; flex-direction: column; }
+  .dw-text strong { font-size: 0.78rem; color: var(--color-text); }
+  .dw-text span { font-size: 0.68rem; color: var(--color-text-muted); }
+  .dw-text code { font-size: 0.65rem; }
+  .dw-arrow { color: var(--color-text-muted); font-size: 0.9rem; padding: 0 0.375rem; margin-top: 2px; }
+
+  .delta-propagation-card { margin-bottom: 2rem; }
+  .propagation-desc { font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 1rem; line-height: 1.6; }
+  .propagation-table { display: flex; flex-direction: column; gap: 0.5rem; }
+  .prop-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; }
+  .prop-row-header { font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 0.25rem; border-bottom: 1px solid var(--color-border); }
+  .prop-type-col { width: 100px; flex-shrink: 0; }
+  .prop-chain-col { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+  .prop-badge { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 4px; display: inline-block; }
+  .prop-req { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .prop-design { background: rgba(168, 85, 247, 0.1); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.2); }
+  .prop-iface { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.2); }
+  .prop-code { background: rgba(14, 182, 119, 0.1); color: #0eb677; border: 1px solid rgba(14, 182, 119, 0.2); }
+  .prop-tag { font-size: 0.62rem; font-weight: 600; padding: 0.125rem 0.4rem; border-radius: 3px; }
+  .prop-tag.active { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .prop-tag.skip { background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); opacity: 0.5; }
+  .prop-arrow { color: var(--color-text-muted); font-size: 0.65rem; }
+
+  .delta-example-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; margin-top: 2rem; }
+
+  .delta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 0.5rem; }
+  .delta-card { border-left: 3px solid #a855f7; }
+  .delta-card h4 { font-size: 0.9rem; }
+  .delta-card-compact { padding: 1rem; }
+  .delta-compact-desc { font-size: 0.78rem; color: var(--color-text-secondary); margin: 0; }
+  .delta-meta { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .delta-type { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .delta-feature { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.2); }
+  .delta-bugfix { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .delta-scope { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.4rem; border-radius: 4px; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+
+  .impact-title { font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 1.25rem; margin-bottom: 0.75rem; }
+  .impact-matrix { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+  .im-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.625rem; border-radius: 6px; background: var(--color-surface-raised); }
+  .im-layer { font-size: 0.75rem; font-weight: 600; color: var(--color-text); width: 120px; flex-shrink: 0; }
+  .im-badge { font-size: 0.62rem; font-weight: 700; padding: 0.125rem 0.5rem; border-radius: 4px; flex-shrink: 0; text-align: center; min-width: 68px; }
+  .im-skip { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+  .im-affected { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .im-detail { font-size: 0.75rem; color: var(--color-text-secondary); }
+  .impact-verdict { padding: 0.75rem; background: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.6; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section > .container > p { color: var(--color-text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; text-decoration: none; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+  .cta-secondary { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  .cta-secondary a { color: var(--color-text-muted); font-size: 0.85rem; }
+  .cta-secondary a:hover { color: var(--color-text); }
+  .cta-divider { color: var(--color-text-muted); opacity: 0.3; }
+
+  /* Mermaid diagram */
+  .mermaid-wrap { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; overflow-x: auto; }
+  .mermaid-wrap .mermaid { display: flex; justify-content: center; }
+  .mermaid-wrap .mermaid svg { max-width: 100%; height: auto; }
+  .mermaid-wrap .mermaid .cluster-label { transform: translateY(6px); }
+  .mermaid-wrap .mermaid .cluster-label .nodeLabel { padding: 4px 8px 0; }
+
+  /* Step descriptions */
+  .step-desc-section { margin-bottom: 1.25rem; }
+  .step-desc-section h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .step-desc-list { padding-left: 1.5rem; display: flex; flex-direction: column; gap: 0.375rem; counter-reset: step-counter; list-style: none; }
+  .step-desc-list li { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; padding-left: 0.25rem; counter-increment: step-counter; position: relative; }
+  .step-desc-list li::before { content: counter(step-counter) "."; position: absolute; left: -1.5rem; width: 1.25rem; text-align: right; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: var(--color-text-muted); }
+  .step-desc-list li strong { color: var(--color-text); font-weight: 600; }
+  .step-desc-list li code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 2rem 1.5rem 2rem; }
+    .dual-artifact { grid-template-columns: 1fr; }
+    .delta-grid { grid-template-columns: 1fr; }
+    .hero-stats { flex-wrap: wrap; }
+    .verify-stats { gap: 1rem; }
+    .deploy-card-header { flex-direction: column; }
+    .deploy-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script is:inline src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script is:inline>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#131316',
+      primaryColor: '#1a3a2a',
+      primaryTextColor: '#fafafa',
+      primaryBorderColor: '#0eb677',
+      lineColor: '#71717a',
+      secondaryColor: '#1a1a1f',
+      tertiaryColor: '#27272a',
+      noteTextColor: '#d4d4d8',
+      noteBkgColor: '#1a1a1f',
+      noteBorderColor: '#3f3f46',
+      actorBkg: '#0eb677',
+      actorTextColor: '#fff',
+      actorBorder: '#0a9960',
+      actorLineColor: '#3f3f46',
+      signalColor: '#d4d4d8',
+      signalTextColor: '#d4d4d8',
+      sequenceNumberColor: '#fff',
+      fontSize: '13px'
+    },
+    sequence: {
+      actorMargin: 60,
+      messageMargin: 30
+    },
+    flowchart: {
+      padding: 16,
+      subGraphTitleMargin: { top: 8, bottom: 4 }
+    }
+  });
+</script>

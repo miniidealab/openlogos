@@ -120,3 +120,44 @@ graph TB
 
 回滚策略：
 - 若初始化目录结构变更影响发布版本，按既有 npm 补丁版本回滚策略修复；旧项目已生成的 Reference 子目录无需迁移。
+
+## 十四、deploy-done 发布检查
+
+本提案新增 CLI 运行时命令和随包分发的 Skill / Spec，因此需要执行 CLI/npm 发布，并在部署后验证 `openlogos deploy-done` 可用。
+
+发布前检查：
+- `cd cli && npm test` 覆盖 `openlogos deploy-done` 的成功与失败分支。
+- `cd cli && npm run build` 通过，且命令入口已注册到 CLI help。
+- `openlogos deploy-done --format json` 输出稳定 JSON envelope。
+- `deployment-executor` skill 已改为部署成功后调用 `openlogos deploy-done`，不再要求 AI 手写 `DEPLOY_DONE`。
+
+部署后检查：
+- 安装发布后的 CLI，构造已 `VERIFY_PASS`、需要部署且存在 `[deploy]` section 的提案。
+- 写入 `logos/resources/verify/deployment-report.md` 后执行 `openlogos deploy-done --env staging`。
+- 确认 `[deploy]` section 全部勾选，`DEPLOY_DONE` 写入，旧 `SMOKE_PASS` / `SMOKE_FAIL` 被清理。
+- 执行 `openlogos status --format json`，确认提案进入 `ready-to-smoke` 或 `deploy-done`。
+
+回滚策略：
+- 若 `deploy-done` 命令导致状态机兼容问题，按既有 npm 补丁版本回滚策略修复。
+- 已写入的 `DEPLOY_DONE` marker 是提案局部状态；回滚 CLI 不应删除用户提案文件。
+
+## 十五、Mermaid Skill 文档发布检查
+
+本提案 `mermaid-syntax-safety` 修改随包分发的 Mermaid 相关 Skill 文档，并同步官网中英文 Skill 文档，因此需要执行官网文档构建与 staging 部署检查。若本次变更随 CLI 版本发布，仍沿用 `cli_tag_release` 的 tag 驱动发布约束；若仅部署官网文档，则只执行 `website_release_sync` 的文档站构建与部署链路。
+
+发布前检查：
+- `logos/skills/architecture-designer/SKILL.md` 已包含 Mermaid flowchart/graph 节点标签安全规则，覆盖 `ID["标签文本"]`、`subgraph "名称"`、`<br/>` 多行标签和避免误触发形状语法。
+- `logos/skills/scenario-architect/SKILL.md` 已包含 Mermaid sequenceDiagram 安全规则，保留单行约束，并要求复杂路径、JSON、错误码和长说明下沉到步骤说明。
+- `logos/skills/deployment-designer/SKILL.md` 已包含部署拓扑图的 Mermaid flowchart/graph 语法安全规则。
+- `website/src/content/docs/skills/` 与 `website/src/content/docs/zh/skills/` 下三个对应 Skill 页面已同步展示 Mermaid 语法安全规则。
+- `cd website && npm run build` 通过。
+
+部署后检查：
+- 官网英文 Skill 页面可访问，并展示 architecture / scenario / deployment 三类 Mermaid 语法安全规则。
+- 官网中文 Skill 页面可访问，并展示 architecture / scenario / deployment 三类 Mermaid 语法安全规则。
+- architecture / deployment 页面的 flowchart 示例使用 `ID["标签文本"]` 形式，不出现 `PROXY[/voice/api 代理]` 这类会误触发形状语法的普通文本节点。
+- scenario 页面的 sequenceDiagram 规则仍要求箭头消息单行，并提示复杂内容放到步骤说明。
+
+回滚策略：
+- 官网内容异常时，通过 Cloudflare Pages 回滚到上一成功部署。
+- 若随 CLI 包发布后发现 Skill 规则有误，通过补丁版本修正；已生成在用户项目中的历史规格文档不做自动迁移。

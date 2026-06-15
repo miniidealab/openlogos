@@ -1,0 +1,361 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import ConceptNav from '../../../components/ConceptNav.astro';
+---
+
+<BaseLayout lang="zh" title="工程根基 — OpenLogos" description="面向软件开发的 Harness Engineering 最佳实践。建立在 40 多年经过验证的理论之上——BDD、TDD、DDD、Stage-Gate——为 AI agent 写代码的时代重新编译。">
+  <ConceptNav current="engineering-foundation" lang="zh" />
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-tag tag-purple">核心理念</div>
+      <h1>Harness Engineering，<br/><span class="gradient-text">扎根于软件巨人的肩膀。</span></h1>
+      <p class="hero-desc">行业已经从 Prompt Engineering 演进到 Context Engineering，再到 Harness Engineering。OpenLogos 是面向软件开发的 Harness Engineering 最佳实践——建立在 40 多年久经沙场的理论之上，为 AI agent 写代码的时代重新编译。</p>
+    </div>
+  </section>
+
+  <!-- What is Harness Engineering -->
+  <section class="harness-section">
+    <div class="container-wide">
+      <div class="section-label">什么是 Harness Engineering</div>
+      <h2 class="section-title">Agent = 模型 + Harness</h2>
+      <p class="section-desc">模型之外的一切——系统提示词、工具集成、文件系统、编排逻辑、约束——都是 Harness。优秀的 harness engineering 让 AI agent 变得可靠、可追溯、可控。</p>
+
+      <!-- Three-layer evolution -->
+      <div class="evolution-track">
+        <div class="evo-step">
+          <div class="evo-badge">第 1 层</div>
+          <h4>Prompt Engineering</h4>
+          <p>如何<em>把话说清楚</em>——指令设计与表达。</p>
+        </div>
+        <div class="evo-arrow">&rarr;</div>
+        <div class="evo-step">
+          <div class="evo-badge">第 2 层</div>
+          <h4>Context Engineering</h4>
+          <p>如何<em>递交正确的信息</em>——上下文的筛选与投递。</p>
+        </div>
+        <div class="evo-arrow">&rarr;</div>
+        <div class="evo-step highlighted">
+          <div class="evo-badge active">第 3 层</div>
+          <h4>Harness Engineering</h4>
+          <p>如何让 AI <em>可靠地执行</em>——编排、护栏与持续运行。</p>
+        </div>
+      </div>
+
+      <!-- Six-layer mapping -->
+      <div class="harness-map">
+        <h3 class="harness-map-title">OpenLogos 如何实现 Harness 的每一层</h3>
+        <div class="harness-map-grid">
+          <div class="hm-card">
+            <div class="hm-layer">1. 信息边界</div>
+            <div class="hm-desc">角色定义与职责范围</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos：</span>
+              <code>AGENTS.md</code> + <code>logos-project.yaml</code> —— AI 的 GPS，定义项目规则、当前阶段以及该读什么。
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">2. 工具系统</div>
+            <div class="hm-desc">外部交互与能力</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos：</span>
+              14 个 AI Skills（<code>SKILL.md</code>）—— 平台无关的 Markdown 文件，引导 AI 走过每个开发阶段。
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">3. 执行编排</div>
+            <div class="hm-desc">多步骤排序与调度</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos：</span>
+              WHY &rarr; WHAT &rarr; HOW 三层推进 + 阶段之间的 Stage-Gate 质量门。
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">4. 记忆与状态</div>
+            <div class="hm-desc">中间结果与持久化上下文</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos：</span>
+              <code>logos/</code> 目录 —— 文档即上下文。每个阶段的产出都成为下一阶段的输入。
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">5. 评估与观测</div>
+            <div class="hm-desc">验证与质量度量</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos：</span>
+              <code>openlogos verify</code> —— 三层可追溯性 + <code>test-results.jsonl</code> 自动化验收。
+            </div>
+          </div>
+          <div class="hm-card">
+            <div class="hm-layer">6. 约束与恢复</div>
+            <div class="hm-desc">错误处理与变更控制</div>
+            <div class="hm-impl">
+              <span class="hm-label">OpenLogos：</span>
+              Delta 变更管理 —— <code>change proposal</code> &rarr; <code>merge</code> &rarr; <code>archive</code>。安全、可审计的迭代。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Theory Map -->
+  <section class="theory-section">
+    <div class="container-wide">
+      <div class="section-label">理论基石</div>
+      <h2 class="section-title">Harness 背后的工程理论</h2>
+      <p class="section-desc">OpenLogos 的 Harness 建立在成熟的工程理论之上。每一根支柱都为 Harness 的某一层提供动力。没有任何一处是凭空设计的。</p>
+
+      <div class="theory-grid">
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">BDD</span>
+            <span class="origin-year">2006 · Dan North</span>
+          </div>
+          <h3>行为驱动开发</h3>
+          <p>GIVEN/WHEN/THEN 验收标准。以面向用户的场景作为唯一事实来源。</p>
+          <div class="theory-maps">
+            <span class="maps-label">映射到：</span>
+            <span class="maps-target">Phase 1 需求、场景结构</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">TDD</span>
+            <span class="origin-year">2003 · Kent Beck</span>
+          </div>
+          <h3>测试驱动开发</h3>
+          <p>先写测试，再写代码。Red → Green → Refactor。测试定义契约。</p>
+          <div class="theory-maps">
+            <span class="maps-label">映射到：</span>
+            <span class="maps-target">Phase 3 Step 3 测试先行、<code>openlogos verify</code></span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">DDD</span>
+            <span class="origin-year">2003 · Eric Evans</span>
+          </div>
+          <h3>领域驱动设计</h3>
+          <p>统一语言。限界上下文。领域模型驱动架构。</p>
+          <div class="theory-maps">
+            <span class="maps-label">映射到：</span>
+            <span class="maps-target">Phase 3 Step 0 架构、场景建模</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">Stage-Gate</span>
+            <span class="origin-year">1986 · Robert Cooper</span>
+          </div>
+          <h3>Stage-Gate 流程</h3>
+          <p>阶段之间设质量门。每道门在放行前都有明确的通过/不通过标准。</p>
+          <div class="theory-maps">
+            <span class="maps-label">映射到：</span>
+            <span class="maps-target">三层推进的质量门、Gate 3.5 验收</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">Docs-as-Code</span>
+            <span class="origin-year">2014 · Write the Docs</span>
+          </div>
+          <h3>文档即代码</h3>
+          <p>纳入版本控制的文档。用对待源代码同样的严谨标准对待文档。</p>
+          <div class="theory-maps">
+            <span class="maps-label">映射到：</span>
+            <span class="maps-target">文档即上下文、<code>logos/</code> 目录</span>
+          </div>
+        </div>
+
+        <div class="theory-card">
+          <div class="theory-origin">
+            <span class="origin-badge">Skills</span>
+            <span class="origin-year">AI 原生范式</span>
+          </div>
+          <h3>可执行的方法论</h3>
+          <p>把方法论编码成 Markdown 文件，让 AI agent 自动读取并执行。</p>
+          <div class="theory-maps">
+            <span class="maps-label">映射到：</span>
+            <span class="maps-target">AI Skills（<code>SKILL.md</code>）、<code>AGENTS.md</code></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Theory Matters -->
+  <section class="why-section">
+    <div class="container">
+      <div class="section-label">为何重要</div>
+      <h2 class="section-title">理论不是负担——而是杠杆</h2>
+
+      <div class="why-grid">
+        <div class="why-card">
+          <div class="why-number">01</div>
+          <h3>可预测性</h3>
+          <p>这些实践经过数十年、数百万个项目的验证。当你把它们用于 AI 辅助开发时，你得到的是可预测的结果——而不是随机游走。</p>
+        </div>
+
+        <div class="why-card">
+          <div class="why-number">02</div>
+          <h3>可组合性</h3>
+          <p>BDD + TDD + DDD + Stage-Gate 天然可以组合。BDD 定义场景，TDD 验证场景，DDD 为场景建模，Stage-Gate 保障阶段间的质量。OpenLogos 把它们串接在一起。</p>
+        </div>
+
+        <div class="why-card">
+          <div class="why-number">03</div>
+          <h3>可教性</h3>
+          <p>相比临时拼凑的指令，AI agent 能从成熟范式中学得更高效。当你说"用 GIVEN/WHEN/THEN"时，AI 立刻理解这个范式，因为它在数百万训练样本中反复出现过。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Not Waterfall -->
+  <section class="myth-section">
+    <div class="container">
+      <div class="section-label">常见疑问</div>
+      <h2 class="section-title">回应质疑者</h2>
+
+      <div class="myth-grid">
+        <div class="myth-card">
+          <h3>"这不就是瀑布模型吗？"</h3>
+          <p>不是。瀑布模型先把<em>所有需求</em>排完，再做<em>任何设计</em>，再写<em>任何代码</em>。OpenLogos 是<strong>按场景</strong>排序的。S01 可以已经进入 Phase 3，而 S04 还停留在 Phase 1。这些阶段是一个推进模型，不是时间表。</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"AI 本应很快。这反而增加了流程。"</h3>
+          <p>一个 5 分钟的提示词产出一堆垃圾、让你 debug 3 小时，那不叫快。一个 30 分钟的结构化流程一次性产出正确、经过测试、可追溯的代码，那才<em>真的</em>快。速度的衡量单位是交付的功能，而不是生成的 token。</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"这对小项目来说是过度工程。"</h3>
+          <p>OpenLogos 可以优雅地向下伸缩。个人项目可以跳过 HTML 原型阶段。一个周末小项目可以把 Phase 1 + 2 压缩进一份文档。方法论是一套工具箱——按需取用即可。</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"为什么不直接用敏捷（Agile）？"</h3>
+          <p>敏捷假设开发者是人类，能把上下文记在脑子里。AI 没有脑子——它需要把上下文<em>写下来</em>。OpenLogos 与敏捷兼容，但坚持上下文显式化，因为这正是 AI 所需要的。</p>
+        </div>
+
+        <div class="myth-card">
+          <h3>"Harness Engineering 和 OpenLogos 有什么区别？"</h3>
+          <p>Harness Engineering 是一门<strong>学科</strong>——它定义了一个工程良好的 AI agent 系统需要什么：边界、工具、编排、记忆、评估和约束。OpenLogos 是这门学科的一个<strong>最佳实践实现</strong>，专门面向软件开发。Harness Engineering 是理论，OpenLogos 是实践。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>准备好亲自试试了吗？</h2>
+      <p>两条命令。五分钟。从第一天起就用对的方式构建项目。</p>
+      <div class="cta-actions">
+        <a href="/zh/getting-started/quick-start" class="btn btn-primary">快速开始</a>
+        <a href="https://github.com/miniidealab/openlogos" class="btn btn-ghost" target="_blank" rel="noopener">在 GitHub 上查看</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 800px; margin: 0 auto; padding: 0 1.5rem; }
+  .container-wide { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .page-hero { padding: 5rem 1.5rem 3rem; text-align: center; }
+  .hero-tag { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 1.5rem; }
+  .tag-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 1rem; }
+  .gradient-text { background: linear-gradient(135deg, #a855f7, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.1rem; line-height: 1.7; max-width: 600px; margin: 0 auto; }
+
+  .section-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-primary); margin-bottom: 0.75rem; text-align: center; }
+  .section-title { font-size: clamp(1.5rem, 3.5vw, 2rem); font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.75rem; text-align: center; }
+  .section-desc { color: var(--color-text-muted); font-size: 1rem; line-height: 1.7; text-align: center; max-width: 560px; margin: 0 auto 3rem; }
+
+  /* Harness Section */
+  .harness-section { padding: 2rem 0 4rem; border-bottom: 1px solid var(--color-border); }
+
+  .evolution-track { display: flex; align-items: stretch; gap: 0; margin-bottom: 3.5rem; }
+  .evo-step { flex: 1; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.5rem; text-align: center; transition: border-color 0.2s; }
+  .evo-step.highlighted { border-color: #a855f7; box-shadow: 0 0 24px rgba(168, 85, 247, 0.12); }
+  .evo-badge { display: inline-block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; margin-bottom: 0.75rem; background: var(--color-surface-raised); color: var(--color-text-muted); }
+  .evo-badge.active { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+  .evo-step h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.4rem; }
+  .evo-step p { font-size: 0.8rem; color: var(--color-text-muted); line-height: 1.5; }
+  .evo-step em { color: var(--color-text-secondary); font-style: normal; font-weight: 600; }
+  .evo-arrow { display: flex; align-items: center; padding: 0 0.5rem; color: var(--color-text-muted); font-size: 1.25rem; flex-shrink: 0; }
+
+  .harness-map { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 2rem; }
+  .harness-map-title { font-size: 1.1rem; font-weight: 700; text-align: center; margin-bottom: 1.5rem; letter-spacing: -0.02em; }
+  .harness-map-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+
+  .hm-card { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 1.25rem; transition: border-color 0.2s; }
+  .hm-card:hover { border-color: var(--color-border-hover); }
+  .hm-layer { font-size: 0.78rem; font-weight: 700; color: #a855f7; margin-bottom: 0.15rem; }
+  .hm-desc { font-size: 0.72rem; color: var(--color-text-muted); margin-bottom: 0.75rem; }
+  .hm-impl { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  .hm-label { font-weight: 600; color: var(--color-primary); }
+  .hm-impl code { font-family: var(--font-mono); font-size: 0.76rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 4px; }
+
+  /* Theory Grid */
+  .theory-section { padding: 2rem 0 4rem; }
+  .theory-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+
+  .theory-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.75rem; display: flex; flex-direction: column; transition: border-color 0.2s; }
+  .theory-card:hover { border-color: var(--color-border-hover); }
+
+  .theory-origin { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+  .origin-badge { font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.5rem; background: rgba(168, 85, 247, 0.1); color: #a855f7; border-radius: 4px; letter-spacing: 0.04em; }
+  .origin-year { font-size: 0.72rem; color: var(--color-text-muted); }
+
+  .theory-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .theory-card > p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.6; flex: 1; }
+
+  .theory-maps { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); font-size: 0.8rem; }
+  .maps-label { color: var(--color-text-muted); font-weight: 500; }
+  .maps-target { color: var(--color-text-secondary); margin-left: 0.25rem; }
+  .maps-target code { font-family: var(--font-mono); font-size: 0.78rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  /* Why Grid */
+  .why-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .why-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+
+  .why-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; }
+  .why-number { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 800; color: var(--color-primary); margin-bottom: 0.75rem; }
+  .why-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .why-card p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.65; }
+
+  /* Myth Grid */
+  .myth-section { padding: 4rem 0; border-top: 1px solid var(--color-border); }
+  .myth-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+
+  .myth-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; }
+  .myth-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--color-text); }
+  .myth-card p { color: var(--color-text-muted); font-size: 0.88rem; line-height: 1.65; }
+  .myth-card strong { color: var(--color-text-secondary); }
+  .myth-card em { font-style: italic; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section p { color: var(--color-text-muted); margin-bottom: 2rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 3rem 1.5rem 2rem; }
+    .theory-grid, .why-grid, .myth-grid { grid-template-columns: 1fr; }
+    .evolution-track { flex-direction: column; }
+    .evo-arrow { justify-content: center; transform: rotate(90deg); padding: 0.25rem 0; }
+    .harness-map-grid { grid-template-columns: 1fr; }
+  }
+</style>

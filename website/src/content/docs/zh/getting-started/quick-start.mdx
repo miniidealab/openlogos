@@ -1,0 +1,324 @@
+---
+title: 快速开始
+description: 10 分钟内上手 OpenLogos。
+---
+
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+让你的第一个 OpenLogos 项目跑起来——从安装到生成第一份 AI 需求文档。
+
+**所需时间：** 约 10 分钟
+
+## 前置条件
+
+- **Node.js** >= 18
+- **一个 AI 编码工具** —— 以下之一：
+  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)（基于终端）
+  - [OpenCode](https://opencode.ai)（基于终端）
+  - [Codex CLI](https://help.openai.com/en/collections/13193998-codex-cli)（基于终端）
+  - [Cursor](https://cursor.sh)（内置 AI 的 IDE）
+
+## 第 1 步：安装
+
+```bash
+npm install -g @miniidealab/openlogos
+```
+
+验证安装：
+
+```bash
+openlogos --version
+```
+
+## 第 2 步：初始化项目
+
+运行 init 命令——它会让你选择语言和 AI 工具：
+
+当你希望一个项目同时部署 Claude Code、OpenCode、Codex 和 Cursor 的目标时，选择 **All**。
+
+<Tabs>
+<TabItem label="Claude Code">
+```
+openlogos init my-project
+
+Choose language / 选择语言:
+  1. English (default)
+  2. 中文
+
+Your choice [1/2] (default: 1): 1
+
+Choose AI coding tool / 选择 AI 编码工具:
+  1. Claude Code (default)
+  2. OpenCode
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
+
+Your choice [1/2/3/4/5/6] (default: 1): 1
+
+Creating OpenLogos project structure for "my-project"...
+
+  ✓ logos/resources/prd/1-product-requirements/
+  ✓ logos/resources/prd/2-product-design/1-feature-specs/
+  ✓ logos/resources/prd/2-product-design/2-page-design/
+  ✓ logos/resources/prd/3-technical-plan/1-architecture/
+  ✓ logos/resources/prd/3-technical-plan/2-scenario-implementation/
+  ✓ logos/resources/api/
+  ✓ logos/resources/database/
+  ✓ logos/resources/test/
+  ✓ logos/resources/scenario/
+  ✓ logos/resources/verify/
+  ✓ logos/changes/
+  ✓ logos/changes/archive/
+  ✓ logos/logos.config.json
+  ✓ logos/logos-project.yaml
+  ✓ AGENTS.md
+  ✓ CLAUDE.md
+  ✓ 16 skills deployed to logos/skills/
+  ✓ 13 specs deployed to logos/spec/
+
+Project initialized. Next steps:
+  1. Review logos/logos.config.json to verify project settings
+  2. Start with Phase 1: tell AI "Help me write requirements"
+  3. Run `openlogos status` to check progress at any time
+
+💡 Claude Code users: install the native plugin for the best experience:
+  /plugin marketplace add miniidealab/openlogos
+  /plugin install openlogos@miniidealab-openlogos
+```
+</TabItem>
+<TabItem label="OpenCode">
+```
+openlogos init my-project
+
+Choose language / 选择语言:
+  1. English (default)
+  2. 中文
+
+Your choice [1/2] (default: 1): 1
+
+Choose AI coding tool / 选择 AI 编码工具:
+  1. Claude Code (default)
+  2. OpenCode
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
+
+Your choice [1/2/3/4/5/6] (default: 1): 2
+
+Creating OpenLogos project structure for "my-project"...
+
+  ✓ logos/resources/prd/1-product-requirements/
+  ✓ logos/resources/prd/2-product-design/1-feature-specs/
+  ✓ logos/resources/prd/2-product-design/2-page-design/
+  ✓ logos/resources/prd/3-technical-plan/1-architecture/
+  ✓ logos/resources/prd/3-technical-plan/2-scenario-implementation/
+  ✓ logos/resources/api/
+  ✓ logos/resources/database/
+  ✓ logos/resources/test/
+  ✓ logos/resources/scenario/
+  ✓ logos/resources/verify/
+  ✓ logos/changes/
+  ✓ logos/changes/archive/
+  ✓ logos/logos.config.json
+  ✓ logos/logos-project.yaml
+  ✓ AGENTS.md
+  ✓ CLAUDE.md
+  ✓ 16 skills deployed to logos/skills/
+  ✓ OpenCode plugin deployed to .opencode/plugins/openlogos.js + opencode.json
+  ✓ opencode.json created with recommended permission defaults
+  ✓ OpenCode slash commands deployed to .opencode/commands/ (10 files)
+  ✓ 13 specs deployed to logos/spec/
+
+Project initialized. Next steps:
+  1. Review logos/logos.config.json to verify project settings
+  2. Start with Phase 1: tell AI "Help me write requirements"
+  3. Run `openlogos status` to check progress at any time
+```
+</TabItem>
+<TabItem label="Cursor">
+```
+openlogos init my-project
+
+Choose language / 选择语言:
+  1. English (default)
+  2. 中文
+
+Your choice [1/2] (default: 1): 1
+
+Choose AI coding tool / 选择 AI 编码工具:
+  1. Claude Code (default)
+  2. OpenCode
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
+
+Your choice [1/2/3/4/5/6] (default: 1): 4
+
+Creating OpenLogos project structure for "my-project"...
+
+  ✓ logos/resources/prd/1-product-requirements/
+  ✓ logos/resources/prd/2-product-design/1-feature-specs/
+  ✓ logos/resources/prd/2-product-design/2-page-design/
+  ✓ logos/resources/prd/3-technical-plan/1-architecture/
+  ✓ logos/resources/prd/3-technical-plan/2-scenario-implementation/
+  ✓ logos/resources/api/
+  ✓ logos/resources/database/
+  ✓ logos/resources/test/
+  ✓ logos/resources/scenario/
+  ✓ logos/resources/verify/
+  ✓ logos/changes/
+  ✓ logos/changes/archive/
+  ✓ logos/logos.config.json
+  ✓ logos/logos-project.yaml
+  ✓ AGENTS.md
+  ✓ CLAUDE.md
+  ✓ 16 skills deployed to .cursor/rules/
+  ✓ 13 specs deployed to logos/spec/
+
+Project initialized. Next steps:
+  1. Review logos/logos.config.json to verify project settings
+  2. Start with Phase 1: tell AI "Help me write requirements"
+  3. Run `openlogos status` to check progress at any time
+```
+</TabItem>
+</Tabs>
+
+现在进入项目并查看状态：
+
+```bash
+cd my-project
+openlogos status
+```
+
+```
+📊 OpenLogos Project Status
+
+──────────────────────────────────────────────────
+🔲  Phase 1 · Requirements (WHY)
+🔲  Phase 2 · Product Design (WHAT)
+🔲  Phase 3-0 · Architecture
+🔲  Phase 3-1 · Scenario Modeling
+🔲  Phase 3-2 · API Design
+🔲  Phase 3-2 · Database Design
+🔲  Phase 3-3a · Test Case Design (Unit + Scenario)
+🔲  Phase 3-3b · API Orchestration Tests
+🔲  Phase 3-4 · Code Implementation + Test Code
+🔲  Phase 3-5 · Test Acceptance (verify)
+──────────────────────────────────────────────────
+
+💡 Suggested next step: Phase 1 · Requirements (WHY)
+   → Tell AI: "Help me write requirements"
+```
+
+一切都是空的——这是预期的。方法论会引导你按顺序走完每个阶段。
+
+## 第 3 步：在你的 AI 工具中打开
+
+在你选择的 AI 工具中打开项目。说一句类似 **"请帮我看看这个项目"** 的话——AI 会自动检测到 OpenLogos 并向你展示项目状态。
+
+<Tabs>
+<TabItem label="Claude Code">
+在终端中进入项目并启动 Claude Code：
+
+```bash
+cd my-project
+claude
+```
+
+Claude Code 在启动时读取 `AGENTS.md`，自动检测到这是一个 OpenLogos 项目：
+
+![Claude Code 检测到 OpenLogos 项目](/docs/quickstart/claudecode-overview.jpg)
+
+它会展示完整的推进路径，并将 Phase 1 标记为起点，提示 **"Empty — START HERE"**。
+</TabItem>
+<TabItem label="OpenCode">
+进入项目并启动 OpenCode：
+
+```bash
+cd my-project
+opencode
+```
+
+OpenCode 读取项目配置并显示一份详细的概览：
+
+![OpenCode 检测到 OpenLogos 项目](/docs/quickstart/opencode-overview.jpg)
+
+它会展示项目结构、检测当前阶段，甚至准确告诉你需要回答哪些问题才能开始。
+</TabItem>
+<TabItem label="Cursor">
+在 Cursor 中打开 `my-project` 文件夹。12 条 OpenLogos 规则会从 `.cursor/rules/` 自动加载——无需手动配置。
+
+让 AI 审阅项目，它就会向你展示完整的阶段推进：
+
+![Cursor 检测到 OpenLogos 项目](/docs/quickstart/cursor-overview.jpg)
+
+AI 检测出所有阶段，展示每一步对应的目录，并建议从 Phase 1 开始。
+</TabItem>
+</Tabs>
+
+## 第 4 步：你的第一次 AI 协作
+
+关键时刻到了。告诉 AI：
+
+> **"帮我写需求文档"**
+
+AI 加载 `prd-writer` Skill，并向你提出三个问题：
+
+![AI 加载 prd-writer skill 并提出问题](/docs/quickstart/ai-collab-start.jpg)
+
+1. **你想构建什么产品？**（一句话：它是什么、给谁用、解决什么问题？）
+2. **目标用户是谁？**（尽可能具体——描述一个真实的人）
+3. **核心目标是什么？**（产品应该达成什么，你会如何衡量成功？）
+
+哪怕只有一个粗略的想法也可以回答——例如：
+
+> **"给普通用户用的计算器，简洁又好看"**
+
+AI 接收你简短的输入，提出几个跟进性的澄清问题，然后产出一份完整、结构化的需求文档：
+
+![AI 生成完整的需求文档](/docs/quickstart/ai-collab-result.jpg)
+
+大约 2 分钟内，它生成了一份 **229 行的需求文档**，包含：
+- 产品定位和核心目标
+- 目标用户画像
+- 痛点分析（P01–P04）
+- 4 个场景（S01–S04）及其优先级
+- 每个场景完整的 **GIVEN/WHEN/THEN** 验收标准
+- 约束、边界，以及一份"不做清单"
+
+文档被保存到 `logos/resources/prd/1-product-requirements/01-requirements.md`——并且可以立即查看：
+
+![生成的需求文档](/docs/quickstart/document-viewer.jpg)
+
+## 第 5 步：查看进度
+
+现在运行 status 命令（或在 Claude Code 中使用斜杠命令）：
+
+![Phase 1 完成——状态显示 Done](/docs/quickstart/status-phase1-done.jpg)
+
+Phase 1 被标记为 **Done**。AI 确认：
+
+- ✅ 需求文档（`01-requirements.md`）已就位，包含 4 个场景（S01–S04）
+- 👉 **下一步：Phase 2 · 产品设计（WHAT）** —— 只需说 *"基于需求做产品设计"*
+
+你已经完成了 OpenLogos 方法论的第一个完整循环。后续每个阶段的运作方式都一样：AI 读取上一阶段的产出，加载合适的 Skill，并引导你走下一步。
+
+## 接下来做什么？
+
+你现在有了一个可用的 OpenLogos 项目，以及一份完整的需求文档。从这里你可以：
+
+- **继续构建** —— 告诉 AI *"帮我做产品设计"* 进入 Phase 2。每个阶段都建立在上一阶段之上，一路推进到经过验证、测试的代码。
+
+- **看看真实项目** —— 访问[导览](/zh/tour)，看 OpenLogos 在两个真实项目上的端到端应用：FlowTask（Rust/Tauri）和 Money-Log（Electron）。
+
+- **理解核心概念** —— 阅读[核心概念](/zh/concepts/three-layer-model)，理解 WHY → WHAT → HOW 模型、场景驱动开发和测试先行方法论。
+
+- **探索工具链** —— 查看 [CLI 参考](/zh/cli) 了解全部 14 个顶层命令，以及 [Skills 参考](/zh/skills) 了解全部 16 个 AI Skill。
+
+:::tip[更进一步：首次 AI 协作]
+准备好超越 Phase 1 了吗？[首次 AI 协作](/zh/getting-started/first-collaboration)指南会带你走完**完整旅程**——从需求到架构、API 设计、测试用例、代码生成，再到 Gate 3.5 验证——端到端构建一个真实的短链接服务。
+:::

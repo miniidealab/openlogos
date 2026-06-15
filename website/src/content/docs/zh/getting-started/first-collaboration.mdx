@@ -1,0 +1,375 @@
+---
+title: 首次 AI 协作
+description: 从需求到经过验证的代码，构建一个完整的短链接服务——OpenLogos 方法论的完整端到端演练。
+---
+
+import { Steps, Aside, Badge } from '@astrojs/starlight/components';
+
+在[快速开始](/zh/getting-started/quick-start)中，你搭建了一个项目并生成了一份需求文档。现在让我们一路走到底——从一句话的想法到一套经过完整测试、可投入生产的代码库。
+
+**项目：** Short-Link —— 一个面向公众的 URL 缩短服务（类似 bit.ly）
+**AI 工具：** Claude Code（同样的工作流也适用于 Cursor 和 OpenCode）
+**时间：** 各阶段合计约 60 分钟
+
+---
+
+## 全局视角
+
+OpenLogos 遵循严格的 **WHY → WHAT → HOW** 推进模型。每个阶段都读取上一阶段的产出，因此上下文不断累积——没有"凭感觉编码"，没有猜测。
+
+| 阶段 | 名称 | Skill | 产出 |
+|-------|------|-------|--------|
+| 1 | 需求 | `prd-writer` | 场景 + 验收标准 |
+| 2 | 产品设计 | `product-designer` | 功能规格 + HTML 原型 |
+| 3-0 | 架构 | `architecture-designer` | 技术栈 + 系统图 |
+| 3-1 | 场景建模 | `scenario-architect` | 每个场景的时序图 |
+| 3-2 | API + DB 设计 | `api-designer` + `db-designer` | OpenAPI 规格 + SQL schema |
+| 3-3 | 测试用例设计 | `test-writer` | 单元测试 + 场景测试 |
+| 3-4 | 代码生成 | — | 业务代码 + 测试代码 |
+| 3-5 | 验证 | `openlogos verify` | Gate 3.5 PASS / FAIL |
+
+让我们逐一走一遍。
+
+---
+
+## Phase 1：需求（WHY）
+
+**提示词：** `Help me write requirements`
+
+AI 加载 `prd-writer` Skill，读取项目配置，然后就产品向你提出几个关键问题——定位、核心功能、范围决策。
+
+![AI 加载 prd-writer Skill，提出问题，并生成一份 239 行的需求文档](/docs/first-collab/c1.requirement.jpg)
+
+经过两轮问答（约 3 分钟的人类输入），AI 产出一份 **239 行的需求文档**，包含：
+
+- **产品定位** —— "一个面向普通用户的公共 URL 缩短服务"
+- **4 个痛点**（P01–P04）—— 长 URL 在聊天中被截断、看不到点击数据等
+- **4 个业务场景**及其优先级：
+
+| ID | 场景 | 优先级 |
+|----|----------|----------|
+| S01 | 创建并分享短链接 | P0 |
+| S02 | 访问短链接并被重定向 | P0 |
+| S03 | 查看链接点击分析 | P0 |
+| S04 | 管理已有链接（编辑/停用/删除） | P1 |
+
+- **关键设计决策** —— 通过管理令牌实现匿名链接、自定义 slug、Phase 1 不支持过期
+- **不做清单** —— 用户登录、自定义域名、二维码、批量创建
+
+文档被保存到 `logos/resources/prd/1-product-requirements/01-requirements.md`。
+
+<Aside type="tip">
+后续每个阶段都会读取这份文档。这些场景（S01–S04）成为整个项目的骨架——它们驱动设计、API 界面、测试用例和代码结构。
+</Aside>
+
+---
+
+## Phase 2：产品设计（WHAT）
+
+**提示词：** `Help me create the product design based on requirements`
+
+AI 加载 `product-designer` Skill，读取需求，判定这是一个含 4 个场景的 **Web 应用**，并产出两类输出：
+
+![AI 加载 product-designer Skill 并开始编写功能规格和原型](/docs/first-collab/c2.ai.execute.jpg)
+
+### 产出 1：功能规格
+
+一份 303 行的功能规格，涵盖全部 4 个场景的交互流程、UI 组件规格、状态转换和错误处理：
+
+![文档查看器中的功能规格文档](/docs/first-collab/c2.docu.feature.specs.jpg)
+
+每个场景都包含：
+- **交互流程** —— 分步的用户旅程
+- **UI 组件规格** —— 类型、行为、校验规则
+- **验收标准** —— 正常路径 + 异常路径
+
+### 产出 2：可交互的 HTML 原型
+
+四个可点击的 HTML 原型——每个场景一个——带有可用的按钮、表单校验、模态框和状态切换：
+
+![S04 的可交互原型：管理链接](/docs/first-collab/c2.prototype.jpg)
+
+这些原型是真实的 HTML 文件，你可以在任意浏览器中打开。它们在写下任何一行业务代码之前，就展示了确切的用户体验。
+
+![Phase 2 完成总结——1 份功能规格 + 4 个原型 + 信息架构](/docs/first-collab/c2.ai.write.product.and.prototype.jpg)
+
+**Phase 2 交付物：**
+- `1-feature-specs/01-feature-specs.md` —— 303 行功能规格
+- `2-page-design/01-homepage-prototype.html` —— S01 创建短链接
+- `2-page-design/02-error-pages-prototype.html` —— S02 错误页
+- `2-page-design/03-analytics-prototype.html` —— S03 分析看板
+- `2-page-design/04-manage-prototype.html` —— S04 管理链接
+
+---
+
+## Phase 3-0：架构
+
+**提示词：** `Help me design the technical architecture`
+
+AI 加载 `architecture-designer` Skill，同时读取需求和产品设计，就技术偏好问一个问题，然后产出架构：
+
+![AI 设计架构——单体全栈 Next.js](/docs/first-collab/c3.1.ai.write.architecture.jpg)
+
+### 架构决策
+
+**模式：** 单体全栈（Next.js）
+
+理由有记录在案：聚焦的工具型产品、4 个场景、没有复杂的后台处理、小团队（1–3 名工程师）——一个零运维复杂度的单一可部署单元。
+
+架构文档还会用确认后的技术栈更新 `logos-project.yaml`：
+
+```yaml
+tech_stack:
+  language: "TypeScript 5.x"
+  framework: "Next.js 15 (App Router)"
+  ui: "React 19 + Tailwind CSS 4"
+  database: "PostgreSQL (Neon serverless)"
+  orm: "Drizzle ORM"
+  cache: "Upstash Redis"
+  test: "Vitest"
+```
+
+### 系统架构图
+
+![架构图，包含 Browser、Next.js Application 和 Data Layer](/docs/first-collab/c3.1.architecture.jpg)
+
+该图展示了三层结构：Browser → Next.js（页面组件 + 路由处理器 + 边缘中间件）→ 数据层（PostgreSQL + Redis 缓存）。
+
+---
+
+## Phase 3-1：场景建模
+
+**提示词：** `Help me model business scenarios`
+
+AI 加载 `scenario-architect` Skill，为全部 4 个场景生成**详细的时序图**。每个场景都成为一份分步的技术规格，包含确切的 API 调用、数据流、缓存策略和异常路径。
+
+![生成了 5 份场景文档，带时序图和 API 界面](/docs/first-collab/c3.1.ai.write.sequence.jpg)
+
+### 生成了什么
+
+| 文件 | 内容 |
+|------|----------|
+| `00-scenario-overview.md` | 场景图谱、依赖图、API 界面索引 |
+| `S01-create-short-link.md` | 14 步时序图 + 6 个异常情况 |
+| `S02-redirect.md` | 2 张时序图（缓存命中 + 缓存未命中）+ 4 个异常情况 |
+| `S03-analytics.md` | 2 张时序图（首次加载 + 轮询）+ 4 个异常情况 |
+| `S04-manage-link.md` | 4 张子流程时序图（加载/编辑/切换/删除） |
+
+### 时序图示例（S02：重定向）
+
+![S02 时序图——Visitor → Edge Middleware → Redis Cache → PostgreSQL](/docs/first-collab/c3.1.sequence.jpg)
+
+该时序图展示了横跨 4 个参与者（访客/浏览器、边缘中间件、Redis 缓存、PostgreSQL）的 10 个步骤，每步都有详细描述，包括缓存策略、通过 `waitUntil()` 异步记录点击，以及 HTTP 302 重定向语义。
+
+### 捕获的关键设计决策
+
+- **S01** —— 令牌模式：`crypto.randomBytes` → bcrypt 哈希，明文令牌只返回一次，绝不存储
+- **S02** —— 用 HTTP 302 而非 301：目标地址可能改变（S04 编辑），所以永久缓存的 301 是错的
+- **S02** —— 异步记录点击：重定向之后通过 `waitUntil()` 触发 `INSERT`
+- **S04** —— 每次变更都 DEL 缓存：显式失效，使下一个访客看到正确的状态
+
+### 识别出的 API 界面
+
+识别出 6 个端点，直接喂给 Phase 3-2：
+
+| 方法 | 端点 | 场景 |
+|--------|----------|----------|
+| POST | `/api/links` | S01 |
+| GET | `/:slug`（边缘中间件） | S02 |
+| GET | `/api/links/:slug` | S04 |
+| PATCH | `/api/links/:slug` | S04 |
+| DELETE | `/api/links/:slug` | S04 |
+| GET | `/api/links/:slug/analytics` | S03 |
+
+---
+
+## Phase 3-2：API + DB 设计
+
+**提示词：** `Help me design the API spec`，然后 `Help me design the database schema`
+
+AI 依次加载 `api-designer` 和 `db-designer` Skill，读取场景时序图，产出一份完整的 OpenAPI 规格和数据库 schema。
+
+### OpenAPI 规格
+
+![API 文档展示 POST /api/links 及完整的请求/响应 schema](/docs/first-collab/c3.2.api.jpg)
+
+每个端点都包含：
+- 请求参数和请求体 schema
+- 带字段说明和示例的响应 schema
+- 错误响应规格
+- 回溯到场景步骤的来源可追溯性（例如 "Source: S01 Step 3 → Step 13"）
+
+### 数据库 Schema
+
+![links 表的数据库 schema，含 6 个字段](/docs/first-collab/c3.2.db.jpg)
+
+`links` 表的 schema 直接从 API 规格和场景需求推导而来：
+
+| 字段 | 类型 | 备注 |
+|-------|------|-------|
+| `slug` | VARCHAR(50) | 主键，3-50 字符 [a-zA-Z0-9-] |
+| `destination_url` | TEXT | 合法的 http/https URL |
+| `management_token` | TEXT | bcrypt 哈希，明文令牌绝不存储 |
+| `is_active` | BOOLEAN | 默认 TRUE，控制 302 还是 410 |
+| `created_at` | TIMESTAMPTZ | 默认 now() |
+| `updated_at` | TIMESTAMPTZ | 默认 now() |
+
+另有一张独立的 `clicks` 表，通过 `referrer`、`country` 和 `user_agent` 字段追踪分析数据。
+
+---
+
+## Phase 3-3：测试用例设计
+
+**提示词：** `Help me design test cases`
+
+AI 加载 `test-writer` Skill，产出两个层级的测试规格：
+
+### 单元测试用例
+
+![S02 的单元测试用例，带来源可追溯性](/docs/first-collab/c3.3.unit.testcase.jpg)
+
+每个单元测试用例都能回溯到它的来源——OpenAPI 规格或场景文档中要求该测试的具体那一行：
+
+- **UT-S02-01** —— "Slug 低于最小长度" → 来源：`openapi.yaml → SlugPath: minLength: 3`
+- **UT-S02-04** —— "活跃链接返回 HTTP 302（而非 301）" → 来源：`S02-redirect.md → Step 10 note`
+- **UT-S02-06** —— "成功重定向时在 clicks 中插入一行" → 来源：`S02-redirect.md → Step 9/5`
+
+### 场景测试用例
+
+![场景测试用例，含正常路径、异常路径和覆盖率校验](/docs/first-collab/c3.3.scenario.testcase.jpg)
+
+场景测试覆盖端到端流程：
+- **正常路径** —— 缓存命中和缓存未命中的重定向流程
+- **异常路径** —— slug 未找到（404）、链接已停用（410）、Redis 不可用（回退到 DB）、点击插入失败（重定向仍然送达）
+- **覆盖率校验** —— 每条验收标准、时序图中的每个异常情况都映射到至少一个测试
+
+测试规格确保在写下任何代码之前，对设计文档达到 **100% 覆盖**。
+
+---
+
+## Phase 3-4：代码生成
+
+**提示词：** `Help me implement S01`
+
+现在到了所有累积的上下文得到回报的时刻。AI 读取**所有内容**——需求、设计、架构、时序图、API 规格、DB schema 和测试用例——然后产出一份实现计划：
+
+![AI 创建一份带文件树的分步实现计划](/docs/first-collab/c3.4.ai.write.code.jpg)
+
+### 文档如何变成代码
+
+AI 不靠猜——它在编写每个文件时都引用具体的文档：
+
+![AI 读取 DB schema 并编写与之精确匹配的 Drizzle ORM schema.ts](/docs/first-collab/c3.4.ai.write.code.refered.by.documents.jpg)
+
+注意 AI 是如何明确声明的：**"首先，让我读取 DB schema 以便精确匹配"** ——然后生成的 `schema.ts` 逐字段地映射 `logos/resources/database/schema.sql`。
+
+### 生成代码的质量
+
+每个源文件都包含回溯到设计文档的可追溯性注释：
+
+![生成的 token.ts 带来源可追溯性注释](/docs/first-collab/c3.4.code.jpg)
+
+```typescript
+/**
+ * Management token utilities.
+ *
+ * Sources:
+ *   S01 Steps 7–8 — token generation at link creation
+ *   S03/S04      — token verification on every management request
+ */
+```
+
+这与"凭感觉编码"恰恰相反——每个函数之所以存在，都是因为某个场景步骤需要它，而且你可以追溯整条链路：**场景 → 时序图 → API 规格 → 代码**。
+
+---
+
+## Phase 3-5：验证
+
+**提示词：** `/openlogos:verify`
+
+最后一个阶段运行所有测试，并依据设计文档校验覆盖率：
+
+![openlogos verify 显示 Gate 3.5 PASS——111 个用例，100% 覆盖](/docs/first-collab/c3.5.openlogos.verify.jpg)
+
+| 指标 | 数值 |
+|--------|-------|
+| 已定义总数 | 111 个用例（79 UT + 32 ST） |
+| 已执行总数 | 111 / 111 |
+| 通过 | 86 |
+| 失败 | 0 |
+| 跳过 | 25 |
+| 覆盖率 | 100% |
+| 通过率 | 77%（86/111） |
+
+那 25 个被跳过的用例是场景测试（ST-S01 到 ST-S04），它们需要一个运行中的 Next.js 服务器 + 数据库 + Redis——它们被有意标记为 `skip`，并由 `logos/resources/scenario/` 中的编排 JSON 文件覆盖。
+
+**Gate 3.5: PASS** —— 所有测试用例均被覆盖。
+
+### 最终状态
+
+![所有阶段完成——每个阶段都显示 ✅](/docs/first-collab/c3.5.openlogos.status.jpg)
+
+```
+🎉 All Phases Complete!
+
+Phase 1 · Requirements       ✅  01-requirements.md
+Phase 2 · Product Design     ✅  Feature specs + 4 HTML prototypes
+Phase 3-0 · Architecture     ✅  Architecture overview
+Phase 3-1 · Scenario Modeling ✅  Sequence diagrams for S01–S04
+Phase 3-2 · API + DB Design  ✅  OpenAPI YAML + SQL schema
+Phase 3-3a · Test Case Design ✅  Test specs for S01–S04
+Phase 3-3b · Orchestration    ✅  JSON orchestration for S01–S04
+Phase 3-4 · Code + Test Code  ✅  Business code + test code with reporter
+Phase 3-5 · Test Acceptance  ✅  100% coverage, Gate 3.5 PASS
+```
+
+---
+
+## 刚刚发生了什么？
+
+在约 60 分钟的人类参与中（大部分时间是回答问题），你从 **"一个 URL 缩短服务"** 走到了：
+
+- **239 行需求文档**，含 4 个场景和验收标准
+- **303 行功能规格**，含交互流程和 UI 组件
+- **4 个可交互 HTML 原型**，可在浏览器中点击体验
+- **257 行架构文档**，含系统图和技术栈选型理由
+- **5 份场景文档**，含 22+ 张时序图和 18 个异常情况
+- **OpenAPI 规格**，含 6 个端点、4 个 schema、完整示例
+- **数据库 schema**，含 2 张表、索引和约束
+- **111 个测试用例**（79 单元 + 32 场景），具备完整的来源可追溯性
+- **可投入生产的代码** —— 搭好脚手架的 Next.js 项目，含全部路由处理器、DB 层和测试
+- **Gate 3.5 PASS** —— 对设计文档 100% 覆盖
+
+每个制品都是 `logos/resources/` 中的纯文本文件。每个决策都有记录。每行代码都能回溯到某个场景步骤。如果明天有新开发者加入，他们可以阅读完整的设计链路，理解每段代码*为什么*存在。
+
+---
+
+## 接下来做什么？
+
+<Steps>
+
+1. **激活变更管理**
+
+   ```bash
+   openlogos launch
+   ```
+
+   这会启用 [Delta 工作流](/zh/deep-dive/documents-as-context)——任何未来的修改在实现之前都要经过 `logos/changes/` 中一份结构化的变更提案。AI 会跨所有层级执行影响分析，确保没有任何东西失去同步。
+
+2. **针对运行中的服务器跑编排测试**
+
+   在本地或 Vercel 上部署，然后执行 S01–S04 的 JSON 编排测试，用针对真实 DB + Redis 的真实 HTTP 请求覆盖当前那 25 个被跳过的场景测试。
+
+3. **探索真实项目导览**
+
+   看看这套方法论在真实项目上的表现：
+   - [FlowTask](/zh/tour/flowtask) —— 用 Claude Code 构建的 Rust/Tauri 桌面应用
+   - [Money-Log](/zh/tour/money-log) —— 用 OpenCode 构建的 Electron 应用
+
+4. **深入理解核心概念**
+
+   - [三层模型](/zh/concepts/three-layer-model) —— 理解 WHY → WHAT → HOW 推进模型
+   - [场景驱动 + 测试先行](/zh/concepts/scenario-driven) —— 场景如何驱动一切
+   - [文档即上下文](/zh/concepts/documents-as-context) —— 为什么纯文本文档胜过"凭感觉编码"
+
+</Steps>

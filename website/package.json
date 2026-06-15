@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "astro dev",
     "generate:releases": "node scripts/generate-releases.mjs",
-    "build": "npm run generate:releases && astro build",
+    "fetch:fonts": "node scripts/fetch-fonts.mjs",
+    "subset:fonts": "node scripts/subset-fonts.mjs",
+    "build": "npm run generate:releases && astro build && npm run fetch:fonts && npm run subset:fonts",
     "preview": "astro preview",
     "smoke:releases": "node scripts/smoke-releases.mjs",
     "test": "node --test test/*.test.mjs",

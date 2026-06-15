@@ -1,14 +1,17 @@
 ---
 interface Props {
   current: string;
+  lang?: string;
 }
 
-const { current } = Astro.props;
+const { current, lang = 'en' } = Astro.props;
+const isZh = lang === 'zh';
+const pre = isZh ? '/zh' : '';
 
 const items = [
-  { id: 'overview', label: 'Overview', href: '/tour', color: '#0eb677' },
-  { id: 'flowtask', label: 'FlowTask · Claude Code', href: '/tour/flowtask', color: '#d97706' },
-  { id: 'money-log', label: 'Money-Log · OpenCode', href: '/tour/money-log', color: '#0ea5e9' },
+  { id: 'overview', label: isZh ? '总览' : 'Overview', href: `${pre}/tour`, color: '#0eb677' },
+  { id: 'flowtask', label: 'FlowTask · Claude Code', href: `${pre}/tour/flowtask`, color: '#d97706' },
+  { id: 'money-log', label: 'Money-Log · OpenCode', href: `${pre}/tour/money-log`, color: '#0ea5e9' },
 ];
 ---
 

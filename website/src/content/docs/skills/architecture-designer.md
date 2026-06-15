@@ -36,6 +36,25 @@ Before diving into per-scenario technical implementation, establish the project'
 | Medium | Frontend-backend separation + monolith backend | Team SaaS, multi-role systems |
 | Complex | Microservices / modular monolith | High-concurrency, multi-platform |
 
+## Mermaid Syntax Safety
+
+Architecture diagrams use Mermaid `graph` / `flowchart`. Node labels should use quoted text whenever they contain spaces, API paths, ports, Chinese text, `<br/>`, or symbols such as `/`, `(`, `)`, `:`, `#`, `{}`, or `[]`.
+
+Use `ID["label"]` for ordinary component labels:
+
+```mermaid
+graph LR
+    Web["Web App"]
+    API["API Server<br/>/voice/api"]
+    Proxy["/voice/api proxy"]
+    Pages["Cloudflare Pages"]
+    subgraph "Staging Environment"
+        API --> Proxy
+    end
+```
+
+Avoid unquoted labels such as `PROXY[/voice/api proxy]`; `[/` is Mermaid shape syntax and can break rendering when the label itself contains `/`. Use `subgraph "Name"` when the subgraph name contains spaces or symbols.
+
 ## Technology Selection Format
 
 Each technology dimension includes a selection, rationale, and alternatives:

@@ -63,25 +63,33 @@
 - 微服务 / 模块化单体
 - 需要详细的架构决策记录（ADR）
 
+**⚠️ Mermaid flowchart / graph 语法安全（强制）**：
+- 节点标签默认使用 `ID["标签文本"]`，尤其是标签包含 `/`、`(`、`)`、`<`、`>`、`:`、`#`、`{}`、`[]`、空格、中文、API 路径、端口、技术栈组合或 `<br/>` 时。
+- 正确：`PROXY["/voice/api 代理"]`、`API["API Server<br/>Node.js"]`、`DB["PostgreSQL :5432"]`。
+- 错误：`PROXY[/voice/api 代理]`，因为 `[/` 会被 Mermaid 解析为平行四边形形状语法，标签内再出现 `/` 时容易导致解析失败。
+- 多行标签使用 `<br/>`，整段文本仍放在同一对双引号内：`API["HTTP API<br/>/voice/api"]`。
+- 子图名称含空格、中文或特殊字符时必须加引号：`subgraph "Voice Service"`。
+- 只有明确需要 Mermaid 形状语义时才使用 `ID[(Database)]`、`ID[/Input/]` 等形状语法；普通说明文本不要借用形状语法。
+
 用 Mermaid 绘制系统架构图：
 
 ```mermaid
 graph TB
-    subgraph Frontend
-        Web[Web App - Next.js]
+    subgraph "Frontend"
+        Web["Web App - Next.js"]
     end
-    subgraph Backend
-        API[API Server - Node.js]
-        Worker[Background Worker]
+    subgraph "Backend"
+        API["API Server - Node.js"]
+        Worker["Background Worker"]
     end
-    subgraph Data
-        DB[(PostgreSQL)]
-        Cache[(Redis)]
-        S3[Object Storage]
+    subgraph "Data"
+        DB["PostgreSQL"]
+        Cache["Redis"]
+        S3["Object Storage"]
     end
-    subgraph External
-        Auth[Supabase Auth]
-        Email[SendGrid]
+    subgraph "External"
+        Auth["Supabase Auth"]
+        Email["SendGrid"]
     end
 
     Web -->|REST API| API

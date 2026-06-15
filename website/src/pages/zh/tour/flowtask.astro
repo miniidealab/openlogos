@@ -1,0 +1,907 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import TourNav from '../../../components/TourNav.astro';
+
+const mermaidS01 = `sequenceDiagram
+    participant U as User
+    participant FE as React Frontend
+    participant BE as Tauri Commands (Rust)
+    participant DB as SQLite
+
+    U->>FE: Step 1: Open app
+    FE->>BE: Step 2: invoke('check_has_user')
+    BE->>DB: Step 3: SELECT COUNT(*) FROM users
+    DB-->>BE: Step 4: return count = 0
+    BE-->>FE: Step 5: return { has_user: false }
+    FE-->>U: Step 6: Render Register page
+
+    U->>FE: Step 7: Fill username, password, confirm & click Register
+    FE->>FE: Step 8: Validate — name 2-20 chars, pwd ≥8, match
+    Note over FE: Fail → EX-8.1 / EX-8.2 / EX-8.3
+
+    FE->>BE: Step 9: invoke('register', { username, password })
+    BE->>DB: Step 10: SELECT id FROM users WHERE username = ?
+    DB-->>BE: Step 11: return empty (username available)
+    Note over BE: Taken → EX-10.1
+
+    BE->>BE: Step 12: bcrypt::hash(password, cost=12)
+    BE->>DB: Step 13: INSERT INTO users (username, password)
+    DB-->>BE: Step 14: return new user { id, username, created_at }
+    Note over BE: Write fail → EX-13.1
+
+    BE-->>FE: Step 15: return { user_id, username }
+    FE->>FE: Step 16: Write Zustand Store { currentUser }
+    FE-->>U: Step 17: Redirect to Task View (empty state)`;
+
+const mermaidArch = `graph TB
+    subgraph FE["Frontend (React 18 + TypeScript)"]
+        Pages["React Components\nUI Pages"]
+        Store["Zustand Store\nGlobal State"]
+        IPC["Tauri IPC\nFrontend-Backend Bridge"]
+    end
+
+    subgraph BE["Backend (Rust Commands)"]
+        Commands["auth · task · category\nAuth / Task CRUD / Category CRUD / bcrypt"]
+    end
+
+    subgraph DB["Data Layer"]
+        SQLite[("SQLite\nLocal File Storage")]
+    end
+
+    Pages --> Store
+    Store --> IPC
+    IPC --> Commands
+    Commands --> SQLite`;
+
+const codeBackend = `<div class="code-snippet"><div class="code-header"><span class="code-file">src-tauri/src/lib.rs</span><span class="code-lang">Rust</span></div><pre><code><span class="hl-cmt">// ── S01 Step 9-15: register ───────────────────────</span>
+<span class="hl-attr">#[tauri::command]</span>
+<span class="hl-kw">async fn</span> <span class="hl-fn">register</span>(
+    params: <span class="hl-ty">RegisterParams</span>,
+    pool: tauri::<span class="hl-ty">State</span>&lt;'_, <span class="hl-ty">SqlitePool</span>&gt;,
+) -&gt; <span class="hl-ty">CmdResult</span>&lt;<span class="hl-ty">UserSession</span>&gt; {
+    <span class="hl-kw">let</span> row = sqlx::<span class="hl-fn">query</span>(<span class="hl-str">"SELECT COUNT(*) as count FROM users WHERE username = ?"</span>)
+        .<span class="hl-fn">bind</span>(&amp;params.username).<span class="hl-fn">fetch_one</span>(pool.<span class="hl-fn">inner</span>()).<span class="hl-kw">await</span>
+        .<span class="hl-fn">map_err</span>(|_| <span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"DB_ERROR"</span>, <span class="hl-str">"Query failed"</span>))?;
+    <span class="hl-kw">if</span> row.<span class="hl-fn">get</span>::&lt;<span class="hl-ty">i64</span>, _&gt;(<span class="hl-str">"count"</span>) &gt; <span class="hl-num">0</span> {
+        <span class="hl-kw">return</span> <span class="hl-ty">Err</span>(<span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"USERNAME_EXISTS"</span>, <span class="hl-str">"Username taken"</span>));
+    }
+    <span class="hl-kw">let</span> pw_hash = <span class="hl-fn">hash</span>(&amp;params.password, DEFAULT_COST)
+        .<span class="hl-fn">map_err</span>(|_| <span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"HASH_ERROR"</span>, <span class="hl-str">"Hash failed"</span>))?;
+    <span class="hl-kw">let</span> result = sqlx::<span class="hl-fn">query</span>(<span class="hl-str">"INSERT INTO users (username, password) VALUES (?, ?)"</span>)
+        .<span class="hl-fn">bind</span>(&amp;params.username).<span class="hl-fn">bind</span>(&amp;pw_hash)
+        .<span class="hl-fn">execute</span>(pool.<span class="hl-fn">inner</span>()).<span class="hl-kw">await</span>
+        .<span class="hl-fn">map_err</span>(|_| <span class="hl-ty">CommandError</span>::<span class="hl-fn">new</span>(<span class="hl-str">"DB_WRITE_ERROR"</span>, <span class="hl-str">"Write failed"</span>))?;
+    <span class="hl-ty">Ok</span>(<span class="hl-ty">UserSession</span> {
+        user_id: result.<span class="hl-fn">last_insert_rowid</span>(),
+        username: params.username,
+        tasks: <span class="hl-fn">vec!</span>[], categories: <span class="hl-fn">vec!</span>[],
+    })
+}</code></pre></div>`;
+
+const codeTest = `<div class="code-snippet"><div class="code-header"><span class="code-file">src-tauri/tests/orchestration.rs</span><span class="code-lang">Rust</span></div><pre><code><span class="hl-attr">#[tokio::test]</span>
+<span class="hl-kw">async fn</span> <span class="hl-fn">ot_s01_01_register_success</span>() {
+    <span class="hl-kw">let</span> pool = <span class="hl-fn">setup_db</span>().<span class="hl-kw">await</span>;
+    <span class="hl-kw">let</span> session = <span class="hl-fn">cmd_register</span>(<span class="hl-str">"xiaoli"</span>.<span class="hl-fn">into</span>(), <span class="hl-str">"Pass1234"</span>.<span class="hl-fn">into</span>(), &amp;pool)
+        .<span class="hl-kw">await</span>.<span class="hl-fn">expect</span>(<span class="hl-str">"register should succeed"</span>);
+    <span class="hl-fn">assert_eq!</span>(session.username, <span class="hl-str">"xiaoli"</span>);
+    <span class="hl-fn">assert!</span>(session.user_id &gt; <span class="hl-num">0</span>);
+    <span class="hl-fn">assert!</span>(session.tasks.<span class="hl-fn">is_empty</span>());
+}
+
+<span class="hl-attr">#[tokio::test]</span>
+<span class="hl-kw">async fn</span> <span class="hl-fn">ot_s01_02_register_username_exists</span>() {
+    <span class="hl-kw">let</span> pool = <span class="hl-fn">setup_db</span>().<span class="hl-kw">await</span>;
+    <span class="hl-fn">cmd_register</span>(<span class="hl-str">"xiaoli"</span>.<span class="hl-fn">into</span>(), <span class="hl-str">"Pass1234"</span>.<span class="hl-fn">into</span>(), &amp;pool).<span class="hl-kw">await</span>.<span class="hl-fn">unwrap</span>();
+    <span class="hl-kw">let</span> err = <span class="hl-fn">cmd_register</span>(<span class="hl-str">"xiaoli"</span>.<span class="hl-fn">into</span>(), <span class="hl-str">"Other123"</span>.<span class="hl-fn">into</span>(), &amp;pool)
+        .<span class="hl-kw">await</span>.<span class="hl-fn">expect_err</span>(<span class="hl-str">"duplicate should fail"</span>);
+    <span class="hl-fn">assert_eq!</span>(err.code, <span class="hl-str">"USERNAME_EXISTS"</span>);
+}</code></pre></div>`;
+---
+
+<BaseLayout title="FlowTask · Claude Code 工作流 — OpenLogos 实战导览" description="看一个 Tauri 桌面应用如何用 OpenLogos + Claude Code 从需求一路走到验证通过的代码。" lang="zh">
+  <TourNav current="flowtask" lang="zh" />
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="hero-badge badge-claude">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Claude Code 工作流
+      </div>
+      <h1>FlowTask</h1>
+      <p class="hero-desc">一个用 <strong>Tauri 2 + React + Rust</strong> 构建的本地优先桌面任务管理器。下面每一份产物都是用 OpenLogos 方法论、借助 Claude Code 生成的。</p>
+      <div class="hero-tech">
+        <span class="tech-tag">Tauri 2</span>
+        <span class="tech-tag">React 18</span>
+        <span class="tech-tag">Rust</span>
+        <span class="tech-tag">SQLite</span>
+        <span class="tech-tag">TypeScript</span>
+        <span class="tech-tag">Zustand</span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num">4</span> 场景</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">18</span> 测试用例</div>
+        <div class="stat-sep">·</div>
+        <div class="stat"><span class="stat-num">100%</span> 覆盖率</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">Gate 3.5: PASS</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">已部署</div>
+        <div class="stat-sep">·</div>
+        <div class="stat pass">Smoke PASS</div>
+      </div>
+      <div class="claude-highlight">
+        <div class="cc-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div>
+          <strong>Claude Code 集成</strong>
+          <span>使用原生 <code>.claude-plugin</code>，配合 <code>skills/</code> <code>commands/</code> <code>hooks/</code>，通过对话式 AI 编程实现方法论驱动的开发。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 1: WHY -->
+  <section class="phase-section" id="phase1">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-amber">1</div>
+        <div>
+          <div class="phase-tag tag-amber">WHY</div>
+          <h2>需求 —— 谁需要它，为什么？</h2>
+        </div>
+      </div>
+      <p class="phase-source">来源：<code>logos/resources/prd/1-product-requirements/01-requirements.md</code></p>
+
+      <div class="artifact-card">
+        <h3>用户画像与痛点</h3>
+        <div class="doc-excerpt">
+          <p><strong>小李，28 岁，自由职业者</strong> —— 同时兼顾多个项目，任务散落在便利贴、手机备忘录和笔记本里。常常错过截止日期，因为没有一个统一的地方来追踪一切。</p>
+          <div class="pain-points">
+            <div class="pain"><span class="pain-id">P01</span> 任务散落在多个地方 → 难以查找，容易遗漏</div>
+            <div class="pain"><span class="pain-id">P02</span> 没有分类 → 工作/生活/学习的任务分不清 → 时常混乱</div>
+            <div class="pain"><span class="pain-id">P03</span> 没有账户体系 → 在共用设备上没有个人空间感</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>场景概览</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>场景</th><th>触发</th><th>痛点</th><th>优先级</th></tr></thead>
+            <tbody>
+              <tr><td>S01</td><td>新用户注册并开始使用</td><td>首次启动应用</td><td>P01, P03</td><td class="p0">P0</td></tr>
+              <tr><td>S02</td><td>登录并管理今天的任务</td><td>已注册用户打开应用</td><td>P01, P02</td><td class="p0">P0</td></tr>
+              <tr><td>S03</td><td>按分类组织任务</td><td>用户想给任务归类</td><td>P02</td><td class="p1">P1</td></tr>
+              <tr><td>S04</td><td>修改账户密码</td><td>用户想修改密码</td><td>P03</td><td class="p1">P1</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>验收标准 —— S01：注册</h3>
+        <div class="ac-list">
+          <div class="ac-item ac-normal">
+            <div class="ac-label">正常</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> 用户首次打开应用，本地不存在任何账户</div>
+              <div><strong>WHEN</strong> 用户输入用户名（2-20 字符）和密码（≥8 字符），点击「注册」</div>
+              <div><strong>THEN</strong> 系统创建本地账户，自动登录，跳转到任务视图并显示空状态引导</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">异常</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> 用户名「xiaoli」本地已存在</div>
+              <div><strong>WHEN</strong> 用户尝试用「xiaoli」注册</div>
+              <div><strong>THEN</strong> 显示「该用户名已被占用，请换一个」</div>
+            </div>
+          </div>
+          <div class="ac-item ac-exception">
+            <div class="ac-label">异常</div>
+            <div class="ac-content">
+              <div><strong>GIVEN</strong> 用户在注册页</div>
+              <div><strong>WHEN</strong> 密码少于 8 个字符</div>
+              <div><strong>THEN</strong> 显示「密码至少需要 8 个字符」</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Phase 2: WHAT -->
+  <section class="phase-section" id="phase2">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-blue">2</div>
+        <div>
+          <div class="phase-tag tag-blue">WHAT</div>
+          <h2>产品设计 —— 用户会看到什么、做什么？</h2>
+        </div>
+      </div>
+      <p class="phase-source">来源：<code>logos/resources/prd/2-product-design/1-feature-specs/01-feature-specs.md</code></p>
+
+      <div class="artifact-card">
+        <h3>信息架构</h3>
+        <div class="code-block">
+          <pre><code>FlowTask
+├── Auth Module
+│   ├── Register Page (first launch)
+│   └── Login Page (returning user)
+└── Main App (after login)
+    ├── Task View (default)
+    │   ├── Category Sidebar
+    │   ├── Task List
+    │   └── Create/Edit Task Panel
+    └── Account Settings
+        └── Change Password Form</code></pre>
+        </div>
+      </div>
+
+      <div class="artifact-card">
+        <h3>UI 原型 —— 注册与主视图</h3>
+        <p class="phase-source">来源：<code>logos/resources/prd/2-product-design/2-page-design/</code></p>
+        <div class="prototype-grid">
+          <div class="prototype-frame">
+            <div class="proto-label">注册 / 登录</div>
+            <iframe src="/tour/prototypes/flowtask-auth.html" loading="lazy"></iframe>
+          </div>
+          <div class="prototype-frame">
+            <div class="proto-label">任务视图（主界面）</div>
+            <iframe src="/tour/prototypes/flowtask-main.html" loading="lazy"></iframe>
+          </div>
+        </div>
+        <p class="artifact-note">在产品设计阶段生成的交互式 HTML 原型 —— 每个页面都在写任何代码之前就设计好了。</p>
+      </div>
+
+      <div class="artifact-card">
+        <h3>S01 交互规格 —— 注册流程</h3>
+        <div class="doc-excerpt">
+          <ol class="interaction-steps">
+            <li>应用启动，检测到不存在本地账户 → 显示注册页</li>
+            <li>注册页包含：用户名输入框、密码输入框、确认密码输入框、注册按钮、「已有账户？登录」链接</li>
+            <li>实时校验：用户名 2-20 字符、密码 ≥8 字符、两次密码一致</li>
+            <li>提交成功 → 创建本地账户（密码加密）→ 自动登录 → 跳转到任务视图</li>
+            <li>任务视图首次进入显示空状态：「还没有任务，点击 + 创建你的第一个任务」</li>
+          </ol>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>字段</th><th>类型</th><th>必填</th><th>校验</th></tr></thead>
+            <tbody>
+              <tr><td>用户名</td><td>文本输入框</td><td>是</td><td>2-20 个字符</td></tr>
+              <tr><td>密码</td><td>密码输入框</td><td>是</td><td>≥ 8 个字符</td></tr>
+              <tr><td>确认密码</td><td>密码输入框</td><td>是</td><td>必须与密码一致</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phase 3: HOW -->
+  <section class="phase-section" id="phase3">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-green">3</div>
+        <div>
+          <div class="phase-tag tag-green">HOW</div>
+          <h2>实现 —— 从架构到验证通过的代码</h2>
+        </div>
+      </div>
+
+      <!-- Step 0: Architecture -->
+      <div class="step-section">
+        <div class="step-badge">Step 0</div>
+        <h3>架构概览</h3>
+        <p class="phase-source">来源：<code>logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md</code></p>
+        <div class="artifact-card">
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidArch} />
+          </div>
+          <p class="artifact-note">业务逻辑（表单、状态、路由）放在 TypeScript；Rust 只负责数据库读写和 bcrypt 加密 —— 在保持前端开发者友好的同时，尽量减少 Rust 代码。</p>
+        </div>
+      </div>
+
+      <!-- Step 1: Sequence Diagram -->
+      <div class="step-section">
+        <div class="step-badge">Step 1</div>
+        <h3>场景 → 时序图</h3>
+        <p class="phase-source">来源：<code>logos/resources/prd/3-technical-plan/2-scenario-implementation/S01-register.md</code></p>
+        <div class="artifact-card">
+          <h4>S01：用户注册 —— 时序图</h4>
+          <div class="mermaid-wrap">
+            <pre class="mermaid" set:html={mermaidS01} />
+          </div>
+
+          <div class="step-desc-section">
+            <h4>步骤</h4>
+            <ol class="step-desc-list">
+              <li><strong>用户</strong>打开 FlowTask 桌面应用。</li>
+              <li><strong>React 前端</strong>调用 <code>invoke('check_has_user')</code>，询问 Rust 本地是否存在任何账户。</li>
+              <li><strong>Tauri Rust</strong> 查询 SQLite：<code>SELECT COUNT(*) FROM users</code>。</li>
+              <li><strong>SQLite</strong> 返回 <code>count = 0</code> —— 没有本地账户。</li>
+              <li><strong>Rust</strong> 向前端返回 <code>has_user: false</code>。</li>
+              <li><strong>React 前端</strong>渲染注册页（若账户已存在，则改为显示登录页）。</li>
+              <li><strong>用户</strong>填写用户名、密码、确认密码，点击「注册」。</li>
+              <li><strong>React 前端</strong>校验：用户名 2-20 字符、密码 ≥8、两次密码一致。校验失败 → 显示错误，跳过后端调用。→ EX-8.1 / EX-8.2 / EX-8.3</li>
+              <li><strong>React 前端</strong>调用 <code>invoke('register')</code>，将明文密码传给 Rust（IPC，无网络）。</li>
+              <li><strong>Rust</strong> 检查用户名是否唯一：<code>SELECT id FROM users WHERE username = ?</code>。</li>
+              <li><strong>SQLite</strong> 返回空 —— 用户名可用。→ EX-10.1（若已被占用）</li>
+              <li><strong>Rust</strong> 用 bcrypt（cost=12）对密码做哈希。明文密码从不存储。</li>
+              <li><strong>Rust</strong> 写入用户：<code>INSERT INTO users</code>。→ EX-13.1（若写入失败）</li>
+              <li><strong>SQLite</strong> 返回新用户记录（id、username、created_at）。</li>
+              <li><strong>Rust</strong> 向前端返回会话。</li>
+              <li><strong>React 前端</strong>写入 Zustand Store，建立登录会话（桌面应用无需 token）。</li>
+              <li><strong>React 前端</strong>跳转到任务视图，并显示空状态引导。</li>
+            </ol>
+          </div>
+
+          <div class="seq-exceptions">
+            <h5>异常情况</h5>
+            <div class="seq-ex"><span class="ex-id">EX-8.1</span> 用户名为空或长度不符 → 显示错误，跳过后端</div>
+            <div class="seq-ex"><span class="ex-id">EX-8.2</span> 密码 &lt; 8 字符 → 显示错误，跳过后端</div>
+            <div class="seq-ex"><span class="ex-id">EX-8.3</span> 两次密码不一致 → 显示错误，跳过后端</div>
+            <div class="seq-ex"><span class="ex-id">EX-10.1</span> 用户名已被占用 → 返回 <code>USERNAME_EXISTS</code></div>
+            <div class="seq-ex"><span class="ex-id">EX-13.1</span> 数据库写入失败 → 返回 <code>DB_WRITE_ERROR</code></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: API + DB -->
+      <div class="step-section">
+        <div class="step-badge">Step 2</div>
+        <h3>API 规格 + 数据库 Schema</h3>
+        <div class="artifact-card">
+          <h4>API 规格 —— Tauri IPC 命令</h4>
+          <p class="phase-source">来源：<code>logos/resources/api/tasks.yaml</code></p>
+          <div class="doc-frame">
+            <iframe src="/tour/docs/flowtask-api.html" loading="lazy"></iframe>
+          </div>
+        </div>
+        <div class="artifact-card">
+          <h4>数据库 Schema —— SQLite 表</h4>
+          <p class="phase-source">来源：<code>logos/resources/database/schema.yaml</code></p>
+          <div class="doc-frame doc-frame-short">
+            <iframe src="/tour/docs/flowtask-db.html" loading="lazy"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Test Cases -->
+      <div class="step-section">
+        <div class="step-badge">Step 3</div>
+        <h3>测试用例设计（先于代码！）</h3>
+        <p class="phase-source">来源：<code>logos/resources/test/S01-test-cases.md</code></p>
+        <div class="artifact-card">
+          <h4>S01 测试用例 —— 单元测试（节选）</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>描述</th><th>输入</th><th>预期</th></tr></thead>
+              <tbody>
+                <tr><td><code>UT-S01-01</code></td><td>用户名恰好 2 字符（下边界）</td><td><code>"ab"</code></td><td>通过</td></tr>
+                <tr><td><code>UT-S01-03</code></td><td>用户名 1 字符（低于边界）</td><td><code>"a"</code></td><td>错误：需 2-20 字符</td></tr>
+                <tr><td><code>UT-S01-06</code></td><td>密码恰好 8 字符（下边界）</td><td><code>"Pass1234"</code></td><td>通过</td></tr>
+                <tr><td><code>UT-S01-07</code></td><td>密码 7 字符（低于边界）</td><td><code>"Pass123"</code></td><td>错误：需 ≥ 8 字符</td></tr>
+                <tr><td><code>UT-S01-11</code></td><td>重复用户名 → 数据库 UNIQUE 约束</td><td><code>"xiaoli"</code>（已存在）</td><td><code>USERNAME_EXISTS</code></td></tr>
+                <tr><td><code>UT-S01-14</code></td><td>密码以 bcrypt 哈希存储</td><td><code>"Pass1234"</code></td><td>以 <code>$2b$</code> 开头</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>S01 测试用例 —— 场景测试（节选）</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>描述</th><th>覆盖</th></tr></thead>
+              <tbody>
+                <tr><td><code>ST-S01-01</code></td><td>完整注册流程：启动 → 注册 → 任务视图</td><td>Steps 1-17</td></tr>
+                <tr><td><code>ST-S01-02</code></td><td>用户名为空 → 前端拦截</td><td>EX-8.1</td></tr>
+                <tr><td><code>ST-S01-05</code></td><td>重复用户名 → 后端报错</td><td>EX-10.1</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: Code Generation -->
+      <div class="step-section">
+        <div class="step-badge">Step 4</div>
+        <h3>代码生成 —— 经由 Claude Code 的设计驱动实现</h3>
+        <p class="phase-source">来源：<code>src-tauri/src/lib.rs</code> · <code>src/pages/</code> · <code>src-tauri/tests/orchestration.rs</code></p>
+        <div class="artifact-card">
+          <div class="codegen-workflow">
+            <div class="workflow-badge claude-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Claude Code —— 对话式 AI 编程
+            </div>
+            <p class="workflow-desc">每个 Tauri 命令都标注了它实现的场景步骤。Claude Code 读取时序图和 API 规格，然后以闭环批次生成后端 + 前端 + 测试。</p>
+          </div>
+          <h4>后端 —— Rust Tauri 命令 <span class="code-maps-to">→ 对应 S01 Steps 9-15</span></h4>
+          <Fragment set:html={codeBackend} />
+          <h4>编排测试 <span class="code-maps-to">→ 端到端验证 S01</span></h4>
+          <Fragment set:html={codeTest} />
+          <div class="codegen-stats">
+            <div class="cg-stat"><span class="cg-num">10</span><span class="cg-label">Tauri 命令</span></div>
+            <div class="cg-stat"><span class="cg-num">6</span><span class="cg-label">React 页面</span></div>
+            <div class="cg-stat"><span class="cg-num">18</span><span class="cg-label">编排测试</span></div>
+            <div class="cg-stat"><span class="cg-num">S01–S04</span><span class="cg-label">全覆盖</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5: Verify -->
+      <div class="step-section">
+        <div class="step-badge">Step 5</div>
+        <h3><code>openlogos verify</code> —— 自动化验收</h3>
+        <p class="phase-source">来源：<code>logos/resources/verify/acceptance-report.md</code></p>
+        <div class="artifact-card verify-card">
+          <div class="verify-header">
+            <div class="verify-badge">Gate 3.5: PASS</div>
+            <span class="verify-date">生成于 2026-04-07</span>
+          </div>
+          <div class="verify-stats">
+            <div class="verify-stat">
+              <span class="vs-num">18</span>
+              <span class="vs-label">已定义</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">18</span>
+              <span class="vs-label">已执行</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">18</span>
+              <span class="vs-label">已通过</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num">0</span>
+              <span class="vs-label">失败</span>
+            </div>
+            <div class="verify-stat">
+              <span class="vs-num green">100%</span>
+              <span class="vs-label">覆盖率</span>
+            </div>
+          </div>
+          <div class="verify-trace">
+            <h4>验收标准可追溯性（节选）</h4>
+            <div class="trace-items">
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S01-AC-001</code> 注册返回带 user_id 的 UserSession → <code>UT-S01-01</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S01-AC-002</code> 重复用户名返回 USERNAME_EXISTS → <code>UT-S01-02</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S02-AC-005</code> 创建任务返回完整的 TaskItem → <code>UT-S02-05</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S03-AC-003</code> 删除分类将 task.category_id 置为 null → <code>UT-S03-03</code> PASS</div>
+              <div class="trace-row"><span class="trace-check">&#10003;</span> <code>S04-AC-001</code> 修改密码返回 success=true → <code>UT-S04-01</code> PASS</div>
+              <div class="trace-row trace-more">…… 另有 13 条，全部 PASS</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="artifact-card deploy-card">
+        <div class="deploy-card-header">
+          <div>
+            <h3>部署与 smoke 门禁</h3>
+            <p>示例项目补齐部署完成标记，并通过部署后的最小健康检查。</p>
+          </div>
+          <div class="verify-badge">Gate 3.8: PASS</div>
+        </div>
+        <div class="deploy-grid">
+          <div class="deploy-item">
+            <span class="deploy-label">部署状态</span>
+            <strong>DEPLOY_DONE</strong>
+            <p>部署执行已完成，状态由 OpenLogos 受控记录。</p>
+          </div>
+          <div class="deploy-item">
+            <span class="deploy-label">Smoke 状态</span>
+            <strong>SMOKE_PASS</strong>
+            <p>部署后 smoke 用例通过，可追溯到 smoke 报告。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Delta Change -->
+  <section class="delta-section">
+    <div class="container">
+      <div class="phase-header">
+        <div class="phase-marker marker-purple">&#916;</div>
+        <div>
+          <div class="phase-tag tag-purple">DELTA</div>
+          <h2>变更追踪 —— 每次迭代都洞察影响范围</h2>
+        </div>
+      </div>
+
+      <div class="delta-intro">
+        <p>传统的 AI 编程（「vibe coding」）只改代码，却忘了设计文档、API 规格和测试用例。久而久之，文档与现实脱节，变得毫无用处。OpenLogos 用一套<strong>结构化的 delta 工作流</strong>解决这一问题 —— 任何变更，无论多小，都必须评估它在整条产物链上的连锁影响。</p>
+      </div>
+
+      <div class="delta-workflow">
+        <div class="dw-step"><div class="dw-num">1</div><div class="dw-text"><strong>proposal.md</strong><span>原因、类型、影响范围、概述</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">2</div><div class="dw-text"><strong>tasks.md</strong><span>按 Phase 划分的任务清单</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">3</div><div class="dw-text"><strong>Delta 文件</strong><span>逐任务产出变更</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">4</div><div class="dw-text"><strong>合并</strong><span><code>openlogos merge</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">5</div><div class="dw-text"><strong>代码 + 测试</strong><span>实现并验证</span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">6</div><div class="dw-text"><strong>部署</strong><span><code>openlogos deploy-done</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">7</div><div class="dw-text"><strong>smoke</strong><span><code>openlogos smoke</code></span></div></div>
+        <div class="dw-arrow">→</div>
+        <div class="dw-step"><div class="dw-num">8</div><div class="dw-text"><strong>归档</strong><span>关闭提案</span></div></div>
+      </div>
+
+      <div class="artifact-card delta-propagation-card">
+        <h3>变更传播规则</h3>
+        <p class="propagation-desc">变更类型决定了最小更新范围。一个看似微小的功能请求，可能会沿着整条链条层层传导：</p>
+        <div class="propagation-table">
+          <div class="prop-row prop-row-header">
+            <div class="prop-type-col">变更类型</div>
+            <div class="prop-chain-col">所需的最小更新</div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-req">需求</span></div>
+            <div class="prop-chain-col"><span class="prop-tag active">需求</span><span class="prop-arrow">→</span><span class="prop-tag active">设计</span><span class="prop-arrow">→</span><span class="prop-tag active">场景</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-design">设计</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">需求</span><span class="prop-arrow">→</span><span class="prop-tag active">设计</span><span class="prop-arrow">→</span><span class="prop-tag active">场景</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-iface">接口</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">需求</span><span class="prop-arrow">→</span><span class="prop-tag skip">设计</span><span class="prop-arrow">→</span><span class="prop-tag skip">场景</span><span class="prop-arrow">→</span><span class="prop-tag active">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag active">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+          <div class="prop-row">
+            <div class="prop-type-col"><span class="prop-badge prop-code">代码级</span></div>
+            <div class="prop-chain-col"><span class="prop-tag skip">需求</span><span class="prop-arrow">→</span><span class="prop-tag skip">设计</span><span class="prop-arrow">→</span><span class="prop-tag skip">场景</span><span class="prop-arrow">→</span><span class="prop-tag skip">API/DB</span><span class="prop-arrow">→</span><span class="prop-tag skip">测试</span><span class="prop-arrow">→</span><span class="prop-tag active">代码</span></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="delta-example-title">真实示例 —— 代码级修复</h3>
+      <p class="phase-source">来源：<code>logos/changes/archive/fix-register-redirect/proposal.md</code></p>
+
+      <div class="artifact-card delta-card">
+        <h4>fix-register-redirect</h4>
+        <div class="delta-meta">
+          <span class="delta-type delta-bugfix">Bug 修复</span>
+          <span class="delta-scope">S01 —— 注册流程</span>
+        </div>
+        <div class="doc-excerpt">
+          <p><strong>问题：</strong>注册后，应用没有跳转到任务视图。用户卡在注册页。</p>
+          <p><strong>根因：</strong><code>useEffect</code> 的条件要求 <code>view === "loading"</code>，但注册后 <code>view</code> 是 <code>"register"</code> —— 跳转从未触发。</p>
+        </div>
+        <h4 class="impact-title">影响分析</h4>
+        <div class="impact-matrix">
+          <div class="im-row"><span class="im-layer">需求</span><span class="im-badge im-skip">无变更</span><span class="im-detail">需求已正确规定了跳转</span></div>
+          <div class="im-row"><span class="im-layer">产品设计</span><span class="im-badge im-skip">无变更</span><span class="im-detail">设计本身是正确的</span></div>
+          <div class="im-row"><span class="im-layer">时序图</span><span class="im-badge im-skip">无变更</span><span class="im-detail">S01 Steps 16→17 已定义了跳转</span></div>
+          <div class="im-row"><span class="im-layer">API 规格</span><span class="im-badge im-skip">无变更</span><span class="im-detail">Tauri IPC 命令不变</span></div>
+          <div class="im-row"><span class="im-layer">数据库 Schema</span><span class="im-badge im-skip">无变更</span><span class="im-detail">无 schema 改动</span></div>
+          <div class="im-row"><span class="im-layer">测试用例</span><span class="im-badge im-skip">无变更</span><span class="im-detail">现有的 ST-S01-01 已覆盖此路径</span></div>
+          <div class="im-row"><span class="im-layer">代码</span><span class="im-badge im-affected">受影响</span><span class="im-detail"><code>App.tsx</code> —— 扩展跳转条件以覆盖 register 与 login 视图</span></div>
+        </div>
+        <div class="impact-verdict">
+          <strong>结论：</strong>仅为代码级修复。该 bug 是缺失了一个条件分支 —— 所有上游产物（需求、设计、API、DB）都是正确的。同时也防御性地覆盖了 S02 登录跳转路径。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <h2>想亲手试试？</h2>
+      <p>克隆仓库在本地运行 FlowTask，或用 OpenLogos 开启你自己的项目。</p>
+      <div class="cta-actions">
+        <a href="https://github.com/miniidealab/openlogos/tree/main/examples/flowtask" target="_blank" rel="noopener" class="btn btn-primary">在 GitHub 上查看 →</a>
+        <a href="/zh/tour/money-log" class="btn btn-ghost">下一个：Money-Log · OpenCode →</a>
+      </div>
+      <div class="cta-secondary">
+        <a href="/zh/getting-started/quick-start">快速开始指南</a>
+        <span class="cta-divider">·</span>
+        <a href="/zh/tour">返回导览总览</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .container { max-width: 860px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Hero */
+  .page-hero { padding: 3rem 1.5rem 3rem; text-align: center; }
+  .hero-badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.75rem; border-radius: 100px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; margin-bottom: 1.5rem; }
+  .badge-claude { background: rgba(217, 119, 6, 0.12); color: #d97706; border: 1px solid rgba(217, 119, 6, 0.25); }
+  .page-hero h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.04em; margin-bottom: 0.75rem; }
+  .hero-desc { color: var(--color-text-muted); font-size: 1.05rem; line-height: 1.7; max-width: 580px; margin: 0 auto 1.5rem; }
+  .hero-desc strong { color: var(--color-text-secondary); }
+  .hero-tech { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.375rem; margin-bottom: 1.5rem; }
+  .tech-tag { font-size: 0.68rem; font-weight: 500; padding: 0.175rem 0.5rem; border-radius: 4px; background: var(--color-surface-raised); border: 1px solid var(--color-border); color: var(--color-text-muted); }
+  .hero-stats { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 0.85rem; color: var(--color-text-muted); margin-bottom: 1.5rem; }
+  .claude-highlight { display: flex; align-items: flex-start; gap: 0.75rem; max-width: 520px; margin: 0 auto; padding: 1rem 1.25rem; background: rgba(217, 119, 6, 0.06); border: 1px solid rgba(217, 119, 6, 0.15); border-radius: 12px; text-align: left; }
+  .cc-icon { flex-shrink: 0; color: #d97706; margin-top: 0.1rem; }
+  .claude-highlight strong { display: block; font-size: 0.82rem; font-weight: 700; color: #d97706; margin-bottom: 0.25rem; }
+  .claude-highlight span { font-size: 0.78rem; color: var(--color-text-muted); line-height: 1.5; }
+  .claude-highlight code { font-family: var(--font-mono); font-size: 0.72rem; background: rgba(217, 119, 6, 0.08); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .stat-num { font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .stat-sep { opacity: 0.3; }
+  .pass { font-family: var(--font-mono); font-weight: 700; color: #0eb677; }
+
+  /* Phase Sections */
+  .phase-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .phase-header { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 0.5rem; }
+  .phase-marker { flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 800; font-family: var(--font-mono); }
+  .marker-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
+  .marker-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
+  .marker-green { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+  .marker-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
+  .phase-tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 0.375rem; }
+  .tag-amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
+  .tag-blue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+  .tag-green { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .tag-purple { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+  .phase-header h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+  .phase-source { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 1.5rem; opacity: 0.7; }
+  .phase-source code { font-family: var(--font-mono); font-size: 0.72rem; background: var(--color-surface-raised); padding: 0.1rem 0.35rem; border-radius: 3px; }
+
+  /* Artifact Cards */
+  .artifact-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 1.75rem; margin-bottom: 1.25rem; }
+  .artifact-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .artifact-card h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.625rem; margin-top: 1rem; }
+  .artifact-card h4:first-child { margin-top: 0; }
+  .artifact-note { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 0.75rem; line-height: 1.5; font-style: italic; }
+
+  /* Doc excerpts */
+  .doc-excerpt { font-size: 0.88rem; color: var(--color-text-secondary); line-height: 1.65; }
+  .doc-excerpt p { margin-bottom: 0.75rem; }
+  .doc-excerpt strong { color: var(--color-text); }
+
+  .pain-points { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+  .pain { font-size: 0.82rem; color: var(--color-text-muted); padding: 0.5rem 0.75rem; background: var(--color-surface-raised); border-radius: 8px; border-left: 3px solid var(--color-border); }
+  .pain-id { font-family: var(--font-mono); font-weight: 700; color: #f59e0b; margin-right: 0.5rem; font-size: 0.75rem; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { text-align: left; padding: 0.5rem 0.75rem; background: var(--color-surface-raised); font-weight: 600; font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--color-border); }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); }
+  td code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .p0 { font-weight: 700; color: #ef4444; }
+  .p1 { font-weight: 600; color: #f59e0b; }
+
+  /* AC list */
+  .ac-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .ac-item { display: flex; gap: 0.75rem; padding: 0.75rem; border-radius: 8px; background: var(--color-surface-raised); }
+  .ac-label { flex-shrink: 0; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.15rem 0.4rem; border-radius: 4px; height: fit-content; margin-top: 0.1rem; }
+  .ac-normal .ac-label { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .ac-exception .ac-label { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+  .ac-content { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  .ac-content strong { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 0.75rem; }
+
+  /* Interaction steps */
+  .interaction-steps { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.375rem; }
+  .interaction-steps li { font-size: 0.85rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .prototype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  .prototype-frame { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); background: #fafafa; }
+  .proto-label { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 0.75rem; background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border); }
+  .prototype-frame iframe, .prototype-single iframe { width: 100%; border: none; background: #fafafa; }
+  .prototype-frame iframe { height: 420px; }
+  .prototype-single { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); background: #fafafa; margin-bottom: 1rem; }
+  .prototype-single iframe { height: 520px; }
+
+  /* Doc iframes */
+  .doc-frame { border-radius: 8px; overflow: hidden; border: 1px solid var(--color-border); margin-bottom: 0.5rem; }
+  .doc-frame iframe { width: 100%; height: 520px; border: none; }
+  .doc-frame-short iframe { height: 420px; }
+
+  /* Code blocks */
+  .code-block { background: #0d0d10; border: 1px solid var(--color-border); border-radius: 10px; padding: 1rem 1.25rem; overflow-x: auto; }
+  .code-block pre { margin: 0; }
+  .code-block code { font-family: var(--font-mono); font-size: 0.78rem; color: var(--color-text-secondary); line-height: 1.6; white-space: pre; }
+
+  /* Step sections */
+  .step-section { margin-bottom: 2rem; }
+  .step-badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 5px; font-size: 0.68rem; font-weight: 700; font-family: var(--font-mono); background: rgba(16, 185, 129, 0.08); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.15); margin-bottom: 0.5rem; }
+  .step-section > h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.25rem; }
+
+  /* Dual artifact */
+  .dual-artifact { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+
+  /* Sequence diagram (text) */
+  .sequence-diagram { font-size: 0.82rem; }
+  .seq-participants { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .seq-p { padding: 0.3rem 0.625rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+  .seq-steps { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; }
+  .seq-step { display: flex; gap: 0.625rem; align-items: flex-start; font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.5; }
+  .seq-step code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .seq-num { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.08); padding: 0.15rem 0.4rem; border-radius: 4px; min-width: 2rem; text-align: center; }
+  .seq-exceptions { border-top: 1px solid var(--color-border); padding-top: 1rem; }
+  .seq-exceptions h5 { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.625rem; }
+  .seq-ex { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 0.375rem; padding-left: 0.25rem; }
+  .seq-ex code { font-family: var(--font-mono); font-size: 0.72rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .ex-id { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: #ef4444; margin-right: 0.375rem; }
+
+  /* Code generation */
+  .codegen-workflow { margin-bottom: 1.25rem; }
+  .workflow-badge { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.85rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.75rem; }
+  .claude-badge { background: linear-gradient(135deg, #d4a574 0%, #c4956a 100%); color: #fff; }
+  .opencode-badge { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+  .workflow-desc { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; }
+  :global(.code-snippet) { background: #1e1e2e; border-radius: 8px; overflow: hidden; margin-bottom: 1.25rem; }
+  :global(.code-snippet .code-header) { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.875rem; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.08); }
+  :global(.code-snippet .code-file) { font-family: var(--font-mono); font-size: 0.72rem; color: #a6adc8; }
+  :global(.code-snippet .code-lang) { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #585b70; }
+  :global(.code-snippet pre) { margin: 0; padding: 1rem 0.875rem; overflow-x: auto; }
+  :global(.code-snippet code) { font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.65; color: #cdd6f4; }
+  :global(.code-snippet .hl-kw) { color: #cba6f7; }
+  :global(.code-snippet .hl-str) { color: #a6e3a1; }
+  :global(.code-snippet .hl-cmt) { color: #6c7086; font-style: italic; }
+  :global(.code-snippet .hl-fn) { color: #89b4fa; }
+  :global(.code-snippet .hl-ty) { color: #f9e2af; }
+  :global(.code-snippet .hl-attr) { color: #fab387; }
+  :global(.code-snippet .hl-num) { color: #fab387; }
+  .code-maps-to { font-size: 0.72rem; font-weight: 500; color: var(--color-text-muted); margin-left: 0.5rem; }
+  .codegen-stats { display: flex; gap: 1rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--color-border); }
+  .cg-stat { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 80px; }
+  .cg-num { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--color-text); }
+  .cg-label { font-size: 0.7rem; color: var(--color-text-muted); margin-top: 0.15rem; }
+
+  /* Verify */
+  .verify-card { border-color: rgba(14, 182, 119, 0.2); }
+  .verify-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+  .verify-badge { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 800; color: #0eb677; background: rgba(14, 182, 119, 0.1); border: 1px solid rgba(14, 182, 119, 0.25); padding: 0.375rem 0.875rem; border-radius: 8px; }
+  .verify-date { font-size: 0.72rem; color: var(--color-text-muted); }
+  .verify-stats { display: flex; gap: 1.5rem; margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
+  .verify-stat { display: flex; flex-direction: column; }
+  .vs-num { font-size: 1.25rem; font-weight: 800; font-family: var(--font-mono); color: var(--color-text); }
+  .vs-num.green { color: #0eb677; }
+  .vs-label { font-size: 0.68rem; color: var(--color-text-muted); font-weight: 500; }
+  .verify-trace h4 { font-size: 0.8rem; font-weight: 600; color: var(--color-text-muted); margin-bottom: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .trace-items { display: flex; flex-direction: column; gap: 0.25rem; }
+  .trace-row { font-size: 0.78rem; color: var(--color-text-secondary); font-family: var(--font-mono); }
+  .trace-row code { font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .trace-check { color: #0eb677; font-weight: 700; margin-right: 0.25rem; }
+  .trace-more { color: var(--color-text-muted); font-style: italic; font-family: var(--font-sans); margin-top: 0.25rem; }
+
+  .deploy-card { border-left: 3px solid #0eb677; margin-top: 1rem; }
+  .deploy-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
+  .deploy-card-header h3 { font-size: 1rem; font-weight: 800; margin-bottom: 0.25rem; }
+  .deploy-card-header p { color: var(--color-text-muted); font-size: 0.82rem; line-height: 1.6; margin: 0; }
+  .deploy-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+  .deploy-item { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.85rem; }
+  .deploy-label { display: block; color: var(--color-text-muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.25rem; }
+  .deploy-item strong { display: block; color: #0eb677; font-family: var(--font-mono); font-size: 0.9rem; margin-bottom: 0.25rem; }
+  .deploy-item p { color: var(--color-text-secondary); font-size: 0.76rem; line-height: 1.55; margin: 0; }
+
+  /* Delta */
+  .delta-section { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+  .delta-intro { margin-bottom: 2rem; }
+  .delta-intro p { color: var(--color-text-secondary); font-size: 0.92rem; line-height: 1.75; }
+
+  .delta-workflow { display: flex; align-items: flex-start; gap: 0; flex-wrap: wrap; margin-bottom: 2rem; padding: 1.25rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; justify-content: center; }
+  .dw-step { display: flex; align-items: flex-start; gap: 0.5rem; }
+  .dw-num { width: 22px; height: 22px; border-radius: 50%; background: #a855f7; color: white; font-size: 0.68rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .dw-text { display: flex; flex-direction: column; }
+  .dw-text strong { font-size: 0.78rem; color: var(--color-text); }
+  .dw-text span { font-size: 0.68rem; color: var(--color-text-muted); }
+  .dw-text code { font-size: 0.65rem; }
+  .dw-arrow { color: var(--color-text-muted); font-size: 0.9rem; padding: 0 0.375rem; margin-top: 2px; }
+
+  .delta-propagation-card { margin-bottom: 2rem; }
+  .propagation-desc { font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 1rem; line-height: 1.6; }
+  .propagation-table { display: flex; flex-direction: column; gap: 0.5rem; }
+  .prop-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; }
+  .prop-row-header { font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 0.25rem; border-bottom: 1px solid var(--color-border); }
+  .prop-type-col { width: 100px; flex-shrink: 0; }
+  .prop-chain-col { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+  .prop-badge { font-size: 0.65rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 4px; display: inline-block; }
+  .prop-req { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .prop-design { background: rgba(168, 85, 247, 0.1); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.2); }
+  .prop-iface { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.2); }
+  .prop-code { background: rgba(14, 182, 119, 0.1); color: #0eb677; border: 1px solid rgba(14, 182, 119, 0.2); }
+  .prop-tag { font-size: 0.62rem; font-weight: 600; padding: 0.125rem 0.4rem; border-radius: 3px; }
+  .prop-tag.active { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .prop-tag.skip { background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); opacity: 0.5; }
+  .prop-arrow { color: var(--color-text-muted); font-size: 0.65rem; }
+
+  .delta-example-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; margin-top: 2rem; }
+
+  .delta-card { border-left: 3px solid #a855f7; }
+  .delta-meta { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
+  .delta-type { font-size: 0.68rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; }
+  .delta-bugfix { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .delta-scope { font-size: 0.68rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+
+  .impact-title { font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 1.25rem; margin-bottom: 0.75rem; }
+  .impact-matrix { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+  .im-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.625rem; border-radius: 6px; background: var(--color-surface-raised); }
+  .im-layer { font-size: 0.75rem; font-weight: 600; color: var(--color-text); width: 120px; flex-shrink: 0; }
+  .im-badge { font-size: 0.62rem; font-weight: 700; padding: 0.125rem 0.5rem; border-radius: 4px; flex-shrink: 0; text-align: center; min-width: 68px; }
+  .im-skip { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+  .im-affected { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .im-detail { font-size: 0.75rem; color: var(--color-text-secondary); }
+  .impact-verdict { padding: 0.75rem; background: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; color: var(--color-text-secondary); line-height: 1.6; }
+
+  /* CTA */
+  .cta-section { padding: 4rem 0 6rem; text-align: center; border-top: 1px solid var(--color-border); }
+  .cta-section h2 { font-size: 1.75rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .cta-section > .container > p { color: var(--color-text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border-radius: 10px; font-size: 0.9rem; font-weight: 600; font-family: var(--font-sans); transition: all 0.2s; border: none; cursor: pointer; text-decoration: none; }
+  .btn-primary { background: var(--color-primary); color: white; }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+  .cta-secondary { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  .cta-secondary a { color: var(--color-text-muted); font-size: 0.85rem; }
+  .cta-secondary a:hover { color: var(--color-text); }
+  .cta-divider { color: var(--color-text-muted); opacity: 0.3; }
+
+  /* Mermaid diagram */
+  .mermaid-wrap { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; overflow-x: auto; }
+  .mermaid-wrap .mermaid { display: flex; justify-content: center; }
+  .mermaid-wrap .mermaid svg { max-width: 100%; height: auto; }
+  .mermaid-wrap .mermaid .cluster-label { transform: translateY(6px); }
+  .mermaid-wrap .mermaid .cluster-label .nodeLabel { padding: 4px 8px 0; }
+
+  /* Step descriptions */
+  .step-desc-section { margin-bottom: 1.25rem; }
+  .step-desc-section h4 { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.75rem; }
+  .step-desc-list { padding-left: 1.5rem; display: flex; flex-direction: column; gap: 0.375rem; counter-reset: step-counter; list-style: none; }
+  .step-desc-list li { font-size: 0.82rem; color: var(--color-text-secondary); line-height: 1.55; padding-left: 0.25rem; counter-increment: step-counter; position: relative; }
+  .step-desc-list li::before { content: counter(step-counter) "."; position: absolute; left: -1.5rem; width: 1.25rem; text-align: right; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700; color: var(--color-text-muted); }
+  .step-desc-list li strong { color: var(--color-text); font-weight: 600; }
+  .step-desc-list li code { font-family: var(--font-mono); font-size: 0.75rem; background: var(--color-surface-raised); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  @media (max-width: 768px) {
+    .page-hero { padding: 2rem 1.5rem 2rem; }
+    .dual-artifact { grid-template-columns: 1fr; }
+    .prototype-grid { grid-template-columns: 1fr; }
+    .hero-stats { flex-wrap: wrap; }
+    .verify-stats { gap: 1rem; }
+    .deploy-card-header { flex-direction: column; }
+    .deploy-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script is:inline src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script is:inline>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#131316',
+      primaryColor: '#1a3a2a',
+      primaryTextColor: '#fafafa',
+      primaryBorderColor: '#0eb677',
+      lineColor: '#71717a',
+      secondaryColor: '#1a1a1f',
+      tertiaryColor: '#27272a',
+      noteTextColor: '#d4d4d8',
+      noteBkgColor: '#1a1a1f',
+      noteBorderColor: '#3f3f46',
+      actorBkg: '#0eb677',
+      actorTextColor: '#fff',
+      actorBorder: '#0a9960',
+      actorLineColor: '#3f3f46',
+      signalColor: '#d4d4d8',
+      signalTextColor: '#d4d4d8',
+      sequenceNumberColor: '#fff',
+      fontSize: '13px'
+    },
+    sequence: {
+      actorMargin: 60,
+      messageMargin: 30
+    },
+    flowchart: {
+      padding: 16,
+      subGraphTitleMargin: { top: 8, bottom: 4 }
+    }
+  });
+</script>

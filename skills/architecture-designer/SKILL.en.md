@@ -62,25 +62,33 @@ Choose an architecture pattern based on product complexity:
 - Microservices / modular monolith
 - Requires detailed Architecture Decision Records (ADR)
 
+**⚠️ Mermaid flowchart / graph syntax safety (required)**:
+- Use `ID["label"]` for node labels by default, especially when labels contain `/`, `(`, `)`, `<`, `>`, `:`, `#`, `{}`, `[]`, spaces, Chinese text, API paths, ports, technology stacks, or `<br/>`.
+- Correct: `PROXY["/voice/api proxy"]`, `API["API Server<br/>Node.js"]`, `DB["PostgreSQL :5432"]`.
+- Incorrect: `PROXY[/voice/api proxy]`, because `[/` is Mermaid shape syntax and labels containing additional `/` can break rendering.
+- For multi-line labels, use `<br/>` inside the same quoted label: `API["HTTP API<br/>/voice/api"]`.
+- Quote subgraph names that contain spaces or symbols: `subgraph "Voice Service"`.
+- Only use Mermaid shape syntax such as `ID[(Database)]` or `ID[/Input/]` when the shape itself is intentional; do not use shape syntax for ordinary text labels.
+
 Draw system architecture diagram using Mermaid:
 
 ```mermaid
 graph TB
-    subgraph Frontend
-        Web[Web App - Next.js]
+    subgraph "Frontend"
+        Web["Web App - Next.js"]
     end
-    subgraph Backend
-        API[API Server - Node.js]
-        Worker[Background Worker]
+    subgraph "Backend"
+        API["API Server - Node.js"]
+        Worker["Background Worker"]
     end
-    subgraph Data
-        DB[(PostgreSQL)]
-        Cache[(Redis)]
-        S3[Object Storage]
+    subgraph "Data"
+        DB["PostgreSQL"]
+        Cache["Redis"]
+        S3["Object Storage"]
     end
-    subgraph External
-        Auth[Supabase Auth]
-        Email[SendGrid]
+    subgraph "External"
+        Auth["Supabase Auth"]
+        Email["SendGrid"]
     end
 
     Web -->|REST API| API

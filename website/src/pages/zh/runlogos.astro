@@ -1,0 +1,381 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  lang="zh"
+  title="RunLogos — OpenLogos 的最佳实践工具 | openlogos.ai"
+  description="OpenLogos 定义标准，RunLogos 让标准更好地落地。可视化、编辑、编排、调试 AI 生成的一切 —— 全部集成在一款桌面应用里。"
+>
+
+<!-- Hero -->
+<section class="rl-hero">
+  <div class="container">
+    <div class="rl-hero-tag">OpenLogos + RunLogos</div>
+    <h1>OpenLogos 定义标准。<br/><span class="accent">RunLogos 让标准更好地落地。</span></h1>
+    <p class="rl-hero-desc">
+      OpenLogos 可独立配合任何 AI 编码工具使用。RunLogos 则进一步放大它的能力 ——
+      可视化、编辑、编排、调试 AI 生成的一切，全部集成在一款桌面应用里。
+    </p>
+    <p class="rl-hero-sub">方法论免费且开源。专业工具提供社区版（Community）与企业版（Enterprise）。</p>
+    <div class="rl-hero-actions">
+      <a href="/zh" class="btn-ghost">了解 OpenLogos</a>
+      <a href="https://runlogos.cn" target="_blank" rel="noopener" class="btn-primary">
+        访问 RunLogos
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4.5 11.5l7-7M4.5 4.5h7v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </div>
+  <div class="rl-hero-glow"></div>
+</section>
+
+<!-- Relationship -->
+<section class="rl-relationship">
+  <div class="container">
+    <div class="section-label">两者的关系</div>
+    <h2>为什么是两个产品？</h2>
+    <p class="section-desc">一个经过验证的模式：开放标准驱动普及，专业工具驱动效率。</p>
+
+    <div class="rl-compare-grid">
+      <div class="rl-compare-card">
+        <div class="rl-compare-badge open">开源</div>
+        <h3>OpenLogos</h3>
+        <p class="rl-compare-role">方法论</p>
+        <ul>
+          <li>引导结构化开发的 AI Skills</li>
+          <li>覆盖项目结构与工作流的规范</li>
+          <li>用于初始化与验证的 CLI 工具</li>
+          <li>支持 Cursor、Claude Code、OpenCode、Codex</li>
+        </ul>
+        <div class="rl-compare-price">免费 & 开源（Apache 2.0）</div>
+      </div>
+      <div class="rl-compare-card featured">
+        <div class="rl-compare-badge pro">专业工具</div>
+        <h3>RunLogos</h3>
+        <p class="rl-compare-role">最佳实践桌面应用</p>
+        <ul>
+          <li>面向所有 AI 生成文档的可视化查看器与编辑器</li>
+          <li>API 编排运行器与调试器</li>
+          <li>评论转提示词（Comment-to-Prompt）的 AI 沟通方式</li>
+          <li>变更管理与测试结果看板</li>
+        </ul>
+        <div class="rl-compare-price">社区版（免费）· 专业版（$49）</div>
+      </div>
+    </div>
+
+    <div class="rl-precedents">
+      <div class="rl-precedents-label">业界先例</div>
+      <div class="rl-precedents-grid">
+        <div class="rl-precedent"><span class="open-tag">OpenAPI</span><span class="arrow">&rarr;</span><span class="tool-tag">SwaggerHub</span></div>
+        <div class="rl-precedent"><span class="open-tag">Kubernetes</span><span class="arrow">&rarr;</span><span class="tool-tag">OpenShift</span></div>
+        <div class="rl-precedent"><span class="open-tag">Scrum / Agile</span><span class="arrow">&rarr;</span><span class="tool-tag">Jira / Linear</span></div>
+        <div class="rl-precedent"><span class="open-tag">GraphQL</span><span class="arrow">&rarr;</span><span class="tool-tag">Apollo Studio</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Core Capabilities -->
+<section class="rl-capabilities">
+  <div class="container">
+    <div class="section-label">核心能力</div>
+    <h2>AI 生成的一切，皆可可视化与编辑</h2>
+    <p class="section-desc">RunLogos 把原始的 AI 输出转化为一个可交互的可视化工作区。</p>
+
+    <!-- Capability 1: Visual Document Viewer & Editor -->
+    <div class="rl-capability">
+      <div class="rl-cap-header">
+        <span class="rl-cap-number">01</span>
+        <div>
+          <h3>可视化文档查看器与编辑器</h3>
+          <p>查看并编辑所有 AI 生成的文档 —— Markdown、页面原型、OpenAPI 规格、数据库 Schema、测试用例、测试结果、变更提案与任务。OpenAPI 与数据库 Schema 配有专属的可视化编辑器，支持 SQLite、PostgreSQL 与 MySQL。</p>
+        </div>
+      </div>
+      <div class="rl-screenshot-tabs" data-tabs="cap1">
+        <div class="rl-tab-nav">
+          <button class="rl-tab active" data-target="cap1-md">Markdown 编辑器</button>
+          <button class="rl-tab" data-target="cap1-seq">时序图</button>
+          <button class="rl-tab" data-target="cap1-proto">页面原型</button>
+          <button class="rl-tab" data-target="cap1-api">OpenAPI 编辑器</button>
+          <button class="rl-tab" data-target="cap1-db">数据库编辑器</button>
+        </div>
+        <div class="rl-tab-panels">
+          <div class="rl-panel active" id="cap1-md"><img src="/runlogos/1.markdown.editor.jpg" alt="RunLogos Markdown 编辑器" loading="lazy" /></div>
+          <div class="rl-panel" id="cap1-seq"><img src="/runlogos/1.1.markdown.sequence.viewer.jpg" alt="RunLogos 时序图查看器" loading="lazy" /></div>
+          <div class="rl-panel" id="cap1-proto"><img src="/runlogos/2.typeproto.viewer.jpg" alt="RunLogos 页面原型查看器" loading="lazy" /></div>
+          <div class="rl-panel" id="cap1-api"><img src="/runlogos/3.openapi-editor.jpg" alt="RunLogos OpenAPI 可视化编辑器" loading="lazy" /></div>
+          <div class="rl-panel" id="cap1-db"><img src="/runlogos/4.db-editor(sqllite:postgresql:mysql).jpg" alt="RunLogos 数据库编辑器" loading="lazy" /></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Capability 2: API Orchestration Runner & Debugger -->
+    <div class="rl-capability">
+      <div class="rl-cap-header">
+        <span class="rl-cap-number">02</span>
+        <div>
+          <h3>API 编排运行器与调试器</h3>
+          <p>直接执行 AI 编写的 API 编排测试场景。详细查看每一次 API 调用的请求与响应。可视化修改编排定义 —— 让场景测试真正做到所见即所得。</p>
+        </div>
+      </div>
+      <div class="rl-screenshot-tabs" data-tabs="cap2">
+        <div class="rl-tab-nav">
+          <button class="rl-tab active" data-target="cap2-debug">API 调试器</button>
+          <button class="rl-tab" data-target="cap2-orch">编排运行器</button>
+        </div>
+        <div class="rl-tab-panels">
+          <div class="rl-panel active" id="cap2-debug"><img src="/runlogos/5.api.debug.jpg" alt="RunLogos API 调试器" loading="lazy" /></div>
+          <div class="rl-panel" id="cap2-orch"><img src="/runlogos/6.api.orchestration.and.run.and.debug.jpg" alt="RunLogos API 编排运行器" loading="lazy" /></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Capability 3: Comment-to-Prompt -->
+    <div class="rl-capability">
+      <div class="rl-cap-header">
+        <span class="rl-cap-number">03</span>
+        <div>
+          <h3>评论转提示词的 AI 沟通</h3>
+          <p>在文档中划选任意文本，添加行内评论，再把多条评论汇聚生成一段精准的 AI 提示词。从模糊的反馈到精确的指令 —— 大幅提升 AI 协作效率。</p>
+        </div>
+      </div>
+      <div class="rl-screenshot-tabs" data-tabs="cap3">
+        <div class="rl-tab-nav">
+          <button class="rl-tab active" data-target="cap3-comment">行内评论</button>
+          <button class="rl-tab" data-target="cap3-prompt">生成 AI 提示词</button>
+        </div>
+        <div class="rl-tab-panels">
+          <div class="rl-panel active" id="cap3-comment"><img src="/runlogos/1.2.markdown.comments.to.prompt.1.jpg" alt="RunLogos 行内评论" loading="lazy" /></div>
+          <div class="rl-panel" id="cap3-prompt"><img src="/runlogos/1.2.markdown.comments.to.prompt.2.jpg" alt="RunLogos 评论转提示词" loading="lazy" /></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Workflow -->
+<section class="rl-workflow">
+  <div class="container">
+    <div class="section-label">协作闭环</div>
+    <h2>OpenLogos + RunLogos 如何协同运作</h2>
+    <p class="section-desc">从方法论到工具、到 AI、再回到方法论的完整闭环。</p>
+
+    <div class="rl-workflow-steps">
+      <div class="rl-step">
+        <div class="rl-step-num">1</div>
+        <div class="rl-step-content">
+          <h4>方法论驱动</h4>
+          <p>在你的 AI 编码工具中使用 OpenLogos Skills，走完从需求 &rarr; 设计 &rarr; 代码的完整工作流。</p>
+        </div>
+      </div>
+      <div class="rl-step-arrow">&darr;</div>
+      <div class="rl-step">
+        <div class="rl-step-num">2</div>
+        <div class="rl-step-content">
+          <h4>可视化与编辑</h4>
+          <p>所有 AI 生成的文档（PRD、API、数据库、测试用例）都在 RunLogos 中可视化呈现，并支持完整编辑。</p>
+        </div>
+      </div>
+      <div class="rl-step-arrow">&darr;</div>
+      <div class="rl-step">
+        <div class="rl-step-num">3</div>
+        <div class="rl-step-content">
+          <h4>编排与测试</h4>
+          <p>在 RunLogos 中运行 API 编排场景，通过详细的请求/响应检视来验证业务流程。</p>
+        </div>
+      </div>
+      <div class="rl-step-arrow">&darr;</div>
+      <div class="rl-step">
+        <div class="rl-step-num">4</div>
+        <div class="rl-step-content">
+          <h4>精准反馈</h4>
+          <p>用「评论转提示词」把评审笔记变成精确的 AI 指令 —— 不再有含糊的描述。</p>
+        </div>
+      </div>
+      <div class="rl-step-arrow">&darr;</div>
+      <div class="rl-step">
+        <div class="rl-step-num">5</div>
+        <div class="rl-step-content">
+          <h4>闭环迭代</h4>
+          <p>方法论 &rarr; 工具 &rarr; AI &rarr; 方法论。每一轮循环都以更少的投入交付更高的质量。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing Tiers -->
+<section class="rl-tiers">
+  <div class="container">
+    <div class="section-label">选择你的路径</div>
+    <h2>免费起步，需要时再升级</h2>
+
+    <div class="rl-tiers-grid">
+      <div class="rl-tier">
+        <h3>OpenLogos</h3>
+        <div class="rl-tier-price">免费</div>
+        <p>AI Skills + 规范 + CLI。支持 Cursor、Claude Code、OpenCode、Codex 等。完整方法论，零成本。</p>
+        <a href="/zh/getting-started/quick-start" class="btn-ghost">开始使用</a>
+      </div>
+      <div class="rl-tier">
+        <h3>RunLogos 社区版</h3>
+        <div class="rl-tier-price">免费</div>
+        <p>基础文档查看与项目管理。可视化探索 OpenLogos 工作流的扎实起点。</p>
+        <a href="https://runlogos.cn" target="_blank" rel="noopener" class="btn-ghost">下载</a>
+      </div>
+      <div class="rl-tier featured">
+        <h3>RunLogos 专业版</h3>
+        <div class="rl-tier-price">$49 <span>一次性买断</span></div>
+        <p>可视化编辑器、API 编排、评论转提示词等。RunLogos 的全部能力，一次购买，永久拥有。</p>
+        <a href="https://runlogos.cn" target="_blank" rel="noopener" class="btn-primary">了解更多</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="rl-cta">
+  <div class="container">
+    <h2>准备好把软件做对了吗？</h2>
+    <p>今天就从 OpenLogos 方法论开始。当你准备好迎接 10 倍效率时，再加上 RunLogos。</p>
+    <div class="rl-cta-actions">
+      <a href="/zh/getting-started/quick-start" class="btn-primary">从 OpenLogos 开始</a>
+      <a href="https://runlogos.cn" target="_blank" rel="noopener" class="btn-ghost">
+        探索 RunLogos
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4.5 11.5l7-7M4.5 4.5h7v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Tab switching for screenshot panels
+  document.querySelectorAll('.rl-screenshot-tabs').forEach(tabGroup => {
+    const buttons = tabGroup.querySelectorAll('.rl-tab');
+    const panels = tabGroup.querySelectorAll('.rl-panel');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-target');
+        buttons.forEach(b => b.classList.remove('active'));
+        panels.forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(target!)?.classList.add('active');
+      });
+    });
+  });
+</script>
+
+</BaseLayout>
+
+<style>
+  .container { max-width: var(--max-width); margin: 0 auto; padding: 0 1.5rem; }
+  .section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--color-primary); margin-bottom: 0.75rem; }
+  .section-desc { color: var(--color-text-muted); font-size: 0.95rem; max-width: 640px; margin: 0.5rem auto 0; line-height: 1.7; }
+  h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 800; letter-spacing: -0.03em; }
+
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.75rem 1.5rem; background: var(--color-primary); color: white;
+    border-radius: 10px; font-weight: 600; font-size: 0.9rem;
+    box-shadow: 0 0 20px var(--color-primary-glow);
+    transition: background 0.2s, transform 0.2s;
+  }
+  .btn-primary:hover { background: var(--color-primary-hover); color: white; transform: translateY(-1px); }
+  .btn-ghost {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.75rem 1.5rem; background: var(--color-surface); color: var(--color-text);
+    border: 1px solid var(--color-border); border-radius: 10px;
+    font-weight: 600; font-size: 0.9rem; transition: border-color 0.2s, transform 0.2s;
+  }
+  .btn-ghost:hover { border-color: var(--color-border-hover); color: var(--color-text); transform: translateY(-1px); }
+
+  /* Hero */
+  .rl-hero { position: relative; padding: 9rem 1.5rem 5rem; text-align: center; overflow: hidden; }
+  .rl-hero-tag { display: inline-block; padding: 0.35rem 1rem; background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: 100px; font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: 0.05em; margin-bottom: 1.5rem; }
+  .rl-hero h1 { font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 900; letter-spacing: -0.04em; line-height: 1.15; max-width: 800px; margin: 0 auto; }
+  .rl-hero .accent { background: linear-gradient(135deg, #0eb677 0%, #2dd4bf 50%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .rl-hero-desc { color: var(--color-text-secondary); font-size: 1.05rem; max-width: 640px; margin: 1.25rem auto 0; line-height: 1.7; }
+  .rl-hero-sub { color: var(--color-text-muted); font-size: 0.85rem; margin-top: 0.75rem; }
+  .rl-hero-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
+  .rl-hero-glow { position: absolute; bottom: -40%; left: 50%; transform: translateX(-50%); width: 600px; height: 400px; background: radial-gradient(ellipse, var(--color-primary-glow) 0%, transparent 70%); pointer-events: none; }
+
+  /* Relationship */
+  .rl-relationship { padding: 6rem 0; text-align: center; }
+  .rl-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-top: 3rem; text-align: left; }
+  .rl-compare-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; transition: border-color 0.2s; }
+  .rl-compare-card:hover { border-color: var(--color-border-hover); }
+  .rl-compare-card.featured { border-color: var(--color-primary); box-shadow: 0 0 30px var(--color-primary-glow); }
+  .rl-compare-badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 1rem; }
+  .rl-compare-badge.open { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .rl-compare-badge.pro { background: rgba(14, 182, 119, 0.15); color: #0eb677; }
+  .rl-compare-card h3 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+  .rl-compare-role { color: var(--color-text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 1.25rem; }
+  .rl-compare-card ul { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; }
+  .rl-compare-card li { font-size: 0.88rem; color: var(--color-text-secondary); padding-left: 1.25rem; position: relative; line-height: 1.5; }
+  .rl-compare-card li::before { content: ''; position: absolute; left: 0; top: 0.55rem; width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary); }
+  .rl-compare-price { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.82rem; font-weight: 600; color: var(--color-text-muted); }
+
+  .rl-precedents { margin-top: 3rem; }
+  .rl-precedents-label { font-size: 0.72rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem; }
+  .rl-precedents-grid { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; }
+  .rl-precedent { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; }
+  .open-tag { color: var(--color-text-secondary); background: var(--color-surface); padding: 0.3rem 0.7rem; border-radius: 6px; border: 1px solid var(--color-border); }
+  .arrow { color: var(--color-text-muted); }
+  .tool-tag { color: var(--color-primary); background: rgba(14, 182, 119, 0.08); padding: 0.3rem 0.7rem; border-radius: 6px; border: 1px solid rgba(14, 182, 119, 0.2); }
+
+  /* Capabilities */
+  .rl-capabilities { padding: 6rem 0; text-align: center; }
+  .rl-capability { margin-top: 4rem; text-align: left; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 2.5rem; }
+  .rl-cap-header { display: flex; gap: 1.5rem; align-items: flex-start; margin-bottom: 2rem; }
+  .rl-cap-number { font-size: 2rem; font-weight: 900; color: var(--color-primary); opacity: 0.4; line-height: 1; flex-shrink: 0; min-width: 2.5rem; }
+  .rl-cap-header h3 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
+  .rl-cap-header p { font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.6; }
+
+  /* Screenshot Tabs */
+  .rl-tab-nav { display: flex; gap: 0.25rem; overflow-x: auto; padding-bottom: 0.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--color-border); }
+  .rl-tab { background: none; border: none; color: var(--color-text-muted); font-family: var(--font-sans); font-size: 0.78rem; font-weight: 500; padding: 0.5rem 0.875rem; border-radius: 8px 8px 0 0; cursor: pointer; transition: color 0.15s, background 0.15s; white-space: nowrap; border-bottom: 2px solid transparent; }
+  .rl-tab:hover { color: var(--color-text-secondary); }
+  .rl-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); background: rgba(14, 182, 119, 0.05); }
+  .rl-panel { display: none; }
+  .rl-panel.active { display: block; }
+  .rl-panel img { width: 100%; border-radius: 10px; border: 1px solid var(--color-border); }
+
+  /* Workflow */
+  .rl-workflow { padding: 6rem 0; text-align: center; }
+  .rl-workflow-steps { max-width: 560px; margin: 3rem auto 0; text-align: left; }
+  .rl-step { display: flex; gap: 1.25rem; align-items: flex-start; }
+  .rl-step-num { width: 36px; height: 36px; border-radius: 10px; background: var(--color-surface-raised); border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; font-size: 0.82rem; font-weight: 700; color: var(--color-primary); flex-shrink: 0; }
+  .rl-step-content h4 { font-size: 1rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .rl-step-content p { font-size: 0.85rem; color: var(--color-text-muted); line-height: 1.6; }
+  .rl-step-arrow { text-align: center; color: var(--color-border-hover); font-size: 1.25rem; padding: 0.25rem 0 0.25rem 1rem; }
+
+  /* Tiers */
+  .rl-tiers { padding: 6rem 0; text-align: center; }
+  .rl-tiers-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; margin-top: 3rem; text-align: left; }
+  .rl-tier { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 2rem; display: flex; flex-direction: column; transition: border-color 0.2s; }
+  .rl-tier:hover { border-color: var(--color-border-hover); }
+  .rl-tier.featured { border-color: var(--color-primary); box-shadow: 0 0 30px var(--color-primary-glow); }
+  .rl-tier h3 { font-size: 1.15rem; font-weight: 700; }
+  .rl-tier-price { font-size: 1.75rem; font-weight: 900; margin: 0.5rem 0 1rem; letter-spacing: -0.03em; }
+  .rl-tier-price span { font-size: 0.75rem; font-weight: 500; color: var(--color-text-muted); }
+  .rl-tier p { font-size: 0.85rem; color: var(--color-text-muted); line-height: 1.6; flex: 1; margin-bottom: 1.5rem; }
+  .rl-tier .btn-primary, .rl-tier .btn-ghost { width: 100%; justify-content: center; }
+
+  /* CTA */
+  .rl-cta { padding: 6rem 0 7rem; text-align: center; position: relative; }
+  .rl-cta h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 800; }
+  .rl-cta p { color: var(--color-text-muted); font-size: 0.95rem; margin: 0.75rem 0 2rem; }
+  .rl-cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .rl-hero { padding: 7rem 1.5rem 4rem; }
+    .rl-hero h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); }
+    .rl-compare-grid { grid-template-columns: 1fr; }
+    .rl-tiers-grid { grid-template-columns: 1fr; }
+    .rl-cap-header { flex-direction: column; gap: 0.75rem; }
+    .rl-capability { padding: 1.5rem; }
+    .rl-tab-nav { gap: 0; }
+    .rl-precedents-grid { flex-direction: column; align-items: center; }
+  }
+</style>

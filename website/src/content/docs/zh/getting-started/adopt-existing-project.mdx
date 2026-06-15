@@ -1,0 +1,362 @@
+---
+title: 接入已有项目
+description: 把 OpenLogos 引入一个已有代码的项目——初始化方法论基础设施，并以完整的变更可追溯性开始迭代。
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+已经有一个在跑的项目了？本指南会带你在不打乱现有代码库的前提下接入 OpenLogos。你将在几分钟内启用完整的方法论基础设施——变更管理、AI Skills、verify 门禁。
+
+**所需时间：** 接入约需 15 分钟，之后按你自己的节奏迭代。
+
+---
+
+## 与快速开始有何不同
+
+[快速开始](/zh/getting-started/quick-start)假设这是一个全新项目，带你从零走过 Phase 1 → 2 → 3。那不是你现在的情况。
+
+当你接入一个已有项目时：
+
+| 方面 | 新项目（`init`） | 已有项目（`adopt`） |
+|--------|---------------------|---------------------------|
+| 起点 | 空目录 | 代码已存在 |
+| 模块生命周期 | `initial`（阶段驱动） | `launched`（变更驱动） |
+| Phase 1–3 文档 | 编码前必需 | 可选——逐步补全 |
+| 变更管理 | `launch` 之后激活 | **立即激活** |
+| 首个建议动作 | 编写需求 | 创建一份 baseline-docs 提案 |
+
+关键区别：`adopt` 会立即把你的模块设为 `lifecycle: launched`、`bootstrap: adopted`。你跳过了初始文档基线的要求，直接进入迭代工作流。
+
+---
+
+## 第 1 步：安装 OpenLogos CLI
+
+```bash
+npm install -g @miniidealab/openlogos
+openlogos --version
+```
+
+---
+
+## 第 2 步：运行 `openlogos adopt`
+
+在你的项目根目录（即 `package.json`、`Cargo.toml` 或 `pyproject.toml` 所在处）：
+
+```bash
+openlogos adopt
+```
+
+CLI 会问你两个问题：
+
+```
+Choose language / 选择语言:
+  1. 中文 (default)
+  2. English
+
+Your choice [1/2] (default: 1): 2
+
+Choose AI coding tool / 选择 AI 编码工具:
+  1. Claude Code (default)
+  2. OpenCode
+  3. Codex
+  4. Cursor
+  5. Other
+  6. All (deploy for all tools)
+
+Your choice [1/2/3/4/5/6] (default: 1): 1
+```
+
+或者传入参数以跳过交互提示：
+
+```bash
+openlogos adopt --locale en --ai-tool claude-code
+```
+
+### 它会创建什么
+
+```
+your-project/
+├── AGENTS.md                    ← AI 指令文件（自动生成）
+├── CLAUDE.md                    ← Claude Code 指令文件
+│
+└── logos/
+    ├── logos.config.json        ← 项目配置
+    ├── logos-project.yaml       ← AI 协作索引
+    │                              (lifecycle: launched, bootstrap: adopted)
+    ├── resources/               ← 空目录，待填充
+    │   ├── prd/
+    │   ├── api/
+    │   ├── database/
+    │   ├── test/
+    │   └── verify/
+    ├── skills/                  ← 部署了 16 个 AI Skill
+    ├── spec/                    ← 方法论规格
+    └── changes/                 ← 变更提案工作区
+```
+
+<Aside type="note">
+`adopt` 还会从 `package.json` 自动检测你的测试命令，并配置 `verify.pre_run_command`，这样 `openlogos verify` 就知道如何运行你的测试。
+</Aside>
+
+---
+
+## 第 3 步：配置 `tech_stack` 和 `skip_phases`
+
+打开 `logos/logos-project.yaml` 并填入你的技术栈。这能给 AI 提供生成准确代码和文档所需的上下文。
+
+```yaml
+tech_stack:
+  language: TypeScript
+  framework: Next.js 15
+  database: PostgreSQL
+  hosting: Vercel
+  auth: NextAuth.js
+```
+
+如果你的项目没有 HTTP API 或数据库，声明 `skip_phases` 来告诉 OpenLogos 跳过哪些阶段：
+
+```yaml
+modules:
+  - id: core
+    name: Core
+    lifecycle: launched
+    bootstrap: adopted
+    skip_phases: [api, database, scenario]  # CLI tool, no HTTP API
+```
+
+| 取值 | 跳过 | 何时使用 |
+|-------|-------|-------------|
+| `api` | API 设计阶段 | 桌面应用、CLI 工具、库 |
+| `database` | DB 设计阶段 | 无状态服务、纯计算 |
+| `scenario` | 编排测试 | 通常与 `api` 搭配使用 |
+
+---
+
+## 第 4 步：验证你的测试设置
+
+检查 `openlogos verify` 能否找到并运行你的测试：
+
+```bash
+cat logos/logos.config.json
+```
+
+你应该能看到一个 `verify` 区块：
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "npm test"
+  }
+}
+```
+
+如果 `pre_run_command` 缺失或不对，手动编辑它：
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "npm test",
+    "sandbox_mode": "auto"
+  }
+}
+```
+
+<Aside type="tip">
+对于有独立的回归测试套件和增量测试套件的项目，使用 `regression_command` + `incremental_command` 替代 `pre_run_command`。详见 [verify 文档](/zh/cli/verify)。
+</Aside>
+
+---
+
+## 第 5 步：查看项目状态
+
+```bash
+openlogos status
+```
+
+你会看到类似这样的输出：
+
+```
+📊 OpenLogos Project Status
+
+⏭️  Phase 1 · Requirements — Document baseline skipped (existing project onboarding)
+⏭️  Phase 2 · Product Design — Document baseline skipped (existing project onboarding)
+⏭️  Phase 3-0 · Architecture — Document baseline skipped (existing project onboarding)
+
+🧩 Modules
+  ✅  core  [launched]
+       💡 Fill in baseline docs first (openlogos change add-baseline-docs)
+```
+
+带 `⏭️` 的阶段被跳过了——这是预期的。你的项目处于 `launched` 生命周期，这意味着**变更管理已立即激活**。从这里开始，每次代码改动都需要一份变更提案。
+
+---
+
+## 第 6 步：从一份 baseline-docs 提案开始
+
+你不必一次写完所有文档。推荐的做法是创建一份基线提案，并在开发功能的过程中逐步补全文档。
+
+```bash
+openlogos change add-baseline-docs
+```
+
+这会创建 `logos/changes/add-baseline-docs/`，内含 `proposal.md` 和 `tasks.md`。告诉 AI：
+
+```
+Read logos/changes/add-baseline-docs/proposal.md and help me fill it in.
+The goal is to document what already exists in this project.
+```
+
+### 先记录什么
+
+按 AI 最需要哪些信息来有效帮你的顺序来排优先级：
+
+| 优先级 | 文档 | 原因 |
+|----------|----------|-----|
+| 高 | 架构概览 | 技术栈、系统边界、关键决策 |
+| 高 | 核心场景时序图 | 主要流程实际如何运作 |
+| 中 | API 规格（如适用） | 现有的端点和契约 |
+| 中 | 测试用例规格 | 已经测了什么、怎么测的 |
+| 低 | 需求文档 | 业务背景，有用但不紧急 |
+
+<Aside type="tip">
+你不必在开始功能开发之前完成基线提案。让一份开放的 `add-baseline-docs` 提案与功能提案并行进行是完全可以的——只要把它们各自的范围分开即可。
+</Aside>
+
+---
+
+## 第 7 步：给你的测试加上 OpenLogos reporter
+
+为了让 `openlogos verify` 正常工作，你的测试需要把结果写入 `logos/resources/verify/test-results.jsonl`。给你的测试运行器加上 OpenLogos reporter。
+
+<Tabs>
+<TabItem label="Vitest">
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    reporters: ['default', './logos/spec/openlogos-reporter.ts'],
+  },
+});
+```
+</TabItem>
+<TabItem label="Jest">
+```javascript
+// jest.config.js
+module.exports = {
+  reporters: ['default', './logos/spec/openlogos-reporter.js'],
+};
+```
+</TabItem>
+<TabItem label="pytest">
+```ini
+# pytest.ini
+[pytest]
+addopts = --openlogos-reporter
+```
+</TabItem>
+</Tabs>
+
+然后用 OpenLogos ID 给你的测试命名：
+
+```typescript
+it('UT-S01-01: should register user with valid email', () => { ... });
+it('ST-S01-01: full registration flow', () => { ... });
+```
+
+完整的 reporter 规格和可直接复制的模板见[测试结果格式](/zh/specs/test-results)。
+
+---
+
+## 从这里开始的迭代工作流
+
+接入完成后，每次变更都遵循 Delta 工作流：
+
+<Steps>
+1. **创建提案**
+
+   ```bash
+   openlogos change my-feature
+   ```
+
+2. **让 AI 填写提案**
+
+   ```
+   Read logos/changes/my-feature/proposal.md and help me fill it in.
+   ```
+
+3. **产出 delta 文件** —— 更新的规格、API 变更、新的测试用例
+
+4. **合并**（人类确认点）
+
+   ```bash
+   openlogos merge my-feature
+   ```
+
+5. **实现代码 + 测试** —— AI 基于合并后的规格生成代码
+
+6. **验证**（人类确认点）
+
+   ```bash
+   openlogos verify
+   ```
+
+7. **归档**
+
+   ```bash
+   openlogos archive my-feature
+   ```
+</Steps>
+
+---
+
+## 常见问题
+
+**我必须先填完所有 Phase 1–3 文档才能做任何事吗？**
+
+不必。有了 `bootstrap: adopted`，Phase 1–3 文档都是可选的。你可以立即开始迭代，并在开发过程中逐步补全——每个功能提案都是记录相关场景和架构决策的好机会。
+
+**如果我的项目有多个模块怎么办？**
+
+运行 `openlogos module add <name>` 注册更多模块。每个模块都独立追踪自己的阶段进度和生命周期状态。
+
+```bash
+openlogos module add payment
+openlogos module add admin
+```
+
+**我能在一个已经用 `init` 初始化过的项目上用 `adopt` 吗？**
+
+不能——如果 `logos/logos.config.json` 已存在，`adopt` 会报错退出。如果你用 `init` 初始化过，又想切换到 `launched` 生命周期，请改用 `openlogos launch`。
+
+**`bootstrap: adopted` 究竟做了什么？**
+
+它告诉 OpenLogos 这个项目跳过了初始文档基线。效果如下：
+- `openlogos status` 把 Phase 1–3 显示为 `⏭️`（跳过）而非 ❌（缺失）
+- `openlogos next` 建议 `openlogos change add-baseline-docs` 而非"编写需求"
+- `openlogos launch` 不再要求 Phase 1–3 文档必须存在
+
+**我的测试命令很复杂——怎么配置？**
+
+直接编辑 `logos/logos.config.json`：
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "docker compose up -d && npm test && docker compose down"
+  }
+}
+```
+
+---
+
+## 后续步骤
+
+- [CLI 参考：adopt](/zh/cli/adopt) —— 含全部选项的完整命令参考
+- [变更管理](/zh/specs/change-management) —— Delta 工作流的详细运作方式
+- [测试结果格式](/zh/specs/test-results) —— 各主流测试框架的 reporter 模板
+- [首次 AI 协作](/zh/getting-started/first-collaboration) —— 一个完整功能周期的端到端演练

@@ -54,6 +54,8 @@ Writes to `logos/resources/prd/3-technical-plan/3-deployment/<module>-01-deploym
 - Post-deployment checklist
 - Smoke test scope definition
 
+Mermaid deployment topology diagrams must follow the same `graph` / `flowchart` syntax safety rule as architecture diagrams: use quoted labels in the form `ID["label"]`, such as `Pages["Cloudflare Pages"]`, `Worker["Cloudflare Worker<br/>staging"]`, and `PROXY["/voice/api proxy"]`. Avoid `PROXY[/voice/api proxy]`, because `[/` is Mermaid shape syntax and can break rendering. Use `subgraph "Staging Environment"` for subgraph names with spaces or symbols.
+
 ### Step 4: Update logos-project.yaml
 
 Writes `deployment_gates` section:

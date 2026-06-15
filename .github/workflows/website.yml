@@ -26,6 +26,14 @@ jobs:
 
       - run: npm ci
 
+      # 字体子集化依赖：build 的 subset:fonts 步骤调用 Python fontTools 生成中文字体子集。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install font subsetting deps
+        run: python -m pip install fonttools brotli
+
       - name: Build
         run: npm run build
 

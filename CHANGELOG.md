@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.10] - 2026-06-15
+
+### Fixed
+
+- **修复 Mermaid Skill 规则未随 CLI 包发布的问题** — 将 Mermaid flowchart/graph 节点标签安全规则与 sequenceDiagram 单行安全规则同步到根 `skills/` 发布源、英文 Skill 源和 Claude 插件模板，确保 `openlogos init/sync` 生成的 Skill 资产包含 `ID["标签文本"]`、`subgraph "名称"`、复杂内容下沉到步骤说明等约束。
+- **同步官网 Skill 文档与 tag 发版链路** — 通过 tag 驱动的 GitHub Actions 发布 CLI/npm 包，并串联官网 Skill 文档构建与 Cloudflare Pages 部署，避免仅手工部署官网导致发布包内核心 Skill 滞后。
+
 ## [0.10.9] - 2026-06-12
 
 ### Added

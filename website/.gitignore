@@ -1,0 +1,3 @@
+# 中文字体源文件（每字重 ~10MB，合计 ~50MB）。不进 git，
+# 由 `npm run fetch:fonts` 从 Google Fonts 按需下载，作为子集化输入。
+fonts-src/

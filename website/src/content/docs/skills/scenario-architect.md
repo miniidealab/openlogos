@@ -43,6 +43,8 @@ If detected, recommend returning to Phase 1 before proceeding.
 - Each arrow includes: `HTTP_METHOD /api/path — brief explanation`
 - Participant aliases: `U` (User), `W` (Web/Frontend), `API` (Server), `DB` (Database)
 - One scenario per file, numbered to correspond with Phase 1
+- Every arrow message must stay on one line
+- Keep participant aliases short ASCII identifiers; put long display names, JSON bodies, error payloads, field explanations, and side-effect details in the step narrative below the diagram
 
 ```mermaid
 sequenceDiagram
@@ -58,6 +60,8 @@ sequenceDiagram
     DB-->>W: Step 5: Return write result
     W-->>U: Step 6: Return registration result
 ```
+
+For Mermaid syntax safety, keep sequence diagrams focused on call order. Paths such as `POST /api/path` are fine in a message, but multi-line JSON, long error-code lists, Markdown tables, HTML, or heavily nested parentheses should be moved to **Step Narratives** or **Exception Case Design**.
 
 ## Step Narratives
 

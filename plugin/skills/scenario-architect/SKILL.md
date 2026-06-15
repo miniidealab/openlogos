@@ -66,6 +66,19 @@ Draw Mermaid sequence diagrams for each scenario, **strictly following these con
 - Numbering starts at 1 and increments consecutively
 - Each arrow includes a one-line behavior description: `HTTP_METHOD /api/path — brief explanation`
 
+**⚠️ Single-line constraint (required)**:
+- The full content of every arrow (`->>` or `-->>`) must stay on one line; do not insert line breaks inside the message text.
+- If a message is too long, shorten it instead of splitting it across lines.
+- Details such as UI button names, side effects, JSON bodies, or error payloads belong in the step narrative below the diagram, not inside arrow lines.
+- Violating this rule can make Mermaid parsing fail and break Markdown rendering.
+
+**⚠️ Mermaid sequenceDiagram syntax safety (required)**:
+- Participant aliases must be short ASCII identifiers such as `U`, `W`, `API`, or `DB`; do not put `/`, spaces, parentheses, or Chinese text in aliases.
+- Keep `participant <alias> as <display name>` display names short. Put complex technology stacks, ports, API paths, and extra explanations in the step narrative below the diagram.
+- Arrow messages must stay on one line. `POST /api/path` is fine, but multi-line JSON, long error bodies, HTML, Markdown tables, or deeply nested parentheses should not appear in Mermaid messages.
+- JSON examples, error-code lists, field explanations, and side-effect notes must go into "Step Descriptions" or "Exception Cases", not Mermaid message lines.
+- When unsure, simplify diagram messages so the diagram shows call order and the prose carries detail.
+
 **Participant conventions**:
 - Use short aliases: `U` (User/Browser), `W` (Web/Frontend), `SB` (Supabase), `DB` (Database)
 - Full name for each participant is noted in the `participant` declaration
