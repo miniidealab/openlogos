@@ -1,0 +1,100 @@
+# 内置 flow 模板：launched（变更生命周期流程）
+# 忠实翻译现有 ProposalStep 状态机（writing → ... → archived），行为不变（M1）。
+# 这是产品唯一源头；项目实例 logos/flow/launched.yaml 可 extends: builtin:launched 后只写差异。
+version: 1
+flow: launched
+
+subflows:
+  # ── 提案：写提案 + 写 delta（合并前人类/评审确认）──────────
+  - id: propose
+    name: 提案
+    nodes:
+      - id: write-proposal
+        name: 编写提案
+        skill: change-writer
+        working_agent: null
+        review_agent: null
+        produces: proposal.md
+        done_when: proposal_package_filled    # proposal.md + tasks.md 均脱模板（对应离开 writing）
+
+      - id: write-delta
+        name: 编写 delta
+        skill: change-writer
+        when: delta_required                  # 纯代码提案（无 [delta]）跳过
+        produces: deltas/
+        done_when: section_complete:delta     # 对应 delta-writing → ready-to-merge
+    gate: { type: human, skippable: true }     # 合并前评审（change-reviewer 介入点）
+
+  # ── 合并：生成 MERGE_PROMPT 并应用 delta（纯代码提案整段跳过）──
+  - id: merge
+    name: 合并
+    when: delta_required                       # 无 [delta] section 时整个 subflow 跳过
+    nodes:
+      - id: generate-merge-prompt
+        name: 生成合并指令
+        skill: merge-executor
+        produces: null
+        # 兼容现状 fallback：MERGE_PROMPT_GENERATED 或 MERGE_PROMPT.md
+        done_when: any_present:[MERGE_PROMPT_GENERATED, MERGE_PROMPT.md]
+      - id: apply-merge
+        name: 应用合并
+        skill: merge-executor
+        produces: null
+        # 兼容现状 fallback：SPEC_MERGED 或旧 MERGED marker
+        done_when: any_present:[SPEC_MERGED, MERGED]
+    gate: { type: none }
+
+  # ── 实现：code + verify（M2 将变 loop，收敛=测试绿）─────────
+  - id: implement
+    name: 实现
+    nodes:
+      - id: code
+        name: 代码实现
+        skill: code-implementor
+        working_agent: null
+        review_agent: null
+        produces: null
+        done_when: section_complete:code       # 对应 coding → ready-to-verify
+
+      - id: verify
+        name: 验收
+        skill: null                            # openlogos verify 驱动
+        produces: null
+        done_when: marker:VERIFY_PASS
+        fail_when: marker:VERIFY_FAIL          # 对应 verify-failed
+    loop: { until: tests_green, max_iters: 1 }  # until 为 M2 预留，M1 按退化环忽略
+    gate: { type: none }
+
+  # ── 交付：deploy + smoke ───────────────────────────────────
+  - id: deliver
+    name: 交付
+    nodes:
+      # 注意：launched 流程中 deployment_required / smoke_required 取【提案级】决策
+      # （resolveProposalDeploymentDecision，依据 proposal.md + [deploy] section），非模块默认。
+      - id: deploy
+        name: 部署执行
+        skill: deployment-executor
+        when: deployment_required
+        produces: null
+        done_when: marker:DEPLOY_DONE          # 对应 ready-to-deploy → deploy-done
+
+      - id: smoke
+        name: 冒烟
+        skill: null                            # openlogos smoke 驱动
+        when: smoke_required
+        produces: null
+        done_when: marker:SMOKE_PASS           # 对应 ready-to-smoke → smoke-passed
+        fail_when: marker:SMOKE_FAIL           # 对应 smoke-failed
+    # entry gate：在 deploy 之前确认（对应 ready-to-deploy 人类检查点）；默认不允许无人值守
+    gate: { type: human, position: entry, skippable: false }
+
+  # ── 收尾：归档 ─────────────────────────────────────────────
+  - id: close
+    name: 收尾
+    nodes:
+      - id: archive
+        name: 归档
+        skill: null                            # openlogos archive 驱动
+        produces: null
+        done_when: archived
+    gate: { type: none }

@@ -1,0 +1,130 @@
+# 内置 flow 模板：initial（首轮开发流程）
+# 忠实 1:1 翻译现有 PHASE_KEYS 13 段瀑布，行为不变（M1）。
+# 这是产品唯一源头；项目实例 logos/flow/initial.yaml 可 extends: builtin:initial 后只写差异。
+version: 1
+flow: initial
+
+subflows:
+  # ── WHY：需求 ───────────────────────────────────────────────
+  - id: why
+    name: WHY 需求
+    nodes:
+      - id: prd
+        name: 需求
+        skill: prd-writer
+        working_agent: null
+        review_agent: null
+        when: bootstrap != adopted
+        produces: logos/resources/prd/1-product-requirements/
+        done_when: dir_nonempty
+    gate: { type: human, skippable: true }   # Gate 1
+
+  # ── WHAT：产品设计 ─────────────────────────────────────────
+  - id: what
+    name: WHAT 产品设计
+    nodes:
+      - id: product-design
+        name: 产品设计
+        skill: product-designer
+        working_agent: null
+        review_agent: null
+        when: bootstrap != adopted
+        produces: logos/resources/prd/2-product-design/
+        done_when: dir_nonempty
+    gate: { type: human, skippable: true }   # Gate 2
+
+  # ── HOW：技术设计 ──────────────────────────────────────────
+  - id: how-design
+    name: HOW 技术设计
+    nodes:
+      - id: architecture
+        name: 架构
+        skill: architecture-designer
+        when: bootstrap != adopted
+        produces: logos/resources/prd/3-technical-plan/1-architecture/
+        done_when: dir_nonempty
+
+      - id: scenario-modeling
+        name: 场景时序
+        skill: scenario-architect
+        for_each: scenarios
+        produces: "logos/resources/prd/3-technical-plan/2-scenario-implementation/{module}-{scenario}-*.md"
+        done_when: all_present
+
+      - id: api-design
+        name: API 设计
+        skill: api-designer
+        when: api_enabled
+        produces: logos/resources/api/
+        done_when: dir_nonempty
+
+      - id: db-design
+        name: DB 设计
+        skill: db-designer
+        when: db_enabled
+        produces: logos/resources/database/
+        done_when: dir_nonempty
+
+      - id: deployment-design
+        name: 部署方案
+        skill: deployment-designer
+        # 不加 when：现状 phase.3-3 从不被显式 skip（既不在 SKIP_PHASE_MAP，也在
+        # NON_FALLBACK_SKIP_PHASES 中免于兜底跳过），故保持"始终活跃"以严格 1:1。
+        produces: logos/resources/prd/3-technical-plan/3-deployment/
+        done_when: dir_nonempty
+
+      - id: test-cases
+        name: 测试用例
+        skill: test-writer
+        for_each: scenarios
+        produces: "logos/resources/test/{module}-{scenario}-test-cases.md"
+        done_when: all_present
+
+      - id: orchestration-test
+        name: 编排测试
+        skill: test-orchestrator
+        when: scenario_enabled     # 现状由 skip_phases:scenario 控制（与 api 无关）
+        produces: logos/resources/scenario/
+        done_when: dir_nonempty
+    gate: { type: none }
+
+  # ── 实现：code + verify（M2 将变 loop，收敛=测试绿）─────────
+  - id: implement
+    name: 实现
+    nodes:
+      - id: code
+        name: 代码实现
+        skill: code-implementor
+        working_agent: null
+        review_agent: null
+        produces: logos/resources/implementation/
+        done_when: dir_nonempty
+
+      - id: verify
+        name: 验收
+        skill: null                # openlogos verify 驱动
+        # initial 首轮开发：完成信号是验收报告文件（PHASE_SUBPATHS[10]），非提案 marker
+        produces: logos/resources/verify/acceptance-report.md
+        done_when: file:logos/resources/verify/acceptance-report.md
+    loop: { until: tests_green, max_iters: 1 }   # until 为 M2 预留，M1 按退化环忽略
+    gate: { type: none }
+
+  # ── 交付：deploy + smoke ───────────────────────────────────
+  - id: deliver
+    name: 交付
+    nodes:
+      - id: deploy
+        name: 部署执行
+        skill: deployment-executor
+        when: deployment_required
+        produces: logos/resources/verify/deployment-report.md
+        done_when: file:logos/resources/verify/deployment-report.md
+
+      - id: smoke
+        name: 冒烟
+        skill: null                # openlogos smoke 驱动
+        when: smoke_required
+        produces: logos/resources/verify/smoke-report.md
+        done_when: file:logos/resources/verify/smoke-report.md
+    # entry gate：在 deploy 之前确认（而非等 deploy+smoke 跑完）；默认不允许无人值守
+    gate: { type: human, position: entry, skippable: false }
