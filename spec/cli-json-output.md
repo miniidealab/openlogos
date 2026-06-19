@@ -4,7 +4,7 @@
 
 ## 1. 概述
 
-OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect` 五类命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
+OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect`、`deploy-done`、`flow show` 等命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
 
 ### 1.1 通用约定
 
@@ -21,7 +21,7 @@ OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect` 五类命令
 
 ```jsonc
 {
-  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "module list"
+  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "deploy-done" | "module list" | "flow show"
   "version": "<cli-version>",
   "timestamp": "<ISO-8601>",
   "data": { ... }
@@ -670,3 +670,116 @@ if openlogos verify --format json 2>/dev/null | jq -e '.data.gate.result == "PAS
   echo "All tests passed!"
 fi
 ```
+
+---
+
+## 9. `openlogos flow show --format json`
+
+查看 OpenLogos 研发流程编排：默认输出内置 raw flow，`--resolved` 输出应用项目 overlay 合并后的生效流程。本命令为只读，不写文件、不接入 status / next 派生。
+
+### 9.1 用法
+
+```bash
+openlogos flow show                                  # 内置 raw flow（人类可读）
+openlogos flow show --format json                    # 内置 raw flow（JSON）
+openlogos flow show --resolved --format json         # overlay 合并后的生效流程（JSON）
+openlogos flow show --lifecycle launched --format json
+```
+
+### 9.2 JSON Schema（data 部分）
+
+```jsonc
+{
+  "lifecycle": "initial",          // "initial" | "launched"，本次查看的 flow
+  "resolved": false,               // 是否为 overlay 合并后的生效流程（--resolved 时为 true）
+  "overlay_applied": false,        // 是否实际应用了项目 logos/flow/<lifecycle>.yaml overlay
+  "builtin_version": "v1",         // 内置模板内容版本（对应 extends 的 @vN）
+  "warnings": [                    // 解析告警；无告警时为空数组
+    {
+      "code": "FLOW_VERSION_MISMATCH",
+      "message": "overlay 引用 builtin:initial@v1，内置模板当前为 v2，请复核 overlay 是否仍引用有效 node id"
+    }
+  ],
+  "flow": {                        // flow 结构本体（subflows / nodes / gates）
+    "flow": "initial",             // flow id（与文件名一致）
+    "version": 1,                  // flow 文件 schema 版本（整数）
+    "extends": null,               // resolved 时可保留来源；raw 内置为 null
+    "subflows": [
+      {
+        "id": "why",
+        "name": "WHY 需求",
+        "when": null,              // subflow 级条件，可选
+        "loop": null,              // 可选；M1 退化环
+        "gate": {
+          "type": "human",         // "none" | "human" |（"cmd" 为 M2 预留）
+          "position": "exit",      // "entry" | "exit"
+          "skippable": true
+        },
+        "nodes": [
+          {
+            "id": "prd",
+            "name": "需求",
+            "skill": "prd-writer",
+            "when": "bootstrap != adopted",
+            "for_each": null,
+            "produces": "logos/resources/prd/1-product-requirements/",
+            "done_when": "dir_nonempty",
+            "fail_when": null,
+            "skipped": false,        // resolved 输出：overlay skip 或 when=false 生效时为 true（节点保留不删除）
+            "overlay_op": null       // resolved 输出：触及该节点的 overlay 操作 "skip"|"add"|"modify"|"reorder"|null
+          }
+          // ... 其余 nodes
+        ]
+      }
+      // ... 其余 subflows
+    ]
+  }
+}
+```
+
+### 9.3 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `lifecycle` | string | 是 | 本次查看的 flow：`"initial"` 或 `"launched"` |
+| `resolved` | boolean | 是 | 是否为 overlay 合并后的生效流程；`--resolved` 时为 true |
+| `overlay_applied` | boolean | 是 | 是否实际应用了项目 `logos/flow/<lifecycle>.yaml` overlay（无 overlay 文件时为 false，即便 `--resolved`）|
+| `builtin_version` | string | 是 | 内置模板内容版本，对应 `extends` 的 `@vN`（如 `"v1"`）|
+| `warnings` | array | 是 | 解析告警列表；无告警为 `[]` |
+| `warnings[].code` | string | 是 | 告警码，如 `"FLOW_VERSION_MISMATCH"` |
+| `warnings[].message` | string | 是 | 告警可读描述 |
+| `flow` | object | 是 | flow 结构本体 |
+| `flow.flow` | string | 是 | flow id（与文件名一致）|
+| `flow.version` | number | 是 | flow 文件 schema 版本（整数）|
+| `flow.extends` | string \| null | 否 | overlay 基线引用；raw 内置为 null |
+| `flow.subflows` | array | 是 | 有序子流程列表 |
+| `flow.subflows[].id` | string | 是 | subflow id |
+| `flow.subflows[].name` | string | 是 | subflow 展示名 |
+| `flow.subflows[].when` | string \| null | 否 | subflow 级条件 |
+| `flow.subflows[].loop` | object \| null | 否 | loop 字段；M1 解析但按退化环处理 |
+| `flow.subflows[].gate` | object | 是 | 门禁定义 |
+| `flow.subflows[].gate.type` | string | 是 | `"none"` \| `"human"`（`"cmd"` 为 M2 预留）|
+| `flow.subflows[].gate.position` | string | 是 | `"entry"` \| `"exit"`（默认 exit）|
+| `flow.subflows[].gate.skippable` | boolean | 是 | auto 模式下该 human gate 是否允许自动跳过 |
+| `flow.subflows[].nodes` | array | 是 | 有序 node 列表 |
+| `flow.subflows[].nodes[].id` | string | 是 | node id，flow 内全局唯一 |
+| `flow.subflows[].nodes[].name` | string | 是 | node 展示名 |
+| `flow.subflows[].nodes[].skill` | string \| null | 否 | 绑定 skill |
+| `flow.subflows[].nodes[].when` | string \| null | 否 | 条件谓词 |
+| `flow.subflows[].nodes[].for_each` | string \| null | 否 | fan-out 维度 |
+| `flow.subflows[].nodes[].produces` | string \| null | 否 | 产出位置/模板 |
+| `flow.subflows[].nodes[].done_when` | string \| null | 否 | 完成判定谓词 |
+| `flow.subflows[].nodes[].fail_when` | string \| null | 否 | 失败/阻塞判定谓词 |
+| `flow.subflows[].nodes[].skipped` | boolean | 否 | **resolved 输出专用**：节点是否被标记 skipped（overlay `skip` 或 `when=false` 生效；节点**保留不删除**）。raw 输出省略或为 false |
+| `flow.subflows[].nodes[].overlay_op` | string \| null | 否 | **resolved 输出专用**：触及该节点的 overlay 操作 `"skip"`/`"add"`/`"modify"`/`"reorder"`/null；raw 输出为 null |
+
+### 9.4 错误语义
+
+`flow show --format json` 的错误仍使用通用错误 envelope（见「错误处理」一节），错误码建议包括：
+
+- `PROJECT_NOT_INITIALIZED` — 当前目录不是 OpenLogos 项目
+- `FLOW_NOT_FOUND` — 包内内置模板或指定 `--lifecycle` 对应的 flow 不存在
+- `FLOW_SCHEMA_INVALID` — flow 文件或 overlay 基础 schema 校验失败（未知 op、缺必填字段、target node id 不存在等），message 应指出具体非法位置
+- `FLOW_VERSION_MISMATCH` — 仅作为 `warnings[]` 中的**告警码**出现（不阻断解析）；不作为错误 envelope 的 `error.code`
+
+错误分支不输出半成品 `flow`；schema 非法时必须以 `FLOW_SCHEMA_INVALID` 失败，而非静默返回部分合并结果。

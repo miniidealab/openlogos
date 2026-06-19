@@ -224,6 +224,27 @@ overlay:                         # 按 node id 寻址的操作列表（strategic
 - **内置模板带版本号**（`builtin/initial@v1`）：内置改名/删节点而 overlay 仍引用旧 id 时可检测并报错。
 - **可调试性**：必须提供 `openlogos flow show --resolved`，输出"基线 + overlay 合并后"的生效流程。
 
+### 10.1 内置模板内容版本来源（builtin_version）
+
+`extends: builtin:<flow>@vN` 中的 `@vN` 指**内置模板内容版本**，与文件 `version`
+（flow 文件 schema 版本，整数）**互不相关**。内置模板内容版本由 **loader 维护一份内部映射**
+作为唯一来源（不依赖 YAML 内字段，避免隐式复用 schema version）：
+
+- 当前映射：`initial → v1`、`launched → v1`。
+- 该映射是 `openlogos flow show` 输出 `builtin_version` 字段、以及 overlay `@vN` 不匹配告警
+  （`FLOW_VERSION_MISMATCH`）比对的**唯一依据**。
+- 当内置模板（`spec/flow/*.yaml`）内容发生破坏性变更（增删/改名 node、调整结构等）时，
+  **必须同步 bump** loader 中该 flow 的内容版本。
+- **禁止**用文件 `version`（schema 版本）隐式充当内容版本。
+
+### 10.2 overlay skip 在 resolved 输出的表达
+
+overlay `op: skip` **等价 `when:false`**：resolved flow 中该节点**保留不删除**，仅被标记 skipped。
+机器输出（`flow show --resolved --format json`）通过 node 字段表达，详见 `spec/cli-json-output.md`：
+- `skipped: true` — 节点被 overlay skip 或 `when=false` 置为跳过；
+- `overlay_op: "skip" | "add" | "modify" | "reorder" | null` — 触及该节点的 overlay 操作来源。
+raw 输出（未应用 overlay）中 `skipped` 为 false、`overlay_op` 为 null。
+
 ## 11. 脚本插件（pre/post_script）
 
 - `pre_script` / `post_script` 是节点级插件钩子（如建分支 / 开 PR / 发通知）。
