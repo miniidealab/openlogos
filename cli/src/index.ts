@@ -15,6 +15,7 @@ import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
 import { moduleList, moduleAdd, moduleRename, moduleRemove } from './commands/module.js';
+import { flowShow } from './commands/flow.js';
 import { VERSION, parseFormat } from './lib/json-output.js';
 
 export { VERSION } from './lib/json-output.js';
@@ -66,11 +67,14 @@ Commands:
   detect             Show CLI version and project detection info
   index              Generate an AI-ready prompt to rebuild resource_index with file-content-based desc
   module <sub>       Manage project modules (list / add <name> / rename <old> <new> / remove <name>)
+  flow show          Show the dev-flow orchestration (built-in or overlay-resolved)
+                       --resolved                   Apply project logos/flow overlay
+                       --lifecycle <initial|launched>  Pick which flow (default: inferred)
 
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, verify, smoke, deploy-done, detect)
+  --format <json>    Output in JSON format (supported: status, next, verify, smoke, deploy-done, detect, flow show)
 
 Examples:
   openlogos init my-saas-project
@@ -186,6 +190,19 @@ async function main() {
     case 'index':
       indexCommand();
       break;
+    case 'flow': {
+      const sub = args[1];
+      if (sub === 'show') {
+        const resolved = args.includes('--resolved');
+        const lifecycle = args.includes('--lifecycle') ? args[args.indexOf('--lifecycle') + 1] : undefined;
+        flowShow(format, { resolved, lifecycle });
+      } else {
+        console.error(`Unknown flow subcommand: ${sub ?? '(none)'}`);
+        console.error('Usage: openlogos flow show [--resolved] [--lifecycle <initial|launched>] [--format json]');
+        process.exit(1);
+      }
+      break;
+    }
     case 'module': {
       const sub = args[1];
       switch (sub) {

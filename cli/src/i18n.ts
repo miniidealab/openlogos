@@ -212,6 +212,11 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // next
     'next.title': 'Next Step',
+    'flow.rawBuiltin': 'built-in @{version}',
+    'flow.resolvedApplied': 'resolved · project overlay applied',
+    'flow.resolvedNoOverlay': 'resolved · no project overlay',
+    'flow.notSkippable': 'not skippable',
+    'flow.resolvedHint': 'Tip: use --resolved to view the effective flow after applying project overlay.',
     'next.createChange': 'Create a change proposal before modifying any code',
     'next.createChangeDetail': 'Run `openlogos change <slug>` to create a new change proposal and activate the guard.',
     'next.fillProposal': 'Fill in proposal.md and tasks.md for the active change',
@@ -443,6 +448,11 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // next
     'next.title': '下一步',
+    'flow.rawBuiltin': '内置模板 @{version}',
+    'flow.resolvedApplied': 'resolved · 已应用项目 overlay',
+    'flow.resolvedNoOverlay': 'resolved · 无项目 overlay',
+    'flow.notSkippable': '不可跳过',
+    'flow.resolvedHint': '提示：使用 --resolved 查看应用项目 overlay 后的生效流程。',
     'next.createChange': '修改代码前必须先创建变更提案',
     'next.createChangeDetail': '运行 `openlogos change <slug>` 创建变更提案并激活 guard。',
     'next.fillProposal': '填写活跃变更的 proposal.md 和 tasks.md',
