@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
+import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys } from '../lib/flow-derive.js';
+import { listFiles } from '../lib/list-files.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { readProjectYaml, isAdoptedBootstrap } from '../lib/project-yaml.js';
@@ -83,7 +85,7 @@ interface ScenarioCoverage {
   missing: string[];
 }
 
-interface PhaseProgressItem {
+export interface PhaseProgressItem {
   done: boolean;
   skipped: boolean;
   skip_reason?: string;
@@ -662,20 +664,8 @@ export function detectProposalStep(
   return 'delta-writing';
 }
 
-export function listFiles(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  try {
-    if (statSync(dir).isFile()) return [basename(dir)];
-    return readdirSync(dir, { recursive: true })
-      .map(f => String(f))
-      .filter(f => {
-        const full = join(dir, f);
-        return statSync(full).isFile() && !f.endsWith('.gitkeep');
-      });
-  } catch {
-    return [];
-  }
-}
+// listFiles 已下沉到 ../lib/list-files.js（断开与 flow-derive.ts 的运行时循环依赖）；re-export 保持对外接口不变。
+export { listFiles };
 
 // skip_phases value → PHASE_KEY mapping
 const SKIP_PHASE_MAP: Record<string, string> = {
@@ -695,7 +685,8 @@ function deriveExplicitSkipPhaseKeys(mod: ModuleInfo): Set<string> {
   return explicitSkip;
 }
 
-function deriveModulePhaseProgress(
+// 保留旧硬编码派生，供 B1 测试期「新派生==旧逻辑」并跑等价断言对照（不再用于生产路径）。
+export function deriveModulePhaseProgress(
   root: string,
   mod: ModuleInfo,
   scenarios: Array<{ id: string }>,
@@ -908,8 +899,8 @@ function buildModuleStatusItem(
     };
   }
 
-  // initial lifecycle
-  const { progress, currentPhase } = deriveModulePhaseProgress(root, mod, scenarios, isMultiModule);
+  // initial lifecycle —— B1：改用 builtin flow 派生（1:1 不改行为）
+  const { progress, currentPhase } = deriveModulePhaseProgressViaFlow(root, mod, scenarios, isMultiModule);
   const currentPhaseLabel = currentPhase ? t(locale as Parameters<typeof t>[0], currentPhase) : null;
 
   let suggestion: string;
@@ -960,6 +951,8 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
   // Global skip: only skip a phase if ALL initial modules declare it in skip_phases
   // (intersection, not union — one module needing a phase is enough to keep it)
   const globalSkipPhaseKeys = new Set<string>();
+  // B1：phase 计划改由 builtin flow 派生（顺序/路径/场景标记/skip 来源均来自 flow）
+  const phasePlan = buildInitialPhasePlan();
 
   const projectYaml = readProjectYaml(root);
   yamlDiagnostics = projectYaml.yaml_diagnostics;
@@ -991,9 +984,9 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     // Intersection: a phase key is globally skipped only if every initial module skips it
     const initialModules = rawModules.filter(m => m.lifecycle === 'initial');
     if (initialModules.length > 0) {
-      for (const phaseKey of PHASE_KEYS) {
-        if (initialModules.every(m => deriveExplicitSkipPhaseKeys(m).has(phaseKey))) {
-          globalSkipPhaseKeys.add(phaseKey);
+      for (const item of phasePlan) {
+        if (initialModules.every(m => flowExplicitSkipPhaseKeys(m, phasePlan).has(item.phaseKey))) {
+          globalSkipPhaseKeys.add(item.phaseKey);
         }
       }
     }
@@ -1002,15 +995,13 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     scenarios = projectYaml.data.scenarios;
   }
 
-  // ── Build top-level phases, applying skip_phases ──
-  const phasePaths = PHASE_SUBPATHS.map(p => join(root, p));
-
-  const phases: PhaseStatus[] = PHASE_KEYS.map((key, i) => ({
-    key,
-    label: t(locale, key),
-    path: phasePaths[i],
+  // ── Build top-level phases from flow plan, applying skip_phases ──
+  const phases: PhaseStatus[] = phasePlan.map(item => ({
+    key: item.phaseKey,
+    label: t(locale, item.phaseKey),
+    path: join(root, item.subpath),
     done: false,
-    skipped: globalSkipPhaseKeys.has(key), // pre-mark explicitly skipped phases
+    skipped: globalSkipPhaseKeys.has(item.phaseKey), // pre-mark explicitly skipped phases
     files: [],
   }));
 
