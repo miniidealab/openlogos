@@ -1,12 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { readLocale, t } from '../i18n.js';
+import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData } from './status.js';
 import type { ProposalStep } from './status.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
+import { gateForProposalStep } from '../lib/flow-derive.js';
 
 export interface NextModuleItem {
   id: string;
@@ -30,6 +31,35 @@ export interface NextData {
   active_change: string | null;
   proposal_step: string | null;
   modules?: NextModuleItem[];
+  // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
+  auto?: boolean;
+  gate_id?: string | null;
+  skippable?: boolean | null;
+  gate_auto_passed?: boolean;
+}
+
+/** 在活跃提案目录追加一行 GATE_AUTO_PASSED JSONL 审计（总是追加、不去重）。 */
+function appendGateAutoPassed(root: string, slug: string, gateId: string, step: string): void {
+  const path = join(root, 'logos', 'changes', slug, 'GATE_AUTO_PASSED');
+  const line = JSON.stringify({ gate_id: gateId, proposal_step: step, timestamp: new Date().toISOString() });
+  appendFileSync(path, line + '\n');
+}
+
+/** auto 放行时的建议文案（仅 ready-to-merge 这类可跳 gate 会用到）。 */
+function autoPassMessage(locale: Locale, gateId: string, step: string, slug: string): { action: string; command: string | null; detail: string } {
+  const command = step === 'ready-to-merge' ? `openlogos merge ${slug}` : null;
+  if (locale === 'zh') {
+    return {
+      action: `auto：可跳人类确认点已放行（gate: ${gateId}）`,
+      command,
+      detail: 'gate 已自动放行，宿主可直接执行、无需人类授权；审计已追加 GATE_AUTO_PASSED。',
+    };
+  }
+  return {
+    action: `auto: skippable human gate passed (gate: ${gateId})`,
+    command,
+    detail: 'Gate auto-passed; host may proceed without human authorization. GATE_AUTO_PASSED audit appended.',
+  };
 }
 
 function buildModuleNextItem(
@@ -155,7 +185,7 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
   }
 }
 
-export function next(format: OutputFormat = 'text', moduleId?: string) {
+export function next(format: OutputFormat = 'text', moduleId?: string, auto: boolean = false) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
 
@@ -291,6 +321,24 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
     }
   }
 
+  // 切片 C：--auto skip-gate（最小 A 方案，仅作用于现有 launched 停顿点）。默认（无 --auto）行为 1:1 不变。
+  let autoGateId: string | null = null;
+  let autoSkippable: boolean | null = null;
+  let gateAutoPassed = false;
+  if (auto) {
+    const gate = data.proposal_step ? gateForProposalStep(data.proposal_step) : null;
+    autoGateId = gate ? gate.gate_id : null;
+    autoSkippable = gate ? gate.skippable : null;
+    if (gate && gate.skippable && data.active_change) {
+      appendGateAutoPassed(root, data.active_change, gate.gate_id, data.proposal_step!);
+      gateAutoPassed = true;
+      const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
+      action = passed.action; command = passed.command; detail = passed.detail;
+      const mi = moduleItems?.find(m => m.active_change === data.active_change);
+      if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+    }
+  }
+
   const result: NextData = {
     action,
     command,
@@ -298,6 +346,7 @@ export function next(format: OutputFormat = 'text', moduleId?: string) {
     active_change: data.active_change,
     proposal_step: data.proposal_step,
     ...(moduleItems !== undefined ? { modules: moduleItems } : {}),
+    ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
   };
 
   if (format === 'json') {

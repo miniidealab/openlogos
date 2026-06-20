@@ -16,6 +16,7 @@ import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
 import { moduleList, moduleAdd, moduleRename, moduleRemove } from './commands/module.js';
 import { flowShow } from './commands/flow.js';
+import { watch } from './commands/watch.js';
 import { VERSION, parseFormat } from './lib/json-output.js';
 
 export { VERSION } from './lib/json-output.js';
@@ -53,6 +54,10 @@ Commands:
                        --module <id>               Filter to a specific module
   next               Show the single most actionable next step
                        --module <id>               Filter to a specific module
+                       --auto                       Auto-pass skippable human gates (records GATE_AUTO_PASSED)
+  watch              Stream live derived dev-flow status (read-only)
+                       --module <id>               Filter to a specific module
+                       --interval <seconds>        Polling interval (default: 2)
   verify             Verify test results against test case specs
   smoke              Verify deployed environment against smoke test specs
                        --env <name>                 Target environment label
@@ -74,7 +79,7 @@ Commands:
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, verify, smoke, deploy-done, detect, flow show)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show)
 
 Examples:
   openlogos init my-saas-project
@@ -153,7 +158,14 @@ async function main() {
     }
     case 'next': {
       const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
-      next(format, moduleArg);
+      next(format, moduleArg, args.includes('--auto'));
+      break;
+    }
+    case 'watch': {
+      const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
+      const intervalRaw = args.includes('--interval') ? args[args.indexOf('--interval') + 1] : undefined;
+      const interval = intervalRaw !== undefined ? Number(intervalRaw) : undefined;
+      watch(format, moduleArg, Number.isFinite(interval) ? interval : undefined);
       break;
     }
     case 'verify':

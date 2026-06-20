@@ -342,3 +342,35 @@ export function detectProposalStepViaFlow(
   if (mergeableDeltaCount > 0 && allTasksChecked(tasksContent)) return 'ready-to-merge';
   return 'delta-writing';
 }
+
+// ── 切片 C：next --auto skip-gate 的 gate 查询助手 ──
+
+export interface GateInfo {
+  /** gate_id 派生值 = `<subflow.id>-<gate.position>`（见 spec/cli-json-output.md）。 */
+  gate_id: string;
+  /** 该人类 gate 是否允许 auto 跳过。 */
+  skippable: boolean;
+}
+
+/**
+ * proposal_step → 其所处的 launched subflow gate 的映射（最小 A 方案，引擎规则）。
+ * 仅 launched 的两个人类停顿点：ready-to-merge（propose 出口）、ready-to-deploy（deliver 入口）。
+ */
+const STEP_TO_GATE_SUBFLOW: Record<string, string> = {
+  'ready-to-merge': 'propose',
+  'ready-to-deploy': 'deliver',
+};
+
+/**
+ * 取某 proposal_step 对应 launched gate 的 `{gate_id, skippable}`；无对应 human gate 时返回 null。
+ * gate_id 与 skippable 均从 builtin launched flow 派生（flow 漂移由 S24 守卫测试兜底）。
+ */
+export function gateForProposalStep(step: string): GateInfo | null {
+  const subflowId = STEP_TO_GATE_SUBFLOW[step];
+  if (!subflowId) return null;
+  const flow = loadBuiltinFlow('launched');
+  const sub = flow.subflows.find(s => s.id === subflowId);
+  if (!sub || !sub.gate || sub.gate.type !== 'human') return null;
+  const position = sub.gate.position ?? 'exit';
+  return { gate_id: `${subflowId}-${position}`, skippable: Boolean(sub.gate.skippable) };
+}
