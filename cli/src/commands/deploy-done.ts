@@ -4,8 +4,8 @@ import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { readProjectYaml } from '../lib/project-yaml.js';
+import { detectProposalStepViaFlow } from '../lib/flow-derive.js';
 import {
-  detectProposalStep,
   parseTaskSections,
   resolveProposalDeploymentDecision,
   type ModuleInfo,
@@ -186,7 +186,7 @@ export function deployDone(format: OutputFormat = 'text', environment?: string) 
   const markerRelativePath = `logos/changes/${active.slug}/DEPLOY_DONE`;
   writeFileSync(join(root, markerRelativePath), '');
   const clearedSmokeMarkers = clearSmokeMarkers(active.proposalDir);
-  const nextStep = normalizeNextStep(detectProposalStep(active.proposalDir, moduleDefaults));
+  const nextStep = normalizeNextStep(detectProposalStepViaFlow(active.proposalDir, moduleDefaults));
 
   const data: DeployDoneData = {
     slug: active.slug,

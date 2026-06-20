@@ -9,12 +9,28 @@
  * - 只用 builtin flow，**不应用项目 overlay**（overlay 驱动留后续切片）。
  * - 两套 legacy done 语义由消费端决定：顶层 phases[] = any-present、per-module = all-present（场景覆盖）。
  * - 场景文件保留 legacy `includes()` 子串匹配（非 glob）。
- * - launched 的 detectProposalStep 不在本引擎范围。
+ *
+ * 切片 B2：新增 `detectProposalStepViaFlow`——launched 模块的 ProposalStep 改由 builtin
+ * launched flow 派生。launched.yaml 提供节点序列与 done_when/fail_when 的 marker/section 名；
+ * marker 非对称优先级与提案级部署决策（resolveProposalDeploymentDecision）作为引擎规则保留，
+ * 逐分支镜像旧 detectProposalStep（1:1 不改行为）。
  */
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isAdoptedBootstrap } from './project-yaml.js';
-import { loadBuiltinFlow } from './flow.js';
+import { loadBuiltinFlow, FlowError } from './flow.js';
 import { listFiles } from './list-files.js';
+import {
+  resolveProposalDeploymentDecision,
+  getDeploySectionSummary,
+  parseTaskSections,
+  isProposalTemplateFilled,
+  isTasksTemplateFilled,
+  countMergeableDeltaFiles,
+  allTasksChecked,
+  hasSmokeCasesForProposal,
+} from './proposal-lifecycle.js';
+import type { ProposalStep } from './proposal-lifecycle.js';
 import type { ModuleInfo, PhaseProgressItem } from '../commands/status.js';
 
 /** node id → 原 PHASE_KEYS（13 个 1:1）。维护在 code 侧以保持 spec/flow/*.yaml 纯净。 */
@@ -195,3 +211,134 @@ export const NON_FALLBACK_SKIP_PHASE_KEYS = new Set([
   'phase.3-7-deploy',
   'phase.3-8-smoke',
 ]);
+
+// ── 切片 B2：launched 模块 ProposalStep 派生 ──
+
+interface LaunchedMarkers {
+  verifyFail: string;
+  verifyPass: string;
+  mergePrompt: string[];
+  merged: string[];
+  deployDone: string;
+  smokeFail: string;
+  smokePass: string;
+}
+
+function markerName(pred: string | null | undefined): string {
+  if (!pred || !pred.startsWith('marker:')) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 期望 marker: 谓词，实际为 ${pred}`);
+  }
+  return pred.slice('marker:'.length).trim();
+}
+
+function anyPresentList(pred: string | null | undefined): string[] {
+  if (!pred || !pred.startsWith('any_present:')) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 期望 any_present: 谓词，实际为 ${pred}`);
+  }
+  const inner = pred.slice('any_present:'.length).trim().replace(/^\[|\]$/g, '');
+  return inner.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/** 从 builtin launched flow 提取生命周期 marker/section 名（flow 声明，引擎据此判定）。 */
+function extractLaunchedMarkers(): LaunchedMarkers {
+  const flow = loadBuiltinFlow('launched');
+  const byId: Record<string, { done_when?: string | null; fail_when?: string | null }> = {};
+  for (const sub of flow.subflows) for (const n of sub.nodes) byId[n.id] = n;
+  const need = (id: string) => {
+    const n = byId[id];
+    if (!n) throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 缺少节点 ${id}`);
+    return n;
+  };
+  return {
+    verifyFail: markerName(need('verify').fail_when),
+    verifyPass: markerName(need('verify').done_when),
+    mergePrompt: anyPresentList(need('generate-merge-prompt').done_when),
+    merged: anyPresentList(need('apply-merge').done_when),
+    deployDone: markerName(need('deploy').done_when),
+    smokeFail: markerName(need('smoke').fail_when),
+    smokePass: markerName(need('smoke').done_when),
+  };
+}
+
+/**
+ * 复现 detectProposalStep：launched 模块 ProposalStep 改由 builtin launched flow 派生。
+ * marker/section 名来自 launched.yaml；分支优先级（VERIFY_FAIL 全局最先、SMOKE 仅在 deploy 完成子块内）
+ * 与提案级部署决策（resolveProposalDeploymentDecision）为引擎规则，1:1 镜像旧逻辑。
+ */
+export function detectProposalStepViaFlow(
+  proposalDir: string,
+  moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
+): ProposalStep {
+  const m = extractLaunchedMarkers();
+  const exists = (name: string) => existsSync(join(proposalDir, name));
+  const anyExists = (names: string[]) => names.some(exists);
+  const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
+    ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
+
+  // verify.fail_when（VERIFY_FAIL）—— 全局最先
+  if (exists(m.verifyFail)) return 'verify-failed';
+
+  // verify.done_when（VERIFY_PASS）—— 进入 deliver/deploy 子块
+  if (exists(m.verifyPass)) {
+    const deploy = getDeploySectionSummary(tasksContent);
+    const hasDeployTasks = Boolean(deploy && deploy.total > 0);
+    const deploymentDecision = resolveProposalDeploymentDecision(proposalDir, moduleDefaults);
+
+    if (deploymentDecision.deployment_decision_conflict) return 'verify-passed';
+    if (deploymentDecision.deployment_required !== true) return 'verify-passed';
+    if (!hasDeployTasks) return 'ready-to-deploy';
+
+    const deployDone = exists(m.deployDone);
+    const deployTasksChecked = deploy!.checked === deploy!.total;
+    if (!deployDone || !deployTasksChecked) return 'ready-to-deploy';
+
+    // smoke.fail_when/done_when —— 仅在 deploy 完成子块内评估（非全局优先）
+    if (exists(m.smokeFail)) return 'smoke-failed';
+    if (exists(m.smokePass)) return 'smoke-passed';
+    if (deploymentDecision.smoke_required === false) return 'deploy-done';
+    if (deploymentDecision.smoke_required === true) return 'ready-to-smoke';
+    if (hasSmokeCasesForProposal(proposalDir)) return 'ready-to-smoke';
+    return 'deploy-done';
+  }
+
+  // apply-merge.done_when（SPEC_MERGED | MERGED）
+  if (anyExists(m.merged)) {
+    const sections = parseTaskSections(tasksContent);
+    if (sections !== null) {
+      const code = sections['code'];
+      // section_complete legacy 语义：present-but-empty（total=0）不算完成
+      if (!code || (code.total > 0 && code.checked === code.total)) return 'ready-to-verify';
+      return 'coding';
+    }
+    return 'ready-to-verify';
+  }
+
+  // generate-merge-prompt.done_when（MERGE_PROMPT_GENERATED | MERGE_PROMPT.md）
+  if (anyExists(m.mergePrompt)) return 'merge-generated';
+
+  // write-proposal.done_when（proposal_package_filled = proposal.md + tasks.md 均脱模板）
+  const proposalContent = existsSync(join(proposalDir, 'proposal.md'))
+    ? readFileSync(join(proposalDir, 'proposal.md'), 'utf-8') : '';
+  if (!isProposalTemplateFilled(proposalContent) || !isTasksTemplateFilled(tasksContent)) {
+    return 'writing';
+  }
+
+  // write-delta.done_when（section_complete:delta）/ code（section_complete:code）
+  const sections = parseTaskSections(tasksContent);
+  if (sections !== null) {
+    const delta = sections['delta'];
+    const code = sections['code'];
+    if (!delta) {
+      // 无 [delta] section = 纯代码提案（区别于 present-but-empty 的 [delta]）
+      if (!code || (code.total > 0 && code.checked === code.total)) return 'ready-to-verify';
+      return 'coding';
+    }
+    if (delta.total > 0 && delta.checked === delta.total) return 'ready-to-merge';
+    return 'delta-writing';
+  }
+
+  // 旧格式兜底
+  const mergeableDeltaCount = countMergeableDeltaFiles(proposalDir);
+  if (mergeableDeltaCount > 0 && allTasksChecked(tasksContent)) return 'ready-to-merge';
+  return 'delta-writing';
+}
