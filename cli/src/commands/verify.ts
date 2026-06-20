@@ -4,7 +4,6 @@ import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import {
-  DEFAULT_VERIFY_RESULT_PATH,
   readVerifyConfig,
   type NormalizedVerifyConfig,
 } from '../lib/verify-config.js';
@@ -26,7 +25,6 @@ export interface TestResult {
   scenario?: string;
 }
 
-const DEFAULT_RESULT_PATH = DEFAULT_VERIFY_RESULT_PATH;
 const TEST_CASES_DIR = 'logos/resources/test';
 const REPORT_DIR = 'logos/resources/verify';
 const MANUAL_SUFFIX = /\[manual\]/i;
