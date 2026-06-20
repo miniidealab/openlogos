@@ -2,6 +2,9 @@ import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys, detectProposalStepViaFlow } from '../lib/flow-derive.js';
+import { deriveOverlayView } from '../lib/flow-overlay-derive.js';
+import type { OverlayNode, CurrentNode } from '../lib/flow-overlay-derive.js';
+import { FlowError } from '../lib/flow.js';
 import { listFiles } from '../lib/list-files.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -121,6 +124,9 @@ export interface ModuleStatusItem {
     deploy_tasks?: TaskItem[];
   } | null;
   suggestion: string;
+  // M2 切片 1a：overlay 驱动派生（仅存在已到达 overlay-added 节点 / 当前为 overlay-added 时输出）
+  overlay_nodes?: OverlayNode[];
+  current_node?: CurrentNode;
 }
 
 export interface StatusData {
@@ -141,6 +147,9 @@ export interface StatusData {
   active_change: string | null;
   proposal_step: ProposalStep | null;
   yaml_diagnostics: YamlDiagnostics | null;
+  // M2 切片 1a：legacy 无 modules[] 项目的 overlay 顶层回退（有 modules[] 时挂 modules[] 下）
+  overlay_nodes?: OverlayNode[];
+  current_node?: CurrentNode;
 }
 
 // Phase paths indexed by PHASE_KEYS order
@@ -391,6 +400,22 @@ function buildModuleStatusItem(
             : 'Run openlogos change <slug> to create a new change proposal');
     }
 
+    const launchedProposalDir = guardActiveChange && guardModule === mod.id
+      ? join(root, 'logos', 'changes', guardActiveChange) : null;
+    const overlay = deriveOverlayView(root, mod, scenarios, launchedProposalDir, isMultiModule);
+    if (overlay && activeChange && overlay.proposal_step_override) {
+      // 当前节点为 overlay-added → proposal_step 回退到前序最近 builtin step（合法枚举）
+      activeChange.proposal_step = overlay.proposal_step_override as ProposalStep;
+      activeChange.proposal_step_label = t(locale as Parameters<typeof t>[0], `status.proposalStep.${overlay.proposal_step_override}`);
+    }
+    if (overlay && overlay.current_node) {
+      // Review F3：当前卡在未完成 overlay 节点 → suggestion 指向该节点，不再提示后续 builtin gate/merge/verify
+      const cn = overlay.current_node;
+      suggestion = locale === 'zh'
+        ? `先完成 overlay 节点「${cn.name}」（${cn.id}）${cn.state === 'failed' ? '（失败，需修复）' : ''}；其完成判定见 flow 后再继续。`
+        : `Finish overlay node "${cn.name}" (${cn.id})${cn.state === 'failed' ? ' (failed — fix it)' : ''} before continuing.`;
+    }
+
     return {
       id: mod.id,
       name: mod.name,
@@ -401,6 +426,8 @@ function buildModuleStatusItem(
       phase_progress: null,
       active_change: activeChange,
       suggestion,
+      ...(overlay && overlay.overlay_nodes.length > 0 ? { overlay_nodes: overlay.overlay_nodes } : {}),
+      ...(overlay && overlay.current_node ? { current_node: overlay.current_node } : {}),
     };
   }
 
@@ -425,6 +452,14 @@ function buildModuleStatusItem(
       : (locale === 'zh' ? '继续推进当前阶段' : 'Continue current phase');
   }
 
+  const overlay = deriveOverlayView(root, mod, scenarios, null, isMultiModule);
+  if (overlay && overlay.current_node) {
+    const cn = overlay.current_node;
+    suggestion = locale === 'zh'
+      ? `先完成 overlay 节点「${cn.name}」（${cn.id}）${cn.state === 'failed' ? '（失败，需修复）' : ''}后再继续。`
+      : `Finish overlay node "${cn.name}" (${cn.id})${cn.state === 'failed' ? ' (failed — fix it)' : ''} before continuing.`;
+  }
+
   return {
     id: mod.id,
     name: mod.name,
@@ -435,6 +470,8 @@ function buildModuleStatusItem(
     phase_progress: progress,
     active_change: null,
     suggestion,
+    ...(overlay && overlay.overlay_nodes.length > 0 ? { overlay_nodes: overlay.overlay_nodes } : {}),
+    ...(overlay && overlay.current_node ? { current_node: overlay.current_node } : {}),
   };
 }
 
@@ -457,7 +494,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
   // (intersection, not union — one module needing a phase is enough to keep it)
   const globalSkipPhaseKeys = new Set<string>();
   // B1：phase 计划改由 builtin flow 派生（顺序/路径/场景标记/skip 来源均来自 flow）
-  const phasePlan = buildInitialPhasePlan();
+  const phasePlan = buildInitialPhasePlan(root);
 
   const projectYaml = readProjectYaml(root);
   yamlDiagnostics = projectYaml.yaml_diagnostics;
@@ -506,7 +543,8 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     label: t(locale, item.phaseKey),
     path: join(root, item.subpath),
     done: false,
-    skipped: globalSkipPhaseKeys.has(item.phaseKey), // pre-mark explicitly skipped phases
+    // 显式 when-skip 或 overlay op:skip（resolved flow 的 node.skipped）均标 skipped（Review F2）
+    skipped: globalSkipPhaseKeys.has(item.phaseKey) || item.overlaySkipped === true,
     files: [],
   }));
 
@@ -584,6 +622,12 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
       const moduleScenarios = scenarios.filter(s => (s.module ?? 'core') === m.id);
       return buildModuleStatusItem(root, m, moduleScenarios, locale, activeChange, guardModule, isMultiModule);
     });
+    // M2 切片 1a（Review F3）：当前落在 overlay-added 节点时，活跃模块已对 proposal_step 做了回退，
+    // 顶层 proposal_step 必须同步，否则 next 的 action/gate 仍按旧状态判断。
+    const activeMod = modules.find(m => m.id === guardModule && m.active_change);
+    if (activeMod?.current_node && activeMod.active_change) {
+      proposalStep = activeMod.active_change.proposal_step;
+    }
   }
 
   let suggestion: string;
@@ -602,9 +646,22 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     suggestion = suggestKey ? t(locale, suggestKey) : t(locale, 'suggest.fallback');
   }
 
+  // M2 切片 1a：legacy 无 modules[] 项目 → overlay 顶层回退（有 modules[] 时挂 module 项下，不在此处）
+  let topOverlay: ReturnType<typeof deriveOverlayView> = null;
+  if (rawModules === undefined) {
+    const synthMod: ModuleInfo = { id: 'core', name: 'core', lifecycle };
+    const proposalDir = activeChange ? join(root, 'logos', 'changes', activeChange) : null;
+    topOverlay = deriveOverlayView(root, synthMod, scenarios, proposalDir);
+    if (topOverlay && topOverlay.proposal_step_override && proposalStep) {
+      proposalStep = topOverlay.proposal_step_override as ProposalStep;
+    }
+  }
+
   return {
     phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
     ...(modules !== undefined ? { modules } : {}),
+    ...(topOverlay && topOverlay.overlay_nodes.length > 0 ? { overlay_nodes: topOverlay.overlay_nodes } : {}),
+    ...(topOverlay && topOverlay.current_node ? { current_node: topOverlay.current_node } : {}),
     active_proposals: activeProposals.map(p => ({
       name: p.name,
       has_proposal: p.hasProposal,
@@ -653,7 +710,20 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
     }
   }
 
-  const data = collectStatusData(root, moduleId);
+  let data: StatusData;
+  try {
+    data = collectStatusData(root, moduleId);
+  } catch (e) {
+    if (e instanceof FlowError) {
+      if (format === 'json') {
+        console.error(JSON.stringify(makeErrorEnvelope('status', e.code, e.message)));
+      } else {
+        console.error(`✖ flow 配置错误（${e.code}）：${e.message}`);
+      }
+      process.exit(1);
+    }
+    throw e;
+  }
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('status', data)));
@@ -726,9 +796,23 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
           }
         }
       }
+      if (m.overlay_nodes && m.overlay_nodes.length > 0) {
+        console.log(`       🧩 ${locale === 'zh' ? 'Overlay 节点' : 'Overlay nodes'}`);
+        for (const on of m.overlay_nodes) {
+          console.log(`         ▶ ${on.id} (${on.name}) · ${on.state} · subflow=${on.subflow_id} · #${on.node_index}`);
+        }
+      }
       console.log(`       💡 ${m.suggestion}`);
     }
     console.log('');
+  }
+
+  // legacy 无 modules[] 项目的 overlay 顶层渲染
+  if (data.overlay_nodes && data.overlay_nodes.length > 0) {
+    console.log(`\n🧩 ${locale === 'zh' ? 'Overlay 节点' : 'Overlay nodes'}`);
+    for (const on of data.overlay_nodes) {
+      console.log(`  ▶ ${on.id} (${on.name}) · ${on.state} · subflow=${on.subflow_id} · #${on.node_index}`);
+    }
   }
 
   if (!moduleId) {

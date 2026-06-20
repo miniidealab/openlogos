@@ -262,6 +262,10 @@ export function applyOverlay(
       if (!op.set || typeof op.set !== 'object' || Array.isArray(op.set)) {
         throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] modify 缺少合法 \`set\`（需为非空对象）`);
       }
+      // op:modify 禁止覆盖 id——改写内置节点身份会破坏 node→phase 映射（见 spec/flow-spec.md §10）
+      if ('id' in (op.set as Record<string, unknown>)) {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] modify 不得覆盖 \`id\`（禁止改写节点身份）`);
+      }
       Object.assign(hit.subflow.nodes[hit.index], op.set);
       hit.subflow.nodes[hit.index].overlay_op = 'modify';
     } else if (kind === 'add') {

@@ -18,7 +18,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isAdoptedBootstrap } from './project-yaml.js';
-import { loadBuiltinFlow, FlowError } from './flow.js';
+import { loadBuiltinFlow, loadFlow, FlowError } from './flow.js';
 import { listFiles } from './list-files.js';
 import {
   resolveProposalDeploymentDecision,
@@ -58,11 +58,16 @@ export interface FlowPhasePlanItem {
   isScenario: boolean;    // node.for_each 存在
   whenExpr: string | null;
   nodeId: string;
+  overlaySkipped?: boolean; // M2 切片 1a：overlay op:skip / when=false 在 resolved 中标记的跳过
 }
 
-/** 从 builtin initial flow 构建有序 phase plan（顺序 == 原 PHASE_KEYS）。 */
-export function buildInitialPhasePlan(): FlowPhasePlanItem[] {
-  const flow = loadBuiltinFlow('initial');
+/**
+ * 构建有序 phase plan（顺序 == 原 PHASE_KEYS）。
+ * 默认读 builtin；传入 root 时读 **resolved flow（含 overlay）**——使 initial 的 overlay
+ * skip/modify/reorder 真正驱动派生（无 overlay 时 resolved==builtin，逐字节不变）。
+ */
+export function buildInitialPhasePlan(root?: string): FlowPhasePlanItem[] {
+  const flow = root ? loadFlow(root, { lifecycle: 'initial', resolved: true }).flow : loadBuiltinFlow('initial');
   const items: FlowPhasePlanItem[] = [];
   for (const sub of flow.subflows) {
     for (const node of sub.nodes) {
@@ -80,6 +85,7 @@ export function buildInitialPhasePlan(): FlowPhasePlanItem[] {
         isScenario: Boolean(node.for_each),
         whenExpr: node.when ?? null,
         nodeId: node.id,
+        overlaySkipped: node.skipped === true,
       });
     }
   }
@@ -120,6 +126,12 @@ function evalWhen(expr: string, mod: ModuleInfo, ctx: WhenContext): boolean {
   return Boolean(ctx[e as keyof WhenContext]);
 }
 
+/** 求值单个节点的 `when`：无 when 视为参与；用于 overlay 节点走查（flow-overlay-derive）。 */
+export function evalNodeWhen(when: string | null | undefined, mod: ModuleInfo): boolean {
+  if (!when) return true;
+  return evalWhen(when, mod, whenContext(mod));
+}
+
 /**
  * 复现 deriveExplicitSkipPhaseKeys：返回因显式 `when`（非 bootstrap）为假而跳过的 phase key 集合。
  * 用于多模块全局 skip 交集。
@@ -146,7 +158,7 @@ export function deriveModulePhaseProgressViaFlow(
   mod: ModuleInfo,
   scenarios: Array<{ id: string }>,
   isMultiModule: boolean = false,
-  plan: FlowPhasePlanItem[] = buildInitialPhasePlan(),
+  plan: FlowPhasePlanItem[] = buildInitialPhasePlan(root),
 ): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
   const progress: Record<string, PhaseProgressItem> = {};
   const ctx = whenContext(mod);
@@ -154,6 +166,12 @@ export function deriveModulePhaseProgressViaFlow(
   for (const item of plan) {
     const key = item.phaseKey;
     const dir = join(root, item.subpath);
+
+    // overlay op:skip 标记的内置节点 → skipped（M2 切片 1a：initial overlay skip 生效）
+    if (item.overlaySkipped) {
+      progress[key] = { done: false, skipped: true };
+      continue;
+    }
 
     // bootstrap-adopted：phase.1/2/3-0 的 when 为 `bootstrap != adopted`，adopted 时跳过并标 reason
     if (item.whenExpr === BOOTSTRAP_WHEN && isAdoptedBootstrap(mod.bootstrap)) {
@@ -239,9 +257,13 @@ function anyPresentList(pred: string | null | undefined): string[] {
   return inner.split(',').map(s => s.trim()).filter(Boolean);
 }
 
-/** 从 builtin launched flow 提取生命周期 marker/section 名（flow 声明，引擎据此判定）。 */
-function extractLaunchedMarkers(): LaunchedMarkers {
-  const flow = loadBuiltinFlow('launched');
+/**
+ * 提取生命周期 marker/section 名（flow 声明，引擎据此判定）。
+ * 默认 builtin；传入 root 时读 **resolved flow（含 overlay）**——使 launched 的
+ * `modify`（改 marker 名）经 flow 流入检测（无 overlay 时 resolved==builtin）。
+ */
+function extractLaunchedMarkers(root?: string): LaunchedMarkers {
+  const flow = root ? loadFlow(root, { lifecycle: 'launched', resolved: true }).flow : loadBuiltinFlow('launched');
   const byId: Record<string, { done_when?: string | null; fail_when?: string | null }> = {};
   for (const sub of flow.subflows) for (const n of sub.nodes) byId[n.id] = n;
   const need = (id: string) => {
@@ -269,7 +291,9 @@ export function detectProposalStepViaFlow(
   proposalDir: string,
   moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
 ): ProposalStep {
-  const m = extractLaunchedMarkers();
+  // proposalDir = <root>/logos/changes/<slug> → root 上溯三级（读 resolved launched flow 含 overlay）
+  const root = join(proposalDir, '..', '..', '..');
+  const m = extractLaunchedMarkers(root);
   const exists = (name: string) => existsSync(join(proposalDir, name));
   const anyExists = (names: string[]) => names.some(exists);
   const tasksContent = existsSync(join(proposalDir, 'tasks.md'))

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
+import { FlowError } from '../lib/flow.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData } from './status.js';
 import type { StatusData } from './status.js';
@@ -108,11 +109,32 @@ export function watch(format: OutputFormat = 'text', moduleId?: string, interval
   const intervalMs = Math.max(1, intervalSec ?? 2) * 1000;
   const stream = new WatchStream(moduleId ?? null, format, line => console.log(line));
 
-  // 启动先输出一次初始快照（无需等变化）
-  stream.tick(collectStatusData(root, moduleId));
+  // M2 切片 1a：派生抛 FlowError（如 launched builtin skip/reorder、overlay-add 谓词非法）时，
+  // 输出错误信封并**不进入 / 停止轮询**（不在错误流上空转）。
+  const tickOrFail = (timer?: ReturnType<typeof setInterval>): boolean => {
+    try {
+      stream.tick(collectStatusData(root, moduleId));
+      return true;
+    } catch (e) {
+      if (e instanceof FlowError) {
+        if (format === 'json') {
+          console.error(JSON.stringify(makeErrorEnvelope('watch', e.code, e.message)));
+        } else {
+          console.error(`✖ flow 配置错误（${e.code}）：${e.message}`);
+        }
+        if (timer) clearInterval(timer);
+        process.exit(1);
+        return false;
+      }
+      throw e;
+    }
+  };
+
+  // 启动先输出一次初始快照（无需等变化）；失败则不进入轮询
+  if (!tickOrFail()) return;
 
   const timer = setInterval(() => {
-    stream.tick(collectStatusData(root, moduleId));
+    tickOrFail(timer);
   }, intervalMs);
   // 让定时器不阻止进程在其它退出路径下结束（CLI 常驻由事件循环保持）
   if (typeof timer.unref === 'function') timer.unref();

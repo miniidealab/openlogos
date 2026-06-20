@@ -8,6 +8,8 @@ import { collectStatusData } from './status.js';
 import type { ProposalStep } from './status.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 import { gateForProposalStep } from '../lib/flow-derive.js';
+import type { CurrentNode } from '../lib/flow-overlay-derive.js';
+import { FlowError } from '../lib/flow.js';
 
 export interface NextModuleItem {
   id: string;
@@ -22,6 +24,7 @@ export interface NextModuleItem {
   deployment_decision_conflict?: boolean;
   deployment_decision_conflict_reason?: string | null;
   deployment_warnings?: string[];
+  current_node?: CurrentNode;
 }
 
 export interface NextData {
@@ -31,6 +34,8 @@ export interface NextData {
   active_change: string | null;
   proposal_step: string | null;
   modules?: NextModuleItem[];
+  // M2 切片 1a：base data 的 current_node（仅当前为 overlay-added 时附带）
+  current_node?: CurrentNode;
   // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
   auto?: boolean;
   gate_id?: string | null;
@@ -217,7 +222,20 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
     }
   }
 
-  const data = collectStatusData(root, moduleId);
+  let data: ReturnType<typeof collectStatusData>;
+  try {
+    data = collectStatusData(root, moduleId);
+  } catch (e) {
+    if (e instanceof FlowError) {
+      if (format === 'json') {
+        console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
+      } else {
+        console.error(`✖ flow 配置错误（${e.code}）：${e.message}`);
+      }
+      process.exit(1);
+    }
+    throw e;
+  }
   const locale = readLocale(root);
 
   // Read guard module
@@ -249,6 +267,20 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
       guardModule,
       locale,
     ));
+    // M2 切片 1a：透传 overlay current_node，并在卡住时把 action 指向该节点（Review F3）
+    moduleItems = moduleItems.map((item, i) => {
+      const cn = data.modules![i].current_node;
+      if (!cn) return item;
+      return {
+        ...item, current_node: cn,
+        action: locale === 'zh'
+          ? `先完成 overlay 节点「${cn.name}」（${cn.id}）${cn.state === 'failed' ? '（失败，需修复）' : ''}`
+          : `Finish overlay node "${cn.name}" (${cn.id})${cn.state === 'failed' ? ' (failed — fix it)' : ''}`,
+        command: null,
+        detail: locale === 'zh' ? '当前流程卡在 overlay 节点，完成其判定后再推进后续步骤。'
+          : 'Flow is at an overlay node; finish it before later steps.',
+      };
+    });
   }
 
   // Global action (legacy / no-modules path)
@@ -325,11 +357,15 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
   let autoGateId: string | null = null;
   let autoSkippable: boolean | null = null;
   let gateAutoPassed = false;
+  // M2 切片 1a（R2 安全）：当前节点为未完成的 overlay-added 节点时，gate 未到达 → 不得 auto-pass。
+  const activeStatusMod = data.modules?.find(m => m.active_change?.slug === data.active_change);
+  const blockedByOverlayNode = Boolean(activeStatusMod?.current_node || data.current_node);
   if (auto) {
-    const gate = data.proposal_step ? gateForProposalStep(data.proposal_step) : null;
+    // Review F3：卡在未完成 overlay-added 节点时还没到 gate 边界 → gate_id/skippable 置 null（不暴露后续 builtin gate 预览）
+    const gate = (data.proposal_step && !blockedByOverlayNode) ? gateForProposalStep(data.proposal_step) : null;
     autoGateId = gate ? gate.gate_id : null;
     autoSkippable = gate ? gate.skippable : null;
-    if (gate && gate.skippable && data.active_change) {
+    if (gate && gate.skippable && data.active_change && !blockedByOverlayNode) {
       appendGateAutoPassed(root, data.active_change, gate.gate_id, data.proposal_step!);
       gateAutoPassed = true;
       const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
@@ -339,6 +375,20 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
     }
   }
 
+  // Review F3：当前卡在未完成 overlay 节点 → 顶层 action/detail 指向该节点，不再提示后续 builtin gate/merge/verify
+  const overlayCur = activeStatusMod?.current_node ?? data.current_node;
+  if (overlayCur) {
+    action = locale === 'zh'
+      ? `先完成 overlay 节点「${overlayCur.name}」（${overlayCur.id}）${overlayCur.state === 'failed' ? '（失败，需修复）' : ''}`
+      : `Finish overlay node "${overlayCur.name}" (${overlayCur.id})${overlayCur.state === 'failed' ? ' (failed — fix it)' : ''}`;
+    command = null;
+    detail = locale === 'zh' ? '当前流程卡在 overlay 节点，完成其判定后再推进后续步骤。'
+      : 'Flow is at an overlay node; finish it before later steps.';
+  }
+
+  // base data 的 current_node：契约规定有 modules[] 时挂 modules[].current_node，仅 legacy 无 modules[] 才回退顶层（Review F4）
+  const baseCurrentNode = data.modules === undefined ? data.current_node : undefined;
+
   const result: NextData = {
     action,
     command,
@@ -346,6 +396,7 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
     active_change: data.active_change,
     proposal_step: data.proposal_step,
     ...(moduleItems !== undefined ? { modules: moduleItems } : {}),
+    ...(baseCurrentNode ? { current_node: baseCurrentNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
   };
 
