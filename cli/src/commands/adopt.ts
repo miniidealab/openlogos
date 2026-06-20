@@ -9,6 +9,7 @@ import {
   createAdoptLogosProject,
   createAgentsMd,
   chooseAiTool,
+  DIRECTORIES,
   ensureVerifyPreRunConfig,
   printVerifyPreRunBackfillResult,
   deployAiToolAssets,
@@ -17,25 +18,6 @@ import {
   resolveDocsAiToolForTarget,
 } from './init.js';
 import type { Locale } from '../i18n.js';
-
-const DIRECTORIES = [
-  'logos/resources/prd/1-product-requirements',
-  'logos/resources/prd/2-product-design/1-feature-specs',
-  'logos/resources/prd/2-product-design/2-page-design',
-  'logos/resources/prd/3-technical-plan/1-architecture',
-  'logos/resources/prd/3-technical-plan/2-scenario-implementation',
-  'logos/resources/prd/3-technical-plan/3-deployment',
-  'logos/resources/api',
-  'logos/resources/database',
-  'logos/resources/test',
-  'logos/resources/test/smoke',
-  'logos/resources/scenario',
-  'logos/resources/implementation',
-  'logos/resources/verify',
-  'logos/resources/reference',
-  'logos/changes',
-  'logos/changes/archive',
-];
 
 function isTTY(): boolean {
   return Boolean(process.stdin.isTTY);

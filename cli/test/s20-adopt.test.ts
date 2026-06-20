@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
-import { detectProjectName } from '../src/commands/init.js';
+import { detectProjectName, REFERENCE_SUBDIRECTORIES } from '../src/commands/init.js';
 import { adopt } from '../src/commands/adopt.js';
 import { next } from '../src/commands/next.js';
 import { collectStatusData } from '../src/commands/status.js';
@@ -93,6 +93,9 @@ describe('S20 Scenario Tests — adopt command', () => {
     expect(yaml.modules?.[0].lifecycle).toBe('launched');
     expect(existsSync(join(root, 'logos', 'spec'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills'))).toBe(true);
+    for (const dir of REFERENCE_SUBDIRECTORIES) {
+      expect(existsSync(join(root, 'logos', 'resources', 'reference', dir, '.gitkeep'))).toBe(true);
+    }
   });
 
   it('ST-S20-02: adopt 后 next 输出补文档引导', async () => {

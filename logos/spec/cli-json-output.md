@@ -279,6 +279,61 @@ openlogos status --format json  # JSON 格式
 
 ---
 
+## 4. `openlogos deploy-done --format json`
+
+### 4.1 用法
+
+```bash
+openlogos deploy-done
+openlogos deploy-done --env staging
+openlogos deploy-done --format json
+```
+
+### 4.2 JSON Schema（data 部分）
+
+```jsonc
+{
+  "slug": "add-feature",
+  "environment": "staging",
+  "marker_path": "logos/changes/add-feature/DEPLOY_DONE",
+  "deployment_report_path": "logos/resources/verify/deployment-report.md",
+  "deploy_tasks_checked": 3,
+  "deploy_tasks_total": 3,
+  "cleared_smoke_markers": ["SMOKE_PASS", "SMOKE_FAIL"],
+  "next_step": "ready-to-smoke"
+}
+```
+
+### 4.3 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `slug` | string | 是 | 当前活跃提案 slug |
+| `environment` | string \| null | 是 | `--env` 指定的部署环境标签；未指定时为 null |
+| `marker_path` | string | 是 | 写入的 `DEPLOY_DONE` marker 路径 |
+| `deployment_report_path` | string | 是 | 部署报告路径 |
+| `deploy_tasks_checked` | number | 是 | `deploy-done` 后 `[deploy]` section 已勾选任务数 |
+| `deploy_tasks_total` | number | 是 | `[deploy]` section 任务总数 |
+| `cleared_smoke_markers` | string[] | 是 | 本次清理的旧 smoke marker 名称 |
+| `next_step` | string | 是 | 下一步状态：`"ready-to-smoke"` 或 `"deploy-done"` |
+
+### 4.4 错误语义
+
+`deploy-done --format json` 的错误仍使用通用错误 envelope，错误码建议包括：
+
+- `PROJECT_NOT_INITIALIZED`
+- `NO_ACTIVE_CHANGE`
+- `CHANGE_NOT_FOUND`
+- `VERIFY_NOT_PASSED`
+- `DEPLOYMENT_DECISION_CONFLICT`
+- `DEPLOYMENT_NOT_REQUIRED`
+- `DEPLOY_TASKS_MISSING`
+- `DEPLOYMENT_REPORT_MISSING`
+
+任何错误分支都不得写入 `DEPLOY_DONE`，不得勾选 `[deploy]` 任务，也不得清理 smoke marker。
+
+---
+
 ## 4. `openlogos verify --format json`
 
 ### 4.1 用法
@@ -334,6 +389,42 @@ openlogos verify --format json  # JSON 格式
       }
     ]
   },
+  "pre_run": {
+    "mode": "two_phase",          // "none" | "pre_run_command" | "two_phase"
+    "commands": [
+      {
+        "stage": "regression",    // "pre_run" | "regression" | "incremental"
+        "command": "npm test",
+        "status": "pass",         // "pass" | "fail" | "skipped"
+        "exit_code": 0,
+        "duration_ms": 1200
+      },
+      {
+        "stage": "incremental",
+        "command": "npm run test:changed",
+        "status": "pass",
+        "exit_code": 0,
+        "duration_ms": 600
+      }
+    ],
+    "result_paths": {
+      "final": "logos/resources/verify/test-results.jsonl",
+      "regression": "logos/resources/verify/test-results.regression.jsonl",
+      "incremental": "logos/resources/verify/test-results.incremental.jsonl"
+    },
+    "merge_strategy": "last-write-wins",
+    "diagnostics": [],
+    "suggestions": []
+  },
+  "sandbox": {
+    "mode": "auto",               // "off" | "auto" | "always"
+    "root": "/private/tmp",
+    "isolated": true,
+    "workspace_write_denied": true,
+    "status": "pass",             // "pass" | "warn" | "fail" | "skipped"
+    "diagnostics": [],
+    "suggestions": []
+  },
   "report_path": "logos/resources/verify/acceptance-report.md"
 }
 ```
@@ -363,6 +454,26 @@ openlogos verify --format json  # JSON 格式
 | `ac_trace.total` | number | 是 | 验收条件总数 |
 | `ac_trace.passed` | number | 是 | 通过的验收条件数 |
 | `ac_trace.failed_criteria` | array | 是 | 未通过的验收条件列表 |
+| `pre_run.mode` | string | 是 | verify 预跑模式：`"none"`、`"pre_run_command"` 或 `"two_phase"` |
+| `pre_run.commands` | array | 是 | 实际执行或跳过的命令阶段 |
+| `pre_run.commands[].stage` | string | 是 | `pre_run`、`regression` 或 `incremental` |
+| `pre_run.commands[].command` | string | 是 | 实际执行的命令文本 |
+| `pre_run.commands[].status` | string | 是 | `pass`、`fail` 或 `skipped` |
+| `pre_run.commands[].exit_code` | number | 否 | 命令退出码 |
+| `pre_run.commands[].duration_ms` | number | 否 | 命令执行时长 |
+| `pre_run.result_paths.final` | string | 是 | 最终验收读取的 JSONL 路径 |
+| `pre_run.result_paths.regression` | string \| null | 否 | 回归阶段结果路径 |
+| `pre_run.result_paths.incremental` | string \| null | 否 | 增量阶段结果路径 |
+| `pre_run.merge_strategy` | string \| null | 否 | 两阶段合并策略，当前为 `last-write-wins` |
+| `pre_run.diagnostics` | string[] | 是 | 可展示给用户的问题诊断 |
+| `pre_run.suggestions` | string[] | 是 | 可展示给用户的修复建议 |
+| `sandbox.mode` | string | 是 | verify 沙箱模式：`"off"`、`"auto"` 或 `"always"` |
+| `sandbox.root` | string | 是 | 沙箱根目录 |
+| `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
+| `sandbox.workspace_write_denied` | boolean | 是 | 是否拒绝写入仓库工作区 |
+| `sandbox.status` | string | 是 | 沙箱执行结果 |
+| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息 |
+| `sandbox.suggestions` | string[] | 是 | 沙箱修复建议 |
 | `report_path` | string | 是 | 生成的验收报告路径 |
 
 ### 4.4 gate.reason 取值
@@ -374,6 +485,16 @@ openlogos verify --format json  # JSON 格式
 | `"incomplete_coverage"` | 存在未覆盖的测试用例 |
 | `"checklist_incomplete"` | 设计时覆盖度校验未完全确认 |
 | `"ac_trace_incomplete"` | 验收条件追溯未完全通过 |
+
+### 4.5 预跑状态兼容规则
+
+- 旧项目只配置 `verify.pre_run_command` 时，`pre_run.mode="pre_run_command"`。
+- 配置 `verify.regression_command` 或 `verify.incremental_command` 时，`pre_run.mode="two_phase"`。
+- 没有任何预跑命令时，`pre_run.mode="none"`。
+- `sandbox_mode="off"` 时，`sandbox.status="skipped"`，并保持历史兼容行为。
+- `sandbox_mode="auto"` 时，环境支持隔离则 `sandbox.status="pass"`，不支持则 `sandbox.status="warn"` 并给出降级原因。
+- `sandbox_mode="always"` 时，若无法隔离则必须失败。
+- 覆盖不足且 `pre_run.mode="none"` 时，必须输出局部测试诊断和配置建议。
 
 ---
 
@@ -412,6 +533,15 @@ openlogos smoke --env production --format json
   "failed_cases": [],
   "uncovered_cases": [],
   "skipped_cases": [],
+  "sandbox": {
+    "mode": "auto",               // "off" | "auto" | "always"
+    "root": "/private/tmp",
+    "isolated": true,
+    "workspace_write_denied": true,
+    "status": "pass",             // "pass" | "warn" | "fail" | "skipped"
+    "diagnostics": [],
+    "suggestions": []
+  },
   "report_path": "logos/resources/verify/smoke-report.md",
   "result_path": "logos/resources/verify/smoke-results.jsonl"
 }
@@ -428,10 +558,23 @@ openlogos smoke --env production --format json
 | `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` |
 | `failed_cases` | array | 是 | 失败 smoke 用例 |
 | `uncovered_cases` | array | 是 | 未覆盖 smoke 用例 ID |
+| `sandbox.mode` | string | 是 | smoke 沙箱模式：`"off"`、`"auto"` 或 `"always"` |
+| `sandbox.root` | string | 是 | 沙箱根目录 |
+| `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
+| `sandbox.workspace_write_denied` | boolean | 是 | 是否拒绝写入仓库工作区 |
+| `sandbox.status` | string | 是 | 沙箱执行结果 |
+| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息 |
+| `sandbox.suggestions` | string[] | 是 | 沙箱修复建议 |
 | `report_path` | string | 是 | smoke 报告路径 |
 | `result_path` | string | 是 | smoke 结果路径 |
 
 `openlogos smoke` 与 `openlogos verify` 共享 JSONL 结果思想，但读取的是 `smoke.result_path`，默认 `logos/resources/verify/smoke-results.jsonl`。冒烟测试用例建议存放在 `logos/resources/test/smoke/`。
+
+### 5.4 兼容规则
+
+- `smoke.command` 仍按既有语义执行。
+- `sandbox_mode` / `sandbox_root` / `sandbox_deny_workspace_write` 仅影响执行环境，不改变 smoke 门禁定义。
+- 当沙箱失败时，`smoke` 仍应写入结果报告，但 JSON 输出必须明确失败原因。
 
 ---
 

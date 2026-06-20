@@ -1,46 +1,49 @@
-# 部署报告
+# Deployment Report
 
-> 生成时间：2026-05-28 12:10 CST  
-> 提案：`release-website-sync-on-tag`  
-> 目标环境：Cloudflare Pages（staging + production）  
-> 状态：SUCCESS
+> Generated after `mermaid-syntax-safety` deployment on 2026-06-15
+> Target environment: Cloudflare Pages staging preview
 
-## 摘要
+## Summary
 
-- 发布链路演练：已完成 staging 预览分支部署（`staging.openlogos.pages.dev`）
-- 生产部署：已完成 production 分支部署（`openlogos.ai`）
-- npm latest：`0.9.31`
-- GitHub Release：`v0.9.31`（非 draft / 非 prerelease）
-- 官网 `/releases`：latest = `v0.9.31`，版本数 `66`，发布时间与链接可访问
+- Proposal: `mermaid-syntax-safety`
+- Deployment task: 按 `website_release_sync` 链路部署官网文档到 staging，并确认 Cloudflare Pages 部署产物可访问
+- Result: PASS
+- Preview URL: `https://613a0909.openlogos.pages.dev`
 
-## 执行步骤
+## Commands
 
-1. 修复发布数据污染防护：
-   - `website/scripts/generate-releases.mjs` 支持 `outputPath`，测试不再写入真实 `website/src/data/releases.json`
-   - `website/test/generate-releases.test.mjs` 改为写临时目录并清理
-2. 重新生成真实发布数据：`cd website && npm run generate:releases -- --strict`
-3. 构建站点：`cd website && npm run build`
-4. staging 演练部署：`cd website && npx wrangler pages deploy dist --project-name openlogos --branch staging`
-5. production 部署：`cd website && npx wrangler pages deploy dist --project-name openlogos --branch master`
-6. 一致性校验：
-   - `npm view @miniidealab/openlogos version` = `0.9.31`
-   - `gh release view v0.9.31 --json ...` 返回已发布版本
-   - `https://staging.openlogos.pages.dev/releases/` 与 `https://openlogos.ai/releases/` 均显示 `v0.9.31`
+1. `cd website && npm run deploy`
+   - Purpose: build the Astro documentation site, generate release data, generate Chinese font subsets, and deploy `website/dist/` to Cloudflare Pages.
+   - Target environment: Cloudflare Pages staging preview for project `openlogos`.
+   - Result: PASS.
 
-## 结果
+## Command Output Summary
 
-- 发布数据生成：PASS（strict 模式成功）
-- 网站构建：PASS
-- staging 演练：PASS
-- production 部署：PASS
-- npm / GitHub / 官网三方一致性：PASS
+- `npm run generate:releases` generated `website/src/data/releases.json` from npm registry with 73 versions.
+- `astro build` completed successfully and built 134 pages.
+- Font fetch/subset steps completed; five Noto Sans SC subset weights were generated.
+- Wrangler version: `4.100.0`.
+- Wrangler uploaded 23 changed files and reused 335 existing files.
+- Functions bundle uploaded successfully.
+- Cloudflare Pages deployment completed at `https://613a0909.openlogos.pages.dev`.
 
-## 回滚点
+## Warnings
 
-- Cloudflare Pages 上一生产部署：`d9e63d0c-95a5-4963-926a-2149c20af158`（master，约 17 小时前）
-- 当前生产部署：`5d2658eb-fcae-4b19-b086-6e6b81cfb99f`（master）
-- 回滚路径：Cloudflare Pages 控制台选择 `openlogos` 项目，将生产别名切回上一生产部署 ID
+- Astro reported existing route collision warnings for `/404` and related fallback routes. These warnings were already present during build validation and did not block deployment.
+- Wrangler warned that the git working directory has uncommitted changes. The deployment proceeded with the current working tree, as this proposal is already verify PASS and the deploy task targets the current staging preview.
 
-## 未解决风险
+## Migration Result
 
-- `website` 构建存在既有 Astro 路由冲突告警（`/404` 重复定义），本次不影响部署成功，但建议后续单独清理。
+No data migration was required.
+
+## Service Startup Result
+
+Cloudflare Pages accepted the deployment and returned a preview URL. Service startup is considered successful for the staging preview deployment.
+
+## Rollback Point
+
+Rollback uses Cloudflare Pages deployment history. If the Mermaid Skill documentation pages regress, roll back the `openlogos` Pages project to the previous successful deployment.
+
+## Unresolved Risks
+
+- Smoke validation has not been executed yet. Run `openlogos smoke --env staging` after explicit human authorization.

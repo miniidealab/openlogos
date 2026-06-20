@@ -107,3 +107,78 @@
 - `cd website && npm run build`
 - `cd website && npm run smoke:releases`
 - `cd cli && npm test && cd ../website && npm test`
+
+## add-deploy-done-command
+
+### 范围
+- 新增 `openlogos deploy-done` 命令
+- 部署完成 marker 受控写入
+- `[deploy]` section 自动勾选
+- 旧 `SMOKE_PASS` / `SMOKE_FAIL` 清理
+- `deploy-done --format json` 输出契约
+
+### 覆盖用例
+- [x] UT-S21-01
+- [x] UT-S21-02
+- [x] UT-S21-03
+- [x] UT-S21-04
+- [x] UT-S21-05
+- [x] UT-S21-06
+- [x] UT-S21-07
+- [x] UT-S21-08
+- [x] UT-S21-09
+- [x] ST-S21-01
+- [x] ST-S21-02
+- [x] ST-S21-03
+- [x] ST-S21-EX-2.1
+- [x] ST-S21-EX-3.1
+- [x] ST-S21-EX-4.1
+- [x] ST-S21-EX-5.1
+- [x] ST-S21-EX-5.2
+- [x] ST-S21-EX-6.1
+
+### 产物
+- `cli/src/commands/deploy-done.ts`
+- `cli/src/index.ts`
+- `cli/src/i18n.ts`
+- `cli/test/s21-deploy-done.test.ts`
+- `logos/resources/verify/test-results.jsonl`
+
+### 验证
+- `cd cli && npm run build`
+- `cd cli && npx vitest run test/s21-deploy-done.test.ts`
+- `cd cli && npx vitest run test/s05-next.test.ts test/s11-status.test.ts`
+- `cd cli && npx vitest run test/s13-verify.test.ts test/s19-smoke.test.ts test/s16-json-output.test.ts`
+- `cd cli && npm test`
+
+## flow-engine-foundation（切片 A：flow 加载器 + flow show + golden 基线）
+
+### 范围
+- 新增 flow 加载器：读包内 `spec/flow/<lifecycle>.yaml` 内置模板（dev/test/prepack 三路径解析）
+- overlay 解析：`extends`（含 baseline/lifecycle 校验、`@vN` 版本告警）+ skip/add/modify/reorder 四操作 node-id strategic-merge + 基础与合并后 schema 校验、node id 唯一性
+- 新增 `openlogos flow show [--resolved] [--lifecycle] [--format json]` 只读命令
+- golden 基线快照锁定现有 status/next 输出（切片 B 等价锚点）
+- **零行为变更**：未接入 status/next 派生
+
+### 覆盖用例
+- [x] UT-S22-01 ~ UT-S22-16
+- [x] ST-S22-01 ~ ST-S22-08
+- [x] ST-S22-EX-2.1 / ST-S22-EX-4.1 / ST-S22-EX-5.1 / ST-S22-EX-5.2
+- [x] golden-baseline characterization（表征 S05/S11/S16，不计编号）
+
+### 产物
+- `cli/src/lib/flow.ts`
+- `cli/src/commands/flow.ts`
+- `cli/src/index.ts`
+- `cli/src/i18n.ts`
+- `cli/test/s22-flow.test.ts`
+- `cli/test/golden-baseline.test.ts`
+- `cli/test/__snapshots__/golden-baseline.test.ts.snap`
+- `spec/cli-json-output.md`、`spec/flow-spec.md`（§9 / §10.1 / §10.2，已 merge）
+- `logos/resources/verify/test-results.jsonl`
+
+### 验证
+- `cd cli && npm run build`
+- `cd cli && npx vitest run test/s22-flow.test.ts test/golden-baseline.test.ts`
+- `cd cli && npm test`（全量回归，零行为变更核验）
+- `node cli/dist/index.js flow show --lifecycle initial --format json`

@@ -32,3 +32,17 @@
 - [x] verify 单阶段 pre_run 状态：已覆盖（UT-JSON-11 / ST-JSON-24）
 - [x] verify 两阶段状态与合并策略：已覆盖（UT-JSON-12 / ST-JSON-25）
 - [x] verify 覆盖不足诊断：已覆盖（UT-JSON-13 / ST-JSON-26）
+
+## 四、golden characterization 归属（机器可读 JSON 契约锚点）
+
+`cli/test/golden-baseline.test.ts` 在录制 `status` / `next --format json` 快照时，同时**表征**
+S16（输出机器可读 JSON）所定义的通用信封与 data schema 现状行为——golden 快照本身就是 S16
+JSON 契约的字节级实例。
+
+归属说明：
+- 该 golden 测试**表征**（characterize）S16 现状 JSON 输出，而非定义新契约；本切片
+  （flow-engine-foundation）应**全部通过**。
+- 其作用是在后续 flow 派生切换切片（切片 B）时，作为"JSON 输出 1:1 不漂移"的等价锚点——
+  若派生切换改变了 `--format json` 的字段或结构，golden 快照将立即失败。
+- golden 测试不替代 S16 既有 UT/ST 用例，二者并存：S16 用例验证信封/字段契约定义；
+  golden 快照锁定整段 JSON 的字节级等价。

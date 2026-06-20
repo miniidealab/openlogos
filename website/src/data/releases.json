@@ -1,17 +1,256 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.9.31",
-  "updatedAt": "2026-05-27T15:19:34.379Z",
-  "generatedAt": "2026-05-27T15:19:34.379Z",
-  "versionCount": 66,
+  "latestVersion": "0.10.10",
+  "updatedAt": "2026-06-15T04:42:20.142Z",
+  "generatedAt": "2026-06-15T04:42:20.142Z",
+  "versionCount": 74,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.9.31"
+    "latest": "0.10.10"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.10.10",
+      "publishedAt": "2026-06-15T04:42:19.825Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.10",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.10",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.10.tgz",
+      "gitHead": null,
+      "size": 557130,
+      "sizeLabel": "544 KB",
+      "unpackedSize": 2282166,
+      "unpackedSizeLabel": "2.2 MB",
+      "fileCount": 245,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复 Mermaid Skill 规则未随 CLI 包发布的问题 — 将 Mermaid flowchart/graph 节点标签安全规则与 sequenceDiagram 单行安全规则同步到根 skills/ 发布源、英文 Skill 源和 Claude 插件模板，确保 openlogos init/sync 生成的 Skill 资产包含 ID[\"标签文本\"]、subgraph \"名称\"、复杂内容下沉到步骤说明等约束。",
+        "同步官网 Skill 文档与 tag 发版链路 — 通过 tag 驱动的 GitHub Actions 发布 CLI/npm 包，并串联官网 Skill 文档构建与 Cloudflare Pages 部署，避免仅手工部署官网导致发布包内核心 Skill 滞后。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.10: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.10.9",
+      "publishedAt": "2026-06-12T08:48:18.954Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.9",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.9",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.9.tgz",
+      "gitHead": null,
+      "size": 554004,
+      "sizeLabel": "541 KB",
+      "unpackedSize": 2275159,
+      "unpackedSizeLabel": "2.2 MB",
+      "fileCount": 245,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [
+        "新增 openlogos deploy-done 受控落标命令 — 部署成功后可通过 CLI 校验 VERIFY_PASS、部署决策、[deploy] section 和部署报告，并统一勾选部署任务、写入 DEPLOY_DONE、清理旧 SMOKE_PASS/SMOKE_FAIL，避免部署完成状态依赖 AI 手写 marker。",
+        "更新部署执行 Skill 与规范 — deployment-executor 部署成功后改为调用 openlogos deploy-done，同时补充 deploy-done --format json 输出契约、tasks 状态规范和发布后 smoke 覆盖。"
+      ],
+      "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.9: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.10.8",
+      "publishedAt": "2026-06-09T05:36:50.271Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.8",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.8",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.8.tgz",
+      "gitHead": null,
+      "size": 548269,
+      "sizeLabel": "535 KB",
+      "unpackedSize": 2249951,
+      "unpackedSizeLabel": "2.1 MB",
+      "fileCount": 241,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复 Codex SessionStart 生命周期注入误判 — Codex hook 现在优先读取 openlogos status --format json 的 data.lifecycle 和 data.active_change，确保 logos-project.yaml 中模块已 launched 时注入 Lifecycle: launched、Change Management: ACTIVE 和 openlogos change <slug>，不再因 logos.config.json.lifecycle 缺失误导模型跳过变更提案。",
+        "修复 launched all-done 项目的下一步提示 — openlogos status/next 在项目已 launched 且所有阶段完成时，不再输出 openlogos launch 初始发布提示，改为引导创建补文档或业务迭代提案。",
+        "修复发布流水线回归测试依赖构建产物的问题 — Codex SessionStart 回归测试改用测试内 fake openlogos status --format json 响应，不再依赖 cli/dist/index.js，适配 GitHub Actions 中先测试、后构建的发布顺序。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.8: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.10.6",
+      "publishedAt": "2026-06-05T17:49:22.311Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.6",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.6",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.6.tgz",
+      "gitHead": null,
+      "size": 548092,
+      "sizeLabel": "535 KB",
+      "unpackedSize": 2248626,
+      "unpackedSizeLabel": "2.1 MB",
+      "fileCount": 241,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复空提案部署占位符冲突误报 — openlogos status --format json 解析 proposal.md 的 ## 部署影响 时，只有字段值精确为 是 或 否 才视为有效布尔决策；空模板中的 是 / 否 不再被误解析为 true，新建提案保持 proposal_step=writing 且不再输出 deployment_decision_conflict=true。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.6: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.10.5",
+      "publishedAt": "2026-06-03T16:37:39.225Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.5",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.5",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.5.tgz",
+      "gitHead": null,
+      "size": 548041,
+      "sizeLabel": "535 KB",
+      "unpackedSize": 2248533,
+      "unpackedSizeLabel": "2.1 MB",
+      "fileCount": 241,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复 proposal 模板占位符状态误判 — openlogos status 判断 proposal.md 是否仍为模板状态时，部署占位符检查限定到 ## 部署影响 section 的结构化字段值；正文其他章节合法引用 `是 / 否 不再导致 proposal_step 被误判为 writing`。新增 S11 回归测试覆盖正文引用和字段值占位符两个方向。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.5: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.10.4",
+      "publishedAt": "2026-06-01T05:34:20.203Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.4",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.4",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.4.tgz",
+      "gitHead": null,
+      "size": 547701,
+      "sizeLabel": "535 KB",
+      "unpackedSize": 2247227,
+      "unpackedSizeLabel": "2.1 MB",
+      "fileCount": 241,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [
+        "PreToolUse guard hook — 新增 .claude/openlogos/bin/guard-check 脚本，在 Claude Code 调用 Edit/Write/Bash 工具前检查 logos/.openlogos-guard 是否存在。launched 生命周期项目在无活跃变更提案时，工具调用被 exit 2 硬性阻断，将变更管理从\"提醒\"升级为\"强制执行\"。支持白名单（logos/changes/、CLAUDE.md、AGENTS.md 等）和 initial lifecycle 豁免。",
+        "官网文档全面同步 — 补齐 11 个缺失文档页（adopt、smoke 命令；deployment-designer、deployment-executor、ui-ux-pro-max Skills；cli-json-output、codex-plugin、directory-convention、module-naming-convention、sql-comment-convention、tasks-spec 规格）；修正版本号、命令数（12→14）、Skill 数（13→16）、Phase 体系（11→13 阶段）、lifecycle 术语（active→launched）；补全侧边栏导航。"
+      ],
+      "fixSummary": [],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.4: Chinese fix summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.10.3",
+      "publishedAt": "2026-05-28T16:19:00.131Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.3",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.3",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.3.tgz",
+      "gitHead": null,
+      "size": 541979,
+      "sizeLabel": "529 KB",
+      "unpackedSize": 2225648,
+      "unpackedSizeLabel": "2.1 MB",
+      "fileCount": 239,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复 tag 发布链路的网站构建 Node 版本不兼容 — publish.yml 在网站构建阶段切换到 Node 22.12.0，满足 Astro 6 的最低版本要求，避免发布后半段失败。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.3: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.10.2",
+      "publishedAt": "2026-05-28T16:13:17.053Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.10.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.10.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.10.2.tgz",
+      "gitHead": null,
+      "size": 541979,
+      "sizeLabel": "529 KB",
+      "unpackedSize": 2225648,
+      "unpackedSizeLabel": "2.1 MB",
+      "fileCount": 239,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "修复发布流水线中的沙箱测试跨平台问题 — ST-JSON-27 改为显式使用测试工作区内可写 sandbox_root，避免在 Linux runner 上因 /private/tmp 权限差异误报失败。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.10.2: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
     {
       "version": "0.9.31",
       "publishedAt": "2026-05-27T15:19:34.086Z",
@@ -31,9 +270,7 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "adopt 接入模式语义收敛 — openlogos adopt 现在统一写入 bootstrap: adopted，并明确接入语义为“完整初始化基础设施，仅跳过 Initial 文档门禁”。",
         "bootstrap 历史值兼容归一 — 读取 logos-project.yaml 时会将历史 bootstrap: skipped 兼容映射为 adopted 接入模式，新写入不再产生 skipped。",

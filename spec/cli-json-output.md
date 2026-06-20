@@ -279,6 +279,52 @@ openlogos status --format json  # JSON 格式
 
 `deployment_decision_conflict=true` 表示 CLI 检测到活跃提案的 `proposal.md` 部署影响声明与 `tasks.md` 的 `[deploy]` section 不一致。客户端必须将其视为阻塞态，提示用户修正提案或任务清单，不得继续展示部署、smoke 或归档主动作。
 
+### 3.6 overlay 派生字段（overlay_nodes / current_node）
+
+派生引擎基于 **resolved flow（内置 + 项目 overlay 合并）**。overlay `op:add` 引入的节点
+**无 phase key、无 proposal_step**，经以下 node 级字段承载（与 §3.3 既有 phase / proposal_step 维度并存）：
+
+**`modules[].overlay_nodes[]`**（仅承载 overlay-ADDED 节点；省略规则见下）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `overlay_nodes[].id` | string | overlay-added 节点 id |
+| `overlay_nodes[].name` | string | 节点展示名 |
+| `overlay_nodes[].state` | string | `"done"` \| `"active"` \| `"skipped"` \| `"failed"` |
+| `overlay_nodes[].subflow_id` | string | 所属 subflow id |
+| `overlay_nodes[].node_index` | number | resolved 序列内 0 基序号（判 gate 前后关系） |
+| `overlay_nodes[].overlay_op` | string | 恒为 `"add"` |
+
+> **只输出已到达节点**：`overlay_nodes` 仅列出**已到达**的 overlay-added 节点——其态必为 `done`/`active`/`skipped`/`failed` 之一（`active` 恒为唯一当前节点）。**尚未到达（未轮到）的 overlay-added 节点不在 `overlay_nodes` 中**（其计划可经 `flow show --resolved` 查看）。`pending`（未到达/未求值）态本切片不引入，留 cmd: 切片（S26）。
+
+**`modules[].current_node`**（object \| 省略；**仅当当前节点为 overlay-added 时输出**）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `current_node.id` | string | 当前 overlay-added 节点 id |
+| `current_node.name` | string | 节点展示名 |
+| `current_node.state` | string | `done` / `active` / `skipped` / `failed` |
+| `current_node.subflow_id` | string | 所属 subflow id |
+| `current_node.node_index` | number | resolved 序列 0 基序号 |
+| `current_node.phase_key` | null | **恒为 null**（current_node 仅为 overlay-added 节点输出）|
+| `current_node.overlay_op` | string | **恒为 `"add"`** |
+
+> **收紧约束（避免破坏 golden）**：`current_node` **只在当前节点是 overlay-added 时输出**；builtin 当前节点**不输出** `current_node`（由既有 `current_phase` / `proposal_step` 表达）。实现**不得**为 builtin current 输出 `current_node`，否则无 overlay 项目会产生新字段、破坏零漂移。
+
+**省略规则（可测，保 golden）**：
+1. `overlay_nodes` 仅当该模块 resolved flow 含 **≥1 个已到达的** overlay-added 节点时输出，否则**省略字段**（不输出空数组）。故「存在 overlay `add` 但尚未到达」与「无 overlay」一样：`overlay_nodes` 省略（计划仍可经 `flow show --resolved` 查看）；
+2. `current_node` 仅当当前节点为 overlay-added 时输出，否则省略；
+3. 有效 overlay-only-builtin（无 add = initial 的 skip/modify/reorder + launched 的 modify）不新增任何字段。
+据此**无 overlay 文件 → 三条均不触发 → §3.2/§3.3 输出逐字节不变**。
+
+**legacy 回退**：`modules[]` 省略的无注册表项目（见 §3.3 `modules` 字段），`overlay_nodes` / `current_node` 回退到**顶层**同名字段；消费方先读 `modules[].*`、缺则读顶层。
+
+### 3.7 launched proposal_step 与 overlay-added 当前节点
+
+`modules[].active_change.proposal_step`（§3.3 既有枚举值集合不变）在 launched 当前节点落于 **overlay-added 节点**时，
+取值 = resolved 序列中该节点**之前最近一个 builtin 节点**对应的 step（保持合法枚举、后向兼容，**不置 null**）；
+**若无前序 builtin（`add ... before` 插到首个 builtin 之前），取 `"writing"`**（状态机首态）。精确位置由 §3.6 `current_node` 承载。
+
 ---
 
 ## 4. `openlogos deploy-done --format json`
@@ -603,8 +649,18 @@ openlogos smoke --env production --format json
 | `PROJECT_NOT_INITIALIZED` | 当前目录不是 OpenLogos 项目 |
 | `NO_TEST_RESULTS` | 找不到测试结果文件 |
 | `NO_TEST_CASES` | 找不到测试用例规格文件 |
+| `FLOW_NOT_FOUND` | 内置 flow 模板缺失 / 无法定位 |
+| `FLOW_SCHEMA_INVALID` | flow 或 overlay 校验失败（含 overlay-add 谓词不可求值、launched builtin skip/reorder、`op:modify` 覆盖 `id` 等）|
 
 > `openlogos watch` 的错误仍使用通用错误 envelope（`command: "watch"`）；项目未初始化时输出 `PROJECT_NOT_INITIALIZED` 并以非零退出码退出，不进入轮询循环。`openlogos next --auto` 的错误沿用 `next` 既有错误语义（如 `PROJECT_NOT_INITIALIZED` / `NO_ACTIVE_CHANGE`），不新增错误码。
+
+### 6.2 overlay 派生错误信封
+
+派生（`status` / `next` / `watch` 调 `collectStatusData`）抛 `FlowError` 时，命令以
+**`makeErrorEnvelope(command, e.code, e.message)`** 输出到 stderr 并非零退出——**`code` 取 `e.code`、不硬编码**
+（`FlowErrorCode` ∈ `PROJECT_NOT_INITIALIZED` / `FLOW_NOT_FOUND` / `FLOW_SCHEMA_INVALID`，见 §6.1）。
+本切片新增的语义错误——**launched builtin `skip`/`reorder`**、**overlay-add 节点谓词组合不可求值**——`code` 为 `FLOW_SCHEMA_INVALID`。
+`watch` 命中该错误时不进入 / 停止轮询。
 
 ---
 
@@ -836,6 +892,20 @@ openlogos watch --module core --format json
 | `status` | object | 是 | 派生状态，结构与 `openlogos status --format json` 的 `data` 一致 |
 
 > 注：顶层 envelope 的 `timestamp` 即该条事件的产生时间；每条 envelope 独立成行（行分隔的 JSON 流）。
+
+### 10.5 watch 的 overlay 派生字段（继承 status data）
+
+`openlogos watch` 的每条 envelope `data` **结构同构于 `status` data**（见 §10.3）。因此 §3.6 / §3.7 的
+`overlay_nodes` / `current_node` 字段及其省略规则**对 watch 同样适用**——存在已到达 overlay-added 节点时随流输出，
+无 overlay 时省略（流内容与未引入本切片时一致）。
+
+---
+
+## `openlogos next --format json`（base data）
+
+`openlogos next --format json` 的 base `data` 新增 `modules[].current_node`（结构同 §3.6），
+**仅当当前节点为 overlay-added 时输出**，否则省略；legacy 无 `modules[]` 时回退顶层 `current_node`。
+默认（无 overlay）`next` 输出不新增字段。`--auto` 的 gate 字段见下节 §11。
 
 ---
 

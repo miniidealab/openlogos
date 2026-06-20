@@ -1,3 +1,7 @@
+# ⚠️ 重要：本 logos/ 目录是 OpenLogos 对【自身方法论的 dogfooding 产物】，不是生产代码。
+# 生产代码 / 规格 / Skill 的唯一源头在仓库【根目录】（cli/、spec/、skills/）。
+# 任何对规格或 Skill 的修改，必须先改根目录源码，再经 `openlogos sync` 同步到 logos/。
+# 切勿把本目录下的文件当作产品实现来修改或交付。
 project:
   name: "openlogos"
   description: ""
@@ -26,7 +30,7 @@ tech_stack:
     release_archive: GitHub Releases
 
 scenario_counter:
-  next_id: 21
+  next_id: 26
 
 modules:
   - id: core
@@ -75,6 +79,21 @@ scenarios:
     module: core
   - id: S20
     name: 已有项目接入 OpenLogos
+    module: core
+  - id: S21
+    name: 标记部署完成
+    module: core
+  - id: S22
+    name: 查看与解析 flow 编排
+    module: core
+  - id: S23
+    name: 实时观测派生研发状态（watch）
+    module: core
+  - id: S24
+    name: next --auto skip-gate
+    module: core
+  - id: S25
+    name: overlay 驱动 status/next/watch 派生
     module: core
 
 release_workflows:
@@ -163,7 +182,7 @@ resource_index:
   - path: logos/resources/prd/3-technical-plan/1-architecture/core-05-baseline-gap-report.md
     desc: 文档基线缺口报告。涉及 adopt 场景的补文档策略与风险识别时必读。
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md
-    desc: 场景总览与依赖图。涉及 S01~S20 覆盖范围、前后依赖关系时必读。
+    desc: 场景总览与依赖图。涉及 S01~S24 覆盖范围、前后依赖关系时必读。
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md
     desc: S01 时序文档。涉及 init 初始化流程、目录产物和配置写入时必读。
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md
@@ -190,12 +209,28 @@ resource_index:
     desc: S19 时序文档。涉及 smoke 门禁状态、报告产物和后续动作时必读。
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S20-adopt-existing-project.md
     desc: S20 时序文档。涉及存量项目接入、bootstrap=adopted 和 launch 放行时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S21-deploy-done-marker.md
+    desc: S21 时序文档。涉及 deploy-done 命令、DEPLOY_DONE marker 写入、部署任务勾选和 smoke marker 清理时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S22-flow-loading.md
+    desc: S22 时序文档。涉及 flow 加载/overlay 解析、flow show 命令与内置模板查看时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S23-watch.md
+    desc: S23 时序文档。涉及 watch 实时观测派生状态、初始快照/仅变化输出、JSON 流时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S24-auto-gate.md
+    desc: S24 时序文档。涉及 next --auto skip-gate、GATE_AUTO_PASSED 审计与 gate 范围语义时必读。
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-99-traceability-matrix.md
     desc: 追踪矩阵。涉及需求-设计-测试-实现映射核查时必读。
   - path: logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
     desc: 部署方案主文档。涉及 npm 发布、GitHub Release、官网部署与回滚策略时必读。
   - path: logos/resources/test/core-S20-test-cases.md
     desc: S20 测试用例。涉及 adopt 初始化完整性、状态兼容和门禁行为验收时必读。
+  - path: logos/resources/test/core-S21-test-cases.md
+    desc: S21 测试用例。涉及 deploy-done 成功路径、错误分支、JSON 输出和状态流转验收时必读。
+  - path: logos/resources/test/core-S22-test-cases.md
+    desc: S22 测试用例。涉及 flow 加载、overlay 四操作、版本告警、flow show 与 JSON 输出验收时必读。
+  - path: logos/resources/test/core-S23-test-cases.md
+    desc: S23 测试用例。涉及 watch 初始快照、仅变化输出、seq/JSON 流、--module 继承与只读验收时必读。
+  - path: logos/resources/test/core-S24-test-cases.md
+    desc: S24 测试用例。涉及 next --auto 放行/卡住、GATE_AUTO_PASSED 审计、默认 next 零漂移验收时必读。
   - path: logos/resources/test/smoke/core-smoke-test-cases.md
     desc: 核心 smoke 用例。涉及发布后最小可用性验证和官网 release 页面检查时必读。
   - path: logos/resources/verify/acceptance-report.md
@@ -206,6 +241,10 @@ resource_index:
     desc: 部署后冒烟报告。涉及 smoke 成败判定与失败定位时必读。
   - path: logos/resources/implementation/implementation-manifest.md
     desc: 实现清单。涉及代码落地路径、测试覆盖与交付边界时必读。
+  - path: cli/src/commands/deploy-done.ts
+    desc: deploy-done 命令实现。涉及 DEPLOY_DONE marker 受控写入、部署前置校验、[deploy] 任务勾选和 smoke marker 清理时必读。
+  - path: cli/test/s21-deploy-done.test.ts
+    desc: S21 deploy-done 命令测试。涉及成功路径、错误分支、JSON 输出、状态流转和 OpenLogos reporter 覆盖时必读。
   - path: logos/spec/logos-project.md
     desc: logos-project.yaml 规范。涉及字段契约、枚举语义和完成判定时必读。
   - path: logos/spec/release-process.md
@@ -214,6 +253,89 @@ resource_index:
     desc: PreToolUse guard hook 规格。涉及变更管理硬拦截机制、白名单规则、判定逻辑时必读。
   - path: .claude/openlogos/bin/guard-check
     desc: PreToolUse hook 脚本。涉及 Claude Code 工具拦截、guard 文件检测、白名单判定时必读。
+
+  - path: logos/resources/test/core-S01-test-cases.md
+    desc: S01 测试用例。涉及 S01 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S05-test-cases.md
+    desc: S05 测试用例。涉及 S05 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S08-test-cases.md
+    desc: S08 测试用例。涉及 S08 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S09-test-cases.md
+    desc: S09 测试用例。涉及 S09 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S11-test-cases.md
+    desc: S11 测试用例。涉及 S11 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S13-test-cases.md
+    desc: S13 测试用例。涉及 S13 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S14-test-cases.md
+    desc: S14 测试用例。涉及 S14 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S15-test-cases.md
+    desc: S15 测试用例。涉及 S15 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S16-test-cases.md
+    desc: S16 测试用例。涉及 S16 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S17-test-cases.md
+    desc: S17 测试用例。涉及 S17 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S18-test-cases.md
+    desc: S18 测试用例。涉及 S18 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/test/core-S19-test-cases.md
+    desc: S19 测试用例。涉及 S19 单元测试与场景测试的实现与验收时必读。
+  - path: spec/agents-md.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/change-management.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/cli-json-output.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/codex-plugin.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/directory-convention.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/logos-project.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/logos.config.schema.json
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/module-naming-convention.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/opencode-plugin.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/sql-comment-convention.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/tasks-spec.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/test-results.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/workflow.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: skills/api-designer/SKILL.md
+    desc: api-designer Skill。使用 api-designer 功能时必读。
+  - path: skills/architecture-designer/SKILL.md
+    desc: architecture-designer Skill。使用 architecture-designer 功能时必读。
+  - path: skills/change-writer/SKILL.md
+    desc: change-writer Skill。使用 change-writer 功能时必读。
+  - path: skills/code-implementor/SKILL.md
+    desc: code-implementor Skill。使用 code-implementor 功能时必读。
+  - path: skills/code-reviewer/SKILL.md
+    desc: code-reviewer Skill。使用 code-reviewer 功能时必读。
+  - path: skills/db-designer/SKILL.md
+    desc: db-designer Skill。使用 db-designer 功能时必读。
+  - path: skills/deployment-designer/SKILL.md
+    desc: deployment-designer Skill。使用 deployment-designer 功能时必读。
+  - path: skills/deployment-executor/SKILL.md
+    desc: deployment-executor Skill。使用 deployment-executor 功能时必读。
+  - path: skills/merge-executor/SKILL.md
+    desc: merge-executor Skill。使用 merge-executor 功能时必读。
+  - path: skills/prd-writer/SKILL.md
+    desc: prd-writer Skill。使用 prd-writer 功能时必读。
+  - path: skills/product-designer/SKILL.md
+    desc: product-designer Skill。使用 product-designer 功能时必读。
+  - path: skills/project-init/SKILL.md
+    desc: project-init Skill。使用 project-init 功能时必读。
+  - path: skills/scenario-architect/SKILL.md
+    desc: scenario-architect Skill。使用 scenario-architect 功能时必读。
+  - path: skills/test-orchestrator/SKILL.md
+    desc: test-orchestrator Skill。使用 test-orchestrator 功能时必读。
+  - path: skills/test-writer/SKILL.md
+    desc: test-writer Skill。使用 test-writer 功能时必读。
+  - path: skills/ui-ux-pro-max/SKILL.md
+    desc: ui-ux-pro-max Skill。使用 ui-ux-pro-max 功能时必读。
 
 conventions:
   - "场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号"

@@ -1135,7 +1135,16 @@ After every **write or modify** operation on Markdown / text specification files
 `;
 }
 
-const DIRECTORIES = [
+export const REFERENCE_SUBDIRECTORIES = [
+  'requirement',
+  'todolist',
+  'code',
+  'image',
+  'temp',
+  'note',
+];
+
+export const DIRECTORIES = [
   'logos/resources/prd/1-product-requirements',
   'logos/resources/prd/2-product-design/1-feature-specs',
   'logos/resources/prd/2-product-design/2-page-design',
@@ -1150,6 +1159,7 @@ const DIRECTORIES = [
   'logos/resources/implementation',
   'logos/resources/verify',
   'logos/resources/reference',
+  ...REFERENCE_SUBDIRECTORIES.map(dir => `logos/resources/reference/${dir}`),
   'logos/changes',
   'logos/changes/archive',
 ];

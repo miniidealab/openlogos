@@ -18,6 +18,7 @@ import {
   createCodexSkillContent,
   mergeAiToolConfig,
   resolveDocsAiToolForTarget,
+  REFERENCE_SUBDIRECTORIES,
   SKILL_NAMES,
   init,
 } from '../src/commands/init.js';
@@ -621,6 +622,9 @@ describe('S01 Scenario Tests — init command', () => {
 
     expect(existsSync(join(root, 'logos', 'spec', 'test-results.md'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'spec', 'sql-comment-convention.md'))).toBe(true);
+    for (const dir of REFERENCE_SUBDIRECTORIES) {
+      expect(existsSync(join(root, 'logos', 'resources', 'reference', dir, '.gitkeep'))).toBe(true);
+    }
 
     const agents2 = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents2).toContain('logos/spec/test-results.md');

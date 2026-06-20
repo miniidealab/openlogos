@@ -55,3 +55,17 @@ sequenceDiagram
 ### EX-4.3: smoke 命令写入仓库非白名单路径
 - **触发条件**：`smoke.sandbox_deny_workspace_write=true`，`smoke.command` 写入仓库根目录中的非白名单路径。
 - **期望响应**：`always` 模式下 smoke FAIL；`auto` 模式下若无法阻断写入必须输出 `sandbox.status=warn`，并给出改用 `always` 的建议。
+
+## smoke 前置依赖 deploy-done
+
+`openlogos smoke` 只能在部署完成状态明确后运行。部署完成状态由 `openlogos deploy-done` 写入的 `DEPLOY_DONE` 与已全勾的 `[deploy]` section 共同表达。
+
+smoke 的前置校验必须保持：
+- 提案声明需要 smoke。
+- 提案部署决策无冲突。
+- `DEPLOY_DONE` 存在。
+- `[deploy]` section 已全部勾选。
+
+`openlogos smoke` 不得替代 `openlogos deploy-done` 写入部署完成 marker；如果缺少 `DEPLOY_DONE`，应提示先完成部署并执行 `openlogos deploy-done`。
+
+重新执行 `openlogos deploy-done` 会清理旧的 `SMOKE_PASS` / `SMOKE_FAIL`，因此 smoke 结果只对应最近一次确认完成的部署。
