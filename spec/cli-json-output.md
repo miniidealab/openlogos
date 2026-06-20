@@ -4,7 +4,9 @@
 
 ## 1. 概述
 
-OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect`、`deploy-done`、`flow show` 等命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
+OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect`、`deploy-done`、`flow show`、`watch` 等命令支持 `--format json` 参数，输出结构化 JSON 供外部工具（如 RunLogos）以编程方式消费。
+
+> `openlogos watch` 的 `--format json` 输出**每条一行的 JSON 流**（多条 envelope，逐行换行分隔），而非单条；其余命令仍为单条 envelope。详见「`openlogos watch --format json`」一节。
 
 ### 1.1 通用约定
 
@@ -17,11 +19,11 @@ OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect`、`deploy-do
 
 ### 1.2 通用信封结构
 
-所有命令的 JSON 输出共享同一信封结构：
+所有命令的 JSON 输出共享同一信封结构（`watch` 为该信封的流式多条输出）：
 
 ```jsonc
 {
-  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "deploy-done" | "module list" | "flow show"
+  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "deploy-done" | "module list" | "flow show" | "watch"
   "version": "<cli-version>",
   "timestamp": "<ISO-8601>",
   "data": { ... }
@@ -602,6 +604,8 @@ openlogos smoke --env production --format json
 | `NO_TEST_RESULTS` | 找不到测试结果文件 |
 | `NO_TEST_CASES` | 找不到测试用例规格文件 |
 
+> `openlogos watch` 的错误仍使用通用错误 envelope（`command: "watch"`）；项目未初始化时输出 `PROJECT_NOT_INITIALIZED` 并以非零退出码退出，不进入轮询循环。`openlogos next --auto` 的错误沿用 `next` 既有错误语义（如 `PROJECT_NOT_INITIALIZED` / `NO_ACTIVE_CHANGE`），不新增错误码。
+
 ---
 
 ## 7. `openlogos module list --format json`
@@ -783,3 +787,105 @@ openlogos flow show --lifecycle launched --format json
 - `FLOW_VERSION_MISMATCH` — 仅作为 `warnings[]` 中的**告警码**出现（不阻断解析）；不作为错误 envelope 的 `error.code`
 
 错误分支不输出半成品 `flow`；schema 非法时必须以 `FLOW_SCHEMA_INVALID` 失败，而非静默返回部分合并结果。
+
+---
+
+## 10. `openlogos watch --format json`（实时派生状态流）
+
+`openlogos watch` 是 `status` 的实时版：轮询 `collectStatusData`（与 `status` 同一派生数据源），把一次性快照变成实时流。本命令**只读**，不写文件、不推进状态、不接入 status / next 的写副作用。
+
+### 10.1 用法
+
+```bash
+openlogos watch                          # 文本模式
+openlogos watch --format json            # JSON 流
+openlogos watch --interval 5             # 轮询间隔 5 秒（默认 2 秒）
+openlogos watch --module core            # 继承 --module 过滤
+openlogos watch --module core --format json
+```
+
+### 10.2 流契约（须严格遵守）
+
+- **启动先输出一次初始快照**（`seq=0`，`event="snapshot"`），无需等到下一次变化。
+- 之后**仅在派生状态变化时**输出一条（`event="change"`，`seq` 递增）。
+- **变化判定** = 相邻两次 `collectStatusData` 的 `data` 深比较（深相等则不输出）。
+- 每条输出携带递增 `seq` 与 `timestamp`。
+- `data.status` 与 `openlogos status --format json` 的 `data` **同构**（同一派生结构）。
+- **继承 `--module`**：派生与变化判定仅针对该模块，等价 `openlogos status --module <id>` 的派生数据。
+- **退出**：Ctrl-C / SIGINT 优雅退出，全程无写副作用。
+- **错误**：项目未初始化时输出 `PROJECT_NOT_INITIALIZED` 错误 envelope（到 stderr）并以非零退出码退出，不进入轮询循环。
+
+### 10.3 JSON Schema（每条 envelope 的 data 部分）
+
+```jsonc
+{
+  "seq": 0,                         // 事件序号，从 0（初始快照）起递增
+  "event": "snapshot",             // "snapshot"（初始快照）| "change"（变化事件）
+  "module": "core",                // 继承的 --module 过滤；未指定时为 null
+  "status": { /* 与 openlogos status 的 data 同构 */ }
+}
+```
+
+### 10.4 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `seq` | number | 是 | 事件序号；初始快照为 0，之后每条变化事件递增 |
+| `event` | string | 是 | `"snapshot"`（启动初始快照）或 `"change"`（后续仅变化时输出） |
+| `module` | string \| null | 是 | 继承的 `--module` 过滤值；未指定时为 null |
+| `status` | object | 是 | 派生状态，结构与 `openlogos status --format json` 的 `data` 一致 |
+
+> 注：顶层 envelope 的 `timestamp` 即该条事件的产生时间；每条 envelope 独立成行（行分隔的 JSON 流）。
+
+---
+
+## 11. `openlogos next --auto` 的 gate 字段
+
+`openlogos next --auto`（skip-gate，最小 A 方案）在既有 `next` data 基础上附带 gate 决策字段，描述当前停顿点对应的 launched flow gate 及 auto 放行结果。**默认 `next`（无 `--auto`）不输出这些字段、`data` 与既有契约 1:1 不变。**
+
+```jsonc
+{
+  // ... 既有 next data 字段 ...
+  "auto": true,                    // 是否启用 auto 模式（--auto）
+  "gate_id": "propose-exit",       // 当前停顿点对应的 launched gate id；无对应 gate 时为 null
+  "skippable": true,               // 该 human gate 是否允许 auto 跳过
+  "gate_auto_passed": true         // 本次 --auto 是否实际放行并追加了 GATE_AUTO_PASSED 审计行
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `auto` | boolean | 否 | 是否启用 `--auto`；默认 `next` 省略或为 false |
+| `gate_id` | string \| null | 否 | 当前停顿点对应的 launched gate id；`ready-to-merge`→propose 出口 gate、`ready-to-deploy`→deliver 入口 gate；无对应 gate（如 `ready-to-smoke`）时为 null |
+| `skippable` | boolean \| null | 否 | 该 human gate 是否允许 auto 跳过：`ready-to-merge`→true、`ready-to-deploy`→false |
+| `gate_auto_passed` | boolean | 否 | 本次 `--auto` 是否实际放行并向 `GATE_AUTO_PASSED` 追加审计行（`skippable:false` 或无 gate 时为 false） |
+
+**`gate_id` 派生规则（契约闭合）**：`spec/flow/launched.yaml` 的 gate 挂在 subflow 上、无显式 id 字段，
+故 `gate_id` 为**派生值** = `<subflow.id>-<gate.position>`（`gate.position` 缺省为 `exit`）。
+据此：propose subflow 的出口 gate → **`propose-exit`**；deliver subflow 的入口 gate → **`deliver-entry`**。
+实现侧 gate 助手须按此规则生成 `gate_id`。
+
+**范围边界**：`--auto` 仅作用于 launched 的 propose 出口 gate（`ready-to-merge`，可跳）与 deliver 入口 gate（`ready-to-deploy`，不可跳）。`smoke` 无对应 gate，`ready-to-smoke` 不在范围内。initial 的 WHY/WHAT 建议门本轮不接入 `--auto`（仅 schema 预留）。
+
+---
+
+## 12. `GATE_AUTO_PASSED` JSONL 审计 schema
+
+`GATE_AUTO_PASSED` 是活跃提案目录下的 **JSONL 审计日志**：`logos/changes/<slug>/GATE_AUTO_PASSED`。
+
+- **每次 `--auto` 放行总是追加一行**（**不去重、不覆盖**），保留完整审计轨迹。
+- **纯审计、不改变派生**：默认 `next`（无 `--auto`）与 `status` **忽略**该文件、输出 1:1 不变——绝不因其存在而让默认 `next` 自动越过 gate。
+
+每行 schema：
+
+```jsonc
+{ "gate_id": "propose-exit", "proposal_step": "ready-to-merge", "timestamp": "2026-06-20T08:01:12Z" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `gate_id` | string | 是 | 被自动放行的 launched gate id |
+| `proposal_step` | string | 是 | 放行时活跃提案所处的 `proposal_step`（如 `"ready-to-merge"`） |
+| `timestamp` | string | 是 | 放行时间（ISO-8601） |
+
+> **幂等说明**：重复 `--auto` 会追加多行；"幂等"仅指对默认 `next`/`status` 的**派生结论无影响、可安全重跑**，**并非**审计日志去重。
