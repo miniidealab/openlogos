@@ -137,6 +137,19 @@
         }
       }
     },
+    "flow": {
+      "type": "object",
+      "description": "可编排研发流程配置（可选）。",
+      "properties": {
+        "cmd_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "flow 节点 cmd: 谓词的项目级默认超时秒数（节点级 cmd_timeout_seconds 优先；二者均须整数 ≥ 1）"
+        }
+      },
+      "additionalProperties": false
+    },
     "sourceRoots": {
       "type": "object",
       "description": "源代码根目录配置。由 code-implementor skill 自动写入，或用户手动配置。",

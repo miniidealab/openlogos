@@ -325,6 +325,78 @@ openlogos status --format json  # JSON 格式
 取值 = resolved 序列中该节点**之前最近一个 builtin 节点**对应的 step（保持合法枚举、后向兼容，**不置 null**）；
 **若无前序 builtin（`add ... before` 插到首个 builtin 之前），取 `"writing"`**（状态机首态）。精确位置由 §3.6 `current_node` 承载。
 
+### 3.8 cmd: 谓词字段（M2 切片 1b）
+
+`cmd:<command>` 谓词（仅 overlay-add 节点）点亮后，机器契约新增：
+
+**(a) node 级 state 枚举追加 `pending`**：`overlay_nodes[].state` 与 `current_node.state` 取值集扩为
+`"done" | "active" | "skipped" | "failed" | "pending"`。`pending` 表示该 `cmd:` 节点**在观察派生（status/watch）下未被求值**——status/watch 不执行命令。无 `cmd:` 节点时不会出现 `pending`。
+
+**(b) `flow show --resolved` node 字段新增 `cmd_timeout_seconds`**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `flow.subflows[].nodes[].cmd_timeout_seconds` | integer ≥ 1 \| null | 节点级 cmd 超时秒数；缺省 null（回退项目级 `flow.cmd_timeout_seconds` / 内置 60s）。`< 1` 或非整数 → `FLOW_SCHEMA_INVALID` |
+
+**(c) `next --format json` 的 cmd 结果字段**（success envelope `data` 顶层；**仅本次 next 执行了 cmd 时出现，否则整组省略**）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `cmd_node_id` | string | 被求值的 cmd 节点 id（即使 done 后 current 已续推，仍归属被求值节点）|
+| `cmd_predicate_field` | string | `"done_when"` \| `"fail_when"` |
+| `cmd_exit_code` | number \| null | 命令退出码；超时为 null |
+| `cmd_timed_out` | boolean | 是否超时 |
+| `cmd_satisfied` | boolean | 该 cmd 谓词是否满足（exit 0）；**非节点最终完成态**（看 `current_node.state`）|
+
+出现条件矩阵：
+
+| 触发 | `cmd_predicate_field` | `cmd_exit_code` | `cmd_timed_out` | `cmd_satisfied` | 结果 |
+|---|---|---|---|---|---|
+| done_when:cmd exit 0 | done_when | 0 | false | true | 节点 done、本次续推 |
+| done_when:cmd 非 0 | done_when | N | false | false | active |
+| done_when:cmd 超时 | done_when | null | true | false | active |
+| fail_when:cmd exit 0 | fail_when | 0 | false | true | failed |
+| fail_when:cmd 非 0/超时（未命中） | fail_when | N/null | false/true | false | 继续评该节点（非 cmd 的）done_when |
+| 本次未执行 cmd | — | — | — | — | 字段整组省略 |
+
+**(d) 执行输出隔离 / 容量边界**：`next` 执行 cmd 时 child stdout/stderr **必须捕获、绝不写父进程 stdout**（保 `next --format json` 单条合法 envelope）；
+持续 drain 防阻塞、每路尾部 ≤64KiB 截断；**命令输出不进 envelope**。
+
+**(e) 每次 next cmd budget = 1**：单次 `next` 至多执行 1 个 cmd；续推后若新 current 又是 cmd 节点，输出为 `current_node`（`state: "pending"`）但不执行第二个。
+
+### 3.9 loop_state 派生字段（M2 切片 2）
+
+implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代（`max_iters > 1`）后，机器契约新增 `loop_state`。
+
+**`modules[].loop_state`**（object \| 省略；**仅 loop 激活时输出**）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `loop_state.subflow_id` | string | 激活 loop 的 subflow id（如 `"implement"`）|
+| `loop_state.until` | string | 收敛谓词，本切片恒为 `"tests_green"` |
+| `loop_state.max_iters` | number | resolved loop 的迭代上限（整数 ≥ 1；> 1 才会出现本对象）|
+| `loop_state.iteration` | number | 已完成的 verify 轮次（= `LOOP_ITERS` 按当前 module 过滤后的行数）|
+| `loop_state.converged` | boolean | 末轮测试绿（账本末行 `result == "pass"`）|
+| `loop_state.escalated` | boolean | `iteration >= max_iters && !converged`（达上限仍未绿）|
+
+**挂载位置（与 §3.6 overlay 字段同构）**：
+- 有 `modules[]` 的项目 → `modules[].loop_state`（按模块）；
+- legacy 无 `modules[]` → 回退**顶层** `loop_state`；消费方先读 `modules[].*`、缺则读顶层；
+- `openlogos next --format json` 的 base data **同步挂 `next.modules[].loop_state`**（顶层仅 legacy fallback）；
+- `openlogos watch` 的 data 与 status 同构，**继承同一挂载与省略规则**（见 §10.5）。
+
+**省略规则（可测，保 golden）**：`loop_state` **仅当** resolved 目标 subflow `loop.max_iters > 1` **且 loop 真正激活**时输出，
+否则**省略字段**。据此 builtin（`max_iters:1`）、未用 `set-loop` 的项目、以及 **initial 多模块**（不支持、不激活）→ `loop_state`
+一律省略，§3.2/§3.3/`next`/`watch` 输出**逐字节不变**（golden 零漂移）。
+
+**与 `proposal_step` 的关系（JSON 兼容）**：`loop-exhausted` **不是新的 `proposal_step` 枚举值**——§3.3 的 `proposal_step`
+集合保持不变（launched loop 未收敛时仍为 `ready-to-verify` / `verify-failed` 等既有值）。"是否达上限"**只由 `loop_state.escalated`
+\+ `next --auto` 的 gate 字段表达**（见 §11.1），实现不得为表达本 gate 而新增 `proposal_step`。
+
+**出环判定（消费方须知）**：loop 激活且 `converged == false` 时，implement 视为**未完成**——`current_phase`（initial）/
+`proposal_step`（launched）**不得**前进到后续 subflow（deliver/deploy/launch），即便 verify 节点的 `done_when`
+（如 initial 的 `file:acceptance-report.md`，FAIL 也会写报告）已满足。
+
 ---
 
 ## 4. `openlogos deploy-done --format json`
@@ -650,7 +722,8 @@ openlogos smoke --env production --format json
 | `NO_TEST_RESULTS` | 找不到测试结果文件 |
 | `NO_TEST_CASES` | 找不到测试用例规格文件 |
 | `FLOW_NOT_FOUND` | 内置 flow 模板缺失 / 无法定位 |
-| `FLOW_SCHEMA_INVALID` | flow 或 overlay 校验失败（含 overlay-add 谓词不可求值、launched builtin skip/reorder、`op:modify` 覆盖 `id` 等）|
+| `FLOW_SCHEMA_INVALID` | flow 或 overlay 校验失败（含 overlay-add 谓词不可求值、launched builtin skip/reorder、`op:modify` 覆盖 `id`、`cmd:` 用于 builtin、同节点双 cmd、`cmd_timeout_seconds` < 1 等）|
+| `FLOW_CMD_SPAWN_FAILED` | `cmd:` 命令的 **shell 进程本身无法启动**（child_process `'error'` 事件，如 shell 缺失 / `EACCES`）；message 含节点 id + 命令名 + errno。**命令不存在（shell exit 127/9009）不属此类**，按非 0 走 success envelope |
 
 > `openlogos watch` 的错误仍使用通用错误 envelope（`command: "watch"`）；项目未初始化时输出 `PROJECT_NOT_INITIALIZED` 并以非零退出码退出，不进入轮询循环。`openlogos next --auto` 的错误沿用 `next` 既有错误语义（如 `PROJECT_NOT_INITIALIZED` / `NO_ACTIVE_CHANGE`），不新增错误码。
 
@@ -896,8 +969,9 @@ openlogos watch --module core --format json
 ### 10.5 watch 的 overlay 派生字段（继承 status data）
 
 `openlogos watch` 的每条 envelope `data` **结构同构于 `status` data**（见 §10.3）。因此 §3.6 / §3.7 的
-`overlay_nodes` / `current_node` 字段及其省略规则**对 watch 同样适用**——存在已到达 overlay-added 节点时随流输出，
-无 overlay 时省略（流内容与未引入本切片时一致）。
+`overlay_nodes` / `current_node` 字段、§3.9 的 `loop_state` 字段及其省略规则**对 watch 同样适用**——
+存在已到达 overlay-added 节点 / loop 激活时随流输出，无 overlay / 未激活时省略（流内容与未引入相应切片时一致）。
+watch 为**观察派生**：遇 loop 只读账本展示 `loop_state`、**不执行测试、不写账本**。
 
 ---
 
@@ -937,6 +1011,21 @@ openlogos watch --module core --format json
 
 **范围边界**：`--auto` 仅作用于 launched 的 propose 出口 gate（`ready-to-merge`，可跳）与 deliver 入口 gate（`ready-to-deploy`，不可跳）。`smoke` 无对应 gate，`ready-to-smoke` 不在范围内。initial 的 WHY/WHAT 建议门本轮不接入 `--auto`（仅 schema 预留）。
 
+### 11.1 loop-exhausted gate（M2 切片 2）
+
+当 implement loop 激活且 `loop_state.escalated == true`（达 `max_iters` 仍未测试绿）时，`next` 派生为 implement 子流程的
+**退出 human gate**。在 `--auto` 下其 gate 字段（§11）取值：
+
+| 字段 | 值 | 说明 |
+|------|----|------|
+| `gate_id` | `"gate:implement:loop-exhausted"` | loop 退出 gate 的确定性 id（`gate:<subflow>:loop-exhausted`）|
+| `skippable` | `false` | **本切片固定不可跳**（不可 overlay 覆盖）|
+| `gate_auto_passed` | `false` | 达上限 gate 即使 `--auto` 也**不放行、不追加 `GATE_AUTO_PASSED`** |
+
+- 行为与既有 `deliver-entry`（`skippable:false`）在 `--auto` 下一致：**照常阻塞**。
+- "继续迭代" = 人类用 overlay `set-loop` 调大 `max_iters`（`escalated` 自动解除）或修到测试绿出环；**gate 不重置计数**。
+- `proposal_step` 不因本 gate 改变（仍为既有枚举值）；达上限信息只在 `loop_state.escalated` + 本节 gate 字段表达。
+
 ---
 
 ## 12. `GATE_AUTO_PASSED` JSONL 审计 schema
@@ -959,3 +1048,33 @@ openlogos watch --module core --format json
 | `timestamp` | string | 是 | 放行时间（ISO-8601） |
 
 > **幂等说明**：重复 `--auto` 会追加多行；"幂等"仅指对默认 `next`/`status` 的**派生结论无影响、可安全重跑**，**并非**审计日志去重。
+
+---
+
+## 13. `LOOP_ITERS` JSONL 账本 schema
+
+`LOOP_ITERS` 是 loop 真迭代的**迭代账本**（append-only JSONL），由 `openlogos verify` 在 **loop 激活时**追加。
+
+- **路径**：launched = `logos/changes/<slug>/LOOP_ITERS`（提案级 episode）；initial = `logos/resources/verify/LOOP_ITERS`（项目级）。
+- **写入责任与时机**：由 **CLI 主进程**在**算出 gate 结果（PASS/FAIL）之后、不依赖 guard 的共享路径**追加（**非 pre-run 命令写**，免 sandbox 白名单）；
+  `result` 取**沙箱降级后的最终** gate 结果。**配置类早退**（`NO_TEST_RESULTS` / `NO_TEST_CASES` / `PROJECT_NOT_INITIALIZED`）
+  **不计为一次迭代、不写**。未激活（builtin `max_iters:1`）时不写（零副作用）。
+- **launched 额外写 `VERIFY_PASS`/`VERIFY_FAIL` marker + 写账本；initial 不进 guard 块、只写 `LOOP_ITERS`**。
+
+每行 schema：
+
+```jsonc
+{ "iter": 2, "node": "verify", "result": "fail", "module": "core", "timestamp": "2026-06-20T20:31:07Z" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `iter` | number | 是 | 本轮序号 = **同 `module` 已有行数 + 1**（按 module 过滤计数，**非整文件总行数**），与读取侧 `loop_state.iteration` 对齐 |
+| `node` | string | 是 | 求值节点，本切片恒为 `"verify"` |
+| `result` | string | 是 | `"pass"`（测试绿）\| `"fail"`（未绿/沙箱降级 FAIL）|
+| `module` | string | 是 | 该轮归属模块；读取侧按 `module` 过滤（避免 initial 项目级账本多模块串号）|
+| `timestamp` | string | 是 | ISO-8601 |
+
+- **module 来源**：launched = `guard.module`；initial 单模块 = 该唯一模块；**initial 多模块** = verify 为项目级单次运行、无法归属 →
+  **不写账本、loop 视为未激活**（本切片已知不支持）。launch 后 initial 账本仅历史产物，launched 派生只读提案目录账本。
+- **状态回退**：verify 再次 FAIL 沿用现有行为清除 `VERIFY_PASS` 及下游 `DEPLOY_DONE`/`SMOKE_*` → implement loop 重新打开；账本续写、`converged` 反映最后一次。

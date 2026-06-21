@@ -136,15 +136,18 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       .toThrowError(expect.objectContaining({ code: 'FLOW_SCHEMA_INVALID' }));
   });
 
-  it('UT-S25-23: overlay-add 用 cmd: 谓词（M2 预留）→ FLOW_SCHEMA_INVALID（F1 白名单）', () => {
+  it('UT-S25-23: overlay-add 用 cmd: 谓词（S26 启用）→ 观察派生 pending + pending_cmd', () => {
     const root = tempProject();
     writeOverlay(root, 'initial', [
       'extends: builtin:initial@v1', 'overlay:',
       '  - op: add', '    before: prd',
-      '    node: { id: bad, name: 坏节点, done_when: "cmd:npm test" }',
+      '    node: { id: chk, name: 检查节点, done_when: "cmd:npm test" }',
     ].join('\n'));
-    expect(() => deriveOverlayView(root, coreInitial, [], null))
-      .toThrowError(expect.objectContaining({ code: 'FLOW_SCHEMA_INVALID' }));
+    // M2 切片 1b：cmd: 在 overlay-add 上已合法（不再 FLOW_SCHEMA_INVALID）；观察派生不执行 → pending
+    const view = deriveOverlayView(root, coreInitial, [], null);
+    expect(view?.current_node?.state).toBe('pending');
+    expect(view?.pending_cmd?.command).toBe('npm test');
+    expect(view?.pending_cmd?.predicate_field).toBe('done_when');
   });
 
   it('UT-S25-24: overlay-add 用未知/拼错谓词 → FLOW_SCHEMA_INVALID（F1 白名单）', () => {
@@ -158,15 +161,18 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       .toThrowError(expect.objectContaining({ code: 'FLOW_SCHEMA_INVALID' }));
   });
 
-  it('UT-S25-25: overlay-add fail_when 用 cmd: → FLOW_SCHEMA_INVALID（F1 校验 fail_when）', () => {
+  it('UT-S25-25: overlay-add fail_when 用 cmd:（done_when 非 cmd）→ 合法，pending_cmd 取 fail_when', () => {
     const root = tempProject();
     writeOverlay(root, 'initial', [
       'extends: builtin:initial@v1', 'overlay:',
       '  - op: add', '    before: prd',
-      '    node: { id: bad, name: 坏节点, done_when: "file:x", fail_when: "cmd:false" }',
+      '    node: { id: chk, name: 检查节点, done_when: "file:x", fail_when: "cmd:false" }',
     ].join('\n'));
-    expect(() => deriveOverlayView(root, coreInitial, [], null))
-      .toThrowError(expect.objectContaining({ code: 'FLOW_SCHEMA_INVALID' }));
+    // 决策 B 仅禁「done_when 与 fail_when 同时为 cmd:」；单侧 cmd: 合法。观察派生 → pending（fail_when 优先 G4）
+    const view = deriveOverlayView(root, coreInitial, [], null);
+    expect(view?.current_node?.state).toBe('pending');
+    expect(view?.pending_cmd?.predicate_field).toBe('fail_when');
+    expect(view?.pending_cmd?.command).toBe('false');
   });
 
   it('UT-S25-26: 纯代码提案（无 [delta]）→ merge subflow 内的 add 节点 = skipped、不阻塞（F2）', () => {

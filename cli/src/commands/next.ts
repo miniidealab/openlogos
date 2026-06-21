@@ -4,12 +4,15 @@ import { parse as parseYaml } from 'yaml';
 import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
-import { collectStatusData } from './status.js';
+import { collectStatusData, deriveActiveOverlay } from './status.js';
 import type { ProposalStep } from './status.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 import { gateForProposalStep } from '../lib/flow-derive.js';
-import type { CurrentNode } from '../lib/flow-overlay-derive.js';
+import type { CurrentNode, CmdEval } from '../lib/flow-overlay-derive.js';
+import type { LoopState } from '../lib/flow-loop-derive.js';
+import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
+import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
 
 export interface NextModuleItem {
   id: string;
@@ -25,6 +28,7 @@ export interface NextModuleItem {
   deployment_decision_conflict_reason?: string | null;
   deployment_warnings?: string[];
   current_node?: CurrentNode;
+  loop_state?: LoopState;
 }
 
 export interface NextData {
@@ -36,11 +40,19 @@ export interface NextData {
   modules?: NextModuleItem[];
   // M2 切片 1a：base data 的 current_node（仅当前为 overlay-added 时附带）
   current_node?: CurrentNode;
+  // M2 切片 2：loop 真迭代派生（仅 overlay 激活时附带）
+  loop_state?: LoopState;
   // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
   auto?: boolean;
   gate_id?: string | null;
   skippable?: boolean | null;
   gate_auto_passed?: boolean;
+  // M2 切片 1b：本次 next 执行了 cmd: 节点求值时附带（budget=1，transient，不写 marker）
+  cmd_node_id?: string;
+  cmd_predicate_field?: 'done_when' | 'fail_when';
+  cmd_exit_code?: number | null;
+  cmd_timed_out?: boolean;
+  cmd_satisfied?: boolean;
 }
 
 /** 在活跃提案目录追加一行 GATE_AUTO_PASSED JSONL 审计（总是追加、不去重）。 */
@@ -190,7 +202,7 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
   }
 }
 
-export function next(format: OutputFormat = 'text', moduleId?: string, auto: boolean = false) {
+export async function next(format: OutputFormat = 'text', moduleId?: string, auto: boolean = false) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
 
@@ -222,9 +234,41 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
     }
   }
 
-  let data: ReturnType<typeof collectStatusData>;
+  const locale = readLocale(root);
+
+  // M2 切片 1b：cmd: 谓词求值（仅 next）。当前节点是待执行 cmd 节点 → 执行一次（budget=1，transient，不写 marker），
+  // 结果回灌派生（cmdEval），让本次 next 输出反映 done/failed/active 续推态。status/watch 不走此路径。
+  let cmdEval: CmdEval | undefined;
+  let cmdResult: { node_id: string; predicate_field: 'done_when' | 'fail_when'; exit_code: number | null; timed_out: boolean; satisfied: boolean } | undefined;
   try {
-    data = collectStatusData(root, moduleId);
+    const observe = deriveActiveOverlay(root, moduleId);
+    const pc = observe?.pending_cmd;
+    if (pc) {
+      let runRes: Awaited<ReturnType<typeof runFlowCmd>>;
+      try {
+        runRes = await runFlowCmd(pc.command, root, pc.timeout_seconds);
+      } catch (e) {
+        if (e instanceof CmdSpawnError) {
+          // 契约（cli-json-output.md §6.1）：message 须含节点 id + 命令名 + errno
+          const msg = locale === 'zh'
+            ? `cmd 节点 \`${pc.node_id}\` 命令无法启动：${pc.command}（${e.errno}）`
+            : `cmd node \`${pc.node_id}\` command failed to spawn: ${pc.command} (${e.errno})`;
+          if (format === 'json') {
+            console.error(JSON.stringify(makeErrorEnvelope('next', 'FLOW_CMD_SPAWN_FAILED', msg)));
+          } else {
+            console.error(`✖ ${msg}`);
+          }
+          process.exit(1);
+        }
+        throw e;
+      }
+      const satisfied = runRes.exitCode === 0 && !runRes.timedOut;
+      cmdEval = { node_id: pc.node_id, satisfied };
+      cmdResult = {
+        node_id: pc.node_id, predicate_field: pc.predicate_field,
+        exit_code: runRes.exitCode, timed_out: runRes.timedOut, satisfied,
+      };
+    }
   } catch (e) {
     if (e instanceof FlowError) {
       if (format === 'json') {
@@ -236,7 +280,21 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
     }
     throw e;
   }
-  const locale = readLocale(root);
+
+  let data: ReturnType<typeof collectStatusData>;
+  try {
+    data = collectStatusData(root, moduleId, cmdEval);
+  } catch (e) {
+    if (e instanceof FlowError) {
+      if (format === 'json') {
+        console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
+      } else {
+        console.error(`✖ flow 配置错误（${e.code}）：${e.message}`);
+      }
+      process.exit(1);
+    }
+    throw e;
+  }
 
   // Read guard module
   let guardModule: string | null = null;
@@ -270,16 +328,34 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
     // M2 切片 1a：透传 overlay current_node，并在卡住时把 action 指向该节点（Review F3）
     moduleItems = moduleItems.map((item, i) => {
       const cn = data.modules![i].current_node;
-      if (!cn) return item;
-      return {
-        ...item, current_node: cn,
-        action: locale === 'zh'
-          ? `先完成 overlay 节点「${cn.name}」（${cn.id}）${cn.state === 'failed' ? '（失败，需修复）' : ''}`
-          : `Finish overlay node "${cn.name}" (${cn.id})${cn.state === 'failed' ? ' (failed — fix it)' : ''}`,
-        command: null,
-        detail: locale === 'zh' ? '当前流程卡在 overlay 节点，完成其判定后再推进后续步骤。'
-          : 'Flow is at an overlay node; finish it before later steps.',
-      };
+      const ls = data.modules![i].loop_state;
+      const withFields: NextModuleItem = { ...item, ...(cn ? { current_node: cn } : {}), ...(ls ? { loop_state: ls } : {}) };
+      if (cn) {
+        return {
+          ...withFields,
+          action: locale === 'zh'
+            ? `先完成 overlay 节点「${cn.name}」（${cn.id}）${cn.state === 'failed' ? '（失败，需修复）' : ''}`
+            : `Finish overlay node "${cn.name}" (${cn.id})${cn.state === 'failed' ? ' (failed — fix it)' : ''}`,
+          command: null,
+          detail: locale === 'zh' ? '当前流程卡在 overlay 节点，完成其判定后再推进后续步骤。'
+            : 'Flow is at an overlay node; finish it before later steps.',
+        };
+      }
+      // M2 切片 2：loop 阻塞时模块项指向 loop（前沿到 verify、跑过≥1 轮、未收敛、未被 overlay 节点抢占，F1）
+      const m = data.modules![i];
+      const mAtVerify = m.active_change?.proposal_step === 'ready-to-verify'
+        || m.active_change?.proposal_step === 'verify-failed' || m.current_phase === 'phase.3-6';
+      if (ls && isLoopBlocking(ls, mAtVerify)) {
+        return {
+          ...withFields,
+          action: ls.escalated
+            ? (locale === 'zh' ? `loop 已达迭代上限 ${ls.max_iters} 轮仍未绿 → 升级人类确认` : `Loop hit max_iters=${ls.max_iters} — human decision needed`)
+            : (locale === 'zh' ? `loop 第 ${ls.iteration}/${ls.max_iters} 轮未绿 → 修复后重跑 openlogos verify` : `Loop round ${ls.iteration}/${ls.max_iters} not green — fix and rerun openlogos verify`),
+          command: null,
+          detail: locale === 'zh' ? '修复后重跑 verify；测试绿即出环续推。' : 'Fix and rerun verify; loop exits once green.',
+        };
+      }
+      return withFields;
     });
   }
 
@@ -360,18 +436,30 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
   // M2 切片 1a（R2 安全）：当前节点为未完成的 overlay-added 节点时，gate 未到达 → 不得 auto-pass。
   const activeStatusMod = data.modules?.find(m => m.active_change?.slug === data.active_change);
   const blockedByOverlayNode = Boolean(activeStatusMod?.current_node || data.current_node);
+  // M2 切片 2：loop 阻塞仅当前沿已到 verify、跑过≥1 轮、未收敛（F1：不抢占 ready-to-merge 等前序停顿点）
+  const loopState = activeStatusMod?.loop_state ?? data.loop_state;
+  const loopAtVerify = data.proposal_step === 'ready-to-verify' || data.proposal_step === 'verify-failed'
+    || data.current_phase === 'phase.3-6';
+  const blockedByLoop = isLoopBlocking(loopState, loopAtVerify);
   if (auto) {
-    // Review F3：卡在未完成 overlay-added 节点时还没到 gate 边界 → gate_id/skippable 置 null（不暴露后续 builtin gate 预览）
-    const gate = (data.proposal_step && !blockedByOverlayNode) ? gateForProposalStep(data.proposal_step) : null;
-    autoGateId = gate ? gate.gate_id : null;
-    autoSkippable = gate ? gate.skippable : null;
-    if (gate && gate.skippable && data.active_change && !blockedByOverlayNode) {
-      appendGateAutoPassed(root, data.active_change, gate.gate_id, data.proposal_step!);
-      gateAutoPassed = true;
-      const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
-      action = passed.action; command = passed.command; detail = passed.detail;
-      const mi = moduleItems?.find(m => m.active_change === data.active_change);
-      if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+    if (blockedByLoop && loopState?.escalated) {
+      // R1：达上限 → loop 退出 human gate，固定不可跳、照常阻塞、不写 GATE_AUTO_PASSED
+      autoGateId = loopExhaustedGateId(loopState.subflow_id);
+      autoSkippable = false;
+    } else {
+      // Review F3：卡在未完成 overlay-added 节点 / loop 未收敛时还没到 gate 边界 → gate_id/skippable 置 null
+      const blocked = blockedByOverlayNode || blockedByLoop;
+      const gate = (data.proposal_step && !blocked) ? gateForProposalStep(data.proposal_step) : null;
+      autoGateId = gate ? gate.gate_id : null;
+      autoSkippable = gate ? gate.skippable : null;
+      if (gate && gate.skippable && data.active_change && !blocked) {
+        appendGateAutoPassed(root, data.active_change, gate.gate_id, data.proposal_step!);
+        gateAutoPassed = true;
+        const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
+        action = passed.action; command = passed.command; detail = passed.detail;
+        const mi = moduleItems?.find(m => m.active_change === data.active_change);
+        if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+      }
     }
   }
 
@@ -386,8 +474,51 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
       : 'Flow is at an overlay node; finish it before later steps.';
   }
 
+  // M2 切片 2：loop 阻塞时顶层 action/detail 指向 loop（未被 overlay 节点抢占、且前沿已到 verify 时，F1）
+  if (blockedByLoop && loopState && !overlayCur) {
+    if (loopState.escalated) {
+      action = locale === 'zh'
+        ? `loop 已达迭代上限 ${loopState.max_iters} 轮仍未绿 → 升级人类确认（继续迭代 / 调整 / 放弃）`
+        : `Loop hit max_iters=${loopState.max_iters} without green — human decision needed (continue / adjust / abandon)`;
+      detail = locale === 'zh'
+        ? `达迭代上限是人类确认点（gate: ${loopExhaustedGateId(loopState.subflow_id)}）；可调大 max_iters 续跑或修到测试绿。`
+        : `Reaching max_iters is a human gate (gate: ${loopExhaustedGateId(loopState.subflow_id)}).`;
+    } else {
+      action = locale === 'zh'
+        ? `loop 第 ${loopState.iteration}/${loopState.max_iters} 轮未绿 → 修复后重跑 openlogos verify（继续迭代）`
+        : `Loop round ${loopState.iteration}/${loopState.max_iters} not green — fix and rerun openlogos verify`;
+      detail = locale === 'zh'
+        ? '让 working_agent 修复后重跑 verify；测试绿即出环续推。'
+        : 'Fix and rerun verify; the loop exits once tests are green.';
+    }
+    command = null;
+  }
+
   // base data 的 current_node：契约规定有 modules[] 时挂 modules[].current_node，仅 legacy 无 modules[] 才回退顶层（Review F4）
   const baseCurrentNode = data.modules === undefined ? data.current_node : undefined;
+  // loop_state：有 modules[] 时挂 modules[].loop_state（透传），legacy 才回退顶层
+  const baseLoopState = data.modules === undefined ? data.loop_state : undefined;
+
+  // M2 切片 1b：cmd 执行后，顶层 action/detail 反映命令结果（done 续推 / 未通过重试 / 超时）
+  if (cmdResult) {
+    const r = cmdResult;
+    if (r.satisfied) {
+      // 命令通过：done_when:cmd → 节点完成续推；fail_when:cmd 通过 → 命中失败（节点 failed，由 overlayCur 接管）。
+      // 若续推后落到未收敛 loop / 其它 overlay 节点，detail 应由其接管，不覆盖（避免 action=loop 而 detail=cmd 不一致，F2）；cmd 结果仍在机器字段。
+      if (r.predicate_field === 'done_when' && !blockedByLoop && !overlayCur) {
+        detail = locale === 'zh'
+          ? `命令通过（exit 0），cmd 节点已完成，继续后续步骤。`
+          : `Command passed (exit 0); cmd node done — proceeding.`;
+      }
+    } else {
+      const reason = r.timed_out
+        ? (locale === 'zh' ? '命令超时' : 'command timed out')
+        : (locale === 'zh' ? `命令未通过（exit ${r.exit_code ?? '?'}）` : `command did not pass (exit ${r.exit_code ?? '?'})`);
+      detail = locale === 'zh'
+        ? `${reason}；cmd 节点判定未满足，修复后重新运行 openlogos next 再次求值。`
+        : `${reason}; cmd predicate not satisfied — fix and run openlogos next to re-evaluate.`;
+    }
+  }
 
   const result: NextData = {
     action,
@@ -397,7 +528,15 @@ export function next(format: OutputFormat = 'text', moduleId?: string, auto: boo
     proposal_step: data.proposal_step,
     ...(moduleItems !== undefined ? { modules: moduleItems } : {}),
     ...(baseCurrentNode ? { current_node: baseCurrentNode } : {}),
+    ...(baseLoopState ? { loop_state: baseLoopState } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
+    ...(cmdResult ? {
+      cmd_node_id: cmdResult.node_id,
+      cmd_predicate_field: cmdResult.predicate_field,
+      cmd_exit_code: cmdResult.exit_code,
+      cmd_timed_out: cmdResult.timed_out,
+      cmd_satisfied: cmdResult.satisfied,
+    } : {}),
   };
 
   if (format === 'json') {

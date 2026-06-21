@@ -158,7 +158,7 @@ async function main() {
     }
     case 'next': {
       const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
-      next(format, moduleArg, args.includes('--auto'));
+      await next(format, moduleArg, args.includes('--auto'));
       break;
     }
     case 'watch': {

@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys, detectProposalStepViaFlow } from '../lib/flow-derive.js';
 import { deriveOverlayView } from '../lib/flow-overlay-derive.js';
-import type { OverlayNode, CurrentNode } from '../lib/flow-overlay-derive.js';
+import type { OverlayNode, CurrentNode, OverlayView, CmdEval } from '../lib/flow-overlay-derive.js';
+import { deriveLoopState, isLoopBlocking } from '../lib/flow-loop-derive.js';
+import type { LoopState } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { listFiles } from '../lib/list-files.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
@@ -127,6 +129,8 @@ export interface ModuleStatusItem {
   // M2 切片 1a：overlay 驱动派生（仅存在已到达 overlay-added 节点 / 当前为 overlay-added 时输出）
   overlay_nodes?: OverlayNode[];
   current_node?: CurrentNode;
+  // M2 切片 2：loop 真迭代派生（仅 overlay set-loop 激活、非 initial 多模块时输出）
+  loop_state?: LoopState;
 }
 
 export interface StatusData {
@@ -150,6 +154,8 @@ export interface StatusData {
   // M2 切片 1a：legacy 无 modules[] 项目的 overlay 顶层回退（有 modules[] 时挂 modules[] 下）
   overlay_nodes?: OverlayNode[];
   current_node?: CurrentNode;
+  // M2 切片 2：loop 真迭代派生顶层回退（legacy 无 modules[] 时）
+  loop_state?: LoopState;
 }
 
 // Phase paths indexed by PHASE_KEYS order
@@ -275,6 +281,7 @@ function buildModuleStatusItem(
   guardActiveChange: string | null,
   guardModule: string | null,
   isMultiModule: boolean = false,
+  cmdEval?: CmdEval,
 ): ModuleStatusItem {
   if (mod.lifecycle === 'launched') {
     let activeChange: ModuleStatusItem['active_change'] = null;
@@ -325,6 +332,19 @@ function buildModuleStatusItem(
           : {}),
         ...(deployTasks.length > 0 ? { deploy_tasks: deployTasks } : {}),
       };
+    }
+
+    // M2 切片 2：loop 真迭代派生（launched 用提案目录账本）。**必须在 suggestion 计算之前**完成 step 回拉，
+    // 否则旧 VERIFY_PASS 生成的「验收通过，可 archive」建议会残留（F1 文案不一致）。
+    const launchedProposalDir = guardActiveChange && guardModule === mod.id
+      ? join(root, 'logos', 'changes', guardActiveChange) : null;
+    const loopState = deriveLoopState(root, mod, launchedProposalDir, isMultiModule);
+    if (activeChange) {
+      const gatedStep = gateLaunchedStepForLoop(activeChange.proposal_step, loopState);
+      if (gatedStep && gatedStep !== activeChange.proposal_step) {
+        activeChange.proposal_step = gatedStep;
+        activeChange.proposal_step_label = t(locale as Parameters<typeof t>[0], `status.proposalStep.${gatedStep}`);
+      }
     }
 
     let suggestion: string;
@@ -400,9 +420,8 @@ function buildModuleStatusItem(
             : 'Run openlogos change <slug> to create a new change proposal');
     }
 
-    const launchedProposalDir = guardActiveChange && guardModule === mod.id
-      ? join(root, 'logos', 'changes', guardActiveChange) : null;
-    const overlay = deriveOverlayView(root, mod, scenarios, launchedProposalDir, isMultiModule);
+    const loopHalt = loopHaltSubflow(loopState);
+    const overlay = deriveOverlayView(root, mod, scenarios, launchedProposalDir, isMultiModule, cmdEval, loopHalt);
     if (overlay && activeChange && overlay.proposal_step_override) {
       // 当前节点为 overlay-added → proposal_step 回退到前序最近 builtin step（合法枚举）
       activeChange.proposal_step = overlay.proposal_step_override as ProposalStep;
@@ -414,6 +433,18 @@ function buildModuleStatusItem(
       suggestion = locale === 'zh'
         ? `先完成 overlay 节点「${cn.name}」（${cn.id}）${cn.state === 'failed' ? '（失败，需修复）' : ''}；其完成判定见 flow 后再继续。`
         : `Finish overlay node "${cn.name}" (${cn.id})${cn.state === 'failed' ? ' (failed — fix it)' : ''} before continuing.`;
+    }
+
+    // 仅当前沿已到 verify（ready-to-verify / verify-failed）才进入 loop 阻塞语义，不抢占前序停顿点（F1）
+    const launchedAtVerify = activeChange?.proposal_step === 'ready-to-verify' || activeChange?.proposal_step === 'verify-failed';
+    if (isLoopBlocking(loopState, launchedAtVerify) && loopState) {
+      suggestion = loopState.escalated
+        ? (locale === 'zh'
+            ? `loop 已达迭代上限 ${loopState.max_iters} 轮仍未绿 → 升级人类确认（继续迭代 / 调整 / 放弃）。`
+            : `Loop hit max_iters=${loopState.max_iters} without green — human decision needed (continue / adjust / abandon).`)
+        : (locale === 'zh'
+            ? `loop 第 ${loopState.iteration}/${loopState.max_iters} 轮未绿 → 修复后重跑 openlogos verify（继续迭代）。`
+            : `Loop round ${loopState.iteration}/${loopState.max_iters} not green — fix and rerun openlogos verify.`);
     }
 
     return {
@@ -428,11 +459,17 @@ function buildModuleStatusItem(
       suggestion,
       ...(overlay && overlay.overlay_nodes.length > 0 ? { overlay_nodes: overlay.overlay_nodes } : {}),
       ...(overlay && overlay.current_node ? { current_node: overlay.current_node } : {}),
+      ...(loopState ? { loop_state: loopState } : {}),
     };
   }
 
   // initial lifecycle —— B1：改用 builtin flow 派生（1:1 不改行为）
-  const { progress, currentPhase } = deriveModulePhaseProgressViaFlow(root, mod, scenarios, isMultiModule);
+  const derived = deriveModulePhaseProgressViaFlow(root, mod, scenarios, isMultiModule);
+  // M2 切片 2（R8）：loop 激活且未收敛 → verify(phase.3-6) 不得 done、current 钉在 3-6，不推进到 deploy/launch
+  const loopState = deriveLoopState(root, mod, null, isMultiModule);
+  const gated = gateInitialPhasesForLoop(derived.progress, derived.currentPhase, loopState);
+  const progress = gated.progress;
+  const currentPhase = gated.currentPhase;
   const currentPhaseLabel = currentPhase ? t(locale as Parameters<typeof t>[0], currentPhase) : null;
 
   let suggestion: string;
@@ -452,12 +489,26 @@ function buildModuleStatusItem(
       : (locale === 'zh' ? '继续推进当前阶段' : 'Continue current phase');
   }
 
-  const overlay = deriveOverlayView(root, mod, scenarios, null, isMultiModule);
+  const overlay = deriveOverlayView(root, mod, scenarios, null, isMultiModule, cmdEval, loopHaltSubflow(loopState));
   if (overlay && overlay.current_node) {
     const cn = overlay.current_node;
     suggestion = locale === 'zh'
       ? `先完成 overlay 节点「${cn.name}」（${cn.id}）${cn.state === 'failed' ? '（失败，需修复）' : ''}后再继续。`
       : `Finish overlay node "${cn.name}" (${cn.id})${cn.state === 'failed' ? ' (failed — fix it)' : ''} before continuing.`;
+  }
+
+  // 仅当前沿已到 verify(phase.3-6) 才进入 loop 阻塞语义（按 pre-gate 当前阶段判断，F1）
+  const vIdx = (PHASE_KEYS as readonly string[]).indexOf('phase.3-6');
+  const initialAtVerify = derived.currentPhase === null
+    || (PHASE_KEYS as readonly string[]).indexOf(derived.currentPhase) >= vIdx;
+  if (isLoopBlocking(loopState, initialAtVerify) && loopState) {
+    suggestion = loopState.escalated
+      ? (locale === 'zh'
+          ? `loop 已达迭代上限 ${loopState.max_iters} 轮仍未绿 → 升级人类确认（继续迭代 / 调整 / 放弃）。`
+          : `Loop hit max_iters=${loopState.max_iters} without green — human decision needed.`)
+      : (locale === 'zh'
+          ? `loop 第 ${loopState.iteration}/${loopState.max_iters} 轮未绿 → 修复后重跑 openlogos verify（继续迭代）。`
+          : `Loop round ${loopState.iteration}/${loopState.max_iters} not green — fix and rerun openlogos verify.`);
   }
 
   return {
@@ -472,10 +523,147 @@ function buildModuleStatusItem(
     suggestion,
     ...(overlay && overlay.overlay_nodes.length > 0 ? { overlay_nodes: overlay.overlay_nodes } : {}),
     ...(overlay && overlay.current_node ? { current_node: overlay.current_node } : {}),
+    ...(loopState ? { loop_state: loopState } : {}),
   };
 }
 
-export function collectStatusData(root: string, filterModuleId?: string): StatusData {
+/**
+ * R8：loop 激活且未收敛时，把 initial 的 verify(phase.3-6) 钉为未完成、当前阶段拉回 3-6，
+ * 阻止因 acceptance-report.md 存在（FAIL 也写）而误推进到 deploy/smoke/launch。
+ * 未激活 / 已收敛 → 原样返回（golden 零漂移）。
+ */
+function gateInitialPhasesForLoop(
+  progress: Record<string, PhaseProgressItem>,
+  currentPhase: string | null,
+  loopState: LoopState | null,
+): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
+  if (!loopState || loopState.converged) return { progress, currentPhase }; // 出环用 converged 裁决（含 iteration=0 + 旧 report）
+  const VERIFY = 'phase.3-6';
+  const next = { ...progress };
+  if (next[VERIFY]) next[VERIFY] = { ...next[VERIFY], done: false };
+  const keys = PHASE_KEYS as readonly string[];
+  const verifyIdx = keys.indexOf(VERIFY);
+  const curIdx = currentPhase ? keys.indexOf(currentPhase) : Number.MAX_SAFE_INTEGER;
+  // 仅在当前已推过 verify（或全完成）时拉回；若仍在 code(3-5) 之前则保持
+  const newCurrent = (curIdx > verifyIdx) ? VERIFY : currentPhase;
+  return { progress: next, currentPhase: newCurrent };
+}
+
+/**
+ * F3：loop 激活且未收敛时返回需 halt 的 subflow id，供 overlay 走查不越过 implement。
+ * 出环用 `converged` 裁决（不要求 iteration≥1）——即便 acceptance-report.md/VERIFY_PASS 已存在，
+ * 未收敛就不得让 verify 之后的 overlay-added 节点变 current。
+ */
+function loopHaltSubflow(loopState: LoopState | null): string | undefined {
+  return loopState && !loopState.converged ? loopState.subflow_id : undefined;
+}
+
+/** launched 阶段对 loop 出环把关：loop 激活且未收敛时，把「verify 已 done 或更后」的 step 拉回 ready-to-verify。 */
+const STEP_PAST_VERIFY = new Set<ProposalStep>([
+  'verify-passed', 'ready-to-deploy', 'deploy-done', 'ready-to-smoke', 'smoke-passed', 'smoke-failed',
+]);
+function gateLaunchedStepForLoop(step: ProposalStep | null, loopState: LoopState | null): ProposalStep | null {
+  if (!loopState || loopState.converged || !step) return step;
+  return STEP_PAST_VERIFY.has(step) ? 'ready-to-verify' : step;
+}
+
+/** 项目级 loop_state（顶层 phases 把关 + legacy 顶层字段）：定位活跃/synth 模块后 deriveLoopState。 */
+function computeProjectLoopState(
+  root: string,
+  rawModules: ModuleInfo[] | undefined,
+  lifecycle: 'initial' | 'launched',
+  activeChange: string | null,
+  guardModule: string | null,
+): LoopState | null {
+  if (rawModules === undefined) {
+    const synthMod: ModuleInfo = { id: 'core', name: 'core', lifecycle };
+    const proposalDir = activeChange ? join(root, 'logos', 'changes', activeChange) : null;
+    return deriveLoopState(root, synthMod, proposalDir, false);
+  }
+  const isMulti = rawModules.length > 1;
+  const target = rawModules.find(m => m.id === guardModule) ?? (rawModules.length === 1 ? rawModules[0] : undefined);
+  if (!target) return null;
+  const proposalDir = activeChange && guardModule === target.id ? join(root, 'logos', 'changes', activeChange) : null;
+  return deriveLoopState(root, target, proposalDir, isMulti);
+}
+
+/**
+ * 为「当前活跃模块」重新派生 overlay 视图（next 的 cmd 求值路径专用）。
+ *
+ * 复用 collectStatusData 的模块/场景/proposalDir 解析，但允许传入 cmdEval：
+ * - 不传 cmdEval（观察）→ 用于取 `pending_cmd`（待执行 cmd 节点）；
+ * - 传 cmdEval（求值）→ next 执行命令后回灌结果，得到该节点 done/failed/active 的续推视图。
+ *
+ * 返回 null 表示无 overlay（golden 零漂移）或无法定位活跃模块。
+ */
+export function deriveActiveOverlay(
+  root: string,
+  filterModuleId?: string,
+  cmdEval?: CmdEval,
+): OverlayView | null {
+  const projectYaml = readProjectYaml(root);
+  // 必须与 collectStatusData 的模块解析对齐（含 deployment_required/smoke_required + deployment_gates 覆盖），
+  // 否则 launched 的 deploy/smoke 区域 when 判定会用错默认值 → next 预派生与 status 看到的 current/pending 漂移。
+  const rawModules: ModuleInfo[] | undefined = Array.isArray(projectYaml.data?.modules)
+    ? projectYaml.data.modules.map(m => ({
+        id: m.id,
+        name: m.name,
+        lifecycle: (m.lifecycle === 'launched' ? 'launched' : 'initial') as 'initial' | 'launched',
+        bootstrap: m.bootstrap ?? 'normal',
+        skip_phases: Array.isArray(m.skip_phases) ? m.skip_phases : [],
+        deployment_required: typeof m.deployment_required === 'boolean' ? m.deployment_required : undefined,
+        smoke_required: typeof m.smoke_required === 'boolean' ? m.smoke_required : undefined,
+      }))
+    : undefined;
+  if (rawModules) {
+    const deploymentGates = projectYaml.data?.deployment_gates ?? {};
+    for (const mod of rawModules) {
+      const gates = deploymentGates[mod.id];
+      if (gates) {
+        if (typeof gates.deployment_required === 'boolean') mod.deployment_required = gates.deployment_required;
+        if (typeof gates.smoke_required === 'boolean') mod.smoke_required = gates.smoke_required;
+      }
+    }
+  }
+  const scenarios: Array<{ id: string; module?: string }> = Array.isArray(projectYaml.data?.scenarios)
+    ? projectYaml.data.scenarios : [];
+
+  // guard：定位活跃提案及其归属模块
+  let activeChange: string | null = null;
+  let guardModule: string | null = null;
+  const guardPath = join(root, 'logos', '.openlogos-guard');
+  if (existsSync(guardPath)) {
+    try {
+      const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+      activeChange = guard.activeChange || null;
+      guardModule = guard.module || null;
+    } catch { /* ignore */ }
+  }
+
+  // legacy（无 modules[]）→ synth core，顶层派生
+  if (rawModules === undefined) {
+    const lifecycle: 'initial' | 'launched' = activeChange ? 'launched' : 'initial';
+    const synthMod: ModuleInfo = { id: 'core', name: 'core', lifecycle };
+    const proposalDir = activeChange ? join(root, 'logos', 'changes', activeChange) : null;
+    return deriveOverlayView(root, synthMod, scenarios, proposalDir, false, cmdEval,
+      loopHaltSubflow(deriveLoopState(root, synthMod, proposalDir, false)));
+  }
+
+  const isMultiModule = rawModules.length > 1;
+  // 目标模块：显式 filter > guard 归属模块 > 单模块兜底
+  const target = filterModuleId
+    ? rawModules.find(m => m.id === filterModuleId)
+    : (rawModules.find(m => m.id === guardModule) ?? (rawModules.length === 1 ? rawModules[0] : undefined));
+  if (!target) return null;
+
+  const moduleScenarios = scenarios.filter(s => (s.module ?? 'core') === target.id);
+  const proposalDir = activeChange && guardModule === target.id
+    ? join(root, 'logos', 'changes', activeChange) : null;
+  return deriveOverlayView(root, target, moduleScenarios, proposalDir, isMultiModule, cmdEval,
+    loopHaltSubflow(deriveLoopState(root, target, proposalDir, isMultiModule)));
+}
+
+export function collectStatusData(root: string, filterModuleId?: string, cmdEval?: CmdEval): StatusData {
   const configPath = join(root, 'logos', 'logos.config.json');
   const locale = readLocale(root);
 
@@ -586,9 +774,6 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     }
   }
 
-  const firstIncomplete = phases.find(p => !p.done && !p.skipped);
-  const allDone = !firstIncomplete;
-
   // Read guard
   let activeChange: string | null = null;
   let proposalStep: ProposalStep | null = null;
@@ -610,6 +795,18 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     } catch { /* ignore */ }
   }
 
+  // M2 切片 2（R8）：loop 激活且未收敛 → 顶层 verify(phase.3-6) 不得 done（出环用 converged 裁决、不要求 iteration≥1），
+  // 避免旧 acceptance-report.md 让 current_phase/all_done 误推进；同时把 launched step 拉回 ready-to-verify
+  const projectLoopState = computeProjectLoopState(root, rawModules, lifecycle, activeChange, guardModule);
+  if (projectLoopState && !projectLoopState.converged) {
+    const vp = phases.find(p => p.key === 'phase.3-6');
+    if (vp && vp.done) vp.done = false;
+    proposalStep = gateLaunchedStepForLoop(proposalStep, projectLoopState);
+  }
+
+  const firstIncomplete = phases.find(p => !p.done && !p.skipped);
+  const allDone = !firstIncomplete;
+
   // Build module status items
   let modules: ModuleStatusItem[] | undefined;
   if (rawModules !== undefined) {
@@ -620,7 +817,7 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     modules = filtered.map(m => {
       // Only pass scenarios that belong to this module (module field defaults to 'core')
       const moduleScenarios = scenarios.filter(s => (s.module ?? 'core') === m.id);
-      return buildModuleStatusItem(root, m, moduleScenarios, locale, activeChange, guardModule, isMultiModule);
+      return buildModuleStatusItem(root, m, moduleScenarios, locale, activeChange, guardModule, isMultiModule, cmdEval);
     });
     // M2 切片 1a（Review F3）：当前落在 overlay-added 节点时，活跃模块已对 proposal_step 做了回退，
     // 顶层 proposal_step 必须同步，否则 next 的 action/gate 仍按旧状态判断。
@@ -646,12 +843,25 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     suggestion = suggestKey ? t(locale, suggestKey) : t(locale, 'suggest.fallback');
   }
 
+  // M2 切片 2：legacy loop 阻塞（前沿到 verify、跑过≥1 轮、未收敛）→ 顶层 suggestion 指向 loop（有 modules[] 时由 module 项承载，F1）
+  const legacyAtVerify = !firstIncomplete
+    || (PHASE_KEYS as readonly string[]).indexOf(firstIncomplete.key) >= (PHASE_KEYS as readonly string[]).indexOf('phase.3-6');
+  if (rawModules === undefined && isLoopBlocking(projectLoopState, legacyAtVerify) && projectLoopState) {
+    suggestion = projectLoopState.escalated
+      ? (locale === 'zh'
+          ? `loop 已达迭代上限 ${projectLoopState.max_iters} 轮仍未绿 → 升级人类确认（继续迭代 / 调整 / 放弃）。`
+          : `Loop hit max_iters=${projectLoopState.max_iters} without green — human decision needed.`)
+      : (locale === 'zh'
+          ? `loop 第 ${projectLoopState.iteration}/${projectLoopState.max_iters} 轮未绿 → 修复后重跑 openlogos verify（继续迭代）。`
+          : `Loop round ${projectLoopState.iteration}/${projectLoopState.max_iters} not green — fix and rerun openlogos verify.`);
+  }
+
   // M2 切片 1a：legacy 无 modules[] 项目 → overlay 顶层回退（有 modules[] 时挂 module 项下，不在此处）
   let topOverlay: ReturnType<typeof deriveOverlayView> = null;
   if (rawModules === undefined) {
     const synthMod: ModuleInfo = { id: 'core', name: 'core', lifecycle };
     const proposalDir = activeChange ? join(root, 'logos', 'changes', activeChange) : null;
-    topOverlay = deriveOverlayView(root, synthMod, scenarios, proposalDir);
+    topOverlay = deriveOverlayView(root, synthMod, scenarios, proposalDir, false, cmdEval, loopHaltSubflow(projectLoopState));
     if (topOverlay && topOverlay.proposal_step_override && proposalStep) {
       proposalStep = topOverlay.proposal_step_override as ProposalStep;
     }
@@ -662,6 +872,8 @@ export function collectStatusData(root: string, filterModuleId?: string): Status
     ...(modules !== undefined ? { modules } : {}),
     ...(topOverlay && topOverlay.overlay_nodes.length > 0 ? { overlay_nodes: topOverlay.overlay_nodes } : {}),
     ...(topOverlay && topOverlay.current_node ? { current_node: topOverlay.current_node } : {}),
+    // M2 切片 2：loop_state 顶层回退（仅 legacy 无 modules[]；有 modules[] 时挂 modules[].loop_state）
+    ...(rawModules === undefined && projectLoopState ? { loop_state: projectLoopState } : {}),
     active_proposals: activeProposals.map(p => ({
       name: p.name,
       has_proposal: p.hasProposal,

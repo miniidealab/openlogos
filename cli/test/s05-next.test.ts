@@ -136,7 +136,7 @@ describe('S05 Unit Tests — next command (initial lifecycle)', () => {
     expect(out).toContain('openlogos launch');
   });
 
-  it('UT-S05-03: uninitialized project → error exit', () => {
+  it('UT-S05-03: uninitialized project → error exit', async () => {
     con.restore();
     restoreCwd();
     const { root: emptyRoot, cleanup: clean2 } = makeTempRoot();
@@ -144,7 +144,7 @@ describe('S05 Unit Tests — next command (initial lifecycle)', () => {
     con = captureConsole();
 
     try {
-      expect(() => next()).toThrow('process.exit(1)');
+      await expect(next()).rejects.toThrow('process.exit(1)');
     } finally {
       con.restore();
       restore2();

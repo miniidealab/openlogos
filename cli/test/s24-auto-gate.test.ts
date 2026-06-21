@@ -243,13 +243,13 @@ describe('S24 场景测试', () => {
 
 // ── 四、异常 ──
 describe('S24 异常', () => {
-  it('ST-S24-EX-2.1: 未初始化项目 next --auto 沿用既有错误语义，不写审计', () => {
+  it('ST-S24-EX-2.1: 未初始化项目 next --auto 沿用既有错误语义，不写审计', async () => {
     const { root, cleanup } = makeTempRoot();
     const restoreCwd = mockCwd(root);
     const con = captureConsole();
     const exitSpy = mockProcessExit();
     cleanups.push(() => { con.restore(); exitSpy.mockRestore(); restoreCwd(); cleanup(); });
-    expect(() => next('json', undefined, true)).toThrow('process.exit(1)');
+    await expect(next('json', undefined, true)).rejects.toThrow('process.exit(1)');
     expect(existsSync(join(root, 'logos', 'changes', 'feat', 'GATE_AUTO_PASSED'))).toBe(false);
   });
 });

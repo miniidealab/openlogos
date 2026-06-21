@@ -15,7 +15,8 @@ export type Lifecycle = 'initial' | 'launched';
 export type FlowErrorCode =
   | 'PROJECT_NOT_INITIALIZED'
   | 'FLOW_NOT_FOUND'
-  | 'FLOW_SCHEMA_INVALID';
+  | 'FLOW_SCHEMA_INVALID'
+  | 'FLOW_CMD_SPAWN_FAILED';
 
 export class FlowError extends Error {
   constructor(public code: FlowErrorCode, message: string) {
@@ -45,16 +46,23 @@ export interface FlowNode {
   fail_when?: string | null;
   pre_script?: string | null;
   post_script?: string | null;
+  cmd_timeout_seconds?: number | null; // M2-1b：节点级 cmd: 超时（整数 ≥1）
   // resolved 输出专用（见 spec/cli-json-output.md §9）
   skipped?: boolean;
   overlay_op?: OverlayOp | null;
+}
+
+/** subflow 循环（见 spec/flow-spec.md §6）。M2 切片 2：max_iters>1 + until:tests_green 点亮真迭代。 */
+export interface FlowLoop {
+  until?: string | null;       // 收敛谓词，本切片仅枚举 'tests_green'
+  max_iters?: number | null;   // 整数 ≥1；>1 才真迭代（仅 overlay set-loop 激活）
 }
 
 export interface FlowSubflow {
   id: string;
   name: string;
   when?: string | null;
-  loop?: unknown;
+  loop?: FlowLoop | null;
   gate?: FlowGate;
   nodes: FlowNode[];
 }
@@ -146,6 +154,20 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
     if (!Array.isArray(s.nodes)) {
       throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 缺少 \`nodes\` 数组`);
     }
+    // M2-2：subflow.loop 校验——max_iters 整数 ≥1、until 仅 'tests_green'
+    if (s.loop != null) {
+      if (typeof s.loop !== 'object' || Array.isArray(s.loop)) {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 \`loop\` 须为对象`);
+      }
+      const lp = s.loop as Record<string, unknown>;
+      if (lp.max_iters != null
+        && (typeof lp.max_iters !== 'number' || !Number.isInteger(lp.max_iters) || lp.max_iters < 1)) {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.max_iters 须为整数 ≥ 1`);
+      }
+      if (lp.until != null && lp.until !== 'tests_green') {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.until 仅支持 \`tests_green\``);
+      }
+    }
     for (const [ni, node] of (s.nodes as unknown[]).entries()) {
       const n = node as Record<string, unknown>;
       if (!n || typeof n.id !== 'string') {
@@ -153,6 +175,11 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
       }
       if (typeof n.name !== 'string') {
         throw new FlowError('FLOW_SCHEMA_INVALID', `${what} node \`${n.id}\` 缺少 \`name\``);
+      }
+      // M2-1b：节点级 cmd_timeout_seconds 须整数 ≥1
+      if (n.cmd_timeout_seconds != null
+        && (typeof n.cmd_timeout_seconds !== 'number' || !Number.isInteger(n.cmd_timeout_seconds) || n.cmd_timeout_seconds < 1)) {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `${what} node \`${n.id}\` 的 cmd_timeout_seconds 须为整数 ≥ 1`);
       }
     }
   }
@@ -291,6 +318,27 @@ export function applyOverlay(
       if (!anchor) throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] reorder 的锚点 \`${anchorId}\` 不存在`);
       const at = op.after ? anchor.index + 1 : anchor.index;
       anchor.subflow.nodes.splice(at, 0, moved);
+    } else if (kind === 'set-loop') {
+      // M2 切片 2：覆盖某 subflow 的 loop（subflow 级，非 node 级）
+      const subId = String(op.subflow ?? '');
+      const sub = flow.subflows.find(s => s.id === subId);
+      if (!sub) throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 的 subflow \`${subId}\` 不存在`);
+      if (!op.set || typeof op.set !== 'object' || Array.isArray(op.set)) {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 缺少合法 \`set\`（需为非空对象）`);
+      }
+      // set 字段白名单（R9）：仅 max_iters / until，未知 key → FLOW_SCHEMA_INVALID（不静默保留）
+      for (const key of Object.keys(op.set as Record<string, unknown>)) {
+        if (key !== 'max_iters' && key !== 'until') {
+          throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 的 set 含未知字段 \`${key}\`（仅允许 max_iters / until）`);
+        }
+      }
+      // 本切片 loop 真迭代仅支持 implement(code/verify)；非 implement 上 max_iters>1 语义不成立（账本由 verify 写）→ fail loud
+      const setMaxIters = (op.set as FlowLoop).max_iters;
+      if (subId !== 'implement' && typeof setMaxIters === 'number' && setMaxIters > 1) {
+        throw new FlowError('FLOW_SCHEMA_INVALID',
+          `overlay[${oi}] set-loop 的真迭代（max_iters>1）本切片仅支持 \`implement\` 子流程，不支持 \`${subId}\``);
+      }
+      sub.loop = { ...(sub.loop ?? {}), ...(op.set as FlowLoop) };
     } else {
       throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] 含未知 op \`${String(kind)}\``);
     }
@@ -305,6 +353,21 @@ export function applyOverlay(
   }
 
   return { flow, warnings };
+}
+
+/**
+ * 找到被激活（loop.max_iters > 1）的 subflow；无则 null。本切片仅 implement 子流程会带。
+ * 激活 = overlay `set-loop` 把 max_iters 设 >1（builtin 恒为 1，故无激活 → golden 零漂移）。
+ */
+export function findActivatedLoop(flow: Flow): { subflow_id: string; until: string; max_iters: number } | null {
+  for (const sub of flow.subflows) {
+    if (sub.id !== 'implement') continue; // 本切片真迭代仅 implement(code/verify)
+    const mi = sub.loop?.max_iters;
+    if (typeof mi === 'number' && mi > 1) {
+      return { subflow_id: sub.id, until: sub.loop?.until ?? 'tests_green', max_iters: mi };
+    }
+  }
+  return null;
 }
 
 export interface LoadFlowOptions {

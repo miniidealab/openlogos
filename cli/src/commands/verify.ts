@@ -1,5 +1,8 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { loadFlow, findActivatedLoop, inferLifecycle, FlowError } from '../lib/flow.js';
+import { loopLedgerPath, readLoopIters } from '../lib/flow-loop-derive.js';
+import { readProjectYaml } from '../lib/project-yaml.js';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -668,6 +671,56 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
   });
 }
 
+/**
+ * M2 切片 2：loop 激活时追加 `LOOP_ITERS` 账本（不依赖 guard 的共享路径，由主进程写）。
+ * launched=guard.module/提案目录；initial 单模块=该模块/resources-verify；initial 多模块=不写（R7）。
+ * 未激活（builtin max_iters:1）/无法定位 → 不写（零副作用）。
+ */
+function appendLoopIter(root: string, gatePass: boolean): void {
+  let activeChange: string | null = null;
+  let guardModule: string | null = null;
+  const guardPath = join(root, 'logos', '.openlogos-guard');
+  if (existsSync(guardPath)) {
+    try {
+      const g = JSON.parse(readFileSync(guardPath, 'utf-8'));
+      activeChange = g.activeChange || null;
+      guardModule = g.module || null;
+    } catch { /* ignore */ }
+  }
+
+  let lifecycle: 'initial' | 'launched';
+  let moduleId: string;
+  let proposalDir: string | null;
+  if (activeChange && guardModule) {
+    lifecycle = 'launched';
+    moduleId = guardModule;
+    proposalDir = join(root, 'logos', 'changes', activeChange);
+  } else {
+    // 无活跃提案：launched 项目的账本只在提案目录、此处无提案 → 不写
+    // （launch 后历史 logos/flow/initial.yaml 即便含 set-loop 也不得写 initial 账本，spec/cli-json-output.md §13）
+    if (inferLifecycle(root) === 'launched') return;
+    lifecycle = 'initial';
+    proposalDir = null;
+    const yaml = readProjectYaml(root);
+    const mods = Array.isArray(yaml.data?.modules) ? yaml.data.modules : [];
+    if (mods.length > 1) return; // initial 多模块：无法归属、不写（R7）
+    moduleId = mods.length === 1 ? mods[0].id : 'core';
+  }
+
+  let resolved;
+  try { resolved = loadFlow(root, { lifecycle, resolved: true }).flow; } catch { return; }
+  if (!findActivatedLoop(resolved)) return; // 未激活 → 不写
+
+  const path = loopLedgerPath(root, proposalDir);
+  const iter = readLoopIters(path, moduleId).length + 1;
+  const row = JSON.stringify({
+    iter, node: 'verify', result: gatePass ? 'pass' : 'fail', module: moduleId,
+    timestamp: new Date().toISOString(),
+  });
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, row + '\n');
+}
+
 export function verify(format: OutputFormat = 'text') {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
@@ -685,6 +738,23 @@ export function verify(format: OutputFormat = 'text') {
   }
 
   const locale = readLocale(root);
+
+  // M2 切片 2：尽早校验 resolved flow（overlay 含非法 set-loop 等）→ fail loud，
+  // 避免静默退化为「不写 LOOP_ITERS、却仍写验收报告与 VERIFY_PASS/FAIL marker」。无 overlay 项目不触发（golden 零漂移）。
+  try {
+    loadFlow(root, { lifecycle: inferLifecycle(root), resolved: true });
+  } catch (e) {
+    if (e instanceof FlowError) {
+      if (format === 'json') {
+        console.error(JSON.stringify(makeErrorEnvelope('verify', e.code, e.message)));
+      } else {
+        console.error(`✖ flow 配置错误（${e.code}）：${e.message}`);
+      }
+      process.exit(1);
+    }
+    throw e;
+  }
+
   const config = readVerifyConfig(root);
   const resultPath = config.resultPath;
   const preRunResult = runVerifyPreRunWithSandbox(root, config, format);
@@ -729,6 +799,9 @@ export function verify(format: OutputFormat = 'text') {
       });
     }
   }
+
+  // M2 切片 2：loop 激活时追加迭代账本（共享路径、取最终 data.gate.result；配置类早退已在上面 process.exit、不会到此）
+  appendLoopIter(root, data.gate.result === 'PASS');
 
   // 写入提案目录标记文件（如果有活跃提案）
   const guardPath = join(root, 'logos', '.openlogos-guard');

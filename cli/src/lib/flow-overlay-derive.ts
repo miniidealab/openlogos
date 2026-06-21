@@ -22,7 +22,7 @@ import { NODE_TO_PHASE_KEY, evalNodeWhen, detectProposalStepViaFlow } from './fl
 import type { ModuleInfo } from '../commands/status.js';
 import type { ProposalStep } from './proposal-lifecycle.js';
 
-export type OverlayNodeState = 'done' | 'active' | 'skipped' | 'failed';
+export type OverlayNodeState = 'done' | 'active' | 'skipped' | 'failed' | 'pending';
 
 export interface OverlayNode {
   id: string;
@@ -43,11 +43,27 @@ export interface CurrentNode {
   overlay_op: string | null;
 }
 
+/** 当前 pending cmd 节点的求值信息，供 next 执行命令（status/watch 不用）。 */
+export interface PendingCmd {
+  node_id: string;
+  command: string;            // cmd: 之后的命令串（已 trim）
+  predicate_field: 'done_when' | 'fail_when';
+  timeout_seconds: number;    // 解析后的两级超时
+}
+
 export interface OverlayView {
   overlay_nodes: OverlayNode[];
   current_node: CurrentNode | null;
   /** launched：当前节点落在 overlay-added 节点时的 proposal_step 回退值（前序最近 builtin step / writing）。 */
   proposal_step_override: string | null;
+  /** 当前节点是未求值的 cmd 节点时填充（仅 next 执行用）；否则 null。 */
+  pending_cmd: PendingCmd | null;
+}
+
+/** next 执行 cmd 后回传的求值结果，让派生把该节点当 done/failed/active 续推（budget=1）。 */
+export interface CmdEval {
+  node_id: string;
+  satisfied: boolean; // 命令 exit 0
 }
 
 interface DeriveCtx {
@@ -134,19 +150,27 @@ function evalPredicate(pred: string, node: FlowNode, ctx: DeriveCtx): boolean {
   return false;
 }
 
-/** M1 谓词白名单（spec §9 词表）。`cmd:`（M2 预留）与未知谓词不在内。 */
-function isKnownM1Predicate(p: string): boolean {
+/** 谓词白名单（spec §9 词表 + M2-1b 的 cmd:）。未知谓词不在内。 */
+function isKnownPredicate(p: string): boolean {
   return p === 'dir_nonempty' || p.startsWith('file:') || p.startsWith('marker:')
     || p.startsWith('any_present:') || p.startsWith('section_complete:')
-    || p === 'proposal_package_filled' || p === 'archived' || p === 'all_present';
+    || p === 'proposal_package_filled' || p === 'archived' || p === 'all_present'
+    || p.startsWith('cmd:');
 }
 
-/** 单个谓词（done_when / fail_when）的白名单 + lifecycle/produces 校验。 */
+/** 单个谓词（done_when / fail_when）的白名单 + lifecycle/produces/cmd 校验。 */
 function validateAddedPredicate(node: FlowNode, ctx: DeriveCtx, pred: string, field: string): void {
-  // 白名单：cmd: 与未知/拼错谓词一律拒绝（避免静默永久 active）——spec §10.3/§12.1
-  if (!isKnownM1Predicate(pred)) {
+  // 白名单：未知/拼错谓词一律拒绝（避免静默永久 active）——spec §10.3/§12.1
+  if (!isKnownPredicate(pred)) {
     throw new FlowError('FLOW_SCHEMA_INVALID',
-      `overlay-add 节点 \`${node.id}\` 的 ${field} \`${pred}\` 非本切片支持的谓词（cmd: 属 M2；不接受未知谓词）`);
+      `overlay-add 节点 \`${node.id}\` 的 ${field} \`${pred}\` 非支持的谓词（不接受未知谓词）`);
+  }
+  // cmd:：空命令非法（spec §9.2）；其余执行约束由 flow-cmd 求值器/超时校验负责
+  if (pred.startsWith('cmd:')) {
+    if (pred.slice('cmd:'.length).trim() === '') {
+      throw new FlowError('FLOW_SCHEMA_INVALID', `overlay-add 节点 \`${node.id}\` 的 ${field} cmd: 命令为空`);
+    }
+    return;
   }
   const launchedOnly = pred.startsWith('marker:') || pred.startsWith('any_present:')
     || pred.startsWith('section_complete:') || pred === 'proposal_package_filled' || pred === 'archived';
@@ -174,6 +198,67 @@ function validateAddedNodePredicate(node: FlowNode, ctx: DeriveCtx): void {
     }
     validateAddedPredicate(node, ctx, node.fail_when, 'fail_when');
   }
+  // 决策 B：禁止同节点 done_when 与 fail_when 均为 cmd:
+  if (node.done_when?.startsWith('cmd:') && node.fail_when?.startsWith('cmd:')) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `overlay-add 节点 \`${node.id}\` 不得同节点 done_when 与 fail_when 均为 cmd:`);
+  }
+}
+
+/** 该节点是否带 cmd: 谓词（done_when 或 fail_when）。 */
+function hasCmdPredicate(node: FlowNode): boolean {
+  return Boolean(node.done_when?.startsWith('cmd:') || node.fail_when?.startsWith('cmd:'));
+}
+
+/** 取节点的 cmd 谓词（fail_when 优先于 done_when，G4）。无则 null。 */
+function cmdPredicateOf(node: FlowNode): { field: 'done_when' | 'fail_when'; pred: string } | null {
+  if (node.fail_when?.startsWith('cmd:')) return { field: 'fail_when', pred: node.fail_when };
+  if (node.done_when?.startsWith('cmd:')) return { field: 'done_when', pred: node.done_when };
+  return null;
+}
+
+/**
+ * 读取项目级 flow.cmd_timeout_seconds。
+ * - 未配置（缺字段 / 配置不可读）→ null（落内置 60s）。
+ * - 字段存在但非整数 ≥1（0 / 负数 / 非整数）→ FLOW_SCHEMA_INVALID（spec flow-spec.md §9.2）。
+ */
+function readProjectCmdTimeout(root: string): number | null {
+  let cfg: { flow?: { cmd_timeout_seconds?: unknown } } | undefined;
+  try {
+    cfg = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+  } catch { return null; } // 配置缺失 / 解析失败 → 用内置默认
+  const t = cfg?.flow?.cmd_timeout_seconds;
+  if (t == null) return null; // 未配置 → 用内置默认
+  if (typeof t !== 'number' || !Number.isInteger(t) || t < 1) {
+    throw new FlowError('FLOW_SCHEMA_INVALID',
+      `项目级 flow.cmd_timeout_seconds 须为整数 ≥ 1（当前 \`${String(t)}\`）`);
+  }
+  return t;
+}
+
+/**
+ * 求 overlay-add 节点的派生态（含 cmd:）。
+ * - 观察派生（无 cmdEval）：cmd 节点 → `pending`（不执行）。
+ * - 求值派生（next 传 cmdEval）：按命令退出码定 done/failed/active（fail_when 优先，G4）。
+ */
+function addNodeState(node: FlowNode, skipped: boolean, ctx: DeriveCtx, cmdEval?: CmdEval): OverlayNodeState {
+  if (skipped) return 'skipped';
+  // 非 cmd 的 fail_when 优先（G4）：命中即 failed，无需执行 cmd
+  if (node.fail_when && !node.fail_when.startsWith('cmd:') && evalPredicate(node.fail_when, node, ctx)) return 'failed';
+  const cmd = cmdPredicateOf(node);
+  if (cmd) {
+    if (cmdEval && cmdEval.node_id === node.id) {
+      if (cmd.field === 'fail_when') {
+        if (cmdEval.satisfied) return 'failed';
+        // fail_when:cmd 未命中 → 评（非 cmd 的）done_when
+        if (node.done_when && !node.done_when.startsWith('cmd:') && evalPredicate(node.done_when, node, ctx)) return 'done';
+        return 'active';
+      }
+      return cmdEval.satisfied ? 'done' : 'active';
+    }
+    return 'pending'; // 观察 / 未求值
+  }
+  if (node.done_when && evalPredicate(node.done_when, node, ctx)) return 'done';
+  return 'active';
 }
 
 /** launched 提案级 when 标志（delta_required / deployment_required / smoke_required）。 */
@@ -250,6 +335,8 @@ export function deriveOverlayView(
   scenarios: Array<{ id: string }>,
   proposalDir: string | null,
   isMultiModule: boolean = false,
+  cmdEval?: CmdEval,
+  haltAfterSubflow?: string,
 ): OverlayView | null {
   const lifecycle = mod.lifecycle;
   const loaded = loadFlow(root, { lifecycle, resolved: true });
@@ -257,6 +344,7 @@ export function deriveOverlayView(
 
   const flow: Flow = loaded.flow;
   const ctx: DeriveCtx = { root, lifecycle, mod, proposalDir, scenarios, isMultiModule };
+  const projectCmdTimeout = readProjectCmdTimeout(root);
 
   // 校验：launched 对 builtin 节点的 skip/reorder 不支持（fail loud）
   if (lifecycle === 'launched') {
@@ -269,10 +357,14 @@ export function deriveOverlayView(
       }
     }
   }
-  // 校验：overlay-add 节点谓词组合
+  // 校验：overlay-add 节点谓词组合 + 决策 A（cmd: 仅 overlay-add 节点）
   for (const sub of flow.subflows) {
     for (const node of sub.nodes) {
       if (node.overlay_op === 'add') validateAddedNodePredicate(node, ctx);
+      else if (hasCmdPredicate(node)) {
+        throw new FlowError('FLOW_SCHEMA_INVALID',
+          `cmd: 谓词仅 overlay-add 节点可用；内置节点 \`${node.id}\`（经 modify）不支持（modify-cmd-on-builtin 留后续）`);
+      }
     }
   }
 
@@ -280,7 +372,7 @@ export function deriveOverlayView(
   // **不输出 node 级 overlay 视图**——否则会把 before write-proposal 的 add 误判为 current，
   // 覆盖「openlogos change <slug>」建议，且无 proposalDir 时 marker 类 done_when 永不可达（Review）。
   if (lifecycle === 'launched' && !proposalDir) {
-    return { overlay_nodes: [], current_node: null, proposal_step_override: null };
+    return { overlay_nodes: [], current_node: null, proposal_step_override: null, pending_cmd: null };
   }
 
   // 按 resolved 顺序展开节点（带所属 subflow 的 when，供 overlay 节点跳过判定）。
@@ -291,6 +383,13 @@ export function deriveOverlayView(
   }
   // add 节点的原始锚点（before/after + anchor id），用于锚点继承的 skip 判定。
   const anchorMap = buildAnchorMap(root, lifecycle);
+
+  // F3/F2：loop 未收敛时（haltAfterSubflow=激活的 loop subflow），走查不得越过该 subflow 的最后一个
+  // **builtin** 节点（implement 的 verify）。注意 after:verify 插入的 add 节点也属 implement，若按整段
+  // 最大 index 会漏掉它们；故只取 builtin 节点的最大 index，使 verify 之后的 overlay-added 节点被 halt。
+  const haltMaxIdx = haltAfterSubflow
+    ? ordered.reduce((mx, e) => (e.subflowId === haltAfterSubflow && e.node.overlay_op !== 'add' ? Math.max(mx, e.index) : mx), -1)
+    : -1;
 
   const reachedAdded: OverlayNode[] = [];
   let current: { node: FlowNode; subflowId: string; index: number; state: OverlayNodeState } | null = null;
@@ -307,6 +406,7 @@ export function deriveOverlayView(
     let passedBuiltin = false;
     for (const entry of ordered) {
       if (frontierIdx !== -1 && entry.index > frontierIdx) break; // 前沿之后：未到达
+      if (haltMaxIdx >= 0 && entry.index > haltMaxIdx) break; // F3：loop 未收敛 → 不越过 implement
       const { node } = entry;
       if (node.overlay_op === 'add') {
         // 锚点继承（Review）：按原始 before/after 锚点判定——若锚定的 builtin 因 when 为假被跳过
@@ -314,16 +414,12 @@ export function deriveOverlayView(
         const anchorSkipped = isAnchorSkipped(node.id, anchorMap, ordered, launchedBuiltinSkipped);
         // subflow.when / node.when / 锚点 builtin when 为假 → skipped（不阻塞）
         const skipped = anchorSkipped || !evalLaunchedWhen(entry.subflowWhen, flags) || !evalLaunchedWhen(node.when, flags);
-        let state: OverlayNodeState;
-        if (skipped) state = 'skipped';
-        else if (node.fail_when && evalPredicate(node.fail_when, node, ctx)) state = 'failed';
-        else if (node.done_when && evalPredicate(node.done_when, node, ctx)) state = 'done';
-        else state = 'active';
+        const state = addNodeState(node, skipped, ctx, cmdEval);
         reachedAdded.push({
           id: node.id, name: node.name, state,
           subflow_id: entry.subflowId, node_index: entry.index, overlay_op: 'add',
         });
-        if (state === 'active' || state === 'failed') { current = { ...entry, state }; break; }
+        if (state === 'active' || state === 'failed' || state === 'pending') { current = { ...entry, state }; break; }
       } else {
         if (entry.index === frontierIdx) { current = { ...entry, state: 'active' }; break; } // builtin 前沿即当前
         passedBuiltin = true; // 前沿之前的 builtin = 已完成/已跳过
@@ -338,22 +434,27 @@ export function deriveOverlayView(
     const initialBuiltinSkipped = (e: { node: FlowNode; subflowWhen: string | null }) =>
       e.node.skipped === true || !evalNodeWhen(e.node.when, mod);
     for (const entry of ordered) {
+      if (haltMaxIdx >= 0 && entry.index > haltMaxIdx) break; // F3：loop 未收敛 → 不越过 implement
       const { node } = entry;
       // 锚点继承：add 锚定到 when 跳过的 builtin（如 api 关闭时的 api-design）→ 一并 skipped
       const anchorSkipped = node.overlay_op === 'add' && isAnchorSkipped(node.id, anchorMap, ordered, initialBuiltinSkipped);
+      const skipped = anchorSkipped || node.skipped === true || !evalNodeWhen(node.when, mod);
       let state: OverlayNodeState;
-      if (anchorSkipped || node.skipped === true || !evalNodeWhen(node.when, mod)) state = 'skipped';
-      else if (node.fail_when && evalPredicate(node.fail_when, node, ctx)) state = 'failed';
-      else if (node.done_when && evalPredicate(node.done_when, node, ctx)) state = 'done';
-      else state = 'active';
-
       if (node.overlay_op === 'add') {
+        // add 节点（可能带 cmd:）→ addNodeState（观察 = pending；求值 = 按退出码）
+        state = addNodeState(node, skipped, ctx, cmdEval);
         reachedAdded.push({
           id: node.id, name: node.name, state,
           subflow_id: entry.subflowId, node_index: entry.index, overlay_op: 'add',
         });
+      } else {
+        // builtin 节点（决策 A：无 cmd:）
+        if (skipped) state = 'skipped';
+        else if (node.fail_when && evalPredicate(node.fail_when, node, ctx)) state = 'failed';
+        else if (node.done_when && evalPredicate(node.done_when, node, ctx)) state = 'done';
+        else state = 'active';
       }
-      if (state === 'active' || state === 'failed') { current = { ...entry, state }; break; }
+      if (state === 'active' || state === 'failed' || state === 'pending') { current = { ...entry, state }; break; }
     }
   }
 
@@ -367,7 +468,22 @@ export function deriveOverlayView(
     };
   }
 
-  return { overlay_nodes: reachedAdded, current_node: currentNode, proposal_step_override: proposalStepOverride };
+  // pending_cmd：当前节点是「待执行的 cmd 节点」时，给消费端（next）执行所需载荷。
+  // 仅观察派生（state==='pending'）输出；求值派生后 cmd 节点已转 done/failed/active，不再 pending。
+  let pendingCmd: PendingCmd | null = null;
+  if (current && current.state === 'pending') {
+    const cmd = cmdPredicateOf(current.node);
+    if (cmd) {
+      pendingCmd = {
+        node_id: current.node.id,
+        command: cmd.pred.slice('cmd:'.length).trim(),
+        predicate_field: cmd.field,
+        timeout_seconds: current.node.cmd_timeout_seconds ?? projectCmdTimeout ?? 60,
+      };
+    }
+  }
+
+  return { overlay_nodes: reachedAdded, current_node: currentNode, proposal_step_override: proposalStepOverride, pending_cmd: pendingCmd };
 }
 
 /** 标记一个 id 是否为 builtin（用于消费端判断）。 */
