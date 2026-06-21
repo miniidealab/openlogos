@@ -8,7 +8,8 @@ import { collectStatusData, deriveActiveOverlay } from './status.js';
 import type { ProposalStep } from './status.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 import { gateForProposalStep } from '../lib/flow-derive.js';
-import type { CurrentNode, CmdEval } from '../lib/flow-overlay-derive.js';
+import type { CurrentNode, CmdEval, NextNode } from '../lib/flow-overlay-derive.js';
+import { resolveNextNode } from '../lib/flow-overlay-derive.js';
 import type { LoopState } from '../lib/flow-loop-derive.js';
 import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
@@ -29,6 +30,7 @@ export interface NextModuleItem {
   deployment_warnings?: string[];
   current_node?: CurrentNode;
   loop_state?: LoopState;
+  next_node?: NextNode;
 }
 
 export interface NextData {
@@ -42,6 +44,8 @@ export interface NextData {
   current_node?: CurrentNode;
   // M2 切片 2：loop 真迭代派生（仅 overlay 激活时附带）
   loop_state?: LoopState;
+  // S28：next_node 编排提示（仅有当前节点时附带；命令级建议/auto 放行/loop 达上限省略）
+  next_node?: NextNode;
   // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
   auto?: boolean;
   gate_id?: string | null;
@@ -499,6 +503,38 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   // loop_state：有 modules[] 时挂 modules[].loop_state（透传），legacy 才回退顶层
   const baseLoopState = data.modules === undefined ? data.loop_state : undefined;
 
+  // S28：next_node 编排提示——modules[] 各项 + legacy 顶层。R4 auto 放行 / R7 loop 达上限 / R5 命令级建议 → 省略。
+  const nextNodeFor = (sm: { id: string; name: string; lifecycle: 'initial' | 'launched'; current_phase: string | null; current_node?: CurrentNode; loop_state?: LoopState; active_change?: { proposal_step: string } | null }, gap: boolean): NextNode | null => {
+    const step = sm.active_change?.proposal_step ?? null;
+    const atVerify = step === 'ready-to-verify' || step === 'verify-failed' || sm.current_phase === 'phase.3-6';
+    return resolveNextNode(root, { id: sm.id, name: sm.name, lifecycle: sm.lifecycle }, {
+      currentNode: sm.current_node, proposalStep: step, currentPhase: sm.current_phase,
+      loopBlocking: isLoopBlocking(sm.loop_state, atVerify), loopEscalated: sm.loop_state?.escalated,
+      gateAutoPassed: gap,
+    });
+  };
+  // R5：命令级建议（创建提案 / 补 baseline / launch）时省略 next_node——这类不是某个 flow 节点。
+  // 顶层 command 是 `openlogos change …`/`openlogos launch` 即命令级（如 adopted 补 baseline：current_phase 虽非空，
+  // 但真实建议是 add-baseline-docs，不能误把 scenario-modeling 当 next_node）。
+  const isCommandLevel = (cmd: string | null): boolean => Boolean(cmd && /^openlogos\s+(change|launch)\b/.test(cmd));
+  const commandLevelTop = isCommandLevel(command);
+  if (moduleItems && data.modules) {
+    moduleItems = moduleItems.map((item, i) => {
+      if (commandLevelTop || isCommandLevel(item.command)) return item; // 命令级建议 → 省略 next_node
+      const gap = gateAutoPassed && item.active_change === data.active_change;
+      const nn = nextNodeFor(data.modules![i], gap);
+      return nn ? { ...item, next_node: nn } : item;
+    });
+  }
+  let baseNextNode: NextNode | undefined;
+  if (data.modules === undefined && !commandLevelTop) {
+    baseNextNode = nextNodeFor({
+      id: 'core', name: 'core', lifecycle: data.lifecycle === 'launched' ? 'launched' : 'initial',
+      current_phase: data.current_phase, current_node: data.current_node, loop_state: data.loop_state,
+      active_change: data.proposal_step ? { proposal_step: data.proposal_step } : null,
+    }, gateAutoPassed) ?? undefined;
+  }
+
   // M2 切片 1b：cmd 执行后，顶层 action/detail 反映命令结果（done 续推 / 未通过重试 / 超时）
   if (cmdResult) {
     const r = cmdResult;
@@ -529,6 +565,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     ...(moduleItems !== undefined ? { modules: moduleItems } : {}),
     ...(baseCurrentNode ? { current_node: baseCurrentNode } : {}),
     ...(baseLoopState ? { loop_state: baseLoopState } : {}),
+    ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
     ...(cmdResult ? {
       cmd_node_id: cmdResult.node_id,

@@ -831,6 +831,16 @@ exports[`golden-baseline: status/next JSON characterization > golden: 全新 ini
   "active_change": null,
   "command": null,
   "detail": "Current phase: phase.1",
+  "next_node": {
+    "id": "prd",
+    "name": "需求",
+    "post_script": null,
+    "pre_script": null,
+    "review_agent": null,
+    "skill": "prd-writer",
+    "subflow_id": "why",
+    "working_agent": null,
+  },
   "proposal_step": null,
 }
 `;

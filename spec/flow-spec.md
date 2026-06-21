@@ -406,6 +406,31 @@ OpenLogos 不自驱动跑测试，只派生"第几轮 / 是否收敛 / 是否升
 **收敛后再失败的状态回退**：verify 再次 FAIL 沿用现有行为清除 `VERIFY_PASS` 及下游 `DEPLOY_DONE`/`SMOKE_*` marker → verify
 回到未 done → `converged` 转 false → implement loop 重新打开；账本续写、`converged` 反映最后一次。
 
+### 12.3 next 透出节点编排提示（next_node，S28）
+
+`openlogos next` 除「下一步是什么」外，再透出**当前该处理节点的编排提示**——`next_node`：`skill` / `working_agent` /
+`review_agent` / `pre_script` / `post_script`（取自 **resolved flow**，含 overlay 重绑）。供宿主据此编排（派哪个 skill/agent、
+要不要跑脚本）。**仍 A 被动**：OpenLogos 不解释/不映射 agent/不执行 script，是否执行由宿主权限模式决定（同 §11 信任边界）。
+JSON 契约（字段类型、`string|null` 空值、挂载、缺省）见 `spec/cli-json-output.md`。
+
+**这是「最终建议处理节点」的派生语义（不只是 JSON 字段说明）**——`next_node` 指向**本次 `next` 响应最终建议处理的真实
+flow node**，**默认 = 当前前沿节点**，下列为例外：
+
+- **【R3·cmd 续推】**：`next` 先对当前 pending cmd 节点求值再续推（见 §12 第 7 条「exit 0 本次响应内视为 done 并续推」）。
+  故 `next_node` 取**求值（cmdEval 回灌）后**的最终节点：cmd `exit 0` → 续推后的节点（**不**是已 done 的 cmd 节点）；
+  cmd 失败/超时 → 该 cmd 节点（求值后 `active`/`failed`）；budget=1 遇第二个 cmd → 第二个 pending cmd 节点。
+- **【R4·auto 放行】**：`next --auto` 自动放行 gate（`gate_auto_passed`）时**不指向节点**（省略 `next_node`）——放行后宿主走
+  gate 的 command，下一节点待重新 `next` 派生。
+- **【R7·loop 阻塞】**：loop 未收敛、未达上限时，前沿虽钉在 `verify`，但本响应实际建议「修代码后重跑 verify」，故 `next_node`
+  指向 loop subflow 的**工作节点**（overlay `current_node` 优先；否则 resolved flow 中 `id == "code"` 且未 `skipped` 的节点，
+  **非 `verify`**——verify 是 CLI 驱动的度量节点）；`code` 缺失/被 overlay `skip` → 省略（仅 initial 等**合法 resolved flow**：
+  launched 对 builtin `code` 的 `skip`/`reorder` 在派生入口已 `FLOW_SCHEMA_INVALID`，不进入此省略）；达上限（`escalated`，
+  loop-exhausted human gate）→ 省略（宿主读 `loop_state.escalated`）。`next_node` 与 `loop_state` 互补。
+- **【R5·命令级建议】**：当前建议不指向某 flow node（`all_done` / 无 active proposal → `openlogos change <slug>` / 补 baseline /
+  `openlogos launch` 等命令级提示）→ 省略 `next_node`。
+
+**范围**：本能力仅 `next` 暴露；`status`/`watch`/`flow show` 不变。
+
 ## 13. M1 / M2 边界总表
 
 | 能力 | M1 | M2 |

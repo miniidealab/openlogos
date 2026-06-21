@@ -18,7 +18,7 @@ import {
   isTasksTemplateFilled,
   resolveProposalDeploymentDecision,
 } from './proposal-lifecycle.js';
-import { NODE_TO_PHASE_KEY, evalNodeWhen, detectProposalStepViaFlow } from './flow-derive.js';
+import { NODE_TO_PHASE_KEY, PHASE_KEY_TO_NODE_ID, evalNodeWhen, detectProposalStepViaFlow } from './flow-derive.js';
 import type { ModuleInfo } from '../commands/status.js';
 import type { ProposalStep } from './proposal-lifecycle.js';
 
@@ -79,7 +79,7 @@ interface DeriveCtx {
  * proposal_step → 当前「正在进行 / 等待」的 builtin launched 节点 id（前沿节点）。
  * 用于 overlay 走查中定位 builtin 前沿，避免重复推导 launched 的 when/done 复杂度（marker 优先级、subflow when、提案级决策）。
  */
-const STEP_TO_CURRENT_BUILTIN: Record<string, string> = {
+export const STEP_TO_CURRENT_BUILTIN: Record<string, string> = {
   'writing': 'write-proposal',
   'delta-writing': 'write-delta',
   'ready-to-merge': 'generate-merge-prompt',
@@ -489,4 +489,63 @@ export function deriveOverlayView(
 /** 标记一个 id 是否为 builtin（用于消费端判断）。 */
 export function isBuiltinNodeId(id: string): boolean {
   return id in NODE_TO_PHASE_KEY;
+}
+
+/** S28：next 透出的编排提示（取自 resolved flow 的最终建议处理节点）。 */
+export interface NextNode {
+  id: string;
+  name: string;
+  subflow_id: string;
+  skill: string | null;
+  working_agent: string | null;
+  review_agent: string | null;
+  pre_script: string | null;
+  post_script: string | null;
+}
+
+/**
+ * S28：解析「本次 next 响应最终建议处理的真实 flow node」的 hints（next_node）。
+ * 默认 = 当前前沿节点（overlay current_node > launched step→builtin > initial phase→builtin）；
+ * 例外：R4 auto 放行 / R7 loop 阻塞·达上限 / R5 命令级建议（无对应节点）→ 返回 null（省略）。
+ * R3（cmd 续推）由调用方传入**已 cmdEval 回灌后**的 current/step/phase 自动满足（cmd done→续推后节点；失败→cmd 节点）。
+ */
+export function resolveNextNode(
+  root: string,
+  mod: ModuleInfo,
+  opts: {
+    currentNode?: { id: string } | null;
+    proposalStep?: string | null;
+    currentPhase?: string | null;
+    loopBlocking?: boolean;   // isLoopBlocking 结果（前沿到 verify + iteration≥1 + 未收敛）
+    loopEscalated?: boolean;
+    gateAutoPassed?: boolean;
+  },
+): NextNode | null {
+  if (opts.gateAutoPassed) return null;                       // R4：gate 自动放行 → 省略
+  let targetId: string | undefined;
+  if (opts.loopBlocking) {
+    if (opts.loopEscalated) return null;                      // R7：达上限 → 省略（宿主读 loop_state）
+    targetId = opts.currentNode?.id ?? 'code';                // R7：工作节点（overlay current_node 优先，否则 code）
+  } else if (opts.currentNode) {
+    targetId = opts.currentNode.id;                           // overlay-added 当前节点（含 cmd 节点）
+  } else if (mod.lifecycle === 'launched') {
+    targetId = opts.proposalStep ? STEP_TO_CURRENT_BUILTIN[opts.proposalStep] : undefined;
+  } else {
+    targetId = opts.currentPhase ? PHASE_KEY_TO_NODE_ID[opts.currentPhase] : undefined;
+  }
+  if (!targetId) return null;                                 // R5 / all_done：无对应 flow 节点 → 省略
+
+  const flow = loadFlow(root, { lifecycle: mod.lifecycle, resolved: true }).flow;
+  for (const sub of flow.subflows) {
+    for (const n of sub.nodes) {
+      if (n.id !== targetId) continue;
+      if (n.skipped) return null;                             // 被 overlay skip → 省略
+      return {
+        id: n.id, name: n.name, subflow_id: sub.id,
+        skill: n.skill ?? null, working_agent: n.working_agent ?? null, review_agent: n.review_agent ?? null,
+        pre_script: n.pre_script ?? null, post_script: n.post_script ?? null,
+      };
+    }
+  }
+  return null;                                                // 目标节点缺失（如 code 被删）→ 省略
 }

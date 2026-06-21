@@ -50,6 +50,26 @@ export const NODE_TO_PHASE_KEY: Record<string, string> = {
   'smoke': 'phase.3-8-smoke',
 };
 
+/**
+ * S28：phase key → builtin node id 的**显式正向映射**（next_node 解析 initial 当前节点用）。
+ * 故意独立成表而非反查 `NODE_TO_PHASE_KEY`，避免实现误用反向查找。
+ */
+export const PHASE_KEY_TO_NODE_ID: Record<string, string> = {
+  'phase.1': 'prd',
+  'phase.2': 'product-design',
+  'phase.3-0': 'architecture',
+  'phase.3-1': 'scenario-modeling',
+  'phase.3-2-api': 'api-design',
+  'phase.3-2-db': 'db-design',
+  'phase.3-3-deployment': 'deployment-design',
+  'phase.3-4a': 'test-cases',
+  'phase.3-4b': 'orchestration-test',
+  'phase.3-5': 'code',
+  'phase.3-6': 'verify',
+  'phase.3-7-deploy': 'deploy',
+  'phase.3-8-smoke': 'smoke',
+};
+
 const BOOTSTRAP_WHEN = 'bootstrap != adopted';
 
 export interface FlowPhasePlanItem {
