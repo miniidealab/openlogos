@@ -4,6 +4,12 @@
 > 性质：spec-first 轮次（纯规格、零代码零测试），**不适用 `openlogos verify`**（无测试可验）。
 > 本记录以三种方式验证规格效果：完整性矩阵 / 桌面等价推演 / 诉求覆盖走查。
 > 日期：2026-06-19
+>
+> **⚠️ 口径更新（2026-06-21）**：本文为 **M1 规格轮**的验证快照。其后 M2 经后续切片处理：
+> **已实现**——`cmd:` 谓词（S26）、loop 真迭代/测试绿收敛（S27）、`next` 暴露 `next_node`（S28）；
+> **已落地**——loop 退出 gate `skippable` overlay 覆盖 + fan-out `coverage_threshold` + loop 内整组收敛（**S29，`flow-gate-fanout-loop` 已归档**）。
+> **进行中（M2 最后一项）**——`modify-cmd-on-builtin`：`cmd:` 放开到 launched verify/deploy/smoke gate（**S30，提案 `flow-cmd-builtin`**）。
+> 下方"M2 点亮 / 预留"措辞为 M1 轮结论；**最新实现口径以 `spec/flow-spec.md §13` 边界总表为准**。
 
 ---
 
@@ -102,6 +108,9 @@ tasks [delta] 3/3✓、无 [code] section；提案级无部署）：
 | 嵌入既有流程（CI/PR 等）| `done_when: cmd:"..."` + pre/post script | **M2**（cmd 谓词）|
 
 **结论**：9/11 诉求 M1 即可表达；2 项（loop 真迭代、cmd 嵌入）已在 schema 预留，M2 点亮。无诉求落空。
+**【2026-06-21 更新】**：这 2 项已分别由 **S27**（loop 真迭代/测试绿收敛）与 **S26**（`cmd:` 嵌入）实现；`next_node` 由 **S28** 实现。
+fan-out 聚合阈值、loop 内整组收敛由 **S29**（`flow-gate-fanout-loop`）实现并归档。
+即 **S26–S29 已落地，11/11 诉求全部实现**；M2 边界表仅剩 `modify-cmd-on-builtin` 由 **S30（`flow-cmd-builtin`，进行中）** 收尾（权威口径见 `spec/flow-spec.md §13`）。
 
 ---
 

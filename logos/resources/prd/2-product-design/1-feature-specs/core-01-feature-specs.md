@@ -17,6 +17,8 @@
 14. 查看与解析 flow 编排（`flow show`，加载内置模板、解析项目 overlay、查看 raw / resolved flow，支持 `--format json`）。
 15. 实时观测派生研发状态（`watch`，轮询 `collectStatusData` 派生数据、初始快照 + 仅变化时流式输出，只读）。
 16. next 自动跳过可跳人类确认点（`next --auto`，skip-gate，最小 A 方案 + `GATE_AUTO_PASSED` 审计留痕）。
+17. 收尾 M2 三个轻量预留项（`flow` 编排）：loop 退出 gate 的 `skippable` 可经 overlay 覆盖（高危 opt-in、auto 放行非收敛代码）、fan-out 聚合阈值 `coverage_threshold`、loop 内 fan-out 收敛语义定死为「整组收敛」。
+18. 把 `cmd:` 谓词放开到 launched 的 `verify` / `deploy` / `smoke` 三个 gate（`flow` 编排）：overlay `modify` 可把这三个门禁节点的 `done_when`（verify/smoke 另含 `fail_when`）改为 `cmd:<command>`，接外部命令 / CI（如 `gh pr checks`、自定义部署校验脚本）；per-field 独立求值、cmd 字段 live 重评瞬态不写 marker，`status`/`watch` 停门前、`next` budget=1 求值续推；其它 builtin 节点改 cmd: 仍 fail loud。
 
 ## 二、规格边界
 ### 2.1 CLI 交互
@@ -152,9 +154,9 @@
 - **`GATE_AUTO_PASSED` 审计语义（须锁定）**：
   - 文件 = 活跃提案目录下的 **JSONL 审计日志**（`logos/changes/<slug>/GATE_AUTO_PASSED`）。
   - 每次 auto 放行**总是追加一行** `{gate_id, proposal_step, timestamp}`（**不去重、不覆盖**，保留完整审计轨迹）。
-  - **纯审计、不改变派生**：默认 `next`（无 `--auto`）与 `status` **忽略**该文件、输出 1:1 不变——绝不因 `GATE_AUTO_PASSED` 存在而让默认 `next` 自动越过 gate。
+  - **纯审计、不改变派生**：默认 `next`（无 `--auto`）与 `status` **忽略**该文件、绝不因 `GATE_AUTO_PASSED` 存在而让默认 `next` 自动越过 gate；`next` base data 仍按当前契约输出（S28 起可能含 `next_node`）。
   - **幂等语义**：仅指 `--auto` 对默认 `next`/`status` 的**派生结论无影响、可安全重跑**，**并非**指审计日志去重（重复放行追加多行）。
-- **默认 `next`（无 `--auto`）严格 1:1 不变**；`--auto` 是纯 opt-in 新能力。
+- **默认 `next`（无 `--auto`）不因 `--auto`/`GATE_AUTO_PASSED` 改变 gate 行为**（base data 仍按当前契约、S28 起可能含 `next_node`）；`--auto` 是纯 opt-in 新能力。
 - **不做（M2）**：overlay 驱动派生、loop 真迭代、`cmd:` 谓词。本切片不接入这些。
 
 ### 2.15 overlay 驱动 status/next/watch 派生
@@ -180,6 +182,236 @@ launched current 落 overlay-added 节点时 `proposal_step` = 前序最近 buil
 node 级新字段仅在存在 overlay-added 节点 / 当前节点为 overlay-added 时输出。
 
 **不在本规格**：`cmd:` 谓词、loop 真迭代、测试绿收敛（属后续切片）。
+
+### 2.16 cmd: 谓词（命令退出码作完成信号）
+
+**目标**：点亮 flow `done_when`/`fail_when` 的 `cmd:<command>` 谓词，让 overlay-add 节点的完成判定由命令退出码决定（如 `npm test`、`gh pr checks`）。
+
+**边界（决策 A/B）**：
+- **仅 overlay-ADDED 节点**可用；`op:modify` 把 builtin 节点 done_when 改成 `cmd:` → `FLOW_SCHEMA_INVALID`（modify-cmd-on-builtin 留后续）。
+- **禁止同节点 `done_when` 与 `fail_when` 均为 `cmd:`** → `FLOW_SCHEMA_INVALID`。
+
+**执行**：
+- **仅 `next` 执行命令**（shell 执行、cwd=项目根、两级可配超时 ≥1s、exit 0=done、非 0/超时=未 done、捕获 stdout/stderr 不外泄且容量受限、信任委托宿主）。
+- `status` / `watch` **不执行**，cmd 节点态 = **`pending`**。
+- **瞬态不持久化**：exit 0 仅本次 next 续推，不写 marker，下次 next 重新求值；**每次 next 至多执行 1 个 cmd（budget=1）**。
+- **求值顺序**：先 `fail_when:cmd`（exit 0 → failed）再 `done_when:cmd`。
+
+**错误分界**：命令不存在（shell exit 127/9009）= 非 0 → success envelope；shell 起不来 = `FLOW_CMD_SPAWN_FAILED` error envelope。
+
+**不变量**：内置零 `cmd:`、无 cmd 项目派生逐字节不变（golden 零漂移）。**不在本规格**：loop 真迭代、测试绿收敛、modify-cmd-on-builtin。
+
+### 2.17 implement loop 真迭代派生（A 被动派生）
+
+**目标**：把 implement（code/verify）子流程的 `loop { until: tests_green, max_iters }` 从退化环（仅解析、不驱动）点亮为**真迭代派生**——OpenLogos 只派生「第几轮 / 是否收敛 / 是否升级 gate」，不自驱动跑测试（**A 被动派生**）。
+
+**激活边界（仅 overlay）**：
+- builtin `initial.yaml` / `launched.yaml` 的 implement subflow 保持 `loop: { until: tests_green, max_iters: 1 }`（**golden 零漂移**）。
+- 仅当项目 overlay 通过 op `set-loop`（`subflow: implement` + `set: { max_iters: >1 }`）把 resolved loop 的 `max_iters` 改为大于 1 时，才进入真迭代派生；`set` 字段仅允许 `max_iters` / `until`（`until` 缺省沿用 `tests_green`）。
+- **initial 多模块**为本切片已知不支持项：即便 overlay 写了 `max_iters>1` 也**不激活**（不写账本、不输出 `loop_state`、派生退化为旧行为）——verify 是项目级单次测试运行，无法把一次 run 归属到某模块的 loop。
+- initial（单模块）与 launched 两条 implement 走**同一套** loop 派生引擎，仅在激活处生效。
+
+**派生语义（读账本，A 被动）**：
+- 迭代计数来源 = `openlogos verify` 在 loop 激活时追加的 `LOOP_ITERS` 账本（append-only JSONL，与 `GATE_AUTO_PASSED` 同理念）；未激活时 verify **不写账本**（零副作用）。
+- `iteration` = `LOOP_ITERS`（按当前 module 过滤后）的行数（已完成的 verify 轮次）。
+- `converged` = 最后一行 `result == "pass"`（tests_green）。
+- `escalated` = `iteration >= max_iters && !converged`。
+- status / watch / next 只**读账本展示或派生措辞**，**绝不执行测试**。
+
+**implement 出环以 `converged` 为准（覆盖内节点 done_when）**：
+- loop 激活时，implement subflow 的出环（done）以 `loop_state.converged` 为准，**覆盖其内节点（含 verify）各自的 `done_when`**。
+- 尤其 initial 的 verify 节点 `done_when: file:logos/resources/verify/acceptance-report.md`，而 `openlogos verify` 无论 PASS / FAIL 都会写该报告——必须被 `converged` 覆盖，否则首次 FAIL 也会被误判为 done。
+- **未收敛（`!converged`）时，status / watch / next 一律不得把当前推进到后续 subflow（deliver / deploy / launch / archive）**——当前节点钉在 implement 内的 verify。
+- launched 的 verify `done_when: marker:VERIFY_PASS` 本就 FAIL-safe（仅 PASS 时点亮），与本规则一致。
+
+**next 派生措辞（消费 `loop_state`）**：
+- 未收敛 & `iteration < max_iters` → 「继续迭代（第 `iteration`/`max_iters` 轮未绿 → 让 working_agent 修复后重跑 `openlogos verify`）」。
+- 未收敛 & `escalated`（达上限）→ 升级人类确认点：「已达迭代上限 `max_iters` 仍未绿 → 继续迭代 / 调整方案 / 放弃」。
+- 收敛 → 出环，续推到下一节点（deliver / archive）。
+
+**达上限升级 = loop 退出 human gate（本切片不可 overlay 覆盖）**：
+- `escalated` 时派生为 implement subflow 的**退出 gate（human）**，`skippable` 本切片**固定 `false`**（`exhausted_gate.skippable` 的 overlay 覆盖留独立切片）。
+- gate_id（确定性）= `gate:<subflow_id>:loop-exhausted`（如 `gate:implement:loop-exhausted`）。
+- **next `--auto` 行为**：escalated 时输出 `gate_id` + `skippable: false`，**照常阻塞、不 auto-pass、不写 `GATE_AUTO_PASSED`**（与现有 deploy gate `skippable:false` 在 auto 下行为一致）。
+- 「继续迭代」= 人类把 `max_iters` 调大（overlay `set-loop`）→ `iteration >= max_iters` 不再成立 → `escalated` 自动解除；或直接修到测试绿（`converged`）出环。**gate 本身不重置计数**。
+
+**与既有能力正交**：
+- 与 `cmd:` 谓词（S26）正交：loop 真迭代押**测试绿**（verify 的 PASS/FAIL），不依赖 `cmd:` 退出码。
+- 与 `next --auto`（S24）正交：auto 仅对可跳 gate 放行，escalated 的 `skippable:false` gate 在 auto 下仍卡。
+- 「是否达上限」**只由 `loop_state.escalated` + `next --auto` 的 `gate_id`/`skippable` 表达**，**不新增 `proposal_step` 枚举值**（launched loop 未收敛时仍为 `ready-to-verify` / `verify-failed` 等既有值），保持 JSON 兼容。
+
+**`loop_state` 挂载（仅激活时输出，否则省略 → golden 零漂移）**：
+- 有 `modules[]` 的项目挂 `modules[].loop_state`（按模块）；legacy 无 `modules[]` 才回退顶层 `loop_state`。
+- `next` 同步挂 `next.modules[].loop_state`、顶层仅 legacy fallback；`watch.data`（与 status 同构）继承同样挂载规则。
+- `loop_state` 字段：`subflow_id` / `until` / `max_iters` / `iteration` / `converged` / `escalated`。
+
+**不变量**：无激活项目（含**所有** golden fixture）→ `status` / `next` / `watch` 输出**逐字节不变**。**不在本规格**：`exhausted_gate.skippable` 的 overlay 覆盖、auto 放行非收敛代码进入交付（语义危险，留独立切片）。
+
+### 2.18 next 暴露 next_node 编排提示（A 被动派生）
+
+**目标**：让 `openlogos next` 输出**最终建议处理的真实 flow 节点**的**编排提示对象 `next_node`**——把 `CLAUDE.md` 散文里的「该用哪个 skill / 哪个 agent / 要不要跑脚本」变成**机器可读的声明**，宿主据此真正照「乐谱」编排。仍是 **A 被动派生**：OpenLogos 只声明、不解释、不校验、不驱动；执行与授权由宿主权限模式决定。
+
+**范围边界（仅 next）**：本能力**只在 `openlogos next` 暴露 `next_node`**；`status` / `watch` 本切片不动（守其 golden 零漂移，是否镜像留后续切片）。
+
+**总定义（最终建议处理节点）**：`next_node` = 取自 **resolved flow（含 overlay）** 的「本次 `next` 响应**最终建议处理的真实 flow 节点**」的 hints。**默认 = 当前前沿节点**；R3（cmd 续推）/ R4（auto 放行）/ R5（命令级建议）/ R7（loop 阻塞）是对这个默认的**例外**（见下各条）。
+
+**字段（全套编排提示）**：
+
+```jsonc
+"next_node": {
+  "id": "code",
+  "name": "代码实现",
+  "subflow_id": "implement",
+  "skill": "code-implementor",
+  "working_agent": null,
+  "review_agent": null,
+  "pre_script": null,
+  "post_script": null
+}
+```
+
+- `id` / `name` / `subflow_id` 为 `string`；`skill` / `working_agent` / `review_agent` / `pre_script` / `post_script` 为 **`string | null`**——这 5 个字段**固定存在**、用 `null` 表示无绑定（如 verify / deploy / smoke 由 CLI 驱动、`skill` 为 `null`）。消费方**不得**把 `skill` 当作必有 `string`。
+- 5 个 hint 字段均为**不透明标签**：OpenLogos 不解释、不校验、不驱动；如何映射到真实 agent、是否执行 script 由宿主权限模式决定（A 架构，与既有信任边界一致）。
+- builtin 模板里 `working_agent` / `review_agent` / `pre_script` / `post_script` 多为 `null`（留用户 overlay 填），`skill` 多已填（prd→prd-writer、code→code-implementor…）。
+
+**默认前沿节点解析（无 R3/R4/R5/R7 例外时，A 被动派生，复用既有映射）**：
+1. **overlay-added 当前节点**（`current_node` 存在）→ 直接取该节点；
+2. **launched builtin** → `STEP_TO_CURRENT_BUILTIN[proposal_step]` → builtin 节点 id；
+3. **initial builtin** → `current_phase` → builtin 节点 id（用显式新增的 `PHASE_KEY_TO_NODE_ID` 映射，**不得**拿正向表 `NODE_TO_PHASE_KEY` 反查）；
+
+再从 **resolved flow** 按 id 取该节点的完整 hints。故 overlay `modify code set:{review_agent: my-reviewer}` 会**如实反映**为 `next_node.review_agent = "my-reviewer"`（overlay 重绑 agent 是关键价值）。
+
+**挂载位置（与 `current_node` / `loop_state` 同构）**：有 `modules[]` → `modules[].next_node`；legacy 无 modules → 顶层 `next_node`。
+
+**【R3】与 cmd 瞬态求值的关系（指向本次响应「最终建议处理」的节点）**：`next` 会先执行当前 pending cmd 再续推，故 `next_node` **指向本次响应最终建议处理的节点**，**不是**刚被求值且已 done 的 cmd 节点：
+- **cmd done（exit 0）→ 续推**：`next_node` = 续推后落到的节点（已 done 的 cmd 节点**不**作为 next_node）。
+- **cmd 失败 / 超时**：节点仍未完成，`next_node` = 该 cmd 节点（指向需重跑的节点）。
+- **budget=1 遇第二个 cmd**：`next_node` = 第二个 pending cmd 节点。
+
+**【R4】与 `--auto` auto-pass 的关系**：为避免「机器字段 next_node 仍指放行前节点、action 却已 proceed」的不一致：
+- **`gate_auto_passed === true`（gate 已自动放行）→ 省略 `next_node`**——放行后宿主应走 gate 的 command，下一个待处理节点要等放行落地后重新 `next` 派生。
+- 非放行的 `--auto`（gate 不可跳、仍阻塞）与无 `--auto` 时，`next_node` 按当前前沿节点正常输出。
+
+**【R7】与 loop 阻塞态的关系**：loop 未收敛时前沿钉在 verify，但 next 的 action 实际是「让 working_agent 修复后重跑 verify」（修代码，不是跑 verify）。为避免 action 与 next_node 不一致：
+- **loop 阻塞、未达上限（继续迭代）**：`next_node` = **loop 工作节点**（含 overlay 重绑的 `skill` / `working_agent`）；`verify` 是 CLI 驱动的度量节点（`skill` 为 null），不作 next_node。工作节点取法：① 若当前有 overlay-added `current_node` 仍优先（按总定义解析）；② 否则取 resolved flow 中 **`id == "code"` 且未 `skipped`** 的节点（不依赖「第一个」，兼容 overlay `reorder`）；③ 若 `code` 缺失 / 被 overlay `skip` → **省略 `next_node`**（loop 仍有效，宿主读 `loop_state`）。该省略分支仅适用于合法 resolved flow（如 initial）；launched 对 builtin `code` 的 `skip` / `reorder` 在 S25 派生入口已 `FLOW_SCHEMA_INVALID`，根本走不到此处。
+- **loop 达上限（`escalated` → `gate:implement:loop-exhausted` human gate）**：**省略 `next_node`**（同 R4，人类确认点、无可派发节点；宿主读 `loop_state.escalated`）。
+- 非阻塞（`iteration=0` / 已收敛 / 无 loop）：`next_node` 按当前前沿节点正常输出（如 `verify`）。
+- 与 `loop_state` 字段并存、互补：`loop_state` 给环状态，`next_node` 给「这一轮该派发哪个节点的 skill/agent」。
+
+**【R5】缺省规则（仅指向真实 flow node，命令级建议一律省略）**：`next_node` **仅当当前建议指向一个真实 flow 节点时输出**；以下「命令级建议」（非某 flow node）一律**省略 `next_node`**：
+- `all_done`（流程走完）；
+- launched **无 active proposal** → 建议 `openlogos change <slug>`；
+- adopted **补 baseline 文档** → 建议 `openlogos change add-baseline-docs`；
+- `openlogos launch` 等其它命令级提示；
+- `--auto` gate 已放行（见 R4）。
+
+**与既有能力正交**：`next_node` 与 cmd（S26）/ loop（S27）/ `--auto`（S24）的现有字段**正交、互不覆盖机器字段**——cmd/loop/auto 各自的字段照常输出，`next_node` 只额外声明「该派发哪个节点的编排提示」。
+
+**golden（有意打破零漂移、须复核 diff）**：本切片是 feature、为 next 新增输出字段，对有当前节点的项目（builtin 节点恒有 skill 等）新增 `next_node` → `next --json` 快照随之更新。必须在**干净基线**上重新 baseline `golden-baseline.test.ts` 并**逐项复核 snapshot diff**，确认**唯一变化是新增 `next_node`**，无其它字段漂移（`status` / `watch` / `flow show` 快照必须不变）。
+
+**不变量**：无当前节点（命令级建议 / R4 放行 / R7 省略分支）时 `next_node` 省略。`status` / `watch` 输出**逐字节不变**（本切片不动它们）。
+
+### 2.19 M2 预留收尾：loop 退出 gate 可跳 + fan-out 阈值 + loop 内整组收敛（A 被动派生）
+
+**目标**：一次性收掉 `spec/flow-spec.md §13` 边界表 M2 列里三个轻量预留项——A·loop 达上限退出 gate 的 `skippable` 可经 overlay 覆盖、B·fan-out 聚合阈值、C·loop 内 fan-out 收敛语义定死。三项全部 **overlay / 字段 opt-in**，builtin 模板零变更，仍是 **A 被动派生**：OpenLogos 只声明、不解释、不自驱动；执行与授权由宿主权限模式决定。契约细节见 `spec/flow-spec.md`（§6/§7/§10.4/§12.2/§13）与 `spec/cli-json-output.md`（§3.9/§11.1/§9）。
+
+#### 2.19.A loop 退出 gate 的 `skippable` 可 overlay 覆盖（高危 opt-in）
+
+**边界**：S27 把 loop 达上限的退出 human gate（`gate:<subflow>:loop-exhausted`，如 `gate:implement:loop-exhausted`）的 `skippable` 固定为 `false`；本能力让它可经 overlay 覆盖。
+- **overlay 入口**：`set-loop` 的 `set` 白名单由 `max_iters` / `until` 扩为 `max_iters` / `until` / `exhausted_gate`；`exhausted_gate` 子结构**仅允许 `{ skippable: boolean }`**。
+- **派生语义（被动）**：`loop_state` **仅当 overlay 显式写了 `exhausted_gate` 时**才输出机器字段 **`exhausted_skippable`**（= resolved loop 的 `exhausted_gate.skippable`）；**未写则省略该字段、消费方按 `false` 处理**（既有 S27 激活-loop 的 `loop_state` JSON 不新增字段 → 真零漂移）；未激活 loop 时整个 `loop_state` 省略。
+- **`next --auto` 行为**：
+  - **`exhausted_skippable !== true`（默认）**：`escalated` 时输出 `gate_id` + `skippable:false`，`--auto` **照常阻塞、不 auto-pass、不写 `GATE_AUTO_PASSED`**（与 deliver 入口 gate `skippable:false` 在 auto 下一致，S27 不变）。
+  - **`exhausted_skippable === true`（高危 opt-in）**：`escalated` 时 `--auto` **自动放行**该退出 gate——输出 `gate_id = gate:<subflow>:loop-exhausted`、`skippable:true`、`gate_auto_passed:true`，向活跃提案的 `GATE_AUTO_PASSED` JSONL **追加审计行**，action 转 proceed（**放行未收敛代码进入后续 subflow、无人值守**）。这是用户在 overlay 显式声明的「达上限即放行」语义，OpenLogos 据 overlay 被动派生、不自行决策授权。
+- **安全红线**：`skippable:true` 是高危能力（自动放行未通过测试的代码）；默认 `false`，须用户显式在 overlay 写 `exhausted_gate.skippable: true` 才生效。OpenLogos 只声明「此 gate 可跳 + 当前 auto → 视为通过」，是否真正进入 auto、放行落地由宿主权限模式决定。
+- **错误处理**：`set` 出现非白名单 key、或 `exhausted_gate` 内含 `skippable` 以外的 key、或 `skippable` 非布尔 → `FLOW_SCHEMA_INVALID`（fail loud，不静默保留、不出现在 resolved flow）。
+- **不变量**：未写 `exhausted_gate`（含 builtin）→ `loop_state` 省略 `exhausted_skippable` 键、auto 下行为同 S27 → golden 零漂移（无论 loop 是否激活，输出逐字节不变）；`proposal_step` 枚举不新增（达上限仍只由 `loop_state.escalated` / `exhausted_skippable` + `--auto` 的 `gate_id`/`skippable`/`gate_auto_passed` 表达）。
+
+#### 2.19.B fan-out 聚合阈值 `coverage_threshold`
+
+**边界**：fan-out 节点新增可选字段 **`coverage_threshold`**（float，`0 < x <= 1`），**仅对 `done_when: all_present` 的 fan-out 节点合法**；**设在非 `all_present` 或无 `for_each`（非 fan-out）的节点 → `FLOW_SCHEMA_INVALID`（fail loud）**。
+- **派生语义**：done 判定由「全部就绪」放宽为 `covered / total >= coverage_threshold` 即判该 fan-out 节点 **done**。
+- **缺省等价 `all_present`**：不写 `coverage_threshold` = 阈值 `1.0`（要求 100% 覆盖），行为与现状 1:1。
+- **`total == 0` 维持现状**：仍按 `all_present` 现状处理（视为未 done），阈值不改变此边界。
+- **覆盖度对象不变**：`{ total, covered, missing }` 结构不变；机器输出仅在**显式设置 `coverage_threshold` 时**于 `flow show` 节点带该字段——**未设置则整键省略、绝不输出 `null`**（写 `null` 亦 normalize 为 absent），以保 `flow show` 零漂移；`status` / `watch` / `next` **不新增字段**，其 `scenario_coverage` 结构不变、`done` 在设置阈值时按阈值判定。
+- **错误处理（fail loud）**：`coverage_threshold` 越界（≤0 或 >1）/ 非数 → `FLOW_SCHEMA_INVALID`；**设在非 `done_when: all_present` 或非 fan-out（无 `for_each`）节点 → 同样 `FLOW_SCHEMA_INVALID`**（不静默忽略、不告警）。
+- **不变量**：builtin 模板不写 `coverage_threshold` → 行为与 `all_present` 1:1 → golden 零漂移。
+
+#### 2.19.C loop 内 fan-out 收敛语义定死 = 整组收敛
+
+**边界（决策定死）**：loop（implement 子流程）内若含 fan-out 节点，**采用「整组收敛」**——
+- loop 的收敛裁判仍是**测试绿**（S27 `until: tests_green`）；fan-out 节点按各自 `all_present` / `coverage_threshold`（见 2.19.B）独立完成。
+- **不引入 per-instance 迭代**：不为单实例各自计 `iteration`、不新增字段、不留悬空 schema。
+- builtin loop 仅 `implement`（code/verify，无 fan-out）；fan-out-in-loop 只可能由用户 overlay 把 fan-out 节点加进 implement——此时同样整组收敛。
+- **不变量**：无新增字段、无 builtin 变更 → golden 零漂移。该项关闭 §13「每实例迭代 vs 整组收敛」预留。
+
+### 2.20 cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin，A 被动派生）
+
+**目标**：收掉 `spec/flow-spec.md §13` 边界表 M2 列**最后一项** `modify-cmd-on-builtin`——把 S26 仅限 overlay-add 节点的 `cmd:` 谓词放开到 **launched 的 `verify` / `deploy` / `smoke` 三个 gate 节点**，使这些门禁可接外部命令 / CI。语义采用 **per-field 独立求值**（cmd 字段 live 重评瞬态、非 cmd 字段照常，`fail_when` 优先于 `done_when` 不变）+ **不写 marker**，仍是 **A 被动派生**：OpenLogos 只声明门禁形态、不自驱动跑命令、不写状态，执行与授权由宿主权限模式决定。cmd 执行语义整体复用 S26（`spawn(shell)`、两级超时、64KiB drain、`exit 0`=谓词命中【按字段：`done_when` 命中为 done、`fail_when` 命中为 failed】、命令输出不进契约、信任边界委托宿主）。契约细节见 `spec/flow-spec.md`（§9.2 放开范围 / §10.3 modify 边界 + per-field 求值 / §12 launched 检测 cmd-aware + loop 正交 / §13 关闭最后一项）与 `spec/cli-json-output.md`（§3.8 cmd_gate / (g)(h) 求值结果 / next_node R3）。
+
+#### 2.20.A 范围：仅 verify / deploy / smoke 三个 launched gate（精确白名单，决策 B）
+
+**边界**：overlay `modify` 可把 **`verify`** / **`deploy`** / **`smoke`** 节点的 `done_when`（`verify` / `smoke` 另含 `fail_when`）改为 `cmd:<command>`；其它 builtin 节点经 modify 改 `done_when` / `fail_when` 到 `cmd:` → **`FLOW_SCHEMA_INVALID`（fail loud）**。
+- **白名单为精确 `(节点, 字段)`**：
+  - `verify.done_when` ✅ / `verify.fail_when` ✅
+  - `smoke.done_when` ✅ / `smoke.fail_when` ✅
+  - `deploy.done_when` ✅ / **`deploy.fail_when` ❌ → `FLOW_SCHEMA_INVALID`**（deploy builtin **无 `fail_when`**，本切片不为 deploy 引入 `fail_when:cmd`）。
+  - 其它任意 `(节点, 字段)` 改 cmd: → `FLOW_SCHEMA_INVALID`。
+- **其它 builtin 节点**（initial 全部；launched 的 `write-proposal` / `write-delta` / `generate-merge-prompt` / `apply-merge` / `code` / `archive`）改 cmd: 仍 fail loud——它们承载 OpenLogos 内部状态（proposal_package / section / marker），cmd: 无意义。
+- **沿用 S26 决策 B**：同节点 `done_when` 与 `fail_when` **不得均为 cmd:** → `FLOW_SCHEMA_INVALID`（仅 verify / smoke 适用）；混合（一 cmd 一 marker）按字段独立求值（见 2.20.B）。
+- **空命令非法**：`cmd:`（命令为空或纯空白）→ `FLOW_SCHEMA_INVALID`（沿用 S26 cmd 谓词校验）。
+
+#### 2.20.B per-field 独立求值 + frontier 观察语义（live 重评、不写 marker）
+
+**核心规则 = 「逐字段按谓词类型独立判定 + 非 cmd 字段先解析、cmd 字段只在前沿节点求值」**，`fail_when` 优先于 `done_when` 不变：
+- **cmd: 字段（live 重评、瞬态、不持久化）**：`status` / `watch` **不执行 cmd**，该 cmd 字段视为 **unknown**；`next` 求值该字段 cmd（**budget=1，与 S26 overlay-add cmd 共享预算**，按 flow 顺序先到先求值），exit 0 命中、非 0 / 超时未命中（不崩溃）。
+- **非 cmd: 字段（marker: 等，行为不变）**：仍按原谓词求值，`status` / `watch` / `next` 一致，与今天逐字节相同。
+- **`next` 对 cmd 字段求值不写 marker**：cmd 字段每次 `next` 重评，`next` 不写 `VERIFY_PASS` / `DEPLOY_DONE` / `SMOKE_PASS` / `*_FAIL`（A 被动派生：`next` 不改项目状态）。现有 `openlogos verify` / `deploy-done` / `smoke` 命令的 marker 写入行为**完全不变**（照常可跑、照常写各自 marker，不禁止 / 不告警）；这些 marker 只在仍为 marker: 谓词的字段上参与判定。
+
+**status / watch 节点态（不执行 cmd，按序短路）**：
+1. 非 cmd `fail_when` 命中（如 `marker:VERIFY_FAIL` 存在）→ **failed**；
+2. 否则 非 cmd `done_when` 命中（如 `marker:VERIFY_PASS` 存在）→ **done**；
+3. 否则 该节点尚有**未求值的 cmd 字段** → **pending**（cmd 字段视为 unknown，**不**因此把已被非 cmd 字段解析的节点也判 pending）；
+4. 否则 → active。
+
+**next（执行 cmd，budget=1）= 仅对前沿（pending）节点求值其 cmd 字段**：上面第 1/2 步已解析为 done / failed 的节点**非前沿**，next **不**为其跑命令；前沿节点按 fail > done：`fail_when:cmd` 先（exit 0 → failed），未命中再 `done_when`（cmd exit 0 → done；marker → 按存在性）。
+
+| 节点字段组合 | marker 状态 | status/watch | next 行为 |
+|---|---|---|---|
+| `done_when:cmd` + `fail_when:marker:VERIFY_FAIL` | VERIFY_FAIL 存在 | failed | —（已 failed，不跑 cmd）|
+| 同上 | VERIFY_FAIL 不存在 | pending | 求值 `done_when:cmd` → exit 0 推进、非 0 / 超时停门前 |
+| `done_when:marker:VERIFY_PASS` + `fail_when:cmd` | VERIFY_PASS 存在 | done | —（已 done、非前沿，**不**跑 `fail_when:cmd`）|
+| 同上 | VERIFY_PASS 不存在 | pending | 求值 `fail_when:cmd` → exit 0 failed；未命中仍停门前（done_when marker 缺失）|
+| `done_when:cmd`（deploy）| — | pending | 求值 `done_when:cmd` → exit 0 推进、非 0 / 超时停门前 |
+
+> 含义：`done_when:marker + fail_when:cmd` 的 cmd 失败检查是「等待门禁期间的 fail-fast」（marker 未到时生效），marker 一到即 done、不再被 cmd 推翻——这是 frontier 模型的明确取舍。
+
+**proposal_step「停门前」与「推进过门」**（live 重评的派生结果）：
+- **cmd 未命中**（status/watch 恒未求值；next `done_when:cmd` 非 0 / 超时）→ proposal_step 停在该 gate **门前**：`verify` → `ready-to-verify`；`deploy` → `ready-to-deploy`；`smoke` → `ready-to-smoke`。
+- **`next` 中 `done_when:cmd` exit 0** → 该 gate 本次 done → proposal_step **推进过门**（**仅本次 envelope 的瞬态合成态**，不写 marker，下一次 `status` 回到门前态——有意的 next/status 不一致）。
+- **`next` 中 `fail_when:cmd` exit 0** → 该 gate 本次 failed → proposal_step = `verify-failed` / `smoke-failed`（瞬态失败态、非推进；deploy 无 `fail_when:cmd`）。
+
+#### 2.20.C 检测 cmd-aware + 机器契约（cmd_gate）
+
+**检测层改造（cmd-aware）**：
+- `extractLaunchedMarkers`（`flow-derive.ts`）：`verify` / `deploy` / `smoke` 的 `done_when` / `fail_when` 若为 `cmd:` → **不抽 marker 名**，改标记为「cmd gate」（对 cmd: 不再抛错，返回 cmd 描述符）；marker: 字段路径**完全不变**。
+- `detectProposalStepViaFlow`：新增**可选 cmd-eval 入参**（来自 `next` 对 builtin gate 的 cmd 求值结果）。无入参（`status` / `watch`）→ 对未被非 cmd 字段解析的前沿 cmd gate 视为 unknown（→ pending / 停门前），**非 cmd 字段已把节点解析为 done / failed 的照常输出、不停门前、不输出 pending**（见 2.20.B frontier）；有入参（`next`）→ 仅对前沿节点按 exit code 判 done / failed / 未过。
+- **marker: 路径不变 → golden 零漂移**：无 overlay 项目 detection / status / next / watch 逐字节不变。
+
+**机器契约**（详见 `spec/cli-json-output.md`）：
+- **新增 JSON 字段 `cmd_gate`**（承载 builtin gate，与 `loop_state` 同构挂载）：当当前前沿是 verify / deploy / smoke 且其 cmd 字段仍 pending（status/watch 恒未求值；next 中 cmd 非 0/超时/未命中，**或因 budget=1 被前序 cmd 耗尽而未求值**）时，输出 `cmd_gate = { node_id, field, command, timeout_seconds }`。
+  - **挂载位置**：有 `modules[]` → **`modules[].cmd_gate`**（与 `active_change` 平级、不挂其下，因 `next` 的 module item 里 `active_change` 是字符串而非对象）；legacy 无 `modules[]` → 回退顶层 `cmd_gate`；`next` 的 base data 同步挂 `next.modules[].cmd_gate`。消费方先读 `modules[].*`、缺则读顶层（与 `loop_state` / `current_node` 一致）。
+  - `current_node` **维持只给 overlay-add**（§3.6 约束不变）；builtin cmd gate 由 **`cmd_gate` + `proposal_step`（停门前）** 共同表达。
+  - **仅有 cmd gate（overlay modify）时出现、否则整字段省略 → golden 零漂移**。
+- **next 的 cmd 执行结果复用 §3.8(c)**：`cmd_node_id` / `cmd_predicate_field` / `cmd_exit_code` / `cmd_timed_out` / `cmd_satisfied`——这些字段已按"被求值的 cmd 节点 id"定义、天然支持 builtin 节点 id（如 `cmd_node_id:"verify"`），无需新增；内部 `pending_cmd` 载荷扩展为可指向 builtin gate（供 next 执行器取命令，**仅内部、不在 JSON 契约**）。
+- **next 的 `proposal_step` 是瞬态合成态（落契约）**：`next` 中 `done_when:cmd` exit 0 → 本次 envelope 的 `proposal_step` 显示推进过门，但不写 marker → 下一次 `status` 回到门前态；须在 `spec/cli-json-output.md` 明确「`next` envelope 门后态据 cmd 求值合成、`status` / `watch` 反映持久化前沿」。
+- **`next_node` R3 扩展到 builtin cmd gate**：builtin cmd 命中续推 → `next_node` 指向续推后节点；cmd 失败 / 超时 → 指向该 builtin gate 节点。明确 `cmd_gate.node_id` / `cmd_satisfied` / `next_node` / `proposal_step` 的瞬态关系。
+
+#### 2.20.D 与 loop（S27/S29）正交 + 其它 builtin fail loud
+
+- **禁止「激活 loop（implement 的 `set-loop max_iters>1`）+ `verify` 的 `done_when` 或 `fail_when` 任一为 cmd:」并存** → **`FLOW_SCHEMA_INVALID`**（resolved 校验时即报，两者同 overlay 可静态检测）。**严格版**：不区分 done / fail 字段，verify 任一字段带 cmd 即与激活 loop 互斥（最安全、零边角）。原因：loop 出环只看 `LOOP_ITERS` 末轮 pass（账本由 `openlogos verify` 写），而 cmd gate 的 `next` 不写账本 / marker，激活 loop 时 cmd exit 0 也无法出环 → fail-loud 隔离。
+- `deploy` / `smoke` 在 `deliver` 子流程、无 loop → 无此冲突；S30 不触碰 loop 收敛逻辑。
+- **不变量**：builtin 三模板的 verify / deploy / smoke 仍是 marker: → 无 overlay 项目 detection / status / next / watch / flow show 逐字节零漂移；cmd-gate 仅经 overlay `modify` opt-in 激活。
 
 ## 三、功能验收摘要
 ### S01
@@ -231,7 +463,26 @@ adopt 后必须生成完整 `logos/` 目录、`logos.config.json`、`logos-proje
 `watch` 必须以 `status` 同一派生数据源（`collectStatusData`）实时输出：**启动先输出一次初始快照**，之后**仅在 `data` 深比较发生变化时**输出，每条携带 `seq` / `timestamp`；必须继承 `--module`；`--interval` 默认 2s；`--format json` 输出 JSON 流，文本模式变化时重渲染；Ctrl-C 优雅退出；全程只读无副作用；项目未初始化报 `PROJECT_NOT_INITIALIZED`。
 
 ### S24
-`next --auto` 必须只对 launched 现有人类停顿点对应 gate 生效：`ready-to-merge`（`skippable:true`）放行并向 `GATE_AUTO_PASSED` JSONL 追加 `{gate_id, proposal_step, timestamp}`；`ready-to-deploy`（`skippable:false`）保持人类停顿；`ready-to-smoke` 不涉及。重复 `--auto` 必须追加多行（不去重）。**默认 `next`（无 `--auto`）与 `status` 必须忽略 `GATE_AUTO_PASSED`、输出严格 1:1 不变**，由 golden 锁定零漂移。
+`next --auto` 必须只对 launched 现有人类停顿点对应 gate 生效：`ready-to-merge`（`skippable:true`）放行并向 `GATE_AUTO_PASSED` JSONL 追加 `{gate_id, proposal_step, timestamp}`；`ready-to-deploy`（`skippable:false`）保持人类停顿；`ready-to-smoke` 不涉及。重复 `--auto` 必须追加多行（不去重）。**默认 `next`（无 `--auto`）与 `status` 必须忽略 `GATE_AUTO_PASSED`、绝不因其越过 gate**（`next` base data 仍按当前契约输出、S28 起可能含 `next_node`），由 golden 锁定 auto/gate 字段零漂移。
 
 ### S25
 overlay 必须真正驱动派生：**initial** 四操作经 `status`/`next` 生效；**launched** 仅 `add`/`modify` 生效，builtin `skip`/`reorder` 派生入口 fail loud（`FLOW_SCHEMA_INVALID`）。overlay-added 节点经 `overlay_nodes`/`current_node` 承载；**无 overlay 时新字段省略、默认派生 golden 零漂移**。
+
+### S26
+`cmd:` 谓词必须仅作用于 overlay-add 节点（builtin modify-cmd → `FLOW_SCHEMA_INVALID`），禁同节点双 cmd；**仅 `next` 执行**（exit 0→done 瞬态续推、非 0/超时→active+结果字段、budget=1），`status`/`watch` 显示 `pending` 不执行；命令不存在=非 0、shell 起不来=`FLOW_CMD_SPAWN_FAILED`；无 cmd 项目 golden 零漂移。
+
+### S27
+implement loop 真迭代必须**仅在 overlay `set-loop`（`max_iters>1`）激活时**生效（builtin `max_iters:1` 退化环不变、golden 零漂移；initial 多模块为已知不支持 no-op）。激活时 `openlogos verify` 追加 `LOOP_ITERS` 账本，派生 `loop_state`（`iteration`/`converged`/`escalated`）；`iteration` 按当前 module 过滤计数、`converged`=末轮 pass、`escalated`=`iteration>=max_iters && !converged`。loop 激活时 implement 出环以 `converged` 为准、覆盖内节点 `done_when`（含 initial 的 `acceptance-report.md` file done_when）；未收敛时 `status`/`next`/`watch` 一律不得推进到 deliver/deploy/launch/archive。next 在未收敛&未达上限时提示继续迭代（修复后重跑 `openlogos verify`），达上限 escalated 时升级 human gate（`gate_id=gate:implement:loop-exhausted`、`skippable:false`，`--auto` 仍卡、不写 `GATE_AUTO_PASSED`、不新增 `proposal_step`），收敛后出环续推。status / watch 只读展示 `loop_state`、不执行测试。与 cmd 谓词（S26）、`--auto`（S24）正交。
+
+### S28
+`openlogos next` 必须新增 `next_node` 编排提示对象，取自 **resolved flow（含 overlay）** 的「本次 next 响应**最终建议处理的真实 flow 节点**」的 hints（`id`/`name`/`subflow_id` + `skill`/`working_agent`/`review_agent`/`pre_script`/`post_script`，后 5 个固定存在、`string|null`、不透明标签、A 被动不执行）。默认 = 当前前沿节点（三路解析：overlay `current_node` / launched `STEP_TO_CURRENT_BUILTIN[step]` / initial `current_phase`→`PHASE_KEY_TO_NODE_ID`，禁用正向表反查）；overlay `modify` 重绑 agent 必须如实反映。挂载与 `current_node`/`loop_state` 同构（`modules[].next_node` / legacy 顶层）。例外：**R3** cmd done 续推→指向续推后节点（非已 done cmd）、cmd 失败/超时→指向 cmd 节点、budget=1→第二个 pending cmd；**R4** `gate_auto_passed===true`（--auto 放行）→省略；**R7** loop 阻塞未达上限→指向工作节点（overlay current_node 优先；否则 `id=code` 未 skipped，非 verify；`code` 缺失/被 skip→省略，仅合法 resolved flow；launched builtin skip 在 S25 已 FLOW_SCHEMA_INVALID）/ escalated 达上限→省略；**R5** 命令级建议（all_done / 无 active proposal→`change <slug>` / 补 baseline / launch）→省略。与 cmd（S26）/ loop（S27）/ `--auto`（S24）正交、互不覆盖机器字段。**仅 next 暴露，`status`/`watch` 不动**；本切片有意为 next 新增字段并重新 baseline `golden-baseline.test.ts`，复核 diff 仅 `next_node`。
+
+### S29
+M2 预留收尾必须一次性收掉 3 个轻量项，全部 overlay/字段 opt-in、builtin 模板零变更、golden 零漂移、A 被动派生不变：
+- **A·loop 退出 gate 可跳**：`set-loop` 的 `set` 白名单必须扩为 `max_iters`/`until`/`exhausted_gate`，`exhausted_gate` 仅允许 `{skippable:boolean}`；派生 `loop_state.exhausted_skippable`（= resolved loop 的 `exhausted_gate.skippable`；**仅当 overlay 写了 `exhausted_gate` 时输出，否则省略、按 `false` 处理**）。`next --auto` 在 `escalated` 且 `exhausted_skippable===true` 时必须自动放行退出 gate（`gate_id=gate:<subflow>:loop-exhausted`、`skippable:true`、`gate_auto_passed:true`、追加 `GATE_AUTO_PASSED` 审计行、action 转 proceed，放行未收敛代码无人值守）；默认 `false` 时必须固定阻塞、不 auto-pass、不写审计（S27 不变）。高危 opt-in，须用户显式声明；OpenLogos 只声明，执行/授权由宿主权限模式决定。`set` 非白名单 key / `exhausted_gate` 非法 key / `skippable` 非布尔 → `FLOW_SCHEMA_INVALID`。`proposal_step` 枚举不新增。
+- **B·fan-out 聚合阈值**：fan-out 节点必须支持可选字段 `coverage_threshold`（float `0<x<=1`，仅 `done_when: all_present` 节点有效，非法/越界/非数 → `FLOW_SCHEMA_INVALID`）；`covered/total >= coverage_threshold` 即判该 fan-out 节点 done；缺省（不写）等价 `all_present`（阈值 1.0、100% 覆盖）；`total==0` 维持现状（未 done）。覆盖度对象 `{total,covered,missing}` 不变；机器输出仅在显式设置时带该字段。
+- **C·loop 内 fan-out 收敛语义定死 = 整组收敛**：loop（implement）内含 fan-out 时必须整组收敛——收敛裁判仍是测试绿（`until: tests_green`），fan-out 节点按各自 `all_present`/`coverage_threshold` 独立完成；不引入 per-instance 迭代、不新增字段、不留悬空 schema。关闭 §13「每实例迭代 vs 整组收敛」预留。
+- 三项与 loop 真迭代（S27）、`next --auto`（S24）、fan-out 覆盖派生（S22/S25）正交、互不覆盖既有机器字段；builtin 不写任何新字段/overlay → `status`/`next`/`watch`/`flow show` golden 逐字节零漂移。
+
+### S30
+`cmd:` 谓词必须放开到 launched 的 `verify` / `deploy` / `smoke` 三个 gate，且仅这三个、按精确 `(节点, 字段)` 白名单：`verify.done_when` / `verify.fail_when` / `smoke.done_when` / `smoke.fail_when` / `deploy.done_when` 经 overlay `modify` 改 cmd: 合法；`deploy.fail_when`（deploy builtin 无 fail_when）及其它任意 builtin 节点 / 字段改 cmd: → `FLOW_SCHEMA_INVALID`；同节点双 cmd（沿用 S26 决策 B）、空命令均 `FLOW_SCHEMA_INVALID`。求值必须 **per-field 独立**（cmd 字段 live 重评、瞬态、不写 marker，非 cmd 字段照常，`fail_when` 优先 `done_when` 不变）+ **frontier**：`status` / `watch` 不执行 cmd，节点态按序短路（非 cmd `fail_when` 命中 → failed；否则非 cmd `done_when` 命中 → done；否则尚有未求值 cmd 字段 → pending；否则 active），cmd 未命中时 proposal_step 停门前（`ready-to-verify` / `ready-to-deploy` / `ready-to-smoke`）；`next` 仅对前沿节点求值 cmd（budget=1、与 S26 共享、`fail_when:cmd` 先于 `done_when:cmd`），`done_when:cmd` exit 0 → 本次推进过门（瞬态合成态、不写 marker、下次 status 回门前——有意的 next/status 不一致）、`fail_when:cmd` exit 0 → 瞬态 `verify-failed` / `smoke-failed`、非 0 / 超时 → 停门前。机器契约必须新增 `cmd_gate`（`{node_id, field, command, timeout_seconds}`，挂 `modules[].cmd_gate` 与 active_change 平级、legacy 回退顶层、仅 cmd gate 时出现）承载 builtin gate；next 的 cmd 求值结果复用 §3.8(c)（`cmd_node_id` 支持 builtin id）；`next_node` R3 扩到 builtin cmd gate（命中续推→续推后节点、失败/超时→该 gate 节点）。检测层 `extractLaunchedMarkers` / `detectProposalStepViaFlow` 必须 cmd-aware（cmd: 不抽 marker 名、next 可传 cmd-eval 入参），marker: 路径完全不变。必须与 loop 正交：激活 loop（`set-loop max_iters>1`）+ verify 任一字段为 cmd: 并存 → `FLOW_SCHEMA_INVALID`（fail loud）。cmd 执行语义整体复用 S26。builtin 三模板仍 marker: → 无 overlay 项目 detection / status / next / watch / flow show golden 逐字节零漂移。收掉 §13 M2 最后一项 modify-cmd-on-builtin。

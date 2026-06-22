@@ -30,7 +30,7 @@ tech_stack:
     release_archive: GitHub Releases
 
 scenario_counter:
-  next_id: 26
+  next_id: 31
 
 modules:
   - id: core
@@ -95,6 +95,21 @@ scenarios:
   - id: S25
     name: overlay 驱动 status/next/watch 派生
     module: core
+  - id: S26
+    name: "cmd: 谓词在 next 求值"
+    module: core
+  - id: S27
+    name: implement(code/verify) loop 真迭代派生
+    module: core
+  - id: S28
+    name: next 暴露 next_node 编排提示
+    module: core
+  - id: S29
+    name: M2 预留收尾（loop 退出 gate 可放行 / fan-out 阈值 / loop 内整组收敛）
+    module: core
+  - id: S30
+    name: "cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin）"
+    module: core
 
 release_workflows:
   cli_tag_release:
@@ -105,7 +120,7 @@ release_workflows:
     automation:
       workflow_file: .github/workflows/publish.yml
       workflow_name: "Publish to npm"
-      trigger_event: push(tags: v*)
+      trigger_event: "push(tags: v*)"
       publish_policy: 禁止本地手工 npm publish，统一由 GitHub Actions 使用 NPM_TOKEN 发布
     preconditions:
       - 工作区已提交待发布改动（避免脏工作区干扰版本核对）
@@ -217,6 +232,18 @@ resource_index:
     desc: S23 时序文档。涉及 watch 实时观测派生状态、初始快照/仅变化输出、JSON 流时必读。
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S24-auto-gate.md
     desc: S24 时序文档。涉及 next --auto skip-gate、GATE_AUTO_PASSED 审计与 gate 范围语义时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S25-overlay-derive.md
+    desc: S25 时序文档。涉及 overlay 驱动 status/next/watch 派生（resolved flow）、四操作生效边界时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S26-cmd-predicate.md
+    desc: "S26 时序文档。涉及 cmd: 谓词在 next 求值、status/watch pending、超时/spawn 失败语义时必读。"
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S27-loop-iterate.md
+    desc: S27 时序文档。涉及 implement(code/verify) loop 真迭代派生、LOOP_ITERS 账本、converged/escalated 与达上限 gate 时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S28-next-node.md
+    desc: S28 时序文档。涉及 next 暴露 next_node 编排提示、最终建议处理节点解析与 R3/R4/R5/R7 例外时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S29-gate-fanout-loop.md
+    desc: S29 时序文档。涉及 loop 退出 gate skippable overlay 覆盖与 auto 放行、fan-out coverage_threshold、loop 内整组收敛语义时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S30-cmd-builtin-gate.md
+    desc: "S30 时序文档。涉及 cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin）、per-field/frontier 求值、cmd_gate 机器契约、与 loop 正交时必读。"
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-99-traceability-matrix.md
     desc: 追踪矩阵。涉及需求-设计-测试-实现映射核查时必读。
   - path: logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
@@ -231,6 +258,18 @@ resource_index:
     desc: S23 测试用例。涉及 watch 初始快照、仅变化输出、seq/JSON 流、--module 继承与只读验收时必读。
   - path: logos/resources/test/core-S24-test-cases.md
     desc: S24 测试用例。涉及 next --auto 放行/卡住、GATE_AUTO_PASSED 审计、默认 next 零漂移验收时必读。
+  - path: logos/resources/test/core-S25-test-cases.md
+    desc: S25 测试用例。涉及 overlay 四操作驱动派生、resolved flow、lifecycle 边界与零漂移验收时必读。
+  - path: logos/resources/test/core-S26-test-cases.md
+    desc: "S26 测试用例。涉及 cmd: 谓词 next 求值、status/watch pending、budget=1、超时/spawn 失败验收时必读。"
+  - path: logos/resources/test/core-S27-test-cases.md
+    desc: S27 测试用例。涉及 loop 真迭代派生、LOOP_ITERS 账本、converged 出环、达上限 gate 与零漂移验收时必读。
+  - path: logos/resources/test/core-S28-test-cases.md
+    desc: S28 测试用例。涉及 next_node 编排提示字段、类型/空值、R3/R4/R5/R7 例外与 golden 重新 baseline 验收时必读。
+  - path: logos/resources/test/core-S29-test-cases.md
+    desc: S29 测试用例。涉及 exhausted_gate.skippable 放行/阻塞、coverage_threshold 判 done、loop 内整组收敛与 golden 零漂移验收时必读。
+  - path: logos/resources/test/core-S30-test-cases.md
+    desc: "S30 测试用例。涉及 cmd: 放开到 verify/deploy/smoke gate 白名单/决策B、per-field/frontier、cmd_gate、next 瞬态与 status 不一致、loop 正交、可达性、budget 顺序与零漂移验收时必读。"
   - path: logos/resources/test/smoke/core-smoke-test-cases.md
     desc: 核心 smoke 用例。涉及发布后最小可用性验证和官网 release 页面检查时必读。
   - path: logos/resources/verify/acceptance-report.md
