@@ -329,7 +329,7 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(out).not.toContain('openlogos smoke');
   });
 
-  it('ST-S19-07: 重新标记部署完成后旧 smoke 结论失效', () => {
+  it('ST-S19-07: 重新标记部署完成后旧 smoke 结论失效', async () => {
     writeLaunchedModule();
     const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
     mkdirSync(proposalDir, { recursive: true });
@@ -365,7 +365,7 @@ describe('S19 Scenario Tests — smoke command', () => {
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('smoke-passed');
 
-    deployDone('json', 'staging');
+    await deployDone('json', 'staging');
 
     expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(false);
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-smoke');

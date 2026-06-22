@@ -61,7 +61,7 @@ describe('S21 Unit Tests — deploy-done command helpers', () => {
 
   afterEach(() => cleanup());
 
-  it('UT-S21-01: 解析 guard 定位活跃提案', () => {
+  it('UT-S21-01: 解析 guard 定位活跃提案', async () => {
     const proposalDir = join(root, 'logos', 'changes', 'deploy-feature');
     mkdirSync(proposalDir, { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({
@@ -76,7 +76,7 @@ describe('S21 Unit Tests — deploy-done command helpers', () => {
     });
   });
 
-  it('UT-S21-07: 成功时勾选 [deploy] 并写入 DEPLOY_DONE 的 section 勾选逻辑', () => {
+  it('UT-S21-07: 成功时勾选 [deploy] 并写入 DEPLOY_DONE 的 section 勾选逻辑', async () => {
     const result = checkTaskSection(DEPLOY_TASKS, 'deploy');
 
     expect(result.checked).toBe(2);
@@ -136,40 +136,40 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     writeFileSync(join(reportDir, 'deployment-report.md'), '# Deployment Report\n\nstaging ok\n');
   }
 
-  it('UT-S21-02 / ST-S21-EX-4.1: 缺少 VERIFY_PASS 时拒绝写 DEPLOY_DONE', () => {
+  it('UT-S21-02 / ST-S21-EX-4.1: 缺少 VERIFY_PASS 时拒绝写 DEPLOY_DONE', async () => {
     const proposalDir = setupProposal();
     writeDeployReport();
 
-    expect(() => deployDone()).toThrow('process.exit(1)');
+    await expect(deployDone()).rejects.toThrow('process.exit(1)');
 
     expect(con.errors.join('\n')).toContain('验收尚未通过');
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(false);
   });
 
-  it('UT-S21-03: 存在 VERIFY_FAIL 时拒绝写 DEPLOY_DONE', () => {
+  it('UT-S21-03: 存在 VERIFY_FAIL 时拒绝写 DEPLOY_DONE', async () => {
     const proposalDir = setupProposal();
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
     writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
 
-    expect(() => deployDone()).toThrow('process.exit(1)');
+    await expect(deployDone()).rejects.toThrow('process.exit(1)');
 
     expect(con.errors.join('\n')).toContain('验收尚未通过');
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(false);
   });
 
-  it('UT-S21-04 / ST-S21-EX-5.1: 部署决策冲突时拒绝写 DEPLOY_DONE', () => {
+  it('UT-S21-04 / ST-S21-EX-5.1: 部署决策冲突时拒绝写 DEPLOY_DONE', async () => {
     const proposalDir = setupProposal('conflict', NO_DEPLOY_PROPOSAL, DEPLOY_TASKS);
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
 
-    expect(() => deployDone()).toThrow('process.exit(1)');
+    await expect(deployDone()).rejects.toThrow('process.exit(1)');
 
     expect(con.errors.join('\n')).toContain('部署决策冲突');
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(false);
   });
 
-  it('UT-S21-05: 缺少 [deploy] section 时拒绝写 DEPLOY_DONE', () => {
+  it('UT-S21-05: 缺少 [deploy] section 时拒绝写 DEPLOY_DONE', async () => {
     const proposalDir = setupProposal('missing-deploy', DEPLOY_PROPOSAL, [
       '# 实现任务',
       '',
@@ -179,30 +179,30 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
 
-    expect(() => deployDone('json')).toThrow('process.exit(1)');
+    await expect(deployDone('json')).rejects.toThrow('process.exit(1)');
 
     const parsed = JSON.parse(con.errors[0]);
     expect(parsed.error.code).toBe('DEPLOYMENT_DECISION_CONFLICT');
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(false);
   });
 
-  it('UT-S21-06 / ST-S21-EX-6.1: 缺少部署报告时拒绝写 DEPLOY_DONE', () => {
+  it('UT-S21-06 / ST-S21-EX-6.1: 缺少部署报告时拒绝写 DEPLOY_DONE', async () => {
     const proposalDir = setupProposal();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
     rmSync(join(root, 'logos/resources/verify/deployment-report.md'), { force: true });
 
-    expect(() => deployDone()).toThrow('process.exit(1)');
+    await expect(deployDone()).rejects.toThrow('process.exit(1)');
 
     expect(con.errors.join('\n')).toContain('缺少部署报告');
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(false);
   });
 
-  it('UT-S21-07 / ST-S21-01: 成功时写入 DEPLOY_DONE 并进入 ready-to-smoke', () => {
+  it('UT-S21-07 / ST-S21-01: 成功时写入 DEPLOY_DONE 并进入 ready-to-smoke', async () => {
     const proposalDir = setupProposal();
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
 
-    deployDone('text', 'staging');
+    await deployDone('text', 'staging');
 
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(true);
     const tasks = readFileSync(join(proposalDir, 'tasks.md'), 'utf-8');
@@ -212,14 +212,14 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     expect(con.logs.join('\n')).toContain('openlogos smoke --env staging');
   });
 
-  it('UT-S21-08: 成功时清理旧 smoke marker', () => {
+  it('UT-S21-08: 成功时清理旧 smoke marker', async () => {
     const proposalDir = setupProposal();
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
     writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
     writeFileSync(join(proposalDir, 'SMOKE_FAIL'), '');
 
-    deployDone('json', 'staging');
+    await deployDone('json', 'staging');
 
     expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(false);
     expect(existsSync(join(proposalDir, 'SMOKE_FAIL'))).toBe(false);
@@ -227,12 +227,12 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     expect(parsed.data.cleared_smoke_markers).toEqual(['SMOKE_PASS', 'SMOKE_FAIL']);
   });
 
-  it('UT-S21-09: JSON 输出包含部署完成摘要', () => {
+  it('UT-S21-09: JSON 输出包含部署完成摘要', async () => {
     const proposalDir = setupProposal();
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
 
-    deployDone('json', 'production');
+    await deployDone('json', 'production');
 
     const parsed = JSON.parse(con.logs[0]);
     expect(parsed.command).toBe('deploy-done');
@@ -245,12 +245,12 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     expect(parsed.data.next_step).toBe('ready-to-smoke');
   });
 
-  it('ST-S21-02: 无需 smoke 的提案部署完成后进入 deploy-done', () => {
+  it('ST-S21-02: 无需 smoke 的提案部署完成后进入 deploy-done', async () => {
     const proposalDir = setupProposal('no-smoke', NO_SMOKE_PROPOSAL);
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
 
-    deployDone();
+    await deployDone();
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('deploy-done');
     con.logs.length = 0;
@@ -258,7 +258,7 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     expect(con.logs.join('\n')).toContain('archive no-smoke');
   });
 
-  it('ST-S21-03: deploy-done 不执行实际部署命令', () => {
+  it('ST-S21-03: deploy-done 不执行实际部署命令', async () => {
     const proposalDir = setupProposal('no-external-command', DEPLOY_PROPOSAL, [
       '# 实现任务',
       '',
@@ -268,31 +268,31 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
 
-    deployDone();
+    await deployDone();
 
     expect(existsSync(join(root, 'external-command-ran'))).toBe(false);
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(true);
   });
 
-  it('ST-S21-EX-2.1: 项目未初始化', () => {
+  it('ST-S21-EX-2.1: 项目未初始化', async () => {
     rmSync(join(root, 'logos', 'logos.config.json'), { force: true });
 
-    expect(() => deployDone('json')).toThrow('process.exit(1)');
+    await expect(deployDone('json')).rejects.toThrow('process.exit(1)');
 
     const parsed = JSON.parse(con.errors[0]);
     expect(parsed.error.code).toBe('PROJECT_NOT_INITIALIZED');
   });
 
-  it('ST-S21-EX-3.1: 缺少活跃提案', () => {
+  it('ST-S21-EX-3.1: 缺少活跃提案', async () => {
     rmSync(join(root, 'logos', '.openlogos-guard'), { force: true });
 
-    expect(() => deployDone('json')).toThrow('process.exit(1)');
+    await expect(deployDone('json')).rejects.toThrow('process.exit(1)');
 
     const parsed = JSON.parse(con.errors[0]);
     expect(parsed.error.code).toBe('NO_ACTIVE_CHANGE');
   });
 
-  it('ST-S21-EX-5.2: 提案无需部署时不写 marker', () => {
+  it('ST-S21-EX-5.2: 提案无需部署时不写 marker', async () => {
     const proposalDir = setupProposal('docs-only', NO_DEPLOY_PROPOSAL, [
       '# 实现任务',
       '',
@@ -302,7 +302,7 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
     writeDeployReport();
 
-    expect(() => deployDone('json')).toThrow('process.exit(1)');
+    await expect(deployDone('json')).rejects.toThrow('process.exit(1)');
 
     const parsed = JSON.parse(con.errors[0]);
     expect(parsed.error.code).toBe('DEPLOYMENT_NOT_REQUIRED');
