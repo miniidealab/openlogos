@@ -47,6 +47,7 @@ export interface FlowNode {
   pre_script?: string | null;
   post_script?: string | null;
   cmd_timeout_seconds?: number | null; // M2-1b：节点级 cmd: 超时（整数 ≥1）
+  coverage_threshold?: number | null;  // S29：fan-out 聚合阈值（0<x<=1）；仅 done_when:all_present 节点；未设置必须省略整键（不输出 null）
   // resolved 输出专用（见 spec/cli-json-output.md §9）
   skipped?: boolean;
   overlay_op?: OverlayOp | null;
@@ -56,6 +57,7 @@ export interface FlowNode {
 export interface FlowLoop {
   until?: string | null;       // 收敛谓词，本切片仅枚举 'tests_green'
   max_iters?: number | null;   // 整数 ≥1；>1 才真迭代（仅 overlay set-loop 激活）
+  exhausted_gate?: { skippable?: boolean } | null; // S29：达上限退出 gate 覆盖；仅 { skippable:boolean }
 }
 
 export interface FlowSubflow {
@@ -167,6 +169,21 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
       if (lp.until != null && lp.until !== 'tests_green') {
         throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.until 仅支持 \`tests_green\``);
       }
+      // S29：loop.exhausted_gate 严格 = { skippable:boolean }（显式写出即校验；缺省/不写则无此键 → 不校验）
+      if ('exhausted_gate' in lp) {
+        const eg = lp.exhausted_gate;
+        if (eg === null || typeof eg !== 'object' || Array.isArray(eg)) {
+          throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.exhausted_gate 须为对象 { skippable:boolean }`);
+        }
+        for (const ek of Object.keys(eg as Record<string, unknown>)) {
+          if (ek !== 'skippable') {
+            throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.exhausted_gate 含未知字段 \`${ek}\`（仅允许 skippable）`);
+          }
+        }
+        if (typeof (eg as { skippable?: unknown }).skippable !== 'boolean') {
+          throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.exhausted_gate.skippable 必填且须为 boolean`);
+        }
+      }
     }
     for (const [ni, node] of (s.nodes as unknown[]).entries()) {
       const n = node as Record<string, unknown>;
@@ -180,6 +197,20 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
       if (n.cmd_timeout_seconds != null
         && (typeof n.cmd_timeout_seconds !== 'number' || !Number.isInteger(n.cmd_timeout_seconds) || n.cmd_timeout_seconds < 1)) {
         throw new FlowError('FLOW_SCHEMA_INVALID', `${what} node \`${n.id}\` 的 cmd_timeout_seconds 须为整数 ≥ 1`);
+      }
+      // S29：coverage_threshold 校验。null/省略 = 未设置（不校验、派生时省略整键，绝不物化为 null）
+      if (n.coverage_threshold != null) {
+        if (typeof n.coverage_threshold !== 'number' || !(n.coverage_threshold > 0 && n.coverage_threshold <= 1)) {
+          throw new FlowError('FLOW_SCHEMA_INVALID',
+            `${what} node \`${n.id}\` 的 coverage_threshold 须为 0 < x <= 1 的 number`);
+        }
+        // fail loud：仅完整 fan-out 节点（done_when:all_present + for_each + 非空 produces）可设；否则报错（不静默忽略）。
+        // 缺 produces 会让派生扫描空路径（误判覆盖率），故 produces 必须为非空字符串。
+        if (n.done_when !== 'all_present' || !n.for_each
+          || typeof n.produces !== 'string' || (n.produces as string).trim() === '') {
+          throw new FlowError('FLOW_SCHEMA_INVALID',
+            `${what} node \`${n.id}\` 的 coverage_threshold 仅 \`done_when: all_present\` + \`for_each\` + 非空 \`produces\` 的 fan-out 节点可设`);
+        }
       }
     }
   }
@@ -295,6 +326,8 @@ export function applyOverlay(
       }
       Object.assign(hit.subflow.nodes[hit.index], op.set);
       hit.subflow.nodes[hit.index].overlay_op = 'modify';
+      // S30：overlay-modify 把 builtin 节点字段改成 cmd: 的精确 (节点,字段) 白名单校验（结构性，resolved 阶段 fail loud）
+      validateModifyCmdGate(hit.subflow.nodes[hit.index], oi, lifecycle);
     } else if (kind === 'add') {
       const node = op.node as FlowNode | undefined;
       if (!node || typeof node.id !== 'string' || typeof node.name !== 'string') {
@@ -326,10 +359,28 @@ export function applyOverlay(
       if (!op.set || typeof op.set !== 'object' || Array.isArray(op.set)) {
         throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 缺少合法 \`set\`（需为非空对象）`);
       }
-      // set 字段白名单（R9）：仅 max_iters / until，未知 key → FLOW_SCHEMA_INVALID（不静默保留）
+      // set 字段白名单（R9 + S29）：仅 max_iters / until / exhausted_gate，未知 key → FLOW_SCHEMA_INVALID（不静默保留）
       for (const key of Object.keys(op.set as Record<string, unknown>)) {
-        if (key !== 'max_iters' && key !== 'until') {
-          throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 的 set 含未知字段 \`${key}\`（仅允许 max_iters / until）`);
+        if (key !== 'max_iters' && key !== 'until' && key !== 'exhausted_gate') {
+          throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 的 set 含未知字段 \`${key}\`（仅允许 max_iters / until / exhausted_gate）`);
+        }
+      }
+      // S29：exhausted_gate 子结构严格 = { skippable:boolean }。显式写出（含 null）即校验：
+      // null / 非对象 / 缺 skippable / skippable 非 boolean / 含未知 key → fail loud。
+      const setObj = op.set as Record<string, unknown>;
+      if ('exhausted_gate' in setObj) {
+        const setExhausted = setObj.exhausted_gate;
+        if (setExhausted === null || typeof setExhausted !== 'object' || Array.isArray(setExhausted)) {
+          throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 的 set.exhausted_gate 须为对象 { skippable:boolean }`);
+        }
+        for (const ek of Object.keys(setExhausted as Record<string, unknown>)) {
+          if (ek !== 'skippable') {
+            throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 的 set.exhausted_gate 含未知字段 \`${ek}\`（仅允许 skippable）`);
+          }
+        }
+        const sk = (setExhausted as { skippable?: unknown }).skippable;
+        if (typeof sk !== 'boolean') {
+          throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] set-loop 的 set.exhausted_gate.skippable 必填且须为 boolean`);
         }
       }
       // 本切片 loop 真迭代仅支持 implement(code/verify)；非 implement 上 max_iters>1 语义不成立（账本由 verify 写）→ fail loud
@@ -344,6 +395,16 @@ export function applyOverlay(
     }
   }
 
+  // S30·F：implement 激活 loop（max_iters>1）+ verify 任一字段 cmd: → 互斥（loop 收敛靠账本、cmd gate 不写账本）
+  const implementSub = flow.subflows.find(s => s.id === 'implement');
+  if (implementSub && typeof implementSub.loop?.max_iters === 'number' && implementSub.loop.max_iters > 1) {
+    const verifyNode = implementSub.nodes.find(n => n.id === 'verify');
+    if (verifyNode && (isCmdPred(verifyNode.done_when) || isCmdPred(verifyNode.fail_when))) {
+      throw new FlowError('FLOW_SCHEMA_INVALID',
+        '激活 loop（implement set-loop max_iters>1）与 verify 的 cmd gate 互斥：verify 的 done_when/fail_when 任一为 cmd: 时不得同时激活 loop（loop 收敛靠 LOOP_ITERS 账本，cmd gate 不写账本）');
+    }
+  }
+
   // 合并后对 resolved flow 做完整 schema 校验 + node id 全局唯一性兜底，杜绝半成品输出
   validateFlow(flow, 'resolved flow');
   const ids = flow.subflows.flatMap(s => s.nodes.map(n => n.id));
@@ -353,6 +414,83 @@ export function applyOverlay(
   }
 
   return { flow, warnings };
+}
+
+/** S30：判定一个谓词字段是否为 cmd:（含 trim 后非空校验在调用处）。 */
+export function isCmdPred(v: string | null | undefined): boolean {
+  return typeof v === 'string' && v.startsWith('cmd:');
+}
+
+/**
+ * 读取并**校验**项目级 `flow.cmd_timeout_seconds`（基础库，供 overlay-derive / flow-derive / deploy-done 共享）。
+ * 缺配置/未设 → null（用内置默认）；**非整数或 < 1 → `FLOW_SCHEMA_INVALID`（fail loud，不静默回退）**。
+ */
+export function readProjectCmdTimeout(root: string): number | null {
+  let cfg: { flow?: { cmd_timeout_seconds?: unknown } } | undefined;
+  try {
+    cfg = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
+  } catch { return null; }
+  const t = cfg?.flow?.cmd_timeout_seconds;
+  if (t == null) return null;
+  if (typeof t !== 'number' || !Number.isInteger(t) || t < 1) {
+    throw new FlowError('FLOW_SCHEMA_INVALID',
+      `项目级 flow.cmd_timeout_seconds 须为整数 ≥ 1（当前 \`${String(t)}\`）`);
+  }
+  return t;
+}
+
+/** S30：launched gate 可被 overlay-modify 改 cmd: 的精确 (节点,字段) 白名单。 */
+const S30_CMD_GATE_FIELDS: Record<string, Array<'done_when' | 'fail_when'>> = {
+  verify: ['done_when', 'fail_when'],
+  smoke: ['done_when', 'fail_when'],
+  deploy: ['done_when'], // deploy builtin 无 fail_when
+};
+
+/**
+ * S30：校验 overlay-modify 后某节点上的 cmd: 字段是否合法（结构性，resolved 阶段 fail loud）。
+ * 白名单按 (节点,字段)；决策 B 同节点不得双 cmd:；空命令非法。
+ */
+function validateModifyCmdGate(node: FlowNode, oi: number, lifecycle: Lifecycle): void {
+  const doneCmd = isCmdPred(node.done_when);
+  const failCmd = isCmdPred(node.fail_when);
+  if (!doneCmd && !failCmd) return; // 未涉及 cmd:，无需校验
+  // S30：cmd: gate 仅 launched（initial 无提案目录、其 verify/deploy/smoke 节点不参与 cmd-gate；node id 同名也不放行）
+  if (lifecycle !== 'launched') {
+    throw new FlowError('FLOW_SCHEMA_INVALID',
+      `overlay[${oi}] modify：cmd: 谓词仅 launched 的 verify/deploy/smoke gate 可经 modify 设置；当前 lifecycle=\`${lifecycle}\`（节点 \`${node.id}\`）`);
+  }
+  const allowed = S30_CMD_GATE_FIELDS[node.id];
+  if (!allowed) {
+    throw new FlowError('FLOW_SCHEMA_INVALID',
+      `overlay[${oi}] modify：cmd: 谓词仅允许改到 launched 的 verify/deploy/smoke gate，不支持 builtin 节点 \`${node.id}\``);
+  }
+  if (doneCmd && !allowed.includes('done_when')) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] modify：\`${node.id}.done_when\` 不支持 cmd:`);
+  }
+  if (failCmd && !allowed.includes('fail_when')) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] modify：\`${node.id}.fail_when\` 不支持 cmd:（如 deploy 无 fail_when）`);
+  }
+  if (doneCmd && failCmd) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] modify：节点 \`${node.id}\` 不得同时把 done_when 与 fail_when 都设为 cmd:（决策 B）`);
+  }
+  // 空命令非法（trim 后空）
+  for (const f of ['done_when', 'fail_when'] as const) {
+    const v = node[f];
+    if (isCmdPred(v) && (v as string).slice('cmd:'.length).trim() === '') {
+      throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] modify：\`${node.id}.${f}\` 的 cmd 命令不得为空`);
+    }
+  }
+}
+
+/**
+ * S29：fan-out 聚合 done 判定（共享，供 flow-derive / flow-overlay-derive 复用）。
+ * 缺省阈值（threshold 省略/null）= `all_present`（全覆盖 covered>=total）；
+ * 设阈值时 `covered/total >= threshold`；`total<=0` 维持现状（视为未 done）。
+ */
+export function fanoutDone(covered: number, total: number, threshold?: number | null): boolean {
+  if (total <= 0) return false;
+  if (threshold != null) return covered / total >= threshold;
+  return covered >= total;
 }
 
 /**

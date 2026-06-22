@@ -5,9 +5,9 @@ import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData, deriveActiveOverlay } from './status.js';
-import type { ProposalStep } from './status.js';
+import type { ProposalStep, CmdGate } from './status.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
-import { gateForProposalStep } from '../lib/flow-derive.js';
+import { gateForProposalStep, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
 import type { CurrentNode, CmdEval, NextNode } from '../lib/flow-overlay-derive.js';
 import { resolveNextNode } from '../lib/flow-overlay-derive.js';
 import type { LoopState } from '../lib/flow-loop-derive.js';
@@ -31,6 +31,7 @@ export interface NextModuleItem {
   current_node?: CurrentNode;
   loop_state?: LoopState;
   next_node?: NextNode;
+  cmd_gate?: CmdGate;
 }
 
 export interface NextData {
@@ -44,6 +45,8 @@ export interface NextData {
   current_node?: CurrentNode;
   // M2 切片 2：loop 真迭代派生（仅 overlay 激活时附带）
   loop_state?: LoopState;
+  // S30：builtin cmd gate 承载（仅 cmd gate observe-pending 时附带）
+  cmd_gate?: CmdGate;
   // S28：next_node 编排提示（仅有当前节点时附带；命令级建议/auto 放行/loop 达上限省略）
   next_node?: NextNode;
   // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
@@ -80,6 +83,22 @@ function autoPassMessage(locale: Locale, gateId: string, step: string, slug: str
     action: `auto: skippable human gate passed (gate: ${gateId})`,
     command,
     detail: 'Gate auto-passed; host may proceed without human authorization. GATE_AUTO_PASSED audit appended.',
+  };
+}
+
+/** S29：loop 达上限退出 gate 经 overlay 标记可跳、auto 放行未收敛代码时的高危文案。 */
+function loopExhaustedAutoPassMessage(locale: Locale, gateId: string): { action: string; command: string | null; detail: string } {
+  if (locale === 'zh') {
+    return {
+      action: `auto：达迭代上限退出 gate 已放行（gate: ${gateId}，overlay 标记可跳）`,
+      command: null,
+      detail: '⚠ 高危：本次放行的是未通过测试的代码（无人值守，由 overlay exhausted_gate.skippable 显式开启）；审计已追加 GATE_AUTO_PASSED。',
+    };
+  }
+  return {
+    action: `auto: loop-exhausted gate passed (gate: ${gateId}, overlay-marked skippable)`,
+    command: null,
+    detail: 'DANGER: released code that did NOT pass tests (unattended, explicitly enabled via overlay exhausted_gate.skippable). GATE_AUTO_PASSED audit appended.',
   };
 }
 
@@ -285,9 +304,57 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     throw e;
   }
 
+  // S30：builtin gate（verify/deploy/smoke）接 cmd: 时，next 求值该 gate cmd（budget=1，与 overlay-add cmd 共享）。
+  // 仅当 overlay-add cmd 未消耗 budget（cmdEval 未定）时才评 builtin gate；①无入参派生定位前沿 → ②求值 → ③回灌。
+  let cmdGateEval: CmdGateEval | undefined;
+  if (!cmdEval) {
+    try {
+      const base = collectStatusData(root, moduleId);
+      // 定位前沿 step：**指定了 --module 时只看该模块自身的活跃提案**——绝不回退顶层 proposal_step，
+      // 否则会执行用户未指定的其它模块活跃提案的 cmd gate（High）。
+      let baseStep: string | undefined;
+      if (moduleId) {
+        baseStep = base.modules?.find(m => m.id === moduleId)?.active_change?.proposal_step ?? undefined;
+      } else {
+        const activeMod = base.modules?.find(m => m.active_change?.slug === (base.active_change ?? undefined));
+        baseStep = activeMod?.active_change?.proposal_step ?? base.proposal_step ?? undefined;
+      }
+      const gate = baseStep ? deriveLaunchedCmdGate(root, baseStep) : null;
+      if (gate) {
+        let runRes: Awaited<ReturnType<typeof runFlowCmd>>;
+        try {
+          runRes = await runFlowCmd(gate.command, root, gate.timeout_seconds);
+        } catch (e) {
+          if (e instanceof CmdSpawnError) {
+            const msg = locale === 'zh'
+              ? `cmd gate \`${gate.node_id}.${gate.field}\` 命令无法启动：${gate.command}（${e.errno}）`
+              : `cmd gate \`${gate.node_id}.${gate.field}\` command failed to spawn: ${gate.command} (${e.errno})`;
+            if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('next', 'FLOW_CMD_SPAWN_FAILED', msg)));
+            else console.error(`✖ ${msg}`);
+            process.exit(1);
+          }
+          throw e;
+        }
+        const satisfied = runRes.exitCode === 0 && !runRes.timedOut;
+        cmdGateEval = { node_id: gate.node_id, field: gate.field, satisfied };
+        cmdResult = {
+          node_id: gate.node_id, predicate_field: gate.field,
+          exit_code: runRes.exitCode, timed_out: runRes.timedOut, satisfied,
+        };
+      }
+    } catch (e) {
+      if (e instanceof FlowError) {
+        if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
+        else console.error(`✖ flow 配置错误（${e.code}）：${e.message}`);
+        process.exit(1);
+      }
+      throw e;
+    }
+  }
+
   let data: ReturnType<typeof collectStatusData>;
   try {
-    data = collectStatusData(root, moduleId, cmdEval);
+    data = collectStatusData(root, moduleId, cmdEval, cmdGateEval);
   } catch (e) {
     if (e instanceof FlowError) {
       if (format === 'json') {
@@ -333,7 +400,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     moduleItems = moduleItems.map((item, i) => {
       const cn = data.modules![i].current_node;
       const ls = data.modules![i].loop_state;
-      const withFields: NextModuleItem = { ...item, ...(cn ? { current_node: cn } : {}), ...(ls ? { loop_state: ls } : {}) };
+      const cg = data.modules![i].cmd_gate;
+      const withFields: NextModuleItem = { ...item, ...(cn ? { current_node: cn } : {}), ...(ls ? { loop_state: ls } : {}), ...(cg ? { cmd_gate: cg } : {}) };
       if (cn) {
         return {
           ...withFields,
@@ -445,14 +513,35 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   const loopAtVerify = data.proposal_step === 'ready-to-verify' || data.proposal_step === 'verify-failed'
     || data.current_phase === 'phase.3-6';
   const blockedByLoop = isLoopBlocking(loopState, loopAtVerify);
-  if (auto) {
-    if (blockedByLoop && loopState?.escalated) {
-      // R1：达上限 → loop 退出 human gate，固定不可跳、照常阻塞、不写 GATE_AUTO_PASSED
+  // S30·#1：--module 指向**非活跃模块**时禁用 auto gate——绝不给其它模块的活跃提案写 GATE_AUTO_PASSED。
+  // （data.active_change 是 guard 顶层 = 活跃模块；过滤模块若无匹配的活跃提案 → activeStatusMod 为空 → 不放行）
+  const autoEnabled = !moduleId || Boolean(activeStatusMod);
+  if (auto && autoEnabled) {
+    if (blockedByOverlayNode) {
+      // R2 安全（优先于 loop 达上限 / 普通 gate）：仍卡在未完成 overlay-added 节点（active/failed）→ gate 未到达。
+      // 即便 loop 已 escalated 且 exhausted_gate.skippable:true，也**不得** auto-pass、不写 GATE_AUTO_PASSED；gate_id/skippable 置 null。
+      autoGateId = null;
+      autoSkippable = null;
+    } else if (blockedByLoop && loopState?.escalated) {
+      // R1 / S29：达上限 → loop 退出 human gate。默认（未写 exhausted_gate）固定不可跳、照常阻塞、不写 GATE_AUTO_PASSED；
+      // overlay 显式 exhausted_gate.skippable:true 时 → 高危 auto 放行未收敛代码（需活跃提案以落审计）。
       autoGateId = loopExhaustedGateId(loopState.subflow_id);
-      autoSkippable = false;
+      if (loopState.exhausted_skippable === true) {
+        autoSkippable = true;
+        if (data.active_change) {
+          appendGateAutoPassed(root, data.active_change, autoGateId, data.proposal_step ?? 'loop-exhausted');
+          gateAutoPassed = true;
+          const passed = loopExhaustedAutoPassMessage(locale, autoGateId);
+          action = passed.action; command = passed.command; detail = passed.detail;
+          const mi = moduleItems?.find(m => m.active_change === data.active_change);
+          if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+        }
+      } else {
+        autoSkippable = false;
+      }
     } else {
-      // Review F3：卡在未完成 overlay-added 节点 / loop 未收敛时还没到 gate 边界 → gate_id/skippable 置 null
-      const blocked = blockedByOverlayNode || blockedByLoop;
+      // Review F3：loop 未收敛时还没到 gate 边界 → gate_id/skippable 置 null（overlay 节点已在上面优先处理）
+      const blocked = blockedByLoop;
       const gate = (data.proposal_step && !blocked) ? gateForProposalStep(data.proposal_step) : null;
       autoGateId = gate ? gate.gate_id : null;
       autoSkippable = gate ? gate.skippable : null;
@@ -479,7 +568,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   }
 
   // M2 切片 2：loop 阻塞时顶层 action/detail 指向 loop（未被 overlay 节点抢占、且前沿已到 verify 时，F1）
-  if (blockedByLoop && loopState && !overlayCur) {
+  // S29：若达上限已被 auto 放行（gateAutoPassed），保留放行文案、不再覆盖为阻塞措辞。
+  if (blockedByLoop && loopState && !overlayCur && !gateAutoPassed) {
     if (loopState.escalated) {
       action = locale === 'zh'
         ? `loop 已达迭代上限 ${loopState.max_iters} 轮仍未绿 → 升级人类确认（继续迭代 / 调整 / 放弃）`
@@ -556,15 +646,28 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     }
   }
 
+  // S30·#1：指定 --module 时，顶层 active_change/proposal_step/action/detail 必须与**过滤后的模块**收敛，
+  // 不得泄漏 guard 顶层（其它模块活跃提案）的建议——否则机器消费者会按顶层推进错误模块。
+  let topActiveChange = data.active_change;
+  let topProposalStep = data.proposal_step;
+  if (moduleId && data.modules && data.modules.length === 1) {
+    const md = data.modules[0];
+    topActiveChange = md.active_change?.slug ?? null;
+    topProposalStep = md.active_change?.proposal_step ?? null;
+    const mi = moduleItems?.[0];
+    if (mi) { action = mi.action; command = mi.command; detail = mi.detail; }
+  }
+
   const result: NextData = {
     action,
     command,
     detail,
-    active_change: data.active_change,
-    proposal_step: data.proposal_step,
+    active_change: topActiveChange,
+    proposal_step: topProposalStep,
     ...(moduleItems !== undefined ? { modules: moduleItems } : {}),
     ...(baseCurrentNode ? { current_node: baseCurrentNode } : {}),
     ...(baseLoopState ? { loop_state: baseLoopState } : {}),
+    ...(data.modules === undefined && data.cmd_gate ? { cmd_gate: data.cmd_gate } : {}),
     ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
     ...(cmdResult ? {
@@ -583,6 +686,14 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
 
   console.log(`\n💡 ${t(locale, 'next.title')}\n`);
 
+  // S28（可选文本展示）：把 next_node 编排提示就近内联为一行「下一节点：<name>（skill: <skill>）」。
+  // JSON 的 next_node 仍是硬契约；此处仅为人类可读的便利展示，省略时不影响任何机器消费方。
+  const nextNodeLine = (nn: NextNode | undefined): string | null => {
+    if (!nn) return null;
+    const skill = nn.skill ? (locale === 'zh' ? `（skill: ${nn.skill}）` : ` (skill: ${nn.skill})`) : '';
+    return `${t(locale, 'next.nextNode')}: ${nn.name}${skill}`;
+  };
+
   if (moduleItems && moduleItems.length > 0) {
     for (const m of moduleItems) {
       const icon = m.lifecycle === 'initial' ? '🔄' : (m.action === 'blocked' ? '⏸️ ' : '✅');
@@ -590,11 +701,15 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       console.log(`       ${m.action}`);
       if (m.command) console.log(`       → ${m.command}`);
       if (m.detail) console.log(`       ${m.detail}`);
+      const nl = nextNodeLine(m.next_node);
+      if (nl) console.log(`       ${nl}`);
     }
   } else {
     console.log(`   ${action}`);
     if (command) console.log(`\n   → ${command}`);
     if (detail) console.log(`\n   ${detail}`);
+    const nl = nextNodeLine(result.next_node);
+    if (nl) console.log(`\n   ${nl}`);
   }
   console.log();
 }

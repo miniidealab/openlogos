@@ -212,6 +212,7 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // next
     'next.title': 'Next Step',
+    'next.nextNode': 'Next node',
     'flow.rawBuiltin': 'built-in @{version}',
     'flow.resolvedApplied': 'resolved · project overlay applied',
     'flow.resolvedNoOverlay': 'resolved · no project overlay',
@@ -448,6 +449,7 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // next
     'next.title': '下一步',
+    'next.nextNode': '下一节点',
     'flow.rawBuiltin': '内置模板 @{version}',
     'flow.resolvedApplied': 'resolved · 已应用项目 overlay',
     'flow.resolvedNoOverlay': 'resolved · 无项目 overlay',

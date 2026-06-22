@@ -18,6 +18,8 @@ export interface LoopState {
   iteration: number;
   converged: boolean;
   escalated: boolean;
+  // S29：仅当 overlay set-loop 显式写了 exhausted_gate 时才出现；未写则省略（消费方按 false 处理）→ 保 S27 激活-loop 零漂移
+  exhausted_skippable?: boolean;
 }
 
 export interface LoopIterRow {
@@ -73,7 +75,12 @@ export function deriveLoopState(
   const iteration = rows.length;
   const converged = iteration > 0 && rows[rows.length - 1].result === 'pass';
   const escalated = iteration >= act.max_iters && !converged;
-  return { subflow_id: act.subflow_id, until: act.until, max_iters: act.max_iters, iteration, converged, escalated };
+  const state: LoopState = { subflow_id: act.subflow_id, until: act.until, max_iters: act.max_iters, iteration, converged, escalated };
+  // S29：仅当 resolved loop 显式带 exhausted_gate（来自 overlay set-loop）时才输出 exhausted_skippable；
+  // 未写则省略该键 → 既有 S27 激活-loop 的 loop_state JSON 不新增字段（真零漂移）。
+  const eg = resolved.subflows.find(s => s.id === act.subflow_id)?.loop?.exhausted_gate;
+  if (eg != null) state.exhausted_skippable = eg.skippable ?? false;
+  return state;
 }
 
 /** loop 退出 gate id（达上限 human gate）。 */

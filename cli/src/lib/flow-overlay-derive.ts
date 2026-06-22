@@ -10,7 +10,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadFlow, readOverlay, FlowError, type Flow, type FlowNode, type Lifecycle } from './flow.js';
+import { loadFlow, readOverlay, FlowError, fanoutDone, readProjectCmdTimeout, type Flow, type FlowNode, type Lifecycle } from './flow.js';
 import { listFiles } from './list-files.js';
 import {
   parseTaskSections,
@@ -143,8 +143,10 @@ function evalPredicate(pred: string, node: FlowNode, ctx: DeriveCtx): boolean {
     const produces = node.produces ?? '';
     const dir = produces.slice(0, produces.lastIndexOf('/'));
     const files = listFiles(join(root, dir));
-    if (ctx.scenarios.length === 0) return false;
-    return ctx.scenarios.every(s => files.some(f => f.includes(`${ctx.mod.id}-${s.id}`)));
+    // S29：honor coverage_threshold（缺省=全覆盖）；复用共享 fanoutDone（与 initial phase 派生一致）
+    const total = ctx.scenarios.length;
+    const covered = ctx.scenarios.filter(s => files.some(f => f.includes(`${ctx.mod.id}-${s.id}`))).length;
+    return fanoutDone(covered, total, node.coverage_threshold);
   }
   // 未知谓词：保守视为未命中
   return false;
@@ -221,19 +223,7 @@ function cmdPredicateOf(node: FlowNode): { field: 'done_when' | 'fail_when'; pre
  * - 未配置（缺字段 / 配置不可读）→ null（落内置 60s）。
  * - 字段存在但非整数 ≥1（0 / 负数 / 非整数）→ FLOW_SCHEMA_INVALID（spec flow-spec.md §9.2）。
  */
-function readProjectCmdTimeout(root: string): number | null {
-  let cfg: { flow?: { cmd_timeout_seconds?: unknown } } | undefined;
-  try {
-    cfg = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
-  } catch { return null; } // 配置缺失 / 解析失败 → 用内置默认
-  const t = cfg?.flow?.cmd_timeout_seconds;
-  if (t == null) return null; // 未配置 → 用内置默认
-  if (typeof t !== 'number' || !Number.isInteger(t) || t < 1) {
-    throw new FlowError('FLOW_SCHEMA_INVALID',
-      `项目级 flow.cmd_timeout_seconds 须为整数 ≥ 1（当前 \`${String(t)}\`）`);
-  }
-  return t;
-}
+// S30：项目级 cmd 超时解析统一移到 flow.ts（readProjectCmdTimeout），此处复用导入。
 
 /**
  * 求 overlay-add 节点的派生态（含 cmd:）。
@@ -361,9 +351,11 @@ export function deriveOverlayView(
   for (const sub of flow.subflows) {
     for (const node of sub.nodes) {
       if (node.overlay_op === 'add') validateAddedNodePredicate(node, ctx);
-      else if (hasCmdPredicate(node)) {
+      // S30：内置 verify/deploy/smoke gate 的 cmd: 已在 applyOverlay 阶段按 (节点,字段) 白名单校验；
+      // 其它内置节点带 cmd: 仍 fail loud（兜底，正常应已在 applyOverlay 拦截）。
+      else if (hasCmdPredicate(node) && !['verify', 'deploy', 'smoke'].includes(node.id)) {
         throw new FlowError('FLOW_SCHEMA_INVALID',
-          `cmd: 谓词仅 overlay-add 节点可用；内置节点 \`${node.id}\`（经 modify）不支持（modify-cmd-on-builtin 留后续）`);
+          `cmd: 谓词不支持内置节点 \`${node.id}\`（仅 overlay-add 节点或 overlay-modify 的 verify/deploy/smoke gate）`);
       }
     }
   }

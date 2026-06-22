@@ -178,7 +178,7 @@ async function main() {
     }
     case 'deploy-done': {
       const envArg = args.includes('--env') ? args[args.indexOf('--env') + 1] : undefined;
-      deployDone(format, envArg);
+      await deployDone(format, envArg);
       break;
     }
     case 'change': {

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
-import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys, detectProposalStepViaFlow } from '../lib/flow-derive.js';
+import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys, detectProposalStepViaFlow, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
 import { deriveOverlayView } from '../lib/flow-overlay-derive.js';
 import type { OverlayNode, CurrentNode, OverlayView, CmdEval } from '../lib/flow-overlay-derive.js';
 import { deriveLoopState, isLoopBlocking } from '../lib/flow-loop-derive.js';
@@ -131,6 +131,16 @@ export interface ModuleStatusItem {
   current_node?: CurrentNode;
   // M2 切片 2：loop 真迭代派生（仅 overlay set-loop 激活、非 initial 多模块时输出）
   loop_state?: LoopState;
+  // S30：builtin gate（verify/deploy/smoke）接 cmd: 时的 observe-pending 承载（仅 cmd gate 时输出）
+  cmd_gate?: CmdGate;
+}
+
+/** S30：builtin cmd gate 的机器契约（observe-pending）。 */
+export interface CmdGate {
+  node_id: string;          // 'verify' | 'deploy' | 'smoke'
+  field: 'done_when' | 'fail_when';
+  command: string;
+  timeout_seconds: number;
 }
 
 export interface StatusData {
@@ -156,6 +166,8 @@ export interface StatusData {
   current_node?: CurrentNode;
   // M2 切片 2：loop 真迭代派生顶层回退（legacy 无 modules[] 时）
   loop_state?: LoopState;
+  // S30：builtin cmd gate 顶层回退（仅 legacy 无 modules[] 时；有 modules[] 时挂 modules[].cmd_gate）
+  cmd_gate?: CmdGate;
 }
 
 // Phase paths indexed by PHASE_KEYS order
@@ -282,6 +294,7 @@ function buildModuleStatusItem(
   guardModule: string | null,
   isMultiModule: boolean = false,
   cmdEval?: CmdEval,
+  cmdGateEval?: CmdGateEval,
 ): ModuleStatusItem {
   if (mod.lifecycle === 'launched') {
     let activeChange: ModuleStatusItem['active_change'] = null;
@@ -301,7 +314,7 @@ function buildModuleStatusItem(
           };
       const deploymentProgress = resolveDeploymentProgress(proposalDir);
       const deploymentDocument = resolveDeploymentDocument(root, guardActiveChange);
-      const step = existsSync(proposalDir) ? detectProposalStepViaFlow(proposalDir, mod) : 'writing';
+      const step = existsSync(proposalDir) ? detectProposalStepViaFlow(proposalDir, mod, cmdGateEval) : 'writing';
       const stepLabel = t(locale as Parameters<typeof t>[0], `status.proposalStep.${step}`);
       const hasProposal = existsSync(join(proposalDir, 'proposal.md'));
       const hasTasksFile = existsSync(join(proposalDir, 'tasks.md'));
@@ -447,6 +460,17 @@ function buildModuleStatusItem(
             : `Loop round ${loopState.iteration}/${loopState.max_iters} not green — fix and rerun openlogos verify.`);
     }
 
+    // S30：当前前沿 builtin gate（verify/deploy/smoke）接 cmd: 时输出 cmd_gate（observe，不执行）。
+    // overlay-added 当前节点优先（其 cmd 由 overlay_nodes/current_node + pending_cmd 承载），不与 builtin gate 重叠。
+    const cmdGateDesc = (activeChange && !(overlay && overlay.current_node))
+      ? deriveLaunchedCmdGate(root, activeChange.proposal_step) : null;
+    // S30：cmd gate 时把建议从「openlogos verify」改成「门禁已接外部命令，运行 openlogos next 触发求值」
+    if (cmdGateDesc) {
+      suggestion = locale === 'zh'
+        ? `门禁「${cmdGateDesc.node_id}」已接外部命令（${cmdGateDesc.field}: ${cmdGateDesc.command}）——运行 openlogos next 触发求值。`
+        : `Gate "${cmdGateDesc.node_id}" is bound to an external command (${cmdGateDesc.field}: ${cmdGateDesc.command}) — run openlogos next to evaluate.`;
+    }
+
     return {
       id: mod.id,
       name: mod.name,
@@ -460,6 +484,7 @@ function buildModuleStatusItem(
       ...(overlay && overlay.overlay_nodes.length > 0 ? { overlay_nodes: overlay.overlay_nodes } : {}),
       ...(overlay && overlay.current_node ? { current_node: overlay.current_node } : {}),
       ...(loopState ? { loop_state: loopState } : {}),
+      ...(cmdGateDesc ? { cmd_gate: cmdGateDesc } : {}),
     };
   }
 
@@ -663,7 +688,7 @@ export function deriveActiveOverlay(
     loopHaltSubflow(deriveLoopState(root, target, proposalDir, isMultiModule)));
 }
 
-export function collectStatusData(root: string, filterModuleId?: string, cmdEval?: CmdEval): StatusData {
+export function collectStatusData(root: string, filterModuleId?: string, cmdEval?: CmdEval, cmdGateEval?: CmdGateEval): StatusData {
   const configPath = join(root, 'logos', 'logos.config.json');
   const locale = readLocale(root);
 
@@ -789,11 +814,16 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
         const guardModuleDefaults = rawModules?.find(m => m.id === guardModule)
           ?? (rawModules?.length === 1 ? rawModules[0] : undefined);
         proposalStep = existsSync(proposalDir)
-          ? detectProposalStepViaFlow(proposalDir, guardModuleDefaults)
+          ? detectProposalStepViaFlow(proposalDir, guardModuleDefaults, cmdGateEval)
           : 'writing';
       }
     } catch { /* ignore */ }
   }
+
+  // S30·#1（High）：legacy（无 modules[]）有活跃提案 → 顶层 lifecycle 同 launched
+  //（与 deriveOverlayDataForModule 的 legacy 分支一致）。否则顶层 cmd_gate（spec §3.8f）、
+  // launched 判定、suggestion 永不成立——status/watch 看不到 pending cmd gate。
+  if (rawModules === undefined && activeChange) lifecycle = 'launched';
 
   // M2 切片 2（R8）：loop 激活且未收敛 → 顶层 verify(phase.3-6) 不得 done（出环用 converged 裁决、不要求 iteration≥1），
   // 避免旧 acceptance-report.md 让 current_phase/all_done 误推进；同时把 launched step 拉回 ready-to-verify
@@ -817,7 +847,7 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
     modules = filtered.map(m => {
       // Only pass scenarios that belong to this module (module field defaults to 'core')
       const moduleScenarios = scenarios.filter(s => (s.module ?? 'core') === m.id);
-      return buildModuleStatusItem(root, m, moduleScenarios, locale, activeChange, guardModule, isMultiModule, cmdEval);
+      return buildModuleStatusItem(root, m, moduleScenarios, locale, activeChange, guardModule, isMultiModule, cmdEval, cmdGateEval);
     });
     // M2 切片 1a（Review F3）：当前落在 overlay-added 节点时，活跃模块已对 proposal_step 做了回退，
     // 顶层 proposal_step 必须同步，否则 next 的 action/gate 仍按旧状态判断。
@@ -867,6 +897,11 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
     }
   }
 
+  // S30：cmd_gate 顶层回退（仅 legacy 无 modules[]、launched、无 overlay 当前节点时）
+  const topCmdGate = (rawModules === undefined && lifecycle === 'launched' && proposalStep
+    && !(topOverlay && topOverlay.current_node))
+    ? deriveLaunchedCmdGate(root, proposalStep) : null;
+
   return {
     phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
     ...(modules !== undefined ? { modules } : {}),
@@ -874,6 +909,7 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
     ...(topOverlay && topOverlay.current_node ? { current_node: topOverlay.current_node } : {}),
     // M2 切片 2：loop_state 顶层回退（仅 legacy 无 modules[]；有 modules[] 时挂 modules[].loop_state）
     ...(rawModules === undefined && projectLoopState ? { loop_state: projectLoopState } : {}),
+    ...(topCmdGate ? { cmd_gate: topCmdGate } : {}),
     active_proposals: activeProposals.map(p => ({
       name: p.name,
       has_proposal: p.hasProposal,
@@ -1013,6 +1049,13 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
         for (const on of m.overlay_nodes) {
           console.log(`         ▶ ${on.id} (${on.name}) · ${on.state} · subflow=${on.subflow_id} · #${on.node_index}`);
         }
+      }
+      // S30：cmd gate 时打印门禁命令（observe，不执行）
+      if (m.cmd_gate) {
+        const cg = m.cmd_gate;
+        console.log(locale === 'zh'
+          ? `       🔌 cmd gate: ${cg.node_id}.${cg.field} = ${cg.command}（运行 openlogos next 触发求值）`
+          : `       🔌 cmd gate: ${cg.node_id}.${cg.field} = ${cg.command} (run openlogos next to evaluate)`);
       }
       console.log(`       💡 ${m.suggestion}`);
     }

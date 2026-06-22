@@ -19,7 +19,10 @@ export interface FlowShowOptions {
 
 /** 归一化 node：补全 resolved 输出字段 skipped/overlay_op 的默认值。 */
 function normalizeNode(node: FlowNode): FlowNode {
-  return { ...node, skipped: node.skipped ?? false, overlay_op: node.overlay_op ?? null };
+  const out: FlowNode = { ...node, skipped: node.skipped ?? false, overlay_op: node.overlay_op ?? null };
+  // S29：coverage_threshold 未设置（null/省略）时必须整键省略、绝不输出 null（保 flow show 零漂移）
+  if (out.coverage_threshold == null) delete out.coverage_threshold;
+  return out;
 }
 
 function normalizeFlow(flow: Flow): Flow {

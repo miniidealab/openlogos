@@ -18,7 +18,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isAdoptedBootstrap } from './project-yaml.js';
-import { loadBuiltinFlow, loadFlow, FlowError } from './flow.js';
+import { loadBuiltinFlow, loadFlow, FlowError, fanoutDone, readProjectCmdTimeout } from './flow.js';
 import { listFiles } from './list-files.js';
 import {
   resolveProposalDeploymentDecision,
@@ -79,6 +79,7 @@ export interface FlowPhasePlanItem {
   whenExpr: string | null;
   nodeId: string;
   overlaySkipped?: boolean; // M2 切片 1a：overlay op:skip / when=false 在 resolved 中标记的跳过
+  coverageThreshold?: number; // S29：fan-out 聚合阈值（0<x<=1）；仅 done_when:all_present 节点；未设置则省略
 }
 
 /**
@@ -106,6 +107,8 @@ export function buildInitialPhasePlan(root?: string): FlowPhasePlanItem[] {
         whenExpr: node.when ?? null,
         nodeId: node.id,
         overlaySkipped: node.skipped === true,
+        // S29：仅 done_when:all_present 的 fan-out 节点带阈值（校验已保证合法挂载）；未设置则 undefined
+        ...(node.coverage_threshold != null ? { coverageThreshold: node.coverage_threshold } : {}),
       });
     }
   }
@@ -217,10 +220,12 @@ export function deriveModulePhaseProgressViaFlow(
         if (found) covered.push(s.id);
         else missing.push(s.id);
       }
+      // S29：fan-out 聚合阈值。复用共享 fanoutDone（缺省=全覆盖 all_present；设阈值时 covered/total>=阈值；total==0 维持现状）。
+      const total = scenarios.length;
       progress[key] = {
-        done: missing.length === 0 && scenarios.length > 0,
+        done: fanoutDone(covered.length, total, item.coverageThreshold),
         skipped: false,
-        scenario_coverage: { total: scenarios.length, covered: covered.length, missing },
+        scenario_coverage: { total, covered: covered.length, missing },
       };
     } else {
       // 非场景阶段：多模块按 {module}- 前缀过滤，单模块任意文件
@@ -252,6 +257,22 @@ export const NON_FALLBACK_SKIP_PHASE_KEYS = new Set([
 
 // ── 切片 B2：launched 模块 ProposalStep 派生 ──
 
+/** S30：cmd gate 的 marker 占位——永不存在的文件名 → status/watch 下该 gate 恒「未满足、停门前」。 */
+const CMD_GATE_SENTINEL = '.__openlogos_cmd_gate_never__';
+
+/** S30：cmd gate 描述符（供 next 求值 + cmd_gate 字段输出）。 */
+export interface CmdGateDesc {
+  node_id: string;          // 'verify' | 'deploy' | 'smoke'
+  field: 'done_when' | 'fail_when';
+  command: string;          // cmd: 之后已 trim
+}
+/** S30：next 求值某 builtin gate cmd 后回灌 detect 的结果（budget=1，至多一个）。 */
+export interface CmdGateEval {
+  node_id: string;
+  field: 'done_when' | 'fail_when';
+  satisfied: boolean;
+}
+
 interface LaunchedMarkers {
   verifyFail: string;
   verifyPass: string;
@@ -260,9 +281,13 @@ interface LaunchedMarkers {
   deployDone: string;
   smokeFail: string;
   smokePass: string;
+  // S30：launched gate 的 cmd 字段（overlay-modify 时），键 = `${node_id}.${field}`
+  cmdGates: Record<string, CmdGateDesc>;
 }
 
 function markerName(pred: string | null | undefined): string {
+  // S30：cmd: 字段不抽 marker 名，返回永不存在的占位（status/watch 停门前；next 走 cmd 回灌）
+  if (typeof pred === 'string' && pred.startsWith('cmd:')) return CMD_GATE_SENTINEL;
   if (!pred || !pred.startsWith('marker:')) {
     throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 期望 marker: 谓词，实际为 ${pred}`);
   }
@@ -291,6 +316,18 @@ function extractLaunchedMarkers(root?: string): LaunchedMarkers {
     if (!n) throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 缺少节点 ${id}`);
     return n;
   };
+  // S30：收集 launched gate 上的 cmd 字段（overlay-modify 时）→ cmdGates
+  const cmdGates: Record<string, CmdGateDesc> = {};
+  const collectCmd = (nodeId: string, field: 'done_when' | 'fail_when') => {
+    const pred = byId[nodeId]?.[field];
+    if (typeof pred === 'string' && pred.startsWith('cmd:')) {
+      cmdGates[`${nodeId}.${field}`] = { node_id: nodeId, field, command: pred.slice('cmd:'.length).trim() };
+    }
+  };
+  for (const id of ['verify', 'deploy', 'smoke']) {
+    collectCmd(id, 'done_when');
+    collectCmd(id, 'fail_when');
+  }
   return {
     verifyFail: markerName(need('verify').fail_when),
     verifyPass: markerName(need('verify').done_when),
@@ -299,6 +336,7 @@ function extractLaunchedMarkers(root?: string): LaunchedMarkers {
     deployDone: markerName(need('deploy').done_when),
     smokeFail: markerName(need('smoke').fail_when),
     smokePass: markerName(need('smoke').done_when),
+    cmdGates,
   };
 }
 
@@ -310,20 +348,26 @@ function extractLaunchedMarkers(root?: string): LaunchedMarkers {
 export function detectProposalStepViaFlow(
   proposalDir: string,
   moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
+  cmdEval?: CmdGateEval | null,
 ): ProposalStep {
   // proposalDir = <root>/logos/changes/<slug> → root 上溯三级（读 resolved launched flow 含 overlay）
   const root = join(proposalDir, '..', '..', '..');
   const m = extractLaunchedMarkers(root);
   const exists = (name: string) => existsSync(join(proposalDir, name));
   const anyExists = (names: string[]) => names.some(exists);
+  // S30：cmd gate 满足判定——marker 字段走 existsSync；cmd 字段仅当 next 回灌 cmdEval 命中时为真（status/watch 恒 false → 停门前）
+  const cmdMet = (nodeId: string, field: 'done_when' | 'fail_when') =>
+    Boolean(cmdEval && cmdEval.node_id === nodeId && cmdEval.field === field && cmdEval.satisfied);
+  const gateMet = (nodeId: string, field: 'done_when' | 'fail_when', marker: string) =>
+    (`${nodeId}.${field}` in m.cmdGates) ? cmdMet(nodeId, field) : exists(marker);
   const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
     ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
 
-  // verify.fail_when（VERIFY_FAIL）—— 全局最先
-  if (exists(m.verifyFail)) return 'verify-failed';
+  // verify.fail_when（VERIFY_FAIL / cmd）—— 全局最先
+  if (gateMet('verify', 'fail_when', m.verifyFail)) return 'verify-failed';
 
-  // verify.done_when（VERIFY_PASS）—— 进入 deliver/deploy 子块
-  if (exists(m.verifyPass)) {
+  // verify.done_when（VERIFY_PASS / cmd）—— 进入 deliver/deploy 子块
+  if (gateMet('verify', 'done_when', m.verifyPass)) {
     const deploy = getDeploySectionSummary(tasksContent);
     const hasDeployTasks = Boolean(deploy && deploy.total > 0);
     const deploymentDecision = resolveProposalDeploymentDecision(proposalDir, moduleDefaults);
@@ -332,13 +376,16 @@ export function detectProposalStepViaFlow(
     if (deploymentDecision.deployment_required !== true) return 'verify-passed';
     if (!hasDeployTasks) return 'ready-to-deploy';
 
-    const deployDone = exists(m.deployDone);
+    // S30：deploy.done_when 为 cmd-gate 时，cmd 是「deploy 是否 done」的唯一裁判——
+    // 不再被 deployTasksChecked（人类勾选 [deploy]）拦住（cmd exit 0 即过门，否则停门前）。marker deploy 行为不变。
+    const deployIsCmdGate = 'deploy.done_when' in m.cmdGates;
+    const deployDone = gateMet('deploy', 'done_when', m.deployDone);
     const deployTasksChecked = deploy!.checked === deploy!.total;
-    if (!deployDone || !deployTasksChecked) return 'ready-to-deploy';
+    if (!deployDone || (!deployIsCmdGate && !deployTasksChecked)) return 'ready-to-deploy';
 
     // smoke.fail_when/done_when —— 仅在 deploy 完成子块内评估（非全局优先）
-    if (exists(m.smokeFail)) return 'smoke-failed';
-    if (exists(m.smokePass)) return 'smoke-passed';
+    if (gateMet('smoke', 'fail_when', m.smokeFail)) return 'smoke-failed';
+    if (gateMet('smoke', 'done_when', m.smokePass)) return 'smoke-passed';
     if (deploymentDecision.smoke_required === false) return 'deploy-done';
     if (deploymentDecision.smoke_required === true) return 'ready-to-smoke';
     if (hasSmokeCasesForProposal(proposalDir)) return 'ready-to-smoke';
@@ -385,6 +432,39 @@ export function detectProposalStepViaFlow(
   const mergeableDeltaCount = countMergeableDeltaFiles(proposalDir);
   if (mergeableDeltaCount > 0 && allTasksChecked(tasksContent)) return 'ready-to-merge';
   return 'delta-writing';
+}
+
+/**
+ * S30：proposal_step → 其前沿 gate 节点 id（仅「停门前」三步）。
+ * **不含 *-failed**：节点已被非 cmd 字段（或 cmd 命中）解析为 failed → 非 pending 前沿，
+ * 不输出 cmd_gate、next 也不再求值 cmd（B3 frontier；如 done_when:cmd + fail_when:marker:VERIFY_FAIL 命中失败）。
+ */
+const STEP_TO_GATE_NODE: Record<string, string> = {
+  'ready-to-verify': 'verify',
+  'ready-to-deploy': 'deploy',
+  'ready-to-smoke': 'smoke',
+};
+
+/**
+ * S30：派生当前前沿 builtin gate 的 cmd_gate 描述符（含生效超时）；非 cmd-gate / 非相关 step → null。
+ * fail_when 优先于 done_when（前沿 next 先评 fail）。供 status/watch/next 输出 cmd_gate + next 求值取命令。
+ */
+export function deriveLaunchedCmdGate(
+  root: string,
+  proposalStep: string,
+): (CmdGateDesc & { timeout_seconds: number }) | null {
+  const nodeId = STEP_TO_GATE_NODE[proposalStep];
+  if (!nodeId) return null;
+  const m = extractLaunchedMarkers(root);
+  const desc = m.cmdGates[`${nodeId}.fail_when`] ?? m.cmdGates[`${nodeId}.done_when`];
+  if (!desc) return null;
+  // timeout：节点级 cmd_timeout_seconds > 项目级 flow.cmd_timeout_seconds > 60s。
+  // 项目级用校验版 readProjectCmdTimeout——非法值 fail loud（FLOW_SCHEMA_INVALID），与执行路径一致。
+  const flow = loadFlow(root, { lifecycle: 'launched', resolved: true }).flow;
+  let nodeTimeout: number | null = null;
+  for (const s of flow.subflows) for (const n of s.nodes) if (n.id === nodeId) nodeTimeout = n.cmd_timeout_seconds ?? null;
+  const projectTimeout = readProjectCmdTimeout(root);
+  return { ...desc, timeout_seconds: nodeTimeout ?? projectTimeout ?? 60 };
 }
 
 // ── 切片 C：next --auto skip-gate 的 gate 查询助手 ──
