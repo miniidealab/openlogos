@@ -284,6 +284,52 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(claude).toContain('MUST first read the corresponding Skill file');
   });
 
+  it('UT-S08-05 / ST-S08-03: sync replaces only managed block and preserves user content', () => {
+    scaffoldProject(root, { locale: 'en' });
+    writeFileSync(join(root, 'AGENTS.md'), [
+      'team rule before',
+      '<!-- OPENLOGOS:BEGIN -->',
+      'old generated',
+      '<!-- OPENLOGOS:END -->',
+      'team rule after',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'CLAUDE.md'), 'claude team rule\n');
+
+    sync();
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('team rule before');
+    expect(agents).toContain('team rule after');
+    expect(agents).toContain('Phase detection logic');
+    expect(agents).not.toContain('old generated');
+    expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+  });
+
+  it('UT-S08-06: sync appends managed block to user file without marker', () => {
+    scaffoldProject(root, { locale: 'en' });
+    writeFileSync(join(root, 'AGENTS.md'), 'team rule without marker\n');
+
+    sync();
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('team rule without marker');
+    expect(agents).toContain('<!-- OPENLOGOS:BEGIN -->');
+    expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+  });
+
+  it('UT-S08-07: sync is idempotent for managed block refresh', () => {
+    scaffoldProject(root, { locale: 'en' });
+    writeFileSync(join(root, 'AGENTS.md'), 'team rule\n');
+
+    sync();
+    sync();
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('team rule');
+    expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+  });
+
   it('ST-S08-06: sync with other → both files include Active Skills', () => {
     scaffoldProject(root, { locale: 'en' });
 

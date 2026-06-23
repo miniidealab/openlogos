@@ -18,6 +18,8 @@ import {
   createCodexSkillContent,
   mergeAiToolConfig,
   resolveDocsAiToolForTarget,
+  mergeInstructionFileContent,
+  writeManagedInstructionFile,
   REFERENCE_SUBDIRECTORIES,
   SKILL_NAMES,
   init,
@@ -175,6 +177,62 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
   it('UT-S01-10c: resolveDocsAiToolForTarget keeps cursor+codex AGENTS.md on Codex skill paths', () => {
     expect(resolveDocsAiToolForTarget(['cursor', 'codex'], 'agents')).toBe('codex');
     expect(resolveDocsAiToolForTarget(['cursor', 'codex'], 'claude')).toBe('cursor');
+  });
+});
+
+describe('S01 Unit Tests — managed instruction file merge', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+  });
+  afterEach(() => cleanup());
+
+  it('UT-S01-45: merge existing AGENTS.md / CLAUDE.md without marker by appending managed block', () => {
+    const merged = mergeInstructionFileContent('user rule\n', 'generated rule');
+
+    expect(merged).toContain('user rule');
+    expect(merged).toContain('<!-- OPENLOGOS:BEGIN -->');
+    expect(merged).toContain('generated rule');
+    expect(merged).toContain('<!-- OPENLOGOS:END -->');
+  });
+
+  it('UT-S01-46: replace only existing managed block and preserve surrounding user content', () => {
+    const existing = [
+      'before',
+      '<!-- OPENLOGOS:BEGIN -->',
+      'old generated',
+      '<!-- OPENLOGOS:END -->',
+      'after',
+      '',
+    ].join('\n');
+
+    const merged = mergeInstructionFileContent(existing, 'new generated');
+
+    expect(merged).toContain('before');
+    expect(merged).toContain('after');
+    expect(merged).toContain('new generated');
+    expect(merged).not.toContain('old generated');
+    expect(merged.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+  });
+
+  it('UT-S01-47: incomplete managed marker fails loud without producing merged content', () => {
+    expect(() => mergeInstructionFileContent('user\n<!-- OPENLOGOS:BEGIN -->\nold', 'new'))
+      .toThrow('Invalid OpenLogos managed block markers');
+  });
+
+  it('UT-S01-48: case variants reuse the existing real path', () => {
+    writeFileSync(join(root, 'agents.md'), 'user lowercase\n');
+
+    const target = writeManagedInstructionFile(root, 'AGENTS.md', 'generated');
+
+    expect(target).toBe(join(root, 'agents.md'));
+    expect(readdirSync(root)).toContain('agents.md');
+    expect(readdirSync(root)).not.toContain('AGENTS.md');
+    const content = readFileSync(join(root, 'agents.md'), 'utf-8');
+    expect(content).toContain('user lowercase');
+    expect(content).toContain('generated');
   });
 });
 
@@ -702,6 +760,21 @@ describe('S01 Scenario Tests — init command', () => {
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
   });
 
+  it('ST-S01-04: init preserves existing user root instruction files', async () => {
+    process.stdin.isTTY = undefined as unknown as boolean;
+    writeFileSync(join(root, 'AGENTS.md'), 'team agents rule\n');
+    writeFileSync(join(root, 'CLAUDE.md'), 'team claude rule\n');
+
+    await init('ci-project', { locale: 'en', aiTool: 'cursor' });
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(agents).toContain('team agents rule');
+    expect(claude).toContain('team claude rule');
+    expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+    expect(claude.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+  });
+
   it('ST-S01-05d: invalid explicit --ai-tool exits with error', async () => {
     process.stdin.isTTY = undefined as unknown as boolean;
 
@@ -985,6 +1058,26 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('Adding AI tool target(s)');
     expect(allLogs).toContain('16 skills synced to .agents/skills/');
     expect(allLogs).toContain('Codex plugin synced');
+  });
+
+  it('ST-S01-05: init --ai-tool preserves user content outside managed block', async () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'cursor';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeFileSync(join(root, 'AGENTS.md'), 'team agents rule\n');
+    writeFileSync(join(root, 'CLAUDE.md'), 'team claude rule\n');
+
+    await init(undefined, { aiTool: 'codex' });
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(agents).toContain('team agents rule');
+    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
+    expect(claude).toContain('team claude rule');
+    expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+    expect(claude.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
   });
 
   it('ST-S01-13: existing project can add all targets and writes stable aiTool array', async () => {

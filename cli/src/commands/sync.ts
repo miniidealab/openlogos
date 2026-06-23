@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { createAgentsMd, deploySpecs, deployAiToolAssets, expandAiTools, resolveDocsAiToolForTarget, ensureVerifyPreRunConfig, printVerifyPreRunBackfillResult } from './init.js';
+import { deploySpecs, deployAiToolAssets, expandAiTools, ensureVerifyPreRunConfig, printVerifyPreRunBackfillResult, writeInstructionFiles } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
 import { VERSION } from '../lib/json-output.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
@@ -173,10 +173,8 @@ export function sync() {
   }
   printVerifyPreRunBackfillResult(locale, verifyBackfill);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', isLaunched));
+  writeInstructionFiles(root, locale, rawAiTool, isLaunched);
   console.log('  ✓ AGENTS.md updated');
-
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', isLaunched));
   console.log('  ✓ CLAUDE.md updated');
 
   deployAiToolAssets(root, aiTools, locale, isLaunched, 'synced');

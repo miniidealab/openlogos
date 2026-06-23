@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
@@ -202,5 +202,36 @@ describe('S20 Scenario Tests — adopt command', () => {
 
     next();
     expect(con.logs.join('\n')).toContain('openlogos change add-baseline-docs');
+  });
+
+  it('UT-S20-10 / ST-S20-07: adopt preserves existing AGENTS.md / CLAUDE.md user content', async () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
+    writeFileSync(join(root, 'AGENTS.md'), 'team agents rule\n');
+    writeFileSync(join(root, 'CLAUDE.md'), 'team claude rule\n');
+
+    await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(agents).toContain('team agents rule');
+    expect(claude).toContain('team claude rule');
+    expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+    expect(claude.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+  });
+
+  it('UT-S20-11 / ST-S20-08: adopt reuses lowercase instruction file variants', async () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
+    writeFileSync(join(root, 'agents.md'), 'lowercase agents rule\n');
+    writeFileSync(join(root, 'claude.md'), 'lowercase claude rule\n');
+
+    await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
+
+    const rootEntries = readdirSync(root);
+    expect(rootEntries).toContain('agents.md');
+    expect(rootEntries).toContain('claude.md');
+    expect(rootEntries).not.toContain('AGENTS.md');
+    expect(rootEntries).not.toContain('CLAUDE.md');
+    expect(readFileSync(join(root, 'agents.md'), 'utf-8')).toContain('lowercase agents rule');
+    expect(readFileSync(join(root, 'claude.md'), 'utf-8')).toContain('lowercase claude rule');
   });
 });

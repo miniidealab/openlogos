@@ -79,6 +79,25 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     expect(agents).not.toContain('Initial Development');
   });
 
+  it('UT-S14-02 / ST-S14-03: launch preserves user content outside managed block', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+    });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'cursor';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    writeFileSync(join(root, 'AGENTS.md'), 'team launch rule\n');
+    writeLaunchGateReports(root, { deploy: true, smoke: true });
+
+    launch();
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('team launch rule');
+    expect(agents).toContain('Change Management (Enforced)');
+    expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
+  });
+
   it('ST-S14-03: launch updates openlogos-policy.mdc for cursor projects', () => {
     writeProjectYaml(root, {
       modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],

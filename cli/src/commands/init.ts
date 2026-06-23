@@ -14,6 +14,9 @@ import {
 
 export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' | 'all';
 
+const OPENLOGOS_BEGIN_MARKER = '<!-- OPENLOGOS:BEGIN -->';
+const OPENLOGOS_END_MARKER = '<!-- OPENLOGOS:END -->';
+
 const ALL_DEPLOYABLE_AI_TOOLS: Exclude<AiTool, 'all'>[] = ['claude-code', 'opencode', 'codex', 'cursor'];
 
 function isDeployableAiTool(value: unknown): value is Exclude<AiTool, 'all'> {
@@ -758,9 +761,88 @@ export function deployAiToolAssets(
   }
 }
 
-function writeInstructionFiles(root: string, locale: Locale, rawAiTool: unknown, isLaunched: boolean) {
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', isLaunched));
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', isLaunched));
+function countMarker(content: string, marker: string): number {
+  return content.split(marker).length - 1;
+}
+
+function normalizeForLegacyCompare(content: string): string {
+  return content.replace(/\r\n/g, '\n').trim();
+}
+
+function withoutManagedMarkers(content: string): string {
+  return content
+    .replace(new RegExp(`^\\s*${OPENLOGOS_BEGIN_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'gm'), '')
+    .replace(new RegExp(`^\\s*${OPENLOGOS_END_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'gm'), '')
+    .trim();
+}
+
+export function createManagedInstructionBlock(generatedContent: string): string {
+  const body = withoutManagedMarkers(generatedContent);
+  return `${OPENLOGOS_BEGIN_MARKER}\n${body}\n${OPENLOGOS_END_MARKER}\n`;
+}
+
+export function mergeInstructionFileContent(existingContent: string | null, generatedContent: string): string {
+  const block = createManagedInstructionBlock(generatedContent);
+  if (existingContent === null || existingContent.length === 0) return block;
+
+  const beginCount = countMarker(existingContent, OPENLOGOS_BEGIN_MARKER);
+  const endCount = countMarker(existingContent, OPENLOGOS_END_MARKER);
+
+  if (beginCount !== endCount || beginCount > 1) {
+    throw new Error('Invalid OpenLogos managed block markers: expected exactly one complete block or no markers.');
+  }
+
+  if (beginCount === 1) {
+    const beginIndex = existingContent.indexOf(OPENLOGOS_BEGIN_MARKER);
+    const endIndex = existingContent.indexOf(OPENLOGOS_END_MARKER);
+    if (endIndex < beginIndex) {
+      throw new Error('Invalid OpenLogos managed block markers: end marker appears before begin marker.');
+    }
+    return existingContent.slice(0, beginIndex) + block.trimEnd() + existingContent.slice(endIndex + OPENLOGOS_END_MARKER.length);
+  }
+
+  if (normalizeForLegacyCompare(existingContent) === normalizeForLegacyCompare(generatedContent)) {
+    return block;
+  }
+
+  let prefix = existingContent;
+  if (!prefix.endsWith('\n')) prefix += '\n';
+  if (!prefix.endsWith('\n\n')) prefix += '\n';
+  return prefix + block;
+}
+
+function resolveInstructionFilePath(root: string, fileName: 'AGENTS.md' | 'CLAUDE.md'): string {
+  const desired = fileName.toLowerCase();
+  const entries = readdirSync(root);
+  const exactEntry = entries.find(entry => entry === fileName);
+  if (exactEntry) return join(root, exactEntry);
+
+  const matches = entries.filter(entry => entry.toLowerCase() === desired);
+  if (matches.length === 1) return join(root, matches[0]);
+  if (matches.length > 1) {
+    throw new Error(`Multiple case variants found for ${fileName}: ${matches.join(', ')}`);
+  }
+  return join(root, fileName);
+}
+
+export function writeManagedInstructionFile(root: string, fileName: 'AGENTS.md' | 'CLAUDE.md', generatedContent: string): string {
+  const targetPath = resolveInstructionFilePath(root, fileName);
+  const existing = existsSync(targetPath) ? readFileSync(targetPath, 'utf-8') : null;
+  writeFileSync(targetPath, mergeInstructionFileContent(existing, generatedContent));
+  return targetPath;
+}
+
+export function writeInstructionFiles(root: string, locale: Locale, rawAiTool: unknown, isLaunched: boolean) {
+  writeManagedInstructionFile(
+    root,
+    'AGENTS.md',
+    createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', isLaunched),
+  );
+  writeManagedInstructionFile(
+    root,
+    'CLAUDE.md',
+    createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', isLaunched),
+  );
 }
 
 export function generatePolicyMdc(locale: Locale, isLaunched: boolean = false): string {
@@ -1570,10 +1652,10 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);
 
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'agents'), 'agents', false));
+  writeManagedInstructionFile(root, 'AGENTS.md', createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'agents'), 'agents', false));
   console.log(`  ✓ AGENTS.md`);
 
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'claude'), 'claude', false));
+  writeManagedInstructionFile(root, 'CLAUDE.md', createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'claude'), 'claude', false));
   console.log(`  ✓ CLAUDE.md`);
 
   const deployTools = expandAiTools(aiTool);

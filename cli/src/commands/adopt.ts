@@ -7,7 +7,6 @@ import {
   detectProjectName,
   createLogosConfig,
   createAdoptLogosProject,
-  createAgentsMd,
   chooseAiTool,
   DIRECTORIES,
   ensureVerifyPreRunConfig,
@@ -15,7 +14,7 @@ import {
   deployAiToolAssets,
   deploySpecs,
   expandAiTools,
-  resolveDocsAiToolForTarget,
+  writeInstructionFiles,
 } from './init.js';
 import type { Locale } from '../i18n.js';
 
@@ -37,11 +36,6 @@ async function chooseLocale(): Promise<Locale> {
       resolve(answer === '2' ? 'en' : 'zh');
     });
   });
-}
-
-function writeInstructionFiles(root: string, locale: Locale, rawAiTool: unknown) {
-  writeFileSync(join(root, 'AGENTS.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', true));
-  writeFileSync(join(root, 'CLAUDE.md'), createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', true));
 }
 
 function ensureDirectories(root: string) {
@@ -114,7 +108,7 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   writeFileSync(yamlPath, createAdoptLogosProject(projectName, locale));
   console.log('✓ 写入 logos-project.yaml（bootstrap: adopted, lifecycle: launched）');
 
-  writeInstructionFiles(root, locale, aiTool);
+  writeInstructionFiles(root, locale, aiTool, true);
   console.log('✓ 写入 AGENTS.md / CLAUDE.md');
 
   const deployTools = expandAiTools(aiTool);
