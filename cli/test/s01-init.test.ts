@@ -775,6 +775,17 @@ describe('S01 Scenario Tests — init command', () => {
     expect(claude.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
   });
 
+  it('ST-S01-EX-04: incomplete managed block blocks init without overwriting file', async () => {
+    process.stdin.isTTY = undefined as unknown as boolean;
+    const originalAgents = 'team agents rule\n<!-- OPENLOGOS:BEGIN -->\nold generated\n';
+    writeFileSync(join(root, 'AGENTS.md'), originalAgents);
+
+    await expect(init('ci-project', { locale: 'en', aiTool: 'cursor' }))
+      .rejects.toThrow('Invalid OpenLogos managed block markers');
+
+    expect(readFileSync(join(root, 'AGENTS.md'), 'utf-8')).toBe(originalAgents);
+  });
+
   it('ST-S01-05d: invalid explicit --ai-tool exits with error', async () => {
     process.stdin.isTTY = undefined as unknown as boolean;
 
