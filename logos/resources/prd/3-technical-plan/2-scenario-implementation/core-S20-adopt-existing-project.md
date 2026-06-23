@@ -1,3 +1,4 @@
+
 # S20: 已有项目接入 OpenLogos — 时序图
 
 ```mermaid
@@ -13,7 +14,7 @@ sequenceDiagram
     C->>C: Step 6: 推断或补齐推荐 sandbox 配置
     C->>C: Step 7: 创建 logos/ 标准目录结构与 Reference 子目录
     C->>C: Step 8: 写入 logos.config.json 与 logos-project.yaml（bootstrap: adopted, lifecycle: launched）
-    C->>C: Step 9: 写入 AGENTS.md 与 CLAUDE.md，并部署所选 AI tools 资产与 `logos/spec/`
+    C->>C: Step 9: 合并写入 AGENTS.md 与 CLAUDE.md 托管片段，并部署所选 AI tools 资产与 `logos/spec/`
     C-->>U: Step 10: 输出接入报告、verify 预跑配置与 sandbox 配置结果，并建议执行 openlogos change add-baseline-docs
 ```
 
@@ -26,7 +27,7 @@ sequenceDiagram
 6. **CLI** 推断或补齐推荐的 `verify.sandbox_mode=auto`、`verify.sandbox_root` 和 `verify.sandbox_deny_workspace_write=true`，但不得覆盖用户已有沙箱配置。
 7. **CLI** 创建 `logos/` 标准目录结构（与 `init` 相同）；其中 `logos/resources/reference/` 下必须同时创建 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录，并写入 `.gitkeep`。
 8. **CLI** 写入 `logos.config.json` 与 `logos-project.yaml`；`logos.config.json` 包含 `verify.result_path`，并在可推断时包含 verify 预跑命令与推荐沙箱配置；`logos-project.yaml` 中模块 `bootstrap` 字段为 `adopted`，`lifecycle` 为 `launched`。
-9. **CLI** 部署 AI 工具资产，与 `init` 行为一致，并部署 `logos/spec/`。
+9. **CLI** 写入根目录 AI 指令文件时复用 `init` 的 managed block 合并策略：已有用户内容必须保留；OpenLogos 内容写入或刷新在托管片段内；同时部署 AI 工具资产与 `logos/spec/`。
 10. **CLI** 输出接入报告，说明 verify 预跑配置与 sandbox 配置是否已补齐，并固定建议下一步执行 `openlogos change add-baseline-docs`。
 
 ## 异常用例
@@ -39,3 +40,9 @@ sequenceDiagram
 - **触发条件**：已有项目没有可识别测试脚本或测试框架。
 - **期望响应**：adopt 成功，但接入报告显示 TODO，提示用户配置 `verify.pre_run_command` 或 `verify.regression_command`，并说明 sandbox 配置仍可按默认推荐值写入。
 - **副作用**：不写入虚假的测试命令。
+
+### EX-9.1: AI 指令文件 marker 不完整
+- **触发条件**：已有项目的 `AGENTS.md` / `CLAUDE.md` 中只存在 `OPENLOGOS:BEGIN` 或只存在 `OPENLOGOS:END`。
+- **期望响应**：adopt 失败并提示用户修复指令文件托管片段边界。
+- **副作用**：不得覆盖用户既有 AI 指令文件。
+

@@ -161,3 +161,26 @@ graph TB
 回滚策略：
 - 官网内容异常时，通过 Cloudflare Pages 回滚到上一成功部署。
 - 若随 CLI 包发布后发现 Skill 规则有误，通过补丁版本修正；已生成在用户项目中的历史规格文档不做自动迁移。
+
+
+## 十六、根目录 AI 指令文件合并发布检查
+
+本提案会修改 CLI `init` / `sync` / `adopt` / `launch` 对根目录 `AGENTS.md` / `CLAUDE.md` 的运行时写入行为，因此需要执行 CLI/npm 发布，并在部署后验证用户自定义配置不会被覆盖。
+
+发布前检查：
+- 合并 `deltas/spec/agents-md.md` 后，确认 `spec/agents-md.md` 与 `logos/spec/agents-md.md` 已同步，避免根规格和 dogfooding 副本漂移。
+- `cd cli && npm test` 覆盖 `openlogos init` 在已有 `AGENTS.md` / `CLAUDE.md` 时保留用户自定义内容并追加 OpenLogos managed block。
+- `cd cli && npm test` 覆盖 `openlogos init --ai-tool <tool>` 在已初始化项目中刷新托管片段但不覆盖用户内容。
+- `cd cli && npm test` 覆盖 `openlogos sync` 只替换 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` 内内容，保留 block 外配置。
+- `cd cli && npm test` 覆盖 `openlogos adopt` 在存量项目已有 `AGENTS.md` / `CLAUDE.md` 时保留原配置。
+- `cd cli && npm test` 覆盖 `openlogos launch` 刷新 launched 指令时保留用户配置。
+- `cd cli && npm test` 覆盖大小写变体（如 `agents.md` / `claude.md`）识别，避免误覆盖或重复创建入口。
+
+部署后检查：
+- 安装发布后的 CLI，在临时目录预置 `AGENTS.md` 与 `CLAUDE.md` 用户自定义内容后执行 `openlogos init --locale zh --ai-tool all smoke`，确认自定义内容仍存在且 OpenLogos 托管片段已写入。
+- 在同一项目中执行 `openlogos sync`，确认自定义内容仍存在，OpenLogos 托管片段被刷新且未重复追加。
+- 在存量项目 fixture 中预置 `agents.md` / `claude.md` 小写文件后执行 `openlogos adopt --locale zh --ai-tool cursor`，确认 CLI 复用既有真实路径并保留用户内容。
+
+回滚策略：
+- 若根指令文件合并逻辑影响初始化或同步，可按既有 npm 补丁版本回滚策略修复。
+- 已在用户项目中追加的 managed block 是普通 Markdown 内容；回滚 CLI 不应删除用户根指令文件。必要时用户可手动移除 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` 托管片段。

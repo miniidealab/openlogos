@@ -130,11 +130,37 @@ AGENTS.md / CLAUDE.md 的变更管理段必须强调：
 - 只有提案级需要部署时，才在 verify PASS 后提醒用户明确授权部署。
 - 只有提案级需要 smoke 且部署完成后，才提醒用户明确授权执行 `openlogos smoke`。
 
+### 托管片段合并规则
+
+`AGENTS.md` / `CLAUDE.md` 是项目根目录的用户可编辑指令文件。OpenLogos 只能维护自身生成的托管片段，不得整文件覆盖用户在托管片段之外写入的项目规则、工具偏好、权限约束或团队约定。
+
+OpenLogos 生成内容必须包裹在固定 marker 内：
+
+```markdown
+<!-- OPENLOGOS:BEGIN -->
+[OpenLogos generated instructions]
+<!-- OPENLOGOS:END -->
+```
+
+写入规则：
+
+1. 若目标文件不存在，创建文件，内容为 OpenLogos 托管片段。
+2. 若目标文件存在且包含完整 marker，只替换 `OPENLOGOS:BEGIN` 与 `OPENLOGOS:END` 之间的内容，保留 marker 外所有用户内容及其相对顺序。
+3. 若目标文件存在但没有 marker，且内容与旧版本 OpenLogos 生成模板等价，则迁移为带 marker 的托管文件。
+4. 若目标文件存在但没有 marker，且包含任何用户自定义内容，则保留原文，并在文件末尾追加 OpenLogos 托管片段；不得整文件覆盖。
+5. 若目标文件存在不完整 marker（只有 begin 或只有 end），写入必须 fail loud，提示用户修复或备份文件；不得猜测边界后覆盖。
+6. 写入前必须按大小写不敏感方式查找同目录下的既有变体，例如 `agents.md`、`Agents.md`、`claude.md`、`Claude.md`。若存在大小写变体，应复用既有真实文件路径进行合并，避免在 macOS 默认大小写不敏感文件系统上误覆盖用户文件，或在大小写敏感文件系统上生成重复指令入口。
+7. `init`、`init --ai-tool`、`adopt`、`sync`、`launch` 必须复用同一个合并写入 helper，确保所有入口具备一致的保留行为。
+
 ### 生成时机
 
-- `openlogos init`：初始化项目时首次生成（含 Active Skills 段，Skills 同步部署）
-- `openlogos sync`：手动触发重新生成（当项目配置变化时，同时重新部署 Skills 并刷新 Active Skills 段）
-- `project-init` Skill：AI 初始化项目时生成
+- `openlogos init`：初始化项目时首次生成；若根目录已存在 `AGENTS.md` / `CLAUDE.md` 或大小写变体，必须按「托管片段合并规则」保留用户内容。
+- `openlogos init --ai-tool <tool>`：为已初始化项目补齐目标 AI 工具时刷新托管片段；不得覆盖托管片段外用户内容。
+- `openlogos adopt`：接入已有项目时生成 OpenLogos 基础设施；若已有项目已经维护 `AGENTS.md` / `CLAUDE.md`，必须合并写入 OpenLogos 托管片段。
+- `openlogos sync`：手动触发重新生成（当项目配置变化时，同时重新部署 Skills 并刷新 Active Skills 段）；只替换 OpenLogos 托管片段。
+- `openlogos launch`：切换 launched 生命周期后刷新变更管理规则；只替换 OpenLogos 托管片段。
+- `project-init` Skill：AI 初始化项目时生成，行为应与 CLI 托管片段策略一致。
+
 
 ## 多平台适配
 
@@ -142,13 +168,15 @@ AGENTS.md / CLAUDE.md 的变更管理段必须强调：
 
 | 工具 | 指令文件 | Skills 部署位置 | 处理方式 |
 |------|---------|---------------|---------|
-| **Cursor** | `AGENTS.md`（原生支持） | `.cursor/rules/*.mdc` | `init` / `sync` 自动部署 |
-| **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署 |
-| **OpenCode（兼容模式）** | `AGENTS.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署 |
+| **Cursor** | `AGENTS.md`（原生支持） | `.cursor/rules/*.mdc` | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
+| **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
+| **OpenCode（兼容模式）** | `AGENTS.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
 | **OpenCode（原生插件模式）** | `opencode.json` + `.opencode/plugins/` | 插件内置/按需加载 | 由插件负责命令桥接与会话注入，`AGENTS.md` 作为兜底 |
 | **GitHub Copilot** | `.github/copilot-instructions.md` | 规划中 | Phase 1.5 |
 
-`openlogos sync` 命令会同时生成所有需要的指令文件，确保不同 AI 工具看到的指令一致。对于 OpenCode 原生插件模式，`sync` 仍保留 `AGENTS.md` 作为降级路径，避免插件不可用时流程中断。
+`openlogos sync` 命令会同时生成所有需要的指令文件，确保不同 AI 工具看到的 OpenLogos 托管片段一致。对于 OpenCode 原生插件模式，`sync` 仍保留 `AGENTS.md` 作为降级路径，避免插件不可用时流程中断。
+
+根目录指令文件可能已存在用户自定义规则。OpenLogos 在任何入口下都只能更新自身 managed block，不能覆盖用户在 block 外的内容。
 
 ## 与 logos-project.yaml 的关系
 
