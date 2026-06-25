@@ -55,7 +55,7 @@ export interface FlowNode {
 
 /** subflow 循环（见 spec/flow-spec.md §6）。M2 切片 2：max_iters>1 + until:tests_green 点亮真迭代。 */
 export interface FlowLoop {
-  until?: string | null;       // 收敛谓词，本切片仅枚举 'tests_green'
+  until?: string | null;       // 收敛谓词，枚举 'tests_green' | 'code_slices_green'
   max_iters?: number | null;   // 整数 ≥1；>1 才真迭代（仅 overlay set-loop 激活）
   exhausted_gate?: { skippable?: boolean } | null; // S29：达上限退出 gate 覆盖；仅 { skippable:boolean }
 }
@@ -97,7 +97,7 @@ export interface LoadFlowResult {
  */
 export const BUILTIN_VERSIONS: Record<Lifecycle, string> = {
   initial: 'v1',
-  launched: 'v1',
+  launched: 'v2', // change-flow-redesign：propose→plan/spec/merge、implement 默认切片循环（破坏性变更，bump v1→v2）
 };
 
 /**
@@ -156,7 +156,7 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
     if (!Array.isArray(s.nodes)) {
       throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 缺少 \`nodes\` 数组`);
     }
-    // M2-2：subflow.loop 校验——max_iters 整数 ≥1、until 仅 'tests_green'
+    // M2-2：subflow.loop 校验——max_iters 整数 ≥1、until 'tests_green' | 'code_slices_green'（change-flow-redesign 放开后者）
     if (s.loop != null) {
       if (typeof s.loop !== 'object' || Array.isArray(s.loop)) {
         throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 \`loop\` 须为对象`);
@@ -166,8 +166,8 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
         && (typeof lp.max_iters !== 'number' || !Number.isInteger(lp.max_iters) || lp.max_iters < 1)) {
         throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.max_iters 须为整数 ≥ 1`);
       }
-      if (lp.until != null && lp.until !== 'tests_green') {
-        throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.until 仅支持 \`tests_green\``);
+      if (lp.until != null && lp.until !== 'tests_green' && lp.until !== 'code_slices_green') {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `${what} subflow \`${s.id}\` 的 loop.until 仅支持 \`tests_green\` | \`code_slices_green\``);
       }
       // S29：loop.exhausted_gate 严格 = { skippable:boolean }（显式写出即校验；缺省/不写则无此键 → 不校验）
       if ('exhausted_gate' in lp) {

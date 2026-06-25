@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
 import { checkTaskSection, deployDone, readActiveProposalGuard } from '../src/commands/deploy-done.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
@@ -249,6 +249,9 @@ describe('S21 Scenario Tests — deploy-done command', () => {
     const proposalDir = setupProposal('no-smoke', NO_SMOKE_PROPOSAL);
     writeDeployReport();
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    // change-flow-redesign：builtin launched 默认激活切片循环；next 走 ViaFlow + loop 收敛裁决，
+    // VERIFY_PASS 须配 pass 账本，否则前沿被回拉、archive 建议不出现。
+    writeLoopPass(proposalDir);
 
     await deployDone();
 

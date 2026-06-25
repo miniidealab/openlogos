@@ -10,7 +10,7 @@ import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 import { gateForProposalStep, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
 import type { CurrentNode, CmdEval, NextNode } from '../lib/flow-overlay-derive.js';
 import { resolveNextNode } from '../lib/flow-overlay-derive.js';
-import type { LoopState } from '../lib/flow-loop-derive.js';
+import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
@@ -30,6 +30,7 @@ export interface NextModuleItem {
   deployment_warnings?: string[];
   current_node?: CurrentNode;
   loop_state?: LoopState;
+  slice_state?: SliceState;
   next_node?: NextNode;
   cmd_gate?: CmdGate;
 }
@@ -45,6 +46,8 @@ export interface NextData {
   current_node?: CurrentNode;
   // M2 切片 2：loop 真迭代派生（仅 overlay 激活时附带）
   loop_state?: LoopState;
+  // change-flow-redesign 切片6：代码切片循环状态（仅切片循环激活时附带）
+  slice_state?: SliceState;
   // S30：builtin cmd gate 承载（仅 cmd gate observe-pending 时附带）
   cmd_gate?: CmdGate;
   // S28：next_node 编排提示（仅有当前节点时附带；命令级建议/auto 放行/loop 达上限省略）
@@ -196,6 +199,8 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
   switch (step) {
     case 'writing':
       return { action: t(locale as Parameters<typeof t>[0], 'next.fillProposal'), command: null, detailKey: 'next.fillProposalDetail' };
+    case 'ready-to-delta':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.approvePlan'), command: null, detailKey: 'next.approvePlanDetail' };
     case 'delta-writing':
     case 'implementing':
     case 'in-progress':
@@ -400,8 +405,9 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     moduleItems = moduleItems.map((item, i) => {
       const cn = data.modules![i].current_node;
       const ls = data.modules![i].loop_state;
+      const ss = data.modules![i].slice_state;
       const cg = data.modules![i].cmd_gate;
-      const withFields: NextModuleItem = { ...item, ...(cn ? { current_node: cn } : {}), ...(ls ? { loop_state: ls } : {}), ...(cg ? { cmd_gate: cg } : {}) };
+      const withFields: NextModuleItem = { ...item, ...(cn ? { current_node: cn } : {}), ...(ls ? { loop_state: ls } : {}), ...(ss ? { slice_state: ss } : {}), ...(cg ? { cmd_gate: cg } : {}) };
       if (cn) {
         return {
           ...withFields,
@@ -592,6 +598,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   const baseCurrentNode = data.modules === undefined ? data.current_node : undefined;
   // loop_state：有 modules[] 时挂 modules[].loop_state（透传），legacy 才回退顶层
   const baseLoopState = data.modules === undefined ? data.loop_state : undefined;
+  // slice_state：同构挂载——有 modules[] 时挂 modules[].slice_state，legacy 才回退顶层
+  const baseSliceState = data.modules === undefined ? data.slice_state : undefined;
 
   // S28：next_node 编排提示——modules[] 各项 + legacy 顶层。R4 auto 放行 / R7 loop 达上限 / R5 命令级建议 → 省略。
   const nextNodeFor = (sm: { id: string; name: string; lifecycle: 'initial' | 'launched'; current_phase: string | null; current_node?: CurrentNode; loop_state?: LoopState; active_change?: { proposal_step: string } | null }, gap: boolean): NextNode | null => {
@@ -603,6 +611,16 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       gateAutoPassed: gap,
     });
   };
+  // 切片6：切片循环阻塞在 code 工作节点（next_node.id==='code'）且未达上限时，注入 next_node.slice = slice_state.current。
+  const withSlice = (nn: NextNode | null, ls: LoopState | undefined, ss: SliceState | undefined, _atVerify: boolean): NextNode | null => {
+    if (!nn || nn.id !== 'code') return nn;
+    if (!ss || ss.current == null) return nn;
+    // 切片循环激活（until=code_slices_green）、未收敛、未达上限 → 注入 next_node.slice。
+    // 不依赖 isLoopBlocking（其要求 iteration≥1 + verify 前沿）：正常 coding 阶段 next_node 已指向 code、
+    // slice_state.current 有值，宿主需据此注入"只做这一片"上下文（spec/cli-json-output.md §3.10(4)）。
+    if (!ls || ls.until !== 'code_slices_green' || ls.converged || ls.escalated) return nn;
+    return { ...nn, slice: ss.current };
+  };
   // R5：命令级建议（创建提案 / 补 baseline / launch）时省略 next_node——这类不是某个 flow 节点。
   // 顶层 command 是 `openlogos change …`/`openlogos launch` 即命令级（如 adopted 补 baseline：current_phase 虽非空，
   // 但真实建议是 add-baseline-docs，不能误把 scenario-modeling 当 next_node）。
@@ -612,17 +630,22 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     moduleItems = moduleItems.map((item, i) => {
       if (commandLevelTop || isCommandLevel(item.command)) return item; // 命令级建议 → 省略 next_node
       const gap = gateAutoPassed && item.active_change === data.active_change;
-      const nn = nextNodeFor(data.modules![i], gap);
+      const sm = data.modules![i];
+      const smStep = sm.active_change?.proposal_step ?? null;
+      const smAtVerify = smStep === 'ready-to-verify' || smStep === 'verify-failed' || sm.current_phase === 'phase.3-6';
+      const nn = withSlice(nextNodeFor(sm, gap), sm.loop_state, sm.slice_state, smAtVerify);
       return nn ? { ...item, next_node: nn } : item;
     });
   }
   let baseNextNode: NextNode | undefined;
   if (data.modules === undefined && !commandLevelTop) {
-    baseNextNode = nextNodeFor({
+    const baseAtVerify = data.proposal_step === 'ready-to-verify' || data.proposal_step === 'verify-failed'
+      || data.current_phase === 'phase.3-6';
+    baseNextNode = withSlice(nextNodeFor({
       id: 'core', name: 'core', lifecycle: data.lifecycle === 'launched' ? 'launched' : 'initial',
       current_phase: data.current_phase, current_node: data.current_node, loop_state: data.loop_state,
       active_change: data.proposal_step ? { proposal_step: data.proposal_step } : null,
-    }, gateAutoPassed) ?? undefined;
+    }, gateAutoPassed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
   }
 
   // M2 切片 1b：cmd 执行后，顶层 action/detail 反映命令结果（done 续推 / 未通过重试 / 超时）
@@ -667,6 +690,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     ...(moduleItems !== undefined ? { modules: moduleItems } : {}),
     ...(baseCurrentNode ? { current_node: baseCurrentNode } : {}),
     ...(baseLoopState ? { loop_state: baseLoopState } : {}),
+    ...(baseSliceState ? { slice_state: baseSliceState } : {}),
     ...(data.modules === undefined && data.cmd_gate ? { cmd_gate: data.cmd_gate } : {}),
     ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),

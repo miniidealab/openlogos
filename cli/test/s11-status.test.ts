@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
 import {
   listFiles,
   collectStatusData,
@@ -352,6 +352,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-smoke');
@@ -378,6 +379,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('deploy-done');
@@ -739,6 +741,7 @@ describe('S11 Scenario Tests — status command', () => {
     mkdirSync(proposalDir, { recursive: true });
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
@@ -772,6 +775,7 @@ describe('S11 Scenario Tests — status command', () => {
     const proposalDir = join(root, 'logos', 'changes', 'my-feature');
     mkdirSync(proposalDir, { recursive: true });
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
     writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
@@ -790,6 +794,7 @@ describe('S11 Scenario Tests — status command', () => {
     const proposalDir = join(root, 'logos', 'changes', 'my-feature');
     mkdirSync(proposalDir, { recursive: true });
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
@@ -816,6 +821,7 @@ describe('S11 Scenario Tests — status command', () => {
     const proposalDir = join(root, 'logos', 'changes', 'my-feature');
     mkdirSync(proposalDir, { recursive: true });
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
@@ -902,6 +908,7 @@ describe('S11 Scenario Tests — status command', () => {
   it('ST-S11-08: no-deploy proposal shows archive after verify PASS', () => {
     const proposalDir = setupLaunchedProposal('docs-only', NO_DEPLOY_PROPOSAL);
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
@@ -919,6 +926,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
@@ -935,6 +943,7 @@ describe('S11 Scenario Tests — status command', () => {
   it('ST-S11-10: status JSON exposes proposal-level deployment decision', () => {
     const proposalDir = setupLaunchedProposal('docs-only', NO_DEPLOY_PROPOSAL);
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status('json');
     const output = JSON.parse(con.logs[0]);
@@ -960,6 +969,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [ ] 通知 RunLogos',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status('json');
     const output = JSON.parse(con.logs[0]);
@@ -991,6 +1001,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status('json');
     const output = JSON.parse(con.logs[0]);
@@ -1102,6 +1113,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 同步官网',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
 
     status('json');
@@ -1127,6 +1139,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 同步官网',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status('json');
     const output = JSON.parse(con.logs[0]);
@@ -1144,6 +1157,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status('json');
     const output = JSON.parse(con.logs[0]);
@@ -1163,6 +1177,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 完成业务代码',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status('json');
     const output = JSON.parse(con.logs[0]);
@@ -1181,6 +1196,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status('json');
     const output = JSON.parse(con.logs[0]);
@@ -1199,6 +1215,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     status();
     const out = [...con.logs, ...con.errors].join('\n');

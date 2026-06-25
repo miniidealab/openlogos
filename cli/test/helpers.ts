@@ -120,3 +120,19 @@ export function mockProcessExit(): MockInstance {
     throw new Error(`process.exit(${code})`);
   });
 }
+
+/**
+ * change-flow-redesign：builtin launched 的 implement 子流程默认激活切片循环
+ * （until: code_slices_green, max_iters: 30）。任何处于 verify-pass 之后的 launched 提案
+ * 在真实流程中由 `openlogos verify` 同时写一行 pass 的 LOOP_ITERS 账本（loop 收敛）。
+ * 合成测试 fixture 写 VERIFY_PASS marker 时须补写这行账本，否则 loop 未收敛会把
+ * proposal_step 回拉到 ready-to-verify（converged 裁决出环，见 spec/flow-spec.md §6/§12.4）。
+ * @param proposalDir 提案目录（VERIFY_PASS 同目录）
+ * @param module 归属模块（默认 core，须与 guard.module 一致）
+ */
+export function writeLoopPass(proposalDir: string, module = 'core'): void {
+  writeFileSync(
+    join(proposalDir, 'LOOP_ITERS'),
+    JSON.stringify({ iter: 1, node: 'verify', result: 'pass', module, timestamp: '2026-06-20T00:00:00.000Z' }) + '\n',
+  );
+}

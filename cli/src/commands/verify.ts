@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { loadFlow, findActivatedLoop, inferLifecycle, FlowError } from '../lib/flow.js';
-import { loopLedgerPath, readLoopIters } from '../lib/flow-loop-derive.js';
+import { loopLedgerPath, readLoopIters, deriveSliceState } from '../lib/flow-loop-derive.js';
 import { readProjectYaml } from '../lib/project-yaml.js';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
@@ -709,14 +709,21 @@ function appendLoopIter(root: string, gatePass: boolean): void {
 
   let resolved;
   try { resolved = loadFlow(root, { lifecycle, resolved: true }).flow; } catch { return; }
-  if (!findActivatedLoop(resolved)) return; // 未激活 → 不写
+  const act = findActivatedLoop(resolved);
+  if (!act) return; // 未激活 → 不写
 
   const path = loopLedgerPath(root, proposalDir);
   const iter = readLoopIters(path, moduleId).length + 1;
-  const row = JSON.stringify({
+  const rowObj: Record<string, unknown> = {
     iter, node: 'verify', result: gatePass ? 'pass' : 'fail', module: moduleId,
     timestamp: new Date().toISOString(),
-  });
+  };
+  // change-flow-redesign：切片循环激活且有当前切片 → 记录本轮尝试的切片（每片尝试历史；完成仍以 [code] 勾选为准）
+  if (proposalDir && act.until === 'code_slices_green') {
+    const cur = deriveSliceState(proposalDir).current;
+    if (cur != null) rowObj.slice = cur;
+  }
+  const row = JSON.stringify(rowObj);
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, row + '\n');
 }

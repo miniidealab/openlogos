@@ -27,7 +27,13 @@ function writeOverlay(root: string, yaml: string) {
   writeFileSync(join(root, 'logos', 'flow', 'launched.yaml'), yaml);
 }
 function modifyOverlay(target: string, setInline: string): string {
-  return ['extends: builtin:launched@v1', 'overlay:', '  - op: modify', `    target: ${target}`, `    set: ${setInline}`].join('\n');
+  // change-flow-redesign：builtin launched implement 默认激活切片循环（code_slices_green, max_iters:30）。
+  // cmd gate（尤其 verify cmd）与激活 loop 互斥（loop 收敛靠 LOOP_ITERS 账本、cmd gate 不写账本），
+  // 且激活 loop 会把 verify-pass 后续态回拉。S30 关注 cmd gate 本身，故先 set-loop max_iters:1 关闭循环
+  // 还原本切片关注的纯 cmd-gate 语义。
+  return ['extends: builtin:launched@v1', 'overlay:',
+    '  - op: set-loop', '    subflow: implement', '    set: { max_iters: 1 }',
+    '  - op: modify', `    target: ${target}`, `    set: ${setInline}`].join('\n');
 }
 function setModules(root: string, n = 1) {
   const mods = Array.from({ length: n }, (_, i) => `  - id: ${i === 0 ? 'core' : 'm' + i}\n    name: ${i === 0 ? 'core' : 'm' + i}\n    lifecycle: launched`).join('\n');
@@ -305,6 +311,7 @@ describe('S30 — 可达性 / budget / golden / deploy-done', () => {
   it('UT-S30-35: budget=1 — 前 overlay-add cmd + 后 verify cmd gate，仅执行前者', async () => {
     const r = tempProject(); setModules(r); setupProposal(r);
     writeOverlay(r, ['extends: builtin:launched@v1', 'overlay:',
+      '  - op: set-loop', '    subflow: implement', '    set: { max_iters: 1 }', // verify cmd 与激活 loop 互斥
       '  - op: add', '    before: verify', '    node: { id: chk, name: 检查, done_when: "cmd:exit 7" }',
       '  - op: modify', '    target: verify', '    set: { done_when: "cmd:true" }'].join('\n'));
     const d = await runNextJson(r);
@@ -555,6 +562,7 @@ describe('S30 — 端到端场景', () => {
   it('ST-S30-09: budget=1 端到端 — overlay-add cmd 先于 verify gate', async () => {
     const r = tempProject(); setModules(r); setupProposal(r);
     writeOverlay(r, ['extends: builtin:launched@v1', 'overlay:',
+      '  - op: set-loop', '    subflow: implement', '    set: { max_iters: 1 }', // verify cmd 与激活 loop 互斥
       '  - op: add', '    before: verify', '    node: { id: chk, name: 检查, done_when: "cmd:true" }',
       '  - op: modify', '    target: verify', '    set: { done_when: "cmd:exit 5" }'].join('\n'));
     const d = await runNextJson(r);

@@ -4,8 +4,8 @@ import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys, detectProposalStepViaFlow, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
 import { deriveOverlayView } from '../lib/flow-overlay-derive.js';
 import type { OverlayNode, CurrentNode, OverlayView, CmdEval } from '../lib/flow-overlay-derive.js';
-import { deriveLoopState, isLoopBlocking } from '../lib/flow-loop-derive.js';
-import type { LoopState } from '../lib/flow-loop-derive.js';
+import { deriveLoopState, deriveSliceStateIfActive, isLoopBlocking } from '../lib/flow-loop-derive.js';
+import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { listFiles } from '../lib/list-files.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
@@ -131,6 +131,8 @@ export interface ModuleStatusItem {
   current_node?: CurrentNode;
   // M2 切片 2：loop 真迭代派生（仅 overlay set-loop 激活、非 initial 多模块时输出）
   loop_state?: LoopState;
+  // change-flow-redesign 切片6：代码切片循环状态（仅切片循环 until=code_slices_green 激活时输出）
+  slice_state?: SliceState;
   // S30：builtin gate（verify/deploy/smoke）接 cmd: 时的 observe-pending 承载（仅 cmd gate 时输出）
   cmd_gate?: CmdGate;
 }
@@ -166,6 +168,8 @@ export interface StatusData {
   current_node?: CurrentNode;
   // M2 切片 2：loop 真迭代派生顶层回退（legacy 无 modules[] 时）
   loop_state?: LoopState;
+  // change-flow-redesign 切片6：代码切片循环状态顶层回退（legacy 无 modules[] 时）
+  slice_state?: SliceState;
   // S30：builtin cmd gate 顶层回退（仅 legacy 无 modules[] 时；有 modules[] 时挂 modules[].cmd_gate）
   cmd_gate?: CmdGate;
 }
@@ -352,6 +356,7 @@ function buildModuleStatusItem(
     const launchedProposalDir = guardActiveChange && guardModule === mod.id
       ? join(root, 'logos', 'changes', guardActiveChange) : null;
     const loopState = deriveLoopState(root, mod, launchedProposalDir, isMultiModule);
+    const sliceState = deriveSliceStateIfActive(root, mod, launchedProposalDir, isMultiModule);
     if (activeChange) {
       const gatedStep = gateLaunchedStepForLoop(activeChange.proposal_step, loopState);
       if (gatedStep && gatedStep !== activeChange.proposal_step) {
@@ -410,6 +415,10 @@ function buildModuleStatusItem(
         suggestion = locale === 'zh'
           ? `验收未通过，修复问题后重新运行 openlogos verify`
           : `Verification failed — fix the issues and run openlogos verify again`;
+      } else if (activeChange.proposal_step === 'ready-to-delta') {
+        suggestion = locale === 'zh'
+          ? `批准 ${activeChange.slug} 的方案（proposal/tasks 与 [code] 切片划分）后开始产出 delta；--auto 模式下 plan 门自动放行（留审计）`
+          : `Approve the plan for ${activeChange.slug} (proposal/tasks and [code] slicing), then start writing deltas; in --auto the plan gate auto-passes (audited)`;
       } else if (activeChange.proposal_step === 'delta-writing' || activeChange.proposal_step === 'implementing' || activeChange.proposal_step === 'in-progress') {
         suggestion = locale === 'zh'
           ? `继续为 ${activeChange.slug} 产出 delta 文件，完成后明确授权执行 openlogos merge ${activeChange.slug}`
@@ -484,6 +493,7 @@ function buildModuleStatusItem(
       ...(overlay && overlay.overlay_nodes.length > 0 ? { overlay_nodes: overlay.overlay_nodes } : {}),
       ...(overlay && overlay.current_node ? { current_node: overlay.current_node } : {}),
       ...(loopState ? { loop_state: loopState } : {}),
+      ...(sliceState ? { slice_state: sliceState } : {}),
       ...(cmdGateDesc ? { cmd_gate: cmdGateDesc } : {}),
     };
   }
@@ -610,6 +620,26 @@ function computeProjectLoopState(
   if (!target) return null;
   const proposalDir = activeChange && guardModule === target.id ? join(root, 'logos', 'changes', activeChange) : null;
   return deriveLoopState(root, target, proposalDir, isMulti);
+}
+
+/** 项目级 slice_state（legacy 顶层回退）：仅切片循环激活时非 null，挂载与 loop_state 同构。 */
+function computeProjectSliceState(
+  root: string,
+  rawModules: ModuleInfo[] | undefined,
+  lifecycle: 'initial' | 'launched',
+  activeChange: string | null,
+  guardModule: string | null,
+): SliceState | null {
+  if (rawModules === undefined) {
+    const synthMod: ModuleInfo = { id: 'core', name: 'core', lifecycle };
+    const proposalDir = activeChange ? join(root, 'logos', 'changes', activeChange) : null;
+    return deriveSliceStateIfActive(root, synthMod, proposalDir, false);
+  }
+  const isMulti = rawModules.length > 1;
+  const target = rawModules.find(m => m.id === guardModule) ?? (rawModules.length === 1 ? rawModules[0] : undefined);
+  if (!target) return null;
+  const proposalDir = activeChange && guardModule === target.id ? join(root, 'logos', 'changes', activeChange) : null;
+  return deriveSliceStateIfActive(root, target, proposalDir, isMulti);
 }
 
 /**
@@ -828,6 +858,7 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
   // M2 切片 2（R8）：loop 激活且未收敛 → 顶层 verify(phase.3-6) 不得 done（出环用 converged 裁决、不要求 iteration≥1），
   // 避免旧 acceptance-report.md 让 current_phase/all_done 误推进；同时把 launched step 拉回 ready-to-verify
   const projectLoopState = computeProjectLoopState(root, rawModules, lifecycle, activeChange, guardModule);
+  const projectSliceState = computeProjectSliceState(root, rawModules, lifecycle, activeChange, guardModule);
   if (projectLoopState && !projectLoopState.converged) {
     const vp = phases.find(p => p.key === 'phase.3-6');
     if (vp && vp.done) vp.done = false;
@@ -909,6 +940,8 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
     ...(topOverlay && topOverlay.current_node ? { current_node: topOverlay.current_node } : {}),
     // M2 切片 2：loop_state 顶层回退（仅 legacy 无 modules[]；有 modules[] 时挂 modules[].loop_state）
     ...(rawModules === undefined && projectLoopState ? { loop_state: projectLoopState } : {}),
+    // change-flow-redesign 切片6：slice_state 顶层回退（仅 legacy 无 modules[]；有 modules[] 时挂 modules[].slice_state）
+    ...(rawModules === undefined && projectSliceState ? { slice_state: projectSliceState } : {}),
     ...(topCmdGate ? { cmd_gate: topCmdGate } : {}),
     active_proposals: activeProposals.map(p => ({
       name: p.name,

@@ -81,6 +81,7 @@ interface DeriveCtx {
  */
 export const STEP_TO_CURRENT_BUILTIN: Record<string, string> = {
   'writing': 'write-proposal',
+  'ready-to-delta': 'write-delta',
   'delta-writing': 'write-delta',
   'ready-to-merge': 'generate-merge-prompt',
   'merge-generated': 'apply-merge',
@@ -493,6 +494,8 @@ export interface NextNode {
   review_agent: string | null;
   pre_script: string | null;
   post_script: string | null;
+  // change-flow-redesign 切片6：切片循环阻塞在 code 工作节点时的「只做这一片」子提示（= slice_state.current）。
+  slice?: string;
 }
 
 /**

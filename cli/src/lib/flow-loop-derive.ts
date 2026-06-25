@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadFlow, findActivatedLoop, type Flow } from './flow.js';
+import { parseTaskSections, extractTaskSectionItems } from './proposal-lifecycle.js';
 import type { ModuleInfo } from '../commands/status.js';
 
 export interface LoopState {
@@ -28,6 +29,7 @@ export interface LoopIterRow {
   result?: 'pass' | 'fail';
   module?: string;
   timestamp?: string;
+  slice?: string; // change-flow-redesign：切片循环（until=code_slices_green）激活时记录本轮尝试的切片
 }
 
 /** 账本路径：launched = 提案目录、initial = logos/resources/verify/。 */
@@ -73,7 +75,18 @@ export function deriveLoopState(
 
   const rows = readLoopIters(loopLedgerPath(root, proposalDir), mod.id);
   const iteration = rows.length;
-  const converged = iteration > 0 && rows[rows.length - 1].result === 'pass';
+  const testsGreen = iteration > 0 && rows[rows.length - 1].result === 'pass';
+  // change-flow-redesign 切片4：until==code_slices_green 时收敛 = section_complete:code ∧ tests_green。
+  // 空 [code]（无 section 或 total==0）→ 退化为纯 tests_green（converged 仅看末行 pass），绝不死锁。
+  // until==tests_green 行为完全不变。
+  let converged = testsGreen;
+  if (act.until === 'code_slices_green' && proposalDir) {
+    const code = readCodeSection(proposalDir);
+    const hasCodeSlices = code != null && code.total > 0;
+    converged = hasCodeSlices
+      ? testsGreen && code.checked === code.total // 复合收敛：切片全勾 ∧ 测试绿
+      : testsGreen;                                // 空 [code] → 退化为 tests_green
+  }
   const escalated = iteration >= act.max_iters && !converged;
   const state: LoopState = { subflow_id: act.subflow_id, until: act.until, max_iters: act.max_iters, iteration, converged, escalated };
   // S29：仅当 resolved loop 显式带 exhausted_gate（来自 overlay set-loop）时才输出 exhausted_skippable；
@@ -81,6 +94,70 @@ export function deriveLoopState(
   const eg = resolved.subflows.find(s => s.id === act.subflow_id)?.loop?.exhausted_gate;
   if (eg != null) state.exhausted_skippable = eg.skippable ?? false;
   return state;
+}
+
+/**
+ * 读提案 tasks.md 的 [code] section，判 section_complete（legacy 语义）：
+ * 无 [code] section 或 total==0 → 视为完成（退化路径，由调用方决定如何退化）；
+ * total>0 时 checked===total 才完成。
+ */
+function readCodeSection(proposalDir: string): { total: number; checked: number } | null {
+  const tasksPath = join(proposalDir, 'tasks.md');
+  if (!existsSync(tasksPath)) return null;
+  const sections = parseTaskSections(readFileSync(tasksPath, 'utf-8'));
+  return sections?.['code'] ?? null;
+}
+
+/** 代码切片循环状态（spec/cli-json-output.md §3.10(2)）。仅切片循环激活时由调用方输出。 */
+export interface SliceState {
+  total: number;
+  done: number;
+  current?: string;
+  remaining: number;
+}
+
+/**
+ * 派生切片状态：读提案 tasks.md 的 [code] section。
+ * - total = 切片数（[code] 行总数）
+ * - done  = 已勾选切片数
+ * - current = 第一个未勾 [code] 行的标题文本（全勾时省略）
+ * - remaining = total - done
+ * 仅在切片循环激活（until=code_slices_green）时由调用方调用并挂载。
+ */
+export function deriveSliceState(proposalDir: string, tasksContent?: string): SliceState {
+  let content = tasksContent;
+  if (content === undefined) {
+    const tasksPath = join(proposalDir, 'tasks.md');
+    content = existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '';
+  }
+  const items = extractTaskSectionItems(content, 'code');
+  const total = items.length;
+  const done = items.filter(i => i.checked).length;
+  const current = items.find(i => !i.checked)?.text;
+  return { total, done, remaining: total - done, ...(current != null ? { current } : {}) };
+}
+
+/**
+ * 切片循环激活时派生 slice_state，否则 null（与 deriveLoopState 同构的激活/归属门禁，保 golden）。
+ * 激活条件：resolved 有激活 loop（max_iters>1）且 `until==='code_slices_green'`，
+ * 且非「initial 多模块」、launched 必须有活跃提案目录。
+ */
+export function deriveSliceStateIfActive(
+  root: string,
+  mod: ModuleInfo,
+  proposalDir: string | null,
+  isMultiModule: boolean = false,
+  flow?: Flow,
+): SliceState | null {
+  const resolved = flow ?? loadFlow(root, { lifecycle: mod.lifecycle, resolved: true }).flow;
+  const act = findActivatedLoop(resolved);
+  if (!act || act.until !== 'code_slices_green') return null;
+  // 与 deriveLoopState 同构的归属门禁
+  if (mod.lifecycle === 'initial' && isMultiModule) return null;
+  if (mod.lifecycle === 'launched' && !proposalDir) return null;
+  // 切片状态读提案目录 tasks.md 的 [code]；initial（无提案目录）→ 读项目级无意义，省略
+  if (!proposalDir) return null;
+  return deriveSliceState(proposalDir);
 }
 
 /** loop 退出 gate id（达上限 human gate）。 */

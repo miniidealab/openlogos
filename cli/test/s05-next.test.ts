@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
 import { next } from '../src/commands/next.js';
 import { detectProposalStep } from '../src/commands/status.js';
 
@@ -235,6 +235,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     next();
 
@@ -421,6 +422,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     expect(detectProposalStep(proposalDir)).toBe('verify-passed');
 
@@ -444,6 +446,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
   it('UT-S05-10f: VERIFY_PASS + [deploy] section → ready-to-deploy, suggests human-authorized deployment', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
@@ -462,6 +465,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
   it('UT-S05-10g: DEPLOY_DONE + smoke cases → ready-to-smoke, suggests openlogos smoke', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
@@ -482,6 +486,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
   it('UT-S05-10h: SMOKE_PASS → smoke-passed, suggests archive', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
     writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
     writeFileSync(join(proposalDir, 'tasks.md'), [
@@ -586,6 +591,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     writeFileSync(join(proposalDir, 'proposal.md'), NO_DEPLOY_PROPOSAL);
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('verify-passed');
 
@@ -606,6 +612,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-deploy');
 
@@ -624,6 +631,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
     mkdirSync(join(root, 'logos/resources/test/smoke'), { recursive: true });
     writeFileSync(join(root, 'logos/resources/test/smoke/core-smoke-test-cases.md'), '| SMOKE-core-01 | health |');
@@ -646,6 +654,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('ready-to-smoke');
@@ -666,6 +675,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('deploy-done');
@@ -729,6 +739,7 @@ describe('S05 Scenario Tests — next --format json', () => {
     writeFileSync(join(proposalDir, 'proposal.md'), NO_DEPLOY_PROPOSAL);
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     next();
     const out = con.logs.join('\n');
@@ -753,6 +764,7 @@ describe('S05 Scenario Tests — next --format json', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     next();
     const out = con.logs.join('\n');
@@ -775,6 +787,7 @@ describe('S05 Scenario Tests — next --format json', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     next();
     const out = con.logs.join('\n');
@@ -800,6 +813,7 @@ describe('S05 Scenario Tests — next --format json', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     next('json');
     const parsed = JSON.parse(con.logs[0]);
@@ -825,6 +839,7 @@ describe('S05 Scenario Tests — next --format json', () => {
       '- [ ] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     next('json');
     const parsed = JSON.parse(con.logs[0]);
@@ -850,6 +865,7 @@ describe('S05 Scenario Tests — next --format json', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
 
     next('json');

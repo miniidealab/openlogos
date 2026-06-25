@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
 import { extractSmokeDefinedIds, smoke } from '../src/commands/smoke.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
@@ -43,6 +43,7 @@ describe('S19 Unit Tests — smoke cases', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: false })).toBe('ready-to-deploy');
 
@@ -201,6 +202,7 @@ describe('S19 Scenario Tests — smoke command', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
     writeSmokeCases();
 
@@ -241,6 +243,7 @@ describe('S19 Scenario Tests — smoke command', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     const step = detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true });
     expect(step).toBe('verify-passed');
@@ -281,6 +284,7 @@ describe('S19 Scenario Tests — smoke command', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
 
     expect(detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true })).toBe('deploy-done');
@@ -319,6 +323,7 @@ describe('S19 Scenario Tests — smoke command', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
 
     const step = detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true });
     expect(step).toBe('verify-passed');
@@ -358,6 +363,7 @@ describe('S19 Scenario Tests — smoke command', () => {
       '- [x] 发布 npm 包',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
     writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
     writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
     mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });

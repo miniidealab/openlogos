@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
 
 // ESM 下无法 spyOn node:child_process 的命名导出；改用 vi.mock 委托工厂 + 开关，
 // 默认转发真实 spawn（真实 shell 测试不受影响），置位 __FORCE_SPAWN_ERROR__ 时模拟 'error' 事件。
@@ -360,6 +360,9 @@ describe('S26 — launched smoke/deploy 区域 cmd overlay 同源派生', () => 
     writeFileSync(join(proposalDir, 'proposal.md'), proposal);
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
     writeFileSync(join(proposalDir, 'VERIFY_PASS'), 'x');
+    // change-flow-redesign：builtin launched 默认激活切片循环；VERIFY_PASS 须配 pass 账本使 loop 收敛，
+    // 否则前沿被回拉到 ready-to-verify，smoke-check 不可达。
+    writeLoopPass(proposalDir);
     // overlay：在 smoke 前插入 cmd 节点——其可达性取决于 smoke_required（= 取决于 deriveActiveOverlay 是否带上模块级默认值）
     mkdirSync(join(root, 'logos', 'flow'), { recursive: true });
     writeFileSync(join(root, 'logos', 'flow', 'launched.yaml'),

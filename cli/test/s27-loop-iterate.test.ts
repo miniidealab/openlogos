@@ -144,7 +144,7 @@ describe('S27 — loop 派生（next/status）', () => {
     writeOverlay(root, 'launched', setLoop('launched', 3));
     writeLedger(join(dir, 'LOOP_ITERS'), [row(1, 'fail')]);
     const data = await runNextJson(root, true);
-    expect(data.gate_id).toBe('propose-exit');
+    expect(data.gate_id).toBe('spec-exit'); // change-flow-redesign：ready-to-merge 归属 spec 出口
     expect(data.skippable).toBe(true);
     expect(data.gate_auto_passed).toBe(true); // 未被 blockedByLoop 拦截
   });
@@ -276,7 +276,7 @@ describe('S27 — module 过滤 / 多模块 / 挂载', () => {
     writeOverlay(root, 'launched', setLoop('launched', 2));
     writeLedger(join(dir, 'LOOP_ITERS'), [row(1, 'fail'), row(2, 'fail')]);
     const data = await runNextJson(root);
-    const VALID = ['writing', 'delta-writing', 'ready-to-merge', 'merge-generated', 'coding',
+    const VALID = ['writing', 'ready-to-delta', 'delta-writing', 'ready-to-merge', 'merge-generated', 'coding',
       'ready-to-verify', 'verify-passed', 'verify-failed', 'ready-to-deploy', 'deploy-done',
       'ready-to-smoke', 'smoke-passed', 'smoke-failed'];
     expect(VALID).toContain(data.proposal_step);
@@ -480,6 +480,40 @@ describe('S27 — 只读 / 统一引擎 / golden', () => {
     const root = tempProject();
     const s = runStatusJson(root);
     expect(s).not.toHaveProperty('loop_state');
+    const n = await runNextJson(root);
+    expect(n).not.toHaveProperty('loop_state');
+  });
+});
+
+// ── 七、change-flow-redesign 增量：launched 默认激活 code_slices_green、initial 不默认激活 ──
+describe('S27 — change-flow-redesign 增量（until 枚举放开 / launched 默认激活）', () => {
+  it('UT-S27-21: until=code_slices_green 合法、loader 接受（resolved loop.until == code_slices_green）', () => {
+    // 合法性双证：(a) builtin launched 默认即用 code_slices_green；(b) overlay set-loop 显式写 until 也不报错。
+    const builtin = loadFlow(tempProject(), { lifecycle: 'launched', resolved: true }).flow;
+    const builtinLoop = builtin.subflows.find(s => s.id === 'implement')?.loop;
+    expect(builtinLoop?.until).toBe('code_slices_green');
+
+    const root = tempProject();
+    writeOverlay(root, 'initial', setLoop('initial', 3, ', until: "code_slices_green"'));
+    const resolved = loadFlow(root, { lifecycle: 'initial', resolved: true }).flow; // 不抛 FLOW_SCHEMA_INVALID
+    expect(resolved.subflows.find(s => s.id === 'implement')?.loop?.until).toBe('code_slices_green');
+  });
+
+  it('UT-S27-22: builtin launched implement 默认激活（无 overlay）→ modules[].loop_state 存在', () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    setupLaunchedProposal(root); // 无 logos/flow overlay
+    const data = runStatusJson(root);
+    // 无需 set-loop：builtin launched implement loop 默认 until=code_slices_green、max_iters=30
+    expect(data.modules[0].loop_state).toMatchObject({ subflow_id: 'implement', until: 'code_slices_green', max_iters: 30 });
+  });
+
+  it('UT-S27-23: initial.yaml implement 仍 max_iters:1、不默认激活（无 loop_state）', async () => {
+    const root = tempProject();
+    setSingleModule(root, 'initial'); // initial 单模块、无 overlay
+    // builtin initial implement loop max_iters:1 → 不激活 → 不输出 loop_state（行为与重拍前一致）
+    const s = runStatusJson(root);
+    expect(s.modules[0].loop_state).toBeUndefined();
     const n = await runNextJson(root);
     expect(n).not.toHaveProperty('loop_state');
   });

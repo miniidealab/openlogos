@@ -13,6 +13,8 @@ import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { next } from '../src/commands/next.js';
 import { gateForProposalStep } from '../src/lib/flow-derive.js';
+import { loadBuiltinFlow, findActivatedLoop } from '../src/lib/flow.js';
+import { loopExhaustedGateId } from '../src/lib/flow-loop-derive.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -28,11 +30,13 @@ function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): st
   ].join('\n');
 }
 const DELTA_DONE = '# 任务\n\n## [delta] 规格变更\n- [x] 产出 delta';
+const DELTA_UNSTARTED = '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta'; // delta 未启动（无勾、无 delta 文件）→ ready-to-delta
 const DEPLOY_EMPTY_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [deploy] 部署\n';
 const DEPLOY_DONE_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [deploy] 部署\n- [x] 部署';
 
 interface StepFixture { proposal: string; tasks: string; markers?: string[]; deploy?: boolean; smoke?: boolean; }
 const FIXTURES: Record<string, StepFixture> = {
+  'ready-to-delta': { proposal: filled(), tasks: DELTA_UNSTARTED },
   'ready-to-merge': { proposal: filled(), tasks: DELTA_DONE },
   'ready-to-deploy': { proposal: filled('是', '否'), tasks: DEPLOY_EMPTY_TASKS, markers: ['VERIFY_PASS'], deploy: true },
   'ready-to-smoke': { proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE'], deploy: true, smoke: true },
@@ -59,6 +63,13 @@ function setup(step: keyof typeof FIXTURES, slug = 'feat'): Ctx {
   writeFileSync(join(dir, 'proposal.md'), fx.proposal);
   writeFileSync(join(dir, 'tasks.md'), fx.tasks);
   for (const mk of fx.markers ?? []) writeFileSync(join(dir, mk), '');
+  // change-flow-redesign：builtin launched implement 默认激活切片循环（code_slices_green）。
+  // VERIFY_PASS 态在真实流程中由 verify 同时写一行 pass 账本（空 [code] → 退化 tests_green 收敛）；
+  // 合成 fixture 须补这行账本，否则 loop 未收敛会把 ready-to-deploy/smoke 回拉到 ready-to-verify。
+  if ((fx.markers ?? []).includes('VERIFY_PASS')) {
+    writeFileSync(join(dir, 'LOOP_ITERS'),
+      JSON.stringify({ iter: 1, node: 'verify', result: 'pass', module: 'core', timestamp: '2026-06-20T00:00:00.000Z' }) + '\n');
+  }
 
   const restoreCwd = mockCwd(root);
   const con = captureConsole();
@@ -78,14 +89,30 @@ function auditLines(p: string): string[] {
 
 // ── 一、gate 助手 UT ──
 describe('S24 gate 助手（gateForProposalStep）', () => {
-  it('UT-S24-01: ready-to-merge → propose 出口 gate skippable:true', () => {
-    expect(gateForProposalStep('ready-to-merge')).toEqual({ gate_id: 'propose-exit', skippable: true });
+  it('UT-S24-01: ready-to-merge → spec 出口 gate skippable:true', () => {
+    // change-flow-redesign：propose→plan/spec/merge，ready-to-merge 归属 spec 出口
+    expect(gateForProposalStep('ready-to-merge')).toEqual({ gate_id: 'spec-exit', skippable: true });
   });
-  it('UT-S24-02: ready-to-deploy → deliver 入口 gate skippable:false', () => {
-    expect(gateForProposalStep('ready-to-deploy')).toEqual({ gate_id: 'deliver-entry', skippable: false });
+  it('UT-S24-02: ready-to-deploy → deliver 入口 gate skippable:true', () => {
+    // change-flow-redesign：deliver 入口门改 skippable:true（无人值守可放行，部署目标可能是测试环境）
+    expect(gateForProposalStep('ready-to-deploy')).toEqual({ gate_id: 'deliver-entry', skippable: true });
+  });
+  it('UT-S24-13: ready-to-delta → plan 出口 gate skippable:true', () => {
+    // change-flow-redesign 新增 plan 出口「批准方案」门
+    expect(gateForProposalStep('ready-to-delta')).toEqual({ gate_id: 'plan-exit', skippable: true });
   });
   it('UT-S24-03: ready-to-smoke 无对应 gate（不在 --auto 范围）', () => {
     expect(gateForProposalStep('ready-to-smoke')).toBeNull();
+  });
+  it('UT-S24-14: 达上限退出门 loop-exhausted → skippable:false（默认，无 exhausted_gate 覆盖）', () => {
+    // builtin launched implement loop 默认无 exhausted_gate 覆盖 → exhausted_skippable 省略（消费方按 false 处理）。
+    // gate_id 由 loopExhaustedGateId(subflow_id) 派生；默认达上限门固定不可跳（skippable:false）。
+    const flow = loadBuiltinFlow('launched');
+    const act = findActivatedLoop(flow);
+    expect(act).not.toBeNull();
+    const gateId = loopExhaustedGateId(act!.subflow_id);
+    const egSkippable = flow.subflows.find(s => s.id === act!.subflow_id)?.loop?.exhausted_gate?.skippable ?? false;
+    expect({ gate_id: gateId, skippable: egSkippable }).toEqual({ gate_id: 'gate:implement:loop-exhausted', skippable: false });
   });
 });
 
@@ -105,13 +132,15 @@ describe('S24 next --auto 行为', () => {
     expect(auditLines(ctx.auditPath)).toHaveLength(1);
   });
 
-  it('UT-S24-06: ready-to-deploy + --auto 保持停顿不写审计', () => {
+  it('UT-S24-06: ready-to-deploy + --auto 放行 deliver 入口门并写审计', () => {
+    // change-flow-redesign：deliver-entry 改 skippable:true → --auto 放行并追加审计
     const ctx = setup('ready-to-deploy');
     next('json', undefined, true);
     const d = jsonData(ctx.con);
-    expect(d.gate_auto_passed).toBe(false);
-    expect(d.skippable).toBe(false);
-    expect(existsSync(ctx.auditPath)).toBe(false);
+    expect(d.gate_id).toBe('deliver-entry');
+    expect(d.skippable).toBe(true);
+    expect(d.gate_auto_passed).toBe(true);
+    expect(auditLines(ctx.auditPath)).toHaveLength(1);
   });
 
   it('UT-S24-07: 重复 --auto 追加多行（不去重）', () => {
@@ -125,7 +154,7 @@ describe('S24 next --auto 行为', () => {
     const ctx = setup('ready-to-merge');
     // 预置审计文件后，默认 next 仍应停在 ready-to-merge，且不含 auto 字段
     writeFileSync(ctx.auditPath,
-      JSON.stringify({ gate_id: 'propose-exit', proposal_step: 'ready-to-merge', timestamp: '2026-06-20T00:00:00.000Z' }) + '\n');
+      JSON.stringify({ gate_id: 'spec-exit', proposal_step: 'ready-to-merge', timestamp: '2026-06-20T00:00:00.000Z' }) + '\n');
     next('json', undefined, false);
     const d = jsonData(ctx.con);
     expect(d.proposal_step).toBe('ready-to-merge');
@@ -149,7 +178,7 @@ describe('S24 next --auto 行为', () => {
     next('json', undefined, true);
     const rec = JSON.parse(auditLines(ctx.auditPath)[0]);
     expect(Object.keys(rec).sort()).toEqual(['gate_id', 'proposal_step', 'timestamp']);
-    expect(rec.gate_id).toBe('propose-exit');
+    expect(rec.gate_id).toBe('spec-exit');
     expect(rec.proposal_step).toBe('ready-to-merge');
     expect(typeof rec.timestamp).toBe('string');
   });
@@ -174,13 +203,47 @@ describe('S24 next --auto 行为', () => {
     const ctx = setup('ready-to-merge');
     next('json', undefined, true);
     const autoData = jsonData(ctx.con);
-    expect(autoData).toMatchObject({ auto: true, gate_id: 'propose-exit', skippable: true, gate_auto_passed: true });
+    expect(autoData).toMatchObject({ auto: true, gate_id: 'spec-exit', skippable: true, gate_auto_passed: true });
 
     ctx.con.logs.length = 0;
     next('json', undefined, false);
     const def = jsonData(ctx.con);
     for (const k of ['auto', 'gate_id', 'skippable', 'gate_auto_passed']) expect(def[k]).toBeUndefined();
     expect(def.proposal_step).toBe('ready-to-merge');
+  });
+
+  it('UT-S24-15: ready-to-delta + --auto 放行仅审计、proposal_step 不因审计前移', () => {
+    const ctx = setup('ready-to-delta');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    // plan 出口门放行（plan-exit skippable:true）+ 追加一行审计
+    expect(d.gate_id).toBe('plan-exit');
+    expect(d.skippable).toBe(true);
+    expect(d.gate_auto_passed).toBe(true);
+    const lines = auditLines(ctx.auditPath);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({ gate_id: 'plan-exit', proposal_step: 'ready-to-delta' });
+    // 审计不推进状态：proposal_step 仍为 ready-to-delta（仅首个 delta 产出后才进入 delta-writing）
+    expect(d.proposal_step).toBe('ready-to-delta');
+    // 即便已写过一行审计，再次默认 next 的派生仍钉在 ready-to-delta（审计不前移）
+    ctx.con.logs.length = 0;
+    next('json', undefined, false);
+    expect(jsonData(ctx.con).proposal_step).toBe('ready-to-delta');
+  });
+
+  it('UT-S24-16: ready-to-deploy + --auto 放行部署门，gate_auto_passed 来自本次响应而非历史审计行', () => {
+    const ctx = setup('ready-to-deploy');
+    // 预置一条历史审计行（伪造），证明放行依据是本次派生而非读历史文件
+    writeFileSync(ctx.auditPath,
+      JSON.stringify({ gate_id: 'deliver-entry', proposal_step: 'ready-to-deploy', timestamp: '2000-01-01T00:00:00.000Z' }) + '\n');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.gate_id).toBe('deliver-entry');
+    expect(d.skippable).toBe(true);
+    expect(d.gate_auto_passed).toBe(true);
+    // 本次放行真实追加一行（历史 1 行 + 本次 1 行 = 2 行），证明 gate_auto_passed 由本次响应产生
+    expect(auditLines(ctx.auditPath)).toHaveLength(2);
+    expect(JSON.parse(auditLines(ctx.auditPath)[1])).toMatchObject({ gate_id: 'deliver-entry', proposal_step: 'ready-to-deploy' });
   });
 });
 
@@ -190,15 +253,33 @@ describe('S24 场景测试', () => {
     const ctx = setup('ready-to-merge');
     next('text', undefined, true);
     const out = ctx.con.logs.join('\n');
-    expect(out).toContain('propose-exit');
+    expect(out).toContain('spec-exit');
     expect(auditLines(ctx.auditPath)).toHaveLength(1);
   });
 
-  it('ST-S24-02: ready-to-deploy 在 --auto 下仍卡住（不写审计）', () => {
+  it('ST-S24-02: ready-to-deploy 在 --auto 下放行 deliver 入口门并留痕', () => {
+    // change-flow-redesign：deliver-entry skippable:true → --auto 放行（部署目标可能是测试环境而非生产）
     const ctx = setup('ready-to-deploy');
     next('json', undefined, true);
-    expect(jsonData(ctx.con).gate_auto_passed).toBe(false);
-    expect(existsSync(ctx.auditPath)).toBe(false);
+    const d = jsonData(ctx.con);
+    expect(d.gate_id).toBe('deliver-entry');
+    expect(d.gate_auto_passed).toBe(true);
+    expect(auditLines(ctx.auditPath)).toHaveLength(1);
+  });
+
+  it('ST-S24-07: deliver 入口门在 --auto 下放行（部署可全自动），放行依据为本次 gate_auto_passed', () => {
+    // Step 1→5a：活跃提案 ready-to-deploy，deliver-entry skippable:true → --auto 放行部署下一步 + 追加审计。
+    const ctx = setup('ready-to-deploy');
+    next('text', undefined, true);
+    const out = ctx.con.logs.join('\n');
+    expect(out).toContain('deliver-entry');
+    expect(auditLines(ctx.auditPath)).toHaveLength(1);
+    // 放行依据为本次响应（gate_auto_passed=true），JSON 形态复核
+    ctx.con.logs.length = 0;
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.gate_auto_passed).toBe(true);
+    expect(d.gate_id).toBe('deliver-entry');
   });
 
   it('ST-S24-03: 默认 next 忽略 GATE_AUTO_PASSED 不越过 gate', () => {
@@ -234,7 +315,7 @@ describe('S24 场景测试', () => {
     next('json', undefined, true);
     for (const line of auditLines(ctx.auditPath)) {
       const rec = JSON.parse(line);
-      expect(rec.gate_id).toBe('propose-exit');
+      expect(rec.gate_id).toBe('spec-exit');
       expect(rec.proposal_step).toBe('ready-to-merge');
       expect(rec.timestamp).toBeTruthy();
     }

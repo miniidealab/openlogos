@@ -425,6 +425,8 @@ export function detectProposalStepViaFlow(
       return 'coding';
     }
     if (delta.total > 0 && delta.checked === delta.total) return 'ready-to-merge';
+    // change-flow-redesign：delta 尚未启动（无勾选、无 delta 文件）→ ready-to-delta（plan 出口驻留态）
+    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0) return 'ready-to-delta';
     return 'delta-writing';
   }
 
@@ -477,11 +479,14 @@ export interface GateInfo {
 }
 
 /**
- * proposal_step → 其所处的 launched subflow gate 的映射（最小 A 方案，引擎规则）。
- * 仅 launched 的两个人类停顿点：ready-to-merge（propose 出口）、ready-to-deploy（deliver 入口）。
+ * proposal_step → 其所处的 launched subflow gate 的映射（引擎规则）。
+ * change-flow-redesign 后三个可跳人类停顿点：ready-to-delta（plan 出口）、
+ * ready-to-merge（spec 出口，由原 propose 改）、ready-to-deploy（deliver 入口）。
+ * gate_id 由 gateForProposalStep 按 `<subflow.id>-<position>` 派生 → plan-exit / spec-exit / deliver-entry。
  */
 const STEP_TO_GATE_SUBFLOW: Record<string, string> = {
-  'ready-to-merge': 'propose',
+  'ready-to-delta': 'plan',
+  'ready-to-merge': 'spec',
   'ready-to-deploy': 'deliver',
 };
 

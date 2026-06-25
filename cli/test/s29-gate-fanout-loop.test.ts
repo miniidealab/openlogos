@@ -159,8 +159,9 @@ describe('S29-A — exhausted_gate.skippable overlay 覆盖 + loop_state.exhaust
     const data = await runNextJson(root);
     expect('exhausted_skippable' in data.modules[0].loop_state).toBe(false);
   });
-  it('UT-S29-08: 未激活 loop（builtin max_iters:1）→ loop_state 整体省略', async () => {
-    const root = tempProject(); setupLaunchedProposal(root); setSingleModule(root, 'launched');
+  it('UT-S29-08: 未激活 loop（builtin initial max_iters:1）→ loop_state 整体省略', async () => {
+    // change-flow-redesign：builtin launched 默认激活切片循环，故"未激活"只剩 builtin initial（无 loop）。
+    const root = tempProject(); setSingleModule(root, 'initial');
     const data = await runNextJson(root);
     expect(data.modules[0].loop_state).toBeUndefined();
   });
@@ -351,11 +352,13 @@ describe('S29-C — loop 内整组收敛 / 零漂移', () => {
     expect(Object.keys(data.modules[0].loop_state).sort()).toEqual(
       ['converged', 'escalated', 'iteration', 'max_iters', 'subflow_id', 'until'].sort());
   });
-  it('ST-S29-07: 无任何 overlay（builtin）→ loop_state 省略、flow show 节点无 coverage_threshold（零漂移）', async () => {
-    const root = tempProject(); setupLaunchedProposal(root); setSingleModule(root, 'launched');
+  it('ST-S29-07: 无任何 overlay（builtin initial）→ loop_state 省略、flow show 节点无 coverage_threshold（零漂移）', async () => {
+    // change-flow-redesign：builtin launched 默认激活切片循环 → launched 下 loop_state 常驻；
+    // "无 overlay → loop_state 省略"的零漂移只对 builtin initial（无 loop）成立。
+    const root = tempProject(); setSingleModule(root, 'initial');
     const data = await runNextJson(root);
     expect(data.modules[0].loop_state).toBeUndefined();
-    // resolved 无 overlay：任何节点都不含 coverage_threshold 键
+    // resolved 无 overlay：任何节点都不含 coverage_threshold 键（两生命周期均如此）
     for (const lc of ['initial', 'launched'] as const) {
       const flow = loadResolved(root, lc);
       for (const s of flow.subflows) for (const n of s.nodes) {

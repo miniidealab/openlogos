@@ -6,6 +6,7 @@ import type { ModuleInfo } from '../commands/status.js';
 
 export type ProposalStep =
   | 'writing'
+  | 'ready-to-delta'
   | 'delta-writing'
   | 'ready-to-merge'
   | 'merge-generated'
@@ -533,6 +534,10 @@ export function detectProposalStep(
     // 有 [delta] section：按 delta 勾选状态判断
     if (delta.total > 0 && delta.checked === delta.total) {
       return 'ready-to-merge';
+    }
+    // change-flow-redesign：delta 尚未启动（无勾选、无 delta 文件）→ ready-to-delta（plan 出口驻留态）
+    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0) {
+      return 'ready-to-delta';
     }
     return 'delta-writing';
   }
