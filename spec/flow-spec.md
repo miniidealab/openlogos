@@ -469,15 +469,16 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
 - **【R3·cmd 续推】**：`next` 先对当前 pending 的 cmd 节点/gate（**overlay-add 节点 或 builtin verify/deploy/smoke cmd gate**，S30）求值再续推（见 §12 第 7 条）。
   故 `next_node` 取**求值（cmdEval 回灌）后**的最终节点：`done_when:cmd` `exit 0` → 续推后的节点（**不**是已 done 的 cmd 节点/gate）；
   `fail_when:cmd` `exit 0` → 该节点/gate（求值后 `failed`）；cmd 非 0/超时 → 该节点/gate（`active`/停门前）；budget=1 遇第二个 cmd → 第二个 pending cmd 节点/gate。builtin gate id 取 `cmd_gate.node_id`。
-- **【R4·auto 放行】**：`next --auto` 自动放行 gate（`gate_auto_passed`）时**不指向节点**（省略 `next_node`）——放行后宿主走
-  gate 的 command，下一节点待重新 `next` 派生。
+- **【R4·auto 放行】**：`next --auto` 自动放行 gate（`gate_auto_passed`）时，默认**不指向节点**（省略 `next_node`）——放行后宿主走
+  gate 的 command，下一节点待重新 `next` 派生。**窄例外：`plan-exit` 被 auto 消费时，CLI 同步写入 `PLAN_APPROVED` 并重新派生到
+  `write-delta` 前沿；本次响应必须输出 `next_node.id == "write-delta"`，供无人值守 driver 立即派发 `change-writer` 写 delta。**
 - **【R7·loop 阻塞】**：loop 未收敛、未达上限时，前沿虽钉在 `verify`，但本响应实际建议「修代码后重跑 verify」，故 `next_node`
   指向 loop subflow 的**工作节点**（overlay `current_node` 优先；否则 resolved flow 中 `id == "code"` 且未 `skipped` 的节点，
   **非 `verify`**——verify 是 CLI 驱动的度量节点）；`code` 缺失/被 overlay `skip` → 省略（仅 initial 等**合法 resolved flow**：
   launched 对 builtin `code` 的 `skip`/`reorder` 在派生入口已 `FLOW_SCHEMA_INVALID`，不进入此省略）；达上限（`escalated`，
   loop-exhausted human gate）→ 省略（宿主读 `loop_state.escalated`）。`next_node` 与 `loop_state` 互补。
 - **【R5·命令级建议】**：当前建议不指向某 flow node（`all_done` / 无 active proposal → `openlogos change <slug>` / 补 baseline /
-  `openlogos launch` 等命令级提示）→ 省略 `next_node`。
+  `openlogos launch` 等命令级提示）→ 省略 `next_node`。`plan-exit` auto 消费后已变成真实 `write-delta` 节点，不属于本省略分支。
 
 **范围**：本能力仅 `next` 暴露；`status`/`watch`/`flow show` 不变。
 
@@ -496,10 +497,15 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
 **(2) `ready-to-delta` 驻留态与 `plan` 门派生（launched 前段重构）**
 
 - launched 前段子流程由 `propose{...}` 重构为 `plan{write-proposal, write-tasks}` + `spec{write-delta}` + `merge{...}`（`spec`/`merge` 带 `when: delta_required`）。
-- **新增 `proposal_step` 值 `ready-to-delta`**：`proposal.md` 与 `tasks.md` 均已脱模板、但尚未产出任何 delta（`[delta]` 未开始）时的驻留态，对应 `plan` 出口 human 门「批准方案」。检测依据 = "proposal/tasks 已填 且 delta 未启动"，**不依赖新增 marker**；首个 delta 产出后自然前移到 `delta-writing`。
+- **新增 `proposal_step` 值 `ready-to-delta`**：`proposal.md` 与 `tasks.md` 均已脱模板、但尚未产出任何 delta（`[delta]` 未开始）且不存在 `PLAN_APPROVED` marker 时的驻留态，对应 `plan` 出口 human 门「批准方案」。
+  - 检测依据 = "proposal/tasks 已填 且 delta 未启动 且 `PLAN_APPROVED` 不存在"。
   - 说明：§12.2 中"`loop-exhausted` 不新增 `proposal_step` 枚举值"仅约束 loop 达上限的表达方式，**不妨碍**本提案前段为 plan 门显式新增 `ready-to-delta`（开发态主动扩展闭合枚举，影响面见提案「主动破例」）。
 - **gate 映射（`STEP_TO_GATE_SUBFLOW` 等价语义）**：`ready-to-delta` → `plan` 出口门（`gate_id = plan-exit`、`skippable:true`）；`ready-to-merge` → **`spec`** 出口门（由原 `propose` 出口改映射）；`ready-to-deploy` → `deliver` 入口门（**`skippable` 由 `false` 改为 `true`**，无人值守 `--auto` 可自动放行，见 §5.1 与 `spec/change-management.md` 部署确认策略）。
-- **plan 门 `--auto` 放行**：`next --auto` 在 `ready-to-delta` 自动放行 `plan-exit`，向 `GATE_AUTO_PASSED` 追加 `{gate_id:"plan-exit", proposal_step:"ready-to-delta", timestamp}`，**仅审计、不推进状态**（与 S24 一致；状态在首个 delta 产出时前移）。
+- **plan 门 `--auto` 放行 = 消费 gate**：`next --auto` 在 `ready-to-delta` 自动放行 `plan-exit` 时，必须同时执行两个持久化动作：
+  1. 向 `GATE_AUTO_PASSED` 追加 `{gate_id:"plan-exit", proposal_step:"ready-to-delta", timestamp}` 审计行；
+  2. 写入活跃提案目录的 `PLAN_APPROVED` marker（内容可为空，存在性为准）。
+- **`PLAN_APPROVED` 的派生语义**：存在 `PLAN_APPROVED` 且 `[delta]` section 尚未全部完成时，`proposal_step` 派生为 `delta-writing`，即使还没有任何 delta 文件或 `[delta]` 勾选。此时 `next` / `next --auto` 的前沿是 `spec.write-delta`，`next_node.id == "write-delta"`。
+- **审计与授权边界**：`GATE_AUTO_PASSED` 仍是审计日志，默认 `next` 与 `status` 不因历史审计行越过 gate；状态推进只认 `PLAN_APPROVED` 或实际 delta 产出。重复 `next --auto` 不应在同一个 `plan-exit` 固定点追加多条审计，因为第一次放行后前沿已经离开 `ready-to-delta`。
 
 ## 13. M1 / M2 边界总表
 
