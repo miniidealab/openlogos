@@ -1,13 +1,15 @@
 # 内置 flow 模板：launched（变更生命周期流程）
-# 忠实翻译现有 ProposalStep 状态机（writing → ... → archived），行为不变（M1）。
+# change-flow-redesign：前段 propose 拆为 plan/spec/merge 三段；deliver 门改 skippable:true；
+# implement loop 默认激活切片循环（until: code_slices_green, max_iters: 30）。
 # 这是产品唯一源头；项目实例 logos/flow/launched.yaml 可 extends: builtin:launched 后只写差异。
+# 注：YAML 模板无 md 章节，本 delta 按整文件替换合并。
 version: 1
 flow: launched
 
 subflows:
-  # ── 提案：写提案 + 写 delta（合并前人类/评审确认）──────────
-  - id: propose
-    name: 提案
+  # ── 方案：写提案 + 划分 tasks（写 delta 前批准方案）──────────
+  - id: plan
+    name: 方案
     nodes:
       - id: write-proposal
         name: 编写提案
@@ -15,36 +17,45 @@ subflows:
         working_agent: null
         review_agent: null
         produces: proposal.md
-        done_when: proposal_package_filled    # proposal.md + tasks.md 均脱模板（对应离开 writing）
+        done_when: proposal_filled            # proposal.md 脱模板
 
+      - id: write-tasks
+        name: 划分 tasks
+        skill: change-writer
+        produces: tasks.md
+        done_when: tasks_filled               # tasks.md 脱模板（含 [code] 切片清单）
+    gate: { type: human, skippable: true }     # 批准方案（含切片划分）；对应 ready-to-delta 驻留态，gate_id=plan-exit
+
+  # ── 规格：写 delta（审 delta + 授权合并的关键门）────────────
+  - id: spec
+    name: 规格变更
+    when: delta_required                       # 纯代码提案（无 [delta]）整段跳过
+    nodes:
       - id: write-delta
         name: 编写 delta
         skill: change-writer
-        when: delta_required                  # 纯代码提案（无 [delta]）跳过
         produces: deltas/
-        done_when: section_complete:delta     # 对应 delta-writing → ready-to-merge
-    gate: { type: human, skippable: true }     # 合并前评审（change-reviewer 介入点）
+        done_when: section_complete:delta      # 对应 delta-writing → ready-to-merge
+    gate: { type: human, skippable: true }     # 审 delta + 授权合并（关键门，change-reviewer 介入点）
 
   # ── 合并：生成 MERGE_PROMPT 并应用 delta（纯代码提案整段跳过）──
   - id: merge
     name: 合并
-    when: delta_required                       # 无 [delta] section 时整个 subflow 跳过
+    when: delta_required
     nodes:
       - id: generate-merge-prompt
         name: 生成合并指令
         skill: merge-executor
         produces: null
-        # 兼容现状 fallback：MERGE_PROMPT_GENERATED 或 MERGE_PROMPT.md
         done_when: any_present:[MERGE_PROMPT_GENERATED, MERGE_PROMPT.md]
       - id: apply-merge
         name: 应用合并
         skill: merge-executor
         produces: null
-        # 兼容现状 fallback：SPEC_MERGED 或旧 MERGED marker
         done_when: any_present:[SPEC_MERGED, MERGED]
     gate: { type: none }
 
-  # ── 实现：code + verify（M2 将变 loop，收敛=测试绿）─────────
+  # ── 实现：code + verify（默认激活切片循环，收敛=全部切片完成且测试绿）──
   - id: implement
     name: 实现
     nodes:
@@ -55,14 +66,14 @@ subflows:
         review_agent: null
         produces: null
         done_when: section_complete:code       # 对应 coding → ready-to-verify
-
       - id: verify
         name: 验收
         skill: null                            # openlogos verify 驱动
         produces: null
         done_when: marker:VERIFY_PASS
         fail_when: marker:VERIFY_FAIL          # 对应 verify-failed
-    loop: { until: tests_green, max_iters: 1 }  # until 为 M2 预留，M1 按退化环忽略
+    # 默认激活切片循环：收敛 = section_complete:code ∧ tests_green；max_iters 达上限升级 loop-exhausted gate（skippable:false）
+    loop: { until: code_slices_green, max_iters: 30 }
     gate: { type: none }
 
   # ── 交付：deploy + smoke ───────────────────────────────────
@@ -77,7 +88,6 @@ subflows:
         when: deployment_required
         produces: null
         done_when: marker:DEPLOY_DONE          # 对应 ready-to-deploy → deploy-done
-
       - id: smoke
         name: 冒烟
         skill: null                            # openlogos smoke 驱动
@@ -85,8 +95,9 @@ subflows:
         produces: null
         done_when: marker:SMOKE_PASS           # 对应 ready-to-smoke → smoke-passed
         fail_when: marker:SMOKE_FAIL           # 对应 smoke-failed
-    # entry gate：在 deploy 之前确认（对应 ready-to-deploy 人类检查点）；默认不允许无人值守
-    gate: { type: human, position: entry, skippable: false }
+    # entry gate：部署前确认。skippable:true → 无人值守 --auto 可自动放行并写 GATE_AUTO_PASSED
+    # （部署目标可能是测试环境而非生产）；默认/手动模式仍停下等人确认。
+    gate: { type: human, position: entry, skippable: true }
 
   # ── 收尾：归档 ─────────────────────────────────────────────
   - id: close

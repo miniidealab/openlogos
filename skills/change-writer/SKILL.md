@@ -175,6 +175,28 @@
 - [ ] 更新对应测试
 ```
 
+### Step 5 补充：[code] 良构切片（change-flow-redesign）
+
+> 自 change-flow-redesign 起，launched `implement` 默认以**切片循环**推进（见场景 S31）：`tasks.md` 的 `[code]` section **每个未勾行就是循环逐片实现的一个切片**。切片划分质量直接决定循环成败，故生成 `[code]` 时必须产出"良构切片"。
+
+生成 `[code]` section 时遵守：
+
+1. **每条 = 一个自闭环切片**：单条切片应能独立实现并通过其相关测试（业务代码 + 该片 UT/ST + reporter），不依赖同批后续切片。
+2. **有序、无前向依赖**：切片按从上到下串行实现（v1 不建模 DAG）；有强依赖时由人/AI 在划分阶段排好序，被依赖的切片在前。
+3. **标注覆盖的用例 ID**：每条切片末尾标注其覆盖的 `UT-Sxx-..` / `ST-Sxx-..`（与 `logos/resources/test/*-test-cases.md` 对齐），与既有 Step 5 规则一致。
+   - 若测试用例 delta 尚未合并、ID 未定，可先写暂定 ID 段，并在测试 delta 合并后、进入实现前回填准确。
+4. **粒度适中**：一个场景或一个清晰子模块是合适粒度；过大单片易失败，过碎则零散。
+5. **空 `[code]`**：纯 docs/delta 提案可无 `[code]` section——此时切片循环退化为 `tests_green`，不影响。
+
+示例：
+
+```markdown
+## [code] 代码实现
+- [ ] 切片1：数据层 schema + 迁移（覆盖 UT-S01-01..05）
+- [ ] 切片2：API 编排 handler（覆盖 ST-S01-01..03）
+- [ ] 切片3：前端面板渲染（覆盖 UT-S02-10..18）
+```
+
 ### Step 6: 产出 Delta 文件
 
 **触发时机**：tasks.md 填写完成、用户确认提案后，按 `[delta]` section 的任务清单逐项产出 delta 文件。
@@ -241,6 +263,13 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 - 每完成一个 delta 文件，立即将 `tasks.md` 中对应条目从 `[ ]` 更新为 `[x]`
 - **禁止直接修改 `logos/resources/` 下的主文档**——所有规格变更必须通过 delta 文件，由 `openlogos merge` 统一合并
 - 全部 delta 产出完成后，提醒用户明确授权运行 `openlogos merge <slug>`
+
+### Step 6 补充：plan 门与 delta 时机（change-flow-redesign）
+
+change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `spec{写delta}` → `merge`，并在 `plan` 出口新增「批准方案」人类门（对应 `proposal_step: ready-to-delta`、gate_id `plan-exit`、`skippable:true`）。
+
+- Step 6「产出 Delta」的触发时机 = **proposal.md + tasks.md 均脱模板、且用户在 plan 门确认方案（含 `[code]` 切片划分）之后**。这与既有"等待用户确认提案内容后才开始产出 delta"一致，只是该确认点现在是流程中显式的 `ready-to-delta` 驻留态。
+- 无人值守 `openlogos next --auto` 下，plan 门可被自动放行（仅写 `GATE_AUTO_PASSED` 审计、不推进状态）；手动模式下停在 `ready-to-delta` 等人确认。
 
 ### Step 7: 引导后续操作（链式驱动）
 

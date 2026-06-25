@@ -140,6 +140,8 @@ Delta 文件的目录结构映射主文档目录：
 
 > **核心原则**：`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 是人类确认点。AI 可提醒、解释、准备命令；未经用户明确授权不得执行。用户以明确请求或 slash command 授权时，AI 可以代为执行。不得在“顺手完成流程”“按流程走完”等隐式场景中自动触发。
 >
+> **无人值守 skip-gate 例外（统一模型）**：launched flow 中所有 `skippable:true` 的人类门——`plan` 出口（`plan-exit`，批准方案）、`spec` 出口（`spec-exit`，审 delta + 授权合并）、`deliver` 入口（`deliver-entry`，部署执行）——在无人值守 `openlogos next --auto` 模式下均可被自动放行：**用户选择 `--auto` 即构成对这些可跳门的授权**，每次放行向 `GATE_AUTO_PASSED` 追加审计行；放行依据是**本次 `--auto` 响应的 `gate_auto_passed=true`**（live 决策），`GATE_AUTO_PASSED` 为 append-only 审计、**历史审计行不构成对后续动作的授权**。**默认/手动模式（无 `--auto`）下，merge / 部署执行仍须人类明确授权**（部署目标可能是测试环境而非生产，故纳入可跳门）。`gate:implement:loop-exhausted`（默认 `skippable:false`）、以及 `verify` / `smoke` / `archive` / `git push`（非 skip-gate flow 门，由 CLI / 人类驱动）**不在** `--auto` 自动放行范围。
+>
 > **规格驱动代码**：代码实现必须在规格合并进主文档之后才能开始，不允许基于 delta 草稿直接写代码。
 
 ```
@@ -182,9 +184,10 @@ Delta 文件的目录结构映射主文档目录：
    └── 验收通过（PASS）→ 继续步骤 9
    └── 验收失败（FAIL）→ 修复代码后重新运行，不需要重走 merge 流程
 
-9. 部署执行（如需要）【人类确认点】
+9. 部署执行（如需要）【人类确认点；无人值守 --auto 下可经 deliver 门自动放行】
    └── 仅当 VERIFY_PASS 存在、提案级 `是否需要部署：是` 且 tasks.md 有 [deploy] section 时进入
-   └── 用户必须明确授权 AI 执行部署
+   └── 默认/手动模式：用户必须明确授权 AI 执行部署
+   └── 无人值守 --auto 模式：deliver 入口门 skippable:true，openlogos next --auto 自动放行该门，以本次响应 gate_auto_passed=true 为本次部署的放行依据（追加 GATE_AUTO_PASSED 审计行；历史审计行不构成后续授权），AI 据此执行本次部署
    └── AI 必须读取合并后的部署方案文档和 [deploy] section
    └── 部署完成后生成 logos/resources/verify/deployment-report.md
    └── 部署完成后写入 logos/changes/{slug}/DEPLOY_DONE
