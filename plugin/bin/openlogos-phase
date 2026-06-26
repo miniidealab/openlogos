@@ -122,6 +122,10 @@ fi
 LOCALE="en"
 LIFECYCLE="initial"
 PROJECT_NAME=""
+STATUS_JSON=""
+STATUS_LIFECYCLE=""
+STATUS_ACTIVE_CHANGE=""
+STATUS_PROPOSAL_STEP=""
 
 if command -v python3 &>/dev/null; then
   LOCALE=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
@@ -129,6 +133,22 @@ if command -v python3 &>/dev/null; then
 elif command -v node &>/dev/null; then
   LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
   PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
+fi
+
+if command -v openlogos &>/dev/null; then
+  STATUS_JSON=$(openlogos status --format json 2>/dev/null || echo "")
+fi
+
+if [ -n "$STATUS_JSON" ]; then
+  if command -v python3 &>/dev/null; then
+    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('lifecycle',''))" 2>/dev/null || echo "")
+    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; mods=data.get('modules') or []; print(active or next((m.get('active_change',{}).get('slug','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('slug')), ''))" 2>/dev/null || echo "")
+    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); step=data.get('proposal_step') or ''; mods=data.get('modules') or []; print(step or next((m.get('active_change',{}).get('proposal_step','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('proposal_step')), ''))" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};console.log(data.lifecycle||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.slug);console.log(data.active_change||mod?.active_change?.slug||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.proposal_step);console.log(data.proposal_step||mod?.active_change?.proposal_step||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+  fi
 fi
 
 # 从 logos-project.yaml 的 modules[].lifecycle 推导项目级 lifecycle
@@ -215,6 +235,10 @@ JSEOF
   echo "$_skip_result" | grep -q '\bapi\b'      && SKIP_API=true      || true
   echo "$_skip_result" | grep -q '\bdatabase\b' && SKIP_DATABASE=true  || true
   echo "$_skip_result" | grep -q '\bscenario\b' && SKIP_SCENARIO=true  || true
+fi
+
+if [ -n "$STATUS_LIFECYCLE" ]; then
+  LIFECYCLE="$STATUS_LIFECYCLE"
 fi
 
 P1="logos/resources/prd/1-product-requirements"
@@ -353,12 +377,53 @@ else
   LANG_POLICY="Language Policy: ALL output MUST be in English."
 fi
 
+change_management_message() {
+  local active="$1"
+  local step="${2:-}"
+  local base="Change Management: ACTIVE — guard file detected. Active change proposal: '$active'."
+  local confirm="openlogos merge, openlogos verify, openlogos smoke, openlogos archive, deployment, and git push are human confirmation points: AI must not execute them without explicit user authorization."
+
+  case "$step" in
+    writing)
+      echo "$base Current proposal step: writing. Allowed files: logos/changes/$active/proposal.md and logos/changes/$active/tasks.md. Do not write deltas or source code yet. $confirm"
+      ;;
+    ready-to-delta)
+      echo "$base Current proposal step: ready-to-delta. The plan is ready for approval; after approval or openlogos next --auto, proceed to delta-writing. Do not modify source code or logos/resources/** directly. $confirm"
+      ;;
+    delta-writing|implementing|in-progress)
+      echo "$base Current proposal step: delta-writing. Allowed files: logos/changes/$active/deltas/** and logos/changes/$active/tasks.md. Continue producing delta files and check off [delta] tasks; do not modify logos/resources/** or source code directly before merge/coding stages. $confirm"
+      ;;
+    ready-to-merge)
+      echo "$base Current proposal step: ready-to-merge. Stop writing deltas and ask the user to explicitly authorize: openlogos merge $active. $confirm"
+      ;;
+    merge-generated)
+      echo "$base Current proposal step: merge-generated. Follow logos/changes/$active/MERGE_PROMPT.md to merge specs, then write logos/changes/$active/SPEC_MERGED when done. $confirm"
+      ;;
+    coding|ready-to-verify|verify-failed)
+      echo "$base Current proposal step: $step. Implement only the [code] section scope from logos/changes/$active/tasks.md, including source code, tests, reporter, and required snapshots; update tasks.md when complete. $confirm"
+      ;;
+    verify-passed|deploy-done|smoke-passed)
+      echo "$base Current proposal step: $step. Verification/delivery is complete for this step; ask the user to explicitly authorize openlogos archive $active when appropriate. $confirm"
+      ;;
+    ready-to-deploy)
+      echo "$base Current proposal step: ready-to-deploy. Deployment requires explicit human authorization before any deployment action. $confirm"
+      ;;
+    ready-to-smoke|smoke-failed)
+      echo "$base Current proposal step: $step. Smoke requires explicit human authorization before running openlogos smoke. $confirm"
+      ;;
+    *)
+      echo "$base Current proposal step is unknown. Run openlogos status or openlogos next to confirm the current proposal step before modifying files; keep changes within the active proposal scope. $confirm"
+      ;;
+  esac
+}
+
 # Detect guard file for active lifecycle
 GUARD_FILE="logos/.openlogos-guard"
 GUARD_STATUS=""
-ACTIVE_CHANGE=""
+ACTIVE_CHANGE="$STATUS_ACTIVE_CHANGE"
+PROPOSAL_STEP="$STATUS_PROPOSAL_STEP"
 
-if [ "$LIFECYCLE" = "launched" ] && [ -f "$GUARD_FILE" ]; then
+if [ "$LIFECYCLE" = "launched" ] && [ -z "$ACTIVE_CHANGE" ] && [ -f "$GUARD_FILE" ]; then
   if command -v python3 &>/dev/null; then
     ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
   elif command -v node &>/dev/null; then
@@ -370,7 +435,7 @@ fi
 if [ "$LIFECYCLE" = "launched" ]; then
   if [ -n "$ACTIVE_CHANGE" ]; then
     GUARD_STATUS="🔓 Active change: $ACTIVE_CHANGE — modify files within the scope of this proposal only."
-    CHANGE_MGMT="Change Management: ACTIVE — guard file detected. Active change proposal: '$ACTIVE_CHANGE'. Only modify files within the scope of logos/changes/$ACTIVE_CHANGE/proposal.md. Full workflow: (1) produce deltas, (2) user authorizes openlogos merge, (3) AI auto-commits spec, (4) implement code per updated spec, (5) AI auto-commits code, (6) user runs openlogos verify — must PASS, (7) user authorizes openlogos archive, (8) AI auto-commits archive, (9) user confirms git push. openlogos merge / verify / archive and git push are human confirmation points: AI must not execute them without explicit user authorization."
+    CHANGE_MGMT=$(change_management_message "$ACTIVE_CHANGE" "${PROPOSAL_STEP:-}")
   else
     GUARD_STATUS="⛔ NO active change proposal. You MUST run openlogos change <slug> before modifying any code."
     CHANGE_MGMT="Change Management: ACTIVE — ⛔ NO guard file found. Before modifying ANY source code, you MUST first run openlogos change <slug> to create a change proposal. Direct code changes without a proposal are FORBIDDEN."
