@@ -434,6 +434,34 @@ node 级新字段仅在存在 overlay-added 节点 / 当前节点为 overlay-add
 - **派生**：`next` 选第一个未勾切片，`next_node` 钉 `code` 并带 `slice` 子提示（"建哪片"，非"修哪片"）；机器字段 `slice_state {total, done, current, remaining}`；`LOOP_ITERS` 可带 `slice` 维度。
 - **无人值守**：`next --auto` 逐片推进；达 `max_iters` 未达成 → `gate:implement:loop-exhausted`（`skippable:false`），默认不自动放行未完成大功能。verify 始终跑全量回归，从模型层杜绝局部绿全局红。
 
+### 2.23 AI 宿主 SessionStart guard 范围注入（Codex / openlogos-phase）
+
+OpenLogos 在 AI 宿主的 SessionStart / phase context 注入中，必须把“active change proposal 的范围”解释为当前提案工作流阶段允许修改的文件集合，而不是 `proposal.md` 单个文件。
+
+**事实源**：
+- SessionStart 入口必须优先执行 `openlogos status --format json` 并读取结构化状态。
+- 顶层 `data.active_change` 与 `data.proposal_step` 可直接使用；多模块场景下如顶层缺失或需要模块归属，必须读取 `data.modules[].active_change.slug` / `data.modules[].active_change.proposal_step`。
+- 只有在 `status --format json` 不可用或缺少结构化字段时，才回退读取 `logos/.openlogos-guard` 中的 `activeChange`；回退文案不得收窄到 `proposal.md`，必须提示以 `openlogos status` / `openlogos next` 为准。
+
+**阶段化允许范围**：
+- `writing`：允许填写 `logos/changes/<slug>/proposal.md` 与 `logos/changes/<slug>/tasks.md`。
+- `ready-to-delta`：提示方案待批准；在用户批准或 `next --auto` 消费 plan gate 后，进入 delta 产出。
+- `delta-writing`：允许写入 `logos/changes/<slug>/deltas/**`，并同步更新 `logos/changes/<slug>/tasks.md` 的 `[delta]` 勾选状态；不得直接修改 `logos/resources/**` 或源码。
+- `ready-to-merge`：不得继续改主规格或源码；提示用户明确授权 `openlogos merge <slug>`。
+- `merge-generated`：允许按 `logos/changes/<slug>/MERGE_PROMPT.md` 合并主规格，并在完成后写入 `SPEC_MERGED`。
+- `coding` / `ready-to-verify` / `verify-failed`：允许按 `[code]` section 修改源码、测试、OpenLogos reporter 与必要快照，并同步更新 `tasks.md`；`openlogos verify` 仍是人类确认点。
+- `verify-passed` / `deploy-done` / `smoke-passed`：提示归档确认点，不自动执行 `openlogos archive <slug>`。
+- `ready-to-deploy` / `ready-to-smoke`：提示部署或 smoke 的人类确认点，不自动执行部署、`openlogos smoke` 或归档。
+
+**文案约束**：
+- 禁止输出 `Only modify files within the scope of logos/changes/<slug>/proposal.md` 这类会把提案范围误读成单文件路径的句子。
+- active guard 存在时，文案应使用“current active change proposal and current proposal step”描述边界，并列出当前阶段的具体允许路径。
+- 无 guard 时仍保持强约束：launched 项目在修改源码前必须先运行 `openlogos change <slug>` 创建提案。
+
+**兼容性**：
+- `guard-check` 继续作为粗粒度安全门：launched 且无 guard 时阻断源码写入，有 guard 时放行，由 SessionStart 上下文和 OpenLogos 流程约束进一步限定阶段范围。
+- 不改变 `openlogos status` / `openlogos next` 的既有 JSON 契约，只消费现有字段。
+
 ## 三、功能验收摘要
 
 ### S01

@@ -96,3 +96,15 @@
 | ST-S11-28 | 非场景阶段多模块前缀过滤等价 | multi-module-prefix | 多模块、目录含混合前缀文件 | 并跑 | per-module 前缀过滤 done 一致 |
 | ST-S11-29 | partial 场景覆盖等价 | partial-scenario | 部分场景缺文件 | 并跑 | scenario_coverage 与 done 一致 |
 | ST-S11-30 | 场景文件名碰撞 / 相邻 ID 等价（legacy includes） | scenario-id-collision | 存在相邻 ID 场景文件 | 并跑 | includes 子串命中结果一致（保留旧行为） |
+
+## 七、SessionStart 消费 status 结构化状态测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S11-40 | SessionStart 优先读取顶层 active_change / proposal_step | status JSON consumer | `status --format json` 顶层包含 `active_change=feat`、`proposal_step=delta-writing` | 执行 SessionStart 解析逻辑 | 解析结果使用顶层 slug 和 step，生成 delta-writing 范围文案 |
+| UT-S11-41 | SessionStart 顶层缺失时回退 modules[].active_change | status JSON consumer | 顶层 `active_change=null`，`modules[0].active_change.slug=feat`、`proposal_step=delta-writing` | 执行 SessionStart 解析逻辑 | 解析结果使用模块级 active_change，并生成 delta-writing 范围文案 |
+| UT-S11-42 | SessionStart 不把 suggestion 当作唯一事实源 | status JSON consumer | `status --format json` 同时含 `proposal_step=ready-to-merge` 和中文 suggestion | 执行 SessionStart 解析逻辑 | 按 `proposal_step` 输出 merge 确认点文案，不通过自然语言 suggestion 推断文件范围 |
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-31 | status 的 delta-writing 状态驱动 SessionStart 写入范围 | S11 Step 3→8 | launched 项目有 active guard，`openlogos status --format json` 输出 `proposal_step=delta-writing` | SessionStart 调用 status 并生成上下文 | 上下文与 status/next 一致：允许 `deltas/**` + `tasks.md`，不允许直接写 `logos/resources/**` 或源码 |
