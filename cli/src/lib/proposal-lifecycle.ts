@@ -56,6 +56,7 @@ export interface TaskItem {
 }
 
 const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
+export const PLAN_APPROVED_MARKER = 'PLAN_APPROVED';
 
 const DEPLOYMENT_BOOLEAN_TEMPLATE_FIELDS = [
   '是否需要部署',
@@ -535,8 +536,10 @@ export function detectProposalStep(
     if (delta.total > 0 && delta.checked === delta.total) {
       return 'ready-to-merge';
     }
-    // change-flow-redesign：delta 尚未启动（无勾选、无 delta 文件）→ ready-to-delta（plan 出口驻留态）
-    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0) {
+    // change-flow-redesign：delta 尚未启动且 plan 门未消费 → ready-to-delta（plan 出口驻留态）。
+    // PLAN_APPROVED 是 plan-exit 被 --auto 消费后的状态源；GATE_AUTO_PASSED 仅为审计，不参与派生。
+    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0
+      && !existsSync(join(proposalDir, PLAN_APPROVED_MARKER))) {
       return 'ready-to-delta';
     }
     return 'delta-writing';

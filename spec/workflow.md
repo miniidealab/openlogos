@@ -267,6 +267,7 @@ AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测
 - **部署相关代码**：部署方案中要求的健康检查、迁移脚本、启动脚本或构建脚本
 - **OpenLogos reporter 集成**：测试代码内嵌标准 reporter，将用例结果写入 `logos/resources/verify/test-results.jsonl` 或配置的阶段结果路径（格式见 [test-results.md](./test-results.md)）
 - **verify 预跑配置检查**：代码完成前必须检查 `logos.config.json` 是否存在 `verify.pre_run_command`、`verify.regression_command` 或 `verify.incremental_command`；缺失时必须补齐或明确说明无法推断
+- **smoke runner 覆盖预检**：若本提案新增或修改 `logos/resources/test/smoke/*.md`，代码完成前必须同步实现 smoke runner / reporter / dispatcher。新增 `SMOKE-*` 必须被 `scripts/smoke-*` 或等效 runner 覆盖，runner 必须写入 `smoke-results.jsonl` 或 `smoke.result_path`，且 `smoke.command` 必须可执行该 runner；预检发现 `smoke_runner_missing`、`smoke_reporter_missing` 或 `smoke_cases_uncovered` 时不得标记 code 完成。
 
 **Step 5 标准交付（不可拆分）**：
 

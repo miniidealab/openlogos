@@ -4,7 +4,7 @@
  * 含 OpenLogos reporter（用例名带 UT-S28 / ST-S28 编号）。golden 由 golden-baseline.test.ts 另行 re-baseline。
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd } from './helpers.js';
 import { next } from '../src/commands/next.js';
@@ -174,7 +174,7 @@ describe('S28 — R3 cmd 续推', () => {
 
 // ── 三、R4 auto / R7 loop / R5 命令级 → 省略 ──
 describe('S28 — 省略规则（R4/R7/R5）', () => {
-  it('UT-S28-15 / ST-S28-05: --auto gate 放行 → 省略 next_node', async () => {
+  it('UT-S28-15 / ST-S28-05 / ST-S28-EX-4: --auto gate 放行默认省略，plan-exit 消费/重复 auto 返回 write-delta', async () => {
     const root = tempProject(); setSingleModule(root, 'launched');
     const dir = join(root, 'logos', 'changes', 'feat'); mkdirSync(dir, { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
@@ -184,6 +184,24 @@ describe('S28 — 省略规则（R4/R7/R5）', () => {
     const d = await runNextJson(root, true);
     expect(d.gate_auto_passed).toBe(true);
     expect(d.modules[0].next_node).toBeUndefined();
+
+    const planRoot = tempProject(); setSingleModule(planRoot, 'launched');
+    const planDir = join(planRoot, 'logos', 'changes', 'feat'); mkdirSync(planDir, { recursive: true });
+    writeFileSync(join(planRoot, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    writeFileSync(join(planDir, 'proposal.md'), PROPOSAL('设计级'));
+    writeFileSync(join(planDir, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [ ] 产出 delta\n');
+    const plan = await runNextJson(planRoot, true);
+    expect(plan.gate_auto_passed).toBe(true);
+    expect(plan.gate_id).toBe('plan-exit');
+    expect(plan.proposal_step).toBe('delta-writing');
+    expect(plan.modules[0].next_node).toMatchObject({ id: 'write-delta', subflow_id: 'spec', skill: 'change-writer' });
+    expect(existsSync(join(planDir, 'PLAN_APPROVED'))).toBe(true);
+
+    const repeated = await runNextJson(planRoot, true);
+    expect(repeated.gate_auto_passed).toBe(false);
+    expect(repeated.gate_id).toBeNull();
+    expect(repeated.proposal_step).toBe('delta-writing');
+    expect(repeated.modules[0].next_node).toMatchObject({ id: 'write-delta' });
   });
 
   it('UT-S28-16 / UT-S28-17 / ST-S28-06: loop 阻塞未达上限 → next_node=code（含重绑 hints）', async () => {

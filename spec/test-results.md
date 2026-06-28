@@ -370,6 +370,40 @@ func ReportResult(id, status string, durationMs int64, err string) {
 }
 ````
 
+## Smoke 结果与覆盖预检
+
+部署后 smoke 用例使用同一类 JSONL 结果格式，但默认写入：
+
+```text
+logos/resources/verify/smoke-results.jsonl
+```
+
+可通过 `logos.config.json.smoke.result_path` 覆盖该路径。每行仍为一个 JSON 对象：
+
+```json
+{ "id": "SMOKE-core-01", "status": "pass", "timestamp": "2026-06-28T00:00:00.000Z", "scenario": "cli version" }
+```
+
+当提案新增或修改 `logos/resources/test/smoke/*.md`，code 阶段必须同步实现可执行 smoke 闭环：
+
+- `scripts/smoke-*.sh`、`scripts/smoke-*.js` 或等效 smoke runner 必须覆盖新增或修改的 `SMOKE-*` ID。
+- runner 必须写入 `smoke-results.jsonl` 或 `smoke.result_path` 指定路径。
+- `smoke.command` 必须能执行新增 runner；推荐配置为 `node scripts/run-smoke.js` 统一 dispatcher，由 dispatcher 自动发现并运行 `scripts/smoke-*`。
+- `openlogos verify` / code completion gate 可执行 smoke 覆盖预检：若本提案新增 smoke ID 但缺少 runner、reporter 或执行结果，应输出 `smoke_runner_missing`、`smoke_reporter_missing` 或 `smoke_cases_uncovered`，并阻断 code 完成。
+
+推荐项目在根目录提供：
+
+```json
+{
+  "smoke": {
+    "command": "node scripts/run-smoke.js",
+    "result_path": "logos/resources/verify/smoke-results.jsonl"
+  }
+}
+```
+
+`scripts/run-smoke.js` 负责发现并顺序运行 `scripts/smoke-*.sh` / `scripts/smoke-*.js`。runner 可通过 `OPENLOGOS_SMOKE_RESULT_PATH` 读取目标结果路径，避免硬编码。
+
 ## 与其他规范的关系
 
 | 规范 | 关系 |

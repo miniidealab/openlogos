@@ -18,6 +18,7 @@ import {
   type SandboxData,
 } from '../lib/sandbox.js';
 import { getDeployTasks } from './status.js';
+import { checkSmokeCoverage, type SmokeCoverageCheck } from '../lib/smoke-coverage.js';
 
 export interface TestResult {
   id: string;
@@ -114,6 +115,7 @@ export interface VerifyData {
     }>;
   };
   pre_run: VerifyPreRunData;
+  smoke_precheck: SmokeCoverageCheck;
   sandbox: SandboxData;
   report_path: string;
 }
@@ -316,6 +318,46 @@ function addCoverageDiagnostics(root: string, data: VerifyData): VerifyData {
       t(locale, 'verify.coverageLocalSuggestionTwoPhase'),
     );
   }
+  return data;
+}
+
+function readSmokeCommandConfig(root: string): { command: string | null; resultPath: string } {
+  const configPath = join(root, 'logos', 'logos.config.json');
+  let command: string | null = null;
+  let resultPath = 'logos/resources/verify/smoke-results.jsonl';
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (typeof config.smoke?.command === 'string') command = config.smoke.command;
+    if (typeof config.smoke?.result_path === 'string') resultPath = config.smoke.result_path;
+  } catch {
+    // 使用默认 smoke 配置。
+  }
+  return { command, resultPath };
+}
+
+function applySmokePrecheck(root: string, data: VerifyData): VerifyData {
+  const smokeConfig = readSmokeCommandConfig(root);
+  const check = checkSmokeCoverage(root, {
+    command: smokeConfig.command,
+    resultPath: smokeConfig.resultPath,
+  });
+  data.smoke_precheck = check;
+  if (check.changed_case_ids.length === 0 || check.result === 'PASS') return data;
+
+  const blockingDiagnostics = check.diagnostics.filter(item => item.code !== 'smoke_cases_uncovered');
+  if (blockingDiagnostics.length === 0) return data;
+
+  data.gate.result = 'FAIL';
+  data.gate.reason = blockingDiagnostics[0]?.code ?? 'smoke_runner_missing';
+  for (const item of blockingDiagnostics) {
+    const cases = item.case_ids?.length ? `：${item.case_ids.join(', ')}` : '';
+    data.pre_run.diagnostics.push(`${item.code}${cases} - ${item.message}`);
+  }
+  data.pre_run.suggestions.push(
+    '为本提案新增的 SMOKE-* 用例实现 scripts/smoke-*.sh 或等效 runner。',
+    '确保 smoke runner 写入 logos/resources/verify/smoke-results.jsonl 或 smoke.result_path。',
+    '将 smoke.command 指向 scripts/run-smoke.js 统一 dispatcher，或显式执行新增 runner。',
+  );
   return data;
 }
 
@@ -625,7 +667,7 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
 
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
 
-  return addCoverageDiagnostics(root, {
+  return applySmokePrecheck(root, addCoverageDiagnostics(root, {
     summary: {
       defined_count: defined.length,
       ut_count: utCount,
@@ -666,9 +708,10 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
       }),
     },
     pre_run: preRun ?? buildInitialPreRunData(config),
+    smoke_precheck: checkSmokeCoverage(root, readSmokeCommandConfig(root)),
     sandbox: buildInitialSandboxData(config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: relReportPath,
-  });
+  }));
 }
 
 /**

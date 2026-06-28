@@ -728,6 +728,9 @@ openlogos smoke --env production --format json
   "failed_cases": [],
   "uncovered_cases": [],
   "skipped_cases": [],
+  "changed_cases": [],
+  "diagnostics": [],
+  "runners": [],
   "sandbox": {
     "mode": "auto",               // "off" | "auto" | "always"
     "root": "/private/tmp",
@@ -750,7 +753,10 @@ openlogos smoke --env production --format json
 | `summary.defined_count` | number | 是 | smoke 用例规格中定义的用例数 |
 | `summary.executed_count` | number | 是 | smoke 结果中实际执行的用例数 |
 | `gate.result` | string | 是 | `PASS` 或 `FAIL` |
-| `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` |
+| `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` / `smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered` |
+| `changed_cases` | string[] | 是 | 当前活跃提案新增或修改的 `SMOKE-*` 用例 ID；无活跃提案或无 smoke 变更时为空 |
+| `diagnostics` | array | 是 | smoke 覆盖预检诊断；每项包含 `code`、`message`、可选 `case_ids` / `runner_paths` / `result_path` |
+| `runners` | string[] | 是 | 静态发现的 `scripts/smoke-*` runner 路径 |
 | `failed_cases` | array | 是 | 失败 smoke 用例 |
 | `uncovered_cases` | array | 是 | 未覆盖 smoke 用例 ID |
 | `sandbox.mode` | string | 是 | smoke 沙箱模式：`"off"`、`"auto"` 或 `"always"` |
@@ -770,6 +776,8 @@ openlogos smoke --env production --format json
 - `smoke.command` 仍按既有语义执行。
 - `sandbox_mode` / `sandbox_root` / `sandbox_deny_workspace_write` 仅影响执行环境，不改变 smoke 门禁定义。
 - 当沙箱失败时，`smoke` 仍应写入结果报告，但 JSON 输出必须明确失败原因。
+- 当活跃提案新增或修改 `SMOKE-*` 用例时，`openlogos smoke` 必须额外执行 smoke 覆盖预检：缺少可达 runner 时输出 `smoke_runner_missing`，发现 runner 但没有有效结果时输出 `smoke_reporter_missing`，新增 ID 没有执行结果时输出 `smoke_cases_uncovered`。
+- 推荐 `smoke.command` 指向 `node scripts/run-smoke.js` 统一 dispatcher；dispatcher 自动发现并执行 `scripts/smoke-*` runner。
 
 ---
 

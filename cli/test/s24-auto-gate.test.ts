@@ -1,10 +1,9 @@
 /**
  * S24 next --auto 自动跳过可跳人类确认点（skip-gate）—— 切片 C。
  *
- * 用例 ID 与 logos/resources/test/core-S24-test-cases.md 严格对齐（UT-S24-01~12 / ST-S24-01~06 / ST-S24-EX-2.1）。
+ * 用例 ID 与 logos/resources/test/core-S24-test-cases.md 严格对齐（UT-S24-01~17 / ST-S24-01~07 / ST-S24-EX-2.1）。
  * 核心不变量：默认 next（无 --auto）行为与未引入 --auto 时 1:1 一致，且忽略 GATE_AUTO_PASSED；
- * --auto 仅作用于现有 launched 停顿点（ready-to-merge=propose 出口 gate skippable→放行+追加审计；
- * ready-to-deploy=deliver 入口 gate skippable:false→保持人类停顿；ready-to-smoke 无 gate 不涉及）。
+ * --auto 仅作用于现有 launched 停顿点；plan-exit auto 会额外写 PLAN_APPROVED 作为状态源。
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
@@ -12,6 +11,7 @@ import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { next } from '../src/commands/next.js';
+import { status } from '../src/commands/status.js';
 import { gateForProposalStep } from '../src/lib/flow-derive.js';
 import { loadBuiltinFlow, findActivatedLoop } from '../src/lib/flow.js';
 import { loopExhaustedGateId } from '../src/lib/flow-loop-derive.js';
@@ -42,7 +42,7 @@ const FIXTURES: Record<string, StepFixture> = {
   'ready-to-smoke': { proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE'], deploy: true, smoke: true },
 };
 
-interface Ctx { root: string; dir: string; auditPath: string; con: ReturnType<typeof captureConsole>; }
+interface Ctx { root: string; dir: string; auditPath: string; planPath: string; con: ReturnType<typeof captureConsole>; }
 
 /** 建一个 launched 项目，活跃提案处于指定 proposal_step，并接管 cwd/console/exit。 */
 function setup(step: keyof typeof FIXTURES, slug = 'feat'): Ctx {
@@ -75,7 +75,7 @@ function setup(step: keyof typeof FIXTURES, slug = 'feat'): Ctx {
   const con = captureConsole();
   const exitSpy = mockProcessExit();
   cleanups.push(() => { con.restore(); exitSpy.mockRestore(); restoreCwd(); cleanup(); });
-  return { root, dir, auditPath: join(dir, 'GATE_AUTO_PASSED'), con };
+  return { root, dir, auditPath: join(dir, 'GATE_AUTO_PASSED'), planPath: join(dir, 'PLAN_APPROVED'), con };
 }
 
 /** 解析最后一行 JSON envelope 的 data。 */
@@ -143,11 +143,15 @@ describe('S24 next --auto 行为', () => {
     expect(auditLines(ctx.auditPath)).toHaveLength(1);
   });
 
-  it('UT-S24-07: 重复 --auto 追加多行（不去重）', () => {
-    const ctx = setup('ready-to-merge');
+  it('UT-S24-07: 重复 plan-exit --auto 不重复追加审计', () => {
+    const ctx = setup('ready-to-delta');
     next('json', undefined, true);
     next('json', undefined, true);
-    expect(auditLines(ctx.auditPath)).toHaveLength(2);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('delta-writing');
+    expect(d.modules).toEqual(expect.any(Array));
+    expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'plan-exit')).toHaveLength(1);
   });
 
   it('UT-S24-08: 默认 next 忽略 GATE_AUTO_PASSED 不越过 gate', () => {
@@ -163,14 +167,18 @@ describe('S24 next --auto 行为', () => {
     expect(d.gate_auto_passed).toBeUndefined();
   });
 
-  it('UT-S24-09: 重复 --auto 后默认 next 派生不变（幂等=派生不受审计行数影响）', () => {
-    const ctx = setup('ready-to-merge');
-    next('json', undefined, true);
-    next('json', undefined, true);
+  it('UT-S24-09: PLAN_APPROVED 是 plan gate 状态源', () => {
+    const ctx = setup('ready-to-delta');
+    writeFileSync(ctx.planPath, '');
     ctx.con.logs.length = 0;
     next('json', undefined, false);
-    expect(jsonData(ctx.con).proposal_step).toBe('ready-to-merge');
-    expect(auditLines(ctx.auditPath)).toHaveLength(2); // 默认 next 不写审计
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
+    ctx.con.logs.length = 0;
+    status('json');
+    expect(jsonData(ctx.con).proposal_step).toBe('delta-writing');
+    expect(auditLines(ctx.auditPath)).toHaveLength(0);
   });
 
   it('UT-S24-10: GATE_AUTO_PASSED 每行 schema 含 gate_id/proposal_step/timestamp', () => {
@@ -212,23 +220,23 @@ describe('S24 next --auto 行为', () => {
     expect(def.proposal_step).toBe('ready-to-merge');
   });
 
-  it('UT-S24-15: ready-to-delta + --auto 放行仅审计、proposal_step 不因审计前移', () => {
+  it('UT-S24-15: ready-to-delta + --auto 消费 plan gate 并进入 write-delta', () => {
     const ctx = setup('ready-to-delta');
     next('json', undefined, true);
     const d = jsonData(ctx.con);
-    // plan 出口门放行（plan-exit skippable:true）+ 追加一行审计
     expect(d.gate_id).toBe('plan-exit');
     expect(d.skippable).toBe(true);
     expect(d.gate_auto_passed).toBe(true);
     const lines = auditLines(ctx.auditPath);
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0])).toMatchObject({ gate_id: 'plan-exit', proposal_step: 'ready-to-delta' });
-    // 审计不推进状态：proposal_step 仍为 ready-to-delta（仅首个 delta 产出后才进入 delta-writing）
-    expect(d.proposal_step).toBe('ready-to-delta');
-    // 即便已写过一行审计，再次默认 next 的派生仍钉在 ready-to-delta（审计不前移）
+    expect(existsSync(ctx.planPath)).toBe(true);
+    expect(d.proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
     ctx.con.logs.length = 0;
     next('json', undefined, false);
-    expect(jsonData(ctx.con).proposal_step).toBe('ready-to-delta');
+    expect(jsonData(ctx.con).proposal_step).toBe('delta-writing');
   });
 
   it('UT-S24-16: ready-to-deploy + --auto 放行部署门，gate_auto_passed 来自本次响应而非历史审计行', () => {
@@ -244,6 +252,16 @@ describe('S24 next --auto 行为', () => {
     // 本次放行真实追加一行（历史 1 行 + 本次 1 行 = 2 行），证明 gate_auto_passed 由本次响应产生
     expect(auditLines(ctx.auditPath)).toHaveLength(2);
     expect(JSON.parse(auditLines(ctx.auditPath)[1])).toMatchObject({ gate_id: 'deliver-entry', proposal_step: 'ready-to-deploy' });
+  });
+
+  it('UT-S24-17: 审计存在但 PLAN_APPROVED 缺失时 status 不前移', () => {
+    const ctx = setup('ready-to-delta');
+    writeFileSync(ctx.auditPath,
+      JSON.stringify({ gate_id: 'plan-exit', proposal_step: 'ready-to-delta', timestamp: '2000-01-01T00:00:00.000Z' }) + '\n');
+    status('json');
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('ready-to-delta');
+    expect(existsSync(ctx.planPath)).toBe(false);
   });
 });
 
@@ -290,14 +308,17 @@ describe('S24 场景测试', () => {
     expect(jsonData(ctx.con).proposal_step).toBe('ready-to-merge');
   });
 
-  it('ST-S24-04: 重复 --auto 追加多行且默认派生不变', () => {
-    const ctx = setup('ready-to-merge');
+  it('ST-S24-04: 重复 plan-exit --auto 不刷审计且状态前移', () => {
+    const ctx = setup('ready-to-delta');
     next('json', undefined, true);
     next('json', undefined, true);
     ctx.con.logs.length = 0;
     next('json', undefined, false);
-    expect(jsonData(ctx.con).proposal_step).toBe('ready-to-merge');
-    expect(auditLines(ctx.auditPath)).toHaveLength(2);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
+    expect(existsSync(ctx.planPath)).toBe(true);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'plan-exit')).toHaveLength(1);
   });
 
   it('ST-S24-05: 默认 next JSON 零漂移（不含任何 --auto gate 字段）', () => {

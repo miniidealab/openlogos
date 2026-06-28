@@ -161,6 +161,15 @@
 | 操作 | 执行的命令、请求或访问动作 |
 | 预期结果 | 返回码、页面状态、日志、数据库状态 |
 
+**同步生成 code 阶段任务要求**：
+
+只要本轮新增或修改 `SMOKE-*` 用例，后续 `tasks.md` 的 `[code]` section 必须包含 smoke runner / reporter / dispatcher 闭环任务。测试设计阶段需要在交付说明中明确提醒 change-writer/code-implementor：
+
+- 实现或更新 `scripts/smoke-*.sh`、`scripts/smoke-*.js` 或等效 smoke runner，且 runner 必须覆盖新增或修改的 `SMOKE-*` ID。
+- smoke runner 必须写入 `logos/resources/verify/smoke-results.jsonl`，或写入 `logos.config.json.smoke.result_path` 指定路径。
+- `logos.config.json.smoke.command` 必须能执行新增 runner；推荐接入统一 `scripts/run-smoke.js` smoke dispatcher 自动发现 `scripts/smoke-*`。
+- code 阶段完成前必须运行 smoke 覆盖预检或等效检查，确认新增 `SMOKE-*` 不在 uncovered cases 中。
+
 ### Step 4: 覆盖度校验
 
 反向校验测试用例是否覆盖了所有关键约束：

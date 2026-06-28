@@ -17,6 +17,7 @@ import {
   type AcTraceEntry,
 } from '../src/commands/verify.js';
 import { readVerifyConfig } from '../src/lib/verify-config.js';
+import { checkSmokeCoverage, extractChangedSmokeIds } from '../src/lib/smoke-coverage.js';
 import * as childProcess from 'node:child_process';
 
 /* ========== Unit Tests ========== */
@@ -169,6 +170,50 @@ describe('S13 Unit Tests — extractDefinedIds', () => {
     expect(ids).toContain('UT-S01-01');
     expect(ids).not.toContain('ST-S01-EX-adopt');
     expect(manualCount).toBe(1);
+  });
+});
+
+describe('S13 Unit Tests — smoke coverage precheck', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root, { locale: 'en' });
+  });
+  afterEach(() => cleanup());
+
+  function writeSmokeDelta(slug: string, id: string) {
+    const proposalDir = join(root, 'logos', 'changes', slug);
+    mkdirSync(join(proposalDir, 'deltas/test/smoke'), { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core' }));
+    writeFileSync(join(proposalDir, 'deltas/test/smoke/core-smoke-test-cases.md'), [
+      '| ID | 描述 |',
+      '|----|------|',
+      `| ${id} | 新增 smoke |`,
+    ].join('\n'));
+  }
+
+  it('UT-S13-SMOKE-01: 提取当前提案新增 smoke case ID', () => {
+    mkdirSync(join(root, 'logos/resources/test/smoke'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/smoke/core-smoke-test-cases.md'), '| SMOKE-OLD-01 | old |');
+    writeSmokeDelta('add-smoke', 'SMOKE-NEW-01');
+    mkdirSync(join(root, 'logos/changes/add-smoke/deltas/test'), { recursive: true });
+    writeFileSync(join(root, 'logos/changes/add-smoke/deltas/test/core-S13-test-cases.md'), '| UT-S13-X | 输入示例 SMOKE-EXAMPLE-01 |');
+
+    expect(extractChangedSmokeIds(root)).toEqual(['SMOKE-NEW-01']);
+  });
+
+  it('UT-S13-SMOKE-02: verify/code gate 发现新增 smoke case uncovered', () => {
+    writeSmokeDelta('add-smoke', 'SMOKE-NEW-02');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/smoke-results.jsonl'), '{"id":"SMOKE-OLD-01","status":"pass"}\n');
+
+    const check = checkSmokeCoverage(root, { command: 'node scripts/run-smoke.js' });
+
+    expect(check.result).toBe('FAIL');
+    expect(check.uncovered_case_ids).toEqual(['SMOKE-NEW-02']);
+    expect(check.diagnostics.map(d => d.code)).toContain('smoke_cases_uncovered');
   });
 });
 
@@ -753,5 +798,57 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(existsSync(join(proposalDir, 'DEPLOY_DONE'))).toBe(false);
     expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(false);
     expect(existsSync(join(proposalDir, 'SMOKE_FAIL'))).toBe(false);
+  });
+
+  it('ST-S13-SMOKE-01: code 完成前阻断遗漏 smoke runner 的提案', () => {
+    writeTestCases(CASES_ALL_PASS);
+    writeResults([
+      '{"id":"UT-S01-01","status":"pass"}',
+      '{"id":"ST-S01-01","status":"pass"}',
+    ]);
+    const proposalDir = join(root, 'logos', 'changes', 'add-smoke');
+    mkdirSync(join(proposalDir, 'deltas/test/smoke'), { recursive: true });
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'add-smoke', module: 'core' }));
+    writeFileSync(join(proposalDir, 'deltas/test/smoke/core-smoke-test-cases.md'), '| SMOKE-NEW-03 | temp |');
+    writeFileSync(join(root, 'scripts/smoke-new.sh'), '#!/usr/bin/env bash\nexit 0\n');
+
+    expect(() => verify('json')).toThrow('process.exit(1)');
+
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('FAIL');
+    expect(parsed.data.smoke_precheck.changed_case_ids).toEqual(['SMOKE-NEW-03']);
+    expect(parsed.data.pre_run.diagnostics.join('\n')).toContain('smoke_runner_missing');
+    expect(parsed.data.pre_run.diagnostics.join('\n')).toContain('smoke_reporter_missing');
+    expect(existsSync(join(proposalDir, 'VERIFY_PASS'))).toBe(false);
+    expect(existsSync(join(proposalDir, 'VERIFY_FAIL'))).toBe(true);
+  });
+
+  it('ST-S13-SMOKE-02: verify 不因部署后 smoke 尚未执行而失败', () => {
+    writeTestCases(CASES_ALL_PASS);
+    writeResults([
+      '{"id":"UT-S01-01","status":"pass"}',
+      '{"id":"ST-S01-01","status":"pass"}',
+    ]);
+    const proposalDir = join(root, 'logos', 'changes', 'add-smoke');
+    mkdirSync(join(proposalDir, 'deltas/test/smoke'), { recursive: true });
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'add-smoke', module: 'core' }));
+    writeFileSync(join(proposalDir, 'deltas/test/smoke/core-smoke-test-cases.md'), '| SMOKE-NEW-04 | temp |');
+    writeFileSync(join(root, 'scripts/smoke-new.sh'), '#!/usr/bin/env bash\nexit 0\n');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-results.jsonl'), '{"id":"SMOKE-OLD-01","status":"pass"}\n');
+    const configPath = join(root, 'logos/logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.smoke = { ...(config.smoke ?? {}), command: 'bash scripts/smoke-new.sh' };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    verify('json');
+
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.smoke_precheck.uncovered_case_ids).toEqual(['SMOKE-NEW-04']);
+    expect(parsed.data.smoke_precheck.diagnostics.map((d: { code: string }) => d.code)).toContain('smoke_cases_uncovered');
+    expect(parsed.data.pre_run.diagnostics.join('\n')).not.toContain('smoke_cases_uncovered');
   });
 });

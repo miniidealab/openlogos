@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, appendFileSync } from 'node:fs';
+import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { readLocale, t, type Locale } from '../i18n.js';
@@ -14,6 +14,7 @@ import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
+import { PLAN_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
 
 export interface NextModuleItem {
   id: string;
@@ -70,6 +71,12 @@ function appendGateAutoPassed(root: string, slug: string, gateId: string, step: 
   const path = join(root, 'logos', 'changes', slug, 'GATE_AUTO_PASSED');
   const line = JSON.stringify({ gate_id: gateId, proposal_step: step, timestamp: new Date().toISOString() });
   appendFileSync(path, line + '\n');
+}
+
+/** 消费 plan-exit gate：写入明确状态源，后续派生不再停留在 ready-to-delta。 */
+function writePlanApproved(root: string, slug: string): void {
+  const path = join(root, 'logos', 'changes', slug, PLAN_APPROVED_MARKER);
+  if (!existsSync(path)) writeFileSync(path, '');
 }
 
 /** auto 放行时的建议文案（仅 ready-to-merge 这类可跳 gate 会用到）。 */
@@ -511,6 +518,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   let autoGateId: string | null = null;
   let autoSkippable: boolean | null = null;
   let gateAutoPassed = false;
+  let planGateAutoConsumed = false;
   // M2 切片 1a（R2 安全）：当前节点为未完成的 overlay-added 节点时，gate 未到达 → 不得 auto-pass。
   const activeStatusMod = data.modules?.find(m => m.active_change?.slug === data.active_change);
   const blockedByOverlayNode = Boolean(activeStatusMod?.current_node || data.current_node);
@@ -554,10 +562,32 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       if (gate && gate.skippable && data.active_change && !blocked) {
         appendGateAutoPassed(root, data.active_change, gate.gate_id, data.proposal_step!);
         gateAutoPassed = true;
-        const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
-        action = passed.action; command = passed.command; detail = passed.detail;
-        const mi = moduleItems?.find(m => m.active_change === data.active_change);
-        if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+        if (gate.gate_id === 'plan-exit' && data.proposal_step === 'ready-to-delta') {
+          writePlanApproved(root, data.active_change);
+          planGateAutoConsumed = true;
+          data.proposal_step = 'delta-writing';
+          const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
+          if (activeModule?.active_change) {
+            activeModule.active_change.proposal_step = 'delta-writing';
+            activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.delta-writing');
+          }
+          const nextAction = actionForProposalStep(locale, 'delta-writing');
+          action = nextAction.action;
+          command = nextAction.command;
+          detail = t(locale, nextAction.detailKey, { slug: data.active_change });
+          const mi = moduleItems?.find(m => m.active_change === data.active_change);
+          if (mi) {
+            mi.proposal_step = 'delta-writing';
+            mi.action = action;
+            mi.command = command;
+            mi.detail = detail;
+          }
+        } else {
+          const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
+          action = passed.action; command = passed.command; detail = passed.detail;
+          const mi = moduleItems?.find(m => m.active_change === data.active_change);
+          if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+        }
       }
     }
   }
@@ -601,7 +631,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   // slice_state：同构挂载——有 modules[] 时挂 modules[].slice_state，legacy 才回退顶层
   const baseSliceState = data.modules === undefined ? data.slice_state : undefined;
 
-  // S28：next_node 编排提示——modules[] 各项 + legacy 顶层。R4 auto 放行 / R7 loop 达上限 / R5 命令级建议 → 省略。
+  // S28：next_node 编排提示——modules[] 各项 + legacy 顶层。R4 auto 放行默认省略；
+  // plan-exit 被消费后已重新派生到 write-delta，按窄例外保留 next_node。
   const nextNodeFor = (sm: { id: string; name: string; lifecycle: 'initial' | 'launched'; current_phase: string | null; current_node?: CurrentNode; loop_state?: LoopState; active_change?: { proposal_step: string } | null }, gap: boolean): NextNode | null => {
     const step = sm.active_change?.proposal_step ?? null;
     const atVerify = step === 'ready-to-verify' || step === 'verify-failed' || sm.current_phase === 'phase.3-6';
@@ -633,7 +664,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   if (moduleItems && data.modules) {
     moduleItems = moduleItems.map((item, i) => {
       if (commandLevelTop || isCommandLevel(item.command)) return item; // 命令级建议 → 省略 next_node
-      const gap = gateAutoPassed && item.active_change === data.active_change;
+      const gap = gateAutoPassed && !planGateAutoConsumed && item.active_change === data.active_change;
       const sm = data.modules![i];
       const smStep = sm.active_change?.proposal_step ?? null;
       const smAtVerify = smStep === 'ready-to-verify' || smStep === 'verify-failed' || sm.current_phase === 'phase.3-6';
@@ -649,7 +680,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       id: 'core', name: 'core', lifecycle: data.lifecycle === 'launched' ? 'launched' : 'initial',
       current_phase: data.current_phase, current_node: data.current_node, loop_state: data.loop_state,
       active_change: data.proposal_step ? { proposal_step: data.proposal_step } : null,
-    }, gateAutoPassed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
+    }, gateAutoPassed && !planGateAutoConsumed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
   }
 
   // M2 切片 1b：cmd 执行后，顶层 action/detail 反映命令结果（done 续推 / 未通过重试 / 超时）

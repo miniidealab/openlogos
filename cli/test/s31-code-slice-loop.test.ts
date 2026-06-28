@@ -10,7 +10,8 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { detectProposalStep, status, type ModuleInfo } from '../src/commands/status.js';
@@ -19,9 +20,11 @@ import { verify } from '../src/commands/verify.js';
 import { detectProposalStepViaFlow, gateForProposalStep } from '../src/lib/flow-derive.js';
 import { deriveSliceState, deriveSliceStateIfActive, deriveLoopState, type LoopState } from '../src/lib/flow-loop-derive.js';
 import { loadBuiltinFlow } from '../src/lib/flow.js';
+import { checkSmokeCoverage } from '../src/lib/smoke-coverage.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function filled(): string {
   return [
@@ -499,5 +502,68 @@ describe('S31 — 场景测试', () => {
     expect(r.exited).toBe(true);
     expect(r.errors.join('')).toContain('NO_TEST_RESULTS');
     expect(existsSync(join(dir, 'LOOP_ITERS'))).toBe(false); // 早退 → 不写账本
+  });
+});
+
+describe('S31 — smoke 用例变更下的切片闭环', () => {
+  it('UT-S31-SMOKE-01: [code] 切片描述必须携带新增 SMOKE ID 与 runner/reporter/dispatcher 要求', () => {
+    const changeWriter = readFileSync(join(REPO_ROOT, 'skills/change-writer/SKILL.md'), 'utf-8');
+    expect(changeWriter).toContain('SMOKE-*');
+    expect(changeWriter).toContain('smoke runner');
+    expect(changeWriter).toContain('smoke reporter');
+    expect(changeWriter).toContain('smoke dispatcher');
+    expect(changeWriter).toContain('[code]');
+  });
+
+  it('UT-S31-SMOKE-02: smoke 覆盖预检未过时切片不得勾选', () => {
+    const { root } = makeProposal([
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 切片1：覆盖 SMOKE-NEW-04，必须实现 smoke runner/reporter/dispatcher',
+    ].join('\n'));
+    const proposalDir = join(root, 'logos', 'changes', 'feat');
+    mkdirSync(join(proposalDir, 'deltas/test/smoke'), { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    writeFileSync(join(proposalDir, 'deltas/test/smoke/core-smoke-test-cases.md'), '| SMOKE-NEW-04 | temp |');
+
+    const check = checkSmokeCoverage(root);
+    const tasks = readFileSync(join(proposalDir, 'tasks.md'), 'utf-8');
+
+    expect(check.result).toBe('FAIL');
+    expect(check.diagnostics.map(d => d.code)).toContain('smoke_runner_missing');
+    expect(tasks).toContain('- [ ] 切片1');
+  });
+
+  it('ST-S31-SMOKE-01: 含 smoke 用例的切片完整闭环后才进入下一片', () => {
+    const { root, dir } = makeProposal([
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 切片1：覆盖 SMOKE-NEW-05，必须实现 smoke runner/reporter/dispatcher',
+      '- [ ] 切片2：后续能力',
+    ].join('\n'));
+    mkdirSync(join(dir, 'deltas/test/smoke'), { recursive: true });
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    writeFileSync(join(dir, 'deltas/test/smoke/core-smoke-test-cases.md'), '| SMOKE-NEW-05 | temp |');
+    writeFileSync(join(root, 'scripts/smoke-new.sh'), '#!/usr/bin/env bash\n');
+    writeFileSync(join(root, 'logos/resources/verify/smoke-results.jsonl'), '{"id":"SMOKE-NEW-05","status":"pass"}\n');
+
+    const check = checkSmokeCoverage(root, {
+      command: 'node scripts/run-smoke.js',
+    });
+    expect(check.result).toBe('PASS');
+
+    writeFileSync(join(dir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 切片1：覆盖 SMOKE-NEW-05，必须实现 smoke runner/reporter/dispatcher',
+      '- [ ] 切片2：后续能力',
+    ].join('\n'));
+    const state = deriveSliceState(dir);
+    expect(state.current).toBe('切片2：后续能力');
   });
 });

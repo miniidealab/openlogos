@@ -134,9 +134,7 @@
 - [ ] 产出 delta 文件到 `deltas/test/smoke/` — 更新部署后冒烟测试用例
 
 ## [code] 代码实现
-- [ ] 实现 src/xxx 中的业务逻辑
-- [ ] 编写对应测试
-- [ ] 编写 smoke 测试代码或脚本
+- [ ] 单切片：实现 src/xxx 中的业务逻辑，并同步更新对应测试、OpenLogos reporter 和必要的 smoke 测试代码或脚本（覆盖 UT-S0x-..、ST-S0x-..）
 
 ## [deploy] 部署任务
 - [ ] 按部署方案部署到 staging
@@ -161,8 +159,7 @@
 - [ ] 产出 delta 文件到 `deltas/scenario/` — 更新编排测试用例
 
 ## [code] 代码实现
-- [ ] 实现 src/xxx 中的业务逻辑
-- [ ] 编写对应测试
+- [ ] 单切片：实现 S0x 的完整代码变更，并同步更新对应 UT/ST、OpenLogos reporter 和必要的 golden baseline（覆盖 UT-S0x-..、ST-S0x-..）
 ```
 
 **纯代码修复模板**（无 delta）：
@@ -171,30 +168,77 @@
 # 实现任务
 
 ## [code] 代码实现
-- [ ] 修复 src/xxx 中的问题
-- [ ] 更新对应测试
+- [ ] 单切片：修复 src/xxx 中的问题，并同步更新对应测试、OpenLogos reporter 和必要的 golden baseline（覆盖 UT-S0x-..、ST-S0x-..）
 ```
 
 ### Step 5 补充：[code] 良构切片（change-flow-redesign）
 
 > 自 change-flow-redesign 起，launched `implement` 默认以**切片循环**推进（见场景 S31）：`tasks.md` 的 `[code]` section **每个未勾行就是循环逐片实现的一个切片**。切片划分质量直接决定循环成败，故生成 `[code]` 时必须产出"良构切片"。
 
+> 📍 **唯一事实源**：launched 变更下，「切几片」（`[code]` 写几行）**只在此处用下方六维打分决定一次**。下游 `code-implementor` 只**逐行消费** `[code]` 切片，**不再重复打分、不再自行分批**（见 `code-implementor` Step 2 的「适用范围」说明与 Step 2 补充的「激活前提」激活门）。正因为切片划分在此一次定死、下游忠实执行，`[code]` 切片划分的质量**直接决定切片循环成败**——这也是必须产出"良构切片"的根本原因。
+
+**硬性规则（优先级最高）**：
+- **小修复默认单切片**：bugfix、文案/样式小改、单一 CLI 行为修复、单文件或少量相关文件修复，默认只生成 1 条 `[code]` 任务。
+- **禁止按工种拆切片**：不得把“实现代码”“编写测试”“写 reporter”“更新 golden baseline”“补文档注释”拆成多条 `[code]` 任务。这些必须合并进同一个自闭环切片。
+- **只有大任务才多切片**：只有按下方评分达到 **8 分及以上** 的任务才需要生成多条 `[code]` 切片；0-7 分必须生成单切片。
+- **不确定时合并**：如果无法证明两条 `[code]` 任务各自独立闭环，就合并为一条单切片。
+
+**切片评分（生成 `[code]` 前必须先算）**：
+
+| 维度 | 0 分 | 1 分 | 2 分 |
+|---|---|---|---|
+| 影响范围 | 1 个文件或局部函数 | 2-5 个相关文件 | 跨模块 / 跨服务 / 跨端 |
+| 行为复杂度 | 单一路径 bugfix | 2-3 个分支 | 多场景 / 状态机 / 异步流程 |
+| 契约变化 | 无 | CLI/API 输出小改 | API/DB/flow/兼容契约变更 |
+| 测试规模 | 1-3 个用例 | 4-8 个用例 | 9+ 个用例或多类测试矩阵 |
+| 风险等级 | 易回滚 | 有兼容性风险 | 涉数据、安全、部署、迁移 |
+| 不确定性 | 原因明确 | 1 个待验证假设 | 多个未知点 / 需要探索 |
+
+**判定**：
+- **0-7 分：不是大任务，必须单切片**。即使包含代码 + 测试 + reporter + golden baseline，也只能写成 1 条 `[code]` 任务。
+- **8 分及以上：定义为大任务，需要切片**。切片必须按子能力垂直拆分，每片都包含业务代码 + 对应 UT/ST + reporter；禁止按工种拆。
+- **无法垂直闭环时仍单切片**：如果达到 8 分但拆不出独立闭环切片，保留 1 条 `[code]`，并在任务描述中说明“评分达到大任务但不可安全拆分”。
+
 生成 `[code]` section 时遵守：
 
-1. **每条 = 一个自闭环切片**：单条切片应能独立实现并通过其相关测试（业务代码 + 该片 UT/ST + reporter），不依赖同批后续切片。
+1. **每条 = 一个自闭环切片**：单条切片应能独立实现并通过其相关测试（业务代码 + 该片 UT/ST + reporter + 必要 golden baseline），不依赖同批后续切片。
 2. **有序、无前向依赖**：切片按从上到下串行实现（v1 不建模 DAG）；有强依赖时由人/AI 在划分阶段排好序，被依赖的切片在前。
 3. **标注覆盖的用例 ID**：每条切片末尾标注其覆盖的 `UT-Sxx-..` / `ST-Sxx-..`（与 `logos/resources/test/*-test-cases.md` 对齐），与既有 Step 5 规则一致。
    - 若测试用例 delta 尚未合并、ID 未定，可先写暂定 ID 段，并在测试 delta 合并后、进入实现前回填准确。
-4. **粒度适中**：一个场景或一个清晰子模块是合适粒度；过大单片易失败，过碎则零散。
+4. **粒度适中**：小修复用单切片；一个场景或一个清晰子模块是合适粒度；过大单片易失败，过碎则会制造无意义循环。
 5. **空 `[code]`**：纯 docs/delta 提案可无 `[code]` section——此时切片循环退化为 `tests_green`，不影响。
+
+**Smoke 用例变更的强制闭环**：
+
+当本提案新增或修改 `logos/resources/test/smoke/*.md`，或 `[delta]` 任务包含 `deltas/test/smoke/` 时，`[code]` 任务必须同步写入 smoke runner 覆盖要求，不允许只写业务代码或普通 UT/ST：
+
+- 切片文本必须列出本提案新增或修改的 `SMOKE-*` 用例 ID。
+- 切片文本必须要求实现或更新 `scripts/smoke-*.sh`、`scripts/smoke-*.js` 或等效 smoke runner。
+- 切片文本必须要求 smoke reporter 写入 `logos/resources/verify/smoke-results.jsonl`，或写入 `logos.config.json.smoke.result_path` 指定路径。
+- 切片文本必须要求把 runner 接入 `logos.config.json.smoke.command`、统一 `scripts/run-smoke.js` smoke dispatcher，或等效可执行链路。
+- 切片文本必须要求完成后运行 smoke 覆盖预检，确认新增 `SMOKE-*` 不在 uncovered cases 中。
 
 示例：
 
 ```markdown
 ## [code] 代码实现
-- [ ] 切片1：数据层 schema + 迁移（覆盖 UT-S01-01..05）
-- [ ] 切片2：API 编排 handler（覆盖 ST-S01-01..03）
-- [ ] 切片3：前端面板渲染（覆盖 UT-S02-10..18）
+- [ ] 单切片：实现 S19 smoke 覆盖预检，并同步实现 scripts/smoke-enforce-runner.sh、smoke-results.jsonl reporter 与 scripts/run-smoke.js dispatcher 接入（覆盖 UT-S19-SMOKE-01、ST-S19-SMOKE-01、SMOKE-core-28）
+```
+
+示例：
+
+```markdown
+## [code] 代码实现
+- [ ] 单切片：修复 next --auto 的 plan-exit 固定点，并同步更新 CLI UT/ST、reporter 和 golden baseline（覆盖 UT-S24-15、ST-S24-04）
+```
+
+多切片仅用于大任务，且每条仍必须自闭环：
+
+```markdown
+## [code] 代码实现
+- [ ] 切片1：实现订单数据层与迁移，并同步更新 DAO UT 和 reporter（覆盖 UT-S01-01..05）
+- [ ] 切片2：实现订单 API handler，并同步更新 API ST 和 reporter（覆盖 ST-S01-01..03）
+- [ ] 切片3：实现前端订单面板，并同步更新组件 UT/ST 和 reporter（覆盖 UT-S02-10..18）
 ```
 
 ### Step 6: 产出 Delta 文件
@@ -292,14 +336,20 @@ change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `s
 - 用户明确要求执行（包括使用 `/openlogos:merge`、`/openlogos:archive` slash command）时，AI 可以代为执行
 - 不得在"顺手完成流程"、"按流程走完"、"继续"等隐式场景中自动触发
 
+**无人值守 `--auto` 例外（与 plan 门对称，依据 `spec/change-management.md` §143「无人值守 skip-gate 例外」）**：
+- 无人值守 `openlogos next --auto` 下，**仅** `spec` 出口门（`spec-exit`，审 delta + 授权合并）与 `deliver` 入口门（`deliver-entry`，部署执行）这两道 `skippable:true` 门可被**编排器（driver）**自动放行——**用户选择 `--auto` 即构成对这两道可跳门的授权**；每次放行向 `GATE_AUTO_PASSED` 追加一行审计（append-only，历史审计行不构成对后续动作的授权）。据此，`--auto` 下 `openlogos merge` 由编排器凭本次 `next --auto` 响应的 `gate_auto_passed=true` 执行，无需逐次人类授权。
+- **被派发的 change-writer agent 自身仍不直接执行 `openlogos merge`**：产出全部 delta 后停手、把控制权交回编排器，由编排器走自动合并。这与默认/手动模式下"提醒用户授权"并不矛盾——`--auto` 只是把"授权"前置到了用户选择 `--auto` 这一步。
+- **红线（`--auto` 绝不自动放行，始终须人类明确授权）**：`openlogos archive`、`openlogos smoke`、`git push`、以及 `gate:implement:loop-exhausted`（默认 `skippable:false`）。它们要么不是可跳 flow 门、要么属高危动作，不在 `--auto` 自动放行范围。
+- **默认 / 手动模式（无 `--auto`）行为完全不变**：merge、部署执行仍停在对应门等人类明确授权。
+
 merge 后的后续提示应按是否需要部署区分：
 
 - **不需要部署**：实现代码 → `openlogos verify` → `openlogos archive`
 - **需要部署**：实现代码 → `openlogos verify` → 用户明确授权部署 → `openlogos smoke` → `openlogos archive`
 
-**部署执行、`openlogos smoke` 也是人类确认点**。AI 未经用户明确授权不得自动部署或自动运行 smoke。
+**部署执行、`openlogos smoke` 也是人类确认点**。AI 未经用户明确授权不得自动部署或自动运行 smoke（例外：`--auto` 下部署执行可经 `deliver-entry` 门由编排器自动放行；`openlogos smoke` 不在自动放行范围，始终须人类确认）。
 
-AI 只负责驱动内容修改，不得在未获明确授权的情况下推进提案状态。
+AI 只负责驱动内容修改，不得在未获明确授权的情况下推进提案状态（`--auto` 无人值守下，对 `spec-exit` / `deliver-entry` 两道可跳门的放行属 §143 授权范围内的自动推进，放行依据为本次 `next --auto` 响应的 `gate_auto_passed=true`）。
 
 ## 输出规范
 

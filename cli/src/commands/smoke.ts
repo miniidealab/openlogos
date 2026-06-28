@@ -5,11 +5,16 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { normalizeSandboxConfig, runSandboxedCommand, buildInitialSandboxData, type SandboxData } from '../lib/sandbox.js';
 import { parseJsonl } from './verify.js';
+import {
+  checkSmokeCoverage,
+  extractSmokeIdsFromContent,
+  type SmokeCoverageCheck,
+  type SmokeCoverageDiagnostic,
+} from '../lib/smoke-coverage.js';
 
 const DEFAULT_SMOKE_RESULT_PATH = 'logos/resources/verify/smoke-results.jsonl';
 const DEFAULT_SMOKE_REPORT_PATH = 'logos/resources/verify/smoke-report.md';
 const SMOKE_CASES_DIR = 'logos/resources/test/smoke';
-const SMOKE_ID_PATTERN = /\bSMOKE-[A-Za-z0-9-]+-\d{2,3}\b/g;
 
 export interface SmokeData {
   environment: string | null;
@@ -27,6 +32,9 @@ export interface SmokeData {
     result: 'PASS' | 'FAIL';
     reason: string | null;
   };
+  changed_cases: string[];
+  diagnostics: SmokeCoverageDiagnostic[];
+  runners: string[];
   failed_cases: Array<{ id: string; error: string }>;
   uncovered_cases: string[];
   skipped_cases: string[];
@@ -47,15 +55,16 @@ export function extractSmokeDefinedIds(root: string): string[] {
 
     for (const file of files) {
       const content = readFileSync(join(dir, file), 'utf-8');
-      let match: RegExpExecArray | null;
-      const re = new RegExp(SMOKE_ID_PATTERN.source, SMOKE_ID_PATTERN.flags);
-      while ((match = re.exec(content)) !== null) {
-        ids.add(match[0]);
-      }
+      for (const id of extractSmokeIdsFromContent(content)) ids.add(id);
     }
   } catch { /* directory read error */ }
 
   return Array.from(ids).sort();
+}
+
+function readSmokeResults(root: string, resultPath: string) {
+  const fullResultPath = join(root, resultPath);
+  return existsSync(fullResultPath) ? parseJsonl(readFileSync(fullResultPath, 'utf-8')) : [];
 }
 
 function generateSmokeReport(data: SmokeData): string {
@@ -88,6 +97,14 @@ function generateSmokeReport(data: SmokeData): string {
     md += '\n';
   }
 
+  if (data.diagnostics.length > 0) {
+    md += '## Diagnostics\n\n| Code | Message | Cases |\n|------|---------|-------|\n';
+    for (const item of data.diagnostics) {
+      md += `| ${item.code} | ${item.message.replace(/\|/g, '\\|').replace(/\n/g, ' ')} | ${(item.case_ids ?? []).join(', ')} |\n`;
+    }
+    md += '\n';
+  }
+
   if (data.skipped_cases.length > 0) {
     md += '## Skipped Cases\n\n';
     for (const id of data.skipped_cases) md += `- ${id}\n`;
@@ -97,7 +114,12 @@ function generateSmokeReport(data: SmokeData): string {
   return md;
 }
 
-export function collectSmokeData(root: string, environment?: string, sandbox?: SandboxData): SmokeData {
+export function collectSmokeData(
+  root: string,
+  environment?: string,
+  sandbox?: SandboxData,
+  coverageCheck?: SmokeCoverageCheck,
+): SmokeData {
   const configPath = join(root, 'logos', 'logos.config.json');
   let resultPath = DEFAULT_SMOKE_RESULT_PATH;
   let reportPath = DEFAULT_SMOKE_REPORT_PATH;
@@ -108,8 +130,8 @@ export function collectSmokeData(root: string, environment?: string, sandbox?: S
     if (config.smoke?.report_path) reportPath = config.smoke.report_path;
   } catch { /* use defaults */ }
 
-  const fullResultPath = join(root, resultPath);
-  const results = parseJsonl(readFileSync(fullResultPath, 'utf-8'));
+  const check = coverageCheck ?? checkSmokeCoverage(root, { resultPath });
+  const results = readSmokeResults(root, resultPath);
   const defined = extractSmokeDefinedIds(root);
   const resultIds = new Set(results.map(r => r.id));
   const passed = results.filter(r => r.status === 'pass');
@@ -120,9 +142,13 @@ export function collectSmokeData(root: string, environment?: string, sandbox?: S
 
   const coveragePct = defined.length > 0 ? Math.round((coveredCount / defined.length) * 100) : 0;
   const passRatePct = results.length > 0 ? Math.round((passed.length / results.length) * 100) : 0;
-  const isPass = failed.length === 0 && uncovered.length === 0;
+  const isPass = failed.length === 0 && uncovered.length === 0 && check.diagnostics.length === 0;
   let reason: string | null = null;
-  if (!isPass) reason = failed.length > 0 ? 'failed_cases' : 'incomplete_coverage';
+  if (!isPass) {
+    if (failed.length > 0) reason = 'failed_cases';
+    else if (check.diagnostics.length > 0) reason = check.diagnostics[0].code;
+    else reason = 'incomplete_coverage';
+  }
 
   const data: SmokeData = {
     environment: environment ?? null,
@@ -140,6 +166,9 @@ export function collectSmokeData(root: string, environment?: string, sandbox?: S
       result: isPass ? 'PASS' : 'FAIL',
       reason,
     },
+    changed_cases: check.changed_case_ids,
+    diagnostics: check.diagnostics,
+    runners: check.runners,
     failed_cases: failed.map(r => ({ id: r.id, error: r.error ?? 'unknown' })),
     uncovered_cases: uncovered,
     skipped_cases: skipped.map(r => r.id),
@@ -214,7 +243,21 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
     }
   }
 
+  const coverageCheck = checkSmokeCoverage(root, { command, resultPath });
+
   if (!existsSync(join(root, resultPath))) {
+    if (coverageCheck.changed_case_ids.length > 0) {
+      const data = collectSmokeData(root, environment, sandboxData, coverageCheck);
+      if (format === 'json') {
+        console.log(JSON.stringify(makeEnvelope('smoke', data)));
+        process.exit(1);
+      }
+      console.error(`\nError: No smoke results found at ${resultPath}.`);
+      for (const item of data.diagnostics) {
+        console.error(`- ${item.code}: ${item.message}`);
+      }
+      process.exit(1);
+    }
     if (format === 'json') {
       console.error(JSON.stringify(makeErrorEnvelope(
         'smoke', 'NO_SMOKE_RESULTS', `No smoke results found at ${resultPath}.`,
@@ -237,7 +280,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
     process.exit(1);
   }
 
-  const data = collectSmokeData(root, environment, sandboxData);
+  const data = collectSmokeData(root, environment, sandboxData, coverageCheck);
   if (sandboxData.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
     data.gate.reason = 'failed_cases';
@@ -306,6 +349,14 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
   if (data.uncovered_cases.length > 0) {
     console.log('\nUncovered smoke cases:');
     for (const id of data.uncovered_cases) console.log(`  ${id}`);
+  }
+
+  if (data.diagnostics.length > 0) {
+    console.log('\nSmoke diagnostics:');
+    for (const item of data.diagnostics) {
+      const cases = item.case_ids?.length ? ` (${item.case_ids.join(', ')})` : '';
+      console.log(`  ${item.code}${cases}: ${item.message}`);
+    }
   }
 
   console.log(`\n${data.gate.result === 'PASS' ? '✅' : '❌'} Gate 3.8: ${data.gate.result}`);

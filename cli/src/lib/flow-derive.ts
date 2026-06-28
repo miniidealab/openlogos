@@ -29,6 +29,7 @@ import {
   countMergeableDeltaFiles,
   allTasksChecked,
   hasSmokeCasesForProposal,
+  PLAN_APPROVED_MARKER,
 } from './proposal-lifecycle.js';
 import type { ProposalStep } from './proposal-lifecycle.js';
 import type { ModuleInfo, PhaseProgressItem } from '../commands/status.js';
@@ -425,8 +426,9 @@ export function detectProposalStepViaFlow(
       return 'coding';
     }
     if (delta.total > 0 && delta.checked === delta.total) return 'ready-to-merge';
-    // change-flow-redesign：delta 尚未启动（无勾选、无 delta 文件）→ ready-to-delta（plan 出口驻留态）
-    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0) return 'ready-to-delta';
+    // change-flow-redesign：delta 尚未启动且 plan 门未消费 → ready-to-delta（plan 出口驻留态）。
+    // PLAN_APPROVED 是 plan-exit 被 --auto 消费后的状态源；GATE_AUTO_PASSED 仅为审计，不参与派生。
+    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0 && !exists(PLAN_APPROVED_MARKER)) return 'ready-to-delta';
     return 'delta-writing';
   }
 
