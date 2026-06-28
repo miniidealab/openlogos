@@ -114,9 +114,62 @@ describe('S31 — slice_state 计数与省略规则', () => {
     expect(deriveSliceStateIfActive(root, { id: 'core', name: 'core', lifecycle: 'initial' }, dir)).toBeNull();
   });
 
-  it('UT-S31-15: launched 无提案目录 → deriveSliceStateIfActive 省略（null）', () => {
+  it('UT-S31-14b: launched 无提案目录 → deriveSliceStateIfActive 省略（null）', () => {
     const { root } = makeProposal('# 任务\n\n## [code] 代码实现\n- [ ] 切片1');
     expect(deriveSliceStateIfActive(root, LAUNCHED_MOD, null)).toBeNull();
+  });
+
+  it('UT-S31-15: 缩进子任务 checkbox 不参与顶层切片计数', () => {
+    const { dir } = makeProposal([
+      '# 任务',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 切片1：Agent idle 状态读取契约',
+      '  - [ ] 扩展 open-agent bridge 状态 IPC',
+      '  - [x] 扩展 AgentAdapter 状态入口',
+      '  - [ ] 补 AgentPanel idle/background/pending/streaming 读取',
+      '- [ ] 切片2：完成屏障消费 Agent idle 状态',
+      '  - [ ] drift-only 必须等待 Agent idle',
+    ].join('\n'));
+    expect(deriveSliceState(dir)).toMatchObject({
+      total: 2,
+      done: 0,
+      remaining: 2,
+      current: '切片1：Agent idle 状态读取契约',
+    });
+  });
+
+  it('UT-S31-16: 父切片已勾但子任务未全勾时不计 done', () => {
+    const { dir } = makeProposal([
+      '# 任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 切片1：Agent idle 状态读取契约',
+      '  - [x] 扩展 open-agent bridge 状态 IPC',
+      '  - [ ] 扩展 AgentAdapter 状态入口',
+      '- [ ] 切片2：完成屏障消费 Agent idle 状态',
+    ].join('\n'));
+    expect(deriveSliceState(dir)).toEqual({
+      total: 2,
+      done: 0,
+      remaining: 2,
+      current: '切片1：Agent idle 状态读取契约',
+      current_children: [
+        { text: '扩展 open-agent bridge 状态 IPC', checked: true },
+        { text: '扩展 AgentAdapter 状态入口', checked: false },
+      ],
+      current_unchecked_children: ['扩展 AgentAdapter 状态入口'],
+    });
+  });
+
+  it('UT-S31-18: 无缩进 checkbox 时保持既有输出兼容', () => {
+    const { dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1\n- [ ] 切片2');
+    expect(deriveSliceState(dir)).toEqual({
+      total: 2,
+      done: 1,
+      remaining: 1,
+      current: '切片2',
+    });
   });
 });
 
@@ -239,6 +292,30 @@ describe('S31 — 命令级契约', () => {
     expect(m.next_node?.slice).toBe('切片1'); // 高修：iteration=0 也注入
   });
 
+  it('UT-S31-17: next_node 输出当前切片子任务', async () => {
+    const { root } = setupCmd([
+      '# 任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] d',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 切片1：Agent idle 状态读取契约',
+      '  - [x] 扩展 open-agent bridge 状态 IPC',
+      '  - [ ] 扩展 AgentAdapter 状态入口',
+      '- [ ] 切片2：完成屏障消费 Agent idle 状态',
+    ].join('\n'), ['SPEC_MERGED']);
+    const m = (await nextJson(root)).modules[0];
+    expect(m.next_node?.id).toBe('code');
+    expect(m.next_node?.slice).toBe('切片1：Agent idle 状态读取契约');
+    expect(m.slice_state.current_children).toEqual([
+      { text: '扩展 open-agent bridge 状态 IPC', checked: true },
+      { text: '扩展 AgentAdapter 状态入口', checked: false },
+    ]);
+    expect(m.slice_state.current_unchecked_children).toEqual(['扩展 AgentAdapter 状态入口']);
+    expect(m.next_node?.slice_children).toEqual(m.slice_state.current_children);
+  });
+
   it('UT-S31-08: next 选第一个未勾切片 + slice 子提示（勾 2 → slice = 第 3 行标题）', async () => {
     // [code] 3 行勾 2 → coding、切片循环激活、未收敛未达上限 → next_node.id==code、slice = 第一个未勾（第 3 行）
     const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n- [x] 切片2\n- [ ] 切片3：收尾', ['SPEC_MERGED']);
@@ -354,6 +431,45 @@ describe('S31 — 场景测试', () => {
     writeLedgerRows(dir, ['pass', 'fail']); // 末轮 fail（全量回归红）
     const m = (await nextJson(root)).modules[0];
     expect(m.loop_state?.converged).toBe(false); // 即便 [code] 全勾，末轮 fail → 不出环
+  });
+
+  it('ST-S31-07: 父切片与子任务全部完成后才推进下一片', async () => {
+    const baseTasks = (firstParent: boolean, firstChildren: [boolean, boolean, boolean]): string => [
+      '# 任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] d',
+      '',
+      '## [code] 代码实现',
+      `- [${firstParent ? 'x' : ' '}] 切片1：Agent idle 状态读取契约`,
+      `  - [${firstChildren[0] ? 'x' : ' '}] 扩展 open-agent bridge 状态 IPC`,
+      `  - [${firstChildren[1] ? 'x' : ' '}] 扩展 AgentAdapter 状态入口`,
+      `  - [${firstChildren[2] ? 'x' : ' '}] 补 AgentPanel idle/background/pending/streaming 读取`,
+      '- [ ] 切片2：完成屏障消费 Agent idle 状态',
+    ].join('\n');
+
+    const blocked = setupCmd(baseTasks(true, [true, false, true]), ['SPEC_MERGED']);
+    writeLedgerRows(blocked.dir, ['pass']);
+    const blockedState = (await nextJson(blocked.root)).modules[0];
+    expect(blockedState.slice_state).toMatchObject({
+      total: 2,
+      done: 0,
+      remaining: 2,
+      current: '切片1：Agent idle 状态读取契约',
+      current_unchecked_children: ['扩展 AgentAdapter 状态入口'],
+    });
+    expect(blockedState.next_node?.slice).toBe('切片1：Agent idle 状态读取契约');
+
+    const advanced = setupCmd(baseTasks(true, [true, true, true]), ['SPEC_MERGED']);
+    writeLedgerRows(advanced.dir, ['pass']);
+    const advancedState = (await nextJson(advanced.root)).modules[0];
+    expect(advancedState.slice_state).toMatchObject({
+      total: 2,
+      done: 1,
+      remaining: 1,
+      current: '切片2：完成屏障消费 Agent idle 状态',
+    });
+    expect(advancedState.next_node?.slice).toBe('切片2：完成屏障消费 Agent idle 状态');
   });
 
   it('ST-S31-EX-1: initial 多模块默认不激活切片循环 → 不输出 slice_state、verify 不写账本', () => {

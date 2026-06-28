@@ -496,6 +496,8 @@ export interface NextNode {
   post_script: string | null;
   // change-flow-redesign 切片6：切片循环阻塞在 code 工作节点时的「只做这一片」子提示（= slice_state.current）。
   slice?: string;
+  // S31：当前父切片下的缩进 checkbox 子任务，供宿主注入当前切片内部工作项。
+  slice_children?: Array<{ text: string; checked: boolean }>;
 }
 
 /**

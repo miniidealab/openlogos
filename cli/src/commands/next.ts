@@ -619,7 +619,11 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     // 不依赖 isLoopBlocking（其要求 iteration≥1 + verify 前沿）：正常 coding 阶段 next_node 已指向 code、
     // slice_state.current 有值，宿主需据此注入"只做这一片"上下文（spec/cli-json-output.md §3.10(4)）。
     if (!ls || ls.until !== 'code_slices_green' || ls.converged || ls.escalated) return nn;
-    return { ...nn, slice: ss.current };
+    return {
+      ...nn,
+      slice: ss.current,
+      ...(ss.current_children && ss.current_children.length > 0 ? { slice_children: ss.current_children } : {}),
+    };
   };
   // R5：命令级建议（创建提案 / 补 baseline / launch）时省略 next_node——这类不是某个 flow 节点。
   // 顶层 command 是 `openlogos change …`/`openlogos launch` 即命令级（如 adopted 补 baseline：current_phase 虽非空，

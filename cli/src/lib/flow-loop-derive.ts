@@ -9,7 +9,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadFlow, findActivatedLoop, type Flow } from './flow.js';
-import { parseTaskSections, extractTaskSectionItems } from './proposal-lifecycle.js';
 import type { ModuleInfo } from '../commands/status.js';
 
 export interface LoopState {
@@ -82,9 +81,9 @@ export function deriveLoopState(
   let converged = testsGreen;
   if (act.until === 'code_slices_green' && proposalDir) {
     const code = readCodeSection(proposalDir);
-    const hasCodeSlices = code != null && code.total > 0;
+    const hasCodeSlices = code.total > 0;
     converged = hasCodeSlices
-      ? testsGreen && code.checked === code.total // 复合收敛：切片全勾 ∧ 测试绿
+      ? testsGreen && code.done === code.total // 复合收敛：父切片及子任务全勾 ∧ 测试绿
       : testsGreen;                                // 空 [code] → 退化为 tests_green
   }
   const escalated = iteration >= act.max_iters && !converged;
@@ -99,28 +98,85 @@ export function deriveLoopState(
 /**
  * 读提案 tasks.md 的 [code] section，判 section_complete（legacy 语义）：
  * 无 [code] section 或 total==0 → 视为完成（退化路径，由调用方决定如何退化）；
- * total>0 时 checked===total 才完成。
+ * total>0 时 done===total 才完成。done 采用 S31 父切片完成规则：
+ * 父切片 checkbox 已勾选，且其下所有缩进子任务 checkbox 均已勾选。
  */
-function readCodeSection(proposalDir: string): { total: number; checked: number } | null {
+function readCodeSection(proposalDir: string): { total: number; done: number } {
   const tasksPath = join(proposalDir, 'tasks.md');
-  if (!existsSync(tasksPath)) return null;
-  const sections = parseTaskSections(readFileSync(tasksPath, 'utf-8'));
-  return sections?.['code'] ?? null;
+  if (!existsSync(tasksPath)) return { total: 0, done: 0 };
+  const state = deriveSliceState(proposalDir, readFileSync(tasksPath, 'utf-8'));
+  return { total: state.total, done: state.done };
 }
 
 /** 代码切片循环状态（spec/cli-json-output.md §3.10(2)）。仅切片循环激活时由调用方输出。 */
+export interface SliceChild {
+  text: string;
+  checked: boolean;
+}
+
 export interface SliceState {
   total: number;
   done: number;
   current?: string;
+  current_children?: SliceChild[];
+  current_unchecked_children?: string[];
   remaining: number;
+}
+
+interface CodeSlice {
+  text: string;
+  checked: boolean;
+  children: SliceChild[];
+}
+
+function extractCodeSlices(content: string): CodeSlice[] {
+  const slices: CodeSlice[] = [];
+  const lines = content.split(/\r?\n/);
+  const sectionPattern = /^## \[([a-z][a-z0-9-]*)\]/i;
+  let inCode = false;
+  let current: CodeSlice | null = null;
+
+  for (const line of lines) {
+    const sectionMatch = line.match(sectionPattern);
+    if (sectionMatch) {
+      inCode = sectionMatch[1].toLowerCase() === 'code';
+      current = null;
+      continue;
+    }
+    if (!inCode) continue;
+
+    const parentMatch = line.match(/^- \[([ x])\]\s+(.+)$/i);
+    if (parentMatch) {
+      current = {
+        checked: parentMatch[1].toLowerCase() === 'x',
+        text: parentMatch[2].trim(),
+        children: [],
+      };
+      slices.push(current);
+      continue;
+    }
+
+    const childMatch = line.match(/^\s+- \[([ x])\]\s+(.+)$/i);
+    if (childMatch && current) {
+      current.children.push({
+        checked: childMatch[1].toLowerCase() === 'x',
+        text: childMatch[2].trim(),
+      });
+    }
+  }
+
+  return slices;
+}
+
+function isSliceDone(slice: CodeSlice): boolean {
+  return slice.checked && slice.children.every(child => child.checked);
 }
 
 /**
  * 派生切片状态：读提案 tasks.md 的 [code] section。
- * - total = 切片数（[code] 行总数）
- * - done  = 已勾选切片数
- * - current = 第一个未勾 [code] 行的标题文本（全勾时省略）
+ * - total = 顶层父切片数（缩进 checkbox 不计入）
+ * - done  = 已完成父切片数（父切片勾选且其下缩进 checkbox 全勾）
+ * - current = 第一个未完成父切片标题文本（全完成时省略）
  * - remaining = total - done
  * 仅在切片循环激活（until=code_slices_green）时由调用方调用并挂载。
  */
@@ -130,11 +186,19 @@ export function deriveSliceState(proposalDir: string, tasksContent?: string): Sl
     const tasksPath = join(proposalDir, 'tasks.md');
     content = existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '';
   }
-  const items = extractTaskSectionItems(content, 'code');
-  const total = items.length;
-  const done = items.filter(i => i.checked).length;
-  const current = items.find(i => !i.checked)?.text;
-  return { total, done, remaining: total - done, ...(current != null ? { current } : {}) };
+  const slices = extractCodeSlices(content);
+  const total = slices.length;
+  const done = slices.filter(isSliceDone).length;
+  const currentSlice = slices.find(slice => !isSliceDone(slice));
+  const currentUncheckedChildren = currentSlice?.children.filter(child => !child.checked).map(child => child.text);
+  return {
+    total,
+    done,
+    remaining: total - done,
+    ...(currentSlice != null ? { current: currentSlice.text } : {}),
+    ...(currentSlice && currentSlice.children.length > 0 ? { current_children: currentSlice.children } : {}),
+    ...(currentUncheckedChildren && currentUncheckedChildren.length > 0 ? { current_unchecked_children: currentUncheckedChildren } : {}),
+  };
 }
 
 /**
