@@ -233,6 +233,7 @@ export const SKILL_NAMES = [
   'code-implementor',
   'code-reviewer',
   'change-writer',
+  'slice-planner',
   'deployment-executor',
   'merge-executor',
 ] as const;
@@ -256,6 +257,7 @@ const SKILL_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
   'code-implementor': { en: 'Code and test code generation with spec fidelity (Step 5)', zh: '基于规格链的代码与测试代码生成（Step 5）' },
   'code-reviewer': { en: 'Code review and compliance checking', zh: '代码审查与规范检查' },
   'change-writer': { en: 'Change proposal writing and impact analysis', zh: '变更提案编写与影响分析' },
+  'slice-planner': { en: 'Post-merge [code] slice planning: six-dim scoring + vertical/horizontal discriminator + delete-the-rest falsification gate (sole source of truth for [code] slicing)', zh: 'merge 后 [code] 切片规划：六维打分 + 垂直/横向判别器 + 删后续证伪门（launched 变更下 [code] 切片的唯一事实源）' },
   'deployment-executor': { en: 'Human-confirmed deployment execution after verify', zh: 'verify 通过后的人类确认部署执行' },
   'merge-executor': { en: 'Delta merge execution via MERGE_PROMPT.md', zh: '通过 MERGE_PROMPT.md 执行 Delta 合并' },
 };

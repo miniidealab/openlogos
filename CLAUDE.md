@@ -88,6 +88,7 @@ Step 5 分批执行提示词（可直接复用）：
 - `logos/skills/code-implementor/SKILL.md` — 基于规格链的代码与测试代码生成（Step 5）
 - `logos/skills/code-reviewer/SKILL.md` — 代码审查与规范检查
 - `logos/skills/change-writer/SKILL.md` — 变更提案编写与影响分析
+- `logos/skills/slice-planner/SKILL.md` — merge 后 [code] 切片规划：六维打分 + 垂直/横向判别器 + 删后续证伪门（launched 变更下 [code] 切片的唯一事实源）
 - `logos/skills/deployment-executor/SKILL.md` — verify 通过后的人类确认部署执行
 - `logos/skills/merge-executor/SKILL.md` — 通过 MERGE_PROMPT.md 执行 Delta 合并
 
