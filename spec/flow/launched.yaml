@@ -1,13 +1,16 @@
 # 内置 flow 模板：launched（变更生命周期流程）
 # change-flow-redesign：前段 propose 拆为 plan/spec/merge 三段；deliver 门改 skippable:true；
 # implement loop 默认激活切片循环（until: code_slices_green, max_iters: 30）。
+# split-slice-planner-stage：[code] 切片从 plan 段剥离，merge 后新增独立 slice 子流程
+#   （节点 plan-slices，skill: slice-planner），出口 slice-exit 门 + ready-to-implement 驻留态；
+#   write-tasks 仅产 [delta]/[deploy]，不再产 [code]。
 # 这是产品唯一源头；项目实例 logos/flow/launched.yaml 可 extends: builtin:launched 后只写差异。
 # 注：YAML 模板无 md 章节，本 delta 按整文件替换合并。
 version: 1
 flow: launched
 
 subflows:
-  # ── 方案：写提案 + 划分 tasks（写 delta 前批准方案）──────────
+  # ── 方案：写提案 + 划分 [delta]/[deploy]（写 delta 前批准方案）──────────
   - id: plan
     name: 方案
     nodes:
@@ -23,8 +26,8 @@ subflows:
         name: 划分 tasks
         skill: change-writer
         produces: tasks.md
-        done_when: tasks_filled               # tasks.md 脱模板（含 [code] 切片清单）
-    gate: { type: human, skippable: true }     # 批准方案（含切片划分）；对应 ready-to-delta 驻留态，gate_id=plan-exit
+        done_when: tasks_delta_filled         # tasks.md 的 [delta]/[deploy] 脱模板（[code] 改由 merge 后 slice 段产出）
+    gate: { type: human, skippable: true }     # 批准方案；对应 ready-to-delta 驻留态，gate_id=plan-exit
 
   # ── 规格：写 delta（审 delta + 授权合并的关键门）────────────
   - id: spec
@@ -54,6 +57,22 @@ subflows:
         produces: null
         done_when: any_present:[SPEC_MERGED, MERGED]
     gate: { type: none }
+
+  # ── 切片：merge 后对已合并规格 + 真实测试 ID 划分 [code] 切片 ──
+  # split-slice-planner-stage：独立环节，唯一事实源；纯文档提案（无代码产出）整段跳过。
+  - id: slice
+    name: 切片规划
+    when: code_required                        # 纯文档提案（无 [code] 产出）整段跳过
+    nodes:
+      - id: plan-slices
+        name: 划分切片
+        skill: slice-planner
+        working_agent: null
+        review_agent: null
+        produces: tasks.md                     # 仅产出 [code] section
+        # 规划完成 = [code] section 脱模板（切片已写出，此时全部未勾），区别于 implement.code 的 section_complete:code（全勾=实现完成）。
+        done_when: tasks_code_filled           # [code] 切片清单脱模板 → ready-to-implement
+    gate: { type: human, skippable: true }     # 批准切片划分；对应 ready-to-implement 驻留态，gate_id=slice-exit
 
   # ── 实现：code + verify（默认激活切片循环，收敛=全部切片完成且测试绿）──
   - id: implement

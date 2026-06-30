@@ -140,7 +140,7 @@ Delta 文件的目录结构映射主文档目录：
 
 > **核心原则**：`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 是人类确认点。AI 可提醒、解释、准备命令；未经用户明确授权不得执行。用户以明确请求或 slash command 授权时，AI 可以代为执行。不得在“顺手完成流程”“按流程走完”等隐式场景中自动触发。
 >
-> **无人值守 skip-gate 例外（统一模型）**：launched flow 中所有 `skippable:true` 的人类门——`plan` 出口（`plan-exit`，批准方案）、`spec` 出口（`spec-exit`，审 delta + 授权合并）、`deliver` 入口（`deliver-entry`，部署执行）——在无人值守 `openlogos next --auto` 模式下均可被自动放行：**用户选择 `--auto` 即构成对这些可跳门的授权**，每次放行向 `GATE_AUTO_PASSED` 追加审计行；放行依据是**本次 `--auto` 响应的 `gate_auto_passed=true`**（live 决策），`GATE_AUTO_PASSED` 为 append-only 审计、**历史审计行不构成对后续动作的授权**。**默认/手动模式（无 `--auto`）下，merge / 部署执行仍须人类明确授权**（部署目标可能是测试环境而非生产，故纳入可跳门）。`gate:implement:loop-exhausted`（默认 `skippable:false`）、以及 `verify` / `smoke` / `archive` / `git push`（非 skip-gate flow 门，由 CLI / 人类驱动）**不在** `--auto` 自动放行范围。
+> **无人值守 skip-gate 例外（统一模型）**：launched flow 中所有 `skippable:true` 的人类门——`plan` 出口（`plan-exit`，批准方案）、`spec` 出口（`spec-exit`，审 delta + 授权合并）、`slice` 出口（`slice-exit`，切片待批准）、`deliver` 入口（`deliver-entry`，部署执行）——在无人值守 `openlogos next --auto` 模式下均可被自动放行：**用户选择 `--auto` 即构成对这些可跳门的授权**，每次放行向 `GATE_AUTO_PASSED` 追加审计行；放行依据是**本次 `--auto` 响应的 `gate_auto_passed=true`**（live 决策），`GATE_AUTO_PASSED` 为 append-only 审计、**历史审计行不构成对后续动作的授权**。**默认/手动模式（无 `--auto`）下，merge / 部署执行仍须人类明确授权**（部署目标可能是测试环境而非生产，故纳入可跳门）。`gate:implement:loop-exhausted`（默认 `skippable:false`）、以及 `verify` / `smoke` / `archive` / `git push`（非 skip-gate flow 门，由 CLI / 人类驱动）**不在** `--auto` 自动放行范围。
 >
 > **规格驱动代码**：代码实现必须在规格合并进主文档之后才能开始，不允许基于 delta 草稿直接写代码。
 
@@ -151,7 +151,7 @@ Delta 文件的目录结构映射主文档目录：
    └── 写入 logos/.openlogos-guard，锁定当前活动提案
 
 2. AI 辅助填写提案（change-writer Skill）
-   └── AI 分析影响范围，填写 proposal.md 和 tasks.md
+   └── AI 分析影响范围，填写 proposal.md 和 tasks.md（plan 段只产 [delta]/[deploy]，不划分 [code] 切片）
    └── 等待用户确认提案内容后，才开始产出 delta
 
 3. 按 tasks.md 逐项产出 Delta 文件（各阶段 Skill）
@@ -172,19 +172,26 @@ Delta 文件的目录结构映射主文档目录：
    └── AI 读取 MERGE_PROMPT.md，逐个 delta 合并到主文档（logos/resources/）
    └── 合并完成后，AI 自动 commit 规格文档变更（告知用户，无需确认）
    └── commit message 格式：docs({slug}): merge spec deltas
-   └── 写入 SPEC_MERGED，表示“主规格已合并，可以开始代码实现”
+   └── 写入 SPEC_MERGED，表示“主规格已合并，可以开始切片规划/代码实现”
 
-7. 实现代码（code-implementor Skill）
-   └── 按合并后的主文档实现业务代码 + 测试代码 + OpenLogos reporter
+7. 切片规划（slice-planner Skill）【slice 出口 slice-exit 为人类确认点；无人值守 --auto 下可放行】
+   └── 仅当提案 code_required（tasks.md 有非空 [code] section）时进入；纯文档提案整段跳过，直接进入步骤 8/9
+   └── slice-planner 以已合并的规格 + 真实 UT/ST 测试 ID 为输入，逐片过「删后续证伪门」划分 [code] 切片
+   └── [code] 切片为「唯一事实源」，下游 code-implementor 忠实逐片消费、不重新分批
+   └── 对应 proposal_step: ready-to-implement
+   └── slice 出口「切片待批准」门：默认/手动模式须人类确认后进入实现；无人值守 --auto 模式自动放行 slice-exit（写 SLICES_APPROVED marker + 追加 GATE_AUTO_PASSED 审计行），放行后前移到 coding
+
+8. 实现代码（code-implementor Skill）
+   └── 按合并后的主文档与 slice-planner 写定的 [code] 切片，逐片实现业务代码 + 测试代码 + OpenLogos reporter
    └── 代码实现完成后，AI 自动 commit 代码变更（告知用户，无需确认）
    └── commit message 格式：feat/fix({slug}): implement changes
 
-8. 运行验收（CLI）【人类确认点】
+9. 运行验收（CLI）【人类确认点】
    └── 用户运行 openlogos verify，生成验收报告
-   └── 验收通过（PASS）→ 继续步骤 9
+   └── 验收通过（PASS）→ 继续步骤 10
    └── 验收失败（FAIL）→ 修复代码后重新运行，不需要重走 merge 流程
 
-9. 部署执行（如需要）【人类确认点；无人值守 --auto 下可经 deliver 门自动放行】
+10. 部署执行（如需要）【人类确认点；无人值守 --auto 下可经 deliver 门自动放行】
    └── 仅当 VERIFY_PASS 存在、提案级 `是否需要部署：是` 且 tasks.md 有 [deploy] section 时进入
    └── 默认/手动模式：用户必须明确授权 AI 执行部署
    └── 无人值守 --auto 模式：deliver 入口门 skippable:true，openlogos next --auto 自动放行该门，以本次响应 gate_auto_passed=true 为本次部署的放行依据（追加 GATE_AUTO_PASSED 审计行；历史审计行不构成后续授权），AI 据此执行本次部署
@@ -193,21 +200,21 @@ Delta 文件的目录结构映射主文档目录：
    └── 部署完成后写入 logos/changes/{slug}/DEPLOY_DONE
    └── 部署失败时不得写入 DEPLOY_DONE，应输出失败点和回滚建议
 
-10. 运行部署后冒烟测试（CLI）【人类确认点】
+11. 运行部署后冒烟测试（CLI）【人类确认点】
    └── 仅当提案级 `是否需要 smoke：是` 且 DEPLOY_DONE 存在时运行 openlogos smoke
    └── openlogos smoke 读取 smoke 结果并生成 logos/resources/verify/smoke-report.md
    └── 冒烟通过写入 SMOKE_PASS
    └── 冒烟失败写入 SMOKE_FAIL
    └── SMOKE_PASS 后才能归档提案；无需 smoke 的提案在部署完成后可归档
 
-11. 归档变更（CLI）【人类确认点】
+12. 归档变更（CLI）【人类确认点】
    └── openlogos archive {slug}
    └── 将 logos/changes/{slug}/ 移入 logos/changes/archive/
    └── 若当前 guard 指向该提案，则删除 logos/.openlogos-guard
    └── 归档完成后，AI 自动 commit 归档变更（告知用户，无需确认）
    └── commit message 格式：chore({slug}): archive change proposal
 
-12. 推送到远端（Git）【人类确认点】
+13. 推送到远端（Git）【人类确认点】
     └── AI 提示用户确认是否执行 git push
     └── 用户明确授权后，AI 执行 git push
     └── 未获授权不得自动推送
@@ -217,9 +224,9 @@ Delta 文件的目录结构映射主文档目录：
 
 | 变更类型 | commit 策略 |
 |---------|------------|
-| 需求级 / 设计级变更 | 至少 3 个 commit：规格（Step 6）+ 代码（Step 7）+ 归档（Step 11） |
-| 接口级变更 | 至少 2 个 commit：规格+代码合并（Step 6-7）+ 归档（Step 11） |
-| 代码级修复 | 至少 2 个 commit：代码（Step 7）+ 归档（Step 11） |
+| 需求级 / 设计级变更 | 至少 3 个 commit：规格（Step 6）+ 代码（Step 8）+ 归档（Step 12） |
+| 接口级变更 | 至少 2 个 commit：规格+代码合并（Step 6 / 8）+ 归档（Step 12） |
+| 代码级修复 | 至少 2 个 commit：代码（Step 8）+ 归档（Step 12） |
 
 ## 变更传播规则
 

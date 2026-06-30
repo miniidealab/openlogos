@@ -174,6 +174,7 @@ loop:
 | `deployment_required` | 是否需要部署 | **来源随 flow 不同**，见下方说明 |
 | `smoke_required` | 是否需要 smoke | **来源随 flow 不同**，见下方说明 |
 | `delta_required` | 提案是否含规格变更 | `= tasks.md 存在 [delta] section`（launched 用；无 [delta] 的纯代码提案为 false） |
+| `code_required` | 提案是否将产出代码 | `= tasks.md 存在非空 [code] section`（launched 用；纯文档提案无 [code] 为 false）。**split-slice-planner-stage 起**用于 gate `slice` 子流程：`code_required==false` 时整个 `slice` 子流程跳过（merge 后直接进入退化的 implement，切片循环按 §12.4(1) 空 `[code]` 退化为 `tests_green`） |
 
 **`deployment_required` / `smoke_required` 的来源随 flow 不同（关键）**：
 - **initial flow**：取**模块级**默认——
@@ -185,7 +186,7 @@ loop:
   `deployment_required: true` 时，一个声明"无需部署"的提案仍会错误进入 deploy。
 
 表达式（M1 支持的最小集）：`flag` / `not flag` / `flag != value`。例：
-`when: deployment_required`、`when: bootstrap != adopted`、`when: not api_enabled`、`when: delta_required`。
+`when: deployment_required`、`when: bootstrap != adopted`、`when: not api_enabled`、`when: delta_required`、`when: code_required`。
 
 ## 9. done_when 谓词词表
 
@@ -506,6 +507,48 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
   2. 写入活跃提案目录的 `PLAN_APPROVED` marker（内容可为空，存在性为准）。
 - **`PLAN_APPROVED` 的派生语义**：存在 `PLAN_APPROVED` 且 `[delta]` section 尚未全部完成时，`proposal_step` 派生为 `delta-writing`，即使还没有任何 delta 文件或 `[delta]` 勾选。此时 `next` / `next --auto` 的前沿是 `spec.write-delta`，`next_node.id == "write-delta"`。
 - **审计与授权边界**：`GATE_AUTO_PASSED` 仍是审计日志，默认 `next` 与 `status` 不因历史审计行越过 gate；状态推进只认 `PLAN_APPROVED` 或实际 delta 产出。重复 `next --auto` 不应在同一个 `plan-exit` 固定点追加多条审计，因为第一次放行后前沿已经离开 `ready-to-delta`。
+
+### 12.5 切片规划子流程派生（split-slice-planner-stage）
+
+本节在 §12.4「切片循环派生与 plan 门派生」基础上扩展，承载 split-slice-planner-stage 把 `[code]` 切片划分从 plan 段（merge 前）剥离、做成独立 `slice` 子流程（merge 后、implement 前）的派生；仍严格 **A 被动派生**（只派生、不自驱动跑测试、不代勾切片、不代切片）。
+
+**(1) `slice` 子流程定义（launched，merge 与 implement 之间）**
+
+- launched 在 `merge` 与 `implement` 之间新增 `slice` 子流程：单节点 `plan-slices`（`skill: slice-planner`，`produces: tasks.md` 的 `[code]` section，`done_when: tasks_code_filled`），出口 `gate:{type:human, position:exit, skippable:true}`，派生 `gate_id = slice-exit`（按 §11「`<subflow.id>-<gate.position>`」规则 = `slice-exit`）。
+- 整个 `slice` 子流程带 `when: code_required`（§8）：纯文档提案（`[code]` 为空）时**整段跳过**（其所有节点视为 skipped），merge 后直接进入退化的 implement，切片循环按 §12.4(1) 空 `[code]` 退化为 `tests_green`，避免常驻激活把纯 docs/delta 小提案卡死。
+- `plan` 段 `write-tasks` **不再产 `[code]`**：其完成判定由 `tasks_filled`（含 `[code]` 切片清单）收窄为 **`tasks_delta_filled`**——`[delta]`/`[deploy]` 脱模板即算完成，`[code]` 切片留待 merge 后由 `plan-slices`（slice-planner）对**已合并的规格 + 真实 UT/ST 测试 ID**撰写。切片的「唯一事实源」由 change-writer 平移到 slice-planner（仍是"一次定死、下游忠实消费"）。
+- **新增两个 `done_when` 谓词（与既有 `tasks_filled` 同族）**：
+  - `tasks_delta_filled` = `tasks.md` 的 `[delta]`/`[deploy]` section 脱模板（不要求 `[code]`），用于 `write-tasks`。
+  - `tasks_code_filled` = `tasks.md` 的 `[code]` section 脱模板（已写出真实切片清单，**此时全部未勾**），用于 `plan-slices`。**与 `implement.code` 的 `section_complete:code`（全勾=实现完成）是两个不同判定**：前者判"切片已划定"（规划完成），后者判"切片已实现"。
+
+**(2) 新增 `proposal_step` 值 `ready-to-implement`（merge 后切片待批准）**
+
+- **新增 `proposal_step` 值 `ready-to-implement`**：merge 完成后、切片循环尚未完成前、`slice` 出口 human 门「切片待批准」尚未放行时的驻留态。
+  - 检测依据 = "`SPEC_MERGED` 在场 且 `code_required` 且 `SLICES_APPROVED` 不存在 且 `[code]` 未全部勾选（切片循环未完成）"。
+  - **该驻留态内的前沿随 `plan-slices` 完成判定 `tasks_code_filled` 二分**：`[code]` 仍为模板（未 `tasks_code_filled`）→ 前沿是 `plan-slices` 节点（`next_node.id == "plan-slices"`，提示宿主唤起 slice-planner 规划切片）；`[code]` 已脱模板（`tasks_code_filled` 满足）→ `plan-slices` 完成，前沿移到 `slice` 出口门（`next_node.gate_id == "slice-exit"`）待批准。两种情况 `proposal_step` 均为 `ready-to-implement`。
+  - **位置**：闭合枚举中置于 `merge-generated` 与 `coding` 之间。
+- **gate 映射（`STEP_TO_GATE_SUBFLOW` 等价语义）**：`ready-to-implement` → `slice` 出口门（`gate_id = slice-exit`、`skippable:true`）。
+- **当前节点映射（`STEP_TO_CURRENT_BUILTIN`）**：`ready-to-implement` → `plan-slices` 节点。
+
+**(3) slice 门 `--auto` 放行 = 消费 gate（对齐 §12.4(2) plan 门写法）**
+
+- `next --auto` 在 `ready-to-implement` 自动放行 `slice-exit` 时，必须同时执行两个持久化动作：
+  1. 向活跃提案目录 `GATE_AUTO_PASSED` 追加 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}` 审计行；
+  2. 写入活跃提案目录的 `SLICES_APPROVED` marker（内容可为空，存在性为准；类比 `plan-exit` 写 `PLAN_APPROVED`）。
+- **`SLICES_APPROVED` 的派生语义**：存在 `SLICES_APPROVED` 且 `[code]` section 尚未全部勾选时，`proposal_step` 派生为 `coding`。此时 `next` / `next --auto` 的前沿是 `implement.code`，`next_node.id == "code"`（**放行后同次响应即重新派生为 `coding`/`code` 前沿**，供无人值守 driver 立即派发 code-implementor 逐片实现）。
+- **幂等边界**：同一提案已存在 `SLICES_APPROVED` 时，`proposal_step` 不再是 `ready-to-implement`，重复 `next --auto` **不得**在同一个 `slice-exit` 固定点再次追加审计行。
+- **审计与授权边界**：`GATE_AUTO_PASSED` 仍是审计日志，默认 `next` 与 `status` 不因历史审计行越过 gate；切片门状态推进只认 `SLICES_APPROVED` 或实际 `[code]` 全部勾选完成。
+
+**(4) 主动扩展 `proposal_step` 闭合枚举（破 INV）声明与影响面**
+
+- **本次主动扩展 `proposal_step` 闭合枚举（破"枚举不新增"不变量）**，新增取值 `ready-to-implement`，理由 = **开发态方法论重画标准照**（与 change-flow-redesign 新增 `ready-to-delta` 同性质，见 §12.4(2)；§12.2「`loop-exhausted` 不新增 `proposal_step` 枚举值」仅约束 loop 达上限的表达方式，不妨碍本提案为 slice 门显式扩展闭合枚举）。
+- **影响面逐条**：
+  1. `spec/cli-json-output.md` §3.3 枚举集合 + §3.10 增量节（新增 `ready-to-implement`、label zh「切片待批准」）；
+  2. `flow-derive`：`STEP_TO_GATE_SUBFLOW` 增 `ready-to-implement → slice`、`STEP_TO_CURRENT_BUILTIN` 增 `ready-to-implement → plan-slices`；
+  3. `spec/cli-json-output.md` §11 `next_node.gate_id` 映射增 `ready-to-implement → slice-exit`、`skippable` 表增 `ready-to-implement → true`；
+  4. `status` / `next` 标签输出 + `GATE_AUTO_PASSED` 审计支持 `gate_id:"slice-exit"`、新增 `SLICES_APPROVED` marker；
+  5. golden baseline（`next --format json` / `status` 快照）重拍，差异须仅为新步骤/新门字段；
+  6. **下游消费方** runlogos driver 对 `proposal_step` 做 switch 的分支需容纳新值——列为下游 follow-up，不在本提案 `[code]` 范围（openlogos CLI 侧先落地，runlogos 升级方法论后单独适配）。
 
 ## 13. M1 / M2 边界总表
 

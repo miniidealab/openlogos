@@ -146,9 +146,10 @@
 
 ### 2.14 next --auto 自动跳过可跳人类确认点（skip-gate）
 - `openlogos next --auto` 在 `next` 的派生基础上引入 **auto 模式**（skip-human-gate）：仅作用于 `next` 现有人类停顿点对应的 launched flow gate，引擎仍只派生"此 gate 可跳 + 当前 auto → 视为通过"，是否进入 auto 由宿主决定（A 架构）。
-- **gate 范围（对照 change-flow-redesign 后的 `spec/flow/launched.yaml`）**：
+- **gate 范围（对照 `spec/flow/launched.yaml`）**：
   - **plan 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-delta`（gate_id `plan-exit`）**：auto 下放行（仅审计、不推进状态）。
   - **spec 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-merge`（gate_id `spec-exit`，由原 propose 出口改）**：auto 下放行。
+  - **slice 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-implement`（gate_id `slice-exit`，批准 merge 后由 slice-planner 划定的 `[code]` 切片）**：auto 下放行（仅审计、不推进状态——切片划定后仍需宿主逐片实现）。
   - **deliver 入口 gate（`human`, `position:entry`, `skippable:true`）→ 对应 `ready-to-deploy`（gate_id `deliver-entry`）**：auto 下**放行**（部署目标可能是测试环境而非生产；放行依据 = 本次响应 `gate_auto_passed=true`，历史审计行不构成授权）。
   - **`gate:implement:loop-exhausted`（默认 `skippable:false`）**：达上限退出门，auto 下**仍卡住**（守住未收敛大功能；除非 overlay 覆盖 `exhausted_gate.skippable`）。
   - **`smoke` 节点无对应 gate**，`ready-to-smoke` 不在 `--auto` 范围。
@@ -429,6 +430,7 @@ node 级新字段仅在存在 overlay-added 节点 / 当前节点为 overlay-add
 
 本节在 2.17（implement loop 真迭代派生）基础上扩展：**内置 launched `implement` 子流程默认激活切片循环**（`loop.until: code_slices_green`、`max_iters: 30`），不再依赖 overlay；2.17 中"builtin 保持 `max_iters:1`、`loop_state` 仅激活时输出、golden 零漂移"对 launched implement 的约束据此修订——launched 下 `loop_state` / `slice_state` 常驻输出，golden 基线主动重拍。其它 builtin（`initial.yaml` implement）仍 `max_iters:1`、initial 多模块不激活（沿用 2.17）。
 
+- **切片清单来源**：`tasks.md` 的 `[code]` section **由 merge 后的 `slice` 子流程（`slice-planner`，见 2.25）写定**，不再由 plan 段 `change-writer` 在 merge 前产出。implement loop 只**消费** `[code]`、不重新分批；循环与收敛逻辑不变。
 - **切片清单**：`tasks.md` `[code]` section 的顶层切片 checkbox = 顶层切片。缩进 checkbox = 所属父切片内部子任务；它不是新的顶层切片，不参与 `slice_state.total` 的计数。
 - **完成判定**：父切片完成必须同时满足父切片 checkbox 已勾选，且该父切片下所有缩进子任务 checkbox 均已勾选。父切片已勾但子任务未全勾时，该父切片仍视为未完成。
 - **收敛**：`code_slices_green` = `section_complete:code ∧ tests_green`——`[code]` 顶层切片与全部缩进子任务 checkbox 全勾 且 末轮全量 verify 绿才出环（重新主张被 loop 覆盖的 `code` 节点 `done_when`）；**空 `[code]` 退化为 `tests_green`**。FAIL-safe 落每个判定入口。
@@ -516,6 +518,28 @@ dispatcher 至少应支持：
 - 将 runner exit code、失败用例和未覆盖用例传递给 `openlogos smoke` 的 JSON 输出。
 - 可按活跃提案只运行相关 runner；若无法归属，则运行全部 canonical smoke runner。
 
+### 2.25 slice 子流程：merge 后独立切片规划环节（split-slice-planner-stage）
+
+把"划分 `[code]` 切片"从 `change-writer` 的 plan 段（merge 前）剥离为**独立 flow 子流程 `slice` + 独立 skill `slice-planner`**，并挪到 **merge 之后、implement 之前**。`change-writer` 的 plan 段（`write-tasks`）从此只产 `[delta]`/`[deploy]`、不再决定 `[code]` 切片。
+
+- **flow 子流程 `slice`（`when: code_required`）**：置于 `merge` 与 `implement` 之间；节点 `plan-slices`（`skill: slice-planner`，`produces: tasks.md` 的 `[code]`，`done_when: tasks_code_filled`）；出口为人类门 `slice-exit`（`type: human`, `skippable: true`）。纯文档提案（无 `[code]` 产出，`when: code_required` 为假）整段跳过。
+- **驻留态 `ready-to-implement`（label「切片待批准」）**：位于 `merge-generated` 与 `coding` 之间。merge 完成（`SPEC_MERGED` 在场）后、`[code]` 切片循环开始前，提案停在 `ready-to-implement`，由 `slice-planner` 在 `plan-slices` 节点产出 `[code]`，停在 `slice-exit` 门待批准；批准后进入 `coding`。
+- **唯一事实源**：切几片、每片做什么，**只在 `slice-planner` 用六维打分 + 删后续证伪门决定一次**；下游 `code-implementor` 只逐片消费、不再重复打分、不再自行分批（INV「切片只决定一次」由 change-writer Step 5 平移到 slice-planner，保持不变）。
+- **输入**：已合并的 `proposal.md` 变更范围 + 已落入 `logos/resources/prd/` 的架构/场景/功能规格 + 已合并的 `logos/resources/test/*-test-cases.md` 的**真实** `UT-Sxx-..`/`ST-Sxx-..` ID。**禁止用占位 ID 切片**——这正是本环节挪到 merge 后的根本原因：对真实规格 + 真实测试 ID 切，而非对未合并草案猜。
+
+**三个核心机制（全部内置进 `slice-planner` skill）**：
+
+1. **六维打分（是否大任务）**：按影响范围 / 行为复杂度 / 契约变化 / 测试规模 / 风险等级 / 不确定性六维打分；0-7 分 = 非大任务 → 单切片；≥8 分 = 大任务 → 进入垂直拆分尝试。
+2. **垂直/横向判别器（选切片轴）**：给每片起名后看名字落在哪类——
+   - 🚩 **横向红旗（禁止，命中即推倒重切）**：片名是层 / 文件 / 工种——"地基 / 底座 / 读写 / 管道 / 接线 / helper / 工具函数 / config 接入 / schema / 类型 / 数据层（单独）/ UI 展示（单独）/ 写测试 / 补 reporter / 重拍 golden"。一组切片读起来像"先建底座 → 再写逻辑 → 再补工具 → 最后接 UI"即把施工顺序当成切片，必须重切。
+   - ✅ **垂直合格**：片名是一条端到端能力线 / 一个场景 / 一个独立子模块的完整闭环——数据→逻辑→产出→该片测试 一并落在同一片内。
+3. **删后续证伪门（强制，须写出逐片结论）**：拟好 N 片后逐片自问——(a) 删掉切片 i+1..N、只做切片 i，`openlogos verify`（永远全量回归）能绿吗？(b) 切片 i 是否产生一条端到端、可观察的能力，而非只给后续片铺管道/接线？任一答"否" → 该片不自闭环 → 向前合并进依赖它的那一片，重跑本门。逐片自问的结论（哪几片合并、为何合并）必须写进 `[code]` section 开头作为留痕。
+   > 机制依据：切片只 scope `code` 的上下文注入、**不 scope verify**。"地基片"（铺好没人用，(b) 否）或"前向依赖片"（依赖尚未落地的后续片，(a) 否）做完跑全量 verify 必然飘红、循环无法出环，会死锁在 `verify-failed`。删后续门在切片阶段提前证伪这类横切。
+
+**逃生口（显式化）**：评分 ≥8 但任何垂直切法都过不了删后续门（能力原子、各部分互相咬死）→ 保留 1 条切片，并写明"评分达大任务，但 <原因> 不可安全垂直拆分，故单片"。这是合规结果而非偷懒；不确定两片能否各自闭环时一律合并。
+
+**唯一交付物**：`tasks.md` 的 `## [code]` section——一组过了删后续证伪门的良构切片，每条标注覆盖的真实 `UT/ST` ID，并满足 smoke 用例变更的强制闭环（新增/修改 smoke 用例时，切片须列出 `SMOKE-*` ID、要求实现/更新 runner + reporter + dispatcher 接入）。不产 `proposal.md`/`[delta]`/`[deploy]`，不写业务代码。
+
 ## 三、功能验收摘要
 
 ### S01
@@ -570,7 +594,7 @@ adopt 后必须生成完整 `logos/` 目录、`logos.config.json`、`logos-proje
 `watch` 必须以 `status` 同一派生数据源（`collectStatusData`）实时输出：**启动先输出一次初始快照**，之后**仅在 `data` 深比较发生变化时**输出，每条携带 `seq` / `timestamp`；必须继承 `--module`；`--interval` 默认 2s；`--format json` 输出 JSON 流，文本模式变化时重渲染；Ctrl-C 优雅退出；全程只读无副作用；项目未初始化报 `PROJECT_NOT_INITIALIZED`。
 
 ### S24
-`next --auto` 必须只对 launched 现有人类停顿点对应 gate 生效：可跳门 `ready-to-delta`（`plan-exit`）/ `ready-to-merge`（`spec-exit`）/ `ready-to-deploy`（`deliver-entry`）均 `skippable:true`、auto 下放行并向 `GATE_AUTO_PASSED` JSONL 追加 `{gate_id, proposal_step, timestamp}`；`gate:implement:loop-exhausted`（默认 `skippable:false`）保持人类停顿；`ready-to-smoke` 不涉及。plan 门放行仅审计、不推进状态。部署放行依据为本次响应 `gate_auto_passed=true`，历史审计行不构成授权。重复 `--auto` 必须追加多行（不去重）。**默认 `next`（无 `--auto`）与 `status` 必须忽略 `GATE_AUTO_PASSED`、绝不因其越过 gate**，由 golden 锁定 auto/gate 字段。
+`next --auto` 必须只对 launched 现有人类停顿点对应 gate 生效：可跳门 `ready-to-delta`（`plan-exit`）/ `ready-to-merge`（`spec-exit`）/ `ready-to-implement`（`slice-exit`）/ `ready-to-deploy`（`deliver-entry`）均 `skippable:true`、auto 下放行并向 `GATE_AUTO_PASSED` JSONL 追加 `{gate_id, proposal_step, timestamp}`；`gate:implement:loop-exhausted`（默认 `skippable:false`）保持人类停顿；`ready-to-smoke` 不涉及。plan 门与 slice 门放行均仅审计、不推进状态。部署放行依据为本次响应 `gate_auto_passed=true`，历史审计行不构成授权。重复 `--auto` 必须追加多行（不去重）。**默认 `next`（无 `--auto`）与 `status` 必须忽略 `GATE_AUTO_PASSED`、绝不因其越过 gate**，由 golden 锁定 auto/gate 字段。
 
 ### S25
 overlay 必须真正驱动派生：**initial** 四操作经 `status`/`next` 生效；**launched** 仅 `add`/`modify` 生效，builtin `skip`/`reorder` 派生入口 fail loud（`FLOW_SCHEMA_INVALID`）。overlay-added 节点经 `overlay_nodes`/`current_node` 承载；**无 overlay 时新字段省略、默认派生 golden 零漂移**。
@@ -596,3 +620,6 @@ M2 预留收尾必须一次性收掉 3 个轻量项，全部 overlay/字段 opt-
 
 ### S31
 launched `implement` 默认以切片循环推进：切片来自 `tasks.md` `[code]` 的顶层 checkbox，缩进 checkbox 是所属切片的内部子任务。收敛 = 全部父切片勾选 ∧ 全部子任务 checkbox 勾选 ∧ 末轮测试绿（`code_slices_green`），空 `[code]` 退化 `tests_green`。`next` 透出当前未完成切片（`next_node.slice` + `slice_state`），并在存在子任务时同步透出 `slice_state.current_children`、`slice_state.current_unchecked_children` 与 `next_node.slice_children`；`verify` 全量回归并追加可带 `slice` 的 `LOOP_ITERS`；达 `max_iters:30` 未达成升级 `gate:implement:loop-exhausted`（`skippable:false`）。切片提示语义为"下一个未完成切片"，回归修复目标由全量 verify 输出决定、归宿主判。initial 多模块不支持。若切片对应的规格变更新增或修改 smoke 用例，该切片必须同步完成 smoke runner/reporter/dispatcher 接入后才能勾选。
+
+### S32
+launched 含代码提案 merge 后必须进入独立的 `slice` 子流程（`when: code_required`）：`plan-slices` 节点由 `slice-planner` 对**已合并规格 + 真实 `UT/ST` ID** 划分 `[code]` 切片，内置六维打分 + 垂直/横向判别器 + 删后续证伪门（逐片自问"删后续能否过全量 verify"与"是否端到端可观察"，写出逐片结论）+ 逃生口（≥8 但原子不可拆 → 显式单片）。划定的 `[code]` 写入 `tasks.md`、提案停在 `ready-to-implement`（`slice-exit` 门，`skippable:true`，`--auto` 可放行），批准后进入 `coding`。`change-writer` plan 段只产 `[delta]`/`[deploy]`、不再决定切片；`code-implementor` 只逐片消费、不重新分批。纯文档提案（无 `[code]`）跳过 `slice` 子流程，切片循环对空 `[code]` 退化为 `tests_green`。
