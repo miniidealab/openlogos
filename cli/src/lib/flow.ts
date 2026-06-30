@@ -97,7 +97,7 @@ export interface LoadFlowResult {
  */
 export const BUILTIN_VERSIONS: Record<Lifecycle, string> = {
   initial: 'v1',
-  launched: 'v2', // change-flow-redesign：propose→plan/spec/merge、implement 默认切片循环（破坏性变更，bump v1→v2）
+  launched: 'v3', // split-slice-planner-stage：merge 后新增 slice 子流程 + ready-to-implement 驻留态（破坏性变更，bump v2→v3）
 };
 
 /**

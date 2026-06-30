@@ -30,7 +30,7 @@ tech_stack:
     release_archive: GitHub Releases
 
 scenario_counter:
-  next_id: 32
+  next_id: 33
 
 modules:
   - id: core
@@ -112,6 +112,9 @@ scenarios:
     module: core
   - id: S31
     name: change-flow-redesign 代码切片循环（plan/spec/merge + code_slices_green + slice_state）
+    module: core
+  - id: S32
+    name: split-slice-planner-stage 切片规划环节（merge 后 slice 子流程 + ready-to-implement + slice-exit）
     module: core
 
 release_workflows:
@@ -249,6 +252,8 @@ resource_index:
     desc: "S30 时序文档。涉及 cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin）、per-field/frontier 求值、cmd_gate 机器契约、与 loop 正交时必读。"
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S31-code-slice-loop.md
     desc: S31 时序文档。涉及 change-flow-redesign 代码切片循环（plan/spec/merge 子流程、ready-to-delta 驻留态、code_slices_green 复合收敛、slice_state/next_node.slice 透出、deliver 门 skippable）时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md
+    desc: S32 时序文档。涉及 split-slice-planner-stage 切片规划环节（merge 后 slice 子流程、plan-slices 节点/slice-planner、ready-to-implement 驻留态、slice-exit 门、SLICES_APPROVED、tasks_code_filled/code_required 谓词、删后续证伪门）时必读。
   - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-99-traceability-matrix.md
     desc: 追踪矩阵。涉及需求-设计-测试-实现映射核查时必读。
   - path: logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
@@ -277,6 +282,8 @@ resource_index:
     desc: "S30 测试用例。涉及 cmd: 放开到 verify/deploy/smoke gate 白名单/决策B、per-field/frontier、cmd_gate、next 瞬态与 status 不一致、loop 正交、可达性、budget 顺序与零漂移验收时必读。"
   - path: logos/resources/test/core-S31-test-cases.md
     desc: S31 测试用例。涉及 ready-to-delta 检测（含纯代码提案不受影响）、slice_state 计数与省略规则、code_slices_green 复合收敛与空[code]退化、plan/spec/deliver 门映射与 deliver skippable、golden 重生成验收时必读。
+  - path: logos/resources/test/core-S32-test-cases.md
+    desc: S32 测试用例。涉及 split-slice-planner-stage 切片规划环节（ready-to-implement 派生与标签、plan-slices 完成判定 tasks_code_filled、slice-exit 门 auto 放行写 SLICES_APPROVED 并续推 coding、幂等、when:code_required 跳过、write-tasks 改 tasks_delta_filled）、golden 重生成验收时必读。
   - path: logos/resources/test/smoke/core-smoke-test-cases.md
     desc: 核心 smoke 用例。涉及发布后最小可用性验证和官网 release 页面检查时必读。
   - path: logos/resources/verify/acceptance-report.md

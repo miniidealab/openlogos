@@ -31,12 +31,15 @@ function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): st
 }
 const DELTA_DONE = '# 任务\n\n## [delta] 规格变更\n- [x] 产出 delta';
 const DELTA_UNSTARTED = '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta'; // delta 未启动（无勾、无 delta 文件）→ ready-to-delta
+// split-slice-planner-stage：merge 后 [code] 已脱模板（切片写出、未勾）但 slice-exit 未放行 → ready-to-implement
+const DELTA_DONE_CODE_SLICES = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2';
 const DEPLOY_EMPTY_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [deploy] 部署\n';
 const DEPLOY_DONE_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [deploy] 部署\n- [x] 部署';
 
 interface StepFixture { proposal: string; tasks: string; markers?: string[]; deploy?: boolean; smoke?: boolean; }
 const FIXTURES: Record<string, StepFixture> = {
   'ready-to-delta': { proposal: filled(), tasks: DELTA_UNSTARTED },
+  'ready-to-implement': { proposal: filled(), tasks: DELTA_DONE_CODE_SLICES, markers: ['SPEC_MERGED'] },
   'ready-to-merge': { proposal: filled(), tasks: DELTA_DONE },
   'ready-to-deploy': { proposal: filled('是', '否'), tasks: DEPLOY_EMPTY_TASKS, markers: ['VERIFY_PASS'], deploy: true },
   'ready-to-smoke': { proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE'], deploy: true, smoke: true },
@@ -100,6 +103,10 @@ describe('S24 gate 助手（gateForProposalStep）', () => {
   it('UT-S24-13: ready-to-delta → plan 出口 gate skippable:true', () => {
     // change-flow-redesign 新增 plan 出口「批准方案」门
     expect(gateForProposalStep('ready-to-delta')).toEqual({ gate_id: 'plan-exit', skippable: true });
+  });
+  it('UT-S24-18: ready-to-implement → slice 出口 gate skippable:true', () => {
+    // split-slice-planner-stage：merge 后 slice 子流程出口「批准切片划分」门
+    expect(gateForProposalStep('ready-to-implement')).toEqual({ gate_id: 'slice-exit', skippable: true });
   });
   it('UT-S24-03: ready-to-smoke 无对应 gate（不在 --auto 范围）', () => {
     expect(gateForProposalStep('ready-to-smoke')).toBeNull();
@@ -263,6 +270,60 @@ describe('S24 next --auto 行为', () => {
     expect(d.proposal_step).toBe('ready-to-delta');
     expect(existsSync(ctx.planPath)).toBe(false);
   });
+
+  it('UT-S24-19: ready-to-implement + --auto 消费 slice gate 并派生 coding', () => {
+    // split-slice-planner-stage：slice-exit 被 --auto 放行 → 写 SLICES_APPROVED + 审计，响应续推 coding / next_node=code
+    const ctx = setup('ready-to-implement');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.gate_id).toBe('slice-exit');
+    expect(d.skippable).toBe(true);
+    expect(d.gate_auto_passed).toBe(true);
+    const lines = auditLines(ctx.auditPath);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({ gate_id: 'slice-exit', proposal_step: 'ready-to-implement' });
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
+    expect(d.proposal_step).toBe('coding');
+    expect((d.modules as any[])[0].proposal_step).toBe('coding');
+    expect((d.modules as any[])[0].next_node?.id).toBe('code');
+    ctx.con.logs.length = 0;
+    next('json', undefined, false);
+    expect(jsonData(ctx.con).proposal_step).toBe('coding');
+  });
+
+  it('UT-S24-20: 重复 slice-exit --auto 不重复追加审计', () => {
+    const ctx = setup('ready-to-implement');
+    next('json', undefined, true);
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('coding');
+    expect((d.modules as any[])[0].next_node?.id).toBe('code');
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(1);
+  });
+
+  it('UT-S24-21: SLICES_APPROVED 是 slice gate 状态源', () => {
+    const ctx = setup('ready-to-implement');
+    writeFileSync(join(ctx.dir, 'SLICES_APPROVED'), '');
+    ctx.con.logs.length = 0;
+    next('json', undefined, false);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('coding');
+    expect((d.modules as any[])[0].next_node?.id).toBe('code');
+    ctx.con.logs.length = 0;
+    status('json');
+    expect(jsonData(ctx.con).proposal_step).toBe('coding');
+    expect(auditLines(ctx.auditPath)).toHaveLength(0);
+  });
+
+  it('UT-S24-22: 审计存在但 SLICES_APPROVED 缺失时 status 不前移', () => {
+    const ctx = setup('ready-to-implement');
+    writeFileSync(ctx.auditPath,
+      JSON.stringify({ gate_id: 'slice-exit', proposal_step: 'ready-to-implement', timestamp: '2000-01-01T00:00:00.000Z' }) + '\n');
+    status('json');
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('ready-to-implement');
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+  });
 });
 
 // ── 三、场景测试 ──
@@ -298,6 +359,40 @@ describe('S24 场景测试', () => {
     const d = jsonData(ctx.con);
     expect(d.gate_auto_passed).toBe(true);
     expect(d.gate_id).toBe('deliver-entry');
+  });
+
+  it('ST-S24-08: slice-exit 在 --auto 下放行并派生 coding', () => {
+    // split-slice-planner-stage：活跃提案 ready-to-implement，--auto 写 SLICES_APPROVED + 审计 → 派生 coding/next_node=code
+    // 注：与 plan-exit 一致，消费后文本/JSON 顶层动作已续推为 coding（不再回显 gate_id 文案），故经 JSON gate 字段核验放行。
+    const ctx = setup('ready-to-implement');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.gate_id).toBe('slice-exit');
+    expect(d.gate_auto_passed).toBe(true);
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
+    expect(auditLines(ctx.auditPath)).toHaveLength(1);
+    expect(d.proposal_step).toBe('coding');
+    expect((d.modules as any[])[0].next_node?.id).toBe('code');
+    // 默认 next 复核：派生 coding 稳定
+    ctx.con.logs.length = 0;
+    next('json', undefined, false);
+    expect(jsonData(ctx.con).proposal_step).toBe('coding');
+  });
+
+  it('ST-S24-09: 重复 slice-exit --auto 不刷审计且状态前移', () => {
+    const ctx = setup('ready-to-implement');
+    next('json', undefined, true);
+    next('json', undefined, true);
+    ctx.con.logs.length = 0;
+    next('json', undefined, false);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('coding');
+    expect((d.modules as any[])[0].next_node?.id).toBe('code');
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(1);
+    ctx.con.logs.length = 0;
+    status('json');
+    expect(jsonData(ctx.con).proposal_step).toBe('coding');
   });
 
   it('ST-S24-03: 默认 next 忽略 GATE_AUTO_PASSED 不越过 gate', () => {

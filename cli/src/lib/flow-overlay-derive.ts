@@ -85,6 +85,7 @@ export const STEP_TO_CURRENT_BUILTIN: Record<string, string> = {
   'delta-writing': 'write-delta',
   'ready-to-merge': 'generate-merge-prompt',
   'merge-generated': 'apply-merge',
+  'ready-to-implement': 'plan-slices', // split-slice-planner-stage：slice 子流程前沿节点
   'coding': 'code',
   'ready-to-verify': 'verify',
   'verify-failed': 'verify',

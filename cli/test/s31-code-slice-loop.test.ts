@@ -287,7 +287,7 @@ function writeVerifyFixture(root: string, result?: 'pass' | 'fail'): void {
 describe('S31 — 命令级契约', () => {
   it('UT-S31-40: coding 阶段 next_node 指向 code 且带 slice（=slice_state.current，不依赖 verify 前沿）', async () => {
     // SPEC_MERGED + [code] 未全勾 → coding；切片循环激活、未收敛、未达上限 → 注入 next_node.slice（高修：iteration=0 也注入）
-    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2', ['SPEC_MERGED']);
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2', ['SPEC_MERGED', 'SLICES_APPROVED']);
     expect(detectProposalStep(dir)).toBe('coding'); // 直测确认阶段（next 的 active_change 是字符串、无 proposal_step）
     const m = (await nextJson(root)).modules[0];
     expect(m.next_node?.id).toBe('code');
@@ -307,7 +307,7 @@ describe('S31 — 命令级契约', () => {
       '  - [x] 扩展 open-agent bridge 状态 IPC',
       '  - [ ] 扩展 AgentAdapter 状态入口',
       '- [ ] 切片2：完成屏障消费 Agent idle 状态',
-    ].join('\n'), ['SPEC_MERGED']);
+    ].join('\n'), ['SPEC_MERGED', 'SLICES_APPROVED']);
     const m = (await nextJson(root)).modules[0];
     expect(m.next_node?.id).toBe('code');
     expect(m.next_node?.slice).toBe('切片1：Agent idle 状态读取契约');
@@ -321,7 +321,7 @@ describe('S31 — 命令级契约', () => {
 
   it('UT-S31-08: next 选第一个未勾切片 + slice 子提示（勾 2 → slice = 第 3 行标题）', async () => {
     // [code] 3 行勾 2 → coding、切片循环激活、未收敛未达上限 → next_node.id==code、slice = 第一个未勾（第 3 行）
-    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n- [x] 切片2\n- [ ] 切片3：收尾', ['SPEC_MERGED']);
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n- [x] 切片2\n- [ ] 切片3：收尾', ['SPEC_MERGED', 'SLICES_APPROVED']);
     expect(detectProposalStep(dir)).toBe('coding');
     const m = (await nextJson(root)).modules[0];
     expect(m.next_node?.id).toBe('code');
@@ -332,7 +332,7 @@ describe('S31 — 命令级契约', () => {
   it('UT-S31-09: slice 指「未建」切片（后片打断先片、全量 verify fail）→ 仍指第一个未勾行，不指已勾回归源', async () => {
     // 切片1 已勾（疑似被后续切片回归打断），切片2/3 未勾、全量 verify FAIL（账本末行 fail）。
     // slice 提示应指"建哪片"=第一个未勾（切片2），而非"修哪片"=已勾的回归源（切片1）。
-    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n- [ ] 切片2\n- [ ] 切片3', ['SPEC_MERGED']);
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n- [ ] 切片2\n- [ ] 切片3', ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeFileSync(join(dir, 'LOOP_ITERS'),
       JSON.stringify({ iter: 1, node: 'verify', result: 'fail', module: 'core', timestamp: 't', slice: '切片2' }) + '\n');
     expect(detectProposalStep(dir)).toBe('coding');
@@ -371,16 +371,16 @@ const CODE3 = (c: [boolean, boolean, boolean]) =>
 describe('S31 — 场景测试', () => {
   it('ST-S31-01: 逐片推进端到端（每轮 next 指向下一未勾片；全勾+末轮绿出环续推）', async () => {
     // 第 1 轮：全未勾 → next 指向切片1
-    const s1 = setupCmd(CODE3([false, false, false]), ['SPEC_MERGED']);
+    const s1 = setupCmd(CODE3([false, false, false]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     expect((await nextJson(s1.root)).modules[0].next_node?.slice).toBe('切片1');
     // 第 2 轮：切片1 已勾 → next 指向切片2
-    const s2 = setupCmd(CODE3([true, false, false]), ['SPEC_MERGED']);
+    const s2 = setupCmd(CODE3([true, false, false]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(s2.dir, ['pass']);
     const m2 = (await nextJson(s2.root)).modules[0];
     expect(m2.next_node?.slice).toBe('切片2');
     expect(m2.loop_state?.converged).toBe(false); // 仍有未勾片 → 未收敛
     // 末态：全部勾选 + 末轮 verify(PASS) → converged 出环（不再指向 code 片）
-    const s3 = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED']);
+    const s3 = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(s3.dir, ['pass']);
     const m3 = (await nextJson(s3.root)).modules[0];
     expect(m3.loop_state?.converged).toBe(true);
@@ -389,7 +389,7 @@ describe('S31 — 场景测试', () => {
 
   it('ST-S31-02: 中途某片不绿 → 同片继续迭代（slice_state.current 仍指该片、不推进）', async () => {
     // 切片1 已勾、切片2 进行中 verify(FAIL)：账本末行 fail、current 仍指切片2、未收敛
-    const { root, dir } = setupCmd(CODE3([true, false, false]), ['SPEC_MERGED']);
+    const { root, dir } = setupCmd(CODE3([true, false, false]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(dir, ['fail']);
     const m = (await nextJson(root)).modules[0];
     expect(m.slice_state?.current).toBe('切片2');
@@ -451,7 +451,7 @@ describe('S31 — 场景测试', () => {
       '- [ ] 切片2：完成屏障消费 Agent idle 状态',
     ].join('\n');
 
-    const blocked = setupCmd(baseTasks(true, [true, false, true]), ['SPEC_MERGED']);
+    const blocked = setupCmd(baseTasks(true, [true, false, true]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(blocked.dir, ['pass']);
     const blockedState = (await nextJson(blocked.root)).modules[0];
     expect(blockedState.slice_state).toMatchObject({
@@ -463,7 +463,7 @@ describe('S31 — 场景测试', () => {
     });
     expect(blockedState.next_node?.slice).toBe('切片1：Agent idle 状态读取契约');
 
-    const advanced = setupCmd(baseTasks(true, [true, true, true]), ['SPEC_MERGED']);
+    const advanced = setupCmd(baseTasks(true, [true, true, true]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(advanced.dir, ['pass']);
     const advancedState = (await nextJson(advanced.root)).modules[0];
     expect(advancedState.slice_state).toMatchObject({
@@ -506,13 +506,15 @@ describe('S31 — 场景测试', () => {
 });
 
 describe('S31 — smoke 用例变更下的切片闭环', () => {
-  it('UT-S31-SMOKE-01: [code] 切片描述必须携带新增 SMOKE ID 与 runner/reporter/dispatcher 要求', () => {
-    const changeWriter = readFileSync(join(REPO_ROOT, 'skills/change-writer/SKILL.md'), 'utf-8');
-    expect(changeWriter).toContain('SMOKE-*');
-    expect(changeWriter).toContain('smoke runner');
-    expect(changeWriter).toContain('smoke reporter');
-    expect(changeWriter).toContain('smoke dispatcher');
-    expect(changeWriter).toContain('[code]');
+  it('UT-S31-SMOKE-01: [code] 切片描述必须携带新增 SMOKE ID 与 runner/reporter 闭环要求', () => {
+    // split-slice-planner-stage：smoke 闭环要求已从 change-writer 迁到 slice-planner（merge 后唯一切片事实源）。
+    // 按 skills/slice-planner/SKILL.md「Smoke 用例变更的强制闭环」段实际措辞断言。
+    const slicePlanner = readFileSync(join(REPO_ROOT, 'skills/slice-planner/SKILL.md'), 'utf-8');
+    expect(slicePlanner).toContain('SMOKE-*');
+    expect(slicePlanner).toContain('runner');
+    expect(slicePlanner).toContain('reporter');
+    expect(slicePlanner).toContain('smoke-results.jsonl');
+    expect(slicePlanner).toContain('[code]');
   });
 
   it('UT-S31-SMOKE-02: smoke 覆盖预检未过时切片不得勾选', () => {

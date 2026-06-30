@@ -14,7 +14,7 @@ import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
-import { PLAN_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
+import { PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
 
 export interface NextModuleItem {
   id: string;
@@ -76,6 +76,12 @@ function appendGateAutoPassed(root: string, slug: string, gateId: string, step: 
 /** 消费 plan-exit gate：写入明确状态源，后续派生不再停留在 ready-to-delta。 */
 function writePlanApproved(root: string, slug: string): void {
   const path = join(root, 'logos', 'changes', slug, PLAN_APPROVED_MARKER);
+  if (!existsSync(path)) writeFileSync(path, '');
+}
+
+/** split-slice-planner-stage：消费 slice-exit gate，写入状态源，后续派生从 ready-to-implement 续推到 coding。 */
+function writeSlicesApproved(root: string, slug: string): void {
+  const path = join(root, 'logos', 'changes', slug, SLICES_APPROVED_MARKER);
   if (!existsSync(path)) writeFileSync(path, '');
 }
 
@@ -216,6 +222,8 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
       return { action: t(locale as Parameters<typeof t>[0], 'next.merge'), command: null, detailKey: 'next.mergeDetail' };
     case 'merge-generated':
       return { action: t(locale as Parameters<typeof t>[0], 'next.executeMerge'), command: null, detailKey: 'next.executeMergeDetail' };
+    case 'ready-to-implement':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.planSlices'), command: null, detailKey: 'next.planSlicesDetail' };
     case 'coding':
       return { action: t(locale as Parameters<typeof t>[0], 'next.startCoding'), command: null, detailKey: 'next.startCodingDetail' };
     case 'ready-to-verify':
@@ -519,6 +527,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   let autoSkippable: boolean | null = null;
   let gateAutoPassed = false;
   let planGateAutoConsumed = false;
+  let sliceGateAutoConsumed = false;
   // M2 切片 1a（R2 安全）：当前节点为未完成的 overlay-added 节点时，gate 未到达 → 不得 auto-pass。
   const activeStatusMod = data.modules?.find(m => m.active_change?.slug === data.active_change);
   const blockedByOverlayNode = Boolean(activeStatusMod?.current_node || data.current_node);
@@ -578,6 +587,27 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           const mi = moduleItems?.find(m => m.active_change === data.active_change);
           if (mi) {
             mi.proposal_step = 'delta-writing';
+            mi.action = action;
+            mi.command = command;
+            mi.detail = detail;
+          }
+        } else if (gate.gate_id === 'slice-exit' && data.proposal_step === 'ready-to-implement') {
+          // split-slice-planner-stage：消费 slice-exit → 写 SLICES_APPROVED，续推到 coding（同次响应重新派生，保留 next_node=code）。
+          writeSlicesApproved(root, data.active_change);
+          sliceGateAutoConsumed = true;
+          data.proposal_step = 'coding';
+          const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
+          if (activeModule?.active_change) {
+            activeModule.active_change.proposal_step = 'coding';
+            activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.coding');
+          }
+          const nextAction = actionForProposalStep(locale, 'coding');
+          action = nextAction.action;
+          command = nextAction.command;
+          detail = t(locale, nextAction.detailKey, { slug: data.active_change });
+          const mi = moduleItems?.find(m => m.active_change === data.active_change);
+          if (mi) {
+            mi.proposal_step = 'coding';
             mi.action = action;
             mi.command = command;
             mi.detail = detail;
@@ -664,7 +694,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   if (moduleItems && data.modules) {
     moduleItems = moduleItems.map((item, i) => {
       if (commandLevelTop || isCommandLevel(item.command)) return item; // 命令级建议 → 省略 next_node
-      const gap = gateAutoPassed && !planGateAutoConsumed && item.active_change === data.active_change;
+      const gap = gateAutoPassed && !planGateAutoConsumed && !sliceGateAutoConsumed && item.active_change === data.active_change;
       const sm = data.modules![i];
       const smStep = sm.active_change?.proposal_step ?? null;
       const smAtVerify = smStep === 'ready-to-verify' || smStep === 'verify-failed' || sm.current_phase === 'phase.3-6';
@@ -680,7 +710,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       id: 'core', name: 'core', lifecycle: data.lifecycle === 'launched' ? 'launched' : 'initial',
       current_phase: data.current_phase, current_node: data.current_node, loop_state: data.loop_state,
       active_change: data.proposal_step ? { proposal_step: data.proposal_step } : null,
-    }, gateAutoPassed && !planGateAutoConsumed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
+    }, gateAutoPassed && !planGateAutoConsumed && !sliceGateAutoConsumed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
   }
 
   // M2 切片 1b：cmd 执行后，顶层 action/detail 反映命令结果（done 续推 / 未通过重试 / 超时）

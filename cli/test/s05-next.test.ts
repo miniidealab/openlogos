@@ -372,7 +372,8 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(out).not.toContain('openlogos merge my-feature');
   });
 
-  it('UT-S05-10: SPEC_MERGED + [code] section not done → coding', () => {
+  it('UT-S05-10: SPEC_MERGED + [code] section not done（无 SLICES_APPROVED）→ ready-to-implement', () => {
+    // split-slice-planner-stage：merge 后 [code] 有未完成切片但 slice-exit 门未放行（无 SLICES_APPROVED）→ ready-to-implement（切片待批准），不再直接 coding。
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
     writeFileSync(join(proposalDir, 'tasks.md'), [
@@ -383,11 +384,11 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     ].join('\n'));
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
-    expect(detectProposalStep(proposalDir)).toBe('coding');
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-implement');
 
     next();
     const out = con.logs.join('\n');
-    expect(out).toMatch(/编码|implement/i);
+    expect(out).toMatch(/切片|slice/i);
     expect(out).not.toContain('openlogos merge my-feature');
   });
 

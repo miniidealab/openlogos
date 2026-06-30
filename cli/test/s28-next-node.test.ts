@@ -63,6 +63,8 @@ function setupLaunchedCoding(root: string, slug = 'feat'): string {
   writeFileSync(join(dir, 'proposal.md'), PROPOSAL('设计级'));
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n\n## [code] 代码实现\n- [ ] 实现 x\n');
   writeFileSync(join(dir, 'SPEC_MERGED'), '');
+  // split-slice-planner-stage：coding 态需 slice-exit 门已放行（SLICES_APPROVED），否则派生为 ready-to-implement。
+  writeFileSync(join(dir, 'SLICES_APPROVED'), '');
   return dir;
 }
 async function runNextJson(root: string, auto = false): Promise<any> {

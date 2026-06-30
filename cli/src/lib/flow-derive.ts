@@ -30,6 +30,7 @@ import {
   allTasksChecked,
   hasSmokeCasesForProposal,
   PLAN_APPROVED_MARKER,
+  SLICES_APPROVED_MARKER,
 } from './proposal-lifecycle.js';
 import type { ProposalStep } from './proposal-lifecycle.js';
 import type { ModuleInfo, PhaseProgressItem } from '../commands/status.js';
@@ -400,6 +401,8 @@ export function detectProposalStepViaFlow(
       const code = sections['code'];
       // section_complete legacy 语义：present-but-empty（total=0）不算完成
       if (!code || (code.total > 0 && code.checked === code.total)) return 'ready-to-verify';
+      // split-slice-planner-stage：[code] 有未完成切片，slice-exit 门未放行（无 SLICES_APPROVED）→ ready-to-implement；放行后 → coding。
+      if (!exists(SLICES_APPROVED_MARKER)) return 'ready-to-implement';
       return 'coding';
     }
     return 'ready-to-verify';
@@ -489,6 +492,7 @@ export interface GateInfo {
 const STEP_TO_GATE_SUBFLOW: Record<string, string> = {
   'ready-to-delta': 'plan',
   'ready-to-merge': 'spec',
+  'ready-to-implement': 'slice', // split-slice-planner-stage：gate_id 派生为 slice-exit
   'ready-to-deploy': 'deliver',
 };
 

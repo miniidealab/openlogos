@@ -91,8 +91,9 @@ const UT: UtCase[] = [
   { ut: 'UT-S09-23', expected: 'ready-to-merge', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE }).dir },
   { ut: 'UT-S09-24', expected: 'merge-generated', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE, markers: ['MERGE_PROMPT_GENERATED'] }).dir },
   { ut: 'UT-S09-25', expected: 'merge-generated', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE, markers: ['MERGE_PROMPT.md'] }).dir },
-  { ut: 'UT-S09-26', expected: 'coding', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['SPEC_MERGED'] }).dir },
-  { ut: 'UT-S09-27', expected: 'coding', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['MERGED'] }).dir },
+  // split-slice-planner-stage：merge 后 [code] 有未完成切片但无 SLICES_APPROVED → ready-to-implement（放行后才 coding）
+  { ut: 'UT-S09-26', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['SPEC_MERGED'] }).dir },
+  { ut: 'UT-S09-27', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['MERGED'] }).dir },
   { ut: 'UT-S09-28', expected: 'ready-to-verify', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_DONE, markers: ['SPEC_MERGED'] }).dir },
   { ut: 'UT-S09-29', expected: 'ready-to-verify', build: () => makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir },
   { ut: 'UT-S09-30', expected: 'ready-to-verify', build: () => makeProposal({ proposal: filled(), tasks: OLDFMT_DONE, markers: ['SPEC_MERGED'] }).dir },
@@ -113,7 +114,8 @@ const UT: UtCase[] = [
   { ut: 'UT-S09-45', expected: 'verify-failed', build: () => makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir },
   { ut: 'UT-S09-46', expected: 'ready-to-deploy', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'SMOKE_PASS'] }).dir },
   { ut: 'UT-S09-47', expected: 'ready-to-deploy', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_PARTIAL_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_PASS'] }).dir },
-  { ut: 'UT-S09-48', expected: 'coding', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_EMPTY, markers: ['SPEC_MERGED'] }).dir },
+  // split-slice-planner-stage：空 [code]（present-but-empty，total=0）+ SPEC_MERGED 仍走 slice 段 → ready-to-implement（无 SLICES_APPROVED）
+  { ut: 'UT-S09-48', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_EMPTY, markers: ['SPEC_MERGED'] }).dir },
   { ut: 'UT-S09-49', expected: 'ready-to-delta', build: () => makeProposal({ proposal: filled(), tasks: DELTA_EMPTY }).dir },
   { ut: 'UT-S09-50', expected: 'verify-passed', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DELTA_DONE, markers: ['VERIFY_PASS'] }).dir },
 ];
@@ -150,9 +152,10 @@ describe('S09 launched flow-derive 测试期并跑等价矩阵', () => {
     expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE, markers: ['MERGE_PROMPT_GENERATED'] }).dir)).toBe('merge-generated');
     expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE, markers: ['MERGE_PROMPT.md'] }).dir)).toBe('merge-generated');
   });
-  it('ST-S09-16: coding 等价（SPEC_MERGED 与旧 MERGED）', () => {
-    expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['SPEC_MERGED'] }).dir)).toBe('coding');
-    expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['MERGED'] }).dir)).toBe('coding');
+  it('ST-S09-16: ready-to-implement 等价（SPEC_MERGED 与旧 MERGED，无 SLICES_APPROVED）', () => {
+    // split-slice-planner-stage：两条派生（ViaFlow / legacy）对 merge 后未放行切片的 [code] 都返回 ready-to-implement，等价仍成立。
+    expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['SPEC_MERGED'] }).dir)).toBe('ready-to-implement');
+    expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['MERGED'] }).dir)).toBe('ready-to-implement');
   });
   it('ST-S09-17: ready-to-verify 等价（纯代码无 [delta] / 旧格式无 section）', () => {
     expect(eq(makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir)).toBe('ready-to-verify');
@@ -190,7 +193,7 @@ describe('S09 launched flow-derive 测试期并跑等价矩阵', () => {
   it('ST-S09-25: 边角①②③ 等价（VERIFY_FAIL 全局 / SMOKE 非全局 / 空 section）', () => {
     expect(eq(makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir)).toBe('verify-failed');
     expect(eq(makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'SMOKE_PASS'] }).dir, DEP)).toBe('ready-to-deploy');
-    expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_EMPTY, markers: ['SPEC_MERGED'] }).dir)).toBe('coding');
+    expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_EMPTY, markers: ['SPEC_MERGED'] }).dir)).toBe('ready-to-implement');
     // 空 [delta] section（total=0、无 delta 文件）= delta 尚未启动 → ready-to-delta
     expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_EMPTY }).dir)).toBe('ready-to-delta');
   });
@@ -212,9 +215,10 @@ describe('S09 launched flow 漂移守卫', () => {
     const flow = loadBuiltinFlow('launched');
     const ids = flow.subflows.flatMap(s => s.nodes.map(n => n.id));
     // change-flow-redesign：plan 段拆为 write-proposal + write-tasks（写 delta 前批准方案）
+    // split-slice-planner-stage：merge 与 implement 之间新增 slice 子流程（节点 plan-slices）
     expect(ids).toEqual([
       'write-proposal', 'write-tasks', 'write-delta', 'generate-merge-prompt', 'apply-merge',
-      'code', 'verify', 'deploy', 'smoke', 'archive',
+      'plan-slices', 'code', 'verify', 'deploy', 'smoke', 'archive',
     ]);
     const byId = Object.fromEntries(flow.subflows.flatMap(s => s.nodes).map(n => [n.id, n]));
     // marker / any_present 谓词
@@ -229,12 +233,17 @@ describe('S09 launched flow 漂移守卫', () => {
     // section / proposal / when 谓词（引擎硬编码语义所依赖，漂移须报警）
     // change-flow-redesign：write-proposal/write-tasks 改为 proposal_filled/tasks_filled（引擎走 isProposal/isTasksTemplateFilled，不读这些 marker）
     expect(byId['write-proposal'].done_when).toBe('proposal_filled');
-    expect(byId['write-tasks'].done_when).toBe('tasks_filled');
+    // split-slice-planner-stage：write-tasks 只产 [delta]/[deploy]（[code] 改由 merge 后 slice 段产出）
+    expect(byId['write-tasks'].done_when).toBe('tasks_delta_filled');
     expect(byId['write-delta'].done_when).toBe('section_complete:delta');
+    // split-slice-planner-stage：slice 子流程 plan-slices 节点（done_when=tasks_code_filled，when=code_required，出口门 skippable）
+    expect(byId['plan-slices'].done_when).toBe('tasks_code_filled');
+    expect(byId['plan-slices'].skill).toBe('slice-planner');
     // change-flow-redesign：delta_required 移到 spec/merge 子流程级 when（纯代码提案整段跳过）
     const subWhen = Object.fromEntries(flow.subflows.map(s => [s.id, s.when ?? null]));
     expect(subWhen['spec']).toBe('delta_required');
     expect(subWhen['merge']).toBe('delta_required');
+    expect(subWhen['slice']).toBe('code_required'); // 纯文档提案整段跳过 slice
     expect(byId['code'].done_when).toBe('section_complete:code');
     expect(byId['deploy'].when).toBe('deployment_required');
     expect(byId['smoke'].when).toBe('smoke_required');

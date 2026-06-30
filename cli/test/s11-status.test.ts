@@ -681,7 +681,7 @@ describe('S11 Scenario Tests — status command', () => {
     expect(core.suggestion).not.toContain('openlogos merge my-feature');
   });
 
-  it('ST-S11-06c: SPEC_MERGED advances proposal to coding', () => {
+  it('ST-S11-06c: SPEC_MERGED + [code] 未勾（无 SLICES_APPROVED）→ ready-to-implement', () => {
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
     }, { lineWidth: 0 }));
@@ -703,8 +703,9 @@ describe('S11 Scenario Tests — status command', () => {
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
 
-    expect(core.active_change!.proposal_step).toBe('coding');
-    expect(core.suggestion).toMatch(/实现代码|Implement code/);
+    // split-slice-planner-stage：merge 后 [code] 有未完成切片但 slice-exit 未放行 → ready-to-implement（切片待批准）。
+    expect(core.active_change!.proposal_step).toBe('ready-to-implement');
+    expect(core.active_change!.proposal_step_label).toMatch(/切片|slice/i);
     expect(core.suggestion).not.toContain('openlogos merge my-feature');
   });
 

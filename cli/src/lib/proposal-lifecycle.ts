@@ -10,6 +10,7 @@ export type ProposalStep =
   | 'delta-writing'
   | 'ready-to-merge'
   | 'merge-generated'
+  | 'ready-to-implement'
   | 'coding'
   | 'ready-to-verify'
   | 'verify-passed'
@@ -57,6 +58,8 @@ export interface TaskItem {
 
 const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
 export const PLAN_APPROVED_MARKER = 'PLAN_APPROVED';
+// split-slice-planner-stage：slice-exit 门被 --auto 消费后的状态源（类比 PLAN_APPROVED）。
+export const SLICES_APPROVED_MARKER = 'SLICES_APPROVED';
 
 const DEPLOYMENT_BOOLEAN_TEMPLATE_FIELDS = [
   '是否需要部署',
@@ -499,6 +502,11 @@ export function detectProposalStep(
       if (!code || (code.total > 0 && code.checked === code.total)) {
         // 无 [code] section 或 [code] 全勾 → 可以 verify
         return 'ready-to-verify';
+      }
+      // split-slice-planner-stage：[code] 有未完成切片。slice-exit 门未放行（无 SLICES_APPROVED）
+      // → ready-to-implement（切片待批准）；放行后 → coding。plan-slices 完成与否仅影响 next_node，不改 proposal_step。
+      if (!existsSync(join(proposalDir, SLICES_APPROVED_MARKER))) {
+        return 'ready-to-implement';
       }
       return 'coding';
     }
