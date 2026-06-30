@@ -158,15 +158,15 @@
   - **`smoke` 节点无对应 gate**：`ready-to-smoke` 不在 skip-gate 机制内，但在全自动 standing 授权的盖章/发布放行范围内（见下「绿后盖章/发布红线」）。
 - **绿后盖章/发布红线（`verify` / `smoke` / `archive` / `git push`）的 `--auto` 自动执行**：这 4 样**均无对应可跳 flow gate**、不经 `gate_id` 走 skip-gate，而是由全自动 `--auto` 的 **standing run-scoped 授权**放行。前提**均为代码已通过 `verify`**（全自动发布的是已验证成果）。
   - `verify` / `smoke` / `archive`：由 AI 宿主在 `--auto` 授权下亲自调用对应 `openlogos` 命令，约束它们的是「生成进 AGENTS.md / CLAUDE.md 的指令文本」——指令文本新增 `--auto` 例外授权后，宿主知道自己处于全自动即自行运行。
-  - `git push`：跑在**独立 hook 进程**里的 PreToolUse guard 看不到 `--auto` 标志，故经**运行域 marker** `logos/changes/<slug>/AUTO_MODE` 传递全自动状态——`openlogos next --auto` 命中活跃提案时写入该 marker，guard-check 检测到即对 `git push` 放行；`openlogos archive` 时随提案目录一并移除。marker **不在场**时 guard 维持现有 `exit 2` 硬阻断。
+  - `git push`：**无需任何 marker / guard 改动**——`plugin/bin/guard-check` 的安全白名单本就含 `^git push`，PreToolUse guard 从不拦截 `git push`。故全自动下 `git push` 是否执行**纯由指令文本承载**：与 `verify` / `smoke` / `archive` 同理，指令文本新增 `--auto` 例外授权后宿主自行执行；半自动下指令文本不含该例外、宿主须等人类明确授权（guard 在两档下行为相同、不参与该约束）。
 - **放行边界明确排除 `loop-exhausted`**：全自动放行**只**覆盖代码已绿之后的 `verify` / `smoke` / `archive` / `git push`；**不**覆盖 `gate:implement:loop-exhausted`（未收敛 / 未绿代码）。后者现有默认 `skippable:false` + overlay 单点 opt-in 逻辑**完整保留、一字不改**，是「全自动只发布已验证成果」的前提守门人。
 - **`GATE_AUTO_PASSED` 审计语义（护栏）**：
   - 文件 = 活跃提案目录下的 **JSONL 审计日志**（`logos/changes/<slug>/GATE_AUTO_PASSED`）。
   - 每次 auto 放行**总是追加一行** `{gate_id, proposal_step, timestamp}`（不去重、不覆盖）。
   - **纯审计、不改变派生**：默认 `next`（无 `--auto`）与 `status` **忽略**该文件；**历史审计行不构成对部署等动作的授权**，放行依据是本次 `--auto` 响应的 `gate_auto_passed=true`。
-- **`AUTO_MODE` marker 契约（护栏）**：运行域临时文件，由 `next --auto` 写入、`archive` 移除，**仅作用于 `git push` 的 guard 放行**；其它写入操作（`>` / `sed -i` / `mv` / `rm` 等）不受其影响，仍按 PreToolUse guard 原规则与文件路径白名单判定。
+- **`git push` 不依赖任何 marker（护栏）**：guard 安全白名单本就放行 `git push`，本能力**不引入** `AUTO_MODE` 之类运行域 marker、不改 guard；`git push` 的两档差异完全由指令文本承载。其它写入操作（`>` / `sed -i` / `mv` / `rm` 等）仍按 PreToolUse guard 原规则与文件路径白名单判定，不受 `--auto` 影响。
 - **R2 安全闸不变**：仍卡在未完成 overlay 节点时不放行——本能力不触碰该不变量。
-- **默认 `next`（无 `--auto`）不因 `--auto`/`GATE_AUTO_PASSED`/`AUTO_MODE` 改变任何 gate 或红线行为**；`--auto` 是纯 opt-in 能力。
+- **默认 `next`（无 `--auto`）不因 `--auto`/`GATE_AUTO_PASSED` 改变任何 gate 或红线行为**；`--auto` 是纯 opt-in 能力。
 
 ### 2.15 overlay 驱动 status/next/watch 派生
 

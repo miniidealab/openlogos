@@ -477,6 +477,6 @@ proposal / tasks（明确是否需要部署）
 - **deploy 在 verify 通过之后**：部署必须由人类明确确认，AI 不得自动发起
 - **smoke 在部署之后**：冒烟测试验收部署环境，不替代 verify
 - **verify / deploy / smoke 失败只修对应产物**：不需要重走 merge 流程，除非发现规格本身错误
-- **git push 是人类确认点**：archive 完成后 AI 提示用户确认，不得自动推送。**例外（auto-full-unattended）**：全自动 / 无人值守模式下（`openlogos next --auto` 的 standing run-scoped 授权——用户选 `--auto` 即一次性授权该提案全链路自动跑到底），archive 完成即由 standing 授权自动 `git push`（`AUTO_MODE` marker 已在 `logos/changes/<slug>/` 在场，使 PreToolUse guard 对 `git push` 放行；见 [pretooluse-guard.md](./pretooluse-guard.md)），并向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行。半自动 / 手动模式（无 `--auto`）维持人工确认，行为完全不变。
+- **git push 是人类确认点**：archive 完成后 AI 提示用户确认，不得自动推送。**例外（auto-full-unattended）**：全自动 / 无人值守模式下（`openlogos next --auto` 的 standing run-scoped 授权——用户选 `--auto` 即一次性授权该提案全链路自动跑到底），archive 完成即由 standing 授权自动 `git push`，并向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行。`git push` 无需任何 marker 或 guard 改动——PreToolUse guard 的安全白名单本就放行 `git push`、从不拦截（见 [pretooluse-guard.md](./pretooluse-guard.md)）；全自动由生成的指令文本授权 AI 自动 push，半自动 / 手动模式（无 `--auto`）由指令文本要求人工确认，行为完全不变。
 
 迭代可能导致场景变更：新增场景、修改已有场景、废弃场景。所有变更通过 `logos/changes/` 提案管理，场景编号一旦分配不复用。

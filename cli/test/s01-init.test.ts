@@ -161,6 +161,29 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(en).toContain('re-read the affected span');
   });
 
+  it('UT-S01-46: createAgentsMd (launched) includes full-auto two-tier authorization carve-out (auto-full-unattended)', () => {
+    // 两档授权写在 launched 强制变更管理块中，故须 isLaunched=true
+    const zh = createAgentsMd('zh', undefined, undefined, true);
+    // 半自动：人类确认点不变
+    expect(zh).toContain('半自动 / 手动模式');
+    expect(zh).toContain('人类确认点');
+    // 全自动：standing 授权自动跑 verify/smoke/archive/git push
+    expect(zh).toContain('全自动 / 无人值守模式');
+    expect(zh).toContain('standing 授权');
+    expect(zh).toContain('openlogos next --auto');
+    // 硬红线：loop-exhausted 任何模式都不放行未过测试代码
+    expect(zh).toContain('gate:implement:loop-exhausted');
+    expect(zh).toContain('绝不放行未通过测试的代码');
+
+    const en = createAgentsMd('en', undefined, undefined, true);
+    expect(en).toContain('Semi-auto / manual mode');
+    expect(en).toContain('human confirmation points');
+    expect(en).toContain('Full-auto / unattended mode');
+    expect(en).toContain('standing authorization');
+    expect(en).toContain('gate:implement:loop-exhausted');
+    expect(en).toContain('never releases code that did not pass tests');
+  });
+
   it('UT-S01-10: createAgentsMd switches conventions by locale', () => {
     const en = createAgentsMd('en');
     const zh = createAgentsMd('zh');

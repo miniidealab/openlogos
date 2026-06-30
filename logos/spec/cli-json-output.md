@@ -243,7 +243,7 @@ openlogos status --format json  # JSON 格式
 | `modules[].phase_progress[key].scenario_coverage` | object \| undefined | 否 | 仅场景类阶段（`phase.3-1`、`phase.3-4a`）存在 |
 | `modules[].active_change` | object \| null | 是 | 当前活跃变更提案；`initial` 模块或无活跃提案时为 null |
 | `modules[].active_change.slug` | string | 是 | 提案 slug |
-| `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"delta-writing"` \| `"ready-to-merge"` \| `"merge-generated"` \| `"coding"` \| `"ready-to-verify"` \| `"verify-passed"` \| `"verify-failed"` \| `"ready-to-deploy"` \| `"deploy-done"` \| `"ready-to-smoke"` \| `"smoke-passed"` \| `"smoke-failed"`；`"implementing"` / `"in-progress"` 为旧版本兼容值 |
+| `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"ready-to-delta"` \| `"delta-writing"` \| `"ready-to-merge"` \| `"merge-generated"` \| `"ready-to-implement"` \| `"coding"` \| `"ready-to-verify"` \| `"verify-passed"` \| `"verify-failed"` \| `"ready-to-deploy"` \| `"deploy-done"` \| `"ready-to-smoke"` \| `"smoke-passed"` \| `"smoke-failed"`；`"implementing"` / `"in-progress"` 为旧版本兼容值。`ready-to-implement`（split-slice-planner-stage 新增）置于 `"merge-generated"` 与 `"coding"` 之间，详见 §3.10 |
 | `modules[].active_change.proposal_step_label` | string | 是 | 提案阶段本地化标签 |
 | `modules[].active_change.has_proposal` | boolean | 是 | 是否存在 proposal.md |
 | `modules[].active_change.has_tasks` | boolean | 是 | 是否存在 tasks.md |
@@ -438,6 +438,22 @@ implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代�
 
 - 语义：`proposal.md` 与 `tasks.md` 均已脱模板、但尚未产出任何 delta 且不存在 `PLAN_APPROVED` marker 时的驻留态，对应 launched `plan` 出口「批准方案」门。
 - `proposal_step_label`（本地化）：`zh` = `"方案待批准"`。
+- 说明：本提案为开发态、主动扩展该闭合枚举（破"枚举不新增"不变量），消费方（含 RunLogos）须同步识别新值。
+
+### (1.1) `proposal_step` 枚举再新增 `ready-to-implement`（修订 §3.3）
+
+`§3.3` 的 `modules[].active_change.proposal_step` 闭合枚举**再新增取值 `"ready-to-implement"`**（split-slice-planner-stage），置于 `"merge-generated"` 与 `"coding"` 之间。叠加 (1) 后的完整集合为：
+`"writing"` | `"ready-to-delta"` | `"delta-writing"` | `"ready-to-merge"` | `"merge-generated"` | `"ready-to-implement"` | `"coding"` | `"ready-to-verify"` | `"verify-passed"` | `"verify-failed"` | `"ready-to-deploy"` | `"deploy-done"` | `"ready-to-smoke"` | `"smoke-passed"` | `"smoke-failed"`（`"implementing"` / `"in-progress"` 仍为旧版本兼容值）。
+
+- 语义：`SPEC_MERGED` 存在、提案 `code_required`、`[code]` section 尚未由 slice-planner 写定（仍为模板/空、未全部勾选）且 `SLICES_APPROVED` marker 不存在时的驻留态，对应 launched `slice` 出口「切片待批准」门（`gate_id=slice-exit`、`skippable:true`）。`[code]` 切片由 merge 后的 `slice` 子流程（slice-planner）对已合并规格 + 真实测试 ID 撰写。
+- `proposal_step_label`（本地化）：`zh` = `"切片待批准"`。
+- **gate / current 映射**：`STEP_TO_GATE_SUBFLOW` 增 `ready-to-implement → slice` 出口门（`gate_id=slice-exit`、`skippable:true`）；`STEP_TO_CURRENT_BUILTIN` 增 `ready-to-implement → plan-slices` 节点。`next --auto` 的 `gate_id` / `skippable` 映射见 §11。
+- **`slice-exit` `--auto` 放行 = 消费 gate**（对齐 (5) plan 门写法）：`next --auto` 在 `ready-to-implement` 自动放行 `slice-exit` 时，必须：
+  1. 向活跃提案目录 `GATE_AUTO_PASSED` 追加一行 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}`；
+  2. 写入 `SLICES_APPROVED` marker（活跃提案目录下，内容可为空、存在性为准；类比 `plan-exit` 写 `PLAN_APPROVED`）。
+  写入后**同次响应重新派生**为 `coding` / `code` 前沿，`proposal_step == "coding"`、`next_node.id == "code"`。
+- **`SLICES_APPROVED` marker**：表示 slice 出口 gate 已被消费；存在后即使 `[code]` 尚未勾选，也派生为 `coding` / `code` 前沿。`GATE_AUTO_PASSED` 仍只表示审计轨迹。
+- **幂等边界**：同一提案已存在 `SLICES_APPROVED` 时，`proposal_step` 不再是 `ready-to-implement`，重复 `next --auto` 不得再次追加 `gate_id:"slice-exit"` 审计行。
 - 说明：本提案为开发态、主动扩展该闭合枚举（破"枚举不新增"不变量），消费方（含 RunLogos）须同步识别新值。
 
 ### (2) 新增 `slice_state`（代码切片循环；修订 §3.9 同构挂载）
@@ -1101,11 +1117,11 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 **例外**：
 - **【R3】cmd 瞬态求值（overlay-add 节点 + builtin verify/deploy/smoke cmd gate，S30）**：`next_node` 取**本次响应 cmd 求值（cmdEval 回灌）后**的最终节点——`done_when:cmd` `exit 0` 续推 → 指向**续推后**节点（**不**指向已 done 的 cmd 节点/gate）；`fail_when:cmd` `exit 0` → 该节点/gate `failed` → 指向**该 cmd 节点/gate**；cmd 非 0/超时 → 指向**该 cmd 节点/gate**（求值后 `active`/停门前）；budget=1 遇第二个 cmd → 指向**第二个 pending cmd** 节点/gate。builtin gate id 取 `cmd_gate.node_id`。
-- **【R4】`--auto` 放行**：`gate_auto_passed === true` 时默认**省略 `next_node`**（放行后宿主走 gate 的 command，下一节点待重新 `next` 派生）。**例外：`gate_id === "plan-exit"` 时，CLI 已写入 `PLAN_APPROVED` 并重新派生到 `write-delta`，本次响应必须输出 `next_node.id == "write-delta"`。**
+- **【R4】`--auto` 放行**：`gate_auto_passed === true` 时默认**省略 `next_node`**（放行后宿主走 gate 的 command，下一节点待重新 `next` 派生）。**例外一：`gate_id === "plan-exit"` 时，CLI 已写入 `PLAN_APPROVED` 并重新派生到 `write-delta`，本次响应必须输出 `next_node.id == "write-delta"`。例外二（split-slice-planner-stage）：`gate_id === "slice-exit"` 时，CLI 已写入 `SLICES_APPROVED` 并重新派生到 `coding` / `code` 前沿，本次响应必须输出 `next_node.id == "code"`，供无人值守 driver 立即派发 code-implementor 逐片实现。**
 - **【R7】loop 阻塞**：未达上限 → `next_node` = loop subflow 的**工作节点**（overlay `current_node` 优先；否则 resolved flow 中 `id == "code"` 且未 `skipped` 的节点，**非 `verify`**，对齐 action「修代码」）；`code` 缺失/被 overlay `skip` → **省略**（仅 initial 等**合法 resolved flow**——launched 对 builtin `code` 的 `skip`/`reorder` 在派生入口已 `FLOW_SCHEMA_INVALID`、走不到此省略）；达上限（`escalated`）→ **省略**（宿主读 `loop_state.escalated`）。与 `loop_state` 互补：环状态看 `loop_state`，这一轮派哪个节点的 skill/agent 看 `next_node`。
-- **【R5】命令级建议**：当前建议不指向某 flow node（`all_done` / launched 无 active proposal → `openlogos change <slug>` / 补 baseline → `openlogos change add-baseline-docs` / `openlogos launch` 等）→ **省略 `next_node`**。`plan-exit` auto 消费后已指向真实 `write-delta` 节点，不按命令级建议省略。
+- **【R5】命令级建议**：当前建议不指向某 flow node（`all_done` / launched 无 active proposal → `openlogos change <slug>` / 补 baseline → `openlogos change add-baseline-docs` / `openlogos launch` 等）→ **省略 `next_node`**。`plan-exit` / `slice-exit` auto 消费后已分别指向真实 `write-delta` / `code` 节点，不按命令级建议省略。
 
-**golden**：`next_node` 对有当前节点的项目新增 → `next --format json` 快照更新（本切片有意为 next 加字段、重新 baseline）；`status`/`watch`/`flow show` 输出不变。本次修复新增 `plan-exit` auto 例外，`next --auto --format json` 的相关 golden 需要同步重拍并复核差异仅为 `proposal_step` 前移、`next_node=write-delta` 与一次性 `PLAN_APPROVED` 副作用。
+**golden**：`next_node` 对有当前节点的项目新增 → `next --format json` 快照更新（本切片有意为 next 加字段、重新 baseline）；`status`/`watch`/`flow show` 输出不变。本次修复新增 `plan-exit` auto 例外，`next --auto --format json` 的相关 golden 需要同步重拍并复核差异仅为 `proposal_step` 前移、`next_node=write-delta` 与一次性 `PLAN_APPROVED` 副作用；split-slice-planner-stage 新增 `slice-exit` auto 例外，差异须仅为 `proposal_step` 由 `ready-to-implement` 前移到 `coding`、`next_node=code` 与一次性 `SLICES_APPROVED` 副作用。
 
 ---
 
@@ -1126,18 +1142,27 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `auto` | boolean | 否 | 是否启用 `--auto`；默认 `next` 省略或为 false |
-| `gate_id` | string \| null | 否 | 当前停顿点对应的 launched gate id；`ready-to-delta`→`plan-exit`、`ready-to-merge`→`spec-exit`、`ready-to-deploy`→`deliver-entry`；无对应 gate（如 `ready-to-smoke`）时为 null |
-| `skippable` | boolean \| null | 否 | 该 human gate 是否允许 auto 跳过：`ready-to-delta` / `ready-to-merge` / `ready-to-deploy`→true；达上限 `loop-exhausted`→默认 false |
-| `gate_auto_passed` | boolean | 否 | 本次 `--auto` 是否实际放行并追加审计。`plan-exit` 放行还必须写入 `PLAN_APPROVED`；`skippable:false` 或无 gate 时为 false；放行依据为本次响应而非历史审计行 |
+| `gate_id` | string \| null | 否 | 当前停顿点对应的 launched gate id；`ready-to-delta`→`plan-exit`、`ready-to-merge`→`spec-exit`、`ready-to-implement`→`slice-exit`、`ready-to-deploy`→`deliver-entry`；无对应 gate（如 `ready-to-smoke`）时为 null |
+| `skippable` | boolean \| null | 否 | 该 human gate 是否允许 auto 跳过：`ready-to-delta` / `ready-to-merge` / `ready-to-implement` / `ready-to-deploy`→true；达上限 `loop-exhausted`→默认 false |
+| `gate_auto_passed` | boolean | 否 | 本次 `--auto` 是否实际放行并追加审计。`plan-exit` 放行还必须写入 `PLAN_APPROVED`、`slice-exit` 放行还必须写入 `SLICES_APPROVED`；`skippable:false` 或无 gate 时为 false；放行依据为本次响应而非历史审计行 |
 
 **`gate_id` 派生规则（契约闭合）**：`spec/flow/launched.yaml` 的 gate 挂在 subflow 上、无显式 id 字段，
 故 `gate_id` 为**派生值** = `<subflow.id>-<gate.position>`（`gate.position` 缺省为 `exit`）。
-据此：plan subflow 出口 gate → **`plan-exit`**；spec subflow 出口 gate → **`spec-exit`**；deliver subflow 的入口 gate → **`deliver-entry`**。
+据此：plan subflow 出口 gate → **`plan-exit`**；spec subflow 出口 gate → **`spec-exit`**；slice subflow 出口 gate → **`slice-exit`**；deliver subflow 的入口 gate → **`deliver-entry`**。
 实现侧 gate 助手须按此规则生成 `gate_id`。
 
 **plan-exit 消费后的同次响应**：当 `gate_id=="plan-exit"` 且 `gate_auto_passed==true` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `PLAN_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"delta-writing"`，并带 `next_node.id=="write-delta"`。消费方不得把 `gate_auto_passed==true` 一概理解为“本次无 next_node”。
 
-**范围边界**：`--auto` 作用于 launched 的 plan 出口（`ready-to-delta`，可跳且会被 `PLAN_APPROVED` 消费）、spec 出口（`ready-to-merge`，可跳）与 deliver 入口（`ready-to-deploy`，可跳）三门。`gate:implement:loop-exhausted` 默认不可跳（见 §11.1）。`smoke` 无对应 gate，`ready-to-smoke` 不在范围内。initial 的 WHY/WHAT 建议门本轮不接入 `--auto`（仅 schema 预留）。
+**slice-exit 消费后的同次响应（split-slice-planner-stage）**：当 `gate_id=="slice-exit"` 且 `gate_auto_passed==true` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `SLICES_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"coding"`，并带 `next_node.id=="code"`。同一提案已存在 `SLICES_APPROVED` 时不再追加同一 `slice-exit` 审计行（幂等）。
+
+**范围边界（auto-full-unattended 重定义）**：`--auto` = **全自动 / 无人值守 standing run-scoped 授权**，作用对象分两层：
+
+1. **可跳 flow 门（经上表 `gate_id` / `skippable` / `gate_auto_passed` 字段表达）**：launched 的 plan 出口（`ready-to-delta`，会被 `PLAN_APPROVED` 消费）、spec 出口（`ready-to-merge`）、slice 出口（`ready-to-implement`，会被 `SLICES_APPROVED` 消费）、deliver 入口（`ready-to-deploy`）四门，`skippable:true`，`--auto` 自动放行。
+2. **代码已绿后的盖章 / 发布红线步骤（无 flow gate，不经 `gate_id` 字段表达）**：`verify`、`smoke`、`archive`、`git push` 没有对应 flow gate（故停在这些步骤时 `gate_id==null`），不由 `next --auto` 的 gate 字段表达。它们在全自动下的「自动执行」**纯由生成的指令文本（AGENTS.md / CLAUDE.md）承载**——宿主 AI driver 读到全自动授权后自行运行；CLI **不**引入运行域 marker、**不**写合成审计行。其中 `git push` 无需任何额外机制：PreToolUse guard 的安全白名单本就放行 `git push`（`plugin/bin/guard-check` 的 `BASH_SAFE_PATTERNS` 含 `^git push`），全自动与半自动的唯一差异在于指令文本是否授权 AI 自行发起。这一层是无人值守**授权语义**，不是 `next --auto` 的 gate 字段语义。
+
+**硬红线（任何模式、含 `--auto` 都不放行）**：`gate:implement:loop-exhausted` 默认不可跳（见 §11.1），全自动也照常阻塞、绝不放行未收敛代码——不在上述两层放行范围内。
+
+`initial` 的 WHY/WHAT 建议门本轮不接入 `--auto`（仅 schema 预留）。
 
 ### 11.1 loop-exhausted gate（M2 切片 2 / S29 可放行）
 
@@ -1173,6 +1198,10 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 - "继续迭代" = 人类用 overlay `set-loop` 调大 `max_iters`（`escalated` 自动解除）或修到收敛出环；**gate 不重置计数**。
 - `proposal_step` 不因本 gate 改变（仍为既有枚举值）；达上限信息只在 `loop_state.escalated` / `exhausted_skippable` + 本节 gate 字段表达。
 
+### 11.1 补充：loop-exhausted 不在全自动盖章/发布放行内
+
+> **auto-full-unattended 澄清（不改 §11.1 既有派生逻辑）**：本提案把 `verify` / `smoke` / `archive` / `git push` 这 4 样「代码已绿后的盖章/发布」红线纳入全自动 standing 授权放行，但 **`gate:implement:loop-exhausted` 明确排除在外**。§11.1 的默认表（`skippable:false` / `gate_auto_passed:false` / `--auto` 照常阻塞）与 opt-in 表（仅 overlay `exhausted_skippable==true` 时放行）**全部保持不变**。理由：loop-exhausted = 代码未过测试，放行它即发布未验证成果，与全自动「只发布已验证成果」的前提相悖。它是该前提的守门人，永不随 `--auto` 自动放行；唯一放行通道仍是用户在 overlay 显式声明的高危 opt-in（与是否 `--auto` 无关）。
+
 ---
 
 ## 12. `GATE_AUTO_PASSED` JSONL 审计 schema
@@ -1181,7 +1210,9 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 - **审计不是状态源**：默认 `next`（无 `--auto`）与 `status` **忽略**该文件、绝不因其存在而让默认 `next` 自动越过 gate；此处「不改变」仅指**不因 `GATE_AUTO_PASSED` 越过 gate**——`next` 的 base data 仍按当前契约输出（S28 起可能含 `next_node`）。
 - **plan gate 的状态源是 `PLAN_APPROVED`**：`plan-exit` auto 放行时除追加审计外，还必须写入 `PLAN_APPROVED` marker；后续状态推进由该 marker 或实际 delta 产出驱动，不由审计行驱动。
-- **追加策略**：处于可跳 gate 且本次实际放行时追加一行。`plan-exit` 第一次放行后前沿离开 `ready-to-delta`，重复 `next --auto` 不得再追加同一 `plan-exit` 审计；`ready-to-merge` / `ready-to-deploy` 等未被本命令消费的 gate 仍保留既有 append-only 审计轨迹。
+- **slice gate 的状态源是 `SLICES_APPROVED`（split-slice-planner-stage）**：`slice-exit` auto 放行时除追加审计外，还必须写入 `SLICES_APPROVED` marker；后续状态推进由该 marker 或实际 `[code]` 全部勾选驱动，不由审计行驱动。
+  > **auto-full-unattended 说明**：全自动盖章/发布红线步骤（`verify` / `smoke` / `archive` / `git push`）**不**写 `GATE_AUTO_PASSED`——它们无 flow gate、由指令文本授权宿主 driver 自行执行，审计落在各步既有 marker（`VERIFY_PASS` / `SMOKE_PASS` / `DEPLOY_DONE`）与提案归档动作上。`GATE_AUTO_PASSED` 仅记录可跳 flow 门（plan/spec/slice/deliver）的放行。
+- **追加策略**：处于可跳 gate 且本次实际放行时追加一行。`plan-exit` 第一次放行后前沿离开 `ready-to-delta`，重复 `next --auto` 不得再追加同一 `plan-exit` 审计；`slice-exit` 第一次放行后前沿离开 `ready-to-implement`（已存在 `SLICES_APPROVED`），重复 `next --auto` 不得再追加同一 `slice-exit` 审计；`ready-to-merge` / `ready-to-deploy` 等未被本命令消费的 gate 仍保留既有 append-only 审计轨迹。
 
 每行 schema：
 
@@ -1189,12 +1220,18 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 { "gate_id": "plan-exit", "proposal_step": "ready-to-delta", "timestamp": "2026-06-25T08:01:12Z" }
 ```
 
+`slice-exit` 放行行示例：
+
+```jsonc
+{ "gate_id": "slice-exit", "proposal_step": "ready-to-implement", "timestamp": "2026-06-30T08:01:12Z" }
+```
+
 字段说明：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `gate_id` | string | 是 | 被本次 `--auto` 放行的 gate id |
-| `proposal_step` | string | 是 | 放行前的 proposal_step；`plan-exit` 应记录 `"ready-to-delta"` |
+| `gate_id` | string | 是 | 被本次 `--auto` 放行的可跳 flow 门 id（`plan-exit` / `spec-exit` / `slice-exit` / `deliver-entry`） |
+| `proposal_step` | string | 是 | 放行前的 proposal_step；`plan-exit` 应记录 `"ready-to-delta"`、`slice-exit` 应记录 `"ready-to-implement"` |
 | `timestamp` | string | 是 | ISO 时间戳 |
 
 ## 13. `LOOP_ITERS` JSONL 账本 schema
@@ -1224,3 +1261,5 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 - **module 来源**：launched = `guard.module`；initial 单模块 = 该唯一模块；**initial 多模块** = verify 为项目级单次运行、无法归属 →
   **不写账本、loop 视为未激活**（本切片已知不支持）。launch 后 initial 账本仅历史产物，launched 派生只读提案目录账本。
 - **状态回退**：verify 再次 FAIL 沿用现有行为清除 `VERIFY_PASS` 及下游 `DEPLOY_DONE`/`SMOKE_*` → implement loop 重新打开；账本续写、`converged` 反映最后一次。
+
+> **auto-full-unattended 注**：本提案曾设想引入 `AUTO_MODE` 运行域 marker 让 PreToolUse guard 放行 `git push`，后经实测证伪——guard 的安全白名单（`plugin/bin/guard-check` `BASH_SAFE_PATTERNS`）本就含 `^git push`，从不拦截，故该 marker 多余、未引入。全自动下 `git push` 的「自动发起」纯由生成的指令文本授权宿主 driver 承载（见 §11 范围边界第 2 层）。

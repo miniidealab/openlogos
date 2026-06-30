@@ -112,7 +112,7 @@ subflows:                       # 有序子流程列表（流程主体）
 - 被自动跳过**必须留痕**：写 `GATE_AUTO_PASSED`（含 gate id、时间）审计记录。
 - 仍符合 A 架构：OpenLogos 只派生"此 gate 可跳 + 当前 auto → 视为通过"；是否 auto 由宿主决定。
 - **全自动 = standing run-scoped 授权（auto-full-unattended 起）**：`openlogos next --auto` 即**全自动 / 无人值守**模式，含义重定义为「standing run-scoped 授权」——用户选 `--auto` 即**一次性授权该提案全链路自动跑到底**。无 `--auto`（半自动 / 手动）时所有人类确认点行为**完全不变**。`--auto` 除按上文自动放行 `skippable:true` 的 flow 门外，还以 **standing 授权自动执行「代码已绿之后」由 CLI 驱动的盖章/发布步骤**——`verify` / `smoke` / `archive` / `git push` 这 4 样红线。
-- **放行对象是 CLI 步骤而非 flow 门**：上述 standing 授权放行的是 CLI 驱动的盖章/发布动作，不改任何 flow 门的 `skippable` 值。其中 `git push` 经**运行域 marker 文件 `AUTO_MODE`**（位于 `logos/changes/<slug>/AUTO_MODE`，由 `openlogos next --auto` 命中活跃提案时写入、`openlogos archive` 时随提案目录一并移除）让 PreToolUse guard 检测到即放行（exit 0），marker 不在场时维持现有 exit 2 硬阻断（见 `spec/pretooluse-guard.md`）。每次自动放行仍向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行（append-only，是审计、非状态源）。R2 安全闸（仍卡在未完成 overlay 节点则不放行）保持不变。
+- **放行对象是 CLI 步骤而非 flow 门**：上述 standing 授权放行的是 CLI 驱动的盖章/发布动作，不改任何 flow 门的 `skippable` 值。其中 `git push` **无需任何 marker 或 guard 改动**——PreToolUse guard 的安全白名单本就放行 `git push`、从不拦截（见 `spec/pretooluse-guard.md`），全自动下由生成的指令文本授权 AI 自动 push、半自动维持人工确认。每次自动放行仍向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行（append-only，是审计、非状态源）。R2 安全闸（仍卡在未完成 overlay 节点则不放行）保持不变。
 - **全自动 4 样红线放行不含 `loop-exhausted`**：达迭代上限仍未过测试的未收敛代码退出门（`gate:<subflow>:loop-exhausted`，默认 `skippable:false`）保留为**硬红线**，是「全自动发布的是已验证成果」这一前提的守门人——**任何模式（含 `--auto`）都绝不自动放行**。它的现有逻辑（默认 `skippable:false`、即使 `--auto` 也阻塞、仅 overlay `set-loop` 的 `set.exhausted_gate.skippable:true` 可单点 opt-in 放行）**一字不改、完整保留**，详见 §6 第 133 行、§10.4、§12.2。
 
 ## 6. loop（subflow 循环）【整体含 M2 预留】

@@ -1466,7 +1466,10 @@ ${generateActiveSkillsSection(locale, aiTool, target)}`;
 11. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
 12. 提醒用户确认是否执行 \`git push\`（人类确认点）
 
-**\`openlogos merge\`、\`openlogos verify\`、部署执行、\`openlogos smoke\`、\`openlogos archive\` 和 \`git push\` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+**两档授权语义（半自动 / 全自动）：**
+- **半自动 / 手动模式（默认，无 \`--auto\`）**：\`openlogos merge\`、\`openlogos verify\`、部署执行、\`openlogos smoke\`、\`openlogos archive\` 和 \`git push\` 是人类确认点。AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+- **全自动 / 无人值守模式（\`openlogos next --auto\`）**：用户选择 \`--auto\` 即构成对该提案全链路的 standing 授权——AI driver 被授权**自动执行** verify、部署、smoke、archive、git push（以及可跳 flow 门 plan/spec/slice/deliver），无需逐步人类确认。\`git push\` 无需额外机制（PreToolUse guard 安全白名单本就放行）。
+- **硬红线（任何模式、含 \`--auto\` 都不放行）**：达迭代上限仍未过测试的未收敛代码（\`gate:implement:loop-exhausted\`）——全自动也照常阻塞，**绝不放行未通过测试的代码**。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
@@ -1496,7 +1499,10 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 11. After archive, AI automatically commits the archive (inform user, no confirmation needed)
 12. Remind the user to confirm whether to run \`git push\` (human confirmation point)
 
-**\`openlogos merge\`, \`openlogos verify\`, deployment execution, \`openlogos smoke\`, \`openlogos archive\`, and \`git push\` are human confirmation points.** AI must not execute them without explicit user authorization. When the user explicitly requests execution (including via the corresponding slash commands), AI may execute them. Must not be triggered implicitly in scenarios like "continue" or "follow the process".
+**Two-tier authorization (semi-auto / full-auto):**
+- **Semi-auto / manual mode (default, no \`--auto\`)**: \`openlogos merge\`, \`openlogos verify\`, deployment execution, \`openlogos smoke\`, \`openlogos archive\`, and \`git push\` are human confirmation points. AI must not execute them without explicit user authorization. When the user explicitly requests execution (including via the corresponding slash commands), AI may execute them. Must not be triggered implicitly in scenarios like "continue" or "follow the process".
+- **Full-auto / unattended mode (\`openlogos next --auto\`)**: choosing \`--auto\` constitutes standing authorization for the whole proposal chain — the AI driver is authorized to **automatically run** verify, deployment, smoke, archive, and git push (plus the skippable flow gates plan/spec/slice/deliver) without per-step human confirmation. \`git push\` needs no extra mechanism (the PreToolUse guard's safe whitelist already allows it).
+- **Hard red line (never auto-passed in ANY mode, including \`--auto\`)**: un-converged code that still fails tests after hitting the iteration cap (\`gate:implement:loop-exhausted\`) — full-auto stays blocked and **never releases code that did not pass tests**.
 
 ### Behavioral Constraints
 - **When you discover a bug/issue**: only output analysis and proposed fix — **do NOT modify code directly** — wait for the user to decide whether to create a change proposal

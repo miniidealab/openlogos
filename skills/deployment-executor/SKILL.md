@@ -28,7 +28,7 @@
 1. **默认 / 手动模式（半自动）**：用户明确授权部署（前置依赖原义；生产环境强烈建议走此路径）。半自动下部署执行、`openlogos smoke` 等仍逐次须人类明确授权，行为**完全不变**。
 2. **无人值守 `openlogos next --auto` 模式（全自动 / standing 授权）**：`--auto` 的含义被重定义为一次性的 **standing run-scoped 授权**——用户选择 `--auto` 即在本次运行域内一次性授权全链路自动到底。本次 `next --auto` 响应对 deliver 入口门（`deliver-entry`，`skippable:true`）输出 **`gate_auto_passed === true`** 时，即构成对**本次**部署的放行依据（部署目标可能是测试环境而非生产）。
 
-全自动 `--auto` 下，同一 standing 授权也覆盖"代码已绿后的盖章 / 发布"动作：部署完成后的 `openlogos smoke`、以及更下游的 `git push`（由本次运行域 marker `AUTO_MODE` 使 PreToolUse guard 放行）均可经此授权自动执行，无需逐次人类再确认；每次放行向 `GATE_AUTO_PASSED` 追加一行审计。
+全自动 `--auto` 下，同一 standing 授权也覆盖"代码已绿后的盖章 / 发布"动作：部署完成后的 `openlogos smoke`、以及更下游的 `git push`（`plugin/bin/guard-check` 的安全白名单本就放行 `git push`，**无需任何 marker / guard 改动**，全自动下纯由指令文本授权）均可经此授权自动执行，无需逐次人类再确认；可跳门每次放行向 `GATE_AUTO_PASSED` 追加一行审计。
 
 受限约束（必须遵守）：
 - 授权依据是**本次 `--auto` 响应的 `gate_auto_passed === true`**这一 live 决策，**不是** `GATE_AUTO_PASSED` 文件的存在；**历史审计行不构成对后续部署 / smoke / push 的授权**（与默认 `next` 忽略 `GATE_AUTO_PASSED` 一致）。

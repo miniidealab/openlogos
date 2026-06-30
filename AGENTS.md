@@ -113,7 +113,10 @@ Step 5 分批执行提示词（可直接复用）：
 11. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
 12. 提醒用户确认是否执行 `git push`（人类确认点）
 
-**`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 是人类确认点。** AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+**两档授权语义（半自动 / 全自动）：**
+- **半自动 / 手动模式（默认，无 `--auto`）**：`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 是人类确认点。AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+- **全自动 / 无人值守模式（`openlogos next --auto`）**：用户选择 `--auto` 即构成对该提案全链路的 standing 授权——AI driver 被授权**自动执行** verify、部署、smoke、archive、git push（以及可跳 flow 门 plan/spec/slice/deliver），无需逐步人类确认。`git push` 无需额外机制（PreToolUse guard 安全白名单本就放行）。
+- **硬红线（任何模式、含 `--auto` 都不放行）**：达迭代上限仍未过测试的未收敛代码（`gate:implement:loop-exhausted`）——全自动也照常阻塞，**绝不放行未通过测试的代码**。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案

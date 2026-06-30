@@ -7,7 +7,7 @@
 # auto-full-unattended：openlogos next --auto = 全自动 / 无人值守（standing run-scoped 授权）——
 #   一次性授权该提案全链路自动跑到底。--auto 除自动放行 skippable:true 的 human gate 外，
 #   还以 standing 授权自动执行「代码已绿之后」的 CLI 盖章/发布步骤 verify/smoke/archive/git push
-#   （git push 经 logos/changes/<slug>/AUTO_MODE marker 让 PreToolUse guard 放行）。
+#   （git push 无需 marker：PreToolUse guard 安全白名单本就放行 git push，全自动由指令文本授权自动 push）。
 #   每次自动放行向提案目录 GATE_AUTO_PASSED 追加审计行。
 #   loop-exhausted 退出门（skippable:false）保留硬红线，任何模式含 --auto 都绝不自动放行。
 #   半自动（无 --auto）所有人类确认点行为完全不变。本 delta 仅在 smoke/archive 节点附近加注释，
@@ -137,7 +137,7 @@ subflows:
         name: 归档
         skill: null                            # openlogos archive 驱动
         # auto-full-unattended：全自动 --auto 下，archive（openlogos archive）经 standing run-scoped 授权自动执行，
-        # 自动放行向提案目录 GATE_AUTO_PASSED 追加审计行；archive 时 AUTO_MODE marker 随提案目录一并移除。
+        # 自动放行向提案目录 GATE_AUTO_PASSED 追加审计行。
         # 半自动（无 --auto）维持人工确认。
         produces: null
         done_when: archived
