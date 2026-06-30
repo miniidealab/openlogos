@@ -58,6 +58,8 @@ export interface NextData {
   gate_id?: string | null;
   skippable?: boolean | null;
   gate_auto_passed?: boolean;
+  // auto-execute-redline-steps：--auto 下非门 CLI 命令步骤（verify/smoke/archive）就绪可自动执行时为 true（默认 next 省略）
+  auto_execute?: boolean;
   // M2 切片 1b：本次 next 执行了 cmd: 节点求值时附带（budget=1，transient，不写 marker）
   cmd_node_id?: string;
   cmd_predicate_field?: 'done_when' | 'fail_when';
@@ -746,6 +748,27 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     if (mi) { action = mi.action; command = mi.command; detail = mi.detail; }
   }
 
+  // auto-execute-redline-steps：--auto 下，非门 CLI 命令步骤（verify/smoke/archive）就绪时输出 auto_execute:true + command，
+  // 供无人值守 driver 自动执行。硬红线排除：卡在 overlay 节点 / loop 阻塞（含达上限 loop-exhausted）/ failed 步骤均不置。
+  // gate_auto_passed（flow 门）与 auto_execute（非门命令步骤）正交，同一响应至多一个为真。
+  let autoExecute = false;
+  if (auto && autoEnabled && !blockedByOverlayNode && !blockedByLoop && topActiveChange) {
+    let autoCmd: string | null = null;
+    if (topProposalStep === 'ready-to-verify') autoCmd = 'openlogos verify';
+    else if (topProposalStep === 'ready-to-smoke') autoCmd = 'openlogos smoke';
+    else if (topProposalStep === 'verify-passed' || topProposalStep === 'deploy-done' || topProposalStep === 'smoke-passed') autoCmd = `openlogos archive ${topActiveChange}`;
+    if (autoCmd) {
+      autoExecute = true;
+      command = autoCmd;
+      action = locale === 'zh' ? `auto: 自动执行 ${autoCmd}（无需人工确认）` : `auto: run ${autoCmd} (no human confirmation)`;
+      detail = locale === 'zh'
+        ? `无人值守模式：standing 授权，直接执行 \`${autoCmd}\`，无需人类确认。`
+        : `Unattended mode: standing authorization — run \`${autoCmd}\` directly without human confirmation.`;
+      const mi = moduleItems?.find(m => m.active_change === topActiveChange);
+      if (mi) { mi.action = action; mi.command = command; mi.detail = detail; }
+    }
+  }
+
   const result: NextData = {
     action,
     command,
@@ -759,6 +782,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     ...(data.modules === undefined && data.cmd_gate ? { cmd_gate: data.cmd_gate } : {}),
     ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
+    ...(autoExecute ? { auto_execute: true } : {}),
     ...(cmdResult ? {
       cmd_node_id: cmdResult.node_id,
       cmd_predicate_field: cmdResult.predicate_field,

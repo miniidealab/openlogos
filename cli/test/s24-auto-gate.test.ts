@@ -43,6 +43,10 @@ const FIXTURES: Record<string, StepFixture> = {
   'ready-to-merge': { proposal: filled(), tasks: DELTA_DONE },
   'ready-to-deploy': { proposal: filled('是', '否'), tasks: DEPLOY_EMPTY_TASKS, markers: ['VERIFY_PASS'], deploy: true },
   'ready-to-smoke': { proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE'], deploy: true, smoke: true },
+  // auto-execute-redline-steps：非门动作步骤 fixture（[code] 全勾 + SLICES_APPROVED → coding 完成）
+  'ready-to-verify': { proposal: filled(), tasks: '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1', markers: ['SPEC_MERGED', 'SLICES_APPROVED'] },
+  'verify-passed': { proposal: filled('否', '否'), tasks: '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1', markers: ['SPEC_MERGED', 'SLICES_APPROVED', 'VERIFY_PASS'] },
+  'smoke-passed': { proposal: filled('是', '是'), tasks: '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n\n## [deploy] 部署\n- [x] 部署', markers: ['SPEC_MERGED', 'SLICES_APPROVED', 'VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_PASS'], deploy: true, smoke: true },
 };
 
 interface Ctx { root: string; dir: string; auditPath: string; planPath: string; con: ReturnType<typeof captureConsole>; }
@@ -198,19 +202,22 @@ describe('S24 next --auto 行为', () => {
     expect(typeof rec.timestamp).toBe('string');
   });
 
-  it('UT-S24-11: ready-to-smoke + --auto 与默认 next 一致（无 gate、不写审计）', () => {
+  it('UT-S24-11: ready-to-smoke + --auto 输出 auto_execute + command=openlogos smoke（非门动作步骤，不经 gate、不写审计）', () => {
     const ctx = setup('ready-to-smoke');
     next('json', undefined, true);
     const autoData = jsonData(ctx.con);
+    // 无 flow gate（不经 gate_id），不写审计
     expect(autoData.gate_id).toBeNull();
     expect(autoData.gate_auto_passed).toBe(false);
     expect(existsSync(ctx.auditPath)).toBe(false);
-    // action/command 与默认 next 等价
+    // auto-execute-redline-steps：新增 auto_execute 信号 + 具体命令
+    expect(autoData.auto_execute).toBe(true);
+    expect(autoData.command).toBe('openlogos smoke');
+    // 默认 next（无 --auto）不置 auto_execute、行为不变
     ctx.con.logs.length = 0;
     next('json', undefined, false);
     const def = jsonData(ctx.con);
-    expect(autoData.action).toBe(def.action);
-    expect(autoData.command).toBe(def.command);
+    expect(def.auto_execute).toBeUndefined();
     expect(autoData.proposal_step).toBe(def.proposal_step);
   });
 
@@ -323,6 +330,63 @@ describe('S24 next --auto 行为', () => {
     const d = jsonData(ctx.con);
     expect(d.proposal_step).toBe('ready-to-implement');
     expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+  });
+});
+
+// ── 六、auto_execute 非门动作步骤（auto-execute-redline-steps）──
+describe('S24 auto_execute 非门动作步骤', () => {
+  it('UT-S24-AE-01: verify-passed + --auto → auto_execute:true + command=openlogos archive', () => {
+    const ctx = setup('verify-passed');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('verify-passed');
+    expect(d.auto_execute).toBe(true);
+    expect(d.command).toBe('openlogos archive feat');
+    expect(String(d.action)).toContain('auto');
+  });
+
+  it('UT-S24-AE-02: ready-to-verify + --auto → auto_execute:true + command=openlogos verify', () => {
+    const ctx = setup('ready-to-verify');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('ready-to-verify');
+    expect(d.auto_execute).toBe(true);
+    expect(d.command).toBe('openlogos verify');
+  });
+
+  it('UT-S24-AE-03: 默认 next（无 --auto）不输出 auto_execute', () => {
+    const ctx = setup('verify-passed');
+    next('json', undefined, false);
+    const d = jsonData(ctx.con);
+    expect(d.auto_execute).toBeUndefined();
+  });
+
+  it('UT-S24-AE-04: loop-exhausted + --auto 不置 auto_execute（硬红线回归）', () => {
+    // 达上限未收敛：verify 账本两行 fail（max_iters 默认 → escalated），proposal_step 处于 verify 前沿
+    const ctx = setup('ready-to-verify');
+    writeFileSync(join(ctx.dir, 'LOOP_ITERS'),
+      [1, 2, 3].map(i => JSON.stringify({ iter: i, node: 'verify', result: 'fail', module: 'core', timestamp: '2026-06-20T00:00:00.000Z' })).join('\n') + '\n');
+    writeFileSync(join(ctx.dir, 'VERIFY_FAIL'), '');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.auto_execute).toBeUndefined();
+  });
+
+  it('UT-S24-AE-05: smoke-passed + --auto → auto_execute:true + command=openlogos archive', () => {
+    const ctx = setup('smoke-passed');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('smoke-passed');
+    expect(d.auto_execute).toBe(true);
+    expect(d.command).toBe('openlogos archive feat');
+  });
+
+  it('ST-S24-AE-01: 全自动 verify 通过后 next --auto 直接给出可执行归档信号', () => {
+    const ctx = setup('verify-passed');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.auto_execute).toBe(true);
+    expect(d.command).toBe('openlogos archive feat');
   });
 });
 
