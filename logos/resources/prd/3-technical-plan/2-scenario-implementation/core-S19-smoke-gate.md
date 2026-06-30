@@ -25,7 +25,7 @@ sequenceDiagram
 ```
 
 ## 步骤说明
-1. **用户**明确授权运行 smoke。
+1. **用户授权运行 smoke**：半自动（无 `--auto`）下由用户**明确授权**运行；全自动（`--auto`）下由 `--auto` 建立的 **standing run-scoped 授权**放行，宿主 driver 自动运行 `openlogos smoke`（约束其行为的指令文本已新增 `--auto` 例外授权），放行事件向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行。无论哪档，下文前置门禁均照常校验。
 2. **CLI** 读取提案级部署决策、`tasks.md` 和 `DEPLOY_DONE`。
 3. **CLI** 先校验 `proposal.md` 与 `[deploy]` section 是否冲突；冲突时不得进入 smoke。
 4. **CLI** 只有在 `smoke_required: true` 且 `DEPLOY_DONE` 存在时才继续；`deployment_progress` 仅用于展示，不替代 `DEPLOY_DONE` 门禁。
@@ -34,6 +34,18 @@ sequenceDiagram
 7. **CLI** 读取用例与结果。
 8. **CLI** 判断 smoke 门禁。
 9. **CLI** 输出报告并暴露沙箱状态。
+
+## --auto 全自动下的 smoke 自动运行（standing 授权）
+
+`openlogos smoke` 是「代码已绿之后」由 CLI 驱动的盖章/发布类红线步骤之一，**非 flow gate**。其 `--auto` 行为按两档区分：
+
+- **半自动（无 `--auto`）**：smoke 维持**人类确认点**——必须由用户明确授权后才运行 `openlogos smoke`，行为完全不变。
+- **全自动（`--auto`）**：用户选 `--auto` 即对该提案建立 standing run-scoped 授权，宿主 driver **自动运行** `openlogos smoke`，无需逐步人工接入；每次放行向 `logos/changes/<slug>/GATE_AUTO_PASSED` 追加审计行（append-only，是审计、非状态源）。
+
+**边界（强制保留）**：
+- `--auto` 仅移除「人工确认运行 smoke」这一步，**不放松任何 smoke 前置门禁**：仍必须满足 `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾、`smoke_required:true`，且 runner / reporter / dispatcher 覆盖检查与 sandbox 隔离判定一字不改。前置不满足时 `--auto` 同样不进入 smoke。
+- smoke PASS 只能来自真实执行结果；`--auto` 不得为满足覆盖率追加伪造 PASS。
+- smoke 不在 `loop-exhausted` 守门范围内；4 样红线（verify/smoke/archive/git push）的 standing 授权放行**不含**未收敛代码退出门。
 
 ## 异常用例
 ### EX-4.1: 缺少 smoke 用例

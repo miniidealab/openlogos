@@ -269,20 +269,26 @@ change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `s
 - 用户明确要求执行（包括使用 `/openlogos:merge`、`/openlogos:archive` slash command）时，AI 可以代为执行
 - 不得在"顺手完成流程"、"按流程走完"、"继续"等隐式场景中自动触发
 
-**无人值守 `--auto` 例外（与 plan 门对称，依据 `spec/change-management.md` §143「无人值守 skip-gate 例外」）**：
-- 无人值守 `openlogos next --auto` 下，**仅** `spec` 出口门（`spec-exit`，审 delta + 授权合并）与 `deliver` 入口门（`deliver-entry`，部署执行）这两道 `skippable:true` 门可被**编排器（driver）**自动放行——**用户选择 `--auto` 即构成对这两道可跳门的授权**；每次放行向 `GATE_AUTO_PASSED` 追加一行审计（append-only，历史审计行不构成对后续动作的授权）。据此，`--auto` 下 `openlogos merge` 由编排器凭本次 `next --auto` 响应的 `gate_auto_passed=true` 执行，无需逐次人类授权。
+**两档模式（半自动 / 全自动）的授权语义**：
+
+- **半自动 / 手动（无 `--auto`）**：所有人类确认点行为**完全不变**——`merge`、部署执行、`smoke`、`archive`、`git push` 仍各自停在对应门，逐次等人类明确授权。
+- **全自动 / 无人值守（`openlogos next --auto`）**：`--auto` 的含义被重定义为一次性的 **standing run-scoped 授权**——用户选择 `--auto` 即在本次运行域内一次性授权全链路自动到底，无需对每道门逐次再确认。
+
+**全自动 `--auto` 下的自动放行范围（依据 `spec/change-management.md` §143「无人值守 skip-gate 例外」）**：
+- `spec` 出口门（`spec-exit`，审 delta + 授权合并）与 `deliver` 入口门（`deliver-entry`，部署执行）这两道 `skippable:true` 门可被**编排器（driver）**自动放行。据此 `openlogos merge` 由编排器凭本次 `next --auto` 响应的 `gate_auto_passed=true` 执行，无需逐次人类授权。
+- **「代码已绿后的盖章 / 发布」4 样红线在全自动下由 standing 授权自动放行**：`openlogos verify`、`openlogos smoke`、`openlogos archive`、`git push`。它们均属"代码已收敛/已绿之后"的盖章或发布动作，`--auto` 下凭用户选择 `--auto` 这一次性授权放行，半自动 / 手动下仍逐次须人类明确授权。
+- 每次放行向 `GATE_AUTO_PASSED` 追加一行审计（append-only，历史审计行不构成对后续动作的授权）；`git push` 另经本次运行域 marker `AUTO_MODE` 使 PreToolUse guard 放行。
 - **被派发的 change-writer agent 自身仍不直接执行 `openlogos merge`**：产出全部 delta 后停手、把控制权交回编排器，由编排器走自动合并。这与默认/手动模式下"提醒用户授权"并不矛盾——`--auto` 只是把"授权"前置到了用户选择 `--auto` 这一步。
-- **红线（`--auto` 绝不自动放行，始终须人类明确授权）**：`openlogos archive`、`openlogos smoke`、`git push`、以及 `gate:implement:loop-exhausted`（默认 `skippable:false`）。它们要么不是可跳 flow 门、要么属高危动作，不在 `--auto` 自动放行范围。
-- **默认 / 手动模式（无 `--auto`）行为完全不变**：merge、部署执行仍停在对应门等人类明确授权。
+- **硬红线（任何模式都绝不自动放行，含 `--auto`）**：`gate:implement:loop-exhausted`（未收敛 / 未绿代码，默认 `skippable:false`）。这是唯一在 `--auto` 下也始终须人类明确授权的门，现有逻辑一字不改——自动放行只发生在"代码已绿"之后，绝不跨越"代码未绿"这条线。
 
-merge 后的后续提示应按是否需要部署区分：
+merge 后的后续提示应按半 / 全自动两档区分：
 
-- **不需要部署**：实现代码 → `openlogos verify` → `openlogos archive`
-- **需要部署**：实现代码 → `openlogos verify` → 用户明确授权部署 → `openlogos smoke` → `openlogos archive`
+- **半自动 / 手动**：
+  - 不需要部署：实现代码 → 用户授权 `openlogos verify` → 用户授权 `openlogos archive` →（如需）用户确认 `git push`
+  - 需要部署：实现代码 → 用户授权 `openlogos verify` → 用户明确授权部署 → 用户授权 `openlogos smoke` → 用户授权 `openlogos archive` →（如需）用户确认 `git push`
+- **全自动 `--auto`**：代码绿后 `verify` / 部署执行 / `smoke` / `archive` / `git push` 均由 standing 授权经编排器与运行域 marker 自动放行（逐次写 `GATE_AUTO_PASSED` 审计），无需逐次人类授权；唯独 `loop-exhausted`（代码未绿）仍停门等人类。
 
-**部署执行、`openlogos smoke` 也是人类确认点**。AI 未经用户明确授权不得自动部署或自动运行 smoke（例外：`--auto` 下部署执行可经 `deliver-entry` 门由编排器自动放行；`openlogos smoke` 不在自动放行范围，始终须人类确认）。
-
-AI 只负责驱动内容修改，不得在未获明确授权的情况下推进提案状态（`--auto` 无人值守下，对 `spec-exit` / `deliver-entry` 两道可跳门的放行属 §143 授权范围内的自动推进，放行依据为本次 `next --auto` 响应的 `gate_auto_passed=true`）。
+AI 只负责驱动内容修改。半自动 / 手动下不得在未获明确授权的情况下推进提案状态；全自动 `--auto` 无人值守下，对 `spec-exit` / `deliver-entry` 两道可跳门，以及代码绿后的 `verify` / `smoke` / `archive` / `git push` 的放行均属 §143 standing 授权范围内的自动推进，放行依据为本次 `next --auto` 响应的 `gate_auto_passed=true`（及 `git push` 的运行域 `AUTO_MODE` marker），但 `loop-exhausted` 永不在自动放行之列。
 
 ## 输出规范
 

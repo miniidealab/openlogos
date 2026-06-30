@@ -4,6 +4,14 @@
 # split-slice-planner-stage：[code] 切片从 plan 段剥离，merge 后新增独立 slice 子流程
 #   （节点 plan-slices，skill: slice-planner），出口 slice-exit 门 + ready-to-implement 驻留态；
 #   write-tasks 仅产 [delta]/[deploy]，不再产 [code]。
+# auto-full-unattended：openlogos next --auto = 全自动 / 无人值守（standing run-scoped 授权）——
+#   一次性授权该提案全链路自动跑到底。--auto 除自动放行 skippable:true 的 human gate 外，
+#   还以 standing 授权自动执行「代码已绿之后」的 CLI 盖章/发布步骤 verify/smoke/archive/git push
+#   （git push 经 logos/changes/<slug>/AUTO_MODE marker 让 PreToolUse guard 放行）。
+#   每次自动放行向提案目录 GATE_AUTO_PASSED 追加审计行。
+#   loop-exhausted 退出门（skippable:false）保留硬红线，任何模式含 --auto 都绝不自动放行。
+#   半自动（无 --auto）所有人类确认点行为完全不变。本 delta 仅在 smoke/archive 节点附近加注释，
+#   skippable 值一律不动。
 # 这是产品唯一源头；项目实例 logos/flow/launched.yaml 可 extends: builtin:launched 后只写差异。
 # 注：YAML 模板无 md 章节，本 delta 按整文件替换合并。
 version: 1
@@ -92,6 +100,7 @@ subflows:
         done_when: marker:VERIFY_PASS
         fail_when: marker:VERIFY_FAIL          # 对应 verify-failed
     # 默认激活切片循环：收敛 = section_complete:code ∧ tests_green；max_iters 达上限升级 loop-exhausted gate（skippable:false）
+    # auto-full-unattended：loop-exhausted 退出门保留硬红线，--auto 也绝不自动放行（仅 set-loop 的 exhausted_gate.skippable:true 可单点 opt-in）；此处 skippable 不动。
     loop: { until: code_slices_green, max_iters: 30 }
     gate: { type: none }
 
@@ -112,6 +121,8 @@ subflows:
         skill: null                            # openlogos smoke 驱动
         when: smoke_required
         produces: null
+        # auto-full-unattended：全自动 --auto 下，smoke（openlogos smoke）经 standing run-scoped 授权自动执行，
+        # 自动放行向提案目录 GATE_AUTO_PASSED 追加审计行；半自动（无 --auto）维持人工确认。skippable 值不动。
         done_when: marker:SMOKE_PASS           # 对应 ready-to-smoke → smoke-passed
         fail_when: marker:SMOKE_FAIL           # 对应 smoke-failed
     # entry gate：部署前确认。skippable:true → 无人值守 --auto 可自动放行并写 GATE_AUTO_PASSED
@@ -125,6 +136,9 @@ subflows:
       - id: archive
         name: 归档
         skill: null                            # openlogos archive 驱动
+        # auto-full-unattended：全自动 --auto 下，archive（openlogos archive）经 standing run-scoped 授权自动执行，
+        # 自动放行向提案目录 GATE_AUTO_PASSED 追加审计行；archive 时 AUTO_MODE marker 随提案目录一并移除。
+        # 半自动（无 --auto）维持人工确认。
         produces: null
         done_when: archived
     gate: { type: none }

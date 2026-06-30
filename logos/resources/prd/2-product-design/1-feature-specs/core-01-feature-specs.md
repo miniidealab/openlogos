@@ -145,19 +145,28 @@
 - **错误边界**：项目未初始化输出 `PROJECT_NOT_INITIALIZED` 并以非零退出码退出，不进入轮询循环。
 
 ### 2.14 next --auto 自动跳过可跳人类确认点（skip-gate）
-- `openlogos next --auto` 在 `next` 的派生基础上引入 **auto 模式**（skip-human-gate）：仅作用于 `next` 现有人类停顿点对应的 launched flow gate，引擎仍只派生"此 gate 可跳 + 当前 auto → 视为通过"，是否进入 auto 由宿主决定（A 架构）。
+- **半 / 全自动两档语义**：
+  - **半自动（无 `--auto`）= 手动 / 默认**：所有人类确认点（4 道可跳门 + `verify` / `smoke` / `archive` / `git push` 红线步骤）行为**完全不变**，逐一人工确认。
+  - **全自动（`--auto`）= 无人值守 = standing run-scoped 授权**：用户选 `--auto` 即**一次性授权该提案全链路自动跑到底**——同时放行（a）4 道可跳 flow 门，与（b）代码**已绿之后**的 4 样「盖章 / 发布」红线步骤 `verify` / `smoke` / `archive` / `git push`。
+- **skip-gate（可跳 flow 门）部分**：`openlogos next --auto` 在 `next` 的派生基础上引入 **auto 模式**（skip-human-gate）：仅作用于 `next` 现有人类停顿点对应的 launched flow gate，引擎仍只派生"此 gate 可跳 + 当前 auto → 视为通过"，是否进入 auto 由宿主决定（A 架构）。
 - **gate 范围（对照 `spec/flow/launched.yaml`）**：
   - **plan 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-delta`（gate_id `plan-exit`）**：auto 下放行（仅审计、不推进状态）。
   - **spec 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-merge`（gate_id `spec-exit`，由原 propose 出口改）**：auto 下放行。
   - **slice 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-implement`（gate_id `slice-exit`，批准 merge 后由 slice-planner 划定的 `[code]` 切片）**：auto 下放行（仅审计、不推进状态——切片划定后仍需宿主逐片实现）。
   - **deliver 入口 gate（`human`, `position:entry`, `skippable:true`）→ 对应 `ready-to-deploy`（gate_id `deliver-entry`）**：auto 下**放行**（部署目标可能是测试环境而非生产；放行依据 = 本次响应 `gate_auto_passed=true`，历史审计行不构成授权）。
-  - **`gate:implement:loop-exhausted`（默认 `skippable:false`）**：达上限退出门，auto 下**仍卡住**（守住未收敛大功能；除非 overlay 覆盖 `exhausted_gate.skippable`）。
-  - **`smoke` 节点无对应 gate**，`ready-to-smoke` 不在 `--auto` 范围。
-- **`GATE_AUTO_PASSED` 审计语义**：
+  - **`gate:implement:loop-exhausted`（默认 `skippable:false`）**：达上限退出门，auto 下**仍卡住**（守住未收敛大功能；除非 overlay 覆盖 `exhausted_gate.skippable`）。**这是任何模式（含 `--auto`）都不放行的硬红线**——绝不自动发布未通过测试的代码。
+  - **`smoke` 节点无对应 gate**：`ready-to-smoke` 不在 skip-gate 机制内，但在全自动 standing 授权的盖章/发布放行范围内（见下「绿后盖章/发布红线」）。
+- **绿后盖章/发布红线（`verify` / `smoke` / `archive` / `git push`）的 `--auto` 自动执行**：这 4 样**均无对应可跳 flow gate**、不经 `gate_id` 走 skip-gate，而是由全自动 `--auto` 的 **standing run-scoped 授权**放行。前提**均为代码已通过 `verify`**（全自动发布的是已验证成果）。
+  - `verify` / `smoke` / `archive`：由 AI 宿主在 `--auto` 授权下亲自调用对应 `openlogos` 命令，约束它们的是「生成进 AGENTS.md / CLAUDE.md 的指令文本」——指令文本新增 `--auto` 例外授权后，宿主知道自己处于全自动即自行运行。
+  - `git push`：跑在**独立 hook 进程**里的 PreToolUse guard 看不到 `--auto` 标志，故经**运行域 marker** `logos/changes/<slug>/AUTO_MODE` 传递全自动状态——`openlogos next --auto` 命中活跃提案时写入该 marker，guard-check 检测到即对 `git push` 放行；`openlogos archive` 时随提案目录一并移除。marker **不在场**时 guard 维持现有 `exit 2` 硬阻断。
+- **放行边界明确排除 `loop-exhausted`**：全自动放行**只**覆盖代码已绿之后的 `verify` / `smoke` / `archive` / `git push`；**不**覆盖 `gate:implement:loop-exhausted`（未收敛 / 未绿代码）。后者现有默认 `skippable:false` + overlay 单点 opt-in 逻辑**完整保留、一字不改**，是「全自动只发布已验证成果」的前提守门人。
+- **`GATE_AUTO_PASSED` 审计语义（护栏）**：
   - 文件 = 活跃提案目录下的 **JSONL 审计日志**（`logos/changes/<slug>/GATE_AUTO_PASSED`）。
   - 每次 auto 放行**总是追加一行** `{gate_id, proposal_step, timestamp}`（不去重、不覆盖）。
   - **纯审计、不改变派生**：默认 `next`（无 `--auto`）与 `status` **忽略**该文件；**历史审计行不构成对部署等动作的授权**，放行依据是本次 `--auto` 响应的 `gate_auto_passed=true`。
-- **默认 `next`（无 `--auto`）不因 `--auto`/`GATE_AUTO_PASSED` 改变 gate 行为**；`--auto` 是纯 opt-in 能力。
+- **`AUTO_MODE` marker 契约（护栏）**：运行域临时文件，由 `next --auto` 写入、`archive` 移除，**仅作用于 `git push` 的 guard 放行**；其它写入操作（`>` / `sed -i` / `mv` / `rm` 等）不受其影响，仍按 PreToolUse guard 原规则与文件路径白名单判定。
+- **R2 安全闸不变**：仍卡在未完成 overlay 节点时不放行——本能力不触碰该不变量。
+- **默认 `next`（无 `--auto`）不因 `--auto`/`GATE_AUTO_PASSED`/`AUTO_MODE` 改变任何 gate 或红线行为**；`--auto` 是纯 opt-in 能力。
 
 ### 2.15 overlay 驱动 status/next/watch 派生
 

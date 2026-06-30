@@ -25,13 +25,16 @@
 
 部署执行的授权可来自以下两者之一：
 
-1. **默认/手动模式**：用户明确授权部署（前置依赖原义；生产环境强烈建议走此路径）。
-2. **无人值守 `openlogos next --auto` 模式（受限）**：本次 `next --auto` 响应对 deliver 入口门（`deliver-entry`，`skippable:true`）输出 **`gate_auto_passed === true`** 时，即构成对**本次**部署的放行依据（部署目标可能是测试环境而非生产）。
+1. **默认 / 手动模式（半自动）**：用户明确授权部署（前置依赖原义；生产环境强烈建议走此路径）。半自动下部署执行、`openlogos smoke` 等仍逐次须人类明确授权，行为**完全不变**。
+2. **无人值守 `openlogos next --auto` 模式（全自动 / standing 授权）**：`--auto` 的含义被重定义为一次性的 **standing run-scoped 授权**——用户选择 `--auto` 即在本次运行域内一次性授权全链路自动到底。本次 `next --auto` 响应对 deliver 入口门（`deliver-entry`，`skippable:true`）输出 **`gate_auto_passed === true`** 时，即构成对**本次**部署的放行依据（部署目标可能是测试环境而非生产）。
+
+全自动 `--auto` 下，同一 standing 授权也覆盖"代码已绿后的盖章 / 发布"动作：部署完成后的 `openlogos smoke`、以及更下游的 `git push`（由本次运行域 marker `AUTO_MODE` 使 PreToolUse guard 放行）均可经此授权自动执行，无需逐次人类再确认；每次放行向 `GATE_AUTO_PASSED` 追加一行审计。
 
 受限约束（必须遵守）：
-- 授权依据是**本次 `--auto` 响应的 `gate_auto_passed === true`**这一 live 决策，**不是** `GATE_AUTO_PASSED` 文件的存在；**历史审计行不构成对后续部署的授权**（与默认 `next` 忽略 `GATE_AUTO_PASSED` 一致）。
+- 授权依据是**本次 `--auto` 响应的 `gate_auto_passed === true`**这一 live 决策，**不是** `GATE_AUTO_PASSED` 文件的存在；**历史审计行不构成对后续部署 / smoke / push 的授权**（与默认 `next` 忽略 `GATE_AUTO_PASSED` 一致）。
 - 仍须满足其它前置依赖（`VERIFY_PASS`、部署方案、`[deploy]` section、部署决策无冲突）。
-- 仍禁止：跳过部署方案凭经验执行、部署失败后写 `DEPLOY_DONE`、手写 `DEPLOY_DONE`、跳过需要的 smoke。
+- 仍禁止：跳过部署方案凭经验执行、部署失败后写 `DEPLOY_DONE`、手写 `DEPLOY_DONE`、**跳过需要的 smoke**（全自动只是把 smoke 的"授权"前置到用户选择 `--auto`，并不允许略过 smoke 本身）。
+- **硬红线不受 `--auto` 影响**：代码未收敛 / 未绿（`gate:implement:loop-exhausted`）在任何模式下都绝不自动放行，自动放行只发生在"代码已绿"之后。
 - 部署完成后仍调用 `openlogos deploy-done` 受控落标，不手写 marker。
 
 > 据此，「前置依赖」第 1 条「用户明确授权部署」在 `--auto` 下由「本次响应 `gate_auto_passed=true`」满足；「禁止行为」第 1 条「未经用户明确确认自动部署」的"明确确认"在 `--auto` 下等价于用户选择 `--auto` + 本次放行，而非凭 AI 自行决定。
@@ -151,7 +154,9 @@ openlogos smoke
 openlogos smoke --env staging
 ```
 
-AI 不得自动运行 `openlogos smoke`，除非用户明确授权。
+**半自动 / 手动模式**：AI 不得自动运行 `openlogos smoke`，除非用户明确授权。
+
+**全自动 `openlogos next --auto` 模式**：`smoke` 属"代码已绿后的盖章"动作，由用户选择 `--auto` 的 standing 授权覆盖，可经编排器凭本次 `next --auto` 响应的 `gate_auto_passed=true` 自动执行（放行时写 `GATE_AUTO_PASSED` 审计），无需逐次人类再确认；唯部署 / 代码本身未绿时不在此列。
 
 ## 禁止行为
 

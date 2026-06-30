@@ -343,15 +343,33 @@ openlogos watch --module core
 
 ### 2.9 next --auto（skip-gate）
 
-`openlogos next --auto` 在受控自动化下自动越过**可跳**的人类确认点，同时守住**不可跳**的高危确认点。最小 A 方案：仅作用于 launched 现有人类停顿点对应的 gate。
+`openlogos next --auto` 提供**全自动 / 无人值守**体验——一次性 standing run-scoped 授权，让流程从方案审批一路自动跑到 `archive` + `git push`，既越过**可跳**的人类确认点，也无人值守地完成代码**已绿之后**的盖章 / 发布动作；同时守住**未收敛代码**这条硬红线。
 
-**可跳 gate（`ready-to-merge`，propose 出口 `skippable:true`）在 auto 下放行并留痕**：
+**半 / 全自动两档**：
+
+- **半自动（无 `--auto`）= 手动 / 默认**：4 道可跳门 + `verify` / `smoke` / `archive` / `git push` 红线步骤**逐一人工确认**，行为与未引入本能力时**完全一致**。
+- **全自动（`--auto`）= 无人值守**：用户选 `--auto` 即**一次性授权该提案全链路自动到底**——自动放行 4 道可跳门，并自动执行 `verify` / `smoke` / `archive`、放行 `git push`。
+
+**帮助文案（`openlogos next --help` 摘要）**：
+
+```text
+--auto   全自动 / 无人值守：standing run-scoped 授权。一次性授权当前提案
+         全链路自动跑到底——自动放行可跳人类确认点（plan/spec/slice/deliver
+         出入口门），并在代码已绿后自动执行 verify / smoke / archive 与放行
+         git push。每次放行写 GATE_AUTO_PASSED 审计；命中活跃提案时写入运行域
+         marker logos/changes/<slug>/AUTO_MODE（archive 时移除），供 git push 的
+         PreToolUse guard 放行。未收敛代码（loop-exhausted，达迭代上限仍未绿）
+         为硬红线，任何模式都不自动放行。不带 --auto 时所有人类确认点行为不变。
+```
+
+**可跳 gate（`ready-to-merge`，spec 出口 `skippable:true`）在 auto 下放行并留痕**：
 
 ```text
 $ openlogos next --auto
 
-✓ auto 模式：可跳人类确认点已放行（gate: propose-exit，skippable）
+✓ auto 模式：可跳人类确认点已放行（gate: spec-exit，skippable）
   审计已追加：logos/changes/<slug>/GATE_AUTO_PASSED
+  运行域 marker 已写入：logos/changes/<slug>/AUTO_MODE（archive 时移除）
 
 下一步（gate 已自动放行，宿主可直接执行、无需人类授权）：openlogos merge <slug>
 ```
@@ -367,22 +385,35 @@ $ openlogos next --auto
 下一步（gate 已自动放行，宿主可直接进入切片循环逐片实现）：实现第一个 [code] 切片
 ```
 
-**不可跳 gate（`ready-to-deploy`，deliver 入口 `skippable:false`）在 auto 下仍卡住**：
+**可跳 gate（`ready-to-deploy`，deliver 入口 `skippable:true`）在 auto 下放行**（部署目标可能是测试环境；放行依据为本次响应 `gate_auto_passed=true`，历史审计行不构成授权）：
 
 ```text
 $ openlogos next --auto
 
-⚠ auto 模式：当前确认点不可自动跳过（gate: deliver-entry，不可跳）
-  部署属高危动作，必须由人类明确授权。
+✓ auto 模式：可跳人类确认点已放行（gate: deliver-entry，skippable）
+  审计已追加：logos/changes/<slug>/GATE_AUTO_PASSED
 
-下一步：验收已通过，部署必须由用户明确授权后执行
+下一步（gate 已自动放行，宿主可在 standing 授权下执行部署）：按部署方案执行部署
 ```
 
-**默认 `next`（无 `--auto`）忽略 `GATE_AUTO_PASSED`、不因其越过 gate**：即便活跃提案目录已存在 `GATE_AUTO_PASSED`，默认 `next` 也绝不因该文件自动越过 gate；其 base data 仍按当前契约输出（S28 起可能含 `next_node`），不受 `--auto` 影响。
+**绿后盖章/发布红线（`verify` / `smoke` / `archive` / `git push`）在 auto 下自动执行**：这 4 样**无对应可跳 flow gate**，不经 skip-gate 机制，而由全自动 standing 授权放行。`verify` / `smoke` / `archive` 由 AI 宿主在 `--auto` 授权下自动调用；`git push` 因活跃提案目录存在 `AUTO_MODE` marker 被 PreToolUse guard 放行（无 marker 时 guard 维持 `exit 2` 硬阻断）。半自动（无 `--auto`）下这 4 样仍逐一提示人类明确授权。
 
-`--auto` 不改变 `ready-to-smoke`（`smoke` 无对应 gate）：处于 `ready-to-smoke` 时，`next --auto` 输出与默认 `next` 一致（提示明确授权运行 `openlogos smoke`），不写 `GATE_AUTO_PASSED`。
+**硬红线：未收敛代码（`loop-exhausted`，达迭代上限仍未绿）在 auto 下仍卡住**：
 
-`--format json` 下，`next --auto` 在既有 next data 基础上附带 gate 字段（`gate_id` / `skippable` / `gate_auto_passed`），详见 `spec/cli-json-output.md`。
+```text
+$ openlogos next --auto
+
+⚠ implement loop 已达迭代上限（3/3）仍未绿 → 升级人类确认点
+  达上限退出 gate（gate: implement:loop-exhausted）不可自动跳过：
+  绝不无人值守发布未通过测试的代码。
+  不写 GATE_AUTO_PASSED、不写 AUTO_MODE marker。
+
+下一步：修复未绿用例后重跑 openlogos verify（或由 overlay 显式开启 exhausted_gate.skippable）
+```
+
+**默认 `next`（无 `--auto`）忽略 `GATE_AUTO_PASSED` / `AUTO_MODE`、不因其越过 gate 或红线**：即便活跃提案目录已存在 `GATE_AUTO_PASSED` 或 `AUTO_MODE` marker，默认 `next` 也绝不因这些文件自动越过任何确认点；其 base data 仍按当前契约输出（S28 起可能含 `next_node`），不受 `--auto` 影响。
+
+`--format json` 下，`next --auto` 在既有 next data 基础上附带 gate 字段（`gate_id` / `skippable` / `gate_auto_passed`），详见 `spec/cli-json-output.md`。`verify` / `smoke` / `archive` / `git push` 非 flow 门、不经 `gate_id`，由 standing 授权与 `AUTO_MODE` marker 驱动。
 
 ### 2.10 overlay 驱动派生（status / next 输出体验）
 

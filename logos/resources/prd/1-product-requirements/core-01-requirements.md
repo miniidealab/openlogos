@@ -446,18 +446,22 @@ OpenLogos 是一套面向 AI 协作的软件研发方法论、CLI 工具和规�
 - **THEN** 输出 `PROJECT_NOT_INITIALIZED` 错误并以非零退出码退出，不进入轮询循环
 
 ### S24: next --auto 自动跳过可跳人类确认点（skip-gate）
-- **触发条件**：在受控自动化（无人值守 / yolo）场景下，用户希望 `openlogos next` 自动越过被声明为可跳的人类确认点。
-- **用户价值**：让流程在自动化模式下持续推进，而不在每个可跳确认点停顿；同时通过审计留痕保证可追溯。
+- **触发条件**：在受控自动化（无人值守 / yolo）场景下，用户希望 `openlogos next --auto` 把流程一路自动推进——既越过被声明为可跳的人类确认点，也无人值守地完成代码已绿之后的盖章 / 发布动作。
+- **用户价值**：让流程在全自动模式下从方案审批一路跑到 `archive` + `git push`，不在每个可跳确认点或每个发布红线停顿；同时通过审计留痕与保留的未收敛硬红线保证可追溯、只发布已验证成果。
 - **优先级**：P1
-- **主路径**：用户执行 `openlogos next --auto`；CLI 取当前停顿步对应的 launched flow gate——若其 `skippable:true` 则视为已通过、放行并输出下一动作建议，同时向活跃提案目录下的 `GATE_AUTO_PASSED` JSONL **追加一行** `{gate_id, proposal_step, timestamp}`（不去重、不覆盖）；若其 `skippable:false` 则保持人类停顿。**默认 `next`（无 `--auto`）忽略 `GATE_AUTO_PASSED`、绝不因其存在而自动越过 gate**；其 base data 仍按当前契约输出（S28 起含 `next_node`）。
+- **半 / 全自动两档定义**：
+  - **半自动（无 `--auto`）= 手动 / 默认**：所有人类确认点行为**完全不变**，逐门、逐红线人工确认（与未引入本能力时一字不差）。
+  - **全自动（`--auto`）= 无人值守 / standing run-scoped 授权**：用户选择 `--auto` 即**一次性授权该提案的全链路自动跑到底**。这一档同时放行两类停顿：（1）4 道可跳 flow 门——plan 出口（`ready-to-delta`）、spec 出口（`ready-to-merge`）、slice 出口（`ready-to-implement`）、deliver 入口（`ready-to-deploy`），均 `skippable:true`；（2）代码**已绿之后**的 4 样「盖章 / 发布」红线步骤——`verify`、`smoke`、`archive`、`git push`。
+- **保留的硬红线（任何模式、含 `--auto` 都不放行）**：`gate:implement:loop-exhausted`（达迭代上限仍未过测试的**未收敛代码**）。`--auto` 照常阻塞，绝不自动放行未通过测试的代码；现有默认 `skippable:false` + overlay 单点 opt-in 逻辑一字不改。这是「全自动发布的是**已验证**成果」这一前提的守门人。
+- **主路径**：用户执行 `openlogos next --auto`；CLI 取当前停顿步对应的 launched flow gate——若其 `skippable:true` 则视为已通过、放行并向活跃提案目录的 `GATE_AUTO_PASSED` JSONL **追加一行** `{gate_id, proposal_step, timestamp}`（append-only、非状态源）；命中活跃提案时写入运行域 marker `logos/changes/<slug>/AUTO_MODE`，使独立 hook 进程中的 PreToolUse guard 对 `git push` 放行（该 marker 在 `archive` 时随提案目录一并移除）。`verify` / `smoke` / `archive` 由 AI 宿主在 `--auto` 的 standing 授权下亲自调用，`git push` 经 `AUTO_MODE` marker 由机器级 guard 放行；`loop-exhausted` 门 `skippable:false` 时保持人类停顿。R2 安全闸（仍卡在未完成 overlay 节点则不放行）不变。
 
 > **gate 范围（对照 `spec/flow/launched.yaml`）**：
 > - **plan 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-delta`（gate_id `plan-exit`）**：auto 下放行（仅审计、不推进状态）。
 > - **spec 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-merge`（gate_id `spec-exit`，由原 propose 出口改）**：auto 下放行。
 > - **slice 出口 gate（`human`, `skippable:true`）→ 对应 `ready-to-implement`（gate_id `slice-exit`，批准 merge 后由 slice-planner 划定的 `[code]` 切片）**：auto 下放行（仅审计、不推进状态——切片划定后仍需宿主逐片实现）。
 > - **deliver 入口 gate（`human`, `position:entry`, `skippable:true`）→ 对应 `ready-to-deploy`（gate_id `deliver-entry`）**：auto 下**放行**（部署目标可能是测试环境；放行依据为本次响应 `gate_auto_passed=true`，历史审计行不构成授权）。
-> - **`gate:implement:loop-exhausted`（`skippable:false`，默认）**：达上限退出门，auto 下**仍卡住**（守住未收敛大功能；除非 overlay 显式覆盖 `exhausted_gate.skippable`）。
-> - `smoke` 节点**无对应 gate**，`ready-to-smoke` 不在 `--auto` 范围。
+> - **`gate:implement:loop-exhausted`（`skippable:false`，默认）**：达上限退出门，auto 下**仍卡住**（守住未收敛大功能；除非 overlay 显式覆盖 `exhausted_gate.skippable`）。这是任何模式都不放行的硬红线。
+> - **`verify` / `smoke` / `archive` / `git push`**：均**无对应可跳 flow gate**，不经 skip-gate 机制；它们是代码已绿之后的「盖章 / 发布」红线步骤，由全自动 `--auto` 的 **standing run-scoped 授权**放行（`verify` / `smoke` / `archive` 由宿主自动调用，`git push` 由 `AUTO_MODE` marker 使 guard 放行）。半自动（无 `--auto`）下这 4 样仍逐一人工确认。
 
 #### 验收条件
 ##### 正常：可跳 gate 在 auto 下放行并留痕
@@ -475,10 +479,20 @@ OpenLogos 是一套面向 AI 协作的软件研发方法论、CLI 工具和规�
 - **WHEN** 用户执行 `openlogos next --auto`
 - **THEN** 追加 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}`；状态不因审计行前移，仅在首个 `[code]` 切片实现并使 implement code 节点推进后进入 `coding`
 
-##### 正常：达上限退出门在 auto 下仍保持停顿
-- **GIVEN** 活跃提案的 implement loop 达 `max_iters` 仍未收敛（`gate:implement:loop-exhausted`，`skippable:false`）
+##### 正常：全自动 --auto 一路到底自动执行 verify / smoke / archive / git push
+- **GIVEN** 活跃提案在 `--auto`（全自动 / 无人值守 = standing run-scoped 授权）下推进，且代码已通过测试（无 `loop-exhausted`）
+- **WHEN** 流程依次到达 `verify`、`smoke`、`archive` 与 archive 后的 `git push`
+- **THEN** AI 宿主在 standing 授权下自动调用 `openlogos verify` / `openlogos smoke` / `openlogos archive`，无需逐步人类授权；`git push` 因活跃提案目录存在 `logos/changes/<slug>/AUTO_MODE` marker 被 PreToolUse guard 放行；每次放行向 `GATE_AUTO_PASSED` 追加审计行
+
+##### 正常：半自动（无 --auto）维持逐门 / 逐红线人工确认
+- **GIVEN** 用户执行不带 `--auto` 的命令链
+- **WHEN** 流程到达任一可跳门或 `verify` / `smoke` / `archive` / `git push` 红线步骤
+- **THEN** CLI 行为与未引入本能力时**完全一致**：每个人类确认点都要人工授权；不写 `AUTO_MODE` marker，`git push` 由 guard 维持 `exit 2` 硬阻断
+
+##### 正常：loop-exhausted 不在全自动放行内（硬红线保留）
+- **GIVEN** 活跃提案的 implement loop 达 `max_iters` 仍未收敛（`gate:implement:loop-exhausted`，默认 `skippable:false`）
 - **WHEN** 用户执行 `openlogos next --auto`
-- **THEN** CLI 仍保持停顿、不放行、不写 `GATE_AUTO_PASSED`（除非 overlay 显式 `exhausted_gate.skippable:true`）
+- **THEN** CLI 仍保持停顿、不放行、不写 `GATE_AUTO_PASSED`、不写 `AUTO_MODE` marker（除非 overlay 显式 `exhausted_gate.skippable:true`）——绝不自动发布未通过测试的代码
 
 ##### 正常：重复 --auto 总是追加审计行
 - **GIVEN** 同一可跳 gate 已被 `--auto` 放行并写过一行审计
@@ -490,10 +504,10 @@ OpenLogos 是一套面向 AI 协作的软件研发方法论、CLI 工具和规�
 - **WHEN** 用户执行 `openlogos next`（无 `--auto`）
 - **THEN** 输出与未引入 `--auto` 时一致，绝不因 `GATE_AUTO_PASSED` 存在而自动越过 gate
 
-##### 正常：smoke 不在 --auto 范围
-- **GIVEN** 活跃提案处于 `ready-to-smoke`
-- **WHEN** 用户执行 `openlogos next --auto`
-- **THEN** 输出与默认 `next` 一致（提示明确授权运行 `openlogos smoke`），不写 `GATE_AUTO_PASSED`
+##### 正常：smoke 在全自动下自动运行、在半自动下维持人工授权
+- **GIVEN** 活跃提案处于 `ready-to-smoke`（`smoke` 节点无对应可跳 flow gate）
+- **WHEN** 用户在全自动 `--auto` 下推进 / 或在半自动（无 `--auto`）下推进
+- **THEN** 全自动下 AI 宿主在 standing 授权下自动调用 `openlogos smoke`（不经 skip-gate、不写 `gate_id`）；半自动下输出与默认 `next` 一致（提示明确授权运行 `openlogos smoke`），不自动运行
 
 ### S25: overlay 驱动 status/next/watch 派生
 

@@ -136,9 +136,15 @@ hook 从 stdin 接收 JSON：
 | `mv` / `cp` / `rm` / `mkdir -p` | 文件系统修改 |
 | `chmod` / `chown` | 权限修改 |
 | `npm install` / `npm uninstall` | 依赖修改 |
-| `git push` | 远程推送 |
+| `git push` | 远程推送（**full-auto marker 在场则放行**，见下方例外） |
 
 **例外**：如果写入目标在文件路径白名单内，仍然放行。
+
+**例外（AUTO_MODE marker 检测规则，auto-full-unattended 起）**：`git push` 默认仍按上表 `git push` 行在无 guard 时 `exit 2` 硬阻断；但 guard-check 检测到活跃提案目录下存在**运行域 marker 文件** `logos/changes/<slug>/AUTO_MODE` 时，对 `git push` 放行（`exit 0`）。
+
+- 该 marker 由 `openlogos next --auto`（全自动 / 无人值守 = standing run-scoped 授权）命中活跃提案时写入，由 `openlogos archive` 时随提案目录一并移除。
+- marker **在场** → 对 `git push` 放行（`exit 0`）；marker **不在场** → 维持现有 `exit 2` 硬阻断。
+- 该例外**仅作用于 `git push`**；其它写入操作（`>` / `>>` / `sed -i` / `tee` / `mv` / `cp` / `rm` 等）不受 `AUTO_MODE` marker 影响，仍按本节原规则与文件路径白名单判定。
 
 ## 输出格式
 

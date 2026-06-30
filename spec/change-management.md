@@ -138,9 +138,15 @@ Delta 文件的目录结构映射主文档目录：
 
 ## 变更工作流
 
-> **核心原则**：`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 是人类确认点。AI 可提醒、解释、准备命令；未经用户明确授权不得执行。用户以明确请求或 slash command 授权时，AI 可以代为执行。不得在“顺手完成流程”“按流程走完”等隐式场景中自动触发。
+> **核心原则（两档模式）**：`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 在**半自动 / 手动模式（无 `--auto`）**下是人类确认点——AI 可提醒、解释、准备命令；未经用户明确授权不得执行，不得在"顺手完成流程""按流程走完"等隐式场景中自动触发；用户以明确请求或 slash command 授权时可代为执行。在**全自动 / 无人值守模式（`openlogos next --auto`）**下，用户选择 `--auto` 即构成对该提案全链路的 **standing run-scoped 授权**：上述确认点中**代码已绿之后的盖章 / 发布动作**——`verify`、部署执行、`smoke`、`archive`、`git push`——以及可跳 flow 门（含 merge 的 `spec-exit`）**自动放行执行**，每次放行向 `GATE_AUTO_PASSED` 追加审计行。
 >
-> **无人值守 skip-gate 例外（统一模型）**：launched flow 中所有 `skippable:true` 的人类门——`plan` 出口（`plan-exit`，批准方案）、`spec` 出口（`spec-exit`，审 delta + 授权合并）、`slice` 出口（`slice-exit`，切片待批准）、`deliver` 入口（`deliver-entry`，部署执行）——在无人值守 `openlogos next --auto` 模式下均可被自动放行：**用户选择 `--auto` 即构成对这些可跳门的授权**，每次放行向 `GATE_AUTO_PASSED` 追加审计行；放行依据是**本次 `--auto` 响应的 `gate_auto_passed=true`**（live 决策），`GATE_AUTO_PASSED` 为 append-only 审计、**历史审计行不构成对后续动作的授权**。**默认/手动模式（无 `--auto`）下，merge / 部署执行仍须人类明确授权**（部署目标可能是测试环境而非生产，故纳入可跳门）。`gate:implement:loop-exhausted`（默认 `skippable:false`）、以及 `verify` / `smoke` / `archive` / `git push`（非 skip-gate flow 门，由 CLI / 人类驱动）**不在** `--auto` 自动放行范围。
+> **无人值守模型（统一）**：launched flow 中的人类停顿点按性质分三类，`--auto` 区别对待：
+>
+> 1. **可跳 flow 门**（`plan` 出口 `plan-exit` 批准方案、`spec` 出口 `spec-exit` 审 delta + 授权合并、`slice` 出口 `slice-exit` 切片待批准、`deliver` 入口 `deliver-entry` 部署执行，均 `skippable:true`）：`--auto` 自动放行（既有行为不变）；放行依据是**本次 `--auto` 响应的 `gate_auto_passed=true`**（live 决策），每次放行写 `GATE_AUTO_PASSED`（append-only 审计、历史审计行不构成对后续动作的授权）。
+> 2. **代码已绿后的盖章 / 发布红线步骤**（`verify`、`smoke`、`archive`、`git push`——非 skip-gate flow 门，由 CLI / 宿主 driver 驱动）：`--auto` 下由 **standing run-scoped 授权**自动执行（选择 `--auto` 即授权至 `archive`），每次执行写 `GATE_AUTO_PASSED` 合成审计行。其中 `git push` 另经**运行域 marker `AUTO_MODE`**——`openlogos next --auto` 命中活跃提案时写入 `logos/changes/<slug>/AUTO_MODE`、`openlogos archive` 时随提案目录移除——使 PreToolUse guard 对 `git push` 放行；marker 不在场时 guard 维持 `exit 2` 硬阻断。
+> 3. **硬红线（任何模式、含 `--auto` 都绝不自动放行）**：`gate:implement:loop-exhausted`（达迭代上限仍未过测试的未收敛 / 未绿代码）。其默认 `skippable:false`、即使 `--auto` 也照常阻塞、仅 overlay `set-loop` 的 `set.exhausted_gate.skippable:true` 可单点 opt-in 放行——这套逻辑**完整保留、一字不改**。放行未收敛代码与「全自动发布的是已验证成果」的前提直接相悖，故 `loop-exhausted` 是该前提的守门人，永不纳入全自动放行。
+>
+> **默认 / 手动模式（无 `--auto`）行为完全不变**：merge / verify / 部署执行 / smoke / archive / git push 全部停在对应人类确认点等明确授权（部署目标可能是测试环境而非生产，故 deliver 门纳入可跳门）。**R2 安全闸保留**：仍卡在未完成 overlay 节点时，任何放行（含可跳门）都不触发。
 >
 > **规格驱动代码**：代码实现必须在规格合并进主文档之后才能开始，不允许基于 delta 草稿直接写代码。
 
@@ -163,7 +169,7 @@ Delta 文件的目录结构映射主文档目录：
    └── 团队/自审 proposal.md 和 delta 文件
    └── delta 任务全部勾选且存在可合并 delta 后，对应 proposal_step: ready-to-merge
 
-5. 生成合并指令（CLI）【人类确认点】
+5. 生成合并指令（CLI）【人类确认点；--auto 下 spec-exit 门自动放行】
    └── openlogos merge {slug}
    └── 扫描 deltas/，生成 MERGE_PROMPT.md
    └── 写入 MERGE_PROMPT_GENERATED，表示“合并指令已生成，等待 AI 合并主规格”
@@ -186,10 +192,12 @@ Delta 文件的目录结构映射主文档目录：
    └── 代码实现完成后，AI 自动 commit 代码变更（告知用户，无需确认）
    └── commit message 格式：feat/fix({slug}): implement changes
 
-9. 运行验收（CLI）【人类确认点】
+9. 运行验收（CLI）【人类确认点；--auto 下 standing 授权自动运行】
    └── 用户运行 openlogos verify，生成验收报告
+   └── 无人值守 --auto 模式：由 standing 授权自动运行 verify，写 GATE_AUTO_PASSED 审计
    └── 验收通过（PASS）→ 继续步骤 10
    └── 验收失败（FAIL）→ 修复代码后重新运行，不需要重走 merge 流程
+   └── ⛔ 若 loop 激活且达上限仍未收敛（loop-exhausted），--auto 照常阻塞、绝不放行未绿代码（硬红线）
 
 10. 部署执行（如需要）【人类确认点；无人值守 --auto 下可经 deliver 门自动放行】
    └── 仅当 VERIFY_PASS 存在、提案级 `是否需要部署：是` 且 tasks.md 有 [deploy] section 时进入
@@ -200,24 +208,28 @@ Delta 文件的目录结构映射主文档目录：
    └── 部署完成后写入 logos/changes/{slug}/DEPLOY_DONE
    └── 部署失败时不得写入 DEPLOY_DONE，应输出失败点和回滚建议
 
-11. 运行部署后冒烟测试（CLI）【人类确认点】
+11. 运行部署后冒烟测试（CLI）【人类确认点；--auto 下 standing 授权自动运行】
    └── 仅当提案级 `是否需要 smoke：是` 且 DEPLOY_DONE 存在时运行 openlogos smoke
+   └── 默认/手动模式：AI 未经明确授权不得自动运行 smoke
+   └── 无人值守 --auto 模式：由 standing 授权自动运行 openlogos smoke（写 GATE_AUTO_PASSED 审计）；前置门禁（VERIFY_PASS / DEPLOY_DONE / [deploy] 全勾 / smoke_required）与 sandbox/runner 覆盖判定均不变
    └── openlogos smoke 读取 smoke 结果并生成 logos/resources/verify/smoke-report.md
    └── 冒烟通过写入 SMOKE_PASS
    └── 冒烟失败写入 SMOKE_FAIL
    └── SMOKE_PASS 后才能归档提案；无需 smoke 的提案在部署完成后可归档
 
-12. 归档变更（CLI）【人类确认点】
+12. 归档变更（CLI）【人类确认点；--auto 下 standing 授权自动归档】
    └── openlogos archive {slug}
-   └── 将 logos/changes/{slug}/ 移入 logos/changes/archive/
+   └── 默认/手动模式：AI 未经明确授权不得自动归档
+   └── 无人值守 --auto 模式：由 standing 授权自动 archive（写 GATE_AUTO_PASSED 审计）
+   └── 将 logos/changes/{slug}/ 移入 logos/changes/archive/（含移除运行域 AUTO_MODE marker）
    └── 若当前 guard 指向该提案，则删除 logos/.openlogos-guard
    └── 归档完成后，AI 自动 commit 归档变更（告知用户，无需确认）
    └── commit message 格式：chore({slug}): archive change proposal
 
-13. 推送到远端（Git）【人类确认点】
-    └── AI 提示用户确认是否执行 git push
-    └── 用户明确授权后，AI 执行 git push
-    └── 未获授权不得自动推送
+13. 推送到远端（Git）【人类确认点；--auto 下 AUTO_MODE marker 使 guard 放行】
+    └── 默认/手动模式：AI 提示用户确认是否执行 git push，未获授权不得自动推送
+    └── 无人值守 --auto 模式：运行域 AUTO_MODE marker 在场使 PreToolUse guard 放行 git push，archive 完成后由 standing 授权自动 push（写 GATE_AUTO_PASSED 审计）
+    └── marker 不在场时 guard 维持 exit 2 硬阻断
 ```
 
 ### commit 粒度规则

@@ -1155,7 +1155,14 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 **slice-exit 消费后的同次响应（split-slice-planner-stage）**：当 `gate_id=="slice-exit"` 且 `gate_auto_passed==true` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `SLICES_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"coding"`，并带 `next_node.id=="code"`。同一提案已存在 `SLICES_APPROVED` 时不再追加同一 `slice-exit` 审计行（幂等）。
 
-**范围边界**：`--auto` 作用于 launched 的 plan 出口（`ready-to-delta`，可跳且会被 `PLAN_APPROVED` 消费）、spec 出口（`ready-to-merge`，可跳）、slice 出口（`ready-to-implement`，可跳且会被 `SLICES_APPROVED` 消费）与 deliver 入口（`ready-to-deploy`，可跳）四门。`gate:implement:loop-exhausted` 默认不可跳（见 §11.1）。`smoke` 无对应 gate，`ready-to-smoke` 不在范围内。initial 的 WHY/WHAT 建议门本轮不接入 `--auto`（仅 schema 预留）。
+**范围边界（auto-full-unattended 重定义）**：`--auto` = **全自动 / 无人值守 standing run-scoped 授权**，作用对象分两层：
+
+1. **可跳 flow 门（经上表 `gate_id` / `skippable` / `gate_auto_passed` 字段表达）**：launched 的 plan 出口（`ready-to-delta`，会被 `PLAN_APPROVED` 消费）、spec 出口（`ready-to-merge`）、slice 出口（`ready-to-implement`，会被 `SLICES_APPROVED` 消费）、deliver 入口（`ready-to-deploy`）四门，`skippable:true`，`--auto` 自动放行。
+2. **代码已绿后的盖章 / 发布红线步骤（无 flow gate，不经 `gate_id` 字段表达）**：`verify`、`smoke`、`archive`、`git push` 没有对应 flow gate（故停在这些步骤时 `gate_id==null`），但在全自动下由 **standing 授权自动执行**——由 CLI / 宿主 driver 驱动，每次执行向 `GATE_AUTO_PASSED` 追加**合成审计行**（§12），其中 `git push` 另经 §14 的 `AUTO_MODE` 运行域 marker 使 PreToolUse guard 放行。这一层不是 `next --auto` 的 gate 字段语义，而是无人值守授权语义。
+
+**硬红线（任何模式、含 `--auto` 都不放行）**：`gate:implement:loop-exhausted` 默认不可跳（见 §11.1），全自动也照常阻塞、绝不放行未收敛代码——不在上述两层放行范围内。
+
+`initial` 的 WHY/WHAT 建议门本轮不接入 `--auto`（仅 schema 预留）。
 
 ### 11.1 loop-exhausted gate（M2 切片 2 / S29 可放行）
 
@@ -1191,6 +1198,10 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 - "继续迭代" = 人类用 overlay `set-loop` 调大 `max_iters`（`escalated` 自动解除）或修到收敛出环；**gate 不重置计数**。
 - `proposal_step` 不因本 gate 改变（仍为既有枚举值）；达上限信息只在 `loop_state.escalated` / `exhausted_skippable` + 本节 gate 字段表达。
 
+### 11.1 补充：loop-exhausted 不在全自动盖章/发布放行内
+
+> **auto-full-unattended 澄清（不改 §11.1 既有派生逻辑）**：本提案把 `verify` / `smoke` / `archive` / `git push` 这 4 样「代码已绿后的盖章/发布」红线纳入全自动 standing 授权放行，但 **`gate:implement:loop-exhausted` 明确排除在外**。§11.1 的默认表（`skippable:false` / `gate_auto_passed:false` / `--auto` 照常阻塞）与 opt-in 表（仅 overlay `exhausted_skippable==true` 时放行）**全部保持不变**。理由：loop-exhausted = 代码未过测试，放行它即发布未验证成果，与全自动「只发布已验证成果」的前提相悖。它是该前提的守门人，永不随 `--auto` 自动放行；唯一放行通道仍是用户在 overlay 显式声明的高危 opt-in（与是否 `--auto` 无关）。
+
 ---
 
 ## 12. `GATE_AUTO_PASSED` JSONL 审计 schema
@@ -1200,7 +1211,8 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 - **审计不是状态源**：默认 `next`（无 `--auto`）与 `status` **忽略**该文件、绝不因其存在而让默认 `next` 自动越过 gate；此处「不改变」仅指**不因 `GATE_AUTO_PASSED` 越过 gate**——`next` 的 base data 仍按当前契约输出（S28 起可能含 `next_node`）。
 - **plan gate 的状态源是 `PLAN_APPROVED`**：`plan-exit` auto 放行时除追加审计外，还必须写入 `PLAN_APPROVED` marker；后续状态推进由该 marker 或实际 delta 产出驱动，不由审计行驱动。
 - **slice gate 的状态源是 `SLICES_APPROVED`（split-slice-planner-stage）**：`slice-exit` auto 放行时除追加审计外，还必须写入 `SLICES_APPROVED` marker；后续状态推进由该 marker 或实际 `[code]` 全部勾选驱动，不由审计行驱动。
-- **追加策略**：处于可跳 gate 且本次实际放行时追加一行。`plan-exit` 第一次放行后前沿离开 `ready-to-delta`，重复 `next --auto` 不得再追加同一 `plan-exit` 审计；`slice-exit` 第一次放行后前沿离开 `ready-to-implement`（已存在 `SLICES_APPROVED`），重复 `next --auto` 不得再追加同一 `slice-exit` 审计；`ready-to-merge` / `ready-to-deploy` 等未被本命令消费的 gate 仍保留既有 append-only 审计轨迹。
+- **盖章/发布红线步骤的合成审计（auto-full-unattended）**：全自动 standing 授权自动执行 `verify` / `smoke` / `archive` / `git push` 时，每步执行追加一行**合成审计**，`gate_id` 取该步骤的合成标识 `"verify"` / `"smoke"` / `"archive"` / `"git-push"`（非 flow gate id，用于区分），`proposal_step` 取执行时的步骤前沿。这些行同样**只是审计、非状态源**——各步真正的状态源仍是各自既有 marker（`VERIFY_PASS` / `SMOKE_PASS` / `DEPLOY_DONE` 等）与提案归档动作；默认/手动模式不写这些合成行。
+- **追加策略**：处于可跳 gate 且本次实际放行时追加一行。`plan-exit` 第一次放行后前沿离开 `ready-to-delta`，重复 `next --auto` 不得再追加同一 `plan-exit` 审计；`slice-exit` 第一次放行后前沿离开 `ready-to-implement`（已存在 `SLICES_APPROVED`），重复 `next --auto` 不得再追加同一 `slice-exit` 审计；`ready-to-merge` / `ready-to-deploy` 等未被本命令消费的 gate 仍保留既有 append-only 审计轨迹。盖章/发布合成行按每步实际执行一次追加，幂等由各步既有 marker（已存在则不重复执行）保证。
 
 每行 schema：
 
@@ -1214,12 +1226,18 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 { "gate_id": "slice-exit", "proposal_step": "ready-to-implement", "timestamp": "2026-06-30T08:01:12Z" }
 ```
 
+盖章/发布红线步骤合成行示例（auto-full-unattended）：
+
+```jsonc
+{ "gate_id": "git-push", "proposal_step": "archived", "timestamp": "2026-06-30T09:12:44Z" }
+```
+
 字段说明：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `gate_id` | string | 是 | 被本次 `--auto` 放行的 gate id |
-| `proposal_step` | string | 是 | 放行前的 proposal_step；`plan-exit` 应记录 `"ready-to-delta"`、`slice-exit` 应记录 `"ready-to-implement"` |
+| `gate_id` | string | 是 | 被本次 `--auto` 放行的标识：可跳 flow 门为其 gate id（`plan-exit` / `spec-exit` / `slice-exit` / `deliver-entry`）；盖章/发布红线步骤（auto-full-unattended）为合成步骤标识 `"verify"` / `"smoke"` / `"archive"` / `"git-push"`（非 flow gate id，用于区分） |
+| `proposal_step` | string | 是 | 放行前的 proposal_step；`plan-exit` 应记录 `"ready-to-delta"`、`slice-exit` 应记录 `"ready-to-implement"`；红线步骤记录其执行时的步骤前沿 |
 | `timestamp` | string | 是 | ISO 时间戳 |
 
 ## 13. `LOOP_ITERS` JSONL 账本 schema
@@ -1249,3 +1267,14 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 - **module 来源**：launched = `guard.module`；initial 单模块 = 该唯一模块；**initial 多模块** = verify 为项目级单次运行、无法归属 →
   **不写账本、loop 视为未激活**（本切片已知不支持）。launch 后 initial 账本仅历史产物，launched 派生只读提案目录账本。
 - **状态回退**：verify 再次 FAIL 沿用现有行为清除 `VERIFY_PASS` 及下游 `DEPLOY_DONE`/`SMOKE_*` → implement loop 重新打开；账本续写、`converged` 反映最后一次。
+
+## 14. `AUTO_MODE` run-scoped marker schema（auto-full-unattended）
+
+`AUTO_MODE` 是**运行域（run-scoped）** marker，用于把「本提案当前处于全自动 / 无人值守模式」这一状态**跨进程**传递给独立运行的 PreToolUse guard（guard 看不到 `openlogos next --auto` 的命令行标志，需持久信号）。
+
+- **路径**：`logos/changes/<slug>/AUTO_MODE`（活跃提案目录下，天然 run-scoped、随提案生命周期存亡）。
+- **写入时机**：`openlogos next --auto` **命中活跃提案时**写入 / 刷新该 marker（存在即幂等，不重复报错）。默认 `next`（无 `--auto`）**不写**。
+- **移除时机**：`openlogos archive <slug>` 把提案目录移入 `archive/` 时随目录一并移除——全自动一旦归档结束，marker 自动消失，下一个提案不会误继承。
+- **被谁消费**：PreToolUse guard（`guard-check`）检测到当前活跃提案目录存在 `AUTO_MODE` → 对 `git push` 放行（`exit 0`）；marker 不在场 → 维持既有 `exit 2` 硬阻断。该 marker **仅放行 `git push`**，不影响 guard 对其它写入操作 / 变更范围的判定。
+- **内容**：marker 文件内容不约束（可为空或写入建立时间戳供审计）；其**存在性**即语义。
+- **与授权模型关系**：`AUTO_MODE` 的存在 = 用户已通过一次 `next --auto` 建立 standing run-scoped 授权；它是 git push 这一机器级 guard 的授权凭据，与 `GATE_AUTO_PASSED`（审计、非状态源）互补——前者是「是否放行 push」的活信号，后者是「放行了什么」的审计轨迹。
