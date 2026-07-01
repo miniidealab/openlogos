@@ -665,13 +665,15 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
 
   // S28：next_node 编排提示——modules[] 各项 + legacy 顶层。R4 auto 放行默认省略；
   // plan-exit 被消费后已重新派生到 write-delta，按窄例外保留 next_node。
-  const nextNodeFor = (sm: { id: string; name: string; lifecycle: 'initial' | 'launched'; current_phase: string | null; current_node?: CurrentNode; loop_state?: LoopState; active_change?: { proposal_step: string } | null }, gap: boolean): NextNode | null => {
+  const nextNodeFor = (sm: { id: string; name: string; lifecycle: 'initial' | 'launched'; current_phase: string | null; current_node?: CurrentNode; loop_state?: LoopState; active_change?: { proposal_step: string; slug?: string } | null }, gap: boolean): NextNode | null => {
     const step = sm.active_change?.proposal_step ?? null;
     const atVerify = step === 'ready-to-verify' || step === 'verify-failed' || sm.current_phase === 'phase.3-6';
+    // R8：透传活跃提案目录，供 resolveNextNode 判 [code] 脱模板 + SLICES_APPROVED 以二分 slice-exit 前沿。
+    const proposalDir = sm.active_change?.slug ? join(root, 'logos', 'changes', sm.active_change.slug) : undefined;
     return resolveNextNode(root, { id: sm.id, name: sm.name, lifecycle: sm.lifecycle }, {
       currentNode: sm.current_node, proposalStep: step, currentPhase: sm.current_phase,
       loopBlocking: isLoopBlocking(sm.loop_state, atVerify), loopEscalated: sm.loop_state?.escalated,
-      gateAutoPassed: gap,
+      gateAutoPassed: gap, proposalDir,
     });
   };
   // 切片6：切片循环阻塞在 code 工作节点（next_node.id==='code'）且未达上限时，注入 next_node.slice = slice_state.current。
@@ -711,7 +713,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     baseNextNode = withSlice(nextNodeFor({
       id: 'core', name: 'core', lifecycle: data.lifecycle === 'launched' ? 'launched' : 'initial',
       current_phase: data.current_phase, current_node: data.current_node, loop_state: data.loop_state,
-      active_change: data.proposal_step ? { proposal_step: data.proposal_step } : null,
+      active_change: data.proposal_step ? { proposal_step: data.proposal_step, slug: data.active_change ?? undefined } : null,
     }, gateAutoPassed && !planGateAutoConsumed && !sliceGateAutoConsumed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
   }
 

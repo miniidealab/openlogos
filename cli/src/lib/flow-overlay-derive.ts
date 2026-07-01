@@ -16,7 +16,9 @@ import {
   parseTaskSections,
   isProposalTemplateFilled,
   isTasksTemplateFilled,
+  isTasksCodeFilled,
   resolveProposalDeploymentDecision,
+  SLICES_APPROVED_MARKER,
 } from './proposal-lifecycle.js';
 import { NODE_TO_PHASE_KEY, PHASE_KEY_TO_NODE_ID, evalNodeWhen, detectProposalStepViaFlow } from './flow-derive.js';
 import type { ModuleInfo } from '../commands/status.js';
@@ -495,6 +497,10 @@ export interface NextNode {
   review_agent: string | null;
   pre_script: string | null;
   post_script: string | null;
+  // fix-next-node-slice-exit-frontier（R8）：前沿是「节点已完成、停在其 subflow 出口/入口人类门待批准」时的派生 gate id
+  // （`<subflow.id>-<gate.position>`，如 `slice-exit`）。出现即示意宿主**不得重派该节点 skill**、按人类门处理。非门前沿时省略。
+  // 见 spec/cli-json-output.md §11 R8、spec/flow-spec.md §12.5(2)/§12.6(2)。
+  gate_id?: string;
   // change-flow-redesign 切片6：切片循环阻塞在 code 工作节点时的「只做这一片」子提示（= slice_state.current）。
   slice?: string;
   // S31：当前父切片下的缩进 checkbox 子任务，供宿主注入当前切片内部工作项。
@@ -517,6 +523,7 @@ export function resolveNextNode(
     loopBlocking?: boolean;   // isLoopBlocking 结果（前沿到 verify + iteration≥1 + 未收敛）
     loopEscalated?: boolean;
     gateAutoPassed?: boolean;
+    proposalDir?: string;     // fix-next-node-slice-exit-frontier（R8）：活跃提案目录，用于判 [code] 脱模板 + SLICES_APPROVED 以二分 slice-exit 前沿
   },
 ): NextNode | null {
   if (opts.gateAutoPassed) return null;                       // R4：gate 自动放行 → 省略
@@ -538,11 +545,25 @@ export function resolveNextNode(
     for (const n of sub.nodes) {
       if (n.id !== targetId) continue;
       if (n.skipped) return null;                             // 被 overlay skip → 省略
-      return {
+      const node: NextNode = {
         id: n.id, name: n.name, subflow_id: sub.id,
         skill: n.skill ?? null, working_agent: n.working_agent ?? null, review_agent: n.review_agent ?? null,
         pre_script: n.pre_script ?? null, post_script: n.post_script ?? null,
       };
+      // R8（fix-next-node-slice-exit-frontier）：ready-to-implement 前沿随 [code] 是否脱模板二分——
+      // plan-slices 已完成（tasks_code_filled）且 slice-exit 门未放行（无 SLICES_APPROVED）→ 前沿在门上，
+      // 附加 gate_id（`<subflow.id>-<gate.position>`），示意宿主不得重派 slice-planner、按人类门处理。
+      // 未脱模板 / 已放行（proposalStep 已 coding→targetId=code）→ 不附加。见 spec/flow-spec.md §12.5(2)/§12.6(2)。
+      if (opts.proposalStep === 'ready-to-implement' && n.id === 'plan-slices' && opts.proposalDir
+        && sub.gate?.type === 'human') {
+        const tasksPath = join(opts.proposalDir, 'tasks.md');
+        const codeFilled = existsSync(tasksPath) && isTasksCodeFilled(readFileSync(tasksPath, 'utf-8'));
+        const slicesApproved = existsSync(join(opts.proposalDir, SLICES_APPROVED_MARKER));
+        if (codeFilled && !slicesApproved) {
+          node.gate_id = `${sub.id}-${sub.gate.position ?? 'exit'}`;
+        }
+      }
+      return node;
     }
   }
   return null;                                                // 目标节点缺失（如 code 被删）→ 省略

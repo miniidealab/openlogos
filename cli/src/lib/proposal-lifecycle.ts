@@ -135,6 +135,23 @@ export function isTasksTemplateFilled(content: string): boolean {
   return !placeholderLines.some(line => lines.has(line));
 }
 
+/**
+ * split-slice-planner-stage / fix-next-node-slice-exit-frontier：
+ * `[code]` section 是否已脱模板（== flow `tasks_code_filled` 谓词）——slice-planner 已写出真实切片清单。
+ * 判据：`## [code]` section 含 ≥1 个 checkbox 条目，且其文本非模板占位（`[切片清单占位]` / `实现代码变更` / `Implement code changes`）。
+ * 供 `resolveNextNode` 对 `ready-to-implement` 前沿二分（未脱模板 → `plan-slices` 节点；已脱模板 → `slice-exit` 门）。
+ */
+const CODE_SECTION_PLACEHOLDERS = new Set([
+  '[切片清单占位]',
+  '实现代码变更',
+  'Implement code changes',
+]);
+
+export function isTasksCodeFilled(content: string): boolean {
+  return extractTaskSectionItems(content, 'code')
+    .some(item => item.text.trim() !== '' && !CODE_SECTION_PLACEHOLDERS.has(item.text.trim()));
+}
+
 export function countMergeableDeltaFiles(proposalDir: string): number {
   let count = 0;
   for (const category of MERGE_SUPPORTED_DELTA_DIRS) {

@@ -111,18 +111,22 @@ describe('S32 — merge 后切片派生', () => {
     expect(m.next_node?.id).toBe('plan-slices');
     expect(m.next_node?.skill).toBe('slice-planner');
     expect(m.next_node?.id).not.toBe('code'); // 不直接进入 code
+    // fix-next-node-slice-exit-frontier（R8）：[code] 仍为模板（未脱模板）→ plan-slices 未完成、前沿是节点、**不带** gate_id
+    expect(m.next_node?.gate_id).toBeUndefined();
   });
 
-  it('UT-S32-05: plan-slices 完成判定 = [code] 脱模板 → 停在 slice-exit 门（slice-exit, skippable:true）', async () => {
+  it('UT-S32-05: plan-slices 完成判定 = [code] 脱模板 → 停在 slice-exit 门（默认 next 即回显 next_node.gate_id）', async () => {
     // [code] 已脱模板（切片写出、未勾）、SLICES_APPROVED 不存在 → ready-to-implement，停 slice-exit 门等批准（不进入 coding）。
-    // 注：默认 next 顶层不回显 gate；门归属经 --auto 顶层 gate 字段核验（与 plan-exit 一致）。
     const { root, dir } = setupCmd(DELTA_DONE_CODE_SLICES, ['SPEC_MERGED']);
     expect(detectProposalStep(dir)).toBe('ready-to-implement');
     const m = (await nextJson(root)).modules[0];
     expect(m.proposal_step).toBe('ready-to-implement');
     expect(m.next_node?.id).toBe('plan-slices');
+    // fix-next-node-slice-exit-frontier（R8）：默认 next（半自动/手动，无 --auto）即在 next_node 上回显 gate_id=slice-exit——
+    // 前沿在门上、宿主不得重派 slice-planner（修复半自动 driver 恒得 plan-slices 无门信号→重派死循环的根因）。
+    expect(m.next_node?.gate_id).toBe('slice-exit');
     expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
-    // --auto 下顶层 gate = slice-exit、skippable:true（停门待批准的归属门）
+    // --auto 下顶层 gate = slice-exit、skippable:true（停门待批准的归属门；与 next_node.gate_id 语义不同，但同指 slice-exit）
     const auto = await nextJson(root, true);
     expect(auto.gate_id).toBe('slice-exit');
     expect(auto.skippable).toBe(true);
@@ -176,20 +180,24 @@ describe('S32 — slice-exit auto 放行与跳过', () => {
 // ── 四、场景测试 ──
 describe('S32 — 场景测试', () => {
   it('ST-S32-01: merge 后切片规划端到端至 slice-exit 放行进 coding', async () => {
-    // 1) merge 就绪、[code] 仍模板 → ready-to-implement、next_node=plan-slices
+    // 1) merge 就绪、[code] 仍模板 → ready-to-implement、next_node=plan-slices（未脱模板、不带 gate_id）
     const tpl = setupCmd(DELTA_DONE_CODE_TEMPLATE, ['SPEC_MERGED']);
     const m1 = (await nextJson(tpl.root)).modules[0];
     expect(m1.proposal_step).toBe('ready-to-implement');
     expect(m1.next_node?.id).toBe('plan-slices');
-    // 2) 写出 [code] 切片（脱模板、未勾）→ 仍 ready-to-implement、停 slice-exit 门
+    expect(m1.next_node?.gate_id).toBeUndefined();
+    // 2) 写出 [code] 切片（脱模板、未勾）→ 仍 ready-to-implement、停 slice-exit 门（默认 next 即回显 next_node.gate_id=slice-exit）
     const filledFix = setupCmd(DELTA_DONE_CODE_SLICES, ['SPEC_MERGED']);
     const m2 = (await nextJson(filledFix.root)).modules[0];
     expect(m2.proposal_step).toBe('ready-to-implement');
-    // 3) --auto 放行 slice-exit → 写 SLICES_APPROVED + 审计 → 派生 coding、next_node=code（进入 S31 切片循环）
+    expect(m2.next_node?.id).toBe('plan-slices');
+    expect(m2.next_node?.gate_id).toBe('slice-exit');
+    // 3) --auto 放行 slice-exit → 写 SLICES_APPROVED + 审计 → 派生 coding、next_node=code（门已消费、不带 gate_id，进入 S31 切片循环）
     const d3 = await nextJson(filledFix.root, true);
     expect(existsSync(join(filledFix.dir, 'SLICES_APPROVED'))).toBe(true);
     expect(d3.proposal_step).toBe('coding');
     expect(d3.modules[0].next_node?.id).toBe('code');
+    expect(d3.modules[0].next_node?.gate_id).toBeUndefined();
     expect(d3.modules[0].next_node?.slice).toBe('切片1');
   });
 
@@ -257,12 +265,18 @@ describe('S32 — 纯代码提案（无 [delta]）无 SPEC_MERGED 进入 slice',
     expect(m.next_node?.id).toBe('plan-slices');
     expect(m.next_node?.id).not.toBe('write-delta');
     expect(m.proposal_step).not.toBe('delta-writing');
+    // R8：纯代码提案 [code] 仍模板 → plan-slices 未完成、不带 gate_id
+    expect(m.next_node?.gate_id).toBeUndefined();
   });
 
-  it('UT-S32-11: 纯代码 [code] 脱模板、无 SLICES_APPROVED、无 SPEC_MERGED → 停 slice-exit 门', async () => {
+  it('UT-S32-11: 纯代码 [code] 脱模板、无 SLICES_APPROVED、无 SPEC_MERGED → 停 slice-exit 门（默认 next 回显 next_node.gate_id）', async () => {
     const { root, dir } = setupCmd(PURE_CODE_SLICES);
     expect(detectProposalStep(dir)).toBe('ready-to-implement');
     expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+    // R8：默认 next（无 --auto）即回显 next_node.gate_id=slice-exit（纯代码提案 spec/merge 空过路径亦二分）
+    const m = (await nextJson(root)).modules[0];
+    expect(m.next_node?.id).toBe('plan-slices');
+    expect(m.next_node?.gate_id).toBe('slice-exit');
     const auto = await nextJson(root, true);
     expect(auto.gate_id).toBe('slice-exit');
     expect(auto.skippable).toBe(true);
