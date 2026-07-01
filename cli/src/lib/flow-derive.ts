@@ -424,8 +424,11 @@ export function detectProposalStepViaFlow(
     const delta = sections['delta'];
     const code = sections['code'];
     if (!delta) {
-      // 无 [delta] section = 纯代码提案（区别于 present-but-empty 的 [delta]）
+      // fix-nodelta-proposal-routing：无 [delta] section = 纯代码提案，spec/merge 空过（vacuously done），
+      // 按 post-merge 的 slice/implement 逻辑路由（依 [code] + SLICES_APPROVED），**绝不返回 delta-writing**。
+      // 见 spec/flow-spec.md §12.6。区别于 present-but-empty 的 [delta]（后者走下方 delta-writing）。
       if (!code || (code.total > 0 && code.checked === code.total)) return 'ready-to-verify';
+      if (!exists(SLICES_APPROVED_MARKER)) return 'ready-to-implement';
       return 'coding';
     }
     if (delta.total > 0 && delta.checked === delta.total) return 'ready-to-merge';

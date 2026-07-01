@@ -102,7 +102,9 @@
 
 > **禁止在 tasks.md 中写入 verify / smoke / 人工验证类条目**——这些属于独立 CLI 操作节点。tasks.md 只追踪 delta、代码和部署执行任务。
 
-> ⚠️ **launched 变更下 `[code]` 切片不在此处产出**（split-slice-planner-stage）：`write-tasks` 节点只产 `## [delta]` / `## [deploy]`。`## [code]` 切片由独立环节 **`slice-planner`** 在 **merge 之后**、对**已合并规格 + 真实测试 ID** 划分（见 `skills/slice-planner/SKILL.md`）。本步骤可留空 `[code]` 或完全不写 `[code]` section；下方模板中的 `[code]` 块仅示意最终形态，不在 plan 段填写。
+> ⚠️ **launched 变更下 `[code]` 切片不在此处产出**（split-slice-planner-stage）：`write-tasks` 节点只产 `## [delta]` / `## [deploy]`。`## [code]` 切片由独立环节 **`slice-planner`** 在 **merge 之后**、对**已合并规格 + 真实测试 ID** 划分（见 `skills/slice-planner/SKILL.md`）。本步骤保留空 `## [code]` 标题（切片项不在 plan 段填写，由 merge 后 slice-planner 划分）；下方模板中的 `[code]` 块仅示意最终形态。
+>
+> ⚠️ **`## [code]` 标题行必须保留**（fix-nodelta-proposal-routing）：`write-tasks` 产出的 `tasks.md` **至少要含一个 `## [tag]` section 标题**，否则 `parseTaskSections` 返回 `null`、派生降级为「旧格式兜底」而误判为 `delta-writing`（把纯代码提案错误派到 `write-delta` 节点、无人值守下死锁）。因此：有 `[delta]` 的提案 `[code]` 标题可留空或省略（已有 `[delta]` 标题）；**无 `[delta]` 的纯代码提案必须写出空的 `## [code]` 标题行**（标题在、条目空，由 merge 空过后的 slice-planner 填切片）。
 
 **格式规则**：
 - `## [delta] <描述>` section：只列 delta 文档产出任务，每条对应一个 delta 文件
@@ -158,13 +160,16 @@
 - [ ] 产出 delta 文件到 `deltas/scenario/` — 更新编排测试用例
 ```
 
-**纯代码修复模板**（无 delta；`[code]` 由 merge 后 slice-planner 填写）：
+**纯代码修复模板**（无 delta；保留空 `## [code]` 标题，切片由 merge 后 slice-planner 填写）：
 
 ```markdown
 # 实现任务
 
-（无 [delta]；merge 整段跳过，直接进入 slice 段由 slice-planner 划分 [code]）
+## [code] 代码实现
+（本段在 plan 段留空：无 `[delta]` 时 `spec`/`merge` 整段空过，切片由 `slice-planner` 在 merge 之后对**已合并/现有规格 + 真实测试 ID**划分填入。此处仅保留 `## [code]` 标题，勿删——删除标题会使 `tasks.md` 无任何 section、派生降级误判为 `delta-writing`。）
 ```
+
+> **为什么保留空 `## [code]`**（fix-nodelta-proposal-routing）：`tasks.md` 有 `## [code]` 标题 ⇒ `parseTaskSections` 非 `null` 且 `code_required` 为真 ⇒ 派生把无 `[delta]` 提案识别为「纯代码提案」，视 `spec`/`merge` 空过后正确落 `ready-to-implement`（前沿 `plan-slices`，唤起 slice-planner），而非误落 `delta-writing`/`write-delta`。详见 `spec/flow-spec.md` §12.6 与 `spec/tasks-spec.md`「状态判断规则」。
 
 ### Step 5 补充：[code] 良构切片（已迁至 slice-planner）
 

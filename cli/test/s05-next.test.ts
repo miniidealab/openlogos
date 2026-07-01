@@ -540,7 +540,9 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(detectProposalStep(proposalDir)).toBe('delta-writing');
   });
 
-  it('UT-S05-13: no [delta] section + [code] not done → coding (skips merge)', () => {
+  it('UT-S05-13: no [delta] section + [code] not done → ready-to-implement (纯代码经 slice-planner, fix-nodelta-proposal-routing)', () => {
+    // fix-nodelta-proposal-routing：无 [delta] = 纯代码提案，spec/merge 空过；[code] 未划片/无 SLICES_APPROVED
+    // → ready-to-implement（前沿 plan-slices，唤起 slice-planner），不再直接 coding（见 spec/flow-spec.md §12.6）。
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
     writeFileSync(join(proposalDir, 'tasks.md'), [
@@ -550,7 +552,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [ ] 修复 src/xxx 中的问题',
     ].join('\n'));
 
-    expect(detectProposalStep(proposalDir)).toBe('coding');
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-implement');
   });
 
   it('UT-S05-13b: no [delta] section + [code] all done → ready-to-verify (skips merge)', () => {

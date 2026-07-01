@@ -1202,6 +1202,39 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 > **auto-full-unattended 澄清（不改 §11.1 既有派生逻辑）**：本提案把 `verify` / `smoke` / `archive` / `git push` 这 4 样「代码已绿后的盖章/发布」红线纳入全自动 standing 授权放行，但 **`gate:implement:loop-exhausted` 明确排除在外**。§11.1 的默认表（`skippable:false` / `gate_auto_passed:false` / `--auto` 照常阻塞）与 opt-in 表（仅 overlay `exhausted_skippable==true` 时放行）**全部保持不变**。理由：loop-exhausted = 代码未过测试，放行它即发布未验证成果，与全自动「只发布已验证成果」的前提相悖。它是该前提的守门人，永不随 `--auto` 自动放行；唯一放行通道仍是用户在 overlay 显式声明的高危 opt-in（与是否 `--auto` 无关）。
 
+### 11.2 `auto_execute`：非门动作步骤的无人值守执行信号（auto-execute-redline-steps）
+
+`gate_auto_passed` 只覆盖**可跳 flow 门**（plan/spec/slice/deliver）。但 `verify` / `smoke` / `archive` **不是 flow 门**——它们是要 driver 去**执行的 CLI 命令**，无 gate 可「跳」。为让无人值守 driver（runlogos）在 `--auto` 下自动执行它们，`next --auto` 新增 **`auto_execute`** 字段。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `auto_execute` | boolean | 否 | `--auto` 下，当前停顿点是一个**已就绪、可在无人值守模式自动执行的 CLI 命令动作步骤**时为 `true`，并把 `command` 填为该具体命令。默认 `next`（无 `--auto`）**永不输出**此字段。 |
+
+**置 `true` 的条件**（全部满足）：
+
+1. `auto === true`；
+2. 当前**未被阻塞**——不卡在未完成 overlay-added 节点（R2 安全闸）、且 `!blockedByLoop`（loop 未阻塞/未达上限）；
+3. `proposal_step ∈ { ready-to-verify, verify-passed, deploy-done, smoke-passed, ready-to-smoke }`。
+
+**伴随 `command` 填充**（这些步骤默认 `command:null`，`auto_execute` 时填具体命令）：
+
+| proposal_step | command |
+|---|---|
+| `ready-to-verify` | `openlogos verify` |
+| `ready-to-smoke` | `openlogos smoke` |
+| `verify-passed` / `deploy-done` / `smoke-passed` | `openlogos archive <slug>` |
+
+`action` / `detail` 同时改为「auto: 自动执行 …，无需人工确认」措辞。
+
+**不置 `auto_execute`（保持人类确认 / 修复语义）**：
+
+- 默认 `next`（无 `--auto`）——永不输出。
+- **硬红线**：loop 达上限未收敛（`blockedByLoop` + `loop_state.escalated`）→ 由 §11.1 的 loop-exhausted gate 处理，**绝不** `auto_execute`（不放行未过测试代码）。
+- `verify-failed` / `smoke-failed`——属「修复后重试」语义，非「就绪可执行」，不置。
+- flow 门步骤（`ready-to-delta` / `ready-to-merge` / `ready-to-implement` / `ready-to-deploy`）——由 `gate_auto_passed` 表达，不走 `auto_execute`。
+
+**语义**：`auto_execute === true` = 在无人值守 `--auto` 模式下，宿主 driver 被授权**立即执行 `command`、无需人类确认**。它是 `gate_auto_passed`（门放行）在「非门 CLI 命令步骤」上的对应物；二者正交、同一响应里至多一个为真。**消费方契约**：runlogos 等 driver 据 `auto_execute===true` + `command` 自动执行该命令；为 false / 缺省时按既有「提示人类授权」处理（半自动行为不变）。
+
 ---
 
 ## 12. `GATE_AUTO_PASSED` JSONL 审计 schema

@@ -532,10 +532,14 @@ export function detectProposalStep(
     const delta = sections['delta'];
     const code = sections['code'];
 
-    // 纯代码提案（新格式无 [delta] section）：完全跳过 merge 阶段
+    // fix-nodelta-proposal-routing：纯代码提案（新格式无 [delta] section）spec/merge 空过（vacuously done），
+    // 按 slice/implement 逻辑路由（依 [code] + SLICES_APPROVED），**绝不返回 delta-writing**（见 spec/flow-spec.md §12.6）。
     if (!delta) {
       if (!code || (code.total > 0 && code.checked === code.total)) {
         return 'ready-to-verify';
+      }
+      if (!existsSync(join(proposalDir, SLICES_APPROVED_MARKER))) {
+        return 'ready-to-implement';
       }
       return 'coding';
     }

@@ -64,6 +64,9 @@ function auditLines(dir: string): string[] {
 const DELTA_DONE_CODE_TEMPLATE = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] [切片清单占位]';
 const DELTA_DONE_CODE_SLICES = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2';
 const PURE_DELTA = '# 任务\n\n## [delta] 规格变更\n- [x] d';
+// fix-nodelta-proposal-routing：纯代码提案（无 [delta]，含空/切片 [code]）
+const PURE_CODE_TEMPLATE = '# 任务\n\n## [code] 代码实现\n- [ ] [切片清单占位]';
+const PURE_CODE_SLICES = '# 任务\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2';
 
 // ── 一、slice 子流程 / write-tasks 结构定义（builtin flow 直测）──
 describe('S32 — slice 子流程与 write-tasks 结构', () => {
@@ -241,5 +244,49 @@ describe('S32 — 异常测试', () => {
     expect(m.proposal_step).toBe('ready-to-implement');
     expect(m.next_node?.id).toBe('plan-slices');
     expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+  });
+});
+
+// ── 六、纯代码提案（无 [delta]）无 SPEC_MERGED 进入切片（fix-nodelta-proposal-routing）──
+describe('S32 — 纯代码提案（无 [delta]）无 SPEC_MERGED 进入 slice', () => {
+  it('UT-S32-10: 纯代码（无 [delta]）无 SPEC_MERGED、[code] 未脱模板 → ready-to-implement / plan-slices（不派 write-delta）', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_TEMPLATE); // 无任何 marker
+    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('ready-to-implement');
+    expect(m.next_node?.id).toBe('plan-slices');
+    expect(m.next_node?.id).not.toBe('write-delta');
+    expect(m.proposal_step).not.toBe('delta-writing');
+  });
+
+  it('UT-S32-11: 纯代码 [code] 脱模板、无 SLICES_APPROVED、无 SPEC_MERGED → 停 slice-exit 门', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_SLICES);
+    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+    const auto = await nextJson(root, true);
+    expect(auto.gate_id).toBe('slice-exit');
+    expect(auto.skippable).toBe(true);
+  });
+
+  it('UT-S32-12: 纯代码 slice-exit --auto 放行 → SLICES_APPROVED + coding / next_node=code（无 SPEC_MERGED）', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_SLICES);
+    const d = await nextJson(root, true);
+    expect(d.gate_id).toBe('slice-exit');
+    expect(d.gate_auto_passed).toBe(true);
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
+    expect(d.proposal_step).toBe('coding');
+    expect(d.modules[0].next_node?.id).toBe('code');
+  });
+
+  it('ST-S32-EX-3: 纯代码提案（无 [delta]）无 SPEC_MERGED 正常进入切片（不因缺 SPEC_MERGED 被拒、不派 write-delta）', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_TEMPLATE);
+    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('ready-to-implement');
+    expect(m.next_node?.id).toBe('plan-slices');
+    expect(m.next_node?.id).not.toBe('write-delta');
+    // 对照 ST-S32-EX-1：有 [delta] 提案无 SPEC_MERGED 仍停 spec/merge；纯代码提案不受此约束
+    const deltaProp = setupCmd(DELTA_DONE_CODE_TEMPLATE, [], 'feat2');
+    expect(detectProposalStep(deltaProp.dir)).not.toBe('ready-to-implement');
   });
 });

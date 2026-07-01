@@ -393,6 +393,9 @@ resource_index:
   - path: spec/flow-spec.md
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
 
+  - path: skills/slice-planner/SKILL.md
+    desc: slice-planner Skill。使用 slice-planner 功能时必读。
+
 conventions:
   - "场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号"
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

@@ -108,3 +108,25 @@
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |----|------|-----------|---------|---------|---------|
 | ST-S09-27 | 用户从 ready-to-delta 批准后，SessionStart 不再卡 proposal.md | S09 Step 7→8 | 提案已填，用户批准方案，`next --auto` 后状态为 `delta-writing` | 重新开启 Codex/OpenLogos 会话 | 会话上下文允许 AI 继续写 `logos/changes/<slug>/deltas/**` 并更新 `tasks.md`，不会因 `proposal.md` 单文件范围拒绝执行 delta 任务 |
+
+## 七、纯代码提案（无 `[delta]`）派生用例（fix-nodelta-proposal-routing）
+
+> 覆盖「纯代码级修复提案（`tasks.md` 无 `## [delta]`、含空 `## [code]` 标题，`delta_required==false`）派生：`spec`/`merge` 空过、直连 slice/implement，**任何组合下 `proposal_step` 不为 `delta-writing`、`next_node.id` 不为 `write-delta`**」。规则见 `spec/flow-spec.md` §12.6、`spec/tasks-spec.md`「状态判断规则」。含 OpenLogos reporter（用例名带 `UT-S09-*` / `ST-S09-*` 供抽取）。
+>
+> 关键不变量：`detectProposalStepViaFlow` 与旧 `detectProposalStep` 对同一无 `[delta]` fixture 必须返回**相等**结果（1:1 等价不破，故两函数须同步修改）。
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S09-55 | 纯代码（无 [delta]）+ 空 `[code]` 标题 + 无 SPEC_MERGED + 无 SLICES_APPROVED → ready-to-implement | flow-spec §12.6 | proposal/tasks 已填、无 `[delta]`、`## [code]` 标题在场且 total=0、无 `SPEC_MERGED`/`SLICES_APPROVED` | derive | `proposal_step==ready-to-implement`；`next_node.id=="plan-slices"`；**非 `delta-writing`/`write-delta`** |
+| UT-S09-56 | 纯代码（无 [delta]）+ `[code]` 有未勾条目 + 无 SPEC_MERGED + 无 SLICES_APPROVED → ready-to-implement | flow-spec §12.6 | 无 `[delta]`、`[code]` total>0 未全勾、无 marker | derive | `ready-to-implement`；`next_node.id=="plan-slices"` |
+| UT-S09-57 | 纯代码（无 [delta]）+ `[code]` 未全勾 + SLICES_APPROVED → coding | flow-spec §12.6 | 无 `[delta]`、`[code]` 未全勾、`SLICES_APPROVED` 在场、无 `SPEC_MERGED` | derive | `coding`；`next_node.id=="code"` |
+| UT-S09-58 | 纯代码（无 [delta]）+ PLAN_APPROVED 在场 + 空 `[code]` + 无 SPEC_MERGED → ready-to-implement（PLAN_APPROVED 不逼出 delta-writing） | flow-spec §12.4(2) carve-out | 无 `[delta]`、`PLAN_APPROVED` 在场、`## [code]` 标题 total=0、无 `SPEC_MERGED`/`SLICES_APPROVED` | derive | `ready-to-implement`（**非 `delta-writing`**）；`next_node.id=="plan-slices"` |
+| UT-S09-59 | 纯代码（无 [delta]）+ `[code]` 全勾 → ready-to-verify（回归 UT-S09-29，无 SPEC_MERGED 亦成立） | flow-spec §12.6 | 无 `[delta]`、`[code]` 全勾、无 `SPEC_MERGED`/marker | derive | `ready-to-verify`；`next_node.id=="verify"` |
+| UT-S09-60 | 无 [delta] 提案任意组合都不派 write-delta（红线断言） | fix-nodelta 不变量 | 遍历 UT-S09-55..59 全部 fixture | derive | 每个 fixture：`proposal_step != "delta-writing"` 且 `next_node.id != "write-delta"` |
+| UT-S09-61 | 回归：旧格式**完全无** `## [tag]` 标题 + 任务未全勾 → delta-writing（兜底不变，UT-S09-32 不破） | 旧格式兜底 | 已填、无任何 section 标记、任务未全勾、无 marker、无可 merge delta | derive | `delta-writing`（纯代码提案因保留 `## [code]` 标题不落入此路径） |
+
+| ID | 描述 | 覆盖 fixture | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-28 | ViaFlow == 旧 detectProposalStep 在无 [delta] fixture 等价 | 纯代码派生集 | UT-S09-55..59 各 fixture | 并跑 `detectProposalStepViaFlow` 与旧 `detectProposalStep` | 每个 fixture 两者返回的 `ProposalStep` 逐一相等（1:1 不变量保持） |
+| ST-S09-29 | 纯代码提案端到端无死锁：plan→(spec/merge 空过)→plan-slices→…→verify | 无 [delta] 全链路 | 纯代码修复提案（空 `## [code]`），经 plan 门 | `next`（指 plan-slices）→ 写 `[code]` 脱模板 → `next`（停 slice-exit）→ `--auto` → … → `ready-to-verify` | 全程无 `delta-writing`/`write-delta` 前沿；无 `blocked(no-progress)`；最终达 `ready-to-verify` |
+| ST-S09-30 | golden 零漂移：有 [delta] 常规提案 status/next 输出不变 | 回归 | 各态有 `[delta]` 提案 fixture | 跑 golden-baseline | 常规提案 status/next JSON 与基线逐字节一致（本变更只影响无 `[delta]` 分支） |

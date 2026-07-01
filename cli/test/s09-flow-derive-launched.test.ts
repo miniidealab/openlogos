@@ -12,6 +12,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot } from './helpers.js';
 import { detectProposalStep, collectStatusData, type ModuleInfo } from '../src/commands/status.js';
 import { detectProposalStepViaFlow } from '../src/lib/flow-derive.js';
+import { STEP_TO_CURRENT_BUILTIN } from '../src/lib/flow-overlay-derive.js';
 import { loadBuiltinFlow } from '../src/lib/flow.js';
 
 const cleanups: Array<() => void> = [];
@@ -66,6 +67,9 @@ const DELTA_EMPTY = '# 任务\n\n## [delta] 规格变更\n';
 // change-flow-redesign：delta 已启动（至少勾一项）但未全勾 → delta-writing（区别于 ready-to-delta 的"尚未启动"）
 const DELTA_INPROGRESS = '# 任务\n\n## [delta] 规格变更\n- [x] d1\n- [ ] d2';
 const CODE_DONE = '# 任务\n\n## [code] 代码实现\n- [x] 实现';
+// fix-nodelta-proposal-routing：纯代码提案（无 [delta]）fixture
+const CODE_PARTIAL = '# 任务\n\n## [code] 代码实现\n- [ ] 实现';
+const CODE_EMPTY = '# 任务\n\n## [code] 代码实现\n';
 const DELTA_DONE_CODE_PARTIAL = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] c';
 const DELTA_DONE_CODE_DONE = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] c';
 const DELTA_DONE_CODE_EMPTY = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n';
@@ -118,6 +122,14 @@ const UT: UtCase[] = [
   { ut: 'UT-S09-48', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_EMPTY, markers: ['SPEC_MERGED'] }).dir },
   { ut: 'UT-S09-49', expected: 'ready-to-delta', build: () => makeProposal({ proposal: filled(), tasks: DELTA_EMPTY }).dir },
   { ut: 'UT-S09-50', expected: 'verify-passed', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DELTA_DONE, markers: ['VERIFY_PASS'] }).dir },
+  // fix-nodelta-proposal-routing：纯代码提案（无 [delta]）spec/merge 空过 → slice/implement，绝不 delta-writing（见 spec/flow-spec.md §12.6）
+  { ut: 'UT-S09-55', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir },
+  { ut: 'UT-S09-56', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: CODE_PARTIAL }).dir },
+  { ut: 'UT-S09-57', expected: 'coding', build: () => makeProposal({ proposal: filled(), tasks: CODE_PARTIAL, markers: ['SLICES_APPROVED'] }).dir },
+  { ut: 'UT-S09-58', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['PLAN_APPROVED'] }).dir },
+  { ut: 'UT-S09-59', expected: 'ready-to-verify', build: () => makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir },
+  // UT-S09-60：红线断言（无 [delta] 任意组合都不派 write-delta）见下方独立 it 块
+  { ut: 'UT-S09-61', expected: 'delta-writing', build: () => makeProposal({ proposal: filled(), tasks: OLDFMT_PARTIAL }).dir },
 ];
 
 describe('S09 launched flow-derive 引擎 UT（ViaFlow 期望值 + 与旧 detectProposalStep 并跑等价）', () => {
@@ -248,5 +260,58 @@ describe('S09 launched flow 漂移守卫', () => {
     expect(byId['deploy'].when).toBe('deployment_required');
     expect(byId['smoke'].when).toBe('smoke_required');
     expect(byId['archive'].done_when).toBe('archived');
+  });
+});
+
+// ── fix-nodelta-proposal-routing：纯代码提案（无 [delta]）派生红线与端到端 ──
+describe('S09 纯代码提案（无 [delta]）派生（fix-nodelta-proposal-routing）', () => {
+  const noDeltaFixtures: Array<{ label: string; build: () => string }> = [
+    { label: 'CODE_EMPTY', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir },
+    { label: 'CODE_PARTIAL', build: () => makeProposal({ proposal: filled(), tasks: CODE_PARTIAL }).dir },
+    { label: 'CODE_PARTIAL+SLICES_APPROVED', build: () => makeProposal({ proposal: filled(), tasks: CODE_PARTIAL, markers: ['SLICES_APPROVED'] }).dir },
+    { label: 'CODE_EMPTY+PLAN_APPROVED', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['PLAN_APPROVED'] }).dir },
+    { label: 'CODE_DONE', build: () => makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir },
+  ];
+
+  it('UT-S09-60: 无 [delta] 提案任意组合都不派 delta-writing / write-delta（红线）', () => {
+    for (const f of noDeltaFixtures) {
+      const dir = f.build();
+      const step = detectProposalStepViaFlow(dir, {});
+      expect(step, `${f.label} 不应为 delta-writing`).not.toBe('delta-writing');
+      expect(STEP_TO_CURRENT_BUILTIN[step], `${f.label} 前沿不应为 write-delta`).not.toBe('write-delta');
+      // ViaFlow == legacy 等价
+      expect(detectProposalStep(dir, {})).toBe(step);
+    }
+  });
+
+  it('ST-S09-28: ViaFlow == 旧 detectProposalStep 在无 [delta] fixture 逐一等价', () => {
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir)).toBe('ready-to-implement');
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_PARTIAL }).dir)).toBe('ready-to-implement');
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_PARTIAL, markers: ['SLICES_APPROVED'] }).dir)).toBe('coding');
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['PLAN_APPROVED'] }).dir)).toBe('ready-to-implement');
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir)).toBe('ready-to-verify');
+  });
+
+  it('ST-S09-29: 纯代码提案派生序列无死锁（plan→plan-slices→coding→verify，全程无 delta-writing）', () => {
+    // 空 [code]（切片未划）→ ready-to-implement（前沿 plan-slices）
+    const s1 = detectProposalStepViaFlow(makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir, {});
+    expect(s1).toBe('ready-to-implement');
+    expect(STEP_TO_CURRENT_BUILTIN[s1]).toBe('plan-slices');
+    // [code] 已划、slice-exit 放行（SLICES_APPROVED）→ coding（前沿 code）
+    const s2 = detectProposalStepViaFlow(makeProposal({ proposal: filled(), tasks: CODE_PARTIAL, markers: ['SLICES_APPROVED'] }).dir, {});
+    expect(s2).toBe('coding');
+    expect(STEP_TO_CURRENT_BUILTIN[s2]).toBe('code');
+    // [code] 全勾 → ready-to-verify（前沿 verify）
+    const s3 = detectProposalStepViaFlow(makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir, {});
+    expect(s3).toBe('ready-to-verify');
+    expect(STEP_TO_CURRENT_BUILTIN[s3]).toBe('verify');
+    for (const s of [s1, s2, s3]) expect(s).not.toBe('delta-writing');
+  });
+
+  it('ST-S09-30: 有 [delta] 常规提案派生零漂移（本变更只影响无 [delta] 分支）', () => {
+    expect(detectProposalStepViaFlow(makeProposal({ proposal: filled(), tasks: DELTA_PARTIAL }).dir, {})).toBe('ready-to-delta');
+    expect(detectProposalStepViaFlow(makeProposal({ proposal: filled(), tasks: DELTA_INPROGRESS }).dir, {})).toBe('delta-writing');
+    expect(detectProposalStepViaFlow(makeProposal({ proposal: filled(), tasks: DELTA_DONE }).dir, {})).toBe('ready-to-merge');
+    expect(detectProposalStepViaFlow(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['SPEC_MERGED'] }).dir, {})).toBe('ready-to-implement');
   });
 });

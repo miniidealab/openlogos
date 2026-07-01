@@ -77,10 +77,12 @@ describe('S31 — ready-to-delta 驻留态检测', () => {
     expect(detectProposalStepViaFlow(dir)).toBe('delta-writing');
   });
 
-  it('UT-S31-05: 纯代码提案（无 [delta] section）不受影响 → coding（非 ready-to-delta）', () => {
+  it('UT-S31-05: 纯代码提案（无 [delta] section）→ ready-to-implement（经 slice-planner，非 ready-to-delta/delta-writing；fix-nodelta-proposal-routing）', () => {
+    // fix-nodelta-proposal-routing：无 [delta] 纯代码提案 spec/merge 空过，[code] 未划片/无 SLICES_APPROVED
+    // → ready-to-implement（前沿 plan-slices）。关键仍是「不落 ready-to-delta / delta-writing」。见 spec/flow-spec.md §12.6。
     const { dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [ ] 实现 x');
-    expect(detectProposalStepViaFlow(dir)).toBe('coding');
-    expect(detectProposalStep(dir)).toBe('coding');
+    expect(detectProposalStepViaFlow(dir)).toBe('ready-to-implement');
+    expect(detectProposalStep(dir)).toBe('ready-to-implement');
   });
 
   it('UT-S31-06: [delta] 全勾 → ready-to-merge（不被 ready-to-delta 抢占）', () => {

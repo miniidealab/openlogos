@@ -72,6 +72,25 @@ S09 变更生命周期各步骤展示的 `proposal_step`（`status` / `next` 共
 不改各态判定结果。并跑等价由测试期「ViaFlow == 旧 detectProposalStep」断言锁定
 （见 `core-S09-test-cases`）。
 
+## 纯代码提案（无 `[delta]`）派生：spec/merge 空过直连 slice/implement（fix-nodelta-proposal-routing）
+
+纯代码级修复提案（`tasks.md` 无 `## [delta]` section）在生命周期派生上与常规（有 `[delta]`）提案的差异：`spec`（write-delta）+ `merge` 子流程带 `when: delta_required`，`delta_required==false` 时**整段空过**——无 delta 待产出、无 delta 待合并、不等 `SPEC_MERGED`。派生据此把无 `[delta]` 提案的 `spec`/`merge` 视为 vacuously done，跳过 `delta-writing`/`ready-to-merge`/`merge-generated` 三态，直接进入 `slice`/`implement` 维度。
+
+**关键不变量**：`delta_required==false` 时，本生命周期**绝不**产出 `proposal_step == delta-writing`、前沿**绝不**为 `write-delta`。这修复了「纯代码提案被派到 `write-delta`、change-writer 正确零产出却被判假完成、无人值守下 `blocked(no-progress)` 死锁」的假阴性。
+
+派生路径（`delta_required==false`，`## [code]` 标题在场）：
+
+- `writing`（proposal/tasks 未脱模板） →（plan 门批准）→ `ready-to-implement`（前沿 `plan-slices`，唤起 slice-planner 对现有/已合并规格 + 真实测试 ID 划 `[code]` 切片）→ `slice-exit` 门 → `coding`（前沿 `code`）→ `ready-to-verify` → …
+- 与常规提案唯一差别 = 中间不经 `delta-writing`/`ready-to-merge`/`merge-generated`（`spec`/`merge` 空过）。规则细节与派生矩阵见 `spec/flow-spec.md` §12.6、`spec/tasks-spec.md`「状态判断规则」。
+
+**前置协同**：以上以纯代码提案 `tasks.md` **保留空 `## [code]` 标题**为前提（`change-writer` 纯代码修复模板已保证）——它令 `parseTaskSections` 非 `null`、`code_required` 为真，从而被识别为纯代码提案而非降级到旧格式兜底。
+
+### EX-9.1: 纯代码提案（无 `[delta]`）被误派 write-delta
+
+- **触发条件**：launched 生命周期、活跃提案 `tasks.md` 无 `## [delta]` section（纯代码级修复），经 plan 门后派生。
+- **期望响应**：`proposal_step` 派生为 `ready-to-implement`（前沿 `plan-slices`）/ `coding` / `ready-to-verify` 之一，**绝不为 `delta-writing`**、`next_node.id` **绝不为 `write-delta`**；无人值守 `--auto` 下不出现 `blocked(no-progress)` 死锁。
+- **副作用**：不改变有 `[delta]` 常规提案的派生（仍 `delta-writing → ready-to-merge → merge-generated → …`）。
+
 ## 异常用例
 ### EX-5.1: 部署决策与 tasks 冲突
 - **触发条件**：`proposal.md` 声明无需部署但 `tasks.md` 存在 `[deploy]` section，或声明需要部署但缺少 `[deploy]` section。

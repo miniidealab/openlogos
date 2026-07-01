@@ -864,7 +864,7 @@ describe('S11 Scenario Tests — status command', () => {
     expect(core.active_change!.proposal_step).toBe('ready-to-merge');
   });
 
-  it('ST-S11-06e: no [delta] section + [code] not done → coding (skips merge)', () => {
+  it('ST-S11-06e: no [delta] section + [code] not done → ready-to-implement (纯代码经 slice-planner, fix-nodelta-proposal-routing)', () => {
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
     }, { lineWidth: 0 }));
@@ -882,7 +882,8 @@ describe('S11 Scenario Tests — status command', () => {
 
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
-    expect(core.active_change!.proposal_step).toBe('coding');
+    // fix-nodelta-proposal-routing：纯代码提案 spec/merge 空过，[code] 未划片 → ready-to-implement（见 spec/flow-spec.md §12.6）
+    expect(core.active_change!.proposal_step).toBe('ready-to-implement');
   });
 
   it('ST-S11-06f: no [delta] section + [code] all done → ready-to-verify (skips merge)', () => {

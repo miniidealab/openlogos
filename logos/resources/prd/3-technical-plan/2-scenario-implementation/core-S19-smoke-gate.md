@@ -122,3 +122,7 @@ sequenceDiagram
 
 ### 与 deploy-done 的关系
 本检查不改变 S19 的前置门禁：仍必须先满足 `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾和 `smoke_required=true`。runner 覆盖检查只负责判断 smoke 用例是否真的执行，不替代部署完成状态。
+
+## auto_execute：`--auto` 下 ready-to-smoke 的自动执行信号（auto-execute-redline-steps）
+
+`next --auto` 在 `proposal_step==ready-to-smoke`（`DEPLOY_DONE` 在场、smoke_required=true）且未被阻塞时，输出 `auto_execute:true` + `command="openlogos smoke"`，`action`/`detail` 改为「auto: 自动执行 smoke」措辞，供无人值守 driver 自动运行 smoke。`openlogos smoke` 命令本身逻辑、smoke 门禁前置判定、smoke FAIL 硬阻塞均不变。半自动（无 `--auto`）下仍是人类确认点、不置 `auto_execute`。详见 `core-S24-auto-gate.md` 的 auto_execute 节与 `spec/cli-json-output.md` §11.2。
