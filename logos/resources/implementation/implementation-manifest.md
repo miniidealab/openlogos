@@ -1,5 +1,33 @@
 # website-release-feed 实现清单
 
+## fix-post-merge-slice-planner-auto-skip
+
+### 范围
+- 修复 CLI `next --auto` 在 `ready-to-implement` 驻留态下误消费 `slice-exit` 的前置条件。
+- 当 `tasks.md` 的 `[code]` 仍为空、模板或占位项时，保持前沿为 `plan-slices`，不写 `SLICES_APPROVED`，不追加 `GATE_AUTO_PASSED{slice-exit}`，不派生 `coding` / `code`。
+- 当 `[code]` 已满足 `tasks_code_filled` 时，保持既有 `slice-exit --auto` 放行语义。
+
+### 覆盖用例
+- [x] UT-S24-23
+- [x] UT-S24-24
+- [x] ST-S24-10
+- [x] ST-S24-EX-4e.2
+- [x] UT-S32-13
+- [x] UT-S32-14
+- [x] ST-S32-05
+- [x] ST-S32-EX-4
+
+### 产物
+- `cli/src/commands/next.ts`
+- `cli/test/s24-auto-gate.test.ts`
+- `cli/test/s32-slice-planning.test.ts`
+- `logos/resources/verify/test-results.jsonl`
+
+### 验证
+- `cd cli && npm run build`
+- `cd cli && npm test -- s24-auto-gate.test.ts s32-slice-planning.test.ts`
+- `cd cli && npm test -- --cache false`
+
 ## 范围
 - 官网发布动态页面 `/releases`
 - 首页发布日志入口

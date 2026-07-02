@@ -14,7 +14,7 @@ import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
-import { PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
+import { isTasksCodeFilled, PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
 
 export interface NextModuleItem {
   id: string;
@@ -85,6 +85,11 @@ function writePlanApproved(root: string, slug: string): void {
 function writeSlicesApproved(root: string, slug: string): void {
   const path = join(root, 'logos', 'changes', slug, SLICES_APPROVED_MARKER);
   if (!existsSync(path)) writeFileSync(path, '');
+}
+
+function isSliceExitAutoReady(root: string, slug: string): boolean {
+  const tasksPath = join(root, 'logos', 'changes', slug, 'tasks.md');
+  return existsSync(tasksPath) && isTasksCodeFilled(readFileSync(tasksPath, 'utf-8'));
 }
 
 /** auto 放行时的建议文案（仅 ready-to-merge 这类可跳 gate 会用到）。 */
@@ -571,54 +576,61 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       autoGateId = gate ? gate.gate_id : null;
       autoSkippable = gate ? gate.skippable : null;
       if (gate && gate.skippable && data.active_change && !blocked) {
-        appendGateAutoPassed(root, data.active_change, gate.gate_id, data.proposal_step!);
-        gateAutoPassed = true;
-        if (gate.gate_id === 'plan-exit' && data.proposal_step === 'ready-to-delta') {
-          writePlanApproved(root, data.active_change);
-          planGateAutoConsumed = true;
-          data.proposal_step = 'delta-writing';
-          const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
-          if (activeModule?.active_change) {
-            activeModule.active_change.proposal_step = 'delta-writing';
-            activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.delta-writing');
-          }
-          const nextAction = actionForProposalStep(locale, 'delta-writing');
-          action = nextAction.action;
-          command = nextAction.command;
-          detail = t(locale, nextAction.detailKey, { slug: data.active_change });
-          const mi = moduleItems?.find(m => m.active_change === data.active_change);
-          if (mi) {
-            mi.proposal_step = 'delta-writing';
-            mi.action = action;
-            mi.command = command;
-            mi.detail = detail;
-          }
-        } else if (gate.gate_id === 'slice-exit' && data.proposal_step === 'ready-to-implement') {
-          // split-slice-planner-stage：消费 slice-exit → 写 SLICES_APPROVED，续推到 coding（同次响应重新派生，保留 next_node=code）。
-          writeSlicesApproved(root, data.active_change);
-          sliceGateAutoConsumed = true;
-          data.proposal_step = 'coding';
-          const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
-          if (activeModule?.active_change) {
-            activeModule.active_change.proposal_step = 'coding';
-            activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.coding');
-          }
-          const nextAction = actionForProposalStep(locale, 'coding');
-          action = nextAction.action;
-          command = nextAction.command;
-          detail = t(locale, nextAction.detailKey, { slug: data.active_change });
-          const mi = moduleItems?.find(m => m.active_change === data.active_change);
-          if (mi) {
-            mi.proposal_step = 'coding';
-            mi.action = action;
-            mi.command = command;
-            mi.detail = detail;
-          }
+        if (gate.gate_id === 'slice-exit'
+          && data.proposal_step === 'ready-to-implement'
+          && !isSliceExitAutoReady(root, data.active_change)) {
+          autoGateId = null;
+          autoSkippable = null;
         } else {
-          const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
-          action = passed.action; command = passed.command; detail = passed.detail;
-          const mi = moduleItems?.find(m => m.active_change === data.active_change);
-          if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+          appendGateAutoPassed(root, data.active_change, gate.gate_id, data.proposal_step!);
+          gateAutoPassed = true;
+          if (gate.gate_id === 'plan-exit' && data.proposal_step === 'ready-to-delta') {
+            writePlanApproved(root, data.active_change);
+            planGateAutoConsumed = true;
+            data.proposal_step = 'delta-writing';
+            const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
+            if (activeModule?.active_change) {
+              activeModule.active_change.proposal_step = 'delta-writing';
+              activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.delta-writing');
+            }
+            const nextAction = actionForProposalStep(locale, 'delta-writing');
+            action = nextAction.action;
+            command = nextAction.command;
+            detail = t(locale, nextAction.detailKey, { slug: data.active_change });
+            const mi = moduleItems?.find(m => m.active_change === data.active_change);
+            if (mi) {
+              mi.proposal_step = 'delta-writing';
+              mi.action = action;
+              mi.command = command;
+              mi.detail = detail;
+            }
+          } else if (gate.gate_id === 'slice-exit' && data.proposal_step === 'ready-to-implement') {
+            // split-slice-planner-stage：消费 slice-exit → 写 SLICES_APPROVED，续推到 coding（同次响应重新派生，保留 next_node=code）。
+            writeSlicesApproved(root, data.active_change);
+            sliceGateAutoConsumed = true;
+            data.proposal_step = 'coding';
+            const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
+            if (activeModule?.active_change) {
+              activeModule.active_change.proposal_step = 'coding';
+              activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.coding');
+            }
+            const nextAction = actionForProposalStep(locale, 'coding');
+            action = nextAction.action;
+            command = nextAction.command;
+            detail = t(locale, nextAction.detailKey, { slug: data.active_change });
+            const mi = moduleItems?.find(m => m.active_change === data.active_change);
+            if (mi) {
+              mi.proposal_step = 'coding';
+              mi.action = action;
+              mi.command = command;
+              mi.detail = detail;
+            }
+          } else {
+            const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
+            action = passed.action; command = passed.command; detail = passed.detail;
+            const mi = moduleItems?.find(m => m.active_change === data.active_change);
+            if (mi) { mi.action = passed.action; mi.command = passed.command; mi.detail = passed.detail; }
+          }
         }
       }
     }

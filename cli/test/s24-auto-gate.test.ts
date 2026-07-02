@@ -31,6 +31,7 @@ function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): st
 }
 const DELTA_DONE = '# 任务\n\n## [delta] 规格变更\n- [x] 产出 delta';
 const DELTA_UNSTARTED = '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta'; // delta 未启动（无勾、无 delta 文件）→ ready-to-delta
+const DELTA_DONE_CODE_TEMPLATE = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] [切片清单占位]';
 // split-slice-planner-stage：merge 后 [code] 已脱模板（切片写出、未勾）但 slice-exit 未放行 → ready-to-implement
 const DELTA_DONE_CODE_SLICES = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2';
 const DEPLOY_EMPTY_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [deploy] 部署\n';
@@ -39,6 +40,7 @@ const DEPLOY_DONE_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [d
 interface StepFixture { proposal: string; tasks: string; markers?: string[]; deploy?: boolean; smoke?: boolean; }
 const FIXTURES: Record<string, StepFixture> = {
   'ready-to-delta': { proposal: filled(), tasks: DELTA_UNSTARTED },
+  'ready-to-implement-template': { proposal: filled(), tasks: DELTA_DONE_CODE_TEMPLATE, markers: ['SPEC_MERGED'] },
   'ready-to-implement': { proposal: filled(), tasks: DELTA_DONE_CODE_SLICES, markers: ['SPEC_MERGED'] },
   'ready-to-merge': { proposal: filled(), tasks: DELTA_DONE },
   'ready-to-deploy': { proposal: filled('是', '否'), tasks: DEPLOY_EMPTY_TASKS, markers: ['VERIFY_PASS'], deploy: true },
@@ -331,6 +333,30 @@ describe('S24 next --auto 行为', () => {
     expect(d.proposal_step).toBe('ready-to-implement');
     expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
   });
+
+  it('UT-S24-23: ready-to-implement 但 [code] 未脱模板时 --auto 不放行 slice-exit', () => {
+    const ctx = setup('ready-to-implement-template');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('ready-to-implement');
+    expect(d.gate_id).not.toBe('slice-exit');
+    expect(d.gate_auto_passed).toBe(false);
+    expect((d.modules as any[])[0].next_node?.id).toBe('plan-slices');
+    expect((d.modules as any[])[0].next_node?.gate_id).toBeUndefined();
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(ctx.auditPath)).toHaveLength(0);
+  });
+
+  it('UT-S24-24: ready-to-implement 已脱模板时 --auto 才消费 slice-exit', () => {
+    const ctx = setup('ready-to-implement');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.gate_id).toBe('slice-exit');
+    expect(d.gate_auto_passed).toBe(true);
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(1);
+    expect(d.proposal_step).toBe('coding');
+  });
 });
 
 // ── 六、auto_execute 非门动作步骤（auto-execute-redline-steps）──
@@ -457,6 +483,38 @@ describe('S24 场景测试', () => {
     ctx.con.logs.length = 0;
     status('json');
     expect(jsonData(ctx.con).proposal_step).toBe('coding');
+  });
+
+  it('ST-S24-10: slice-exit 只在 plan-slices 完成后可被 auto 放行', () => {
+    const ctx = setup('ready-to-implement-template');
+    next('json', undefined, true);
+    const first = jsonData(ctx.con);
+    expect(first.proposal_step).toBe('ready-to-implement');
+    expect((first.modules as any[])[0].next_node?.id).toBe('plan-slices');
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(ctx.auditPath)).toHaveLength(0);
+
+    writeFileSync(join(ctx.dir, 'tasks.md'), DELTA_DONE_CODE_SLICES);
+    ctx.con.logs.length = 0;
+    next('json', undefined, true);
+    const second = jsonData(ctx.con);
+    expect(second.gate_id).toBe('slice-exit');
+    expect(second.gate_auto_passed).toBe(true);
+    expect(second.proposal_step).toBe('coding');
+    expect((second.modules as any[])[0].next_node?.id).toBe('code');
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(1);
+  });
+
+  it('ST-S24-EX-4e.2: 未到 slice-exit 门时误用 --auto 不写状态且保持 plan-slices', () => {
+    const ctx = setup('ready-to-implement-template');
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+    expect(d.proposal_step).toBe('ready-to-implement');
+    expect(d.gate_auto_passed).toBe(false);
+    expect((d.modules as any[])[0].next_node?.id).toBe('plan-slices');
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(ctx.auditPath)).toHaveLength(0);
   });
 
   it('ST-S24-03: 默认 next 忽略 GATE_AUTO_PASSED 不越过 gate', () => {

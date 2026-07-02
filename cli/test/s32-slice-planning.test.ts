@@ -59,6 +59,15 @@ function auditLines(dir: string): string[] {
   const p = join(dir, 'GATE_AUTO_PASSED');
   return existsSync(p) ? readFileSync(p, 'utf-8').split('\n').filter(Boolean) : [];
 }
+function expectPlanSlicesNotAutoPassed(d: Record<string, any>, dir: string): void {
+  expect(d.proposal_step).toBe('ready-to-implement');
+  expect(d.gate_id).not.toBe('slice-exit');
+  expect(d.gate_auto_passed).toBe(false);
+  expect(d.modules[0].next_node?.id).toBe('plan-slices');
+  expect(d.modules[0].next_node?.gate_id).toBeUndefined();
+  expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+  expect(auditLines(dir).filter(l => JSON.parse(l).gate_id === 'slice-exit')).toHaveLength(0);
+}
 
 // tasks 片段
 const DELTA_DONE_CODE_TEMPLATE = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] [切片清单占位]';
@@ -175,6 +184,18 @@ describe('S32 — slice-exit auto 放行与跳过', () => {
     expect(m.next_node?.id).not.toBe('plan-slices');
     expect(m.proposal_step).toBe('ready-to-verify'); // 无 [code] → 直接可 verify（退化路径）
   });
+
+  it('UT-S32-13: next --auto 在 [code] 未脱模板时不得空过 plan-slices', async () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_TEMPLATE, ['SPEC_MERGED']);
+    const d = await nextJson(root, true);
+    expectPlanSlicesNotAutoPassed(d, dir);
+  });
+
+  it('UT-S32-14: 纯代码提案未切片时 next --auto 仍先派 plan-slices', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_TEMPLATE);
+    const d = await nextJson(root, true);
+    expectPlanSlicesNotAutoPassed(d, dir);
+  });
 });
 
 // ── 四、场景测试 ──
@@ -229,6 +250,21 @@ describe('S32 — 场景测试', () => {
     expect(m.next_node?.id).toBe('code');
     expect(statusJson(root).modules[0].active_change.proposal_step).toBe('coding');
   });
+
+  it('ST-S32-05: merge 后自动模式也必须先规划切片', async () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_TEMPLATE, ['SPEC_MERGED']);
+    const first = await nextJson(root, true);
+    expectPlanSlicesNotAutoPassed(first, dir);
+
+    writeFileSync(join(dir, 'tasks.md'), DELTA_DONE_CODE_SLICES);
+    const second = await nextJson(root, true);
+    expect(second.gate_id).toBe('slice-exit');
+    expect(second.gate_auto_passed).toBe(true);
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
+    expect(auditLines(dir).filter(l => JSON.parse(l).gate_id === 'slice-exit')).toHaveLength(1);
+    expect(second.proposal_step).toBe('coding');
+    expect(second.modules[0].next_node?.id).toBe('code');
+  });
 });
 
 // ── 五、异常测试 ──
@@ -252,6 +288,13 @@ describe('S32 — 异常测试', () => {
     expect(m.proposal_step).toBe('ready-to-implement');
     expect(m.next_node?.id).toBe('plan-slices');
     expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+  });
+
+  it('ST-S32-EX-4: 未切片时 --auto 不得写空 SLICES_APPROVED', async () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_TEMPLATE, ['SPEC_MERGED']);
+    const d = await nextJson(root, true);
+    expectPlanSlicesNotAutoPassed(d, dir);
+    expect(d.modules[0].next_node?.id).not.toBe('code');
   });
 });
 
