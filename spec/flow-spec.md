@@ -529,15 +529,20 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
 - **新增 `proposal_step` 值 `ready-to-implement`**：merge 完成（含纯代码提案的**空过 merge**，见 §12.6）后、切片循环尚未完成前、`slice` 出口 human 门「切片待批准」尚未放行时的驻留态。
   - 检测依据 = "（`SPEC_MERGED` 在场 **或** `delta_required==false`（无 `[delta]`，`spec`/`merge` 空过）） 且 `code_required` 且 `SLICES_APPROVED` 不存在 且 `[code]` 未全部勾选（切片循环未完成）"。
   - **该驻留态内的前沿随 `plan-slices` 完成判定 `tasks_code_filled` 二分**：`[code]` 仍为模板（未 `tasks_code_filled`）→ 前沿是 `plan-slices` 节点（`next_node.id == "plan-slices"`，**不带** `next_node.gate_id`，提示宿主唤起 slice-planner 规划切片）；`[code]` 已脱模板（`tasks_code_filled` 满足）→ `plan-slices` 完成，前沿移到 `slice` 出口门，此时 `next_node` **仍带节点标识 `id == "plan-slices"` 并附加 `gate_id == "slice-exit"`**（`id` 与 `gate_id` 共存，非二选一：`id` 标识刚完成的节点、`gate_id` 标识其后待批准的门；宿主见 `gate_id` 即知**不得重派该节点的 skill**，改按人类门处理）待批准。两种情况 `proposal_step` 均为 `ready-to-implement`。**（`next_node.gate_id` 的字段契约与 R8 派生规则见 `spec/cli-json-output.md` §11「next_node 编排提示字段」；本条为对该前沿子字段的规格来源，fix-next-node-slice-exit-frontier 前实现仅落地了顶层 `--auto` `gate_id`、`next_node.gate_id` 从未产出，致半自动 `ready-to-implement` 恒 `next_node.id == "plan-slices"` 无门信号、下游以 `next_node` 派活时重派 slice-planner 死循环——本次追平实现。）**
+  - **`--auto` 放行前置（fix-post-merge-slice-planner-auto-skip）**：`ready-to-implement` 只是 slice 子流程的驻留态，不等价于 `slice-exit` 已到达。`next --auto` 消费 `slice-exit` 前，必须先判定 `plan-slices` 已完成，即 `tasks_code_filled == true` 且 `SLICES_APPROVED` 不存在。若 `[code]` 仍为模板、空 section 或仅含占位项（未 `tasks_code_filled`），则前沿仍是 `plan-slices` 节点：`next --auto` **不得**追加 `GATE_AUTO_PASSED{gate_id:"slice-exit"}`、**不得**写入 `SLICES_APPROVED`、**不得**把 `proposal_step` 前移到 `coding`，也**不得**进入 implement loop / code / verify。该响应应与默认 `next` 在前沿节点上一致，保留 `next_node.id=="plan-slices"`，供宿主派发 slice-planner。
   - **位置**：闭合枚举中置于 `merge-generated` 与 `coding` 之间。
 - **gate 映射（`STEP_TO_GATE_SUBFLOW` 等价语义）**：`ready-to-implement` → `slice` 出口门（`gate_id = slice-exit`、`skippable:true`）。
 - **当前节点映射（`STEP_TO_CURRENT_BUILTIN`）**：`ready-to-implement` → `plan-slices` 节点。
 
 **(3) slice 门 `--auto` 放行 = 消费 gate（对齐 §12.4(2) plan 门写法）**
 
+- **消费条件**：以下两个条件同时成立时，`next --auto` 才允许消费 `slice-exit`：
+  1. 当前派生步骤为 `ready-to-implement`；
+  2. `tasks.md` 的 `[code]` section 已满足 `tasks_code_filled`（至少有一个真实切片项，且不是 `[切片清单占位]` / `实现代码变更` / `Implement code changes` 等模板占位）。
 - `next --auto` 在 `ready-to-implement` 自动放行 `slice-exit` 时，必须同时执行两个持久化动作：
   1. 向活跃提案目录 `GATE_AUTO_PASSED` 追加 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}` 审计行；
   2. 写入活跃提案目录的 `SLICES_APPROVED` marker（内容可为空，存在性为准；类比 `plan-exit` 写 `PLAN_APPROVED`）。
+- 原有两个持久化动作保持不变，但只在上述消费条件满足后执行。若消费条件不满足，`slice-exit` 还未到达；此时即使 `slice` 子流程的出口 gate 定义为 `skippable:true`，也不能空过该门，因为跳过 `plan-slices` 会破坏“merge 后由 slice-planner 对真实规格 + 真实测试 ID 切片”的唯一事实源。
 - **`SLICES_APPROVED` 的派生语义**：存在 `SLICES_APPROVED` 且 `[code]` section 尚未全部勾选时，`proposal_step` 派生为 `coding`。此时 `next` / `next --auto` 的前沿是 `implement.code`，`next_node.id == "code"`（**放行后同次响应即重新派生为 `coding`/`code` 前沿**，供无人值守 driver 立即派发 code-implementor 逐片实现）。放行后 `next_node` **不带** `gate_id`（门已消费，非"待批准"）。
 - **幂等边界**：同一提案已存在 `SLICES_APPROVED` 时，`proposal_step` 不再是 `ready-to-implement`，重复 `next --auto` **不得**在同一个 `slice-exit` 固定点再次追加审计行。
 - **审计与授权边界**：`GATE_AUTO_PASSED` 仍是审计日志，默认 `next` 与 `status` 不因历史审计行越过 gate；切片门状态推进只认 `SLICES_APPROVED` 或实际 `[code]` 全部勾选完成。
@@ -575,6 +580,8 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
 | 在场、已 `tasks_code_filled`、未全勾 | 无 | `ready-to-implement` | `id: plan-slices` + `gate_id: slice-exit` |
 | 在场、未全勾 | 有 | `coding` | `id: code`（无 `gate_id`）|
 | 全勾 / 缺失 | — | `ready-to-verify` | `id: verify`（无 `gate_id`）|
+
+**纯代码提案同样遵守 slice-exit 消费条件**：`delta_required==false` 只表示 `spec` / `merge` 子流程空过，不表示 `plan-slices` 空过。纯代码提案若 `[code]` 未 `tasks_code_filled`，`next --auto` 也必须先返回 `plan-slices`，不得写入 `SLICES_APPROVED` 或进入 `coding`。只有 slice-planner 写出真实 `[code]` 切片后，`--auto` 才可消费 `slice-exit`。
 
 **(3) 前置协同（change-writer 模板）**
 

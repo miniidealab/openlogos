@@ -452,6 +452,7 @@ implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代�
   1. 向活跃提案目录 `GATE_AUTO_PASSED` 追加一行 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}`；
   2. 写入 `SLICES_APPROVED` marker（活跃提案目录下，内容可为空、存在性为准；类比 `plan-exit` 写 `PLAN_APPROVED`）。
   写入后**同次响应重新派生**为 `coding` / `code` 前沿，`proposal_step == "coding"`、`next_node.id == "code"`。
+- **`slice-exit` 顶层 gate 字段的出现条件（fix-post-merge-slice-planner-auto-skip）**：`proposal_step=="ready-to-implement"` 时，顶层 `gate_id:"slice-exit"` / `gate_auto_passed:true` 只允许在 `tasks_code_filled==true` 后出现。若 `[code]` 仍为模板、空 section 或占位项，`next --auto --format json` 必须保持前沿为 `plan-slices`，输出形态应满足：`modules[].proposal_step == "ready-to-implement"`；`modules[].next_node.id == "plan-slices"`；`modules[].next_node.gate_id` 省略；`gate_auto_passed` 为 `false` 或省略；`gate_id` 为 `null` 或省略，绝不得为 `"slice-exit"`；不写入 `SLICES_APPROVED`，不追加 `GATE_AUTO_PASSED{gate_id:"slice-exit"}`，不返回 `next_node.id=="code"`。`[code]` 已脱模板且 `SLICES_APPROVED` 不存在时，既有语义保持不变：默认 `next` 输出 `next_node.id=="plan-slices"` 且 `next_node.gate_id=="slice-exit"`；`next --auto` 消费该门，写入 `SLICES_APPROVED`，并在同次响应重新派生为 `coding` / `next_node.id=="code"`。
 - **`SLICES_APPROVED` marker**：表示 slice 出口 gate 已被消费；存在后即使 `[code]` 尚未勾选，也派生为 `coding` / `code` 前沿。`GATE_AUTO_PASSED` 仍只表示审计轨迹。
 - **幂等边界**：同一提案已存在 `SLICES_APPROVED` 时，`proposal_step` 不再是 `ready-to-implement`，重复 `next --auto` 不得再次追加 `gate_id:"slice-exit"` 审计行。
 - 说明：本提案为开发态、主动扩展该闭合枚举（破"枚举不新增"不变量），消费方（含 RunLogos）须同步识别新值。
@@ -1119,11 +1120,11 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 **例外**：
 - **【R3】cmd 瞬态求值（overlay-add 节点 + builtin verify/deploy/smoke cmd gate，S30）**：`next_node` 取**本次响应 cmd 求值（cmdEval 回灌）后**的最终节点——`done_when:cmd` `exit 0` 续推 → 指向**续推后**节点（**不**指向已 done 的 cmd 节点/gate）；`fail_when:cmd` `exit 0` → 该节点/gate `failed` → 指向**该 cmd 节点/gate**；cmd 非 0/超时 → 指向**该 cmd 节点/gate**（求值后 `active`/停门前）；budget=1 遇第二个 cmd → 指向**第二个 pending cmd** 节点/gate。builtin gate id 取 `cmd_gate.node_id`。
-- **【R4】`--auto` 放行**：`gate_auto_passed === true` 时默认**省略 `next_node`**（放行后宿主走 gate 的 command，下一节点待重新 `next` 派生）。**例外一：`gate_id === "plan-exit"` 时，CLI 已写入 `PLAN_APPROVED` 并重新派生到 `write-delta`，本次响应必须输出 `next_node.id == "write-delta"`。例外二（split-slice-planner-stage）：`gate_id === "slice-exit"` 时，CLI 已写入 `SLICES_APPROVED` 并重新派生到 `coding` / `code` 前沿，本次响应必须输出 `next_node.id == "code"`，供无人值守 driver 立即派发 code-implementor 逐片实现。** `--auto` 放行态下 `next_node` 不带 `gate_id`（门已被消费，非"待批准"，见 R8）。
+- **【R4】`--auto` 放行**：`gate_auto_passed === true` 时默认**省略 `next_node`**（放行后宿主走 gate 的 command，下一节点待重新 `next` 派生）。**例外一：`gate_id === "plan-exit"` 时，CLI 已写入 `PLAN_APPROVED` 并重新派生到 `write-delta`，本次响应必须输出 `next_node.id == "write-delta"`。例外二（split-slice-planner-stage）：仅当 `gate_id === "slice-exit"`、`gate_auto_passed === true` 且 CLI 已确认 `[code]` 满足 `tasks_code_filled` 时，CLI 才会写入 `SLICES_APPROVED` 并重新派生到 `coding` / `code` 前沿，本次响应必须输出 `next_node.id == "code"`。若 `[code]` 未脱模板，则 `slice-exit` 尚未到达，不适用 R4 放行例外；响应必须按 R8 走 `plan-slices` 节点前沿。** `--auto` 放行态下 `next_node` 不带 `gate_id`（门已被消费，非"待批准"，见 R8）。
 - **【R7】loop 阻塞**：未达上限 → `next_node` = loop subflow 的**工作节点**（overlay `current_node` 优先；否则 resolved flow 中 `id == "code"` 且未 `skipped` 的节点，**非 `verify`**，对齐 action「修代码」）；`code` 缺失/被 overlay `skip` → **省略**（仅 initial 等**合法 resolved flow**——launched 对 builtin `code` 的 `skip`/`reorder` 在派生入口已 `FLOW_SCHEMA_INVALID`、走不到此省略）；达上限（`escalated`）→ **省略**（宿主读 `loop_state.escalated`）。与 `loop_state` 互补：环状态看 `loop_state`，这一轮派哪个节点的 skill/agent 看 `next_node`。
 - **【R5】命令级建议**：当前建议不指向某 flow node（`all_done` / launched 无 active proposal → `openlogos change <slug>` / 补 baseline → `openlogos change add-baseline-docs` / `openlogos launch` 等）→ **省略 `next_node`**。`plan-exit` / `slice-exit` auto 消费后已分别指向真实 `write-delta` / `code` 节点，不按命令级建议省略。
 - **【R8】切片出口门前沿（默认 `next`，含半自动/手动；本次修复）**：`proposal_step == "ready-to-implement"` 是「`plan-slices` 节点完成判定 `tasks_code_filled` 二分」的驻留态，`next_node` 据此二分（落地 `spec/flow-spec.md` §12.5(2)/§12.6(2) 已规定的前沿）：
-  - `[code]` 仍为模板（未 `tasks_code_filled`）→ `plan-slices` 未完成，前沿 = 该节点：`next_node.id == "plan-slices"`、**不带** `gate_id`（宿主派 slice-planner 规划切片）。
+  - `[code]` 仍为模板（未 `tasks_code_filled`）→ `plan-slices` 未完成，前沿 = 该节点：`next_node.id == "plan-slices"`、**不带** `gate_id`。默认 `next` 与 `next --auto` 在此前沿上一致：宿主应派 slice-planner 规划切片，CLI 不得自动消费 `slice-exit`。
   - `[code]` 已脱模板（`tasks_code_filled`）且 `SLICES_APPROVED` **不存在** → `plan-slices` 完成、前沿移到 `slice` 出口门：`next_node.id == "plan-slices"` **并附加** `next_node.gate_id == "slice-exit"`（宿主**不得**再派 slice-planner；半自动/手动停等人类在 `slice-exit` 门确认，`--auto` 则按 R4 例外二自动放行、消费后 `next_node.id == "code"` 且无 `gate_id`）。
   - `SLICES_APPROVED` 已存在（门已消费）→ `proposal_step == "coding"`、`next_node.id == "code"`、无 `gate_id`（不属本例外，走默认前沿）。
   - **动机**：修复「半自动 driver 以 `next_node` 派活时，`ready-to-implement` 恒得 `next_node.id == "plan-slices"`（切片写好也不带门信号）→ 反复重派 slice-planner 死循环」的 openlogos 侧根因。此前仅顶层 `--auto` `gate_id` 落地，`next_node.gate_id`（flow-spec §12.5 承诺的前沿子字段）从未实现。
@@ -1153,6 +1154,8 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 | `skippable` | boolean \| null | 否 | 该 human gate 是否允许 auto 跳过：`ready-to-delta` / `ready-to-merge` / `ready-to-implement` / `ready-to-deploy`→true；达上限 `loop-exhausted`→默认 false |
 | `gate_auto_passed` | boolean | 否 | 本次 `--auto` 是否实际放行并追加审计。`plan-exit` 放行还必须写入 `PLAN_APPROVED`、`slice-exit` 放行还必须写入 `SLICES_APPROVED`；`skippable:false` 或无 gate 时为 false；放行依据为本次响应而非历史审计行 |
 
+`ready-to-implement` 的 gate 字段是**到达 slice 出口门后**的字段，不是该驻留态的无条件字段。CLI 必须先用 `tasks_code_filled` 二分 `ready-to-implement`：未脱模板时 `gate_id` 不得为 `"slice-exit"`，`gate_auto_passed` 不得为 `true`；已脱模板且 `SLICES_APPROVED` 不存在时，才允许输出 / 消费 `"slice-exit"`。
+
 **`gate_id` 派生规则（契约闭合）**：`spec/flow/launched.yaml` 的 gate 挂在 subflow 上、无显式 id 字段，
 故 `gate_id` 为**派生值** = `<subflow.id>-<gate.position>`（`gate.position` 缺省为 `exit`）。
 据此：plan subflow 出口 gate → **`plan-exit`**；spec subflow 出口 gate → **`spec-exit`**；slice subflow 出口 gate → **`slice-exit`**；deliver subflow 的入口 gate → **`deliver-entry`**。
@@ -1160,7 +1163,7 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 **plan-exit 消费后的同次响应**：当 `gate_id=="plan-exit"` 且 `gate_auto_passed==true` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `PLAN_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"delta-writing"`，并带 `next_node.id=="write-delta"`。消费方不得把 `gate_auto_passed==true` 一概理解为“本次无 next_node”。
 
-**slice-exit 消费后的同次响应（split-slice-planner-stage）**：当 `gate_id=="slice-exit"` 且 `gate_auto_passed==true` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `SLICES_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"coding"`，并带 `next_node.id=="code"`。同一提案已存在 `SLICES_APPROVED` 时不再追加同一 `slice-exit` 审计行（幂等）。
+**slice-exit 消费后的同次响应（split-slice-planner-stage）**：当 `gate_id=="slice-exit"`、`gate_auto_passed==true` 且 `[code]` 已满足 `tasks_code_filled` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `SLICES_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"coding"`，并带 `next_node.id=="code"`。同一提案已存在 `SLICES_APPROVED` 时不再追加同一 `slice-exit` 审计行（幂等）。若 `[code]` 未脱模板，则不得进入本分支。
 
 **范围边界（auto-full-unattended 重定义）**：`--auto` = **全自动 / 无人值守 standing run-scoped 授权**，作用对象分两层：
 
