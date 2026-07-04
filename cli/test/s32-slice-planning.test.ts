@@ -14,7 +14,10 @@ import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
 import { status } from '../src/commands/status.js';
+import { merge } from '../src/commands/merge.js';
+import { isTasksCodeFilled } from '../src/lib/proposal-lifecycle.js';
 import { loadBuiltinFlow } from '../src/lib/flow.js';
+import { deriveAutomationDiagnostic } from '../src/lib/automation-diagnostic.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -29,8 +32,14 @@ function filled(): string {
   ].join('\n');
 }
 
+function codeRequiredProposal(): string {
+  return filled()
+    .replace('## 变更类型\n设计级', '## 变更类型\n代码级修复')
+    .replace('## 变更概述\n概述。', '## 变更概述\n需要 CLI 状态派生代码与自动化测试实现。');
+}
+
 /** 建带 guard 的 launched 命令级 fixture（活跃提案 = filled proposal + 指定 tasks/markers）。 */
-function setupCmd(tasks: string, markers: string[] = [], slug = 'feat'): { root: string; dir: string } {
+function setupCmd(tasks: string, markers: string[] = [], slug = 'feat', proposal = filled()): { root: string; dir: string } {
   const { root, cleanup } = makeTempRoot();
   cleanups.push(cleanup);
   scaffoldProject(root, { locale: 'zh' });
@@ -40,10 +49,15 @@ function setupCmd(tasks: string, markers: string[] = [], slug = 'feat'): { root:
     JSON.stringify({ activeChange: slug, module: 'core', createdAt: '2026-06-20T00:00:00.000Z' }));
   const dir = join(root, 'logos', 'changes', slug);
   mkdirSync(join(dir, 'deltas', 'spec'), { recursive: true });
-  writeFileSync(join(dir, 'proposal.md'), filled());
+  writeFileSync(join(dir, 'proposal.md'), proposal);
   writeFileSync(join(dir, 'tasks.md'), tasks);
   for (const mk of markers) writeFileSync(join(dir, mk), '');
   return { root, dir };
+}
+
+function writeTestDelta(dir: string, ids: string[] = ['UT-S32-19', 'ST-S32-07']): void {
+  mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+  writeFileSync(join(dir, 'deltas', 'test', 'core-S32-test-cases.md'), ids.map(id => `| ${id} | 新增回归 |`).join('\n'));
 }
 async function nextJson(root: string, auto = false): Promise<Record<string, any>> {
   const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
@@ -313,7 +327,8 @@ describe('S32 — 纯代码提案（无 [delta]）无 SPEC_MERGED 进入 slice',
   });
 
   it('UT-S32-11: 纯代码 [code] 脱模板、无 SLICES_APPROVED、无 SPEC_MERGED → 停 slice-exit 门（默认 next 回显 next_node.gate_id）', async () => {
-    const { root, dir } = setupCmd(PURE_CODE_SLICES);
+    // enforce-slice-stage-ordering：纯代码提案「slice-planner 已正常填切片」态含 SLICE_STAGE_ENTERED marker（真实流程经 next 派 plan-slices 时写入）。
+    const { root, dir } = setupCmd(PURE_CODE_SLICES, ['SLICE_STAGE_ENTERED']);
     expect(detectProposalStep(dir)).toBe('ready-to-implement');
     expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
     // R8：默认 next（无 --auto）即回显 next_node.gate_id=slice-exit（纯代码提案 spec/merge 空过路径亦二分）
@@ -326,7 +341,8 @@ describe('S32 — 纯代码提案（无 [delta]）无 SPEC_MERGED 进入 slice',
   });
 
   it('UT-S32-12: 纯代码 slice-exit --auto 放行 → SLICES_APPROVED + coding / next_node=code（无 SPEC_MERGED）', async () => {
-    const { root, dir } = setupCmd(PURE_CODE_SLICES);
+    // enforce-slice-stage-ordering：slice-planner 已正常填切片态（含 SLICE_STAGE_ENTERED marker）→ --auto 正常放行。
+    const { root, dir } = setupCmd(PURE_CODE_SLICES, ['SLICE_STAGE_ENTERED']);
     const d = await nextJson(root, true);
     expect(d.gate_id).toBe('slice-exit');
     expect(d.gate_auto_passed).toBe(true);
@@ -345,5 +361,313 @@ describe('S32 — 纯代码提案（无 [delta]）无 SPEC_MERGED 进入 slice',
     // 对照 ST-S32-EX-1：有 [delta] 提案无 SPEC_MERGED 仍停 spec/merge；纯代码提案不受此约束
     const deltaProp = setupCmd(DELTA_DONE_CODE_TEMPLATE, [], 'feat2');
     expect(detectProposalStep(deltaProp.dir)).not.toBe('ready-to-implement');
+  });
+});
+
+// ── 七、enforce-slice-stage-ordering：提前填充 [code] auto-reset（§12.7 方案 C）──
+function runMerge(root: string, slug = 'feat'): void {
+  const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
+  try { merge(slug); } finally { cap.restore(); ex.mockRestore(); restore(); }
+}
+function codeFilled(dir: string): boolean {
+  return isTasksCodeFilled(readFileSync(join(dir, 'tasks.md'), 'utf-8'));
+}
+function autoresetLines(dir: string): any[] {
+  const p = join(dir, 'CODE_AUTORESET');
+  return existsSync(p) ? readFileSync(p, 'utf-8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
+}
+
+describe('S32 — 提前填充 [code] auto-reset（enforce-slice-stage-ordering）', () => {
+  it('UT-S32-15: 有 [delta] 提案 merge 时 auto-reset 提前填充的 [code]（trigger:merge）', () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_SLICES); // 有 [delta] + [code] 提前填切片、无 SPEC_MERGED
+    expect(codeFilled(dir)).toBe(true);
+    runMerge(root);
+    // [code] 被重置为占位、标题保留
+    expect(codeFilled(dir)).toBe(false);
+    expect(readFileSync(join(dir, 'tasks.md'), 'utf-8')).toContain('## [code]');
+    // 备份含旧内容 + trigger:merge
+    const lines = autoresetLines(dir);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].trigger).toBe('merge');
+    expect(lines[0].old_code).toContain('切片1');
+    expect(lines[0].ts).toBeTruthy();
+  });
+
+  it('UT-S32-16: 纯代码提案 --auto 消费 slice-exit 前守卫 auto-reset 提前填充的 [code]（trigger:slice-guard）', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_SLICES); // 纯代码 + [code] 提前填、无 SLICE_STAGE_ENTERED
+    const d = await nextJson(root, true);
+    // 守卫：无 marker → 提前填充 → reset + 不放行、回退 plan-slices
+    expect(codeFilled(dir)).toBe(false);
+    expect(autoresetLines(dir)[0].trigger).toBe('slice-guard');
+    expect(existsSync(join(dir, 'SLICE_STAGE_ENTERED'))).toBe(true);
+    expectPlanSlicesNotAutoPassed(d, dir);
+  });
+
+  it('UT-S32-17: auto-reset 幂等（[code] 已占位不清理/不备份）', () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_TEMPLATE); // [code] 已是占位（[切片清单占位]）
+    runMerge(root);           // SPEC_MERGED 写入
+    runMerge(root);           // 已 merge → 幂等 return
+    expect(existsSync(join(dir, 'CODE_AUTORESET'))).toBe(false); // 未 filled → 从不备份
+  });
+
+  it('UT-S32-18: 派生路径（status）只读、不触发 auto-reset', () => {
+    const { root, dir } = setupCmd(PURE_CODE_SLICES); // [code] 提前填、无 marker
+    statusJson(root);         // 纯派生
+    expect(codeFilled(dir)).toBe(true);                          // [code] 未被修改
+    expect(existsSync(join(dir, 'CODE_AUTORESET'))).toBe(false); // 无备份（被动派生只读）
+  });
+
+  it('ST-S32-06: 有 [delta] 提案提前填 [code] → merge auto-reset → slice-planner 重划 → 放行', async () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_SLICES); // 提前填
+    runMerge(root);           // reset [code]、deltas 空 → 同时写 SPEC_MERGED
+    expect(codeFilled(dir)).toBe(false);
+    expect(existsSync(join(dir, 'SPEC_MERGED'))).toBe(true);
+    // merge 后前沿正常落 plan-slices（[code] 空）
+    const m1 = (await nextJson(root)).modules[0];
+    expect(m1.proposal_step).toBe('ready-to-implement');
+    expect(m1.next_node?.id).toBe('plan-slices');
+    expect(m1.next_node?.gate_id).toBeUndefined();
+    // slice-planner 对已合并规格重划真实切片 → --auto 放行（有 delta 直接可放行）
+    writeFileSync(join(dir, 'tasks.md'), DELTA_DONE_CODE_SLICES);
+    const d = await nextJson(root, true);
+    expect(d.proposal_step).toBe('coding');
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
+  });
+
+  it('ST-S32-EX-5: 纯代码提案提前填 [code] → --auto 守卫 reset → 下轮 plan-slices → 填 → 放行', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_SLICES); // 提前填、无 marker
+    // 1) 首次 --auto：守卫 reset + 不放行
+    const d1 = await nextJson(root, true);
+    expectPlanSlicesNotAutoPassed(d1, dir);
+    expect(codeFilled(dir)).toBe(false);
+    expect(existsSync(join(dir, 'SLICE_STAGE_ENTERED'))).toBe(true);
+    expect(autoresetLines(dir)[0].trigger).toBe('slice-guard');
+    // 2) slice-planner 填真实切片 → 有 marker + filled → 放行 coding
+    writeFileSync(join(dir, 'tasks.md'), PURE_CODE_SLICES);
+    const d2 = await nextJson(root, true);
+    expect(d2.gate_id).toBe('slice-exit');
+    expect(d2.proposal_step).toBe('coding');
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
+  });
+});
+
+// ── 八、缺失 [code] section 的代码必需态回归（fix-missing-code-section-slice-gate）──
+describe('S32 — 缺失 [code] section 的代码必需态', () => {
+  it('UT-S32-19: SPEC_MERGED + 测试 delta + 缺失 [code] 仍进入 plan-slices', async () => {
+    const { root, dir } = setupCmd(PURE_DELTA, ['SPEC_MERGED'], 'feat', codeRequiredProposal());
+    writeTestDelta(dir, ['UT-S32-19', 'ST-S32-07']);
+
+    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+
+    const statusData = statusJson(root);
+    const s = statusData.modules[0].active_change;
+    expect(s.proposal_step).toBe('ready-to-implement');
+    expect(s.code_planning_diagnostic).toMatchObject({
+      reason: 'tasks-code-section-missing',
+      tasksPath: 'logos/changes/feat/tasks.md',
+    });
+    expect(statusData.modules[0].suggestion).toContain('slice-planner');
+    expect(statusData.suggestion).toContain('slice-planner');
+    expect(statusData.suggestion).not.toMatch(/verify|验收/);
+    expect(statusData.modules[0].automation_diagnostic).toBeUndefined();
+
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('ready-to-implement');
+    expect(m.next_node?.id).toBe('plan-slices');
+    expect(m.next_node?.gate_id).toBeUndefined();
+    expect(m.next_node?.id).not.toBe('verify');
+    expect(m.next_node?.id).not.toBe('code');
+    expect(m.code_planning_diagnostic?.reason).toBe('tasks-code-section-missing');
+  });
+
+  it('UT-S32-20: 缺失 [code] 的代码必需态 next --auto 不消费 slice-exit', async () => {
+    const { root, dir } = setupCmd(PURE_DELTA, ['SPEC_MERGED'], 'feat', codeRequiredProposal());
+    writeTestDelta(dir, ['UT-S32-20']);
+
+    const d = await nextJson(root, true);
+    expect(d.proposal_step).toBe('ready-to-implement');
+    expect(d.gate_id).not.toBe('slice-exit');
+    expect(d.gate_auto_passed).toBe(false);
+    expect(d.modules[0].next_node?.id).toBe('plan-slices');
+    expect(d.modules[0].next_node?.gate_id).toBeUndefined();
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(dir).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(0);
+  });
+
+  it('UT-S32-21: 明确纯文档提案缺失 [code] 不被误伤', async () => {
+    const { root, dir } = setupCmd(PURE_DELTA, ['SPEC_MERGED']);
+
+    expect(detectProposalStep(dir)).toBe('ready-to-verify');
+    const s = statusJson(root).modules[0].active_change;
+    expect(s.proposal_step).toBe('ready-to-verify');
+    expect(s.code_planning_diagnostic).toBeUndefined();
+
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('ready-to-verify');
+    expect(m.next_node?.id).not.toBe('plan-slices');
+  });
+
+  it('UT-S32-22: slice-planner 可创建缺失 [code] section 并推进到 slice-exit', async () => {
+    const { root, dir } = setupCmd(PURE_DELTA, ['SPEC_MERGED'], 'feat', codeRequiredProposal());
+    writeTestDelta(dir, ['UT-S32-22']);
+
+    const before = (await nextJson(root)).modules[0];
+    expect(before.proposal_step).toBe('ready-to-implement');
+    expect(before.next_node?.id).toBe('plan-slices');
+    expect(before.next_node?.gate_id).toBeUndefined();
+
+    writeFileSync(join(dir, 'tasks.md'), DELTA_DONE_CODE_SLICES);
+    expect(isTasksCodeFilled(readFileSync(join(dir, 'tasks.md'), 'utf-8'))).toBe(true);
+
+    const after = (await nextJson(root)).modules[0];
+    expect(after.proposal_step).toBe('ready-to-implement');
+    expect(after.next_node?.id).toBe('plan-slices');
+    expect(after.next_node?.gate_id).toBe('slice-exit');
+
+    const statusData = statusJson(root);
+    expect(statusData.modules[0].suggestion).toContain('slice-exit');
+    expect(statusData.suggestion).toContain('slice-exit');
+    expect(statusData.suggestion).not.toMatch(/verify|验收/);
+  });
+
+  it('ST-S32-07: RunLogos 缺失 [code] 事故先派 slice-planner，切片写出后才进入 slice-exit/coding', async () => {
+    const { root, dir } = setupCmd(PURE_DELTA, ['SPEC_MERGED'], 'feat', codeRequiredProposal());
+    writeTestDelta(dir, ['UT-S32-19', 'UT-S32-22', 'ST-S32-07']);
+
+    const first = await nextJson(root, true);
+    expectPlanSlicesNotAutoPassed(first, dir);
+    expect(first.modules[0].code_planning_diagnostic?.reason).toBe('tasks-code-section-missing');
+
+    writeFileSync(join(dir, 'tasks.md'), DELTA_DONE_CODE_SLICES);
+    const second = await nextJson(root);
+    expect(second.modules[0].proposal_step).toBe('ready-to-implement');
+    expect(second.modules[0].next_node?.gate_id).toBe('slice-exit');
+
+    const third = await nextJson(root, true);
+    expect(third.proposal_step).toBe('coding');
+    expect(third.modules[0].next_node?.id).toBe('code');
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
+  });
+});
+
+describe('S32 — artifact 声明与切片合同诊断', () => {
+  it('UT-S32-23: artifact 声明遗漏但磁盘产物存在可诊断', () => {
+    const { root, dir } = setupCmd([
+      '# 任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] d',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 切片：覆盖 UT-S32-23，需要业务代码、测试和 reporter',
+    ].join('\n'), ['SPEC_MERGED', 'SLICES_APPROVED']);
+    mkdirSync(join(root, 'cli/src'), { recursive: true });
+    mkdirSync(join(root, 'cli/test'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'cli/src/s32.ts'), 'export const s32 = true;\n');
+    writeFileSync(join(root, 'cli/test/s32-extra.test.ts'), 'it("UT-S32-23",()=>{});\n');
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), '{"id":"UT-S32-23","status":"pass"}\n');
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S32-23'],
+      declaredArtifacts: ['cli/src/s32.ts'],
+    });
+
+    expect(diagnostic).toMatchObject({
+      reason: 'artifact-missing',
+      completion_state: 'slice_incomplete',
+    });
+    expect(diagnostic?.missing_artifacts).toContain('cli/test/');
+    expect(diagnostic?.remediation).toContain('更正');
+  });
+
+  it('UT-S32-24: artifact 越界必须阻断并要求人工或重派', () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_SLICES, ['SPEC_MERGED', 'SLICES_APPROVED']);
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      declaredArtifacts: ['../outside.txt'],
+    });
+
+    expect(diagnostic).toMatchObject({
+      reason: 'artifact-out-of-scope',
+      completion_state: 'invalid_done_claim',
+      human_action_required: true,
+      suggested_next_node: 'manual',
+    });
+  });
+
+  it('UT-S32-25: 更正 artifacts 后重新验证通过局部完成', () => {
+    const { root, dir } = setupCmd([
+      '# 任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] d',
+      '',
+      '## [code] 代码实现',
+      '- [x] 切片：覆盖 UT-S32-25，需要业务代码、测试和 reporter',
+    ].join('\n'), ['SPEC_MERGED', 'SLICES_APPROVED']);
+    mkdirSync(join(root, 'cli/src'), { recursive: true });
+    mkdirSync(join(root, 'cli/test'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'cli/src/s32-corrected.ts'), 'export const corrected = true;\n');
+    writeFileSync(join(root, 'cli/test/s32-corrected.test.ts'), 'it("UT-S32-25",()=>{});\n');
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S32-25","status":"pass"}',
+      '{"id":"UT-S32-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const first = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S32-25'],
+      declaredArtifacts: ['cli/src/s32-corrected.ts'],
+    });
+    expect(first?.reason).toBe('artifact-missing');
+
+    const corrected = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S32-25'],
+      declaredArtifacts: ['cli/src/s32-corrected.ts', 'cli/test/s32-corrected.test.ts'],
+      verifyGate: 'FAIL',
+      failedTests: ['UT-S32-REG'],
+    });
+    expect(corrected).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+    });
+    expect(corrected?.validated_artifacts).toEqual(['cli/src/s32-corrected.ts', 'cli/test/s32-corrected.test.ts']);
+  });
+
+  it('ST-S32-08: slice-planner 产物驱动后续 artifact 校验', () => {
+    const { root, dir } = setupCmd([
+      '# 任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] d',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 切片：实现诊断闭环（覆盖 UT-S32-23、UT-S32-24、UT-S32-25、ST-S32-08）',
+    ].join('\n'), ['SPEC_MERGED', 'SLICES_APPROVED']);
+    mkdirSync(join(root, 'cli/src'), { recursive: true });
+    mkdirSync(join(root, 'cli/test'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'cli/src/s32-st.ts'), 'export const st = true;\n');
+    writeFileSync(join(root, 'cli/test/s32-st.test.ts'), 'it("ST-S32-08",()=>{});\n');
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S32-23","status":"pass"}',
+      '{"id":"UT-S32-24","status":"pass"}',
+      '{"id":"UT-S32-25","status":"pass"}',
+      '{"id":"ST-S32-08","status":"pass"}',
+    ].join('\n') + '\n');
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      declaredArtifacts: ['cli/src/s32-st.ts', 'cli/test/s32-st.test.ts'],
+    });
+
+    expect(diagnostic?.required_test_ids).toEqual(['UT-S32-23', 'UT-S32-24', 'UT-S32-25', 'ST-S32-08']);
+    expect(diagnostic?.validated_artifacts).toEqual(['cli/src/s32-st.ts', 'cli/test/s32-st.test.ts']);
+    expect(diagnostic?.missing_artifacts).toEqual([]);
   });
 });

@@ -47,6 +47,21 @@
 - 当 `proposal.md` 与 `tasks.md` 冲突时，CLI 必须在 status / next 中给出警告，并阻止“无需人工确认的自动部署”。
 - 冲突状态必须通过 `deployment_decision_conflict=true` 显式暴露，作为 CLI 和 RunLogos 的阻断信号；冲突未修正前不得展示 deploy、smoke 或 archive 作为主动作。
 
+### 2.5a plan gate 待消费态与任务执行进度分层
+
+`ready-to-delta` 是 proposal/tasks 已完成后的 plan 出口等待态，不是任务规划失败态。CLI、AI driver 与 RunLogos 面板必须把以下三类状态分开展示和消费：
+
+1. **计划资料状态**：`proposal.md` 是否脱模板、`tasks.md` 是否脱模板、是否存在结构化 section。该状态决定 plan 是否 ready。
+2. **plan gate 状态**：`proposal_step=ready-to-delta` 且 `PLAN_APPROVED` 不存在时，表示 plan gate 待人工批准或由 `next --auto` 消费。
+3. **任务执行进度**：`tasks.md` 中 `[delta]` / `[deploy]` checkbox 的完成数，只表示后续执行进度；例如 `0/8` 是“8 个 delta 尚未写”，不是“任务规划 0% 完成”。
+
+展示规则：
+
+- 半自动模式下，`ready-to-delta` 应显示为“方案已完成，等待批准后写 delta”。
+- 全自动模式下，driver 看到 `ready-to-delta` 后应调用或消费 `next --auto` 的 `plan-exit` 结果；若同次响应返回 `gate_auto_passed=true` 与 `next_node.id=="write-delta"`，应继续派发 `delta-writing`，不得停在 plan gate。
+- 若 `proposal.md` 或 `tasks.md` 仍为模板，才可展示为“任务规划未完成”；该状态必须由模板识别字段或 `proposal_step=writing` 支撑，不得由 checkbox 统计推导。
+- `tasks_execution_done < tasks_execution_total` 只影响 delta/deploy 执行清单，不得把 `plan_ready=true` 回退为失败。
+
 ### 2.6 bootstrap: adopted 行为约束
 
 - `adopt` 命令生成的 `logos-project.yaml` 中，模块 `bootstrap` 字段值为 `adopted`，`lifecycle` 直接为 `launched`。
@@ -632,3 +647,56 @@ launched `implement` 默认以切片循环推进：切片来自 `tasks.md` `[cod
 
 ### S32
 launched 含代码提案 merge 后必须进入独立的 `slice` 子流程（`when: code_required`）：`plan-slices` 节点由 `slice-planner` 对**已合并规格 + 真实 `UT/ST` ID** 划分 `[code]` 切片，内置六维打分 + 垂直/横向判别器 + 删后续证伪门（逐片自问"删后续能否过全量 verify"与"是否端到端可观察"，写出逐片结论）+ 逃生口（≥8 但原子不可拆 → 显式单片）。划定的 `[code]` 写入 `tasks.md`、提案停在 `ready-to-implement`（`slice-exit` 门，`skippable:true`，`--auto` 可放行），批准后进入 `coding`。`change-writer` plan 段只产 `[delta]`/`[deploy]`、不再决定切片；`code-implementor` 只逐片消费、不重新分批。纯文档提案（无 `[code]`）跳过 `slice` 子流程，切片循环对空 `[code]` 退化为 `tests_green`。
+
+## 自动 driver 完成回报韧性
+
+### 功能目标
+
+OpenLogos 的 CLI JSON 输出、验收报告与测试 reporter 必须共同形成可被 RunLogos driver 消费的证据链。driver 在收到 agent 的完成回报后，应能基于 OpenLogos 输出判断该回报属于局部完成、需补 artifact、需 repair、需重派，还是必须 hard block。
+
+### 完成回报状态
+
+OpenLogos / driver 的完成回报校验至少区分以下结果：
+
+| 状态 | 含义 | 建议下一步 |
+|---|---|---|
+| `slice_done` | 当前切片的业务代码、UT/ST、reporter、必要 fixture/golden 已满足 | 继续下一切片或全量 verify |
+| `slice_done_global_verify_failed` | 当前切片局部完成，但全量 verify 仍失败 | 派生 repair / code，携带失败测试 |
+| `slice_incomplete` | 当前切片合同未满足 | 重派当前切片或补缺失项 |
+| `invalid_done_claim` | agent 声明与磁盘事实明显不符 | 要求更正 artifacts 或重派 |
+| `no_progress` | 无产物、无测试、无状态推进 | 消耗 retry 预算，必要时升级 |
+
+### 失败原因枚举
+
+`claimed-done-but-unverified` 不应作为唯一失败码。机器输出应细分为：
+
+- `artifact-missing`
+- `artifact-out-of-scope`
+- `focused-tests-missing`
+- `reporter-missing`
+- `global-verify-failed`
+- `driver-cannot-validate-artifacts`
+- `no-progress`
+
+### 结构化 block
+
+block / escalated 必须包含：
+
+```json
+{
+  "reason": "global-verify-failed",
+  "failed_tests": ["UT-S05-10c"],
+  "validated_artifacts": ["cli/src/commands/next.ts"],
+  "missing_artifacts": [],
+  "suggested_next_node": "code",
+  "human_action_required": false
+}
+```
+
+`human_action_required=false` 表示无人值守模式可继续派 repair / code。只有需要人类判断产品取舍、授权高危门、或硬红线不可自动跨越时，该字段才为 `true`。
+
+### 兼容要求
+
+- 半自动模式仍保留人类确认点，不因本能力自动执行 merge / verify / deploy / smoke / archive。
+- `next --auto` 模式下，用户已有 standing 授权；可恢复失败应尽量进入自动 repair，而不是直接 hard block。
+- `gate:implement:loop-exhausted` 仍是硬红线，不因本能力默认放行未通过测试的代码。

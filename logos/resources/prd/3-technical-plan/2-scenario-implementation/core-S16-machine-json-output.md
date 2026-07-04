@@ -45,6 +45,16 @@ sequenceDiagram
 }
 ```
 
+## next/status `code_required` 字段
+
+`openlogos next` / `openlogos status --format json` 在存在活跃提案时，`modules[].active_change` 下输出布尔字段 `code_required`，表示当前提案是否需要代码实现。
+
+- 取值等于内部谓词 `isCodeRequiredForProposal`（单一事实源），不复刻第二套判断。
+- 仅当 `active_change` 非 null 时出现；无活跃提案时随整个对象不出现（零漂移边界）。
+- 一致性：`code_required==false` 时 `next_node.id` 不为 `code`/`plan-slices`（slice 子流程 `when: code_required` 整段跳过）；`code_required==true` 且 `[code]` 未脱模板时维持 `ready-to-implement` / `plan-slices`。
+
+外部消费方（如 RunLogos 驱动）应直接读取该字段判定「是否需要代码」，替代自行用关键词正则重判，避免与 CLI 派生结论分歧（见 reference `openlogos-runlogos-code-required-divergence-bug-report.md`）。契约字段定义见 `spec/cli-json-output.md` §3.11。
+
 ## 异常用例
 ### EX-2.1: 非 JSON 格式
 - **触发条件**：未传入或传入非 json。

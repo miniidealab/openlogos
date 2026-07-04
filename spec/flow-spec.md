@@ -598,6 +598,95 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
 - **不破「`proposal_step` 闭合枚举不新增」INV**：复用现有 `ready-to-implement`/`coding`/`ready-to-verify`，**不新增枚举值**。
 - 影响面：下游 runlogos driver 对无 `[delta]` 提案的前沿由 `write-delta` 变为 `plan-slices`/`code`/`verify`，消除本假阴性死锁；`status`/`next`/`watch` 对无 `[delta]` 提案不再提示「写入 `deltas/**`」；常规有 `[delta]` 提案路径不变。
 
+### 12.7 提前填充的 [code] auto-reset（enforce-slice-stage-ordering）
+
+**问题**：`isTasksCodeFilled`（判 `tasks_code_filled`）是纯内容判据，不带时序前置，无法区分「slice-planner 在正确时机（merge 后）划的切片」与「`write-tasks`（plan 段、merge 前）AI 提前填的切片」——两者磁盘状态相同。提前填充使 §12.5 / §12.6 派生把前沿直接判到 `slice-exit` 门（有 delta 提案 merge 后）或 `ready-to-implement` 已 `tasks_code_filled`（纯代码提案），**跳过 slice-planner 独立环节**。
+
+**（1）提前填充的定义**
+
+`[code]` 已 `tasks_code_filled`，但「slice 阶段尚未合法进入」：
+- 有 delta 提案（`delta_required==true`）：`SPEC_MERGED` 尚不在场；
+- 纯代码提案（`delta_required==false`）：`SLICE_STAGE_ENTERED` marker 不在场（slice 阶段从未经 plan-slices 空态进入）。
+
+**（2）auto-reset 触发点（确定性 CLI 动作，不依赖 AI）**
+
+在「进入 slice 段 / 放行 slice-exit」的确定性 CLI 动作上，若检测到 `[code]` 已 `tasks_code_filled` 但非 slice-planner 正常产出，则先清理再继续：
+- **有 delta 提案 → `openlogos merge`**（生成 `MERGE_PROMPT` / 写 `SPEC_MERGED` 前，`trigger:"merge"`）。此后进入 slice 段 `[code]` 恒空，slice-planner 正常填。
+- **纯代码提案（无 delta、不经 merge）→ `next --auto` 消费 slice-exit 门前的守卫**（`trigger:"slice-guard"`）。纯代码提案既不经 merge、也不经 `ready-to-delta` plan 门（`fix-nodelta-proposal-routing`：无 `[delta]` 直接派生 `ready-to-implement`），故缺一个「进入 slice 前」的确定性事件点；改用 `SLICE_STAGE_ENTERED` marker 区分「slice-planner 正常填」与「change-writer 提前填」：
+  - `next --auto` 派生到 slice 前沿而 `[code]` 未 filled（前沿 plan-slices）时写入 `SLICE_STAGE_ENTERED`（标记 slice 阶段已合法进入）；
+  - 消费 slice-exit 前若 `[code]` filled 但**无** `SLICE_STAGE_ENTERED`（从未经过 plan-slices 空态）= 提前填充 → auto-reset、不放行、回退 plan-slices（`next_node` 由 `resolveNextNode` 重读 tasks.md 自动派生为 plan-slices）。
+  - 有 delta 提案的 slice-exit 守卫**直接放行、不看 marker**（提前填充已由 merge 落点兜住），故不破坏既有派生。
+
+**（3）清理动作**
+
+- 把 `tasks.md` 的 `## [code]` section 重置为模板占位（等价 change-writer 纯代码模板：保留空 `## [code]` 标题、令 `isTasksCodeFilled==false`）；
+- 被清理的旧 `[code]` 原文备份到提案目录 `CODE_AUTORESET`（append-only jsonl，每行含 `ts` / 触发点 `trigger: "merge" | "slice-guard"` / 旧 `[code]` 原文），可追溯、非无痕删除。
+
+**（4）幂等**
+
+`[code]` 已是占位（未 `tasks_code_filled`）时，触发点不清理、不追加 `CODE_AUTORESET`。重复 `merge` / 重复触发 slice-exit 守卫不产生重复备份。
+
+**（5）被动派生边界（A 被动派生不变）**
+
+auto-reset 是**命令副作用**，只发生在 `openlogos merge` 与 `next --auto` 消费 slice-exit 门的守卫这两个本就有副作用的动作上（`SLICE_STAGE_ENTERED` marker 亦只在 `--auto` 路径读写）。`status` / 默认 `next` / `flow-derive` 的**派生路径保持只读**，绝不触发清理、绝不读写 marker。清理后 `[code]` 恒为空进入 slice 阶段，§12.5 / §12.6 派生自然落「前沿 `plan-slices` → 唤起 slice-planner」，派生规则本身一行不改。
+
+**（6）扩展的副作用（显式登记，未破枚举 / 判据 INV）**
+
+- EXT-1：`openlogos merge` 副作用扩展——除生成 `MERGE_PROMPT` / 应用 delta 外，新增「进入 slice 前 auto-reset 提前填充的 `[code]`」，保持 merge 幂等。
+- EXT-2：`next --auto` 消费 slice-exit 门的守卫扩展——放行前若判定纯代码提案 `[code]` 提前填充（filled 且无 `SLICE_STAGE_ENTERED`）则 auto-reset 并回退 plan-slices；派生到 plan-slices 前沿时写 `SLICE_STAGE_ENTERED`。仅在 `--auto` 有副作用路径读写 marker。
+- 新增 marker `SLICE_STAGE_ENTERED`（提案目录，存在性为准）：标记纯代码提案 slice 阶段已合法进入，供 slice-exit 守卫区分提前填充。有 delta 提案不写该 marker（由 merge 落点兜底）。
+- 不破 `isTasksCodeFilled` 判据、不破 `proposal_step` 闭合枚举（**不新增阻断态**）、不破 A 被动派生。
+
+**（7）残留边界**
+
+方案的 slice-guard 覆盖 **`--auto` 无人值守**下的纯代码提案（最需兜底的场景）。**半自动模式**（无 `--auto`）纯代码提案不经 slice-guard（`SLICE_STAGE_ENTERED` 只在 `--auto` 路径读写），提前填充靠教育层（`change-writer` ⛔ 禁令）+ 人类在环兜底。物理堵死该半自动残留窗口需 PreToolUse guard 写入时硬拦（L3），列为未来加固，不在本变更。
+
+### 12.8 缺失 [code] section 的代码必需态兜底（fix-missing-code-section-slice-gate）
+
+本节修复一个 post-merge 假阴性：有 `[delta]` 的 launched 提案在 merge 后实际需要代码实现，但 `tasks.md` 完全缺失 `## [code]` section 时，派生不得把“缺失 section”解释成“无需代码，可直接 verify”。`code_required` 必须由提案意图、任务结构、已合并 delta 与测试规格变化共同推导，而不是只由非空 `[code]` section 决定。
+
+**(1) `code_required` 的多信号判定**
+
+`code_required` 为真至少包含以下任一条件：
+
+- `tasks.md` 存在 `## [code]` section（即使 section 为空或仅为模板占位，也表示需要进入 slice 规划）；
+- `proposal.md` 声明变更类型为代码级修复，或变更概述/范围明确包含业务代码、CLI 派生、DriverLoop、AgentAdapter、reporter、runner、测试覆盖实现等实现对象；
+- `tasks.md` 的 `[delta]` section 指向 `deltas/test/**`，且 delta 新增或修改 `UT-*` / `ST-*` / `SMOKE-*` 测试用例，这些测试用例要求后续业务代码、测试代码或 OpenLogos reporter 落地；
+- 已合并规格中新增或修改测试 ID，且 proposal 未明确声明“纯文档/无需代码实现”；
+- delta 文档明确要求后续实现源代码、测试代码、runner、reporter、golden 或面板展示变更。
+
+显式纯文档提案仍允许 `code_required=false`：proposal 明确声明无需代码，`tasks.md` 无 `[code]`，delta 不新增实现相关测试 ID，也不要求 runner/reporter/source 变更时，slice 子流程按既有规则整段跳过。
+
+**(2) post-merge 派生规则**
+
+`SPEC_MERGED` 在场（或纯代码提案 `delta_required==false` 空过 merge）且 `code_required==true` 时：
+
+- `tasks.md` 缺失 `## [code]` section、`[code]` 为空、或仅含模板/占位项，均表示切片尚未规划；
+- 派生必须停在 `ready-to-implement`，前沿为 `next_node.id=="plan-slices"`，且 `next_node.gate_id` 省略；
+- `plan-slices` / `slice-planner` 被允许创建缺失的 `## [code]` section，并写入真实切片；
+- `next --auto` 不得写 `SLICES_APPROVED`，不得追加 `GATE_AUTO_PASSED{gate_id:"slice-exit"}`，不得派生 `coding` / `code`，也不得派生 `ready-to-verify` / `verify`。
+
+这条规则优先于 §12.4 的“空 `[code]` 退化为 `tests_green`”。空 `[code]` 退化只适用于 `code_required==false` 的纯文档/退化 implement 场景；不适用于“需要代码但切片缺失”的非法态。
+
+**(3) 诊断输出**
+
+当 `code_required==true` 且 `tasks.md` 缺失 `## [code]` section 时，CLI 应尽量返回可行动诊断，供 driver 和用户区分“未规划切片”与“无需代码”：
+
+```text
+reason=tasks-code-section-missing
+tasksPath=logos/changes/<slug>/tasks.md
+remediation=补空 ## [code] section 后重新进入 plan-slices，或由 slice-planner 创建 section
+```
+
+当 `## [code]` 存在但未脱模板时，可使用 `reason=slices-not-planned`。上述诊断不改变 proposal_step 枚举，仍复用 `ready-to-implement`；它只约束 next_node 与可执行动作。
+
+**(4) 不变量**
+
+- 缺失 `[code]` 不再自动等价于 `code_required=false`。
+- `code_required=true` 且切片未规划时，`loop_state` / `slice_state` 不得驱动宿主进入 `_loopRepair()` 或 canonical verify。
+- `SLICES_APPROVED` 只能在真实 `[code]` 切片满足 `tasks_code_filled` 后产生。
+- 纯文档提案不被误伤：明确无需代码且没有实现相关测试 delta 的提案，仍可跳过 slice 子流程。
+
 ## 13. M1 / M2 边界总表
 
 > **图例**：下表「M1」列 = **当前已实现/可用**（含 M2 各切片 S26–S29 已点亮的能力）；「M2」列 = **后续待实现**。
@@ -621,3 +710,81 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
 ## 14. 版本
 
 - 0.1.0：M1 草案。确立数据模型与内置模板结构；M2 字段已预留但不实现。
+
+## 自动流程可恢复失败与 dispatch 完成状态分层
+
+### 13. 自动流程韧性
+
+#### 13.1 完成状态
+
+agent dispatch 的完成校验不得只输出 pass/fail。OpenLogos / driver 至少应支持：
+
+| 状态 | 定义 | 后续 |
+|---|---|---|
+| `slice_done` | 当前切片合同满足，focused tests / reporter pass | 继续下一切片或 verify |
+| `slice_done_global_verify_failed` | 当前切片合同满足，但全量 verify 失败 | 派 repair / code |
+| `slice_incomplete` | 当前切片合同缺 artifact、测试或 reporter | 重派当前切片 |
+| `invalid_done_claim` | agent 声明与磁盘事实矛盾 | 要求更正或重派 |
+| `no_progress` | 无产物、无测试、无状态推进 | 消耗 retry 预算 |
+
+#### 13.2 失败原因
+
+`claimed-done-but-unverified` 只能作为兼容显示，不得作为唯一机器原因。结构化原因包括：
+
+- `artifact-missing`
+- `artifact-out-of-scope`
+- `focused-tests-missing`
+- `reporter-missing`
+- `global-verify-failed`
+- `driver-cannot-validate-artifacts`
+- `no-progress`
+
+#### 13.3 retry / block 升级
+
+`retry-exhausted` 只表示多轮无进展或不可恢复失败。以下情况不得直接升级为 `retry-exhausted`：
+
+- 已验证 artifacts 存在；
+- 本片 reporter 证据存在；
+- focused tests 已通过；
+- 全量 verify 有明确失败测试；
+- 下一步可由 repair / code 继续推进。
+
+#### 13.4 建议下一节点
+
+当 `global-verify-failed` 且存在 validated artifacts 时，`suggested_next_node` 应为 `code` 或等价 repair 节点，`human_action_required=false`。当缺少 artifacts 或 reporter 时，建议节点应指向当前切片重派或补证据流程。当失败涉及产品取舍、越权 artifact 或硬红线时，`human_action_required=true`。
+
+#### 13.5 自动流程诊断的前沿隔离
+
+`automation_diagnostic` 的消费必须服从当前 flow 前沿。`global-verify-failed` 是实现/验证闭环中的 repair 信号，不是跨阶段全局抢占信号。
+
+##### 合法消费前沿
+
+只有当前前沿已经进入 implement loop，或明确处于 verify 失败后的修复闭环时，`next` 才能把 `global-verify-failed` 提升为 repair/code 建议：
+
+- `coding`
+- `ready-to-verify` 且已有本轮代码实现 / reporter 证据
+- `verify-failed`
+- implement loop 未收敛、未达上限的 repair 轮次
+
+##### 禁止抢占前沿
+
+以下前沿必须优先保留自身 flow 语义，不得被历史 verify 诊断覆盖：
+
+- plan：`writing`、`ready-to-delta`
+- spec：`delta-writing`、`ready-to-merge`
+- merge：`merge-generated`
+- slice：`ready-to-implement` 下的 `plan-slices` 节点或 `slice-exit` 门
+- deliver / close：`ready-to-deploy`、`deploy-done`、`ready-to-smoke`、`smoke-passed`
+
+在禁止抢占前沿，`next_node` 由当前前沿派生规则决定。例如 `delta-writing` 仍是 `write-delta`，`ready-to-merge --auto` 仍返回 merge command，`ready-to-implement` 未规划切片时仍是 `plan-slices`。
+
+##### 与 `next_node` / gate 的优先级
+
+优先级从高到低：
+
+1. 当前 flow 前沿的 gate / node 派生；
+2. `next --auto` 对可跳 gate 的本次放行结果；
+3. 当前实现/验证闭环内的 `automation_diagnostic` repair 建议；
+4. 历史诊断或只读诊断。
+
+因此，`ready-to-merge` 的 `spec-exit` command、`ready-to-delta` 的 `plan-exit`、`ready-to-implement` 的 `plan-slices` / `slice-exit` 均高于 stale `global-verify-failed`。

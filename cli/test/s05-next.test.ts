@@ -410,13 +410,13 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(out).toMatch(/verify/i);
   });
 
-  it('UT-S05-10c: SPEC_MERGED + no [code] section → ready-to-verify', () => {
+  it('UT-S05-10c: SPEC_MERGED + code_required + no [code] section → ready-to-implement', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
     writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n');
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
-    expect(detectProposalStep(proposalDir)).toBe('ready-to-verify');
+    expect(detectProposalStep(proposalDir)).toBe('ready-to-implement');
   });
 
   it('UT-S05-10d: VERIFY_PASS → verify-passed, suggest archive', () => {

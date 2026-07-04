@@ -21,6 +21,7 @@ import { detectProposalStepViaFlow, gateForProposalStep } from '../src/lib/flow-
 import { deriveSliceState, deriveSliceStateIfActive, deriveLoopState, type LoopState } from '../src/lib/flow-loop-derive.js';
 import { loadBuiltinFlow } from '../src/lib/flow.js';
 import { checkSmokeCoverage } from '../src/lib/smoke-coverage.js';
+import { deriveAutomationDiagnostic } from '../src/lib/automation-diagnostic.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -34,6 +35,12 @@ function filled(): string {
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '概述。',
   ].join('\n');
+}
+
+function codeRequiredProposal(): string {
+  return filled()
+    .replace('## 变更类型\n设计级', '## 变更类型\n代码级修复')
+    .replace('## 变更概述\n概述。', '## 变更概述\n需要 CLI 状态派生代码、测试和 reporter 实现。');
 }
 
 /** 建提案目录并写 proposal/tasks（可选 delta 文件、LOOP_ITERS 行）。返回 { root, dir }。 */
@@ -185,32 +192,32 @@ describe('S31 — code_slices_green 复合收敛', () => {
     return deriveLoopState(root, LAUNCHED_MOD, dir, false, flow);
   }
 
-  it('UT-S31-20: 切片全勾 ∧ 末轮 pass → converged:true', () => {
+  it('复合收敛：切片全勾 ∧ 末轮 pass → converged:true', () => {
     const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1\n- [x] 切片2', { loop: ['fail', 'pass'] });
     expect(loop(root, dir)).toMatchObject({ until: 'code_slices_green', converged: true });
   });
 
-  it('UT-S31-21: 测试绿但切片未全勾 → converged:false（复合收敛更严，不误判完成）', () => {
+  it('internal-S31-converged-requires-all-slices: 测试绿但切片未全勾 → converged:false（复合收敛更严，不误判完成）', () => {
     const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1\n- [ ] 切片2', { loop: ['pass'] });
     expect(loop(root, dir)).toMatchObject({ converged: false });
   });
 
-  it('UT-S31-22: 切片全勾但末轮 fail → converged:false', () => {
+  it('internal-S31-converged-requires-tests-green: 切片全勾但末轮 fail → converged:false', () => {
     const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1', { loop: ['fail'] });
     expect(loop(root, dir)).toMatchObject({ converged: false });
   });
 
-  it('UT-S31-23: 空 [code]（无 section）+ 末轮 pass → 退化为 tests_green、converged:true（不死锁）', () => {
+  it('internal-S31-empty-code-no-section-pass: 空 [code]（无 section）+ 末轮 pass → 退化为 tests_green、converged:true（不死锁）', () => {
     const { root, dir } = makeProposal('# 任务\n\n## [delta] 规格变更\n- [x] d', { loop: ['pass'] });
     expect(loop(root, dir)).toMatchObject({ converged: true });
   });
 
-  it('UT-S31-24: 空 [code]（total=0）+ 末轮 pass → 退化 tests_green、converged:true（不死锁）', () => {
+  it('internal-S31-empty-code-section-pass: 空 [code]（total=0）+ 末轮 pass → 退化 tests_green、converged:true（不死锁）', () => {
     const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n', { loop: ['pass'] });
     expect(loop(root, dir)).toMatchObject({ converged: true });
   });
 
-  it('UT-S31-25: iteration=0（无账本）→ converged:false（出环未达，前沿钉在 verify）', () => {
+  it('internal-S31-no-ledger-not-converged: iteration=0（无账本）→ converged:false（出环未达，前沿钉在 verify）', () => {
     const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1');
     expect(loop(root, dir)).toMatchObject({ iteration: 0, converged: false });
   });
@@ -238,7 +245,7 @@ describe('S31 — gateForProposalStep 三门映射', () => {
 
 // ── 五、命令级契约（next_node.slice / ready-to-delta 文案 / verify 写 slice）——子代理遗漏的命令级断言 ──
 /** 建带 guard 的 launched 命令级 fixture（活跃提案 = filled proposal + 指定 tasks/markers）。 */
-function setupCmd(tasks: string, markers: string[] = [], slug = 'feat'): { root: string; dir: string } {
+function setupCmd(tasks: string, markers: string[] = [], slug = 'feat', proposal = filled()): { root: string; dir: string } {
   const { root, cleanup } = makeTempRoot();
   cleanups.push(cleanup);
   scaffoldProject(root);
@@ -248,10 +255,15 @@ function setupCmd(tasks: string, markers: string[] = [], slug = 'feat'): { root:
     JSON.stringify({ activeChange: slug, module: 'core', createdAt: '2026-06-20T00:00:00.000Z' }));
   const dir = join(root, 'logos', 'changes', slug);
   mkdirSync(join(dir, 'deltas', 'spec'), { recursive: true });
-  writeFileSync(join(dir, 'proposal.md'), filled());
+  writeFileSync(join(dir, 'proposal.md'), proposal);
   writeFileSync(join(dir, 'tasks.md'), tasks);
   for (const mk of markers) writeFileSync(join(dir, mk), '');
   return { root, dir };
+}
+
+function writeTestDelta(dir: string, ids: string[] = ['UT-S31-19', 'ST-S31-08']): void {
+  mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+  writeFileSync(join(dir, 'deltas', 'test', 'core-S31-test-cases.md'), ids.map(id => `| ${id} | 新增回归 |`).join('\n'));
 }
 async function nextJson(root: string): Promise<{ modules: Array<Record<string, any>> }> {
   const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
@@ -268,6 +280,13 @@ async function nextJsonAuto(root: string): Promise<Record<string, any>> {
 function writeLedgerRows(dir: string, results: Array<'pass' | 'fail'>): void {
   writeFileSync(join(dir, 'LOOP_ITERS'),
     results.map((r, i) => JSON.stringify({ iter: i + 1, node: 'verify', result: r, module: 'core', timestamp: 't' })).join('\n') + '\n');
+}
+function writeStaleVerifyFailure(root: string, passId = 'UT-S31-stale-pass'): void {
+  mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+  writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+    JSON.stringify({ id: passId, status: 'pass' }),
+    JSON.stringify({ id: 'UT-S31-STALE-REG', status: 'fail', error: 'stale regression' }),
+  ].join('\n') + '\n');
 }
 /** 运行 verify（json），返回是否 exit + 捕获 stderr。 */
 function runVerify(root: string): { exited: boolean; errors: string[] } {
@@ -504,6 +523,183 @@ describe('S31 — 场景测试', () => {
     expect(r.exited).toBe(true);
     expect(r.errors.join('')).toContain('NO_TEST_RESULTS');
     expect(existsSync(join(dir, 'LOOP_ITERS'))).toBe(false); // 早退 → 不写账本
+  });
+});
+
+describe('S31 — 空 [code] 退化边界（代码必需态不得进入 loop）', () => {
+  it('UT-S31-19: 空 [code] 退化仅适用于 code_required=false', async () => {
+    const docsOnly = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d', ['SPEC_MERGED', 'VERIFY_PASS']);
+    writeLedgerRows(docsOnly.dir, ['pass']);
+    const docsModule = (await nextJson(docsOnly.root)).modules[0];
+    expect(docsModule.proposal_step).toBe('verify-passed');
+    expect(docsModule.loop_state).toMatchObject({ converged: true });
+    expect(docsModule.next_node?.id).not.toBe('plan-slices');
+
+    const codeRequired = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d', ['SPEC_MERGED', 'VERIFY_PASS'], 'feat-code', codeRequiredProposal());
+    writeTestDelta(codeRequired.dir, ['UT-S31-19']);
+    writeLedgerRows(codeRequired.dir, ['pass']);
+    const codeModule = (await nextJson(codeRequired.root)).modules[0];
+    expect(codeModule.proposal_step).toBe('ready-to-implement');
+    expect(codeModule.next_node?.id).toBe('plan-slices');
+    expect(codeModule.next_node?.id).not.toBe('code');
+    expect(codeModule.next_node?.id).not.toBe('verify');
+    expect(codeModule.loop_state).toMatchObject({ converged: false });
+  });
+
+  it('UT-S31-20: 需要代码但切片缺失时不输出 verify repair 前沿', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d', ['SPEC_MERGED', 'VERIFY_FAIL'], 'feat', codeRequiredProposal());
+    writeTestDelta(dir, ['UT-S31-20']);
+    writeLedgerRows(dir, ['fail']);
+
+    expect(detectProposalStepViaFlow(dir)).toBe('ready-to-implement');
+    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('ready-to-implement');
+    expect(m.next_node?.id).toBe('plan-slices');
+    expect(m.next_node?.id).not.toBe('verify');
+    expect(m.next_node?.id).not.toBe('code');
+    expect(m.command).not.toBe('openlogos verify');
+  });
+
+  it('ST-S31-08: 新增测试规格但未规划切片时不得按空 [code] 收敛', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d', ['SPEC_MERGED'], 'feat', codeRequiredProposal());
+    writeTestDelta(dir, ['UT-S31-19', 'UT-S31-20', 'ST-S31-08']);
+    writeLedgerRows(dir, ['pass']);
+
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('ready-to-implement');
+    expect(m.next_node?.id).toBe('plan-slices');
+    expect(m.next_node?.id).not.toBe('verify');
+    expect(m.next_node?.id).not.toBe('code');
+    expect(m.loop_state).toMatchObject({ converged: false });
+    expect(m.code_planning_diagnostic?.reason).toBe('tasks-code-section-missing');
+  });
+});
+
+describe('S31 — slice-local done 与全量失败分离诊断', () => {
+  it('UT-S31-21: slice-local done 不被全量 verify failed 否定', () => {
+    const { root, dir } = setupCmd([
+      '# 任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] d',
+      '',
+      '## [code] 代码实现',
+      '- [x] 切片：覆盖 UT-S31-21',
+    ].join('\n'), ['SPEC_MERGED', 'SLICES_APPROVED']);
+    mkdirSync(join(root, 'cli/src'), { recursive: true });
+    mkdirSync(join(root, 'cli/test'), { recursive: true });
+    writeFileSync(join(root, 'cli/src/s31.ts'), 'export const s31 = true;\n');
+    writeFileSync(join(root, 'cli/test/s31.test.ts'), 'it("UT-S31-21",()=>{});\n');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S31-21","status":"pass"}',
+      '{"id":"UT-S31-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S31-21'],
+      declaredArtifacts: ['cli/src/s31.ts', 'cli/test/s31.test.ts'],
+      verifyGate: 'FAIL',
+      failedTests: ['UT-S31-REG'],
+    });
+
+    expect(diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain('claimed-done-but-unverified');
+  });
+
+  it('UT-S31-22: focused tests 缺失时才判切片未完成', () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片：覆盖 UT-S31-22', ['SPEC_MERGED', 'SLICES_APPROVED']);
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), '{"id":"UT-OTHER","status":"pass"}\n');
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S31-22'],
+    });
+
+    expect(diagnostic).toMatchObject({
+      reason: 'focused-tests-missing',
+      completion_state: 'slice_incomplete',
+    });
+  });
+
+  it('ST-S31-09: 全量失败驱动 repair，保留本片完成证据', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片：覆盖 ST-S31-09', ['SPEC_MERGED', 'SLICES_APPROVED']);
+    mkdirSync(join(root, 'cli/src'), { recursive: true });
+    writeFileSync(join(root, 'cli/src/s31-st.ts'), 'export const st = true;\n');
+    writeLedgerRows(dir, ['fail']);
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"ST-S31-09","status":"pass"}',
+      '{"id":"UT-S31-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const data = await nextJsonAuto(root);
+
+    expect(data.modules[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+      suggested_next_node: 'code',
+    });
+    expect(data.modules[0].automation_diagnostic.missing_artifacts).toEqual([]);
+    expect(data.modules[0].next_node?.id).toBe('code');
+  });
+
+  it('UT-S31-23: ready-to-merge + stale failed 不派发 repair/code', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d');
+    writeStaleVerifyFailure(root, 'UT-S31-23');
+
+    const data = await nextJsonAuto(root);
+
+    expect(detectProposalStep(dir)).toBe('ready-to-merge');
+    expect(data.proposal_step).toBe('ready-to-merge');
+    expect(data.command).toBe('openlogos merge feat');
+    expect(data.gate_id).toBe('spec-exit');
+    expect(data.modules[0].automation_diagnostic).toBeUndefined();
+    expect(data.modules[0].next_node).toBeUndefined();
+  });
+
+  it('UT-S31-24: ready-to-implement 缺切片 + stale failed 仍停 plan-slices', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d', ['SPEC_MERGED'], 'feat', codeRequiredProposal());
+    writeTestDelta(dir, ['UT-S31-24']);
+    writeStaleVerifyFailure(root, 'UT-S31-24');
+
+    const data = await nextJsonAuto(root);
+
+    expect(data.proposal_step).toBe('ready-to-implement');
+    expect(data.gate_id).toBeNull();
+    expect(data.gate_auto_passed).toBe(false);
+    expect(data.modules[0].next_node?.id).toBe('plan-slices');
+    expect(data.modules[0].automation_diagnostic).toBeUndefined();
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+  });
+
+  it('UT-S31-25 / ST-S31-10: verify-failed 前沿仍消费 global verify failed 为 repair/code', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片：覆盖 UT-S31-25 和 ST-S31-10', ['SPEC_MERGED', 'SLICES_APPROVED', 'VERIFY_FAIL']);
+    writeLedgerRows(dir, ['fail']);
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S31-25","status":"pass"}',
+      '{"id":"ST-S31-10","status":"pass"}',
+      '{"id":"UT-S31-STALE-REG","status":"fail","error":"stale regression"}',
+    ].join('\n') + '\n');
+
+    const data = await nextJsonAuto(root);
+
+    expect(data.proposal_step).toBe('verify-failed');
+    expect(data.command).toBeNull();
+    expect(data.modules[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+      suggested_next_node: 'code',
+    });
+    expect(data.modules[0].next_node?.id).toBe('code');
   });
 });
 

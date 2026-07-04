@@ -102,7 +102,7 @@
 
 > **禁止在 tasks.md 中写入 verify / smoke / 人工验证类条目**——这些属于独立 CLI 操作节点。tasks.md 只追踪 delta、代码和部署执行任务。
 
-> ⚠️ **launched 变更下 `[code]` 切片不在此处产出**（split-slice-planner-stage）：`write-tasks` 节点只产 `## [delta]` / `## [deploy]`。`## [code]` 切片由独立环节 **`slice-planner`** 在 **merge 之后**、对**已合并规格 + 真实测试 ID** 划分（见 `skills/slice-planner/SKILL.md`）。本步骤保留空 `## [code]` 标题（切片项不在 plan 段填写，由 merge 后 slice-planner 划分）；下方模板中的 `[code]` 块仅示意最终形态。
+> ⛔ **严禁在 `write-tasks` 阶段规划或填写 `[code]` 切片**（enforce-slice-stage-ordering / split-slice-planner-stage）：`write-tasks` 节点**只产** `## [delta]` / `## [deploy]`。`## [code]` 切片由独立环节 **`slice-planner`** 在 **merge 之后**、对**已合并规格 + 真实测试 ID** 划分（见 `skills/slice-planner/SKILL.md`）。**即使某些切片此刻看起来"显而易见"，也绝不在此处写任何 `[code]` 条目**——提前填充会被 CLI 在进入 slice 段时**自动清理作废**：有 delta 提案于 `openlogos merge` 时、纯代码提案于 plan 门放行时，把 `[code]` 重置为占位并把旧内容备份到提案目录 `CODE_AUTORESET`（可追溯、非无痕删除，见 `spec/flow-spec.md` §12.7）。清理不阻断流程、无人值守自愈，但**你提前划的切片一律作废**——因为它是对未合并规格 + 占位测试 ID 划的，信息不全必然切错。本步骤**只保留空 `## [code]` 标题**（切片项不在 plan 段填写，由 merge 后 slice-planner 划分）；下方模板中的 `[code]` 块仅示意最终形态。
 >
 > ⚠️ **`## [code]` 标题行必须保留**（fix-nodelta-proposal-routing）：`write-tasks` 产出的 `tasks.md` **至少要含一个 `## [tag]` section 标题**，否则 `parseTaskSections` 返回 `null`、派生降级为「旧格式兜底」而误判为 `delta-writing`（把纯代码提案错误派到 `write-delta` 节点、无人值守下死锁）。因此：有 `[delta]` 的提案 `[code]` 标题可留空或省略（已有 `[delta]` 标题）；**无 `[delta]` 的纯代码提案必须写出空的 `## [code]` 标题行**（标题在、条目空，由 merge 空过后的 slice-planner 填切片）。
 
@@ -170,6 +170,24 @@
 ```
 
 > **为什么保留空 `## [code]`**（fix-nodelta-proposal-routing）：`tasks.md` 有 `## [code]` 标题 ⇒ `parseTaskSections` 非 `null` 且 `code_required` 为真 ⇒ 派生把无 `[delta]` 提案识别为「纯代码提案」，视 `spec`/`merge` 空过后正确落 `ready-to-implement`（前沿 `plan-slices`，唤起 slice-planner），而非误落 `delta-writing`/`write-delta`。详见 `spec/flow-spec.md` §12.6 与 `spec/tasks-spec.md`「状态判断规则」。
+
+**有 delta 的代码必需提案也必须保留 `[code]` 标题（fix-missing-code-section-slice-gate）**：
+
+在 split-slice-planner-stage 下，`change-writer` 仍然严禁在 plan 段填写 `[code]` 切片条目；但“保留空 `## [code]` 标题”和“提前填写切片条目”是两件不同的事。
+
+- 凡 proposal / 用户描述 / delta 任务表明后续需要代码实现，`tasks.md` 必须保留空 `## [code] 代码实现` 标题。
+- 该规则同时适用于有 `[delta]` 的代码级提案和无 `[delta]` 的纯代码提案。
+- 如果 `[delta]` 会新增或修改 `UT-*` / `ST-*` / `SMOKE-*` 测试用例，且这些用例需要业务代码、测试代码、runner、reporter 或 golden 落地，则必须保留空 `## [code]` 标题。
+- `## [code]` 标题下只能写占位说明，不得写任何 `- [ ]` 切片任务；真实切片由 merge 后 `slice-planner` 统一填写。
+
+推荐占位：
+
+```markdown
+## [code] 代码实现
+（本段在 plan 段留空：本提案需要代码实现，但 `[code]` 切片由 merge 后的 `slice-planner` 基于已合并规格和真实 UT/ST ID 统一规划。此处仅保留 `## [code]` 标题，勿提前填写切片项。）
+```
+
+缺失 `## [code]` 标题会让后续状态派生失去“需要切片”的结构锚点。在有 `[delta]` 且新增测试规格的代码级提案中，缺失标题不得被下游解释为“无需代码”；但 change-writer 必须从产物源头减少这种异常态。若不确定是否需要代码，优先保留空 `## [code]` 标题，让 merge 后的 slice-planner 基于已合并规格和真实测试 ID 作最终规划。
 
 ### Step 5 补充：[code] 良构切片（已迁至 slice-planner）
 

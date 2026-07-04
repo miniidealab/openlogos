@@ -315,6 +315,32 @@ deliver → close）求值各节点的 `done_when` / `fail_when`，叠加上述�
 - golden 基线（`cli/test/golden-baseline.test.ts` 与 `next --format json` 快照）按预期重拍，差异须仅为新步骤 `ready-to-implement`、新门 `slice-exit` 相关字段。
 - 下游消费方（runlogos driver 对 `proposal_step` 的 switch）需容纳新值，列为下游 follow-up，不在本提案 `[code]` 范围（openlogos CLI 侧先落地）。
 
+## 十三点二、缺失 [code] section 的代码必需态兜底
+
+S32 的 `slice` 子流程以 `when: code_required` 控制是否进入切片规划。该谓词不能只由 `tasks.md` 是否存在非空 `[code]` section 推导，否则会把“上游产物漏掉 `[code]` 标题”误判成“纯文档提案无需代码”，导致 merge 后直接进入 verify。
+
+### `code_required` 的来源
+
+`code_required` 是提案级语义谓词，来源包括：
+
+- `tasks.md` 存在 `## [code]` section（空 section 也表示需要 merge 后规划切片）；
+- `proposal.md` 声明代码级修复，或变更范围包含 CLI 派生、业务代码、测试代码、runner、reporter、面板展示等实现对象；
+- delta 新增或修改实现相关 `UT-*` / `ST-*` / `SMOKE-*` 测试用例；
+- delta 文字要求后续代码实现、测试 reporter 或 golden 更新。
+
+### 缺失 `[code]` 的派生
+
+当 `SPEC_MERGED` 在场且 `code_required==true` 时：
+
+- `tasks.md` 缺失 `## [code]` section 是 `tasks-code-section-missing`，不是 `code_required=false`；
+- 派生仍落 `ready-to-implement`，`next_node.id=="plan-slices"`；
+- `slice-planner` 可以创建缺失的 `## [code]` section 并写入真实切片；
+- `next --auto` 不得消费 `slice-exit`、不得写 `SLICES_APPROVED`、不得进入 `coding` / `verify`。
+
+### implement loop 前置
+
+S31 的 implement loop 只能在 `SLICES_APPROVED` 存在，或 `[code]` 切片确已规划并经 slice-exit 门确认后进入。缺失 `[code]` 的代码必需态不得输出会驱动宿主 `_loopRepair()` 或 canonical verify 的前沿。空 `[code]` 退化为 `tests_green` 仅适用于明确无需代码的纯文档提案。
+
 ## 十四、watch 与 next --auto（skip-gate）架构
 
 M1 切片 C 在已就绪的派生层（A `flow show` + B1 initial 派生 + B2 launched 派生）之上补两个新能力，让 M1 的「声明式可编排 + 实时观测 + 基础自动化」闭环。
@@ -689,3 +715,42 @@ cmd-gate 时输出 `cmd_gate` 字段、`proposal_step` 停门前；**observe 不
 - **cmd-gate 仅经 overlay `modify` opt-in 激活**；`markerName` / `detectProposalStepViaFlow` 对 marker: 路径行为不变；JSON 字段 `cmd_gate` 仅 cmd gate 时出现。builtin 三模板 verify/deploy/smoke 仍 `marker:` → 无 overlay 项目 detection/status/next/watch **逐字节不变** → `golden-baseline.test.ts` 零漂移。
 - **A 被动派生严守**：`next` 不写状态 marker、cmd 字段每次重评；OpenLogos 只声明 gate 接 cmd:，是否求值/推进由宿主 + 用户 overlay 显式驱动，引擎不自行越门。
 - 本切片**收掉** `spec/flow-spec.md §13` M2 列最后一项 `modify-cmd-on-builtin`（M2 列清空）；**不触碰 loop 收敛逻辑**（与 verify cmd gate 经 fail-loud 隔离）。
+
+## 自动流程证据边界与责任分工
+
+### 证据源
+
+OpenLogos 自动流程涉及四类证据：
+
+1. `tasks.md`：声明切片与任务完成状态，但不单独证明测试已通过。
+2. `logos/resources/verify/test-results.jsonl`：OpenLogos reporter 写入的测试 ID 执行证据。
+3. `logos/resources/verify/acceptance-report.md`：`openlogos verify` 汇总的全量验收结论。
+4. driver audit / progress：RunLogos 或其它宿主记录的 agent dispatch、artifact 声明与调度结果。
+
+架构上必须避免把四类证据压缩成单一布尔值。尤其是“本片 reporter 通过”和“全量验收失败”可以同时为真，二者应驱动 repair，而不是驱动 hard block。
+
+### OpenLogos 主责
+
+OpenLogos CLI 负责提供权威、结构化、可机器消费的状态：
+
+- 当前 `proposal_step` / `next_node`；
+- 当前 loop / slice 是否收敛；
+- verify 的失败测试与覆盖诊断；
+- artifacts / reporter / focused tests 的校验结果；
+- 建议下一节点与是否需要人类介入。
+
+### 外部 driver 主责
+
+RunLogos / 外部 driver 负责执行调度：
+
+- 根据 OpenLogos 输出派发 agent；
+- 收集 agent 完成回报与 artifacts；
+- 将 artifacts 与 OpenLogos 证据对齐；
+- 在可恢复失败时重派 repair / code；
+- 仅在 OpenLogos 明确输出硬阻塞或需要人类判断时停止。
+
+### 设计约束
+
+- `retry-exhausted` 不得作为所有校验失败的兜底出口。
+- audit / progress 中的失败事件必须保留可恢复原因，不能只保留最终抽象原因。
+- 当 driver 自身无法验证 artifacts 时，应输出 `driver-cannot-validate-artifacts`，而不是推断 agent 虚报。

@@ -465,6 +465,55 @@ describe('S11 Scenario Tests — status command', () => {
     '修改运行时代码。',
   ].join('\n');
 
+  const PLAN_READY_PROPOSAL = [
+    '# 变更提案：plan-ready',
+    '',
+    '## 变更原因',
+    '需要完善 plan gate 状态诊断。',
+    '',
+    '## 变更类型',
+    '设计级',
+    '',
+    '## 变更范围',
+    '- status JSON',
+    '',
+    '## 部署影响',
+    '- 是否需要部署：否',
+    '- 部署原因：仅修改本地 CLI 状态诊断。',
+    '- 影响环境：无',
+    '- 是否涉及数据迁移：否',
+    '- 是否需要回滚预案：否',
+    '- 是否需要 smoke：否',
+    '',
+    '## 变更概述',
+    '新增 plan_state，区分方案完成与执行任务进度。',
+  ].join('\n');
+
+  function codeRequiredProposal(): string {
+    return PLAN_READY_PROPOSAL
+      .replace('## 变更类型\n设计级', '## 变更类型\n代码级修复')
+      .replace('## 变更概述\n新增 plan_state，区分方案完成与执行任务进度。', '## 变更概述\n需要 CLI 状态派生代码、测试和 reporter 实现。');
+  }
+
+  const PLAN_READY_TASKS = [
+    '# 实现任务',
+    '',
+    '## [delta] 规格变更',
+    '- [ ] 产出 delta 文件',
+    '- [ ] 更新测试用例',
+    '',
+    '## [code] 代码实现',
+    '- [ ] 实现状态诊断',
+  ].join('\n');
+
+  function writeStaleVerifyFailure(passId = 'UT-S11-stale-pass') {
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      JSON.stringify({ id: passId, status: 'pass' }),
+      JSON.stringify({ id: 'UT-S11-STALE-REG', status: 'fail', error: 'stale regression' }),
+    ].join('\n') + '\n');
+  }
+
   beforeEach(() => {
     ({ root, cleanup } = makeTempRoot());
     scaffoldProject(root);
@@ -940,6 +989,141 @@ describe('S11 Scenario Tests — status command', () => {
     status();
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('发布 npm 包');
+  });
+
+  it('UT-S09-62 / UT-S11-43 / UT-S11-44 / ST-S09-31 / ST-S11-32: ready-to-delta 输出 plan_state，执行 0/N 不代表规划失败', () => {
+    setupLaunchedProposal('plan-ready', PLAN_READY_PROPOSAL, PLAN_READY_TASKS);
+
+    const data = collectStatusData(root);
+    const active = data.modules!.find(m => m.id === 'core')!.active_change!;
+
+    expect(active.proposal_step).toBe('ready-to-delta');
+    expect(active.plan_state).toMatchObject({
+      plan_ready: true,
+      plan_gate_pending: true,
+      plan_approved: false,
+      tasks_template_filled: true,
+      tasks_execution_done: 0,
+      tasks_execution_total: 2,
+      tasks_execution_scope: 'delta',
+    });
+    expect(active.plan_state!.diagnostic).toContain('等待 plan-exit');
+    expect(JSON.stringify(active.plan_state)).not.toMatch(/规划失败|planning failed|blocked|retry-exhausted/i);
+  });
+
+  it('UT-S09-63 / UT-S11-45: 部署决策冲突优先于 plan gate pending', () => {
+    const conflictProposal = PLAN_READY_PROPOSAL
+      .replace('- 是否需要部署：否', '- 是否需要部署：否')
+      .replace('仅修改本地 CLI 状态诊断。', '声明无需部署。');
+    setupLaunchedProposal('plan-conflict', conflictProposal, [
+      PLAN_READY_TASKS,
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布 npm 包',
+    ].join('\n'));
+
+    const active = collectStatusData(root).modules!.find(m => m.id === 'core')!.active_change!;
+
+    expect(active.deployment_decision_conflict).toBe(true);
+    expect(active.plan_state).toMatchObject({
+      plan_ready: false,
+      plan_gate_pending: false,
+      plan_approved: false,
+    });
+    expect(active.plan_state!.diagnostic).toContain('部署决策冲突');
+  });
+
+  it('UT-S11-46: PLAN_APPROVED 后关闭 plan_gate_pending 并标记 plan_approved', () => {
+    const proposalDir = setupLaunchedProposal('plan-approved', PLAN_READY_PROPOSAL, PLAN_READY_TASKS);
+    writeFileSync(join(proposalDir, 'PLAN_APPROVED'), '');
+
+    const active = collectStatusData(root).modules!.find(m => m.id === 'core')!.active_change!;
+
+    expect(active.proposal_step).toBe('delta-writing');
+    expect(active.plan_state).toMatchObject({
+      plan_ready: true,
+      plan_gate_pending: false,
+      plan_approved: true,
+      tasks_execution_done: 0,
+      tasks_execution_total: 2,
+      tasks_execution_scope: 'delta',
+    });
+  });
+
+  it('UT-S11-47 / ST-S11-34: ready-to-delta 不消费历史 automation diagnostic', () => {
+    setupLaunchedProposal('plan-ready', PLAN_READY_PROPOSAL, PLAN_READY_TASKS);
+    writeStaleVerifyFailure('UT-S11-47');
+
+    status('json');
+    const output = JSON.parse(con.logs[0]);
+    const mod = output.data.modules[0];
+
+    expect(mod.active_change.proposal_step).toBe('ready-to-delta');
+    expect(mod.automation_diagnostic).toBeUndefined();
+    expect(JSON.stringify(mod)).not.toContain('global-verify-failed');
+  });
+
+  it('UT-S11-48: delta-writing 不消费历史 automation diagnostic', () => {
+    const proposalDir = setupLaunchedProposal('delta-writing', PLAN_READY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件',
+      '- [ ] 更新测试用例',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 实现状态诊断',
+    ].join('\n'));
+    mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
+    writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
+    writeStaleVerifyFailure('UT-S11-48');
+
+    status('json');
+    const mod = JSON.parse(con.logs[0]).data.modules[0];
+
+    expect(mod.active_change.proposal_step).toBe('delta-writing');
+    expect(mod.automation_diagnostic).toBeUndefined();
+  });
+
+  it('UT-S11-49: ready-to-merge 不消费历史 automation diagnostic', () => {
+    const proposalDir = setupLaunchedProposal('ready-merge', PLAN_READY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件',
+      '',
+      '## [code] 代码实现',
+      '- [ ] 实现状态诊断',
+    ].join('\n'));
+    mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
+    writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
+    writeStaleVerifyFailure('UT-S11-49');
+
+    status('json');
+    const mod = JSON.parse(con.logs[0]).data.modules[0];
+
+    expect(mod.active_change.proposal_step).toBe('ready-to-merge');
+    expect(mod.automation_diagnostic).toBeUndefined();
+  });
+
+  it('UT-S11-50: 未规划 [code] 的 ready-to-implement 不消费历史 automation diagnostic', () => {
+    const proposalDir = setupLaunchedProposal('need-slices', codeRequiredProposal(), [
+      '# 实现任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] 产出 delta 文件',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
+    mkdirSync(join(proposalDir, 'deltas', 'test'), { recursive: true });
+    writeFileSync(join(proposalDir, 'deltas', 'test', 'core-S11-test-cases.md'), '| UT-S11-50 | 新增回归 |');
+    writeStaleVerifyFailure('UT-S11-50');
+
+    status('json');
+    const mod = JSON.parse(con.logs[0]).data.modules[0];
+
+    expect(mod.active_change.proposal_step).toBe('ready-to-implement');
+    expect(mod.automation_diagnostic).toBeUndefined();
+    expect(mod.suggestion).toMatch(/切片|slice/i);
   });
 
   it('ST-S11-10: status JSON exposes proposal-level deployment decision', () => {

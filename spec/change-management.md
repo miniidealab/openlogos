@@ -181,6 +181,7 @@ Delta 文件的目录结构映射主文档目录：
    └── 写入 SPEC_MERGED，表示“主规格已合并，可以开始切片规划/代码实现”
 
 7. 切片规划（slice-planner Skill）【slice 出口 slice-exit 为人类确认点；无人值守 --auto 下可放行】
+   └── 前置 auto-reset（enforce-slice-stage-ordering）：进入本步骤前，CLI 已在「进入 slice 段」的确定性动作上自动清理任何提前填充的 [code]——有 delta 提案于 openlogos merge 时、纯代码提案于 plan 门放行（写 PLAN_APPROVED）时，把 [code] 重置为占位并把旧内容备份到提案目录 CODE_AUTORESET（append-only jsonl，可追溯）；故 slice-planner 恒从空 [code] 开始划分。清理幂等、不阻断流程、无人值守自愈（见 spec/flow-spec.md §12.7）
    └── 仅当提案 code_required（tasks.md 有非空 [code] section）时进入；纯文档提案整段跳过，直接进入步骤 8/9
    └── slice-planner 以已合并的规格 + 真实 UT/ST 测试 ID 为输入，逐片过「删后续证伪门」划分 [code] 切片
    └── [code] 切片为「唯一事实源」，下游 code-implementor 忠实逐片消费、不重新分批

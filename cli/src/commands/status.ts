@@ -12,6 +12,7 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { readProjectYaml, isAdoptedBootstrap } from '../lib/project-yaml.js';
 import type { BootstrapMode, YamlDiagnostics } from '../lib/project-yaml.js';
+import { canConsumeAutomationDiagnosticAtStep, deriveAutomationDiagnostic, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 // proposal-lifecycle 函数簇已下沉到 ../lib/proposal-lifecycle.js（断开与 flow-derive.ts 的运行时循环依赖）。
 import {
   countTasks,
@@ -25,9 +26,14 @@ import {
   resolveDeploymentDocument,
   resolveProposalDeploymentDecision,
   detectProposalStep,
+  getCodePlanningDiagnostic,
+  derivePlanState,
+  isCodeRequiredForProposal,
 } from '../lib/proposal-lifecycle.js';
 import type {
   ProposalStep,
+  PlanState,
+  CodePlanningDiagnostic,
   DeploymentDecisionSource,
   ProposalDeploymentDecision,
   DeploymentProgressStatus,
@@ -50,6 +56,7 @@ export {
 };
 export type {
   ProposalStep,
+  PlanState,
   DeploymentDecisionSource,
   ProposalDeploymentDecision,
   DeploymentProgressStatus,
@@ -114,6 +121,9 @@ export interface ModuleStatusItem {
     tasks_checked: number;
     tasks_total: number;
     delta_count: number;
+    // expose-code-required-field：当前活跃提案是否需要代码实现（取值＝isCodeRequiredForProposal，单一事实源）。
+    // 仅在 active_change 非 null 时出现（本对象整体为 null 时不出现），供外部消费方直接读取，替代自建正则重判。
+    code_required: boolean;
     deployment_required: boolean | null;
     smoke_required: boolean | null;
     deployment_reason: string | null;
@@ -124,6 +134,8 @@ export interface ModuleStatusItem {
     deployment_document: DeploymentDocument;
     deployment_warnings?: string[];
     deploy_tasks?: TaskItem[];
+    plan_state?: PlanState;
+    code_planning_diagnostic?: CodePlanningDiagnostic;
   } | null;
   suggestion: string;
   // M2 切片 1a：overlay 驱动派生（仅存在已到达 overlay-added 节点 / 当前为 overlay-added 时输出）
@@ -135,6 +147,7 @@ export interface ModuleStatusItem {
   slice_state?: SliceState;
   // S30：builtin gate（verify/deploy/smoke）接 cmd: 时的 observe-pending 承载（仅 cmd gate 时输出）
   cmd_gate?: CmdGate;
+  automation_diagnostic?: AutomationDiagnostic;
 }
 
 /** S30：builtin cmd gate 的机器契约（observe-pending）。 */
@@ -172,6 +185,8 @@ export interface StatusData {
   slice_state?: SliceState;
   // S30：builtin cmd gate 顶层回退（仅 legacy 无 modules[] 时；有 modules[] 时挂 modules[].cmd_gate）
   cmd_gate?: CmdGate;
+  automation_diagnostic?: AutomationDiagnostic;
+  plan_state?: PlanState;
 }
 
 // Phase paths indexed by PHASE_KEYS order
@@ -326,6 +341,8 @@ function buildModuleStatusItem(
       const { checked, total } = countTasks(tasksContent);
       const deltaCount = countMergeableDeltaFiles(proposalDir);
       const deployTasks = getDeployTasks(proposalDir);
+      const codePlanningDiagnostic = getCodePlanningDiagnostic(proposalDir, tasksContent);
+      const planState = derivePlanState(proposalDir, step, deploymentDecision, tasksContent);
 
       activeChange = {
         slug: guardActiveChange,
@@ -336,6 +353,7 @@ function buildModuleStatusItem(
         tasks_checked: checked,
         tasks_total: total,
         delta_count: deltaCount,
+        code_required: isCodeRequiredForProposal(proposalDir, tasksContent),
         deployment_required: deploymentDecision.deployment_required,
         smoke_required: deploymentDecision.smoke_required,
         deployment_reason: deploymentDecision.deployment_reason,
@@ -348,6 +366,8 @@ function buildModuleStatusItem(
           ? { deployment_warnings: deploymentDecision.deployment_warnings }
           : {}),
         ...(deployTasks.length > 0 ? { deploy_tasks: deployTasks } : {}),
+        plan_state: planState,
+        ...(codePlanningDiagnostic ? { code_planning_diagnostic: codePlanningDiagnostic } : {}),
       };
     }
 
@@ -357,6 +377,9 @@ function buildModuleStatusItem(
       ? join(root, 'logos', 'changes', guardActiveChange) : null;
     const loopState = deriveLoopState(root, mod, launchedProposalDir, isMultiModule);
     const sliceState = deriveSliceStateIfActive(root, mod, launchedProposalDir, isMultiModule);
+    const rawAutomationDiagnostic = launchedProposalDir
+      ? deriveAutomationDiagnostic(root, { proposalDir: launchedProposalDir, loopState, sliceState })
+      : null;
     if (activeChange) {
       const gatedStep = gateLaunchedStepForLoop(activeChange.proposal_step, loopState);
       if (gatedStep && gatedStep !== activeChange.proposal_step) {
@@ -379,6 +402,14 @@ function buildModuleStatusItem(
         suggestion = locale === 'zh'
           ? `让 AI 读取 logos/changes/${activeChange.slug}/MERGE_PROMPT.md 并执行规格合并；完成后写入 SPEC_MERGED`
           : `Ask AI to read logos/changes/${activeChange.slug}/MERGE_PROMPT.md and merge specs; write SPEC_MERGED when done`;
+      } else if (activeChange.proposal_step === 'ready-to-implement') {
+        suggestion = activeChange.code_planning_diagnostic
+          ? (locale === 'zh'
+              ? `先为 ${activeChange.slug} 运行 slice-planner，基于已合并规格和真实 UT/ST ID 写入 [code] 切片`
+              : `Run slice-planner for ${activeChange.slug} first; write [code] slices from merged specs and real UT/ST IDs`)
+          : (locale === 'zh'
+              ? `切片已规划，批准 [code] 切片划分（slice-exit 门）后开始实现`
+              : `Code slices are planned — approve the [code] slicing (slice-exit gate) before implementing`);
       } else if (activeChange.proposal_step === 'coding') {
         suggestion = locale === 'zh'
           ? `按已合并规格实现代码，完成后勾选 [code] section 所有任务`
@@ -495,6 +526,9 @@ function buildModuleStatusItem(
       ...(loopState ? { loop_state: loopState } : {}),
       ...(sliceState ? { slice_state: sliceState } : {}),
       ...(cmdGateDesc ? { cmd_gate: cmdGateDesc } : {}),
+      ...(rawAutomationDiagnostic && canConsumeAutomationDiagnosticAtStep(activeChange?.proposal_step)
+        ? { automation_diagnostic: rawAutomationDiagnostic }
+        : {}),
     };
   }
 
@@ -859,6 +893,10 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
   // 避免旧 acceptance-report.md 让 current_phase/all_done 误推进；同时把 launched step 拉回 ready-to-verify
   const projectLoopState = computeProjectLoopState(root, rawModules, lifecycle, activeChange, guardModule);
   const projectSliceState = computeProjectSliceState(root, rawModules, lifecycle, activeChange, guardModule);
+  const projectProposalDir = activeChange ? join(root, 'logos', 'changes', activeChange) : null;
+  const rawProjectAutomationDiagnostic = projectProposalDir
+    ? deriveAutomationDiagnostic(root, { proposalDir: projectProposalDir, loopState: projectLoopState, sliceState: projectSliceState })
+    : null;
   if (projectLoopState && !projectLoopState.converged) {
     const vp = phases.find(p => p.key === 'phase.3-6');
     if (vp && vp.done) vp.done = false;
@@ -917,6 +955,11 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
           : `Loop round ${projectLoopState.iteration}/${projectLoopState.max_iters} not green — fix and rerun openlogos verify.`);
   }
 
+  const activeModule = modules?.find(m => m.id === guardModule && m.active_change);
+  if (activeModule?.suggestion) {
+    suggestion = activeModule.suggestion;
+  }
+
   // M2 切片 1a：legacy 无 modules[] 项目 → overlay 顶层回退（有 modules[] 时挂 module 项下，不在此处）
   let topOverlay: ReturnType<typeof deriveOverlayView> = null;
   if (rawModules === undefined) {
@@ -932,6 +975,9 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
   const topCmdGate = (rawModules === undefined && lifecycle === 'launched' && proposalStep
     && !(topOverlay && topOverlay.current_node))
     ? deriveLaunchedCmdGate(root, proposalStep) : null;
+  const topPlanState = (rawModules === undefined && projectProposalDir && proposalStep && existsSync(projectProposalDir))
+    ? derivePlanState(projectProposalDir, proposalStep, resolveProposalDeploymentDecision(projectProposalDir))
+    : null;
 
   return {
     phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
@@ -943,6 +989,10 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
     // change-flow-redesign 切片6：slice_state 顶层回退（仅 legacy 无 modules[]；有 modules[] 时挂 modules[].slice_state）
     ...(rawModules === undefined && projectSliceState ? { slice_state: projectSliceState } : {}),
     ...(topCmdGate ? { cmd_gate: topCmdGate } : {}),
+    ...(rawModules === undefined && rawProjectAutomationDiagnostic && canConsumeAutomationDiagnosticAtStep(proposalStep)
+      ? { automation_diagnostic: rawProjectAutomationDiagnostic }
+      : {}),
+    ...(topPlanState ? { plan_state: topPlanState } : {}),
     active_proposals: activeProposals.map(p => ({
       name: p.name,
       has_proposal: p.hasProposal,
@@ -1136,7 +1186,10 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
       }
     } else {
       const firstIncomplete = data.phases.find(p => !p.done && !p.skipped)!;
-      console.log(`\n💡 ${t(locale, 'status.suggestNext', { label: firstIncomplete.label })}`);
+      const suggestionLabel = data.active_change && data.proposal_step
+        ? t(locale, `status.proposalStep.${data.proposal_step}`)
+        : firstIncomplete.label;
+      console.log(`\n💡 ${t(locale, 'status.suggestNext', { label: suggestionLabel })}`);
       console.log(`   → ${data.suggestion}\n`);
     }
   }

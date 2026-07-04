@@ -5,7 +5,7 @@ import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData, deriveActiveOverlay } from './status.js';
-import type { ProposalStep, CmdGate } from './status.js';
+import type { ProposalStep, PlanState, CmdGate } from './status.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 import { gateForProposalStep, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
 import type { CurrentNode, CmdEval, NextNode } from '../lib/flow-overlay-derive.js';
@@ -14,7 +14,9 @@ import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
-import { isTasksCodeFilled, PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
+import { isTasksCodeFilled, parseTaskSections, resetCodeSection, PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
+import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
+import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 
 export interface NextModuleItem {
   id: string;
@@ -29,11 +31,17 @@ export interface NextModuleItem {
   deployment_decision_conflict?: boolean;
   deployment_decision_conflict_reason?: string | null;
   deployment_warnings?: string[];
+  plan_state?: PlanState;
+  code_planning_diagnostic?: CodePlanningDiagnostic;
+  // expose-code-required-field：当前活跃提案是否需要代码实现（取值＝isCodeRequiredForProposal）。
+  // next 里 active_change 是 slug 字符串，故本字段平铺在 module 级（同 proposal_step 的处理）；仅活跃提案时出现。
+  code_required?: boolean;
   current_node?: CurrentNode;
   loop_state?: LoopState;
   slice_state?: SliceState;
   next_node?: NextNode;
   cmd_gate?: CmdGate;
+  automation_diagnostic?: AutomationDiagnostic;
 }
 
 export interface NextData {
@@ -51,6 +59,8 @@ export interface NextData {
   slice_state?: SliceState;
   // S30：builtin cmd gate 承载（仅 cmd gate observe-pending 时附带）
   cmd_gate?: CmdGate;
+  automation_diagnostic?: AutomationDiagnostic;
+  plan_state?: PlanState;
   // S28：next_node 编排提示（仅有当前节点时附带；命令级建议/auto 放行/loop 达上限省略）
   next_node?: NextNode;
   // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
@@ -87,9 +97,32 @@ function writeSlicesApproved(root: string, slug: string): void {
   if (!existsSync(path)) writeFileSync(path, '');
 }
 
-function isSliceExitAutoReady(root: string, slug: string): boolean {
-  const tasksPath = join(root, 'logos', 'changes', slug, 'tasks.md');
-  return existsSync(tasksPath) && isTasksCodeFilled(readFileSync(tasksPath, 'utf-8'));
+/**
+ * slice-exit 是否可 auto 放行。
+ * `[code]` 未 filled → false（前沿 plan-slices）。
+ * enforce-slice-stage-ordering §12.7 方案 C：`[code]` filled 时——有 delta 提案由 `openlogos merge` 落点兜底、直接可放行；
+ * 纯代码提案需 `SLICE_STAGE_ENTERED` marker（区分 slice-planner 正常填 vs change-writer 提前填）。
+ * 若纯代码 + filled + 无 marker → 判定为提前填充，auto-reset `[code]`（trigger:"slice-guard"）并返回 false（不放行、回退 plan-slices）。
+ */
+function isSliceExitAutoReady(root: string, slug: string, locale: Locale = 'zh'): boolean {
+  const dir = join(root, 'logos', 'changes', slug);
+  const tasksPath = join(dir, 'tasks.md');
+  if (!existsSync(tasksPath)) return false;
+  const content = readFileSync(tasksPath, 'utf-8');
+  if (!isTasksCodeFilled(content)) return false;
+  if (parseTaskSections(content)?.['delta']) return true;
+  if (existsSync(join(dir, 'SLICE_STAGE_ENTERED'))) return true;
+  resetCodeSection(dir, 'slice-guard', locale);
+  return false;
+}
+
+/** 纯代码提案：标记 slice 阶段已合法进入（供 --auto 区分提前填充；有 delta 提案由 merge 落点兜底，不写 marker）。 */
+function ensureSliceStageEntered(root: string, slug: string): void {
+  const dir = join(root, 'logos', 'changes', slug);
+  const tasksPath = join(dir, 'tasks.md');
+  if (existsSync(tasksPath) && parseTaskSections(readFileSync(tasksPath, 'utf-8'))?.['delta']) return;
+  const p = join(dir, 'SLICE_STAGE_ENTERED');
+  if (!existsSync(p)) writeFileSync(p, '');
 }
 
 /** auto 放行时的建议文案（仅 ready-to-merge 这类可跳 gate 会用到）。 */
@@ -138,6 +171,8 @@ function buildModuleNextItem(
       deployment_decision_conflict?: boolean;
       deployment_decision_conflict_reason?: string | null;
       deployment_warnings?: string[];
+      plan_state?: PlanState;
+      code_planning_diagnostic?: CodePlanningDiagnostic;
     } | null;
   },
   guardActiveChange: string | null,
@@ -157,6 +192,7 @@ function buildModuleNextItem(
           deployment_decision_conflict: true,
           deployment_decision_conflict_reason: mod.active_change.deployment_decision_conflict_reason ?? null,
           ...(mod.active_change.deployment_warnings ? { deployment_warnings: mod.active_change.deployment_warnings } : {}),
+          ...(mod.active_change.plan_state ? { plan_state: mod.active_change.plan_state } : {}),
         };
       }
       const step = mod.active_change.proposal_step;
@@ -165,6 +201,10 @@ function buildModuleNextItem(
         id: mod.id, name: mod.name, lifecycle: 'launched',
         action, command, detail: mod.suggestion,
         active_change: mod.active_change.slug, proposal_step: step,
+        ...(mod.active_change.plan_state ? { plan_state: mod.active_change.plan_state } : {}),
+        ...(mod.active_change.code_planning_diagnostic
+          ? { code_planning_diagnostic: mod.active_change.code_planning_diagnostic }
+          : {}),
       };
     }
 
@@ -417,6 +457,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           deployment_decision_conflict: m.active_change.deployment_decision_conflict,
           deployment_decision_conflict_reason: m.active_change.deployment_decision_conflict_reason,
           deployment_warnings: m.active_change.deployment_warnings,
+          plan_state: m.active_change.plan_state,
+          code_planning_diagnostic: m.active_change.code_planning_diagnostic,
         } : null,
       },
       data.active_change,
@@ -429,7 +471,18 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       const ls = data.modules![i].loop_state;
       const ss = data.modules![i].slice_state;
       const cg = data.modules![i].cmd_gate;
-      const withFields: NextModuleItem = { ...item, ...(cn ? { current_node: cn } : {}), ...(ls ? { loop_state: ls } : {}), ...(ss ? { slice_state: ss } : {}), ...(cg ? { cmd_gate: cg } : {}) };
+      const ad = data.modules![i].automation_diagnostic;
+      // expose-code-required-field：把 status active_change.code_required 平铺到 next 的 module 级（仅活跃提案时）。
+      const cr = data.modules![i].active_change?.code_required;
+      const withFields: NextModuleItem = {
+        ...item,
+        ...(cn ? { current_node: cn } : {}),
+        ...(ls ? { loop_state: ls } : {}),
+        ...(ss ? { slice_state: ss } : {}),
+        ...(cg ? { cmd_gate: cg } : {}),
+        ...(ad ? { automation_diagnostic: ad } : {}),
+        ...(cr !== undefined ? { code_required: cr } : {}),
+      };
       if (cn) {
         return {
           ...withFields,
@@ -445,7 +498,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       const m = data.modules![i];
       const mAtVerify = m.active_change?.proposal_step === 'ready-to-verify'
         || m.active_change?.proposal_step === 'verify-failed' || m.current_phase === 'phase.3-6';
-      if (ls && isLoopBlocking(ls, mAtVerify)) {
+      const mRecoverableGlobalVerify = ad?.reason === 'global-verify-failed' && ad.human_action_required === false;
+      if (ls && isLoopBlocking(ls, mAtVerify) && !mRecoverableGlobalVerify) {
         return {
           ...withFields,
           action: ls.escalated
@@ -540,9 +594,15 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   const blockedByOverlayNode = Boolean(activeStatusMod?.current_node || data.current_node);
   // M2 切片 2：loop 阻塞仅当前沿已到 verify、跑过≥1 轮、未收敛（F1：不抢占 ready-to-merge 等前序停顿点）
   const loopState = activeStatusMod?.loop_state ?? data.loop_state;
+  const automationDiagnostic = activeStatusMod?.automation_diagnostic ?? data.automation_diagnostic;
+  const automationDiagnosticStep = activeStatusMod?.active_change?.proposal_step ?? data.proposal_step;
+  const recoverableGlobalVerify = automationDiagnostic?.reason === 'global-verify-failed'
+    && automationDiagnostic.human_action_required === false
+    && canConsumeAutomationDiagnosticAtStep(automationDiagnosticStep);
   const loopAtVerify = data.proposal_step === 'ready-to-verify' || data.proposal_step === 'verify-failed'
     || data.current_phase === 'phase.3-6';
   const blockedByLoop = isLoopBlocking(loopState, loopAtVerify);
+  const blockedByHardLoop = blockedByLoop && !recoverableGlobalVerify;
   // S30·#1：--module 指向**非活跃模块**时禁用 auto gate——绝不给其它模块的活跃提案写 GATE_AUTO_PASSED。
   // （data.active_change 是 guard 顶层 = 活跃模块；过滤模块若无匹配的活跃提案 → activeStatusMod 为空 → 不放行）
   const autoEnabled = !moduleId || Boolean(activeStatusMod);
@@ -552,7 +612,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       // 即便 loop 已 escalated 且 exhausted_gate.skippable:true，也**不得** auto-pass、不写 GATE_AUTO_PASSED；gate_id/skippable 置 null。
       autoGateId = null;
       autoSkippable = null;
-    } else if (blockedByLoop && loopState?.escalated) {
+    } else if (blockedByHardLoop && loopState?.escalated) {
       // R1 / S29：达上限 → loop 退出 human gate。默认（未写 exhausted_gate）固定不可跳、照常阻塞、不写 GATE_AUTO_PASSED；
       // overlay 显式 exhausted_gate.skippable:true 时 → 高危 auto 放行未收敛代码（需活跃提案以落审计）。
       autoGateId = loopExhaustedGateId(loopState.subflow_id);
@@ -571,14 +631,17 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       }
     } else {
       // Review F3：loop 未收敛时还没到 gate 边界 → gate_id/skippable 置 null（overlay 节点已在上面优先处理）
-      const blocked = blockedByLoop;
+      const blocked = blockedByHardLoop;
       const gate = (data.proposal_step && !blocked) ? gateForProposalStep(data.proposal_step) : null;
       autoGateId = gate ? gate.gate_id : null;
       autoSkippable = gate ? gate.skippable : null;
       if (gate && gate.skippable && data.active_change && !blocked) {
         if (gate.gate_id === 'slice-exit'
           && data.proposal_step === 'ready-to-implement'
-          && !isSliceExitAutoReady(root, data.active_change)) {
+          && !isSliceExitAutoReady(root, data.active_change, locale)) {
+          // [code] 未 filled（前沿 plan-slices），或纯代码提前填充已被 isSliceExitAutoReady 守卫 reset。
+          // 标记 slice 阶段已进入（纯代码提案后续 --auto 据此区分提前填充）；不放行。next_node 由下方 resolveNextNode 重读 tasks.md 自动派生 plan-slices。
+          ensureSliceStageEntered(root, data.active_change);
           autoGateId = null;
           autoSkippable = null;
         } else {
@@ -592,6 +655,12 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
             if (activeModule?.active_change) {
               activeModule.active_change.proposal_step = 'delta-writing';
               activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.delta-writing');
+              activeModule.active_change.plan_state = {
+                ...activeModule.active_change.plan_state,
+                plan_gate_pending: false,
+                plan_approved: true,
+                diagnostic: 'plan gate 已消费，继续派发 write-delta。',
+              } as PlanState;
             }
             const nextAction = actionForProposalStep(locale, 'delta-writing');
             action = nextAction.action;
@@ -600,6 +669,14 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
             const mi = moduleItems?.find(m => m.active_change === data.active_change);
             if (mi) {
               mi.proposal_step = 'delta-writing';
+              if (mi.plan_state) {
+                mi.plan_state = {
+                  ...mi.plan_state,
+                  plan_gate_pending: false,
+                  plan_approved: true,
+                  diagnostic: 'plan gate 已消费，继续派发 write-delta。',
+                };
+              }
               mi.action = action;
               mi.command = command;
               mi.detail = detail;
@@ -649,7 +726,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
 
   // M2 切片 2：loop 阻塞时顶层 action/detail 指向 loop（未被 overlay 节点抢占、且前沿已到 verify 时，F1）
   // S29：若达上限已被 auto 放行（gateAutoPassed），保留放行文案、不再覆盖为阻塞措辞。
-  if (blockedByLoop && loopState && !overlayCur && !gateAutoPassed) {
+  if (blockedByHardLoop && loopState && !overlayCur && !gateAutoPassed) {
     if (loopState.escalated) {
       action = locale === 'zh'
         ? `loop 已达迭代上限 ${loopState.max_iters} 轮仍未绿 → 升级人类确认（继续迭代 / 调整 / 放弃）`
@@ -674,17 +751,21 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   const baseLoopState = data.modules === undefined ? data.loop_state : undefined;
   // slice_state：同构挂载——有 modules[] 时挂 modules[].slice_state，legacy 才回退顶层
   const baseSliceState = data.modules === undefined ? data.slice_state : undefined;
+  const basePlanState = data.modules === undefined ? data.plan_state : undefined;
 
   // S28：next_node 编排提示——modules[] 各项 + legacy 顶层。R4 auto 放行默认省略；
   // plan-exit 被消费后已重新派生到 write-delta，按窄例外保留 next_node。
-  const nextNodeFor = (sm: { id: string; name: string; lifecycle: 'initial' | 'launched'; current_phase: string | null; current_node?: CurrentNode; loop_state?: LoopState; active_change?: { proposal_step: string; slug?: string } | null }, gap: boolean): NextNode | null => {
+  const nextNodeFor = (sm: { id: string; name: string; lifecycle: 'initial' | 'launched'; current_phase: string | null; current_node?: CurrentNode; loop_state?: LoopState; automation_diagnostic?: AutomationDiagnostic; active_change?: { proposal_step: string; slug?: string } | null }, gap: boolean): NextNode | null => {
     const step = sm.active_change?.proposal_step ?? null;
     const atVerify = step === 'ready-to-verify' || step === 'verify-failed' || sm.current_phase === 'phase.3-6';
+    const recoverable = sm.automation_diagnostic?.reason === 'global-verify-failed'
+      && sm.automation_diagnostic.human_action_required === false
+      && canConsumeAutomationDiagnosticAtStep(step);
     // R8：透传活跃提案目录，供 resolveNextNode 判 [code] 脱模板 + SLICES_APPROVED 以二分 slice-exit 前沿。
     const proposalDir = sm.active_change?.slug ? join(root, 'logos', 'changes', sm.active_change.slug) : undefined;
     return resolveNextNode(root, { id: sm.id, name: sm.name, lifecycle: sm.lifecycle }, {
       currentNode: sm.current_node, proposalStep: step, currentPhase: sm.current_phase,
-      loopBlocking: isLoopBlocking(sm.loop_state, atVerify), loopEscalated: sm.loop_state?.escalated,
+      loopBlocking: isLoopBlocking(sm.loop_state, atVerify), loopEscalated: recoverable ? false : sm.loop_state?.escalated,
       gateAutoPassed: gap, proposalDir,
     });
   };
@@ -695,7 +776,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     // 切片循环激活（until=code_slices_green）、未收敛、未达上限 → 注入 next_node.slice。
     // 不依赖 isLoopBlocking（其要求 iteration≥1 + verify 前沿）：正常 coding 阶段 next_node 已指向 code、
     // slice_state.current 有值，宿主需据此注入"只做这一片"上下文（spec/cli-json-output.md §3.10(4)）。
-    if (!ls || ls.until !== 'code_slices_green' || ls.converged || ls.escalated) return nn;
+    if (!ls || ls.until !== 'code_slices_green' || ls.converged) return nn;
     return {
       ...nn,
       slice: ss.current,
@@ -725,6 +806,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     baseNextNode = withSlice(nextNodeFor({
       id: 'core', name: 'core', lifecycle: data.lifecycle === 'launched' ? 'launched' : 'initial',
       current_phase: data.current_phase, current_node: data.current_node, loop_state: data.loop_state,
+      automation_diagnostic: data.automation_diagnostic,
       active_change: data.proposal_step ? { proposal_step: data.proposal_step, slug: data.active_change ?? undefined } : null,
     }, gateAutoPassed && !planGateAutoConsumed && !sliceGateAutoConsumed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
   }
@@ -762,11 +844,21 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     if (mi) { action = mi.action; command = mi.command; detail = mi.detail; }
   }
 
+  if (recoverableGlobalVerify && automationDiagnostic) {
+    command = null;
+    action = locale === 'zh'
+      ? '全量 verify 未通过，但当前切片证据已成立 → 派发 repair/code'
+      : 'Global verify failed but current slice evidence is valid — dispatch repair/code';
+    detail = automationDiagnostic.remediation;
+    const mi = moduleItems?.find(m => m.active_change === topActiveChange);
+    if (mi) { mi.action = action; mi.command = command; mi.detail = detail; }
+  }
+
   // auto-execute-redline-steps：--auto 下，非门 CLI 命令步骤（verify/smoke/archive）就绪时输出 auto_execute:true + command，
   // 供无人值守 driver 自动执行。硬红线排除：卡在 overlay 节点 / loop 阻塞（含达上限 loop-exhausted）/ failed 步骤均不置。
   // gate_auto_passed（flow 门）与 auto_execute（非门命令步骤）正交，同一响应至多一个为真。
   let autoExecute = false;
-  if (auto && autoEnabled && !blockedByOverlayNode && !blockedByLoop && topActiveChange) {
+  if (auto && autoEnabled && !blockedByOverlayNode && !blockedByHardLoop && !recoverableGlobalVerify && topActiveChange) {
     let autoCmd: string | null = null;
     if (topProposalStep === 'ready-to-verify') autoCmd = 'openlogos verify';
     else if (topProposalStep === 'ready-to-smoke') autoCmd = 'openlogos smoke';
@@ -794,6 +886,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     ...(baseLoopState ? { loop_state: baseLoopState } : {}),
     ...(baseSliceState ? { slice_state: baseSliceState } : {}),
     ...(data.modules === undefined && data.cmd_gate ? { cmd_gate: data.cmd_gate } : {}),
+    ...(data.modules === undefined && data.automation_diagnostic ? { automation_diagnostic: data.automation_diagnostic } : {}),
+    ...(basePlanState ? { plan_state: basePlanState } : {}),
     ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
     ...(autoExecute ? { auto_execute: true } : {}),

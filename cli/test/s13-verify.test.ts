@@ -18,6 +18,8 @@ import {
 } from '../src/commands/verify.js';
 import { readVerifyConfig } from '../src/lib/verify-config.js';
 import { checkSmokeCoverage, extractChangedSmokeIds } from '../src/lib/smoke-coverage.js';
+import { deriveAutomationDiagnostic } from '../src/lib/automation-diagnostic.js';
+import { next } from '../src/commands/next.js';
 import * as childProcess from 'node:child_process';
 
 /* ========== Unit Tests ========== */
@@ -32,23 +34,287 @@ describe('S13 Unit Tests — parseJsonl', () => {
     expect(results[1].error).toBe('timeout');
   });
 
-  it('UT-S13-30: skip malformed lines without throwing', () => {
+  it('internal-S13-parse-malformed: skip malformed lines without throwing', () => {
     const input = '{"id":"UT-S01-01","status":"pass"}\nnot-json\n{"id":"ST-S01-01","status":"pass"}';
     const results = parseJsonl(input);
     expect(results).toHaveLength(2);
   });
 
-  it('UT-S13-31: last occurrence wins for duplicate IDs', () => {
+  it('internal-S13-parse-duplicate-last-wins: last occurrence wins for duplicate IDs', () => {
     const input = '{"id":"UT-S01-01","status":"fail"}\n{"id":"UT-S01-01","status":"pass"}';
     const results = parseJsonl(input);
     expect(results).toHaveLength(1);
     expect(results[0].status).toBe('pass');
   });
 
-  it('UT-S13-32: ignore empty and whitespace-only lines', () => {
+  it('internal-S13-parse-empty-lines: ignore empty and whitespace-only lines', () => {
     const input = '\n  \n{"id":"UT-S01-01","status":"pass"}\n\n';
     const results = parseJsonl(input);
     expect(results).toHaveLength(1);
+  });
+});
+
+describe('S13 — 自动流程证据分层诊断', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root, { locale: 'zh' });
+  });
+  afterEach(() => cleanup());
+
+  function setupLaunchedSlice(tasksLine: string): string {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), [
+      'project:',
+      '  name: t',
+      'modules:',
+      '  - id: core',
+      '    name: Core',
+      '    lifecycle: launched',
+    ].join('\n'));
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(root, 'logos', 'changes', 'feat');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), [
+      '# 变更提案：feat',
+      '',
+      '## 变更原因',
+      '需要代码。',
+      '',
+      '## 变更类型',
+      '代码级',
+      '',
+      '## 变更范围',
+      '- CLI',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：无',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '实现自动流程诊断。',
+    ].join('\n'));
+    writeFileSync(join(dir, 'tasks.md'), [
+      '# 任务',
+      '',
+      '## [delta] 规格变更',
+      '- [x] d',
+      '',
+      '## [code] 代码实现',
+      tasksLine,
+    ].join('\n'));
+    writeFileSync(join(dir, 'SPEC_MERGED'), '');
+    writeFileSync(join(dir, 'SLICES_APPROVED'), '');
+    return dir;
+  }
+
+  function setupReadyToMergeWithStaleVerify(): string {
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), [
+      'project:',
+      '  name: t',
+      'modules:',
+      '  - id: core',
+      '    name: Core',
+      '    lifecycle: launched',
+    ].join('\n'));
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(root, 'logos', 'changes', 'feat');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), [
+      '# 变更提案：feat',
+      '',
+      '## 变更原因',
+      '需要代码。',
+      '',
+      '## 变更类型',
+      '设计级',
+      '',
+      '## 变更范围',
+      '- CLI',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：无',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+      '',
+      '## 变更概述',
+      '实现自动流程诊断。',
+    ].join('\n'));
+    writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S13-32","status":"pass"}',
+      '{"id":"UT-S13-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+    return dir;
+  }
+
+  it('UT-S13-32: verify JSON 保留本次失败诊断', () => {
+    const dir = setupLaunchedSlice('- [x] 切片：覆盖 UT-S13-32');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S13-32","status":"pass"}',
+      '{"id":"UT-S13-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const data = collectVerifyData(root);
+
+    expect(dir).toContain('feat');
+    expect(data.automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+      human_action_required: false,
+      suggested_next_node: 'code',
+    });
+    expect(data.automation_diagnostic?.failed_tests).toContain('UT-S13-REG');
+  });
+
+  it('UT-S13-33 / ST-S13-10: verify 诊断不在 plan/spec 前沿自动传播为 repair', async () => {
+    setupReadyToMergeWithStaleVerify();
+    const restore = mockCwd(root);
+    const con = captureConsole();
+    const exitSpy = mockProcessExit();
+    try {
+      await next('json', undefined, true);
+    } finally {
+      con.restore();
+      exitSpy.mockRestore();
+      restore();
+    }
+    const data = JSON.parse(con.logs[con.logs.length - 1]).data;
+
+    expect(data.proposal_step).toBe('ready-to-merge');
+    expect(data.command).toBe('openlogos merge feat');
+    expect(data.modules[0].automation_diagnostic).toBeUndefined();
+    expect(data.modules[0].next_node).toBeUndefined();
+    expect(JSON.stringify(data)).not.toContain('suggested_next_node');
+  });
+
+  it('UT-S13-34: 只有当前实现/验证前沿消费 global verify failed', async () => {
+    const dir = setupLaunchedSlice('- [x] 切片：覆盖 UT-S13-34');
+    writeFileSync(join(dir, 'LOOP_ITERS'),
+      JSON.stringify({ iter: 1, node: 'verify', result: 'fail', module: 'core', timestamp: 't', slice: '切片：覆盖 UT-S13-34' }) + '\n');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S13-34","status":"pass"}',
+      '{"id":"UT-S13-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const restore = mockCwd(root);
+    const con = captureConsole();
+    const exitSpy = mockProcessExit();
+    try {
+      await next('json', undefined, true);
+    } finally {
+      con.restore();
+      exitSpy.mockRestore();
+      restore();
+    }
+    const data = JSON.parse(con.logs[con.logs.length - 1]).data;
+
+    expect(data.modules[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      suggested_next_node: 'code',
+    });
+    expect(data.modules[0].next_node.id).toBe('code');
+  });
+
+  it('UT-S13-30: focused reporter pass + global verify failed 输出可恢复诊断', () => {
+    const dir = setupLaunchedSlice('- [x] 切片：覆盖 UT-S13-30、ST-S13-09');
+    mkdirSync(join(root, 'cli/src/lib'), { recursive: true });
+    mkdirSync(join(root, 'cli/test'), { recursive: true });
+    writeFileSync(join(root, 'cli/src/lib/changed.ts'), 'export const changed = true;\n');
+    writeFileSync(join(root, 'cli/test/changed.test.ts'), 'it("UT-S13-30",()=>{});\n');
+    mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), [
+      '| ID | 描述 |',
+      '|----|------|',
+      '| UT-S13-30 | focused pass |',
+      '| ST-S13-09 | repair |',
+      '| UT-S13-REG | regression |',
+    ].join('\n'));
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S13-30","status":"pass"}',
+      '{"id":"ST-S13-09","status":"pass"}',
+      '{"id":"UT-S13-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const data = collectVerifyData(root);
+    expect(data.automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+      human_action_required: false,
+      suggested_next_node: 'code',
+    });
+    expect(data.automation_diagnostic?.failed_tests).toContain('UT-S13-REG');
+
+    const direct = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S13-30', 'ST-S13-09'],
+      declaredArtifacts: ['cli/src/lib/changed.ts', 'cli/test/changed.test.ts'],
+      verifyGate: 'FAIL',
+      failedTests: ['UT-S13-REG'],
+    });
+    expect(direct?.validated_artifacts).toEqual(['cli/src/lib/changed.ts', 'cli/test/changed.test.ts']);
+    expect(direct?.reason).toBe('global-verify-failed');
+  });
+
+  it('UT-S13-31: reporter 缺失本片 test ID 不等价全量失败', () => {
+    const dir = setupLaunchedSlice('- [ ] 切片：覆盖 UT-S13-31');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), '{"id":"UT-OTHER-01","status":"pass"}\n');
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S13-31'],
+      declaredArtifacts: [],
+    });
+
+    expect(diagnostic).toMatchObject({
+      reason: 'focused-tests-missing',
+      completion_state: 'slice_incomplete',
+    });
+    expect(diagnostic?.required_test_ids).toEqual(['UT-S13-31']);
+  });
+
+  it('ST-S13-09: verify 失败列表可驱动 next --auto repair', async () => {
+    const dir = setupLaunchedSlice('- [x] 切片：覆盖 ST-S13-09');
+    writeFileSync(join(dir, 'LOOP_ITERS'),
+      JSON.stringify({ iter: 1, node: 'verify', result: 'fail', module: 'core', timestamp: 't', slice: '切片：覆盖 ST-S13-09' }) + '\n');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"ST-S13-09","status":"pass"}',
+      '{"id":"UT-S13-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const restore = mockCwd(root);
+    const con = captureConsole();
+    const exitSpy = mockProcessExit();
+    try {
+      await next('json', undefined, true);
+    } finally {
+      con.restore();
+      exitSpy.mockRestore();
+      restore();
+    }
+    const data = JSON.parse(con.logs[con.logs.length - 1]).data;
+    expect(data.modules[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+      suggested_next_node: 'code',
+    });
+    expect(data.modules[0].next_node.id).toBe('code');
+    expect(data.modules[0].automation_diagnostic.failed_tests).toContain('UT-S13-REG');
+    expect(JSON.stringify(data)).not.toContain('retry-exhausted');
   });
 });
 
@@ -61,7 +327,7 @@ describe('S13 Unit Tests — extractDefinedIds', () => {
   });
   afterEach(() => cleanup());
 
-  it('UT-S13-33: extract UT/ST IDs from test-cases.md', () => {
+  it('internal-S13-extract-defined-ids: extract UT/ST IDs from test-cases.md', () => {
     const testDir = join(root, 'logos/resources/test');
     mkdirSync(testDir, { recursive: true });
     writeFileSync(

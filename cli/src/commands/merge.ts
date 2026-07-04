@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { readLocale, t, mergePromptTemplate } from '../i18n.js';
+import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 
 const DELTA_TO_RESOURCE: Record<string, string> = {
   'prd': 'logos/resources/prd',
@@ -81,6 +82,9 @@ export function merge(slug?: string) {
     console.log(`\n✓ ${t(locale, 'merge.alreadyMerged', { slug })}`);
     return;
   }
+
+  // enforce-slice-stage-ordering §12.7：进入 slice 前 auto-reset 提前填充的 [code]（有 delta 提案落点，trigger:"merge"；幂等，已占位则不动）
+  resetCodeSection(changePath, 'merge', locale);
 
   const deltasDir = join(changePath, 'deltas');
   const deltas = scanDeltas(deltasDir);

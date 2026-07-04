@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadFlow, findActivatedLoop, type Flow } from './flow.js';
+import { isCodeRequiredForProposal } from './proposal-lifecycle.js';
 import type { ModuleInfo } from '../commands/status.js';
 
 export interface LoopState {
@@ -82,9 +83,10 @@ export function deriveLoopState(
   if (act.until === 'code_slices_green' && proposalDir) {
     const code = readCodeSection(proposalDir);
     const hasCodeSlices = code.total > 0;
+    const codeRequired = isCodeRequiredForProposal(proposalDir);
     converged = hasCodeSlices
       ? testsGreen && code.done === code.total // 复合收敛：父切片及子任务全勾 ∧ 测试绿
-      : testsGreen;                                // 空 [code] → 退化为 tests_green
+      : (!codeRequired && testsGreen);              // 空 [code] 仅在无需代码时退化为 tests_green
   }
   const escalated = iteration >= act.max_iters && !converged;
   const state: LoopState = { subflow_id: act.subflow_id, until: act.until, max_iters: act.max_iters, iteration, converged, escalated };

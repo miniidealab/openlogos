@@ -182,4 +182,39 @@ describe('S09/S11 — SessionStart guard 范围注入', () => {
     expect(context).toContain('openlogos merge feat');
     expect(context).not.toContain('logos/changes/feat/deltas/**');
   });
+
+  it('ST-S11-33: SessionStart 使用 plan_state 而非 suggestion 猜测 ready-to-delta 等待态', () => {
+    const root = tempProject();
+    const binDir = installOpenlogosWrapper(root, statusJson({
+      active_change: 'feat',
+      proposal_step: 'ready-to-delta',
+      suggestion: '本地化文案可能变化，不能作为唯一事实源',
+      modules: [{
+        active_change: {
+          slug: 'feat',
+          proposal_step: 'ready-to-delta',
+          plan_state: {
+            plan_ready: true,
+            plan_gate_pending: true,
+            plan_approved: false,
+            tasks_template_filled: true,
+            tasks_execution_done: 0,
+            tasks_execution_total: 2,
+            tasks_execution_scope: 'delta',
+          },
+        },
+      }],
+    }));
+
+    const context = runCodex(root, binDir);
+    const phaseContext = runPhase(root, binDir);
+
+    expect(context).toContain('Current proposal step: ready-to-delta');
+    expect(context).toContain('plan gate is pending');
+    expect(context).toContain('tasks_execution=0/2 delta');
+    expect(context).toContain('not planning failure');
+    expect(context).not.toContain('logos/changes/feat/deltas/**');
+    expect(phaseContext).toContain('Current proposal step: ready-to-delta');
+    expect(phaseContext).toContain('tasks_execution=0/2 delta');
+  });
 });

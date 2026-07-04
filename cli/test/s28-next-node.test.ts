@@ -46,6 +46,9 @@ const PROPOSAL = (kind = '代码级') => ['# 变更提案：feat', '', '## 变�
   '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
   '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
   '## 变更概述', '概述。'].join('\n');
+function codeRequiredProposal(): string {
+  return PROPOSAL('代码级修复').replace('概述。', '需要 CLI 状态派生代码、测试和 reporter 实现。');
+}
 /** launched ready-to-verify（current builtin = verify）。 */
 function setupLaunchedVerify(root: string, slug = 'feat'): string {
   const dir = join(root, 'logos', 'changes', slug);
@@ -66,6 +69,22 @@ function setupLaunchedCoding(root: string, slug = 'feat'): string {
   // split-slice-planner-stage：coding 态需 slice-exit 门已放行（SLICES_APPROVED），否则派生为 ready-to-implement。
   writeFileSync(join(dir, 'SLICES_APPROVED'), '');
   return dir;
+}
+function setupLaunchedStep(root: string, tasks: string, markers: string[] = [], proposal = PROPOSAL('设计级'), slug = 'feat'): string {
+  const dir = join(root, 'logos', 'changes', slug);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core' }));
+  writeFileSync(join(dir, 'proposal.md'), proposal);
+  writeFileSync(join(dir, 'tasks.md'), tasks);
+  for (const marker of markers) writeFileSync(join(dir, marker), '');
+  return dir;
+}
+function writeStaleVerifyFailure(root: string, passId = 'UT-S28-stale-pass'): void {
+  mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+  writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+    JSON.stringify({ id: passId, status: 'pass' }),
+    JSON.stringify({ id: 'UT-S28-STALE-REG', status: 'fail', error: 'stale regression' }),
+  ].join('\n') + '\n');
 }
 async function runNextJson(root: string, auto = false): Promise<any> {
   const restore = mockCwd(root); const cap = captureConsole();
@@ -263,6 +282,65 @@ describe('S28 — 省略规则（R4/R7/R5）', () => {
     expect(d.command).toBe('openlogos change add-baseline-docs'); // 命令级建议
     expect(d.next_node).toBeUndefined();
     expect(d.modules[0].next_node).toBeUndefined(); // 不得误把 scenario-modeling 当 next_node
+  });
+
+  it('UT-S28-27 / ST-S28-10: delta-writing + stale diagnostic 仍派发 write-delta', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n- [ ] 更新测试\n\n## [code] 代码实现\n- [ ] 实现 x');
+    writeStaleVerifyFailure(root, 'UT-S28-27');
+
+    const d = await runNextJson(root);
+
+    expect(d.modules[0].proposal_step).toBe('delta-writing');
+    expect(d.modules[0].next_node?.id).toBe('write-delta');
+    expect(d.modules[0].automation_diagnostic).toBeUndefined();
+  });
+
+  it('UT-S28-28: ready-to-merge --auto 不被 stale diagnostic 改成 code', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta');
+    writeStaleVerifyFailure(root, 'UT-S28-28');
+
+    const d = await runNextJson(root, true);
+
+    expect(d.proposal_step).toBe('ready-to-merge');
+    expect(d.command).toBe('openlogos merge feat');
+    expect(d.modules[0].next_node).toBeUndefined();
+    expect(d.modules[0].automation_diagnostic).toBeUndefined();
+  });
+
+  it('UT-S28-29: ready-to-implement 缺切片 + stale diagnostic 仍停 plan-slices', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    const dir = setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta', ['SPEC_MERGED'], codeRequiredProposal());
+    mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+    writeFileSync(join(dir, 'deltas', 'test', 'core-S28-test-cases.md'), '| UT-S28-29 | 新增回归 |');
+    writeStaleVerifyFailure(root, 'UT-S28-29');
+
+    const d = await runNextJson(root, true);
+
+    expect(d.proposal_step).toBe('ready-to-implement');
+    expect(d.gate_id).toBeNull();
+    expect(d.gate_auto_passed).toBe(false);
+    expect(d.modules[0].next_node?.id).toBe('plan-slices');
+    expect(d.modules[0].automation_diagnostic).toBeUndefined();
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+  });
+
+  it('UT-S28-30: coding 前沿仍消费 global verify failed 为 repair/code', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    const dir = setupLaunchedCoding(root);
+    writeLedger(join(dir, 'LOOP_ITERS'), [row(1, 'fail')]);
+    writeStaleVerifyFailure(root, 'UT-S28-30');
+
+    const d = await runNextJson(root, true);
+
+    expect(d.modules[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      suggested_next_node: 'code',
+      human_action_required: false,
+    });
+    expect(d.modules[0].next_node?.id).toBe('code');
+    expect(d.command).toBeNull();
   });
 });
 

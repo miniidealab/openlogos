@@ -108,3 +108,39 @@
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |----|------|-----------|---------|---------|---------|
 | ST-S11-31 | status 的 delta-writing 状态驱动 SessionStart 写入范围 | S11 Step 3→8 | launched 项目有 active guard，`openlogos status --format json` 输出 `proposal_step=delta-writing` | SessionStart 调用 status 并生成上下文 | 上下文与 status/next 一致：允许 `deltas/**` + `tasks.md`，不允许直接写 `logos/resources/**` 或源码 |
+
+## 八、ready-to-delta 状态分层与 plan_state 测试
+
+> 覆盖 `status --format json` / SessionStart / UI 消费 `plan_state` 的分层语义，确保 `tasks.md` 执行进度不再被误读为任务规划失败。用例实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+| ID | 用例 | 覆盖点 | 前置条件 | 操作 | 期望 |
+|---|---|---|---|---|---|
+| UT-S11-43 | ready-to-delta 输出 plan_state pending | JSON 契约 | 活跃提案 proposal/tasks 已脱模板，`proposal_step=ready-to-delta`，无 `PLAN_APPROVED` | `openlogos status --format json` 或 collectStatusData | `plan_state.plan_ready==true`；`plan_gate_pending==true`；`plan_approved==false`；`tasks_template_filled==true` |
+| UT-S11-44 | tasks 执行进度与 plan_ready 解耦 | checkbox 分层 | 同 UT-S11-43，`[delta]` checkbox 为 `0/N` | 读取 `plan_state` | `tasks_execution_done==0`、`tasks_execution_total==N`，且 `plan_ready` 仍为 true |
+| UT-S11-45 | proposal/tasks 冲突优先于 plan gate pending | 冲突诊断 | `proposal.md` 声明无需部署但 `tasks.md` 存在 `[deploy]` section | `status --format json` | `deployment_decision_conflict==true`；`plan_state.plan_ready==false`；诊断说明冲突，不输出 plan gate pending 成功态 |
+| UT-S11-46 | PLAN_APPROVED 后 plan_gate_pending 关闭 | gate 消费状态源 | 活跃提案存在 `PLAN_APPROVED`，delta 尚未写完 | `status --format json` | `plan_state.plan_gate_pending==false`；`plan_state.plan_approved==true`；`proposal_step` 为 `delta-writing` 或后续 |
+| ST-S11-32 | RunLogos 面板可区分规划完成与执行 0/N | 消费方分层 | 构造 `ready-to-delta + tasks_execution_done=0` 的 JSON | 面板/driver 诊断适配层消费 | 展示“方案已完成，等待批准/auto 消费”；不展示“任务规划失败” |
+| ST-S11-33 | SessionStart 使用 plan_state 而非 suggestion 猜测 | SessionStart 消费 | `status --format json` 含 `plan_state.plan_gate_pending=true`，suggestion 文案可本地化变化 | 执行 SessionStart 解析逻辑 | 输出 plan gate 等待态文案；不因中文 suggestion 或 checkbox 比例改变写入范围 |
+
+## 九、status 中 automation_diagnostic 前沿边界测试
+
+> 以下用例含 OpenLogos reporter。用例名必须带 `UT-S11-47` / `ST-S11-34` 等 ID，供 verify 抽取覆盖。
+
+### 9.1 单元测试用例补充
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-47 | `ready-to-delta` 不挂载可驱动 repair 的 diagnostic | status JSON | 活跃提案 `proposal_step=ready-to-delta`，存在历史 verify 失败证据 | `status --format json` | 保留 `proposal_step=="ready-to-delta"`；不输出 `automation_diagnostic.suggested_next_node=="code"` |
+| UT-S11-48 | `delta-writing` 不被 global verify failed 改写 | status JSON | `PLAN_APPROVED` 存在、`[delta]` 未完成，同时存在失败 acceptance report | `status --format json` | 保留 `proposal_step=="delta-writing"`；delta 进度照常输出；不输出 repair/code 前沿 |
+| UT-S11-49 | `ready-to-merge` status 保留 merge 前沿 | status JSON | `[delta]` 全勾且存在 delta 文件，历史 `test-results.jsonl` 有失败 | `status --format json` | `proposal_step=="ready-to-merge"`；不因 stale diagnostic 回退到 `verify-failed` 或 `coding` |
+| UT-S11-50 | 未规划切片的 `ready-to-implement` 保留 plan-slices | status JSON | `SPEC_MERGED` 在场、`code_required=true`、`[code]` 缺失或模板态、历史 verify failed | `status --format json` | `proposal_step=="ready-to-implement"`；诊断不得建议 `code` / `verify` repair |
+
+### 9.2 场景测试用例补充
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-34 | status 不让 stale verify diagnostic 污染 plan/spec/slice 前沿 | S11 Step 3→8 | 构造同一提案依次处于 `ready-to-delta`、`delta-writing`、`ready-to-merge`、未规划切片的 `ready-to-implement`，并放入历史失败证据 | 分别执行 `openlogos status --format json` | 每个状态均保留自身 `proposal_step`；不输出可驱动 repair/code 的 `automation_diagnostic` |
+
+### 9.3 覆盖度校验补充
+
+- [ ] status 非 code/verify 前沿不挂载可驱动 repair 诊断：UT-S11-47、UT-S11-48、UT-S11-49、UT-S11-50、ST-S11-34

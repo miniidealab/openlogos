@@ -4,6 +4,9 @@
 | ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
 |----|------|------|---------|------|---------|
 | UT-S16-01 | 解析 format=json | parseFormat | CLI 参数 | --format json | 返回 json |
+| UT-S16-02 | `next`/`status --format json` 活跃提案下暴露 `code_required` 布尔字段 | collectStatusData / next 派生 | 存在活跃提案 | `next --format json` | `modules[].active_change.code_required` 存在且类型为 boolean |
+| UT-S16-03 | `code_required` 取值等于 `isCodeRequiredForProposal` | isCodeRequiredForProposal | A: 纯文档提案（无 `[code]`、无测试 delta、未声明代码级）；B: 含 `[code]` 或新增 `UT-*` 的代码提案 | 分别 `next --format json` | A: `code_required==false` 且 `next_node.id` ∉ {`code`,`plan-slices`}；B: `code_required==true` |
+| UT-S16-04 | 零漂移边界：无活跃提案时不出现 `code_required` | collectStatusData | `initial` 模块或 launched 无活跃提案 | `status --format json` | `modules[].active_change==null`，输出**不含** `code_required` 字段（既有 golden 不漂移） |
 | UT-JSON-09 | `collectDetectData` 在可恢复 YAML 损坏下仍返回 launched 生命周期 | collectDetectData | `logos-project.yaml` 前半段 modules 完整，后半段存在语法错误 | detect helper | `project.modules` 存在，`project.lifecycle=launched`，并返回 `yaml_diagnostics.parse_status=recovered` |
 | UT-JSON-10 | `collectStatusData` 在可恢复 YAML 损坏下仍返回 modules | collectStatusData | 同上 | status helper | `modules` 存在，`lifecycle=launched`，并返回 `yaml_diagnostics.parse_status=recovered` |
 | UT-JSON-11 | `collectVerifyData` 暴露单阶段 pre_run 状态 | collectVerifyData | 配置 pre_run_command | verify helper | `pre_run.mode=pre_run_command`，包含命令状态与 final result_path |
@@ -28,6 +31,7 @@
 
 ## 三、覆盖度校验
 - [x] format=json envelope：已覆盖（UT-S16-01 / ST-S16-01）
+- [x] `code_required` 契约字段（存在性 / 取值 / 零漂移边界）：已覆盖（UT-S16-02 / UT-S16-03 / UT-S16-04）
 - [x] detect/status 容错：已覆盖（UT-JSON-09 / UT-JSON-10 / ST-JSON-21 / ST-JSON-22 / ST-JSON-23）
 - [x] verify 单阶段 pre_run 状态：已覆盖（UT-JSON-11 / ST-JSON-24）
 - [x] verify 两阶段状态与合并策略：已覆盖（UT-JSON-12 / ST-JSON-25）

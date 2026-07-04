@@ -29,6 +29,13 @@ function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): st
     '## 变更概述', '概述。',
   ].join('\n');
 }
+
+function codeRequiredProposal(): string {
+  return filled()
+    .replace('## 变更类型\n设计级', '## 变更类型\n代码级修复')
+    .replace('## 变更概述\n概述。', '## 变更概述\n需要 CLI 状态派生代码、测试和 reporter 实现。');
+}
+
 const DELTA_DONE = '# 任务\n\n## [delta] 规格变更\n- [x] 产出 delta';
 const DELTA_UNSTARTED = '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta'; // delta 未启动（无勾、无 delta 文件）→ ready-to-delta
 const DELTA_DONE_CODE_TEMPLATE = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] [切片清单占位]';
@@ -40,6 +47,7 @@ const DEPLOY_DONE_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [d
 interface StepFixture { proposal: string; tasks: string; markers?: string[]; deploy?: boolean; smoke?: boolean; }
 const FIXTURES: Record<string, StepFixture> = {
   'ready-to-delta': { proposal: filled(), tasks: DELTA_UNSTARTED },
+  'ready-to-implement-missing-code': { proposal: codeRequiredProposal(), tasks: DELTA_DONE, markers: ['SPEC_MERGED'] },
   'ready-to-implement-template': { proposal: filled(), tasks: DELTA_DONE_CODE_TEMPLATE, markers: ['SPEC_MERGED'] },
   'ready-to-implement': { proposal: filled(), tasks: DELTA_DONE_CODE_SLICES, markers: ['SPEC_MERGED'] },
   'ready-to-merge': { proposal: filled(), tasks: DELTA_DONE },
@@ -87,6 +95,11 @@ function setup(step: keyof typeof FIXTURES, slug = 'feat'): Ctx {
   return { root, dir, auditPath: join(dir, 'GATE_AUTO_PASSED'), planPath: join(dir, 'PLAN_APPROVED'), con };
 }
 
+function writeTestDelta(dir: string, ids: string[] = ['UT-S24-25', 'ST-S24-11']): void {
+  mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+  writeFileSync(join(dir, 'deltas', 'test', 'core-S24-test-cases.md'), ids.map(id => `| ${id} | 新增回归 |`).join('\n'));
+}
+
 /** 解析最后一行 JSON envelope 的 data。 */
 function jsonData(con: ReturnType<typeof captureConsole>): Record<string, unknown> {
   const last = con.logs[con.logs.length - 1];
@@ -94,6 +107,13 @@ function jsonData(con: ReturnType<typeof captureConsole>): Record<string, unknow
 }
 function auditLines(p: string): string[] {
   return existsSync(p) ? readFileSync(p, 'utf-8').split('\n').filter(Boolean) : [];
+}
+function writeStaleVerifyFailure(ctx: Ctx, passId = 'UT-S24-stale-pass'): void {
+  mkdirSync(join(ctx.root, 'logos/resources/verify'), { recursive: true });
+  writeFileSync(join(ctx.root, 'logos/resources/verify/test-results.jsonl'), [
+    JSON.stringify({ id: passId, status: 'pass' }),
+    JSON.stringify({ id: 'UT-S24-STALE-REG', status: 'fail', error: 'stale regression' }),
+  ].join('\n') + '\n');
 }
 
 // ── 一、gate 助手 UT ──
@@ -236,6 +256,50 @@ describe('S24 next --auto 行为', () => {
     expect(def.proposal_step).toBe('ready-to-merge');
   });
 
+  it('UT-S24-28: next --auto 遇到 global verify failed 不 hard block，指向 repair/code', () => {
+    const ctx = setup('ready-to-verify');
+    writeFileSync(join(ctx.dir, 'LOOP_ITERS'),
+      JSON.stringify({ iter: 1, node: 'verify', result: 'fail', module: 'core', timestamp: 't', slice: '切片1' }) + '\n');
+    mkdirSync(join(ctx.root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(ctx.root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S24-28","status":"pass"}',
+      '{"id":"UT-S24-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect(d.auto).toBe(true);
+    expect(d.gate_auto_passed).toBe(false);
+    expect(d.modules[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+      suggested_next_node: 'code',
+      human_action_required: false,
+    });
+    expect(d.modules[0].next_node?.id).toBe('code');
+    expect(JSON.stringify(d)).not.toContain('retry-exhausted');
+  });
+
+  it('UT-S24-29: 可恢复失败不写无关 gate 审计或 verify 通过 marker', () => {
+    const ctx = setup('ready-to-verify');
+    writeFileSync(join(ctx.dir, 'LOOP_ITERS'),
+      JSON.stringify({ iter: 1, node: 'verify', result: 'fail', module: 'core', timestamp: 't' }) + '\n');
+    mkdirSync(join(ctx.root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(ctx.root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S24-29","status":"pass"}',
+      '{"id":"UT-S24-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect(d.modules[0].automation_diagnostic.reason).toBe('global-verify-failed');
+    expect(d.gate_auto_passed).toBe(false);
+    expect(existsSync(ctx.auditPath)).toBe(false);
+    expect(existsSync(join(ctx.dir, 'VERIFY_PASS'))).toBe(false);
+  });
+
   it('UT-S24-15: ready-to-delta + --auto 消费 plan gate 并进入 write-delta', () => {
     const ctx = setup('ready-to-delta');
     next('json', undefined, true);
@@ -253,6 +317,81 @@ describe('S24 next --auto 行为', () => {
     ctx.con.logs.length = 0;
     next('json', undefined, false);
     expect(jsonData(ctx.con).proposal_step).toBe('delta-writing');
+  });
+
+  it('UT-S09-64 / UT-S24-30 / UT-S24-31 / UT-S24-32: plan-exit auto 响应继续派发 write-delta，tasks 0/N 不阻断', () => {
+    const ctx = setup('ready-to-delta');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect(d.gate_id).toBe('plan-exit');
+    expect(d.gate_auto_passed).toBe(true);
+    expect(d.proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
+    expect((d.modules as any[])[0].plan_state).toMatchObject({
+      plan_gate_pending: false,
+      plan_approved: true,
+      tasks_execution_done: 0,
+      tasks_execution_total: 1,
+      tasks_execution_scope: 'delta',
+    });
+    expect(JSON.stringify(d)).not.toMatch(/planning failed|blocked|retry-exhausted/i);
+  });
+
+  it('UT-S24-33: 已有 PLAN_APPROVED 时重复 auto 不追加 plan 审计且保持 write-delta 前沿', () => {
+    const ctx = setup('ready-to-delta');
+    writeFileSync(ctx.planPath, '');
+    writeFileSync(ctx.auditPath,
+      JSON.stringify({ gate_id: 'plan-exit', proposal_step: 'ready-to-delta', timestamp: '2000-01-01T00:00:00.000Z' }) + '\n');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect(d.proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
+    expect(d.gate_auto_passed).toBe(false);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'plan-exit')).toHaveLength(1);
+  });
+
+  it('UT-S24-34 / ST-S24-15: ready-to-merge + stale verify failed + --auto 保留 merge command', () => {
+    const ctx = setup('ready-to-merge');
+    writeStaleVerifyFailure(ctx, 'UT-S24-34');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect(d.proposal_step).toBe('ready-to-merge');
+    expect(d.command).toBe('openlogos merge feat');
+    expect(d.gate_id).toBe('spec-exit');
+    expect(d.gate_auto_passed).toBe(true);
+    expect(d.automation_diagnostic).toBeUndefined();
+    expect((d.modules as any[])[0].automation_diagnostic).toBeUndefined();
+    expect((d.modules as any[])[0].next_node).toBeUndefined();
+    expect(JSON.stringify(d)).not.toContain('global-verify-failed');
+    expect(JSON.stringify(d)).not.toContain('suggested_next_node');
+  });
+
+  it('UT-S24-35: ready-to-merge 的模块级 command 不被 stale diagnostic 清空', () => {
+    const ctx = setup('ready-to-merge');
+    writeStaleVerifyFailure(ctx, 'UT-S24-35');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect((d.modules as any[])[0].command).toBe('openlogos merge feat');
+    expect((d.modules as any[])[0].action).not.toMatch(/repair|code/i);
+  });
+
+  it('UT-S24-36: ready-to-merge + stale diagnostic 不写 SLICES_APPROVED、不消费 slice-exit', () => {
+    const ctx = setup('ready-to-merge');
+    writeStaleVerifyFailure(ctx, 'UT-S24-36');
+
+    next('json', undefined, true);
+
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(ctx.auditPath).map(line => JSON.parse(line).gate_id)).toEqual(['spec-exit']);
   });
 
   it('UT-S24-16: ready-to-deploy + --auto 放行部署门，gate_auto_passed 来自本次响应而非历史审计行', () => {
@@ -356,6 +495,48 @@ describe('S24 next --auto 行为', () => {
     expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
     expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(1);
     expect(d.proposal_step).toBe('coding');
+  });
+
+  it('UT-S24-25: 代码必需但缺失 [code] 时 ready-to-implement 不等于 slice-exit 到达', () => {
+    const ctx = setup('ready-to-implement-missing-code');
+    writeTestDelta(ctx.dir, ['UT-S24-25']);
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect(d.proposal_step).toBe('ready-to-implement');
+    expect(d.gate_id).not.toBe('slice-exit');
+    expect(d.gate_auto_passed).toBe(false);
+    expect((d.modules as any[])[0].next_node?.id).toBe('plan-slices');
+    expect((d.modules as any[])[0].next_node?.gate_id).toBeUndefined();
+  });
+
+  it('UT-S24-26: 缺失 [code] 时不写 slice 审计与 marker', () => {
+    const ctx = setup('ready-to-implement-missing-code');
+    writeTestDelta(ctx.dir, ['UT-S24-26']);
+    next('json', undefined, true);
+
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(0);
+  });
+
+  it('UT-S24-27: 缺失 [code] 与已脱模板 [code] 的 auto 行为区分', () => {
+    const ctx = setup('ready-to-implement-missing-code');
+    writeTestDelta(ctx.dir, ['UT-S24-27']);
+    next('json', undefined, true);
+    const a = jsonData(ctx.con);
+    expect(a.proposal_step).toBe('ready-to-implement');
+    expect((a.modules as any[])[0].next_node?.id).toBe('plan-slices');
+    expect(a.gate_auto_passed).toBe(false);
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+
+    writeFileSync(join(ctx.dir, 'tasks.md'), DELTA_DONE_CODE_SLICES);
+    ctx.con.logs.length = 0;
+    next('json', undefined, true);
+    const b = jsonData(ctx.con);
+    expect(b.gate_id).toBe('slice-exit');
+    expect(b.gate_auto_passed).toBe(true);
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
+    expect((b.modules as any[])[0].next_node?.id).toBe('code');
   });
 });
 
@@ -506,6 +687,62 @@ describe('S24 场景测试', () => {
     expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(1);
   });
 
+  it('ST-S24-11: 全自动模式下缺失 [code] 不得空过切片门', () => {
+    const ctx = setup('ready-to-implement-missing-code');
+    writeTestDelta(ctx.dir, ['UT-S24-25', 'UT-S24-26', 'ST-S24-11']);
+
+    next('json', undefined, true);
+    const first = jsonData(ctx.con);
+    expect(first.proposal_step).toBe('ready-to-implement');
+    expect((first.modules as any[])[0].next_node?.id).toBe('plan-slices');
+    expect(first.gate_id).not.toBe('slice-exit');
+    expect(first.gate_auto_passed).toBe(false);
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(0);
+
+    ctx.con.logs.length = 0;
+    next('json', undefined, true);
+    const second = jsonData(ctx.con);
+    expect(second.proposal_step).toBe('ready-to-implement');
+    expect((second.modules as any[])[0].next_node?.id).toBe('plan-slices');
+    expect(second.gate_auto_passed).toBe(false);
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(false);
+    expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'slice-exit')).toHaveLength(0);
+
+    writeFileSync(join(ctx.dir, 'tasks.md'), DELTA_DONE_CODE_SLICES);
+    ctx.con.logs.length = 0;
+    next('json', undefined, true);
+    const third = jsonData(ctx.con);
+    expect(third.gate_id).toBe('slice-exit');
+    expect(third.gate_auto_passed).toBe(true);
+    expect(third.proposal_step).toBe('coding');
+    expect((third.modules as any[])[0].next_node?.id).toBe('code');
+    expect(existsSync(join(ctx.dir, 'SLICES_APPROVED'))).toBe(true);
+  });
+
+  it('ST-S24-12: 无人值守全量红进入 repair 而非 retry exhausted', () => {
+    const ctx = setup('ready-to-verify');
+    writeFileSync(join(ctx.dir, 'LOOP_ITERS'),
+      JSON.stringify({ iter: 2, node: 'verify', result: 'fail', module: 'core', timestamp: 't', slice: '切片1' }) + '\n');
+    mkdirSync(join(ctx.root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(ctx.root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"ST-S24-12","status":"pass"}',
+      '{"id":"UT-S24-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect((d.modules as any[])[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+    });
+    expect((d.modules as any[])[0].next_node?.id).toBe('code');
+    expect((d.modules as any[])[0].automation_diagnostic.failed_tests).toContain('UT-S24-REG');
+    expect(d.gate_auto_passed).toBe(false);
+    expect(JSON.stringify(d)).not.toContain('retry-exhausted');
+  });
+
   it('ST-S24-EX-4e.2: 未到 slice-exit 门时误用 --auto 不写状态且保持 plan-slices', () => {
     const ctx = setup('ready-to-implement-template');
     next('json', undefined, true);
@@ -536,6 +773,32 @@ describe('S24 场景测试', () => {
     expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
     expect(existsSync(ctx.planPath)).toBe(true);
     expect(auditLines(ctx.auditPath).filter(line => JSON.parse(line).gate_id === 'plan-exit')).toHaveLength(1);
+  });
+
+  it('ST-S09-32 / ST-S24-13: 全自动 plan gate 到 delta-writing 后产生 write-delta dispatch 信号', () => {
+    const ctx = setup('ready-to-delta');
+
+    next('json', undefined, true);
+    const d = jsonData(ctx.con);
+
+    expect(d.gate_auto_passed).toBe(true);
+    expect(d.proposal_step).toBe('delta-writing');
+    expect((d.modules as any[])[0].next_node?.id).toBe('write-delta');
+    expect(existsSync(ctx.planPath)).toBe(true);
+    expect(JSON.stringify(d)).not.toMatch(/blocked|no-progress|retry-exhausted/i);
+  });
+
+  it('ST-S24-14: 半自动 ready-to-delta 仍停人工确认，不写 PLAN_APPROVED', () => {
+    const ctx = setup('ready-to-delta');
+
+    next('json', undefined, false);
+    const d = jsonData(ctx.con);
+
+    expect(d.proposal_step).toBe('ready-to-delta');
+    expect(String(d.action)).toMatch(/批准方案|Approve/i);
+    expect(d.gate_auto_passed).toBeUndefined();
+    expect(existsSync(ctx.planPath)).toBe(false);
+    expect(auditLines(ctx.auditPath)).toHaveLength(0);
   });
 
   it('ST-S24-05: 默认 next JSON 零漂移（不含任何 --auto gate 字段）', () => {

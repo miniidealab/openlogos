@@ -454,6 +454,23 @@ smoke 顺序：
 
 该一致性约束应在 AI 填写提案时前置自检，并在 CLI 的 `status` / `next` 中作为运行时护栏。
 
+## plan gate 等待态与无人值守闭环
+
+在 launched 变更中，`proposal.md` 与 `tasks.md` 已脱模板后，流程进入 plan 出口门等待态。该等待态必须与任务执行进度分离：
+
+- `ready-to-delta` 表示方案已完成，等待 `plan-exit` 人工批准或 `next --auto` 自动消费。
+- `tasks.md` 中 `[delta]` / `[deploy]` checkbox 表示后续执行清单进度；`0/N` 是“尚未执行”，不是“未规划”。
+- `PLAN_APPROVED` 或实际 delta 产出才表示 plan gate 已消费；`GATE_AUTO_PASSED` 只作为审计，不作为默认状态源。
+
+AI / driver 在 proposal/tasks 工作单元结束前必须执行前沿校验：
+
+1. 若状态仍为 `writing`，说明 proposal/tasks 尚未完成或结构冲突，必须修正后再结束。
+2. 若状态为 `ready-to-delta`，应报告“方案已完成，plan gate 待批准/auto 消费”，不得报告 blocked 或任务规划失败。
+3. 若在全自动模式下调用 `next --auto` 并消费 `plan-exit`，且响应含 `gate_auto_passed=true` 与 `next_node.id=="write-delta"`，driver 必须继续派发 delta-writing。
+4. 若 `tasks_execution_done < tasks_execution_total`，只说明 delta/deploy/code 执行任务尚未完成，不得将其折叠为 proposal/tasks 规划失败。
+
+该规则用于 RunLogos / AI 宿主的自动调度健壮性：可恢复的等待态必须输出可行动诊断和下一前沿；只有 proposal/tasks 真实未脱模板、部署决策冲突、越权产物或不可恢复的人类决策缺口才可阻断。
+
 ## 迭代规则
 
 功能迭代**必须**按同样的分层工作流推进，使用 Delta 变更管理（详见 [change-management.md](./change-management.md)）。不允许跳过中间环节直接改代码。
@@ -480,3 +497,36 @@ proposal / tasks（明确是否需要部署）
 - **git push 是人类确认点**：archive 完成后 AI 提示用户确认，不得自动推送。**例外（auto-full-unattended）**：全自动 / 无人值守模式下（`openlogos next --auto` 的 standing run-scoped 授权——用户选 `--auto` 即一次性授权该提案全链路自动跑到底），archive 完成即由 standing 授权自动 `git push`，并向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行。`git push` 无需任何 marker 或 guard 改动——PreToolUse guard 的安全白名单本就放行 `git push`、从不拦截（见 [pretooluse-guard.md](./pretooluse-guard.md)）；全自动由生成的指令文本授权 AI 自动 push，半自动 / 手动模式（无 `--auto`）由指令文本要求人工确认，行为完全不变。
 
 迭代可能导致场景变更：新增场景、修改已有场景、废弃场景。所有变更通过 `logos/changes/` 提案管理，场景编号一旦分配不复用。
+
+## 无人值守恢复策略
+
+### 可恢复失败
+
+无人值守流程中，可恢复失败是指系统已经掌握足够证据继续推进修复的失败，包括：
+
+- 局部切片完成但全量 verify 失败；
+- artifacts 声明遗漏但可从磁盘事实更正；
+- reporter 缺失少量 test ID，且当前切片可重派补齐；
+- driver 缺少验证规则但能输出明确缺口。
+
+### 恢复动作
+
+可恢复失败必须输出下一步动作：
+
+- `repair` / `code`：用于全量 verify failed；
+- `re-dispatch-current-slice`：用于切片合同未满足；
+- `correct-artifacts`：用于完成回报 artifacts 声明错误；
+- `rerun-focused-tests`：用于 focused tests 缺失或 reporter 缺失；
+- `human-review`：仅用于必须人工判断的情况。
+
+### hard block
+
+hard block 仅适用于：
+
+- 达到不可跳硬红线；
+- 连续无产物、无测试、无状态变化；
+- 越权修改或工作单元范围冲突；
+- 外部依赖不可用且无法继续模拟或降级；
+- 明确需要人类产品/风险决策。
+
+任何 hard block 都必须说明为什么不能自动恢复，并提供恢复所需的人类动作。

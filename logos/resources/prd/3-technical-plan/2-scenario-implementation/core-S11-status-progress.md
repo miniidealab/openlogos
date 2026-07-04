@@ -149,6 +149,48 @@ launched 模块在存在活跃提案时，`active_change.proposal_step` 的判�
 
 JSON 输出中 `deployment_progress.status=done` 不等价于部署完成；只有同时存在 `DEPLOY_DONE` 才能离开 `ready-to-deploy`。
 
+## plan gate 诊断状态与 tasks 执行进度分层
+
+`openlogos status --format json` 在 launched 活跃提案下应提供面向 driver/UI 的 plan gate 诊断对象，用于消除 `ready-to-delta` 与任务执行进度之间的歧义。该对象可以挂载在 `modules[].active_change.plan_state`，legacy 单模块输出可回退到顶层 `plan_state`。
+
+建议结构：
+
+```json
+{
+  "plan_ready": true,
+  "plan_gate_pending": true,
+  "plan_approved": false,
+  "tasks_template_filled": true,
+  "tasks_execution_done": 0,
+  "tasks_execution_total": 8,
+  "tasks_execution_scope": "delta",
+  "diagnostic": "proposal/tasks 已完成，等待 plan-exit 批准；checkbox 表示 delta 执行进度"
+}
+```
+
+字段语义：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `plan_ready` | boolean | `proposal.md` 与 `tasks.md` 已脱模板，且 proposal/tasks 一致性检查未阻断 plan |
+| `plan_gate_pending` | boolean | `proposal_step=ready-to-delta` 且 `PLAN_APPROVED` 不存在，当前停在 plan 出口门 |
+| `plan_approved` | boolean | `PLAN_APPROVED` 存在，或已通过实际 delta 产出离开 plan gate |
+| `tasks_template_filled` | boolean | `tasks.md` 已被结构化填写，不是 CLI 初始模板 |
+| `tasks_execution_done` | number | 当前可执行 section 的已勾 checkbox 数 |
+| `tasks_execution_total` | number | 当前可执行 section 的 checkbox 总数 |
+| `tasks_execution_scope` | string | 当前统计口径，优先为 `"delta"`；无 `[delta]` 且有 `[deploy]` 时为 `"deploy"`；不可用时为 `"none"` |
+| `diagnostic` | string | 可直接展示给 RunLogos / AI driver 的短诊断 |
+
+派生规则：
+
+- `proposal_step=writing` 时，`plan_ready=false`，`plan_gate_pending=false`；若 `tasks_template_filled=false`，可提示继续填写 tasks。
+- `proposal_step=ready-to-delta` 时，若 proposal/tasks 已脱模板，必须输出 `plan_ready=true`、`plan_gate_pending=true`、`plan_approved=false`；`tasks_execution_done` 可以为 0，但不得影响 `plan_ready`。
+- `PLAN_APPROVED` 存在或 `proposal_step=delta-writing` 时，`plan_gate_pending=false`、`plan_approved=true`。
+- `deployment_decision_conflict=true` 时，`plan_ready=false`，诊断应优先说明 proposal/tasks 冲突。
+- 文本输出可继续简洁展示，但 JSON 契约必须足以让 UI/driver 区分“待批准”“待执行”和“未规划”。
+
+SessionStart hook 与 RunLogos 面板应优先消费结构化字段，不得通过中文 `suggestion` 或 checkbox 比例反推 plan 是否失败。
+
 ## SessionStart 消费 status 结构化状态
 
 S11 的 `openlogos status --format json` 是 AI 宿主 SessionStart 阶段化范围注入的主要事实源。SessionStart hook 应读取以下字段：
@@ -174,3 +216,20 @@ S11 的 `openlogos status --format json` 是 AI 宿主 SessionStart 阶段化范
 - 无 guard 时，仍维持 launched 项目修改源码前必须创建提案的阻断提示。
 
 该能力不新增 `status` JSON 字段，只消费现有契约。
+
+## automation_diagnostic 在 status 中的前沿边界
+
+`openlogos status --format json` 负责展示当前活跃提案的真实前沿。对于 launched 活跃提案，status 不得把历史 verify 失败诊断挂载成会改变下一步动作的 repair/code 建议，除非当前提案已经进入实现/验证闭环。
+
+### 状态派生要求
+
+- `ready-to-delta`：展示 plan gate / `plan_state`，不得输出 `suggested_next_node:"code"` 的 `automation_diagnostic`。
+- `delta-writing`：展示 delta 执行进度，允许宿主继续写 delta，不得被全量失败诊断改写为 repair。
+- `ready-to-merge`：展示 merge 是确认点 / 可跳 spec gate，不得被 stale diagnostic 改写为 verify repair。
+- `merge-generated`：展示 merge 已完成后的下一阶段，不消费历史 verify 失败。
+- `ready-to-implement` 且 `[code]` 未规划：展示 `plan-slices` 前沿，不输出可驱动 repair/code 的诊断。
+- `coding`、`ready-to-verify`、`verify-failed`：可输出实现/验证相关 `automation_diagnostic`，用于 driver 派发 repair/code。
+
+### 消费方约束
+
+SessionStart、RunLogos 面板和其它 status 消费方必须以结构化 `proposal_step` / `next_node` / gate 字段为准，不得仅因存在历史 `automation_diagnostic.reason=="global-verify-failed"` 就扩大当前写入范围或跳过当前 flow 前沿。

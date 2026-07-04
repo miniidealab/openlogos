@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { listFiles } from './list-files.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
@@ -54,6 +54,25 @@ export interface DeploymentDocument {
 export interface TaskItem {
   checked: boolean;
   text: string;
+}
+
+export interface CodePlanningDiagnostic {
+  reason: 'tasks-code-section-missing' | 'slices-not-planned';
+  tasksPath: string;
+  remediation: string;
+}
+
+export type TasksExecutionScope = 'delta' | 'deploy' | 'code' | 'none';
+
+export interface PlanState {
+  plan_ready: boolean;
+  plan_gate_pending: boolean;
+  plan_approved: boolean;
+  tasks_template_filled: boolean;
+  tasks_execution_done: number;
+  tasks_execution_total: number;
+  tasks_execution_scope: TasksExecutionScope;
+  diagnostic?: string;
 }
 
 const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
@@ -152,6 +171,145 @@ export function isTasksCodeFilled(content: string): boolean {
     .some(item => item.text.trim() !== '' && !CODE_SECTION_PLACEHOLDERS.has(item.text.trim()));
 }
 
+const TEST_CASE_ID_PATTERN = /\b(?:UT|ST|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/;
+
+function hasTestDeltaSignal(proposalDir: string, tasksContent: string): boolean {
+  if (/\bdeltas\/test\//.test(tasksContent) && TEST_CASE_ID_PATTERN.test(tasksContent)) {
+    return true;
+  }
+
+  for (const file of listFiles(join(proposalDir, 'deltas', 'test'))) {
+    const fullPath = join(proposalDir, 'deltas', 'test', file);
+    try {
+      if (TEST_CASE_ID_PATTERN.test(readFileSync(fullPath, 'utf-8'))) {
+        return true;
+      }
+    } catch {
+      // 忽略不可读文件；listFiles 已过滤普通文件，此处只兜底竞态。
+    }
+  }
+  return false;
+}
+
+function proposalDeclaresCodeRequired(content: string): boolean {
+  return /(?:代码级|code-level|code\s+level|业务代码|实现代码|代码实现|runner|reporter)/i.test(content);
+}
+
+function proposalDeclaresNoCode(content: string): boolean {
+  return /(?:无需代码|无代码|纯文档|不涉及代码|no\s+code|docs-only|documentation-only)/i.test(content);
+}
+
+export function isCodeRequiredForProposal(
+  proposalDir: string,
+  tasksContent?: string,
+  sections?: Record<string, { checked: number; total: number }> | null,
+): boolean {
+  const taskText = tasksContent ?? (existsSync(join(proposalDir, 'tasks.md'))
+    ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '');
+  const parsedSections = sections ?? parseTaskSections(taskText);
+  if (parsedSections?.code && parsedSections.code.total > 0) return true;
+
+  const proposalContent = existsSync(join(proposalDir, 'proposal.md'))
+    ? readFileSync(join(proposalDir, 'proposal.md'), 'utf-8') : '';
+
+  const testDeltaRequiresCode = hasTestDeltaSignal(proposalDir, taskText);
+  if (testDeltaRequiresCode) return true;
+  if (proposalDeclaresNoCode(proposalContent)) return false;
+  return proposalDeclaresCodeRequired(proposalContent);
+}
+
+export function getCodePlanningDiagnostic(proposalDir: string, tasksContent?: string): CodePlanningDiagnostic | null {
+  const taskText = tasksContent ?? (existsSync(join(proposalDir, 'tasks.md'))
+    ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '');
+  const sections = parseTaskSections(taskText);
+  if (!isCodeRequiredForProposal(proposalDir, taskText, sections)) return null;
+
+  const code = sections?.code;
+  const slug = proposalDir.split(/[\\/]/).filter(Boolean).pop() ?? '<slug>';
+  const tasksPath = `logos/changes/${slug}/tasks.md`;
+  if (!code) {
+    return {
+      reason: 'tasks-code-section-missing',
+      tasksPath,
+      remediation: '补空 ## [code] section 后重新进入 plan-slices，或由 slice-planner 创建 section',
+    };
+  }
+  if (!isTasksCodeFilled(taskText)) {
+    return {
+      reason: 'slices-not-planned',
+      tasksPath,
+      remediation: '由 slice-planner 基于已合并规格和真实 UT/ST ID 写入 [code] 切片',
+    };
+  }
+  return null;
+}
+
+export function isCodeRequiredButUnplanned(proposalDir: string, tasksContent?: string): boolean {
+  const taskText = tasksContent ?? (existsSync(join(proposalDir, 'tasks.md'))
+    ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '');
+  return isCodeRequiredForProposal(proposalDir, taskText) && !isTasksCodeFilled(taskText);
+}
+
+/** enforce-slice-stage-ordering：auto-reset 时把 `## [code]` 重置成的纯代码模板占位（等价 change-writer 纯代码模板）。 */
+const CODE_SECTION_RESET_PLACEHOLDER: Record<string, string> = {
+  zh: '- [ ] 实现代码变更',
+  en: '- [ ] Implement code changes',
+};
+
+/** 提取 tasks.md 中 `## [code]` section 的原始文本（标题到下一个 `## ` 前），用于 auto-reset 备份。 */
+function extractCodeSectionRaw(content: string): string {
+  const lines = content.split(/\r?\n/);
+  const out: string[] = [];
+  let inCode = false;
+  for (const line of lines) {
+    if (/^## \[code\]/i.test(line)) { inCode = true; out.push(line); continue; }
+    if (inCode) {
+      if (/^## /.test(line)) break;
+      out.push(line);
+    }
+  }
+  return out.join('\n').trimEnd();
+}
+
+/** 把 `## [code]` section body 重置为纯代码模板占位（保留 `## [code]` 标题行）。 */
+function replaceCodeSectionBody(content: string, placeholder: string): string {
+  const lines = content.split(/\r?\n/);
+  const out: string[] = [];
+  let inCode = false;
+  for (const line of lines) {
+    if (/^## \[code\]/i.test(line)) {
+      out.push(line, '', placeholder);
+      inCode = true;
+      continue;
+    }
+    if (inCode) {
+      if (/^## /.test(line)) { inCode = false; out.push('', line); }
+      continue; // 丢弃 [code] 旧 body
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+/**
+ * enforce-slice-stage-ordering：auto-reset 提前填充的 `[code]` section（§12.7）。
+ * 仅当 `[code]` 已 `tasks_code_filled`（提前填充）时，重置为纯代码模板占位并把旧内容备份到提案目录 `CODE_AUTORESET`。
+ * 幂等：`[code]` 已占位（未 `tasks_code_filled`）时不清理、不备份，返回 false。
+ * ⚠️ 只在有副作用命令（`openlogos merge` / `next --auto` slice-exit 守卫）中调用；**绝不**在 `status`/`flow-derive` 被动派生路径调用（A 被动派生只读）。
+ */
+export function resetCodeSection(proposalDir: string, trigger: string, locale = 'zh'): boolean {
+  const tasksPath = join(proposalDir, 'tasks.md');
+  if (!existsSync(tasksPath)) return false;
+  const content = readFileSync(tasksPath, 'utf-8');
+  if (!isTasksCodeFilled(content)) return false; // 幂等：已占位不动
+  const oldCode = extractCodeSectionRaw(content);
+  const placeholder = CODE_SECTION_RESET_PLACEHOLDER[locale] ?? CODE_SECTION_RESET_PLACEHOLDER.zh;
+  writeFileSync(tasksPath, replaceCodeSectionBody(content, placeholder));
+  const backup = JSON.stringify({ ts: new Date().toISOString(), trigger, old_code: oldCode });
+  appendFileSync(join(proposalDir, 'CODE_AUTORESET'), backup + '\n');
+  return true;
+}
+
 export function countMergeableDeltaFiles(proposalDir: string): number {
   let count = 0;
   for (const category of MERGE_SUPPORTED_DELTA_DIRS) {
@@ -234,6 +392,65 @@ export function readTaskSectionItems(proposalDir: string, tag: string): TaskItem
   const tasksPath = join(proposalDir, 'tasks.md');
   if (!existsSync(tasksPath)) return [];
   return extractTaskSectionItems(readFileSync(tasksPath, 'utf-8'), tag);
+}
+
+function resolveTasksExecution(
+  sections: Record<string, { checked: number; total: number }> | null,
+): { done: number; total: number; scope: TasksExecutionScope } {
+  for (const scope of ['delta', 'deploy', 'code'] as const) {
+    if (sections?.[scope]) {
+      return {
+        done: sections[scope].checked,
+        total: sections[scope].total,
+        scope,
+      };
+    }
+  }
+  return { done: 0, total: 0, scope: 'none' };
+}
+
+export function derivePlanState(
+  proposalDir: string,
+  step: ProposalStep,
+  deploymentDecision: Pick<ProposalDeploymentDecision, 'deployment_decision_conflict' | 'deployment_decision_conflict_reason'>,
+  tasksContent?: string,
+): PlanState {
+  const proposalPath = join(proposalDir, 'proposal.md');
+  const tasksPath = join(proposalDir, 'tasks.md');
+  const proposalContent = existsSync(proposalPath) ? readFileSync(proposalPath, 'utf-8') : '';
+  const taskText = tasksContent ?? (existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '');
+  const sections = parseTaskSections(taskText);
+  const execution = resolveTasksExecution(sections);
+  const proposalFilled = isProposalTemplateFilled(proposalContent);
+  const tasksTemplateFilled = isTasksTemplateFilled(taskText) && sections !== null;
+  const planApproved = existsSync(join(proposalDir, PLAN_APPROVED_MARKER))
+    || (step !== 'writing' && step !== 'ready-to-delta');
+  const conflict = deploymentDecision.deployment_decision_conflict;
+  const planReady = proposalFilled && tasksTemplateFilled && !conflict;
+  const planGatePending = step === 'ready-to-delta' && !planApproved && planReady;
+
+  let diagnostic: string | undefined;
+  if (conflict) {
+    diagnostic = deploymentDecision.deployment_decision_conflict_reason
+      ?? 'proposal.md 与 tasks.md 存在 plan 层冲突，请先修正后再继续。';
+  } else if (!proposalFilled || !tasksTemplateFilled) {
+    diagnostic = 'proposal/tasks 尚未完成脱模板，不能进入 plan gate。';
+  } else if (planGatePending) {
+    diagnostic = 'proposal/tasks 已完成，等待 plan-exit 批准或 next --auto 消费；checkbox 表示后续执行进度。';
+  } else if (planApproved) {
+    diagnostic = 'plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。';
+  }
+
+  return {
+    plan_ready: planReady,
+    plan_gate_pending: planGatePending,
+    plan_approved: planApproved,
+    tasks_template_filled: tasksTemplateFilled,
+    tasks_execution_done: execution.done,
+    tasks_execution_total: execution.total,
+    tasks_execution_scope: execution.scope,
+    ...(diagnostic ? { diagnostic } : {}),
+  };
 }
 
 export function getDeployTasks(proposalDir: string): TaskItem[] {
@@ -464,6 +681,10 @@ export function detectProposalStep(
   proposalDir: string,
   moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
 ): ProposalStep {
+  if ((existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED')))
+    && isCodeRequiredButUnplanned(proposalDir)) {
+    return 'ready-to-implement';
+  }
   if (existsSync(join(proposalDir, 'VERIFY_FAIL'))) {
     return 'verify-failed';
   }
@@ -516,8 +737,12 @@ export function detectProposalStep(
     const sections = parseTaskSections(tasksContent);
     if (sections !== null) {
       const code = sections['code'];
+      const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
+      if (!code && codeRequired) {
+        return 'ready-to-implement';
+      }
       if (!code || (code.total > 0 && code.checked === code.total)) {
-        // 无 [code] section 或 [code] 全勾 → 可以 verify
+        // 无 [code] section 且无需代码，或 [code] 全勾 → 可以 verify
         return 'ready-to-verify';
       }
       // split-slice-planner-stage：[code] 有未完成切片。slice-exit 门未放行（无 SLICES_APPROVED）

@@ -130,3 +130,15 @@
 | ST-S09-28 | ViaFlow == 旧 detectProposalStep 在无 [delta] fixture 等价 | 纯代码派生集 | UT-S09-55..59 各 fixture | 并跑 `detectProposalStepViaFlow` 与旧 `detectProposalStep` | 每个 fixture 两者返回的 `ProposalStep` 逐一相等（1:1 不变量保持） |
 | ST-S09-29 | 纯代码提案端到端无死锁：plan→(spec/merge 空过)→plan-slices→…→verify | 无 [delta] 全链路 | 纯代码修复提案（空 `## [code]`），经 plan 门 | `next`（指 plan-slices）→ 写 `[code]` 脱模板 → `next`（停 slice-exit）→ `--auto` → … → `ready-to-verify` | 全程无 `delta-writing`/`write-delta` 前沿；无 `blocked(no-progress)`；最终达 `ready-to-verify` |
 | ST-S09-30 | golden 零漂移：有 [delta] 常规提案 status/next 输出不变 | 回归 | 各态有 `[delta]` 提案 fixture | 跑 golden-baseline | 常规提案 status/next JSON 与基线逐字节一致（本变更只影响无 `[delta]` 分支） |
+
+## 八、proposal/tasks 写完后的 final 前校验测试
+
+> 覆盖 AI/driver 在 `proposal.md` 与 `tasks.md` 已脱模板后必须确认前沿或消费 auto gate，避免把 `ready-to-delta + tasks 0/N` 误判为任务规划失败。用例实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+| ID | 用例 | 覆盖点 | 前置条件 | 操作 | 期望 |
+|---|---|---|---|---|---|
+| UT-S09-62 | proposal/tasks 已脱模板后 final 前识别 ready-to-delta | final 前校验 | `proposal.md` 已填、`tasks.md` 含 `[delta]` 且 checkbox `0/N`、无 `PLAN_APPROVED` | 调用 proposal lifecycle / driver 前沿校验函数 | 返回 `proposal_step=="ready-to-delta"`；`plan_ready==true`；不得返回任务规划失败 |
+| UT-S09-63 | tasks checkbox 0/N 不触发规划失败 | 执行进度分层 | 同 UT-S09-62，`tasks_execution_done=0`、`tasks_execution_total>0` | 生成 final 诊断 | 诊断说明“delta 尚未执行 / plan gate pending”；不包含 blocked、planning failed 或要求重写 tasks 的语义 |
+| UT-S09-64 | auto 消费 plan-exit 后继续派发 write-delta | final 前 auto 闭环 | `ready-to-delta` 提案，`next --auto` 响应含 `gate_auto_passed=true`、`next_node.id="write-delta"` | driver 消费响应 | 下一 dispatch 为 `write-delta` / change-writer；不得 final 停止在 plan gate |
+| ST-S09-31 | proposal/tasks 产出端到端不被误判为 block | S09 Step 3→8 | 从新建提案到 AI 写完 proposal/tasks，`tasks.md` `[delta]` 全未勾 | 模拟 driver 完成 write-proposal/write-tasks 后读取 `status/next` | 流程进入 `ready-to-delta`；面向用户的状态为“方案待批准/auto 消费”；无“任务规划失败” |
+| ST-S09-32 | 全自动下 plan gate 后进入 delta-writing | S09 + S24 联动 | 同 ST-S09-31，随后执行 `next --auto --format json` | driver 按响应继续派发 | `PLAN_APPROVED` 语义成立，下一工作单元为 `write-delta`；不出现 blocked/no-progress |

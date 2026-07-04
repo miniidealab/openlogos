@@ -28,6 +28,22 @@ tasks.md 使用带标记的 section 组织任务，每个 section 对应提案�
 
 **`[code]` section 的切片划分时机（split-slice-planner-stage）**：`plan` 段 `write-tasks` 只产 `[delta]` / `[deploy]`，**不再划分 `[code]` 切片**；`[code]` 切片由 **merge 之后、implement 之前**的独立 `slice` 子流程（`slice-planner` skill）撰写——以**已合并的规格 + 真实 UT/ST 测试 ID**为输入，逐片过「删后续证伪门」后写入。切片的「唯一事实源」为 slice-planner（一次定死、下游 code-implementor 忠实逐片消费）。纯文档提案（无 `[code]`）时 `slice` 子流程整段跳过（`when: code_required`）。
 
+**提前填充的兜底（enforce-slice-stage-ordering）**：若 `write-tasks` 阶段仍把 `[code]` 提前填充，CLI 会在「进入 slice 段」的确定性动作上自动清理（auto-reset）——有 delta 提案于 `openlogos merge` 时、纯代码提案于 plan 门放行时，把 `[code]` 重置为占位并把旧内容备份到提案目录 `CODE_AUTORESET`（append-only jsonl，可追溯），随后由 merge 后 slice-planner 对真实测试 ID 重新划分。清理**不阻断流程、无人值守自愈**。详见 `spec/flow-spec.md` §12.7。
+
+**需要代码提案的 `[code]` 标题保留与缺失诊断（fix-missing-code-section-slice-gate）**：`tasks.md` 的 `## [code]` 标题在 split-slice-planner-stage 后不仅是切片承载区，也是“本提案需要代码实现、merge 后应进入 slice-planner”的结构锚点。凡 launched 提案满足 `code_required==true`，plan 段必须保留空 `## [code] 代码实现` 标题，切片条目仍由 merge 后 `slice-planner` 填写。
+
+必须保留空 `[code]` 标题的情况：
+
+- 变更类型为代码级修复；
+- proposal / tasks / delta 明确提到后续业务代码、测试代码、OpenLogos reporter、runner、CLI 派生或 UI/driver 消费侧实现；
+- `[delta]` 会新增或修改 `UT-*` / `ST-*` / `SMOKE-*` 测试用例，且这些用例需要后续实现覆盖；
+- change-writer 无法确定是否纯文档时，宁可保留空 `## [code]` 标题，让 merge 后的 slice-planner 作最终切片判断。
+
+禁止的解释：
+
+- 对需要代码的提案，`tasks.md` 缺失 `## [code]` 不得被解释为“无代码任务 / code remaining 为 0”。
+- 对需要代码的提案，`[code]` 为空或模板占位不得被解释为“可 verify”，只能解释为“切片未规划”。
+
 ### Section 标记
 
 Section 标题格式为 `## [<tag>] <描述>`，其中 `<tag>` 为小写英文标识符：
@@ -41,7 +57,7 @@ Section 标题格式为 `## [<tag>] <描述>`，其中 `<tag>` 为小写英文�
 ### 规则
 
 1. **`[delta]` section 只列 delta 任务**：每条任务必须对应一个 delta 文件的产出，不得混入代码或部署任务
-2. **`[code]` section 只列代码任务**：直接修改 `src/`、`test/` 等源文件的任务，不得混入 delta 或部署任务。**`[code]` 切片在 merge 后由 slice-planner 对真实测试 ID 划分**，`plan` 段 `write-tasks` 不得提前划分 `[code]`
+2. **`[code]` section 只列代码任务**：直接修改 `src/`、`test/` 等源文件的任务，不得混入 delta 或部署任务。**`[code]` 切片在 merge 后由 slice-planner 对真实测试 ID 划分**，`plan` 段 `write-tasks` 不得提前划分 `[code]`（若提前填充，CLI 在进入 slice 段时 auto-reset 并备份到 `CODE_AUTORESET`、作废，见 `spec/flow-spec.md` §12.7）
 3. **`[deploy]` section 只列部署任务**：部署、迁移、发布、重启、配置检查、回滚准备等任务写入此 section，不得混入代码实现任务
 4. **三个 section 均为可选**：
    - 纯代码提案（无规格变更）：只有 `[code]` section，无 `[delta]` section
@@ -76,6 +92,8 @@ CLI 的 `detectProposalStep()` / `detectProposalStepViaFlow()` 按以下规则�
 | `SMOKE_PASS` 存在 | → `smoke-passed` |
 
 > **纯代码提案（无 `[delta]`）绝不派生 `delta-writing`**（fix-nodelta-proposal-routing）：`tasks.md` 无 `## [delta]` section（`delta_required==false`）时，`spec`/`merge` 子流程整段空过（无 delta 待合并、不等 `SPEC_MERGED`），派生直接按上表 `ready-to-implement`/`coding`/`ready-to-verify` 三行（其 `SPEC_MERGED` 前置对纯代码提案以「空过」满足）推进。此类提案在**任何** `[code]`/`SLICES_APPROVED`/`PLAN_APPROVED` 组合下 `proposal_step` 均不为 `delta-writing`、前沿不为 `write-delta`。前提是纯代码提案 `tasks.md` 保留 `## [code]` 标题（见「格式规范」）；完全无 `## [tag]` 标题的旧格式 `tasks.md` 仍走「向后兼容」的全局兜底。详见 `spec/flow-spec.md` §12.6。
+
+> **缺失 `[code]` 的代码必需态**：`SPEC_MERGED` 在场、`code_required==true`、`tasks.md` 缺失 `## [code]` 时，派生为 `ready-to-implement`，`next_node.id=="plan-slices"`，诊断 `tasks-code-section-missing`。`SPEC_MERGED` 在场、`code_required==true`、`## [code]` 存在但未 `tasks_code_filled` 时，同样派生为 `ready-to-implement`，诊断 `slices-not-planned`。只有 `code_required==false` 且缺失 `[code]` 时，才按纯文档/退化 implement 路径推进，可跳过 slice。
 
 > **change-flow-redesign 新增 `ready-to-delta`**：前段 `plan` 子流程（write-proposal + write-tasks）完成、`spec`（write-delta）尚未开始时的驻留态，对应 plan 出口「批准方案」门（gate_id=`plan-exit`、`skippable:true`）。其检测依据为"proposal/tasks 已脱模板、尚无 delta 产出、且 `PLAN_APPROVED` 不存在"。
 
@@ -183,3 +201,25 @@ CLI 的 `detectProposalStep()` / `detectProposalStepViaFlow()` 按以下规则�
 - [ ] 产出 delta 文件到 deltas/prd/1-product-requirements/ — 补充非功能性需求
 - [ ] 产出 delta 文件到 deltas/prd/2-product-design/1-feature-specs/ — 更新交互说明
 ```
+
+## 切片完成声明与证据关系
+
+### 任务勾选语义
+
+`tasks.md` 的 `[code]` 切片勾选表示当前切片合同已完成：业务代码、对应 UT/ST、OpenLogos reporter 与必要 fixture/golden 已落盘。该勾选不表示全量 verify 必然通过。
+
+### 证据分层
+
+| 证据 | 证明内容 | 不能证明 |
+|---|---|---|
+| `[code]` 切片勾选 | 本片合同已完成 | 全量回归已通过 |
+| `test-results.jsonl` 本片 ID pass | focused tests / reporter 通过 | 非本片测试通过 |
+| `acceptance-report.md` PASS | 全量验收通过 | artifact 声明完整 |
+| artifacts 列表 | agent 声明产物 | 产物一定满足切片合同 |
+
+### 规则
+
+- 全量 verify 失败不得自动反向取消 `[code]` 切片勾选。
+- 若 artifacts / reporter 缺失，应输出当前切片未完成诊断，而不是依赖全量 verify 失败推断。
+- 若本片证据完整但全量失败，应进入 repair / code，保留本片完成事实。
+- driver 更正 artifacts 声明时，不应要求改写 tasks；应重新校验证据并追加 audit。

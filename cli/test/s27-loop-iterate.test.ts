@@ -12,6 +12,7 @@ import { next } from '../src/commands/next.js';
 import { status, collectStatusData } from '../src/commands/status.js';
 import { verify } from '../src/commands/verify.js';
 import { loadFlow } from '../src/lib/flow.js';
+import { deriveAutomationDiagnostic } from '../src/lib/automation-diagnostic.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -516,5 +517,75 @@ describe('S27 — change-flow-redesign 增量（until 枚举放开 / launched �
     expect(s.modules[0].loop_state).toBeUndefined();
     const n = await runNextJson(root);
     expect(n).not.toHaveProperty('loop_state');
+  });
+});
+
+describe('S27 — 自动流程 retry / no-progress 边界', () => {
+  it('UT-S27-24: 有产物但全量回归失败不计为 no progress', () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    const dir = setupLaunchedProposal(root);
+    mkdirSync(join(root, 'cli/src'), { recursive: true });
+    writeFileSync(join(root, 'cli/src/changed.ts'), 'export const changed = true;\n');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S27-24","status":"pass"}',
+      '{"id":"UT-S27-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: ['UT-S27-24'],
+      declaredArtifacts: ['cli/src/changed.ts'],
+      loopState: { subflow_id: 'implement', until: 'code_slices_green', max_iters: 3, iteration: 1, converged: false, escalated: false },
+    });
+
+    expect(diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+    });
+    expect(diagnostic?.reason).not.toBe('no-progress');
+  });
+
+  it('UT-S27-25: 真正无产物才进入 no-progress / retry exhausted 边界', () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    const dir = setupLaunchedProposal(root);
+
+    const diagnostic = deriveAutomationDiagnostic(root, {
+      proposalDir: dir,
+      requiredTestIds: [],
+      declaredArtifacts: [],
+      loopState: { subflow_id: 'implement', until: 'code_slices_green', max_iters: 2, iteration: 2, converged: false, escalated: true },
+    });
+
+    expect(diagnostic).toMatchObject({
+      reason: 'no-progress',
+      completion_state: 'no_progress',
+      suggested_next_node: 'manual',
+      human_action_required: true,
+    });
+  });
+
+  it('ST-S27-09: 全量失败输出 repair/code 前沿，不输出 retry exhausted', async () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    const dir = setupLaunchedProposal(root);
+    writeLedger(join(dir, 'LOOP_ITERS'), [row(1, 'fail')]);
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"ST-S27-09","status":"pass"}',
+      '{"id":"UT-S27-REG","status":"fail","error":"regression"}',
+    ].join('\n') + '\n');
+
+    const data = await runNextJson(root, true);
+
+    expect(data.modules[0].automation_diagnostic).toMatchObject({
+      reason: 'global-verify-failed',
+      completion_state: 'slice_done_global_verify_failed',
+      suggested_next_node: 'code',
+    });
+    expect(data.modules[0].next_node?.id).toBe('code');
+    expect(JSON.stringify(data)).not.toContain('retry-exhausted');
   });
 });

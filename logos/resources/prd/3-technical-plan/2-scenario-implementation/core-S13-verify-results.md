@@ -105,3 +105,55 @@ sequenceDiagram
 - `smoke_runner_missing`：找不到当前提案新增 smoke 用例对应 runner 或 dispatcher 注册。
 - `smoke_reporter_missing`：runner 存在但没有写入 `smoke.result_path`。
 - `smoke_cases_uncovered`：结果文件存在但缺少新增 `SMOKE-*` ID。
+
+## verify 结果与 reporter 证据分层
+
+### 目标
+
+`openlogos verify` 的结果必须支持自动 driver 区分局部切片证据与全量回归结论。focused tests / reporter pass 证明某个切片的指定测试已执行通过；acceptance report 的全量失败证明仍需要 repair。二者不是互斥关系。
+
+### 时序补充
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant R as Reporter
+    participant V as openlogos verify
+    participant D as Driver
+
+    A->>R: 写入本片 UT/ST pass 记录
+    D->>V: 运行全量 verify
+    V-->>D: 输出 failed_tests 与 acceptance report
+    alt 本片 reporter pass 且全量 verify failed
+        D-->>D: 标记 slice_done_global_verify_failed
+        D-->>A: 派发 repair / code，附 failed_tests
+    else reporter / focused tests 缺失
+        D-->>A: 重派当前切片或补 reporter
+    else 全量 verify pass
+        D-->>D: 进入后续流程
+    end
+```
+
+### 规则
+
+- `test-results.jsonl` 中存在本片要求的 test ID 且均 pass 时，可作为本片 focused tests 通过证据。
+- acceptance report 中存在失败用例时，应输出 `global-verify-failed` 与失败用例列表。
+- 本片 focused tests pass + global verify failed 时，不得输出 `claimed-done-but-unverified`。
+- verify JSON / report 应为 driver 暴露足够字段，避免 driver 解析自然语言报告。
+
+### 异常路径
+
+- reporter 缺失对应 test ID：输出 `reporter-missing` 或 `focused-tests-missing`。
+- acceptance report 失败但没有失败测试列表：输出 `global-verify-failed` 并附 `driver-cannot-validate-artifacts` 或等价诊断，提示补充结构化失败证据。
+
+## verify 诊断与后续前沿传播边界
+
+`openlogos verify --format json` 可以在本次验收失败时输出 `automation_diagnostic`，包括 `global-verify-failed`、失败测试列表、缺失 reporter、缺失 focused tests 等结构化原因。该诊断用于解释 verify 结果，并为实现/验证闭环中的 repair 提供输入。
+
+verify 诊断不得无条件传播到后续 `status` / `next` 的所有前沿。传播规则如下：
+
+1. 若当前活跃提案仍处于 plan/spec/merge/slice 未完成前沿，历史 verify 诊断只能作为只读背景信息或被省略，不得覆盖当前前沿。
+2. 若当前活跃提案处于 `coding`、`ready-to-verify` 或 `verify-failed`，且存在本轮切片 artifacts、reporter 与 focused tests 证据，`global-verify-failed` 可以驱动 repair/code。
+3. 若失败证据属于上一提案、上一轮已离开的 flow 阶段或过期 acceptance report，`status` / `next` 不得把它提升为当前提案的 `suggested_next_node:"code"`。
+
+该边界不削弱 verify 本身的诊断能力；它只限制诊断在非当前前沿中的跨阶段抢占。

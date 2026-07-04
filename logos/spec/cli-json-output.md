@@ -250,6 +250,7 @@ openlogos status --format json  # JSON 格式
 | `modules[].active_change.tasks_checked` | number | 是 | 已勾选任务数 |
 | `modules[].active_change.tasks_total` | number | 是 | 总任务数 |
 | `modules[].active_change.delta_count` | number | 是 | deltas 目录下的文件数 |
+| `modules[].active_change.code_required` | boolean | 是（`active_change` 非 null 时；为 null 时整个对象不出现，本字段亦不出现） | 当前活跃提案是否需要代码实现。取值**必须**等于内部谓词 `isCodeRequiredForProposal`（`cli/src/lib/proposal-lifecycle.ts`），供外部消费方直接读取，替代自行用关键词正则重判「要不要代码」。详见 §3.11 |
 | `modules[].active_change.deployment_required` | boolean \| null | 是 | 活跃提案是否需要部署；无法判断时为 null |
 | `modules[].active_change.smoke_required` | boolean \| null | 是 | 活跃提案是否需要部署后 smoke；无法判断时为 null |
 | `modules[].active_change.deployment_reason` | string \| null | 是 | 来自 `proposal.md` 的部署原因或兼容推断说明 |
@@ -452,6 +453,7 @@ implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代�
   1. 向活跃提案目录 `GATE_AUTO_PASSED` 追加一行 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}`；
   2. 写入 `SLICES_APPROVED` marker（活跃提案目录下，内容可为空、存在性为准；类比 `plan-exit` 写 `PLAN_APPROVED`）。
   写入后**同次响应重新派生**为 `coding` / `code` 前沿，`proposal_step == "coding"`、`next_node.id == "code"`。
+- **`slice-exit` 顶层 gate 字段的出现条件（fix-post-merge-slice-planner-auto-skip）**：`proposal_step=="ready-to-implement"` 时，顶层 `gate_id:"slice-exit"` / `gate_auto_passed:true` 只允许在 `tasks_code_filled==true` 后出现。若 `[code]` 仍为模板、空 section 或占位项，`next --auto --format json` 必须保持前沿为 `plan-slices`，输出形态应满足：`modules[].proposal_step == "ready-to-implement"`；`modules[].next_node.id == "plan-slices"`；`modules[].next_node.gate_id` 省略；`gate_auto_passed` 为 `false` 或省略；`gate_id` 为 `null` 或省略，绝不得为 `"slice-exit"`；不写入 `SLICES_APPROVED`，不追加 `GATE_AUTO_PASSED{gate_id:"slice-exit"}`，不返回 `next_node.id=="code"`。`[code]` 已脱模板且 `SLICES_APPROVED` 不存在时，既有语义保持不变：默认 `next` 输出 `next_node.id=="plan-slices"` 且 `next_node.gate_id=="slice-exit"`；`next --auto` 消费该门，写入 `SLICES_APPROVED`，并在同次响应重新派生为 `coding` / `next_node.id=="code"`。
 - **`SLICES_APPROVED` marker**：表示 slice 出口 gate 已被消费；存在后即使 `[code]` 尚未勾选，也派生为 `coding` / `code` 前沿。`GATE_AUTO_PASSED` 仍只表示审计轨迹。
 - **幂等边界**：同一提案已存在 `SLICES_APPROVED` 时，`proposal_step` 不再是 `ready-to-implement`，重复 `next --auto` 不得再次追加 `gate_id:"slice-exit"` 审计行。
 - 说明：本提案为开发态、主动扩展该闭合枚举（破"枚举不新增"不变量），消费方（含 RunLogos）须同步识别新值。
@@ -487,6 +489,81 @@ implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代�
 - **`deliver-entry`（不变）**：该门 `skippable:true`。`ready-to-deploy` 下 `next --auto` 自动放行，输出 `gate_id="deliver-entry"`、`skippable:true`、`gate_auto_passed:true`，并追加 `GATE_AUTO_PASSED` 审计行。
 - **授权语义（钉死）**：部署放行依据 = **本次 `next --auto` 响应输出 `gate_auto_passed === true`**（live 决策）；`GATE_AUTO_PASSED` 为 append-only 审计轨迹，**历史审计行不构成对后续部署或 plan gate 的授权**，默认 `next`（无 `--auto`）一律忽略之（与 S24 一致）。plan gate 状态推进只认 `PLAN_APPROVED` 或实际 delta 产出。
 - `ready-to-merge`（`spec` 出口）保持 `skippable:true`（语义不变，仅 gate 归属子流程由 `propose` 改为 `spec`）。
+
+---
+
+## 3.11 `code_required` 契约字段（expose-code-required-field）
+
+把已在 flow 派生中使用的内部谓词 `code_required`（驱动 `when: code_required` 子流程跳过、`plan-slices` 判定等，见 §3.10 与场景 S32/S24/S31）暴露为**显式契约字段**，作为「是否需要代码实现」的**单一事实源**，供外部消费方（如 RunLogos 驱动）直接读取，替代自行用关键词正则重判。
+
+### (1) 字段定义（修订 §3.3）
+- 路径：`modules[].active_change.code_required`
+- 类型：`boolean`
+- 取值：等于内部谓词 `isCodeRequiredForProposal`（`cli/src/lib/proposal-lifecycle.ts`）——`true`＝提案含 `## [code]` 产出需求（有 `[code]` 段 / `[delta]` 新增 `UT-*`/`ST-*`/`SMOKE-*` / proposal 声明代码级）；`false`＝纯文档 / 纯规格提案。
+
+### (2) 出现条件与零漂移边界
+- **仅在 `active_change` 非 null 时出现**；无活跃提案时 `active_change==null`，本字段随整个对象一并不出现。
+- 因此**无活跃提案的项目其 `next`/`status` JSON 不新增任何字段，既有 golden 不漂移**；有活跃提案的项目 `active_change` 对象新增一个 key，受影响 golden 须同步更新。
+
+### (3) 一致性约束
+- `code_required==false` ⟹ `next_node.id` 不为 `"code"`/`"plan-slices"`；`slice` 子流程（`when: code_required`）整段跳过。
+- `code_required==true` 且 `[code]` 未脱模板 ⟹ 维持 `proposal_step=="ready-to-implement"`、`next_node.id=="plan-slices"`。
+- 本字段只读、纯派生；`next` 不因输出本字段而写任何 marker。
+
+---
+
+## 3.13 launched plan_state 诊断对象
+
+为避免消费方把 `tasks.md` checkbox 执行进度误判为任务规划失败，`status` / `next` / `watch` 在 launched 活跃提案下新增可选诊断对象 `plan_state`。该对象是非破坏性扩展；缺失时旧消费方行为不变，新消费方应优先使用它区分 plan ready、plan gate pending 与任务执行进度。
+
+### 挂载位置
+
+- 有 `modules[]` 的输出：挂载到 `modules[].active_change.plan_state`。
+- legacy 单模块或顶层兼容输出：可回退到顶层 `plan_state`。
+- `next --format json` 的 module item 与 `status --format json` 保持同构；`watch` 事件中的 `data` 与 `status` 同构。
+
+### Schema
+
+```jsonc
+{
+  "plan_state": {
+    "plan_ready": true,
+    "plan_gate_pending": true,
+    "plan_approved": false,
+    "tasks_template_filled": true,
+    "tasks_execution_done": 0,
+    "tasks_execution_total": 8,
+    "tasks_execution_scope": "delta",
+    "diagnostic": "proposal/tasks 已完成，等待 plan-exit 批准；checkbox 表示 delta 执行进度"
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `plan_ready` | boolean | 是 | proposal/tasks 已脱模板，且无部署决策冲突等 plan 层阻断 |
+| `plan_gate_pending` | boolean | 是 | 当前停在 plan 出口门：`proposal_step=="ready-to-delta"` 且 `PLAN_APPROVED` 不存在 |
+| `plan_approved` | boolean | 是 | plan gate 已消费：`PLAN_APPROVED` 存在，或当前已离开 `ready-to-delta` |
+| `tasks_template_filled` | boolean | 是 | `tasks.md` 已脱模板并含有效 section 结构 |
+| `tasks_execution_done` | number | 是 | 当前执行 section 的已勾选任务数；不得用于反推 plan 是否 ready |
+| `tasks_execution_total` | number | 是 | 当前执行 section 的任务总数 |
+| `tasks_execution_scope` | `"delta"` \| `"deploy"` \| `"code"` \| `"none"` | 是 | 当前统计口径；plan 段通常为 `"delta"` |
+| `diagnostic` | string | 否 | 面向 AI driver / UI 的短诊断，说明等待态或阻断原因 |
+
+### 派生规则
+
+- `proposal_step=="writing"`：`plan_ready=false`；`plan_gate_pending=false`；`plan_approved=false`；若 `tasks.md` 尚未脱模板，`tasks_template_filled=false`。
+- `proposal_step=="ready-to-delta"`：当 proposal/tasks 已脱模板且无冲突时，必须输出 `plan_ready=true`、`plan_gate_pending=true`、`plan_approved=false`。此时 `tasks_execution_done` 可以为 0；这表示 delta 尚未执行，不表示任务规划失败。
+- `proposal_step=="delta-writing"` 或后续态：`plan_gate_pending=false`；`plan_approved=true`。
+- `deployment_decision_conflict==true` 或 proposal/tasks 结构冲突：`plan_ready=false`，`diagnostic` 应说明冲突；不得伪装为 plan gate pending。
+- `[delta]` section 存在时，`tasks_execution_scope="delta"`，统计 `[delta]` checkbox；无 `[delta]` 且有 `[deploy]` 时统计 `[deploy]`；无可统计 section 时为 `"none"` 且 done/total 均为 0。
+
+### 消费方契约
+
+- UI / driver 不得再通过 `tasks_execution_done / tasks_execution_total` 比值判断 plan 是否失败。
+- `plan_ready=true && plan_gate_pending=true` 应展示为“方案已完成，等待 plan gate 批准或 auto 消费”。
+- `next --auto` 若消费 `plan-exit` 并返回 `gate_auto_passed=true` 与 `next_node.id=="write-delta"`，消费方必须继续派发 `write-delta`。
+- 历史 `GATE_AUTO_PASSED` 仍只是审计；`plan_approved` 的状态源为 `PLAN_APPROVED` 或实际离开 `ready-to-delta` 的派生事实。
 
 ---
 
@@ -1119,11 +1196,11 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 **例外**：
 - **【R3】cmd 瞬态求值（overlay-add 节点 + builtin verify/deploy/smoke cmd gate，S30）**：`next_node` 取**本次响应 cmd 求值（cmdEval 回灌）后**的最终节点——`done_when:cmd` `exit 0` 续推 → 指向**续推后**节点（**不**指向已 done 的 cmd 节点/gate）；`fail_when:cmd` `exit 0` → 该节点/gate `failed` → 指向**该 cmd 节点/gate**；cmd 非 0/超时 → 指向**该 cmd 节点/gate**（求值后 `active`/停门前）；budget=1 遇第二个 cmd → 指向**第二个 pending cmd** 节点/gate。builtin gate id 取 `cmd_gate.node_id`。
-- **【R4】`--auto` 放行**：`gate_auto_passed === true` 时默认**省略 `next_node`**（放行后宿主走 gate 的 command，下一节点待重新 `next` 派生）。**例外一：`gate_id === "plan-exit"` 时，CLI 已写入 `PLAN_APPROVED` 并重新派生到 `write-delta`，本次响应必须输出 `next_node.id == "write-delta"`。例外二（split-slice-planner-stage）：`gate_id === "slice-exit"` 时，CLI 已写入 `SLICES_APPROVED` 并重新派生到 `coding` / `code` 前沿，本次响应必须输出 `next_node.id == "code"`，供无人值守 driver 立即派发 code-implementor 逐片实现。** `--auto` 放行态下 `next_node` 不带 `gate_id`（门已被消费，非"待批准"，见 R8）。
+- **【R4】`--auto` 放行**：`gate_auto_passed === true` 时默认**省略 `next_node`**（放行后宿主走 gate 的 command，下一节点待重新 `next` 派生）。**例外一：`gate_id === "plan-exit"` 时，CLI 已写入 `PLAN_APPROVED` 并重新派生到 `write-delta`，本次响应必须输出 `next_node.id == "write-delta"`。例外二（split-slice-planner-stage）：仅当 `gate_id === "slice-exit"`、`gate_auto_passed === true` 且 CLI 已确认 `[code]` 满足 `tasks_code_filled` 时，CLI 才会写入 `SLICES_APPROVED` 并重新派生到 `coding` / `code` 前沿，本次响应必须输出 `next_node.id == "code"`。若 `[code]` 未脱模板，则 `slice-exit` 尚未到达，不适用 R4 放行例外；响应必须按 R8 走 `plan-slices` 节点前沿。** `--auto` 放行态下 `next_node` 不带 `gate_id`（门已被消费，非"待批准"，见 R8）。
 - **【R7】loop 阻塞**：未达上限 → `next_node` = loop subflow 的**工作节点**（overlay `current_node` 优先；否则 resolved flow 中 `id == "code"` 且未 `skipped` 的节点，**非 `verify`**，对齐 action「修代码」）；`code` 缺失/被 overlay `skip` → **省略**（仅 initial 等**合法 resolved flow**——launched 对 builtin `code` 的 `skip`/`reorder` 在派生入口已 `FLOW_SCHEMA_INVALID`、走不到此省略）；达上限（`escalated`）→ **省略**（宿主读 `loop_state.escalated`）。与 `loop_state` 互补：环状态看 `loop_state`，这一轮派哪个节点的 skill/agent 看 `next_node`。
 - **【R5】命令级建议**：当前建议不指向某 flow node（`all_done` / launched 无 active proposal → `openlogos change <slug>` / 补 baseline → `openlogos change add-baseline-docs` / `openlogos launch` 等）→ **省略 `next_node`**。`plan-exit` / `slice-exit` auto 消费后已分别指向真实 `write-delta` / `code` 节点，不按命令级建议省略。
 - **【R8】切片出口门前沿（默认 `next`，含半自动/手动；本次修复）**：`proposal_step == "ready-to-implement"` 是「`plan-slices` 节点完成判定 `tasks_code_filled` 二分」的驻留态，`next_node` 据此二分（落地 `spec/flow-spec.md` §12.5(2)/§12.6(2) 已规定的前沿）：
-  - `[code]` 仍为模板（未 `tasks_code_filled`）→ `plan-slices` 未完成，前沿 = 该节点：`next_node.id == "plan-slices"`、**不带** `gate_id`（宿主派 slice-planner 规划切片）。
+  - `[code]` 仍为模板（未 `tasks_code_filled`）→ `plan-slices` 未完成，前沿 = 该节点：`next_node.id == "plan-slices"`、**不带** `gate_id`。默认 `next` 与 `next --auto` 在此前沿上一致：宿主应派 slice-planner 规划切片，CLI 不得自动消费 `slice-exit`。
   - `[code]` 已脱模板（`tasks_code_filled`）且 `SLICES_APPROVED` **不存在** → `plan-slices` 完成、前沿移到 `slice` 出口门：`next_node.id == "plan-slices"` **并附加** `next_node.gate_id == "slice-exit"`（宿主**不得**再派 slice-planner；半自动/手动停等人类在 `slice-exit` 门确认，`--auto` 则按 R4 例外二自动放行、消费后 `next_node.id == "code"` 且无 `gate_id`）。
   - `SLICES_APPROVED` 已存在（门已消费）→ `proposal_step == "coding"`、`next_node.id == "code"`、无 `gate_id`（不属本例外，走默认前沿）。
   - **动机**：修复「半自动 driver 以 `next_node` 派活时，`ready-to-implement` 恒得 `next_node.id == "plan-slices"`（切片写好也不带门信号）→ 反复重派 slice-planner 死循环」的 openlogos 侧根因。此前仅顶层 `--auto` `gate_id` 落地，`next_node.gate_id`（flow-spec §12.5 承诺的前沿子字段）从未实现。
@@ -1153,6 +1230,8 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 | `skippable` | boolean \| null | 否 | 该 human gate 是否允许 auto 跳过：`ready-to-delta` / `ready-to-merge` / `ready-to-implement` / `ready-to-deploy`→true；达上限 `loop-exhausted`→默认 false |
 | `gate_auto_passed` | boolean | 否 | 本次 `--auto` 是否实际放行并追加审计。`plan-exit` 放行还必须写入 `PLAN_APPROVED`、`slice-exit` 放行还必须写入 `SLICES_APPROVED`；`skippable:false` 或无 gate 时为 false；放行依据为本次响应而非历史审计行 |
 
+`ready-to-implement` 的 gate 字段是**到达 slice 出口门后**的字段，不是该驻留态的无条件字段。CLI 必须先用 `tasks_code_filled` 二分 `ready-to-implement`：未脱模板时 `gate_id` 不得为 `"slice-exit"`，`gate_auto_passed` 不得为 `true`；已脱模板且 `SLICES_APPROVED` 不存在时，才允许输出 / 消费 `"slice-exit"`。
+
 **`gate_id` 派生规则（契约闭合）**：`spec/flow/launched.yaml` 的 gate 挂在 subflow 上、无显式 id 字段，
 故 `gate_id` 为**派生值** = `<subflow.id>-<gate.position>`（`gate.position` 缺省为 `exit`）。
 据此：plan subflow 出口 gate → **`plan-exit`**；spec subflow 出口 gate → **`spec-exit`**；slice subflow 出口 gate → **`slice-exit`**；deliver subflow 的入口 gate → **`deliver-entry`**。
@@ -1160,7 +1239,38 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 
 **plan-exit 消费后的同次响应**：当 `gate_id=="plan-exit"` 且 `gate_auto_passed==true` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `PLAN_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"delta-writing"`，并带 `next_node.id=="write-delta"`。消费方不得把 `gate_auto_passed==true` 一概理解为“本次无 next_node”。
 
-**slice-exit 消费后的同次响应（split-slice-planner-stage）**：当 `gate_id=="slice-exit"` 且 `gate_auto_passed==true` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `SLICES_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"coding"`，并带 `next_node.id=="code"`。同一提案已存在 `SLICES_APPROVED` 时不再追加同一 `slice-exit` 审计行（幂等）。
+**slice-exit 消费后的同次响应（split-slice-planner-stage）**：当 `gate_id=="slice-exit"`、`gate_auto_passed==true` 且 `[code]` 已满足 `tasks_code_filled` 时，CLI 必须在写入 `GATE_AUTO_PASSED` 和 `SLICES_APPROVED` 后重新派生响应数据；响应中的活跃提案 `proposal_step` 应为 `"coding"`，并带 `next_node.id=="code"`。同一提案已存在 `SLICES_APPROVED` 时不再追加同一 `slice-exit` 审计行（幂等）。若 `[code]` 未脱模板，则不得进入本分支。
+
+**缺失 `[code]` section 的代码必需态 JSON 契约（fix-missing-code-section-slice-gate）**：当 launched 活跃提案处于 post-merge 阶段，且 CLI 根据 proposal / delta / 测试规格变化推导出 `code_required==true`，但 `tasks.md` 缺失 `## [code]` 或 `[code]` 尚未脱模板时，`status` / `next` / `watch` 的机器契约必须表达为“待切片”，不得表达为“可 verify”。
+
+- `modules[].active_change.proposal_step` 保持 `"ready-to-implement"`；
+- `modules[].next_node.id` 必须为 `"plan-slices"`；
+- `modules[].next_node.gate_id` 必须省略；
+- 顶层 `gate_id` 必须为 `null` 或省略，不得为 `"slice-exit"`；
+- `gate_auto_passed` 必须为 `false` 或省略；
+- 不得返回 `next_node.id=="verify"` 或 `next_node.id=="code"`；
+- 不得写入 `SLICES_APPROVED`，不得追加 `GATE_AUTO_PASSED{gate_id:"slice-exit"}`。
+
+实现可在 module item 或 next payload 中追加非破坏性诊断对象，消费方按可选字段处理：
+
+```json
+{
+  "slice_diagnostic": {
+    "reason": "tasks-code-section-missing",
+    "tasksPath": "logos/changes/<slug>/tasks.md",
+    "remediation": "补空 ## [code] section 后重新进入 plan-slices，或由 slice-planner 创建 section"
+  }
+}
+```
+
+`reason` 取值建议：
+
+| reason | 含义 |
+|---|---|
+| `tasks-code-section-missing` | `code_required==true`，但 `tasks.md` 缺失 `## [code]` section |
+| `slices-not-planned` | `## [code]` 存在但为空、模板或占位项，尚未满足 `tasks_code_filled` |
+
+该诊断不新增 `proposal_step` 枚举，不改变既有成功 envelope；它用于防止 RunLogos 等消费方把“没有切片”误解释为“可以 verify / repair”。
 
 **范围边界（auto-full-unattended 重定义）**：`--auto` = **全自动 / 无人值守 standing run-scoped 授权**，作用对象分两层：
 
@@ -1302,4 +1412,100 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
   **不写账本、loop 视为未激活**（本切片已知不支持）。launch 后 initial 账本仅历史产物，launched 派生只读提案目录账本。
 - **状态回退**：verify 再次 FAIL 沿用现有行为清除 `VERIFY_PASS` 及下游 `DEPLOY_DONE`/`SMOKE_*` → implement loop 重新打开；账本续写、`converged` 反映最后一次。
 
+## 自动流程韧性诊断 JSON 契约
+
+### 12. 自动流程诊断字段
+
+`status` / `next` / `verify` 的 JSON 输出可包含 `automation_diagnostic`，供 RunLogos / driver 消费。
+
+```json
+{
+  "automation_diagnostic": {
+    "reason": "global-verify-failed",
+    "completion_state": "slice_done_global_verify_failed",
+    "failed_tests": ["UT-S05-10c"],
+    "required_test_ids": ["UT-S32-19"],
+    "validated_artifacts": ["cli/src/lib/flow-derive.ts"],
+    "missing_artifacts": [],
+    "suggested_next_node": "code",
+    "human_action_required": false,
+    "remediation": "全量 verify 仍失败，基于 failed_tests 派发 repair/code。"
+  }
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `reason` | string | 结构化失败原因 |
+| `completion_state` | string | dispatch 完成状态分层 |
+| `failed_tests` | string[] | 全量 verify 失败测试 |
+| `required_test_ids` | string[] | 当前切片要求覆盖的测试 ID |
+| `validated_artifacts` | string[] | 已确认存在且在范围内的 artifacts |
+| `missing_artifacts` | string[] | 缺失或无法验证的 artifacts |
+| `suggested_next_node` | string | 建议下一节点，如 `code`、`plan-slices`、`verify` |
+| `human_action_required` | boolean | 是否必须人工介入 |
+| `remediation` | string | 可行动修复说明 |
+
+### 原因枚举
+
+- `artifact-missing`
+- `artifact-out-of-scope`
+- `focused-tests-missing`
+- `reporter-missing`
+- `global-verify-failed`
+- `driver-cannot-validate-artifacts`
+- `no-progress`
+
+### 兼容规则
+
+- 既有 `proposal_step` / `next_node` 字段保持兼容。
+- 默认文本输出可摘要诊断；JSON 输出必须保留机器字段。
+- `claimed-done-but-unverified` 若保留，仅作为兼容别名，不得替代 `reason`。
+
 > **auto-full-unattended 注**：本提案曾设想引入 `AUTO_MODE` 运行域 marker 让 PreToolUse guard 放行 `git push`，后经实测证伪——guard 的安全白名单（`plugin/bin/guard-check` `BASH_SAFE_PATTERNS`）本就含 `^git push`，从不拦截，故该 marker 多余、未引入。全自动下 `git push` 的「自动发起」纯由生成的指令文本授权宿主 driver 承载（见 §11 范围边界第 2 层）。
+
+## 12.1 `automation_diagnostic` 前沿作用域
+
+`automation_diagnostic` 分为两类输出：
+
+- **执行结果诊断**：`openlogos verify --format json` 可在本次 verify 结果中输出 `automation_diagnostic`，用于解释当前验收失败、缺失 reporter、缺失 focused tests 或全量失败原因。
+- **可驱动前沿诊断**：`openlogos status --format json` / `openlogos next --format json` 只有在当前活跃提案前沿属于实现/验证闭环时，才可输出会改变下一步动作的 `automation_diagnostic`，即带有 `reason:"global-verify-failed"`、`suggested_next_node:"code"` 或等价 repair 语义、`human_action_required:false` 的诊断。
+
+实现/验证闭环前沿仅包括：
+
+- `proposal_step=="coding"`；
+- `proposal_step=="ready-to-verify"` 且 implement loop 已进入过代码实现阶段；
+- `proposal_step=="verify-failed"`；
+- implement loop 未收敛、未达上限并需要重新派发 `code` / repair 的状态。
+
+以下前沿不得被历史 verify 失败、历史 `test-results.jsonl`、历史 `acceptance-report.md` 或上一轮提案残留的 `automation_diagnostic` 覆盖为 repair/code 建议：
+
+- `writing`
+- `ready-to-delta`
+- `delta-writing`
+- `ready-to-merge`
+- `merge-generated`
+- `ready-to-implement` 且 `plan-slices` 未完成或正停在 `slice-exit`
+- `ready-to-deploy`
+- `deploy-done`
+- `ready-to-smoke`
+- `smoke-passed`
+
+在上述非实现/验证前沿，`status` / `next` 可以省略 `automation_diagnostic`，也可以输出不改变 flow 前沿的只读诊断；但不得输出 `suggested_next_node:"code"` / `"verify"`，不得把 `action` 改为 repair/code，不得清空当前 gate 或命令步骤本应返回的 `command`。
+
+## 11.3 `ready-to-merge --auto` 与 stale diagnostic 的命令保留
+
+当活跃提案处于 `ready-to-merge`，且调用 `openlogos next --auto --format json` 时，即使工作区存在历史 verify 失败证据或 stale `automation_diagnostic`，响应仍必须保留 spec 出口门的自动放行语义：
+
+- 顶层或模块级 `proposal_step` 为 `"ready-to-merge"` 或本次 gate 响应对应的 spec 出口前沿；
+- `gate_id=="spec-exit"`；
+- `skippable===true`；
+- `gate_auto_passed===true`；
+- `command=="openlogos merge <slug>"` 出现在既有契约定义的顶层和 / 或 `modules[].active_change.command` 位置；
+- `action` / `detail` 表达 merge 可执行，而不是 repair/code；
+- 不写 `PLAN_APPROVED`、不写 `SLICES_APPROVED`；
+- 不得因 `global-verify-failed` 将 `command` 置为 `null`。
+
+该规则同样适用于多模块输出：模块级活跃提案的 command 不得被非当前前沿的 `automation_diagnostic` 清空。

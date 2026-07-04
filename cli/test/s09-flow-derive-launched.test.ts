@@ -115,7 +115,7 @@ const UT: UtCase[] = [
   { ut: 'UT-S09-42', expected: 'ready-to-smoke', build: () => makeProposal({ proposal: undeclaredDeploy(), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE'], smokeCases: true }).dir },
   { ut: 'UT-S09-43', expected: 'smoke-passed', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_PASS'] }).dir },
   { ut: 'UT-S09-44', expected: 'smoke-failed', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_FAIL'] }).dir },
-  { ut: 'UT-S09-45', expected: 'verify-failed', build: () => makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir },
+  { ut: 'UT-S09-45', expected: 'ready-to-implement', build: () => makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir },
   { ut: 'UT-S09-46', expected: 'ready-to-deploy', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'SMOKE_PASS'] }).dir },
   { ut: 'UT-S09-47', expected: 'ready-to-deploy', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_PARTIAL_TASKS, markers: ['VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_PASS'] }).dir },
   // split-slice-planner-stage：空 [code]（present-but-empty，total=0）+ SPEC_MERGED 仍走 slice 段 → ready-to-implement（无 SLICES_APPROVED）
@@ -177,9 +177,9 @@ describe('S09 launched flow-derive 测试期并跑等价矩阵', () => {
     expect(eq(makeProposal({ proposal: filled('否'), tasks: DELTA_DONE, markers: ['VERIFY_PASS'] }).dir)).toBe('verify-passed');
     expect(eq(makeProposal({ proposal: filled('否'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS'] }).dir)).toBe('verify-passed');
   });
-  it('ST-S09-19: verify-failed 等价（VERIFY_FAIL 全局优先，含与 SPEC_MERGED/未填提案并存）', () => {
+  it('ST-S09-19: verify-failed 等价；code_required 缺片优先于 VERIFY_FAIL repair 前沿', () => {
     expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE, markers: ['VERIFY_FAIL'] }).dir)).toBe('verify-failed');
-    expect(eq(makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir)).toBe('verify-failed');
+    expect(eq(makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir)).toBe('ready-to-implement');
   });
   it('ST-S09-20: ready-to-deploy 等价（无 deploy 任务 / DEPLOY_DONE 缺 / 任务未全勾）', () => {
     expect(eq(makeProposal({ proposal: filled('是', '否'), tasks: DEPLOY_EMPTY_TASKS, markers: ['VERIFY_PASS'] }).dir, DEP)).toBe('ready-to-deploy');
@@ -202,8 +202,8 @@ describe('S09 launched flow-derive 测试期并跑等价矩阵', () => {
     expect(eq(withMergeableDelta(makeProposal({ proposal: filled(), tasks: OLDFMT_DONE }).dir))).toBe('ready-to-merge');
     expect(eq(withMergeableDelta(makeProposal({ proposal: filled(), tasks: OLDFMT_PARTIAL }).dir))).toBe('delta-writing');
   });
-  it('ST-S09-25: 边角①②③ 等价（VERIFY_FAIL 全局 / SMOKE 非全局 / 空 section）', () => {
-    expect(eq(makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir)).toBe('verify-failed');
+  it('ST-S09-25: 边角①②③ 等价（缺片优先 / SMOKE 非全局 / 空 section）', () => {
+    expect(eq(makeProposal({ proposal: TEMPLATE, tasks: DELTA_PARTIAL, markers: ['VERIFY_FAIL', 'SPEC_MERGED'] }).dir)).toBe('ready-to-implement');
     expect(eq(makeProposal({ proposal: filled('是', '是'), tasks: DEPLOY_DONE_TASKS, markers: ['VERIFY_PASS', 'SMOKE_PASS'] }).dir, DEP)).toBe('ready-to-deploy');
     expect(eq(makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_EMPTY, markers: ['SPEC_MERGED'] }).dir)).toBe('ready-to-implement');
     // 空 [delta] section（total=0、无 delta 文件）= delta 尚未启动 → ready-to-delta

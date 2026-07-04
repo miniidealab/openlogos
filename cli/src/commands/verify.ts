@@ -19,6 +19,7 @@ import {
 } from '../lib/sandbox.js';
 import { getDeployTasks } from './status.js';
 import { checkSmokeCoverage, type SmokeCoverageCheck } from '../lib/smoke-coverage.js';
+import { deriveAutomationDiagnostic, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 
 export interface TestResult {
   id: string;
@@ -118,6 +119,7 @@ export interface VerifyData {
   smoke_precheck: SmokeCoverageCheck;
   sandbox: SandboxData;
   report_path: string;
+  automation_diagnostic?: AutomationDiagnostic;
 }
 
 function safeReadFile(path: string): string {
@@ -667,7 +669,7 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
 
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
 
-  return applySmokePrecheck(root, addCoverageDiagnostics(root, {
+  const data = applySmokePrecheck(root, addCoverageDiagnostics(root, {
     summary: {
       defined_count: defined.length,
       ut_count: utCount,
@@ -712,6 +714,24 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
     sandbox: buildInitialSandboxData(config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: relReportPath,
   }));
+
+  let proposalDir: string | null = null;
+  const guardPath = join(root, 'logos', '.openlogos-guard');
+  if (existsSync(guardPath)) {
+    try {
+      const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+      if (guard.activeChange) proposalDir = join(root, 'logos', 'changes', String(guard.activeChange));
+    } catch {
+      proposalDir = null;
+    }
+  }
+  const automationDiagnostic = deriveAutomationDiagnostic(root, {
+    proposalDir,
+    verifyGate: data.gate.result,
+    failedTests: data.failed_cases.map(item => item.id),
+  });
+  if (automationDiagnostic) data.automation_diagnostic = automationDiagnostic;
+  return data;
 }
 
 /**

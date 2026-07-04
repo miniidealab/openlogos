@@ -26,6 +26,8 @@ import {
   parseTaskSections,
   isProposalTemplateFilled,
   isTasksTemplateFilled,
+  isCodeRequiredForProposal,
+  isCodeRequiredButUnplanned,
   countMergeableDeltaFiles,
   allTasksChecked,
   hasSmokeCasesForProposal,
@@ -365,6 +367,10 @@ export function detectProposalStepViaFlow(
   const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
     ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
 
+  if (anyExists(m.merged) && isCodeRequiredButUnplanned(proposalDir, tasksContent)) {
+    return 'ready-to-implement';
+  }
+
   // verify.fail_when（VERIFY_FAIL / cmd）—— 全局最先
   if (gateMet('verify', 'fail_when', m.verifyFail)) return 'verify-failed';
 
@@ -399,7 +405,9 @@ export function detectProposalStepViaFlow(
     const sections = parseTaskSections(tasksContent);
     if (sections !== null) {
       const code = sections['code'];
+      const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
       // section_complete legacy 语义：present-but-empty（total=0）不算完成
+      if (!code && codeRequired) return 'ready-to-implement';
       if (!code || (code.total > 0 && code.checked === code.total)) return 'ready-to-verify';
       // split-slice-planner-stage：[code] 有未完成切片，slice-exit 门未放行（无 SLICES_APPROVED）→ ready-to-implement；放行后 → coding。
       if (!exists(SLICES_APPROVED_MARKER)) return 'ready-to-implement';

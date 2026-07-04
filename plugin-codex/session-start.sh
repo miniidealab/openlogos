@@ -38,6 +38,13 @@ if command -v python3 &>/dev/null; then
   ALL_DONE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('data',{}).get('all_done') else 'false')" 2>/dev/null || echo "false")
   ACTIVE_CHANGE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; mods=data.get('modules') or []; print(active or next((m.get('active_change',{}).get('slug','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('slug')), ''))" 2>/dev/null || echo "")
   PROPOSAL_STEP=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); step=data.get('proposal_step') or ''; mods=data.get('modules') or []; print(step or next((m.get('active_change',{}).get('proposal_step','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('proposal_step')), ''))" 2>/dev/null || echo "")
+  PLAN_STATE_SUMMARY=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; ps=data.get('plan_state'); mods=data.get('modules') or [];
+for m in mods:
+  ac=m.get('active_change') if isinstance(m.get('active_change'),dict) else None
+  if not ac: continue
+  if active and ac.get('slug') != active: continue
+  ps = ps or ac.get('plan_state'); break
+print('' if not isinstance(ps,dict) else 'plan_ready=%s, plan_gate_pending=%s, plan_approved=%s, tasks_execution=%s/%s %s' % (str(bool(ps.get('plan_ready'))).lower(), str(bool(ps.get('plan_gate_pending'))).lower(), str(bool(ps.get('plan_approved'))).lower(), ps.get('tasks_execution_done',0), ps.get('tasks_execution_total',0), ps.get('tasks_execution_scope','none')))" 2>/dev/null || echo "")
 elif command -v node &>/dev/null; then
   LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
   CONFIG_LIFECYCLE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.lifecycle||'')" 2>/dev/null || echo "")
@@ -48,6 +55,7 @@ elif command -v node &>/dev/null; then
   ALL_DONE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).all_done?'true':'false')}catch(e){console.log('false')}})" 2>/dev/null || echo "false")
   ACTIVE_CHANGE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.slug);console.log(data.active_change||mod?.active_change?.slug||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
   PROPOSAL_STEP=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.proposal_step);console.log(data.proposal_step||mod?.active_change?.proposal_step||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+  PLAN_STATE_SUMMARY=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const active=data.active_change||'';let ps=data.plan_state;for(const m of data.modules||[]){const ac=m.active_change;if(!ac) continue;if(active&&ac.slug!==active) continue;ps=ps||ac.plan_state;break;}console.log(!ps?'':\`plan_ready=\${!!ps.plan_ready}, plan_gate_pending=\${!!ps.plan_gate_pending}, plan_approved=\${!!ps.plan_approved}, tasks_execution=\${ps.tasks_execution_done??0}/\${ps.tasks_execution_total??0} \${ps.tasks_execution_scope||'none'}\`)}catch(e){console.log('')}})" 2>/dev/null || echo "")
 else
   echo "{}"
   exit 0
@@ -61,6 +69,7 @@ fi
 change_management_message() {
   local active="$1"
   local step="${2:-}"
+  local plan_state="${3:-}"
   local base="Change Management: ACTIVE — guard file detected. Active change proposal: '$active'."
   local confirm="openlogos merge, openlogos verify, openlogos smoke, openlogos archive, deployment, and git push are human confirmation points: AI must not execute them without explicit user authorization."
 
@@ -69,7 +78,7 @@ change_management_message() {
       echo "$base Current proposal step: writing. Allowed files: logos/changes/$active/proposal.md and logos/changes/$active/tasks.md. Do not write deltas or source code yet. $confirm"
       ;;
     ready-to-delta)
-      echo "$base Current proposal step: ready-to-delta. The plan is ready for approval; after approval or openlogos next --auto, proceed to delta-writing. Do not modify source code or logos/resources/** directly. $confirm"
+      echo "$base Current proposal step: ready-to-delta. The plan is ready for approval; plan gate is pending and after approval or openlogos next --auto, proceed to delta-writing. ${plan_state:+Plan state: $plan_state. }Tasks execution 0/N means execution has not started, not planning failure. Do not modify source code or logos/resources/** directly. $confirm"
       ;;
     delta-writing|implementing|in-progress)
       echo "$base Current proposal step: delta-writing. Allowed files: logos/changes/$active/deltas/** and logos/changes/$active/tasks.md. Continue producing delta files and check off [delta] tasks; do not modify logos/resources/** or source code directly before merge/coding stages. $confirm"
@@ -123,7 +132,7 @@ if [ "$LIFECYCLE" = "launched" ] || [ "$LIFECYCLE" = "active" ]; then
 
   if [ -n "${ACTIVE_CHANGE:-}" ]; then
     GUARD_STATUS="🔓 Active change: $ACTIVE_CHANGE"
-    CHANGE_MGMT=$(change_management_message "$ACTIVE_CHANGE" "${PROPOSAL_STEP:-}")
+    CHANGE_MGMT=$(change_management_message "$ACTIVE_CHANGE" "${PROPOSAL_STEP:-}" "${PLAN_STATE_SUMMARY:-}")
   else
     GUARD_STATUS="⛔ NO active change proposal"
     CHANGE_MGMT="Change Management: ACTIVE — ⛔ NO guard file found. Before modifying ANY source code, you MUST first run openlogos change <slug> to create a change proposal."
