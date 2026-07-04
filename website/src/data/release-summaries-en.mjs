@@ -1,4 +1,11 @@
 export const RELEASE_SUMMARIES_EN = {
+  '0.13.1': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      '`openlogos verify` now rejects inconsistent result ledgers: malformed JSONL rows, invalid statuses, unknown or manual result IDs, and broken count invariants surface through the new `consistency` JSON diagnostics and fail the gate with `result_ledger_inconsistent`.',
+      'Duplicate test IDs remain last-write-wins compatible, but the final result set must still trace back to defined automated test cases before the gate can pass.',
+    ],
+  },
   '0.12.9': {
     valueSummaryEn: [
       'Exposed `code_required` as an explicit contract field on `openlogos status/next/watch --format json` (`modules[].active_change.code_required`), giving external consumers such as RunLogos a single source of truth for whether the active proposal needs code — instead of re-deriving it with keyword regexes.',

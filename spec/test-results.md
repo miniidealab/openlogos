@@ -404,6 +404,65 @@ logos/resources/verify/smoke-results.jsonl
 
 `scripts/run-smoke.js` 负责发现并顺序运行 `scripts/smoke-*.sh` / `scripts/smoke-*.js`。runner 可通过 `OPENLOGOS_SMOKE_RESULT_PATH` 读取目标结果路径，避免硬编码。
 
+## JSONL 结果账本一致性与 Gate 判据
+
+`openlogos verify` 读取 `test-results.jsonl` 时，必须把“结果格式合法”和“统计自洽”作为 Gate PASS 的前置条件。
+
+### 归一化规则
+
+1. 每行必须是 JSON 对象。
+2. 每条记录必须包含字符串 `id` 和 `status`。
+3. `status` 只能为 `pass`、`fail` 或 `skip`。
+4. `status="fail"` 时必须提供非空 `error`。
+5. 同一 `id` 多次出现时，最后一条合法记录生效。
+6. 非法记录必须进入诊断集合，不得被静默丢弃后继续 PASS。
+
+### ID 对齐规则
+
+1. 自动化结果 ID 必须与 `logos/resources/test/**/*.md` 中定义的非 `[manual]` `UT-*` / `ST-*` 用例完全一致。
+2. 未定义 ID 必须被报告为 `unknown_test_result_id`。
+3. `[manual]` 用例不得写入 JSONL；若出现，应报告为 `manual_test_result_id`。
+
+### 统计不变量
+
+去重并过滤为合法自动化结果后，verify 汇总必须满足：
+
+```text
+passed_count + failed_count + skipped_count == executed_count
+executed_count <= defined_count
+covered_count + uncovered_count == defined_count
+```
+
+若 `failed_count == 0` 且 `skipped_count == 0`，还必须满足：
+
+```text
+passed_count == executed_count
+pass_rate_pct == 100
+```
+
+任一不变量失败时，`gate.result` 必须为 `FAIL`，`gate.reason` 必须非空，推荐使用 `result_ledger_inconsistent` 或具体错误码。
+
+### JSON 输出建议
+
+`openlogos verify --format json` 应输出可选 `consistency` 字段，供自动化消费方展示诊断：
+
+```json
+{
+  "consistency": {
+    "ok": false,
+    "reasons": ["unknown_test_result_id", "result_count_mismatch"],
+    "unknown_result_ids": ["UT-S13-GHOST"],
+    "manual_result_ids": [],
+    "invalid_results": [
+      {"line": 3, "id": "UT-S13-X", "reason": "invalid_status"}
+    ],
+    "count_mismatches": ["passed_failed_skipped_ne_executed"]
+  }
+}
+```
+
+当 `consistency.ok === false` 时，任何客户端都必须把 verify 视为未通过；不得仅因 `failed_count == 0` 和 `uncovered_count == 0` 继续推进 archive、deploy 或 release。
+
 ## 与其他规范的关系
 
 | 规范 | 关系 |

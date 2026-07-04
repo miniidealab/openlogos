@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import {
   parseJsonl,
+  parseJsonlWithDiagnostics,
+  buildVerifyCountMismatches,
   extractDefinedIds,
   extractChecklist,
   extractAcTrace,
@@ -51,6 +53,18 @@ describe('S13 Unit Tests — parseJsonl', () => {
     const input = '\n  \n{"id":"UT-S01-01","status":"pass"}\n\n';
     const results = parseJsonl(input);
     expect(results).toHaveLength(1);
+  });
+
+  it('UT-S13-35: 非法 status 不得被判 PASS', () => {
+    const input = [
+      '{"id":"UT-S13-35","status":"pass"}',
+      '{"id":"UT-S13-BAD","status":"unknown"}',
+    ].join('\n');
+    const parsed = parseJsonlWithDiagnostics(input);
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.invalidResults).toEqual([
+      { line: 2, id: 'UT-S13-BAD', status: 'unknown', reason: 'invalid_status' },
+    ]);
   });
 });
 
@@ -480,6 +494,76 @@ describe('S13 Unit Tests — smoke coverage precheck', () => {
     expect(check.result).toBe('FAIL');
     expect(check.uncovered_case_ids).toEqual(['SMOKE-NEW-02']);
     expect(check.diagnostics.map(d => d.code)).toContain('smoke_cases_uncovered');
+  });
+});
+
+describe('S13 Unit Tests — verify result consistency', () => {
+  let root: string;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root, { locale: 'zh' });
+  });
+  afterEach(() => cleanup());
+
+  function writeCases(content: string) {
+    mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), content);
+  }
+
+  function writeVerifyResults(lines: string[]) {
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), lines.join('\n') + '\n');
+  }
+
+  it('UT-S13-36: 未定义结果 ID 不得污染 PASS', () => {
+    writeCases('| UT-S13-36 | defined |\n');
+    writeVerifyResults([
+      '{"id":"UT-S13-36","status":"pass"}',
+      '{"id":"UT-S13-GHOST","status":"pass"}',
+    ]);
+
+    const data = collectVerifyData(root);
+
+    expect(data.gate.result).toBe('FAIL');
+    expect(data.gate.reason).toBe('result_ledger_inconsistent');
+    expect(data.consistency.ok).toBe(false);
+    expect(data.consistency.reasons).toContain('unknown_test_result_id');
+    expect(data.consistency.unknown_result_ids).toEqual(['UT-S13-GHOST']);
+    expect(data.consistency.count_mismatches).toContain('executed_exceeds_defined');
+  });
+
+  it('UT-S13-37: 统计守恒不成立时 FAIL', () => {
+    const mismatches = buildVerifyCountMismatches({
+      defined_count: 1,
+      executed_count: 2,
+      passed_count: 1,
+      failed_count: 0,
+      skipped_count: 0,
+      uncovered_count: 0,
+      coverage_pct: 100,
+      pass_rate_pct: 50,
+    });
+
+    expect(mismatches).toContain('executed_exceeds_defined');
+    expect(mismatches).toContain('passed_ne_executed_without_fail_or_skip');
+    expect(mismatches).toContain('pass_rate_below_100_without_fail_or_skip');
+  });
+
+  it('UT-S13-38: 合法重复 ID 保持 last-write-wins', () => {
+    writeCases('| UT-S13-38 | defined |\n');
+    writeVerifyResults([
+      '{"id":"UT-S13-38","status":"fail","error":"old"}',
+      '{"id":"UT-S13-38","status":"pass"}',
+    ]);
+
+    const data = collectVerifyData(root);
+
+    expect(data.gate.result).toBe('PASS');
+    expect(data.consistency.ok).toBe(true);
+    expect(data.summary.executed_count).toBe(1);
+    expect(data.summary.passed_count).toBe(1);
   });
 });
 
@@ -926,6 +1010,31 @@ describe('S13 Scenario Tests — verify command', () => {
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('not ok');
     expect(allLogs).toContain('FAIL');
+  });
+
+  it('ST-S13-11: 不自洽 verify 账本阻断全自动归档', () => {
+    writeTestCases(CASES_ALL_PASS);
+    writeResults([
+      '{"id":"UT-S01-01","status":"pass"}',
+      '{"id":"ST-S01-01","status":"pass"}',
+      '{"id":"UT-S13-GHOST","status":"pass"}',
+    ]);
+    const proposalDir = join(root, 'logos/changes/verify-result-consistency-gate');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(root, 'logos/.openlogos-guard'), JSON.stringify({
+      activeChange: 'verify-result-consistency-gate',
+      module: 'core',
+    }));
+
+    expect(() => verify('json')).toThrow('process.exit(1)');
+
+    const output = JSON.parse(con.logs[0]);
+    expect(output.data.gate.result).toBe('FAIL');
+    expect(output.data.gate.reason).toBe('result_ledger_inconsistent');
+    expect(output.data.consistency.ok).toBe(false);
+    expect(output.data.consistency.unknown_result_ids).toContain('UT-S13-GHOST');
+    expect(existsSync(join(proposalDir, 'VERIFY_PASS'))).toBe(false);
+    expect(existsSync(join(proposalDir, 'VERIFY_FAIL'))).toBe(true);
   });
 
   it('ST-S13-05: missing results file → error exit', () => {

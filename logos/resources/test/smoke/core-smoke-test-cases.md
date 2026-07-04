@@ -76,3 +76,25 @@
 - [ ] smoke runner 缺失诊断：已覆盖（SMOKE-core-28）
 - [ ] smoke reporter 缺失诊断：已覆盖（SMOKE-core-29）
 - [ ] 统一 dispatcher 覆盖新增 smoke case：已覆盖（SMOKE-core-30）
+
+## 五、verify 结果账本一致性发布后冒烟用例
+
+### 一、冒烟测试范围补充
+
+| 环境 | 覆盖范围 | 说明 |
+|------|----------|------|
+| staging | verify 结果账本一致性、非法 status 诊断、未定义结果 ID 诊断、last-write-wins 兼容性 | 发布后验证不自洽 verify 账本不会被误判 PASS |
+
+### 二、冒烟测试用例补充
+
+| ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
+|----|------|------|----------|----------|------|----------|
+| SMOKE-core-31 | verify 拒绝非法 status 结果账本 | verify 结果账本一致性 | staging | 安装含本变更的 CLI；临时项目定义 `UT-S13-SMOKE-31`；JSONL 同时写入该用例 pass 和一个 `status:"unknown"` 结果 | 执行 `openlogos verify --format json` | 命令失败；`gate.result="FAIL"`；诊断包含非法 status；不写入 `VERIFY_PASS` |
+| SMOKE-core-32 | verify 拒绝未定义结果 ID | verify 结果账本一致性 | staging | 安装含本变更的 CLI；临时项目定义用例全部 pass；JSONL 另写入 `UT-S13-GHOST` pass | 执行 `openlogos verify --format json` | 命令失败；诊断包含 `UT-S13-GHOST`；不允许 Gate PASS |
+| SMOKE-core-33 | verify 保持合法 last-write-wins 行为 | verify 结果账本一致性 | staging | 安装含本变更的 CLI；同一已定义用例先写 fail 后写 pass，且无额外非法结果 | 执行 `openlogos verify --format json` | 最后一次结果生效；若全部定义用例最终 pass，则 Gate PASS |
+
+### 三、覆盖度校验补充
+
+- [ ] 非法 status 发布后冒烟：SMOKE-core-31
+- [ ] 未定义结果 ID 发布后冒烟：SMOKE-core-32
+- [ ] last-write-wins 兼容性发布后冒烟：SMOKE-core-33

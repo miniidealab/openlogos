@@ -914,3 +914,33 @@ OpenLogos 作为可被 RunLogos / CI / AI driver 消费的流程事实源，必�
 
 - RunLogos / 外部 driver 不需要猜测 OpenLogos 内部状态机；仅通过 `next` / `status` / `verify` 的机器输出即可判断下一步是 repair、重派当前切片、补 artifacts、重跑测试，还是人工阻塞。
 - 可恢复失败在 `--auto` 模式下应优先继续自动修复闭环；只有 `human_action_required=true` 或不可跳硬红线时才停止。
+
+## S13 verify 结果账本一致性验收补充
+
+### 背景
+
+`openlogos verify` 是 OpenLogos 自动化流程、RunLogos driver 和 CI 消费的权威验收门禁。门禁不能只检查“是否没有失败用例”和“是否覆盖全部定义用例”，还必须证明结果账本本身可信。
+
+### 需求
+
+1. `openlogos verify` 必须在计算 PASS / FAIL 前校验 `test-results.jsonl` 的 schema 与统计自洽性。
+2. 同一个用例 ID 多次出现时继续采用 last-write-wins；但去重后的每条结果都必须满足：
+   - `id` 对应一个已定义、非 `[manual]` 的自动化用例；
+   - `status` 只能是 `pass`、`fail` 或 `skip`；
+   - `status="fail"` 时必须有可诊断的 `error`。
+3. 以下任一情况必须使 verify Gate 非 PASS，并输出明确诊断：
+   - 存在非法 JSONL 行、缺失 `id` / `status`，或 `status` 不在允许枚举内；
+   - 存在未定义用例 ID；
+   - `passed_count + failed_count + skipped_count != executed_count`；
+   - `executed_count > defined_count`；
+   - `failed_count == 0 && skipped_count == 0 && passed_count != executed_count`；
+   - `pass_rate_pct < 100` 且无失败 / 跳过结果能解释该差异。
+4. 结果账本不可信时，`openlogos verify --format json` 必须返回非零退出码，`gate.result` 不得为 `PASS`，`gate.reason` 必须非空。
+5. 正常全绿且统计自洽的结果必须保持既有 PASS 行为。
+
+### 验收口径
+
+- 构造 `defined_count=1`、`executed_count=2`、`passed_count=1`、`failed_count=0`、`skipped_count=0`、`uncovered_count=0` 的账本时，verify 必须 FAIL。
+- 构造包含非法 `status` 的账本时，verify 必须 FAIL，并在 JSON 诊断中暴露非法结果原因。
+- 构造包含未定义用例 ID 的账本时，verify 必须 FAIL，并列出未定义 ID。
+- 全部已定义自动化用例均 `pass` 且无额外 / 非法结果时，verify 仍 PASS。

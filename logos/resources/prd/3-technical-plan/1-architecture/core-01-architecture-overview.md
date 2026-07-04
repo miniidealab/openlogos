@@ -111,6 +111,55 @@ verify 预执行由 CLI 统一编排，RunLogos 等客户端只调用 `openlogos
 | adopt 预跑配置推断 | `cli/src/commands/adopt.ts` | `cli/test/s20-adopt.test.ts` |
 | verify JSON 预跑状态 | `cli/src/commands/verify.ts`、`cli/src/lib/json-output.ts` | `cli/test/s16-json-output.test.ts` |
 
+## 九.A verify 结果账本一致性架构
+
+verify 结果汇总在 `cli/src/commands/verify.ts` 中增加一致性校验层，位于 JSONL 解析 / last-write-wins 归一化之后、Gate 判定与报告写入之前。
+
+### 数据流
+
+```mermaid
+flowchart TB
+    A["读取 test-results.jsonl"] --> B["解析 JSONL 行"]
+    B --> C["按 id last-write-wins 归一化"]
+    C --> D["校验 schema 与 defined test IDs"]
+    D --> E["校验统计不变量"]
+    E --> F["计算覆盖率 / 通过率 / AC trace"]
+    F --> G["计算 verify Gate"]
+```
+
+### 一致性校验职责
+
+1. `parseJsonl` 或其后置归一化逻辑必须区分“可用于统计的合法结果”和“需要诊断的非法结果”，不得把非法 `status` 结果作为已执行但既非 pass / fail / skip 的幽灵行放入 PASS 路径。
+2. `collectVerifyData` 必须获得以下诊断输入：
+   - `invalid_result_lines`：不可解析 JSON、缺少 `id` / `status`、非法 `status`、`fail` 缺少 `error`；
+   - `unknown_result_ids`：结果 ID 不属于已定义自动化用例；
+   - `manual_result_ids`：结果 ID 对应 `[manual]` 用例；
+   - `count_mismatches`：`passed + failed + skipped != executed`、`executed > defined`、`pass_rate < 100` 但无失败 / 跳过解释等。
+3. `VerifyData` JSON 输出应增加可选 `consistency` 字段：
+   ```json
+   {
+     "ok": false,
+     "reasons": ["invalid_test_result_status", "unknown_test_result_id"],
+     "unknown_result_ids": ["UT-S13-GHOST"],
+     "invalid_results": [{"line": 2, "id": "UT-S13-X", "reason": "invalid_status"}],
+     "count_mismatches": ["passed_failed_skipped_ne_executed"]
+   }
+   ```
+4. 当 `consistency.ok === false` 时，`gate.result` 必须为 `FAIL`，`gate.reason` 必须为 `result_ledger_inconsistent` 或更具体的首个一致性错误码。
+
+### 实现映射补充
+
+| 能力 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| verify JSONL schema 与结果账本一致性 | `cli/src/commands/verify.ts` | `cli/test/s13-verify.test.ts` |
+| verify JSON consistency 字段稳定输出 | `cli/src/commands/verify.ts`、`cli/src/lib/json-output.ts` | `cli/test/s16-json-output.test.ts` |
+
+### 兼容性
+
+- 合法结果的 last-write-wins 行为保持不变。
+- 没有非法行、没有未定义 ID、全部自动化用例通过的项目输出仍保持 PASS。
+- 新增 `consistency` 字段是向后兼容字段；旧客户端可继续读取 `gate`，新客户端可用 `consistency` 展示更精确诊断。
+
 ## 十、verify / smoke 沙箱执行架构
 OpenLogos CLI 需要在运行时层面支持测试命令隔离，避免外部测试脚本误写工作区。
 

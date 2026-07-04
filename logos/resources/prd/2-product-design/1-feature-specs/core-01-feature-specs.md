@@ -103,6 +103,33 @@
   - smoke: `result_path`
 - 沙箱诊断必须进入 JSON 输出，供 RunLogos / CI 判断是否展示降级告警或失败原因。
 
+### 2.7A verify 结果账本一致性硬门
+
+`openlogos verify` 在读取 `verify.result_path` 后，必须先把 JSONL 结果归一化为一个可信的逻辑结果集合，再计算覆盖率、通过率、AC 追溯和 Gate。
+
+规则如下：
+
+1. **解析与去重**
+   - JSONL 每行必须是对象；
+   - 同一 `id` 多次出现时，最后一条合法记录生效；
+   - 非法行不得被静默计入通过或覆盖，必须进入一致性诊断。
+2. **schema 校验**
+   - `id` 必须存在并可对应到 `logos/resources/test/**/*.md` 中的自动化 `UT-*` / `ST-*` 用例；
+   - `[manual]` 用例不接受自动化 JSONL 结果；
+   - `status` 只能为 `pass` / `fail` / `skip`；
+   - `fail` 结果必须携带 `error`。
+3. **统计不变量**
+   - `executed_count` 等于去重后的合法自动化结果数；
+   - `passed_count + failed_count + skipped_count == executed_count`；
+   - `executed_count <= defined_count`；
+   - 若 `failed_count == 0` 且 `skipped_count == 0`，则 `passed_count == executed_count` 且 `pass_rate_pct == 100`。
+4. **Gate 判据**
+   - 只有 schema 合法、统计自洽、无失败、无跳过、无未覆盖、checklist 完成、AC 追溯完成时才能 PASS；
+   - 任一一致性错误都必须使 `gate.result="FAIL"`；
+   - `gate.reason` 应优先返回 `result_ledger_inconsistent`，并通过结构化字段列出具体原因。
+
+该硬门用于阻断被历史行、未定义 ID、非法 status 或 reporter 污染撑大的结果账本。RunLogos / CI 可继续信任 `openlogos verify` 的 Gate 作为权威结论，不需要复制内部统计逻辑。
+
 ### 2.10 Reference 默认分类目录
 - `openlogos init` 与 `openlogos adopt` 创建标准目录结构时，必须保证 `logos/resources/reference/` 下存在以下子目录：`requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/`。
 - 每个 Reference 子目录必须写入 `.gitkeep`，保证空目录可以被版本控制保留。

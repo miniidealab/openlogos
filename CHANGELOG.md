@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-07-04
+
+### Fixed
+
+- **verify 结果账本一致性硬门** — `openlogos verify` 现在会拒绝非法 JSONL 结果、非法 `status`、未定义或 manual 用例 ID、统计不变量不成立等不自洽账本；JSON 输出新增 `consistency` 诊断，Gate 失败时返回 `result_ledger_inconsistent`，避免全自动消费方误信不可信的 PASS。
+- **保留合法 last-write-wins 兼容性** — 同一测试 ID 的重复结果仍按最后一次结果生效，但最终结果集合必须全部可追溯到已定义自动化用例。
+
 ## [0.13.0] - 2026-07-04
 
 ### Added

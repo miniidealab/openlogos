@@ -30,6 +30,22 @@ export interface TestResult {
   scenario?: string;
 }
 
+export interface VerifyInvalidResult {
+  line: number;
+  id?: string;
+  status?: string;
+  reason: string;
+}
+
+export interface VerifyConsistencyData {
+  ok: boolean;
+  reasons: string[];
+  unknown_result_ids: string[];
+  manual_result_ids: string[];
+  invalid_results: VerifyInvalidResult[];
+  count_mismatches: string[];
+}
+
 const TEST_CASES_DIR = 'logos/resources/test';
 const REPORT_DIR = 'logos/resources/verify';
 const MANUAL_SUFFIX = /\[manual\]/i;
@@ -100,6 +116,7 @@ export interface VerifyData {
   failed_cases: Array<{ id: string; error: string }>;
   uncovered_cases: string[];
   skipped_cases: string[];
+  consistency: VerifyConsistencyData;
   checklist: {
     total: number;
     checked: number;
@@ -386,13 +403,97 @@ export function parseJsonl(content: string): TestResult[] {
   return Array.from(resultMap.values());
 }
 
-export function extractDefinedIds(root: string): { ids: string[]; utCount: number; stCount: number; manualCount: number } {
+function asResultRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function consistencyReasonForInvalid(reason: string): string {
+  if (reason === 'invalid_status') return 'invalid_test_result_status';
+  if (reason === 'invalid_json') return 'invalid_test_result_json';
+  return 'invalid_test_result_schema';
+}
+
+function pushUnique<T>(items: T[], item: T): void {
+  if (!items.includes(item)) items.push(item);
+}
+
+function pushUniqueMany<T>(items: T[], nextItems: T[]): void {
+  for (const item of nextItems) pushUnique(items, item);
+}
+
+export function parseJsonlWithDiagnostics(content: string): { results: TestResult[]; invalidResults: VerifyInvalidResult[] } {
+  const resultMap = new Map<string, TestResult>();
+  const invalidResults: VerifyInvalidResult[] = [];
+  const lines = content.split('\n');
+  for (let index = 0; index < lines.length; index++) {
+    const trimmed = lines[index].trim();
+    if (!trimmed) continue;
+    const line = index + 1;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      invalidResults.push({ line, reason: 'invalid_json' });
+      continue;
+    }
+
+    const obj = asResultRecord(parsed);
+    if (!obj) {
+      invalidResults.push({ line, reason: 'invalid_record' });
+      continue;
+    }
+
+    const id = typeof obj.id === 'string' ? obj.id.trim() : '';
+    const status = typeof obj.status === 'string' ? obj.status.trim() : '';
+    const base = {
+      line,
+      ...(id ? { id } : {}),
+      ...(status ? { status } : {}),
+    };
+    if (!id) {
+      invalidResults.push({ ...base, reason: 'missing_id' });
+      continue;
+    }
+    if (!status) {
+      invalidResults.push({ ...base, reason: 'missing_status' });
+      continue;
+    }
+    if (status !== 'pass' && status !== 'fail' && status !== 'skip') {
+      invalidResults.push({ ...base, reason: 'invalid_status' });
+      continue;
+    }
+    if (status === 'fail' && (typeof obj.error !== 'string' || obj.error.trim() === '')) {
+      invalidResults.push({ ...base, reason: 'missing_error' });
+      continue;
+    }
+
+    resultMap.set(id, {
+      id,
+      status,
+      ...(typeof obj.duration_ms === 'number' ? { duration_ms: obj.duration_ms } : {}),
+      ...(typeof obj.timestamp === 'string' ? { timestamp: obj.timestamp } : {}),
+      ...(typeof obj.error === 'string' ? { error: obj.error } : {}),
+      ...(typeof obj.scenario === 'string' ? { scenario: obj.scenario } : {}),
+    });
+  }
+  return { results: Array.from(resultMap.values()), invalidResults };
+}
+
+interface DefinedIndex {
+  ids: string[];
+  utCount: number;
+  stCount: number;
+  manualCount: number;
+  manualIds: string[];
+}
+
+function extractDefinedIndex(root: string): DefinedIndex {
   const dir = join(root, TEST_CASES_DIR);
-  if (!existsSync(dir)) return { ids: [], utCount: 0, stCount: 0, manualCount: 0 };
+  if (!existsSync(dir)) return { ids: [], utCount: 0, stCount: 0, manualCount: 0, manualIds: [] };
 
   const idSet = new Set<string>();
   const manualSet = new Set<string>();
-  let manualCount = 0;
   try {
     const files = readdirSync(dir, { recursive: true })
       .map(f => String(f))
@@ -410,10 +511,7 @@ export function extractDefinedIds(root: string): { ids: string[]; utCount: numbe
         const id = firstCell.replace(MANUAL_SUFFIX, '').replace(/\s+/g, ' ').trim();
         const isManual = MANUAL_SUFFIX.test(firstCell) || MANUAL_SUFFIX.test(line);
         if (isManual) {
-          if (!manualSet.has(id)) {
-            manualSet.add(id);
-            manualCount++;
-          }
+          manualSet.add(id);
           idSet.delete(id);
           continue;
         }
@@ -426,8 +524,14 @@ export function extractDefinedIds(root: string): { ids: string[]; utCount: numbe
   } catch { /* directory read error */ }
 
   const ids = Array.from(idSet).sort();
+  const manualIds = Array.from(manualSet).sort();
   const utCount = ids.filter(id => id.startsWith('UT-')).length;
   const stCount = ids.filter(id => id.startsWith('ST-')).length;
+  return { ids, utCount, stCount, manualCount: manualIds.length, manualIds };
+}
+
+export function extractDefinedIds(root: string): { ids: string[]; utCount: number; stCount: number; manualCount: number } {
+  const { ids, utCount, stCount, manualCount } = extractDefinedIndex(root);
   return { ids, utCount, stCount, manualCount };
 }
 
@@ -612,13 +716,83 @@ export function generateReport(
   return md;
 }
 
+export interface VerifyCountSummary {
+  defined_count: number;
+  executed_count: number;
+  passed_count: number;
+  failed_count: number;
+  skipped_count: number;
+  uncovered_count: number;
+  coverage_pct: number;
+  pass_rate_pct: number;
+}
+
+export function buildVerifyCountMismatches(summary: VerifyCountSummary): string[] {
+  const mismatches: string[] = [];
+  if (summary.passed_count + summary.failed_count + summary.skipped_count !== summary.executed_count) {
+    mismatches.push('passed_failed_skipped_ne_executed');
+  }
+  if (summary.executed_count > summary.defined_count) {
+    mismatches.push('executed_exceeds_defined');
+  }
+  if (summary.coverage_pct === 100 && summary.uncovered_count !== 0) {
+    mismatches.push('coverage_full_with_uncovered');
+  }
+  if (summary.uncovered_count === 0 && summary.coverage_pct < 100 && summary.defined_count > 0) {
+    mismatches.push('coverage_incomplete_without_uncovered');
+  }
+  if (summary.failed_count === 0 && summary.skipped_count === 0 && summary.passed_count !== summary.executed_count) {
+    mismatches.push('passed_ne_executed_without_fail_or_skip');
+  }
+  if (summary.failed_count === 0 && summary.skipped_count === 0 && summary.pass_rate_pct < 100 && summary.executed_count > 0) {
+    mismatches.push('pass_rate_below_100_without_fail_or_skip');
+  }
+  return mismatches;
+}
+
+function buildVerifyConsistency(params: {
+  invalidResults: VerifyInvalidResult[];
+  unknownResultIds: string[];
+  manualResultIds: string[];
+  countMismatches: string[];
+}): VerifyConsistencyData {
+  const reasons: string[] = [];
+  for (const invalid of params.invalidResults) {
+    pushUnique(reasons, consistencyReasonForInvalid(invalid.reason));
+  }
+  if (params.unknownResultIds.length > 0) pushUnique(reasons, 'unknown_test_result_id');
+  if (params.manualResultIds.length > 0) pushUnique(reasons, 'manual_test_result_id');
+  if (params.countMismatches.length > 0) pushUnique(reasons, 'result_count_mismatch');
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    unknown_result_ids: params.unknownResultIds,
+    manual_result_ids: params.manualResultIds,
+    invalid_results: params.invalidResults,
+    count_mismatches: params.countMismatches,
+  };
+}
+
 export function collectVerifyData(root: string, preRun?: VerifyPreRunData): VerifyData {
   const config = readVerifyConfig(root);
   const resultPath = config.resultPath;
 
   const fullResultPath = join(root, resultPath);
-  const results = parseJsonl(readFileSync(fullResultPath, 'utf-8'));
-  const { ids: defined, utCount, stCount, manualCount } = extractDefinedIds(root);
+  const parsedResults = parseJsonlWithDiagnostics(readFileSync(fullResultPath, 'utf-8'));
+  const results = parsedResults.results;
+  const { ids: defined, utCount, stCount, manualCount, manualIds } = extractDefinedIndex(root);
+  const definedSet = new Set(defined);
+  const manualSet = new Set(manualIds);
+  const unknownResultIds: string[] = [];
+  const manualResultIds: string[] = [];
+  for (const result of results) {
+    if (definedSet.has(result.id)) continue;
+    if (manualSet.has(result.id)) {
+      pushUnique(manualResultIds, result.id);
+    } else {
+      pushUnique(unknownResultIds, result.id);
+    }
+  }
 
   const resultIds = new Set(results.map(r => r.id));
   const passed = results.filter(r => r.status === 'pass');
@@ -633,6 +807,25 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
   const passRatePct = results.length > 0
     ? Math.round((passed.length / results.length) * 100)
     : 0;
+  const summary = {
+    defined_count: defined.length,
+    ut_count: utCount,
+    st_count: stCount,
+    manual_count: manualCount,
+    executed_count: results.length,
+    passed_count: passed.length,
+    failed_count: failed.length,
+    skipped_count: skipped.length,
+    uncovered_count: uncovered.length,
+    coverage_pct: coveragePct,
+    pass_rate_pct: passRatePct,
+  };
+  const consistency = buildVerifyConsistency({
+    invalidResults: parsedResults.invalidResults,
+    unknownResultIds,
+    manualResultIds,
+    countMismatches: buildVerifyCountMismatches(summary),
+  });
 
   const checklist = extractChecklist(root);
   const acTrace = extractAcTrace(root);
@@ -648,13 +841,15 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
     return !automatedIds.every(cid => resultMap.get(cid)?.status === 'pass');
   });
 
-  const isPass = failed.length === 0 && uncovered.length === 0
+  const isPass = consistency.ok && failed.length === 0 && skipped.length === 0 && uncovered.length === 0
     && checklistUnchecked.length === 0 && acFailed.length === 0;
   const gateResult = isPass ? 'PASS' as const : 'FAIL' as const;
 
   let gateReason: string | null = null;
   if (!isPass) {
-    if (failed.length > 0) gateReason = 'failed_cases';
+    if (!consistency.ok) gateReason = 'result_ledger_inconsistent';
+    else if (failed.length > 0) gateReason = 'failed_cases';
+    else if (skipped.length > 0) gateReason = 'skipped_cases';
     else if (uncovered.length > 0) gateReason = 'incomplete_coverage';
     else if (checklistUnchecked.length > 0) gateReason = 'checklist_incomplete';
     else gateReason = 'ac_trace_incomplete';
@@ -670,19 +865,7 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
 
   const data = applySmokePrecheck(root, addCoverageDiagnostics(root, {
-    summary: {
-      defined_count: defined.length,
-      ut_count: utCount,
-      st_count: stCount,
-      manual_count: manualCount,
-      executed_count: results.length,
-      passed_count: passed.length,
-      failed_count: failed.length,
-      skipped_count: skipped.length,
-      uncovered_count: uncovered.length,
-      coverage_pct: coveragePct,
-      pass_rate_pct: passRatePct,
-    },
+    summary,
     gate: {
       result: gateResult,
       reason: gateReason,
@@ -690,6 +873,7 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
     failed_cases: failed.map(r => ({ id: r.id, error: r.error ?? 'unknown' })),
     uncovered_cases: uncovered,
     skipped_cases: skipped.map(r => r.id),
+    consistency,
     checklist: {
       total: checklist.length,
       checked: checklist.filter(c => c.checked).length,
@@ -913,7 +1097,7 @@ export function verify(format: OutputFormat = 'text') {
   console.log(t(locale, 'verify.readingResults', { path: resultPath }));
   console.log(t(locale, 'verify.readingCases'));
 
-  const { summary, gate, failed_cases, uncovered_cases, checklist, ac_trace, pre_run } = data;
+  const { summary, gate, failed_cases, uncovered_cases, consistency, checklist, ac_trace, pre_run } = data;
 
   console.log(`\n${LINE}`);
   console.log(`📊 ${t(locale, 'verify.summary')}`);
@@ -945,6 +1129,27 @@ export function verify(format: OutputFormat = 'text') {
     }
   }
 
+  if (!consistency.ok) {
+    console.log('\n❌ verify result ledger is inconsistent');
+    for (const reason of consistency.reasons) {
+      console.log(`  ${reason}`);
+    }
+    if (consistency.unknown_result_ids.length > 0) {
+      console.log(`  unknown_result_ids: ${consistency.unknown_result_ids.join(', ')}`);
+    }
+    if (consistency.manual_result_ids.length > 0) {
+      console.log(`  manual_result_ids: ${consistency.manual_result_ids.join(', ')}`);
+    }
+    for (const invalid of consistency.invalid_results) {
+      const id = invalid.id ? ` id=${invalid.id}` : '';
+      const status = invalid.status ? ` status=${invalid.status}` : '';
+      console.log(`  invalid line ${invalid.line}:${id}${status} reason=${invalid.reason}`);
+    }
+    if (consistency.count_mismatches.length > 0) {
+      console.log(`  count_mismatches: ${consistency.count_mismatches.join(', ')}`);
+    }
+  }
+
   if (checklist.total > 0) {
     console.log(`\n📋 ${t(locale, 'verify.checklistTitle')}`);
     console.log(`  ${t(locale, 'verify.checklistSummary', { checked: String(checklist.checked), total: String(checklist.total) })}`);
@@ -970,8 +1175,12 @@ export function verify(format: OutputFormat = 'text') {
 
   if (gate.result === 'PASS') {
     console.log(`\n✅ ${t(locale, 'verify.gatePass')}`);
+  } else if (gate.reason === 'result_ledger_inconsistent') {
+    console.log('\n❌ Gate 3.5: FAIL (result ledger inconsistent)');
   } else if (gate.reason === 'failed_cases') {
     console.log(`\n❌ ${t(locale, 'verify.gateFail')}`);
+  } else if (gate.reason === 'skipped_cases') {
+    console.log('\n❌ Gate 3.5: FAIL (skipped cases)');
   } else if (gate.reason === 'incomplete_coverage') {
     console.log(`\n❌ ${t(locale, 'verify.gateFailCoverage')}`);
   } else if (gate.reason === 'checklist_incomplete') {

@@ -205,3 +205,24 @@ graph TB
 - 若 smoke 覆盖预检误阻断正常提案，按既有 npm 补丁版本策略修复；必要时临时回退到上一版本 CLI。
 - 官网文档异常时，通过 Cloudflare Pages 回滚到上一成功部署。
 - 用户项目中已存在的 smoke runner 与 `smoke-results.jsonl` 属普通项目文件，回滚 CLI 不应删除。
+
+## 十八、verify 结果账本一致性发布检查
+
+本提案 `verify-result-consistency-gate` 修改 CLI 运行时代码、测试结果规范与 S13 验收门禁，因此需要执行 CLI/npm 发布，并在部署后验证自动化消费方不能再被不自洽的 verify 结果误导。
+
+发布前检查：
+- `cd cli && npm test` 覆盖非法 `status`、未定义结果 ID、统计守恒失败和合法 last-write-wins 的回归用例。
+- `cd cli && npm run build` 通过。
+- `openlogos verify --format json` 在不自洽账本 fixture 下返回非零退出码，`gate.result="FAIL"`，`gate.reason` 非空。
+- 正常全绿且统计自洽的 fixture 仍返回 `gate.result="PASS"`。
+
+部署后检查：
+- 安装发布后的 CLI，构造只定义 1 个用例、JSONL 含 1 个 pass 用例和 1 个非法 `status` 结果的项目，执行 `openlogos verify --format json`，应返回 FAIL。
+- 构造 defined 用例全部 pass、JSONL 另含未定义 `UT-*` ID 的项目，执行 `openlogos verify --format json`，应返回 FAIL 并列出未定义 ID。
+- 构造合法重复 ID 的项目，确认最后一次结果生效且统计自洽时仍可 PASS。
+- 使用 RunLogos / driver 消费该 FAIL 响应时，不得继续触发 archive / deploy / release。
+
+回滚策略：
+- 若一致性硬门误阻断合法项目，按既有 npm 补丁版本策略修复并发布新 patch。
+- 旧项目的 `test-results.jsonl` 是运行时产物，不做迁移；用户可通过清空旧结果文件并重新运行完整测试恢复。
+- 官网文档异常时，通过 Cloudflare Pages 回滚到上一成功部署。

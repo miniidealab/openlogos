@@ -73,6 +73,61 @@ sequenceDiagram
 - **触发条件**：未配置任何预跑命令，且存在未覆盖用例。
 - **期望响应**：verify FAIL，输出覆盖不足列表，同时提示可能只运行了局部测试，并建议配置 `verify.pre_run_command`、`verify.regression_command` 或启用 verify 沙箱以隔离完整测试执行。
 
+## verify 结果账本一致性预检
+
+在 Step 7 读取测试用例与结果之后、Step 8 计算验收指标之前，`openlogos verify` 必须执行结果账本一致性预检：
+
+```mermaid
+sequenceDiagram
+    participant C as OpenLogos CLI
+    participant S as Test Specs
+    participant R as test-results.jsonl
+    participant G as Gate Calculator
+
+    C->>S: Step 7a: 读取已定义自动化 UT/ST ID 与 manual ID
+    C->>R: Step 7b: 逐行解析 JSONL
+    C->>C: Step 7c: 按 id last-write-wins 归一化合法候选结果
+    C->>C: Step 7d: 校验 status、unknown ID、manual ID 与统计不变量
+    alt 账本自洽
+        C->>G: Step 8: 计算覆盖率、通过率、AC 追溯与 Gate
+    else 账本不自洽
+        C-->>G: Step 8: Gate FAIL，reason=result_ledger_inconsistent
+    end
+```
+
+### 规则
+
+1. `status` 只能为 `pass`、`fail`、`skip`；其它值必须进入一致性错误，不得计入 PASS。
+2. 结果 ID 必须属于已定义自动化用例；未定义 ID 和 `[manual]` ID 都必须进入一致性错误。
+3. 去重后的统计必须满足 `passed + failed + skipped == executed` 和 `executed <= defined`。
+4. 当 `failed == 0` 且 `skipped == 0` 时，`passed` 必须等于 `executed`；否则说明存在幽灵结果，Gate 必须 FAIL。
+5. 一致性错误优先级高于覆盖率 / AC 追溯的普通失败诊断，因为结果账本不可信时覆盖率和通过率都不可作为放行依据。
+
+### 诊断
+
+- `invalid_test_result_json`：JSONL 行不可解析或不是对象。
+- `invalid_test_result_schema`：缺少 `id` / `status`，或 `fail` 缺少 `error`。
+- `invalid_test_result_status`：`status` 不属于 `pass` / `fail` / `skip`。
+- `unknown_test_result_id`：结果 ID 不在自动化测试规格中。
+- `manual_test_result_id`：结果 ID 对应 `[manual]` 用例。
+- `result_count_mismatch`：统计守恒不成立。
+- `executed_exceeds_defined`：执行数大于定义数。
+
+## EX-7.1: 结果账本统计不自洽
+
+- **触发条件**：去重后的结果集合出现 `passed + failed + skipped != executed`、`executed > defined`，或 `failed=0 && skipped=0 && passed != executed`。
+- **期望响应**：verify FAIL，`gate.reason` 为 `result_ledger_inconsistent` 或等价具体错误码；JSON 输出包含 `consistency.ok=false` 与具体不变量失败原因；不得写入 `VERIFY_PASS`。
+
+## EX-7.2: JSONL 含非法结果状态
+
+- **触发条件**：某条结果记录的 `status` 不是 `pass`、`fail` 或 `skip`。
+- **期望响应**：verify FAIL，诊断 `invalid_test_result_status`；该记录不得被算作通过、失败或跳过，也不得让 Gate PASS。
+
+## EX-7.3: JSONL 含未定义或 manual 用例 ID
+
+- **触发条件**：结果记录 ID 不存在于自动化测试规格，或对应 `[manual]` 用例。
+- **期望响应**：verify FAIL，诊断 `unknown_test_result_id` 或 `manual_test_result_id`，并列出相关 ID；不得因为 defined 用例均 pass 就忽略额外污染结果。
+
 ## smoke 覆盖预检步骤
 
 在 Step 7 读取测试用例与结果之后、Step 8 计算验收指标之前，`openlogos verify` 或 code completion gate 应增加 smoke 覆盖预检：
