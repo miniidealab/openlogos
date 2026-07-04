@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-04
+
+### Added
+
+- **官网 / 文档 / README 全面对齐 flow 能力** — 新增首页全自动流程板块、《可编排研发流程》deep-dive 与 concepts 术语页；新增 CLI 文档 flow show / watch / deploy-done 与 next --auto 章节；新增 flow-spec / slice-planner 规格并更新 cli-json-output / change-management / tasks-spec；补齐 README（中英）flow 小节与英文发布摘要。
+
+### Changed
+
+- **flow 能力首次对外发布** — 累积自 0.11.3–0.12.9 的 flow 引擎、next --auto 全自动无人值守、slice 切片循环、loop-exhausted 硬红线随本版本正式发布到 npm 与 GitHub Release。
+
 ## [0.12.9] - 2026-07-03
 
 ### Added
