@@ -40,7 +40,7 @@ openlogos detect --format json
 ```json
 {
   "cli": {
-    "version": "0.10.3",
+    "version": "0.12.9",
     "node_version": "v22.0.0"
   },
   "project": {
@@ -72,6 +72,7 @@ openlogos status --format json
 | `phases[]` | 全部 13 个阶段，含 `key`、`label`、`done`、`skipped`、`files` |
 | `modules[]` | 每模块的生命周期、当前阶段、阶段进度、活跃变更、建议 |
 | `modules[].active_change` | 提案步骤、任务进度、部署决策、冲突检测 |
+| `modules[].active_change.code_required` | 「本提案是否需要代码」的单一事实源（见下） |
 | `current_phase` | 第一个未完成的阶段 key（全部完成则为 `null`） |
 | `lifecycle` | 由模块状态推导出的项目生命周期 |
 | `yaml_diagnostics` | YAML 存在问题时的解析恢复状态 |
@@ -83,18 +84,74 @@ openlogos status --format json
 | 步骤 | 含义 |
 |------|---------|
 | `writing` | 提案/任务仍有模板占位符 |
+| `ready-to-delta` | 提案 + 任务已填、尚无 delta、`PLAN_APPROVED` 不在场——`plan-exit`「批准方案」门 |
 | `delta-writing` | 提案已填写；delta 任务未全部勾选 |
-| `ready-to-merge` | 所有 delta 任务已勾选 |
+| `ready-to-merge` | 所有 delta 任务已勾选（`spec-exit` 门） |
 | `merge-generated` | `openlogos merge` 已运行 |
-| `coding` | 规格已合并；代码任务未全部勾选 |
+| `ready-to-implement` | 规格已合并、`code_required`、`[code]` 切片尚未由 slice-planner 写定——`slice-exit`「切片待批准」门 |
+| `coding` | 切片已批准；代码任务未全部勾选 |
 | `ready-to-verify` | 所有代码任务已勾选 |
 | `verify-passed` | `openlogos verify` 通过 |
 | `verify-failed` | `openlogos verify` 失败 |
-| `ready-to-deploy` | 验证通过，待部署 |
+| `ready-to-deploy` | 验证通过，待部署（`deliver-entry` 门） |
 | `deploy-done` | 已执行部署 |
 | `ready-to-smoke` | 部署完成，待 smoke |
 | `smoke-passed` | `openlogos smoke` 通过 |
 | `smoke-failed` | `openlogos smoke` 失败 |
+
+`ready-to-delta` 与 `ready-to-implement` 分别由变更流程重构和切片规划剥离新增；消费方（含 RunLogos）须同步识别。`implementing` / `in-progress` 仍为旧版本兼容值。
+
+### code_required
+
+`modules[].active_change.code_required`（boolean）是「提案是否需要代码实现」的**单一事实源**，等于内部谓词 `isCodeRequiredForProposal`——`true` 表示提案含 `## [code]` 产出需求（有 `[code]` 段 / `[delta]` 新增 `UT-*`/`ST-*`/`SMOKE-*` / proposal 声明代码级），`false` 表示纯文档 / 纯规格提案。消费方应直接读本字段，替代自行用关键词正则重判。
+
+- **仅在 `active_change` 非 null 时出现**；无活跃提案时整个对象（含本字段）不出现，故无活跃提案的项目不新增字段（golden 零漂移）。
+- 一致性约束：`code_required==false` ⟹ `next_node.id` 绝不为 `code`/`plan-slices`，`slice` 子流程（`when: code_required`）整段跳过。`code_required==true` 且 `[code]` 未脱模板 ⟹ `proposal_step=="ready-to-implement"`、`next_node.id=="plan-slices"`。
+
+### 编排机器字段
+
+以下字段驱动外部编排器。它们遵循相同的**挂载 + 省略**规则：有 `modules[]` 时挂在 `modules[].*`，legacy 项目回退到顶层；消费方先读 `modules[].*`、缺则读顶层。未激活时**整字段省略**，保 golden 零漂移。
+
+**`loop_state`**——仅 implement loop 激活时输出（`max_iters > 1`；builtin launched 默认满足）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `subflow_id` | string | 激活 loop 的 subflow id（如 `implement`） |
+| `until` | string | 收敛谓词（`tests_green` \| `code_slices_green`） |
+| `max_iters` | number | resolved 迭代上限 |
+| `iteration` | number | 已完成的 verify 轮次（当前 module 的 `LOOP_ITERS` 行数） |
+| `converged` | boolean | 末轮测试绿 |
+| `escalated` | boolean | `iteration >= max_iters && !converged`（达上限仍未绿） |
+| `exhausted_skippable` | boolean \| 省略 | loop-exhausted 门是否可被 `--auto` 放行；仅当 overlay `set-loop` 写了 `exhausted_gate` 时输出 |
+
+**`slice_state`**——仅切片循环激活时输出（`until == code_slices_green` 且 `max_iters > 1`；launched 下常驻）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `total` | number | `[code]` 切片总数 |
+| `done` | number | 已勾选切片数（`section_complete:code` 计数） |
+| `current` | string \| 省略 | 第一个未勾 `[code]` 行标题；全部完成时省略 |
+| `remaining` | number | `total - done` |
+
+**`plan_state`**——launched 诊断对象，避免消费方把 `tasks.md` checkbox 进度误判为规划失败：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `plan_ready` | boolean | proposal/tasks 已脱模板、无 plan 层阻断 |
+| `plan_gate_pending` | boolean | 停在 `plan-exit`：`ready-to-delta` 且 `PLAN_APPROVED` 不在场 |
+| `plan_approved` | boolean | `PLAN_APPROVED` 在场，或已离开 `ready-to-delta` |
+| `tasks_template_filled` | boolean | `tasks.md` 已脱模板且含有效 section 结构 |
+| `tasks_execution_done` / `tasks_execution_total` | number | 当前 section checkbox 进度——**不得**用于反推 plan 是否 ready |
+| `tasks_execution_scope` | string | `delta` \| `deploy` \| `code` \| `none` |
+| `diagnostic` | string | 面向人/driver 的等待或阻断态短诊断 |
+
+**`next_node`**（仅 `openlogos next`）——本轮该处理节点的编排提示，携带 resolved flow 的 `skill` / `working_agent` / `review_agent` / `pre_script` / `post_script`。默认 = 当前前沿节点，例外：
+
+- 切片循环内（未收敛、未达上限）指向 `code` 工作节点，并带 `next_node.slice`（= `slice_state.current`，「只做这一片」）。
+- 在 slice/plan 门处，`id` 之外附加 **`next_node.gate_id`**——如 `ready-to-implement` 且 `plan-slices` 已完成时输出 `id: "plan-slices"` + `gate_id: "slice-exit"`，提示宿主**不要**重派 skill，改按人类门处理。gate_id 映射：`ready-to-delta → plan-exit`、`ready-to-merge → spec-exit`、`ready-to-implement → slice-exit`、`ready-to-deploy → deliver-entry`。
+- 命令级建议（`all_done`、`openlogos change <slug>`、`openlogos launch`）及 gate 被自动放行后省略。
+
+**`GATE_AUTO_PASSED`**——活跃提案目录下的 **append-only 审计账本**（JSONL）。`next --auto` 每次自动放行 `skippable:true` 门时追加 `{gate_id, proposal_step, timestamp}`。它是**审计、非状态源**——历史行绝不授权后续部署或 gate；默认 `next`（无 `--auto`）一律忽略之。状态推进只认真实 marker（plan 认 `PLAN_APPROVED`、slice 认 `SLICES_APPROVED`）或实际 delta/切片产出。部署放行依据本次 `next --auto` 响应的 **live** `gate_auto_passed === true`。
 
 ## verify
 

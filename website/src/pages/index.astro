@@ -235,6 +235,61 @@ const distTagSummary = Object.entries(releaseData.distTags ?? {})
     </div>
   </section>
 
+  <!-- Orchestratable Flow -->
+  <section class="workflow" id="flow">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-badge">Full-Auto Flow</span>
+        <h2>One authorization. The change ships itself.</h2>
+        <p class="section-subtitle">
+          The flow engine models your entire change lifecycle as a declarative
+          state machine. Run <code>openlogos next --auto</code> once and the AI driver
+          walks the whole chain — pausing only at the hard safety line.
+        </p>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:0.4rem;justify-content:center;align-items:center;max-width:920px;margin:0 auto 2.75rem;">
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">plan</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">spec</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">merge</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">slice</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">implement ↻</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">deliver</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">close</span>
+      </div>
+
+      <div class="scenarios">
+        <div class="scenario">
+          <div class="scenario-number">A1</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">Two-tier authorization</div>
+            <p>Semi-auto (default) keeps every human checkpoint — merge, verify, deploy, smoke, archive, push. Full-auto (<code>--auto</code>) is a standing, run-scoped authorization that auto-passes skippable gates and auto-runs verify / smoke / archive / push once the code is green, appending each pass to a <code>GATE_AUTO_PASSED</code> audit trail.</p>
+          </div>
+        </div>
+
+        <div class="scenario">
+          <div class="scenario-number">A2</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">Hard red line — never ships untested code</div>
+            <p>The implement stage loops on code slices until tests are green. If it hits the iteration ceiling unresolved, it escalates to a non-skippable <code>loop-exhausted</code> gate. <strong>No mode — not even <code>--auto</code> — ever auto-passes code that did not pass tests.</strong></p>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center;margin-top:2rem;">
+        <a href="/deep-dive/orchestratable-flow" class="pillar pillar-purple">
+          <span class="pillar-dot"></span>How the flow engine works
+        </a>
+      </div>
+    </div>
+  </section>
+
   <!-- Compatibility -->
   <section class="compat">
     <div class="section-container">

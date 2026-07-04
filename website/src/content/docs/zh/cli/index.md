@@ -15,7 +15,7 @@ npm install -g @miniidealab/openlogos
 
 ```bash
 openlogos --version
-# 0.10.3
+# 0.12.9
 ```
 
 ## 全局选项
@@ -36,6 +36,8 @@ openlogos --version
 | [`sync`](/zh/cli/sync) | 重新生成 AI 指令文件和 Skills |
 | [`status`](/zh/cli/status) | 显示项目阶段并建议下一步 |
 | [`next`](/zh/cli/next) | 显示最值得执行的单条下一步 |
+| [`watch`](/zh/cli/watch) | 实时流式输出派生的 dev-flow 状态（只读） |
+| [`flow show`](/zh/cli/flow-show) | 展示解析后的 dev-flow 编排 |
 | [`detect`](/zh/cli/detect) | 显示 CLI 版本和项目检测信息 |
 | [`index`](/zh/cli/index-command) | 生成用于重建 `logos-project.yaml` 资源索引的 AI 提示词 |
 | [`module`](/zh/cli/module) | 管理项目模块（list / add / rename / remove） |
@@ -45,6 +47,7 @@ openlogos --version
 | 命令 | 说明 |
 |---------|-------------|
 | [`verify`](/zh/cli/verify) | 针对测试用例规格验证测试结果（Gate 3.6） |
+| [`deploy-done`](/zh/cli/deploy-done) | 受控记录部署完成（Gate 3.7） |
 | [`smoke`](/zh/cli/smoke) | 针对 smoke 规格验证部署后健康状况（Gate 3.8） |
 | [`launch`](/zh/cli/launch) | 在验证通过后激活变更管理 |
 

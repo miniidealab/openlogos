@@ -176,6 +176,21 @@ import TourNav from '../../components/TourNav.astro';
     </div>
   </section>
 
+  <section class="flow-recap-section">
+    <div class="container">
+      <h2 class="section-title">Iterating after launch: one command, unattended</h2>
+      <p class="section-desc">Once a project is launched, every change runs through the flow engine. In full-auto mode a single authorization drives the whole chain — you only step in at the hard safety line.</p>
+      <div style="max-width:640px;margin:0 auto;background:var(--color-surface);border:1px solid var(--color-border);border-radius:12px;padding:1.5rem 1.75rem;font-family:var(--font-mono);font-size:0.85rem;line-height:1.9;color:var(--color-text-secondary);">
+        <div><span style="color:var(--color-text-muted);">$</span> openlogos change add-dark-mode</div>
+        <div><span style="color:var(--color-text-muted);">$</span> openlogos next <strong style="color:var(--color-primary);">--auto</strong></div>
+        <div style="opacity:0.85;">↳ plan → spec → merge → slice → implement ↻ → deliver → close</div>
+        <div style="opacity:0.85;">↳ verify / smoke / archive / push run automatically once code is green</div>
+        <div style="opacity:0.85;">↳ pauses only on <code>loop-exhausted</code> — when tests never went green</div>
+      </div>
+      <p class="section-desc" style="margin-top:1.5rem;">See <a href="/deep-dive/orchestratable-flow" style="color:var(--color-primary);">how the flow engine works →</a></p>
+    </div>
+  </section>
+
   <section class="cta-section">
     <div class="container">
       <h2>Dive into a real project</h2>

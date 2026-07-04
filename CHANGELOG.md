@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.9] - 2026-07-03
+
+### Added
+
+- **暴露 `code_required` 契约字段** — 把已在 flow 派生中使用的内部谓词 `code_required` 提升为 `openlogos status/next/watch --format json` 的显式契约字段（`modules[].active_change.code_required`），作为「当前提案是否需要代码实现」的单一事实源，供 RunLogos 等外部消费方直接读取，替代自行用关键词正则重判（expose-code-required-field）。
+
+## [0.12.5] - 2026-07-02
+
+### Fixed
+
+- **切片规划前守卫自动放行** — merge 后进入 slice 段时，`openlogos next --auto` 在 `[code]` 切片尚未由 slice-planner 写定前不再自动放行 `slice-exit` 门，避免对尚未成形的切片过早跳过（fix-post-merge-slice-planner-auto-skip）。
+
+## [0.12.4] - 2026-07-01
+
+### Added
+
+- **`next_node` 在 slice-exit 前沿输出 `gate_id`** — `openlogos next` 的 `next_node` 编排提示在切片出口前沿补充 `gate_id`，便于 driver 精确识别当前门（fix-next-node-slice-exit-frontier）。
+
+### Fixed
+
+- **修复无 delta 纯代码提案的节点路由** — `tasks.md` 至少保留一个 `## [tag]` section 标题，避免 `parseTaskSections` 返回 `null` 导致派生降级、把纯代码提案误路由到 `write-delta` 节点、无人值守下死锁（fix-nodelta-proposal-routing）。
+
+## [0.12.3] - 2026-07-01
+
+### Added
+
+- **`next --auto` 全自动 / 无人值守模式** — 重定义 `openlogos next --auto` 为 standing run-scoped 授权：一次授权即让提案全链路自动跑到底，自动放行 `skippable:true` 的 human 门；引入两档授权语义（半自动人类确认点 / 全自动无人值守）与 revert/回退 marker 机制（auto-full-unattended）。
+- **代码已绿后红线步骤自动执行** — 全自动模式下 `verify` / `smoke` / `archive` 可自动执行（JSON 输出 `auto_execute:true`），`git push` 由 PreToolUse guard 安全白名单放行；每次自动放行向提案目录 `GATE_AUTO_PASSED` 追加 append-only 审计行（auto-execute-redline-steps）。
+
+### Changed
+
+- **loop-exhausted 硬红线** — 达迭代上限仍未过测试的未收敛代码升级为 `loop-exhausted` 退出门（默认 `skippable:false`）；任何模式（含 `--auto`）都绝不自动放行未通过测试的代码。
+
+## [0.12.0] - 2026-06-30
+
+### Added
+
+- **切片规划独立成段（slice-planner）** — 把 `[code]` 切片从 plan 段剥离为 merge 之后、implement 之前的独立 slice 子流程：新增 `plan-slices` 节点与 `slice-planner` skill（六维打分 + 删后续证伪门，对已合并规格 + 真实测试 ID 划分切片），新增 `ready-to-implement` 驻留态；`write-tasks` 不再产 `[code]`（split-slice-planner-stage）。
+
+## [0.11.3] - 2026-06-28
+
+### Added
+
+- **flow 可编排研发流程引擎** — 把研发全流程建模为 subflow→node→gate→loop 的声明式状态机作为唯一事实源，`status/next/watch` 从内置 flow 模板被动派生当前前沿；新增 `openlogos flow show`（`--resolved` 应用 overlay、`--lifecycle initial|launched`）与内置 `initial` / `launched` 两套模板（flow-engine-foundation，S22/S09）。
+- **`openlogos watch` 实时状态 + `next --auto` 跳门** — 新增只读流式 `watch` 命令输出实时派生的 dev-flow 状态，`next` 引入 `--auto` 跳过 `skippable` 门（flow-watch-auto，S23/S24）。
+- **overlay 驱动派生** — 项目 `logos/flow/*.yaml` 可 `extends: builtin:*` 只写差异（skip 节点 / set-loop / cmd 谓词），status/next/watch 应用 overlay 后派生（flow-overlay-derive，S25）。
+- **cmd 谓词 + loop 真迭代 + fan-out + `next_node` 编排提示** — cmd 谓词与循环真迭代派生（S26/S27）、`next` 暴露 `next_node` 编排提示（S28）、fan-out 阈值整组收敛与 cmd 门放开到 launched verify/deploy/smoke（S29/S30）。
+- **变更流程重构为 plan/spec/merge + 切片循环** — 把原 propose 单段拆为 plan（方案）/ spec（规格·delta）/ merge（合并）三段，并在 implement 段引入代码切片循环（change-flow-redesign）。
+- **`[code]` 切片子任务勾选** — 支持 `[code]` 切片的子任务 checkbox（code-slice-subtask-checkboxes）。
+
+### Fixed
+
+- **保留用户指令文件** — 修复 instruction 文件合并时丢失用户内容的问题（fix-instruction-file-merge）。
+- **Codex guard 上下文按提案步骤 scope** — 按当前提案步骤限定 guard 注入上下文（codex-guard-scope-context）。
+- **修复自动 plan 门进度显示**（fix-auto-plan-gate-progress）。
+- **强制 smoke runner 覆盖预检**（enforce-smoke-runner-coverage）。
+
 ## [0.10.10] - 2026-06-15
 
 ### Fixed

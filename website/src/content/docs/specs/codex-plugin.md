@@ -46,7 +46,7 @@ project-root/
 ```json
 {
   "name": "openlogos",
-  "version": "0.10.3",
+  "version": "0.12.9",
   "description": "OpenLogos methodology plugin for Codex CLI",
   "hooks": {
     "session-start": "./hooks/session-start.sh"

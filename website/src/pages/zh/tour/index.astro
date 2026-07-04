@@ -176,6 +176,21 @@ import TourNav from '../../../components/TourNav.astro';
     </div>
   </section>
 
+  <section class="flow-recap-section">
+    <div class="container">
+      <h2 class="section-title">launched 之后的迭代：一条命令，无人值守</h2>
+      <p class="section-desc">项目一旦 launched，每次变更都走 flow 引擎。全自动模式下，一次授权即驱动整条链路——你只在硬安全线前介入。</p>
+      <div style="max-width:640px;margin:0 auto;background:var(--color-surface);border:1px solid var(--color-border);border-radius:12px;padding:1.5rem 1.75rem;font-family:var(--font-mono);font-size:0.85rem;line-height:1.9;color:var(--color-text-secondary);">
+        <div><span style="color:var(--color-text-muted);">$</span> openlogos change add-dark-mode</div>
+        <div><span style="color:var(--color-text-muted);">$</span> openlogos next <strong style="color:var(--color-primary);">--auto</strong></div>
+        <div style="opacity:0.85;">↳ plan → spec → merge → slice → implement ↻ → deliver → close</div>
+        <div style="opacity:0.85;">↳ 代码转绿后 verify / smoke / archive / push 自动执行</div>
+        <div style="opacity:0.85;">↳ 仅当 <code>loop-exhausted</code>（测试始终未绿）时才停下</div>
+      </div>
+      <p class="section-desc" style="margin-top:1.5rem;"><a href="/zh/deep-dive/orchestratable-flow" style="color:var(--color-primary);">看 flow 引擎如何运作 →</a></p>
+    </div>
+  </section>
+
   <section class="cta-section">
     <div class="container">
       <h2>深入一个真实项目</h2>

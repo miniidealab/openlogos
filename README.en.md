@@ -60,6 +60,31 @@ Core principles:
 - **Test-first delivery**: tests are part of the spec, not an afterthought
 - **Traceable iteration**: changes should go through proposal / merge / archive flow
 
+## Full-Auto Flow (the flow engine)
+
+Since `0.11`, OpenLogos models the entire change lifecycle as a **declarative state machine** (the flow engine) that is the single source of truth — `status` / `next` / `watch` all passively derive "what to do next" from it. Every change in a launched project walks a fixed chain:
+
+```text
+plan → spec (deltas) → merge → slice (plan [code] slices)
+  → implement (slice loop ↻) → deliver (verify/deploy/smoke) → close (archive/push)
+```
+
+**Two authorization tiers:**
+
+- **Semi-auto (default)**: merge, verify, deploy, smoke, archive and push stay human confirmation points.
+- **Full-auto / unattended (`openlogos next --auto`)**: one standing, run-scoped authorization drives the whole chain to completion — auto-passing skippable gates and auto-running verify / smoke / archive / push once the code is green, appending every pass to a `GATE_AUTO_PASSED` audit trail.
+
+**Hard red line (safety base)**: the implement stage loops on code slices until tests are green; hitting the iteration ceiling unresolved escalates to a non-skippable `loop-exhausted` gate. **No mode — not even `--auto` — ever auto-passes code that did not pass tests.**
+
+```bash
+openlogos change add-dark-mode     # create a change proposal
+openlogos next --auto              # one command, drives the whole chain unattended
+openlogos flow show --resolved     # show the orchestration after overlays
+openlogos watch                    # stream live derived state
+```
+
+Learn more: [Orchestratable Flow](https://openlogos.ai/deep-dive/orchestratable-flow)
+
 ## Install and Prerequisites
 
 ### Step 1: Install the OpenLogos CLI
@@ -153,8 +178,11 @@ If the agent or plugin panel still does not appear, check these first:
 | `openlogos init [name]` | Initialize a project |
 | `openlogos sync` | Regenerate AI instruction files and skills |
 | `openlogos status` | Inspect current phase and progress |
-| `openlogos next` | Show the recommended next step |
+| `openlogos next [--auto]` | Show the recommended next step; `--auto` is full-auto / unattended mode |
+| `openlogos watch` | Stream live derived dev-flow state |
+| `openlogos flow show` | Show the flow orchestration (`--resolved` applies overlays) |
 | `openlogos verify` | Generate the acceptance report |
+| `openlogos deploy-done` | Record controlled deployment completion |
 | `openlogos launch` | Switch from initial delivery to active iteration |
 | `openlogos change <slug>` | Create a change proposal |
 | `openlogos merge <slug>` | Merge proposal deltas |

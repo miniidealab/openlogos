@@ -216,6 +216,60 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     </div>
   </section>
 
+  <!-- Orchestratable Flow -->
+  <section class="workflow" id="flow">
+    <div class="section-container">
+      <div class="section-header">
+        <span class="section-badge">全自动流程</span>
+        <h2>一次授权，变更自己跑完。</h2>
+        <p class="section-subtitle">
+          flow 引擎把整个变更生命周期建模为声明式状态机。运行一次
+          <code>openlogos next --auto</code>，AI driver 便走完整条链路——只在硬安全线前停下。
+        </p>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:0.4rem;justify-content:center;align-items:center;max-width:920px;margin:0 auto 2.75rem;">
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">plan 方案</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">spec 规格</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">merge 合并</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">slice 切片</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">implement 实现 ↻</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">deliver 交付</span>
+        <span style="opacity:0.5;">→</span>
+        <span style="padding:0.4rem 0.85rem;border:1px solid var(--border,#334155);border-radius:999px;font-size:0.85rem;white-space:nowrap;">close 收尾</span>
+      </div>
+
+      <div class="scenarios">
+        <div class="scenario">
+          <div class="scenario-number">A1</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">两档授权语义</div>
+            <p>半自动（默认）保留每一个人类确认点——merge、verify、部署、smoke、archive、push。全自动（<code>--auto</code>）是一次性、run-scoped 的 standing 授权：自动放行可跳过的门，代码转绿后自动执行 verify / smoke / archive / push，并把每次放行追加到 <code>GATE_AUTO_PASSED</code> 审计轨迹。</p>
+          </div>
+        </div>
+
+        <div class="scenario">
+          <div class="scenario-number">A2</div>
+          <div class="scenario-body">
+            <div class="scenario-prompt">硬红线——绝不发布未过测试的代码</div>
+            <p>implement 段对代码切片循环，直到测试转绿。若达迭代上限仍未收敛，升级为不可跳过的 <code>loop-exhausted</code> 门。<strong>任何模式——即便 <code>--auto</code>——都绝不自动放行未通过测试的代码。</strong></p>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center;margin-top:2rem;">
+        <a href="/zh/deep-dive/orchestratable-flow" class="pillar pillar-purple">
+          <span class="pillar-dot"></span>flow 引擎如何运作
+        </a>
+      </div>
+    </div>
+  </section>
+
   <!-- Compatibility -->
   <section class="compat">
     <div class="section-container">

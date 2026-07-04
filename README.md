@@ -60,6 +60,31 @@ HOW  -> 技术架构 -> 场景建模 -> API / DB -> 测试设计 -> 代码实现
 - **测试先行**：测试不是补充材料，而是开发规格的一部分
 - **变更可追溯**：通过 proposal / merge / archive 管理迭代
 
+## 全自动流程（Flow 引擎）
+
+从 `0.11` 起，OpenLogos 把整个变更生命周期建模为一台**声明式状态机**（flow 引擎），作为唯一事实源——`status` / `next` / `watch` 都从它被动派生「下一步该做什么」。launched 项目的每次变更沿固定链路推进：
+
+```text
+plan（方案）→ spec（规格/delta）→ merge（合并）→ slice（切片规划）
+  → implement（实现·切片循环 ↻）→ deliver（verify/部署/smoke）→ close（归档/push）
+```
+
+**两档授权：**
+
+- **半自动（默认）**：merge、verify、部署、smoke、archive、push 都是人类确认点。
+- **全自动 / 无人值守（`openlogos next --auto`）**：一次授权即让提案全链路自动跑到底，自动放行可跳过的门，代码转绿后自动执行 verify / smoke / archive / push，并把每次放行追加到 `GATE_AUTO_PASSED` 审计轨迹。
+
+**硬红线（安全底座）**：implement 段对代码切片循环，直到测试转绿；达迭代上限仍未收敛会升级为不可跳过的 `loop-exhausted` 门。**任何模式——即便 `--auto`——都绝不自动放行未通过测试的代码。**
+
+```bash
+openlogos change add-dark-mode     # 创建变更提案
+openlogos next --auto              # 一条命令，无人值守跑完整条链路
+openlogos flow show --resolved     # 查看应用 overlay 后的真实编排
+openlogos watch                    # 流式查看实时派生状态
+```
+
+深入了解：[可编排研发流程](https://openlogos.ai/deep-dive/orchestratable-flow)
+
 ## 安装与前置条件
 
 ### 第一步：安装 OpenLogos CLI
@@ -153,8 +178,11 @@ OpenLogos 当前已支持：
 | `openlogos init [name]` | 初始化项目 |
 | `openlogos sync` | 重新生成 AI 指令文件与 Skills |
 | `openlogos status` | 查看当前阶段进度 |
-| `openlogos next` | 输出下一步建议 |
+| `openlogos next [--auto]` | 输出下一步建议；`--auto` 为全自动无人值守模式 |
+| `openlogos watch` | 流式查看实时派生的研发流程状态 |
+| `openlogos flow show` | 查看 flow 编排（`--resolved` 应用 overlay） |
 | `openlogos verify` | 生成测试验收报告 |
+| `openlogos deploy-done` | 部署完成后受控落标 |
 | `openlogos launch` | 从首轮开发切换到活跃迭代 |
 | `openlogos change <slug>` | 创建变更提案 |
 | `openlogos merge <slug>` | 合并提案 deltas |

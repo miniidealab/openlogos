@@ -35,6 +35,13 @@ This specification defines the structured format for `tasks.md` in OpenLogos cha
 
 Sections without markers are treated as general tasks and don't affect proposal step detection.
 
+### `[code]` is filled after merge, not during `write-tasks`
+
+Under the redesigned launched flow (see [Change Management](/specs/change-management) and [Slice Planner](/specs/slice-planner)), `[code]` slices are **no longer written during the plan stage**. `write-tasks` (change-writer) produces **only `[delta]` and `[deploy]`**; its completion predicate is `tasks_delta_filled`. The `[code]` slices are cut later by the `slice-planner` in a dedicated `slice` subflow that runs **after merge**, against the merged spec and real test IDs — its completion predicate is `tasks_code_filled` (slices written, all unchecked).
+
+- A pure-code proposal (no `[delta]`) must still **keep an empty `## [code]` heading**. This keeps `parseTaskSections` non-null and `code_required` true, so the proposal is structurally consistent with a post-merge proposal and the slice-planner picks it up normally.
+- If `[code]` is filled early (during `write-tasks`, before the slice stage legitimately enters), the CLI auto-resets it to a template placeholder on the deterministic slice-stage entry (backing the old text up to `CODE_AUTORESET`), so `slice-planner` remains the single source of truth for slices.
+
 ## Task Format
 
 Each task is a Markdown checkbox:

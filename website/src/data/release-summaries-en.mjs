@@ -1,4 +1,117 @@
 export const RELEASE_SUMMARIES_EN = {
+  '0.12.9': {
+    valueSummaryEn: [
+      'Exposed `code_required` as an explicit contract field on `openlogos status/next/watch --format json` (`modules[].active_change.code_required`), giving external consumers such as RunLogos a single source of truth for whether the active proposal needs code — instead of re-deriving it with keyword regexes.',
+    ],
+    fixSummaryEn: [],
+  },
+  '0.12.5': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Guarded slice auto-pass: after merge, `openlogos next --auto` no longer auto-passes the `slice-exit` gate until the `[code]` slices have actually been written by slice-planner, so unformed slices are never skipped prematurely.',
+    ],
+  },
+  '0.12.4': {
+    valueSummaryEn: [
+      'The `next_node` orchestration hint now emits `gate_id` at the slice-exit frontier so drivers can precisely identify the current gate.',
+    ],
+    fixSummaryEn: [
+      'Fixed node routing for no-delta pure-code proposals: `tasks.md` keeps at least one `## [tag]` section heading so `parseTaskSections` no longer returns null and misroutes to the `write-delta` node (which deadlocked unattended runs).',
+    ],
+  },
+  '0.12.3': {
+    valueSummaryEn: [
+      'Redefined `openlogos next --auto` as full-auto / unattended mode: a standing, run-scoped authorization that lets a proposal run the whole chain to completion, auto-passing `skippable` human gates, with a two-tier authorization model (semi-auto human checkpoints vs. full-auto unattended) and a revert marker mechanism.',
+      'In full-auto mode `verify` / `smoke` / `archive` auto-execute once the code is green (`auto_execute:true`) and `git push` is allowed by the PreToolUse guard safelist; every auto-pass appends an append-only audit line to `GATE_AUTO_PASSED`.',
+      'Hard red line: code that hit the iteration ceiling without passing tests is escalated to a `loop-exhausted` exit gate (default non-skippable) — no mode, including `--auto`, ever auto-passes untested code.',
+    ],
+    fixSummaryEn: [],
+  },
+  '0.12.0': {
+    valueSummaryEn: [
+      'Split slice planning into its own stage: `[code]` slices moved out of the plan stage into a dedicated slice subflow that runs after merge and before implement (new `plan-slices` node + `slice-planner` skill, six-dimension scoring + delete-the-rest falsification gate, new `ready-to-implement` residency state). `write-tasks` no longer produces `[code]`.',
+    ],
+    fixSummaryEn: [],
+  },
+  '0.11.3': {
+    valueSummaryEn: [
+      'Introduced the orchestratable dev-flow engine: the whole development process is modeled as a declarative subflow→node→gate→loop state machine as the single source of truth, with `status/next/watch` passively derived from built-in flow templates; added `openlogos flow show` (`--resolved`, `--lifecycle initial|launched`) and the built-in `initial` / `launched` templates.',
+      'Added the read-only streaming `openlogos watch` command for live derived dev-flow state, and `next --auto` to skip `skippable` gates.',
+      'Added overlay-driven derivation: a project `logos/flow/*.yaml` can `extends: builtin:*` and only write the diffs (skip nodes / set-loop / cmd predicates).',
+      'Added cmd predicates, real loop iteration, fan-out threshold group convergence, and the `next_node` orchestration hint; restructured the change flow into plan / spec / merge stages plus a code slice loop.',
+    ],
+    fixSummaryEn: [
+      'Preserved user instruction files during instruction-file merges.',
+      'Scoped the Codex guard injection context by proposal step, fixed auto plan-gate progress display, and enforced smoke runner coverage checks.',
+    ],
+  },
+  '0.10.10': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Shipped the Mermaid skill safety rules with the CLI package so `openlogos init/sync` generates skill assets that carry the flowchart/sequenceDiagram label-safety constraints.',
+      'Synced the site skill docs with the tag-driven GitHub Actions release pipeline so published packages no longer lag the site.',
+    ],
+  },
+  '0.10.9': {
+    valueSummaryEn: [
+      'Added the `openlogos deploy-done` controlled completion command that validates `VERIFY_PASS`, the deployment decision, the `[deploy]` section and the deployment report, then checks tasks, writes `DEPLOY_DONE` and clears stale `SMOKE_PASS/FAIL`.',
+      'Updated the deployment-executor skill to call `openlogos deploy-done`, with a `deploy-done --format json` output contract and post-deploy smoke coverage.',
+    ],
+    fixSummaryEn: [],
+  },
+  '0.10.8': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Fixed Codex SessionStart lifecycle injection to read `lifecycle`/`active_change` from `openlogos status --format json`.',
+      'Fixed the next-step guidance for launched, all-done projects, and removed the release regression test dependency on build artifacts.',
+    ],
+  },
+  '0.10.6': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Fixed an empty-proposal deployment placeholder conflict false positive: only exact `是`/`否` field values count as a boolean deployment decision.',
+    ],
+  },
+  '0.10.5': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Fixed proposal-template placeholder state misdetection by scoping the deployment placeholder check to the structured fields under the deployment-impact section.',
+    ],
+  },
+  '0.10.4': {
+    valueSummaryEn: [
+      'Added the PreToolUse guard hook: launched projects hard-block Edit/Write/Bash with exit 2 when no active change proposal exists, upgrading change management from a reminder to enforcement (with safelist and initial-lifecycle exemption).',
+      'Comprehensive site docs sync: filled 11 missing doc pages and corrected version, command count, skill count, phase model and lifecycle terminology.',
+    ],
+    fixSummaryEn: [],
+  },
+  '0.10.3': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Fixed a site-build Node version incompatibility in the tag release pipeline by switching the website build to Node 22.12.0 for Astro 6.',
+    ],
+  },
+  '0.10.2': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Fixed a cross-platform sandbox test issue in the release pipeline (`ST-JSON-27` now uses a writable in-workspace `sandbox_root`).',
+    ],
+  },
+  '0.10.1': {
+    valueSummaryEn: [],
+    fixSummaryEn: [
+      'Fixed a tag release workflow misconfiguration by replacing the direct `secrets` reference in an `if` condition with an explicit credential check step.',
+    ],
+  },
+  '0.10.0': {
+    valueSummaryEn: [
+      'Standardized verify/smoke sandbox execution: `openlogos verify` and `smoke` support `sandbox_mode`, `sandbox_root` and `sandbox_deny_workspace_write`, exposing a `sandbox` diagnostic in JSON output.',
+      'Added the CLI sandbox executor (auto downgrade / always isolate) and synced the site verify docs.',
+    ],
+    fixSummaryEn: [
+      'Prevented test commands from accidentally writing to the workspace by reclaiming result files and restricting workspace writes.',
+    ],
+  },
   '0.9.29': {
     valueSummaryEn: [
       'Added the vendored ui-ux-pro-max skill for GUI product design guidance across web, mobile, and desktop products.',

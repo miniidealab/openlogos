@@ -173,6 +173,33 @@ delta 目录结构与主文档目录一致。`openlogos merge` 会递归扫描�
 
 **人类确认点**：`openlogos merge`、`openlogos verify`、`openlogos archive` 和 `git push`。未经用户明确授权，AI 不得执行这些操作。
 
+## launched 变更流程（重构后）
+
+上面的八步大纲是历史上单段 `propose` 的视角。在当前的 launched 流程下（见 [Flow 规范](/zh/specs/flow-spec)），变更生命周期是一条七子流程流水线：
+
+```
+plan → spec → merge → slice → implement → deliver → close
+```
+
+旧的 `propose` 段拆成三段，各自以自己的门收尾：
+
+| 子流程 | 节点 | 出口门 | 变化 |
+|--------|------|--------|------|
+| **plan** | `write-proposal`、`write-tasks` | `plan-exit`（human，可跳） | 新增「批准方案」门。`write-tasks` 仅产 `[delta]`/`[deploy]`——**不产 `[code]`** |
+| **spec** | `write-delta` | `spec-exit`（human，可跳） | `when: delta_required`；审 delta + 授权合并 |
+| **merge** | `generate-merge-prompt`、`apply-merge` | — | `when: delta_required`；纯代码提案整段跳过 |
+| **slice** | `plan-slices`（slice-planner） | `slice-exit`（human，可跳） | 新增段；`when: code_required`；对**已合并**规格 + 真实测试 ID 划分 `[code]` 切片（见 [切片规划](/zh/specs/slice-planner)） |
+| **implement** | `code`、`verify` | — | 默认激活切片循环（`until: code_slices_green`） |
+| **deliver** | `deploy`、`smoke` | `deliver-entry`（human，可跳） | 部署在**提案级**决策 |
+| **close** | `archive` | — | — |
+
+两点结构性后果：
+
+- **`[code]` 切片划分从 plan 段挪到 slice 段。** 不再在写任务时进行（对草案猜），而是在 merge 后、对真实已合并规格 + 已定测试 ID 进行。`write-tasks` 以 `tasks_delta_filled` 完成；`plan-slices` 以 `tasks_code_filled` 完成。
+- **部署是提案级决策，不再取模块默认。** launched 流程从提案声明的部署影响 + `[deploy]` section 解析 `deployment_required` / `smoke_required`（`resolveProposalDeploymentDecision()`），绝不回退模块默认——故声明「无需部署」的提案不会错误进入 deploy。`deliver-entry` 门 `skippable: true`，无人值守 `--auto` 可放行，手动模式仍停下等确认。
+
+新增的 `proposal_step` 驻留态 `ready-to-delta`（在 `plan-exit`）与 `ready-to-implement`（在 `slice-exit`）表达这两个新门；见 [CLI JSON 输出](/zh/specs/cli-json-output)。
+
 ## 变更传播规则
 
 并非每次变更都需要全链路更新。受影响的范围取决于变更类型：

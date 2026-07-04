@@ -35,6 +35,13 @@ description: 变更提案任务文件的结构化格式规格——章节标记�
 
 无标记的章节被视为通用任务，不影响提案步骤检测。
 
+### `[code]` 在 merge 后填写，而非 `write-tasks` 阶段
+
+在重构后的 launched 流程下（见 [变更管理](/zh/specs/change-management) 与 [切片规划](/zh/specs/slice-planner)），`[code]` 切片**不再在 plan 阶段填写**。`write-tasks`（change-writer）**只产 `[delta]` 和 `[deploy]`**，其完成判定为 `tasks_delta_filled`。`[code]` 切片改由 `slice-planner` 在一个独立的 `slice` 子流程里、在 **merge 之后**对已合并规格 + 真实测试 ID 划分——其完成判定为 `tasks_code_filled`（切片已写出、全部未勾）。
+
+- 无 `[delta]` 的纯代码提案仍须**保留空的 `## [code]` 标题**。这令 `parseTaskSections` 非 null、`code_required` 为真，使提案结构与 post-merge 提案一致，slice-planner 得以正常接手。
+- 若 `[code]` 被提前填充（在 `write-tasks` 阶段、切片阶段合法进入之前），CLI 会在进入切片阶段的确定性动作上把它 auto-reset 回模板占位（旧原文备份到 `CODE_AUTORESET`），使 `slice-planner` 始终是切片的唯一事实源。
+
 ## 任务格式
 
 每个任务是一个 Markdown 复选框：

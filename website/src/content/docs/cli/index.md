@@ -15,7 +15,7 @@ Verify:
 
 ```bash
 openlogos --version
-# 0.10.3
+# 0.12.9
 ```
 
 ## Global options
@@ -36,6 +36,8 @@ openlogos --version
 | [`sync`](/cli/sync) | Regenerate AI instruction files and Skills |
 | [`status`](/cli/status) | Show project phase and suggest next steps |
 | [`next`](/cli/next) | Show the single most actionable next step |
+| [`watch`](/cli/watch) | Stream live derived dev-flow state (read-only) |
+| [`flow show`](/cli/flow-show) | Show the resolved dev-flow orchestration |
 | [`detect`](/cli/detect) | Show CLI version and project detection information |
 | [`index`](/cli/index-command) | Generate an AI-ready prompt to rebuild `logos-project.yaml` resource index |
 | [`module`](/cli/module) | Manage project modules (list / add / rename / remove) |
@@ -45,6 +47,7 @@ openlogos --version
 | Command | Description |
 |---------|-------------|
 | [`verify`](/cli/verify) | Verify test results against test case specs (Gate 3.6) |
+| [`deploy-done`](/cli/deploy-done) | Record controlled deployment completion (Gate 3.7) |
 | [`smoke`](/cli/smoke) | Verify post-deployment health against smoke specs (Gate 3.8) |
 | [`launch`](/cli/launch) | Activate change management after verification passes |
 

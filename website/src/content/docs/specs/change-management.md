@@ -173,6 +173,33 @@ The delta directory structure mirrors the main document directory. `openlogos me
 
 **Human confirmation points**: `openlogos merge`, `openlogos verify`, `openlogos archive`, and `git push`. AI must not execute these without explicit user authorization.
 
+## The Launched Change Flow (Redesigned)
+
+The eight-step outline above is the historical single-segment `propose` view. Under the current launched flow (see the [Flow Specification](/specs/flow-spec)), the change lifecycle is a seven-subflow pipeline:
+
+```
+plan → spec → merge → slice → implement → deliver → close
+```
+
+The old `propose` segment split into three, each ending in its own gate:
+
+| Subflow | Nodes | Exit gate | What changed |
+|---------|-------|-----------|--------------|
+| **plan** | `write-proposal`, `write-tasks` | `plan-exit` (human, skippable) | New "approve the plan" gate. `write-tasks` produces `[delta]`/`[deploy]` only — **no `[code]`** |
+| **spec** | `write-delta` | `spec-exit` (human, skippable) | `when: delta_required`; review deltas + authorize merge |
+| **merge** | `generate-merge-prompt`, `apply-merge` | — | `when: delta_required`; a pure-code proposal skips the whole segment |
+| **slice** | `plan-slices` (slice-planner) | `slice-exit` (human, skippable) | New segment; `when: code_required`; cuts `[code]` slices against the **merged** spec + real test IDs (see [Slice Planner](/specs/slice-planner)) |
+| **implement** | `code`, `verify` | — | Slice loop active by default (`until: code_slices_green`) |
+| **deliver** | `deploy`, `smoke` | `deliver-entry` (human, skippable) | Deployment decided at the **proposal level** |
+| **close** | `archive` | — | — |
+
+Two structural consequences:
+
+- **`[code]` slicing moved from plan to slice.** It no longer happens while writing tasks (a guess against a draft); it happens after merge, against real merged specs and fixed test IDs. `write-tasks` completes on `tasks_delta_filled`; `plan-slices` completes on `tasks_code_filled`.
+- **Deployment is a proposal-level decision, not a module default.** The launched flow resolves `deployment_required` / `smoke_required` from the proposal's declared deployment impact plus the `[deploy]` section (`resolveProposalDeploymentDecision()`), never from module defaults — so a proposal declaring "no deployment" does not wrongly enter deploy. The `deliver-entry` gate is `skippable: true`, so an unattended `--auto` run can release it while manual mode still stops for confirmation.
+
+New `proposal_step` residency states `ready-to-delta` (at `plan-exit`) and `ready-to-implement` (at `slice-exit`) express the two new gates; see [CLI JSON Output](/specs/cli-json-output).
+
 ## Change Propagation Rules
 
 Not every change requires a full-chain update. The affected scope depends on the change type:
