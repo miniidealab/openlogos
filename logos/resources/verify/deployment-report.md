@@ -1,85 +1,46 @@
 # 部署报告
 
-> 生成时间：2026-07-04
-> 提案：`verify-result-consistency-gate`
-> 目标环境：staging / Cloudflare Pages preview
-
-## 摘要
-
-- 部署结果：PASS
-- 发布版本：`v0.13.1`
-- 发布提交：`9c15d073e386d2cf19f1a469a62a06c1afb98b54`
-- GitHub Actions run：`28711575778`
-- npm 包：`@miniidealab/openlogos@0.13.1`
-- GitHub Release：`https://github.com/miniidealab/openlogos/releases/tag/v0.13.1`
-- Cloudflare Pages preview：`https://34261c56.openlogos.pages.dev`
-- Cloudflare Pages alias：`https://head.openlogos.pages.dev`
+## 基本信息
+- 提案：`codex-claude-skill-namespace-separation`
+- 模块：`core`
+- 部署时间：2026-07-04 18:54:23 PDT
+- 目标环境：production
+- 结果：成功，存在观察项
 
 ## 执行命令摘要
+- `cd cli && npm test -- --cache false`：通过，31 个测试文件、1068 个测试。
+- `cd cli && npm run build`：通过。
+- `cd cli && npm pack`：通过，包版本 `0.13.2`，打包产物包含 Codex marketplace、Codex 插件模板、Claude 插件模板、spec 与构建产物。
+- `cd website && npm test`：通过，3 个测试。
+- `cd website && npm run build`：通过。
+- `git commit -m "release: v0.13.2"`：提交 `182f37d`。
+- `git tag v0.13.2`：创建发布 tag。
+- `git push origin master && git push origin v0.13.2`：通过，触发 GitHub Actions 发布流水线。
+- `gh run watch 28726112726`：发布流水线成功。
 
-1. `cd cli && npm test`
-   - 目的：执行 CLI 全量回归，覆盖 verify 结果账本一致性回归用例。
-   - 结果：PASS，31 个测试文件、1052 个测试用例通过。
-
-2. `cd cli && npm run build`
-   - 目的：验证 CLI TypeScript 构建。
-   - 结果：PASS。
-
-3. `cd cli && npm pack --pack-destination /tmp/...`
-   - 目的：验证发布包可打包且版本为 `0.13.1`。
-   - 结果：PASS。
-
-4. `cd website && npm run generate:releases`
-   - 目的：从 npm registry 生成官网 release 数据。
-   - 结果：PASS，生成 75 个版本数据。
-
-5. `cd website && npm run build`
-   - 目的：验证官网构建、release 页面和字体子集产物。
-   - 结果：PASS，构建 148 个页面。
-
-6. `git commit -m "fix(verify): enforce result ledger consistency"`
-   - 目的：提交本次修复、规格、测试、smoke runner 与发布元数据。
-   - 结果：PASS，提交 `9c15d073e386d2cf19f1a469a62a06c1afb98b54`。
-
-7. `git tag v0.13.1`
-   - 目的：创建 tag 驱动发布入口。
-   - 结果：PASS。
-
-8. `git push origin master && git push origin v0.13.1`
-   - 目的：推送发布提交与 tag，触发 GitHub Actions 发布链路。
-   - 结果：PASS。
-
-9. `gh run watch 28711575778 --exit-status`
-   - 目的：等待 tag 发布工作流完成。
-   - 结果：PASS；workflow 完成 npm publish、GitHub Release、官网 release 数据生成、官网构建、Cloudflare Pages 部署。
-
-10. `openlogos deploy-done --env staging`
-    - 目的：受控写入部署完成状态，勾选当前提案 `[deploy]` 任务。
-    - 结果：PASS，部署任务 `2/2`，写入 `logos/changes/verify-result-consistency-gate/DEPLOY_DONE`。
-
-## 发布后确认
-
-- `npm view @miniidealab/openlogos version --json` 返回 `"0.13.1"`。
-- `npm view @miniidealab/openlogos@0.13.1 dist.tarball version --json` 返回 `version: "0.13.1"`。
-- `gh release view v0.13.1` 返回 release URL：`https://github.com/miniidealab/openlogos/releases/tag/v0.13.1`。
-- `https://34261c56.openlogos.pages.dev/releases` 返回 200，页面包含 `0.13.1` 与安装命令。
-- `https://head.openlogos.pages.dev/releases` 返回 200，页面包含 `0.13.1` 与安装命令。
+## 发布结果
+- GitHub Actions run：`28726112726`，结论 `success`。
+- npm latest：`@miniidealab/openlogos@0.13.2`。
+- 发布后 CLI 版本：`npx -y @miniidealab/openlogos@0.13.2 --version` 输出 `0.13.2`。
+- GitHub Release：`https://github.com/miniidealab/openlogos/releases/tag/v0.13.2`。
+- npm tarball：`https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.2.tgz`。
+- Cloudflare Pages 部署 URL：`https://c1f827e4.openlogos.pages.dev`。
+- Cloudflare Pages alias：`https://head.openlogos.pages.dev`。
 
 ## 迁移结果
-
 无业务数据库迁移。
 
-## 服务启动结果
-
-GitHub Actions 发布链路成功完成；Cloudflare Pages 接受部署并返回 preview / alias URL。staging preview 服务启动成功。
+## 服务启动与部署后检查
+- GitHub Actions 已完成 npm publish、GitHub Release 创建、严格 release data 生成、官网构建和 Cloudflare Pages 部署。
+- Actions 内 `Verify website latest version matches tag` 已通过，构建产物 `latestVersion` 与 `v0.13.2` 一致。
+- `https://c1f827e4.openlogos.pages.dev/releases/` 已可检索到 `v0.13.2`、`openlogos-0.13.2.tgz` 和 npm 版本链接。
+- `https://head.openlogos.pages.dev/releases/` 已可检索到 `v0.13.2`、`openlogos-0.13.2.tgz` 和 npm 版本链接。
 
 ## 回滚点
-
-- npm：如发现 `0.13.1` 误阻断合法 verify，可按既有策略发布新的 patch 版本回滚行为。
-- GitHub Release：如 release notes 或附件异常，可修正后发布新 patch，并在必要时标记旧 release。
-- 官网：如页面内容异常，可通过 Cloudflare Pages 部署历史回滚到上一成功部署。
+- npm：如发布版本存在阻断问题，按既有策略发布新的 patch 版本回滚或修复。
+- GitHub Release：可在 GitHub Release 页面标注或撤下异常版本，并以新 tag 发布修复版本。
+- 官网：可在 Cloudflare Pages 回滚到上一成功部署。
 
 ## 未解决风险
-
-- 主域名 `https://openlogos.ai/releases` 在本次检查时尚未显示 `0.13.1`，但 Cloudflare Pages preview 与 `head` alias 已显示新版本；后续 smoke 应继续验证最终访问入口。
-- 部署后 smoke 尚未执行；本工作单元未运行 `openlogos smoke`。
+- `https://openlogos.ai/releases/` 在部署后短时间内尚未检索到 `v0.13.2`；Pages 版本 URL 与 alias 已展示新版本，判断为自定义域缓存或传播延迟观察项。后续 smoke 应继续验证自定义域。
+- GitHub Actions 日志包含 Node.js 20 deprecation annotation，不影响本次发布结果，但后续可将 workflow action/runtime 配置升级以消除警告。
