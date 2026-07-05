@@ -147,13 +147,20 @@
    - `[manual]` 用例不接受自动化 JSONL 结果；
    - `status` 只能为 `pass` / `fail` / `skip`；
    - `fail` 结果必须携带 `error`。
-3. **统计不变量**
+3. **skip 语义**
+   - `skip` 表示该用例在本轮测试中被显式处理，但因当前环境、外部依赖、部署目标或平台能力限制未实际执行；
+   - `skip` 计入 `executed_count`、`skipped_count` 和覆盖率分子；
+   - `skip` 不计入 `failed_count`，不得单独触发 Gate FAIL；
+   - 报告必须继续展示 `skipped_count` 与 `skipped_cases`，避免环境性跳过被隐藏。
+4. **统计不变量**
    - `executed_count` 等于去重后的合法自动化结果数；
    - `passed_count + failed_count + skipped_count == executed_count`；
    - `executed_count <= defined_count`；
-   - 若 `failed_count == 0` 且 `skipped_count == 0`，则 `passed_count == executed_count` 且 `pass_rate_pct == 100`。
-4. **Gate 判据**
-   - 只有 schema 合法、统计自洽、无失败、无跳过、无未覆盖、checklist 完成、AC 追溯完成时才能 PASS；
+   - `pass_rate_pct` 按 `(passed_count + skipped_count) / executed_count` 计算；
+   - 若 `failed_count == 0`，则 `passed_count + skipped_count == executed_count` 且 `pass_rate_pct == 100`。
+5. **Gate 判据**
+   - 只有 schema 合法、统计自洽、无失败、无未覆盖、checklist 完成、AC 追溯完成时才能 PASS；
+   - 合法 skip 不阻塞 PASS；
    - 任一一致性错误都必须使 `gate.result="FAIL"`；
    - `gate.reason` 应优先返回 `result_ledger_inconsistent`，并通过结构化字段列出具体原因。
 

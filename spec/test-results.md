@@ -408,6 +408,18 @@ logos/resources/verify/smoke-results.jsonl
 
 `openlogos verify` 读取 `test-results.jsonl` 时，必须把“结果格式合法”和“统计自洽”作为 Gate PASS 的前置条件。
 
+### skip 结果的有效通过语义
+
+`status:"skip"` 表示用例已被当前测试运行明确处理，但因本机环境、外部依赖、部署目标或平台能力限制未实际执行断言。它不同于未覆盖：
+
+- skip 结果必须由 reporter 显式写入 JSONL；
+- skip 计入 `executed_count`，并使对应定义用例计入 covered；
+- skip 计入 `skipped_count`，并继续暴露在 `skipped_cases` / 报告的跳过列表中；
+- skip 不计入 `failed_count`，也不作为 Gate 失败原因；
+- 在计算通过率时，skip 视为有效通过，使用 `(passed_count + skipped_count) / executed_count`。
+
+该语义只适用于合法、已定义、非 `[manual]` 的自动化结果。非法 JSON、未知 ID、manual ID、缺失 `fail.error` 等账本一致性错误仍必须使 Gate FAIL。
+
 ### 归一化规则
 
 1. 每行必须是 JSON 对象。
@@ -433,10 +445,17 @@ executed_count <= defined_count
 covered_count + uncovered_count == defined_count
 ```
 
-若 `failed_count == 0` 且 `skipped_count == 0`，还必须满足：
+通过率必须按有效通过数计算：
 
 ```text
-passed_count == executed_count
+effective_passed_count = passed_count + skipped_count
+pass_rate_pct = executed_count > 0 ? round(effective_passed_count / executed_count * 100) : 0
+```
+
+若 `failed_count == 0`，还必须满足：
+
+```text
+passed_count + skipped_count == executed_count
 pass_rate_pct == 100
 ```
 

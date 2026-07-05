@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
-import { extractSmokeDefinedIds, smoke } from '../src/commands/smoke.js';
+import { collectSmokeData, extractSmokeDefinedIds, smoke } from '../src/commands/smoke.js';
 import { checkSmokeCoverage, discoverSmokeRunners } from '../src/lib/smoke-coverage.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
@@ -105,6 +105,30 @@ describe('S19 Unit Tests — smoke cases', () => {
       'scripts/smoke-core.sh',
       'website/scripts/smoke-releases.mjs',
     ]);
+  });
+
+  it('UT-S19-07: smoke skip 计入有效通过率', () => {
+    scaffoldProject(root, { locale: 'zh' });
+    const casesDir = join(root, 'logos/resources/test/smoke');
+    mkdirSync(casesDir, { recursive: true });
+    writeFileSync(join(casesDir, 'core-smoke-test-cases.md'), [
+      '| SMOKE-core-01 | health |',
+      '| SMOKE-core-02 | environment skip |',
+    ].join('\n'));
+    const verifyDir = join(root, 'logos/resources/verify');
+    mkdirSync(verifyDir, { recursive: true });
+    writeFileSync(join(verifyDir, 'smoke-results.jsonl'), [
+      '{"id":"SMOKE-core-01","status":"pass"}',
+      '{"id":"SMOKE-core-02","status":"skip"}',
+    ].join('\n') + '\n');
+
+    const data = collectSmokeData(root);
+
+    expect(data.gate.result).toBe('PASS');
+    expect(data.gate.reason).toBeNull();
+    expect(data.summary.pass_rate_pct).toBe(100);
+    expect(data.summary.skipped_count).toBe(1);
+    expect(data.skipped_cases).toEqual(['SMOKE-core-02']);
   });
 });
 
@@ -229,6 +253,36 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(parsed.data.sandbox).toBeDefined();
     expect(parsed.data.sandbox.mode).toBe('auto');
     expect(['pass', 'warn', 'skipped']).toContain(parsed.data.sandbox.status);
+  });
+
+  it('ST-S19-08: smoke 含环境性 skip 时报告 PASS 且保留跳过列表', () => {
+    writeSmokeCases();
+    writeSmokeResults([
+      '{"id":"SMOKE-core-01","status":"pass"}',
+      '{"id":"SMOKE-core-02","status":"skip"}',
+    ]);
+    const proposalDir = join(root, 'logos', 'changes', 'verify-skip-counts-as-pass');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({
+      activeChange: 'verify-skip-counts-as-pass',
+      module: 'core',
+    }));
+    writeFileSync(join(proposalDir, 'SMOKE_FAIL'), '');
+
+    smoke('json', 'staging');
+
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.gate.reason).toBeNull();
+    expect(parsed.data.summary.pass_rate_pct).toBe(100);
+    expect(parsed.data.summary.skipped_count).toBe(1);
+    expect(parsed.data.skipped_cases).toEqual(['SMOKE-core-02']);
+    const report = readFileSync(join(root, 'logos/resources/verify/smoke-report.md'), 'utf-8');
+    expect(report).toContain('## Skipped Cases');
+    expect(report).toContain('SMOKE-core-02');
+    expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(true);
+    expect(existsSync(join(proposalDir, 'SMOKE_FAIL'))).toBe(false);
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 
   it('ST-S19-06: smoke always sandbox blocks non-whitelist write', () => {

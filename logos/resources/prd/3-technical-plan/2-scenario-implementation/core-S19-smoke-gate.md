@@ -123,6 +123,28 @@ sequenceDiagram
 ### 与 deploy-done 的关系
 本检查不改变 S19 的前置门禁：仍必须先满足 `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾和 `smoke_required=true`。runner 覆盖检查只负责判断 smoke 用例是否真的执行，不替代部署完成状态。
 
+## smoke skip 统计口径
+
+`openlogos smoke` 读取 `smoke-results.jsonl` 时，`status:"skip"` 表示 smoke runner 已显式处理该用例，但当前环境缺少部署目标、外部依赖或平台能力，无法执行真实断言。
+
+统计规则：
+
+- skip 计入 `executed_count` 和 `skipped_count`；
+- skip 对应的 `SMOKE-*` 不再计入 uncovered；
+- skip 不计入 `failed_count`，不得单独导致 smoke Gate FAIL；
+- `pass_rate_pct` 按有效通过数计算：`round((passed_count + skipped_count) / executed_count * 100)`；
+- `skipped_cases` 必须继续在 JSON 和 `smoke-report.md` 中展示，供用户审计环境性跳过。
+
+Gate 判定边界不变：
+
+- 只要存在 `fail`，smoke Gate 必须 FAIL；
+- 只要存在 uncovered，smoke Gate 必须 FAIL；
+- runner / reporter / dispatcher 覆盖诊断仍可使 Gate FAIL；
+- sandbox failure 仍可使 Gate FAIL；
+- `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾和 `smoke_required=true` 等前置门禁不因 skip 语义而放松。
+
+该口径与 verify 保持一致：skip 是可见的有效通过，不是未覆盖，也不是失败。
+
 ## auto_execute：`--auto` 下 ready-to-smoke 的自动执行信号（auto-execute-redline-steps）
 
 `next --auto` 在 `proposal_step==ready-to-smoke`（`DEPLOY_DONE` 在场、smoke_required=true）且未被阻塞时，输出 `auto_execute:true` + `command="openlogos smoke"`，`action`/`detail` 改为「auto: 自动执行 smoke」措辞，供无人值守 driver 自动运行 smoke。`openlogos smoke` 命令本身逻辑、smoke 门禁前置判定、smoke FAIL 硬阻塞均不变。半自动（无 `--auto`）下仍是人类确认点、不置 `auto_execute`。详见 `core-S24-auto-gate.md` 的 auto_execute 节与 `spec/cli-json-output.md` §11.2。

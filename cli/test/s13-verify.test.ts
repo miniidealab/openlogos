@@ -547,8 +547,8 @@ describe('S13 Unit Tests — verify result consistency', () => {
     });
 
     expect(mismatches).toContain('executed_exceeds_defined');
-    expect(mismatches).toContain('passed_ne_executed_without_fail_or_skip');
-    expect(mismatches).toContain('pass_rate_below_100_without_fail_or_skip');
+    expect(mismatches).toContain('effective_passed_ne_executed_without_fail');
+    expect(mismatches).toContain('pass_rate_below_100_without_fail');
   });
 
   it('UT-S13-38: 合法重复 ID 保持 last-write-wins', () => {
@@ -564,6 +564,54 @@ describe('S13 Unit Tests — verify result consistency', () => {
     expect(data.consistency.ok).toBe(true);
     expect(data.summary.executed_count).toBe(1);
     expect(data.summary.passed_count).toBe(1);
+  });
+
+  it('UT-S13-39: 合法 skip 不阻塞 verify Gate', () => {
+    writeCases(`# Test Cases
+| UT-S13-39 | pass case |
+| ST-S13-12 | environment skip |
+
+## 三、覆盖度校验
+
+- [x] skip counted as effective pass
+
+## 四、验收条件追溯
+
+| AC ID | 验收条件 | 覆盖用例 |
+|-------|---------|---------|
+| S13-AC-012 | skip is valid | UT-S13-39, ST-S13-12 |
+`);
+    writeVerifyResults([
+      '{"id":"UT-S13-39","status":"pass"}',
+      '{"id":"ST-S13-12","status":"skip"}',
+    ]);
+
+    const data = collectVerifyData(root);
+
+    expect(data.gate.result).toBe('PASS');
+    expect(data.gate.reason).toBeNull();
+    expect(data.summary.pass_rate_pct).toBe(100);
+    expect(data.summary.skipped_count).toBe(1);
+    expect(data.skipped_cases).toEqual(['ST-S13-12']);
+    expect(data.ac_trace.passed).toBe(1);
+    expect(data.ac_trace.failed_criteria).toEqual([]);
+  });
+
+  it('UT-S13-40: skip 计入有效通过率但保留审计列表', () => {
+    writeCases('| UT-S13-40 | environment skip |\n');
+    writeVerifyResults([
+      '{"id":"UT-S13-40","status":"skip"}',
+    ]);
+
+    const data = collectVerifyData(root);
+    const report = readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf-8');
+
+    expect(data.gate.result).toBe('PASS');
+    expect(data.summary.passed_count + data.summary.skipped_count).toBe(data.summary.executed_count);
+    expect(data.summary.pass_rate_pct).toBe(100);
+    expect(report).toContain('| Pass rate | 100% |');
+    expect(report).toContain('## Skipped Cases');
+    expect(report).toContain('UT-S13-40');
   });
 });
 
@@ -1035,6 +1083,46 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(output.data.consistency.unknown_result_ids).toContain('UT-S13-GHOST');
     expect(existsSync(join(proposalDir, 'VERIFY_PASS'))).toBe(false);
     expect(existsSync(join(proposalDir, 'VERIFY_FAIL'))).toBe(true);
+  });
+
+  it('ST-S13-12: verify 含环境性 skip 时仍允许流程通过', () => {
+    const cases = `# Test Cases
+| UT-S13-39 | pass case |
+| ST-S13-12 | environment skip |
+
+## 三、覆盖度校验
+
+- [x] skip counted as effective pass
+
+## 四、验收条件追溯
+
+| AC ID | 验收条件 | 覆盖用例 |
+|-------|---------|---------|
+| S13-AC-012 | skip is valid | UT-S13-39, ST-S13-12 |
+`;
+    writeTestCases(cases);
+    writeResults([
+      '{"id":"UT-S13-39","status":"pass"}',
+      '{"id":"ST-S13-12","status":"skip"}',
+    ]);
+    const proposalDir = join(root, 'logos/changes/verify-skip-counts-as-pass');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(root, 'logos/.openlogos-guard'), JSON.stringify({
+      activeChange: 'verify-skip-counts-as-pass',
+      module: 'core',
+    }));
+    writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
+
+    verify('json');
+
+    const output = JSON.parse(con.logs[0]);
+    expect(output.data.gate.result).toBe('PASS');
+    expect(output.data.gate.reason).toBeNull();
+    expect(output.data.summary.pass_rate_pct).toBe(100);
+    expect(output.data.skipped_cases).toEqual(['ST-S13-12']);
+    expect(existsSync(join(proposalDir, 'VERIFY_PASS'))).toBe(true);
+    expect(existsSync(join(proposalDir, 'VERIFY_FAIL'))).toBe(false);
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 
   it('ST-S13-05: missing results file → error exit', () => {

@@ -141,7 +141,7 @@ export function collectSmokeData(
   const coveredCount = defined.filter(id => resultIds.has(id)).length;
 
   const coveragePct = defined.length > 0 ? Math.round((coveredCount / defined.length) * 100) : 0;
-  const passRatePct = results.length > 0 ? Math.round((passed.length / results.length) * 100) : 0;
+  const passRatePct = results.length > 0 ? Math.round(((passed.length + skipped.length) / results.length) * 100) : 0;
   const isPass = failed.length === 0 && uncovered.length === 0 && check.diagnostics.length === 0;
   let reason: string | null = null;
   if (!isPass) {

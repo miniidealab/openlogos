@@ -940,6 +940,8 @@ OpenLogos 作为可被 RunLogos / CI / AI driver 消费的流程事实源，必�
 
 `openlogos verify` 是 OpenLogos 自动化流程、RunLogos driver 和 CI 消费的权威验收门禁。门禁不能只检查“是否没有失败用例”和“是否覆盖全部定义用例”，还必须证明结果账本本身可信。
 
+部分用例在本机、CI 或部署目标缺失时可以由 reporter 明确标记为 `status:"skip"`。这类 skip 是“已处理但因环境限制未执行”的结果，不等同于未覆盖或失败。它必须在报告中可见，但不应阻塞 verify / smoke 流程。
+
 ### 需求
 
 1. `openlogos verify` 必须在计算 PASS / FAIL 前校验 `test-results.jsonl` 的 schema 与统计自洽性。
@@ -947,18 +949,24 @@ OpenLogos 作为可被 RunLogos / CI / AI driver 消费的流程事实源，必�
    - `id` 对应一个已定义、非 `[manual]` 的自动化用例；
    - `status` 只能是 `pass`、`fail` 或 `skip`；
    - `status="fail"` 时必须有可诊断的 `error`。
-3. 以下任一情况必须使 verify Gate 非 PASS，并输出明确诊断：
+3. `status="skip"` 的合法结果必须计入 `executed_count`、`skipped_count` 和覆盖率分子；通过率按 `(passed_count + skipped_count) / executed_count` 计算。
+4. 以下任一情况必须使 verify Gate 非 PASS，并输出明确诊断：
    - 存在非法 JSONL 行、缺失 `id` / `status`，或 `status` 不在允许枚举内；
    - 存在未定义用例 ID；
+   - 存在 `[manual]` 用例 ID 写入自动化 JSONL；
+   - `status="fail"` 缺少非空 `error`；
    - `passed_count + failed_count + skipped_count != executed_count`；
    - `executed_count > defined_count`；
-   - `failed_count == 0 && skipped_count == 0 && passed_count != executed_count`；
-   - `pass_rate_pct < 100` 且无失败 / 跳过结果能解释该差异。
-4. 结果账本不可信时，`openlogos verify --format json` 必须返回非零退出码，`gate.result` 不得为 `PASS`，`gate.reason` 必须非空。
-5. 正常全绿且统计自洽的结果必须保持既有 PASS 行为。
+   - `failed_count == 0 && passed_count + skipped_count != executed_count`；
+   - `pass_rate_pct < 100` 且没有失败结果能解释该差异。
+5. 合法 skip 不得单独导致 `gate.result="FAIL"`，也不得返回 `gate.reason="skipped_cases"`；若无失败、无未覆盖、账本一致、checklist 完成且 AC 追溯满足，包含 skip 的 verify 仍必须 PASS。
+6. `openlogos smoke` 的通过率展示必须采用同样的有效通过口径，但仍保留 `skipped_count` 与 `skipped_cases` 供用户审计。
+7. 结果账本不可信时，`openlogos verify --format json` 必须返回非零退出码，`gate.result` 不得为 `PASS`，`gate.reason` 必须非空。
+8. 正常全绿且统计自洽的结果必须保持既有 PASS 行为。
 
 ### 验收口径
 
+- 构造 `defined_count=2`、`executed_count=2`、`passed_count=1`、`skipped_count=1`、`failed_count=0`、`uncovered_count=0` 的账本时，verify 必须 PASS，`pass_rate_pct` 必须为 100。
 - 构造 `defined_count=1`、`executed_count=2`、`passed_count=1`、`failed_count=0`、`skipped_count=0`、`uncovered_count=0` 的账本时，verify 必须 FAIL。
 - 构造包含非法 `status` 的账本时，verify 必须 FAIL，并在 JSON 诊断中暴露非法结果原因。
 - 构造包含未定义用例 ID 的账本时，verify 必须 FAIL，并列出未定义 ID。

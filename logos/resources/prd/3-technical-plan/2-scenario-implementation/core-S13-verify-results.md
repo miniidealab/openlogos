@@ -89,7 +89,7 @@ sequenceDiagram
     C->>C: Step 7c: 按 id last-write-wins 归一化合法候选结果
     C->>C: Step 7d: 校验 status、unknown ID、manual ID 与统计不变量
     alt 账本自洽
-        C->>G: Step 8: 计算覆盖率、通过率、AC 追溯与 Gate
+        C->>G: Step 8: 计算覆盖率、有效通过率、AC 追溯与 Gate
     else 账本不自洽
         C-->>G: Step 8: Gate FAIL，reason=result_ledger_inconsistent
     end
@@ -100,8 +100,11 @@ sequenceDiagram
 1. `status` 只能为 `pass`、`fail`、`skip`；其它值必须进入一致性错误，不得计入 PASS。
 2. 结果 ID 必须属于已定义自动化用例；未定义 ID 和 `[manual]` ID 都必须进入一致性错误。
 3. 去重后的统计必须满足 `passed + failed + skipped == executed` 和 `executed <= defined`。
-4. 当 `failed == 0` 且 `skipped == 0` 时，`passed` 必须等于 `executed`；否则说明存在幽灵结果，Gate 必须 FAIL。
-5. 一致性错误优先级高于覆盖率 / AC 追溯的普通失败诊断，因为结果账本不可信时覆盖率和通过率都不可作为放行依据。
+4. `skip` 是合法的环境性跳过结果，计入 executed / covered / skipped，并在报告中展示，但不作为失败结果。
+5. 通过率必须使用有效通过数计算：`pass_rate_pct = round((passed + skipped) / executed * 100)`。
+6. 当 `failed == 0` 时，`passed + skipped` 必须等于 `executed`；否则说明存在幽灵结果，Gate 必须 FAIL。
+7. Gate PASS 条件为：一致性通过、无 fail、无 uncovered、checklist 完成、AC 追溯完成。合法 skip 不得单独导致 `skipped_cases` 失败。
+8. 一致性错误优先级高于覆盖率 / AC 追溯的普通失败诊断，因为结果账本不可信时覆盖率和通过率都不可作为放行依据。
 
 ### 诊断
 
@@ -115,7 +118,7 @@ sequenceDiagram
 
 ## EX-7.1: 结果账本统计不自洽
 
-- **触发条件**：去重后的结果集合出现 `passed + failed + skipped != executed`、`executed > defined`，或 `failed=0 && skipped=0 && passed != executed`。
+- **触发条件**：去重后的结果集合出现 `passed + failed + skipped != executed`、`executed > defined`，或 `failed=0 && passed + skipped != executed`。
 - **期望响应**：verify FAIL，`gate.reason` 为 `result_ledger_inconsistent` 或等价具体错误码；JSON 输出包含 `consistency.ok=false` 与具体不变量失败原因；不得写入 `VERIFY_PASS`。
 
 ## EX-7.2: JSONL 含非法结果状态
@@ -127,6 +130,11 @@ sequenceDiagram
 
 - **触发条件**：结果记录 ID 不存在于自动化测试规格，或对应 `[manual]` 用例。
 - **期望响应**：verify FAIL，诊断 `unknown_test_result_id` 或 `manual_test_result_id`，并列出相关 ID；不得因为 defined 用例均 pass 就忽略额外污染结果。
+
+## EX-7.4: 合法 skip 不阻塞 verify Gate
+
+- **触发条件**：已定义自动化用例全部被覆盖，其中部分结果为 `status:"skip"`，且无 `fail`、无 unknown ID、无 manual ID、无 schema 错误。
+- **期望响应**：verify PASS；`skipped_count` 与 `skipped_cases` 正常展示；`pass_rate_pct` 为 100；不得返回 `gate.reason="skipped_cases"`。
 
 ## smoke 覆盖预检步骤
 

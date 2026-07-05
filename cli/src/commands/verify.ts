@@ -692,16 +692,18 @@ export function generateReport(
       });
       const automatedIds = ac.linkedCaseIds.filter(cid => resultMap.has(cid));
       const allManual = ac.linkedCaseIds.length > 0 && automatedIds.length === 0;
-      const allPass = automatedIds.length > 0 && automatedIds.every(cid => resultMap.get(cid)?.status === 'pass');
+      const allEffectivePass = automatedIds.length > 0
+        && automatedIds.every(cid => ['pass', 'skip'].includes(resultMap.get(cid)?.status ?? ''));
       const acStatus = ac.linkedCaseIds.length === 0
         ? '⚠️ no linked cases'
         : allManual ? '🔵 MANUAL'
-        : allPass ? '✅ PASS' : '❌ FAIL';
+        : allEffectivePass ? '✅ PASS' : '❌ FAIL';
       md += `| ${ac.acId} | ${ac.description} | ${statuses.join(', ')} | ${acStatus} |\n`;
     }
     const acPassed = acTrace.filter(ac => {
       const automatedIds = ac.linkedCaseIds.filter(cid => resultMap.has(cid));
-      return automatedIds.length > 0 && automatedIds.every(cid => resultMap.get(cid)?.status === 'pass');
+      return automatedIds.length > 0
+        && automatedIds.every(cid => ['pass', 'skip'].includes(resultMap.get(cid)?.status ?? ''));
     }).length;
     const acManual = acTrace.filter(ac =>
       ac.linkedCaseIds.length > 0 && !ac.linkedCaseIds.some(cid => resultMap.has(cid)),
@@ -741,11 +743,12 @@ export function buildVerifyCountMismatches(summary: VerifyCountSummary): string[
   if (summary.uncovered_count === 0 && summary.coverage_pct < 100 && summary.defined_count > 0) {
     mismatches.push('coverage_incomplete_without_uncovered');
   }
-  if (summary.failed_count === 0 && summary.skipped_count === 0 && summary.passed_count !== summary.executed_count) {
-    mismatches.push('passed_ne_executed_without_fail_or_skip');
+  const effectivePassedCount = summary.passed_count + summary.skipped_count;
+  if (summary.failed_count === 0 && effectivePassedCount !== summary.executed_count) {
+    mismatches.push('effective_passed_ne_executed_without_fail');
   }
-  if (summary.failed_count === 0 && summary.skipped_count === 0 && summary.pass_rate_pct < 100 && summary.executed_count > 0) {
-    mismatches.push('pass_rate_below_100_without_fail_or_skip');
+  if (summary.failed_count === 0 && summary.pass_rate_pct < 100 && summary.executed_count > 0) {
+    mismatches.push('pass_rate_below_100_without_fail');
   }
   return mismatches;
 }
@@ -805,7 +808,7 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
     ? Math.round((coveredCount / defined.length) * 100)
     : 0;
   const passRatePct = results.length > 0
-    ? Math.round((passed.length / results.length) * 100)
+    ? Math.round(((passed.length + skipped.length) / results.length) * 100)
     : 0;
   const summary = {
     defined_count: defined.length,
@@ -838,10 +841,10 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
     if (ac.linkedCaseIds.length === 0) return true;
     const automatedIds = ac.linkedCaseIds.filter(cid => resultMap.has(cid));
     if (automatedIds.length === 0) return false; // 全 manual → MANUAL_PENDING，不失败
-    return !automatedIds.every(cid => resultMap.get(cid)?.status === 'pass');
+    return !automatedIds.every(cid => ['pass', 'skip'].includes(resultMap.get(cid)?.status ?? ''));
   });
 
-  const isPass = consistency.ok && failed.length === 0 && skipped.length === 0 && uncovered.length === 0
+  const isPass = consistency.ok && failed.length === 0 && uncovered.length === 0
     && checklistUnchecked.length === 0 && acFailed.length === 0;
   const gateResult = isPass ? 'PASS' as const : 'FAIL' as const;
 
@@ -849,7 +852,6 @@ export function collectVerifyData(root: string, preRun?: VerifyPreRunData): Veri
   if (!isPass) {
     if (!consistency.ok) gateReason = 'result_ledger_inconsistent';
     else if (failed.length > 0) gateReason = 'failed_cases';
-    else if (skipped.length > 0) gateReason = 'skipped_cases';
     else if (uncovered.length > 0) gateReason = 'incomplete_coverage';
     else if (checklistUnchecked.length > 0) gateReason = 'checklist_incomplete';
     else gateReason = 'ac_trace_incomplete';
@@ -1112,7 +1114,7 @@ export function verify(format: OutputFormat = 'text') {
   console.log(`  ⏭️  ${t(locale, 'verify.skipped', { count: String(summary.skipped_count) })}`);
   console.log(LINE);
   console.log(`  ${t(locale, 'verify.coverage', { pct: String(summary.coverage_pct), covered: String(summary.defined_count - summary.uncovered_count), total: String(summary.defined_count) })}`);
-  console.log(`  ${t(locale, 'verify.passRate', { pct: String(summary.pass_rate_pct), passed: String(summary.passed_count), total: String(summary.executed_count) })}`);
+  console.log(`  ${t(locale, 'verify.passRate', { pct: String(summary.pass_rate_pct), passed: String(summary.passed_count + summary.skipped_count), total: String(summary.executed_count) })}`);
   console.log(LINE);
 
   if (failed_cases.length > 0) {
@@ -1179,8 +1181,6 @@ export function verify(format: OutputFormat = 'text') {
     console.log('\n❌ Gate 3.5: FAIL (result ledger inconsistent)');
   } else if (gate.reason === 'failed_cases') {
     console.log(`\n❌ ${t(locale, 'verify.gateFail')}`);
-  } else if (gate.reason === 'skipped_cases') {
-    console.log('\n❌ Gate 3.5: FAIL (skipped cases)');
   } else if (gate.reason === 'incomplete_coverage') {
     console.log(`\n❌ ${t(locale, 'verify.gateFailCoverage')}`);
   } else if (gate.reason === 'checklist_incomplete') {

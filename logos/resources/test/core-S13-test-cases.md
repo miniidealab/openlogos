@@ -109,3 +109,23 @@
 - [ ] 统计守恒硬门：UT-S13-37
 - [ ] last-write-wins 正常兼容：UT-S13-38
 - [ ] 全自动归档阻断：ST-S13-11
+
+## 十一、verify skip 有效通过回归
+
+### 11.1 单元测试用例补充
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S13-39 | 合法 skip 不阻塞 verify Gate | verify Gate | 定义 2 个自动化用例；JSONL 中 1 个 `pass`、1 个 `skip`；无失败、无未覆盖、无 checklist / AC 缺口 | `collectVerifyData` | `gate.result="PASS"`，`summary.pass_rate_pct=100`，`summary.skipped_count=1`，`skipped_cases` 包含 skip ID |
+| UT-S13-40 | skip 计入有效通过率但保留审计列表 | verify summary | 定义用例均被 pass / skip 覆盖 | `collectVerifyData` / report data | `passed_count + skipped_count == executed_count`，`pass_rate_pct=100`，报告仍展示 Skipped Cases |
+
+### 11.2 场景测试用例补充
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-12 | verify 含环境性 skip 时仍允许流程通过 | Step 7→9 | 活跃提案 ready-to-verify；全部定义用例均有结果，其中部分为 `skip`；无 fail / uncovered / consistency error | `openlogos verify --format json` 或等价 collector | verify 输出 PASS，不写 `VERIFY_FAIL`，不得返回 `gate.reason="skipped_cases"` |
+
+### 11.3 覆盖度校验补充
+
+- [ ] 合法 skip 不阻塞 Gate：UT-S13-39、ST-S13-12
+- [ ] skip 计入有效通过率但保留审计：UT-S13-40
