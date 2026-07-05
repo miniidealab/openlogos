@@ -1,6 +1,7 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync, chmodSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync, chmodSync, rmSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { execSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
@@ -20,7 +21,11 @@ const CODEX_OPENLOGOS_PLUGIN_ID = 'openlogos';
 const CODEX_OPENLOGOS_PLUGIN_REL_DIR = '.agents/plugins/openlogos';
 const CODEX_OPENLOGOS_SKILLS_REL_DIR = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/skills`;
 const CODEX_MARKETPLACE_REL_PATH = '.agents/plugins/marketplace.json';
+const CODEX_PERSONAL_MARKETPLACE_REL_PATH = '.agents/plugins/marketplace.json';
+const CODEX_PERSONAL_PLUGIN_REL_DIR = 'plugins/openlogos';
 const CODEX_HOOK_REL_PATH = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/hooks/session-start.sh`;
+const CODEX_LEGACY_PLUGIN_REL_DIR = '.codex-plugin';
+const CODEX_LEGACY_HOOK_REL_PATH = `${CODEX_LEGACY_PLUGIN_REL_DIR}/hooks/session-start.sh`;
 
 const ALL_DEPLOYABLE_AI_TOOLS: Exclude<AiTool, 'all'>[] = ['claude-code', 'opencode', 'codex', 'cursor'];
 
@@ -329,26 +334,30 @@ function mergeCodexConfig(root: string): { created: boolean; updated: boolean } 
   const configDir = join(root, '.codex');
   const configPath = join(configDir, 'config.toml');
 
-  const pluginBlock = `\n[plugins.openlogos]\nenabled = true\n`;
   const hookBlock = `\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "${CODEX_HOOK_REL_PATH}"\ntimeout = 5\nasync = false\nstatusMessage = "Loading OpenLogos phase context..."\n`;
 
   mkdirSync(configDir, { recursive: true });
 
   if (!existsSync(configPath)) {
-    writeFileSync(configPath, pluginBlock + hookBlock);
+    writeFileSync(configPath, hookBlock);
     return { created: true, updated: true };
   }
 
   const existing = readFileSync(configPath, 'utf-8');
   let content = existing;
   let changed = false;
-  const hasPluginBlock = content.includes('[plugins.openlogos]');
-  const hasOpenLogosHook = content.includes(`command = "${CODEX_HOOK_REL_PATH}"`);
-
-  if (!hasPluginBlock) {
-    content += pluginBlock;
+  const legacyHookCleanup = removeLegacyOpenLogosCodexHookBlocks(content);
+  if (legacyHookCleanup.changed) {
+    content = legacyHookCleanup.content;
     changed = true;
   }
+  const openLogosPluginBlockCleanup = removeTomlTableBlock(content, '[plugins.openlogos]');
+  if (openLogosPluginBlockCleanup.changed) {
+    content = openLogosPluginBlockCleanup.content;
+    changed = true;
+  }
+  const hasOpenLogosHook = content.includes(`command = "${CODEX_HOOK_REL_PATH}"`);
+
   if (!hasOpenLogosHook) {
     content += hookBlock;
     changed = true;
@@ -360,13 +369,97 @@ function mergeCodexConfig(root: string): { created: boolean; updated: boolean } 
   return { created: false, updated: changed };
 }
 
+function removeLegacyOpenLogosCodexHookBlocks(content: string): { content: string; changed: boolean } {
+  const lines = content.split('\n');
+  const kept: string[] = [];
+  let changed = false;
+
+  for (let i = 0; i < lines.length;) {
+    if (lines[i]?.trim() !== '[[hooks.SessionStart]]') {
+      kept.push(lines[i]);
+      i++;
+      continue;
+    }
+
+    const block: string[] = [];
+    block.push(lines[i]);
+    i++;
+
+    while (i < lines.length) {
+      const trimmed = lines[i].trim();
+      const startsNewTomlTable = trimmed.startsWith('[')
+        && trimmed !== '[[hooks.SessionStart.hooks]]'
+        && !trimmed.startsWith('[hooks.SessionStart.');
+      if (startsNewTomlTable) break;
+      block.push(lines[i]);
+      i++;
+    }
+
+    const blockText = block.join('\n');
+    const isLegacyOpenLogosHook = blockText.includes(`command = "${CODEX_LEGACY_HOOK_REL_PATH}"`)
+      || blockText.includes(`command = "./${CODEX_LEGACY_HOOK_REL_PATH}"`);
+    if (isLegacyOpenLogosHook) {
+      changed = true;
+      continue;
+    }
+
+    kept.push(...block);
+  }
+
+  return { content: kept.join('\n'), changed };
+}
+
+function removeTomlTableBlock(content: string, tableHeader: string): { content: string; changed: boolean } {
+  const lines = content.split('\n');
+  const kept: string[] = [];
+  let changed = false;
+
+  for (let i = 0; i < lines.length;) {
+    if (lines[i]?.trim() !== tableHeader) {
+      kept.push(lines[i]);
+      i++;
+      continue;
+    }
+
+    changed = true;
+    i++;
+    while (i < lines.length) {
+      const trimmed = lines[i].trim();
+      if (trimmed.startsWith('[')) break;
+      i++;
+    }
+  }
+
+  return { content: kept.join('\n'), changed };
+}
+
 function createCodexMarketplaceEntry(): Record<string, unknown> {
   return {
-    id: CODEX_OPENLOGOS_PLUGIN_ID,
-    name: 'OpenLogos',
-    path: CODEX_OPENLOGOS_PLUGIN_REL_DIR,
-    plugin: `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/.codex-plugin/plugin.json`,
-    description: 'OpenLogos methodology skills and session context for Codex',
+    name: CODEX_OPENLOGOS_PLUGIN_ID,
+    source: {
+      source: 'local',
+      path: `./${CODEX_OPENLOGOS_PLUGIN_REL_DIR}`,
+    },
+    policy: {
+      installation: 'AVAILABLE',
+      authentication: 'ON_INSTALL',
+    },
+    category: 'Engineering',
+  };
+}
+
+function createCodexPersonalMarketplaceEntry(): Record<string, unknown> {
+  return {
+    name: CODEX_OPENLOGOS_PLUGIN_ID,
+    source: {
+      source: 'local',
+      path: `./${CODEX_PERSONAL_PLUGIN_REL_DIR}`,
+    },
+    policy: {
+      installation: 'AVAILABLE',
+      authentication: 'ON_INSTALL',
+    },
+    category: 'Engineering',
   };
 }
 
@@ -376,7 +469,13 @@ function upsertCodexMarketplace(root: string): { created: boolean; updated: bool
 
   const entry = createCodexMarketplaceEntry();
   if (!existsSync(marketplacePath)) {
-    writeFileSync(marketplacePath, JSON.stringify({ plugins: [entry] }, null, 2));
+    writeFileSync(marketplacePath, JSON.stringify({
+      name: basename(root),
+      interface: {
+        displayName: `${basename(root)} project plugins`,
+      },
+      plugins: [entry],
+    }, null, 2));
     return { created: true, updated: true };
   }
 
@@ -393,13 +492,34 @@ function upsertCodexMarketplace(root: string): { created: boolean; updated: bool
   const index = plugins.findIndex((item) => {
     if (typeof item !== 'object' || item === null) return false;
     const record = item as Record<string, unknown>;
-    return record.id === CODEX_OPENLOGOS_PLUGIN_ID || record.name === 'OpenLogos';
+    return record.id === CODEX_OPENLOGOS_PLUGIN_ID
+      || record.name === CODEX_OPENLOGOS_PLUGIN_ID
+      || record.name === 'OpenLogos';
   });
 
   let changed = false;
+  if (typeof data.name !== 'string' || data.name.length === 0) {
+    data.name = basename(root);
+    changed = true;
+  }
+  if (!data.interface || typeof data.interface !== 'object' || Array.isArray(data.interface)) {
+    data.interface = { displayName: `${basename(root)} project plugins` };
+    changed = true;
+  }
   if (index >= 0) {
     const current = plugins[index] as Record<string, unknown>;
-    const merged = { ...current, ...entry };
+    const {
+      id: _id,
+      path: _path,
+      plugin: _plugin,
+      description: _description,
+      ...preserved
+    } = current;
+    void _id;
+    void _path;
+    void _plugin;
+    void _description;
+    const merged = { ...preserved, ...entry };
     if (JSON.stringify(current) !== JSON.stringify(merged)) {
       plugins[index] = merged;
       changed = true;
@@ -420,6 +540,196 @@ function upsertCodexMarketplace(root: string): { created: boolean; updated: bool
   return { created: false, updated: changed };
 }
 
+function upsertCodexPersonalMarketplace(home: string): { created: boolean; updated: boolean; path: string } {
+  const marketplacePath = join(home, CODEX_PERSONAL_MARKETPLACE_REL_PATH);
+  mkdirSync(dirname(marketplacePath), { recursive: true });
+
+  const entry = createCodexPersonalMarketplaceEntry();
+  if (!existsSync(marketplacePath)) {
+    writeFileSync(marketplacePath, JSON.stringify({
+      name: 'personal',
+      interface: {
+        displayName: 'Personal',
+      },
+      plugins: [entry],
+    }, null, 2));
+    return { created: true, updated: true, path: marketplacePath };
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(readFileSync(marketplacePath, 'utf-8'));
+  } catch {
+    return { created: false, updated: false, path: marketplacePath };
+  }
+
+  const plugins = Array.isArray(data.plugins)
+    ? data.plugins as unknown[]
+    : [];
+  const index = plugins.findIndex((item) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const record = item as Record<string, unknown>;
+    return record.id === CODEX_OPENLOGOS_PLUGIN_ID
+      || record.name === CODEX_OPENLOGOS_PLUGIN_ID
+      || record.name === 'OpenLogos';
+  });
+
+  let changed = false;
+  if (data.name !== 'personal') {
+    data.name = 'personal';
+    changed = true;
+  }
+  if (!data.interface || typeof data.interface !== 'object' || Array.isArray(data.interface)) {
+    data.interface = { displayName: 'Personal' };
+    changed = true;
+  }
+  if (index >= 0) {
+    const current = plugins[index] as Record<string, unknown>;
+    const {
+      id: _id,
+      path: _path,
+      plugin: _plugin,
+      description: _description,
+      ...preserved
+    } = current;
+    void _id;
+    void _path;
+    void _plugin;
+    void _description;
+    const merged = { ...preserved, ...entry };
+    if (JSON.stringify(current) !== JSON.stringify(merged)) {
+      plugins[index] = merged;
+      changed = true;
+    }
+  } else {
+    plugins.push(entry);
+    changed = true;
+  }
+
+  if (data.plugins !== plugins) {
+    data.plugins = plugins;
+    changed = true;
+  }
+
+  if (changed) {
+    writeFileSync(marketplacePath, JSON.stringify(data, null, 2));
+  }
+  return { created: false, updated: changed, path: marketplacePath };
+}
+
+function writeCodexRootCompatibilityPlugin(root: string): { created: boolean; updated: boolean; skipped: boolean } {
+  const legacyDir = join(root, CODEX_LEGACY_PLUGIN_REL_DIR);
+  const pluginJsonPath = join(legacyDir, 'plugin.json');
+  if (existsSync(pluginJsonPath) && readCodexPluginName(pluginJsonPath) !== CODEX_OPENLOGOS_PLUGIN_ID) {
+    return { created: false, updated: false, skipped: true };
+  }
+
+  mkdirSync(legacyDir, { recursive: true });
+  const manifest = {
+    name: CODEX_OPENLOGOS_PLUGIN_ID,
+    version: '0.13.4',
+    description: 'OpenLogos methodology — Why→What→How structured AI-driven development',
+    skills: `./${CODEX_OPENLOGOS_SKILLS_REL_DIR}/`,
+    interface: {
+      display_name: 'OpenLogos',
+      short_description: 'Structured development: PRD → Design → Scenarios → API → Code',
+      default_prompt: ['What should I do next in the OpenLogos workflow?'],
+    },
+  };
+  const next = `${JSON.stringify(manifest, null, 2)}\n`;
+  const created = !existsSync(pluginJsonPath);
+  if (!created && readFileSync(pluginJsonPath, 'utf-8') === next) {
+    return { created: false, updated: false, skipped: false };
+  }
+
+  writeFileSync(pluginJsonPath, next);
+  return { created, updated: true, skipped: false };
+}
+
+function readCodexPluginName(pluginJsonPath: string): string | null {
+  try {
+    const data = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
+    return typeof data?.name === 'string' ? data.name : null;
+  } catch {
+    return null;
+  }
+}
+
+function removeLegacyOpenLogosCodexPlugin(root: string): boolean {
+  const legacyDir = join(root, CODEX_LEGACY_PLUGIN_REL_DIR);
+  const pluginJsonPath = join(legacyDir, 'plugin.json');
+  if (!existsSync(pluginJsonPath)) return false;
+
+  if (readCodexPluginName(pluginJsonPath) !== CODEX_OPENLOGOS_PLUGIN_ID) return false;
+
+  rmSync(legacyDir, { recursive: true, force: true });
+  return true;
+}
+
+function resolveCodexPersonalHome(): string {
+  return process.env.OPENLOGOS_CODEX_PERSONAL_HOME || homedir();
+}
+
+function shouldSkipCodexPersonalSync(): boolean {
+  if (process.env.OPENLOGOS_DISABLE_CODEX_PERSONAL_SYNC === '1') return true;
+  return Boolean((process.env.VITEST || process.env.VITEST_WORKER_ID) && !process.env.OPENLOGOS_CODEX_PERSONAL_HOME);
+}
+
+function shouldSkipCodexPluginInstall(): boolean {
+  return process.env.OPENLOGOS_SKIP_CODEX_PLUGIN_INSTALL === '1'
+    || Boolean(process.env.VITEST || process.env.VITEST_WORKER_ID);
+}
+
+function installCodexPersonalPlugin(): { status: 'installed' | 'skipped' | 'failed'; error?: string } {
+  if (shouldSkipCodexPluginInstall()) return { status: 'skipped' };
+
+  try {
+    execSync('codex plugin add openlogos@personal --json', { stdio: 'pipe' });
+    return { status: 'installed' };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: 'failed', error: message };
+  }
+}
+
+function deployCodexPersonalPlugin(root: string, locale: Locale): {
+  skipped: boolean;
+  plugin: { created: boolean; updated: boolean; path?: string };
+  marketplace: { created: boolean; updated: boolean; path?: string };
+  install: { status: 'installed' | 'skipped' | 'failed'; error?: string };
+} {
+  if (shouldSkipCodexPersonalSync()) {
+    return {
+      skipped: true,
+      plugin: { created: false, updated: false },
+      marketplace: { created: false, updated: false },
+      install: { status: 'skipped' },
+    };
+  }
+
+  const home = resolveCodexPersonalHome();
+  const personalPluginDir = join(home, CODEX_PERSONAL_PLUGIN_REL_DIR);
+  const projectPluginDir = join(root, CODEX_OPENLOGOS_PLUGIN_REL_DIR);
+  const created = !existsSync(personalPluginDir);
+  rmSync(personalPluginDir, { recursive: true, force: true });
+  copyDirRecursive(projectPluginDir, personalPluginDir);
+
+  const skillsSource = findSkillsSource();
+  if (skillsSource && existsSync(skillsSource)) {
+    writeCodexSkillsToTarget(join(personalPluginDir, 'skills'), skillsSource, locale);
+  }
+
+  const marketplace = upsertCodexPersonalMarketplace(home);
+  const install = installCodexPersonalPlugin();
+
+  return {
+    skipped: false,
+    plugin: { created, updated: true, path: personalPluginDir },
+    marketplace,
+    install,
+  };
+}
+
 function countSkillDirs(path: string): number {
   if (!existsSync(path)) return 0;
   try {
@@ -431,7 +741,10 @@ function countSkillDirs(path: string): number {
   }
 }
 
-function detectCodexProjectSkillBoundary(root: string): { legacySkillCount: number; projectPluginCount: number; hasLegacyPlugin: boolean } {
+function detectCodexProjectSkillBoundary(
+  root: string,
+  legacyOpenLogosPluginRemoved = false,
+): { legacySkillCount: number; projectPluginCount: number; hasLegacyPlugin: boolean; legacyOpenLogosPluginRemoved: boolean } {
   const legacySkillCount = countSkillDirs(join(root, '.agents', 'skills'));
   let projectPluginCount = 0;
   const pluginsDir = join(root, '.agents', 'plugins');
@@ -446,6 +759,7 @@ function detectCodexProjectSkillBoundary(root: string): { legacySkillCount: numb
     legacySkillCount,
     projectPluginCount,
     hasLegacyPlugin: existsSync(join(root, '.codex-plugin')),
+    legacyOpenLogosPluginRemoved,
   };
 }
 
@@ -453,7 +767,14 @@ export function deployCodexPlugin(root: string, locale: Locale = 'en'): {
   target: string;
   config: { created: boolean; updated: boolean };
   marketplace: { created: boolean; updated: boolean };
-  boundary: { legacySkillCount: number; projectPluginCount: number; hasLegacyPlugin: boolean };
+  personal: {
+    skipped: boolean;
+    plugin: { created: boolean; updated: boolean; path?: string };
+    marketplace: { created: boolean; updated: boolean; path?: string };
+    install: { status: 'installed' | 'skipped' | 'failed'; error?: string };
+  };
+  compatibilityPlugin: { created: boolean; updated: boolean; skipped: boolean };
+  boundary: { legacySkillCount: number; projectPluginCount: number; hasLegacyPlugin: boolean; legacyOpenLogosPluginRemoved: boolean };
 } | null {
   const source = findCodexPluginTemplateSource();
   if (!source || !existsSync(source)) return null;
@@ -476,13 +797,16 @@ export function deployCodexPlugin(root: string, locale: Locale = 'en'): {
 
   const marketplaceResult = upsertCodexMarketplace(root);
   const configResult = mergeCodexConfig(root);
-  const boundary = detectCodexProjectSkillBoundary(root);
+  const legacyOpenLogosPluginRemoved = removeLegacyOpenLogosCodexPlugin(root);
+  const compatibilityPlugin = writeCodexRootCompatibilityPlugin(root);
+  const personal = deployCodexPersonalPlugin(root, locale);
+  const boundary = detectCodexProjectSkillBoundary(root, legacyOpenLogosPluginRemoved);
 
   const targetLabel = locale === 'zh'
-    ? '.agents/plugins/openlogos/ + .agents/plugins/marketplace.json + .codex/config.toml'
-    : '.agents/plugins/openlogos/ + .agents/plugins/marketplace.json + .codex/config.toml';
+    ? '.agents/plugins/openlogos/ + ~/.agents/plugins/marketplace.json + ~/.codex plugin cache + .codex/config.toml'
+    : '.agents/plugins/openlogos/ + ~/.agents/plugins/marketplace.json + ~/.codex plugin cache + .codex/config.toml';
 
-  return { target: targetLabel, config: configResult, marketplace: marketplaceResult, boundary };
+  return { target: targetLabel, config: configResult, marketplace: marketplaceResult, personal, compatibilityPlugin, boundary };
 }
 
 function mergeOpenCodeConfig(root: string) {
@@ -848,6 +1172,11 @@ export function deployAiToolAssets(
       } else if (codexResult.config.updated) {
         console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
       }
+      if (codexResult.personal.install.status === 'installed') {
+        console.log(`  ✓ ${t(locale, 'init.codexPersonalPluginInstalled')}`);
+      } else if (codexResult.personal.install.status === 'failed') {
+        console.warn(`  ⚠ ${t(locale, 'init.codexPersonalPluginInstallFailed')}`);
+      }
       if (
         codexResult.boundary.legacySkillCount > 0
         || codexResult.boundary.projectPluginCount > 0
@@ -1046,6 +1375,21 @@ export function createCodexSkillContent(skillName: string, content: string): str
   return `---\nname: ${JSON.stringify(skillName)}\ndescription: ${JSON.stringify(description)}\n---\n\n${content}`;
 }
 
+function writeCodexSkillsToTarget(targetDir: string, source: string, locale: Locale): number {
+  let count = 0;
+  for (const name of SKILL_NAMES) {
+    const skillDir = join(targetDir, name);
+    mkdirSync(skillDir, { recursive: true });
+    const srcPath = resolveSkillFile(source, name, locale);
+    if (srcPath) {
+      const content = readFileSync(srcPath, 'utf-8');
+      writeFileSync(join(skillDir, 'SKILL.md'), createCodexSkillContent(name, content));
+      count++;
+    }
+  }
+  return count;
+}
+
 function copyDirRecursive(src: string, dest: string): void {
   mkdirSync(dest, { recursive: true });
   for (const entry of readdirSync(src, { withFileTypes: true })) {
@@ -1138,16 +1482,7 @@ export function deploySkills(
 
   if (aiTool === 'codex') {
     const targetDir = join(root, CODEX_OPENLOGOS_SKILLS_REL_DIR);
-    for (const name of SKILL_NAMES) {
-      const skillDir = join(targetDir, name);
-      mkdirSync(skillDir, { recursive: true });
-      const srcPath = resolveSkillFile(source, name, locale);
-      if (srcPath) {
-        const content = readFileSync(srcPath, 'utf-8');
-        writeFileSync(join(skillDir, 'SKILL.md'), createCodexSkillContent(name, content));
-        count++;
-      }
-    }
+    count = writeCodexSkillsToTarget(targetDir, source, locale);
     return { target: `${CODEX_OPENLOGOS_SKILLS_REL_DIR}/`, count };
   }
 

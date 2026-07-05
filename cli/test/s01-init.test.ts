@@ -628,8 +628,16 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
 
       const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
       expect(marketplace.plugins).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: 'openlogos', path: '.agents/plugins/openlogos' }),
+        expect.objectContaining({
+          name: 'openlogos',
+          source: { source: 'local', path: './.agents/plugins/openlogos' },
+        }),
       ]));
+      const pluginManifest = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'), 'utf-8'));
+      expect(pluginManifest.skills).toBe('./skills/');
+      const rootManifest = JSON.parse(readFileSync(join(root, '.codex-plugin', 'plugin.json'), 'utf-8'));
+      expect(rootManifest.name).toBe('openlogos');
+      expect(rootManifest.skills).toBe('./.agents/plugins/openlogos/skills/');
     } finally {
       cleanup();
     }
@@ -652,19 +660,115 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     }
   });
 
-  it('UT-S01-51: Codex init preserves historical .codex-plugin while creating new marketplace assets', () => {
+  it('UT-S01-50b: Codex init syncs OpenLogos plugin to the personal marketplace without project skills', () => {
+    const { root, cleanup } = makeTempRoot();
+    const { root: fakeHome, cleanup: cleanupHome } = makeTempRoot();
+    const previousHome = process.env.OPENLOGOS_CODEX_PERSONAL_HOME;
+    try {
+      process.env.OPENLOGOS_CODEX_PERSONAL_HOME = fakeHome;
+      mkdirSync(join(fakeHome, 'plugins', 'openlogos', 'skills', 'old-project-skill'), { recursive: true });
+      writeFileSync(join(fakeHome, 'plugins', 'openlogos', 'skills', 'old-project-skill', 'SKILL.md'), '# Old Project Skill\n');
+      mkdirSync(join(root, '.agents', 'skills', 'cnb-tke-release-guard'), { recursive: true });
+      writeFileSync(join(root, '.agents', 'skills', 'cnb-tke-release-guard', 'SKILL.md'), '# CNB TKE Release Guard\n');
+
+      deploySkills(root, 'codex', 'en');
+      const result = deployCodexPlugin(root, 'en');
+
+      expect(result?.personal.skipped).toBe(false);
+      expect(result?.personal.install.status).toBe('skipped');
+      expect(existsSync(join(fakeHome, 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
+      expect(existsSync(join(fakeHome, 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(fakeHome, 'plugins', 'openlogos', 'skills', 'cnb-tke-release-guard', 'SKILL.md'))).toBe(false);
+      expect(existsSync(join(fakeHome, 'plugins', 'openlogos', 'skills', 'old-project-skill', 'SKILL.md'))).toBe(false);
+
+      const marketplace = JSON.parse(readFileSync(join(fakeHome, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
+      expect(marketplace.name).toBe('personal');
+      expect(marketplace.plugins).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: 'openlogos',
+          source: { source: 'local', path: './plugins/openlogos' },
+        }),
+      ]));
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.OPENLOGOS_CODEX_PERSONAL_HOME;
+      } else {
+        process.env.OPENLOGOS_CODEX_PERSONAL_HOME = previousHome;
+      }
+      cleanupHome();
+      cleanup();
+    }
+  });
+
+  it('UT-S01-51: Codex init preserves non-OpenLogos historical .codex-plugin while creating new marketplace assets', () => {
     const { root, cleanup } = makeTempRoot();
     try {
       mkdirSync(join(root, '.codex-plugin'), { recursive: true });
       writeFileSync(join(root, '.codex-plugin', 'plugin.json'), '{"name":"legacy-custom"}\n');
       writeFileSync(join(root, '.codex-plugin', 'custom.txt'), 'keep\n');
 
-      deployCodexPlugin(root, 'en');
+      const result = deployCodexPlugin(root, 'en');
 
       expect(readFileSync(join(root, '.codex-plugin', 'plugin.json'), 'utf-8')).toBe('{"name":"legacy-custom"}\n');
       expect(readFileSync(join(root, '.codex-plugin', 'custom.txt'), 'utf-8')).toBe('keep\n');
       expect(existsSync(join(root, '.agents', 'plugins', 'marketplace.json'))).toBe(true);
       expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
+      expect(result?.boundary.hasLegacyPlugin).toBe(true);
+      expect(result?.boundary.legacyOpenLogosPluginRemoved).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-51b: Codex init removes legacy OpenLogos root .codex-plugin and old SessionStart hook', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      mkdirSync(join(root, '.codex-plugin', 'hooks'), { recursive: true });
+      writeFileSync(join(root, '.codex-plugin', 'plugin.json'), '{"name":"openlogos"}\n');
+      writeFileSync(join(root, '.codex-plugin', 'custom.txt'), 'legacy openlogos asset\n');
+      mkdirSync(join(root, '.codex'), { recursive: true });
+      writeFileSync(
+        join(root, '.codex', 'config.toml'),
+        [
+          '[plugins.other]',
+          'enabled = true',
+          '',
+          '[[hooks.SessionStart]]',
+          '[[hooks.SessionStart.hooks]]',
+          'type = "command"',
+          'command = ".codex-plugin/hooks/session-start.sh"',
+          'timeout = 5',
+          '',
+          '[[hooks.SessionStart]]',
+          '[[hooks.SessionStart.hooks]]',
+          'type = "command"',
+          'command = ".agents/plugins/openlogos/hooks/session-start.sh"',
+          '',
+          '[[hooks.SessionStart]]',
+          '[[hooks.SessionStart.hooks]]',
+          'type = "command"',
+          'command = "./other.sh"',
+          '',
+        ].join('\n')
+      );
+
+      const result = deployCodexPlugin(root, 'en');
+
+      expect(existsSync(join(root, '.codex-plugin', 'hooks'))).toBe(false);
+      expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
+      expect(result?.boundary.hasLegacyPlugin).toBe(true);
+      expect(result?.boundary.legacyOpenLogosPluginRemoved).toBe(true);
+      expect(result?.compatibilityPlugin.updated).toBe(true);
+      const rootManifest = JSON.parse(readFileSync(join(root, '.codex-plugin', 'plugin.json'), 'utf-8'));
+      expect(rootManifest.name).toBe('openlogos');
+      expect(rootManifest.skills).toBe('./.agents/plugins/openlogos/skills/');
+
+      const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
+      expect(codexConfig).not.toContain('command = ".codex-plugin/hooks/session-start.sh"');
+      expect(codexConfig).toContain('command = "./other.sh"');
+      expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
+      const hookMatches = codexConfig.match(/command = "\.agents\/plugins\/openlogos\/hooks\/session-start\.sh"/g) ?? [];
+      expect(hookMatches).toHaveLength(1);
     } finally {
       cleanup();
     }
@@ -1049,7 +1153,10 @@ describe('S01 Scenario Tests — init command', () => {
     const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
     expect(marketplace.plugins).toEqual([
       expect.objectContaining({ id: 'adcn', path: '.agents/plugins/adcn' }),
-      expect.objectContaining({ id: 'openlogos', path: '.agents/plugins/openlogos' }),
+      expect.objectContaining({
+        name: 'openlogos',
+        source: { source: 'local', path: './.agents/plugins/openlogos' },
+      }),
     ]);
   });
 
@@ -1104,7 +1211,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'hooks', 'session-start.sh'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(false);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
@@ -1114,13 +1221,18 @@ describe('S01 Scenario Tests — init command', () => {
     expect(agents).not.toContain('`logos/skills/prd-writer/SKILL.md`');
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
-    expect(codexConfig).toContain('[plugins.openlogos]');
+    expect(codexConfig).not.toContain('[plugins.openlogos]');
     expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
 
     const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
     expect(marketplace.plugins).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'openlogos', path: '.agents/plugins/openlogos' }),
+      expect.objectContaining({
+        name: 'openlogos',
+        source: { source: 'local', path: './.agents/plugins/openlogos' },
+      }),
     ]));
+    const rootManifest = JSON.parse(readFileSync(join(root, '.codex-plugin', 'plugin.json'), 'utf-8'));
+    expect(rootManifest.skills).toBe('./.agents/plugins/openlogos/skills/');
 
     const skill = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
     expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);

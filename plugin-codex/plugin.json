@@ -1,7 +1,8 @@
 {
   "name": "openlogos",
-  "version": "1.0.0",
+  "version": "0.13.4",
   "description": "OpenLogos methodology — Why→What→How structured AI-driven development",
+  "skills": "./skills/",
   "interface": {
     "display_name": "OpenLogos",
     "short_description": "Structured development: PRD → Design → Scenarios → API → Code",

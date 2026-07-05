@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.4] - 2026-07-05
+
+### Fixed
+
+- **恢复 Codex `$openlogos` 插件发现闭环** — `openlogos init/sync` 现在会把 OpenLogos 官方 Codex 插件同步到 Codex 默认个人 marketplace（`~/plugins/openlogos` + `~/.agents/plugins/marketplace.json`），并刷新 `openlogos@personal`，解决仅写项目内 `.agents/plugins/marketplace.json` 时新会话无法发现 `$openlogos` skills 的问题。
+- **清理历史污染残留** — 同步个人 OpenLogos 插件时先重建 `~/plugins/openlogos`，确保旧版误吸收的项目 `.agents/skills/*` 不会残留在 OpenLogos 命名空间；项目专属插件继续保留在自己的 `<plugin>:<skill>` 命名空间。
+
+## [0.13.3] - 2026-07-05
+
+### Fixed
+
+- **彻底隔离 Codex OpenLogos 插件命名空间** — `openlogos init/sync/launch` 现在会清理旧版根 `.codex-plugin` 中 `name: "openlogos"` 的 OpenLogos 插件资产，并移除 `.codex/config.toml` 中指向 `.codex-plugin/hooks/session-start.sh` 的旧 SessionStart hook，避免 Codex 把项目 `.agents/skills/*` 误归属到 `$openlogos`。非 OpenLogos 的历史根 `.codex-plugin` 会继续保留。
+
 ## [0.13.2] - 2026-07-04
 
 ### Fixed
