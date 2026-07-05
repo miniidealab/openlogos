@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.5] - 2026-07-05
+
+### Fixed
+
+- **verify / smoke 跳过用例统计口径修复** — `status:"skip"` 现在计入有效通过数，`pass_rate_pct` 按 `(passed + skipped) / executed` 计算；合法环境性 skip 继续展示在 `skipped_cases` / 报告中，但不再单独阻塞 verify 或 smoke Gate。
+- **verify AC trace 接受合法 skip** — AC 追溯中关联用例为 `pass` 或 `skip` 时均视为该自动化验收条件有效通过，避免本机不可运行的 smoke/verify 用例把成功率误判为失败。
+
 ## [0.13.4] - 2026-07-05
 
 ### Fixed
@@ -753,7 +760,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.10.9...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.5...HEAD
+[0.13.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.5
+[0.13.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.4
 [0.10.9]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.9
 [0.10.8]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.8
 [0.10.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.6
