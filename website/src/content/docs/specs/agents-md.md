@@ -76,11 +76,15 @@ The Active Skills section is dynamically generated based on the `aiTool` field i
 | `cursor` | `.cursor/rules/*.mdc` | `skills/{name}/` → `.cursor/rules/{name}.mdc` |
 | `claude-code` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
 | `opencode` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
-| `codex` | `.agents/skills/*/SKILL.md` | `.agents/skills/{name}/SKILL.md` |
+| `codex` | `.agents/plugins/openlogos/skills/*/SKILL.md` | `$openlogos:{name}` → `.agents/plugins/openlogos/skills/{name}/SKILL.md` |
 | `other` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
 | `all` or array | All configured tool targets | Multi-tool Skill paths |
 
-All 16 built-in Skills are listed with descriptions.
+All 17 built-in Skills are listed with descriptions.
+
+For Codex, the Active Skills section is grouped by namespace. OpenLogos methodology skills are listed as `$openlogos:<skill>` and point to `.agents/plugins/openlogos/skills/`. Project-specific Skills stay outside the OpenLogos namespace: project plugin skills use `$<plugin>:<skill>` from `.agents/plugins/<plugin>/skills/`, while legacy or repo-scoped local Skills remain under `.agents/skills/` and are grouped as project-specific.
+
+For Claude Code, OpenLogos methodology Skills remain under `logos/skills/`, while project-owned Skills under `.claude/skills/<skill>/SKILL.md` are kept as a separate project-specific group and are not copied into the OpenLogos plugin.
 
 For tools that support Skill binding (Claude Code, Cursor), the Phase detection section includes direct file paths so the AI can read and execute the Skill file immediately.
 
@@ -111,7 +115,7 @@ Different AI tools use different instruction file names, but the content is cons
 | **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | Auto-deployed by `init` / `sync` |
 | **OpenCode (compat)** | `AGENTS.md` | `logos/skills/*/SKILL.md` | Auto-deployed by `init` / `sync` |
 | **OpenCode (plugin)** | `opencode.json` + `.opencode/plugins/` | Plugin-loaded | Plugin handles command bridging, `AGENTS.md` as fallback |
-| **Codex** | `AGENTS.md` + `.codex/config.toml` | `.agents/skills/*/SKILL.md` | Auto-deployed by `init` / `sync` |
+| **Codex** | `AGENTS.md` + `.codex/config.toml` + `.agents/plugins/marketplace.json` | `.agents/plugins/openlogos/skills/*` for `$openlogos:<skill>`; project plugins or `.agents/skills/*` stay separate | `init` / `sync` refresh only the `openlogos` marketplace entry and preserve project Skills |
 | **GitHub Copilot** | `.github/copilot-instructions.md` | Planned | Future release |
 
 `openlogos sync` generates all needed instruction files simultaneously, ensuring consistent instructions across AI tools.

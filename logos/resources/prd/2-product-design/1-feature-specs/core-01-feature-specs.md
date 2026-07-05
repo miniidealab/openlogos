@@ -27,6 +27,35 @@
 
 ### 2.2 AI 资产
 - `AGENTS.md`、`CLAUDE.md`、Skills 和插件模板必须由 `sync`/`init`/`launch` 维护。
+- OpenLogos 官方方法论技能与项目 / 产品 / 仓库专属技能必须使用可区分的命名空间或目录边界。
+- OpenLogos 托管资产只能刷新 OpenLogos 自身拥有的内容；用户在托管范围外维护的项目技能、项目插件、项目指令和自定义 hook 不得被整合进 OpenLogos 官方命名空间。
+- 兼容历史 `.codex-plugin` 与 `.agents/skills` 项目时，CLI 可以保留旧资产或迁移 OpenLogos 自有资产，但不得把未知项目技能重命名为 `openlogos:<skill>`。
+
+### 2.2b Skill 命名空间与目录边界
+
+#### Codex
+- 推荐结构为 repo marketplace + 多插件目录：`.agents/plugins/marketplace.json` 注册 `openlogos` 插件，OpenLogos 方法论技能位于该插件自己的 `skills/` 内。
+- `openlogos` 插件命名空间只承载 OpenLogos 官方方法论技能，例如 `openlogos:prd-writer`、`openlogos:change-writer`、`openlogos:code-implementor`。
+- 项目专属技能必须使用项目自己的插件命名空间，例如 `adcn:release-guard`，或作为明确的 repo-scoped local skill 暴露；不得进入 OpenLogos 插件后形成 `openlogos:release-guard`。
+- `openlogos init/sync --ai-tool codex` 必须能兼容历史 `.codex-plugin/` 与 `.agents/skills/` 布局：对 OpenLogos 自有技能可迁移或刷新，对未知项目技能只保留和诊断，不吸收、不改名。
+
+#### Claude Code
+- OpenLogos 官方 Claude 插件只承载 OpenLogos 方法论技能和 OpenLogos hook / guard。
+- 项目专属技能推荐放在 `.claude/skills/<skill>/SKILL.md`，或打包成项目独立 Claude 插件。
+- 项目独立 Claude 插件必须使用项目命名空间；不得把项目专属技能放入 OpenLogos 插件的 `plugin/skills` 后使其表现为 `/openlogos:*`。
+- `CLAUDE.md` 的 Active Skills / 插件说明必须把 OpenLogos 方法论技能与项目专属技能分组描述，避免 AI 把项目规则误判为 OpenLogos 通用规则。
+
+#### 生成与同步策略
+- `init` 首次生成时创建 OpenLogos 官方资产边界，不覆盖已有项目专属技能。
+- `sync` 刷新时只替换 OpenLogos managed block 和 OpenLogos 托管插件资产。
+- `launch` 更新 launched 规则时不得改变项目专属技能所属命名空间。
+- 对无法判断归属的 skill，CLI 必须保守处理为项目专属资产，并输出诊断或保留说明。
+
+### 2.2c 兼容与迁移策略
+- 已存在 `.codex-plugin/` 的项目继续可用；新版本同步时应优先生成 repo marketplace 结构，并保留历史入口作为兼容兜底或迁移来源。
+- 已存在 `.agents/skills/<name>/SKILL.md` 的项目中，OpenLogos 只能刷新与官方技能名完全匹配且处于 OpenLogos 托管范围内的文件；其它 skill 视为项目资产。
+- 生成的 `AGENTS.md` / `CLAUDE.md` 必须包含命名空间边界说明：OpenLogos 技能用于方法论流程，项目技能用于当前仓库规则，两者冲突时按更具体的项目规则处理，但不得改变 OpenLogos 流程门禁。
+- 对多 AI 工具项目，Codex、Claude Code、OpenCode、Cursor 看到的 OpenLogos 方法论规则应一致，但各宿主的项目专属技能目录按宿主约定保留。
 
 ### 2.3 变更管理
 - 活跃 guard 存在时，新变更必须被阻止。

@@ -226,3 +226,27 @@ graph TB
 - 若一致性硬门误阻断合法项目，按既有 npm 补丁版本策略修复并发布新 patch。
 - 旧项目的 `test-results.jsonl` 是运行时产物，不做迁移；用户可通过清空旧结果文件并重新运行完整测试恢复。
 - 官网文档异常时，通过 Cloudflare Pages 回滚到上一成功部署。
+
+## 十九、Codex / Claude Skill 命名空间边界发布检查
+
+本提案 `codex-claude-skill-namespace-separation` 会修改 CLI `init` / `sync` / `launch` 的 AI 工具资产生成行为、Codex 插件模板、Claude Code 插件边界说明、随包分发的规范文档和官网文档，因此需要执行 CLI/npm 发布与官网文档同步。
+
+### 发布前检查
+- `cd cli && npm test` 覆盖 Codex repo marketplace 生成、`openlogos` 插件条目刷新和项目插件条目保留。
+- `cd cli && npm test` 覆盖历史 `.codex-plugin/` 与 `.agents/skills/*` 兼容路径，确认未知项目 skill 不会被复制到 OpenLogos 插件命名空间。
+- `cd cli && npm test` 覆盖 Claude Code `.claude/skills/*` 项目技能保留，确认项目 skill 不进入 OpenLogos 官方 Claude 插件。
+- `cd cli && npm test` 覆盖 `AGENTS.md` / `CLAUDE.md` 生成内容中 OpenLogos 方法论技能与项目专属技能分组展示。
+- `cd cli && npm run build` 通过，且 npm pack 产物包含更新后的 `plugin-codex/`、`plugin/`、`spec/agents-md.md`、`spec/codex-plugin.md` 与同步后的官网文档源码。
+- 官网中英文文档已说明 Codex `openlogos:<skill>`、Claude Code `/openlogos:*` 与项目专属 skill 的边界。
+
+### 部署后检查
+- 安装发布后的 CLI，在临时项目执行 `openlogos init smoke --locale zh --ai-tool codex`，确认 `.agents/plugins/marketplace.json` 存在 `openlogos` 条目，OpenLogos 官方技能位于 `openlogos` 插件命名空间。
+- 在包含 `.agents/plugins/adcn/skills/release-guard/SKILL.md` 的项目中执行 `openlogos sync`，确认 `adcn` 插件条目和 skill 内容不变，且不存在 `openlogos:release-guard`。
+- 在包含历史 `.agents/skills/release-guard/SKILL.md` 的项目中执行 `openlogos sync`，确认该 skill 原样保留，OpenLogos 插件不吸收该 skill。
+- 在包含 `.claude/skills/release-guard/SKILL.md` 的项目中执行 `openlogos init --ai-tool claude-code` 和 `openlogos sync`，确认项目 skill 原样保留，`CLAUDE.md` 单独说明项目专属技能。
+- 访问官网相关文档页，确认 Codex / Claude Code Skill 命名空间边界说明可见。
+
+### 回滚策略
+- 若 Codex marketplace 生成影响已有项目，可通过 npm 补丁版本回滚或修复；历史 `.codex-plugin/` 兼容路径保留，作为临时降级入口。
+- 若 Claude Code 项目 skill 边界说明或同步逻辑误阻断用户项目，可按既有 npm 补丁版本策略修复；用户项目中的 `.claude/skills/*` 文件不做自动迁移或删除。
+- 若官网文档异常，通过 Cloudflare Pages 回滚到上一成功部署。

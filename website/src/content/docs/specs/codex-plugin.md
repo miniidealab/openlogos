@@ -9,13 +9,13 @@ OpenLogos provides a native plugin for OpenAI Codex CLI, upgrading from the basi
 
 ### Mode A: Compatibility Mode (always available)
 
-- **Input**: `AGENTS.md` + `logos/skills/*/SKILL.md`
-- **When**: Plugin not installed or plugin fails
+- **Input**: `AGENTS.md` plus legacy `logos/skills/*/SKILL.md`, `.codex-plugin/`, or `.agents/skills/*`
+- **When**: Plugin not installed, plugin fails, or an older project has not migrated to the repo marketplace yet
 - **Experience**: Zero extra installation, basic functionality
 
 ### Mode B: Native Plugin Mode (recommended)
 
-- **Input**: Auto-generated `.codex-plugin/plugin.json`, `.codex-plugin/hooks/session-start.sh`, `.codex/config.toml`
+- **Input**: Auto-generated `.agents/plugins/marketplace.json`, `.agents/plugins/openlogos/`, and `.codex/config.toml`
 - **When**: Full experience with SessionStart phase injection, auto-loaded Skills, unified workflow control
 - **Experience**: Enhanced, easy to distribute and version
 
@@ -25,23 +25,29 @@ After `openlogos init --ai-tool codex` or `openlogos init --ai-tool all`:
 
 ```
 project-root/
-├── .codex-plugin/
-│   ├── plugin.json              # Plugin manifest
-│   └── hooks/
-│       └── session-start.sh     # SessionStart hook script
+├── .agents/
+│   ├── plugins/
+│   │   ├── marketplace.json     # Repo marketplace with the openlogos entry
+│   │   ├── openlogos/
+│   │   │   ├── .codex-plugin/
+│   │   │   │   └── plugin.json
+│   │   │   ├── hooks/
+│   │   │   │   └── session-start.sh
+│   │   │   └── skills/
+│   │   │       ├── prd-writer/SKILL.md
+│   │   │       ├── scenario-architect/SKILL.md
+│   │   │       └── ...          # OpenLogos methodology Skills
+│   │   └── <project-plugin>/
+│   │       └── skills/<project-skill>/SKILL.md
+│   └── skills/                  # Legacy or repo-scoped project Skills
 ├── .codex/
 │   └── config.toml              # Plugin and hook configuration
-├── .agents/
-│   └── skills/                  # Codex-native Skill files
-│       ├── prd-writer/SKILL.md
-│       ├── scenario-architect/SKILL.md
-│       └── ...                  # 16 Skills total
 └── AGENTS.md                    # Fallback instructions
 ```
 
 ## Plugin Manifest
 
-`.codex-plugin/plugin.json`:
+`.agents/plugins/openlogos/.codex-plugin/plugin.json`:
 
 ```json
 {
@@ -65,6 +71,14 @@ The hook script (`session-start.sh`) runs at the beginning of each Codex session
 
 This gives Codex the same phase-aware context that Claude Code gets via its native plugin system.
 
+## Skill Namespace Boundary
+
+Codex OpenLogos methodology Skills use the `openlogos` namespace, for example `$openlogos:prd-writer`, `$openlogos:scenario-architect`, and `$openlogos:change-writer`. These Skills live under `.agents/plugins/openlogos/skills/`.
+
+Project-specific Skills must remain outside the OpenLogos namespace. Project plugins use their own namespace, such as `$adcn:release-guard` from `.agents/plugins/adcn/skills/`. Legacy or repo-scoped local Skills can stay under `.agents/skills/`, and `AGENTS.md` groups them as project-specific Skills instead of official OpenLogos capabilities.
+
+`openlogos init` and `openlogos sync` update or insert only the `openlogos` entry in `.agents/plugins/marketplace.json`; existing project plugin entries are preserved in place. Historical `.codex-plugin/` directories are left intact for compatibility, while new OpenLogos assets are written under `.agents/plugins/openlogos/`.
+
 ## Skill Format for Codex
 
 Codex requires YAML frontmatter in Skill files. OpenLogos automatically converts each Skill during deployment:
@@ -85,7 +99,7 @@ Without this frontmatter, Codex shows `missing YAML frontmatter` warnings and sk
 Codex may show `hook needs review before it can run` on first launch after plugin deployment. This is Codex's standard hook security review:
 
 1. Open `/hooks` in Codex
-2. Review `.codex-plugin/hooks/session-start.sh`
+2. Review `.agents/plugins/openlogos/hooks/session-start.sh`
 3. Approve to enable OpenLogos phase context injection
 
 ## Configuration
@@ -94,19 +108,19 @@ Codex may show `hook needs review before it can run` on first launch after plugi
 
 ```toml
 [plugins]
-openlogos = { path = ".codex-plugin" }
+openlogos = { path = ".agents/plugins/openlogos" }
 
 [hooks]
-session-start = ".codex-plugin/hooks/session-start.sh"
+session-start = ".agents/plugins/openlogos/hooks/session-start.sh"
 ```
 
 ## Comparison with Other Platforms
 
 | Dimension | Claude Code | OpenCode | Codex |
 |-----------|-------------|----------|-------|
-| Plugin mechanism | `.claude/` native plugin | `.opencode/plugins/` JS | `.codex-plugin/` + hooks |
+| Plugin mechanism | `.claude/` native plugin | `.opencode/plugins/` JS | repo marketplace + `.agents/plugins/openlogos/` |
 | SessionStart | settings.json hook | Plugin JS hook | shell hook script |
-| Skill location | `logos/skills/` | `logos/skills/` | `.agents/skills/` |
+| Skill location | `logos/skills/` plus `.claude/skills/` project Skills | `logos/skills/` | `.agents/plugins/openlogos/skills/` for `$openlogos:<skill>`; project Skills stay in project namespaces |
 | Slash commands | `.claude/commands/` | `.opencode/commands/` | N/A (AGENTS.md) |
 | Fallback | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` |
 

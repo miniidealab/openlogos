@@ -120,7 +120,7 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(allErrors).toContain('logos.config.json not found');
   });
 
-  it('ST-S08-04: sync with claude-code deploys to logos/skills/', () => {
+  it('ST-S08-04-legacy: sync with claude-code deploys to logos/skills/', () => {
     scaffoldProject(root, { locale: 'en' });
 
     const configPath = join(root, 'logos', 'logos.config.json');
@@ -167,7 +167,7 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(allLogs).toContain('slash commands');
   });
 
-  it('ST-S08-04c: sync with codex deploys plugin assets and points AGENTS.md to .agents skills', () => {
+  it('ST-S08-04c: sync with codex deploys plugin assets and points AGENTS.md to openlogos plugin skills', () => {
     scaffoldProject(root, { locale: 'en' });
 
     const configPath = join(root, 'logos', 'logos.config.json');
@@ -177,16 +177,18 @@ describe('S08 Scenario Tests — sync command', () => {
 
     sync();
 
-    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'hooks', 'session-start.sh'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'marketplace.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'hooks', 'session-start.sh'))).toBe(true);
     expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
-    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
-    expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+    expect(agents).toContain('$openlogos:prd-writer');
+    expect(agents).toContain('.agents/plugins/openlogos/skills/prd-writer/SKILL.md');
+    expect(agents).not.toContain('`logos/skills/prd-writer/SKILL.md`');
 
-    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    const skill = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
     expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
   });
 
@@ -198,7 +200,7 @@ describe('S08 Scenario Tests — sync command', () => {
     config.aiTool = 'codex';
     writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-    const skillDir = join(root, '.agents', 'skills', 'prd-writer');
+    const skillDir = join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer');
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, 'SKILL.md'), '# Skill: PRD Writer\n\nOld invalid file');
 
@@ -227,7 +229,7 @@ describe('S08 Scenario Tests — sync command', () => {
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
     expect(codexConfig).toContain('command = "./other.sh"');
-    expect(codexConfig).toContain('command = ".codex-plugin/hooks/session-start.sh"');
+    expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
   });
 
   it('ST-S08-04e: sync with codex is idempotent when OpenLogos hook already exists', () => {
@@ -242,11 +244,159 @@ describe('S08 Scenario Tests — sync command', () => {
     sync();
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
-    const hookMatches = codexConfig.match(/command = "\.codex-plugin\/hooks\/session-start\.sh"/g) ?? [];
+    const hookMatches = codexConfig.match(/command = "\.agents\/plugins\/openlogos\/hooks\/session-start\.sh"/g) ?? [];
     expect(hookMatches).toHaveLength(1);
   });
 
-  it('ST-S08-05: sync defaults to cursor when aiTool not in config', () => {
+  it('UT-S08-08: sync only refreshes marketplace openlogos entry', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    mkdirSync(join(root, '.agents', 'plugins'), { recursive: true });
+    const adcnEntry = { id: 'adcn', name: 'ADCN', path: '.agents/plugins/adcn', custom: 'keep' };
+    writeFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), JSON.stringify({
+      plugins: [
+        { id: 'openlogos', name: 'Old OpenLogos', path: '.old/openlogos', custom: 'replace-openlogos-fields' },
+        adcnEntry,
+      ],
+    }, null, 2));
+
+    sync();
+
+    const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
+    expect(marketplace.plugins[1]).toEqual(adcnEntry);
+    expect(marketplace.plugins[0]).toEqual(expect.objectContaining({
+      id: 'openlogos',
+      path: '.agents/plugins/openlogos',
+      custom: 'replace-openlogos-fields',
+    }));
+  });
+
+  it('UT-S08-09: sync does not migrate unknown .agents/skills into OpenLogos plugin', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    mkdirSync(join(root, '.agents', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+    sync();
+
+    expect(readFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'release-guard', 'SKILL.md'))).toBe(false);
+  });
+
+  it('UT-S08-10: sync refreshes official OpenLogos Codex skills', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    const skillDir = join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '# old');
+
+    sync();
+
+    const skill = readFileSync(join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
+    expect(skill).toContain('# Skill: PRD Writer');
+  });
+
+  it('UT-S08-11: sync preserves Claude .claude/skills project skills', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'claude-code';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    mkdirSync(join(root, '.claude', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+    sync();
+
+    expect(readFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+    expect(existsSync(join(root, 'logos', 'skills', 'release-guard', 'SKILL.md'))).toBe(false);
+  });
+
+  it('UT-S08-12: sync prints project skill namespace diagnostic', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    mkdirSync(join(root, '.agents', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+    sync();
+
+    expect(con.logs.join('\n')).toContain('Project-specific Codex skills/plugins were preserved outside the OpenLogos namespace.');
+  });
+
+  it('ST-S08-04: sync preserves Codex project plugin and refreshes OpenLogos plugin', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    mkdirSync(join(root, '.agents', 'plugins', 'adcn', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'plugins', 'adcn', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+    mkdirSync(join(root, '.agents', 'plugins'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), JSON.stringify({
+      plugins: [{ id: 'adcn', name: 'ADCN', path: '.agents/plugins/adcn' }],
+    }, null, 2));
+
+    sync();
+
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(readFileSync(join(root, '.agents', 'plugins', 'adcn', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+    const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
+    expect(marketplace.plugins).toEqual([
+      expect.objectContaining({ id: 'adcn' }),
+      expect.objectContaining({ id: 'openlogos', path: '.agents/plugins/openlogos' }),
+    ]);
+  });
+
+  it('ST-S08-05: sync preserves historical .agents/skills project skill', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'codex';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    mkdirSync(join(root, '.agents', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+    sync();
+
+    expect(readFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('Project-Specific Skills');
+    expect(agents).not.toContain('$openlogos:release-guard');
+  });
+
+  it('ST-S08-06: sync preserves Claude project skill and refreshes managed instructions', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.aiTool = 'claude-code';
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    mkdirSync(join(root, '.claude', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+    writeFileSync(join(root, 'CLAUDE.md'), 'team claude rule\n');
+
+    sync();
+
+    expect(readFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('team claude rule');
+    expect(claude).toContain('Project-Specific Skills');
+    expect(claude).toContain('.claude/skills/<skill>/SKILL.md');
+  });
+
+  it('ST-S08-05-legacy: sync defaults to cursor when aiTool not in config', () => {
     scaffoldProject(root, { locale: 'en' });
 
     sync();
@@ -330,7 +480,7 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
   });
 
-  it('ST-S08-06: sync with other → both files include Active Skills', () => {
+  it('ST-S08-06-legacy: sync with other → both files include Active Skills', () => {
     scaffoldProject(root, { locale: 'en' });
 
     const configPath = join(root, 'logos', 'logos.config.json');
@@ -396,8 +546,8 @@ describe('S08 Scenario Tests — sync command', () => {
 
     sync();
 
-    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
   });
 
   it('ST-S08-10b: sync with all keeps skills for all deployable tools and generates shared docs', () => {
@@ -411,9 +561,9 @@ describe('S08 Scenario Tests — sync command', () => {
     sync();
 
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
-    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('logos/skills/prd-writer/SKILL.md');

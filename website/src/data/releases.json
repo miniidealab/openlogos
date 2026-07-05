@@ -1,17 +1,52 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.13.0",
-  "updatedAt": "2026-07-04T10:19:14.715Z",
-  "generatedAt": "2026-07-04T10:19:14.715Z",
-  "versionCount": 75,
+  "latestVersion": "0.13.1",
+  "updatedAt": "2026-07-04T15:55:51.217Z",
+  "generatedAt": "2026-07-04T15:55:51.217Z",
+  "versionCount": 76,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.13.0"
+    "latest": "0.13.1"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.13.1",
+      "publishedAt": "2026-07-04T15:55:50.839Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.1",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.1",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.1.tgz",
+      "gitHead": null,
+      "size": 739748,
+      "sizeLabel": "722 KB",
+      "unpackedSize": 2943156,
+      "unpackedSizeLabel": "2.8 MB",
+      "fileCount": 293,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [],
+      "fixSummary": [
+        "verify 结果账本一致性硬门 — openlogos verify 现在会拒绝非法 JSONL 结果、非法 status、未定义或 manual 用例 ID、统计不变量不成立等不自洽账本；JSON 输出新增 consistency 诊断，Gate 失败时返回 result_ledger_inconsistent，避免全自动消费方误信不可信的 PASS。",
+        "保留合法 last-write-wins 兼容性 — 同一测试 ID 的重复结果仍按最后一次结果生效，但最终结果集合必须全部可追溯到已定义自动化用例。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [
+        "`openlogos verify` now rejects inconsistent result ledgers: malformed JSONL rows, invalid statuses, unknown or manual result IDs, and broken count invariants surface through the new `consistency` JSON diagnostics and fail the gate with `result_ledger_inconsistent`.",
+        "Duplicate test IDs remain last-write-wins compatible, but the final result set must still trace back to defined automated test cases before the gate can pass."
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.1: Chinese value summary entries are missing; English value summary entries are missing."
+    },
     {
       "version": "0.13.0",
       "publishedAt": "2026-07-04T10:19:14.399Z",
@@ -31,9 +66,7 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "官网 / 文档 / README 全面对齐 flow 能力 — 新增首页全自动流程板块、《可编排研发流程》deep-dive 与 concepts 术语页；新增 CLI 文档 flow show / watch / deploy-done 与 next --auto 章节；新增 flow-spec / slice-planner 规格并更新 cli-json-output / change-management / tasks-spec；补齐 README（中英）flow 小节与英文发布摘要。",
         "flow 能力首次对外发布 — 累积自 0.11.3–0.12.9 的 flow 引擎、next --auto 全自动无人值守、slice 切片循环、loop-exhausted 硬红线随本版本正式发布到 npm 与 GitHub Release。"
@@ -618,8 +651,8 @@
       "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.9.21",
       "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.9.21.tgz",
       "gitHead": "bfda450211c6f12535868f23f2e61c0e35827611",
-      "size": null,
-      "sizeLabel": null,
+      "size": 261093,
+      "sizeLabel": "255 KB",
       "unpackedSize": 935598,
       "unpackedSizeLabel": "914 KB",
       "fileCount": 157,

@@ -98,3 +98,27 @@
 - [ ] 非法 status 发布后冒烟：SMOKE-core-31
 - [ ] 未定义结果 ID 发布后冒烟：SMOKE-core-32
 - [ ] last-write-wins 兼容性发布后冒烟：SMOKE-core-33
+
+## 六、Codex / Claude Skill 命名空间发布后冒烟用例
+
+### 一、冒烟测试范围补充
+
+| 环境 | 覆盖范围 | 说明 |
+|------|----------|------|
+| staging | Codex repo marketplace、OpenLogos 插件命名空间、历史 Codex 资产兼容、Claude Code 项目 skill 保留、官网命名空间文档 | 发布后验证 OpenLogos 方法论技能与项目专属技能不会混入同一命名空间 |
+
+### 二、冒烟测试用例补充
+
+| ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
+|----|------|------|----------|----------|------|----------|
+| SMOKE-core-34 | Codex init 生成 OpenLogos repo marketplace 命名空间 | Codex Skill 命名空间 | staging | 安装含本变更的 CLI，准备空目录 | 执行 `openlogos init smoke --locale zh --ai-tool codex` | `.agents/plugins/marketplace.json` 存在 `openlogos` 条目；OpenLogos 官方 skill 位于 `openlogos` 插件；`AGENTS.md` 说明 `openlogos:<skill>` 为方法论技能 |
+| SMOKE-core-35 | Codex sync 不吸收项目专属 skill | Codex 项目 skill 边界 | staging | 安装含本变更的 CLI，准备已初始化项目并预置 `.agents/skills/release-guard/SKILL.md` 或 `.agents/plugins/adcn/skills/release-guard/SKILL.md` | 执行 `openlogos sync` | 项目 skill 原样保留；`openlogos` 插件不包含 `release-guard`；生成文档中不存在 `openlogos:release-guard` |
+| SMOKE-core-36 | Claude Code init/sync 保留 `.claude/skills` 项目技能 | Claude Code 项目 skill 边界 | staging | 安装含本变更的 CLI，准备项目并预置 `.claude/skills/release-guard/SKILL.md` | 执行 `openlogos init smoke --locale zh --ai-tool claude-code` 或在已初始化项目中执行 `openlogos sync` | `.claude/skills/release-guard/SKILL.md` 内容不变；OpenLogos 官方插件不包含该 skill；`CLAUDE.md` 单独说明项目专属技能 |
+| SMOKE-core-37 | 官网展示 Codex / Claude Skill 命名空间边界说明 | 官网文档 | staging | 官网已构建或部署 | 访问 Codex 插件规范、AGENTS.md 生成规范及对应中文页 | 页面说明 OpenLogos 方法论技能与项目专属技能的目录和命名空间边界 |
+
+### 三、覆盖度校验补充
+
+- [ ] Codex repo marketplace 发布后冒烟：SMOKE-core-34
+- [ ] Codex 项目专属 skill 保留发布后冒烟：SMOKE-core-35
+- [ ] Claude Code 项目专属 skill 保留发布后冒烟：SMOKE-core-36
+- [ ] 官网命名空间文档发布后冒烟：SMOKE-core-37

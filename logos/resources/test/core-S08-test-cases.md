@@ -31,3 +31,27 @@
 - [x] sync 诊断路径：已覆盖（ST-S08-02）
 - [x] sync 根指令文件合并：已覆盖（UT-S08-05 / UT-S08-06 / UT-S08-07 / ST-S08-03）
 
+## 四、Codex / Claude Skill 命名空间同步测试补充
+
+### 4.1 单元测试用例补充
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S08-08 | sync 只刷新 marketplace 的 `openlogos` 条目 | Codex repo marketplace 同步 | `.agents/plugins/marketplace.json` 含 `openlogos` 与项目插件条目 | sync | 只更新 `openlogos` 条目；项目插件条目内容不变 |
+| UT-S08-09 | sync 不把 `.agents/skills` 未知 skill 迁移到 OpenLogos 插件 | Codex Skill 归属判定 | `.agents/skills/release-guard/SKILL.md` 存在 | sync | 文件原样保留；`openlogos` 插件不新增 `release-guard` |
+| UT-S08-10 | sync 可刷新 OpenLogos 官方 Codex skills | Codex 官方 skill 同步 | `openlogos` 插件内存在旧版 `prd-writer` | sync | 官方 skill 被刷新为当前模板 |
+| UT-S08-11 | sync 保留 Claude `.claude/skills` 项目技能 | Claude Skill 边界 | `.claude/skills/release-guard/SKILL.md` 存在 | sync | 项目 skill 内容与路径不变；OpenLogos 官方插件不包含该 skill |
+| UT-S08-12 | sync 输出项目 skill 命名空间诊断 | 同步结果输出 | 存在项目专属 Codex 或 Claude skill | sync | 输出中说明项目 skill 未进入 OpenLogos 命名空间 |
+
+### 4.2 场景测试用例补充
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S08-04 | sync 保留 Codex 项目插件并刷新 OpenLogos 插件 | Step 8→10 | 已初始化 Codex 项目，marketplace 含 `openlogos` 与 `adcn` | 执行 sync | `openlogos` 插件刷新；`adcn` 插件不被删除、改名或重排为 OpenLogos 插件 |
+| ST-S08-05 | sync 保留历史 `.agents/skills` 项目 skill | Step 8→10 | 已初始化项目存在 `.agents/skills/release-guard/SKILL.md` | 执行 sync | 项目 skill 原样保留；生成说明不出现 `openlogos:release-guard` |
+| ST-S08-06 | sync 保留 Claude 项目 skill 并刷新托管片段 | Step 7→10 | 已初始化 Claude 项目，`.claude/skills/release-guard/SKILL.md` 与 `CLAUDE.md` 均存在 | 执行 sync | `CLAUDE.md` managed block 刷新；项目 skill 原样保留且单独分组 |
+
+### 4.3 覆盖度校验补充
+- [x] Codex marketplace 项目插件保留：已覆盖（UT-S08-08 / ST-S08-04）
+- [x] 历史 `.agents/skills` 项目 skill 不被吸收：已覆盖（UT-S08-09 / ST-S08-05）
+- [x] OpenLogos 官方 Codex skills 可刷新：已覆盖（UT-S08-10）
+- [x] Claude 项目 skill 保留：已覆盖（UT-S08-11 / ST-S08-06）
+- [x] 同步输出命名空间诊断：已覆盖（UT-S08-12）

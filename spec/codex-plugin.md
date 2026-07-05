@@ -14,26 +14,26 @@
 
 ### 模式 A：兼容模式（当前可用）
 
-- 输入：`AGENTS.md` + `logos/skills/*/SKILL.md`
-- 适用：未安装插件或插件异常时
-- 特点：零额外安装，体验相对基础
+- 输入：`AGENTS.md` + OpenLogos managed block；历史项目可能还存在 `.codex-plugin/` 或 `.agents/skills/*`
+- 适用：未安装插件、插件异常或历史项目尚未迁移 repo marketplace 时
+- 特点：零额外安装，体验相对基础；不得把项目专属 skill 解释为 OpenLogos 官方 skill
 
-### 模式 B：原生插件模式（推荐）
+### 模式 B：repo marketplace 原生插件模式（推荐）
 
-- 输入：`openlogos init/sync` 自动生成的 `.codex-plugin/plugin.json`、`.codex-plugin/hooks/session-start.sh`、`.codex/config.toml`
-- 适用：希望获得 SessionStart Phase 注入、技能自动加载、统一工作流控制
-- 特点：体验增强，便于分发与版本管理
+- 输入：`openlogos init/sync` 自动生成或维护的 `.agents/plugins/marketplace.json`、`.agents/plugins/openlogos/`、`.codex/config.toml`
+- 适用：希望获得 SessionStart Phase 注入、技能自动加载、统一工作流控制，并与项目插件共存
+- 特点：OpenLogos 方法论技能处于 `openlogos` 插件命名空间；项目专属技能处于项目自己的插件命名空间或 repo-scoped local skill
 
 ## 与其他工具的对比
 
 | 维度 | Claude Code | OpenCode | Codex |
 |---|---|---|---|
 | 指令文件 | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` |
-| 技能路径 | `logos/skills/` | `logos/skills/` | `.agents/skills/<name>/SKILL.md` |
-| 插件清单 | `plugin/` 目录 | `.opencode/plugins/openlogos.js` | `.codex-plugin/plugin.json` |
+| 技能路径 | `logos/skills/` / `.claude/skills/` | `logos/skills/` | `.agents/plugins/openlogos/skills/` + 项目插件或 repo-scoped local skill |
+| 插件清单 | `plugin/` 目录 | `.opencode/plugins/openlogos.js` | `.agents/plugins/marketplace.json` + `.agents/plugins/openlogos/.codex-plugin/plugin.json` |
 | 配置文件 | `.claude/settings.json` | `opencode.json` | `.codex/config.toml` |
 | Hook 协议 | stdin/stdout JSON | 事件驱动 JS | stdin/stdout JSON（同 Claude Code） |
-| 技能调用语法 | `/skill-name` | `/openlogos:*` | `$skill-name` |
+| 技能调用语法 | `/skill-name` 或插件命名空间命令 | `/openlogos:*` | `$openlogos:<skill>`；项目技能使用 `$<project-plugin>:<skill>` 或本地 skill 名 |
 | SessionStart | `hooks.json` | `session.created` | `[[hooks.SessionStart]]` |
 
 ## 目录结构
@@ -41,7 +41,8 @@
 ```text
 openlogos/
 ├── plugin-codex/
-│   ├── plugin.json            # 插件清单模板
+│   ├── plugin.json            # OpenLogos 插件清单模板
+│   ├── marketplace.json       # repo marketplace 条目模板
 │   └── session-start.sh       # SessionStart hook 脚本模板
 └── spec/codex-plugin.md       # 本规范文档
 ```
@@ -51,18 +52,49 @@ openlogos/
 ```text
 <user-project>/
 ├── .agents/
+│   ├── plugins/
+│   │   ├── marketplace.json
+│   │   ├── openlogos/
+│   │   │   ├── .codex-plugin/
+│   │   │   │   └── plugin.json
+│   │   │   ├── hooks/
+│   │   │   │   └── session-start.sh
+│   │   │   └── skills/
+│   │   │       ├── prd-writer/SKILL.md
+│   │   │       ├── scenario-architect/SKILL.md
+│   │   │       └── ... (OpenLogos 官方 skill)
+│   │   └── <project-plugin>/
+│   │       └── skills/<project-skill>/SKILL.md
 │   └── skills/
-│       ├── prd-writer/SKILL.md
-│       ├── scenario-architect/SKILL.md
-│       └── ... (全部 13 个 skill)
-├── .codex-plugin/
-│   ├── plugin.json
-│   └── hooks/
-│       └── session-start.sh
+│       └── <legacy-or-local-project-skill>/SKILL.md
 ├── .codex/
 │   └── config.toml
 └── AGENTS.md                  # 兜底指令（始终保留）
 ```
+
+## Skill 命名空间边界
+
+Codex 中 `openlogos` 是 OpenLogos 官方方法论命名空间。该命名空间只允许包含 OpenLogos 分发的 Skills，例如 `openlogos:prd-writer`、`openlogos:scenario-architect`、`openlogos:change-writer`。
+
+项目 / 产品 / 仓库专属 Skills 必须满足以下任一条件：
+1. 位于项目自己的插件命名空间，例如 `adcn:release-guard`。
+2. 位于明确的 repo-scoped local skill 目录，并在 `AGENTS.md` 中以项目专属技能分组说明。
+3. 保留在历史 `.agents/skills/*` 时，不被 OpenLogos 同步逻辑重命名或复制到 `openlogos` 插件。
+
+禁止行为：
+- 不得把 `.agents/skills/release-guard/SKILL.md` 复制到 `.agents/plugins/openlogos/skills/release-guard/SKILL.md`。
+- 不得在 marketplace 中把项目插件条目改名为 `openlogos`。
+- 不得在 `AGENTS.md` 中把项目专属技能描述为 OpenLogos 官方方法论技能。
+
+## 兼容迁移策略
+
+`openlogos init/sync --ai-tool codex` 的迁移策略：
+1. 若项目没有 Codex 插件资产，生成 repo marketplace 和 `openlogos` 插件。
+2. 若项目存在历史 `.codex-plugin/`，保留兼容入口，并优先生成新 marketplace 结构；只有确认属于 OpenLogos 自有模板的文件才可刷新。
+3. 若项目存在 `.agents/skills/<name>/SKILL.md`，只有 `<name>` 是 OpenLogos 官方技能且处于 OpenLogos 托管范围内时才可迁移；其它 skill 原样保留并输出项目专属诊断。
+4. 若 `.agents/plugins/marketplace.json` 已存在项目插件条目，只更新或插入 `openlogos` 条目，不删除、不排序、不改写项目条目。
+
+迁移完成后，`AGENTS.md` 必须说明 `openlogos:<skill>` 仅代表 OpenLogos 方法论技能，项目专属技能应使用项目命名空间。
 
 ## 构建与发布边界
 
@@ -98,7 +130,7 @@ Codex 支持的 SessionStart 输出字段：`systemMessage`、`stopReason`。
 
 ## 命令调用
 
-Codex 使用 `$skill-name` 语法调用技能（不同于 Claude Code 的 `/skill-name`）。`AGENTS.md` 中的 Active Skills 章节应使用 `$` 前缀说明。
+Codex 使用 `$<skill>` 语法调用技能（不同于 Claude Code 的 `/skill-name`）。OpenLogos 方法论技能必须带 `openlogos` 命名空间，例如 `$openlogos:prd-writer`、`$openlogos:change-writer`。项目插件技能必须使用项目插件命名空间，例如 `$adcn:release-guard`；repo-scoped local skill 可按 Codex 本地 skill 名展示，但必须在 `AGENTS.md` 中归入“项目专属 Skills”。`AGENTS.md` 中的 Active Skills 章节应使用 `$` 前缀并分组说明。
 
 ## 配置格式（`.codex/config.toml`）
 
@@ -126,10 +158,10 @@ statusMessage = "Loading OpenLogos phase context..."
 
 | 模式 | 配置 | 技能来源 | CLI 桥接 |
 |---|---|---|---|
-| **兼容**（兜底） | `AGENTS.md` only | `logos/skills/` | 无 |
-| **原生插件**（推荐） | `.codex-plugin/` + `.codex/config.toml` | `.agents/skills/` | `session-start.sh` → `openlogos status` |
+| **兼容**（兜底） | `AGENTS.md` only，或历史 `.codex-plugin/` | `logos/skills/` / 历史 OpenLogos skill 路径；项目 skill 仍按项目资产处理 | 无或历史 `session-start.sh` |
+| **原生插件**（推荐） | `.agents/plugins/marketplace.json` + `.agents/plugins/openlogos/` + `.codex/config.toml` | OpenLogos 插件内 `skills/`；项目插件或 repo-scoped local skill 单独存在 | `session-start.sh` → `openlogos status` |
 
-原生插件模式为推荐路径。`AGENTS.md` 始终保留作为降级兜底。
+原生插件模式为推荐路径。`AGENTS.md` 始终保留作为降级兜底。兼容模式与原生插件模式都必须保持 OpenLogos 方法论命名空间和项目专属 Skill 命名空间分离。
 
 ## 验收标准（文档阶段）
 

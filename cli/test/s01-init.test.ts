@@ -15,6 +15,7 @@ import {
   deployClaudeCodePlugin,
   findClaudePluginTemplateSource,
   generatePolicyMdc,
+  deployCodexPlugin,
   createCodexSkillContent,
   mergeAiToolConfig,
   resolveDocsAiToolForTarget,
@@ -191,10 +192,11 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(zh).toContain('遵循 OpenLogos');
   });
 
-  it('UT-S01-10b: createAgentsMd uses .agents skill paths for codex agents target', () => {
+  it('UT-S01-10b: createAgentsMd uses Codex openlogos plugin skill paths for codex agents target', () => {
     const output = createAgentsMd('en', 'codex', 'agents');
-    expect(output).toContain('.agents/skills/prd-writer/SKILL.md');
-    expect(output).not.toContain('logos/skills/prd-writer/SKILL.md');
+    expect(output).toContain('$openlogos:prd-writer');
+    expect(output).toContain('.agents/plugins/openlogos/skills/prd-writer/SKILL.md');
+    expect(output).not.toContain('`logos/skills/prd-writer/SKILL.md`');
   });
 
   it('UT-S01-10c: resolveDocsAiToolForTarget keeps cursor+codex AGENTS.md on Codex skill paths', () => {
@@ -580,10 +582,10 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     try {
       const result = deploySkills(root, 'codex', 'en');
       expect(result).not.toBeNull();
-      expect(result!.target).toBe('.agents/skills/');
+      expect(result!.target).toBe('.agents/plugins/openlogos/skills/');
       expect(result!.count).toBe(17);
 
-      const content = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+      const content = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
       expect(content).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---\n\n# Skill: PRD Writer/);
     } finally {
       cleanup();
@@ -610,6 +612,92 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     } finally {
       cleanup();
     }
+  });
+
+  it('UT-S01-49: Codex init assets use repo marketplace and OpenLogos plugin namespace', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      const skillsResult = deploySkills(root, 'codex', 'en');
+      const pluginResult = deployCodexPlugin(root, 'en');
+
+      expect(skillsResult?.target).toBe('.agents/plugins/openlogos/skills/');
+      expect(pluginResult).not.toBeNull();
+      expect(existsSync(join(root, '.agents', 'plugins', 'marketplace.json'))).toBe(true);
+      expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
+
+      const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
+      expect(marketplace.plugins).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'openlogos', path: '.agents/plugins/openlogos' }),
+      ]));
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-50: Codex init does not absorb project-specific .agents/skills into openlogos', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      mkdirSync(join(root, '.agents', 'skills', 'release-guard'), { recursive: true });
+      writeFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+      deploySkills(root, 'codex', 'en');
+      deployCodexPlugin(root, 'en');
+
+      expect(readFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+      expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'release-guard', 'SKILL.md'))).toBe(false);
+      expect(createAgentsMd('en', 'codex', 'agents')).not.toContain('$openlogos:release-guard');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-51: Codex init preserves historical .codex-plugin while creating new marketplace assets', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      mkdirSync(join(root, '.codex-plugin'), { recursive: true });
+      writeFileSync(join(root, '.codex-plugin', 'plugin.json'), '{"name":"legacy-custom"}\n');
+      writeFileSync(join(root, '.codex-plugin', 'custom.txt'), 'keep\n');
+
+      deployCodexPlugin(root, 'en');
+
+      expect(readFileSync(join(root, '.codex-plugin', 'plugin.json'), 'utf-8')).toBe('{"name":"legacy-custom"}\n');
+      expect(readFileSync(join(root, '.codex-plugin', 'custom.txt'), 'utf-8')).toBe('keep\n');
+      expect(existsSync(join(root, '.agents', 'plugins', 'marketplace.json'))).toBe(true);
+      expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-52: Claude Code init preserves .claude/skills project skills outside OpenLogos plugin', () => {
+    const { root, cleanup } = makeTempRoot();
+    try {
+      mkdirSync(join(root, '.claude', 'skills', 'release-guard'), { recursive: true });
+      writeFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+      deployClaudeCodePlugin(root, 'en');
+      deploySkills(root, 'claude-code', 'en');
+
+      expect(readFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+      expect(existsSync(join(root, 'logos', 'skills', 'release-guard', 'SKILL.md'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('UT-S01-53: generated instructions group OpenLogos and project-specific Skills', () => {
+    const codex = createAgentsMd('en', 'codex', 'agents');
+    expect(codex).toContain('### OpenLogos Methodology Skills');
+    expect(codex).toContain('### Project-Specific Skills');
+    expect(codex).toContain('$openlogos:prd-writer');
+    expect(codex).toContain('$<plugin>:<skill>');
+    expect(codex).not.toContain('$openlogos:release-guard');
+
+    const claude = createAgentsMd('en', 'claude-code', 'claude');
+    expect(claude).toContain('### OpenLogos Methodology Skills');
+    expect(claude).toContain('### Project-Specific Skills');
+    expect(claude).toContain('.claude/skills/<skill>/SKILL.md');
   });
 });
 
@@ -853,7 +941,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(con.logs.join('\n')).toContain('无法推断 verify 预跑配置');
   });
 
-  it('ST-S01-06: name conflict — user selects package.json name', async () => {
+  it('ST-S01-06-legacy: name conflict — user selects package.json name', async () => {
     process.stdin.isTTY = true;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'old-name' }));
     readlineAnswers = ['1', '4', '2']; // English, Cursor (option 4), choose package.json name
@@ -866,7 +954,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('old-name');
   });
 
-  it('ST-S01-07: choose Claude Code → deploys to logos/skills/ and .claude/ plugin assets', async () => {
+  it('ST-S01-07-legacy: choose Claude Code → deploys to logos/skills/ and .claude/ plugin assets', async () => {
     process.stdin.isTTY = true;
     readlineAnswers = ['1', '1']; // English, Claude Code (option 1, default)
 
@@ -926,7 +1014,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogsOc).toContain('slash commands');
   });
 
-  it('ST-S01-08: choose Other → both files include Active Skills', async () => {
+  it('ST-S01-08-legacy: choose Other → both files include Active Skills', async () => {
     process.stdin.isTTY = true;
     readlineAnswers = ['1', '5']; // English, Other (option 5)
 
@@ -941,6 +1029,55 @@ describe('S01 Scenario Tests — init command', () => {
     expect(claude).toContain('## Active Skills');
 
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+  });
+
+  it('ST-S01-06: Codex initialization creates OpenLogos marketplace and preserves project plugin', async () => {
+    mkdirSync(join(root, '.agents', 'plugins', 'adcn', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'plugins', 'adcn', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+    mkdirSync(join(root, '.agents', 'plugins'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), JSON.stringify({
+      plugins: [
+        { id: 'adcn', name: 'ADCN', path: '.agents/plugins/adcn' },
+      ],
+    }, null, 2));
+
+    await init('codex-marketplace', { locale: 'en', aiTool: 'codex' });
+
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(readFileSync(join(root, '.agents', 'plugins', 'adcn', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+
+    const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
+    expect(marketplace.plugins).toEqual([
+      expect.objectContaining({ id: 'adcn', path: '.agents/plugins/adcn' }),
+      expect.objectContaining({ id: 'openlogos', path: '.agents/plugins/openlogos' }),
+    ]);
+  });
+
+  it('ST-S01-07: Codex initialization does not expose project skill as OpenLogos skill', async () => {
+    mkdirSync(join(root, '.agents', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+    await init('codex-local-skill', { locale: 'en', aiTool: 'codex' });
+
+    expect(readFileSync(join(root, '.agents', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'release-guard', 'SKILL.md'))).toBe(false);
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agents).toContain('Project-Specific Skills');
+    expect(agents).not.toContain('$openlogos:release-guard');
+    expect(con.logs.join('\n')).toContain('Project-specific Codex skills/plugins were preserved outside the OpenLogos namespace.');
+  });
+
+  it('ST-S01-08: Claude initialization preserves project-specific .claude/skills', async () => {
+    mkdirSync(join(root, '.claude', 'skills', 'release-guard'), { recursive: true });
+    writeFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), '# Release Guard\n');
+
+    await init('claude-project-skill', { locale: 'en', aiTool: 'claude-code' });
+
+    expect(readFileSync(join(root, '.claude', 'skills', 'release-guard', 'SKILL.md'), 'utf-8')).toBe('# Release Guard\n');
+    expect(existsSync(join(root, 'logos', 'skills', 'release-guard', 'SKILL.md'))).toBe(false);
+    const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
+    expect(claude).toContain('Project-Specific Skills');
+    expect(claude).toContain('.claude/skills/<skill>/SKILL.md');
   });
 
   it('ST-S01-09: Chinese locale with Claude Code', async () => {
@@ -960,23 +1097,32 @@ describe('S01 Scenario Tests — init command', () => {
     expect(claude).toContain('需求文档编写');
   });
 
-  it('ST-S01-10: init with codex deploys native plugin assets and binds AGENTS.md to .agents skills', async () => {
+  it('ST-S01-10: init with codex deploys native plugin assets and binds AGENTS.md to openlogos plugin skills', async () => {
     await init('codex-project', { locale: 'en', aiTool: 'codex' });
 
-    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'hooks', 'session-start.sh'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'marketplace.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'hooks', 'session-start.sh'))).toBe(true);
+    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(false);
     expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
-    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
-    expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+    expect(agents).toContain('$openlogos:prd-writer');
+    expect(agents).toContain('.agents/plugins/openlogos/skills/prd-writer/SKILL.md');
+    expect(agents).toContain('Project-Specific Skills');
+    expect(agents).not.toContain('`logos/skills/prd-writer/SKILL.md`');
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
     expect(codexConfig).toContain('[plugins.openlogos]');
-    expect(codexConfig).toContain('command = ".codex-plugin/hooks/session-start.sh"');
+    expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
 
-    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
+    expect(marketplace.plugins).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'openlogos', path: '.agents/plugins/openlogos' }),
+    ]));
+
+    const skill = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
     expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
   });
 
@@ -1017,7 +1163,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     const output = execFileSync(
       'bash',
-      [join(root, '.codex-plugin', 'hooks', 'session-start.sh')],
+      [join(root, '.agents', 'plugins', 'openlogos', 'hooks', 'session-start.sh')],
       {
         cwd: root,
         env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ''}` },
@@ -1038,12 +1184,12 @@ describe('S01 Scenario Tests — init command', () => {
   it('ST-S01-11: init with all includes codex assets and keeps shared logos skills for compatibility', async () => {
     await init('all-project', { locale: 'en', aiTool: 'all' });
 
-    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
 
-    const codexSkill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    const codexSkill = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
     expect(codexSkill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
 
     const sharedSkill = readFileSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
@@ -1073,24 +1219,24 @@ describe('S01 Scenario Tests — init command', () => {
 
     const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
     expect(updatedConfig.aiTool).toEqual(['cursor', 'codex']);
-    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, '.codex', 'config.toml'))).toBe(true);
     expect(readFileSync(resourcePath, 'utf-8')).toBe('# existing requirements');
     expect(readFileSync(yamlPath, 'utf-8')).toContain('custom: keep-me');
 
-    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    const skill = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
     expect(skill).toMatch(/^---\nname: "prd-writer"\ndescription: "Requirements document authoring"\n---/);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
-    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
-    expect(agents).not.toContain('logos/skills/prd-writer/SKILL.md');
+    expect(agents).toContain('.agents/plugins/openlogos/skills/prd-writer/SKILL.md');
+    expect(agents).not.toContain('`logos/skills/prd-writer/SKILL.md`');
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).not.toContain('## Active Skills');
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('Adding AI tool target(s)');
-    expect(allLogs).toContain('17 skills synced to .agents/skills/');
+    expect(allLogs).toContain('17 skills synced to .agents/plugins/openlogos/skills/');
     expect(allLogs).toContain('Codex plugin synced');
   });
 
@@ -1108,7 +1254,7 @@ describe('S01 Scenario Tests — init command', () => {
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(agents).toContain('team agents rule');
-    expect(agents).toContain('.agents/skills/prd-writer/SKILL.md');
+    expect(agents).toContain('.agents/plugins/openlogos/skills/prd-writer/SKILL.md');
     expect(claude).toContain('team claude rule');
     expect(agents.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
     expect(claude.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
@@ -1126,10 +1272,10 @@ describe('S01 Scenario Tests — init command', () => {
     const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
     expect(updatedConfig.aiTool).toEqual(['claude-code', 'opencode', 'codex', 'cursor']);
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
-    expect(existsSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
-    expect(existsSync(join(root, '.codex-plugin', 'plugin.json'))).toBe(true);
+    expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, '.claude', 'commands', 'openlogos'))).toBe(true);
 
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
@@ -1152,10 +1298,10 @@ describe('S01 Scenario Tests — init command', () => {
     expect(updatedConfig.aiTool).toEqual(['cursor', 'codex']);
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
-    const hookMatches = codexConfig.match(/command = "\.codex-plugin\/hooks\/session-start\.sh"/g) ?? [];
+    const hookMatches = codexConfig.match(/command = "\.agents\/plugins\/openlogos\/hooks\/session-start\.sh"/g) ?? [];
     expect(hookMatches).toHaveLength(1);
 
-    const skill = readFileSync(join(root, '.agents', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
+    const skill = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
     const frontmatterMatches = skill.match(/^---$/gm) ?? [];
     expect(frontmatterMatches).toHaveLength(2);
   });

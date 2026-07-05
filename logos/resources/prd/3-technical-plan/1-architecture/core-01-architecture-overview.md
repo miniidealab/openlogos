@@ -4,12 +4,13 @@
 OpenLogos 由 CLI、规范源码、Skills、插件模板、静态文档站和示例项目组成。
 
 ## 二、系统组件
-- `cli/`：核心命令和阶段判断逻辑。
+- `cli/`：核心命令、阶段判断逻辑、AI 工具资产同步逻辑和插件模板部署逻辑。
 - `spec/`：方法论规范源码。
-- `skills/`：AI Skills。
-- `plugin/`、`plugin-codex/`、`plugin-opencode/`：宿主工具插件模板。
+- `skills/`：OpenLogos 方法论 Skills 源码。
+- `plugin/`、`plugin-codex/`、`plugin-opencode/`：宿主工具插件模板；其中 OpenLogos 官方插件只承载 OpenLogos 方法论技能。
 - `website/`：文档站。
 - `logos/resources/`：项目内真相源。
+- 用户项目中的 `.agents/plugins/`、`.claude/skills/`、项目独立插件目录：项目 / 产品 / 仓库专属 Skill 的归属位置，不属于 OpenLogos 官方方法论命名空间。
 
 ## 三、技术选型
 - 语言：TypeScript。
@@ -82,6 +83,69 @@ OpenLogos 由 CLI、规范源码、Skills、插件模板、静态文档站和示
 | 提案级部署决策解析 | `cli/src/commands/status.ts`、`cli/src/commands/next.ts` | `cli/test/s05-next.test.ts`、`cli/test/s11-status.test.ts` |
 | 提案模板部署影响字段 | `cli/src/i18n.ts`、`cli/src/commands/change.ts` | `cli/test/s09-change.test.ts` |
 | JSON 输出部署决策 | `cli/src/commands/status.ts`、`cli/src/lib/json-output.ts` | `cli/test/s16-json-output.test.ts` |
+
+## 八.A AI Skill 命名空间边界架构
+
+OpenLogos 的 AI 资产同步由“官方方法论插件”和“项目专属技能”两条边界组成。
+
+### Codex repo marketplace
+
+Codex 新版推荐部署结构：
+
+```text
+<user-project>/
+├── .agents/
+│   ├── plugins/
+│   │   ├── marketplace.json
+│   │   ├── openlogos/
+│   │   │   ├── .codex-plugin/plugin.json
+│   │   │   ├── hooks/session-start.sh
+│   │   │   └── skills/<openlogos-skill>/SKILL.md
+│   │   └── <project-plugin>/
+│   │       └── skills/<project-skill>/SKILL.md
+│   └── skills/
+│       └── <legacy-or-local-project-skill>/SKILL.md
+├── .codex/
+│   └── config.toml
+└── AGENTS.md
+```
+
+规则：
+1. `openlogos` 插件命名空间只由 OpenLogos CLI 维护，只包含 OpenLogos 方法论技能、OpenLogos SessionStart hook 和 OpenLogos 上下文注入逻辑。
+2. 项目专属技能必须保留在项目插件命名空间或 repo-scoped local skill 目录；未知 skill 默认按项目资产处理。
+3. `.agents/plugins/marketplace.json` 是 repo marketplace 入口，用于声明 `openlogos` 插件与项目插件并存；`sync` 可刷新 OpenLogos 条目，不删除或改写项目插件条目。
+4. 历史 `.codex-plugin/` 继续作为兼容路径；迁移时只迁移 OpenLogos 自有资产，不吸收未知 `.agents/skills/*`。
+
+### Claude Code 边界
+
+Claude Code 中 OpenLogos 官方插件只承载 OpenLogos 方法论技能、guard 和 hook。项目专属技能推荐位于：
+
+```text
+<user-project>/
+├── .claude/
+│   └── skills/<project-skill>/SKILL.md
+└── plugin/
+    └── <project-plugin>/skills/<project-skill>/SKILL.md
+```
+
+规则：
+1. OpenLogos 官方 Claude 插件不得把 `.claude/skills/*` 项目技能复制到 OpenLogos 插件 `plugin/skills`。
+2. 项目插件若需要分发，应使用项目自己的命名空间，例如 `/adcn:release-guard`，不得使用 `/openlogos:*`。
+3. `CLAUDE.md` managed block 负责说明边界，不负责重排项目技能目录。
+
+### 实现映射补充
+
+| 能力 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| Codex repo marketplace 生成与兼容迁移 | `cli/src/commands/init.ts`、`cli/src/commands/sync.ts`、`plugin-codex/`、`.codex-plugin/` | `cli/test/s01-init.test.ts`、`cli/test/s08-sync.test.ts` |
+| OpenLogos / 项目 Skill 归属判定 | `cli/src/commands/init.ts`、`cli/src/commands/sync.ts` | `cli/test/s01-init.test.ts`、`cli/test/s08-sync.test.ts` |
+| Claude Code 项目技能边界说明 | `cli/src/commands/init.ts`、`cli/src/commands/sync.ts`、`cli/src/commands/launch.ts`、`plugin/` | `cli/test/s01-init.test.ts`、`cli/test/s08-sync.test.ts`、`cli/test/s14-launch.test.ts` |
+| 生成文档与官网同步 | `spec/agents-md.md`、`spec/codex-plugin.md`、`website/` | `cli/test/s01-init.test.ts`、`cli/test/s08-sync.test.ts`、发布 smoke |
+
+### 不变量
+- 无项目专属 skill 的项目，生成的 OpenLogos 方法论体验应保持兼容。
+- 已有项目专属 skill 的项目，执行 `init --ai-tool`、`sync` 或 `launch` 后，项目 skill 的路径、命名空间和内容不得被 OpenLogos 托管逻辑重写。
+- AI 工具运行时上下文必须能表达“OpenLogos 方法论规则”和“当前仓库规则”的区别；若两者同时存在，项目规则可补充具体工程约束，但不得删除或绕过 OpenLogos 变更管理门禁。
 
 ## 九、verify 预执行架构
 verify 预执行由 CLI 统一编排，RunLogos 等客户端只调用 `openlogos verify --format json`，不复制测试编排逻辑。

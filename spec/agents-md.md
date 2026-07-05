@@ -70,17 +70,23 @@ Deployment rules:
 4. Initial modules can be launched only after verify, deployment, and smoke gates pass, unless explicitly marked as not requiring deployment
 
 ## Active Skills
-[根据 `logos.config.json` 的 `aiTool` 字段动态生成]
+[根据 `logos.config.json` 的 `aiTool` 字段动态生成，并按 OpenLogos 方法论技能与项目专属技能分组]
 
-当 aiTool = "cursor" 时，列出 `.cursor/rules/` 下部署的 `.mdc` 文件：
+当 aiTool = "cursor" 时，列出 `.cursor/rules/` 下部署的 OpenLogos `.mdc` 文件：
 - `skills/prd-writer` — `.cursor/rules/prd-writer.mdc`
 - `skills/product-designer` — `.cursor/rules/product-designer.mdc`
 - ...（共 13 项）
 
-当 aiTool = "claude-code" 或 "other" 时，列出 `logos/skills/` 下部署的 `SKILL.md` 文件：
+当 aiTool = "claude-code" 或 "other" 时，列出 `logos/skills/` 下部署的 OpenLogos 方法论 `SKILL.md` 文件：
 - `skills/prd-writer` — `logos/skills/prd-writer/SKILL.md`
 - `skills/product-designer` — `logos/skills/product-designer/SKILL.md`
 - ...（共 13 项）
+
+若项目存在 `.claude/skills/<skill>/SKILL.md`，生成内容必须单独列为“项目专属 Skills”，并说明它们属于当前仓库规则，不属于 OpenLogos 官方方法论插件；不得把它们描述成 `/openlogos:*` 能力。
+
+当 aiTool = "codex" 时：
+- **兼容模式**：继续保留 `AGENTS.md` + OpenLogos managed block。
+- **原生插件模式（推荐）**：通过 `.agents/plugins/marketplace.json` 加载 `openlogos` 插件；OpenLogos 方法论技能显示为 `openlogos:<skill-name>`；项目专属技能必须位于项目自己的插件命名空间或明确的 repo-scoped local skill 中。
 
 当 aiTool = "opencode" 时：
 - **兼容模式**：继续使用 `AGENTS.md` + `logos/skills/*/SKILL.md`
@@ -120,6 +126,21 @@ AGENTS.md 的内容从以下文件中自动提取：
 8. If deployment is required, smoke tests must be designed and run via `openlogos smoke` after deployment
 9. For launched-project change proposals, deployment and smoke decisions must be made at proposal level. A module-level deployment gate is only a default and must not force deploy/smoke for a proposal that explicitly does not require deployment.
 10. After editing Markdown / text specs, re-read from disk and show excerpts to the user (see 「文档修改后的验证」生成段)
+
+### Skill 命名空间生成规则
+
+OpenLogos 生成的 AI 指令必须明确区分：
+
+| 类型 | 归属 | Codex 表达 | Claude Code 表达 | 说明 |
+|------|------|------------|------------------|------|
+| OpenLogos 方法论技能 | OpenLogos 官方 | `openlogos:<skill>` | OpenLogos 官方插件 / `logos/skills/*` | 只表达 OpenLogos 方法论流程 |
+| 项目专属技能 | 当前仓库或产品团队 | `<project-plugin>:<skill>` 或 repo-scoped local skill | `.claude/skills/<skill>` 或项目独立插件 | 表达当前仓库工程、发布、业务规则 |
+
+生成规则：
+1. `openlogos` 命名空间只用于 OpenLogos 官方方法论技能。
+2. 未知来源或用户自建 skill 默认视为项目专属技能。
+3. `AGENTS.md` / `CLAUDE.md` 可引用项目专属技能位置，但不得把项目专属技能归入 OpenLogos 官方插件。
+4. 若项目技能与 OpenLogos 方法论规则都适用，项目技能可补充更具体的工程约束，但不得绕过 OpenLogos 的设计、Delta、verify、deploy、smoke 门禁。
 
 ### 提案级部署门禁生成规则
 
@@ -164,19 +185,20 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 
 ## 多平台适配
 
-不同 AI 工具使用不同的指令文件名，但内容一致：
+不同 AI 工具使用不同的指令文件名和 Skill / 插件目录，但 OpenLogos 方法论技能与项目专属技能的边界必须一致：
 
-| 工具 | 指令文件 | Skills 部署位置 | 处理方式 |
-|------|---------|---------------|---------|
-| **Cursor** | `AGENTS.md`（原生支持） | `.cursor/rules/*.mdc` | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
-| **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
-| **OpenCode（兼容模式）** | `AGENTS.md` | `logos/skills/*/SKILL.md` | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
-| **OpenCode（原生插件模式）** | `opencode.json` + `.opencode/plugins/` | 插件内置/按需加载 | 由插件负责命令桥接与会话注入，`AGENTS.md` 作为兜底 |
-| **GitHub Copilot** | `.github/copilot-instructions.md` | 规划中 | Phase 1.5 |
+| 工具 | 指令文件 | OpenLogos Skills 部署位置 | 项目专属 Skills 推荐位置 | 处理方式 |
+|------|---------|--------------------------|--------------------------|---------|
+| **Cursor** | `AGENTS.md`（原生支持） | `.cursor/rules/*.mdc` | 项目自有 Cursor 规则目录 | `init` / `sync` 自动部署 OpenLogos 规则，并通过 managed block 合并根指令文件 |
+| **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` 或 OpenLogos 官方 Claude 插件 | `.claude/skills/<skill>/SKILL.md` 或项目独立 Claude 插件 | `init` / `sync` 自动部署 OpenLogos 托管资产；项目技能单独分组，不归入 `/openlogos:*` |
+| **Codex** | `AGENTS.md` | `.agents/plugins/openlogos/skills/*` | `.agents/plugins/<project-plugin>/skills/*` 或 repo-scoped local skill | `init` / `sync` 自动维护 repo marketplace 的 `openlogos` 条目；项目插件条目原样保留 |
+| **OpenCode（兼容模式）** | `AGENTS.md` | `logos/skills/*/SKILL.md` | 项目自有 OpenCode 插件或规则 | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
+| **OpenCode（原生插件模式）** | `opencode.json` + `.opencode/plugins/` | 插件内置/按需加载 | 项目自有 `.opencode/plugins/` | 由插件负责命令桥接与会话注入，`AGENTS.md` 作为兜底 |
+| **GitHub Copilot** | `.github/copilot-instructions.md` | 规划中 | 规划中 | Phase 1.5 |
 
 `openlogos sync` 命令会同时生成所有需要的指令文件，确保不同 AI 工具看到的 OpenLogos 托管片段一致。对于 OpenCode 原生插件模式，`sync` 仍保留 `AGENTS.md` 作为降级路径，避免插件不可用时流程中断。
 
-根目录指令文件可能已存在用户自定义规则。OpenLogos 在任何入口下都只能更新自身 managed block，不能覆盖用户在 block 外的内容。
+根目录指令文件可能已存在用户自定义规则。OpenLogos 在任何入口下都只能更新自身 managed block 和自身插件资产，不能覆盖用户在 block 外的内容，也不能把用户项目专属 Skill 吸收到 OpenLogos 官方命名空间。
 
 ## 与 logos-project.yaml 的关系
 

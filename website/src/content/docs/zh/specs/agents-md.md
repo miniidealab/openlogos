@@ -76,11 +76,15 @@ Active Skills 章节根据 `logos.config.json` 中的 `aiTool` 字段动态生�
 | `cursor` | `.cursor/rules/*.mdc` | `skills/{name}/` → `.cursor/rules/{name}.mdc` |
 | `claude-code` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
 | `opencode` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
-| `codex` | `.agents/skills/*/SKILL.md` | `.agents/skills/{name}/SKILL.md` |
+| `codex` | `.agents/plugins/openlogos/skills/*/SKILL.md` | `$openlogos:{name}` → `.agents/plugins/openlogos/skills/{name}/SKILL.md` |
 | `other` | `logos/skills/*/SKILL.md` | `logos/skills/{name}/SKILL.md` |
 | `all` 或数组 | 所有已配置的工具目标 | 多工具 Skill 路径 |
 
-全部 16 个内置 Skill 均带描述列出。
+全部 17 个内置 Skill 均带描述列出。
+
+对于 Codex，Active Skills 章节按命名空间分组。OpenLogos 方法论技能展示为 `$openlogos:<skill>`，并指向 `.agents/plugins/openlogos/skills/`。项目专属 Skills 保持在 OpenLogos 命名空间之外：项目插件技能使用 `.agents/plugins/<plugin>/skills/` 中的 `$<plugin>:<skill>`，历史或 repo-scoped local Skills 保留在 `.agents/skills/` 并归入项目专属分组。
+
+对于 Claude Code，OpenLogos 方法论 Skills 仍位于 `logos/skills/`；`.claude/skills/<skill>/SKILL.md` 下的项目技能单独作为项目专属分组保留，不会复制进 OpenLogos 官方插件。
 
 对于支持 Skill 绑定的工具（Claude Code、Cursor），阶段检测章节会包含直接文件路径，使 AI 能立即读取并执行 Skill 文件。
 
@@ -111,7 +115,7 @@ Active Skills 章节根据 `logos.config.json` 中的 `aiTool` 字段动态生�
 | **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` | 由 `init` / `sync` 自动部署 |
 | **OpenCode（兼容）** | `AGENTS.md` | `logos/skills/*/SKILL.md` | 由 `init` / `sync` 自动部署 |
 | **OpenCode（插件）** | `opencode.json` + `.opencode/plugins/` | 插件加载 | 插件处理命令桥接，`AGENTS.md` 作为回退 |
-| **Codex** | `AGENTS.md` + `.codex/config.toml` | `.agents/skills/*/SKILL.md` | 由 `init` / `sync` 自动部署 |
+| **Codex** | `AGENTS.md` + `.codex/config.toml` + `.agents/plugins/marketplace.json` | `$openlogos:<skill>` 使用 `.agents/plugins/openlogos/skills/*`；项目插件或 `.agents/skills/*` 单独保留 | `init` / `sync` 只刷新 marketplace 的 `openlogos` 条目并保留项目 Skills |
 | **GitHub Copilot** | `.github/copilot-instructions.md` | 计划中 | 未来版本 |
 
 `openlogos sync` 会同时生成所有需要的指令文件，确保各 AI 工具间指令一致。

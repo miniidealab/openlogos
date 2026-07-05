@@ -18,6 +18,10 @@ const WEBSITE_SMOKE_IDS = new Set([
   'SMOKE-core-22',
   'SMOKE-core-23',
   'SMOKE-core-24',
+  'SMOKE-core-34',
+  'SMOKE-core-35',
+  'SMOKE-core-36',
+  'SMOKE-core-37',
 ]);
 
 function removePreviousWebsiteResults() {
@@ -290,6 +294,80 @@ async function run() {
     report('SMOKE-core-24', 'pass', 'Mermaid syntax safety rules are rendered on Skill docs pages');
   } catch (error) {
     report('SMOKE-core-24', 'fail', 'Mermaid syntax safety rules are rendered on Skill docs pages', String(error));
+    throw error;
+  }
+
+  try {
+    // SMOKE-core-34: Codex docs expose the repo marketplace and OpenLogos namespace.
+    const enCodex = readHtml('specs/codex-plugin/index.html');
+    const enAgents = readHtml('specs/agents-md/index.html');
+    assert(enCodex.includes('.agents/plugins/marketplace.json'), 'English Codex docs missing repo marketplace path');
+    assert(enCodex.includes('.agents/plugins/openlogos/skills/'), 'English Codex docs missing OpenLogos plugin skills path');
+    assert(enCodex.includes('$openlogos:prd-writer'), 'English Codex docs missing openlogos skill namespace');
+    assert(enAgents.includes('$openlogos:{name}') || enAgents.includes('$openlogos:&#x3C;skill>'),
+      'English AGENTS.md docs missing Codex openlogos skill expression');
+    report('SMOKE-core-34', 'pass', 'Codex docs render repo marketplace and OpenLogos namespace');
+  } catch (error) {
+    report('SMOKE-core-34', 'fail', 'Codex docs render repo marketplace and OpenLogos namespace', String(error));
+    throw error;
+  }
+
+  try {
+    // SMOKE-core-35: Codex docs state that project Skills stay outside OpenLogos.
+    const enCodex = readHtml('specs/codex-plugin/index.html');
+    const enAgents = readHtml('specs/agents-md/index.html');
+    assert(enCodex.includes('$adcn:release-guard'), 'English Codex docs missing project plugin namespace example');
+    assert(enCodex.includes('.agents/skills/'), 'English Codex docs missing legacy project skill path');
+    assert(enCodex.includes('preserved'), 'English Codex docs missing preservation language');
+    assert(enAgents.includes('project-specific Skills') || enAgents.includes('Project-specific Skills') || enAgents.includes('Project-Specific Skills'),
+      'English AGENTS.md docs missing project-specific Skills grouping');
+    assert(!enAgents.includes('$openlogos:release-guard'), 'English AGENTS.md docs incorrectly expose release-guard as OpenLogos skill');
+    report('SMOKE-core-35', 'pass', 'Codex docs preserve project-specific skill boundary');
+  } catch (error) {
+    report('SMOKE-core-35', 'fail', 'Codex docs preserve project-specific skill boundary', String(error));
+    throw error;
+  }
+
+  try {
+    // SMOKE-core-36: Claude Code project Skills are documented as separate from OpenLogos.
+    const enAgents = readHtml('specs/agents-md/index.html');
+    const zhAgents = readHtml('zh/specs/agents-md/index.html');
+    assert(enAgents.includes('.claude/skills/') && (
+      enAgents.includes('.claude/skills/&lt;skill&gt;/SKILL.md')
+      || enAgents.includes('.claude/skills/&#x3C;skill>/SKILL.md')
+      || enAgents.includes('.claude/skills/<skill>/SKILL.md')
+    ),
+      'English AGENTS.md docs missing .claude/skills project path');
+    assert(enAgents.includes('are not copied into the OpenLogos plugin'), 'English AGENTS.md docs missing Claude project skill boundary');
+    assert(zhAgents.includes('.claude/skills/') && (
+      zhAgents.includes('.claude/skills/&lt;skill&gt;/SKILL.md')
+      || zhAgents.includes('.claude/skills/&#x3C;skill>/SKILL.md')
+      || zhAgents.includes('.claude/skills/<skill>/SKILL.md')
+    ),
+      'Chinese AGENTS.md docs missing .claude/skills project path');
+    assert(zhAgents.includes('项目专属'), 'Chinese AGENTS.md docs missing project-specific skill grouping');
+    report('SMOKE-core-36', 'pass', 'Claude Code project skill boundary docs are rendered');
+  } catch (error) {
+    report('SMOKE-core-36', 'fail', 'Claude Code project skill boundary docs are rendered', String(error));
+    throw error;
+  }
+
+  try {
+    // SMOKE-core-37: English and Chinese docs both explain the Codex / Claude namespace boundary.
+    const enCodex = readHtml('specs/codex-plugin/index.html');
+    const enAgents = readHtml('specs/agents-md/index.html');
+    const zhCodex = readHtml('zh/specs/codex-plugin/index.html');
+    const zhAgents = readHtml('zh/specs/agents-md/index.html');
+    assert(enCodex.includes('Skill Namespace Boundary'), 'English Codex docs missing namespace boundary heading');
+    assert(enCodex.includes('.agents/plugins/openlogos/'), 'English Codex docs missing OpenLogos plugin directory');
+    assert(enAgents.includes('project-specific Skills') || enAgents.includes('Project-specific Skills') || enAgents.includes('Project-Specific Skills'),
+      'English AGENTS.md docs missing project-specific grouping');
+    assert(zhCodex.includes('Skill 命名空间边界'), 'Chinese Codex docs missing namespace boundary heading');
+    assert(zhCodex.includes('.agents/plugins/openlogos/'), 'Chinese Codex docs missing OpenLogos plugin directory');
+    assert(zhAgents.includes('项目专属 Skills'), 'Chinese AGENTS.md docs missing project-specific grouping');
+    report('SMOKE-core-37', 'pass', 'Bilingual docs render Codex and Claude Skill namespace boundary');
+  } catch (error) {
+    report('SMOKE-core-37', 'fail', 'Bilingual docs render Codex and Claude Skill namespace boundary', String(error));
     throw error;
   }
 

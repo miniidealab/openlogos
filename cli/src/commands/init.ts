@@ -16,6 +16,11 @@ export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' |
 
 const OPENLOGOS_BEGIN_MARKER = '<!-- OPENLOGOS:BEGIN -->';
 const OPENLOGOS_END_MARKER = '<!-- OPENLOGOS:END -->';
+const CODEX_OPENLOGOS_PLUGIN_ID = 'openlogos';
+const CODEX_OPENLOGOS_PLUGIN_REL_DIR = '.agents/plugins/openlogos';
+const CODEX_OPENLOGOS_SKILLS_REL_DIR = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/skills`;
+const CODEX_MARKETPLACE_REL_PATH = '.agents/plugins/marketplace.json';
+const CODEX_HOOK_REL_PATH = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/hooks/session-start.sh`;
 
 const ALL_DEPLOYABLE_AI_TOOLS: Exclude<AiTool, 'all'>[] = ['claude-code', 'opencode', 'codex', 'cursor'];
 
@@ -325,7 +330,7 @@ function mergeCodexConfig(root: string): { created: boolean; updated: boolean } 
   const configPath = join(configDir, 'config.toml');
 
   const pluginBlock = `\n[plugins.openlogos]\nenabled = true\n`;
-  const hookBlock = `\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = ".codex-plugin/hooks/session-start.sh"\ntimeout = 5\nasync = false\nstatusMessage = "Loading OpenLogos phase context..."\n`;
+  const hookBlock = `\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "${CODEX_HOOK_REL_PATH}"\ntimeout = 5\nasync = false\nstatusMessage = "Loading OpenLogos phase context..."\n`;
 
   mkdirSync(configDir, { recursive: true });
 
@@ -338,7 +343,7 @@ function mergeCodexConfig(root: string): { created: boolean; updated: boolean } 
   let content = existing;
   let changed = false;
   const hasPluginBlock = content.includes('[plugins.openlogos]');
-  const hasOpenLogosHook = content.includes('command = ".codex-plugin/hooks/session-start.sh"');
+  const hasOpenLogosHook = content.includes(`command = "${CODEX_HOOK_REL_PATH}"`);
 
   if (!hasPluginBlock) {
     content += pluginBlock;
@@ -355,12 +360,108 @@ function mergeCodexConfig(root: string): { created: boolean; updated: boolean } 
   return { created: false, updated: changed };
 }
 
-export function deployCodexPlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean } } | null {
+function createCodexMarketplaceEntry(): Record<string, unknown> {
+  return {
+    id: CODEX_OPENLOGOS_PLUGIN_ID,
+    name: 'OpenLogos',
+    path: CODEX_OPENLOGOS_PLUGIN_REL_DIR,
+    plugin: `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/.codex-plugin/plugin.json`,
+    description: 'OpenLogos methodology skills and session context for Codex',
+  };
+}
+
+function upsertCodexMarketplace(root: string): { created: boolean; updated: boolean } {
+  const marketplacePath = join(root, CODEX_MARKETPLACE_REL_PATH);
+  mkdirSync(dirname(marketplacePath), { recursive: true });
+
+  const entry = createCodexMarketplaceEntry();
+  if (!existsSync(marketplacePath)) {
+    writeFileSync(marketplacePath, JSON.stringify({ plugins: [entry] }, null, 2));
+    return { created: true, updated: true };
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(readFileSync(marketplacePath, 'utf-8'));
+  } catch {
+    return { created: false, updated: false };
+  }
+
+  const plugins = Array.isArray(data.plugins)
+    ? data.plugins as unknown[]
+    : [];
+  const index = plugins.findIndex((item) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const record = item as Record<string, unknown>;
+    return record.id === CODEX_OPENLOGOS_PLUGIN_ID || record.name === 'OpenLogos';
+  });
+
+  let changed = false;
+  if (index >= 0) {
+    const current = plugins[index] as Record<string, unknown>;
+    const merged = { ...current, ...entry };
+    if (JSON.stringify(current) !== JSON.stringify(merged)) {
+      plugins[index] = merged;
+      changed = true;
+    }
+  } else {
+    plugins.push(entry);
+    changed = true;
+  }
+
+  if (data.plugins !== plugins) {
+    data.plugins = plugins;
+    changed = true;
+  }
+
+  if (changed) {
+    writeFileSync(marketplacePath, JSON.stringify(data, null, 2));
+  }
+  return { created: false, updated: changed };
+}
+
+function countSkillDirs(path: string): number {
+  if (!existsSync(path)) return 0;
+  try {
+    return readdirSync(path, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .length;
+  } catch {
+    return 0;
+  }
+}
+
+function detectCodexProjectSkillBoundary(root: string): { legacySkillCount: number; projectPluginCount: number; hasLegacyPlugin: boolean } {
+  const legacySkillCount = countSkillDirs(join(root, '.agents', 'skills'));
+  let projectPluginCount = 0;
+  const pluginsDir = join(root, '.agents', 'plugins');
+  if (existsSync(pluginsDir)) {
+    try {
+      projectPluginCount = readdirSync(pluginsDir, { withFileTypes: true })
+        .filter(entry => entry.isDirectory() && entry.name !== CODEX_OPENLOGOS_PLUGIN_ID)
+        .length;
+    } catch { /* ignore unreadable project plugin dirs */ }
+  }
+  return {
+    legacySkillCount,
+    projectPluginCount,
+    hasLegacyPlugin: existsSync(join(root, '.codex-plugin')),
+  };
+}
+
+export function deployCodexPlugin(root: string, locale: Locale = 'en'): {
+  target: string;
+  config: { created: boolean; updated: boolean };
+  marketplace: { created: boolean; updated: boolean };
+  boundary: { legacySkillCount: number; projectPluginCount: number; hasLegacyPlugin: boolean };
+} | null {
   const source = findCodexPluginTemplateSource();
   if (!source || !existsSync(source)) return null;
 
-  const pluginDir = join(root, '.codex-plugin');
+  const pluginDir = join(root, CODEX_OPENLOGOS_PLUGIN_REL_DIR);
+  const codexPluginDir = join(pluginDir, '.codex-plugin');
   const hooksDir = join(pluginDir, 'hooks');
+  mkdirSync(codexPluginDir, { recursive: true });
   mkdirSync(hooksDir, { recursive: true });
 
   const pluginJsonSrc = join(source, 'plugin.json');
@@ -368,18 +469,20 @@ export function deployCodexPlugin(root: string, locale: Locale = 'en'): { target
 
   if (!existsSync(pluginJsonSrc) || !existsSync(hookSrc)) return null;
 
-  copyFileSync(pluginJsonSrc, join(pluginDir, 'plugin.json'));
+  copyFileSync(pluginJsonSrc, join(codexPluginDir, 'plugin.json'));
   const hookDest = join(hooksDir, 'session-start.sh');
   copyFileSync(hookSrc, hookDest);
   try { chmodSync(hookDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
 
+  const marketplaceResult = upsertCodexMarketplace(root);
   const configResult = mergeCodexConfig(root);
+  const boundary = detectCodexProjectSkillBoundary(root);
 
   const targetLabel = locale === 'zh'
-    ? '.codex-plugin/ + .codex/config.toml'
-    : '.codex-plugin/ + .codex/config.toml';
+    ? '.agents/plugins/openlogos/ + .agents/plugins/marketplace.json + .codex/config.toml'
+    : '.agents/plugins/openlogos/ + .agents/plugins/marketplace.json + .codex/config.toml';
 
-  return { target: targetLabel, config: configResult };
+  return { target: targetLabel, config: configResult, marketplace: marketplaceResult, boundary };
 }
 
 function mergeOpenCodeConfig(root: string) {
@@ -745,6 +848,13 @@ export function deployAiToolAssets(
       } else if (codexResult.config.updated) {
         console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
       }
+      if (
+        codexResult.boundary.legacySkillCount > 0
+        || codexResult.boundary.projectPluginCount > 0
+        || codexResult.boundary.hasLegacyPlugin
+      ) {
+        console.log(`  ℹ ${t(locale, 'init.codexProjectSkillsPreserved')}`);
+      }
     }
   }
 
@@ -1027,7 +1137,7 @@ export function deploySkills(
   }
 
   if (aiTool === 'codex') {
-    const targetDir = join(root, '.agents', 'skills');
+    const targetDir = join(root, CODEX_OPENLOGOS_SKILLS_REL_DIR);
     for (const name of SKILL_NAMES) {
       const skillDir = join(targetDir, name);
       mkdirSync(skillDir, { recursive: true });
@@ -1038,7 +1148,7 @@ export function deploySkills(
         count++;
       }
     }
-    return { target: '.agents/skills/', count };
+    return { target: `${CODEX_OPENLOGOS_SKILLS_REL_DIR}/`, count };
   }
 
   const targetDir = join(root, 'logos', 'skills');
@@ -1065,18 +1175,43 @@ function shouldIncludeActiveSkills(aiTool: AiTool, target: 'agents' | 'claude'):
 
 function skillBasePath(aiTool: AiTool | undefined, target: 'agents' | 'claude' | undefined): string {
   if (aiTool === 'codex' && target === 'agents') {
-    return '.agents/skills';
+    return CODEX_OPENLOGOS_SKILLS_REL_DIR;
   }
   return 'logos/skills';
 }
 
 function generateActiveSkillsSection(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude'): string {
+  if (aiTool === 'codex' && target === 'agents') {
+    const headingOfficial = locale === 'zh' ? '### OpenLogos 方法论 Skills' : '### OpenLogos Methodology Skills';
+    const headingProject = locale === 'zh' ? '### 项目专属 Skills' : '### Project-Specific Skills';
+    const projectNote = locale === 'zh'
+      ? '项目插件技能使用 `$<plugin>:<skill>` 命名空间（例如 `$adcn:release-guard`），位于 `.agents/plugins/<plugin>/skills/`；历史或 repo-scoped local skill 保留在 `.agents/skills/`，不得描述为 OpenLogos 官方技能。'
+      : 'Project plugin skills use the `$<plugin>:<skill>` namespace (for example `$adcn:release-guard`) from `.agents/plugins/<plugin>/skills/`; legacy or repo-scoped local skills remain under `.agents/skills/` and must not be described as official OpenLogos skills.';
+    let section = `${headingOfficial}\n`;
+    for (const name of SKILL_NAMES) {
+      const desc = SKILL_DESCRIPTIONS[name]?.[locale] ?? SKILL_DESCRIPTIONS[name]?.en ?? name;
+      section += `- \`$openlogos:${name}\` — \`${CODEX_OPENLOGOS_SKILLS_REL_DIR}/${name}/SKILL.md\` — ${desc}\n`;
+    }
+    section += `\n${headingProject}\n- ${projectNote}\n`;
+    return section;
+  }
+
   let section = '';
+  if (target === 'claude' && aiTool === 'claude-code') {
+    section += locale === 'zh'
+      ? '### OpenLogos 方法论 Skills\n'
+      : '### OpenLogos Methodology Skills\n';
+  }
   const basePath = skillBasePath(aiTool, target);
   for (const name of SKILL_NAMES) {
     const desc = SKILL_DESCRIPTIONS[name]?.[locale] ?? SKILL_DESCRIPTIONS[name]?.en ?? name;
     const skillBase = MULTI_FILE_SKILLS.has(name) ? 'logos/skills' : basePath;
     section += `- \`${skillBase}/${name}/SKILL.md\` — ${desc}\n`;
+  }
+  if (target === 'claude' && aiTool === 'claude-code') {
+    section += locale === 'zh'
+      ? '\n### 项目专属 Skills\n- `.claude/skills/<skill>/SKILL.md` 中的项目技能保持项目归属，不会进入 OpenLogos 官方插件或 `logos/skills/`；如存在，请按项目语义单独调用和维护。\n'
+      : '\n### Project-Specific Skills\n- Project skills under `.claude/skills/<skill>/SKILL.md` remain project-owned and are not copied into the OpenLogos official plugin or `logos/skills/`; when present, invoke and maintain them by project semantics.\n';
   }
   return section;
 }

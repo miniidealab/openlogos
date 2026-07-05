@@ -25,8 +25,27 @@ sequenceDiagram
 5. **CLI** 补录资源索引。
 6. **CLI** 检查 `verify.pre_run_command`、`verify.regression_command`、`verify.incremental_command` 是否至少存在一个。若缺失，按测试栈推断并补齐；无法推断时输出 TODO。
 7. **CLI** 刷新 `AGENTS.md` / `CLAUDE.md` 时复用统一 managed block 合并逻辑，仅替换 OpenLogos 托管片段，保留托管片段外用户自定义内容；无 marker 旧文件保留原文并追加托管片段。
-8. **CLI** 同步 AI 工具插件资产。
-9. **CLI** 汇总输出。
+8. **CLI** 扫描目标宿主的项目专属 Skill 与插件资产。Codex 包括 `.agents/skills/*`、`.agents/plugins/*` 与历史 `.codex-plugin/`；Claude Code 包括 `.claude/skills/*` 与项目独立插件。
+9. **CLI** 只同步 OpenLogos 官方插件资产。Codex 中刷新 repo marketplace 的 `openlogos` 插件条目、OpenLogos skills 和 SessionStart hook；Claude Code 中刷新 OpenLogos 官方插件和 guard；项目专属 skill、项目插件条目和未知归属资产原样保留。
+10. **CLI** 汇总输出，同步结果中应包含兼容迁移说明和命名空间诊断，便于用户发现项目 skill 是否仍处于项目命名空间。
+
+## AI 工具 Skill 命名空间同步补充时序
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as OpenLogos CLI
+
+    U->>C: Step 1: openlogos sync
+    C->>C: Step 2: 读取 logos.config.json 与 logos-project.yaml
+    C->>C: Step 3: 同步项目名与 lifecycle
+    C->>C: Step 4: 补全 scenarios[].module
+    C->>C: Step 5: 扫描并补录 resource_index
+    C->>C: Step 6: 检查 verify 预跑配置
+    C->>C: Step 7: 合并刷新 AGENTS.md、CLAUDE.md 托管片段
+    C->>C: Step 8: 扫描项目专属 Skill 与插件资产
+    C->>C: Step 9: 只刷新 OpenLogos 官方插件资产
+    C-->>U: Step 10: 输出同步结果、兼容迁移结果与命名空间诊断
+```
 
 ## 异常用例
 ### EX-2.1: 配置缺失
@@ -43,3 +62,17 @@ sequenceDiagram
 - **期望响应**：sync 失败并提示修复指令文件托管片段边界。
 - **副作用**：不得覆盖用户指令文件。
 
+### EX-8.1: 历史 Codex `.agents/skills` 中混有项目专属 Skill
+- **触发条件**：已初始化项目存在 `.agents/skills/prd-writer/SKILL.md` 和 `.agents/skills/release-guard/SKILL.md`，其中 `release-guard` 不是 OpenLogos 官方技能。
+- **期望响应**：sync 可刷新或迁移 OpenLogos 官方技能；`release-guard` 被保留为项目资产，不进入 `openlogos` 插件命名空间；输出诊断提示用户可创建项目插件命名空间。
+- **副作用**：不得删除、重命名或改写项目专属 Skill。
+
+### EX-9.1: repo marketplace 中存在项目插件条目
+- **触发条件**：`.agents/plugins/marketplace.json` 已包含 `openlogos` 之外的项目插件条目。
+- **期望响应**：sync 只更新 `openlogos` 条目和 OpenLogos 托管文件；项目插件条目保持顺序和内容不变。
+- **副作用**：不得把项目插件下的技能复制到 OpenLogos 插件。
+
+### EX-9.2: Claude Code `.claude/skills` 中存在项目技能
+- **触发条件**：已初始化项目存在 `.claude/skills/release-guard/SKILL.md`。
+- **期望响应**：sync 刷新 OpenLogos 官方 Claude 插件与 `CLAUDE.md` managed block，但 `.claude/skills/release-guard/SKILL.md` 原样保留，并在说明中标记为项目专属技能。
+- **副作用**：不得把 `release-guard` 复制到 OpenLogos 插件 `plugin/skills`。

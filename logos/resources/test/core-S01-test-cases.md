@@ -44,3 +44,27 @@
 - [x] 大小写变体保护：已覆盖（UT-S01-48）
 - [x] 不完整 marker fail loud：已覆盖（UT-S01-47 / ST-S01-EX-04）
 
+## 四、Codex / Claude Skill 命名空间边界测试补充
+
+### 4.1 单元测试用例补充
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S01-49 | Codex init 生成 repo marketplace 的 OpenLogos 插件命名空间 | Codex 插件初始化 | 空目录，选择 `--ai-tool codex` | init | 生成 `.agents/plugins/marketplace.json` 与 `openlogos` 插件条目；OpenLogos 官方 skill 位于 `openlogos` 插件内 |
+| UT-S01-50 | Codex init 不吸收项目专属 `.agents/skills` | Codex Skill 归属判定 | 预置 `.agents/skills/release-guard/SKILL.md` | init | `release-guard` 不进入 `openlogos` 插件；无 `openlogos:release-guard` 描述 |
+| UT-S01-51 | Codex init 兼容历史 `.codex-plugin` | Codex 兼容迁移 | 预置历史 `.codex-plugin/plugin.json` | init | 历史入口不被破坏；新 OpenLogos marketplace 资产生成或刷新；未知文件不被覆盖 |
+| UT-S01-52 | Claude Code init 保留 `.claude/skills` 项目技能 | Claude Skill 边界 | 预置 `.claude/skills/release-guard/SKILL.md` | init | 项目技能原样保留；OpenLogos 官方插件不包含该 skill |
+| UT-S01-53 | 生成指令分组展示 OpenLogos 与项目专属 Skills | 指令生成 | 同时存在 OpenLogos skill 与项目 skill | init | `AGENTS.md` / `CLAUDE.md` 将两类 skill 分组；项目 skill 不被描述为 OpenLogos 官方能力 |
+
+### 4.2 场景测试用例补充
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S01-06 | Codex 初始化生成 OpenLogos marketplace 且保留项目插件 | Step 8→11 | 空目录预置 `.agents/plugins/adcn/skills/release-guard/SKILL.md` | 执行 `openlogos init demo --ai-tool codex` | `openlogos` 插件生成；`adcn` 项目插件保留；marketplace 同时包含两类条目 |
+| ST-S01-07 | Codex 初始化不把项目 skill 暴露成 OpenLogos skill | Step 8→11 | 空目录预置 `.agents/skills/release-guard/SKILL.md` | 执行 `openlogos init demo --ai-tool codex` | 输出诊断说明项目 skill 归属；生成资产中不存在 `openlogos:release-guard` |
+| ST-S01-08 | Claude 初始化保留项目专属 `.claude/skills` | Step 8→11 | 空目录预置 `.claude/skills/release-guard/SKILL.md` | 执行 `openlogos init demo --ai-tool claude-code` | `.claude/skills/release-guard/SKILL.md` 内容不变；`CLAUDE.md` 分组说明项目 skill |
+
+### 4.3 覆盖度校验补充
+- [x] Codex repo marketplace 生成：已覆盖（UT-S01-49 / ST-S01-06）
+- [x] Codex 项目 skill 不进入 OpenLogos 命名空间：已覆盖（UT-S01-50 / ST-S01-07）
+- [x] 历史 `.codex-plugin` 兼容：已覆盖（UT-S01-51）
+- [x] Claude `.claude/skills` 项目技能保留：已覆盖（UT-S01-52 / ST-S01-08）
+- [x] 指令分组展示命名空间边界：已覆盖（UT-S01-53）

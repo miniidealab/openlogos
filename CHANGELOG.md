@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-07-04
+
+### Fixed
+
+- **Codex / Claude Skill 命名空间边界** — `openlogos init/sync/launch` 现在将 OpenLogos 官方 Codex 技能写入 `.agents/plugins/openlogos` 命名空间，并保留项目插件、历史 `.codex-plugin` 与 `.agents/skills` 项目技能；Claude Code 项目技能继续保留在 `.claude/skills`，不会进入 OpenLogos 官方插件。
+- **AI 指令与文档同步** — `AGENTS.md` / `CLAUDE.md` Active Skills 分组区分 OpenLogos 方法论技能与项目专属技能，官网中英文文档、插件模板和 smoke 覆盖同步说明命名空间边界。
+
 ## [0.13.1] - 2026-07-04
 
 ### Fixed

@@ -1,6 +1,6 @@
 # OpenLogos 需求文档
 
-> 最后更新：2026-07-03
+> 最后更新：2026-07-05
 
 ## 一、产品背景与目标
 ### 1.1 产品定位
@@ -23,7 +23,11 @@ OpenLogos 是一套面向 AI 协作的软件研发方法论、CLI 工具和规�
 因为用户先问”怎么实现”，导致需求、设计、测试与发布顺序被打乱 → 导致 AI 输出不可追溯、难验证 → 造成后续返工和流程失控。
 
 ### P02：不同 AI 工具的接入方式不一致
-因为不同宿主工具有不同的指令文件、插件和工作区约定 → 导致同一个项目在不同工具下行为不一致 → 造成上下文丢失和维护成本上升。
+因为不同宿主工具有不同的指令文件、插件、工作区约定和 Skill 命名空间规则 → 导致同一个项目在不同工具下行为不一致 → 造成上下文丢失、维护成本上升，以及 OpenLogos 方法论技能与项目 / 产品 / 仓库专属技能边界混淆。
+
+OpenLogos 必须让 AI 能稳定区分两类能力：
+1. **OpenLogos 方法论技能**：由 OpenLogos 官方资产生成和维护，只表达 WHY → WHAT → HOW、Delta、verify、deploy、smoke 等方法论规则。
+2. **项目专属技能**：由用户仓库或产品团队维护，只表达当前项目的发布守卫、客户环境操作、业务治理、仓库工程约定等规则，不得被误暴露为 OpenLogos 官方方法论能力。
 
 ### P03：已有实现缺少统一的文档真相源
 因为仓库早期产物分散在代码、规范、示例和测试中 → 导致 AI 无法快速判断”什么已经完成、下一步该做什么” → 造成阶段判断和交付判断不稳定。
@@ -126,7 +130,17 @@ OpenLogos 是一套面向 AI 协作的软件研发方法论、CLI 工具和规�
 ##### 正常：全新项目初始化
 - **GIVEN** 当前目录没有 `logos/logos.config.json`
 - **WHEN** 用户执行 `openlogos init my-project`
-- **THEN** 生成 `logos/` 标准目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md` 和 `CLAUDE.md`；若可识别测试栈，还应写入可执行的 `verify.pre_run_command`；`logos/resources/reference/` 下默认生成 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；根目录 AI 指令文件中的 OpenLogos 内容必须位于 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` 托管片段内
+- **THEN** 生成 `logos/` 标准目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md` 和 `CLAUDE.md`；若可识别测试栈，还应写入可执行的 `verify.pre_run_command`；`logos/resources/reference/` 下默认生成 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；根目录 AI 指令文件中的 OpenLogos 内容必须位于 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` 托管片段内；当目标包含 Codex 原生插件时，OpenLogos 方法论技能必须落在 `openlogos` 插件命名空间，项目专属技能不得被初始化流程吸收到 `openlogos` 命名空间；当目标包含 Claude Code 时，OpenLogos 官方插件和 `.claude/skills/` 项目技能边界必须在生成指令中明确。
+
+##### 正常：Codex 初始化生成 OpenLogos repo marketplace 命名空间边界
+- **GIVEN** 当前目录没有 `logos/logos.config.json`，且用户选择 `--ai-tool codex` 或 `--ai-tool all`
+- **WHEN** 用户执行 `openlogos init`
+- **THEN** CLI 生成或维护 Codex repo marketplace 结构，使 OpenLogos 方法论插件使用 `openlogos` 命名空间；若项目已存在 `.agents/skills/<name>/SKILL.md` 之类仓库专属技能，初始化流程不得把这些技能复制进 OpenLogos 插件，也不得使其在 Codex 中显示为 `openlogos:<name>`；生成的指令必须提示项目专属技能应使用项目自己的插件命名空间或明确的 repo-scoped local skill 路径。
+
+##### 正常：Claude Code 初始化不把项目专属 Skill 放入 OpenLogos 插件
+- **GIVEN** 当前目录存在项目自定义 `.claude/skills/release-guard/SKILL.md`，且用户选择 `--ai-tool claude-code` 或 `--ai-tool all`
+- **WHEN** 用户执行 `openlogos init`
+- **THEN** OpenLogos 官方 Claude 插件只包含 OpenLogos 方法论技能；项目自定义技能保留在 `.claude/skills/` 或项目独立 Claude 插件中；生成的 `CLAUDE.md` 不得把项目技能描述为 `/openlogos:*` 能力。
 
 ##### 正常：已有用户根指令文件时保留自定义配置
 - **GIVEN** 当前目录没有 `logos/logos.config.json`，但已存在 `AGENTS.md` / `CLAUDE.md` 或大小写变体（如 `agents.md` / `claude.md`），且文件包含用户自定义规则
@@ -186,7 +200,12 @@ OpenLogos 是一套面向 AI 协作的软件研发方法论、CLI 工具和规�
 ##### 正常：配置更新后同步
 - **GIVEN** `logos.config.json` 或 `logos-project.yaml` 已更新
 - **WHEN** 用户执行 `openlogos sync`
-- **THEN** 相关 AI 资产与 `resource_index` 被重新生成或补录；`AGENTS.md` / `CLAUDE.md` 仅替换 OpenLogos 托管片段，托管片段外用户内容原样保留
+- **THEN** 相关 AI 资产与 `resource_index` 被重新生成或补录；`AGENTS.md` / `CLAUDE.md` 仅替换 OpenLogos 托管片段，托管片段外用户内容原样保留；Codex 同步必须保留 OpenLogos 方法论技能与项目专属技能的命名空间边界；Claude Code 同步必须保留 `.claude/skills/` 项目技能和 OpenLogos 官方插件技能的边界。
+
+##### 正常：同步不会把项目专属 Skill 吸入 OpenLogos 命名空间
+- **GIVEN** 已初始化项目包含 OpenLogos 官方技能，同时包含用户维护的项目专属 skill
+- **WHEN** 用户执行 `openlogos sync`
+- **THEN** OpenLogos 只刷新自己托管的插件、hook、指令片段和方法论技能；项目专属 skill 不得被复制到 `plugins/openlogos/`、`.codex-plugin/`、OpenLogos Claude 插件包或任何会形成 `openlogos:<skill>` / `/openlogos:*` 调用语义的位置；若需要分发项目专属 skill，CLI 应保留或提示使用项目自己的插件命名空间。
 
 ##### 正常：无 marker 旧文件合并
 - **GIVEN** 已初始化项目的 `AGENTS.md` / `CLAUDE.md` 缺少 OpenLogos marker，且包含用户自定义内容
