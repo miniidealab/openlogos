@@ -90,7 +90,7 @@ Delta 文件使用标记来指示目标文档中应当发生的变更：
 ✓ No delta files in logos/changes/<slug>/deltas/ — nothing to merge.
 ```
 
-这不是错误。纯代码变更（重构、不涉及规格的 bug 修复）是合法的提案，可以跳过 merge 步骤。`SPEC_MERGED` 标记会将提案步骤推进到 `coding`，使工作流得以继续。
+这不是错误。纯代码变更（重构、不涉及规格的 bug 修复）是合法提案，但它们**不会**跳过 spec-complete。该命令会执行 no-delta merge，并写入带 `type:"no_delta_spec_complete"` 的 `SPEC_MERGED`。之后，只有真实 `UT-*` / `ST-*` / `SMOKE-*` ID 已可解析，代码提案才进入 `plan-slices`；否则 `next/status` 返回 `test-id-required`。
 
 ## 错误
 

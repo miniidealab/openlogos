@@ -18,7 +18,7 @@ Key properties:
 
 ## Built-in Skills
 
-OpenLogos includes 13 Skills covering the entire lifecycle:
+OpenLogos includes 17 Skills covering the entire lifecycle:
 
 ### Phase 1 — WHY
 
@@ -51,6 +51,7 @@ OpenLogos includes 13 Skills covering the entire lifecycle:
 | Skill | Purpose |
 |-------|---------|
 | [`change-writer`](/skills/change-writer) | Write change proposals with impact analysis |
+| [`slice-planner`](/skills/slice-planner) | Plan post-spec-complete `[code]` slices from merged specs and real test IDs |
 | [`merge-executor`](/skills/merge-executor) | Merge delta files into main documents |
 
 ## How Skills are loaded

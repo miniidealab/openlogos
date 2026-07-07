@@ -88,6 +88,8 @@ The `proposal_step` field tracks change proposal lifecycle:
 | `delta-writing` | Proposal filled; delta tasks not all checked |
 | `ready-to-merge` | All delta tasks checked (the `spec-exit` gate) |
 | `merge-generated` | `openlogos merge` has run |
+| `spec-complete-required` | Code proposal has no spec-complete marker; run no-delta `openlogos merge <slug>` or finish merge before planning slices |
+| `test-id-required` | Spec-complete is done, but no real `UT-*` / `ST-*` / `SMOKE-*` IDs are available for slice planning |
 | `ready-to-implement` | Specs merged, `code_required`, `[code]` slices not yet written by slice-planner — the `slice-exit` "approve slices" gate |
 | `coding` | Slices approved; code tasks not all checked |
 | `ready-to-verify` | All code tasks checked |
@@ -101,12 +103,15 @@ The `proposal_step` field tracks change proposal lifecycle:
 
 `ready-to-delta` and `ready-to-implement` were added by the change-flow redesign and the slice-planner split respectively; consumers (including RunLogos) must recognise them. `implementing` / `in-progress` remain legacy-compatible values.
 
+`spec-complete-required` and `test-id-required` are blocking diagnostics for code proposals before `plan-slices`. They are not human gates and `--auto` must not skip them. In both states, `next_node.id` must not be `plan-slices`; the JSON includes `reason` (`no_delta_spec_marker_missing` or `code_change_requires_real_test_ids`) so drivers can route the work to merge/spec-complete or test-ID authoring instead of dispatching `slice-planner`.
+
 ### code_required
 
 `modules[].active_change.code_required` (boolean) is the **single source of truth** for whether a proposal needs code implementation. It equals the internal predicate `isCodeRequiredForProposal` — `true` when the proposal carries a `## [code]` requirement (a `[code]` section, `[delta]`-added `UT-*`/`ST-*`/`SMOKE-*`, or a proposal-level code declaration), `false` for pure-doc / pure-spec proposals. Consumers should read this field directly instead of re-guessing with keyword regexes.
 
 - Appears **only when `active_change` is non-null**; with no active proposal the whole object (and this field) is absent, so projects without an active proposal see no new fields (golden zero-drift).
 - Consistency: `code_required==false` ⟹ `next_node.id` is never `code`/`plan-slices` and the `slice` subflow (`when: code_required`) is skipped entirely. `code_required==true` with `[code]` still on template ⟹ `proposal_step=="ready-to-implement"`, `next_node.id=="plan-slices"`.
+- For no-delta code proposals, `code_required==true` still requires `SPEC_MERGED`/`MERGED` first. Missing spec-complete marker yields `spec-complete-required`; missing real test IDs after spec-complete yields `test-id-required`.
 
 ### Orchestration machine fields
 

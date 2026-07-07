@@ -92,9 +92,11 @@ A structured checklist using section tags — only include sections relevant to 
 
 Section tag rules:
 - `## [delta]` — delta output tasks only. All checked → `ready-to-merge`
-- `## [code]` — code implementation tasks only. All checked → `ready-to-verify`
-- Code-only fixes: only `[code]` section, no `[delta]` section (skips directly to `ready-to-merge`)
+- `## [code]` — code implementation anchor only during planning. Real `[code]` slices are written later by `slice-planner`, after spec-complete.
+- Code-only fixes: keep an empty `## [code]` section and no `[delta]` section. They do **not** skip directly to implementation; after plan approval, run no-delta `openlogos merge <slug>` so the CLI writes `SPEC_MERGED` with `type:"no_delta_spec_complete"`, then let `slice-planner` cut slices from merged specs + real test IDs.
 - Keep delta tasks and code tasks strictly separated — never mix them
+
+Do not fill `[code]` slice lines in `write-tasks`. Early slices are based on draft specs or placeholder tests and will be reset by the CLI on merge (`CODE_AUTORESET`). If the code change needs new or reused tests, list the real `UT-*` / `ST-*` / `SMOKE-*` IDs in the proposal or test delta before slice planning; otherwise `next/status` must stop at `test-id-required`.
 
 ## Chain-Driven Execution
 

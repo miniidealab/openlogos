@@ -19,6 +19,12 @@ Phase 3 (HOW)  → What's the system call chain? API contracts? DB schema? How t
 
 场景 ID（`S01`、`S02`……）全局唯一，在 Phase 1 中定义并一路延续到 Phase 3 验证。无需单独的追溯矩阵——**场景本身就是追溯链**。
 
+## launched 变更与 no-delta spec-complete
+
+项目 launched 之后，变更提案仍然遵循同一条 Why → What → How 追溯链。纯代码修复可以没有 PRD/API/DB delta，但仍需要一个明确的 spec-complete 检查点，让下游工具知道「What 已稳定」。OpenLogos 通过 no-delta `openlogos merge <slug>` 表达该状态，并写入带 `type:"no_delta_spec_complete"` 的 `SPEC_MERGED`。
+
+只有该 marker 存在，且真实 `UT-*` / `ST-*` / `SMOKE-*` ID 已可解析时，流程才允许进入 `plan-slices`。缺 marker 返回 `spec-complete-required`；缺测试 ID 返回 `test-id-required`。这样纯代码提案仍保留可追溯性，同时不放松 slice-planner 前置规则。
+
 ## 阶段总览
 
 ```

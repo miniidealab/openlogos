@@ -18,7 +18,7 @@ Skill 是一个存放在项目 `skills/` 目录下的 Markdown 文件（`SKILL.m
 
 ## 内置 Skills
 
-OpenLogos 包含 13 个 Skill，覆盖整个生命周期：
+OpenLogos 包含 17 个 Skill，覆盖整个生命周期：
 
 ### Phase 1 —— WHY
 
@@ -51,6 +51,7 @@ OpenLogos 包含 13 个 Skill，覆盖整个生命周期：
 | Skill | 用途 |
 |-------|---------|
 | [`change-writer`](/zh/skills/change-writer) | 编写带影响分析的变更提案 |
+| [`slice-planner`](/zh/skills/slice-planner) | 基于已合并规格与真实测试 ID 规划 spec-complete 后的 `[code]` 切片 |
 | [`merge-executor`](/zh/skills/merge-executor) | 将 delta 文件合并进主文档 |
 
 ## Skill 如何被加载

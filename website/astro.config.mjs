@@ -96,6 +96,7 @@ export default defineConfig({
             { label: 'code-reviewer', slug: 'skills/code-reviewer' },
             { label: 'deployment-executor', slug: 'skills/deployment-executor' },
             { label: 'change-writer', slug: 'skills/change-writer' },
+            { label: 'slice-planner', slug: 'skills/slice-planner' },
             { label: 'merge-executor', slug: 'skills/merge-executor' },
             { label: 'ui-ux-pro-max', slug: 'skills/ui-ux-pro-max' },
           ],

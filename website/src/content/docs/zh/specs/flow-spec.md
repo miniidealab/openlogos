@@ -226,7 +226,7 @@ overlay:
 |--------|------|------|------|
 | **plan** | `write-proposal`、`write-tasks` | human，可跳（`plan-exit`） | 批准方案；`write-tasks` 仅产 `[delta]`/`[deploy]` |
 | **spec** | `write-delta` | human，可跳（`spec-exit`） | `when: delta_required`；审 delta + 授权合并 |
-| **merge** | `generate-merge-prompt`、`apply-merge` | none | `when: delta_required`；纯代码提案跳过 |
+| **merge** | `generate-merge-prompt`、`apply-merge` | none | 有 delta 提案生成/执行 merge prompt；纯代码提案通过 no-delta `openlogos merge` 写入 `SPEC_MERGED` |
 | **slice** | `plan-slices`（skill: slice-planner） | human，可跳（`slice-exit`） | `when: code_required`；merge 后划分 `[code]` 切片 |
 | **implement** | `code`、`verify` | none | 默认激活切片循环（`until: code_slices_green, max_iters: 30`） |
 | **deliver** | `deploy`、`smoke` | human，entry，**可跳**（`deliver-entry`） | 提案级部署决策 |
@@ -235,6 +235,8 @@ overlay:
 重构要点：
 
 - `[code]` 切片划分从 plan 段**剥离**到独立的 `slice` 子流程，在 merge **之后**运行——对**已合并规格 + 真实测试 ID**切，而非对草案猜。
+- 纯代码提案虽然没有文档 delta，仍必须有可追踪的 spec-complete 状态。进入 `plan-slices` 前必须存在 `SPEC_MERGED`（或 `MERGED`）；缺失时 `status`/`next` 返回 `spec-complete-required`，不得派 `plan-slices`。
+- spec-complete 后，代码提案若缺真实 `UT-*` / `ST-*` / `SMOKE-*` ID，返回 `test-id-required`。`plan-slices` 禁止基于占位或缺失测试 ID 切片。
 - `implement` 子流程**默认激活切片循环**（故 launched 下 `loop_state` / `slice_state` 常驻）。
 - `deliver` 入口门 `skippable: true`：无人值守 `--auto` 可放行（部署目标可能是测试环境）；手动模式仍停下等确认。
 

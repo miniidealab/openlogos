@@ -1,9 +1,9 @@
 ---
 title: Skills 总览
-description: 全部 16 个 OpenLogos 内置 AI Skill 的参考文档。
+description: 全部 17 个 OpenLogos 内置 AI Skill 的参考文档。
 ---
 
-OpenLogos 内置 **16 个 AI Skill** —— 它们是结构化的 Markdown 指令文件（`SKILL.md`），引导 AI 编码工具走完开发生命周期的每个阶段。Skill 在 `openlogos init` 时自动部署，并通过 `openlogos sync` 同步。
+OpenLogos 内置 **17 个 AI Skill** —— 它们是结构化的 Markdown 指令文件（`SKILL.md`），引导 AI 编码工具走完开发生命周期的每个阶段。Skill 在 `openlogos init` 时自动部署，并通过 `openlogos sync` 同步。
 
 ## Skill 的工作方式
 
@@ -49,6 +49,7 @@ Skill 的组织遵循 OpenLogos 的**三层推进模型**（WHY → WHAT → HOW
 | Skill | 用途 | 触发条件 |
 |-------|---------|---------|
 | [`change-writer`](/zh/skills/change-writer) | 编写带影响分析的变更提案 | launched 生命周期中的任何迭代 |
+| [`slice-planner`](/zh/skills/slice-planner) | 基于已合并规格与真实测试 ID 规划 spec-complete 后的 `[code]` 切片 | merge / no-delta spec-complete 之后、代码实现之前 |
 | [`merge-executor`](/zh/skills/merge-executor) | 将 delta 文件合并进主文档 | `openlogos merge <slug>` 之后 |
 
 ## 设计智能

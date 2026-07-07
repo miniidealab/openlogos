@@ -92,9 +92,11 @@ description: 遵循 Delta 工作流编写带影响分析的变更提案。
 
 区段标签规则：
 - `## [delta]` —— 仅 delta 输出任务。全部勾选 → `ready-to-merge`
-- `## [code]` —— 仅代码实现任务。全部勾选 → `ready-to-verify`
-- 仅代码修复：只有 `[code]` 区段，无 `[delta]` 区段（直接跳到 `ready-to-merge`）
+- `## [code]` —— 在 plan 阶段只作为代码实现锚点；真实 `[code]` 切片由 spec-complete 后的 `slice-planner` 填写。
+- 仅代码修复：保留空 `## [code]` 区段，无 `[delta]` 区段。它们**不会**直接跳到实现；plan 批准后需执行 no-delta `openlogos merge <slug>`，由 CLI 写入带 `type:"no_delta_spec_complete"` 的 `SPEC_MERGED`，再由 `slice-planner` 基于已合并规格 + 真实测试 ID 切片。
 - 严格区分 delta 任务与代码任务 —— 绝不混用
+
+不得在 `write-tasks` 阶段填写 `[code]` 切片行。过早切片基于草案规格或占位测试，CLI 会在 merge 时将其 reset 并记录 `CODE_AUTORESET`。若代码变更需要新增或复用测试，必须在 proposal 或测试 delta 中列出真实 `UT-*` / `ST-*` / `SMOKE-*` ID；否则 `next/status` 必须停在 `test-id-required`。
 
 ## 链式驱动执行
 

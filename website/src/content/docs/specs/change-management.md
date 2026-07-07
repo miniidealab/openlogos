@@ -187,7 +187,7 @@ The old `propose` segment split into three, each ending in its own gate:
 |---------|-------|-----------|--------------|
 | **plan** | `write-proposal`, `write-tasks` | `plan-exit` (human, skippable) | New "approve the plan" gate. `write-tasks` produces `[delta]`/`[deploy]` only — **no `[code]`** |
 | **spec** | `write-delta` | `spec-exit` (human, skippable) | `when: delta_required`; review deltas + authorize merge |
-| **merge** | `generate-merge-prompt`, `apply-merge` | — | `when: delta_required`; a pure-code proposal skips the whole segment |
+| **merge** | `generate-merge-prompt`, `apply-merge` | — | Delta proposals generate/apply merge prompts; pure-code proposals run no-delta `openlogos merge` to write `SPEC_MERGED` |
 | **slice** | `plan-slices` (slice-planner) | `slice-exit` (human, skippable) | New segment; `when: code_required`; cuts `[code]` slices against the **merged** spec + real test IDs (see [Slice Planner](/specs/slice-planner)) |
 | **implement** | `code`, `verify` | — | Slice loop active by default (`until: code_slices_green`) |
 | **deliver** | `deploy`, `smoke` | `deliver-entry` (human, skippable) | Deployment decided at the **proposal level** |
@@ -196,6 +196,7 @@ The old `propose` segment split into three, each ending in its own gate:
 Two structural consequences:
 
 - **`[code]` slicing moved from plan to slice.** It no longer happens while writing tasks (a guess against a draft); it happens after merge, against real merged specs and fixed test IDs. `write-tasks` completes on `tasks_delta_filled`; `plan-slices` completes on `tasks_code_filled`.
+- **No-delta still has spec-complete.** A pure-code proposal has no delta files, but `openlogos merge <slug>` still performs a no-op merge and writes `SPEC_MERGED` with `type:"no_delta_spec_complete"`. Until that marker exists, `next/status` must return `spec-complete-required`; after it exists, missing real test IDs must return `test-id-required` instead of dispatching `slice-planner`.
 - **Deployment is a proposal-level decision, not a module default.** The launched flow resolves `deployment_required` / `smoke_required` from the proposal's declared deployment impact plus the `[deploy]` section (`resolveProposalDeploymentDecision()`), never from module defaults — so a proposal declaring "no deployment" does not wrongly enter deploy. The `deliver-entry` gate is `skippable: true`, so an unattended `--auto` run can release it while manual mode still stops for confirmation.
 
 New `proposal_step` residency states `ready-to-delta` (at `plan-exit`) and `ready-to-implement` (at `slice-exit`) express the two new gates; see [CLI JSON Output](/specs/cli-json-output).

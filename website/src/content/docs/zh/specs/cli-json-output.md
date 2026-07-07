@@ -88,6 +88,8 @@ openlogos status --format json
 | `delta-writing` | 提案已填写；delta 任务未全部勾选 |
 | `ready-to-merge` | 所有 delta 任务已勾选（`spec-exit` 门） |
 | `merge-generated` | `openlogos merge` 已运行 |
+| `spec-complete-required` | 代码提案缺少 spec-complete marker；需先执行 no-delta `openlogos merge <slug>` 或完成 merge，再规划切片 |
+| `test-id-required` | spec-complete 已完成，但缺真实 `UT-*` / `ST-*` / `SMOKE-*` ID，不能规划切片 |
 | `ready-to-implement` | 规格已合并、`code_required`、`[code]` 切片尚未由 slice-planner 写定——`slice-exit`「切片待批准」门 |
 | `coding` | 切片已批准；代码任务未全部勾选 |
 | `ready-to-verify` | 所有代码任务已勾选 |
@@ -101,12 +103,15 @@ openlogos status --format json
 
 `ready-to-delta` 与 `ready-to-implement` 分别由变更流程重构和切片规划剥离新增；消费方（含 RunLogos）须同步识别。`implementing` / `in-progress` 仍为旧版本兼容值。
 
+`spec-complete-required` 与 `test-id-required` 是代码提案进入 `plan-slices` 前的阻断诊断，不是 human gate，`--auto` 不得跳过。两种状态下 `next_node.id` 都不得为 `plan-slices`；JSON 会带 `reason`（`no_delta_spec_marker_missing` 或 `code_change_requires_real_test_ids`），供 driver 把工作派回 merge/spec-complete 或测试 ID 补齐，而不是误派 `slice-planner`。
+
 ### code_required
 
 `modules[].active_change.code_required`（boolean）是「提案是否需要代码实现」的**单一事实源**，等于内部谓词 `isCodeRequiredForProposal`——`true` 表示提案含 `## [code]` 产出需求（有 `[code]` 段 / `[delta]` 新增 `UT-*`/`ST-*`/`SMOKE-*` / proposal 声明代码级），`false` 表示纯文档 / 纯规格提案。消费方应直接读本字段，替代自行用关键词正则重判。
 
 - **仅在 `active_change` 非 null 时出现**；无活跃提案时整个对象（含本字段）不出现，故无活跃提案的项目不新增字段（golden 零漂移）。
 - 一致性约束：`code_required==false` ⟹ `next_node.id` 绝不为 `code`/`plan-slices`，`slice` 子流程（`when: code_required`）整段跳过。`code_required==true` 且 `[code]` 未脱模板 ⟹ `proposal_step=="ready-to-implement"`、`next_node.id=="plan-slices"`。
+- 对 no-delta 代码提案，`code_required==true` 仍要求先存在 `SPEC_MERGED`/`MERGED`。缺 spec-complete marker 返回 `spec-complete-required`；spec-complete 后缺真实测试 ID 返回 `test-id-required`。
 
 ### 编排机器字段
 

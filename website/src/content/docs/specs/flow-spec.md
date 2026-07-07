@@ -77,7 +77,7 @@ The flow body is an **ordered list of subflows**; each subflow holds an **ordere
     skippable: false            # may an auto-mode run skip this human gate?
 ```
 
-A subflow may also carry `when`: if false the **entire subflow is skipped** (all nodes marked skipped). For example, launched's `merge` subflow uses `when: delta_required`, so a pure-code proposal (no `[delta]`) skips the whole section instead of dead-waiting on `SPEC_MERGED`.
+A subflow may also carry `when`: if false the **entire subflow is skipped** (all nodes marked skipped). For example, launched's `spec` subflow uses `when: delta_required`, so a pure-code proposal (no `[delta]`) skips delta authoring. It does **not** skip spec completion entirely: a code proposal with no delta must still run `openlogos merge <slug>` as a no-op spec-complete step that writes `SPEC_MERGED`.
 
 **`gate.position`** decides *when* the gate fires:
 
@@ -226,7 +226,7 @@ The change flow was redesigned: the old single `propose` segment became **plan â
 |---------|-------|------|-------|
 | **plan** | `write-proposal`, `write-tasks` | human, skippable (`plan-exit`) | Approve the plan; `write-tasks` produces `[delta]`/`[deploy]` only |
 | **spec** | `write-delta` | human, skippable (`spec-exit`) | `when: delta_required`; review delta + authorize merge |
-| **merge** | `generate-merge-prompt`, `apply-merge` | none | `when: delta_required`; pure-code proposals skip |
+| **merge** | `generate-merge-prompt`, `apply-merge` | none | Delta proposals generate/apply merge prompts; pure-code proposals use no-delta `openlogos merge` to write `SPEC_MERGED` |
 | **slice** | `plan-slices` (skill: slice-planner) | human, skippable (`slice-exit`) | `when: code_required`; splits `[code]` slices post-merge |
 | **implement** | `code`, `verify` | none | Slice loop active by default (`until: code_slices_green, max_iters: 30`) |
 | **deliver** | `deploy`, `smoke` | human, entry, **skippable** (`deliver-entry`) | Proposal-level deployment decision |
@@ -235,6 +235,8 @@ The change flow was redesigned: the old single `propose` segment became **plan â
 Key redesign points:
 
 - The `[code]` slice split is **stripped out of the plan segment** into an independent `slice` subflow that runs *after* merge â€” so slices are cut against the **merged spec and real test IDs**, not against a draft.
+- Pure-code proposals have no document delta, but they still need a traceable spec-complete state. Before `plan-slices`, `SPEC_MERGED` (or `MERGED`) must exist; without it `status`/`next` return `spec-complete-required`, not `plan-slices`.
+- After spec-complete, a code proposal without real `UT-*` / `ST-*` / `SMOKE-*` IDs returns `test-id-required`. `plan-slices` must not run against placeholder or missing test IDs.
 - The `implement` subflow **activates the slice loop by default** (hence `loop_state` / `slice_state` are always present under launched).
 - The `deliver` entry gate is `skippable: true`: an unattended `--auto` run can release it (the deploy target may be a test environment); manual mode still stops for confirmation.
 

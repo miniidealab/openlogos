@@ -39,7 +39,8 @@ Sections without markers are treated as general tasks and don't affect proposal 
 
 Under the redesigned launched flow (see [Change Management](/specs/change-management) and [Slice Planner](/specs/slice-planner)), `[code]` slices are **no longer written during the plan stage**. `write-tasks` (change-writer) produces **only `[delta]` and `[deploy]`**; its completion predicate is `tasks_delta_filled`. The `[code]` slices are cut later by the `slice-planner` in a dedicated `slice` subflow that runs **after merge**, against the merged spec and real test IDs — its completion predicate is `tasks_code_filled` (slices written, all unchecked).
 
-- A pure-code proposal (no `[delta]`) must still **keep an empty `## [code]` heading**. This keeps `parseTaskSections` non-null and `code_required` true, so the proposal is structurally consistent with a post-merge proposal and the slice-planner picks it up normally.
+- A pure-code proposal (no `[delta]`) must still **keep an empty `## [code]` heading**. This keeps `parseTaskSections` non-null and `code_required` true, but it is not permission to slice immediately: the proposal must first run no-delta `openlogos merge <slug>` and receive a `SPEC_MERGED` marker.
+- Once `SPEC_MERGED` exists, the proposal may enter `plan-slices` only when real `UT-*` / `ST-*` / `SMOKE-*` IDs can be parsed from `proposal.md`, `tasks.md`, or merged test deltas. Missing IDs produce `test-id-required`, not a placeholder slice.
 - If `[code]` is filled early (during `write-tasks`, before the slice stage legitimately enters), the CLI auto-resets it to a template placeholder on the deterministic slice-stage entry (backing the old text up to `CODE_AUTORESET`), so `slice-planner` remains the single source of truth for slices.
 
 ## Task Format
@@ -60,8 +61,11 @@ Each task is a Markdown checkbox:
 | Condition | Proposal Step |
 |-----------|---------------|
 | `[delta]` section has unchecked items | `delta-writing` |
-| All `[delta]` items checked (or no `[delta]` section) | `ready-to-merge` |
-| `SPEC_MERGED` exists + `[code]` has unchecked items | `coding` |
+| All `[delta]` items checked | `ready-to-merge` |
+| No `[delta]` + code required + no `SPEC_MERGED`/`MERGED` | `spec-complete-required` |
+| `SPEC_MERGED` exists + code required + no real test IDs | `test-id-required` |
+| `SPEC_MERGED` exists + `[code]` not yet planned | `ready-to-implement` / `plan-slices` |
+| `SPEC_MERGED` exists + `[code]` planned + `SLICES_APPROVED` exists | `coding` |
 | All `[code]` items checked (or no `[code]` section) | `ready-to-verify` |
 | `VERIFY_PASS` exists + `[deploy]` has unchecked items | `ready-to-deploy` |
 | All `[deploy]` items checked | `deploy-done` / `ready-to-smoke` |

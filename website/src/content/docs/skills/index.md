@@ -1,9 +1,9 @@
 ---
 title: Skills Overview
-description: Reference documentation for all 16 built-in OpenLogos AI Skills.
+description: Reference documentation for all 17 built-in OpenLogos AI Skills.
 ---
 
-OpenLogos ships with **16 AI Skills** — structured Markdown instruction files (`SKILL.md`) that guide AI coding tools through each phase of the development lifecycle. Skills are deployed automatically during `openlogos init` and synchronized via `openlogos sync`.
+OpenLogos ships with **17 AI Skills** — structured Markdown instruction files (`SKILL.md`) that guide AI coding tools through each phase of the development lifecycle. Skills are deployed automatically during `openlogos init` and synchronized via `openlogos sync`.
 
 ## How Skills Work
 
@@ -49,6 +49,7 @@ Skills are organized to follow the OpenLogos **three-layer progression model** (
 | Skill | Purpose | Trigger |
 |-------|---------|---------|
 | [`change-writer`](/skills/change-writer) | Write change proposals with impact analysis | Any iteration during launched lifecycle |
+| [`slice-planner`](/skills/slice-planner) | Plan post-spec-complete `[code]` slices from merged specs and real test IDs | After merge / no-delta spec-complete, before code implementation |
 | [`merge-executor`](/skills/merge-executor) | Merge delta files into main documents | After `openlogos merge <slug>` |
 
 ## Design Intelligence

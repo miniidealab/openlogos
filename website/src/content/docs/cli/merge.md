@@ -90,7 +90,7 @@ If `deltas/` is empty or contains no recognized files, the command writes a `SPE
 ✓ No delta files in logos/changes/<slug>/deltas/ — nothing to merge.
 ```
 
-This is not an error. Code-only changes (refactors, bug fixes that don't touch specs) are valid proposals that skip the merge step. The `SPEC_MERGED` marker advances the proposal step to `coding` so the workflow can continue.
+This is not an error. Code-only changes (refactors, bug fixes that don't touch specs) are valid proposals, but they do **not** skip spec-complete. The command performs a no-delta merge and writes `SPEC_MERGED` with `type:"no_delta_spec_complete"`. After that, code proposals move to `plan-slices` only when real `UT-*` / `ST-*` / `SMOKE-*` IDs are available; otherwise `next/status` report `test-id-required`.
 
 ## Errors
 

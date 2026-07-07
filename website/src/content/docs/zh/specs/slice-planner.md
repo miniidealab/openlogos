@@ -15,10 +15,10 @@ description: merge 之后如何规划 [code] 切片——六维打分、垂直/�
 **前置依赖（强制，缺一不可）：**
 
 1. 活跃提案存在且已 merge——提案目录有 `SPEC_MERGED`（或 `MERGED`）marker。
-2. 规格 delta 已合并进主文档（架构 / 场景 / 功能规格已落在 `logos/resources/prd/`）。
-3. **测试用例已合并、ID 已定**——相关 `logos/resources/test/*-test-cases.md` 含真实 `UT-Sxx-..` / `ST-Sxx-..`。
+2. 规格 delta 已合并进主文档（架构 / 场景 / 功能规格已落在 `logos/resources/prd/`），或 marker 明确记录纯代码提案无文档 delta：`type:"no_delta_spec_complete"`。
+3. **测试用例已合并或已显式复用、ID 已定**——相关 `logos/resources/test/*-test-cases.md`、`proposal.md` 或 `tasks.md` 含真实 `UT-*` / `ST-*` / `SMOKE-*`。
 
-若任一不满足（尤其测试 ID 未定），说明尚未到切片时机——**禁止用占位 ID 切片**。对**真实规格 + 真实测试 ID**切，而非对草案猜——这正是本环节挪到 merge 后的根本原因。
+若任一不满足，说明尚未到切片时机。缺 `SPEC_MERGED`/`MERGED` 必须回到 `spec-complete-required`；spec-complete 后缺真实测试 ID 必须回到 `test-id-required`。**禁止用占位 ID 切片**。对**真实规格 + 真实测试 ID**切，而非对草案猜——这正是本环节挪到 merge 后的根本原因。
 
 ## 唯一交付物
 
@@ -81,6 +81,7 @@ description: merge 之后如何规划 [code] 切片——六维打分、垂直/�
 ## 与 `tasks.md` 及 CLI 派生的关系
 
 - `write-tasks`（plan 段、merge **之前**）**不再产 `[code]`**。其完成判定由 `tasks_filled` 收窄为 `tasks_delta_filled`——`[delta]`/`[deploy]` 脱模板即算完成；切片留待 merge 后由 `plan-slices` 产出。无 delta 的纯代码提案仍须保留空 `## [code]` 标题。
+- 对纯代码提案，空 `## [code]` 标题只是 `code_required` 的结构锚点，不表示可以立即切片；必须先由 `openlogos merge <slug>` 写入 no-delta `SPEC_MERGED` marker。
 - `plan-slices` 在 `tasks_code_filled` 满足时完成（`[code]` section 写出真实切片、此时全部未勾）。这与 `implement.code` 的 `section_complete:code`（全勾=实现完成）是两个不同判定：前者判「切片已划定」，后者判「切片已实现」。
 - `CODE_AUTORESET` 保护守序：若 `[code]` 被提前填充（在 `plan-slices` 合法进入前由 `write-tasks` 填），CLI 会在进入切片阶段的确定性动作上把它 auto-reset 回模板占位，并把旧原文备份（append-only JSONL）。这样即便 `[code]` 曾被越序提前填，slice-planner 仍是唯一事实源。
 

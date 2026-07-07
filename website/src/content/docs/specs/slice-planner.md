@@ -15,10 +15,10 @@ Slice planning was deliberately moved to run **after merge, before implement**. 
 **Hard prerequisites (all required):**
 
 1. The active proposal exists and has merged — a `SPEC_MERGED` (or `MERGED`) marker is present.
-2. The spec deltas have merged into the main documents (architecture / scenario / feature specs under `logos/resources/prd/`).
-3. **Test cases have merged and IDs are fixed** — the relevant `logos/resources/test/*-test-cases.md` contain real `UT-Sxx-..` / `ST-Sxx-..` IDs.
+2. The spec deltas have merged into the main documents (architecture / scenario / feature specs under `logos/resources/prd/`), or the marker explicitly records `type:"no_delta_spec_complete"` for a pure-code proposal with no document delta.
+3. **Test cases have merged or been explicitly referenced and IDs are fixed** — the relevant `logos/resources/test/*-test-cases.md`, `proposal.md`, or `tasks.md` contain real `UT-*` / `ST-*` / `SMOKE-*` IDs.
 
-If any prerequisite fails (especially undefined test IDs), it is **not yet time to slice** — placeholder IDs are forbidden. Cutting against the *merged spec and real test IDs*, not against a draft guess, is precisely why this step lives after merge.
+If any prerequisite fails, it is **not yet time to slice**. Missing `SPEC_MERGED`/`MERGED` must route to `spec-complete-required`; missing real test IDs after spec-complete must route to `test-id-required`. Placeholder IDs are forbidden. Cutting against the *merged spec and real test IDs*, not against a draft guess, is precisely why this step lives after merge.
 
 ## The Only Deliverable
 
@@ -81,6 +81,7 @@ After writing, **read the `[code]` section back from disk** and show the origina
 ## Relationship to `tasks.md` and CLI Derivation
 
 - `write-tasks` (in the plan segment, *before* merge) **no longer produces `[code]`**. Its completion predicate narrowed from `tasks_filled` to `tasks_delta_filled` — `[delta]`/`[deploy]` filled out of template is enough; slices wait for `plan-slices` after merge. A pure-code proposal with no delta must still keep an empty `## [code]` heading.
+- For pure-code proposals, the empty `## [code]` heading is only the structural anchor for `code_required`; it does not mean slice planning may start. `openlogos merge <slug>` must first write the no-delta `SPEC_MERGED` marker.
 - `plan-slices` completes when `tasks_code_filled` holds (the `[code]` section is filled with real slices, all unchecked). This is distinct from `implement.code`'s `section_complete:code` (all checked = implementation done): the former judges "slices are planned", the latter "slices are implemented".
 - A `CODE_AUTORESET` protection guards ordering: if `[code]` was filled early (by `write-tasks`, before `plan-slices` legitimately entered), the CLI auto-resets it back to a template placeholder on the deterministic entry into the slice stage, backing up the old text (append-only JSONL). This keeps slice-planner as the single source of truth even when a `[code]` block was pre-filled out of order.
 

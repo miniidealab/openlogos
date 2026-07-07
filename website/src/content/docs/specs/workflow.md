@@ -19,6 +19,12 @@ Phase 3 (HOW)  → What's the system call chain? API contracts? DB schema? How t
 
 Scenario IDs (`S01`, `S02`...) are globally unique, defined in Phase 1 and carried through to Phase 3 verification. No separate traceability matrix is needed — **the scenario itself is the trace chain**.
 
+## Launched Changes and No-Delta Spec-Complete
+
+After a project is launched, the same Why → What → How traceability applies to change proposals. A code-only fix may have no PRD/API/DB delta, but it still needs an explicit spec-complete checkpoint so downstream tools know the "what" is stable. OpenLogos represents this with a no-delta `openlogos merge <slug>` that writes `SPEC_MERGED` with `type:"no_delta_spec_complete"`.
+
+Only after that marker exists, and only when real `UT-*` / `ST-*` / `SMOKE-*` IDs are available, may the flow enter `plan-slices`. Missing marker yields `spec-complete-required`; missing test IDs yields `test-id-required`. This keeps pure-code proposals traceable without weakening the slice-planner rules.
+
 ## Phase Overview
 
 ```
