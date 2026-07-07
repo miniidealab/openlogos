@@ -458,7 +458,7 @@ describe('S09 Scenario Tests — merge command', () => {
     expect(allErrors).toContain('not found');
   });
 
-  it('ST-S09-07: no delta files → ok, nothing to merge', () => {
+  it('ST-S09-07: no delta files → writes no-delta SPEC_MERGED marker without MERGE_PROMPT', () => {
     const changePath = join(root, 'logos', 'changes', 'empty');
     mkdirSync(join(changePath, 'deltas', 'prd'), { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Empty');
@@ -466,9 +466,15 @@ describe('S09 Scenario Tests — merge command', () => {
     merge('empty');
 
     const allLogs = con.logs.join('\n');
-    expect(allLogs).toContain('nothing to merge');
+    expect(allLogs).toContain('no-delta spec-complete');
     expect(existsSync(join(changePath, 'MERGE_PROMPT.md'))).toBe(false);
     expect(existsSync(join(changePath, 'SPEC_MERGED'))).toBe(true);
+    const marker = JSON.parse(readFileSync(join(changePath, 'SPEC_MERGED'), 'utf-8'));
+    expect(marker).toMatchObject({
+      type: 'no_delta_spec_complete',
+      reason: 'pure-code proposal has no spec delta',
+    });
+    expect(marker.completed_at).toBeTruthy();
   });
 });
 

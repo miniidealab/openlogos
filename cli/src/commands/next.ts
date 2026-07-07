@@ -14,7 +14,7 @@ import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
-import { isTasksCodeFilled, parseTaskSections, resetCodeSection, PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
+import { isTasksCodeFilled, PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
 import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
 import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 
@@ -99,30 +99,15 @@ function writeSlicesApproved(root: string, slug: string): void {
 
 /**
  * slice-exit 是否可 auto 放行。
- * `[code]` 未 filled → false（前沿 plan-slices）。
- * enforce-slice-stage-ordering §12.7 方案 C：`[code]` filled 时——有 delta 提案由 `openlogos merge` 落点兜底、直接可放行；
- * 纯代码提案需 `SLICE_STAGE_ENTERED` marker（区分 slice-planner 正常填 vs change-writer 提前填）。
- * 若纯代码 + filled + 无 marker → 判定为提前填充，auto-reset `[code]`（trigger:"slice-guard"）并返回 false（不放行、回退 plan-slices）。
+ * `[code]` 未 filled → false（前沿 plan-slices）；filled → true（前沿 slice-exit）。
+ * 提前填充的 `[code]` 统一由 `openlogos merge` 在 spec-complete 前 auto-reset。
  */
-function isSliceExitAutoReady(root: string, slug: string, locale: Locale = 'zh'): boolean {
+function isSliceExitAutoReady(root: string, slug: string): boolean {
   const dir = join(root, 'logos', 'changes', slug);
   const tasksPath = join(dir, 'tasks.md');
   if (!existsSync(tasksPath)) return false;
   const content = readFileSync(tasksPath, 'utf-8');
-  if (!isTasksCodeFilled(content)) return false;
-  if (parseTaskSections(content)?.['delta']) return true;
-  if (existsSync(join(dir, 'SLICE_STAGE_ENTERED'))) return true;
-  resetCodeSection(dir, 'slice-guard', locale);
-  return false;
-}
-
-/** 纯代码提案：标记 slice 阶段已合法进入（供 --auto 区分提前填充；有 delta 提案由 merge 落点兜底，不写 marker）。 */
-function ensureSliceStageEntered(root: string, slug: string): void {
-  const dir = join(root, 'logos', 'changes', slug);
-  const tasksPath = join(dir, 'tasks.md');
-  if (existsSync(tasksPath) && parseTaskSections(readFileSync(tasksPath, 'utf-8'))?.['delta']) return;
-  const p = join(dir, 'SLICE_STAGE_ENTERED');
-  if (!existsSync(p)) writeFileSync(p, '');
+  return isTasksCodeFilled(content);
 }
 
 /** auto 放行时的建议文案（仅 ready-to-merge 这类可跳 gate 会用到）。 */
@@ -269,6 +254,8 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
       return { action: t(locale as Parameters<typeof t>[0], 'next.merge'), command: null, detailKey: 'next.mergeDetail' };
     case 'merge-generated':
       return { action: t(locale as Parameters<typeof t>[0], 'next.executeMerge'), command: null, detailKey: 'next.executeMergeDetail' };
+    case 'spec-complete-required':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.specCompleteRequired'), command: null, detailKey: 'next.specCompleteRequiredDetail' };
     case 'ready-to-implement':
       return { action: t(locale as Parameters<typeof t>[0], 'next.planSlices'), command: null, detailKey: 'next.planSlicesDetail' };
     case 'coding':
@@ -638,10 +625,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       if (gate && gate.skippable && data.active_change && !blocked) {
         if (gate.gate_id === 'slice-exit'
           && data.proposal_step === 'ready-to-implement'
-          && !isSliceExitAutoReady(root, data.active_change, locale)) {
-          // [code] 未 filled（前沿 plan-slices），或纯代码提前填充已被 isSliceExitAutoReady 守卫 reset。
-          // 标记 slice 阶段已进入（纯代码提案后续 --auto 据此区分提前填充）；不放行。next_node 由下方 resolveNextNode 重读 tasks.md 自动派生 plan-slices。
-          ensureSliceStageEntered(root, data.active_change);
+          && !isSliceExitAutoReady(root, data.active_change)) {
+          // [code] 未 filled（前沿 plan-slices），不放行。next_node 由下方 resolveNextNode 重读 tasks.md 自动派生 plan-slices。
           autoGateId = null;
           autoSkippable = null;
         } else {

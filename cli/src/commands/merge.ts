@@ -52,6 +52,14 @@ export function scanDeltas(deltasDir: string): DeltaFile[] {
   return results;
 }
 
+function noDeltaSpecMergedMarker(): string {
+  return JSON.stringify({
+    type: 'no_delta_spec_complete',
+    reason: 'pure-code proposal has no spec delta',
+    completed_at: new Date().toISOString(),
+  }, null, 2) + '\n';
+}
+
 export function merge(slug?: string) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
@@ -90,7 +98,7 @@ export function merge(slug?: string) {
   const deltas = scanDeltas(deltasDir);
 
   if (deltas.length === 0) {
-    writeFileSync(join(changePath, 'SPEC_MERGED'), '');
+    writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
     console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
     return;
   }

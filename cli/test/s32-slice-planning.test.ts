@@ -73,6 +73,13 @@ function auditLines(dir: string): string[] {
   const p = join(dir, 'GATE_AUTO_PASSED');
   return existsSync(p) ? readFileSync(p, 'utf-8').split('\n').filter(Boolean) : [];
 }
+function writeNoDeltaMarker(dir: string): void {
+  writeFileSync(join(dir, 'SPEC_MERGED'), JSON.stringify({
+    type: 'no_delta_spec_complete',
+    reason: 'pure-code proposal has no spec delta',
+    completed_at: '2026-06-20T00:00:00.000Z',
+  }, null, 2));
+}
 function expectPlanSlicesNotAutoPassed(d: Record<string, any>, dir: string): void {
   expect(d.proposal_step).toBe('ready-to-implement');
   expect(d.gate_id).not.toBe('slice-exit');
@@ -205,10 +212,14 @@ describe('S32 — slice-exit auto 放行与跳过', () => {
     expectPlanSlicesNotAutoPassed(d, dir);
   });
 
-  it('UT-S32-14: 纯代码提案未切片时 next --auto 仍先派 plan-slices', async () => {
+  it('UT-S32-14: 纯代码提案缺 SPEC_MERGED 时 next --auto 不得派 plan-slices', async () => {
     const { root, dir } = setupCmd(PURE_CODE_TEMPLATE);
     const d = await nextJson(root, true);
-    expectPlanSlicesNotAutoPassed(d, dir);
+    expect(d.proposal_step).toBe('spec-complete-required');
+    expect(d.gate_auto_passed).toBe(false);
+    expect(d.modules[0].next_node?.id).not.toBe('plan-slices');
+    expect(d.modules[0].next_node?.id).not.toBe('code');
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
   });
 });
 
@@ -312,53 +323,50 @@ describe('S32 — 异常测试', () => {
   });
 });
 
-// ── 六、纯代码提案（无 [delta]）无 SPEC_MERGED 进入切片（fix-nodelta-proposal-routing）──
-describe('S32 — 纯代码提案（无 [delta]）无 SPEC_MERGED 进入 slice', () => {
-  it('UT-S32-10: 纯代码（无 [delta]）无 SPEC_MERGED、[code] 未脱模板 → ready-to-implement / plan-slices（不派 write-delta）', async () => {
+// ── 六、纯代码提案（无 [delta]）需 no-delta SPEC_MERGED 后进入切片 ──
+describe('S32 — 纯代码提案（无 [delta]）no-delta spec-complete', () => {
+  it('UT-S32-10: 纯代码（无 [delta]）无 SPEC_MERGED、[code] 未脱模板 → spec-complete-required（不派 write-delta/plan-slices）', async () => {
     const { root, dir } = setupCmd(PURE_CODE_TEMPLATE); // 无任何 marker
-    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+    expect(detectProposalStep(dir)).toBe('spec-complete-required');
     const m = (await nextJson(root)).modules[0];
-    expect(m.proposal_step).toBe('ready-to-implement');
-    expect(m.next_node?.id).toBe('plan-slices');
+    expect(m.proposal_step).toBe('spec-complete-required');
+    expect(m.next_node?.id).not.toBe('plan-slices');
     expect(m.next_node?.id).not.toBe('write-delta');
     expect(m.proposal_step).not.toBe('delta-writing');
-    // R8：纯代码提案 [code] 仍模板 → plan-slices 未完成、不带 gate_id
+  });
+
+  it('UT-S32-11: 纯代码 no-delta SPEC_MERGED 后 [code] 未脱模板 → ready-to-implement / plan-slices', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_TEMPLATE);
+    writeNoDeltaMarker(dir);
+    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+    const m = (await nextJson(root)).modules[0];
+    expect(m.next_node?.id).toBe('plan-slices');
     expect(m.next_node?.gate_id).toBeUndefined();
   });
 
-  it('UT-S32-11: 纯代码 [code] 脱模板、无 SLICES_APPROVED、无 SPEC_MERGED → 停 slice-exit 门（默认 next 回显 next_node.gate_id）', async () => {
-    // enforce-slice-stage-ordering：纯代码提案「slice-planner 已正常填切片」态含 SLICE_STAGE_ENTERED marker（真实流程经 next 派 plan-slices 时写入）。
-    const { root, dir } = setupCmd(PURE_CODE_SLICES, ['SLICE_STAGE_ENTERED']);
-    expect(detectProposalStep(dir)).toBe('ready-to-implement');
-    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
-    // R8：默认 next（无 --auto）即回显 next_node.gate_id=slice-exit（纯代码提案 spec/merge 空过路径亦二分）
-    const m = (await nextJson(root)).modules[0];
-    expect(m.next_node?.id).toBe('plan-slices');
-    expect(m.next_node?.gate_id).toBe('slice-exit');
-    const auto = await nextJson(root, true);
-    expect(auto.gate_id).toBe('slice-exit');
-    expect(auto.skippable).toBe(true);
-  });
-
-  it('UT-S32-12: 纯代码 slice-exit --auto 放行 → SLICES_APPROVED + coding / next_node=code（无 SPEC_MERGED）', async () => {
-    // enforce-slice-stage-ordering：slice-planner 已正常填切片态（含 SLICE_STAGE_ENTERED marker）→ --auto 正常放行。
-    const { root, dir } = setupCmd(PURE_CODE_SLICES, ['SLICE_STAGE_ENTERED']);
-    const d = await nextJson(root, true);
-    expect(d.gate_id).toBe('slice-exit');
-    expect(d.gate_auto_passed).toBe(true);
-    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
-    expect(d.proposal_step).toBe('coding');
-    expect(d.modules[0].next_node?.id).toBe('code');
-  });
-
-  it('ST-S32-EX-3: 纯代码提案（无 [delta]）无 SPEC_MERGED 正常进入切片（不因缺 SPEC_MERGED 被拒、不派 write-delta）', async () => {
-    const { root, dir } = setupCmd(PURE_CODE_TEMPLATE);
-    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+  it('UT-S32-12: 纯代码 no-delta SPEC_MERGED + [code] 脱模板后停 slice-exit 门', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_SLICES);
+    writeNoDeltaMarker(dir);
     const m = (await nextJson(root)).modules[0];
     expect(m.proposal_step).toBe('ready-to-implement');
     expect(m.next_node?.id).toBe('plan-slices');
-    expect(m.next_node?.id).not.toBe('write-delta');
-    // 对照 ST-S32-EX-1：有 [delta] 提案无 SPEC_MERGED 仍停 spec/merge；纯代码提案不受此约束
+    expect(m.next_node?.gate_id).toBe('slice-exit');
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+  });
+
+  it('ST-S32-EX-3: 纯代码提案（无 [delta]）需 no-delta merge 后进入切片', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_TEMPLATE);
+    expect(detectProposalStep(dir)).toBe('spec-complete-required');
+    const before = (await nextJson(root)).modules[0];
+    expect(before.next_node?.id).not.toBe('plan-slices');
+    runMerge(root);
+    const marker = JSON.parse(readFileSync(join(dir, 'SPEC_MERGED'), 'utf-8'));
+    expect(marker.type).toBe('no_delta_spec_complete');
+    const after = (await nextJson(root)).modules[0];
+    expect(after.proposal_step).toBe('ready-to-implement');
+    expect(after.next_node?.id).toBe('plan-slices');
+    expect(after.next_node?.id).not.toBe('write-delta');
+    // 对照 ST-S32-EX-1：有 [delta] 提案无 SPEC_MERGED 仍停 spec/merge
     const deltaProp = setupCmd(DELTA_DONE_CODE_TEMPLATE, [], 'feat2');
     expect(detectProposalStep(deltaProp.dir)).not.toBe('ready-to-implement');
   });
@@ -393,14 +401,16 @@ describe('S32 — 提前填充 [code] auto-reset（enforce-slice-stage-ordering�
     expect(lines[0].ts).toBeTruthy();
   });
 
-  it('UT-S32-16: 纯代码提案 --auto 消费 slice-exit 前守卫 auto-reset 提前填充的 [code]（trigger:slice-guard）', async () => {
-    const { root, dir } = setupCmd(PURE_CODE_SLICES); // 纯代码 + [code] 提前填、无 SLICE_STAGE_ENTERED
-    const d = await nextJson(root, true);
-    // 守卫：无 marker → 提前填充 → reset + 不放行、回退 plan-slices
+  it('UT-S32-16: 纯代码提案 no-delta merge 时 auto-reset 提前填充的 [code]（trigger:merge）', async () => {
+    const { root, dir } = setupCmd(PURE_CODE_SLICES); // 纯代码 + [code] 提前填、无 SPEC_MERGED
+    runMerge(root);
     expect(codeFilled(dir)).toBe(false);
-    expect(autoresetLines(dir)[0].trigger).toBe('slice-guard');
-    expect(existsSync(join(dir, 'SLICE_STAGE_ENTERED'))).toBe(true);
-    expectPlanSlicesNotAutoPassed(d, dir);
+    expect(autoresetLines(dir)[0].trigger).toBe('merge');
+    const marker = JSON.parse(readFileSync(join(dir, 'SPEC_MERGED'), 'utf-8'));
+    expect(marker.type).toBe('no_delta_spec_complete');
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('ready-to-implement');
+    expect(m.next_node?.id).toBe('plan-slices');
   });
 
   it('UT-S32-17: auto-reset 幂等（[code] 已占位不清理/不备份）', () => {
@@ -434,15 +444,17 @@ describe('S32 — 提前填充 [code] auto-reset（enforce-slice-stage-ordering�
     expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
   });
 
-  it('ST-S32-EX-5: 纯代码提案提前填 [code] → --auto 守卫 reset → 下轮 plan-slices → 填 → 放行', async () => {
+  it('ST-S32-EX-5: 纯代码提案提前填 [code] → no-delta merge reset → plan-slices → 填 → 放行', async () => {
     const { root, dir } = setupCmd(PURE_CODE_SLICES); // 提前填、无 marker
-    // 1) 首次 --auto：守卫 reset + 不放行
-    const d1 = await nextJson(root, true);
-    expectPlanSlicesNotAutoPassed(d1, dir);
+    // 1) no-delta merge：reset + 写 SPEC_MERGED
+    runMerge(root);
     expect(codeFilled(dir)).toBe(false);
-    expect(existsSync(join(dir, 'SLICE_STAGE_ENTERED'))).toBe(true);
-    expect(autoresetLines(dir)[0].trigger).toBe('slice-guard');
-    // 2) slice-planner 填真实切片 → 有 marker + filled → 放行 coding
+    expect(existsSync(join(dir, 'SPEC_MERGED'))).toBe(true);
+    expect(autoresetLines(dir)[0].trigger).toBe('merge');
+    const m1 = (await nextJson(root)).modules[0];
+    expect(m1.proposal_step).toBe('ready-to-implement');
+    expect(m1.next_node?.id).toBe('plan-slices');
+    // 2) slice-planner 填真实切片 → filled → 放行 coding
     writeFileSync(join(dir, 'tasks.md'), PURE_CODE_SLICES);
     const d2 = await nextJson(root, true);
     expect(d2.gate_id).toBe('slice-exit');

@@ -402,6 +402,10 @@ function buildModuleStatusItem(
         suggestion = locale === 'zh'
           ? `让 AI 读取 logos/changes/${activeChange.slug}/MERGE_PROMPT.md 并执行规格合并；完成后写入 SPEC_MERGED`
           : `Ask AI to read logos/changes/${activeChange.slug}/MERGE_PROMPT.md and merge specs; write SPEC_MERGED when done`;
+      } else if (activeChange.proposal_step === 'spec-complete-required') {
+        suggestion = locale === 'zh'
+          ? `当前是无 delta 代码提案，先明确授权执行 openlogos merge ${activeChange.slug} 写入 no-delta SPEC_MERGED`
+          : `No-delta code proposal: explicitly request openlogos merge ${activeChange.slug} to write the no-delta SPEC_MERGED marker`;
       } else if (activeChange.proposal_step === 'ready-to-implement') {
         suggestion = activeChange.code_planning_diagnostic
           ? (locale === 'zh'

@@ -84,12 +84,12 @@ describe('S31 — ready-to-delta 驻留态检测', () => {
     expect(detectProposalStepViaFlow(dir)).toBe('delta-writing');
   });
 
-  it('UT-S31-05: 纯代码提案（无 [delta] section）→ ready-to-implement（经 slice-planner，非 ready-to-delta/delta-writing；fix-nodelta-proposal-routing）', () => {
-    // fix-nodelta-proposal-routing：无 [delta] 纯代码提案 spec/merge 空过，[code] 未划片/无 SLICES_APPROVED
-    // → ready-to-implement（前沿 plan-slices）。关键仍是「不落 ready-to-delta / delta-writing」。见 spec/flow-spec.md §12.6。
+  it('UT-S31-05: 纯代码提案（无 [delta] section）缺 SPEC_MERGED → spec-complete-required（非 ready-to-delta/delta-writing）', () => {
+    // support-nodelta-spec-complete：无 [delta] 纯代码提案不再 spec/merge 空过。
+    // 关键仍是「不落 ready-to-delta / delta-writing」，而是停 no-delta spec-complete。
     const { dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [ ] 实现 x');
-    expect(detectProposalStepViaFlow(dir)).toBe('ready-to-implement');
-    expect(detectProposalStep(dir)).toBe('ready-to-implement');
+    expect(detectProposalStepViaFlow(dir)).toBe('spec-complete-required');
+    expect(detectProposalStep(dir)).toBe('spec-complete-required');
   });
 
   it('UT-S31-06: [delta] 全勾 → ready-to-merge（不被 ready-to-delta 抢占）', () => {
@@ -212,8 +212,8 @@ describe('S31 — code_slices_green 复合收敛', () => {
     expect(loop(root, dir)).toMatchObject({ converged: true });
   });
 
-  it('internal-S31-empty-code-section-pass: 空 [code]（total=0）+ 末轮 pass → 退化 tests_green、converged:true（不死锁）', () => {
-    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n', { loop: ['pass'] });
+  it('internal-S31-docs-only-no-code-section-pass: 无 [code] section + 末轮 pass → 退化 tests_green、converged:true（不死锁）', () => {
+    const { root, dir } = makeProposal('# 任务\n\n## [delta] 规格变更\n- [x] d', { loop: ['pass'] });
     expect(loop(root, dir)).toMatchObject({ converged: true });
   });
 
@@ -222,9 +222,9 @@ describe('S31 — code_slices_green 复合收敛', () => {
     expect(loop(root, dir)).toMatchObject({ iteration: 0, converged: false });
   });
 
-  it('UT-S31-07: 空 [code]（切片数 0）退化为 tests_green → converged:true + slice_state{total:0}（不因无切片卡死）', () => {
-    // 切片数 0：复合收敛退化为纯 tests_green（仅看末轮 pass），绝不死锁；slice_state 同时报 total:0。
-    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n', { loop: ['pass'] });
+  it('UT-S31-07: 纯文档无 [code] section 退化为 tests_green → converged:true + slice_state{total:0}（不因无切片卡死）', () => {
+    // 无代码需求：复合收敛退化为纯 tests_green（仅看末轮 pass），绝不死锁；slice_state 同时报 total:0。
+    const { root, dir } = makeProposal('# 任务\n\n## [delta] 规格变更\n- [x] d', { loop: ['pass'] });
     expect(loop(root, dir)).toMatchObject({ until: 'code_slices_green', converged: true });
     expect(deriveSliceState(dir)).toEqual({ total: 0, done: 0, remaining: 0 });
   });

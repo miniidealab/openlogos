@@ -84,6 +84,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'status.proposalStep.in-progress': 'writing deltas — update change delta files',
     'status.proposalStep.ready-to-merge': 'ready to merge — explicitly request `openlogos merge` to proceed',
     'status.proposalStep.merge-generated': 'merge instructions generated — ask AI to merge specs',
+    'status.proposalStep.spec-complete-required': 'spec-complete required — run no-delta merge before planning code slices',
     'status.proposalStep.ready-to-implement': 'slices pending — approve the [code] slicing (slice-exit gate) before implementing',
     'status.proposalStep.coding': 'coding — implement code from merged specs',
     'status.proposalStep.ready-to-verify': 'ready to verify — explicitly request `openlogos verify`',
@@ -196,7 +197,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.proposal': '  - Change proposal: {slug}',
     'merge.deltaCount': '  - Delta files: {count}',
     'merge.aiHint': 'Tell AI: "Read logos/changes/{slug}/MERGE_PROMPT.md and execute merge"',
-    'merge.noDelta': 'No delta files in logos/changes/{slug}/deltas/ — nothing to merge.',
+    'merge.noDelta': 'No delta files in logos/changes/{slug}/deltas/ — no-delta spec-complete marker written.',
     'merge.alreadyMerged': 'Specs already merged for \'{slug}\' (SPEC_MERGED exists) — nothing to do.',
     'merge.archiveHint': 'Next, ask AI to execute logos/changes/{slug}/MERGE_PROMPT.md and write SPEC_MERGED after specs are actually merged. Then implement code, run `openlogos verify`, and explicitly request `openlogos archive {slug}` after verification passes.',
 
@@ -253,6 +254,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'next.mergeDetail': 'Explicitly request `openlogos merge {slug}` to generate MERGE_PROMPT.md.',
     'next.executeMerge': 'Execute spec merge',
     'next.executeMergeDetail': 'Ask AI to read logos/changes/{slug}/MERGE_PROMPT.md, merge deltas into logos/resources, commit docs, then write logos/changes/{slug}/SPEC_MERGED.',
+    'next.specCompleteRequired': 'Complete no-delta spec marker',
+    'next.specCompleteRequiredDetail': 'Explicitly request `openlogos merge {slug}` to write the no-delta SPEC_MERGED marker before planning [code] slices.',
     'next.launch': 'Activate change management for future iterations',
     'next.phaseDetail': 'Current phase: {phase}',
 
@@ -330,6 +333,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'status.proposalStep.in-progress': '撰写 Delta — 更新变更增量文档',
     'status.proposalStep.ready-to-merge': '可合并 — 明确授权执行 merge，再明确授权执行归档',
     'status.proposalStep.merge-generated': '合并指令已生成 — 等待 AI 合并主规格',
+    'status.proposalStep.spec-complete-required': '需完成规格阶段 — 先执行 no-delta merge 写入 SPEC_MERGED，再规划代码切片',
     'status.proposalStep.ready-to-implement': '切片待批准 — 批准 [code] 切片划分（slice-exit 门）后开始实现',
     'status.proposalStep.coding': '编码中 — 按已合并规格实现代码',
     'status.proposalStep.ready-to-verify': '待验收 — 明确授权执行 `openlogos verify`',
@@ -442,7 +446,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.proposal': '  - 变更提案：{slug}',
     'merge.deltaCount': '  - Delta 文件：{count} 个',
     'merge.aiHint': '对 AI 说：「读取 logos/changes/{slug}/MERGE_PROMPT.md 并执行合并」',
-    'merge.noDelta': 'logos/changes/{slug}/deltas/ 中没有 delta 文件，无需合并。',
+    'merge.noDelta': 'logos/changes/{slug}/deltas/ 中没有 delta 文件，已写入 no-delta spec-complete 标记。',
     'merge.alreadyMerged': '提案 \'{slug}\' 的规格已合并（SPEC_MERGED 存在），无需重复操作。',
     'merge.archiveHint': '下一步让 AI 执行 logos/changes/{slug}/MERGE_PROMPT.md，真正合并主规格后写入 SPEC_MERGED。之后再实现代码、运行 `openlogos verify`，验收通过后明确授权执行 `openlogos archive {slug}`。',
 
@@ -499,6 +503,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'next.mergeDetail': '明确授权执行 `openlogos merge {slug}`，生成 MERGE_PROMPT.md。',
     'next.executeMerge': '执行规格合并',
     'next.executeMergeDetail': '让 AI 读取 logos/changes/{slug}/MERGE_PROMPT.md，将 delta 合入 logos/resources，提交规格文档后写入 logos/changes/{slug}/SPEC_MERGED。',
+    'next.specCompleteRequired': '完成 no-delta 规格阶段标记',
+    'next.specCompleteRequiredDetail': '明确授权执行 `openlogos merge {slug}` 写入 no-delta SPEC_MERGED 后，再进入 [code] 切片规划。',
     'next.launch': '激活变更管理，开始迭代开发',
     'next.phaseDetail': '当前阶段：{phase}',
 

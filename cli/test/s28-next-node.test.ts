@@ -56,6 +56,7 @@ function setupLaunchedVerify(root: string, slug = 'feat'): string {
   writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core' }));
   writeFileSync(join(dir, 'proposal.md'), PROPOSAL());
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
+  writeFileSync(join(dir, 'SPEC_MERGED'), '');
   return dir;
 }
 /** launched coding（current builtin = code）：SPEC_MERGED + [code] 未勾。 */

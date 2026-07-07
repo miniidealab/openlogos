@@ -10,6 +10,7 @@ export type ProposalStep =
   | 'delta-writing'
   | 'ready-to-merge'
   | 'merge-generated'
+  | 'spec-complete-required'
   | 'ready-to-implement'
   | 'coding'
   | 'ready-to-verify'
@@ -207,7 +208,7 @@ export function isCodeRequiredForProposal(
   const taskText = tasksContent ?? (existsSync(join(proposalDir, 'tasks.md'))
     ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '');
   const parsedSections = sections ?? parseTaskSections(taskText);
-  if (parsedSections?.code && parsedSections.code.total > 0) return true;
+  if (parsedSections?.code) return true;
 
   const proposalContent = existsSync(join(proposalDir, 'proposal.md'))
     ? readFileSync(join(proposalDir, 'proposal.md'), 'utf-8') : '';
@@ -295,7 +296,7 @@ function replaceCodeSectionBody(content: string, placeholder: string): string {
  * enforce-slice-stage-ordering：auto-reset 提前填充的 `[code]` section（§12.7）。
  * 仅当 `[code]` 已 `tasks_code_filled`（提前填充）时，重置为纯代码模板占位并把旧内容备份到提案目录 `CODE_AUTORESET`。
  * 幂等：`[code]` 已占位（未 `tasks_code_filled`）时不清理、不备份，返回 false。
- * ⚠️ 只在有副作用命令（`openlogos merge` / `next --auto` slice-exit 守卫）中调用；**绝不**在 `status`/`flow-derive` 被动派生路径调用（A 被动派生只读）。
+ * ⚠️ 只在有副作用命令（`openlogos merge`）中调用；**绝不**在 `status`/`flow-derive` 被动派生路径调用（A 被动派生只读）。
  */
 export function resetCodeSection(proposalDir: string, trigger: string, locale = 'zh'): boolean {
   const tasksPath = join(proposalDir, 'tasks.md');
@@ -316,6 +317,10 @@ export function countMergeableDeltaFiles(proposalDir: string): number {
     count += listFiles(join(proposalDir, 'deltas', category)).length;
   }
   return count;
+}
+
+export function hasSpecCompleteMarker(proposalDir: string): boolean {
+  return existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'));
 }
 
 export function countTasks(content: string): { checked: number; total: number } {
@@ -681,8 +686,7 @@ export function detectProposalStep(
   proposalDir: string,
   moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
 ): ProposalStep {
-  if ((existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED')))
-    && isCodeRequiredButUnplanned(proposalDir)) {
+  if (hasSpecCompleteMarker(proposalDir) && isCodeRequiredButUnplanned(proposalDir)) {
     return 'ready-to-implement';
   }
   if (existsSync(join(proposalDir, 'VERIFY_FAIL'))) {
@@ -730,7 +734,7 @@ export function detectProposalStep(
     }
     return 'deploy-done';
   }
-  if (existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'))) {
+  if (hasSpecCompleteMarker(proposalDir)) {
     // 规格已合并，判断 [code] section 是否全部完成
     const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
       ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
@@ -774,9 +778,12 @@ export function detectProposalStep(
     const delta = sections['delta'];
     const code = sections['code'];
 
-    // fix-nodelta-proposal-routing：纯代码提案（新格式无 [delta] section）spec/merge 空过（vacuously done），
-    // 按 slice/implement 逻辑路由（依 [code] + SLICES_APPROVED），**绝不返回 delta-writing**（见 spec/flow-spec.md §12.6）。
+    // support-nodelta-spec-complete：无 [delta] 只表示不需要写 delta，不代表 spec-complete。
+    // 需要代码的 no-delta 提案必须先通过 openlogos merge 写 no-delta SPEC_MERGED。
     if (!delta) {
+      if (isCodeRequiredForProposal(proposalDir, tasksContent, sections)) {
+        return 'spec-complete-required';
+      }
       if (!code || (code.total > 0 && code.checked === code.total)) {
         return 'ready-to-verify';
       }
