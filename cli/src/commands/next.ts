@@ -5,7 +5,7 @@ import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData, deriveActiveOverlay } from './status.js';
-import type { ProposalStep, PlanState, CmdGate } from './status.js';
+import type { ProposalStep, ProposalBlockReason, PlanState, CmdGate } from './status.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
 import { gateForProposalStep, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
 import type { CurrentNode, CmdEval, NextNode } from '../lib/flow-overlay-derive.js';
@@ -28,6 +28,7 @@ export interface NextModuleItem {
   detail: string;
   active_change: string | null;
   proposal_step: ProposalStep | null;
+  reason?: ProposalBlockReason;
   deployment_decision_conflict?: boolean;
   deployment_decision_conflict_reason?: string | null;
   deployment_warnings?: string[];
@@ -50,6 +51,7 @@ export interface NextData {
   detail: string;
   active_change: string | null;
   proposal_step: string | null;
+  reason?: ProposalBlockReason;
   modules?: NextModuleItem[];
   // M2 切片 1a：base data 的 current_node（仅当前为 overlay-added 时附带）
   current_node?: CurrentNode;
@@ -153,6 +155,7 @@ function buildModuleNextItem(
     active_change: {
       slug: string;
       proposal_step: ProposalStep;
+      reason?: ProposalBlockReason;
       deployment_decision_conflict?: boolean;
       deployment_decision_conflict_reason?: string | null;
       deployment_warnings?: string[];
@@ -174,6 +177,7 @@ function buildModuleNextItem(
           detail: mod.active_change.deployment_warnings?.join(' ') || mod.suggestion,
           active_change: mod.active_change.slug,
           proposal_step: mod.active_change.proposal_step,
+          ...(mod.active_change.reason ? { reason: mod.active_change.reason } : {}),
           deployment_decision_conflict: true,
           deployment_decision_conflict_reason: mod.active_change.deployment_decision_conflict_reason ?? null,
           ...(mod.active_change.deployment_warnings ? { deployment_warnings: mod.active_change.deployment_warnings } : {}),
@@ -186,6 +190,7 @@ function buildModuleNextItem(
         id: mod.id, name: mod.name, lifecycle: 'launched',
         action, command, detail: mod.suggestion,
         active_change: mod.active_change.slug, proposal_step: step,
+        ...(mod.active_change.reason ? { reason: mod.active_change.reason } : {}),
         ...(mod.active_change.plan_state ? { plan_state: mod.active_change.plan_state } : {}),
         ...(mod.active_change.code_planning_diagnostic
           ? { code_planning_diagnostic: mod.active_change.code_planning_diagnostic }
@@ -256,6 +261,8 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
       return { action: t(locale as Parameters<typeof t>[0], 'next.executeMerge'), command: null, detailKey: 'next.executeMergeDetail' };
     case 'spec-complete-required':
       return { action: t(locale as Parameters<typeof t>[0], 'next.specCompleteRequired'), command: null, detailKey: 'next.specCompleteRequiredDetail' };
+    case 'test-id-required':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.testIdRequired'), command: null, detailKey: 'next.testIdRequiredDetail' };
     case 'ready-to-implement':
       return { action: t(locale as Parameters<typeof t>[0], 'next.planSlices'), command: null, detailKey: 'next.planSlicesDetail' };
     case 'coding':
@@ -441,6 +448,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
         active_change: m.active_change ? {
           slug: m.active_change.slug,
           proposal_step: m.active_change.proposal_step,
+          reason: m.active_change.reason,
           deployment_decision_conflict: m.active_change.deployment_decision_conflict,
           deployment_decision_conflict_reason: m.active_change.deployment_decision_conflict_reason,
           deployment_warnings: m.active_change.deployment_warnings,
@@ -821,10 +829,12 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   // 不得泄漏 guard 顶层（其它模块活跃提案）的建议——否则机器消费者会按顶层推进错误模块。
   let topActiveChange = data.active_change;
   let topProposalStep = data.proposal_step;
+  let topReason = data.reason;
   if (moduleId && data.modules && data.modules.length === 1) {
     const md = data.modules[0];
     topActiveChange = md.active_change?.slug ?? null;
     topProposalStep = md.active_change?.proposal_step ?? null;
+    topReason = md.active_change?.reason;
     const mi = moduleItems?.[0];
     if (mi) { action = mi.action; command = mi.command; detail = mi.detail; }
   }
@@ -866,6 +876,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     detail,
     active_change: topActiveChange,
     proposal_step: topProposalStep,
+    ...(topReason ? { reason: topReason } : {}),
     ...(moduleItems !== undefined ? { modules: moduleItems } : {}),
     ...(baseCurrentNode ? { current_node: baseCurrentNode } : {}),
     ...(baseLoopState ? { loop_state: baseLoopState } : {}),

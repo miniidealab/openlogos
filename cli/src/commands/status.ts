@@ -27,11 +27,13 @@ import {
   resolveProposalDeploymentDecision,
   detectProposalStep,
   getCodePlanningDiagnostic,
+  getProposalStepReason,
   derivePlanState,
   isCodeRequiredForProposal,
 } from '../lib/proposal-lifecycle.js';
 import type {
   ProposalStep,
+  ProposalBlockReason,
   PlanState,
   CodePlanningDiagnostic,
   DeploymentDecisionSource,
@@ -56,6 +58,7 @@ export {
 };
 export type {
   ProposalStep,
+  ProposalBlockReason,
   PlanState,
   DeploymentDecisionSource,
   ProposalDeploymentDecision,
@@ -116,6 +119,7 @@ export interface ModuleStatusItem {
     slug: string;
     proposal_step: ProposalStep;
     proposal_step_label: string;
+    reason?: ProposalBlockReason;
     has_proposal: boolean;
     has_tasks: boolean;
     tasks_checked: number;
@@ -175,6 +179,7 @@ export interface StatusData {
   source_roots: { src: string[]; test: string[] } | null;
   active_change: string | null;
   proposal_step: ProposalStep | null;
+  reason?: ProposalBlockReason;
   yaml_diagnostics: YamlDiagnostics | null;
   // M2 切片 1a：legacy 无 modules[] 项目的 overlay 顶层回退（有 modules[] 时挂 modules[] 下）
   overlay_nodes?: OverlayNode[];
@@ -342,12 +347,14 @@ function buildModuleStatusItem(
       const deltaCount = countMergeableDeltaFiles(proposalDir);
       const deployTasks = getDeployTasks(proposalDir);
       const codePlanningDiagnostic = getCodePlanningDiagnostic(proposalDir, tasksContent);
+      const reason = getProposalStepReason(proposalDir, step, tasksContent);
       const planState = derivePlanState(proposalDir, step, deploymentDecision, tasksContent);
 
       activeChange = {
         slug: guardActiveChange,
         proposal_step: step,
         proposal_step_label: stepLabel,
+        ...(reason ? { reason } : {}),
         has_proposal: hasProposal,
         has_tasks: hasTasksFile,
         tasks_checked: checked,
@@ -406,6 +413,10 @@ function buildModuleStatusItem(
         suggestion = locale === 'zh'
           ? `当前是无 delta 代码提案，先明确授权执行 openlogos merge ${activeChange.slug} 写入 no-delta SPEC_MERGED`
           : `No-delta code proposal: explicitly request openlogos merge ${activeChange.slug} to write the no-delta SPEC_MERGED marker`;
+      } else if (activeChange.proposal_step === 'test-id-required') {
+        suggestion = locale === 'zh'
+          ? `先为 ${activeChange.slug} 补充或显式复用真实 UT/ST/SMOKE 测试 ID，再进入 slice-planner`
+          : `Add or explicitly reference real UT/ST/SMOKE IDs for ${activeChange.slug} before running slice-planner`;
       } else if (activeChange.proposal_step === 'ready-to-implement') {
         suggestion = activeChange.code_planning_diagnostic
           ? (locale === 'zh'
@@ -982,6 +993,9 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
   const topPlanState = (rawModules === undefined && projectProposalDir && proposalStep && existsSync(projectProposalDir))
     ? derivePlanState(projectProposalDir, proposalStep, resolveProposalDeploymentDecision(projectProposalDir))
     : null;
+  const topReason = (projectProposalDir && proposalStep && existsSync(projectProposalDir))
+    ? getProposalStepReason(projectProposalDir, proposalStep)
+    : null;
 
   return {
     phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
@@ -1011,6 +1025,7 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
     source_roots: sourceRoots,
     active_change: activeChange,
     proposal_step: proposalStep,
+    ...(topReason ? { reason: topReason } : {}),
     yaml_diagnostics: yamlDiagnostics,
   };
 }

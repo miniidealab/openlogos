@@ -23,12 +23,20 @@ const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 function filled(): string {
+  return filledWithOverview('概述。覆盖 UT-S32-04、UT-S32-21、ST-S32-EX-1、ST-S32-EX-6。');
+}
+
+function filledWithoutTestIds(): string {
+  return filledWithOverview('概述。');
+}
+
+function filledWithOverview(overview: string): string {
   return [
     '# 变更提案：feat', '', '## 变更原因', '需要新能力。', '', '## 变更类型', '设计级', '',
     '## 变更范围', '- 影响的功能规格：core-01', '', '## 部署影响',
     '- 是否需要部署：否', '- 部署原因：纯文档', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
-    '## 变更概述', '概述。',
+    '## 变更概述', overview,
   ].join('\n');
 }
 
@@ -320,6 +328,36 @@ describe('S32 — 异常测试', () => {
     const d = await nextJson(root, true);
     expectPlanSlicesNotAutoPassed(d, dir);
     expect(d.modules[0].next_node?.id).not.toBe('code');
+  });
+
+  it('UT-S32-26: SPEC_MERGED + code_required 但缺真实测试 ID → test-id-required', async () => {
+    const { root, dir } = setupCmd(DELTA_DONE_CODE_TEMPLATE, ['SPEC_MERGED'], 'feat', filledWithoutTestIds());
+    expect(detectProposalStep(dir)).toBe('test-id-required');
+
+    const statusData = statusJson(root);
+    const s = statusData.modules[0].active_change;
+    expect(s.proposal_step).toBe('test-id-required');
+    expect(s.reason).toBe('code_change_requires_real_test_ids');
+
+    const d = await nextJson(root);
+    expect(d.proposal_step).toBe('test-id-required');
+    expect(d.reason).toBe('code_change_requires_real_test_ids');
+    expect(d.modules[0].reason).toBe('code_change_requires_real_test_ids');
+    expect(d.modules[0].next_node?.id).not.toBe('plan-slices');
+  });
+
+  it('ST-S32-EX-6: 缺真实 UT/ST/SMOKE ID 时 next/status 不派 slice-planner', async () => {
+    const { root } = setupCmd(PURE_CODE_TEMPLATE, ['SPEC_MERGED'], 'feat', filledWithoutTestIds());
+
+    const s = statusJson(root).modules[0].active_change;
+    expect(s.proposal_step).toBe('test-id-required');
+    expect(s.reason).toBe('code_change_requires_real_test_ids');
+
+    const m = (await nextJson(root)).modules[0];
+    expect(m.proposal_step).toBe('test-id-required');
+    expect(m.reason).toBe('code_change_requires_real_test_ids');
+    expect(m.next_node?.id).not.toBe('plan-slices');
+    expect(m.action).toContain('测试 ID');
   });
 });
 

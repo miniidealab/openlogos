@@ -11,6 +11,7 @@ export type ProposalStep =
   | 'ready-to-merge'
   | 'merge-generated'
   | 'spec-complete-required'
+  | 'test-id-required'
   | 'ready-to-implement'
   | 'coding'
   | 'ready-to-verify'
@@ -62,6 +63,10 @@ export interface CodePlanningDiagnostic {
   tasksPath: string;
   remediation: string;
 }
+
+export type ProposalBlockReason =
+  | 'no_delta_spec_marker_missing'
+  | 'code_change_requires_real_test_ids';
 
 export type TasksExecutionScope = 'delta' | 'deploy' | 'code' | 'none';
 
@@ -217,6 +222,49 @@ export function isCodeRequiredForProposal(
   if (testDeltaRequiresCode) return true;
   if (proposalDeclaresNoCode(proposalContent)) return false;
   return proposalDeclaresCodeRequired(proposalContent);
+}
+
+function readIfExists(path: string): string {
+  return existsSync(path) ? readFileSync(path, 'utf-8') : '';
+}
+
+export function hasRealTestIdsForProposal(proposalDir: string, tasksContent?: string): boolean {
+  const taskText = tasksContent ?? readIfExists(join(proposalDir, 'tasks.md'));
+  if (TEST_CASE_ID_PATTERN.test(taskText)) return true;
+
+  const proposalContent = readIfExists(join(proposalDir, 'proposal.md'));
+  if (TEST_CASE_ID_PATTERN.test(proposalContent)) return true;
+
+  for (const file of listFiles(join(proposalDir, 'deltas', 'test'))) {
+    const fullPath = join(proposalDir, 'deltas', 'test', file);
+    try {
+      if (TEST_CASE_ID_PATTERN.test(readFileSync(fullPath, 'utf-8'))) return true;
+    } catch {
+      // 忽略不可读文件；listFiles 已过滤普通文件，此处只兜底竞态。
+    }
+  }
+
+  return false;
+}
+
+export function getProposalStepReason(
+  proposalDir: string,
+  step?: ProposalStep,
+  tasksContent?: string,
+): ProposalBlockReason | null {
+  const taskText = tasksContent ?? readIfExists(join(proposalDir, 'tasks.md'));
+  const sections = parseTaskSections(taskText);
+  const codeRequired = isCodeRequiredForProposal(proposalDir, taskText, sections);
+  const currentStep = step ?? detectProposalStep(proposalDir);
+
+  if (currentStep === 'spec-complete-required' && codeRequired && !hasSpecCompleteMarker(proposalDir)) {
+    return 'no_delta_spec_marker_missing';
+  }
+  if (currentStep === 'test-id-required' && codeRequired && hasSpecCompleteMarker(proposalDir)
+    && !hasRealTestIdsForProposal(proposalDir, taskText)) {
+    return 'code_change_requires_real_test_ids';
+  }
+  return null;
 }
 
 export function getCodePlanningDiagnostic(proposalDir: string, tasksContent?: string): CodePlanningDiagnostic | null {
@@ -686,15 +734,21 @@ export function detectProposalStep(
   proposalDir: string,
   moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
 ): ProposalStep {
-  if (hasSpecCompleteMarker(proposalDir) && isCodeRequiredButUnplanned(proposalDir)) {
+  const initialTasksContent = readIfExists(join(proposalDir, 'tasks.md'));
+  if (hasSpecCompleteMarker(proposalDir)
+    && isCodeRequiredForProposal(proposalDir, initialTasksContent)
+    && !isTasksCodeFilled(initialTasksContent)
+    && !hasRealTestIdsForProposal(proposalDir, initialTasksContent)) {
+    return 'test-id-required';
+  }
+  if (hasSpecCompleteMarker(proposalDir) && isCodeRequiredButUnplanned(proposalDir, initialTasksContent)) {
     return 'ready-to-implement';
   }
   if (existsSync(join(proposalDir, 'VERIFY_FAIL'))) {
     return 'verify-failed';
   }
   if (existsSync(join(proposalDir, 'VERIFY_PASS'))) {
-    const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
-      ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
+    const tasksContent = readIfExists(join(proposalDir, 'tasks.md'));
     const deploy = getDeploySectionSummary(tasksContent);
     const hasDeployTasks = Boolean(deploy && deploy.total > 0);
     const deploymentDecision = resolveProposalDeploymentDecision(proposalDir, moduleDefaults);
@@ -736,12 +790,14 @@ export function detectProposalStep(
   }
   if (hasSpecCompleteMarker(proposalDir)) {
     // 规格已合并，判断 [code] section 是否全部完成
-    const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
-      ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
+    const tasksContent = readIfExists(join(proposalDir, 'tasks.md'));
     const sections = parseTaskSections(tasksContent);
     if (sections !== null) {
       const code = sections['code'];
       const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
+      if (codeRequired && !isTasksCodeFilled(tasksContent) && !hasRealTestIdsForProposal(proposalDir, tasksContent)) {
+        return 'test-id-required';
+      }
       if (!code && codeRequired) {
         return 'ready-to-implement';
       }
@@ -762,10 +818,8 @@ export function detectProposalStep(
   if (existsSync(join(proposalDir, 'MERGE_PROMPT_GENERATED')) || existsSync(join(proposalDir, 'MERGE_PROMPT.md'))) {
     return 'merge-generated';
   }
-  const proposalContent = existsSync(join(proposalDir, 'proposal.md'))
-    ? readFileSync(join(proposalDir, 'proposal.md'), 'utf-8') : '';
-  const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
-    ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
+  const proposalContent = readIfExists(join(proposalDir, 'proposal.md'));
+  const tasksContent = readIfExists(join(proposalDir, 'tasks.md'));
   const mergeableDeltaCount = countMergeableDeltaFiles(proposalDir);
 
   if (!isProposalTemplateFilled(proposalContent) || !isTasksTemplateFilled(tasksContent)) {

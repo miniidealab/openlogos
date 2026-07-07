@@ -85,6 +85,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'status.proposalStep.ready-to-merge': 'ready to merge — explicitly request `openlogos merge` to proceed',
     'status.proposalStep.merge-generated': 'merge instructions generated — ask AI to merge specs',
     'status.proposalStep.spec-complete-required': 'spec-complete required — run no-delta merge before planning code slices',
+    'status.proposalStep.test-id-required': 'test IDs required — add or reference real UT/ST/SMOKE IDs before planning code slices',
     'status.proposalStep.ready-to-implement': 'slices pending — approve the [code] slicing (slice-exit gate) before implementing',
     'status.proposalStep.coding': 'coding — implement code from merged specs',
     'status.proposalStep.ready-to-verify': 'ready to verify — explicitly request `openlogos verify`',
@@ -256,6 +257,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'next.executeMergeDetail': 'Ask AI to read logos/changes/{slug}/MERGE_PROMPT.md, merge deltas into logos/resources, commit docs, then write logos/changes/{slug}/SPEC_MERGED.',
     'next.specCompleteRequired': 'Complete no-delta spec marker',
     'next.specCompleteRequiredDetail': 'Explicitly request `openlogos merge {slug}` to write the no-delta SPEC_MERGED marker before planning [code] slices.',
+    'next.testIdRequired': 'Add real test IDs',
+    'next.testIdRequiredDetail': 'Add or explicitly reference real UT/ST/SMOKE IDs for {slug}; `plan-slices` is blocked until test IDs are stable.',
     'next.launch': 'Activate change management for future iterations',
     'next.phaseDetail': 'Current phase: {phase}',
 
@@ -334,6 +337,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'status.proposalStep.ready-to-merge': '可合并 — 明确授权执行 merge，再明确授权执行归档',
     'status.proposalStep.merge-generated': '合并指令已生成 — 等待 AI 合并主规格',
     'status.proposalStep.spec-complete-required': '需完成规格阶段 — 先执行 no-delta merge 写入 SPEC_MERGED，再规划代码切片',
+    'status.proposalStep.test-id-required': '需补测试 ID — 先补充或显式复用真实 UT/ST/SMOKE ID，再规划代码切片',
     'status.proposalStep.ready-to-implement': '切片待批准 — 批准 [code] 切片划分（slice-exit 门）后开始实现',
     'status.proposalStep.coding': '编码中 — 按已合并规格实现代码',
     'status.proposalStep.ready-to-verify': '待验收 — 明确授权执行 `openlogos verify`',
@@ -505,6 +509,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'next.executeMergeDetail': '让 AI 读取 logos/changes/{slug}/MERGE_PROMPT.md，将 delta 合入 logos/resources，提交规格文档后写入 logos/changes/{slug}/SPEC_MERGED。',
     'next.specCompleteRequired': '完成 no-delta 规格阶段标记',
     'next.specCompleteRequiredDetail': '明确授权执行 `openlogos merge {slug}` 写入 no-delta SPEC_MERGED 后，再进入 [code] 切片规划。',
+    'next.testIdRequired': '补充真实测试 ID',
+    'next.testIdRequiredDetail': '先为 {slug} 补充或显式复用真实 UT/ST/SMOKE ID；测试 ID 稳定前不得进入 `plan-slices`。',
     'next.launch': '激活变更管理，开始迭代开发',
     'next.phaseDetail': '当前阶段：{phase}',
 

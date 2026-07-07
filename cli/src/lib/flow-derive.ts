@@ -26,8 +26,10 @@ import {
   parseTaskSections,
   isProposalTemplateFilled,
   isTasksTemplateFilled,
+  isTasksCodeFilled,
   isCodeRequiredForProposal,
   isCodeRequiredButUnplanned,
+  hasRealTestIdsForProposal,
   countMergeableDeltaFiles,
   allTasksChecked,
   hasSmokeCasesForProposal,
@@ -367,6 +369,13 @@ export function detectProposalStepViaFlow(
   const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
     ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
 
+  if (anyExists(m.merged)
+    && isCodeRequiredForProposal(proposalDir, tasksContent)
+    && !isTasksCodeFilled(tasksContent)
+    && !hasRealTestIdsForProposal(proposalDir, tasksContent)) {
+    return 'test-id-required';
+  }
+
   if (anyExists(m.merged) && isCodeRequiredButUnplanned(proposalDir, tasksContent)) {
     return 'ready-to-implement';
   }
@@ -406,6 +415,9 @@ export function detectProposalStepViaFlow(
     if (sections !== null) {
       const code = sections['code'];
       const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
+      if (codeRequired && !isTasksCodeFilled(tasksContent) && !hasRealTestIdsForProposal(proposalDir, tasksContent)) {
+        return 'test-id-required';
+      }
       // section_complete legacy 语义：present-but-empty（total=0）不算完成
       if (!code && codeRequired) return 'ready-to-implement';
       if (!code || (code.total > 0 && code.checked === code.total)) return 'ready-to-verify';
