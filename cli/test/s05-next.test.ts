@@ -412,7 +412,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-10c: SPEC_MERGED + code_required + no [code] section → ready-to-implement', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容，复用 UT-S05-10c。');
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n');
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
@@ -540,37 +540,39 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
     expect(detectProposalStep(proposalDir)).toBe('delta-writing');
   });
 
-  it('UT-S05-13: no [delta] section + [code] not done → ready-to-implement (纯代码经 slice-planner, fix-nodelta-proposal-routing)', () => {
-    // fix-nodelta-proposal-routing：无 [delta] = 纯代码提案，spec/merge 空过；[code] 未划片/无 SLICES_APPROVED
-    // → ready-to-implement（前沿 plan-slices，唤起 slice-planner），不再直接 coding（见 spec/flow-spec.md §12.6）。
+  it('UT-S05-13: no-delta SPEC_MERGED + [code] not done → ready-to-implement', () => {
+    // support-nodelta-spec-complete：纯代码提案无 [delta] 也必须先经 no-delta merge 写 SPEC_MERGED；
+    // spec-complete 与真实测试 ID 都满足后，未完成 [code] 才能进入 ready-to-implement。
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容，复用 UT-S05-13。');
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
       '## [code] 代码实现',
-      '- [ ] 修复 src/xxx 中的问题',
+      '- [ ] 修复 src/xxx 中的问题（覆盖 UT-S05-13）',
     ].join('\n'));
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
     expect(detectProposalStep(proposalDir)).toBe('ready-to-implement');
   });
 
-  it('UT-S05-13b: no [delta] section + [code] all done → ready-to-verify (skips merge)', () => {
+  it('UT-S05-13b: no-delta SPEC_MERGED + [code] all done → ready-to-verify', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容，复用 UT-S05-13b。');
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
       '## [code] 代码实现',
-      '- [x] 修复 src/xxx 中的问题',
+      '- [x] 修复 src/xxx 中的问题（覆盖 UT-S05-13b）',
     ].join('\n'));
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
     expect(detectProposalStep(proposalDir)).toBe('ready-to-verify');
   });
 
-  it('UT-S05-13c: no [delta] section + no [code] section → ready-to-verify (skips merge)', () => {
+  it('UT-S05-13c: no-delta docs-only + no [code] section → ready-to-verify', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n文档级\n## 变更范围\n- 无\n## 变更概述\n纯文档调整，无需代码。');
     // 新格式但两个 section 都没有（极端情况）
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [other] 其他\n- [x] 某任务\n');
 

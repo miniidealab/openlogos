@@ -58,6 +58,7 @@ function setupLaunchedProposal(root: string, slug = 'feat'): string {
     '## 变更概述', '概述。'].join('\n');
   writeFileSync(join(dir, 'proposal.md'), proposal);
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
+  writeFileSync(join(dir, 'SPEC_MERGED'), '');
   return dir;
 }
 

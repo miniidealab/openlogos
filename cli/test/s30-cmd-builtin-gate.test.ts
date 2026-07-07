@@ -58,6 +58,7 @@ function setupProposal(root: string, opts: { deploy?: boolean; smoke?: boolean }
     ? '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n\n## [deploy] 部署任务\n- [ ] 发布\n'
     : '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n';
   writeFileSync(join(dir, 'tasks.md'), tasks);
+  writeFileSync(join(dir, 'SPEC_MERGED'), '');
   return dir;
 }
 function runStatusJson(root: string): any {

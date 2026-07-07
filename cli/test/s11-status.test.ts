@@ -913,7 +913,7 @@ describe('S11 Scenario Tests — status command', () => {
     expect(core.active_change!.proposal_step).toBe('ready-to-merge');
   });
 
-  it('ST-S11-06e: no [delta] section + [code] not done → ready-to-implement (纯代码经 slice-planner, fix-nodelta-proposal-routing)', () => {
+  it('ST-S11-06e: no-delta SPEC_MERGED + [code] not done → ready-to-implement', () => {
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
     }, { lineWidth: 0 }));
@@ -921,21 +921,22 @@ describe('S11 Scenario Tests — status command', () => {
     writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
     const proposalDir = join(root, 'logos', 'changes', 'my-feature');
     mkdirSync(proposalDir, { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容，复用 ST-S11-06e。');
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
       '## [code] 代码实现',
-      '- [ ] 修复 src/xxx 中的问题',
+      '- [ ] 修复 src/xxx 中的问题（覆盖 ST-S11-06e）',
     ].join('\n'));
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
-    // fix-nodelta-proposal-routing：纯代码提案 spec/merge 空过，[code] 未划片 → ready-to-implement（见 spec/flow-spec.md §12.6）
+    // support-nodelta-spec-complete：纯代码提案先经 no-delta merge 完成规格阶段，再进入切片/实现前沿。
     expect(core.active_change!.proposal_step).toBe('ready-to-implement');
   });
 
-  it('ST-S11-06f: no [delta] section + [code] all done → ready-to-verify (skips merge)', () => {
+  it('ST-S11-06f: no-delta SPEC_MERGED + [code] all done → ready-to-verify', () => {
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
     }, { lineWidth: 0 }));
@@ -943,13 +944,14 @@ describe('S11 Scenario Tests — status command', () => {
     writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
     const proposalDir = join(root, 'logos', 'changes', 'my-feature');
     mkdirSync(proposalDir, { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容，复用 ST-S11-06f。');
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
       '## [code] 代码实现',
-      '- [x] 修复 src/xxx 中的问题',
+      '- [x] 修复 src/xxx 中的问题（覆盖 ST-S11-06f）',
     ].join('\n'));
+    writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 
     const data = collectStatusData(root);
     const core = data.modules!.find(m => m.id === 'core')!;
