@@ -530,3 +530,16 @@ hard block 仅适用于：
 - 明确需要人类产品/风险决策。
 
 任何 hard block 都必须说明为什么不能自动恢复，并提供恢复所需的人类动作。
+
+## 无文档 delta 也必须保留 spec-complete 追溯
+
+OpenLogos 的 Why → What → How 链路不要求每个提案都修改规格文档，但要求每个进入实现的提案都能证明规格阶段已经定稿。纯代码级提案没有 PRD / API / DB / 场景 delta 时，不能把“没有 delta”解释为“规格阶段天然完成且可直接实现”。
+
+方法论规则：
+
+1. **Why / What 不变也要留痕**：纯代码提案应在 proposal 中说明复用哪些既有需求、场景与测试 ID。
+2. **spec-complete 是状态，不等于文档修改**：无 delta 时通过 no-delta merge 写入 `SPEC_MERGED`，表达“本次无需文档 delta，规格阶段已确认完成”。
+3. **How 必须绑定真实测试 ID**：代码切片必须绑定真实 UT/ST/SMOKE ID；测试 ID 未稳定时不得切片。
+4. **slice-planner 不补方法论缺口**：它只消费已完成 spec-complete 与真实测试 ID，不负责替上游判断是否可以进入实现。
+
+这保证“无文档 delta”的轻量修复仍保持可追溯，而不会把切片规划建立在隐含假设或占位测试 ID 上。

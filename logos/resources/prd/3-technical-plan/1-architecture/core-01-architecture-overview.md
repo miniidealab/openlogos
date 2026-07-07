@@ -398,35 +398,37 @@ deliver → close）求值各节点的 `done_when` / `fail_when`，叠加上述�
 
 ## 十三点一、slice 子流程派生与 ready-to-implement 驻留态（split-slice-planner-stage）
 
-把 `[code]` 切片划分从 plan 段（merge 前、`change-writer`）剥离为 merge 之后的独立 `slice` 子流程（`spec/flow/launched.yaml` 新增节点 `plan-slices`，`skill: slice-planner`），并在 `detectProposalStepViaFlow` 的节点序列中于 **merge 子流程与 implement 子流程之间**插入一个新前沿。`status` / `next` / `watch` 的 `proposal_step` 据此扩展。
+把 `[code]` 切片划分从 plan 段（merge 前、`change-writer`）剥离为 spec-complete 之后的独立 `slice` 子流程（`spec/flow/launched.yaml` 节点 `plan-slices`，`skill: slice-planner`），并在 `detectProposalStepViaFlow` 的节点序列中于 **merge 子流程与 implement 子流程之间**插入前置门禁。
 
-### 新增 `slice` 子流程派生（`when: code_required`）
+### spec-complete 统一信号
 
-- `slice` 子流程置于 `merge`（`apply-merge` → `SPEC_MERGED`）与 `implement`（`code`/`verify`）之间，仅含节点 `plan-slices`（`produces: tasks.md` 的 `[code]`），出口为人类门 `slice-exit`（`type: human`, `skippable: true`）。
-- **`when: code_required`**：纯文档提案（无 `[code]` 产出）整段跳过——`detectProposalStepViaFlow` 不派生 `ready-to-implement`，merge 后直接续推到 implement（切片循环对空 `[code]` 退化为 `tests_green`，沿用 S31）。
-- 与 `merge` 子流程的 `when: delta_required` 同理：派生入口按提案级谓词决定该子流程是否参与节点序列求值。
+1. 含 `[delta]` 的提案：只有 `SPEC_MERGED` / `MERGED` 存在，才表示 delta 已合并进主规格。
+2. 无 `[delta]` 的纯代码提案：不进入 `write-delta`，但必须通过 `openlogos merge <slug>` 执行 no-op merge 并写入 `SPEC_MERGED`，表示 no-delta spec-complete。
+3. `SPEC_MERGED` 的新写入内容应为可解析审计对象，至少包含：
 
-### `ready-to-implement` 驻留态（位于 `merge-generated` 与 `coding` 之间）
+```json
+{
+  "type": "no_delta_spec_complete",
+  "reason": "pure-code proposal has no spec delta",
+  "completed_at": "..."
+}
+```
 
-- 新增 `ProposalStep` 取值 **`ready-to-implement`**（label「切片待批准」），在 `cli-json-output` 的 `proposal_step` 闭合枚举中置于 `merge-generated` 与 `coding` 之间——这是本提案**主动破「枚举不新增」不变量**的开发态方法论重画标准照（与 change-flow-redesign 新增 `ready-to-delta` 同性质，影响面见 proposal「破坏的不变量」§INV-1）。
-- 派生时机：merge 子流程完成（`SPEC_MERGED` 在场）且 `code_required` 为真后、`[code]` 切片循环尚未在 implement 推进前，`slice` 子流程 `plan-slices` 为当前前沿、提案停在 `slice-exit` 门 → `proposal_step = ready-to-implement`。`slice-exit` 经人类批准（或 `--auto` 放行）后续推到 `coding`。
+### 新增派生阻塞
 
-### 映射扩展（`flow-derive.ts` / `flow-overlay-derive.ts`）
+- `spec-complete-required`：`code_required==true`，但提案未完成 spec-complete。该状态输出 `reason:"no_delta_spec_marker_missing"` 或等价诊断，`next_node` 不得指向 `plan-slices`。
+- `test-id-required`：spec-complete 已完成，且 `code_required==true`，但相关真实 `UT-*` / `ST-*` / `SMOKE-*` ID 不可解析。该状态输出 `reason:"code_change_requires_real_test_ids"` 或等价诊断，`next_node` 不得指向 `plan-slices`。
 
-- **`STEP_TO_GATE_SUBFLOW` 扩展**：新增 `ready-to-implement → slice`（gate_id `slice-exit`、`skippable: true`），供 `next --auto` 的 gate 查询助手判定该停顿步对应可跳门。`--auto` 放行时写 `GATE_AUTO_PASSED` 一行 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}`，**仅审计、不推进状态**，幂等边界对齐 `plan-exit`（见 §14 GATE_AUTO_PASSED 纯审计语义、S24）。
-- **`STEP_TO_CURRENT_BUILTIN` 扩展**：新增 `ready-to-implement → plan-slices`，使 `resolveNextNode`（§18）在该步的默认前沿解析为 `plan-slices` 节点、从 resolved flow 取其 hints（`skill: slice-planner`）。该映射仍是 `flow-overlay-derive.ts` 唯一一份、export 复用，禁止复制第二份（沿用 §18「单一来源约束」）。
+### `ready-to-implement`
 
-### `plan-slices` 节点完成判定（merge 后 `[code]` 脱模板）
+仅当 spec-complete 已完成、测试 ID 已稳定、`code_required==true` 且 `SLICES_APPROVED` 不存在时，才能派生 `ready-to-implement`。该驻留态内部仍按 `tasks_code_filled` 二分：
 
-- `plan-slices` 完成 = **`tasks.md` 的 `[code]` section 脱模板**（从模板占位变为真实切片清单），表示"切片已划定"。这与 implement `code` 节点的 `done_when: section_complete:code`（按 §13「section 完成语义按 legacy」= `total > 0 && checked === total`，即全部切片**勾选**、表示"切片已实现"）是**两个不同判定**：前者判规划完成、后者判实现完成。
-- 该"脱模板 vs 全勾"的区分作为**引擎派生规则保留**（与 §13 中 marker 优先级、section 完成语义留在引擎同理）：merge 后 `[code]` 已脱模板但切片循环未推进 → `ready-to-implement`；切片循环推进中（部分勾选）→ `coding`；全部勾选且末轮测试绿 → `ready-to-verify`（沿用 §13 / S31）。
-- **`write-tasks` 完成判定收窄**：plan 段 `write-tasks` 的 `done_when` 由"含 `[code]` 切片清单"改为 **`[delta]`/`[deploy]` 脱模板**（不再要求 `[code]`）；`[code]` 由 merge 后 `slice` 子流程产出。`change-writer` 的 plan 段不再决定切片，"切片只决定一次"的唯一事实源由 change-writer Step 5 平移到 `slice-planner`（INV 保持，见 proposal §INV-2）。
+- `[code]` 未脱模板：前沿是 `plan-slices`，宿主派发 `slice-planner`。
+- `[code]` 已脱模板：前沿是 `slice-exit` 门，宿主不得重派 `slice-planner`。
 
-### 消费方与约束
+### driver 边界
 
-- `status` / `next` / `watch` 经 `collectStatusData` 消费扩展后的 `proposal_step`；`next` 在 `ready-to-implement` 透出指向 `plan-slices`/`slice-planner` 的 `next_node`（cli-experience §2.13.2）。
-- golden 基线（`cli/test/golden-baseline.test.ts` 与 `next --format json` 快照）按预期重拍，差异须仅为新步骤 `ready-to-implement`、新门 `slice-exit` 相关字段。
-- 下游消费方（runlogos driver 对 `proposal_step` 的 switch）需容纳新值，列为下游 follow-up，不在本提案 `[code]` 范围（openlogos CLI 侧先落地）。
+RunLogos 等宿主不得自行用 `delta_required==false` 推断可以派发 `slice-planner`。宿主必须消费 OpenLogos `next/status` 的结构化前沿：只有 `next_node.id=="plan-slices"` 且无阻塞诊断时才派发 `slice-planner`。
 
 ## 十三点二、缺失 [code] section 的代码必需态兜底
 

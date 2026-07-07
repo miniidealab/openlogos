@@ -971,3 +971,26 @@ OpenLogos 作为可被 RunLogos / CI / AI driver 消费的流程事实源，必�
 - 构造包含非法 `status` 的账本时，verify 必须 FAIL，并在 JSON 诊断中暴露非法结果原因。
 - 构造包含未定义用例 ID 的账本时，verify 必须 FAIL，并列出未定义 ID。
 - 全部已定义自动化用例均 `pass` 且无额外 / 非法结果时，verify 仍 PASS。
+
+## 纯代码提案 no-delta spec-complete 需求
+
+### 背景
+
+纯代码级提案没有 PRD / API / DB / 场景 delta，但仍会进入实现与测试闭环。此类提案若直接跳过规格完成信号，会让下游 `slice-planner` 无法判断规格阶段是否已经定稿，也无法确认真实 UT/ST/SMOKE ID 是否稳定。
+
+### 需求
+
+1. OpenLogos 必须为纯代码提案提供可追踪的 spec-complete 状态。
+2. 纯代码提案不得进入 `write-delta`，但必须执行 no-delta merge/spec-complete 后才能进入切片规划。
+3. no-delta spec-complete 统一复用 `SPEC_MERGED` marker；marker 内容应能区分真实 delta merge 与 no-delta spec-complete。
+4. `next/status` 不得在缺少 spec-complete 信号时把代码提案派到 `plan-slices`。
+5. `next/status` 不得在缺少真实 UT/ST/SMOKE ID 时把代码提案派到 `plan-slices`。
+6. `slice-planner` 必须保持严格前置：只消费已完成 spec-complete 且测试 ID 已稳定的提案，不得使用占位测试 ID。
+
+### 验收条件
+
+- 无 delta 的纯代码提案执行 `openlogos merge <slug>` 后，提案目录出现 `SPEC_MERGED`，内容包含 `type: "no_delta_spec_complete"`、原因与完成时间。
+- 无 delta 的纯代码提案在缺少 `SPEC_MERGED` 时，`openlogos next/status` 返回 `proposal_step: "spec-complete-required"` 或等价结构化诊断，且不返回 `next_node.id=="plan-slices"`。
+- 代码提案缺少真实测试 ID 时，`openlogos next/status` 返回 `proposal_step: "test-id-required"` 或等价结构化诊断，且不返回 `next_node.id=="plan-slices"`。
+- 已完成 no-delta spec-complete 且真实测试 ID 可解析时，`openlogos next/status` 才允许返回 `ready-to-implement` + `next_node.id=="plan-slices"`。
+- 纯文档提案不受本规则误伤；无需代码时仍可跳过 `slice` 子流程。

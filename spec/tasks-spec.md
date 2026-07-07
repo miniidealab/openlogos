@@ -74,14 +74,16 @@ CLI 的 `detectProposalStep()` / `detectProposalStepViaFlow()` 按以下规则�
 | tasks.md / 标记状态 | 判断结果 |
 |---|---|
 | 提案模板未填写完整（`proposal.md` 或 `tasks.md` 任一未脱模板） | → `writing` |
-| `proposal.md` 与 `tasks.md` 均已脱模板，但 `[delta]` 尚未开始产出（无 delta 文件、`[delta]` 未勾）且 `PLAN_APPROVED` 不存在（对应 plan 出口「批准方案」门待放行） | → `ready-to-delta` |
+| `proposal.md` 与 `tasks.md` 均已脱模板，但 `[delta]` 尚未开始产出且 `PLAN_APPROVED` 不存在（对应 plan 出口「批准方案」门待放行） | → `ready-to-delta` |
 | `PLAN_APPROVED` 存在，且有 `[delta]` section 但尚未全部勾选 | → `delta-writing` |
-| 有 `[delta]` section、已开始产出 delta 文件但未全部勾选 | → `delta-writing` |
 | 有 `[delta]` section 且全部勾选，且未生成 MERGE_PROMPT | → `ready-to-merge` |
 | 已生成 `MERGE_PROMPT.md` / `MERGE_PROMPT_GENERATED`，但未写入 `SPEC_MERGED` | → `merge-generated` |
-| （`SPEC_MERGED` 存在 **或** 无 `[delta]` section（纯代码提案 `spec`/`merge` 空过））、提案 `code_required`、`[code]` 切片尚待批准（slice-planner 已写定但 `SLICES_APPROVED` 不存在；对应 slice 出口「切片待批准」门待放行） | → `ready-to-implement` |
-| `SLICES_APPROVED` 存在（或提案无需 slice 门），且 `[code]` section 未全部勾选 | → `coding` |
-| （`SPEC_MERGED` 存在 **或** 无 `[delta]` section（纯代码提案 `spec`/`merge` 空过）），且无 `[code]` section 或 `[code]` 全部勾选 | → `ready-to-verify` |
+| `code_required==true` 且缺少 `SPEC_MERGED` / `MERGED`（包括无 `[delta]` 的纯代码提案） | → `spec-complete-required` |
+| spec-complete 已完成、`code_required==true`，但无法解析真实 `UT-*` / `ST-*` / `SMOKE-*` ID | → `test-id-required` |
+| `SPEC_MERGED` / `MERGED` 存在、测试 ID 已稳定、`code_required==true`、`[code]` 未脱模板或缺失 | → `ready-to-implement`（前沿 `plan-slices`） |
+| `SPEC_MERGED` / `MERGED` 存在、测试 ID 已稳定、`[code]` 已脱模板但 `SLICES_APPROVED` 不存在 | → `ready-to-implement`（前沿 `slice-exit`） |
+| `SLICES_APPROVED` 存在，且 `[code]` section 未全部勾选 | → `coding` |
+| `SPEC_MERGED` / `MERGED` 存在，且无代码需求或 `[code]` 全部勾选 | → `ready-to-verify` |
 | `VERIFY_FAIL` 存在 | → `verify-failed` |
 | `proposal.md` 与 `[deploy]` section 冲突 | → 阻塞态；CLI 输出 warning，不推进 deploy / smoke / archive |
 | `VERIFY_PASS` 存在，提案级无需部署，且无 `[deploy]` section | → `verify-passed` |
@@ -91,7 +93,11 @@ CLI 的 `detectProposalStep()` / `detectProposalStepViaFlow()` 按以下规则�
 | `SMOKE_FAIL` 存在 | → `smoke-failed` |
 | `SMOKE_PASS` 存在 | → `smoke-passed` |
 
-> **纯代码提案（无 `[delta]`）绝不派生 `delta-writing`**（fix-nodelta-proposal-routing）：`tasks.md` 无 `## [delta]` section（`delta_required==false`）时，`spec`/`merge` 子流程整段空过（无 delta 待合并、不等 `SPEC_MERGED`），派生直接按上表 `ready-to-implement`/`coding`/`ready-to-verify` 三行（其 `SPEC_MERGED` 前置对纯代码提案以「空过」满足）推进。此类提案在**任何** `[code]`/`SLICES_APPROVED`/`PLAN_APPROVED` 组合下 `proposal_step` 均不为 `delta-writing`、前沿不为 `write-delta`。前提是纯代码提案 `tasks.md` 保留 `## [code]` 标题（见「格式规范」）；完全无 `## [tag]` 标题的旧格式 `tasks.md` 仍走「向后兼容」的全局兜底。详见 `spec/flow-spec.md` §12.6。
+> **纯代码提案（无 `[delta]`）绝不派生 `delta-writing`**：`delta_required==false` 时不进入 `write-delta`。但纯代码提案不再以“无 `[delta]`”自动满足 merge 前置；缺少 no-delta `SPEC_MERGED` 时必须停在 `spec-complete-required`。详见 `spec/flow-spec.md` §12.6。
+
+> **no-delta `SPEC_MERGED`**：`openlogos merge <slug>` 在无 delta 时写入 `SPEC_MERGED`，内容建议包含 `type:"no_delta_spec_complete"`、`reason`、`completed_at`。该 marker 表示“规格阶段已完成且无文档 delta”，不是主规格被修改。
+
+> **缺失测试 ID 的代码必需态**：代码提案进入 `plan-slices` 前必须有真实测试 ID。无法解析时，派生为 `test-id-required`，诊断 `code_change_requires_real_test_ids`；不得让 slice-planner 使用占位 ID。
 
 > **缺失 `[code]` 的代码必需态**：`SPEC_MERGED` 在场、`code_required==true`、`tasks.md` 缺失 `## [code]` 时，派生为 `ready-to-implement`，`next_node.id=="plan-slices"`，诊断 `tasks-code-section-missing`。`SPEC_MERGED` 在场、`code_required==true`、`## [code]` 存在但未 `tasks_code_filled` 时，同样派生为 `ready-to-implement`，诊断 `slices-not-planned`。只有 `code_required==false` 且缺失 `[code]` 时，才按纯文档/退化 implement 路径推进，可跳过 slice。
 
@@ -99,7 +105,7 @@ CLI 的 `detectProposalStep()` / `detectProposalStepViaFlow()` 按以下规则�
 
 > **`PLAN_APPROVED`**：`openlogos next --auto` 在 `ready-to-delta` 自动放行 `plan-exit` 时写入的 marker。该 marker 表示 plan gate 已被消费；**当提案含 `[delta]` section 时**，存在后即使尚未产出 delta 文件，也应派生为 `delta-writing` / `write-delta` 前沿。**无 `[delta]` 的纯代码提案不受此条影响**（不派生 `delta-writing`，见上）。`GATE_AUTO_PASSED` 仍为审计文件，不作为状态判断依据。
 
-> **split-slice-planner-stage 新增 `ready-to-implement`**：merge 之后（含纯代码提案的**空过 merge**）、implement 之前的独立 `slice` 子流程（`plan-slices`，slice-planner）完成切片撰写、但 `slice` 出口「切片待批准」门（gate_id=`slice-exit`、`skippable:true`）尚未放行时的驻留态。检测依据为"（`SPEC_MERGED` 在场 **或** 无 `[delta]`（spec/merge 空过））、提案 `code_required`、`[code]` 已由 slice-planner 写定脱模板、且 `SLICES_APPROVED` 不存在"。`[code]` 切片由 merge 后对真实测试 ID 划分；`plan` 段 `write-tasks` 不再产 `[code]`。纯文档提案（无 `[code]`、`code_required==false`）时 `slice` 子流程整段跳过，merge 后直接进入 `ready-to-verify` / 退化 implement。
+> **split-slice-planner-stage 新增 `ready-to-implement`**：spec-complete 之后、implement 之前的独立 `slice` 子流程（`plan-slices`，slice-planner）完成切片撰写、但 `slice` 出口「切片待批准」门（gate_id=`slice-exit`、`skippable:true`）尚未放行时的驻留态。检测依据为"`SPEC_MERGED` / `MERGED` 在场、测试 ID 已稳定、提案 `code_required`、`[code]` 已由 slice-planner 写定脱模板、且 `SLICES_APPROVED` 不存在"。`[code]` 切片由 merge 后对真实测试 ID 划分；`plan` 段 `write-tasks` 不再产 `[code]`。纯文档提案（无 `[code]`、`code_required==false`）时 `slice` 子流程整段跳过，merge 后直接进入 `ready-to-verify` / 退化 implement。
 
 > **`SLICES_APPROVED`**：`openlogos next --auto` 在 `ready-to-implement` 自动放行 `slice-exit` 时写入的 marker。该 marker 表示 slice gate 已被消费；存在后即派生为 `coding` / `code` 前沿（前沿 `next_node.id == "code"`）。`GATE_AUTO_PASSED` 仍为审计文件，不作为状态判断依据；幂等——已存在 `SLICES_APPROVED` 时重复 `next --auto` 不再追加同一 `slice-exit` 审计行。
 
@@ -187,10 +193,10 @@ CLI 的 `detectProposalStep()` / `detectProposalStepViaFlow()` 按以下规则�
 # 实现任务
 
 ## [code] 代码实现
-（本段在 plan 段留空；无 `[delta]` 时 `spec`/`merge` 整段空过，切片由 `slice-planner` 在 merge 之后对现有/已合并规格 + 真实测试 ID 划分填入。保留 `## [code]` 标题，勿删。）
+（本段在 plan 段留空：无 `[delta]` 时不进入 `write-delta`，但仍需执行 no-delta `openlogos merge <slug>` 写入 `SPEC_MERGED`，随后由 `slice-planner` 基于已完成 spec-complete 的规格与真实测试 ID 划分切片。）
 ```
 
-> 保留 `## [code]` 标题是**硬要求**：删除后 `tasks.md` 无任何 `## [tag]` section，派生降级为旧格式兜底、把纯代码提案误判为 `delta-writing`（错误派到 `write-delta` 节点）。见 `spec/flow-spec.md` §12.6。
+保留 `## [code]` 标题是硬要求；执行 no-delta merge 是进入 `plan-slices` 的硬前置。见 `spec/flow-spec.md` §12.6。
 
 ### 纯规格变更（无代码）
 

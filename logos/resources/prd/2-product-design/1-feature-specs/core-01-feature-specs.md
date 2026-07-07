@@ -607,25 +607,24 @@ dispatcher 至少应支持：
 
 ### 2.25 slice 子流程：merge 后独立切片规划环节（split-slice-planner-stage）
 
-把"划分 `[code]` 切片"从 `change-writer` 的 plan 段（merge 前）剥离为**独立 flow 子流程 `slice` + 独立 skill `slice-planner`**，并挪到 **merge 之后、implement 之前**。`change-writer` 的 plan 段（`write-tasks`）从此只产 `[delta]`/`[deploy]`、不再决定 `[code]` 切片。
+把"划分 `[code]` 切片"从 `change-writer` 的 plan 段（merge 前）剥离为**独立 flow 子流程 `slice` + 独立 skill `slice-planner`**，并挪到 **spec-complete 之后、implement 之前**。`change-writer` 的 plan 段（`write-tasks`）从此只产 `[delta]`/`[deploy]`、不再决定 `[code]` 切片。
 
 - **flow 子流程 `slice`（`when: code_required`）**：置于 `merge` 与 `implement` 之间；节点 `plan-slices`（`skill: slice-planner`，`produces: tasks.md` 的 `[code]`，`done_when: tasks_code_filled`）；出口为人类门 `slice-exit`（`type: human`, `skippable: true`）。纯文档提案（无 `[code]` 产出，`when: code_required` 为假）整段跳过。
-- **驻留态 `ready-to-implement`（label「切片待批准」）**：位于 `merge-generated` 与 `coding` 之间。merge 完成（`SPEC_MERGED` 在场）后、`[code]` 切片循环开始前，提案停在 `ready-to-implement`，由 `slice-planner` 在 `plan-slices` 节点产出 `[code]`，停在 `slice-exit` 门待批准；批准后进入 `coding`。
-- **唯一事实源**：切几片、每片做什么，**只在 `slice-planner` 用六维打分 + 删后续证伪门决定一次**；下游 `code-implementor` 只逐片消费、不再重复打分、不再自行分批（INV「切片只决定一次」由 change-writer Step 5 平移到 slice-planner，保持不变）。
-- **输入**：已合并的 `proposal.md` 变更范围 + 已落入 `logos/resources/prd/` 的架构/场景/功能规格 + 已合并的 `logos/resources/test/*-test-cases.md` 的**真实** `UT-Sxx-..`/`ST-Sxx-..` ID。**禁止用占位 ID 切片**——这正是本环节挪到 merge 后的根本原因：对真实规格 + 真实测试 ID 切，而非对未合并草案猜。
+- **spec-complete 前置**：所有代码提案进入 `plan-slices` 前都必须完成 spec-complete。含 `[delta]` 提案以真实合并后的 `SPEC_MERGED` / `MERGED` 为信号；无 `[delta]` 的纯代码提案必须通过 no-delta `openlogos merge <slug>` 写入 `SPEC_MERGED`，不得仅凭 `delta_required==false` 直接空过到切片规划。
+- **no-delta `SPEC_MERGED` 内容**：无 delta 时写入 JSON 或等价可解析内容，至少包含 `type:"no_delta_spec_complete"`、`reason`、`completed_at`。已有空 marker 仍可兼容读取，但新写入必须带审计内容。
+- **驻留态 `spec-complete-required`**：代码提案缺少 spec-complete marker 时，`next/status` 必须停在 `spec-complete-required` 或输出等价诊断 `reason:"no_delta_spec_marker_missing"`，提示执行 no-delta merge，不得返回 `next_node.id=="plan-slices"`。
+- **测试 ID 门禁 `test-id-required`**：spec-complete 已完成但无法解析本提案所需真实 `UT-*` / `ST-*` / `SMOKE-*` ID 时，`next/status` 必须停在 `test-id-required` 或输出等价诊断 `reason:"code_change_requires_real_test_ids"`，不得派发 `slice-planner`。
+- **驻留态 `ready-to-implement`（label「切片待批准」）**：spec-complete 完成且测试 ID 已稳定后、`[code]` 切片循环开始前，提案停在 `ready-to-implement`，由 `slice-planner` 在 `plan-slices` 节点产出 `[code]`，切片写定后停在 `slice-exit` 门待批准；批准后进入 `coding`。
+- **唯一事实源**：切几片、每片做什么，**只在 `slice-planner` 用六维打分 + 删后续证伪门决定一次**；下游 `code-implementor` 只逐片消费、不再重复打分、不再自行分批。
+- **输入**：已完成 spec-complete 的 `proposal.md` 变更范围 + 已落入 `logos/resources/prd/` 的架构/场景/功能规格 + 已合并的 `logos/resources/test/*-test-cases.md` 的**真实** `UT-Sxx-..`/`ST-Sxx-..`/`SMOKE-*` ID。**禁止用占位 ID 切片**。
 
-**三个核心机制（全部内置进 `slice-planner` skill）**：
+### 切片算法
 
 1. **六维打分（是否大任务）**：按影响范围 / 行为复杂度 / 契约变化 / 测试规模 / 风险等级 / 不确定性六维打分；0-7 分 = 非大任务 → 单切片；≥8 分 = 大任务 → 进入垂直拆分尝试。
-2. **垂直/横向判别器（选切片轴）**：给每片起名后看名字落在哪类——
-   - 🚩 **横向红旗（禁止，命中即推倒重切）**：片名是层 / 文件 / 工种——"地基 / 底座 / 读写 / 管道 / 接线 / helper / 工具函数 / config 接入 / schema / 类型 / 数据层（单独）/ UI 展示（单独）/ 写测试 / 补 reporter / 重拍 golden"。一组切片读起来像"先建底座 → 再写逻辑 → 再补工具 → 最后接 UI"即把施工顺序当成切片，必须重切。
-   - ✅ **垂直合格**：片名是一条端到端能力线 / 一个场景 / 一个独立子模块的完整闭环——数据→逻辑→产出→该片测试 一并落在同一片内。
-3. **删后续证伪门（强制，须写出逐片结论）**：拟好 N 片后逐片自问——(a) 删掉切片 i+1..N、只做切片 i，`openlogos verify`（永远全量回归）能绿吗？(b) 切片 i 是否产生一条端到端、可观察的能力，而非只给后续片铺管道/接线？任一答"否" → 该片不自闭环 → 向前合并进依赖它的那一片，重跑本门。逐片自问的结论（哪几片合并、为何合并）必须写进 `[code]` section 开头作为留痕。
-   > 机制依据：切片只 scope `code` 的上下文注入、**不 scope verify**。"地基片"（铺好没人用，(b) 否）或"前向依赖片"（依赖尚未落地的后续片，(a) 否）做完跑全量 verify 必然飘红、循环无法出环，会死锁在 `verify-failed`。删后续门在切片阶段提前证伪这类横切。
+2. **垂直/横向判别器（选切片轴）**：给每片起名后看名字落在哪类。片名是层 / 文件 / 工种时必须重切；片名是端到端能力线 / 场景 / 独立子模块闭环时才合格。
+3. **删后续证伪门**：拟好 N 片后逐片自问：(a) 删掉后续切片只做当前片，全量 `openlogos verify` 能绿吗？(b) 当前片是否端到端可观察？任一为否即向前合并。逐片结论必须写入 `[code]` 开头。
 
-**逃生口（显式化）**：评分 ≥8 但任何垂直切法都过不了删后续门（能力原子、各部分互相咬死）→ 保留 1 条切片，并写明"评分达大任务，但 <原因> 不可安全垂直拆分，故单片"。这是合规结果而非偷懒；不确定两片能否各自闭环时一律合并。
-
-**唯一交付物**：`tasks.md` 的 `## [code]` section——一组过了删后续证伪门的良构切片，每条标注覆盖的真实 `UT/ST` ID，并满足 smoke 用例变更的强制闭环（新增/修改 smoke 用例时，切片须列出 `SMOKE-*` ID、要求实现/更新 runner + reporter + dispatcher 接入）。不产 `proposal.md`/`[delta]`/`[deploy]`，不写业务代码。
+**唯一交付物**：`tasks.md` 的 `## [code]` section。它包含删后续结论、真实测试 ID 标注、业务代码 + 测试 + reporter + 必要 fixture/golden 的闭环要求。`slice-planner` 不产 `proposal.md`、不产 `[delta]`、不写业务代码。
 
 ## 三、功能验收摘要
 
@@ -634,7 +633,6 @@ dispatcher 至少应支持：
 
 ### S05
 next 必须输出最可执行建议，而不是多条并列建议；存在活跃提案时，next 必须优先读取提案级部署决策。无需部署的提案在 verify PASS 后建议 archive；需要部署的提案在 verify PASS 后建议由用户明确授权部署；部署决策冲突时建议修正 proposal / tasks，不建议部署、smoke 或归档。
-
 
 ### S08
 sync 必须同时处理 AI 资产和资源索引。刷新 `AGENTS.md` / `CLAUDE.md` 时只能替换 OpenLogos 托管片段，不得覆盖托管片段外用户内容。
@@ -647,7 +645,6 @@ status 必须显示阶段进度、活跃变更、提案级部署决策、部署�
 
 ### S13
 verify 必须关联测试用例与运行结果，并负责在读取结果前触发配置的测试预跑命令。若配置了 `regression_command` 与 `incremental_command`，verify 必须按顺序执行并合并结果；若配置了 `verify.sandbox_mode`，预跑命令必须通过沙箱执行器运行，并在 JSON 输出中暴露 `sandbox` 诊断；若覆盖不足且无预跑配置，必须诊断可能只运行了局部测试，并给出配置建议。若活跃提案新增或修改 smoke 用例，verify 或 code completion gate 还必须执行 smoke 覆盖预检，提前发现 smoke runner/reporter 缺失，避免问题延迟到部署后暴露。
-
 
 ### S14
 launch 必须检查验收、部署和 smoke 门禁。切换 launched 后重新生成 AI 指令与策略时，只能更新 OpenLogos 托管片段，必须保留用户已有根指令配置。
@@ -666,7 +663,6 @@ resource_index 必须能反向索引当前真相源。
 
 ### S19
 smoke 必须验证部署后环境的最小可用链路，但只在提案级 `smoke_required: true` 且部署完成后进入。部署进度摘要仅能来自 `tasks.md` 的 `[deploy]` section，不能把 `[code]` section 误当作部署进度。若配置了 `smoke.sandbox_mode` 且存在 `smoke.command`，CLI 必须通过沙箱执行器运行 smoke 命令，并在文本与 JSON 输出中暴露沙箱诊断。若 smoke 用例来自当前提案新增或修改，`openlogos smoke` 必须能区分 runner 缺失、reporter 缺失与用例 uncovered，并在 JSON 中暴露诊断码。
-
 
 ### S20
 adopt 后必须生成完整 `logos/` 目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；生成的模块标记为 `bootstrap: adopted` 与 `lifecycle: launched`；`logos/resources/reference/` 必须默认包含 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；同时应为可识别测试栈写入 verify 预跑配置与推荐沙箱配置，无法推断时输出 TODO。若存量项目已有 `AGENTS.md` / `CLAUDE.md` 或大小写变体，adopt 必须合并写入 OpenLogos 托管片段并保留用户自定义配置。`status` 必须将 Initial 文档基线显示为「已跳过（存量项目接入）」；`next` 必须输出补文档引导；`launch` 必须豁免 Initial 文档门禁。目录已存在 `logos/logos.config.json` 时必须拒绝重复执行并报错。历史 `bootstrap: skipped` 项目必须保持兼容。
@@ -709,7 +705,8 @@ M2 预留收尾必须一次性收掉 3 个轻量项，全部 overlay/字段 opt-
 launched `implement` 默认以切片循环推进：切片来自 `tasks.md` `[code]` 的顶层 checkbox，缩进 checkbox 是所属切片的内部子任务。收敛 = 全部父切片勾选 ∧ 全部子任务 checkbox 勾选 ∧ 末轮测试绿（`code_slices_green`），空 `[code]` 退化 `tests_green`。`next` 透出当前未完成切片（`next_node.slice` + `slice_state`），并在存在子任务时同步透出 `slice_state.current_children`、`slice_state.current_unchecked_children` 与 `next_node.slice_children`；`verify` 全量回归并追加可带 `slice` 的 `LOOP_ITERS`；达 `max_iters:30` 未达成升级 `gate:implement:loop-exhausted`（`skippable:false`）。切片提示语义为"下一个未完成切片"，回归修复目标由全量 verify 输出决定、归宿主判。initial 多模块不支持。若切片对应的规格变更新增或修改 smoke 用例，该切片必须同步完成 smoke runner/reporter/dispatcher 接入后才能勾选。
 
 ### S32
-launched 含代码提案 merge 后必须进入独立的 `slice` 子流程（`when: code_required`）：`plan-slices` 节点由 `slice-planner` 对**已合并规格 + 真实 `UT/ST` ID** 划分 `[code]` 切片，内置六维打分 + 垂直/横向判别器 + 删后续证伪门（逐片自问"删后续能否过全量 verify"与"是否端到端可观察"，写出逐片结论）+ 逃生口（≥8 但原子不可拆 → 显式单片）。划定的 `[code]` 写入 `tasks.md`、提案停在 `ready-to-implement`（`slice-exit` 门，`skippable:true`，`--auto` 可放行），批准后进入 `coding`。`change-writer` plan 段只产 `[delta]`/`[deploy]`、不再决定切片；`code-implementor` 只逐片消费、不重新分批。纯文档提案（无 `[code]`）跳过 `slice` 子流程，切片循环对空 `[code]` 退化为 `tests_green`。
+
+launched 含代码提案在 spec-complete 后必须进入独立的 `slice` 子流程（`when: code_required`）：`plan-slices` 节点由 `slice-planner` 对**已完成 spec-complete 的规格 + 真实 `UT/ST/SMOKE` ID**划分 `[code]` 切片，内置六维打分 + 垂直/横向判别器 + 删后续证伪门 + 逃生口。纯代码提案无 `[delta]` 时不进入 `write-delta`，但必须通过 no-delta merge 写入 `SPEC_MERGED` 后才可进入 `plan-slices`。缺 spec-complete 或缺真实测试 ID 时，`next/status` 必须返回结构化阻塞，不得派发 `slice-planner`。
 
 ## 自动 driver 完成回报韧性
 

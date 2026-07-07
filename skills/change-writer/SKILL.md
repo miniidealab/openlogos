@@ -102,9 +102,9 @@
 
 > **禁止在 tasks.md 中写入 verify / smoke / 人工验证类条目**——这些属于独立 CLI 操作节点。tasks.md 只追踪 delta、代码和部署执行任务。
 
-> ⛔ **严禁在 `write-tasks` 阶段规划或填写 `[code]` 切片**（enforce-slice-stage-ordering / split-slice-planner-stage）：`write-tasks` 节点**只产** `## [delta]` / `## [deploy]`。`## [code]` 切片由独立环节 **`slice-planner`** 在 **merge 之后**、对**已合并规格 + 真实测试 ID** 划分（见 `skills/slice-planner/SKILL.md`）。**即使某些切片此刻看起来"显而易见"，也绝不在此处写任何 `[code]` 条目**——提前填充会被 CLI 在进入 slice 段时**自动清理作废**：有 delta 提案于 `openlogos merge` 时、纯代码提案于 plan 门放行时，把 `[code]` 重置为占位并把旧内容备份到提案目录 `CODE_AUTORESET`（可追溯、非无痕删除，见 `spec/flow-spec.md` §12.7）。清理不阻断流程、无人值守自愈，但**你提前划的切片一律作废**——因为它是对未合并规格 + 占位测试 ID 划的，信息不全必然切错。本步骤**只保留空 `## [code]` 标题**（切片项不在 plan 段填写，由 merge 后 slice-planner 划分）；下方模板中的 `[code]` 块仅示意最终形态。
+> ⛔ **严禁在 `write-tasks` 阶段规划或填写 `[code]` 切片**（enforce-slice-stage-ordering / split-slice-planner-stage）：`write-tasks` 节点**只产** `## [delta]` / `## [deploy]`。`## [code]` 切片由独立环节 **`slice-planner`** 在 **merge / no-delta spec-complete 之后**、对**已定稿规格 + 真实测试 ID** 划分（见 `skills/slice-planner/SKILL.md`）。**即使某些切片此刻看起来"显而易见"，也绝不在此处写任何 `[code]` 条目**——提前填充会被 CLI 在 `openlogos merge` 进入 spec-complete 前**自动清理作废**：把 `[code]` 重置为占位并把旧内容备份到提案目录 `CODE_AUTORESET`（可追溯、非无痕删除，见 `spec/flow-spec.md` §12.7）。清理不阻断流程、无人值守自愈，但**你提前划的切片一律作废**——因为它是对未定稿规格 + 占位测试 ID 划的，信息不全必然切错。本步骤**只保留空 `## [code]` 标题**（切片项不在 plan 段填写，由 spec-complete 后 slice-planner 划分）；下方模板中的 `[code]` 块仅示意最终形态。
 >
-> ⚠️ **`## [code]` 标题行必须保留**（fix-nodelta-proposal-routing）：`write-tasks` 产出的 `tasks.md` **至少要含一个 `## [tag]` section 标题**，否则 `parseTaskSections` 返回 `null`、派生降级为「旧格式兜底」而误判为 `delta-writing`（把纯代码提案错误派到 `write-delta` 节点、无人值守下死锁）。因此：有 `[delta]` 的提案 `[code]` 标题可留空或省略（已有 `[delta]` 标题）；**无 `[delta]` 的纯代码提案必须写出空的 `## [code]` 标题行**（标题在、条目空，由 merge 空过后的 slice-planner 填切片）。
+> ⚠️ **`## [code]` 标题行必须保留**（fix-nodelta-proposal-routing）：`write-tasks` 产出的 `tasks.md` **至少要含一个 `## [tag]` section 标题**，否则 `parseTaskSections` 返回 `null`、派生降级为「旧格式兜底」而误判为 `delta-writing`（把纯代码提案错误派到 `write-delta` 节点、无人值守下死锁）。因此：有 `[delta]` 的提案 `[code]` 标题可留空或省略（已有 `[delta]` 标题）；**无 `[delta]` 的纯代码提案必须写出空的 `## [code]` 标题行**（标题在、条目空，由 no-delta `SPEC_MERGED` 后的 slice-planner 填切片）。
 
 **格式规则**：
 - `## [delta] <描述>` section：只列 delta 文档产出任务，每条对应一个 delta 文件
@@ -160,16 +160,16 @@
 - [ ] 产出 delta 文件到 `deltas/scenario/` — 更新编排测试用例
 ```
 
-**纯代码修复模板**（无 delta；保留空 `## [code]` 标题，切片由 merge 后 slice-planner 填写）：
+**纯代码修复模板（无 delta；保留空 `## [code]` 标题，切片由 no-delta merge 后 slice-planner 填写）**：
 
 ```markdown
 # 实现任务
 
 ## [code] 代码实现
-（本段在 plan 段留空：无 `[delta]` 时 `spec`/`merge` 整段空过，切片由 `slice-planner` 在 merge 之后对**已合并/现有规格 + 真实测试 ID**划分填入。此处仅保留 `## [code]` 标题，勿删——删除标题会使 `tasks.md` 无任何 section、派生降级误判为 `delta-writing`。）
+（本段在 plan 段留空：无 `[delta]` 时不进入 `write-delta`，但仍需执行 no-delta `openlogos merge <slug>` 写入 `SPEC_MERGED`，表示 spec-complete 已完成；随后由 `slice-planner` 基于已完成 spec-complete 的规格与真实测试 ID 划分 `[code]` 切片。此处仅保留 `## [code]` 标题，勿提前填写切片项。）
 ```
 
-> **为什么保留空 `## [code]`**（fix-nodelta-proposal-routing）：`tasks.md` 有 `## [code]` 标题 ⇒ `parseTaskSections` 非 `null` 且 `code_required` 为真 ⇒ 派生把无 `[delta]` 提案识别为「纯代码提案」，视 `spec`/`merge` 空过后正确落 `ready-to-implement`（前沿 `plan-slices`，唤起 slice-planner），而非误落 `delta-writing`/`write-delta`。详见 `spec/flow-spec.md` §12.6 与 `spec/tasks-spec.md`「状态判断规则」。
+> **为什么保留空 `## [code]` 并仍需 no-delta merge**：`## [code]` 标题用于表达 `code_required==true` 与后续切片承载区；no-delta `SPEC_MERGED` 用于表达“规格阶段已完成且本次无文档 delta”。两者缺一不可。`change-writer` 不得把无 `[delta]` 解释为可直接进入 `plan-slices`，也不得提前填写 `[code]` 切片。
 
 **有 delta 的代码必需提案也必须保留 `[code]` 标题（fix-missing-code-section-slice-gate）**：
 
@@ -264,12 +264,13 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 - **禁止直接修改 `logos/resources/` 下的主文档**——所有规格变更必须通过 delta 文件，由 `openlogos merge` 统一合并
 - 全部 delta 产出完成后，提醒用户明确授权运行 `openlogos merge <slug>`
 
-### Step 6 补充：plan 门与 delta 时机（change-flow-redesign）
+### Step 6 补充：plan 门与 delta / no-delta spec-complete 时机
 
-change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `spec{写delta}` → `merge`，并在 `plan` 出口新增「批准方案」人类门（对应 `proposal_step: ready-to-delta`、gate_id `plan-exit`、`skippable:true`）。split-slice-planner-stage 起，**`[code]` 切片划分移出 plan 门**，改在 merge 后 `slice` 段由 `slice-planner` 产出，并在 `slice-exit` 门（`ready-to-implement`）确认。
+change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `spec{写delta 或 no-delta spec-complete}` → `merge/spec-complete`，并在 `plan` 出口新增「批准方案」人类门。split-slice-planner-stage 起，`[code]` 切片划分移出 plan 门，改在 spec-complete 后 `slice` 段由 `slice-planner` 产出。
 
-- Step 6「产出 Delta」的触发时机 = **proposal.md + tasks.md 的 `[delta]`/`[deploy]` 均脱模板、且用户在 plan 门确认方案之后**（plan 门确认范围 = 提案 + `[delta]`/`[deploy]`，**不再含 `[code]` 切片划分**）。`[code]` 切片在 merge 后单独规划、单独确认。
-- 无人值守 `openlogos next --auto` 下，plan 门可被自动放行（仅写 `GATE_AUTO_PASSED` 审计、不推进状态）；手动模式下停在 `ready-to-delta` 等人确认。
+- 有 `[delta]` 的提案：plan 门确认后，change-writer 只按 `[delta]` section 产出 delta 文件；全部完成后提醒用户或 driver 执行 `openlogos merge <slug>`。
+- 无 `[delta]` 的纯代码提案：change-writer 不产 delta；plan 门确认后，下一步是 no-delta `openlogos merge <slug>` 写入 `SPEC_MERGED`，再由 `slice-planner` 规划 `[code]`。
+- 任意代码提案：测试 ID 未稳定时不得进入 `plan-slices`，不得用占位 ID 预写切片。
 
 ### Step 7: 引导后续操作（链式驱动）
 

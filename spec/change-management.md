@@ -334,3 +334,39 @@ openlogos archive add-remember-me
 
 - **change-writer**：在 `openlogos change` 后使用，辅助填写 proposal.md 和 tasks.md
 - **merge-executor**：在 `openlogos merge` 后使用，读取 MERGE_PROMPT.md 执行实际合并
+
+## no-delta spec-complete
+
+纯代码提案（无 `[delta]` section）不进入 `write-delta`，但仍必须完成 spec-complete。spec-complete 的统一入口为：
+
+```bash
+openlogos merge <slug>
+```
+
+当提案没有 delta 文件时，`merge` 执行 no-op merge：
+
+1. 不生成 `MERGE_PROMPT.md`；
+2. 不修改主规格；
+3. 写入 `logos/changes/<slug>/SPEC_MERGED`；
+4. marker 内容标明 `type:"no_delta_spec_complete"`、`reason` 与 `completed_at`；
+5. 已存在 `SPEC_MERGED` 时幂等返回。
+
+### 生命周期位置
+
+```text
+plan → spec-complete(no-delta merge) → slice → implement → deliver → close
+```
+
+对于无 `[delta]` 的纯代码提案：
+
+- `delta_required=false` 表示跳过 `write-delta`；
+- `SPEC_MERGED` 表示 spec-complete 已完成；
+- 缺 `SPEC_MERGED` 时，`next/status` 返回 `spec-complete-required`；
+- spec-complete 后若缺真实测试 ID，`next/status` 返回 `test-id-required`；
+- 只有两者满足后，才允许进入 `plan-slices`。
+
+### 责任边界
+
+- OpenLogos CLI 负责写入 no-delta `SPEC_MERGED`、派生前沿与诊断。
+- `slice-planner` 负责保持严格前置，不绕过 marker 与真实测试 ID。
+- RunLogos 等宿主只按 `next/status` 派发，不自行越级调用 `slice-planner`。

@@ -1509,3 +1509,72 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 - 不得因 `global-verify-failed` 将 `command` 置为 `null`。
 
 该规则同样适用于多模块输出：模块级活跃提案的 command 不得被非当前前沿的 `automation_diagnostic` 清空。
+
+## 3.13 no-delta spec-complete 与测试 ID 门禁 JSON 契约
+
+### `spec-complete-required`
+
+当活跃提案需要代码实现，但缺少 `SPEC_MERGED` / `MERGED` 时，`status` / `next` / `watch` 必须表达为 spec-complete 阻塞。
+
+```json
+{
+  "proposal_step": "spec-complete-required",
+  "active_change": {
+    "code_required": true,
+    "code_planning_diagnostic": {
+      "reason": "no_delta_spec_marker_missing",
+      "remediation": "run openlogos merge <slug> to write SPEC_MERGED"
+    }
+  }
+}
+```
+
+约束：
+
+- 不得返回 `next_node.id=="plan-slices"`；
+- 不得返回 `next_node.id=="code"`；
+- 不得返回 `next_node.id=="verify"`；
+- `next --auto` 不得把该状态当作 skippable gate。
+
+### `test-id-required`
+
+当活跃提案已完成 spec-complete 且需要代码实现，但缺少真实测试 ID 时，`status` / `next` / `watch` 必须表达为测试 ID 阻塞。
+
+```json
+{
+  "proposal_step": "test-id-required",
+  "active_change": {
+    "code_required": true,
+    "code_planning_diagnostic": {
+      "reason": "code_change_requires_real_test_ids",
+      "remediation": "add or reference real UT/ST/SMOKE IDs before plan-slices"
+    }
+  }
+}
+```
+
+约束：
+
+- 不得返回 `next_node.id=="plan-slices"`；
+- 不得写入 `SLICES_APPROVED`；
+- 不得输出 `gate_auto_passed:true`；
+- 不得进入 implement loop repair。
+
+### `reason` 取值
+
+| reason | 含义 | 建议处理 |
+|---|---|---|
+| `no_delta_spec_marker_missing` | 代码提案缺少 spec-complete marker | 执行 `openlogos merge <slug>`；无 delta 时写 no-delta `SPEC_MERGED` |
+| `code_change_requires_real_test_ids` | 代码提案缺少真实测试 ID | 补充测试资源或显式声明复用真实 UT/ST/SMOKE ID |
+
+### `SPEC_MERGED` 内容
+
+no-delta merge 写入的 `SPEC_MERGED` 建议为：
+
+```json
+{
+  "type": "no_delta_spec_complete",
+  "reason": "pure-code proposal has no spec delta",
+  "completed_at": "..."
+}
+```

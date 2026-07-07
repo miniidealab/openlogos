@@ -10,11 +10,13 @@
 
 ## 前置依赖（强制，缺一不可）
 
-1. 活跃提案存在且已 merge：提案目录有 `SPEC_MERGED`（或 `MERGED`）marker
-2. 规格 delta 已合并进主文档：本次涉及的架构 / 场景 / 功能规格已落在 `logos/resources/prd/`
-3. **测试用例已合并、ID 已定**：相关 `logos/resources/test/*-test-cases.md` 含真实 `UT-Sxx-..` / `ST-Sxx-..`
+1. 活跃提案存在且已完成 spec-complete：提案目录有 `SPEC_MERGED`（或 `MERGED`）marker。
+   - 含 `[delta]` 提案：该 marker 表示 delta 已真实合入主规格。
+   - 无 `[delta]` 的纯代码提案：该 marker 必须由 no-delta `openlogos merge <slug>` 写入，表示本次没有规格 delta 但规格阶段已完成。
+2. 规格 delta 已合并进主文档，或 no-delta `SPEC_MERGED` 明确记录本次无需文档 delta。
+3. **测试用例已合并、ID 已定**：相关 `logos/resources/test/*-test-cases.md` 或显式复用声明含真实 `UT-Sxx-..` / `ST-Sxx-..` / `SMOKE-*` ID。
 
-> 若以上任一不满足（尤其测试 ID 未定），说明尚未到切片时机——**禁止用占位 ID 切片**，提示用户先完成 merge。这正是本环节挪到 merge 后的根本原因：对**真实规格 + 真实测试 ID**切，而非对草案猜。
+> 若以上任一不满足（尤其缺 `SPEC_MERGED` 或测试 ID 未定），说明尚未到切片时机。**禁止用占位 ID 切片**，提示先完成 no-delta merge / merge 或补齐真实测试 ID。这正是本环节挪到 spec-complete 后的根本原因：对**已定稿规格 + 真实测试 ID**切，而非对草案或隐含假设猜。
 
 ## 核心职责
 
@@ -110,3 +112,11 @@
 ## 推荐提示词
 
 - `请按 slice-planner 规划本提案的 [code] 切片：先读已合并规格与真实测试 ID，六维打分，再用垂直/横向判别器与删后续证伪门逐片自检（写出结论），拆不开就显式单切。只写 tasks.md 的 [code] section 并读回确认。`
+
+## 纯代码提案处理规则
+
+当提案无 `[delta]` section 时，slice-planner 不得自行认定 spec/merge 已空过。必须先检查 `SPEC_MERGED`：
+
+- 缺 `SPEC_MERGED`：拒绝切片，提示执行 `openlogos merge <slug>` 生成 no-delta spec-complete marker。
+- 有 `SPEC_MERGED` 但缺真实测试 ID：拒绝切片，提示补充或声明复用真实 UT/ST/SMOKE ID。
+- 两者均满足：按既有六维打分、垂直/横向判别器与删后续证伪门写 `[code]`。

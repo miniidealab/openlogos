@@ -81,3 +81,30 @@ sequenceDiagram
 - 若 `smoke_required=false`，`next` 返回 `deploy-done`，提示明确授权执行 `openlogos archive <slug>`。
 
 `next` 不得建议用户或 AI 手写 `DEPLOY_DONE`。
+
+## spec-complete-required / test-id-required 的 next 建议
+
+当活跃提案处于 launched 生命周期且需要代码实现时，`openlogos next` 必须在派发 `plan-slices` 之前检查两个前置：
+
+1. spec-complete 是否已完成；
+2. 真实测试 ID 是否已稳定。
+
+### spec-complete-required
+
+- **触发条件**：`code_required==true`，提案无待写 delta 或 delta 已处理，但提案目录缺少 `SPEC_MERGED` / `MERGED`。
+- **期望响应**：`proposal_step=="spec-complete-required"`，`next_node` 省略或指向 no-delta merge 命令提示，不得指向 `plan-slices`。
+- **建议文案**：提示执行 `openlogos merge <slug>`。若无 delta，merge 将执行 no-op merge 并写入 `SPEC_MERGED`。
+- **JSON 诊断**：`reason=="no_delta_spec_marker_missing"`，`remediation=="run openlogos merge <slug>"`。
+
+### test-id-required
+
+- **触发条件**：spec-complete 已完成，`code_required==true`，但无法解析本提案将由 `[code]` 切片覆盖的真实 `UT-*` / `ST-*` / `SMOKE-*` ID。
+- **期望响应**：`proposal_step=="test-id-required"`，不得输出 `next_node.id=="plan-slices"`。
+- **建议文案**：提示补充测试资源或显式声明复用已有真实测试 ID。
+- **JSON 诊断**：`reason=="code_change_requires_real_test_ids"`，`remediation=="add or reference real test IDs before plan-slices"`。
+
+### 不变量
+
+- 纯文档提案不进入上述阻塞；`code_required==false` 时仍按现有纯文档路径推进。
+- `next --auto` 不能跳过这两个阻塞；它们不是 skippable human gate。
+- `status` 与 `next` 对上述状态的 `proposal_step` 与诊断必须一致。

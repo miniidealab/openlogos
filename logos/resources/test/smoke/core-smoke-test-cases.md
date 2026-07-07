@@ -122,3 +122,10 @@
 - [ ] Codex 项目专属 skill 保留发布后冒烟：SMOKE-core-35
 - [ ] Claude Code 项目专属 skill 保留发布后冒烟：SMOKE-core-36
 - [ ] 官网命名空间文档发布后冒烟：SMOKE-core-37
+
+## no-delta spec-complete 与 slice-planner 前置冒烟
+
+| ID | 名称 | 覆盖 | 环境 | 前置 | 操作 | 期望 |
+|---|---|---|---|---|---|---|
+| SMOKE-core-09 | 纯代码提案 no-delta spec-complete 冒烟 | no-delta merge / `SPEC_MERGED` | staging | 安装含本变更的 CLI；构造无 `[delta]`、含空 `[code]` 的活跃提案 | 执行 `openlogos merge <slug>`，再执行 `openlogos next --format json` | `SPEC_MERGED` 存在且内容标记 `no_delta_spec_complete`；测试 ID 可解析时 `next_node.id=="plan-slices"` |
+| SMOKE-core-10 | 缺测试 ID 不派 slice-planner 冒烟 | `test-id-required` | staging | 构造代码提案，已有 `SPEC_MERGED`，但无真实 UT/ST/SMOKE ID | 执行 `openlogos next --format json` | 返回 `proposal_step=="test-id-required"` 或等价诊断；不返回 `next_node.id=="plan-slices"`；不写 `SLICES_APPROVED` |

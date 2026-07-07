@@ -864,3 +864,64 @@ $ openlogos next
 - 文本模式用于人读。
 - JSON 模式用于机器读。
 - 错误输出不得吞掉上下文。
+
+## no-delta spec-complete 与测试 ID 缺失提示
+
+### `proposal_step=spec-complete-required`
+
+当活跃提案为代码提案、`tasks.md` 无 `[delta]` section 或无需产出 delta，但提案目录缺少 `SPEC_MERGED` / `MERGED` 时，`openlogos status` 与 `openlogos next` 必须提示先完成 no-delta spec-complete。
+
+文本建议：
+
+```text
+活跃提案：<slug> · 步骤 spec-complete-required（需完成 no-delta spec-complete）
+下一步：执行 openlogos merge <slug>。该提案没有规格 delta，merge 将执行 no-op merge 并写入 SPEC_MERGED。
+```
+
+JSON 约束：
+
+```json
+{
+  "proposal_step": "spec-complete-required",
+  "diagnostic": {
+    "reason": "no_delta_spec_marker_missing",
+    "remediation": "run openlogos merge <slug> to write SPEC_MERGED"
+  }
+}
+```
+
+此状态下不得返回 `next_node.id=="plan-slices"`、`next_node.id=="code"` 或 `next_node.id=="verify"`。
+
+### `proposal_step=test-id-required`
+
+当代码提案已完成 spec-complete，但 OpenLogos 无法从已合并测试资源或显式复用声明中解析到真实 `UT-*` / `ST-*` / `SMOKE-*` ID 时，`status/next` 必须提示补齐测试 ID。
+
+文本建议：
+
+```text
+活跃提案：<slug> · 步骤 test-id-required（缺少真实测试 ID）
+下一步：补充或声明复用真实 UT/ST/SMOKE ID；测试 ID 稳定后再进入 slice-planner。
+```
+
+JSON 约束：
+
+```json
+{
+  "proposal_step": "test-id-required",
+  "diagnostic": {
+    "reason": "code_change_requires_real_test_ids",
+    "remediation": "add or reference real UT/ST/SMOKE IDs before plan-slices"
+  }
+}
+```
+
+此状态下不得输出 `gate_auto_passed:true`，不得写入 `SLICES_APPROVED`。
+
+### no-delta merge 输出
+
+`openlogos merge <slug>` 在无 delta 时应输出：
+
+```text
+已完成 no-delta spec-complete：该提案没有规格 delta，已写入 SPEC_MERGED。
+下一步：重新运行 openlogos next，根据测试 ID 门禁进入 plan-slices 或返回阻塞诊断。
+```

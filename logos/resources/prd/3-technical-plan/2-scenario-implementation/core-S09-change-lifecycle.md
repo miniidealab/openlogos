@@ -72,24 +72,33 @@ S09 变更生命周期各步骤展示的 `proposal_step`（`status` / `next` 共
 不改各态判定结果。并跑等价由测试期「ViaFlow == 旧 detectProposalStep」断言锁定
 （见 `core-S09-test-cases`）。
 
-## 纯代码提案（无 `[delta]`）派生：spec/merge 空过直连 slice/implement（fix-nodelta-proposal-routing）
+## 纯代码提案（无 `[delta]`）派生：no-delta spec-complete 后进入 slice/implement
 
-纯代码级修复提案（`tasks.md` 无 `## [delta]` section）在生命周期派生上与常规（有 `[delta]`）提案的差异：`spec`（write-delta）+ `merge` 子流程带 `when: delta_required`，`delta_required==false` 时**整段空过**——无 delta 待产出、无 delta 待合并、不等 `SPEC_MERGED`。派生据此把无 `[delta]` 提案的 `spec`/`merge` 视为 vacuously done，跳过 `delta-writing`/`ready-to-merge`/`merge-generated` 三态，直接进入 `slice`/`implement` 维度。
+纯代码级修复提案（`tasks.md` 无 `## [delta]` section）在生命周期派生上与常规提案的差异是：不进入 `write-delta`，但仍必须完成 spec-complete 留痕。`openlogos merge <slug>` 在无 delta 时执行 no-op merge 并写入 `SPEC_MERGED`，表示 no-delta spec-complete。
 
-**关键不变量**：`delta_required==false` 时，本生命周期**绝不**产出 `proposal_step == delta-writing`、前沿**绝不**为 `write-delta`。这修复了「纯代码提案被派到 `write-delta`、change-writer 正确零产出却被判假完成、无人值守下 `blocked(no-progress)` 死锁」的假阴性。
+**关键不变量**：
 
-派生路径（`delta_required==false`，`## [code]` 标题在场）：
+1. `delta_required==false` 时，本生命周期**绝不**产出 `proposal_step=="delta-writing"`，前沿**绝不**为 `write-delta`。
+2. `delta_required==false` 不再等价于“spec/merge 已完成”。缺少 `SPEC_MERGED` / `MERGED` 时，代码提案必须停在 `spec-complete-required`。
+3. 只有 no-delta `SPEC_MERGED` 在场且真实测试 ID 稳定时，才可进入 `ready-to-implement` / `plan-slices`。
 
-- `writing`（proposal/tasks 未脱模板） →（plan 门批准）→ `ready-to-implement`（前沿 `plan-slices`，唤起 slice-planner 对现有/已合并规格 + 真实测试 ID 划 `[code]` 切片）→ `slice-exit` 门 → `coding`（前沿 `code`）→ `ready-to-verify` → …
-- 与常规提案唯一差别 = 中间不经 `delta-writing`/`ready-to-merge`/`merge-generated`（`spec`/`merge` 空过）。规则细节与派生矩阵见 `spec/flow-spec.md` §12.6、`spec/tasks-spec.md`「状态判断规则」。
+派生路径：
 
-**前置协同**：以上以纯代码提案 `tasks.md` **保留空 `## [code]` 标题**为前提（`change-writer` 纯代码修复模板已保证）——它令 `parseTaskSections` 非 `null`、`code_required` 为真，从而被识别为纯代码提案而非降级到旧格式兜底。
+- `writing`（proposal/tasks 未脱模板） →（plan 门批准）→ `spec-complete-required`（提示执行 `openlogos merge <slug>`；无 delta 时写 no-delta `SPEC_MERGED`）→ `test-id-required`（若缺真实测试 ID）→ `ready-to-implement`（前沿 `plan-slices`）→ `slice-exit` 门 → `coding`（前沿 `code`）→ `ready-to-verify` → …
+
+**前置协同**：纯代码提案 `tasks.md` 仍必须保留空 `## [code]` 标题，用于表达 `code_required==true` 和后续切片承载区。该标题不代表切片已规划，切片仍由 no-delta spec-complete 后的 `slice-planner` 统一写入。
 
 ### EX-9.1: 纯代码提案（无 `[delta]`）被误派 write-delta
 
 - **触发条件**：launched 生命周期、活跃提案 `tasks.md` 无 `## [delta]` section（纯代码级修复），经 plan 门后派生。
-- **期望响应**：`proposal_step` 派生为 `ready-to-implement`（前沿 `plan-slices`）/ `coding` / `ready-to-verify` 之一，**绝不为 `delta-writing`**、`next_node.id` **绝不为 `write-delta`**；无人值守 `--auto` 下不出现 `blocked(no-progress)` 死锁。
+- **期望响应**：若无 `SPEC_MERGED` / `MERGED`，`proposal_step=="spec-complete-required"`，`next_node.id` 不为 `write-delta` 且不为 `plan-slices`；若已有 no-delta `SPEC_MERGED` 且测试 ID 稳定，则派生为 `ready-to-implement` / `plan-slices`。
 - **副作用**：不改变有 `[delta]` 常规提案的派生（仍 `delta-writing → ready-to-merge → merge-generated → …`）。
+
+### EX-9.2: no-delta merge 写入 spec-complete marker
+
+- **触发条件**：提案无 `[delta]` section，执行 `openlogos merge <slug>`。
+- **期望响应**：CLI 不生成 `MERGE_PROMPT.md`，直接写入 `SPEC_MERGED`；新写入内容包含 `type:"no_delta_spec_complete"`、`reason`、`completed_at`。
+- **副作用**：重复执行 merge 幂等返回已完成，不覆盖已有 marker。
 
 ## 异常用例
 ### EX-5.1: 部署决策与 tasks 冲突
