@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.6] - 2026-07-07
+
+### Fixed
+
+- **纯代码提案 no-delta spec-complete 闭环** — `openlogos merge` 对无规格 delta 的代码提案执行 no-op merge 并写入带审计内容的 `SPEC_MERGED`，让纯代码修复也具备可追踪的规格阶段完成状态。
+- **切片规划前测试 ID 门禁** — `openlogos next/status` 在缺 `SPEC_MERGED` 或缺真实 UT/ST/SMOKE ID 时返回 `spec-complete-required` / `test-id-required` 诊断，阻止未满足前置条件的提案误派到 `slice-planner`。
+- **随包规范、Skill、官网与 smoke 覆盖同步** — 更新 flow/tasks/change/CLI JSON 等规格、change-writer 与 slice-planner Skill、官网中英文文档，并新增 no-delta spec-complete / 缺测试 ID 的发布后 smoke 覆盖。
+
 ## [0.13.5] - 2026-07-05
 
 ### Fixed
@@ -760,7 +768,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.5...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.6...HEAD
+[0.13.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.6
 [0.13.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.5
 [0.13.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.4
 [0.10.9]: https://github.com/miniidealab/openlogos/releases/tag/v0.10.9
