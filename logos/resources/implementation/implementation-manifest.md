@@ -1,5 +1,30 @@
 # website-release-feed 实现清单
 
+## support-nodelta-spec-complete：smoke dispatcher 结果路径修复
+
+### 范围
+- 将统一 smoke dispatcher 的 `OPENLOGOS_SMOKE_RESULT_PATH` 规范化为项目根目录下的绝对路径。
+- 保证以 `website/` 等嵌套目录为工作目录的 runner 与根目录 runner 写入同一份 JSONL 结果账本。
+- 防止嵌套 runner 将结果误写到 `website/logos/resources/verify/`，造成官网 smoke 用例 uncovered。
+
+### 覆盖用例
+- [x] UT-S19-SMOKE-03
+- [x] ST-S19-SMOKE-02
+- [x] SMOKE-core-03 / 07 / 08 / 15 / 21 / 22 / 23 / 24 / 34 / 35 / 36 / 37
+
+### 产物
+- `scripts/run-smoke.js`
+- `cli/test/s19-smoke.test.ts`
+- `logos/resources/verify/test-results.jsonl`
+- `logos/resources/verify/smoke-results.jsonl`
+- `logos/resources/verify/smoke-report.md`
+
+### 验证
+- `cd cli && npm test -- test/s19-smoke.test.ts --cache false`：20/20 通过。
+- `cd cli && npm test -- --cache false`：1078/1078 通过。
+- `cd website && npm test`：3/3 通过。
+- `openlogos smoke`：37/37 通过，Gate 3.8 PASS。
+
 ## fix-post-merge-slice-planner-auto-skip
 
 ### 范围
