@@ -4,7 +4,10 @@ import process from 'node:process';
 import { RELEASE_SUMMARY_FALLBACK_MESSAGE } from '../src/lib/releases-summary.mjs';
 
 const ROOT = process.cwd();
-const RESULT_PATH = resolve(ROOT, '../logos/resources/verify/smoke-results.jsonl');
+const RESULT_PATH = resolve(
+  ROOT,
+  process.env.OPENLOGOS_SMOKE_RESULT_PATH || '../logos/resources/verify/smoke-results.jsonl',
+);
 const DIST_DIR = resolve(ROOT, 'dist');
 const RELEASE_DATA_PATH = resolve(ROOT, 'src/data/releases.json');
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/miniidealab/openlogos/releases/latest';

@@ -227,6 +227,12 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
   let sandboxData = buildInitialSandboxData(sandbox);
 
   if (command) {
+    // 每次执行已配置的 smoke.command 都必须从空账本开始。
+    // 否则上一次部署留下的 pass/skip 会被当成本轮真实结果，形成伪覆盖。
+    const fullResultPath = join(root, resultPath);
+    mkdirSync(dirname(fullResultPath), { recursive: true });
+    writeFileSync(fullResultPath, '');
+
     if (format !== 'json') console.log(`\n⚙️  Running smoke.command: ${command}`);
     const result = runSandboxedCommand({
       root,

@@ -310,6 +310,9 @@ describe('S19 Scenario Tests — smoke command', () => {
   it('ST-S19-SMOKE-02: 统一 dispatcher 执行新增 runner 后无 uncovered', () => {
     writeSmokeCases();
     const proposalDir = writeChangedSmokeDelta('deploy-feature', 'SMOKE-core-02');
+    writeSmokeResults([
+      '{"id":"SMOKE-core-99","status":"pass","scenario":"stale result from previous deployment"}',
+    ]);
     mkdirSync(join(root, 'scripts'), { recursive: true });
     copyFileSync(join(REPO_ROOT, 'scripts/run-smoke.js'), join(root, 'scripts/run-smoke.js'));
     writeFileSync(join(root, 'scripts/smoke-temp.js'), [
@@ -327,8 +330,10 @@ describe('S19 Scenario Tests — smoke command', () => {
 
     const parsed = JSON.parse(con.logs[0]);
     expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.summary.executed_count).toBe(2);
     expect(parsed.data.uncovered_cases).not.toContain('SMOKE-core-02');
     expect(parsed.data.diagnostics).toEqual([]);
+    expect(readFileSync(join(root, 'logos/resources/verify/smoke-results.jsonl'), 'utf-8')).not.toContain('SMOKE-core-99');
     expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(true);
   });
 

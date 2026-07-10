@@ -1,0 +1,491 @@
+#!/usr/bin/env node
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+const repoRoot = process.cwd();
+const resultPath = resolve(
+  repoRoot,
+  process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl',
+);
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+let packageFixture = null;
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function writeSmoke(id, status, error) {
+  mkdirSync(dirname(resultPath), { recursive: true });
+  const record = {
+    id,
+    status,
+    timestamp: new Date().toISOString(),
+    scenario: 'core CLI deployment smoke',
+  };
+  if (error) record.error = String(error).slice(0, 500);
+  appendFileSync(resultPath, `${JSON.stringify(record)}\n`);
+}
+
+function run(command, args, cwd, extraEnv = {}) {
+  const env = { ...process.env, ...extraEnv };
+  delete env.OPENLOGOS_SMOKE_RESULT_PATH;
+  return spawnSync(command, args, { cwd, encoding: 'utf-8', env });
+}
+
+function checked(result, label) {
+  if (result.status !== 0) {
+    throw new Error([
+      `${label} failed with exit ${result.status}`,
+      result.stdout?.trim(),
+      result.stderr?.trim(),
+    ].filter(Boolean).join('\n'));
+  }
+  return result;
+}
+
+function parseEnvelope(result) {
+  const raw = `${result.stdout || ''}\n${result.stderr || ''}`;
+  const line = raw.split('\n').find(item => item.trim().startsWith('{'));
+  if (!line) throw new Error(`missing JSON envelope: ${raw.slice(0, 500)}`);
+  return JSON.parse(line);
+}
+
+function withTempProject(prefix, fn) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    return fn(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function preparePackagedCli() {
+  if (packageFixture) return packageFixture;
+
+  const root = mkdtempSync(join(tmpdir(), 'openlogos-smoke-package-'));
+  const installRoot = join(root, 'install');
+  mkdirSync(installRoot, { recursive: true });
+  writeFileSync(join(installRoot, 'package.json'), JSON.stringify({ name: 'openlogos-smoke-install', private: true }));
+
+  const packed = checked(
+    run(npmCommand, ['pack', join(repoRoot, 'cli'), '--pack-destination', root, '--json'], repoRoot),
+    'npm pack',
+  );
+  let metadata;
+  try {
+    metadata = JSON.parse(packed.stdout.trim())[0];
+  } catch (error) {
+    throw new Error(`unable to parse npm pack metadata: ${String(error)}\n${packed.stdout.slice(0, 500)}`);
+  }
+
+  const tarball = join(root, metadata.filename);
+  assert(existsSync(tarball), `npm pack did not create ${tarball}`);
+  checked(
+    run(npmCommand, ['install', tarball, '--ignore-scripts', '--no-audit', '--no-fund'], installRoot),
+    'npm install packed CLI',
+  );
+
+  const entry = join(installRoot, 'node_modules/@miniidealab/openlogos/dist/index.js');
+  assert(existsSync(entry), 'installed CLI entry is missing');
+  packageFixture = {
+    root,
+    entry,
+    files: new Set((metadata.files || []).map(item => item.path)),
+  };
+  return packageFixture;
+}
+
+function cleanupPackageFixture() {
+  if (!packageFixture) return;
+  rmSync(packageFixture.root, { recursive: true, force: true });
+  packageFixture = null;
+}
+
+function runCli(root, args) {
+  const { entry } = preparePackagedCli();
+  return run(process.execPath, [entry, ...args], root);
+}
+
+function writeConfig(root, config) {
+  mkdirSync(join(root, 'logos'), { recursive: true });
+  writeFileSync(join(root, 'logos/logos.config.json'), JSON.stringify({
+    name: 'core-cli-smoke',
+    locale: 'zh',
+    documents: {},
+    ...config,
+  }, null, 2));
+}
+
+function writeLaunchedProject(root, bootstrap) {
+  mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+  mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+  mkdirSync(join(root, 'logos/changes'), { recursive: true });
+  writeConfig(root, {});
+  writeFileSync(join(root, 'logos/logos-project.yaml'), [
+    'project:',
+    '  name: core-cli-smoke',
+    'modules:',
+    '  - id: core',
+    '    name: Core',
+    '    lifecycle: launched',
+    ...(bootstrap ? [`    bootstrap: ${bootstrap}`] : []),
+    'deployment_gates:',
+    '  core:',
+    '    deployment_required: true',
+    '    smoke_required: true',
+    '',
+  ].join('\n'));
+}
+
+function writeProposal(root, slug, proposal, tasks) {
+  const proposalDir = join(root, 'logos/changes', slug);
+  mkdirSync(proposalDir, { recursive: true });
+  writeFileSync(join(root, 'logos/.openlogos-guard'), JSON.stringify({
+    activeChange: slug,
+    module: 'core',
+    createdAt: '2026-07-10T00:00:00.000Z',
+  }));
+  writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+  writeFileSync(join(proposalDir, 'tasks.md'), tasks);
+  return proposalDir;
+}
+
+const NO_DEPLOY_PROPOSAL = [
+  '# 变更提案：docs-only',
+  '',
+  '## 变更原因',
+  '补充说明文档。',
+  '',
+  '## 变更类型',
+  '文档级',
+  '',
+  '## 部署影响',
+  '- 是否需要部署：否',
+  '- 部署原因：仅更新文档，不需要发布运行产物',
+  '- 影响环境：无',
+  '- 是否涉及数据迁移：否',
+  '- 是否需要回滚预案：否',
+  '- 是否需要 smoke：否',
+  '',
+  '## 变更概述',
+  '补充文档。',
+].join('\n');
+
+const DEPLOY_PROPOSAL = [
+  '# 变更提案：runtime-change',
+  '',
+  '## 变更原因',
+  '修改 CLI 运行时代码。',
+  '',
+  '## 变更类型',
+  '代码级修复',
+  '',
+  '## 部署影响',
+  '- 是否需要部署：是',
+  '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+  '- 影响环境：staging',
+  '- 是否涉及数据迁移：否',
+  '- 是否需要回滚预案：是',
+  '- 是否需要 smoke：是',
+  '',
+  '## 变更概述',
+  '修改运行时代码。',
+].join('\n');
+
+function smokeCliPackageVersion() {
+  const fixture = preparePackagedCli();
+  const version = checked(run(process.execPath, [fixture.entry, '--version'], fixture.root), 'openlogos --version');
+  assert(/^\d+\.\d+\.\d+/.test(version.stdout.trim()), `unexpected version: ${version.stdout.trim()}`);
+}
+
+function smokeInitAssets() {
+  withTempProject('openlogos-smoke-init-assets-', root => {
+    checked(runCli(root, ['init', 'smoke', '--locale', 'zh', '--ai-tool', 'all']), 'openlogos init');
+    for (const name of ['requirement', 'todolist', 'code', 'image', 'temp', 'note']) {
+      assert(existsSync(join(root, 'logos/resources/reference', name)), `missing reference directory: ${name}`);
+    }
+    assert(existsSync(join(root, 'AGENTS.md')), 'AGENTS.md was not generated');
+    assert(existsSync(join(root, 'CLAUDE.md')), 'CLAUDE.md was not generated');
+    assert(existsSync(join(root, '.agents/plugins/marketplace.json')), 'Codex marketplace was not generated');
+  });
+}
+
+function smokePackageTemplates() {
+  const { files } = preparePackagedCli();
+  for (const prefix of ['claude-plugin-template/', 'codex-plugin-template/', 'opencode-plugin-template/']) {
+    assert([...files].some(path => path.startsWith(prefix)), `packed CLI is missing ${prefix}`);
+  }
+}
+
+function smokeNoDeployStatus() {
+  withTempProject('openlogos-smoke-no-deploy-', root => {
+    writeLaunchedProject(root);
+    const proposalDir = writeProposal(root, 'docs-only', NO_DEPLOY_PROPOSAL, '# 实现任务\n');
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'LOOP_ITERS'), '{"iter":1,"node":"verify","result":"pass","module":"core"}\n');
+
+    const output = checked(runCli(root, ['status', '--format', 'json']), 'openlogos status');
+    const data = parseEnvelope(output).data;
+    const module = data.modules.find(item => item.id === 'core');
+    assert(module.active_change.deployment_required === false, 'deployment_required should be false');
+    assert(module.active_change.proposal_step === 'verify-passed', `unexpected step: ${module.active_change.proposal_step}`);
+    assert(/archive/i.test(module.suggestion || ''), 'status should suggest archive instead of deploy');
+  });
+}
+
+function smokeDeployProgress() {
+  withTempProject('openlogos-smoke-deploy-progress-', root => {
+    writeLaunchedProject(root);
+    writeProposal(root, 'runtime-change', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 已完成业务代码',
+      '- [ ] 不应计入部署进度的代码任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+      '- [ ] 同步官网',
+    ].join('\n'));
+
+    const output = checked(runCli(root, ['status', '--format', 'json']), 'openlogos status');
+    const active = parseEnvelope(output).data.modules.find(item => item.id === 'core').active_change;
+    assert(active.deployment_progress.checked === 1, 'deploy checked count should be 1');
+    assert(active.deployment_progress.total === 2, 'deploy total should ignore [code] tasks');
+    assert(active.deployment_document.name === 'tasks.md', 'deployment document should point to tasks.md');
+  });
+}
+
+function smokeAdoptNextGuidance() {
+  withTempProject('openlogos-smoke-adopt-next-', root => {
+    writeLaunchedProject(root, 'adopted');
+    const output = checked(runCli(root, ['next']), 'openlogos next');
+    assert(output.stdout.includes('openlogos change add-baseline-docs'), 'missing baseline documentation guidance');
+  });
+}
+
+function smokeVerifyWithoutPreRun() {
+  withTempProject('openlogos-smoke-verify-none-', root => {
+    writeConfig(root, { verify: { result_path: 'logos/resources/verify/test-results.jsonl', sandbox_mode: 'off' } });
+    mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/logos-project.yaml'), 'project:\n  name: verify-none\n');
+    writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), '| UT-S13-02 | one |\n| UT-S13-03 | two |\n');
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), '{"id":"UT-S13-02","status":"pass"}\n');
+
+    const output = runCli(root, ['verify', '--format', 'json']);
+    assert(output.status !== 0, 'verify should fail when coverage is incomplete');
+    const data = parseEnvelope(output).data;
+    assert(data.pre_run.mode === 'none', `unexpected pre_run mode: ${data.pre_run.mode}`);
+    assert(data.gate.result === 'FAIL', 'verify gate should fail');
+    assert(data.pre_run.suggestions.some(item => item.includes('verify.pre_run_command')), 'missing pre-run remediation');
+  });
+}
+
+function smokeVerifyTwoPhase() {
+  withTempProject('openlogos-smoke-verify-two-phase-', root => {
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+    writeFileSync(join(root, 'scripts/regression.js'), [
+      "import { mkdirSync, writeFileSync } from 'node:fs';",
+      "mkdirSync('logos/resources/verify', { recursive: true });",
+      "writeFileSync('logos/resources/verify/regression.jsonl', '{\"id\":\"UT-S13-02\",\"status\":\"fail\",\"error\":\"old\"}\\n{\"id\":\"UT-S13-03\",\"status\":\"pass\"}\\n');",
+    ].join('\n'));
+    writeFileSync(join(root, 'scripts/incremental.js'), [
+      "import { mkdirSync, writeFileSync } from 'node:fs';",
+      "mkdirSync('logos/resources/verify', { recursive: true });",
+      "writeFileSync('logos/resources/verify/incremental.jsonl', '{\"id\":\"UT-S13-02\",\"status\":\"pass\"}\\n');",
+    ].join('\n'));
+    writeConfig(root, { verify: {
+      result_path: 'logos/resources/verify/test-results.jsonl',
+      regression_command: 'node scripts/regression.js',
+      incremental_command: 'node scripts/incremental.js',
+      regression_result_path: 'logos/resources/verify/regression.jsonl',
+      incremental_result_path: 'logos/resources/verify/incremental.jsonl',
+      merge_strategy: 'last-write-wins',
+      sandbox_mode: 'off',
+    } });
+    writeFileSync(join(root, 'logos/logos-project.yaml'), 'project:\n  name: verify-two-phase\n');
+    writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), '| UT-S13-02 | one |\n| UT-S13-03 | two |\n');
+
+    const output = checked(runCli(root, ['verify', '--format', 'json']), 'two-phase verify');
+    const data = parseEnvelope(output).data;
+    assert(data.pre_run.mode === 'two_phase', `unexpected pre_run mode: ${data.pre_run.mode}`);
+    assert(data.pre_run.commands.every(item => item.status === 'pass'), 'two-phase commands did not pass');
+    assert(data.gate.result === 'PASS', 'two-phase verify gate should pass');
+  });
+}
+
+function smokeLegacySkippedBootstrap() {
+  withTempProject('openlogos-smoke-legacy-bootstrap-', root => {
+    writeLaunchedProject(root, 'skipped');
+    const status = checked(runCli(root, ['status', '--format', 'json']), 'openlogos status');
+    const module = parseEnvelope(status).data.modules.find(item => item.id === 'core');
+    assert(module.bootstrap === 'adopted', `legacy bootstrap was not normalized: ${module.bootstrap}`);
+    const next = checked(runCli(root, ['next']), 'openlogos next');
+    assert(next.stdout.includes('openlogos change add-baseline-docs'), 'legacy bootstrap lost adopt guidance');
+  });
+}
+
+function writeSandboxVerifyFixture(root, mode, writesForbidden) {
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+  writeFileSync(join(root, 'scripts/verify-result.js'), [
+    "import { mkdirSync, writeFileSync } from 'node:fs';",
+    "mkdirSync('logos/resources/verify', { recursive: true });",
+    "writeFileSync('logos/resources/verify/test-results.jsonl', '{\"id\":\"UT-S13-02\",\"status\":\"pass\"}\\n');",
+    ...(writesForbidden ? ["writeFileSync('forbidden.txt', 'blocked');"] : []),
+  ].join('\n'));
+    writeConfig(root, { verify: {
+      result_path: 'logos/resources/verify/test-results.jsonl',
+      pre_run_command: 'node scripts/verify-result.js',
+      sandbox_mode: mode,
+      sandbox_root: tmpdir(),
+      sandbox_deny_workspace_write: true,
+    } });
+  writeFileSync(join(root, 'logos/logos-project.yaml'), 'project:\n  name: verify-sandbox\n');
+  writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), '| UT-S13-02 | sandbox |\n');
+}
+
+function smokeVerifyAutoSandbox() {
+  withTempProject('openlogos-smoke-verify-auto-', root => {
+    writeSandboxVerifyFixture(root, 'auto', false);
+    const output = checked(runCli(root, ['verify', '--format', 'json']), 'verify auto sandbox');
+    const data = parseEnvelope(output).data;
+    assert(data.gate.result === 'PASS', 'verify auto sandbox gate should pass');
+    assert(['pass', 'warn'].includes(data.sandbox.status), `unexpected sandbox status: ${data.sandbox.status}`);
+    assert(!existsSync(join(root, 'forbidden.txt')), 'verify auto sandbox wrote a forbidden workspace file');
+  });
+}
+
+function smokeVerifyAlwaysSandbox() {
+  withTempProject('openlogos-smoke-verify-always-', root => {
+    writeSandboxVerifyFixture(root, 'always', true);
+    const output = runCli(root, ['verify', '--format', 'json']);
+    assert(output.status !== 0, 'verify always sandbox should reject forbidden writes');
+    const data = parseEnvelope(output).data;
+    assert(data.gate.result === 'FAIL', 'verify always sandbox gate should fail');
+    assert(data.sandbox.status === 'fail', `unexpected sandbox status: ${data.sandbox.status}`);
+    assert(!existsSync(join(root, 'forbidden.txt')), 'forbidden verify write escaped the sandbox');
+  });
+}
+
+function writeNestedSmokeFixture(root, mode, writesForbidden) {
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  mkdirSync(join(root, 'logos/resources/test/smoke'), { recursive: true });
+  writeFileSync(join(root, 'scripts/smoke-nested.js'), [
+    "import { mkdirSync, writeFileSync } from 'node:fs';",
+    "mkdirSync('logos/resources/verify', { recursive: true });",
+    "writeFileSync('logos/resources/verify/smoke-results.jsonl', '{\"id\":\"SMOKE-NESTED-01\",\"status\":\"pass\"}\\n');",
+    ...(writesForbidden ? ["writeFileSync('forbidden.txt', 'blocked');"] : []),
+  ].join('\n'));
+  writeConfig(root, { smoke: {
+    result_path: 'logos/resources/verify/smoke-results.jsonl',
+    report_path: 'logos/resources/verify/smoke-report.md',
+    command: 'node scripts/smoke-nested.js',
+    sandbox_mode: mode,
+    sandbox_root: tmpdir(),
+    sandbox_deny_workspace_write: true,
+  } });
+  writeFileSync(join(root, 'logos/logos-project.yaml'), 'project:\n  name: smoke-sandbox\n');
+  writeFileSync(join(root, 'logos/resources/test/smoke/core-smoke-test-cases.md'), '| SMOKE-NESTED-01 | nested sandbox |\n');
+}
+
+function smokeAutoSandbox() {
+  withTempProject('openlogos-smoke-smoke-auto-', root => {
+    writeNestedSmokeFixture(root, 'auto', false);
+    const output = checked(runCli(root, ['smoke', '--format', 'json']), 'smoke auto sandbox');
+    const data = parseEnvelope(output).data;
+    assert(data.gate.result === 'PASS', 'smoke auto sandbox gate should pass');
+    assert(['pass', 'warn'].includes(data.sandbox.status), `unexpected sandbox status: ${data.sandbox.status}`);
+    assert(!existsSync(join(root, 'forbidden.txt')), 'smoke auto sandbox wrote a forbidden workspace file');
+  });
+}
+
+function smokeAlwaysSandbox() {
+  withTempProject('openlogos-smoke-smoke-always-', root => {
+    writeNestedSmokeFixture(root, 'always', true);
+    const output = runCli(root, ['smoke', '--format', 'json']);
+    assert(output.status !== 0, 'smoke always sandbox should reject forbidden writes');
+    const data = parseEnvelope(output).data;
+    assert(data.gate.result === 'FAIL', 'smoke always sandbox gate should fail');
+    assert(data.sandbox.status === 'fail', `unexpected sandbox status: ${data.sandbox.status}`);
+    assert(!existsSync(join(root, 'forbidden.txt')), 'forbidden smoke write escaped the sandbox');
+  });
+}
+
+function smokeDeployDone() {
+  withTempProject('openlogos-smoke-deploy-done-', root => {
+    writeLaunchedProject(root);
+    const proposalDir = writeProposal(root, 'runtime-change', DEPLOY_PROPOSAL, [
+      '# 实现任务',
+      '',
+      '## [code] 代码实现',
+      '- [x] 修改运行时代码',
+      '',
+      '## [deploy] 部署任务',
+      '- [ ] 发布本地 CLI',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeFileSync(join(proposalDir, 'LOOP_ITERS'), '{"iter":1,"node":"verify","result":"pass","module":"core"}\n');
+    writeFileSync(join(proposalDir, 'SMOKE_PASS'), 'old');
+    writeFileSync(join(proposalDir, 'SMOKE_FAIL'), 'old');
+    writeFileSync(join(root, 'logos/resources/verify/deployment-report.md'), '# Deployment Report\n\nstaging ok\n');
+
+    const output = checked(runCli(root, ['deploy-done', '--env', 'staging', '--format', 'json']), 'openlogos deploy-done');
+    const data = parseEnvelope(output).data;
+    assert(data.next_step === 'ready-to-smoke', `unexpected next step: ${data.next_step}`);
+    assert(existsSync(join(proposalDir, 'DEPLOY_DONE')), 'DEPLOY_DONE was not written');
+    assert(!existsSync(join(proposalDir, 'SMOKE_PASS')), 'old SMOKE_PASS was not cleared');
+    assert(!existsSync(join(proposalDir, 'SMOKE_FAIL')), 'old SMOKE_FAIL was not cleared');
+    assert(readFileSync(join(proposalDir, 'tasks.md'), 'utf-8').includes('- [x] 发布本地 CLI'), 'deploy task was not checked');
+
+    const status = checked(runCli(root, ['status', '--format', 'json']), 'openlogos status after deploy-done');
+    const active = parseEnvelope(status).data.modules.find(item => item.id === 'core').active_change;
+    assert(active.proposal_step === 'ready-to-smoke', `unexpected proposal step: ${active.proposal_step}`);
+  });
+}
+
+const cases = [
+  ['SMOKE-core-01', smokeCliPackageVersion],
+  ['SMOKE-core-02', smokeInitAssets],
+  ['SMOKE-core-04', smokePackageTemplates],
+  ['SMOKE-core-05', smokeNoDeployStatus],
+  ['SMOKE-core-06', smokeDeployProgress],
+  ['SMOKE-core-11', smokeAdoptNextGuidance],
+  ['SMOKE-core-12', smokeVerifyWithoutPreRun],
+  ['SMOKE-core-13', smokeVerifyTwoPhase],
+  ['SMOKE-core-14', smokeLegacySkippedBootstrap],
+  ['SMOKE-core-16', smokeVerifyAutoSandbox],
+  ['SMOKE-core-17', smokeVerifyAlwaysSandbox],
+  ['SMOKE-core-18', smokeAutoSandbox],
+  ['SMOKE-core-19', smokeAlwaysSandbox],
+  ['SMOKE-core-20', smokeDeployDone],
+];
+
+let failed = false;
+try {
+  for (const [id, fn] of cases) {
+    try {
+      fn();
+      writeSmoke(id, 'pass');
+    } catch (error) {
+      failed = true;
+      writeSmoke(id, 'fail', error);
+    }
+  }
+} finally {
+  cleanupPackageFixture();
+}
+
+process.exit(failed ? 1 : 0);
