@@ -314,12 +314,23 @@ describe('S19 Scenario Tests — smoke command', () => {
       '{"id":"SMOKE-core-99","status":"pass","scenario":"stale result from previous deployment"}',
     ]);
     mkdirSync(join(root, 'scripts'), { recursive: true });
+    mkdirSync(join(root, 'website/scripts'), { recursive: true });
     copyFileSync(join(REPO_ROOT, 'scripts/run-smoke.js'), join(root, 'scripts/run-smoke.js'));
-    writeFileSync(join(root, 'scripts/smoke-temp.js'), [
+    writeFileSync(join(root, 'scripts/smoke-root.js'), [
       "import { mkdirSync, appendFileSync } from 'node:fs';",
-      "mkdirSync('logos/resources/verify', { recursive: true });",
-      "appendFileSync('logos/resources/verify/smoke-results.jsonl', JSON.stringify({ id: 'SMOKE-core-01', status: 'pass' }) + '\\n');",
-      "appendFileSync('logos/resources/verify/smoke-results.jsonl', JSON.stringify({ id: 'SMOKE-core-02', status: 'pass' }) + '\\n');",
+      "import { dirname } from 'node:path';",
+      "const resultPath = process.env.OPENLOGOS_SMOKE_RESULT_PATH;",
+      "if (!resultPath) throw new Error('missing OPENLOGOS_SMOKE_RESULT_PATH');",
+      "mkdirSync(dirname(resultPath), { recursive: true });",
+      "appendFileSync(resultPath, JSON.stringify({ id: 'SMOKE-core-01', status: 'pass' }) + '\\n');",
+    ].join('\n'));
+    writeFileSync(join(root, 'website/scripts/smoke-nested.js'), [
+      "import { mkdirSync, appendFileSync } from 'node:fs';",
+      "import { dirname } from 'node:path';",
+      "const resultPath = process.env.OPENLOGOS_SMOKE_RESULT_PATH;",
+      "if (!resultPath) throw new Error('missing OPENLOGOS_SMOKE_RESULT_PATH');",
+      "mkdirSync(dirname(resultPath), { recursive: true });",
+      "appendFileSync(resultPath, JSON.stringify({ id: 'SMOKE-core-02', status: 'pass' }) + '\\n');",
     ].join('\n'));
     const configPath = join(root, 'logos', 'logos.config.json');
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
@@ -334,6 +345,7 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(parsed.data.uncovered_cases).not.toContain('SMOKE-core-02');
     expect(parsed.data.diagnostics).toEqual([]);
     expect(readFileSync(join(root, 'logos/resources/verify/smoke-results.jsonl'), 'utf-8')).not.toContain('SMOKE-core-99');
+    expect(existsSync(join(root, 'website/logos/resources/verify/smoke-results.jsonl'))).toBe(false);
     expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(true);
   });
 

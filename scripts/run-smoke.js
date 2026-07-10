@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { basename, join, relative } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = process.cwd();
 const runnerPattern = /^smoke-.+\.(?:sh|js|mjs|cjs)$/;
 const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'logos']);
-const resultPath = process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl';
+const resultPath = resolve(
+  root,
+  process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl',
+);
 
 function walk(dir) {
   if (!existsSync(dir)) return [];
