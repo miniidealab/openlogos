@@ -38,6 +38,9 @@
 version: 1                      # flow 文件 schema 版本（整数，独立于本规范文档版本号 0.1.0）
 flow: initial                   # flow id（与文件名一致）
 extends: builtin:initial@v1     # 可选；overlay 基线 + 基线版本（见 §9）。无 extends = 自包含完整定义
+defaults:                       # 可选【contract-self-description】，flow 级派发默认值
+  dispatch:
+    timeout_seconds: 900        # 节点 dispatch.timeout_seconds 的唯一默认值源（fallback）（见「派发元数据 dispatch 与 requires_reviewed（contract-self-description）」章节）
 subflows:                       # 有序子流程列表（流程主体）
   - id: why
     name: WHY 需求
@@ -53,6 +56,12 @@ subflows:                       # 有序子流程列表（流程主体）
 - 流程主体由**有序的 subflow 列表**构成；每个 subflow 含**有序的 node 列表**。
 - "连续几个节点圈成一个 subflow" = 把它们放进同一个 subflow 的 `nodes`。
 - node id 在整份 flow 内**全局唯一**（overlay 按 id 寻址，见 §9）。
+- `defaults.dispatch.timeout_seconds`【contract-self-description】：节点 `dispatch.timeout_seconds` 的**唯一默认值源（fallback）**——
+  节点未显式声明 `timeout_seconds` 时一律取此值；**节点显式声明的特例值优先于 defaults**（内置模板只在特例节点
+  显式声明——code/implement 类 3600、deploy 类 1800，其余节点一律省略、由 defaults(900) 物化）；项目 overlay
+  覆盖 defaults 只影响未显式声明的节点（优先级与 overlay 合并规则见 §10.5）；
+  **resolved 时物化进每个节点，输出层不再有第二处默认**。本字段为可选的**向后兼容扩展**：
+  flow 文件 schema **`version: 1` 保持不变**，旧 flow 文件（无 `defaults`）解析行为不变。
 
 ## 4. node 字段
 
@@ -70,12 +79,27 @@ subflows:                       # 有序子流程列表（流程主体）
   fail_when: null               # 可选，失败/阻塞判定谓词；命中则该节点状态为 failed（见 §9）
   pre_script: null              # 可选，前置脚本插件（见 §11）
   post_script: null             # 可选，后置脚本插件（见 §11）
+  dispatch:                     # 可选【contract-self-description】，派发元数据（详见「派发元数据 dispatch 与 requires_reviewed（contract-self-description）」章节）
+    idempotent: true            #   该节点重派发是否安全（人工声明，不从其它字段推导）
+    timeout_seconds: 900        #   派发看门狗超时建议（秒）；未声明取 defaults.dispatch.timeout_seconds（§3）
+    artifacts_hint: []          #   产物提示（string[]）；[] = 「产物未知」契约语义（非缺省缺失）
+  requires_reviewed: null       # 可选【contract-self-description】，执行前置评审对象列表（如 ["proposal","delta"]）
 ```
 
 - `working_agent` / `review_agent` 是**不透明标签**：OpenLogos 不校验、不调度其行为；
   如何映射到真实 agent 由执行引擎自行适配。内置模板中默认留空。
 - `skill` 为该节点推荐使用的 Skill；`next` 会把它作为给宿主的指令的一部分输出。
 - `coverage_threshold`【S29】：**仅 `done_when: all_present` 的 fan-out 节点合法**，缺省（不写/写 `null`）= 等价全覆盖。**未显式设置有效 number 时派生/输出必须省略整键、绝不物化为 `coverage_threshold: null`**（写 `null` 也 normalize 为 absent），以保 `flow show` golden 零漂移。语义与校验（含「设在非 `all_present` 或非 fan-out 节点 → `FLOW_SCHEMA_INVALID`」）见 §7。内置模板均不写。
+- `dispatch`【contract-self-description】：节点派发元数据，**权威数据源 = flow 节点定义**（内置模板
+  `spec/flow/initial.yaml` / `spec/flow/launched.yaml` 逐节点**人工声明**，**不从 `produces`/`done_when` 推导**）；
+  resolved flow 派生把它物化为**完整对象**并经 `next_node.dispatch` 透传给宿主（JSON 契约见
+  `spec/cli-json-output.md`）。overlay-add 节点未声明时的完整保守默认、`defaults.dispatch.timeout_seconds`
+  唯一默认值源（fallback）与 `artifacts_hint: []` 语义，见「派发元数据 dispatch 与 requires_reviewed（contract-self-description）」章节。
+- `requires_reviewed`【contract-self-description】：声明该节点执行前必须已完成评审的对象列表
+  （不透明字符串标签，如 `"proposal"` / `"delta"`；内置 launched 的 `apply-merge` 声明 `["proposal","delta"]`）。
+  OpenLogos 不执行评审调度，仅经 `next_node` 透传；未声明的节点不输出该字段。
+- `dispatch` / `requires_reviewed` 均为可选的**向后兼容扩展**：flow 文件 schema **`version: 1` 不变**，
+  旧 flow 文件解析行为不变。
 
 ## 5. subflow 与 gate
 
@@ -128,7 +152,7 @@ loop:
   - `tests_green`：收敛 = 末轮测试绿（账本末行 `result == "pass"`）。
   - `code_slices_green`：收敛 = `section_complete:code ∧ tests_green`——即 `tasks.md` 的 `[code]` 切片**全部勾选** 且 末轮测试绿。它**重新主张被 loop 覆盖掉的 `code` 节点 `done_when`**（见 §12.2 R2），用于"逐片实现、全部切片完成且测试绿才出环"的代码切片循环。**空 `[code]`**（无切片、纯 docs/delta 提案）下 `code_slices_green` 退化为 `tests_green`，避免常驻激活把小提案卡死。派生细节见 §12.4。
 - **`max_iters > 1` 真迭代**：把 subflow 变成"迭代到测试绿/全部切片绿"的收敛循环（actor-critic：working_agent 改 → 测试当奖励信号 → 未达成再来一轮，至 `max_iters` 后升级到 gate）。
-  - **激活来源**：① overlay `set-loop`（见 §10.4）把目标 subflow `max_iters` 设 >1；② **change-flow-redesign 起，builtin `launched.yaml` 的 `implement` 默认 `max_iters:30` + `until:code_slices_green`，即默认激活切片循环**（故 launched 下 `loop_state`/`slice_state` 常驻输出）。**其它 builtin（`initial.yaml` 的 implement、以及 launched 其它 subflow）仍 `max_iters:1`**。**例外**：initial 多模块即便 `max_iters>1` 也**不激活**（见 §12.2）。
+  - **激活来源**：① overlay `set-loop`（见 §10.4）把目标 subflow `max_iters` 设 >1；② **change-flow-redesign 起，builtin `launched.yaml` 的 `implement` 默认 `max_iters:30` + `until:code_slices_green`，即默认带切片循环定义**。**contract-self-description 起，loop「定义在场」≠ `loop_state` 挂出**：`loop_state` **仅当 implement 子流程已真实进入**——确定性事实合取 `code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved` 成立——时输出，四条缺一即省略字段（判据与主动破例声明见 §12.2）；**`slice_state` 常驻口径不变**（两者激活判据分别写明，`slice_state` 是切片规划进度的展示面、不触发 driver loop 分支）。**其它 builtin（`initial.yaml` 的 implement、以及 launched 其它 subflow）仍 `max_iters:1`**。**例外**：initial 多模块即便 `max_iters>1` 也**不激活**（见 §12.2）。
   - 派生量：`iteration` = 该 loop 已完成的 verify 轮次；`converged` = 按 `until` 判定收敛；`escalated` = `iteration >= max_iters && !converged`。
 - **收敛信号押客观数字信号（测试绿 / 切片全勾 ∧ 测试绿）**，不以 review_agent 主观判定作收敛裁判。
 - 计数来源 = `openlogos verify` 追加的 `LOOP_ITERS` 账本（见 `spec/cli-json-output.md`）；机器字段 `loop_state` / `slice_state` 见同文档。
@@ -180,6 +204,7 @@ loop:
 | `code_required` | 提案是否将产出代码 | 由 `tasks.md` 的 `[code]` section、proposal / delta / 测试资源信号综合推导。`code_required==true` 时，slice 子流程只有在 spec-complete 与真实测试 ID 门禁通过后才能进入 |
 | `spec_complete` | 活跃提案是否完成规格阶段 | 含 delta 提案以 `SPEC_MERGED` / `MERGED` 为真；无 delta 代码提案以 no-delta `SPEC_MERGED` 为真 |
 | `test_ids_ready` | 代码提案是否具备真实测试 ID | 相关测试资源或显式复用声明中能解析到真实 `UT-*` / `ST-*` / `SMOKE-*` ID |
+| `ui_impact` | 本次提案是否触及界面（GUI 模块的 UI/UX 变更） | **新增可派生 when-flag**（仿 `delta_required`），**module-aware**：`= (活跃提案所属 module 的 product_type ∈ GUI) && proposal.md「UI/UX 变更声明」段声明 ui_impact:true`。`product_type` **唯一源 = `logos-project.yaml` 的 `modules[].product_type`**（枚举 `web|desktop|mobile|cli|api|library|skills|service`，GUI 集合 = `{web,desktop,mobile}`，字段缺失 = 非 GUI）。**两者缺一即为 false**——活跃提案 module 非 GUI（`product_type ∈ {cli,api,library,skills,service}` 或缺失）恒 false，声明 `ui_impact:false` 亦为 false。派生源见下方「`ui_impact` 的派生规则」 |
 
 `delta_required==false` 只跳过 `write-delta`，不得直接跳过 spec-complete。纯代码提案必须通过 no-delta merge 写入 `SPEC_MERGED`。
 
@@ -192,8 +217,21 @@ loop:
   的部署影响与 `tasks.md` 的 `[deploy]` section 解析；**不得**回退到模块默认。否则模块默认
   `deployment_required: true` 时，一个声明"无需部署"的提案仍会错误进入 deploy。
 
+**`ui_impact` 的派生规则（新增，launched flow 专用，module-aware）**：
+- **`product_type` 唯一源**：`logos-project.yaml` 的 `modules[].product_type`（枚举 `web|desktop|mobile|cli|api|library|skills|service`；
+  GUI 集合 = `{web,desktop,mobile}`；字段缺失 = 非 GUI）。求值取**活跃提案所属 module** 的 `product_type`（module-aware，非项目全局单值）。
+- **派生方式仿 `delta_required`**：从**活跃提案** `proposal.md` 的「UI/UX 变更声明」段推导，与该 module 的 `product_type` 联合判定。
+  - 活跃提案 module `product_type ∈ GUI`（`web` / `desktop` / `mobile`）**且**声明段 `ui_impact: true` → `ui_impact = true`；
+  - 活跃提案 module `product_type` 非 GUI（`cli` / `api` / `library` / `skills` / `service` 或缺失）→ 恒 `false`（整个 UI-first 特性不启用，overlay 节点被 `when` 跳过）；
+  - 声明段缺失或 `ui_impact: false` → `false`。
+- **单一事实源**：`proposal.md`「UI/UX 变更声明」段的 `ui_impact` 是「本次动没动界面」的**权威意图源**；
+  `flow-derive` / guard / 面板**只读这一组事实源**，不引入第二处判定。「原型是否已产出」由
+  `write-ui-prototype` overlay 节点的 `done_when` 富对账（见「## ADDED」章节）绑定，二者不各说各话。
+- **只对 launched flow 有效**：initial flow 无提案目录、无 UI/UX 变更声明段，`ui_impact` 在 initial 恒 false。
+- **[code] 触点**：`flow-derive.ts` 新增该派生逻辑（从提案声明段 + 活跃提案 module 的 `logos-project.yaml modules[].product_type` 推导，module-aware），与既有 `delta_required` 派生并列。
+
 表达式（M1 支持的最小集）：`flag` / `not flag` / `flag != value`。例：
-`when: deployment_required`、`when: bootstrap != adopted`、`when: not api_enabled`、`when: delta_required`、`when: code_required`。
+`when: deployment_required`、`when: bootstrap != adopted`、`when: not api_enabled`、`when: delta_required`、`when: code_required`、`when: ui_impact`。
 
 ## 9. done_when 谓词词表
 
@@ -207,7 +245,7 @@ loop:
 | `proposal_package_filled` | **proposal.md 与 tasks.md 均**脱离模板填写完整（对齐 `status.ts:633`，launched 用） | M1 |
 | `section_complete:<tag>` | tasks.md 指定 section（如 `delta`/`code`）全部勾选或不存在 | M1 |
 | `archived` | 提案已归档 | M1 |
-| `cmd:<command>` | 命令退出码为 0（**仅 overlay-add 节点**；执行语义见 §9.2） | M2 切片 1b |
+| `cmd:<command>` | 命令退出码为 0（**仅 overlay-add 节点**，及 §10.3 白名单的 overlay-modify launched gate；执行语义见 §9.2） | M2 切片 1b |
 
 **失败/阻塞谓词（`fail_when`）**：与 `done_when` 同词表，但命中表示节点处于 **failed** 状态（非完成）。
 用于忠实表达现有失败态——例如 launched 的 verify 节点 `fail_when: marker:VERIFY_FAIL`
@@ -218,6 +256,10 @@ failed 节点不向后流转，`next` 输出"修复后重试"。
 
 > launched 流程的 done_when 多用 `proposal_package_filled` / `section_complete:*` / `marker:*` / `archived`，
 > 忠实表达现有 `ProposalStep` 状态机；详见内置 `spec/flow/launched.yaml`。
+
+> **方法论 GUI overlay 的 `cmd:` 用法**：`write-ui-prototype` / `verify-ui-provenance` 是 overlay-**add** 节点，
+> 故其 `done_when: cmd:<...>` 合法（§9.2）。这两个节点**不在** builtin `launched.yaml` 中，
+> 只由方法论 GUI overlay `op:add` 注入（见「## ADDED」章节与 §10.3）。
 
 ### 9.1 谓词上下文（overlay-add 节点适用）
 
@@ -315,12 +357,16 @@ overlay `op:add` 节点**必须**带可求值的完成判定，否则该节点�
 - `all_present` **必须**配 `for_each` + `produces`（fan-out）；
 - `cmd:<command>` 适用于 **overlay-add 节点** 与 **overlay-modify 的 launched gate**，按精确 `(节点, 字段)` 白名单（命中外一律 `FLOW_SCHEMA_INVALID`）：
   - overlay-**add** 节点：`done_when` / `fail_when` 均可 cmd:（lifecycle 见上表）。
+    - **方法论 GUI overlay 的两个 add 节点属此列**：`write-ui-prototype`（`done_when: cmd:openlogos check-ui-prototype`）与
+      `verify-ui-provenance`（`done_when: cmd:openlogos check-ui-hash-match`，命令内部三分支），均落在 launched `plan` subflow 内（提案目录求值根可用），
+      合法。二者均为**单 `done_when: cmd:`**（无 `fail_when`），不触发「同节点双 cmd:」（决策 B）。
   - overlay-**modify** builtin（**仅 launched 这 3 个 gate**）：`verify.done_when` ✅ / `verify.fail_when` ✅ / `smoke.done_when` ✅ / `smoke.fail_when` ✅ / `deploy.done_when` ✅；
     **`deploy.fail_when:cmd` → `FLOW_SCHEMA_INVALID`**（deploy builtin **无 `fail_when`**）；其它任意 `(builtin 节点, 字段)` 改 cmd: → `FLOW_SCHEMA_INVALID`。
   - **决策 B**：**同节点 `done_when` 与 `fail_when` 不得均为 `cmd:`**（→ `FLOW_SCHEMA_INVALID`；仅 verify/smoke 适用）。混合（一 cmd 一 marker）按 §12 per-field/frontier 求值。
   - **空命令（trim 后空）→ `FLOW_SCHEMA_INVALID`**。
 - **F·与 loop 正交**：`implement` 经 `set-loop` 激活 loop（`max_iters>1`）时，**`verify` 的 `done_when` 或 `fail_when` 任一为 cmd: → `FLOW_SCHEMA_INVALID`**
   （loop 收敛靠 `LOOP_ITERS` 账本、cmd gate 不写账本 → 冲突；resolved 校验静态拦截）。`deploy`/`smoke` 在 `deliver` 无 loop、无此冲突。
+  **UI-first overlay 的两个 add 节点在 `plan` subflow（无 loop）内，与此正交冲突无关。**
 
 不满足上述组合的 **overlay-add 节点**（lifecycle 相关谓词矩阵，如 initial 用 `marker:`），由**派生入口**判 `FLOW_SCHEMA_INVALID`（`applyOverlay` 对其保持结构性宽松、不做此语义校验，故 `flow show --resolved` 仍可展示）。
 
@@ -345,6 +391,29 @@ overlay `op:add` 节点**必须**带可求值的完成判定，否则该节点�
   **缺省（完全不写 `exhausted_gate`）**→ 退出 gate `skippable` 维持 `false`、`loop_state` 省略 `exhausted_skippable`（S27 行为不变）。
 - 校验：`max_iters` 须整数 ≥ 1；**`until` 枚举 `tests_green` | `code_slices_green`**（change-flow-redesign 放开 `code_slices_green`；其它取值 → `FLOW_SCHEMA_INVALID`）；目标 subflow 不存在 / 缺 `set` → `FLOW_SCHEMA_INVALID`。
 - 只有 `max_iters > 1` 才真正激活 loop 真迭代派生（见 §12.2 / §12.4）；`set-loop` 到 `max_iters:1` 等价退化环（无激活效果）；`exhausted_gate.skippable` 仅在 loop 激活并达上限时才有派生意义。
+
+### 10.5 overlay 顶层 defaults（contract-self-description）
+
+**`defaults` 是 overlay 文档的合法顶层字段**（与 `version`/`flow`/`extends`/`overlay` 并列），用于项目级覆盖内置模板的派发默认值：
+
+```yaml
+version: 1
+flow: launched
+extends: builtin:launched@v1
+defaults:                        # 可选；文件级 strategic-merge，先于 overlay 操作列表应用
+  dispatch:
+    timeout_seconds: 600         # 覆盖 builtin defaults(900)，作用于所有未显式声明 timeout 的节点
+overlay:
+  - op: modify
+    target: code
+    set: { dispatch: { timeout_seconds: 7200 } }   # 节点级 override，优先级最高
+```
+
+- **应用顺序**：overlay 顶层 `defaults` 在**操作列表（skip/add/modify/reorder/set-loop）之前**按文件级 strategic-merge 覆盖 builtin `defaults`；随后 resolved 物化按最终 defaults 进行。
+- **优先级（低 → 高）**：builtin `defaults` < overlay 顶层 `defaults` < 节点显式 `dispatch.timeout_seconds`（builtin 特例声明或 overlay-add 节点声明）< overlay `modify` 的节点级 `set.dispatch.timeout_seconds`。
+- **校验**：`defaults` 若出现，必须是对象且 `defaults.dispatch.timeout_seconds` 为正整数；非法类型 / 部分非法对象（如 `defaults.dispatch: "fast"`）→ `FLOW_SCHEMA_INVALID`（与 §3 的 schema 校验同源，加载层与派生层不得各自解释）。
+- **向后兼容**：不写 `defaults` 的既有 overlay 文件行为不变（沿用 builtin defaults）；flow 文件 schema `version: 1` 不变。
+- S22（加载/解析）与 S25（overlay 派生）引用本节同一规则，UT-S25-24（overlay 覆盖 defaults 物化进未声明节点）为验收锚。
 
 ## 11. 脚本插件（pre/post_script）
 
@@ -420,11 +489,44 @@ overlay `op:add` 节点**必须**带可求值的完成判定，否则该节点�
 把 implement（code/verify）子流程的退化环点亮为"迭代到测试绿"的收敛循环。**仍是 A 被动派生**——
 OpenLogos 不自驱动跑测试，只派生"第几轮 / 是否收敛 / 是否升级 gate"。
 
-**激活条件**：resolved 的目标 subflow（implement）`loop.max_iters > 1`，**且不属于"initial 多模块 unsupported no-op"**。
-未激活时一切退化为旧行为、不产出 `loop_state`、verify 不写账本（golden 零漂移）。
+**激活条件（contract-self-description 收紧，主动破例）**：分两层判定，缺一不挂 `loop_state`：
+
+1. **结构性前置（loop 定义激活，不变）**：resolved 的目标 subflow（implement）`loop.max_iters > 1`，
+   **且不属于"initial 多模块 unsupported no-op"**。
+2. **implement 进入判据（contract-self-description 新增）**：`loop_state` 挂出 **iff** implement 子流程
+   **已真实进入**，判据为确定性事实合取——`code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved`：
+   - `spec_complete` = `SPEC_MERGED` / `MERGED` 在场（含纯代码提案的 no-delta `SPEC_MERGED`，§12.6）；
+   - `slices_planned` = `tasks.md` `[code]` section 含**真实脱占位条目**（`tasks_code_filled`）；
+   - `slices_approved` = **slice-exit 门已消费**，权威事实 = `SLICES_APPROVED` marker 在场（§12.5）。
+   - 该合取与 `active_change.facts` 是**同一份计算**（单一事实源在 CLI，不允许两处实现；`facts` 契约见
+     `spec/cli-json-output.md`），driver 可直接从 facts 读出「implement 是否已进入」。
+   - **`ready-to-implement`（切片已规划、待 slice-exit 批准）的合法驻留态不挂**；
+   - **docs-only / no-code 提案（`code_required == false`）永不激活 implement loop**，不因 launched flow
+     含 loop 定义而挂出；
+   - 四条缺一即**省略 `loop_state` 字段**（不输出空对象、不输出 null）。
+
+**主动破例声明（破「launched 下 `loop_state` 常驻输出」不变量）**：本节主动取消 change-flow-redesign
+确立的「launched 默认激活切片循环 → `loop_state`/`slice_state` 常驻输出」中 `loop_state` 的常驻口径
+（原 §6 激活来源②、`spec/cli-json-output.md` §3.9、S27「常驻输出」措辞同步收紧）。收紧后 spec 阶段 /
+切片未规划 / 切片未批准时**不再输出** `loop_state`——这是消灭 runlogos loop 劫持假死的上游根治，
+现役 driver 对「`loop_state` 缺席」本就走普通推进，兼容。影响面：golden 快照 launched 活跃提案系列
+重拍（差异须仅为 `loop_state` 缺席与本提案新增字段）。**`slice_state` 常驻口径不变、不收紧**。
+**反面锚**：`pre-implement` 步骤下 `loop_state` 不输出——`pre-implement + loop_state` 是**非法组合**，
+由生产者一致性漂移注入测试断言其不存在（见「步骤注册表与 step_meta（contract-self-description）」章节），而非固化为合法夹具。
+
+**`loop_state.activated_at`（contract-self-description 新增，审计用）**：`loop_state` 挂出时携带可选字段
+`activated_at`（ISO 8601），表示 implement 进入时刻。时间来源必须**持久且确定**：读自结构化
+`SLICES_APPROVED` marker 的 `approved_at`（§12.5）；旧格式空 marker → **省略该字段**（兼容）。
+同一磁盘状态永远派生同一 JSON，不破坏 A 被动派生确定性。
+
+未满足激活条件时一切退化为旧行为、不产出 `loop_state`、verify 不写账本（golden 零漂移口径相应改为：
+按上述判据挂出/缺席即为基线）。
 
 **计数与收敛**（读 `LOOP_ITERS` 账本，按当前 module 过滤）：
-- `iteration` = 账本（过滤后）行数；`converged` = 末行 `result == "pass"`；`escalated` = `iteration >= max_iters && !converged`。
+- `iteration` = 账本（过滤后）行数；`escalated` = `iteration >= max_iters && !converged`。
+- `converged` **按 resolved `until` 求值**（枚举与语义见 §6，契约收敛为闭合双分支、无无条件公式）：
+  - `until == tests_green` → `converged` = 末行 `result == "pass"`（末轮测试绿）；
+  - `until == code_slices_green` → `converged` = `section_complete:code ∧ tests_green`（`[code]` 父切片及缩进子任务**全部勾选** 且 末轮测试绿；**空 `[code]`** 退化为纯 `tests_green`，派生细节见 §12.4）。builtin launched 默认即此分支——仍有未勾切片时**即便末轮 verify 绿也不得出环**（S31 FAIL-safe 收敛条件）。
 
 **出环规则（核心）**：loop 激活时，**implement subflow 的完成以 `loop_state.converged` 为准，覆盖其内节点（含 verify）各自的
 `done_when`**。尤其 initial 的 verify `done_when: file:.../acceptance-report.md`——`openlogos verify` 无论 PASS/FAIL 都写该
@@ -545,10 +647,11 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
   2. `tasks.md` 的 `[code]` section 已满足 `tasks_code_filled`（至少有一个真实切片项，且不是 `[切片清单占位]` / `实现代码变更` / `Implement code changes` 等模板占位）。
 - `next --auto` 在 `ready-to-implement` 自动放行 `slice-exit` 时，必须同时执行两个持久化动作：
   1. 向活跃提案目录 `GATE_AUTO_PASSED` 追加 `{gate_id:"slice-exit", proposal_step:"ready-to-implement", timestamp}` 审计行；
-  2. 写入活跃提案目录的 `SLICES_APPROVED` marker（内容可为空，存在性为准；类比 `plan-exit` 写 `PLAN_APPROVED`）。
+  2. 写入活跃提案目录的 `SLICES_APPROVED` **结构化 marker**（contract-self-description 起由「空文件」升级；类比 `plan-exit` 写 `PLAN_APPROVED`）——**JSON 单行**：`{"schema":"openlogos/slices-approved@1","approved_at":"<ISO 8601>"}`，消费 slice-exit 时**原子写入一次**；**已存在则不重写**（重复 `next --auto` 不刷新 `approved_at`）。存在性仍是「切片门已消费」的权威事实；`approved_at` 是 `loop_state.activated_at` 的持久时间源（§12.2）。
+- **`SLICES_APPROVED` 结构化 marker 的统一写入/读取规则（contract-self-description）**：任何写入 `SLICES_APPROVED` 的 CLI 路径（含 `--auto` 消费与人工确认后的消费动作）一律按上述 JSON 单行格式**原子一次写入**、幂等（已存在不重写）；读取侧**兼容旧格式空文件**——视为已批准、无时间戳（`loop_state.activated_at` 省略），不报错、不要求迁移。
 - 原有两个持久化动作保持不变，但只在上述消费条件满足后执行。若消费条件不满足，`slice-exit` 还未到达；此时即使 `slice` 子流程的出口 gate 定义为 `skippable:true`，也不能空过该门，因为跳过 `plan-slices` 会破坏“merge 后由 slice-planner 对真实规格 + 真实测试 ID 切片”的唯一事实源。
 - **`SLICES_APPROVED` 的派生语义**：存在 `SLICES_APPROVED` 且 `[code]` section 尚未全部勾选时，`proposal_step` 派生为 `coding`。此时 `next` / `next --auto` 的前沿是 `implement.code`，`next_node.id == "code"`（**放行后同次响应即重新派生为 `coding`/`code` 前沿**，供无人值守 driver 立即派发 code-implementor 逐片实现）。放行后 `next_node` **不带** `gate_id`（门已消费，非"待批准"）。
-- **幂等边界**：同一提案已存在 `SLICES_APPROVED` 时，`proposal_step` 不再是 `ready-to-implement`，重复 `next --auto` **不得**在同一个 `slice-exit` 固定点再次追加审计行。
+- **幂等边界**：同一提案已存在 `SLICES_APPROVED` 时，`proposal_step` 不再是 `ready-to-implement`，重复 `next --auto` **不得**在同一个 `slice-exit` 固定点再次追加审计行，也**不得**重写 marker 内容（`approved_at` 一次写定、永不刷新）。
 - **审计与授权边界**：`GATE_AUTO_PASSED` 仍是审计日志，默认 `next` 与 `status` 不因历史审计行越过 gate；切片门状态推进只认 `SLICES_APPROVED` 或实际 `[code]` 全部勾选完成。
 
 **(4) 主动扩展 `proposal_step` 闭合枚举（破 INV）声明与影响面**
@@ -715,6 +818,101 @@ remediation=补空 ## [code] section 后重新进入 plan-slices，或由 slice-
 - `SLICES_APPROVED` 只能在真实 `[code]` 切片满足 `tasks_code_filled` 后产生。
 - 纯文档提案不被误伤：明确无需代码且没有实现相关测试 delta 的提案，仍可跳过 slice 子流程。
 
+## 步骤注册表与 step_meta（contract-self-description）
+
+本章确立 `proposal_step` 的**唯一铸造点**与自描述元数据 `step_meta`，根治「driver 用本地缓存的步骤枚举反推语义、随 CLI 演进反复漂移」这一假死误杀源头（提案 C1）。
+
+### 唯一铸造点：`cli/src/lib/step-registry.ts`
+
+- CLI 内建**步骤注册表**，路径固定为 `cli/src/lib/step-registry.ts`；**任何代码路径产生 `proposal_step` 必须经注册表**。
+- 收敛既有分散铸造点：`detectProposalStep`（`proposal-lifecycle.ts`）与 `detectProposalStepViaFlow`（`flow-derive.ts`）两套镜像实现收敛为一，`status` / `next` 中直接产字面量或覆盖 `proposal_step` 的点一并改经注册表。
+- **CI lint（挂测试）**：全仓扫描「字面量赋给 `proposal_step` 却不在注册表 / 不经注册表」→ 测试失败。
+
+### `step_meta` 自描述
+
+- `status` / `next` 的 `modules[].active_change` 随步骤携带 `step_meta: {phase, kind}`（JSON 契约与挂载位置见 `spec/cli-json-output.md`）：
+  - `phase ∈ pre-implement | implement | post-implement`；
+  - `kind ∈ produce | gate | command-required | residency`。
+- **`step_meta` 不构成第二枚举**——`phase` / `kind` 是小闭合枚举，且契约明文规定：**消费方遇未知值必须走保守分支**（规范性引用，消费方行为验收归 runlogos R5）。
+
+### 全量注册表（phase / kind 表）
+
+**本提案不新增 `proposal_step` 枚举值**，注册表覆盖既有全集：
+
+| proposal_step | phase | kind |
+|---|---|---|
+| writing | pre-implement | produce |
+| ready-to-delta | pre-implement | gate |
+| delta-writing | pre-implement | produce |
+| ready-to-merge | pre-implement | gate |
+| merge-generated | pre-implement | command-required |
+| spec-complete-required | pre-implement | command-required |
+| test-id-required | pre-implement | residency |
+| ready-to-implement | pre-implement | residency |
+| coding | implement | produce |
+| ready-to-verify | implement | command-required |
+| verify-failed | implement | residency |
+| verify-passed | post-implement | residency |
+| ready-to-deploy | post-implement | gate |
+| deploy-done | post-implement | residency |
+| ready-to-smoke | post-implement | command-required |
+| smoke-passed | post-implement | residency |
+| smoke-failed | post-implement | residency |
+| implementing（旧兼容） | implement | produce |
+| in-progress（旧兼容） | implement | produce |
+
+### 与 loop_state 激活判据的一致性（生产者反面锚）
+
+- 注册表的 `phase` 与 §12.2 的 implement 进入判据必须一致：**`phase == pre-implement` 的任何步骤下 `loop_state` 不得输出**（`pre-implement + loop_state` 是非法组合）。
+- **生产者一致性漂移注入测试**：在 CLI 注册全新步骤（如 `x-future-step`, `phase=pre-implement`）→ 断言 (a) 注册表 / `step_meta` / schema 三方同步、schema 校验通过；(b) 该 pre-implement 步骤下 `loop_state` 不输出（断言非法组合不存在，而非固化为合法夹具）。
+
+## 派发元数据 dispatch 与 requires_reviewed（contract-self-description）
+
+本章定义 flow 节点的派发元数据契约（提案 C4），消灭「driver 用本地 allowlist 猜哪类派活重投安全」这一误杀根源（transient-ambiguous 秒杀非幂等派发的结构根因）。拍板原则：**宁慢勿错杀**。
+
+### 数据源与继承规则（事实源闭合）
+
+- **权威数据源 = flow 节点定义**：内置模板 `spec/flow/initial.yaml`、`spec/flow/launched.yaml` **逐节点人工声明** `dispatch`；显式声明则以声明为准。
+- **不从 `produces` / `done_when` 推导**——推导算法本身会成为新的隐式世界模型，违背契约自描述宗旨。
+- resolved flow 派生把节点元数据**物化并透传**进 `next_node`：**`next_node.dispatch` 恒为完整对象 `{idempotent, timeout_seconds, artifacts_hint}`，无二义分支**（JSON 契约见 `spec/cli-json-output.md` §11）。
+- 节点可另声明 `requires_reviewed: string[]`（执行前置评审对象；内置 launched 的 `apply-merge` 声明 `["proposal","delta"]`）；driver 的 `priorReviewNode` 本地映射表退化为消费该声明。未声明的节点不输出该字段。
+
+### overlay-add 未声明 `dispatch` 时的完整保守默认
+
+```yaml
+dispatch:
+  idempotent: false            # 未声明即视为重投不安全（宁慢勿错杀）
+  timeout_seconds: <flow 文件 defaults.dispatch.timeout_seconds>
+  artifacts_hint: []           # 空数组 = 「产物未知」，语义写入契约：
+                               # 消费方不得以 artifacts_hint 为空/不达作为判死依据，只能升级观察
+```
+
+- 保守默认是**完整对象**，节点 schema 校验按完整对象通过（消灭实现自行猜测）。
+- S25（overlay 派生）测试补「overlay-add 未声明 dispatch → 输出完整保守默认对象且过 schema」用例。
+
+### `defaults.dispatch.timeout_seconds`（唯一默认值源 fallback）
+
+- `timeout_seconds` 的**唯一默认值源（fallback）** = flow 文件顶层 `defaults.dispatch.timeout_seconds`（§3）：内置模板给出具体数值（900）；**resolved 时物化进每个未显式声明的节点，输出层不再有第二处默认**。
+- **优先级链（全链统一，见 §10.5）**：builtin `defaults` < overlay 顶层 `defaults` < 节点显式 `dispatch.timeout_seconds`（builtin 特例或 overlay-add 声明）< overlay `modify` 的节点级 `set.dispatch.timeout_seconds`。
+- **作用域澄清**：顶层 `defaults` 是「唯一**默认值**源」而非唯一取值来源——节点显式 override 优先；项目 overlay 覆盖 `defaults` 只影响未显式声明 `timeout_seconds` 的节点，不改写 code(3600)/deploy(1800) 等显式特例。内置模板**仅特例节点显式声明** `timeout_seconds`，其余节点一律省略、由 defaults 物化。
+
+### `artifacts_hint: []` 的契约语义
+
+- `artifacts_hint: []` ＝**「产物未知」**，是契约语义而非缺省缺失；消费方**不得**以 `artifacts_hint` 为空或产物未出现作为判死依据，**只能升级观察**（消费方行为验收归 runlogos R5）。
+
+### 内置节点声明基准
+
+- **内容产出 / 评审类节点**（write-proposal、write-tasks、write-delta、plan-slices、review 类、code）：`idempotent: true`；
+- **一次性落盘 / 执行类节点**（apply-merge、deploy、archive 类）：`idempotent: false`；
+- **verify / smoke 命令节点**：`idempotent: true`；
+- `timeout_seconds`：默认 900，code / implement 类 3600，deploy 类 1800；
+- `artifacts_hint` 写该节点的**具体产物提示**（如 `["proposal.md"]`、`["logos/resources/**","SPEC_MERGED"]`）；
+- `apply-merge` 另声明 `requires_reviewed: ["proposal","delta"]`。
+
+### 向后兼容
+
+- `dispatch` / `requires_reviewed` / 顶层 `defaults` 均为**向后兼容扩展**：flow 文件 schema **`version: 1` 保持不变**；旧 flow 文件（无这些字段）解析行为不变，未声明节点按上述保守默认物化。
+
 ## 13. M1 / M2 边界总表
 
 > **图例**：下表「M1」列 = **当前已实现/可用**（含 M2 各切片 S26–S29 已点亮的能力）；「M2」列 = **后续待实现**。
@@ -816,3 +1014,148 @@ agent dispatch 的完成校验不得只输出 pass/fail。OpenLogos / driver 至
 4. 历史诊断或只读诊断。
 
 因此，`ready-to-merge` 的 `spec-exit` command、`ready-to-delta` 的 `plan-exit`、`ready-to-implement` 的 `plan-slices` / `slice-exit` 均高于 stale `global-verify-failed`。
+
+## GUI UI-first overlay 节点与 ui_impact when-flag
+
+本章定义方法论为 **GUI 产品项目**（网站 / 桌面应用 / 移动 App）提供的 **UI-first flow overlay**，把
+「UI/UX 确认前移到批准提案门」落成两个 **overlay-add 节点**。**这两个节点不硬编码进 builtin
+`launched.yaml`**——只由方法论 GUI overlay 以 `op:add` 注入项目实例
+`logos/flow/launched.yaml`。只有作为 overlay-add 节点，它们才**合法**使用 `done_when: cmd:`（§9.2 / §10.3）。
+非 GUI 项目不注入该 overlay，特性零启用、流程零改动。
+
+> **占位符 vs 可执行命令（关键）**：本章正文与代码示意里出现的 `cmd:<check-ui-prototype>` / `cmd:<check-ui-hash-match>` 中
+> 的尖括号 `<...>` **仅为文档示意占位**——`<...>` 是 shell 重定向语法，若真写进 overlay 会必然非零、节点永久 pending。
+> **运行时 overlay 资产（`gui-ui-first.yaml`）必须写确定可执行命令**：`done_when: "cmd:openlogos check-ui-prototype"` 与
+> `done_when: "cmd:openlogos check-ui-hash-match"`。这两个是本提案 [code] 交付的**真实 CLI 子命令**：在**项目根 cwd** 运行、
+> **自行解析活跃提案**（无需 slug 参数）、exit 0 = 通过 / 非 0 = 未通过。
+
+### overlay 唯一源文件与注入机制
+
+- **唯一源文件**：`spec/flow/overlays/gui-ui-first.yaml`（随 CLI 分发的方法论资产，纯 overlay 片段，含本章两个完整 `op:add`）。
+  这是这两个 UI-first 节点定义的**唯一事实源**——各项目**不手写**这两个节点。
+- **注入命令**：`openlogos init` / `openlogos sync`。
+- **`product_type` 唯一源**：`logos-project.yaml` 的 `modules[].product_type`（枚举 `web|desktop|mobile|cli|api|library|skills|service`；
+  GUI 集合 = `{web,desktop,mobile}`；字段缺失 = 非 GUI）。**不引入第二处 product_type 判定源**。
+- **注入条件（项目实例级）**：仅当**项目含 ≥1 GUI 模块**（存在某 `modules[].product_type ∈ {web,desktop,mobile}`）时，把 overlay 注入项目实例；
+  项目**无任何 GUI 模块**（全部为 `cli`/`api`/`library`/`skills`/`service` 或缺失）→ **不注入**。
+- **节点参与（module-aware）**：注入 ≠ 恒参与。节点是否参与由 `when: ui_impact` 决定，`ui_impact` 针对**活跃提案所属 module** 的
+  `product_type` 求值——活跃提案落在非 GUI 模块 → 节点 `when` 不满足 → **skip**（即使 overlay 已在项目实例注入）。
+- **注入去向**：把 `gui-ui-first.yaml` 的两个 `op:add` 合并进**项目实例** `logos/flow/launched.yaml`；该实例
+  `extends: builtin:launched@v1`，即在 builtin launched 基线之上叠加这两个 overlay-add 节点。
+- **builtin 不承载**：`spec/flow/launched.yaml`（builtin 源）**始终不含**这两个节点，只在文件头注释标注该 overlay 扩展点。
+  故 builtin 侧无 `cmd:` 谓词、无 `FLOW_SCHEMA_INVALID` 风险；`cmd:` 合法性完全由「overlay-add 节点身份」保证。
+
+### 触发条件（`when: ui_impact`）
+
+两个节点均带 `when: ui_impact`（§8 新增 when-flag，**module-aware**，`product_type` 唯一取 `logos-project.yaml modules[].product_type`）：
+- `ui_impact == false`（活跃提案 module 非 GUI，即 `product_type ∈ {cli,api,library,skills}` 或缺失、或声明段 `ui_impact:false`）→ 两节点 `when` 不满足、**skip**，流程与今天完全一致；
+- `ui_impact == true`（活跃提案 module `product_type ∈ {web,desktop,mobile}` + 声明段 `ui_impact:true`）→ 两节点参与流程。
+
+### 节点一：`write-ui-prototype`（plan-exit 门前产原型）
+
+方法论 GUI overlay 以 `op:add` / `after: write-tasks` 注入，落在 launched `plan` subflow 内、**`plan-exit` 门之前**：
+
+```yaml
+- op: add
+  after: write-tasks              # 落在 plan subflow 内、plan-exit（gate）门前
+  node:
+    id: write-ui-prototype
+    name: 产出 UI 原型
+    skill: change-writer          # change-writer 调用 ui-ux-pro-max（product-designer Step 5a 子流程）
+    when: ui_impact
+    produces: deltas/prd/2-product-design/2-page-design/
+    done_when: "cmd:openlogos check-ui-prototype"   # 运行时资产必为可执行命令；正文 <...> 仅示意
+```
+
+- **产物**：逐页原型 `deltas/prd/2-product-design/2-page-design/core-NN-<slug>.html`（裸 HTML，关键几屏 + 各状态）
+  + 提案目录 `design-system.json`（ui-ux-pro-max 令牌，审计追溯；仅 `design_system_mode: generated` 时产出，`fallback` 时以降级原因替代，见下）。
+  走现有 delta 路径，**不新增 `ui/` 目录**。
+- **授权链**：原型产出是 **plan 节点门前的普通内容生成**，授权同「写 `proposal.md` / `tasks.md`」——**不新增授权、不新增门**。
+  其写入由 guard 的 **plan 阶段 allowlist（仅放行 `2-page-design/*.html`）** 授权，越界路径被 guard 拒。
+- **`done_when: cmd:openlogos check-ui-prototype` 的富对账（机器收敛，随 `design_system_mode` 变化）**（正文示意常写作 `cmd:<check-ui-prototype>`，运行时资产为可执行命令 `openlogos check-ui-prototype`）：作为 overlay-add 节点，`cmd:` 合法（§9.2）。
+  命令做**富对账**，`exit 0` 才判该节点 done、`plan` 子流程才完成、`plan-exit` 门才可放行。对账口径**随 UI/UX 变更声明段的
+  声明字段 `design_system_mode` 分流**（F2）：
+  - **公共项（两种模式都必须满足）**：
+    1. **逐页非空**：UI/UX 变更声明段**声明的每一个页面**，在 `2-page-design/` 下都有**对应的非空原型文件**（非「至少一个」）；
+    2. **声明清单 == 产出文件**：声明页清单与实际产出原型文件集合按 **basename 集合**比较一致（结构化对账，见下）；
+    3. **内容 hash 记录**：命令记录逐文件内容 hash（供批准时写入 `PLAN_APPROVED.hashes`、下游防漂移比对）。
+  - **`design_system_mode: generated`（走了设计系统）**：额外要求提案目录存在**合法非空**的 `design-system.json`
+    （ui-ux-pro-max 令牌，**禁伪造令牌**）。
+  - **`design_system_mode: fallback`（降级 / 未走设计系统）**：**不要求** `design-system.json`，改为要求声明段有**非空**的
+    `design_system_fallback_reason`（降级原因，如 Python3 缺失）；此模式下缺 `design-system.json` **不判失败**。
+  任一适用项不满足 → `cmd` 非 0 → 节点未 done → plan-exit 门前无「已对账原型」可放行。由此富对账成为 plan-exit 前的**机器收敛条件**
+  （替代过弱的 `dir_nonempty`「至少一个文件」）。
+- **声明清单为结构化记录 + basename 集合比较（F3）**：UI/UX 变更声明段的页面清单是**结构化条目**，每条含
+  `id` + **精确 basename** `prototype: core-NN-<slug>.html` + `description`。checker 把**声明的 basename 集合**与
+  `2-page-design/` 下**实际产出文件的 basename 集合**做**集合相等**比较（不是子串包含、不是「至少一个」）——多一个、少一个、命名不符均判不一致。
+- **残差（如实标注）**：`design_system_mode: generated` 下，「HTML 是否*真出自* ui-ux-pro-max」除 `design-system.json` 令牌可追溯外
+  **无法纯机器证明**——既有 acceptance 口径下的荣誉制 + 令牌追溯限制，如实记录、非遗漏。
+- **[code] 触点**：CLI 子命令 `openlogos check-ui-prototype`（项目根 cwd、自行解析活跃提案、exit 0/非 0）由 implement 阶段实现（本 delta 只定契约）。
+
+### 节点二：`verify-ui-provenance`（merge 前拦漂移）
+
+方法论 GUI overlay 以 `op:add` / `before: generate-merge-prompt` 注入，落在 **merge 之前**（原型落盘 resources 之前拦截漂移）：
+
+```yaml
+- op: add
+  before: generate-merge-prompt   # merge subflow 入口、原型落盘 resources 之前
+  node:
+    id: verify-ui-provenance
+    name: 校验 UI provenance
+    when: ui_impact
+    produces: null
+    done_when: "cmd:openlogos check-ui-hash-match"   # 运行时资产必为可执行命令；命令内部三分支
+```
+
+- **单 `done_when: cmd:openlogos check-ui-hash-match`，命令内部【三分支】**（正文示意常写作 `cmd:<check-ui-hash-match>`，运行时资产为可执行命令）：
+  仍是**单 `done_when: cmd:`**（无 `fail_when`），不触发 §9.2 决策 B「同节点 done_when/fail_when 均为 cmd:」；作为 overlay-add 单 cmd:，合法。
+  该节点**仅以 `when: ui_impact` 控参与**，故 GUI `ui_impact:true` 但**旧空 `PLAN_APPROVED`（无曾渲染证据）**的 legacy/degraded 提案**仍会进入本节点**；
+  若命令只有「匹配→0 / 缺失失配→非0」两果，空 marker 无 hashes 将**永远无法匹配**、节点永久未 done → advisory 放行不可达（旧面板卡死）。故命令内部按
+  **持久化批准记录（`PLAN_APPROVED`）**分三支（与 merge / 落盘同一批准记录分支、以持久化记录为键，与 F4 R7 一致）：
+  1. **`PLAN_APPROVED` 含 UI provenance**（`ui_prototype_rendered:true` + `pages` + `hashes`）→ 重算 `2-page-design/` 现值 hash 与固化 `hashes` 比对：
+     **完好且全匹配 → exit 0**（节点 done → 放行前进）；**缺失 / 损坏 / 失配 → 非 0（fail closed 阻断）**。
+  2. **legacy/degraded，或旧空 marker 且无任何「曾渲染」证据**（无 `ui_prototype_rendered`、无 `hashes`）→ **记 advisory 后 exit 0**
+     （节点 done → merge 可达）。**← 新增的第三成功分支**，专解「旧空 marker 永久未 done、advisory 放行不可达」的卡死。
+  3. **部分 / 损坏 provenance**（`ui_prototype_rendered:true` 但缺 / 空 `hashes`）→ **不得**误判为 legacy → **fail closed（非 0）**。
+  即：匹配成功 **或** 合法 legacy（分支 2）都 `exit 0`；失配 / 损坏 / 部分 provenance（分支 1 尾、分支 3）非 0。
+  失配非 0 时节点未 done（active/pending）→ **前向阻断**，remediation 见下方状态转换。
+- **状态转换（诚实边界）**：flow 引擎**前向线性、无跨 subflow 自动回退边**。「退回 plan-exit」**非引擎自动 rewind**——
+  `verify-ui-provenance` 未 done ⇒ 阻断；remediation = **driver / 人工显式重入 plan**（重跑 producer 产原型 + plan-exit 重批，
+  刷新 `PLAN_APPROVED.hashes`）→ 再到该节点时 hash 匹配 `exit 0` → done → 放行。即「失配即卡在未 done + 显式重入刷新」，
+  不假装引擎自动倒转。
+- **与 merge 命令级校验的关系**：本节点只拦 **driver 流**；`openlogos merge <slug>` 直接调用另有命令级 hash gate（见提案 F4 R5，
+  merge.ts 落地），二者互为纵深防御。[code] 触点：CLI 子命令 `openlogos check-ui-hash-match`（项目根 cwd、自行解析活跃提案、内部三分支、exit 0/非 0）由 implement 阶段实现。
+
+### builtin 不硬编码这两个节点（关键约束）
+
+- **builtin `launched.yaml` 绝不硬编码 `write-ui-prototype` / `verify-ui-provenance`**：若把它们写进 builtin，则它们是
+  builtin 节点，其 `done_when: cmd:` 会被判 `FLOW_SCHEMA_INVALID`（§9.2：cmd: 在 builtin 非法，仅 overlay-add 及白名单
+  overlay-modify gate 合法）。
+- **只有经方法论 GUI overlay `op:add` 注入才能合法用 `cmd:`**：overlay-add 节点身份是它们合法使用富对账 `cmd:` 谓词的**前提**。
+  builtin `launched.yaml` 仅在文件头注释区标注该 overlay 扩展点（见本提案对 `spec/flow/launched.yaml` 的 delta）。
+- **落地方式**：方法论提供 GUI 项目 overlay 唯一源 `spec/flow/overlays/gui-ui-first.yaml`（`init` / `sync` 在
+  `product_type ∈ GUI` 时注入项目实例 `logos/flow/launched.yaml`，非各项目手写）；[delta] 在新 spec +
+  本 `flow-spec.md` 定义该 overlay-add 节点与 `check-ui-prototype` / `check-ui-hash-match` 契约，[code] 实现 checker 命令。
+
+### ordering 例外与 flow-derive 判据（保留不变）
+
+- **ordering 例外**：`flow-derive` 仅当出现**非原型的规格 delta**、或 `plan-exit` 已放行时才视为进入 spec 阶段；
+  例外**仅限** `2-page-design/*.html` 叶子原型——`write-ui-prototype` 在 plan-exit 门前产出 `2-page-design/*.html`，
+  **不得**被 `flow-derive` 误判为「已进入 spec」。其余 `deltas/**`（规格 / skill delta）仍严格在 `plan-exit` 之后（`spec` subflow）产出。
+- **例外仅限 `2-page-design/*.html`**：不涉及 `[code]` 切片与 spec-merge 依赖；其它任何 `deltas/**` 出现即照常判进入 spec。
+- **[code] 触点**：`flow-derive.ts` 识别 plan subflow 新增的 `write-ui-prototype` 节点、不因原型 delta 误判进入 spec
+  （与 §8 `ui_impact` 派生逻辑同批落地）。
+
+## baseline-seed 节点（brownfield-adopter S33，command-driven，非 builtin gate）
+
+存量项目「逆向建立现状基线」的 `baseline-seed` **不是 launched flow 的 builtin gate、也不由 flow 引擎驱动**，
+故 builtin `spec/flow/launched.yaml` / `initial.yaml` **不含**该节点、`status`/`next`/`watch`/`flow show` 的 golden **零漂移**。
+其语义作为方法论资产记录于 `spec/flow/overlays/brownfield-baseline.yaml`（该 overlay 的 `overlay:` **有意为空**，不改写 builtin node 序列）。
+
+- **触发与派生**：`bootstrap: adopted` 且无活跃提案时，`next`/`status` 按模块级 `baseline_seed_state` 枚举（`required｜partial｜seeded`）派生引导（取代旧 `add-baseline-docs`）：
+  - `required`/`partial` → 引导「逆向建立现状基线 / 完成现状基线」，`command`/`next_node` 指向 `openlogos baseline-seed`（命令级建议 → 省略 `next_node`）。
+  - `seeded` → 展示覆盖率并引导 `openlogos change`。
+- **唯一 producer 边界**：`openlogos adopt` 只写初值 `required`、不启动 AI、不产逆向内容；逆向扫描由 AI 会话/driver（`brownfield-adopter` skill）产出，经 `openlogos baseline-seed`（begin/commit/status）由 CLI 落盘（命令契约见 `spec/logos-project.md`、JSON 见 `spec/cli-json-output.md §3.12`）。
+- **状态写入唯一入口**：`baseline_seed_state` 与逆向目标文件的唯一写入者是 CLI；producer 只写 run 私有 staging。
+- **崩溃一致性**：多文件提交经 commit journal 事务（`prepared→committing→committed`，状态最后写）+ 模块级事务锁 + 恢复门；机器读取入口读目标/算覆盖率前先经门恢复，否则返回 `baseline_commit_in_progress`、不把半新集合当权威。
+- **与 partial 恢复态**：`partial` 是持久化恢复态；无活跃提案时主 `action`/`next_node` 指向 `baseline-seed` 恢复入口；有活跃提案时 `proposal_step`/`next_node` 保持提案真实前沿、partial 恢复以 `baseline_coverage.recovery` advisory 呈现、不阻断 change。

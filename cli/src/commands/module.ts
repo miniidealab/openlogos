@@ -4,11 +4,13 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale } from '../i18n.js';
 import * as readline from 'node:readline';
 import { type OutputFormat, makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
+import { PRODUCT_TYPE_ENUM, isValidProductType, isGuiProductType } from '../lib/ui-first.js';
 
 interface ModuleEntry {
   id: string;
   name: string;
   lifecycle: 'initial' | 'launched';
+  product_type?: string;
 }
 
 function readProjectYaml(root: string): Record<string, unknown> {
@@ -145,17 +147,23 @@ export function moduleList(format: OutputFormat = 'text'): void {
   console.log();
 }
 
-export function moduleAdd(name: string | undefined): void {
+export function moduleAdd(name: string | undefined, productType?: string): void {
   const root = process.cwd();
   checkConfig(root);
 
   if (!name) {
-    console.error('Usage: openlogos module add <name>');
+    console.error('Usage: openlogos module add <name> [product-type]');
     process.exit(1);
   }
 
   if (!/^[a-z][a-z0-9-]*$/.test(name)) {
     console.error(`Error: module name "${name}" is invalid. Use lowercase letters, digits, and hyphens only.`);
+    process.exit(1);
+  }
+
+  // 可选 product_type：给出即校验，非法值报错退出；省略则不写该字段（缺失 = 非 GUI 安全默认）。
+  if (productType !== undefined && !isValidProductType(productType)) {
+    console.error(`Error: invalid product type "${productType}". Valid values: ${PRODUCT_TYPE_ENUM.join(', ')}.`);
     process.exit(1);
   }
 
@@ -168,15 +176,109 @@ export function moduleAdd(name: string | undefined): void {
   }
 
   const locale = readLocale(root);
-  modules.push({
+  const entry: ModuleEntry = {
     id: name,
     name: locale === 'zh' ? name : name,
     lifecycle: 'initial',
-  });
+  };
+  if (productType !== undefined) {
+    entry.product_type = productType;
+  }
+  modules.push(entry);
 
   yaml.modules = modules;
   writeProjectYaml(root, yaml);
   console.log(`✓ Module "${name}" added to logos-project.yaml`);
+}
+
+/**
+ * proposal-ui-ux-first（切片1）：设置/更新模块的 product_type（overlay 注入与 ui_impact 派生的唯一数据源）。
+ * 唯一数据源 = logos-project.yaml modules[].product_type。
+ * 缺参/非法枚举/未知 module → 报错退出（exit 1），不写文件；合法幂等写入（相同值为 no-op）。
+ */
+export function moduleSetProductType(
+  moduleId: string | undefined,
+  productType: string | undefined,
+  format: OutputFormat = 'text',
+): void {
+  const root = process.cwd();
+  checkConfig(root);
+
+  // 缺参 → 用法错误，不写文件。
+  if (!moduleId || !productType) {
+    if (format === 'json') {
+      process.stderr.write(JSON.stringify(makeErrorEnvelope(
+        'module set-product-type',
+        'MISSING_ARGUMENT',
+        'Usage: openlogos module set-product-type <module-id> <enum>',
+      )) + '\n');
+    } else {
+      console.error('Usage: openlogos module set-product-type <module-id> <enum>');
+    }
+    process.exit(1);
+  }
+
+  // 非法枚举 → 报错并列出全部合法枚举，不写文件。
+  if (!isValidProductType(productType)) {
+    const msg = `Invalid product type "${productType}". Valid values: ${PRODUCT_TYPE_ENUM.join(', ')}.`;
+    if (format === 'json') {
+      process.stderr.write(JSON.stringify(makeErrorEnvelope(
+        'module set-product-type',
+        'INVALID_PRODUCT_TYPE',
+        msg,
+      )) + '\n');
+    } else {
+      console.error(`Error: ${msg}`);
+    }
+    process.exit(1);
+  }
+
+  const yaml = readProjectYaml(root);
+  const modules = (yaml.modules as ModuleEntry[] | undefined) ?? [];
+  const mod = modules.find(m => m.id === moduleId);
+
+  // 未知 module id → 报错，不写文件。
+  if (!mod) {
+    const msg = `Module "${moduleId}" not found.`;
+    if (format === 'json') {
+      process.stderr.write(JSON.stringify(makeErrorEnvelope(
+        'module set-product-type',
+        'MODULE_NOT_FOUND',
+        msg,
+      )) + '\n');
+    } else {
+      console.error(`Error: ${msg}`);
+    }
+    process.exit(1);
+  }
+
+  // 合法：幂等写入（相同值 = no-op，仍成功 exit 0）。
+  const changed = mod.product_type !== productType;
+  if (changed) {
+    mod.product_type = productType;
+    yaml.modules = modules;
+    writeProjectYaml(root, yaml);
+  }
+
+  const isGui = isGuiProductType(productType);
+
+  if (format === 'json') {
+    const data = {
+      module_id: moduleId,
+      product_type: productType,
+      is_gui: isGui,
+      changed,
+    };
+    process.stdout.write(JSON.stringify(makeEnvelope('module set-product-type', data)) + '\n');
+    return;
+  }
+
+  if (changed) {
+    console.log(`✓ Module "${moduleId}" product_type set to "${productType}".`);
+  } else {
+    console.log(`✓ Module "${moduleId}" product_type already "${productType}" (no change).`);
+  }
+  console.log('  Run `openlogos sync` to align the GUI overlay if needed.');
 }
 
 export function moduleRename(oldName: string | undefined, newName: string | undefined): void {

@@ -44,7 +44,7 @@ function codeRequiredProposal(): string {
 }
 
 /** 建提案目录并写 proposal/tasks（可选 delta 文件、LOOP_ITERS 行）。返回 { root, dir }。 */
-function makeProposal(tasks: string, opts: { deltaFile?: boolean; loop?: Array<'pass' | 'fail'> } = {}): { root: string; dir: string } {
+function makeProposal(tasks: string, opts: { deltaFile?: boolean; loop?: Array<'pass' | 'fail'>; markers?: string[] } = {}): { root: string; dir: string } {
   const { root, cleanup } = makeTempRoot();
   cleanups.push(cleanup);
   const dir = join(root, 'logos', 'changes', 'feat');
@@ -52,6 +52,9 @@ function makeProposal(tasks: string, opts: { deltaFile?: boolean; loop?: Array<'
   writeFileSync(join(dir, 'proposal.md'), filled());
   writeFileSync(join(dir, 'tasks.md'), tasks);
   if (opts.deltaFile) writeFileSync(join(dir, 'deltas', 'spec', 'x.md'), 'delta');
+  // contract-self-description 切片1（C2）：直调 deriveLoopState 的收敛数学用例需四事实齐备才挂出，
+  // fixture 按合并后规格补齐 markers（旧空 marker 形态）。
+  for (const mk of opts.markers ?? []) writeFileSync(join(dir, mk), '');
   if (opts.loop) {
     writeFileSync(join(dir, 'LOOP_ITERS'),
       opts.loop.map((r, i) => JSON.stringify({ iter: i + 1, node: 'verify', result: r, module: 'core', timestamp: 't' })).join('\n') + '\n');
@@ -193,39 +196,40 @@ describe('S31 — code_slices_green 复合收敛', () => {
   }
 
   it('复合收敛：切片全勾 ∧ 末轮 pass → converged:true', () => {
-    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1\n- [x] 切片2', { loop: ['fail', 'pass'] });
+    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1\n- [x] 切片2', { loop: ['fail', 'pass'], markers: ['SPEC_MERGED', 'SLICES_APPROVED'] });
     expect(loop(root, dir)).toMatchObject({ until: 'code_slices_green', converged: true });
   });
 
   it('internal-S31-converged-requires-all-slices: 测试绿但切片未全勾 → converged:false（复合收敛更严，不误判完成）', () => {
-    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1\n- [ ] 切片2', { loop: ['pass'] });
+    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1\n- [ ] 切片2', { loop: ['pass'], markers: ['SPEC_MERGED', 'SLICES_APPROVED'] });
     expect(loop(root, dir)).toMatchObject({ converged: false });
   });
 
   it('internal-S31-converged-requires-tests-green: 切片全勾但末轮 fail → converged:false', () => {
-    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1', { loop: ['fail'] });
+    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1', { loop: ['fail'], markers: ['SPEC_MERGED', 'SLICES_APPROVED'] });
     expect(loop(root, dir)).toMatchObject({ converged: false });
   });
 
-  it('internal-S31-empty-code-no-section-pass: 空 [code]（无 section）+ 末轮 pass → 退化为 tests_green、converged:true（不死锁）', () => {
-    const { root, dir } = makeProposal('# 任务\n\n## [delta] 规格变更\n- [x] d', { loop: ['pass'] });
-    expect(loop(root, dir)).toMatchObject({ converged: true });
+  it('internal-S31-empty-code-no-section-pass: 空 [code]（docs-only）→ loop_state 缺席（C2：code_required=false 永不挂，无环即无锁）', () => {
+    const { root, dir } = makeProposal('# 任务\n\n## [delta] 规格变更\n- [x] d', { loop: ['pass'], markers: ['SPEC_MERGED', 'SLICES_APPROVED'] });
+    expect(loop(root, dir)).toBeNull();
   });
 
-  it('internal-S31-docs-only-no-code-section-pass: 无 [code] section + 末轮 pass → 退化 tests_green、converged:true（不死锁）', () => {
+  it('internal-S31-docs-only-no-code-section-pass: 无 [code] section → loop_state 缺席（C2 收紧，出环走普通 done_when 判定）', () => {
     const { root, dir } = makeProposal('# 任务\n\n## [delta] 规格变更\n- [x] d', { loop: ['pass'] });
-    expect(loop(root, dir)).toMatchObject({ converged: true });
+    expect(loop(root, dir)).toBeNull();
   });
 
   it('internal-S31-no-ledger-not-converged: iteration=0（无账本）→ converged:false（出环未达，前沿钉在 verify）', () => {
-    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1');
+    const { root, dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [x] 切片1', { markers: ['SPEC_MERGED', 'SLICES_APPROVED'] });
     expect(loop(root, dir)).toMatchObject({ iteration: 0, converged: false });
   });
 
-  it('UT-S31-07: 纯文档无 [code] section 退化为 tests_green → converged:true + slice_state{total:0}（不因无切片卡死）', () => {
-    // 无代码需求：复合收敛退化为纯 tests_green（仅看末轮 pass），绝不死锁；slice_state 同时报 total:0。
+  it('UT-S31-07: 纯文档无 [code] section → loop_state 缺席 + slice_state{total:0}（C2：docs-only 永不挂，不因无切片卡死）', () => {
+    // contract-self-description 切片1：docs-only 提案不再挂 loop_state（缺席 = 普通推进，无环即无锁）；
+    // slice_state 常驻口径不变，同时报 total:0。
     const { root, dir } = makeProposal('# 任务\n\n## [delta] 规格变更\n- [x] d', { loop: ['pass'] });
-    expect(loop(root, dir)).toMatchObject({ until: 'code_slices_green', converged: true });
+    expect(loop(root, dir)).toBeNull();
     expect(deriveSliceState(dir)).toEqual({ total: 0, done: 0, remaining: 0 });
   });
 });
@@ -419,7 +423,7 @@ describe('S31 — 场景测试', () => {
   });
 
   it('ST-S31-03: 全部完成且测试绿 → converged:true 出环到 deliver/close', async () => {
-    const { root, dir } = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED']);
+    const { root, dir } = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(dir, ['fail', 'pass']); // 末轮 pass
     const data = await nextJson(root);
     expect(data.modules[0].loop_state).toMatchObject({ until: 'code_slices_green', converged: true });
@@ -429,7 +433,7 @@ describe('S31 — 场景测试', () => {
 
   it('ST-S31-04: 达上限升级退出门（gate:implement:loop-exhausted、skippable:false、--auto 仍卡）', async () => {
     // 全勾但 30 轮均 fail（未绿）→ 前沿 ready-to-verify、escalated；--auto 默认仍阻塞不写审计
-    const { root, dir } = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED']);
+    const { root, dir } = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(dir, Array<'fail'>(30).fill('fail'));
     expect(detectProposalStep(dir)).toBe('ready-to-verify');
     const data = await nextJsonAuto(root);
@@ -446,12 +450,12 @@ describe('S31 — 场景测试', () => {
     writeLedgerRows(dir, ['pass']);
     expect(detectProposalStep(dir)).toBe('ready-to-verify'); // 无 [code] → 直接可 verify
     const m = (await nextJson(root)).modules[0];
-    expect(m.loop_state).toMatchObject({ converged: true }); // 退化 tests_green，不死锁
+    expect(m.loop_state).toBeUndefined(); // C2：docs-only 不挂 loop_state（缺席=普通推进，无环即无锁）
   });
 
   it('ST-S31-06: 全量回归把关（局部绿全局红不出环）—— [code] 全勾但全量 verify(FAIL) → 不收敛', async () => {
     // 第 3 片实现破坏第 1 片：[code] 全勾，但末轮全量 verify FAIL → tests_green:false → converged:false，不出环
-    const { root, dir } = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED']);
+    const { root, dir } = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED', 'SLICES_APPROVED']);
     writeLedgerRows(dir, ['pass', 'fail']); // 末轮 fail（全量回归红）
     const m = (await nextJson(root)).modules[0];
     expect(m.loop_state?.converged).toBe(false); // 即便 [code] 全勾，末轮 fail → 不出环
@@ -532,7 +536,7 @@ describe('S31 — 空 [code] 退化边界（代码必需态不得进入 loop）'
     writeLedgerRows(docsOnly.dir, ['pass']);
     const docsModule = (await nextJson(docsOnly.root)).modules[0];
     expect(docsModule.proposal_step).toBe('verify-passed');
-    expect(docsModule.loop_state).toMatchObject({ converged: true });
+    expect(docsModule.loop_state).toBeUndefined(); // C2：docs-only 永不挂
     expect(docsModule.next_node?.id).not.toBe('plan-slices');
 
     const codeRequired = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d', ['SPEC_MERGED', 'VERIFY_PASS'], 'feat-code', codeRequiredProposal());
@@ -543,7 +547,7 @@ describe('S31 — 空 [code] 退化边界（代码必需态不得进入 loop）'
     expect(codeModule.next_node?.id).toBe('plan-slices');
     expect(codeModule.next_node?.id).not.toBe('code');
     expect(codeModule.next_node?.id).not.toBe('verify');
-    expect(codeModule.loop_state).toMatchObject({ converged: false });
+    expect(codeModule.loop_state).toBeUndefined(); // C2：切片未规划/未批准不挂——缺席不表示可 verify，前沿仍钉 plan-slices
   });
 
   it('UT-S31-20: 需要代码但切片缺失时不输出 verify repair 前沿', async () => {
@@ -572,7 +576,7 @@ describe('S31 — 空 [code] 退化边界（代码必需态不得进入 loop）'
     expect(m.next_node?.id).toBe('plan-slices');
     expect(m.next_node?.id).not.toBe('verify');
     expect(m.next_node?.id).not.toBe('code');
-    expect(m.loop_state).toMatchObject({ converged: false });
+    expect(m.loop_state).toBeUndefined(); // C2：未规划切片不挂 loop_state，防误判收敛由前沿钉 plan-slices 保证
     expect(m.code_planning_diagnostic?.reason).toBe('tasks-code-section-missing');
   });
 });
@@ -765,5 +769,63 @@ describe('S31 — smoke 用例变更下的切片闭环', () => {
     ].join('\n'));
     const state = deriveSliceState(dir);
     expect(state.current).toBe('切片2：后续能力');
+  });
+});
+
+// ── contract-self-description 切片1（C2）：slice-exit 批准与 loop_state 激活边界 ──
+describe('S31 — slice-exit 批准与 loop_state 激活边界（contract-self-description）', () => {
+  function setupBoundary(markers: string[]): { root: string; dir: string } {
+    const { root, cleanup } = makeTempRoot();
+    cleanups.push(cleanup);
+    scaffoldProject(root);
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }] }, { lineWidth: 0 }));
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(root, 'logos', 'changes', 'feat');
+    mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), ['# 变更提案：feat', '', '## 变更类型', '代码级', '', '## 部署影响',
+      '- 是否需要部署：否', '- 部署原因：纯代码', '- 是否需要 smoke：否', '', '## 变更概述', '实现 A。'].join('\n'));
+    writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：实现 A\n');
+    writeFileSync(join(dir, 'deltas', 'test', 'core-S31-test-cases.md'), '| UT-S31-90 | 回归 |\n');
+    for (const mk of markers) writeFileSync(join(dir, mk), '');
+    return { root, dir };
+  }
+  function statusData(root: string): any {
+    const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
+    try { status('json'); } finally { cap.restore(); ex.mockRestore(); restore(); }
+    return JSON.parse(cap.logs[cap.logs.length - 1]).data;
+  }
+  async function nextData(root: string, auto = false): Promise<any> {
+    const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
+    try { await next('json', undefined, auto); } finally { cap.restore(); ex.mockRestore(); restore(); }
+    return JSON.parse(cap.logs[cap.logs.length - 1]).data;
+  }
+
+  it('UT-S31-26: slice-exit 未批准（无 SLICES_APPROVED）→ 不挂 loop_state、停 ready-to-implement、不进 implement loop', () => {
+    const { root } = setupBoundary(['SPEC_MERGED']);
+    const s = statusData(root);
+    expect(s.modules[0].active_change.proposal_step).toBe('ready-to-implement');
+    expect(s.modules[0].loop_state).toBeUndefined();
+  });
+
+  it('UT-S31-27: SLICES_APPROVED 写入后才挂 loop_state 并派 code 前沿', async () => {
+    const { root } = setupBoundary(['SPEC_MERGED', 'SLICES_APPROVED']);
+    const s = statusData(root);
+    expect(s.modules[0].active_change.proposal_step).toBe('coding');
+    expect(s.modules[0].loop_state).toMatchObject({ subflow_id: 'implement', until: 'code_slices_green' });
+    const n = await nextData(root);
+    expect(n.modules[0].next_node.id).toBe('code');
+    expect(n.modules[0].next_node.slice).toBe('切片1：实现 A');
+  });
+
+  it('ST-S31-11: 放行前后边界端到端——loop_state 出现严格晚于 marker 写入', async () => {
+    const { root, dir } = setupBoundary(['SPEC_MERGED']);
+    expect(statusData(root).modules[0].loop_state).toBeUndefined();
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(false);
+    await nextData(root, true); // --auto 消费 slice-exit
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
+    const after = statusData(root);
+    expect(after.modules[0].loop_state).toMatchObject({ subflow_id: 'implement' });
+    expect(after.modules[0].loop_state.activated_at).toBe(JSON.parse(readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8')).approved_at);
   });
 });

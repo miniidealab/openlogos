@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { syncLogosProjectName, sync, syncScenariosModuleField } from '../src/commands/sync.js';
+import { VERSION } from '../src/lib/json-output.js';
 
 /* ========== Unit Tests ========== */
 
@@ -473,7 +474,7 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(agents).toContain('必须使用中文');
   });
 
-  it('ST-S08-07: sync with claude-code generates Skill binding in CLAUDE.md', () => {
+  it('ST-S08-07-legacy: sync with claude-code generates Skill binding in CLAUDE.md', () => {
     scaffoldProject(root, { locale: 'en' });
     const configPath = join(root, 'logos', 'logos.config.json');
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));
@@ -779,6 +780,59 @@ describe('S08 Scenario Tests — sync command', () => {
     const config = JSON.parse(readFileSync(join(root, 'logos', 'logos.config.json'), 'utf-8'));
     expect(config.verify.pre_run_command).toBeUndefined();
     expect(con.logs.join('\n')).toContain('verify pre-run config could not be inferred');
+  });
+
+  it('UT-S08-13: sync writes version stamp to logos/.openlogos-sync.json on success', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const stampPath = join(root, 'logos', '.openlogos-sync.json');
+    expect(existsSync(stampPath)).toBe(false);
+
+    sync();
+
+    const stamp = JSON.parse(readFileSync(stampPath, 'utf-8'));
+    expect(stamp.cliVersion).toBe(VERSION);
+    expect(new Date(stamp.syncedAt).toISOString()).toBe(stamp.syncedAt);
+  });
+
+  it('UT-S08-14: failed sync (baseline_commit_in_progress) does not write or refresh version stamp', () => {
+    scaffoldProject(root, { locale: 'en' });
+    // 模块 core 已声明 + 锁被存活进程（pid 1）占用 → withRecoveredReadLocks 无法恢复 → 非零退出
+    writeFileSync(
+      join(root, 'logos', 'logos-project.yaml'),
+      stringifyYaml({
+        project: { name: 'test-project', description: '' },
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
+      }, { lineWidth: 0 }),
+    );
+    const runsDir = join(root, 'logos', 'resources', 'verify', 'baseline-seed-runs');
+    mkdirSync(runsDir, { recursive: true });
+    writeFileSync(join(runsDir, 'core.commit.lock'), JSON.stringify({ pid: 1, at: Date.now() }));
+
+    const stampPath = join(root, 'logos', '.openlogos-sync.json');
+    const oldContent = JSON.stringify({ cliVersion: '0.0.1', syncedAt: '2020-01-01T00:00:00.000Z' }, null, 2) + '\n';
+    writeFileSync(stampPath, oldContent);
+
+    expect(() => sync()).toThrow('process.exit(1)');
+
+    expect(con.errors.join('\n')).toContain('baseline_commit_in_progress');
+    expect(readFileSync(stampPath, 'utf-8')).toBe(oldContent);
+  });
+
+  it('ST-S08-07: version stamp exists after sync and is idempotently overwritten', () => {
+    scaffoldProject(root, { locale: 'en' });
+    const stampPath = join(root, 'logos', '.openlogos-sync.json');
+
+    sync();
+    const first = JSON.parse(readFileSync(stampPath, 'utf-8'));
+    expect(first.cliVersion).toBe(VERSION);
+
+    sync();
+    const raw = readFileSync(stampPath, 'utf-8');
+    const second = JSON.parse(raw);
+    expect(second.cliVersion).toBe(VERSION);
+    expect(Object.keys(second).sort()).toEqual(['cliVersion', 'syncedAt']);
+    // 整体覆盖（非追加）：文件始终是单一 JSON 对象
+    expect((raw.match(/"cliVersion"/g) ?? []).length).toBe(1);
   });
 });
 

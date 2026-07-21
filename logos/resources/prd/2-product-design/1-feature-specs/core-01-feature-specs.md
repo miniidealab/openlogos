@@ -19,6 +19,8 @@
 16. next 自动跳过可跳人类确认点（`next --auto`，skip-gate，最小 A 方案 + `GATE_AUTO_PASSED` 审计留痕）。
 17. 收尾 M2 三个轻量预留项（`flow` 编排）：loop 退出 gate 的 `skippable` 可经 overlay 覆盖（高危 opt-in、auto 放行非收敛代码）、fan-out 聚合阈值 `coverage_threshold`、loop 内 fan-out 收敛语义定死为「整组收敛」。
 18. 把 `cmd:` 谓词放开到 launched 的 `verify` / `deploy` / `smoke` 三个 gate（`flow` 编排）：overlay `modify` 可把这三个门禁节点的 `done_when`（verify/smoke 另含 `fail_when`）改为 `cmd:<command>`，接外部命令 / CI（如 `gh pr checks`、自定义部署校验脚本）；per-field 独立求值、cmd 字段 live 重评瞬态不写 marker，`status`/`watch` 停门前、`next` budget=1 求值续推；其它 builtin 节点改 cmd: 仍 fail loud。
+19. 存量项目逆向建基线与按需深化（`brownfield-adopter`）：`adopt` 后由 AI 会话/driver 派发逆向扫描，产出带 `## 逆向基线来源` provenance 章节的**种子基线**（现状快照、`verified: false`、不写 PRD）；随每次 change 触碰逐区域升级为 human-verified，覆盖率采 tombstone 分母法不虚增；`verify` 对未验证逆向 spec 仅软告警不硬失败；存量文档 provenance 保守逐产物迁移不伪造/不降级。
+20. feature 功能分组层（`add-feature-model`）：在 module 与 scenario 之间引入**可选的 feature 分组维度**（归属单一 module、聚合若干 scenario、可选链接 feature-specs 文档）；范式比照 scenario——`feature_counter` / `features[]` / `scenario.feature` 由 AI 维护，CLI 只读消费。CLI 提供 `openlogos feature list`（只读视图）、`openlogos feature-backfill`（复刻 `openlogos index` 范式生成 AI 回填 prompt），并在 `status`/`next` 增加 feature 分组桶（含"未分组"桶）；存量项目 A 惰性可选 + B 一键回填、升级零改动、混合态合法。
 
 ## 二、规格边界
 ### 2.1 CLI 交互
@@ -94,12 +96,13 @@
 ### 2.6 bootstrap: adopted 行为约束
 
 - `adopt` 命令生成的 `logos-project.yaml` 中，模块 `bootstrap` 字段值为 `adopted`，`lifecycle` 直接为 `launched`。
-- `bootstrap: adopted` 表示模块通过存量项目接入进入 OpenLogos；它不是“首轮方法论闭环已完成”，而是“完整 OpenLogos 基础设施已初始化，Initial 文档基线被接入流程豁免，后续应通过补文档提案补齐”。
+- `bootstrap: adopted` 表示模块通过存量项目接入进入 OpenLogos；它不是“首轮方法论闭环已完成”，而是“完整 OpenLogos 基础设施已初始化，Initial 文档基线被接入流程豁免，后续应通过逆向建基线（brownfield-adopter）建立现状基线”。
 - `bootstrap: adopted` 模块不要求 Phase 1、Phase 2 和 Phase 3-0 文档存在；`status` 将其显示为「文档基线已跳过（存量项目接入）」，而非未完成。
-- `next` 在 `bootstrap: adopted` 且无活跃提案时，固定输出补文档引导，建议执行 `openlogos change add-baseline-docs`，不建议直接开始业务迭代。
+- **adopt 确定性初始化时写入模块级枚举 `baseline_seed_state: required`**（唯一状态字段，非布尔），衔接逆向建基线（S33）：AI 会话/driver 检测该状态后派发 `brownfield-adopter` 产出种子基线（写 run staging），经 `openlogos baseline-seed commit` 由 CLI 依 manifest 计算 `baseline_seed_state`（未全 `partial` → 必需 kind 齐且全部合法 `seeded`）；CLI 本身不启动 AI、不产逆向内容、不声称基线已建立。
+- `next` 在 `bootstrap: adopted` 且无活跃提案时输出建基线/深化引导，并展示现状基线覆盖率（human-verified 分子 / tombstone 分母），不建议直接开始与逆向未验证区域相关的业务迭代。
 - `launch` 对 `bootstrap: adopted` 且 `lifecycle: launched` 的模块豁免 Initial 文档门禁检查。
 - CLI 必须继续兼容历史 `bootstrap: skipped`，读取时按 adopted 接入模式处理；但 `adopt` 新写入的项目必须使用 `bootstrap: adopted`。
-- 补文档提案（如 `add-baseline-docs`）归档后，`next` 恢复正常阶段建议逻辑。若后续需要表示基线已补齐，可由专门变更引入 `baseline_status`，本次不新增第三个状态维度。
+- **provenance 语义**：逆向产物的现状可信度由文档内具名章节 `## 逆向基线来源` 承载（`provenance` / `verified` / `confirmed_by` / `evidence` / `confirmed_at`），`logos-project.yaml` 为派生索引；缺该章节的既有文档判 `unknown`/`legacy-unclassified`，不无条件回填。本次以此表达「现状可信边界」，不新增独立的 `baseline_status` 第三状态维度。
 
 ### 2.7 verify 预执行模型
 - `openlogos verify` 必须在读取 JSONL 前处理 verify 预执行配置。
@@ -353,13 +356,21 @@ node 级新字段仅在存在 overlay-added 节点 / 当前节点为 overlay-add
   "working_agent": null,
   "review_agent": null,
   "pre_script": null,
-  "post_script": null
+  "post_script": null,
+  "dispatch": {
+    "idempotent": true,
+    "timeout_seconds": 3600,
+    "artifacts_hint": ["logos/resources/verify/test-results.jsonl"]
+  }
 }
 ```
 
 - `id` / `name` / `subflow_id` 为 `string`；`skill` / `working_agent` / `review_agent` / `pre_script` / `post_script` 为 **`string | null`**——这 5 个字段**固定存在**、用 `null` 表示无绑定（如 verify / deploy / smoke 由 CLI 驱动、`skill` 为 `null`）。消费方**不得**把 `skill` 当作必有 `string`。
 - 5 个 hint 字段均为**不透明标签**：OpenLogos 不解释、不校验、不驱动；如何映射到真实 agent、是否执行 script 由宿主权限模式决定（A 架构，与既有信任边界一致）。
 - builtin 模板里 `working_agent` / `review_agent` / `pre_script` / `post_script` 多为 `null`（留用户 overlay 填），`skill` 多已填（prd→prd-writer、code→code-implementor…）。
+- **派发契约 `dispatch` / `requires_reviewed`（contract-self-description 新增）**：每个 `next_node` **恒带完整** `dispatch: {"idempotent": bool, "timeout_seconds": int, "artifacts_hint": string[]}`；节点可另声明 `requires_reviewed: string[]`（driver 的 priorReviewNode 本地映射表退化为消费该声明）。权威数据源 = flow 节点定义（内置模板逐节点人工声明，**不从 produces/done_when 推导**）；显式声明则以声明为准；resolved flow 派生把节点元数据透传进 `next_node`——`next_node.dispatch` 恒为完整对象，无二义分支。
+- **overlay-add 未声明 `dispatch` 时的保守默认**：`{idempotent:false, timeout_seconds: defaults.dispatch.timeout_seconds, artifacts_hint: []}`；`artifacts_hint: []` ＝「产物未知」契约语义：消费方不得据此判死，只能升级观察。flow 文件顶层新增 `defaults: {dispatch: {timeout_seconds: 900}}`（唯一默认值源（fallback）；overlay 可覆盖；resolved 物化进每节点，输出层不再有第二处默认）。flow 文件 schema `version: 1` 保持不变（字段为向后兼容扩展）。
+- **内置节点声明基准**：内容产出/评审节点（write-proposal、write-tasks、write-delta、plan-slices、review 类、code）idempotent:true；一次性落盘/执行节点（apply-merge、deploy、archive 类）idempotent:false；verify/smoke 命令节点 idempotent:true。timeout_seconds：默认 900，code/implement 类 3600，deploy 类 1800。artifacts_hint 写该节点的具体产物提示（如 `["proposal.md"]`、`["logos/resources/**","SPEC_MERGED"]`）。apply-merge 声明 `requires_reviewed: ["proposal","delta"]`。
 
 **默认前沿节点解析（无 R3/R4/R5/R7 例外时，A 被动派生，复用既有映射）**：
 1. **overlay-added 当前节点**（`current_node` 存在）→ 直接取该节点；
@@ -394,9 +405,9 @@ node 级新字段仅在存在 overlay-added 节点 / 当前节点为 overlay-add
 
 **与既有能力正交**：`next_node` 与 cmd（S26）/ loop（S27）/ `--auto`（S24）的现有字段**正交、互不覆盖机器字段**——cmd/loop/auto 各自的字段照常输出，`next_node` 只额外声明「该派发哪个节点的编排提示」。
 
-**golden（有意打破零漂移、须复核 diff）**：本切片是 feature、为 next 新增输出字段，对有当前节点的项目（builtin 节点恒有 skill 等）新增 `next_node` → `next --json` 快照随之更新。必须在**干净基线**上重新 baseline `golden-baseline.test.ts` 并**逐项复核 snapshot diff**，确认**唯一变化是新增 `next_node`**，无其它字段漂移（`status` / `watch` / `flow show` 快照必须不变）。
+**golden（有意打破零漂移、须复核 diff）**：本切片是 feature、为 next 新增输出字段，对有当前节点的项目（builtin 节点恒有 skill 等）新增 `next_node` → `next --json` 快照随之更新。必须在**干净基线**上重新 baseline `golden-baseline.test.ts` 并**逐项复核 snapshot diff**，确认**唯一变化是新增 `next_node`**，无其它字段漂移（`status` / `watch` / `flow show` 快照必须不变）。contract-self-description 在此基础上**主动破例**，golden 复核改按**提案级差异白名单**（不再沿用本切片历史的局部零漂移锚）：全部输出允许 `contract`；活跃提案允许 `active_change.step_meta`/`facts`；launched 活跃提案用例 5/6/8/9 **允许且要求** pre-implement `loop_state` 缺席（C2 收紧的必然差异）；`next_node` 允许新增 `dispatch`/`requires_reviewed`（破 R8 八字段锚，next golden 用例 2/6 重拍）；`flow show` 允许新增顶层 `defaults` 与逐节点 `dispatch`/`requires_reviewed`。白名单之外才要求逐字节不漂移。
 
-**不变量**：无当前节点（命令级建议 / R4 放行 / R7 省略分支）时 `next_node` 省略。`status` / `watch` 输出**逐字节不变**（本切片不动它们）。
+**不变量**：无当前节点（命令级建议 / R4 放行 / R7 省略分支）时 `next_node` 省略。`status` / `watch` 输出在**本切片（S28）范围内**不因 `next_node` 新增而变；contract-self-description 起按上方提案级差异白名单复核（`contract`/`step_meta`/`facts`/`loop_state` 缺席属声明内差异，不算漂移）。
 
 ### 2.19 M2 预留收尾：loop 退出 gate 可跳 + fan-out 阈值 + loop 内整组收敛（A 被动派生）
 
@@ -515,7 +526,7 @@ node 级新字段仅在存在 overlay-added 节点 / 当前节点为 overlay-add
 
 ### 2.22 implement loop 默认激活切片循环（change-flow-redesign）
 
-本节在 2.17（implement loop 真迭代派生）基础上扩展：**内置 launched `implement` 子流程默认激活切片循环**（`loop.until: code_slices_green`、`max_iters: 30`），不再依赖 overlay；2.17 中"builtin 保持 `max_iters:1`、`loop_state` 仅激活时输出、golden 零漂移"对 launched implement 的约束据此修订——launched 下 `loop_state` / `slice_state` 常驻输出，golden 基线主动重拍。其它 builtin（`initial.yaml` implement）仍 `max_iters:1`、initial 多模块不激活（沿用 2.17）。
+本节在 2.17（implement loop 真迭代派生）基础上扩展：**内置 launched `implement` 子流程默认激活切片循环**（`loop.until: code_slices_green`、`max_iters: 30`），不再依赖 overlay；2.17 中"builtin 保持 `max_iters:1`、`loop_state` 仅激活时输出、golden 零漂移"对 launched implement 的约束据此修订——launched 下 `slice_state` 常驻输出、golden 基线主动重拍；**`loop_state` 不再常驻输出**，其挂出时机由 contract-self-description 主动破例收紧（见下「`loop_state` 挂出时机」）。其它 builtin（`initial.yaml` implement）仍 `max_iters:1`、initial 多模块不激活（沿用 2.17）。
 
 - **切片清单来源**：`tasks.md` 的 `[code]` section **由 merge 后的 `slice` 子流程（`slice-planner`，见 2.25）写定**，不再由 plan 段 `change-writer` 在 merge 前产出。implement loop 只**消费** `[code]`、不重新分批；循环与收敛逻辑不变。
 - **切片清单**：`tasks.md` `[code]` section 的顶层切片 checkbox = 顶层切片。缩进 checkbox = 所属父切片内部子任务；它不是新的顶层切片，不参与 `slice_state.total` 的计数。
@@ -525,6 +536,9 @@ node 级新字段仅在存在 overlay-added 节点 / 当前节点为 overlay-add
 - **兼容性**：无缩进子任务 checkbox 的既有 `[code]` 切片行为不变；缩进普通 bullet 仍只是说明文字，不进入子任务完成判定；initial 多模块仍不输出 `slice_state`。
 - **边界**：OpenLogos 只派生状态与机器字段，不自动勾选父切片或子任务 checkbox，不替代宿主/Agent 的代码实现、测试执行和任务勾选动作。
 - **无人值守**：`next --auto` 逐片推进；达 `max_iters` 未达成 → `gate:implement:loop-exhausted`（`skippable:false`），默认不自动放行未完成大功能。verify 始终跑全量回归，从模型层杜绝局部绿全局红。
+- **`loop_state` 挂出时机（contract-self-description 收紧，主动破例打破「launched 下 `loop_state` 常驻输出」不变量）**：挂出 **iff** `code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved`（与 facts 同一份计算）；否则省略字段。`ready-to-implement`（切片已规划、待 slice-exit 批准）**不挂**；docs-only（code_required=false）**永不挂**。缺席态语义：`loop_state` 缺席 = implement 未进入，消费方走 next 驱动普通推进，不得进入 loop 分支——现役 driver 对缺席态本就走普通推进，只改 CLI 即消灭 loop 劫持整类假死。spec 阶段/切片未规划的 launched 活跃提案 golden 快照（用例 5/6/8/9）随之重拍。
+- **`loop_state.activated_at`（审计）**：新增 `activated_at`（ISO 8601），读自结构化 SLICES_APPROVED；旧空 marker → 省略该字段。SLICES_APPROVED marker 由「空文件」升级为结构化内容：消费 slice-exit 时原子写入一次，JSON 单行：`{"schema":"openlogos/slices-approved@1","approved_at":"<ISO 8601>"}`；已存在不重写（重复 `next --auto` 不刷新）；兼容读旧空文件（视为已批准、无时间戳）。同一磁盘状态永远派生同一 JSON，不破坏 A 被动派生确定性。
+- **`slice_state` 常驻口径不变**（激活判据与 loop_state 分别写明）：`slice_state` 是切片规划进度的展示面、不触发 driver loop 分支，维持现状不收紧。
 
 ### 2.23 AI 宿主 SessionStart guard 范围注入（Codex / openlogos-phase）
 
@@ -626,6 +640,292 @@ dispatcher 至少应支持：
 
 **唯一交付物**：`tasks.md` 的 `## [code]` section。它包含删后续结论、真实测试 ID 标注、业务代码 + 测试 + reporter + 必要 fixture/golden 的闭环要求。`slice-planner` 不产 `proposal.md`、不产 `[delta]`、不写业务代码。
 
+### 2.26 GUI 项目提案阶段前置 UI/UX 原型确认（proposal-ui-ux-first）
+
+**目标**：对已 `launched` 的 **GUI 产品项目**（网站 / 桌面应用 / 移动 App），把 UI/UX 确认**前移到「批准提案」门**——在提案阶段就产出界面原型，使用户在批准提案时（**面板已渲染原型的前提下**）连界面一起确认，避免「批准后自动实现才发现界面不对」的高成本返工。**复用现有 `plan-exit`（批准方案）门，不新增门态、不新增确认标记、不新增 `ui/` 目录。** 非 GUI 项目（纯 CLI / API / Skills）整个特性不启用、流程零改动。
+
+本节只定义 openlogos 侧的**功能规格边界（契约）**；driver 侧的 producer dispatch / 面板原型渲染 / provenance 写入归 runlogos 关联 change `ui-ux-first-panel`，本节不含其实现。
+
+#### 2.26.1 原型作为 page-design delta 产出（不新增 `ui/` 目录）
+
+- 判定「本次动了界面」后，change-writer 在**提案阶段**用 `ui-ux-pro-max` 设计系统产出界面原型，**原型直接作为 page-design delta** 写入 `logos/changes/<slug>/deltas/prd/2-product-design/2-page-design/core-NN-<slug>.html`。
+- 原型为**裸 HTML**（可直接 iframe 渲染），须覆盖本次变更的**关键几屏 + 各交互状态**（如空态 / 加载 / 正常 / 错误 / 边界态）。
+- `design-system.json`（ui-ux-pro-max 令牌）作为**审计产物**留在提案目录 `logos/changes/<slug>/`，供追溯「原型出自设计系统」；它不是 page-design delta、不落入 resources。
+- **不新增 `ui/` 目录、复用现有 delta 路径映射**：原型走**现有 delta 路径**——面板已用 `readDir(deltas/**/*)` 列出可直接渲染；`deltas/prd/**` → `logos/resources/prd/**` 的现有路径映射仍复用（原型落入原型图文件夹，先例 `core-03-release-page-prototype.html`）。但原型落盘**不经由 merge 拷贝步骤**（不复用 `scanDeltas` 拷贝原型资产），而由**专用事务落盘入口 `commitVerifiedPrototypes()`** 完成：**严格模式下先重算并校验 hash，再原子提交**；**merge-executor 绝不触碰原型资产**。
+- `proposal.md` 保持 markdown 结构不变，避免打断 CLI / runlogos 对 proposal 的解析。
+
+#### 2.26.2 UI/UX 变更声明段（proposal.md 内机器可读声明）
+
+- `openlogos change` 为已 `launched` 的 **GUI 项目**生成的 `proposal.md` 模板注入一节「UI/UX 变更声明」，机器可读地声明本次动没动界面 + 原型页清单：
+  - `ui_impact`：布尔，声明本次是否触及界面。它是「本次动没动界面」的**权威意图源（单一事实源）**。
+  - `design_system_mode`：枚举 `generated | fallback`，机器可读地声明原型出自 ui-ux-pro-max 设计系统（`generated`）还是通用风格降级兜底（`fallback`），见 2.26.10 与 2.26.7 的对账口径。
+  - **声明页清单（结构化记录，非「页面名 → 文件」的自由文本）**：一个数组，每一条为一个页面记录，字段：
+    - `id`：清单内**唯一**标识（用于稳定引用该页）。
+    - `prototype`：预期原型文件的 **basename**，形如 `core-NN-<slug>.html`——**仅允许 basename**（禁止 `..`、禁止任何子目录分隔符）、扩展名**必须为 `.html`**、在全清单内**唯一**。
+    - `description`：该页 / 屏幕的用途描述（人读）。
+  - **对账按精确 basename 集合比较**：以「声明清单的 `prototype` basename 集合」对比「`2-page-design/` 下实际原型文件的 basename 集合」，**重复、额外、缺失任一情况均判失败**。
+  - `PLAN_APPROVED` 的 `pages` 与 `hashes` **复用同一 basename 作为键**（`hashes` 的键即各页 `prototype` basename），三方对账全程以该 basename 键对齐。
+- **仅 GUI 项目注入该段**；非 GUI 项目（`product_type` 非 GUI 类）不注入，特性不启用。
+- 该声明段是下游 `flow-derive` / guard / 面板 / checker 的**唯一意图事实源**：不引入第二处判定，避免 `ui_impact` 与文件存在性各说各话。
+
+#### 2.26.3 「动没动界面」三层判定（plan 阶段执行、去循环依赖）
+
+- **判定主体与时机**：判定在 **plan 阶段由 change-writer 执行**（非 merge 后、非扫描 delta 内容）。
+- **判定依据**：**提案意图 + 项目 `product_type` + `tasks.md` 已规划的 `[delta]` 目标**，**而非扫描尚不存在的 delta 文件内容**（在 plan 阶段无 delta 可扫，「先 delta 还是先原型」构成循环依赖，故废除「扫 delta 内容兜底」表述）。
+- **三层落地**：
+  1. change-writer 依 `product_type` 与提案意图**声明** `ui_impact`。
+  2. **自检**：`tasks.md` 的 `[delta]` 目标是否命中 `2-page-design/`，或命中**含交互变更**的 feature-specs；命中即**强制判为「动了界面」**（`ui_impact:true`）。
+  3. **可选多 agent 复核**：默认**关**，可由 driver 派发。
+- 据此判定后再产出原型，全链路无循环依赖。
+- **判定容错优先流程平滑**：作为增益功能，判错代价可控（顶多多画一次或退回重设），不追求绝对严谨。
+
+#### 2.26.4 复用 `plan-exit` 批准门与「批准即 UI 确认」的前提
+
+- **看界面不是一道新关卡**：它挂在「批准提案」这一现有动作上，**复用现有 `plan-exit`（批准方案）门——不新增门态、不新增确认标记文件**。
+- 原型产出是 **plan 节点门前的普通内容生成**，授权状态与「写 `proposal.md` / `tasks.md`」**完全相同**（不新增授权、不新增门）；唯一人类确认点仍是 `plan-exit`。
+- **「批准 == UI 已确认」这一等价仅当面板实际渲染了原型时成立**（F4）：
+  - **渲染面板**：用户批准提案 / 启动全自动 / 让 driver 进下一步，即构成 **UI 视觉确认**；面板在批准时记录「已展示原型」provenance（`ui_prototype_rendered` + `pages` + `hashes`）。
+  - **旧面板（不渲染，仅把 `.html` 按文本列出）**：该批准**只是普通方案批准、不构成 UI 视觉确认**；方法论**不宣称 UI 已确认**，给出 **advisory 提示但不阻断**（延续「不阻断」立场）。这是既有批准事件上的溯源属性，**不是新门 / 新确认标记文件**。
+- **过渡期指引**：建议 runlogos 渲染升级**先于** GUI 团队依赖本前移价值发布；未升级前用户可直接打开原型 `.html` 自行确认。
+
+#### 2.26.5 plan 阶段写入 allowlist（仅放行原型路径）
+
+- plan-exit 门**前**，写入范围**显式放行且仅放行** `deltas/prd/2-product-design/2-page-design/*.html` 这一原型路径；其余 `deltas/**` 在 plan 阶段仍**禁止写入**。
+- 该 allowlist 与「plan→spec→code 时序」「SessionStart `writing` / `ready-to-delta` 分支的 GUI + `ui_impact` 例外文案」三者**口径一致**：仅 GUI 项目 + 本次触及 UI 时允许在 plan 阶段产出 page-design 原型 delta，其余 delta 仍禁于 plan 阶段。
+
+#### 2.26.6 producer dispatch 契约（契约由 openlogos 定，实现归 runlogos）
+
+- driver 在 plan 节点、当判定「动了界面」（`ui_impact:true`）时，**派发 change-writer 在 plan-exit 前产出逐页原型** 的 dispatch 契约由 **openlogos spec 定义**；**driver 实现归 runlogos 关联 change `ui-ux-first-panel`**（本节不含实现）。
+- **producer 责任 = 优先调用 ui-ux-pro-max（`generated`，产逐页原型 + `design-system.json` 令牌）；不可用（如 Python3 缺失）时按 fallback 契约兜底**（`fallback`，产通用风格逐页原型、**不产令牌**、填非空 `design_system_fallback_reason`），见 2.26.7 / 2.26.10。**不得**因渲染 / 令牌能力缺失而无条件卡死或强求令牌。
+- 该 change 为**必须交付的关联件（非可选）**：本特性核心视觉确认价值 = openlogos 契约 **且** runlogos 实现，二者缺一即不成立。
+
+#### 2.26.7 收敛判定（done_when：逐页非空 + 令牌 + 三方对账）
+
+- 原型节点收敛条件**按 `design_system_mode` 分档**（fail closed：缺字段 / 非法值一律判 fail）：
+  - `generated`：UI/UX 变更声明段**声明的每一个页面**在 `2-page-design/` 下都有**对应的非空原型文件**、声明清单 basename 集合 == 产出文件 basename 集合，**且**提案目录存在**合法非空**的 `design-system.json`（ui-ux-pro-max 令牌）。不是「至少存在一个文件」的弱收敛。
+  - `fallback`（降级兜底）：仍要求**逐页非空** + 声明清单 == 产出文件一致；**不要求 `design-system.json`**（降级不产令牌），但**必须**在声明段填写**非空** `design_system_fallback_reason`（如「Python3 缺失」）。满足即收敛通过，**不阻塞**。降级模式下**禁止伪造设计系统令牌**（不得写占位 / 伪造的 `design-system.json`）。
+  - **其它取值 / 缺 `design_system_mode` / `generated` 却无合法令牌 → fail closed**（判未收敛，advisory）。
+- **完整 ground truth（三方对账）**——权威三元组必须一致：
+  1. `proposal.md` 声明段的 `ui_impact` + **声明页清单**；
+  2. `2-page-design/` 下实际产出的原型文件；
+  3. merge 落盘 / 面板渲染的对象。
+  **声明清单 == 产出文件** 为完整性判据；不一致 = 节点未收敛（advisory）。
+- **producer 交付责任与残差（如实标注）**：producer = change-writer（driver 派发），**优先调用 ui-ux-pro-max 产出逐页非空原型 + 令牌（`generated`）；不可用（如 Python3 缺失）时按 fallback 契约产通用风格逐页非空原型、不产令牌、填非空降级原因（`fallback`）**；该责任由 change-writer skill + UT/ST + 验收执行与校验。**残差**：`generated` 支下「HTML 是否*真出自* ui-ux-pro-max」除 `design-system.json` 令牌可追溯外**无法纯机器证明**，属既有 acceptance 口径下的**荣誉制 + 令牌追溯**限制（如实记录、非遗漏）；`fallback` 支不产令牌，依 `design_system_mode: fallback` 如实标注为降级产物。
+
+#### 2.26.8 「批准即确认」的 provenance 契约与防漂移（仅 `ui_impact:true` 有意义）
+
+- **载体与向后兼容**：provenance 落在 **`PLAN_APPROVED` marker 的可选 JSON body**。`PLAN_APPROVED` **存在性语义完全不变**——存在即门已过、**空 marker 仍合法**；provenance 是**可选叠加字段**，缺失 / 空 body ⇒ 安全默认「不宣称 UI 已确认」。即 `PLAN_APPROVED` 是「存在性 marker + 可选 provenance body」的**向后兼容超集**，非破坏性重定义。
+- **body 结构**：`{ ui_prototype_rendered: true, pages: [...], hashes: { "<file>": "<sha256>" } }`——记录**批准时刻**确认的原型文件清单与逐文件内容 hash。
+- **防批准后漂移（阻断，非仅 advisory）**：下游（merge / implement）**重算 hash 比对**；任一不匹配（原型在批准后漂移）⇒ **该 UI 确认作废，且对 `ui_impact:true` 变更阻断其交付前进**。阻断方式**复用现有 `plan-exit` 门的「批准内容变更即批准失效」完整性语义**（原型 hash 变了 → 批准过期 → 必须**重新批准**才能继续），**不新增门**。
+- **判定分支**：`ui_prototype_rendered:true` 且 **hash 全匹配** = UI 已确认、放行；**hash 失配** = 确认作废 + 阻断（重批前不前进）；缺失 / false（旧面板 / 未渲染，非漂移）= 不宣称 UI 已确认、记 advisory、不阻断。
+- **适用范围**：仅 `ui_impact:true` 提案要求这些字段有意义；`ui_impact:false` 不涉及。
+
+#### 2.26.9 严格性以「持久化批准记录」为键，绝不因会话 capability 缺失降级（F4 R7 红线）
+
+- **模式选择（plan-exit 之前）** 才读会话 capability（runlogos 写的 `logos/.session-capabilities.json`，例 `{"ui_prototype_render": true}`）：就绪 → 渲染确认模式（要求 provenance + hash）；缺失 → 降级模式（不 claim UI 确认、advisory 不阻断）。这是该 capability 文件的**唯一**合法用途。
+- **强制语义（plan-exit 之后：merge / 落盘 / 落盘后复核）一律以持久化 `PLAN_APPROVED` provenance 为键，不再读 session capability**：
+  - **批准记录含 UI provenance**（`ui_prototype_rendered:true` + `pages` + `hashes`，即曾走渲染确认路径）⇒ **所有 merge / 落盘 / 落盘后复核入口永久 fail closed**：`hashes` 必须存在且完好、逐文件重算匹配；缺失 / 损坏 / 失配一律拒绝（非零退出、不生成 `MERGE_PROMPT`、不写 resources、不写 `SPEC_MERGED`）。**当前会话 capability 文件缺失 / 过期 / 被清理一律不得降级**——「曾渲染确认」的证据已固化在批准记录里，易失会话态无权推翻它。
+  - **批准记录明确为 legacy/degraded、或旧空 marker 且无任何「曾渲染确认」证据** ⇒ 才走 F3 向后兼容 advisory 放行（不要求 `hashes`、不阻断）。
+  - 判据由 `ui_impact` **与 `PLAN_APPROVED` 内容**共同决定；提示前 / 落盘时 / 落盘后三处**一致按此**，杜绝三处复用同一「capability 缺失即降级」错误分支而一致放行。
+
+#### 2.26.10 Python3 降级（不阻塞）
+
+- ui-ux-pro-max 依赖 Python3；**Python3 缺失时以通用风格兜底并在提案标注「未走设计系统」**，**不阻塞、不报错**。
+- **机器可读降级声明**：降级时声明段写 `design_system_mode: fallback` + **非空** `design_system_fallback_reason`（如「Python3 缺失」）。据此，checker **不再对降级产物强制要求 `design-system.json`**——从而消解「降级不产令牌、却强制要 `design-system.json` → 永远卡死」的矛盾。
+- 降级产出的原型仍作为 page-design delta 落盘：满足**逐页非空** + **声明清单 basename 集合 == 产出文件 basename 集合**即收敛通过、**不阻塞**；缺 `design-system.json` 令牌追溯属预期（对账时依 `design_system_mode: fallback` 如实标注为降级产物），**不判 fail**。
+- **fail closed 边界**：`design_system_mode` 缺失 / 取非法值，或 `generated` 却无合法非空 `design-system.json`，或 `fallback` 却缺 `design_system_fallback_reason` ——一律判 fail（不放行）；**禁止在降级模式伪造设计系统令牌**。
+
+### 2.27 存量项目逆向建基线与按需深化（brownfield-adopter）
+
+#### 2.27.1 目标
+存量项目 `adopt` 接入后不再掉进「空提案」死角：接入时建立一份**种子基线**（现状快照，非权威意图），并随每次 change 触碰按需把触碰区域升级为人工确认，可信边界前移。存量代码 grandfather 豁免，不要求回头符合 spec。
+
+#### 2.27.2 唯一 producer 边界（adopt 只初始化，AI driver 才逆向扫描）
+- `openlogos adopt` **只做确定性本地初始化**并写入 `baseline_seed_state: required`；**不启动** Codex/Claude/RunLogos、不选模型、不授代码库读取范围、不产逆向内容。
+- 逆向扫描的**唯一 producer 是 AI 会话/driver**：检测 `baseline_seed_state: required` 后派发 `brownfield-adopter` skill 产出种子基线（写 run staging），经 `openlogos baseline-seed commit` 由 CLI 计算并写 `partial`/`seeded`（字段写入 owner 是 CLI，producer 不直接改 YAML、不直接写目标目录）。
+- **能力降级**：CLI-only / `--ai-tool other` / 非交互 CI / AI 能力缺失时，adopt 输出可复制的后续命令/提示并保持 `baseline_seed_state: required`，**绝不声称基线已建立**。
+- **失败原子性**：adopt 初始化与逆向扫描解耦——初始化为原子确定性操作；扫描失败保持当前 `baseline_seed_state`（`required`/`partial`）、允许重试、不回滚已初始化的 `logos/`，部分产物在重扫时按候选 `key` 覆盖/清理；JSON `status` 的 `baseline_coverage.state` 映射枚举 `required`/`partial`/`seeded`。
+
+#### 2.27.3 种子基线内容（只含可验证事实，不写 PRD）
+- 产物 = system-map（模块图 / 入口 / 依赖）+ **场景候选清单**（启发式逆向），只含可从代码忠实验证的事实。
+- **不写 PRD / 意图类文档**（意图无法从代码忠实还原）。
+- 每份产物含具名章节 `## 逆向基线来源`，内含 `candidates[]` 注册表（一文档可含 N 个候选）：每候选 `key` / `state`（active|tombstone|retired）/ `verified: false` / `aliases[]` / `superseded_by[]` / 审计字段；`provenance` 为**派生值**（由 `verified` + `state` 推出，非独立存储），不构成第二个真相源。
+
+#### 2.27.4 provenance 权威载体 = 文档内具名章节（非 YAML frontmatter）
+- 权威载体是文档内**具名章节** `## 逆向基线来源`，因为它是 `MODIFIED` delta 可原子寻址/替换的单位——单份最终态 delta 的一个 `MODIFIED` 即可把 `verified: false → true` 与正文改动一并落盘，无需扩展 merge 协议。
+- `logos-project.yaml` 为**派生索引**，携 `source_hash` + 生成时间，只读该章节；索引缺失/过期/解析失败时降级输出 `unknown`/`stale`，不输出貌似精确的百分比。
+
+#### 2.27.5 JIT 深化：单份最终态 delta 承载「确认现状 + 前向改动」
+- 后续 `openlogos change` 触碰只有 `verified: false` 逆向 spec 的区域时，change-writer 给 **advisory（不设硬门）**：建议在**当前 change 内那一份最终态 delta**里一并确认该区域现状（`## 逆向基线来源` 置 `verified: true` + `confirmed_by`/`evidence`）。
+- guard 合规：全程在当前单一 change 的 `deltas/**` 内写作，不直接改 `resources/**`、不嵌套第二个 change；**不引入双有序 delta / 多操作 delta 协议**（现行协议无法表达）。
+- `human-verified` **仅在该 delta merge 落主文档后生效**；覆盖率只读已合并主文档，advisory 不因未合并 delta 提前消失或声称前移。
+
+#### 2.27.6 覆盖率：tombstone 分母法（不虚增）
+- 规范键 `key = <module>::<sha256(normalize(anchor))[:12]>`（hash 形式，可读 slug 只进 `anchor`/`display`）；候选携 `aliases[]`（重命名/移动不新建）、`superseded_by[]`（合并/拆分旧键留存并 tombstone）、扫描器版本升级经事件日志 migration map 继承旧 key。分母 = `active ∪ tombstone`、`retired` 不计入；零分母报 `n/a`。详见架构 `core-06-provenance-data-model`。
+- **分母 = 存活候选 ∪ 未经人工确认的 tombstone**；重扫删除/合并的候选转 tombstone 仍留分母，仅人工确认的废弃/合并事件才移出。**分子 = module 下 `human-verified` 候选数**。`coverage = human_verified / (存活 + 未确认 tombstone)`。⇒ 无人工动作分母不缩小，百分比不因删除上升。
+- `status --format json` 另单独输出 `human_verified_delta`，禁止把分母波动解读为新增人工确认。
+
+#### 2.27.7 verify 软告警 + 存量迁移保守
+- `verify` 对 `verified: false` 逆向 spec 仅输出软告警，**不硬失败**（grandfather 豁免存量代码）。
+- 存量 provenance 迁移**保守逐产物**：缺 `## 逆向基线来源` 章节的既有文档标 `unknown`/`legacy-unclassified`（不降级人工文档、不虚构逆向基线），无产物不创建 provenance；迁移幂等、写前备份、失败可恢复、旧版 CLI 忽略未知字段。这是持久化元数据迁移。
+
+#### 2.27.8 种子状态提交协议：`openlogos baseline-seed`（CLI 唯一写入入口，两阶段 staging，F7）
+`baseline_seed_state` 的**唯一合法写入路径**是新增 CLI 命令 `openlogos baseline-seed`——AI/driver/skill **绝不直接改 YAML、也不直接把产物写入目标 `logos/resources/`**，只经此命令让 CLI 校验后原子写状态与目标文件。采**两阶段 staging** 结构，消除「begin 在产物存在前索要内容 hash」的自相矛盾：
+
+- **`openlogos baseline-seed begin --module <id> --manifest <path> [--format json]`**：扫描开始时 producer 提交**逻辑产物计划**（**不含内容 hash**，因产物字节此刻尚未生成）：`{ module, expected: [ { kind, target_path, candidate_keys:[...] } ] }`。CLI 对计划做 schema 与安全校验后签发 `run_id`、创建 run 私有 staging 目录 `logos/resources/verify/baseline-seed-runs/<run_id>/staging/` 并持久化 run 记录，返回 `run_id`。校验规则（不满足即非零退出、拒绝）：
+  - **必需 kind 集合**：`expected` 至少覆盖 `system-map` 与 `scenario-candidates` 两类（防「少报单项 manifest → 误 seeded」）；`kind` 取受控枚举。
+  - **路径安全**：`target_path` 必须为**项目根相对路径**且位于允许的逆向基线目录（`logos/resources/` 下约定基线区），**拒绝**绝对路径、`..`、符号链接逃逸、重复路径。
+  - **不改写现有状态**：`begin` **不下调** `baseline_seed_state`——`partial` 保留至新 run 首次有效 commit（仅 `adopt` 写初值 `required`、`commit` 写 `partial`/`seeded`）；同模块此前未完成 run 标 `superseded`。
+- **`openlogos baseline-seed commit --module <id> --run-id <id> [--format json]`**：Skill 已把产物写入该 run 的 **staging** 后调用。CLI 对 **staged 实际字节**逐项校验：内容 sha256、`## 逆向基线来源`/`candidates[]` schema 合法、**staged `candidates[]` 的 key 集合与 manifest 该项 `candidate_keys` 逐项一致**、路径安全复检。分类 `committed`/`missing`/`invalid`；仅当**必需 kind 齐全且全部 expected 合法**时，才把 staged 文件**原子提交**到 `target_path` 并写 `baseline_seed_state: seeded`；**≥1 合法但未全/必需 kind 不齐 → `partial`（不提交不完整集合为权威）；0 → 保持当前状态**。CLI 是唯一状态写入者。
+- **`openlogos baseline-seed status --module <id> [--format json]`**：只读当前 run、staging 进度与状态，供恢复/重试决策。
+
+**完整性权威**：`seeded` 仅在必需 kind 齐全且 manifest 全部 expected 合法时成立——单产物 manifest、少报 manifest、单文件落盘**均不得**被判「全部完成」。**多文件崩溃一致性（commit journal + 恢复门，见架构 §4.4）**：`commit` 跨多个目标文档 + 派生索引 + `baseline_seed_state` YAML，经持久化 journal `prepared→committing→committed`（**状态最后写**、journal 阶段/进度自身原子写）在**模块级事务锁**下提交。`committing` 期间物理目标可能半新，故**不对直接按路径读取的人工/Skill 宣称原子可见**；而以**恢复门**保证机器一致性：`status`/`next`/`verify`/覆盖率重算/index 扫描/派生器在读目标或算覆盖率前必须取模块锁 + 检测未终结 journal → **先恢复**、否则返回 `baseline_commit_in_progress` 且不把当前集合当权威（即便 prior 曾 `seeded` 也不复用）。恢复按每目标 on-disk hash 与 journal old/new 重判态：`prepared`→回滚、`committing`+staging 完好→前滚补齐、`committing`+staging 缺失→按 backup 回滚；`seeded` 当且仅当完整新集合 + 索引在盘。**幂等/并发/恢复**：同 `run_id` 重复 commit 依 staging + journal 重算、结果一致、不重复计数；`stale`（被 superseded）/未知 run_id/路径逃逸/`candidate_keys` 不匹配拒绝（非零退出 + `error` 码 `stale_run`/`unknown_run`/`path_escape`/`candidate_key_mismatch`/`missing_required_kind`）；同模块并发 run 由锁互斥；**带未终结 journal 的 run 持恢复优先权，新 `begin` 必须先在锁内跑其恢复再 supersede**。**退出码/JSON envelope**：协议错误非零退出；成功（含 `partial`）退出 0，JSON `{ ok, run_id, module, baseline_seed_state, committed, missing, invalid }`。
+
+#### 2.27.9 `partial` 恢复态契约 + 与活跃提案的优先级（next/status 行为，F8）
+`partial` 是**持久化恢复态**（扫描中断后保留、用户可重试），必须有确定且唯一的用户可见行为，不得被实现当作 `required`/`seeded`/`error`：
+
+- **展示**：`status`/`next` 人读明确显示「现状基线部分建立 / 扫描未完成」，JSON `baseline_coverage.state=partial`。
+- **与活跃提案的优先级（消除「唯一指向恢复」与「不阻断 change」的冲突）**：
+  - **无活跃提案**（无 guard）：partial 把主 `action` / `next_node` 指向 `baseline-seed` 恢复入口（`commit --run-id <id>` 续提交或重新 `begin` 补齐）。
+  - **有活跃提案**（guard 存在）：`next` 主 `action` / `next_node` / `proposal_step` **保持该提案真实前沿**（不被恢复建议劫持、不改写 `proposal_step`、不阻断 change）；partial 恢复以**结构化 advisory** 呈现于 `baseline_coverage.recovery`（`{ available:true, entry:"openlogos baseline-seed …", run_id }`），非硬门。
+- **`incomplete` 字段 shape（稳定不分叉）**：`baseline_coverage` 出现时 `incomplete` **恒存在为布尔**——`state==partial` 时 `true`，`required`/`seeded` 时 `false`（不省略）；`partial` 下**不得**用已落盘候选当最终分母算精确百分比。
+- **重新 begin 不回退 partial**：从 `partial` 重新 `begin` 只创建新 run（旧 run `superseded`），`baseline_seed_state` **保留 `partial`**，直到新 run 首次有效 `commit` 才转 `partial`/`seeded`；不因 `begin` 回退到 `required`。
+- **边界**：`partial + 索引 stale`（`freshness=stale` 且 `incomplete=true`）、`partial + 无产物`（引导重跑、保留 run 记录、状态仍 `partial`）、`partial + 活跃提案`（proposal 前沿为主、recovery 为 advisory、change 不阻断）、`重试成功 → seeded`、`重试再失败 → 保持 partial`。`status`/`next` 对同一 `partial` 输出必须一致。
+
+#### 2.27.10 扫描侧候选采信：alias-aware canonical 重算（provenance-scan-canonical-recompute）
+
+修复 issue「provenance 扫描器把指南文档里的示例章节当真实候选」。provenance 读侧（`## 逆向基线来源` 扫描器）此前仅以 `key.startsWith("<module>::")` 前缀采信候选，与写侧 `baseline-seed`（§2.27.8 的 `key === candidateKey(module, anchor)` 重算校验）强度不对齐，导致文档/教学示例里"语法真、语义假"的编造候选被当成真实 provenance 迹象。
+
+- **采信判据收紧为 canonical 重算（与写侧对齐）**：扫描器采信一候选，当且仅当 `key === candidateKey(module, anchor)` **或** `key === candidateKey(module, alias)`（任一 `alias ∈ aliases[]`）。格式合法但 hash 失配的编造/示例 key 不再被采信。
+- **必须 alias-aware**：`aliases[]` 语义是旧 anchor、改名后 `key` 保持稳定（见 §2.27 与架构 core-06 §三 身份继承）。故判据取「当前 anchor ∪ aliases 任一可重算命中」，以保留改名继承 / tombstone / superseded 的合法候选；单用当前 anchor 会误杀。
+- **读侧全链一致受益**：`feature-backfill` 候选查询、`buildBaselineCoverage` 覆盖率分母/新鲜度均按此不变量过滤——含 `## 逆向基线来源` 示例章节的文档（如存入 `reference/` 的官方指南）不再让 `feature-backfill` 对 `core` 硬报错，也不再让幽灵候选进覆盖率分母或把 freshness 打成 stale。
+- **零新约定、不改结构**：不新增 `candidates[]` 字段、不改覆盖率口径、不改 provenance 派生；合法基线项目行为逐字节不变。
+
+#### 2.27.11 legacy 缺省语义三入口统一 + sync 迁移落盘（baseline-seed-legacy-default-unify）
+
+修复「legacy adopted 项目（`bootstrap: adopted` 且 yaml 无 `baseline_seed_state` 字段）三入口缺省语义分歧」：`next` / `baseline-seed` 状态机各自本地 `?? 'required'` 推断，`status` 独家走「有候选→`seeded`，无候选→`unknown` 且不输出字段」，同一项目在不同命令下两种世界观；下游按 status JSON 契约 fail-closed 导致基线入口整体消失。
+
+**统一缺省派生规则（唯一裁决，废除 `unknown` 第三态）**：
+
+```
+effectiveBaselineSeedState(root, moduleId, explicit) → { state, legacy }
+  explicit 存在            → { state: explicit, legacy: false }
+  缺省（legacy）：
+    有候选 ∧ 有 open run   → { state: 'partial',  legacy: true }   # 与状态机「扫描中断」对齐
+    有候选 ∧ 无 open run   → { state: 'seeded',   legacy: true }   # 候选在场 = 基线事实上建立过
+    无候选                → { state: 'required', legacy: true }   # 引导逆向建基线（advisory，不设硬门）
+```
+
+- **单一事实源**：该 helper（并入 `cli/src/lib/baseline-jit.ts`）是三入口（`next` / `status` / `baseline-seed` 状态机）唯一的缺省语义权威；任何入口**禁止**持有第二份私有缺省规则（本地 `?? 'required'`、私有 `effectiveAdoptedState` 一类实现全部废除）。`legacy: true` 表示派生值（yaml 未落盘），供 legacy 迁移提示与 sync 迁移使用。
+- **候选/open run 判定**：「有候选」= `scanModuleCandidates` 对已合并权威文档扫描的候选数 > 0；「有 open run」= 该模块存在 `status: open` 的 baseline-seed run record。
+- **读锁纪律（继承 §2.27.8 F7 恢复门）**：helper 内部派生读权威文档与 run 记录，必须在**模块读锁区间**内执行（helper 自取读锁，支持外层已持锁时复用）——调用方不得在锁外派生，杜绝「门检查后锁外读半提交集合」的 TOCTOU。
+- **`unknown` 废除**：`unknown` 是无规格落点的实现层第三态，下游无法消费；本节后任何命令的任何输出（人读/JSON）不得出现 `unknown` 作为 `baseline_seed_state` 取值。
+- **不强推 brownfield 的兜底**：`required` 派生态仍为 advisory 引导（§2.27.9 不设硬门），不阻断 `openlogos change` 正常迭代。
+
+**sync 迁移落盘（legacy 缺省态物理消亡）**：`openlogos sync` 的元数据迁移（`migrate-lifecycle`）扩展——对 `bootstrap: adopted`（含历史 `skipped` 兼容读取）且无 `baseline_seed_state` 的模块，调用上述 helper 派生并把**显式枚举写入 `logos-project.yaml`**；changes 记录写明派生依据（如 `core: baseline_seed_state 缺省 → required（派生：无逆向候选）`）。已有显式值**不覆盖**；历史布尔 `baseline_seed_required` 的既有迁移行为不回归；迁移幂等。迁移后运行时派生仅作「迁移尚未执行」的过渡兜底；status 的 legacy 迁移提示文案保留，且自此指向的 sync 真实有效（不再空头）。
+
+**status JSON 契约收紧（adopted 恒输出）**：`status --format json` 对 `bootstrap: adopted` 模块**无条件输出** `modules[].baseline_seed_state`（explicit 或派生值，枚举仅 `required｜partial｜seeded`），废除「缺省 → 字段缺失」路径；**含 `baseline_commit_in_progress` 降级分支**（提交进行中同样恒输出，legacy 缺省时经派生兜底取值）。不新增 `baseline_seed_state_source` 字段（下游 fail-closed 判定 `typeof === 'string'` 在新契约下零改动自然恢复；避免契约面膨胀）。非 adopted 模块行为不变；对旧版下游为纯增量、向后兼容。
+
+### 2.28 status / next 机器契约自描述（contract 版本握手 / step_meta / facts，contract-self-description）
+
+**目标**：让 `status` / `next` 的机器契约**自描述**——driver 需要的阶段语义与确定性事实由 CLI 权威输出为结构化字段，消灭消费方的本地世界模型（本地步骤枚举表、私有 marker/文件解析、重投安全 allowlist）。拍板原则：宁慢勿错杀——多等 5 分钟看门狗远好于误杀健康 run，一切措辞与设计冲突以此裁决。
+
+**contract 版本握手**：
+
+- status/next 的 `data` 顶层新增 `"contract": {"version": "1.0.0"}`（语义化契约版本，独立于 CLI 版本）。
+- SemVer 规则：**major** = 必填字段删除/改义、闭合枚举语义变化（含移除值）、既有字段挂出判据变更；**minor** = 向后兼容扩展（新增可选字段、闭合枚举新增值）；**patch** = 不改形态与语义的澄清。
+- 版本-schema 一一映射：`spec/schema/status.schema.json`、`spec/schema/next.schema.json`（内嵌契约版本号，随 npm prepack 打包）；响应 `contract.version` 与打包 schema 版本一致，CI 校验。
+- 消费方约定（规范性引用，验收归 runlogos R5）：未知 major / 缺 `contract` 字段 → 保守模式（仅 next 驱动普通推进 + 看门狗，启发式判定降级为仅观察）；契约内任何枚举遇未知值 → 保守分支。
+
+**step_meta 与步骤注册表**：
+
+- `modules[].active_change.step_meta = {"phase", "kind"}`；`phase ∈ pre-implement|implement|post-implement`；`kind ∈ produce|gate|command-required|residency`。
+- 唯一铸造点 = `cli/src/lib/step-registry.ts`（收敛 `detectProposalStep` 与 `detectProposalStepViaFlow` 双镜像及 status/next 覆盖点）；CI lint：字面量赋 proposal_step 不经注册表 → 测试失败。
+- 全量注册表（**不新增 proposal_step 枚举值**）：
+
+| proposal_step | phase | kind |
+|---|---|---|
+| writing | pre-implement | produce |
+| ready-to-delta | pre-implement | gate |
+| delta-writing | pre-implement | produce |
+| ready-to-merge | pre-implement | gate |
+| merge-generated | pre-implement | command-required |
+| spec-complete-required | pre-implement | command-required |
+| test-id-required | pre-implement | residency |
+| ready-to-implement | pre-implement | residency |
+| coding | implement | produce |
+| ready-to-verify | implement | command-required |
+| verify-failed | implement | residency |
+| verify-passed | post-implement | residency |
+| ready-to-deploy | post-implement | gate |
+| deploy-done | post-implement | residency |
+| ready-to-smoke | post-implement | command-required |
+| smoke-passed | post-implement | residency |
+| smoke-failed | post-implement | residency |
+| implementing（旧兼容） | implement | produce |
+| in-progress（旧兼容） | implement | produce |
+
+- `step_meta` 不构成第二枚举——phase/kind 为小闭合枚举，且契约明文规定消费方遇未知值必须走保守分支。
+
+**facts 权威事实块**：
+
+- `modules[].active_change.facts = {"spec_complete", "slices_planned", "slices_approved", "code_required", "has_delta_tasks", "verify_pass"}`（全布尔，仅活跃提案时输出）。
+- CLI 权威计算：spec_complete = SPEC_MERGED/MERGED 在场；slices_planned = tasks.md `[code]` 含真实脱占位条目；slices_approved = SLICES_APPROVED marker 在场；code_required / has_delta_tasks 沿现行判定；verify_pass = VERIFY_PASS marker。单一事实源在 CLI，driver 的自读/私有解析降级为低版本 fallback。
+- facts 与 `loop_state` 激活判据**同源**（同一份计算，不允许两处实现），driver 可直接从 facts 读出「implement 是否已进入」。
+
+**golden 与不变量破坏声明（主动破例）**：新增 `data` 顶层 `contract` 对象打破「data 顶层逐字节不变（golden 零漂移）」——全部 9 个 golden 基线快照重拍，破坏性集中在此、随大版本发布；`active_change` 新增 `step_meta` / `facts` 走 `spec/cli-json-output.md` 既有可控扩展口径（仅有活跃提案的 golden 重拍，无活跃提案项目零漂移）。
+
+**验收边界**：本项目只验**生产者契约**——注册表/step_meta/schema 三方同步；`pre-implement 步骤不输出 loop_state` 的反面锚（漂移注入 `x-future-step` 生产者一致性测试）；`contract.version` 与打包 schema 一致。消费方保守模式 / 零误杀 / suspect 可逆态验收归 runlogos R5 提案；双向契约测试是跨仓总方案完成定义。
+
+### 2.29 feature 功能分组层（add-feature-model）
+
+在 module（部署/生命周期单元，粗）与 scenario（单一时序，细）之间引入**可选的 feature（功能）分组层**，补上缺失的轻量组织/导航层，并接回已有的 `2-product-design/1-feature-specs/` 文档。
+
+- **定位**：feature 只承担组织/导航语义（把场景聚成能力域），**不复制** module 的 lifecycle/deployment/product_type/baseline 重语义；feature **归属单一 module**（子分组、不跨 module）。
+- **范式（AI 维护、CLI 只读）**：`feature_counter.next_id`、`features[]`、`scenario.feature` 由 AI 维护（比照 `scenario_counter`：读→用作 F0X→+1 写回），CLI 不新建取号机制。
+- **模型字段**：`features[]` 元素 `{id, name, module, spec?}`；`feature_counter.next_id`；`scenario.feature?`。ID 项目全局唯一、格式 `F0X`（>99 进位三位）；`spec` = feature-specs 文档序号（如 `core-01`，无 `.md`/无锚点），目标缺失视为未链接。
+- **计数器冲突恢复（两步式，无歧义）**：`allocated = max(configured_next_id, max(existing)+1)`，用 `allocated` 创建，持久化 `feature_counter.next_id = allocated + 1`（例：已有 F05 + next_id=3 → F06、持久化 7、下次 F07）。
+- **CLI 能力边界**：
+  - `openlogos feature list [--module <id>] [--format json]`：只读列出各 module 下 feature 桶及成员列表；未注册 module → 错误码 `MODULE_NOT_FOUND`；空列表 → `features:[]` 退出码 0。
+  - `openlogos feature-backfill [--module <id>] [--format json]`：复刻 `openlogos index` 范式——CLI 只生成回填 prompt（打包场景清单 + 现有 feature-specs 文档 + 当前 yaml）写入 `logos/feature-backfill-prompt.md`，**不改 yaml**；由 AI 语义聚类回写；幂等、只补未分组、非强制。
+  - `status`/`next` 输出条件（回应 delta-F10）：**省略 `features` 当且仅当**该 module 既无注册 feature（`features[]` 中 module==本 module）**且**其下无任何场景带 `feature` 键。**只要**有 ≥1 个注册 feature**或**有 ≥1 个场景带 `feature` 键（含未知/跨 module 悬空引用）即**输出**：列出每个注册 feature（空成员 `scenarios:[]`），末位 `__ungrouped__`（当且仅当有未归属/降级场景）。因此显式写了未知/跨 module 引用的场景**一定**出现在 `__ungrouped__`，不会因"无注册 feature"被省略丢失。
+  - **条件版本（回应 delta-F1=B）**：全响应无任何 `features`（纯 pre-feature 项目）时 `contract.version` **保持 `1.0.0`**、输出**逐字节完全不变（含版本字段）**；任一 module 输出 `features` 时响应 `contract.version=1.1.0`。`features` 出现 ⟺ `1.1.0`；`1.0.0` 响应永不含 `features`。
+  - `feature list`（专用分组视图，回应 delta-F10）：无 legacy golden、不受零漂移约束——对每个 module 始终展示全部注册 feature（空成员 `[]`）+ `__ungrouped__`（当该 module 有未归属/降级场景）；module 有场景但无注册 feature 时返回 `[{__ungrouped__}]`（非 `[]`）。`features:[]` 仅用于**真正空 module**（无注册 feature 且无场景成员）。
+- **空 feature 展示（回应 delta-F4）**：合法模型允许先登记 F01 再逐步归属；此时 F01 成员为空但**必须保留**、输出 `scenarios:[]`（不过滤）。status/next 与 feature list 对**已输出**的 feature 集合一致；差异仅在 status/next 为保零漂移对纯 pre-feature 项目省略字段，而 feature list 始终展示分组。
+- **feature_counter 缺失语义（回应 delta-F7）**：`feature_counter` 或其 `next_id` 缺失时（存量首次回填的主输入），`configured_next_id = feature_counter?.next_id ?? 1`，再执行两步式冲突恢复 `allocated = max(configured_next_id, max(existing)+1)`。首次回填从 `F01` 开始。
+- **五条不变量**：① feature 完全可选（纯 pre-feature 项目**逐字节完全等同今天，含 `contract.version` 保持 1.0.0**，双向 CLI 兼容）；② 混合态合法（"未分组"桶）；③ 不承担 lifecycle/deployment；④ 归属降级（`scenario.feature` 缺失/未知/跨 module 三态一律入所属 module 的"未分组"桶，不报错、不阻断；**不**类比 `scenario.module` 的兜底行为，也不改动它）；⑤ 契约条件版本 minor（`contract.version` **仅在响应含 `features` 时** `1.1.0`，否则保持 `1.0.0`；两版 schema 并存、`features`⟺`1.1.0`，见 2.28 / `spec/cli-json-output.md`）。
+- **存量迁移（A + B）**：A 惰性可选（升级零改动、按需回填）；B 一键回填（`feature-backfill` 生成 prompt、AI 回写、幂等）；迁移永不被 `launch`/`verify` 强制。
+
+### 2.29.1 feature-backfill 纳入逆向候选（feature-backfill-brownfield）
+
+接回 `add-feature-model`（2.29）与 `brownfield-adopter`（2.27）之间的断链。原 `feature-backfill` 只以顶层 `scenarios[]` 为输入，而 S33 逆向产出的场景候选存于 `## 逆向基线来源` 章节 + `baseline_index`（未进 `scenarios[]`），导致逆向接入的存量项目在 feature 侧看不见、也无从聚类。
+
+**方案 A（读侧扩展 + AI 回写登记，CLI 仍只生成 prompt）**：
+
+- **读侧扩展(场景候选唯一查询,回应 F1)**：`feature-backfill` 生成 prompt 时,除 `scenarios[]` 外**只纳入逆向"场景候选"**。因 `BaselineCandidate` 无 `kind` 字段、`scanModuleCandidates` 会混入 system-map 候选,故权威筛选 = 读**已提交 run manifest** 的 `kind==scenario-candidates → target_path`,只取这些文档 `## 逆向基线来源` 的 `candidates[]`,筛选谓词**固定为 `state=="active" && verified==false`**（`verified:true` 已人工确认候选**排除**,不纳入、不计数——它们由 S33 JIT 确认流治理);run 历史缺失/迁移项目按目标类型/命名约定回退,仍不可定类则走降级(不静默计 0)。纳入项全部 `verified:false`,prompt 中**如实标注**"逆向候选 · 未进 scenarios[] · provenance verified:false"。
+- **提交恢复门(回应 F2)**：`feature-backfill` 是新的基线机器消费者,候选筛选/计数/prompt 构造**全部在 `withRecoveredReadLocks` 同一读锁临界区内**完成（检测/恢复 `prepared`/`committing` journal);无法取锁/恢复 → `--format json` 错误码 `BASELINE_COMMIT_IN_PROGRESS`、非零退出、**不写/不覆盖** prompt。无 `--module` 按 `modules[]` 顺序取多 module 锁。
+- **AI 回写职责(scenario 取号契约,回应 F3)**（prompt 指令）：对 `scenarios[]` 已有场景 + 逆向候选一并聚类;对逆向候选**登记为新场景**——复用 scenario 全局取号（`spec/module-naming-convention.md`）:`configured_next_id = scenario_counter.next_id ?? 1`、`allocated = max(configured_next_id, max(existing S)+1)`,按确定顺序逐个分配唯一 `SXX`、持久化 `next_id = 最后分配+1`;每场景写 `{id, name:<候选 anchor/display>, module:<候选所属 module>, feature:F0X}`;feature 取号沿用 2.29 `feature_counter`。**不改动候选 provenance `verified` 状态**。
+- **输出契约(必填字段,回应 F4)**：`feature-backfill --format json` 的 `data` **必含** `baseline_candidates_total`（integer ≥0,键恒在场):**最终写入 prompt 的场景候选数**（kind+module+state+去重全部过滤后)。"向后兼容"指响应**新增该键**,而非可省略;消费方据此区分"零候选"与"旧实现无键"。
+- **`--module` 口径(回应 F5)**：传 `--module` 只纳入该 module 候选、未注册 module → `MODULE_NOT_FOUND`(与 `feature list` 一致);无 `--module` 按 `modules[]` 顺序聚合全项目;`baseline_candidates_total` 恒等于过滤后最终纳入数。
+
+**必须守住的不变量（逐条）**：
+
+1. **导航 ≠ 可信度（核心红线）**：把逆向候选登记进 `scenarios[]` 只是导航/分组注册，**绝不**赋予 provenance `verified:true`。`## 逆向基线来源` 的 `verified:false` 仍是权威；S33 覆盖率 `coverage = human_verified /（存活 ∪ 未确认 tombstone)` 完全不变、不虚增。
+2. **status/next 零漂移不变**：status/next 仍**只读 `scenarios[]`**（不直接读逆向候选）。非存量项目、以及 AI 尚未回写前的存量项目，输出逐字节不变、条件版本沿用 2.28（无 features → `1.0.0`）；**不**让 status/next 直接吞逆向候选（否则 adopted 项目会凭空长出 `features`、破坏零漂移）。
+3. **CLI 只读 + 生成 prompt 不变**：`feature-backfill` 不取号、不改 yaml、不启动 AI；登记 `scenarios[]` + feature 由 AI 按 prompt 回写。
+4. **非存量项目零改动**：无 `baseline_index` / 无逆向候选时行为与今天一致（`baseline_candidates_total=0`、prompt 无候选段）。
+5. **不改 merge / provenance 协议**：不引入双有序 delta、不嵌套 change、不扩展 provenance schema。
+
+**与 2.27 的桥接关系**：S33 负责"逆向出场景候选 + 追踪可信度"；本扩展负责"把这些候选组织成 feature 分组供导航"。两者操作不同结构（provenance 章节 vs `scenarios[]`）、互不改写对方语义。
+
+### 2.29.2 feature-backfill 错误可诊断性：触发文件路径 + 失败分类（provenance-scan-canonical-recompute）
+
+扩展 §2.29.1：`feature-backfill` 报 `BASELINE_PROVENANCE_INVALID` 时，错误 message / JSON envelope 附上判定为 provenance 的**触发文件相对路径清单**与失败原因**分类**，把「只报模块名、需源码级逐环节排查」降为一眼定位。
+
+- **`paths[]`**：本次判定为 provenance 迹象、导致失败的文件相对项目根路径清单（确定性排序）。
+- **`reason` 分类**：`unparseable`（权威/约定目标 `## 逆向基线来源` 坏 fenced YAML）| `unclassifiable-evidence`（有 provenance/baseline_index 迹象但无 committed run manifest 且无约定命名文件、不可定类）。
+- 该增强为**向后兼容**（错误 envelope 新增字段，不改错误码语义、不改退出码、不改「不写/不覆盖 prompt」红线）。与 §2.27.10 的 canonical 采信配合：真正因编造/示例 key 产生的假迹象在采信阶段即被排除、不再进入本错误路径；进入本路径的必是真实坏结构或真不可定类，`paths[]` 直接指向问题文件。
+
 ## 三、功能验收摘要
 
 ### S01
@@ -707,6 +1007,12 @@ launched `implement` 默认以切片循环推进：切片来自 `tasks.md` `[cod
 ### S32
 
 launched 含代码提案在 spec-complete 后必须进入独立的 `slice` 子流程（`when: code_required`）：`plan-slices` 节点由 `slice-planner` 对**已完成 spec-complete 的规格 + 真实 `UT/ST/SMOKE` ID**划分 `[code]` 切片，内置六维打分 + 垂直/横向判别器 + 删后续证伪门 + 逃生口。纯代码提案无 `[delta]` 时不进入 `write-delta`，但必须通过 no-delta merge 写入 `SPEC_MERGED` 后才可进入 `plan-slices`。缺 spec-complete 或缺真实测试 ID 时，`next/status` 必须返回结构化阻塞，不得派发 `slice-planner`。
+
+### S33
+`adopt` 接入后必须写入 `baseline_seed_state: required` 并衔接逆向建基线：AI 会话/driver 检测该状态后派发 `brownfield-adopter` 产出**种子基线**（system-map + 场景候选清单，每份含 `## 逆向基线来源` 与 `candidates[]`：`verified: false`、provenance 派生为 `reverse-engineered`），经 `openlogos baseline-seed commit` 由 CLI 计算 `partial`→`seeded`；CLI 本身绝不启动 AI、不声称基线已建立，能力缺失时降级输出可复制提示并保持 `required`。后续 `change` 触碰未验证逆向区域时 change-writer 给 advisory（不设硬门），建议在单份最终态 delta 内一并确认现状（`verified: true` + `confirmed_by`/`evidence`）；`human-verified` 仅 merge 后生效，覆盖率采 tombstone 分母法不虚增，`verify` 对未验证逆向 spec 仅软告警不硬失败；存量 provenance 迁移保守逐产物、缺章节标 `unknown`/`legacy-unclassified`、不伪造不降级。
+
+### S34
+feature 是 module 与 scenario 之间的**可选轻量分组层**：由 AI 维护 `feature_counter`/`features[]`/`scenario.feature`，CLI 只读消费。`status`/`next` 输出 `features` 当且仅当 module 有 ≥1 个注册 feature **或**有 ≥1 个场景带 `feature` 键（每个注册 feature，空成员为 `scenarios:[]`，末位 `__ungrouped__` 仅当有未归属/降级场景）；仅在 module 既无注册 feature 且无场景带 `feature` 键时省略字段——**未知/跨 module 引用一定进入 `__ungrouped__`、不被省略（delta-F10）**。`feature list` 为专用分组视图，module 有场景无注册 feature 时返回 `[{__ungrouped__}]`，`[]` 仅用于真正空 module。`openlogos feature list` 只读呈现分组与成员列表 `scenarios:[{id,name}]`（成员列表与 phase 无关，不复用依附 phase 的 `scenario_coverage`）；未注册 module 报 `MODULE_NOT_FOUND`。`openlogos feature-backfill` 只生成 AI 回填 prompt（打印 `prompt_path`）、不改 yaml、幂等；缺 `feature_counter.next_id` 时默认 `?? 1`（首次回填从 F01 起）。**feature-backfill 纳入逆向候选（feature-backfill-brownfield，见 2.29.1）**：生成 prompt 时复用 S33 provenance 只读入口一并纳入逆向场景候选（标注 verified:false / 未进 scenarios[]），AI 回写时登记进 `scenarios[]` 并分配 feature 但**不改 provenance verified**；`--format json` 增 `baseline_candidates_total`；status/next 仍只读 `scenarios[]`、adopted 项目回写前零漂移。`scenario.feature` 缺失/未知/跨 module 三态一律降级为"未分组"、不报错。**条件版本（delta-F1=B）**：`modules[].features` 属 minor 扩展；`contract.version` 仅在响应含 `features` 时升 `1.1.0`，纯 pre-feature 响应保持 `1.0.0`、**逐字节完全不变**；两版 schema 并存、`features`⟺`1.1.0`。
 
 ## 自动 driver 完成回报韧性
 

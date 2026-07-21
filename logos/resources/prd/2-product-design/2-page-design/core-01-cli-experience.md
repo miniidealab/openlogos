@@ -119,7 +119,7 @@ JSON 输出应包含：
 
 ### 2.5 adopt
 
-`openlogos adopt` 为已有项目接入专用命令。它不是轻量补丁命令，而是“只跳过 Initial 文档门禁的 init”：必须完成与 `init` 同级别的 OpenLogos 基础设施初始化，然后用 `bootstrap: adopted` 标记存量项目接入来源。
+`openlogos adopt` 为已有项目接入专用命令。它不是轻量补丁命令，而是“只跳过 Initial 文档门禁的 init”：必须完成与 `init` 同级别的 OpenLogos 基础设施初始化，然后用 `bootstrap: adopted` 标记存量项目接入来源，并写入模块级枚举 `baseline_seed_state: required` 衔接逆向建基线（S33）。
 
 **检测与确认阶段**
 ```text
@@ -146,6 +146,7 @@ openlogos adopt --locale zh --ai-tool all
 ✓ 写入 AGENTS.md / CLAUDE.md
 ✓ 部署所选 AI tools 的 Skills / 插件 / 命令资产
 ✓ 部署 OpenLogos 规范文件到 logos/spec/
+✓ 标记待建现状基线（baseline_seed_state: required）
 ```
 
 **verify 预跑配置阶段**
@@ -176,12 +177,20 @@ openlogos adopt --locale zh --ai-tool all
   · OpenLogos 基础设施已完整初始化
   · Initial 文档基线已跳过，不强制要求
   · 模块生命周期直接设为 launched
+  · 现状基线待建立（baseline_seed_state: required）
 
-建议的下一步：先补充项目基线文档
-  → openlogos change add-baseline-docs
-  在变更提案中逐步补写需求、架构、场景、测试用例，
-  把 TDD 思想贯彻到每一次迭代中。
+建议的下一步：逆向建立现状基线（种子基线，非权威意图）
+  由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单，
+  每份产物带 provenance 标记（reverse-engineered / verified: false）。
+  存量代码 grandfather 豁免，可信边界随后续 change 触碰而前移。
 ```
+
+> **能力缺失时的降级输出**（CLI-only / 非交互 CI / AI 不可用）：adopt 不启动 AI、不声称基线已建立，保持 `baseline_seed_state: required` 并输出可复制的后续提示：
+> ```text
+> ⚠ 未检测到可用的 AI 会话来逆向建立现状基线。
+>   现状基线仍待建立（baseline_seed_state: required）。
+>   请在支持 brownfield-adopter 的 AI 会话中继续，或稍后重试。
+> ```
 
 **异常：logos/ 已存在**
 ```text
@@ -191,20 +200,48 @@ openlogos adopt --locale zh --ai-tool all
 
 ### 2.6 next（存量项目接入无提案时）
 
-`bootstrap: adopted` 且无活跃提案时，`openlogos next` 输出固定引导。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
+`bootstrap: adopted` 且无活跃提案时，`openlogos next` 按 `baseline_seed_state`（`required` / `partial` / `seeded`）输出建基线或深化引导，并展示现状基线覆盖率。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
 
+**种子基线待建立（`baseline_seed_state: required`）**
 ```text
 $ openlogos next
 
-📌 当前状态：已接入（存量项目接入模式），尚无活跃变更提案
+📌 当前状态：已接入（存量项目接入模式），现状基线待建立
 
-建议的下一步：先补充项目基线文档
-  → openlogos change add-baseline-docs
-  在变更提案中逐步补写需求、架构、场景、测试用例，
-  把 TDD 思想贯彻到每一次迭代中。
-
-补文档提案归档后，openlogos next 将恢复正常阶段建议。
+建议的下一步：逆向建立现状基线
+  由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单
+  （种子基线：provenance=reverse-engineered / verified=false）。
 ```
+
+**种子基线部分建立（`baseline_seed_state: partial`，扫描未完成 / 中断可恢复）**
+```text
+$ openlogos next
+
+📌 当前状态：已接入（存量项目接入模式），现状基线部分建立（扫描未完成）
+
+现状基线覆盖率：incomplete（已落盘候选 5，扫描未完成，暂不计算精确百分比）
+
+建议的下一步：完成现状基线（恢复扫描）
+  → openlogos baseline-seed commit --module core --run-id <run_id>   # 续提交已落盘产物
+  或重新 openlogos baseline-seed begin 派发扫描补齐缺失产物。
+  也可先发起 openlogos change 业务迭代（不强制先恢复）。
+```
+
+**种子基线已建立（`seeded`），展示覆盖率**
+```text
+$ openlogos next
+
+📌 当前状态：已接入（存量项目接入模式），现状基线已建立
+
+现状基线覆盖率：human-verified 0 / 候选 12（含 tombstone 0）
+  覆盖率随后续 change 触碰逐区域前移；无新增人工确认时不虚增。
+
+建议的下一步：正常发起 openlogos change 迭代
+  触碰只有未验证逆向 spec 的区域时，change-writer 会建议在本次
+  最终态 delta 内一并确认该区域现状（不设硬门）。
+```
+
+> `partial` 是**持久化恢复态**（非瞬时）：`status` 与 `next` 输出必须一致，且不把已落盘候选当最终分母算精确百分比（标 `incomplete`）。**本节为「无活跃提案」情形**，故 partial 主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed`）；**存在活跃提案时改为「proposal 前沿为主、partial 恢复作 `baseline_coverage.recovery` advisory」**（见 §2.22 优先级）。覆盖率无法可信重算时（派生索引缺失/过期/解析失败）显示 `unknown`/`stale`，不输出貌似精确的百分比。`next` 不得把未建立/部分建立的种子基线显示为已建立。
 
 ### 2.7 flow show
 
@@ -556,22 +593,26 @@ $ openlogos next
   下一节点：quality-gate · skill: （无） · working_agent: my-qa-agent
 ```
 
-`--format json` 下，`next` 的 success envelope 新增 `next_node` 对象，挂载与 `current_node` / `loop_state` 同构（有 `modules[]` → `modules[].next_node`，legacy 回退顶层 `next_node`）；`skill` / `working_agent` / `review_agent` / `pre_script` / `post_script` 固定存在、`string | null`：
+`--format json` 下，`next` 的 success envelope 新增 `next_node` 对象，挂载与 `current_node` / `loop_state` 同构（有 `modules[]` → `modules[].next_node`，legacy 回退顶层 `next_node`）；`skill` / `working_agent` / `review_agent` / `pre_script` / `post_script` 固定存在、`string | null`；每个 `next_node` **恒带完整** `dispatch: {"idempotent": bool, "timeout_seconds": int, "artifacts_hint": string[]}`，节点可另声明 `requires_reviewed: string[]`（如 apply-merge 声明 `requires_reviewed: ["proposal","delta"]`，contract-self-description）：
 ```jsonc
 // 有 modules[] 的项目
-{"command":"next","version":"<cli-version>","data":{"modules":[
+{"command":"next","version":"<cli-version>","data":{"contract":{"version":"1.0.0"},"modules":[
   {"id":"core","next_node":{
     "id":"code","name":"代码实现","subflow_id":"implement",
     "skill":"code-implementor","working_agent":null,"review_agent":"my-code-reviewer",
-    "pre_script":null,"post_script":null
+    "pre_script":null,"post_script":null,
+    "dispatch":{"idempotent":true,"timeout_seconds":3600,"artifacts_hint":["logos/resources/verify/test-results.jsonl"]}
   }}
 ]}}
 // legacy 无 modules 的项目 → 顶层 next_node
-{"command":"next","version":"<cli-version>","data":{"next_node":{
+{"command":"next","version":"<cli-version>","data":{"contract":{"version":"1.0.0"},"next_node":{
   "id":"verify","name":"验收","subflow_id":"implement",
-  "skill":null,"working_agent":null,"review_agent":null,"pre_script":null,"post_script":null
+  "skill":null,"working_agent":null,"review_agent":null,"pre_script":null,"post_script":null,
+  "dispatch":{"idempotent":true,"timeout_seconds":900,"artifacts_hint":["logos/resources/verify/acceptance-report.md"]}
 }}}
 ```
+
+**dispatch 数据源与保守默认**：权威数据源 = flow 节点定义（内置模板逐节点人工声明，**不从 produces/done_when 推导**）；overlay-add 未声明 → 保守默认 `{idempotent:false, timeout_seconds: defaults.dispatch.timeout_seconds, artifacts_hint: []}`；`artifacts_hint: []` ＝「产物未知」契约语义：消费方不得据此判死，只能升级观察。
 
 **省略 `next_node` 的情形**（命令级建议或例外，文本不显示「下一节点」行、JSON 不含该字段）：
 - `all_done`（流程走完）、无 active proposal（建议 `openlogos change <slug>`）、补 baseline 文档（`openlogos change add-baseline-docs`）、`openlogos launch` 等命令级提示；
@@ -580,7 +621,7 @@ $ openlogos next
 
 **与 cmd / loop / --auto 正交**：`next_node` 不覆盖 cmd（S26）/ loop（S27）/ `--auto`（S24）既有字段，三者照常输出；loop 阻塞未达上限时 `next_node` 指向 loop 工作节点（`code`，对齐 action「修代码」而非 verify），与 `loop_state` 并存互补。
 
-**不变量**：`status` / `watch` 输出不受影响（本切片不动它们）；`next` 仅对有当前节点的项目新增 `next_node`，golden 快照按预期仅此一处更新。
+**不变量**：`status` / `watch` 输出不受影响（本切片不动它们）；`next` 仅对有当前节点的项目新增 `next_node`。golden：contract-self-description **主动破例**打破「next_node 既有 8 字段逐字节不变」锚——新增 `dispatch` / `requires_reviewed` 子字段，next golden（用例 2/6）重拍。
 
 ### 2.13.1 S31 切片子任务 checkbox 的 JSON 输出
 
@@ -925,3 +966,418 @@ JSON 约束：
 已完成 no-delta spec-complete：该提案没有规格 delta，已写入 SPEC_MERGED。
 下一步：重新运行 openlogos next，根据测试 ID 门禁进入 plan-slices 或返回阻塞诊断。
 ```
+
+### 2.16 change：GUI 项目 proposal.md「UI/UX 变更声明」段注入
+
+对已 `launched` 的 **GUI 产品项目**（`product_type` ∈ 网站 / 桌面 / 移动 App），`openlogos change <slug>` 在生成 `proposal.md` 时，模板额外注入一节机器可读的「UI/UX 变更声明」段。CLI 本次范围**只动模板注入**，**不新增 `--ui` 等命令行为、不新增门态、不新增确认标记**；注入的声明段供 change-writer 在 plan 阶段填写「本次动没动界面 + 原型页清单」。
+
+**非 GUI 项目（纯 CLI / API / Skills）不注入该段，`openlogos change` 输出与流程逐字节零改动。** 是否注入仅由 `product_type` 决定，判定「动没动界面」由 change-writer 在 plan 阶段依提案意图 + `product_type` + `tasks.md` 的 `[delta]` 目标完成，`openlogos change` 只负责放置声明段占位、不做界面判定。
+
+**GUI 项目 `openlogos change` 成功输出（示意，含声明段注入提示）**：
+
+```text
+$ openlogos change refresh-dashboard-cards
+
+✓ 已创建变更提案：logos/changes/refresh-dashboard-cards/
+✓ 写入 proposal.md（含「UI/UX 变更声明」段）
+✓ 写入 tasks.md
+✓ 写入 guard 文件：logos/.openlogos-guard
+
+检测到 GUI 项目（product_type: website）：
+  · proposal.md 已注入「UI/UX 变更声明」段（ui_impact + 声明页清单占位）
+  · 若本次触及界面，请在 plan 阶段用 ui-ux-pro-max 产出 page-design 原型，
+    作为 deltas/prd/2-product-design/2-page-design/core-NN-<slug>.html 写入
+    （原型将在批准提案时随面板渲染一并确认）
+
+下一步：用 change-writer 填写 proposal.md / tasks.md，并声明 ui_impact
+```
+
+**注入的「UI/UX 变更声明」段占位（写入 `proposal.md`，保持 markdown 结构不变）**：`openlogos change` 只写入占位结构，具体值由 change-writer 填。占位以标准 markdown 小节承载，含 `ui_impact` 布尔声明、机器可读的 `design_system_mode`（默认 `generated`；降级时须置 `fallback` 并填 `design_system_fallback_reason`）与结构化声明页清单占位，**不打断 CLI / runlogos 对 `proposal.md` 的解析**：
+
+```markdown
+## UI/UX 变更声明
+
+- ui_impact: <true | false>   # 本次是否触及界面（GUI 项目必填）
+- design_system_mode: <generated | fallback>   # 机器可读：generated=走设计系统产令牌；fallback=降级（如 Python3 缺失）
+- design_system_fallback_reason: <降级原因，仅 design_system_mode:fallback 时必填，如「Python3 缺失」>
+- design-system.json: <ui-ux-pro-max 令牌产物路径；仅 design_system_mode:generated 时产出并要求，fallback 时不产/不要求>
+- 声明页清单（ui_impact:true 时逐页列出，与 2-page-design/ 下原型文件一一对应）：
+  - id: <unique-page-id>
+    prototype: core-NN-<slug>.html   # 仅 basename；禁 .. / 子目录；扩展名必须 .html；全清单唯一
+    description: <一句话说明该屏/状态>
+```
+
+**要点（CLI 体验层面）**：
+- `proposal.md` 保持既有 markdown 结构（标题层级、既有各段顺序不变），声明段作为一节追加，避免打断下游对 proposal 的解析。
+- 声明段是**机器可读**的：`ui_impact` 是「本次动没动界面」的单一权威意图源；`design_system_mode`（`generated | fallback`）是「是否走了设计系统」的单一权威事实源，供 checker `check-ui-prototype` 分流对账（`generated` 要求合法非空 `design-system.json` 令牌；`fallback` 禁伪造令牌、不要求 `design-system.json`、须填 `design_system_fallback_reason`）。
+- 声明页清单占位为**结构化记录**（每页一个 `id` + 精确 `prototype` basename + `description`），供 change-writer 逐页填写。`prototype` 只取 basename（禁 `..` / 子目录，扩展名必须 `.html`，全清单唯一），是与 `2-page-design/` 下实际产出原型文件做完整性对账的键：checker 按精确 basename 集合比较（排序无关；重复 / 额外 / 缺失均失败），`PLAN_APPROVED.pages` / `hashes` 复用同一 basename 键（对账契约在 `spec/change-management.md` / `spec/proposal-ui-ux-first.md`，此处只描述 CLI 呈现）。
+- `openlogos change` **不生成原型、不判定界面、不做对账**——仅放置声明段占位并给出引导提示；原型产出与对账发生在 plan 阶段的 change-writer 环节。
+- Python3 缺失导致 ui-ux-pro-max 无法运行时，不阻塞 `openlogos change`；提案照常创建，change-writer 后续以通用风格兜底、置 `design_system_mode: fallback` 并填 `design_system_fallback_reason`（不产 / 不要求 `design-system.json`）。
+
+**异常与边界**：
+- 非 GUI 项目：不注入声明段，`openlogos change` 输出无「检测到 GUI 项目」提示，与现状一致。
+- guard 冲突（已有活跃提案）：沿用现有 `openlogos change` guard 冲突提示，声明段注入不改变该异常行为。
+
+### 2.17 status / next 的 `capabilities` 段呈现（CLI 输出层面）
+
+`openlogos status` / `openlogos next` 在输出中新增 `capabilities` 段，用于在 CLI 层面呈现当前会话是否具备 UI 原型渲染能力（`ui_prototype_render`），供宿主 / driver 在 plan-exit **之前**据此选择渲染确认模式或降级模式。**详细契约见 `spec/cli-json-output.md`，此处只描述终端呈现体验。**
+
+**文本模式（GUI 项目、能力就绪）**：能力就绪时，`status` 可就近提示 UI 原型将随面板渲染确认：
+
+```text
+$ openlogos status
+
+📊 OpenLogos Project Status
+...（既有 phase / proposal_step 面板不变）...
+🧩 能力（capabilities）
+  · ui_prototype_render：就绪 → 批准提案时面板渲染原型即构成 UI 确认
+```
+
+**文本模式（能力缺失 / 旧面板 / CLI-only）**：能力缺失时如实呈现降级，**不 claim UI 已确认**，且不阻断：
+
+```text
+🧩 能力（capabilities）
+  · ui_prototype_render：缺失（降级）→ 批准仅为普通方案批准，不构成 UI 视觉确认
+    提示：可直接打开原型 .html 自行确认
+```
+
+**JSON 模式**：`status` / `next` 的 success envelope 在 `data` 增 `capabilities` 段（如 `{"ui_prototype_render": true|false}`）；能力信号来源与解析规则见 `spec/cli-json-output.md`。
+
+**不变量**：
+- 非 GUI 项目 / 无能力输入通道时，`capabilities` 段可省略或全为默认降级值，`status` / `next` 输出与未引入本特性时保持兼容。
+- 该段仅供 plan-exit **之前**的模式选择；plan-exit **之后**的 merge / 落盘强制语义一律以持久化的 `PLAN_APPROVED` provenance 为准，不因当前会话 capability 缺失而降级（详见 `spec/change-management.md`）。
+
+## 存量项目 product_type 迁移与回填（CLI 体验）
+
+> **背景（F1 critical）**：UI-first 的目标受众是**已 `launched` 的 GUI 项目**，但这些存量项目早已跑完 `init`/`adopt`，升级后不重跑采集，其 `logos-project.yaml` 的 `modules[]` 普遍**缺 `product_type` 字段**。按「缺失=非 GUI」安全默认，UI-first 对它们完全不可达。本段描述补齐迁移路径后的**终端体验**：回填命令、缺字段诊断、`module add` 采集、`--auto` 下暴露 next action。**数据源 / 枚举 / 迁移语义的权威定义在 `spec/logos-project.md`；机器可读 JSON 契约在 `spec/cli-json-output.md`，此处只描述人类可读的终端呈现。**
+>
+> 枚举：`web | desktop | mobile | cli | api | library | skills | service`；GUI 集合 = {`web`, `desktop`, `mobile`}。
+
+### 2.18 `openlogos module set-product-type <module-id> <enum>` 终端体验
+
+显式、幂等、带校验地写入 / 更新 `logos-project.yaml` 中 `modules[<module-id>].product_type`，是存量模块开启（或关闭）UI-first 的**唯一受支持回填入口**。
+
+**成功（首次设置为 GUI 枚举，提示下一步 sync 注入 overlay）**：
+
+```text
+$ openlogos module set-product-type web web
+
+✓ 已更新模块 web 的 product_type：web（GUI）
+  · logos-project.yaml → modules[web].product_type: web
+
+检测到项目现含 GUI 模块：
+  · 下一步运行 openlogos sync 将幂等注入 gui-ui-first overlay
+    （节点 write-ui-prototype / verify-ui-provenance）
+  · 该模块的后续提案将启用 UI-first（ui_impact 可为 true）
+```
+
+**成功（设置为非 GUI 枚举）**：不引导 overlay 注入，保持零改动语义。
+
+```text
+$ openlogos module set-product-type api api
+
+✓ 已更新模块 api 的 product_type：api（非 GUI）
+  · logos-project.yaml → modules[api].product_type: api
+  · 非 GUI：不注入 overlay，变更流程零改动
+```
+
+**幂等 no-op（值与当前相同）**：不报错、不产生多余写入，可安全重复执行。
+
+```text
+$ openlogos module set-product-type web web
+
+✓ 模块 web 的 product_type 已是 web，无需变更（no-op）
+```
+
+**非法枚举（报错并列出全部合法枚举，非零退出）**：
+
+```text
+$ openlogos module set-product-type web frontend
+
+✗ 非法的 product_type：frontend
+  合法枚举：web | desktop | mobile | cli | api | library | skills | service
+  （GUI 集合 = web / desktop / mobile）
+```
+
+**未知 module（报错指明 id 不存在，非零退出）**：
+
+```text
+$ openlogos module set-product-type payments web
+
+✗ 未知模块：payments
+  当前已注册模块：web、api、tooling
+  提示：先用 openlogos module add 注册，或检查拼写
+```
+
+**缺参（用法错误，打印用法、非零退出）**：
+
+```text
+$ openlogos module set-product-type web
+
+✗ 用法错误：缺少 <enum> 参数
+  用法：openlogos module set-product-type <module-id> <enum>
+  <enum>：web | desktop | mobile | cli | api | library | skills | service
+```
+
+### 2.19 `openlogos sync` 缺字段诊断 + overlay 注入 / 移除提示
+
+**检测到 launched 模块缺 `product_type`（人类可读诊断，提示运行 set-product-type；warning 不阻断）**：`sync` 照常完成同步，额外列出缺字段模块并给出精确回填命令。
+
+```text
+$ openlogos sync
+
+✓ 已重新生成 AGENTS.md / CLAUDE.md
+✓ 已重新部署 skills
+
+⚠ 检测到 launched 模块缺少 product_type（PRODUCT_TYPE_CONFIRMATION_REQUIRED）
+  缺字段模块：web、admin
+  · UI-first 暂不启用：缺字段一律按非 GUI 处理（安全默认）
+  · 请为每个模块显式确认产品类型，例如：
+      openlogos module set-product-type web web
+      openlogos module set-product-type admin web
+  · 若确为非 GUI，也请显式设置（如 set-product-type <id> cli）以消除本提示
+```
+
+**注入 overlay（项目含 ≥1 GUI 模块，幂等；重复 sync 不重复注入）**：
+
+```text
+$ openlogos sync
+
+✓ 已重新生成 AGENTS.md / CLAUDE.md
+✓ 项目含 GUI 模块（web）→ 已注入 gui-ui-first overlay
+    · logos/flow/launched.yaml：write-ui-prototype、verify-ui-provenance
+  （幂等：已注入时重复 sync 为 no-op，不重复写入）
+```
+
+**移除 overlay（最后一个 GUI 模块改为非 GUI / 被移除，项目不再含 GUI 模块）**：仅按 `gui-ui-first` 已知 node id + overlay 源标记识别注入产物，**绝不删除用户自定义 ops**。
+
+```text
+$ openlogos sync
+
+✓ 已重新生成 AGENTS.md / CLAUDE.md
+✓ 项目不再含 GUI 模块 → 已移除 gui-ui-first overlay ops
+    · 移除 write-ui-prototype、verify-ui-provenance（仅 gui-ui-first 注入产物）
+    · 用户自定义 overlay ops 保持不变
+  launched.yaml 回到无 gui-ui-first ops 的态（非 GUI 零改动）
+```
+
+### 2.20 `openlogos module add` 采集 `product_type` 交互示意
+
+新增 module 时同步采集 `product_type`：交互式 prompt，或 `--product-type <enum>` 非交互指定。
+
+**交互式 prompt**：
+
+```text
+$ openlogos module add
+
+模块 id: web
+模块名称: Web 控制台
+产品类型 (product_type)？
+  1) web       (GUI)
+  2) desktop   (GUI)
+  3) mobile    (GUI)
+  4) cli       (非 GUI)
+  5) api       (非 GUI)
+  6) library   (非 GUI)
+  7) skills    (非 GUI)
+  8) service   (非 GUI)
+选择 [默认 4) cli]: 1
+
+✓ 已新增模块 web（product_type: web，GUI）
+  · 项目含 GUI 模块 → 下一步 openlogos sync 注入 gui-ui-first overlay
+```
+
+**非交互（`--product-type`）**：
+
+```text
+$ openlogos module add web --name "Web 控制台" --product-type web
+
+✓ 已新增模块 web（product_type: web，GUI）
+```
+
+**省略 product_type（落安全非 GUI 默认 `cli`，标注需人工确认）**：与 `adopt` 推断口径一致，避免误把新模块当成 GUI。
+
+```text
+$ openlogos module add tooling --name "内部脚本"
+
+✓ 已新增模块 tooling（product_type: cli，非 GUI · 需人工确认）
+  提示：默认落非 GUI 安全值 cli；若为 GUI 请运行
+    openlogos module set-product-type tooling <web|desktop|mobile>
+```
+
+### 2.21 `--auto`（无人值守）下不猜测、暴露 next action 的体验
+
+`openlogos next --auto` **绝不**凭启发式把未设置 `product_type` 的模块升级为 GUI：保持安全非 GUI 默认，把 `PRODUCT_TYPE_CONFIRMATION_REQUIRED` 作为**机器可读 next action 暴露**给 driver，仅在显式配置 GUI 枚举后才注入 overlay。
+
+```text
+$ openlogos next --auto
+
+（... 正常推进当前提案 ...）
+
+⚠ PRODUCT_TYPE_CONFIRMATION_REQUIRED（不阻断，仅暴露待确认项）
+  缺 product_type 的 launched 模块：web、admin
+  · --auto 不猜测：这些模块仍按非 GUI 处理，UI-first 不启用
+  · next_action：openlogos module set-product-type <module-id> <web|desktop|mobile|cli|...>
+    显式设置后 UI-first 方可对该模块生效
+```
+
+**要点（CLI 体验层面）**：
+- 缺字段诊断是 **warning 而非 error**：`sync` / `status` / `next`（含 `--auto`）照常完成，只暴露待确认项，绝不阻断，绝不隐式升级为 GUI。
+- 缺字段的**安全默认（非 GUI）维持到显式设置**：`set-product-type` / `module add` 显式落值前，缺字段模块一律非 GUI，`ui_impact` 恒 `false`、不注入 overlay。
+- `set-product-type` **幂等**：重复设为相同值为 no-op；`sync` 注入 / 移除也幂等（以「项目是否含 ≥1 GUI 模块」为唯一键收敛）。
+- overlay 移除**仅**针对 `gui-ui-first` 已知 node id（`write-ui-prototype` / `verify-ui-provenance`）与 overlay 源标记，用户自定义 ops 不动。
+- 机器可读契约（`PRODUCT_TYPE_CONFIRMATION_REQUIRED` warning/next_action 结构、`module list` 的 `product_type` 字段、`set-product-type --format json` 结果结构）见 `spec/cli-json-output.md`。
+
+### 2.22 现状基线覆盖率的 status / JSON 呈现（brownfield-adopter）
+
+`bootstrap: adopted` 模块下，`status` 与 `next` 展示现状基线覆盖率，语义单一来源、口径一致：
+
+- **人读**：`现状基线覆盖率：human-verified <分子> / 候选 <存活> （含 tombstone <未确认废弃数>）`。覆盖率百分比仅由 `human-verified` 分子驱动。
+- **JSON**（`status --format json` / `next --format json`）：新增 `baseline_coverage` 对象——
+  ```json
+  {
+    "baseline_coverage": {
+      "state": "seeded",
+      "incomplete": false,
+      "human_verified": 0,
+      "denominator": 12,
+      "tombstones": 0,
+      "human_verified_delta": 0,
+      "source": "derived-index",
+      "freshness": "fresh"
+    }
+  }
+  ```
+  - `state`：`required` | `partial` | `seeded`（映射模块级 `baseline_seed_state`）。
+  - `incomplete`：**恒存在的布尔**（稳定 shape，不省略）——`state==partial` 时 `true`（`denominator`/百分比非最终值、不算精确百分比、`next` 下一步指向恢复），`required`/`seeded` 时 `false`。
+  - `denominator` = 存活候选 ∪ 未经人工确认的 tombstone；`human_verified_delta` 单列，禁止把分母波动解读为新增人工确认。
+  - `freshness`：`fresh` | `stale` | `unknown`；`stale`/`unknown` 时不得输出貌似精确的百分比。
+  - `recovery`（仅 `state==partial` 且**存在活跃提案**时出现）：结构化 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change。
+- **partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `baseline-seed` 恢复；**有活跃提案**时主 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory 呈现。
+- 覆盖率**只读已合并主文档**中各产物 `## 逆向基线来源` 章节；merge 前的未合并 delta 不计入覆盖率、不提前声称前移。
+
+### 2.23 openlogos baseline-seed 终端体验（种子状态提交，brownfield-adopter）
+
+`openlogos baseline-seed` 是 `baseline_seed_state` 的**唯一写入入口**（AI/driver/skill 不直接改 YAML、不直接写目标 `logos/resources/`）。采两阶段 staging。三子命令：
+
+**begin（扫描开始，提交逻辑产物计划——无内容 hash——CLI 校验后签发 run_id + 建 staging）**
+```text
+# manifest 为逻辑计划：{ module, expected:[{ kind, target_path, candidate_keys:[...] }] }，无 planned_sha256
+$ openlogos baseline-seed begin --module core --manifest .logos-seed-plan.json --format json
+{ "ok": true, "run_id": "seed-core-0007", "module": "core",
+  "baseline_seed_state": "required", "expected": 12,
+  "staging": "logos/resources/verify/baseline-seed-runs/seed-core-0007/staging/" }
+# 校验失败示例：缺必需 kind → 非零退出 { "ok": false, "error": "missing_required_kind" }
+```
+
+**commit（skill 已把产物写入 staging 后，CLI 对 staged 字节校验并原子提交）**
+```text
+$ openlogos baseline-seed commit --module core --run-id seed-core-0007 --format json
+{ "ok": true, "run_id": "seed-core-0007", "module": "core",
+  "baseline_seed_state": "seeded",   # 必需 kind 齐+全部合法→提交 staged 到目标+seeded；未全→partial；0→保持
+  "committed": ["...12 条..."], "missing": [], "invalid": [] }
+```
+
+**status（只读当前 run、staging 进度与状态，供恢复/重试决策）**
+```text
+$ openlogos baseline-seed status --module core
+run: seed-core-0007  state: partial  staged 5/12  missing 7
+下一步：openlogos baseline-seed commit --module core --run-id seed-core-0007（补齐 staging 后自动转 seeded）
+```
+
+**错误与不变量**：
+- `begin` 校验：必需 kind（`system-map`+`scenario-candidates`）齐全、`target_path` 项目根相对且位于允许基线目录、拒绝绝对路径/`..`/符号链接/重复路径——否则非零退出（`missing_required_kind`/`path_escape`）。
+- `seeded` 仅在必需 kind 齐全且全部 expected 合法时成立——少报/单项 manifest、单文件 staged **均不得**被判完成。
+- `commit` 对 staged 实际字节算 hash + 比对 `candidate_keys` 与 staged `candidates[]` 一致；不一致 → `candidate_key_mismatch` 非零退出。
+- `commit` 幂等（同 run_id 依 staging 重算、结果一致）；`stale`（被新 begin superseded）/未知 `run_id`/并发 → `stale_run`/`unknown_run`/`run_locked` 非零退出、不写状态、不提交文件。
+- 从 `partial` 重新 `begin` **不回退到 `required`**（保留 `partial` 至新 run 首次有效 commit）。
+- run 记录 + staging + `commit-journal.json` 持久化于 `logos/resources/verify/baseline-seed-runs/<run_id>/`。跨多文件提交经 journal `prepared→committing→committed`（状态最后写）在模块级事务锁下进行；`status`/`next`/`verify`/覆盖率等机器读取入口经**恢复门**（取锁 + 检测未终结 journal → 先恢复，否则 `baseline_commit_in_progress`）保证不把半新集合当权威，`seeded` 当且仅当完整新集合在盘（见架构 §4.4；对直接按路径读取的人工/Skill 不宣称原子可见）。
+
+### 2.24 status / next 契约自描述 JSON 输出（contract / step_meta / facts / dispatch 与 loop_state 缺席态，contract-self-description）
+
+`status` / `next` 的 `--format json` 输出携带机器契约自描述字段：`data` 顶层 `contract`（契约版本握手）、`active_change.step_meta`（步骤语义元数据）、`active_change.facts`（CLI 权威事实块）、`next_node.dispatch`（派发契约，仅 next）。字段定义与注册表见功能规格 2.28 / 2.18；本节给出输出示例与体验口径。
+
+**status（ready-to-implement 驻留态 → `loop_state` 缺席）**：
+
+```jsonc
+$ openlogos status --format json
+{
+  "command": "status",
+  "version": "<cli-version>",
+  "data": {
+    "contract": { "version": "1.0.0" },
+    "modules": [
+      {
+        "id": "core",
+        "active_change": {
+          "slug": "contract-self-description",
+          "proposal_step": "ready-to-implement",
+          "step_meta": { "phase": "pre-implement", "kind": "residency" },
+          "facts": {
+            "spec_complete": true,
+            "slices_planned": true,
+            "slices_approved": false,
+            "code_required": true,
+            "has_delta_tasks": true,
+            "verify_pass": false
+          }
+          // ……既有字段（deployment_required / smoke_required 等）原样保留
+        }
+        // 注意：本例 slices_approved=false（slice-exit 门未消费）→ loop_state 缺席（省略字段，非 null）
+      }
+    ]
+  }
+}
+```
+
+**next（implement 已激活 → `loop_state` 在场 + `next_node.dispatch`）**：
+
+```jsonc
+$ openlogos next --format json
+{
+  "command": "next",
+  "version": "<cli-version>",
+  "data": {
+    "contract": { "version": "1.0.0" },
+    "modules": [
+      {
+        "id": "core",
+        "next_node": {
+          "id": "code",
+          "name": "代码实现",
+          "subflow_id": "implement",
+          "skill": "code-implementor",
+          "working_agent": null,
+          "review_agent": null,
+          "pre_script": null,
+          "post_script": null,
+          "dispatch": {
+            "idempotent": true,
+            "timeout_seconds": 3600,
+            "artifacts_hint": ["logos/resources/verify/test-results.jsonl"]
+          }
+        },
+        "loop_state": {
+          "subflow_id": "implement",
+          "until": "code_slices_green",
+          "max_iters": 30,
+          "iteration": 1,
+          "converged": false,
+          "escalated": false,
+          "activated_at": "2026-07-17T08:00:00Z"
+        }
+      }
+    ]
+  }
+}
+```
+
+体验口径：
+
+- `contract` 恒在 `data` 顶层：`{"version": "1.0.0"}`（语义化契约版本，独立于 CLI 版本）。消费方约定（规范性引用，验收归 runlogos R5）：未知 major / 缺 `contract` 字段 → 保守模式（仅 next 驱动普通推进 + 看门狗，启发式判定降级为仅观察）；契约内任何枚举遇未知值 → 保守分支。
+- `step_meta` 随 `active_change` 输出：`phase ∈ pre-implement|implement|post-implement`、`kind ∈ produce|gate|command-required|residency`；消费方遇未知值必须走保守分支，不得判死。
+- `facts` 全布尔、仅活跃提案时输出；driver 直接读 facts 判断「implement 是否已进入」，不再自读 marker / 私有解析 tasks.md。
+- **`loop_state` 缺席态**：挂出 **iff** `code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved`（与 facts 同一份计算）；否则省略字段。`ready-to-implement`（切片已规划、待 slice-exit 批准）**不挂**；docs-only（code_required=false）**永不挂**。缺席 = implement 未进入 → 消费方走普通推进，不得进入 loop 分支。`slice_state` 常驻口径不变。
+- `loop_state.activated_at`（ISO 8601）读自结构化 SLICES_APPROVED；旧空 marker → 省略该字段。
+- `next_node.dispatch` 恒为完整对象；overlay-add 未声明 → 保守默认 `{idempotent:false, timeout_seconds: defaults.dispatch.timeout_seconds, artifacts_hint: []}`；`artifacts_hint: []` ＝「产物未知」契约语义：消费方不得据此判死，只能升级观察。示例中的 dispatch 取值以内置 flow 模板逐节点声明为准。
+- 文本模式不新增展示要求（契约自描述面向机器消费）；既有文本输出不变。

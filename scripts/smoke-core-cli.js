@@ -270,7 +270,9 @@ function smokeAdoptNextGuidance() {
   withTempProject('openlogos-smoke-adopt-next-', root => {
     writeLaunchedProject(root, 'adopted');
     const output = checked(runCli(root, ['next']), 'openlogos next');
-    assert(output.stdout.includes('openlogos change add-baseline-docs'), 'missing baseline documentation guidance');
+    // brownfield-adopter（S33）：required 时引导逆向建基线（取代旧 add-baseline-docs）。
+    assert(output.stdout.includes('openlogos baseline-seed begin'), 'missing reverse-baseline guidance');
+    assert(!output.stdout.includes('openlogos change add-baseline-docs'), 'still suggests add-baseline-docs');
   });
 }
 
@@ -333,7 +335,8 @@ function smokeLegacySkippedBootstrap() {
     const module = parseEnvelope(status).data.modules.find(item => item.id === 'core');
     assert(module.bootstrap === 'adopted', `legacy bootstrap was not normalized: ${module.bootstrap}`);
     const next = checked(runCli(root, ['next']), 'openlogos next');
-    assert(next.stdout.includes('openlogos change add-baseline-docs'), 'legacy bootstrap lost adopt guidance');
+    // brownfield-adopter（S33）：历史 skipped 与 adopted 一致，引导逆向建基线。
+    assert(next.stdout.includes('openlogos baseline-seed begin'), 'legacy bootstrap lost reverse-baseline guidance');
   });
 }
 
@@ -456,6 +459,106 @@ function smokeDeployDone() {
   });
 }
 
+
+// ── contract-self-description（SMOKE-core-49/50）：发布后契约自描述冒烟 ──
+
+const CONTRACT_PROPOSAL = [
+  '# 变更提案：contract-smoke',
+  '',
+  '## 变更原因',
+  '契约自描述冒烟。',
+  '',
+  '## 变更类型',
+  '代码级修复',
+  '',
+  '## 部署影响',
+  '- 是否需要部署：否',
+  '- 部署原因：纯代码',
+  '- 影响环境：无',
+  '- 是否涉及数据迁移：否',
+  '- 是否需要回滚预案：否',
+  '- 是否需要 smoke：否',
+  '',
+  '## 变更概述',
+  '实现契约字段。',
+].join('\n');
+
+function smokeContractSelfDescription() {
+  // SMOKE-core-49：发布安装后 status/next 真实携带 contract.version（与打包 schema 一致）、step_meta 闭合枚举、facts 六布尔
+  withTempProject('openlogos-smoke-contract-', root => {
+    writeLaunchedProject(root);
+    writeProposal(root, 'contract-smoke', CONTRACT_PROPOSAL,
+      '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n');
+
+    const { entry } = preparePackagedCli();
+    const pkgRoot = resolve(entry, '..', '..');
+    // code review F9：分别读取两份已安装 schema，各自与对应响应核对（任一漂移即失败）
+    // add-feature-model（S34，delta-F1=B）：契约改为**条件版本**——schema 为向后兼容 superset，
+    // x-contract-version = 支持集最高版；响应 contract.version ∈ 支持集（$defs.contract.enum），
+    // 且 features present ⟺ 1.1.0（见 spec/cli-json-output.md §1.4 调整后的映射校验）。
+    const schemaVersions = {};
+    const supportedVersions = {};
+    for (const name of ['status', 'next']) {
+      const schemaPath = join(pkgRoot, 'spec', 'schema', `${name}.schema.json`);
+      assert(existsSync(schemaPath), `packed CLI missing spec/schema/${name}.schema.json`);
+      const schema = JSON.parse(readFileSync(schemaPath, 'utf-8'));
+      assert(typeof schema['x-contract-version'] === 'string', `${name} schema 缺 x-contract-version`);
+      assert(String(schema.$id || '').endsWith(`/${schema['x-contract-version']}`),
+        `${name} schema $id(${schema.$id}) 与 x-contract-version(${schema['x-contract-version']}) 不一致`);
+      schemaVersions[name] = schema['x-contract-version'];
+      const enumVals = schema.$defs?.contract?.properties?.version?.enum;
+      assert(Array.isArray(enumVals) && enumVals.length > 0, `${name} schema 缺 $defs.contract.version.enum`);
+      assert(enumVals.includes(schema['x-contract-version']),
+        `${name} x-contract-version(${schema['x-contract-version']}) 不在支持集(${enumVals})`);
+      supportedVersions[name] = enumVals;
+    }
+    assert(schemaVersions.status === schemaVersions.next,
+      `status/next schema 契约版本漂移: ${schemaVersions.status} vs ${schemaVersions.next}`);
+
+    const statusData = parseEnvelope(checked(runCli(root, ['status', '--format', 'json']), 'status --format json')).data;
+    const nextData = parseEnvelope(checked(runCli(root, ['next', '--format', 'json']), 'next --format json')).data;
+    for (const [name, data] of [['status', statusData], ['next', nextData]]) {
+      const v = data.contract?.version;
+      // ① 响应版本必须在 schema 支持集内
+      assert(data.contract && supportedVersions[name].includes(v),
+        `${name} data.contract.version(${v}) 不在 packed ${name} schema 支持集(${supportedVersions[name]})`);
+      // ② 条件版本一致性：任一 module 输出 features ⟺ 1.1.0；否则 1.0.0
+      const hasFeatures = Array.isArray(data.modules) && data.modules.some(m => m.features !== undefined);
+      assert(v === (hasFeatures ? '1.1.0' : '1.0.0'),
+        `${name} 条件版本失配: hasFeatures=${hasFeatures} 但 contract.version=${v}`);
+    }
+    const active = statusData.modules.find(item => item.id === 'core').active_change;
+    assert(['pre-implement', 'implement', 'post-implement'].includes(active.step_meta?.phase), `step_meta.phase 非法: ${active.step_meta?.phase}`);
+    assert(['produce', 'gate', 'command-required', 'residency'].includes(active.step_meta?.kind), `step_meta.kind 非法: ${active.step_meta?.kind}`);
+    const facts = active.facts;
+    for (const key of ['spec_complete', 'slices_planned', 'slices_approved', 'code_required', 'has_delta_tasks', 'verify_pass']) {
+      assert(typeof facts?.[key] === 'boolean', `facts.${key} 缺失或非布尔`);
+    }
+    // 与磁盘相符抽样：无 SPEC_MERGED/SLICES_APPROVED/VERIFY_PASS
+    assert(facts.spec_complete === false && facts.slices_approved === false && facts.verify_pass === false,
+      `facts 与磁盘不符: ${JSON.stringify(facts)}`);
+  });
+}
+
+function smokeSpecPhaseNoLoopState() {
+  // SMOKE-core-50：spec 阶段（未 merge 活跃提案）确不挂 loop_state；step_meta.phase==pre-implement 反面锚成立
+  withTempProject('openlogos-smoke-noloop-', root => {
+    writeLaunchedProject(root);
+    writeProposal(root, 'contract-smoke', CONTRACT_PROPOSAL,
+      '# 任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n');
+
+    const statusData = parseEnvelope(checked(runCli(root, ['status', '--format', 'json']), 'status --format json')).data;
+    const nextData = parseEnvelope(checked(runCli(root, ['next', '--format', 'json']), 'next --format json')).data;
+    const mod = statusData.modules.find(item => item.id === 'core');
+    assert(mod.active_change.step_meta.phase === 'pre-implement', `spec 阶段 phase 应为 pre-implement: ${mod.active_change.step_meta.phase}`);
+    assert(mod.loop_state === undefined, `spec 阶段不得挂 loop_state: ${JSON.stringify(mod.loop_state)}`);
+    const nmod = nextData.modules.find(item => item.id === 'core');
+    assert(nmod.loop_state === undefined, `next spec 阶段不得挂 loop_state`);
+    // 流程未被判死：next 仍给出可执行建议（普通推进）
+    assert(typeof nmod.action === 'string' && nmod.action.length > 0, 'next 应给出普通推进建议');
+  });
+}
+
 const cases = [
   ['SMOKE-core-01', smokeCliPackageVersion],
   ['SMOKE-core-02', smokeInitAssets],
@@ -471,6 +574,8 @@ const cases = [
   ['SMOKE-core-18', smokeAutoSandbox],
   ['SMOKE-core-19', smokeAlwaysSandbox],
   ['SMOKE-core-20', smokeDeployDone],
+  ['SMOKE-core-49', smokeContractSelfDescription],
+  ['SMOKE-core-50', smokeSpecPhaseNoLoopState],
 ];
 
 let failed = false;

@@ -1,20 +1,29 @@
-import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData, deriveActiveOverlay } from './status.js';
-import type { ProposalStep, ProposalBlockReason, PlanState, CmdGate } from './status.js';
-import { isAdoptedBootstrap } from '../lib/project-yaml.js';
+import type { ProposalStep, ProposalBlockReason, PlanState, CmdGate, ProductTypeConfirmation } from './status.js';
+import { isAdoptedBootstrap, readProjectYaml } from '../lib/project-yaml.js';
+import type { BaselineSeedState, BaselineCoverage } from '../lib/baseline-provenance.js';
+import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
 import { gateForProposalStep, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
 import type { CurrentNode, CmdEval, NextNode } from '../lib/flow-overlay-derive.js';
 import { resolveNextNode } from '../lib/flow-overlay-derive.js';
 import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
-import { loopExhaustedGateId, isLoopBlocking } from '../lib/flow-loop-derive.js';
+import { loopExhaustedGateId, isLoopBlocking, deriveLoopState } from '../lib/flow-loop-derive.js';
+import { deriveProposalFacts } from '../lib/proposal-lifecycle.js';
+import { contractVersion, mintStep } from '../lib/step-registry.js';
+import type { StepMeta } from '../lib/step-registry.js';
+import { formatFeaturesText } from '../lib/feature-grouping.js';
+import type { FeatureGroupItem } from '../lib/feature-grouping.js';
 import { FlowError } from '../lib/flow.js';
 import { runFlowCmd, CmdSpawnError } from '../lib/flow-cmd.js';
-import { isTasksCodeFilled, PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER } from '../lib/proposal-lifecycle.js';
+import { isTasksCodeFilled, writeSlicesApprovedMarker } from '../lib/proposal-lifecycle.js';
+import type { ProposalFacts } from '../lib/proposal-lifecycle.js';
+import { writePlanApprovedMarker } from '../lib/ui-provenance.js';
 import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
 import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 
@@ -37,15 +46,26 @@ export interface NextModuleItem {
   // expose-code-required-field：当前活跃提案是否需要代码实现（取值＝isCodeRequiredForProposal）。
   // next 里 active_change 是 slug 字符串，故本字段平铺在 module 级（同 proposal_step 的处理）；仅活跃提案时出现。
   code_required?: boolean;
+  // contract-self-description 切片1（C3）：facts 权威事实块，同上平铺在 module 级（仅活跃提案时出现）。
+  facts?: ProposalFacts;
+  // contract-self-description 切片2（C1）：step_meta 同上平铺在 module 级（仅活跃提案时出现）。
+  step_meta?: StepMeta;
   current_node?: CurrentNode;
   loop_state?: LoopState;
   slice_state?: SliceState;
   next_node?: NextNode;
   cmd_gate?: CmdGate;
   automation_diagnostic?: AutomationDiagnostic;
+  // brownfield-adopter（S33）：现状基线种子状态与覆盖率（仅 bootstrap=adopted 且无活跃提案时附带）
+  baseline_seed_state?: BaselineSeedState;
+  baseline_coverage?: BaselineCoverage;
+  // add-feature-model（S34）：透传 status 的 feature 分组（与 status 同源同字段）。
+  features?: FeatureGroupItem[];
 }
 
 export interface NextData {
+  // contract-self-description 切片2（C5）：机器契约版本握手（与 status 同构）。
+  contract: { version: string };
   action: string;
   command: string | null;
   detail: string;
@@ -63,6 +83,10 @@ export interface NextData {
   cmd_gate?: CmdGate;
   automation_diagnostic?: AutomationDiagnostic;
   plan_state?: PlanState;
+  // proposal-ui-ux-first 切片1：与 status 同构挂顶层的缺 product_type 诊断（warning，仅存在缺字段 launched 模块时附带）。
+  product_type_confirmation?: ProductTypeConfirmation;
+  // proposal-ui-ux-first 切片3：前置能力门 capability surface（与 status 同构，仅能力就绪时附带）。
+  capabilities?: { ui_prototype_render: true };
   // S28：next_node 编排提示（仅有当前节点时附带；命令级建议/auto 放行/loop 达上限省略）
   next_node?: NextNode;
   // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
@@ -78,6 +102,8 @@ export interface NextData {
   cmd_exit_code?: number | null;
   cmd_timed_out?: boolean;
   cmd_satisfied?: boolean;
+  // brownfield-adopter（S33）：现状基线覆盖率（legacy 无 modules 时挂顶层；有 modules 时挂 modules[].baseline_coverage）
+  baseline_coverage?: BaselineCoverage;
 }
 
 /** 在活跃提案目录追加一行 GATE_AUTO_PASSED JSONL 审计（总是追加、不去重）。 */
@@ -87,16 +113,23 @@ function appendGateAutoPassed(root: string, slug: string, gateId: string, step: 
   appendFileSync(path, line + '\n');
 }
 
-/** 消费 plan-exit gate：写入明确状态源，后续派生不再停留在 ready-to-delta。 */
+/**
+ * 消费 plan-exit gate：写入明确状态源，后续派生不再停留在 ready-to-delta。
+ * proposal-ui-ux-first（F3/F4）：`PLAN_APPROVED` 是「存在性 marker + 可选 provenance JSON body」的
+ * 向后兼容超集——driver 自动放行走空写（不渲染、不宣称 UI 已确认）；渲染面板（runlogos）批准时
+ * 才写 `{ui_prototype_rendered,pages,hashes}` body。此处（openlogos 自动消费路径）保持空写。
+ */
 function writePlanApproved(root: string, slug: string): void {
-  const path = join(root, 'logos', 'changes', slug, PLAN_APPROVED_MARKER);
-  if (!existsSync(path)) writeFileSync(path, '');
+  writePlanApprovedMarker(join(root, 'logos', 'changes', slug));
 }
 
-/** split-slice-planner-stage：消费 slice-exit gate，写入状态源，后续派生从 ready-to-implement 续推到 coding。 */
+/**
+ * split-slice-planner-stage：消费 slice-exit gate，写入状态源，后续派生从 ready-to-implement 续推到 coding。
+ * contract-self-description 切片1（C2/D5）：升级为结构化 JSON 单行 marker（approved_at = loop_state.activated_at
+ * 的持久时间源）；已存在不重写——重复 `next --auto` 不刷新时间戳，读取侧兼容旧空文件。
+ */
 function writeSlicesApproved(root: string, slug: string): void {
-  const path = join(root, 'logos', 'changes', slug, SLICES_APPROVED_MARKER);
-  if (!existsSync(path)) writeFileSync(path, '');
+  writeSlicesApprovedMarker(join(root, 'logos', 'changes', slug));
 }
 
 /**
@@ -146,11 +179,15 @@ function loopExhaustedAutoPassMessage(locale: Locale, gateId: string): { action:
 }
 
 function buildModuleNextItem(
+  root: string,
   mod: {
     id: string;
     name: string;
     lifecycle: 'initial' | 'launched';
     bootstrap?: 'normal' | 'adopted';
+    baseline_seed_state?: BaselineSeedState;
+    /** baseline-seed-legacy-default-unify：yaml 未落盘显式枚举（派生态）→ 引导附 sync 迁移提示。 */
+    baseline_seed_legacy?: boolean;
     suggestion: string;
     active_change: {
       slug: string;
@@ -212,14 +249,45 @@ function buildModuleNextItem(
     }
 
     if (isAdoptedBootstrap(mod.bootstrap)) {
+      // baseline-seed-legacy-default-unify：有效状态一律经共享 helper（唯一事实源，禁止本地缺省规则）。
+      // mod.baseline_seed_state 来自 collectStatusData（adopted 恒派生输出）→ helper 短路返回；legacy 提示由 baseline_seed_legacy 承载。
+      const seedState: BaselineSeedState = effectiveBaselineSeedState(root, mod.id, mod.baseline_seed_state).state;
+      const legacyHint = mod.baseline_seed_legacy
+        ? (locale === 'zh' ? '（legacy 项目未标注种子状态，建议运行 openlogos sync 迁移元数据）' : ' (legacy: run openlogos sync to record baseline state)')
+        : '';
+      if (seedState === 'seeded') {
+        return {
+          id: mod.id, name: mod.name, lifecycle: 'launched',
+          bootstrap: mod.bootstrap,
+          action: t(locale as Parameters<typeof t>[0], 'next.createChange'),
+          command: 'openlogos change <slug>',
+          detail: (locale === 'zh'
+            ? '现状基线已建立；触碰只有未验证逆向 spec 的区域时，change-writer 会建议在本次最终态 delta 内一并确认现状（不设硬门）。'
+            : 'Baseline established; when a change touches an unverified reverse-engineered region, change-writer advises confirming it within the same final-state delta (advisory, not a hard gate).') + legacyHint,
+          active_change: null, proposal_step: null,
+        };
+      }
+      if (seedState === 'partial') {
+        // partial（无活跃提案）：主 action/command 指向 baseline-seed 恢复入口（EX-3.4）。
+        return {
+          id: mod.id, name: mod.name, lifecycle: 'launched',
+          bootstrap: mod.bootstrap,
+          action: locale === 'zh' ? '完成现状基线（恢复扫描）' : 'Complete current-state baseline (resume scan)',
+          command: 'openlogos baseline-seed commit',
+          detail: (locale === 'zh'
+            ? '现状基线部分建立（扫描未完成）——续提交已落盘产物或重新 begin 补齐；也可先发起 openlogos change 迭代（不强制）。'
+            : 'Baseline partially established (scan unfinished) — resume commit or re-begin; you may also start openlogos change first (not required).') + legacyHint,
+          active_change: null, proposal_step: null,
+        };
+      }
       return {
         id: mod.id, name: mod.name, lifecycle: 'launched',
         bootstrap: mod.bootstrap,
-        action: locale === 'zh' ? '先补充项目基线文档' : 'Fill in baseline docs first',
-        command: 'openlogos change add-baseline-docs',
-        detail: locale === 'zh'
-          ? '建议先创建补文档提案，再开始业务迭代。'
-          : 'Create a baseline-docs change proposal before starting feature work.',
+        action: locale === 'zh' ? '逆向建立现状基线' : 'Establish current-state baseline (reverse-engineer)',
+        command: 'openlogos baseline-seed begin',
+        detail: (locale === 'zh'
+          ? '由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单（种子基线 / reverse-engineered / verified:false）。'
+          : 'An AI session/driver reverse-scans the codebase to produce a system-map + scenario candidate list (reverse-engineered / verified:false).') + legacyHint,
         active_change: null, proposal_step: null,
       };
     }
@@ -428,6 +496,14 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     throw e;
   }
 
+  // baseline-seed-legacy-default-unify：legacy 派生态判定——raw yaml 无显式枚举（归一化后仍 undefined）的 adopted 模块。
+  // 有效状态本身来自 collectStatusData 的 helper 派生；此处只判「是否派生值」以附 sync 迁移提示。
+  const legacySeedModuleIds = new Set<string>(
+    (readProjectYaml(root).data?.modules ?? [])
+      .filter(m => isAdoptedBootstrap(m.bootstrap) && m.baseline_seed_state === undefined)
+      .map(m => m.id),
+  );
+
   // Read guard module
   let guardModule: string | null = null;
   const guardPath = join(root, 'logos', '.openlogos-guard');
@@ -442,8 +518,11 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   let moduleItems: NextModuleItem[] | undefined;
   if (data.modules && data.modules.length > 0) {
     moduleItems = data.modules.map(m => buildModuleNextItem(
+      root,
       {
         id: m.id, name: m.name, lifecycle: m.lifecycle, bootstrap: m.bootstrap,
+        baseline_seed_state: m.baseline_seed_state,
+        baseline_seed_legacy: legacySeedModuleIds.has(m.id),
         suggestion: m.suggestion,
         active_change: m.active_change ? {
           slug: m.active_change.slug,
@@ -469,6 +548,15 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       const ad = data.modules![i].automation_diagnostic;
       // expose-code-required-field：把 status active_change.code_required 平铺到 next 的 module 级（仅活跃提案时）。
       const cr = data.modules![i].active_change?.code_required;
+      // contract-self-description 切片1（C3）：facts 同样平铺到 module 级（仅活跃提案时）。
+      const fx = data.modules![i].active_change?.facts;
+      // contract-self-description 切片2（C1）：step_meta 同样平铺（仅活跃提案时）。
+      const stm = data.modules![i].active_change?.step_meta;
+      // brownfield-adopter（S33）：透传现状基线覆盖率与状态（与 status 同源同字段）。
+      const bc = data.modules![i].baseline_coverage;
+      const bss = data.modules![i].baseline_seed_state;
+      // add-feature-model（S34）：透传 feature 分组（与 status 同源同字段）。
+      const ft = data.modules![i].features;
       const withFields: NextModuleItem = {
         ...item,
         ...(cn ? { current_node: cn } : {}),
@@ -477,6 +565,11 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
         ...(cg ? { cmd_gate: cg } : {}),
         ...(ad ? { automation_diagnostic: ad } : {}),
         ...(cr !== undefined ? { code_required: cr } : {}),
+        ...(fx ? { facts: fx } : {}),
+        ...(stm ? { step_meta: stm } : {}),
+        ...(bss ? { baseline_seed_state: bss } : {}),
+        ...(bc ? { baseline_coverage: bc } : {}),
+        ...(ft !== undefined ? { features: ft } : {}),
       };
       if (cn) {
         return {
@@ -517,13 +610,29 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     if (!data.active_change) {
       const bootstrapModule = data.modules?.find(m => m.lifecycle === 'launched' && isAdoptedBootstrap(m.bootstrap));
       if (bootstrapModule) {
-        action = locale === 'zh'
-          ? '先补充项目基线文档'
-          : 'Fill in the project baseline documents first';
-        command = 'openlogos change add-baseline-docs';
-        detail = locale === 'zh'
-          ? '建议先创建补文档提案，再开始业务迭代。'
-          : 'Create a baseline-docs change proposal before starting feature work.';
+        // baseline-seed-legacy-default-unify：有效状态一律经共享 helper（唯一事实源；status 已恒派生 → 短路）。
+        const seedState: BaselineSeedState = effectiveBaselineSeedState(root, bootstrapModule.id, bootstrapModule.baseline_seed_state).state;
+        if (seedState === 'seeded') {
+          action = t(locale, 'next.createChange');
+          command = 'openlogos change <slug>';
+          detail = locale === 'zh'
+            ? '现状基线已建立；触碰只有未验证逆向 spec 的区域时，change-writer 会建议在本次最终态 delta 内一并确认现状（不设硬门）。'
+            : 'Baseline established; touching an unverified reverse-engineered region triggers a change-writer advisory to confirm it in the same final-state delta.';
+        } else if (seedState === 'partial') {
+          action = locale === 'zh' ? '完成现状基线（恢复扫描）' : 'Complete current-state baseline (resume scan)';
+          command = 'openlogos baseline-seed commit';
+          detail = locale === 'zh'
+            ? '现状基线部分建立（扫描未完成）——续提交已落盘产物或重新 begin 补齐；也可先发起 openlogos change 迭代（不强制）。'
+            : 'Baseline partially established (scan unfinished) — resume commit or re-begin; you may also start openlogos change first.';
+        } else {
+          action = locale === 'zh'
+            ? '逆向建立现状基线'
+            : 'Establish current-state baseline (reverse-engineer)';
+          command = 'openlogos baseline-seed begin';
+          detail = locale === 'zh'
+            ? '由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单（种子基线 / reverse-engineered / verified:false）。'
+            : 'An AI session/driver reverse-scans the codebase to produce a system-map + scenario candidate list (reverse-engineered / verified:false).';
+        }
       } else {
         action = t(locale, 'next.createChange');
         command = 'openlogos change <slug>';
@@ -562,13 +671,24 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       || firstModule?.phase_progress?.['phase.3-0']?.skip_reason === 'bootstrap-skipped';
 
     if (bootstrapAdopted && !data.active_change) {
-      action = locale === 'zh'
-        ? '先补充项目基线文档'
-        : 'Fill in the project baseline documents first';
-      command = 'openlogos change add-baseline-docs';
-      detail = locale === 'zh'
-        ? '建议先创建补文档提案，再开始业务迭代。'
-        : 'Create a baseline-docs change proposal before starting feature work.';
+      // baseline-seed-legacy-default-unify：有效状态一律经共享 helper（唯一事实源；status 已恒派生 → 短路）。
+      // bootstrapAdopted 为 true 蕴含 firstModule 存在（其判定全部引用 firstModule）。
+      const seedState: BaselineSeedState = effectiveBaselineSeedState(root, firstModule!.id, firstModule!.baseline_seed_state).state;
+      if (seedState === 'seeded') {
+        action = t(locale, 'next.createChange');
+        command = 'openlogos change <slug>';
+        detail = locale === 'zh'
+          ? '现状基线已建立；可正常发起变更迭代。'
+          : 'Baseline established; you can start change iterations normally.';
+      } else {
+        action = locale === 'zh'
+          ? '逆向建立现状基线'
+          : 'Establish current-state baseline (reverse-engineer)';
+        command = 'openlogos baseline-seed begin';
+        detail = locale === 'zh'
+          ? '由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单（种子基线 / reverse-engineered / verified:false）。'
+          : 'An AI session/driver reverse-scans the codebase to produce a system-map + scenario candidate list (reverse-engineered / verified:false).';
+      }
     } else {
       action = data.suggestion;
       command = null;
@@ -643,11 +763,13 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           if (gate.gate_id === 'plan-exit' && data.proposal_step === 'ready-to-delta') {
             writePlanApproved(root, data.active_change);
             planGateAutoConsumed = true;
-            data.proposal_step = 'delta-writing';
+            const mintedDelta = mintStep('delta-writing'); // 覆盖点唯一铸造（C1/F5）：步骤与 step_meta 成对产出
+            data.proposal_step = mintedDelta.proposal_step;
             const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
             if (activeModule?.active_change) {
-              activeModule.active_change.proposal_step = 'delta-writing';
+              activeModule.active_change.proposal_step = mintedDelta.proposal_step;
               activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.delta-writing');
+              activeModule.active_change.step_meta = mintedDelta.step_meta;
               activeModule.active_change.plan_state = {
                 ...activeModule.active_change.plan_state,
                 plan_gate_pending: false,
@@ -661,7 +783,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
             detail = t(locale, nextAction.detailKey, { slug: data.active_change });
             const mi = moduleItems?.find(m => m.active_change === data.active_change);
             if (mi) {
-              mi.proposal_step = 'delta-writing';
+              mi.proposal_step = mintedDelta.proposal_step;
+              mi.step_meta = mintedDelta.step_meta;
               if (mi.plan_state) {
                 mi.plan_state = {
                   ...mi.plan_state,
@@ -678,11 +801,13 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
             // split-slice-planner-stage：消费 slice-exit → 写 SLICES_APPROVED，续推到 coding（同次响应重新派生，保留 next_node=code）。
             writeSlicesApproved(root, data.active_change);
             sliceGateAutoConsumed = true;
-            data.proposal_step = 'coding';
+            const mintedCoding = mintStep('coding'); // 覆盖点唯一铸造（C1/F5）
+            data.proposal_step = mintedCoding.proposal_step;
             const activeModule = data.modules?.find(m => m.active_change?.slug === data.active_change);
             if (activeModule?.active_change) {
-              activeModule.active_change.proposal_step = 'coding';
+              activeModule.active_change.proposal_step = mintedCoding.proposal_step;
               activeModule.active_change.proposal_step_label = t(locale, 'status.proposalStep.coding');
+              activeModule.active_change.step_meta = mintedCoding.step_meta;
             }
             const nextAction = actionForProposalStep(locale, 'coding');
             action = nextAction.action;
@@ -690,10 +815,36 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
             detail = t(locale, nextAction.detailKey, { slug: data.active_change });
             const mi = moduleItems?.find(m => m.active_change === data.active_change);
             if (mi) {
-              mi.proposal_step = 'coding';
+              mi.proposal_step = mintedCoding.proposal_step;
+              mi.step_meta = mintedCoding.step_meta;
               mi.action = action;
               mi.command = command;
               mi.detail = detail;
+            }
+            // contract-self-description 切片1（C2/C3）：消费后磁盘已有 SLICES_APPROVED——同次响应按
+            // 「同一磁盘状态同一输出」重新派生 facts 与 loop_state（四事实此刻齐备 → loop_state 挂出，
+            // 下游 withSlice 才能注入 next_node.slice 上下文）。
+            const consumedDir = join(root, 'logos', 'changes', data.active_change);
+            if (activeModule?.active_change) {
+              activeModule.active_change.facts = deriveProposalFacts(consumedDir);
+              const rederived = deriveLoopState(
+                root,
+                activeModule as unknown as Parameters<typeof deriveLoopState>[1],
+                consumedDir,
+                (data.modules?.length ?? 1) > 1,
+              );
+              if (rederived) activeModule.loop_state = rederived;
+              if (mi) {
+                mi.facts = activeModule.active_change.facts;
+                if (rederived) mi.loop_state = rederived;
+              }
+            } else if (data.modules === undefined) {
+              // code review F4：legacy 项目（无 modules[]）同样按「消费后同一磁盘状态重新派生」——
+              // 否则同次响应 proposal_step 已 coding、marker 已写，顶层 loop_state 却仍是消费前快照（缺席），
+              // 首次 code 派发拿不到 loop/slice 上下文。
+              const legacyMod = { id: guardModule ?? 'core', name: guardModule ?? 'core', lifecycle: 'launched' as const };
+              const rederivedLegacy = deriveLoopState(root, legacyMod as Parameters<typeof deriveLoopState>[1], consumedDir, false);
+              if (rederivedLegacy) data.loop_state = rederivedLegacy;
             }
           } else {
             const passed = autoPassMessage(locale, gate.gate_id, data.proposal_step!, data.active_change);
@@ -779,7 +930,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   // R5：命令级建议（创建提案 / 补 baseline / launch）时省略 next_node——这类不是某个 flow 节点。
   // 顶层 command 是 `openlogos change …`/`openlogos launch` 即命令级（如 adopted 补 baseline：current_phase 虽非空，
   // 但真实建议是 add-baseline-docs，不能误把 scenario-modeling 当 next_node）。
-  const isCommandLevel = (cmd: string | null): boolean => Boolean(cmd && /^openlogos\s+(change|launch)\b/.test(cmd));
+  const isCommandLevel = (cmd: string | null): boolean => Boolean(cmd && /^openlogos\s+(change|launch|baseline-seed)\b/.test(cmd));
   const commandLevelTop = isCommandLevel(command);
   if (moduleItems && data.modules) {
     moduleItems = moduleItems.map((item, i) => {
@@ -871,6 +1022,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   }
 
   const result: NextData = {
+    // add-feature-model（S34，delta-F1=B）：条件版本——响应含任一 modules[].features 时 1.1.0，否则 1.0.0
+    contract: { version: contractVersion((data.modules ?? []).some(m => m.features !== undefined)) },
     action,
     command,
     detail,
@@ -884,6 +1037,9 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     ...(data.modules === undefined && data.cmd_gate ? { cmd_gate: data.cmd_gate } : {}),
     ...(data.modules === undefined && data.automation_diagnostic ? { automation_diagnostic: data.automation_diagnostic } : {}),
     ...(basePlanState ? { plan_state: basePlanState } : {}),
+    // proposal-ui-ux-first 切片1：与 status 同构，直接透传 collectStatusData 计算的顶层诊断（省略即省略）。
+    ...(data.product_type_confirmation ? { product_type_confirmation: data.product_type_confirmation } : {}),
+    ...(data.capabilities ? { capabilities: data.capabilities } : {}),
     ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
     ...(autoExecute ? { auto_execute: true } : {}),
@@ -920,6 +1076,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       if (m.detail) console.log(`       ${m.detail}`);
       const nl = nextNodeLine(m.next_node);
       if (nl) console.log(`       ${nl}`);
+      // add-feature-model（S34，delta-F2）：feature 分组文本呈现（纯 pre-feature 时零字节零漂移）
+      for (const line of formatFeaturesText(m.features)) console.log(line);
     }
   } else {
     console.log(`   ${action}`);

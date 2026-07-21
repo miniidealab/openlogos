@@ -34,7 +34,9 @@ OpenLogos 由 CLI、规范源码、Skills、插件模板、静态文档站和示
 - `tech_stack`
 - `modules`
 - `scenario_counter`
-- `scenarios`
+- `scenarios`（可选 `feature` 归属字段，见「二十、feature 功能分组模型层」）
+- `feature_counter`（可选，AI 维护，仿 `scenario_counter`）
+- `features`（可选，feature 分组注册表）
 - `deployment_gates`
 - `resource_index`
 
@@ -830,6 +832,215 @@ cmd-gate 时输出 `cmd_gate` 字段、`proposal_step` 停门前；**observe 不
 - **cmd-gate 仅经 overlay `modify` opt-in 激活**；`markerName` / `detectProposalStepViaFlow` 对 marker: 路径行为不变；JSON 字段 `cmd_gate` 仅 cmd gate 时出现。builtin 三模板 verify/deploy/smoke 仍 `marker:` → 无 overlay 项目 detection/status/next/watch **逐字节不变** → `golden-baseline.test.ts` 零漂移。
 - **A 被动派生严守**：`next` 不写状态 marker、cmd 字段每次重评；OpenLogos 只声明 gate 接 cmd:，是否求值/推进由宿主 + 用户 overlay 显式驱动，引擎不自行越门。
 - 本切片**收掉** `spec/flow-spec.md §13` M2 列最后一项 `modify-cmd-on-builtin`（M2 列清空）；**不触碰 loop 收敛逻辑**（与 verify cmd gate 经 fail-loud 隔离）。
+
+## 二十、feature 功能分组模型层（add-feature-model）
+
+在 module 与 scenario 之间引入**可选的 feature（功能）分组层**，形成三层模型 `module → feature → scenario`。feature 是轻量组织/导航维度，不承担部署/生命周期语义。
+
+### 数据模型（logos-project.yaml）
+
+```yaml
+feature_counter:          # 可选，AI 维护，仿 scenario_counter
+  next_id: 4
+features:                 # 可选，feature 注册表
+  - id: F01               # F0X 项目全局唯一（>99 进位三位）
+    name: 项目生命周期与初始化
+    module: core          # 归属单一 module（子分组、不跨 module）
+    spec: core-01         # 可选：feature-specs 文档序号，缺失视为未链接
+scenarios:
+  - id: S01
+    module: core
+    feature: F01          # 可选
+```
+
+- **单一事实源读取侧**：`cli/src/lib/project-yaml.ts` 的 `ProjectYamlData` 补 `features[]` / `feature_counter`，`ProjectYamlScenario` 补可选 `feature`，`normalizeProjectYaml` / `normalizeScenario` 解析新字段。status/next/feature 命令统一从此读取。
+
+### AI 维护范式（与 scenario 同构）
+
+CLI 从不读写 `scenario_counter.next_id`（取号是 AI 职责）。feature 沿用同一范式：`feature_counter` / `features[]` / `scenario.feature` 由 AI 维护（Skill 指导），CLI **不新建取号机制**，只做只读消费与 prompt 生成。
+
+- **取号**：读 `next_id` → 用作 `F0X` → `+1` 写回。
+- **冲突恢复（两步式）**：`allocated = max(configured_next_id, max(existing)+1)`，用 `allocated` 创建，持久化 `feature_counter.next_id = allocated + 1`（防 off-by-one 重号）。
+
+### 五条不变量
+
+1. **feature 完全可选**：纯 pre-feature 项目**逐字节完全等同今天（含 `contract.version` 保持 `1.0.0`，条件版本见不变量 5）**；`normalizeScenario` 只读已知字段，旧 CLI 天然忽略新字段，新 CLI 读旧 yaml 视为无 feature（双向 CLI 兼容）。
+2. **混合态一等合法**：同 module 下部分场景有 feature、部分没有 → "未分组"（`__ungrouped__`）桶收纳。
+3. **feature 不承担 lifecycle/deployment**：纯组织维度。
+4. **归属降级（独立规范）**：`scenario.feature` 缺失/指向未知 feature/跨 module 三态一律入所属 module 的"未分组"桶，不报错、不阻断。本层**不**类比 `scenario.module`（后者仅对缺失兜底 core，显式未知不回退），且不改动 `scenario.module` 现状。
+5. **契约条件版本 minor（回应 delta-F1=B）**：新增可选 `modules[].features` 字段属 minor；采**条件版本发射**——`contract.version` = `1.1.0` **当且仅当**本次响应含 ≥1 个 `modules[].features`，否则**保持 `1.0.0`**。故纯 pre-feature 响应逐字节完全不变（含版本）、无 golden 重拍；仅带 feature 响应升 `1.1.0`。两版契约并存（1.0.0 无 features / 1.1.0 可含 features），`features`⟺`1.1.0`；两份 schema 的 `contract.version` 由 const 放宽为 `enum ["1.0.0","1.1.0"]` + 根级 allOf 约束（`version==1.0.0 ⟹ 无 features`），CI 校验"响应 version ∈ 支持集 + features⟹1.1.0"。**版本发射唯一改点 = `cli/src/lib/step-registry.ts`**：由单常量 `CONTRACT_VERSION` 改为导出两版本常量（`1.0.0`/`1.1.0`）或选择器；status/next import 后**按本次响应是否含 features 条件选择**发射版本（不各自硬编码——回应 delta-F6）。
+
+### 派生与命令架构
+
+- **契约版本发射（唯一改点，条件版本）**：`cli/src/lib/step-registry.ts` 由单常量 `CONTRACT_VERSION` 改为导出 `1.0.0`/`1.1.0` 两版本常量（或选择器 helper）；`status.ts:1227` / `next.ts:999` import 后**按本次响应是否含 `features` 条件选择**发射版本（含 features → 1.1.0，否则 1.0.0），不各自硬编码——保证两命令、两版 schema 与条件版本约束一致（回应 delta-F1=B / F6）。
+- **status 分组桶**：`cli/src/commands/status.ts` 的 `collectStatusData` 在按 module 分组（`s.module ?? 'core'`）之下再按 `features[]` 声明顺序建 feature 桶（含成员为空的注册 feature，`scenarios:[]`）；`ModuleStatusItem` 补可选 `features`（元素含 `id`/`name`/`spec`/`scenarios:[{id,name}]` 稳定成员列表——与 phase 无关，**不复用**依附 phase 的 `ScenarioCoverage`）；overlay 路径 `cli/src/lib/flow-overlay-derive.ts` 同款分组处同步。
+- **省略/降级派生规则（How 层，回应 delta-F10）**：`collectStatusData`（及 overlay 派生）**省略 `features` 当且仅当**该 module 既无注册 feature（`features[]` 中 `module==本 module`）**且**其下无任何场景带 `feature` 键（纯 pre-feature 项目）。**只要**有 ≥1 注册 feature，**或**有 ≥1 场景带 `feature` 键（含未知/跨 module 悬空引用），即**输出** `features` 并在末位补 `__ungrouped__` 降级桶——因此未知/跨 module 引用一定进入 `__ungrouped__`，不因"无注册 feature"被省略（与 UT-S34-12/13、产品规格、CLI 契约、schema `$comment` 一致）。`feature list` 为专用分组视图（无零漂移约束）：module 有场景但无注册 feature 时仍返回 `[{__ungrouped__}]`，`[]` 仅用于真正空 module。
+- **next**：透传 status 的 feature 结构（`NextModuleItem` 增同形 `features?`），不在 feature 层改变"下一步"选择逻辑。
+- **feature list**：`cli/src/commands/feature.ts` 只读视图，复用 `makeEnvelope`/`makeErrorEnvelope`（未注册 module → `MODULE_NOT_FOUND`）。
+- **feature-backfill**：以 `cli/src/commands/index-cmd.ts` 为范式样板，生成 `logos/feature-backfill-prompt.md`，不改 yaml、幂等。
+- **命令注册**：`cli/src/index.ts` 挂 `feature` / `feature-backfill` 命令 + HELP + `--format` 清单。
+
+### 实现映射补充（S34）
+
+| 场景 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| S34 | `cli/src/lib/step-registry.ts`（版本发射唯一改点：单常量→1.0.0/1.1.0 双常量或选择器，条件发射）、`cli/src/lib/project-yaml.ts`（features[]/feature_counter/scenario.feature 解析）、`cli/src/commands/status.ts`（feature 分组桶，消费 CONTRACT_VERSION）、`cli/src/lib/flow-overlay-derive.ts`（overlay 分组同步）、`cli/src/commands/feature.ts`（feature list）、`cli/src/commands/feature-backfill.ts`（生成 prompt）、`cli/src/index.ts`（命令注册） | `cli/test/s34-feature.test.ts` |
+
+## 二十.A feature-backfill 纳入逆向候选架构（feature-backfill-brownfield）
+
+补上「二十、feature 功能分组模型层」与「brownfield-adopter（S33，`core-06-provenance-data-model`）」之间的读侧桥接。
+
+### 问题结构
+
+- feature 侧（`feature list` / `feature-backfill` / status 分组）以顶层 `scenarios[]` 为唯一输入。
+- S33 逆向候选活在文档 `## 逆向基线来源` 章节的 `candidates[]` + yaml 派生 `baseline_index`，**不进** `scenarios[]`。
+- ⇒ 逆向接入的存量项目其候选在 feature 侧不可见、无从聚类。
+
+### 场景候选唯一查询协议（回应 F1：候选无 `kind` 字段，须显式筛类）
+
+**约束**：`BaselineCandidate`（`cli/src/lib/baseline-provenance.ts`）**不含 `kind`**；`scanModuleCandidates()` 会同时返回 `scenario-candidates` 与 `system-map` 两类产物的候选，`baseline_index[module]` 也只有聚合 hash/覆盖率/时间、无 `kind→target_path`。直接复用会把 system-map 候选（模块图/入口/依赖）误纳入 feature 聚类并多计 `baseline_candidates_total`。
+
+**协议(权威、可持久重建)**：
+- **权威来源 = 已提交 run manifest 的 `expected[{kind, target_path, candidate_keys[]}]`**（S33 §run 记录：`begin` 必含 `kind: system-map` + `kind: scenario-candidates`）。取该 module **最新 committed（非 `superseded`）run** 的 `expected[]` 中 `kind == "scenario-candidates"` 的 `target_path` 集合 → **只取这些文档** `## 逆向基线来源` 章节的候选,即"逆向场景候选"。
+- **去重与顺序**：候选按 `key` 去重、按目标文档 + 文档内 `key` 升序（确定性、幂等，与 `scanModuleCandidates` 同序）。
+- **筛选谓词（回应 delta-r2-F1，固定布尔）**：`state == "active" && verified == false`。`tombstone`/`retired` 不纳入;**`verified:true`（已人工确认）候选排除**——它们已由 S33 JIT 确认流治理、不在本命令范围,不纳入、不计数。⇒ 纳入项**全部**是 `verified:false`,prompt 统一标注 `verified:false` 即**如实**（不虚假标注）,`baseline_candidates_total` 口径= active 且未验证的场景候选数。
+- **回退(run 历史缺失/迁移项目)**：无 committed run manifest 时,回退按 S33 既有 scenario-candidates 文档的**目标类型/命名约定**识别（与 `baseline-seed` 的 `target_path` 允许目录一致）;仍无法确定类别 → 该 module 记为**候选不可信**,走 F6 降级（不静默计 0）。
+
+### 提交恢复门与同锁读取(回应 F2：feature-backfill 是新机器消费者)
+
+`feature-backfill` 作为**新的基线机器消费者**,必须接入 S33 §4.4 的崩溃一致性读取门:
+- **同锁临界区**：候选筛选（含上节 kind/module/state 过滤）、计数、prompt 内容构造**全部在 `withRecoveredReadLocks(root, at, moduleIds, cb)`（`cli/src/lib/baseline-seed-txn.ts`)的同一临界区内完成**（与 `openlogos index`、JIT advisory 同范式);读前检测并恢复 `prepared`/`committing` journal。
+- **无法取锁/恢复**：返回 `baseline_commit_in_progress`——**不写、不覆盖** `logos/feature-backfill-prompt.md`;`--format json` 走错误 envelope（错误码 `BASELINE_COMMIT_IN_PROGRESS`)、非零退出;文本模式打印同义错误。**绝不**把半新多文档集合当权威、绝不生成缺项/重复项 prompt。
+- **多 module 锁顺序（无 `--module`)**：按 `modules[]` 声明顺序取锁（稳定顺序,防死锁与跨 module 混合快照);`listProjectModuleIds` 提供 module 集合。
+
+### 降级语义(回应 F6：解析失败 / 索引 stale)
+
+- **无 `baseline_index` 且无逆向产物**（真·非存量）→ `baseline_candidates_total=0`、prompt 无候选段、命中"非存量零改动"。
+- **有权威章节但索引 stale / hash 不符** → 在读锁内**从权威文档 `## 逆向基线来源` 重算**（不信 stale 索引);重算成功即照常纳入。
+- **权威章节解析失败（坏 fenced YAML 等)（回应 delta-r2-F6，唯一行为)** → **走错误 envelope、稳定错误码 `BASELINE_PROVENANCE_INVALID`、非零退出、不写/不覆盖 prompt**（不静默降为 0 冒充非存量、不走"warning 成功"以免与必填计数无法闭合)。与"真·零候选"（成功、`baseline_candidates_total=0`)明确区分。
+
+### 五条不变量（How 层）
+
+1. **导航 ≠ 可信度**：`scenarios[]` 登记是导航注册；provenance `verified` 权威源仍是 `## 逆向基线来源` 章节，覆盖率派生（`human_verified / 分母`）单独重算、不受 `scenarios[]` 影响,本命令**不触发索引重写或任何覆盖率副作用**。
+2. **status/next 仍只读 `scenarios[]`**：不接入 `baseline_index` 候选到 status/next 输出；adopted 项目在 AI 回写前逐字节零漂移、条件版本沿用（无 features → `1.0.0`）。
+3. **CLI 只读 + 生成 prompt**：`feature-backfill` 不取号、不写 yaml、不启动 AI；scenario/feature 取号由 AI 按 prompt 回写（见二十.B）。
+4. **非存量零改动**：无逆向场景候选时 `baseline_candidates_total=0`、prompt 与今天一致。
+5. **不改 merge / provenance 协议**：不扩展 provenance schema、不引入双有序 delta / 嵌套 change;不改 `candidates[]` 结构（不新增 `kind` 字段——类别经 run manifest 派生）。
+
+### 实现映射补充（feature-backfill-brownfield）
+
+| 场景 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| S34（feature-backfill-brownfield） | `cli/src/commands/feature-backfill.ts`（读锁临界区内:场景候选唯一查询 + 计数 + prompt 标注/取号指令 + `baseline_candidates_total` + `BASELINE_COMMIT_IN_PROGRESS`/降级)、`cli/src/lib/baseline-provenance.ts` + `baseline-seed-txn.ts`（复用 `scanModuleCandidates` / `withRecoveredReadLocks` / run manifest 只读)、（可选）`cli/src/commands/{next,status}.ts`（adopted 路径引导） | `cli/test/s34-feature-backfill.test.ts`（扩展） |
+
+## 二十.A' 扫描侧 canonical 采信 + 错误 envelope 富化（provenance-scan-canonical-recompute）
+
+补 §二十.A：修复 provenance 扫描侧采信强度低于写侧导致的「文档示例毒化基线」——既堵 `feature-backfill` 硬报错，也堵覆盖率分母/新鲜度静默污染。
+
+### 扫描侧 canonical 重算采信（读写强度对齐）
+
+- **问题**：`cli/src/lib/baseline-provenance.ts` 的 `scanModuleCandidates` / `listModuleProvenanceDocs`（经 `listResourceMarkdown` 递归全扫 `logos/resources/**`）采信候选仅 `key.startsWith("<module>::")` 前缀匹配，**不校验 hash**；而写侧 `baseline-seed`（`validateSeedCandidate`）是 `key === candidateKey(module, anchor)` 重算比对。示例/教学编造 key（格式合法、hash 失配）被读侧误采信。
+- **改法**：读侧采信判据收紧为 `key === candidateKey(module, anchor) ∨ ∃ a∈aliases[] : key === candidateKey(module, a)`（**alias-aware**，见 core-06 §一.A / §三 身份继承）。`candidateKey` 已存在（`baseline-provenance.ts`），零新约定；判据加在 `listModuleProvenanceDocs` 的文档持有判定与 `scanModuleCandidates` 的候选聚合两处，读侧全链一致（`buildBaselineCoverage`、`feature-backfill` 同源受益）。
+- **不变量**：合法基线项目（含改名继承 / tombstone / superseded 候选）覆盖率数值、`aggregate_hash`、freshness 逐字节不变；仅排除不可重算的幽灵候选。
+
+### `BASELINE_PROVENANCE_INVALID` envelope 富化（可诊断性）
+
+- §二十.A「降级语义」的 `BASELINE_PROVENANCE_INVALID` 失败路径，错误 envelope 补两字段（向后兼容、错误码/退出码/「不写不覆盖 prompt」红线不变）：
+  - `paths[]`：判定为 provenance 迹象、导致失败的文件相对项目根路径清单（确定性排序）。
+  - `reason`：`unparseable`（坏 fenced YAML）| `unclassifiable-evidence`（有迹象但无 manifest 且无约定命名文件、不可定类）。
+- 与 canonical 采信配合：编造/示例 key 在采信阶段即排除、不再进入本错误路径；进入者必为真实坏结构或真不可定类，`paths[]` 直指问题文件。
+
+### 实现映射补充（provenance-scan-canonical-recompute）
+
+| 关注点 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| 扫描侧 alias-aware canonical 采信 | `cli/src/lib/baseline-provenance.ts`（`listModuleProvenanceDocs` / `scanModuleCandidates` 加 `key===candidateKey(module, anchor∪aliases)` 过滤，复用 `candidateKey`） | `cli/test/s33-*.test.ts`（UT-S33-37…40） |
+| 错误 envelope `paths[]`+`reason` | `cli/src/commands/feature-backfill.ts`（`BASELINE_PROVENANCE_INVALID` envelope 补触发文件路径 + 分类） | `cli/test/s34-feature-backfill.test.ts`（UT-S34-23/24） |
+
+## 二十.A'' legacy 缺省语义统一派生架构（baseline-seed-legacy-default-unify）
+
+补 §二十.A / core-06 §4.1：修复 legacy adopted 项目（yaml 无 `baseline_seed_state` 字段）三入口缺省语义分歧——`next` / `baseline-seed` 状态机本地 `?? 'required'`，`status` 私有 `effectiveAdoptedState`（有候选→`seeded`，无候选→`unknown` 且不输出字段），下游按契约 fail-closed 后基线入口整体消失；且 `sync` 迁移只认旧布尔、对「两字段皆无」空转。
+
+### 共享派生 helper（单一事实源）
+
+- **唯一权威**：`cli/src/lib/baseline-jit.ts` 新增导出 `effectiveBaselineSeedState(root, moduleId, explicit?): { state: BaselineSeedState; legacy: boolean }`。派生规则：explicit 优先；缺省时 有候选 ∧ 有 open run → `partial`，有候选 ∧ 无 open run → `seeded`，无候选 → `required`；**废除 `unknown` 第三态**。「有候选」= `scanModuleCandidates(root, moduleId).candidates.length > 0`；「有 open run」= `listRunIds`/`readRunRecord` 中该模块存在 `status: 'open'` 的 run。
+- **读锁纪律（继承 status F7 反 TOCTOU）**：helper 内部读权威文档 / run 记录必须在**模块读锁区间**（`withBaselineReadLock`）内执行——helper 自取读锁，并提供 `{ assumeLocked }` 一类入参支持外层已持锁时复用（status 的锁内派生场景）；锁被占用（提交进行中）时按恢复门语义返回降级信号，由调用方走 `baseline_commit_in_progress` 分支。
+- **全量清点（一次收编，禁止残留）**：`next.ts:249/596/657`、`baseline-seed.ts:147/303/334`、`status.ts:30-35（删除私有 `effectiveAdoptedState`）/663/685` 全部改为经 helper 取有效状态；以 `grep "baseline_seed_state ??"` 与 `grep "readSeedState(.*) ??"` 在 `cli/src/` 下清零为验收锚。任何入口不得再持有第二份缺省规则。
+- **status 恒输出**：adopted 模块 `modules[].baseline_seed_state` 无条件输出（explicit 或派生值）；**含 `!derived.ok`（`baseline_commit_in_progress`）降级分支**——该分支同样经派生兜底取值，不得回落到「原始字段缺失 → 不输出」。
+
+### sync 迁移落盘（migrate-lifecycle 扩展）
+
+- `cli/src/lib/migrate-lifecycle.ts`：在既有「布尔→枚举」迁移之后，对 `bootstrap: adopted`（含历史 `skipped` 兼容读取）且仍无 `baseline_seed_state` 的模块，调用共享 helper 派生并写入显式枚举；changes 记录写明派生依据（如 `core: baseline_seed_state 缺省 → required（派生：无逆向候选）`）。已有显式值不覆盖；历史布尔迁移行为不回归；幂等。
+- 迁移后 legacy 缺省态物理消亡，运行时派生仅作过渡兜底；status legacyHint 文案保留且自此指向的 sync 真实有效。
+
+### 实现映射补充（baseline-seed-legacy-default-unify）
+
+| 关注点 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| 共享派生 helper（读锁内派生 + open run 判定） | `cli/src/lib/baseline-jit.ts`（`effectiveBaselineSeedState`，复用 `scanModuleCandidates` / `withBaselineReadLock` / run 记录读取） | `cli/test/s33-*.test.ts`（三入口一致性 UT） |
+| 三入口收编（删私有缺省规则） | `cli/src/commands/next.ts`、`cli/src/commands/baseline-seed.ts`、`cli/src/commands/status.ts`（含 `effectiveAdoptedState` 删除与 commit-in-progress 分支兜底） | `cli/test/s05-next.test.ts`、`cli/test/s11-status.test.ts`、`cli/test/s33-*.test.ts` |
+| sync 迁移落盘 | `cli/src/lib/migrate-lifecycle.ts`（无字段 adopted 派生回填 + changes 记录） | `cli/test/s33-*.test.ts`（迁移 UT） |
+| status JSON 契约恒输出 | `cli/src/commands/status.ts`（adopted 恒输出 `baseline_seed_state`，废除 unknown → 缺失路径） | `cli/test/s11-status.test.ts`、`cli/test/s16-json-output.test.ts`、golden |
+
+## 二十一、步骤注册表架构（step-registry 唯一铸造点，contract-self-description）
+
+### 现状问题
+
+`proposal_step` 字面量铸造点分散、无统一铸造点：`cli/src/lib/proposal-lifecycle.ts` 的 `detectProposalStep` 与 `cli/src/lib/flow-derive.ts` 的 `detectProposalStepViaFlow` 是**两套镜像实现**，另有 `cli/src/commands/status.ts`、`cli/src/commands/next.ts` 直接产字面量或覆盖派生结果。driver 侧被迫用本地枚举集反推步骤语义，已多次漂移。
+
+### 改造：唯一铸造点
+
+- 新增 `cli/src/lib/step-registry.ts` 作为 `proposal_step` 的**唯一铸造点**：任何代码路径产生 `proposal_step` 必须经注册表——收敛 `detectProposalStep` 与 `detectProposalStepViaFlow` 双镜像为一，`status.ts` / `next.ts` 的直接字面量与覆盖点一并改走注册表。
+- 注册表为每个步骤铸造 `step_meta: {phase, kind}`（`phase ∈ pre-implement|implement|post-implement`、`kind ∈ produce|gate|command-required|residency`），由 `status` / `next` 的 `modules[].active_change.step_meta` 随步骤携带输出。全量注册表（**不新增 `proposal_step` 枚举值**）以功能规格 2.28 为唯一事实源。
+- `step_meta` 不构成第二枚举——phase/kind 为小闭合枚举，且契约明文规定消费方遇未知值必须走保守分支。
+
+### CI lint（注册表旁路防回归）
+
+配套 lint 进 CLI 的 CI：全仓扫描「字面量赋给 `proposal_step` 却不在注册表」→ 挂测试失败。注册表成为步骤语义漂移的结构性闸门，而非约定。
+
+### 实现映射补充
+
+| 关注点 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| 步骤注册表 + step_meta | `cli/src/lib/step-registry.ts`（新增）、`cli/src/lib/proposal-lifecycle.ts`、`cli/src/lib/flow-derive.ts`、`cli/src/commands/{status,next}.ts` | `cli/test/s11-status.test.ts`、`cli/test/s05-next.test.ts`、注册表 lint 测试 |
+
+## 二十二、机器契约层架构（contract.version 与 spec/schema/ 版本化 JSON Schema，contract-self-description）
+
+### 契约版本握手
+
+- `status` / `next` 的 `data` 顶层新增 `"contract": {"version": "1.0.0"}`（语义化契约版本，独立于 CLI 版本；与既有 envelope `version`（CLI 版本串）、flow 文件整数 schema `version` 是三个不同的版本维度，互不混用）。
+- SemVer 规则：**major** = 必填字段删除/改义、闭合枚举语义变化（含移除值）、既有字段挂出判据变更；**minor** = 向后兼容扩展（新增可选字段、闭合枚举新增值）；**patch** = 不改形态与语义的澄清。
+- 消费方约定（规范性引用，验收归 runlogos R5）：未知 major / 缺 `contract` 字段 → 保守模式（仅 next 驱动普通推进 + 看门狗，启发式判定降级为仅观察）；契约内任何枚举遇未知值 → 保守分支。
+
+### 版本化 JSON Schema（spec/schema/）
+
+- CLI 仓发布 status/next 的 JSON Schema：`spec/schema/status.schema.json`、`spec/schema/next.schema.json`（内嵌契约版本号，随 npm prepack 打包，附包内容验证测试）。
+- **版本-schema 一一映射**：响应 `contract.version` 必须与打包 schema 版本一致，CI 加校验；契约演进时 schema 与版本号同步推进。
+
+### 权威事实与派发契约的数据流（单一事实源）
+
+- **facts**：`modules[].active_change.facts` 由 CLI 权威计算输出（复用既有权威判定 `hasSpecCompleteMarker` / `isTasksCodeFilled` 等，导出为单一实现）；`loop_state` 激活判据与 facts **同源**（同一份计算，不允许两处实现）。
+- **dispatch**：权威数据源 = flow 节点定义——内置模板 `spec/flow/initial.yaml`、`spec/flow/launched.yaml` 逐节点补齐 `dispatch` 声明（flow 文件 schema 与加载层同步扩展，涉及 S22 加载/解析、S25 overlay 派生）；`defaults.dispatch.timeout_seconds` 为唯一默认值源（fallback），resolved 时物化进每个节点，输出层不再有第二处默认；**不从 produces/done_when 推导**（推导算法本身会成为新的隐式世界模型）。
+
+### CI 一致性证伪（生产者契约）
+
+- 每个注册步骤/节点必须通过 schema 校验（含 step_meta/dispatch 必填，overlay-add 未声明 dispatch 走保守默认后同样过校验）。
+- **生产者一致性漂移注入测试**：在 CLI 注册全新步骤（如 `x-future-step`, `phase=pre-implement`）→ 断言 (a) 注册表/step_meta/schema 三方同步、schema 校验通过；(b) 该 pre-implement 步骤下 `loop_state` 不输出（激活判据的反面锚——`pre-implement + loop_state` 是非法组合，生产者测试断言其不存在，而非将其固化为合法夹具）。
+- **验收边界**：本架构只承诺**生产者契约**（contract 版本字段在场、注册表/schema/输出三方同步、dispatch/facts 字段来源正确、包内 schema 完整）；消费方保守模式 / 零误杀 / suspect 可逆态验收归 runlogos R5 提案，双向契约测试是跨仓总方案完成定义。
+
+### golden 影响（主动破例）
+
+`data` 顶层新增 `contract` 打破「data 顶层逐字节不变（golden 零漂移）」——全部 9 个 golden 基线快照重拍（`cli/test/golden-baseline.test.ts`），破坏性集中在此、随大版本发布；`active_change` 新增 `step_meta` / `facts` 走既有可控扩展口径（仅有活跃提案的 golden 重拍）。
+
+### 实现映射补充
+
+| 关注点 | 主要代码路径 | 主要测试路径 |
+|------|-------------|-------------|
+| contract 版本握手 + schema 打包 | `cli/src/lib/json-output.ts`、`spec/schema/status.schema.json`、`spec/schema/next.schema.json`、npm prepack | `cli/test/s16-json-output.test.ts`、包内容验证测试 |
+| facts 权威事实块 | `cli/src/lib/proposal-lifecycle.ts`（权威判定导出）、`cli/src/commands/{status,next}.ts` | `cli/test/s11-status.test.ts`、`cli/test/s05-next.test.ts` |
+| dispatch 节点元数据 | `spec/flow/{initial,launched}.yaml`、`cli/src/lib/flow.ts`（schema + 加载）、`cli/src/lib/flow-overlay-derive.ts`（透传/保守默认） | `cli/test/s22-flow.test.ts`、`cli/test/s25-overlay-derive.test.ts`、`cli/test/s28-next-node.test.ts` |
+| loop_state 激活收紧 | `cli/src/lib/flow-loop-derive.ts`（四事实合取判据）、SLICES_APPROVED 结构化 marker 写入点 | `cli/test/s27-loop-iterate.test.ts`、`cli/test/golden-baseline.test.ts` |
+| 生产者漂移注入 | `cli/src/lib/step-registry.ts` + schema 校验测试 | 漂移注入（`x-future-step`）一致性测试 |
 
 ## 自动流程证据边界与责任分工
 

@@ -1,17 +1,140 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.13.1",
-  "updatedAt": "2026-07-04T15:55:51.217Z",
-  "generatedAt": "2026-07-04T15:55:51.217Z",
-  "versionCount": 76,
+  "latestVersion": "0.13.6",
+  "updatedAt": "2026-07-08T02:09:56.380Z",
+  "generatedAt": "2026-07-08T02:09:56.380Z",
+  "versionCount": 80,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.13.1"
+    "latest": "0.13.6"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.13.6",
+      "publishedAt": "2026-07-08T02:09:56.086Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.6",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.6",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.6.tgz",
+      "gitHead": null,
+      "size": 750381,
+      "sizeLabel": "733 KB",
+      "unpackedSize": 2996341,
+      "unpackedSizeLabel": "2.9 MB",
+      "fileCount": 294,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [],
+      "fixSummary": [
+        "纯代码提案 no-delta spec-complete 闭环 — openlogos merge 对无规格 delta 的代码提案执行 no-op merge 并写入带审计内容的 SPEC_MERGED，让纯代码修复也具备可追踪的规格阶段完成状态。",
+        "切片规划前测试 ID 门禁 — openlogos next/status 在缺 SPEC_MERGED 或缺真实 UT/ST/SMOKE ID 时返回 spec-complete-required / test-id-required 诊断，阻止未满足前置条件的提案误派到 slice-planner。",
+        "随包规范、Skill、官网与 smoke 覆盖同步 — 更新 flow/tasks/change/CLI JSON 等规格、change-writer 与 slice-planner Skill、官网中英文文档，并新增 no-delta spec-complete / 缺测试 ID 的发布后 smoke 覆盖。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.6: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.13.5",
+      "publishedAt": "2026-07-05T06:24:43.667Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.5",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.5",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.5.tgz",
+      "gitHead": null,
+      "size": 748157,
+      "sizeLabel": "731 KB",
+      "unpackedSize": 2984074,
+      "unpackedSizeLabel": "2.8 MB",
+      "fileCount": 294,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "verify / smoke 跳过用例统计口径修复 — status:\"skip\" 现在计入有效通过数，pass_rate_pct 按 (passed + skipped) / executed 计算；合法环境性 skip 继续展示在 skipped_cases / 报告中，但不再单独阻塞 verify 或 smoke Gate。",
+        "verify AC trace 接受合法 skip — AC 追溯中关联用例为 pass 或 skip 时均视为该自动化验收条件有效通过，避免本机不可运行的 smoke/verify 用例把成功率误判为失败。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.5: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.13.4",
+      "publishedAt": "2026-07-05T05:20:11.634Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.4",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.4",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.4.tgz",
+      "gitHead": null,
+      "size": 747768,
+      "sizeLabel": "730 KB",
+      "unpackedSize": 2983061,
+      "unpackedSizeLabel": "2.8 MB",
+      "fileCount": 294,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "恢复 Codex $openlogos 插件发现闭环 — openlogos init/sync 现在会把 OpenLogos 官方 Codex 插件同步到 Codex 默认个人 marketplace（~/plugins/openlogos + ~/.agents/plugins/marketplace.json），并刷新 openlogos@personal，解决仅写项目内 .agents/plugins/marketplace.json 时新会话无法发现 $openlogos skills 的问题。",
+        "清理历史污染残留 — 同步个人 OpenLogos 插件时先重建 ~/plugins/openlogos，确保旧版误吸收的项目 .agents/skills/* 不会残留在 OpenLogos 命名空间；项目专属插件继续保留在自己的 <plugin>:<skill> 命名空间。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.4: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.13.2",
+      "publishedAt": "2026-07-05T01:49:59.238Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.2.tgz",
+      "gitHead": null,
+      "size": 744304,
+      "sizeLabel": "727 KB",
+      "unpackedSize": 2960640,
+      "unpackedSizeLabel": "2.8 MB",
+      "fileCount": 294,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [],
+      "fixSummary": [
+        "Codex / Claude Skill 命名空间边界 — openlogos init/sync/launch 现在将 OpenLogos 官方 Codex 技能写入 .agents/plugins/openlogos 命名空间，并保留项目插件、历史 .codex-plugin 与 .agents/skills 项目技能；Claude Code 项目技能继续保留在 .claude/skills，不会进入 OpenLogos 官方插件。",
+        "AI 指令与文档同步 — AGENTS.md / CLAUDE.md Active Skills 分组区分 OpenLogos 方法论技能与项目专属技能，官网中英文文档、插件模板和 smoke 覆盖同步说明命名空间边界。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.2: Chinese value summary entries are missing; English value summary entries are missing; English fix summary entries are missing."
+    },
     {
       "version": "0.13.1",
       "publishedAt": "2026-07-04T15:55:50.839Z",
@@ -31,9 +154,7 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [],
       "fixSummary": [
         "verify 结果账本一致性硬门 — openlogos verify 现在会拒绝非法 JSONL 结果、非法 status、未定义或 manual 用例 ID、统计不变量不成立等不自洽账本；JSON 输出新增 consistency 诊断，Gate 失败时返回 result_ledger_inconsistent，避免全自动消费方误信不可信的 PASS。",

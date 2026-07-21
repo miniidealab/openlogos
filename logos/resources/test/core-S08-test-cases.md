@@ -55,3 +55,21 @@
 - [x] OpenLogos 官方 Codex skills 可刷新：已覆盖（UT-S08-10）
 - [x] Claude 项目 skill 保留：已覆盖（UT-S08-11 / ST-S08-06）
 - [x] 同步输出命名空间诊断：已覆盖（UT-S08-12）
+
+## 五、版本戳落盘（.openlogos-sync.json）测试补充
+
+### 5.1 单元测试用例补充
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S08-13 | 成功 sync 落盘版本戳 | sync 版本戳落盘 | 已初始化项目，`logos/.openlogos-sync.json` 不存在 | sync | 生成 `logos/.openlogos-sync.json`，`cliVersion` 等于当前 CLI VERSION，`syncedAt` 为合法 ISO 8601 时间戳 |
+| UT-S08-14 | 失败路径不写/不刷新版本戳 | sync 版本戳落盘 | 模块 baseline 提交进行中（锁被占用且无法恢复），`logos/.openlogos-sync.json` 已含上一次成功 sync 的旧内容 | sync | 非零退出并报 `baseline_commit_in_progress`；版本戳文件内容与 sync 前逐字节一致（不刷新 `cliVersion` / `syncedAt`） |
+
+### 5.2 场景测试用例补充
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S08-07 | sync 后版本戳存在且幂等覆盖 | Step 1→11 | 已初始化 | 连续执行 sync 两次 | 每次成功 sync 后 `logos/.openlogos-sync.json` 均存在且为单一 JSON 对象（非追加）；`cliVersion` 等于当前 CLI VERSION；第二次 sync 整体覆盖写入，文件仍只含 `cliVersion` / `syncedAt` 两个字段 |
+
+### 5.3 覆盖度校验补充
+- [ ] 成功 sync 落盘版本戳：UT-S08-13
+- [ ] 失败路径零写副作用：UT-S08-14
+- [ ] 版本戳主路径与幂等覆盖：ST-S08-07

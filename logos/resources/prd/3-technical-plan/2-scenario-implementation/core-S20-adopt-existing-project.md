@@ -28,7 +28,7 @@ sequenceDiagram
 7. **CLI** 创建 `logos/` 标准目录结构（与 `init` 相同）；其中 `logos/resources/reference/` 下必须同时创建 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录，并写入 `.gitkeep`。
 8. **CLI** 写入 `logos.config.json` 与 `logos-project.yaml`；`logos.config.json` 包含 `verify.result_path`，并在可推断时包含 verify 预跑命令与推荐沙箱配置；`logos-project.yaml` 中模块 `bootstrap` 字段为 `adopted`，`lifecycle` 为 `launched`。
 9. **CLI** 写入根目录 AI 指令文件时复用 `init` 的 managed block 合并策略：已有用户内容必须保留；OpenLogos 内容写入或刷新在托管片段内；同时部署 AI 工具资产与 `logos/spec/`。
-10. **CLI** 输出接入报告，说明 verify 预跑配置与 sandbox 配置是否已补齐，并固定建议下一步执行 `openlogos change add-baseline-docs`。
+10. **CLI** **写入模块级枚举 `baseline_seed_state: required`**（衔接逆向建基线 S33；唯一状态字段，非布尔），输出接入报告，说明 verify 预跑配置与 sandbox 配置是否已补齐，并说明下一步将由 AI 会话/driver 逆向建立现状基线（种子基线，非权威意图）。**CLI 本身不启动 AI、不产逆向内容、不声称基线已建立**；能力缺失时输出可复制的后续提示并保持 `baseline_seed_state: required`。
 
 ## 异常用例
 ### EX-2.1: 项目已初始化
@@ -45,4 +45,9 @@ sequenceDiagram
 - **触发条件**：已有项目的 `AGENTS.md` / `CLAUDE.md` 中只存在 `OPENLOGOS:BEGIN` 或只存在 `OPENLOGOS:END`。
 - **期望响应**：adopt 失败并提示用户修复指令文件托管片段边界。
 - **副作用**：不得覆盖用户既有 AI 指令文件。
+
+### EX-10.1: adopt 不越权逆向扫描
+- **触发条件**：adopt 完成初始化。
+- **期望响应**：adopt 只写入 `baseline_seed_state: required`，**不启动 AI、不产任何逆向基线内容、不声称基线已建立**；逆向扫描由 AI 会话/driver 检测该状态后派发 `brownfield-adopter`（见 S33）。
+- **副作用**：能力缺失时保持 `baseline_seed_state: required`，输出可复制提示，不伪造基线。
 

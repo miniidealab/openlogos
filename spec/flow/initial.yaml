@@ -1,8 +1,21 @@
+#
 # 内置 flow 模板：initial（首轮开发流程）
 # 忠实 1:1 翻译现有 PHASE_KEYS 13 段瀑布，行为不变（M1）。
+# contract-self-description：顶层新增 defaults.dispatch.timeout_seconds（timeout 唯一默认值源 fallback）；
+#   每个节点新增 dispatch 派发元数据（idempotent / timeout_seconds / artifacts_hint，逐节点人工声明、
+#   不从 produces/done_when 推导，基准见 flow-spec「派发元数据」章节）。
+#   向后兼容扩展：flow 文件 schema version: 1 保持不变。
 # 这是产品唯一源头；项目实例 logos/flow/initial.yaml 可 extends: builtin:initial 后只写差异。
+# 注：YAML 模板无 md 章节，本 delta 按整文件替换合并。
 version: 1
 flow: initial
+
+# contract-self-description：dispatch.timeout_seconds 的唯一默认值源（fallback）；
+# 节点未显式声明 timeout_seconds 时取此值；显式声明的特例节点（code 3600 / deploy 1800）优先于 defaults；
+# 项目 overlay 覆盖 defaults 只影响未显式声明的节点；resolved 时物化进每个节点。
+defaults:
+  dispatch:
+    timeout_seconds: 900
 
 subflows:
   # ── WHY：需求 ───────────────────────────────────────────────
@@ -17,6 +30,8 @@ subflows:
         when: bootstrap != adopted
         produces: logos/resources/prd/1-product-requirements/
         done_when: dir_nonempty
+        # 内容产出类：重派发安全
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/prd/1-product-requirements/"] }
     gate: { type: human, skippable: true }   # Gate 1
 
   # ── WHAT：产品设计 ─────────────────────────────────────────
@@ -31,6 +46,7 @@ subflows:
         when: bootstrap != adopted
         produces: logos/resources/prd/2-product-design/
         done_when: dir_nonempty
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/prd/2-product-design/"] }
     gate: { type: human, skippable: true }   # Gate 2
 
   # ── HOW：技术设计 ──────────────────────────────────────────
@@ -43,6 +59,7 @@ subflows:
         when: bootstrap != adopted
         produces: logos/resources/prd/3-technical-plan/1-architecture/
         done_when: dir_nonempty
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/prd/3-technical-plan/1-architecture/"] }
 
       - id: scenario-modeling
         name: 场景时序
@@ -50,6 +67,7 @@ subflows:
         for_each: scenarios
         produces: "logos/resources/prd/3-technical-plan/2-scenario-implementation/{module}-{scenario}-*.md"
         done_when: all_present
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/prd/3-technical-plan/2-scenario-implementation/{module}-{scenario}-*.md"] }
 
       - id: api-design
         name: API 设计
@@ -57,6 +75,7 @@ subflows:
         when: api_enabled
         produces: logos/resources/api/
         done_when: dir_nonempty
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/api/"] }
 
       - id: db-design
         name: DB 设计
@@ -64,6 +83,7 @@ subflows:
         when: db_enabled
         produces: logos/resources/database/
         done_when: dir_nonempty
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/database/"] }
 
       - id: deployment-design
         name: 部署方案
@@ -72,6 +92,7 @@ subflows:
         # NON_FALLBACK_SKIP_PHASES 中免于兜底跳过），故保持"始终活跃"以严格 1:1。
         produces: logos/resources/prd/3-technical-plan/3-deployment/
         done_when: dir_nonempty
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/prd/3-technical-plan/3-deployment/"] }
 
       - id: test-cases
         name: 测试用例
@@ -79,6 +100,7 @@ subflows:
         for_each: scenarios
         produces: "logos/resources/test/{module}-{scenario}-test-cases.md"
         done_when: all_present
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/test/{module}-{scenario}-test-cases.md"] }
 
       - id: orchestration-test
         name: 编排测试
@@ -86,6 +108,7 @@ subflows:
         when: scenario_enabled     # 现状由 skip_phases:scenario 控制（与 api 无关）
         produces: logos/resources/scenario/
         done_when: dir_nonempty
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/scenario/"] }
     gate: { type: none }
 
   # ── 实现：code + verify（M2 将变 loop，收敛=测试绿）─────────
@@ -99,6 +122,8 @@ subflows:
         review_agent: null
         produces: logos/resources/implementation/
         done_when: dir_nonempty
+        # 实现类：重派发安全（逐片实现可续跑），timeout 取实现类 3600
+        dispatch: { idempotent: true, timeout_seconds: 3600, artifacts_hint: ["logos/resources/implementation/"] }
 
       - id: verify
         name: 验收
@@ -106,6 +131,8 @@ subflows:
         # initial 首轮开发：完成信号是验收报告文件（PHASE_SUBPATHS[10]），非提案 marker
         produces: logos/resources/verify/acceptance-report.md
         done_when: file:logos/resources/verify/acceptance-report.md
+        # verify 命令节点：重跑安全
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/verify/acceptance-report.md"] }
     loop: { until: tests_green, max_iters: 1 }   # until 为 M2 预留，M1 按退化环忽略
     gate: { type: none }
 
@@ -119,6 +146,8 @@ subflows:
         when: deployment_required
         produces: logos/resources/verify/deployment-report.md
         done_when: file:logos/resources/verify/deployment-report.md
+        # 一次性执行类：重投不安全，timeout 取部署类 1800
+        dispatch: { idempotent: false, timeout_seconds: 1800, artifacts_hint: ["logos/resources/verify/deployment-report.md"] }
 
       - id: smoke
         name: 冒烟
@@ -126,5 +155,7 @@ subflows:
         when: smoke_required
         produces: logos/resources/verify/smoke-report.md
         done_when: file:logos/resources/verify/smoke-report.md
+        # smoke 命令节点：重跑安全
+        dispatch: { idempotent: true, artifacts_hint: ["logos/resources/verify/smoke-report.md"] }
     # entry gate：在 deploy 之前确认（而非等 deploy+smoke 跑完）；默认不允许无人值守
     gate: { type: human, position: entry, skippable: false }

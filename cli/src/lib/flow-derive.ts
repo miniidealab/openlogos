@@ -37,7 +37,9 @@ import {
   SLICES_APPROVED_MARKER,
 } from './proposal-lifecycle.js';
 import type { ProposalStep } from './proposal-lifecycle.js';
+import { mintStep, type MintedStep } from './step-registry.js';
 import type { ModuleInfo, PhaseProgressItem } from '../commands/status.js';
+import { deriveUiImpact } from './ui-first.js';
 
 /** node id → 原 PHASE_KEYS（13 个 1:1）。维护在 code 侧以保持 spec/flow/*.yaml 纯净。 */
 export const NODE_TO_PHASE_KEY: Record<string, string> = {
@@ -346,12 +348,115 @@ function extractLaunchedMarkers(root?: string): LaunchedMarkers {
   };
 }
 
+// ── proposal-ui-ux-first 切片1：ui_impact 派生 + plan 阶段原型 delta 例外 ──
+
+/**
+ * launched flow 的可派生 when-flag `ui_impact`（module-aware）。
+ * = 活跃提案所属 module 的 product_type ∈ GUI（web/desktop/mobile）
+ *   && proposal.md「UI/UX 变更声明」段 ui_impact:true。
+ * 直接转调 ui-first 的 deriveUiImpact（唯一数据源 = logos-project.yaml + proposal.md 声明段）。
+ * 非 GUI 模块（含缺字段）恒 false；声明 ui_impact:false 亦 false。
+ */
+export function deriveUiImpactFlag(root: string, moduleId: string | undefined, proposalDir: string): boolean {
+  return deriveUiImpact(root, moduleId, proposalDir);
+}
+
+/** 原型 delta 相对路径前缀（overlay produces：deltas/prd/2-product-design/2-page-design/）。 */
+const PROTOTYPE_DELTA_PREFIX = join('prd', '2-product-design', '2-page-design');
+
+/**
+ * 判据：提案的可合并 delta **仅**为 `deltas/prd/2-product-design/2-page-design/*.html` 原型文件
+ * （至少一个原型 html，且无任何其它规格 delta）。
+ * - 无任何原型 html（含无 delta）→ false（非「仅原型」）。
+ * - 存在任何 **非** 2-page-design/*.html 的可合并 delta（如 1-feature-specs/*.md、api/*.yaml）→ false。
+ * - 仅原型且全为 .html → true。
+ * 纯判据、无副作用；用于 plan 阶段「原型 delta 例外」（原型不应误判进入 spec/delta-writing）。
+ */
+export function isPrototypeOnlyDelta(proposalDir: string): boolean {
+  let prototypeCount = 0;
+  let otherCount = 0;
+  for (const category of MERGE_SUPPORTED_DELTA_DIRS_FOR_UI) {
+    for (const rel of listFiles(join(proposalDir, 'deltas', category))) {
+      const full = join(category, rel);
+      const isPrototype = full.startsWith(PROTOTYPE_DELTA_PREFIX + '/') && full.endsWith('.html');
+      if (isPrototype) prototypeCount++;
+      else otherCount++;
+    }
+  }
+  return prototypeCount > 0 && otherCount === 0;
+}
+
+/**
+ * 判据：plan 阶段是否应「进入 spec」（离开 ready-to-delta 门前态）。
+ * ui_impact 为真时启用「原型 delta 例外」：
+ *   - 仅 2-page-design/*.html 原型 delta（无非原型规格 delta）且未 PLAN_APPROVED → **不进 spec**（仍 plan）；
+ *   - 出现任何非原型规格 delta，或 plan-exit 已放行（PLAN_APPROVED）→ 进入 spec。
+ * ui_impact 为假（含非 GUI）→ 恢复原逻辑：有任意可合并 delta 或 PLAN_APPROVED 即进 spec。
+ * 该判据仅描述「delta 尚未勾选（checked===0）」这一支的门前语义，供 detect 主体最小接入。
+ */
+export function shouldEnterSpec(proposalDir: string, uiImpact: boolean): boolean {
+  const planApproved = existsSync(join(proposalDir, PLAN_APPROVED_MARKER));
+  if (planApproved) return true;
+  const mergeableCount = countMergeableDeltaFiles(proposalDir);
+  if (mergeableCount === 0) return false;
+  // 有可合并 delta：ui_impact 时，若仅原型 html → 仍门前（不进 spec）；否则进 spec。
+  if (uiImpact && isPrototypeOnlyDelta(proposalDir)) return false;
+  return true;
+}
+
+/** isPrototypeOnlyDelta 扫描的 delta 类目（与 countMergeableDeltaFiles 的 MERGE_SUPPORTED_DELTA_DIRS 对齐）。 */
+const MERGE_SUPPORTED_DELTA_DIRS_FOR_UI = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
+
+/**
+ * 读活跃提案所属 module id（guard 文件 module 字段）；缺失/损坏 → undefined。
+ * ui_impact 为 module-aware，需据此定位 product_type；缺 module 时 deriveUiImpactFlag 恒 false（安全默认）。
+ */
+function activeModuleId(root: string): string | undefined {
+  const guardPath = join(root, 'logos', '.openlogos-guard');
+  if (!existsSync(guardPath)) return undefined;
+  try {
+    const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+    return typeof guard.module === 'string' && guard.module.trim() ? guard.module.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * 复现 detectProposalStep：launched 模块 ProposalStep 改由 builtin launched flow 派生。
  * marker/section 名来自 launched.yaml；分支优先级（VERIFY_FAIL 全局最先、SMOKE 仅在 deploy 完成子块内）
  * 与提案级部署决策（resolveProposalDeploymentDecision）为引擎规则，1:1 镜像旧逻辑。
  */
+// ── contract-self-description（code review r2-F5）：检测器唯一铸造出口 ──
+// 内部 raw 检测仍以字面量表达分支结论（派生逻辑的自然写法），但**对外唯一出口**一律经
+// mintStep() 校验并成对携带 step_meta——注册表缺条目的新步骤在此 fail loud，无法静默流出。
+// 测试注入缝：仅供生产者漂移注入测试驱动真实 status/next 生产路径产出未来步骤。
+let stepDetectorOverrideForTest: ((proposalDir: string, raw: ProposalStep) => ProposalStep) | null = null;
+export function __setStepDetectorOverrideForTest(fn: typeof stepDetectorOverrideForTest): void {
+  stepDetectorOverrideForTest = fn;
+}
+
+/** 检测器成对铸造出口：status/next 消费 {proposal_step, step_meta} 成对结果（C1 唯一铸造点）。 */
+export function detectMintedStepViaFlow(
+  proposalDir: string,
+  moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
+  cmdEval?: CmdGateEval | null,
+): MintedStep {
+  const raw = detectProposalStepViaFlowRaw(proposalDir, moduleDefaults, cmdEval);
+  const effective = stepDetectorOverrideForTest ? stepDetectorOverrideForTest(proposalDir, raw) : raw;
+  return mintStep(effective);
+}
+
+/** 兼容出口（既有测试/调用面）：同样经注册表铸造校验后返回步骤值。 */
 export function detectProposalStepViaFlow(
+  proposalDir: string,
+  moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
+  cmdEval?: CmdGateEval | null,
+): ProposalStep {
+  return detectMintedStepViaFlow(proposalDir, moduleDefaults, cmdEval).proposal_step;
+}
+
+function detectProposalStepViaFlowRaw(
   proposalDir: string,
   moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
   cmdEval?: CmdGateEval | null,
@@ -454,7 +559,13 @@ export function detectProposalStepViaFlow(
     if (delta.total > 0 && delta.checked === delta.total) return 'ready-to-merge';
     // change-flow-redesign：delta 尚未启动且 plan 门未消费 → ready-to-delta（plan 出口驻留态）。
     // PLAN_APPROVED 是 plan-exit 被 --auto 消费后的状态源；GATE_AUTO_PASSED 仅为审计，不参与派生。
-    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0 && !exists(PLAN_APPROVED_MARKER)) return 'ready-to-delta';
+    // proposal-ui-ux-first：ui_impact 为真时启用「原型 delta 例外」——仅 2-page-design/*.html 原型 delta
+    // （无非原型规格 delta、无 PLAN_APPROVED）视为 plan 门前态 ready-to-delta，不因原型 delta 误判进 delta-writing。
+    // shouldEnterSpec 门控 ui_impact：非 GUI / 未声明时 uiImpact=false，判据退化为原逻辑（count===0 && !PLAN_APPROVED），逐字节不变。
+    if (delta.checked === 0) {
+      const uiImpact = deriveUiImpactFlag(root, activeModuleId(root), proposalDir);
+      if (!shouldEnterSpec(proposalDir, uiImpact)) return 'ready-to-delta';
+    }
     return 'delta-writing';
   }
 

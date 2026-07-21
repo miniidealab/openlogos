@@ -1315,3 +1315,202 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(parsed.data.pre_run.diagnostics.join('\n')).not.toContain('smoke_cases_uncovered');
   });
 });
+
+// ── contract-self-description 切片4（C6/D7）：同 ID timestamp 去重全序 ──
+describe('S13 — timestamp 去重全序（contract-self-description）', () => {
+  let root: string;
+  let cleanup: () => void;
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root, { locale: 'zh' });
+    mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), '| UT-S13-90 | d |\n| UT-S13-91 | d |\n');
+  });
+  afterEach(() => cleanup());
+  function writeVerifyResults(lines: string[]) {
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), lines.join('\n') + '\n');
+  }
+  /** 读回结果账本并按全序去重后取某 ID 的生效记录。 */
+  function effective(id: string): TestResult {
+    const content = readFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), 'utf-8');
+    return parseJsonlWithDiagnostics(content).results.find(r => r.id === id)!;
+  }
+
+  it('UT-S13-41: 全合法乱序追加 → 绝对时刻最新优先（后写入的旧 fail 不翻盘）', () => {
+    writeVerifyResults([
+      '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T10:00:00Z"}',
+      '{"id":"UT-S13-90","status":"fail","error":"stale","timestamp":"2026-07-17T08:00:00Z"}', // 文件末行但时刻更旧
+      '{"id":"UT-S13-91","status":"pass","timestamp":"2026-07-17T09:00:00Z"}',
+    ]);
+    expect(effective('UT-S13-90').status).toBe('pass'); // 不因旧 fail 在文件末尾而翻盘
+    const data = collectVerifyData(root);
+    expect(data.gate.result).toBe('PASS');
+  });
+
+  it('UT-S13-42: 缺失+合法混排 → 该 ID 整组退回文件行序 last-wins', () => {
+    writeVerifyResults([
+      '{"id":"UT-S13-90","status":"fail","error":"x","timestamp":"2026-07-17T10:00:00Z"}', // 合法且最新
+      '{"id":"UT-S13-90","status":"pass"}',                                                  // 缺 timestamp、行序最后
+      '{"id":"UT-S13-91","status":"pass","timestamp":"2026-07-17T09:00:00Z"}',
+    ]);
+    // 组内存在缺失 → 不做时间猜测，整组退回行序 last-wins（取 pass）；91 组全合法不受影响
+    expect(effective('UT-S13-90').status).toBe('pass');
+    expect(effective('UT-S13-91').status).toBe('pass');
+  });
+
+  it('UT-S13-43: 非法格式（"yesterday"、"2026/07/17"）按缺失处理 → 整组退回行序', () => {
+    writeVerifyResults([
+      '{"id":"UT-S13-90","status":"fail","error":"x","timestamp":"2026-07-17T10:00:00Z"}',
+      '{"id":"UT-S13-90","status":"pass","timestamp":"yesterday"}',
+      '{"id":"UT-S13-91","status":"fail","error":"y","timestamp":"2026/07/17 10:00:00"}',
+      '{"id":"UT-S13-91","status":"pass","timestamp":"2026-07-17T09:00:00Z"}',
+    ]);
+    expect(effective('UT-S13-90').status).toBe('pass'); // 非法按缺失 → 行序后者
+    expect(effective('UT-S13-91').status).toBe('pass'); // 同上（非法在前，仍整组行序 last-wins → 末行 pass）
+  });
+
+  it('UT-S13-44: 异时区同刻（+08:00 与 Z）→ 文件行序后者优先', () => {
+    writeVerifyResults([
+      '{"id":"UT-S13-90","status":"fail","error":"x","timestamp":"2026-07-17T18:00:00+08:00"}', // == 10:00Z
+      '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T10:00:00Z"}',                   // 同刻、行序后者
+      '{"id":"UT-S13-91","status":"pass","timestamp":"2026-07-17T09:00:00Z"}',
+    ]);
+    expect(effective('UT-S13-90').status).toBe('pass');
+  });
+
+  it('UT-S13-45: 同一批记录重复追加幂等重放 → 去重结论与 Gate 结果不变', () => {
+    const batch = [
+      '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T10:00:00Z"}',
+      '{"id":"UT-S13-90","status":"fail","error":"stale","timestamp":"2026-07-17T08:00:00Z"}',
+      '{"id":"UT-S13-91","status":"pass"}',
+    ];
+    writeVerifyResults(batch);
+    const first = collectVerifyData(root);
+    writeVerifyResults([...batch, ...batch]); // 原样整体重复追加
+    const second = collectVerifyData(root);
+    expect(second.gate.result).toBe(first.gate.result);
+    expect(second.summary.executed_count).toBe(first.summary.executed_count);
+    expect(effective('UT-S13-90').status).toBe('pass');
+  });
+
+  it('UT-S13-46: 两阶段合并（regression+incremental）沿用同一 timestamp 全序（merge_results 语义升级）', () => {
+    const restoreCwd = mockCwd(root); const con = captureConsole(); const exitSpy = mockProcessExit();
+    try {
+      const configPath = join(root, 'logos/logos.config.json');
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      // 场景 A：两条均带合法 timestamp——回归(晚) fail 在合并文件前段、增量(早) pass 在后段 → 取最新的 fail
+      config.verify = {
+        ...(config.verify ?? {}),
+        regression_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.regression.jsonl','{\\"id\\":\\"UT-S13-90\\",\\"status\\":\\"fail\\",\\"error\\":\\"real\\",\\"timestamp\\":\\"2026-07-17T10:00:00Z\\"}\\n{\\"id\\":\\"UT-S13-91\\",\\"status\\":\\"pass\\",\\"timestamp\\":\\"2026-07-17T10:00:00Z\\"}\\n')"`,
+        incremental_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.incremental.jsonl','{\\"id\\":\\"UT-S13-90\\",\\"status\\":\\"pass\\",\\"timestamp\\":\\"2026-07-17T08:00:00Z\\"}\\n')"`,
+        regression_result_path: 'logos/resources/verify/test-results.regression.jsonl',
+        incremental_result_path: 'logos/resources/verify/test-results.incremental.jsonl',
+      };
+      writeFileSync(configPath, JSON.stringify(config, null, 2));
+      expect(() => verify()).toThrow('process.exit(1)'); // fail 是最新证据 → Gate FAIL（不因合并文件末行 pass 翻盘）
+      const merged = readFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), 'utf-8');
+      // 合并文件保持 regression→incremental 行序；去重与单文件同一实现（parseJsonlWithDiagnostics）
+      expect(merged.trim().split('\n')).toHaveLength(3);
+      expect(effective('UT-S13-90').status).toBe('fail');
+    } finally { con.restore(); exitSpy.mockRestore(); restoreCwd(); }
+  });
+
+  it('ST-S13-13: 端到端——verify 结论跟随最新 timestamp，consistency 契约在去重后照常生效', () => {
+    // 第一次：fail 时刻最新（虽然 pass 行在后）→ FAIL
+    writeVerifyResults([
+      '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T08:00:00Z"}',
+      '{"id":"UT-S13-90","status":"fail","error":"regress","timestamp":"2026-07-17T10:00:00Z"}',
+      '{"id":"UT-S13-91","status":"pass","timestamp":"2026-07-17T09:00:00Z"}',
+    ]);
+    const first = collectVerifyData(root);
+    expect(first.gate.result).toBe('FAIL');
+    // 追加更新时刻的 pass → PASS；守恒不变量在去重后计算（executed==2）
+    const content = readFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), 'utf-8');
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'),
+      content + '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T11:00:00Z"}\n');
+    const second = collectVerifyData(root);
+    expect(second.gate.result).toBe('PASS');
+    expect(second.summary.executed_count).toBe(2);
+    expect(second.consistency.ok).toBe(true);
+    // 含无 timestamp 记录的其它 ID 保持行序 last-wins：另起无 timestamp 组
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T11:00:00Z"}',
+      '{"id":"UT-S13-91","status":"fail","error":"x"}',
+      '{"id":"UT-S13-91","status":"pass"}',
+    ].join('\n') + '\n');
+    const third = collectVerifyData(root);
+    expect(third.gate.result).toBe('PASS'); // 91 组无 timestamp → 行序 last-wins = pass
+  });
+});
+
+// ── code review F1：严格时间戳的无时区 / 日历溢出 / 非法 offset 负例与跨 TZ 确定性 ──
+describe('S13 — parseStrictTimestampMs 严格性（code review F1）', () => {
+  it('internal-S13-strict-ts: 无时区/不存在日期/非法 offset 一律按缺失，解析结论与运行机器 TZ 无关', async () => {
+    const { parseStrictTimestampMs } = await import('../src/lib/timestamp.js');
+    // 必须携带时区：无时区的本地时间在不同机器解出不同绝对时刻 → 拒绝
+    expect(parseStrictTimestampMs('2026-07-17T10:00:00')).toBeNull();
+    expect(parseStrictTimestampMs('2026-07-17 10:00:00Z')).toBeNull();   // 空格分隔非约定形态
+    expect(parseStrictTimestampMs('2026-07-17t10:00:00z')).toBeNull();   // 非约定大小写
+    // 日历溢出：Date.parse 会滚进 3 月，这里必须拒绝
+    expect(parseStrictTimestampMs('2026-02-30T10:00:00Z')).toBeNull();
+    expect(parseStrictTimestampMs('2026-13-01T10:00:00Z')).toBeNull();
+    expect(parseStrictTimestampMs('2026-04-31T00:00:00Z')).toBeNull();
+    // 非法 offset
+    expect(parseStrictTimestampMs('2026-07-17T10:00:00+25:00')).toBeNull();
+    expect(parseStrictTimestampMs('2026-07-17T10:00:00+08:60')).toBeNull();
+    expect(parseStrictTimestampMs('2026-07-17T10:00:00+0800')).toBeNull(); // 无冒号 offset 非约定形态
+    // 合法：Z 与数字 offset 归一同一绝对时刻（手工纪元运算，TZ 无关）
+    const z = parseStrictTimestampMs('2026-07-17T10:00:00Z');
+    const off = parseStrictTimestampMs('2026-07-17T18:00:00+08:00');
+    expect(z).not.toBeNull();
+    expect(off).toBe(z);
+    expect(z).toBe(Date.UTC(2026, 6, 17, 10, 0, 0)); // 与纪元常量比对：不经 Date.parse、不受 TZ 影响
+    expect(parseStrictTimestampMs('2026-07-17T10:00:00.5Z')).toBe(z! + 500);
+    // 闰年合法反例：2028-02-29 合法、2026-02-29 非法
+    expect(parseStrictTimestampMs('2028-02-29T00:00:00Z')).not.toBeNull();
+    expect(parseStrictTimestampMs('2026-02-29T00:00:00Z')).toBeNull();
+    // r2-F6：首尾空白是非法输入（与发布 schema 的 date-time 一致，不做 trim 宽容）
+    expect(parseStrictTimestampMs(' 2026-07-17T10:00:00Z')).toBeNull();
+    expect(parseStrictTimestampMs('2026-07-17T10:00:00Z ')).toBeNull();
+  });
+
+  it('internal-S13-strict-ts-subms: 亚毫秒全序不截断——.0009Z 严格晚于 .0001Z（逆行序仍取最新）', async () => {
+    const { parseStrictTimestampParts, compareStrictTimestamps } = await import('../src/lib/timestamp.js');
+    const a = parseStrictTimestampParts('2026-07-17T10:00:00.0001Z')!;
+    const b = parseStrictTimestampParts('2026-07-17T10:00:00.0009Z')!;
+    expect(a.ms).toBe(b.ms); // 毫秒粒度相同——r2-F1 指出的降精度陷阱
+    expect(compareStrictTimestamps(b, a)).toBeGreaterThan(0); // 全精度下 b 严格晚于 a
+    // 端到端：较新 .0009 的 pass 在前、较旧 .0001 的 fail 在后 → 仍取 pass（不被行序翻盘）
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), '| UT-S13-90 | d |\n');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T10:00:00.0009Z"}',
+      '{"id":"UT-S13-90","status":"fail","error":"stale","timestamp":"2026-07-17T10:00:00.0001Z"}',
+    ].join('\n') + '\n');
+    expect(collectVerifyData(root).gate.result).toBe('PASS');
+    // 异 offset 同一绝对时刻（含亚毫秒）→ compare==0 → 行序后者优先
+    const z = parseStrictTimestampParts('2026-07-17T10:00:00.5Z')!;
+    const off = parseStrictTimestampParts('2026-07-17T18:00:00.500+08:00')!;
+    expect(compareStrictTimestamps(z, off)).toBe(0);
+    cleanup();
+  });
+
+  it('internal-S13-strict-ts-group: 无时区记录使该 ID 整组退回行序 last-wins（不再进入时间比较）', () => {
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/test/core-S13-test-cases.md'), '| UT-S13-90 | d |\n');
+    mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [
+      '{"id":"UT-S13-90","status":"fail","error":"x","timestamp":"2026-07-17T10:00:00Z"}',
+      '{"id":"UT-S13-90","status":"pass","timestamp":"2026-07-17T23:00:00"}', // 无时区 → 组内含缺失
+    ].join('\n') + '\n');
+    const data = collectVerifyData(root);
+    expect(data.gate.result).toBe('PASS'); // 整组退回行序 last-wins → 末行 pass 生效（不做时区猜测）
+    cleanup();
+  });
+});

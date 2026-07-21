@@ -32,7 +32,7 @@ sequenceDiagram
 5. **CLI** 优先使用提案级部署决策计算提案步骤；判断 `proposal.md` 是否仍为模板状态时，只能检查必需章节是否存在、通用模板字段是否仍未填写，以及 `## 部署影响` section 内结构化字段的字段值，不得因为正文其他章节合法出现 ``是 / 否`` 字面量而将 `proposal_step` 回退为 `writing`。部署影响布尔字段必须以字段值精确等于 `是` 或 `否` 作为有效决策；字段值为 `是 / 否` 时必须视为模板占位符，不得解析为 `true` 或 `false`。
 6. **CLI** 校验 `proposal.md` 与 `tasks.md` 是否冲突。
 7. **CLI** 生成 `deployment_progress` 与 `deployment_document`，其中任务文档入口必须指向 `tasks.md`。
-8. **CLI** 输出状态面板；JSON 模式下输出部署决策字段与部署进度摘要，供 RunLogos 判断按钮。
+8. **CLI** 输出状态面板；JSON 模式下输出部署决策字段与部署进度摘要，供 RunLogos 判断按钮。JSON 模式下 `data` 顶层携带 `contract: {"version": "1.0.0"}`，`modules[].active_change` 随步骤携带 `step_meta` 与 `facts`（详见「status 的契约自描述输出（contract / step_meta / facts）」）。
 
 ## initial phase 派生（flow-derive）与两套 legacy done 语义
 
@@ -99,6 +99,65 @@ launched 模块在存在活跃提案时，`active_change.proposal_step` 的判�
 状态计算仍以 `detectProposalStep` 的语义为单一事实源；并跑等价由测试期「ViaFlow == 旧
 `detectProposalStep`」断言锁定（见 `core-S09-test-cases`），**不进入生产 CLI 路径**。
 
+## status 的契约自描述输出（contract / step_meta / facts）
+
+本节按提案 contract-self-description（C1/C3/C5）定义 `status --format json` 的契约自描述能力：步骤语义与确定性事实由 CLI 权威输出，消费方（AI driver）的自读/私有解析降级为低版本 fallback。
+
+### contract 版本握手
+
+- status/next 的 `data` 顶层新增 `"contract": {"version": "1.0.0"}`（语义化契约版本，独立于 CLI 版本）。
+- SemVer 规则：**major** = 必填字段删除/改义、闭合枚举语义变化（含移除值）、既有字段挂出判据变更；**minor** = 向后兼容扩展（新增可选字段、闭合枚举新增值）；**patch** = 不改形态与语义的澄清。
+- 版本-schema 一一映射：`spec/schema/status.schema.json`、`spec/schema/next.schema.json`（内嵌契约版本号，随 npm prepack 打包）；响应 `contract.version` 与打包 schema 版本一致，CI 校验。
+- 消费方约定（规范性引用，验收归 runlogos R5）：未知 major / 缺 `contract` 字段 → 保守模式（仅 next 驱动普通推进 + 看门狗，启发式判定降级为仅观察）；契约内任何枚举遇未知值 → 保守分支。
+- envelope / contract / schema 的完整定义场景见 `core-S16-machine-json-output`。
+
+### step_meta 与步骤注册表
+
+- `modules[].active_change.step_meta = {"phase", "kind"}`；`phase ∈ pre-implement|implement|post-implement`；`kind ∈ produce|gate|command-required|residency`。
+- 唯一铸造点 = `cli/src/lib/step-registry.ts`（收敛 `detectProposalStep` 与 `detectProposalStepViaFlow` 双镜像及 status/next 直接产字面量/覆盖点）；CI lint：字面量赋 proposal_step 不经注册表 → 测试失败。
+- 「状态计算以 `detectProposalStep` 的语义为单一事实源」口径不变：注册表收敛的是 `proposal_step` 字面量的铸造点并统一附着 `step_meta`，不改变各步骤的判定语义。
+- **不新增 proposal_step 枚举值**；`step_meta` 不构成第二枚举——phase/kind 为小闭合枚举，消费方遇未知值必须按保守分支处理。
+- 全量注册表：
+
+| proposal_step | phase | kind |
+|---|---|---|
+| writing | pre-implement | produce |
+| ready-to-delta | pre-implement | gate |
+| delta-writing | pre-implement | produce |
+| ready-to-merge | pre-implement | gate |
+| merge-generated | pre-implement | command-required |
+| spec-complete-required | pre-implement | command-required |
+| test-id-required | pre-implement | residency |
+| ready-to-implement | pre-implement | residency |
+| coding | implement | produce |
+| ready-to-verify | implement | command-required |
+| verify-failed | implement | residency |
+| verify-passed | post-implement | residency |
+| ready-to-deploy | post-implement | gate |
+| deploy-done | post-implement | residency |
+| ready-to-smoke | post-implement | command-required |
+| smoke-passed | post-implement | residency |
+| smoke-failed | post-implement | residency |
+| implementing（旧兼容） | implement | produce |
+| in-progress（旧兼容） | implement | produce |
+
+### facts 权威事实块
+
+- `modules[].active_change.facts = {"spec_complete", "slices_planned", "slices_approved", "code_required", "has_delta_tasks", "verify_pass"}`（全布尔，仅活跃提案时输出）。
+- CLI 权威计算：spec_complete = SPEC_MERGED/MERGED 在场；slices_planned = tasks.md `[code]` 含真实脱占位条目；slices_approved = SLICES_APPROVED marker 在场；code_required / has_delta_tasks 沿现行判定；verify_pass = VERIFY_PASS marker。单一事实源在 CLI，driver 的自读/私有解析降级为低版本 fallback。
+- `loop_state` 激活判据与 facts 同源（同一份计算，不允许两处实现），driver 可直接从 facts 读出「implement 是否已进入」；`loop_state` 挂出时机的定义见 `core-S27-loop-iterate`（本提案 C2）。
+
+### active_change 扩展口径与主动破例声明
+
+- `active_change` 新增 `step_meta` / `facts` 走 `spec/cli-json-output.md`「有活跃提案 golden 同步更新」既有可控扩展口径：仅有活跃提案的 golden 重拍，无活跃提案项目零漂移；不属硬红线，但按规范要求显式声明。
+- **主动破例**：破「data 顶层逐字节不变（golden 零漂移）」——`data` 顶层新增 `contract` → 全部 9 个 golden 基线快照重拍（本提案唯一的全量 golden 重拍点，随大版本发布；见 `core-S16-machine-json-output`）。
+- 验收边界：openlogos 本提案只验**生产者契约**（注册表/step_meta/schema 三方同步、facts 字段来源正确、contract 版本字段在场）；消费方保守模式 / 零误杀验收归 runlogos R5 提案。
+
+### EX-8.1: 无活跃提案时 step_meta / facts 零漂移
+- **触发条件**：模块无活跃提案（`active_change` 不出现 / 为 null）。
+- **期望响应**：`step_meta` 与 `facts` 随整个 `active_change` 对象不出现（零漂移边界，与 `code_required` 同口径）；`data` 顶层 `contract` 仍然输出（contract 是 envelope 级契约，不依赖活跃提案存在）。
+- **副作用**：无。
+
 ## 异常用例
 ### EX-2.1: 模块过滤不存在
 - **触发条件**：用户传入不存在的 `--module`。
@@ -108,6 +167,11 @@ launched 模块在存在活跃提案时，`active_change.proposal_step` 的判�
 - **触发条件**：模块 `bootstrap: adopted` 或历史 `bootstrap: skipped`，Initial 文档目录为空。
 - **期望响应**：Initial 文档基线显示为「文档基线已跳过（存量项目接入）」，不显示为未完成或错误；整体状态不受缺失影响。
 - **副作用**：无。
+
+### EX-3.3: adopted 模块 status JSON 恒输出 baseline_seed_state（baseline-seed-legacy-default-unify）
+- **触发条件**：任意 `bootstrap: adopted` 模块（explicit 显式值或 legacy 缺省皆可；含基线提交进行中的 `baseline_commit_in_progress` 降级情形）执行 `openlogos status --format json`。
+- **期望响应**：`modules[].baseline_seed_state` **无条件输出**，取值为合法枚举 `required｜partial｜seeded`——explicit 优先；yaml 缺省时经共享 helper `effectiveBaselineSeedState` 派生（有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`，见 core-06 §4.1），**「缺省 → 字段缺失」路径与 `unknown` 第三态一并废除**；`baseline_commit_in_progress` 降级分支同样经派生兜底恒输出，不得回落到原始字段缺失。legacy 派生态（yaml 未落盘）时 suggestion 附「运行 `openlogos sync` 迁移元数据」提示，且该 sync 迁移对无字段模块真实落盘（不空转）。`status` 与 `next`、`baseline-seed status` 对同一模块的有效状态**逐字节一致**（三入口单一事实源）。非 adopted 模块行为不变。
+- **副作用**：无状态修改；对下游为纯增量契约收紧（fail-closed 消费方判 `typeof === 'string'` 自然恢复渲染），不新增 `baseline_seed_state_source` 字段。
 
 ### EX-5.1: proposal 正文引用部署模板占位符
 - **触发条件**：`proposal.md` 的 `## 部署影响` 字段已明确填写，但变更原因、变更概述或其他正文段落中引用 ``是 / 否`` 等模板占位符字面量。

@@ -1833,6 +1833,7 @@ modules:
     name: ${locale === 'zh' ? '核心功能' : 'Core'}
     lifecycle: launched
     bootstrap: adopted
+    baseline_seed_state: required
     skip_phases: [api, database, scenario]
     deployment_required: true
 

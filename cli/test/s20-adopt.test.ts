@@ -98,15 +98,52 @@ describe('S20 Scenario Tests — adopt command', () => {
     }
   });
 
-  it('ST-S20-02: adopt 后 next 输出补文档引导', async () => {
+  it('ST-S20-02 / UT-S20-12: adopt 写入 baseline_seed_state:required 且 next 输出逆向建基线引导', async () => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
     await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
+
+    // UT-S20-12：adopt 写入枚举 baseline_seed_state: required（非布尔）。
+    const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8')) as {
+      modules?: Array<{ baseline_seed_state?: string; baseline_seed_required?: unknown }>;
+    };
+    expect(yaml.modules?.[0].baseline_seed_state).toBe('required');
+    expect(yaml.modules?.[0].baseline_seed_required).toBeUndefined();
+
     con.restore();
     con = captureConsole();
 
     next();
     const out = con.logs.join('\n');
-    expect(out).toContain('openlogos change add-baseline-docs');
+    expect(out).toContain('openlogos baseline-seed begin');
+    expect(out).toContain('逆向建立现状基线');
+    expect(out).not.toContain('openlogos change add-baseline-docs');
+  });
+
+  it('UT-S20-13: adopt 不启动 AI、不产逆向内容、不声称基线已建立', async () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
+    await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
+
+    const out = con.logs.join('\n');
+    // 接入报告说明「待建立」，绝不出现「基线已建立」。
+    expect(out).toContain('现状基线待建立');
+    expect(out).not.toContain('基线已建立');
+    // logos/resources/ 下无逆向产物（无任何含 `## 逆向基线来源` 章节的文档）。
+    const { scanModuleCandidates } = await import('../src/lib/baseline-provenance.js');
+    expect(scanModuleCandidates(root, 'core').doc_count).toBe(0);
+  });
+
+  it('ST-S20-09: adopt 能力缺失（非交互）时降级不伪造基线', async () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
+    // 非交互环境（stdin 非 TTY，测试默认即如此）走降级分支。
+    await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
+
+    const yaml = parseYaml(readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8')) as {
+      modules?: Array<{ baseline_seed_state?: string }>;
+    };
+    expect(yaml.modules?.[0].baseline_seed_state).toBe('required');
+    const out = con.logs.join('\n');
+    expect(out).toContain('未检测到可用的 AI 会话');
+    expect(out).not.toContain('基线已建立');
   });
 
   it('ST-S20-03: adopt 后 status 将 Phase 1~3 标记为 skipped', async () => {
@@ -201,7 +238,8 @@ describe('S20 Scenario Tests — adopt command', () => {
     expect(data.phases.find(p => p.key === 'phase.1')?.skipped).toBe(true);
 
     next();
-    expect(con.logs.join('\n')).toContain('openlogos change add-baseline-docs');
+    expect(con.logs.join('\n')).toContain('openlogos baseline-seed begin');
+    expect(con.logs.join('\n')).not.toContain('openlogos change add-baseline-docs');
   });
 
   it('UT-S20-10 / ST-S20-07: adopt preserves existing AGENTS.md / CLAUDE.md user content', async () => {

@@ -68,6 +68,8 @@ function setupLaunchedProposal(root: string, slug = 'feat'): string {
   writeFileSync(join(dir, 'proposal.md'), proposal);
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
   writeFileSync(join(dir, 'SPEC_MERGED'), '');
+  // contract-self-description 切片1（C2）：四事实合取收紧——loop 激活类 fixture 补齐 slices_approved（旧空 marker）。
+  writeFileSync(join(dir, 'SLICES_APPROVED'), '');
   return dir;
 }
 function runStatusJson(root: string): any {

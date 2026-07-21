@@ -3,6 +3,8 @@ import { join, dirname } from 'node:path';
 import { loadFlow, findActivatedLoop, inferLifecycle, FlowError } from '../lib/flow.js';
 import { loopLedgerPath, readLoopIters, deriveSliceState } from '../lib/flow-loop-derive.js';
 import { readProjectYaml } from '../lib/project-yaml.js';
+import { collectBaselineSoftWarnings } from '../lib/baseline-provenance.js';
+import { withBaselineReadLock } from '../lib/baseline-seed-txn.js';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -137,6 +139,8 @@ export interface VerifyData {
   sandbox: SandboxData;
   report_path: string;
   automation_diagnostic?: AutomationDiagnostic;
+  // brownfield-adopter（S33）：对 verified:false 逆向 spec 的软告警（不改 gate、不写 VERIFY_FAIL、不硬失败）。
+  baseline_warnings?: string[];
 }
 
 function safeReadFile(path: string): string {
@@ -388,19 +392,45 @@ function ensureResultFileWhenPreRunFailed(fullResultPath: string, preRun: Verify
   writeFileSync(fullResultPath, '');
 }
 
+// ── contract-self-description 切片4（C6/D7）：同 ID timestamp 去重全序规则 ──
+
+// 严格解析迁至共享 lib（proposal-lifecycle 的 marker 读取与 verify 去重同一实现，code review F1/F6）；
+// re-export 保持既有 import 路径不变。
+import { parseStrictTimestampMs, parseStrictTimestampParts, compareStrictTimestamps } from '../lib/timestamp.js';
+export { parseStrictTimestampMs };
+
+/**
+ * 同 ID 去重全序（spec/test-results.md「归一化规则」第 5 条，单文件与两阶段合并共用同一实现）：
+ * 1. 该 ID 全部记录时间戳均合法 → 绝对时刻最新优先；同刻（含异时区同刻）→ 文件行序后者优先；
+ * 2. 存在任一缺失/非法时间戳 → 该 ID 整组退回文件行序 last-wins（等价旧行为，不对不完整证据做时间猜测）。
+ * rows 按文件行序传入；按 ID 分组独立进行。
+ */
+export function selectEffectiveResult<T extends { timestamp?: string }>(rows: T[]): T {
+  const times = rows.map(r => parseStrictTimestampParts(r.timestamp));
+  if (times.some(t => t == null)) return rows[rows.length - 1];
+  let best = 0;
+  for (let i = 1; i < rows.length; i++) {
+    // 全精度比较（code review r2-F1：亚毫秒不截断）；同一绝对时刻（=0）→ 行序后者优先
+    if (compareStrictTimestamps(times[i]!, times[best]!) >= 0) best = i;
+  }
+  return rows[best];
+}
+
 export function parseJsonl(content: string): TestResult[] {
-  const resultMap = new Map<string, TestResult>();
+  const groups = new Map<string, TestResult[]>();
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
       const obj = JSON.parse(trimmed) as TestResult;
       if (obj.id && obj.status) {
-        resultMap.set(obj.id, obj);
+        const rows = groups.get(obj.id) ?? [];
+        rows.push(obj);
+        groups.set(obj.id, rows);
       }
     } catch { /* skip malformed lines */ }
   }
-  return Array.from(resultMap.values());
+  return Array.from(groups.values()).map(selectEffectiveResult);
 }
 
 function asResultRecord(value: unknown): Record<string, unknown> | null {
@@ -423,7 +453,9 @@ function pushUniqueMany<T>(items: T[], nextItems: T[]): void {
 }
 
 export function parseJsonlWithDiagnostics(content: string): { results: TestResult[]; invalidResults: VerifyInvalidResult[] } {
-  const resultMap = new Map<string, TestResult>();
+  // C6/D7：合法记录按 ID 分组（保留行序），末尾经 selectEffectiveResult 做 timestamp 全序去重；
+  // 非法行进入诊断集合、不参与去重（去重只在合法记录之间进行，不吞非法行）。
+  const groups = new Map<string, TestResult[]>();
   const invalidResults: VerifyInvalidResult[] = [];
   const lines = content.split('\n');
   for (let index = 0; index < lines.length; index++) {
@@ -468,7 +500,8 @@ export function parseJsonlWithDiagnostics(content: string): { results: TestResul
       continue;
     }
 
-    resultMap.set(id, {
+    const rows = groups.get(id) ?? [];
+    rows.push({
       id,
       status,
       ...(typeof obj.duration_ms === 'number' ? { duration_ms: obj.duration_ms } : {}),
@@ -476,8 +509,9 @@ export function parseJsonlWithDiagnostics(content: string): { results: TestResul
       ...(typeof obj.error === 'string' ? { error: obj.error } : {}),
       ...(typeof obj.scenario === 'string' ? { scenario: obj.scenario } : {}),
     });
+    groups.set(id, rows);
   }
-  return { results: Array.from(resultMap.values()), invalidResults };
+  return { results: Array.from(groups.values()).map(selectEffectiveResult), invalidResults };
 }
 
 interface DefinedIndex {
@@ -1045,6 +1079,25 @@ export function verify(format: OutputFormat = 'text') {
 
   const data = collectVerifyData(root, preRun);
   data.sandbox = sandbox;
+  // brownfield-adopter（S33）：对 verified:false 逆向 spec 仅软告警，绝不影响 gate.result（grandfather 豁免存量代码）。
+  {
+    const projectYaml = readProjectYaml(root);
+    const baselineModuleIds = (projectYaml.data?.modules ?? []).map(m => m.id);
+    const warnings: string[] = [];
+    const at = new Date().toISOString();
+    for (const moduleId of baselineModuleIds) {
+      // F7：把「取锁—检查/恢复—算覆盖率/软告警」并入**同一读锁区间**——旧 readGate 恢复后即释放锁再返回，
+      // 真实读取（collectBaselineSoftWarnings）发生在锁外，writer 可在门检查完成与读取之间启动提交，仍读半集合。
+      // 现改为在持锁回调内完成软告警收集；提交进行中（锁被占用）则不把半新集合当权威，仅提示、不硬失败。
+      const res = withBaselineReadLock(root, moduleId, at, () => collectBaselineSoftWarnings(root, [moduleId]));
+      if (!res.ok) {
+        warnings.push(`baseline_commit_in_progress: 模块 ${moduleId} 的种子基线提交进行中——本次不据其算覆盖率/软告警（软提示，不阻断）。`);
+        continue;
+      }
+      warnings.push(...res.value);
+    }
+    if (warnings.length > 0) data.baseline_warnings = warnings;
+  }
   if (sandbox.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
     data.gate.reason = 'failed_cases';
@@ -1100,6 +1153,11 @@ export function verify(format: OutputFormat = 'text') {
   console.log(t(locale, 'verify.readingCases'));
 
   const { summary, gate, failed_cases, uncovered_cases, consistency, checklist, ac_trace, pre_run } = data;
+
+  if (data.baseline_warnings && data.baseline_warnings.length > 0) {
+    console.log(`\n⚠ ${locale === 'zh' ? '现状基线软告警（不阻断验收）' : 'Baseline soft warnings (non-blocking)'}:`);
+    for (const w of data.baseline_warnings) console.log(`  · ${w}`);
+  }
 
   console.log(`\n${LINE}`);
   console.log(`📊 ${t(locale, 'verify.summary')}`);

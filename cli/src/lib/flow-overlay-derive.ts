@@ -507,6 +507,11 @@ export interface NextNode {
   slice?: string;
   // S31：当前父切片下的缩进 checkbox 子任务，供宿主注入当前切片内部工作项。
   slice_children?: Array<{ text: string; checked: boolean }>;
+  // contract-self-description 切片3（C4）：派发契约——恒为完整对象（resolved 物化，无二义分支）。
+  // driver 据 idempotent 判重投安全、timeout_seconds 设看门狗、artifacts_hint 做产物提示（[]=产物未知，不得据此判死）。
+  dispatch: { idempotent: boolean; timeout_seconds: number; artifacts_hint: string[] };
+  // contract-self-description 切片3（C4）：执行前置评审对象（仅节点显式声明时输出；driver 的 priorReviewNode 表退化为消费本声明）。
+  requires_reviewed?: string[];
 }
 
 /**
@@ -515,6 +520,33 @@ export interface NextNode {
  * 例外：R4 auto 放行 / R7 loop 阻塞·达上限 / R5 命令级建议（无对应节点）→ 返回 null（省略）。
  * R3（cmd 续推）由调用方传入**已 cmdEval 回灌后**的 current/step/phase 自动满足（cmd done→续推后节点；失败→cmd 节点）。
  */
+/**
+ * contract-self-description 切片3（C4）：requires_reviewed 声明透传。
+ * no-delta 反向锚（幻影评审根治）：提案 tasks.md 无 `[delta]` 真实条目（has_delta_tasks=false）时，
+ * 过滤掉声明中的 "delta"——no-delta 形态不存在 delta 产物，不得要求幻影 delta 评审
+ * （消费方 driver 的 priorReviewNode 表退化为消费本声明，见 spec/cli-json-output.md）。
+ */
+/** resolved 节点必须携带完整物化 dispatch（materializeResolvedDispatch 不变量；缺失 = 内部错误）。 */
+function requireMaterializedDispatch(n: FlowNode): { idempotent: boolean; timeout_seconds: number; artifacts_hint: string[] } {
+  const d = n.dispatch;
+  if (!d || typeof d.idempotent !== 'boolean' || typeof d.timeout_seconds !== 'number' || !Array.isArray(d.artifacts_hint)) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `resolved 节点 \`${n.id}\` 缺完整物化 dispatch（materializeResolvedDispatch 不变量被破坏）`);
+  }
+  return { idempotent: d.idempotent, timeout_seconds: d.timeout_seconds, artifacts_hint: [...d.artifacts_hint] };
+}
+
+function buildRequiresReviewed(n: FlowNode, proposalDir?: string): { requires_reviewed: string[] } | null {
+  if (!n.requires_reviewed || n.requires_reviewed.length === 0) return null;
+  let list = [...n.requires_reviewed];
+  if (proposalDir && list.includes('delta')) {
+    const tasksPath = join(proposalDir, 'tasks.md');
+    const sections = existsSync(tasksPath) ? parseTaskSections(readFileSync(tasksPath, 'utf-8')) : null;
+    const hasDeltaTasks = (sections?.delta?.total ?? 0) > 0;
+    if (!hasDeltaTasks) list = list.filter(x => x !== 'delta');
+  }
+  return list.length > 0 ? { requires_reviewed: list } : null;
+}
+
 export function resolveNextNode(
   root: string,
   mod: ModuleInfo,
@@ -551,6 +583,10 @@ export function resolveNextNode(
         id: n.id, name: n.name, subflow_id: sub.id,
         skill: n.skill ?? null, working_agent: n.working_agent ?? null, review_agent: n.review_agent ?? null,
         pre_script: n.pre_script ?? null, post_script: n.post_script ?? null,
+        // C4（code review F7）：resolved flow 恒已物化完整 dispatch——输出层**直接消费**、不再兜底默认
+        // （第二默认源违反「唯一默认值源」契约）；缺失即物化不变量被破坏，fail loud。
+        dispatch: requireMaterializedDispatch(n),
+        ...(buildRequiresReviewed(n, opts.proposalDir) ?? {}),
       };
       // R8（fix-next-node-slice-exit-frontier）：ready-to-implement 前沿随 [code] 是否脱模板二分——
       // plan-slices 已完成（tasks_code_filled）且 slice-exit 门未放行（无 SLICES_APPROVED）→ 前沿在门上，

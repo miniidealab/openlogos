@@ -289,3 +289,26 @@ resource_index:
 ```
 
 **不执行此步骤将导致 api-designer/db-designer 等后续 Skill 无法感知时序图的存在，AI 将无法从正确的源头推导 API 设计。**
+
+## Step 补充：为场景分配 feature 分组（add-feature-model）
+
+在 module 与 scenario 之间存在**可选的 feature（功能）分组层**。生成新场景时，scenario-architect 应顺手维护 feature 归属（与维护 `scenario_counter` 同为 AI 职责，CLI 不代劳）。
+
+### 生成场景时分配 feature
+
+1. **取 scenario 号**（既有流程）：读 `logos-project.yaml` 的 `scenario_counter.next_id` → 用作 `SXX` → `+1` 写回。
+2. **判断 feature 归属**：新场景属于哪个功能域（能力域）？
+   - 命中已有 feature → 在 `scenarios[]` 该场景条目写 `feature: F0X`。
+   - 需要新建 feature → 读 `feature_counter.next_id` 取号 `F0X`（缺失时 `configured_next_id = feature_counter?.next_id ?? 1`，从 `F01` 起）、`+1` 写回，向 `features[]` 追加 `{id, name, module, spec?}`（`module` 必为该场景所属 module；`spec` 可选链接 feature-specs 文档序号，如 `core-01`），再给场景写 `feature: F0X`。
+   - 暂不确定 → **可不写 `feature`**（合法：该场景落入所属 module 的"未分组"桶，不阻断）。
+
+### feature 编号约束（务必遵守）
+
+- feature ID 项目全局唯一、格式 `F0X`，**严禁不同 module 从 F01 重号**（与 scenario 同策）。
+- 计数器冲突恢复（防 off-by-one 重号）：`configured_next_id = feature_counter?.next_id ?? 1`，`allocated = max(configured_next_id, max(existing)+1)`，用 `allocated` 创建、持久化 `feature_counter.next_id = allocated + 1`。
+  - **工作示例**：已有最大 `F05`、`feature_counter.next_id=3`（异常态）→ `configured_next_id=3`，`allocated=max(3, 5+1)=6` → 分配 `F06`、持久化 `next_id=7`、下次分配 `F07`；**绝不复用已存在 ID**。
+- 详见 `spec/module-naming-convention.md` 的「feature 功能分组编号规范」。
+
+### 存量项目回填引导
+
+存量项目场景已平铺、无 feature 归属时，引导用户运行 `openlogos feature-backfill`：CLI 生成 `logos/feature-backfill-prompt.md`（打包场景清单 + 现有 feature-specs 文档 + 当前 yaml），AI 据此语义聚类回写 `features[]` / `scenario.feature` / `feature_counter`（幂等、只补未分组、非强制）。

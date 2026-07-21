@@ -85,7 +85,115 @@ fi
 # ── Step 3: Check guard file ──────────────────────────────────────────────────
 GUARD_FILE="logos/.openlogos-guard"
 if [ -f "$GUARD_FILE" ]; then
-  # Active change proposal exists — allow
+  # Active change proposal exists. Normally allow everything within scope, but
+  # while the proposal is still in the plan stage (before plan-exit, i.e. the
+  # PLAN_APPROVED marker does not yet exist) we narrow delta writes: only the
+  # GUI page-design prototype (deltas/prd/2-product-design/2-page-design/*.html)
+  # may be produced in plan stage; all other deltas/** writes are deferred to
+  # delta-writing (after PLAN_APPROVED). Non-delta scope is unaffected.
+  ACTIVE_SLUG=""
+  if command -v python3 &>/dev/null; then
+    ACTIVE_SLUG=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    ACTIVE_SLUG=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); process.stdout.write(d.activeChange||'')" 2>/dev/null || echo "")
+  fi
+
+  PLAN_STAGE=0
+  if [ -n "$ACTIVE_SLUG" ] && [ ! -f "logos/changes/$ACTIVE_SLUG/PLAN_APPROVED" ]; then
+    PLAN_STAGE=1
+  fi
+
+  if [ "$PLAN_STAGE" -eq 0 ]; then
+    # delta-writing (or no resolvable slug) — regular behavior, allow within scope.
+    exit 0
+  fi
+
+  # Plan stage: enforce the page-design-only allowlist for delta writes.
+  # rel_of_cwd <path> — echo path relative to cwd (reuses same normalization as whitelist).
+  rel_of_cwd() {
+    local p="$1" rel=""
+    if command -v python3 &>/dev/null; then
+      rel="$(python3 - "$p" <<'PYEOF' 2>/dev/null
+import sys, os
+path = sys.argv[1]
+cwd = os.getcwd()
+real_cwd = os.path.realpath(cwd)
+# Resolve the deepest existing ancestor of the (possibly not-yet-created) path,
+# so the /tmp -> /private/tmp symlink is normalized even when the leaf dirs
+# do not exist yet.
+anc = path
+tail = []
+while anc and not os.path.exists(anc):
+    anc, base = os.path.split(anc)
+    tail.append(base)
+    if not base:
+        break
+try:
+    real_anc = os.path.realpath(anc) if anc else anc
+except Exception:
+    real_anc = anc
+real_path = os.path.join(real_anc, *reversed(tail)) if tail else real_anc
+try:
+    r = os.path.relpath(real_path, real_cwd)
+    if r.startswith('..'):
+        r2 = os.path.relpath(path, cwd)
+        if not r2.startswith('..'):
+            r = r2
+except ValueError:
+    r = path
+print(r)
+PYEOF
+)"
+    elif command -v node &>/dev/null; then
+      rel="$(node -e "
+const path=require('path'),fs=require('fs');
+const p=process.argv[1],cwd=process.cwd();
+let realCwd=cwd; try{realCwd=fs.realpathSync(cwd);}catch{}
+let anc=p; const tail=[];
+while(anc && !fs.existsSync(anc)){const parsed=path.parse(anc); if(anc===parsed.root){break;} tail.push(path.basename(anc)); anc=path.dirname(anc);}
+let realAnc=anc; try{realAnc=fs.realpathSync(anc);}catch{}
+const realP=tail.length?path.join(realAnc,...tail.reverse()):realAnc;
+let rel=path.relative(realCwd,realP);
+if(rel.startsWith('..')){const r2=path.relative(cwd,p); if(!r2.startsWith('..')) rel=r2;}
+process.stdout.write(rel);
+" "$p" 2>/dev/null)"
+    fi
+    if [ -z "$rel" ]; then
+      local norm="${p#/}" cwd_s
+      cwd_s="$(pwd)"; cwd_s="${cwd_s#/}"
+      rel="${norm#"$cwd_s/"}"
+    fi
+    echo "$rel"
+  }
+
+  # is_plan_stage_delta_blocked <path> — return 0 (blocked) if path is a delta
+  # write that is NOT the allowed page-design .html prototype.
+  is_plan_stage_delta_blocked() {
+    local rel
+    rel="$(rel_of_cwd "$1")"
+    # Only concerned with this proposal's deltas/ tree.
+    local delta_prefix="logos/changes/$ACTIVE_SLUG/deltas/"
+    if [[ "$rel" != "$delta_prefix"* ]]; then
+      return 1  # not a delta write — not our concern here
+    fi
+    # Allowed: deltas/prd/2-product-design/2-page-design/<name>.html
+    if [[ "$rel" == "${delta_prefix}prd/2-product-design/2-page-design/"*.html ]]; then
+      return 1  # allowed prototype
+    fi
+    return 0  # any other delta in plan stage → blocked
+  }
+
+  # If not a delta write at all, fall through to normal handling below.
+  case "$TOOL_NAME" in
+    Edit|Write)
+      _FP="$(json_get "$INPUT" "file_path")"
+      if [ -n "$_FP" ] && is_plan_stage_delta_blocked "$_FP"; then
+        block "⛔ 变更管理拦截（plan 阶段）：当前提案尚未通过 plan-exit（PLAN_APPROVED 不存在）。\\n\\n目标文件：$_FP\\n\\nplan 阶段仅允许产出 page-design 原型 delta（deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 请在 plan 通过后（delta-writing）再产出。"
+      fi
+      ;;
+  esac
+
+  # Plan-stage but not a blocked delta write — allow within scope.
   exit 0
 fi
 

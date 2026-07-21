@@ -26,6 +26,8 @@
 | S28 | next 暴露 next_node 编排提示 | `commands/next.ts` / `lib/flow-overlay-derive.ts` / `lib/flow-derive.ts` | `s28-next-node.test.ts` | 进行中 |
 | S29 | M2 预留收尾（loop 退出 gate 可放行 / fan-out 阈值 / loop 内整组收敛） | `lib/flow.ts` / `lib/flow-loop-derive.ts` / `lib/flow-derive.ts` / `commands/next.ts` | `s29-gate-fanout-loop.test.ts` | 进行中 |
 | S30 | cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin） | `lib/flow.ts` / `lib/flow-derive.ts` / `lib/flow-overlay-derive.ts` / `commands/{next,status,watch}.ts` | `s30-cmd-builtin-gate.test.ts` | 进行中 |
+| S33 | 存量项目逆向建基线与按需深化 | `adopt.ts` / `baseline-seed.ts` / `next.ts` / `status.ts` / `verify.ts` / `lib/project-yaml.ts` / `lib/migrate-lifecycle.ts` / `skills/brownfield-adopter` | `s33-brownfield-baseline.test.ts` | 进行中 |
+| S34 | 管理 feature 分组 | `lib/project-yaml.ts` / `commands/status.ts` / `lib/flow-overlay-derive.ts` / `commands/feature.ts` / `commands/feature-backfill.ts` / `index.ts` | `s34-feature.test.ts` | 进行中 |
 
 ## 场景依赖关系
 - S01 生成基础项目结构，为后续所有场景提供配置与目录前提。
@@ -68,6 +70,8 @@
 - [S28](./core-S28-next-node.md)
 - [S29](./core-S29-gate-fanout-loop.md)
 - [S30](./core-S30-cmd-builtin-gate.md)
+- [S33](./core-S33-brownfield-baseline.md)
+- [S34](./core-S34-feature-management.md)
 
 ## S21 依赖关系
 
@@ -77,3 +81,25 @@ graph LR
     S21 --> S19[S19 smoke gate]
     S21 --> S09[S09 archive]
 ```
+
+## S33 依赖关系（brownfield-adopter）
+
+- **S20 → S33**：`openlogos adopt`（S20）在初始化时写入模块级 `baseline_seed_state: required`，把逆向建种子基线自动衔接到 S33；S33 的种子基线产出以 S20 生成的 `logos/` 结构与 `bootstrap: adopted` 为前提。
+- **S33 → S05**：S33 建立/深化的现状基线覆盖率经 `baseline_coverage` 由 S05（next）/ S11（status）展示；`baseline_seed_state`（required/partial/seeded）驱动 S05 的 adopted 路径引导（取代旧 add-baseline-docs 引导）。
+- **S33 → S09**：后续 `openlogos change`（S09）触碰只有未验证逆向 spec 的区域时，change-writer 给 JIT advisory（不设硬门），在**单份最终态 delta** 内一并确认现状（`## 逆向基线来源` 候选 `verified:true`），merge 后覆盖率前移；不新增门、不嵌套 change、不改 merge 协议。
+- **S33 → verify（S13）**：`verify` 对 `verified:false` 逆向 spec 仅软告警、不硬失败（grandfather 豁免存量代码）。
+- **provenance 权威源**：文档内具名章节 `## 逆向基线来源` + `candidates[]`（详见架构 `core-06-provenance-data-model`）；`logos-project.yaml` 为派生索引、非权威。
+
+## S34 依赖关系（add-feature-model）
+
+- **S17 → S34**：feature 是 module 的子分组，`feature.module` 必指向 `modules[]`（S17 维护）中已注册的 module；S34 复用 S17 的模块注册表作为归属校验的上位。
+- **S34 → S05/S11**：`features[]` 与 `scenario.feature` 由 S05（next）/ S11（status）按 module 下的 feature 桶（含"未分组"桶）分组呈现；纯 pre-feature 项目（无 `features`、无场景带 `feature` 键）省略字段、派生**逐字节完全等同今天（含 `contract.version` 保持 `1.0.0`，条件版本）**。
+- **S34 → S16**：`modules[].features` 作为 minor 契约扩展（**条件版本**：`contract.version` 仅在响应含 `features` 时 `1.1.0`，否则 `1.0.0`）进入 status/next 的 JSON 输出，成员列表 `scenarios:[{id,name}]` 与 phase 无关；两版 schema 并存、`features`⟺`1.1.0`。
+- **AI 维护范式**：`feature_counter` / `features[]` / `scenario.feature` 由 AI 维护（比照 `scenario_counter`），CLI 只读消费 + 生成 `feature-backfill` prompt，不新建 CLI 取号机制。
+
+## S34↔S33 桥接（feature-backfill-brownfield）
+
+- **S33 → S34（feature-backfill）**：S33 逆向产出的场景候选（`## 逆向基线来源` / `baseline_index`，`verified:false`，未进 `scenarios[]`）经 `feature-backfill` 读侧扩展一并纳入回填 prompt；AI 回写时把候选登记进 `scenarios[]`（导航）并分配 `feature`。
+- **红线：导航 ≠ 可信度**：候选进 `scenarios[]` 只是导航注册，**不**改其 provenance `verified`；S33 覆盖率（`human_verified / 分母`）不变、不虚增。
+- **status/next 只读 `scenarios[]`**：不直接吞逆向候选，adopted 项目在 AI 回写前零漂移。
+- **结构分离**：S33 用 provenance 章节 + `baseline_index` 追踪可信度；S34 用 `scenarios[]` + `features[]` 做导航分组。二者互不改写对方语义。

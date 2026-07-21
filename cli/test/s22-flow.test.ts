@@ -372,3 +372,114 @@ describe('S22 flow show command', () => {
     expect(env.data.flow.subflows.length).toBeGreaterThan(0);
   });
 });
+
+// ── contract-self-description 切片3（C4）：flow 节点 dispatch / requires_reviewed / defaults 加载 ──
+describe('S22 — dispatch 元数据加载与校验（contract-self-description）', () => {
+  it('UT-S22-17: 内置模板 raw 仅特例节点显式 timeout，resolved 后每节点物化完整 dispatch', async () => {
+    const { loadFlow: lf, loadBuiltinFlow: lbf } = await import('../src/lib/flow.js');
+    for (const lc of ['initial', 'launched'] as const) {
+      const raw = lbf(lc);
+      const nodes = raw.subflows.flatMap(s => s.nodes);
+      for (const n of nodes) {
+        expect(n.dispatch, `${lc}:${n.id} 应声明 dispatch`).toBeTruthy();
+        expect(typeof n.dispatch!.idempotent).toBe('boolean');
+        expect(Array.isArray(n.dispatch!.artifacts_hint)).toBe(true);
+      }
+      // raw：timeout 仅特例节点显式（code 3600 / deploy 1800），其余省略（由 defaults 物化）
+      const explicit = nodes.filter(n => n.dispatch!.timeout_seconds != null).map(n => `${n.id}:${n.dispatch!.timeout_seconds}`).sort();
+      expect(explicit).toEqual(['code:3600', 'deploy:1800']);
+      expect(raw.defaults?.dispatch?.timeout_seconds).toBe(900);
+      // 声明基准抽样：产出/评审与 verify/smoke 类 idempotent:true；一次性落盘/执行类 false
+      const byId = new Map(nodes.map(n => [n.id, n.dispatch!]));
+      if (lc === 'launched') {
+        expect(byId.get('write-proposal')!.idempotent).toBe(true);
+        expect(byId.get('apply-merge')!.idempotent).toBe(false);
+        expect(byId.get('archive')!.idempotent).toBe(false);
+        expect(byId.get('verify')!.idempotent).toBe(true);
+      } else {
+        expect(byId.get('deploy')!.idempotent).toBe(false);
+        expect(byId.get('smoke')!.idempotent).toBe(true);
+      }
+      // resolved：全节点物化完整对象，未显式节点 timeout == defaults(900)
+      const { root, cleanup } = makeTempRoot();
+      scaffoldProject(root);
+      const resolved = lf(root, { lifecycle: lc, resolved: true }).flow;
+      for (const n of resolved.subflows.flatMap(s => s.nodes)) {
+        expect(n.dispatch).toMatchObject({
+          idempotent: expect.any(Boolean),
+          timeout_seconds: expect.any(Number),
+          artifacts_hint: expect.any(Array),
+        });
+        if (!['code', 'deploy'].includes(n.id)) expect(n.dispatch!.timeout_seconds).toBe(900);
+      }
+      cleanup();
+    }
+  });
+
+  it('UT-S22-18: apply-merge requires_reviewed==["proposal","delta"] 加载，未声明节点不注入默认', async () => {
+    const { loadBuiltinFlow: lbf } = await import('../src/lib/flow.js');
+    const flow = lbf('launched');
+    const nodes = flow.subflows.flatMap(s => s.nodes);
+    const applyMerge = nodes.find(n => n.id === 'apply-merge')!;
+    expect(applyMerge.requires_reviewed).toEqual(['proposal', 'delta']);
+    for (const n of nodes.filter(n => n.id !== 'apply-merge')) {
+      expect(n.requires_reviewed == null, `${n.id} 不应有 requires_reviewed`).toBe(true);
+    }
+  });
+
+  it('UT-S22-19: dispatch/requires_reviewed/defaults 类型非法 → FLOW_SCHEMA_INVALID；schema version 保持 1', async () => {
+    const { validateFlow: vf, loadBuiltinFlow: lbf, FlowError: FE } = await import('../src/lib/flow.js');
+    const base = () => JSON.parse(JSON.stringify(lbf('launched')));
+    expect(base().version).toBe(1); // 向后兼容扩展，schema version 不变
+    const bad1 = base(); bad1.subflows[0].nodes[0].dispatch = { idempotent: 'yes' };
+    expect(() => vf(bad1)).toThrowError(/dispatch\.idempotent/);
+    const bad2 = base(); bad2.subflows[0].nodes[0].dispatch = { timeout_seconds: 0 };
+    expect(() => vf(bad2)).toThrowError(/timeout_seconds/);
+    const bad3 = base(); bad3.subflows[0].nodes[0].dispatch = { artifacts_hint: [1] };
+    expect(() => vf(bad3)).toThrowError(/artifacts_hint/);
+    const bad4 = base(); bad4.subflows[0].nodes[0].requires_reviewed = 'proposal';
+    expect(() => vf(bad4)).toThrowError(/requires_reviewed/);
+    const bad5 = base(); bad5.defaults = { dispatch: 'fast' };
+    expect(() => vf(bad5)).toThrowError(/defaults\.dispatch/);
+    try { vf(bad5); } catch (e) { expect((e as InstanceType<typeof FE>).code).toBe('FLOW_SCHEMA_INVALID'); }
+  });
+
+  it('UT-S22-20: defaults.dispatch.timeout_seconds 顶层加载与 overlay 覆盖后物化进未显式节点（唯一默认值源）', async () => {
+    const { loadFlow: lf } = await import('../src/lib/flow.js');
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root);
+    mkdirSync(join(root, 'logos', 'flow'), { recursive: true });
+    writeFileSync(join(root, 'logos', 'flow', 'launched.yaml'),
+      'extends: builtin:launched@v3\ndefaults:\n  dispatch:\n    timeout_seconds: 600\n');
+    const raw = lf(root, { lifecycle: 'launched' }).flow;
+    expect(raw.defaults?.dispatch?.timeout_seconds).toBe(900); // raw = builtin 声明
+    const resolved = lf(root, { lifecycle: 'launched', resolved: true }).flow;
+    expect(resolved.defaults?.dispatch?.timeout_seconds).toBe(600); // overlay defaults 覆盖 builtin defaults
+    const byId = new Map(resolved.subflows.flatMap(s => s.nodes).map(n => [n.id, n.dispatch!]));
+    expect(byId.get('write-proposal')!.timeout_seconds).toBe(600); // 未显式节点 → 物化覆盖值
+    expect(byId.get('code')!.timeout_seconds).toBe(3600);          // 节点显式特例优先于 defaults
+    expect(byId.get('deploy')!.timeout_seconds).toBe(1800);
+    cleanup();
+  });
+
+  it('ST-S22-09: flow show raw/resolved JSON 端到端暴露 defaults 与逐节点 dispatch/requires_reviewed', async () => {
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root);
+    const run = (opts: Record<string, unknown>) => {
+      const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
+      try { flowShow('json', opts); } finally { cap.restore(); ex.mockRestore(); restore(); }
+      return JSON.parse(cap.logs[cap.logs.length - 1]).data;
+    };
+    const raw = run({ lifecycle: 'launched' });
+    expect(raw.flow.defaults.dispatch.timeout_seconds).toBe(900);
+    const resolved = run({ lifecycle: 'launched', resolved: true });
+    for (const sub of resolved.flow.subflows) {
+      for (const n of sub.nodes) {
+        expect(n.dispatch).toMatchObject({ idempotent: expect.any(Boolean), timeout_seconds: expect.any(Number), artifacts_hint: expect.any(Array) });
+      }
+    }
+    const applyMerge = resolved.flow.subflows.flatMap((s: any) => s.nodes).find((n: any) => n.id === 'apply-merge');
+    expect(applyMerge.requires_reviewed).toEqual(['proposal', 'delta']);
+    cleanup();
+  });
+});

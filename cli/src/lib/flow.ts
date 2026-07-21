@@ -33,6 +33,20 @@ export interface FlowGate {
   skippable?: boolean;
 }
 
+/** 节点派发元数据声明（raw 可部分省略；resolved 物化为完整对象，见 materializeResolvedDispatch）。 */
+export interface FlowDispatchDecl {
+  idempotent?: boolean;
+  timeout_seconds?: number | null;
+  artifacts_hint?: string[];
+}
+
+/** resolved 物化后的完整派发契约（next_node.dispatch 的数据源，恒三字段齐备）。 */
+export interface FlowDispatch {
+  idempotent: boolean;
+  timeout_seconds: number;
+  artifacts_hint: string[];
+}
+
 export interface FlowNode {
   id: string;
   name: string;
@@ -48,6 +62,10 @@ export interface FlowNode {
   post_script?: string | null;
   cmd_timeout_seconds?: number | null; // M2-1b：节点级 cmd: 超时（整数 ≥1）
   coverage_threshold?: number | null;  // S29：fan-out 聚合阈值（0<x<=1）；仅 done_when:all_present 节点；未设置必须省略整键（不输出 null）
+  // contract-self-description 切片3（C4）：派发元数据（权威数据源 = 节点人工声明，不从 produces/done_when 推导）
+  dispatch?: FlowDispatchDecl | null;
+  // contract-self-description 切片3（C4）：执行前置评审对象列表（如 ["proposal","delta"]）；未声明不输出
+  requires_reviewed?: string[] | null;
   // resolved 输出专用（见 spec/cli-json-output.md §9）
   skipped?: boolean;
   overlay_op?: OverlayOp | null;
@@ -73,8 +91,13 @@ export interface Flow {
   flow: string;
   version: number;
   extends?: string | null;
+  // contract-self-description 切片3（C4）：flow 级派发默认值（timeout 唯一默认值源 fallback，见 spec/flow-spec.md §3/§10.5）
+  defaults?: { dispatch?: { timeout_seconds?: number } } | null;
   subflows: FlowSubflow[];
 }
+
+/** 兜底默认（内置模板均显式带 defaults:900；此常量仅护住无 defaults 的旧自包含 flow 文件）。 */
+export const FALLBACK_DISPATCH_TIMEOUT_SECONDS = 900;
 
 export interface FlowWarning {
   code: string;
@@ -136,6 +159,51 @@ function readYamlFile(path: string, what: string): Record<string, unknown> {
   return doc as Record<string, unknown>;
 }
 
+/** dispatch 声明子字段类型校验（内置与 overlay 同规则，spec/flow-spec.md §4）。 */
+function validateDispatchDecl(d: unknown, where: string, what: string): void {
+  if (d == null) return;
+  if (typeof d !== 'object' || Array.isArray(d)) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} ${where} 的 dispatch 须为对象`);
+  }
+  const dd = d as Record<string, unknown>;
+  if (dd.idempotent != null && typeof dd.idempotent !== 'boolean') {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} ${where} 的 dispatch.idempotent 须为 boolean`);
+  }
+  if (dd.timeout_seconds != null
+    && (typeof dd.timeout_seconds !== 'number' || !Number.isInteger(dd.timeout_seconds) || dd.timeout_seconds < 1)) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} ${where} 的 dispatch.timeout_seconds 须为正整数`);
+  }
+  if (dd.artifacts_hint != null
+    && (!Array.isArray(dd.artifacts_hint) || (dd.artifacts_hint as unknown[]).some(x => typeof x !== 'string'))) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} ${where} 的 dispatch.artifacts_hint 须为字符串数组`);
+  }
+}
+
+/** requires_reviewed 类型校验。 */
+function validateRequiresReviewed(v: unknown, where: string, what: string): void {
+  if (v == null) return;
+  if (!Array.isArray(v) || (v as unknown[]).some(x => typeof x !== 'string')) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} ${where} 的 requires_reviewed 须为字符串数组`);
+  }
+}
+
+/** 顶层 defaults 校验（overlay 与内置同规则，spec/flow-spec.md §3/§10.5）。 */
+function validateDefaults(v: unknown, what: string): void {
+  if (v == null) return;
+  if (typeof v !== 'object' || Array.isArray(v)) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} 顶层 defaults 须为对象`);
+  }
+  const dv = (v as Record<string, unknown>).dispatch;
+  if (dv == null) return;
+  if (typeof dv !== 'object' || Array.isArray(dv)) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} defaults.dispatch 须为对象`);
+  }
+  const ts = (dv as Record<string, unknown>).timeout_seconds;
+  if (ts != null && (typeof ts !== 'number' || !Number.isInteger(ts) || ts < 1)) {
+    throw new FlowError('FLOW_SCHEMA_INVALID', `${what} defaults.dispatch.timeout_seconds 须为正整数`);
+  }
+}
+
 /** 基础 schema 校验（见 spec/flow-spec.md）。不合法抛 FLOW_SCHEMA_INVALID。 */
 export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow {
   const f = flow as Record<string, unknown>;
@@ -148,6 +216,8 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
   if (!Array.isArray(f.subflows)) {
     throw new FlowError('FLOW_SCHEMA_INVALID', `${what} 缺少 \`subflows\` 数组`);
   }
+  // contract-self-description 切片3（C4）：顶层 defaults 类型校验（可选、向后兼容扩展，schema version 不变）
+  validateDefaults(f.defaults, what);
   for (const [si, sub] of (f.subflows as unknown[]).entries()) {
     const s = sub as Record<string, unknown>;
     if (!s || typeof s.id !== 'string') {
@@ -193,6 +263,9 @@ export function validateFlow(flow: unknown, what = 'flow'): asserts flow is Flow
       if (typeof n.name !== 'string') {
         throw new FlowError('FLOW_SCHEMA_INVALID', `${what} node \`${n.id}\` 缺少 \`name\``);
       }
+      // contract-self-description 切片3（C4）：节点 dispatch / requires_reviewed 类型校验
+      validateDispatchDecl(n.dispatch, `node \`${n.id}\``, what);
+      validateRequiresReviewed(n.requires_reviewed, `node \`${n.id}\``, what);
       // M2-1b：节点级 cmd_timeout_seconds 须整数 ≥1
       if (n.cmd_timeout_seconds != null
         && (typeof n.cmd_timeout_seconds !== 'number' || !Number.isInteger(n.cmd_timeout_seconds) || n.cmd_timeout_seconds < 1)) {
@@ -242,6 +315,8 @@ export function inferLifecycle(root: string): Lifecycle {
 
 interface OverlayDoc {
   extends?: string;
+  // contract-self-description 切片3（§10.5）：overlay 顶层 defaults（文件级 strategic-merge，先于操作列表应用）
+  defaults?: { dispatch?: { timeout_seconds?: number } };
   overlay?: Array<Record<string, unknown>>;
 }
 
@@ -299,6 +374,16 @@ export function applyOverlay(
     }
   }
 
+  // contract-self-description 切片3（§10.5）：overlay 顶层 defaults 在操作列表之前按文件级 strategic-merge
+  // 覆盖 builtin defaults（优先级链：builtin defaults < overlay defaults < 节点显式 < overlay modify）。
+  if (overlay.defaults !== undefined) {
+    validateDefaults(overlay.defaults, 'overlay');
+    flow.defaults = {
+      ...flow.defaults,
+      dispatch: { ...flow.defaults?.dispatch, ...overlay.defaults?.dispatch },
+    };
+  }
+
   if (overlay.overlay !== undefined && !Array.isArray(overlay.overlay)) {
     throw new FlowError('FLOW_SCHEMA_INVALID', 'overlay 的 `overlay` 字段必须是操作数组');
   }
@@ -324,7 +409,17 @@ export function applyOverlay(
       if ('id' in (op.set as Record<string, unknown>)) {
         throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] modify 不得覆盖 \`id\`（禁止改写节点身份）`);
       }
-      Object.assign(hit.subflow.nodes[hit.index], op.set);
+      // contract-self-description 切片3（§10.5）：set.dispatch 按子字段深合并（优先级链最高层），
+      // 不整体替换节点既有 dispatch 声明；类型非法 → FLOW_SCHEMA_INVALID（内置与 overlay 同规则）。
+      const setObj = { ...(op.set as Record<string, unknown>) };
+      if ('dispatch' in setObj) {
+        validateDispatchDecl(setObj.dispatch, `overlay[${oi}] modify`, 'overlay');
+        setObj.dispatch = { ...hit.subflow.nodes[hit.index].dispatch, ...(setObj.dispatch as object) };
+      }
+      if ('requires_reviewed' in setObj) {
+        validateRequiresReviewed(setObj.requires_reviewed, `overlay[${oi}] modify`, 'overlay');
+      }
+      Object.assign(hit.subflow.nodes[hit.index], setObj);
       hit.subflow.nodes[hit.index].overlay_op = 'modify';
       // S30：overlay-modify 把 builtin 节点字段改成 cmd: 的精确 (节点,字段) 白名单校验（结构性，resolved 阶段 fail loud）
       validateModifyCmdGate(hit.subflow.nodes[hit.index], oi, lifecycle);
@@ -336,6 +431,8 @@ export function applyOverlay(
       if (findNode(flow, node.id)) {
         throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] add 的 node id \`${node.id}\` 已存在（重复）`);
       }
+      validateDispatchDecl((node as FlowNode).dispatch, `overlay[${oi}] add node \`${node.id}\``, 'overlay');
+      validateRequiresReviewed((node as FlowNode).requires_reviewed, `overlay[${oi}] add node \`${node.id}\``, 'overlay');
       const anchorId = String(op.after ?? op.before ?? '');
       const hit = findNode(flow, anchorId);
       if (!hit) throw new FlowError('FLOW_SCHEMA_INVALID', `overlay[${oi}] add 的锚点 \`${anchorId}\` 不存在`);
@@ -514,7 +611,29 @@ export interface LoadFlowOptions {
 }
 
 /**
- * 加载 flow：默认内置 raw flow；resolved=true 时叠加项目 overlay。
+ * contract-self-description 切片3（C4）：resolved 物化——每个节点补全为完整 dispatch 对象，
+ * 输出层不再有第二处默认。规则（spec/flow-spec.md「派发元数据」）：
+ * - timeout_seconds：节点显式值 > flow 顶层 defaults.dispatch.timeout_seconds > 兜底 900；
+ * - 未声明 dispatch 的节点（含 overlay-add）→ 完整保守默认 { idempotent:false, timeout:defaults, artifacts_hint:[] }
+ *   （artifacts_hint:[] ＝「产物未知」契约语义；宁慢勿错杀）；
+ * - 权威数据源 = 节点人工声明，不从 produces/done_when 推导。
+ */
+export function materializeResolvedDispatch(flow: Flow): void {
+  const defaultTimeout = flow.defaults?.dispatch?.timeout_seconds ?? FALLBACK_DISPATCH_TIMEOUT_SECONDS;
+  for (const sub of flow.subflows) {
+    for (const n of sub.nodes) {
+      const decl = n.dispatch ?? {};
+      n.dispatch = {
+        idempotent: decl.idempotent ?? false,
+        timeout_seconds: decl.timeout_seconds ?? defaultTimeout,
+        artifacts_hint: decl.artifacts_hint ?? [],
+      };
+    }
+  }
+}
+
+/**
+ * 加载 flow：默认内置 raw flow；resolved=true 时叠加项目 overlay 并物化节点 dispatch。
  * lifecycle 缺省按项目状态推断。
  */
 export function loadFlow(root: string, opts: LoadFlowOptions = {}): LoadFlowResult {
@@ -528,9 +647,11 @@ export function loadFlow(root: string, opts: LoadFlowOptions = {}): LoadFlowResu
 
   const overlay = readOverlay(root, lifecycle);
   if (!overlay) {
+    materializeResolvedDispatch(builtin);
     return { lifecycle, resolved: true, overlay_applied: false, builtin_version, warnings: [], flow: builtin };
   }
 
   const { flow, warnings } = applyOverlay(builtin, overlay, lifecycle);
+  materializeResolvedDispatch(flow);
   return { lifecycle, resolved: true, overlay_applied: true, builtin_version, warnings, flow };
 }

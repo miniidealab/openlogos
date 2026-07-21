@@ -144,3 +144,34 @@
 ### 9.3 覆盖度校验补充
 
 - [ ] status 非 code/verify 前沿不挂载可驱动 repair 诊断：UT-S11-47、UT-S11-48、UT-S11-49、UT-S11-50、ST-S11-34
+
+## 十、契约自描述字段与步骤注册表测试（contract-self-description）
+
+> 覆盖 D1（contract 握手）、D2（step_meta 与步骤注册表 + CI lint）、D3（facts 权威事实块）在 `status --format json` 上的生产者契约，以及 D9 的生产者一致性漂移注入验收（含「pre-implement 步骤不输出 loop_state」反面锚）。本节用例编号顺延既有最大编号（UT-S11-50 / ST-S11-34）。`active_change` 新增 `step_meta` / `facts` 走既有可控扩展口径：仅有活跃提案的 golden 同步更新，无活跃提案项目零漂移（D8）。用例实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 10.1 单元测试用例补充
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S11-51 | status JSON data 顶层 contract 在场且版本为 1.0.0 | D1 contract 握手 | 任意 fixture（有无活跃提案均取样） | `status --format json` | `data.contract` 恒在场且等于 `{"version":"1.0.0"}` |
+| UT-S11-52 | active_change.step_meta 在场且取值经注册表映射 | D2 步骤注册表 | launched 活跃提案，抽样多个步骤 fixture | `status --format json` | `modules[].active_change.step_meta = {phase, kind}` 恒在场；抽样断言与注册表一致：writing→`{pre-implement, produce}`、ready-to-merge→`{pre-implement, gate}`、coding→`{implement, produce}`、verify-passed→`{post-implement, residency}`；phase ∈ pre-implement\|implement\|post-implement、kind ∈ produce\|gate\|command-required\|residency |
+| UT-S11-53 | active_change.facts 六布尔字段在场且与磁盘权威事实一致 | D3 facts 事实块 | launched 活跃提案：SPEC_MERGED 在场、`[code]` 含真实脱占位条目、无 SLICES_APPROVED、无 VERIFY_PASS | `status --format json` | `facts = {spec_complete, slices_planned, slices_approved, code_required, has_delta_tasks, verify_pass}` 六字段全在场且均为布尔；该 fixture 下 `spec_complete==true`、`slices_planned==true`、`slices_approved==false`、`verify_pass==false`；取值与 CLI 权威判定（`hasSpecCompleteMarker` / `isTasksCodeFilled` / marker 在场性）同一份计算 |
+| UT-S11-54 | 无活跃提案时不输出 step_meta/facts，contract 仍在场 | D1/D3 零漂移边界 | launched 无活跃提案（或 initial 模块） | `status --format json` | `modules[].active_change==null`，输出不含 `step_meta` / `facts`；`data.contract` 仍在场（无活跃提案项目除 contract 外零额外漂移） |
+| UT-S11-55 | 注册表 lint：字面量 proposal_step 不经注册表即失败 | D2 CI lint | cli/src 全量源码 | 全仓静态扫描 lint 测试 | 任何「字面量赋给 proposal_step 却不经 `step-registry.ts` 注册表」的代码路径 → 测试失败并指出文件位置；现有全部铸造点（原 `detectProposalStep` / `detectProposalStepViaFlow` 双镜像及 status/next 覆盖点）收敛后 lint 通过 |
+| UT-S11-56 | 生产者一致性漂移注入：新注册步骤三方同步 | D9 漂移注入 | 测试内注册全新步骤 `x-future-step`（phase=pre-implement, kind=produce） | 注册后跑生产者一致性测试 | 注册表 / `step_meta` 输出 / 打包 schema 三方同步，schema 校验通过（含 step_meta 必填）；任一方遗漏 → 测试失败 |
+| UT-S11-57 | 漂移注入反面锚：pre-implement 步骤不输出 loop_state | D9 反面锚（D4 激活判据） | 承接 UT-S11-56：活跃提案当前步骤为 `x-future-step`（phase=pre-implement） | `status --format json` | 输出**不含** `loop_state`（`pre-implement + loop_state` 是非法组合，测试断言其不存在，而非将其固化为合法夹具）；`slice_state` 常驻口径不受影响 |
+
+### 10.2 场景测试用例补充
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-35 | status 契约自描述字段端到端互相一致 | Step 1→8 | 同一 launched 提案依次构造 ready-to-merge → ready-to-implement（未批准切片）→ coding 三个状态 | 每个状态执行 `openlogos status --format json` | 三次输出均满足：`data.contract.version=="1.0.0"`；`step_meta` 与 `proposal_step` 经同一注册表映射（ready-to-implement→`{pre-implement, residency}`、coding→`{implement, produce}`）；`facts` 与 `loop_state` 挂出判据同源——前两个状态 `facts.slices_approved==false` 且无 `loop_state`，coding 状态四事实全真且 `loop_state` 挂出 |
+
+### 10.3 覆盖度校验补充
+
+- [ ] status data 顶层 contract 在场且 =1.0.0：UT-S11-51
+- [ ] step_meta 在场与注册表取值正确：UT-S11-52、ST-S11-35
+- [ ] facts 在场与权威取值正确：UT-S11-53、ST-S11-35
+- [ ] 无活跃提案零漂移边界：UT-S11-54
+- [ ] 注册表 lint（字面量不经注册表 → 失败）：UT-S11-55
+- [ ] 漂移注入三方同步 + pre-implement 不输出 loop_state 反面锚：UT-S11-56、UT-S11-57

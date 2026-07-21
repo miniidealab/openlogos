@@ -107,6 +107,7 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
 
   writeFileSync(yamlPath, createAdoptLogosProject(projectName, locale));
   console.log('✓ 写入 logos-project.yaml（bootstrap: adopted, lifecycle: launched）');
+  console.log('✓ 标记待建现状基线（baseline_seed_state: required）');
 
   writeInstructionFiles(root, locale, aiTool, true);
   console.log('✓ 写入 AGENTS.md / CLAUDE.md');
@@ -122,9 +123,17 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   console.log('项目已进入存量项目接入模式（bootstrap: adopted）：');
   console.log('  · OpenLogos 基础设施已完整初始化');
   console.log('  · Initial 文档基线已跳过，不强制要求');
-  console.log('  · 模块生命周期直接设为 launched\n');
-  console.log('建议的下一步：先补充项目基线文档');
-  console.log('  → openlogos change add-baseline-docs');
-  console.log('  在变更提案中逐步补写需求、架构、场景、测试用例，');
-  console.log('  把 TDD 思想贯彻到每一次迭代中。\n');
+  console.log('  · 模块生命周期直接设为 launched');
+  console.log('  · 现状基线待建立（baseline_seed_state: required）\n');
+  console.log('建议的下一步：逆向建立现状基线（种子基线，非权威意图）');
+  console.log('  由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单，');
+  console.log('  每份产物带 provenance 标记（reverse-engineered / verified: false）。');
+  console.log('  存量代码 grandfather 豁免，可信边界随后续 change 触碰而前移。\n');
+  // 能力降级语义（F2）：adopt 只做确定性初始化并写入 baseline_seed_state: required；
+  // 绝不启动 AI、不产逆向内容、不声称基线已建立。逆向扫描由 AI 会话/driver 检测该状态后派发 brownfield-adopter 完成。
+  if (!isTTY()) {
+    console.log('⚠ 未检测到可用的 AI 会话来逆向建立现状基线。');
+    console.log('  现状基线仍待建立（baseline_seed_state: required）。');
+    console.log('  请在支持 brownfield-adopter 的 AI 会话中继续，或稍后重试。\n');
+  }
 }

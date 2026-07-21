@@ -272,6 +272,83 @@ change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `s
 - 无 `[delta]` 的纯代码提案：change-writer 不产 delta；plan 门确认后，下一步是 no-delta `openlogos merge <slug>` 写入 `SPEC_MERGED`，再由 `slice-planner` 规划 `[code]`。
 - 任意代码提案：测试 ID 未稳定时不得进入 `plan-slices`，不得用占位 ID 预写切片。
 
+## Step 6 补充二：GUI 项目提案阶段前置 UI/UX 原型（proposal-ui-ux-first）
+
+对已 `launched` 的 **GUI 产品项目**（网站 / 桌面应用 / 移动 App），当本次变更触及界面时，change-writer 在**提案阶段**（plan 节点、`plan-exit` 门**前**）就用 `ui-ux-pro-max` 设计系统产出界面原型，使用户在批准提案时（**面板已渲染原型的前提下**）连界面一起确认，避免「批准后自动实现才发现界面不对」的高成本返工。**复用现有 `plan-exit`（批准方案）门——不新增门态、不新增确认标记、不新增 `ui/` 目录。** 非 GUI 项目（纯 CLI / API / 纯后端服务 / Skills）整个特性不启用，本节全部跳过、流程零改动。
+
+> 本节只定义 change-writer 侧的 **producer 产出职责与可交付要求**；driver 在 plan 节点**派发** change-writer 产原型（producer dispatch）、面板渲染原型、批准时写 provenance 均归 runlogos 关联 change `ui-ux-first-panel`，本节不含其实现。
+
+### ① 触发条件：先判 `product_type`，再判本次是否动界面（去循环依赖）
+
+判定在 **plan 阶段由 change-writer 执行**，分两层，**依据是「提案意图 + 已规划的 `[delta]` 目标」，而非扫描尚不存在的 delta 文件内容**（plan 阶段无 delta 可扫，「先 delta 还是先原型」构成循环依赖，故不扫 delta 内容）：
+
+1. **先判 `product_type` 是否 ∈ GUI**：从 `logos/logos-project.yaml` 的 `product_type` / `tech_stack` 读取。
+   - ✅ GUI 类：Web 应用 / 移动应用 / 桌面应用（Electron / Tauri / SwiftUI / Jetpack Compose / Qt / WPF / GTK 等）/ 混合型中含 GUI 交付物的部分。
+   - ❌ 非 GUI 类：纯 CLI / Library / AI Skills / 纯 API 服务 / 纯后端服务（`service`：常驻 worker / 定时循环任务 / 消息消费者等，无对外接口）—— 整节跳过、`ui_impact` 恒为 `false`、不注入声明段。
+2. **再判本次是否动界面**（仅当 `product_type ∈ GUI`）：
+   - **依据 = 提案意图 + `tasks.md` 已规划的 `[delta]` 目标是否命中 `2-page-design/`，或命中含交互变更的 feature-specs delta**。命中即**强制判为「动了界面」**（`ui_impact:true`）。
+   - **不扫描尚不存在的 delta 内容**（去循环依赖）。
+   - 可选多 agent 复核默认**关**，可由 driver 派发。
+
+判定容错优先流程平滑：作为增益功能，判错代价可控（顶多多画一次或退回重设），不追求绝对严谨。
+
+### ② change-writer 作为 plan 节点 producer，被 driver 在 plan-exit 门前 dispatch 产原型
+
+- 原型产出是 **plan 节点门前的普通内容生成**，授权状态与「写 `proposal.md` / `tasks.md`」**完全相同**——**不新增授权、不新增门**。唯一人类确认点仍是 `plan-exit`。
+- driver 在 plan 节点判定 `ui_impact:true` 且**前置能力就绪**时，**派发 change-writer（用 ui-ux-pro-max）在 `plan-exit` 前产出原型**（producer dispatch）。这属既有 plan 节点执行范围，driver 实现归 runlogos `ui-ux-first-panel`。
+- change-writer 的写入由 guard 的 **plan 阶段写入 allowlist（仅放行 `deltas/prd/2-product-design/2-page-design/*.html`）** 授权；其余 `deltas/**` 在 plan 阶段仍禁止写入，越界路径被 guard 拒。
+- `--auto` 下 `plan-exit`（`skippable:true`）自动放行，但原型已在门前产出、provenance 已记录。
+
+### ③ ui-ux-pro-max 生成步骤（调用设计系统）
+
+复用 product-designer 的 Step 5a UI/UX 子流程（见 `skills/product-designer/SKILL.md`），在提案阶段前移使用：
+
+1. 从提案意图 + Phase 1 需求文档提取关键词：产品类型（SaaS / e-commerce / dashboard / portfolio 等）+ 行业 + 风格倾向。
+2. 调用 `ui-ux-pro-max` 获取设计系统（风格 + 调色板 + 字体配对 + 登陆页模式 + 反模式清单），并落地 `design-system.json` 令牌（此为正常路径，置 `design_system_mode: generated`）：
+   ```bash
+   python3 logos/skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <style_keywords>" --design-system -p "<项目名>"
+   ```
+3. 以设计系统为视觉基础，为**结构化声明清单里的每个页面**（每条 `id` / `prototype`）产出裸 HTML 原型（关键几屏 + 各交互状态：空态 / 加载 / 正常 / 错误 / 边界态）。
+
+### ④ 可交付要求：声明清单 == 产出文件（F1 R5，逐页 + 非空 + 令牌）
+
+「文件存在」只是弱收敛（文件可能为空、非 ui-ux-pro-max 产物、或声明多页只产一页）。change-writer 的**可交付标准**收紧为：
+
+- **逐页非空**：UI/UX 变更声明段声明的**每一个页面**（结构化清单中每条 `id` / `prototype` 记录），都在 `deltas/prd/2-product-design/2-page-design/` 下有 basename 精确匹配的**非空原型文件**（不是「至少一个文件」）。
+- **令牌追溯（仅 `design_system_mode: generated`）**：`design_system_mode: generated` 时，提案目录 `logos/changes/<slug>/` 下留存合法非空 `design-system.json`（ui-ux-pro-max 令牌），把每个原型系到设计系统。`design_system_mode: fallback` 时**不产 / 不要求 `design-system.json`、禁伪造令牌**（详见 ⑥）。
+- **完整性判据（三方对账，按 basename 集合）**：(i) `proposal.md` 声明段 `ui_impact` + 结构化声明页清单（每条的 `prototype` basename）；(ii) `2-page-design/` 下实际产出的原型文件 basename；(iii) merge 落盘 / 面板渲染对象。**声明清单 basename 集合 == 产出文件 basename 集合** 为完整性判据（排序无关；重复 / 额外 / 缺失均失败）；不一致 = 节点未收敛（advisory）。`PLAN_APPROVED.pages` / `hashes` 复用同一 basename 键。
+- 该可交付要求由 overlay-add 节点 `write-ui-prototype` 的 `done_when: cmd:<check-ui-prototype>` 做**富对账**作为 `plan-exit` 前的机器收敛条件——命令 `exit 0` 节点才 done、plan 子流程才完成、plan-exit 门才可放行。checker 按 `design_system_mode` 分流：
+  - `generated` → 合法非空 `design-system.json`（令牌）+ 逐页非空 + 声明清单==产出文件（basename 集合一致）→ `exit 0`；`generated` 但无令牌 → fail closed。
+  - `fallback` → 必须有非空 `design_system_fallback_reason`（如「Python3 缺失」），**禁伪造令牌、不要求 `design-system.json`**，逐页非空 + 清单一致即 `exit 0`（不阻塞、plan-exit 可到达）。
+  - 其它值 / 缺 `design_system_mode` 字段 → fail closed。
+- **残差（如实标注）**：「HTML 是否*真出自* ui-ux-pro-max」除 `design-system.json` 令牌可追溯外**无法纯机器证明**——这是既有 acceptance 口径下的荣誉制 + 令牌追溯限制，如实记录、非遗漏。
+
+### ⑤ 原型作为 page-design delta 产出 + 填写声明段
+
+- **原型路径**：直接作为 page-design delta 写入 `logos/changes/<slug>/deltas/prd/2-product-design/2-page-design/core-NN-<slug>.html`（裸 HTML，可直接 iframe 渲染）。
+- **不新增 `ui/` 目录、复用现有 delta 路径映射**（`deltas/prd/** → resources/prd/**`）：面板已用 `readDir(deltas/**/*)` 列出可直接渲染。但原型资产的落盘**不复用 `scanDeltas`/merge-executor 的整份拷贝路径**——所有 `ui_impact` 原型一律由 `openlogos merge` 内专用事务落盘入口 `commitVerifiedPrototypes()` 统一提交（严格模式对 staged 字节做 hash 校验 + 原子提交；advisory 模式同一入口、不做严格 hash 校验），**merge-executor 绝不触碰原型资产**、无第二条绕过路径。「复用路径映射」仅指无额外人工步骤，**非**「无新代码路径」。
+- **填写声明段**：在 `proposal.md` 的「UI/UX 变更声明」段写入：
+  - `ui_impact`：布尔（本次是否触及界面，权威意图源 / 单一事实源）。
+  - `design_system_mode`：`generated | fallback`（是否走了设计系统的单一权威事实源）。`generated` 时同时产出 `design-system.json`；`fallback` 时须填 `design_system_fallback_reason` 且不产 / 不要求 `design-system.json`（见 ⑥）。
+  - **结构化声明页清单**：本次原型应覆盖的每个页面 / 屏幕作为一条**结构化记录**填写——每页一个唯一 `id`、精确的 `prototype` basename（仅文件名，禁 `..` / 子目录，扩展名必须 `.html`，全清单唯一）、一句话 `description`：
+    ```
+    - id: <unique-page-id>
+      prototype: core-NN-<slug>.html
+      description: <一句话>
+    ```
+    以 `prototype` basename 集合保证「声明清单 == 产出文件」可机器判定（排序无关；重复 / 额外 / 缺失均失败）。
+- `proposal.md` 保持 markdown 结构不变，避免打断 CLI / runlogos 对 proposal 的解析。声明段是下游 `flow-derive` / guard / 面板 / checker 的**唯一意图事实源**，不引入第二处判定。
+
+### ⑥ Python3 降级：置 `design_system_mode: fallback`（通用风格兜底，不阻塞、不产令牌）
+
+检测不到 `python3` 时跳过 ui-ux-pro-max 调用，提示用户「检测到 ui-ux-pro-max 依赖的 Python 3 不可用。原型将使用通用风格生成。如需专业级设计系统建议，请安装 Python 3 后重试。」：
+
+- 原型**用通用风格继续产出**结构化声明清单里的每个页面，**不阻塞、不报错**。
+- 在声明段置 `design_system_mode: fallback` 并填 `design_system_fallback_reason`（如「Python3 缺失」）；此情形下**不产出 / 不要求 `design-system.json` 令牌，禁伪造令牌**。
+- 此时 checker `check-ui-prototype` 走 `fallback` 分支：只要 `design_system_fallback_reason` 非空、逐页非空、声明清单 == 产出文件（basename 集合一致）即 `exit 0`——**不因缺 `design-system.json` 而阻塞**，plan-exit 门可到达。这消解了「降级不产令牌，但 `done_when` 却强制要 `design-system.json` → 卡死」的矛盾。
+- 正常路径（`python3` 可用、走了设计系统）则置 `design_system_mode: generated` 并产出 `design-system.json`（见 ③ / ④），checker 走 `generated` 分支要求合法非空令牌。
+- 与提案「Python3 缺失时以通用风格兜底并标注，不阻塞」的口径一致。
+
 ### Step 7: 引导后续操作（链式驱动）
 
 提供一条可直接执行的提示词，让用户一句话启动全部任务的链式执行：
@@ -339,3 +416,17 @@ AI 只负责驱动内容修改。半自动 / 手动下不得在未获明确授�
 **执行任务（提案填写完成后）**：
 - `按 tasks.md 帮我逐步更新 S02 的所有受影响文档`
 - `帮我修复 S02 登录接口的 500 错误并重新验收`
+
+## Step 6 补充三：存量逆向基线的 JIT 深化 advisory（brownfield-adopter S33，不设硬门）
+
+> 适用范围：`bootstrap: adopted` 模块下，本次 change 的**目标区域只有 `verified: false` 的逆向 spec**（种子基线，见 S33）时启用。其余情形 change-writer 行为零改动。
+
+**判定（只读已合并主文档）**：对本次 `[delta]` 触碰的每个目标主文档，读其 `## 逆向基线来源` 章节——若该章节存在候选、且其 active/tombstone 候选**全部** `verified: false`（无 human-verified），则该区域为「未验证逆向区域」。判定只读 `logos/resources/` 已合并主文档，**不看未合并 delta**（advisory 不因未合并 delta 前移/消失）。CLI 侧支撑 helper：`cli/src/lib/baseline-jit.ts` 的 `detectBaselineJitAdvisory(root, slug)`。
+
+**advisory（建议、不阻断）**：检测到未验证逆向区域时，change-writer 给出建议——**在当前 change 的单份最终态 delta 内**，把对应 `## 逆向基线来源` 候选置 `verified: true` 并记 `confirmed_by` / `evidence` / `confirmed_at`，与本次前向改动**一并落盘**（同一个 `MODIFIED` 章节替换即可原子承载「确认现状 + 前向改动」）。
+
+**硬约束（务必遵守）**：
+1. **单份最终态 delta**：每个被触碰目标文档只产出一份 delta（现行 `deltas/** → 主文档` 1:1 映射、`MODIFIED` 替换同名章节）；**不生成第二份「现状确认 delta」**、不引入双有序 delta / 多操作 delta 协议。
+2. **不直接改 `resources/**`、不嵌套第二个 change**（guard 互斥）；现状确认作为审计事实记在该章节 + `tasks.md` `[delta]` 勾稽对应候选 ID。
+3. **`human-verified` 仅 merge 后生效**：merge 前主文档仍 `verified: false`，覆盖率只读已合并主文档、不因未合并 delta 前移。
+4. **不设硬门**：用户可跳过建议、直接写前向 delta；该区域 `verified` 保持 `false`、覆盖率不前移。change-writer 不得阻断。

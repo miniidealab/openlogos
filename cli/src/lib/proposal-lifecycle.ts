@@ -1,4 +1,9 @@
-import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, appendFileSync, linkSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { parseStrictTimestampMs } from './timestamp.js';
+// 循环导入（安全性见 detectProposalStep 注释）：仅函数声明跨界调用、无顶层跨界求值。
+import { detectMintedStepViaFlow } from './flow-derive.js';
+
 import { join } from 'node:path';
 import { listFiles } from './list-files.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
@@ -371,6 +376,77 @@ export function hasSpecCompleteMarker(proposalDir: string): boolean {
   return existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'));
 }
 
+// ── contract-self-description 切片1：facts 权威事实块 + 结构化 SLICES_APPROVED ──
+
+export interface ProposalFacts {
+  spec_complete: boolean;
+  slices_planned: boolean;
+  slices_approved: boolean;
+  code_required: boolean;
+  has_delta_tasks: boolean;
+  verify_pass: boolean;
+}
+
+/**
+ * CLI 权威计算的确定性事实块（spec/cli-json-output.md §3.3「facts 权威事实块」）。
+ * loop_state 激活判据（flow-loop-derive）与本函数是**同一份计算**——单一事实源，禁止第二处实现。
+ */
+export function deriveProposalFacts(proposalDir: string, tasksContent?: string): ProposalFacts {
+  const taskText = tasksContent ?? (existsSync(join(proposalDir, 'tasks.md'))
+    ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '');
+  const sections = parseTaskSections(taskText);
+  return {
+    spec_complete: hasSpecCompleteMarker(proposalDir),
+    slices_planned: isTasksCodeFilled(taskText),
+    slices_approved: existsSync(join(proposalDir, SLICES_APPROVED_MARKER)),
+    code_required: isCodeRequiredForProposal(proposalDir, taskText, sections),
+    has_delta_tasks: (sections?.delta?.total ?? 0) > 0,
+    verify_pass: existsSync(join(proposalDir, 'VERIFY_PASS')),
+  };
+}
+
+/**
+ * 结构化 SLICES_APPROVED marker（spec/flow-spec.md §12.5(3)）：消费 slice-exit 时原子写入一次
+ * JSON 单行 `{"schema":"openlogos/slices-approved@1","approved_at":"<ISO 8601>"}`；
+ * 已存在**不重写**（重复 `next --auto` 不刷新 approved_at）。
+ */
+export function writeSlicesApprovedMarker(proposalDir: string): void {
+  const path = join(proposalDir, SLICES_APPROVED_MARKER);
+  if (existsSync(path)) return; // 快路径：已存在不重写（approved_at 一次写定）
+  // code review F2：原子独占发布——先写完整内容到临时文件，再 linkSync 单赢发布：
+  // 并发竞争时后到者 EEXIST（保留先赢内容、不覆盖不刷新）；崩溃只可能留下 tmp 残件，
+  // 目标路径要么不存在、要么是完整单行 JSON（绝无半内容）。
+  const tmp = join(proposalDir, `.${SLICES_APPROVED_MARKER}.tmp-${randomUUID()}`);
+  const line = JSON.stringify({ schema: 'openlogos/slices-approved@1', approved_at: new Date().toISOString() });
+  writeFileSync(tmp, line + '\n');
+  try {
+    linkSync(tmp, path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; // EEXIST = 并发先赢，静默保留
+  } finally {
+    try { unlinkSync(tmp); } catch { /* tmp 清理尽力而为 */ }
+  }
+}
+
+/**
+ * 读结构化 SLICES_APPROVED 的 approved_at（loop_state.activated_at 的持久时间源）。
+ * 旧格式空文件 / 非法 JSON → null（存在性仍表示「切片门已消费」，仅时间戳缺失）。
+ */
+export function readSlicesApprovedAt(proposalDir: string): string | null {
+  const path = join(proposalDir, SLICES_APPROVED_MARKER);
+  if (!existsSync(path)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { schema?: unknown; approved_at?: unknown };
+    // code review F6：读取端校验——schema 常量与严格 RFC 3339 时间格式；任一无效 → 按「无时间戳」省略
+    // （存在性仍是「切片门已消费」的权威事实，损坏 marker 不得把坏时间原样发布进 loop_state.activated_at）。
+    if (parsed.schema !== 'openlogos/slices-approved@1') return null;
+    if (typeof parsed.approved_at !== 'string' || parseStrictTimestampMs(parsed.approved_at) == null) return null;
+    return parsed.approved_at;
+  } catch {
+    return null;
+  }
+}
+
 export function countTasks(content: string): { checked: number; total: number } {
   const checked = (content.match(/^- \[x\]/gim) ?? []).length;
   const unchecked = (content.match(/^- \[ \]/gm) ?? []).length;
@@ -734,135 +810,10 @@ export function detectProposalStep(
   proposalDir: string,
   moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> = {},
 ): ProposalStep {
-  const initialTasksContent = readIfExists(join(proposalDir, 'tasks.md'));
-  if (hasSpecCompleteMarker(proposalDir)
-    && isCodeRequiredForProposal(proposalDir, initialTasksContent)
-    && !isTasksCodeFilled(initialTasksContent)
-    && !hasRealTestIdsForProposal(proposalDir, initialTasksContent)) {
-    return 'test-id-required';
-  }
-  if (hasSpecCompleteMarker(proposalDir) && isCodeRequiredButUnplanned(proposalDir, initialTasksContent)) {
-    return 'ready-to-implement';
-  }
-  if (existsSync(join(proposalDir, 'VERIFY_FAIL'))) {
-    return 'verify-failed';
-  }
-  if (existsSync(join(proposalDir, 'VERIFY_PASS'))) {
-    const tasksContent = readIfExists(join(proposalDir, 'tasks.md'));
-    const deploy = getDeploySectionSummary(tasksContent);
-    const hasDeployTasks = Boolean(deploy && deploy.total > 0);
-    const deploymentDecision = resolveProposalDeploymentDecision(proposalDir, moduleDefaults);
-
-    if (deploymentDecision.deployment_decision_conflict) {
-      return 'verify-passed';
-    }
-
-    if (deploymentDecision.deployment_required !== true) {
-      return 'verify-passed';
-    }
-
-    if (!hasDeployTasks) {
-      return 'ready-to-deploy';
-    }
-
-    const deployDone = existsSync(join(proposalDir, 'DEPLOY_DONE'));
-    const deployTasksChecked = deploy!.checked === deploy!.total;
-    if (!deployDone || !deployTasksChecked) {
-      return 'ready-to-deploy';
-    }
-
-    if (existsSync(join(proposalDir, 'SMOKE_FAIL'))) {
-      return 'smoke-failed';
-    }
-    if (existsSync(join(proposalDir, 'SMOKE_PASS'))) {
-      return 'smoke-passed';
-    }
-    if (deploymentDecision.smoke_required === false) {
-      return 'deploy-done';
-    }
-    if (deploymentDecision.smoke_required === true) {
-      return 'ready-to-smoke';
-    }
-    if (hasSmokeCasesForProposal(proposalDir)) {
-      return 'ready-to-smoke';
-    }
-    return 'deploy-done';
-  }
-  if (hasSpecCompleteMarker(proposalDir)) {
-    // 规格已合并，判断 [code] section 是否全部完成
-    const tasksContent = readIfExists(join(proposalDir, 'tasks.md'));
-    const sections = parseTaskSections(tasksContent);
-    if (sections !== null) {
-      const code = sections['code'];
-      const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
-      if (codeRequired && !isTasksCodeFilled(tasksContent) && !hasRealTestIdsForProposal(proposalDir, tasksContent)) {
-        return 'test-id-required';
-      }
-      if (!code && codeRequired) {
-        return 'ready-to-implement';
-      }
-      if (!code || (code.total > 0 && code.checked === code.total)) {
-        // 无 [code] section 且无需代码，或 [code] 全勾 → 可以 verify
-        return 'ready-to-verify';
-      }
-      // split-slice-planner-stage：[code] 有未完成切片。slice-exit 门未放行（无 SLICES_APPROVED）
-      // → ready-to-implement（切片待批准）；放行后 → coding。plan-slices 完成与否仅影响 next_node，不改 proposal_step。
-      if (!existsSync(join(proposalDir, SLICES_APPROVED_MARKER))) {
-        return 'ready-to-implement';
-      }
-      return 'coding';
-    }
-    // 旧格式：无 section 标记，直接进入 ready-to-verify
-    return 'ready-to-verify';
-  }
-  if (existsSync(join(proposalDir, 'MERGE_PROMPT_GENERATED')) || existsSync(join(proposalDir, 'MERGE_PROMPT.md'))) {
-    return 'merge-generated';
-  }
-  const proposalContent = readIfExists(join(proposalDir, 'proposal.md'));
-  const tasksContent = readIfExists(join(proposalDir, 'tasks.md'));
-  const mergeableDeltaCount = countMergeableDeltaFiles(proposalDir);
-
-  if (!isProposalTemplateFilled(proposalContent) || !isTasksTemplateFilled(tasksContent)) {
-    return 'writing';
-  }
-
-  // 结构化 section 判断
-  const sections = parseTaskSections(tasksContent);
-  if (sections !== null) {
-    const delta = sections['delta'];
-    const code = sections['code'];
-
-    // support-nodelta-spec-complete：无 [delta] 只表示不需要写 delta，不代表 spec-complete。
-    // 需要代码的 no-delta 提案必须先通过 openlogos merge 写 no-delta SPEC_MERGED。
-    if (!delta) {
-      if (isCodeRequiredForProposal(proposalDir, tasksContent, sections)) {
-        return 'spec-complete-required';
-      }
-      if (!code || (code.total > 0 && code.checked === code.total)) {
-        return 'ready-to-verify';
-      }
-      if (!existsSync(join(proposalDir, SLICES_APPROVED_MARKER))) {
-        return 'ready-to-implement';
-      }
-      return 'coding';
-    }
-
-    // 有 [delta] section：按 delta 勾选状态判断
-    if (delta.total > 0 && delta.checked === delta.total) {
-      return 'ready-to-merge';
-    }
-    // change-flow-redesign：delta 尚未启动且 plan 门未消费 → ready-to-delta（plan 出口驻留态）。
-    // PLAN_APPROVED 是 plan-exit 被 --auto 消费后的状态源；GATE_AUTO_PASSED 仅为审计，不参与派生。
-    if (delta.checked === 0 && countMergeableDeltaFiles(proposalDir) === 0
-      && !existsSync(join(proposalDir, PLAN_APPROVED_MARKER))) {
-      return 'ready-to-delta';
-    }
-    return 'delta-writing';
-  }
-
-  // 旧格式降级：全局判断（向后兼容）
-  if (mergeableDeltaCount > 0 && allTasksChecked(tasksContent)) {
-    return 'ready-to-merge';
-  }
-  return 'delta-writing';
+  // code review r3-F5（C1 收敛为一）+ smoke-repair（SMOKE-core-48）：镜像判定树已删除——唯一权威检测器
+  // = flow-derive.detectMintedStepViaFlow（同一棵判定树、同一注册表铸造出口），**静态循环导入直连**。
+  // 此前的运行时 delegate 注册在「入口只加载本模块、不加载 flow-derive」时（如 baseline-seed commit）
+  // 未注册即抛错，炸出错误信封（SMOKE-core-48 回归）。ESM 循环安全依据：两模块顶层互不求值对方
+  // 非函数绑定，函数声明跨循环 hoisted，本调用发生在两模块均已求值之后。
+  return detectMintedStepViaFlow(proposalDir, moduleDefaults).proposal_step;
 }

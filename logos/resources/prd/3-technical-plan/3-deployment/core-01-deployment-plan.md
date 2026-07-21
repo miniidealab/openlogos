@@ -77,6 +77,8 @@ graph TB
 
 本提案 `deploy-progress-summary-panel` 会修改 CLI 运行时代码，因此后续实现验收通过后需要按本方案构建、测试、打包，并由用户决定是否发布 npm 包。
 
+本提案 `brownfield-adopter` 修改 / 新增 CLI 运行时代码（**新增 `baseline-seed.ts`**；改 `adopt.ts` / `next.ts` / `status.ts` / `verify.ts` / `project-yaml.ts` / `migrate-lifecycle.ts`）与 Skill / 方法论规格，据判定规则第 2 条声明 `deployment_required: true` 并保留 `[deploy]` section：验收通过后需经既有 tag → npm publish + GitHub Release 链路发布，用户方能获得 adopt 自动/降级建基线、`openlogos baseline-seed` 种子状态提交、next/status 覆盖率与 verify 软告警能力。回滚走 npm `dist-tag` 回退 + 回退对应 tag；老 adopted 项目 provenance 元数据迁移为持久化 schema/data migration，须幂等、写前备份、失败可恢复、旧版 CLI 忽略未知字段。部署后 smoke 覆盖已发布包中 adopt 自动/降级路径、`baseline-seed` 提交协议与 partial 恢复、status/next/verify 输出（见 smoke 用例 SMOKE-core-44…48）。
+
 ## 十一、官网发布动态构建策略
 - 官网构建前必须执行发布数据生成脚本，从 npm registry 读取 `@miniidealab/openlogos` 的 `dist-tags`、`versions` 和 `time`。
 - 生成结果写入官网源码可导入的静态 JSON 文件，Astro 页面在构建时读取该文件。
@@ -250,3 +252,40 @@ graph TB
 - 若 Codex marketplace 生成影响已有项目，可通过 npm 补丁版本回滚或修复；历史 `.codex-plugin/` 兼容路径保留，作为临时降级入口。
 - 若 Claude Code 项目 skill 边界说明或同步逻辑误阻断用户项目，可按既有 npm 补丁版本策略修复；用户项目中的 `.claude/skills/*` 文件不做自动迁移或删除。
 - 若官网文档异常，通过 Cloudflare Pages 回滚到上一成功部署。
+
+## 二十、契约自描述发布检查（contract-self-description）
+
+本提案 `contract-self-description` 修改 CLI 运行时代码（status/next JSON 契约、`loop_state` 挂出判据、verify 同 ID 去重）并新增随包分发的 `spec/schema/` JSON Schema，据「十、提案级发布决策」判定规则第 2 条声明 `deployment_required: true` 并保留 `[deploy]` section。影响环境：本地（全局 npm 安装）；公开 npm 发布沿既有 tag → npm publish + GitHub Release 链路，须经人类确认另行执行。无数据迁移。
+
+### 大版本发布口径
+
+- 本提案的契约破坏性变更——`data` 顶层新增 `contract`（全部 9 个 golden 基线快照重拍）、`next_node` 新增 `dispatch` / `requires_reviewed`（破 R8 八字段锚）、`loop_state` 挂出判据收紧（破「launched 常驻输出」）——**集中在一次大版本（major）发布**交付，破坏面一次说清，不拆散成多个小版本零敲碎打。
+- **C2（loop_state 挂出时机收紧）可独立先行以小版本发布救火**：此时 `contract` 字段尚不存在（0.x 前契约时代），「既有字段挂出判据变更即 contract major」的规则自 contract 1.0.0 发布起才起算；且现役 runlogos driver 对「loop_state 缺席」本就走普通推进（runlogos S48 EX-48.9），对消费方向后兼容。先行发布 C2 可立即消灭 loop 劫持整类假死，不必等大版本。
+- 交付顺序与提案概述一致（供 slice-planner 参考，非其约束）：C2 最小独立先行（可选救火）→ C1+C3+C5（破坏性集中的大版本核心）→ C4+C6+C7 随同一大版本收尾。
+
+### 契约版本演进策略（D1）
+
+- 大版本发布交付的契约形态即 `contract.version = "1.0.0"`（语义化契约版本，独立于 CLI 版本演进）；此前无 `contract` 字段的历史输出视为「0.x 前契约时代」，消费方按缺字段保守分支处理。
+- SemVer 规则：**major** = 必填字段删除/改义、闭合枚举语义变化（含移除值）、既有字段挂出判据变更；**minor** = 向后兼容扩展（新增可选字段、闭合枚举新增值）；**patch** = 不改形态与语义的澄清。
+- 版本-schema 一一映射：`spec/schema/status.schema.json`、`spec/schema/next.schema.json` 内嵌契约版本号；响应 `contract.version` 必须与打包 schema 版本一致，CI 校验（见下发布前检查）。
+
+### spec/schema/ 随包打包与包内容验证
+
+- `spec/schema/status.schema.json`、`spec/schema/next.schema.json` 随 npm `prepack` 打入发布包，发布包内 schema 与响应契约同版本演进。
+
+发布前检查：
+- `cd cli && npm test` 通过，覆盖：注册表/step_meta/schema 三方同步与 schema 校验（含 dispatch 必填、overlay-add 保守默认后过校验）、漂移注入 `x-future-step` 生产者一致性测试（含 pre-implement 步骤不输出 `loop_state` 反面锚）、响应 `contract.version` 与打包 schema 版本一一对应校验、verify timestamp 去重混合用例。
+- `cd cli && npm run build` 通过。
+- `cd cli && npm pack` 后验证包内容包含 `spec/schema/*.schema.json`，且 schema 内嵌契约版本 == 响应 `contract.version`（包内容验证测试）。
+
+部署后检查（smoke）：
+- 安装发布后的 CLI，在 launched fixture 中执行 `openlogos status --format json` / `openlogos next --format json`，确认 `data.contract.version` 在场、`active_change` 携带 `step_meta` / `facts`、`next_node` 携带完整 `dispatch`。
+- 确认 spec 阶段（未消费 slice-exit）的活跃提案确不输出 `loop_state`。
+- 详见 `logos/resources/test/smoke/core-smoke-test-cases.md`。
+
+### 回滚预案
+
+- **回装上一版本即可**：npm 全局回装旧版（公开发布则 `dist-tag` 回退 + 回退对应 tag），无数据迁移、无状态文件需要清理。
+- 契约新增字段（`contract` / `step_meta` / `facts` / `dispatch` / `requires_reviewed`）对旧消费方为向后兼容扩展：旧 driver 忽略未知字段即可，不因新字段出现而失效。
+- `loop_state` 缺席语义旧 driver 本就处理（runlogos S48 EX-48.9，缺席即走普通推进）：新版收紧挂出不会使旧 driver 进入不可用状态；回滚后 `loop_state` 恢复旧挂出行为，同样不破坏消费方。
+- 结构化 `SLICES_APPROVED` marker 对旧版 CLI 无碍（旧版仅做存在性判断），回滚不需迁移；`activated_at` 字段随回滚消失，属可接受降级。

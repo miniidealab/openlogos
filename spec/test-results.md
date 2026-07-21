@@ -65,7 +65,7 @@ logos/resources/verify/test-results.jsonl
 - `id` 必须匹配正则 `^(UT|ST)-S\d{2}-\d{2,3}$`
 - `status` 仅允许三个值：`pass`、`fail`、`skip`
 - `error` 在 `status=fail` 时必须提供，其他状态可省略
-- 同一个 `id` 如果出现多次（如重试），`openlogos verify` 取**最后一次**的结果
+- 同一个 `id` 如果出现多次（如重试），`openlogos verify` 按「同 ID timestamp 去重全序规则」取最新一次的结果（完整算法见「JSONL 结果账本一致性与 Gate 判据 → 归一化规则」；该 ID 存在任一缺失/非法 `timestamp` 时整组退回文件行序 last-wins，等价旧行为——旧 reporter 不写 `timestamp`，产物零行为变化）
 
 ### `[manual]` 标记用例
 
@@ -135,8 +135,10 @@ logos/resources/verify/test-results.jsonl
 1. 若配置 `regression_command`，先执行回归测试。
 2. 若配置 `incremental_command`，再执行增量测试。
 3. CLI 合并阶段结果，写入 `result_path`。
-4. 同一个用例 ID 多次出现时，最后一次结果生效。
+4. 同一个用例 ID 多次出现时（含跨阶段重复），按**「同 ID timestamp 去重全序规则」**取一条生效记录（contract-self-description 统一算法，见「归一化规则」第 5 条）：该 ID 全部 `timestamp` 合法 → 绝对时刻最新优先、同刻按合并后文件行序后者优先；存在任一缺失/非法 → 该 ID 整组退回合并后文件行序 last-wins。**两阶段合并与单文件去重不得各自实现两套语义**。
 5. 若未配置阶段结果路径，CLI 必须用临时快照或等价机制避免第二阶段 reporter 清空第一阶段结果。
+
+**`merge_results: "last-write-wins"` 配置值语义升级（contract-self-description）**：枚举值名称保留（**兼容名称，不新增枚举、不要求迁移**），其规范语义即上述统一全序算法——对不写 `timestamp` 的旧 reporter 产物，算法必然命中「整组退回行序 last-wins」分支，行为与旧名字面含义逐字节一致（零行为变化）；写 `timestamp` 的新 reporter 则取真正最新的执行证据。该配置语义以 S13 测试用例为验收锚（两阶段合并路径的 timestamp 去重回归）。
 
 ### `verify.sandbox_mode` / `smoke.sandbox_mode`
 
@@ -426,8 +428,13 @@ logos/resources/verify/smoke-results.jsonl
 2. 每条记录必须包含字符串 `id` 和 `status`。
 3. `status` 只能为 `pass`、`fail` 或 `skip`。
 4. `status="fail"` 时必须提供非空 `error`。
-5. 同一 `id` 多次出现时，最后一条合法记录生效。
-6. 非法记录必须进入诊断集合，不得被静默丢弃后继续 PASS。
+5. 同一 `id` 多次出现时，在**合法记录**之间按「同 ID timestamp 去重全序规则」取一条生效记录（contract-self-description，替代旧「最后一条合法记录生效」行序规则）：
+   1. 先对该 ID 的每条记录严格解析 `timestamp`（ISO 8601，含时区偏移归一为绝对时刻）；非法格式一律按「缺失」处理；
+   2. **该 ID 全部记录时间戳均合法** → 按绝对时刻比较取最新；同一时刻（含不同时区表示的同刻）→ 文件行序后者优先；
+   3. **该 ID 存在任一缺失/非法时间戳** → 该 ID 整组退回文件行序 last-wins（等价旧行为——不对不完整证据做时间猜测，对齐宁慢勿错杀原则，也保证旧 reporter 产物零行为变化）。
+
+   去重按 ID 分组独立进行；一个 ID 退回行序不影响其他 ID 按时间戳去重。旧 reporter（完全不写 `timestamp`）的账本对每个 ID 均命中第 3 条 → 与旧版结论逐字节一致，**零行为变化**。实现测试必须覆盖混合情况：乱序追加、缺失+合法混排、非法格式、异时区同刻。
+6. 非法记录必须进入诊断集合，不得被静默丢弃后继续 PASS（去重只在合法记录之间进行，不吞非法行）。
 
 ### ID 对齐规则
 
@@ -437,7 +444,7 @@ logos/resources/verify/smoke-results.jsonl
 
 ### 统计不变量
 
-去重并过滤为合法自动化结果后，verify 汇总必须满足：
+去重（按上文「同 ID timestamp 去重全序规则」）并过滤为合法自动化结果后，verify 汇总必须满足：
 
 ```text
 passed_count + failed_count + skipped_count == executed_count
@@ -460,6 +467,8 @@ pass_rate_pct == 100
 ```
 
 任一不变量失败时，`gate.result` 必须为 `FAIL`，`gate.reason` 必须非空，推荐使用 `result_ledger_inconsistent` 或具体错误码。
+
+**与去重规则的关系（contract-self-description）**：上述守恒不变量与「JSON 输出建议」的 `consistency` 契约均在**去重后**的结果集上计算；去重规则的变更只影响「同一 ID 多条记录取哪一条」，**不改变 `consistency` 既有契约**（字段形态、`ok` 判据、FAIL 语义均不变）。极端场景（乱序追加的 jsonl）下 verify 结论可能与旧版不同——这正是改造目的：取真正最新的执行证据，而非文件末尾的陈旧证据。
 
 ### JSON 输出建议
 

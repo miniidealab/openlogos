@@ -810,3 +810,152 @@ describe('ST-JSON modules field contract', () => {
     expect(active.deployment_decision_conflict_reason).toContain('部署决策冲突');
   });
 });
+
+// ── contract-self-description 切片2（C5）：envelope data 顶层 contract 字段 ──
+describe('S16 — envelope contract 版本握手（contract-self-description）', () => {
+  it('UT-S16-05: status/next 的 data.contract 初始 1.0.0、合法 SemVer、独立于 envelope CLI version', async () => {
+    const { next } = await import('../src/commands/next.js');
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    // status
+    let restore = mockCwd(root); let con = captureConsole();
+    try { status('json'); } finally { con.restore(); restore(); }
+    const sEnv = JSON.parse(con.logs[con.logs.length - 1]);
+    // next
+    restore = mockCwd(root); con = captureConsole();
+    try { await next('json'); } finally { con.restore(); restore(); }
+    const nEnv = JSON.parse(con.logs[con.logs.length - 1]);
+    for (const env of [sEnv, nEnv]) {
+      expect(env.data.contract).toEqual({ version: '1.0.0' });
+      expect(env.data.contract.version).toMatch(/^\d+\.\d+\.\d+$/); // 合法 SemVer
+      expect(env.version).toBe(VERSION);                            // envelope 顶层仍是 CLI 版本串
+      // 两者互不替代：契约版本独立演进（当前恰好不等断言留给数值不同的未来；此处断言语义分离即字段各自在场）
+      expect(typeof env.version).toBe('string');
+    }
+    cleanup();
+  });
+});
+
+// ── contract-self-description 切片5（C7）：schema 发布、版本一致性、合并产物与文档化校验 ──
+describe('S16 — JSON Schema 发布与生产者一致性（contract-self-description）', () => {
+  const REPO = join(process.cwd(), '..');
+  const SCHEMA_DIR = join(REPO, 'spec', 'schema');
+
+  async function ajv2020() {
+    const { default: Ajv2020 } = await import('ajv/dist/2020.js');
+    const { default: addFormats } = await import('ajv-formats');
+    const ajv = new Ajv2020({ strict: false, allowUnionTypes: true });
+    addFormats(ajv); // code review F6：format:"date-time" 必须被真实执行，否则坏 activated_at 会静默通过
+    return ajv;
+  }
+  function loadSchema(name: 'status' | 'next'): any {
+    return JSON.parse(readFileSync(join(SCHEMA_DIR, `${name}.schema.json`), 'utf-8'));
+  }
+
+  it('UT-S16-06: contract.version 与两份打包 schema 版本映射（add-feature-model 条件版本 superset）', async () => {
+    // add-feature-model（S34，delta-F1=B）：契约由单 const 版本升级为**条件版本**——
+    // schema 为向后兼容 superset，x-contract-version = 最高支持版本 1.1.0，$id 版本段同步为 1.1.0，
+    // version 由 const 放宽为 enum ["1.0.0","1.1.0"]（响应无 features 时 1.0.0、有 features 时 1.1.0）。
+    const { CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES } = await import('../src/lib/step-registry.js');
+    for (const name of ['status', 'next'] as const) {
+      const schema = loadSchema(name);
+      expect(schema['x-contract-version']).toBe(CONTRACT_VERSION_WITH_FEATURES);
+      expect(schema.$id.endsWith(`/${CONTRACT_VERSION_WITH_FEATURES}`)).toBe(true); // $id 版本段 = superset 最高版本
+      expect(schema.properties.contract.$ref ?? schema.$defs.contract).toBeTruthy();
+      // 支持集恰为两版基线 + 含 feature 版
+      expect(schema.$defs.contract.properties.version.enum).toEqual([CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES]);
+      // 根级 allOf 条件约束存在：version==1.0.0 ⟹ 无 features
+      expect(Array.isArray(schema.allOf) && schema.allOf.length >= 1).toBe(true);
+    }
+  });
+
+  it('UT-S16-07: schema 随包发布（files+prepack 等价流程）+ 真实输出以 data 为实例过校验', async () => {
+    // 等价 prepack 流程：package.json files 含 spec，prepack 把 ../spec 拷入包根 → 断言两份 schema 在拷贝面内
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8'));
+    expect(pkg.files).toContain('spec');
+    expect(pkg.scripts.prepack).toContain("cpSync('../spec','./spec'");
+    const { existsSync: ex } = await import('node:fs');
+    expect(ex(join(SCHEMA_DIR, 'status.schema.json'))).toBe(true);
+    expect(ex(join(SCHEMA_DIR, 'next.schema.json'))).toBe(true);
+    // 真实输出：解析 envelope 后以 output.data 为校验实例（校验对象 = data，非整份 envelope）
+    const ajv = await ajv2020();
+    const { next } = await import('../src/commands/next.js');
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    let restore = mockCwd(root); let con = captureConsole();
+    try { status('json'); } finally { con.restore(); restore(); }
+    const sEnv = JSON.parse(con.logs[con.logs.length - 1]);
+    restore = mockCwd(root); con = captureConsole();
+    try { await next('json'); } finally { con.restore(); restore(); }
+    const nEnv = JSON.parse(con.logs[con.logs.length - 1]);
+    // envelope 外层结构另行断言
+    for (const env of [sEnv, nEnv]) {
+      expect(Object.keys(env)).toEqual(expect.arrayContaining(['command', 'version', 'timestamp', 'data']));
+    }
+    expect(ajv.validate(loadSchema('status'), sEnv.data), JSON.stringify(ajv.errors)).toBe(true);
+    const ajv2 = await ajv2020();
+    expect(ajv2.validate(loadSchema('next'), nEnv.data), JSON.stringify(ajv2.errors)).toBe(true);
+    cleanup();
+  });
+
+  it('UT-S16-08: 未知枚举保守语义与 artifacts_hint:[] 语义在契约中文档化', () => {
+    const statusSchema = readFileSync(join(SCHEMA_DIR, 'status.schema.json'), 'utf-8');
+    const nextSchema = readFileSync(join(SCHEMA_DIR, 'next.schema.json'), 'utf-8');
+    const contractDoc = readFileSync(join(REPO, 'spec', 'cli-json-output.md'), 'utf-8');
+    expect(statusSchema).toContain('保守分支');
+    expect(nextSchema).toContain('产物未知');
+    expect(nextSchema).toContain('不得据此判死');
+    expect(contractDoc).toContain('保守分支');
+    expect(contractDoc).toContain('产物未知');
+  });
+
+  it('UT-S16-09: non-Markdown 整文件 delta 合并产物机器校验（可解析、无标记行；坏产物必失败）', async () => {
+    const { parse: parseYamlDoc } = await import('yaml');
+    const MARKER = /^## (MODIFIED|ADDED|REMOVED) — /m;
+    const checkJson = (content: string) => { JSON.parse(content); if (MARKER.test(content)) throw new Error('marker line'); };
+    const checkYaml = (content: string) => {
+      parseYamlDoc(content);
+      if (MARKER.test(content.split('\n')[0] ?? '')) throw new Error('marker first line');
+    };
+    for (const f of ['status.schema.json', 'next.schema.json']) {
+      expect(() => checkJson(readFileSync(join(SCHEMA_DIR, f), 'utf-8'))).not.toThrow();
+    }
+    for (const f of ['initial.yaml', 'launched.yaml']) {
+      expect(() => checkYaml(readFileSync(join(REPO, 'spec', 'flow', f), 'utf-8'))).not.toThrow();
+    }
+    // 坏产物：标记行未剥离 → 必失败
+    expect(() => checkJson('## ADDED — spec/schema/x.json\n{}')).toThrow();
+    expect(() => checkYaml('## MODIFIED — spec/flow/x.yaml（整文件替换）\nversion: 1')).toThrow();
+  });
+
+  it('ST-S16-02: pack 面内 schema 校验真实输出 + 版本一致性端到端（只验生产者）', async () => {
+    // 等价 pack 产物面：files=[...,'spec'] + prepack 拷贝 → 以仓内 spec/schema 为包内 schema 事实源
+    const ajv = await ajv2020();
+    const { next } = await import('../src/commands/next.js');
+    const { CONTRACT_VERSION } = await import('../src/lib/step-registry.js');
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    // launched 活跃提案 fixture（含 step_meta/facts 的活跃形态）
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), 'project:\n  name: t\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\n');
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(root, 'logos', 'changes', 'feat');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), ['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', '代码级', '',
+      '## 变更范围', '- core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码', '- 影响环境：无',
+      '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '实现。'].join('\n'));
+    writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [ ] d\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n');
+    let restore = mockCwd(root); let con = captureConsole();
+    try { status('json'); } finally { con.restore(); restore(); }
+    const sData = JSON.parse(con.logs[con.logs.length - 1]).data;
+    restore = mockCwd(root); con = captureConsole();
+    try { await next('json'); } finally { con.restore(); restore(); }
+    const nData = JSON.parse(con.logs[con.logs.length - 1]).data;
+    expect(ajv.validate(loadSchema('status'), sData), JSON.stringify(ajv.errors)).toBe(true);
+    const ajv2 = await ajv2020();
+    expect(ajv2.validate(loadSchema('next'), nData), JSON.stringify(ajv2.errors)).toBe(true);
+    expect(sData.contract.version).toBe(CONTRACT_VERSION);
+    expect(nData.contract.version).toBe(CONTRACT_VERSION);
+    // 只验生产者：消费方保守模式不在本用例（归 runlogos R5）
+    cleanup();
+  });
+});

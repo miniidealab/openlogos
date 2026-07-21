@@ -1,6 +1,6 @@
 # OpenLogos 需求文档
 
-> 最后更新：2026-07-05
+> 最后更新：2026-07-21
 
 ## 一、产品背景与目标
 ### 1.1 产品定位
@@ -35,6 +35,8 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 ### P04：已有项目无法低摩擦接入 OpenLogos
 因为 `openlogos init` 入场路径假设从第零天开始，要求走完 Phase 1→3 全部文档才能进入变更管理模式 → 导致已有代码的用户不知道从哪里开始 → 造成方法论无法落地到存量项目。
 
+进一步地，即使 `openlogos adopt` 用 `bootstrap: adopted` 跳过 Initial 文档门禁，接入**只「跳过」不「填充」**：接入后 `logos/resources/` 仍为空，没有任何 spec 基线。用户想做任何迭代都被推进 change/提案流程，而提案是「在已有基线上打 delta」的机制，此刻**无基线可 diff** → 导致 `merge` 无 spec 目标可打补丁、change-writer（写前向意图）无法承担「从代码逆向出现状」的认知任务、整套系统塞进一个提案粒度爆炸、逆向推断出的现状被误当权威意图基线 → 造成存量项目接入后掉进「空提案」死角。
+
 ### P05：部署完成状态依赖 AI 手写 marker
 因为 `openlogos verify` 和 `openlogos smoke` 都由 CLI 自动写入对应 PASS/FAIL marker，而部署完成后的 `DEPLOY_DONE` 只能依赖 AI 在 skill 步骤中手写 → 导致部署实际成功后仍可能因为 marker 遗漏而卡在 `ready-to-deploy` → 造成后续 smoke、archive 和状态面板无法继续推进。
 
@@ -49,7 +51,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-25 个场景（编号跳号、最高至 S32，`scenario_counter.next_id=33`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+27 个场景（编号跳号、最高至 S34，`scenario_counter.next_id=35`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -58,7 +60,9 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 |------|---------|---------|---------|--------|
 | S01 | 初始化 OpenLogos 项目 | 首次在空目录接入 | P01/P02/P03 | P0 |
 | S20 | 已有项目接入 OpenLogos | 在已有代码库上首次接入 | P04/P02/P03 | P0 |
+| S33 | 存量项目逆向建基线与按需深化 | adopt 接入后自动扫码建种子基线、迭代触碰时按需深化 | P04 | P0 |
 | S17 | 管理模块注册表 | 项目分模块演进时 | P03 | P1 |
+| S34 | 管理 feature 分组 | 场景增多需按功能域组织、或存量项目需回填 feature | P01/P03 | P1 |
 
 ### ② 变更管理生命周期与状态引导
 以受控 Delta 流程组织每一次迭代，并随时回答"现在到哪了、下一步做什么"（回应 P01/P03）。
@@ -387,15 +391,20 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ### S20: 已有项目接入 OpenLogos
 - **触发条件**：用户在已有代码库（有 `package.json` / `Cargo.toml` / `pyproject.toml` 或其他项目文件）的目录中首次接入 OpenLogos，且当前目录没有 `logos/logos.config.json`。
-- **用户价值**：用户不需要把存量代码当作全新项目从零推进，但仍能一次性获得完整 OpenLogos 基础设施、AI 工具资产、语言策略、verify 预跑配置、推荐沙箱策略、Reference 分类目录和变更管理入口；已有项目的根目录 AI 指令文件配置必须被保留。
+- **用户价值**：用户不需要把存量代码当作全新项目从零推进，但仍能一次性获得完整 OpenLogos 基础设施、AI 工具资产、语言策略、verify 预跑配置、推荐沙箱策略、Reference 分类目录和变更管理入口；已有项目的根目录 AI 指令文件配置必须被保留。接入完成后不再掉进「空提案」死角——adopt 确定性初始化时写入模块级枚举 `baseline_seed_state: required`，把后续逆向建种子基线自动衔接到 S33。
 - **优先级**：P0
-- **主路径**：CLI 检测已有项目信息，交互确认项目名、文档语言与 AI 工具，按 `init` 等价能力生成完整基础设施与 Reference 分类目录；推断并写入 verify 预跑配置或输出 TODO；默认写入兼容的沙箱配置建议；模块写入 `bootstrap: adopted` 与 `lifecycle: launched`，通过 managed block 合并写入 AI 指令文件，输出接入报告并建议创建补文档提案。
+- **主路径**：CLI 检测已有项目信息，交互确认项目名、文档语言与 AI 工具，按 `init` 等价能力生成完整基础设施与 Reference 分类目录；推断并写入 verify 预跑配置或输出 TODO；默认写入兼容的沙箱配置建议；模块写入 `bootstrap: adopted` 与 `lifecycle: launched`，并**写入模块级枚举 `baseline_seed_state: required`**（衔接 S33 逆向建基线）；通过 managed block 合并写入 AI 指令文件，输出接入报告并建议按 S33 建立现状基线。
 
 #### 验收条件
 ##### 正常：已有项目完整接入
 - **GIVEN** 当前目录存在 `package.json`（或其他项目清单文件），且没有 `logos/logos.config.json`
 - **WHEN** 用户执行 `openlogos adopt`
-- **THEN** CLI 生成与 `init` 同级别的基础设施：`logos/` 标准目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；`logos/resources/reference/` 下默认生成 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；`logos-project.yaml` 中模块包含 `bootstrap: adopted` 与 `lifecycle: launched`；`logos.config.json` 包含 `verify.result_path`，并在可推断时包含 verify 预跑配置与推荐沙箱配置；输出接入报告并建议执行 `openlogos change add-baseline-docs`
+- **THEN** CLI 生成与 `init` 同级别的基础设施：`logos/` 标准目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；`logos/resources/reference/` 下默认生成 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；`logos-project.yaml` 中模块包含 `bootstrap: adopted` 与 `lifecycle: launched`；`logos.config.json` 包含 `verify.result_path`，并在可推断时包含 verify 预跑配置与推荐沙箱配置；输出接入报告
+
+##### 正常：adopt 自动衔接逆向建基线（S33 前置）
+- **GIVEN** 当前目录无 `logos/logos.config.json`
+- **WHEN** 用户执行 `openlogos adopt`
+- **THEN** adopt 在确定性初始化完成时写入 `baseline_seed_state: required`；接入报告说明「下一步将逆向扫描代码库建立现状基线（种子基线，非权威意图）」；adopt 本身**不启动 AI、不声称基线已建立**——逆向扫描由 AI 会话/driver 检测该状态后派发 `brownfield-adopter` 完成（见 S33）；能力缺失时 adopt 输出可复制的后续命令/提示并保持 `baseline_seed_state: required`
 
 ##### 正常：接入时保留既有 AI 指令文件
 - **GIVEN** 存量项目已有 `AGENTS.md` / `CLAUDE.md` 或大小写变体，且包含用户自定义配置
@@ -869,6 +878,162 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **WHEN** 用户尝试在 merge 完成前用占位 ID 划分切片
 - **THEN** slice-planner 拒绝切片，提示先完成 merge——切片必须对真实规格 + 真实测试 ID 进行，而非对未合并草案猜切
 
+### S33: 存量项目逆向建基线与按需深化
+- **触发条件**：`openlogos adopt` 完成后模块处于 `bootstrap: adopted` 且 `baseline_seed_state: required`；或后续 `openlogos change` 触碰只有未验证逆向 spec 的区域。
+- **用户价值**：存量项目接入后立即获得一份**种子基线**（现状快照，只含可从代码忠实验证的事实：模块图、入口、依赖、**场景候选清单**），带 provenance 标记且明确 `verified: false`；随每次 change 触碰逐区域升级为人工确认，可信边界前移，存量代码 grandfather 豁免、不要求回头符合 spec。
+- **优先级**：P0
+- **主路径**：AI 会话/driver 检测 `baseline_seed_state: required` → 派发 `brownfield-adopter` skill 扫描代码库 → 逐产物写入含具名章节 `## 逆向基线来源` 与 `candidates[]`（`verified: false`、provenance 派生 `reverse-engineered`）的种子基线 → 展示现状基线覆盖率（human-verified 分子 / `active ∪ tombstone` 分母）→ 经 `openlogos baseline-seed`（`begin` → 写 run staging → `commit`）由 CLI 计算 `baseline_seed_state`（未全 `partial`、必需 kind 齐且全部合法 `seeded`，见 S33）。后续 `openlogos change` 触碰未验证逆向区域时，change-writer 给 advisory，建议在**当前 change 内那一份最终态 delta**里一并确认该区域现状（把 `## 逆向基线来源` 的 `verified` 升为 `true` 并记 `confirmed_by`/`evidence`），merge 落主文档后覆盖率前移一格。
+
+#### 验收条件
+##### 正常：adopt 后逆向产出种子基线（producer=AI driver，非 CLI）
+- **GIVEN** 模块 `bootstrap: adopted` 且 `baseline_seed_state: required`
+- **WHEN** AI 会话/driver 检测到该状态并派发 `brownfield-adopter`
+- **THEN** 在 `logos/resources/` 下产出只含可验证事实的种子基线（system-map + 场景候选清单）；每份产物含具名章节 `## 逆向基线来源` 与 `candidates[]`（每候选 `verified: false`、provenance 派生 `reverse-engineered`）；**不写 PRD**（意图无法从代码忠实还原）；产物写 run staging 后经 `openlogos baseline-seed commit`，由 CLI 依 manifest 计算 `baseline_seed_state`（未全 `partial`、必需 kind 齐且全部合法 `seeded`）
+- **且** `openlogos adopt`（CLI 本身）绝不启动 AI、不产出逆向内容、不声称基线已建立
+
+##### 正常：能力缺失时降级不伪造
+- **GIVEN** CLI-only / `--ai-tool other` / 非交互 CI / AI 能力缺失
+- **WHEN** adopt 完成但无法派发逆向扫描
+- **THEN** 保持 `baseline_seed_state: required`，输出可复制的后续命令/提示；`status`/`next` 明确显示「种子基线待建立」，绝不把未产出的基线显示为已建立
+
+##### 正常：change 触碰未验证逆向区域给 advisory（不设硬门）
+- **GIVEN** 活跃 `openlogos change`，其目标区域只有 `verified: false` 的逆向 spec
+- **WHEN** change-writer 产出 delta
+- **THEN** change-writer 给 advisory，建议在当前 change 的**单份最终态 delta**内一并确认该区域现状（`## 逆向基线来源` 置 `verified: true` + `confirmed_by`/`evidence`），与前向改动合并落盘；这是**不设硬门**的建议，用户可跳过直接写前向 delta
+
+##### 正常：human-verified 仅 merge 后生效、覆盖率不虚增
+- **GIVEN** 一份含 `verified: true` 的现状确认 + 前向改动的最终态 delta
+- **WHEN** 执行 `openlogos merge`
+- **THEN** `human-verified` 仅在该 delta 成功落入主文档后生效；覆盖率**只读已合并主文档**；覆盖率分母采 tombstone 法（存活候选 ∪ 未经人工确认的 tombstone），删除/合并候选转 tombstone 仍留分母，**无新增人工确认时百分比不上升**
+
+##### 异常：verify 对未验证逆向 spec 软告警
+- **GIVEN** 主文档区域仍为 `verified: false` 的逆向 spec
+- **WHEN** 执行 `openlogos verify`
+- **THEN** 仅输出软告警（提示该区域为未确认逆向现状），**不硬失败**；grandfather 豁免存量代码
+
+##### 异常：存量 provenance 保守迁移不伪造/不降级
+- **GIVEN** 老 adopted 项目已有文档但缺 `## 逆向基线来源` 章节
+- **WHEN** 迁移回填 provenance 元数据
+- **THEN** 该文档标 `unknown`/`legacy-unclassified`，**不自动推断为 `reverse-engineered` 或 `human-verified`**；无产物时不创建任何 provenance；迁移幂等、写前备份、旧版 CLI 忽略未知字段
+
+#### S33 补充：provenance 扫描侧只采信可重算规范键（provenance-scan-canonical-recompute）
+
+修复 issue「provenance 扫描器把指南文档里的示例章节当真实候选」——扫描侧采信强度低于写侧，导致文档示例毒化基线。以下为 S33 逆向建基线能力的补充验收（能力扩展，不新增场景）：
+
+##### 正常：扫描侧只采信可重算规范键，文档示例不毒化基线
+- **GIVEN** 一个从未跑过 baseline-seed 的项目（真·非存量，`logos-project.yaml` 无 `scenarios[]/features[]/baseline_index`），其 `logos/resources/`（如 `reference/` 子目录）存有含 `## 逆向基线来源` 示例章节的文档（官方指南/培训材料/bug report 等），示例候选 `key` 格式合法但与 `anchor` 的规范重算值不一致（教学编造 key）
+- **WHEN** 运行 `openlogos feature-backfill`（或任何读覆盖率的命令）
+- **THEN** 扫描器**不采信**该编造候选（判据 = `key === candidateKey(module, anchor)` 或 `key === candidateKey(module, alias∈aliases)`，与写侧 `baseline-seed` 同强度）；`feature-backfill` 按"真·非存量"成功、`baseline_candidates_total=0`、**不报** `BASELINE_PROVENANCE_INVALID`；覆盖率分母不含该幽灵候选、新鲜度不因该文档改动打成 `stale`
+
+##### 正常：改名继承 / tombstone 合法候选仍被采信（alias-aware）
+- **GIVEN** 一个真实基线项目，其某候选经锚点重命名（旧 anchor 入 `aliases[]`、`key` 保持稳定）或已 `tombstone`（`superseded_by` 指向新 key）
+- **WHEN** 扫描器采信候选
+- **THEN** 该候选因 `key === candidateKey(module, 旧anchor∈aliases)` 仍被采信、不被误杀；合法基线项目的覆盖率数值与新鲜度**逐字节不变**
+
+##### 异常：判定为 provenance 失败时报告触发文件与分类
+- **GIVEN** 权威/约定目标 `## 逆向基线来源` 坏 fenced YAML，或有迹象但不可定类
+- **WHEN** `feature-backfill` 因此失败
+- **THEN** 错误 envelope 附**触发文件相对路径清单** `paths[]` 与失败**分类** `reason`（`unparseable` | `unclassifiable-evidence`），可一眼定位问题文件（不再只报模块名）
+
+### S34: 管理 feature 分组
+- **触发条件**：项目场景增多、需要在 module 与 scenario 之间按功能域（feature）组织导航；或存量项目需要把既有平铺场景回填到 feature 分组。
+- **用户价值**：补上 module（粗，部署/生命周期单元）与 scenario（细，单一时序）之间缺失的**轻量组织层**，让 `status`/`next` 可按 feature 分组导航，并接回已有的 feature-specs 文档；存量项目零改动即可用、可按需回填。
+- **优先级**：P1
+- **主路径**：
+  1. `openlogos feature list [--module <id>]` 只读查看各 module 下的 feature 分组及其场景成员（未归属场景落入"未分组"桶）。
+  2. `openlogos feature-backfill [--module <id>]` 为存量项目生成一份 AI 回填 prompt（打包场景清单 + 现有 feature-specs 文档 + 当前 yaml），由 AI 语义聚类成 `features[]`、分配 `scenario.feature`、维护 `feature_counter` 后回写 `logos-project.yaml`（幂等、只补未分组、非强制）。
+  3. `status`/`next` 在 module 下按 feature 分组呈现（含"未分组"桶），feature 缺失即省略、行为等同今天。
+
+#### 验收条件
+##### 正常：feature 分组按功能域组织导航
+- **GIVEN** `logos-project.yaml` 的 `scenarios[]` 部分场景带 `feature` 归属、`features[]` 已登记
+- **WHEN** 用户执行 `openlogos status --format json`
+- **THEN** 对应 `modules[].features[]` 按 YAML 声明顺序列出各 feature 及其场景成员列表 `scenarios:[{id,name}]`，无归属场景归入 `id:"__ungrouped__"` 伪 feature（恒末位）
+
+##### 正常：纯 pre-feature 项目逐字节完全一致（含 contract.version，回应 delta-F1）
+- **GIVEN** `logos-project.yaml` 无 `features[]`、且无任何场景带 `feature` 字段（纯 pre-feature 项目）
+- **WHEN** 用户执行 `openlogos status` / `openlogos next`
+- **THEN** `modules[].features` 省略，`data.contract.version` **保持 `1.0.0`**，输出与引入 feature 前**逐字节完全一致**（**含版本字段，无任何差异**），不报错
+- **注**：范围锚所有者裁定采**条件版本（B）**——`contract.version` 仅在响应含 `features` 时为 `1.1.0`，纯 pre-feature 响应保持 `1.0.0`，真正满足逐字节一致验收（回应 delta-F1）
+
+##### 正常：feature-backfill 打印生成路径
+- **GIVEN** 存量项目场景平铺
+- **WHEN** 用户执行 `openlogos feature-backfill`（文本）或 `--format json`
+- **THEN** 文本模式 stdout 打印 prompt 路径 `logos/feature-backfill-prompt.md`；`--format json` 的 `data.prompt_path` 等于该路径；`logos-project.yaml` 字节不变
+
+##### 正常：存量项目一键回填生成 prompt
+- **GIVEN** 存量项目场景平铺、无 feature 归属
+- **WHEN** 用户执行 `openlogos feature-backfill`
+- **THEN** 在 `logos/feature-backfill-prompt.md` 生成回填 prompt 并打印路径；命令不改动 `logos-project.yaml`（由 AI 按 prompt 回写）；重复执行幂等覆盖同一 prompt
+
+##### 异常：feature 引用降级不阻断（含无注册 feature 场景，回应 delta-F10）
+- **GIVEN** 某场景的 `feature` 缺失、指向未知 feature、或指向跨 module 的 feature（**即使该 module 无任何注册 feature**）
+- **WHEN** 用户执行 `openlogos status` / `openlogos feature list`
+- **THEN** 该场景一律落入所属 module 的"未分组"（`__ungrouped__`）桶，不报错、不阻断；**只要存在显式 `feature` 键，`modules[].features` 就必须输出该降级桶，绝不因"无注册 feature"被省略**
+
+##### 异常：feature list 指定未注册 module
+- **GIVEN** 用户传入不存在的 `--module <id>`
+- **WHEN** 用户执行 `openlogos feature list --module <id> --format json`
+- **THEN** 走通用错误 envelope，错误码为 `MODULE_NOT_FOUND`，非零退出码
+
+#### S33 补充：legacy 缺省语义三入口统一（baseline-seed-legacy-default-unify）
+
+修复 issue「legacy adopted 项目 `baseline_seed_state` 缺省语义三入口分歧」——`next` / `baseline-seed` 状态机推断 `required`，`status` 独家推断「有候选→`seeded`，无候选→`unknown` 且**不输出字段**」，同一项目在不同命令下呈现两种世界观；下游（runlogos 面板等）按 status JSON 契约 fail-closed，基线入口整体消失。且 `openlogos sync` 的元数据迁移只认旧布尔 `baseline_seed_required`，对「两字段皆无」的早期接入项目空转，status 的 legacy 迁移提示成为空头指引。以下为 S33 逆向建基线能力的补充验收（行为统一，不新增场景）：
+
+##### 正常：三入口缺省语义单一事实源，逐字节一致
+- **GIVEN** legacy adopted 模块（`bootstrap: adopted`，`logos-project.yaml` 无 `baseline_seed_state` 字段、也无旧布尔 `baseline_seed_required`），分「有逆向候选 / 无逆向候选」两档
+- **WHEN** 分别运行 `openlogos next`、`openlogos status --format json`、`openlogos baseline-seed status --module <id>`
+- **THEN** 三入口对该模块给出的有效 `baseline_seed_state` **逐字节一致**，且遵循统一派生规则：explicit 显式值优先；缺省时**有候选且同模块存在 open run record → `partial`**（与状态机「扫描中断」语义对齐）、**有候选无 open run → `seeded`**（候选在场 = 基线事实上建立过）、**无候选 → `required`**；**废除 `unknown` 第三态**（任何入口的任何输出不得出现 `unknown` 状态值）
+- **且** 派生规则由**唯一共享 helper** 承载，任何入口不得持有第二份私有缺省规则（本地 `?? 'required'` 一类实现全部废除）
+- **且** `required` 态仍为 advisory 引导、不设硬门——不阻断用户直接发起 `openlogos change` 正常迭代
+
+##### 正常：sync 迁移把 legacy 缺省派生值落盘为显式枚举
+- **GIVEN** legacy adopted 模块（无 `baseline_seed_state` 字段；`bootstrap: adopted`，含历史 `skipped` 兼容读取）
+- **WHEN** 运行 `openlogos sync`
+- **THEN** 迁移按统一派生规则计算并把**显式枚举**写入 `logos-project.yaml` 的 `baseline_seed_state`；changes 记录写明派生依据（如 `core: baseline_seed_state 缺省 → required（派生：无逆向候选）`）；已有显式值**不被覆盖**；历史布尔 `baseline_seed_required` 的既有迁移行为不回归；迁移幂等
+- **且** 迁移后 legacy 缺省态在该项目物理消亡，运行时派生仅作「迁移尚未执行」的过渡兜底；status 的 legacy 迁移提示（指向 sync）自此真实有效
+
+##### 正常：adopted 模块 status JSON 恒输出 baseline_seed_state（契约收紧）
+- **GIVEN** 任意 `bootstrap: adopted` 模块（explicit 或 legacy 缺省；含基线提交进行中 `baseline_commit_in_progress` 降级情形）
+- **WHEN** 运行 `openlogos status --format json`
+- **THEN** `modules[].baseline_seed_state` **无条件输出**，取值为合法枚举 `required｜partial｜seeded`（explicit 或派生值）；「缺省 → 字段缺失」路径废除；非 adopted 模块行为不变
+- **且** 下游按「字段必在」消费（fail-closed 判定自然恢复渲染），旧版下游遇新增字段不受影响（纯增量，向后兼容）
+
+### S34 补充：feature-backfill 纳入逆向候选（feature-backfill-brownfield）
+
+- **触发条件**：存量项目经 `openlogos adopt` + 逆向建基线（S33）产出**场景候选**（存于 `## 逆向基线来源` 章节 + `baseline_index`，未进顶层 `scenarios[]`）；用户希望把这些逆向场景也组织成 feature 分组。
+- **用户价值**：接回 S33↔S34 的断链——`feature-backfill` 不再只对 `scenarios[]` 有效，也能帮**逆向接入的存量项目**把逆向场景聚成功能域，使其可按 feature 导航。
+- **主路径(方案 A)**：
+  1. `openlogos feature-backfill` 生成 prompt 时，除 `scenarios[]` 外**再纳入逆向场景候选**（复用 S33 provenance 只读入口），并**明确标注**"逆向候选 · 未进 scenarios[] · provenance verified:false"。
+  2. AI 按 prompt 对已有场景 + 逆向候选一并聚类；对逆向候选，回写时**登记进 `scenarios[]`（导航注册表）并分配 `feature`**——**不改动其 provenance `verified` 状态**（仍由 S33 的 JIT 确认流治理）。
+  3. CLI 仍**只生成 prompt、不改 `logos-project.yaml`、幂等**；`--format json` 成功响应的 `data` **必含**非负整数统计 `baseline_candidates_total`（键恒在场，见契约 §1.5）。
+
+#### 验收条件
+##### 正常：feature-backfill 只纳入"场景候选"并标注（回应 F1）
+- **GIVEN** 存量项目同时有 `system-map` 与 `scenario-candidates` 两类逆向产物，`scenarios[]` 不含这些候选
+- **WHEN** 用户执行 `openlogos feature-backfill`
+- **THEN** 生成的 `logos/feature-backfill-prompt.md` **只含 scenario-candidates**（经已提交 run manifest `kind==scenario-candidates` 筛出）、不含 system-map 候选，且标注"逆向候选 / verified:false / 未进 scenarios[]"；`--format json` 的 `data.baseline_candidates_total` **键恒在场**且等于**最终写入 prompt 的场景候选数**
+
+##### 正常：非存量项目零改动（回应 F4）
+- **GIVEN** 项目无逆向场景候选
+- **WHEN** 用户执行 `openlogos feature-backfill`
+- **THEN** 行为与 S34 引入时完全一致：prompt 不含逆向候选段，`data.baseline_candidates_total == 0`（**键仍在场**，用于区分"零候选"与"旧实现无键"）
+
+##### 异常：提交进行中不写半新集合（回应 F2）
+- **GIVEN** 该 module 基线提交进行中（`prepared`/`committing` journal 无法在读锁内恢复）
+- **WHEN** 用户执行 `openlogos feature-backfill`
+- **THEN** 命令**不写/不覆盖** `feature-backfill-prompt.md`；`--format json` 返回错误码 `BASELINE_COMMIT_IN_PROGRESS`、非零退出（绝不把半新多文档集合当权威）
+
+##### 异常：索引 stale 重算 / 解析失败报错（回应 F6，唯一行为）
+- **GIVEN** ①索引 stale 但权威 `## 逆向基线来源` 章节有效；②权威章节坏 fenced YAML
+- **WHEN** 用户执行 `openlogos feature-backfill`
+- **THEN** ①读锁内从权威文档重算、命令成功照常纳入；②走错误 envelope、错误码 `BASELINE_PROVENANCE_INVALID`、非零退出、**不写/不覆盖 prompt**（**不得**声称 `baseline_candidates_total=0` 冒充非存量零改动）
+
+##### 红线：CLI 不改 yaml、不动 provenance 可信度、S33 覆盖率不变（回应 F7）
+- **GIVEN** 存量项目有场景候选（含 active `verified:false` 与 tombstone 共存）
+- **WHEN** 用户执行 `openlogos feature-backfill`（含重复执行、含 `--module` 与全项目）
+- **THEN** `logos-project.yaml` 字节不变；各 `## 逆向基线来源` 章节候选 `verified` 状态不变（导航 ≠ 可信度）；**经 S33 正式覆盖率读取入口在命令前后计算,`human_verified` / `denominator` / `tombstones` / `coverage` / `freshness` 深相等**（不触发索引重写或覆盖率副作用）；重复执行幂等覆盖同一 prompt
+
 ### S13/S19/S31 smoke runner 覆盖闭环验收补充
 #### S13: smoke 覆盖预检
 - **GIVEN** 活跃提案新增或修改了 `logos/resources/test/smoke/*.md`，并新增一个或多个 `SMOKE-*` 用例 ID
@@ -934,6 +1099,32 @@ OpenLogos 作为可被 RunLogos / CI / AI driver 消费的流程事实源，必�
 - RunLogos / 外部 driver 不需要猜测 OpenLogos 内部状态机；仅通过 `next` / `status` / `verify` 的机器输出即可判断下一步是 repair、重派当前切片、补 artifacts、重跑测试，还是人工阻塞。
 - 可恢复失败在 `--auto` 模式下应优先继续自动修复闭环；只有 `human_action_required=true` 或不可跳硬红线时才停止。
 
+## 机器契约自描述与防误杀（假死）要求
+
+### 背景
+
+OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI driver 的流程事实源。上游（CLI 契约 / agent UI / 世界状态）是开放世界：driver 里每一份「本地缓存的世界模型」（本地步骤枚举表、错误串、正则、屏幕启发式、私有 marker 解析、重投安全 allowlist）必然随 CLI 演进过期。当这些弱信号有权直接产生不可逆终态时，健康 run 会被误判为死亡（假死）——真死可以重新点一下；假死会让用户弃用全自动能力。已坐实的活体案例包括：CLI 从 `writing` 起提前挂出 `loop_state` 导致 no-delta 提案全自动第一跳即被假 `blocked`（loop 劫持），以及 driver 用本地 allowlist 猜「哪类派活重投安全」导致非幂等派发被瞬态歧义秒杀。
+
+根治方向是让**契约自描述（消灭猜）**：driver 需要的每一个判定语义，都必须由 CLI 权威输出为结构化字段，而不是让消费方逆向猜测。
+
+### 拍板原则（最高优先）
+
+宁慢勿错杀：多等 5 分钟看门狗远好于误杀健康 run。一切措辞与设计冲突以此裁决。
+
+### 需求
+
+1. **机器契约必须自描述**：`status` / `next` 的机器输出必须携带足以让消费方判断阶段语义与派发安全性的结构化字段——步骤语义元数据 `step_meta`（phase / kind）、CLI 权威计算的确定性事实块 `facts`、派发节点自描述 `next_node.dispatch`。消费方不得被迫维护本地步骤枚举表、私有 marker/文件解析或重投安全 allowlist。
+2. **契约版本握手**：status/next 的 `data` 顶层新增 `"contract": {"version": "1.0.0"}`（语义化契约版本，独立于 CLI 版本）。SemVer 规则：**major** = 必填字段删除/改义、闭合枚举语义变化（含移除值）、既有字段挂出判据变更；**minor** = 向后兼容扩展（新增可选字段、闭合枚举新增值）；**patch** = 不改形态与语义的澄清。版本-schema 一一映射：`spec/schema/status.schema.json`、`spec/schema/next.schema.json`（内嵌契约版本号，随 npm prepack 打包）；响应 `contract.version` 与打包 schema 版本一致，CI 校验。
+3. **消费方保守模式原则**（规范性引用，验收归 runlogos R5）：未知 major / 缺 `contract` 字段 → 保守模式（仅 next 驱动普通推进 + 看门狗，启发式判定降级为仅观察）；契约内任何枚举遇未知值 → 保守分支。据此，CLI 新增枚举值或可选字段不再构成对旧 driver 的破坏。
+4. **防误杀（假死）**：任何触发 driver 分支的字段（如 `loop_state`）只在其语义真正成立时挂出，缺席态语义 = 普通推进；弱信号（本地枚举、错误串、正则、产物提示不达）不得作为判死依据。特别地，`artifacts_hint: []` ＝「产物未知」契约语义：消费方不得据此判死，只能升级观察。
+5. **不新增 `proposal_step` 枚举值**：自描述通过 `step_meta` 等元数据表达，不扩张既有闭合枚举；`step_meta` 的 phase/kind 为小闭合枚举，消费方遇未知值必须走保守分支。
+
+### 验收口径
+
+- `openlogos status --format json` / `openlogos next --format json` 的 `data` 顶层携带 `contract.version`；有活跃提案时 `active_change` 携带 `step_meta` 与 `facts`；`next` 输出的每个 `next_node` 恒带完整 `dispatch` 对象。
+- 生产者一致性可被 CI 证伪：注册表/step_meta/schema 三方同步；`pre-implement` 步骤不输出 `loop_state`（漂移注入 `x-future-step` 生产者一致性测试的反面锚）；`contract.version` 与打包 schema 版本一一对应。
+- **验收边界**：本项目只验**生产者契约**；「未知 major/未知枚举 → 保守模式」「零误杀」「suspect 可逆态」是消费方行为，其验收归 runlogos 仓 R5 提案；双向契约测试是跨仓总方案完成定义，不是本项目单仓的完成判据。
+
 ## S13 verify 结果账本一致性验收补充
 
 ### 背景
@@ -994,3 +1185,39 @@ OpenLogos 作为可被 RunLogos / CI / AI driver 消费的流程事实源，必�
 - 代码提案缺少真实测试 ID 时，`openlogos next/status` 返回 `proposal_step: "test-id-required"` 或等价结构化诊断，且不返回 `next_node.id=="plan-slices"`。
 - 已完成 no-delta spec-complete 且真实测试 ID 可解析时，`openlogos next/status` 才允许返回 `ready-to-implement` + `next_node.id=="plan-slices"`。
 - 纯文档提案不受本规则误伤；无需代码时仍可跳过 `slice` 子流程。
+
+## S09 GUI 项目提案阶段前置 UI/UX 原型确认
+
+### 背景
+
+对已 `launched` 的 **GUI 产品项目**（网站 / 桌面应用 / 移动 App），当前 UI/UX 原型由 product-designer 在 Phase 2 产出——发生在**提案批准之后、driver 自动实现期间**。用户在 S09「批准提案」门只看到纯文字方案，看不到界面长什么样；等自动化把 UI 做出来才发现不对，导致大量返工，且返工发生在全自动链路里、纠偏成本最高。
+
+核心洞察：把 UI/UX 确认**前移到「批准提案」门**——GUI 项目在提案阶段就产出界面原型，使用户能在批准提案时（面板已渲染原型的前提下）连界面一起确认。看界面**不是一道新关卡**，它挂在现有「批准提案」动作上，复用现有 `plan-exit`（批准方案）门，**不新增门态、不新增确认标记**。
+
+非 GUI 项目（纯 CLI / API / 纯后端服务 / Skills）整个特性不启用，S09 流程零改动。
+
+### 适用范围（判断顺序）
+
+本特性仅对 **GUI 产品项目**且**本次变更确实触及界面**时启用，判定按以下顺序进行：
+
+1. **先判 `product_type` 是否属于 GUI**（网站 / 桌面应用 / 移动 App）。若项目 `product_type` 为纯 CLI / API / 纯后端服务（`service`）/ Skills，则本特性整体不启用，S09 生命周期与提案结构**零改动**，后续判断不再进行。
+2. **再判本次变更是否动了界面**（`ui_impact`）。该判定在 **plan 阶段由 change-writer 执行**，依据是**提案意图 + 项目 `product_type` + `tasks.md` 已规划的 `[delta]` 目标**，而非扫描尚不存在的 delta 文件内容（在 plan 阶段无 delta 可扫，扫内容会构成「先 delta 还是先原型」的循环依赖）。当 `tasks.md` 的 `[delta]` 目标命中 `2-page-design/` 或含交互变更的 feature-specs 时，强制判为「动了界面」。
+3. 仅当两条同时成立（`product_type∈GUI` 且 `ui_impact:true`）时，本次提案在 plan 阶段前置产出 UI/UX 原型；任一不成立则不产出原型、流程照旧。
+
+作为**增益功能**，判定**容错优先流程平滑**：判错代价可控（顶多多画一次或退回重设），不追求绝对严谨。
+
+### 需求
+
+1. GUI 项目 + `ui_impact:true` 的提案，UI/UX 原型在**提案阶段**就产出，并**作为 page-design delta** 写入 `deltas/prd/2-product-design/2-page-design/`（裸 HTML，关键几屏 + 各状态）；`design-system.json` 作为审计令牌留在提案目录。**不新增 `ui/` 目录、复用现有 delta 路径映射**——原型仍走 `deltas/prd/**` → `logos/resources/prd/**` 的现有路径映射落入原型图文件夹，但**落盘由专用事务落盘入口 `commitVerifiedPrototypes()` 完成**（严格模式下先做 hash 校验，再原子提交）；**merge-executor 绝不触碰原型资产**，原型落盘不经由 merge 拷贝步骤。
+2. 复用现有 `plan-exit`（批准提案）门作为 UI 确认，**不新增门态、不新增确认标记**：**在面板已实际渲染原型的前提下**，用户批准提案 / 启动全自动 / 让 driver 进下一步即构成 UI 确认。
+3. **「批准即确认」的前提**：「批准 == UI 已确认」这一等价**仅当面板实际渲染了原型时成立**；在不渲染的旧面板上，用户点批准只是普通方案批准、**不构成 UI 视觉确认**。缺渲染证据时方法论**不宣称 UI 已确认**、给出 advisory 提示，但**不阻断**。
+4. **降级兜底不阻塞**：Python3 缺失时以通用风格兜底并在提案标注「未走设计系统」，**不阻塞、不报错**。
+
+### 验收口径
+
+- **非 GUI 项目不受影响**：`product_type` 为纯 CLI / API / 纯后端服务（`service`）/ Skills 时，`openlogos change` 生成的提案结构、S09 生命周期与 `plan-exit` 行为与本特性引入前**完全一致**，不注入任何 UI/UX 相关内容。
+- **GUI + 动界面 → 提案阶段有原型**：GUI 项目且本次 `ui_impact:true` 时，提案在 `plan-exit` 门前，`deltas/prd/2-product-design/2-page-design/` 下存在与「UI/UX 变更声明」段所声明页面对应的原型文件（作为 page-design delta），供批准前查看。
+- **GUI + 不动界面 → 流程照旧**：GUI 项目但本次 `ui_impact:false` 时，不产出原型，`plan-exit` 行为与不启用本特性时一致。
+- **复用批准门即 UI 确认（有前提）**：面板已渲染原型时，用户在既有 `plan-exit` 门批准提案即构成 UI 确认，**不出现新的门或新的确认标记文件**；面板未渲染原型（旧面板）时，该批准仅为普通方案批准，方法论给出「未构成 UI 视觉确认」的 advisory，且**不阻断**流程。
+- **判定依据正确**：`ui_impact` 判定依据为项目 `product_type` 与 `tasks.md` 已规划的 `[delta]` 目标，而非扫描 delta 文件内容；先 GUI 判定、后动界面判定的顺序可被验证。
+- **降级不阻塞**：Python3 缺失场景下，提案仍可产出通用风格原型并标注「未走设计系统」，`openlogos change` 与后续推进**不报错、不卡住**。

@@ -57,6 +57,8 @@ function setupLaunchedVerify(root: string, slug = 'feat'): string {
   writeFileSync(join(dir, 'proposal.md'), PROPOSAL());
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
   writeFileSync(join(dir, 'SPEC_MERGED'), '');
+  // contract-self-description 切片1（C2）：四事实合取收紧——loop 激活类 fixture 补齐 slices_approved（旧空 marker）。
+  writeFileSync(join(dir, 'SLICES_APPROVED'), '');
   return dir;
 }
 /** launched coding（current builtin = code）：SPEC_MERGED + [code] 未勾。 */
@@ -275,12 +277,12 @@ describe('S28 — 省略规则（R4/R7/R5）', () => {
     expect(resolveNextNode(root, mod, { proposalStep: null, currentPhase: null })).toBeNull();
   });
 
-  it('UT-S28-24: initial adopted 补 baseline（命令级，current_phase 非空）→ 所有层级省略 next_node', async () => {
+  it('UT-S28-24: initial adopted 逆向建基线（命令级，current_phase 非空）→ 所有层级省略 next_node', async () => {
     const root = tempProject();
     writeFileSync(join(root, 'logos', 'logos-project.yaml'),
       'project:\n  name: "t"\nmodules:\n  - id: core\n    name: core\n    lifecycle: initial\n    bootstrap: adopted\n');
     const d = await runNextJson(root);
-    expect(d.command).toBe('openlogos change add-baseline-docs'); // 命令级建议
+    expect(d.command).toBe('openlogos baseline-seed begin'); // 命令级建议（brownfield-adopter）
     expect(d.next_node).toBeUndefined();
     expect(d.modules[0].next_node).toBeUndefined(); // 不得误把 scenario-modeling 当 next_node
   });
@@ -381,5 +383,212 @@ describe('S28 — R7 优先级 / launched skip 报错 / 范围边界', () => {
     const s = runStatusJson(root);
     expect(s).not.toHaveProperty('next_node');
     expect(s.modules ?? []).toEqual(expect.any(Array));
+  });
+});
+
+// ── contract-self-description 切片3（C4）：next_node.dispatch 派发契约 ──
+describe('S28 — next_node.dispatch 派发契约（contract-self-description）', () => {
+  it('UT-S28-31: builtin 节点 dispatch 数据源 = flow 节点定义（write-delta 内容产出类）', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta A\n- [ ] 产出 delta B\n'); // delta-writing 前沿 → write-delta
+    const { loadFlow } = await import('../src/lib/flow.js');
+    const decl = loadFlow(root, { lifecycle: 'launched', resolved: true }).flow
+      .subflows.flatMap(s => s.nodes).find(n => n.id === 'write-delta')!.dispatch!;
+    const nn = (await runNextJson(root)).modules[0].next_node;
+    expect(nn.id).toBe('write-delta');
+    expect(nn.dispatch).toEqual(decl); // 与 resolved flow 声明逐字段一致，无输出层改写
+    expect(nn.dispatch).toMatchObject({ idempotent: true, timeout_seconds: 900 }); // 内容产出类 true；timeout 由 defaults(900) 物化
+    expect(nn.dispatch.artifacts_hint).toContain('deltas/');
+  });
+
+  it('UT-S28-32: 一次性落盘节点 idempotent:false + requires_reviewed 透传（merge-generated → apply-merge）', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n', ['MERGE_PROMPT_GENERATED']);
+    const nn = (await runNextJson(root)).modules[0].next_node;
+    expect(nn.id).toBe('apply-merge');
+    expect(nn.dispatch.idempotent).toBe(false);
+    expect(nn.requires_reviewed).toEqual(['proposal', 'delta']); // 原样透传，driver 替代本地 priorReviewNode 映射表
+  });
+
+  it('UT-S28-33: timeout_seconds 分级物化（code 3600 / deploy 1800 / 其余 defaults 900）', async () => {
+    // code 3600：coding 前沿
+    const root = tempProject(); setSingleModule(root, 'launched');
+    setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n', ['SPEC_MERGED', 'SLICES_APPROVED']);
+    const nn = (await runNextJson(root)).modules[0].next_node;
+    expect(nn.id).toBe('code');
+    expect(nn.dispatch.timeout_seconds).toBe(3600);
+    // write-delta 900：delta-writing 前沿
+    const root2 = tempProject(); setSingleModule(root2, 'launched');
+    setupLaunchedStep(root2, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta A\n- [ ] 产出 delta B\n', [], PROPOSAL('设计级'), 'feat');
+    const nn2 = (await runNextJson(root2)).modules[0].next_node;
+    expect(nn2.id).toBe('write-delta');
+    expect(nn2.dispatch.timeout_seconds).toBe(900); // 未显式节点 = defaults 物化，输出层无第二处默认
+    // deploy 1800：resolved flow 物化值（前沿构造成本高，数据源断言等价）
+    const { loadFlow } = await import('../src/lib/flow.js');
+    const deploy = loadFlow(root, { lifecycle: 'launched', resolved: true }).flow
+      .subflows.flatMap(s => s.nodes).find(n => n.id === 'deploy')!;
+    expect(deploy.dispatch!.timeout_seconds).toBe(1800);
+  });
+
+  it('UT-S28-35: 更新后 R8 锚回归——既有 8 字段取值不变，仅新增 dispatch（恒在）/requires_reviewed（声明时）', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta A\n- [ ] 产出 delta B\n'); // write-delta 前沿
+    const nn = (await runNextJson(root)).modules[0].next_node;
+    // 键集：8 既有字段 + dispatch（write-delta 未声明 requires_reviewed → 不出现，无其它增删）
+    expect(Object.keys(nn).sort()).toEqual([
+      'dispatch', 'id', 'name', 'post_script', 'pre_script', 'review_agent', 'skill', 'subflow_id', 'working_agent',
+    ]);
+    // 既有 8 字段取值与 flow 声明逐字一致（R8 锚：仅新增、不改值）
+    expect(nn).toMatchObject({
+      id: 'write-delta', subflow_id: 'spec', skill: 'change-writer',
+      working_agent: null, review_agent: null, pre_script: null, post_script: null,
+    });
+  });
+
+  it('ST-S28-11: 提案级差异白名单端到端——contract/step_meta/facts/dispatch 在场、pre-implement loop_state 缺席', async () => {
+    const root = tempProject(); setSingleModule(root, 'launched');
+    setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n', ['SPEC_MERGED']);
+    const status = runStatusJson(root);
+    const next = await runNextJson(root);
+    // 白名单内必须出现的差异
+    expect(status.contract).toEqual({ version: '1.0.0' });
+    expect(next.contract).toEqual({ version: '1.0.0' });
+    expect(status.modules[0].active_change.step_meta).toEqual({ phase: 'pre-implement', kind: 'residency' });
+    expect(status.modules[0].active_change.facts).toMatchObject({ spec_complete: true, slices_approved: false });
+    expect(next.modules[0].next_node.dispatch).toBeTruthy();
+    // C2：pre-implement（ready-to-implement 驻留）loop_state 必须缺席（允许且要求的差异）
+    expect(status.modules[0].loop_state).toBeUndefined();
+    expect(next.modules[0].loop_state).toBeUndefined();
+    // driver 消费视角：从 dispatch.idempotent 直接判重投安全，无需本地 allowlist
+    expect(typeof next.modules[0].next_node.dispatch.idempotent).toBe('boolean');
+  });
+});
+
+// ── contract-self-description 切片5（C7）：next schema 可执行校验 ──
+describe('S28 — next schema 校验（contract-self-description）', () => {
+  async function ajv2020() {
+    const { default: Ajv2020 } = await import('ajv/dist/2020.js');
+    const { default: addFormats } = await import('ajv-formats');
+    const ajv = new Ajv2020({ strict: false, allowUnionTypes: true });
+    addFormats(ajv); // code review F6：format:"date-time" 必须被真实执行，否则坏 activated_at 会静默通过
+    return ajv;
+  }
+  async function nextSchema(): Promise<any> {
+    const { readFileSync: rf } = await import('node:fs');
+    return JSON.parse(rf(join(process.cwd(), '..', 'spec', 'schema', 'next.schema.json'), 'utf-8'));
+  }
+
+  it('UT-S28-34: 各前沿形态解析 envelope 后以 output.data 为实例通过 schema 校验', async () => {
+    const schema = await nextSchema();
+    const fixtures: Array<{ tasks: string; markers: string[] }> = [
+      { tasks: '# 实现任务\n\n## [delta] 规格变更\n- [x] A\n- [ ] B\n', markers: [] },                       // write-delta
+      { tasks: '# 实现任务\n\n## [delta] 规格变更\n- [x] A\n', markers: ['MERGE_PROMPT_GENERATED'] },          // apply-merge（含 requires_reviewed）
+      { tasks: '# 实现任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n- [ ] 切片1\n', markers: ['SPEC_MERGED', 'SLICES_APPROVED'] }, // code（loop_state 在场）
+    ];
+    for (const f of fixtures) {
+      const root = tempProject(); setSingleModule(root, 'launched');
+      setupLaunchedStep(root, f.tasks, f.markers);
+      const data = await runNextJson(root);
+      const ajv = await ajv2020();
+      expect(ajv.validate(schema, data), JSON.stringify(ajv.errors)).toBe(true);
+      expect(data.modules[0].next_node.dispatch).toMatchObject({ idempotent: expect.any(Boolean) });
+    }
+  });
+
+  it('UT-S28-36: schema 反面用例——next_node 九必填字段逐个删除必失败、hint 显式 null 正例通过', async () => {
+    const schema = await nextSchema();
+    const base = {
+      contract: { version: '1.0.0' },
+      modules: [{
+        id: 'core',
+        active_change: null,   // r2-F3：基础必填（可为 null）
+        proposal_step: null,
+        next_node: {
+          id: 'write-delta', name: '编写 delta', subflow_id: 'spec',
+          skill: 'change-writer', working_agent: null, review_agent: null, pre_script: null, post_script: null,
+          dispatch: { idempotent: true, timeout_seconds: 900, artifacts_hint: ['deltas/'] },
+        },
+      }],
+      // legacy 顶层挂载复用同一 $defs.nextNode
+      next_node: {
+        id: 'write-delta', name: '编写 delta', subflow_id: 'spec',
+        skill: null, working_agent: null, review_agent: null, pre_script: null, post_script: null,
+        dispatch: { idempotent: true, timeout_seconds: 900, artifacts_hint: [] },
+      },
+    };
+    // 正例：五个 hint 显式 null 合法（string|null）
+    const okAjv = await ajv2020();
+    expect(okAjv.validate(schema, base), JSON.stringify(okAjv.errors)).toBe(true);
+    // 反面：modules[].next_node 与 legacy 顶层各自逐删九必填之一 → 必失败（同一 $defs，两挂载行为一致）
+    const REQUIRED = ['id', 'name', 'subflow_id', 'skill', 'working_agent', 'review_agent', 'pre_script', 'post_script', 'dispatch'];
+    for (const where of ['modules', 'top'] as const) {
+      for (const field of REQUIRED) {
+        const bad = JSON.parse(JSON.stringify(base));
+        if (where === 'modules') delete bad.modules[0].next_node[field];
+        else delete bad.next_node[field];
+        const ajv = await ajv2020();
+        expect(ajv.validate(schema, bad), `${where}:${field} 缺失应校验失败`).toBe(false);
+      }
+    }
+  });
+});
+
+// ── code review F3/F6：schema 条件必填反面用例与 activated_at 格式执行 ──
+describe('S28 — schema 活跃模块条件必填与 activated_at 格式（code review F3/F6）', () => {
+  it('UT-S28-37: 活跃模块缺 step_meta/facts/proposal_step/code_required 任一 → schema 必失败；active_change:null 合法', async () => {
+    const schema = JSON.parse((await import('node:fs')).readFileSync(join(process.cwd(), '..', 'spec', 'schema', 'next.schema.json'), 'utf-8'));
+    const base = {
+      contract: { version: '1.0.0' },
+      modules: [{
+        id: 'core', active_change: 'feat', proposal_step: 'coding',
+        step_meta: { phase: 'implement', kind: 'produce' },
+        facts: { spec_complete: true, slices_planned: true, slices_approved: true, code_required: true, has_delta_tasks: true, verify_pass: false },
+        code_required: true,
+      }],
+    };
+    const { default: Ajv2020 } = await import('ajv/dist/2020.js');
+    const { default: addFormats } = await import('ajv-formats');
+    const mk = () => { const a = new Ajv2020({ strict: false, allowUnionTypes: true }); addFormats(a); return a; };
+    expect(mk().validate(schema, base)).toBe(true);
+    for (const field of ['proposal_step', 'step_meta', 'facts', 'code_required']) {
+      const bad = JSON.parse(JSON.stringify(base));
+      delete bad.modules[0][field];
+      expect(mk().validate(schema, bad), `活跃模块缺 ${field} 应失败`).toBe(false);
+    }
+    // 评审给出的最小反例（活跃但无自描述）必须被拒绝
+    const reviewerCounterexample = { contract: { version: '1.0.0' }, modules: [{ id: 'core', active_change: 'feat', proposal_step: 'coding' }] };
+    expect(mk().validate(schema, reviewerCounterexample)).toBe(false);
+    // r2-F3 绕过反例：漏掉 active_change 但 proposal_step 非 null → 仍必须失败（第二条件 + 基础必填双保险）
+    const bypass = { contract: { version: '1.0.0' }, modules: [{ id: 'core', proposal_step: 'coding' }] };
+    expect(mk().validate(schema, bypass), '缺 active_change 携非空 proposal_step 应失败').toBe(false);
+    // 基础必填：active_change / proposal_step 键本身不可缺席（可为 null）
+    const missingBase = { contract: { version: '1.0.0' }, modules: [{ id: 'core' }] };
+    expect(mk().validate(schema, missingBase), '缺基础字段应失败').toBe(false);
+    // 无活跃提案（两者均 null）→ 不要求自描述字段，合法（零漂移正例）
+    const idle = { contract: { version: '1.0.0' }, modules: [{ id: 'core', active_change: null, proposal_step: null }] };
+    expect(mk().validate(schema, idle), 'active_change:null 应合法').toBe(true);
+  });
+
+  it('UT-S28-38: loop_state.activated_at 坏格式（"not-a-date"）→ schema 必失败（format 被真实执行）', async () => {
+    const schema = JSON.parse((await import('node:fs')).readFileSync(join(process.cwd(), '..', 'spec', 'schema', 'next.schema.json'), 'utf-8'));
+    const { default: Ajv2020 } = await import('ajv/dist/2020.js');
+    const { default: addFormats } = await import('ajv-formats');
+    const mk = () => { const a = new Ajv2020({ strict: false, allowUnionTypes: true }); addFormats(a); return a; };
+    const withLoop = (activatedAt?: string) => ({
+      contract: { version: '1.0.0' },
+      modules: [{
+        id: 'core', active_change: 'feat', proposal_step: 'coding',
+        step_meta: { phase: 'implement', kind: 'produce' },
+        facts: { spec_complete: true, slices_planned: true, slices_approved: true, code_required: true, has_delta_tasks: true, verify_pass: false },
+        code_required: true,
+        loop_state: {
+          subflow_id: 'implement', until: 'code_slices_green', max_iters: 30, iteration: 0, converged: false, escalated: false,
+          ...(activatedAt !== undefined ? { activated_at: activatedAt } : {}),
+        },
+      }],
+    });
+    expect(mk().validate(schema, withLoop('2026-07-17T08:00:00Z')), '合法 activated_at 应通过').toBe(true);
+    expect(mk().validate(schema, withLoop('not-a-date')), '坏 activated_at 应失败').toBe(false);
+    expect(mk().validate(schema, withLoop()), '省略 activated_at 应合法').toBe(true);
   });
 });

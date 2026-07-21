@@ -86,6 +86,29 @@
 
 检测不到 `python3` 时跳过本步并提示用户「检测到 ui-ux-pro-max 依赖的 Python 3 不可用。原型将使用通用风格生成。如需专业级设计系统建议，请安装 Python 3 后重试。」原型用通用风格继续生成，不阻塞 Step 5。
 
+### Step 5a 补充：UI/UX 子流程可被 change-writer 在提案阶段复用（proposal-ui-ux-first）
+
+Step 5a 的 UI/UX 子流程（调用 `ui-ux-pro-max` 设计系统 → 落地 `design-system.json` 令牌 → 以设计系统为基础产出 page-design 原型）**不仅用于 Phase 2 全新产品设计**——对已 `launched` 的 **GUI 产品项目**，同一子流程**可被 `change-writer` 在变更提案阶段（plan 节点、`plan-exit` 门前）复用**，把 UI/UX 确认从「批准后自动实现期间」**前移到「批准提案」门**。
+
+**复用点（前移，非仅 Phase 2）**：
+
+- **谁调用**：变更走 Delta 流程时，由 driver 在 plan 节点派发的 `change-writer`（producer）复用本 Step 5a 子流程，而非 Phase 2 的 product-designer 主流程。触发与产出规则见 `skills/change-writer/SKILL.md` 的「Step 6 补充二：GUI 项目提案阶段前置 UI/UX 原型」。
+- **何时调用**：提案阶段（`plan-exit` 门**前**），当 `product_type ∈ GUI` 且本次 `ui_impact:true` 时。区别于 Phase 2 在完整需求就绪后一次性产出全部页面设计。
+
+**产物与 Step 5a 完全一致**（复用即产出一致）：
+
+1. **原型**：以 ui-ux-pro-max 设计系统为视觉基础产出的裸 HTML 原型（关键几屏 + 各交互状态）。提案阶段复用时，原型作为 page-design delta 写入 `logos/changes/<slug>/deltas/prd/2-product-design/2-page-design/*.html`（Phase 2 则直接写 `logos/resources/prd/2-product-design/2-page-design/`）。
+2. **`design-system.json`**：ui-ux-pro-max 令牌产物，用于追溯「原型出自设计系统」。提案阶段复用时留存于提案目录 `logos/changes/<slug>/` 作审计产物。**仅 `design_system_mode: generated`（走了设计系统）时产出并要求；`fallback`（降级）时不产 / 不要求 `design-system.json`、禁伪造令牌**（详见下「降级路径」）。
+
+**两种 `design_system_mode`（机器可读，提案阶段复用时写入声明段）**：
+
+- `generated`：`python3` 可用、正常走 ui-ux-pro-max 设计系统 → 产出 `design-system.json` 令牌。
+- `fallback`：降级 → 声明段填 `design_system_fallback_reason`（如「Python3 缺失」），**不产 / 不要求 `design-system.json`、禁伪造令牌**。
+
+**降级路径一致**：检测不到 `python3` 时，两处（Phase 2 主流程 / 提案阶段复用）均以通用风格兜底、置 `design_system_mode: fallback` 并填 `design_system_fallback_reason`（不产令牌），不阻塞、不报错。字段与对账契约详见 `skills/change-writer/SKILL.md` 的「Step 6 补充二」④/⑥。
+
+**适用/不适用一致**：仅 GUI 类产品触发（Web / 移动 / 桌面 / 含 GUI 交付物的混合型）；纯 CLI / Library / AI Skills / 纯 API 服务不触发。
+
 #### Step 5b：根据产品类型生成对应形式的原型
 
 根据产品类型生成对应形式的原型（见示例）。GUI 类产品在 Step 5a 已获取设计系统的基础上落地视觉/交互；非 GUI 类产品直接按产品类型选择对应原型形式。

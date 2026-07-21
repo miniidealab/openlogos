@@ -721,3 +721,148 @@ describe('S32 — artifact 声明与切片合同诊断', () => {
     expect(diagnostic?.missing_artifacts).toEqual([]);
   });
 });
+
+// ── contract-self-description 切片1（C3/D5）：facts 单一事实源与结构化 SLICES_APPROVED ──
+describe('S32 — facts 单一事实源与结构化 SLICES_APPROVED（contract-self-description）', () => {
+  it('UT-S32-27: facts.slices_planned 与派生结论同源——占位 false / 真实切片 true', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 实现代码变更', ['SPEC_MERGED']);
+    writeTestDelta(dir);
+    const s1 = statusJson(root);
+    expect(s1.modules[0].active_change.facts.slices_planned).toBe(false);
+    expect((await nextJson(root)).modules[0].next_node.id).toBe('plan-slices');
+    writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片');
+    expect(statusJson(root).modules[0].active_change.facts.slices_planned).toBe(true);
+  });
+
+  it('UT-S32-28: facts.slices_approved=false 的「已规划待批准」驻留态不挂 loop_state', () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片', ['SPEC_MERGED']);
+    writeTestDelta(dir);
+    const s = statusJson(root);
+    expect(s.modules[0].active_change.facts).toMatchObject({ slices_planned: true, slices_approved: false });
+    expect(s.modules[0].active_change.proposal_step).toBe('ready-to-implement');
+    expect(s.modules[0].loop_state).toBeUndefined();
+  });
+
+  it('UT-S32-29: next --auto 消费 slice-exit → 原子写入结构化 JSON 单行 marker', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片', ['SPEC_MERGED']);
+    writeTestDelta(dir);
+    await nextJson(root, true);
+    const raw = readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8');
+    expect(raw.trim().split('\n')).toHaveLength(1);
+    const parsed = JSON.parse(raw);
+    expect(parsed.schema).toBe('openlogos/slices-approved@1');
+    expect(typeof parsed.approved_at).toBe('string');
+    expect(Number.isNaN(Date.parse(parsed.approved_at))).toBe(false);
+  });
+
+  it('UT-S32-30: marker 幂等——已存在不重写、approved_at 不刷新、slice-exit 审计仅一行', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片', ['SPEC_MERGED']);
+    writeTestDelta(dir);
+    await nextJson(root, true);
+    const first = readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8');
+    await nextJson(root, true);
+    expect(readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8')).toBe(first);
+    const sliceExitAudits = auditLines(dir).map(l => JSON.parse(l)).filter(a => a.gate_id === 'slice-exit');
+    expect(sliceExitAudits).toHaveLength(1);
+  });
+
+  it('UT-S32-31: 兼容旧空 marker——视为已批准、loop_state 挂出但省略 activated_at、不改写旧文件', () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片', ['SPEC_MERGED', 'SLICES_APPROVED']);
+    writeTestDelta(dir);
+    const s = statusJson(root);
+    expect(s.modules[0].active_change.proposal_step).toBe('coding');
+    expect(s.modules[0].loop_state).toMatchObject({ subflow_id: 'implement' });
+    expect(s.modules[0].loop_state.activated_at).toBeUndefined();
+    expect(readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8')).toBe('');
+  });
+
+  it('ST-S32-09: facts 三元组随磁盘事实翻转，(t,t,t) 末态才挂 loop_state', async () => {
+    const { root, dir } = setupCmd('# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 实现代码变更');
+    writeTestDelta(dir);
+    const read = () => {
+      const s = statusJson(root);
+      const f = s.modules[0].active_change.facts;
+      return { triple: [f.spec_complete, f.slices_planned, f.slices_approved], loop: s.modules[0].loop_state };
+    };
+    expect(read()).toMatchObject({ triple: [false, false, false], loop: undefined });
+    writeNoDeltaMarker(dir);
+    expect(read()).toMatchObject({ triple: [true, false, false], loop: undefined });
+    writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片');
+    expect(read()).toMatchObject({ triple: [true, true, false], loop: undefined });
+    await nextJson(root, true); // 消费 slice-exit
+    const final = read();
+    expect(final.triple).toEqual([true, true, true]);
+    expect(final.loop).toMatchObject({ subflow_id: 'implement' });
+  });
+});
+
+// ── code review F2/F4：marker 原子单赢与 legacy 同次重派生 ──
+describe('S32 — SLICES_APPROVED 原子性与 legacy 同次派生（code review F2/F4）', () => {
+  it('UT-S32-32: 并发多进程消费 → 单赢（先赢内容保留、approved_at 不被覆盖、恒为完整单行 JSON）', async () => {
+    const { execSync } = await import('node:child_process');
+    const { mkdtempSync, readFileSync: rf, existsSync: ex, readdirSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    execSync('npm run build', { cwd: process.cwd(), stdio: 'ignore' }); // 确保 dist 与源同步（并发测试走真实进程边界）
+    const dir = mkdtempSync(join(tmpdir(), 'slices-approved-race-'));
+    const lib = join(process.cwd(), 'dist', 'lib', 'proposal-lifecycle.js');
+    const script = `import('${lib}').then(m => m.writeSlicesApprovedMarker('${dir}'))`;
+    const { spawn } = await import('node:child_process');
+    const procs = Array.from({ length: 8 }, () => spawn(process.execPath, ['-e', script]));
+    await Promise.all(procs.map(p => new Promise(res => p.on('exit', res))));
+    const markerPath = join(dir, 'SLICES_APPROVED');
+    expect(ex(markerPath)).toBe(true);
+    const content = rf(markerPath, 'utf-8');
+    expect(content.trim().split('\n')).toHaveLength(1); // 恒为完整单行（绝无半内容/多行覆写）
+    const parsed = JSON.parse(content);
+    expect(parsed.schema).toBe('openlogos/slices-approved@1');
+    expect(Number.isNaN(Date.parse(parsed.approved_at))).toBe(false);
+    // 再次调用不重写（approved_at 一次写定）
+    const { writeSlicesApprovedMarker } = await import('../src/lib/proposal-lifecycle.js');
+    writeSlicesApprovedMarker(dir);
+    expect(rf(markerPath, 'utf-8')).toBe(content);
+    // 发布过程不留 tmp 残件污染判定：目录内仅 marker 本体（tmp 已清理）
+    expect(readdirSync(dir).filter(f => f.includes('SLICES_APPROVED'))).toEqual(['SLICES_APPROVED']);
+  }, 30_000);
+
+  it('UT-S32-33: 坏 marker（损坏 JSON/坏时间/错 schema 常量）→ activated_at 省略、存在性语义保持', async () => {
+    const { readSlicesApprovedAt } = await import('../src/lib/proposal-lifecycle.js');
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const cases: Array<[string, string]> = [
+      ['半内容损坏', '{"schema":"openlogos/slices-app'],
+      ['坏时间', '{"schema":"openlogos/slices-approved@1","approved_at":"not-a-date"}'],
+      ['无时区时间', '{"schema":"openlogos/slices-approved@1","approved_at":"2026-07-17T08:00:00"}'],
+      ['错 schema 常量', '{"schema":"other@1","approved_at":"2026-07-17T08:00:00Z"}'],
+      ['首尾空白时间戳（r2-F6：读取端与发布 schema date-time 一致，不 trim 宽容）', '{"schema":"openlogos/slices-approved@1","approved_at":" 2026-07-17T08:00:00Z "}'],
+    ];
+    for (const [label, content] of cases) {
+      const dir = mkdtempSync(join(tmpdir(), 'slices-approved-bad-'));
+      writeFileSync(join(dir, 'SLICES_APPROVED'), content);
+      expect(readSlicesApprovedAt(dir), `${label} 不得原样发布时间`).toBeNull();
+    }
+  });
+
+  it('UT-S32-34: legacy 项目（无 modules[]）消费 slice-exit → 同次响应即带 loop_state/activated_at（F4）', async () => {
+    const { root: r, cleanup } = makeTempRoot();
+    cleanups.push(cleanup);
+    scaffoldProject(r);
+    // legacy：logos-project.yaml 无 modules 键 → status/next 走顶层 fallback 挂载
+    writeFileSync(join(r, 'logos', 'logos-project.yaml'), 'project:\n  name: legacy-t\n');
+    writeFileSync(join(r, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(r, 'logos', 'changes', 'feat');
+    mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), filled().replace('设计级', '代码级修复'));
+    writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片');
+    writeFileSync(join(dir, 'deltas', 'test', 'core-S32-test-cases.md'), '| UT-S32-90 | 回归 |');
+    writeFileSync(join(dir, 'SPEC_MERGED'), '');
+    const data = await nextJson(r, true); // --auto 消费 slice-exit
+    expect(existsSync(join(dir, 'SLICES_APPROVED'))).toBe(true);
+    const marker = JSON.parse(readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8'));
+    // 同次响应：coding + 顶层 loop_state（legacy 挂载）+ activated_at 与 marker 一致 + slice 上下文可注入
+    expect(data.proposal_step).toBe('coding');
+    expect(data.loop_state).toMatchObject({ subflow_id: 'implement', until: 'code_slices_green' });
+    expect(data.loop_state.activated_at).toBe(marker.approved_at);
+    expect(data.next_node?.id).toBe('code');
+    expect(data.next_node?.slice).toBe('切片1：真实切片');
+  });
+});

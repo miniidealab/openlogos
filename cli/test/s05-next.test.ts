@@ -28,7 +28,9 @@ function writeBootstrapModule(root: string, bootstrap: 'adopted' | 'skipped') {
   writeFileSync(
     join(root, 'logos', 'logos-project.yaml'),
     stringifyYaml({
-      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap }],
+      // adopt 确定性写入 baseline_seed_state: required（见 createAdoptLogosProject）——fixture 显式携带，
+      // 以真实反映 brownfield 模块的种子待建状态（F6：缺省字段则不推断，另由 legacy 用例覆盖）。
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap, baseline_seed_state: 'required' }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
     }, { lineWidth: 0 }),
   );
@@ -183,22 +185,25 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).toContain('openlogos change');
   });
 
-  it('UT-S05-bootstrap-01: bootstrap=adopted with no active proposal → suggest add-baseline-docs', () => {
+  it('UT-S05-bootstrap-01: bootstrap=adopted + baseline_seed_state:required with no active proposal → guide reverse baseline (brownfield-adopter, replaces add-baseline-docs)', () => {
     writeAdoptedModule(root);
 
     next();
 
     const out = con.logs.join('\n');
-    expect(out).toContain('openlogos change add-baseline-docs');
+    expect(out).toContain('openlogos baseline-seed begin');
+    expect(out.toLowerCase()).toContain('baseline');
+    expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S05-bootstrap-02 / ST-S05-bootstrap-02: bootstrap=skipped legacy mode with no active proposal → suggest add-baseline-docs', () => {
+  it('UT-S05-bootstrap-02 / ST-S05-bootstrap-02: bootstrap=skipped legacy mode + required with no active proposal → same reverse-baseline guidance', () => {
     writeLegacySkippedModule(root);
 
     next();
 
     const out = con.logs.join('\n');
-    expect(out).toContain('openlogos change add-baseline-docs');
+    expect(out).toContain('openlogos baseline-seed begin');
+    expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 
   it('UT-S05-bootstrap-03 / ST-S05-bootstrap-03: bootstrap=adopted with active proposal → follows proposal flow', () => {
@@ -882,15 +887,145 @@ describe('S05 Scenario Tests — next --format json', () => {
     expect(parsed.data.modules[0].action).toMatch(/archive|归档/i);
   });
 
-  it('ST-S05-bootstrap-01: bootstrap=adopted with no active proposal returns baseline-docs guidance in JSON', () => {
+  it('ST-S05-bootstrap-01: bootstrap=adopted + required with no active proposal returns reverse-baseline guidance in JSON', () => {
     writeAdoptedModule(root);
 
     next('json');
     const parsed = JSON.parse(con.logs[0]);
 
-    expect(parsed.data.command).toBe('openlogos change add-baseline-docs');
-    expect(String(parsed.data.action).toLowerCase()).toContain('baseline');
+    expect(parsed.data.command).toBe('openlogos baseline-seed begin');
     expect(parsed.data.modules[0].bootstrap).toBe('adopted');
-    expect(parsed.data.modules[0].command).toBe('openlogos change add-baseline-docs');
+    expect(parsed.data.modules[0].command).toBe('openlogos baseline-seed begin');
+    expect(parsed.data.modules[0].baseline_seed_state).toBe('required');
+    // baseline_coverage 恒存在为对象，incomplete 恒布尔（required → false）。
+    expect(parsed.data.modules[0].baseline_coverage.state).toBe('required');
+    expect(parsed.data.modules[0].baseline_coverage.incomplete).toBe(false);
+  });
+});
+
+// ── contract-self-description 切片2（C5）：next data 顶层 contract ──
+describe('S05 — next contract 版本握手（contract-self-description）', () => {
+  it('UT-S05-26: next data 顶层 contract 恒在场且等于 {version:"1.0.0"}（initial 与 launched 均取样）', async () => {
+    // initial 全新项目
+    const a = makeTempRoot();
+    scaffoldProject(a.root, { locale: 'zh' });
+    let restore = mockCwd(a.root); let cap = captureConsole();
+    try { await next('json'); } finally { cap.restore(); restore(); }
+    expect(JSON.parse(cap.logs[cap.logs.length - 1]).data.contract).toEqual({ version: '1.0.0' });
+    a.cleanup();
+    // launched + 活跃提案
+    const b = makeTempRoot();
+    scaffoldProject(b.root, { locale: 'zh' });
+    writeLaunchedModule(b.root);
+    writeFileSync(join(b.root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(b.root, 'logos', 'changes', 'feat');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), '# 变更提案：feat\n\n## 变更类型\n代码级\n');
+    writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [ ] d\n\n## [code] 代码实现\n- [ ] 实现代码变更\n');
+    restore = mockCwd(b.root); cap = captureConsole();
+    try { await next('json'); } finally { cap.restore(); restore(); }
+    const data = JSON.parse(cap.logs[cap.logs.length - 1]).data;
+    expect(data.contract).toEqual({ version: '1.0.0' });
+    b.cleanup();
+  });
+});
+
+// ── contract-self-description 切片3（C4）：next_node.dispatch / requires_reviewed（S05 视角） ──
+describe('S05 — next dispatch/requires_reviewed（contract-self-description）', () => {
+  function launchedProposal(tasks: string, markers: Array<[string, string]> = [], proposalKind = '代码级'): { root: string; dir: string; cleanup: () => void } {
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    writeLaunchedModule(root);
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(root, 'logos', 'changes', 'feat');
+    mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), ['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', proposalKind, '',
+      '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码', '- 影响环境：无',
+      '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '实现 A。'].join('\n'));
+    writeFileSync(join(dir, 'tasks.md'), tasks);
+    writeFileSync(join(dir, 'deltas', 'test', 'core-S05-test-cases.md'), '| UT-S05-90 | 回归 |\n');
+    for (const [name, content] of markers) writeFileSync(join(dir, name), content);
+    return { root, dir, cleanup };
+  }
+  async function nextData(root: string): Promise<any> {
+    const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
+    try { await next('json'); } finally { cap.restore(); ex.mockRestore(); restore(); }
+    return JSON.parse(cap.logs[cap.logs.length - 1]).data;
+  }
+  const DELTA_TASKS = '# 任务\n\n## [delta] 规格变更\n- [x] A\n- [ ] B\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n';
+
+  it('UT-S05-27: next_node.dispatch 恒为完整对象、无二义分支（多前沿取样）', async () => {
+    // write-delta / apply-merge / code 三前沿
+    const fixtures: Array<{ tasks: string; markers: Array<[string, string]>; expectId: string }> = [
+      { tasks: DELTA_TASKS, markers: [], expectId: 'write-delta' },
+      { tasks: '# 任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n', markers: [['MERGE_PROMPT_GENERATED', '']], expectId: 'apply-merge' },
+      { tasks: '# 任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n- [ ] 切片1\n', markers: [['SPEC_MERGED', ''], ['SLICES_APPROVED', '']], expectId: 'code' },
+    ];
+    for (const f of fixtures) {
+      const { root, cleanup } = launchedProposal(f.tasks, f.markers);
+      const nn = (await nextData(root)).modules[0].next_node;
+      expect(nn.id).toBe(f.expectId);
+      expect(typeof nn.dispatch.idempotent).toBe('boolean');
+      expect(Number.isInteger(nn.dispatch.timeout_seconds)).toBe(true);
+      expect(Array.isArray(nn.dispatch.artifacts_hint)).toBe(true);
+      expect(Object.keys(nn.dispatch).sort()).toEqual(['artifacts_hint', 'idempotent', 'timeout_seconds']);
+      cleanup();
+    }
+  });
+
+  it('UT-S05-28: requires_reviewed 声明透传——merge-generated→apply-merge 带、ready-to-merge→generate-merge-prompt 不带', async () => {
+    // 正向：merge-generated 前沿（apply-merge 声明 ["proposal","delta"]）
+    const a = launchedProposal('# 任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n', [['MERGE_PROMPT_GENERATED', '']]);
+    const na = (await nextData(a.root)).modules[0].next_node;
+    expect(na.id).toBe('apply-merge');
+    expect(na.requires_reviewed).toEqual(['proposal', 'delta']);
+    a.cleanup();
+    // 对照：ready-to-merge 前沿映射 generate-merge-prompt（未声明 → 不含该字段）
+    const b = launchedProposal('# 任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n');
+    const db = await nextData(b.root);
+    const nb = db.modules[0].next_node;
+    expect(nb.id).toBe('generate-merge-prompt');
+    expect('requires_reviewed' in nb).toBe(false);
+    b.cleanup();
+  });
+
+  it('UT-S05-29: no-delta 提案不得输出 delta 评审要求（幻影评审反向锚）', async () => {
+    // 纯代码 no-delta：无 [delta] 段、仅空 [code] 标题 → spec-complete-required 路径
+    const { root, cleanup } = launchedProposal('# 任务\n\n## [code] 代码实现\n（占位说明）\n');
+    const data = await nextData(root);
+    // 可达性正锚（code review F10）：no-delta 的 spec-complete-required 前沿映射到 apply-merge——
+    // 该节点 flow 声明 requires_reviewed:["proposal","delta"]，过滤路径**必然被触达**；
+    // 断言输出恰为 ["proposal"]（删除过滤实现则此处出现 "delta"、测试必红）。
+    expect(data.modules[0].next_node?.id).toBe('apply-merge');
+    expect(data.modules[0].next_node?.requires_reviewed).toEqual(['proposal']);
+    // 全输出扫描兜底：任何位置的 requires_reviewed 不得含 "delta"
+    const collected: string[][] = [];
+    JSON.stringify(data, (k, v) => { if (k === 'requires_reviewed') collected.push(v); return v; });
+    expect(collected.length).toBeGreaterThan(0); // 集合非空——路径已触达，非空转
+    for (const rr of collected) expect(rr).not.toContain('delta');
+    // 仍沿 no-delta merge / spec-complete-required 路径推进（不派 write-delta）
+    expect(data.modules[0].proposal_step).toBe('spec-complete-required');
+    expect(JSON.stringify(data)).toContain('openlogos merge');
+    cleanup();
+  });
+
+  it('ST-S05-13: 四前沿端到端——contract 恒在场、dispatch 与声明一致、requires_reviewed 仅 apply-merge 出现', async () => {
+    const frontiers: Array<{ tasks: string; markers: Array<[string, string]>; id: string; requires: boolean; idem: boolean }> = [
+      { tasks: DELTA_TASKS, markers: [], id: 'write-delta', requires: false, idem: true },
+      { tasks: '# 任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n', markers: [], id: 'generate-merge-prompt', requires: false, idem: true },
+      { tasks: '# 任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n（切片由 slice-planner 规划）\n', markers: [['MERGE_PROMPT_GENERATED', '']], id: 'apply-merge', requires: true, idem: false },
+      { tasks: '# 任务\n\n## [delta] 规格变更\n- [x] A\n\n## [code] 代码实现\n- [ ] 切片1\n', markers: [['SPEC_MERGED', ''], ['SLICES_APPROVED', '']], id: 'code', requires: false, idem: true },
+    ];
+    for (const f of frontiers) {
+      const { root, cleanup } = launchedProposal(f.tasks, f.markers);
+      const data = await nextData(root);
+      expect(data.contract).toEqual({ version: '1.0.0' });
+      const nn = data.modules[0].next_node;
+      expect(nn.id).toBe(f.id);
+      expect(nn.dispatch.idempotent).toBe(f.idem);
+      expect('requires_reviewed' in nn).toBe(f.requires);
+      if (f.requires) expect(nn.requires_reviewed).toEqual(['proposal', 'delta']);
+      cleanup();
+    }
   });
 });

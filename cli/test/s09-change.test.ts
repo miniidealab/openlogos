@@ -415,7 +415,8 @@ describe('S09 Scenario Tests — merge command', () => {
     const changePath = join(root, 'logos', 'changes', 'fix-bug');
     mkdirSync(join(changePath, 'deltas', 'prd'), { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Fix Bug Proposal\n\nContent here.');
-    writeFileSync(join(changePath, 'deltas', 'prd', 'update.md'), '# PRD update');
+    // proposal-ui-ux-first F3：.md delta 须含 ADDED/MODIFIED/REMOVED 段标记（否则 merge 拒绝、防静默覆盖）
+    writeFileSync(join(changePath, 'deltas', 'prd', 'update.md'), '## ADDED — PRD update\n\nContent.');
 
     merge('fix-bug');
 
@@ -437,9 +438,10 @@ describe('S09 Scenario Tests — merge command', () => {
     mkdirSync(join(changePath, 'deltas', 'prd', '3-technical-plan', '2-scenario-implementation'), { recursive: true });
     mkdirSync(join(changePath, 'deltas', 'test'), { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Fix Flow Proposal');
-    writeFileSync(join(changePath, 'deltas', 'prd', '1-product-requirements', '01-req.md'), '# req');
-    writeFileSync(join(changePath, 'deltas', 'prd', '3-technical-plan', '2-scenario-implementation', 'S01.md'), '# scenario');
-    writeFileSync(join(changePath, 'deltas', 'test', 'S01-test-cases.md'), '# tests');
+    // proposal-ui-ux-first F3：.md delta 须含 ADDED/MODIFIED/REMOVED 段标记
+    writeFileSync(join(changePath, 'deltas', 'prd', '1-product-requirements', '01-req.md'), '## ADDED — Req\n\nreq');
+    writeFileSync(join(changePath, 'deltas', 'prd', '3-technical-plan', '2-scenario-implementation', 'S01.md'), '## ADDED — Scenario\n\nscenario');
+    writeFileSync(join(changePath, 'deltas', 'test', 'S01-test-cases.md'), '## ADDED — Tests\n\ntests');
 
     merge('fix-flow');
 

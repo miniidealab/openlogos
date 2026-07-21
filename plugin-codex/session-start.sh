@@ -66,19 +66,33 @@ if [ -z "$STATUS_LIFECYCLE" ] && [ "$LIFECYCLE" = "initial" ] && [ -f "logos/.op
   LIFECYCLE="launched"
 fi
 
+# GUI UI-first overlay detection: the project instance flow (logos/flow/launched.yaml)
+# has the write-ui-prototype node injected only for GUI projects. When present we grant
+# a plan-stage exception allowing the page-design prototype delta.
+ui_first_exception_text() {
+  local active="$1"
+  if [ -f "logos/flow/launched.yaml" ] && grep -q 'write-ui-prototype' "logos/flow/launched.yaml" 2>/dev/null; then
+    echo " 例外：GUI 项目且本次触及 UI（ui_impact）时，允许在 plan 阶段产出 page-design 原型 delta（logos/changes/$active/deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 仍禁于 plan 阶段。"
+  else
+    echo ""
+  fi
+}
+
 change_management_message() {
   local active="$1"
   local step="${2:-}"
   local plan_state="${3:-}"
   local base="Change Management: ACTIVE — guard file detected. Active change proposal: '$active'."
   local confirm="openlogos merge, openlogos verify, openlogos smoke, openlogos archive, deployment, and git push are human confirmation points: AI must not execute them without explicit user authorization."
+  local ui_exc
+  ui_exc="$(ui_first_exception_text "$active")"
 
   case "$step" in
     writing)
-      echo "$base Current proposal step: writing. Allowed files: logos/changes/$active/proposal.md and logos/changes/$active/tasks.md. Do not write deltas or source code yet. $confirm"
+      echo "$base Current proposal step: writing. Allowed files: logos/changes/$active/proposal.md and logos/changes/$active/tasks.md. Do not write deltas or source code yet.${ui_exc} $confirm"
       ;;
     ready-to-delta)
-      echo "$base Current proposal step: ready-to-delta. The plan is ready for approval; plan gate is pending and after approval or openlogos next --auto, proceed to delta-writing. ${plan_state:+Plan state: $plan_state. }Tasks execution 0/N means execution has not started, not planning failure. Do not modify source code or logos/resources/** directly. $confirm"
+      echo "$base Current proposal step: ready-to-delta. The plan is ready for approval; plan gate is pending and after approval or openlogos next --auto, proceed to delta-writing. ${plan_state:+Plan state: $plan_state. }Tasks execution 0/N means execution has not started, not planning failure. Do not modify source code or logos/resources/** directly.${ui_exc} $confirm"
       ;;
     delta-writing|implementing|in-progress)
       echo "$base Current proposal step: delta-writing. Allowed files: logos/changes/$active/deltas/** and logos/changes/$active/tasks.md. Continue producing delta files and check off [delta] tasks; do not modify logos/resources/** or source code directly before merge/coding stages. $confirm"
@@ -157,6 +171,22 @@ else
   STATUS_LINE="📊 OpenLogos: $CURRENT_PHASE"
 fi
 
+# proposal-ui-ux-first 切片3：前置能力门 capability surface（读 logos/.session-capabilities.json）。
+# 缺失=降级模式（不注入 capabilities 段）；仅用于 plan-exit 前模式选择，plan-exit 后强制语义以 PLAN_APPROVED 为准。
+CAPABILITIES=""
+CAP_FILE="logos/.session-capabilities.json"
+if [ -f "$CAP_FILE" ]; then
+  UI_RENDER=""
+  if command -v python3 &>/dev/null; then
+    UI_RENDER=$(python3 -c "import json;print('true' if json.load(open('$CAP_FILE')).get('ui_prototype_render') is True else '')" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    UI_RENDER=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CAP_FILE','utf-8'));console.log(d.ui_prototype_render===true?'true':'')" 2>/dev/null || echo "")
+  fi
+  if [ "$UI_RENDER" = "true" ]; then
+    CAPABILITIES="Capabilities: ui_prototype_render=true (rendered UI confirmation available; capability 仅用于 plan-exit 前模式选择——就绪→渲染确认模式，plan-exit 后以 PLAN_APPROVED 为准)."
+  fi
+fi
+
 # Build additional context
 CONTEXT="=== OpenLogos Project Context ===
 Project: $PROJECT_NAME
@@ -164,7 +194,8 @@ Locale: $LOCALE
 Lifecycle: $LIFECYCLE
 Current Phase: $CURRENT_PHASE
 Suggested Next: $SUGGESTION
-$LANG_POLICY
+$LANG_POLICY${CAPABILITIES:+
+$CAPABILITIES}
 $CHANGE_MGMT
 === End OpenLogos Context ==="
 

@@ -1,0 +1,392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openlogos.dev/schema/status/1.1.0",
+  "title": "openlogos status --format json 机器契约（data 对象）",
+  "x-contract-version": "1.1.0",
+  "$comment": "向后兼容 superset schema，最高支持契约版本 1.1.0（add-feature-model，条件版本 delta-F1=B）。本 schema 同时校验 contract.version 为 1.0.0（无 modules[].features）与 1.1.0（可含 features）两版响应；根级 allOf 约束 version==1.0.0 ⟹ 无 features、features present ⟹ 1.1.0，故 pre-feature 响应逐字节保持 1.0.0。JSON Schema dialect = draft 2020-12。校验对象 = envelope 的 data 字段。未知可选字段策略：additionalProperties 全局放开；消费方遇未知字段/枚举值走保守分支（见 spec/cli-json-output.md）。必填集只锁核心承诺：data.contract 恒在场；active_change 非 null 时 slug/proposal_step/step_meta/facts 恒在场；loop_state 挂出时六必填字段齐备且 until 为闭合双值。发布与版本映射（调整）：响应 data.contract.version ∈ 本 schema 支持集 {1.0.0,1.1.0} 且 features⟹1.1.0，CI 校验。",
+  "type": "object",
+  "required": [
+    "contract"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "contract": {
+      "$ref": "#/$defs/contract"
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "active_change": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "$comment": "data 顶层 active_change 为活跃提案 slug 字符串（对象形态在 modules[].active_change；本修正为 schema 与既有输出契约对齐的 patch 级更正）"
+    },
+    "proposal_step": {
+      "$ref": "#/$defs/proposalStepOrNull"
+    },
+    "loop_state": {
+      "$ref": "#/$defs/loopState"
+    },
+    "slice_state": {
+      "$ref": "#/$defs/sliceState"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "contract"
+        ],
+        "properties": {
+          "contract": {
+            "properties": {
+              "version": {
+                "const": "1.0.0"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "modules": {
+            "items": {
+              "not": {
+                "required": [
+                  "features"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "$comment": "条件版本（add-feature-model delta-F1=B）：contract.version==1.0.0 ⟹ 任何 module 都不得含 features；因此 features 存在即强制 version 为 1.1.0，pre-feature 响应逐字节保持 1.0.0"
+    }
+  ],
+  "$defs": {
+    "contract": {
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "version": {
+          "enum": [
+            "1.0.0",
+            "1.1.0"
+          ],
+          "$comment": "条件版本（add-feature-model delta-F1=B）：响应无任何 modules[].features 时为 1.0.0（与 pre-feature 逐字节一致）；任一 module 输出 features 时为 1.1.0。根级 allOf 约束 features⟺1.1.0。升级规则见 spec/cli-json-output.md"
+        }
+      }
+    },
+    "proposalStep": {
+      "enum": [
+        "writing",
+        "ready-to-delta",
+        "delta-writing",
+        "ready-to-merge",
+        "merge-generated",
+        "spec-complete-required",
+        "test-id-required",
+        "ready-to-implement",
+        "coding",
+        "ready-to-verify",
+        "verify-passed",
+        "verify-failed",
+        "ready-to-deploy",
+        "deploy-done",
+        "ready-to-smoke",
+        "smoke-passed",
+        "smoke-failed",
+        "implementing",
+        "in-progress"
+      ],
+      "$comment": "闭合枚举（本契约不新增值；implementing/in-progress 为旧兼容值）。唯一铸造点 = cli/src/lib/step-registry.ts"
+    },
+    "proposalStepOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/proposalStep"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stepMeta": {
+      "type": "object",
+      "required": [
+        "phase",
+        "kind"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "phase": {
+          "enum": [
+            "pre-implement",
+            "implement",
+            "post-implement"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "produce",
+            "gate",
+            "command-required",
+            "residency"
+          ]
+        }
+      },
+      "$comment": "phase/kind 为小闭合枚举；生产者只准输出上述值；消费方遇未知值走保守分支（minor 可新增值）"
+    },
+    "facts": {
+      "type": "object",
+      "required": [
+        "spec_complete",
+        "slices_planned",
+        "slices_approved",
+        "code_required",
+        "has_delta_tasks",
+        "verify_pass"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "spec_complete": {
+          "type": "boolean"
+        },
+        "slices_planned": {
+          "type": "boolean"
+        },
+        "slices_approved": {
+          "type": "boolean"
+        },
+        "code_required": {
+          "type": "boolean"
+        },
+        "has_delta_tasks": {
+          "type": "boolean"
+        },
+        "verify_pass": {
+          "type": "boolean"
+        }
+      },
+      "$comment": "CLI 权威计算的确定性事实块，与 loop_state 激活判据同一份计算（单一事实源）"
+    },
+    "activeChange": {
+      "type": "object",
+      "required": [
+        "slug",
+        "proposal_step",
+        "step_meta",
+        "facts"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "slug": {
+          "type": "string"
+        },
+        "proposal_step": {
+          "$ref": "#/$defs/proposalStep"
+        },
+        "proposal_step_label": {
+          "type": "string"
+        },
+        "step_meta": {
+          "$ref": "#/$defs/stepMeta"
+        },
+        "facts": {
+          "$ref": "#/$defs/facts"
+        },
+        "code_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "activeChangeOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/activeChange"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "feature": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "spec",
+        "scenarios"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^F(?:0[1-9]|[1-9]\\d+)$"
+            },
+            {
+              "const": "__ungrouped__"
+            }
+          ],
+          "$comment": "规范编号 F01…F09/F10…F99/F100+（^F(?:0[1-9]|[1-9]\\d+)$，项目全局唯一，拒 F00/F0/F001 等前导零非规范编号）或保留伪 feature id \"__ungrouped__\"（承载未归属/降级场景，恒排末位）——杜绝非规范 id 通过校验"
+        },
+        "name": {
+          "type": "string"
+        },
+        "spec": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "$comment": "feature-specs 文档序号（如 core-01），无链接为 null；required（键恒在场）"
+        },
+        "scenarios": {
+          "type": "array",
+          "$comment": "稳定场景成员列表（与 phase/生命周期无关），按 scenarios[] YAML 顺序",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "$comment": "add-feature-model：feature 功能分组。可选、minor 新增。已注册的空成员 feature 必须保留并输出 scenarios:[]。省略 features 字段当且仅当该 module 既无注册 feature 且无任何场景带 feature 键（纯 pre-feature 项目，除 contract.version 外零漂移）；只要有注册 feature 或有场景带 feature 键（含未知/跨 module 悬空引用触发的 __ungrouped__ 降级桶）即必须输出"
+    },
+    "loopState": {
+      "type": "object",
+      "required": [
+        "subflow_id",
+        "until",
+        "max_iters",
+        "iteration",
+        "converged",
+        "escalated"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "subflow_id": {
+          "type": "string"
+        },
+        "until": {
+          "enum": [
+            "tests_green",
+            "code_slices_green"
+          ],
+          "$comment": "闭合双值；builtin launched 默认 code_slices_green。converged 按 resolved until 分支求值（见 spec/flow-spec.md §6/§12.2/§12.4）"
+        },
+        "max_iters": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "iteration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "converged": {
+          "type": "boolean"
+        },
+        "escalated": {
+          "type": "boolean"
+        },
+        "activated_at": {
+          "type": "string",
+          "format": "date-time",
+          "$comment": "可选；读自结构化 SLICES_APPROVED 的 approved_at；旧空 marker 省略"
+        },
+        "exhausted_skippable": {
+          "type": "boolean",
+          "$comment": "可选；仅 overlay set-loop 显式写 exhausted_gate 时输出"
+        }
+      },
+      "$comment": "挂出 iff code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved（与 facts 同源）；未激活省略整个字段——pre-implement 步骤下本对象不得出现（生产者反面锚）"
+    },
+    "sliceState": {
+      "type": "object",
+      "required": [
+        "total",
+        "done",
+        "remaining"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "done": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "current": {
+          "type": "string"
+        },
+        "current_children": {
+          "type": "array"
+        },
+        "current_unchecked_children": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "$comment": "常驻口径不变（与 loop_state 激活判据分别定义）"
+    },
+    "module": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "type": "string"
+        },
+        "active_change": {
+          "$ref": "#/$defs/activeChangeOrNull"
+        },
+        "loop_state": {
+          "$ref": "#/$defs/loopState"
+        },
+        "slice_state": {
+          "$ref": "#/$defs/sliceState"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/feature"
+          },
+          "$comment": "add-feature-model：可选 feature 分组（1.1.0 minor 新增）。省略当且仅当 module 无注册 feature 且无场景带 feature 键；否则输出（含未知/跨 module 引用触发的 __ungrouped__ 降级桶）"
+        }
+      }
+    }
+  }
+}

@@ -50,3 +50,31 @@ JSON 契约的字节级实例。
   若派生切换改变了 `--format json` 的字段或结构，golden 快照将立即失败。
 - golden 测试不替代 S16 既有 UT/ST 用例，二者并存：S16 用例验证信封/字段契约定义；
   golden 快照锁定整段 JSON 的字节级等价。
+
+## 五、contract 版本握手与 schema 发布测试（contract-self-description）
+
+> 覆盖 D1（status/next data 顶层 `contract` 版本握手、版本-schema 一一映射）与 C7（发布 JSON Schema、prepack 打包与包内容验证、未知枚举保守语义的契约文档化）。验收边界按 D9：本节只验**生产者契约**；「未知 major/未知枚举 → 保守模式」的消费方行为验收归 runlogos R5 提案。按 D8 主动破例声明：data 顶层新增 `contract` 打破「data 顶层逐字节不变」→ 全部 9 个 golden 基线快照随本变更重拍属预期。本节用例编号顺延既有最大编号（UT-S16-04 / ST-S16-01）。用例实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 5.1 单元测试用例补充
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S16-05 | status/next envelope data 顶层 contract 字段（初始 1.0.0） | D1 contract 握手 | 任意 fixture（initial / launched、有无活跃提案均取样） | `status --format json` 与 `next --format json` | 两命令 `data.contract` 恒在场且等于 `{"version":"1.0.0"}`；`version` 为合法 SemVer 字符串，独立于 envelope 顶层的 CLI 版本串（两者可不同） |
+| UT-S16-06 | contract.version 与打包 schema 版本一一映射 | D1 版本-schema 映射 | `spec/schema/status.schema.json`、`spec/schema/next.schema.json` 内嵌契约版本号 | 读取响应 `contract.version` 与两份 schema 内嵌版本比对 | 三者完全一致（均为 `1.0.0`）；构造失配（改任一 schema 内嵌版本）→ 该 CI 校验测试失败 |
+| UT-S16-07 | schema 随 npm prepack 打包 + 包内容验证 | C7 schema 发布 | 执行 `npm pack`（或等价 prepack 流程） | 检查 pack 产物文件清单并用打包 schema 校验真实输出 | 产物包含 `spec/schema/status.schema.json` 与 `spec/schema/next.schema.json`；解析真实 `status`/`next --format json` 的 envelope 后，**以 `output.data` 作为 schema 校验实例**通过对应 schema（两份 schema 的校验对象 = data 对象，非整份 envelope；含 `step_meta`、`dispatch` 必填字段）；另行断言 envelope 外层结构含 `command`/`version`/`timestamp`/`data` 四字段 |
+| UT-S16-08 | 未知枚举保守语义在契约中文档化 | C5 未知值语义 | 已发布的两份 schema 与 `spec/cli-json-output.md` 契约文本 | 静态断言测试 | schema 对闭合枚举字段（`step_meta.phase`/`step_meta.kind` 等）附带「消费方遇未知值必须按保守分支处理」的契约描述；`artifacts_hint: []` ＝「产物未知，消费方不得据此判死、只能升级观察」语义在契约中明文可查；任一措辞缺失 → 测试失败 |
+| UT-S16-09 | non-Markdown 整文件 delta 合并后产物机器校验 | F11 合并协议（skills/merge-executor） | 按合并协议应用 `deltas/spec/schema/*.json` 与 `deltas/spec/flow/*.yaml` 整文件 delta | 检查合并产物 | 目标 `spec/schema/status.schema.json`、`spec/schema/next.schema.json` 存在且可直接 `JSON.parse`，文件任意位置不含 `## MODIFIED`/`## ADDED` 标记行；目标 `spec/flow/*.yaml` 可被 YAML 解析且首行非标记行；构造「标记行未剥离」的坏产物 → 校验必须失败 |
+
+### 5.2 场景测试用例补充
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S16-02 | schema 发布与契约版本一致性端到端 | Step 1→5 | launched 活跃提案 fixture | `npm pack` → 从 pack 产物取 schema → 执行 `status --format json` 与 `next --format json` → 解析 envelope 取 `data` → 用产物内 schema 逐一校验 `data` 实例 | 两命令的 **`output.data`** 均通过打包 schema 校验（校验对象 = data，另行断言 envelope 外层 `command`/`version`/`timestamp`/`data` 结构）；`data.contract.version` 与产物内两份 schema 内嵌版本一致（`1.0.0`）；本用例只验生产者侧字段与打包完整性，不验消费方保守模式（归 runlogos R5） |
+
+### 5.3 覆盖度校验补充
+
+- [ ] envelope data 顶层 contract 字段（初始 1.0.0）：UT-S16-05
+- [ ] contract.version 与打包 schema 版本一致性：UT-S16-06、ST-S16-02
+- [ ] schema 发布 / prepack 包内容验证：UT-S16-07、ST-S16-02
+- [ ] 未知枚举保守语义契约文档化：UT-S16-08
+- [ ] non-Markdown 整文件 delta 合并后产物可解析且无标记行：UT-S16-09

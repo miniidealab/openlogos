@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml, parseDocument } from 'yaml';
+import type { BaselineSeedState, BaselineIndexEntry } from './baseline-provenance.js';
 
 export type YamlParseStatus = 'recovered' | 'error';
 export type BootstrapMode = 'normal' | 'adopted';
@@ -18,11 +19,46 @@ export interface ProjectYamlModule {
   skip_phases?: string[];
   deployment_required?: boolean;
   smoke_required?: boolean;
+  /**
+   * proposal-ui-ux-first（F1）：模块级 UI 产品类型，overlay 注入与 `ui_impact` 派生的唯一数据源。
+   * 枚举 `web|desktop|mobile|cli|api|library|skills|service`，GUI 集合 = {web,desktop,mobile}。
+   * 字段缺失一律按非 GUI 处理（安全默认），保「非 GUI 零改动」不变量。
+   */
+  product_type?: string;
+  /**
+   * brownfield-adopter（S33）：模块级现状基线种子状态，枚举 `required|partial|seeded`（唯一状态字段，非布尔）。
+   * 读取兼容历史布尔 `baseline_seed_required: true` → 映射为 `required`；`false`/缺失不推断。
+   */
+  baseline_seed_state?: BaselineSeedState;
 }
 
 export interface ProjectYamlScenario {
   id: string;
+  /** add-feature-model（S34）：场景名称（供 feature 分组成员列表 `scenarios:[{id,name}]`；缺失回退为 id）。 */
+  name?: string;
   module?: string;
+  /**
+   * add-feature-model（S34）：可选 feature 归属（`F0X`）。缺失 / 指向未知 feature / 跨 module 一律
+   * 降级为所属 module 的"未分组"桶（不报错、不阻断）。不改动 `module` 现状语义。
+   */
+  feature?: string;
+}
+
+/**
+ * add-feature-model（S34）：feature 功能分组注册表元素。feature 是 module 的子分组（不跨 module），
+ * 由 AI 维护（比照 scenario_counter，CLI 不取号），仅读取侧解析。
+ */
+export interface ProjectYamlFeature {
+  id: string;
+  name: string;
+  module: string;
+  /** 可选：feature-specs 文档序号（如 `core-01`，无 `.md`/无锚点），目标缺失视为未链接。 */
+  spec?: string;
+}
+
+/** add-feature-model（S34）：全局 feature 编号计数器，AI 维护（仿 scenario_counter）。 */
+export interface ProjectYamlFeatureCounter {
+  next_id?: number;
 }
 
 export interface ProjectYamlDeploymentGate {
@@ -34,7 +70,13 @@ export interface ProjectYamlDeploymentGate {
 export interface ProjectYamlData {
   modules?: ProjectYamlModule[];
   scenarios?: ProjectYamlScenario[];
+  /** add-feature-model（S34）：可选 feature 分组注册表。 */
+  features?: ProjectYamlFeature[];
+  /** add-feature-model（S34）：可选全局 feature 计数器（AI 维护）。 */
+  feature_counter?: ProjectYamlFeatureCounter;
   deployment_gates?: Record<string, ProjectYamlDeploymentGate>;
+  /** brownfield-adopter（S33）：provenance/覆盖率的派生索引（非权威），按 module 携 source_hash 供新鲜度对账。 */
+  baseline_index?: Record<string, BaselineIndexEntry>;
 }
 
 export interface ProjectYamlReadResult {
@@ -124,8 +166,30 @@ function normalizeModule(raw: unknown): ProjectYamlModule | null {
   if (smokeRequired !== undefined) {
     module.smoke_required = smokeRequired;
   }
+  if (typeof record.product_type === 'string') {
+    module.product_type = record.product_type;
+  }
+  const seedState = normalizeBaselineSeedState(record.baseline_seed_state, record.baseline_seed_required);
+  if (seedState !== undefined) {
+    module.baseline_seed_state = seedState;
+  }
 
   return module;
+}
+
+/**
+ * 读取 baseline_seed_state 枚举，兼容历史布尔 baseline_seed_required：
+ * 枚举合法值优先；否则布尔 true → 'required'；false/缺失 → undefined（不推断）。
+ */
+export function normalizeBaselineSeedState(
+  enumValue: unknown,
+  legacyBoolean?: unknown,
+): BaselineSeedState | undefined {
+  if (enumValue === 'required' || enumValue === 'partial' || enumValue === 'seeded') {
+    return enumValue;
+  }
+  if (legacyBoolean === true) return 'required';
+  return undefined;
 }
 
 function normalizeScenario(raw: unknown): ProjectYamlScenario | null {
@@ -133,10 +197,46 @@ function normalizeScenario(raw: unknown): ProjectYamlScenario | null {
   if (!record || typeof record.id !== 'string') return null;
 
   const scenario: ProjectYamlScenario = { id: record.id };
+  if (typeof record.name === 'string') {
+    scenario.name = record.name;
+  }
   if (typeof record.module === 'string') {
     scenario.module = record.module;
   }
+  if (typeof record.feature === 'string') {
+    scenario.feature = record.feature;
+  }
   return scenario;
+}
+
+/** add-feature-model（S34）：解析单个 feature 注册项。id/name/module 必需，spec 可选。 */
+function normalizeFeature(raw: unknown): ProjectYamlFeature | null {
+  const record = asRecord(raw);
+  if (!record
+    || typeof record.id !== 'string'
+    || typeof record.name !== 'string'
+    || typeof record.module !== 'string') {
+    return null;
+  }
+  const feature: ProjectYamlFeature = {
+    id: record.id,
+    name: record.name,
+    module: record.module,
+  };
+  if (typeof record.spec === 'string') {
+    feature.spec = record.spec;
+  }
+  return feature;
+}
+
+/** add-feature-model（S34）：解析 feature_counter（仅 next_id: number 合法）。 */
+function normalizeFeatureCounter(raw: unknown): ProjectYamlFeatureCounter | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  if (typeof record.next_id === 'number') {
+    return { next_id: record.next_id };
+  }
+  return undefined;
 }
 
 function normalizeDeploymentGate(raw: unknown): ProjectYamlDeploymentGate | null {
@@ -179,6 +279,18 @@ function normalizeProjectYaml(raw: unknown): ProjectYamlData | null {
     data.scenarios = scenarios;
   }
 
+  const features = Array.isArray(record.features)
+    ? record.features.map(normalizeFeature).filter((item): item is ProjectYamlFeature => item !== null)
+    : undefined;
+  if (features !== undefined) {
+    data.features = features;
+  }
+
+  const featureCounter = normalizeFeatureCounter(record.feature_counter);
+  if (featureCounter !== undefined) {
+    data.feature_counter = featureCounter;
+  }
+
   const deploymentGates = asRecord(record.deployment_gates);
   if (deploymentGates) {
     const normalized: Record<string, ProjectYamlDeploymentGate> = {};
@@ -190,6 +302,24 @@ function normalizeProjectYaml(raw: unknown): ProjectYamlData | null {
     }
     if (Object.keys(normalized).length > 0) {
       data.deployment_gates = normalized;
+    }
+  }
+
+  const baselineIndex = asRecord(record.baseline_index);
+  if (baselineIndex) {
+    const normalized: Record<string, BaselineIndexEntry> = {};
+    for (const [moduleId, entry] of Object.entries(baselineIndex)) {
+      const rec = asRecord(entry);
+      if (!rec) continue;
+      const indexEntry: BaselineIndexEntry = {};
+      if (typeof rec.source_hash === 'string') indexEntry.source_hash = rec.source_hash;
+      if (typeof rec.human_verified === 'number') indexEntry.human_verified = rec.human_verified;
+      if (typeof rec.denominator === 'number') indexEntry.denominator = rec.denominator;
+      if (typeof rec.generated_at === 'string') indexEntry.generated_at = rec.generated_at;
+      if (Object.keys(indexEntry).length > 0) normalized[moduleId] = indexEntry;
+    }
+    if (Object.keys(normalized).length > 0) {
+      data.baseline_index = normalized;
     }
   }
 

@@ -59,6 +59,9 @@ function setupLaunchedProposal(root: string, slug = 'feat'): string {
   writeFileSync(join(dir, 'proposal.md'), proposal);
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
   writeFileSync(join(dir, 'SPEC_MERGED'), '');
+  // contract-self-description 切片1（C2）：loop_state 挂出判据收紧为四事实合取——既有 loop 激活类
+  // fixture 按合并后规格补齐 slices_approved（旧空 marker 形态，activated_at 省略、不影响既有断言）。
+  writeFileSync(join(dir, 'SLICES_APPROVED'), '');
   return dir;
 }
 
@@ -588,5 +591,133 @@ describe('S27 — 自动流程 retry / no-progress 边界', () => {
     });
     expect(data.modules[0].next_node?.id).toBe('code');
     expect(JSON.stringify(data)).not.toContain('retry-exhausted');
+  });
+});
+
+// ── contract-self-description 切片1（C2/C3）：loop_state 激活时机收紧边界 ──
+describe('S27 — loop_state 激活时机收紧（contract-self-description）', () => {
+  const APPROVED_AT = '2026-07-17T08:00:00Z';
+  const STRUCTURED = JSON.stringify({ schema: 'openlogos/slices-approved@1', approved_at: APPROVED_AT }) + '\n';
+  const CODE_PLACEHOLDER = '# 实现任务\n\n## [delta] 规格变更\n- [ ] 产出 delta\n\n## [code] 代码实现\n- [ ] 实现代码变更\n';
+  const CODE_FILLED_UNCHECKED = '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n\n## [code] 代码实现\n- [ ] 切片1：实现 A\n';
+
+  function setupProposalRaw(root: string, opts: { tasks: string; markers?: Array<[string, string]>; docsOnly?: boolean }, slug = 'feat'): string {
+    const dir = join(root, 'logos', 'changes', slug);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core' }));
+    const kind = opts.docsOnly ? '文档级' : '代码级';
+    const overview = opts.docsOnly ? '纯文档，无需代码。' : '实现 A。';
+    writeFileSync(join(dir, 'proposal.md'), ['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', kind, '',
+      '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：无', '- 影响环境：无',
+      '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', overview].join('\n'));
+    writeFileSync(join(dir, 'tasks.md'), opts.tasks);
+    if (!opts.docsOnly) {
+      mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+      writeFileSync(join(dir, 'deltas', 'test', 'core-S27-test-cases.md'), '| UT-S27-90 | 回归 |\n');
+    }
+    for (const [name, content] of opts.markers ?? []) writeFileSync(join(dir, name), content);
+    return dir;
+  }
+
+  it('UT-S27-26: writing 驻留态（无 SPEC_MERGED）不挂 loop_state，facts.spec_complete=false', async () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    setupProposalRaw(root, { tasks: CODE_PLACEHOLDER });
+    const s = runStatusJson(root);
+    expect(s.modules[0].loop_state).toBeUndefined();
+    expect(s.modules[0].active_change.facts.spec_complete).toBe(false);
+    const n = await runNextJson(root);
+    expect(n.modules[0].loop_state).toBeUndefined();
+    expect(n.modules[0].facts.spec_complete).toBe(false);
+  });
+
+  it('UT-S27-27: spec 阶段（delta-writing / ready-to-merge）均不挂 loop_state，facts 照常输出', () => {
+    for (const deltaChecked of [false, true]) {
+      const root = tempProject();
+      setSingleModule(root, 'launched');
+      const mark = deltaChecked ? 'x' : ' ';
+      setupProposalRaw(root, { tasks: `# 实现任务\n\n## [delta] 规格变更\n- [${mark}] 产出 delta\n\n## [code] 代码实现\n- [ ] 实现代码变更\n` });
+      const s = runStatusJson(root);
+      expect(s.modules[0].loop_state).toBeUndefined();
+      expect(s.modules[0].active_change.facts).toMatchObject({ spec_complete: false, slices_approved: false, has_delta_tasks: true });
+    }
+  });
+
+  it('UT-S27-28: ready-to-implement（已规划待批准）不挂 loop_state，slice_state 照常输出', () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    setupProposalRaw(root, { tasks: CODE_FILLED_UNCHECKED, markers: [['SPEC_MERGED', '']] });
+    const s = runStatusJson(root);
+    expect(s.modules[0].active_change.proposal_step).toBe('ready-to-implement');
+    expect(s.modules[0].loop_state).toBeUndefined();
+    expect(s.modules[0].slice_state).toMatchObject({ total: 1, done: 0 });
+    expect(s.modules[0].active_change.facts).toMatchObject({ spec_complete: true, slices_planned: true, slices_approved: false });
+  });
+
+  it('UT-S27-29: 四事实齐备后挂出，activated_at 读自结构化 marker', () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    setupProposalRaw(root, { tasks: CODE_FILLED_UNCHECKED, markers: [['SPEC_MERGED', ''], ['SLICES_APPROVED', STRUCTURED]] });
+    const s = runStatusJson(root);
+    expect(s.modules[0].loop_state).toMatchObject({
+      subflow_id: 'implement', until: 'code_slices_green', max_iters: 30, iteration: 0, converged: false, activated_at: APPROVED_AT,
+    });
+    expect(s.modules[0].active_change.facts).toMatchObject({ spec_complete: true, slices_planned: true, slices_approved: true, code_required: true });
+  });
+
+  it('UT-S27-30: 旧格式空 marker → 挂出但省略 activated_at（兼容）', () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    setupProposalRaw(root, { tasks: CODE_FILLED_UNCHECKED, markers: [['SPEC_MERGED', ''], ['SLICES_APPROVED', '']] });
+    const s = runStatusJson(root);
+    expect(s.modules[0].loop_state).toMatchObject({ subflow_id: 'implement', until: 'code_slices_green' });
+    expect(s.modules[0].loop_state.activated_at).toBeUndefined();
+  });
+
+  it('UT-S27-31: docs-only（code_required=false）永不挂 loop_state', () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    setupProposalRaw(root, { docsOnly: true, tasks: '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n', markers: [['SPEC_MERGED', ''], ['SLICES_APPROVED', STRUCTURED]] });
+    const s = runStatusJson(root);
+    expect(s.modules[0].active_change.facts.code_required).toBe(false);
+    expect(s.modules[0].loop_state).toBeUndefined();
+  });
+
+  it('UT-S27-32: converged 按 code_slices_green 复合判定——切片未全勾时末轮绿也不出环', () => {
+    // (a) 未全勾 + 末轮绿 → converged:false
+    const rootA = tempProject();
+    setSingleModule(rootA, 'launched');
+    const dirA = setupProposalRaw(rootA, {
+      tasks: '# 实现任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n- [ ] 切片2\n',
+      markers: [['SPEC_MERGED', ''], ['SLICES_APPROVED', STRUCTURED]],
+    });
+    writeLedger(join(dirA, 'LOOP_ITERS'), [row(1, 'pass')]);
+    const a = runStatusJson(rootA);
+    expect(a.modules[0].loop_state).toMatchObject({ until: 'code_slices_green', converged: false });
+    // (b) 全勾 + 末轮绿 → converged:true
+    const rootB = tempProject();
+    setSingleModule(rootB, 'launched');
+    const dirB = setupProposalRaw(rootB, {
+      tasks: '# 实现任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [x] 切片1\n- [x] 切片2\n',
+      markers: [['SPEC_MERGED', ''], ['SLICES_APPROVED', STRUCTURED]],
+    });
+    writeLedger(join(dirB, 'LOOP_ITERS'), [row(1, 'pass')]);
+    const b = runStatusJson(rootB);
+    expect(b.modules[0].loop_state).toMatchObject({ until: 'code_slices_green', converged: true });
+  });
+
+  it('ST-S27-10: 端到端——marker 写入前不挂、消费 slice-exit 后才挂，重复 --auto 不刷新 activated_at', async () => {
+    const root = tempProject();
+    setSingleModule(root, 'launched');
+    const dir = setupProposalRaw(root, { tasks: CODE_FILLED_UNCHECKED, markers: [['SPEC_MERGED', '']] });
+    expect(runStatusJson(root).modules[0].loop_state).toBeUndefined();
+    await runNextJson(root, true); // --auto 消费 slice-exit → 写结构化 marker
+    const markerRaw = readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8');
+    const marker = JSON.parse(markerRaw);
+    expect(marker.schema).toBe('openlogos/slices-approved@1');
+    const s = runStatusJson(root);
+    expect(s.modules[0].loop_state.activated_at).toBe(marker.approved_at);
+    await runNextJson(root, true); // 重复 --auto：marker 不重写、approved_at 不刷新
+    expect(readFileSync(join(dir, 'SLICES_APPROVED'), 'utf-8')).toBe(markerRaw);
   });
 });

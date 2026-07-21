@@ -102,6 +102,7 @@ WHITELIST_PREFIXES=(
   ".cursor/"
   "logos/skills/"
   "logos/spec/"
+  "docs/"
   ".gitignore"
   "README"
   "CLAUDE.md"

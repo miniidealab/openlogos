@@ -14,8 +14,13 @@ import { deployDone } from './commands/deploy-done.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
-import { moduleList, moduleAdd, moduleRename, moduleRemove } from './commands/module.js';
+import { moduleList, moduleAdd, moduleRename, moduleRemove, moduleSetProductType } from './commands/module.js';
+import { featureList } from './commands/feature.js';
+import { featureBackfill } from './commands/feature-backfill.js';
+import { checkUiPrototype } from './commands/check-ui-prototype.js';
+import { checkUiHashMatchCommand } from './commands/check-ui-hash-match.js';
 import { flowShow } from './commands/flow.js';
+import { baselineSeedBegin, baselineSeedCommit, baselineSeedStatus } from './commands/baseline-seed.js';
 import { watch } from './commands/watch.js';
 import { VERSION, parseFormat } from './lib/json-output.js';
 
@@ -63,6 +68,10 @@ Commands:
                        --env <name>                 Target environment label
   deploy-done        Mark the active change deployment as completed
                        --env <name>                 Target environment label
+  baseline-seed      Commit reverse-engineered baseline seed state (brownfield-adopter)
+                       begin  --module <id> --manifest <path>   Freeze logical plan + create staging
+                       commit --module <id> --run-id <id>       Validate staged bytes + atomic commit
+                       status --module <id>                     Read run/staging progress
   launch             Activate change management for a module after first development cycle
                        launch [module-id]          Specify module (auto-detects if only one exists)
   change <slug>      Create a change proposal for iterative updates
@@ -72,6 +81,10 @@ Commands:
   detect             Show CLI version and project detection info
   index              Generate an AI-ready prompt to rebuild resource_index with file-content-based desc
   module <sub>       Manage project modules (list / add <name> / rename <old> <new> / remove <name>)
+  feature list       List feature groups per module (read-only)
+                       --module <id>               Filter to a specific module
+  feature-backfill   Generate an AI prompt to backfill feature groups (does not modify yaml)
+                       --module <id>               Scope scenarios to a specific module
   flow show          Show the dev-flow orchestration (built-in or overlay-resolved)
                        --resolved                   Apply project logos/flow overlay
                        --lifecycle <initial|launched>  Pick which flow (default: inferred)
@@ -79,7 +92,7 @@ Commands:
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill)
 
 Examples:
   openlogos init my-saas-project
@@ -215,6 +228,22 @@ async function main() {
       }
       break;
     }
+    case 'baseline-seed': {
+      const sub = args[1];
+      const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
+      const manifestArg = args.includes('--manifest') ? args[args.indexOf('--manifest') + 1] : undefined;
+      const runIdArg = args.includes('--run-id') ? args[args.indexOf('--run-id') + 1] : undefined;
+      switch (sub) {
+        case 'begin': baselineSeedBegin(moduleArg, manifestArg, format); break;
+        case 'commit': baselineSeedCommit(moduleArg, runIdArg, format); break;
+        case 'status': baselineSeedStatus(moduleArg, format); break;
+        default:
+          console.error(`Unknown baseline-seed subcommand: ${sub ?? '(none)'}`);
+          console.error('Usage: openlogos baseline-seed <begin|commit|status> --module <id> [--manifest <path>] [--run-id <id>] [--format json]');
+          process.exit(1);
+      }
+      break;
+    }
     case 'module': {
       const sub = args[1];
       switch (sub) {
@@ -222,11 +251,39 @@ async function main() {
         case 'add': moduleAdd(args[2]); break;
         case 'rename': moduleRename(args[2], args[3]); break;
         case 'remove': moduleRemove(args[2]); break;
+        case 'set-product-type': moduleSetProductType(args[2], args[3], format); break;
         default:
           console.error(`Unknown module subcommand: ${sub ?? '(none)'}`);
-          console.error('Usage: openlogos module <list|add|rename|remove>');
+          console.error('Usage: openlogos module <list|add|rename|remove|set-product-type>');
           process.exit(1);
       }
+      break;
+    }
+    case 'feature': {
+      const sub = args[1];
+      const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
+      switch (sub) {
+        case 'list': featureList(format, moduleArg); break;
+        default:
+          console.error(`Unknown feature subcommand: ${sub ?? '(none)'}`);
+          console.error('Usage: openlogos feature list [--module <id>] [--format json]');
+          process.exit(1);
+      }
+      break;
+    }
+    case 'feature-backfill': {
+      const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
+      featureBackfill(format, moduleArg);
+      break;
+    }
+    case 'check-ui-prototype': {
+      const slugArg = args.slice(1).find(a => !a.startsWith('--'));
+      checkUiPrototype(slugArg, format);
+      break;
+    }
+    case 'check-ui-hash-match': {
+      const slugArg = args.slice(1).find(a => !a.startsWith('--'));
+      checkUiHashMatchCommand(slugArg, format);
       break;
     }
     default:

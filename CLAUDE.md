@@ -74,6 +74,7 @@ Step 5 分批执行提示词（可直接复用）：
 ## Active Skills
 **重要**：当你识别到当前 Phase 后，必须先读取对应的 Skill 文件（使用上方 Phase 检测逻辑中指定的路径），按 Skill 中定义的步骤逐步执行。不要跳过 Skill 文件直接生成内容。
 
+### OpenLogos 方法论 Skills
 - `logos/skills/project-init/SKILL.md` — 项目初始化与结构搭建
 - `logos/skills/prd-writer/SKILL.md` — 需求文档编写
 - `logos/skills/product-designer/SKILL.md` — 产品设计与原型
@@ -91,6 +92,9 @@ Step 5 分批执行提示词（可直接复用）：
 - `logos/skills/slice-planner/SKILL.md` — merge 后 [code] 切片规划：六维打分 + 垂直/横向判别器 + 删后续证伪门（launched 变更下 [code] 切片的唯一事实源）
 - `logos/skills/deployment-executor/SKILL.md` — verify 通过后的人类确认部署执行
 - `logos/skills/merge-executor/SKILL.md` — 通过 MERGE_PROMPT.md 执行 Delta 合并
+
+### 项目专属 Skills
+- `.claude/skills/<skill>/SKILL.md` 中的项目技能保持项目归属，不会进入 OpenLogos 官方插件或 `logos/skills/`；如存在，请按项目语义单独调用和维护。
 
 ## ⛔ 变更管理（强制执行）
 

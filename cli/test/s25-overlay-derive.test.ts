@@ -592,3 +592,75 @@ describe('S25 — overlay 驱动派生（command: status / next）', () => {
     expect(data.gate_auto_passed).toBe(false);
   });
 });
+
+// ── contract-self-description 切片3（C4/§10.5）：overlay-add dispatch 继承与完整保守默认 ──
+describe('S25 — overlay-add dispatch 继承与保守默认（contract-self-description）', () => {
+  async function nextJson(root: string): Promise<any> {
+    const restoreCwd = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
+    try { await next('json'); } finally { cap.restore(); ex.mockRestore(); restoreCwd(); }
+    return JSON.parse(cap.logs[cap.logs.length - 1]).data;
+  }
+  const ADD_DECLARED = [
+    'extends: builtin:initial@v1', 'overlay:',
+    '  - op: add', '    before: prd',
+    '    node: { id: kickoff, name: 启动门, done_when: "file:logos/resources/KICKOFF",',
+    '      dispatch: { idempotent: true, timeout_seconds: 600, artifacts_hint: ["out.md"] },',
+    '      requires_reviewed: ["proposal"] }',
+  ].join('\n');
+  const ADD_UNDECLARED = ADD_KICKOFF_BEFORE_PRD; // 无 dispatch 声明
+
+  it('UT-S25-22: overlay-add 显式声明 dispatch/requires_reviewed → resolved 原样透传、不被保守默认覆盖', async () => {
+    const root = tempProject();
+    setInitialModule(root);
+    writeOverlay(root, 'initial', ADD_DECLARED);
+    const data = await nextJson(root);
+    expect(data.modules[0].next_node).toMatchObject({
+      id: 'kickoff',
+      dispatch: { idempotent: true, timeout_seconds: 600, artifacts_hint: ['out.md'] },
+      requires_reviewed: ['proposal'],
+    });
+  });
+
+  it('UT-S25-23: overlay-add 未声明 dispatch → 输出完整保守默认对象（idempotent:false + defaults 超时 + artifacts_hint:[]）', async () => {
+    const root = tempProject();
+    setInitialModule(root);
+    writeOverlay(root, 'initial', ADD_UNDECLARED);
+    const data = await nextJson(root);
+    const nn = data.modules[0].next_node;
+    expect(nn.id).toBe('kickoff');
+    // 完整保守默认：三字段齐备、无缺失分支；artifacts_hint:[] = 「产物未知」合法契约语义（非缺省缺失）
+    expect(nn.dispatch).toEqual({ idempotent: false, timeout_seconds: 900, artifacts_hint: [] });
+    expect('requires_reviewed' in nn).toBe(false);
+  });
+
+  it('UT-S25-24: 项目 overlay 覆盖 defaults.dispatch.timeout_seconds → 物化进未声明节点（唯一默认值源）', async () => {
+    const root = tempProject();
+    setInitialModule(root);
+    writeOverlay(root, 'initial', ['extends: builtin:initial@v1',
+      'defaults:', '  dispatch:', '    timeout_seconds: 120', 'overlay:',
+      '  - op: add', '    before: prd',
+      '    node: { id: kickoff, name: 启动门, done_when: "file:logos/resources/KICKOFF" }'].join('\n'));
+    const data = await nextJson(root);
+    expect(data.modules[0].next_node.dispatch).toEqual({ idempotent: false, timeout_seconds: 120, artifacts_hint: [] });
+  });
+
+  it('ST-S25-06: 声明 / 未声明 dispatch 两路端到端——dispatch 恒为完整对象、无二义分支', async () => {
+    // 路 A：显式声明
+    const a = tempProject();
+    setInitialModule(a);
+    writeOverlay(a, 'initial', ADD_DECLARED);
+    const da = await nextJson(a);
+    expect(da.modules[0].next_node.dispatch).toEqual({ idempotent: true, timeout_seconds: 600, artifacts_hint: ['out.md'] });
+    // 路 B：未声明 → 保守默认完整对象
+    const b = tempProject();
+    setInitialModule(b);
+    writeOverlay(b, 'initial', ADD_UNDECLARED);
+    const db = await nextJson(b);
+    expect(db.modules[0].next_node.dispatch).toEqual({ idempotent: false, timeout_seconds: 900, artifacts_hint: [] });
+    // 两路 next_node 均含完整三字段（结构性断言，schema 可执行校验由切片5 落地）
+    for (const d of [da, db]) {
+      const disp = d.modules[0].next_node.dispatch;
+      expect(Object.keys(disp).sort()).toEqual(['artifacts_hint', 'idempotent', 'timeout_seconds']);
+    }
+  });
+});

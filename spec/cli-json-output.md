@@ -30,6 +30,149 @@ OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect`、`deploy-do
 }
 ```
 
+**`contract` 契约版本握手（contract-self-description）**：`status` / `next` 的 `data` 顶层新增 `"contract": {"version": "1.0.0"}`（语义化契约版本，独立于 CLI 版本演进；信封顶层 `version` 仍为 CLI 版本串，两者互不替代、不得混用）。
+
+- **初始 `contract.version = "1.0.0"`**：本次交付的契约形态即 1.0.0；此前无 `contract` 字段的历史输出视为「0.x 前契约时代」，消费方按缺字段保守分支处理。
+- **SemVer 规则**：**major** = 必填字段删除/改义、闭合枚举语义变化（含移除值）、既有字段挂出判据变更；**minor** = 向后兼容扩展（新增可选字段、闭合枚举新增值）；**patch** = 不改形态与语义的澄清。
+- **版本-schema 一一映射**：`spec/schema/status.schema.json`、`spec/schema/next.schema.json`（内嵌契约版本号，随 npm prepack 打包）；响应 `contract.version` 与打包 schema 版本一致，CI 校验。详见「JSON Schema 发布与契约版本（contract-self-description）」一节。
+- **消费方约定（规范性引用，验收归 runlogos R5）**：未知 major / 缺 `contract` 字段 → 保守模式（仅 next 驱动普通推进 + 看门狗，启发式判定降级为仅观察）；契约内任何枚举遇未知值 → 保守分支。本条为规范性引用：生产者侧（本仓）不验收消费方行为，见「JSON Schema 发布与契约版本（contract-self-description）」的验收边界。
+
+**主动破例声明（golden 全量重拍）**：新增 `data` 顶层 `contract` 对象破坏既有「data 顶层逐字节不变（golden 零漂移）」不变量——**全部 9 个 golden 基线快照**（`cli/test/golden-baseline.test.ts`）重拍。这是本提案唯一的全量 golden 重拍点，破坏性集中在此，随大版本发布。
+
+### 1.3 JSON Schema 发布与契约版本（contract-self-description）
+
+status / next 机器契约随包发布 JSON Schema，并以 CI 把「契约自描述」变成可证伪判据。
+
+**Schema 发布**：
+
+- CLI 仓发布 status/next 的 JSON Schema：`spec/schema/status.schema.json`、`spec/schema/next.schema.json`（内嵌契约版本号，随 `contract.version` 演进，见 §1.2 版本-schema 一一映射）。
+- schema 文件随 npm `prepack` 打包进发布产物，附**包内容验证测试**：打包产物必须包含两份 schema 文件，且其内嵌版本号与响应 `contract.version` 一致。
+
+**版本一致性 CI 校验**：
+
+- 响应 `contract.version` 与打包 schema 版本一一对应（§1.2 映射规则的 CI 落点）；不一致 → CI 失败。
+- 每个注册步骤/节点必须通过 schema 校验（含 `step_meta` / `dispatch` 必填；overlay-add 未声明 `dispatch` 走保守默认后同样过校验——节点 schema 校验按完整对象通过）。
+
+**生产者一致性漂移注入测试（反面锚）**：
+
+- 在 CLI 注册全新步骤（如 `x-future-step`, `phase=pre-implement`）→ 断言：
+  - (a) 注册表 / step_meta / schema 三方同步、schema 校验通过；
+  - (b) **该 pre-implement 步骤下 `loop_state` 不输出**（§3.9 激活判据的反面锚——`pre-implement + loop_state` 是非法组合，生产者测试断言其不存在，而非将其固化为合法夹具）。
+
+**验收边界（消灭跨仓越权）**：
+
+- openlogos 本提案只验**生产者契约**：注册表/step_meta/schema 三方同步；`pre-implement 步骤不输出 loop_state` 的反面锚（漂移注入 x-future-step 生产者一致性测试）；contract.version 与打包 schema 一致；dispatch/facts 字段来源正确；包内 schema 完整。
+- 消费方保守模式 / 零误杀 / suspect 可逆态验收归 runlogos R5 提案（用本提案发布的新生产者夹具喂旧/现役消费者做韧性测试）；双向契约测试是跨仓总方案完成定义，不是本仓单仓的完成判据。
+
+### 1.4 modules[].features feature 分组契约（add-feature-model）
+
+status / next 的 `data.modules[]` 新增**可选字段 `features`**，承载 module → feature → scenario 三层模型的 feature 分组。按 §1.2 SemVer 规则，新增可选字段属 **minor**（`1.0.0` → `1.1.0`）。
+
+> **版本策略：条件版本（范围锚所有者裁定 = B，回应 delta-F1）**：为**真正满足"feature 全缺失时逐字节一致"验收**（含 `contract.version` 字段），采用**条件版本发射**——`data.contract.version` = **`1.1.0` 当且仅当**本次响应至少含一个 `modules[].features` 字段；否则**保持 `1.0.0`**。
+> - **纯 pre-feature 项目**（响应无任何 `features`）→ `contract.version` 仍为 `1.0.0`，输出**逐字节完全不变**（含版本字段），真正零漂移、无 golden 重拍。
+> - **带 feature 的响应**（≥1 module 输出 `features`）→ `contract.version` = `1.1.0`。
+> - **两版契约各自自洽**：`features` 出现 ⟺ `contract.version==1.1.0`；`1.0.0` 响应**永不含** `features`。这不构成"同版本两形态"——1.0.0 与 1.1.0 是两个自洽契约，响应按 contract-self-description 声明各自实际满足的版本。
+> - **schema 与 CI**：两版契约同时打包并存（见下"schema 版本并存"）；一一映射 CI 校验调整为：**响应 `contract.version` ∈ schema 支持的版本集**，且 **`features` present ⟹ version `1.1.0`**、**version `1.0.0` ⟹ 无 `features`**。npm prepack 包内容验证覆盖两版。
+
+#### 字段形态
+
+```json
+"modules": [
+  {
+    "id": "core",
+    "features": [
+      {
+        "id": "F01",
+        "name": "项目生命周期与初始化",
+        "spec": "core-01",
+        "scenarios": [
+          { "id": "S01", "name": "初始化 OpenLogos 项目" },
+          { "id": "S14", "name": "切换到 launched 生命周期" }
+        ]
+      },
+      {
+        "id": "__ungrouped__",
+        "name": "未分组",
+        "spec": null,
+        "scenarios": [ { "id": "S30", "name": "cmd: 放开到 verify/deploy/smoke gate" } ]
+      }
+    ]
+  }
+]
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `modules[].features` | array \| 省略 | 否 | **省略当且仅当**该 module 既无注册 feature（`features[]` 中 `module==本 module`）**且**其下无任何场景带 `feature` 键。**当响应所有 module 都省略 `features`（纯 pre-feature 项目）→ `contract.version` 保持 `1.0.0`、输出逐字节完全不变**；任一 module 输出 `features` → 响应 `contract.version=1.1.0`。否则**输出**（见下"输出条件与降级桶"，回应 delta-F10） |
+| `features[].id` | string | 是 | 合法 `F0X`（`^F(?:0[1-9]\|[1-9]\d+)$`，项目全局唯一，禁 `F00`/前导零如 `F001`）**或**固定保留伪 feature `"__ungrouped__"` |
+| `features[].name` | string | 是 | feature 名称；未分组桶为「未分组」 |
+| `features[].spec` | string \| null | 是 | feature-specs 文档序号（如 `core-01`），无链接时为 `null`（键恒在场） |
+| `features[].scenarios` | array | 是 | **稳定场景成员列表**，元素 `{id,name}`；空成员为 `[]` |
+
+#### 语义约束
+
+- **coverage 基准**：`features[].scenarios` 是**稳定成员列表（与 phase / module 生命周期无关）**，在 initial / launched / 独立 `feature list` 三种上下文取值一致；**不复用**依附具体 phase/node 计算的 `scenario_coverage`。phase 维度覆盖率仍只由 `modules[].phase_progress[].scenario_coverage` 承载，不下放 feature 层。
+- **输出条件与降级桶（回应 delta-F10）**：status/next 的 `modules[].features` **省略当且仅当**该 module 既无注册 feature、**且**其下无任何场景带 `feature` 键（纯 pre-feature module）。**只要**该 module 有 ≥1 个注册 feature，**或**有 ≥1 个场景带 `feature` 键（含未知/跨 module 的悬空引用），就**必须输出** `features`——因此显式写了未知/跨 module 引用的场景**一定能**出现在末位 `__ungrouped__` 桶，绝不因"无注册 feature"被省略而丢失降级桶。当响应任一 module 输出 `features` 时该响应 `contract.version=1.1.0`；全响应无 `features` 时保持 `1.0.0`（条件版本，见上）。
+- **schema 版本并存（条件版本，回应 delta-F1）**：`status.schema.json` / `next.schema.json` 的 `contract.version` 由 `const "1.0.0"` 放宽为 `enum ["1.0.0","1.1.0"]`，并加条件约束 `features` present ⟹ `contract.version=="1.1.0"`、`contract.version=="1.0.0"` ⟹ module 无 `features`。`x-contract-version` 标为向后兼容 superset 的最高版本 `1.1.0`，`$comment` 说明本 schema 同时校验 1.0.0 与 1.1.0 响应；一一映射 CI 校验相应调整为"响应 version ∈ schema 支持集 + features⟹1.1.0"。
+- **空成员 feature 展示规则（回应 delta-F4）**：合法模型允许先登记 F01、再逐步归属。**输出时**始终列出该 module 下全部注册 feature（空成员 `scenarios:[]`，不过滤）；末位 `__ungrouped__` 仅当该 module 有 ≥1 个未归属/降级场景时出现。
+- **"未分组"= 固定保留伪 feature**：机器值 `id:"__ungrouped__"`（双下划线包裹，不匹配 `^F(?:0[1-9]|[1-9]\d+)$` 合法 ID，防冲突），恒排 `features[]` **末位**。
+- **feature item 形态由 schema 锁定（回应 delta-F8）**：`status.schema.json` / `next.schema.json` 的 `$defs/feature` 将 `id`/`name`/`spec`/`scenarios` 全部列为 `required`（`spec` 类型 `["string","null"]`，无链接为 `null` 但键在场），`id` 用 `anyOf(pattern "^F(?:0[1-9]|[1-9]\\d+)$"`（**规范编号**：`F01`…`F09`/`F10`…`F99`/`F100`+，拒 `F00`/`F0`/`F001` 等前导零非规范编号）`, const "__ungrouped__")`，杜绝非法 id / 缺 spec 通过校验。
+- **稳定排序**：合法 feature 按 `features[]` YAML 声明顺序；其名下 `scenarios` 按 `scenarios[]` YAML 顺序。
+- **归属降级**：`scenario.feature` 缺失 / 指向未知 feature / 指向跨 module 的 feature —— 三态一律入所属 module 的"未分组"桶（不报错、不阻断），且据上"输出条件"，即使 module 无注册 feature 也会因存在 `feature` 键而输出该桶。
+- **next 透传**：`next` 的 `modules[].features` 与 status 输出的 feature 集合一致（同一派生），`next` 不在 feature 层改变"下一步"选择逻辑；文本与 JSON 同构。
+
+#### feature list / feature-backfill 命令契约
+
+- **`openlogos feature list [--module <id>] [--format json]`**（只读，专用分组视图，回应 delta-F10）：
+  - 成功 → `makeEnvelope("feature list", data)`，`data.modules[].features[]` 的 item 形态与上文同构。**feature list 作为专用分组视图无 legacy golden、不受零漂移约束**：对每个 module 列出全部注册 feature（空成员 `scenarios:[]`）+ 末位 `__ungrouped__`（当且仅当该 module 有 ≥1 个未归属/降级场景）。因此 module 有场景但无注册 feature 时返回 `features:[{"id":"__ungrouped__",...}]`（**非** `[]`）。
+  - `features: []` **仅**用于**真正空 module**——既无注册 feature、也无任何场景成员。
+  - 与 status/next 关系：三命令对**已输出**的 feature 集合一致；差异仅在 status/next 为保零漂移，对纯 pre-feature 项目省略 `features` 字段，而 feature list 始终展示分组（含 `__ungrouped__`）。
+  - `--module <id>` 未注册 → 通用错误 envelope（§6），错误码 **`MODULE_NOT_FOUND`**，输出 stderr、非零退出码。
+- **`openlogos feature-backfill [--module <id>] [--format json]`**（生成 prompt，不改 yaml）：
+  - 文本模式打印 prompt 路径与引导语；`--format json` 返回 `{ prompt_path, scenarios_total, ungrouped_total, features_existing }`。
+  - 幂等：重复运行覆盖同一 `logos/feature-backfill-prompt.md`，退出码 0。
+
+
+### 1.5 feature-backfill 纳入逆向候选契约（feature-backfill-brownfield）
+
+扩展 §1.4 的 `feature-backfill` 命令契约，接回 S33 逆向**场景**候选（S34 能力增量，向后兼容 = 响应新增字段）。
+
+- **读侧扩展（只筛 scenario-candidates，回应 F1）**：`feature-backfill` 生成 prompt 时,除 `scenarios[]` 外**只纳入逆向场景候选**——因候选无 `kind` 字段,权威筛选 = 读**已提交 run manifest** 的 `kind==scenario-candidates → target_path`,只取这些文档 `## 逆向基线来源` 的 `candidates[]`,筛选谓词**固定 `state=="active" && verified==false`**（`verified:true` 已人工确认候选**排除**、不计数);纳入项全部 `verified:false`,prompt 中如实标注"逆向候选 / verified:false / 未进 scenarios[]"。system-map 候选**不纳入**。
+- **提交恢复读锁（回应 F2）**：候选筛选/计数/prompt 构造在 `withRecoveredReadLocks` 同一临界区内完成;无法取锁/恢复 → 走通用错误 envelope（§6),错误码 **`BASELINE_COMMIT_IN_PROGRESS`**、输出 stderr、非零退出、**不写/不覆盖** prompt。
+- **输出字段(必填,回应 F4)**：`feature-backfill --format json` 成功响应的 `data` **必含** `baseline_candidates_total`（integer,`minimum: 0`,键恒在场):**最终写入 prompt 的场景候选数**（`kind + module + state + verified + 去重` 全部过滤后)。完整成功形态:
+  ```json
+  { "prompt_path": "logos/feature-backfill-prompt.md", "scenarios_total": 0, "ungrouped_total": 0, "features_existing": 0, "baseline_candidates_total": 4 }
+  ```
+  零候选时 `baseline_candidates_total: 0`（**键仍在场**,区分"零候选"与"旧实现无键")。
+- **`--module` 口径(回应 F5)**：传 `--module` 只纳入该 module 候选、未注册 → 错误码 `MODULE_NOT_FOUND`(与 `feature list` 一致);无 `--module` 按 `modules[]` 顺序聚合全项目;`baseline_candidates_total` 恒等于过滤后最终纳入数。
+- **降级(回应 F6，唯一行为)**：索引 stale → 锁内从权威文档重算(成功、照常纳入);**权威章节解析失败 → 走通用错误 envelope、错误码 `BASELINE_PROVENANCE_INVALID`、非零退出、不写/不覆盖 prompt**（不以 `baseline_candidates_total=0` 冒充非存量零候选、不走 warning 成功)。
+- **红线**：本命令仍**只生成 prompt、不改 `logos-project.yaml`、不改 `## 逆向基线来源` 章节、不触发覆盖率副作用**;逆向候选进 `scenarios[]`（含 scenario 取号/计数器推进）与 feature 分配由 AI 按 prompt 回写,且**不改动 provenance `verified`**（导航 ≠ 可信度）。
+- **status/next 契约不变**：status/next 仍只读 `scenarios[]`、不吞逆向候选;条件版本（§1.4）不变。
+
+### 1.5.1 feature-backfill 错误 envelope 富化：触发文件路径 + 分类（provenance-scan-canonical-recompute）
+
+扩展 §1.5：`feature-backfill` 报 `BASELINE_PROVENANCE_INVALID` 时，通用错误 envelope（§6）的 `error` 对象**新增两字段**（向后兼容 = 新增字段；错误码语义、非零退出、「不写/不覆盖 prompt」红线均不变）：
+
+- **`paths`**（`string[]`，键恒在场，可为空数组）：本次判定为 provenance 迹象、导致失败的文件**相对项目根路径**清单，确定性排序（按路径升序）。
+- **`reason`**（`string` 闭合枚举）：失败原因分类——
+  - `unparseable`：权威/约定目标 `## 逆向基线来源` 坏 fenced YAML（解析失败）；
+  - `unclassifiable-evidence`：有 provenance / `baseline_index` 迹象，但无 committed run manifest 且无约定命名文件（`<module>-scenario-candidates.md`），不可定类。
+
+错误形态示例：
+
+```json
+{
+  "error": {
+    "code": "BASELINE_PROVENANCE_INVALID",
+    "message": "reverse baseline provenance section invalid/unparseable for module(s): core. reason=unparseable; paths=[logos/resources/reference/x.md]",
+    "paths": ["logos/resources/reference/x.md"],
+    "reason": "unparseable"
+  }
+}
+```
+
+- **与扫描侧 canonical 采信（core-06 §一.A / feature-specs §2.27.10）配合**：格式合法但 hash 失配的编造/示例 key 在候选采信阶段即被排除、**不再进入本错误路径**（此前会误报）。进入本路径者必为真实坏结构或真不可定类，`paths` 直指问题文件。
+- **消费方约定**：`reason` 遇未知值 → 保守分支（当作一般 provenance 失败处理）；`paths` 缺失 → 视为空清单（旧实现无该字段）。
 ---
 
 ## 2. `openlogos detect --format json`
@@ -245,6 +388,10 @@ openlogos status --format json  # JSON 格式
 | `modules[].active_change.slug` | string | 是 | 提案 slug |
 | `modules[].active_change.proposal_step` | string | 是 | 提案阶段：`"writing"` \| `"ready-to-delta"` \| `"delta-writing"` \| `"ready-to-merge"` \| `"merge-generated"` \| `"ready-to-implement"` \| `"coding"` \| `"ready-to-verify"` \| `"verify-passed"` \| `"verify-failed"` \| `"ready-to-deploy"` \| `"deploy-done"` \| `"ready-to-smoke"` \| `"smoke-passed"` \| `"smoke-failed"`；`"implementing"` / `"in-progress"` 为旧版本兼容值。`ready-to-implement`（split-slice-planner-stage 新增）置于 `"merge-generated"` 与 `"coding"` 之间，详见 §3.10 |
 | `modules[].active_change.proposal_step_label` | string | 是 | 提案阶段本地化标签 |
+| `modules[].active_change.step_meta` | object | 是（`active_change` 非 null 时） | 步骤自描述元数据 `{"phase", "kind"}`，来自步骤注册表（唯一铸造点），见下文「step_meta 与步骤注册表（contract-self-description）」 |
+| `modules[].active_change.step_meta.phase` | string | 是 | `"pre-implement"` \| `"implement"` \| `"post-implement"`；小闭合枚举，消费方遇未知值必须走保守分支（见 §1.2 消费方约定） |
+| `modules[].active_change.step_meta.kind` | string | 是 | `"produce"` \| `"gate"` \| `"command-required"` \| `"residency"`；小闭合枚举，消费方遇未知值必须走保守分支 |
+| `modules[].active_change.facts` | object | 是（`active_change` 非 null 时） | CLI 权威计算的确定性事实块（全布尔，仅活跃提案时输出），见下文「facts 权威事实块（contract-self-description）」 |
 | `modules[].active_change.has_proposal` | boolean | 是 | 是否存在 proposal.md |
 | `modules[].active_change.has_tasks` | boolean | 是 | 是否存在 tasks.md |
 | `modules[].active_change.tasks_checked` | number | 是 | 已勾选任务数 |
@@ -258,6 +405,8 @@ openlogos status --format json  # JSON 格式
 | `modules[].active_change.deployment_decision_conflict` | boolean | 是 | `proposal.md` 与 `[deploy]` section 是否冲突 |
 | `modules[].active_change.deployment_decision_conflict_reason` | string \| null | 否 | 冲突原因摘要；无冲突时为 null |
 | `modules[].suggestion` | string | 是 | 针对该模块的下一步建议（本地化文本） |
+| `modules[].baseline_seed_state` | string | 否（非 adopted 模块省略；**adopted 模块恒输出**） | brownfield-adopter（S33）：`required｜partial｜seeded`；`bootstrap=adopted` 模块**无条件输出**（含活跃提案与 `baseline_commit_in_progress` 降级分支）——explicit 显式值优先，yaml 缺省（legacy）时经共享 helper `effectiveBaselineSeedState` 派生（有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`，见架构 core-06 §4.1）；**无 `unknown` 取值、无「缺省 → 字段缺失」路径**（baseline-seed-legacy-default-unify）。不新增 `baseline_seed_state_source` 字段 |
+| `modules[].baseline_coverage` | object | 否 | S33 现状基线覆盖率；仅 `bootstrap=adopted` 且基线派生可用时输出（不随 `baseline_seed_state` 的恒输出扩展），`status`/`next` 字段一致。见 §3.12 |
 | `active_proposals` | array | 是 | 活跃变更提案列表 |
 | `active_proposals[].name` | string | 是 | 提案目录名 |
 | `active_proposals[].has_proposal` | boolean | 是 | 是否存在 proposal.md |
@@ -272,6 +421,44 @@ openlogos status --format json  # JSON 格式
 | `yaml_diagnostics.parse_status` | string | 是 | `"recovered"` 或 `"error"`；`recovered` 表示已从 AST 恢复可用的 `modules` 等数据 |
 | `yaml_diagnostics.messages` | string[] | 是 | 诊断消息摘要 |
 
+**step_meta 与步骤注册表（contract-self-description）**
+
+- `modules[].active_change.step_meta = {"phase", "kind"}`；`phase ∈ pre-implement|implement|post-implement`；`kind ∈ produce|gate|command-required|residency`。
+- 唯一铸造点 = `cli/src/lib/step-registry.ts`（收敛 `detectProposalStep` 与 `detectProposalStepViaFlow` 双镜像及 status/next 覆盖点）；任何代码路径产生 `proposal_step` 必须经注册表。CI lint：字面量赋 proposal_step 不经注册表 → 测试失败。
+- **不新增 proposal_step 枚举值**；`step_meta` 不构成第二枚举——phase/kind 为小闭合枚举，消费方遇未知值必须按保守分支处理（§1.2），CLI 新增值不再构成对旧 driver 的破坏。
+- 全量注册表（`proposal_step` → phase/kind 映射，与实现中 `step-registry.ts` 一一对应）：
+
+| proposal_step | phase | kind |
+|---|---|---|
+| writing | pre-implement | produce |
+| ready-to-delta | pre-implement | gate |
+| delta-writing | pre-implement | produce |
+| ready-to-merge | pre-implement | gate |
+| merge-generated | pre-implement | command-required |
+| spec-complete-required | pre-implement | command-required |
+| test-id-required | pre-implement | residency |
+| ready-to-implement | pre-implement | residency |
+| coding | implement | produce |
+| ready-to-verify | implement | command-required |
+| verify-failed | implement | residency |
+| verify-passed | post-implement | residency |
+| ready-to-deploy | post-implement | gate |
+| deploy-done | post-implement | residency |
+| ready-to-smoke | post-implement | command-required |
+| smoke-passed | post-implement | residency |
+| smoke-failed | post-implement | residency |
+| implementing（旧兼容） | implement | produce |
+| in-progress（旧兼容） | implement | produce |
+
+**facts 权威事实块（contract-self-description）**
+
+- `modules[].active_change.facts = {"spec_complete", "slices_planned", "slices_approved", "code_required", "has_delta_tasks", "verify_pass"}`（全布尔，仅活跃提案时输出）。
+- CLI 权威计算：spec_complete = SPEC_MERGED/MERGED 在场；slices_planned = tasks.md `[code]` 含真实脱占位条目；slices_approved = SLICES_APPROVED marker 在场；code_required / has_delta_tasks 沿现行判定；verify_pass = VERIFY_PASS marker。单一事实源在 CLI，driver 的自读/私有解析降级为低版本 fallback。
+- §3.9 的 `loop_state` 激活判据与 facts 同源（同一份计算，不允许两处实现），driver 可直接从 facts 读出「implement 是否已进入」。
+- `facts.code_required` 与既有 `active_change.code_required`（§3.11）取值恒相等（同一谓词）；facts 与既有 `consistency` 契约对齐、不矛盾。
+
+**扩展口径（golden）**：`step_meta` / `facts` 为 `active_change` 新增 key，走 §3.11(2) 既有可控扩展口径——仅在 `active_change` 非 null 时出现，**无活跃提案的项目其 `next`/`status` JSON 不新增任何字段、既有 golden 不漂移**；有活跃提案的受影响 golden 须同步更新。
+
 ### 3.4 解析语义
 
 `yaml_diagnostics.parse_status = "recovered"` 时，`modules` 必须保留，`lifecycle` 必须按恢复后的模块状态派生，不得因为 YAML 局部损坏而退回 `initial`。若无法恢复任何模块信息，则 CLI 必须返回明确的 `yaml_diagnostics`，而不是静默吞错。
@@ -279,6 +466,35 @@ openlogos status --format json  # JSON 格式
 ### 3.5 冲突语义
 
 `deployment_decision_conflict=true` 表示 CLI 检测到活跃提案的 `proposal.md` 部署影响声明与 `tasks.md` 的 `[deploy]` section 不一致。客户端必须将其视为阻塞态，提示用户修正提案或任务清单，不得继续展示部署、smoke 或归档主动作。
+
+### 3.12 现状基线覆盖率字段（baseline_coverage，brownfield-adopter S33）
+
+`bootstrap=adopted` 且无活跃提案的模块下，`status`/`next --format json` 在 `modules[].baseline_coverage` 输出现状基线覆盖率对象（`next` 挂 `modules[].baseline_coverage`，legacy 无 `modules[]` 才回退顶层 `baseline_coverage`）。字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `state` | string | `required｜partial｜seeded`，映射模块级 `baseline_seed_state` |
+| `incomplete` | boolean | **恒存在为布尔**（稳定 shape，不省略）：`state==partial` → `true`，`required`/`seeded` → `false`。`partial` 时不得用已落盘候选当最终分母算精确百分比 |
+| `human_verified` | number | 分子 = 该 module 下 `verified:true` 的 `active` 候选数 |
+| `denominator` | number | 分母 = `active ∪ tombstone`（`retired` 不计入）；`0` 表示覆盖率 `n/a` |
+| `tombstones` | number | 分母内未经人工确认的 tombstone 数 |
+| `human_verified_delta` | number | 与派生索引记录的上次 `human_verified` 之差（无索引为 0）；**禁止把分母波动解读为新增人工确认** |
+| `source` | string | `derived-index`（用了 `baseline_index` 派生索引）｜`documents`（直接从文档权威章节重算） |
+| `freshness` | string | `fresh｜stale｜unknown`；索引 `source_hash` 与文档实时聚合 hash 不符时为 `stale`，此时不输出貌似精确的百分比 |
+| `recovery` | object | **仅 `state==partial` 且存在活跃提案时出现**：结构化恢复 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change |
+| `commit_in_progress` | boolean | 仅恢复门无法取模块锁（提交进行中）时置 `true`：机器消费者**不把当前集合当权威**（不据其算覆盖率/报 seeded） |
+
+**partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `openlogos baseline-seed` 恢复入口；**有活跃提案**时 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory、不阻断 change。**只读已合并主文档**：覆盖率从各产物 `## 逆向基线来源` 章节实时聚合（可再经 `logos-project.yaml` 的 `baseline_index` 缓存加速 + 新鲜度对账），merge 前的未合并 delta 不计入；机器读取入口读前先经恢复门（取模块锁 + 检测未终结 journal → 先恢复，否则 `baseline_commit_in_progress`）。`verify --format json` 另在 `data.baseline_warnings`（string[]）输出对 `verified:false` 逆向 spec 的软告警——**不改 `gate.result`、不写 `VERIFY_FAIL`、不硬失败**（grandfather 豁免存量代码）。
+
+### 3.13 `openlogos baseline-seed --format json`（brownfield-adopter S33）
+
+`baseline_seed_state` 与逆向目标文件的**唯一写入入口**，两阶段 staging。三子命令共用 envelope `command: "baseline-seed"`：
+
+- **begin**：`data = { ok, run_id, module, baseline_seed_state, expected, staging }`（`baseline_seed_state` 为当前值，begin 不下调）。
+- **commit**：`data = { ok, run_id, module, baseline_seed_state, committed:[], missing:[], invalid:[] }`；`baseline_seed_state` = `seeded`（必需 kind 齐 + 全部合法）｜`partial`（≥1 未全，不提交不完整集合）｜保持。
+- **status**：`data = { ok, module, baseline_seed_state, run_id, staged, expected, missing:[] }`。
+
+**错误 envelope**（协议错误非零退出）：`error.code ∈ { missing_required_kind, path_escape, candidate_key_mismatch, unknown_run, stale_run, run_locked, baseline_commit_in_progress, invalid_manifest }`；错误时不写 `baseline_seed_state`、不提交任何 staged 文件。
 
 ### 3.6 overlay 派生字段（overlay_nodes / current_node）
 
@@ -388,25 +604,36 @@ openlogos status --format json  # JSON 格式
 
 ### 3.9 loop_state 派生字段（M2 切片 2）
 
-implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代（`max_iters > 1`）后，机器契约新增 `loop_state`。
+implement（code/verify）子流程的 resolved loop 定义满足 `max_iters > 1`（builtin launched 默认 `max_iters:30`，或经 overlay `set-loop`）时，机器契约可输出 `loop_state`；是否真正挂出由下方激活判据决定。
 
-**`modules[].loop_state`**（object \| 省略；**仅 loop 激活时输出**）：
+**激活判据（contract-self-description，主动破例收紧）**：`loop_state` 挂出 **iff** `code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved`（与 facts 同一份计算，见 §3.3「facts 权威事实块」；`slices_approved` 的权威事实 = `SLICES_APPROVED` marker 在场）；否则省略字段。四条缺一即不挂出：
+
+- `ready-to-implement`（切片已规划、待 slice-exit 批准）的合法驻留态**不挂**；
+- docs-only / no-code 提案（`code_required=false`）**永不挂**，不因 launched flow 含 loop 定义而挂出；
+- spec 阶段（`writing` 至 `merge-generated` / `spec-complete-required` / `test-id-required`）不挂。
+
+**主动破例声明**：本判据破坏既有「launched 下 `loop_state` 常驻输出」不变量（本节旧口径「launched 模块下常驻输出」、`spec/flow-spec.md` §6/§12.2、S27「常驻输出」措辞——各处同步修订）。收紧后 spec 阶段 / 切片未规划 / 切片待批准时不再输出 `loop_state`；launched 活跃提案 golden 系列（用例 5/6/8/9）重拍。**`slice_state` 常驻口径（§3.10(2)）不变**，两者激活判据分别写明、不得互相推导。
+
+**`modules[].loop_state`**（object \| 省略；**仅按上方激活判据挂出时输出**）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `loop_state.subflow_id` | string | 激活 loop 的 subflow id（如 `"implement"`）|
-| `loop_state.until` | string | 收敛谓词，本切片恒为 `"tests_green"` |
+| `loop_state.until` | string | 收敛谓词，**闭合枚举 `"tests_green" \| "code_slices_green"`**（builtin launched 默认 `"code_slices_green"`；schema 锁定双值，消费方遇未知值走保守分支）|
 | `loop_state.max_iters` | number | resolved loop 的迭代上限（整数 ≥ 1；> 1 才会出现本对象）|
 | `loop_state.iteration` | number | 已完成的 verify 轮次（= `LOOP_ITERS` 按当前 module 过滤后的行数）|
-| `loop_state.converged` | boolean | 末轮测试绿（账本末行 `result == "pass"`）|
+| `loop_state.converged` | boolean | **按 resolved `until` 求值**（两分支，无无条件公式）：`tests_green` → 末轮测试绿（账本末行 `result == "pass"`）；`code_slices_green` → `section_complete:code ∧ tests_green`（`[code]` 全勾 且 末轮绿；空 `[code]` 退化为纯 `tests_green`）。派生细节见 `spec/flow-spec.md` §6/§12.2/§12.4 |
 | `loop_state.escalated` | boolean | `iteration >= max_iters && !converged`（达上限仍未绿）|
+| `loop_state.activated_at` | string \| **省略** | implement loop 激活时刻（ISO 8601，审计用），读自结构化 `SLICES_APPROVED` marker 的 `approved_at`；旧格式空 marker → **省略该字段**（兼容） |
 | `loop_state.exhausted_skippable` | boolean \| **省略** | 达上限退出 gate 是否可被 `next --auto` 放行 = resolved loop 的 `exhausted_gate.skippable`。**仅当 overlay `set-loop` 显式写了 `exhausted_gate` 时输出**；未写则**省略**，消费方按 `false` 处理 |
 
 - **`exhausted_skippable`（S29）省略规则（保真零漂移）**：**只有** overlay `set-loop` 显式写了 `set.exhausted_gate`（如 `{skippable:true}`）时，
   才把 `exhausted_skippable` 加入 `loop_state`；**未写 `exhausted_gate` → 字段省略**（不输出 `exhausted_skippable:false`）。
-  这样**既有 S27 激活-loop（仅 `max_iters>1`、无 `exhausted_gate`）的 `loop_state` JSON 逐字节不变**，不新增字段。
+  这样**既有 S27 激活-loop（仅 `max_iters>1`、无 `exhausted_gate`）的 `loop_state` JSON 不新增此字段**。
   它只在 `escalated == true` 时影响 `--auto` 放行（见 §11.1），其余态仅为声明。builtin / 未激活 loop → 整个 `loop_state` 省略。
-  **零漂移口径**：未写任何 S29 字段（`exhausted_gate` / `coverage_threshold`）的项目——**无论 loop 是否激活**——`status`/`next`/`watch`/`flow show` 输出逐字节不变。
+  **零漂移口径（S29 字段自身）**：未写任何 S29 字段（`exhausted_gate` / `coverage_threshold`）的项目，`status`/`next`/`watch`/`flow show` 输出不因 S29 新增任何字段。
+
+**`SLICES_APPROVED` 结构化 marker（修订 §3.10(1.1) 的「内容可为空」约定）**：消费 slice-exit 时原子写入一次，JSON 单行：`{"schema":"openlogos/slices-approved@1","approved_at":"<ISO 8601>"}`；已存在不重写（重复 `next --auto` 不刷新）；兼容读旧空文件（视为已批准、无时间戳，`activated_at` 省略）。同一磁盘状态永远派生同一 JSON，不破坏 A 被动派生确定性。
 
 **挂载位置（与 §3.6 overlay 字段同构）**：
 - 有 `modules[]` 的项目 → `modules[].loop_state`（按模块）；
@@ -414,9 +641,9 @@ implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代�
 - `openlogos next --format json` 的 base data **同步挂 `next.modules[].loop_state`**（顶层仅 legacy fallback）；
 - `openlogos watch` 的 data 与 status 同构，**继承同一挂载与省略规则**（见 §10.5）。
 
-**省略规则（可测，保 golden）**：`loop_state` **仅当** resolved 目标 subflow `loop.max_iters > 1` **且 loop 真正激活**时输出，
-否则**省略字段**。据此 builtin（`max_iters:1`）、未用 `set-loop` 的项目、以及 **initial 多模块**（不支持、不激活）→ `loop_state`
-一律省略，§3.2/§3.3/`next`/`watch` 输出**逐字节不变**（golden 零漂移）。
+**省略规则（可测）**：`loop_state` **仅当** resolved 目标 subflow `loop.max_iters > 1` **且满足上方四合取激活判据**时输出，
+否则**省略字段**。据此 builtin（`max_iters:1`）、未激活的项目、以及 **initial 多模块**（不支持、不激活）→ `loop_state`
+一律省略；无活跃提案项目输出逐字节不变。
 
 **与 `proposal_step` 的关系（JSON 兼容）**：`loop-exhausted` **不是新的 `proposal_step` 枚举值**——§3.3 的 `proposal_step`
 集合保持不变（launched loop 未收敛时仍为 `ready-to-verify` / `verify-failed` 等既有值）。"是否达上限"**只由 `loop_state.escalated`
@@ -469,7 +696,7 @@ implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代�
 | `slice_state.current` | string \| 省略 | 当前待实现切片（第一个未勾 `[code]` 行标题）；全部完成时省略 |
 | `slice_state.remaining` | number | `total - done` |
 
-**省略规则（保 golden）**：`slice_state` **仅切片循环激活时输出**，否则整字段省略（不物化 `null`）。空 `[code]`（`total==0`）下 `code_slices_green` 退化为 `tests_green`，此时 `slice_state` 仍可输出 `{total:0, done:0, remaining:0}`（无 `current`）供展示，loop 收敛按 `tests_green` 判。**因 builtin launched `implement` 默认激活，launched 模块下 `slice_state` 与 `loop_state` 常驻输出**；initial 多模块不支持、省略。
+**省略规则（保 golden）**：`slice_state` **仅切片循环激活时输出**，否则整字段省略（不物化 `null`）。空 `[code]`（`total==0`）下 `code_slices_green` 退化为 `tests_green`，此时 `slice_state` 仍可输出 `{total:0, done:0, remaining:0}`（无 `current`）供展示，loop 收敛按 `tests_green` 判。**因 builtin launched `implement` 默认激活，launched 模块下 `slice_state` 常驻输出——该常驻口径经 contract-self-description 明示维持不变**；`loop_state` 则不再常驻，按 §3.9 的四合取激活判据挂出（contract-self-description 主动破例，两者激活判据分别写明）；initial 多模块不支持、省略。`slice_state` 是切片规划进度的展示面、不触发 driver loop 分支。
 
 ### (3) `LOOP_ITERS` 账本新增可选 `slice` 字段（修订 §3.9 计数来源）
 
@@ -564,6 +791,121 @@ implement（code/verify）子流程经 overlay `set-loop` 激活 loop 真迭代�
 - `plan_ready=true && plan_gate_pending=true` 应展示为“方案已完成，等待 plan gate 批准或 auto 消费”。
 - `next --auto` 若消费 `plan-exit` 并返回 `gate_auto_passed=true` 与 `next_node.id=="write-delta"`，消费方必须继续派发 `write-delta`。
 - 历史 `GATE_AUTO_PASSED` 仍只是审计；`plan_approved` 的状态源为 `PLAN_APPROVED` 或实际离开 `ready-to-delta` 的派生事实。
+
+---
+
+## 3.14 `capabilities` 段（UI 前置能力门载体，status / next）
+
+为把 UI-first 的**前置能力门**（capability gate）表达为机器可读契约，`openlogos status` / `next` 的 `--format json`
+输出在 `data` 顶层**新增可选对象 `capabilities`**。它承载「当前会话是否具备渲染 UI 原型的能力」，
+供 openlogos 侧在 `plan-exit` **之前**决定进入「渲染确认模式」还是「降级模式」。
+
+### (1) 输入通道：`logos/.session-capabilities.json`
+
+`status` / `next` 是 openlogos 的**输出**；能力信号的**输入**由持久化文件通道提供：
+
+- **runlogos 在会话建立时写** `logos/.session-capabilities.json`，例：
+
+  ```json
+  { "ui_prototype_render": true }
+  ```
+
+- **`openlogos-phase` 钩子（SessionStart 上下文）与 `status` / `next`（JSON）读该文件**，据以生成上下文
+  `capabilities` 段与 JSON `capabilities` 字段。
+- **文件缺失 = 能力缺失（降级模式）**：文件不存在、无法解析、或缺 `ui_prototype_render` 键时，
+  `capabilities.ui_prototype_render` 一律派生为 `false`（安全默认降级，不 claim UI 确认）。
+- 该文件是 **runlogos 私有会话态**，位于 `logos/` 下（gitignore），**非方法论产物**，openlogos 侧只读不写。
+
+由此闭环：**runlogos 写文件 → openlogos 读并 surface → 流程在 plan-exit 前决定模式**。
+
+### (2) `capabilities` 段 Schema（status / next 的 `data` 顶层）
+
+```jsonc
+{
+  // ... 既有 status / next data 字段 ...
+  "capabilities": {
+    "ui_prototype_render": true    // 当前会话是否具备渲染 UI 原型的能力（缺失=false，降级）
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `capabilities` | object \| 省略 | 否 | 会话能力声明；见「出现与省略规则」。挂载于 `status` / `next` 的 `data` 顶层 |
+| `capabilities.ui_prototype_render` | boolean | 是（`capabilities` 出现时）| 当前会话是否能渲染 UI 原型：由 `logos/.session-capabilities.json` 的 `ui_prototype_render` 派生；文件缺失 / 不可解析 / 缺键 → `false`（降级） |
+
+### (3) 出现与省略规则（零漂移边界）
+
+- `capabilities` **仅当** `logos/.session-capabilities.json` 存在**且**可解析出至少一个已知能力键时输出；
+  文件缺失 / 不可解析 → **整个 `capabilities` 段省略**（不输出 `{"ui_prototype_render": false}`）。
+- 由此**未提供 capability 文件的项目**（现有绝大多数项目、纯 CLI / API / Skills 项目）——其
+  `status` / `next` JSON **逐字节不变**，既有 golden 不漂移。
+- 消费方语义：**`capabilities` 段省略 == 能力缺失（降级）**；`capabilities.ui_prototype_render:false` 显式声明降级；
+  二者对下游模式选择等价。
+- `watch` 的 `data` 与 `status` 同构：若实现将 `capabilities` 纳入 `watch` 流，须遵循同一出现 / 省略规则；
+  本切片契约以 `status` / `next` 为准。
+
+### (4) 消费契约：capability 仅用于 plan-exit *之前* 的模式选择（红线，F4 R7）
+
+- **模式选择（plan-exit 之前）** 才读 `capabilities`：
+  - `capabilities.ui_prototype_render == true`（会话就绪）→ **渲染确认模式**：面板渲染原型，批准即构成 UI 视觉确认，
+    要求写入绑定 `pages` / `hashes` 的 `PLAN_APPROVED` provenance。
+  - `capabilities` 缺失 / `ui_prototype_render == false`（旧面板 / openlogos-CLI-only）→ **降级模式**：
+    不 claim「UI/UX 确认已前移」，给 advisory 提示、不阻断。
+- **这是 `logos/.session-capabilities.json` 与本 `capabilities` 段的唯一合法用途**——只用于 plan-exit **之前**选择交互模式。
+
+- **强制语义（plan-exit *之后*：merge / 落盘 / 落盘后复核）绝不读会话 capability**，一律以持久化
+  `PLAN_APPROVED` provenance 为准：
+  - `PLAN_APPROVED` 含 UI provenance（`ui_prototype_rendered:true` + `pages` + `hashes`，即该批准曾走渲染确认路径）
+    ⇒ 所有 merge / 落盘 / 落盘后复核入口**永久 fail closed**：`hashes` 必须存在且逐文件重算匹配；
+    缺失 / 损坏 / 失配一律拒绝。**当前会话 `capabilities` 段缺失 / `.session-capabilities.json` 被清理一律不得降级**——
+    「曾渲染确认」的证据已固化在批准记录里，易失会话态无权推翻它。
+  - 仅当批准记录明确为 legacy/degraded、或旧空 marker 且无任何「曾渲染确认」证据时，才走 F3 向后兼容 advisory 放行。
+- **反例（明令禁止）**：不得以「消费 merge 时 `capabilities` 段缺失」为由，对已含 UI provenance 的 `PLAN_APPROVED`
+  放行漂移原型——这构成跨会话降级绕过（渲染会话写 `hashes` → 原型被改 → 新 CLI-only 会话 merge 放行「确认 vX、实现 vY」）。
+
+### (5) JSON 字段示例
+
+**会话就绪（runlogos 写入 `{"ui_prototype_render": true}`）** — `openlogos status --format json` 片段：
+
+```json
+{
+  "command": "status",
+  "version": "0.5.9",
+  "timestamp": "2026-07-10T12:00:00.000Z",
+  "data": {
+    "capabilities": { "ui_prototype_render": true },
+    "current_phase": null,
+    "suggestion": "...",
+    "all_done": false,
+    "lifecycle": "launched"
+  }
+}
+```
+
+**能力缺失（无 `logos/.session-capabilities.json`）** — `capabilities` 段**省略**，输出与既有 golden 逐字节一致：
+
+```json
+{
+  "command": "next",
+  "version": "0.5.9",
+  "timestamp": "2026-07-10T12:00:00.000Z",
+  "data": {
+    "current_phase": null,
+    "suggestion": "...",
+    "lifecycle": "launched"
+  }
+}
+```
+
+### (6) [code] 触点（本 delta 只定契约）
+
+- **改源模板**：`plugin/bin/openlogos-phase`（Claude）+ `plugin-codex/session-start.sh`（Codex 入口）读
+  `logos/.session-capabilities.json`，在注入上下文块追加 `capabilities` 段；`.claude/openlogos/bin/openlogos-phase`
+  为 sync 部署副本、**不直接改**。
+- **改 JSON 输出**：`cli/src/commands/status.ts` / `cli/src/commands/next.ts` 读该文件、按本节规则派生并挂 `data.capabilities`。
+- **上下文 `capabilities` 段与 JSON `capabilities` 字段必须一致 surface**（同一 `.session-capabilities.json` 派生源），
+  跨仓端到端 smoke 断言两入口一致（见提案 F2 R7）。
 
 ---
 
@@ -1170,7 +1512,7 @@ watch 为**观察派生**：遇 loop 只读账本展示 `loop_state`、**不执�
 **总定义**：`next_node` = 取自 **resolved flow（含 overlay）** 的「**本次 `next` 响应最终建议处理的真实 flow node**」的 hints。
 **默认 = 当前前沿节点**；R3（cmd 续推）/ R4（auto 放行）/ R7（loop 阻塞）/ R5（命令级建议）/ R8（切片出口门前沿）是对默认的例外（见下）。
 
-**字段与类型**（对象本身可省略；一旦出现，`id`/`name`/`subflow_id` 与下列 5 个 hint 字段固定存在，`gate_id` / `slice` / `slice_children` 为可选）：
+**字段与类型**（对象本身可省略；一旦出现，`id`/`name`/`subflow_id`、下列 5 个 hint 字段与 `dispatch`（完整对象）固定存在，`gate_id` / `slice` / `slice_children` / `requires_reviewed` 为可选）：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -1182,12 +1524,34 @@ watch 为**观察派生**：遇 loop 只读账本展示 `loop_state`、**不执�
 | `next_node.review_agent` | string \| null | review agent 标签；无绑定为 `null` |
 | `next_node.pre_script` | string \| null | 前置脚本；无为 `null` |
 | `next_node.post_script` | string \| null | 后置脚本；无为 `null` |
+| `next_node.dispatch` | object | **恒存在的完整派发契约对象**（contract-self-description）：`{"idempotent": bool, "timeout_seconds": int, "artifacts_hint": string[]}`，无二义分支，规则见下文「dispatch 派发契约」 |
+| `next_node.dispatch.idempotent` | boolean | 该节点派发重投是否安全；`false` = 重投不安全 |
+| `next_node.dispatch.timeout_seconds` | integer | 派发超时秒数；唯一默认值源（fallback） = flow 文件顶层 `defaults.dispatch.timeout_seconds`（resolved 时物化进每个节点，输出层不再有第二处默认） |
+| `next_node.dispatch.artifacts_hint` | string[] | 节点产物提示（如 `["proposal.md"]`）；`[]` ＝「产物未知」契约语义：消费方不得据此判死，只能升级观察 |
+| `next_node.requires_reviewed` | string[] | **可选**。节点声明的前置评审要求（如 apply-merge 声明 `["proposal","delta"]`）；driver 的 `priorReviewNode` 本地映射表退化为消费该声明。未声明时省略 |
 | `next_node.gate_id` | string | **可选**。当前沿是「某 flow node 已完成、停在其所属 subflow 的出口/入口人类门待批准」时出现，值 = 派生 gate id（`<subflow.id>-<gate.position>`，见 §11）。**出现即表示：该节点的产出已完成、宿主不得再派该节点的 skill 重跑，而应把它当人类门处理（半自动停等确认；`--auto` 则该门被自动放行、见 R4）**。非门前沿时省略（R8） |
 
 - **`skill`/`working_agent`/`review_agent`/`pre_script`/`post_script` 这 5 个 hint 字段固定存在、用 `null` 表示无绑定**；
   消费方**不得**把 `skill` 当作必有 `string`。
 - **`gate_id` 是可选子字段，出现与否是消费方区分「派节点 vs 停门」的判据**——不出现时按 `id` 派节点的 skill/agent；出现时前沿在门上、不重派节点。**注意与顶层 `gate_id`（§11 gate 字段表）区分**：顶层 `gate_id` 仅 `--auto` 输出、描述「当前 `--auto` 放行/停在的门」；`next_node.gate_id` 是**前沿子字段、任意档（含默认 `next`）均可出现**、描述「前沿节点后紧邻的待批准门」。二者在语义与出现条件上均不同，不得混用。
 - 取自 **resolved flow** → overlay `modify code set:{review_agent: my-reviewer}` 会如实反映为 `next_node.review_agent = "my-reviewer"`。
+
+**dispatch 派发契约（contract-self-description）**：
+
+- 每个 `next_node` 恒带完整 `dispatch: {"idempotent": bool, "timeout_seconds": int, "artifacts_hint": string[]}`；节点可另声明 `requires_reviewed: string[]`。
+- **权威数据源 = flow 节点定义**（内置模板 `spec/flow/initial.yaml`、`spec/flow/launched.yaml` 逐节点人工声明，**不从 produces/done_when 推导**——推导算法本身会成为新的隐式世界模型）；显式声明则以声明为准；resolved flow 派生把节点元数据透传进 `next_node`。
+- **overlay-add 未声明 `dispatch` 时的保守默认（完整对象，消灭实现自行猜测）**：
+
+```yaml
+dispatch:
+  idempotent: false            # 未声明即视为重投不安全（宁慢勿错杀）
+  timeout_seconds: <flow 文件 defaults.dispatch.timeout_seconds>
+  artifacts_hint: []           # 空数组 = 「产物未知」，语义写入契约：
+                               # 消费方不得以 artifacts_hint 为空/不达作为判死依据，只能升级观察
+```
+
+- `timeout_seconds` 的**唯一默认值源（fallback）** = flow 文件顶层新增 `defaults: {dispatch: {timeout_seconds: 900}}`（内置模板给出具体数值，项目 overlay 可覆盖；resolved 时物化进每个节点）。flow 文件 schema `version: 1` 保持不变（字段为向后兼容扩展）。
+- 内置节点声明基准（权威声明在 flow 模板，此处为口径摘要）：内容产出/评审节点（write-proposal、write-tasks、write-delta、plan-slices、review 类、code）idempotent:true；一次性落盘/执行节点（apply-merge、deploy、archive 类）idempotent:false；verify/smoke 命令节点 idempotent:true。timeout_seconds：默认 900，code/implement 类 3600，deploy 类 1800。artifacts_hint 写该节点的具体产物提示（如 `["proposal.md"]`、`["logos/resources/**","SPEC_MERGED"]`）。apply-merge 声明 `requires_reviewed: ["proposal","delta"]`。
 
 **挂载位置（与 `current_node`/`loop_state` 同构）**：有 `modules[]` → `modules[].next_node`；legacy 无 `modules[]` → 顶层 `next_node`。
 
@@ -1205,7 +1569,7 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
   - `SLICES_APPROVED` 已存在（门已消费）→ `proposal_step == "coding"`、`next_node.id == "code"`、无 `gate_id`（不属本例外，走默认前沿）。
   - **动机**：修复「半自动 driver 以 `next_node` 派活时，`ready-to-implement` 恒得 `next_node.id == "plan-slices"`（切片写好也不带门信号）→ 反复重派 slice-planner 死循环」的 openlogos 侧根因。此前仅顶层 `--auto` `gate_id` 落地，`next_node.gate_id`（flow-spec §12.5 承诺的前沿子字段）从未实现。
 
-**golden**：`next_node` 对有当前节点的项目新增 → `next --format json` 快照更新（本切片有意为 next 加字段、重新 baseline）；`status`/`watch`/`flow show` 输出不变。本次修复新增 `plan-exit` auto 例外，`next --auto --format json` 的相关 golden 需要同步重拍并复核差异仅为 `proposal_step` 前移、`next_node=write-delta` 与一次性 `PLAN_APPROVED` 副作用；split-slice-planner-stage 新增 `slice-exit` auto 例外，差异须仅为 `proposal_step` 由 `ready-to-implement` 前移到 `coding`、`next_node=code` 与一次性 `SLICES_APPROVED` 副作用。**fix-next-node-slice-exit-frontier（R8）新增「切片已划未批准」态的 `next_node.gate_id == "slice-exit"`：默认 `next --format json` 相关 golden 须重拍，差异须严格限定为该态下 `next_node` 新增可选 `gate_id` 字段（`id`/`name`/`subflow_id`/5 个 hint 逐字节不变；`--auto` 放行态与其它 proposal_step 输出不变）。**
+**golden**：`next_node` 对有当前节点的项目新增 → `next --format json` 快照更新（本切片有意为 next 加字段、重新 baseline）；「`status`/`watch`/`flow show` 输出不变」是 S28 切片的**历史局部口径，已被 contract-self-description 的提案级差异白名单覆盖、在本提案内不再成立**（全部 9 个 status/next golden 快照均**允许且要求**新增 `data.contract`——与 §1.2 的全量重拍声明一致；活跃提案快照允许 `step_meta`/`facts`；launched 活跃提案用例 5/6/8/9 允许且要求 pre-implement `loop_state` 缺席；`flow show` 允许顶层 `defaults` 与逐节点 `dispatch`/`requires_reviewed`；白名单之外逐字节零漂移，复核锚 = ST-S28-11）。本次修复新增 `plan-exit` auto 例外，`next --auto --format json` 的相关 golden 需要同步重拍并复核差异仅为 `proposal_step` 前移、`next_node=write-delta` 与一次性 `PLAN_APPROVED` 副作用；split-slice-planner-stage 新增 `slice-exit` auto 例外，差异须仅为 `proposal_step` 由 `ready-to-implement` 前移到 `coding`、`next_node=code` 与一次性 `SLICES_APPROVED` 副作用。fix-next-node-slice-exit-frontier（R8）新增「切片已划未批准」态的 `next_node.gate_id == "slice-exit"`：默认 `next --format json` 相关 golden 已重拍，该态下 `next_node` 新增可选 `gate_id` 字段。**contract-self-description（主动破例）破 R8「既有字段逐字节不变」锚**：此前锚定的「`id`/`name`/`subflow_id`/5 个 hint 逐字节不变」既有 8 字段口径由本提案主动破例——`next_node` 新增恒存在的 `dispatch` 完整对象与可选 `requires_reviewed` 子字段，next golden（用例 2/6）重拍，差异须严格限定为新增这两个子字段（既有 8 字段的取值逐字节不变；`--auto` 放行态与其它 proposal_step 的既有字段输出不变）。
 
 ---
 
@@ -1578,3 +1942,201 @@ no-delta merge 写入的 `SPEC_MERGED` 建议为：
   "completed_at": "..."
 }
 ```
+
+## product_type 迁移相关 JSON 契约（proposal-ui-ux-first）
+
+> **背景（F1 critical）**：存量已 `launched` 的 GUI 项目升级后不重跑 `init`/`adopt`，其
+> `logos-project.yaml` 的 `modules[]` 普遍**缺 `product_type` 字段**。本节把「缺字段迁移入口」
+> 与「回填结果」定义为机器可读契约，供 driver / RunLogos 精确发现待确认项并回填。
+>
+> **数据源与迁移语义权威**：`spec/logos-project.md`（`modules[].product_type` 是唯一事实源，
+> 枚举 `web|desktop|mobile|cli|api|library|skills|service`，GUI 集合 = {`web`,`desktop`,`mobile`}，缺失=非 GUI 安全默认）。
+> 本节只定义 **JSON 输出形态**（`status`/`next` 诊断信号、`module list` 字段、`set-product-type` 结果 envelope）。
+
+### (1) `status` / `next` 缺字段诊断信号 `PRODUCT_TYPE_CONFIRMATION_REQUIRED`
+
+`status` / `next` 的 success envelope 检测到**任一 `launched` 模块缺 `product_type` 字段**时，
+在 `data` 顶层输出**可选诊断对象 `product_type_confirmation`**。它是 **warning（不阻断既有流程）**，
+携带 `next_action` 指向 `openlogos module set-product-type`，并**列出全部缺字段的 module ids** 供精确回填。
+
+**Schema（挂 `status` / `next` 的 `data` 顶层）**：
+
+```jsonc
+{
+  // ... 既有 status / next data 字段 ...
+  "product_type_confirmation": {
+    "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+    "level": "warning",                      // 恒为 warning：不阻断，仅暴露待确认项
+    "missing_module_ids": ["web", "admin"],  // 缺 product_type 的 launched module id 列表（保持 modules[] 内出现顺序）
+    "next_action": {
+      "command": "openlogos module set-product-type",
+      "enum": ["web", "desktop", "mobile", "cli", "api", "library", "skills", "service"],
+      "gui_enum": ["web", "desktop", "mobile"],
+      "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+    }
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `product_type_confirmation` | object \| 省略 | 否 | 见「出现与省略规则」。仅当存在缺字段的 launched 模块时输出 |
+| `product_type_confirmation.signal` | string | 是（对象出现时）| 恒为 `"PRODUCT_TYPE_CONFIRMATION_REQUIRED"` |
+| `product_type_confirmation.level` | string | 是 | 恒为 `"warning"`（不阻断） |
+| `product_type_confirmation.missing_module_ids` | string[] | 是 | 缺 `product_type` 的 **launched** module id 列表；非空、去重、按 `modules[]` 出现顺序（golden 确定性）|
+| `product_type_confirmation.next_action.command` | string | 是 | 恒为 `"openlogos module set-product-type"` |
+| `product_type_confirmation.next_action.enum` | string[] | 是 | 全部合法枚举值（固定顺序 = `["web","desktop","mobile","cli","api","library","skills","service"]`；扩展只允许尾部追加，既有前缀顺序不变）|
+| `product_type_confirmation.next_action.gui_enum` | string[] | 是 | GUI 子集 `["web","desktop","mobile"]` |
+| `product_type_confirmation.next_action.hint` | string | 否 | 面向 driver / UI 的短提示 |
+
+**挂载位置（module-aware，与既有 overlay/loop 字段挂载同构）**：
+- `missing_module_ids` 是**项目级聚合**（跨所有 launched 模块的缺字段并集），故 `product_type_confirmation`
+  **挂 `data` 顶层**（不挂 `modules[].active_change`，因缺字段与是否有活跃提案无关）。
+- `next --format json` 的 base data 与 `status` 同构挂顶层 `product_type_confirmation`；
+  `watch` 的 `data` 与 `status` 同构，继承同一出现 / 省略规则。
+
+**出现与省略规则（零漂移边界）**：
+- `product_type_confirmation` **仅当**存在 **≥1 个 launched 模块缺 `product_type` 字段**时输出；
+  否则**整个对象省略**（不输出 `missing_module_ids:[]`）。
+- 由此**所有 launched 模块均已显式设置 `product_type` 的项目**、以及**无 launched 模块的 initial 项目**——
+  其 `status` / `next` JSON **逐字节不变**，既有 golden 不漂移。
+- **确定性**：`missing_module_ids` 按 `modules[]` 出现顺序枚举缺字段模块，同一 `logos-project.yaml` 下输出稳定，golden 可钉。
+
+**消费契约（安全默认不因诊断改变）**：
+- 该信号**只暴露待确认项，绝不隐式升级为 GUI**：缺字段模块在**显式设置前仍按非 GUI 处理**
+  （`ui_impact` 恒 `false`、不注入 overlay）。
+- `next --auto` 检测到缺字段时**照常输出本诊断对象**（不阻断推进、不猜测升级），供 driver 暴露 next action；
+  仅在经 `set-product-type` / `module add` 显式配置 GUI 枚举后才注入 overlay（红线，见 `spec/logos-project.md` §4）。
+
+### (2) `openlogos module list --format json` 每模块新增 `product_type`
+
+修订 §7.2 / §7.3：`module list` 的 `data.modules[]` 每项**新增可选字段 `product_type`**，
+让消费方无需另读 `logos-project.yaml` 即可判定 GUI / 非 GUI。
+
+**修订后 Schema（data 部分）**：
+
+```jsonc
+{
+  "modules": [
+    {
+      "id": "web",
+      "name": "Web 控制台",
+      "lifecycle": "launched",
+      "product_type": "web"       // 缺失时该键省略（不物化 null）——见向后兼容
+    },
+    {
+      "id": "api",
+      "name": "后端服务",
+      "lifecycle": "launched",
+      "product_type": "api"
+    },
+    {
+      "id": "legacy",
+      "name": "历史模块",
+      "lifecycle": "launched"
+      // 无 product_type 键：存量未回填模块 → 消费方按「缺失=非 GUI 安全默认」处理
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `modules[].product_type` | string \| 省略 | 否 | 模块产品类型枚举（`web`/`desktop`/`mobile`/`cli`/`api`/`library`/`skills`/`service`）。**`logos-project.yaml` 中该模块无 `product_type` 字段时，本键整体省略（不输出 `null`）**，与源 YAML 一一对应 |
+
+**向后兼容（省略而非 null）**：
+- **字段缺失即省略**：源 `modules[].product_type` 不存在时，JSON **不输出该键**（不物化 `product_type:null`）。
+  消费方语义：**键缺失 == 非 GUI 安全默认**（与 `spec/logos-project.md`「缺失=非 GUI」一致）。
+- 由此**全部模块均未回填 `product_type` 的存量项目**，其 `module list --format json` 输出与本特性前
+  **逐字节一致**（既有 §7 golden 不漂移）；仅已显式设置的模块多出一个 `product_type` 键。
+- **golden 稳定性**：某模块是否出现 `product_type` 键，**确定性地**取决于源 YAML 是否含该字段——
+  「缺字段 = 非 GUI」时 diagnostic（§1）出现 / 本字段省略，二者互为对照且可钉 golden。
+
+### (3) `openlogos module set-product-type --format json` 结果 envelope
+
+`openlogos module set-product-type <module-id> <enum> --format json` 走通用信封
+（`command: "module set-product-type"`）。
+
+**成功（写入 / 更新）** — success envelope `data`：
+
+```json
+{
+  "command": "module set-product-type",
+  "version": "0.5.9",
+  "timestamp": "2026-07-10T12:00:00.000Z",
+  "data": {
+    "module_id": "web",
+    "product_type": "web",
+    "is_gui": true,
+    "changed": true,
+    "overlay_sync_hint": "openlogos sync"
+  }
+}
+```
+
+**成功（幂等 no-op，值与当前相同）** — `changed:false`，仍为成功（退出码 0）：
+
+```json
+{
+  "command": "module set-product-type",
+  "version": "0.5.9",
+  "timestamp": "2026-07-10T12:00:00.000Z",
+  "data": {
+    "module_id": "web",
+    "product_type": "web",
+    "is_gui": true,
+    "changed": false,
+    "overlay_sync_hint": null
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `data.module_id` | string | 是 | 被设置的 module id |
+| `data.product_type` | string | 是 | 设置后的 product_type 枚举值 |
+| `data.is_gui` | boolean | 是 | 是否 ∈ GUI 集合 {`web`,`desktop`,`mobile`} |
+| `data.changed` | boolean | 是 | 是否真正发生写入；幂等 no-op（值未变）为 `false`，仍成功 |
+| `data.overlay_sync_hint` | string \| null | 是 | 设为 GUI 枚举且**新使项目含 GUI 模块**时提示 `"openlogos sync"`；否则 / no-op 时为 `null`。仅提示，`set-product-type` 本身不动 `launched.yaml` |
+
+**错误** — 走通用错误 envelope（见 §6，输出到 stderr、非零退出）；新增错误码：
+
+| 错误码 | 说明 |
+|--------|------|
+| `INVALID_PRODUCT_TYPE` | `<enum>` 非合法枚举；`message` **必须列出全部合法枚举**（`web`/`desktop`/`mobile`/`cli`/`api`/`library`/`skills`）|
+| `MODULE_NOT_FOUND` | `<module-id>` 不在 `logos-project.yaml` 的 `modules[]` |
+| `MISSING_ARGUMENT` | 缺 `<module-id>` 或 `<enum>`（usage error），`message` 含用法串 |
+
+**非法枚举错误示例**：
+
+```json
+{
+  "command": "module set-product-type",
+  "version": "0.5.9",
+  "timestamp": "2026-07-10T12:00:00.000Z",
+  "error": {
+    "code": "INVALID_PRODUCT_TYPE",
+    "message": "非法的 product_type：frontend。合法枚举：web | desktop | mobile | cli | api | library | skills（GUI 集合 = web / desktop / mobile）"
+  }
+}
+```
+
+**未知 module 错误示例**：
+
+```json
+{
+  "command": "module set-product-type",
+  "version": "0.5.9",
+  "timestamp": "2026-07-10T12:00:00.000Z",
+  "error": {
+    "code": "MODULE_NOT_FOUND",
+    "message": "未知模块：payments。当前已注册模块：web、api、tooling"
+  }
+}
+```
+
+**契约不变量**：
+- 任何错误分支**不得写入** `logos-project.yaml`（非法枚举 / 未知 module / 缺参一律零副作用）。
+- `set-product-type` **仅改 `modules[].product_type`**，不注入 / 移除 overlay；overlay 收敛仍由 `sync` 幂等负责
+  （见 `spec/logos-project.md` §5），`overlay_sync_hint` 只是引导。
+- 成功 envelope 的 `is_gui` 由 `product_type ∈ {web,desktop,mobile}` 派生，供消费方直接判定，无需自行维护 GUI 集合。

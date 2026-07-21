@@ -5,6 +5,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: initial �
   "active_change": null,
   "active_proposals": [],
   "all_done": false,
+  "contract": {
+    "version": "1.0.0",
+  },
   "current_phase": "phase.2",
   "lifecycle": "initial",
   "locale": "en",
@@ -115,6 +118,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: initial-ad
   "active_change": null,
   "active_proposals": [],
   "all_done": false,
+  "contract": {
+    "version": "1.0.0",
+  },
   "current_phase": "phase.3-1",
   "lifecycle": "initial",
   "locale": "en",
@@ -292,7 +298,7 @@ exports[`golden-baseline: status/next JSON characterization > golden: initial-ad
   ],
   "proposal_step": null,
   "source_roots": null,
-  "suggestion": "Fill in baseline docs first (openlogos change add-baseline-docs)",
+  "suggestion": "Establish current-state baseline (AI session/driver reverse-scans the codebase)",
   "yaml_diagnostics": null,
 }
 `;
@@ -309,6 +315,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched +
     },
   ],
   "all_done": false,
+  "contract": {
+    "version": "1.0.0",
+  },
   "current_phase": "phase.1",
   "lifecycle": "launched",
   "locale": "en",
@@ -418,6 +427,32 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched +
       "skipped": false,
     },
   ],
+  "product_type_confirmation": {
+    "level": "warning",
+    "missing_module_ids": [
+      "core",
+    ],
+    "next_action": {
+      "command": "openlogos module set-product-type",
+      "enum": [
+        "web",
+        "desktop",
+        "mobile",
+        "cli",
+        "api",
+        "library",
+        "skills",
+        "service",
+      ],
+      "gui_enum": [
+        "web",
+        "desktop",
+        "mobile",
+      ],
+      "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）",
+    },
+    "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+  },
   "proposal_step": null,
   "source_roots": null,
   "suggestion": "Tell AI: "Help me write requirements"",
@@ -437,6 +472,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched +
     },
   ],
   "all_done": false,
+  "contract": {
+    "version": "1.0.0",
+  },
   "current_phase": "phase.1",
   "lifecycle": "launched",
   "locale": "en",
@@ -546,6 +584,32 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched +
       "skipped": false,
     },
   ],
+  "product_type_confirmation": {
+    "level": "warning",
+    "missing_module_ids": [
+      "core",
+    ],
+    "next_action": {
+      "command": "openlogos module set-product-type",
+      "enum": [
+        "web",
+        "desktop",
+        "mobile",
+        "cli",
+        "api",
+        "library",
+        "skills",
+        "service",
+      ],
+      "gui_enum": [
+        "web",
+        "desktop",
+        "mobile",
+      ],
+      "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）",
+    },
+    "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+  },
   "proposal_step": null,
   "source_roots": null,
   "suggestion": "Tell AI: "Help me write requirements"",
@@ -558,6 +622,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched �
   "action": "Create a change proposal before modifying any code",
   "active_change": null,
   "command": "openlogos change <slug>",
+  "contract": {
+    "version": "1.0.0",
+  },
   "detail": "Run \`openlogos change <slug>\` to create a new change proposal and activate the guard.",
   "modules": [
     {
@@ -572,6 +639,32 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched �
       "proposal_step": null,
     },
   ],
+  "product_type_confirmation": {
+    "level": "warning",
+    "missing_module_ids": [
+      "core",
+    ],
+    "next_action": {
+      "command": "openlogos module set-product-type",
+      "enum": [
+        "web",
+        "desktop",
+        "mobile",
+        "cli",
+        "api",
+        "library",
+        "skills",
+        "service",
+      ],
+      "gui_enum": [
+        "web",
+        "desktop",
+        "mobile",
+      ],
+      "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）",
+    },
+    "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+  },
   "proposal_step": null,
 }
 `;
@@ -588,6 +681,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched �
     },
   ],
   "all_done": false,
+  "contract": {
+    "version": "1.0.0",
+  },
   "current_phase": "phase.1",
   "lifecycle": "launched",
   "locale": "en",
@@ -697,6 +793,32 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched �
       "skipped": false,
     },
   ],
+  "product_type_confirmation": {
+    "level": "warning",
+    "missing_module_ids": [
+      "core",
+    ],
+    "next_action": {
+      "command": "openlogos module set-product-type",
+      "enum": [
+        "web",
+        "desktop",
+        "mobile",
+        "cli",
+        "api",
+        "library",
+        "skills",
+        "service",
+      ],
+      "gui_enum": [
+        "web",
+        "desktop",
+        "mobile",
+      ],
+      "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）",
+    },
+    "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+  },
   "proposal_step": null,
   "source_roots": null,
   "suggestion": "Tell AI: "Help me write requirements"",
@@ -709,6 +831,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched �
   "active_change": null,
   "active_proposals": [],
   "all_done": false,
+  "contract": {
+    "version": "1.0.0",
+  },
   "current_phase": "phase.1",
   "lifecycle": "launched",
   "locale": "en",
@@ -818,6 +943,32 @@ exports[`golden-baseline: status/next JSON characterization > golden: launched �
       "skipped": false,
     },
   ],
+  "product_type_confirmation": {
+    "level": "warning",
+    "missing_module_ids": [
+      "core",
+    ],
+    "next_action": {
+      "command": "openlogos module set-product-type",
+      "enum": [
+        "web",
+        "desktop",
+        "mobile",
+        "cli",
+        "api",
+        "library",
+        "skills",
+        "service",
+      ],
+      "gui_enum": [
+        "web",
+        "desktop",
+        "mobile",
+      ],
+      "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）",
+    },
+    "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+  },
   "proposal_step": null,
   "source_roots": null,
   "suggestion": "Tell AI: "Help me write requirements"",
@@ -830,8 +981,18 @@ exports[`golden-baseline: status/next JSON characterization > golden: 全新 ini
   "action": "Tell AI: "Help me write requirements"",
   "active_change": null,
   "command": null,
+  "contract": {
+    "version": "1.0.0",
+  },
   "detail": "Current phase: phase.1",
   "next_node": {
+    "dispatch": {
+      "artifacts_hint": [
+        "logos/resources/prd/1-product-requirements/",
+      ],
+      "idempotent": true,
+      "timeout_seconds": 900,
+    },
     "id": "prd",
     "name": "需求",
     "post_script": null,
@@ -850,6 +1011,9 @@ exports[`golden-baseline: status/next JSON characterization > golden: 全新 ini
   "active_change": null,
   "active_proposals": [],
   "all_done": false,
+  "contract": {
+    "version": "1.0.0",
+  },
   "current_phase": "phase.1",
   "lifecycle": "initial",
   "locale": "en",

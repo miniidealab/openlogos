@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 import { readLocale } from '../i18n.js';
+import { withRecoveredReadLocks, listProjectModuleIds } from '../lib/baseline-seed-txn.js';
 
 // ---------------------------------------------------------------------------
 // 文件扫描工具
@@ -86,6 +87,10 @@ export function indexCommand() {
     process.exit(1);
   }
 
+  // brownfield-adopter（S33 / F7）：把「取锁—检查/恢复—扫描 logos/resources 生成索引」合并到**同一读锁区间**——
+  // 杜绝旧「过门后释放锁、真实扫描在锁外」的 TOCTOU（writer 可在门检查与文件读取之间启动提交，索引读半集合）。
+  // 提交进行中（锁被占用、无法恢复）→ 回调**不执行**、不生成半提交索引，随后非零退出报 baseline_commit_in_progress。
+  const idxInterval = withRecoveredReadLocks(root, new Date().toISOString(), listProjectModuleIds(root), () => {
   console.log('\nScanning project files for index generation...\n');
 
   const config = JSON.parse(readFileSync(configPath, 'utf-8'));
@@ -152,6 +157,11 @@ export function indexCommand() {
   console.log('Next step:');
   console.log('  Tell your AI assistant: "Read logos/index-prompt.md and execute the instructions"\n');
   console.log('  The AI will read each file\'s content and directly update logos/logos-project.yaml\n');
+  });
+  if (!idxInterval.ok) {
+    console.error(`Error: baseline_commit_in_progress — 模块 ${idxInterval.inProgress.join(', ')} 现状基线提交进行中，请稍后重试 openlogos index。`);
+    process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------------------

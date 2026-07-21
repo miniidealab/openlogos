@@ -1,0 +1,28 @@
+# 方法论 brownfield-adopter overlay 源：brownfield-baseline（S33）
+# ─────────────────────────────────────────────────────────────────────────────
+# 本文件记录存量项目「逆向建基线」的 baseline-seed 节点语义。与 gui-ui-first.yaml 不同，
+# 【baseline-seed 不是 launched flow 的 builtin gate、也不由 flow 引擎驱动】：
+#   - 现状基线的建立是【command-driven 恢复入口】——由 `openlogos next` / `status` 在
+#     bootstrap: adopted 且无活跃提案时按 baseline_seed_state（required/partial/seeded）派生引导，
+#     由 AI 会话/driver 经 `openlogos baseline-seed`（begin/commit/status，见 spec/logos-project.md）落盘。
+#   - 因此本 overlay【不注入 launched.yaml 的 node 序列】（注入会改 proposal_step 状态机、破坏 golden 零漂移），
+#     仅作为方法论资产记录节点语义，供文档/宿主理解。
+#
+# baseline-seed 节点语义（非 builtin gate，command-driven）：
+overlay: []   # 有意为空：不改写 builtin flow node 序列
+baseline_seed_node:
+  id: baseline-seed
+  name: 逆向建立现状基线
+  skill: brownfield-adopter
+  driven_by: command            # openlogos baseline-seed（begin/commit/status），非 flow gate
+  producer: ai-session-or-driver
+  states: [required, partial, seeded]   # 模块级 baseline_seed_state 枚举
+  entry:
+    required: "openlogos baseline-seed begin --module <id> --manifest <path>  # + 派发 brownfield-adopter 写 staging → commit"
+    partial:  "openlogos baseline-seed commit --module <id> --run-id <id>     # 续提交；或重新 begin 补齐"
+    seeded:   "openlogos change <slug>                                          # 正常迭代；触碰未验证逆向区域触发 JIT advisory"
+  invariants:
+    - "adopt 只写初值 required、不启动 AI、不产逆向内容、不声称基线已建立"
+    - "状态与目标文件唯一写入者是 CLI（baseline-seed）；producer 只写 run 私有 staging"
+    - "seeded 当且仅当必需 kind 齐 + 全部 expected 合法 + 完整新集合在盘（经 commit journal 事务）"
+    - "机器读取入口经恢复门：取模块锁 + 检测未终结 journal → 先恢复，否则 baseline_commit_in_progress"

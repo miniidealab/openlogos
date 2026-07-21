@@ -1,12 +1,7 @@
-# ⚠️ 重要：本 logos/ 目录是 OpenLogos 对【自身方法论的 dogfooding 产物】，不是生产代码。
-# 生产代码 / 规格 / Skill 的唯一源头在仓库【根目录】（cli/、spec/、skills/）。
-# 任何对规格或 Skill 的修改，必须先改根目录源码，再经 `openlogos sync` 同步到 logos/。
-# 切勿把本目录下的文件当作产品实现来修改或交付。
 project:
-  name: "openlogos"
+  name: openlogos
   description: ""
-  methodology: "OpenLogos"
-
+  methodology: OpenLogos
 tech_stack:
   language: TypeScript
   runtime: Node.js >=18
@@ -19,7 +14,7 @@ tech_stack:
     framework: Astro 6.x
     docs_theme: "@astrojs/starlight"
     hosting: Cloudflare Pages
-    release_data_pipeline: "npm run generate:releases -> npm run build -> npm run deploy"
+    release_data_pipeline: npm run generate:releases -> npm run build -> npm run deploy
   plugin_templates:
     - claude-plugin-template
     - opencode-plugin-template
@@ -28,95 +23,163 @@ tech_stack:
     package_registry: npm
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
-
 scenario_counter:
-  next_id: 33
-
+  next_id: 35
+feature_counter:
+  next_id: 9
 modules:
   - id: core
     name: 核心功能
     lifecycle: launched
     bootstrap: adopted
-    skip_phases: [api, database, scenario]
+    skip_phases:
+      - api
+      - database
+      - scenario
     deployment_required: true
-
+    product_type: desktop
+features:
+  - id: F01
+    name: 项目初始化与接入
+    module: core
+    spec: core-01
+  - id: F02
+    name: 状态与进度观测
+    module: core
+    spec: core-01
+  - id: F03
+    name: AI 资产与资源索引同步
+    module: core
+    spec: core-01
+  - id: F04
+    name: 变更提案与切片生命周期
+    module: core
+    spec: core-01
+  - id: F05
+    name: 验收与部署门禁
+    module: core
+    spec: core-01
+  - id: F06
+    name: flow 编排引擎
+    module: core
+    spec: core-01
+  - id: F07
+    name: 模块与 feature 分组管理
+    module: core
+    spec: core-01
+  - id: F08
+    name: 机器可读输出与规范
+    module: core
+    spec: core-01
 scenarios:
   - id: S01
     name: 初始化 OpenLogos 项目
     module: core
+    feature: F01
   - id: S05
     name: 查看下一步建议
     module: core
+    feature: F02
   - id: S08
     name: 同步 AI 工具资产与资源索引
     module: core
+    feature: F03
   - id: S09
     name: 创建、合并、归档变更提案
     module: core
+    feature: F04
   - id: S11
     name: 查看阶段进度与活跃变更
     module: core
+    feature: F02
   - id: S13
     name: 运行测试验收并生成报告
     module: core
+    feature: F05
   - id: S14
     name: 切换到 launched 生命周期
     module: core
+    feature: F01
   - id: S15
     name: 处理 SQL 注释规范
     module: core
+    feature: F08
   - id: S16
     name: 输出机器可读 JSON
     module: core
+    feature: F08
   - id: S17
     name: 管理模块注册表
     module: core
+    feature: F07
   - id: S18
     name: 同步 resource_index
     module: core
+    feature: F03
   - id: S19
     name: 执行部署后 smoke 门禁
     module: core
+    feature: F05
   - id: S20
     name: 已有项目接入 OpenLogos
     module: core
+    feature: F01
   - id: S21
     name: 标记部署完成
     module: core
+    feature: F05
   - id: S22
     name: 查看与解析 flow 编排
     module: core
+    feature: F06
   - id: S23
     name: 实时观测派生研发状态（watch）
     module: core
+    feature: F02
   - id: S24
     name: next --auto skip-gate
     module: core
+    feature: F06
   - id: S25
     name: overlay 驱动 status/next/watch 派生
     module: core
+    feature: F06
   - id: S26
     name: "cmd: 谓词在 next 求值"
     module: core
+    feature: F06
   - id: S27
     name: implement(code/verify) loop 真迭代派生
     module: core
+    feature: F06
   - id: S28
     name: next 暴露 next_node 编排提示
     module: core
+    feature: F06
   - id: S29
     name: M2 预留收尾（loop 退出 gate 可放行 / fan-out 阈值 / loop 内整组收敛）
     module: core
+    feature: F06
   - id: S30
     name: "cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin）"
     module: core
+    feature: F06
   - id: S31
     name: change-flow-redesign 代码切片循环（plan/spec/merge + code_slices_green + slice_state）
     module: core
+    feature: F04
   - id: S32
     name: split-slice-planner-stage 切片规划环节（merge 后 slice 子流程 + ready-to-implement + slice-exit）
     module: core
-
+    feature: F04
+  - id: S33
+    name: brownfield-adopter 存量项目逆向建基线与按需深化（baseline_seed_state + provenance/tombstone 覆盖率 + baseline-seed + JIT advisory）
+    module: core
+    feature: F01
+  - id: S34
+    name: 管理 feature 分组
+    module: core
+    feature: F07
 release_workflows:
   cli_tag_release:
     name: CLI tag 驱动标准发版（GitHub Workflow 唯一入口）
@@ -125,7 +188,7 @@ release_workflows:
       - git push origin vX.Y.Z
     automation:
       workflow_file: .github/workflows/publish.yml
-      workflow_name: "Publish to npm"
+      workflow_name: Publish to npm
       trigger_event: "push(tags: v*)"
       publish_policy: 禁止本地手工 npm publish，统一由 GitHub Actions 使用 NPM_TOKEN 发布
     preconditions:
@@ -156,7 +219,6 @@ release_workflows:
       - logos/spec/release-process.md
       - logos/resources/prd/3-technical-plan/1-architecture/core-03-release-and-versioning.md
       - logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
-
   website_release_sync:
     name: 官网发布动态与文档站发布
     status: standard
@@ -173,14 +235,12 @@ release_workflows:
     references:
       - logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md
       - logos/resources/test/smoke/core-smoke-test-cases.md
-
 deployment_gates:
   core:
     deployment_required: true
     smoke_required: true
     environments:
       - staging
-
 resource_index:
   - path: logos/resources/prd/1-product-requirements/core-01-requirements.md
     desc: 产品需求主文档。涉及命令行为、场景范围、验收条件与优先级时必读。
@@ -306,7 +366,6 @@ resource_index:
     desc: PreToolUse guard hook 规格。涉及变更管理硬拦截机制、白名单规则、判定逻辑时必读。
   - path: .claude/openlogos/bin/guard-check
     desc: PreToolUse hook 脚本。涉及 Claude Code 工具拦截、guard 文件检测、白名单判定时必读。
-
   - path: logos/resources/test/core-S01-test-cases.md
     desc: S01 测试用例。涉及 S01 单元测试与场景测试的实现与验收时必读。
   - path: logos/resources/test/core-S05-test-cases.md
@@ -389,16 +448,31 @@ resource_index:
     desc: test-writer Skill。使用 test-writer 功能时必读。
   - path: skills/ui-ux-pro-max/SKILL.md
     desc: ui-ux-pro-max Skill。使用 ui-ux-pro-max 功能时必读。
-
   - path: spec/flow-spec.md
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
-
   - path: skills/slice-planner/SKILL.md
     desc: slice-planner Skill。使用 slice-planner 功能时必读。
-
+  - path: spec/proposal-ui-ux-first.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-06-provenance-data-model.md
+    desc: 系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S33-brownfield-baseline.md
+    desc: S33 场景时序图。涉及 S33 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/test/core-S33-test-cases.md
+    desc: S33 测试用例。涉及 S33 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S34-feature-management.md
+    desc: S34 时序文档。涉及 feature 功能分组模型（module→feature→scenario）、feature list 只读视图、feature-backfill 生成 AI 回填 prompt、未分组桶与归属降级时必读。
+  - path: logos/resources/test/core-S34-test-cases.md
+    desc: S34 测试用例。涉及 features[]/feature_counter/scenario.feature 解析、feature 分组与未分组桶、空成员 feature、条件版本发射（含 features→1.1.0/无→1.0.0）一致性、feature list（含 MODULE_NOT_FOUND）、feature-backfill prompt 路径与幂等、纯 pre-feature 零漂移 golden 时必读。
+  - path: spec/schema/next.schema.json
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/schema/status.schema.json
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: skills/brownfield-adopter/SKILL.md
+    desc: brownfield-adopter Skill。使用 brownfield-adopter 功能时必读。
 conventions:
-  - "场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号"
+  - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"
-  - "部署与 smoke 是否执行以活跃提案的部署影响与 tasks.md [deploy] section 为准"
-  - "遵循 OpenLogos 三层推进模型（Why → What → How）"
-  - "每次变更必须先创建 logos/changes/ 变更提案"
+  - 部署与 smoke 是否执行以活跃提案的部署影响与 tasks.md [deploy] section 为准
+  - 遵循 OpenLogos 三层推进模型（Why → What → How）
+  - 每次变更必须先创建 logos/changes/ 变更提案

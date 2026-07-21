@@ -584,6 +584,15 @@ ${meta}
 - 是否需要回滚预案：是 / 否
 - 是否需要 smoke：是 / 否
 
+## UI/UX 变更声明
+
+\`\`\`yaml
+ui_impact: false            # 本次是否触及界面（GUI 项目才有意义）
+design_system_mode: generated   # generated | fallback（fallback 时须填 design_system_fallback_reason）
+design_system_fallback_reason: ""
+pages: []                   # 每项 {id, prototype: core-NN-<slug>.html, description}
+\`\`\`
+
 ## 变更概述
 [用 1-3 段话概述具体改什么]
 `;
@@ -611,6 +620,15 @@ ${meta}
 - Data migration involved: yes / no
 - Rollback plan required: yes / no
 - Smoke required: yes / no
+
+## UI/UX Change Declaration
+
+\`\`\`yaml
+ui_impact: false            # Does this change touch the UI (only meaningful for GUI projects)
+design_system_mode: generated   # generated | fallback (fallback requires design_system_fallback_reason)
+design_system_fallback_reason: ""
+pages: []                   # each item {id, prototype: core-NN-<slug>.html, description}
+\`\`\`
 
 ## Summary
 [Describe what will change in 1-3 paragraphs]

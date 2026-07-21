@@ -56,3 +56,13 @@
 - [x] adopt 保留根指令文件用户配置：已覆盖（UT-S20-10、ST-S20-07）
 - [x] adopt 大小写变体保护：已覆盖（UT-S20-11、ST-S20-08）
 
+## 四、逆向建基线衔接补充用例（brownfield-adopter）
+
+| 用例 ID | 名称 | 覆盖点 | 前置 | 输入 | 期望 |
+|---|---|---|---|---|---|
+| UT-S20-12 | adopt 写入 baseline_seed_state:required | adopt 逻辑 | 空 logos/ | 执行 adopt | `logos-project.yaml` 模块含枚举 `baseline_seed_state: required`（非布尔），接入报告说明下一步逆向建基线 |
+| UT-S20-13 | adopt 不启动 AI、不声称基线已建立 | adopt 逻辑 | 空 logos/ | 执行 adopt | 未调用 AI；接入报告不出现「基线已建立」；`logos/resources/` 无逆向产物 |
+| ST-S20-09 | adopt 能力缺失时降级不伪造 | S33 EX-4.1 联动 | CLI-only / 非交互 CI | 执行 adopt | 保持 `baseline_seed_state: required`，输出可复制的后续提示，不显示基线已建立 |
+
+> 说明：本补充仅衔接 S33（种子基线由 AI 会话/driver 派发产出）；S20 主用例（ST-S20-01…08、UT-S20-01…11）不变。
+

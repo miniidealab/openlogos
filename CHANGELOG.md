@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.11] - 2026-07-20
+
+### Added
+
+- **feature 功能分组层（S34，add-feature-model）** — 在 `module` 与 `scenario` 之间引入**可选的 `feature`（功能）分组维度**：归属单一 module、聚合若干 scenario、可选链接 feature-specs 文档。范式比照 scenario——`feature_counter` / `features[]` / `scenario.feature` 由 AI 维护，CLI 只读消费。
+  - 新增 `openlogos feature list [--module <id>] [--format json]`（只读分组视图，含"未分组"桶；未注册 module 报 `MODULE_NOT_FOUND`）。
+  - 新增 `openlogos feature-backfill [--module <id>] [--format json]`（复刻 `openlogos index` 范式生成 AI 回填 prompt，不改 yaml、幂等）。
+  - `status` / `next` 在 module 下按 feature 分组呈现（text + JSON），并采**条件契约版本**：响应含 `features` 时 `contract.version=1.1.0`，否则保持 `1.0.0`（纯 pre-feature 项目逐字节零漂移）。两份 JSON Schema 升级为向后兼容 superset（`version` enum `["1.0.0","1.1.0"]` + 根级 allOf 约束）。
+
+## [0.13.10] - 2026-07-19
+
+### Added
+
+- **`product_type` 枚举新增 `service`（纯后端服务）** — 常驻 worker / daemon、定时循环任务、消息队列消费者等无对外 HTTP/RPC 接口的后端服务现在有了准确的产品类型；与 `api`（对外暴露 HTTP/RPC 接口）以「有无对外接口」划界。`service` 归非 GUI 集合、追加在枚举末尾（固定顺序契约：既有 7 值前缀不变），`module set-product-type` / `module add` / 缺字段诊断 `next_action.enum`（扩为 8 值）与随包 spec / Skill 同步更新。
+
 ## [0.13.6] - 2026-07-07
 
 ### Fixed

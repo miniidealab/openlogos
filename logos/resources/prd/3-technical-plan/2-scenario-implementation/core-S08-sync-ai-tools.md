@@ -28,6 +28,29 @@ sequenceDiagram
 8. **CLI** 扫描目标宿主的项目专属 Skill 与插件资产。Codex 包括 `.agents/skills/*`、`.agents/plugins/*` 与历史 `.codex-plugin/`；Claude Code 包括 `.claude/skills/*` 与项目独立插件。
 9. **CLI** 只同步 OpenLogos 官方插件资产。Codex 中刷新 repo marketplace 的 `openlogos` 插件条目、OpenLogos skills 和 SessionStart hook；Claude Code 中刷新 OpenLogos 官方插件和 guard；项目专属 skill、项目插件条目和未知归属资产原样保留。
 10. **CLI** 汇总输出，同步结果中应包含兼容迁移说明和命名空间诊断，便于用户发现项目 skill 是否仍处于项目命名空间。
+11. **CLI** 全部同步步骤成功完成后，写入版本戳文件 `logos/.openlogos-sync.json`（`cliVersion` + `syncedAt`，幂等覆盖）；任何失败退出路径（配置缺失、baseline 提交进行中）都不写、不刷新该文件。详见「版本戳落盘（.openlogos-sync.json）」章节。
+
+## 版本戳落盘（.openlogos-sync.json）
+
+`openlogos sync` 成功完成后，在项目本地落盘最近一次成功 sync 使用的 CLI 版本，供人或 AI 与全局安装版本（`openlogos --version`）对比，判断本地是否需要再次 sync。
+
+**文件路径**：`logos/.openlogos-sync.json`
+
+**文件内容**：
+
+```json
+{
+  "cliVersion": "<当前 CLI VERSION，即 cli/package.json 的 version>",
+  "syncedAt": "<ISO 8601 时间戳>"
+}
+```
+
+**行为约束**：
+
+1. **只在成功路径写入**：写入时机位于 sync 全部同步步骤正常执行完毕之后（即 `withRecoveredReadLocks` 回调成功返回、未因 `baseline_commit_in_progress` 退出）。sync 因 `logos.config.json` 缺失或 baseline 提交进行中而失败退出时，不写、不刷新该文件——避免失败的 sync 刷新版本戳造成「看似已同步」的假象。
+2. **幂等覆盖**：每次成功 sync 整体覆盖写入（非追加），文件始终反映最近一次成功 sync 的版本与时间。
+3. **私有会话态定位**：与 `logos/.session-capabilities.json` 同款做法——项目本地私有文件，约定 gitignore，CLI 不强制改写用户 `.gitignore`。
+4. **消费边界**：本文件只是事实源；`status` / `next` 等命令的「CLI 已升级，建议重新 sync」对比提示不属于本场景范围。
 
 ## AI 工具 Skill 命名空间同步补充时序
 ```mermaid
@@ -51,6 +74,7 @@ sequenceDiagram
 ### EX-2.1: 配置缺失
 - **触发条件**：目录未初始化。
 - **期望响应**：输出错误并退出。
+- **副作用**：不写、不刷新 `logos/.openlogos-sync.json` 版本戳。
 
 ### EX-6.1: 缺少 verify 预跑配置且无法推断
 - **触发条件**：旧项目没有任何 verify 预跑命令，且 CLI 无法从项目清单推断测试命令。
@@ -76,3 +100,8 @@ sequenceDiagram
 - **触发条件**：已初始化项目存在 `.claude/skills/release-guard/SKILL.md`。
 - **期望响应**：sync 刷新 OpenLogos 官方 Claude 插件与 `CLAUDE.md` managed block，但 `.claude/skills/release-guard/SKILL.md` 原样保留，并在说明中标记为项目专属技能。
 - **副作用**：不得把 `release-guard` 复制到 OpenLogos 插件 `plugin/skills`。
+
+### EX-11.1: 同步失败时不写版本戳
+- **触发条件**：sync 因 `baseline_commit_in_progress`（模块基线提交进行中、锁被占用且无法恢复）非零退出，或因配置缺失（EX-2.1）提前退出。
+- **期望响应**：正常输出既有错误信息；`logos/.openlogos-sync.json` 不被创建；已存在的版本戳文件内容保持原样（仍反映上一次成功 sync）。
+- **副作用**：零写副作用——失败路径不得刷新 `cliVersion` / `syncedAt`。

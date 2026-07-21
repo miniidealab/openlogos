@@ -400,13 +400,17 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
   it('UT-S11-bootstrap-03: bootstrap=skipped 的 launched 模块按 adopted 接入模式建议补文档提案', () => {
     scaffoldProject(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
-      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped', baseline_seed_state: 'required' }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
     }, { lineWidth: 0 }));
 
     const data = collectStatusData(root);
     expect(data.modules?.[0].bootstrap).toBe('adopted');
-    expect(data.modules?.[0].suggestion).toContain('add-baseline-docs');
+    // brownfield-adopter（S33）：required 时引导逆向建基线（取代旧 add-baseline-docs）。
+    expect(data.modules?.[0].suggestion.toLowerCase()).toContain('baseline');
+    expect(data.modules?.[0].suggestion).not.toContain('add-baseline-docs');
+    expect(data.modules?.[0].baseline_seed_state).toBe('required');
+    expect(data.modules?.[0].baseline_coverage?.incomplete).toBe(false);
   });
 });
 
@@ -1415,27 +1419,27 @@ describe('S11 Scenario Tests — status command', () => {
   it('ST-S11-bootstrap-01: 存量项目接入状态面板正确显示已跳过', () => {
     scaffoldProject(root, { locale: 'zh' });
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
-      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'adopted' }],
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'adopted', baseline_seed_state: 'required' }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
     }, { lineWidth: 0 }));
 
     status();
     const out = con.logs.join('\n');
     expect(out).toContain('文档基线已跳过（存量项目接入）');
-    expect(out).toContain('openlogos change add-baseline-docs');
+    expect(out).toContain('逆向建立现状基线');
   });
 
   it('ST-S11-bootstrap-02: 历史 skipped 接入状态面板正确显示已跳过', () => {
     scaffoldProject(root, { locale: 'zh' });
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
-      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped' }],
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'skipped', baseline_seed_state: 'required' }],
       deployment_gates: { core: { deployment_required: true, smoke_required: true } },
     }, { lineWidth: 0 }));
 
     status();
     const out = con.logs.join('\n');
     expect(out).toContain('文档基线已跳过（存量项目接入）');
-    expect(out).toContain('openlogos change add-baseline-docs');
+    expect(out).toContain('逆向建立现状基线');
   });
 });
 
@@ -2072,3 +2076,271 @@ describe('S11 Unit Tests — multi-module phase filtering', () => {
     expect(data.modules![0].current_phase).toBe('phase.1');
   });
 });
+
+// ── contract-self-description 切片1（C3）：active_change.facts 权威事实块 ──
+describe('S11 — active_change.facts（contract-self-description）', () => {
+  it('UT-S11-53: launched 活跃提案输出 facts 六布尔且与磁盘权威事实一致', () => {
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+    const dir = join(root, 'logos', 'changes', 'feat');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'proposal.md'), '# 变更提案：feat\n\n## 变更类型\n代码级\n\n## 变更概述\n实现 A。\n');
+    writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片\n');
+    writeFileSync(join(dir, 'SPEC_MERGED'), '');
+    const restoreCwd = mockCwd(root); const con = captureConsole();
+    try { status('json'); } finally { con.restore(); restoreCwd(); }
+    const data = JSON.parse(con.logs[con.logs.length - 1]).data;
+    expect(data.modules[0].active_change.facts).toEqual({
+      spec_complete: true,      // SPEC_MERGED 在场
+      slices_planned: true,     // [code] 含真实脱占位条目
+      slices_approved: false,   // 无 SLICES_APPROVED
+      code_required: true,      // [code] section 在场
+      has_delta_tasks: true,    // [delta] 含条目
+      verify_pass: false,       // 无 VERIFY_PASS
+    });
+    cleanup();
+  });
+});
+
+// ── contract-self-description 切片2（C1/C5）：contract 版本握手 + step_meta + 注册表 lint ──
+describe('S11 — contract / step_meta / 步骤注册表（contract-self-description）', () => {
+  function launchedFixture(opts: { proposal?: boolean } = {}): { root: string; cleanup: () => void } {
+    const { root, cleanup } = makeTempRoot();
+    scaffoldProject(root, { locale: 'zh' });
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+    }, { lineWidth: 0 }));
+    if (opts.proposal !== false) {
+      writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+      const dir = join(root, 'logos', 'changes', 'feat');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'proposal.md'), '# 变更提案：feat\n\n## 变更类型\n代码级\n\n## 变更概述\n实现 A。\n');
+      writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片\n');
+      writeFileSync(join(dir, 'SPEC_MERGED'), '');
+    }
+    return { root, cleanup };
+  }
+  function runStatus(root: string): any {
+    const restoreCwd = mockCwd(root); const con = captureConsole();
+    try { status('json'); } finally { con.restore(); restoreCwd(); }
+    return JSON.parse(con.logs[con.logs.length - 1]).data;
+  }
+
+  it('UT-S11-51: status data 顶层 contract 恒在场且等于 {version:"1.0.0"}', () => {
+    const { root, cleanup } = launchedFixture();
+    const data = runStatus(root);
+    expect(data.contract).toEqual({ version: '1.0.0' });
+    cleanup();
+  });
+
+  it('UT-S11-52: step_meta 经注册表映射，phase/kind 在闭合枚举内', async () => {
+    const { STEP_REGISTRY } = await import('../src/lib/step-registry.js');
+    // 抽样断言四步骤映射（与 spec/cli-json-output.md §3.3 表逐字一致）
+    expect(STEP_REGISTRY['writing']).toEqual({ phase: 'pre-implement', kind: 'produce' });
+    expect(STEP_REGISTRY['ready-to-merge']).toEqual({ phase: 'pre-implement', kind: 'gate' });
+    expect(STEP_REGISTRY['coding']).toEqual({ phase: 'implement', kind: 'produce' });
+    expect(STEP_REGISTRY['verify-passed']).toEqual({ phase: 'post-implement', kind: 'residency' });
+    // 输出侧取值 == 注册表映射（ready-to-implement 驻留态 fixture）
+    const { root, cleanup } = launchedFixture();
+    const ac = runStatus(root).modules[0].active_change;
+    expect(ac.step_meta).toEqual(STEP_REGISTRY[ac.proposal_step]);
+    const PHASES = ['pre-implement', 'implement', 'post-implement'];
+    const KINDS = ['produce', 'gate', 'command-required', 'residency'];
+    for (const meta of Object.values(STEP_REGISTRY)) {
+      expect(PHASES).toContain((meta as any).phase);
+      expect(KINDS).toContain((meta as any).kind);
+    }
+    cleanup();
+  });
+
+  it('UT-S11-54: 无活跃提案 → 不出现 step_meta/facts（active_change:null），contract 仍在场', () => {
+    const { root, cleanup } = launchedFixture({ proposal: false });
+    const data = runStatus(root);
+    expect(data.contract).toEqual({ version: '1.0.0' });
+    expect(data.modules[0].active_change).toBeNull();
+    expect(JSON.stringify(data)).not.toContain('step_meta');
+    expect(JSON.stringify(data)).not.toContain('"facts"');
+    cleanup();
+  });
+
+  it('UT-S11-55: 注册表 lint——枚举与注册表同步、源内 proposal_step 字面量赋值全部在注册表', async () => {
+    const { readFileSync: rf } = await import('node:fs');
+    const { resolve, dirname: dn, join: j } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const { REGISTERED_STEPS } = await import('../src/lib/step-registry.js');
+    const srcDir = resolve(dn(fileURLToPath(import.meta.url)), '../src');
+    // (1) ProposalStep 闭合枚举（源定义解析）与注册表键集完全一致——枚举新增值而注册表缺条目 → 本测试失败
+    const lifecycleSrc = rf(j(srcDir, 'lib', 'proposal-lifecycle.ts'), 'utf-8');
+    const unionBlock = lifecycleSrc.match(/export type ProposalStep =([\s\S]*?);/);
+    expect(unionBlock).not.toBeNull();
+    const enumValues = [...unionBlock![1].matchAll(/'([a-z-]+)'/g)].map(m => m[1]).sort();
+    expect(enumValues).toEqual([...REGISTERED_STEPS].sort());
+    // (2) 派生镜像（flow-derive / proposal-lifecycle）中出现的 proposal_step 字面量必须全部在注册表内
+    const registered = new Set<string>(REGISTERED_STEPS);
+    for (const rel of ['lib/flow-derive.ts', 'lib/proposal-lifecycle.ts', 'commands/status.ts', 'commands/next.ts']) {
+      const src = rf(j(srcDir, rel), 'utf-8');
+      for (const m of src.matchAll(/proposal_step\s*[:=]\s*'([a-z-]+)'/g)) {
+        expect(registered.has(m[1]), `${rel}: proposal_step 字面量 '${m[1]}' 不在 step-registry`).toBe(true);
+      }
+    }
+    // (3) code review F5：commands 层（status/next 覆盖点）禁止「字面量直接赋值 proposal_step」——
+    //     必须经 mintStep 成对铸造（步骤+step_meta 绑定，无法各自漂移）。直接赋值出现即失败。
+    for (const rel of ['commands/status.ts', 'commands/next.ts']) {
+      const src = rf(j(srcDir, rel), 'utf-8');
+      const direct = [...src.matchAll(/proposal_step\s*=\s*'([a-z-]+)'/g)].map(m => m[0]);
+      expect(direct, `${rel} 存在未经 mintStep 的字面量赋值：${direct.join(' | ')}`).toEqual([]);
+    }
+    // (4) r2-F5：检测器（两套镜像）内的 `return '<kebab 字面量>'` 全形态扫描——每个疑似步骤返回值
+    //     必须在注册表（或显式非步骤白名单）内；同时断言两镜像出口均已接 mintStep（成对铸造出口在场）。
+    const NON_STEP_RETURN_ALLOWLIST = new Set<string>([]); // 新的未知 kebab 返回值默认 fail loud
+    for (const rel of ['lib/flow-derive.ts', 'lib/proposal-lifecycle.ts']) {
+      const src = rf(j(srcDir, rel), 'utf-8');
+      for (const m of src.matchAll(/return\s+'([a-z][a-z0-9-]*)'/g)) {
+        const lit = m[1];
+        expect(registered.has(lit) || NON_STEP_RETURN_ALLOWLIST.has(lit),
+          `${rel}: 检测器返回字面量 '${lit}' 不在注册表且不在白名单`).toBe(true);
+      }
+    }
+    expect(rf(j(srcDir, 'lib/flow-derive.ts'), 'utf-8')).toContain('mintStep(effective)');
+    // r3-F5 收敛为一：旧镜像树必须不存在；proposal-lifecycle 只保留对权威检测器的委托
+    const lifecycleSrc2 = rf(j(srcDir, 'lib/proposal-lifecycle.ts'), 'utf-8');
+    expect(lifecycleSrc2).not.toContain('detectProposalStepRaw');
+    expect(lifecycleSrc2).toContain('detectMintedStepViaFlow(proposalDir, moduleDefaults).proposal_step');
+  });
+
+  it('ST-S11-35: contract/step_meta/facts 端到端一致（与 loop_state 挂出判据同源）', () => {
+    const { root, cleanup } = launchedFixture();
+    const data = runStatus(root);
+    expect(data.contract).toEqual({ version: '1.0.0' });
+    const ac = data.modules[0].active_change;
+    expect(ac.proposal_step).toBe('ready-to-implement');
+    expect(ac.step_meta).toEqual({ phase: 'pre-implement', kind: 'residency' });
+    expect(ac.facts).toMatchObject({ spec_complete: true, slices_planned: true, slices_approved: false });
+    // step_meta.phase==pre-implement ↔ loop_state 缺席（与 facts 同源判据的反面锚）
+    expect(data.modules[0].loop_state).toBeUndefined();
+    cleanup();
+  });
+});
+
+// ── contract-self-description 切片5（C7）：x-future-step 生产者漂移注入 ──
+describe('S11 — 生产者一致性漂移注入（contract-self-description）', () => {
+  it('UT-S11-56: 注册 x-future-step → 真实生产路径产出、漏扩 schema 被抓、三方同步后通过', async () => {
+    const { STEP_REGISTRY, mintStep, REGISTERED_STEPS } = await import('../src/lib/step-registry.js');
+    const { __setStepDetectorOverrideForTest } = await import('../src/lib/flow-derive.js');
+    const { collectStatusData } = await import('../src/commands/status.js');
+    const { readFileSync: rf } = await import('node:fs');
+    const { default: Ajv2020 } = await import('ajv/dist/2020.js');
+    const { default: addFormats } = await import('ajv-formats');
+    const schemaPath = join(process.cwd(), '..', 'spec', 'schema', 'status.schema.json');
+    const realSchema = JSON.parse(rf(schemaPath, 'utf-8'));
+    // 三方同步基线：注册表键集 == 真实发布 schema 的 proposalStep 枚举（漂移即失败）
+    expect([...realSchema.$defs.proposalStep.enum].sort()).toEqual([...REGISTERED_STEPS].sort());
+    const FUTURE = 'x-future-step';
+    const { root, cleanup } = makeTempRoot();
+    try {
+      scaffoldProject(root, { locale: 'zh' });
+      writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      }, { lineWidth: 0 }));
+      writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+      const dir = join(root, 'logos', 'changes', 'feat');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'proposal.md'), '# 变更提案：feat\n\n## 变更类型\n代码级\n\n## 变更概述\n实现。\n');
+      writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [ ] d\n\n## [code] 代码实现\n（占位）\n');
+      // 漂移注入：真实注册表 + 检测器注入缝 → **真实 status 生产路径**产出未来步骤
+      (STEP_REGISTRY as Record<string, unknown>)[FUTURE] = { phase: 'pre-implement', kind: 'residency' };
+      __setStepDetectorOverrideForTest(() => FUTURE as never);
+      const data = collectStatusData(root) as any;
+      const ac = data.modules[0].active_change;
+      // 真实生产者经注册表铸造：新步骤 + step_meta 自动成对附着（不猜、不本地枚举）
+      expect(ac.proposal_step).toBe(FUTURE);
+      expect(ac.step_meta).toEqual({ phase: 'pre-implement', kind: 'residency' });
+      // 真实 pre-implement 未来步骤输出：loop_state 缺席（非法组合不存在——r2-F5 真实输出锚）
+      expect(data.modules[0].loop_state).toBeUndefined();
+      // 漏扩 schema（真实发布 schema 未同步）→ 真实输出校验必须失败：三方必须一起动的可证伪门
+      const ajvOld = new Ajv2020({ strict: false, allowUnionTypes: true }); addFormats(ajvOld);
+      expect(ajvOld.validate(realSchema, data)).toBe(false);
+      // 同步扩展 schema 枚举后 → 同一真实输出通过
+      const futureSchema = JSON.parse(JSON.stringify(realSchema));
+      futureSchema.$defs.proposalStep.enum = [...realSchema.$defs.proposalStep.enum, FUTURE];
+      const ajvNew = new Ajv2020({ strict: false, allowUnionTypes: true }); addFormats(ajvNew);
+      expect(ajvNew.validate(futureSchema, data), JSON.stringify(ajvNew.errors)).toBe(true);
+      // 注册表未同步（只删注册表、保留 override）→ 真实生产路径 fail loud，不静默流出裸步骤
+      delete (STEP_REGISTRY as Record<string, unknown>)[FUTURE];
+      expect(() => collectStatusData(root)).toThrow(/未注册/);
+      expect(() => mintStep('x-unregistered-step' as never)).toThrow(/未注册/);
+    } finally {
+      __setStepDetectorOverrideForTest(null);
+      delete (STEP_REGISTRY as Record<string, unknown>)[FUTURE];
+      cleanup();
+    }
+  });
+
+  it('UT-S11-57: 反面锚——四事实齐备下注入 pre-implement 未来步骤仍必须抑制 loop_state（真实生产路径）', async () => {
+    const { STEP_REGISTRY } = await import('../src/lib/step-registry.js');
+    const { __setStepDetectorOverrideForTest } = await import('../src/lib/flow-derive.js');
+    const { collectStatusData } = await import('../src/commands/status.js');
+    // 反向 fixture（r3-F5）：磁盘四事实全部为真——SPEC_MERGED + 结构化 SLICES_APPROVED + 未完成真实切片
+    const { root, cleanup } = makeTempRoot();
+    const FUTURE = 'x-future-step';
+    const FUTURE_IMPL = 'x-future-impl-step';
+    try {
+      scaffoldProject(root, { locale: 'zh' });
+      writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
+        modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      }, { lineWidth: 0 }));
+      writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
+      const dir = join(root, 'logos', 'changes', 'feat');
+      mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
+      writeFileSync(join(dir, 'proposal.md'), '# 变更提案：feat\n\n## 变更类型\n代码级\n\n## 变更概述\n实现。\n');
+      writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片\n');
+      writeFileSync(join(dir, 'deltas', 'test', 'core-S11-test-cases.md'), '| UT-S11-90 | 回归 |\n');
+      writeFileSync(join(dir, 'SPEC_MERGED'), '');
+      writeFileSync(join(dir, 'SLICES_APPROVED'), JSON.stringify({ schema: 'openlogos/slices-approved@1', approved_at: '2026-07-17T08:00:00Z' }) + '\n');
+      // 基线（无注入）：四事实齐备 → 真实输出挂 loop_state（coding / implement）——证明 fixture 底层确会激活 loop
+      const baseline = collectStatusData(root) as any;
+      expect(baseline.modules[0].active_change.facts).toMatchObject({ spec_complete: true, slices_planned: true, slices_approved: true, code_required: true });
+      expect(baseline.modules[0].active_change.step_meta.phase).toBe('implement');
+      expect(baseline.modules[0].loop_state).toMatchObject({ subflow_id: 'implement' });
+      // 注入 pre-implement 未来步骤：同一磁盘（四事实仍真）→ 真实输出必须抑制 loop_state（非法组合不存在）
+      (STEP_REGISTRY as Record<string, unknown>)[FUTURE] = { phase: 'pre-implement', kind: 'residency' };
+      __setStepDetectorOverrideForTest(() => FUTURE as never);
+      const suppressed = collectStatusData(root) as any;
+      expect(suppressed.modules[0].active_change.proposal_step).toBe(FUTURE);
+      expect(suppressed.modules[0].active_change.step_meta.phase).toBe('pre-implement');
+      expect(suppressed.modules[0].loop_state, 'pre-implement 未来步骤下 loop_state 必须被抑制').toBeUndefined();
+      // 换 implement 相位的未来步骤 → loop_state 恢复挂出：证明测试确实触达抑制分支（双向敏感）
+      (STEP_REGISTRY as Record<string, unknown>)[FUTURE_IMPL] = { phase: 'implement', kind: 'produce' };
+      __setStepDetectorOverrideForTest(() => FUTURE_IMPL as never);
+      const restored = collectStatusData(root) as any;
+      expect(restored.modules[0].active_change.step_meta.phase).toBe('implement');
+      expect(restored.modules[0].loop_state).toMatchObject({ subflow_id: 'implement' });
+      // 既有 pre-implement 驻留态扫描（真实 fixture，无注入）
+      __setStepDetectorOverrideForTest(null);
+      const { rmSync } = await import('node:fs');
+      const preFixtures: Array<{ tasks: string; markers: string[] }> = [
+        { tasks: '# 任务\n\n## [delta] 规格变更\n- [ ] d\n\n## [code] 代码实现\n（占位）\n', markers: [] },
+        { tasks: '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1：真实切片\n', markers: ['SPEC_MERGED'] },
+      ];
+      for (const f of preFixtures) {
+        writeFileSync(join(dir, 'tasks.md'), f.tasks);
+        rmSync(join(dir, 'SPEC_MERGED'), { force: true });
+        rmSync(join(dir, 'SLICES_APPROVED'), { force: true });
+        for (const mk of f.markers) writeFileSync(join(dir, mk), '');
+        const data = collectStatusData(root) as any;
+        expect(data.modules[0].active_change.step_meta.phase).toBe('pre-implement');
+        expect(data.modules[0].loop_state).toBeUndefined();
+      }
+    } finally {
+      __setStepDetectorOverrideForTest(null);
+      delete (STEP_REGISTRY as Record<string, unknown>)[FUTURE];
+      delete (STEP_REGISTRY as Record<string, unknown>)[FUTURE_IMPL];
+      cleanup();
+    }
+  });
+});
+

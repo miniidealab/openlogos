@@ -1,0 +1,553 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openlogos.dev/schema/next/1.1.0",
+  "title": "openlogos next --format json 机器契约（data 对象）",
+  "x-contract-version": "1.1.0",
+  "$comment": "向后兼容 superset schema，最高支持契约版本 1.1.0（add-feature-model，条件版本 delta-F1=B，透传自 status 分组）。本 schema 同时校验 contract.version 为 1.0.0（无 modules[].features）与 1.1.0（可含 features）两版响应；根级 allOf 约束 version==1.0.0 ⟹ 无 features、features present ⟹ 1.1.0，故 pre-feature 响应逐字节保持 1.0.0。JSON Schema dialect = draft 2020-12。校验对象 = envelope 的 data 字段。未知可选字段策略：additionalProperties 全局放开；消费方遇未知字段/枚举值走保守分支（见 spec/cli-json-output.md）。必填集锁核心承诺：data.contract 恒在场；next_node 出现时 id/name/subflow_id/dispatch 恒在场且 dispatch 为完整三字段对象（artifacts_hint:[] 是「产物未知」合法语义）。发布与版本映射（调整）：响应 data.contract.version ∈ 本 schema 支持集 {1.0.0,1.1.0} 且 features⟹1.1.0，CI 校验。",
+  "type": "object",
+  "required": [
+    "contract"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "contract": {
+      "$ref": "#/$defs/contract"
+    },
+    "modules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nextModule"
+      }
+    },
+    "next_node": {
+      "$ref": "#/$defs/nextNode"
+    },
+    "proposal_step": {
+      "$ref": "#/$defs/proposalStepOrNull"
+    },
+    "loop_state": {
+      "$ref": "#/$defs/loopState"
+    },
+    "slice_state": {
+      "$ref": "#/$defs/sliceState"
+    },
+    "auto": {
+      "type": "boolean"
+    },
+    "gate_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "skippable": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "gate_auto_passed": {
+      "type": "boolean"
+    },
+    "auto_execute": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "contract"
+        ],
+        "properties": {
+          "contract": {
+            "properties": {
+              "version": {
+                "const": "1.0.0"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "modules": {
+            "items": {
+              "not": {
+                "required": [
+                  "features"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "$comment": "条件版本（add-feature-model delta-F1=B）：contract.version==1.0.0 ⟹ 任何 module 都不得含 features；features 存在即强制 version 为 1.1.0，pre-feature 响应逐字节保持 1.0.0"
+    }
+  ],
+  "$defs": {
+    "contract": {
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "version": {
+          "enum": [
+            "1.0.0",
+            "1.1.0"
+          ],
+          "$comment": "条件版本（add-feature-model delta-F1=B）：响应无任何 modules[].features 时为 1.0.0（与 pre-feature 逐字节一致）；任一 module 输出 features 时为 1.1.0。根级 allOf 约束 features⟺1.1.0。升级规则见 spec/cli-json-output.md"
+        }
+      }
+    },
+    "proposalStep": {
+      "enum": [
+        "writing",
+        "ready-to-delta",
+        "delta-writing",
+        "ready-to-merge",
+        "merge-generated",
+        "spec-complete-required",
+        "test-id-required",
+        "ready-to-implement",
+        "coding",
+        "ready-to-verify",
+        "verify-passed",
+        "verify-failed",
+        "ready-to-deploy",
+        "deploy-done",
+        "ready-to-smoke",
+        "smoke-passed",
+        "smoke-failed",
+        "implementing",
+        "in-progress"
+      ]
+    },
+    "proposalStepOrNull": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/proposalStep"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dispatch": {
+      "type": "object",
+      "required": [
+        "idempotent",
+        "timeout_seconds",
+        "artifacts_hint"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "idempotent": {
+          "type": "boolean",
+          "$comment": "重派发是否安全；权威声明来自 flow 节点定义，driver 不得本地 allowlist 猜测"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "$comment": "resolved 物化值；未显式声明的节点取 flow 顶层 defaults.dispatch.timeout_seconds（唯一默认值源 fallback）"
+        },
+        "artifacts_hint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "$comment": "[] = 「产物未知」契约语义：消费方不得据此判死，只能升级观察"
+        }
+      }
+    },
+    "nextNode": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "subflow_id",
+        "skill",
+        "working_agent",
+        "review_agent",
+        "pre_script",
+        "post_script",
+        "dispatch"
+      ],
+      "$comment": "八字段锚的可执行化：next_node 一旦出现，id/name/subflow_id 与五个固定 hint（skill/working_agent/review_agent/pre_script/post_script，无绑定必须显式 null）恒在场，加本契约新增的恒存在 dispatch；requires_reviewed 仅声明节点输出。modules[].next_node 与 legacy 顶层 next_node 复用本定义。",
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "subflow_id": {
+          "type": "string"
+        },
+        "skill": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_agent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review_agent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pre_script": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "post_script": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gate_id": {
+          "type": "string"
+        },
+        "slice": {
+          "type": "string"
+        },
+        "slice_children": {
+          "type": "array"
+        },
+        "dispatch": {
+          "$ref": "#/$defs/dispatch"
+        },
+        "requires_reviewed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "$comment": "可选；仅节点显式声明时输出（如内置 launched apply-merge = [\"proposal\",\"delta\"]）；未声明节点不含本字段"
+        }
+      }
+    },
+    "stepMeta": {
+      "type": "object",
+      "required": [
+        "phase",
+        "kind"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "phase": {
+          "enum": [
+            "pre-implement",
+            "implement",
+            "post-implement"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "produce",
+            "gate",
+            "command-required",
+            "residency"
+          ]
+        }
+      }
+    },
+    "facts": {
+      "type": "object",
+      "required": [
+        "spec_complete",
+        "slices_planned",
+        "slices_approved",
+        "code_required",
+        "has_delta_tasks",
+        "verify_pass"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "spec_complete": {
+          "type": "boolean"
+        },
+        "slices_planned": {
+          "type": "boolean"
+        },
+        "slices_approved": {
+          "type": "boolean"
+        },
+        "code_required": {
+          "type": "boolean"
+        },
+        "has_delta_tasks": {
+          "type": "boolean"
+        },
+        "verify_pass": {
+          "type": "boolean"
+        }
+      }
+    },
+    "activeChange": {
+      "type": "object",
+      "required": [
+        "slug",
+        "proposal_step",
+        "step_meta",
+        "facts"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "slug": {
+          "type": "string"
+        },
+        "proposal_step": {
+          "$ref": "#/$defs/proposalStep"
+        },
+        "step_meta": {
+          "$ref": "#/$defs/stepMeta"
+        },
+        "facts": {
+          "$ref": "#/$defs/facts"
+        }
+      }
+    },
+    "feature": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "spec",
+        "scenarios"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^F(?:0[1-9]|[1-9]\\d+)$"
+            },
+            {
+              "const": "__ungrouped__"
+            }
+          ],
+          "$comment": "规范编号 F01…F09/F10…F99/F100+（^F(?:0[1-9]|[1-9]\\d+)$，项目全局唯一，拒 F00/F0/F001 等前导零）或保留伪 feature id \"__ungrouped__\"（恒排末位）"
+        },
+        "name": {
+          "type": "string"
+        },
+        "spec": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "$comment": "feature-specs 文档序号，无链接为 null；required（键恒在场）"
+        },
+        "scenarios": {
+          "type": "array",
+          "$comment": "稳定场景成员列表（与 phase/生命周期无关）",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "$comment": "add-feature-model：feature 功能分组（透传自 status）。可选、minor 新增。已注册空成员 feature 保留输出 scenarios:[]。省略当且仅当 module 既无注册 feature 且无场景带 feature 键；有注册 feature 或有场景带 feature 键（含未知/跨 module 悬空引用的 __ungrouped__ 降级桶）即输出"
+    },
+    "loopState": {
+      "type": "object",
+      "required": [
+        "subflow_id",
+        "until",
+        "max_iters",
+        "iteration",
+        "converged",
+        "escalated"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "subflow_id": {
+          "type": "string"
+        },
+        "until": {
+          "enum": [
+            "tests_green",
+            "code_slices_green"
+          ]
+        },
+        "max_iters": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "iteration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "converged": {
+          "type": "boolean"
+        },
+        "escalated": {
+          "type": "boolean"
+        },
+        "activated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "exhausted_skippable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sliceState": {
+      "type": "object",
+      "required": [
+        "total",
+        "done",
+        "remaining"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "done": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "current": {
+          "type": "string"
+        }
+      }
+    },
+    "nextModule": {
+      "type": "object",
+      "required": [
+        "id",
+        "active_change",
+        "proposal_step"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "proposal_step": {
+          "$ref": "#/$defs/proposalStepOrNull"
+        },
+        "active_change": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "$comment": "next 的 active_change 是提案 slug 字符串（status 才是对象）；step_meta/facts/code_required 在 next 平铺于 module 级（既有 S28/expose-code-required 契约）；required 基础字段（可为 null）——漏字段不再绕过条件校验"
+        },
+        "next_node": {
+          "$ref": "#/$defs/nextNode"
+        },
+        "loop_state": {
+          "$ref": "#/$defs/loopState"
+        },
+        "slice_state": {
+          "$ref": "#/$defs/sliceState"
+        },
+        "code_required": {
+          "type": "boolean"
+        },
+        "facts": {
+          "$ref": "#/$defs/facts"
+        },
+        "step_meta": {
+          "$ref": "#/$defs/stepMeta"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/feature"
+          },
+          "$comment": "add-feature-model：透传 status 的 feature 分组（1.1.0 minor 新增）。省略当且仅当 module 无注册 feature 且无场景带 feature 键；否则输出（含 __ungrouped__ 降级桶）"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "active_change": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "active_change"
+            ]
+          },
+          "then": {
+            "required": [
+              "active_change",
+              "proposal_step",
+              "step_meta",
+              "facts",
+              "code_required"
+            ],
+            "$comment": "活跃提案模块（active_change 为 slug 字符串）必须携带步骤自描述与权威事实（code review F3：可执行契约必须能拒绝「步骤在场但自描述缺失」漂移）"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "proposal_step": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "proposal_step"
+            ]
+          },
+          "then": {
+            "required": [
+              "active_change",
+              "proposal_step",
+              "step_meta",
+              "facts",
+              "code_required"
+            ],
+            "$comment": "code review r2-F3：proposal_step 非 null 同样强制完整自描述——缺 active_change 不再构成绕过"
+          }
+        }
+      ]
+    }
+  }
+}

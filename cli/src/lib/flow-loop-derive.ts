@@ -9,7 +9,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadFlow, findActivatedLoop, type Flow } from './flow.js';
-import { isCodeRequiredForProposal } from './proposal-lifecycle.js';
+import { isCodeRequiredForProposal, deriveProposalFacts, readSlicesApprovedAt } from './proposal-lifecycle.js';
 import type { ModuleInfo } from '../commands/status.js';
 
 export interface LoopState {
@@ -19,6 +19,9 @@ export interface LoopState {
   iteration: number;
   converged: boolean;
   escalated: boolean;
+  // contract-self-description 切片1（C2）：implement 进入时刻（ISO 8601，审计用），读自结构化
+  // SLICES_APPROVED marker 的 approved_at；旧格式空 marker → 省略该字段（兼容）。
+  activated_at?: string;
   // S29：仅当 overlay set-loop 显式写了 exhausted_gate 时才出现；未写则省略（消费方按 false 处理）→ 保 S27 激活-loop 零漂移
   exhausted_skippable?: boolean;
 }
@@ -73,6 +76,20 @@ export function deriveLoopState(
   // launched 无活跃提案 → 无提案目录账本，绝不 fallback 读 initial 账本（“launch 后不读 initial 账本”）
   if (mod.lifecycle === 'launched' && !proposalDir) return null;
 
+  // contract-self-description 切片1（C2）：launched 提案的 loop_state 挂出收紧为 implement 进入判据——
+  // code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved（与 active_change.facts 同一份计算，
+  // spec/flow-spec.md §12.2）。四条缺一即省略字段：writing/spec 阶段与 ready-to-implement 驻留态不挂、
+  // docs-only（code_required=false）永不挂。initial（overlay set-loop 显式激活、无提案生命周期）保持
+  // 既有结构性激活语义不变。
+  let activatedAt: string | null = null;
+  if (mod.lifecycle === 'launched' && proposalDir) {
+    const facts = deriveProposalFacts(proposalDir);
+    if (!(facts.code_required && facts.spec_complete && facts.slices_planned && facts.slices_approved)) {
+      return null;
+    }
+    activatedAt = readSlicesApprovedAt(proposalDir);
+  }
+
   const rows = readLoopIters(loopLedgerPath(root, proposalDir), mod.id);
   const iteration = rows.length;
   const testsGreen = iteration > 0 && rows[rows.length - 1].result === 'pass';
@@ -90,6 +107,8 @@ export function deriveLoopState(
   }
   const escalated = iteration >= act.max_iters && !converged;
   const state: LoopState = { subflow_id: act.subflow_id, until: act.until, max_iters: act.max_iters, iteration, converged, escalated };
+  // activated_at 在 exhausted_skippable 之前挂出（spec/cli-json-output.md §3.9 字段表序）；旧空 marker → 省略
+  if (activatedAt) state.activated_at = activatedAt;
   // S29：仅当 resolved loop 显式带 exhausted_gate（来自 overlay set-loop）时才输出 exhausted_skippable；
   // 未写则省略该键 → 既有 S27 激活-loop 的 loop_state JSON 不新增字段（真零漂移）。
   const eg = resolved.subflows.find(s => s.id === act.subflow_id)?.loop?.exhausted_gate;
