@@ -79,3 +79,45 @@
 
 ## 七、结论
 本地全局部署**成功**，发布前检查全绿、包内容与契约版本验证通过、部署后即时验证符合 C1-C7 预期。后续 `openlogos smoke` 按流程另行授权执行。
+
+---
+
+# 部署报告：change-lint-shift-left（2026-07-22）
+
+## 一、部署摘要
+- **模块 / 提案**：core / change-lint-shift-left
+- **授权依据**：`--auto` 对 deliver 门的 standing 授权（`GATE_AUTO_PASSED` 含 `deliver-entry`，`gate_auto_passed=true`）
+- **目标环境**：本机全局（测试目标）；公开 npm 发布沿 tag 链路，保留人类确认点，本单元未执行。
+- **前置条件**：`VERIFY_PASS` 存在 ✓；`tasks.md` 含 `[deploy]` section（3 项）✓；proposal 声明需要部署 ✓。
+- **执行链路**：部署方案 §二十一（change-lint 发布检查）本地链路。
+
+## 二、执行命令摘要（§二十一）
+
+| 步骤 | 命令 / 动作 | 结果 |
+|---|---|---|
+| 版本递增 | `cli/package.json` version `0.13.14` → `0.13.15`（patch +1，major.minor 不动） | **PASS** |
+| 构建打包 | `cd cli && npm run build && npm pack` | **PASS**（tarball `miniidealab-openlogos-0.13.15.tgz`，368 文件） |
+| 产物核验 | `dist/index.js` 可 grep 到 `change-lint` 命令注册 | **PASS**（4 处命中） |
+| 回滚来源留存 | 上一版 tarball `cli/miniidealab-openlogos-0.13.14.tgz` 在本地留存 | **PASS** |
+| 全局安装 | `npm install -g ./miniidealab-openlogos-0.13.15.tgz` | **PASS** |
+| 版本一致性校验 | `openlogos --version` == `0.13.15` == `cli/package.json` | **PASS** |
+| 可发现性即时验证 | 已部署全局 `openlogos --help` 收录 `change-lint` | **PASS** |
+
+## 三、随包交付内容核验
+- `dist/commands/change-lint.js`、`dist/lib/change-lint.js`、`dist/lib/delta-classify.js`、`dist/lib/markdown-scan.js`（S35 新增命令与共享判据层）✓
+- 变更 skills：`change-writer` / `slice-planner` SKILL 随 prepack 打入 ✓
+- `spec/cli-json-output.md` / `spec/change-management.md`（§3.15 envelope 契约与流程规格）随包 ✓
+
+## 四、迁移与服务
+无数据迁移（change-lint 为纯增量只读命令）；无常驻服务。
+
+## 五、回滚预案（§二十一 失败处理与回滚）
+`npm install -g cli/miniidealab-openlogos-0.13.14.tgz` 回装上一版；lint 为只读命令，回滚零数据副作用、零迁移；回滚后复核 `openlogos --version` 恢复 `0.13.14`。
+
+## 六、未执行的动作
+1. 公开 npm 发布（tag → GitHub Actions publish + Release）：人类确认点，未执行。
+2. `openlogos smoke`（SMOKE-core-51…53 部署后冒烟）：本工作单元仅部署，smoke 按流程另行授权执行。
+3. 官网部署：本提案无 website 变更，不涉及。
+
+## 七、结论
+本机全局部署**成功**：0.13.15 已构建、打包、安装，版本一致性与命令可发现性即时验证通过，回滚 tarball 已留存。

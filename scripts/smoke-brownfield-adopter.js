@@ -109,9 +109,14 @@ try {
 // SMOKE-core-46：status/next baseline_coverage 字段一致 + tombstone 不虚增 + n/a + stale。
 try {
   withTempProject('smoke-bfa-46-', (root) => {
+    // smoke-repair（SMOKE-core-46）：扫描侧采信判据与写侧同强度（provenance-scan-canonical-recompute）——
+    // 候选必须 key == candidateKey(module, anchor)（携 anchor 重算比对），旧手造 key（core::a11111111111、
+    // 无 anchor）会被整条排除出 coverage 分母，夹具与 SMOKE-core-48 同步对齐 provenance 契约。
+    const A1 = '系统边界：core CLI';
+    const A2 = '场景候选：S90 示例';
     scaffoldAdopted(root, 'seeded',
-      `  - key: "core::a11111111111"\n    state: active\n    verified: true\n    confirmed_by: "fred"\n` +
-      `  - key: "core::b22222222222"\n    state: active\n    verified: false\n`);
+      `  - key: "${candidateKey('core', A1)}"\n    anchor: "${A1}"\n    state: active\n    verified: true\n    confirmed_by: "fred"\n` +
+      `  - key: "${candidateKey('core', A2)}"\n    anchor: "${A2}"\n    state: active\n    verified: false\n`);
     const s = parseEnvelope(runCli(root, ['status', '--format', 'json'])).data.modules[0].baseline_coverage;
     const n = parseEnvelope(runCli(root, ['next', '--format', 'json'])).data.modules[0].baseline_coverage;
     if (JSON.stringify(s) !== JSON.stringify(n)) throw new Error('status/next baseline_coverage mismatch');
@@ -132,7 +137,9 @@ try {
 // SMOKE-core-47：verify 对 verified:false 逆向 spec 软告警不硬失败（gate 结果不因 baseline 改变）。
 try {
   withTempProject('smoke-bfa-47-', (root) => {
-    scaffoldAdopted(root, 'seeded', `  - key: "core::a11111111111"\n    state: active\n    verified: false\n`);
+    // smoke-repair（SMOKE-core-47）：同 46——候选须为规范键 + anchor，否则被采信判据排除、软告警不再产生。
+    const A47 = '系统边界：core CLI';
+    scaffoldAdopted(root, 'seeded', `  - key: "${candidateKey('core', A47)}"\n    anchor: "${A47}"\n    state: active\n    verified: false\n`);
     // 最小可运行 verify 集：一条已定义 UT 用例 + 其通过结果，使 verify 走到 baseline 软告警计算并打印 envelope。
     mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
     writeFileSync(join(root, 'logos/resources/test/core-X-test-cases.md'),

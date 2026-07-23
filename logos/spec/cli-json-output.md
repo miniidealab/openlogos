@@ -405,8 +405,8 @@ openlogos status --format json  # JSON 格式
 | `modules[].active_change.deployment_decision_conflict` | boolean | 是 | `proposal.md` 与 `[deploy]` section 是否冲突 |
 | `modules[].active_change.deployment_decision_conflict_reason` | string \| null | 否 | 冲突原因摘要；无冲突时为 null |
 | `modules[].suggestion` | string | 是 | 针对该模块的下一步建议（本地化文本） |
-| `modules[].baseline_seed_state` | string | 否 | brownfield-adopter（S33）：`required｜partial｜seeded`；仅 `bootstrap=adopted` 且无活跃提案时输出，映射 `logos-project.yaml` 的 `baseline_seed_state` 枚举 |
-| `modules[].baseline_coverage` | object | 否 | S33 现状基线覆盖率；与 `baseline_seed_state` 同条件输出，`status`/`next` 字段一致。见 §3.12 |
+| `modules[].baseline_seed_state` | string | 否（非 adopted 模块省略；**adopted 模块恒输出**） | brownfield-adopter（S33）：`required｜partial｜seeded`；`bootstrap=adopted` 模块**无条件输出**（含活跃提案与 `baseline_commit_in_progress` 降级分支）——explicit 显式值优先，yaml 缺省（legacy）时经共享 helper `effectiveBaselineSeedState` 派生（有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`，见架构 core-06 §4.1）；**无 `unknown` 取值、无「缺省 → 字段缺失」路径**（baseline-seed-legacy-default-unify）。不新增 `baseline_seed_state_source` 字段 |
+| `modules[].baseline_coverage` | object | 否 | S33 现状基线覆盖率；仅 `bootstrap=adopted` 且基线派生可用时输出（不随 `baseline_seed_state` 的恒输出扩展），`status`/`next` 字段一致。见 §3.12 |
 | `active_proposals` | array | 是 | 活跃变更提案列表 |
 | `active_proposals[].name` | string | 是 | 提案目录名 |
 | `active_proposals[].has_proposal` | boolean | 是 | 是否存在 proposal.md |
@@ -2140,3 +2140,81 @@ no-delta merge 写入的 `SPEC_MERGED` 建议为：
 - `set-product-type` **仅改 `modules[].product_type`**，不注入 / 移除 overlay；overlay 收敛仍由 `sync` 幂等负责
   （见 `spec/logos-project.md` §5），`overlay_sync_hint` 只是引导。
 - 成功 envelope 的 `is_gui` 由 `product_type ∈ {web,desktop,mobile}` 派生，供消费方直接判定，无需自行维护 GUI 集合。
+
+## 3.15 `openlogos change-lint --format json`（change-lint-shift-left S35）
+
+### 用法
+
+```bash
+openlogos change-lint [--slug <slug>] [--format json]
+```
+
+无 `--slug` 时取 guard 活跃提案。**遵守 §1.2 通用信封，无裸 JSON 例外。** 默认（无 `--format json`）为人读文本输出，不输出 JSON；本节契约仅约束 `--format json`。
+
+### 成功态（检查完成，无论 pass 与否）→ stdout success envelope
+
+```json
+{
+  "command": "change-lint",
+  "version": "<cli version>",
+  "timestamp": "<RFC 3339>",
+  "data": {
+    "slug": "change-lint-shift-left",
+    "pass": false,
+    "violations": [
+      {
+        "code": "tasks_code_header_missing",
+        "path": "logos/changes/change-lint-shift-left/tasks.md",
+        "message": "需代码的提案缺少 ## [code] 标题",
+        "fix_hint": "在 tasks.md 保留空 `## [code] 代码实现` 标题（切片由 merge 后 slice-planner 填写）",
+        "flow_reason": "tasks-code-section-missing"
+      },
+      {
+        "code": "code_change_requires_real_test_ids",
+        "path": "logos/changes/change-lint-shift-left/tasks.md",
+        "message": "需代码的提案在当前证据等级下无可采信的 UT/ST/SMOKE ID",
+        "fix_hint": "在 tasks.md 的 [delta] 规划测试规格 delta，或在 proposal.md 的「## 复用测试 ID」小节按固定语法列出已存在的具体 ID（如 UT-S09-02）",
+        "flow_reason": "code_change_requires_real_test_ids"
+      },
+      {
+        "code": "deployment_decision_conflict",
+        "path": "logos/changes/change-lint-shift-left/proposal.md",
+        "message": "proposal 声明需要部署，但 tasks.md 无 [deploy] section",
+        "fix_hint": "在 tasks.md 增加 [deploy] section，或把 proposal.md 部署影响改为「否」",
+        "flow_reason": "deployment_decision_conflict"
+      }
+    ]
+  }
+}
+```
+
+- `pass:true` → exit 0；`pass:false` → exit 2（检查红，可原地修复）。
+- `violations[]` 四字段 `code` / `path` / `message` / `fix_hint` **全必填**；`flow_reason` 可选。
+- **`flow_reason` 序列化契约（唯一形态）**：类型恒为 **string**，仅 L2/L3/L5 三个 code 携带（其余 code 不得出现该字段）。取值见下表；L5 的值固定为字符串 `"deployment_decision_conflict"`（即源字段**名**——其源 `resolveProposalDeploymentDecision().deployment_decision_conflict` 本身是 boolean，但 `flow_reason` **不序列化布尔值**，下游按 `code` 定位、按该字符串名回查源字段）。上方三例即 L2/L3/L5 的规范 JSON。
+- `path` 相对**项目根**；**排序（全序，含最终 tie-break）**：①检查项 L1→L7；②`path` 字典序；③**源位置出现序**（同文件多条违规按源行号/声明行出现顺序，如复用清单逐行违规）；④`code` 字典序；⑤`message` 字典序。同输入必得同序列（稳定排序承诺）。全过时 `violations: []`（空数组必在，不省略）。
+
+### 操作错误 → stderr error envelope，exit 1
+
+`makeErrorEnvelope("change-lint", <code>, <message>)`；操作错误码（与 violation code 分池）：`not_initialized` | `no_active_proposal` | `slug_not_found` | `slug_invalid` | `module_unresolved`（提案模块归属无法唯一解析或不存在于 `logos-project.yaml`——module-aware 判据〔L7〕缺输入，fail-closed 不完成检查）| `artifact_unreadable`（提案产物读取失败的通用码——`proposal.md` / `tasks.md` / delta 文件任一不可读，`message` 必须含具体文件路径）。
+
+**读取顺序与终止红线**：命令按 **`logos/logos.config.json` 存在性探测（所有分支的第一步；缺失 → `not_initialized`，此时不读 guard 及任何后续产物）** → guard → slug 解析/containment → `proposal.md`（含 module resolver）→ `tasks.md` → `deltas/**` 的顺序读取；操作错误的判定**允许其判定所必需的最小读取**（如 `module_unresolved` 需先读 proposal.md 与 guard），红线是**错误一旦确定即终止**——不再读取任何其它产物、不调用任何检查项、不产生第二份输出。未初始化目录**必得** `not_initialized` 而非 `no_active_proposal`（顺序保证，ST-S35-03b 锚定）。
+
+### `violations[].code` 闭合枚举（`ChangeLintViolationCode`，23 码）
+
+| 检查项 | code | flow_reason（string，可选） |
+|--------|------|---------------------------|
+| L1 | `tasks_sections_unparsable` | — |
+| L2 | `tasks_code_header_missing` | `"tasks-code-section-missing"`（`CodePlanningDiagnostic.reason` 枚举成员） |
+| L3 | `code_change_requires_real_test_ids` | `"code_change_requires_real_test_ids"`（`ProposalBlockReason` 枚举成员） |
+| L4 | `delta_missing_section_marker`、`delta_template_skeleton` | — |
+| L5 | `deployment_decision_conflict` | `"deployment_decision_conflict"`（源字段名；源字段类型 boolean） |
+| L6 | `delta_path_invalid` | — |
+| L7（既有 checker 13 码） | `design_system_mode_invalid`、`no_pages_declared`、`prototype_path_traversal`、`prototype_basename_invalid`、`prototype_basename_duplicate`、`prototype_missing`、`prototype_extra`、`prototype_empty`、`design_system_missing`、`design_system_invalid`、`design_system_empty`、`fallback_reason_missing`、`fallback_token_forged` | — |
+| L7（新增结构 3 码） | `ui_declaration_missing`、`ui_declaration_unparsable`、`ui_impact_not_boolean` | — |
+
+该表为**唯一枚举源**：实现以导出的闭合 TypeScript union/常量表承载，禁开放字符串；下游消费方遇表外 code 应按契约违约处理（保守模式）。
+
+### 解析语义
+
+- 下游 driver 按 exit code 三分流：0 交付合格；2 读 `data.violations` 逐条生成修复动作（`fix_hint` 可直接进修复提示词）；1 读 stderr envelope 的 `code` 排障——「可原地修复的检查红」与「命令未完成检查」由此稳定区分。
+- `--help` 的全局 `--format json` 支持列表同步收录 `change-lint`。

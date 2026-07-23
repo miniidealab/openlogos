@@ -24,7 +24,7 @@ tech_stack:
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
 scenario_counter:
-  next_id: 35
+  next_id: 36
 feature_counter:
   next_id: 9
 modules:
@@ -38,6 +38,7 @@ modules:
       - scenario
     deployment_required: true
     product_type: desktop
+    baseline_seed_state: required
 features:
   - id: F01
     name: 项目初始化与接入
@@ -145,7 +146,7 @@ scenarios:
     module: core
     feature: F06
   - id: S26
-    name: "cmd: 谓词在 next 求值"
+    name: "openlogos"
     module: core
     feature: F06
   - id: S27
@@ -464,6 +465,10 @@ resource_index:
     desc: S34 时序文档。涉及 feature 功能分组模型（module→feature→scenario）、feature list 只读视图、feature-backfill 生成 AI 回填 prompt、未分组桶与归属降级时必读。
   - path: logos/resources/test/core-S34-test-cases.md
     desc: S34 测试用例。涉及 features[]/feature_counter/scenario.feature 解析、feature 分组与未分组桶、空成员 feature、条件版本发射（含 features→1.1.0/无→1.0.0）一致性、feature list（含 MODULE_NOT_FOUND）、feature-backfill prompt 路径与幂等、纯 pre-feature 零漂移 golden 时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md
+    desc: S35 场景时序图。涉及 openlogos change-lint 命令的执行时序、L1–L7 检查分支、操作错误终止红线、只读性约束与消费点关系时必读。
+  - path: logos/resources/test/core-S35-test-cases.md
+    desc: S35 测试用例。涉及 change-lint 共享判据层 UT（L1–L7 正反例、阶段分类、ID 文法、模板骨架、同源锚、收紧回归）与真实 CLI 入口 ST（双格式输出、exit code、slug 解析、只读性）的实现与验收时必读。
   - path: spec/schema/next.schema.json
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
   - path: spec/schema/status.schema.json

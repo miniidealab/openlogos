@@ -544,3 +544,24 @@ merge-executor 的「整份 create / replace」**仅**适用于 `2-page-design/`
 6. **不设硬门**：用户可跳过建议、直接写前向 delta；该区域 `verified` 保持 `false`、覆盖率不前移；change-writer 不得阻断。
 
 判定与校验的 CLI 侧支撑：`cli/src/lib/baseline-jit.ts`（`detectBaselineJitAdvisory` 只读已合并主文档判未验证逆向区域；`deltaConfirmsCurrentState` 校验单份 delta 是否承载 verified:true 现状确认）。
+
+## change-lint 产出点自检（change-lint-shift-left）
+
+### 定位
+
+`openlogos change-lint [--slug <slug>] [--format json]` 是提案计划产物（proposal.md / tasks.md / deltas/**）的**产出点主动硬检查**：把 pre-implement 判据（测试 ID 在场、`[code]` 标题、delta 段标记与脱模板、部署决策一致性、delta 路径合法、GUI 声明结构）从消费点（merge / flow-derive）左移到产出点，在 agent 上下文还热时暴露缺口。
+
+### 授权语义
+
+- **只读、非人类确认点**：任何角色、任何阶段可跑；不写任何文件 / marker / 哈希清单；不改变任何 step/gate 派生；不属于 merge/verify/smoke/archive 等人类确认点序列。
+- **产出方硬性交付门（技能侧约定）**：change-writer 在 write-proposal/write-tasks 完成后与 delta 产出完成后、slice-planner 在切片产出完成后，必须运行 change-lint 且 **exit 0 才可交付**；exit 2（检查红）按 violations 逐条修复后重跑；exit 1（操作错误）按 message 排障。该门是产出方的自检纪律，**不是**新增 flow gate。
+
+### 与消费点判据的关系（纵深防御）
+
+- lint 与 merge / flow-derive **共享同一批判据函数**（单一事实源，严禁第二份判据）；lint 只提前暴露，消费点判据全部保留。
+- 随本变更生效的两项判据语义收紧（两端同步）：①test-id 采信收紧——占位尾段（`xx`/`TBD`/`TODO` 等）与通配族名（`UT-Sxx-*` 等）不再计入真实测试 ID；②`.md` delta 收紧——除段标记外，模板骨架（占位字面量未替换）也被 merge 拒绝。
+- delta 路径检查为正交双结论：merge 消费行为零改动（历史存量兼容通道）；lint 对 `invalid` 路径报违规（新产出交付门）。
+
+### 检查项与退出码（摘要）
+
+L1 tasks 结构可解析 / L2 `[code]` 标题在场 / L3 分阶段测试证据 / L4 delta 段标记+脱模板 / L5 部署决策一致 / L6 delta 路径合法 / L7 GUI 声明结构（`product_type ∈ GUI` 时激活）。exit 0 = 全过；exit 2 = 检查完成有违规（stdout success envelope）；exit 1 = 操作错误（stderr error envelope）。plan 段无 delta 时 L4/L6 空集通过（阶段感知，「产出多少查多少」）。JSON 契约详见 `spec/cli-json-output.md` §3.15。

@@ -1042,6 +1042,35 @@ CLI 从不读写 `scenario_counter.next_id`（取号是 AI 职责）。feature �
 | loop_state 激活收紧 | `cli/src/lib/flow-loop-derive.ts`（四事实合取判据）、SLICES_APPROVED 结构化 marker 写入点 | `cli/test/s27-loop-iterate.test.ts`、`cli/test/golden-baseline.test.ts` |
 | 生产者漂移注入 | `cli/src/lib/step-registry.ts` + schema 校验测试 | 漂移注入（`x-future-step`）一致性测试 |
 
+## 二十三、change-lint 打包调用层架构（change-lint-shift-left S35）
+
+### 定位与不变量
+
+`openlogos change-lint` 是**既有共享判据函数的打包调用层**。不变量（与 step-registry 唯一铸造点同级强度）：
+
+- **严禁第二份判据**：lint 的每一项检查必须调用与 flow-derive / merge 相同的共享函数；判据改一处，消费点（惰性）与检查点（主动）同时生效。禁止在 lint 内复制正则、映射表或判定逻辑（教训参照 baseline-seed 三入口分歧事故）。
+- **只读**：不写任何项目文件 / marker / 哈希清单；不改变任何 step/gate 派生语义。
+
+### 实现映射
+
+| 检查 | 共享函数（`cli/src/lib/`） | 说明 |
+|------|--------------------------|------|
+| L1 | `parseTaskSections`（proposal-lifecycle.ts） | 既有，直接复用 |
+| L2 | `isCodeRequiredForProposal` × section 在场判定（proposal-lifecycle.ts） | 既有，直接复用 |
+| L3 | 新共享结构化 test-id evaluator（含权威 parser `parseTestCaseIds` 与阶段分类函数） | 前置重构①：ID 闭合文法（锚定正则 + token 边界 + 整串匹配，见功能规格 §2.30）与阶段分类（marker × `[delta]` 勾选度 → plan / spec-complete / slice 三级证据；勾选度计数基**仅含任务文字带 `deltas/` 目标路径的 delta 产出条目**，非 delta / merge-time checkbox 不参与计数）单点实现；复用声明按固定语法逐项解析并校验已合并规格存在性；`hasRealTestIdsForProposal` / flow-derive 改为其打包调用（显式语义收紧之一） |
+| L4 | 新共享 `validateMarkdownDelta` | 前置重构②：自 merge.ts 私有 `SECTION_MARKER_RE` 演进，结构化返回 `missing_section_marker` / `template_skeleton_present`。**模板骨架为结构规则而非全文词表**：先解析 marker block 并剔除行内代码、代码围栏内容，然后 (a) marker 标题本身等于占位标题即命中；(b) 块正文中**只要仍存在任一独占一行的权威模板占位符行**（未替换占位行）即命中——**不要求正文全部由占位构成**，真实标题/真实内容与残留占位行混合的部分脱模板产物同样报 `delta_template_skeleton`（否则该文件会被 merge 写入未替换占位内容）；行内代码、代码围栏中的引用与正常说明文字**不得命中**。占位字面量以**唯一常量表**承载，覆盖两个权威模板（`spec/change-management.md` `[新增内容标题]` 系 + 根 Skill `[新增章节标题]` 系）× ADDED/MODIFIED/REMOVED 全部标题与正文占位变体；merge 改为其打包调用（显式语义收紧之二），回归含「真实骨架全拒 + 真实内容混合残留占位行拒 + 合法引用不拒 + 本提案 delta 自检通过」 |
+| L5 | `resolveProposalDeploymentDecision`（proposal-lifecycle.ts:740） | 既有，读 `deployment_decision_conflict` 布尔字段 |
+| L6 | 新共享 delta 分类器（正交双结论） | 前置重构③：自 merge.ts 私有 `DELTA_TO_RESOURCE` + `scanDeltas` 演进；`mergeDisposition`（merge 消费，行为逐字节零改动）⊥ `lintValidity`（lint 报 `delta_path_invalid`）；原型资产通道（`commitVerifiedPrototypes`）语义不变 |
+| L7 | `evaluateUiPrototype` 纯 evaluator + 共享 proposal-context resolver | 前置重构④：拆纯 evaluator（只读）与产物写入 wrapper（`UI_PROTOTYPE_HASHES.json` 归 wrapper，`check-ui-prototype` 命令行为不变）；激活判据 = 模块 `product_type ∈ GUI`，坏声明（缺段/坏 YAML/非布尔）报独立新码不被 false 吞。**前置重构⑤（模块归属单一事实源）**：把 merge.ts 私有 `readProposalModule` 提取为共享 proposal-context resolver——`proposal.md > module:` 头优先（持久事实源）；头缺失且 guard.activeChange==slug 才回退 guard.module；冲突以头为准；无法解析或模块不在 yaml → 操作错误 `module_unresolved`（fail-closed）。L7 及一切 module-aware 判据统一消费其结果，`--slug` 指向的提案按其自身模块判定、与 guard 指向无关 |
+
+### violation code 注册表归属
+
+`ChangeLintViolationCode` 为**23 码闭合注册表**（L1–L6 共 7 码 + L7 既有 13 码 + L7 新增 3 结构码），以导出的 TypeScript union/常量表承载，禁开放字符串；`spec/cli-json-output.md` §3.15 为契约唯一枚举源。仅 L2/L3/L5 三处语义真实重合携带可选 `flow_reason` 映射（L2 → `CodePlanningDiagnostic.reason` 枚举成员 `tasks-code-section-missing`；L3 → `ProposalBlockReason` 枚举成员 `code_change_requires_real_test_ids`；L5 → `resolveProposalDeploymentDecision` 返回值的 `deployment_decision_conflict` 布尔字段名）。
+
+### 同源回归锚（守护测试架构）
+
+不做「violation 集合 == flow 停因」判等（非同构：lint 多违规并发，flow 单停因）；改为对同一夹具断言**共享 evaluator 在 lint 与 flow-derive / merge 两侧 pass/fail 与结构化细节一致**。兼容回归锚定：占位串提案不再绕过 `test-id-required`；模板骨架 delta 被 merge 拒绝；unknown/reference 忽略语义（UT-S09-02/10）与已知 category 任意扩展名文件、文件 symlink 的 merge 消费行为逐字节零漂移。
+
 ## 自动流程证据边界与责任分工
 
 ### 证据源

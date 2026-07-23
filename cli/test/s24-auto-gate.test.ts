@@ -26,7 +26,8 @@ function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): st
     '## 变更范围', '- 影响的功能规格：core-01-feature-specs', '', '## 部署影响',
     `- 是否需要部署：${deploy}`, '- 部署原因：说明', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', `- 是否需要 smoke：${smoke}`, '',
-    '## 变更概述', '概述。覆盖 UT-S24-23、UT-S24-24、ST-S24-10、ST-S24-EX-4e.2。',
+    '## 变更概述', '概述。',
+    '', '## 复用测试 ID', '', '- UT-S24-23 — 回归覆盖', '- UT-S24-24 — 回归覆盖', '- ST-S24-10 — 回归覆盖',
   ].join('\n');
 }
 
@@ -79,6 +80,9 @@ function setup(step: keyof typeof FIXTURES, slug = 'feat'): Ctx {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'proposal.md'), fx.proposal);
   writeFileSync(join(dir, 'tasks.md'), fx.tasks);
+  // S35：复用声明存在性只认已合并结构化 ID 列。
+  writeFileSync(join(root, 'logos', 'resources', 'test', 'core-S24-test-cases.md'),
+    '| ID | 用例 |\n|---|---|\n| UT-S24-23 | 回归 |\n| UT-S24-24 | 回归 |\n| ST-S24-10 | 回归 |');
   for (const mk of fx.markers ?? []) writeFileSync(join(dir, mk), '');
   // change-flow-redesign：builtin launched implement 默认激活切片循环（code_slices_green）。
   // VERIFY_PASS 态在真实流程中由 verify 同时写一行 pass 账本（空 [code] → 退化 tests_green 收敛）；

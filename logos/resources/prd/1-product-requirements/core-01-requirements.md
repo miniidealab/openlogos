@@ -51,7 +51,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-27 个场景（编号跳号、最高至 S34，`scenario_counter.next_id=35`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+28 个场景（编号跳号、最高至 S35，`scenario_counter.next_id=36`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -73,6 +73,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S14 | 切换到 launched 生命周期 | 首轮交付完成并进入活跃迭代 | P01/P03 | P0 |
 | S05 | 查看下一步建议 | 需要快速知道当前该做什么 | P01/P03 | P0 |
 | S11 | 查看阶段进度与活跃变更 | 需要确认当前状态 | P03 | P0 |
+| S35 | 提案计划产物左移硬检查（change-lint） | 提案产物（proposal/tasks/deltas）产出后交付前 | P01/P06/P07 | P1 |
 
 ### ③ 验收与部署门禁
 用可追溯的验收报告与部署 / smoke 门禁守住交付质量（回应 P01/P03/P05）。
@@ -1221,3 +1222,18 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 - **复用批准门即 UI 确认（有前提）**：面板已渲染原型时，用户在既有 `plan-exit` 门批准提案即构成 UI 确认，**不出现新的门或新的确认标记文件**；面板未渲染原型（旧面板）时，该批准仅为普通方案批准，方法论给出「未构成 UI 视觉确认」的 advisory，且**不阻断**流程。
 - **判定依据正确**：`ui_impact` 判定依据为项目 `product_type` 与 `tasks.md` 已规划的 `[delta]` 目标，而非扫描 delta 文件内容；先 GUI 判定、后动界面判定的顺序可被验证。
 - **降级不阻塞**：Python3 缺失场景下，提案仍可产出通用风格原型并标注「未走设计系统」，`openlogos change` 与后续推进**不报错、不卡住**。
+
+## S35: 提案计划产物左移硬检查（change-lint）
+
+**动因**：pre-implement 判据（测试 ID 在场、`[code]` 标题、delta 结构、部署声明一致性等）此前只在消费点（merge / flow-derive / verify）惰性触发。缺口在写提案阶段产生，却要到 merge 之后才被发现——agent 上下文已丢失，无人值守流程停机等人（真实事故：`code_change_requires_real_test_ids` 在 merge 后阻断）。
+
+**场景**：产出方（change-writer / slice-planner / 下游 driver 的 producer agent）完成 proposal.md / tasks.md / deltas 后，运行 `openlogos change-lint [--slug <slug>] [--format json]` 主动自检；检查全过（exit 0）才可交付，检查红（exit 2）按 violations 逐条修复后重跑。
+
+**验收条件**：
+1. 七项检查 L1–L7 全部**复用共享判据函数**（与 flow-derive / merge 同一批实现），严禁第二份判据；
+2. 独立顶层命令 `change-lint`，与 `openlogos change <slug>`（S09 创建提案）**零命名空间交集**——`openlogos change lint` 的既有含义（创建 slug 为 `lint` 的提案）不变；
+3. 双 exit code 契约：0 = 全过；2 = 检查完成但有违规；1 = 操作错误；输出形态随 `--format` 分流（默认人读文本，`--format json` 走通用信封）；
+4. violation code 为 23 码闭合注册表（见 `spec/cli-json-output.md` §3.15），仅语义真实重合的条目携带可选 `flow_reason` 映射；
+5. 阶段感知：「产出多少查多少」——plan 段无 delta 时 L4/L6 空集通过；L1/L2/L3/L5 自 write-tasks 完成起恒生效；测试证据按 plan / spec-complete / slice 三级阶段分类判定，且证据集合**限定到本提案**（不采信项目全局无关 ID）；
+6. 只读命令（**项目级**）：不写任何项目文件、marker、guard、`logos-project.yaml`、verify 账本、哈希清单；运行前后**整个项目根**的文件集合与内容哈希不变（不止提案目录）；
+7. lint 不新增 step/gate/marker、不接入 flow 派生；消费点判据保留（纵深防御）。

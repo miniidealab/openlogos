@@ -18,6 +18,7 @@ import { moduleList, moduleAdd, moduleRename, moduleRemove, moduleSetProductType
 import { featureList } from './commands/feature.js';
 import { featureBackfill } from './commands/feature-backfill.js';
 import { checkUiPrototype } from './commands/check-ui-prototype.js';
+import { changeLint } from './commands/change-lint.js';
 import { checkUiHashMatchCommand } from './commands/check-ui-hash-match.js';
 import { flowShow } from './commands/flow.js';
 import { baselineSeedBegin, baselineSeedCommit, baselineSeedStatus } from './commands/baseline-seed.js';
@@ -76,6 +77,7 @@ Commands:
                        launch [module-id]          Specify module (auto-detects if only one exists)
   change <slug>      Create a change proposal for iterative updates
                        --module <id>               Assign proposal to a specific module
+  change-lint [--slug <slug>]   检查活跃提案的计划产物（proposal/tasks/deltas）是否交付合格（只读）
   merge <slug>       Generate MERGE_PROMPT.md for AI to execute delta merging
   archive <slug>     Archive a completed change proposal
   detect             Show CLI version and project detection info
@@ -92,7 +94,7 @@ Commands:
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill, change-lint)
 
 Examples:
   openlogos init my-saas-project
@@ -274,6 +276,17 @@ async function main() {
     case 'feature-backfill': {
       const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
       featureBackfill(format, moduleArg);
+      break;
+    }
+    case 'change-lint': {
+      // code-r1 F8：区分「未传 --slug」（undefined → 允许 guard 回退）与「传了 flag 但缺值/值是另一 option」
+      // （'' → 命令层按显式空值硬拒 slug_invalid，绝不回退 guard 对错误目标返回成功）。
+      let slugArg: string | undefined;
+      if (args.includes('--slug')) {
+        const v = args[args.indexOf('--slug') + 1];
+        slugArg = (v === undefined || v.startsWith('--')) ? '' : v;
+      }
+      changeLint(slugArg, format);
       break;
     }
     case 'check-ui-prototype': {

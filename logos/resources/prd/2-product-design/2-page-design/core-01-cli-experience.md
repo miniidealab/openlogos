@@ -1381,3 +1381,58 @@ $ openlogos next --format json
 - `loop_state.activated_at`（ISO 8601）读自结构化 SLICES_APPROVED；旧空 marker → 省略该字段。
 - `next_node.dispatch` 恒为完整对象；overlay-add 未声明 → 保守默认 `{idempotent:false, timeout_seconds: defaults.dispatch.timeout_seconds, artifacts_hint: []}`；`artifacts_hint: []` ＝「产物未知」契约语义：消费方不得据此判死，只能升级观察。示例中的 dispatch 取值以内置 flow 模板逐节点声明为准。
 - 文本模式不新增展示要求（契约自描述面向机器消费）；既有文本输出不变。
+
+### 2.25 change-lint（S35 计划产物左移硬检查）
+
+命令发现：`openlogos --help` 的命令列表新增一行，`--format json` 支持列表收录 `change-lint`：
+
+```
+  change-lint [--slug <slug>]   检查活跃提案的计划产物（proposal/tasks/deltas）是否交付合格（只读）
+```
+
+全过（exit 0）：
+
+```
+$ openlogos change-lint
+change-lint: change-lint-shift-left
+  ✓ L1 tasks.md 结构可解析
+  ✓ L2 [code] 标题在场（空段占位合法）
+  ✓ L3 测试证据在场（已规划测试规格 delta）
+  ✓ L4 delta 段标记与脱模板（3 个 .md delta）
+  ✓ L5 部署决策一致（需要部署 × [deploy] 在场）
+  ✓ L6 delta 路径合法（3 mergeable / 0 invalid）
+  ✓ L7 UI 声明结构合法（ui_impact:false，不进入逐页对账）
+PASS（7/7）
+```
+
+检查红（exit 2，每个 ✗ 给「缺什么 / 在哪补 / 补成什么样」）：
+
+```
+$ openlogos change-lint
+change-lint: change-lint-shift-left
+  ✓ L1 tasks.md 结构可解析
+  ✗ L3 [code_change_requires_real_test_ids] 需代码的提案无测试证据
+      缺什么：tasks/proposal/deltas/test 均无可采信的 UT/ST/SMOKE ID，也无测试规格 delta 规划
+      在哪补：tasks.md 的 [delta] section，或 proposal.md 的「复用测试 ID」小节
+      补成什么样：- [ ] 产出 delta 到 `deltas/test/` — 新增 XX 用例；或列出已存在 ID 如 `UT-S09-02`
+  ✗ L5 [deployment_decision_conflict] proposal 声明需要部署，tasks.md 无 [deploy] section
+      ……
+FAIL（5/7，2 项违规）
+```
+
+操作错误（exit 1，stderr）：
+
+```
+$ openlogos change-lint --slug not-exists
+Error [slug_not_found]: 提案 logos/changes/not-exists 不存在
+$ openlogos change-lint --slug ../../etc
+Error [slug_invalid]: slug 含非法路径字符（合法：[a-z0-9][a-z0-9-]*）
+$ openlogos change-lint          # 无 guard 活跃提案时
+Error [no_active_proposal]: 无活跃提案且未指定 --slug
+$ openlogos change-lint --slug orphan-change   # proposal.md 无 module 头且 guard 不指向它
+Error [module_unresolved]: 无法解析提案所属模块（proposal.md 缺 "> module:" 头且 guard 不指向该提案）
+```
+
+操作错误的终止红线：允许该错误**判定所必需的最小读取**（如 `module_unresolved` 需先读 guard 与 proposal.md 头）；**错误一旦确定即终止**——不再读取其它产物、不执行任何检查项、无第二份输出。产物读取失败（proposal/tasks/delta 任一不可读）统一报 `Error [artifact_unreadable]: <文件路径> …`。
+
+`--format json` 走通用信封（详见 `spec/cli-json-output.md` §3.15）：检查完成（无论 pass true/false）stdout 输出 success envelope，`pass:false` 时 exit 2；操作错误 stderr 输出 error envelope，exit 1。三种退出码语义（0 交付合格 / 2 可原地修复的检查红 / 1 命令未完成检查）供 driver 与技能侧稳定分流。

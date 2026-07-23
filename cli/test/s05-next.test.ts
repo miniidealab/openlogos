@@ -417,7 +417,10 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-10c: SPEC_MERGED + code_required + no [code] section → ready-to-implement', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容，复用 UT-S05-10c。');
+    // S35 收紧：散文 ID 不构成证据——改用结构化复用声明 + 已合并结构化 ID 列。
+    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容。\n\n## 复用测试 ID\n\n- UT-S05-10c — 回归覆盖');
+    writeFileSync(join(proposalDir, '..', '..', 'resources', 'test', 'core-S05-test-cases.md'),
+      '| ID | 用例 |\n|---|---|\n| UT-S05-10c | 回归 |');
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n');
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
 

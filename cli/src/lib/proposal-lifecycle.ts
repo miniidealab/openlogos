@@ -6,6 +6,8 @@ import { detectMintedStepViaFlow } from './flow-derive.js';
 
 import { join } from 'node:path';
 import { listFiles } from './list-files.js';
+import { authorityScan, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
+import { listEvidenceTestDeltaFiles } from './delta-classify.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
 import type { ModuleInfo } from '../commands/status.js';
 
@@ -233,23 +235,250 @@ function readIfExists(path: string): string {
   return existsSync(path) ? readFileSync(path, 'utf-8') : '';
 }
 
-export function hasRealTestIdsForProposal(proposalDir: string, tasksContent?: string): boolean {
-  const taskText = tasksContent ?? readIfExists(join(proposalDir, 'tasks.md'));
-  if (TEST_CASE_ID_PATTERN.test(taskText)) return true;
+// ── S35 change-lint 前置重构①：结构化 test-id evaluator（lint 与 flow-derive 同源，严禁第二份判据）──
 
-  const proposalContent = readIfExists(join(proposalDir, 'proposal.md'));
-  if (TEST_CASE_ID_PATTERN.test(proposalContent)) return true;
+/**
+ * ID 闭合文法兼容基线：现行宽语法的锚定整串版（spec §2.30，与 TEST_CASE_ID_PATTERN 同构、仅改整串锚定）。
+ * r4 F20：点号仅允许作段内分隔（如 `01.1`）——候选以 `.` 开头/结尾或含空 dot 段（`xx.`、`a..b`）不构成 ID，
+ * 否则 `UT-S99-xx.` 的尾段变成 `xx.`、绕过占位黑名单的整段精确匹配。
+ */
+export const TEST_ID_ANCHORED_RE = /^(?:UT|ST|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)*$/;
+/** 占位符黑名单：最末段命中即拒绝（大小写不敏感）。 */
+const TEST_ID_PLACEHOLDER_TAILS = new Set(['xx', 'nn', 'tbd', 'todo']);
+/** 通配/未消费尾部字符：候选含任一即整候选拒绝（前缀不采信）。 */
+const TEST_ID_WILDCARD_RE = /[*?[\]]/;
 
-  for (const file of listFiles(join(proposalDir, 'deltas', 'test'))) {
-    const fullPath = join(proposalDir, 'deltas', 'test', file);
+function isAcceptedTestId(candidate: string): boolean {
+  if (TEST_ID_WILDCARD_RE.test(candidate)) return false; // 减法拒绝①：通配族名整候选拒绝
+  if (!TEST_ID_ANCHORED_RE.test(candidate)) return false; // 兼容基线：整串匹配（match[0] === 候选全串）
+  const tail = candidate.split('-').pop() ?? '';
+  if (TEST_ID_PLACEHOLDER_TAILS.has(tail.toLowerCase())) return false; // 减法拒绝②：占位尾段
+  return true;
+}
+
+/**
+ * 权威 test-id parser（spec §2.30）：按词法边界切候选（空白/反引号/除 `-` `.` `*` `?` 方括号外的标点），
+ * 候选必须整串满足兼容基线文法；含通配字符或占位尾段的候选整体拒绝、前缀不采信。
+ */
+export function parseTestCaseIds(text: string): string[] {
+  const ids: string[] = [];
+  // 候选 = [A-Za-z0-9.-] 加上须整体拒绝的通配字符 [*?[\]] 的最长连续段；其余字符（空白/反引号/中英文标点）均为边界。
+  for (const raw of text.match(/[A-Za-z0-9.*?[\]-]+/g) ?? []) {
+    // r4 F20：候选首尾的点号是句末/边界标点、不是 ID 组成部分——先规范化剥除再整串判定：
+    // `UT-S99-xx.` 规范化为 `UT-S99-xx` 后照常命中占位黑名单；`见 UT-S09-02.` 的合法 ID 不因句末点号丢失。
+    const candidate = raw.replace(/^\.+|\.+$/g, '');
+    if (isAcceptedTestId(candidate)) ids.push(candidate);
+  }
+  return ids;
+}
+
+/** 约定的 ID 列表头（code-r2 F5）：表格首列表头必须是 ID / 用例 ID 才构成测试规格 ID 列。 */
+const TEST_ID_HEADER_RE = /^(?:用例\s*)?id$/i;
+
+/**
+ * 从 markdown **真实测试规格表格**的结构化 ID 列（首列）提取已定义测试 ID（code-r1 F5 / r2 强化）：
+ * 权威掩码剔除代码围栏、缩进代码块与 HTML 注释；只认「表头行 + delimiter 行 + 数据行」的完整
+ * 表格块（兼容无首尾 pipe），且要求 delimiter 与表头列数一致、**首列表头 ∈ {ID, 用例 ID}**——
+ * 孤立 pipe 行、散文/覆盖清单、注释/缩进示例中的 token、非 ID 列普通表格均不构成存在性。
+ */
+export function extractStructuredTestIds(content: string): string[] {
+  const lines = content.split(/\r?\n/);
+  const scan = authorityScan(lines);
+  const ids: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (scan.masked[i] || !scan.text[i].includes('|')) { i++; continue; }
+    let j = i;
+    while (j < lines.length && !scan.masked[j] && scan.text[j].includes('|')) j++;
+    const block = scan.text.slice(i, j);
+    if (block.length >= 3 && isTableDelimiterRow(block[1])) {
+      const header = tableRowCells(block[0]);
+      const delimiter = tableRowCells(block[1]);
+      if (header.length > 0 && header.length === delimiter.length && TEST_ID_HEADER_RE.test(header[0])) {
+        for (const row of block.slice(2)) {
+          // r3 F19：按 GFM 语义稳定提取首 cell（tableRowCells 已处理 \| 转义与 code span 内管道）；
+          // 描述列的额外/缺失 cell 不否定首列 ID——corpus 零收窄契约优先。
+          const cells = tableRowCells(row);
+          const first = (cells[0] ?? '').replace(/\[manual\]/i, '').trim();
+          if (isAcceptedTestId(first)) ids.push(first);
+        }
+      }
+    }
+    i = j;
+  }
+  return ids;
+}
+
+export type TestEvidenceStage = 'plan' | 'spec-complete' | 'slice';
+
+/**
+ * 证据等级阶段分类（spec §2.30 分类函数，输入 = marker × tasks.md 机器事实）。
+ * `[delta]` 勾选度计数基**仅含任务文字带 `deltas/` 目标路径的 delta 产出条目**——
+ * 非 delta / merge-time checkbox 不参与计数（防延后元数据任务把 delta 完成态压回 plan 级）。
+ */
+export function classifyTestEvidenceStage(proposalDir: string, tasksContent?: string): TestEvidenceStage {
+  // 注意：本函数不用裸 `return '<literal>'`（UT-S11-55 注册表 lint 全形态扫描 return 字面量），
+  // 一律经变量赋值返回；stage 值非 ProposalStep，不进 step-registry。
+  let stage: TestEvidenceStage = 'plan';
+  if (hasSpecCompleteMarker(proposalDir)) {
+    stage = 'slice';
+  } else {
+    const taskText = tasksContent ?? readIfExists(join(proposalDir, 'tasks.md'));
+    const sections = parseTaskSections(taskText);
+    if (sections && Object.prototype.hasOwnProperty.call(sections, 'delta')) {
+      const deltaProducing = extractTaskSectionItems(taskText, 'delta').filter(i => i.text.includes('deltas/'));
+      if (deltaProducing.length > 0 && deltaProducing.every(i => i.checked)) stage = 'spec-complete';
+    }
+  }
+  return stage;
+}
+
+export interface ReuseDeclarationEntry {
+  line: string;
+  id: string | null;
+  problem: 'syntax' | 'not-found' | 'duplicate' | null;
+}
+
+export interface ReuseDeclarationResult {
+  present: boolean;
+  entries: ReuseDeclarationEntry[];
+  validIds: string[];
+  allValid: boolean;
+}
+
+/**
+ * 解析 proposal.md 中标题精确为 `## 复用测试 ID` 的复用声明小节（固定语法：每行 `- <ID> — <一句话用途>`）。
+ * 逐项判定：语法非法 / ID 不存在于已合并结构化 ID 列 / 重复，各标注 problem；合法项不因此失效但小节整体不判过。
+ */
+export function parseReuseDeclaration(proposalContent: string, mergedIds: Set<string>): ReuseDeclarationResult {
+  const lines = proposalContent.split(/\r?\n/);
+  const scan = authorityScan(lines);
+  // code-r1 F11（r2 强化）：标题只认权威掩码外（围栏/缩进代码/HTML 注释之外）的精确二级 heading。
+  const start = lines.findIndex((_, i) => !scan.masked[i] && scan.text[i].trim() === '## 复用测试 ID');
+  if (start === -1) return { present: false, entries: [], validIds: [], allValid: false };
+
+  const entries: ReuseDeclarationEntry[] = [];
+  const seen = new Set<string>();
+  const validIds: string[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (!scan.masked[i] && /^##\s/.test(scan.text[i])) break;
+    if (scan.masked[i]) continue; // 掩码内容不参与解析
+    const line = scan.text[i];
+    if (line.trim() === '') continue;
+    if (!line.trim().startsWith('- ')) {
+      // F11：声明段内除空行外的每个内容行都必须符合固定列表语法——非列表正文行报 syntax。
+      entries.push({ line: line.trim(), id: null, problem: 'syntax' });
+      continue;
+    }
+    const m = line.trim().match(/^-\s+(\S+)\s+—\s+(.+)$/);
+    if (!m || !isAcceptedTestId(m[1])) {
+      entries.push({ line: line.trim(), id: null, problem: 'syntax' });
+      continue;
+    }
+    const id = m[1];
+    if (seen.has(id)) {
+      entries.push({ line: line.trim(), id, problem: 'duplicate' });
+      continue;
+    }
+    seen.add(id);
+    if (!mergedIds.has(id)) {
+      entries.push({ line: line.trim(), id, problem: 'not-found' });
+      continue;
+    }
+    entries.push({ line: line.trim(), id, problem: null });
+    validIds.push(id);
+  }
+  const allValid = entries.length > 0 && entries.every(e => e.problem === null);
+  return { present: true, entries, validIds, allValid };
+}
+
+/** 读取已合并 `logos/resources/test/**` 全部结构化 ID 列（仅用于复用声明的存在性校验）。 */
+export function readMergedStructuredTestIds(proposalDir: string): Set<string> {
+  const mergedTestDir = join(proposalDir, '..', '..', 'resources', 'test');
+  const ids = new Set<string>();
+  for (const file of listFiles(mergedTestDir)) {
+    if (!file.endsWith('.md')) continue;
     try {
-      if (TEST_CASE_ID_PATTERN.test(readFileSync(fullPath, 'utf-8'))) return true;
-    } catch {
-      // 忽略不可读文件；listFiles 已过滤普通文件，此处只兜底竞态。
+      for (const id of extractStructuredTestIds(readFileSync(join(mergedTestDir, file), 'utf-8'))) ids.add(id);
+    } catch { /* 不可读文件不构成存在性 */ }
+  }
+  return ids;
+}
+
+export interface TestIdEvidenceResult {
+  stage: TestEvidenceStage;
+  /** 本提案在当前证据等级下是否解析到可采信证据。 */
+  evidenceOk: boolean;
+  /** 复用声明逐行问题（存在即为 L3 violation）。 */
+  reuse: ReuseDeclarationResult;
+  /**
+   * L3 唯一总判定（code-r1 F10）：evidenceOk 且复用声明（若存在）零非法项。
+   * lint 与 flow-derive 均只消费本字段——不得各自拼装 pass/fail（同判据同结论）。
+   */
+  pass: boolean;
+}
+
+/**
+ * 分阶段测试证据模型（spec §2.30，proposal-scoped）：
+ * - slice：曾有测试 delta → 只读本提案 deltas/test/** 映射到的已合并目标文件结构化 ID 列；否则只认合法复用清单。
+ *   **禁止扫描 logos/resources/test/ 全目录**（全局无关 ID 不构成本提案证据）。
+ * - spec-complete：从本提案已产出 deltas/test/ 文件的结构化 ID 列或经校验复用清单解析。
+ * - plan（有 [delta]）：任务规划了 deltas/test/ 目标，或合法复用清单。
+ * - plan（无 [delta]，纯代码提案）：复用清单或已存在 deltas/test/ 文件。
+ */
+export function evaluateTestIdEvidence(proposalDir: string, tasksContent?: string): TestIdEvidenceResult {
+  const taskText = tasksContent ?? readIfExists(join(proposalDir, 'tasks.md'));
+  const proposalContent = readIfExists(join(proposalDir, 'proposal.md'));
+  const stage = classifyTestEvidenceStage(proposalDir, taskText);
+  const reuse = parseReuseDeclaration(proposalContent, readMergedStructuredTestIds(proposalDir));
+  const reuseEvidence = reuse.present && reuse.allValid && reuse.validIds.length > 0;
+
+  // code-r1 F6：测试 delta 清单来自共享分类器——只有 mergeable 且路径合法的条目才可贡献证据
+  // （隐藏文件、unknown/reference、symlink 逃逸等被 L6 忽略/判非法的条目不构成 plan/spec-complete/slice 证据）。
+  const deltaTestDir = join(proposalDir, 'deltas', 'test');
+  const deltaTestFiles = listEvidenceTestDeltaFiles(proposalDir);
+
+  const structuredIdsFrom = (paths: string[]): number => {
+    let count = 0;
+    for (const p of paths) {
+      try {
+        count += extractStructuredTestIds(readFileSync(p, 'utf-8')).length;
+      } catch { /* 不可读不计入证据 */ }
+    }
+    return count;
+  };
+
+  let evidenceOk: boolean;
+  if (stage === 'slice') {
+    if (deltaTestFiles.length > 0) {
+      const mergedTargets = deltaTestFiles.map(f => join(proposalDir, '..', '..', 'resources', 'test', f));
+      evidenceOk = structuredIdsFrom(mergedTargets) > 0 || reuseEvidence;
+    } else {
+      evidenceOk = reuseEvidence;
+    }
+  } else if (stage === 'spec-complete') {
+    evidenceOk = structuredIdsFrom(deltaTestFiles.map(f => join(deltaTestDir, f))) > 0 || reuseEvidence;
+  } else {
+    const sections = parseTaskSections(taskText);
+    const hasDeltaSection = sections !== null && Object.prototype.hasOwnProperty.call(sections, 'delta');
+    if (hasDeltaSection) {
+      const plansTestDelta = extractTaskSectionItems(taskText, 'delta').some(i => i.text.includes('deltas/test/'));
+      evidenceOk = plansTestDelta || reuseEvidence;
+    } else {
+      evidenceOk = deltaTestFiles.length > 0 || reuseEvidence;
     }
   }
 
-  return false;
+  // code-r1 F10：唯一总判定——合法替代证据不得掩盖非法复用声明（lint 与 flow-derive 同判据同结论）。
+  const reuseClean = reuse.entries.every(e => e.problem === null);
+  return { stage, evidenceOk, reuse, pass: evidenceOk && reuseClean };
+}
+
+export function hasRealTestIdsForProposal(proposalDir: string, tasksContent?: string): boolean {
+  // S35 显式语义收紧之一：flow-derive `test-id-required` 改为共享结构化 evaluator 的打包调用——
+  // 占位/通配 ID 不再采信、证据 proposal-scoped、按阶段分类判定；消费 evaluator 的唯一总判定
+  // `pass`（含复用声明零非法项），与 change-lint L3 同判据同结论（code-r1 F10）。
+  return evaluateTestIdEvidence(proposalDir, tasksContent).pass;
 }
 
 export function getProposalStepReason(

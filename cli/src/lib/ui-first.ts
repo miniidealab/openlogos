@@ -16,6 +16,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readProjectYaml, type ProjectYamlData, type ProjectYamlModule } from './project-yaml.js';
+import { authorityScan } from './markdown-scan.js';
 
 /** product_type 合法枚举（spec/logos-project.md）；固定顺序契约：扩展只允许尾部追加。 */
 export const PRODUCT_TYPE_ENUM = ['web', 'desktop', 'mobile', 'cli', 'api', 'library', 'skills', 'service'] as const;
@@ -77,8 +78,6 @@ export interface UiUxDeclaration {
   present: boolean;
 }
 
-const DECL_HEADING = 'UI/UX 变更声明';
-
 /**
  * 解析 proposal.md 的「UI/UX 变更声明」段。用 YAML fenced block 承载机器可读字段，
  * 不打断 markdown 结构。段格式（模板注入，见 change.ts / cli-experience）：
@@ -96,32 +95,53 @@ const DECL_HEADING = 'UI/UX 变更声明';
  *
  * 缺段/无法解析 → present:false, ui_impact:false（安全默认）。
  */
-export function parseUiUxDeclaration(proposalMd: string): UiUxDeclaration {
-  const empty: UiUxDeclaration = { ui_impact: false, pages: [], present: false };
-  if (!proposalMd) return empty;
-  // 定位标题行
+/**
+ * 权威声明段唯一定位器（code-r2 F11）：结构检查与 legacy 解析消费**同一解析结果**，避免两套 parser 分叉。
+ * 标题只认权威掩码外（围栏/缩进代码/HTML 注释之外）的**真实 heading 行**（无 `includes` 宽松分支——
+ * 普通正文提及「## UI/UX 变更声明」不构成声明）；YAML fence 按 ```/~~~ 同字符配对。
+ */
+export function locateUiDeclarationYaml(proposalMd: string):
+  | { found: false }
+  | { found: true; yamlText: string | null } {
   const lines = proposalMd.split('\n');
+  // r3 F11：定位器**全程**消费同一 authorityScan——标题只认掩码外精确 `## UI/UX 变更声明`，
+  // fence 只认扫描器承认的权威围栏定界（region fence-open/close，≤3 空格缩进）；
+  // HTML 注释、缩进代码中的 YAML fence（region comment/indented）一律不采信。
+  const scan = authorityScan(lines);
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (/^#{1,6}\s+.*UI\/UX\s*变更声明/.test(lines[i]) || lines[i].includes(`## ${DECL_HEADING}`)) {
+    if (scan.masked[i]) continue;
+    if (scan.text[i].trim() === '## UI/UX 变更声明') {
       start = i;
       break;
     }
   }
-  if (start === -1) return empty;
-  // 从标题后找第一个 ```yaml fenced block（到下一个 ``` 结束），或下一个标题前的内容
+  if (start === -1) return { found: false };
   let fenceStart = -1;
   let fenceEnd = -1;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^#{1,6}\s/.test(lines[i]) && fenceStart === -1) break; // 段结束、无 fence
-    if (fenceStart === -1 && /^```/.test(lines[i].trim())) { fenceStart = i; continue; }
-    if (fenceStart !== -1 && /^```/.test(lines[i].trim())) { fenceEnd = i; break; }
+    if (fenceStart === -1) {
+      if (!scan.masked[i] && /^#{1,6}\s/.test(scan.text[i])) break; // 段结束、无权威 fence
+      if (scan.region[i] === 'fence-open') { fenceStart = i; continue; }
+      // comment / indented 区域直接跳过——不构成声明 fence
+    } else if (scan.region[i] === 'fence-close') {
+      fenceEnd = i;
+      break;
+    }
   }
-  if (fenceStart === -1 || fenceEnd === -1) return { ...empty, present: true };
-  const yamlText = lines.slice(fenceStart + 1, fenceEnd).join('\n');
+  if (fenceStart === -1 || fenceEnd === -1) return { found: true, yamlText: null };
+  return { found: true, yamlText: lines.slice(fenceStart + 1, fenceEnd).join('\n') };
+}
+
+export function parseUiUxDeclaration(proposalMd: string): UiUxDeclaration {
+  const empty: UiUxDeclaration = { ui_impact: false, pages: [], present: false };
+  if (!proposalMd) return empty;
+  const located = locateUiDeclarationYaml(proposalMd);
+  if (!located.found) return empty;
+  if (located.yamlText === null) return { ...empty, present: true };
   let doc: unknown;
   try {
-    doc = parseYaml(yamlText);
+    doc = parseYaml(located.yamlText);
   } catch {
     return { ...empty, present: true };
   }
@@ -160,6 +180,43 @@ export function readUiUxDeclaration(proposalDir: string): UiUxDeclaration {
   const p = join(proposalDir, 'proposal.md');
   if (!existsSync(p)) return { ui_impact: false, pages: [], present: false };
   return parseUiUxDeclaration(readFileSync(p, 'utf-8'));
+}
+
+// ── S35 change-lint L7：声明段结构分析（坏声明不得被 parse 降级成 false 吞掉）──
+
+export type UiDeclarationStructure =
+  | { ok: true; ui_impact: boolean }
+  | { ok: false; problem: 'ui_declaration_missing' | 'ui_declaration_unparsable' | 'ui_impact_not_boolean'; detail: string };
+
+/**
+ * GUI 项目下声明段的结构化判定（与 parseUiUxDeclaration 的「安全默认」正交）：
+ * 缺段 → ui_declaration_missing；无 fenced YAML / YAML 损坏 / 非对象 → ui_declaration_unparsable；
+ * `ui_impact` 非布尔 → ui_impact_not_boolean；结构合法 → 返回 ui_impact 布尔值。
+ */
+export function analyzeUiDeclarationStructure(proposalMd: string): UiDeclarationStructure {
+  // code-r2 F11：与 parseUiUxDeclaration 消费**同一个**权威定位器（locateUiDeclarationYaml）——
+  // 围栏/缩进代码/HTML 注释内的示例、普通正文提及标题均不构成权威声明。
+  const located = locateUiDeclarationYaml(proposalMd);
+  if (!located.found) {
+    return { ok: false, problem: 'ui_declaration_missing', detail: 'proposal.md 缺少「UI/UX 变更声明」段（GUI 项目为结构必填）' };
+  }
+  if (located.yamlText === null) {
+    return { ok: false, problem: 'ui_declaration_unparsable', detail: '声明段缺少 fenced YAML block' };
+  }
+  let doc: unknown;
+  try {
+    doc = parseYaml(located.yamlText);
+  } catch (e) {
+    return { ok: false, problem: 'ui_declaration_unparsable', detail: `声明段 YAML 损坏：${String(e).slice(0, 120)}` };
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    return { ok: false, problem: 'ui_declaration_unparsable', detail: '声明段 YAML 不是对象' };
+  }
+  const uiImpact = (doc as Record<string, unknown>).ui_impact;
+  if (typeof uiImpact !== 'boolean') {
+    return { ok: false, problem: 'ui_impact_not_boolean', detail: `ui_impact 必须为布尔（得到 ${JSON.stringify(uiImpact)}）` };
+  }
+  return { ok: true, ui_impact: uiImpact };
 }
 
 // ── module-aware ui_impact 派生 ──

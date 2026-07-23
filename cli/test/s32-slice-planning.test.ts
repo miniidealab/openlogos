@@ -23,7 +23,11 @@ const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 function filled(): string {
-  return filledWithOverview('概述。覆盖 UT-S32-04、UT-S32-21、ST-S32-EX-1、ST-S32-EX-6。');
+  // S35 收紧后散文 ID 不再构成证据：改用结构化复用声明（ID 存在于 setupCmd 写入的已合并测试规格）。
+  return filledWithOverview('概述。覆盖 UT-S32-04、UT-S32-21、ST-S32-EX-1、ST-S32-EX-6。') + [
+    '', '## 复用测试 ID', '',
+    '- UT-S32-04 — 回归覆盖', '- UT-S32-21 — 回归覆盖', '- ST-S32-EX-1 — 回归覆盖', '- ST-S32-EX-6 — 回归覆盖',
+  ].join('\n');
 }
 
 function filledWithoutTestIds(): string {
@@ -60,12 +64,21 @@ function setupCmd(tasks: string, markers: string[] = [], slug = 'feat', proposal
   writeFileSync(join(dir, 'proposal.md'), proposal);
   writeFileSync(join(dir, 'tasks.md'), tasks);
   for (const mk of markers) writeFileSync(join(dir, mk), '');
+  // S35：复用声明的存在性校验只认已合并结构化 ID 列——写入 filled() 复用的四个 ID。
+  writeFileSync(join(root, 'logos', 'resources', 'test', 'core-S32-test-cases.md'),
+    ['| ID | 用例 |', '|---|---|', '| UT-S32-04 | 回归 |', '| UT-S32-21 | 回归 |', '| ST-S32-EX-1 | 回归 |', '| ST-S32-EX-6 | 回归 |'].join('\n'));
   return { root, dir };
 }
 
 function writeTestDelta(dir: string, ids: string[] = ['UT-S32-19', 'ST-S32-07']): void {
   mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
-  writeFileSync(join(dir, 'deltas', 'test', 'core-S32-test-cases.md'), ids.map(id => `| ${id} | 新增回归 |`).join('\n'));
+  const table = ids.map(id => `| ${id} | 新增回归 |`).join('\n');
+  writeFileSync(join(dir, 'deltas', 'test', 'core-S32-test-cases.md'),
+    ['| ID | 用例 |', '|---|---|', table].join('\n'));
+  // S35 slice 级证据 = delta 映射到的已合并目标文件结构化 ID 列（真实 merge 后目标在场）。
+  // 注意保留 setupCmd 写入的 filled() 复用声明四 ID——F10 唯一总判定下复用项失配会判红。
+  writeFileSync(join(dir, '..', '..', 'resources', 'test', 'core-S32-test-cases.md'),
+    ['| ID | 用例 |', '|---|---|', '| UT-S32-04 | 回归 |', '| UT-S32-21 | 回归 |', '| ST-S32-EX-1 | 回归 |', '| ST-S32-EX-6 | 回归 |', table].join('\n'));
 }
 async function nextJson(root: string, auto = false): Promise<Record<string, any>> {
   const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
@@ -799,10 +812,10 @@ describe('S32 — facts 单一事实源与结构化 SLICES_APPROVED（contract-s
 // ── code review F2/F4：marker 原子单赢与 legacy 同次重派生 ──
 describe('S32 — SLICES_APPROVED 原子性与 legacy 同次派生（code review F2/F4）', () => {
   it('UT-S32-32: 并发多进程消费 → 单赢（先赢内容保留、approved_at 不被覆盖、恒为完整单行 JSON）', async () => {
-    const { execSync } = await import('node:child_process');
     const { mkdtempSync, readFileSync: rf, existsSync: ex, readdirSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
-    execSync('npm run build', { cwd: process.cwd(), stdio: 'ignore' }); // 确保 dist 与源同步（并发测试走真实进程边界）
+    // r4 F12：dist 由 Vitest globalSetup 在 worker 启动前串行构建（与源同步）——worker 内不得再
+    // 并发 npm run build（会与其它真实 CLI 测试竞态改写同一 dist，子进程加载半成品模块）
     const dir = mkdtempSync(join(tmpdir(), 'slices-approved-race-'));
     const lib = join(process.cwd(), 'dist', 'lib', 'proposal-lifecycle.js');
     const script = `import('${lib}').then(m => m.writeSlicesApprovedMarker('${dir}'))`;

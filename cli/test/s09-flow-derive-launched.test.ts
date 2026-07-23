@@ -34,6 +34,11 @@ function makeProposal(opts: ProposalOpts): { dir: string; root: string } {
     mkdirSync(smokeDir, { recursive: true });
     writeFileSync(join(smokeDir, 'core-smoke.md', ), 'smoke case');
   }
+  // S35：复用声明的存在性只认已合并结构化 ID 列——为 filled()/TEMPLATE 的复用声明写入目标规格。
+  const mergedTestDir = join(root, 'logos', 'resources', 'test');
+  mkdirSync(mergedTestDir, { recursive: true });
+  writeFileSync(join(mergedTestDir, 'core-S09-test-cases.md'),
+    '| ID | 用例 |\n|---|---|\n| UT-S09-28 | 回归 |\n| ST-S09-28 | 回归 |\n| ST-S09-29 | 回归 |\n| UT-S09-45 | 回归 |');
   return { dir, root };
 }
 
@@ -44,7 +49,8 @@ function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): st
     '## 变更范围', '- 影响的功能规格：core-01-feature-specs', '', '## 部署影响',
     `- 是否需要部署：${deploy}`, '- 部署原因：说明', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', `- 是否需要 smoke：${smoke}`, '',
-    '## 变更概述', '概述。覆盖 UT-S09-28、ST-S09-28、ST-S09-29。',
+    '## 变更概述', '概述。',
+    '', '## 复用测试 ID', '', '- UT-S09-28 — 回归覆盖', '- ST-S09-28 — 回归覆盖', '- ST-S09-29 — 回归覆盖',
   ].join('\n');
 }
 /** 已填正文但部署字段为占位符 → 提案级决策为 null，回退 tasks 源（smoke_required=null）。 */
@@ -58,7 +64,8 @@ function undeclaredDeploy(): string {
 const TEMPLATE = [
   '# 变更提案：feat', '', '## 变更原因', '[为什么要做这个变更？来源于哪个需求/反馈/Bug？]', '',
   '## 变更类型', '[需求级 / 设计级 / 接口级 / 代码级]', '', '## 变更范围', '- 影响的需求文档：[列表]', '',
-  '## 部署影响', '- 是否需要部署：是 / 否', '', '## 变更概述', '[用 1-3 段话概述具体改什么] 覆盖 UT-S09-45。',
+  '## 部署影响', '- 是否需要部署：是 / 否', '', '## 变更概述', '[用 1-3 段话概述具体改什么] 需要代码实现。',
+  '', '## 复用测试 ID', '', '- UT-S09-45 — 回归覆盖',
 ].join('\n');
 
 const DELTA_PARTIAL = '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta';

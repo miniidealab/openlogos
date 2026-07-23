@@ -120,3 +120,18 @@
 - 缺 `SPEC_MERGED`：拒绝切片，提示执行 `openlogos merge <slug>` 生成 no-delta spec-complete marker。
 - 有 `SPEC_MERGED` 但缺真实测试 ID：拒绝切片，提示补充或声明复用真实 UT/ST/SMOKE ID。
 - 两者均满足：按既有六维打分、垂直/横向判别器与删后续证伪门写 `[code]`。
+
+## 硬性交付门：openlogos change-lint（切片产出完成后强制）
+
+> change-lint-shift-left 起，切片规划的交付自检升格为**机器硬门**：`[code]` 切片写入 `tasks.md` 完毕后、报告完成前，必须通过 change-lint。
+
+**规则（强制）**：
+
+1. 切片清单写入 `tasks.md` 后运行：
+   ```bash
+   cd <项目根目录> && openlogos change-lint
+   ```
+2. **exit 0 才可交付**——才允许报告切片规划完成、把控制权交回 driver 或用户。
+3. **exit 2（检查红）**：按每条 violation 的 fix_hint 逐条修复后重跑，直至 exit 0；禁止带红交付。常见红项：`[code]` 切片引用的测试 ID 含占位/通配写法（L3 拒绝采信——切片必须引用 merge 后规格中的**真实** UT/ST/SMOKE ID）、切片任务误写进 `[delta]`/`[deploy]` 导致结构异常（L1/L5）。
+4. **exit 1（操作错误）**：按 stderr message 排障后重跑。
+5. 该命令只读、非人类确认点；通过 lint **不**等于通过 slice-exit 门——删后续证伪门与用户批准仍按既有流程执行。

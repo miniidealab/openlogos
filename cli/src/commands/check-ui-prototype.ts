@@ -82,7 +82,11 @@ interface CheckOutcome {
   errorCode?: string;
 }
 
-/** 纯判定（无副作用地对账），返回退出码与原因。可选写入 sha256 哈希清单。 */
+/**
+ * 纯判定（无副作用地对账），返回退出码与原因。
+ * S35 前置重构④：本函数为**纯 evaluator（只读）**——`UI_PROTOTYPE_HASHES.json` 的写入归
+ * 命令 wrapper（writeUiPrototypeHashes，仅 `check-ui-prototype` 命令路径），change-lint L7 只调本函数。
+ */
 export function evaluateUiPrototype(proposalDir: string): CheckOutcome {
   const decl = readUiUxDeclaration(proposalDir);
 
@@ -245,18 +249,27 @@ export function evaluateUiPrototype(proposalDir: string): CheckOutcome {
     }
   }
 
-  // 可选：写逐文件 sha256 清单
-  try {
-    writeFileSync(join(proposalDir, 'UI_PROTOTYPE_HASHES.json'), JSON.stringify(hashes, null, 2) + '\n');
-  } catch {
-    /* 非硬要求 */
-  }
-
   return {
     code: 0,
     reason: `UI/UX 对账通过（mode=${mode}，${declaredSet.size} 页）。`,
     data: { mode, pages: [...declaredSet], hashes },
   };
+}
+
+/**
+ * 产物写入 wrapper（S35 前置重构④）：仅当真正完成逐页对账且 outcome 明确携带 hashes 时写清单
+ * （code-r1 F9：`ui_impact !== true` 分支无 data → 不写文件，保持改造前既有行为——不产生空哈希文件）。
+ * 仅 check-ui-prototype 命令路径调用。
+ */
+export function writeUiPrototypeHashes(proposalDir: string, outcome: CheckOutcome): void {
+  if (outcome.code !== 0) return;
+  const hashes = (outcome.data as { hashes?: Record<string, string> } | undefined)?.hashes;
+  if (!hashes) return; // when 不满足（无对账数据）→ 与改造前一致：不落文件
+  try {
+    writeFileSync(join(proposalDir, 'UI_PROTOTYPE_HASHES.json'), JSON.stringify(hashes, null, 2) + '\n');
+  } catch {
+    /* 非硬要求 */
+  }
 }
 
 export function checkUiPrototype(slug: string | undefined, format: OutputFormat = 'text'): void {
@@ -286,6 +299,7 @@ export function checkUiPrototype(slug: string | undefined, format: OutputFormat 
   }
 
   const outcome = evaluateUiPrototype(resolved.proposalDir);
+  writeUiPrototypeHashes(resolved.proposalDir, outcome);
 
   if (format === 'json') {
     if (outcome.code === 0) {

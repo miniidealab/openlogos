@@ -289,3 +289,26 @@ graph TB
 - 契约新增字段（`contract` / `step_meta` / `facts` / `dispatch` / `requires_reviewed`）对旧消费方为向后兼容扩展：旧 driver 忽略未知字段即可，不因新字段出现而失效。
 - `loop_state` 缺席语义旧 driver 本就处理（runlogos S48 EX-48.9，缺席即走普通推进）：新版收紧挂出不会使旧 driver 进入不可用状态；回滚后 `loop_state` 恢复旧挂出行为，同样不破坏消费方。
 - 结构化 `SLICES_APPROVED` marker 对旧版 CLI 无碍（旧版仅做存在性判断），回滚不需迁移；`activated_at` 字段随回滚消失，属可接受降级。
+
+## 二十一、change-lint 发布检查（change-lint-shift-left）
+
+### 发布前检查（本地链路）
+
+1. 版本号：`cli/package.json` `version` patch +1（当前 `0.13.14` → `0.13.15`，以部署时实际当前版本为准；`major.minor` 不动）。
+2. 构建打包：`cd cli && npm run build && npm pack`；构建产物含 `change-lint` 命令入口（`dist/` 内可 grep 到命令注册）。
+3. 回滚来源留存：打包前保留上一版 tarball（`openlogos-cli-<prev>.tgz`）于本地，作为回滚安装源。
+
+### 部署（本机全局）
+
+- `npm install -g <生成的 tarball>`；
+- 版本一致性校验：`openlogos --version` 输出与 `cli/package.json` 一致；不一致 → 部署失败，按回滚策略处理。
+
+### 部署后检查
+
+- 冒烟经 `openlogos smoke` 门禁运行 SMOKE-core-51…53（见 `test/smoke/` 补充节）：命令可见性、`--help` 可发现、text/JSON 调用契约（exit 0/2/1）、只读性。
+- 冒烟任一失败 → 不得 archive，按失败处理。
+
+### 失败处理与回滚
+
+- 安装失败 / 版本不一致 / 冒烟失败：`npm install -g <上一版 tarball>` 回滚；lint 为纯增量只读命令，回滚零数据副作用、零迁移。
+- 回滚后复核 `openlogos --version` 恢复为上一版。

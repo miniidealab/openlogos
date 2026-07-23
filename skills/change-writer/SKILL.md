@@ -430,3 +430,23 @@ AI 只负责驱动内容修改。半自动 / 手动下不得在未获明确授�
 2. **不直接改 `resources/**`、不嵌套第二个 change**（guard 互斥）；现状确认作为审计事实记在该章节 + `tasks.md` `[delta]` 勾稽对应候选 ID。
 3. **`human-verified` 仅 merge 后生效**：merge 前主文档仍 `verified: false`，覆盖率只读已合并主文档、不因未合并 delta 前移。
 4. **不设硬门**：用户可跳过建议、直接写前向 delta；该区域 `verified` 保持 `false`、覆盖率不前移。change-writer 不得阻断。
+
+## 硬性交付门：openlogos change-lint（Step 5 / Step 6 完成后强制）
+
+> change-lint-shift-left 起，本 Skill 的自检从「逐项人工核对」升格为**机器硬门**。适用于 Step 5（`proposal.md` + `tasks.md` 生成完毕、含部署决策一致性自检表核对之后）与 Step 6（全部 delta 文件产出完毕之后）两个交付点。
+
+**规则（强制）**：
+
+1. 每个交付点完成后，必须运行：
+   ```bash
+   cd <项目根目录> && openlogos change-lint
+   ```
+   （检查活跃提案；需要时可 `--slug <slug>` 显式指定，`--format json` 供程序化消费。）
+2. **exit 0 才可交付**——才允许报告"本步骤完成"、把控制权交回用户或 driver。
+3. **exit 2（检查红）**：按输出中每条 violation 的「缺什么 / 在哪补 / 补成什么样（fix_hint）」逐条修复后**重跑**，直至 exit 0；禁止带红交付。
+4. **exit 1（操作错误）**：按 stderr message 排障（如无活跃提案、slug 非法），修复环境后重跑。
+5. 该命令只读、非人类确认点，运行不需要额外授权，也**不**替代 `openlogos merge` 等人类确认点。
+
+**plan 段的 L3 证据指引**（避免死锁与假通过）：plan 阶段测试 ID 通常尚未定稿，L3 只认两种证据——(a) `tasks.md` `[delta]` 中规划了测试规格 delta（目标含 `deltas/test/`）；(b) `proposal.md` 中标题**精确**为 `## 复用测试 ID` 的小节，每行 `- <ID> — <一句话用途>`，ID 必须**精确存在于已合并** `logos/resources/test/` 规格（固定语法与逐项判定规则见功能规格 §2.30）。**禁止**用占位 ID（`UT-Sxx-xx`、`TBD`、`TODO`）或通配族名（`UT-Sxx-*`）蒙混——lint 与 flow-derive 一律拒绝采信。注意证据等级随阶段自动升级：`[delta]` 任务**全部勾选**后，任务文字里的 `deltas/test/` 规划字样不再充当证据，必须有实际产出的测试 delta 文件或合法复用清单。**producer 规则**：`[delta]` section 只含一文件一任务的 delta 产出 checkbox；非 delta / merge-time 工作（如「merge 时同步更新元数据」）**不得以 checkbox 形式写入 `[delta]`**（用说明文字或独立小节承载）——否则延后条目会把已完成的 delta 证据等级错误压回 plan 级（阶段分类的勾选度计数基仅含 delta 产出条目，见功能规格 §2.30）。
+
+**delta 产出的 L4 提醒**：每个 `.md` delta 必须含 ADDED/MODIFIED/REMOVED 段标记**且**已把模板占位字面量（如 `[新增章节标题]`、`[新增的完整内容]`）替换为真实内容——只要正文中残留任一**独占一行**的占位字面量（含「真实内容 + 未替换占位行」的混合形态）即命中模板骨架，会被 lint 与 merge 同时拒绝；行内代码/代码围栏中的引用不受影响。

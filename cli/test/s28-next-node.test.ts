@@ -317,6 +317,10 @@ describe('S28 — 省略规则（R4/R7/R5）', () => {
     const dir = setupLaunchedStep(root, '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta', ['SPEC_MERGED'], codeRequiredProposal());
     mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
     writeFileSync(join(dir, 'deltas', 'test', 'core-S28-test-cases.md'), '| UT-S28-29 | 新增回归 |');
+    // S35 slice 级证据读 delta 映射到的已合并目标文件（merge 后目标在场；须为完整表格块）。
+    mkdirSync(join(root, 'logos', 'resources', 'test'), { recursive: true });
+    writeFileSync(join(root, 'logos', 'resources', 'test', 'core-S28-test-cases.md'),
+      '| ID | 用例 |\n|---|---|\n| UT-S28-29 | 新增回归 |');
     writeStaleVerifyFailure(root, 'UT-S28-29');
 
     const d = await runNextJson(root, true);

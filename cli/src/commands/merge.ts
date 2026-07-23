@@ -2,14 +2,14 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { dirname, join, relative } from 'node:path';
 import { readLocale, t, mergePromptTemplate } from '../i18n.js';
 import { resetCodeSection } from '../lib/proposal-lifecycle.js';
+// S35 前置重构②③⑤：段标记/模板骨架校验、delta 分类、模块归属解析改为共享判据打包调用（严禁第二份判据）。
+import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError } from '../lib/change-lint.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
   readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH,
 } from '../lib/ui-provenance.js';
 
-/** F3：markdown 规格/skill delta 必须含 ADDED/MODIFIED/REMOVED 段标记（防静默整份覆盖）。 */
-const SECTION_MARKER_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\b/m;
 /** 原型资产：2-page-design 下的 .html（由 commitVerifiedPrototypes 落盘，merge-executor 不碰）。 */
 function isPrototypeAsset(relativePath: string): boolean {
   return relativePath.replace(/\\/g, '/').includes('/2-product-design/2-page-design/')
@@ -26,64 +26,35 @@ function readGuard(root: string): { activeChange?: string; module?: string } | n
   } catch { return null; }
 }
 
-/**
- * 从 proposal.md 头部 `> module: <id>` 读取提案归属模块（**持久、不可歧义**的事实源，
- * 不依赖易失/可损坏的 guard 文件）。用于 module-aware ui_impact 派生，避免 guard 缺失即静默跳过强制门（F2）。
- */
-function readProposalModule(proposalDir: string): string | undefined {
-  const p = join(proposalDir, 'proposal.md');
-  if (!existsSync(p)) return undefined;
-  const m = /(?:^|\n)>\s*module:\s*([a-z][a-z0-9-]*)/i.exec(readFileSync(p, 'utf-8'));
-  return m ? m[1] : undefined;
-}
-
-const DELTA_TO_RESOURCE: Record<string, string> = {
-  'prd': 'logos/resources/prd',
-  'api': 'logos/resources/api',
-  'database': 'logos/resources/database',
-  'scenario': 'logos/resources/scenario',
-  'test': 'logos/resources/test',
-  'spec': 'spec',
-  'skills': 'skills',
-};
-
 interface DeltaFile {
   deltaPath: string;
   targetDir: string;
   relativePath: string;
 }
 
+/**
+ * S35 code-r1 F2：merge 的 delta 消费集合 = 共享分类器的**无逻辑投影**
+ * （`classifyProposalDeltas(...).filter(mergeDisposition === 'mergeable')`）。
+ * 路径枚举、隐藏规则、symlink containment 与 IO 错误只在 delta-classify.ts 实现一次——
+ * 判据改一处，消费点（merge）与检查点（lint L6）同时生效。
+ */
 export function scanDeltas(deltasDir: string): DeltaFile[] {
-  const results: DeltaFile[] = [];
-  if (!existsSync(deltasDir)) return results;
-
-  for (const category of readdirSync(deltasDir).sort()) {
-    const categoryDir = join(deltasDir, category);
-    if (!statSync(categoryDir).isDirectory()) continue;
-
-    const targetDir = DELTA_TO_RESOURCE[category];
-    if (!targetDir) continue;
-
-    const files = readdirSync(categoryDir, { recursive: true })
-      .map(f => String(f))
-      .filter(f => {
-        const full = join(categoryDir, f);
-        return statSync(full).isFile()
-          && !f.split(/[\\/]/).some(part => part.startsWith('.'))
-          && !f.endsWith('.gitkeep');
-      })
-      .sort();
-
-    for (const file of files) {
-      results.push({
-        deltaPath: join(categoryDir, file),
-        targetDir: join(targetDir, dirname(file)),
-        relativePath: `deltas/${category}/${file}`,
-      });
-    }
-  }
-
-  return results;
+  const proposalDir = dirname(deltasDir);
+  const entries = classifyProposalDeltas(proposalDir);
+  // r4 F7：错误态先于投影——分类器的 ioError fail-fast 哨兵条目绝不混入普通清单
+  // （否则「产物不可读」被过滤成空 delta，经 no-delta 早退写成 SPEC_MERGED 假成功）。
+  const ioBroken = entries.find(e => e.ioError);
+  if (ioBroken) throw new DeltaScanUnreadableError(ioBroken);
+  return entries
+    .filter(e => e.mergeDisposition === 'mergeable')
+    .map(e => {
+      const withinCategory = e.relativePath.split('/').slice(2).join('/');
+      return {
+        deltaPath: join(proposalDir, e.relativePath),
+        targetDir: join(DELTA_TO_RESOURCE[e.category], dirname(withinCategory)),
+        relativePath: e.relativePath,
+      };
+    });
 }
 
 function noDeltaSpecMergedMarker(): string {
@@ -151,50 +122,47 @@ export function merge(slug?: string) {
   resetCodeSection(changePath, 'merge', locale);
 
   const deltasDir = join(changePath, 'deltas');
-  const deltas = scanDeltas(deltasDir);
-
-  if (deltas.length === 0) {
-    writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
-    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
-    return;
-  }
-
-  // F3：非法 .md delta（缺 ADDED/MODIFIED/REMOVED 段标记）报错停下——绝不静默整份覆盖主文档、不写 SPEC_MERGED。
-  // 收窄：仅 markdown 规格/skill delta 受此约束；`2-page-design/` 原型资产（.html）走整份落盘、不需段标记。
-  for (const d of deltas) {
-    if (d.relativePath.endsWith('.md') && !isPrototypeAsset(d.relativePath)) {
-      const content = readFileSync(d.deltaPath, 'utf-8');
-      if (!SECTION_MARKER_RE.test(content)) {
-        console.error(`Error: 非法 delta（缺 ADDED/MODIFIED/REMOVED 段标记）：${d.relativePath}`);
-        console.error('  绝不静默整份覆盖主文档；请补段标记后重试。未生成 MERGE_PROMPT、未写 SPEC_MERGED。');
-        process.exit(1);
-      }
+  let deltas: DeltaFile[];
+  try {
+    deltas = scanDeltas(deltasDir);
+  } catch (e) {
+    // r4 F7：delta 枚举/元数据 IO 错误 → 与 change-lint 同映射（artifact_unreadable），
+    // 绝不把不可读产物投影成 no-delta 成功。
+    if (e instanceof DeltaScanUnreadableError) {
+      console.error(`Error: delta 产物不可读（artifact_unreadable）：logos/changes/${slug}/${e.entry.relativePath}：${e.entry.ioError}`);
+      console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED。修复文件权限/IO 后重试。');
+      process.exit(1);
     }
+    throw e;
   }
 
   // F4 R7 / F1 freshness：原型完整性门（键=持久化 PLAN_APPROVED provenance，不读会话 capability）。
   // F2 修复：强制门的**触发**不得依赖易失/可损坏的 guard——两条独立触发，取或：
-  //   (a) 持久化 PLAN_APPROVED 已含「曾渲染」证据（full/partial）⇒ 无论 guard/module 能否解析都强制（这是 F4 R7 的核心：证据固化于批准记录）；
-  //   (b) module-aware ui_impact 派生为真（module 取自 proposal.md 持久归属，其次 guard）——覆盖「原型已产出但批准记录为空/legacy」的 advisory 落盘路径。
+  //   (a) 持久化 PLAN_APPROVED 已含「曾渲染」证据（full/partial）⇒ 无论 guard/module 能否解析都强制；
+  //   (b) module-aware ui_impact 派生为真（module 经共享 resolver 解析）。
+  // S35 code-r2 F1：本块必须先于 no-delta 早退——否则 `> module: ghost` + ui_impact:true 的无 delta 提案
+  // 会在 resolver 与 UI 门执行前直接写入 SPEC_MERGED（module-aware 判定的提案须先完成 resolver）。
   const provClass = classifyProvenance(readPlanApproved(changePath));
   const hasUiProvenanceEvidence = provClass === 'full' || provClass === 'partial';
-  const moduleId = readProposalModule(changePath) ?? readGuard(root)?.module;
+  // S35 code-r1 F1：模块归属经共享 proposal-context resolver（头优先 / 同 slug guard 回退 / 模块须在 yaml 注册）。
+  const moduleCtx = resolveProposalModuleContext(root, changePath, slug);
 
-  // F2（code-r2）：当提案「看起来是 UI-first」（声明 ui_impact:true 或 deltas 下存在 page-design 原型 HTML）
-  // 但既无「曾渲染」provenance 证据、两处 module 事实源（proposal.md `> module:` + guard.module）又都不可解析时，
-  // **无法确认是否 GUI 项目** → 不得把 undefined 当非 GUI 静默跳过强制门 → fail closed 拒绝 merge。
+  // F2（code-r2）+ S35 code-r1 F1：当提案「看起来是 UI-first」（声明 ui_impact:true 或 deltas 下存在
+  // page-design 原型 HTML）但既无「曾渲染」provenance 证据、模块上下文又不可解析（含**模块不存在于
+  // logos-project.yaml** 的未知模块）时，**无法确认是否 GUI 项目** → 不得静默按非 GUI 跳过强制门 → fail closed。
   const decl = readUiUxDeclaration(changePath);
   const protoDeltaDir = join(changePath, PROTOTYPE_DELTA_SUBPATH);
   const hasPrototypeHtml = existsSync(protoDeltaDir)
     && readdirSync(protoDeltaDir).some(f => f.endsWith('.html') && statSync(join(protoDeltaDir, f)).isFile());
   const looksUiFirst = decl.ui_impact === true || hasPrototypeHtml;
-  if (looksUiFirst && !hasUiProvenanceEvidence && moduleId === undefined) {
-    console.error('Error: 提案声明 ui_impact:true 或存在 page-design 原型，但无法解析归属 module（proposal.md 缺 `> module:` 且 guard 缺失/损坏/缺 module）。');
-    console.error('  无法确认是否 GUI 项目 → fail closed 拒绝 merge：未生成 MERGE_PROMPT、未写 resources、未写 SPEC_MERGED。补 proposal.md 的 `> module:` 头或修复 guard 后重试。');
+  if (looksUiFirst && !hasUiProvenanceEvidence && !moduleCtx.ok) {
+    console.error(`Error: 提案声明 ui_impact:true 或存在 page-design 原型，但模块归属无法解析（${moduleCtx.detail}）。`);
+    console.error('  无法确认是否 GUI 项目 → fail closed 拒绝 merge：未生成 MERGE_PROMPT、未写 resources、未写 SPEC_MERGED。补 proposal.md 的 `> module:` 头（并确保模块已注册）后重试。');
     process.exit(1);
   }
 
-  const uiImpact = hasUiProvenanceEvidence || deriveUiImpact(root, moduleId, changePath);
+  const uiImpact = hasUiProvenanceEvidence
+    || (moduleCtx.ok && deriveUiImpact(root, moduleCtx.moduleId, changePath));
   if (uiImpact) {
     // ① 命令级 pre-merge hash gate：堵直接调用绕过。full 失配/损坏、partial → fail closed（不生成 MERGE_PROMPT、不写 SPEC_MERGED）。
     const hm = checkUiHashMatch(changePath);
@@ -208,6 +176,32 @@ export function merge(slug?: string) {
     if (!commit.ok) {
       console.error(`Error: 原型事务落盘失败（${commit.reason}）：resources 回 merge 前态、零残留，拒绝 merge。`);
       process.exit(1);
+    }
+  }
+
+  if (deltas.length === 0) {
+    writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
+    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+    return;
+  }
+
+  // F3：非法 .md delta 报错停下——绝不静默整份覆盖主文档、不写 SPEC_MERGED。
+  // 收窄：仅 markdown 规格/skill delta 受此约束；`2-page-design/` 原型资产（.html）走整份落盘、不需段标记。
+  // S35 显式语义收紧之二：经共享 validateMarkdownDelta，除段标记外同时拒绝模板骨架（占位字面量未替换）。
+  for (const d of deltas) {
+    if (d.relativePath.endsWith('.md') && !isPrototypeAsset(d.relativePath)) {
+      const content = readFileSync(d.deltaPath, 'utf-8');
+      const v = validateMarkdownDelta(content);
+      if (v.missingSectionMarker) {
+        console.error(`Error: 非法 delta（缺 ADDED/MODIFIED/REMOVED 段标记）：${d.relativePath}`);
+        console.error('  绝不静默整份覆盖主文档；请补段标记后重试。未生成 MERGE_PROMPT、未写 SPEC_MERGED。');
+        process.exit(1);
+      }
+      if (v.templateSkeleton) {
+        console.error(`Error: 非法 delta（模板占位字面量未替换）：${d.relativePath}（${v.skeletonHits[0]}）`);
+        console.error('  模板骨架 delta 会把占位内容写入主文档；请替换为真实内容后重试。未生成 MERGE_PROMPT、未写 SPEC_MERGED。');
+        process.exit(1);
+      }
     }
   }
 

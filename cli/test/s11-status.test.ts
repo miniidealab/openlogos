@@ -1122,6 +1122,10 @@ describe('S11 Scenario Tests — status command', () => {
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
     mkdirSync(join(proposalDir, 'deltas', 'test'), { recursive: true });
     writeFileSync(join(proposalDir, 'deltas', 'test', 'core-S11-test-cases.md'), '| UT-S11-50 | 新增回归 |');
+    // S35 slice 级证据读 delta 映射到的已合并目标文件（merge 后目标在场；须为完整表格块）。
+    mkdirSync(join(proposalDir, '..', '..', 'resources', 'test'), { recursive: true });
+    writeFileSync(join(proposalDir, '..', '..', 'resources', 'test', 'core-S11-test-cases.md'),
+      '| ID | 用例 |\n|---|---|\n| UT-S11-50 | 新增回归 |');
     writeStaleVerifyFailure('UT-S11-50');
 
     status('json');

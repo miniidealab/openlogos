@@ -926,6 +926,75 @@ effectiveBaselineSeedState(root, moduleId, explicit) → { state, legacy }
 - **`reason` 分类**：`unparseable`（权威/约定目标 `## 逆向基线来源` 坏 fenced YAML）| `unclassifiable-evidence`（有 provenance/baseline_index 迹象但无 committed run manifest 且无约定命名文件、不可定类）。
 - 该增强为**向后兼容**（错误 envelope 新增字段，不改错误码语义、不改退出码、不改「不写/不覆盖 prompt」红线）。与 §2.27.10 的 canonical 采信配合：真正因编造/示例 key 产生的假迹象在采信阶段即被排除、不再进入本错误路径；进入本路径的必是真实坏结构或真不可定类，`paths[]` 直接指向问题文件。
 
+### 2.30 change-lint 计划产物左移硬检查（S35）
+
+#### 命令形态
+
+`openlogos change-lint [--slug <slug>] [--format json]`
+
+- **独立顶层命令**（F4 碰撞裁决记录：`openlogos change lint` 子命令形态被否决——CLI 现行解析把 `change` 后首个非 flag 参数当 slug，该字节序列的既有含义是「创建 slug 为 `lint` 的提案」，子命令形态会改变 S09 公开行为且使 slug 为 `lint` 的提案无法创建；顶层命令零碰撞、S09 零改动）。
+- 无 `--slug` → 取 guard 活跃提案；无活跃提案且未给 slug → 操作错误（`no_active_proposal`，exit 1）。
+- **slug 词法**：`[a-z0-9][a-z0-9-]*`；拒绝空值、路径分隔符、`.`、`..`、绝对路径；解析后做 realpath containment 校验（目标必须落在 `logos/changes/` 内，symlink 逃逸同拒，`slug_invalid` / `slug_not_found`）。历史不合词法的提案目录走只读兼容口径：目录直查存在即可 lint，仍过 containment。
+- **模块归属解析（module-aware 判据的唯一权威，含 L7）**：经共享 proposal-context resolver 解析——①首选 `proposal.md` 头部 `> module: <id>`（持久事实源）；②仅当该头缺失**且** guard 的 `activeChange` 等于本 slug 时，回退 guard 的 `module` 字段；③两者同时在场且冲突时以 proposal.md 头为准；④仍无法解析出模块、或解析出的模块不存在于 `logos-project.yaml` → 操作错误 `module_unresolved`（exit 1，命令未完成检查，fail-closed，不得静默按非 GUI 跳过）。
+
+#### 检查项矩阵
+
+| # | 检查 | 共享判据 | 生效阶段 |
+|---|------|---------|---------|
+| L1 | tasks.md 结构可解析（≥1 个 `## [tag]` 标题） | `parseTaskSections` 非 null | 恒生效 |
+| L2 | 需代码的提案有 `## [code]` 标题（空段占位合法） | `isCodeRequiredForProposal` × section 在场判定 | 恒生效 |
+| L3 | 分阶段测试证据模型 | 共享结构化 test-id evaluator | 恒生效（仅 code_required 提案） |
+| L4 | `.md` delta 含 ADDED/MODIFIED/REMOVED 段标记且脱模板骨架 | 共享 `validateMarkdownDelta` | 仅对已存在 delta 文件 |
+| L5 | 部署决策一致性（proposal × tasks `[deploy]` 互证） | `resolveProposalDeploymentDecision` conflict 判定 | 恒生效 |
+| L6 | delta 路径合法性（正交双结论） | 共享 delta 分类器（lint 读 `lintValidity`） | 仅对已存在 delta 文件 |
+| L7 | GUI 项目 ui_impact 声明结构合法 + `ui_impact:true` 逐页对账 | `evaluateUiPrototype` 纯 evaluator；模块经 proposal-context resolver 解析，`product_type ∈ {web,desktop,mobile}` 激活 | 仅 GUI 项目 |
+
+#### L3 分阶段测试证据模型
+
+**证据等级的阶段分类函数（唯一、可判定；输入 = marker 与 tasks.md 的机器事实，无命令参数）**：
+
+| 优先序 | 输入事实 | 证据等级 |
+|--------|---------|---------|
+| 1 | `SPEC_MERGED` / `MERGED` marker 存在 | **slice 级**：证据集合**限定到本提案（proposal-scoped）**——曾有测试 delta 的提案，把本提案 `deltas/test/**` 的相对路径逐一映射到对应 `logos/resources/test/**` 目标文件，**只读取这些目标文件**的结构化 ID 列；无测试 delta 的纯代码提案**只能**凭合法复用清单。**禁止扫描 `logos/resources/test/` 全目录**——项目全局的无关既有 ID 不构成本提案证据（否则成熟项目任何提案 merge 后都会假通过）。lint 与 flow-derive `test-id-required` 同判据同结论 |
+| 2 | 无 merged marker，`[delta]` section 存在且其任务**全部勾选** | **spec-complete 级**：必须能从**本提案**已产出的 `deltas/test/` 文件的结构化 ID 列、或经校验复用清单解析到具体 ID；`[delta]` 任务文字中的 `deltas/test/` 规划字样**不再充当证据**（防「全勾但测试 delta 实际缺失」假通过） |
+| 3 | 无 merged marker，`[delta]` section 存在且未全部勾选 | **plan 级**：证据 (a) `[delta]` 任务规划了 `deltas/test/` 目标，或 (b) 合法复用声明 |
+| 4 | 无 merged marker，无 `[delta]` section（纯代码提案） | **plan 级**（证据仅 (b) 复用声明或已存在 `deltas/test/` 文件），直至 no-delta merge 写入 `SPEC_MERGED` 进入 slice 级 |
+
+**`[delta]` 勾选度的计数基（防延后非 delta 任务降级证据等级）**：上表第 2/3 档的「勾选度」**仅统计 delta 产出条目**——任务文字含 `deltas/` 目标路径的 checkbox 项；不含 `deltas/` 路径的条目（如「merge 时同步更新元数据」类 merge-time 工作）**不参与计数**。producer 规范（change-writer）同时要求：`[delta]` section 只含一文件一任务的 delta 产出 checkbox，非 delta / merge-time 工作不得以 checkbox 形式写入 `[delta]`（以说明文字或独立小节承载）。双保险缺一即防：即便 producer 违规混入非 delta checkbox，分类函数也不会把「全部真实 delta 已落盘」的提案压回 plan 级、从而绕过 spec-complete 级的测试 delta 实物校验（UT-S35-09a 反例锚定）。
+
+**复用声明固定语法（producer/parser 互操作契约，可整块复制）**——`proposal.md` 中标题**精确**为 `## 复用测试 ID` 的小节，正文为列表，每行一条：
+
+```markdown
+## 复用测试 ID
+
+- UT-S09-02 — 覆盖 unknown 目录忽略回归
+- ST-S30-04 — 覆盖 cmd-gate 端到端路径
+- SMOKE-core-12 — 覆盖部署后命令可见性
+```
+
+解析规则：每行 `- <ID> — <一句话用途>`；ID 必须**精确存在于已合并** `logos/resources/test/` 规格的**表格结构化 ID 列（首列）**——散文、覆盖清单或说明文字中提及的 token **不构成存在性**（防「仅散文提及」伪装成已定义用例）；允许 UT/ST/SMOKE 混合；同一 ID 重复 → 该项违规；存在任一非法项（语法不符或 ID 不存在）→ **逐项各报一条** `code_change_requires_real_test_ids` violation（`path` 指向 proposal.md，`message` 含该行原文），合法项不因此失效但小节整体不判过，直至全部合法。
+
+**ID 闭合文法（兼容基线 + 减法拒绝，权威 parser 单点承载）**：
+- **兼容基线 = 现行宽语法的锚定整串版（含点号收紧）**：`^(UT|ST|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)*$`——与生产 `TEST_CASE_ID_PATTERN` 同构、整串锚定，且**点号仅允许作段内分隔**（如 `01.1`）：候选以 `.` 开头/结尾或含空 dot 段（如 `xx.`、`a..b`）不构成合法 ID——否则尾随点号会使末段变成 `xx.`、绕过占位黑名单的整段精确匹配。**不收窄形态**：现行语料中的 `ST-S01-EX-adopt`、`UT-S05-bootstrap-01`、`UT-S05-B01`、`UT-JSON-09`、`ST-JSON-21`、`UT-S09-110a-neg`、多段后缀及含连字符 module 的 `SMOKE-<module>-NN` 全部继续合法（模块命名规范「小写字母+连字符」兼容）。
+- **减法拒绝（仅以下两类，在基线之上叠加）**：①候选含 `*`、`?`、方括号或其它未被基线消费的尾部字符 → 整候选拒绝；②最末段为 `xx`/`XX`/`NN`/`TBD`/`TODO`（大小写不敏感）→ 拒绝。
+- 大小写敏感；token 边界 = 空白、行首尾、反引号、中英文标点（`-` 与 `.` 除外）；**候选首尾的点号按边界标点先行剥除**（句末点号不是 ID 组成部分：`见 UT-S09-02.` 采信为 `UT-S09-02`；`UT-S99-xx.` 规范化为 `UT-S99-xx` 后仍命中占位黑名单）；候选必须整串匹配（`match[0] === 候选全串`，前缀命中不采信）。
+- **corpus compatibility 回归（实现前置）**：从当前全部 `logos/resources/test/*.md` 表格首列构建语料回归夹具，既有全部已定义 ID（含非数字尾段形态）必须继续被 parser 接受——flow-derive 换用 parser 后**零合法提案回归**。
+- 文法以架构文档指定的共享 parser（`parseTestCaseIds`）单点实现，lint / flow-derive / merge 一律经它——**新 ID 的判定不依赖「已合并语料中存在」**（新 ID 按文法判形 + 从测试 delta 结构化 ID 列读取），复用 ID 才要求存在性（且仅认结构化 ID 列）。
+
+#### L6 正交双结论
+
+共享分类器对每个 delta 条目返回两个正交结论：`mergeDisposition`（`mergeable` / `ignored`——与现行 merge 消费行为逐字节一致，**零改动**）与 `lintValidity`（`valid` / `explicitly_ignored`〔`reference` 具名保留〕/ `invalid`〔unknown 目录、越界目标、symlink 逃逸、根下直放、**非常规 symlink 目标**（解析后非普通文件亦非目录，如 FIFO/socket——与现行 merge 的 `isFile()` 过滤零漂移，恒不消费、恒不预读）〕）。merge 只读前者，lint 只读后者并对 `invalid` 报 `delta_path_invalid`；根级 symlink 与根级普通文件同判（分类器对任何文件系统输入不得崩溃）。
+
+#### 输出
+
+- **人读**（默认，无 `--format json`）：逐项 ✓/✗ + PASS/FAIL 摘要；每个 ✗ 给「缺什么 / 在哪补 / 补成什么样（含示例）」三段式 fix_hint；操作错误输出 `Error [<code>]: <message>` 到 stderr。**默认模式不输出 JSON。**
+- **`--format json`**：遵守通用信封（见 `spec/cli-json-output.md` §3.15）；检查完成（无论 pass）→ stdout success envelope；操作错误 → stderr error envelope。
+- **exit code**（两种格式一致）：0 = 全过；2 = 有违规；1 = 操作错误。
+
+#### 授权语义
+
+只读、非人类确认点、任何角色任何阶段可跑；不写 marker、不改变任何 step/gate 派生。只读红线为**项目级**：运行前后整个项目根（含 `logos/.openlogos-guard`、marker、`logos-project.yaml`、verify 账本）零写入。
+
 ## 三、功能验收摘要
 
 ### S01

@@ -96,6 +96,16 @@ function scaffoldLaunchedProject(root, slug, proposalOverview) {
     '## 变更概述',
     proposalOverview,
   ].join('\n'));
+  // S35 收紧：散文 ID 不再构成测试证据——SMOKE-core-09 的证据改为结构化复用声明 + 已合并结构化 ID 列。
+  if (/UT-S32-11/.test(proposalOverview)) {
+    appendFileSync(join(root, 'logos/changes', slug, 'proposal.md'), [
+      '', '', '## 复用测试 ID', '',
+      '- UT-S32-11 — 覆盖 no-delta spec-complete 派生',
+      '- ST-S32-EX-3 — 覆盖纯代码提案切片路径',
+    ].join('\n'));
+    writeFileSync(join(root, 'logos/resources/test', 'core-S32-test-cases.md'),
+      ['| ID | 用例 |', '|---|---|', '| UT-S32-11 | 回归 |', '| ST-S32-EX-3 | 回归 |'].join('\n'));
+  }
   writeFileSync(join(root, 'logos/changes', slug, 'tasks.md'), [
     '# 实现任务',
     '',

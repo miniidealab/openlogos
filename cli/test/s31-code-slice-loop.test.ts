@@ -267,7 +267,11 @@ function setupCmd(tasks: string, markers: string[] = [], slug = 'feat', proposal
 
 function writeTestDelta(dir: string, ids: string[] = ['UT-S31-19', 'ST-S31-08']): void {
   mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
-  writeFileSync(join(dir, 'deltas', 'test', 'core-S31-test-cases.md'), ids.map(id => `| ${id} | 新增回归 |`).join('\n'));
+  const table = ['| ID | 用例 |', '|---|---|', ...ids.map(id => `| ${id} | 新增回归 |`)].join('\n');
+  writeFileSync(join(dir, 'deltas', 'test', 'core-S31-test-cases.md'), table);
+  // S35 slice 级证据读 delta 映射到的已合并目标文件（merge 后目标在场；须为完整表格块）。
+  mkdirSync(join(dir, '..', '..', 'resources', 'test'), { recursive: true });
+  writeFileSync(join(dir, '..', '..', 'resources', 'test', 'core-S31-test-cases.md'), table);
 }
 async function nextJson(root: string): Promise<{ modules: Array<Record<string, any>> }> {
   const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
