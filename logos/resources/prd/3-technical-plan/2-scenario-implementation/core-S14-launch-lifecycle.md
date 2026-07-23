@@ -43,3 +43,18 @@ sequenceDiagram
 - **期望响应**：拒绝刷新指令文件并提示用户修复 marker。
 - **副作用**：不得覆盖用户指令文件。
 
+### EX-1.1: 指定模块不存在
+- **触发条件**：`openlogos launch <module>` 传入的模块 id 未在 `logos-project.yaml` 的 `modules` 中注册。
+- **期望响应**：输出「模块不存在」错误（`launch.moduleNotFound`）并以非零码退出，不进入门禁校验与 lifecycle 变更。
+- **副作用**：不修改任何文件（`logos-project.yaml`、AI 指令文件、Skill 资产均不变）。
+
+### EX-1.2: 多模块未指定 --module
+- **触发条件**：注册表存在 ≥2 个模块，用户执行 `openlogos launch` 未带模块参数（无法唯一确定目标）。
+- **期望响应**：输出「请指定模块」错误（`launch.multiModuleError`，列出可选模块 id）并以非零码退出；空注册表（0 模块）则输出「无已注册模块」错误退出。
+- **副作用**：无文件被修改。
+
+### EX-5.1: 模块已 launched（幂等）
+- **触发条件**：目标模块 `lifecycle` 已为 `launched`，再次执行 `openlogos launch <module>`。
+- **期望响应**：不重复推进状态——normal bootstrap 模块输出「模块已 launched」提示（`launch.moduleAlreadyLaunched`）并以零码正常返回（no-op）；adopted bootstrap 模块幂等刷新 AI 指令与 Skill 资产后正常返回，不改写 `lifecycle`。
+- **副作用**：`lifecycle` 值不变；normal 分支不触发任何写入，adopted 分支仅幂等刷新托管片段与资产、不产生语义漂移。
+

@@ -38,7 +38,7 @@ modules:
       - scenario
     deployment_required: true
     product_type: desktop
-    baseline_seed_state: required
+    baseline_seed_state: seeded
 features:
   - id: F01
     name: 项目初始化与接入
@@ -146,7 +146,7 @@ scenarios:
     module: core
     feature: F06
   - id: S26
-    name: "openlogos"
+    name: openlogos
     module: core
     feature: F06
   - id: S27
@@ -481,3 +481,9 @@ conventions:
   - 部署与 smoke 是否执行以活跃提案的部署影响与 tasks.md [deploy] section 为准
   - 遵循 OpenLogos 三层推进模型（Why → What → How）
   - 每次变更必须先创建 logos/changes/ 变更提案
+baseline_index:
+  core:
+    source_hash: b1c5fdb2589a4be66fbef835004ac17a7a596984f1e104d58cff399936d96b46
+    human_verified: 0
+    denominator: 35
+    generated_at: 2026-07-23T06:28:40.406Z

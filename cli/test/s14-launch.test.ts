@@ -120,7 +120,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
 
   /* ---- explicit module-id ---- */
 
-  it('ST-S14-04: explicit module-id launches that module', () => {
+  it('ST-S14-18: explicit module-id launches that module', () => {
     writeProjectYaml(root, {
       modules: [
         { id: 'core', name: 'Core', lifecycle: 'initial' },
@@ -138,7 +138,8 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
 
   /* ---- multi-module no-arg error ---- */
 
-  it('ST-S14-05: multi-module, no arg → error exit', () => {
+  it('UT-S14-04: multi-module or empty registry, no arg → error exit', () => {
+    // ≥2 模块未指定 --module → 要求显式模块 id 并非零退出
     writeProjectYaml(root, {
       modules: [
         { id: 'core', name: 'Core', lifecycle: 'initial' },
@@ -148,11 +149,16 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
 
     expect(() => launch()).toThrow('process.exit(1)');
     expect(con.errors.join('\n')).toContain('module-id');
+
+    // 0 模块（空注册表）→ 独立的「无已注册模块」错误并非零退出
+    writeProjectYaml(root, { modules: [] });
+    expect(() => launch()).toThrow('process.exit(1)');
+    expect(con.errors.join('\n')).toContain('No modules registered');
   });
 
   /* ---- already launched ---- */
 
-  it('ST-S14-06: already launched module → no-op with message', () => {
+  it('UT-S14-05 / ST-S14-04: already launched module → idempotent no-op', () => {
     writeProjectYaml(root, {
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
     });
@@ -166,7 +172,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
 
   /* ---- module not found ---- */
 
-  it('ST-S14-07: unknown module-id → error exit', () => {
+  it('UT-S14-03: unknown module-id → error exit', () => {
     writeProjectYaml(root, {
       modules: [{ id: 'core', name: 'Core', lifecycle: 'initial' }],
     });

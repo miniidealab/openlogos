@@ -13,10 +13,12 @@ sequenceDiagram
     C->>C: Step 5: 推断测试命令与 verify 预跑配置
     C->>C: Step 6: 推断或补齐推荐 sandbox 配置
     C->>C: Step 7: 创建 logos/ 标准目录结构与 Reference 子目录
-    C->>C: Step 8: 写入 logos.config.json 与 logos-project.yaml（bootstrap: adopted, lifecycle: launched）
+    C->>C: Step 8: 写入 logos.config.json 与 logos-project.yaml（bootstrap: adopted, lifecycle: launched, baseline_seed_state: required）
     C->>C: Step 9: 合并写入 AGENTS.md 与 CLAUDE.md 托管片段，并部署所选 AI tools 资产与 `logos/spec/`
-    C-->>U: Step 10: 输出接入报告、verify 预跑配置与 sandbox 配置结果，并建议执行 openlogos change add-baseline-docs
+    C-->>U: Step 10: 输出接入报告、verify 预跑配置与 sandbox 配置结果；说明现状基线待建立，下一步由 AI 会话/driver 逆向建基线（openlogos baseline-seed begin/commit，见 S33）
 ```
+
+> **交接说明**：`adopt` 只做确定性初始化并写 `baseline_seed_state: required`，**CLI 本身不启动 AI、不产逆向内容、不声称基线已建立**。现状基线的逆向建立由 AI 会话/driver 检测该状态后经 `openlogos baseline-seed`（`begin` 提交逻辑产物计划 → 写 staging → `commit` 原子提交）完成，完整时序见 **S33**。旧的 `openlogos change add-baseline-docs` 入口已废弃、由 baseline-seed 流程取代，本时序图不再引用。
 
 ## 步骤说明
 1. **用户**执行 `openlogos adopt`。

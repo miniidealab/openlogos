@@ -13,9 +13,13 @@ sequenceDiagram
     C->>C: Step 5: 检测测试栈与测试命令
     C->>C: Step 6: 写入 logos.config.json 与 logos-project.yaml
     C->>C: Step 7: 查找 AGENTS.md / CLAUDE.md 及大小写变体
-    C->>C: Step 8: 通过 managed block 合并写入 AI 指令文件
-    C-->>U: Step 9: 输出创建清单、verify 预跑配置结果与下一步建议
+    C->>C: Step 8: 发现既有项目专属 Skill 与插件资产
+    C->>C: Step 9: 通过 managed block 合并写入 AI 指令文件
+    C->>C: Step 10: 为目标 AI 工具生成 OpenLogos 官方插件与命名空间边界
+    C-->>U: Step 11: 输出创建清单、verify 预跑配置结果、AI 资产边界与下一步建议
 ```
+
+> 主时序图与下方「步骤说明」逐步对齐（均为 11 步）；其中 Step 8 / Step 10 承载 AI 工具专属 Skill 发现与 OpenLogos 官方插件命名空间边界。
 
 ## 步骤说明
 1. **用户**执行 `openlogos init`。
@@ -29,25 +33,6 @@ sequenceDiagram
 9. **CLI** 通过 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` managed block 合并写入 OpenLogos 指令：已有完整 marker 时只替换托管片段；无 marker 且包含用户内容时保留原文并追加托管片段；历史纯 OpenLogos 旧模板可迁移为带 marker 文件；marker 不完整时 fail loud，不猜测边界覆盖。
 10. **CLI** 为目标 AI 工具生成 OpenLogos 官方插件资产：Codex 使用 repo marketplace / `openlogos` 插件命名空间承载方法论技能；Claude Code 使用 OpenLogos 官方插件承载方法论技能，同时保留 `.claude/skills/` 或项目独立插件中的项目专属技能。
 11. **CLI** 输出下一步建议，并说明 verify 预跑配置是否已补齐；当发现项目专属 Skill 时，输出其保留位置和不属于 OpenLogos 官方命名空间的提示。
-
-## AI 工具 Skill 命名空间边界补充时序
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as OpenLogos CLI
-
-    U->>C: Step 1: openlogos init my-project
-    C->>C: Step 2: 检查项目是否已初始化
-    C->>C: Step 3: 读取项目名、locale 与 aiTool
-    C->>C: Step 4: 创建 logos/ 标准目录与 Reference 子目录
-    C->>C: Step 5: 检测测试栈与测试命令
-    C->>C: Step 6: 写入 logos.config.json 与 logos-project.yaml
-    C->>C: Step 7: 查找 AGENTS.md / CLAUDE.md 及大小写变体
-    C->>C: Step 8: 发现既有项目专属 Skill 与插件资产
-    C->>C: Step 9: 通过 managed block 合并写入 AI 指令文件
-    C->>C: Step 10: 为目标 AI 工具生成 OpenLogos 官方插件与命名空间边界
-    C-->>U: Step 11: 输出创建清单、verify 预跑配置结果、AI 资产边界和下一步建议
-```
 
 ## 异常用例
 ### EX-2.1: 项目已初始化
