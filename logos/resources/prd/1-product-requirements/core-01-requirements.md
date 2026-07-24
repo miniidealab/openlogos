@@ -60,7 +60,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 |------|---------|---------|---------|--------|
 | S01 | 初始化 OpenLogos 项目 | 首次在空目录接入 | P01/P02/P03 | P0 |
 | S20 | 已有项目接入 OpenLogos | 在已有代码库上首次接入 | P04/P02/P03 | P0 |
-| S33 | 存量项目逆向建基线与按需深化 | adopt 接入后自动扫码建种子基线、迭代触碰时按需深化 | P04 | P0 |
+| S33 | 存量项目逆向建种子基线 | adopt 接入后自动扫码建种子基线（候选注册表，verified 冻结、无确认升级入口） | P04 | P0 |
 | S17 | 管理模块注册表 | 项目分模块演进时 | P03 | P1 |
 | S34 | 管理 feature 分组 | 场景增多需按功能域组织、或存量项目需回填 feature | P01/P03 | P1 |
 
@@ -879,11 +879,11 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **WHEN** 用户尝试在 merge 完成前用占位 ID 划分切片
 - **THEN** slice-planner 拒绝切片，提示先完成 merge——切片必须对真实规格 + 真实测试 ID 进行，而非对未合并草案猜切
 
-### S33: 存量项目逆向建基线与按需深化
-- **触发条件**：`openlogos adopt` 完成后模块处于 `bootstrap: adopted` 且 `baseline_seed_state: required`；或后续 `openlogos change` 触碰只有未验证逆向 spec 的区域。
-- **用户价值**：存量项目接入后立即获得一份**种子基线**（现状快照，只含可从代码忠实验证的事实：模块图、入口、依赖、**场景候选清单**），带 provenance 标记且明确 `verified: false`；随每次 change 触碰逐区域升级为人工确认，可信边界前移，存量代码 grandfather 豁免、不要求回头符合 spec。
+### S33: 存量项目逆向建种子基线
+- **触发条件**：`openlogos adopt` 完成后模块处于 `bootstrap: adopted` 且 `baseline_seed_state: required`。
+- **用户价值**：存量项目接入后立即获得一份**种子基线**（现状快照，只含可从代码忠实验证的事实：模块图、入口、依赖、**场景候选清单**），带 provenance 标记且明确 `verified: false`；存量代码 grandfather 豁免、不要求回头符合 spec。
 - **优先级**：P0
-- **主路径**：AI 会话/driver 检测 `baseline_seed_state: required` → 派发 `brownfield-adopter` skill 扫描代码库 → 逐产物写入含具名章节 `## 逆向基线来源` 与 `candidates[]`（`verified: false`、provenance 派生 `reverse-engineered`）的种子基线 → 展示现状基线覆盖率（human-verified 分子 / `active ∪ tombstone` 分母）→ 经 `openlogos baseline-seed`（`begin` → 写 run staging → `commit`）由 CLI 计算 `baseline_seed_state`（未全 `partial`、必需 kind 齐且全部合法 `seeded`，见 S33）。后续 `openlogos change` 触碰未验证逆向区域时，change-writer 给 advisory，建议在**当前 change 内那一份最终态 delta**里一并确认该区域现状（把 `## 逆向基线来源` 的 `verified` 升为 `true` 并记 `confirmed_by`/`evidence`），merge 落主文档后覆盖率前移一格。
+- **主路径**：AI 会话/driver 检测 `baseline_seed_state: required` → 派发 `brownfield-adopter` skill 扫描代码库 → 逐产物写入含具名章节 `## 逆向基线来源` 与 `candidates[]`（`verified: false`、provenance 派生 `reverse-engineered`）的种子基线 → 展示现状基线覆盖率（human-verified 分子 / `active ∪ tombstone` 分母）→ 经 `openlogos baseline-seed`（`begin` → 写 run staging → `commit`）由 CLI 计算 `baseline_seed_state`（未全 `partial`、必需 kind 齐且全部合法 `seeded`，见 S33）。
 
 #### 验收条件
 ##### 正常：adopt 后逆向产出种子基线（producer=AI driver，非 CLI）
@@ -897,20 +897,10 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **WHEN** adopt 完成但无法派发逆向扫描
 - **THEN** 保持 `baseline_seed_state: required`，输出可复制的后续命令/提示；`status`/`next` 明确显示「种子基线待建立」，绝不把未产出的基线显示为已建立
 
-##### 正常：change 触碰未验证逆向区域给 advisory（不设硬门）
-- **GIVEN** 活跃 `openlogos change`，其目标区域只有 `verified: false` 的逆向 spec
-- **WHEN** change-writer 产出 delta
-- **THEN** change-writer 给 advisory，建议在当前 change 的**单份最终态 delta**内一并确认该区域现状（`## 逆向基线来源` 置 `verified: true` + `confirmed_by`/`evidence`），与前向改动合并落盘；这是**不设硬门**的建议，用户可跳过直接写前向 delta
-
-##### 正常：human-verified 仅 merge 后生效、覆盖率不虚增
-- **GIVEN** 一份含 `verified: true` 的现状确认 + 前向改动的最终态 delta
-- **WHEN** 执行 `openlogos merge`
-- **THEN** `human-verified` 仅在该 delta 成功落入主文档后生效；覆盖率**只读已合并主文档**；覆盖率分母采 tombstone 法（存活候选 ∪ 未经人工确认的 tombstone），删除/合并候选转 tombstone 仍留分母，**无新增人工确认时百分比不上升**
-
-##### 异常：verify 对未验证逆向 spec 软告警
-- **GIVEN** 主文档区域仍为 `verified: false` 的逆向 spec
-- **WHEN** 执行 `openlogos verify`
-- **THEN** 仅输出软告警（提示该区域为未确认逆向现状），**不硬失败**；grandfather 豁免存量代码
+##### 正常：覆盖率 tombstone 分母不虚增
+- **GIVEN** 一组 `verified: false` 的逆向候选（种子基线现状）
+- **WHEN** 重扫删除/合并候选或读取覆盖率
+- **THEN** 覆盖率**只读已合并主文档**；覆盖率分母采 tombstone 法（存活候选 ∪ 未经确认的 tombstone），删除/合并候选转 tombstone 仍留分母，百分比不因删除上升
 
 ##### 异常：存量 provenance 保守迁移不伪造/不降级
 - **GIVEN** 老 adopted 项目已有文档但缺 `## 逆向基线来源` 章节
@@ -1006,7 +996,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **用户价值**：接回 S33↔S34 的断链——`feature-backfill` 不再只对 `scenarios[]` 有效，也能帮**逆向接入的存量项目**把逆向场景聚成功能域，使其可按 feature 导航。
 - **主路径(方案 A)**：
   1. `openlogos feature-backfill` 生成 prompt 时，除 `scenarios[]` 外**再纳入逆向场景候选**（复用 S33 provenance 只读入口），并**明确标注**"逆向候选 · 未进 scenarios[] · provenance verified:false"。
-  2. AI 按 prompt 对已有场景 + 逆向候选一并聚类；对逆向候选，回写时**登记进 `scenarios[]`（导航注册表）并分配 `feature`**——**不改动其 provenance `verified` 状态**（仍由 S33 的 JIT 确认流治理）。
+  2. AI 按 prompt 对已有场景 + 逆向候选一并聚类；对逆向候选，回写时**登记进 `scenarios[]`（导航注册表）并分配 `feature`**——**不改动其 provenance `verified` 状态**（`verified` 本变更后冻结、无升级路径，导航 ≠ 可信度）。
   3. CLI 仍**只生成 prompt、不改 `logos-project.yaml`、幂等**；`--format json` 成功响应的 `data` **必含**非负整数统计 `baseline_candidates_total`（键恒在场，见契约 §1.5）。
 
 #### 验收条件

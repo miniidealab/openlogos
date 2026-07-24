@@ -20,7 +20,7 @@ baseline_seed_node:
   entry:
     required: "openlogos baseline-seed begin --module <id> --manifest <path>  # + 派发 brownfield-adopter 写 staging → commit"
     partial:  "openlogos baseline-seed commit --module <id> --run-id <id>     # 续提交；或重新 begin 补齐"
-    seeded:   "openlogos change <slug>                                          # 正常迭代；触碰未验证逆向区域触发 JIT advisory"
+    seeded:   "openlogos change <slug>                                          # 正常迭代"
   invariants:
     - "adopt 只写初值 required、不启动 AI、不产逆向内容、不声称基线已建立"
     - "状态与目标文件唯一写入者是 CLI（baseline-seed）；producer 只写 run 私有 staging"

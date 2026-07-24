@@ -18,10 +18,10 @@
 ## 核心原则（不可违反）
 
 1. **只写可从代码忠实验证的事实**：system-map（模块图 / 入口 / 依赖）+ **场景候选清单**。**绝不写 PRD / 意图类文档**（意图无法从代码忠实还原）。
-2. **每份产物 `verified: false`**：种子基线是「推断现状」，非权威意图基线。人工确认（升 `verified: true`）只发生在后续 change 的 JIT 深化里（见 change-writer / S09）。
+2. **每份产物 `verified: false`（冻结字段）**：种子基线是「推断现状」，非权威意图基线。`verified` 恒为 `false`，人工确认机制已移除——不存在把 `verified` 升级为 `true` 的路径。
 3. **不直接改 YAML、不直接写目标 `logos/resources/`**：产物只写入 run 私有 **staging**，由 `openlogos baseline-seed commit`（CLI，唯一写入者）校验后原子提交。
 4. **能力缺失不伪造**：无法扫描时保持 `baseline_seed_state: required`、输出可复制提示，绝不声称基线已建立。
-5. **grandfather 豁免**：存量代码不要求回头符合 spec；覆盖率随后续 change 触碰逐区域前移。
+5. **存量代码不要求回头符合 spec**：种子基线是「未确认的事实」而非「被违反的意图」，方法论硬门只对新引入的意图生效、不对历史现状追溯生效；覆盖率沿用 tombstone 分母法（分子 `human_verified` 恒 `0`、分母 `active ∪ tombstone`），删除候选转 tombstone 仍留分母、不虚增。
 
 ## 执行步骤
 
@@ -69,9 +69,6 @@ candidates:
     verified: false
     aliases: []
     superseded_by: []
-    confirmed_by: null
-    evidence: null
-    confirmed_at: null
 ```
 ```
 
@@ -92,12 +89,12 @@ CLI 对 staged 实际字节算 hash + 校验 schema + 比对 candidate_keys，�
 
 ### Step 6: 展示覆盖率 / 交回控制
 
-commit 成功后运行 `openlogos next` / `status`，向用户展示现状基线覆盖率（`human-verified 0 / 候选 N`）。提示：后续 `openlogos change` 触碰只有未验证逆向 spec 的区域时，change-writer 会给 advisory，建议在当次最终态 delta 内一并确认现状（升 `verified: true`），merge 后覆盖率前移一格。
+commit 成功后运行 `openlogos next` / `status`，向用户展示现状基线覆盖率（`human-verified 0 / 候选 N`，`verified` 恒 `false`——分子恒 0、分母仍采 `active ∪ tombstone` 分母法）。提示：后续 `openlogos change` 与普通 launched 模块一致，产出正常前向 delta；候选注册表仍随重扫维护 active/tombstone/alias 生命周期，无确认升级入口。
 
 ## 恢复 / 重试
 
 - 扫描中断 → `partial`（持久化恢复态）：补齐 staging 后 `commit --run-id <id>` 续提交，或重新 `begin` 补齐缺失产物（旧 run `superseded`，状态保留 `partial` 至新 run 首次有效 commit）。
-- 提交崩溃：`baseline-seed` / `status` / `next` / `verify` 等机器读取入口经**恢复门**（取模块锁 + 检测未终结 journal → 先恢复）保证目标集合落定全旧或全新，`seeded` 当且仅当完整新集合在盘。
+- 提交崩溃：`baseline-seed` / `status` / `next` / 覆盖率重算 / `index`·`sync` 等机器读取入口经**恢复门**（取模块锁 + 检测未终结 journal → 先恢复）保证目标集合落定全旧或全新，`seeded` 当且仅当完整新集合在盘。（`verify` 已与基线候选解耦，不读取基线、不承担恢复职责。）
 
 ## 降级（能力缺失）
 

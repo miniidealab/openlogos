@@ -484,7 +484,9 @@ openlogos status --format json  # JSON 格式
 | `recovery` | object | **仅 `state==partial` 且存在活跃提案时出现**：结构化恢复 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change |
 | `commit_in_progress` | boolean | 仅恢复门无法取模块锁（提交进行中）时置 `true`：机器消费者**不把当前集合当权威**（不据其算覆盖率/报 seeded） |
 
-**partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `openlogos baseline-seed` 恢复入口；**有活跃提案**时 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory、不阻断 change。**只读已合并主文档**：覆盖率从各产物 `## 逆向基线来源` 章节实时聚合（可再经 `logos-project.yaml` 的 `baseline_index` 缓存加速 + 新鲜度对账），merge 前的未合并 delta 不计入；机器读取入口读前先经恢复门（取模块锁 + 检测未终结 journal → 先恢复，否则 `baseline_commit_in_progress`）。`verify --format json` 另在 `data.baseline_warnings`（string[]）输出对 `verified:false` 逆向 spec 的软告警——**不改 `gate.result`、不写 `VERIFY_FAIL`、不硬失败**（grandfather 豁免存量代码）。
+**partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `openlogos baseline-seed` 恢复入口；**有活跃提案**时 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory、不阻断 change。**只读已合并主文档**：覆盖率从各产物 `## 逆向基线来源` 章节实时聚合（可再经 `logos-project.yaml` 的 `baseline_index` 缓存加速 + 新鲜度对账），merge 前的未合并 delta 不计入；机器读取入口读前先经恢复门（取模块锁 + 检测未终结 journal → 先恢复，否则 `baseline_commit_in_progress`）。
+
+> 注（drop-baseline-confirmation）：人工确认机制删除后，`verify --format json` **不再输出** `data.baseline_warnings`——`verify` 对 `verified:false` 逆向 spec 既不产软告警、也不硬失败（grandfather 豁免存量代码，verify 从不因逆向候选 fail）。`baseline_coverage` 的 shape / schema / `contract.version` **不变**（`human_verified` 等字段保留、冻结）。
 
 ### 3.13 `openlogos baseline-seed --format json`（brownfield-adopter S33）
 

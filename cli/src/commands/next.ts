@@ -262,8 +262,8 @@ function buildModuleNextItem(
           action: t(locale as Parameters<typeof t>[0], 'next.createChange'),
           command: 'openlogos change <slug>',
           detail: (locale === 'zh'
-            ? '现状基线已建立；触碰只有未验证逆向 spec 的区域时，change-writer 会建议在本次最终态 delta 内一并确认现状（不设硬门）。'
-            : 'Baseline established; when a change touches an unverified reverse-engineered region, change-writer advises confirming it within the same final-state delta (advisory, not a hard gate).') + legacyHint,
+            ? '现状基线已建立；可正常发起变更迭代。'
+            : 'Baseline established; you can start change iterations normally.') + legacyHint,
           active_change: null, proposal_step: null,
         };
       }
@@ -616,8 +616,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           action = t(locale, 'next.createChange');
           command = 'openlogos change <slug>';
           detail = locale === 'zh'
-            ? '现状基线已建立；触碰只有未验证逆向 spec 的区域时，change-writer 会建议在本次最终态 delta 内一并确认现状（不设硬门）。'
-            : 'Baseline established; touching an unverified reverse-engineered region triggers a change-writer advisory to confirm it in the same final-state delta.';
+            ? '现状基线已建立；可正常发起变更迭代。'
+            : 'Baseline established; you can start change iterations normally.';
         } else if (seedState === 'partial') {
           action = locale === 'zh' ? '完成现状基线（恢复扫描）' : 'Complete current-state baseline (resume scan)';
           command = 'openlogos baseline-seed commit';

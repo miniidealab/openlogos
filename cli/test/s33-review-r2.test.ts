@@ -9,7 +9,6 @@ import {
   sha256, atomicWriteJson, recoverJournal, eventsPath,
   type CommitJournal,
 } from '../src/lib/baseline-seed-txn.js';
-import { detectBaselineJitAdvisory } from '../src/lib/baseline-jit.js';
 import { scanModuleCandidates, buildBaselineCoverage, candidateKey } from '../src/lib/baseline-provenance.js';
 
 const T1 = 'logos/resources/prd/core-system-map.md';
@@ -163,27 +162,6 @@ describe('S33 review r2 — 残留边界闭环', () => {
     expect(mod.baseline_seed_state).toBe('required');     // 架构 §4.1：缺省经统一派生（无候选 → required），unknown 第三态废除
     expect(mod.suggestion.toLowerCase()).toContain('legacy');
     expect(mod.suggestion).toContain('逆向建立现状基线'); // advisory 引导，不设硬门、不阻断 change
-  });
-
-  it('F7: 提交进行中（锁被存活进程占用）时 baseline-jit 返回 commit_in_progress、不据半集合判 advisory', () => {
-    // committing journal + 锁被 pid=1（存活）占用 → recoverPendingForRead 无法恢复 → inProgress
-    const runId = 'seed-core-0001';
-    mkdirSync(dirname(lockPath(root, 'core')), { recursive: true });
-    writeFileSync(lockPath(root, 'core'), JSON.stringify({ pid: 1, at: Date.now() }));
-    writeFileSync(join(root, T1), docFor([{ key: K1 }]));
-    const journal: CommitJournal = {
-      phase: 'committing', run_id: runId, module: 'core',
-      targets: [{ target_path: T1, old_sha256: null, new_sha256: sha256(docFor([{ key: K1 }])), applied: true }],
-      index: { yaml_backup_path: join(backupDir(root, runId), 'x.bak'), old_yaml_sha256: null },
-      state_transition: { from: 'partial', to: 'seeded' }, keys: [K1],
-    };
-    atomicWriteJson(journalPath(root, runId), journal);
-    // change 触碰 T1
-    const deltaP = join(root, 'logos/changes/feat/deltas/prd/core-system-map.md');
-    mkdirSync(dirname(deltaP), { recursive: true }); writeFileSync(deltaP, docFor([{ key: K1 }]));
-    const adv = detectBaselineJitAdvisory(root, 'feat');
-    expect(adv.advise).toBe(false);
-    expect(adv.message).toContain('baseline_commit_in_progress');
   });
 
   it('F9: 崩溃在 register 事件之前 → roll-forward 幂等补记事件（携真实 keys）', () => {

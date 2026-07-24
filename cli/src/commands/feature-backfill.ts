@@ -181,7 +181,7 @@ function buildPrompt(
 - **两步式冲突恢复**：设已有最大 scenario 编号为 \`max(existing S)\`（无场景为 0），取
   \`allocated = max(configured_next_id, max(existing S)+1)\`，按下面逆向候选清单**确定顺序逐个**分配唯一 \`SXX\`（每次 \`+1\`），最后持久化 \`scenario_counter.next_id = 最后分配值 + 1\`。**严禁复用候选 key 作 scenario id、严禁从 S01 重号**。
 - 每个新场景写 \`{id: SXX, name: <候选名>, module: <候选所属 module>, feature: F0X}\`。
-- **红线：只登记进 \`scenarios[]\`（导航），绝不改动逆向候选在 \`## 逆向基线来源\` 章节的 \`verified\` 状态（导航 ≠ 可信度，可信度由 S33 JIT 确认流治理）。**
+- **红线：只登记进 \`scenarios[]\`（导航），绝不改动逆向候选在 \`## 逆向基线来源\` 章节的 \`verified\` 状态（导航 ≠ 可信度；\`verified\` 是冻结字段、恒 \`false\`，不存在确认升级入口）。**
 
 ## 已有场景清单（待聚类）
 

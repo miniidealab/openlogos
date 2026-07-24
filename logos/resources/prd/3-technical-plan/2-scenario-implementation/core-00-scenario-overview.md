@@ -26,7 +26,7 @@
 | S28 | next 暴露 next_node 编排提示 | `commands/next.ts` / `lib/flow-overlay-derive.ts` / `lib/flow-derive.ts` | `s28-next-node.test.ts` | 进行中 |
 | S29 | M2 预留收尾（loop 退出 gate 可放行 / fan-out 阈值 / loop 内整组收敛） | `lib/flow.ts` / `lib/flow-loop-derive.ts` / `lib/flow-derive.ts` / `commands/next.ts` | `s29-gate-fanout-loop.test.ts` | 进行中 |
 | S30 | cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin） | `lib/flow.ts` / `lib/flow-derive.ts` / `lib/flow-overlay-derive.ts` / `commands/{next,status,watch}.ts` | `s30-cmd-builtin-gate.test.ts` | 进行中 |
-| S33 | 存量项目逆向建基线与按需深化 | `adopt.ts` / `baseline-seed.ts` / `next.ts` / `status.ts` / `verify.ts` / `lib/project-yaml.ts` / `lib/migrate-lifecycle.ts` / `skills/brownfield-adopter` | `s33-brownfield-baseline.test.ts` | 进行中 |
+| S33 | 存量项目逆向建种子基线 | `adopt.ts` / `baseline-seed.ts` / `next.ts` / `status.ts` / `verify.ts` / `lib/project-yaml.ts` / `lib/migrate-lifecycle.ts` / `skills/brownfield-adopter` | `s33-brownfield-baseline.test.ts` | 进行中 |
 | S34 | 管理 feature 分组 | `lib/project-yaml.ts` / `commands/status.ts` / `lib/flow-overlay-derive.ts` / `commands/feature.ts` / `commands/feature-backfill.ts` / `index.ts` | `s34-feature.test.ts` | 进行中 |
 
 ## 场景依赖关系
@@ -85,9 +85,8 @@ graph LR
 ## S33 依赖关系（brownfield-adopter）
 
 - **S20 → S33**：`openlogos adopt`（S20）在初始化时写入模块级 `baseline_seed_state: required`，把逆向建种子基线自动衔接到 S33；S33 的种子基线产出以 S20 生成的 `logos/` 结构与 `bootstrap: adopted` 为前提。
-- **S33 → S05**：S33 建立/深化的现状基线覆盖率经 `baseline_coverage` 由 S05（next）/ S11（status）展示；`baseline_seed_state`（required/partial/seeded）驱动 S05 的 adopted 路径引导（取代旧 add-baseline-docs 引导）。
-- **S33 → S09**：后续 `openlogos change`（S09）触碰只有未验证逆向 spec 的区域时，change-writer 给 JIT advisory（不设硬门），在**单份最终态 delta** 内一并确认现状（`## 逆向基线来源` 候选 `verified:true`），merge 后覆盖率前移；不新增门、不嵌套 change、不改 merge 协议。
-- **S33 → verify（S13）**：`verify` 对 `verified:false` 逆向 spec 仅软告警、不硬失败（grandfather 豁免存量代码）。
+- **S33 → S05**：S33 建立的现状基线覆盖率经 `baseline_coverage` 由 S05（next）/ S11（status）展示；`baseline_seed_state`（required/partial/seeded）驱动 S05 的 adopted 路径引导（取代旧 add-baseline-docs 引导）。
+- **S33 → verify（S13）**：`verify` 对逆向 spec（`verified:false`）**不产出软告警**，也**不硬失败**（grandfather 豁免存量代码）。
 - **provenance 权威源**：文档内具名章节 `## 逆向基线来源` + `candidates[]`（详见架构 `core-06-provenance-data-model`）；`logos-project.yaml` 为派生索引、非权威。
 
 ## S34 依赖关系（add-feature-model）

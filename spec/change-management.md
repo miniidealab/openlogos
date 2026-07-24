@@ -528,23 +528,6 @@ plan-exit 门前，写入范围**显式且仅放行** `deltas/prd/2-product-desi
 
 merge-executor 的「整份 create / replace」**仅**适用于 `2-page-design/` 等资产目录下**非 `ui_impact` 绑定**的原型 / 资产文件类型（`.html` / `.png` / `.svg` 等）；`.md` 规格 / skill delta 缺 `ADDED` / `MODIFIED` / `REMOVED` 段标记时**一律判为非法 delta 并报错停下**，绝不静默整份覆盖主文档。**注意**：本特性引入的 `ui_impact` 原型资产**不走 merge-executor 的整份 create / replace 路径**，一律由 `commitVerifiedPrototypes()` 统一落盘（严格模式做 hash 校验、advisory 模式不做，二者同一入口）；merge-executor 绝不触碰原型资产。
 
-## 存量逆向基线的 JIT 深化（brownfield-adopter S33，advisory + 单份最终态 delta）
-
-`bootstrap: adopted` 模块下，当活跃 change 的目标区域**只有 `verified: false` 的逆向 spec**（种子基线）时，change-writer 给出 **JIT advisory（不设硬门）**：建议在**当前 change 的单份最终态 delta**内一并确认该区域现状。本节定义该路径在现行 delta 协议下的**唯一合法落盘结构**。
-
-### 单份最终态 delta 承载「确认现状 + 前向改动」（不引入多操作 delta）
-
-现行 delta 协议规定 `deltas/**` 相对路径 **1:1 映射唯一目标主文档**，`MODIFIED` 语义是「用完整内容替换主文档同名章节」。同一目标文档无法并存两份独立 delta，也无「同一 delta 内两个同名 `MODIFIED` 有序阶段」的表示。故：
-
-1. **单份最终态 delta**：每个被触碰目标文档只产出**一份**最终态 delta，承载「人工确认后的现状 + 本次前向改动」的最终内容，按现行 `MODIFIED`（每章节一份完整替换）落盘，走既有 `deltas/** → resources/**` 映射——**merge CLI / merge-executor / delta schema 一律不改**。
-2. **provenance 随 delta 原子升级**：该 delta 的一个 `MODIFIED` 同时把文档内具名章节 `## 逆向基线来源` 的 `verified: false → true`（并写 `confirmed_by` / `evidence` / `confirmed_at`）与正文改动一并替换。
-3. **现状确认是审计事实、非第二份 delta**：确认了哪些逆向候选、证据、确认人记在该章节 + `tasks.md` `[delta]` 勾稽对应候选 ID，**不新增第二个落盘目标**、**不引入双有序 delta / 多操作 delta manifest**（现行协议无法表达）。
-4. **`human-verified` 仅 merge 后生效**：merge 前主文档仍 `verified: false`，覆盖率**只读已合并主文档**，advisory 不因未合并 delta 提前消失或声称前移。
-5. **guard 合规**：全程在当前单一 change 的 `deltas/**` 内写作，**不直接改 `resources/**`、不嵌套第二个 change**。
-6. **不设硬门**：用户可跳过建议、直接写前向 delta；该区域 `verified` 保持 `false`、覆盖率不前移；change-writer 不得阻断。
-
-判定与校验的 CLI 侧支撑：`cli/src/lib/baseline-jit.ts`（`detectBaselineJitAdvisory` 只读已合并主文档判未验证逆向区域；`deltaConfirmsCurrentState` 校验单份 delta 是否承载 verified:true 现状确认）。
-
 ## change-lint 产出点自检（change-lint-shift-left）
 
 ### 定位

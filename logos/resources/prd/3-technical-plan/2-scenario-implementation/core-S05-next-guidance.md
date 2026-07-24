@@ -97,7 +97,7 @@ sequenceDiagram
 - **期望响应**：按**有效** `baseline_seed_state` 分档引导。有效状态**一律经共享 helper `effectiveBaselineSeedState` 取得**（explicit 显式值优先；yaml 缺省时按统一派生规则：有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`；**无 `unknown` 第三态**，见 core-06 §4.1）——`next` 不得本地 `?? 'required'` 私自推断：
   - `required`：输出「逆向建立现状基线」引导（由 AI 会话/driver 经 `openlogos baseline-seed begin` + 派发 `brownfield-adopter` 逆向扫描），不建议直接开始与未验证区域相关的业务迭代。
   - `partial`（扫描未完成、持久化恢复态）：显示「现状基线部分建立 / 扫描未完成」；**因本 EX 前提为 guard 不存在（无活跃提案）**，主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed commit --run-id <id>` 续提交或重新 `begin` 补齐），说明「可先继续完成基线，也可发起业务 change（不强制）」；覆盖率标 `incomplete`、不算精确百分比。**有活跃提案的 partial 优先级见 EX-3.5**。
-  - `seeded`：展示现状基线覆盖率（`human-verified <分子> / 候选 <存活>（含 tombstone <n>）`）并引导正常发起 `openlogos change`；触碰未验证逆向区域时提示 change-writer 会给 JIT advisory。
+  - `seeded`：展示现状基线覆盖率（`human-verified <分子> / 候选 <存活>（含 tombstone <n>）`）并引导正常发起 `openlogos change`。
   - 覆盖率无法可信重算（派生索引缺失/过期/解析失败）时显示 `unknown`/`stale`，不输出貌似精确的百分比。
   - **legacy 派生态（`legacy: true`，yaml 未落盘）**：上述分档引导正常给出，同时附 legacy 迁移提示「运行 `openlogos sync` 把派生状态落盘为显式枚举」（sync 迁移见 core-06 §4.1，落盘后本提示消失）。
 - **副作用**：无状态修改；`status`/`next`/`baseline-seed status` 对同一模块的有效状态**逐字节一致**（三入口单一事实源）；`next` 不得把未建立/部分建立的种子基线显示为已建立。

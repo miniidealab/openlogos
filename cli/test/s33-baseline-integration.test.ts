@@ -8,7 +8,6 @@ import { collectStatusData } from '../src/commands/status.js';
 import { createAdoptLogosProject } from '../src/commands/init.js';
 import {
   scanModuleCandidates,
-  collectBaselineSoftWarnings,
   candidateKey,
 } from '../src/lib/baseline-provenance.js';
 
@@ -44,7 +43,7 @@ function writeReverseDoc(root: string, filename: string, candidatesYaml: string)
   writeFileSync(join(dir, filename), docWithCandidates(candidatesYaml));
 }
 
-describe('S33 read-side integration — adopt enum / seeded coverage / verify soft-warn', () => {
+describe('S33 read-side integration — adopt enum / seeded coverage（确认机制已移除，verify 无 baseline 软告警）', () => {
   let root: string;
   let cleanup: () => void;
   let restoreCwd: () => void;
@@ -144,18 +143,5 @@ describe('S33 read-side integration — adopt enum / seeded coverage / verify so
     expect(after.denominator).toBe(2);
     expect(after.human_verified).toBe(1);
     expect(after.tombstones).toBe(1);
-  });
-
-  it('UT-S33-17 / ST-S33-EX-04: verify 对 verified:false 逆向 spec 仅软告警（不硬失败机制）', () => {
-    writeAdoptedSeedState(root, 'seeded');
-    writeReverseDoc(root, 'core-system-map.md', revCand('cli:adopt', { verified: false }));
-    const warnings = collectBaselineSoftWarnings(root, ['core']);
-    expect(warnings.length).toBeGreaterThan(0);
-    expect(warnings[0]).toContain('软告警');
-    expect(warnings[0]).toContain('不阻断');
-
-    // 全部人工确认后无软告警
-    writeReverseDoc(root, 'core-system-map.md', revCand('cli:adopt', { verified: true, confirmed_by: 'fred' }));
-    expect(collectBaselineSoftWarnings(root, ['core'])).toHaveLength(0);
   });
 });

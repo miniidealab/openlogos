@@ -322,14 +322,10 @@
 | ST-S09-EX-9.4 | 空原型文件不满足可交付 done_when | F1 R5 收紧存在性 | 声明页对应文件存在但为空（0 字节） | `check-ui-prototype` | 未收敛（逐页非空判据不满足）；「存在」不等于「可交付」 |
 | ST-S09-EX-9.5 | 提示前 / 落盘时 / 落盘后三处判据一致 | 纵深防御一致性 | 含 UI provenance 的漂移原型 | 分别命中 merge.ts 提示前、`commitVerifiedPrototypes()` 落盘时、`apply-merge` 后复核 | 三处均 fail closed，**不复用同一「capability 缺失即降级」错误分支一致放行**；形成纵深防御 |
 
-## 存量逆向基线 JIT advisory 补充用例（brownfield-adopter）
+## 存量逆向基线：确认机制已移除的反向回归（brownfield-adopter）
 
 | 用例 ID | 名称 | 覆盖点 | 前置 | 输入 | 期望 |
 |---|---|---|---|---|---|
-| UT-S09-B01 | change 触碰未验证逆向区域判定 | change-writer 分支 | 目标区域仅 `verified=false` 逆向 spec | 分析目标区域 | 判定为「未验证逆向区域」，产出 advisory 标记 |
-| UT-S09-B02 | 单份最终态 delta 承载确认+前向 | delta 结构 | 一份最终态 delta | 解析 | 一个 `MODIFIED` 同时含正文改动与 `## 逆向基线来源` `verified:true`；无第二份「现状确认 delta」 |
-| UT-S09-B03 | merge 前覆盖率不提前前移 | 覆盖率读 | 现状确认已写 delta 未 merge | 读覆盖率 | 只读已合并主文档；未合并 delta 不计入 |
-| ST-S09-B01 | advisory 不设硬门、可跳过 | S09 EX-9.6 | 未验证逆向区域 | 用户跳过 advisory 直接写前向 delta | 不阻断；`verified` 保持 false；覆盖率不前移 |
-| ST-S09-B02 | 接受 advisory 后 merge 使 verified 生效 | S09 EX-9.6/9.7 | 含 `verified:true` 的最终态 delta | merge | 主文档 `verified=true` 生效；guard 全程不被违反（未直接改 resources、未嵌套 change） |
+| UT-S09-B01 | seeded 项目触碰逆向区域时 next / change-writer 不再给 JIT 确认提示 | 确认机制移除反向回归 | `bootstrap: adopted`、`seeded`、活跃 change 目标区域仅 `verified:false` 逆向 spec | 执行 `openlogos next`；change-writer 产 delta | `next` 输出**不含** JIT advisory / 「确认现状」提示；change-writer **不**建议在 delta 内把 `## 逆向基线来源` 置 `verified:true`、**不**产确认相关 advisory；该区域 `verified` 保持 `false`、覆盖率不变 |
 
-> 说明：本补充仅覆盖 `bootstrap: adopted` 下 JIT 深化路径；S09 主生命周期用例与 GUI UI-first 用例不变。
+> 说明：原 `UT-S09-B02`/`UT-S09-B03`、`ST-S09-B01`/`ST-S09-B02`（advisory 存在判定 / 单份最终态 delta 承载确认 / merge 后覆盖率前移）随人工确认机制删除一并移除；本节只保留一条**反向回归**（`UT-S09-B01` 复用），断言确认提示不再产生。

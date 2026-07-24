@@ -3,8 +3,6 @@ import { join, dirname } from 'node:path';
 import { loadFlow, findActivatedLoop, inferLifecycle, FlowError } from '../lib/flow.js';
 import { loopLedgerPath, readLoopIters, deriveSliceState } from '../lib/flow-loop-derive.js';
 import { readProjectYaml } from '../lib/project-yaml.js';
-import { collectBaselineSoftWarnings } from '../lib/baseline-provenance.js';
-import { withBaselineReadLock } from '../lib/baseline-seed-txn.js';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -139,8 +137,6 @@ export interface VerifyData {
   sandbox: SandboxData;
   report_path: string;
   automation_diagnostic?: AutomationDiagnostic;
-  // brownfield-adopter（S33）：对 verified:false 逆向 spec 的软告警（不改 gate、不写 VERIFY_FAIL、不硬失败）。
-  baseline_warnings?: string[];
 }
 
 function safeReadFile(path: string): string {
@@ -1079,25 +1075,6 @@ export function verify(format: OutputFormat = 'text') {
 
   const data = collectVerifyData(root, preRun);
   data.sandbox = sandbox;
-  // brownfield-adopter（S33）：对 verified:false 逆向 spec 仅软告警，绝不影响 gate.result（grandfather 豁免存量代码）。
-  {
-    const projectYaml = readProjectYaml(root);
-    const baselineModuleIds = (projectYaml.data?.modules ?? []).map(m => m.id);
-    const warnings: string[] = [];
-    const at = new Date().toISOString();
-    for (const moduleId of baselineModuleIds) {
-      // F7：把「取锁—检查/恢复—算覆盖率/软告警」并入**同一读锁区间**——旧 readGate 恢复后即释放锁再返回，
-      // 真实读取（collectBaselineSoftWarnings）发生在锁外，writer 可在门检查完成与读取之间启动提交，仍读半集合。
-      // 现改为在持锁回调内完成软告警收集；提交进行中（锁被占用）则不把半新集合当权威，仅提示、不硬失败。
-      const res = withBaselineReadLock(root, moduleId, at, () => collectBaselineSoftWarnings(root, [moduleId]));
-      if (!res.ok) {
-        warnings.push(`baseline_commit_in_progress: 模块 ${moduleId} 的种子基线提交进行中——本次不据其算覆盖率/软告警（软提示，不阻断）。`);
-        continue;
-      }
-      warnings.push(...res.value);
-    }
-    if (warnings.length > 0) data.baseline_warnings = warnings;
-  }
   if (sandbox.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
     data.gate.reason = 'failed_cases';
@@ -1153,11 +1130,6 @@ export function verify(format: OutputFormat = 'text') {
   console.log(t(locale, 'verify.readingCases'));
 
   const { summary, gate, failed_cases, uncovered_cases, consistency, checklist, ac_trace, pre_run } = data;
-
-  if (data.baseline_warnings && data.baseline_warnings.length > 0) {
-    console.log(`\n⚠ ${locale === 'zh' ? '现状基线软告警（不阻断验收）' : 'Baseline soft warnings (non-blocking)'}:`);
-    for (const w of data.baseline_warnings) console.log(`  · ${w}`);
-  }
 
   console.log(`\n${LINE}`);
   console.log(`📊 ${t(locale, 'verify.summary')}`);

@@ -569,20 +569,3 @@ export function reconcileModuleCandidates(
   for (const [, arr] of result) arr.sort((a, b) => a.key.localeCompare(b.key));
   return result;
 }
-
-/** 收集 verify 软告警：主文档区域仍为 verified:false 的逆向 spec（grandfather 豁免、不硬失败）。 */
-export function collectBaselineSoftWarnings(root: string, moduleIds: string[]): string[] {
-  const warnings: string[] = [];
-  for (const moduleId of moduleIds) {
-    const scan = scanModuleCandidates(root, moduleId);
-    const unverified = scan.candidates.filter(
-      c => !c.verified && (c.state === 'active' || c.state === 'tombstone'),
-    );
-    if (unverified.length > 0) {
-      warnings.push(
-        `baseline_provenance_unverified: 模块 ${moduleId} 存在 ${unverified.length} 个未确认的逆向现状候选（verified:false）——软告警，不阻断验收（存量代码 grandfather 豁免）。`,
-      );
-    }
-  }
-  return warnings;
-}

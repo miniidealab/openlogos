@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { makeTempRoot, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import { collectStatusData } from '../src/commands/status.js';
-import { detectBaselineJitAdvisory } from '../src/lib/baseline-jit.js';
 import {
   lockPath, journalPath, backupDir, sha256, atomicWriteJson,
   acquireLock, releaseLock, runsRoot,
@@ -96,14 +95,6 @@ describe('S33 review r5 — F1 永久锁死 / F7 锁外读半集合 / F2 跨模�
   });
 
   // ---- F7：机器读取者在**同一读锁区间**内读取；提交进行中报 commit_in_progress，不据半集合 ----
-  it('F7: JIT advisory 在提交进行中经读锁区间返回 baseline_commit_in_progress（不据半集合判 advisory）', () => {
-    mkdirSync(join(root, 'logos/changes/feat/deltas'), { recursive: true });
-    stallCommit(root);
-    const adv = detectBaselineJitAdvisory(root, 'feat');
-    expect(adv.advise).toBe(false);
-    expect(adv.message).toContain('baseline_commit_in_progress');
-  });
-
   it('F7: status 顶层 suggestion 在提交进行中不据半集合推断 required，改提示稍后重试', () => {
     stallCommit(root);
     const data = collectStatusData(root);

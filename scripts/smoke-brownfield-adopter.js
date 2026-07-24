@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * brownfield-adopter 切片1（读侧可信边界）发布后冒烟：SMOKE-core-44/45/46/47。
+ * brownfield-adopter 切片1（读侧可信边界）发布后冒烟：SMOKE-core-44/45/46/47/48。
  *
  * 覆盖已发布包中 adopt 自动/降级建基线引导、status/next 的 baseline_coverage 一致性、
- * verify 对 verified:false 逆向 spec 的软告警（不硬失败），以及 baseline-seed 两阶段提交协议 + partial 恢复态。
+ * verify 对逆向 spec **不再产软告警**（drop-baseline-confirmation 确认机制移除反向回归：JSON 无 baseline_warnings、gate 不因 baseline 失败），以及 baseline-seed 两阶段提交协议 + partial 恢复态。
  */
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -134,23 +134,28 @@ try {
   writeSmoke('SMOKE-core-46', 'pass');
 } catch (e) { writeSmoke('SMOKE-core-46', 'fail', e); }
 
-// SMOKE-core-47：verify 对 verified:false 逆向 spec 软告警不硬失败（gate 结果不因 baseline 改变）。
+// SMOKE-core-47：verify 对 verified:false 逆向 spec 不再产软告警（drop-baseline-confirmation 反向回归：JSON 无 baseline_warnings、gate 不因 baseline 失败）。
 try {
   withTempProject('smoke-bfa-47-', (root) => {
-    // smoke-repair（SMOKE-core-47）：同 46——候选须为规范键 + anchor，否则被采信判据排除、软告警不再产生。
+    // 候选须为规范键 + anchor（真实 seeded 候选形态）；确认机制若还在，此 verified:false 候选会触发软告警。
     const A47 = '系统边界：core CLI';
     scaffoldAdopted(root, 'seeded', `  - key: "${candidateKey('core', A47)}"\n    anchor: "${A47}"\n    state: active\n    verified: false\n`);
-    // 最小可运行 verify 集：一条已定义 UT 用例 + 其通过结果，使 verify 走到 baseline 软告警计算并打印 envelope。
+    // 最小可运行 verify 集：一条已定义 UT 用例 + 其通过结果，使 verify 走到 gate 并打印 envelope。
     mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
     writeFileSync(join(root, 'logos/resources/test/core-X-test-cases.md'),
       '# X\n\n| 用例 ID | 名称 |\n|---|---|\n| UT-X-01 | 冒烟占位 |\n');
     writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'),
       JSON.stringify({ id: 'UT-X-01', status: 'pass' }) + '\n');
     const res = runCli(root, ['verify', '--format', 'json']);
+    // 先证 verify 本身成功通过（否则"无 baseline_warnings"是假绿）：退出码 0 + 成功 envelope + gate.result=PASS。
+    if (res.status !== 0) throw new Error(`verify exited non-zero (${res.status}): ${res.stdout}\n${res.stderr}`);
     const env = parseEnvelope(res);
-    // 软告警出现在 data.baseline_warnings，且 gate 失败原因（若有）绝不因 baseline 造成。
-    const warnings = env.data?.baseline_warnings ?? [];
-    if (warnings.length === 0) throw new Error('verify did not surface baseline soft warning');
+    if (env.error) throw new Error(`verify returned error envelope: ${JSON.stringify(env.error)}`);
+    if (env.data?.gate?.result !== 'PASS') throw new Error(`gate.result not PASS: ${JSON.stringify(env.data?.gate)}`);
+    // 反向断言：verify 不再输出 data.baseline_warnings；gate 失败原因（若有）绝不因 baseline 造成。
+    if (env.data?.baseline_warnings !== undefined) {
+      throw new Error(`verify still surfaced baseline_warnings: ${JSON.stringify(env.data.baseline_warnings)}`);
+    }
     const reason = env.data?.gate?.reason ?? '';
     if (String(reason).includes('baseline')) throw new Error(`gate.reason wrongly caused by baseline: ${reason}`);
   });

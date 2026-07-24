@@ -121,3 +121,46 @@
 
 ## 七、结论
 本机全局部署**成功**：0.13.15 已构建、打包、安装，版本一致性与命令可发现性即时验证通过，回滚 tarball 已留存。
+
+---
+
+# 部署报告：drop-baseline-confirmation（2026-07-24）
+
+## 一、部署摘要
+- **模块 / 提案**：core / drop-baseline-confirmation（删除逆向基线人工确认机制）
+- **授权依据**：`openlogos next --auto` 对 `deliver-entry` 门 `gate_auto_passed=true`（standing run-scoped 授权）
+- **目标环境**：本机全局（测试 / staging 目标）。**公开 npm 发布（tag → GitHub Actions publish + Release）沿本项目一贯惯例保留为人类确认点，本自动单元未执行。**
+- **前置条件**：`VERIFY_PASS` 存在 ✓（07:39，acceptance-report Gate PASS）；`tasks.md` 含 `[deploy]` section ✓；proposal 声明需要部署 ✓。
+- **执行链路**：部署方案 §十（tag 驱动发布链路）的本地 staging 段（bump + build + pack + install + 核验）。
+
+## 二、执行命令摘要
+| 步骤 | 命令 / 动作 | 结果 |
+|---|---|---|
+| 版本递增 | `cli/package.json` version `0.13.15` → `0.13.16`（patch +1，无 contract 版本变化） | **PASS** |
+| 构建 | `cd cli && npm run build`（tsc） | **PASS**（exit 0） |
+| 全量回归 | 本会话 `npx vitest run`：54 文件 / 1479 用例全绿（VERIFY_PASS 已落） | **PASS** |
+| 打包 | `cd cli && npm pack` → `miniidealab-openlogos-0.13.16.tgz`（≈978 kB） | **PASS** |
+| 产物核验 | 解包 tarball：`dist` 内 `collectBaselineSoftWarnings`/`detectBaselineJitAdvisory`/`baseline_warnings`/`JIT 确认流` **0 命中**；`dist/commands/feature-backfill.js` 含新红线「不存在确认升级入口」；随包 `skills/brownfield-adopter/SKILL.md` 含冻结说明 | **PASS** |
+| 回滚来源留存 | 上一版 `cli/miniidealab-openlogos-0.13.15.tgz` 本地留存 | **PASS** |
+| 全局安装 | `npm install -g ./miniidealab-openlogos-0.13.16.tgz` | **PASS** |
+| 版本一致性 | `openlogos --version` == `0.13.16` == `cli/package.json` | **PASS** |
+| 部署后即时功能核验 | 安装后 CLI：`openlogos --help` exit 0；临时 seeded adopted 项目 `openlogos next` **不含** JIT 确认提示（change-writer 建议 / 一并确认现状 / 不设硬门）——移除已在部署产物真实生效 | **PASS** |
+
+## 三、随包交付内容核验
+- `dist/lib/baseline-jit.js`（仅保留 `effectiveBaselineSeedState`，advisory 死代码已删）、`dist/commands/verify.js`（无 `baseline_warnings`/软告警）、`dist/commands/next.js`（seeded 正常迭代文案）、`dist/commands/feature-backfill.js`（新红线）✓
+- 随包 skills / docs：`skills/brownfield-adopter/SKILL.md`、`skills/change-writer/SKILL.md`（Step6补充三已删、UI 窄例外已补）、`docs/brownfield-adopter-guide.md` ✓
+- `baseline_coverage` 契约 / scanner / provenance 字段**未改**（冻结保留）✓
+
+## 四、迁移与服务
+无数据迁移（JSON 契约与 provenance 数据均不变，`verified`/`confirmed_*` 冻结保留）；无常驻服务。
+
+## 五、回滚预案（部署方案 §十）
+`npm install -g cli/miniidealab-openlogos-0.13.15.tgz` 回装上一版；本变更无数据副作用、无迁移；回滚后复核 `openlogos --version` 恢复 `0.13.15`。若后续公开发布后需回滚：`npm dist-tag` 回退 + 删除对应 tag。
+
+## 六、未执行的动作（人类确认点）
+1. **公开 npm 发布（tag → GitHub Actions publish + GitHub Release）：人类确认点，未执行。** 正式发布需：提交本变更 31 个文件（当前工作区未提交）、更新 `plugin/.claude-plugin/plugin.json` / `CHANGELOG.md` 与 `cli/package.json` 一致、创建并推送 `v0.13.16` tag 触发 CI。
+2. `openlogos smoke`（SMOKE-core-44…48）：本工作单元仅部署，smoke 按流程另行授权执行。
+3. 官网部署：本提案无 website 变更；Cloudflare 凭据长期失效，另行处理。
+
+## 七、结论
+本机全局 staging 部署**成功**：0.13.16 已构建、打包、安装，版本一致性、包内容（已删符号清零 + 新产物在场）与部署后即时功能核验（移除生效）全部通过，回滚 tarball 已留存。公开 npm 发布保留为人类确认点。

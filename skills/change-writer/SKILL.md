@@ -287,6 +287,7 @@ change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `s
    - ❌ 非 GUI 类：纯 CLI / Library / AI Skills / 纯 API 服务 / 纯后端服务（`service`：常驻 worker / 定时循环任务 / 消息消费者等，无对外接口）—— 整节跳过、`ui_impact` 恒为 `false`、不注入声明段。
 2. **再判本次是否动界面**（仅当 `product_type ∈ GUI`）：
    - **依据 = 提案意图 + `tasks.md` 已规划的 `[delta]` 目标是否命中 `2-page-design/`，或命中含交互变更的 feature-specs delta**。命中即**强制判为「动了界面」**（`ui_impact:true`）。
+   - **窄例外（命中 `2-page-design/` 时）**：仅当目标为**页面原型产物**（`.html`，或含 `pages` 声明）才强制 `ui_impact:true`；若目标是**纯 CLI 体验文本规格**（`.md` 且**无** `pages` 声明），不强制 `ui_impact:true`。
    - **不扫描尚不存在的 delta 内容**（去循环依赖）。
    - 可选多 agent 复核默认**关**，可由 driver 派发。
 
@@ -416,20 +417,6 @@ AI 只负责驱动内容修改。半自动 / 手动下不得在未获明确授�
 **执行任务（提案填写完成后）**：
 - `按 tasks.md 帮我逐步更新 S02 的所有受影响文档`
 - `帮我修复 S02 登录接口的 500 错误并重新验收`
-
-## Step 6 补充三：存量逆向基线的 JIT 深化 advisory（brownfield-adopter S33，不设硬门）
-
-> 适用范围：`bootstrap: adopted` 模块下，本次 change 的**目标区域只有 `verified: false` 的逆向 spec**（种子基线，见 S33）时启用。其余情形 change-writer 行为零改动。
-
-**判定（只读已合并主文档）**：对本次 `[delta]` 触碰的每个目标主文档，读其 `## 逆向基线来源` 章节——若该章节存在候选、且其 active/tombstone 候选**全部** `verified: false`（无 human-verified），则该区域为「未验证逆向区域」。判定只读 `logos/resources/` 已合并主文档，**不看未合并 delta**（advisory 不因未合并 delta 前移/消失）。CLI 侧支撑 helper：`cli/src/lib/baseline-jit.ts` 的 `detectBaselineJitAdvisory(root, slug)`。
-
-**advisory（建议、不阻断）**：检测到未验证逆向区域时，change-writer 给出建议——**在当前 change 的单份最终态 delta 内**，把对应 `## 逆向基线来源` 候选置 `verified: true` 并记 `confirmed_by` / `evidence` / `confirmed_at`，与本次前向改动**一并落盘**（同一个 `MODIFIED` 章节替换即可原子承载「确认现状 + 前向改动」）。
-
-**硬约束（务必遵守）**：
-1. **单份最终态 delta**：每个被触碰目标文档只产出一份 delta（现行 `deltas/** → 主文档` 1:1 映射、`MODIFIED` 替换同名章节）；**不生成第二份「现状确认 delta」**、不引入双有序 delta / 多操作 delta 协议。
-2. **不直接改 `resources/**`、不嵌套第二个 change**（guard 互斥）；现状确认作为审计事实记在该章节 + `tasks.md` `[delta]` 勾稽对应候选 ID。
-3. **`human-verified` 仅 merge 后生效**：merge 前主文档仍 `verified: false`，覆盖率只读已合并主文档、不因未合并 delta 前移。
-4. **不设硬门**：用户可跳过建议、直接写前向 delta；该区域 `verified` 保持 `false`、覆盖率不前移。change-writer 不得阻断。
 
 ## 硬性交付门：openlogos change-lint（Step 5 / Step 6 完成后强制）
 

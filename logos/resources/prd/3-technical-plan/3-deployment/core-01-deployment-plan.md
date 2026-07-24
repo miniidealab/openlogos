@@ -77,7 +77,7 @@ graph TB
 
 本提案 `deploy-progress-summary-panel` 会修改 CLI 运行时代码，因此后续实现验收通过后需要按本方案构建、测试、打包，并由用户决定是否发布 npm 包。
 
-本提案 `brownfield-adopter` 修改 / 新增 CLI 运行时代码（**新增 `baseline-seed.ts`**；改 `adopt.ts` / `next.ts` / `status.ts` / `verify.ts` / `project-yaml.ts` / `migrate-lifecycle.ts`）与 Skill / 方法论规格，据判定规则第 2 条声明 `deployment_required: true` 并保留 `[deploy]` section：验收通过后需经既有 tag → npm publish + GitHub Release 链路发布，用户方能获得 adopt 自动/降级建基线、`openlogos baseline-seed` 种子状态提交、next/status 覆盖率与 verify 软告警能力。回滚走 npm `dist-tag` 回退 + 回退对应 tag；老 adopted 项目 provenance 元数据迁移为持久化 schema/data migration，须幂等、写前备份、失败可恢复、旧版 CLI 忽略未知字段。部署后 smoke 覆盖已发布包中 adopt 自动/降级路径、`baseline-seed` 提交协议与 partial 恢复、status/next/verify 输出（见 smoke 用例 SMOKE-core-44…48）。
+本提案 `brownfield-adopter` 修改 / 新增 CLI 运行时代码（**新增 `baseline-seed.ts`**；改 `adopt.ts` / `next.ts` / `status.ts` / `verify.ts` / `project-yaml.ts` / `migrate-lifecycle.ts`）与 Skill / 方法论规格，据判定规则第 2 条声明 `deployment_required: true` 并保留 `[deploy]` section：验收通过后需经既有 tag → npm publish + GitHub Release 链路发布，用户方能获得 adopt 自动/降级建基线、`openlogos baseline-seed` 种子状态提交、next/status 覆盖率能力。回滚走 npm `dist-tag` 回退 + 回退对应 tag；老 adopted 项目 provenance 元数据迁移为持久化 schema/data migration，须幂等、写前备份、失败可恢复、旧版 CLI 忽略未知字段。部署后 smoke 覆盖已发布包中 adopt 自动/降级路径、`baseline-seed` 提交协议与 partial 恢复、status/next 输出（见 smoke 用例 SMOKE-core-44…48）。
 
 ## 十一、官网发布动态构建策略
 - 官网构建前必须执行发布数据生成脚本，从 npm registry 读取 `@miniidealab/openlogos` 的 `dist-tags`、`versions` 和 `time`。

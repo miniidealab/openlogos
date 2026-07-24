@@ -174,7 +174,7 @@ scenarios:
     module: core
     feature: F04
   - id: S33
-    name: brownfield-adopter 存量项目逆向建基线与按需深化（baseline_seed_state + provenance/tombstone 覆盖率 + baseline-seed + JIT advisory）
+    name: brownfield-adopter 存量项目逆向建种子基线（baseline_seed_state + provenance/tombstone 覆盖率 + baseline-seed）
     module: core
     feature: F01
   - id: S34

@@ -200,7 +200,7 @@ openlogos adopt --locale zh --ai-tool all
 
 ### 2.6 next（存量项目接入无提案时）
 
-`bootstrap: adopted` 且无活跃提案时，`openlogos next` 按 `baseline_seed_state`（`required` / `partial` / `seeded`）输出建基线或深化引导，并展示现状基线覆盖率。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
+`bootstrap: adopted` 且无活跃提案时，`openlogos next` 按 `baseline_seed_state`（`required` / `partial` / `seeded`）输出建基线引导，并展示现状基线覆盖率。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
 
 **种子基线待建立（`baseline_seed_state: required`）**
 ```text
@@ -234,11 +234,9 @@ $ openlogos next
 📌 当前状态：已接入（存量项目接入模式），现状基线已建立
 
 现状基线覆盖率：human-verified 0 / 候选 12（含 tombstone 0）
-  覆盖率随后续 change 触碰逐区域前移；无新增人工确认时不虚增。
+  覆盖率采 tombstone 分母法，不因删除候选虚增。
 
 建议的下一步：正常发起 openlogos change 迭代
-  触碰只有未验证逆向 spec 的区域时，change-writer 会建议在本次
-  最终态 delta 内一并确认该区域现状（不设硬门）。
 ```
 
 > `partial` 是**持久化恢复态**（非瞬时）：`status` 与 `next` 输出必须一致，且不把已落盘候选当最终分母算精确百分比（标 `incomplete`）。**本节为「无活跃提案」情形**，故 partial 主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed`）；**存在活跃提案时改为「proposal 前沿为主、partial 恢复作 `baseline_coverage.recovery` advisory」**（见 §2.22 优先级）。覆盖率无法可信重算时（派生索引缺失/过期/解析失败）显示 `unknown`/`stale`，不输出貌似精确的百分比。`next` 不得把未建立/部分建立的种子基线显示为已建立。
@@ -1291,7 +1289,7 @@ run: seed-core-0007  state: partial  staged 5/12  missing 7
 - `commit` 对 staged 实际字节算 hash + 比对 `candidate_keys` 与 staged `candidates[]` 一致；不一致 → `candidate_key_mismatch` 非零退出。
 - `commit` 幂等（同 run_id 依 staging 重算、结果一致）；`stale`（被新 begin superseded）/未知 `run_id`/并发 → `stale_run`/`unknown_run`/`run_locked` 非零退出、不写状态、不提交文件。
 - 从 `partial` 重新 `begin` **不回退到 `required`**（保留 `partial` 至新 run 首次有效 commit）。
-- run 记录 + staging + `commit-journal.json` 持久化于 `logos/resources/verify/baseline-seed-runs/<run_id>/`。跨多文件提交经 journal `prepared→committing→committed`（状态最后写）在模块级事务锁下进行；`status`/`next`/`verify`/覆盖率等机器读取入口经**恢复门**（取锁 + 检测未终结 journal → 先恢复，否则 `baseline_commit_in_progress`）保证不把半新集合当权威，`seeded` 当且仅当完整新集合在盘（见架构 §4.4；对直接按路径读取的人工/Skill 不宣称原子可见）。
+- run 记录 + staging + `commit-journal.json` 持久化于 `logos/resources/verify/baseline-seed-runs/<run_id>/`。跨多文件提交经 journal `prepared→committing→committed`（状态最后写）在模块级事务锁下进行；`status`/`next`/覆盖率等机器读取入口经**恢复门**（取锁 + 检测未终结 journal → 先恢复，否则 `baseline_commit_in_progress`）保证不把半新集合当权威（`verify` 已与基线候选解耦、不参与恢复门），`seeded` 当且仅当完整新集合在盘（见架构 §4.4；对直接按路径读取的人工/Skill 不宣称原子可见）。
 
 ### 2.24 status / next 契约自描述 JSON 输出（contract / step_meta / facts / dispatch 与 loop_state 缺席态，contract-self-description）
 

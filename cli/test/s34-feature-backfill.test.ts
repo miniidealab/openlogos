@@ -121,6 +121,19 @@ describe('S34 — feature-backfill：取号算法静态快照（prompt + Skill�
       expect(doc).toContain('configured_next_id = feature_counter?.next_id ?? 1');
     }
   });
+
+  it('feature-backfill prompt 红线不再引用已删除的 JIT 确认流（drop-baseline-confirmation 反向回归）', () => {
+    const root = projectRoot(FLAT_PROJECT);
+    runBackfill(root, 'text');
+    const prompt = readFileSync(join(root, 'logos', 'feature-backfill-prompt.md'), 'utf-8');
+    // 反向：运行时给 AI 的红线不得再指向已删除的 JIT 确认流 / verified 升级。
+    expect(prompt).not.toContain('JIT');
+    expect(prompt).not.toContain('确认流');
+    expect(prompt).not.toMatch(/verified\s*:?\s*true/);
+    // 正向：明确 verified 为冻结字段、无确认升级入口。
+    expect(prompt).toContain('冻结字段');
+    expect(prompt).toContain('不存在确认升级入口');
+  });
 });
 
 describe('S34 — feature-backfill：CLI 边界（生成 prompt、不改 yaml、幂等）', () => {

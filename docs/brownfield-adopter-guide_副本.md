@@ -1,6 +1,8 @@
 # 存量项目逆向建基线（brownfield-adopter）使用说明
 
-> 面向把**已有代码库**接入 OpenLogos 的场景：不要求你回头补齐 initial 文档基线，而是**逆向扫描现状**、以「种子基线」（system-map + 场景候选清单）形式登记，随后在日常 change 迭代中**按需深化**、逐格把「逆向猜测」升级为「人工确认」。
+> 面向把**已有代码库**接入 OpenLogos 的场景：不要求你回头补齐 initial 文档基线，而是**逆向扫描现状**、以「种子基线」（system-map + 场景候选清单）形式登记为逆向候选注册表（`verified` 恒 `false`，随重扫维护 active/tombstone/alias 生命周期）。
+
+> ⚠️ **人工确认机制已移除**：不再有「按需深化 / JIT advisory / 把 `verified:false` 升级为 `true`」这一路径。`verified` 字段**恒为 `false`（冻结字段）**，仅用于标注「这是逆向登记的现状、非权威意图」；不再存在把 `verified` 升为 `true` 的入口。**覆盖率的字段/shape 保持不变**（`human-verified <分子> / 候选 <active∪tombstone 分母>`，含 `tombstones` 计数与 `freshness`），但**分子 `human_verified` 恒为 `0`**（无确认升级入口）；删除/合并候选转 tombstone 仍留分母、百分比不上升；零分母报 `n/a`。
 
 ---
 
@@ -9,25 +11,22 @@
 传统 OpenLogos 从 Why → What → How 正向推进，要求先有需求/设计/技术方案才写代码。但存量项目**代码已经存在**，没有对应文档。brownfield-adopter 让你：
 
 - `openlogos adopt` 一键把已有项目接入（跳过 initial 文档基线，模块直接 `launched`）；
-- 由 AI 会话**逆向扫描**代码库，产出**种子基线**并登记为 `reverse-engineered / verified:false`（明确标注「这是机器猜的、尚未人工确认」）；
-- 存量代码享受 **grandfather 豁免**：`verify` 对未确认的逆向 spec 只软告警、不阻断；
-- 之后每次 `openlogos change` 触碰到「只有逆向 spec」的区域时，给你一个 **advisory（不设硬门）**，建议顺手在同一份 delta 里确认现状（`verified:true`），可信边界随迭代**自然前移**。
+- 由 AI 会话**逆向扫描**代码库，产出**种子基线**并登记为 `reverse-engineered / verified:false`（明确标注「这是机器逆向登记的现状快照、非权威意图」；`verified` 为冻结字段，恒 `false`）；
+- 存量代码不要求回头符合 spec：种子基线是「未确认的事实」而非「被违反的意图」，方法论硬门只对**新引入的意图**生效、不对历史现状追溯生效。
 
-一句话：**先把现状照原样登记下来（不假装是权威意图），再在真正改动它时顺手确认。**
+一句话：**先把现状照原样登记下来（不假装是权威意图），随后按普通 change 迭代改动它——不再有单独的「确认」步骤，`verified` 冻结为 `false`。**
 
 ### 它是如何解决的（理论视角）
 
-存量项目与 OpenLogos 的根本矛盾在于：方法论是**意图优先（intent-first）**的——代码必须可追溯地派生自权威意图（Why → What → How）；而存量代码是**先有 What（实现），没有 Why（意图）**。两条朴素的出路都不可行：要么在动任何代码前先逆向补齐**全量权威规格**（成本 ≈ O(代码规模)，且你在"补写你无法验证的意图"，等于伪造 Why）；要么对 legacy 直接放弃可追溯性保证。brownfield-adopter 用四条原理绕开这个矛盾：
+存量项目与 OpenLogos 的根本矛盾在于：方法论是**意图优先（intent-first）**的——代码必须可追溯地派生自权威意图（Why → What → How）；而存量代码是**先有 What（实现），没有 Why（意图）**。两条朴素的出路都不可行：要么在动任何代码前先逆向补齐**全量权威规格**（成本 ≈ O(代码规模)，且你在"补写你无法验证的意图"，等于伪造 Why）；要么对 legacy 直接放弃可追溯性保证。brownfield-adopter 用三条原理绕开这个矛盾：
 
 1. **事实 / 意图分离（provenance 分层）**——把"代码现状是什么"（可验证事实）与"设计意图为什么"（权威 intent）显式拆成两层。种子基线**只声称前者**（`reverse-engineered`），绝不伪造后者。于是"无可信意图"不再是障碍：系统不假装知道 Why，只如实登记 What-is，可信度低但**诚实**。
 
-2. **可信度的单调偏序（verified 格）**——`verified:false → verified:true` 是一条**只升不降**的偏序；可信边界随确认单调前移、永不倒退。系统在任一时刻都精确知道"哪些是机器猜的、哪些是人工确认的"，而**覆盖率 = 已确认 / 候选总量**就是这条格上的一个**可度量收敛指标**——adoption 从"是/否"变成一个能持续逼近 1 的连续过程。
+2. **可信度冻结、注册表仍维护**——`verified` 冻结为 `false`（覆盖率分子 `human_verified` 恒 0），仅标注「这是逆向登记的现状、非权威意图」。但候选注册表**不是不可变快照**：它仍随重扫维护 `active`/`tombstone`/`retired` 状态与 alias/supersede 身份生命周期。覆盖率沿用 **tombstone 分母法**（分母 = `active ∪ tombstone`、`retired` 不计），删除/合并候选转 tombstone 仍留分母 ⇒ 百分比不因删除上升；只是分子恒 0、不承载任何"确认进度"语义。
 
-3. **惰性求值 / 按需深化（JIT）**——不要求一次性确认整个 legacy（那是 O(代码规模) 的巨额前置成本），而把"确认"**推迟到真正触碰该区域的那次 change**（成本按实际改动摊销，≈ O(被触碰的改动数)）。理论上这是把"全量前置验证"换成"增量按需验证"：与其花无穷成本去确认那些永远不会再改的代码，不如**只在改它时才确认它**——把接入的固定大成本转化为随迭代分摊的边际成本。
+3. **门只对新意图、不对历史现状追溯生效**——因为存量 spec 是"未确认的事实"而非"被违反的意图"，方法论的硬门只对**新引入的意图**生效、不对历史现状追溯生效，从而保证"接入"这一步本身永远不会因"历史欠债"而阻断当前工作。
 
-4. **豁免只对历史、门只对新意图**——因为存量 spec 是"未确认的事实"而非"被违反的意图"，`verify` 对它**软告警而非硬失败**（grandfather）。方法论的硬门只对**新引入的意图**生效、不对历史现状追溯生效，从而保证"接入"这一步本身永远不会因"历史欠债"而阻断当前工作。
-
-这四条合起来，使 legacy 现状也进入 OpenLogos 同一套 change / delta / merge 可追溯账本（每条候选有稳定 key、`source_hash`、provenance 标记），**只是初始可信度标为低、随迭代提升**——最终"存量"与"新增"收敛到同一治理模型下。
+这三条合起来，使 legacy 现状也进入 OpenLogos 同一套 change / delta / merge 可追溯账本（每条候选有稳定 key、`source_hash`、provenance 标记），只是**如实标注为逆向现状（可信度低但诚实）**——"存量"与"新增"在同一治理模型下共存。
 
 ---
 
@@ -36,11 +35,9 @@
 | 概念 | 含义 |
 |------|------|
 | **种子基线（seed baseline）** | 逆向扫描产出的两类必需产物：`system-map`（系统地图）+ `scenario-candidates`（场景候选清单）。**非权威意图**，只登记「可验证事实」。 |
-| **provenance（来源标记）** | 每份逆向产物文档内含具名章节 `## 逆向基线来源`，其中 `candidates[]` 逐条标 `verified`。`verified:false` = reverse-engineered（机器猜的）；`verified:true` = human-verified（人工确认）。 |
+| **provenance（来源标记）** | 每份逆向产物文档内含具名章节 `## 逆向基线来源`，其中 `candidates[]` 逐条标 `verified`。`verified` 为**冻结字段、恒 `false`** = reverse-engineered（逆向登记的现状快照、非权威意图）。 |
 | **`baseline_seed_state`** | 模块级**枚举**状态字段（非布尔），唯一写入者是 CLI：`required`（待建立）/ `partial`（部分建立、扫描未完成）/ `seeded`（已建立）/ 缺省+无候选视为 `unknown`（不推断）。 |
-| **覆盖率** | `human-verified 分子 / 候选分母`。刚 seeded 时 human-verified=0；随每次 change 确认逐格上升。 |
-| **grandfather 豁免** | 存量代码即便对应 spec 仍是 `verified:false`，`verify` 也**不硬失败**，只软告警。 |
-| **JIT advisory** | change-writer 判定本次 change 目标区域是否「只有 verified:false 逆向 spec」，若是则给非硬门建议，让你在**当前那一份最终态 delta**里一并确认现状。 |
+| **覆盖率（baseline_coverage）** | 字段/shape 不变：分子 `human_verified`（恒 `0`）/ 分母 `active ∪ tombstone`（`retired` 不计）；删除候选转 tombstone 仍留分母、百分比不上升；零分母 `n/a`；含 `tombstones`/`freshness`。种子基线全 `verified:false`，分子恒 0、不承载「确认进度」语义。 |
 | **run / staging** | 每次逆向提交是一个事务：`begin` 冻结「逻辑产物计划」并签发 `run_id` + 建 run 私有 staging；AI 把产物写进 staging；`commit` 校验 staged 字节后**原子**落入目标文档。 |
 
 ---
@@ -59,18 +56,14 @@ flowchart TD
     D --> E["🤖 <b>AI 会话 / Driver</b><br/>baseline-seed commit --module &lt;id&gt; --run-id &lt;id&gt;<br/><i>（CLI 对 staged 字节算 hash + 校验 schema + 比对 candidate_keys）</i>"]
       --> F{"⚙️ <b>CLI 判定</b>"}
 
-    F -->|必需 kind 齐 + 全部合法| G["✅ 原子提交目标 + baseline_seed_state: <b>seeded</b><br/>展示覆盖率（human-verified 0 / 候选 N）"]
+    F -->|必需 kind 齐 + 全部合法| G["✅ 原子提交目标 + baseline_seed_state: <b>seeded</b><br/>展示覆盖率（human-verified 0 / 候选 N，含 tombstone T；零分母 n/a、verified 恒 false）"]
     F -->|部分合法 / 缺必需 kind| P["🟡 baseline_seed_state: <b>partial</b><br/><i>（不提交不完整集合为权威，可重试）</i>"]
     P -.->|补齐 staging 重跑 commit| E
 
     G --> H["👤 <b>用户</b><br/>日常 openlogos change &lt;slug&gt; 迭代（guard 生效）"]
-      --> I{"📝 <b>change-writer</b><br/>目标区域只有 verified:false ?"}
+      --> K["✏️ 正常前向 delta（种子基线 verified 恒 false、不变）"]
 
-    I -->|是| J["💡 <b>advisory（不设硬门）</b><br/>接受 → 单份最终态 delta 内置 verified:true + confirmed_by / evidence"]
-    I -->|否 / 跳过| K["✏️ 正常前向 delta（该区域 verified 保持 false）"]
-
-    J --> L["👤 <b>用户</b><br/>openlogos merge &lt;slug&gt;<br/>→ delta 落主文档、verified:true 生效、<b>覆盖率前移一格</b>"]
-    K --> L
+    K --> L["👤 <b>用户</b><br/>openlogos merge &lt;slug&gt;<br/>→ delta 落主文档"]
 
     classDef user fill:#1e3a5f,stroke:#4a90d9,color:#fff;
     classDef cli fill:#3a2f1e,stroke:#d9a34a,color:#fff;
@@ -174,18 +167,17 @@ openlogos baseline-seed commit --module core --run-id seed-core-0001
 ```bash
 openlogos status          # 或 openlogos next / baseline-seed status --module core
 ```
-**你看到**（要点）：`baseline_seed_state=seeded`，覆盖率 **human-verified 0 / 候选 N**，并引导「可正常发起 openlogos change <slug> 迭代」。
-> 覆盖率一开始 human-verified=0 是正常的——种子基线全是 `verified:false`，等你在 change 里逐格确认后才上升。
+**你看到**（要点）：`baseline_seed_state=seeded`，覆盖率 **`human-verified 0 / 候选 N（含 tombstone 0）`（verified 恒 false、分子恒 0）**，并引导「可正常发起 openlogos change <slug> 迭代」。
+> 种子基线全是 `verified:false`（冻结字段）——它是逆向候选注册表（仍随重扫维护 active/tombstone 生命周期）；覆盖率沿用 tombstone 分母法，分子（`human_verified`）恒 0。
 
-### Step 6 —— 日常迭代时按需确认现状（你做）
+### Step 6 —— 日常迭代（你做）
 ```bash
 openlogos change refine-login     # guard 生效，进入变更流程
 ```
-- 若本次改动区域**只有 verified:false 逆向 spec**，change-writer 给一条 **advisory（不是硬门，可跳过）**：建议在**这一份最终态 delta** 里顺手把该区域 `## 逆向基线来源` 候选置 `verified: true` + `confirmed_by`/`evidence`。
-- `openlogos merge refine-login` 后：delta 落主文档、`verified:true` 生效、**覆盖率前移一格**（human-verified +1）。
-- 期间 `openlogos verify`：对仍未确认的逆向区域**只软告警、不阻断**（grandfather 豁免）。
+- 与普通 launched 模块完全一致：change-writer 产出正常前向 delta，`openlogos merge refine-login` 后 delta 落主文档。
+- 种子基线的 `verified` 字段保持冻结 `false`，不参与本次变更、也不因变更改变。
 
-**产出物**：`logos/changes/refine-login/` 提案与 delta；merge 后主文档对应候选变 `verified:true`；`baseline_index` 覆盖率随之更新。
+**产出物**：`logos/changes/refine-login/` 提案与 delta；merge 后主文档按前向 delta 更新。
 
 ---
 
@@ -197,8 +189,8 @@ openlogos change refine-login     # guard 生效，进入变更流程
 | 2 | AI | `baseline-seed begin --manifest` | `required`（不变） | `baseline-seed-runs/<run>/run.json` + 空 `staging/` + 签发账本 |
 | 3 | Skill | （写 staging） | `required`（不变） | staging 下的 `## 逆向基线来源` 产物 |
 | 4 | AI | `baseline-seed commit --run-id` | → `seeded`/`partial` | 目标文档落盘 + 覆盖率索引 + `baseline-events.jsonl` |
-| 5 | 你 | `status` / `next` | 观察 | 覆盖率 human-verified 0 / 候选 N |
-| 6 | 你 | `change` → `merge` | 覆盖率前移 | delta + 主文档候选 `verified:true` |
+| 5 | 你 | `status` / `next` | 观察 | 覆盖率 `human-verified 0 / 候选 N`（verified 恒 false、分子恒 0） |
+| 6 | 你 | `change` → `merge` | 正常迭代 | delta + 主文档按前向 delta 更新 |
 
 ---
 
@@ -294,17 +286,15 @@ candidates:
 - `key`：规范键 = `<module>::<sha256(normalize(anchor))[:12]>`。CLI 会重算并与你填的 key 比对，不一致即拒。
 - `anchor`：稳定锚点（非空字符串），是身份来源；重命名时旧 anchor 进 `aliases[]` 以继承身份。
 - `state`：`active`（默认）/ `tombstone`（已删/退役但保留分母）/ `retired`。seed 输入必须显式 `active`。
-- `verified`：seed 输入必须**显式为布尔 `false`**（缺失/非布尔一律拒——种子只登记未确认事实）。
+- `verified`：**冻结字段**，seed 输入必须**显式为布尔 `false`**（缺失/非布尔一律拒——种子只登记逆向现状快照）。人工确认机制已移除，不存在把 `verified` 升级为 `true` 的路径。
 - `source_hash`：CLI 对整个章节文本算 sha256，作为覆盖率/新鲜度基准（你不用填）。
-
-> 人工确认时（在 change 的 delta 内）把对应候选改为 `verified: true` 并补 `confirmed_by` / `evidence` / `confirmed_at`。
 
 ---
 
 ## 7. 状态机与覆盖率
 
 ```
-adopt ─────────────► required ──begin+commit(全合法)──► seeded ──change确认──► 覆盖率逐格前移
+adopt ─────────────► required ──begin+commit(全合法)──► seeded（种子基线冻结、verified 恒 false）
                         │                                  ▲
                         └──commit(部分合法/缺必需kind)──► partial ──重跑commit/重begin──┘
 
@@ -312,22 +302,12 @@ adopt ─────────────► required ──begin+commit(全
 旧布尔 true ─────────► required（legacy 迁移）
 ```
 
-- 覆盖率 = human-verified / 候选分母；`partial` 时标 `incomplete`、不算精确百分比。
+- 覆盖率 = `human_verified`（恒 `0`）/ `active ∪ tombstone`（分母；删除候选转 tombstone 仍留分母、百分比不上升）；零分母报 `n/a`；`partial` 时标 `incomplete`、不算完整集合。
 - 从 `partial` 重新 `begin` **不回退到 `required`**（保留 partial 至新 run 首次有效 commit）。
 
 ---
 
-## 8. 按需深化（把 verified:false 升级为 true）
-
-1. 日常 `openlogos change <slug>`（guard 生效）。
-2. change-writer 若判定目标区域只有 `verified:false` 逆向 spec → 给 **advisory（非硬门）**。
-3. 接受建议：在**当前 change 的那一份最终态 delta** 内，把对应 `## 逆向基线来源` 候选置 `verified:true` + `confirmed_by`/`evidence`，与前向改动**一并落盘**——不生成第二份「现状确认 delta」、不直接改 `resources/`、不嵌套第二个 change（EX-12.1 允许跳过）。
-4. `openlogos merge <slug>` → delta 落主文档、`verified:true` 生效、覆盖率**只读已合并主文档**并前移一格。
-5. `openlogos verify`：对仍为 `verified:false` 的区域只**软告警**、不硬失败（EX-15.1，grandfather 豁免）。
-
----
-
-## 9. 错误码速查
+## 8. 错误码速查
 
 | error | 触发 |
 |-------|------|
@@ -346,26 +326,26 @@ adopt ─────────────► required ──begin+commit(全
 
 ---
 
-## 10. 恢复与并发（你基本无需干预）
+## 9. 恢复与并发（你基本无需干预）
 
-- **崩溃一致性**：commit 走 journal 事务（`prepared → committing → committed`，状态最后写）。任一机器消费者（重跑 commit、下次 begin、`status`/`next`/`verify`/覆盖率重算/`index`/`sync`）在读目标前先取模块锁 + 检测未终结 journal → 先恢复（前滚/回滚），再在**同一锁区间**内读取，杜绝读到半提交集合。
+- **崩溃一致性**：commit 走 journal 事务（`prepared → committing → committed`，状态最后写）。任一机器消费者（重跑 commit、下次 begin、`status`/`next`/覆盖率重算/`index`/`sync`；`verify` 已与基线候选解耦、不读取基线、不承担恢复职责）在读目标前先取模块锁 + 检测未终结 journal → 先恢复（前滚/回滚），再在**同一锁区间**内读取，杜绝读到半提交集合。
 - **`sync` 提交进行中**：读取门前移到任何迁移/写副作用之前 → **零写副作用**后非零退出报 `baseline_commit_in_progress`。
 - **陈旧死锁回收**：经死 owner 身份的独立 marker 单赢仲裁 + 条件重读后原子替换，**绝不移动/覆盖 path 上的活锁**（互斥不破），孤儿 marker 可被检测清除（无永久锁死）。
 
 ---
 
-## 11. 信任边界（务必知情）
+## 10. 信任边界（务必知情）
 
 签发账本把「签发事实」从「目录内自述 JSON 是否自洽」提升为「CLI 受控账本是否登记」，杜绝把手工放入（未经 `begin`）的自洽 run 目录提交为 `seeded`。但**本地文件型模型无密钥**：能任意改写 `logos/` 的完全对抗写者仍可同时伪造 `run.json` 与账本条目——该残留**显式声明为超出本地信任模型范围**（与 producer 直接以同一计划 `begin` 等价，不构成越权）。密码学级不可伪造需 CLI 私钥/OS 权限边界，非当前迭代目标。
 
 ---
 
-## 12. 快速上手 checklist
+## 11. 快速上手 checklist
 
 1. 在项目根 `cd <项目根>`（`logos.config.json` 所在目录），运行 `openlogos adopt`。
 2. 确认 `logos-project.yaml` 里模块为 `bootstrap: adopted, lifecycle: launched, baseline_seed_state: required`。
 3. 在**支持 brownfield-adopter 的 AI 会话**里说明：「当前模块 `baseline_seed_state: required`，请逆向建立现状基线」——让 driver 走 `begin → 扫描写 staging → commit`。
 4. `openlogos baseline-seed status --module <id>` 或 `openlogos status` 看是否变 `seeded`、覆盖率如何。
-5. 之后正常 `openlogos change <slug>` 迭代；遇到 advisory 时顺手在同一份 delta 里确认现状（`verified:true`），`merge` 后覆盖率前移。
+5. 之后正常 `openlogos change <slug>` 迭代（与普通 launched 模块一致）；种子基线 `verified` 恒 `false`、不参与变更。
 
 > 所有 `openlogos` 命令都要先 `cd` 到项目根再执行，否则报 `logos.config.json not found`。

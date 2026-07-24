@@ -111,13 +111,13 @@
 |------|------|
 | `key` | 规范键 `<module>::<sha256(normalize(anchor))[:12]>`（hash 形式；可读 slug 只进 `anchor`/`display`） |
 | `anchor` / `display` | 规范化前的语义锚点（命令名/入口符号）/ 展示名，仅供人读 |
-| `state` | `active`（存活）｜`tombstone`（重扫消失未确认废弃）｜`retired`（人工确认废弃） |
-| `verified` | 布尔；`true` 仅在人工确认并 merge 落主文档后 |
+| `state` | `active`（存活）｜`tombstone`（重扫消失未废弃）｜`retired`（已废弃） |
+| `verified` | 布尔；**本变更（drop-baseline-confirmation）后冻结、恒 `false`**——人工确认机制已删除、**无 `false→true` 升级入口**；`true` 仅为历史/兼容读取值，当前无任何写入路径 |
 | `aliases[]` / `superseded_by[]` | 重命名/移动追加旧 anchor（同一候选不新建）/ 合并拆分旧键指向新键 |
-| `confirmed_by` / `evidence` / `confirmed_at` | `verified:true` 时的审计字段 |
-| `retired_by` / `retire_event_id` | `state:retired` 时的人工确认审计字段 |
+| `confirmed_by` / `evidence` / `confirmed_at` | **冻结字段、恒 `null`**：原为 `verified:true` 时的审计字段，当前无写入入口（仅兼容读取历史值） |
+| `retired_by` / `retire_event_id` | `state:retired` 时的废弃审计字段 |
 
-**provenance 为派生值（非独立存储）**：`verified:true` ⇒ `human-verified`；`verified:false ∧ state∈{active,tombstone}` ⇒ `reverse-engineered`；候选/章节缺失 ⇒ `unknown`/`legacy-unclassified`（缺 `## 逆向基线来源` 章节的既有文档一律派生 `unknown`，保守迁移不虚构 candidates、不推断 `reverse-engineered`）。**覆盖率（tombstone 分母法）**：分母 = `active ∪ tombstone`（`retired` 不计入）；分子 = `verified:true` 的 `active` 候选；零分母报 `n/a`；删除候选转 tombstone 仍留分母 ⇒ 无新增人工确认时百分比不上升。
+**provenance 为派生值（非独立存储）**：`verified:true` ⇒ `human-verified`（**冻结分支**：`verified` 恒 `false`、无升级路径，该派生仅兼容读取历史值）；`verified:false ∧ state∈{active,tombstone}` ⇒ `reverse-engineered`；候选/章节缺失 ⇒ `unknown`/`legacy-unclassified`（缺 `## 逆向基线来源` 章节的既有文档一律派生 `unknown`，保守迁移不虚构 candidates、不推断 `reverse-engineered`）。**覆盖率（tombstone 分母法，shape/schema 不变）**：分母 = `active ∪ tombstone`（`retired` 不计入）；分子 = `verified:true` 的 `active` 候选（冻结后恒 `0`）；零分母报 `n/a`；删除候选转 tombstone 仍留分母 ⇒ 百分比不因删除上升。
 
 **`openlogos baseline-seed` 命令契约（`baseline_seed_state` 与逆向目标文件的唯一写入入口，两阶段 staging）**：AI/driver/skill **绝不直接改 YAML、也不直接写目标 `logos/resources/`**，只把产物写入 run 私有 staging，经本命令让 CLI 校验后原子提交。
 
@@ -127,7 +127,7 @@
 | `commit --module <id> --run-id <id>` | 对 **staged 实际字节**算 sha256 + 校验 `## 逆向基线来源`/`candidates[]` schema + 比对 `candidate_keys` 一致 → 分类 `committed`/`missing`/`invalid` | 必需 kind 齐 + 全部 expected 合法 → 经 commit journal 事务提交全部目标 + 派生索引 + `baseline_seed_state: seeded`；≥1 未全 → `partial`（**不提交不完整集合为权威**）；0 → 保持；幂等（同 run 依 staging 重算一致） |
 | `status --module <id>` | 只读当前 run、staging 进度与状态 | 经恢复门（先恢复未终结 journal，否则 `baseline_commit_in_progress`） |
 
-**错误码**（协议错误非零退出、不写状态、不提交）：`missing_required_kind` / `path_escape` / `candidate_key_mismatch` / `unknown_run` / `stale_run`（被新 begin superseded）/ `run_locked`（同模块并发）/ `baseline_commit_in_progress`。成功（含 `partial`）退出 0，JSON envelope `{ ok, run_id, module, baseline_seed_state, committed, missing, invalid }`。**多文件崩溃一致性**：`commit` 跨多目标文档 + 派生索引 + 状态 YAML，经持久化 journal `prepared→committing→committed`（状态最后写、journal 阶段/进度自身临时文件+rename 原子写）在模块级事务锁下提交；恢复按每目标 on-disk hash 与 journal old/new 逐目标重判态（prepared→回滚、committing+staging 完好→前滚+seeded、committing+staging 缺失→按 backup 回滚），`seeded` 当且仅当完整新集合在盘（详见架构 core-06-provenance-data-model §4.4）。事件日志 `logos/resources/verify/baseline-events.jsonl`（append-only）承载迁移/废弃/确认审计。
+**错误码**（协议错误非零退出、不写状态、不提交）：`missing_required_kind` / `path_escape` / `candidate_key_mismatch` / `unknown_run` / `stale_run`（被新 begin superseded）/ `run_locked`（同模块并发）/ `baseline_commit_in_progress`。成功（含 `partial`）退出 0，JSON envelope `{ ok, run_id, module, baseline_seed_state, committed, missing, invalid }`。**多文件崩溃一致性**：`commit` 跨多目标文档 + 派生索引 + 状态 YAML，经持久化 journal `prepared→committing→committed`（状态最后写、journal 阶段/进度自身临时文件+rename 原子写）在模块级事务锁下提交；恢复按每目标 on-disk hash 与 journal old/new 逐目标重判态（prepared→回滚、committing+staging 完好→前滚+seeded、committing+staging 缺失→按 backup 回滚），`seeded` 当且仅当完整新集合在盘（详见架构 core-06-provenance-data-model §4.4）。事件日志 `logos/resources/verify/baseline-events.jsonl`（append-only）承载迁移/废弃审计。
 
 `skip_phases` 允许值：
 

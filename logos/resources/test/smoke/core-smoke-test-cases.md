@@ -155,7 +155,7 @@
 ## 八、brownfield-adopter 发布后冒烟用例
 
 ### 一、范围补充
-覆盖已发布包中 `openlogos adopt` 的自动/降级建基线路径、`openlogos baseline-seed` 种子状态提交协议与 partial 恢复态，以及 `status` / `next` / `verify` 对现状基线覆盖率与未验证逆向 spec 的人读与 JSON 输出。ID 顺延主规格当前已占用的 `SMOKE-core-43`，取 `SMOKE-core-44`…`48`。
+覆盖已发布包中 `openlogos adopt` 的自动/降级建基线路径、`openlogos baseline-seed` 种子状态提交协议与 partial 恢复态，以及 `status` / `next` 对现状基线覆盖率、`verify` 对逆向 spec **不再产出确认软告警**的人读与 JSON 输出。ID 顺延主规格当前已占用的 `SMOKE-core-43`，取 `SMOKE-core-44`…`48`。
 
 ### 二、冒烟测试用例补充
 | ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
@@ -163,14 +163,14 @@
 | SMOKE-core-44 | adopt 后 next 输出逆向建基线引导 | brownfield-adopter adopt 衔接 | staging | 安装含本变更的 CLI；空存量项目执行 `openlogos adopt` | 执行 `openlogos next` | 模块 `baseline_seed_state: required`；输出「逆向建立现状基线（种子基线 / reverse-engineered / verified:false）」引导；**不再**建议 `openlogos change add-baseline-docs` |
 | SMOKE-core-45 | adopt 能力缺失降级不伪造基线 | adopt 降级路径 | staging | 安装含本变更的 CLI；无可用 AI 会话（CLI-only / 非交互） | 执行 `openlogos adopt` 后 `openlogos status --format json` | `adopt` 不启动 AI、不产逆向内容；`baseline_seed_state` 保持 `required`；输出可复制后续提示；不显示「基线已建立」 |
 | SMOKE-core-46 | status/next 暴露 baseline_coverage 字段一致 | 覆盖率 JSON 呈现 | staging | 安装含本变更的 CLI；构造 `bootstrap: adopted` 且 `seeded`、含逆向候选的项目 | 执行 `openlogos status --format json` 与 `openlogos next --format json` | 两命令均含 `baseline_coverage`（`state`/`human_verified`/`denominator`/`tombstones`/`human_verified_delta`/`freshness`），字段一致；删除候选不使百分比上升（tombstone 留分母）；`active∪tombstone`=0 时报 `n/a`；索引失效时 `freshness=stale/unknown`、不输出精确百分比 |
-| SMOKE-core-47 | verify 对未验证逆向 spec 软告警不硬失败 | verify 软告警 | staging | 安装含本变更的 CLI；构造含 `verified:false` 逆向 spec 区域的提案 | 执行 `openlogos verify --format json` | 输出未确认逆向现状的软告警诊断；**不写 `VERIFY_FAIL`、不硬失败**；grandfather 豁免存量代码 |
+| SMOKE-core-47 | verify 对逆向 spec 不产软告警、JSON 无 baseline_warnings（确认机制移除反向回归） | verify 反向回归 | staging | 安装含本变更的 CLI；构造含 `verified:false` 逆向 spec 区域的提案 | 执行 `openlogos verify --format json` | verify **不输出**现状基线/未确认逆向的软告警文本，JSON **不含** `baseline_warnings` 字段；verify gate 结果**不受**基线逆向候选影响（不因其硬失败、也不因其软告警） |
 | SMOKE-core-48 | baseline-seed 提交协议 + partial 恢复态一致 | 种子状态提交（F7/F8） | staging | 安装含本变更的 CLI；adopt 完成、`baseline_seed_state:required` | `openlogos baseline-seed begin --manifest`（N 产物）→ 仅落盘部分产物后 `commit --run-id`（partial）→ 运行 `openlogos next` 与 `status --format json` → 补齐产物后再 `commit` | 首次 commit 写 `baseline_seed_state: partial`、`missing` 非空；`next`/`status` 一致输出 `state=partial`/`incomplete=true` 且下一步指向 `openlogos baseline-seed`；stale run_id commit 非零退出不写状态；补齐后再 commit 写 `seeded`；全程状态仅由 CLI 写入（无直接改 YAML） |
 
 ### 三、覆盖度校验补充
 - [ ] adopt 自动衔接建基线引导：SMOKE-core-44
 - [ ] adopt 降级不伪造基线：SMOKE-core-45
 - [ ] 覆盖率 JSON 一致 + tombstone 不虚增 + 零分母 + 降级：SMOKE-core-46
-- [ ] verify 软告警不硬失败：SMOKE-core-47
+- [ ] verify 对逆向 spec 不产软告警、JSON 无 baseline_warnings：SMOKE-core-47
 - [ ] baseline-seed 提交协议 + partial 恢复态一致：SMOKE-core-48
 
 ## 九、契约自描述与防误杀发布后冒烟用例
