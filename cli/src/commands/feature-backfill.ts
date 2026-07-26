@@ -189,6 +189,8 @@ ${scenarioLines || '（无场景）'}
 
 ## 逆向场景候选（active && verified:false；未进 scenarios[]，需登记 + 聚类）
 
+> 防御性去重：本清单已剔除与现有 \`scenarios[]\` 同 module 同 name 的已登记候选。若你仍发现某候选与 \`scenarios[]\` 同 module 同 name，**跳过、复用其原 ID，严禁为其重铸新号**（防止重扫/重跑产生逐字同名、无文档的孤儿场景）。
+
 ${candidateLines || '（无逆向场景候选）'}
 
 ## 现有 feature-specs 文档（聚类参考）
@@ -290,12 +292,23 @@ export function featureBackfill(format: OutputFormat = 'text', moduleId?: string
       };
     }
 
+    // 已登记去重（幂等硬门，scenario-registry-duplicate-on-rescan）：以现有 scenarios[] 为对账基准，
+    // 剔除 (module, name) 已登记的候选——不入 prompt、不计入 baseline_candidates_total，使"重扫/重跑
+    // feature-backfill"对已登记场景幂等（不把已登记场景当新候选再登记、scenario_counter 不为重复项自增）。
+    // 红线：仅候选入 prompt 前的读侧过滤，绝不改动 `## 逆向基线来源` 章节候选的 state/verified。
+    const registeredKeys = new Set(
+      allScenarios.map((s) => `${s.module ?? 'core'} ${s.name ?? ''}`),
+    );
+    const dedupedCandidates = baselineCandidates.filter(
+      (c) => !registeredKeys.has(`${c.module} ${c.name}`),
+    );
+
     const currentYaml = existsSync(yamlPath) ? readFileSync(yamlPath, 'utf-8') : '';
-    const prompt = buildPrompt(scenarios, features, baselineCandidates, featureSpecs, currentYaml);
+    const prompt = buildPrompt(scenarios, features, dedupedCandidates, featureSpecs, currentYaml);
     // 只生成 prompt，绝不改动 logos-project.yaml / 逆向基线来源章节
     writeFileSync(join(root, PROMPT_REL), prompt);
     const ungroupedTotal = scenarios.filter((s) => !isResolved(s, features)).length;
-    return { kind: 'written', baselineCandidatesTotal: baselineCandidates.length, ungroupedTotal };
+    return { kind: 'written', baselineCandidatesTotal: dedupedCandidates.length, ungroupedTotal };
   });
 
   // 取锁/恢复失败：提交进行中 → 不写/不覆盖 prompt、报错、非零退出

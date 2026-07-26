@@ -162,7 +162,7 @@ scenarios:
     module: core
     feature: F06
   - id: S30
-    name: "cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin）"
+    name: "openlogos"
     module: core
     feature: F06
   - id: S31
@@ -475,6 +475,17 @@ resource_index:
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
   - path: skills/brownfield-adopter/SKILL.md
     desc: brownfield-adopter Skill。使用 brownfield-adopter 功能时必读。
+  - path: logos/resources/prd/3-technical-plan/1-architecture/core-system-map.md
+    desc: 系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。
+  - path: logos/resources/verify/baseline-seed-runs/seed-core-0001/resolved/logos/resources/prd/3-technical-plan/1-architecture/core-system-map.md
+    desc: 系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。
+  - path: logos/resources/verify/baseline-seed-runs/seed-core-0001/resolved/logos/resources/prd/3-technical-plan/2-scenario-implementation/core-scenario-candidates.md
+    desc: 验收报告。涉及 verify、部署或 smoke 结果、覆盖度分析、Gate 判定时必读。
+  - path: logos/resources/verify/baseline-seed-runs/seed-core-0001/staging/logos/resources/prd/3-technical-plan/1-architecture/core-system-map.md
+    desc: 系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。
+  - path: logos/resources/verify/baseline-seed-runs/seed-core-0001/staging/logos/resources/prd/3-technical-plan/2-scenario-implementation/core-scenario-candidates.md
+    desc: 验收报告。涉及 verify、部署或 smoke 结果、覆盖度分析、Gate 判定时必读。
+
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

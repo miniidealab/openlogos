@@ -478,3 +478,114 @@ describe('S34 — feature-backfill 防文档示例毒化 + 错误 envelope 富�
     expect(e2.paths).toContain(mysteryRel);
   });
 });
+
+// ── 已登记去重（幂等硬门，scenario-registry-duplicate-on-rescan）──
+// 候选 name = display ?? anchor ?? key（feature-backfill.ts）；fixture 无 display → name = anchor。
+// 故让 scenarios[].name 与候选 anchor 逐字相等即可触发去重。候选 key（candidateKey）只出现在候选段，
+// 用作"是否入 prompt"的判据（scenarios[] 清单只含 name，不含 key，故 key 不会误命中已有场景清单）。
+describe('S34 — feature-backfill：已登记去重（scenario-registry-duplicate-on-rescan）', () => {
+  it('UT-S34-25: 候选与 scenarios[] 同 module 同 name → 剔除、不入 prompt、不计数；provenance 字节不变', () => {
+    const anchor = '用户注册与登录';
+    const root = projectRoot({
+      project: { name: 't' },
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      scenarios: [{ id: 'S01', name: anchor, module: 'core' }],
+    });
+    setupBrownfield(root, 'core', [{ anchor }]); // 候选 anchor 与已登记场景同名同 module
+    const scDoc = join(root, ...RESRC, 'core-scenarios.md');
+    const docBefore = readFileSync(scDoc, 'utf-8');
+
+    const env = JSON.parse(runBackfill(root, 'json').out);
+    expect(env.data.baseline_candidates_total).toBe(0); // 已登记 → 剔除、不计数
+    const prompt = readFileSync(join(root, 'logos', 'feature-backfill-prompt.md'), 'utf-8');
+    expect(prompt).not.toContain(candidateKey('core', anchor)); // 候选 key 未入 prompt
+    expect(prompt).toContain('（无逆向场景候选）');
+    // 红线：只读侧过滤，不改 `## 逆向基线来源` 章节候选 state/verified
+    expect(readFileSync(scDoc, 'utf-8')).toBe(docBefore);
+  });
+
+  it('UT-S34-26: 真·新增候选（scenarios[] 无同名）不误杀、仍纳入', () => {
+    const registered = 'A：账号登录';
+    const fresh = 'B：证书解析';
+    const root = projectRoot({
+      project: { name: 't' },
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      scenarios: [{ id: 'S01', name: registered, module: 'core' }],
+    });
+    setupBrownfield(root, 'core', [{ anchor: registered }, { anchor: fresh }]);
+    const env = JSON.parse(runBackfill(root, 'json').out);
+    expect(env.data.baseline_candidates_total).toBe(1); // 只计入未登记的 B
+    const prompt = readFileSync(join(root, 'logos', 'feature-backfill-prompt.md'), 'utf-8');
+    expect(prompt).toContain(candidateKey('core', fresh));       // B 纳入
+    expect(prompt).not.toContain(candidateKey('core', registered)); // A（已登记）剔除
+  });
+
+  it('UT-S34-27: 重跑 backfill 对已登记候选幂等（total 稳定、prompt 幂等、yaml/provenance 字节不变）', () => {
+    const a = '场景甲'; const b = '场景乙';
+    const root = projectRoot({
+      project: { name: 't' },
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      scenarios: [
+        { id: 'S01', name: a, module: 'core' },
+        { id: 'S02', name: b, module: 'core' },
+      ],
+    });
+    setupBrownfield(root, 'core', [{ anchor: a }, { anchor: b }]); // 全部已登记
+    const yamlPath = join(root, 'logos', 'logos-project.yaml');
+    const scDoc = join(root, ...RESRC, 'core-scenarios.md');
+    const yamlBefore = readFileSync(yamlPath, 'utf-8');
+    const docBefore = readFileSync(scDoc, 'utf-8');
+
+    const env1 = JSON.parse(runBackfill(root, 'json').out);
+    expect(env1.data.baseline_candidates_total).toBe(0);
+    const p1 = readFileSync(join(root, 'logos', 'feature-backfill-prompt.md'), 'utf-8');
+    // 重跑
+    const env2 = JSON.parse(runBackfill(root, 'json').out);
+    expect(env2.data.baseline_candidates_total).toBe(0);
+    expect(readFileSync(join(root, 'logos', 'feature-backfill-prompt.md'), 'utf-8')).toBe(p1); // prompt 幂等
+    expect(readFileSync(yamlPath, 'utf-8')).toBe(yamlBefore);   // yaml 不变
+    expect(readFileSync(scDoc, 'utf-8')).toBe(docBefore);       // provenance 不变（无同名孤儿产生入口）
+  });
+
+  it('UT-S34-28: 去重键为 (module, name)——跨 module 同名不误剔除', () => {
+    const name = '登录';
+    const root = projectRoot({
+      project: { name: 't' },
+      modules: [
+        { id: 'core', name: 'Core', lifecycle: 'launched' },
+        { id: 'admin', name: 'Admin', lifecycle: 'launched' },
+      ],
+      scenarios: [{ id: 'S01', name, module: 'core' }], // core 已登记「登录」
+    });
+    setupBrownfield(root, 'admin', [{ anchor: name }]); // admin 的「登录」候选：同名不同 module
+    // 聚合口径：admin 的「登录」不因 core 同名场景被剔除
+    const env = JSON.parse(runBackfill(root, 'json').out);
+    expect(env.data.baseline_candidates_total).toBe(1);
+    const prompt = readFileSync(join(root, 'logos', 'feature-backfill-prompt.md'), 'utf-8');
+    expect(prompt).toContain(candidateKey('admin', name)); // admin 候选仍纳入
+  });
+
+  it('ST-S34-06: 存量项目重扫不产生同名孤儿场景（CLI 边界；候选段空、total=0、yaml/provenance 字节不变）', () => {
+    const names = ['注册登录', '工具发现', '证书解析'];
+    const root = projectRoot({
+      project: { name: 't' },
+      modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }],
+      scenarios: names.map((n, i) => ({ id: `S0${i + 1}`, name: n, module: 'core' })),
+    });
+    setupBrownfield(root, 'core', names.map((anchor) => ({ anchor }))); // 上一轮已全部登记
+    const yamlPath = join(root, 'logos', 'logos-project.yaml');
+    const scDoc = join(root, ...RESRC, 'core-scenarios.md');
+    const yamlBefore = readFileSync(yamlPath, 'utf-8');
+    const docBefore = readFileSync(scDoc, 'utf-8');
+
+    const res = runBackfill(root, 'json');
+    expect(res.threw).toBe(false); // 退出码 0
+    const env = JSON.parse(res.out);
+    expect(env.data.baseline_candidates_total).toBe(0);
+    const prompt = readFileSync(join(root, 'logos', 'feature-backfill-prompt.md'), 'utf-8');
+    expect(prompt).toContain('（无逆向场景候选）'); // 候选段为空
+    for (const n of names) expect(prompt).not.toContain(candidateKey('core', n));
+    expect(readFileSync(yamlPath, 'utf-8')).toBe(yamlBefore);
+    expect(readFileSync(scDoc, 'utf-8')).toBe(docBefore);
+  });
+});
