@@ -313,7 +313,7 @@ function normalizeProjectYaml(raw: unknown): ProjectYamlData | null {
       if (!rec) continue;
       const indexEntry: BaselineIndexEntry = {};
       if (typeof rec.source_hash === 'string') indexEntry.source_hash = rec.source_hash;
-      if (typeof rec.human_verified === 'number') indexEntry.human_verified = rec.human_verified;
+      // drop-coverage-human-verified：不再解析 human_verified（旧值遇之忽略）。
       if (typeof rec.denominator === 'number') indexEntry.denominator = rec.denominator;
       if (typeof rec.generated_at === 'string') indexEntry.generated_at = rec.generated_at;
       if (Object.keys(indexEntry).length > 0) normalized[moduleId] = indexEntry;

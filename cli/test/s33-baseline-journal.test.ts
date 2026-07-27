@@ -155,7 +155,7 @@ describe('S33 commit journal 崩溃一致性 + 恢复门（F10）', () => {
     // backup 在 makeCrashRun 时捕获【旧】yaml（partial）。
     makeCrashRun(root, 'seed-core-0001', { phase: 'committing', onDisk: { t1: newA, t2: oldB }, stagingIntact: false, applied: [true, false], from: 'partial' });
     // 模拟提交中途已把状态写成 seeded（尚未终结即崩溃）。
-    writeSeedState(root, 'core', 'seeded', { source_hash: 'new', human_verified: 1, denominator: 1 });
+    writeSeedState(root, 'core', 'seeded', { source_hash: 'new', denominator: 1 });
     expect(readSeedState(root, 'core')).toBe('seeded');
     // 回滚（staging 缺失）：应按 journal.index.yaml_backup_path 还原 yaml/state 到旧值 partial、目标全旧。
     recoverJournal(root, 'seed-core-0001', AT);

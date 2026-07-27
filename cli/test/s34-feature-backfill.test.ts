@@ -333,7 +333,7 @@ describe('S34 — feature-backfill-brownfield：纳入逆向场景候选', () =>
 
   it('UT-S34-21: 索引 stale 重算(成功) / 权威目标坏 fenced YAML 报错(哨兵字节) / 无关坏文档不阻断（回应 F6+F3+F1）', () => {
     // ① 索引 stale 但权威文档有效 → CLI 只读 manifest 目标文档(不信 index) → 成功、正常纳入
-    const root1 = projectRoot({ ...BROWNFIELD_YAML, baseline_index: { core: { source_hash: 'STALE_WRONG', human_verified: 0, denominator: 1 } } });
+    const root1 = projectRoot({ ...BROWNFIELD_YAML, baseline_index: { core: { source_hash: 'STALE_WRONG', denominator: 1 } } });
     setupBrownfield(root1, 'core', [{ anchor: 'a' }]);
     const env = JSON.parse(runBackfill(root1, 'json').out);
     expect(env.data.baseline_candidates_total).toBe(1); // stale index 不影响，从权威文档重算
@@ -365,13 +365,13 @@ describe('S34 — feature-backfill-brownfield：纳入逆向场景候选', () =>
 
   it('UT-S34-22: 经 S33 正式覆盖率读取入口 buildBaselineCoverage，命令前后深相等（含 freshness，回应 F7）', () => {
     // 带 baseline_index 使 freshness 参与判定（正式入口 = 生产 status/next 所用同一读取路径）
-    const root = projectRoot({ ...BROWNFIELD_YAML, baseline_index: { core: { source_hash: 'X', human_verified: 1, denominator: 3 } } });
+    const root = projectRoot({ ...BROWNFIELD_YAML, baseline_index: { core: { source_hash: 'X', denominator: 3 } } });
     setupBrownfield(root, 'core', [
-      { anchor: 'a' },                              // active verified:false
-      { anchor: 'v', verified: true },              // active verified:true（分子）
-      { anchor: 't', state: 'tombstone' },          // tombstone（进分母）
+      { anchor: 'a' },                              // active
+      { anchor: 'v', verified: true },              // active（verified 为残留字段，不影响计数）
+      { anchor: 't', state: 'tombstone' },          // tombstone（进 denominator）
     ]);
-    const indexEntry = { source_hash: 'X', human_verified: 1, denominator: 3 };
+    const indexEntry = { source_hash: 'X', denominator: 3 };
     const readCov = () => buildBaselineCoverage(root, 'core', 'seeded', indexEntry);
     const yamlPath = join(root, 'logos', 'logos-project.yaml');
     const scDoc = join(root, ...RESRC, 'core-scenarios.md');
@@ -380,16 +380,14 @@ describe('S34 — feature-backfill-brownfield：纳入逆向场景候选', () =>
     const docBefore = readFileSync(scDoc, 'utf-8');
     runBackfill(root, 'json');
     const after = readCov();
-    // 正式入口返回对象整体深相等（human_verified/denominator/tombstones/human_verified_delta/source/freshness）
+    // 正式入口返回对象整体深相等（纯计数 shape：state/incomplete/denominator/tombstones/source/freshness）
     expect(after).toEqual(before);
     expect(after.freshness).toBe(before.freshness);
-    // r2-F4：BaselineCoverage 无 `coverage` 字段——按规格:53 显式计算覆盖率值并断言前后不变（denom==0 ? null : hv/denom）
-    const covValue = (c: typeof before) => (c.denominator === 0 ? null : c.human_verified / c.denominator);
-    expect(covValue(after)).toBe(covValue(before));
-    // 分母 = active(a,v) ∪ tombstone(t) = 3；分子 = verified 的 active(v) = 1 → 覆盖率 1/3，命令前后不变
+    // denominator = active(a,v) ∪ tombstone(t) = 3；tombstones = 1，命令前后不变（纯逆向候选计数，无分子/比值）
     expect(before.denominator).toBe(3);
-    expect(before.human_verified).toBe(1);
-    expect(covValue(before)).toBe(1 / 3);
+    expect(before.tombstones).toBe(1);
+    expect(before).not.toHaveProperty('human_verified'); // 分子字段已删
+    expect(before).not.toHaveProperty('coverage');       // 比值字段已删
     // 并存：YAML / provenance / prompt 幂等字节断言
     expect(readFileSync(yamlPath, 'utf-8')).toBe(yamlBefore);
     expect(readFileSync(scDoc, 'utf-8')).toBe(docBefore);

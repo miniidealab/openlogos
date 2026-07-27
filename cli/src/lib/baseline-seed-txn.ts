@@ -420,7 +420,7 @@ export function readSeedState(root: string, moduleId: string): BaselineSeedState
 export function computeIndexEntry(root: string, moduleId: string, at: string): BaselineIndexEntry {
   const scan = scanModuleCandidates(root, moduleId);
   const cov = computeCoverage(scan.candidates);
-  return { source_hash: scan.aggregate_hash, human_verified: cov.human_verified, denominator: cov.denominator, generated_at: at };
+  return { source_hash: scan.aggregate_hash, denominator: cov.denominator, generated_at: at };
 }
 
 export function appendEvent(root: string, event: Record<string, unknown>): void {

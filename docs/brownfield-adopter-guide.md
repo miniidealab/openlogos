@@ -2,7 +2,7 @@
 
 > 面向把**已有代码库**接入 OpenLogos 的场景：不要求你回头补齐 initial 文档基线，而是**逆向扫描现状**、以「种子基线」（system-map + 场景候选清单）形式登记为逆向候选注册表（`verified` 恒 `false`，随重扫维护 active/tombstone/alias 生命周期）。
 
-> ⚠️ **人工确认机制已移除**：不再有「按需深化 / JIT advisory / 把 `verified:false` 升级为 `true`」这一路径。`verified` 字段**恒为 `false`（冻结字段）**，仅用于标注「这是逆向登记的现状、非权威意图」；不再存在把 `verified` 升为 `true` 的入口。**覆盖率的字段/shape 保持不变**（`human-verified <分子> / 候选 <active∪tombstone 分母>`，含 `tombstones` 计数与 `freshness`），但**分子 `human_verified` 恒为 `0`**（无确认升级入口）；删除/合并候选转 tombstone 仍留分母、百分比不上升；零分母报 `n/a`。
+> ⚠️ **人工确认机制已移除**：不再有「按需深化 / JIT advisory / 把 `verified:false` 升级为 `true`」这一路径。`verified` 字段**恒为 `false`（残留字段）**，仅用于标注「这是逆向登记的现状、非权威意图」；不再存在把 `verified` 升为 `true` 的入口。**覆盖率退化为纯逆向候选计数**（人读 `逆向候选 N 条（含 tombstone T）`，JSON 为 `denominator`（= `active ∪ tombstone` 分母）+ `tombstones` + `freshness`，已删除覆盖率分子与 `coverage` 比值字段）；删除/合并候选转 tombstone 仍计入、计数不缩小；零候选报 `n/a`。
 
 ---
 
@@ -22,7 +22,7 @@
 
 1. **事实 / 意图分离（provenance 分层）**——把"代码现状是什么"（可验证事实）与"设计意图为什么"（权威 intent）显式拆成两层。种子基线**只声称前者**（`reverse-engineered`），绝不伪造后者。于是"无可信意图"不再是障碍：系统不假装知道 Why，只如实登记 What-is，可信度低但**诚实**。
 
-2. **可信度冻结、注册表仍维护**——`verified` 冻结为 `false`（覆盖率分子 `human_verified` 恒 0），仅标注「这是逆向登记的现状、非权威意图」。但候选注册表**不是不可变快照**：它仍随重扫维护 `active`/`tombstone`/`retired` 状态与 alias/supersede 身份生命周期。覆盖率沿用 **tombstone 分母法**（分母 = `active ∪ tombstone`、`retired` 不计），删除/合并候选转 tombstone 仍留分母 ⇒ 百分比不因删除上升；只是分子恒 0、不承载任何"确认进度"语义。
+2. **可信度冻结、注册表仍维护**——`verified` 冻结为 `false`（残留字段，不再被覆盖率读取），仅标注「这是逆向登记的现状、非权威意图」。但候选注册表**不是不可变快照**：它仍随重扫维护 `active`/`tombstone`/`retired` 状态与 alias/supersede 身份生命周期。覆盖率退化为**纯逆向候选计数**、沿用 **tombstone 分母法**（`denominator` = `active ∪ tombstone`、`retired` 不计），删除/合并候选转 tombstone 仍计入 ⇒ 计数不因删除而缩小；无分子、不承载任何"确认进度"语义。
 
 3. **门只对新意图、不对历史现状追溯生效**——因为存量 spec 是"未确认的事实"而非"被违反的意图"，方法论的硬门只对**新引入的意图**生效、不对历史现状追溯生效，从而保证"接入"这一步本身永远不会因"历史欠债"而阻断当前工作。
 
@@ -37,7 +37,7 @@
 | **种子基线（seed baseline）** | 逆向扫描产出的两类必需产物：`system-map`（系统地图）+ `scenario-candidates`（场景候选清单）。**非权威意图**，只登记「可验证事实」。 |
 | **provenance（来源标记）** | 每份逆向产物文档内含具名章节 `## 逆向基线来源`，其中 `candidates[]` 逐条标 `verified`。`verified` 为**冻结字段、恒 `false`** = reverse-engineered（逆向登记的现状快照、非权威意图）。 |
 | **`baseline_seed_state`** | 模块级**枚举**状态字段（非布尔），唯一写入者是 CLI：`required`（待建立）/ `partial`（部分建立、扫描未完成）/ `seeded`（已建立）/ 缺省+无候选视为 `unknown`（不推断）。 |
-| **覆盖率（baseline_coverage）** | 字段/shape 不变：分子 `human_verified`（恒 `0`）/ 分母 `active ∪ tombstone`（`retired` 不计）；删除候选转 tombstone 仍留分母、百分比不上升；零分母 `n/a`；含 `tombstones`/`freshness`。种子基线全 `verified:false`，分子恒 0、不承载「确认进度」语义。 |
+| **覆盖率（baseline_coverage）** | 纯逆向候选计数：`denominator` = `active ∪ tombstone`（`retired` 不计）+ `tombstones` + `freshness`（已删分子与 `coverage` 比值）；删除候选转 tombstone 仍计入、计数不缩小；零候选 `n/a`。种子基线全 `verified:false`，无分子、不承载「确认进度」语义。 |
 | **run / staging** | 每次逆向提交是一个事务：`begin` 冻结「逻辑产物计划」并签发 `run_id` + 建 run 私有 staging；AI 把产物写进 staging；`commit` 校验 staged 字节后**原子**落入目标文档。 |
 
 ---
@@ -56,7 +56,7 @@ flowchart TD
     D --> E["🤖 <b>AI 会话 / Driver</b><br/>baseline-seed commit --module &lt;id&gt; --run-id &lt;id&gt;<br/><i>（CLI 对 staged 字节算 hash + 校验 schema + 比对 candidate_keys）</i>"]
       --> F{"⚙️ <b>CLI 判定</b>"}
 
-    F -->|必需 kind 齐 + 全部合法| G["✅ 原子提交目标 + baseline_seed_state: <b>seeded</b><br/>展示覆盖率（human-verified 0 / 候选 N，含 tombstone T；零分母 n/a、verified 恒 false）"]
+    F -->|必需 kind 齐 + 全部合法| G["✅ 原子提交目标 + baseline_seed_state: <b>seeded</b><br/>展示覆盖率（逆向候选 N 条，含 tombstone T；零候选 n/a、verified 恒 false）"]
     F -->|部分合法 / 缺必需 kind| P["🟡 baseline_seed_state: <b>partial</b><br/><i>（不提交不完整集合为权威，可重试）</i>"]
     P -.->|补齐 staging 重跑 commit| E
 
@@ -167,8 +167,8 @@ openlogos baseline-seed commit --module core --run-id seed-core-0001
 ```bash
 openlogos status          # 或 openlogos next / baseline-seed status --module core
 ```
-**你看到**（要点）：`baseline_seed_state=seeded`，覆盖率 **`human-verified 0 / 候选 N（含 tombstone 0）`（verified 恒 false、分子恒 0）**，并引导「可正常发起 openlogos change <slug> 迭代」。
-> 种子基线全是 `verified:false`（冻结字段）——它是逆向候选注册表（仍随重扫维护 active/tombstone 生命周期）；覆盖率沿用 tombstone 分母法，分子（`human_verified`）恒 0。
+**你看到**（要点）：`baseline_seed_state=seeded`，覆盖率 **`逆向候选 N 条（含 tombstone 0）`（纯计数、verified 恒 false）**，并引导「可正常发起 openlogos change <slug> 迭代」。
+> 种子基线全是 `verified:false`（残留字段）——它是逆向候选注册表（仍随重扫维护 active/tombstone 生命周期）；覆盖率沿用 tombstone 分母法，纯逆向候选计数、无分子。
 
 ### Step 6 —— 日常迭代（你做）
 ```bash
@@ -189,7 +189,7 @@ openlogos change refine-login     # guard 生效，进入变更流程
 | 2 | AI | `baseline-seed begin --manifest` | `required`（不变） | `baseline-seed-runs/<run>/run.json` + 空 `staging/` + 签发账本 |
 | 3 | Skill | （写 staging） | `required`（不变） | staging 下的 `## 逆向基线来源` 产物 |
 | 4 | AI | `baseline-seed commit --run-id` | → `seeded`/`partial` | 目标文档落盘 + 覆盖率索引 + `baseline-events.jsonl` |
-| 5 | 你 | `status` / `next` | 观察 | 覆盖率 `human-verified 0 / 候选 N`（verified 恒 false、分子恒 0） |
+| 5 | 你 | `status` / `next` | 观察 | 覆盖率 `逆向候选 N 条（含 tombstone T）`（纯计数、verified 恒 false） |
 | 6 | 你 | `change` → `merge` | 正常迭代 | delta + 主文档按前向 delta 更新 |
 
 ---
@@ -302,7 +302,7 @@ adopt ─────────────► required ──begin+commit(全
 旧布尔 true ─────────► required（legacy 迁移）
 ```
 
-- 覆盖率 = `human_verified`（恒 `0`）/ `active ∪ tombstone`（分母；删除候选转 tombstone 仍留分母、百分比不上升）；零分母报 `n/a`；`partial` 时标 `incomplete`、不算完整集合。
+- 覆盖率 = 纯逆向候选计数：`denominator` = `active ∪ tombstone`（删除候选转 tombstone 仍计入、计数不缩小）；零候选报 `n/a`；`partial` 时标 `incomplete`、不算完整集合。
 - 从 `partial` 重新 `begin` **不回退到 `required`**（保留 partial 至新 run 首次有效 commit）。
 
 ---

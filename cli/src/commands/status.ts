@@ -23,7 +23,7 @@ import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
 function commitInProgressCoverage(seedState: BaselineSeedState): BaselineCoverage {
   return {
     state: seedState, incomplete: seedState === 'partial',
-    human_verified: 0, denominator: 0, tombstones: 0, human_verified_delta: 0,
+    denominator: 0, tombstones: 0,
     source: 'documents', freshness: 'unknown', commit_in_progress: true,
   };
 }

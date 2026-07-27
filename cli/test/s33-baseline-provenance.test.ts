@@ -53,9 +53,9 @@ describe('S33 provenance 数据模型与覆盖率（读侧可信边界）', () =
     expect(parsed).not.toBeNull();
     expect(parsed!.candidates).toHaveLength(3);
     expect(parsed!.candidates.map(c => c.state)).toEqual(['active', 'active', 'tombstone']);
-    // provenance 为派生值（非独立字段）
+    // provenance 为派生值（非独立字段，由 state 派生、无 human-verified 分支）
     expect(deriveProvenance(parsed!.candidates[0])).toBe('reverse-engineered');
-    expect(deriveProvenance(parsed!.candidates[1])).toBe('human-verified');
+    expect(deriveProvenance(parsed!.candidates[1])).toBe('reverse-engineered'); // verified:true 不再派生 human-verified
     expect(deriveProvenance(parsed!.candidates[2])).toBe('reverse-engineered');
   });
 
@@ -68,33 +68,21 @@ describe('S33 provenance 数据模型与覆盖率（读侧可信边界）', () =
     expect(parseProvenanceSection(before)!.source_hash).not.toBe(parseProvenanceSection(after)!.source_hash);
   });
 
-  it('UT-S33-05: tombstone 分母法——删除候选转 tombstone 仍留分母，百分比不上升', () => {
+  it('UT-S33-05: tombstone 计数——删除候选转 tombstone 仍计入 denominator，计数不缩小', () => {
     const active5 = [
-      cand({ key: 'core::a', verified: true }),
-      cand({ key: 'core::b', verified: true }),
+      cand({ key: 'core::a' }),
+      cand({ key: 'core::b' }),
       cand({ key: 'core::c' }),
       cand({ key: 'core::d' }),
       cand({ key: 'core::e' }),
     ];
     const before = computeCoverage(active5);
-    expect(before).toMatchObject({ human_verified: 2, denominator: 5, coverage: 2 / 5 });
-    // 重扫删除一个未验证候选 → 转 tombstone（仍在分母）
+    expect(before).toEqual({ denominator: 5, tombstones: 0 });
+    // 重扫删除一个候选 → 转 tombstone（仍计入 denominator）
     const afterDelete = active5.map(c => (c.key === 'core::e' ? { ...c, state: 'tombstone' as const } : c));
     const after = computeCoverage(afterDelete);
-    expect(after.denominator).toBe(5);
-    expect(after.human_verified).toBe(2);
-    expect(after.coverage!).toBeLessThanOrEqual(before.coverage!); // 不上升
-  });
-
-  it('UT-S33-06: 覆盖率分子仅 verified:true 的 active 驱动', () => {
-    const list = [
-      cand({ key: 'core::a', state: 'active', verified: true }),
-      cand({ key: 'core::b', state: 'tombstone', verified: true }), // verified tombstone 不计入分子
-      cand({ key: 'core::c', state: 'active', verified: false }),
-    ];
-    const cov = computeCoverage(list);
-    expect(cov.human_verified).toBe(1); // 仅 active+verified
-    expect(cov.denominator).toBe(3);
+    expect(after.denominator).toBe(5); // 计数不缩小
+    expect(after.tombstones).toBe(1);
   });
 
   it('UT-S33-07: 规范键确定性 + alias 承载（重命名不新建候选的数据模型）', () => {
@@ -132,29 +120,16 @@ describe('S33 provenance 数据模型与覆盖率（读侧可信边界）', () =
     }
   });
 
-  it('UT-S33-10: 零分母覆盖率报 n/a（coverage=null，不报 100%/0%）', () => {
-    expect(computeCoverage([]).coverage).toBeNull();
-    expect(computeCoverage([cand({ key: 'core::a', state: 'retired' })]).coverage).toBeNull();
+  it('UT-S33-10: 零候选 denominator=0（n/a，不报 100%/0%）', () => {
+    expect(computeCoverage([]).denominator).toBe(0);
+    expect(computeCoverage([cand({ key: 'core::a', state: 'retired' })]).denominator).toBe(0);
   });
 
-  it('UT-S33-11: tombstone 仅人工确认才 retired 移出分母', () => {
-    const withTombstone = [cand({ key: 'core::a', state: 'active', verified: true }), cand({ key: 'core::b', state: 'tombstone' })];
+  it('UT-S33-11: tombstone 仅废弃才 retired 移出计数', () => {
+    const withTombstone = [cand({ key: 'core::a', state: 'active' }), cand({ key: 'core::b', state: 'tombstone' })];
     expect(computeCoverage(withTombstone).denominator).toBe(2);
     const afterRetire = withTombstone.map(c => (c.key === 'core::b' ? { ...c, state: 'retired' as const, retired_by: 'fred' } : c));
     expect(computeCoverage(afterRetire).denominator).toBe(1);
-  });
-
-  it('UT-S33-12: verified active 候选被删除转 tombstone（仍在分母、分子-1）', () => {
-    const list = [
-      cand({ key: 'core::a', state: 'active', verified: true }),
-      cand({ key: 'core::b', state: 'active', verified: false }),
-      cand({ key: 'core::c', state: 'active', verified: false }),
-    ];
-    expect(computeCoverage(list)).toMatchObject({ human_verified: 1, denominator: 3 });
-    const afterDelete = list.map(c => (c.key === 'core::a' ? { ...c, state: 'tombstone' as const } : c)); // verified 保留 true 但转 tombstone
-    const cov = computeCoverage(afterDelete);
-    expect(cov.human_verified).toBe(0); // 分子-1（tombstone 不计入分子）
-    expect(cov.denominator).toBe(3);    // 分母不变
   });
 
   it('UT-S33-13: 合并/拆分 superseded_by 承载——旧 key 转 tombstone 仍留分母', () => {
@@ -300,26 +275,26 @@ describe('S33 provenance 扫描侧 alias-aware canonical 采信（provenance-sca
     }
   });
 
-  it('UT-S33-39: 含示例章节的无关文档不污染覆盖率分母 / aggregate_hash / freshness', () => {
+  it('UT-S33-39: 含示例章节的无关文档不污染覆盖率计数 / aggregate_hash / freshness', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      // 合法基线：1 verified active（分子）+ 1 未验证 active + 1 tombstone（均进分母）
+      // 合法基线：2 active + 1 tombstone（均进 denominator）
       const body =
-        candYaml({ key: candidateKey('core', 'cli:a'), anchor: 'cli:a', verified: true }) +
+        candYaml({ key: candidateKey('core', 'cli:a'), anchor: 'cli:a' }) +
         candYaml({ key: candidateKey('core', 'cli:b'), anchor: 'cli:b' }) +
         candYaml({ key: candidateKey('core', 'cli:c'), anchor: 'cli:c', state: 'tombstone' });
       writeResourceDoc(root, 'prd/core-system-map.md', body);
 
       const scanBefore = scanModuleCandidates(root, 'core');
       const covBefore = computeCoverage(scanBefore.candidates);
-      expect(covBefore).toEqual({ human_verified: 1, denominator: 3, tombstones: 1, coverage: 1 / 3 });
+      expect(covBefore).toEqual({ denominator: 3, tombstones: 1 });
 
       // 加入含示例章节的无关文档（幽灵候选，parse_ok=true）
       writeResourceDoc(root, 'reference/brownfield-adopter-guide.md',
         candYaml({ key: 'core::a1b2c3d4e5f6', anchor: 'cli:baseline-seed-commit' }));
 
       const scanAfter = scanModuleCandidates(root, 'core');
-      expect(computeCoverage(scanAfter.candidates)).toEqual(covBefore); // 覆盖率各字段深相等（幽灵不进分母）
+      expect(computeCoverage(scanAfter.candidates)).toEqual(covBefore); // 覆盖率各字段深相等（幽灵不进计数）
       expect(scanAfter.aggregate_hash).toBe(scanBefore.aggregate_hash); // 示例文档不进 aggregate_hash
       // 对既有索引对账仍 fresh（示例文档改动不改 hash → 不打成 stale）
       expect(buildBaselineCoverage(root, 'core', 'seeded', { source_hash: scanBefore.aggregate_hash }).freshness).toBe('fresh');
@@ -339,8 +314,8 @@ describe('S33 provenance 扫描侧 alias-aware canonical 采信（provenance-sca
         candYaml({ key: ks[3], anchor: 'cli:d', state: 'retired', verified: true }));
       const scan = scanModuleCandidates(root, 'core');
       expect(scan.candidates.map((c) => c.key).sort()).toEqual([...ks].sort()); // 全部合法候选均被采信
-      // 覆盖率：分母 = active(a,b) ∪ tombstone(c) = 3；retired(d) 不计分母；分子 = verified active(a) = 1
-      expect(computeCoverage(scan.candidates)).toEqual({ human_verified: 1, denominator: 3, tombstones: 1, coverage: 1 / 3 });
+      // 计数：denominator = active(a,b) ∪ tombstone(c) = 3；retired(d) 不计入
+      expect(computeCoverage(scan.candidates)).toEqual({ denominator: 3, tombstones: 1 });
     } finally {
       cleanup();
     }

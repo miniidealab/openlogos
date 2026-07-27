@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 export type CandidateState = 'active' | 'tombstone' | 'retired';
-export type Provenance = 'human-verified' | 'reverse-engineered' | 'unknown';
+export type Provenance = 'reverse-engineered' | 'unknown';
 export type BaselineSeedState = 'required' | 'partial' | 'seeded';
 
 const SECTION_HEADING = '## 逆向基线来源';
@@ -51,13 +51,10 @@ export function isCanonicalKey(key: string, moduleId?: string): boolean {
 export type CoverageFreshness = 'fresh' | 'stale' | 'unknown';
 
 export interface CoverageResult {
-  human_verified: number;
-  /** 分母 = active ∪ tombstone（retired 不计入）。 */
+  /** 候选计数 = active ∪ tombstone（retired 不计入）。纯逆向候选计数，无分子/比值。 */
   denominator: number;
-  /** 未经人工确认的 tombstone 数（仍在分母内）。 */
+  /** tombstone 数（仍计入 denominator，供人读拆分）。 */
   tombstones: number;
-  /** human_verified / denominator；零分母时为 null（n/a）。 */
-  coverage: number | null;
 }
 
 export interface BaselineRecovery {
@@ -70,10 +67,9 @@ export interface BaselineCoverage {
   state: BaselineSeedState;
   /** 稳定 shape：恒存在为布尔。state==partial → true，否则 false。 */
   incomplete: boolean;
-  human_verified: number;
+  /** 候选计数 = active ∪ tombstone（纯逆向候选计数，无分子/比值）。 */
   denominator: number;
   tombstones: number;
-  human_verified_delta: number;
   source: 'derived-index' | 'documents';
   freshness: CoverageFreshness;
   /** 仅 state==partial 且存在活跃提案时出现：结构化恢复 advisory（不改 proposal_step、不阻断 change）。 */
@@ -225,12 +221,10 @@ export function parseProvenanceSection(markdown: string): ProvenanceSection | nu
 }
 
 /**
- * provenance 为派生值（单一可信来源）：
- * verified:true ⇒ human-verified；verified:false ∧ state∈{active,tombstone} ⇒ reverse-engineered；
- * 否则（retired 未确认 / 章节缺失）⇒ unknown。
+ * provenance 为派生值（单一可信来源），由 `state` 派生（不再读 `verified`——确认概念已删除，无 human-verified 值）：
+ * state∈{active,tombstone} ⇒ reverse-engineered；否则（retired / 章节缺失）⇒ unknown。
  */
 export function deriveProvenance(candidate: BaselineCandidate): Provenance {
-  if (candidate.verified) return 'human-verified';
   if (candidate.state === 'active' || candidate.state === 'tombstone') return 'reverse-engineered';
   return 'unknown';
 }
@@ -241,8 +235,8 @@ export function classifyDocProvenance(markdown: string): 'reverse-engineered' | 
 }
 
 /**
- * tombstone 分母法：分母 = active ∪ tombstone（retired 不计入）；分子 = verified:true 的 active；
- * 零分母 ⇒ coverage=null（n/a）。删除候选转 tombstone 仍留分母 ⇒ 无新增人工确认时百分比不上升。
+ * tombstone 分母法（纯逆向候选计数）：denominator = active ∪ tombstone（retired 不计入）；
+ * 无分子、无 coverage 比值。删除候选转 tombstone 仍计入 denominator ⇒ 计数不因删除而缩小、不虚增。
  */
 export function computeCoverage(candidates: BaselineCandidate[]): CoverageResult {
   // F5：按稳定键去重（同 key 多次出现——含跨文档——只计一次，last-wins）。
@@ -251,13 +245,9 @@ export function computeCoverage(candidates: BaselineCandidate[]): CoverageResult
   const deduped = [...byKey.values()];
   const active = deduped.filter(c => c.state === 'active');
   const tombstones = deduped.filter(c => c.state === 'tombstone');
-  const denominator = active.length + tombstones.length;
-  const human_verified = active.filter(c => c.verified).length;
   return {
-    human_verified,
-    denominator,
+    denominator: active.length + tombstones.length,
     tombstones: tombstones.length,
-    coverage: denominator === 0 ? null : human_verified / denominator,
   };
 }
 
@@ -340,7 +330,6 @@ export function listModuleProvenanceDocs(root: string, moduleId: string): string
 /** 派生索引条目（可选）：logos-project.yaml 的 baseline_index[moduleId]。 */
 export interface BaselineIndexEntry {
   source_hash?: string;
-  human_verified?: number;
   denominator?: number;
   generated_at?: string;
 }
@@ -364,37 +353,31 @@ export function buildBaselineCoverage(
     source = 'derived-index';
     freshness = indexEntry.source_hash === scan.aggregate_hash ? 'fresh' : 'stale';
   }
-  // F5：任一权威文档章节解析失败 ⇒ unknown（不静默报 fresh、不输出貌似精确的百分比）。
+  // F5：任一权威文档章节解析失败 ⇒ unknown（不静默报 fresh、不输出貌似精确的计数结论）。
   if (scan.parse_failed) freshness = 'unknown';
-
-  const priorVerified = indexEntry && typeof indexEntry.human_verified === 'number'
-    ? indexEntry.human_verified
-    : cov.human_verified;
 
   return {
     state,
     incomplete: state === 'partial',
-    human_verified: cov.human_verified,
     denominator: cov.denominator,
     tombstones: cov.tombstones,
-    human_verified_delta: cov.human_verified - priorVerified,
     source,
     freshness,
   };
 }
 
-/** 人读覆盖率一行文案。stale/unknown 或零分母时不输出精确百分比。 */
+/** 人读覆盖率一行文案（纯逆向候选计数，无分子/百分比）。stale/unknown 或零候选时不给出计数结论。 */
 export function formatCoverageLine(cov: BaselineCoverage, locale: string): string {
   const zh = locale === 'zh';
   if (cov.freshness !== 'fresh') {
     return zh
-      ? `现状基线覆盖率：${cov.freshness}（派生索引失效，暂不计算精确百分比）`
-      : `Baseline coverage: ${cov.freshness} (derived index invalid; precise percentage withheld)`;
+      ? `现状基线覆盖率：${cov.freshness}（派生索引失效，暂不给出可信计数）`
+      : `Baseline coverage: ${cov.freshness} (derived index invalid; count withheld)`;
   }
   if (cov.incomplete) {
     return zh
-      ? `现状基线覆盖率：incomplete（扫描未完成，暂不计算精确百分比）`
-      : `Baseline coverage: incomplete (scan unfinished; precise percentage withheld)`;
+      ? `现状基线覆盖率：incomplete（扫描未完成，计数非最终值）`
+      : `Baseline coverage: incomplete (scan unfinished; count not final)`;
   }
   if (cov.denominator === 0) {
     return zh
@@ -402,8 +385,8 @@ export function formatCoverageLine(cov: BaselineCoverage, locale: string): strin
       : `Baseline coverage: n/a (no reverse-engineered candidates yet)`;
   }
   return zh
-    ? `现状基线覆盖率：human-verified ${cov.human_verified} / 候选 ${cov.denominator}（含 tombstone ${cov.tombstones}）`
-    : `Baseline coverage: human-verified ${cov.human_verified} / ${cov.denominator} candidates (tombstone ${cov.tombstones})`;
+    ? `现状基线覆盖率：逆向候选 ${cov.denominator} 条（含 tombstone ${cov.tombstones}）`
+    : `Baseline coverage: ${cov.denominator} reverse-engineered candidates (tombstone ${cov.tombstones})`;
 }
 
 /** F4：把候选注册表序列化为 `## 逆向基线来源` 章节文本（确定性、供 commit 落盘）。 */

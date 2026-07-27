@@ -80,7 +80,7 @@ export interface BaselineMigrateResult {
  *    经共享 helper `effectiveBaselineSeedState`（唯一事实源）派生并**写入显式枚举**，changes 记录写明派生依据；
  *    落盘后 legacy 缺省态物理消亡，运行时派生仅作过渡兜底。已有显式值不覆盖。
  * provenance 本身为派生值、不落 YAML：缺 `## 逆向基线来源` 章节的既有文档一律派生 `unknown`/`legacy-unclassified`，
- * **不虚构 candidates[]、不推断 reverse-engineered/human-verified、无产物不创建任何 provenance**。
+ * **不虚构 candidates[]、不推断 reverse-engineered、无产物不创建任何 provenance**。
  *
  * 不变量：幂等（重复运行不改结果）、写前备份（logos-project.yaml.bak）、旧版 CLI 忽略未知字段。
  * 锁纪律：调用方（sync）已在 `withRecoveredReadLocks` 的**全模块读锁区间**内执行本迁移——

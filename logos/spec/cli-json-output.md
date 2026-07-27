@@ -138,12 +138,13 @@ status / next 的 `data.modules[]` 新增**可选字段 `features`**，承载 mo
 扩展 §1.4 的 `feature-backfill` 命令契约，接回 S33 逆向**场景**候选（S34 能力增量，向后兼容 = 响应新增字段）。
 
 - **读侧扩展（只筛 scenario-candidates，回应 F1）**：`feature-backfill` 生成 prompt 时,除 `scenarios[]` 外**只纳入逆向场景候选**——因候选无 `kind` 字段,权威筛选 = 读**已提交 run manifest** 的 `kind==scenario-candidates → target_path`,只取这些文档 `## 逆向基线来源` 的 `candidates[]`,筛选谓词**固定 `state=="active" && verified==false`**（`verified:true` 已人工确认候选**排除**、不计数);纳入项全部 `verified:false`,prompt 中如实标注"逆向候选 / verified:false / 未进 scenarios[]"。system-map 候选**不纳入**。
+- **已登记去重（幂等硬门，回应 scenario-registry-duplicate-on-rescan）**：候选筛选**以现有 `scenarios[]` 为对账基准**——凡候选的 `(module, name)` 已存在于 `scenarios[]`（`name` 逐字相等、module 归属相同）者**一律剔除**,不入 prompt、不计入 `baseline_candidates_total`。此门保证"重扫 / 重跑 feature-backfill"对**已登记**场景**幂等**（不把已登记场景当新候选再登记一遍、`scenario_counter` 不为重复项自增）,兑现上一条"未进 scenarios[]"的断言。剔除仅作用于**候选入 prompt 前的读侧过滤**,**绝不改动** `## 逆向基线来源` 章节的候选 `state` / `verified`(候选保持 `active && verified:false`;去重是导航侧幂等,非候选生命周期迁移)。
 - **提交恢复读锁（回应 F2）**：候选筛选/计数/prompt 构造在 `withRecoveredReadLocks` 同一临界区内完成;无法取锁/恢复 → 走通用错误 envelope（§6),错误码 **`BASELINE_COMMIT_IN_PROGRESS`**、输出 stderr、非零退出、**不写/不覆盖** prompt。
-- **输出字段(必填,回应 F4)**：`feature-backfill --format json` 成功响应的 `data` **必含** `baseline_candidates_total`（integer,`minimum: 0`,键恒在场):**最终写入 prompt 的场景候选数**（`kind + module + state + verified + 去重` 全部过滤后)。完整成功形态:
+- **输出字段(必填,回应 F4)**：`feature-backfill --format json` 成功响应的 `data` **必含** `baseline_candidates_total`（integer,`minimum: 0`,键恒在场):**最终写入 prompt 的场景候选数**（`kind + module + state + verified + 候选 key 去重 + 已登记 scenarios[]（同 module 同 name）排除` 全部过滤后)。完整成功形态:
   ```json
   { "prompt_path": "logos/feature-backfill-prompt.md", "scenarios_total": 0, "ungrouped_total": 0, "features_existing": 0, "baseline_candidates_total": 4 }
   ```
-  零候选时 `baseline_candidates_total: 0`（**键仍在场**,区分"零候选"与"旧实现无键")。
+  零候选时 `baseline_candidates_total: 0`（**键仍在场**,区分"零候选"与"旧实现无键")。**首轮 backfill（候选尚未登记进 `scenarios[]`）计数与旧行为一致**——已登记去重只在候选已有同 module 同 name 登记条目时减少计数,不影响真·新增候选。
 - **`--module` 口径(回应 F5)**：传 `--module` 只纳入该 module 候选、未注册 → 错误码 `MODULE_NOT_FOUND`(与 `feature list` 一致);无 `--module` 按 `modules[]` 顺序聚合全项目;`baseline_candidates_total` 恒等于过滤后最终纳入数。
 - **降级(回应 F6，唯一行为)**：索引 stale → 锁内从权威文档重算(成功、照常纳入);**权威章节解析失败 → 走通用错误 envelope、错误码 `BASELINE_PROVENANCE_INVALID`、非零退出、不写/不覆盖 prompt**（不以 `baseline_candidates_total=0` 冒充非存量零候选、不走 warning 成功)。
 - **红线**：本命令仍**只生成 prompt、不改 `logos-project.yaml`、不改 `## 逆向基线来源` 章节、不触发覆盖率副作用**;逆向候选进 `scenarios[]`（含 scenario 取号/计数器推进）与 feature 分配由 AI 按 prompt 回写,且**不改动 provenance `verified`**（导航 ≠ 可信度）。

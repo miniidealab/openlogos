@@ -117,7 +117,7 @@
 | `confirmed_by` / `evidence` / `confirmed_at` | **冻结字段、恒 `null`**：原为 `verified:true` 时的审计字段，当前无写入入口（仅兼容读取历史值） |
 | `retired_by` / `retire_event_id` | `state:retired` 时的废弃审计字段 |
 
-**provenance 为派生值（非独立存储）**：`verified:true` ⇒ `human-verified`（**冻结分支**：`verified` 恒 `false`、无升级路径，该派生仅兼容读取历史值）；`verified:false ∧ state∈{active,tombstone}` ⇒ `reverse-engineered`；候选/章节缺失 ⇒ `unknown`/`legacy-unclassified`（缺 `## 逆向基线来源` 章节的既有文档一律派生 `unknown`，保守迁移不虚构 candidates、不推断 `reverse-engineered`）。**覆盖率（tombstone 分母法，shape/schema 不变）**：分母 = `active ∪ tombstone`（`retired` 不计入）；分子 = `verified:true` 的 `active` 候选（冻结后恒 `0`）；零分母报 `n/a`；删除候选转 tombstone 仍留分母 ⇒ 百分比不因删除上升。
+**provenance 为派生值（非独立存储）**：由 `state` 派生（不再读 `verified`——确认概念已删除，无 `human-verified` 值）：`state∈{active,tombstone}` ⇒ `reverse-engineered`；候选/章节缺失 ⇒ `unknown`/`legacy-unclassified`（缺 `## 逆向基线来源` 章节的既有文档一律派生 `unknown`，保守迁移不虚构 candidates、不推断 `reverse-engineered`）。**覆盖率（tombstone 分母法，纯逆向候选计数）**：`denominator` = `active ∪ tombstone`（`retired` 不计入）+ 单列 `tombstones`，无分子、无 `coverage` 比值；零候选报 `n/a`；删除候选转 tombstone 仍计入 ⇒ 计数不因删除而缩小。
 
 **`openlogos baseline-seed` 命令契约（`baseline_seed_state` 与逆向目标文件的唯一写入入口，两阶段 staging）**：AI/driver/skill **绝不直接改 YAML、也不直接写目标 `logos/resources/`**，只把产物写入 run 私有 staging，经本命令让 CLI 校验后原子提交。
 

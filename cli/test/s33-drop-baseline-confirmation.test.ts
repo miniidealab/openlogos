@@ -101,14 +101,14 @@ describe('drop-baseline-confirmation：确认机制删除反向回归', () => {
   const REPO = resolve(process.cwd(), '..');
   const DIST_DOCS = ['skills/brownfield-adopter/SKILL.md', 'docs/brownfield-adopter-guide.md'];
 
-  it('F1 回归：分发 Skill/指南保留 baseline_coverage 契约（human_verified 分子 / active∪tombstone 分母），不改成候选纯计数/不可变快照', () => {
+  it('F1 回归（drop-coverage-human-verified）：分发 Skill/指南覆盖率退化为纯逆向候选计数——删 human_verified 分子、保留 tombstone 分母法', () => {
     for (const rel of DIST_DOCS) {
       const doc = readFileSync(join(REPO, rel), 'utf-8');
-      expect(doc).toContain('human_verified');            // 分子字段保留
+      expect(doc).not.toContain('human_verified');        // 分子字段已删（JSON 契约）
+      expect(doc).not.toContain('human-verified');        // 人读文案不再暴露 human-verified 分子
       expect(doc).toContain('tombstone');                 // tombstone 生命周期保留
-      expect(doc).toContain('active ∪ tombstone');        // 分母口径保留
-      expect(doc).not.toContain('候选纯计数');            // 不得改写为纯计数
-      expect(doc).not.toContain('候选计数');              // 也不得写"候选计数 N"（流程图残留）
+      expect(doc).toContain('active ∪ tombstone');        // 分母（denominator）口径保留
+      expect(doc).toContain('逆向候选');                   // 已改为纯逆向候选计数
       expect(doc).not.toContain('不可变的现状快照');      // 不得称注册表为不可变快照（仍随重扫维护）
       expect(doc).not.toContain('冻结的现状快照');        // 同上
     }

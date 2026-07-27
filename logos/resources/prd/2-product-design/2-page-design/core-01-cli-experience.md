@@ -233,8 +233,8 @@ $ openlogos next
 
 📌 当前状态：已接入（存量项目接入模式），现状基线已建立
 
-现状基线覆盖率：human-verified 0 / 候选 12（含 tombstone 0）
-  覆盖率采 tombstone 分母法，不因删除候选虚增。
+现状基线覆盖率：逆向候选 12 条（含 tombstone 0）
+  纯逆向候选计数（tombstone 分母法）：删除候选转 tombstone 仍计入、不虚增。
 
 建议的下一步：正常发起 openlogos change 迭代
 ```
@@ -1230,26 +1230,24 @@ $ openlogos next --auto
 
 `bootstrap: adopted` 模块下，`status` 与 `next` 展示现状基线覆盖率，语义单一来源、口径一致：
 
-- **人读**：`现状基线覆盖率：human-verified <分子> / 候选 <存活> （含 tombstone <未确认废弃数>）`。覆盖率百分比仅由 `human-verified` 分子驱动。
+- **人读**：`现状基线覆盖率：逆向候选 <denominator> 条（含 tombstone <tombstones>）`。为纯逆向候选计数——无分子、无百分比。
 - **JSON**（`status --format json` / `next --format json`）：新增 `baseline_coverage` 对象——
   ```json
   {
     "baseline_coverage": {
       "state": "seeded",
       "incomplete": false,
-      "human_verified": 0,
       "denominator": 12,
       "tombstones": 0,
-      "human_verified_delta": 0,
       "source": "derived-index",
       "freshness": "fresh"
     }
   }
   ```
   - `state`：`required` | `partial` | `seeded`（映射模块级 `baseline_seed_state`）。
-  - `incomplete`：**恒存在的布尔**（稳定 shape，不省略）——`state==partial` 时 `true`（`denominator`/百分比非最终值、不算精确百分比、`next` 下一步指向恢复），`required`/`seeded` 时 `false`。
-  - `denominator` = 存活候选 ∪ 未经人工确认的 tombstone；`human_verified_delta` 单列，禁止把分母波动解读为新增人工确认。
-  - `freshness`：`fresh` | `stale` | `unknown`；`stale`/`unknown` 时不得输出貌似精确的百分比。
+  - `incomplete`：**恒存在的布尔**（稳定 shape，不省略）——`state==partial` 时 `true`（`denominator` 非最终值、`next` 下一步指向恢复），`required`/`seeded` 时 `false`。
+  - `denominator` = 存活候选 ∪ tombstone 候选数；`tombstones` = 其中 tombstone 数（供人读拆分）。删除候选转 tombstone 仍计入 `denominator`、不缩小计数。
+  - `freshness`：`fresh` | `stale` | `unknown`；`stale`/`unknown` 时不得输出貌似精确的计数结论。
   - `recovery`（仅 `state==partial` 且**存在活跃提案**时出现）：结构化 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change。
 - **partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `baseline-seed` 恢复；**有活跃提案**时主 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory 呈现。
 - 覆盖率**只读已合并主文档**中各产物 `## 逆向基线来源` 章节；merge 前的未合并 delta 不计入覆盖率、不提前声称前移。

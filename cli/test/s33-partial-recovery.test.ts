@@ -89,7 +89,7 @@ describe('S33 partial 恢复态 + 端到端主路径（写侧种子状态提交�
     const r = JSON.parse(con.logs[0]).data;
     expect(r.baseline_seed_state).toBe('seeded');
     const mod = collectStatusData(root).modules![0];
-    expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', human_verified: 0, denominator: 2 });
+    expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', denominator: 2, tombstones: 0 });
   });
 
   it('ST-S33-04: 扫描中断→partial→重试→seeded 恢复闭环（next/status 一致）', () => {

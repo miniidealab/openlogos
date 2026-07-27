@@ -88,8 +88,8 @@ describe('S33 read-side integration — adopt enum / seeded coverage（确认机
     const data = collectStatusData(root);
     const mod = data.modules![0];
     expect(mod.baseline_seed_state).toBe('seeded');
-    expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', human_verified: 1, denominator: 2, incomplete: false });
-    expect(mod.suggestion).toContain('human-verified 1'); // 覆盖率行（locale 无关子串）
+    expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', denominator: 2, tombstones: 0, incomplete: false });
+    expect(mod.suggestion).toMatch(/逆向候选 2 条|2 reverse-engineered candidates/); // 覆盖率行（纯计数，locale 二选一）
 
     next('json');
     const parsed = JSON.parse(con.logs[0]);
@@ -103,7 +103,7 @@ describe('S33 read-side integration — adopt enum / seeded coverage（确认机
 
     next('json');
     const bc = JSON.parse(con.logs[0]).data.modules[0].baseline_coverage;
-    for (const field of ['state', 'incomplete', 'human_verified', 'denominator', 'tombstones', 'human_verified_delta', 'source', 'freshness']) {
+    for (const field of ['state', 'incomplete', 'denominator', 'tombstones', 'source', 'freshness']) {
       expect(bc).toHaveProperty(field);
     }
     expect(bc.state).toBe('seeded');
@@ -119,29 +119,28 @@ describe('S33 read-side integration — adopt enum / seeded coverage（确认机
     expect(mod.baseline_coverage?.source).toBe('derived-index');
   });
 
-  it('UT-S05-B04: 零候选 seeded 覆盖率报 n/a（denominator 0、coverage 不虚报）', () => {
+  it('UT-S05-B04: 零候选 seeded 覆盖率报 n/a（denominator 0、计数不虚报）', () => {
     writeAdoptedSeedState(root, 'seeded');
     // 无逆向产物文档
     const mod = collectStatusData(root).modules![0];
-    expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', denominator: 0, human_verified: 0, incomplete: false });
+    expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', denominator: 0, tombstones: 0, incomplete: false });
     expect(mod.suggestion).toContain('n/a');
   });
 
-  it('ST-S05-B01（tombstone 不虚增）: 删除候选转 tombstone 后百分比不上升、分母不缩', () => {
+  it('ST-S05-B01（tombstone 不虚增）: 删除候选转 tombstone 后计数不缩小、denominator 不缩', () => {
     writeAdoptedSeedState(root, 'seeded');
     writeReverseDoc(root, 'core-system-map.md',
-      revCand('cli:adopt', { verified: true }) +
-      revCand('cli:next', { verified: false }));
+      revCand('cli:adopt') +
+      revCand('cli:next'));
     const before = collectStatusData(root).modules![0].baseline_coverage!;
-    expect(before).toMatchObject({ human_verified: 1, denominator: 2 });
+    expect(before).toMatchObject({ denominator: 2, tombstones: 0 });
 
     // 重扫：b 消失 → 转 tombstone（仍在分母）
     writeReverseDoc(root, 'core-system-map.md',
-      revCand('cli:adopt', { verified: true }) +
-      revCand('cli:next', { state: 'tombstone', verified: false }));
+      revCand('cli:adopt') +
+      revCand('cli:next', { state: 'tombstone' }));
     const after = collectStatusData(root).modules![0].baseline_coverage!;
     expect(after.denominator).toBe(2);
-    expect(after.human_verified).toBe(1);
     expect(after.tombstones).toBe(1);
   });
 });

@@ -120,10 +120,10 @@ try {
     const s = parseEnvelope(runCli(root, ['status', '--format', 'json'])).data.modules[0].baseline_coverage;
     const n = parseEnvelope(runCli(root, ['next', '--format', 'json'])).data.modules[0].baseline_coverage;
     if (JSON.stringify(s) !== JSON.stringify(n)) throw new Error('status/next baseline_coverage mismatch');
-    for (const f of ['state', 'incomplete', 'human_verified', 'denominator', 'tombstones', 'human_verified_delta', 'source', 'freshness']) {
+    for (const f of ['state', 'incomplete', 'denominator', 'tombstones', 'source', 'freshness']) {
       if (!(f in s)) throw new Error(`missing baseline_coverage.${f}`);
     }
-    if (s.human_verified !== 1 || s.denominator !== 2) throw new Error(`unexpected coverage ${JSON.stringify(s)}`);
+    if (s.denominator !== 2 || s.tombstones !== 0) throw new Error(`unexpected coverage ${JSON.stringify(s)}`);
     // 零候选 → n/a
     withTempProject('smoke-bfa-46b-', (root2) => {
       scaffoldAdopted(root2, 'seeded', null);
