@@ -9,12 +9,12 @@
 | UT-S05-17 | 部署完成且无需 smoke 后建议 archive | 提案级 smoke 决策 | `DEPLOY_DONE` 存在、`smoke_required=false` | next | 建议 `openlogos archive <slug>` |
 | UT-S05-18 | deploy-done 后需要 smoke 时建议运行 smoke | S21/S05 | `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾、`smoke_required=true` | next | `proposal_step=ready-to-smoke`，建议明确授权执行 `openlogos smoke` |
 | UT-S05-19 | deploy-done 后无需 smoke 时建议 archive | S21/S05 | `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾、`smoke_required=false` | next | `proposal_step=deploy-done`，建议明确授权执行 `openlogos archive <slug>` |
-| UT-S05-bootstrap-01 | bootstrap=adopted 且 baseline_seed_state:required 无提案时引导逆向建基线（brownfield-adopter，取代旧 add-baseline-docs） | next 逻辑 | 模块 bootstrap=adopted、`baseline_seed_state:required`、无 guard 文件 | next | 输出「逆向建立现状基线」引导（种子基线 / reverse-engineered / verified:false）；**不再**建议 `openlogos change add-baseline-docs` |
-| UT-S05-bootstrap-02 | bootstrap=skipped 历史兼容且 required 无提案时同样引导逆向建基线 | next 逻辑 | 模块 bootstrap=skipped、`baseline_seed_state:required`、无 guard 文件 | next | 输出与 adopted 一致的「逆向建立现状基线」引导；不再建议 add-baseline-docs |
+| UT-S05-bootstrap-01 | bootstrap=adopted 且 baseline_seed_state:required 无提案时引导建基线（brownfield-adopter，取代旧 add-baseline-docs） | next 逻辑 | 模块 bootstrap=adopted、`baseline_seed_state:required`、无 guard 文件 | next | 输出「建立现状基线」大白话引导（不暴露 `reverse-engineered`/`verified:false`/`system-map` 等行话）；**不再**建议 `openlogos change add-baseline-docs` |
+| UT-S05-bootstrap-02 | bootstrap=skipped 历史兼容且 required 无提案时同样引导建基线 | next 逻辑 | 模块 bootstrap=skipped、`baseline_seed_state:required`、无 guard 文件 | next | 输出与 adopted 一致的「建立现状基线」大白话引导；不再建议 add-baseline-docs |
 | UT-S05-bootstrap-03 | bootstrap=adopted 有活跃提案时走正常提案流程 | next 逻辑 | 模块 bootstrap=adopted，存在 guard 文件 | next | 正常读取提案状态，不输出建基线引导 |
 | UT-S05-bootstrap-04 | bootstrap=skipped 历史兼容且有活跃提案时走正常提案流程 | next 逻辑 | 模块 bootstrap=skipped，存在 guard 文件 | next | 正常读取提案状态，不输出建基线引导 |
-| UT-S05-B01 | baseline_seed_state:seeded 无提案时展示覆盖率 | next 分支 | bootstrap=adopted、`baseline_seed_state:seeded`、无提案 | next | 展示 `human-verified <分子> / 候选 <active∪tombstone>`，引导正常发起 `openlogos change` |
-| UT-S05-B02 | 覆盖率 JSON baseline_coverage 字段 | next --format json | bootstrap=adopted、`seeded` | next --format json | 输出 `baseline_coverage`（`state`/`human_verified`/`denominator`/`tombstones`/`human_verified_delta`/`freshness`），`state` 映射 `baseline_seed_state` |
+| UT-S05-B01 | baseline_seed_state:seeded 无提案时引导发起 change（不展示覆盖率人读行） | next 分支 | bootstrap=adopted、`baseline_seed_state:seeded`、无提案 | next | 输出「现状基线已建立；可正常发起 `openlogos change`」，**不含覆盖率人读行**（无 `逆向候选`/`tombstone` 等字样）；`baseline_coverage` JSON 字段照常输出 |
+| UT-S05-B02 | 覆盖率 JSON baseline_coverage 字段 | next --format json | bootstrap=adopted、`seeded` | next --format json | 输出 `baseline_coverage`（`state`/`incomplete`/`denominator`/`tombstones`/`source`/`freshness`），`state` 映射 `baseline_seed_state` |
 | UT-S05-B03 | 派生索引失效时覆盖率降级 | next 分支 | 索引 `source_hash` 与文档章节不符 | next / next --format json | `freshness=stale`（或 `unknown`），不输出精确百分比 |
 | UT-S05-B04 | 零候选时覆盖率报 n/a | next 分支 | bootstrap=adopted、seeded 但 `active∪tombstone`=0 | next --format json | `baseline_coverage` 报 `n/a`（不报 100%/0%） |
 | UT-S05-B05 | partial 时 next 指向恢复入口且标 incomplete | next 分支 | bootstrap=adopted、`baseline_seed_state:partial`、无提案 | next / next --format json | `baseline_coverage.state=partial`、`incomplete=true`；下一步指向 `openlogos baseline-seed`（commit/begin）；不算精确百分比；说明可先发 change（不强制） |
@@ -29,11 +29,11 @@
 | ST-S05-01 | 输出单一下一步建议 | Step 1→6 | 已初始化 | 执行 next | 返回最佳建议 |
 | ST-S05-03 | 文档类提案验收通过后不进入部署 | Step 1→6 | 活跃提案声明无需部署且 verify PASS | 执行 next | 输出 archive 建议，不展示部署或 smoke 为下一步 |
 | ST-S05-04 | 代码发布类提案验收通过后进入部署授权 | Step 1→6 | 活跃提案声明需要部署且 verify PASS | 执行 next | 输出部署授权建议 |
-| ST-S05-bootstrap-01 | 存量项目接入 required 无提案时引导逆向建基线（取代旧 add-baseline-docs） | Step 1→7（bootstrap 分支） | adopt 完成、`baseline_seed_state:required`、无活跃提案 | 执行 next | 输出「逆向建立现状基线」引导；不再建议 `openlogos change add-baseline-docs` |
+| ST-S05-bootstrap-01 | 存量项目接入 required 无提案时引导建基线（取代旧 add-baseline-docs） | Step 1→7（bootstrap 分支） | adopt 完成、`baseline_seed_state:required`、无活跃提案 | 执行 next | 输出「建立现状基线」大白话引导；不再建议 `openlogos change add-baseline-docs` |
 | ST-S05-bootstrap-02 | 历史 skipped required 无提案时引导逆向建基线 | Step 1→7（bootstrap 分支） | 旧项目 bootstrap=skipped、`required`、无活跃提案 | 执行 next | 输出与 adopted 一致的建基线引导；不再建议 add-baseline-docs |
 | ST-S05-bootstrap-03 | 存量项目接入有活跃提案时走正常提案流程 | Step 1→7（bootstrap 分支） | adopt 完成，存在活跃提案 | 执行 next | 正常读取提案状态，不输出建基线引导 |
 | ST-S05-bootstrap-04 | 历史 skipped 有活跃提案时走正常提案流程 | Step 1→7（bootstrap 分支） | 旧项目 bootstrap=skipped，存在活跃提案 | 执行 next | 正常读取提案状态，不输出建基线引导 |
-| ST-S05-B01 | adopted 覆盖率引导端到端（status/next 一致） | Step 1→7（bootstrap 分支） | adopt→seeded、含逆向候选、无提案 | 执行 next 与 status | 两命令 `baseline_coverage` 字段一致；删除候选不使百分比上升（tombstone 留分母）；不把未建立基线显示为已建立 |
+| ST-S05-B01 | adopted 基线已建立引导端到端（status/next 一致、不含覆盖率人读行） | Step 1→7（bootstrap 分支） | adopt→seeded、含逆向候选、无提案 | 执行 next 与 status | 两命令 suggestion/detail 一致为「现状基线已建立；可正常发起 `openlogos change`」、**均不含覆盖率人读行**（无 `逆向候选`/`tombstone` 字样）；`baseline_coverage` JSON 字段一致；不把未建立基线显示为已建立 |
 | ST-S05-B02 | partial + 无活跃提案：主动作指向恢复 | Step 1→7（bootstrap 分支） | `baseline_seed_state:partial`、**无** guard | 执行 next 与 status | 两命令一致 `state=partial`/`incomplete=true`；主 `action`/`next_node` 指向 `openlogos baseline-seed` 恢复；不算精确百分比；重试成功回 seeded |
 | ST-S05-B03 | partial + 活跃提案：proposal 前沿为主、恢复作 advisory | Step 1→7（bootstrap 分支） | `baseline_seed_state:partial`、**存在** guard（活跃提案某前沿） | 执行 next 与 status | 主 `action`/`next_node`/`proposal_step` **保持提案真实前沿**（不被恢复劫持、不改写）；partial 恢复以 `baseline_coverage.recovery` advisory 呈现；change 流程不阻断 |
 | ST-S05-05 | 部署完成标记由 CLI 写入后进入 smoke 建议 | S05 Step 3→7 / S21 | 活跃提案需要部署和 smoke，`deploy-done` 已成功 | 执行 `openlogos next --format json` | 返回 `proposal_step=ready-to-smoke`，不再提示手写 `DEPLOY_DONE` |
@@ -49,7 +49,7 @@
 `cli/test/golden-baseline.test.ts` 对 S05 `next --format json` 的既有输出做 characterization 快照，在 fixture 矩阵（initial-adopted / initial-fresh / launched 各 ProposalStep 态 / 无部署 / 纯代码）上录制真实输出作为基线。
 
 归属与本次变更的关系：
-- **本变更有意更新 adopted / skipped「无活跃提案」路径的 next 输出**（由旧「补文档引导 + `openlogos change add-baseline-docs`」改为「逆向建立现状基线」引导 / seeded 覆盖率），因此 **adopted-no-proposal fixture 的 golden 快照需随本变更重新 baseline**（这是有意的行为变更，不是漂移）；其余 fixture（fresh / launched 各态 / initial 派生等价）保持 1:1 不变、golden 零漂移。
+- **本变更（plain-baseline-guidance）有意更新 adopted / skipped「无活跃提案」路径的 next 输出**（seeded 由「展示覆盖率」改为大白话「现状基线已建立；可正常发起 change」、不展示覆盖率人读行；required/partial 引导去 `reverse-engineered`/`verified:false`/`system-map`/`已落盘产物`/`begin` 等行话），因此 **adopted-no-proposal fixture 的 golden 快照需随本变更重新 baseline**（这是有意的行为变更，不是漂移）；其余 fixture（fresh / launched 各态 / initial 派生等价）保持 1:1 不变、golden 零漂移。
 - 复核 golden diff 时，adopted-no-proposal 分支的 `action`/`detail` 变化为**预期**；任何其它 fixture 出现 diff 均视为回归。
 - golden 测试不替代 S05 既有 UT/ST 用例，二者并存。
 

@@ -94,11 +94,11 @@ sequenceDiagram
 
 ### EX-3.1: bootstrap=adopted 或历史 skipped 且无活跃提案
 - **触发条件**：模块 `bootstrap: adopted`（或历史 `bootstrap: skipped`），且 `logos/.openlogos-guard` 不存在。
-- **期望响应**：按**有效** `baseline_seed_state` 分档引导。有效状态**一律经共享 helper `effectiveBaselineSeedState` 取得**（explicit 显式值优先；yaml 缺省时按统一派生规则：有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`；**无 `unknown` 第三态**，见 core-06 §4.1）——`next` 不得本地 `?? 'required'` 私自推断：
-  - `required`：输出「逆向建立现状基线」引导（由 AI 会话/driver 经 `openlogos baseline-seed begin` + 派发 `brownfield-adopter` 逆向扫描），不建议直接开始与未验证区域相关的业务迭代。
-  - `partial`（扫描未完成、持久化恢复态）：显示「现状基线部分建立 / 扫描未完成」；**因本 EX 前提为 guard 不存在（无活跃提案）**，主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed commit --run-id <id>` 续提交或重新 `begin` 补齐），说明「可先继续完成基线，也可发起业务 change（不强制）」；覆盖率标 `incomplete`、不算精确百分比。**有活跃提案的 partial 优先级见 EX-3.5**。
-  - `seeded`：展示现状基线覆盖率（`逆向候选 <denominator> 条（含 tombstone <tombstones>）`，纯计数、无分子无百分比）并引导正常发起 `openlogos change`。
-  - 覆盖率无法可信重算（派生索引缺失/过期/解析失败）时显示 `unknown`/`stale`，不输出貌似精确的百分比。
+- **期望响应**：按**有效** `baseline_seed_state` 分档引导。有效状态**一律经共享 helper `effectiveBaselineSeedState` 取得**（explicit 显式值优先；yaml 缺省时按统一派生规则：有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`；**无 `unknown` 第三态**，见 core-06 §4.1）——`next` 不得本地 `?? 'required'` 私自推断。**面向用户的引导语一律用大白话，不暴露 `tombstone`/`reverse-engineered`/`verified:false`/`system-map`/`逆向候选` 等内部记账概念**：
+  - `required`：action「建立现状基线」；detail「现状基线尚未建立：让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点」（技术实现经 `openlogos baseline-seed begin` + 派发 `brownfield-adopter` 扫描，属"如何做"、不写进用户文案）。不建议直接开始与未建立区域相关的业务迭代。
+  - `partial`（扫描未完成、持久化恢复态）：detail「现状基线扫描未完成——运行 `openlogos baseline-seed commit` 继续完成；也可先发起 `openlogos change` 迭代（不强制）」；**因本 EX 前提为 guard 不存在（无活跃提案）**，主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed commit --run-id <id>`）。JSON `baseline_coverage.incomplete=true` 仍如实输出，但**不向用户展示覆盖率人读行**。**有活跃提案的 partial 优先级见 EX-3.5**。
+  - `seeded`：detail「现状基线已建立；可正常发起 `openlogos change` 迭代」，**不展示覆盖率人读行**（覆盖率数字对用户无行动意义、且会泄漏 tombstone 等内部概念）；覆盖率仅保留在 `baseline_coverage` JSON 机器字段。`status` 与 `next` 的 seeded 引导语一致（均为干净文案）。
+  - 覆盖率无法可信重算（派生索引缺失/过期/解析失败）时 JSON `freshness=unknown`/`stale`（机器字段），不影响上述人读引导语。
   - **legacy 派生态（`legacy: true`，yaml 未落盘）**：上述分档引导正常给出，同时附 legacy 迁移提示「运行 `openlogos sync` 把派生状态落盘为显式枚举」（sync 迁移见 core-06 §4.1，落盘后本提示消失）。
 - **副作用**：无状态修改；`status`/`next`/`baseline-seed status` 对同一模块的有效状态**逐字节一致**（三入口单一事实源）；`next` 不得把未建立/部分建立的种子基线显示为已建立。
 
@@ -115,12 +115,13 @@ sequenceDiagram
 `bootstrap: adopted` 且无活跃提案时，`next`（与 `status` 同源）读取现状基线状态位与覆盖率：
 
 - **数据来源**：覆盖率**只读已合并主文档**中各产物 `## 逆向基线来源` 章节，经派生索引（携 `source_hash` + 生成时间）聚合；索引失效时降级 `unknown`/`stale` 或按文档权威章节实时重算。
-- **计数口径**：tombstone 分母法——`denominator` = 存活候选 ∪ tombstone 候选数；删除候选转 tombstone 仍计入、不缩小计数（纯逆向候选计数，无分子、无 `coverage` 比值）。
-- **JSON**：`next --format json` 输出 `baseline_coverage`（见 cli-experience §2.22），与 `status` 字段一致。
+- **计数口径（JSON 机器字段）**：tombstone 分母法——`denominator` = 存活候选 ∪ tombstone 候选数；删除候选转 tombstone 仍计入、不缩小计数（纯逆向候选计数，无分子、无 `coverage` 比值）。
+- **不进人读引导语**：`denominator`/`tombstones` 等覆盖率数字**仅作为 `baseline_coverage` JSON 机器字段**供程序（如 runlogos 面板）消费；`status`/`next` 的**人读引导语不展示覆盖率行**——seeded 只说「基线已建立、可发起变更」，不向用户暴露 `tombstone`/`逆向候选` 等内部记账概念。
+- **JSON**：`next --format json` 输出 `baseline_coverage`（见 cli-experience §2.22），与 `status` 字段一致、逐字节不变。
 
-### EX-3.2: seeded 后展示覆盖率并引导迭代
+### EX-3.2: seeded 后引导迭代（不展示覆盖率人读行）
 - **触发条件**：`bootstrap: adopted`、状态位 `seeded`、无活跃提案。
-- **期望响应**：`next` 展示覆盖率并引导正常发起 `openlogos change`；不再强制「先补全所有文档」。
+- **期望响应**：`next`/`status` 输出「现状基线已建立；可正常发起 `openlogos change` 迭代」，**不展示覆盖率人读行**；不再强制「先补全所有文档」。`baseline_coverage` JSON 字段照常输出。
 - **副作用**：无。
 
 ### EX-3.3: 覆盖率不可信时降级

@@ -200,7 +200,7 @@ openlogos adopt --locale zh --ai-tool all
 
 ### 2.6 next（存量项目接入无提案时）
 
-`bootstrap: adopted` 且无活跃提案时，`openlogos next` 按 `baseline_seed_state`（`required` / `partial` / `seeded`）输出建基线引导，并展示现状基线覆盖率。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
+`bootstrap: adopted` 且无活跃提案时，`openlogos next` 按 `baseline_seed_state`（`required` / `partial` / `seeded`）输出建基线引导。**面向用户的引导语用大白话，不展示覆盖率人读行、不暴露 `tombstone`/`reverse-engineered`/`verified`/`system-map`/`逆向候选` 等内部记账概念**（覆盖率仅作 `baseline_coverage` JSON 机器字段）。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
 
 **种子基线待建立（`baseline_seed_state: required`）**
 ```text
@@ -208,9 +208,9 @@ $ openlogos next
 
 📌 当前状态：已接入（存量项目接入模式），现状基线待建立
 
-建议的下一步：逆向建立现状基线
-  由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单
-  （种子基线：provenance=reverse-engineered / verified=false）。
+建议的下一步：建立现状基线
+  现状基线尚未建立：让 AI 扫描现有代码，
+  梳理出当前系统结构与场景清单作为迭代起点。
 ```
 
 **种子基线部分建立（`baseline_seed_state: partial`，扫描未完成 / 中断可恢复）**
@@ -219,27 +219,21 @@ $ openlogos next
 
 📌 当前状态：已接入（存量项目接入模式），现状基线部分建立（扫描未完成）
 
-现状基线覆盖率：incomplete（已落盘候选 5，扫描未完成，暂不计算精确百分比）
-
-建议的下一步：完成现状基线（恢复扫描）
-  → openlogos baseline-seed commit --module core --run-id <run_id>   # 续提交已落盘产物
-  或重新 openlogos baseline-seed begin 派发扫描补齐缺失产物。
+建议的下一步：完成现状基线（继续扫描）
+  → openlogos baseline-seed commit --module core --run-id <run_id>   # 继续完成扫描
   也可先发起 openlogos change 业务迭代（不强制先恢复）。
 ```
 
-**种子基线已建立（`seeded`），展示覆盖率**
+**种子基线已建立（`seeded`）**
 ```text
 $ openlogos next
 
 📌 当前状态：已接入（存量项目接入模式），现状基线已建立
 
-现状基线覆盖率：逆向候选 12 条（含 tombstone 0）
-  纯逆向候选计数（tombstone 分母法）：删除候选转 tombstone 仍计入、不虚增。
-
 建议的下一步：正常发起 openlogos change 迭代
 ```
 
-> `partial` 是**持久化恢复态**（非瞬时）：`status` 与 `next` 输出必须一致，且不把已落盘候选当最终分母算精确百分比（标 `incomplete`）。**本节为「无活跃提案」情形**，故 partial 主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed`）；**存在活跃提案时改为「proposal 前沿为主、partial 恢复作 `baseline_coverage.recovery` advisory」**（见 §2.22 优先级）。覆盖率无法可信重算时（派生索引缺失/过期/解析失败）显示 `unknown`/`stale`，不输出貌似精确的百分比。`next` 不得把未建立/部分建立的种子基线显示为已建立。
+> `partial` 是**持久化恢复态**（非瞬时）：`status` 与 `next` 输出必须一致（JSON `baseline_coverage.incomplete=true`）。**本节为「无活跃提案」情形**，故 partial 主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed`）；**存在活跃提案时改为「proposal 前沿为主、partial 恢复作 `baseline_coverage.recovery` advisory」**（见 §2.22 优先级）。覆盖率数字仅作 `baseline_coverage` JSON 机器字段、不进人读引导语。`next` 不得把未建立/部分建立的种子基线显示为已建立。
 
 ### 2.7 flow show
 
@@ -1228,10 +1222,10 @@ $ openlogos next --auto
 
 ### 2.22 现状基线覆盖率的 status / JSON 呈现（brownfield-adopter）
 
-`bootstrap: adopted` 模块下，`status` 与 `next` 展示现状基线覆盖率，语义单一来源、口径一致：
+`bootstrap: adopted` 模块下，现状基线覆盖率**仅作为 `status` / `next` 的 `--format json` 机器字段 `baseline_coverage` 呈现，不进人读引导语**，语义单一来源、口径一致：
 
-- **人读**：`现状基线覆盖率：逆向候选 <denominator> 条（含 tombstone <tombstones>）`。为纯逆向候选计数——无分子、无百分比。
-- **JSON**（`status --format json` / `next --format json`）：新增 `baseline_coverage` 对象——
+- **人读**：`status`/`next` 的人读引导语在任何 baseline 状态下**都不展示覆盖率行**——覆盖率数字对用户无行动意义，且会泄漏 `tombstone`/`逆向候选` 等内部记账概念。seeded 只输出「现状基线已建立；可正常发起 openlogos change」（见 §2.6 与 core-S05 EX-3.1）。
+- **JSON**（`status --format json` / `next --format json`）：`baseline_coverage` 对象（机器字段，逐字节不变）——
   ```json
   {
     "baseline_coverage": {
@@ -1246,8 +1240,8 @@ $ openlogos next --auto
   ```
   - `state`：`required` | `partial` | `seeded`（映射模块级 `baseline_seed_state`）。
   - `incomplete`：**恒存在的布尔**（稳定 shape，不省略）——`state==partial` 时 `true`（`denominator` 非最终值、`next` 下一步指向恢复），`required`/`seeded` 时 `false`。
-  - `denominator` = 存活候选 ∪ tombstone 候选数；`tombstones` = 其中 tombstone 数（供人读拆分）。删除候选转 tombstone 仍计入 `denominator`、不缩小计数。
-  - `freshness`：`fresh` | `stale` | `unknown`；`stale`/`unknown` 时不得输出貌似精确的计数结论。
+  - `denominator` = 存活候选 ∪ tombstone 候选数；`tombstones` = 其中 tombstone 数。删除候选转 tombstone 仍计入 `denominator`、不缩小计数。
+  - `freshness`：`fresh` | `stale` | `unknown`；`stale`/`unknown` 时不得据其输出貌似精确的计数结论。
   - `recovery`（仅 `state==partial` 且**存在活跃提案**时出现）：结构化 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change。
 - **partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `baseline-seed` 恢复；**有活跃提案**时主 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory 呈现。
 - 覆盖率**只读已合并主文档**中各产物 `## 逆向基线来源` 章节；merge 前的未合并 delta 不计入覆盖率、不提前声称前移。
