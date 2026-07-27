@@ -15,7 +15,7 @@ import { readProjectYaml, isAdoptedBootstrap } from '../lib/project-yaml.js';
 import type { BootstrapMode, YamlDiagnostics, ProjectYamlScenario } from '../lib/project-yaml.js';
 import { buildModuleFeatures, formatFeaturesText } from '../lib/feature-grouping.js';
 import type { FeatureGroupItem } from '../lib/feature-grouping.js';
-import { buildBaselineCoverage, formatCoverageLine } from '../lib/baseline-provenance.js';
+import { buildBaselineCoverage } from '../lib/baseline-provenance.js';
 import type { BaselineSeedState, BaselineCoverage, BaselineIndexEntry } from '../lib/baseline-provenance.js';
 import { withBaselineReadLock, listRunIds, readRunRecord } from '../lib/baseline-seed-txn.js';
 import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
@@ -617,8 +617,8 @@ function buildModuleStatusItem(
           seed = seedState;
           cov = buildAdoptedCoverage(root, mod.id, seedState, false, baselineIndex, { assumeLocked: true });
           sug = (locale === 'zh'
-            ? `现状基线已建立——${formatCoverageLine(cov, locale)}；可正常发起 openlogos change <slug> 迭代`
-            : `Baseline established — ${formatCoverageLine(cov, locale)}; run openlogos change <slug> to iterate`) + legacyHint;
+            ? `现状基线已建立；可正常发起 openlogos change <slug> 迭代`
+            : `Baseline established; run openlogos change <slug> to iterate`) + legacyHint;
         } else if (seedState === 'partial') {
           seed = seedState;
           cov = buildAdoptedCoverage(root, mod.id, seedState, false, baselineIndex, { assumeLocked: true });
@@ -627,14 +627,14 @@ function buildModuleStatusItem(
             .filter(r => r && r.module === mod.id && r.status === 'open').pop();
           const runRef = openRun?.run_id ?? '<run_id>';
           sug = (locale === 'zh'
-            ? `现状基线部分建立（扫描未完成）——完成恢复：openlogos baseline-seed commit --module ${mod.id} --run-id ${runRef}（也可先发起 openlogos change 迭代，不强制）`
-            : `Baseline partially established (scan unfinished) — resume: openlogos baseline-seed commit --module ${mod.id} --run-id ${runRef} (or start openlogos change first; not required)`) + legacyHint;
+            ? `现状基线扫描未完成——运行 openlogos baseline-seed commit --module ${mod.id} --run-id ${runRef} 继续完成（也可先发起 openlogos change 迭代，不强制）`
+            : `Current-state baseline scan unfinished — run openlogos baseline-seed commit --module ${mod.id} --run-id ${runRef} to finish (or start openlogos change first; not required)`) + legacyHint;
         } else {
           seed = seedState;
           cov = buildAdoptedCoverage(root, mod.id, seedState, false, baselineIndex, { assumeLocked: true });
           sug = (locale === 'zh'
-            ? '逆向建立现状基线：由 AI 会话/driver 逆向扫描代码库产出 system-map + 场景候选清单（种子基线 / reverse-engineered / verified:false）'
-            : 'Establish current-state baseline: an AI session/driver reverse-scans the codebase to produce a system-map + scenario candidate list (reverse-engineered / verified:false)') + legacyHint;
+            ? '建立现状基线：让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点'
+            : 'Establish current-state baseline: have an AI scan the existing code and outline the current system structure and scenario list as a starting point') + legacyHint;
         }
         return { seed, cov, sug };
       });

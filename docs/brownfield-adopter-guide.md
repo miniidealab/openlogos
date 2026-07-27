@@ -2,7 +2,7 @@
 
 > 面向把**已有代码库**接入 OpenLogos 的场景：不要求你回头补齐 initial 文档基线，而是**逆向扫描现状**、以「种子基线」（system-map + 场景候选清单）形式登记为逆向候选注册表（`verified` 恒 `false`，随重扫维护 active/tombstone/alias 生命周期）。
 
-> ⚠️ **人工确认机制已移除**：不再有「按需深化 / JIT advisory / 把 `verified:false` 升级为 `true`」这一路径。`verified` 字段**恒为 `false`（残留字段）**，仅用于标注「这是逆向登记的现状、非权威意图」；不再存在把 `verified` 升为 `true` 的入口。**覆盖率退化为纯逆向候选计数**（人读 `逆向候选 N 条（含 tombstone T）`，JSON 为 `denominator`（= `active ∪ tombstone` 分母）+ `tombstones` + `freshness`，已删除覆盖率分子与 `coverage` 比值字段）；删除/合并候选转 tombstone 仍计入、计数不缩小；零候选报 `n/a`。
+> ⚠️ **人工确认机制已移除**：不再有「按需深化 / JIT advisory / 把 `verified:false` 升级为 `true`」这一路径。`verified` 字段**恒为 `false`（残留字段）**，仅用于标注「这是逆向登记的现状、非权威意图」；不再存在把 `verified` 升为 `true` 的入口。**覆盖率仅作 JSON 机器字段、不进人读引导语**（`denominator`（= `active ∪ tombstone` 分母）+ `tombstones` + `freshness`，已删除分子与 `coverage` 比值字段）——`status`/`next` 的 seeded 引导语只提示「现状基线已建立；可发起 change」，不向用户暴露 `tombstone`/`逆向候选` 等内部记账概念；删除/合并候选转 tombstone 仍计入、计数不缩小；零候选 JSON `denominator=0`。
 
 ---
 
@@ -56,7 +56,7 @@ flowchart TD
     D --> E["🤖 <b>AI 会话 / Driver</b><br/>baseline-seed commit --module &lt;id&gt; --run-id &lt;id&gt;<br/><i>（CLI 对 staged 字节算 hash + 校验 schema + 比对 candidate_keys）</i>"]
       --> F{"⚙️ <b>CLI 判定</b>"}
 
-    F -->|必需 kind 齐 + 全部合法| G["✅ 原子提交目标 + baseline_seed_state: <b>seeded</b><br/>展示覆盖率（逆向候选 N 条，含 tombstone T；零候选 n/a、verified 恒 false）"]
+    F -->|必需 kind 齐 + 全部合法| G["✅ 原子提交目标 + baseline_seed_state: <b>seeded</b><br/>提示「现状基线已建立；可发起 change」（覆盖率仅 JSON 机器字段、不展示人读行）"]
     F -->|部分合法 / 缺必需 kind| P["🟡 baseline_seed_state: <b>partial</b><br/><i>（不提交不完整集合为权威，可重试）</i>"]
     P -.->|补齐 staging 重跑 commit| E
 
@@ -167,7 +167,7 @@ openlogos baseline-seed commit --module core --run-id seed-core-0001
 ```bash
 openlogos status          # 或 openlogos next / baseline-seed status --module core
 ```
-**你看到**（要点）：`baseline_seed_state=seeded`，覆盖率 **`逆向候选 N 条（含 tombstone 0）`（纯计数、verified 恒 false）**，并引导「可正常发起 openlogos change <slug> 迭代」。
+**你看到**（要点）：`baseline_seed_state=seeded`，提示 **「现状基线已建立；可正常发起 openlogos change <slug> 迭代」**（覆盖率仅作 `baseline_coverage` JSON 机器字段、不展示人读行；verified 恒 false）。
 > 种子基线全是 `verified:false`（残留字段）——它是逆向候选注册表（仍随重扫维护 active/tombstone 生命周期）；覆盖率沿用 tombstone 分母法，纯逆向候选计数、无分子。
 
 ### Step 6 —— 日常迭代（你做）
@@ -189,7 +189,7 @@ openlogos change refine-login     # guard 生效，进入变更流程
 | 2 | AI | `baseline-seed begin --manifest` | `required`（不变） | `baseline-seed-runs/<run>/run.json` + 空 `staging/` + 签发账本 |
 | 3 | Skill | （写 staging） | `required`（不变） | staging 下的 `## 逆向基线来源` 产物 |
 | 4 | AI | `baseline-seed commit --run-id` | → `seeded`/`partial` | 目标文档落盘 + 覆盖率索引 + `baseline-events.jsonl` |
-| 5 | 你 | `status` / `next` | 观察 | 覆盖率 `逆向候选 N 条（含 tombstone T）`（纯计数、verified 恒 false） |
+| 5 | 你 | `status` / `next` | 观察 | 提示「现状基线已建立；可发起 change」（覆盖率仅 JSON 机器字段、不展示人读行） |
 | 6 | 你 | `change` → `merge` | 正常迭代 | delta + 主文档按前向 delta 更新 |
 
 ---

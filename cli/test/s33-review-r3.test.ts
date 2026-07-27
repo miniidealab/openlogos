@@ -209,7 +209,7 @@ describe('S33 review r3 — F1..F8 反例的真实入口回归', () => {
     setupAdopted(root, ''); // 无 baseline_seed_state 字段、无候选
     const mod = collectStatusData(root).modules![0];
     expect(mod.baseline_seed_state).toBe('required');
-    expect(mod.suggestion).toContain('逆向建立现状基线');
+    expect(mod.suggestion).toContain('建立现状基线');
     expect(mod.suggestion).toContain('openlogos sync');
   });
 

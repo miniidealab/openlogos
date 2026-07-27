@@ -366,29 +366,6 @@ export function buildBaselineCoverage(
   };
 }
 
-/** 人读覆盖率一行文案（纯逆向候选计数，无分子/百分比）。stale/unknown 或零候选时不给出计数结论。 */
-export function formatCoverageLine(cov: BaselineCoverage, locale: string): string {
-  const zh = locale === 'zh';
-  if (cov.freshness !== 'fresh') {
-    return zh
-      ? `现状基线覆盖率：${cov.freshness}（派生索引失效，暂不给出可信计数）`
-      : `Baseline coverage: ${cov.freshness} (derived index invalid; count withheld)`;
-  }
-  if (cov.incomplete) {
-    return zh
-      ? `现状基线覆盖率：incomplete（扫描未完成，计数非最终值）`
-      : `Baseline coverage: incomplete (scan unfinished; count not final)`;
-  }
-  if (cov.denominator === 0) {
-    return zh
-      ? `现状基线覆盖率：n/a（暂无逆向候选）`
-      : `Baseline coverage: n/a (no reverse-engineered candidates yet)`;
-  }
-  return zh
-    ? `现状基线覆盖率：逆向候选 ${cov.denominator} 条（含 tombstone ${cov.tombstones}）`
-    : `Baseline coverage: ${cov.denominator} reverse-engineered candidates (tombstone ${cov.tombstones})`;
-}
-
 /** F4：把候选注册表序列化为 `## 逆向基线来源` 章节文本（确定性、供 commit 落盘）。 */
 export function serializeProvenanceSection(candidates: BaselineCandidate[]): string {
   const plain = candidates.map(c => {

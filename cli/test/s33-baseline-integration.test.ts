@@ -79,7 +79,7 @@ describe('S33 read-side integration — adopt enum / seeded coverage（确认机
     expect(scanModuleCandidates(root, 'core').candidates).toHaveLength(0);
   });
 
-  it('UT-S05-B01 / ST-S05-B01: seeded 无提案时 status/next 展示覆盖率、字段一致', () => {
+  it('UT-S05-B01 / ST-S05-B01: seeded 无提案时 status/next 引导发起 change（不展示覆盖率人读行）、字段一致', () => {
     writeAdoptedSeedState(root, 'seeded');
     writeReverseDoc(root, 'core-system-map.md',
       revCand('cli:adopt', { verified: true, confirmed_by: 'fred' }) +
@@ -89,7 +89,10 @@ describe('S33 read-side integration — adopt enum / seeded coverage（确认机
     const mod = data.modules![0];
     expect(mod.baseline_seed_state).toBe('seeded');
     expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', denominator: 2, tombstones: 0, incomplete: false });
-    expect(mod.suggestion).toMatch(/逆向候选 2 条|2 reverse-engineered candidates/); // 覆盖率行（纯计数，locale 二选一）
+    // seeded 引导语为大白话「现状基线已建立」，不展示覆盖率人读行、不泄漏 tombstone/逆向候选 等内部记账概念。
+    expect(mod.suggestion).toMatch(/现状基线已建立|Baseline established/); // locale 二选一
+    expect(mod.suggestion).toContain('openlogos change');
+    expect(mod.suggestion).not.toMatch(/逆向候选|tombstone|reverse-engineered/);
 
     next('json');
     const parsed = JSON.parse(con.logs[0]);
@@ -124,7 +127,8 @@ describe('S33 read-side integration — adopt enum / seeded coverage（确认机
     // 无逆向产物文档
     const mod = collectStatusData(root).modules![0];
     expect(mod.baseline_coverage).toMatchObject({ state: 'seeded', denominator: 0, tombstones: 0, incomplete: false });
-    expect(mod.suggestion).toContain('n/a');
+    // 零候选 = JSON 层 n/a（denominator 0）；seeded 引导语保持干净，不再把 n/a 塞进人读文案。
+    expect(mod.suggestion).toMatch(/现状基线已建立|Baseline established/);
   });
 
   it('ST-S05-B01（tombstone 不虚增）: 删除候选转 tombstone 后计数不缩小、denominator 不缩', () => {

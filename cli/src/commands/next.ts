@@ -275,19 +275,19 @@ function buildModuleNextItem(
           action: locale === 'zh' ? '完成现状基线（恢复扫描）' : 'Complete current-state baseline (resume scan)',
           command: 'openlogos baseline-seed commit',
           detail: (locale === 'zh'
-            ? '现状基线部分建立（扫描未完成）——续提交已落盘产物或重新 begin 补齐；也可先发起 openlogos change 迭代（不强制）。'
-            : 'Baseline partially established (scan unfinished) — resume commit or re-begin; you may also start openlogos change first (not required).') + legacyHint,
+            ? '现状基线扫描未完成——运行 openlogos baseline-seed commit 继续完成；也可先发起 openlogos change 迭代（不强制）。'
+            : 'Current-state baseline scan unfinished — run openlogos baseline-seed commit to finish; you may also start openlogos change first (not required).') + legacyHint,
           active_change: null, proposal_step: null,
         };
       }
       return {
         id: mod.id, name: mod.name, lifecycle: 'launched',
         bootstrap: mod.bootstrap,
-        action: locale === 'zh' ? '逆向建立现状基线' : 'Establish current-state baseline (reverse-engineer)',
+        action: locale === 'zh' ? '建立现状基线' : 'Establish current-state baseline',
         command: 'openlogos baseline-seed begin',
         detail: (locale === 'zh'
-          ? '由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单（种子基线 / reverse-engineered / verified:false）。'
-          : 'An AI session/driver reverse-scans the codebase to produce a system-map + scenario candidate list (reverse-engineered / verified:false).') + legacyHint,
+          ? '让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点。'
+          : 'Have an AI scan the existing code and outline the current system structure and scenario list as a starting point.') + legacyHint,
         active_change: null, proposal_step: null,
       };
     }
@@ -622,16 +622,16 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           action = locale === 'zh' ? '完成现状基线（恢复扫描）' : 'Complete current-state baseline (resume scan)';
           command = 'openlogos baseline-seed commit';
           detail = locale === 'zh'
-            ? '现状基线部分建立（扫描未完成）——续提交已落盘产物或重新 begin 补齐；也可先发起 openlogos change 迭代（不强制）。'
-            : 'Baseline partially established (scan unfinished) — resume commit or re-begin; you may also start openlogos change first.';
+            ? '现状基线扫描未完成——运行 openlogos baseline-seed commit 继续完成；也可先发起 openlogos change 迭代（不强制）。'
+            : 'Current-state baseline scan unfinished — run openlogos baseline-seed commit to finish; you may also start openlogos change first.';
         } else {
           action = locale === 'zh'
-            ? '逆向建立现状基线'
-            : 'Establish current-state baseline (reverse-engineer)';
+            ? '建立现状基线'
+            : 'Establish current-state baseline';
           command = 'openlogos baseline-seed begin';
           detail = locale === 'zh'
-            ? '由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单（种子基线 / reverse-engineered / verified:false）。'
-            : 'An AI session/driver reverse-scans the codebase to produce a system-map + scenario candidate list (reverse-engineered / verified:false).';
+            ? '让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点。'
+            : 'Have an AI scan the existing code and outline the current system structure and scenario list as a starting point.';
         }
       } else {
         action = t(locale, 'next.createChange');
@@ -682,12 +682,12 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           : 'Baseline established; you can start change iterations normally.';
       } else {
         action = locale === 'zh'
-          ? '逆向建立现状基线'
-          : 'Establish current-state baseline (reverse-engineer)';
+          ? '建立现状基线'
+          : 'Establish current-state baseline';
         command = 'openlogos baseline-seed begin';
         detail = locale === 'zh'
-          ? '由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单（种子基线 / reverse-engineered / verified:false）。'
-          : 'An AI session/driver reverse-scans the codebase to produce a system-map + scenario candidate list (reverse-engineered / verified:false).';
+          ? '让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点。'
+          : 'Have an AI scan the existing code and outline the current system structure and scenario list as a starting point.';
       }
     } else {
       action = data.suggestion;

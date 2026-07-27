@@ -161,7 +161,7 @@ describe('S33 review r2 — 残留边界闭环', () => {
     const mod = collectStatusData(root).modules![0];
     expect(mod.baseline_seed_state).toBe('required');     // 架构 §4.1：缺省经统一派生（无候选 → required），unknown 第三态废除
     expect(mod.suggestion.toLowerCase()).toContain('legacy');
-    expect(mod.suggestion).toContain('逆向建立现状基线'); // advisory 引导，不设硬门、不阻断 change
+    expect(mod.suggestion).toContain('建立现状基线'); // advisory 引导，不设硬门、不阻断 change
   });
 
   it('F9: 崩溃在 register 事件之前 → roll-forward 幂等补记事件（携真实 keys）', () => {

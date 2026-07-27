@@ -115,7 +115,7 @@ describe('S20 Scenario Tests — adopt command', () => {
     next();
     const out = con.logs.join('\n');
     expect(out).toContain('openlogos baseline-seed begin');
-    expect(out).toContain('逆向建立现状基线');
+    expect(out).toContain('建立现状基线');
     expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 

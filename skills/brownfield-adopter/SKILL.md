@@ -87,9 +87,9 @@ CLI 对 staged 实际字节算 hash + 校验 schema + 比对 candidate_keys，�
 - **≥1 合法但未全** → `partial`（**不提交不完整集合为权威**）；补齐 staging 后重跑 commit（幂等）。
 - **0 合法** → 保持当前状态。
 
-### Step 6: 展示覆盖率 / 交回控制
+### Step 6: 交回控制（提示基线已建立）
 
-commit 成功后运行 `openlogos next` / `status`，向用户展示现状基线覆盖率（`逆向候选 N 条（含 tombstone T）`，纯计数——`verified` 恒 `false`、`denominator` 采 `active ∪ tombstone` 分母法，无分子/百分比）。提示：后续 `openlogos change` 与普通 launched 模块一致，产出正常前向 delta；候选注册表仍随重扫维护 active/tombstone/alias 生命周期，无确认升级入口。
+commit 成功后运行 `openlogos next` / `status`，向用户提示「现状基线已建立；可正常发起 openlogos change」——**覆盖率仅作 `baseline_coverage` JSON 机器字段、不进人读引导语**（`denominator`/`tombstones` 等内部记账概念不向用户暴露；`verified` 恒 `false`）。提示：后续 `openlogos change` 与普通 launched 模块一致，产出正常前向 delta；候选注册表仍随重扫维护 active/tombstone/alias 生命周期，无确认升级入口。
 
 ## 恢复 / 重试
 

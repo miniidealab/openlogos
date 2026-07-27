@@ -117,10 +117,10 @@ describe('S33 legacy 缺省语义三入口统一（baseline-seed-legacy-default-
     // 三入口逐字节一致（单一事实源）
     expect(new Set([r.nextState, r.statusState, r.seedState]).size).toBe(1);
     // next 引导逆向建基线 + legacy 迁移提示
-    expect(r.nextDetail).toContain('逆向建立现状基线');
+    expect(r.nextDetail).toContain('建立现状基线');
     expect(r.nextDetail).toContain('openlogos sync');
     // status 引导 + legacy 迁移提示
-    expect(r.statusSuggestion).toContain('逆向建立现状基线');
+    expect(r.statusSuggestion).toContain('建立现状基线');
     expect(r.statusSuggestion).toContain('openlogos sync');
     // baseline-seed status（text）附 legacy 迁移提示
     expect(r.seedText).toContain('openlogos sync');

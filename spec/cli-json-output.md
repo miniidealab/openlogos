@@ -477,7 +477,7 @@ openlogos status --format json  # JSON 格式
 | `state` | string | `required｜partial｜seeded`，映射模块级 `baseline_seed_state` |
 | `incomplete` | boolean | **恒存在为布尔**（稳定 shape，不省略）：`state==partial` → `true`，`required`/`seeded` → `false`。`partial` 时不得用已落盘候选当最终计数 |
 | `denominator` | number | 候选计数 = `active ∪ tombstone`（`retired` 不计入）；`0` 表示覆盖率 `n/a`。纯逆向候选计数，无分子/比值 |
-| `tombstones` | number | `denominator` 内的 tombstone 数（仍计入，供人读拆分） |
+| `tombstones` | number | `denominator` 内的 tombstone 数（仍计入；纯机器字段，不进人读引导语） |
 | `source` | string | `derived-index`（用了 `baseline_index` 派生索引）｜`documents`（直接从文档权威章节重算） |
 | `freshness` | string | `fresh｜stale｜unknown`；索引 `source_hash` 与文档实时聚合 hash 不符时为 `stale`，此时不输出貌似精确的计数结论 |
 | `recovery` | object | **仅 `state==partial` 且存在活跃提案时出现**：结构化恢复 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change |
@@ -488,6 +488,8 @@ openlogos status --format json  # JSON 格式
 > 注（drop-baseline-confirmation）：人工确认机制删除后，`verify --format json` **不再输出** `data.baseline_warnings`——`verify` 对 `verified:false` 逆向 spec 既不产软告警、也不硬失败（grandfather 豁免存量代码，verify 从不因逆向候选 fail）。
 >
 > 注（drop-coverage-human-verified）：覆盖率退化为**纯逆向候选计数**——`human_verified`（分子）、`human_verified_delta`、`coverage`（比值）三字段**已删**（此前 drop-baseline-confirmation 冻结保留，现干净删除）。因该形态尚未对用户发布、无兼容负担，`spec/schema/*.json` 与 golden 均不含 `baseline_coverage`，故 schema / golden / `contract.version` 均**无改动**。
+>
+> 注（plain-baseline-guidance）：覆盖率**仅作 JSON 机器字段**——`status`/`next` 的**人读引导语不再展示覆盖率行**（seeded 只提示「现状基线已建立；可正常发起 openlogos change」），`tombstone`/`逆向候选` 等内部记账概念不向用户暴露。`baseline_coverage` JSON 字段表**不变**。
 
 ### 3.13 `openlogos baseline-seed --format json`（brownfield-adopter S33）
 
