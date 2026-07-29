@@ -477,7 +477,7 @@ openlogos status --format json  # JSON 格式
 | `state` | string | `required｜partial｜seeded`，映射模块级 `baseline_seed_state` |
 | `incomplete` | boolean | **恒存在为布尔**（稳定 shape，不省略）：`state==partial` → `true`，`required`/`seeded` → `false`。`partial` 时不得用已落盘候选当最终计数 |
 | `denominator` | number | 候选计数 = `active ∪ tombstone`（`retired` 不计入）；`0` 表示覆盖率 `n/a`。纯逆向候选计数，无分子/比值 |
-| `tombstones` | number | `denominator` 内的 tombstone 数（仍计入，供人读拆分） |
+| `tombstones` | number | `denominator` 内的 tombstone 数（仍计入；纯机器字段，不进人读引导语） |
 | `source` | string | `derived-index`（用了 `baseline_index` 派生索引）｜`documents`（直接从文档权威章节重算） |
 | `freshness` | string | `fresh｜stale｜unknown`；索引 `source_hash` 与文档实时聚合 hash 不符时为 `stale`，此时不输出貌似精确的计数结论 |
 | `recovery` | object | **仅 `state==partial` 且存在活跃提案时出现**：结构化恢复 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change |
@@ -488,6 +488,8 @@ openlogos status --format json  # JSON 格式
 > 注（drop-baseline-confirmation）：人工确认机制删除后，`verify --format json` **不再输出** `data.baseline_warnings`——`verify` 对 `verified:false` 逆向 spec 既不产软告警、也不硬失败（grandfather 豁免存量代码，verify 从不因逆向候选 fail）。
 >
 > 注（drop-coverage-human-verified）：覆盖率退化为**纯逆向候选计数**——`human_verified`（分子）、`human_verified_delta`、`coverage`（比值）三字段**已删**（此前 drop-baseline-confirmation 冻结保留，现干净删除）。因该形态尚未对用户发布、无兼容负担，`spec/schema/*.json` 与 golden 均不含 `baseline_coverage`，故 schema / golden / `contract.version` 均**无改动**。
+>
+> 注（plain-baseline-guidance）：覆盖率**仅作 JSON 机器字段**——`status`/`next` 的**人读引导语不再展示覆盖率行**（seeded 只提示「现状基线已建立；可正常发起 openlogos change」），`tombstone`/`逆向候选` 等内部记账概念不向用户暴露。`baseline_coverage` JSON 字段表**不变**。
 
 ### 3.13 `openlogos baseline-seed --format json`（brownfield-adopter S33）
 
@@ -1299,7 +1301,23 @@ openlogos module list --format json  # JSON 格式
 
 > 若项目未注册任何模块，`modules` 为空数组 `[]`，不报错。
 
----
+### 7.4 `logos-project.yaml` 受损时的错误分层（fix-module-cmd-yaml-error-handling）
+
+`module` 命令族（list / add / rename / remove / set-product-type）读取 `logos-project.yaml` 统一走 `lib/project-yaml` 的恢复读取路径（严格解析失败时 AST 恢复 + `yaml_diagnostics`），与 `status` / `next` 同一口径。**禁止**把解析异常静默折叠为空模块清单。
+
+**恢复态（`parse_status: "recovered"`，AST 恢复出 modules）**：
+
+- `module list --format json`：正常返回恢复出的 modules，`data` 新增**可选字段 `yaml_diagnostics`**（结构与 `status` 的同名字段一致：`{ parse_status, messages }`）。健康 yaml 下该键**整体省略**——既有 golden 零漂移。
+- 写命令（add / rename / remove / set-product-type）：**拒绝写回**，报错误码 `PROJECT_YAML_DEGRADED_WRITE_REFUSED`（通用错误 envelope，stderr、非零退出）。AST 恢复只保证恢复部分字段，序列化恢复态会把未恢复字段静默丢弃，故不写回。
+
+**不可恢复（`parse_status: "error"`，恢复不出 modules）**：
+
+- 全族命令报错误码 `PROJECT_YAML_UNPARSABLE`，`message` 附解析器原始错误与行号；**绝不**折叠为 `MODULE_NOT_FOUND`。
+
+**数据不摧毁不变量**：上述任一降级 / 错误分支**零写入**——命令执行前后 `logos-project.yaml` 文件字节不变。
+
+| 错误码 | 说明 |
+|---
 
 ## 8. 完整用法示例
 
@@ -2107,8 +2125,10 @@ no-delta merge 写入的 `SPEC_MERGED` 建议为：
 | 错误码 | 说明 |
 |--------|------|
 | `INVALID_PRODUCT_TYPE` | `<enum>` 非合法枚举；`message` **必须列出全部合法枚举**（`web`/`desktop`/`mobile`/`cli`/`api`/`library`/`skills`）|
-| `MODULE_NOT_FOUND` | `<module-id>` 不在 `logos-project.yaml` 的 `modules[]` |
+| `MODULE_NOT_FOUND` | `<module-id>` 不在 `logos-project.yaml` 的 `modules[]`。**语义收窄（fix-module-cmd-yaml-error-handling）**：仅在「yaml 正常解析或已恢复出 modules，且 modules 中确实没有该 id」时使用；yaml 解析失败一律走 `PROJECT_YAML_UNPARSABLE` / `PROJECT_YAML_DEGRADED_WRITE_REFUSED`（见 §7.4），禁止折叠 |
 | `MISSING_ARGUMENT` | 缺 `<module-id>` 或 `<enum>`（usage error），`message` 含用法串 |
+| `PROJECT_YAML_UNPARSABLE` | `logos-project.yaml` 解析失败且 AST 恢复不出 `modules`（见 §7.4） |
+| `PROJECT_YAML_DEGRADED_WRITE_REFUSED` | 读取走了 AST 恢复路径（降级态），拒绝写回（见 §7.4） |
 
 **非法枚举错误示例**：
 

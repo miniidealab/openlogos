@@ -1021,6 +1021,11 @@ JSON 输出必须与文本输出共享同一事实源。`openlogos verify --form
 ### S17
 模块增删改必须同步 YAML 与引用。
 
+**YAML 解析错误分层与写路径防护（fix-module-cmd-yaml-error-handling）**：
+- **统一读取路径**：`module` 命令族（list / add / rename / remove / set-product-type）读取 `logos-project.yaml` 必须走 `lib/project-yaml` 的恢复读取（严格解析失败时 AST 恢复 + `yaml_diagnostics`），与 `status` / `next` / `verify` / `feature` 同一口径；禁止本地简化读取把解析异常静默折叠为空对象。
+- **错误分层，禁止折叠**：解析失败且无法恢复出 modules → 独立错误码 `PROJECT_YAML_UNPARSABLE`（附解析器原始错误与行号），绝不折叠为 `MODULE_NOT_FOUND`；`MODULE_NOT_FOUND` 仅在「yaml 正常解析或已恢复出 modules，且 modules 中确实没有该 id」时使用。恢复态（`parse_status: recovered`）下 `module list` 正常返回恢复出的 modules，JSON envelope 附可选 `yaml_diagnostics` 字段（口径与 `status` 一致）。
+- **降级态写防护（数据不摧毁不变量）**：本次读取走过恢复路径或解析失败时，写命令一律拒绝写回，报独立错误码 `PROJECT_YAML_DEGRADED_WRITE_REFUSED` 并提示先修复 yaml；任何降级态下写命令执行前后 `logos-project.yaml` 文件字节必须保持不变——绝不把恢复态或空对象序列化落盘。
+
 ### S18
 resource_index 必须能反向索引当前真相源。
 

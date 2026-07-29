@@ -5,6 +5,7 @@ import { readLocale } from '../i18n.js';
 import * as readline from 'node:readline';
 import { type OutputFormat, makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import { PRODUCT_TYPE_ENUM, isValidProductType, isGuiProductType } from '../lib/ui-first.js';
+import { readProjectYaml as readRecoveredProjectYaml, type YamlDiagnostics } from '../lib/project-yaml.js';
 
 interface ModuleEntry {
   id: string;
@@ -13,14 +14,70 @@ interface ModuleEntry {
   product_type?: string;
 }
 
-function readProjectYaml(root: string): Record<string, unknown> {
+/**
+ * fix-module-cmd-yaml-error-handling（S17 EX-3.2 / EX-3.3）：module 族统一读取结果。
+ * - 健康 yaml：raw 为完整原始文档（供 read-modify-write 回写），diagnostics 为 null。
+ * - 严格解析失败：降级到 lib/project-yaml 的 AST 恢复读取（与 status/next 同一口径），
+ *   raw 为 null（降级态禁止整文档回写），modules 为恢复出的集合，diagnostics 携带解析诊断。
+ */
+interface ModuleYamlRead {
+  raw: Record<string, unknown> | null;
+  modules: ModuleEntry[];
+  diagnostics: YamlDiagnostics | null;
+}
+
+function readModuleYaml(root: string): ModuleYamlRead {
   const path = join(root, 'logos', 'logos-project.yaml');
-  if (!existsSync(path)) return {};
+  if (!existsSync(path)) return { raw: {}, modules: [], diagnostics: null };
   try {
-    return parseYaml(readFileSync(path, 'utf-8')) ?? {};
+    const raw = (parseYaml(readFileSync(path, 'utf-8')) ?? {}) as Record<string, unknown>;
+    return { raw, modules: (raw.modules as ModuleEntry[] | undefined) ?? [], diagnostics: null };
   } catch {
-    return {};
+    const recovered = readRecoveredProjectYaml(root);
+    return {
+      raw: null,
+      modules: (recovered.data?.modules ?? []) as unknown as ModuleEntry[],
+      diagnostics: recovered.yaml_diagnostics ?? { parse_status: 'error', messages: [] },
+    };
   }
+}
+
+function yamlErrorDetail(diagnostics: YamlDiagnostics): string {
+  return diagnostics.messages[0] ?? 'unknown parse error';
+}
+
+/**
+ * 错误分层门（EX-3.2 / EX-3.3）：
+ * - 不可恢复（parse_status "error"）→ 任何 module 命令报 PROJECT_YAML_UNPARSABLE；
+ * - 恢复态（parse_status "recovered"）→ 仅写命令报 PROJECT_YAML_DEGRADED_WRITE_REFUSED（forWrite=true）。
+ * 命中即输出错误（JSON envelope 到 stderr / 文本到 console.error）并 exit 1；返回则可继续。
+ * 数据不摧毁不变量：命中路径零写入，logos-project.yaml 字节不变。
+ */
+function rejectDegradedYaml(
+  read: ModuleYamlRead,
+  command: string,
+  format: OutputFormat,
+  forWrite: boolean,
+): void {
+  if (!read.diagnostics) return;
+  const detail = yamlErrorDetail(read.diagnostics);
+  let code: string;
+  let msg: string;
+  if (read.diagnostics.parse_status === 'error') {
+    code = 'PROJECT_YAML_UNPARSABLE';
+    msg = `logos-project.yaml is unparsable: ${detail}. Fix the YAML syntax and retry.`;
+  } else if (forWrite) {
+    code = 'PROJECT_YAML_DEGRADED_WRITE_REFUSED';
+    msg = `logos-project.yaml has YAML syntax errors (read degraded to AST recovery): ${detail}. Fix the YAML syntax before modifying modules; refusing to write back a partially recovered document.`;
+  } else {
+    return;
+  }
+  if (format === 'json') {
+    process.stderr.write(JSON.stringify(makeErrorEnvelope(command, code, msg)) + '\n');
+  } else {
+    console.error(`Error: ${msg}`);
+  }
+  process.exit(1);
 }
 
 function writeProjectYaml(root: string, data: Record<string, unknown>): void {
@@ -114,19 +171,28 @@ export function moduleList(format: OutputFormat = 'text'): void {
     process.exit(1);
   }
 
-  const yaml = readProjectYaml(root);
-  const modules = (yaml.modules as ModuleEntry[] | undefined) ?? [];
+  const read = readModuleYaml(root);
+  rejectDegradedYaml(read, 'module list', format, false);
+  const modules = read.modules;
 
   if (format === 'json') {
-    const data = {
+    const data: Record<string, unknown> = {
       modules: modules.map(m => ({
         id: m.id,
         name: m.name,
         lifecycle: m.lifecycle,
       })),
     };
+    // 恢复态（EX-3.3 只读分层）：附解析诊断，口径与 status 一致，供消费方提示「yaml 受损（已降级恢复）」。
+    if (read.diagnostics) {
+      data.yaml_diagnostics = read.diagnostics;
+    }
     process.stdout.write(JSON.stringify(makeEnvelope('module list', data)) + '\n');
     return;
+  }
+
+  if (read.diagnostics) {
+    console.warn('⚠  logos-project.yaml has YAML syntax errors; modules below were recovered from a degraded parse. Fix the YAML before modifying modules.');
   }
 
   if (modules.length === 0) {
@@ -167,8 +233,10 @@ export function moduleAdd(name: string | undefined, productType?: string): void 
     process.exit(1);
   }
 
-  const yaml = readProjectYaml(root);
-  const modules = (yaml.modules as ModuleEntry[] | undefined) ?? [];
+  const read = readModuleYaml(root);
+  rejectDegradedYaml(read, 'module add', 'text', true);
+  const yaml = read.raw!;
+  const modules = read.modules;
 
   if (modules.find(m => m.id === name)) {
     console.error(`Error: module "${name}" already exists.`);
@@ -233,8 +301,10 @@ export function moduleSetProductType(
     process.exit(1);
   }
 
-  const yaml = readProjectYaml(root);
-  const modules = (yaml.modules as ModuleEntry[] | undefined) ?? [];
+  const read = readModuleYaml(root);
+  rejectDegradedYaml(read, 'module set-product-type', format, true);
+  const yaml = read.raw!;
+  const modules = read.modules;
   const mod = modules.find(m => m.id === moduleId);
 
   // 未知 module id → 报错，不写文件。
@@ -296,8 +366,10 @@ export function moduleRename(oldName: string | undefined, newName: string | unde
     process.exit(1);
   }
 
-  const yaml = readProjectYaml(root);
-  const modules = (yaml.modules as ModuleEntry[] | undefined) ?? [];
+  const read = readModuleYaml(root);
+  rejectDegradedYaml(read, 'module rename', 'text', true);
+  const yaml = read.raw!;
+  const modules = read.modules;
   const idx = modules.findIndex(m => m.id === oldName);
 
   if (idx === -1) {
@@ -359,8 +431,10 @@ export function moduleRemove(name: string | undefined): void {
     process.exit(1);
   }
 
-  const yaml = readProjectYaml(root);
-  const modules = (yaml.modules as ModuleEntry[] | undefined) ?? [];
+  const read = readModuleYaml(root);
+  rejectDegradedYaml(read, 'module remove', 'text', true);
+  const yaml = read.raw!;
+  const modules = read.modules;
   const idx = modules.findIndex(m => m.id === name);
 
   if (idx === -1) {

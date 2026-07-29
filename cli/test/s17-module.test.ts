@@ -3,7 +3,8 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
-import { moduleList, moduleAdd, moduleRename, moduleRemove } from '../src/commands/module.js';
+import { moduleList, moduleAdd, moduleRename, moduleRemove, moduleSetProductType } from '../src/commands/module.js';
+import { status } from '../src/commands/status.js';
 
 const readlineState = vi.hoisted(() => ({ answers: [] as string[] }));
 
@@ -70,7 +71,7 @@ describe('S17 Unit Tests — module commands', () => {
     expect(out).toContain('payment');
   });
 
-  it('UT-S17-03: moduleList sorts initial modules first', () => {
+  it('UT-S17-18: moduleList sorts initial modules first', () => {
     writeProjectYaml(root, {
       modules: [
         { id: 'core', name: '核心功能', lifecycle: 'launched' },
@@ -88,7 +89,7 @@ describe('S17 Unit Tests — module commands', () => {
 
   /* ---- moduleAdd ---- */
 
-  it('UT-S17-04: moduleAdd works without a guard file', () => {
+  it('UT-S17-19: moduleAdd works without a guard file', () => {
     // No guard file — should succeed without error
     const { logs, restore } = captureConsole();
     moduleAdd('newmod');
@@ -98,7 +99,7 @@ describe('S17 Unit Tests — module commands', () => {
     expect(logs.some(l => l.includes('added'))).toBe(true);
   });
 
-  it('UT-S17-04b: moduleAdd works with a guard file (no warning expected)', () => {
+  it('UT-S17-19b: moduleAdd works with a guard file (no warning expected)', () => {
     writeGuard(root);
     const { logs, restore } = captureConsole();
     moduleAdd('newmod');
@@ -109,7 +110,7 @@ describe('S17 Unit Tests — module commands', () => {
     expect(logs.join('\n')).not.toContain('Warning');
   });
 
-  it('UT-S17-05: moduleAdd appends module to yaml', () => {
+  it('UT-S17-20: moduleAdd appends module to yaml', () => {
     const { restore } = captureConsole();
     moduleAdd('payment');
     restore();
@@ -120,7 +121,7 @@ describe('S17 Unit Tests — module commands', () => {
     expect(mod.lifecycle).toBe('initial');
   });
 
-  it('UT-S17-06: moduleAdd rejects invalid name', () => {
+  it('UT-S17-21: moduleAdd rejects invalid name', () => {
     const exitSpy = mockProcessExit();
     const { errors, restore } = captureConsole();
     expect(() => moduleAdd('Invalid_Name')).toThrow();
@@ -390,5 +391,229 @@ describe('S17 Scenario Tests — module registry workflow', () => {
     expect(con.logs.join('\n')).toContain('added');
     expect(con.logs.join('\n')).toContain('Updated logos-project.yaml');
     expect(con.logs.join('\n')).toContain('removed');
+  });
+});
+
+/* ==========================================================================
+ * fix-module-cmd-yaml-error-handling（S17 EX-3.2 / EX-3.3）
+ * YAML 解析错误分层与写路径防护
+ * ========================================================================== */
+
+// 可恢复损坏：modules 段完好，infrastructure 映射块内悬空序列项（严格解析抛错，AST 可恢复 modules）
+const RECOVERABLE_BROKEN_YAML = `project:
+  name: repro
+modules:
+  - id: core
+    name: Core
+    lifecycle: launched
+  - id: admin
+    name: Admin
+    lifecycle: launched
+infrastructure:
+  production: x
+  - path: dangling.md
+`;
+
+// 不可恢复损坏：无 modules 段 + 同类语法损坏（严格解析抛错，AST 恢复不出 modules）
+const UNRECOVERABLE_BROKEN_YAML = `project:
+  name: repro
+infrastructure:
+  production: x
+  - path: dangling.md
+`;
+
+function writeRawProjectYaml(root: string, content: string) {
+  writeFileSync(join(root, 'logos', 'logos-project.yaml'), content);
+}
+
+function readRawProjectYaml(root: string): string {
+  return readFileSync(join(root, 'logos', 'logos-project.yaml'), 'utf-8');
+}
+
+function captureStd(fn: () => void): { out: string; err: string } {
+  const outChunks: string[] = [];
+  const errChunks: string[] = [];
+  const origOut = process.stdout.write.bind(process.stdout);
+  const origErr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = (chunk: unknown) => { outChunks.push(String(chunk)); return true; };
+  process.stderr.write = (chunk: unknown) => { errChunks.push(String(chunk)); return true; };
+  try {
+    fn();
+  } finally {
+    process.stdout.write = origOut;
+    process.stderr.write = origErr;
+  }
+  return { out: outChunks.join(''), err: errChunks.join('') };
+}
+
+describe('S17 Unit Tests — YAML error layering & write protection', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+  let con: ReturnType<typeof captureConsole>;
+  let exitSpy: ReturnType<typeof mockProcessExit>;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+    restoreCwd = mockCwd(root);
+    con = captureConsole();
+    exitSpy = mockProcessExit();
+    readlineState.answers = [];
+  });
+
+  afterEach(() => {
+    con.restore();
+    exitSpy.mockRestore();
+    restoreCwd();
+    cleanup();
+  });
+
+  it('UT-S17-03: 恢复态 list 返回恢复 modules + yaml_diagnostics（parse_status: recovered）', () => {
+    writeRawProjectYaml(root, RECOVERABLE_BROKEN_YAML);
+    const { out } = captureStd(() => moduleList('json'));
+    const parsed = JSON.parse(out);
+    expect(parsed.data.modules.map((m: { id: string }) => m.id)).toEqual(['core', 'admin']);
+    expect(parsed.data.yaml_diagnostics.parse_status).toBe('recovered');
+    expect(parsed.data.yaml_diagnostics.messages.length).toBeGreaterThan(0);
+  });
+
+  it('UT-S17-04: 不可恢复 yaml → 全族报 PROJECT_YAML_UNPARSABLE（绝不折叠为 MODULE_NOT_FOUND）', () => {
+    writeRawProjectYaml(root, UNRECOVERABLE_BROKEN_YAML);
+    const before = readRawProjectYaml(root);
+
+    // module list --format json
+    const { err: listErr } = captureStd(() => {
+      expect(() => moduleList('json')).toThrow('process.exit(1)');
+    });
+    const listEnv = JSON.parse(listErr);
+    expect(listEnv.error.code).toBe('PROJECT_YAML_UNPARSABLE');
+    expect(listEnv.error.message).toContain('block sequence');
+    expect(listEnv.error.code).not.toBe('MODULE_NOT_FOUND');
+
+    // module set-product-type --format json
+    const { err: setErr } = captureStd(() => {
+      expect(() => moduleSetProductType('core', 'web', 'json')).toThrow('process.exit(1)');
+    });
+    expect(JSON.parse(setErr).error.code).toBe('PROJECT_YAML_UNPARSABLE');
+
+    // 文本命令族：add / rename / remove
+    expect(() => moduleAdd('newmod')).toThrow('process.exit(1)');
+    expect(() => moduleRename('core', 'newcore')).toThrow('process.exit(1)');
+    expect(() => moduleRemove('admin')).toThrow('process.exit(1)');
+    expect(con.errors.some(e => e.includes('unparsable'))).toBe(true);
+    expect(con.errors.every(e => !e.includes('not found'))).toBe(true);
+
+    // 数据不摧毁：全程字节不变
+    expect(readRawProjectYaml(root)).toBe(before);
+  });
+
+  it('UT-S17-05: 降级态写命令拒绝写回（PROJECT_YAML_DEGRADED_WRITE_REFUSED），文件字节不变', () => {
+    writeRawProjectYaml(root, RECOVERABLE_BROKEN_YAML);
+    const before = readRawProjectYaml(root);
+
+    const { err: setErr } = captureStd(() => {
+      expect(() => moduleSetProductType('core', 'web', 'json')).toThrow('process.exit(1)');
+    });
+    expect(JSON.parse(setErr).error.code).toBe('PROJECT_YAML_DEGRADED_WRITE_REFUSED');
+
+    expect(() => moduleAdd('newmod')).toThrow('process.exit(1)');
+    expect(() => moduleRename('core', 'newcore')).toThrow('process.exit(1)');
+    expect(() => moduleRemove('admin')).toThrow('process.exit(1)');
+    expect(con.errors.some(e => e.includes('Fix the YAML syntax before modifying modules'))).toBe(true);
+
+    expect(readRawProjectYaml(root)).toBe(before);
+  });
+
+  it('UT-S17-06: MODULE_NOT_FOUND 语义收窄——仅健康 yaml 且 id 确实不存在时使用', () => {
+    writeProjectYaml(root, {
+      modules: [{ id: 'core', name: '核心', lifecycle: 'launched' }],
+    });
+    const { err } = captureStd(() => {
+      expect(() => moduleSetProductType('ghost', 'web', 'json')).toThrow('process.exit(1)');
+    });
+    expect(JSON.parse(err).error.code).toBe('MODULE_NOT_FOUND');
+  });
+});
+
+describe('S17 Scenario Tests — YAML 损坏错误分层', () => {
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+  let con: ReturnType<typeof captureConsole>;
+  let exitSpy: ReturnType<typeof mockProcessExit>;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    scaffoldProject(root);
+    restoreCwd = mockCwd(root);
+    con = captureConsole();
+    exitSpy = mockProcessExit();
+    readlineState.answers = [];
+  });
+
+  afterEach(() => {
+    con.restore();
+    exitSpy.mockRestore();
+    restoreCwd();
+    cleanup();
+  });
+
+  it('ST-S17-02: 坏 yaml 上 module 族错误分层（可恢复/不可恢复两态，全程字节不变）', () => {
+    // 可恢复态
+    writeRawProjectYaml(root, RECOVERABLE_BROKEN_YAML);
+    const recoverableBefore = readRawProjectYaml(root);
+
+    const { out: listOut } = captureStd(() => moduleList('json'));
+    const listParsed = JSON.parse(listOut);
+    expect(listParsed.data.modules.map((m: { id: string }) => m.id)).toContain('core');
+    expect(listParsed.data.yaml_diagnostics.parse_status).toBe('recovered');
+
+    const { err: setErr } = captureStd(() => {
+      expect(() => moduleSetProductType('core', 'web', 'json')).toThrow('process.exit(1)');
+    });
+    expect(JSON.parse(setErr).error.code).toBe('PROJECT_YAML_DEGRADED_WRITE_REFUSED');
+
+    expect(() => moduleAdd('x')).toThrow('process.exit(1)');
+    expect(readRawProjectYaml(root)).toBe(recoverableBefore);
+
+    // 不可恢复态
+    writeRawProjectYaml(root, UNRECOVERABLE_BROKEN_YAML);
+    const unrecoverableBefore = readRawProjectYaml(root);
+
+    const { err: listErr } = captureStd(() => {
+      expect(() => moduleList('json')).toThrow('process.exit(1)');
+    });
+    expect(JSON.parse(listErr).error.code).toBe('PROJECT_YAML_UNPARSABLE');
+
+    const { err: setErr2 } = captureStd(() => {
+      expect(() => moduleSetProductType('core', 'web', 'json')).toThrow('process.exit(1)');
+    });
+    expect(JSON.parse(setErr2).error.code).toBe('PROJECT_YAML_UNPARSABLE');
+
+    expect(readRawProjectYaml(root)).toBe(unrecoverableBefore);
+  });
+
+  it('ST-S17-03: 与 status 读取口径一致（status 可见的模块，module 族必须可见）', () => {
+    writeRawProjectYaml(root, RECOVERABLE_BROKEN_YAML);
+
+    const logsBefore = con.logs.length;
+    status('json');
+    const statusOut = con.logs.slice(logsBefore).find(l => l.startsWith('{"command":"status"'));
+    expect(statusOut).toBeDefined();
+    const statusParsed = JSON.parse(statusOut!);
+    const statusIds = (statusParsed.data.modules ?? []).map((m: { id: string }) => m.id).sort();
+
+    const { out: listOut } = captureStd(() => moduleList('json'));
+    const listIds = JSON.parse(listOut).data.modules.map((m: { id: string }) => m.id).sort();
+
+    expect(statusIds.length).toBeGreaterThan(0);
+    expect(listIds).toEqual(statusIds);
+
+    // status 判定缺 product_type 的模块，module 族必须可见（死锁消解的读取侧前提）
+    const missing = statusParsed.data.product_type_confirmation?.missing_module_ids ?? [];
+    for (const id of missing) {
+      expect(listIds).toContain(id);
+    }
   });
 });

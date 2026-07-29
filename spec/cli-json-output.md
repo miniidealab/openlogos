@@ -1301,6 +1301,26 @@ openlogos module list --format json  # JSON 格式
 
 > 若项目未注册任何模块，`modules` 为空数组 `[]`，不报错。
 
+### 7.4 `logos-project.yaml` 受损时的错误分层（fix-module-cmd-yaml-error-handling）
+
+`module` 命令族（list / add / rename / remove / set-product-type）读取 `logos-project.yaml` 统一走 `lib/project-yaml` 的恢复读取路径（严格解析失败时 AST 恢复 + `yaml_diagnostics`），与 `status` / `next` 同一口径。**禁止**把解析异常静默折叠为空模块清单。
+
+**恢复态（`parse_status: "recovered"`，AST 恢复出 modules）**：
+
+- `module list --format json`：正常返回恢复出的 modules，`data` 新增**可选字段 `yaml_diagnostics`**（结构与 `status` 的同名字段一致：`{ parse_status, messages }`）。健康 yaml 下该键**整体省略**——既有 golden 零漂移。
+- 写命令（add / rename / remove / set-product-type）：**拒绝写回**，报错误码 `PROJECT_YAML_DEGRADED_WRITE_REFUSED`（通用错误 envelope，stderr、非零退出）。AST 恢复只保证恢复部分字段，序列化恢复态会把未恢复字段静默丢弃，故不写回。
+
+**不可恢复（`parse_status: "error"`，恢复不出 modules）**：
+
+- 全族命令报错误码 `PROJECT_YAML_UNPARSABLE`，`message` 附解析器原始错误与行号；**绝不**折叠为 `MODULE_NOT_FOUND`。
+
+**数据不摧毁不变量**：上述任一降级 / 错误分支**零写入**——命令执行前后 `logos-project.yaml` 文件字节不变。
+
+| 错误码 | 说明 |
+|--------|------|
+| `PROJECT_YAML_UNPARSABLE` | `logos-project.yaml` 解析失败且 AST 恢复不出 `modules`；`message` 含解析器原始错误与行号 |
+| `PROJECT_YAML_DEGRADED_WRITE_REFUSED` | 读取走了 AST 恢复路径（降级态），写命令拒绝把恢复态序列化写回；提示先修复 yaml 语法 |
+
 ---
 
 ## 8. 完整用法示例
@@ -2109,8 +2129,10 @@ no-delta merge 写入的 `SPEC_MERGED` 建议为：
 | 错误码 | 说明 |
 |--------|------|
 | `INVALID_PRODUCT_TYPE` | `<enum>` 非合法枚举；`message` **必须列出全部合法枚举**（`web`/`desktop`/`mobile`/`cli`/`api`/`library`/`skills`）|
-| `MODULE_NOT_FOUND` | `<module-id>` 不在 `logos-project.yaml` 的 `modules[]` |
+| `MODULE_NOT_FOUND` | `<module-id>` 不在 `logos-project.yaml` 的 `modules[]`。**语义收窄（fix-module-cmd-yaml-error-handling）**：仅在「yaml 正常解析或已恢复出 modules，且 modules 中确实没有该 id」时使用；yaml 解析失败一律走 `PROJECT_YAML_UNPARSABLE` / `PROJECT_YAML_DEGRADED_WRITE_REFUSED`（见 §7.4），禁止折叠 |
 | `MISSING_ARGUMENT` | 缺 `<module-id>` 或 `<enum>`（usage error），`message` 含用法串 |
+| `PROJECT_YAML_UNPARSABLE` | `logos-project.yaml` 解析失败且 AST 恢复不出 `modules`（见 §7.4） |
+| `PROJECT_YAML_DEGRADED_WRITE_REFUSED` | 读取走了 AST 恢复路径（降级态），拒绝写回（见 §7.4） |
 
 **非法枚举错误示例**：
 
