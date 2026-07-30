@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.20] - 2026-07-29
+
+> 本版本是 v0.13.6 之后的首个正式发布：0.13.7–0.13.19 期间的内部迭代（含已记录在 0.13.10 / 0.13.11 条目中的内容）随本版本一并首次发布到 npm / GitHub Release / 官网。
+
+### Fixed
+
+- **`module` 命令族 YAML 解析错误分层与写路径防护（fix-module-cmd-yaml-error-handling）** — 修复 `module` 命令族本地读取静默吞掉 `logos-project.yaml` 解析错误、把任意模块误报为 `MODULE_NOT_FOUND` 的缺陷（此前造成「`status` 恢复出 modules 要求 set-product-type、而 set-product-type 报模块不存在」的死锁，RunLogos 产品形态弹窗在坏 yaml 项目上结构性必败）：
+  - **统一读取路径**：`module` 全族（list / add / rename / remove / set-product-type）改用 `lib/project-yaml` 的 AST 恢复读取，与 `status` / `next` 同一口径。
+  - **错误分层**：解析失败且不可恢复 → 新错误码 `PROJECT_YAML_UNPARSABLE`（附解析器原始错误与行号）；`MODULE_NOT_FOUND` 收窄为「yaml 可读且 id 确实不存在」；恢复态 `module list` 返回恢复出的 modules 并在 envelope 附可选 `yaml_diagnostics`。
+  - **写路径防护（数据不摧毁）**：降级态写命令一律拒绝写回（新错误码 `PROJECT_YAML_DEGRADED_WRITE_REFUSED`），根除「坏 yaml 上 `module add` 把整个 `logos-project.yaml` 清空」的数据摧毁隐患；任何降级/错误分支执行前后文件字节不变。
+
+### Added
+
+- **存量项目逆向建种子基线（S33，brownfield-adopter 系列）** — `openlogos adopt` 接入存量项目后由 AI driver 逆向扫描建立现状基线；`openlogos baseline-seed` 作为 CLI 唯一写入入口（两阶段 staging + commit journal 崩溃一致性 + 模块级事务锁）；provenance 权威载体为文档内具名章节，覆盖率按 tombstone 分母法纯计数。
+- **status / next 机器契约自描述（contract-self-description）** — JSON 响应新增 `contract.version` 版本握手、`step_meta`、结构化 facts，供 RunLogos 等机器消费方稳定解析。
+- **GUI 项目提案阶段前置 UI/UX 原型（proposal-ui-ux-first）** — GUI 产品项目在 plan 门前由 change-writer 调用 ui-ux-pro-max 产出页面原型，批准提案时连界面一起确认；`module set-product-type` / `module add [product-type]` 维护模块级 `product_type`（含 `service` 枚举）。
+- **`openlogos change-lint` 计划产物左移硬检查（S35，change-lint-shift-left）** — 提案/tasks/delta 的七项结构与证据机器硬门（L1–L7），exit 0 才可交付；change-writer / slice-planner 的交付自检升格为机器门。
+- **feature 功能分组系列收尾** — `feature-backfill` 纳入逆向候选（brownfield）、回填去重已登记场景、provenance 扫描 alias-aware canonical 重算、baseline-seed legacy 缺省语义三入口统一。
+
+### Changed
+
+- **逆向基线确认与覆盖率简化（drop-baseline-confirmation / drop-coverage-human-verified / plain-baseline-guidance）** — 删除逆向基线人工确认概念，覆盖率退化为纯逆向候选计数（`human_verified` / `coverage` 字段删除）；`status` / `next` 人读引导语不再展示覆盖率行与 `tombstone` 等内部记账概念（JSON 机器字段不变）。
+- **F01 场景文档一致性深化（deepen-f01-scenarios）** — 项目初始化与接入相关场景文档口径统一。
+
 ## [0.13.11] - 2026-07-20
 
 ### Added
@@ -783,7 +807,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.6...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.20...HEAD
+[0.13.20]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.20
 [0.13.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.6
 [0.13.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.5
 [0.13.4]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.4
