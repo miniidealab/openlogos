@@ -1,0 +1,3 @@
+{"gate_id":"plan-exit","proposal_step":"ready-to-delta","timestamp":"2026-07-31T05:56:22.384Z"}
+{"gate_id":"spec-exit","proposal_step":"ready-to-merge","timestamp":"2026-07-31T06:33:26.710Z"}
+{"gate_id":"slice-exit","proposal_step":"ready-to-implement","timestamp":"2026-07-31T06:39:01.386Z"}
