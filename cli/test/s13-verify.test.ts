@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, lstatSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
 import {
   parseJsonl,
@@ -19,6 +19,12 @@ import {
   type AcTraceEntry,
 } from '../src/commands/verify.js';
 import { readVerifyConfig } from '../src/lib/verify-config.js';
+import {
+  runSandboxedCommand,
+  isDependencyExemptPath,
+  detectRuntimeWriteProtection,
+  DEPENDENCY_DIR_EXEMPT_INFO,
+} from '../src/lib/sandbox.js';
 import { checkSmokeCoverage, extractChangedSmokeIds } from '../src/lib/smoke-coverage.js';
 import { deriveAutomationDiagnostic } from '../src/lib/automation-diagnostic.js';
 import { next } from '../src/commands/next.js';
@@ -1512,5 +1518,474 @@ describe('S13 — parseStrictTimestampMs 严格性（code review F1）', () => {
     const data = collectVerifyData(root);
     expect(data.gate.result).toBe('PASS'); // 整组退回行序 last-wins → 末行 pass 生效（不做时区猜测）
     cleanup();
+  });
+});
+
+/* ========== Sandbox dependency-dir exemption & runtime write protection (fix-sandbox-node-modules-write-audit) ========== */
+
+describe('S13 Sandbox — dependency-dir exemption & runtime write protection', () => {
+  const wp = detectRuntimeWriteProtection();
+  let origin: string;
+  let cleanupOrigin: () => void;
+  let sandboxBase: string;
+  let cleanupSandboxBase: () => void;
+
+  beforeEach(() => {
+    ({ root: origin, cleanup: cleanupOrigin } = makeTempRoot());
+    ({ root: sandboxBase, cleanup: cleanupSandboxBase } = makeTempRoot());
+  });
+
+  afterEach(() => {
+    cleanupOrigin();
+    cleanupSandboxBase();
+  });
+
+  function run(mode: 'auto' | 'always', command: string, allowed: string[] = ['logos/resources/verify/test-results.jsonl']) {
+    return runSandboxedCommand({
+      root: origin,
+      command,
+      format: 'json',
+      sandbox: { mode, root: sandboxBase, denyWorkspaceWrite: true },
+      allowedWritePaths: allowed,
+    });
+  }
+
+  function writeScript(name: string, body: string): string {
+    writeFileSync(join(origin, name), body);
+    return `node ${name}`;
+  }
+
+  it.skipIf(!wp.available)('UT-S13-47: always 模式下仅写 node_modules 不判非白名单，豁免说明走 infos 通道', () => {
+    mkdirSync(join(origin, 'node_modules/.bin'), { recursive: true });
+    const command = writeScript('prep.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('node_modules/.bin/fresh-shim','x');",
+      "fs.mkdirSync('logos/resources/verify',{recursive:true});",
+      "fs.writeFileSync('logos/resources/verify/test-results.jsonl','');",
+    ].join('\n'));
+
+    const res = run('always', command);
+
+    expect(res.command.status).toBe('pass');
+    expect(res.sandbox.status).toBe('pass');
+    expect(res.sandbox.isolated).toBe(true);
+    expect(res.sandbox.infos).toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    expect(res.sandbox.diagnostics.join('\n')).not.toContain('非白名单');
+    expect(res.sandbox.diagnostics.join('\n')).not.toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    // 白名单结果文件回收；node_modules 写入不回收
+    expect(existsSync(join(origin, 'logos/resources/verify/test-results.jsonl'))).toBe(true);
+    expect(existsSync(join(origin, 'node_modules/.bin/fresh-shim'))).toBe(false);
+  });
+
+  it('UT-S13-48: 精确段匹配边界——近似名称不豁免、分隔符归一、豁免外 auto 仍 warn', () => {
+    // 匹配规则单元断言（含 Windows 分隔符归一化）
+    expect(isDependencyExemptPath('node_modules/.bin/x')).toBe(true);
+    expect(isDependencyExemptPath('packages/a/node_modules/y')).toBe(true);
+    expect(isDependencyExemptPath('node_modules\\.bin\\x')).toBe(true);
+    expect(isDependencyExemptPath('src\\node_modules-cache\\evil.txt')).toBe(false);
+    expect(isDependencyExemptPath('src/node_modules-cache/evil.txt')).toBe(false);
+    expect(isDependencyExemptPath('vendor/my-node_modules/data')).toBe(false);
+    expect(isDependencyExemptPath('node_modules.txt')).toBe(false);
+
+    mkdirSync(join(origin, 'node_modules'), { recursive: true });
+    const command = writeScript('near-miss.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('node_modules/exempt.txt','x');",
+      "fs.mkdirSync('src/node_modules-cache',{recursive:true});",
+      "fs.writeFileSync('src/node_modules-cache/evil.txt','x');",
+      "fs.mkdirSync('vendor/my-node_modules',{recursive:true});",
+      "fs.writeFileSync('vendor/my-node_modules/data','x');",
+      "fs.writeFileSync('node_modules.txt','x');",
+      "fs.writeFileSync('src-evil.txt','x');",
+    ].join('\n'));
+
+    const res = run('auto', command);
+    expect(res.sandbox.status).toBe('warn');
+    const diag = res.sandbox.diagnostics.join('\n');
+    expect(diag).toContain('非白名单写入');
+    expect(diag).toContain('src/node_modules-cache/evil.txt');
+    expect(diag).toContain('vendor/my-node_modules/data');
+    expect(diag).toContain('node_modules.txt');
+    expect(diag).not.toContain('node_modules/exempt.txt');
+    expect(res.sandbox.suggestions.join('\n')).toContain('always');
+  });
+
+  it.skipIf(!wp.available)('UT-S13-48: always 模式下近似名称写入仍 FAIL（回归）', () => {
+    mkdirSync(join(origin, 'node_modules'), { recursive: true });
+    const command = writeScript('near-miss-always.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('node_modules/exempt.txt','x');",
+      "fs.mkdirSync('src/node_modules-cache',{recursive:true});",
+      "fs.writeFileSync('src/node_modules-cache/evil.txt','x');",
+    ].join('\n'));
+
+    const res = run('always', command);
+    expect(res.command.status).toBe('fail');
+    expect(res.sandbox.status).toBe('fail');
+    const diag = res.sandbox.diagnostics.join('\n');
+    expect(diag).toContain('src/node_modules-cache/evil.txt');
+    expect(diag).not.toContain('node_modules/exempt.txt');
+  });
+
+  it.skipIf(!wp.available)('UT-S13-49: monorepo 嵌套 node_modules 同样豁免（完整段相等，非根前缀）', () => {
+    mkdirSync(join(origin, 'packages/a/node_modules/.bin'), { recursive: true });
+    const command = writeScript('nested.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('packages/a/node_modules/.bin/shim','x');",
+    ].join('\n'));
+
+    const res = run('always', command);
+    expect(res.command.status).toBe('pass');
+    expect(res.sandbox.status).toBe('pass');
+    expect(res.sandbox.diagnostics.join('\n')).not.toContain('非白名单');
+    // 嵌套形态同样必须产生固定信息级说明，且不进问题诊断（§2.9 可观测性契约）
+    expect(res.sandbox.infos).toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    expect(res.sandbox.diagnostics.join('\n')).not.toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+  });
+
+  it.skipIf(!wp.available)('UT-S13-50: 内部相对 symlink 保持相对语义，穿透写入不落原 workspace', () => {
+    mkdirSync(join(origin, 'packages/pkg'), { recursive: true });
+    writeFileSync(join(origin, 'packages/pkg/f.txt'), 'real');
+    mkdirSync(join(origin, 'node_modules'), { recursive: true });
+    symlinkSync('../packages/pkg', join(origin, 'node_modules/pkg'));
+    const command = writeScript('through-link.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('node_modules/pkg/through.txt','x');",
+    ].join('\n'));
+
+    const res = run('always', command);
+    expect(res.sandbox.isolated).toBe(true);
+    // 原 workspace 字节不变：写入只发生在沙箱副本
+    expect(existsSync(join(origin, 'packages/pkg/through.txt'))).toBe(false);
+    expect(readFileSync(join(origin, 'packages/pkg/f.txt'), 'utf-8')).toBe('real');
+    // 链接保持相对语义的直接证据：穿透写入物理落在沙箱副本的 packages/pkg（快照 diff 只扫沙箱），
+    // 而非被 cpSync 默认语义改写为原 workspace 绝对路径后写回原目录
+    expect(res.sandbox.diagnostics.join('\n')).toContain('packages/pkg/through.txt');
+  });
+
+  it('UT-S13-51: 启动前逃逸 symlink 按无法隔离处理，不静默豁免', () => {
+    const outside = makeTempRoot();
+    try {
+      mkdirSync(join(origin, 'node_modules'), { recursive: true });
+      symlinkSync(outside.root, join(origin, 'node_modules/escape'));
+      const command = writeScript('noop.js', 'process.exit(0);');
+
+      const always = run('always', command);
+      expect(always.command.status).toBe('fail');
+      expect(always.command.error).toContain('escaping symlinks');
+      expect(always.sandbox.status).toBe('fail');
+      expect(always.sandbox.diagnostics.join('\n')).toContain('node_modules/escape');
+
+      const auto = run('auto', command);
+      expect(auto.sandbox.isolated).toBe(false);
+      expect(auto.sandbox.status).toBe('warn');
+      expect(auto.sandbox.diagnostics.join('\n')).toContain('逃逸');
+    } finally {
+      outside.cleanup();
+    }
+  });
+
+  it.skipIf(!wp.available)('UT-S13-52: 白名单结果文件位于 node_modules 下仍被定点采集回收', () => {
+    mkdirSync(join(origin, 'node_modules'), { recursive: true });
+    const command = writeScript('nm-result.js', [
+      "const fs=require('fs');",
+      "fs.mkdirSync('node_modules/.cache/openlogos',{recursive:true});",
+      "fs.writeFileSync('node_modules/.cache/openlogos/test-results.jsonl','{\"id\":\"UT-X\",\"status\":\"pass\"}\\n');",
+    ].join('\n'));
+
+    const res = run('always', command, ['node_modules/.cache/openlogos/test-results.jsonl']);
+    expect(res.command.status).toBe('pass');
+    expect(res.sandbox.status).toBe('pass');
+    expect(res.sandbox.diagnostics.join('\n')).not.toContain('非白名单');
+    // 定点采集：结果文件回收到原 workspace 对应路径
+    expect(existsSync(join(origin, 'node_modules/.cache/openlogos/test-results.jsonl'))).toBe(true);
+  });
+
+  it.skipIf(!wp.available)('UT-S13-53: 运行期新建绝对逃逸 symlink 后写入被写保护阻断，原 workspace 零改动', () => {
+    mkdirSync(join(origin, 'packages/data'), { recursive: true });
+    writeFileSync(join(origin, 'packages/data/sentinel.txt'), 'sentinel');
+    mkdirSync(join(origin, 'node_modules'), { recursive: true });
+    const command = writeScript('runtime-escape.js', [
+      "const fs=require('fs');",
+      `fs.symlinkSync(${JSON.stringify(origin)},'node_modules/esc');`,
+      "fs.writeFileSync('node_modules/esc/evil.txt','x');",
+    ].join('\n'));
+
+    const always = run('always', command);
+    expect(always.command.status).toBe('fail');
+    expect(existsSync(join(origin, 'evil.txt'))).toBe(false);
+    expect(readFileSync(join(origin, 'packages/data/sentinel.txt'), 'utf-8')).toBe('sentinel');
+
+    const auto = run('auto', command);
+    expect(auto.command.status).toBe('fail');
+    expect(existsSync(join(origin, 'evil.txt'))).toBe(false);
+    expect(readFileSync(join(origin, 'packages/data/sentinel.txt'), 'utf-8')).toBe('sentinel');
+  });
+
+  it.skipIf(!wp.available)('UT-S13-54: 运行期 retarget 内部链接指向原 workspace 后写入被写保护阻断', () => {
+    mkdirSync(join(origin, 'packages/pkg'), { recursive: true });
+    writeFileSync(join(origin, 'packages/pkg/f.txt'), 'real');
+    mkdirSync(join(origin, 'node_modules'), { recursive: true });
+    symlinkSync('../packages/pkg', join(origin, 'node_modules/pkg'));
+    const command = writeScript('retarget.js', [
+      "const fs=require('fs');",
+      "fs.rmSync('node_modules/pkg',{force:true});",
+      `fs.symlinkSync(${JSON.stringify(origin)},'node_modules/pkg');`,
+      "fs.writeFileSync('node_modules/pkg/evil.txt','x');",
+    ].join('\n'));
+
+    const res = run('always', command);
+    expect(res.command.status).toBe('fail');
+    expect(existsSync(join(origin, 'evil.txt'))).toBe(false);
+    expect(existsSync(join(origin, 'packages/pkg/evil.txt'))).toBe(false);
+    expect(readFileSync(join(origin, 'packages/pkg/f.txt'), 'utf-8')).toBe('real');
+  });
+
+  it('UT-S13-55: 运行期写保护不可用时按能力分层处理（always FAIL / auto warn 披露残留风险）', () => {
+    const prev = process.env.OPENLOGOS_SANDBOX_WRITE_PROTECTION;
+    process.env.OPENLOGOS_SANDBOX_WRITE_PROTECTION = 'off';
+    try {
+      const command = writeScript('noop-wp.js', 'process.exit(0);');
+
+      const always = run('always', command);
+      expect(always.command.status).toBe('fail');
+      expect(always.command.error).toContain('runtime write protection');
+      expect(always.sandbox.status).toBe('fail');
+      expect(always.sandbox.diagnostics.join('\n')).toContain('无法启用运行期写保护');
+
+      const auto = run('auto', command);
+      expect(auto.command.status).toBe('pass');
+      expect(auto.sandbox.isolated).toBe(true);
+      expect(auto.sandbox.status).toBe('warn');
+      expect(auto.sandbox.diagnostics.join('\n')).toContain('无法启用运行期写保护');
+    } finally {
+      if (prev === undefined) delete process.env.OPENLOGOS_SANDBOX_WRITE_PROTECTION;
+      else process.env.OPENLOGOS_SANDBOX_WRITE_PROTECTION = prev;
+    }
+  });
+  it.skipIf(!wp.available)('internal-copyback-symlink-result: 白名单路径被做成逃逸 symlink 时拒绝回收', () => {
+    mkdirSync(join(origin, 'logos/resources/verify'), { recursive: true });
+    writeFileSync(join(origin, 'victim.txt'), 'sentinel');
+    const command = writeScript('plant-link.js', [
+      "const fs=require('fs');",
+      "fs.mkdirSync('logos/resources/verify',{recursive:true});",
+      `fs.symlinkSync(${JSON.stringify(join(origin, 'victim.txt'))},'logos/resources/verify/test-results.jsonl');`,
+    ].join('\n'));
+
+    const res = run('always', command);
+    // 回收校验拒绝 symlink 源：always 下判失败，且原 workspace 零污染
+    expect(res.sandbox.diagnostics.join('\n')).toContain('白名单回收校验未通过');
+    expect(res.sandbox.status).toBe('fail');
+    expect(res.command.status).toBe('fail');
+    expect(readFileSync(join(origin, 'victim.txt'), 'utf-8')).toBe('sentinel');
+    const planted = join(origin, 'logos/resources/verify/test-results.jsonl');
+    if (existsSync(planted)) {
+      // 若存在必须不是 symlink（未被植入链接）
+      expect(lstatSync(planted).isSymbolicLink()).toBe(false);
+    }
+  });
+
+  it.skipIf(!wp.available)('internal-copyback-traversal: 含 .. 的白名单路径被拒绝，不得穿越到 workspace 之外', () => {
+    const escapedTarget = resolve(origin, '..', 'outside-escape-probe', 'result.txt');
+    const command = writeScript('traversal.js', [
+      "const fs=require('fs');",
+      "fs.mkdirSync('../outside-escape-probe',{recursive:true});",
+      "fs.writeFileSync('../outside-escape-probe/result.txt','escaped-always');",
+    ].join('\n'));
+
+    const res = run('always', command, ['../outside-escape-probe/result.txt']);
+    expect(res.sandbox.diagnostics.join('\n')).toContain('白名单回收校验未通过');
+    expect(res.sandbox.status).toBe('fail');
+    // 真实 workspace 父目录不得出现穿越产物
+    expect(existsSync(escapedTarget)).toBe(false);
+  });
+
+  it.skipIf(!wp.available)('internal-copyback-parent-symlink: 回收目标父链含 symlink 时拒绝回收', () => {
+    mkdirSync(join(origin, 'real'), { recursive: true });
+    symlinkSync('real', join(origin, 'linkdir'));
+    const command = writeScript('parent-link.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('linkdir/result.txt','x');",
+    ].join('\n'));
+
+    const res = run('auto', command, ['linkdir/result.txt']);
+    expect(res.sandbox.diagnostics.join('\n')).toContain('回收目标父链含 symlink');
+    expect(existsSync(join(origin, 'real/result.txt'))).toBe(false);
+    expect(existsSync(join(origin, 'linkdir/result.txt'))).toBe(false);
+  });
+
+  it.skipIf(!wp.available)('internal-copyback-zero-change-on-always-fail: 审计 FAIL 时不回收任何对象', () => {
+    mkdirSync(join(origin, 'logos/resources/verify'), { recursive: true });
+    const command = writeScript('fail-audit.js', [
+      "const fs=require('fs');",
+      "fs.mkdirSync('src',{recursive:true});",
+      "fs.writeFileSync('src/evil.txt','x');",
+      "fs.mkdirSync('logos/resources/verify',{recursive:true});",
+      "fs.writeFileSync('logos/resources/verify/test-results.jsonl','{\"id\":\"UT-X\",\"status\":\"pass\"}');",
+    ].join('\n'));
+
+    const res = run('always', command);
+    expect(res.sandbox.status).toBe('fail');
+    // always 已判非白名单失败：原 workspace 保持零变化，结果文件不回收
+    expect(existsSync(join(origin, 'logos/resources/verify/test-results.jsonl'))).toBe(false);
+    expect(existsSync(join(origin, 'src/evil.txt'))).toBe(false);
+  });
+
+  it.skipIf(!wp.available)('internal-copyback-tmpleaf-symlink: 预置可预测临时名 symlink 不得改写非白名单文件', () => {
+    // 攻击面：旧实现临时名固定为 <dest>.<pid>.olcbtmp 且 copyFileSync 跟随该叶节点 symlink
+    writeFileSync(join(origin, 'victim.txt'), 'sentinel');
+    symlinkSync('victim.txt', join(origin, `result.txt.${process.pid}.olcbtmp`));
+    const command = writeScript('write-result.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('result.txt','fresh-result');",
+    ].join('\n'));
+
+    const res = run('always', command, ['result.txt']);
+    expect(res.command.status).toBe('pass');
+    expect(res.sandbox.status).toBe('pass');
+    // 非白名单哨兵字节不变；结果落盘为普通文件而非 symlink
+    expect(readFileSync(join(origin, 'victim.txt'), 'utf-8')).toBe('sentinel');
+    expect(lstatSync(join(origin, 'result.txt')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(origin, 'result.txt'), 'utf-8')).toBe('fresh-result');
+    // 预置链接本身保持原样（未被跟随写入、未被删除）
+    expect(lstatSync(join(origin, `result.txt.${process.pid}.olcbtmp`)).isSymbolicLink()).toBe(true);
+  });
+
+  it.skipIf(!wp.available)('internal-copyback-tmp-collision: 同名普通文件不被回收临时文件覆盖', () => {
+    writeFileSync(join(origin, `result.txt.${process.pid}.olcbtmp`), 'user-data');
+    const command = writeScript('write-result-2.js', [
+      "const fs=require('fs');",
+      "fs.writeFileSync('result.txt','fresh-result');",
+    ].join('\n'));
+
+    const res = run('always', command, ['result.txt']);
+    expect(res.command.status).toBe('pass');
+    // 用户同名文件不被覆盖或删除；结果正常回收
+    expect(readFileSync(join(origin, `result.txt.${process.pid}.olcbtmp`), 'utf-8')).toBe('user-data');
+    expect(readFileSync(join(origin, 'result.txt'), 'utf-8')).toBe('fresh-result');
+  });
+
+  it.skipIf(!wp.available)('internal-relative-sandbox-root-outside: 相对 sandbox_root（项目根外）解析为绝对路径后正常隔离', () => {
+    const command = writeScript('rel-root-ok.js', [
+      "const fs=require('fs');",
+      "fs.mkdirSync('logos/resources/verify',{recursive:true});",
+      "fs.writeFileSync('logos/resources/verify/test-results.jsonl','');",
+    ].join('\n'));
+
+    const res = runSandboxedCommand({
+      root: origin,
+      command,
+      format: 'json',
+      sandbox: { mode: 'always', root: '../rel-sandbox-base', denyWorkspaceWrite: true },
+      allowedWritePaths: ['logos/resources/verify/test-results.jsonl'],
+    });
+    // 保护器建立不得被误报为用户命令失败：命令 pass、sandbox pass、结果回收
+    expect(res.command.status).toBe('pass');
+    expect(res.sandbox.status).toBe('pass');
+    expect(res.sandbox.isolated).toBe(true);
+    expect(existsSync(join(origin, 'logos/resources/verify/test-results.jsonl'))).toBe(true);
+    rmSync(resolve(origin, '..', 'rel-sandbox-base'), { recursive: true, force: true });
+  });
+
+  it('internal-relative-sandbox-root-inside: sandbox_root 落在 workspace 内时按无法隔离处理而非伪装命令失败', () => {
+    const command = writeScript('rel-root-inside.js', 'process.exit(0);');
+
+    const auto = runSandboxedCommand({
+      root: origin,
+      command,
+      format: 'json',
+      sandbox: { mode: 'auto', root: 'sandboxes', denyWorkspaceWrite: true },
+      allowedWritePaths: [],
+    });
+    // 自拷贝失败归因于沙箱建立：降级执行 + warn，而不是 sandbox pass + 命令失败
+    expect(auto.sandbox.isolated).toBe(false);
+    expect(auto.sandbox.status).toBe('warn');
+    expect(auto.sandbox.diagnostics.join('\n')).toContain('无法启用沙箱');
+    expect(auto.command.status).toBe('pass');
+
+    const always = runSandboxedCommand({
+      root: origin,
+      command,
+      format: 'json',
+      sandbox: { mode: 'always', root: 'sandboxes', denyWorkspaceWrite: true },
+      allowedWritePaths: [],
+    });
+    expect(always.command.status).toBe('fail');
+    expect(always.command.error).toContain('setup failed');
+    expect(always.sandbox.status).toBe('fail');
+  });
+
+});
+
+describe('S13 Scenario — pnpm 依赖修复式写入在 always 沙箱下 verify PASS', () => {
+  const wp = detectRuntimeWriteProtection();
+  let root: string;
+  let cleanup: () => void;
+  let restoreCwd: () => void;
+  let con: ReturnType<typeof captureConsole>;
+  let exitSpy: ReturnType<typeof mockProcessExit>;
+  let sandboxBase: string;
+  let cleanupSandboxBase: () => void;
+
+  beforeEach(() => {
+    ({ root, cleanup } = makeTempRoot());
+    ({ root: sandboxBase, cleanup: cleanupSandboxBase } = makeTempRoot());
+    scaffoldProject(root, { locale: 'en' });
+    restoreCwd = mockCwd(root);
+    con = captureConsole();
+    exitSpy = mockProcessExit();
+  });
+
+  afterEach(() => {
+    con.restore();
+    exitSpy.mockRestore();
+    restoreCwd();
+    cleanupSandboxBase();
+    cleanup();
+  });
+
+  it.skipIf(!wp.available)('ST-S13-14: 模拟 pnpm 依赖修复式写入的项目在 always 沙箱下 verify PASS', () => {
+    writeFileSync(join(root, 'logos/resources/test', 'S99-test-cases.md'), '| UT-S99-01 | d |\n| ST-S99-01 | d |\n');
+    mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
+    writeFileSync(join(root, 'node_modules/.bin/tsc'), 'old-shim');
+    writeFileSync(join(root, 'prerun.js'), [
+      "const fs=require('fs');",
+      "fs.writeFileSync('node_modules/.bin/tsc','repaired-shim');",
+      "fs.writeFileSync('node_modules/.bin/new-shim','x');",
+      "fs.mkdirSync('logos/resources/verify',{recursive:true});",
+      "fs.writeFileSync('logos/resources/verify/test-results.jsonl','{\"id\":\"UT-S99-01\",\"status\":\"pass\"}\\n{\"id\":\"ST-S99-01\",\"status\":\"pass\"}\\n');",
+    ].join('\n'));
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.verify = {
+      ...config.verify,
+      sandbox_mode: 'always',
+      sandbox_root: sandboxBase,
+      pre_run_command: 'node prerun.js',
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    verify('json');
+
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.sandbox.isolated).toBe(true);
+    expect(parsed.data.sandbox.status).toBe('pass');
+    expect(parsed.data.sandbox.infos).toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    expect(parsed.data.sandbox.diagnostics.join('\n')).not.toContain('非白名单');
+    // 豁免说明不得进入 pre_run.diagnostics
+    expect(parsed.data.pre_run.diagnostics.join('\n')).not.toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    // 结果与报告正常生成；node_modules 变更不回收
+    expect(existsSync(join(root, 'logos/resources/verify/acceptance-report.md'))).toBe(true);
+    expect(readFileSync(join(root, 'node_modules/.bin/tsc'), 'utf-8')).toBe('old-shim');
+    expect(existsSync(join(root, 'node_modules/.bin/new-shim'))).toBe(false);
+
+    // 文本输出：豁免说明以 ℹ️ 渲染且全程只出现一次
+    con.logs.length = 0;
+    verify();
+    const infoLines = con.logs.filter(line => typeof line === 'string' && line.includes(DEPENDENCY_DIR_EXEMPT_INFO));
+    expect(infoLines).toHaveLength(1);
+    expect(infoLines[0]).toContain('ℹ️');
+    expect(infoLines[0]).not.toContain('⚠️');
   });
 });

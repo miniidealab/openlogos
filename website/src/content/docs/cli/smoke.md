@@ -54,6 +54,8 @@ Configure in `logos/logos.config.json`:
 | `report_path` | `logos/resources/verify/smoke-report.md` | Path to generated report |
 | `sandbox_mode` | `auto` | Sandbox isolation mode (`off` / `auto` / `always`) |
 
+The sandbox executor is shared with `openlogos verify`: writes under a path segment exactly equal to `node_modules` are exempt from the write audit (a note is emitted via the optional `sandbox.infos` field without affecting `sandbox.status`); whitelisted result files are collected back even when located under `node_modules`; symlink isolation and OS-level runtime write protection apply — when write protection is unavailable, `always` fails and `auto` warns.
+
 ## Gate 3.8 pass criteria
 
 Both conditions must be met:

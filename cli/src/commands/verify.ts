@@ -246,7 +246,8 @@ function mergeSandboxStatus(current: SandboxData, next: SandboxData): SandboxDat
   const status = rank[next.status] > rank[current.status] ? next.status : current.status;
   const diagnostics = Array.from(new Set([...current.diagnostics, ...next.diagnostics]));
   const suggestions = Array.from(new Set([...current.suggestions, ...next.suggestions]));
-  return {
+  const infos = Array.from(new Set([...(current.infos ?? []), ...(next.infos ?? [])]));
+  const merged: SandboxData = {
     mode: current.mode,
     root: next.isolated ? next.root : current.root,
     isolated: current.isolated || next.isolated,
@@ -255,6 +256,8 @@ function mergeSandboxStatus(current: SandboxData, next: SandboxData): SandboxDat
     diagnostics,
     suggestions,
   };
+  if (infos.length > 0) merged.infos = infos;
+  return merged;
 }
 
 export function runVerifyPreRunWithSandbox(root: string, config: NormalizedVerifyConfig, format: OutputFormat): RunVerifyPreRunResult {
@@ -1262,6 +1265,11 @@ export function verify(format: OutputFormat = 'text') {
     if (data.sandbox.diagnostics.length > 0) {
       for (const line of data.sandbox.diagnostics) {
         console.log(`  ⚠️  ${line}`);
+      }
+    }
+    if (data.sandbox.infos && data.sandbox.infos.length > 0) {
+      for (const line of data.sandbox.infos) {
+        console.log(`  ℹ️  ${line}`);
       }
     }
     if (data.sandbox.suggestions.length > 0) {

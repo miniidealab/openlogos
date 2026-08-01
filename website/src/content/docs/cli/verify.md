@@ -40,9 +40,13 @@ Behavior:
 
 - `sandbox_mode: "off"`: keep historical behavior, no isolation.
 - `sandbox_mode: "auto"`: prefer isolation; if isolation is unavailable, downgrade with warning and keep command compatibility.
-- `sandbox_mode: "always"`: isolation is mandatory; if setup fails or non-whitelisted writes are detected, verify fails.
+- `sandbox_mode: "always"`: isolation is mandatory; if setup fails, the sandbox copy contains escaping symlinks, runtime write protection is unavailable, or non-whitelisted writes are detected, verify fails.
 
-When sandbox is enabled, pre-run commands only allow result-file write-back (`verify.result_path`, optional `regression_result_path`, `incremental_result_path`) plus report output.
+When sandbox is enabled, pre-run commands only allow result-file write-back (`verify.result_path`, optional `regression_result_path`, `incremental_result_path`) plus report output. Write-back uses targeted collection: whitelisted result files are copied back even when located under `node_modules`.
+
+Dependency-directory exemption: paths containing a full segment exactly equal to `node_modules` (including nested monorepo forms like `packages/a/node_modules/**`) are one-off dependency directories inside the sandbox copy — they are skipped by the write audit and never copied back. This absorbs pnpm 11's `verifyDepsBeforeRun=install` auto-repair of `node_modules/.bin/*` without false warnings. Near-miss names such as `node_modules-cache` are NOT exempt. When the exemption applies, an informational note is emitted via the optional `sandbox.infos` JSON field (rendered once with `ℹ️` in text output) without affecting `sandbox.status`.
+
+Symlink isolation & runtime write protection: the workspace copy preserves symlink target literals and is checked for links escaping the sandbox; during command execution an OS-level write protection layer (macOS `sandbox-exec`, Linux bubblewrap) blocks writes to the original workspace before they happen — covering symlinks created or retargeted at runtime. If no protection mechanism is available, `always` fails with the reason, and `auto` continues sandboxed with a warning disclosing the residual risk.
 
 ## What it checks
 

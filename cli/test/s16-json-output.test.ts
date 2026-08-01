@@ -6,6 +6,7 @@ import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit
 import { collectDetectData, detect } from '../src/commands/detect.js';
 import { collectStatusData, status } from '../src/commands/status.js';
 import { verify } from '../src/commands/verify.js';
+import { detectRuntimeWriteProtection } from '../src/lib/sandbox.js';
 import { VERSION, parseFormat, makeEnvelope, makeErrorEnvelope } from '../src/lib/json-output.js';
 
 /* ========== Unit Tests — json-output helpers ========== */
@@ -454,7 +455,9 @@ describe('JSON output — verify --format json', () => {
     expect(output.data.pre_run.suggestions.join('\n')).toContain('verify.pre_run_command');
   });
 
-  it('ST-JSON-27: verify --format json with sandbox always fails on non-whitelist write', () => {
+  // 运行期写保护不可用的环境下，always 会在命令执行前按能力分层失败（诊断为「无法启用运行期写保护」），
+  // 到不了写入审计——该断言只在写保护可用时可达，环境性 skip
+  it.skipIf(!detectRuntimeWriteProtection().available)('ST-JSON-27: verify --format json with sandbox always fails on non-whitelist write', () => {
     writeTestCases(CASES_ALL_PASS);
     const sandboxRoot = join(root, '..', '.openlogos-sandbox-tests');
     mkdirSync(sandboxRoot, { recursive: true });

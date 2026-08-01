@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
 import { collectSmokeData, extractSmokeDefinedIds, smoke } from '../src/commands/smoke.js';
+import { detectRuntimeWriteProtection, DEPENDENCY_DIR_EXEMPT_INFO } from '../src/lib/sandbox.js';
 import { checkSmokeCoverage, discoverSmokeRunners } from '../src/lib/smoke-coverage.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
@@ -285,7 +286,9 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('ST-S19-06: smoke always sandbox blocks non-whitelist write', () => {
+  // 原名 ST-S19-06 与规格中「缺少 DEPLOY_DONE 拒绝推进」的 ST-S19-06 撞号，
+  // 更正为归属 UT-S19-08 的回归分支（豁免目录之外的非白名单写入仍按 EX-4.3 阻断）
+  it('UT-S19-08: 回归——smoke always 沙箱阻断 node_modules 之外的非白名单写入', () => {
     writeSmokeCases();
     writeSmokeResults([
       '{"id":"SMOKE-core-01","status":"pass"}',
@@ -305,6 +308,99 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(parsed.data.gate.result).toBe('FAIL');
     expect(parsed.data.sandbox.mode).toBe('always');
     expect(parsed.data.sandbox.status).toBe('fail');
+  });
+
+  it.skipIf(!detectRuntimeWriteProtection().available)('UT-S19-08: smoke 沙箱 always 模式下 node_modules 写入豁免，说明走 infos 通道', () => {
+    writeSmokeCases();
+    mkdirSync(join(root, 'node_modules'), { recursive: true });
+    // 模拟真实 runner：先做 pnpm 式依赖修复写入，再产出 smoke 结果
+    writeFileSync(join(root, 'nm-write.js'), [
+      "const fs=require('fs');",
+      "fs.mkdirSync('node_modules/.bin',{recursive:true});",
+      "fs.writeFileSync('node_modules/.bin/x','x');",
+      "fs.mkdirSync('logos/resources/verify',{recursive:true});",
+      "fs.writeFileSync('logos/resources/verify/smoke-results.jsonl',",
+      "  '{\"id\":\"SMOKE-core-01\",\"status\":\"pass\"}\\n{\"id\":\"SMOKE-core-02\",\"status\":\"pass\"}\\n');",
+    ].join('\n'));
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.smoke = {
+      ...(config.smoke ?? {}),
+      sandbox_mode: 'always',
+      command: 'node nm-write.js',
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    smoke('json', 'staging');
+
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.sandbox.status).toBe('pass');
+    expect(parsed.data.sandbox.infos).toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    expect(parsed.data.sandbox.diagnostics.join('\n')).not.toContain('非白名单');
+    // node_modules 写入不回收到原 workspace
+    expect(existsSync(join(root, 'node_modules/.bin/x'))).toBe(false);
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(!detectRuntimeWriteProtection().available)('internal-S19-nested-node-modules-infos: 仅含嵌套 node_modules 的 monorepo 同样产生 infos（共享执行器回归）', () => {
+    writeSmokeCases();
+    mkdirSync(join(root, 'packages/a/node_modules'), { recursive: true });
+    writeFileSync(join(root, 'nested-nm.js'), [
+      "const fs=require('fs');",
+      "fs.mkdirSync('packages/a/node_modules/.bin',{recursive:true});",
+      "fs.writeFileSync('packages/a/node_modules/.bin/x','x');",
+      "fs.mkdirSync('logos/resources/verify',{recursive:true});",
+      "fs.writeFileSync('logos/resources/verify/smoke-results.jsonl',",
+      "  '{\"id\":\"SMOKE-core-01\",\"status\":\"pass\"}\\n{\"id\":\"SMOKE-core-02\",\"status\":\"pass\"}\\n');",
+    ].join('\n'));
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.smoke = {
+      ...(config.smoke ?? {}),
+      sandbox_mode: 'always',
+      command: 'node nested-nm.js',
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    smoke('json', 'staging');
+
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.sandbox.status).toBe('pass');
+    expect(parsed.data.sandbox.infos).toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    expect(parsed.data.sandbox.diagnostics.join('\n')).not.toContain(DEPENDENCY_DIR_EXEMPT_INFO);
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(!detectRuntimeWriteProtection().available)('UT-S19-09: smoke 结果文件位于 node_modules 下仍被定点采集回收', () => {
+    writeSmokeCases();
+    mkdirSync(join(root, 'node_modules'), { recursive: true });
+    writeFileSync(join(root, 'nm-result.js'), [
+      "const fs=require('fs');",
+      "fs.mkdirSync('node_modules/.cache/openlogos',{recursive:true});",
+      "fs.writeFileSync('node_modules/.cache/openlogos/smoke-results.jsonl',",
+      "  '{\"id\":\"SMOKE-core-01\",\"status\":\"pass\"}\\n{\"id\":\"SMOKE-core-02\",\"status\":\"pass\"}\\n');",
+    ].join('\n'));
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.smoke = {
+      ...(config.smoke ?? {}),
+      sandbox_mode: 'always',
+      result_path: 'node_modules/.cache/openlogos/smoke-results.jsonl',
+      command: 'node nm-result.js',
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    smoke('json', 'staging');
+
+    const parsed = JSON.parse(con.logs[0]);
+    expect(parsed.data.gate.result).toBe('PASS');
+    expect(parsed.data.sandbox.status).toBe('pass');
+    expect(parsed.data.sandbox.diagnostics.join('\n')).not.toContain('非白名单');
+    // 定点采集：白名单结果文件即使位于 node_modules 下也回收到原 workspace
+    expect(existsSync(join(root, 'node_modules/.cache/openlogos/smoke-results.jsonl'))).toBe(true);
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 
   it('ST-S19-SMOKE-02: 统一 dispatcher 执行新增 runner 后无 uncovered', () => {
@@ -525,6 +621,50 @@ describe('S19 Scenario Tests — smoke command', () => {
     const out = con.logs.join('\n');
     expect(out).toContain('部署决策冲突');
     expect(out).not.toContain('openlogos smoke');
+  });
+
+  it('ST-S19-06: 缺少 DEPLOY_DONE 时拒绝 smoke 门禁推进', () => {
+    writeLaunchedModule();
+    const proposalDir = join(root, 'logos', 'changes', 'need-deploy-marker');
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(
+      join(root, 'logos', '.openlogos-guard'),
+      JSON.stringify({ activeChange: 'need-deploy-marker', module: 'core', createdAt: new Date().toISOString() }),
+    );
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：need-deploy-marker',
+      '',
+      '## 部署影响',
+      '- 是否需要部署：是',
+      '- 部署原因：修改 CLI 运行时代码，需要发布新包',
+      '- 影响环境：生产',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：是',
+      '- 是否需要 smoke：是',
+      '',
+      '## 变更概述',
+      '修改运行时代码。',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务',
+      '',
+      '## [deploy] 部署任务',
+      '- [x] 发布 npm 包',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+    writeLoopPass(proposalDir);
+    writeSmokeCases();
+    // 关键前置：[deploy] 已全勾但没有 DEPLOY_DONE marker
+
+    const step = detectProposalStep(proposalDir, { deployment_required: true, smoke_required: true });
+    expect(step).not.toBe('ready-to-smoke');
+
+    next();
+    const out = con.logs.join('\n');
+    // 不建议进入 smoke，提示先完成部署标记（deploy-done）
+    expect(out).not.toContain('openlogos smoke');
+    expect(out).toMatch(/deploy/i);
+    expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(false);
   });
 
   it('ST-S19-07: 重新标记部署完成后旧 smoke 结论失效', async () => {

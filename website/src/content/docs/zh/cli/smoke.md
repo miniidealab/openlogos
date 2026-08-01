@@ -54,6 +54,8 @@ openlogos smoke [--format json] [--environment <name>]
 | `report_path` | `logos/resources/verify/smoke-report.md` | 生成的报告路径 |
 | `sandbox_mode` | `auto` | 沙箱隔离模式（`off` / `auto` / `always`） |
 
+沙箱执行器与 `openlogos verify` 共享：完整路径段严格等于 `node_modules` 的写入豁免写入审计（通过可选 `sandbox.infos` 字段输出信息级说明，不影响 `sandbox.status`）；白名单结果文件即使位于 `node_modules` 下也会定点回收；symlink 隔离与 OS 级运行期写保护同样适用——写保护不可用时 `always` 失败、`auto` 告警。
+
 ## Gate 3.8 通过标准
 
 两个条件都必须满足：

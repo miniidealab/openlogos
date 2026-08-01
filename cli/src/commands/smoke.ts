@@ -345,6 +345,11 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
     for (const line of data.sandbox.diagnostics) {
       console.log(`    - ${line}`);
     }
+    if (data.sandbox.infos && data.sandbox.infos.length > 0) {
+      for (const line of data.sandbox.infos) {
+        console.log(`    ℹ️  ${line}`);
+      }
+    }
   }
 
   if (data.failed_cases.length > 0) {

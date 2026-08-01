@@ -40,9 +40,13 @@ openlogos verify --format json
 
 - `sandbox_mode: "off"`：保持历史行为，无隔离。
 - `sandbox_mode: "auto"`：优先隔离；如果隔离不可用，则降级并发出警告，保持命令兼容性。
-- `sandbox_mode: "always"`：强制隔离；如果设置失败或检测到非白名单写入，verify 失败。
+- `sandbox_mode: "always"`：强制隔离；如果设置失败、沙箱副本存在逃逸 symlink、无法启用运行期写保护，或检测到非白名单写入，verify 失败。
 
-启用沙箱后，pre-run 命令仅允许结果文件的写回（`verify.result_path`、可选的 `regression_result_path`、`incremental_result_path`）以及报告输出。
+启用沙箱后，pre-run 命令仅允许结果文件的写回（`verify.result_path`、可选的 `regression_result_path`、`incremental_result_path`）以及报告输出。写回采用定点采集：白名单结果文件即使位于 `node_modules` 下也照常回收。
+
+依赖目录豁免：规范化后存在完整路径段严格等于 `node_modules` 的路径（含 monorepo 嵌套形态如 `packages/a/node_modules/**`）视为沙箱内一次性依赖目录——不参与写入审计、从不回收。这消除了 pnpm 11 `verifyDepsBeforeRun=install` 自动修复 `node_modules/.bin/*` 造成的固定误报；`node_modules-cache` 等近似名称不豁免。豁免生效时通过可选 JSON 字段 `sandbox.infos` 输出一条信息级说明（文本输出以 `ℹ️` 渲染一次），不影响 `sandbox.status`。
+
+symlink 隔离与运行期写保护：复制保持 symlink 目标字面量并校验逃逸链接；命令执行期间由 OS 级写保护（macOS `sandbox-exec` / Linux bubblewrap）在写入发生前阻断对原 workspace 的写入——覆盖运行期新建或改写的 symlink。写保护机制不可用时，`always` 失败并说明原因，`auto` 继续沙箱执行但告警披露残留风险。
 
 ## 检查内容
 
