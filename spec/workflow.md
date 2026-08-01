@@ -344,8 +344,19 @@ smoke 顺序：
 工作区写入保护：
 - 当 `sandbox_deny_workspace_write=true` 时，沙箱执行器必须阻止预跑命令或 smoke 命令写入仓库根目录中的非白名单路径。
 - 白名单仅包含配置声明的结果文件、报告文件和 CLI 显式生成的门禁标记。
+- **白名单回收采用定点采集**：copy-back 对白名单声明的每个路径在沙箱副本内存在即拷回，不依赖快照 diff；白名单路径位于审计豁免目录（如 `node_modules`）下也照常回收——白名单回收优先于豁免。
 - `always` 模式下，一旦检测到非白名单写入，命令必须失败。
 - `auto` 模式下，无法启用写入保护时必须输出告警，并在 JSON `sandbox.status` 中标记为 `warn`。
+
+依赖目录豁免（fix-sandbox-node-modules-write-audit）：
+- 沙箱副本内**规范化并统一分隔符后，存在至少一个完整路径段严格等于 `node_modules`** 的路径视为沙箱内一次性依赖目录，**不参与**非白名单写入判定（典型来源：pnpm 11 `verifyDepsBeforeRun=install` 在沙箱副本内自动 install/repair 重写 `node_modules/.bin/*`）；禁止子串/前缀/后缀匹配，`node_modules-cache` 等近似名称不豁免。
+- 该豁免为执行器内置固定规则，不是项目可配置白名单；不得开放项目级通用 allow-path 配置。
+- 基线 / 命令后快照遍历直接跳过豁免目录；豁免生效时以 JSON `sandbox.infos`（可选、additive）输出一条信息级说明，`sandbox.status` 不因此改变，文本输出以 `ℹ️` 渲染一次。
+
+symlink 隔离与运行期写保护（先于依赖目录豁免生效）：
+- 复制 workspace 进沙箱必须保持 symlink 原始目标字面量（等价 `verbatimSymlinks` 语义），复制后执行 realpath containment 校验；存在逃逸链接按「无法隔离」处理：`always` 失败、`auto` 降级为非隔离执行并告警。
+- 命令执行期间必须由 OS 级写保护（macOS `sandbox-exec` 拒写原 workspace 子树 / Linux bubblewrap 只读绑定 / 等价机制）在**写入发生前**阻断对原 workspace 的写入，覆盖运行期新建或改写（retarget）的 symlink。
+- 运行期写保护机制不可用时按能力分层：`always` 命令失败并说明原因；`auto` 继续沙箱执行但 `sandbox.status=warn` 并披露残留风险。
 
 兼容性：
 - 未配置 `sandbox_mode` 的历史项目等价于 `off`，不得破坏既有 verify / smoke 行为。

@@ -1107,8 +1107,9 @@ openlogos verify --format json  # JSON 格式
 | `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
 | `sandbox.workspace_write_denied` | boolean | 是 | 是否拒绝写入仓库工作区 |
 | `sandbox.status` | string | 是 | 沙箱执行结果 |
-| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息 |
+| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息（问题诊断） |
 | `sandbox.suggestions` | string[] | 是 | 沙箱修复建议 |
+| `sandbox.infos` | string[] | 否 | 信息级说明通道（additive、向后兼容）：承载不影响 `sandbox.status` 的说明（如依赖目录豁免提示），仅在非空时出现；不得混入 `diagnostics`，verify 不得将其复制进 `pre_run.diagnostics`，文本输出以 `ℹ️` 渲染一次 |
 | `report_path` | string | 是 | 生成的验收报告路径 |
 
 ### 4.4 gate.reason 取值
@@ -1127,8 +1128,9 @@ openlogos verify --format json  # JSON 格式
 - 配置 `verify.regression_command` 或 `verify.incremental_command` 时，`pre_run.mode="two_phase"`。
 - 没有任何预跑命令时，`pre_run.mode="none"`。
 - `sandbox_mode="off"` 时，`sandbox.status="skipped"`，并保持历史兼容行为。
-- `sandbox_mode="auto"` 时，环境支持隔离则 `sandbox.status="pass"`，不支持则 `sandbox.status="warn"` 并给出降级原因。
-- `sandbox_mode="always"` 时，若无法隔离则必须失败。
+- `sandbox_mode="auto"` 时，环境支持隔离则 `sandbox.status="pass"`，不支持则 `sandbox.status="warn"` 并给出降级原因；无法启用运行期写保护时同样 `warn` 并披露残留风险。
+- `sandbox_mode="always"` 时，若无法隔离、沙箱副本存在逃逸 symlink 或无法启用运行期写保护则必须失败。
+- 沙箱写入审计豁免沙箱内一次性依赖目录（规范化后存在完整路径段严格等于 `node_modules`）；豁免生效时以 `sandbox.infos` 输出一条信息级说明，`sandbox.status` 不因此改变。
 - 覆盖不足且 `pre_run.mode="none"` 时，必须输出局部测试诊断和配置建议。
 
 ---
@@ -1204,8 +1206,9 @@ openlogos smoke --env production --format json
 | `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
 | `sandbox.workspace_write_denied` | boolean | 是 | 是否拒绝写入仓库工作区 |
 | `sandbox.status` | string | 是 | 沙箱执行结果 |
-| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息 |
+| `sandbox.diagnostics` | string[] | 是 | 沙箱诊断信息（问题诊断） |
 | `sandbox.suggestions` | string[] | 是 | 沙箱修复建议 |
+| `sandbox.infos` | string[] | 否 | 信息级说明通道（additive、向后兼容）：与 verify 共享执行器语义，承载依赖目录豁免等不影响 `sandbox.status` 的说明，仅在非空时出现 |
 | `report_path` | string | 是 | smoke 报告路径 |
 | `result_path` | string | 是 | smoke 结果路径 |
 
@@ -1317,7 +1320,11 @@ openlogos module list --format json  # JSON 格式
 **数据不摧毁不变量**：上述任一降级 / 错误分支**零写入**——命令执行前后 `logos-project.yaml` 文件字节不变。
 
 | 错误码 | 说明 |
-|---
+|--------|------|
+| `PROJECT_YAML_UNPARSABLE` | `logos-project.yaml` 解析失败且 AST 恢复不出 `modules`；`message` 含解析器原始错误与行号 |
+| `PROJECT_YAML_DEGRADED_WRITE_REFUSED` | 读取走了 AST 恢复路径（降级态），写命令拒绝把恢复态序列化写回；提示先修复 yaml 语法 |
+
+---
 
 ## 8. 完整用法示例
 
