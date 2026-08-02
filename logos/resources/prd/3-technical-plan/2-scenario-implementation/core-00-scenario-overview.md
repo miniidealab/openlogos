@@ -28,6 +28,7 @@
 | S30 | cmd: 放开到 verify/deploy/smoke gate（modify-cmd-on-builtin） | `lib/flow.ts` / `lib/flow-derive.ts` / `lib/flow-overlay-derive.ts` / `commands/{next,status,watch}.ts` | `s30-cmd-builtin-gate.test.ts` | 进行中 |
 | S33 | 存量项目逆向建种子基线 | `adopt.ts` / `baseline-seed.ts` / `next.ts` / `status.ts` / `verify.ts` / `lib/project-yaml.ts` / `lib/migrate-lifecycle.ts` / `skills/brownfield-adopter` | `s33-brownfield-baseline.test.ts` | 进行中 |
 | S34 | 管理 feature 分组 | `lib/project-yaml.ts` / `commands/status.ts` / `lib/flow-overlay-derive.ts` / `commands/feature.ts` / `commands/feature-backfill.ts` / `index.ts` | `s34-feature.test.ts` | 进行中 |
+| S36 | 生命周期变更影响分类（impact） | `commands/impact.ts` / `lib/impact-classify.ts` | `s36-impact.test.ts` | 进行中 |
 
 ## 场景依赖关系
 - S01 生成基础项目结构，为后续所有场景提供配置与目录前提。

@@ -23,6 +23,7 @@ import { checkUiHashMatchCommand } from './commands/check-ui-hash-match.js';
 import { flowShow } from './commands/flow.js';
 import { baselineSeedBegin, baselineSeedCommit, baselineSeedStatus } from './commands/baseline-seed.js';
 import { watch } from './commands/watch.js';
+import { impact } from './commands/impact.js';
 import { VERSION, parseFormat } from './lib/json-output.js';
 
 export { VERSION } from './lib/json-output.js';
@@ -90,11 +91,15 @@ Commands:
   flow show          Show the dev-flow orchestration (built-in or overlay-resolved)
                        --resolved                   Apply project logos/flow overlay
                        --lifecycle <initial|launched>  Pick which flow (default: inferred)
+  impact             Classify a git change range as lifecycle-only bookkeeping (read-only, for CI)
+                       --base <rev> --head <rev>   Git range mode (safe revision resolution)
+                       --stdin                      Read \`git diff --no-relative --name-status -z\` bytes from stdin
+                       --prefix <dir/>              Project prefix for --stdin mode (monorepo)
 
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill, change-lint)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill, change-lint, impact)
 
 Examples:
   openlogos init my-saas-project
@@ -114,15 +119,37 @@ Examples:
 Learn more: https://openlogos.ai
 `;
 
+/**
+ * 取值选项集合：全局 help/version 分派必须位置感知——这些选项的下一个 token 是选项值，
+ * 不参与全局 --help/-h/--version/-v 判定。否则 `impact --base --help` 会在命令级
+ * 词法拒绝（IMPACT_INPUT_INVALID，S36 三层防线第一层）之前提前 exit 0，架空硬拒绝。
+ */
+const VALUE_OPTIONS = new Set([
+  '--locale', '--ai-tool', '--aitool', '--module', '--interval', '--env',
+  '--manifest', '--run-id', '--slug', '--lifecycle', '--format',
+  '--base', '--head', '--prefix',
+]);
+
+/** 剔除取值选项的值位 token，仅保留可参与全局选项判定的 token。 */
+function nonValueTokens(args: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (VALUE_OPTIONS.has(args[i])) { i++; continue; }
+    out.push(args[i]);
+  }
+  return out;
+}
+
 async function main() {
   const args = process.argv.slice(2);
+  const globalTokens = nonValueTokens(args);
 
-  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+  if (args.length === 0 || globalTokens.includes('--help') || globalTokens.includes('-h')) {
     console.log(HELP);
     process.exit(0);
   }
 
-  if (args.includes('--version') || args.includes('-v')) {
+  if (globalTokens.includes('--version') || globalTokens.includes('-v')) {
     console.log(VERSION);
     process.exit(0);
   }
@@ -287,6 +314,10 @@ async function main() {
         slugArg = (v === undefined || v.startsWith('--')) ? '' : v;
       }
       changeLint(slugArg, format);
+      break;
+    }
+    case 'impact': {
+      impact(args.slice(1), format);
       break;
     }
     case 'check-ui-prototype': {

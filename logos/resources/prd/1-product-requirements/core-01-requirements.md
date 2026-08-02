@@ -51,7 +51,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-28 个场景（编号跳号、最高至 S35，`scenario_counter.next_id=36`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+29 个场景（编号跳号、最高至 S36，`scenario_counter.next_id=37`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -74,6 +74,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S05 | 查看下一步建议 | 需要快速知道当前该做什么 | P01/P03 | P0 |
 | S11 | 查看阶段进度与活跃变更 | 需要确认当前状态 | P03 | P0 |
 | S35 | 提案计划产物左移硬检查（change-lint） | 提案产物（proposal/tasks/deltas）产出后交付前 | P01/P06/P07 | P1 |
+| S36 | 生命周期变更影响分类（impact） | 下游 CI 需判定一次 push 区间是否仅含生命周期文件变更时 | P07/P03 | P1 |
 
 ### ③ 验收与部署门禁
 用可追溯的验收报告与部署 / smoke 门禁守住交付质量（回应 P01/P03/P05）。
@@ -1257,3 +1258,19 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 5. 阶段感知：「产出多少查多少」——plan 段无 delta 时 L4/L6 空集通过；L1/L2/L3/L5 自 write-tasks 完成起恒生效；测试证据按 plan / spec-complete / slice 三级阶段分类判定，且证据集合**限定到本提案**（不采信项目全局无关 ID）；
 6. 只读命令（**项目级**）：不写任何项目文件、marker、guard、`logos-project.yaml`、verify 账本、哈希清单；运行前后**整个项目根**的文件集合与内容哈希不变（不止提案目录）；
 7. lint 不新增 step/gate/marker、不接入 flow 派生；消费点判据保留（纵深防御）。
+
+## S36: 生命周期变更影响分类（impact）
+
+**动因**：来自社区 RFC（issue #9）。下游项目在 launched 生命周期下，CI 依据 Git changed paths 判断一次 push 是否影响可部署制品。一次纯 `openlogos archive` 提交（删除 `logos/.openlogos-guard` + 把 `logos/changes/<slug>/**` 移入带时间戳的 `logos/changes/archive/**`）被 fail-closed 的路径分类器误判为制品变更，重复触发约 482 秒的构建 / migration / rollout / smoke。且生命周期 marker（`MERGE_PROMPT_GENERATED` / `VERIFY_PASS` / `SMOKE_PASS` / `DEPLOY_DONE`）均为空文件，Git exact-content rename 检测会把空 blob 任意配对（如 `VERIFY_PASS -> SMOKE_PASS`），下游无法靠 marker 文件名对应关系识别归档。OpenLogos 此前无任何机器可读的生命周期影响契约，每个项目各自逆向工程 guard / marker / 归档目录结构，易漂移。
+
+**场景**：CI（或宿主脚本）在收到 push 后运行 `openlogos impact --base <rev> --head <rev> [--format json]` 由 CLI 内部安全解析修订并执行 `git diff --no-relative --name-status -z` 取得变更集；或在 CI 平台已有 changed paths 字节流时以管道喂给 `openlogos impact --stdin [--prefix <dir/>]`（完全不依赖 git）。命令按 OpenLogos 官方路径语义契约判定该区间变更是否 lifecycle-only，CI 依 `lifecycle_only` 唯一决策字段决定是否跳过制品构建 / 部署。
+
+**验收条件**：
+1. OpenLogos 正式声明**版本化路径语义契约 v1**：lifecycle-only 路径集合 = `logos/.openlogos-guard`、`logos/changes/**`（含 `archive/**`）、`logos/resources/verify/**`、`logos/.runtime/**`；`logos/**` 下其余一切（含 `resources/database/**`、`logos.config.json`）归类 `project`（项目自决，可能进入制品或影响 verify/smoke，OpenLogos 不越界背书）；`logos/` 之外归类 `external`。契约以版本化常量内置于代码，权威文字声明落根 `spec/change-impact.md`（随本提案 delta 产出）与功能规格，同源维护、代码与规范一致。
+2. **双输入模式**：`--base <rev> --head <rev>` 模式由 CLI 内部取得 diff 字节流（要求 git 仓库环境）；`--stdin` 模式直接消费管道输入的同格式字节流、完全不依赖 git。两模式对同一（字节流, 前缀）输入必须给出逐字段一致结论。
+3. **修订参数安全（防 Git 选项注入）**：`--base`/`--head` 值以 `-` 开头（option-like）或为空一律 `IMPACT_INPUT_INVALID`、不传给任何 git 进程；合法值先经 `git rev-parse --verify --end-of-options <rev>^{commit}` 解析为完整 commit OID，`git diff --no-relative --name-status -z` 位置参数只接收规范化 OID——只读红线覆盖项目内与项目外，命令不得因参数值产生任何文件系统写入。
+4. **路径坐标对齐（monorepo 兼容）**：分类按 **OpenLogos 项目根相对路径**判定——`--base/--head` 模式经 `git rev-parse --show-prefix` 自动取得并按段边界剥除项目前缀，`--stdin` 模式由 `--prefix <dir/>` 显式提供（缺省 = 输入已是项目根相对）；项目前缀外路径不静默丢弃、直接归 `external`；输出保留原始输入路径。git 取流**必须显式 `--no-relative`** 中和仓库/用户 `diff.relative=true` 配置（该配置会把路径裁剪为当前目录相对并静默过滤目录外变更，破坏 top-level 坐标与「前缀外不丢弃」不变量），并以对抗配置测试锚定。
+5. **判定全部 fail-closed**：只按路径前缀分类，完全不依赖 rename 配对结果、时间戳目录名与 marker 文件名——空 marker 被 Git 乱配对不影响结论；R/C（rename/copy）必须新旧路径双侧均为 lifecycle 才算 lifecycle；覆盖 A/M/D/R/C 五种状态；未知状态字母（T/U/X 等）、解析失败、空 diff、空输入一律 `lifecycle_only: false` 并给出原因。
+6. `lifecycle_only` 是**唯一决策字段**；`operations`（如推断出 archive）、`changes`（slug 列表）、`reasons` 为辅助展示信息，文档明确 CI 不得据其做部署决策，也不得以退出码替代 `lifecycle_only` 做决策。
+7. **输出契约版本化、只增不改、snake_case**：`--format json` 走通用信封，data 含 `schema_version: "openlogos-change-impact.v1"`、`lifecycle_only`、`files[]`（`status`/`path`/`old_path`/`class`）、`non_lifecycle_paths` 等全 snake_case 字段（遵守 `spec/cli-json-output.md` §1.1）；schema 字段只增不改，破坏性变更须升 v2 并保留 v1 过渡期；data 契约与稳定错误码（`IMPACT_GIT_DIFF_FAILED`、`IMPACT_INPUT_INVALID`）随本提案 delta 登记进根 `spec/cli-json-output.md`（§3.16 与 §6.1 错误码表）。
+8. **零行为侵入**：不改变 archive / merge / verify 任何现有行为与输出；不给 archive 新增 stdout JSON envelope；不修改任何 marker 的内容与「逐字节等价」既有契约；命令全程只读、不写任何项目文件。文档同时建议 CI 侧 pin 住 CLI 版本，避免隐式升级引入判定行为变化。

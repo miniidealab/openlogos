@@ -24,7 +24,7 @@ tech_stack:
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
 scenario_counter:
-  next_id: 36
+  next_id: 37
 feature_counter:
   next_id: 9
 modules:
@@ -469,6 +469,12 @@ resource_index:
     desc: S35 场景时序图。涉及 openlogos change-lint 命令的执行时序、L1–L7 检查分支、操作错误终止红线、只读性约束与消费点关系时必读。
   - path: logos/resources/test/core-S35-test-cases.md
     desc: S35 测试用例。涉及 change-lint 共享判据层 UT（L1–L7 正反例、阶段分类、ID 文法、模板骨架、同源锚、收紧回归）与真实 CLI 入口 ST（双格式输出、exit code、slug 解析、只读性）的实现与验收时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S36-change-impact.md
+    desc: S36 场景时序图。涉及 openlogos impact 命令的双输入模式执行时序、修订参数安全三层防线、路径坐标系（monorepo 前缀）、fail-closed 异常分支与只读红线时必读。
+  - path: logos/resources/test/core-S36-test-cases.md
+    desc: S36 测试用例。涉及 impact 分类器纯函数 UT（路径契约三类、R/C 双侧、fail-closed 兜底、前缀剥除、修订词法拒绝）与真实 CLI 入口 ST（双输入模式一致、snake_case envelope、注入哨兵只读性、monorepo 与 diff.relative 对抗配置）的实现与验收时必读。
+  - path: spec/change-impact.md
+    desc: 生命周期变更影响契约权威声明。涉及 impact 路径语义契约 v1、路径坐标系、Git 状态流解析、修订参数安全与版本兼容规则时必读。
   - path: spec/schema/next.schema.json
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
   - path: spec/schema/status.schema.json

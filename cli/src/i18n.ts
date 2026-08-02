@@ -270,6 +270,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'archive.watch.incompatible': 'A RunLogos instance cannot coordinate this protocol. Upgrade openlogos CLI or close that instance, then retry.',
     'archive.watch.legacyBusy': 'Error: Windows could not move the proposal directory. An older RunLogos instance or another program may still be watching it; upgrade or close the application, then retry.',
     'archive.watch.reconciled': '  Archive completion was reconciled from disk state after an operation error.',
+
+    // impact (S36)
+    'impact.header': 'impact: lifecycle_only = {value}',
+    'impact.filesHeader': 'files ({count}):',
+    'impact.nonLifecycleHeader': 'non-lifecycle paths ({count}):',
+    'impact.operationsLine': 'operations: {ops}',
+    'impact.changesLine': 'changes: {changes}',
+    'impact.reasonsHeader': 'reasons:',
+    'impact.footerTrue': 'Conclusion: all changes are lifecycle bookkeeping (safe to skip artifact build). CI must read only lifecycle_only.',
+    'impact.footerFalse': 'Conclusion: not lifecycle-only (fail-closed). CI must read only lifecycle_only.',
   },
   zh: {
     // init
@@ -527,6 +537,16 @@ const messages: Record<Locale, Record<string, string>> = {
     'archive.watch.incompatible': '检测到无法协调该协议的 RunLogos 实例；请升级 openlogos CLI 或关闭该实例后重试。',
     'archive.watch.legacyBusy': '错误：Windows 无法移动提案目录，可能有旧版 RunLogos 或其他程序仍在监听；请升级或关闭应用后重试。',
     'archive.watch.reconciled': '  归档操作报错后已依据磁盘状态调和为成功。',
+
+    // impact (S36)
+    'impact.header': 'impact: lifecycle_only = {value}',
+    'impact.filesHeader': '文件（{count}）：',
+    'impact.nonLifecycleHeader': '非 lifecycle 路径（{count}）：',
+    'impact.operationsLine': '推断操作：{ops}',
+    'impact.changesLine': '涉及提案：{changes}',
+    'impact.reasonsHeader': '原因：',
+    'impact.footerTrue': '结论：全部变更为生命周期簿记（可跳过制品构建）。CI 只应读取 lifecycle_only 字段。',
+    'impact.footerFalse': '结论：非纯生命周期变更（fail-closed）。CI 只应读取 lifecycle_only 字段。',
   },
 };
 

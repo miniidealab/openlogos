@@ -1,17 +1,52 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.13.6",
-  "updatedAt": "2026-07-08T02:09:56.380Z",
-  "generatedAt": "2026-07-08T02:09:56.380Z",
-  "versionCount": 80,
+  "latestVersion": "0.13.20",
+  "updatedAt": "2026-07-30T00:07:56.513Z",
+  "generatedAt": "2026-07-30T00:07:56.513Z",
+  "versionCount": 81,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.13.6"
+    "latest": "0.13.20"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.13.20",
+      "publishedAt": "2026-07-30T00:07:56.186Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.20",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.20",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.20.tgz",
+      "gitHead": null,
+      "size": 1012619,
+      "sizeLabel": "989 KB",
+      "unpackedSize": 3901026,
+      "unpackedSizeLabel": "3.7 MB",
+      "fileCount": 368,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "存量项目逆向建种子基线（S33，brownfield-adopter 系列） — openlogos adopt 接入存量项目后由 AI driver 逆向扫描建立现状基线；openlogos baseline-seed 作为 CLI 唯一写入入口（两阶段 staging + commit journal 崩溃一致性 + 模块级事务锁）；provenance 权威载体为文档内具名章节，覆盖率按 tombstone 分母法纯计数。",
+        "status / next 机器契约自描述（contract-self-description） — JSON 响应新增 contract.version 版本握手、step_meta、结构化 facts，供 RunLogos 等机器消费方稳定解析。",
+        "GUI 项目提案阶段前置 UI/UX 原型（proposal-ui-ux-first） — GUI 产品项目在 plan 门前由 change-writer 调用 ui-ux-pro-max 产出页面原型，批准提案时连界面一起确认；module set-product-type / module add [product-type] 维护模块级 product_type（含 service 枚举）。"
+      ],
+      "fixSummary": [
+        "module 命令族 YAML 解析错误分层与写路径防护（fix-module-cmd-yaml-error-handling） — 修复 module 命令族本地读取静默吞掉 logos-project.yaml 解析错误、把任意模块误报为 MODULE_NOT_FOUND 的缺陷（此前造成「status 恢复出 modules 要求 set-product-type、而 set-product-type 报模块不存在」的死锁，RunLogos 产品形态弹窗在坏 yaml 项目上结构性必败）："
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.20: English value summary entries are missing; English fix summary entries are missing."
+    },
     {
       "version": "0.13.6",
       "publishedAt": "2026-07-08T02:09:56.086Z",
@@ -31,9 +66,7 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [],
       "fixSummary": [
         "纯代码提案 no-delta spec-complete 闭环 — openlogos merge 对无规格 delta 的代码提案执行 no-op merge 并写入带审计内容的 SPEC_MERGED，让纯代码修复也具备可追踪的规格阶段完成状态。",

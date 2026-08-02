@@ -1254,10 +1254,14 @@ openlogos smoke --env production --format json
 | `ARCHIVE_WATCH_ACK_TIMEOUT` | Windows `archive` 在有界 deadline 内未收齐全部 `released` ACK；fail-closed，待处理实例写入协议 `result.json` |
 | `ARCHIVE_WATCH_INSTANCE_FAILED` | Windows `archive` 收到实例 `failed` ACK 或无效 ACK；fail-closed，稳定 reason 写入协议 `result.json` |
 | `ARCHIVE_WATCH_STATE_INCONSISTENT` | Windows `archive` 的 live/archive/guard 磁盘三态无法唯一调和；保留磁盘事实并 fail-closed |
+| `IMPACT_GIT_DIFF_FAILED` | `impact --base/--head` 模式下 git 不可用、非 git 仓库、修订经 `rev-parse --verify --end-of-options` 解析失败、或 `git diff` 非零退出；操作错误（非零退出），区别于判定完成的 fail-closed `lifecycle_only: false` |
+| `IMPACT_INPUT_INVALID` | `impact` 参数组合非法（`--stdin` 与 `--base/--head` 并存、两组皆缺、`--base`/`--head` 只给其一、`--prefix` 用于非 `--stdin` 模式）、`--base`/`--head` 值为空或 option-like（`-` 开头，词法拒绝、不传给任何 git 进程）、或 `--stdin` 模式 stdin 读取失败（I/O 层无法取得输入） |
 
 > `openlogos watch` 的错误仍使用通用错误 envelope（`command: "watch"`）；项目未初始化时输出 `PROJECT_NOT_INITIALIZED` 并以非零退出码退出，不进入轮询循环。`openlogos next --auto` 的错误沿用 `next` 既有错误语义（如 `PROJECT_NOT_INITIALIZED` / `NO_ACTIVE_CHANGE`），不新增错误码。
 >
 > `openlogos archive` 仍是纯文本命令，不新增 stdout JSON envelope。上述 `ARCHIVE_WATCH_*` 以稳定错误码文本写 stderr 并非零退出；机器可读握手细节位于 `logos/.runtime/archive-watch/v1/requests/<requestId>/result.json`。
+>
+> `openlogos impact` 的操作错误（`IMPACT_*`）在 `--format json` 下走 stderr error envelope、默认文本下走 stderr `Error [<code>]: <message>`；**判定完成（含 fail-closed `lifecycle_only: false`）不是错误**，走 stdout success envelope、exit 0（见 §3.16）。
 
 ### 6.2 overlay 派生错误信封
 
@@ -2254,3 +2258,56 @@ openlogos change-lint [--slug <slug>] [--format json]
 
 - 下游 driver 按 exit code 三分流：0 交付合格；2 读 `data.violations` 逐条生成修复动作（`fix_hint` 可直接进修复提示词）；1 读 stderr envelope 的 `code` 排障——「可原地修复的检查红」与「命令未完成检查」由此稳定区分。
 - `--help` 的全局 `--format json` 支持列表同步收录 `change-lint`。
+
+## 3.16 `openlogos impact --format json`（ci-change-impact-contract S36）
+
+### 用法
+
+```bash
+openlogos impact --base <rev> --head <rev> [--format json]
+git diff --no-relative --name-status -z <base> <head> | openlogos impact --stdin [--prefix <dir/>] [--format json]
+```
+
+- `--base/--head` 模式：CLI 内部安全解析修订（词法拒 option-like → `git rev-parse --verify --end-of-options <rev>^{commit}` 解析完整 OID → `git diff --no-relative --name-status -z` 只收规范化 OID；**显式 `--no-relative` 中和仓库/用户 `diff.relative=true` 配置**，保证输出为 top-level 坐标、不裁剪项目前缀外变更），并经 `git rev-parse --show-prefix` 自动取得项目前缀（monorepo 兼容）。
+- `--stdin` 模式：消费管道输入的同格式字节流，完全不依赖 git；`--prefix <dir/>` 显式声明项目前缀，缺省 = 输入已是项目根相对；调用方须保证字节流为 top-level 坐标（示例统一带 `--no-relative`）。`--prefix` 仅 `--stdin` 模式合法。
+- 供 `--help` 全局 `--format json` 支持列表同步收录 `impact`。
+
+### JSON Schema（data 部分）
+
+```jsonc
+{
+  "schema_version": "openlogos-change-impact.v1",
+  "lifecycle_only": false,
+  "files": [
+    { "status": "R", "path": "logos/changes/archive/20260801-x/proposal.md", "old_path": "logos/changes/x/proposal.md", "class": "lifecycle" },
+    { "status": "M", "path": "cli/src/index.ts", "old_path": null, "class": "external" }
+  ],
+  "non_lifecycle_paths": ["cli/src/index.ts"],
+  "operations": ["archive"],
+  "changes": ["x"],
+  "reasons": ["non-lifecycle path: cli/src/index.ts"]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `schema_version` | string | 是 | 固定 `"openlogos-change-impact.v1"`；字段只增不改，破坏性变更升 v2 并保留 v1 过渡期 |
+| `lifecycle_only` | boolean | 是 | **唯一决策字段**：`true` 当且仅当变更集非空、全部记录解析成功、每个文件（R/C 含双侧）均为 `lifecycle` class；一切不确定输入（未知状态字母、解析失败、空 diff、空输入）fail-closed 为 `false` |
+| `files` | array | 是 | 逐文件分类结果（顺序与输入流一致） |
+| `files[].status` | string | 是 | 规范化单字母 `A` / `M` / `D` / `R` / `C`（相似度后缀已剥除） |
+| `files[].path` | string | 是 | 新路径，**原始输入坐标**（不剥项目前缀） |
+| `files[].old_path` | string \| null | 是 | 旧路径（仅 R/C），其余 `null`；原始输入坐标 |
+| `files[].class` | string | 是 | `"lifecycle"` / `"project"` / `"external"`（R/C 取双侧中更不安全一侧；分类坐标为剥除项目前缀后的项目根相对路径，契约见 `spec/change-impact.md`） |
+| `non_lifecycle_paths` | array | 是 | 导致 `lifecycle_only: false` 的越界路径清单（原始输入坐标，确定性排序）；fail-closed 兜底触发时可为空、原因见 `reasons` |
+| `operations` | array | 是 | 辅助展示：推断出的生命周期操作（如 `"archive"`）；不可推断时空数组；**CI 不得据其做部署决策** |
+| `changes` | array | 是 | 辅助展示：涉及的提案 slug 列表；**CI 不得据其做部署决策** |
+| `reasons` | array | 是 | 辅助展示：结论原因（越界路径、fail-closed 兜底原因等） |
+
+### 解析语义
+
+- **exit code**：0 = 判定完成（`lifecycle_only` 真假皆 0）；非零 = 操作错误。退出码不编码判定结论，CI 只读 `lifecycle_only`。
+- 判定完成 → stdout success envelope；操作错误 → stderr error envelope（错误码见 §6.1：`IMPACT_GIT_DIFF_FAILED` / `IMPACT_INPUT_INVALID`）。默认（无 `--format json`）输出人读文本，stdout 无 JSON。
+- **命名回归红线**：data 递归键集合必须恰为上表声明的键（全 snake_case，§1.1），不得出现未声明键（防实现内部 camelCase 类型名泄漏到 stdout）。
+- 命令全程只读（项目内外零写入）；路径语义、坐标系与修订参数安全的权威声明见根 `spec/change-impact.md`。

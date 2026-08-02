@@ -1034,6 +1034,94 @@ effectiveBaselineSeedState(root, moduleId, explicit) → { state, legacy }
 
 **实现边界**：本仓只实现 CLI 消费端；RunLogos 协议端（pause watcher、写 ACK、读 result 恢复）不在本仓。CLI 先行、RunLogos 未配套期间快照恒空 → 走快路径、无回归。
 
+### 2.32 生命周期变更影响分类（impact，S36）
+
+> 提案原文规划为 §2.31；因 win32-archive-watcher-handshake 已先行合入 §2.31，本节顺延为 §2.32，内容不变。
+
+#### 命令形态（双输入模式）
+
+`openlogos impact --base <rev> --head <rev> [--format json]`
+`git diff --no-relative --name-status -z <base> <head> | openlogos impact --stdin [--prefix <dir/>] [--format json]`
+
+- **`--base/--head` 模式**：CLI 内部取得变更字节流（要求当前目录处于 git 仓库环境），修订解析走**唯一的安全路径**（见下「修订参数安全」）；git 不可用、非 git 仓库、修订不可解析或 `git diff` 非零退出 → 操作错误 `IMPACT_GIT_DIFF_FAILED`（非零退出；`--format json` 时 stderr error envelope）。
+- **`--stdin` 模式**：直接消费管道输入的同格式（`--name-status -z`）字节流，**完全不依赖 git**，供 CI 平台已有 changed paths 的场景。可选 `--prefix <dir/>` 声明路径坐标前缀（见下「路径坐标系」）。
+- **参数校验**：`--stdin` 与 `--base`/`--head` 互斥；`--prefix` 仅 `--stdin` 模式合法（与 `--base`/`--head` 并存亦非法）；两组皆缺、或 `--base`/`--head` 只给其一、或 `--stdin` 模式下 stdin 读取失败（I/O 层无法取得输入）→ 操作错误 `IMPACT_INPUT_INVALID`。注意区分：**取不到输入**是操作错误（非零退出）；**取到了字节流但内容不可解析**是判定完成、结论 fail-closed（`lifecycle_only: false`，exit 0，见下）。
+- 默认输出人类可读文本（摘要 + 分类清单）；`--format json` 输出机器契约。两模式、两格式下判定逻辑同一套纯函数：**同一（字节流, 前缀）输入逐字段结论一致**（git 模式的自动前缀等价于 `--stdin` + 显式 `--prefix`）。
+
+#### 修订参数安全（防 Git 选项注入，只读红线的前置条件）
+
+`--base` / `--head` 的值即使经 `execFile` 参数数组传递（不经 shell），Git 仍会把 `-` 开头的值解析为选项（如 `--output=<path>` 会令 `git diff` 写文件——真实写入口）。因此规定**三层防线**，任何实现不得绕过：
+
+1. **词法拒绝**：值为空、或以 `-` 开头（option-like）→ 直接 `IMPACT_INPUT_INVALID`，**不把该值传给任何 git 进程**、不交给 Git 猜测。
+2. **修订解析隔离**：对 base / head 分别执行 `git rev-parse --verify --end-of-options <rev>^{commit}` 解析为**完整十六进制 commit OID**（兼容 SHA-1/SHA-256）；解析失败 → `IMPACT_GIT_DIFF_FAILED`。
+3. **diff 只收规范化 OID 且显式中和 relative 配置**：`git diff --no-relative --name-status -z <base_oid> <head_oid>` 的位置参数只允许上一步产出的十六进制 OID，杜绝任何用户原值到达 diff 进程；**必须显式携带 `--no-relative`**——仓库/用户配置 `diff.relative=true` 时，Git 会把输出路径裁剪为当前目录相对并静默过滤当前目录外的变更，破坏坐标系不变量（见下节），显式命令行开关是覆盖任意 repo/user config 的中和手段。
+
+只读红线因此覆盖**项目内与项目外**：命令全程不因参数值产生任何文件系统写入（ST 以项目内/项目外双哨兵锚定）。
+
+#### 路径坐标系（OpenLogos 项目根对齐，monorepo 兼容）
+
+Git 的 `--name-status` 输出始终相对 **git top-level**；而 OpenLogos 只要求命令在含 `logos/logos.config.json` 的项目根运行，项目根可以位于 monorepo 子目录（如 `/repo/packages/app`）。两个坐标系显式对齐：
+
+- **分类坐标 = OpenLogos 项目根相对路径**。分类前先把输入路径按**已验证的项目前缀**剥除：
+  - `--base/--head` 模式：CLI 经 `git rev-parse --show-prefix` 自动取得项目根相对 git top-level 的前缀（项目根即 top-level 时为空前缀）。
+  - `--stdin` 模式：由调用方经 `--prefix <dir/>` 显式提供同一前缀；缺省 = 空前缀（输入字节流已是项目根相对）。
+- **前缀剥除按路径段边界**：`packages/app/logos/changes/x` 在前缀 `packages/app/` 下剥为 `logos/changes/x` 再查契约表；`packages/app-evil/**` 不命中前缀。
+- **项目前缀外的路径不静默丢弃**：直接归 `external` class（non-lifecycle），照常计入 `files[]` 与 `non_lifecycle_paths`——不得用 `--relative` 之类手段让它们从判定中消失。
+- **输出坐标 = 原始输入路径**：`files[].path` / `files[].old_path` / `non_lifecycle_paths` 一律保留未剥前缀的原始路径（与输入字节流可直接对照）；前缀剥除仅发生在分类内部。
+- **取流配置中和（不变量守卫）**：git 模式取流命令**必须显式携带 `--no-relative`**，以中和仓库/用户配置 `diff.relative=true`——该合法配置等价于启用相对模式，会把路径改写为当前目录相对并**静默裁掉当前目录外的变更**，同时破坏「输出始终为 git top-level 坐标」与「项目前缀外路径不静默丢弃」两条不变量，并使 git 模式无法与消费完整原始字节流的 `--stdin` 模式逐字段一致。仅在文档禁止 `--relative` 不足以覆盖配置来源，必须落在命令行开关上并由 ST 对抗配置档锚定（ST-S36-10⑤）。`--stdin` 模式由调用方保证字节流为 top-level 坐标（示例统一带 `--no-relative`）。
+
+#### 路径语义契约 v1（只声明确定安全的集合，其余不背书）
+
+版本化常量 `PATH_CLASSES_V1` 内置于 `cli/src/lib/impact-classify.ts`，权威文字声明落根 `spec/change-impact.md`（本提案随 delta 一并产出）与本节，三处同源维护、代码与规范一致。下表的匹配对象是**剥除项目前缀后的项目根相对路径**：
+
+| class | 集合 | 语义 |
+|-------|------|------|
+| `lifecycle` | `logos/.openlogos-guard`（精确文件）；`logos/changes/**`（含 `archive/**`）；`logos/resources/verify/**`；`logos/.runtime/**` | OpenLogos 官方背书：纯生命周期簿记，确定不进入可部署制品 |
+| `project` | `logos/**` 下上述之外的一切（含 `resources/database/**`、`logos.config.json`、`resources/prd/**` 等） | 项目自决：可能进入制品或影响 verify/smoke，OpenLogos 不越界背书 |
+| `external` | 项目前缀外的一切，以及项目内 `logos/` 之外的一切 | 项目业务域，OpenLogos 完全不判断 |
+
+- 前缀匹配按**路径段边界**判定：`logos/changes/x` 命中，`logos/changes-evil/x`、`logos/changesfoo` 不命中；`logos/.openlogos-guard` 为精确文件匹配。
+- 路径以 `/` 分隔（git 原生输出形态）为准；`-z` 分隔规避引号转义与特殊字符文件名问题。
+
+#### 判定规则（全部 fail-closed）
+
+- **只按路径前缀分类**：完全不依赖 rename 配对结果、时间戳归档目录名与 marker 文件名——空 marker 被 Git exact-content rename 检测任意配对（如 `VERIFY_PASS -> SMOKE_PASS`）不影响结论。
+- **状态覆盖**：A / M / D（单路径）；R / C（携相似度后缀如 `R100`，双路径）——R/C 必须**新旧路径双侧均为 `lifecycle`** 才算 lifecycle，任一侧越界即该文件非 lifecycle。
+- **fail-closed 兜底**：未知状态字母（T / U / X 等）、字节流解析失败（截断记录、字段数不符）、空 diff、空输入，一律判定完成且 `lifecycle_only: false`，并在 `reasons` 给出原因。空 diff 不判 true——CI 语境下空区间多为 sha 传参错误，宁可多构建一次。
+- **结论**：`lifecycle_only === true` 当且仅当变更集非空、全部记录解析成功、且每个文件（R/C 含双侧）均为 `lifecycle` class。
+- **`lifecycle_only` 是唯一决策字段**：`operations`（如从「guard 删除 + changes 移入 archive」推断出 `archive`）、`changes`（涉及的提案 slug 列表）、`reasons` 仅辅助展示，CI 不得据其做部署决策；退出码也不编码判定结论（判定完成一律 exit 0，无论真假），CI 不得以退出码替代 `lifecycle_only`。
+
+#### 输出契约（版本化、只增不改，字段命名遵守 §1.1 snake_case）
+
+`--format json` 走 `spec/cli-json-output.md` §1.2 通用信封（`command: "impact"`），data 部分（登记于 `spec/cli-json-output.md` §3.16，本提案随 delta 一并产出）：
+
+```jsonc
+{
+  "schema_version": "openlogos-change-impact.v1",
+  "lifecycle_only": false,
+  "files": [
+    { "status": "R", "path": "logos/changes/archive/20260801-x/proposal.md", "old_path": "logos/changes/x/proposal.md", "class": "lifecycle" },
+    { "status": "M", "path": "cli/src/index.ts", "old_path": null, "class": "external" }
+  ],
+  "non_lifecycle_paths": ["cli/src/index.ts"],
+  "operations": ["archive"],
+  "changes": ["x"],
+  "reasons": ["non-lifecycle path: cli/src/index.ts"]
+}
+```
+
+- **全部公开字段为 snake_case**（`spec/cli-json-output.md` §1.1「字段命名：snake_case」）：`schema_version` / `lifecycle_only` / `files[]`（`status` / `path` / `old_path` / `class`）/ `non_lifecycle_paths` / `operations` / `changes` / `reasons`。**命名回归红线**：data 递归键集合必须恰为本契约声明的键，不得出现未声明键（防实现内部 camelCase 类型名泄漏到 stdout，测试锚定）。
+- `files[]`：逐文件 `status`（规范化单字母 A/M/D/R/C）/ `path`（新路径，原始输入坐标）/ `old_path`（仅 R/C，其余 `null`）/ `class`（该文件归并结论：R/C 取双侧中更不安全的一侧）。
+- `non_lifecycle_paths`：导致 `lifecycle_only: false` 的越界路径清单（原始输入坐标，确定性排序）；fail-closed 兜底触发时可为空、原因见 `reasons`。
+- **只增不改**：schema 字段只增不改；破坏性变更须升 `openlogos-change-impact.v2` 并保留 v1 过渡期。
+- **exit code**：0 = 判定完成（`lifecycle_only` 真假皆 0）；非零 = 操作错误（`IMPACT_GIT_DIFF_FAILED` / `IMPACT_INPUT_INVALID`，stderr error envelope / stderr 文本）。
+
+#### 授权语义与非目标
+
+- 只读命令、非人类确认点，任何角色任何阶段可跑；不写任何项目文件、marker、guard，**也不得因参数值写项目外任何路径**（修订参数安全三层防线是该红线的实现前提）。
+- 非目标：不替项目判断业务源码 / Dockerfile / 部署配置是否影响制品（`project` / `external` 类的部署语义归项目自决）；不改变 archive / merge / verify 任何现有行为与输出；不给 archive 新增 stdout JSON envelope；不修改任何 marker 内容（规避「逐字节等价」契约兼容风险，§2.31 亦不受影响）。
+- 文档建议 CI 侧 pin 住 CLI 版本，避免隐式升级引入判定行为变化；暂缓 archive 落盘 manifest 形态（只覆盖 archive 单次操作，回答不了任意 `base..head` 区间问题，`impact` 已完整覆盖其场景）。
+
 ## 三、功能验收摘要
 
 ### S01
