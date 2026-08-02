@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.21] - 2026-08-01
+
+### Fixed
+
+- **verify / smoke 沙箱依赖目录审计豁免与隔离边界加固** — 沙箱快照对完整路径段严格等于 `node_modules` 的一次性依赖目录免除非白名单写入告警，避免 pnpm 自动修复依赖导致 `auto` 常态告警或 `always` 误失败；同时改为白名单定点回收，保留 symlink 字面目标并校验 realpath containment，写保护能力不足时按模式 fail / warn，且通过信息级诊断披露豁免。
+- **Windows `archive` 与外部 watcher 的有界握手** — Windows 下归档前通过项目本地 lease / prepare / ACK / result 协议协调活跃 watcher 释放目录句柄；补齐超时与不兼容实例 fail-closed、single-flight、崩溃后三态调和、稳定 `ARCHIVE_WATCH_*` 错误码及旧 watcher 的 `EPERM` 诊断。macOS / Linux 保持无协议文件访问、无额外等待的原路径。
+
 ## [0.13.20] - 2026-07-29
 
 > 本版本是 v0.13.6 之后的首个正式发布：0.13.7–0.13.19 期间的内部迭代（含已记录在 0.13.10 / 0.13.11 条目中的内容）随本版本一并首次发布到 npm / GitHub Release / 官网。
@@ -807,7 +814,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.20...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.21...HEAD
+[0.13.21]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.21
 [0.13.20]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.20
 [0.13.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.6
 [0.13.5]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.5
