@@ -1,3 +1,55 @@
+# 部署报告：release-0-13-21（2026-08-02）
+
+## 一、部署摘要
+
+- **模块 / 提案**：core / `release-0-13-21`
+- **授权依据**：用户明确授权只在本机全局安装并生成供 Windows 验收的 npm `.tgz`，同时明确禁止 npm/GitHub 发布与 `git push`
+- **部署时间**：2026-08-02T01:43:06Z
+- **目标环境**：本机全局 npm（`/opt/homebrew/bin/openlogos`）；Windows 验收机由用户后续手工安装
+- **前置门**：`VERIFY_PASS` 在场；1113/1113 用例通过，覆盖率与通过率均为 100%；`tasks.md` 的 `[code]` 已全部完成
+- **结论**：本机部署成功，`openlogos --version` 为 `0.13.21`
+
+## 二、执行命令摘要
+
+| 步骤 | 命令 / 动作 | 结果 |
+|---|---|---|
+| 回滚包留存 | 从官方 registry 获取 `@miniidealab/openlogos@0.13.20` tarball 到 `cli/rollback/` | **PASS**；SHA-1 `787c4dd57dff8f9c6ad3844141f00c4fa8195bf5` 与 registry 一致 |
+| 构建与打包 | `cd cli && npm run build && npm pack` | **PASS**；生成 `miniidealab-openlogos-0.13.21.tgz`，372 个文件 |
+| 包内容核验 | 校验包版本、路径安全、CLI 入口、Windows watcher、规格、Skills 与三类插件模板 | **PASS**；缺失 0、危险路径 0 |
+| 本机全局安装 | `npm install -g <0.13.21 tarball>` | **PASS**；全局包更新为 `@miniidealab/openlogos@0.13.21` |
+| 安装后检查 | `openlogos --version`、`openlogos --help`、全局包必需文件检查 | **PASS** |
+
+## 三、Windows 验收包
+
+- **文件**：`cli/miniidealab-openlogos-0.13.21.tgz`
+- **SHA-256**：`58302f83423640c14002749bead6175bfd98c103543ca6cebfe4d778b0b5877a`
+- **包版本**：`0.13.21`
+- **文件数**：372
+- **关键内容**：`dist/index.js`、`dist/lib/archive-watch.js`、`spec/schema/*.schema.json`、`skills/`、`claude-plugin-template/`、`opencode-plugin-template/`、`codex-plugin-template/`
+- **Windows 安装命令**：`npm install -g .\miniidealab-openlogos-0.13.21.tgz`
+
+## 四、迁移与服务状态
+
+- 无数据库或配置迁移。
+- CLI 无常驻服务；安装后的命令入口与帮助输出均正常。
+- 本次未创建 tag、未执行 `npm publish`、未创建 GitHub Release、未部署官网、未执行 `git push`。
+
+## 五、回滚点
+
+- **官方回滚包**：`cli/rollback/miniidealab-openlogos-0.13.20.tgz`
+- **回滚命令**：`npm install -g /Users/huangxianglong/gitlab/openlogos/cli/rollback/miniidealab-openlogos-0.13.20.tgz`
+- 回滚后应运行 `openlogos --version`，预期恢复为 `0.13.20`。
+- 本次无数据迁移，回滚无需清理项目状态文件。
+
+## 六、验收结论与环境备注
+
+1. Windows 原生 watcher 句柄与目录 rename 端到端验证已由用户在目标环境完成，并于 2026-08-02 明确确认验收通过。
+2. `openlogos smoke` 已完成：53/53 用例通过，覆盖率与通过率均为 100%，Gate 3.8 为 PASS，`SMOKE_PASS` 已落盘。
+3. 本机 npm 默认镜像缓存查询 0.13.20 时出现缺失缓存文件的 `ENOENT`；本次通过独立临时缓存和官方 registry 完成校验与安装，未修改用户默认缓存。若后续默认 npm 查询仍失败，可单独执行缓存诊断。
+4. `cli/` 根目录既有的另一个 `miniidealab-openlogos-0.13.20.tgz` 与官方发布包 SHA-1 不同，未覆盖；本次回滚只认 `cli/rollback/` 中已校验的官方包。
+
+---
+
 # 部署报告 — proposal-ui-ux-first
 
 ## 部署时间
