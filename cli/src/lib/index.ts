@@ -13,3 +13,5 @@ export {
   type OutputFormat,
   type JsonEnvelope,
 } from './json-output.js';
+
+export * from './archive-watch.js';

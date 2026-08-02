@@ -1,5 +1,38 @@
 # website-release-feed 实现清单
 
+## win32-archive-watcher-handshake（单一自闭环切片）
+
+### 范围
+- 新增 `openlogos.archive-watch/v1` CLI 消费端：确定性项目标识与协议路径、租约快照、不可协调实例识别、原子 prepare/result、ACK 屏障、过期清理、single-flight、去递归 token 与磁盘三态调和。
+- `openlogos archive` 仅在注入/真实平台为 `win32` 时执行握手；非 Windows 路径不访问协议目录、不校验 token、不等待，保持原 rename 行为。
+- Windows 握手失败、超时、实例失败与三态矛盾均 fail-closed；旧版 watcher 导致的 `EPERM`/`EACCES`/`EBUSY` 输出明确诊断且不自动重试。
+- 本仓只实现 CLI 端；真实 Windows watcher + rename 端到端验证明确留待打包后在 Windows 机器执行。
+
+### 覆盖用例
+- [x] UT-S09-125 ~ UT-S09-134
+- [x] ST-S09-44 ~ ST-S09-47
+- [x] ST-S09-EX-10.1 ~ ST-S09-EX-10.4
+- [x] ST-S09-01、ST-S11-08、UT-S24-AE-01、ST-S24-AE-01
+
+### 产物
+- `cli/src/lib/archive-watch.ts`
+- `cli/src/lib/index.ts`
+- `cli/src/commands/archive.ts`
+- `cli/src/i18n.ts`
+- `cli/test/s09-change.test.ts`
+- `spec/cli-json-output.md`、`logos/spec/cli-json-output.md`
+- `spec/workflow.md`、`logos/spec/workflow.md`
+- `logos/resources/verify/test-results.jsonl`（OpenLogos reporter）
+
+### 验证
+- `cd cli && npm run build`：通过。
+- `cd cli && npm test -- test/s09-change.test.ts --cache false`：47/47 通过。
+- `cd cli && npm test -- test/s09-change.test.ts test/s11-status.test.ts test/s24-auto-gate.test.ts --cache false`：193/193 通过；上述 22 个新增/复用 ID 均由 reporter 记录为 `pass`。
+- `cd cli && npm test -- --cache false`：54 个测试文件、1529/1529 通过。
+- `cd website && npm test`：3/3 通过。
+- `cd cli && npx eslint src/commands/archive.ts src/lib/archive-watch.ts src/lib/index.ts src/i18n.ts`：通过。
+- 未在 macOS 伪报 Windows 真机结果；Windows 端到端验证状态为“待打包后在 Windows 机器执行”。
+
 ## support-nodelta-spec-complete：smoke dispatcher 结果路径修复
 
 ### 范围

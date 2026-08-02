@@ -1250,8 +1250,14 @@ openlogos smoke --env production --format json
 | `FLOW_NOT_FOUND` | 内置 flow 模板缺失 / 无法定位 |
 | `FLOW_SCHEMA_INVALID` | flow 或 overlay 校验失败（含 overlay-add 谓词不可求值、launched builtin skip/reorder、`op:modify` 覆盖 `id`、`cmd:` 用于 builtin、同节点双 cmd、`cmd_timeout_seconds` < 1 等）|
 | `FLOW_CMD_SPAWN_FAILED` | `cmd:` 命令的 **shell 进程本身无法启动**（child_process `'error'` 事件，如 shell 缺失 / `EACCES`）；message 含节点 id + 命令名 + errno。**命令不存在（shell exit 127/9009）不属此类**，按非 0 走 success envelope |
+| `ARCHIVE_WATCH_PREPARE_FAILED` | Windows `archive` 无法建立安全握手请求、发现不可协调实例、检测到 single-flight 冲突或实例快照在 rename 前发生竞态；fail-closed，不 rename、不动 guard |
+| `ARCHIVE_WATCH_ACK_TIMEOUT` | Windows `archive` 在有界 deadline 内未收齐全部 `released` ACK；fail-closed，待处理实例写入协议 `result.json` |
+| `ARCHIVE_WATCH_INSTANCE_FAILED` | Windows `archive` 收到实例 `failed` ACK 或无效 ACK；fail-closed，稳定 reason 写入协议 `result.json` |
+| `ARCHIVE_WATCH_STATE_INCONSISTENT` | Windows `archive` 的 live/archive/guard 磁盘三态无法唯一调和；保留磁盘事实并 fail-closed |
 
 > `openlogos watch` 的错误仍使用通用错误 envelope（`command: "watch"`）；项目未初始化时输出 `PROJECT_NOT_INITIALIZED` 并以非零退出码退出，不进入轮询循环。`openlogos next --auto` 的错误沿用 `next` 既有错误语义（如 `PROJECT_NOT_INITIALIZED` / `NO_ACTIVE_CHANGE`），不新增错误码。
+>
+> `openlogos archive` 仍是纯文本命令，不新增 stdout JSON envelope。上述 `ARCHIVE_WATCH_*` 以稳定错误码文本写 stderr 并非零退出；机器可读握手细节位于 `logos/.runtime/archive-watch/v1/requests/<requestId>/result.json`。
 
 ### 6.2 overlay 派生错误信封
 

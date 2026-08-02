@@ -507,6 +507,14 @@ proposal / tasks（明确是否需要部署）
 - **verify / deploy / smoke 失败只修对应产物**：不需要重走 merge 流程，除非发现规格本身错误
 - **git push 是人类确认点**：archive 完成后 AI 提示用户确认，不得自动推送。**例外（auto-full-unattended）**：全自动 / 无人值守模式下（`openlogos next --auto` 的 standing run-scoped 授权——用户选 `--auto` 即一次性授权该提案全链路自动跑到底），archive 完成即由 standing 授权自动 `git push`，并向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行。`git push` 无需任何 marker 或 guard 改动——PreToolUse guard 的安全白名单本就放行 `git push`、从不拦截（见 [pretooluse-guard.md](./pretooluse-guard.md)）；全自动由生成的指令文本授权 AI 自动 push，半自动 / 手动模式（无 `--auto`）由指令文本要求人工确认，行为完全不变。
 
+### Windows 外部归档 watcher 握手
+
+- 仅当 `process.platform === "win32"` 时，`openlogos archive <slug>` 才读取 `logos/.runtime/archive-watch/v1/`；macOS/Linux 不读写协议文件、不校验 token、不等待，直接沿用既有 rename 路径。
+- Windows 下先清理过期协议对象并快照项目匹配的活跃租约。快照为空时立即走快路径；非空时原子写 `prepare.json`，只有 `expectedInstances` 全部写出 `released` ACK 后才允许 rename。
+- ACK 超时、实例 `failed`、未知协议主版本、缺少 `prepare` 能力或 rename 的 `EPERM`/`EACCES`/`EBUSY` 均 fail-closed：不删除 guard、不自动重试，并输出稳定 `ARCHIVE_WATCH_*` 错误码。
+- RunLogos 宿主只可通过与项目、slug、协议及有效期绑定的子进程变量 `OPENLOGOS_ARCHIVE_WATCH_PREPARED` 跳过外部握手；不存在长期全局逃生开关。
+- rename 异常或进程重跑时以 live/archive/guard 磁盘三态裁决，磁盘已归档则写 `reconciledFromDisk:true`，矛盾则拒绝继续。真实 Windows watcher + rename 端到端验证在打包后由 Windows 机器执行；非 Windows 开发机只运行注入式 `fs/platform/env/clock` 协议测试。
+
 迭代可能导致场景变更：新增场景、修改已有场景、废弃场景。所有变更通过 `logos/changes/` 提案管理，场景编号一旦分配不复用。
 
 ## 无人值守恢复策略

@@ -265,6 +265,11 @@ const messages: Record<Locale, Record<string, string>> = {
     // archive
     'archive.done': '✓ Change proposal \'{slug}\' archived.',
     'archive.path': '  logos/changes/{slug}/ → logos/changes/archive/{slug}/',
+    'archive.watch.failed': 'Error [{code}]: archive watcher handshake failed ({reason}).',
+    'archive.watch.details': '  Instances: {details}',
+    'archive.watch.incompatible': 'A RunLogos instance cannot coordinate this protocol. Upgrade openlogos CLI or close that instance, then retry.',
+    'archive.watch.legacyBusy': 'Error: Windows could not move the proposal directory. An older RunLogos instance or another program may still be watching it; upgrade or close the application, then retry.',
+    'archive.watch.reconciled': '  Archive completion was reconciled from disk state after an operation error.',
   },
   zh: {
     // init
@@ -517,6 +522,11 @@ const messages: Record<Locale, Record<string, string>> = {
     // archive
     'archive.done': '✓ 变更提案 \'{slug}\' 已归档。',
     'archive.path': '  logos/changes/{slug}/ → logos/changes/archive/{slug}/',
+    'archive.watch.failed': '错误 [{code}]：归档 watcher 握手失败（{reason}）。',
+    'archive.watch.details': '  实例：{details}',
+    'archive.watch.incompatible': '检测到无法协调该协议的 RunLogos 实例；请升级 openlogos CLI 或关闭该实例后重试。',
+    'archive.watch.legacyBusy': '错误：Windows 无法移动提案目录，可能有旧版 RunLogos 或其他程序仍在监听；请升级或关闭应用后重试。',
+    'archive.watch.reconciled': '  归档操作报错后已依据磁盘状态调和为成功。',
   },
 };
 
