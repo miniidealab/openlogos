@@ -92,6 +92,8 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
       slug: result.slug,
       pass,
       violations: result.violations,
+      // S38（delta-r1 F4）：warnings 仅非空时出现，否则整个字段省略（零漂移，契约见 cli-json-output §3.15）
+      ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
     })));
   } else {
     console.log(`change-lint: ${result.slug}`);
@@ -111,12 +113,18 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
         }
       }
     }
+    // S38：决策记录 warning（提醒级，不改结论 / exit code）
+    for (const w of result.warnings) {
+      console.log(`  ⚠ 决策记录：${w.message}`);
+      console.log(`      建议：${w.fix_hint}`);
+    }
     const total = result.checks.length;
     const passed = result.checks.filter(c => c.violations === 0).length;
+    const warnSuffix = result.warnings.length > 0 ? `，${result.warnings.length} warning` : '';
     if (pass) {
-      console.log(`PASS（${passed}/${total}）`);
+      console.log(`PASS（${passed}/${total}${warnSuffix}）`);
     } else {
-      console.log(`FAIL（${passed}/${total}，${result.violations.length} 项违规）`);
+      console.log(`FAIL（${passed}/${total}，${result.violations.length} 项违规${warnSuffix}）`);
     }
   }
 

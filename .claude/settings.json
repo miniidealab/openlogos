@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/openlogos/bin/openlogos-phase"
+            "command": "node \".claude/openlogos/bin/openlogos-phase-launcher.cjs\""
           }
         ]
       }

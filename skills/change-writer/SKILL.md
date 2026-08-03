@@ -376,6 +376,39 @@ change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `s
 - 正常路径（`python3` 可用、走了设计系统）则置 `design_system_mode: generated` 并产出 `design-system.json`（见 ③ / ④），checker 走 `generated` 分支要求合法非空令牌。
 - 与提案「Python3 缺失时以通用风格兜底并标注，不阻塞」的口径一致。
 
+
+## Step 6 补充三：决策记录沉淀（S38，decision-record-capability）
+
+> 来源变更：decision-record-capability（社区 RFC issue #12 补充观察）。承接 S37 archive audit-only 契约——决策理由不能只活在归档的 proposal 里。
+
+设计决策的**理由**若只写进 proposal 的「变更原因」，归档后即失联、archive 删除即彻底消失。为把「为什么这样设计」沉淀为可检索的活文档，change-writer 在提案阶段判断本次是否立下值得长期复盘的**拍板决策**；若有，产出决策记录。
+
+### ① 何时升格为决策记录（升格判据）
+
+「变更原因」是**每案必填**的叙述性动机——留在 `proposal.md`，**不复制进 resources**。决策记录是**少数**值得长期复盘的拍板，满足任一即升格：
+
+1. 立了未来变更必须遵守的**不变量 / 约束**；
+2. 在**真实备选之间**做了取舍，且被否选项将来可能被重新提出（记下理由以免反复争论）；
+3. **跨多个规格 / 组件**。
+
+**一句话测试**：「读合并后的规格本身，能否还原这个 why？」——能→**不升格**；规格只说 what、而 why 与被否方案会随 proposal 归档丢失→**才升格**。明确**不升格**：bug 修复、机械重构、发版 bump、trivial 改动。宁缺毋滥——每个提案都写决策记录会把 archive 的检索污染搬进 resources，违背本能力初衷。
+
+### ② 产出方式（可选章节 + deltas/decisions/）
+
+- 判定需要升格时，在 `proposal.md` 新增**可选**章节「## 已确定的设计决策」：每条含**拟定** `DXX`、决策一句话、理由摘要。**拟定号仅为占位、不硬编定死**——最终 `DXX` 由 merge-executor 在 apply 时按分配公式定号：`base = max(configured_next_id ?? 1, max(【已落盘】DXX，空集=0)+1)`（**基准只含已落盘、不纳入本批待落盘 DXX**，delta-r2 F5），候选按稳定序第 `i` 条 `expected_i = base + i`，校验「文件名==标题==`expected_i`」、拒重复。
+- 在 `tasks.md` `[delta]` 规划决策记录 delta：`deltas/decisions/<module>-DXX-<slug>.md`（目录映射 `deltas/decisions/ → logos/resources/decisions/`；**该类别须先由 decision-record-capability 的代码注册，注册前会被判 `delta_path_invalid`**，delta-r1 F1）。
+- 决策记录文档结构（标准 ADR 变体，见 feature-specs §2.34.2）：**状态**（`proposed` / `accepted` / `superseded by DYY`）、**背景**、**决策**（一句话可引用）、**理由**（含关键论据与实证）、**备选方案**（被否选项 + 否掉原因）、**影响面**（约束哪些规格 / 代码 / 流程）、**来源**（提案 slug + issue 链接）。
+- `DXX` 全局唯一，由 `logos-project.yaml` 的 `decision_counter.next_id` 维护（对齐 `scenario_counter` / `feature_counter` 的「AI 维护、CLI 不取号」语义）；**取号 / 递增在 merge-executor apply 时**（不是 `openlogos merge`，delta-r1 F2），见 `skills/merge-executor/SKILL.md`。
+- **不含「已确定的设计决策」章节的提案：不产决策记录、全流程零负担**；决策记录走既有 delta → merge → merge-executor apply 通道，**不新增 `openlogos decision` CLI 命令**。
+
+### ③ 推翻旧决策（superseded，不删除）
+
+新决策推翻旧决策时**不删除**旧记录：用 `MODIFIED` 携旧记录整条剩余全量、仅把「状态」改为 `superseded by DYY`，并在新记录「来源」引用旧 `DXX`。`DXX` 纳入 S37 守恒门 ID 注册表——决策记录条目删除必须显式（`REMOVED` / `REMOVED-ITEMS` 点名），隐式删除会被 change-lint L8 / merge 拒绝。
+
+### ④ change-lint 提示（warning 级）
+
+proposal 含「已确定的设计决策」章节但 `[delta]` 无 `deltas/decisions/` 任务时，`openlogos change-lint` 产 **warning**（`decision_record_section_without_delta`，走独立 `warnings[]` 通道，**不改 exit code、不阻断门**）——提醒补决策记录 delta 或移除该决策章节。它是提醒而非硬门（「是否值得记决策」是判断题、非机器可判定事实）。
+
 ### Step 7: 引导后续操作（链式驱动）
 
 提供一条可直接执行的提示词，让用户一句话启动全部任务的链式执行：

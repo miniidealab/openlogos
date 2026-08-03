@@ -405,7 +405,7 @@ export function shouldEnterSpec(proposalDir: string, uiImpact: boolean): boolean
 }
 
 /** isPrototypeOnlyDelta 扫描的 delta 类目（与 countMergeableDeltaFiles 的 MERGE_SUPPORTED_DELTA_DIRS 对齐）。 */
-const MERGE_SUPPORTED_DELTA_DIRS_FOR_UI = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
+const MERGE_SUPPORTED_DELTA_DIRS_FOR_UI = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'spec', 'skills'] as const;
 
 /**
  * 读活跃提案所属 module id（guard 文件 module 字段）；缺失/损坏 → undefined。

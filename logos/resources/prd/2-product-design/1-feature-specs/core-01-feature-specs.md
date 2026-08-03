@@ -1202,6 +1202,73 @@ Git 的 `--name-status` 输出始终相对 **git top-level**；而 OpenLogos 只
 - 权威文字声明落 `spec/change-management.md` 与 `spec/directory-convention.md`（随本提案 delta 产出）。
 
 
+
+### 2.34 决策记录沉淀能力（S38）
+
+> 来源变更：decision-record-capability（社区 RFC issue #12 补充观察）。位于 §2.33（S37 守恒门与 archive 审计定位）之后。承接 §2.33.3 预留的「未来新增 ID 类别，如决策记录 `DXX`，只改注册表一处」。
+
+#### 2.34.0 两阶段 bootstrap（delta-r1 F1）
+
+`deltas/decisions/` 是**尚未注册**的 delta 类别：现行 `cli/src/lib/delta-classify.ts` 的 `DELTA_TO_RESOURCE` 与合法类别白名单仅含 `prd/api/database/scenario/test/spec/skills`，对 `deltas/decisions/` 判 `delta_path_invalid`、`openlogos merge` 在生成 `MERGE_PROMPT` 前即拒绝。而注册该类别属代码改动、只能在 merge 后实现（先规格后代码）。因此：
+
+- **本能力（S38）本身不产 `deltas/decisions/` 记录**——本案先合并能力规格，并在 `[code]` 注册 `decisions` 类别（`delta-classify.ts` / `flow-derive.ts` / `proposal-lifecycle.ts` 的 `MERGE_SUPPORTED_DELTA_DIRS(_FOR_UI)`）与索引扫描（§2.34.1）。
+- **首条 dogfood 决策记录 `core-D01-*` 由后续变更**在类别注册上线后产出——届时 `deltas/decisions/` 已是合法可 merge 类别，端到端 dogfood 才成立。
+
+#### 2.34.1 沉淀位置、命名与 resource_index（顶层 decisions/ + 全局 DXX）
+
+- **目录**：顶层 `logos/resources/decisions/`（与 `prd/`、`api/`、`test/`、`database/` 平级）。决策跨 Why / What / How 三层通用，单一顶层目录使 AI 与人只需检索一处——直接回应 issue #12「决策理由检索率最低、需先知道 slug 才找得到」。**不置于** `prd/1-product-requirements/` 下（决策不限需求层）。
+- **命名**：`<module>-DXX-<slug>.md`（如 `core-D01-decision-record-capability.md`），遵循既有模块前缀惯例。
+- **resource_index 扫描器扩展（delta-r1 F3，需代码）**：现行 `cli/src/lib/sync-resource-index.ts` 的 `scanCandidateFiles()` 逐项扫描 `prd/api/database/test/scenario/verify/implementation`，**不含 `decisions`**；`inferResourceDesc()` 亦无决策记录规则。故本能力**必须扩展统一扫描器**：`scanCandidateFiles()` 纳入 `logos/resources/decisions/`，`inferResourceDesc()` 增 `<module>-DXX-*.md` 的内容化 desc 规则。扩展后 `openlogos index` / `sync` 才能发现新决策记录并生成内容化描述并进入 `resource_index`。**不得**声称「既有机制自动收录、无需新增扫描」。
+
+#### 2.34.2 决策记录文档结构（标准 ADR 变体）
+
+每条决策记录至少含下列章节：
+
+| 章节 | 内容 |
+|------|------|
+| 状态 | `proposed` / `accepted` / `superseded by DYY` |
+| 背景 | 面临什么问题、什么约束 |
+| 决策 | 拍板的结论（一句话可引用） |
+| 理由 | 为什么选它——含关键论据与实证 |
+| 备选方案 | 被否掉的选项 + 否掉原因 |
+| 影响面 | 该决策约束哪些规格 / 代码 / 流程 |
+| 来源 | 产生该决策的提案 slug + 相关 issue 链接 |
+
+#### 2.34.3 升格判据（与「变更原因」分工）
+
+「变更原因」是 proposal 每案必填的**叙述性动机**，留在 proposal / archive，**不机械复制进 resources**——否则把 issue #12 实测的 archive 检索污染（72–87% 命中在 archive）原样搬进 resources。决策记录是**少数**值得长期复盘的**拍板**，满足任一即升格：
+
+1. 立了未来变更必须遵守的**不变量 / 约束**；
+2. 在**真实备选之间**做了取舍，且被否选项将来可能被重新提出（记下理由以免反复争论）；
+3. **跨多个规格 / 组件**。
+
+**一句话测试**：「读合并后的规格本身，能否还原这个 why？」——能→不升格；规格只说 what、而 why 与被否方案会随 proposal 归档丢失→才升格。明确**不升格**：bug 修复、机械重构、发版 bump、trivial 改动。该判据写入 `skills/change-writer/SKILL.md` 作为产出指引。
+
+#### 2.34.4 DXX 分配与所有权（delta-r1 F2/F5）——merge-executor 在 apply 时定号
+
+- **分配公式（全局唯一，闭合；delta-r2 F5：基准只含已落盘、不含本批）**：`base = max(configured_next_id ?? 1, max(logos/resources/decisions/ 中【已落盘】DXX，空集按 0) + 1)`——**基准只从【已落盘】记录取最大值，绝不把本批 `deltas/decisions/` 待落盘 DXX 纳入 max**。本提案候选按**不依赖待分配 DXX 的稳定顺序**（文件名 slug 声明序）排列，第 `i` 条（**0 基**）`expected_i = base + i`；校验每条「文件名 DXX == 标题 DXX == `expected_i`」、与既有资源或本提案内**重复即拒绝**（阻断）；全部 apply 成功后持久化 `next_id = base + 候选数`（= 全部已落盘 DXX 之最大 + 1）。仅递增 `next_id`、或把本批候选纳入 max，均不能保证唯一——前者遇 stale/缺失 counter 但已有决策文件会重复分配，后者会把首条合法记录（拟号 D01）算成 D02 后自拒（故基准取 `next_id` 与「已落盘最大 +1」较大者、且排除本批）。
+- **事务所有者 = merge-executor（不是 `openlogos merge`）**：`openlogos merge` 只校验 delta + 生成 `MERGE_PROMPT` / `MERGE_PROMPT_GENERATED`；**实际落盘、分配 DXX、持久化 `decision_counter.next_id = max(全部已落盘 DXX) + 1`、更新 `resource_index`** 均由 **merge-executor 在 apply 时**、于同一提交内完成，最后写 `SPEC_MERGED`。这与现行 `scenario_counter` / `feature_counter` 一致（「AI 维护、CLI 不取号、仅读取侧解析」，见 `project-yaml.ts`）——故 `project-yaml.ts` 只**读取侧解析** `decision_counter`，**不新增 CLI 取号 helper**（不引入第二套计数逻辑）。
+- **失败语义**：apply 冲突 / 失败 / 用户中止时**回滚**（不提前消耗编号，避免「计数器已前移、决策不存在」半状态）；重跑幂等（同一 delta 集重复 apply 得同一 DXX 分配与同一 `next_id`）。
+- **不含「已确定的设计决策」章节的提案，全流程行为与现状完全一致（零回归、零负担）**；决策记录走既有 `deltas/ → merge → merge-executor apply` 通道，**不新增 `openlogos decision` CLI 命令**。
+
+#### 2.34.5 change-lint 决策记录提示（warning 级，不阻断门；契约见 cli-json-output §3.15）
+
+- `openlogos change-lint` 新增检查：proposal 含「已确定的设计决策」章节，但 `tasks.md` `[delta]` 无 `deltas/decisions/` 产出任务时，产出 **warning 级**提示（code `decision_record_section_without_delta`）。
+- **warning 不改变 exit code、不阻断 plan / spec 门**（区别于 L1–L8 的 violation）。理由：「本次变更是否立下值得记录的决策」是**判断题、非机器可判定事实**；硬门会逼着不需要 ADR 的变更硬写噪音、或用主观标准卡住流程。对比 S37 守恒门可为 violation（「有没有隐式删 ID」是机器可判定的结构事实），本项性质不同，故取 warning。
+- **机器契约唯一事实源 = `spec/cli-json-output.md` §3.15（delta-r1 F4）**：`change-lint --format json` 的 `data.warnings[]` 字段的**出现 / 省略规则、item 闭合字段、稳定排序、与 `pass` / exit code 的正交关系、warning 与 violation 并存时的 envelope** 均由 §3.15 权威定义（本提案含 `deltas/spec/cli-json-output.md` MODIFIED）。为保「零回归 / 零漂移」：**`warnings` 仅在非空时出现，否则整个字段省略**（无决策 warning 时输出与现状逐字节一致，锚定 UT-S38-03）。`warnings[]` 不进 `ChangeLintViolationCode` 闭合枚举（§3.15 的失败性语义纯净）。
+
+#### 2.34.6 守恒保护与 superseded 生命周期（S37 联动）
+
+- **`DXX` 纳入 S37 守恒门 ID 模式注册表**（§2.33.3 已预留：注册表扩展只改一处、判据函数零改动）：决策记录条目（决策记录文档标题 / 首列结构位置携带的 `DXX`）受隐式删除保护——删除必须走显式 `REMOVED`（删整条记录）或同锚 `MODIFIED` + `REMOVED-ITEMS` 点名，否则 `delta_implicit_id_removal`。
+- **推翻 / 替代**：新决策推翻旧决策时**不删除**旧记录，改其「状态」为 `superseded by DYY`（用 `MODIFIED` 携整条剩余全量、仅改状态字段——`DXX` 在结构位置保留、守恒通过），并由新记录在「来源 / 关联」引用旧 `DXX`。决策历史因此完整留在 `logos/resources/decisions/` 活文档内、可检索、**不依赖 archive**——与 §2.33.6 audit-only 契约一致。
+
+#### 2.34.7 零回归与非目标
+
+- 不追溯为存量已归档提案补写决策记录（项目可自行按价值挑选沉淀，走正常提案）。
+- 不强制所有提案产出决策记录（无「已确定的设计决策」章节 → 全流程零改动）。
+- 不实现 archive 保留策略 / `archive --prune`（issue #12 请求 2，团队已在该 issue 回应中暂缓；与本能力正交）。
+- 既有 L1–L8 检查、merge / merge-executor / archive 对无决策章节提案的行为、`ADDED / MODIFIED / REMOVED` 三标记语义均不变。
+
 ## 三、功能验收摘要
 
 ### S01

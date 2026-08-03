@@ -24,9 +24,11 @@ tech_stack:
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
 scenario_counter:
-  next_id: 38
+  next_id: 39
 feature_counter:
   next_id: 9
+decision_counter:
+  next_id: 1
 modules:
   - id: core
     name: 核心功能
@@ -479,6 +481,10 @@ resource_index:
     desc: S37 场景时序图。涉及 delta 条目守恒门的事前点数（lint 产出点 / merge 消费点同判据）、事后点数（merge-executor 自检）、章节锚 fail-closed 定位、REMOVED-ITEMS 声明性部分删除协议与分支覆盖 B1–B15 时必读。
   - path: logos/resources/test/core-S37-test-cases.md
     desc: S37 测试用例。涉及守恒判据纯函数 UT（结构化归属四类绕过反例、重复标题锚夹具、节号完整 token 文法与 corpus 回归、映射一致性）与真实 CLI 入口 ST（lint 拦截 / merge 拒绝 / 部分删除端到端落地 / 零漂移 / 只读性）的实现与验收时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S38-decision-record.md
+    desc: S38 场景时序图。涉及决策记录沉淀能力的 merge 校验→merge-executor apply 落盘所有权、DXX 分配公式（基准只含已落盘、expected_i=base+i）、change-lint warning、superseded 流转与分支 B1–B11 时必读。
+  - path: logos/resources/test/core-S38-test-cases.md
+    desc: S38 测试用例。涉及 change-lint 决策 warning 与 JSON warnings[] 契约、DXX 守恒（复用 S37 判据）、DXX 分配公式四类反例（stale/缺失 counter、重复、错号、首条 D01 不自拒）、sync-resource-index 扫描器扩展、archive 删除后自足检索的实现与验收时必读。
   - path: spec/schema/next.schema.json
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
   - path: spec/schema/status.schema.json

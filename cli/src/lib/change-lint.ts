@@ -16,6 +16,7 @@ import {
   resolveProposalDeploymentDecision,
   evaluateTestIdEvidence,
   extractStructuredTestIds,
+  extractTaskSectionItems,
 } from './proposal-lifecycle.js';
 import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import {
@@ -81,6 +82,20 @@ export interface ChangeLintViolation {
   message: string;
   fix_hint: string;
   flow_reason?: string;
+}
+
+/**
+ * change-lint 警告（decision-record-capability S38，delta-r1 F4）——与 `violations[]` **正交**：
+ * warning 是**提醒**、不影响 `pass` / exit code，走独立通道、不进 `ChangeLintViolationCode` 闭合枚举。
+ * 契约（出现/省略、item 闭合字段、稳定排序）以 `spec/cli-json-output.md` §3.15 为唯一事实源；
+ * `warnings` 仅在**非空时出现**、否则整个字段省略（零漂移）。item 恰含 code/message/fix_hint（不含 path）。
+ */
+export type ChangeLintWarningCode = 'decision_record_section_without_delta';
+
+export interface ChangeLintWarning {
+  code: ChangeLintWarningCode;
+  message: string;
+  fix_hint: string;
 }
 
 // ── L4：validateMarkdownDelta（前置重构②，fence-aware——F4 修正）──
@@ -161,6 +176,20 @@ export const ID_PATTERN_REGISTRY = {
   scenarioHeading: /^(S\d+)(?=$|\s|[:：])/,
   /** 场景 ID：场景总览 / 场景地图表行首列单元格（整格恰为 SXX；表结构、表头 schema 与辖属上下文由抽取器把关）。 */
   scenarioRow: /^S\d+$/,
+  /**
+   * 决策记录 ID（S38 decision-record-capability）：`# DXX：` / `## DXX` 形态章节标题——
+   * DXX 后接冒号、空白或行尾均为合法结构位置（决策记录文档标题）；`D123x` 等前缀伪命中仍拒绝。
+   * 承 §2.33.3 预留「注册表扩展只改一处、判据函数零改动」——DXX 复用同一 flat 守恒机制。
+   */
+  decisionHeading: /^(D\d+)(?=$|\s|[:：])/,
+  /** 决策记录 ID：决策表行首列单元格（整格恰为 DXX，供多决策索引表结构位置识别）。 */
+  decisionRow: /^D\d+$/,
+  /**
+   * 决策表首列表头语义（code-r1 F1）：首列表头须为「编号 / 决策编号」——比照 scenarioTableHeader。
+   * 决策表分支与场景表分支正交分流：场景表数据行为 SXX（不命中 decisionRow）、决策表数据行为 DXX
+   * （不命中 scenarioRow），故两分支可安全并跑于同一张表而互不污染。
+   */
+  decisionTableHeader: /^(?:决策\s*)?编号$/,
   /** 场景表首列表头语义（结构化归属，code-r1 F3）：首列表头须为「编号 / 场景编号」。 */
   scenarioTableHeader: /^(?:场景\s*)?编号$/,
   /** 场景表第二列表头 schema（code-r2 F3）：正式场景表第二列恒为「场景名称」——普通编号表（如「编号+说明」）不构成场景 ID 结构位置。 */
@@ -228,6 +257,8 @@ function describeTableIdentity(identity: string, countBySubPath: Map<string, num
  * ④ **表身份键**（code-r3）：场景行 ID 不进 flat 集合，而是携带「章节根以下的辖属子路径」身份——
  *   守恒侧仅当既有 ID 与保留 ID **表身份相同**才认可保留，外层场景锚不再是后代子节克隆表的通行证
  *  （`### 历史引用` 下的双列克隆表身份为「历史引用」，与正式表身份 `''` 不同，无法背书删除）。
+ * ⑤ **决策表首列**（code-r1 F1）：首列表头为决策编号语义（`decisionTableHeader`）的合法 GFM 表，
+ *   首列恰为 DXX 的数据行 ID 进 flat（复用同一 flat 守恒机制、与决策标题同集合，见 §2.34.2）。
  * chunkRootIsFirstHeading：目标章节切片以章节标题开头时置 true——该标题是身份路径的根、不入子路径。
  */
 function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirstHeading = false): RegistryIdExtraction {
@@ -242,6 +273,9 @@ function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirst
   for (const h of headings) {
     const sm = ID_PATTERN_REGISTRY.scenarioHeading.exec(h.text);
     if (sm) flat.add(sm[1]);
+    // S38：决策记录 DXX 标题（结构位置 = 决策记录文档标题），复用 flat 守恒机制
+    const dm = ID_PATTERN_REGISTRY.decisionHeading.exec(h.text);
+    if (dm) flat.add(dm[1]);
     const firstToken = h.text.split(/\s+/)[0] ?? '';
     if (ID_PATTERN_REGISTRY.sectionNumber.test(firstToken)) flat.add(firstToken);
   }
@@ -287,6 +321,18 @@ function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirst
             set.add(identity);
             scenarioRows.set(first, set);
           }
+        }
+      }
+      // S38（code-r1 F1）：决策表首列结构位置——合法 GFM 表 + 首列表头为决策编号语义时，
+      // 首列恰为 DXX 的数据行 ID 进 flat（架构 §二十五 / feature-spec §2.34.2「首列结构位置携带的
+      // DXX 受隐式删除保护」，复用同一 flat 守恒机制、与决策标题同集合）。与场景表分支正交并跑：
+      // 场景行为 SXX 不命中 decisionRow、决策行为 DXX 不命中 scenarioRow，故互不污染。
+      const decisionSchemaOk = header.length >= 1 && header.length === delimiter.length
+        && ID_PATTERN_REGISTRY.decisionTableHeader.test(header[0]);
+      if (decisionSchemaOk) {
+        for (const row of block.slice(2)) {
+          const first = (tableRowCells(row)[0] ?? '').trim();
+          if (ID_PATTERN_REGISTRY.decisionRow.test(first)) flat.add(first);
         }
       }
     }
@@ -617,8 +663,44 @@ export type ChangeLintOpErrorCode =
   | 'artifact_unreadable';
 
 export type ChangeLintRunResult =
-  | { ok: true; slug: string; violations: ChangeLintViolation[]; checks: { id: number; label: string; violations: number }[] }
+  | { ok: true; slug: string; violations: ChangeLintViolation[]; warnings: ChangeLintWarning[]; checks: { id: number; label: string; violations: number }[] }
   | { ok: false; errorCode: ChangeLintOpErrorCode; message: string };
+
+/**
+ * 决策记录 warning 判据（S38，delta-r1 F4；code-r1/r2 F3 修正范围）：proposal 含「已确定的设计决策」
+ * **章节标题**（fence/注释外的真实标题，不采信围栏内示例）、但 `[delta]` 段无任何 `deltas/decisions/`
+ * 产出（`[delta]` 段**结构化任务项**规划或实际 mergeable decisions delta 条目均无）→ 提醒补决策记录 delta。
+ * code-r1 F3：① 决策章节判定改走 fence-aware 标题扫描（authorityScan + scanHeadings）——围栏内的
+ * `## 已确定的设计决策` 示例不再误触发。
+ * code-r2 F3：② `deltas/decisions/` 扫描收敛到 `[delta]` 段的**结构化任务项**（复用 proposal-lifecycle
+ * 的 extractTaskSectionItems，仅匹配 `- [ ]` / `- [x]` 项正文）——段内的普通说明、HTML 注释、围栏示例
+ * （如「本案不要创建 `deltas/decisions/`」）不再冒充权威任务、不再误抑制 warning。
+ * 纯结构判定、复用既有 proposal / tasks 分节解析，无第二份 proposal 解析。
+ */
+export function computeDecisionRecordWarnings(
+  proposalContent: string,
+  tasksContent: string,
+  hasDecisionsDeltaEntry: boolean,
+): ChangeLintWarning[] {
+  const lines = proposalContent.split(/\r?\n/);
+  const scan = authorityScan(lines);
+  const hasDecisionSection = scanHeadings(lines, scan.masked, scan.text)
+    .some(h => h.text.includes('已确定的设计决策'));
+  if (!hasDecisionSection) return [];
+  // code-r2 F3：仅采信 [delta] 段的结构化任务项正文，且先 fence/注释掩码——[delta] 段内的普通说明、
+  // HTML 注释、围栏示例（哪怕形如 `- [ ] …deltas/decisions/…`）均被剔除，不构成「已规划」、不误抑制 warning。
+  const taskLines = tasksContent.split(/\r?\n/);
+  const taskScan = authorityScan(taskLines);
+  const maskedTasks = taskLines.map((l, i) => (taskScan.masked[i] ? '' : l)).join('\n');
+  const deltaTaskText = extractTaskSectionItems(maskedTasks, 'delta').map(it => it.text).join('\n');
+  const plansDecisionsDelta = hasDecisionsDeltaEntry || /deltas\/decisions\//.test(deltaTaskText);
+  if (plansDecisionsDelta) return [];
+  return [{
+    code: 'decision_record_section_without_delta',
+    message: 'proposal 含「已确定的设计决策」章节，但 [delta] 未规划 deltas/decisions/ 产出',
+    fix_hint: '补 deltas/decisions/<module>-DXX-<slug>.md 决策记录 delta（升格判据见 change-writer），或移除该决策章节',
+  }];
+}
 
 /** 严格 slug 词法（spec §2.30；r2 F18）：不匹配者仅当历史目录实际存在时走只读兼容，否则 slug_invalid。 */
 export const SLUG_STRICT_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -887,5 +969,11 @@ export function runChangeLint(root: string, proposalDir: string, slug: string): 
     { id: 8, label: '条目守恒（ID 隐式删除拦截）', violations: countFor(8) },
   ];
 
-  return { ok: true, slug, violations: sorted, checks };
+  // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
+  // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
+  const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
+  const warnings = computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry)
+    .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
+
+  return { ok: true, slug, violations: sorted, warnings, checks };
 }

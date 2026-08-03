@@ -1473,3 +1473,51 @@ Error: delta 条目守恒检查未通过，拒绝生成 MERGE_PROMPT。
 - 与模板骨架拒绝（L4 消费点）同级：非零退出、不生成 `MERGE_PROMPT.md`、不写任何 marker。
 - 修复为「MODIFIED 剩余全量 + REMOVED-ITEMS 同锚点名」成对写法（或整节 REMOVED）后重跑 merge 即放行，无需重建提案。
 
+### 2.27 决策记录提示体验（S38 change-lint warning）
+
+> 来源变更：decision-record-capability（社区 RFC issue #12 补充观察）。位于 §2.26（change-lint L8 守恒，S37）之后。
+
+#### change-lint 文本输出（决策记录 warning，不阻断门）
+
+提案 `proposal.md` 含「已确定的设计决策」章节、但 `tasks.md` `[delta]` 无 `deltas/decisions/` 产出任务时，`openlogos change-lint` 在 L1–L8 全绿基础上追加 **warning 行**，`PASS` 结论与 `exit 0` **不变**（warning 不阻断 plan / spec 门）：
+
+```
+change-lint: add-oauth-provider
+  ✓ L1 tasks.md 结构可解析
+  ✓ L2 [code] 标题在场（空段占位合法）
+  ✓ L3 测试证据在场（分阶段证据模型）
+  ✓ L4 delta 段标记与脱模板（3 个 .md delta）
+  ✓ L5 部署决策一致
+  ✓ L6 delta 路径合法（3 mergeable / 0 invalid）
+  ✓ L7 UI 声明结构合法
+  ✓ L8 条目守恒（ID 隐式删除拦截）
+  ⚠ 决策记录：proposal 含「已确定的设计决策」章节，但 [delta] 未规划 deltas/decisions/ 产出
+      建议：补 deltas/decisions/<module>-DXX-<slug>.md 决策记录 delta（升格判据见 change-writer），或移除该决策章节
+PASS（8/8，1 warning）
+```
+
+- **warning 不改变 exit code**：`exit 0`、结论仍为 `PASS`。它是**提醒**而非硬门——「本次是否立下值得记录的决策」是判断题、非机器可判定事实（对比 L8「有没有隐式删 ID」是机器可判定的结构事实，故 L8 是 violation）。
+- **无决策章节的提案**：不产该 warning，输出与现状完全一致（能力零负担）。
+- **补齐后**：`[delta]` 出现 `deltas/decisions/` 任务后 warning 消失。
+
+#### JSON 输出（`--format json`）
+
+warning 经独立 `warnings[]` 通道输出，**不混入** `violations[]`（保持 `ChangeLintViolationCode` 闭合枚举的失败性语义纯净）；`pass` 仍为 `true`。**字段契约以 `spec/cli-json-output.md` §3.15 为唯一事实源（delta-r1 F4）**：`warnings` **仅在非空时出现、否则整个字段省略**（无决策 warning 时输出与本字段引入前逐字节一致，零漂移）；item 恰含 `code` / `message` / `fix_hint` 三字段、按 `code` 后 `message` 稳定排序；与 `pass` / exit code 正交；与 violation 并存时二数组并列、各自独立排序。有决策 warning 时：
+
+```json
+{
+  "command": "change-lint",
+  "data": {
+    "slug": "add-oauth-provider",
+    "pass": true,
+    "violations": [],
+    "warnings": [
+      {
+        "code": "decision_record_section_without_delta",
+        "message": "proposal 含「已确定的设计决策」章节，但 [delta] 未规划 deltas/decisions/ 产出",
+        "fix_hint": "补 deltas/decisions/<module>-DXX-<slug>.md 决策记录 delta，或移除该决策章节"
+      }
+    ]
+  }
+}
+```

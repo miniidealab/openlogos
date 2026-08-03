@@ -61,6 +61,15 @@ export interface ProjectYamlFeatureCounter {
   next_id?: number;
 }
 
+/**
+ * decision-record-capability（S38）：全局决策记录（DXX）编号计数器。
+ * 由 AI / merge-executor 维护（比照 scenario_counter / feature_counter，CLI **不取号**、仅读取侧解析）——
+ * 取号由 merge-executor 在 apply 时按闭合公式执行，本模块不新增取号 / 写 helper（不引入第二套计数逻辑）。
+ */
+export interface ProjectYamlDecisionCounter {
+  next_id?: number;
+}
+
 export interface ProjectYamlDeploymentGate {
   deployment_required?: boolean;
   smoke_required?: boolean;
@@ -74,6 +83,8 @@ export interface ProjectYamlData {
   features?: ProjectYamlFeature[];
   /** add-feature-model（S34）：可选全局 feature 计数器（AI 维护）。 */
   feature_counter?: ProjectYamlFeatureCounter;
+  /** decision-record-capability（S38）：可选全局决策记录计数器（AI / merge-executor 维护，CLI 只读）。 */
+  decision_counter?: ProjectYamlDecisionCounter;
   deployment_gates?: Record<string, ProjectYamlDeploymentGate>;
   /** brownfield-adopter（S33）：provenance/覆盖率的派生索引（非权威），按 module 携 source_hash 供新鲜度对账。 */
   baseline_index?: Record<string, BaselineIndexEntry>;
@@ -239,6 +250,16 @@ function normalizeFeatureCounter(raw: unknown): ProjectYamlFeatureCounter | unde
   return undefined;
 }
 
+/** decision-record-capability（S38）：解析 decision_counter（仅 next_id: number 合法；CLI 只读、不取号）。 */
+function normalizeDecisionCounter(raw: unknown): ProjectYamlDecisionCounter | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  if (typeof record.next_id === 'number') {
+    return { next_id: record.next_id };
+  }
+  return undefined;
+}
+
 function normalizeDeploymentGate(raw: unknown): ProjectYamlDeploymentGate | null {
   const record = asRecord(raw);
   if (!record) return null;
@@ -289,6 +310,11 @@ function normalizeProjectYaml(raw: unknown): ProjectYamlData | null {
   const featureCounter = normalizeFeatureCounter(record.feature_counter);
   if (featureCounter !== undefined) {
     data.feature_counter = featureCounter;
+  }
+
+  const decisionCounter = normalizeDecisionCounter(record.decision_counter);
+  if (decisionCounter !== undefined) {
+    data.decision_counter = decisionCounter;
   }
 
   const deploymentGates = asRecord(record.deployment_gates);

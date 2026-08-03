@@ -202,6 +202,37 @@ openlogos verify、部署执行、openlogos smoke 和 openlogos archive 均为�
 - 本协议**仅**适用于 `deltas/spec/flow/*.yaml` 与 `deltas/spec/schema/*.json` 两类规格整文件；`.md` 规格/Skill delta 仍走段标记合并（缺段标记报错，见「段标记收窄」）；`2-page-design/` 资产与 `ui_impact` 原型的既有规则不变（后者仍由 `commitVerifiedPrototypes()` 落盘，merge-executor 不触碰）。
 - `MERGE_PROMPT.md` 生成文本（`cli/src/i18n.ts`）须同步声明本协议（剥首行、整文件写入、合并后 parse 校验）——该实现改动归本提案 `[code]` 切片，验收锚 = S16 测试「merge 后 schema 产物可解析且无标记行」。
 
+
+## 决策记录 apply 事务所有权（S38，decision-record-capability）
+
+> 来源变更：decision-record-capability（社区 RFC issue #12 补充观察）。delta-r1 F2/F5：`openlogos merge` 只校验 delta + 生成 `MERGE_PROMPT`；决策记录的**实际落盘、DXX 取号、计数器持久化、索引更新**均由 **merge-executor 在 apply 时**承担（与既有 `scenario_counter` / `feature_counter` 的「AI 维护、CLI 不取号」一致）。
+
+当 `deltas/decisions/` 含决策记录 delta 时，merge-executor 在应用该批 delta 时于**同一提交**内按下列顺序执行，作为决策记录的**唯一事务所有者**。该事务的**取号 + 落盘 + 计数器 + 索引 + marker** 语义由受控生产原语 `cli/src/lib/decision-record.ts` 的 `applyDecisionRecords(root, proposalDir)` 承载（它是 `allocateDecisionRecordIds` 的真实生产消费者、由 ST-S38-03/10/11 端到端驱动断言）——merge-executor 按此顺序执行、以其为事务事实源，而非各自散写。该原语按段标记**分类 ADDED / MODIFIED**（MODIFIED = superseded 等就地更新既有记录、**保号不取新号**，非按同名跳过），并对全部主文档 / YAML / index / marker 做**持久事务（journal）保护**（比照 `UI_COMMIT_JOURNAL.json`）：首个资源写入前原子落一份 `DECISION_APPLY_JOURNAL.json`（记录提案身份 = 目标集合 + 正文、`base`、分配号、旧内容），任一步失败回滚已写、恢复旧内容、不留半状态。**事务身份以 journal 判定，不以正文相等判定**——无匹配 journal 时，任何同名既有目标的显式 ADDED（**即使正文相同**）一律**冲突拒绝、绝不覆盖**（`base` 计入全部已提交落盘 DXX、与既有资源重复即拒）；有匹配 journal（崩溃/中断恢复）时，沿用 journal 记录的 `base`/分配号**前滚补齐**、**绝不据已前移的 `next_id` 重算**（故 marker 前崩溃可重试收敛、不会算成 D(N+1) 自拒）。写 `SPEC_MERGED`（提交边界）前**重读校验全部后置条件**（文档集合、`decision_counter.next_id`、`resource_index` 收录），任一不满足即回滚；提交成功即清 journal。重试据 journal + `SPEC_MERGED` + 完整后置条件补齐（不按文件名跳过、不据前移 counter 重算）：
+
+### ① DXX 取号（闭合分配公式，保证全局唯一；delta-r2 F5：基准只含已落盘、不含本批）
+
+- **分配基准**：`base = max(configured_next_id ?? 1, max(logos/resources/decisions/ 中【已落盘】DXX，空集按 0) + 1)`。**基准只从【已落盘】记录取最大值——绝不把本批 `deltas/decisions/` 待落盘 DXX 纳入 max**（否则首条合法记录：资源空、`next_id=1`、拟号 D01 被算成 `max(1,1+1)=D02`、再因「文件名 D01 ≠ allocated D02」自拒）。「仅读 `decision_counter.next_id` 递增」不足以唯一——counter 缺失 / 落后（stale）而已落盘决策文件存在时会重复分配，故基准取 `next_id` 与「已落盘最大 +1」的较大者。
+- **本批候选取号**：本提案候选按**不依赖待分配 DXX 的稳定顺序**（文件名 slug 声明序）排列；第 `i` 条（**0 基**）`expected_i = base + i`。
+- **校验**：每条 **文件名 DXX == 标题 DXX == `expected_i`**；本提案内 / 与既有资源**重复即拒绝**（阻断报告、不落盘、不写 `SPEC_MERGED`），要求改号。
+- **持久化**：全部 apply 成功后写 `decision_counter.next_id = base + 候选数`（等价「全部已落盘 DXX 之最大 + 1」）。
+- 举例：资源空、`next_id=1` → `base=1`；单条候选 `expected_0=D01`（首条不再被拒）；两条候选 → `D01`/`D02`，`next_id=3`。`next_id=7`、无更大已落盘 → `base=7`，单条得 `D07`；`next_id` 缺失、已落盘含 `D03` → `base=max(1,3+1)=4`，得 `D04`。
+
+### ② 落盘与元数据（同一提交）
+
+- 应用 delta 写决策记录主文档到 `logos/resources/decisions/<module>-DXX-<slug>.md`。
+- 持久化 `logos-project.yaml` 的 `decision_counter.next_id = max(全部已落盘 DXX) + 1`（与 `scenario_counter` / `feature_counter` 同为 AI 维护字段；`project-yaml.ts` 只读取侧解析、CLI 不取号）。
+- 更新 `resource_index` 收录新决策记录（内容化 desc 由 `sync-resource-index.ts` 扩展扫描器规则生成；merge-executor 不手工编造 desc，走权威 index 路径）。
+
+### ③ 守恒事后点数 + 失败语义
+
+- 承 S37 事后点数：合并落盘后清点决策记录实际 `DXX` 集合 == 合并前 − REMOVED 整条 − REMOVED-ITEMS 点名 + 新增；superseded 是 `MODIFIED` 改状态、`DXX` 不减。不符即报告、暂停、**不写 `SPEC_MERGED`**。
+- **失败回滚**：apply 冲突 / 校验失败 / 用户中止时回滚，**不提前消耗编号**（杜绝「计数器已前移、决策不存在」半状态）。
+- **重试幂等**：同一 delta 集重复 apply 得同一 DXX 分配与同一 `decision_counter.next_id`。
+
+### ④ 无决策记录时零改动
+
+`deltas/decisions/` 为空的提案，merge-executor 行为与本能力上线前**逐字节一致**（不触发上述任何步骤）。
+
 ## 输出规范
 
 - 直接修改 `logos/resources/` 中的主文档（就地编辑）

@@ -51,7 +51,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-30 个场景（编号跳号、最高至 S37，`scenario_counter.next_id=38`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+31 个场景（编号跳号、最高至 S38，`scenario_counter.next_id=39`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -76,6 +76,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S35 | 提案计划产物左移硬检查（change-lint） | 提案产物（proposal/tasks/deltas）产出后交付前 | P01/P06/P07 | P1 |
 | S36 | 生命周期变更影响分类（impact） | 下游 CI 需判定一次 push 区间是否仅含生命周期文件变更时 | P07/P03 | P1 |
 | S37 | delta 条目守恒门（条目级隐式删除拦截） | 提案 delta 触及带稳定 ID 条目的规格时（lint 产出点 / merge 消费点） | P01/P06/P07 | P1 |
+| S38 | 决策记录沉淀能力（决策理由入 resources） | 提案含「已确定的设计决策」章节、需把拍板理由沉淀为可检索活文档时 | P01/P03/P07 | P1 |
 
 ### ③ 验收与部署门禁
 用可追溯的验收报告与部署 / smoke 门禁守住交付质量（回应 P01/P03/P05）。
@@ -1292,3 +1293,21 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 6. **archive 审计定位（audit-only）**：提案一旦归档，其内容仅供审计——archive 不是任何规格内容的事实源；`logos/resources/` 必须自足（当前有效规格必须存在于 resources，任何流程 / Skill / CLI 不得依赖读取 archive 内容）；archive 过期后可整体或部分删除，删除不损失任何当前有效信息（含 `MERGE_PROMPT.md` 等纯派生物）。写入 `spec/change-management.md` 与 `spec/directory-convention.md`。
 7. **残差如实标注**：仅「结构化 ID 条目内部的无编号散文」不在机器门内（删散文与改写散文机器不可分，改写是 MODIFIED 正当用途）；散文所在章节的整体消失仍被章节级 ID 守恒抓住。
 8. **零回归**：既有 L1–L7 行为、merge 对合法 delta 的消费行为、`ADDED / MODIFIED / REMOVED` 三标记基本语义均不变；守恒门是新增拒绝分支（`REMOVED-ITEMS` 为新增纯声明性标记，不引入新的合并操作语义）。新增 3 个 violation code 扩册进 `ChangeLintViolationCode` 闭合枚举（26 码，`spec/cli-json-output.md` §3.15）。
+
+## S38: 决策记录沉淀能力（决策理由入 resources）
+
+**动因**：来自社区 RFC（issue #12）的补充观察。一个 launched 项目（133 个已归档提案）实测：133 个 proposal **全部**含「变更原因」章节，但只有 4 个含正式「已确定的设计决策」章节；`logos/resources/` 下无任何 ADR / 决策记录类文档。即**设计决策的理由目前只沉淀在 archive 的 proposal 里**——检索率最低（需先知道 slug 才找得到）、却最需要复盘。S37 确立 archive **audit-only** 定位（归档仅供审计、过期可整体删除、不作为任何事实源）后缺口更显性：决策理由若只活在 proposal 里，归档即失联、archive 删除即彻底消失。resources 的「自足性」目前只覆盖规格结论（是什么），不覆盖决策理由（为什么）。
+
+**场景**：change-writer 在提案阶段判断本次变更是否立下值得长期复盘的**拍板决策**（升格判据见验收条件 3）；若有，在 proposal.md 填「已确定的设计决策」章节，并在 `[delta]` 规划 `deltas/decisions/` 决策记录——`openlogos merge` 校验通过后由 **merge-executor 在 apply 时**落入 `logos/resources/decisions/`。决策记录条目化、带全局唯一 `DXX` 编号，纳入 S37 守恒门保护（删除必须显式 `REMOVED` 点名）；推翻旧决策改状态为 `superseded by DYY`（不删除）。由此「为什么这样设计」成为当前有效规格的一部分、可被 AI 与人直接检索，archive 彻底卸下「决策理由唯一载体」负担。
+
+**两阶段 bootstrap（delta-r1 F1）**：`deltas/decisions/` 是尚未注册的 delta 类别（现行 `delta-classify.ts` 判 `delta_path_invalid`），本案先合并能力规格 + 代码注册该类别；**首条 dogfood 决策记录 `core-D01` 由后续变更**在注册上线后产出。
+
+**验收条件**：
+1. **沉淀位置、命名与 DXX 唯一性（delta-r1 F5）**：决策记录存于顶层 `logos/resources/decisions/`（与 `prd`/`api`/`test` 平级——决策跨 Why/What/How 三层通用，单一目录使 AI 只需看一处）；文件命名 `<module>-DXX-<slug>.md`；`DXX` 全局唯一，由 `logos/logos-project.yaml` 新增 `decision_counter.next_id` 维护（对齐 `scenario_counter`/`feature_counter` 的「AI 维护、CLI 不取号、仅读取侧解析」语义）。**取号由 merge-executor 在 apply 时按闭合公式执行（delta-r2 F5：基准只含已落盘、不含本批）**：`base = max(configured_next_id ?? 1, max(【已落盘】DXX，空集=0)+1)`——**基准只从 `resources/decisions/` 已落盘记录取 max，绝不纳入本批待落盘 DXX**（否则首条拟号 D01 会被 `max(1,1+1)` 算成 D02 后因「文件名≠allocated」自拒）。本提案候选按稳定序（文件名 slug）排列，第 `i` 条（0 基）`expected_i = base + i`；校验「文件名==标题==`expected_i`」、与既有资源或本提案内重复即拒绝、全部 apply 成功后持久化 `next_id = base + 候选数`。仅递增 next_id、或把本批候选纳入 max，均不能保证唯一。
+2. **决策记录文档结构（标准 ADR 变体）**：每条至少含——状态（proposed / accepted / superseded by DYY）、背景、决策（一句话可引用）、理由（含关键论据与实证）、备选方案（被否选项 + 否掉原因）、影响面（约束哪些规格 / 代码 / 流程）、来源（产生该决策的提案 slug + 相关 issue 链接）。
+3. **升格判据（与「变更原因」分工，写入 change-writer 指引）**：「变更原因」是每案必填的叙述性动机，留在 proposal、**不机械复制进 resources**（否则把 archive 检索污染搬进 resources）。决策记录是**少数**值得长期复盘的拍板，满足任一即升格：① 立了未来变更必须遵守的**不变量 / 约束**；② 在**真实备选间**做了取舍且被否项将来可能被重提；③ **跨多个规格 / 组件**。一句话测试：「读合并后的规格本身能否还原这个 why？」能→不升格；规格只说 what、why 与被否方案会丢→才升格。bug 修复 / 机械重构 / 发版 bump / trivial 改动不升格。
+4. **change-writer 接入 + 落盘所有权（delta-r1 F2；不强制、零负担）**：proposal 模板新增**可选**「已确定的设计决策」章节；含该章节的提案，`[delta]` 必须规划 `deltas/decisions/` 决策记录 delta；**不含该章节的提案全流程行为与现状完全一致（零回归、零负担）**。决策记录走既有 `deltas/ → merge（只校验+生成 MERGE_PROMPT）→ merge-executor apply（实际落盘+取号+持久化计数器+更新索引+SPEC_MERGED，失败回滚/幂等）` 通道，**不新增 `openlogos decision` CLI 命令**。
+5. **change-lint warning（Q3，不阻断门；契约见 cli-json-output §3.15，delta-r1 F4）**：proposal 含「已确定的设计决策」章节但 `[delta]` 无 `deltas/decisions/` 任务时，`openlogos change-lint` 产出 **warning 级**提示（走独立 `warnings[]` 通道，不失败、不改 exit code、不进 `ChangeLintViolationCode` 闭合枚举；`warnings` 仅非空时出现、否则省略以保零回归）。理由：「是否值得记决策」是判断题、非机器可判定事实，硬门会逼写噪音或用主观标准卡门；对比 S37 守恒门可为 violation（「有没有隐式删 ID」机器可判定），本项不同故 warning。
+6. **守恒与 superseded 联动（S37）**：`DXX` 纳入 S37 守恒门 ID 模式注册表（`ID_PATTERN_REGISTRY` 单点扩册，判据函数零改动，见 §2.33.3 预留），决策记录条目删除必须显式 `REMOVED` / `REMOVED-ITEMS` 点名；推翻旧决策不删除、改状态为 `superseded by DYY` 并由新记录引用——决策历史留在 resources 活文档内、天然可检索、不依赖 archive。
+7. **resource_index 收录（delta-r1 F3，需扩展扫描器）**：现行 `cli/src/lib/sync-resource-index.ts` 的 `scanCandidateFiles()` 白名单不含 `decisions`、`inferResourceDesc()` 无 DXX 规则，故必须**扩展统一扫描器**（`scanCandidateFiles()` 纳入 `decisions/`、`inferResourceDesc()` 增 `<module>-DXX-*.md` 内容化 desc 规则），`openlogos index` / `sync` 才能发现新决策记录、生成内容化描述并进入 `resource_index`——直接解 issue #12「需先知道 slug 才找得到」。**不得**声称既有机制自动收录。端到端验收须从「索引无该项」起跑权威 index/sync、断言路径+desc 补入且幂等（ST-S38-06）。
+8. **零回归 + 非目标**：不追溯为存量已归档提案补写决策记录（项目自行按价值挑选沉淀、走正常提案）；不强制所有提案产出决策记录；不实现 archive 保留策略 / `archive --prune`（issue #12 请求 2，团队已暂缓，与本能力正交）；不改 `ADDED / MODIFIED / REMOVED` 语义与既有 merge / archive / change-lint 对无决策章节提案的行为。

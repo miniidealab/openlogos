@@ -21,7 +21,7 @@ function listFilesRecursive(dir: string): string[] {
 }
 
 /** 扫描项目中所有应纳入 resource_index 的文件，返回相对于项目根目录的路径列表 */
-function scanCandidateFiles(root: string): string[] {
+export function scanCandidateFiles(root: string): string[] {
   const results: string[] = [];
 
   const scanDir = (absDir: string) => {
@@ -36,6 +36,7 @@ function scanCandidateFiles(root: string): string[] {
   scanDir(join(root, 'logos/resources/database'));
   scanDir(join(root, 'logos/resources/test'));
   scanDir(join(root, 'logos/resources/scenario'));
+  scanDir(join(root, 'logos/resources/decisions'));
   scanDir(join(root, 'logos/resources/verify'));
   scanDir(join(root, 'logos/resources/implementation'));
 
@@ -90,6 +91,12 @@ const RULES: DescRule[] = [
     pattern: /logos\/resources\/test\/smoke\/(?:[a-z][a-z0-9-]*-)?([a-z][a-z0-9-]*)-smoke-test-cases\.md$/,
     zh: (m) => `${m[1]} 模块部署后冒烟测试用例。涉及 openlogos smoke 或 launch 前门禁时必读。`,
     en: (m) => `${m[1]} deployment smoke test cases. Required when running openlogos smoke or checking launch gates.`,
+  },
+  // 3c. 决策记录（S38 decision-record-capability）：core-D01-<slug>.md → D01 决策记录
+  {
+    pattern: /logos\/resources\/decisions\/(?:[a-z][a-z0-9-]*-)?(D\d+)-(.+)\.md$/,
+    zh: (m) => `${m[1]} 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。`,
+    en: (m) => `${m[1]} decision record (ADR variant). Required when reviewing the design decision's context, rationale, alternatives, impact, or provenance.`,
   },
   // 4. 技术架构
   {

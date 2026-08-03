@@ -1131,6 +1131,39 @@ CLI 从不读写 `scenario_counter.next_id`（取号是 AI 职责）。feature �
 6. archive audit-only 契约（见功能规格 §2.33.6）不引入任何读 archive 的代码路径——resources 自足性在代码面的体现是「archive 只写不读」维持现状并固化为红线。
 
 
+
+## 二十五、决策记录沉淀能力实现映射（S38，decision-record-capability）
+
+> 来源变更：decision-record-capability（社区 RFC issue #12 补充观察）。位于 §二十四（S37 守恒判据实现映射）之后。delta-r1 复审后补齐自举路径、落盘所有权、索引扫描器与编号唯一性。
+
+### 25.1 delta 类别注册（delta-r1 F1，解自举死锁）
+
+- 现行 `cli/src/lib/delta-classify.ts` 的 `DELTA_TO_RESOURCE` 与合法类别校验（`invalidReason` 白名单）仅含 `prd/api/database/scenario/test/spec/skills`（+ `reference`），对 `deltas/decisions/` 判 `delta_path_invalid`。`cli/src/lib/flow-derive.ts` 的 `MERGE_SUPPORTED_DELTA_DIRS_FOR_UI` 与 `cli/src/lib/proposal-lifecycle.ts` 的 `MERGE_SUPPORTED_DELTA_DIRS` 同为该白名单的第二、三处副本。
+- **`[code]` 注册 `decisions` 类别**：三处白名单 + `DELTA_TO_RESOURCE` 新增 `decisions → logos/resources/decisions/`（同源维护，一致性由回归测试锚定）。注册上线后 `deltas/decisions/` 才成为合法可 merge 类别——**首条 dogfood `core-D01` 由后续变更产出**（本案不含 `deltas/decisions/` 记录，见 §2.34.0）。
+
+### 25.2 目录、编号与落盘所有权（delta-r1 F2/F5）
+
+- **决策记录目录**：顶层 `logos/resources/decisions/`，文件 `<module>-DXX-<slug>.md`。
+- **`decision_counter` 是「AI 维护、CLI 不取号、仅读取侧解析」**（比照 `project-yaml.ts` 现状：`scenario_counter` / `feature_counter` 由 AI 维护、CLI 不取号、只 read-side parse——**当前该模块无计数器写 helper**，delta-r1 F5 已核实）。故 `cli/src/lib/project-yaml.ts` 仅新增 `decision_counter` 的**读取侧解析**（缺失时 read-side 视为未配置，取号时按公式回落），**不新增 CLI 取号 / 写 helper**（不引入第二套计数逻辑）。
+- **取号 / 落盘所有者 = merge-executor（AI），不是 `openlogos merge`（delta-r1 F2）**：`openlogos merge` 只校验 delta + 生成 `MERGE_PROMPT` / `MERGE_PROMPT_GENERATED`（`merge.ts` 不写资源、不改计数器）。merge-executor 在 apply 时于**同一提交**内：① 应用 delta 写决策记录主文档；② 按分配公式定号；③ 持久化 `decision_counter.next_id`；④ 更新 `resource_index`；⑤ 写 `SPEC_MERGED`。失败回滚（不提前消耗编号）、重试幂等。
+- **分配公式（全局唯一，闭合；delta-r2 F5：基准只含已落盘、不含本批）**：`base = max(configured_next_id ?? 1, max(resources/decisions/ 中【已落盘】DXX，空集按 0) + 1)`——**基准只从已落盘记录取 max，绝不纳入本批 `deltas/decisions/` 待落盘 DXX**。本提案候选按不依赖待分配 DXX 的稳定顺序（文件名 slug 声明序）排列，第 `i` 条（0 基）`expected_i = base + i`；校验「文件名 DXX == 标题 DXX == `expected_i`」，与既有资源 / 本提案内重复即拒绝；全部 apply 成功后持久化 `next_id = base + 候选数`。**先扫已落盘最大 DXX** 消解「counter 缺失 / stale 但决策文件已存在 → 重复分配」；**排除本批** 消解「首条拟号 D01 被 `max(1,1+1)` 算成 D02 后自拒」（delta-r2 F5）。
+
+### 25.3 resource_index 扫描器扩展（delta-r1 F3，需代码）
+
+- 现行 `cli/src/lib/sync-resource-index.ts` 的 `scanCandidateFiles()` 逐项扫描 `prd/api/database/test/scenario/verify/implementation`，**无 `decisions`**；`inferResourceDesc()` 无决策记录规则。
+- **`[code]` 扩展统一扫描器**：`scanCandidateFiles()` 纳入 `logos/resources/decisions/`；`inferResourceDesc()` 增 `logos/resources/decisions/(?:[a-z][a-z0-9-]*-)?D\d+-.+\.md$` 的内容化 desc 规则。扩展后 `openlogos index` / `sync` 才能发现新决策记录、生成内容化描述并进入 `resource_index`（AC7 / ST-S38-06 的机器保障）。`sync-resource-index.ts` 及其测试列入实现面；端到端用例从「索引无该项」的真实 YAML 起、落盘后跑权威 index/sync、断言路径 + desc 补入且重复运行幂等。
+
+### 25.4 判据与守恒门联动 + change-lint warning（delta-r1 F4）
+
+- **`DXX` 扩册进 `ID_PATTERN_REGISTRY`**（`cli/src/lib/change-lint.ts`，S37 §2.33.3 已预留「注册表扩展只改一处、判据函数零改动」）：token 文法 `D\d+`、结构化抽取位置 = 决策记录文档标题 / 决策表首列。扩册后决策记录条目**自动获得** S37 守恒门保护（`delta_implicit_id_removal`），无需第二份判据。superseded 用 `MODIFIED` 携整条剩余全量、仅改状态字段——`DXX` 在场、守恒通过。
+- **change-lint 决策 warning（独立 warnings 通道）**：`change-lint.ts` 检测「proposal 含『已确定的设计决策』章节 且 `[delta]` 无 `deltas/decisions/` 任务」→ 产 warning（code `decision_record_section_without_delta`）。**warning 走独立 `warnings[]` 输出通道**，`pass` / exit code 不受影响、**不进** `ChangeLintViolationCode` 闭合枚举。其 JSON 契约（出现 / 省略 / 排序 / envelope）以 `spec/cli-json-output.md` §3.15 为唯一事实源；**仅非空时出现、否则省略**（零漂移）。文本经 `cli/src/commands/change-lint.ts` 追加 `⚠` 行、`cli/src/i18n.ts` 承载文案。复用 S35 change-lint 既有 proposal / tasks 解析，纯结构判定、无第二份 proposal 解析。
+
+### 25.5 不变量
+
+1. **判据单一事实源**：`DXX` 守恒复用 S37 `change-lint.ts` 判据函数，严禁第二份 ID 正则 / 判据（承 §二十四）。
+2. **计数逻辑不重复**：`decision_counter` 复用 `scenario_counter` / `feature_counter` 的「AI 维护、CLI 只读」范式，取号由 merge-executor 按闭合公式执行，CLI 不新增取号逻辑。
+3. **零回归**：无「已确定的设计决策」章节的提案，change-lint / merge / merge-executor / archive 行为逐字节不变；`warnings` 空时省略、DXX 类别注册不影响既有类别校验。
+
 ## 自动流程证据边界与责任分工
 
 ### 证据源

@@ -25,6 +25,7 @@ export const DELTA_TO_RESOURCE: Record<string, string> = {
   'database': 'logos/resources/database',
   'scenario': 'logos/resources/scenario',
   'test': 'logos/resources/test',
+  'decisions': 'logos/resources/decisions',
   'spec': 'spec',
   'skills': 'skills',
 };

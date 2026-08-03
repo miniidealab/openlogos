@@ -88,7 +88,7 @@ export interface PlanState {
   diagnostic?: string;
 }
 
-const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'spec', 'skills'] as const;
+const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'spec', 'skills'] as const;
 export const PLAN_APPROVED_MARKER = 'PLAN_APPROVED';
 // split-slice-planner-stage：slice-exit 门被 --auto 消费后的状态源（类比 PLAN_APPROVED）。
 export const SLICES_APPROVED_MARKER = 'SLICES_APPROVED';

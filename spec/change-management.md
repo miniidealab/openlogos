@@ -305,6 +305,32 @@ AI 在以下三个节点自动提交（告知用户，无需确认）：
 
 push 是独立的人类确认点（Step 12），AI 必须等待用户明确授权后才执行。
 
+
+### 决策记录沉淀（S38，decision-record-capability）
+
+> 来源变更：decision-record-capability（社区 RFC issue #12 补充观察）。承接「归档定位：audit-only（S37）」——决策理由不再是 archive 的独有内容。
+
+**目的**：把设计决策的**理由**从「只活在 archive 的 proposal 变更原因里」沉淀为 `logos/resources/decisions/` 下可检索的活文档。archive 归档后仅供审计、可删除（S37），若决策理由只活在 proposal 里则归档即失联；决策记录使「为什么这样设计」成为当前有效规格的一部分。
+
+**「变更原因」与「决策记录」分工（升格判据）**：
+- **变更原因**：`proposal.md` 每案必填的叙述性动机，留在 proposal / archive，**不机械复制进 resources**。
+- **决策记录**：`logos/resources/decisions/` 下**少数**值得长期复盘的拍板。满足任一即升格——① 立了未来变更必须遵守的不变量 / 约束；② 在真实备选间取舍且被否项可能被重提；③ 跨多个规格 / 组件。一句话测试：「读合并后的规格本身能否还原这个 why？」能→不升格；会丢 why 与被否方案→才升格。bug 修复 / 机械重构 / 发版 bump / trivial 不升格。
+
+**两阶段 bootstrap（delta-r1 F1）**：`deltas/decisions/` 是尚未注册的 delta 类别，现行 `delta-classify.ts` 会判 `delta_path_invalid`、`openlogos merge` 拒绝生成 `MERGE_PROMPT`；注册该类别属代码、只能 merge 后实现。故引入本能力的变更**先合并能力规格 + 在代码注册 `decisions` 类别与索引扫描**，**首条真实决策记录由后续变更**在注册上线后产出。
+
+**流程接入（不强制、零负担、走既有 delta 通道；落盘所有者 = merge-executor）**：
+1. change-writer 在 `proposal.md` 新增**可选**「已确定的设计决策」章节（每条含**拟定** `DXX`、决策一句话、理由摘要——拟定号不硬编，最终号由 merge-executor 按公式定）。
+2. 含该章节的提案，`tasks.md` `[delta]` 必须规划 `deltas/decisions/<module>-DXX-<slug>.md` 决策记录 delta。
+3. **`openlogos merge` 只校验 delta（含 `decisions` 类别合法性、S37 守恒 L8）+ 生成 `MERGE_PROMPT` / `MERGE_PROMPT_GENERATED`——不写资源、不改计数器**。
+4. **merge-executor 在 apply 时**（同一提交内）：按分配公式定号——`base = max(configured_next_id ?? 1, max(【已落盘】DXX，空集=0)+1)`（**基准只含已落盘、不纳入本批待落盘 DXX**，delta-r2 F5），候选按稳定序第 `i` 条 `expected_i = base + i`，校验「文件名==标题==`expected_i`」、拒重复 → 落盘决策记录到 `logos/resources/decisions/` → 持久化 `decision_counter.next_id = base + 候选数`（对齐 `scenario_counter` / `feature_counter` 的 AI 维护语义）→ 更新 `resource_index`（内容化 desc 由 `sync-resource-index.ts` 扩展扫描器生成）→ 事后 ID 点数自检通过后写 `SPEC_MERGED`。失败回滚（不提前消耗编号）、重试幂等。详见 `skills/merge-executor/SKILL.md`。
+5. **不含该章节的提案，全流程行为与现状完全一致（零回归、零负担）**；**不新增 `openlogos decision` CLI 命令**。
+
+**change-lint 提示（warning 级，不阻断门）**：proposal 含「已确定的设计决策」章节但 `[delta]` 无 `deltas/decisions/` 任务时，`openlogos change-lint` 产 warning（`decision_record_section_without_delta`），走独立 `warnings[]` 通道、**不改 exit code、不进 `ChangeLintViolationCode` 闭合枚举**；契约见 `spec/cli-json-output.md` §3.15（`warnings` 仅非空时出现、否则省略）。「是否值得记决策」是判断题、非机器可判定事实，故取 warning 而非 violation。
+
+**守恒与 superseded 生命周期（承 S37 守恒门）**：`DXX` 纳入条目守恒门 ID 模式注册表，决策记录条目删除必须显式（`REMOVED` 删整条 / 同锚 `MODIFIED` + `REMOVED-ITEMS` 点名）。推翻旧决策**不删除**，用 `MODIFIED` 携整条剩余全量、仅把「状态」改为 `superseded by DYY` 并由新记录引用旧 `DXX`——决策历史留在 `logos/resources/decisions/` 活文档内、可检索、不依赖 archive。
+
+**非目标**：不追溯为存量已归档提案补写决策记录；不强制所有提案产出决策记录；不实现 archive 保留策略 / `archive --prune`（issue #12 请求 2，团队已暂缓）。
+
 ## MERGE_PROMPT.md 文件规范
 
 `openlogos merge` 命令自动生成的指令文件，结构如下：

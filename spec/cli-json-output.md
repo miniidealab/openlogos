@@ -2275,6 +2275,38 @@ openlogos change-lint [--slug <slug>] [--format json]
 - 只读性、envelope 结构、exit code 三分流（0/2/1）均与 §3.15 既有契约一致，L8 仅新增检查维度。
 
 
+
+> 归属 `## 3.15 openlogos change-lint --format json`；为 change-lint JSON 补充**警告通道**的权威机器契约（delta-r1 F4）。与既有 `violations[]`（失败性、恒在场空数组）正交——warning 是**提醒**、不影响 `pass` / exit code。**采用 ADDED 子节而非 MODIFIED 整个 §3.15**，以免整节替换触发 L8 守恒对既有枚举表 / 解析语义子节的携带负担；本子节只新增 `warnings[]` 定义，不改 §3.15 既有字段。
+
+### change-lint warnings[]（S38 决策记录提示）
+
+- **出现 / 省略规则（零漂移）**：`data.warnings` **仅在非空时出现**；无 warning 时**整个字段省略**（不是 `[]`）。这保证「无决策章节 / 无 warning」时 `change-lint --format json` 输出与本字段引入前**逐字节一致**（UT-S38-03 / ST-S38-02 锚定的零回归）。⚠ 注意与 `## 3.10` `flow show` 的 `warnings[]`（恒在场、空为 `[]`）语义**不同**——那是 flow 命令的既有契约，此处是 change-lint 命令的新契约，二者各自独立、互不改动。
+- **item 闭合字段**：`warnings[]` 每项恰含 `code`（string）、`message`（string）、`fix_hint`（string）三字段全必填；**不含** `path`（决策记录 warning 是提案级、非文件行级；未来若需文件级 warning 再于本契约扩字段）。
+- **稳定排序（全序）**：`warnings[]` 按 ①`code` 字典序 ②`message` 字典序 排序；同输入必得同序列（重复运行逐字节一致）。
+- **与 `pass` / exit code 正交**：warning **不改变** `pass` 与 exit code——`pass` 仅由 `violations[]` 是否为空决定（`pass:true`→exit 0；`pass:false`→exit 2）。仅有 warning、无 violation 时 `pass:true`、exit 0、`violations:[]`（空数组仍必在，语义不变）、`warnings:[…]` 出现。
+- **warning 与 violation 并存 envelope**：二者同时存在时，`violations[]`（`pass:false`、exit 2）与 `warnings[]` **并列输出、各自独立排序、互不混入**；消费方按 exit code 走既有三分流，`warnings[]` 仅作附加提醒读取，不参与 exit code 判定。
+- **闭合枚举分池**：warning code（如 `decision_record_section_without_delta`）**不进** `ChangeLintViolationCode` 闭合枚举（该枚举仍为失败性 violation 专用，26 码不变）；warning code 是独立命名空间。
+
+示例（仅有决策 warning、无 violation）：
+
+```json
+{
+  "command": "change-lint",
+  "data": {
+    "slug": "add-oauth-provider",
+    "pass": true,
+    "violations": [],
+    "warnings": [
+      {
+        "code": "decision_record_section_without_delta",
+        "message": "proposal 含「已确定的设计决策」章节，但 [delta] 未规划 deltas/decisions/ 产出",
+        "fix_hint": "补 deltas/decisions/<module>-DXX-<slug>.md 决策记录 delta，或移除该决策章节"
+      }
+    ]
+  }
+}
+```
+
 ## 3.16 `openlogos impact --format json`（ci-change-impact-contract S36）
 
 ### 用法
