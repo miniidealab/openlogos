@@ -24,7 +24,7 @@ tech_stack:
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
 scenario_counter:
-  next_id: 37
+  next_id: 38
 feature_counter:
   next_id: 9
 modules:
@@ -475,6 +475,10 @@ resource_index:
     desc: S36 测试用例。涉及 impact 分类器纯函数 UT（路径契约三类、R/C 双侧、fail-closed 兜底、前缀剥除、修订词法拒绝）与真实 CLI 入口 ST（双输入模式一致、snake_case envelope、注入哨兵只读性、monorepo 与 diff.relative 对抗配置）的实现与验收时必读。
   - path: spec/change-impact.md
     desc: 生命周期变更影响契约权威声明。涉及 impact 路径语义契约 v1、路径坐标系、Git 状态流解析、修订参数安全与版本兼容规则时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S37-delta-conservation.md
+    desc: S37 场景时序图。涉及 delta 条目守恒门的事前点数（lint 产出点 / merge 消费点同判据）、事后点数（merge-executor 自检）、章节锚 fail-closed 定位、REMOVED-ITEMS 声明性部分删除协议与分支覆盖 B1–B15 时必读。
+  - path: logos/resources/test/core-S37-test-cases.md
+    desc: S37 测试用例。涉及守恒判据纯函数 UT（结构化归属四类绕过反例、重复标题锚夹具、节号完整 token 文法与 corpus 回归、映射一致性）与真实 CLI 入口 ST（lint 拦截 / merge 拒绝 / 部分删除端到端落地 / 零漂移 / 只读性）的实现与验收时必读。
   - path: spec/schema/next.schema.json
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
   - path: spec/schema/status.schema.json

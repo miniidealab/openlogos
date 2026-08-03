@@ -2239,7 +2239,7 @@ openlogos change-lint [--slug <slug>] [--format json]
 
 **读取顺序与终止红线**：命令按 **`logos/logos.config.json` 存在性探测（所有分支的第一步；缺失 → `not_initialized`，此时不读 guard 及任何后续产物）** → guard → slug 解析/containment → `proposal.md`（含 module resolver）→ `tasks.md` → `deltas/**` 的顺序读取；操作错误的判定**允许其判定所必需的最小读取**（如 `module_unresolved` 需先读 proposal.md 与 guard），红线是**错误一旦确定即终止**——不再读取任何其它产物、不调用任何检查项、不产生第二份输出。未初始化目录**必得** `not_initialized` 而非 `no_active_proposal`（顺序保证，ST-S35-03b 锚定）。
 
-### `violations[].code` 闭合枚举（`ChangeLintViolationCode`，23 码）
+### `violations[].code` 闭合枚举（`ChangeLintViolationCode`，26 码）
 
 | 检查项 | code | flow_reason（string，可选） |
 |--------|------|---------------------------|
@@ -2251,6 +2251,7 @@ openlogos change-lint [--slug <slug>] [--format json]
 | L6 | `delta_path_invalid` | — |
 | L7（既有 checker 13 码） | `design_system_mode_invalid`、`no_pages_declared`、`prototype_path_traversal`、`prototype_basename_invalid`、`prototype_basename_duplicate`、`prototype_missing`、`prototype_extra`、`prototype_empty`、`design_system_missing`、`design_system_invalid`、`design_system_empty`、`fallback_reason_missing`、`fallback_token_forged` | — |
 | L7（新增结构 3 码） | `ui_declaration_missing`、`ui_declaration_unparsable`、`ui_impact_not_boolean` | — |
+| L8（S37 守恒 3 码） | `delta_implicit_id_removal`、`delta_removed_unknown_id`、`delta_section_anchor_unresolvable` | — |
 
 该表为**唯一枚举源**：实现以导出的闭合 TypeScript union/常量表承载，禁开放字符串；下游消费方遇表外 code 应按契约违约处理（保守模式）。
 
@@ -2258,6 +2259,21 @@ openlogos change-lint [--slug <slug>] [--format json]
 
 - 下游 driver 按 exit code 三分流：0 交付合格；2 读 `data.violations` 逐条生成修复动作（`fix_hint` 可直接进修复提示词）；1 读 stderr envelope 的 `code` 排障——「可原地修复的检查红」与「命令未完成检查」由此稳定区分。
 - `--help` 的全局 `--format json` 支持列表同步收录 `change-lint`。
+
+### L8 条目守恒检查项登记（merge-conservation-archive-audit S37）
+
+- **检查项**：L8 条目守恒（delta 条目级隐式删除拦截）。对每个目标为带稳定 ID 条目规格的 `.md` delta，**逐触及章节、按结构化归属**对账：
+  - **结构化归属**：ID 的存在 / 保留 / 点名只认结构位置（测试表 ID 首列、`## SXX:` 标题与场景表行首列、标题行节号——多级数字 + 可选直接字母后缀或末级点分字母的完整 token，`2.29.1` 与 `2.29.2`、`2.19.A` 与 `2.19.B` 均为不同 ID）；散文提及、非 ID 列单元格、代码围栏引用一律不计。ID 类别经 ID 模式注册表统一定义。
+  - `delta_implicit_id_removal`：锚定章节既有结构化 ID 未在同锚 MODIFIED 新内容的结构位置保留、未被同锚 `REMOVED-ITEMS` 点名（每行 `- <ID> — <删除原因>`）、也未随整节 `REMOVED` 删除 → 每 ID 一条；REMOVED-ITEMS 缺同锚 MODIFIED 配对亦按本码报出（点名无物质载体）。
+  - `delta_removed_unknown_id`：REMOVED-ITEMS 点名的 ID 不属于其锚定章节的既有结构化 ID 集合（含拼写不存在与跨章节点名两种形态）。
+  - `delta_section_anchor_unresolvable`：段标记章节锚（单段或标题路径 `父级 > 目标`）在目标主文档解析到 0 个或 ≥2 个章节（fail-closed，诊断区分 not-found / ambiguous 并列候选位置；禁止取第一个命中或合并同名章节）。
+  - 目标主文档不存在（全新文档）跳过守恒。
+- **排序**：violations 稳定排序扩展为 L1→L8 + path 字典序，同 path 按源位置出现序 tie-break（既有规则延伸，L8 排 L7 之后）。
+- **fix_hint 语义**：`delta_implicit_id_removal` 给出双修复路径（补回同锚 MODIFIED 块结构条目 / 补充同锚 REMOVED-ITEMS 点名行）；`delta_removed_unknown_id` 提示核对 ID 拼写或锚定正确章节；`delta_section_anchor_unresolvable` 提示改用标题路径锚并列出候选章节。
+- **消费点同判据**：`openlogos merge` 打包调用同一判据函数，任一违规即非零退出、不生成 `MERGE_PROMPT.md`、不写任何 marker（无 stdout JSON envelope 变更——merge 仍为文本命令）。
+- **阶段感知**：plan 段无 delta 时 L8 空集通过（「产出多少查多少」，与 L4/L6 同口径）。
+- 只读性、envelope 结构、exit code 三分流（0/2/1）均与 §3.15 既有契约一致，L8 仅新增检查维度。
+
 
 ## 3.16 `openlogos impact --format json`（ci-change-impact-contract S36）
 

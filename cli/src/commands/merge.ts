@@ -3,7 +3,7 @@ import { dirname, join, relative } from 'node:path';
 import { readLocale, t, mergePromptTemplate } from '../i18n.js';
 import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 // S35 前置重构②③⑤：段标记/模板骨架校验、delta 分类、模块归属解析改为共享判据打包调用（严禁第二份判据）。
-import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError } from '../lib/change-lint.js';
+import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys } from '../lib/change-lint.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
@@ -188,6 +188,7 @@ export function merge(slug?: string) {
   // F3：非法 .md delta 报错停下——绝不静默整份覆盖主文档、不写 SPEC_MERGED。
   // 收窄：仅 markdown 规格/skill delta 受此约束；`2-page-design/` 原型资产（.html）走整份落盘、不需段标记。
   // S35 显式语义收紧之二：经共享 validateMarkdownDelta，除段标记外同时拒绝模板骨架（占位字面量未替换）。
+  const conservationSectionWriters = new Map<string, string[]>(); // code-r1 F1：`${targetRel}#${sectionLine}` → 写者列表
   for (const d of deltas) {
     if (d.relativePath.endsWith('.md') && !isPrototypeAsset(d.relativePath)) {
       const content = readFileSync(d.deltaPath, 'utf-8');
@@ -202,7 +203,38 @@ export function merge(slug?: string) {
         console.error('  模板骨架 delta 会把占位内容写入主文档；请替换为真实内容后重试。未生成 MERGE_PROMPT、未写 SPEC_MERGED。');
         process.exit(1);
       }
+      // S37 L8 条目守恒（merge-conservation-archive-audit）：与 change-lint L8 共享同一判据函数
+      //（严禁第二份判据）。任一违规 → 非零退出、不生成 MERGE_PROMPT、不写任何 marker（与模板骨架拒绝同级）。
+      // 目标主文档不存在（全新文档）无守恒义务。
+      const targetRel = deltaTargetProjectPath(d.relativePath);
+      if (targetRel) {
+        const targetAbs = join(root, targetRel);
+        if (existsSync(targetAbs)) {
+          const targetContent = readFileSync(targetAbs, 'utf-8');
+          const conservation = evaluateDeltaConservation(content, targetContent);
+          if (conservation.length > 0) {
+            console.error(t(locale, 'merge.conservationRejected', { path: d.relativePath }));
+            for (const cv of conservation) {
+              console.error(`  - [${cv.code}] ${cv.message}`);
+            }
+            console.error(t(locale, 'merge.conservationHint'));
+            process.exit(1);
+          }
+          // code-r1 F1：跨 delta 文件的同一目标章节多写者 fail-closed（与 lint 共享同一解析辅助）
+          for (const key of resolveModifiedSectionKeys(content, targetContent)) {
+            const k = `${targetRel}#${key}`;
+            conservationSectionWriters.set(k, [...(conservationSectionWriters.get(k) ?? []), d.relativePath]);
+          }
+        }
+      }
     }
+  }
+  for (const [k, writers] of conservationSectionWriters) {
+    if (writers.length < 2) continue;
+    console.error(t(locale, 'merge.conservationRejected', { path: writers.join('、') }));
+    console.error(`  - [delta_implicit_id_removal] 目标 ${k.split('#')[0]} 的同一章节被 ${writers.length} 个 delta 文件的 MODIFIED 写入——顺序应用下后写覆盖前写；每章节仅允许一个 MODIFIED 写者`);
+    console.error(t(locale, 'merge.conservationHint'));
+    process.exit(1);
   }
 
   const proposalPath = join(changePath, 'proposal.md');

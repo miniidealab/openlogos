@@ -965,7 +965,7 @@ describe('S35 — 同源锚与契约', () => {
     }
   });
 
-  it('UT-S35-21: 违规集契约——四字段必填、23 码闭合、flow_reason 仅 L2/L3/L5 且恒 string、L1→L7 再 path 排序', () => {
+  it('UT-S35-21: 违规集契约——四字段必填、26 码闭合（S37 扩册 L8 三码）、flow_reason 仅 L2/L3/L5 且恒 string、L1→L7 再 path 排序', () => {
     const { root, dir } = setup({
       proposal: proposalMd({ deploy: '是', reuseLines: ['- UT-S99-99 — 不存在'] }),
       tasks: '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/prd/`', // 缺 [code]、无测试规划 → L2+L3；deploy 是无 [deploy] → L5
@@ -975,7 +975,7 @@ describe('S35 — 同源锚与契约', () => {
     const { violations } = lintViolations(root);
     expect(violations.length).toBeGreaterThanOrEqual(4);
     const registry = new Set<string>(CHANGE_LINT_VIOLATION_CODES);
-    expect(registry.size).toBe(23);
+    expect(registry.size).toBe(26); // S37 merge-conservation-archive-audit 扩册 L8 三码（§3.15 契约 26 码）
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');

@@ -78,9 +78,13 @@ OpenLogos 方法论的统一入口。包含配置文件、研发资源文档和�
 | `implementation/` | Phase 3: HOW | 代码实现清单（Markdown），标记代码实现阶段完成 |
 | `verify/` | Phase 3: HOW | 测试验收、部署执行、冒烟测试结果（JSONL + 报告） |
 
+**自足性声明（S37，merge-conservation-archive-audit）**：`logos/resources/` 必须**自足**——所有「当前有效」的规格内容必须存在于此处（方法论规范在根 `spec/`、Skill 在 `skills/`），任何流程、Skill、CLI 均不得依赖读取 `logos/changes/archive/` 内容来还原当前真相。条目退出 resources 只能显式发生——**整节删除经 `REMOVED`，部分条目删除经同锚 `MODIFIED`（携带剩余全量）+ `REMOVED-ITEMS`（逐行点名）的成对协议**——由条目守恒门（change-lint L8 + merge 拒绝）机器保障，详见 [change-management.md](./change-management.md)。
+
 ### logos/changes/
 
 变更提案工作区。每次功能迭代或 Bug 修复，先在这里创建变更提案，审核通过后再合并回主文档。详见 [change-management.md](./change-management.md)。
+
+**archive 定位（audit-only，S37）**：`logos/changes/archive/` 是已完成变更的历史归档，**仅供审计**——它不是任何规格内容的事实源；归档内容过期后可整体或部分删除（含 `MERGE_PROMPT.md` 等纯派生物），删除不得损失任何当前有效信息（当前真相自足于 `logos/resources/` 与根 `spec/`、`skills/`）。清理由项目按需自行执行，OpenLogos 不强制保留期。
 
 ### logos.config.json 与 logos-project.yaml
 

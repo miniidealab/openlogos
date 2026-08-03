@@ -1071,6 +1071,66 @@ CLI 从不读写 `scenario_counter.next_id`（取号是 AI 职责）。feature �
 
 不做「violation 集合 == flow 停因」判等（非同构：lint 多违规并发，flow 单停因）；改为对同一夹具断言**共享 evaluator 在 lint 与 flow-derive / merge 两侧 pass/fail 与结构化细节一致**。兼容回归锚定：占位串提案不再绕过 `test-id-required`；模板骨架 delta 被 merge 拒绝；unknown/reference 忽略语义（UT-S09-02/10）与已知 category 任意扩展名文件、文件 symlink 的 merge 消费行为逐字节零漂移。
 
+## 二十四、delta 条目守恒判据架构（merge-conservation-archive-audit S37）
+
+> 位于「二十三、change-lint 打包调用层架构（S35）」之后。
+
+### 判据落点与共享（严禁第二份判据）
+
+- 守恒判据以**纯函数**落 `cli/src/lib/change-lint.ts` **单点实现**（与 L4 `validateMarkdownDelta` 同文件同纪律）：输入（delta 内容, 目标主文档内容），输出结构化违规列表（`delta_implicit_id_removal` / `delta_removed_unknown_id` / `delta_section_anchor_unresolvable`，含缺失 ID、所属章节锚、fix_hint）。
+- 两个消费点**打包调用同一函数**：`change-lint.ts` 作为 L8 检查项（产出点，exit 2 报违规）；`merge.ts` 在生成 MERGE_PROMPT 前调用（消费点，违规即拒绝、与模板骨架拒绝同级）。延续 S35 确立的「lint 与 merge / flow-derive 共享同一批判据函数（单一事实源，严禁第二份判据）」不变量。
+- 同源回归锚：同一夹具断言 lint 与 merge 两侧 pass/fail 及结构化细节一致（对齐 §二十三「同源回归锚」模式）。
+
+### 章节锚解析器（fail-closed，禁止猜测）
+
+- 段标记标题即章节锚，支持**单段锚**（标题在目标文档中唯一时）与**标题路径锚**（`父级标题 > 目标标题`，` > ` 分隔，覆盖标题重复语料——`core-smoke-test-cases.md` 中 `### 二、冒烟测试用例补充` 重复 7 次、分属不同父章节）。
+- 解析器按 heading 层级树匹配路径；结果为 **0 个或 ≥2 个**章节 → 返回 `delta_section_anchor_unresolvable`（诊断含 not-found / ambiguous 区分与候选位置列表）。**实现红线：不得取第一个命中、不得合并同名章节、不得用 delta 内容反猜目标。**
+- L8 / merge 消费点 / merge-executor（人工定位，歧义暂停询问）三方共用同一定位规则。
+
+### ID 模式注册表与结构化抽取（防散文绕过）
+
+- 新增导出常量注册表（形如 `ID_PATTERN_REGISTRY`），每类含**token 文法**与**结构化抽取位置**双要素——ID 的「存在 / 保留 / 点名」只认结构位置，散文提及、非 ID 列单元格、fence 内引用一律不计：
+  1. **测试 ID**（`UT-*` / `ST-*` / `SMOKE-*`）——结构位置：测试用例表 **ID 首列单元格**（结构识别对齐既有 `extractStructuredTestIds` 模式）；token 判形**复用既有 `parseTestCaseIds` 权威 parser**（锚定整串兼容基线 + 减法拒绝），不新建第二 parser。
+  2. **场景 ID**（`SXX`）——结构位置：`## SXX:` / `### SXX` 形态章节标题；场景总览 / 场景地图表**行首列**。
+  3. **节号**——**完整编号 token 文法**：`N(.N)*` 多级数字 + 可选**直接单字母后缀**或**末级点分单字母**（等价 `N(?:\.N)*(?:[A-Za-z]|\.[A-Za-z])?`），覆盖既有全部形态（`2.33`、`2.29.1`、`2.29.2`、`2.2b`、`2.2c`、`2.5a`、`2.7A`、`2.13.1`、`2.19.A`–`2.19.C`、`2.20.A`–`2.20.D`）；**完整 token 即 ID**（`2.29.1` ≠ `2.29.2` ≠ `2.29`；`2.2b` ≠ `2.2c`；`2.19.A` ≠ `2.19.B` ≠ `2.19`）；结构位置：仅**标题行**——版本号（`0.13.21`）与散文小数天然排除。
+- **兼容语料回归（强制）**：从当前全部受管规格标题生成 corpus，闭合文法必须全量识别；逐个删除任一标题必须产生守恒违规（防文法漏形态）。
+- 逐章节归属对账：保留 / 点名必须发生在 ID 原所在章节锚定的块内，跨章节引用不背书。
+- 注册表是守恒判据的唯一 ID 事实源；未来扩类（如决策记录 `DXX`）只改注册表，判据函数零改动。**严禁在注册表外散落第二份 ID 正则。**
+
+### 判定流程（两消费点同流程）
+
+1. 解析 delta 的 `ADDED / MODIFIED / REMOVED / REMOVED-ITEMS` 块（段标记解析扩展承认 REMOVED-ITEMS；仅含 REMOVED-ITEMS 无物质变更块 → 非法）；
+2. 目标主文档不存在 → 跳过（新文件无守恒义务）；
+3. 逐锚解析章节（0 / ≥2 命中 → `delta_section_anchor_unresolvable`，该锚不再进入后续对账）；
+4. 对每个被 MODIFIED / REMOVED / REMOVED-ITEMS 触及的章节，按注册表**结构化抽取**既有 ID 集合；
+5. 逐章节集合对账：既有 ID −（同锚 MODIFIED 新内容结构 ID ∪ 同锚 REMOVED-ITEMS 点名 ID ∪ 整节 REMOVED 的全节 ID）≠ ∅ → 逐 ID 产 `delta_implicit_id_removal`；点名 ID ∉ 锚定章节既有集合 → `delta_removed_unknown_id`；REMOVED-ITEMS 无同锚 MODIFIED 配对 → 按 `delta_implicit_id_removal` 对偶缺陷报出；
+6. 违规稳定排序（L8 位于 L7 之后，同 path 按源位置出现序）。
+
+### 事后点数（职责在 Skill 层，非 CLI）
+
+- merge-executor（AI）合并落盘后、写 `SPEC_MERGED` 前，按同一注册表**结构化口径**清点：合并后主文档实际 ID 集合 == 合并前 − REMOVED 整节 ID − REMOVED-ITEMS 点名 + 新增；不符即报告并暂停。该步骤是 AI 行为规范（`skills/merge-executor/SKILL.md`），不新增 CLI 面；CLI 侧事前门已确定性拦截 delta 缺陷，事后点数只兜底「执行出错」。REMOVED-ITEMS 为纯声明性标记，merge-executor 不据其执行编辑。
+
+### 实现映射
+
+| 面 | 位置 | 内容 |
+|----|------|------|
+| 判据纯函数 + 锚解析器 + ID 模式注册表 | `cli/src/lib/change-lint.ts` | 守恒对账函数、heading-path 锚解析、`ID_PATTERN_REGISTRY`（文法 + 结构位置双要素）、新 violation code 定义 |
+| L8 检查项接线 | `cli/src/commands/change-lint.ts`（经 lib 打包） | L8 汇入 violations 聚合与稳定排序 |
+| merge 消费点拒绝 | `cli/src/commands/merge.ts` | 生成 MERGE_PROMPT 前打包调用，违规非零退出 |
+| 违规文案 | `cli/src/i18n.ts` | L8 违规与 merge 拒绝文案 key（zh/en） |
+| 契约登记 | `spec/cli-json-output.md` §3.15 | `ChangeLintViolationCode` 闭合枚举扩册 3 码 |
+| 映射一致性回归 | `cli/test/`（S37 测试） | `DELTA_TO_RESOURCE` 与 `spec/change-management.md`、change-writer 目录映射表三方一致（含 `spec → 根 spec/`、`skills → 根 skills/`） |
+
+### 架构不变量
+
+1. 守恒判据纯函数、无副作用、不读写文件系统之外的状态（输入即字符串）。
+2. lint 与 merge 共享同一判据、同一锚解析器、同一注册表，严禁第二份。
+3. 锚解析 fail-closed：0 / 多命中一律拒绝，禁止任何猜测式回退。
+4. 结构化归属：ID 计数只认结构位置，任何正文 token 扫描式实现均不合规。
+5. 零回归：L1–L7 判据、合法 delta 的 merge 消费行为逐字节不变；L8 仅新增。
+6. archive audit-only 契约（见功能规格 §2.33.6）不引入任何读 archive 的代码路径——resources 自足性在代码面的体现是「archive 只写不读」维持现状并固化为红线。
+
+
 ## 自动流程证据边界与责任分工
 
 ### 证据源

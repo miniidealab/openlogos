@@ -29,6 +29,7 @@
 | S33 | 存量项目逆向建种子基线 | `adopt.ts` / `baseline-seed.ts` / `next.ts` / `status.ts` / `verify.ts` / `lib/project-yaml.ts` / `lib/migrate-lifecycle.ts` / `skills/brownfield-adopter` | `s33-brownfield-baseline.test.ts` | 进行中 |
 | S34 | 管理 feature 分组 | `lib/project-yaml.ts` / `commands/status.ts` / `lib/flow-overlay-derive.ts` / `commands/feature.ts` / `commands/feature-backfill.ts` / `index.ts` | `s34-feature.test.ts` | 进行中 |
 | S36 | 生命周期变更影响分类（impact） | `commands/impact.ts` / `lib/impact-classify.ts` | `s36-impact.test.ts` | 进行中 |
+| S37 | delta 条目守恒门（条目级隐式删除拦截） | `lib/change-lint.ts` / `commands/change-lint.ts` / `commands/merge.ts` | `s37-delta-conservation.test.ts` | 进行中 |
 
 ## 场景依赖关系
 - S01 生成基础项目结构，为后续所有场景提供配置与目录前提。

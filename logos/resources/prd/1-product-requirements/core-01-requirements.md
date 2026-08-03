@@ -51,7 +51,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-29 个场景（编号跳号、最高至 S36，`scenario_counter.next_id=37`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+30 个场景（编号跳号、最高至 S37，`scenario_counter.next_id=38`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -75,6 +75,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S11 | 查看阶段进度与活跃变更 | 需要确认当前状态 | P03 | P0 |
 | S35 | 提案计划产物左移硬检查（change-lint） | 提案产物（proposal/tasks/deltas）产出后交付前 | P01/P06/P07 | P1 |
 | S36 | 生命周期变更影响分类（impact） | 下游 CI 需判定一次 push 区间是否仅含生命周期文件变更时 | P07/P03 | P1 |
+| S37 | delta 条目守恒门（条目级隐式删除拦截） | 提案 delta 触及带稳定 ID 条目的规格时（lint 产出点 / merge 消费点） | P01/P06/P07 | P1 |
 
 ### ③ 验收与部署门禁
 用可追溯的验收报告与部署 / smoke 门禁守住交付质量（回应 P01/P03/P05）。
@@ -1274,3 +1275,20 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 6. `lifecycle_only` 是**唯一决策字段**；`operations`（如推断出 archive）、`changes`（slug 列表）、`reasons` 为辅助展示信息，文档明确 CI 不得据其做部署决策，也不得以退出码替代 `lifecycle_only` 做决策。
 7. **输出契约版本化、只增不改、snake_case**：`--format json` 走通用信封，data 含 `schema_version: "openlogos-change-impact.v1"`、`lifecycle_only`、`files[]`（`status`/`path`/`old_path`/`class`）、`non_lifecycle_paths` 等全 snake_case 字段（遵守 `spec/cli-json-output.md` §1.1）；schema 字段只增不改，破坏性变更须升 v2 并保留 v1 过渡期；data 契约与稳定错误码（`IMPACT_GIT_DIFF_FAILED`、`IMPACT_INPUT_INVALID`）随本提案 delta 登记进根 `spec/cli-json-output.md`（§3.16 与 §6.1 错误码表）。
 8. **零行为侵入**：不改变 archive / merge / verify 任何现有行为与输出；不给 archive 新增 stdout JSON envelope；不修改任何 marker 的内容与「逐字节等价」既有契约；命令全程只读、不写任何项目文件。文档同时建议 CI 侧 pin 住 CLI 版本，避免隐式升级引入判定行为变化。
+
+
+## S37: delta 条目守恒门（条目级隐式删除拦截）
+
+**动因**：来自社区 RFC（issue #12）。一个 launched 项目（133 个已归档提案）实测发现 resources 中的 smoke 规格只剩 12 个用例，而历史编号发到 1–169 号段——一百多个历史用例只存在于 `archive/*/deltas/`。根因是 delta 语义的隐式删除旁路：`MODIFIED = 整章节替换`，AI 产出 MODIFIED 块时若未携带该章节其余未变更条目，merge 忠实替换后旧条目静默消失，全程无任何机器校验兜底（change-lint L1–L7 不查内容守恒）。同时 spec 从未定义 archive 的事实源地位——resources 内容消失后，archive 被动升格为「唯一事实源」，用户无法安全清理归档。设计意图本是「删除必须显式（REMOVED + 说明原因）」，MODIFIED 旁路使之落空。
+
+**场景**：change-writer 产出 delta 后运行 `openlogos change-lint`（产出点，L8），或用户/driver 运行 `openlogos merge <slug>`（消费点）。CLI 对每个目标为带稳定 ID 条目规格的 `.md` delta **逐触及章节、按结构化归属**做守恒对账：锚定章节的既有结构化 ID，凡未在同锚新内容的结构位置保留、未被同锚 `REMOVED-ITEMS` 点名、也未随整节 `REMOVED` 删除者，判为「隐式删除」违规——lint 报红（exit 2）、merge 拒绝生成 MERGE_PROMPT。merge-executor 合并落盘后再做事后点数自检，双保险确保条目只能显式退出 resources。
+
+**验收条件**：
+1. **delta 语义收紧（spec 契约，REMOVED 基本语义零改动）**：`MODIFIED` 块不得隐式删除既有条目。显式删除两种形态：删整节走既有 `REMOVED — <唯一章节锚>`（该节 ID 随节显式删除）；删部分条目走 `MODIFIED — <章节锚>`（携带剩余全量）**成对搭配**新增的**纯声明性标记** `REMOVED-ITEMS — <同一章节锚>`（逐行点名 `- <ID> — <删除原因>`；merge 不据其执行编辑，物质变更由 MODIFIED 整节替换完成）。写入 `spec/change-management.md`（随本提案 delta 产出）。
+2. **ID 模式注册表（单点维护，结构化归属）**：守恒覆盖的 ID 类别经统一注册表定义，每类含 token 文法 + **结构化抽取位置**双要素——测试 ID（`UT-*` / `ST-*` / `SMOKE-*`，测试表 ID 首列，token 判形复用 `parseTestCaseIds`）、场景 ID（`SXX`，章节标题与场景表行首列）、节号（多级数字 + 可选直接字母后缀或**末级点分字母**的**完整 token**，仅标题行，`2.29.1` ≠ `2.29.2`、`2.2b` ≠ `2.2c`、`2.19.A` ≠ `2.19.B`）；散文提及、非 ID 列单元格、fence 引用不构成保留或点名；从当前全部受管规格标题生成兼容语料做 corpus 回归；严禁在注册表外散落第二份 ID 正则。
+3. **章节锚唯一定位（fail-closed）**：段标记章节锚支持单段与标题路径（`父级 > 目标`）两种形态；解析到 0 或 ≥2 个章节一律报 `delta_section_anchor_unresolvable`（诊断区分 not-found / ambiguous 并列候选），禁止取第一个命中、合并同名章节或按内容反猜。
+4. **事前点数（主门，确定性 CLI）+ merge 消费点同判据拒绝**：`openlogos change-lint` 新增 L8 守恒检查（逐章节对账报 `delta_implicit_id_removal` / `delta_removed_unknown_id` / `delta_section_anchor_unresolvable`，exit 2；目标主文档不存在时跳过；L4 承认 `REMOVED-ITEMS` 合法标记）；`openlogos merge` 打包调用与 L8 同一判据函数（严禁第二份判据），任一违规即拒绝生成 MERGE_PROMPT（与模板骨架拒绝同级、非零退出）。端到端验收含「部分删除实际应用合并后仅点名条目消失、其余条目逐字节保留」。
+5. **事后点数（AI 自检）**：merge-executor 合并落盘后按结构化口径清点主文档实际 ID 集合 == 合并前 − REMOVED 整节 ID − REMOVED-ITEMS 点名 + 新增；不符即报告并暂停、不写 `SPEC_MERGED`（写入 `skills/merge-executor/SKILL.md`）。
+6. **archive 审计定位（audit-only）**：提案一旦归档，其内容仅供审计——archive 不是任何规格内容的事实源；`logos/resources/` 必须自足（当前有效规格必须存在于 resources，任何流程 / Skill / CLI 不得依赖读取 archive 内容）；archive 过期后可整体或部分删除，删除不损失任何当前有效信息（含 `MERGE_PROMPT.md` 等纯派生物）。写入 `spec/change-management.md` 与 `spec/directory-convention.md`。
+7. **残差如实标注**：仅「结构化 ID 条目内部的无编号散文」不在机器门内（删散文与改写散文机器不可分，改写是 MODIFIED 正当用途）；散文所在章节的整体消失仍被章节级 ID 守恒抓住。
+8. **零回归**：既有 L1–L7 行为、merge 对合法 delta 的消费行为、`ADDED / MODIFIED / REMOVED` 三标记基本语义均不变；守恒门是新增拒绝分支（`REMOVED-ITEMS` 为新增纯声明性标记，不引入新的合并操作语义）。新增 3 个 violation code 扩册进 `ChangeLintViolationCode` 闭合枚举（26 码，`spec/cli-json-output.md` §3.15）。

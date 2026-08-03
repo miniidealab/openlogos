@@ -205,15 +205,19 @@ change-writer 在 launched 下**不再产出、不再打分、不再划分 `[cod
 
 #### 目录映射
 
-Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logos/resources/` 一一对应：
+Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与合并目标一一对应：
 
-| 目标主文档目录 | Delta 子目录 |
+| 目标目录 | Delta 子目录 |
 |---|---|
 | `logos/resources/prd/` | `deltas/prd/` |
 | `logos/resources/api/` | `deltas/api/` |
 | `logos/resources/database/` | `deltas/database/` |
 | `logos/resources/scenario/` | `deltas/scenario/` |
 | `logos/resources/test/` | `deltas/test/` |
+| 项目根 `spec/`（方法论规范，权威） | `deltas/spec/` |
+| 项目根 `skills/`（Skill 文档，权威） | `deltas/skills/` |
+
+> **根权威 → dogfood 副本为单向同步**：`deltas/spec/` 与 `deltas/skills/` 的合并目标是项目根 `spec/`、`skills/`；`logos/spec/`、`logos/skills/` 是 merge 后由既有同步机制再生成的副本，**不得作为 delta 直接目标**。该映射与 CLI `DELTA_TO_RESOURCE` 常量保持一致（一致性由回归测试锚定）。
 
 `prd/` 下按子目录进一步对应：
 
@@ -245,7 +249,7 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 
 #### 文件格式
 
-每个 delta 文件使用 `ADDED / MODIFIED / REMOVED` 标记，每个标记块对应主文档中的一个章节：
+每个 delta 文件使用 `ADDED / MODIFIED / REMOVED / REMOVED-ITEMS` 标记，每个标记块对应主文档中的一个章节：
 
 ```markdown
 ## ADDED — [新增章节标题]
@@ -255,8 +259,30 @@ Delta 文件写入 `logos/changes/<slug>/deltas/` 下对应子目录，与 `logo
 [修改后的完整内容，merge 时替换主文档中同名章节]
 
 ## REMOVED — [删除章节标题]
-[说明删除原因，merge 时删除主文档中同名章节]
+[说明删除原因，merge 时删除主文档中同名章节；建议列出该节 ID 供审计]
+
+## REMOVED-ITEMS — [被删条目所在章节锚]
+[纯声明性标记，merge 不据其执行编辑：逐行点名被删 ID]
 ```
+
+**守恒写作规范（S37，merge-conservation-archive-audit，强制）**：
+
+1. **MODIFIED 必须携带整节全量内容**——它是整章节替换，不是"只写改动的部分"。凡目标章节内未变更的**结构化条目**（测试表 ID 行、场景表行、编号小节），必须原样抄入 MODIFIED 块的对应结构位置；漏抄 = 隐式删除，会被 change-lint L8 与 `openlogos merge` 双侧拒绝。**注意：仅在散文里提及 ID 不算保留**——守恒按结构位置计数（测试表 ID 首列、场景标题/表行首列、标题行节号）。
+2. **删除整个章节**用既有 `REMOVED — <唯一章节锚>`（语义不变，整节删除；该节 ID 随节显式删除）。
+3. **删除章节内部分条目**必须成对写：`MODIFIED — <章节锚>` 携带删除后剩余的全量内容 + `REMOVED-ITEMS — <同一章节锚>` 逐行点名被删 ID，固定语法：
+
+   ```markdown
+   ## MODIFIED — 四、smoke runner 覆盖强制规则发布后冒烟用例 > 二、冒烟测试用例补充
+   [该小节删除后剩余的全量内容]
+
+   ## REMOVED-ITEMS — 四、smoke runner 覆盖强制规则发布后冒烟用例 > 二、冒烟测试用例补充
+   - SMOKE-core-31 — runner 覆盖检查项已由 SMOKE-core-51 取代
+   ```
+
+   REMOVED-ITEMS 是纯声明（merge 不据其编辑），点名 ID 必须属于锚定章节；只点名不配 MODIFIED、或点名别的章节的 ID，都会被拒绝。
+4. **章节锚必须唯一可定位**：目标标题在主文档中重复时（如 smoke 规格中 `二、冒烟测试用例补充` 出现 7 次），必须用标题路径锚 `父级标题 > 目标标题`；锚解析不到或命中多个会被 fail-closed 拒绝（`delta_section_anchor_unresolvable`），不要指望工具猜。
+5. 产出 delta 前先读目标主文档被触及章节，抄录其全部既有结构化 ID 清单核对一遍——"合并后这些 ID 是否都有去处（结构位置保留 / REMOVED-ITEMS 点名 / 随整节 REMOVED 删除）"。
+6. 无稳定 ID 的散文改写不受机器门约束，但同样不得借 MODIFIED 顺手删除与本次变更无关的内容。
 
 #### 行为规范
 
@@ -436,4 +462,7 @@ AI 只负责驱动内容修改。半自动 / 手动下不得在未获明确授�
 
 **plan 段的 L3 证据指引**（避免死锁与假通过）：plan 阶段测试 ID 通常尚未定稿，L3 只认两种证据——(a) `tasks.md` `[delta]` 中规划了测试规格 delta（目标含 `deltas/test/`）；(b) `proposal.md` 中标题**精确**为 `## 复用测试 ID` 的小节，每行 `- <ID> — <一句话用途>`，ID 必须**精确存在于已合并** `logos/resources/test/` 规格（固定语法与逐项判定规则见功能规格 §2.30）。**禁止**用占位 ID（`UT-Sxx-xx`、`TBD`、`TODO`）或通配族名（`UT-Sxx-*`）蒙混——lint 与 flow-derive 一律拒绝采信。注意证据等级随阶段自动升级：`[delta]` 任务**全部勾选**后，任务文字里的 `deltas/test/` 规划字样不再充当证据，必须有实际产出的测试 delta 文件或合法复用清单。**producer 规则**：`[delta]` section 只含一文件一任务的 delta 产出 checkbox；非 delta / merge-time 工作（如「merge 时同步更新元数据」）**不得以 checkbox 形式写入 `[delta]`**（用说明文字或独立小节承载）——否则延后条目会把已完成的 delta 证据等级错误压回 plan 级（阶段分类的勾选度计数基仅含 delta 产出条目，见功能规格 §2.30）。
 
-**delta 产出的 L4 提醒**：每个 `.md` delta 必须含 ADDED/MODIFIED/REMOVED 段标记**且**已把模板占位字面量（如 `[新增章节标题]`、`[新增的完整内容]`）替换为真实内容——只要正文中残留任一**独占一行**的占位字面量（含「真实内容 + 未替换占位行」的混合形态）即命中模板骨架，会被 lint 与 merge 同时拒绝；行内代码/代码围栏中的引用不受影响。
+**delta 产出的 L4 提醒**：每个 `.md` delta 必须含 ADDED/MODIFIED/REMOVED（或搭配 REMOVED-ITEMS）段标记**且**已把模板占位字面量（如 `[新增章节标题]`、`[新增的完整内容]`）替换为真实内容——只要正文中残留任一**独占一行**的占位字面量（含「真实内容 + 未替换占位行」的混合形态）即命中模板骨架，会被 lint 与 merge 同时拒绝；行内代码/代码围栏中的引用不受影响。
+
+**delta 产出的 L8 提醒（S37 条目守恒）**：每个触及带稳定 ID 条目规格的 `.md` delta，其 MODIFIED 块必须在**结构位置**携带目标章节全量既有 ID 条目（散文提及不算保留）；删整节走 REMOVED，删部分条目走「MODIFIED 剩余全量 + REMOVED-ITEMS 同锚点名」成对写法；标题重复时用标题路径锚（` > ` 连接父级）。既有 ID 未保留、未点名、未随整节删除 → `delta_implicit_id_removal`；点名越界 / 拼写不存在 → `delta_removed_unknown_id`；锚解析 0 或多命中 → `delta_section_anchor_unresolvable`。lint exit 2、merge 拒绝生成 MERGE_PROMPT。全新文档 delta 不受守恒约束。交付前按「守恒写作规范」第 5 条自查一遍 ID 去处。
+

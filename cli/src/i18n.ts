@@ -200,6 +200,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.aiHint': 'Tell AI: "Read logos/changes/{slug}/MERGE_PROMPT.md and execute merge"',
     'merge.noDelta': 'No delta files in logos/changes/{slug}/deltas/ — no-delta spec-complete marker written.',
     'merge.alreadyMerged': 'Specs already merged for \'{slug}\' (SPEC_MERGED exists) — nothing to do.',
+    'merge.conservationRejected': 'Error: delta entry-conservation check failed (S37): {path} — refusing to generate MERGE_PROMPT; no markers written.',
+    'merge.conservationHint': '  Fix: carry the full remaining section content in the same-anchor MODIFIED block, or name each removed ID in a same-anchor REMOVED-ITEMS block (`- <ID> — <reason>`); use a heading-path anchor (`parent > target`) when the title repeats. Run `openlogos change-lint` first to locate all violations at the producing side.',
     'merge.archiveHint': 'Next, ask AI to execute logos/changes/{slug}/MERGE_PROMPT.md and write SPEC_MERGED after specs are actually merged. Then implement code, run `openlogos verify`, and explicitly request `openlogos archive {slug}` after verification passes.',
 
     // launch
@@ -466,6 +468,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.deltaCount': '  - Delta 文件：{count} 个',
     'merge.aiHint': '对 AI 说：「读取 logos/changes/{slug}/MERGE_PROMPT.md 并执行合并」',
     'merge.noDelta': 'logos/changes/{slug}/deltas/ 中没有 delta 文件，已写入 no-delta spec-complete 标记。',
+    'merge.conservationRejected': 'Error: delta 条目守恒检查未通过（S37）：{path}——拒绝生成 MERGE_PROMPT，未写任何 marker。',
+    'merge.conservationHint': '  修复方式：把缺失 ID 的条目补回同锚 MODIFIED 块的结构位置（携带整节全量内容），或新增同锚 REMOVED-ITEMS 块逐行点名（`- <ID> — <删除原因>`）；锚歧义时改用标题路径锚（父级标题 > 目标标题）。可先运行 `openlogos change-lint` 在产出点定位全部违规。',
     'merge.alreadyMerged': '提案 \'{slug}\' 的规格已合并（SPEC_MERGED 存在），无需重复操作。',
     'merge.archiveHint': '下一步让 AI 执行 logos/changes/{slug}/MERGE_PROMPT.md，真正合并主规格后写入 SPEC_MERGED。之后再实现代码、运行 `openlogos verify`，验收通过后明确授权执行 `openlogos archive {slug}`。',
 

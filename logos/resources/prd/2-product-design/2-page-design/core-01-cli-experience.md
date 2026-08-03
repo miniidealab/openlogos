@@ -1426,3 +1426,50 @@ Error [module_unresolved]: 无法解析提案所属模块（proposal.md 缺 "> m
 操作错误的终止红线：允许该错误**判定所必需的最小读取**（如 `module_unresolved` 需先读 guard 与 proposal.md 头）；**错误一旦确定即终止**——不再读取其它产物、不执行任何检查项、无第二份输出。产物读取失败（proposal/tasks/delta 任一不可读）统一报 `Error [artifact_unreadable]: <文件路径> …`。
 
 `--format json` 走通用信封（详见 `spec/cli-json-output.md` §3.15）：检查完成（无论 pass true/false）stdout 输出 success envelope，`pass:false` 时 exit 2；操作错误 stderr 输出 error envelope，exit 1。三种退出码语义（0 交付合格 / 2 可原地修复的检查红 / 1 命令未完成检查）供 driver 与技能侧稳定分流。
+
+
+### 2.26 change-lint L8 守恒违规与 merge 拒绝体验（S37 delta 条目守恒门）
+
+> 来源变更：merge-conservation-archive-audit。位于 §2.25（change-lint S35）之后。
+
+#### change-lint 文本输出（L8 违规示例）
+
+```
+change-lint: my-change
+  ✓ L1 tasks.md 结构可解析
+  ✓ L2 [code] 标题在场（空段占位合法）
+  ✓ L3 测试证据在场（分阶段证据模型）
+  ✓ L4 delta 段标记与脱模板（2 个 .md delta）
+  ✓ L5 部署决策一致
+  ✓ L6 delta 路径合法（2 mergeable / 0 invalid）
+  ✓ L7 UI 声明结构合法
+  ✗ L8 条目守恒（ID 隐式删除拦截）
+    - deltas/test/smoke/core-smoke-test-cases.md
+      [delta_implicit_id_removal] MODIFIED —「二、冒烟测试用例」将隐式删除该章节既有 ID：SMOKE-core-03、SMOKE-core-07
+      fix_hint: 把上述 ID 的条目补回同锚 MODIFIED 块的结构位置（携带整节全量内容），或新增同锚 REMOVED-ITEMS 块逐行点名（- <ID> — <删除原因>）
+    - deltas/test/smoke/core-smoke-test-cases.md
+      [delta_section_anchor_unresolvable] 锚「二、冒烟测试用例补充」在目标文档命中 7 处（ambiguous）
+      fix_hint: 改用标题路径锚唯一定位，如「四、smoke runner 覆盖强制规则发布后冒烟用例 > 二、冒烟测试用例补充」；候选位置见诊断列表
+    - deltas/test/core-S12-test-cases.md
+      [delta_removed_unknown_id] REMOVED-ITEMS 点名的 UT-S12-99 不属于其锚定章节
+      fix_hint: 核对 ID 拼写，或将点名行移到 ID 原所在章节的 REMOVED-ITEMS 块
+FAIL（7/8，L8 共 3 条违规）
+```
+
+- 退出码：exit 2（检查完成、有违规）；全过 exit 0；操作错误 exit 1。与 §2.25 既有约定一致。
+- 违规行按 L1→L8 + path 字典序稳定排序；每条违规必含 `code`、`path`、`fix_hint`。
+
+#### merge 拒绝文案（消费点同判据）
+
+```
+$ openlogos merge my-change
+Error: delta 条目守恒检查未通过，拒绝生成 MERGE_PROMPT。
+  - deltas/test/smoke/core-smoke-test-cases.md
+    MODIFIED —「二、冒烟测试用例」将隐式删除该章节既有 ID：SMOKE-core-03、SMOKE-core-07
+修复方式：把缺失 ID 的条目补回同锚 MODIFIED 块的结构位置，或新增同锚 REMOVED-ITEMS 块逐行点名（- <ID> — <删除原因>）；锚歧义时改用标题路径锚（父级标题 > 目标标题）。
+可先运行 `openlogos change-lint` 在产出点定位全部违规。
+```
+
+- 与模板骨架拒绝（L4 消费点）同级：非零退出、不生成 `MERGE_PROMPT.md`、不写任何 marker。
+- 修复为「MODIFIED 剩余全量 + REMOVED-ITEMS 同锚点名」成对写法（或整节 REMOVED）后重跑 merge 即放行，无需重建提案。
+

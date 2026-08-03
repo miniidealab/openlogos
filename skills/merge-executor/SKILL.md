@@ -110,6 +110,38 @@ openlogos verify、部署执行、openlogos smoke 和 openlogos archive 均为�
 2. **不改动无关内容**：只修改 delta 指定的部分，不重新格式化整个文档
 3. **冲突时询问**：如果主文档中找不到 delta 引用的章节（可能已被其他变更修改），暂停并询问用户如何处理
 4. **逐文件确认**：处理完每个 delta 文件后展示修改摘要，等待用户确认后再处理下一个
+5. **章节锚唯一定位（S37）**：段标记标题即章节锚，支持标题路径形态（`父级标题 > 目标标题`）。锚在主文档中解析到 **0 个或 ≥2 个**章节时一律**暂停并询问用户**——不得取第一个命中、不得合并同名章节、不得按 delta 内容反猜目标（与第 3 条同源，覆盖标题重复的真实语料，如 smoke 规格中 `二、冒烟测试用例补充` 出现 7 次）。
+6. **显式删除契约（S37，REMOVED 语义零改动）**：整节删除走既有 `REMOVED`（删除锚定章节全节）；**部分条目删除由「MODIFIED 携带剩余全量 + `REMOVED-ITEMS` 同锚点名」成对表达**——`REMOVED-ITEMS` 是**纯声明性标记，不据其执行任何编辑**（物质变更完全由 MODIFIED 的整节替换完成），它只是删除授权与审计记录。应用 MODIFIED 块时若发现主文档该章节存在 delta 未在结构位置携带、且未被同锚 REMOVED-ITEMS 点名、也未随整节 REMOVED 删除的带稳定 ID 条目（测试 ID `UT-*`/`ST-*`/`SMOKE-*`、场景 `SXX`、多级节号），视为 delta 疑似隐式删除：**暂停并询问用户**，不得自行决定丢弃（正常情况下此类 delta 已被 `openlogos merge` 的事前守恒门拒绝，走到这里说明门外有异常，更须停）。
+
+## 合并原则补充：条目守恒与事后点数（merge-conservation-archive-audit S37）
+
+> 位于「合并原则」之后。条目守恒的**事前门**由 CLI 承担：`openlogos merge` 生成 MERGE_PROMPT 前已用与 change-lint L8 同一判据（结构化归属、逐章节对账、锚唯一定位 fail-closed）拦截缺陷 delta——merge-executor 拿到的 MERGE_PROMPT 对应的 delta 已通过事前点数。本节定义 merge-executor 的**事后点数**兜底职责：拦截「delta 合法、但合并执行出错」。
+
+### REMOVED-ITEMS 处理规则（声明性，无编辑动作）
+
+- 遇到 `## REMOVED-ITEMS — <章节锚>` 块：**不执行任何主文档编辑**——它声明"锚定章节中这些 ID 的消失是显式授权的"，物质删除已由同锚 MODIFIED 块的整节替换完成。
+- 将点名清单记入该文件的合并摘要（删除了哪些 ID、原因），供用户确认与事后点数对账。
+- 发现 REMOVED-ITEMS 无同锚 MODIFIED 块配对时暂停询问（点名无物质载体，事前门本应拦截）。
+
+### 事后点数（合并落盘后、写 SPEC_MERGED 前，强制）
+
+1. **清点时机**：全部 delta 应用完毕、主文档落盘后，`git commit` 与写 `SPEC_MERGED` **之前**。
+2. **清点口径（结构化）**：按 ID 模式注册表三类，对每个被本次合并触及的主文档清点**结构位置**上的实际 ID 集合——测试 ID 只数测试表 ID 首列、场景 ID 只数 `## SXX:` 标题与场景表行首列、节号只数标题行；散文提及不计。
+3. **对账公式**：
+
+   ```
+   合并后主文档实际结构化 ID 集合
+     == 合并前 ID 集合 − REMOVED 整节的 ID − REMOVED-ITEMS 点名 ID + delta 新增 ID
+   ```
+
+4. **相符** → 把点数结果写进合并摘要（例如「smoke 规格：合并前 53 ID − 整节删除 0 − 点名删除 2 + 新增 3 = 54，实测 54 ✓」），继续 commit 并写 `SPEC_MERGED`。
+5. **不符** → **报告差异（多了哪些 / 少了哪些 ID）并暂停，不执行 commit、不写 `SPEC_MERGED`**，等待用户裁决；不得静默修补后继续。
+6. 该自检不依赖 CLI，可用 Read/grep 完成；它是「delta 合法但 AI 合并执行出错」的最后防线，与事前门（CLI 确定性判据）共同构成两道点数。
+
+### 与 archive audit-only 契约的关系
+
+条目守恒（事前 + 事后）保证内容退出 `logos/resources/` 只能显式发生并留有 REMOVED / REMOVED-ITEMS 记录，因此归档（`logos/changes/archive/`）仅供审计、非事实源、过期可删除（契约见 `spec/change-management.md`「归档定位：audit-only」）。merge-executor 在任何情况下都**不得读取 archive 内容**来还原或补齐主文档——当前真相只在 `logos/resources/`、根 `spec/` 与根 `skills/`。
+
 
 ## 合并原则补充：段标记收窄 + 原型资产落盘归代码路径（proposal-ui-ux-first）
 

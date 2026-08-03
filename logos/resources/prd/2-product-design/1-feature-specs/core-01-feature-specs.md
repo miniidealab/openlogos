@@ -1122,6 +1122,86 @@ Git 的 `--name-status` 输出始终相对 **git top-level**；而 OpenLogos 只
 - 非目标：不替项目判断业务源码 / Dockerfile / 部署配置是否影响制品（`project` / `external` 类的部署语义归项目自决）；不改变 archive / merge / verify 任何现有行为与输出；不给 archive 新增 stdout JSON envelope；不修改任何 marker 内容（规避「逐字节等价」契约兼容风险，§2.31 亦不受影响）。
 - 文档建议 CI 侧 pin 住 CLI 版本，避免隐式升级引入判定行为变化；暂缓 archive 落盘 manifest 形态（只覆盖 archive 单次操作，回答不了任意 `base..head` 区间问题，`impact` 已完整覆盖其场景）。
 
+### 2.33 delta 条目守恒门与 archive 审计定位（S37）
+
+> 来源变更：merge-conservation-archive-audit（社区 RFC issue #12）。位于 §2.32（S36 impact）之后。
+
+#### 2.33.1 守恒判据（形式化定义，按结构化归属）
+
+对每个目标为**带稳定 ID 条目规格**的 `.md` delta 文件，**逐触及章节**做集合对账：
+
+```
+对每个被 MODIFIED / REMOVED / REMOVED-ITEMS 锚定的主文档章节 sec：
+  违规集合(sec) = sec 的既有结构化 ID 集合
+               − delta 中锚定 sec 的新内容（MODIFIED 块正文）的结构化 ID 集合
+               − 锚定 sec 的 REMOVED-ITEMS 块点名 ID 集合
+               −（sec 被整节 REMOVED 时：sec 全部既有 ID，视为随章节显式删除）
+要求：每个 sec 的违规集合 == ∅
+```
+
+- **结构化归属（防散文绕过）**：ID 的「存在」与「保留」都只认**结构位置**——测试 ID 只从测试表 **ID 首列单元格**抽取；场景 ID 只从 `## SXX:` 形态章节标题与场景总览 / 场景地图表**行首列**抽取；节号只从**标题行**抽取。散文提及、非 ID 列单元格、代码围栏内引用一律**不计入**——在正文里写一句「SMOKE-core-03 已删除」不构成保留，也不构成显式删除。
+- **逐章节对账（防跨节背书）**：保留必须发生在 **ID 原所在章节**锚定的块内；A 章节的 MODIFIED 块中出现 B 章节的 ID，不为 B 章节的删除背书。
+- **违规判定**：违规集合中每个 ID 产生一条 `delta_implicit_id_removal` violation（含缺失 ID、所属章节锚、fix_hint：「补回该章节 MODIFIED 块的结构条目，或用锚定该章节的 REMOVED-ITEMS 块点名」）。
+- **反向校验**：REMOVED-ITEMS 点名的 ID 不属于其锚定章节的既有结构化 ID 集合 → `delta_removed_unknown_id`（含拼写不存在与「点名了别的章节的 ID」两种形态）。
+- **新文件跳过**：目标主文档不存在（delta 创建全新文档）时跳过守恒——无既有条目可保。
+- **ADDED 块**：不触及既有章节、不产生守恒义务（纯新增天然守恒）。
+
+#### 2.33.2 章节锚与唯一定位（fail-closed）
+
+- 段标记的标题部分是**章节锚**，支持两种形态：
+  - **单段锚**：`## MODIFIED — 二、冒烟测试用例`——仅当该标题在目标主文档中**唯一**时合法；
+  - **标题路径锚**：`## MODIFIED — 四、smoke runner 覆盖强制规则发布后冒烟用例 > 二、冒烟测试用例补充`——以 ` > ` 连接父级到目标级标题，用于目标标题在文档中重复时唯一定位（真实语料：`core-smoke-test-cases.md` 中 `### 二、冒烟测试用例补充` 重复 7 次，分属不同父章节）。
+- **解析规则（确定性，禁止猜测）**：锚在目标主文档中解析到 **0 个或 ≥2 个**章节 → fail-closed，产生 `delta_section_anchor_unresolvable` violation（诊断区分 not-found / ambiguous 与候选位置列表）；判据**不得**取第一个命中、不得合并同名章节、不得按 delta 内容反猜目标。
+- 该定位规则同时约束三方：change-lint L8、`openlogos merge` 消费点、merge-executor 应用 delta 时的人工定位（歧义即暂停询问，与「冲突时询问」原则一致）。
+
+#### 2.33.3 ID 模式注册表（单点维护）
+
+守恒覆盖的 ID 类别由统一注册表定义，注册表是唯一事实源，**严禁在注册表外散落第二份 ID 正则**：
+
+| 类别 | 文法 | 结构化抽取位置 |
+|------|------|----------------|
+| 测试 ID | `UT-*` / `ST-*` / `SMOKE-*`，token 判形复用既有 `parseTestCaseIds` 权威 parser | 测试用例表 **ID 首列单元格**（结构识别对齐既有 `extractStructuredTestIds` 模式，先认结构位置、再用 parser 判形） |
+| 场景 ID | `SXX`（如 `S05`、`S37`） | `## SXX:` / `### SXX` 形态**章节标题**；场景总览 / 场景地图表**行首列** |
+| 功能规格节号 | 完整编号 token：`N(.N)*` 多级数字 + 可选**直接单字母后缀**或**末级点分单字母**（等价 `N(?:\.N)*(?:[A-Za-z]|\.[A-Za-z])?`；覆盖 `2.33`、`2.29.1`、`2.29.2`、`2.2b`、`2.2c`、`2.5a`、`2.7A`、`2.13.1`、`2.19.A`、`2.19.B`、`2.19.C`、`2.20.A`、`2.20.B`、`2.20.C`、`2.20.D` 等既有全部形态） | **标题行**（`### <编号> <标题>` 与 `§<编号>` 引用形态）；**完整 token 即 ID**——`2.29.1` 与 `2.29.2` 是不同 ID、二者均不坍缩为 `2.29`；`2.2b` 与 `2.2c` 不同 ID；`2.19.A` 与 `2.19.B` 不同 ID、均不坍缩为 `2.19` |
+| 版本号 / 散文小数排除 | — | 节号只从标题行抽取，`0.13.21`、散文中的 `1.5` 等天然不入集合；标题行外的 `§N.NN` 引用视为散文提及、不计入保留 |
+
+- **兼容语料回归（强制）**：实现须先从当前全部受管规格（feature-specs / cli-experience / requirements / test / smoke 等）的标题生成兼容语料，闭合文法必须识别语料中全部既有编号标题；逐个删除任一标题须产生守恒违规（corpus 回归锚定，防文法漏形态）。
+- 注册表扩展（未来新增 ID 类别，如决策记录 `DXX`）只改注册表一处，判据函数零改动。
+- **残差（如实标注）**：仅「结构化 ID 条目内部的无编号散文」不在机器门内——删散文与改写散文机器不可分，而改写正是 `MODIFIED` 的正当用途；散文所在章节的整体消失仍被章节级 ID（`SXX` / 节号）守恒抓住，最严重的条目级 / 章节级丢失形态均在门内。散文的「不得隐式删除」保留为 spec 契约与 change-writer / merge-executor 行为规范。
+
+#### 2.33.4 显式删除的两种形态（REMOVED 语义零改动）
+
+| 意图 | 写法 | merge 执行语义 |
+|------|------|----------------|
+| 删除整个章节 | `## REMOVED — <唯一章节锚>`，块内说明删除原因（建议同时列出该节 ID 供审计） | **既有语义不变**：删除锚定章节全节；该节全部既有结构化 ID 视为随章节显式删除，守恒不再另行要求点名 |
+| 删除章节内部分条目 | `## MODIFIED — <唯一章节锚>`（携带删除后剩余的**全量**内容）**+** `## REMOVED-ITEMS — <同一章节锚>`（逐行点名被删 ID：`- <ID> — <删除原因>`） | **REMOVED-ITEMS 是纯声明性标记**：merge / merge-executor **不据其执行任何编辑**——物质变更完全由 MODIFIED 块的整节替换完成；REMOVED-ITEMS 仅作为守恒判据的点名采信来源与审计记录 |
+
+- 这样设计使「部分删除」**无需新的合并操作语义**：整节替换（MODIFIED）本就确定性地物化了删除结果，REMOVED-ITEMS 只回答「这些 ID 的消失是否显式授权」。`ADDED / MODIFIED / REMOVED` 三标记基本语义保持零改动（提案非目标成立）。
+- 约束：REMOVED-ITEMS 块必须与同锚 MODIFIED 块**成对出现**（有点名而无对应 MODIFIED → 点名无物质载体，判 `delta_implicit_id_removal` 的对偶缺陷，fix_hint 提示补 MODIFIED 块）；点名行固定语法每行 `- <ID> — <删除原因>`，仅散文提及不构成点名。
+- L4（段标记与脱模板）扩展承认 `REMOVED-ITEMS` 为合法段标记；仅含 REMOVED-ITEMS 而无 ADDED/MODIFIED/REMOVED 的 delta 仍判非法（无物质变更载体）。
+
+#### 2.33.5 两道点数
+
+| 道次 | 执行者 | 时机 | 拦截目标 | 失败后果 |
+|------|--------|------|----------|----------|
+| 事前点数（主门） | 确定性 CLI（`cli/src/lib/change-lint.ts` 单点判据） | change-lint L8（产出点）与 `openlogos merge`（消费点，打包调用同一函数） | delta 写错（隐式删除 / 锚不可解析 / 点名越界） | lint exit 2；merge 拒绝生成 MERGE_PROMPT（与模板骨架拒绝同级、非零退出） |
+| 事后点数（兜底自检） | merge-executor（AI） | 合并落盘后、写 `SPEC_MERGED` 前 | delta 合法但 AI 合并执行出错 | 报告差异并暂停，不写 `SPEC_MERGED` |
+
+事后点数公式（按结构化口径逐文档清点）：合并后主文档实际结构化 ID 集合 == 合并前 − REMOVED 整节 ID − REMOVED-ITEMS 点名 + delta 新增。
+
+- 遵守既有不变量：lint 与 merge **共享同一批判据函数**（单一事实源，严禁第二份判据）。
+- 新增 violation code `delta_implicit_id_removal`、`delta_removed_unknown_id`、`delta_section_anchor_unresolvable` 扩册进 `ChangeLintViolationCode` 闭合枚举（详见 `spec/cli-json-output.md` §3.15）。
+- 零回归：L1–L7 行为、合法 delta 的 merge 消费行为、三标记基本语义均不变。
+
+#### 2.33.6 archive 审计定位（audit-only 契约）
+
+- **提案一旦归档，其内容仅供审计**：`logos/changes/archive/` 不是任何规格内容的事实源。
+- **resources 自足性**：所有「当前有效」的规格内容必须存在于 `logos/resources/`（方法论规范在根 `spec/`、Skill 在根 `skills/`）；任何流程、Skill、CLI 均不得依赖读取 archive 内容。
+- **可删除**：archive 过期后可整体或部分删除，删除不得损失任何当前有效信息；`MERGE_PROMPT.md` 等纯派生物由「全部可删」覆盖，无需单独分类。
+- 守恒门（2.33.1–2.33.5）是本契约的机器保障：条目退出 resources 只能显式发生并留有 REMOVED / REMOVED-ITEMS 记录，「resources 自足」从口号变为可验证性质。
+- 权威文字声明落 `spec/change-management.md` 与 `spec/directory-convention.md`（随本提案 delta 产出）。
+
+
 ## 三、功能验收摘要
 
 ### S01

@@ -133,6 +133,9 @@ function checkOfCode(code: string): number {
     case 'delta_template_skeleton': return 4;
     case 'deployment_decision_conflict': return 5;
     case 'delta_path_invalid': return 6;
+    case 'delta_implicit_id_removal':
+    case 'delta_removed_unknown_id':
+    case 'delta_section_anchor_unresolvable': return 8;
     default: return 7;
   }
 }
