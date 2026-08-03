@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.22] - 2026-08-03
+
+> 本版本随 tag 一并首次对外发布 `0.13.21` 的内容（`0.13.21` 本地候选版从未推送 tag / 发布 npm），并叠加以下两项新增能力。
+
+### Added
+
+- **`openlogos impact` — 生命周期变更影响分类契约（ci-change-impact-contract，S36）** — 新增只读命令，供下游 CI 依据 Git changed paths 判定一次 push（任意 `base..head` 区间）是否只是纯生命周期簿记（`logos/.openlogos-guard`、`logos/changes/**`、`logos/resources/verify/**`、`logos/.runtime/**`），使纯 `openlogos archive` 等簿记提交不再被 fail-closed 分类器误判为制品变更。支持 `--base/--head`（安全修订解析三层防线）与 `--stdin [--prefix]`（monorepo）双输入模式，全链路 fail-closed；契约见 `spec/change-impact.md` 与 `spec/cli-json-output.md §3.16`。
+
+### Fixed
+
+- **`change-lint` / `merge` 的 L8 delta 条目守恒门加固（merge-conservation-archive-audit）** — 场景表身份键从「辖属子路径」升级为「辖属子路径 + 同子路径内表序号」，封死同一标题下多张合法场景表被去重坍缩、历史快照副本为正式场景条目的隐式删除背书的绕过；配套 change-lint 与 merge 两道事前主门一致拒绝。
+- **`publish.yml` 官网生产部署缺 `--branch master`** — tag checkout 为 detached HEAD 时分支名为 `HEAD`，`wrangler pages deploy` 一律发成 Preview、生产 openlogos.ai 不更新；补 `--branch master` 使 tag 触发的发布直达生产分支，消除每次发版后需本地手工补发生产的缺陷。
+
 ## [0.13.21] - 2026-08-01
 
 ### Fixed
@@ -815,6 +828,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
 [Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.21...HEAD
+[0.13.22]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.22
 [0.13.21]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.21
 [0.13.20]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.20
 [0.13.6]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.6
