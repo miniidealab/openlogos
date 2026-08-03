@@ -447,10 +447,6 @@ function pushUnique<T>(items: T[], item: T): void {
   if (!items.includes(item)) items.push(item);
 }
 
-function pushUniqueMany<T>(items: T[], nextItems: T[]): void {
-  for (const item of nextItems) pushUnique(items, item);
-}
-
 export function parseJsonlWithDiagnostics(content: string): { results: TestResult[]; invalidResults: VerifyInvalidResult[] } {
   // C6/D7：合法记录按 ID 分组（保留行序），末尾经 selectEffectiveResult 做 timestamp 全序去重；
   // 非法行进入诊断集合、不参与去重（去重只在合法记录之间进行，不吞非法行）。

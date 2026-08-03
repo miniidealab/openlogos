@@ -17,7 +17,7 @@ import { join, dirname, isAbsolute, normalize, sep } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type { BaselineSeedState, BaselineIndexEntry } from './baseline-provenance.js';
-import { parseProvenanceSection, scanModuleCandidates, computeCoverage } from './baseline-provenance.js';
+import { scanModuleCandidates, computeCoverage } from './baseline-provenance.js';
 
 export const REQUIRED_KINDS = ['system-map', 'scenario-candidates'] as const;
 export const KIND_ENUM = ['system-map', 'scenario-candidates', 'dependency-map', 'entry-points'] as const;

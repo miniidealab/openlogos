@@ -5,7 +5,7 @@
  * 不直接写目标 `logos/resources/`，只把产物写入 run 私有 staging，经本命令让 CLI 校验后原子提交。
  * 两阶段 staging + commit journal 事务 + 模块级锁 + 恢复门，详见 lib/baseline-seed-txn.ts 与架构 §4.4。
  */
-import { existsSync, readFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -20,8 +20,8 @@ import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
 import {
   validateManifest, isSafeModuleId, isSafeRunId, acquireLock, releaseLock, readGate, recoverJournal,
   findUnfinalizedJournal, listRunIds, readRunRecord, runRecordPath, stagingDir,
-  runDir, runsRoot, atomicWriteJson, writeSeedState, readSeedState,
-  commitSeededTransaction, sha256, recordIssuedRun, isIssuedRun, newIssuedNonce,
+  runDir, atomicWriteJson, writeSeedState, readSeedState,
+  commitSeededTransaction, recordIssuedRun, isIssuedRun, newIssuedNonce,
   type ExpectedItem, type RunRecord, type SeedErrorCode,
 } from '../lib/baseline-seed-txn.js';
 
