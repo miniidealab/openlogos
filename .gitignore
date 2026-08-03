@@ -49,7 +49,12 @@ opencode.json
 Thumbs.db
 
 # OpenLogos 根目录 logos/：本仓 dogfooding 与变更提案均保留在本地，不提交到 GitHub
-/logos/
+# 例外：logos/resources/test/ 是权威测试语料（tag 发布 CI 测试门 + verify 设计时覆盖读取整目录），
+# 逐级解除父目录排除后全量入库，使新增 core-SXX-test-cases.md 随 git add -A 自动追踪（不再手工 force-add）。
+/logos/*
+!/logos/resources/
+/logos/resources/*
+!/logos/resources/test/
 
 # Python 编译产物（ui-ux-pro-max scripts/ 运行后生成）
 __pycache__/
