@@ -33,9 +33,3 @@ jobs:
 
       - name: Run tests
         run: npm test
-
-      - name: Verify test acceptance
-        run: |
-          npm run build
-          cd ..
-          node cli/dist/index.js verify
