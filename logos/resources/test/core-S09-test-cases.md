@@ -382,3 +382,31 @@
 | UT-S09-B01 | seeded 项目触碰逆向区域时 next / change-writer 不再给 JIT 确认提示 | 确认机制移除反向回归 | `bootstrap: adopted`、`seeded`、活跃 change 目标区域仅 `verified:false` 逆向 spec | 执行 `openlogos next`；change-writer 产 delta | `next` 输出**不含** JIT advisory / 「确认现状」提示；change-writer **不**建议在 delta 内把 `## 逆向基线来源` 置 `verified:true`、**不**产确认相关 advisory；该区域 `verified` 保持 `false`、覆盖率不变 |
 
 > 说明：原 `UT-S09-B02`/`UT-S09-B03`、`ST-S09-B01`/`ST-S09-B02`（advisory 存在判定 / 单份最终态 delta 承载确认 / merge 后覆盖率前移）随人工确认机制删除一并移除；本节只保留一条**反向回归**（`UT-S09-B01` 复用），断言确认提示不再产生。
+
+## 五、openlogos change 模块归属 fail-closed 用例（issue #17）
+
+### 5.1 单元测试用例（resolveModule / 文案）
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S09-140 | 显式 --module 存在 → 归属该模块 | resolveModule | 多模块，含 module-b | `--module module-b` | 返回 `module-b` |
+| UT-S09-141 | 显式非法 --module → 非零退出 + **合法 id 清单（在场且按 modules[] 顺序）** | resolveModule | 多模块 `[module-a, module-b]` | `--module nope` | exit 1；stderr **逐字含 `module-a`、`module-b`** 且 `module-a` 先于 `module-b`（code-r1 F1：不得以「运行 module list」提示命令冒充清单） |
+| UT-S09-142 | 单模块（**非 core**）未传 --module → 自动归属该唯一模块 | resolveModule | 恰 1 个模块 `payments`（无 core） | 无 --module | 返回 `payments`（**非硬编码 core**），文案「自动挂靠，当前只有一个模块」 |
+| UT-S09-143 | 多模块含 core 未传 --module → 默认 core | resolveModule | 模块 `[a, core, b]` | 无 --module | 返回 `core`；文案「归属模块：core（默认挂靠 core…）」与实选一致 |
+| UT-S09-144 | 多模块无 core 未传 --module → fail-closed + 逐候选可执行命令 | resolveModule | 模块 `[module-a, module-b]`，无 core，slug=`s1` | 无 --module | **非零退出**；**不返回 modules[0]**；stderr 含原因 + **每个合法 id 一条完整命令**（`openlogos change s1 --module module-a` 与 `openlogos change s1 --module module-b` 均逐字在场、按 modules[] 顺序）；**输出不含字面 `<id>`** |
+| UT-S09-145 | 文案一致性：无「实选 modules[0] 却称默认 core」 | i18n / resolveModule | 多模块无 core | 无 --module | 输出**不**出现「归属模块：module-a（默认挂靠 core…）」式不一致 |
+| UT-S09-146 | 英文 locale 无 core 错误文案在场且可诊断 | i18n（`en`） | `locale: en`，模块 `[module-a, module-b]` 无 core，slug=`s1` | 无 --module | 非零退出；英文错误含原因、全部候选，且 `openlogos change s1 --module module-a` 与 `openlogos change s1 --module module-b` 两条完整命令逐字在场；**不显示裸 i18n key 名**、不含字面 `<id>` |
+
+### 5.2 场景测试用例（真实 CLI 端到端 + 原子性）
+
+> code-r1 F3：本节全部用例经**真实 CLI 入口** `spawnSync(process.execPath, [dist/index.js, ...argv])` 执行，断言 OS 退出码 + stdout/stderr + 磁盘零残留（函数直调仅作 UT）。code-r1 F4：候选命令按 `modules[]` 顺序做**精确序列**断言（提取 stderr 中 `openlogos change` 开头行 `toEqual` 完整期望数组）。
+
+| ID | 描述 | 覆盖 | 前置条件 | 操作序列 | 预期结果 |
+|----|------|------|---------|---------|---------|
+| ST-S09-50 | 多模块无 core 未传 --module → 拒绝 + 逐候选可执行命令 + 零残留 | EX-9.6 | 多模块项目无 core（`[module-a, module-b]`），无活跃 guard | `openlogos change test-change` | 非零退出；stderr 为**每个合法 id 各一条**完整命令 `openlogos change test-change --module module-a` / `--module module-b`（按 modules[] 顺序、逐字可执行、**无字面 `<id>`**）；**未创建** `logos/changes/test-change/`、**未写** `.openlogos-guard`、无残留 |
+| ST-S09-51 | 补 --module 后成功归属 | 决策表#1 | 同上 | `openlogos change test-change --module module-b` | exit 0；guard.module 与 proposal `> module:` 均为 `module-b` |
+| ST-S09-52 | 多模块含 core 默认挂靠零回归 | 决策表#4 | 多模块含 core | `openlogos change c1` | exit 0；guard/proposal 均为 `core`；文案与实选一致 |
+| ST-S09-53 | 单模块（**非 core**）自动挂靠归属该唯一模块 | 决策表#3 | 单模块 `payments`（无 core） | `openlogos change c2` | exit 0；输出模块、`guard.module`、proposal `> module:` **全部等于 `payments`**（证伪「单模块仍硬编码返回 core」）；单 core 主路径由既有 ST-S09-01 作对照 |
+| ST-S09-54 | 英文 locale 多模块无 core 端到端 fail-closed | 决策表#5（`en`） | `locale: en`，多模块无 core（`[module-a, module-b]`） | `openlogos change s1` | 非零退出；英文 stderr 含原因 + 每个合法 id 一条完整命令（`openlogos change s1 --module module-a` / `--module module-b` 逐字在场、按 modules[] 顺序）；无残留目录/guard；不显示裸 key、无字面 `<id>` |
+| ST-S09-55 | **裸 `--module`（缺值）→ 非零退出 + 用法、零残留（code-r1 F2）** | 决策表#2 前提校验 | 多模块 `[core, module-b]` | `openlogos change probe --module`（末尾缺值） | 非零退出；stderr 含 `--module requires a module id` + `Usage`；**不得**折叠成未传参数而创建 `core` 提案；未创建 `logos/changes/probe/`、未写 guard |
+| ST-S09-56 | **显式非法 --module → 非零退出 + 合法 id 清单（顺序）+ 零残留（code-r1 F1，真实 CLI）** | 决策表#2 | 多模块 `[module-a, module-b]` | `openlogos change probe --module nope` | 非零退出；stderr 含 `模块 'nope'` + 逐字 `module-a`、`module-b`（`module-a` 先于 `module-b`）；未创建 change 目录、未写 guard |

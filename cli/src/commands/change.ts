@@ -8,7 +8,7 @@ interface ModuleEntry {
   lifecycle?: string;
 }
 
-function resolveModule(root: string, moduleArg: string | undefined, locale: string): string {
+function resolveModule(root: string, moduleArg: string | undefined, locale: string, slug: string): string {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
   let modules: ModuleEntry[] = [];
   if (existsSync(yamlPath)) {
@@ -17,19 +17,32 @@ function resolveModule(root: string, moduleArg: string | undefined, locale: stri
       if (Array.isArray(yaml?.modules)) modules = yaml.modules as ModuleEntry[];
     } catch { /* ignore */ }
   }
+  const l = locale as 'en' | 'zh';
 
   if (moduleArg) {
     if (!modules.find(m => m.id === moduleArg)) {
-      console.error(t(locale as 'en' | 'zh', 'change.moduleNotFound', { module: moduleArg }));
-      console.error(t(locale as 'en' | 'zh', 'change.moduleNotFoundHint'));
+      console.error(t(l, 'change.moduleNotFound', { module: moduleArg }));
+      // F1（code-r1）：决策表第 2 行要求「模块不存在 + 合法清单」——按 modules[] 声明顺序列出全部合法 id。
+      console.error(t(l, 'change.moduleNotFoundAvailable', { modules: modules.map(m => m.id).join(', ') }));
+      console.error(t(l, 'change.moduleNotFoundHint'));
       process.exit(1);
     }
     return moduleArg;
   }
 
-  if (modules.length === 1) return modules[0].id;
+  if (modules.length === 1) return modules[0].id;   // 单模块归属该唯一模块（可能非 core，不硬编码）
   const core = modules.find(m => m.id === 'core');
-  return core ? 'core' : (modules[0]?.id ?? 'core');
+  if (core) return 'core';                          // 多模块含 core → 默认挂靠 core
+  if (modules.length === 0) return 'core';          // 退化：无模块注册，保留既有兜底（不改行为）
+
+  // 多模块（≥2）无 core 且未传 --module → fail-closed（issue #17）：
+  // 非零退出，为每个合法 module id 各给出一条完整可执行的重试命令；绝不静默回退 modules[0]。
+  console.error(t(l, 'change.moduleNoCore'));
+  console.error(t(l, 'change.moduleNoCoreRetryHeader'));
+  for (const m of modules) {
+    console.error(`  openlogos change ${slug} --module ${m.id}`);
+  }
+  process.exit(1);
 }
 
 export function change(slug?: string, moduleArg?: string) {
@@ -86,7 +99,7 @@ export function change(slug?: string, moduleArg?: string) {
       if (Array.isArray(yaml?.modules)) allModules = yaml.modules as ModuleEntry[];
     } catch { /* ignore */ }
   }
-  const moduleId = resolveModule(root, moduleArg, locale);
+  const moduleId = resolveModule(root, moduleArg, locale, slug);
 
   // Print module assignment message
   if (moduleArg) {

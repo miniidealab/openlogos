@@ -234,6 +234,16 @@ sequenceDiagram
 - **对照组（fail closed，不放行）**：批准记录**含 rendered 证据但缺 `hashes`（部分 provenance）** → 曾走渲染确认路径却无完整 hash → **非零退出 → 节点未 done → 阻断**，不得降级放行；须显式重入 plan 刷新 `PLAN_APPROVED.hashes` 后方可前进。
 - **副作用**：不新增门态 / 不新增确认标记；三分支判据（含完整 provenance 校 hash / legacy 空 marker advisory / 部分 provenance fail closed）与 2.26.9 的持久化键语义一致；不改变 `ui_impact:false` 或纯 CLI/API/Skills 提案的既有行为。
 
+### EX-9.6: 多模块无 core 未传 --module 的 change 静默挂靠 modules[0]（issue #17）
+
+- **触发条件**：多模块项目、`modules[]` 无 `id: core`，用户执行 `openlogos change <slug>` 未传 `--module`。
+- **旧缺陷**：`resolveModule()` 回退 `modules[0]`（`change.ts:30-32`），并以 `change.moduleDefault` 文案声称「默认挂靠 core」，实际挂到首模块；错误 `module` 写入 `.openlogos-guard` 与 `proposal.md` 头 `> module:`，到 `change-lint` / `status` / `next` / 模块级门禁才暴露。
+- **期望响应**：`resolveModule()` 对该分支 **fail-closed**——打印错误（原因 + **每个合法 module id 各一条完整可执行的重试命令**：以实际 slug + 该 id 组成 `openlogos change <实际slug> --module <该id>`，按 `modules[]` 顺序、**不含字面 `<id>` 占位符**）、`en`/`zh` 两套文案、**非零退出**，**不回退 `modules[0]`**。
+- **原子性**：解析在**创建 change 目录 / 写 proposal / tasks / deltas / guard 之前**执行（与既有「提案已存在」「guard 冲突」前置校验同位置），失败不残留任何半成品。
+- **不变量**：解析结果（`.openlogos-guard.module` 与 `proposal.md` `> module:`）与用户显式选择或唯一确定的模块一致；YAML `modules[]` 顺序不承载归属语义。
+- **零回归**：显式 `--module` / 单模块自动挂靠 / 多模块含 core 默认挂靠三条路径行为不变；`change.moduleDefault` 文案修正后，`归属模块：{module}` 与括号说明指同一模块。
+- **决策依据**：见 `logos/resources/decisions/core-D01-change-module-fail-closed.md`（fail-closed 不变量、否决 modules[0]、暂不引入 default_module）。
+
 ## Windows 外部归档 watcher 握手时序（win32-archive-watcher-handshake）
 
 仅当 `process.platform === 'win32'` 且用户从外部终端执行 `openlogos archive <slug>` 时，Step 13→14 之间插入以下有界握手；非 Windows 平台此段完全不执行，直接走既有 rename 归档。

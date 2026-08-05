@@ -225,7 +225,18 @@ async function main() {
     }
     case 'change': {
       const restArgs = args.slice(1).filter(a => !a.startsWith('--'));
-      const moduleArg = args.includes('--module') ? args[args.indexOf('--module') + 1] : undefined;
+      const moduleIdx = args.indexOf('--module');
+      // F2（code-r1）：`--module` 出现但缺值（末尾）或下一个仍是 flag → 缺值参数，非零退出并打印用法，
+      // 不得折叠成「未传 --module」而静默创建默认（core）提案。
+      if (moduleIdx !== -1) {
+        const val = args[moduleIdx + 1];
+        if (val === undefined || val.startsWith('--')) {
+          console.error('Error: --module requires a module id (e.g. `openlogos change <slug> --module core`).');
+          console.error('Usage: openlogos change <slug> [--module <id>]');
+          process.exit(1);
+        }
+      }
+      const moduleArg = moduleIdx !== -1 ? args[moduleIdx + 1] : undefined;
       change(restArgs[0], moduleArg);
       break;
     }

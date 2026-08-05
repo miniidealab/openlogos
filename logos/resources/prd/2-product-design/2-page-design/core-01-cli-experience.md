@@ -1010,6 +1010,70 @@ $ openlogos change refresh-dashboard-cards
 - 非 GUI 项目：不注入声明段，`openlogos change` 输出无「检测到 GUI 项目」提示，与现状一致。
 - guard 冲突（已有活跃提案）：沿用现有 `openlogos change` guard 冲突提示，声明段注入不改变该异常行为。
 
+### 2.16b change：模块归属输出与多模块无 core 的 fail-closed（issue #17）
+
+`openlogos change <slug>` 打印归属模块行，其文案必须与实际选中模块一致，多模块无 `core` 时 fail-closed。
+
+**单模块（自动挂靠「该模块」，非固定 core）**——单模块项目归属其唯一模块，无论该模块是否叫 `core`：
+
+```text
+$ openlogos change add-remember-me      # 唯一模块为 payments（非 core）
+创建变更提案：add-remember-me
+归属模块：payments（自动挂靠，当前只有一个模块）
+  ✓ logos/changes/add-remember-me/proposal.md
+  …
+```
+
+**多模块含 core（默认挂靠 core，文案与实选一致）**：
+
+```text
+$ openlogos change refresh-cards
+归属模块：core（默认挂靠 core，可用 --module <id> 指定其他模块）
+```
+
+**多模块含 core、显式指定其他模块**：
+
+```text
+$ openlogos change refresh-cards --module portal-crm
+归属模块：portal-crm
+```
+
+**多模块无 core、未传 `--module`（fail-closed，非零退出、原子失败）**——重试提示为**每个合法 module id 各生成一条以实际 slug + 该 id 组成的完整可执行命令**（按 `modules[]` 声明顺序），**不含字面 `<id>` 占位符**：
+
+```text
+$ openlogos change staging-executor-bootstrap-pipeline
+Error: 当前项目包含多个模块且未配置 core，无法推断变更归属。
+请任选一个模块重试：
+  openlogos change staging-executor-bootstrap-pipeline --module portal-identity
+  openlogos change staging-executor-bootstrap-pipeline --module portal-crm
+  openlogos change staging-executor-bootstrap-pipeline --module portal-delivery
+  openlogos change staging-executor-bootstrap-pipeline --module portal-conversation
+  openlogos change staging-executor-bootstrap-pipeline --module release-platform
+  openlogos change staging-executor-bootstrap-pipeline --module station
+# 退出码非 0；未创建 logos/changes/staging-executor-bootstrap-pipeline/、未写 guard
+```
+
+**英文 locale（`locale: en`）同语义错误输出**——`i18n.ts` 的无 core 错误文案 `en` / `zh` 两套并存，缺任一 key 会在运行时直接显示 key 名，故 `en` 亦须给出原因 + 全部候选命令：
+
+```text
+$ openlogos change staging-executor-bootstrap-pipeline
+Error: this project has multiple modules and no `core`; cannot infer change ownership.
+Retry with one of:
+  openlogos change staging-executor-bootstrap-pipeline --module portal-identity
+  openlogos change staging-executor-bootstrap-pipeline --module portal-crm
+  openlogos change staging-executor-bootstrap-pipeline --module portal-delivery
+  openlogos change staging-executor-bootstrap-pipeline --module portal-conversation
+  openlogos change staging-executor-bootstrap-pipeline --module release-platform
+  openlogos change staging-executor-bootstrap-pipeline --module station
+```
+
+**要点**：
+
+- 归属模块行的 `归属模块：{module}` 与括号内说明必须指同一模块——不得再出现「打印 `portal-identity` 却声称默认挂靠 core」（原 `change.moduleDefault` 文案 bug）。
+- 单模块自动挂靠归属**该唯一模块**（可能非 core），文案与实选一致。
+- 多模块无 core 分支输出到 stderr、退出码非 0，且**在创建任何文件前**返回——不残留半成品 proposal / tasks / deltas / guard。
+- 错误输出三要素：错误原因、**每个合法 module id 一条完整可执行的 `openlogos change <实际slug> --module <id>` 命令**（按 `modules[]` 顺序、无字面 `<id>` 占位符）、`en` / `zh` 两套 locale 均在场。
+
 ### 2.17 status / next 的 `capabilities` 段呈现（CLI 输出层面）
 
 `openlogos status` / `openlogos next` 在输出中新增 `capabilities` 段，用于在 CLI 层面呈现当前会话是否具备 UI 原型渲染能力（`ui_prototype_render`），供宿主 / driver 在 plan-exit **之前**据此选择渲染确认模式或降级模式。**详细契约见 `spec/cli-json-output.md`，此处只描述终端呈现体验。**

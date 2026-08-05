@@ -28,7 +28,7 @@ scenario_counter:
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 1
+  next_id: 2
 modules:
   - id: core
     name: 核心功能
@@ -501,6 +501,8 @@ resource_index:
     desc: 系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。
   - path: logos/resources/verify/baseline-seed-runs/seed-core-0001/staging/logos/resources/prd/3-technical-plan/2-scenario-implementation/core-scenario-candidates.md
     desc: 验收报告。涉及 verify、部署或 smoke 结果、覆盖度分析、Gate 判定时必读。
+  - path: logos/resources/decisions/core-D01-change-module-fail-closed.md
+    desc: D01 决策记录：openlogos change 多模块无 core 时 fail-closed、不隐式回退 modules[0]。涉及模块归属解析语义、fail-closed 不变量、default_module 取舍时必读。
 
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号

@@ -299,6 +299,23 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **WHEN** 执行 `openlogos archive <slug>`
 - **THEN** 不创建/读取/监听任何协议文件、不校验 token、不增加等待，沿用原 archive 路径；无论 CLI/RunLogos 版本新旧
 
+##### 正常：openlogos change 模块归属解析（显式 / 单模块 / 多模块含 core）
+- **GIVEN** 项目已 launched，用户执行 `openlogos change <slug>`
+- **WHEN** 命令需要确定本次提案的归属模块
+- **THEN** 按以下确定性规则解析（fail-closed，issue #17）：
+  1. **显式 `--module <id>`**：校验该 id 存在于 `logos-project.yaml` 的 `modules[]`——存在则归属该模块，不存在则非零退出并提示合法 module 清单；
+  2. **单模块项目**（`modules` 恰 1 个）：自动归属该模块，输出「自动挂靠，当前只有一个模块」；
+  3. **多模块且存在 `id: core`**：默认归属 `core`，输出的提示文案必须与实际选中模块（`core`）一致。
+- **AND** 归属结果一致写入 `.openlogos-guard` 的 `module` 字段与 `proposal.md` 头 `> module:`，作为 `change-lint` / `status` / `next` / 模块级门禁的持久事实源。
+
+##### 异常：多模块无 core 未传 --module（fail-closed）
+- **GIVEN** 项目为**多模块**且 `modules[]` 中**不存在 `id: core`**
+- **WHEN** 用户执行 `openlogos change <slug>` 且**未传** `--module`
+- **THEN** 命令 **fail-closed**：以**非零退出码**报错，错误信息说明「多模块且未配置 core，无法推断变更归属」，并为**每个合法 module id 各给出一条完整可执行的重试命令**——以**实际 slug** + 该 id 组成 `openlogos change <实际slug> --module <该id>`，按 `modules[]` 声明顺序列出，**输出不含字面 `<id>` 占位符**（占位符非合法 id、不可直接运行）；
+- **AND** **绝不静默选择 `modules[0]`**（YAML 数组顺序不承载归属语义）；
+- **AND** 失败必须**原子**：不创建 `logos/changes/<slug>/` 目录、不写 `proposal.md` / `tasks.md` / `deltas/`、不写 `.openlogos-guard`——不残留任何半成品；
+- **AND** 提示文案不得再出现「实际选中 `modules[0]`、却声称默认挂靠 core」的不一致（修正原 `change.moduleDefault` 文案）。
+
 ### S11: 查看阶段进度与活跃变更
 - **触发条件**：用户需要确认当前完成到哪一步。
 - **用户价值**：快速判断文档、测试、提案和部署状态，并让 RunLogos 面板获得一致的按钮门禁依据。

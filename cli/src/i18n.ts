@@ -191,7 +191,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'change.moduleDefault': 'Module: {module} (defaulted to core — use --module <id> to specify another)',
     'change.moduleAssigned': 'Module: {module}',
     'change.moduleNotFound': 'Error: Module \'{module}\' not found in logos-project.yaml.',
+    'change.moduleNotFoundAvailable': 'Available modules: {modules}',
     'change.moduleNotFoundHint': 'Run `openlogos module list` to see available modules.',
+    'change.moduleNoCore': 'Error: this project has multiple modules and no `core`; cannot infer change ownership.',
+    'change.moduleNoCoreRetryHeader': 'Retry with one of:',
 
     // merge
     'merge.summary': 'Merge Summary:',
@@ -460,7 +463,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'change.moduleDefault': '归属模块：{module}（默认挂靠 core，可用 --module <id> 指定其他模块）',
     'change.moduleAssigned': '归属模块：{module}',
     'change.moduleNotFound': 'Error: 模块 \'{module}\' 在 logos-project.yaml 中不存在。',
+    'change.moduleNotFoundAvailable': '可用模块：{modules}',
     'change.moduleNotFoundHint': '运行 `openlogos module list` 查看可用模块。',
+    'change.moduleNoCore': 'Error: 当前项目包含多个模块且未配置 core，无法推断变更归属。',
+    'change.moduleNoCoreRetryHeader': '请任选一个模块重试：',
 
     // merge
     'merge.summary': '合并摘要：',

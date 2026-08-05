@@ -1285,6 +1285,42 @@ change/merge/archive 必须构成闭环；提案填写阶段必须同步形成�
 
 **Windows 外部归档 watcher 握手（win32-archive-watcher-handshake）**：在 Windows 上，`openlogos archive` 在 rename 前必须与所有「未过期、projectId 匹配、capabilities 含 prepare」的活跃 RunLogos 实例完成有界文件协议握手，等其释放监听句柄后再 rename（详见 §2.31）。握手只负责释放句柄，不改变归档资格、授权、verify、smoke、guard 删除时机、归档目录命名等既有规则。快照为空（未装/未运行/未监听）时走既有 rename 快路径、不引入等待；ACK 超时、实例 failed、遇不可协调监听者（旧版持句柄致 EPERM、capabilities 不足、未知高版本）均 fail-closed：不 rename、不动 guard、不自动重试。**非 Windows 平台完全不启用本协议。**
 
+#### S09 openlogos change 模块归属解析（fail-closed，issue #17）
+
+`openlogos change <slug>` 创建提案时确定归属模块 `moduleId`（写入 `.openlogos-guard.module` 与 `proposal.md` 头 `> module:`）。解析走**确定性决策表**，无 core 时 **fail-closed**、不隐式回退首模块：
+
+| # | 条件 | 行为 | 输出 / 退出码 |
+|---|------|------|--------------|
+| 1 | 传入 `--module <id>` 且 id ∈ `modules[]` | 归属该模块 | `归属模块：<id>`；exit 0 |
+| 2 | 传入 `--module <id>` 且 id ∉ `modules[]` | 拒绝 | `模块不存在` + 合法清单；exit 1 |
+| 3 | 未传 `--module`，`modules` 恰 1 个 | 自动归属该模块 | `归属模块：<id>（自动挂靠，当前只有一个模块）`；exit 0 |
+| 4 | 未传 `--module`，多模块且存在 `id: core` | 默认归属 `core` | `归属模块：core（默认挂靠 core，可用 --module <id> 指定其他模块）`；exit 0 |
+| 5 | 未传 `--module`，多模块且**无** `id: core` | **fail-closed 拒绝** | 错误 + 可选模块清单 + 重试命令；**非零退出** |
+
+**关键不变量**：
+
+- **文案与实际一致**：第 4 行 `change.moduleDefault` 文案里的「归属模块：{module}」与括号内语义必须指同一模块——修正原实现「`{module}` 插 `modules[0]`、括号却写默认 core」的不一致（该不一致仅在无 core 的多模块下出现，因为原逻辑第 5 类也落到该文案）。
+- **不选 `modules[0]`**：第 5 类不得回退 `modules[0]`；YAML `modules[]` 数组顺序不承载归属语义。
+- **单模块归属「该模块」（非固定 core）**：第 3 类归属 `modules[0]` 当且仅当**恰有一个模块**——归属其唯一 id（可能非 `core`），不得硬编码返回 `core`。
+- **原子失败**：第 2、5 类拒绝必须在**建目录 / 写 proposal / tasks / deltas / guard 之前**完成——解析失败即退出，不残留半成品（对齐既有「已存在提案 / guard 冲突」的前置校验位置）。
+- **可运行的重试命令（第 5 类，无字面 `<id>`）**：错误输出为**每个合法 module id 各生成一条以【实际 slug】 + 该 id 组成的完整可执行命令**，按 `modules[]` 声明顺序列出——**不得**输出含字面 `<id>` 占位符的单条命令（占位符不是合法 id，且 shell 可能把 `<...>` 当重定向，用户仍须手工替换，违背「可运行」验收）。文案 `en` / `zh` 两套并存（`i18n.ts` 开放字符串键，缺任一 key 运行时会直接显示 key 名）：
+
+  ```text
+  # zh
+  Error: 当前项目包含多个模块且未配置 core，无法推断变更归属。
+  请任选一个模块重试：
+    openlogos change staging-executor-bootstrap-pipeline --module portal-identity
+    openlogos change staging-executor-bootstrap-pipeline --module portal-crm
+    …（覆盖全部合法 module id，按 modules[] 顺序）
+  # en
+  Error: this project has multiple modules and no `core`; cannot infer change ownership.
+  Retry with one of:
+    openlogos change staging-executor-bootstrap-pipeline --module portal-identity
+    …
+  ```
+
+**零回归**：第 1、3、4 三条正确路径的输出与退出码与本次修复前**逐字节一致**；单模块 / 显式 `--module` / 多模块含 core 的既有行为不变。若未来需项目级默认，另评估显式 `default_module` 配置，不复用数组顺序隐式语义（见决策记录 `core-D01-change-module-fail-closed`）。
+
 ### S11
 status 必须显示阶段进度、活跃变更、提案级部署决策、部署进度摘要和下一步建议。JSON 输出必须暴露部署决策字段、部署进度摘要和任务文档入口，供 RunLogos 面板判断是否展示部署按钮、smoke 按钮和归档按钮。`deployment_decision_conflict=true` 时必须展示为阻塞态。
 
