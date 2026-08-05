@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.24] - 2026-08-05
+
+> 本版本随 tag 一并首次对外发布 `0.13.23` 的内容（`0.13.23` 本地候选版从未推送 tag / 发布 npm）。
+
+### Added
+
+- **决策记录沉淀能力（S38，decision-record-capability）** — [issue #12](https://github.com/miniidealab/openlogos/issues/12) 补充观察（设计决策理由只沉淀在 archive 的 proposal 里，归档即失联、检索率最低）的承诺跟进：为「为什么这样设计」在 `logos/resources/` 中安排正式沉淀位置，使决策理由成为当前有效规格的一部分、可被 AI 与人直接检索。
+  - 新增顶层 `logos/resources/decisions/` 目录（与 `prd/`、`api/`、`test/` 平级），决策记录按 `<module>-DXX-<slug>.md` 命名，`decision_counter` 由 merge-executor 在 apply 时统一分配与持久化。
+  - change-writer proposal 模板新增可选「已确定的设计决策」章节与升格判据（立不变量 / 真实备选取舍 / 跨规格组件才升格；bug 修复、机械重构、发版 bump 不升格）；决策记录经既有 `deltas/decisions/ → merge` 通道落盘，不新增 CLI 命令。
+  - `openlogos change-lint` 新增独立 `warnings[]` 通道（`cli-json-output.md §3.15`）：proposal 含决策章节但 `[delta]` 无 `deltas/decisions/` 任务时提示（warning 不阻断门）；DXX 纳入 S37 条目守恒门 ID 注册表，决策记录条目获得与场景/测试 ID 同级的隐式删除保护。
+  - `openlogos sync` 资源索引扫描纳入 `decisions/` 目录；superseded 生命周期支持决策被后续决策取代。
+
+### Fixed
+
+- **`openlogos change` 多模块无 `core` 时静默挂靠 `modules[0]`（change-module-fail-closed，[issue #17](https://github.com/miniidealab/openlogos/issues/17)）** — 多模块项目 `logos-project.yaml` 无 `core` 模块且未传 `--module` 时，`resolveModule()` 静默回退到 `modules[0]`，且提示文案谎称「默认挂靠 core」；错误归属被持久化到 `.openlogos-guard` 与 `proposal.md`，常到后续门禁才暴露。现改为 **fail-closed**：非零退出、列出全部合法 module id 并给出可运行的重试命令，且在建目录/写 guard 之前拦截（失败原子、不残留半成品）；同时修正文案使提示与实际选中模块一致。既有三条正确路径（显式 `--module` / 单模块自动挂靠 / 多模块含 `core` 默认挂靠）行为逐字节零改动。配套决策记录 `core-D01`（决策记录能力上线后首条 dogfood）。
+- **CI / 工程卫生** — 根治 tag 发布语料漏入库（force-add `logos/resources/` 被测语料）并升级 GitHub Actions 清除 Node 20 弃用告警；清零 master CI lint 门 6 处未使用符号；移除 `ci.yml` 无法在 CI 运行的 verify 步骤与从未启用 GitHub Pages、每次必败的 `website.yml`。
+
 ## [0.13.22] - 2026-08-03
 
 > 本版本随 tag 一并首次对外发布 `0.13.21` 的内容（`0.13.21` 本地候选版从未推送 tag / 发布 npm），并叠加以下两项新增能力。
@@ -828,6 +845,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
 [Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.21...HEAD
+[0.13.24]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.24
 [0.13.22]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.22
 [0.13.21]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.21
 [0.13.20]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.20
