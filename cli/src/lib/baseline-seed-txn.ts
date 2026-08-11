@@ -29,6 +29,17 @@ export type SeedErrorCode =
   | 'provenance_doc_uncovered'
   | 'baseline_commit_in_progress';
 
+/**
+ * 未终结 journal 无法在读前确定性恢复时的统一硬错误。读取方必须中止，不能降级为 partial 后继续。
+ */
+export class BaselineCommitInProgressError extends Error {
+  readonly code = 'baseline_commit_in_progress' as const;
+  constructor(message = 'baseline_commit_in_progress — 未终结种子事务无法安全恢复') {
+    super(message);
+    this.name = 'BaselineCommitInProgressError';
+  }
+}
+
 export interface ExpectedItem { kind: string; target_path: string; candidate_keys: string[]; }
 export interface RunRecord {
   run_id: string;
@@ -205,6 +216,13 @@ function isProcessAlive(pid: number): boolean {
 const heldLockTokens = new Map<string, string>();
 let lockTokenSeq = 0;
 
+function lockHeldByCurrentProcess(root: string, moduleId: string): boolean {
+  const token = heldLockTokens.get(moduleId);
+  if (!token) return false;
+  const owner = readLockOwner(lockPath(root, moduleId));
+  return owner !== 'unparseable' && owner.pid === process.pid && owner.token === token;
+}
+
 interface LockOwner { pid?: number; at?: number; token?: string }
 /** 读锁 owner；空/不可解析返回 'unparseable'（协议外/发布窗口 → 一律不回收）。 */
 function readLockOwner(path: string): LockOwner | 'unparseable' {
@@ -238,7 +256,7 @@ export function acquireLock(root: string, moduleId: string): boolean {
       const owner = readLockOwner(path);
       if (owner === 'unparseable') return false;
       if (typeof owner.pid !== 'number') return false;
-      if (owner.pid === process.pid) return false;   // 本进程已持有 → 非陈旧
+      if (owner.pid === process.pid) return false;   // 本进程已持有 → 公共 acquire 仍拒绝重入
       if (isProcessAlive(owner.pid)) return false;    // 活进程 → 不抢
 
       // 死进程锁回收（**安全性**：绝不基于陈旧读结果移动/覆盖 path 上的锁）。
@@ -358,6 +376,63 @@ export function readJournal(root: string, runId: string): CommitJournal | null {
   try { return JSON.parse(readFileSync(p, 'utf-8')) as CommitJournal; } catch { return null; }
 }
 
+const SHA256_RE = /^[a-f0-9]{64}$/;
+
+/** journal 是恢复指令而非普通缓存：存在但不可解析/不闭合时必须硬失败，绝不能当作“不存在”。 */
+function readJournalStrict(root: string, runId: string): CommitJournal | null {
+  const p = journalPath(root, runId);
+  if (!existsSync(p)) return null;
+  let raw: unknown;
+  try { raw = JSON.parse(readFileSync(p, 'utf-8')); } catch {
+    throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} 损坏或截断`);
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} schema 非法`);
+  }
+  const j = raw as Record<string, unknown>;
+  const phases = new Set(['prepared', 'committing', 'committed']);
+  if (!phases.has(String(j.phase)) || j.run_id !== runId || !isSafeModuleId(j.module)
+    || !Array.isArray(j.targets) || j.targets.length === 0 || !Array.isArray(j.keys)
+    || j.keys.some(k => typeof k !== 'string')) {
+    throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} 必填字段非法`);
+  }
+  const targets: ExpectedItem[] = [];
+  const seen = new Set<string>();
+  for (const value of j.targets) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} target 非法`);
+    }
+    const t = value as Record<string, unknown>;
+    if (typeof t.target_path !== 'string'
+      || !(t.old_sha256 === null || (typeof t.old_sha256 === 'string' && SHA256_RE.test(t.old_sha256)))
+      || typeof t.new_sha256 !== 'string' || !SHA256_RE.test(t.new_sha256)
+      || typeof t.applied !== 'boolean' || seen.has(t.target_path)) {
+      throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} target 字段/哈希非法`);
+    }
+    seen.add(t.target_path);
+    targets.push({ kind: 'system-map', target_path: t.target_path, candidate_keys: [] });
+  }
+  if (!validateTargetPaths(root, targets).ok) {
+    throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} target 路径越界`);
+  }
+  const index = j.index as Record<string, unknown> | null;
+  const transition = j.state_transition as Record<string, unknown> | null;
+  const states = new Set<unknown>([null, 'required', 'partial', 'seeded']);
+  if (!index || typeof index.yaml_backup_path !== 'string'
+    || !(index.old_yaml_sha256 === null || (typeof index.old_yaml_sha256 === 'string' && SHA256_RE.test(index.old_yaml_sha256)))
+    || !transition || !states.has(transition.from) || transition.to !== 'seeded') {
+    throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} index/state_transition 非法`);
+  }
+  const backupBase = backupDir(root, runId);
+  const backupPath = index.yaml_backup_path;
+  const normalizedBackup = normalize(backupPath);
+  if (!isAbsolute(normalizedBackup)
+    || !(normalizedBackup === backupBase || normalizedBackup.startsWith(backupBase + sep))) {
+    throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} yaml backup 路径越界`);
+  }
+  return raw as CommitJournal;
+}
+
 export function listRunIds(root: string): string[] {
   const base = runsRoot(root);
   if (!existsSync(base)) return [];
@@ -367,13 +442,17 @@ export function listRunIds(root: string): string[] {
 
 /** 查找模块下未终结（prepared/committing）的 journal（锁保证至多一个在飞行）。 */
 export function findUnfinalizedJournal(root: string, moduleId: string): { runId: string; journal: CommitJournal } | null {
+  let found: { runId: string; journal: CommitJournal } | null = null;
   for (const runId of listRunIds(root)) {
-    const journal = readJournal(root, runId);
+    const journal = readJournalStrict(root, runId);
     if (journal && journal.module === moduleId && journal.phase !== 'committed') {
-      return { runId, journal };
+      if (found) {
+        throw new BaselineCommitInProgressError(`baseline_commit_in_progress — 模块 ${moduleId} 存在多个未终结 journal`);
+      }
+      found = { runId, journal };
     }
   }
-  return null;
+  return found;
 }
 
 // ---- 读写 logos-project.yaml 的状态与派生索引 ----
@@ -526,7 +605,7 @@ function resolvedIntact(root: string, runId: string, journal: CommitJournal): bo
  * - committing + resolved 缺失：回滚（按 backup + old_sha256 还原目标与 yaml，状态保持 from）。
  */
 export function recoverJournal(root: string, runId: string, at: string): RecoverResult {
-  const journal = readJournal(root, runId);
+  const journal = readJournalStrict(root, runId);
   if (!journal || journal.phase === 'committed') return { recovered: false, outcome: 'none' };
 
   if (journal.phase === 'prepared') {
@@ -553,7 +632,24 @@ export function recoverJournal(root: string, runId: string, at: string): Recover
     return { recovered: true, outcome: 'rolled-forward' };
   }
 
-  // resolved 缺失 → 回滚：逐目标按 on-disk hash 重判，非 old 的从 backup 还原（或删除新建文件）。
+  // resolved 缺失 → 只有在**所有**旧字节（含 yaml）均可证明已在盘或有匹配 backup 时才允许回滚。
+  // 任一恢复材料缺失/哈希不符都统一硬报 baseline_commit_in_progress，且在判断完成前零写入。
+  for (const t of journal.targets) {
+    const abs = join(root, t.target_path);
+    if (sha256File(abs) === t.old_sha256) continue;
+    const bak = join(backupDir(root, runId), t.target_path);
+    if (t.old_sha256 !== null && sha256File(bak) !== t.old_sha256) {
+      throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} 缺少可校验目标 backup：${t.target_path}`);
+    }
+  }
+  const currentYamlSha = sha256File(yamlPath(root));
+  if (currentYamlSha !== journal.index.old_yaml_sha256
+    && journal.index.old_yaml_sha256 !== null
+    && sha256File(journal.index.yaml_backup_path) !== journal.index.old_yaml_sha256) {
+    throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} 缺少可校验 yaml backup`);
+  }
+
+  // 已证明可恢复后再回滚：逐目标按 on-disk hash 重判，非 old 的从 backup 还原（或删除新建文件）。
   for (const t of journal.targets) {
     const abs = join(root, t.target_path);
     if (sha256File(abs) === t.old_sha256) continue; // 已是旧值
@@ -565,7 +661,7 @@ export function recoverJournal(root: string, runId: string, at: string): Recover
     }
   }
   // 还原 yaml（索引 + 状态）到旧值。
-  if (existsSync(journal.index.yaml_backup_path)) {
+  if (currentYamlSha !== journal.index.old_yaml_sha256 && existsSync(journal.index.yaml_backup_path)) {
     atomicWrite(yamlPath(root), readFileSync(journal.index.yaml_backup_path, 'utf-8'));
   }
   rmSync(journalPath(root, runId), { force: true });
@@ -607,7 +703,8 @@ export function recoverPendingForRead(root: string, at: string): { inProgress: s
   const inProgress: string[] = [];
   const modules = new Set<string>();
   for (const runId of listRunIds(root)) {
-    const j = readJournal(root, runId);
+    // 读取入口不得用宽松 parser 把损坏 journal 当“不存在”；严格 schema/path/hash 错误直接硬报。
+    const j = readJournalStrict(root, runId);
     if (j && j.phase !== 'committed') modules.add(j.module);
   }
   for (const moduleId of modules) {
@@ -629,6 +726,8 @@ export function withBaselineReadLock<T>(
   at: string,
   fn: () => T,
 ): { ok: true; value: T } | { ok: false; error: 'baseline_commit_in_progress' } {
+  // 外层 withRecoveredReadLocks 已持本模块锁时直接复用同一临界区；公共 acquireLock 语义仍保持“拒绝重入”。
+  if (lockHeldByCurrentProcess(root, moduleId)) return { ok: true, value: fn() };
   if (!acquireLock(root, moduleId)) return { ok: false, error: 'baseline_commit_in_progress' };
   try {
     const pending = findUnfinalizedJournal(root, moduleId);
@@ -646,6 +745,16 @@ export function listProjectModuleIds(root: string): string[] {
   return modules.map(m => (typeof m.id === 'string' ? m.id : null)).filter((x): x is string => x !== null);
 }
 
+/** 只有 adopted/历史 skipped 模块允许 baseline-seed 写 resources；普通模块无需创建读锁目录。 */
+export function listBaselineSeedModuleIds(root: string): string[] {
+  const doc = readYamlDoc(root);
+  const modules = Array.isArray(doc.modules) ? (doc.modules as Array<Record<string, unknown>>) : [];
+  return modules
+    .filter(m => m.bootstrap === 'adopted' || m.bootstrap === 'skipped')
+    .map(m => (typeof m.id === 'string' ? m.id : null))
+    .filter((x): x is string => x !== null);
+}
+
 /**
  * F7：多模块**读锁区间**——index/sync 等在读取/扫描 logos/resources（可能含多模块权威 provenance 文档）**之前**
  * 调用：按确定顺序（排序，防死锁）取**所有相关模块**锁，恢复各自未终结 journal，再把这些锁**持有到 fn 完成**，
@@ -660,16 +769,23 @@ export function withRecoveredReadLocks<T>(
 ): { ok: true; value: T } | { ok: false; inProgress: string[] } {
   const sorted = [...new Set(moduleIds)].sort();
   const held: string[] = [];
+  let currentModule = sorted[0] ?? 'unknown';
   try {
     for (const m of sorted) {
+      currentModule = m;
+      if (lockHeldByCurrentProcess(root, m)) continue;
       if (!acquireLock(root, m)) return { ok: false, inProgress: [m] };
       held.push(m);
     }
     for (const m of sorted) {
+      currentModule = m;
       const pending = findUnfinalizedJournal(root, m);
       if (pending) recoverJournal(root, pending.runId, at);
     }
     return { ok: true, value: fn() };
+  } catch (e) {
+    if (e instanceof BaselineCommitInProgressError) return { ok: false, inProgress: [currentModule] };
+    throw e;
   } finally {
     for (const m of held) releaseLock(root, m);
   }

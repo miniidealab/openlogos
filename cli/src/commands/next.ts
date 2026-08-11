@@ -26,6 +26,7 @@ import type { ProposalFacts } from '../lib/proposal-lifecycle.js';
 import { writePlanApprovedMarker } from '../lib/ui-provenance.js';
 import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
 import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
+import { BaselineCommitInProgressError } from '../lib/baseline-seed-txn.js';
 
 export interface NextModuleItem {
   id: string;
@@ -145,6 +146,21 @@ function isSliceExitAutoReady(root: string, slug: string): boolean {
   return isTasksCodeFilled(content);
 }
 
+/** S39：adopted 三态只影响可选证据说明，绝不劫持无提案时的主 action/command。 */
+function adoptedDirectChangeDetail(locale: string, state: BaselineSeedState, legacyHint = ''): string {
+  const zh = state === 'required'
+    ? '无需先单独建立基线，可直接发起变更；openlogos baseline-seed begin 仅是显式可选的证据加速器。'
+    : state === 'partial'
+      ? '未提交 staging 不进入有效视图且不阻断变更，可直接发起变更；openlogos baseline-seed commit 仅用于显式恢复可选种子扫描。'
+      : '现状基线可作为证据加速器，可直接发起变更迭代。';
+  const en = state === 'required'
+    ? 'No standalone baseline is required: start a change directly. baseline-seed begin remains an explicit optional evidence accelerator.'
+    : state === 'partial'
+      ? 'Uncommitted staging is excluded from the effective view and does not block change; baseline-seed commit is an explicit optional recovery action.'
+      : 'The current-state baseline can accelerate evidence lookup; start a change directly.';
+  return (locale === 'zh' ? zh : en) + legacyHint;
+}
+
 /** auto 放行时的建议文案（仅 ready-to-merge 这类可跳 gate 会用到）。 */
 function autoPassMessage(locale: Locale, gateId: string, step: string, slug: string): { action: string; command: string | null; detail: string } {
   const command = step === 'ready-to-merge' ? `openlogos merge ${slug}` : null;
@@ -255,39 +271,12 @@ function buildModuleNextItem(
       const legacyHint = mod.baseline_seed_legacy
         ? (locale === 'zh' ? '（legacy 项目未标注种子状态，建议运行 openlogos sync 迁移元数据）' : ' (legacy: run openlogos sync to record baseline state)')
         : '';
-      if (seedState === 'seeded') {
-        return {
-          id: mod.id, name: mod.name, lifecycle: 'launched',
-          bootstrap: mod.bootstrap,
-          action: t(locale as Parameters<typeof t>[0], 'next.createChange'),
-          command: 'openlogos change <slug>',
-          detail: (locale === 'zh'
-            ? '现状基线已建立；可正常发起变更迭代。'
-            : 'Baseline established; you can start change iterations normally.') + legacyHint,
-          active_change: null, proposal_step: null,
-        };
-      }
-      if (seedState === 'partial') {
-        // partial（无活跃提案）：主 action/command 指向 baseline-seed 恢复入口（EX-3.4）。
-        return {
-          id: mod.id, name: mod.name, lifecycle: 'launched',
-          bootstrap: mod.bootstrap,
-          action: locale === 'zh' ? '完成现状基线（恢复扫描）' : 'Complete current-state baseline (resume scan)',
-          command: 'openlogos baseline-seed commit',
-          detail: (locale === 'zh'
-            ? '现状基线扫描未完成——运行 openlogos baseline-seed commit 继续完成；也可先发起 openlogos change 迭代（不强制）。'
-            : 'Current-state baseline scan unfinished — run openlogos baseline-seed commit to finish; you may also start openlogos change first (not required).') + legacyHint,
-          active_change: null, proposal_step: null,
-        };
-      }
       return {
         id: mod.id, name: mod.name, lifecycle: 'launched',
         bootstrap: mod.bootstrap,
-        action: locale === 'zh' ? '建立现状基线' : 'Establish current-state baseline',
-        command: 'openlogos baseline-seed begin',
-        detail: (locale === 'zh'
-          ? '让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点。'
-          : 'Have an AI scan the existing code and outline the current system structure and scenario list as a starting point.') + legacyHint,
+        action: t(locale as Parameters<typeof t>[0], 'next.createChange'),
+        command: 'openlogos change <slug>',
+        detail: adoptedDirectChangeDetail(locale, seedState, legacyHint),
         active_change: null, proposal_step: null,
       };
     }
@@ -422,6 +411,11 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       };
     }
   } catch (e) {
+    if (e instanceof BaselineCommitInProgressError) {
+      if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
+      else console.error(`✖ ${e.message}`);
+      process.exit(1);
+    }
     if (e instanceof FlowError) {
       if (format === 'json') {
         console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
@@ -472,6 +466,11 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
         };
       }
     } catch (e) {
+      if (e instanceof BaselineCommitInProgressError) {
+        if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
+        else console.error(`✖ ${e.message}`);
+        process.exit(1);
+      }
       if (e instanceof FlowError) {
         if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
         else console.error(`✖ flow 配置错误（${e.code}）：${e.message}`);
@@ -485,6 +484,11 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   try {
     data = collectStatusData(root, moduleId, cmdEval, cmdGateEval);
   } catch (e) {
+    if (e instanceof BaselineCommitInProgressError) {
+      if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
+      else console.error(`✖ ${e.message}`);
+      process.exit(1);
+    }
     if (e instanceof FlowError) {
       if (format === 'json') {
         console.error(JSON.stringify(makeErrorEnvelope('next', e.code, e.message)));
@@ -612,27 +616,9 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       if (bootstrapModule) {
         // baseline-seed-legacy-default-unify：有效状态一律经共享 helper（唯一事实源；status 已恒派生 → 短路）。
         const seedState: BaselineSeedState = effectiveBaselineSeedState(root, bootstrapModule.id, bootstrapModule.baseline_seed_state).state;
-        if (seedState === 'seeded') {
-          action = t(locale, 'next.createChange');
-          command = 'openlogos change <slug>';
-          detail = locale === 'zh'
-            ? '现状基线已建立；可正常发起变更迭代。'
-            : 'Baseline established; you can start change iterations normally.';
-        } else if (seedState === 'partial') {
-          action = locale === 'zh' ? '完成现状基线（恢复扫描）' : 'Complete current-state baseline (resume scan)';
-          command = 'openlogos baseline-seed commit';
-          detail = locale === 'zh'
-            ? '现状基线扫描未完成——运行 openlogos baseline-seed commit 继续完成；也可先发起 openlogos change 迭代（不强制）。'
-            : 'Current-state baseline scan unfinished — run openlogos baseline-seed commit to finish; you may also start openlogos change first.';
-        } else {
-          action = locale === 'zh'
-            ? '建立现状基线'
-            : 'Establish current-state baseline';
-          command = 'openlogos baseline-seed begin';
-          detail = locale === 'zh'
-            ? '让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点。'
-            : 'Have an AI scan the existing code and outline the current system structure and scenario list as a starting point.';
-        }
+        action = t(locale, 'next.createChange');
+        command = 'openlogos change <slug>';
+        detail = adoptedDirectChangeDetail(locale, seedState);
       } else {
         action = t(locale, 'next.createChange');
         command = 'openlogos change <slug>';
@@ -674,21 +660,9 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       // baseline-seed-legacy-default-unify：有效状态一律经共享 helper（唯一事实源；status 已恒派生 → 短路）。
       // bootstrapAdopted 为 true 蕴含 firstModule 存在（其判定全部引用 firstModule）。
       const seedState: BaselineSeedState = effectiveBaselineSeedState(root, firstModule!.id, firstModule!.baseline_seed_state).state;
-      if (seedState === 'seeded') {
-        action = t(locale, 'next.createChange');
-        command = 'openlogos change <slug>';
-        detail = locale === 'zh'
-          ? '现状基线已建立；可正常发起变更迭代。'
-          : 'Baseline established; you can start change iterations normally.';
-      } else {
-        action = locale === 'zh'
-          ? '建立现状基线'
-          : 'Establish current-state baseline';
-        command = 'openlogos baseline-seed begin';
-        detail = locale === 'zh'
-          ? '让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点。'
-          : 'Have an AI scan the existing code and outline the current system structure and scenario list as a starting point.';
-      }
+      action = t(locale, 'next.createChange');
+      command = 'openlogos change <slug>';
+      detail = adoptedDirectChangeDetail(locale, seedState);
     } else {
       action = data.suggestion;
       command = null;

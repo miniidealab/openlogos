@@ -8,6 +8,7 @@
 
 
 ## 二、冒烟测试用例
+
 | ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
 |----|------|------|----------|----------|------|----------|
 | SMOKE-core-01 | CLI 包可安装并输出版本 | 部署方案 | staging | 包已发布或本地 pack 完成 | `openlogos --version` | 返回版本号 |
@@ -20,7 +21,7 @@
 | SMOKE-core-08 | 首页可进入发布动态 | 官网发布动态 | staging | 官网已部署或本地预览已启动 | 访问首页并点击最近发布入口 | 可跳转 `/releases`，且页面非 404 |
 | SMOKE-core-09 | 纯代码提案 no-delta spec-complete 冒烟 | no-delta merge / `SPEC_MERGED` | staging | 安装含本变更的 CLI；构造无 `[delta]`、含空 `[code]` 且含真实 UT/ST ID 的活跃提案 | 执行 `openlogos merge <slug>`，再执行 `openlogos next --format json` | `SPEC_MERGED` 存在且内容标记 `no_delta_spec_complete`；`proposal_step=="ready-to-implement"`；`next_node.id=="plan-slices"` |
 | SMOKE-core-10 | 缺测试 ID 不派 slice-planner 冒烟 | `test-id-required` | staging | 安装含本变更的 CLI；构造代码提案，已有 `SPEC_MERGED`，但无真实 UT/ST/SMOKE ID | 执行 `openlogos next --format json` | 返回 `proposal_step=="test-id-required"` 与 `reason=="code_change_requires_real_test_ids"`；不返回 `next_node.id=="plan-slices"`；不写 `SLICES_APPROVED` |
-| SMOKE-core-11 | adopt 后 next 输出逆向建基线引导 | adopt 命令 / brownfield-adopter | staging | SMOKE-core-10 完成，无活跃提案，模块 `baseline_seed_state:required` | 执行 `openlogos next` | 模块 `baseline_seed_state: required`；输出「逆向建立现状基线」引导（种子基线 / reverse-engineered / verified:false）；**不再**建议 `openlogos change add-baseline-docs` |
+| SMOKE-core-11 | adopt 后 required 状态仍直接引导 change | adopt 命令 / brownfield-adopter | staging | SMOKE-core-10 完成，无活跃提案，模块 `baseline_seed_state:required`，无未终结 journal | 执行 `openlogos next` | 主动作指向 `openlogos change <slug>`；required 仅表示可选全库 seed 未完成，可附显式 baseline-seed 说明，但不要求先 seed、不再建议 `add-baseline-docs` |
 | SMOKE-core-12 | verify 在无预跑配置且覆盖不足时输出诊断 | verify 预执行模型 | staging | 安装含本变更的 CLI，构造仅局部测试结果且缺少 verify 预跑配置的项目 | 执行 `openlogos verify --format json` | `pre_run.mode=none`，输出覆盖不足诊断与配置建议 |
 | SMOKE-core-13 | verify 两阶段预跑与合并结果可用 | verify 预执行模型 | staging | 安装含本变更的 CLI，构造包含 regression / incremental 配置的项目 | 执行 `openlogos verify --format json` | 返回 `pre_run.mode=two_phase`，阶段命令状态和最终合并结果可供客户端展示 |
 | SMOKE-core-14 | 历史 skipped 项目在 next/status 中保持接入模式 | adopt 兼容性 | staging | 安装含本变更的 CLI，准备 bootstrap=skipped 的历史项目 | 执行 `openlogos status` 与 `openlogos next` | 输出与 bootstrap=adopted 一致的接入模式引导与阶段显示 |
@@ -37,7 +38,6 @@
 | SMOKE-core-25 | init 保留用户根指令文件 | 根指令文件合并 | staging | 安装含本变更的 CLI；临时目录预置含用户内容的 `AGENTS.md` / `CLAUDE.md` | 执行 `openlogos init smoke --locale zh --ai-tool all` | 用户内容仍存在；文件包含且仅包含一个 OpenLogos managed block；OpenLogos 指令内容已写入 |
 | SMOKE-core-26 | sync 幂等刷新根指令托管片段 | 根指令文件合并 | staging | SMOKE-core-25 完成 | 执行 `openlogos sync` 两次 | 用户内容仍存在；OpenLogos managed block 被刷新且未重复追加 |
 | SMOKE-core-27 | adopt 保护大小写变体指令文件 | 根指令文件合并 | staging | 安装含本变更的 CLI；存量项目 fixture 预置 `agents.md` / `claude.md` 小写文件 | 执行 `openlogos adopt --locale zh --ai-tool cursor` | CLI 复用既有真实路径合并内容；用户内容仍存在；不生成重复大小写入口 |
-
 
 ## 三、覆盖度校验
 - [x] CLI 健康检查：已覆盖
@@ -155,23 +155,23 @@
 ## 八、brownfield-adopter 发布后冒烟用例
 
 ### 一、范围补充
-覆盖已发布包中 `openlogos adopt` 的自动/降级建基线路径、`openlogos baseline-seed` 种子状态提交协议与 partial 恢复态，以及 `status` / `next` 对现状基线覆盖率、`verify` 对逆向 spec **不再产出确认软告警**的人读与 JSON 输出。ID 顺延主规格当前已占用的 `SMOKE-core-43`，取 `SMOKE-core-44`…`48`。
+覆盖已发布包中 `openlogos adopt` 后直接 change 的默认路径、用户显式选择 `openlogos baseline-seed` 时的种子状态提交协议与安全 partial 恢复，以及 `status`/`next` 的兼容 coverage、事务恢复硬门和 `verify` 无确认软告警。ID 顺延主规格当前已占用的 `SMOKE-core-43`，取 `SMOKE-core-44`…`48`。
 
 ### 二、冒烟测试用例补充
 | ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
 |----|------|------|----------|----------|------|----------|
-| SMOKE-core-44 | adopt 后 next 输出逆向建基线引导 | brownfield-adopter adopt 衔接 | staging | 安装含本变更的 CLI；空存量项目执行 `openlogos adopt` | 执行 `openlogos next` | 模块 `baseline_seed_state: required`；输出「逆向建立现状基线（种子基线 / reverse-engineered / verified:false）」引导；**不再**建议 `openlogos change add-baseline-docs` |
-| SMOKE-core-45 | adopt 能力缺失降级不伪造基线 | adopt 降级路径 | staging | 安装含本变更的 CLI；无可用 AI 会话（CLI-only / 非交互） | 执行 `openlogos adopt` 后 `openlogos status --format json` | `adopt` 不启动 AI、不产逆向内容；`baseline_seed_state` 保持 `required`；输出可复制后续提示；不显示「基线已建立」 |
-| SMOKE-core-46 | status/next 暴露 baseline_coverage 字段一致 | 覆盖率 JSON 呈现 | staging | 安装含本变更的 CLI；构造 `bootstrap: adopted` 且 `seeded`、含逆向候选的项目 | 执行 `openlogos status --format json` 与 `openlogos next --format json` | 两命令均含 `baseline_coverage`（`state`/`human_verified`/`denominator`/`tombstones`/`human_verified_delta`/`freshness`），字段一致；删除候选不使百分比上升（tombstone 留分母）；`active∪tombstone`=0 时报 `n/a`；索引失效时 `freshness=stale/unknown`、不输出精确百分比 |
-| SMOKE-core-47 | verify 对逆向 spec 不产软告警、JSON 无 baseline_warnings（确认机制移除反向回归） | verify 反向回归 | staging | 安装含本变更的 CLI；构造含 `verified:false` 逆向 spec 区域的提案 | 执行 `openlogos verify --format json` | verify **不输出**现状基线/未确认逆向的软告警文本，JSON **不含** `baseline_warnings` 字段；verify gate 结果**不受**基线逆向候选影响（不因其硬失败、也不因其软告警） |
-| SMOKE-core-48 | baseline-seed 提交协议 + partial 恢复态一致 | 种子状态提交（F7/F8） | staging | 安装含本变更的 CLI；adopt 完成、`baseline_seed_state:required` | `openlogos baseline-seed begin --manifest`（N 产物）→ 仅落盘部分产物后 `commit --run-id`（partial）→ 运行 `openlogos next` 与 `status --format json` → 补齐产物后再 `commit` | 首次 commit 写 `baseline_seed_state: partial`、`missing` 非空；`next`/`status` 一致输出 `state=partial`/`incomplete=true` 且下一步指向 `openlogos baseline-seed`；stale run_id commit 非零退出不写状态；补齐后再 commit 写 `seeded`；全程状态仅由 CLI 写入（无直接改 YAML） |
+| SMOKE-core-44 | adopt 后 required 默认直接引导 change | brownfield-adopter adopt 衔接 | staging | 安装含本变更的 CLI；空存量项目执行 `openlogos adopt`；无未终结 journal | 执行 `openlogos next` | 模块兼容字段为 `baseline_seed_state: required`；主动作指向 `openlogos change <slug>`，baseline-seed 仅显式可选；不要求先建基线、不建议 `add-baseline-docs` |
+| SMOKE-core-45 | adopt 能力缺失不伪造且 change 可达 | adopt 降级路径 | staging | 安装含本变更的 CLI；无可用 AI 会话（CLI-only / 非交互） | 执行 `openlogos adopt` 后 `openlogos status --format json` 与 `next` | adopt 不启动 AI、不产逆向内容；`baseline_seed_state` 保持 `required`；next 给出可复制 change 主提示，可附可选 seed 说明；不显示「基线已建立」 |
+| SMOKE-core-46 | status/next 暴露兼容 baseline_coverage 字段一致 | 覆盖率 JSON 呈现 | staging | 安装含本变更的 CLI；构造 `bootstrap: adopted` 且 `seeded`、含逆向候选、无未终结 journal的项目 | 执行 `openlogos status --format json` 与 `openlogos next --format json` | 两命令均含 `baseline_coverage` 的 `state`/`incomplete`/`denominator`/`tombstones`/`source`/`freshness` 且一致；不含已删除的 `human_verified`/`human_verified_delta`/`coverage`；零候选报 `n/a`，索引失效时 `freshness=stale/unknown` 且不输出精确计数结论 |
+| SMOKE-core-47 | verify 对逆向 spec 不产软告警、JSON 无 baseline_warnings（确认机制移除反向回归） | verify 反向回归 | staging | 安装含本变更的 CLI；构造含 `verified:false` 逆向 spec 区域的提案 | 执行 `openlogos verify --format json` | verify 不输出现状基线/未确认逆向的软告警文本，JSON 不含 `baseline_warnings`；verify gate 结果不受基线逆向候选影响 |
+| SMOKE-core-48 | 显式 baseline-seed 提交协议 + 安全 partial 非阻断恢复 | 种子状态提交（F7/F8） | staging | 安装含本变更的 CLI；adopt 完成、用户显式选择预扫、无未终结 journal | `baseline-seed begin`（N 产物）→ 仅写部分 staging 后 `commit`（partial）→ 运行 next/status → 补齐后再 commit | 首次 commit 写 `partial`、`missing` 非空；next 主动作仍为 `openlogos change <slug>`，status/next 一致输出 `state=partial`/`incomplete=true`，seed commit/begin 仅旁路 recovery；stale run 非零且不写状态；补齐后写 `seeded` |
 
 ### 三、覆盖度校验补充
-- [ ] adopt 自动衔接建基线引导：SMOKE-core-44
-- [ ] adopt 降级不伪造基线：SMOKE-core-45
-- [ ] 覆盖率 JSON 一致 + tombstone 不虚增 + 零分母 + 降级：SMOKE-core-46
+- [ ] adopt 后 required 默认 change：SMOKE-core-44
+- [ ] adopt 能力缺失不伪造且 change 可达：SMOKE-core-45
+- [ ] coverage 兼容字段一致 + 已删除字段不复活 + tombstone/零分母/新鲜度：SMOKE-core-46
 - [ ] verify 对逆向 spec 不产软告警、JSON 无 baseline_warnings：SMOKE-core-47
-- [ ] baseline-seed 提交协议 + partial 恢复态一致：SMOKE-core-48
+- [ ] 显式 baseline-seed 提交协议 + 安全 partial 主动作 change、恢复旁路：SMOKE-core-48
 
 ## 九、契约自描述与防误杀发布后冒烟用例
 
@@ -208,3 +208,28 @@
 
 - SMOKE-core-51…53 全部经 `openlogos smoke` 门禁执行并由 runner/reporter 写入结果账本；任一失败阻断 archive。
 - 三条用例分别锚定：入口注册（打包正确性）、双格式与三退出码契约（机器可消费性）、只读性（授权语义）——与 UT/ST 层不互相替代（三层证据各自独立）。
+
+## 十一、baseline-on-touch 发布后冒烟用例（S39）
+
+### 一、冒烟范围
+
+在真实安装的 npm tarball/发布包上验证存量接入主路径、L9 结构门、缺失目标 CREATE apply 与无 JIT 回归。所有用例必须由 smoke runner 执行并通过 OpenLogos smoke reporter 写入 `logos/resources/verify/smoke-results.jsonl`；仅手工运行命令或只写规格不算覆盖。
+
+### 二、冒烟测试用例
+
+| ID | 描述 | 目标环境 | 前置条件 | 操作 | 通过标准 |
+|---|---|---|---|---|---|
+| SMOKE-core-54 | adopt 后无需 seed 直接 change，未终结 journal 仍硬阻断 | staging | 从新版 tarball 安装 CLI；准备未初始化存量 CLI 项目；另备不可恢复 journal 夹具与 resources/index 读取哨兵 | 执行 adopt；在无未终结 journal 下分别构造 required/安全 partial/seeded 后运行 next 并创建首个 change；再注入不可恢复 journal 重跑 next/status | 恢复门通过时三态主动作均可创建 change且 partial staging 不被当规格；不可恢复夹具返回 `baseline_commit_in_progress`、读取哨兵为 0、无 proposal/delta 写入 |
+| SMOKE-core-55 | 权威 targets、逐场景完备与 plan L9 | staging | 新提案显式 touched S05/S39，并为每场景列强制维度和全部条件 disposition；两个场景共享同一测试/feature target | 生成 proposal/tasks，运行 change-lint text/JSON；依次删除 S05 维度、复制 canonical target、构造非法 SKIP/AMBIGUOUS | 合法计划 `P==T` 且每目标仅一 task；负例分别返回 `baseline_closure_target_missing`、`delta_target_duplicate`、`baseline_closure_malformed`/`baseline_closure_ambiguous`，不得由 tasks 反推通过 |
+| SMOKE-core-56 | 缺失目标全量 CREATE 与 API/DB non-Markdown apply | staging | 提案触达无正式场景/测试/OpenAPI/DDL 的 HTTP+SQLite 场景；准备真实 OpenAPI YAML 与 SQLite SQL ADDED 控制 delta，并含一个既有目标的 MODIFIED 对照 | 按场景→API/DB→测试/编排产出最终态 deltas，经授权 merge/apply；重读目标并实际 parse OpenAPI、在临时 SQLite 事务执行 DDL | 场景含完整时序/异常，测试/编排含真实 ID/reporter；API/DB 只剥离首行且最终目标无 marker、可解析/执行；所有目标/counter/index 原子落盘，成功后才有 `SPEC_MERGED` |
+| SMOKE-core-57 | P/T/D、模式漂移与残缺/非法 delta fail-closed | staging | 准备合法 plan 后分别替换一个等量不同成员的 task/delta、外部创建原 CREATE 目标、删除场景 Mermaid、让 non-Markdown 首行 target 漂移/SQL 失效 | 分别运行 change-lint/merge 消费路径 | 逐例返回集合差异、`delta_target_mode_mismatch`、`create_target_incomplete`、`non_markdown_delta_invalid`；不覆盖、不部分 apply、不写 `SPEC_MERGED`，既有目标字节保持不变 |
+| SMOKE-core-58 | 无 JIT/verified/baseline warning 回归 | staging | adopted + committed `verified:false` candidate，直接执行首个 on-touch change 到 verify 消费前沿 | 检查人读/JSON、delta、主规格预期与 marker 集合 | 无确认提示、无 verified:true/confirmed_* 写回、无 baseline_warnings、无新 gate/marker；唯一用户方案门仍为 plan-exit |
+
+### 三、覆盖与发布判定
+
+- SMOKE-core-54 同时锚定“用户无需单独建立基线”与“不可恢复 journal 绝不读取半新资源”。
+- SMOKE-core-55 锚定 proposal 权威 targets、逐场景维度完备与 `P==T`，证明遗漏/SKIP/AMBIGUOUS 可被 L9 发现。
+- SMOKE-core-56 锚定 CREATE 不是骨架，并验证 API/DB non-Markdown 首行剥离、真实 parse/执行与原子落盘。
+- SMOKE-core-57 锚定 `P==T==D` 成员对账、模式/完整度/非 Markdown 语法及 merge 纵深 fail-closed。
+- SMOKE-core-58 锚定已删除 JIT 确认流程不会复活。
+- 任一用例未被 runner/reporter 分派、未写结果或失败，都必须阻断 archive；不得以 UT/ST 通过替代发布后证据。

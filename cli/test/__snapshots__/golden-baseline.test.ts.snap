@@ -298,7 +298,7 @@ exports[`golden-baseline: status/next JSON characterization > golden: initial-ad
   ],
   "proposal_step": null,
   "source_roots": null,
-  "suggestion": "Establish current-state baseline (AI session/driver reverse-scans the codebase)",
+  "suggestion": "Run openlogos change <slug> (seed=required; baseline-seed remains an explicit optional accelerator)",
   "yaml_diagnostics": null,
 }
 `;

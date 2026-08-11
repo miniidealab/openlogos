@@ -100,7 +100,7 @@ describe('S33 review r2 — 残留边界闭环', () => {
     expect(con.errors.join('\n')).toContain('invalid_provenance');
   });
 
-  it('F4: 真实 anchor 重命名身份继承（staged newAnchor + aliases=[旧 anchor] 继承 prior 人工确认）', () => {
+  it('F4: 真实 anchor 重命名身份继承，同时清除历史确认写回', () => {
     const OLD_A = 'cli:old';
     const NEW_A = 'cli:new';
     const OLD_K = candidateKey('core', OLD_A);
@@ -110,7 +110,7 @@ describe('S33 review r2 — 残留边界闭环', () => {
     let runId = begin();
     stage(root, runId, T1, docForA([{ anchor: OLD_A }])); stage(root, runId, T2, docForA([{ anchor: A2 }]));
     con.logs.length = 0; baselineSeedCommit('core', runId, 'json');
-    // 人工确认 OLD（merge 落主文档）
+    // 历史 OLD 含已删除机制留下的 verified:true（仅用于兼容读入）
     writeFileSync(join(root, T1), docForA([{ anchor: OLD_A, verified: true }]));
     // 重扫：anchor 重命名 → NEW key，aliases 记**旧 anchor**（契约保真，非旧 key）
     writeManifest(root, fullExpected([NEW_K], [K2]));
@@ -119,9 +119,9 @@ describe('S33 review r2 — 残留边界闭环', () => {
     stage(root, runId, T2, docForA([{ anchor: A2 }]));
     con.logs.length = 0; baselineSeedCommit('core', runId, 'json');
     const merged = readFileSync(join(root, T1), 'utf-8');
-    // NEW 继承人工确认（verified:true）；OLD 未作为独立 tombstone 残留（身份已继承）
+    // NEW 继承身份但不得继承确认值；OLD 未作为独立 tombstone 残留（身份已继承）
     const sec = scanModuleCandidates(root, 'core').candidates;
-    expect(sec.find(c => c.key === NEW_K)?.verified).toBe(true);
+    expect(sec.find(c => c.key === NEW_K)?.verified).toBe(false);
     expect(sec.find(c => c.key === OLD_K)).toBeUndefined();
     expect(merged).toContain(NEW_K);
   });
@@ -161,7 +161,8 @@ describe('S33 review r2 — 残留边界闭环', () => {
     const mod = collectStatusData(root).modules![0];
     expect(mod.baseline_seed_state).toBe('required');     // 架构 §4.1：缺省经统一派生（无候选 → required），unknown 第三态废除
     expect(mod.suggestion.toLowerCase()).toContain('legacy');
-    expect(mod.suggestion).toContain('建立现状基线'); // advisory 引导，不设硬门、不阻断 change
+    expect(mod.suggestion).toContain('openlogos change <slug>');
+    expect(mod.suggestion).toContain('仅为显式可选加速器');
   });
 
   it('F9: 崩溃在 register 事件之前 → roll-forward 幂等补记事件（携真实 keys）', () => {

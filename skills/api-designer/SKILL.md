@@ -236,3 +236,74 @@ resource_index:
 ```
 
 **不执行此步骤将导致后续 test-writer/code-implementor 无法感知 API 规格文件，AI 将无法基于正确的接口定义编写测试和代码。**
+
+## S39 delta 模式：从 effective sequence 生成唯一 API delta
+
+### 激活与前置
+
+仅当 on-touch-v1 闭包矩阵判定 API/interface 适用时启用。必须先存在 effective scenario sequence；若没有时序来源，返回 AMBIGUOUS/前置缺失，禁止直接从用户一句话猜 OpenAPI。
+
+当前 change-writer 拥有最终文件写入权；本 Skill 返回 API 内容、验证结论与 orchestration 影响，不得创建第二份“API 基线 delta”。
+
+### 适用性
+
+以下任一成立则 API 适用：HTTP、RPC、GraphQL、稳定 CLI/进程协议、消息 topic/event、webhook 或其它跨边界公开契约。纯进程内调用且无稳定外部协议可证据化 SKIP。
+
+adopted 历史 `skip_phases: [api]` 不是永久禁用；与时序冲突时必须让 plan 暴露冲突。
+
+### MODIFY
+
+- 读取主 API + 当前同目标 delta 的 effective view；
+- 对已有 endpoint/schema 做兼容修改，对新 endpoint/schema 在同一文件增加；
+- 保留未变更 endpoint/schema/operationId 与稳定 ID，遵守守恒/兼容策略；
+- 多场景共享一个 OpenAPI 文件时聚合为一份最终态 delta。
+- 对 `.yaml|.yml|.json` 目标，输出必须是**整文件最终态**而非片段，首行为 `## MODIFIED — <canonical target>（整文件替换）`；其后 payload 是完整 OpenAPI。change-writer 不得再包一层 Markdown marker。
+
+### CREATE
+
+目标缺失时返回完整可校验接口文档，至少含：
+
+- OpenAPI/协议版本与 info；
+- servers/channels（适用时）；
+- paths/operations 或消息 channel；
+- 唯一 operationId/message name；
+- request/response/schema 与必填/约束；
+- error/状态码；
+- auth/permission；
+- 幂等、分页、并发或重试中适用项；
+- 版本兼容/弃用策略；
+- 从 scenario 步骤到 operation 的追溯。
+
+Markdown 外的 YAML/JSON delta 在剥离首行控制 marker 后必须是有效 OpenAPI；含冒号等特殊字符的文本按项目规范引用。禁止 TODO/空 paths/只有示例无 schema。
+
+对 non-Markdown API target，完整输出格式固定：
+
+```text
+## ADDED — logos/resources/api/<file>.yaml（新文件，整文件）
+openapi: 3.1.0
+...
+```
+
+- 首行声明 target 必须与 delta 路径映射结果一致；CREATE 只能用 ADDED，目标必须缺失。
+- marker 不是 YAML 内容；merge/lint 在 parse 前剥离且仅剥离首行，最终 API 文件不得含 marker。
+- `.yaml/.yml` 必须 duplicate-key fail-closed 解析，`.json` 必须 duplicate-key-aware 解析，并通过 OpenAPI 3.x schema/ref/operationId 校验与 CREATE 完整度检查。
+- marker/路径/mode/存在性/语法/引用任一失败时返回 `non_markdown_delta_invalid` 或 `create_target_incomplete`，整批零落盘。协议权威定义见 merge-executor 的 non-Markdown 整文件章节。
+
+### 输出给下游
+
+同时返回：
+
+- 受影响 operation 与 schema 清单；
+- 每个 operation 对应的 scenario step；
+- 需要 test-orchestrator 覆盖的主/异常链；
+- 兼容/迁移风险。
+
+API 适用即编排测试适用；change-writer 必须规划对应唯一 orchestration target，除非已有目标 MODIFY。
+
+### 完成检查
+
+- 全部 API 可追溯到 effective sequence；
+- 目标模式与磁盘事实一致；
+- 同 canonical target 只有一个输出；
+- 语法验证与最低完整度均通过；
+- 不读 seed staging，不写 verified/确认字段，不新增 JIT 流程。

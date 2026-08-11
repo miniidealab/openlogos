@@ -93,8 +93,9 @@ describe('drop-baseline-confirmation：确认机制删除反向回归', () => {
     expect(out).not.toContain('change-writer 会建议');
     expect(out).not.toContain('一并确认现状');
     expect(out).not.toContain('不设硬门');
-    // 保留：正常引导发起变更。
-    expect(out).toContain('可正常发起变更迭代');
+    // 保留：主动作与说明均直接引导发起变更。
+    expect(out).toContain('openlogos change <slug>');
+    expect(out).toContain('可直接发起变更迭代');
   });
 
   // ---- 分发资产（skills/ + docs/ 随 npm 包分发）静态契约回归 ----
@@ -107,11 +108,14 @@ describe('drop-baseline-confirmation：确认机制删除反向回归', () => {
       expect(doc).not.toContain('human_verified');        // 分子字段已删（JSON 契约）
       expect(doc).not.toContain('human-verified');        // 人读文案不再暴露 human-verified 分子
       expect(doc).toContain('tombstone');                 // tombstone 生命周期保留
-      expect(doc).toContain('active ∪ tombstone');        // 分母（denominator）口径保留
-      expect(doc).toContain('逆向候选');                   // 已改为纯逆向候选计数
       expect(doc).not.toContain('不可变的现状快照');      // 不得称注册表为不可变快照（仍随重扫维护）
       expect(doc).not.toContain('冻结的现状快照');        // 同上
     }
+    const guide = readFileSync(join(REPO, 'docs/brownfield-adopter-guide.md'), 'utf-8');
+    const skill = readFileSync(join(REPO, 'skills/brownfield-adopter/SKILL.md'), 'utf-8');
+    expect(guide).toContain('逆向候选');                  // 人读指南说明纯逆向候选计数
+    expect(guide).toContain('active ∪ tombstone');         // 人读指南保留精确 denominator 口径
+    expect(skill).toContain('active/tombstone/alias');     // 执行 Skill 保留同一候选生命周期集合
   });
 
   // 权威规格（已合并主文档）——恢复门/机器读取者清单不得把 verify 当基线读取者。
@@ -122,10 +126,11 @@ describe('drop-baseline-confirmation：确认机制删除反向回归', () => {
   ];
 
   it('F2 回归：分发 Skill/指南明确 verify 已与基线解耦（不再列为恢复门机器消费者）', () => {
-    for (const rel of DIST_DOCS) {
-      const doc = readFileSync(join(REPO, rel), 'utf-8');
-      expect(doc).toContain('`verify` 已与基线候选解耦');
-    }
+    const guide = readFileSync(join(REPO, 'docs/brownfield-adopter-guide.md'), 'utf-8');
+    const skill = readFileSync(join(REPO, 'skills/brownfield-adopter/SKILL.md'), 'utf-8');
+    expect(guide).toContain('`verify` 已与基线候选解耦');
+    expect(skill).toContain('baseline-seed/status/next/index/sync/S39 等入口');
+    expect(skill).not.toMatch(/baseline-seed\/status\/next\/index\/sync\/verify/);
   });
 
   it('F2 回归：权威规格恢复门/读取者清单不再把 verify 列为基线读取者', () => {
@@ -153,8 +158,8 @@ describe('drop-baseline-confirmation：确认机制删除反向回归', () => {
       const doc = readFileSync(join(REPO, rel), 'utf-8');
       expect(doc).not.toContain('深化引导');   // JIT 按需深化引导已删除
     }
-    // feature-specs 的 next/bootstrap 行为必须按 baseline_seed_state 分档、seeded 正常引导 change。
+    // feature-specs 的 next/bootstrap 行为必须让三态共用 direct-change 主分支。
     const fspec = readFileSync(join(REPO, ACTIVE_SPECS[0]), 'utf-8');
-    expect(fspec).toMatch(/`seeded`[^\n]*正常引导 `openlogos change`/);
+    expect(fspec).toMatch(/`required`、安全 `partial`、`seeded`[^\n]*`openlogos change <slug>`/);
   });
 });

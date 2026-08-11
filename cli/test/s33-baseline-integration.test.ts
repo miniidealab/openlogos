@@ -113,7 +113,7 @@ describe('S33 read-side integration — adopt enum / seeded coverage（确认机
     expect(typeof bc.incomplete).toBe('boolean');
   });
 
-  it('UT-S05-B03: 派生索引 source_hash 与文档不符时 freshness=stale', () => {
+  it('UT-S05-B03 / UT-S33-52: source_hash 不符时 seed 精确结论降级 stale', () => {
     writeAdoptedSeedState(root, 'seeded', { core: { source_hash: 'deadbeef-mismatch' } });
     writeReverseDoc(root, 'core-system-map.md', revCand('cli:adopt', { verified: false }));
 

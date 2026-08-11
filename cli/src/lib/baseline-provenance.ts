@@ -183,11 +183,28 @@ export function validateSeedCandidate(raw: unknown, moduleId: string): string | 
   const r = raw as Record<string, unknown>;
   if (r.state !== 'active') return `state 必须显式为 active（实际 ${JSON.stringify(r.state)}）`;
   if (r.verified !== false) return `verified 必须显式为布尔 false（实际 ${JSON.stringify(r.verified)}）`;
+  for (const field of ['confirmed_by', 'evidence', 'confirmed_at'] as const) {
+    if (r[field] !== undefined && r[field] !== null) return `${field} 必须缺失或为 null（确认写回机制已删除）`;
+  }
   if (typeof r.anchor !== 'string' || r.anchor.trim() === '') return 'anchor 缺失或为空（种子必须携锚点）';
   if (typeof r.key !== 'string' || r.key.trim() === '') return 'key 缺失';
   const expected = candidateKey(moduleId, r.anchor);
   if (r.key !== expected) return `key 与 anchor 不一致（期望 ${expected}，实际 ${r.key}）`;
   return null;
+}
+
+/**
+ * 确认机制删除后的写侧归一化：历史 `verified:true`/confirmed_* 只允许被旧文档读侧兼容，
+ * 任何重扫、替换或序列化都必须冻结为 false/null，绝不把旧确认状态写回新字节。
+ */
+function withoutConfirmationWriteback(candidate: BaselineCandidate): BaselineCandidate {
+  return {
+    ...candidate,
+    verified: false,
+    confirmed_by: null,
+    evidence: null,
+    confirmed_at: null,
+  };
 }
 
 /** 解析文档内 `## 逆向基线来源` 章节的 candidates[] 与 source_hash。缺章节返回 null。 */
@@ -368,7 +385,8 @@ export function buildBaselineCoverage(
 
 /** F4：把候选注册表序列化为 `## 逆向基线来源` 章节文本（确定性、供 commit 落盘）。 */
 export function serializeProvenanceSection(candidates: BaselineCandidate[]): string {
-  const plain = candidates.map(c => {
+  const plain = candidates.map(raw => {
+    const c = withoutConfirmationWriteback(raw);
     const o: Record<string, unknown> = { key: c.key };
     if (c.anchor) o.anchor = c.anchor;
     if (c.display) o.display = c.display;
@@ -376,9 +394,7 @@ export function serializeProvenanceSection(candidates: BaselineCandidate[]): str
     o.verified = c.verified;
     o.aliases = c.aliases;
     o.superseded_by = c.superseded_by;
-    o.confirmed_by = c.confirmed_by;
-    o.evidence = c.evidence;
-    o.confirmed_at = c.confirmed_at;
+    // confirmed_by/evidence/confirmed_at 仅供旧文档读兼容；确认机制删除后禁止写回这些键。
     o.retired_by = c.retired_by;
     o.retire_event_id = c.retire_event_id;
     return o;
@@ -410,8 +426,8 @@ export function replaceProvenanceSection(markdown: string, candidates: BaselineC
 
 /**
  * F4：重扫候选继承 + tombstone 对账。以 prior（已合并主文档候选）为基准合并 staged：
- * - 匹配（同 key 或 alias 命中）：继承人工确认（verified:true 不被降级、保留 confirmed_by/evidence/confirmed_at）、并 alias。
- * - prior 中在 staged 消失的候选：转 `tombstone`（保留 verified 与确认字段——**不抹掉人工确认、不缩小分母**）；`retired` 保持。
+ * - 匹配（同 key 或 alias 命中）：继承身份与 alias，但把历史确认残留冻结为 false/null，不写回 confirmed_*。
+ * - prior 中在 staged 消失的候选：转 `tombstone` 并同样清除确认残留；`retired` 保持生命周期但不保留确认值。
  * 结果按 key 排序（确定性、幂等）。
  */
 export function reconcileCandidates(prior: BaselineCandidate[], staged: BaselineCandidate[]): BaselineCandidate[] {
@@ -429,24 +445,18 @@ export function reconcileCandidates(prior: BaselineCandidate[], staged: Baseline
     if (!p) { for (const a of s.aliases) { const hit = priorByKey.get(a) ?? priorByAlias.get(a); if (hit) { p = hit; break; } } }
     if (p) {
       consumed.add(p.key);
-      const keepVerified = s.verified || p.verified;
-      const inheritConfirm = !s.verified && p.verified;
-      result.push({
+      result.push(withoutConfirmationWriteback({
         ...s,
-        verified: keepVerified,
-        confirmed_by: inheritConfirm ? p.confirmed_by : s.confirmed_by,
-        evidence: inheritConfirm ? p.evidence : s.evidence,
-        confirmed_at: inheritConfirm ? p.confirmed_at : s.confirmed_at,
         aliases: [...new Set([...s.aliases, ...p.aliases])],
-      });
+      }));
     } else {
-      result.push(s);
+      result.push(withoutConfirmationWriteback(s));
     }
   }
   for (const p of prior) {
     if (consumed.has(p.key) || result.some(r => r.key === p.key)) continue;
-    // prior 在 staged 消失：转 tombstone（保留 verified + 确认字段）；retired 原样保留。
-    result.push(p.state === 'retired' ? p : { ...p, state: 'tombstone' });
+    // prior 在 staged 消失：转 tombstone；历史确认残留只读兼容，不进入新序列化结果。
+    result.push(withoutConfirmationWriteback(p.state === 'retired' ? p : { ...p, state: 'tombstone' }));
   }
   result.sort((a, b) => a.key.localeCompare(b.key));
   return result;
@@ -459,7 +469,7 @@ export function reconcileCandidates(prior: BaselineCandidate[], staged: Baseline
  * - `aliases[]` 权威语义是**旧 anchor**（非旧 key）——故 prior 同时按其 `anchor` 与 `aliases` 建索引，staged 的
  *   `aliases`（旧 anchor）既直接匹配 prior anchor，也经 `candidateKey(module, alias)` 匹配 prior key，保证真实
  *   anchor 重命名可继承身份。
- * - 匹配成功：继承人工确认（verified:true 不降级、保留 confirmed_by/evidence/confirmed_at）、并 alias（含 prior 旧 anchor），
+ * - 匹配成功：继承候选身份与 alias（含 prior 旧 anchor），但历史确认残留统一冻结为 false/null，
  *   身份分配到 staged 的**新目标文档**（支持跨文档移动，不在旧文档留 tombstone、不产生跨文档重复 key）。
  * - prior 中在 staged 消失且未被继承的候选：在其**原文档**转 tombstone（retired 原样保留）。
  * 返回 `Map<target_path, 候选[]>`（每文档内按 key 排序，确定性、幂等）。
@@ -503,27 +513,23 @@ export function reconcileModuleCandidates(
       if (hit && !consumed.has(hit.cand.key)) {
         const p = hit.cand;
         consumed.add(p.key);
-        const keepVerified = s.verified || p.verified;
-        const inheritConfirm = !s.verified && p.verified;
         const inheritedAliases = [...s.aliases, ...p.aliases];
         if (p.anchor && p.anchor !== s.anchor) inheritedAliases.push(p.anchor);
-        push(doc, {
+        push(doc, withoutConfirmationWriteback({
           ...s,
-          verified: keepVerified,
-          confirmed_by: inheritConfirm ? p.confirmed_by : s.confirmed_by,
-          evidence: inheritConfirm ? p.evidence : s.evidence,
-          confirmed_at: inheritConfirm ? p.confirmed_at : s.confirmed_at,
           aliases: [...new Set(inheritedAliases)],
-        });
+        }));
       } else {
-        push(doc, s);
+        push(doc, withoutConfirmationWriteback(s));
       }
     }
   }
 
   for (const e of priorEntries) {
     if (consumed.has(e.cand.key) || resultKeys.has(e.cand.key)) continue;
-    push(e.doc, e.cand.state === 'retired' ? e.cand : { ...e.cand, state: 'tombstone' });
+    push(e.doc, withoutConfirmationWriteback(
+      e.cand.state === 'retired' ? e.cand : { ...e.cand, state: 'tombstone' },
+    ));
   }
 
   for (const [, arr] of result) arr.sort((a, b) => a.key.localeCompare(b.key));

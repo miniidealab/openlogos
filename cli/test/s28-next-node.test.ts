@@ -277,12 +277,12 @@ describe('S28 — 省略规则（R4/R7/R5）', () => {
     expect(resolveNextNode(root, mod, { proposalStep: null, currentPhase: null })).toBeNull();
   });
 
-  it('UT-S28-24: initial adopted 逆向建基线（命令级，current_phase 非空）→ 所有层级省略 next_node', async () => {
+  it('UT-S28-24: initial adopted direct-change（命令级，current_phase 非空）→ 所有层级省略 next_node', async () => {
     const root = tempProject();
     writeFileSync(join(root, 'logos', 'logos-project.yaml'),
       'project:\n  name: "t"\nmodules:\n  - id: core\n    name: core\n    lifecycle: initial\n    bootstrap: adopted\n');
     const d = await runNextJson(root);
-    expect(d.command).toBe('openlogos baseline-seed begin'); // 命令级建议（brownfield-adopter）
+    expect(d.command).toBe('openlogos change <slug>'); // 命令级 direct-change；baseline-seed 仅旁路可选
     expect(d.next_node).toBeUndefined();
     expect(d.modules[0].next_node).toBeUndefined(); // 不得误把 scenario-modeling 当 next_node
   });

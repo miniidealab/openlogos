@@ -265,3 +265,68 @@ resource_index:
 ```
 
 **不执行此步骤将导致后续 code-implementor 无法感知数据库 Schema，AI 将无法生成与真实表结构一致的 ORM 代码和查询逻辑。**
+
+## S39 delta 模式：按持久化证据生成唯一 DB delta
+
+### 激活与适用性
+
+on-touch-v1 场景出现持久化实体、关系、查询、索引、事务、迁移或保留策略时启用。只使用内存或无结构临时数据时可 SKIP，并把时序/代码证据交回闭包矩阵。
+
+结构化文件若是稳定持久化契约，应至少进入架构/数据模型说明，不能因为“不是 SQL”而自动认为没有数据设计。
+
+### 输入
+
+- effective requirement/scenario/API；
+- 现有 DB schema/DDL/migration；
+- 可重算 ORM model、SQL、fixture 与查询代码；
+- 本次 proposal 的数据保留/兼容意图。
+
+代码只证明现状表/字段，不提供历史业务 Why。无法决定唯一性、级联、保留期等产品选择时返回 AMBIGUOUS。
+
+### MODIFY
+
+- 读取主 schema + 当前同目标 delta 的 effective view；
+- 在一个 delta 中聚合所有受影响表/字段/索引/迁移；
+- 保留未变更结构，显式描述 rename/drop/backfill；
+- 给出向前迁移、向后兼容与回滚策略；禁止另建“DB 基线 delta”。
+- 对 `.sql` 目标，输出必须是整文件最终态，首行为 `## MODIFIED — <canonical target>（整文件替换）`；其后 payload 是完整、对应方言可解析的 DDL，不得输出差异片段或 Markdown 章节 marker。
+
+### CREATE
+
+目标缺失时返回完整可执行/可审查的数据规格，至少含：
+
+- 实体/表/集合及字段类型、nullable/default；
+- 主键、外键、唯一/检查约束；
+- 索引及其查询依据；
+- 关系、级联和事务边界；
+- 初始化/迁移顺序；
+- 旧数据 backfill 与兼容窗口（适用时）；
+- 回滚/失败恢复；
+- scenario step/API schema 到数据结构的追溯。
+
+禁止只有新增字段片段、没有建表/约束上下文的“全量”文档；禁止 TODO/占位。
+
+non-Markdown SQL CREATE 的输出格式固定：
+
+```text
+## ADDED — logos/resources/database/<file>.sql（新文件，整文件）
+-- 后续为完整 SQL payload
+CREATE TABLE ...;
+```
+
+- 首行声明 target 必须与 delta 路径映射结果一致；CREATE 只能用 ADDED 且目标缺失。marker 在 SQL 校验/写入前由 merge/lint 剥离，最终 DDL 不得含 marker。
+- SQL 方言必须来自已合并架构或 `logos-project.yaml tech_stack.database`；若方言缺失/冲突或 validator 不可用，返回 AMBIGUOUS/`non_markdown_delta_invalid`，不得用通用分号检查猜测通过。
+- 剥离后的 payload 必须被方言 parser 完整消费；有适配器时在临时空库/事务执行并回滚，SQLite 夹具强制真实执行。CREATE 还需通过表/键/约束/索引/迁移/回滚完整度。
+- marker、声明 target、mode/存在性、语法或执行任一失败时整批零落盘；协议权威定义见 merge-executor 的 non-Markdown 整文件章节。
+
+### 输出与所有权
+
+本 Skill 把内容、受影响实体清单、migration/smoke 风险交回 change-writer。最终 canonical target 只由 change-writer 写一份 delta。数据迁移会同时触发 deployment/smoke 影响复核。
+
+### 完成检查
+
+- target mode 与磁盘存在性一致；
+- schema/DDL 语法与引用关系可验证；
+- 数据约束与 scenario 异常路径一致；
+- test-writer 获得需要覆盖的事务/约束/迁移断言；
+- 不采信 partial seed，不写确认/verified 状态。

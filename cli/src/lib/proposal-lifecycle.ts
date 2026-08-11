@@ -6,7 +6,9 @@ import { detectMintedStepViaFlow } from './flow-derive.js';
 
 import { join } from 'node:path';
 import { listFiles } from './list-files.js';
-import { authorityScan, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
+import {
+  authorityScan, extractUniqueAuthoritySection, isTableDelimiterRow, tableRowCells,
+} from './markdown-scan.js';
 import { listEvidenceTestDeltaFiles } from './delta-classify.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
 import type { ModuleInfo } from '../commands/status.js';
@@ -110,8 +112,12 @@ function isTemplateBooleanChoice(value: string | null): boolean {
 }
 
 export function isDeploymentSectionTemplateFilled(content: string): boolean {
-  const section = extractMarkdownSection(content, '部署影响');
-  if (!section) return true;
+  const sectionResult = extractUniqueAuthoritySection(content, '部署影响');
+  if (sectionResult.status === 'missing') return true;
+  if (sectionResult.status === 'duplicate' || sectionResult.content === null) return false;
+  const section = sectionResult.content;
+
+  if (hasDuplicateDeploymentFields(section)) return false;
 
   for (const label of DEPLOYMENT_BOOLEAN_TEMPLATE_FIELDS) {
     if (isTemplateBooleanChoice(parseChineseField(section, label))) {
@@ -815,38 +821,41 @@ export function getDeployTasks(proposalDir: string): TaskItem[] {
   return readTaskSectionItems(proposalDir, 'deploy');
 }
 
-function extractMarkdownSection(content: string, heading: string): string | null {
-  const lines = content.split(/\r?\n/);
-  const startIndex = lines.findIndex(line => line.trim() === `## ${heading}`);
-  if (startIndex < 0) return null;
-
-  const sectionLines: string[] = [];
-  for (let i = startIndex + 1; i < lines.length; i++) {
-    if (/^##\s+/.test(lines[i])) break;
-    sectionLines.push(lines[i]);
-  }
-  return sectionLines.join('\n');
-}
-
 function parseChineseBoolean(section: string, label: string): boolean | null {
   const value = parseChineseField(section, label);
-  if (value === '是') return true;
-  if (value === '否') return false;
+  // 允许模板约定的解释性括注（如「是（发布后验证）」），但不接受任意前缀猜测。
+  if (value && /^是(?:$|\s*[（(])/.test(value)) return true;
+  if (value && /^否(?:$|\s*[（(])/.test(value)) return false;
   return null;
 }
 
 function parseChineseField(section: string, label: string): string | null {
+  const values = parseChineseFieldValues(section, label);
+  return values.length === 1 ? values[0] : null;
+}
+
+function parseChineseFieldValues(section: string, label: string): Array<string | null> {
   const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const value = section.match(new RegExp(`^-\\s*${escapedLabel}\\s*[：:]\\s*(.+)$`, 'm'))?.[1]?.trim();
-  return value ? value : null;
+  const matches = section.matchAll(new RegExp(`^-\\s*${escapedLabel}\\s*[：:]\\s*(.*)$`, 'gm'));
+  return Array.from(matches, match => match[1].trim() || null);
+}
+
+function hasDuplicateDeploymentFields(section: string): boolean {
+  const knownFields = [
+    ...DEPLOYMENT_BOOLEAN_TEMPLATE_FIELDS,
+    ...Object.keys(DEPLOYMENT_FIELD_PLACEHOLDERS),
+  ];
+  return knownFields.some(label => parseChineseFieldValues(section, label).length > 1);
 }
 
 export function parseProposalDeploymentDecision(content: string): Pick<
   ProposalDeploymentDecision,
   'deployment_required' | 'smoke_required' | 'deployment_reason'
 > | null {
-  const section = extractMarkdownSection(content, '部署影响');
-  if (!section) return null;
+  const sectionResult = extractUniqueAuthoritySection(content, '部署影响');
+  if (sectionResult.status !== 'unique' || sectionResult.content === null) return null;
+  const section = sectionResult.content;
+  if (hasDuplicateDeploymentFields(section)) return null;
 
   const deploymentRequired = parseChineseBoolean(section, '是否需要部署');
   const smokeRequired = parseChineseBoolean(section, '是否需要 smoke');

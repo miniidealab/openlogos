@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { readLocale, t, proposalTemplate, tasksTemplate } from '../i18n.js';
+import { listProjectModuleIds, withRecoveredReadLocks } from '../lib/baseline-seed-txn.js';
 
 interface ModuleEntry {
   id: string;
@@ -90,56 +91,67 @@ export function change(slug?: string, moduleArg?: string) {
     }
   }
 
-  // Resolve module
-  const yamlPath = join(root, 'logos', 'logos-project.yaml');
-  let allModules: ModuleEntry[] = [];
-  if (existsSync(yamlPath)) {
-    try {
-      const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
-      if (Array.isArray(yaml?.modules)) allModules = yaml.modules as ModuleEntry[];
-    } catch { /* ignore */ }
+  // `change` 也是 adopted 项目的 resources 读取入口：在解析模块、创建提案或写 guard 前，
+  // 与 status/next/index/sync 共用 seed journal 恢复硬门，并把锁持有到全部提案写入结束。
+  // 无模块注册时仍锁 core；findUnfinalizedJournal 会严格扫描所有 journal，损坏记录不能被静默跳过。
+  const projectModules = listProjectModuleIds(root);
+  const at = new Date().toISOString();
+  const locked = withRecoveredReadLocks(root, at, projectModules.length > 0 ? projectModules : ['core'], () => {
+    const yamlPath = join(root, 'logos', 'logos-project.yaml');
+    let allModules: ModuleEntry[] = [];
+    if (existsSync(yamlPath)) {
+      try {
+        const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
+        if (Array.isArray(yaml?.modules)) allModules = yaml.modules as ModuleEntry[];
+      } catch { /* ignore */ }
+    }
+    const moduleId = resolveModule(root, moduleArg, locale, slug);
+
+    // Print module assignment message
+    if (moduleArg) {
+      console.log(`\n${t(locale, 'change.creating', { slug })}`);
+      console.log(t(locale, 'change.moduleAssigned', { module: moduleId }));
+    } else if (allModules.length === 1) {
+      console.log(`\n${t(locale, 'change.creating', { slug })}`);
+      console.log(t(locale, 'change.moduleAuto', { module: moduleId }));
+    } else {
+      console.log(`\n${t(locale, 'change.creating', { slug })}`);
+      console.log(t(locale, 'change.moduleDefault', { module: moduleId }));
+    }
+    console.log('');
+
+    const deltaDirs = ['deltas/prd', 'deltas/api', 'deltas/database', 'deltas/scenario'];
+
+    mkdirSync(changePath, { recursive: true });
+    for (const dir of deltaDirs) {
+      mkdirSync(join(changePath, dir), { recursive: true });
+    }
+
+    writeFileSync(join(changePath, 'proposal.md'), proposalTemplate(locale, slug, moduleId));
+    console.log(`  ✓ logos/changes/${slug}/proposal.md`);
+
+    writeFileSync(join(changePath, 'tasks.md'), tasksTemplate(locale));
+    console.log(`  ✓ logos/changes/${slug}/tasks.md`);
+
+    console.log(`  ✓ logos/changes/${slug}/deltas/`);
+
+    const guard = JSON.stringify({
+      activeChange: slug,
+      module: moduleId,
+      createdAt: at,
+    }, null, 2);
+    writeFileSync(guardPath, guard);
+    console.log(`  ✓ logos/.openlogos-guard`);
+
+    console.log(`\n${t(locale, 'change.done')}`);
+    console.log(t(locale, 'change.step1', { slug }));
+    console.log(t(locale, 'change.step2'));
+    console.log(t(locale, 'change.step3'));
+    console.log(t(locale, 'change.step4', { slug }) + '\n');
+  });
+
+  if (!locked.ok) {
+    console.error(`Error: baseline_commit_in_progress — 模块 ${locked.inProgress.join(', ')} 的现状基线事务无法在创建提案前恢复。`);
+    process.exit(1);
   }
-  const moduleId = resolveModule(root, moduleArg, locale, slug);
-
-  // Print module assignment message
-  if (moduleArg) {
-    console.log(`\n${t(locale, 'change.creating', { slug })}`);
-    console.log(t(locale, 'change.moduleAssigned', { module: moduleId }));
-  } else if (allModules.length === 1) {
-    console.log(`\n${t(locale, 'change.creating', { slug })}`);
-    console.log(t(locale, 'change.moduleAuto', { module: moduleId }));
-  } else {
-    console.log(`\n${t(locale, 'change.creating', { slug })}`);
-    console.log(t(locale, 'change.moduleDefault', { module: moduleId }));
-  }
-  console.log('');
-
-  const deltaDirs = ['deltas/prd', 'deltas/api', 'deltas/database', 'deltas/scenario'];
-
-  mkdirSync(changePath, { recursive: true });
-  for (const dir of deltaDirs) {
-    mkdirSync(join(changePath, dir), { recursive: true });
-  }
-
-  writeFileSync(join(changePath, 'proposal.md'), proposalTemplate(locale, slug, moduleId));
-  console.log(`  ✓ logos/changes/${slug}/proposal.md`);
-
-  writeFileSync(join(changePath, 'tasks.md'), tasksTemplate(locale));
-  console.log(`  ✓ logos/changes/${slug}/tasks.md`);
-
-  console.log(`  ✓ logos/changes/${slug}/deltas/`);
-
-  const guard = JSON.stringify({
-    activeChange: slug,
-    module: moduleId,
-    createdAt: new Date().toISOString(),
-  }, null, 2);
-  writeFileSync(guardPath, guard);
-  console.log(`  ✓ logos/.openlogos-guard`);
-
-  console.log(`\n${t(locale, 'change.done')}`);
-  console.log(t(locale, 'change.step1', { slug }));
-  console.log(t(locale, 'change.step2'));
-  console.log(t(locale, 'change.step3'));
-  console.log(t(locale, 'change.step4', { slug }) + '\n');
 }

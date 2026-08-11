@@ -17,7 +17,10 @@ import { buildModuleFeatures, formatFeaturesText } from '../lib/feature-grouping
 import type { FeatureGroupItem } from '../lib/feature-grouping.js';
 import { buildBaselineCoverage } from '../lib/baseline-provenance.js';
 import type { BaselineSeedState, BaselineCoverage, BaselineIndexEntry } from '../lib/baseline-provenance.js';
-import { withBaselineReadLock, listRunIds, readRunRecord } from '../lib/baseline-seed-txn.js';
+import {
+  withBaselineReadLock, withRecoveredReadLocks, listBaselineSeedModuleIds,
+  listRunIds, readRunRecord, BaselineCommitInProgressError,
+} from '../lib/baseline-seed-txn.js';
 import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
 
 function commitInProgressCoverage(seedState: BaselineSeedState): BaselineCoverage {
@@ -622,19 +625,15 @@ function buildModuleStatusItem(
         } else if (seedState === 'partial') {
           seed = seedState;
           cov = buildAdoptedCoverage(root, mod.id, seedState, false, baselineIndex, { assumeLocked: true });
-          // partial（无活跃提案）：主 suggestion 指向恢复入口（openlogos baseline-seed）。
-          const openRun = listRunIds(root).map(id => readRunRecord(root, id))
-            .filter(r => r && r.module === mod.id && r.status === 'open').pop();
-          const runRef = openRun?.run_id ?? '<run_id>';
           sug = (locale === 'zh'
-            ? `现状基线扫描未完成——运行 openlogos baseline-seed commit --module ${mod.id} --run-id ${runRef} 继续完成（也可先发起 openlogos change 迭代，不强制）`
-            : `Current-state baseline scan unfinished — run openlogos baseline-seed commit --module ${mod.id} --run-id ${runRef} to finish (or start openlogos change first; not required)`) + legacyHint;
+            ? '未提交 staging 已从有效视图排除，不阻断变更；运行 openlogos change <slug> 直接创建新提案（baseline-seed commit 仅为显式可选恢复）'
+            : 'Uncommitted staging is excluded and does not block change; run openlogos change <slug> (baseline-seed commit is optional recovery)') + legacyHint;
         } else {
           seed = seedState;
           cov = buildAdoptedCoverage(root, mod.id, seedState, false, baselineIndex, { assumeLocked: true });
           sug = (locale === 'zh'
-            ? '建立现状基线：让 AI 扫描现有代码，梳理出当前系统结构与场景清单作为迭代起点'
-            : 'Establish current-state baseline: have an AI scan the existing code and outline the current system structure and scenario list as a starting point') + legacyHint;
+            ? '无需先单独建立基线；运行 openlogos change <slug> 直接创建新提案（baseline-seed begin 仅为显式可选加速器）'
+            : 'No standalone baseline is required; run openlogos change <slug> (baseline-seed begin is an explicit optional accelerator)') + legacyHint;
         }
         return { seed, cov, sug };
       });
@@ -963,7 +962,22 @@ export function deriveActiveOverlay(
     loopHaltSubflow(deriveLoopState(root, target, proposalDir, isMultiModule)));
 }
 
+/**
+ * S39 统一读取硬门：锁住全部模块、恢复 journal 后，在同一临界区完成 resources/index/coverage 的真实读取。
+ * 无法恢复时抛稳定 baseline_commit_in_progress，绝不返回“成功 + partial”半新视图。
+ */
 export function collectStatusData(root: string, filterModuleId?: string, cmdEval?: CmdEval, cmdGateEval?: CmdGateEval): StatusData {
+  const locked = withRecoveredReadLocks(root, new Date().toISOString(), listBaselineSeedModuleIds(root),
+    () => collectStatusDataLocked(root, filterModuleId, cmdEval, cmdGateEval));
+  if (!locked.ok) {
+    throw new BaselineCommitInProgressError(
+      `baseline_commit_in_progress — 模块 ${locked.inProgress.join(', ')} 的现状基线提交进行中`,
+    );
+  }
+  return locked.value;
+}
+
+function collectStatusDataLocked(root: string, filterModuleId?: string, cmdEval?: CmdEval, cmdGateEval?: CmdGateEval): StatusData {
   const configPath = join(root, 'logos', 'logos.config.json');
   const locale = readLocale(root);
 
@@ -1168,14 +1182,10 @@ export function collectStatusData(root: string, filterModuleId?: string, cmdEval
         : 'Baseline commit in progress — retry openlogos status shortly';
     } else {
       const seedState = topRes.value;
-      // required（显式或派生）驱动逆向建立基线；seeded / partial → 正常迭代引导（unknown 第三态已废除）。
-      suggestion = seedState === 'required'
-        ? (locale === 'zh'
-            ? '逆向建立现状基线（由 AI 会话/driver 逆向扫描代码库产出种子基线）'
-            : 'Establish current-state baseline (AI session/driver reverse-scans the codebase)')
-        : (locale === 'zh'
-            ? '现状基线已建立——可正常发起 openlogos change <slug> 迭代'
-            : 'Baseline established — run openlogos change <slug> to iterate');
+      // S39：required/安全 partial/seeded 三态的主动作完全等价；差异只体现在可选证据说明。
+      suggestion = locale === 'zh'
+        ? `运行 openlogos change <slug> 创建新提案（当前 seed=${seedState}；baseline-seed 仅为显式可选加速器）`
+        : `Run openlogos change <slug> (seed=${seedState}; baseline-seed remains an explicit optional accelerator)`;
     }
   } else {
     const suggestKey = SUGGEST_KEYS[firstIncomplete!.key];
@@ -1293,6 +1303,11 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
   try {
     data = collectStatusData(root, moduleId);
   } catch (e) {
+    if (e instanceof BaselineCommitInProgressError) {
+      if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('status', e.code, e.message)));
+      else console.error(`✖ ${e.message}`);
+      process.exit(1);
+    }
     if (e instanceof FlowError) {
       if (format === 'json') {
         console.error(JSON.stringify(makeErrorEnvelope('status', e.code, e.message)));

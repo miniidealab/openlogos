@@ -64,6 +64,7 @@ graph TB
 本项目需要发布与部署方案；CLI 发布由 tag 驱动，npm publish 与 GitHub Release 同步生成。部署执行和 smoke 必须由用户明确授权。
 
 ## 十、提案级发布决策
+
 本部署方案描述 core 模块具备的发布能力，不表示每个提案都必须发布 npm 包或部署官网。是否执行部署必须以活跃提案的 `## 部署影响` 和 `tasks.md` 的 `[deploy]` section 为准。
 
 判定规则：
@@ -77,7 +78,7 @@ graph TB
 
 本提案 `deploy-progress-summary-panel` 会修改 CLI 运行时代码，因此后续实现验收通过后需要按本方案构建、测试、打包，并由用户决定是否发布 npm 包。
 
-本提案 `brownfield-adopter` 修改 / 新增 CLI 运行时代码（**新增 `baseline-seed.ts`**；改 `adopt.ts` / `next.ts` / `status.ts` / `verify.ts` / `project-yaml.ts` / `migrate-lifecycle.ts`）与 Skill / 方法论规格，据判定规则第 2 条声明 `deployment_required: true` 并保留 `[deploy]` section：验收通过后需经既有 tag → npm publish + GitHub Release 链路发布，用户方能获得 adopt 自动/降级建基线、`openlogos baseline-seed` 种子状态提交、next/status 覆盖率能力。回滚走 npm `dist-tag` 回退 + 回退对应 tag；老 adopted 项目 provenance 元数据迁移为持久化 schema/data migration，须幂等、写前备份、失败可恢复、旧版 CLI 忽略未知字段。部署后 smoke 覆盖已发布包中 adopt 自动/降级路径、`baseline-seed` 提交协议与 partial 恢复、status/next 输出（见 smoke 用例 SMOKE-core-44…48）。
+本提案 `brownfield-adopter` 修改/新增 CLI 运行时代码（新增 `baseline-seed.ts`，并修改 `adopt.ts`、`next.ts`、`status.ts`、`verify.ts`、`project-yaml.ts`、`migrate-lifecycle.ts`）与 Skill/方法论规格，据判定规则第 2 条声明 `deployment_required: true` 并保留 `[deploy]` section。发布后的 `baseline-seed` 是显式可选的 eager seed 加速器；adopt、required 或安全 partial 不再自动派发扫描，默认入口是 change。恢复门通过后 seed 状态只作旁路信息；未终结 journal 无法恢复时必须在读取 resources/index/coverage 前硬报错。回滚走 npm `dist-tag` 回退与对应 tag 回退；legacy provenance/seed 状态迁移须幂等、写前备份、失败可恢复、旧版 CLI 忽略未知字段。部署后 smoke 覆盖显式 seed、三态默认 change、partial 恢复与不可恢复 journal 硬门（SMOKE-core-11/44…48 及本提案新增用例）。
 
 ## 十一、官网发布动态构建策略
 - 官网构建前必须执行发布数据生成脚本，从 npm registry 读取 `@miniidealab/openlogos` 的 `dist-tags`、`versions` 和 `time`。
@@ -312,3 +313,61 @@ graph TB
 
 - 安装失败 / 版本不一致 / 冒烟失败：`npm install -g <上一版 tarball>` 回滚；lint 为纯增量只读命令，回滚零数据副作用、零迁移。
 - 回滚后复核 `openlogos --version` 恢复为上一版。
+
+## 二十二、baseline-on-touch 发布检查（S39）
+
+### 发布目标
+
+把 on-touch 提案模板、根/分发 Skills、闭包共享判据、change-lint L9、adopt/next/status 引导与 CREATE merge 支撑作为同一 CLI 版本交付。仅更新仓库源码而未验证打包内容不算部署完成。
+
+### 发布前检查
+
+1. 运行项目规定的全量测试与构建，确认 S09/S20/S33/S35/S39 UT/ST 和 reporter 覆盖全部真实 ID。
+2. 生成 npm tarball，检查包内至少包含：
+   - 新版 CLI build 产物与 L9 code 注册表；
+   - `spec/baseline-closure.md` 及更新后的根 specs；
+   - change-writer、brownfield-adopter、scenario/API/DB/test/orchestrator/merge Skills；
+   - 初始化/同步模板中的对应 dogfood 副本。
+3. 在隔离 staging/本机从 tarball 真实安装，确认 `openlogos --version` 与 `cli/package.json` 一致。
+4. 对真实安装包运行 `openlogos smoke` 所承载的 SMOKE-core-54…58；源码目录直调不能替代。
+5. 核对 CLI/package、插件 manifest、CHANGELOG、tag 版本一致；标准发布入口仍为 tag 驱动 GitHub Actions，禁止本地手工 npm publish。
+
+### 部署与发布链路
+
+```text
+全量测试/构建
+  → npm pack
+  → staging/本机真实安装
+  → smoke 54…58
+  → 准备版本/CHANGELOG/tag
+  → push tag
+  → GitHub Actions publish npm + GitHub Release + website release sync
+  → npm view / release / website 交叉核对
+```
+
+### 数据与兼容
+
+- 无数据迁移：不批量改写 `baseline_seed_state`、`skip_phases`、provenance、coverage、现有资源或活跃提案。
+- 旧项目由新版读取语义立即受益；legacy proposal 无 on-touch-v1 时只走 L1–L8。
+- seed JSON shape 保留；消费者无需同步迁移即可继续读取。
+- 已经通过普通 delta 合并的用户规格不依赖新运行时闭包状态，回滚 CLI 不删除这些文档。
+
+### 部署后检查
+
+- adopt 后默认主动作是直接 change；required/安全 partial/seeded 均不阻断。另做未终结 journal 故障注入：恢复失败必须返回 `baseline_commit_in_progress` 且读取哨兵证明未访问半新 resources/index。
+- 新 change 模板能生成闭包声明与 target mode，change-lint 可见 L9。
+- 重复目标/模式冲突返回稳定诊断；合法 CREATE 能在 merge-executor apply 后形成完整文件。
+- 包内 Skills 明确无 baseline task、JIT advisory、verified 写回与 baseline warning。
+- npm、GitHub Release 与官网展示同一版本。
+
+### 回滚方案
+
+1. 保留上一版 npm tarball、版本号与 dist-tag 指向；发布失败时安装上一版恢复 CLI。
+2. tag 发布失败不复用失败 tag，修复后递增 patch 重发。
+3. 若新版默认引导或 L9 存在严重回归，回退 CLI/Skills 资产；不回滚用户已经合法合并的规格。
+4. 回滚不得改写/删除 seed/provenance、当前 change delta 或 `logos/resources/**`。
+5. 记录回滚原因、受影响版本和 smoke 结果到部署报告。
+
+### 发布门结论
+
+本能力需要部署且需要 smoke；verify PASS 后方可执行 `[deploy]`，部署完成后由既有 `openlogos smoke` 独立门判定。此处不新增 baseline 专用部署门。

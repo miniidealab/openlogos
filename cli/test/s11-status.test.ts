@@ -406,7 +406,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
 
     const data = collectStatusData(root);
     expect(data.modules?.[0].bootstrap).toBe('adopted');
-    // brownfield-adopter（S33）：required 时引导逆向建基线（取代旧 add-baseline-docs）。
+    // baseline-on-touch（S39）：required 时直接 change，brownfield-adopter 仅显式可选。
     expect(data.modules?.[0].suggestion.toLowerCase()).toContain('baseline');
     expect(data.modules?.[0].suggestion).not.toContain('add-baseline-docs');
     expect(data.modules?.[0].baseline_seed_state).toBe('required');
@@ -1430,7 +1430,8 @@ describe('S11 Scenario Tests — status command', () => {
     status();
     const out = con.logs.join('\n');
     expect(out).toContain('文档基线已跳过（存量项目接入）');
-    expect(out).toContain('逆向建立现状基线');
+    expect(out).toContain('openlogos change <slug>');
+    expect(out).toContain('显式可选加速器');
   });
 
   it('ST-S11-bootstrap-02: 历史 skipped 接入状态面板正确显示已跳过', () => {
@@ -1443,7 +1444,8 @@ describe('S11 Scenario Tests — status command', () => {
     status();
     const out = con.logs.join('\n');
     expect(out).toContain('文档基线已跳过（存量项目接入）');
-    expect(out).toContain('逆向建立现状基线');
+    expect(out).toContain('openlogos change <slug>');
+    expect(out).toContain('显式可选加速器');
   });
 });
 
@@ -2347,4 +2349,3 @@ describe('S11 — 生产者一致性漂移注入（contract-self-description）'
     }
   });
 });
-

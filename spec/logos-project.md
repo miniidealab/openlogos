@@ -87,9 +87,9 @@
 | `name` | string | 是 | 模块名称（中文或英文均可） |
 | `lifecycle` | string | 是 | 模块生命周期：`initial`（初始开发阶段，关注 phase 推进）或 `launched`（迭代开发阶段，关注变更提案） |
 | `bootstrap` | string | 否 | 入场模式：`normal`（默认，完整走 Phase 1→3）或 `adopted`（存量项目接入，Initial 文档基线已跳过）。由 `openlogos adopt` 命令写入，不建议手动修改。历史值 `skipped` 仅用于兼容读取。 |
-| `skip_phases` | array | 否 | 声明本模块不需要的阶段，phase 检测时跳过对应目录。由 `architecture-designer` Skill 在技术选型后填写。 |
+| `skip_phases` | array | 否 | 声明本模块不需要的阶段，phase 检测时跳过对应目录。由 `architecture-designer` Skill 在技术选型后填写；adopted 接入自动写入的值只豁免 Initial 完整性，后续 launched change 必须按触达场景重新判断 API/DB/编排适用性。 |
 | `deployment_required` | boolean | 否 | 是否需要部署执行门禁。软件项目默认 true；纯文档、纯库或明确无需部署的模块可设为 false。 |
-| `baseline_seed_state` | string | 否 | brownfield-adopter（S33）：现状基线种子状态，枚举 `required｜partial｜seeded`（**唯一状态字段，非布尔**）。`openlogos adopt` 写初值 `required`；`openlogos baseline-seed commit` 写 `partial`/`seeded`（状态推进唯一入口）。读取兼容历史布尔 `baseline_seed_required: true` → 映射为 `required`。**字段缺失（legacy adopted，字段引入前接入）**：有效状态由共享 helper `effectiveBaselineSeedState` 统一派生（explicit 优先；有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`；无 `unknown` 第三态），三入口（next/status/baseline-seed）单一事实源；`openlogos sync` 迁移把派生值**回填为显式枚举**（仅回填缺失字段、不推进状态；已有显式值不覆盖；changes 记录写明派生依据），落盘后运行时派生仅作过渡兜底（baseline-seed-legacy-default-unify）。 |
+| `baseline_seed_state` | string | 否 | brownfield-adopter（S33）可选 eager seed 状态，枚举 `required｜partial｜seeded`（唯一状态字段，非布尔）。`adopt` 写初值 `required`；显式 `openlogos baseline-seed commit` 写 `partial`/`seeded`。读取兼容历史布尔 `baseline_seed_required: true` → `required`。字段缺失时，仅在 journal 恢复门成功后由共享 helper `effectiveBaselineSeedState` 统一派生（explicit 优先；有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`），`openlogos sync` 可回填显式枚举。恢复失败时先返回 `baseline_commit_in_progress` error envelope，不运行 helper，也不承诺正常 `modules[]` 状态字段。 |
 
 **`bootstrap` 字段语义**：
 
@@ -100,10 +100,11 @@
 | `skipped` | 历史兼容值，等价于 `adopted` 读取，不再新写入 | 旧版本 `openlogos adopt` 写入 |
 
 `bootstrap: adopted` 时的行为约束：
-- `status`：Phase 1、Phase 2 和 Phase 3-0 缺失不报错，显示「文档基线已跳过（存量项目接入）」
-- `next`：无活跃提案时按 `baseline_seed_state` 分档引导（S33，取代旧 `add-baseline-docs`）——`required`/`partial` 引导「逆向建立现状基线」（`openlogos baseline-seed begin` + 派发 `brownfield-adopter`），`seeded` 展示现状基线覆盖率并引导正常发起 `openlogos change`
-- `launch`：豁免 Initial 文档门禁检查（不依赖 `lifecycle` 值）
-- `detect/status --format json`：新项目输出 `bootstrap: adopted`；历史 `bootstrap: skipped` 至少必须被识别为同一种接入模式，不得回退为普通 launched 或 initial
+- `status`：Phase 1、Phase 2 和 Phase 3-0 缺失不报错，显示「文档基线已跳过（存量项目接入）」；该 Initial 豁免不代表本次触达规格可跳过。
+- `next`：在读取 resources/index/coverage 前先通过未终结 journal 恢复门；无活跃提案且恢复成功时，`required`、安全 `partial`、`seeded` 三态主动作均为 `openlogos change <slug>`。baseline-seed begin/commit 只在用户显式选择全库扫描时作为 `optional_action`/`recovery` 旁路诊断，不得成为 change 前置。
+- `launch`：豁免 Initial 文档门禁检查（不依赖 `lifecycle` 值）。
+- `detect/status --format json`：新项目输出 `bootstrap: adopted`；历史 `bootstrap: skipped` 至少必须被识别为同一种接入模式，不得回退为普通 launched 或 initial。
+- `prepared`/`committing` journal 无法恢复时：非零返回 `baseline_commit_in_progress`，只携最小安全 module/run/journal 诊断；不读取半新 resources/index/coverage，不派生 legacy seed state，不输出正常业务 suggestion。
 
 **`## 逆向基线来源` provenance 章节 schema（S33 权威载体）**：每份逆向产物文档内含一个具名章节 `## 逆向基线来源`，其内一段 fenced YAML 承载 `candidates[]` 注册表，是 provenance 与覆盖率的**唯一权威载体**（`logos-project.yaml` 的 `baseline_index` 仅为派生索引、携 `source_hash` 供新鲜度对账）。每个候选字段：
 
@@ -127,7 +128,7 @@
 | `commit --module <id> --run-id <id>` | 对 **staged 实际字节**算 sha256 + 校验 `## 逆向基线来源`/`candidates[]` schema + 比对 `candidate_keys` 一致 → 分类 `committed`/`missing`/`invalid` | 必需 kind 齐 + 全部 expected 合法 → 经 commit journal 事务提交全部目标 + 派生索引 + `baseline_seed_state: seeded`；≥1 未全 → `partial`（**不提交不完整集合为权威**）；0 → 保持；幂等（同 run 依 staging 重算一致） |
 | `status --module <id>` | 只读当前 run、staging 进度与状态 | 经恢复门（先恢复未终结 journal，否则 `baseline_commit_in_progress`） |
 
-**错误码**（协议错误非零退出、不写状态、不提交）：`missing_required_kind` / `path_escape` / `candidate_key_mismatch` / `unknown_run` / `stale_run`（被新 begin superseded）/ `run_locked`（同模块并发）/ `baseline_commit_in_progress`。成功（含 `partial`）退出 0，JSON envelope `{ ok, run_id, module, baseline_seed_state, committed, missing, invalid }`。**多文件崩溃一致性**：`commit` 跨多目标文档 + 派生索引 + 状态 YAML，经持久化 journal `prepared→committing→committed`（状态最后写、journal 阶段/进度自身临时文件+rename 原子写）在模块级事务锁下提交；恢复按每目标 on-disk hash 与 journal old/new 逐目标重判态（prepared→回滚、committing+staging 完好→前滚+seeded、committing+staging 缺失→按 backup 回滚），`seeded` 当且仅当完整新集合在盘（详见架构 core-06-provenance-data-model §4.4）。事件日志 `logos/resources/verify/baseline-events.jsonl`（append-only）承载迁移/废弃审计。
+**错误码**（协议错误非零退出、不写状态、不提交）：`missing_required_kind` / `path_escape` / `candidate_key_mismatch` / `unknown_run` / `stale_run`（被新 begin superseded）/ `run_locked`（同模块并发）/ `baseline_commit_in_progress`。成功（含安全 `partial`）退出 0，JSON envelope `{ ok, run_id, module, baseline_seed_state, committed, missing, invalid }`。`baseline_commit_in_progress` 是操作错误 envelope，不伪装为带正常 `modules[]`/coverage/suggestion 的成功态。**多文件崩溃一致性**：`commit` 跨多目标文档 + 派生索引 + 状态 YAML，经持久化 journal `prepared→committing→committed`（状态最后写、journal 阶段/进度自身临时文件+rename 原子写）在模块级事务锁下提交；恢复按每目标 on-disk hash 与 journal old/new 逐目标重判态（prepared→回滚、committing+staging 完好→前滚+seeded、committing+staging 缺失→按 backup 回滚），`seeded` 当且仅当完整新集合在盘（详见架构 core-06-provenance-data-model §4.4）。事件日志 `logos/resources/verify/baseline-events.jsonl`（append-only）承载迁移/废弃审计。
 
 `skip_phases` 允许值：
 
@@ -535,3 +536,68 @@ modules:
   `verify-ui-provenance`）及 overlay 源标记**识别注入产物；**绝不删除用户自定义的 overlay ops**。
 - **不变量**：注入 / 移除均以「项目是否含 ≥1 GUI 模块」为键，重复 `sync` 收敛到同一状态（幂等）；
   在项目不含 GUI 模块时 `launched.yaml` 回到**无 `gui-ui-first` ops** 的态，保「**非 GUI 项目零改动**」不变量。
+
+## S39 元数据语义：按触达闭包不新增状态
+
+### baseline_seed_state 的兼容解释
+
+`modules[].baseline_seed_state` 继续使用 `required|partial|seeded` 枚举及既有读写/迁移协议，但其作用域收窄为 **S33 eager seed 子系统状态**：
+
+- `required`：可选全库 seed 尚未形成完整 committed 集合；不表示 change 被禁止。
+- `partial`：可选 seed run 未齐/未提交。若仅有 open run/未提交 staging，则排除后不阻断 change；该状态本身不能证明是否存在未终结 commit journal。
+- `seeded`：可选 seed 已原子提交；可作为 S39 EvidenceScanner 加速输入；不表示触达规格已闭包。
+
+`status`/`next` 可继续输出 baseline_coverage 兼容字段。在恢复门确认无未终结 journal或已成功恢复后，无活跃提案时主 action 为 `openlogos change <slug>`，有活跃提案时 proposal_step/next_node 优先。seed state 不再是默认 action 的分支裁判。
+
+未终结 journal（`prepared|committing` 等）是独立事务事实：机器消费者必须在同一模块锁内先恢复再读取 resources/index/coverage；无法恢复时硬报 `baseline_commit_in_progress`，不得因为枚举仍为 `partial|required|seeded` 就降级继续。
+
+### adopted skip_phases
+
+当 `bootstrap: adopted` 时，接入流程自动写入的 `skip_phases` 表示 Initial phase 完整性豁免，不是 launched change 的永久技术禁用清单。S39 对每个触达场景按时序/代码/测试证据重新判断 API、database、scenario orchestration 适用性。
+
+非 adopted 模块由 architecture-designer 明确写入的 skip 仍是强架构证据；若本次 proposal 与其冲突，必须在 plan 中 AMBIGUOUS 或同案修订，不能静默忽略任一事实。
+
+### 不新增闭包状态字段
+
+on-touch 闭包的权威事实由 proposal policy、tasks 模式、delta 文件和合并后 resources 组成。禁止在 `logos-project.yaml` 新增：
+
+- per-scenario `baseline_complete`/`closure_state`；
+- confirmed/verified 可信度字段；
+- baseline gate/marker 映射。
+
+原因：闭包是目标集合在当前 change 的结构关系，持久化布尔会随文档变化过期，并制造第二事实源。
+
+### S39 与 D02 apply 元数据
+
+本提案 merge-executor apply 成功时：
+
+```yaml
+scenario_counter:
+  next_id: 40
+
+decision_counter:
+  next_id: 3
+
+scenarios:
+  # 保留全部既有项
+  - id: S39
+    name: 提案规划时按触达目标形成规格闭包
+    module: core
+    feature: F04
+```
+
+并由 `resource_index` 收录：
+
+- `logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md`
+- `logos/resources/test/core-S39-test-cases.md`
+- `logos/resources/decisions/core-D02-baseline-on-touch.md`
+- 根 `spec/baseline-closure.md`/Skills 经同步生成的 dogfood 资产
+
+counter、scenario、decision 与 index 更新属于同一 apply 事务；写目标失败时全部回滚，不写 SPEC_MERGED。重复 apply 必须幂等，不重复登记 S39/D02。
+
+### 迁移与向后兼容
+
+- 不批量改写旧项目的 seed/skip 字段；新读取语义即时生效。
+- legacy 缺 seed 字段仍用现有共享 helper 派生并可由 sync 回填，但派生结果不影响 change 可达性。
+- 历史 `bootstrap: skipped` 继续按 adopted 兼容。
+- 旧 CLI 可忽略新场景/资源；新 CLI 读取旧项目不要求先迁移文档。

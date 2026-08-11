@@ -3,7 +3,9 @@ import { dirname, join, relative } from 'node:path';
 import { readLocale, t, mergePromptTemplate } from '../i18n.js';
 import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 // S35 前置重构②③⑤：段标记/模板骨架校验、delta 分类、模块归属解析改为共享判据打包调用（严禁第二份判据）。
-import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys } from '../lib/change-lint.js';
+import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
+import { BASELINE_CLOSURE_VIOLATION_CODES, hasBaselineClosureSignal } from '../lib/baseline-closure.js';
+import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
@@ -100,6 +102,20 @@ export function merge(slug?: string) {
     process.exit(1);
   }
 
+  // S39 apply 崩溃恢复：任何新 prompt/marker 或其它事务动作前，先把上一次闭包 apply
+  // 收敛为全旧或已提交全新；journal 损坏/材料不足时 fail-closed 并保留诊断材料。
+  const closureApplyRecovery = recoverBaselineClosureApply(root, changePath);
+  if (!closureApplyRecovery.ok) {
+    console.error(`Error: baseline closure apply 事务无法安全恢复：${closureApplyRecovery.error}`);
+    console.error('  拒绝 merge：未生成新的 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+    process.exit(1);
+  }
+  if (closureApplyRecovery.recovered === 'rolled_back') {
+    console.log('  ↺ 检测到残留 baseline closure apply journal，已回滚至全旧一致态。');
+  } else if (closureApplyRecovery.recovered === 'committed') {
+    console.log('  ↺ 检测到已提交 baseline closure apply journal，后置状态完整，已清理恢复材料。');
+  }
+
   // F1：崩溃恢复——在扫描 delta / 任何新校验或写入之前，先检测并消化残留 commit journal
   // （前滚补完或回滚到全有或全无态），避免后续 commitVerifiedPrototypes 删除恢复材料造成断链。
   const recovered = recoverCommitJournal(changePath);
@@ -116,6 +132,39 @@ export function merge(slug?: string) {
   if (existsSync(join(changePath, 'SPEC_MERGED'))) {
     console.log(`\n✓ ${t(locale, 'merge.alreadyMerged', { slug })}`);
     return;
+  }
+
+  // S39 merge 纵深防御：任何 reset/UI commit/prompt/marker 写入之前，对已激活 on-touch 的提案
+  // 重跑 change-lint 所消费的同一 ClosureEvaluator。legacy（无声明且 tasks 无模式）不得被 L9
+  // 凭空激活；激活判据同样来自 baseline-closure 单点，调用方不复制 YAML/task 正则。
+  let closureActive = false;
+  try {
+    const proposalBytes = existsSync(join(changePath, 'proposal.md'))
+      ? readFileSync(join(changePath, 'proposal.md'), 'utf-8') : '';
+    const tasksBytes = existsSync(join(changePath, 'tasks.md'))
+      ? readFileSync(join(changePath, 'tasks.md'), 'utf-8') : '';
+    closureActive = hasBaselineClosureSignal(proposalBytes, tasksBytes);
+  } catch {
+    console.error('Error: merge 前无法读取 proposal.md/tasks.md 以判定 on-touch 闭包（artifact_unreadable）。');
+    console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+    process.exit(1);
+  }
+  if (closureActive) {
+    const closurePreflight = runChangeLint(root, changePath, slug);
+    if (!closurePreflight.ok) {
+      const prefix = closurePreflight.errorCode === 'module_unresolved' ? '模块归属无法解析；' : '';
+      console.error(`Error: ${prefix}merge 前闭包预检无法完成（${closurePreflight.errorCode}）：${closurePreflight.message}`);
+      console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+      process.exit(1);
+    }
+    const closureCodes = new Set<string>(BASELINE_CLOSURE_VIOLATION_CODES);
+    const closureViolations = closurePreflight.violations.filter(v => closureCodes.has(v.code));
+    if (closureViolations.length > 0) {
+      console.error('Error: on-touch 基线闭包未通过，拒绝 merge：');
+      for (const v of closureViolations) console.error(`  - [${v.code}] ${v.path}：${v.message}`);
+      console.error('  未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index；按 fix_hint 修复后重试。');
+      process.exit(1);
+    }
   }
 
   // enforce-slice-stage-ordering §12.7：进入 slice 前 auto-reset 提前填充的 [code]（有 delta 提案落点，trigger:"merge"；幂等，已占位则不动）

@@ -43,28 +43,29 @@
 ### 2.1 主路径
 | 用例 ID | 名称 | 覆盖步骤 | 前置 | 输入 | 期望 |
 |---|---|---|---|---|---|
-| ST-S33-01 | adopt 后 AI driver 经 baseline-seed 两阶段建种子基线（真实 begin→生成→commit 主路径） | Step 4→9 | adopt 完成、`baseline_seed_state:required` | driver `baseline-seed begin`（逻辑计划含必需 kind）→ 派发 skill 写 staging → `baseline-seed commit` | 产出 system-map + 场景候选清单（含 candidates[]）写入 staging；commit 对 staged 字节校验、必需 kind 齐+全部合法 → 原子提交 + `seeded`；展示「现状基线已建立」引导（**不含覆盖率人读行**，无 `逆向候选`/`tombstone` 字样）；skill/driver 未直接改 YAML、未直接写目标目录 |
-| ST-S33-04 | 扫描中断→partial→重试→seeded 恢复闭环 | EX-6.1/6.4 | begin 后仅部分产物落盘 | `commit`（partial）→ 补齐产物 → 再 `commit` | 首次 commit 写 `partial`、`next`/`status` 指向恢复入口且一致；补齐后再 commit 写 `seeded`；全程状态仅由 CLI 写 |
+| ST-S33-01 | 显式选择 eager seed 后，AI driver 经 baseline-seed 两阶段建种子基线 | Step 4→9 | adopt 完成、`baseline_seed_state:required`，用户/宿主已显式选择全库预扫 | driver `baseline-seed begin`（逻辑计划含必需 kind）→ 派发 skill 写 staging → `baseline-seed commit` | 产出 system-map + 场景候选清单（含 candidates[]）写入 staging；commit 对 staged 字节校验、必需 kind 齐+全部合法 → 原子提交 + `seeded`；展示「可选现状扫描已完成」（不含覆盖率人读行）；skill/driver 未直接改 YAML、未直接写目标目录；该路径不成为 adopt→change 前置 |
+| ST-S33-04 | 扫描中断→安全 partial→旁路重试→seeded 闭环 | EX-6.1/6.4 | 显式 begin 后仅部分产物落盘，且未进入 `prepared`/`committing` journal | `commit`（partial）→ 运行 next/status → 补齐产物 → 再 `commit` | 首次 commit 写 `partial`；next 主动作仍为 `openlogos change <slug>`，status/next 一致输出 `state=partial`/`incomplete=true`，seed commit/begin 仅为非阻断 recovery；补齐后再 commit 写 `seeded`；全程状态仅由 CLI 写 |
 
 ### 2.2 异常路径
 | 用例 ID | 名称 | 覆盖点 | 前置 | 输入 | 期望 |
 |---|---|---|---|---|---|
-| ST-S33-EX-01 | CLI-only 不伪造基线 | EX-4.1 | 无可用 AI 会话 | adopt | 保持 `baseline_seed_state:required`，输出可复制提示，不显示已建立 |
-| ST-S33-EX-02 | 扫描失败可重试不回滚 | EX-6.1 | 扫描中途失败 | 重试 | `baseline_seed_state:partial`；重扫按候选 `key` 覆盖；`logos/` 不回滚 |
+| ST-S33-EX-01 | CLI-only 不伪造基线且不阻断 change | EX-4.1 | 无可用 AI 会话 | adopt | 保持 `baseline_seed_state:required`，输出可复制的 change 主提示；seed 仅显式可选，不显示已建立 |
+| ST-S33-EX-02 | 扫描失败可重试不回滚 | EX-6.1 | 扫描中途失败且未进入 commit journal | 重试 / next | `baseline_seed_state:partial`；重扫按候选 `key` 覆盖 staging；`logos/` 不回滚；next 主动作仍为 change。若已有未终结 journal，则不得走本分支，必须先恢复或硬报 `baseline_commit_in_progress` |
 | ST-S33-EX-04 | verify 对逆向 spec 无软告警且不硬失败（确认机制移除反向） | EX-15.1 | `verified=false` 逆向 spec | verify | 无现状基线软告警、JSON 无 `baseline_warnings`、不硬失败；verify gate 结果与基线逆向候选无关 |
 | ST-S33-EX-05 | 存量 provenance 保守迁移 | EX-15.2 | 老文档缺章节 | 迁移 | 派生 `unknown`/`legacy-unclassified`，不伪造、不降级 |
 
 ## 三、覆盖度校验
+
 - [x] adopt 写枚举状态、不产逆向内容：UT-S33-01/02
 - [x] 一文档多候选 candidates[] 解析 + provenance 派生：UT-S33-03
 - [x] tombstone 计数不虚增 + 零候选 n/a + retire 移出计数 + 合并拆分 + 迁移 + hash 漂移：UT-S33-05/09/10/11/13/14
 - [x] 规范键 hash + alias 继承：UT-S33-07/08
 - [x] 存量迁移保守 + 幂等 + 布尔兼容：UT-S33-15/16、ST-S33-EX-05
 - [x] verify 对逆向 spec 不产软告警、JSON 无 baseline_warnings（确认机制移除反向回归）：UT-S33-17、ST-S33-EX-04
-- [x] AI driver 唯一 producer + 降级不伪造：ST-S33-01、ST-S33-EX-01/02
+- [x] AI driver 仅在显式 seed 时作为 producer；能力缺失不伪造且默认 change 可达：ST-S33-01、ST-S33-EX-01/02
 - [x] baseline-seed 两阶段协议（begin 逻辑计划无 hash/staging、必需 kind、路径安全、candidate_keys 一致、commit 幂等/stale/并发/schema/少报不误判/partial 不回退）：UT-S33-18…27、ST-S33-01、EX-6.2/6.3
 - [x] 多文件 commit journal 崩溃一致性 + 读取门（prepared 回滚 / committing 前滚·回滚 / 逐故障点恢复后不变量 / 半提交 supersede / 读取门 committing 先恢复或 baseline_commit_in_progress / prior=seeded 重扫先读不暴露半新 / old·new hash 逐目标重判 + 进度原子写 / 索引旧值 backup 回滚可执行）：UT-S33-28…36、EX-6.5（架构 §4.4）
-- [x] partial 恢复态 next/status 一致 + 活跃提案优先级（EX-3.4 无提案 / EX-3.5 有提案互斥）+ 重试闭环：ST-S33-04、EX-6.4（并见 core-S05 UT-S05-B05…B08、ST-S05-B02/B03）
+- [x] 安全 partial 的 next/status 状态一致、无提案默认 change、有提案保持 proposal 前沿、seed 恢复仅旁路；未终结 journal 恢复失败为独立硬错误：ST-S33-04、EX-6.4（并见 core-S05 UT-S05-B05…B09、ST-S05-B02…B04）
 
 ## 四、provenance 扫描侧 alias-aware canonical 采信（provenance-scan-canonical-recompute）
 
@@ -91,20 +92,52 @@
 
 | ID | 描述 | 前置条件 | 输入 | 预期输出 |
 |----|------|---------|------|---------|
-| UT-S33-41 | 三入口一致性：legacy 无候选 → required（核心防复发） | legacy 夹具：`bootstrap: adopted`、yaml 无 `baseline_seed_state` 也无旧布尔、`logos/resources/` 无逆向候选、无 guard | 依次运行 `next --format json`、`status --format json`、`baseline-seed status --module core --format json` | 三入口有效 state **逐字节一致** = `required`；next 给「建立现状基线」大白话引导；三者均附 legacy sync 迁移提示；无任何 `unknown` 输出 |
-| UT-S33-42 | 三入口一致性：legacy 有候选（无 open run）→ seeded | legacy 夹具 + 一份含合法可重算候选的逆向产物（已合并主文档）、无 open run record | 同 UT-S33-41 三命令 | 三入口有效 state **逐字节一致** = `seeded`；status/next 引导正常 `openlogos change`（**不展示覆盖率人读行**） |
-| UT-S33-43 | legacy 有候选 + open run → partial（与状态机「扫描中断」对齐） | legacy 夹具 + 合法候选 + 同模块存在 `status: open` 的 baseline-seed run record | 同 UT-S33-41 三命令 | 三入口有效 state **逐字节一致** = `partial`；`incomplete=true`；引导指向恢复入口（无 guard 前提） |
-| UT-S33-44 | sync 迁移落盘：两档派生值写入显式枚举 + changes 记录派生依据 | 两个 legacy 夹具：①无候选；②有候选无 open run | 各自运行 `openlogos sync` | ①yaml 落 `baseline_seed_state: required`、changes 记录含「缺省 → required（派生：无逆向候选）」字样；②落 `seeded`、记录含派生依据；再跑一次 sync 无重复变更（幂等） |
-| UT-S33-45 | sync 迁移不覆盖显式值 + 历史布尔迁移不回归 | ①模块已有显式 `baseline_seed_state: partial`；②模块只有旧布尔 `baseline_seed_required: true`；③只有 `baseline_seed_required: false` | 各自运行 `openlogos sync` | ①显式值保持 `partial` 不被派生覆盖；②布尔迁移为 `required`（既有行为不回归）；③移除布尔后按无字段走派生落盘（不再「不推断」空转） |
-| UT-S33-46 | 契约恒输出：adopted 模块 status JSON 恒含合法枚举 | adopted 模块矩阵：explicit required/partial/seeded、legacy 有候选、legacy 无候选；另一非 adopted 模块 | `status --format json` | 每个 adopted 模块 `modules[].baseline_seed_state` 均存在且 ∈ `required｜partial｜seeded`（explicit 或派生值）；非 adopted 模块输出与本变更前逐字节一致 |
-| UT-S33-47 | commit-in-progress 降级分支仍恒输出（legacy 无字段） | legacy 夹具（无字段）+ 模块事务锁被占用 / 未终结 journal（模拟提交进行中） | `status --format json` | 走 `baseline_commit_in_progress` 降级 suggestion，但 `modules[].baseline_seed_state` **仍存在**且为合法枚举（派生兜底），不因原始字段缺失而缺字段 |
-| UT-S33-48 | 回归：unknown 不再出现于任何 JSON 输出 + 私有缺省规则清零 | 覆盖 UT-S33-41…47 全部夹具 | 三命令 JSON 输出全集 | 任何 JSON 序列化结果不含 `"baseline_seed_state":"unknown"`（或任何 `unknown` 状态值）；实现侧验收锚：`grep "baseline_seed_state ??"` 与 `grep "readSeedState(.*) ??"` 在 `cli/src/` 清零（唯一缺省规则在共享 helper 内） |
+| UT-S33-41 | 三入口一致性：legacy 无候选 → required，默认 change 可达 | legacy 夹具：`bootstrap: adopted`、yaml 无 `baseline_seed_state` 也无旧布尔、`logos/resources/` 无逆向候选、无 guard、无未终结 journal | 依次运行 `next --format json`、`status --format json`、`baseline-seed status --module core --format json` | 三入口正常成功态的有效 state 逐字节一致=`required`；next 主动作是 `openlogos change <slug>`，可附 legacy sync/显式 seed 提示；无任何 `unknown` 输出 |
+| UT-S33-42 | 三入口一致性：legacy 有候选（无 open run）→ seeded | legacy 夹具 + 一份含合法可重算候选的逆向产物（已合并主文档）、无 open run record、无未终结 journal | 同 UT-S33-41 三命令 | 三入口正常成功态的有效 state 逐字节一致=`seeded`；status/next 引导正常 `openlogos change`（不展示覆盖率人读行） |
+| UT-S33-43 | legacy 有候选 + open run → 安全 partial，默认 change 可达 | legacy 夹具 + 合法候选 + 同模块存在 `status: open` 的 baseline-seed run record，但无 `prepared`/`committing` journal | 同 UT-S33-41 三命令 | 三入口正常成功态的有效 state 逐字节一致=`partial`，`incomplete=true`；next 主动作是 change，seed commit/begin 只作非阻断 recovery advisory |
+| UT-S33-44 | sync 迁移落盘：两档派生值写入显式枚举 + changes 记录派生依据 | 两个 legacy 夹具：①无候选；②有候选无 open run；均无未终结 journal | 各自运行 `openlogos sync` | ①yaml 落 `baseline_seed_state: required`、changes 记录含「缺省 → required（派生：无逆向候选）」；②落 `seeded`、记录含派生依据；再跑一次 sync 无重复变更（幂等） |
+| UT-S33-45 | sync 迁移不覆盖显式值 + 历史布尔迁移不回归 | ①模块已有显式 `baseline_seed_state: partial`；②模块只有旧布尔 `baseline_seed_required: true`；③只有 `baseline_seed_required: false`；均无未终结 journal | 各自运行 `openlogos sync` | ①显式值保持 `partial` 不被派生覆盖；②布尔迁移为 `required`；③移除布尔后按无字段走派生落盘（不再空转） |
+| UT-S33-46 | 正常成功契约：adopted 模块 status JSON 恒含合法枚举 | adopted 模块矩阵：explicit required/partial/seeded、legacy 有候选、legacy 无候选；另一非 adopted 模块；恢复门均通过 | `status --format json` | 正常成功 envelope 中，每个 adopted 模块 `modules[].baseline_seed_state` 均存在且属于 `required｜partial｜seeded`；非 adopted 模块输出与本变更前逐字节一致 |
+| UT-S33-47 | 不可恢复 journal 在 legacy 缺字段时先于状态派生硬失败 | legacy 夹具（无字段）+ journal=`prepared|committing`，故障注入使前滚/回滚均失败；对 candidate/run/index/coverage/helper 设置读取哨兵 | `status --format json` | 非零返回 `baseline_commit_in_progress` 通用 error envelope；只含最小安全 module/run/journal 诊断，不输出正常 `data.modules[]`、`baseline_seed_state`、coverage 或 suggestion；所有派生读取哨兵为 0 |
+| UT-S33-48 | 回归：正常 JSON 无 unknown，错误分支不伪造枚举 | 覆盖 UT-S33-41…47 全部夹具 | 三命令 JSON 输出全集 | 恢复门通过的正常输出不含 `baseline_seed_state:unknown`；恢复失败输出错误 envelope 且不猜测 `required｜partial｜seeded`；实现侧私有缺省规则清零，唯一正常派生规则仍在共享 helper 内 |
 
 ### 5.2 覆盖度校验
-- [ ] 三入口一致性两档夹具（无候选→required / 有候选→seeded）：UT-S33-41、UT-S33-42
-- [ ] 有候选 + open run → partial 与状态机对齐：UT-S33-43
+- [ ] 三入口一致性两档夹具（无候选→required / 有候选→seeded），且默认 change 可达：UT-S33-41、UT-S33-42
+- [ ] 有候选 + open run → 安全 partial，主动作 change、seed 恢复旁路：UT-S33-43
 - [ ] sync 迁移两档落盘 + 派生依据 + 幂等：UT-S33-44
 - [ ] 显式值不覆盖 + 布尔迁移不回归：UT-S33-45
-- [ ] adopted 恒输出契约（含非 adopted 零漂移）：UT-S33-46
-- [ ] commit-in-progress + legacy 降级分支恒输出：UT-S33-47
-- [ ] unknown 废除回归 + 私有缺省规则清零：UT-S33-48
+- [ ] adopted 正常成功恒输出契约（含非 adopted 零漂移）：UT-S33-46
+- [ ] 不可恢复 journal + legacy 缺字段在任何状态派生前硬错误、零读取：UT-S33-47
+- [ ] 正常输出无 unknown + 错误分支不伪造枚举 + 私有缺省规则清零：UT-S33-48
+
+## 六、eager seed 可选化与 S39 证据接口测试
+
+> 所有用例实现必须写入 OpenLogos reporter `logos/resources/verify/test-results.jsonl`。
+
+### 6.1 单元测试
+
+| ID | 检查项 | 输入 | 期望 |
+|---|---|---|---|
+| UT-S33-49 | required 不阻断闭包 | state=required、无 seed 目标 | S39 从代码/测试扫描；plan 可完成 |
+| UT-S33-50 | 安全 partial staging 排除 | state=partial、staging 含完整-looking 文档、无未终结 journal | effective view 不含 staging；不把它当目标存在；change 可继续 |
+| UT-S33-51 | seeded 只作加速 | state=seeded、candidate 指向触达代码 | EvidenceScanner 可用 candidate 定位；仍检查正式场景/API/DB/test 目标 |
+| UT-S33-52 | stale committed seed 降级 | source_hash 不匹配 | 忽略 stale 精确结论、回退重算；change 不阻断 |
+| UT-S33-53 | seed state 不决定 action | required/安全 partial/seeded 参数化，且无未终结 journal或恢复成功 | 三态的无提案默认 action 均可创建 change；仅可选诊断不同 |
+| UT-S33-54 | 无确认字段写入 | 任意 seed + on-touch change | 输出无 verified:true、confirmed_by、confirmed_at、baseline_warnings |
+| UT-S33-55 | 未终结 journal 恢复失败不降级 | 参数化崩溃点：prepared、逐目标 rename、index/state 写入前后；恢复素材损坏 | 每个消费者先取锁恢复；无法恢复返回 `baseline_commit_in_progress`，resources/index/coverage/EvidenceScanner 读取计数为 0 |
+
+### 6.2 场景测试
+
+| ID | 场景 | 操作 | 期望 |
+|---|---|---|---|
+| ST-S33-05 | 完全跳过 seed 完成首个 change | adopted required → 直接 change → S39 plan/spec | 全链路可达；缺失目标 CREATE；seed state 保持兼容值 |
+| ST-S33-06 | 安全 partial run 与 change 并存 | begin 后只写部分 staging、未进入 journal，再创建 change | staging 不污染闭包；change 正常推进；run 后续仍可恢复/提交 |
+| ST-S33-07 | seeded candidate 首次转正式场景 | committed candidate、正式场景文档缺失 | S39 CREATE 全量场景并登记身份；candidate verified 不变 |
+| ST-S33-08 | 旧确认机制反向回归 | fixture 含 verified:false 候选，执行 plan/spec/verify 消费路径 | 无 JIT advisory、无确认写回、无 baseline warning、门结果不受 verified 影响 |
+| ST-S33-09 | commit journal 崩溃点故障注入 | 对多目标+index+state 事务逐崩溃点中断，分别验证可前滚、可回滚与不可恢复夹具 | 可恢复夹具落定全旧/全新；不可恢复夹具对 status/next/index/sync/S39 全部硬报 `baseline_commit_in_progress`，不读半新、不写迁移、不创建 change 产物 |
+
+### 6.3 保留契约回归
+
+- baseline-seed begin/commit/status、路径安全、candidate key 对账、锁、journal 恢复、partial→seeded 事务测试继续全绿；新增断言明确 safe partial 与未终结 journal 不共享降级分支。
+- status/next 的 `baseline_coverage` 兼容 shape 不删除；改变的是它不再决定主 action。
+- tombstone 分母、legacy 缺省派生与 sync 显式回填规则保持；S39 不新建每场景闭包状态。

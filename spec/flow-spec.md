@@ -1148,14 +1148,12 @@ agent dispatch 的完成校验不得只输出 pass/fail。OpenLogos / driver 至
 
 ## baseline-seed 节点（brownfield-adopter S33，command-driven，非 builtin gate）
 
-存量项目「逆向建立现状基线」的 `baseline-seed` **不是 launched flow 的 builtin gate、也不由 flow 引擎驱动**，
-故 builtin `spec/flow/launched.yaml` / `initial.yaml` **不含**该节点、`status`/`next`/`watch`/`flow show` 的 golden **零漂移**。
-其语义作为方法论资产记录于 `spec/flow/overlays/brownfield-baseline.yaml`（该 overlay 的 `overlay:` **有意为空**，不改写 builtin node 序列）。
+存量项目的 `baseline-seed` 是用户或宿主**显式选择的全库扫描加速器**，不是 launched flow 的 builtin gate，也不由 flow 引擎驱动，更不是 adopted 项目进入首个 change 的默认前置步骤。
+故 builtin `spec/flow/launched.yaml` / `initial.yaml` **不含**该节点，`status`/`next`/`watch`/`flow show` 的 proposal flow node 序列保持不变。其方法论语义记录于 `spec/flow/overlays/brownfield-baseline.yaml`；该 overlay 的 `overlay:` 有意为空，不改写 builtin node 序列。
 
-- **触发与派生**：`bootstrap: adopted` 且无活跃提案时，`next`/`status` 按模块级 `baseline_seed_state` 枚举（`required｜partial｜seeded`）派生引导（取代旧 `add-baseline-docs`）：
-  - `required`/`partial` → 引导「逆向建立现状基线 / 完成现状基线」，`command`/`next_node` 指向 `openlogos baseline-seed`（命令级建议 → 省略 `next_node`）。
-  - `seeded` → 展示覆盖率并引导 `openlogos change`。
-- **唯一 producer 边界**：`openlogos adopt` 只写初值 `required`、不启动 AI、不产逆向内容；逆向扫描由 AI 会话/driver（`brownfield-adopter` skill）产出，经 `openlogos baseline-seed`（begin/commit/status）由 CLI 落盘（命令契约见 `spec/logos-project.md`、JSON 见 `spec/cli-json-output.md §3.12`）。
-- **状态写入唯一入口**：`baseline_seed_state` 与逆向目标文件的唯一写入者是 CLI；producer 只写 run 私有 staging。
-- **崩溃一致性**：多文件提交经 commit journal 事务（`prepared→committing→committed`，状态最后写）+ 模块级事务锁 + 恢复门；机器读取入口读目标/算覆盖率前先经门恢复，否则返回 `baseline_commit_in_progress`、不把半新集合当权威。
-- **与 partial 恢复态**：`partial` 是持久化恢复态；无活跃提案时主 `action`/`next_node` 指向 `baseline-seed` 恢复入口；有活跃提案时 `proposal_step`/`next_node` 保持提案真实前沿、partial 恢复以 `baseline_coverage.recovery` advisory 呈现、不阻断 change。
+- **默认动作**：`bootstrap: adopted` 且无活跃提案、恢复门通过时，`required`、安全 `partial`、`seeded` 三态的主 `action`/`next_node` 均指向 `openlogos change <slug>`。`baseline_seed_state` 只描述可选 eager seed 状态，不参与默认入口裁决。
+- **显式可选入口**：用户或宿主明确选择全库扫描时，`required` 可执行 `openlogos baseline-seed begin`，安全 `partial` 可执行 `commit --run-id <id>` 或重新 `begin`，`seeded` 可按需重扫。这些命令只作为 `optional_action`/`baseline_coverage.recovery` 旁路诊断，不覆盖无提案时的 change 主动作。
+- **唯一 producer 边界**：`openlogos adopt` 只写兼容初值 `required`、不启动 AI、不产逆向内容；显式 seed 才由 AI 会话/driver（`brownfield-adopter` skill）写 run 私有 staging，再经 `openlogos baseline-seed`（begin/commit/status）由 CLI 落盘（命令契约见 `spec/logos-project.md`，JSON 见 `spec/cli-json-output.md §3.12`）。
+- **状态写入唯一入口**：`baseline_seed_state` 与逆向目标文件的唯一写入者是 CLI；producer 不直接修改 YAML 或标准 `logos/resources/**`。
+- **安全 partial 与提案前沿**：仅有 open run / 未提交 staging 且无未终结 journal 时，排除 staging 后继续 change；无活跃提案时主动作仍为 change，有活跃提案时保持真实 `proposal_step`/`next_node`。seed 恢复只作非阻断 advisory。
+- **崩溃一致性硬门**：`prepared`/`committing` 等未终结 journal 不是安全 partial。机器入口必须在同一模块锁内、读取 resources/index/coverage 前先恢复；无法恢复时非零返回 `baseline_commit_in_progress`，不输出正常 coverage、seed 状态派生或业务主动作，也不得读取半新集合。

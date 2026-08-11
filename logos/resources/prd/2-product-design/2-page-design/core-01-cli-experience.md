@@ -119,7 +119,7 @@ JSON 输出应包含：
 
 ### 2.5 adopt
 
-`openlogos adopt` 为已有项目接入专用命令。它不是轻量补丁命令，而是“只跳过 Initial 文档门禁的 init”：必须完成与 `init` 同级别的 OpenLogos 基础设施初始化，然后用 `bootstrap: adopted` 标记存量项目接入来源，并写入模块级枚举 `baseline_seed_state: required` 衔接逆向建基线（S33）。
+`openlogos adopt` 为已有项目接入专用命令。它不是轻量补丁命令，而是“只跳过 Initial 文档门禁的 init”：必须完成与 `init` 同级别的 OpenLogos 基础设施初始化，然后用 `bootstrap: adopted` 标记存量项目接入来源。可继续写入模块级兼容枚举 `baseline_seed_state: required`，但该字段只描述显式可选 eager seed 的状态，不再衔接自动派发，也不改变接入后的 change 主动作。
 
 **检测与确认阶段**
 ```text
@@ -146,7 +146,7 @@ openlogos adopt --locale zh --ai-tool all
 ✓ 写入 AGENTS.md / CLAUDE.md
 ✓ 部署所选 AI tools 的 Skills / 插件 / 命令资产
 ✓ 部署 OpenLogos 规范文件到 logos/spec/
-✓ 标记待建现状基线（baseline_seed_state: required）
+✓ 保留可选扫描状态（baseline_seed_state: required）
 ```
 
 **verify 预跑配置阶段**
@@ -175,21 +175,23 @@ openlogos adopt --locale zh --ai-tool all
 
 项目已进入存量项目接入模式（bootstrap: adopted）：
   · OpenLogos 基础设施已完整初始化
-  · Initial 文档基线已跳过，不强制要求
+  · Initial 文档门禁已跳过
   · 模块生命周期直接设为 launched
-  · 现状基线待建立（baseline_seed_state: required）
+  · 现在可以直接描述第一个变更
 
-建议的下一步：逆向建立现状基线（种子基线，非权威意图）
-  由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单，
-  每份产物带 provenance 标记（reverse-engineered / verified: false）。
-  存量代码 grandfather 豁免，可信边界随后续 change 触碰而前移。
+建议的下一步：创建首个 change
+  → openlogos change <slug>
+  提案会按本次触达的功能/场景检查规格：已有则修改，缺失则全量创建。
+
+可选：若希望预先扫描整个仓库，可显式运行 openlogos baseline-seed；
+它只加速后续证据定位，不是发起 change 的前置条件。
 ```
 
-> **能力缺失时的降级输出**（CLI-only / 非交互 CI / AI 不可用）：adopt 不启动 AI、不声称基线已建立，保持 `baseline_seed_state: required` 并输出可复制的后续提示：
+> **能力缺失时的降级输出**（CLI-only / 非交互 CI / AI 不可用）：adopt 不启动 AI、不声称基线已建立，但这不阻断 change：
 > ```text
-> ⚠ 未检测到可用的 AI 会话来逆向建立现状基线。
->   现状基线仍待建立（baseline_seed_state: required）。
->   请在支持 brownfield-adopter 的 AI 会话中继续，或稍后重试。
+> ℹ 当前未执行可选的全库现状扫描。
+>   你仍可直接运行 openlogos change <slug>；提案将按触达范围补齐规格。
+>   如需预扫全库，可稍后在支持 brownfield-adopter 的 AI 会话中显式运行 baseline-seed。
 > ```
 
 **异常：logos/ 已存在**
@@ -200,40 +202,48 @@ openlogos adopt --locale zh --ai-tool all
 
 ### 2.6 next（存量项目接入无提案时）
 
-`bootstrap: adopted` 且无活跃提案时，`openlogos next` 按 `baseline_seed_state`（`required` / `partial` / `seeded`）输出建基线引导。**面向用户的引导语用大白话，不展示覆盖率人读行、不暴露 `tombstone`/`reverse-engineered`/`verified`/`system-map`/`逆向候选` 等内部记账概念**（覆盖率仅作 `baseline_coverage` JSON 机器字段）。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
+`bootstrap: adopted` 且无活跃提案时，`openlogos next` 的主 `action` / `next_node` 统一指向创建 `openlogos change <slug>`。`baseline_seed_state`（`required` / `partial` / `seeded`）继续作为 seed 子系统机器状态输出，但不再选择主动作。历史 `bootstrap: skipped` 项目按相同逻辑兼容处理。
 
-**种子基线待建立（`baseline_seed_state: required`）**
+在读取任何 `logos/resources/**`、`baseline_index` 或 coverage 之前，CLI 必须在同一模块读锁区间检查并恢复未终结 commit journal。无法安全前滚/回滚时返回 `baseline_commit_in_progress` 并停止；不得以“忽略 seed”继续读取可能半新的资源。只有不含未终结 journal 的 open run / 未提交 staging 才是安全的非阻断 partial。
+
+**可选 seed 尚未建立（`baseline_seed_state: required`）**
 ```text
 $ openlogos next
 
-📌 当前状态：已接入（存量项目接入模式），现状基线待建立
+📌 当前状态：已接入（存量项目接入模式）
 
-建议的下一步：建立现状基线
-  现状基线尚未建立：让 AI 扫描现有代码，
-  梳理出当前系统结构与场景清单作为迭代起点。
+建议的下一步：创建一个变更
+  → openlogos change <slug>
+  提案会按本次触达的功能/场景补齐规格。
+
+可选：运行 openlogos baseline-seed 可预扫全库，但不是前置条件。
 ```
 
-**种子基线部分建立（`baseline_seed_state: partial`，扫描未完成 / 中断可恢复）**
+**安全的 partial（open run / 未提交 staging，且无未终结 journal）**
 ```text
 $ openlogos next
 
-📌 当前状态：已接入（存量项目接入模式），现状基线部分建立（扫描未完成）
+📌 当前状态：已接入；可选全库扫描尚未完成
 
-建议的下一步：完成现状基线（继续扫描）
-  → openlogos baseline-seed commit --module core --run-id <run_id>   # 继续完成扫描
-  也可先发起 openlogos change 业务迭代（不强制先恢复）。
+建议的下一步：创建一个变更
+  → openlogos change <slug>
+
+旁路诊断：可稍后重试 openlogos baseline-seed commit --module core --run-id <run_id>；
+未提交 staging 不会进入本次提案的规格有效视图。
 ```
 
-**种子基线已建立（`seeded`）**
+**可选 seed 已建立（`seeded`）**
 ```text
 $ openlogos next
 
-📌 当前状态：已接入（存量项目接入模式），现状基线已建立
+📌 当前状态：已接入；可选现状扫描已完成
 
-建议的下一步：正常发起 openlogos change 迭代
+建议的下一步：创建一个变更
+  → openlogos change <slug>
+  已提交 seed 只用于加速定位；触达场景仍由提案完成规格闭包。
 ```
 
-> `partial` 是**持久化恢复态**（非瞬时）：`status` 与 `next` 输出必须一致（JSON `baseline_coverage.incomplete=true`）。**本节为「无活跃提案」情形**，故 partial 主 `action`/`next_node` 指向恢复入口（`openlogos baseline-seed`）；**存在活跃提案时改为「proposal 前沿为主、partial 恢复作 `baseline_coverage.recovery` advisory」**（见 §2.22 优先级）。覆盖率数字仅作 `baseline_coverage` JSON 机器字段、不进人读引导语。`next` 不得把未建立/部分建立的种子基线显示为已建立。
+> `partial` 状态与“未终结 commit journal”不是同义词。安全 open run / staging 可排除后继续 change；`prepared`/`committing` journal 必须先恢复，失败即硬错误。`status` 与 `next` 的 seed 状态/诊断必须同源，但 action 所有权由 S05 的 next 场景定义。
 
 ### 2.7 flow show
 
@@ -607,7 +617,7 @@ $ openlogos next
 **dispatch 数据源与保守默认**：权威数据源 = flow 节点定义（内置模板逐节点人工声明，**不从 produces/done_when 推导**）；overlay-add 未声明 → 保守默认 `{idempotent:false, timeout_seconds: defaults.dispatch.timeout_seconds, artifacts_hint: []}`；`artifacts_hint: []` ＝「产物未知」契约语义：消费方不得据此判死，只能升级观察。
 
 **省略 `next_node` 的情形**（命令级建议或例外，文本不显示「下一节点」行、JSON 不含该字段）：
-- `all_done`（流程走完）、无 active proposal（建议 `openlogos change <slug>`）、补 baseline 文档（`openlogos change add-baseline-docs`）、`openlogos launch` 等命令级提示；
+- `all_done`（流程走完）、launched 或 adopted 无 active proposal（journal 恢复门通过后的 `required`、安全 `partial`、`seeded` 均建议 `openlogos change <slug>`）、`openlogos launch` 等命令级提示；三态共用 direct-change 分支，不存在 `add-baseline-docs` fixture；
 - `--auto` gate 已自动放行（`gate_auto_passed:true`）；
 - loop 阻塞且 `code` 节点缺失 / 被 overlay `skip`，或 loop 达上限（`escalated`）。
 
@@ -1303,11 +1313,12 @@ $ openlogos next --auto
   }
   ```
   - `state`：`required` | `partial` | `seeded`（映射模块级 `baseline_seed_state`）。
-  - `incomplete`：**恒存在的布尔**（稳定 shape，不省略）——`state==partial` 时 `true`（`denominator` 非最终值、`next` 下一步指向恢复），`required`/`seeded` 时 `false`。
+  - `incomplete`：**恒存在的布尔**（稳定 shape，不省略）——`state==partial` 时 `true`（`denominator` 非最终值，但不改变 `next` 主动作），`required`/`seeded` 时 `false`。
   - `denominator` = 存活候选 ∪ tombstone 候选数；`tombstones` = 其中 tombstone 数。删除候选转 tombstone 仍计入 `denominator`、不缩小计数。
   - `freshness`：`fresh` | `stale` | `unknown`；`stale`/`unknown` 时不得据其输出貌似精确的计数结论。
-  - `recovery`（仅 `state==partial` 且**存在活跃提案**时出现）：结构化 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change。
-- **partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `baseline-seed` 恢复；**有活跃提案**时主 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory 呈现。
+  - `recovery`（仅 `state==partial`、已确认不存在未终结 commit journal 且有可恢复 open run / 未提交 staging 时可出现）：结构化 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`；若无可提交 run，则可把 `entry` 指向重新执行 `openlogos baseline-seed begin`。该字段在有无活跃提案时都只是可选、非阻断的 seed 旁路诊断，不改写顶层 `action`、`next_node` 或 `proposal_step`。
+- **安全 partial 与提案前沿的优先级**：仅有 open run / 未提交 staging 且无未终结 journal 时，先排除 staging，不把它计入规格有效视图。无活跃提案时，主 `action`/`next_node` 指向 `openlogos change <slug>`；有活跃提案时，主 `action`/`next_node`/`proposal_step` 保持该提案真实前沿。两种情况下 seed commit/begin 均只可作为 `recovery` 旁路诊断。
+- **未终结事务硬门**：`prepared`/`committing` 等未终结 commit journal 不是安全 partial，也不是正常成功响应分支。`status`/`next` 必须在同一模块读锁区间、读取任何 `logos/resources/**`、`baseline_index` 或 coverage 之前先前滚或回滚；无法安全恢复时非零返回 `baseline_commit_in_progress` 并停止，不输出正常 `baseline_coverage`、change 动作或 seed advisory，也不得读取可能半新的资源。
 - 覆盖率**只读已合并主文档**中各产物 `## 逆向基线来源` 章节；merge 前的未合并 delta 不计入覆盖率、不提前声称前移。
 
 ### 2.23 openlogos baseline-seed 终端体验（种子状态提交，brownfield-adopter）
@@ -1585,3 +1596,85 @@ warning 经独立 `warnings[]` 通道输出，**不混入** `violations[]`（保
   }
 }
 ```
+
+## 2.35 按触达目标补齐规格的 CLI 体验（S39）
+
+### 2.35.1 adopt 完成后的默认引导
+
+`openlogos adopt` 完成后，用户不再被要求先执行独立基线流程。人读输出应把“描述第一个变更”作为唯一主动作；eager seed 仅以次级可选提示出现，不得冒充门禁。
+
+```text
+✓ 存量项目已接入 OpenLogos
+
+下一步：直接描述你要做的第一个变更
+  openlogos change <slug>
+
+提案规划时会自动检查本次触达场景的规格：
+  已有目标 → 修改
+  缺失目标 → 在同一份 delta 中创建完整文档
+
+可选：若希望预先扫描整个仓库，可显式运行 baseline-seed；这不是发起 change 的前置条件。
+```
+
+即使兼容字段仍为 `baseline_seed_state: required` 或 `partial`，主动作也必须指向 `openlogos change <slug>`。不得输出“请先建立基线后再发起变更”。
+
+### 2.35.2 status / next 呈现
+
+- 无活跃提案：`next` 主动作始终允许创建 change；seed 状态只可作为非阻断的 `optional_action`/补充说明。
+- 有活跃提案：proposal_step、next_node 与既有 flow 优先；seed 不覆盖活跃 change 的建议。
+- `status --format json` 与 `next --format json` 继续保留既有 `baseline_coverage` shape，兼容消费者；但 `baseline_coverage.state` 不再决定顶层 `action`。
+- 仅安全 open run / 未提交 staging 可作为非阻断 seed 诊断并从规格事实中排除；未终结 commit journal 必须先在读锁内恢复，失败硬报 `baseline_commit_in_progress`，不得读取半新 resources/index 后继续当前 change。
+
+示例：
+
+```text
+💡 下一步：创建一个变更提案
+   openlogos change <slug>
+
+ℹ 可选的全库种子扫描尚未完成；本次变更仍会按触达场景自动补齐规格。
+```
+
+### 2.35.3 tasks 中的目标模式
+
+```text
+[MODIFY] deltas/prd/.../existing.md  已有目标：聚合为唯一最终态 delta
+[CREATE] deltas/prd/.../missing.md   缺失目标：创建完整文档
+[SKIP]   API                         无接口边界：只在闭包矩阵记录，不产生 checkbox
+```
+
+用户审核的仍是既有 `plan-exit`。界面或 CLI 不新增“确认现状基线”“确认每个目标”按钮，也不要求第二次批准。
+
+### 2.35.4 change-lint 诊断体验
+
+plan 阶段示例：
+
+```text
+✗ L9 按触达闭包
+  delta_target_duplicate: deltas/test/core-S12-test-cases.md 被规划了 2 次
+  修复：合并为一条 task，并把所有 S12 测试变化写入同一 delta
+
+✗ L9 按触达闭包
+  delta_target_mode_mismatch: [CREATE] 目标已存在
+  修复：改为 [MODIFY]，或修正目标路径
+```
+
+spec 阶段示例：
+
+```text
+✗ L9 按触达闭包
+  create_target_incomplete: core-S12-payment.md 缺少 Mermaid 时序图与异常路径
+  修复：补齐完整场景文档；不要再创建第二份“基线 delta”
+```
+
+诊断必须给出稳定 code、项目根相对 path 与可执行 fix_hint。语义不确定时使用 `baseline_closure_ambiguous` 并列出缺少的证据，不得猜测。
+
+### 2.35.5 无 JIT 回归文案红线
+
+以下文案及同义变体禁止重新出现：
+
+- “该区域尚未人工确认，是否现在确认？”
+- “把 verified:false 升级为 verified:true”
+- “先确认现状，再继续本次变更”
+- “verify 通过，但存在 baseline_warnings”
+
+允许的阻断只有普通 plan 完整性缺口，例如“无法判断该场景是否写入持久化数据，请补充业务选择”；它发生在现有方案审核前，不建立逐区域确认状态。

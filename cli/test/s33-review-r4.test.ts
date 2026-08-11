@@ -215,10 +215,9 @@ describe('S33 review r4 — F1/F2/F4/F7/F10 新反例的真实入口回归', () 
     expect(readFileSync(join(root, 'logos/logos.config.json'), 'utf-8')).toBe(cfgBefore);
   });
 
-  it('F7: status 提交进行中经读锁区间返回 commit_in_progress，不据半集合派生', () => {
+  it('F7: status 提交进行中经读锁区间硬报 baseline_commit_in_progress，不据半集合派生', () => {
     stallCommit();
-    const mod = collectStatusData(root).modules![0];
-    expect(mod.baseline_coverage?.commit_in_progress).toBe(true);
+    expect(() => collectStatusData(root)).toThrow('baseline_commit_in_progress');
   });
 
   // ---- F10：空/畸形 candidate_keys 不再关闭集合一致性校验 ----

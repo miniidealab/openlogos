@@ -185,24 +185,26 @@ describe('S05 Unit Tests — next command (launched lifecycle, no guard)', () =>
     expect(out).toContain('openlogos change');
   });
 
-  it('UT-S05-bootstrap-01: bootstrap=adopted + baseline_seed_state:required with no active proposal → guide reverse baseline (brownfield-adopter, replaces add-baseline-docs)', () => {
+  it('UT-S05-bootstrap-01: bootstrap=adopted + baseline_seed_state:required with no active proposal → direct change，seed 仅可选', () => {
     writeAdoptedModule(root);
 
     next();
 
     const out = con.logs.join('\n');
-    expect(out).toContain('openlogos baseline-seed begin');
+    expect(out).toContain('openlogos change <slug>');
+    expect(out).toContain('baseline-seed begin');
     expect(out.toLowerCase()).toContain('baseline');
     expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S05-bootstrap-02 / ST-S05-bootstrap-02: bootstrap=skipped legacy mode + required with no active proposal → same reverse-baseline guidance', () => {
+  it('UT-S05-bootstrap-02 / ST-S05-bootstrap-02: bootstrap=skipped legacy mode + required with no active proposal → 同样 direct change', () => {
     writeLegacySkippedModule(root);
 
     next();
 
     const out = con.logs.join('\n');
-    expect(out).toContain('openlogos baseline-seed begin');
+    expect(out).toContain('openlogos change <slug>');
+    expect(out).toContain('baseline-seed begin');
     expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 
@@ -890,15 +892,15 @@ describe('S05 Scenario Tests — next --format json', () => {
     expect(parsed.data.modules[0].action).toMatch(/archive|归档/i);
   });
 
-  it('ST-S05-bootstrap-01: bootstrap=adopted + required with no active proposal returns reverse-baseline guidance in JSON', () => {
+  it('ST-S05-bootstrap-01: bootstrap=adopted + required with no active proposal returns direct-change guidance in JSON', () => {
     writeAdoptedModule(root);
 
     next('json');
     const parsed = JSON.parse(con.logs[0]);
 
-    expect(parsed.data.command).toBe('openlogos baseline-seed begin');
+    expect(parsed.data.command).toBe('openlogos change <slug>');
     expect(parsed.data.modules[0].bootstrap).toBe('adopted');
-    expect(parsed.data.modules[0].command).toBe('openlogos baseline-seed begin');
+    expect(parsed.data.modules[0].command).toBe('openlogos change <slug>');
     expect(parsed.data.modules[0].baseline_seed_state).toBe('required');
     // baseline_coverage 恒存在为对象，incomplete 恒布尔（required → false）。
     expect(parsed.data.modules[0].baseline_coverage.state).toBe('required');

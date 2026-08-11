@@ -169,9 +169,10 @@ launched 模块在存在活跃提案时，`active_change.proposal_step` 的判�
 - **副作用**：无。
 
 ### EX-3.3: adopted 模块 status JSON 恒输出 baseline_seed_state（baseline-seed-legacy-default-unify）
-- **触发条件**：任意 `bootstrap: adopted` 模块（explicit 显式值或 legacy 缺省皆可；含基线提交进行中的 `baseline_commit_in_progress` 降级情形）执行 `openlogos status --format json`。
-- **期望响应**：`modules[].baseline_seed_state` **无条件输出**，取值为合法枚举 `required｜partial｜seeded`——explicit 优先；yaml 缺省时经共享 helper `effectiveBaselineSeedState` 派生（有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`，见 core-06 §4.1），**「缺省 → 字段缺失」路径与 `unknown` 第三态一并废除**；`baseline_commit_in_progress` 降级分支同样经派生兜底恒输出，不得回落到原始字段缺失。legacy 派生态（yaml 未落盘）时 suggestion 附「运行 `openlogos sync` 迁移元数据」提示，且该 sync 迁移对无字段模块真实落盘（不空转）。`status` 与 `next`、`baseline-seed status` 对同一模块的有效状态**逐字节一致**（三入口单一事实源）。非 adopted 模块行为不变。
-- **副作用**：无状态修改；对下游为纯增量契约收紧（fail-closed 消费方判 `typeof === 'string'` 自然恢复渲染），不新增 `baseline_seed_state_source` 字段。
+
+- **触发条件**：`bootstrap: adopted` 模块执行 `openlogos status --format json`，且 seed journal 恢复门已确认无未终结 journal或已成功恢复；explicit 显式值与 legacy 缺省均适用。
+- **期望响应**：`modules[].baseline_seed_state` 恒为合法枚举 `required｜partial｜seeded`：explicit 优先；yaml 缺省时经共享 `effectiveBaselineSeedState` 派生（有 committed candidate 且仅有安全 open run/未提交 staging→`partial`，有 candidate 且无 open run→`seeded`，无 candidate→`required`）。安全 staging 不进入 resources/index/coverage，`status`、`next`、`baseline-seed status` 对同一一致视图的有效状态逐字节一致。legacy 派生态 suggestion 可提示运行 `openlogos sync` 迁移元数据。
+- **副作用**：无状态修改；不新增 `baseline_seed_state_source`。本成功契约不覆盖无法恢复的 `prepared|committing` journal；该情形必须走下方事务硬门，不得用派生枚举兜底成成功 envelope。
 
 ### EX-5.1: proposal 正文引用部署模板占位符
 - **触发条件**：`proposal.md` 的 `## 部署影响` 字段已明确填写，但变更原因、变更概述或其他正文段落中引用 ``是 / 否`` 等模板占位符字面量。
@@ -297,3 +298,42 @@ S11 的 `openlogos status --format json` 是 AI 宿主 SessionStart 阶段化范
 ### 消费方约束
 
 SessionStart、RunLogos 面板和其它 status 消费方必须以结构化 `proposal_step` / `next_node` / gate 字段为准，不得仅因存在历史 `automation_diagnostic.reason=="global-verify-failed"` 就扩大当前写入范围或跳过当前 flow 前沿。
+
+## status 的 seed journal 前置恢复门（baseline-on-touch）
+
+### 时序优先级
+
+本节是 S11 Step 2“读取资源目录、模块注册表与默认部署门禁”及所有后续读取的硬前置条件，优先于正常状态面板/JSON 成功契约：
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI
+    participant J as SeedJournalRecovery
+    participant R as resources/index/coverage
+
+    U->>C: openlogos status [--format json]
+    C->>J: 在模块锁内检查并恢复未终结 journal
+    alt 无未终结 journal或可安全恢复
+        J-->>C: 全旧或全新一致视图
+        C->>R: 执行原 S11 Step 2 及后续读取
+        C-->>U: 正常 status 输出
+    else 无法安全前滚或回滚
+        J-->>C: baseline_commit_in_progress
+        C-->>U: 非零硬操作错误
+        Note over C,R: 不读取 resources/index/coverage，不派生正常状态面板
+    end
+```
+
+### 步骤约束
+
+1. CLI 只读取定位模块锁/journal 所需的最小元数据，不得先扫描标准 resources、resource_index 或 coverage。
+2. `prepared|committing` 等未终结 journal 必须在锁内前滚到全新集合或回滚到全旧集合；恢复成功后才进入原 S11 Step 2。
+3. 无法恢复时返回 `baseline_commit_in_progress` 操作错误；JSON 使用统一 error envelope，可携 module/run/journal 与修复提示，但不得伪装成 `success:true`，也不得输出从半新集合派生的 `modules[].phase_progress`、coverage、active_change 或建议。
+4. 仅 open run/未提交 staging 且无未终结 commit journal 属安全 partial：排除 staging 后继续正常 status，兼容 `baseline_seed_state: partial`。
+
+### 不变量
+
+- `baseline_commit_in_progress` 不是 seed 证据降级提示，而是标准资源一致性硬门。
+- status、next、index、sync、coverage 与 S39 EvidenceScanner 复用同一恢复入口和锁顺序；不得由各消费者复制不同的降级分支。
+- 失败路径读取哨兵必须证明 resources/index/coverage 调用数为 0；恢复重试成功后输出只能对应全旧或全新集合。

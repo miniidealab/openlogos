@@ -95,11 +95,9 @@ describe('S33 review r5 — F1 永久锁死 / F7 锁外读半集合 / F2 跨模�
   });
 
   // ---- F7：机器读取者在**同一读锁区间**内读取；提交进行中报 commit_in_progress，不据半集合 ----
-  it('F7: status 顶层 suggestion 在提交进行中不据半集合推断 required，改提示稍后重试', () => {
+  it('F7: status 在提交进行中硬失败且不据半集合推断 required', () => {
     stallCommit(root);
-    const data = collectStatusData(root);
-    // 顶层 suggestion 经读锁区间派生；提交进行中 → 不驱动逆向 baseline-seed。
-    expect(data.suggestion).not.toContain('逆向建立现状基线');
+    expect(() => collectStatusData(root)).toThrow(/baseline_commit_in_progress/);
   });
 
   // ---- F2：签发账本每模块独立——不同模块并发 begin 不再跨模块 lost-update ----

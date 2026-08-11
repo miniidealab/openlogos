@@ -263,8 +263,9 @@ export function baselineSeedCommit(moduleId: string | undefined, runId: string |
 
     let finalState: BaselineSeedState;
     if (allValid && cls.committed.length > 0) {
-      // F4：seeded 提交前，对每个目标做重扫对账——以已合并主文档为 prior 继承人工确认（verified:true 不降级）、
-      // 消失候选转 tombstone（不缩分母、支持 alias/rename 身份继承）；**在内存计算最终内容，不改写 staged**
+      // F4：seeded 提交前，对每个目标做重扫对账——以已合并主文档为 prior 继承候选身份/alias，
+      // 但历史 verified:true/confirmed_* 只读兼容、统一归一为 false/null 后再写；消失候选转 tombstone
+      // （不缩分母、支持 alias/rename 身份继承）；**在内存计算最终内容，不改写 staged**
       // （staged 保持纯净扫描器输出 → 幂等重提交稳定、F3 校验恒对纯净输入）。最终内容交事务持久化到 resolved 后提交。
       // F4：以**模块级全局**注册表对账（prior/staged 均按目标文档聚合），支持真实 anchor 重命名（旧 anchor 进
       // aliases[]）身份继承与跨文档移动去重；结果按文档回写。staged 保持纯净（不改写），仅内存计算最终内容。

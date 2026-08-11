@@ -124,16 +124,12 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   console.log('  · OpenLogos 基础设施已完整初始化');
   console.log('  · Initial 文档基线已跳过，不强制要求');
   console.log('  · 模块生命周期直接设为 launched');
-  console.log('  · 现状基线待建立（baseline_seed_state: required）\n');
-  console.log('建议的下一步：逆向建立现状基线（种子基线，非权威意图）');
-  console.log('  由 AI 会话/driver 逆向扫描代码库，产出 system-map + 场景候选清单，');
-  console.log('  每份产物带 provenance 标记（reverse-engineered / verified: false）。');
-  console.log('  存量代码 grandfather 豁免，可信边界随后续 change 触碰而前移。\n');
-  // 能力降级语义（F2）：adopt 只做确定性初始化并写入 baseline_seed_state: required；
-  // 绝不启动 AI、不产逆向内容、不声称基线已建立。逆向扫描由 AI 会话/driver 检测该状态后派发 brownfield-adopter 完成。
+  console.log('  · baseline_seed_state: required 仅保留为兼容/可选证据状态，不阻断变更\n');
+  console.log('建议的下一步：直接运行 openlogos change <slug> 创建第一个变更提案。');
+  console.log('  提案规划会按触达的功能/场景自动闭包：目标存在则 MODIFY，缺失则 CREATE 全量文档。');
+  console.log('  无需先建立独立基线；openlogos baseline-seed begin 仅作为显式可选的证据扫描加速器。\n');
+  // 能力降级语义：adopt 只做确定性初始化；无 AI 会话也不影响直接进入 change。
   if (!isTTY()) {
-    console.log('⚠ 未检测到可用的 AI 会话来逆向建立现状基线。');
-    console.log('  现状基线仍待建立（baseline_seed_state: required）。');
-    console.log('  请在支持 brownfield-adopter 的 AI 会话中继续，或稍后重试。\n');
+    console.log('ℹ 当前为非交互环境；初始化已完成，可在任意支持 OpenLogos 的 AI 会话中直接执行 openlogos change <slug>。\n');
   }
 }

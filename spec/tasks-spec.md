@@ -229,3 +229,103 @@ CLI 的 `detectProposalStep()` / `detectProposalStepViaFlow()` 按以下规则�
 - 若 artifacts / reporter 缺失，应输出当前切片未完成诊断，而不是依赖全量 verify 失败推断。
 - 若本片证据完整但全量失败，应进入 repair / code，保留本片完成事实。
 - driver 更正 artifacts 声明时，不应要求改写 tasks；应重新校验证据并追加 audit。
+
+## on-touch-v1 的 delta 目标模式与唯一性
+
+### 适用范围
+
+proposal 声明 `baseline_closure.policy: on-touch-v1` 时，`[delta]` checkbox 必须显式写目标模式：
+
+```markdown
+- [ ] [MODIFY] `deltas/prd/.../existing.md`：聚合描述
+- [ ] [CREATE] `deltas/test/new.md`：完整新目标描述
+```
+
+模式位于 checkbox 后、目标路径前，闭合枚举仅 `MODIFY|CREATE`。`SKIP` 与 `AMBIGUOUS` 不得写成 checkbox。
+
+### proposal 权威闭包声明
+
+tasks 不是目标全集的来源。on-touch-v1 proposal 必须按 `spec/baseline-closure.md` §5.1–5.3 持久化唯一 fenced YAML：
+
+- `baseline_closure.schema_version: 1`；
+- 独立 `touched_scenario_ids[]`；
+- 规范化 `targets[]`，每项固定含 `category`、`scenario_ids`、`mode`、`delta_path`、`reason`、`evidence[]`、`missing_evidence[]`；
+- `MODIFY|CREATE` 要求非空 delta_path/evidence、空 missing_evidence；`SKIP` 要求 null delta_path、非空 evidence；`AMBIGUOUS` 要求 null delta_path、非空 missing_evidence；
+- 重复 YAML key、重复 canonical target、空理由、非法枚举、错误 null 组合、非规范路径或遗漏 touched scenario 的强制/条件维度一律 fail-closed。
+
+人读“闭包结论”表不是 parser 输入。L9 必须先解析 proposal targets，再比较 tasks；不得只从已有 tasks 推断计划全集，否则被漏写的场景/目标无法被发现。
+
+### 一文件一任务
+
+每条 `[delta]` task 必须对应一个精确 delta 文件，不得只写目录。所有路径先映射/规范化为 canonical target：
+
+- 同一 target 恰一条 task；多场景/多章节变化合并进该条描述。
+- task 文字中的目标与实际 delta 文件路径一一对应。
+- 禁止同一 target 的“建立基线”任务和“实现增量”任务并存。
+- 根规格、Skills、decision 与 resources 目标遵循同一规则。
+
+### 模式判据
+
+- `MODIFY`：plan 时目标文件存在；同 delta 可有 MODIFIED 与 ADDED 块。
+- `CREATE`：plan 时目标文件不存在；Markdown delta 用 ADDED 章节产完整文档，API/DB non-Markdown delta 用与 canonical target 一致、可剥离的 ADDED 首行控制行加完整 payload。
+- plan 后存在性变化必须返回 plan/spec 修正，不能自动换模式。
+
+non-Markdown `.yaml|.yml|.json|.sql` task 的路径仍映射同一个 canonical target；控制行不是第二个 target，也不得进入最终目标。mode/声明 target、后缀、目标存在性、剥离后语法或整文件完整度任一不符时，spec 以 `non_markdown_delta_invalid`/`create_target_incomplete` fail-closed。
+
+### SKIP 记录
+
+不适用目标只写在 proposal `baseline_closure.targets[]`，使用 `mode: SKIP`、`delta_path: null`、非空 `reason`/`evidence[]`、空 `missing_evidence[]`。它不出现在 `[delta]`、不参与 checkbox 总数，也不生成空文件。缺证据的 SKIP 是 malformed，不能默认为合法不适用。
+
+### AMBIGUOUS 处理
+
+信息不足/冲突时在 proposal target 写 `mode: AMBIGUOUS`、`delta_path: null` 与非空 `missing_evidence[]`；已有冲突事实可写入 `evidence[]`。tasks 不得为其生成猜测路径。缺 `missing_evidence[]` 的 AMBIGUOUS 是 malformed；任一合法 AMBIGUOUS 在场时 proposal/tasks 未完成，不得通过 plan-exit。
+
+### L9 三方集合对账
+
+设：
+
+```text
+P = proposal.targets 中 mode∈{MODIFY,CREATE} 映射后的 canonical target 集合
+T = tasks.md [delta] 中 [MODIFY]/[CREATE] 路径映射后的 canonical target 集合
+D = deltas/ 中可合并文件映射后的 canonical target 集合
+```
+
+- plan：必须 `P == T`，且两侧无重复；SKIP/AMBIGUOUS 不进入 T。
+- spec：必须 `P == T == D`，同时逐目标 mode、delta path 与磁盘存在性一致。
+- `P-T` 是漏 task，`T-P` 是未声明 task，`D-P`/`D-T` 是未规划 delta，`P-D`（任务已完成时）是漏 delta；全部差异逐项报告，不首错短路。
+- `targets_total/modify/create/skip/ambiguous` 只从 proposal targets 计算；不得从 tasks/deltas 倒算 SKIP 或 AMBIGUOUS。
+
+### 完成语义
+
+1. 每产出一个 delta 文件，必须立即把同 task `[ ]` 改为 `[x]`；不得批末统一勾选。
+2. `[x]` 表示该精确文件已存在且达到当前阶段结构要求，不是“正在处理”。
+3. `[delta]` 全勾时，plan 文字不再作为 L3/L9 证据；必须有实际测试/目标 delta。
+4. `[code]` 标题仍在 plan 留空，由 merge 后 slice-planner 基于真实 ID 写入。
+5. `[deploy]` 继续只追踪部署执行；verify/smoke 命令不写进 tasks。
+
+### 合法示例
+
+```markdown
+## [delta] 规格变更
+- [x] [MODIFY] `deltas/prd/1-product-requirements/core-01-requirements.md`：S12/S13 共享主需求的最终态修改
+- [ ] [CREATE] `deltas/prd/3-technical-plan/2-scenario-implementation/core-S40-payment.md`：完整场景时序与异常
+- [ ] [CREATE] `deltas/test/core-S40-test-cases.md`：完整 UT/ST 与 reporter 契约
+
+## [code] 代码实现
+> merge 后由 slice-planner 填写。
+```
+
+### 非法示例
+
+```markdown
+- [ ] 建立 S40 基线
+- [ ] 修改 S40 增量
+- [ ] [SKIP] API
+- [ ] [CREATE] `deltas/test/`
+```
+
+原因依次为：同目标双任务、SKIP 误入完成度、路径不是文件。
+
+### Legacy 兼容
+
+未声明 on-touch-v1 且任务无模式的历史提案按原格式解析。任何任务已使用 `[MODIFY]`/`[CREATE]` 时，proposal 缺策略声明视为结构错误，不能退回 legacy。

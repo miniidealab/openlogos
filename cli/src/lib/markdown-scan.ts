@@ -20,6 +20,24 @@ export interface AuthorityScan {
   region: AuthorityRegion[];
 }
 
+export type AuthoritySectionStatus = 'missing' | 'duplicate' | 'unique';
+
+export interface AuthoritySectionResult {
+  status: AuthoritySectionStatus;
+  /** 仅 unique 时存在；内容已排除围栏、缩进代码与 HTML 注释区域。 */
+  content: string | null;
+}
+
+interface AuthorityAtxHeading {
+  level: number;
+  text: string;
+}
+
+interface AuthorityHeading extends AuthorityAtxHeading {
+  /** 标题最后一行；ATX 等于标题行，Setext 等于下划线行。 */
+  endIndex: number;
+}
+
 /** 剥掉一行内已闭合的 HTML 注释片段（<!-- ... -->）。 */
 function stripInlineHtmlComments(line: string): string {
   return line.replace(/<!--[\s\S]*?-->/g, '');
@@ -128,6 +146,75 @@ export function authorityScan(lines: string[]): AuthorityScan {
     region.push(null);
   }
   return { masked, text, region };
+}
+
+/**
+ * 解析 CommonMark ATX 标题的结构部分：允许 0–3 个前导空格、标题标记后的多个空格，
+ * 并剥离前有空白的可选关闭 `#` 序列。返回的 text 可用于同义标题唯一性判断。
+ */
+function parseAuthorityAtxHeading(line: string): AuthorityAtxHeading | null {
+  const match = line.match(/^ {0,3}(#{1,6})(?:[ \t]+(.*)|[ \t]*)$/);
+  if (!match) return null;
+  const text = (match[2] ?? '').replace(/[ \t]+#+[ \t]*$/, '').trim();
+  return { level: match[1].length, text };
+}
+
+/** Setext 下划线对应的标题层级。 */
+function setextHeadingLevel(line: string): 1 | 2 | null {
+  const match = line.match(/^ {0,3}(=+|-+)[ \t]*$/);
+  if (!match) return null;
+  return match[1][0] === '=' ? 1 : 2;
+}
+
+/** 从标题文本行识别权威 Setext H1/H2，并把下划线纳入同一个标题跨度。 */
+function parseAuthoritySetextHeading(scan: AuthorityScan, index: number): AuthorityHeading | null {
+  if (scan.masked[index] || index + 1 >= scan.text.length || scan.masked[index + 1]) return null;
+  const text = scan.text[index].trim();
+  const level = setextHeadingLevel(scan.text[index + 1]);
+  if (!text || level === null) return null;
+  // 列表项后的 `---` 是 thematic break/list 延续，不把它误认成 Setext 标题。
+  if (/^(?:[-+*]|\d+[.)])\s+/.test(scan.text[index].trimStart())) return null;
+  if (parseAuthorityAtxHeading(scan.text[index]) !== null) return null;
+  return { level, text, endIndex: index + 1 };
+}
+
+/** ATX 与 Setext 共用的权威标题入口，供唯一性计数、section 起点和边界判断复用。 */
+function parseAuthorityHeading(scan: AuthorityScan, index: number): AuthorityHeading | null {
+  if (scan.masked[index]) return null;
+  const atx = parseAuthorityAtxHeading(scan.text[index]);
+  if (atx) return { ...atx, endIndex: index };
+  return parseAuthoritySetextHeading(scan, index);
+}
+
+/**
+ * 提取恰好一个权威二级 Markdown section。
+ *
+ * 标题与 section 边界只认 authorityScan 判定为权威的行；返回内容同样把所有非权威行
+ * 置空，因此 fenced 示例、缩进代码和 HTML 注释中的同名标题/字段都不能参与业务解析。
+ * ATX 同义写法先规范化；ATX/Setext H2 统一参与同名唯一性计数，多个围栏外同名标题
+ * 显式返回 duplicate，禁止 first-wins。
+ * section 遇到任一权威 H1/H2（ATX 或 Setext）即结束，防止兄弟/父级章节字段串入。
+ */
+export function extractUniqueAuthoritySection(content: string, heading: string): AuthoritySectionResult {
+  const lines = content.split(/\r?\n/);
+  const scan = authorityScan(lines);
+  const starts: AuthorityHeading[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const candidate = parseAuthorityHeading(scan, i);
+    if (candidate?.level === 2 && candidate.text === heading) starts.push(candidate);
+  }
+
+  if (starts.length === 0) return { status: 'missing', content: null };
+  if (starts.length > 1) return { status: 'duplicate', content: null };
+
+  const sectionLines: string[] = [];
+  for (let i = starts[0].endIndex + 1; i < lines.length; i++) {
+    const candidate = parseAuthorityHeading(scan, i);
+    if (candidate && candidate.level <= 2) break;
+    sectionLines.push(scan.masked[i] ? '' : scan.text[i]);
+  }
+  return { status: 'unique', content: sectionLines.join('\n') };
 }
 
 /** 兼容旧签名：仅返回掩码（含围栏/缩进代码/HTML 注释）。 */

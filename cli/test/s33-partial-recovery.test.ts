@@ -100,12 +100,12 @@ describe('S33 partial 恢复态 + 端到端主路径（写侧种子状态提交�
     con.logs.length = 0;
     baselineSeedCommit('core', runId, 'json');
     expect(JSON.parse(con.logs[0]).data.baseline_seed_state).toBe('partial');
-    // next/status 一致指向恢复入口
+    // next/status 一致保留 partial 诊断，但主动作直接 change
     const mod = collectStatusData(root).modules![0];
     expect(mod.baseline_seed_state).toBe('partial');
     expect(mod.baseline_coverage?.incomplete).toBe(true);
     const nd = nextJson(con);
-    expect(nd.modules[0].command ?? nd.command).toContain('openlogos baseline-seed');
+    expect(nd.modules[0].command ?? nd.command).toBe('openlogos change <slug>');
     // 补齐 → 再 commit → seeded
     stage(root, runId, SCENARIOS, reverseDoc(K2));
     con.logs.length = 0;
@@ -114,14 +114,14 @@ describe('S33 partial 恢复态 + 端到端主路径（写侧种子状态提交�
     expect(readSeedState(root, 'core')).toBe('seeded');
   });
 
-  it('UT-S05-B05 / ST-S05-B02: partial 无活跃提案 → next/status state=partial/incomplete、主动作指向 baseline-seed', () => {
+  it('UT-S05-B05 / ST-S05-B02: partial 无活跃提案 → next/status state=partial/incomplete、主动作直接 change', () => {
     setupAdopted(root, 'partial');
     writeFileSync(join(root, SYSTEM_MAP), reverseDoc(K1));
     const mod = collectStatusData(root).modules![0];
     expect(mod.baseline_seed_state).toBe('partial');
     expect(mod.baseline_coverage?.incomplete).toBe(true);
     const nd = nextJson(con);
-    expect(nd.modules[0].command).toContain('openlogos baseline-seed');
+    expect(nd.modules[0].command).toBe('openlogos change <slug>');
     expect(nd.modules[0].baseline_coverage.state).toBe('partial');
     // status/next 一致
     expect(nd.modules[0].baseline_coverage.incomplete).toBe(true);
@@ -178,7 +178,8 @@ describe('S33 partial 恢复态 + 端到端主路径（写侧种子状态提交�
     expect(yaml.modules?.[0].baseline_seed_state).toBe('required');
     const out = con.logs.join('\n');
     expect(out).not.toContain('基线已建立');
-    expect(out).toContain('未检测到可用的 AI 会话');
+    expect(out).toContain('当前为非交互环境');
+    expect(out).toContain('openlogos change <slug>');
   });
 
   it('ST-S33-EX-02: 扫描失败可重试、不回滚已初始化 logos/（partial 保留、重扫按 key 覆盖）', () => {

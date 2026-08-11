@@ -94,6 +94,8 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
       violations: result.violations,
       // S38（delta-r1 F4）：warnings 仅非空时出现，否则整个字段省略（零漂移，契约见 cli-json-output §3.15）
       ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
+      // S39：仅 on-touch-v1 提案出现；legacy 完全省略，保持 JSON 零漂移。
+      ...(result.baseline_closure ? { baseline_closure: result.baseline_closure } : {}),
     })));
   } else {
     console.log(`change-lint: ${result.slug}`);
@@ -144,6 +146,15 @@ function checkOfCode(code: string): number {
     case 'delta_implicit_id_removal':
     case 'delta_removed_unknown_id':
     case 'delta_section_anchor_unresolvable': return 8;
+    case 'baseline_closure_declaration_missing':
+    case 'baseline_closure_malformed':
+    case 'baseline_closure_target_missing':
+    case 'delta_target_duplicate':
+    case 'delta_target_mode_mismatch':
+    case 'baseline_closure_ambiguous':
+    case 'delta_target_unplanned':
+    case 'create_target_incomplete':
+    case 'non_markdown_delta_invalid': return 9;
     default: return 7;
   }
 }

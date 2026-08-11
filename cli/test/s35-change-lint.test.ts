@@ -965,7 +965,7 @@ describe('S35 — 同源锚与契约', () => {
     }
   });
 
-  it('UT-S35-21: 违规集契约——四字段必填、26 码闭合（S37 扩册 L8 三码）、flow_reason 仅 L2/L3/L5 且恒 string、L1→L7 再 path 排序', () => {
+  it('UT-S35-21 / UT-S35-37: 违规集契约——四字段必填、35 码闭合（含 L9 九码）、排序稳定', () => {
     const { root, dir } = setup({
       proposal: proposalMd({ deploy: '是', reuseLines: ['- UT-S99-99 — 不存在'] }),
       tasks: '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/prd/`', // 缺 [code]、无测试规划 → L2+L3；deploy 是无 [deploy] → L5
@@ -975,7 +975,7 @@ describe('S35 — 同源锚与契约', () => {
     const { violations } = lintViolations(root);
     expect(violations.length).toBeGreaterThanOrEqual(4);
     const registry = new Set<string>(CHANGE_LINT_VIOLATION_CODES);
-    expect(registry.size).toBe(26); // S37 merge-conservation-archive-audit 扩册 L8 三码（§3.15 契约 26 码）
+    expect(registry.size).toBe(35); // S39 baseline-on-touch 扩册 L9 九码（§3.15 契约 35 码）
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');
@@ -1424,7 +1424,7 @@ describe('S35 — ST 场景测试', () => {
     expect(l3.map((v: any) => v.message.includes('UT-S99-91') ? 1 : v.message.includes('UT-S99-92') ? 2 : 3)).toEqual([1, 2, 3]);
   });
 
-  it('ST-S35-06: 只读性（项目级，真实 CLI）——五条路径运行前后全量条目（含 symlink/空目录）与哈希完全不变', { timeout: 120_000 }, () => {
+  it('ST-S35-06 / ST-S35-12: 只读性（项目级，真实 CLI）——五条路径运行前后文件集合与哈希完全不变', { timeout: 120_000 }, () => {
     // ① exit 0（非 GUI 全过）——夹具含空目录与 symlink，验证 F17 快照覆盖非普通文件
     const p0 = setup({ proposal: proposalMd({ codeRequired: false }) });
     mkdirSync(join(p0.root, 'empty-dir'), { recursive: true });
@@ -1457,4 +1457,3 @@ describe('S35 — ST 场景测试', () => {
     expect(existsSync(join(g1.dir, 'UI_PROTOTYPE_HASHES.json'))).toBe(false);
   });
 });
-

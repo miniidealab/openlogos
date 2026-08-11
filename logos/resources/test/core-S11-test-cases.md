@@ -175,3 +175,26 @@
 - [ ] 无活跃提案零漂移边界：UT-S11-54
 - [ ] 注册表 lint（字面量不经注册表 → 失败）：UT-S11-55
 - [ ] 漂移注入三方同步 + pre-implement 不输出 loop_state 反面锚：UT-S11-56、UT-S11-57
+
+## baseline-on-touch：status journal 恢复门测试
+
+> 本节补充 S11 status 的事务一致性回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S11-B01 | 安全 partial 仍输出正常 status | adopted、仅 open run/未提交 staging、无未终结 journal | `status` / `status --format json` | staging 被排除；成功 envelope 的 `baseline_seed_state=partial`；正常阶段/提案前沿可读取 |
+| UT-S11-B02 | 未终结 journal 恢复失败硬阻断 | journal=`prepared|committing`，staging/backup 损坏使前滚与回滚均失败；对 resources/index/coverage 读取点设哨兵 | `status --format json` | 非零 `baseline_commit_in_progress` error envelope；读取哨兵均为 0；不输出伪成功 modules/coverage/action |
+| UT-S11-B03 | journal 可恢复后只读一致集合 | 分别准备可前滚全新与可回滚全旧夹具 | `status --format json` | 恢复与读取位于同一锁序；输出只匹配完整全新或全旧 fixture，不出现混合 hash/index/state |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S11-B01 | status/next 对安全 partial 与未终结事务分流 | 先构造仅 staging 的 partial，再在多文件 rename/index/state 各崩溃点构造可恢复/不可恢复 journal | 分别执行 status 与 next，并记录标准资源读取哨兵 | 安全 partial 两入口成功且 staging 不采信；可恢复夹具只读全旧/全新；不可恢复夹具两入口均硬报 `baseline_commit_in_progress`、读取计数为 0 |
+
+### golden 边界
+
+- 无 journal、已成功恢复及安全 partial 的既有 status golden 只按本案明确改变的 seed/action 字段重拍。
+- 不可恢复 journal 是操作错误夹具，不得录成正常 status golden，也不得以“始终输出 baseline_seed_state”覆盖错误 envelope。

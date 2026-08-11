@@ -76,7 +76,7 @@ function scaffoldAdopted(root, seedState, candidatesYaml) {
   if (candidatesYaml) writeFileSync(join(root, 'logos/resources/prd/core-system-map.md'), reverseDoc(candidatesYaml));
 }
 
-// SMOKE-core-44：adopt 后 next 输出逆向建基线引导（真 adopt）。
+// SMOKE-core-44：adopt 后 next 主动作直接 change；seed 只作可选说明（真 adopt）。
 try {
   withTempProject('smoke-bfa-44-', (root) => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
@@ -84,7 +84,8 @@ try {
     if (adoptRes.status !== 0) throw new Error(`adopt failed: ${adoptRes.stderr?.slice(0, 300)}`);
     const nextRes = runCli(root, ['next']);
     const out = `${nextRes.stdout}\n${nextRes.stderr}`;
-    if (!out.includes('openlogos baseline-seed begin')) throw new Error('next missing reverse-baseline guidance');
+    if (!out.includes('openlogos change <slug>')) throw new Error('next missing direct-change guidance');
+    if (!out.includes('baseline-seed begin') || !out.includes('可选')) throw new Error('next missing optional seed accelerator note');
     if (out.includes('openlogos change add-baseline-docs')) throw new Error('next still suggests add-baseline-docs');
   });
   writeSmoke('SMOKE-core-44', 'pass');
@@ -194,10 +195,10 @@ try {
     if (partial.data.baseline_seed_state !== 'partial') throw new Error(`expected partial, got ${partial.data.baseline_seed_state}`);
     if (!Array.isArray(partial.data.missing) || partial.data.missing.length === 0) throw new Error('partial missing not reported');
     if (existsSync(join(root, T1))) throw new Error('partial wrongly committed incomplete set to target');
-    // next/status 一致指向 baseline-seed 恢复
+    // S39：安全 partial 不劫持主动作，next 仍直接 change；恢复命令只在可选说明中出现。
     const nd = parseEnvelope(runCli(root, ['next', '--format', 'json'])).data;
     const ndCmd = nd.modules?.[0]?.command ?? nd.command ?? '';
-    if (!String(ndCmd).includes('openlogos baseline-seed')) throw new Error(`next did not point to baseline-seed: ${ndCmd}`);
+    if (ndCmd !== 'openlogos change <slug>') throw new Error(`partial next did not point to direct change: ${ndCmd}`);
     // stale run_id commit 非零退出、不写状态
     const stale = runCli(root, ['baseline-seed', 'commit', '--module', 'core', '--run-id', 'seed-core-9999', '--format', 'json']);
     if (stale.status === 0) throw new Error('unknown run_id commit should be non-zero');

@@ -87,10 +87,10 @@ graph LR
 
 ## S33 依赖关系（brownfield-adopter）
 
-- **S20 → S33**：`openlogos adopt`（S20）在初始化时写入模块级 `baseline_seed_state: required`，把逆向建种子基线自动衔接到 S33；S33 的种子基线产出以 S20 生成的 `logos/` 结构与 `bootstrap: adopted` 为前提。
-- **S33 → S05**：S33 建立的现状基线覆盖率经 `baseline_coverage` 由 S05（next）/ S11（status）展示；`baseline_seed_state`（required/partial/seeded）驱动 S05 的 adopted 路径引导（取代旧 add-baseline-docs 引导）。
-- **S33 → verify（S13）**：`verify` 对逆向 spec（`verified:false`）**不产出软告警**，也**不硬失败**（grandfather 豁免存量代码）。
-- **provenance 权威源**：文档内具名章节 `## 逆向基线来源` + `candidates[]`（详见架构 `core-06-provenance-data-model`）；`logos-project.yaml` 为派生索引、非权威。
+- **S20 → S33（显式可选）**：S20 `openlogos adopt` 只完成确定性初始化并可写兼容初值 `baseline_seed_state: required`，默认交接 S09/S39 创建首个 change；只有用户或宿主显式选择 eager seed 时才进入 S33。S33 仍以 S20 生成的 `logos/` 结构与 `bootstrap: adopted` 为前提。
+- **S33 → S05/S11（旁路状态 + 恢复硬门）**：恢复门通过后，S33 的 `baseline_coverage` 与 `required|partial|seeded` 只作旁路信息，S05 无提案主动作始终为 change，S11 输出正常状态；未终结 journal 无法恢复时二者都在任何 resources/index/coverage 读取前硬报 `baseline_commit_in_progress`，不派生正常状态。
+- **S33 → S39（可选证据）**：仅 committed/fresh seed 可帮助定位存量事实；S39 仍独立完成触达目标闭包，partial staging 或 stale seed 不作为正式目标存在性依据。
+- **S33 → verify（S13）**：`verify` 对逆向 spec（`verified:false`）不产出软告警，也不硬失败（grandfather 豁免存量代码）。
 
 ## S34 依赖关系（add-feature-model）
 
@@ -105,3 +105,51 @@ graph LR
 - **红线：导航 ≠ 可信度**：候选进 `scenarios[]` 只是导航注册，**不**改其 provenance `verified`；S33 覆盖率（`human_verified / 分母`）不变、不虚增。
 - **status/next 只读 `scenarios[]`**：不直接吞逆向候选，adopted 项目在 AI 回写前零漂移。
 - **结构分离**：S33 用 provenance 章节 + `baseline_index` 追踪可信度；S34 用 `scenarios[]` + `features[]` 做导航分组。二者互不改写对方语义。
+
+## S39 场景登记与依赖关系（baseline-on-touch）
+
+### 场景地图增量
+
+| 场景 | 名称 | Feature | 触发入口 | 产出 |
+|---|---|---|---|---|
+| S39 | 提案规划时按触达目标形成规格闭包 | F04 变更提案与切片生命周期 | S09 write-tasks | 闭包矩阵、唯一 delta tasks、完整 MODIFY/CREATE 目标 |
+
+### 依赖关系
+
+```mermaid
+flowchart LR
+    S20[S20 adopted 接入] --> S09[S09 创建提案]
+    S33[S33 可选 eager seed] -. 可选证据 .-> S39[S39 按触达闭包]
+    S33 -. 状态/事务 .-> S11[S11 status 恢复门]
+    S11 -. 一致视图 .-> S39
+    S09 --> S39
+    S34[S34 feature/scenario 身份] --> S39
+    S39 --> S35[S35 change-lint L9]
+    S39 --> SC[scenario-architect]
+    SC --> API[api-designer 条件适用]
+    SC --> DB[db-designer 条件适用]
+    SC --> TEST[test-writer]
+    API --> ORCH[test-orchestrator]
+    DB --> TEST
+    S35 --> MERGE[merge / merge-executor]
+```
+
+### 依赖说明
+
+1. S20 完成后直接进入 S09，不再强制经过 S33。
+2. S33 是虚线可选依赖：committed/fresh seed 可减少扫描；恢复门通过后任意 seed state 都不阻断 S39，但未终结 journal 无法恢复时在任何规格读取前硬阻断。
+3. S11 与 S39 复用 S33 的同一 journal 恢复入口：status/next/闭包扫描在任何标准资源读取前先得到全旧或全新一致视图，无法恢复统一硬报 `baseline_commit_in_progress`。
+4. S39 复用 S34 的 feature/scenario 身份模型；首次触达 candidate 时可在 apply 事务登记身份，但不升级 provenance verified。
+5. S39 必须先生成有效场景时序，再决定 API/DB；API 适用时 test-orchestrator 同步适用。
+6. S35 在 plan/spec 两阶段校验结构事实，merge 继续纵深校验；不新增 flow node 或 gate。
+
+### 场景索引增量
+
+- `core-S39-baseline-on-touch.md`：受影响场景识别、目标适用性、canonical path 去重、MODIFY/CREATE/SKIP、effective view、专业 Skill 顺序路由、L9 与 merge apply。
+- `core-S11-status-progress.md`：精确替换 journal 成功降级异常，并新增 status 读取前恢复硬门；对应测试补 UT-S11-B01…B03、ST-S11-B01。
+- 对应测试：`logos/resources/test/core-S39-test-cases.md`。
+- 对应决策：`logos/resources/decisions/core-D02-baseline-on-touch.md`。
+
+### 元数据 apply
+
+merge-executor apply 时把 S39 登记为 `feature: F04`，将 `scenario_counter.next_id` 从 39 推进到 40，并把场景与测试文档纳入 `resource_index`。失败必须回滚且不得写 `SPEC_MERGED`。

@@ -26,12 +26,22 @@ import {
 import { analyzeUiDeclarationStructure, isGuiProductType } from './ui-first.js';
 import { readProjectYaml } from './project-yaml.js';
 import { evaluateUiPrototype } from '../commands/check-ui-prototype.js';
+import {
+  canonicalTargetFromDeltaPath,
+  evaluateBaselineClosure,
+  type BaselineClosureSummary,
+} from './baseline-closure.js';
+import {
+  BaselineCommitInProgressError,
+  listBaselineSeedModuleIds,
+  withRecoveredReadLocks,
+} from './baseline-seed-txn.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
 export type { DeltaEntryClassification, MergeDisposition, LintValidity };
 
-// ── violation code 闭合注册表（26 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
+// ── violation code 闭合注册表（35 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
 
 export const CHANGE_LINT_VIOLATION_CODES = [
   // L1–L6（7 码）
@@ -64,6 +74,16 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'delta_implicit_id_removal',
   'delta_removed_unknown_id',
   'delta_section_anchor_unresolvable',
+  // L9 S39 on-touch 闭包 9 码
+  'baseline_closure_declaration_missing',
+  'baseline_closure_malformed',
+  'baseline_closure_target_missing',
+  'delta_target_duplicate',
+  'delta_target_mode_mismatch',
+  'baseline_closure_ambiguous',
+  'delta_target_unplanned',
+  'create_target_incomplete',
+  'non_markdown_delta_invalid',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -584,11 +604,7 @@ export function resolveModifiedSectionKeys(deltaContent: string, targetContent: 
 
 /** delta 相对路径（`deltas/<category>/<rest>`）→ 项目根相对目标路径；无法映射（unknown 类别 / 根级直放）→ null。 */
 export function deltaTargetProjectPath(relativePath: string): string | null {
-  const segs = relativePath.split('/');
-  if (segs.length < 3 || segs[0] !== 'deltas') return null;
-  const mapped = (DELTA_TO_RESOURCE as Record<string, string>)[segs[1]];
-  if (!mapped) return null;
-  return `${mapped}/${segs.slice(2).join('/')}`;
+  return canonicalTargetFromDeltaPath(relativePath);
 }
 
 // ── 前置重构⑤：共享 proposal-context resolver（模块归属单一事实源）──
@@ -660,10 +676,18 @@ export type ChangeLintOpErrorCode =
   | 'slug_not_found'
   | 'slug_invalid'
   | 'module_unresolved'
-  | 'artifact_unreadable';
+  | 'artifact_unreadable'
+  | 'baseline_commit_in_progress';
 
 export type ChangeLintRunResult =
-  | { ok: true; slug: string; violations: ChangeLintViolation[]; warnings: ChangeLintWarning[]; checks: { id: number; label: string; violations: number }[] }
+  | {
+      ok: true;
+      slug: string;
+      violations: ChangeLintViolation[];
+      warnings: ChangeLintWarning[];
+      checks: { id: number; label: string; violations: number }[];
+      baseline_closure?: BaselineClosureSummary;
+    }
   | { ok: false; errorCode: ChangeLintOpErrorCode; message: string };
 
 /**
@@ -736,6 +760,26 @@ function pushViolation(acc: CheckAcc, check: number, v: ChangeLintViolation): vo
  * proposal.md（含 module resolver）→ tasks.md → deltas/**（含全量可读性探测——F7）。
  */
 export function runChangeLint(root: string, proposalDir: string, slug: string): ChangeLintRunResult {
+  try {
+    const locked = withRecoveredReadLocks(root, new Date().toISOString(), listBaselineSeedModuleIds(root),
+      () => runChangeLintLocked(root, proposalDir, slug));
+    if (!locked.ok) {
+      return {
+        ok: false,
+        errorCode: 'baseline_commit_in_progress',
+        message: `模块 ${locked.inProgress.join(', ')} 的未终结种子提交无法在 lint 读取前恢复`,
+      };
+    }
+    return locked.value;
+  } catch (e) {
+    if (e instanceof BaselineCommitInProgressError) {
+      return { ok: false, errorCode: 'baseline_commit_in_progress', message: e.message };
+    }
+    throw e;
+  }
+}
+
+function runChangeLintLocked(root: string, proposalDir: string, slug: string): ChangeLintRunResult {
   let proposalContent = '';
   let tasksContent = '';
   const proposalPath = join(proposalDir, 'proposal.md');
@@ -904,8 +948,11 @@ export function runChangeLint(root: string, proposalDir: string, slug: string): 
 
   // L8：条目守恒（S37）——仅 mergeable+valid 的 `.md` 规格 delta（原型资产天然被 .md 过滤排除）；
   // 目标主文档不存在（全新文档）跳过；目标存在但不可读 → artifact_unreadable（操作级红线）。
+  // SPEC_MERGED 后已没有 merge 前目标快照，拿 delta 再对最终目标做守恒会制造假阳性；纵深守恒必须发生在
+  // merge 写 prompt 前。因此 post-merge 只运行 L9 的最终事实/P==T==D 检查，不重放 L8。
   const sectionWriters = new Map<string, string[]>(); // `${targetRel}#${sectionLine}` → 写者 delta relPath 列表（code-r1 F1 跨文件单写者）
-  for (const entry of deltaEntries) {
+  const postMerge = existsSync(join(proposalDir, 'SPEC_MERGED'));
+  for (const entry of postMerge ? [] : deltaEntries) {
     if (!(entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid' && entry.relativePath.endsWith('.md'))) continue;
     const targetRel = deltaTargetProjectPath(entry.relativePath);
     if (!targetRel) continue;
@@ -942,7 +989,16 @@ export function runChangeLint(root: string, proposalDir: string, slug: string): 
     }
   }
 
-  // 全序稳定排序：①检查项 L1→L8；②path 字典序；③源位置出现序；④code；⑤message
+  // L9：S39 on-touch 基线闭包。legacy（无 policy 且 tasks 无 mode）完全省略本检查，保持既有输出零漂移；
+  // 新声明或 mode 语法一旦在场即 fail-closed，所有调用方消费同一 evaluator。
+  const closure = evaluateBaselineClosure({
+    root, proposalDir, slug, proposalContent, tasksContent, deltaEntries, deltaContents,
+  });
+  if (closure.active) {
+    for (const v of closure.violations) pushViolation(acc, 9, v);
+  }
+
+  // 全序稳定排序：①检查项 L1→L9；②path 字典序；③源位置出现序；④code；⑤message
   const sorted = [...acc.violations].sort((a, b) => {
     const oa = acc.order.get(a)!;
     const ob = acc.order.get(b)!;
@@ -967,6 +1023,7 @@ export function runChangeLint(root: string, proposalDir: string, slug: string): 
     { id: 6, label: `delta 路径合法（${mergeableCount} mergeable / ${invalidCount} invalid）`, violations: countFor(6) },
     ...(guiActive ? [{ id: 7, label: 'UI 声明结构合法', violations: countFor(7) }] : []),
     { id: 8, label: '条目守恒（ID 隐式删除拦截）', violations: countFor(8) },
+    ...(closure.active ? [{ id: 9, label: 'on-touch 基线闭包（P/T/D 与 CREATE 完整度）', violations: countFor(9) }] : []),
   ];
 
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
@@ -975,5 +1032,8 @@ export function runChangeLint(root: string, proposalDir: string, slug: string): 
   const warnings = computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry)
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
-  return { ok: true, slug, violations: sorted, warnings, checks };
+  return {
+    ok: true, slug, violations: sorted, warnings, checks,
+    ...(closure.summary ? { baseline_closure: closure.summary } : {}),
+  };
 }

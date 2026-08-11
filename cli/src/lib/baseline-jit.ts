@@ -5,15 +5,15 @@
  */
 import { scanModuleCandidates } from './baseline-provenance.js';
 import type { BaselineSeedState } from './baseline-provenance.js';
-import { withBaselineReadLock, listRunIds, readRunRecord } from './baseline-seed-txn.js';
+import {
+  BaselineCommitInProgressError, withBaselineReadLock, listRunIds, readRunRecord,
+} from './baseline-seed-txn.js';
 
 /** `effectiveBaselineSeedState` 的返回：有效状态 + 是否为 legacy 派生值（yaml 未落盘）。 */
 export interface EffectiveBaselineSeedState {
   state: BaselineSeedState;
   /** true = 派生值（yaml 缺省，尚未经 sync 迁移落盘），供 legacy 迁移提示与 sync 迁移使用。 */
   legacy: boolean;
-  /** true = 派生时模块锁被占用（提交进行中），state 为保守兜底 `partial`（不据半提交集合扫描）。 */
-  commit_in_progress?: boolean;
 }
 
 /**
@@ -28,7 +28,7 @@ export interface EffectiveBaselineSeedState {
  *
  * 锁纪律（继承 F7 恢复门）：派生读权威文档与 run 记录，必须在模块读锁区间内——缺省派生时本函数自取读锁；
  * 调用方已持锁（如 status 的 withBaselineReadLock 区间、baseline-seed 的写锁区间）则传 `assumeLocked: true` 复用。
- * 锁被占用（提交进行中）→ 不做锁外扫描，返回保守兜底 `partial` + `commit_in_progress: true`（契约恒输出仍成立）。
+ * 锁被占用（提交进行中）→ 不做锁外扫描并硬报 `baseline_commit_in_progress`；禁止把半新视图降级成正常 `partial`。
  */
 export function effectiveBaselineSeedState(
   root: string,
@@ -47,6 +47,10 @@ export function effectiveBaselineSeedState(
   };
   if (opts?.assumeLocked) return { state: derive(), legacy: true };
   const res = withBaselineReadLock(root, moduleId, new Date().toISOString(), derive);
-  if (!res.ok) return { state: 'partial', legacy: true, commit_in_progress: true };
+  if (!res.ok) {
+    throw new BaselineCommitInProgressError(
+      `baseline_commit_in_progress — 模块 ${moduleId} 的 legacy seed 状态无法在恢复成功前派生`,
+    );
+  }
   return { state: res.value, legacy: true };
 }

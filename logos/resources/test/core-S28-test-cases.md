@@ -30,7 +30,7 @@
 | UT-S28-21 | 【R7】launched builtin code skip → S25 FLOW_SCHEMA_INVALID（非省略） | **launched** overlay `skip code`（builtin） | 派生 / `next` | `FLOW_SCHEMA_INVALID`（S25 派生入口 fail loud）；根本不进 S28 next_node 省略逻辑 |
 | UT-S28-22 | 【R5】all_done → 省略 next_node | 流程走完（all_done） | `next --format json` | 输出**不含** `next_node`（命令级建议非真实 flow node） |
 | UT-S28-23 | 【R5】launched 无 active proposal → 省略 | launched、无 active proposal（建议 `change <slug>`） | `next --format json` | 输出**不含** `next_node` |
-| UT-S28-24 | 【R5】adopted 补 baseline → 省略 | adopted、建议 `change add-baseline-docs` | `next --format json` | 输出**不含** `next_node` |
+| UT-S28-24 | 【R5】adopted 三态 direct-change → 省略 | adopted、`baseline_seed_state` 参数化为 required/安全 partial/seeded、无 active proposal、恢复门通过，建议 `openlogos change <slug>` | `next --format json` | 三态均输出 change 主动作且**不含** `next_node`；不产生 `add-baseline-docs` fixture，seed 仅旁路可选信息 |
 | UT-S28-25 | 【R6】initial 解析用 PHASE_KEY_TO_NODE_ID 正向 map | initial 各 phase | `next --format json` | 各 phase 正确映射到 builtin node id（与正向表 NODE_TO_PHASE_KEY 1:1 但**不**反查实现） |
 | UT-S28-26 | 范围边界：status/watch 不输出 next_node | 同有当前节点项目 | `status` / `watch --format json` | 输出**不含** `next_node` key（仅 next 暴露） |
 
@@ -44,14 +44,14 @@
 | ST-S28-05 | 【R4】--auto 放行分流 | Step 2→3 | ready-to-merge/deploy 可跳 + ready-to-delta 可跳各一例 | 非 plan gate：省略 next_node、action proceed；plan-exit：写 `PLAN_APPROVED` 并输出 `next_node.id=="write-delta"` |
 | ST-S28-06 | 【R7】loop 阻塞派工作节点端到端 | Step 4 | set-loop 激活、verify FAIL → `next` | `next_node.id:code`（非 verify）；与 loop_state 并存 |
 | ST-S28-07 | 【R7】loop escalated 省略端到端 | Step 4 | 迭代至达上限均 fail → `next` | 省略 next_node；`escalated:true` |
-| ST-S28-08 | 【R5】命令级建议省略端到端 | Step 7 | all_done / 无 active proposal / 补 baseline | 各省略 next_node |
+| ST-S28-08 | 【R5】命令级建议省略端到端 | Step 7 | all_done / launched 无 active proposal / adopted 三态无 active proposal且恢复门通过 / launch | 各命令级建议均省略 next_node；adopted 三态主动作均为 change，不存在 add-baseline-docs 分支 |
 | ST-S28-09 | golden：干净基线重新 baseline、diff 仅 next_node | 安全红线 | 重跑 `next --json` 快照 + 逐项复核 diff | `next` 快照唯一新增 / 调整 `next_node`，无其它字段漂移；`status`/`watch`/`flow show` 快照逐字节不变 |
 
 ## 三、异常测试用例
 | ID | 描述 | 覆盖异常 | 操作 | 预期 |
 |----|------|----------|------|------|
 | ST-S28-EX-1 | launched builtin code skip → 报错（非省略） | EX-1 | launched overlay `skip code` → 派生 | `FLOW_SCHEMA_INVALID`（S25 入口），不进 S28 省略逻辑 |
-| ST-S28-EX-2 | 命令级建议省略（非报错） | EX-2 | all_done / change / baseline / launch | 各正常省略 `next_node`、无报错 |
+| ST-S28-EX-2 | 命令级建议省略（非报错） | EX-2 | all_done / launched 或 adopted 无 active proposal→change / launch | 各正常省略 `next_node`、无报错；adopted 不产生 add-baseline-docs 分支 |
 | ST-S28-EX-3 | initial loop 阻塞 + code 缺失/被 skip → 省略 | EX-3 | initial set-loop + skip code、verify FAIL | 省略 next_node、loop_state 仍在；不报错 |
 | ST-S28-EX-4 | 已存在 PLAN_APPROVED 后重复 next --auto | EX-4 | ready-to-delta 已被消费，尚未产出 delta | `next --auto --format json` | 不再走 auto 放行省略；输出 `next_node.id=="write-delta"` |
 
@@ -66,7 +66,7 @@
 - [ ] 【R4】--auto 放行分流：UT-S28-15、ST-S28-05、ST-S28-EX-4
 - [ ] 【R7】loop 阻塞未达上限→code（overlay current_node 优先 / 重绑 hints）：UT-S28-16、UT-S28-17、UT-S28-18、ST-S28-06
 - [ ] 【R7】code 被 overlay skip→省略（initial）/ launched builtin skip→FLOW_SCHEMA_INVALID / 达上限→省略（普通 next 省略 + escalated；`--auto` 才输出 loop-exhausted gate 字段）：UT-S28-19、UT-S28-20、UT-S28-20b、UT-S28-21、ST-S28-07、ST-S28-EX-1、ST-S28-EX-3
-- [ ] 【R5】all_done / 无 active proposal（建议 change）/ 补 baseline→省略：UT-S28-22、UT-S28-23、UT-S28-24、ST-S28-08、ST-S28-EX-2
+- [ ] 【R5】all_done / launched 无 active proposal / adopted 三态无 active proposal（均建议 change）/ launch→省略：UT-S28-22、UT-S28-23、UT-S28-24、ST-S28-08、ST-S28-EX-2
 - [ ] 【R6】initial 用 PHASE_KEY_TO_NODE_ID 正向 map（非反查）：UT-S28-25
 - [ ] 范围边界（status/watch 不输出 next_node）：UT-S28-26
 - [ ] golden：干净基线重新 baseline、diff 仅 next_node（其它快照不变）：ST-S28-09

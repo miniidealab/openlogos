@@ -140,3 +140,54 @@
 - `基于 API 规格帮我生成 S01 的编排测试`
 - `帮我把所有场景的正常路径编排出来`
 - `帮我给 S02 补充异常路径的编排测试`
+
+## S39 delta 模式：API 场景的完整编排闭包
+
+### 适用性
+
+on-touch-v1 闭包中 API/interface 非 SKIP 时，本 Skill 强制适用；API 明确 SKIP 时，编排同样 SKIP，并把同一时序证据写回 proposal 闭包矩阵。不得出现 API 适用但编排测试未规划。
+
+### 输入
+
+- effective scenario sequence（唯一编排起点）；
+- effective OpenAPI/消息协议；
+- effective DB/状态约束；
+- UT/ST 验收与环境/鉴权要求。
+
+不得读取旧 API 绕过当前 scenario delta，不采信 seed staging。
+
+### MODIFY
+
+- 编排目标存在时，把新增请求链、断言与既有流程修改聚合进同一 delta；
+- 保留未变更的稳定编排 ID/场景，遵守 S37；
+- 多 API 场景共享目标时 canonical path 去重，不拆基线/增量。
+
+### CREATE
+
+目标缺失时返回完整可执行编排规格，至少包含：
+
+- 真实场景/编排测试 ID；
+- 前置环境、认证、fixture 与初始数据；
+- 按 sequenceDiagram 顺序的请求/消息链；
+- 每步状态码、schema、业务状态与持久化副作用断言；
+- 异常、重试、幂等、权限、并发中适用分支；
+- cleanup/隔离与重复执行幂等；
+- 失败诊断与 OpenLogos reporter 输出到 `test-results.jsonl`；
+- API operationId/scenario step 追溯。
+
+禁止只有 happy path、只有 curl 示例、无断言/cleanup/reporter 的骨架。
+
+### 输出所有权与下游
+
+把编排内容、真实 ID、runner/fixture 实现影响交回 change-writer，由其写唯一 target delta。新增编排 ID 必须进入 merge 后 slice-planner 的实现证据集。
+
+### SKIP 输出
+
+非 API 项目不得创建空 `deltas/scenario/`。返回：category=orchestration、mode=SKIP、关联 scenario、证据“effective sequence 无外部接口边界”。
+
+### 完成检查
+
+- 每个 API operation/message 至少有主路径和适用异常断言；
+- 编排顺序与 effective sequence 一致；
+- target mode/路径/cardinality 合法；
+- 无 JIT baseline 确认或 verified 条件。

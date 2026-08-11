@@ -312,3 +312,60 @@ resource_index:
 ### 存量项目回填引导
 
 存量项目场景已平铺、无 feature 归属时，引导用户运行 `openlogos feature-backfill`：CLI 生成 `logos/feature-backfill-prompt.md`（打包场景清单 + 现有 feature-specs 文档 + 当前 yaml），AI 据此语义聚类回写 `features[]` / `scenario.feature` / `feature_counter`（幂等、只补未分组、非强制）。
+
+## S39 delta 模式：目标存在则修改，缺失则全量创建
+
+### 触发
+
+change-writer 的 on-touch-v1 闭包判定把某 scenario target 标为 MODIFY/CREATE，并咨询本 Skill 生成内容时启用。当前 change-writer 保持最终 delta 文件所有权；本 Skill 返回内容与校验结果，不得另写第二份同目标 delta。
+
+### 输入
+
+- proposal 中本次 Why/验收；
+- 已合并需求/feature/architecture；
+- 当前 change 的 effective view；
+- 可重算代码/测试/配置现状证据；
+- 拟定 feature/scenario 身份与模式。
+
+不得从代码推断历史 Why，不读取其它 change/archive/partial seed staging。
+
+### MODIFY
+
+目标存在时读取完整被触及章节：
+
+- 已有锚用 MODIFIED，并携整节全量内容遵守 S37；
+- 需要新章节时可在同一 delta 用 ADDED；
+- 多场景共享 overview/traceability 时把所有变更交回同一 target delta。
+
+### CREATE
+
+目标缺失时返回可独立成立的完整场景文档，至少包含：
+
+1. 标题、SXX、feature、来源；
+2. 场景目标与用户价值；
+3. 参与者及职责；
+4. 前置/成功后置条件；
+5. 完整 Mermaid `sequenceDiagram` 主路径；
+6. 步骤说明；
+7. alt/异常/边界用例；
+8. 与 requirement/API/DB/test/decision 的追溯；
+9. 明确非目标与安全边界。
+
+禁止只给 skeleton/TODO。CREATE 仍由 change-writer 写 `## ADDED — ...（全新场景文档）`，不使用 CREATE marker。
+
+### API/DB 派生接口
+
+输出必须明确：
+
+- 哪些交互是 HTTP/RPC/消息边界，供 api-designer 判定；
+- 哪些步骤读写持久化，供 db-designer 判定；
+- 主/异常路径与验收点，供 test-writer/test-orchestrator 生成真实用例。
+
+若无法判断，把具体缺口返回 change-writer 标 AMBIGUOUS；不在 delta-writing 启动 JIT 人工确认。
+
+### 完成检查
+
+- 时序参与者与步骤说明一一对应；
+- API 先有时序来源；异常至少覆盖输入、依赖、并发/幂等或权限中适用项；
+- 无 verified/confirmed/baseline warning 写入；
+- 返回的目标路径与 change-writer 提供的 canonical target 一致。

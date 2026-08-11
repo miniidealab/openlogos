@@ -499,3 +499,105 @@ AI 只负责驱动内容修改。半自动 / 手动下不得在未获明确授�
 
 **delta 产出的 L8 提醒（S37 条目守恒）**：每个触及带稳定 ID 条目规格的 `.md` delta，其 MODIFIED 块必须在**结构位置**携带目标章节全量既有 ID 条目（散文提及不算保留）；删整节走 REMOVED，删部分条目走「MODIFIED 剩余全量 + REMOVED-ITEMS 同锚点名」成对写法；标题重复时用标题路径锚（` > ` 连接父级）。既有 ID 未保留、未点名、未随整节删除 → `delta_implicit_id_removal`；点名越界 / 拼写不存在 → `delta_removed_unknown_id`；锚解析 0 或多命中 → `delta_section_anchor_unresolvable`。lint exit 2、merge 拒绝生成 MERGE_PROMPT。全新文档 delta 不受守恒约束。交付前按「守恒写作规范」第 5 条自查一遍 ID 去处。
 
+## S39：按触达目标形成规格闭包（baseline-on-touch）
+
+> 本节在 launched change 的 Step 2、Step 5、Step 6 强制生效；权威契约见 `spec/baseline-closure.md`。它替代“用户先单独建全局基线”的默认工作方式，但不删除显式可选的 brownfield seed。
+
+### Step 2 扩展：先识别触达场景，再枚举目标
+
+1. 从 proposal 意图提取用户可观察行为、验收与非目标。
+2. 读取 `logos-project.yaml`、resource_index 及关联需求/feature/scenario；必要时只读代码、测试、配置、路由、DDL 与 committed seed。
+3. 绑定已有 feature/scenario；不存在稳定身份时规划新 scenario。
+4. 对每个场景按 Why → What → How 枚举：requirement、feature、architecture、scenario sequence、API、DB、UT/ST、API orchestration、deployment/smoke。
+5. 每个类别记录适用性证据；API 必须从时序派生，API 适用则编排测试适用。
+6. 代码/测试只证明现状；本次意图来自 proposal。无法判断的产品选择标 `AMBIGUOUS`，不猜测。
+
+adopted 项目的 `baseline_seed_state` 任意值都不构成 change 前置门；但在读取 resources/index/coverage 或运行 EvidenceScanner 之前，必须先在同一模块锁内检查并恢复未终结 seed commit journal。只有恢复成功、确认不存在未终结 journal，或仅有可排除的 open run/未提交 staging 时才能执行本步骤；无法恢复硬报 `baseline_commit_in_progress`。历史自动 `skip_phases` 仅豁免 Initial 完整性，不能永久屏蔽本次实际适用目标。
+
+### Step 5 扩展：闭包声明与一目标一 task
+
+proposal 必须写：
+
+```yaml
+baseline_closure:
+  policy: on-touch-v1
+  schema_version: 1
+  unit: canonical-merge-target-path
+  delta_cardinality: exactly-one-per-non-skip-target
+  effective_view: merged-resources-plus-current-change-deltas
+  ambiguity: block-before-existing-plan-exit
+  standalone_baseline_required: false
+  jit_confirmation: disabled
+  touched_scenario_ids: [S05, S39]
+  targets:
+    - category: scenario
+      scenario_ids: [S05]
+      mode: MODIFY
+      delta_path: "deltas/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md"
+      reason: "本案改变 next 的 adopted 默认动作。"
+      evidence: ["target_exists: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md"]
+      missing_evidence: []
+```
+
+这是唯一持久计划源；人读矩阵只能由它投影。`touched_scenario_ids` 必须独立列全，不能从 targets 反推；每个 target 固定含 `category/scenario_ids/mode/delta_path/reason/evidence/missing_evidence`。字段/模式组合、排序、重复 key 与逐场景强制/条件维度完备规则严格遵循 `spec/baseline-closure.md` §5.1–5.3。
+
+目标判定：
+
+- 文件存在 → `[MODIFY]`；同 delta 可组合 MODIFIED/ADDED。
+- 文件缺失 → `[CREATE]`；同路径 delta 用 ADDED 产完整文档。
+- 不适用 → target 写 `SKIP + delta_path:null + 非空 reason/evidence + missing_evidence:[]`，不创建 checkbox。
+- 信息不足 → target 写 `AMBIGUOUS + delta_path:null + 非空 missing_evidence`；保持 plan 未完成。
+
+把 delta path 映射为 canonical target 后去重。多个场景命中同 target 必须聚合为一条 task，禁止“建立基线”与“实现增量”两条任务。每条 task 指向精确文件，不能只写目录。
+
+写完 proposal/tasks 后对账：`P = proposal 非 SKIP/AMBIGUOUS targets`、`T = tasks [delta] canonical targets`，plan 必须 `P==T` 且无重复；delta 全部产出后再令 `D = deltas canonical targets`，spec 必须 `P==T==D`。不得只比较数量，也不得从 T/D 倒算 SKIP/AMBIGUOUS。
+
+`[code]` 继续只保留空标题；不得因闭包规划提前切片。不新增 `[baseline]` section。
+
+### Step 6 扩展：按 effective view 产一份最终态 delta
+
+严格顺序：需求/feature → 架构/场景 → API/DB → 测试/编排 → 部署/smoke → 根 specs/skills/decision。每一项开始前读取：
+
+```text
+已合并 target + 当前 change 同 target 的唯一 delta = effective view
+```
+
+不得叠加其它 change、archive 或 baseline-seed staging。
+
+读取 effective view 前必须先通过 seed journal 恢复门；恢复失败时不得读取可能半新的标准 resources/index，也不得以“seed 证据不可用”降级继续写 proposal/tasks/delta。
+
+内容生产规则：
+
+- scenario：可咨询 scenario-architect，必须有目标、参与者、前后置、Mermaid 时序、步骤、异常/边界、追溯。
+- API：可咨询 api-designer，只能从 effective scenario 派生，CREATE 必须是完整合法接口规格。`.yaml|.yml|.json` 目标使用整文件最终态：第一行必须是与 plan mode、canonical target 完全一致的 `## ADDED — <target>（新文件，整文件）` 或 `## MODIFIED — <target>（整文件替换）` 控制行，其后才是完整 OpenAPI payload；不得再包 Markdown 章节 marker。
+- DB：可咨询 db-designer，按持久化证据生成完整 schema/DDL、约束、索引、迁移/回滚。`.sql` 目标同样使用上述 ADDED/MODIFIED 首行控制行与完整方言 payload，禁止片段 DDL。
+- tests：可咨询 test-writer；所有触达场景有真实 UT/ST ID 与 reporter。
+- orchestration：API 适用时咨询 test-orchestrator，含调用链、fixture、断言、cleanup、reporter。
+
+专业 Skill 只返回内容/检查结论，当前 change-writer 保持最终文件写入所有权；不得让多个 agent 各写一份同目标 delta。
+
+### 完成纪律
+
+1. 创建/更新一个 delta 文件；
+2. 立即回到 tasks，把该精确条目 `[ ]` 改 `[x]`；
+3. 从磁盘读回文件关键片段与 task 勾选；
+4. 再处理下一个目标；
+5. `[delta]` 全勾后执行项目允许的结构门并交回 merge 授权点。
+
+若当前工作单元明确禁止运行 CLI，则不得违反；应完成等价静态检查并把命令门留给 driver。
+
+### CREATE 最低完整度
+
+遵循 `spec/baseline-closure.md` 类别表。文件非空或“有标题”不算完整；禁止 TODO/占位/“后续补充”。CREATE 是计划模式，不得写 `## CREATE` marker；Markdown CREATE 用 ADDED 章节，API/DB non-Markdown CREATE 用可剥离的 ADDED 首行控制行。writer 必须在交付前验证控制行 target/mode、剥离后 YAML/JSON/OpenAPI 或方言 SQL 语法，并确认 payload 非空。
+
+### 无 JIT 红线
+
+禁止输出或写入：
+
+- “该区域未确认，是否确认”的 advisory；
+- `verified:true`、confirmed_by/at/evidence；
+- verify `baseline_warnings`；
+- baseline 专用 gate/marker/section/task；
+- 同目标双 delta。
+
+真实信息不足只在既有 plan-exit 前以 AMBIGUOUS 一次性列出，不建立逐区域确认流程。

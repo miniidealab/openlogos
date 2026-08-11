@@ -209,7 +209,7 @@ describe('S33 review r3 — F1..F8 反例的真实入口回归', () => {
     setupAdopted(root, ''); // 无 baseline_seed_state 字段、无候选
     const mod = collectStatusData(root).modules![0];
     expect(mod.baseline_seed_state).toBe('required');
-    expect(mod.suggestion).toContain('建立现状基线');
+    expect(mod.suggestion).toContain('openlogos change <slug>');
     expect(mod.suggestion).toContain('openlogos sync');
   });
 
@@ -262,9 +262,8 @@ describe('S33 review r3 — F1..F8 反例的真实入口回归', () => {
     expect(con.errors.join('\n')).toContain('baseline_commit_in_progress');
   });
 
-  it('F7: status 在提交进行中先过门，返回 commit_in_progress、不据半集合派生有效状态', () => {
+  it('F7: status 在提交进行中先过门并硬报 baseline_commit_in_progress', () => {
     stallCommit();
-    const mod = collectStatusData(root).modules![0];
-    expect(mod.baseline_coverage?.commit_in_progress).toBe(true);
+    expect(() => collectStatusData(root)).toThrow(/baseline_commit_in_progress/);
   });
 });

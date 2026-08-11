@@ -98,7 +98,7 @@ describe('S20 Scenario Tests — adopt command', () => {
     }
   });
 
-  it('ST-S20-02 / UT-S20-12: adopt 写入 baseline_seed_state:required 且 next 输出逆向建基线引导', async () => {
+  it('ST-S20-02 / UT-S20-12 / UT-S20-15: adopt 写入兼容 seed 状态但 required 不劫持 next 主动作', async () => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
     await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
 
@@ -114,25 +114,26 @@ describe('S20 Scenario Tests — adopt command', () => {
 
     next();
     const out = con.logs.join('\n');
-    expect(out).toContain('openlogos baseline-seed begin');
-    expect(out).toContain('建立现状基线');
+    expect(out).toContain('openlogos change <slug>');
+    expect(out).toContain('无需先单独建立基线');
+    expect(out).toContain('baseline-seed begin 仅是显式可选');
     expect(out).not.toContain('openlogos change add-baseline-docs');
   });
 
-  it('UT-S20-13: adopt 不启动 AI、不产逆向内容、不声称基线已建立', async () => {
+  it('UT-S20-13 / UT-S20-14: adopt 不启动 AI，完成主提示直接给出 change', async () => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
     await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
 
     const out = con.logs.join('\n');
-    // 接入报告说明「待建立」，绝不出现「基线已建立」。
-    expect(out).toContain('现状基线待建立');
+    // 接入报告不伪造基线完成，也不把 seed 作为必经下一步。
+    expect(out).toContain('直接运行 openlogos change <slug>');
     expect(out).not.toContain('基线已建立');
     // logos/resources/ 下无逆向产物（无任何含 `## 逆向基线来源` 章节的文档）。
     const { scanModuleCandidates } = await import('../src/lib/baseline-provenance.js');
     expect(scanModuleCandidates(root, 'core').doc_count).toBe(0);
   });
 
-  it('ST-S20-09: adopt 能力缺失（非交互）时降级不伪造基线', async () => {
+  it('ST-S20-09 / ST-S20-11: adopt 能力缺失（非交互）时仍给可复制 change 命令且不伪造基线', async () => {
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'existing-app' }));
     // 非交互环境（stdin 非 TTY，测试默认即如此）走降级分支。
     await adopt(undefined, { locale: 'zh', aiTool: 'cursor' });
@@ -142,7 +143,8 @@ describe('S20 Scenario Tests — adopt command', () => {
     };
     expect(yaml.modules?.[0].baseline_seed_state).toBe('required');
     const out = con.logs.join('\n');
-    expect(out).toContain('未检测到可用的 AI 会话');
+    expect(out).toContain('当前为非交互环境');
+    expect(out).toContain('openlogos change <slug>');
     expect(out).not.toContain('基线已建立');
   });
 

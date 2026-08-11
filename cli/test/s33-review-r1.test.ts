@@ -136,7 +136,7 @@ describe('S33 review r1 — F1..F9 修复的行为测试', () => {
   });
 
   // ---- F4：重扫继承 + tombstone 对账 ----
-  it('F4: 重扫继承人工确认、消失候选转 tombstone（不抹确认、不缩分母）', () => {
+  it('F4: 重扫清除历史确认写回、消失候选转 tombstone（不缩分母）', () => {
     // 首次：T1 含 K1+KX，commit seeded
     writeManifest(root, fullExpected([K1, KX], [K2]));
     con.logs.length = 0; baselineSeedBegin('core', 'seed-plan.json', 'json');
@@ -146,7 +146,7 @@ describe('S33 review r1 — F1..F9 修复的行为测试', () => {
     con.logs.length = 0; baselineSeedCommit('core', run1, 'json');
     expect(JSON.parse(con.logs[0]).data.baseline_seed_state).toBe('seeded');
 
-    // 人工确认 K1（模拟 JIT delta merge 落主文档：K1 verified:true）
+    // 模拟旧版本遗留的 K1 verified:true；新写侧只能兼容读取，不能继续写回。
     writeFileSync(join(root, T1), docFor([{ key: K1, verified: true }, { key: KX }]));
     let cov = scanModuleCandidates(root, 'core');
     expect(cov.candidates.find(c => c.key === K1)?.verified).toBe(true);
@@ -160,15 +160,15 @@ describe('S33 review r1 — F1..F9 修复的行为测试', () => {
     con.logs.length = 0; baselineSeedCommit('core', run2, 'json');
     expect(JSON.parse(con.logs[0]).data.baseline_seed_state).toBe('seeded');
 
-    // 对账后：K1 人工确认被继承（未被降级）、KX 转 tombstone（仍在分母）
+    // 对账后：K1 确认残留被归一为 false/null、KX 转 tombstone（仍在分母）
     const merged = parseProvenanceSection(readFileSync(join(root, T1), 'utf-8'))!;
-    expect(merged.candidates.find(c => c.key === K1)?.verified).toBe(true);   // 未抹确认
+    expect(merged.candidates.find(c => c.key === K1)?.verified).toBe(false);  // 禁止旧确认写回
     expect(merged.candidates.find(c => c.key === KX)?.state).toBe('tombstone'); // 消失 → tombstone
     const c2 = scanModuleCandidates(root, 'core');
-    // 分母含 K1(active)+KX(tombstone)+K2(active)=3，未因删除缩小；分子 K1=1
+    // 分母含 K1(active)+KX(tombstone)+K2(active)=3，未因删除缩小；确认分子已删除。
     const cc = c2.candidates;
     expect(cc.filter(c => c.state === 'active' || c.state === 'tombstone').length).toBe(3);
-    expect(cc.filter(c => c.state === 'active' && c.verified).length).toBe(1);
+    expect(cc.filter(c => c.state === 'active' && c.verified).length).toBe(0);
   });
 
   // ---- F5：去重 + 解析失败新鲜度 ----

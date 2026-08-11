@@ -680,7 +680,7 @@ S28 让 `openlogos next` 输出 **`next_node`**——把「本次 `next` 响应*
   - **阻塞、未达上限（继续迭代）**：`next_node` = **loop subflow 的工作节点 code**（含 overlay 重绑的 skill/working_agent）；`verify` 是 CLI 驱动度量节点（skill 为 null）不作 next_node。工作节点取法：① 若有 overlay-added `current_node` 仍**优先**（按默认解析，不被本条覆盖）；② 否则取 resolved flow 中 **`id == "code"` 且未 `skipped`** 的节点（不依赖「第一个」，兼容 overlay `reorder`）；③ 若 `code` 缺失 / 被 overlay `skip` → **省略 `next_node`**（loop 仍有效，宿主读 `loop_state`）。该省略分支**仅适用于合法 resolved flow（如 initial）**——launched 对 builtin `code` 的 `skip`/`reorder` 在 **S25 派生入口已 `FLOW_SCHEMA_INVALID`（fail loud）**，根本走不到此省略逻辑。
   - **达上限（`escalated` → `gate:implement:loop-exhausted` human gate）**：**省略 `next_node`**（同 R4，人类确认点、无可派发节点；宿主读 `loop_state.escalated`）。
   - 非阻塞（`iteration=0` / 已收敛 / 无 loop）：按前沿正常输出（如 `verify`）。`next_node` 与 `loop_state` 并存互补——`loop_state` 给环状态，`next_node` 给「这一轮该派发哪个节点的 skill/agent」。
-- **【R5】命令级建议一律省略**（非某 flow node，`resolveNextNode` 返回 null）：`all_done`（流程走完）、launched 无 active proposal（建议 `openlogos change <slug>`）、adopted 补 baseline 文档（建议 `openlogos change add-baseline-docs`）、`openlogos launch` 等其它命令级提示、`--auto` gate 已放行（R4）。
+- **【R5】命令级建议一律省略**（非某 flow node，`resolveNextNode` 返回 null）：`all_done`（流程走完）、launched 或 adopted 无 active proposal（journal 恢复门通过后的 `required`、安全 `partial`、`seeded` 均建议 `openlogos change <slug>`）、`openlogos launch` 等其它命令级提示、`--auto` gate 已放行（R4）；三态共用 direct-change 分支，不存在 `add-baseline-docs` fixture。
 
 ### 范围边界与零漂移约束
 
@@ -959,28 +959,28 @@ CLI 从不读写 `scenario_counter.next_id`（取号是 AI 职责）。feature �
 
 ## 二十.A'' legacy 缺省语义统一派生架构（baseline-seed-legacy-default-unify）
 
-补 §二十.A / core-06 §4.1：修复 legacy adopted 项目（yaml 无 `baseline_seed_state` 字段）三入口缺省语义分歧——`next` / `baseline-seed` 状态机本地 `?? 'required'`，`status` 私有 `effectiveAdoptedState`（有候选→`seeded`，无候选→`unknown` 且不输出字段），下游按契约 fail-closed 后基线入口整体消失；且 `sync` 迁移只认旧布尔、对「两字段皆无」空转。
+补 §二十.A / core-06 §4.1：legacy adopted 项目（YAML 无 `baseline_seed_state`）在 `next`、`status`、`baseline-seed` 三入口共享同一缺省派生 helper，但该 helper 只属于 **journal 恢复门通过后的正常成功路径**。不可恢复 journal 是更高优先级的操作错误，不能为满足正常字段 shape 而跨门扫描或猜测状态。
 
 ### 共享派生 helper（单一事实源）
 
-- **唯一权威**：`cli/src/lib/baseline-jit.ts` 新增导出 `effectiveBaselineSeedState(root, moduleId, explicit?): { state: BaselineSeedState; legacy: boolean }`。派生规则：explicit 优先；缺省时 有候选 ∧ 有 open run → `partial`，有候选 ∧ 无 open run → `seeded`，无候选 → `required`；**废除 `unknown` 第三态**。「有候选」= `scanModuleCandidates(root, moduleId).candidates.length > 0`；「有 open run」= `listRunIds`/`readRunRecord` 中该模块存在 `status: 'open'` 的 run。
-- **读锁纪律（继承 status F7 反 TOCTOU）**：helper 内部读权威文档 / run 记录必须在**模块读锁区间**（`withBaselineReadLock`）内执行——helper 自取读锁，并提供 `{ assumeLocked }` 一类入参支持外层已持锁时复用（status 的锁内派生场景）；锁被占用（提交进行中）时按恢复门语义返回降级信号，由调用方走 `baseline_commit_in_progress` 分支。
-- **全量清点（一次收编，禁止残留）**：`next.ts:249/596/657`、`baseline-seed.ts:147/303/334`、`status.ts:30-35（删除私有 `effectiveAdoptedState`）/663/685` 全部改为经 helper 取有效状态；以 `grep "baseline_seed_state ??"` 与 `grep "readSeedState(.*) ??"` 在 `cli/src/` 下清零为验收锚。任何入口不得再持有第二份缺省规则。
-- **status 恒输出**：adopted 模块 `modules[].baseline_seed_state` 无条件输出（explicit 或派生值）；**含 `!derived.ok`（`baseline_commit_in_progress`）降级分支**——该分支同样经派生兜底取值，不得回落到「原始字段缺失 → 不输出」。
+- **唯一权威**：`cli/src/lib/baseline-jit.ts` 导出 `effectiveBaselineSeedState(root, moduleId, explicit?): { state: BaselineSeedState; legacy: boolean }`。恢复门通过后按以下规则派生：explicit 优先；缺省时有候选且有安全 open run → `partial`，有候选且无 open run → `seeded`，无候选 → `required`；正常成功 envelope 废除 `unknown` 第三态。“有候选”来自 `scanModuleCandidates`；“有安全 open run”仅指不存在 `prepared|committing` journal 时，该模块 `status:'open'` 的 run record。
+- **恢复门与读锁纪律（先门、后 helper）**：调用方先取得模块锁并检查未终结 journal；可安全前滚/回滚时先恢复为全旧或全新，再在同一锁区间调用 helper。helper 可提供 `{ assumeLocked }` 一类入参复用外层锁，禁止门检查后锁外扫描造成 TOCTOU。若 journal 无法恢复，立即非零返回 `baseline_commit_in_progress` 通用 error envelope；错误只携最小安全 module/run/journal 诊断与恢复提示，**不调用 helper、不扫描 candidate/run/index/coverage、不输出正常 `modules[]`、`baseline_seed_state`、coverage、action 或 suggestion，也不猜测枚举**。
+- **全量清点（一次收编，禁止残留）**：恢复成功后的 `next.ts`、`baseline-seed.ts`、`status.ts` 全部经共享 helper 取 legacy 有效状态；删除 status 私有 `effectiveAdoptedState` 与本地 `?? 'required'` 一类第二规则。验收同时清零任何“`!derived.ok` 后仍调用 helper/扫描候选/兜底枚举”的分支。
+- **status 输出边界**：恢复门通过后的正常成功 envelope 中，adopted 模块 `modules[].baseline_seed_state` 恒输出 explicit 或派生值；不可恢复 journal 只返回上述错误 envelope，正常恒输出契约不适用，也不得退回“原始字段缺失 → 猜值/省略后继续成功”。
 
 ### sync 迁移落盘（migrate-lifecycle 扩展）
 
-- `cli/src/lib/migrate-lifecycle.ts`：在既有「布尔→枚举」迁移之后，对 `bootstrap: adopted`（含历史 `skipped` 兼容读取）且仍无 `baseline_seed_state` 的模块，调用共享 helper 派生并写入显式枚举；changes 记录写明派生依据（如 `core: baseline_seed_state 缺省 → required（派生：无逆向候选）`）。已有显式值不覆盖；历史布尔迁移行为不回归；幂等。
-- 迁移后 legacy 缺省态物理消亡，运行时派生仅作过渡兜底；status legacyHint 文案保留且自此指向的 sync 真实有效。
+- `cli/src/lib/migrate-lifecycle.ts` 在既有“布尔→枚举”迁移之后，仅当模块 journal 恢复门通过，才对 `bootstrap: adopted`（含历史 `skipped` 兼容读取）且仍无 `baseline_seed_state` 的模块调用共享 helper，写入显式枚举，并在 changes 记录派生依据（如 `core: baseline_seed_state 缺省 → required（派生：无逆向候选）`）。已有显式值不覆盖；历史布尔迁移行为不回归；幂等、写前备份。
+- journal 无法恢复时 sync 同样返回 `baseline_commit_in_progress`，不得扫描半新资源、不得运行 helper、不得写 YAML 或 changes。恢复成功后 legacy 缺省态才可物理消亡；运行时派生仅作迁移尚未执行时的过渡兜底。
 
 ### 实现映射补充（baseline-seed-legacy-default-unify）
 
 | 关注点 | 主要代码路径 | 主要测试路径 |
 |------|-------------|-------------|
-| 共享派生 helper（读锁内派生 + open run 判定） | `cli/src/lib/baseline-jit.ts`（`effectiveBaselineSeedState`，复用 `scanModuleCandidates` / `withBaselineReadLock` / run 记录读取） | `cli/test/s33-*.test.ts`（三入口一致性 UT） |
-| 三入口收编（删私有缺省规则） | `cli/src/commands/next.ts`、`cli/src/commands/baseline-seed.ts`、`cli/src/commands/status.ts`（含 `effectiveAdoptedState` 删除与 commit-in-progress 分支兜底） | `cli/test/s05-next.test.ts`、`cli/test/s11-status.test.ts`、`cli/test/s33-*.test.ts` |
-| sync 迁移落盘 | `cli/src/lib/migrate-lifecycle.ts`（无字段 adopted 派生回填 + changes 记录） | `cli/test/s33-*.test.ts`（迁移 UT） |
-| status JSON 契约恒输出 | `cli/src/commands/status.ts`（adopted 恒输出 `baseline_seed_state`，废除 unknown → 缺失路径） | `cli/test/s11-status.test.ts`、`cli/test/s16-json-output.test.ts`、golden |
+| journal 恢复硬门 + 共享派生 helper | `cli/src/lib/baseline-seed-txn.ts` / `baseline-jit.ts`（先锁内恢复，成功后 `effectiveBaselineSeedState` 复用 `scanModuleCandidates` / run 读取） | `cli/test/s33-*.test.ts`（正常三入口一致性 + UT-S33-47 不可恢复零读取） |
+| 三入口收编（删私有缺省规则） | `cli/src/commands/next.ts`、`cli/src/commands/baseline-seed.ts`、`cli/src/commands/status.ts`（恢复失败直接 error envelope；正常路径删除私有 `effectiveAdoptedState`） | `cli/test/s05-next.test.ts`、`cli/test/s11-status.test.ts`、`cli/test/s33-*.test.ts` |
+| sync 迁移落盘 | `cli/src/lib/migrate-lifecycle.ts`（恢复成功后无字段 adopted 派生回填；失败零写入） | `cli/test/s33-*.test.ts`（迁移 UT + 不可恢复 journal） |
+| status JSON 正常/错误边界 | `cli/src/commands/status.ts`（正常 adopted 恒输出 seed state；错误不输出正常 modules/seed/coverage/suggestion） | `cli/test/s11-status.test.ts`、`cli/test/s16-json-output.test.ts`、golden |
 
 ## 二十一、步骤注册表架构（step-registry 唯一铸造点，contract-self-description）
 
@@ -1202,3 +1202,128 @@ RunLogos / 外部 driver 负责执行调度：
 - `retry-exhausted` 不得作为所有校验失败的兜底出口。
 - audit / progress 中的失败事件必须保留可恢复原因，不能只保留最终抽象原因。
 - 当 driver 自身无法验证 artifacts 时，应输出 `driver-cannot-validate-artifacts`，而不是推断 agent 虚报。
+
+## 二十六、按触达目标规格闭包架构（S39，baseline-on-touch）
+
+### 26.1 职责边界
+
+S39 分成“语义规划”和“确定性校验”两层：
+
+- **change-writer（语义所有者）**：理解提案意图、识别 feature/scenario、判断 API/DB/架构/测试适用性、区分现状证据与新增意图，生成闭包矩阵及一目标一 task。
+- **共享 closure evaluator（结构事实所有者）**：规范化目标路径、对账磁盘存在性与 `MODIFY|CREATE`、查重、比较 plan 与实际 delta、执行类别最低完整度检查。change-lint 与 merge 只能打包调用，不得复制判据。
+- **专业 Skill（内容生产者）**：按 Why → What → How 顺序读取 effective view，生成场景/API/DB/测试内容，但不得自行创建第二份同目标 delta。
+- **merge-executor（apply 所有者）**：对已通过检查的唯一 delta 做修改或创建、更新元数据与 resource_index，并以事务方式写 `SPEC_MERGED`。
+
+### 26.2 核心数据结构
+
+```ts
+type BaselineClosureMode = "MODIFY" | "CREATE" | "SKIP" | "AMBIGUOUS";
+
+interface BaselineClosureTarget {
+  scenarioIds: string[];
+  category: "requirement" | "feature" | "architecture" | "scenario" |
+    "api" | "database" | "test" | "orchestration" | "deployment" | "smoke" |
+    "spec" | "skill" | "decision";
+  deltaPath: string | null;
+  targetPath: string | null;
+  canonicalTargetPath: string | null;
+  mode: BaselineClosureMode;
+  reason: string;
+  applicabilityEvidence: string[];
+  missingEvidence: string[];
+}
+
+interface BaselineClosurePlan {
+  policy: "on-touch-v1";
+  schemaVersion: 1;
+  touchedScenarioIds: string[];
+  targets: BaselineClosureTarget[];
+}
+```
+
+持久化单一事实源是 proposal `## 基线闭包计划` 下唯一 fenced YAML 的 `baseline_closure` 对象；固定含独立 `touched_scenario_ids[]` 与 `targets[]`。CLI 只把 snake_case 持久字段映射为上述内部 camelCase，不得从 tasks 反向派生 targets，也不得用人读表补漏。tasks 与 deltas 是后续对账集合，不是 SKIP/AMBIGUOUS 或目标全集来源；不新增独立状态文件。
+
+每个持久 target 固定含 `category`、`scenario_ids`、`mode`、`delta_path`、`reason`、`evidence[]`、`missing_evidence[]`。字段/组合、排序、重复 YAML key 与 touched scenario 维度完备规则以 `spec/baseline-closure.md` §5.1–5.3 为唯一规范。parser 必须启用 duplicate-key fail-closed；未知 schema_version 不降级 legacy。
+
+### 26.3 effective view
+
+`EffectiveTargetView(target)` 的唯一公式：
+
+```text
+已合并 target bytes
+  + 当前 change 同 canonical target 的唯一合法 delta 预期结果
+  = 下游生成器读取的 effective view
+```
+
+- 没有当前 delta 时读取主规格；目标缺失且规划 CREATE 时视为空目标。
+- staged/partial baseline-seed、其它活跃/归档 change、未授权草稿不进入 effective view。
+- 同目标出现多个 task、多个 delta 来源或路径归一化冲突时直接失败，不定义“最后一个赢”。
+- API 生成器必须读取有效时序；DB/测试生成器必须读取有效需求、场景和 API，保证 Why → What → How 有序传播。
+
+### 26.4 canonical target resolver
+
+建议新增共享模块 `cli/src/lib/baseline-closure.ts`（最终文件边界由 slice-planner/实现阶段确认），复用 `delta-classify` 的目录映射与 containment：
+
+1. 将 `deltas/prd/**`、`deltas/api/**`、`deltas/database/**`、`deltas/scenario/**`、`deltas/test/**`、`deltas/spec/**`、`deltas/skills/**`、`deltas/decisions/**` 映射到目标根；
+2. 统一 `/`、移除安全的 `.` 段、拒绝 `..`、绝对路径和 symlink escape；
+3. 按平台既有路径大小写策略规范化；
+4. 返回 canonical target path，作为 task 与 delta cardinality 的唯一键。
+
+该 resolver 必须由 change-lint、merge/proposal lifecycle 与 change-writer 产物检查共同消费，禁止各自维护路径映射副本。
+
+### 26.5 plan/spec 两阶段 evaluator
+
+| 阶段 | 输入 | 硬检查 |
+|---|---|---|
+| plan | proposal targets + tasks + 主目标存在性 | 严格 schema；touched scenario 维度完备；`P(proposal non-skip)==T(tasks)`；模式与存在性一致；AMBIGUOUS=0；部署结论一致 |
+| spec | plan 结果 + deltas | `P==T==D(deltas)`；一目标一文件；marker/整文件协议合法；CREATE 最低完整；既有 L4/L6/L7/L8 全过 |
+| merge | spec evaluator 结果 | 纵深重跑结构判据；任何漂移 fail-closed，不生成可 apply 指令 |
+
+legacy proposal 未声明 `baseline_closure.policy: on-touch-v1` 时按既有 L1–L8 兼容，不突然阻塞存量活跃 change；新版提案模板写入策略后 L9 fail-closed。
+
+### 26.6 CREATE 最低完整度检查
+
+最低完整度采用类别注册表而非全文长度：
+
+- scenario：身份/目标、参与者、Mermaid sequenceDiagram、步骤、异常/边界；
+- API：OpenAPI/接口版本、paths/channels、schema、错误、鉴权/兼容；
+- database：实体/DDL、键/约束/索引、迁移/回滚；
+- test：真实 UT/ST ID、主/异常/边界、追溯、OpenLogos reporter；
+- orchestration：请求链、断言、fixture/cleanup、reporter；
+- decision：状态、背景、决策、理由、备选、影响面、来源。
+
+检查只证明结构完整，不声称业务语义正确；业务正确性仍由方案审核与后续测试证明。
+
+### 26.7 CREATE apply 与元数据事务
+
+缺失目标继续使用 `ADDED` 语义，不新增 CREATE merge 操作：Markdown 用 ADDED 章节；API/DB 非 Markdown 用整文件首行 `ADDED` 控制 marker，声明 canonical target 并在 parse/落盘前确定性剥离。MODIFY 的非 Markdown 目标同理用首行 MODIFIED 做整文件替换。merge-executor 在 apply 前确认存在性、marker mode 与声明 target 一致；若 plan 后漂移，停止且不静默覆盖。
+
+apply 事务顺序：
+
+1. 预计算所有 MODIFY/CREATE 目标新字节与旧字节备份；
+2. 校验 canonical target 唯一、CREATE 完整度与 S37 守恒；API/DB 非 Markdown 还须剥离首行 marker 后通过 OpenAPI/YAML/JSON 或方言 SQL parse/执行预检；
+3. 原子写全部目标；
+4. 登记新 scenario/decision 编号并更新 `resource_index`；
+5. 事后点数与路径对账；
+6. 全部成功才写 `SPEC_MERGED`，失败按备份回滚。
+
+本提案 apply 时登记 S39/F04、推进 `scenario_counter.next_id=40`，并在 D02 落盘后推进 `decision_counter.next_id=3`。
+
+### 26.8 seed、skip 与引导实现映射
+
+- `adopt.ts`：完成后主提示改为直接创建 change；兼容字段可继续写入。
+- `next.ts`/`status.ts`：保留 baseline JSON shape，但 seed state 不决定默认 action；活跃提案始终优先。
+- `project-yaml.ts`：对 `bootstrap: adopted` 将历史 `skip_phases` 解释为 Initial 豁免；S39 适用性另由场景证据决定。
+- baseline-seed 恢复门必须位于任何 resources/index/coverage 读取之前并覆盖真实读取；安全 open run/未提交 staging 排除后可继续，未终结 journal 无法恢复则硬报 `baseline_commit_in_progress`，不得运行 closure evaluator。
+- change-lint/i18n：增加 L9 稳定 codes 与 fix_hint；无 JIT warning 通道。
+
+### 26.9 架构不变量
+
+1. canonical target path 一对一映射 task、delta、apply 结果。
+2. 语义判断只有 change-writer 一处；确定性判据只有共享 evaluator 一处。
+3. CREATE 是计划模式；ADDED 是既有 merge 控制语义。Markdown ADDED 为章节，API/DB ADDED 为可剥离整文件首行，两者均不得写进最终目标。
+4. effective view 只含已合并资源与当前 change 的唯一 delta。
+5. API 必须源自时序图；测试必须追溯需求/场景/API/DB。
+6. 不新增 baseline 状态、JIT 确认、verified 写回、baseline/JIT gate 或专用 marker；API/DB 整文件首行控制语法不属于确认状态，且合并后不得留在目标中。
+7. 未触达区域零写入、零迁移、零强制 seed 成本。
+8. proposal `touched_scenario_ids` 与 `targets[]` 是独立全集；L9 以它们发现漏场景/漏维度，不允许任务集合自证完备。

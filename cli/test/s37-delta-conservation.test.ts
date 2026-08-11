@@ -587,9 +587,9 @@ describe('S37 — 契约、同源与零漂移', () => {
     }
   });
 
-  it('UT-S37-31: 零回归——枚举 26 码闭合；合法 delta 零 L8 违规、L1–L7 判据不受影响', () => {
-    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(26);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(26);
+  it('UT-S37-31: 零回归——枚举 35 码闭合；合法 delta 零 L8 违规、L1–L7 判据不受影响', () => {
+    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(35);
+    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(35);
     // 合法形态全过：纯 ADDED / 全量 MODIFIED / 整节 REMOVED / 成对部分删除
     const legalDeltas = [
       delta('ADDED', '新章节', table('SMOKE-core-99')),

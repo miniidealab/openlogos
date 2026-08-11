@@ -33,9 +33,12 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 因为仓库早期产物分散在代码、规范、示例和测试中 → 导致 AI 无法快速判断”什么已经完成、下一步该做什么” → 造成阶段判断和交付判断不稳定。
 
 ### P04：已有项目无法低摩擦接入 OpenLogos
+
 因为 `openlogos init` 入场路径假设从第零天开始，要求走完 Phase 1→3 全部文档才能进入变更管理模式 → 导致已有代码的用户不知道从哪里开始 → 造成方法论无法落地到存量项目。
 
-进一步地，即使 `openlogos adopt` 用 `bootstrap: adopted` 跳过 Initial 文档门禁，接入**只「跳过」不「填充」**：接入后 `logos/resources/` 仍为空，没有任何 spec 基线。用户想做任何迭代都被推进 change/提案流程，而提案是「在已有基线上打 delta」的机制，此刻**无基线可 diff** → 导致 `merge` 无 spec 目标可打补丁、change-writer（写前向意图）无法承担「从代码逆向出现状」的认知任务、整套系统塞进一个提案粒度爆炸、逆向推断出的现状被误当权威意图基线 → 造成存量项目接入后掉进「空提案」死角。
+`openlogos adopt` 虽可用 `bootstrap: adopted` 跳过 Initial 文档门禁，但历史默认路径仍把一次全项目逆向 seed 当成首次 change 的前置动作。全库 seed 成本随存量规模增长，而且代码事实快照不能还原产品 Why，也不能保证未来真正触达的场景已经拥有完整需求、时序、API/DB 与测试链。若没有 seed 就拒绝 delta，会把用户重新推回独立建基线；若先写“基线 delta”再写“增量 delta”，同一目标又没有合法的双 delta 顺序语义。
+
+因此低摩擦接入的权威路径是：adopt 完成后直接创建首个 change；change-writer 在规划 tasks 时按本次触达的 feature/scenario 建立规格闭包。目标已存在则在唯一 delta 中修改，目标缺失则在唯一 delta 中创建同时包含可证实存量事实与本次增量意图的完整最终态文档。未触达区域不补。全库 baseline-seed 保留为用户显式选择的扫描加速器，不构成 change 前置，也不恢复逐区域 JIT 人工确认。安全 open run/未提交 staging 可排除后继续；但未终结 seed commit journal 必须在 S05 next、S11 status 与 S39 闭包读取任何 resources/index/coverage 前完成恢复，无法恢复硬报 `baseline_commit_in_progress`，不得读取半新集合。
 
 ### P05：部署完成状态依赖 AI 手写 marker
 因为 `openlogos verify` 和 `openlogos smoke` 都由 CLI 自动写入对应 PASS/FAIL marker，而部署完成后的 `DEPLOY_DONE` 只能依赖 AI 在 skill 步骤中手写 → 导致部署实际成功后仍可能因为 marker 遗漏而卡在 `ready-to-deploy` → 造成后续 smoke、archive 和状态面板无法继续推进。
@@ -51,7 +54,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-31 个场景（编号跳号、最高至 S38，`scenario_counter.next_id=39`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+32 个场景（编号跳号、最高至 S39，`scenario_counter.next_id=40`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -59,13 +62,13 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | 编号 | 场景名称 | 触发条件 | 关联痛点 | 优先级 |
 |------|---------|---------|---------|--------|
 | S01 | 初始化 OpenLogos 项目 | 首次在空目录接入 | P01/P02/P03 | P0 |
-| S20 | 已有项目接入 OpenLogos | 在已有代码库上首次接入 | P04/P02/P03 | P0 |
-| S33 | 存量项目逆向建种子基线 | adopt 接入后自动扫码建种子基线（候选注册表，verified 冻结、无确认升级入口） | P04 | P0 |
+| S20 | 已有项目接入 OpenLogos | 在已有代码库上首次接入；完成后可直接发起首个 change | P04/P02/P03 | P0 |
+| S33 | 存量项目逆向建种子基线 | 用户显式选择 eager seed，或宿主把它作为可选扫描加速器时 | P04 | P1 |
 | S17 | 管理模块注册表 | 项目分模块演进时 | P03 | P1 |
 | S34 | 管理 feature 分组 | 场景增多需按功能域组织、或存量项目需回填 feature | P01/P03 | P1 |
 
 ### ② 变更管理生命周期与状态引导
-以受控 Delta 流程组织每一次迭代，并随时回答"现在到哪了、下一步做什么"（回应 P01/P03）。
+以受控 Delta 流程组织每一次迭代，并随时回答“现在到哪了、下一步做什么”（回应 P01/P03/P04）。
 
 | 编号 | 场景名称 | 触发条件 | 关联痛点 | 优先级 |
 |------|---------|---------|---------|--------|
@@ -77,6 +80,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S36 | 生命周期变更影响分类（impact） | 下游 CI 需判定一次 push 区间是否仅含生命周期文件变更时 | P07/P03 | P1 |
 | S37 | delta 条目守恒门（条目级隐式删除拦截） | 提案 delta 触及带稳定 ID 条目的规格时（lint 产出点 / merge 消费点） | P01/P06/P07 | P1 |
 | S38 | 决策记录沉淀能力（决策理由入 resources） | 提案含「已确定的设计决策」章节、需把拍板理由沉淀为可检索活文档时 | P01/P03/P07 | P1 |
+| S39 | 提案规划时按触达目标形成规格闭包 | launched change 触达某个功能/场景、需规划 delta 目标时 | P04/P01/P03 | P0 |
 
 ### ③ 验收与部署门禁
 用可追溯的验收报告与部署 / smoke 门禁守住交付质量（回应 P01/P03/P05）。
@@ -119,12 +123,12 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S32 | 切片规划环节（merge 后划分 [code] 切片） | merge 完成、需把已合并规格拆成良构切片再实现时 | P08 | P1 |
 
 ### ⑦ 机器可读契约（JSON 输出 · 宿主编排）
-把状态与"下一节点该用什么"暴露成稳定机器字段，供脚本与编排宿主直接消费（回应 P07/P03）。
+把状态与“下一节点该用什么”暴露成稳定机器字段，供脚本与编排宿主直接消费（回应 P07/P03）。
 
 | 编号 | 场景名称 | 触发条件 | 关联痛点 | 优先级 |
 |------|---------|---------|---------|--------|
 | S16 | 输出机器可读 JSON | 需要被脚本或工具消费时 | P07/P03 | P1 |
-| S28 | next 暴露 next_node 编排提示 | 宿主需把"下一节点用哪个 skill/agent、要不要跑脚本"当机器字段读取并编排时 | P07 | P1 |
+| S28 | next 暴露 next_node 编排提示 | 宿主需把“下一节点用哪个 skill/agent、要不要跑脚本”当机器字段读取并编排时 | P07 | P1 |
 
 ## 四、核心场景详述
 
@@ -441,21 +445,22 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 
 ### S20: 已有项目接入 OpenLogos
+
 - **触发条件**：用户在已有代码库（有 `package.json` / `Cargo.toml` / `pyproject.toml` 或其他项目文件）的目录中首次接入 OpenLogos，且当前目录没有 `logos/logos.config.json`。
-- **用户价值**：用户不需要把存量代码当作全新项目从零推进，但仍能一次性获得完整 OpenLogos 基础设施、AI 工具资产、语言策略、verify 预跑配置、推荐沙箱策略、Reference 分类目录和变更管理入口；已有项目的根目录 AI 指令文件配置必须被保留。接入完成后不再掉进「空提案」死角——adopt 确定性初始化时写入模块级枚举 `baseline_seed_state: required`，把后续逆向建种子基线自动衔接到 S33。
+- **用户价值**：用户不需要把存量代码当作全新项目从零推进，但仍能一次性获得完整 OpenLogos 基础设施、AI 工具资产、语言策略、verify 预跑配置、推荐沙箱策略、Reference 分类目录和变更管理入口；已有项目的根目录 AI 指令文件配置必须被保留。接入完成后可直接描述第一个 change，由 S39 只为本次触达场景补齐规格闭包；无需先执行独立全库基线工作。
 - **优先级**：P0
-- **主路径**：CLI 检测已有项目信息，交互确认项目名、文档语言与 AI 工具，按 `init` 等价能力生成完整基础设施与 Reference 分类目录；推断并写入 verify 预跑配置或输出 TODO；默认写入兼容的沙箱配置建议；模块写入 `bootstrap: adopted` 与 `lifecycle: launched`，并**写入模块级枚举 `baseline_seed_state: required`**（衔接 S33 逆向建基线）；通过 managed block 合并写入 AI 指令文件，输出接入报告并建议按 S33 建立现状基线。
+- **主路径**：CLI 检测已有项目信息，交互确认项目名、文档语言与 AI 工具，按 `init` 等价能力生成完整基础设施与 Reference 分类目录；推断并写入 verify 预跑配置或输出 TODO；默认写入兼容的沙箱配置建议；模块写入 `bootstrap: adopted` 与 `lifecycle: launched`，并可继续写入兼容枚举 `baseline_seed_state: required`。该枚举只描述显式可选 eager seed 尚未完成，不是 change gate。CLI 通过 managed block 合并写入 AI 指令文件，输出接入报告并把主动作指向创建 `openlogos change <slug>`；用户显式要求预扫全库时才进入 S33。
 
 #### 验收条件
 ##### 正常：已有项目完整接入
 - **GIVEN** 当前目录存在 `package.json`（或其他项目清单文件），且没有 `logos/logos.config.json`
 - **WHEN** 用户执行 `openlogos adopt`
-- **THEN** CLI 生成与 `init` 同级别的基础设施：`logos/` 标准目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；`logos/resources/reference/` 下默认生成 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；`logos-project.yaml` 中模块包含 `bootstrap: adopted` 与 `lifecycle: launched`；`logos.config.json` 包含 `verify.result_path`，并在可推断时包含 verify 预跑配置与推荐沙箱配置；输出接入报告
+- **THEN** CLI 生成与 `init` 同级别的基础设施：`logos/` 标准目录、`logos.config.json`、`logos-project.yaml`、`AGENTS.md`、`CLAUDE.md`、`logos/spec/` 和所选 AI tools 的 Skills / 插件 / 命令资产；`logos/resources/reference/` 下默认生成 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；`logos-project.yaml` 中模块包含 `bootstrap: adopted` 与 `lifecycle: launched`；`logos.config.json` 包含 `verify.result_path`，并在可推断时包含 verify 预跑配置与推荐沙箱配置；输出接入报告，主动作是创建首个 change
 
-##### 正常：adopt 自动衔接逆向建基线（S33 前置）
+##### 正常：adopt 后直接进入首个 change，S33 为显式可选
 - **GIVEN** 当前目录无 `logos/logos.config.json`
 - **WHEN** 用户执行 `openlogos adopt`
-- **THEN** adopt 在确定性初始化完成时写入 `baseline_seed_state: required`；接入报告说明「下一步将逆向扫描代码库建立现状基线（种子基线，非权威意图）」；adopt 本身**不启动 AI、不声称基线已建立**——逆向扫描由 AI 会话/driver 检测该状态后派发 `brownfield-adopter` 完成（见 S33）；能力缺失时 adopt 输出可复制的后续命令/提示并保持 `baseline_seed_state: required`
+- **THEN** adopt 在确定性初始化完成时可继续写入 `baseline_seed_state: required` 以兼容既有消费者，但接入报告说明「现在可以直接描述第一个变更，由提案按触达场景补齐规格」；adopt 本身不启动 AI、不声称基线已建立，也不要求 driver 因 `required`/`partial` 自动派发 `brownfield-adopter`。只有用户显式执行 `openlogos baseline-seed` 或宿主显式选择 eager seed 优化时才进入 S33；能力缺失不影响创建 change
 
 ##### 正常：接入时保留既有 AI 指令文件
 - **GIVEN** 存量项目已有 `AGENTS.md` / `CLAUDE.md` 或大小写变体，且包含用户自定义配置
@@ -705,7 +710,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
   - **【R3】与 cmd 瞬态求值的关系**：`next_node` 指向本次响应最终建议处理的节点——cmd done(exit 0)续推→指向续推后落到的节点（**不**指向已 done 的 cmd 节点）；cmd 失败/超时→指向该 cmd 节点（需重跑）；budget=1 遇第二个 cmd→指向第二个 pending cmd 节点。
   - **【R4】与 `--auto` auto-pass 的关系**：`gate_auto_passed === true`（gate 已自动放行）→**省略 `next_node`**（放行后宿主应走 gate 的 command，待放行落地后重新 next 派生）；非放行的 `--auto` 与无 `--auto` 时按前沿正常输出。
   - **【R7】与 loop 阻塞态的关系**：loop 阻塞、未达上限（继续迭代）→`next_node` = loop 工作节点（对齐 action「修代码」而非「跑 verify」）：overlay-add `current_node` 仍优先；否则取 resolved flow 中 `id == "code"` 且未 `skipped` 的节点（兼容 reorder）；`code` 缺失/被 overlay skip→**省略**（仅 initial 等合法 resolved flow；launched builtin skip 在 S25 派生入口已 `FLOW_SCHEMA_INVALID`，走不到此省略）。loop 达上限（`escalated` → human gate）→**省略**（同 R4，人类确认点无可派发节点）。与 `loop_state` 并存互补。
-  - **【R5】缺省规则**：`next_node` 仅当当前建议指向一个真实 flow 节点时输出；命令级建议一律省略——`all_done`、launched 无 active proposal（建议 `openlogos change <slug>`）、adopted 补 baseline 文档（建议 `openlogos change add-baseline-docs`）、`openlogos launch` 等命令级提示、`--auto` gate 已放行。
+  - **【R5】缺省规则**：`next_node` 仅当当前建议指向一个真实 flow 节点时输出；命令级建议一律省略——`all_done`、launched 或 adopted 无 active proposal（journal 恢复门通过后的 `required`、安全 `partial`、`seeded` 均建议 `openlogos change <slug>`）、`openlogos launch` 等命令级提示、`--auto` gate 已放行；三态共用 direct-change 分支，不存在 `add-baseline-docs` fixture。
   - **范围与 golden**：`status` / `watch` 输出不变；`next` 对有当前节点的项目新增 `next_node`，在干净基线上重新 baseline 并逐项复核 diff，确认唯一变化是新增 `next_node`，无其它字段漂移。
 
 ### S29: M2 预留收尾（loop 退出 gate 可覆盖 / fan-out 覆盖阈值 / loop 内 fan-out 整组收敛）
@@ -930,22 +935,23 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **THEN** slice-planner 拒绝切片，提示先完成 merge——切片必须对真实规格 + 真实测试 ID 进行，而非对未合并草案猜切
 
 ### S33: 存量项目逆向建种子基线
-- **触发条件**：`openlogos adopt` 完成后模块处于 `bootstrap: adopted` 且 `baseline_seed_state: required`。
-- **用户价值**：存量项目接入后立即获得一份**种子基线**（现状快照，只含可从代码忠实验证的事实：模块图、入口、依赖、**场景候选清单**），带 provenance 标记且明确 `verified: false`；存量代码 grandfather 豁免、不要求回头符合 spec。
-- **优先级**：P0
-- **主路径**：AI 会话/driver 检测 `baseline_seed_state: required` → 派发 `brownfield-adopter` skill 扫描代码库 → 逐产物写入含具名章节 `## 逆向基线来源` 与 `candidates[]`（`verified: false`、provenance 派生 `reverse-engineered`）的种子基线 → 展示现状基线覆盖率（human-verified 分子 / `active ∪ tombstone` 分母）→ 经 `openlogos baseline-seed`（`begin` → 写 run staging → `commit`）由 CLI 计算 `baseline_seed_state`（未全 `partial`、必需 kind 齐且全部合法 `seeded`，见 S33）。
+
+- **触发条件**：用户显式要求预扫全库/建立现状 seed，或宿主明确选择 eager seed 作为后续证据定位加速器；`baseline_seed_state: required|partial` 本身不得自动触发派发。
+- **用户价值**：需要全局扫描加速时，用户可获得一份**种子基线**（现状快照，只含可从代码忠实验证的事实：模块图、入口、依赖、**场景候选清单**），带 provenance 标记且明确 `verified: false`；完全跳过本场景也能由 S39 在每次 change 中按触达范围形成正式规格闭包。
+- **优先级**：P1
+- **主路径**：用户或宿主显式选择 eager seed → AI 会话/driver 派发 `brownfield-adopter` skill 扫描代码库 → 逐产物写入含具名章节 `## 逆向基线来源` 与 `candidates[]`（`verified: false`、provenance 派生 `reverse-engineered`）的种子基线 → 经 `openlogos baseline-seed`（`begin` → 写 run staging → `commit`）由 CLI 原子提交并计算 `baseline_seed_state`。完成后产物仅作为 S39 的可选证据索引，不能替代需求、时序、API/DB 或测试规格，也不能改变默认 next 的 change 主动作。
 
 #### 验收条件
-##### 正常：adopt 后逆向产出种子基线（producer=AI driver，非 CLI）
-- **GIVEN** 模块 `bootstrap: adopted` 且 `baseline_seed_state: required`
-- **WHEN** AI 会话/driver 检测到该状态并派发 `brownfield-adopter`
-- **THEN** 在 `logos/resources/` 下产出只含可验证事实的种子基线（system-map + 场景候选清单）；每份产物含具名章节 `## 逆向基线来源` 与 `candidates[]`（每候选 `verified: false`、provenance 派生 `reverse-engineered`）；**不写 PRD**（意图无法从代码忠实还原）；产物写 run staging 后经 `openlogos baseline-seed commit`，由 CLI 依 manifest 计算 `baseline_seed_state`（未全 `partial`、必需 kind 齐且全部合法 `seeded`）
-- **且** `openlogos adopt`（CLI 本身）绝不启动 AI、不产出逆向内容、不声称基线已建立
+##### 正常：显式选择后逆向产出种子基线（producer=AI driver，非 CLI）
+- **GIVEN** 模块 `bootstrap: adopted`，且用户/宿主明确选择 eager seed
+- **WHEN** AI 会话/driver 派发 `brownfield-adopter`
+- **THEN** 在 run 私有 staging 中产出只含可验证事实的种子基线（system-map + 场景候选清单）；每份产物含具名章节 `## 逆向基线来源` 与 `candidates[]`（每候选 `verified: false`、provenance 派生 `reverse-engineered`）；**不写 PRD**；产物经 `openlogos baseline-seed commit` 原子提交，由 CLI 依 manifest 计算 `baseline_seed_state`
+- **且** `openlogos adopt`（CLI 本身）绝不启动 AI、不产出逆向内容、不声称基线已建立，driver 也不得只因状态为 `required|partial` 自动派发
 
-##### 正常：能力缺失时降级不伪造
+##### 正常：能力缺失时不伪造且不阻断 change
 - **GIVEN** CLI-only / `--ai-tool other` / 非交互 CI / AI 能力缺失
-- **WHEN** adopt 完成但无法派发逆向扫描
-- **THEN** 保持 `baseline_seed_state: required`，输出可复制的后续命令/提示；`status`/`next` 明确显示「种子基线待建立」，绝不把未产出的基线显示为已建立
+- **WHEN** adopt 完成，或用户尝试显式 seed 但无法派发逆向扫描
+- **THEN** 不创建任何伪造 seed；兼容状态可保持 `required`/`partial`，同时明确仍可直接执行 `openlogos change <slug>`。不得把 seed 能力缺失转化为 change、plan、delta 或 merge 前置失败
 
 ##### 正常：覆盖率 tombstone 分母不虚增
 - **GIVEN** 一组 `verified: false` 的逆向候选（种子基线现状）
@@ -964,7 +970,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 ##### 正常：扫描侧只采信可重算规范键，文档示例不毒化基线
 - **GIVEN** 一个从未跑过 baseline-seed 的项目（真·非存量，`logos-project.yaml` 无 `scenarios[]/features[]/baseline_index`），其 `logos/resources/`（如 `reference/` 子目录）存有含 `## 逆向基线来源` 示例章节的文档（官方指南/培训材料/bug report 等），示例候选 `key` 格式合法但与 `anchor` 的规范重算值不一致（教学编造 key）
 - **WHEN** 运行 `openlogos feature-backfill`（或任何读覆盖率的命令）
-- **THEN** 扫描器**不采信**该编造候选（判据 = `key === candidateKey(module, anchor)` 或 `key === candidateKey(module, alias∈aliases)`，与写侧 `baseline-seed` 同强度）；`feature-backfill` 按"真·非存量"成功、`baseline_candidates_total=0`、**不报** `BASELINE_PROVENANCE_INVALID`；覆盖率分母不含该幽灵候选、新鲜度不因该文档改动打成 `stale`
+- **THEN** 扫描器**不采信**该编造候选（判据 = `key === candidateKey(module, anchor)` 或 `key === candidateKey(module, alias∈aliases)`，与写侧 `baseline-seed` 同强度）；`feature-backfill` 按“真·非存量”成功、`baseline_candidates_total=0`、**不报** `BASELINE_PROVENANCE_INVALID`；覆盖率分母不含该幽灵候选、新鲜度不因该文档改动打成 `stale`
 
 ##### 正常：改名继承 / tombstone 合法候选仍被采信（alias-aware）
 - **GIVEN** 一个真实基线项目，其某候选经锚点重命名（旧 anchor 入 `aliases[]`、`key` 保持稳定）或已 `tombstone`（`superseded_by` 指向新 key）
@@ -1328,3 +1334,20 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 6. **守恒与 superseded 联动（S37）**：`DXX` 纳入 S37 守恒门 ID 模式注册表（`ID_PATTERN_REGISTRY` 单点扩册，判据函数零改动，见 §2.33.3 预留），决策记录条目删除必须显式 `REMOVED` / `REMOVED-ITEMS` 点名；推翻旧决策不删除、改状态为 `superseded by DYY` 并由新记录引用——决策历史留在 resources 活文档内、天然可检索、不依赖 archive。
 7. **resource_index 收录（delta-r1 F3，需扩展扫描器）**：现行 `cli/src/lib/sync-resource-index.ts` 的 `scanCandidateFiles()` 白名单不含 `decisions`、`inferResourceDesc()` 无 DXX 规则，故必须**扩展统一扫描器**（`scanCandidateFiles()` 纳入 `decisions/`、`inferResourceDesc()` 增 `<module>-DXX-*.md` 内容化 desc 规则），`openlogos index` / `sync` 才能发现新决策记录、生成内容化描述并进入 `resource_index`——直接解 issue #12「需先知道 slug 才找得到」。**不得**声称既有机制自动收录。端到端验收须从「索引无该项」起跑权威 index/sync、断言路径+desc 补入且幂等（ST-S38-06）。
 8. **零回归 + 非目标**：不追溯为存量已归档提案补写决策记录（项目自行按价值挑选沉淀、走正常提案）；不强制所有提案产出决策记录；不实现 archive 保留策略 / `archive --prune`（issue #12 请求 2，团队已暂缓，与本能力正交）；不改 `ADDED / MODIFIED / REMOVED` 语义与既有 merge / archive / change-lint 对无决策章节提案的行为。
+
+## S39: 提案规划时按触达目标形成规格闭包
+
+- **触发条件**：launched 项目创建 change，change-writer 正在依据提案意图规划 `[delta]` tasks。
+- **用户价值**：存量项目无需先建立全局基线；只有真正触达的功能/场景承担补文档成本，并且每个目标只生成一份可合并的最终态 delta。
+- **优先级**：P0。
+- **主路径**：识别受影响 feature/scenario → 按 Why → What → How 枚举需求、功能、时序、架构、API、DB、UT/ST、API 编排、部署/smoke 等适用目标 → 读取“已合并资源 + 当前 change 已产 delta”的有效视图 → 以规范化合并目标路径去重 → 目标存在规划 `MODIFY`、缺失规划 `CREATE`、不适用记录 `SKIP` → 在现有 plan-exit 批准后产出每个目标唯一 delta。
+
+### S39 验收条件
+
+1. 同一规范化目标路径在 `[delta]` 中恰有一个 task、在 `deltas/` 中至多一个文件；多个场景命中同一路径时聚合，不得拆成“基线 delta + 增量 delta”。
+2. `MODIFY` 目标必须存在；既有章节存在时用 `MODIFIED`，章节缺失时可在同一 delta 用 `ADDED`，并遵守 S37 条目守恒。
+3. `CREATE` 目标必须缺失；delta 继续使用既有 `ADDED` 标记，但内容必须是可独立成立的完整文档，不新增 merge 操作。
+4. 触达场景必须有完整时序图与 UT/ST；存在接口边界时必须从时序图派生 API 并补 API 编排测试；存在持久化时必须补 DB 规格；不适用项记录证据化 `SKIP`。
+5. 代码、测试、配置只能证明存量事实；本次 change 提供新增 Why 与验收意图。证据不足时以 `AMBIGUOUS` 停在现有 plan-exit 前，不猜测、不产半成品。
+6. adopted 项目的历史自动 `skip_phases` 只豁免 Initial 完整性，不能永久压掉后续 change 中实际适用的 API/DB/场景目标。
+7. 不新增 `[baseline]` section、baseline task、gate、marker、JIT advisory、`verified:true` 写回或 `baseline_warnings`；唯一人类方案门仍是既有 `plan-exit`。

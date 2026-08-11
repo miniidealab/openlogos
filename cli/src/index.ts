@@ -6,7 +6,6 @@ import { sync } from './commands/sync.js';
 import { status } from './commands/status.js';
 import { next } from './commands/next.js';
 import { change } from './commands/change.js';
-import { merge } from './commands/merge.js';
 import { archive } from './commands/archive.js';
 import { verify } from './commands/verify.js';
 import { smoke } from './commands/smoke.js';
@@ -18,7 +17,6 @@ import { moduleList, moduleAdd, moduleRename, moduleRemove, moduleSetProductType
 import { featureList } from './commands/feature.js';
 import { featureBackfill } from './commands/feature-backfill.js';
 import { checkUiPrototype } from './commands/check-ui-prototype.js';
-import { changeLint } from './commands/change-lint.js';
 import { checkUiHashMatchCommand } from './commands/check-ui-hash-match.js';
 import { flowShow } from './commands/flow.js';
 import { baselineSeedBegin, baselineSeedCommit, baselineSeedStatus } from './commands/baseline-seed.js';
@@ -80,6 +78,8 @@ Commands:
                        --module <id>               Assign proposal to a specific module
   change-lint [--slug <slug>]   检查活跃提案的计划产物（proposal/tasks/deltas）是否交付合格（只读）
   merge <slug>       Generate MERGE_PROMPT.md for AI to execute delta merging
+  merge-apply <slug> Atomically apply an approved on-touch merge manifest
+                       --manifest <path>           Strict final-bytes manifest inside proposal dir
   archive <slug>     Archive a completed change proposal
   detect             Show CLI version and project detection info
   index              Generate an AI-ready prompt to rebuild resource_index with file-content-based desc
@@ -114,6 +114,7 @@ Examples:
   openlogos detect --format json
   openlogos change add-remember-me
   openlogos merge add-remember-me
+  openlogos merge-apply add-remember-me --manifest logos/changes/add-remember-me/MERGE_APPLY_MANIFEST.json
   openlogos archive add-remember-me
 
 Learn more: https://openlogos.ai
@@ -240,9 +241,18 @@ async function main() {
       change(restArgs[0], moduleArg);
       break;
     }
-    case 'merge':
+    case 'merge': {
+      const { merge } = await import('./commands/merge.js');
       merge(args[1]);
       break;
+    }
+    case 'merge-apply': {
+      const manifestIndex = args.indexOf('--manifest');
+      const manifestArg = manifestIndex >= 0 ? args[manifestIndex + 1] : undefined;
+      const { mergeApply } = await import('./commands/merge-apply.js');
+      mergeApply(args[1], manifestArg);
+      break;
+    }
     case 'launch':
       launch(args[1]);
       break;
@@ -324,6 +334,7 @@ async function main() {
         const v = args[args.indexOf('--slug') + 1];
         slugArg = (v === undefined || v.startsWith('--')) ? '' : v;
       }
+      const { changeLint } = await import('./commands/change-lint.js');
       changeLint(slugArg, format);
       break;
     }

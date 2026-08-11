@@ -108,7 +108,7 @@ describe('S33 legacy 缺省语义三入口统一（baseline-seed-legacy-default-
     };
   }
 
-  it('UT-S33-41: 三入口一致性——legacy 无候选 → required，三者逐字节一致且均附 legacy sync 迁移提示', async () => {
+  it('UT-S33-41 / UT-S20-18: legacy 无候选派生 required，但默认 action 仍为 change', async () => {
     setupLegacyAdopted(root);
     const r = await triEntryStates();
     expect(r.nextState).toBe('required');
@@ -116,11 +116,11 @@ describe('S33 legacy 缺省语义三入口统一（baseline-seed-legacy-default-
     expect(r.seedState).toBe('required');
     // 三入口逐字节一致（单一事实源）
     expect(new Set([r.nextState, r.statusState, r.seedState]).size).toBe(1);
-    // next 引导逆向建基线 + legacy 迁移提示
-    expect(r.nextDetail).toContain('建立现状基线');
+    // next 主动作直接 change；legacy 迁移提示与可选 seed 信息仍在
+    expect(r.nextDetail).toContain('直接发起变更');
     expect(r.nextDetail).toContain('openlogos sync');
-    // status 引导 + legacy 迁移提示
-    expect(r.statusSuggestion).toContain('建立现状基线');
+    // status 同样不把 seed 设为前置
+    expect(r.statusSuggestion).toContain('openlogos change <slug>');
     expect(r.statusSuggestion).toContain('openlogos sync');
     // baseline-seed status（text）附 legacy 迁移提示
     expect(r.seedText).toContain('openlogos sync');
@@ -174,17 +174,12 @@ describe('S33 legacy 缺省语义三入口统一（baseline-seed-legacy-default-
     expect(['required', 'partial', 'seeded']).toContain(coreMod.baseline_seed_state);
   });
 
-  it('UT-S33-47: commit-in-progress 降级分支仍恒输出（legacy 无字段 → 保守兜底 partial）', () => {
+  it('UT-S33-47: commit-in-progress 为读取硬门，不再降级输出 partial 成功态', () => {
     setupLegacyAdopted(root);
     stallCommit(root);
-    const mod = collectStatusData(root).modules![0];
-    // 降级 suggestion + 字段仍在且为合法枚举（不因原始字段缺失而缺字段）
-    expect(mod.suggestion).toContain('提交进行中');
-    expect(['required', 'partial', 'seeded']).toContain(mod.baseline_seed_state);
-    expect(mod.baseline_seed_state).toBe('partial');
-    // helper 直测：锁占用 → 保守兜底 + commit_in_progress 信号
-    const eff = effectiveBaselineSeedState(root, 'core');
-    expect(eff).toEqual({ state: 'partial', legacy: true, commit_in_progress: true });
+    expect(() => collectStatusData(root)).toThrow(/baseline_commit_in_progress/);
+    // helper 直测：锁占用时同样硬失败，绝不派生并输出正常 partial 状态。
+    expect(() => effectiveBaselineSeedState(root, 'core')).toThrow(/baseline_commit_in_progress/);
   });
 
   it('UT-S33-48: 回归——unknown 不再出现于任何 JSON 输出；活跃提案下 adopted 仍恒输出字段', async () => {

@@ -24,11 +24,11 @@ tech_stack:
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
 scenario_counter:
-  next_id: 39
+  next_id: 40
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 2
+  next_id: 3
 modules:
   - id: core
     name: 核心功能
@@ -183,6 +183,10 @@ scenarios:
     name: 管理 feature 分组
     module: core
     feature: F07
+  - id: S39
+    name: 提案规划时按触达目标形成规格闭包
+    module: core
+    feature: F04
 release_workflows:
   cli_tag_release:
     name: CLI tag 驱动标准发版（GitHub Workflow 唯一入口）
@@ -503,6 +507,15 @@ resource_index:
     desc: 验收报告。涉及 verify、部署或 smoke 结果、覆盖度分析、Gate 判定时必读。
   - path: logos/resources/decisions/core-D01-change-module-fail-closed.md
     desc: D01 决策记录：openlogos change 多模块无 core 时 fail-closed、不隐式回退 modules[0]。涉及模块归属解析语义、fail-closed 不变量、default_module 取舍时必读。
+
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md
+    desc: S39 场景时序图。涉及 S39 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/test/core-S39-test-cases.md
+    desc: S39 测试用例。涉及 S39 单元测试与场景测试的实现与验收时必读。
+  - path: logos/resources/decisions/core-D02-baseline-on-touch.md
+    desc: D02 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
+  - path: spec/baseline-closure.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
 
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号

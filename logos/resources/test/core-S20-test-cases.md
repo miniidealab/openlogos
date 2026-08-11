@@ -19,17 +19,16 @@
 
 ## 二、场景测试用例
 
-
 ### 2.1 主路径
 
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |----|------|-----------|---------|---------|---------|
 | ST-S20-01 | 已有项目完整接入 | Step 1→10 | 有 package.json，无 logos/ | 执行 adopt | 生成全部基础文件（含 Skills、插件模板、logos/spec/）；`logos/resources/reference/` 下包含 `requirement/`、`todolist/`、`code/`、`image/`、`temp/`、`note/` 子目录；bootstrap=adopted，lifecycle=launched，并在可识别测试栈时写入 verify 预跑配置 |
-| ST-S20-02 | 接入后 next 输出补文档引导 | S05 联动 | adopt 完成，无活跃提案 | 执行 next | 输出补文档引导，建议 change add-baseline-docs |
+| ST-S20-02 | 接入后 next 直接引导首个 change | S05 联动 | adopt 完成、无活跃提案、无未终结 journal | 执行 next | 主动作建议 `openlogos change <slug>`；不建议 `change add-baseline-docs`，baseline-seed 仅为显式可选旁路 |
 | ST-S20-03 | 接入后 status 显示 Initial 基线已跳过 | S11 联动 | adopt 完成 | 执行 status | Initial 文档基线显示为「文档基线已跳过（存量项目接入）」，不报错 |
 | ST-S20-04 | 接入后 launch 豁免 Initial 门禁 | S14 联动 | adopt 完成，bootstrap=adopted，Initial 文档为空 | 执行 launch | 不检查 Initial 文档，直接放行 |
 | ST-S20-05 | adopt 后写入 verify 预跑配置 | Step 1→10 | 有 package.json 且可识别测试脚本 | 执行 adopt | 接入报告说明 verify 预跑配置已补齐 |
-| ST-S20-06 | 历史 skipped 项目按接入模式输出 next/status | Step 1→10 | 旧项目已有 bootstrap=skipped，无活跃提案 | 执行 next / status | 输出与 adopted 接入模式一致的补文档引导与阶段显示 |
+| ST-S20-06 | 历史 skipped 项目按接入模式输出 next/status | Step 1→10 | 旧项目已有 bootstrap=skipped、无活跃提案、无未终结 journal | 执行 next / status | next 与 adopted 一致直接建议 `openlogos change <slug>`，不产生 add-baseline-docs 分支；status 保持 Initial 豁免阶段显示 |
 | ST-S20-07 | adopt 保留已有根指令文件 | Step 9 | 有 package.json，无 logos/，预置含用户内容的 `AGENTS.md` / `CLAUDE.md` | 执行 adopt | 用户内容仍存在；OpenLogos managed block 被追加或刷新 |
 | ST-S20-08 | adopt 保护大小写变体 | Step 9 | 有 package.json，无 logos/，预置 `agents.md` / `claude.md` | 执行 adopt | 复用既有小写路径合并内容，不创建重复大小写入口 |
 
@@ -40,16 +39,15 @@
 | ST-S20-EX-01 | 已初始化项目拒绝重复接入 | EX-2.1 | 已存在 logos/logos.config.json | 执行 adopt | 退出并报错，不覆盖文件 |
 | ST-S20-EX-02 | 无法推断测试命令时输出 TODO | EX-5.1 | 无任何可识别测试脚本或框架配置 | 执行 adopt | 接入成功，但输出 verify 预跑配置补齐提示 |
 
-
 ## 三、覆盖度校验
 
 - [x] adopt 命令主路径：已覆盖（ST-S20-01）
 - [x] Reference 默认子目录生成：已覆盖（ST-S20-01）
 - [x] bootstrap=adopted 标记写入：已覆盖（UT-S20-05/06、ST-S20-01）
-- [x] 历史 skipped 兼容：已覆盖（UT-S20-09、ST-S20-06）
+- [x] 历史 skipped 兼容且默认 direct-change：已覆盖（UT-S20-09、ST-S20-06）
 - [x] verify 预跑配置写入：已覆盖（UT-S20-07、ST-S20-05）
-- [x] 无法推断时输出 TODO：已覆盖（UT-S20-08、ST-S20-06）
-- [x] next 补文档引导：已覆盖（ST-S20-02）
+- [x] 无法推断时输出 TODO：已覆盖（UT-S20-08、ST-S20-EX-02）
+- [x] next 直接引导首个 change、不生成 add-baseline-docs 分支：已覆盖（ST-S20-02、ST-S20-06）
 - [x] status Initial 基线已跳过显示：已覆盖（ST-S20-03）
 - [x] launch 门禁豁免：已覆盖（ST-S20-04）
 - [x] 重复接入异常：已覆盖（ST-S20-EX-01）
@@ -60,9 +58,38 @@
 
 | 用例 ID | 名称 | 覆盖点 | 前置 | 输入 | 期望 |
 |---|---|---|---|---|---|
-| UT-S20-12 | adopt 写入 baseline_seed_state:required | adopt 逻辑 | 空 logos/ | 执行 adopt | `logos-project.yaml` 模块含枚举 `baseline_seed_state: required`（非布尔），接入报告说明下一步逆向建基线 |
-| UT-S20-13 | adopt 不启动 AI、不声称基线已建立 | adopt 逻辑 | 空 logos/ | 执行 adopt | 未调用 AI；接入报告不出现「基线已建立」；`logos/resources/` 无逆向产物 |
-| ST-S20-09 | adopt 能力缺失时降级不伪造 | S33 EX-4.1 联动 | CLI-only / 非交互 CI | 执行 adopt | 保持 `baseline_seed_state: required`，输出可复制的后续提示，不显示基线已建立 |
+| UT-S20-12 | adopt 写入 baseline_seed_state:required，但默认引导直接 change | adopt 逻辑 | 空 logos/ | 执行 adopt | `logos-project.yaml` 模块含枚举 `baseline_seed_state: required`（非布尔）；接入报告的主动作是 `openlogos change <slug>`，baseline-seed 仅为显式可选全库预扫 |
+| UT-S20-13 | adopt 不启动 AI、不声称基线已建立 | adopt 逻辑 | 空 logos/ | 执行 adopt | 未调用 AI；接入报告不出现「基线已建立」；`logos/resources/` 无逆向产物；不把缺少 seed 写成 change 前置条件 |
+| ST-S20-09 | adopt 能力缺失时降级不伪造且 change 可达 | S33 EX-4.1 联动 | CLI-only / 非交互 CI | 执行 adopt | 保持 `baseline_seed_state: required`，输出可复制的 `openlogos change <slug>` 主提示；可附显式 seed 说明，但不显示基线已建立、不要求先 seed |
 
-> 说明：本补充仅衔接 S33（种子基线由 AI 会话/driver 派发产出）；S20 主用例（ST-S20-01…08、UT-S20-01…11）不变。
+> 说明：本补充衔接 S33 的**显式可选**种子扫描能力；S20 默认主路径是 adopt 后直接创建 change。S20 主用例 ID（ST-S20-01…08、UT-S20-01…11）全部保留，其中 ST-S20-02/06 已在第二节改写为 direct-change 预期。
 
+## 五、adopt 后直接 change 测试（baseline-on-touch）
+
+> 所有用例实现必须写入 OpenLogos reporter `logos/resources/verify/test-results.jsonl`。
+
+### 5.1 单元测试
+
+| ID | 检查项 | 输入 | 期望 |
+|---|---|---|---|
+| UT-S20-14 | adopt 完成主提示 | 新存量项目执行 adopt | 主动作是 `openlogos change <slug>`；seed 仅可选说明 |
+| UT-S20-15 | required 不劫持 next | adopted + `baseline_seed_state: required` + 无提案 | next action 指向 change；不指向强制 baseline-seed |
+| UT-S20-16 | 安全 partial 不劫持 next | adopted + partial/open run、无未终结 journal | 未提交 staging 不采信；change 仍可达；seed 重试为非阻断诊断 |
+| UT-S20-17 | seeded 仍执行闭包 | adopted + seeded | 首个 change 仍声明 on-touch-v1；seed 只作为 EvidenceScanner 输入 |
+| UT-S20-18 | legacy 缺字段兼容 | adopted、缺 seed 字段 | helper 可派生兼容状态；默认 action 仍为 change，JSON shape 合法 |
+| UT-S20-19 | 未终结 journal 恢复失败硬阻断 | adopted + journal=`prepared|committing`，故障注入使前滚/回滚失败 | `baseline_commit_in_progress`；在 resources/index/coverage 读取前停止，不输出 change 主动作 |
+
+### 5.2 场景测试
+
+| ID | 场景 | 操作 | 期望 |
+|---|---|---|---|
+| ST-S20-10 | 从 adopt 到首个 plan | 真实临时项目 adopt → next → change → 生成 proposal/tasks | 无 baseline-seed 步骤即可到 plan；闭包目标模式在场 |
+| ST-S20-11 | 能力缺失降级 | CLI-only adopt，无 AI seed 能力 | 不伪造文档；给出可复制 change 命令；不把 required 当阻塞 |
+| ST-S20-12 | adopted skip 与真实接口冲突 | fixture 自动 skip api，但首个 change 时序含 HTTP | plan 暴露冲突并规划 API/编排或 AMBIGUOUS；不得静默 SKIP |
+| ST-S20-13 | safe partial 与半新事务分流 | 分别构造仅 staging 的 partial 与 rename 中断的未终结 journal，执行 next/change 入口 | 前者直接 change 且 staging 排除；后者恢复失败硬报 `baseline_commit_in_progress`，读取哨兵未触发、无 proposal 写入 |
+
+### 5.3 覆盖与兼容
+
+- Initial phase 仍显示“已跳过（存量项目接入）”，launch 豁免不变。
+- 既有 AI 指令文件合并、reference 目录、verify 预跑推断与重复初始化拒绝均保持。
+- 不删除 seed 字段/命令，不触发数据迁移；只改变默认用户路径与消费优先级。

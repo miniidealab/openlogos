@@ -607,3 +607,86 @@ L1 tasks 结构可解析 / L2 `[code]` 标题在场 / L3 分阶段测试证据 /
 - merge-executor 侧的事后点数要求：合并落盘后按结构化口径清点，主文档实际 ID 集合 == 合并前 − REMOVED 整节 ID − REMOVED-ITEMS 点名 + 新增，不符即报告并暂停、不写 `SPEC_MERGED`（AI 行为规范，详见 `skills/merge-executor/SKILL.md`）。
 - 零回归：合法 delta（纯 ADDED / 全量 MODIFIED / 整节 REMOVED / MODIFIED+REMOVED-ITEMS 成对）的 merge 消费行为与既有逐字节一致；守恒门是新增拒绝分支，`ADDED / MODIFIED / REMOVED` 基本语义零改动（REMOVED-ITEMS 为新增的纯声明性标记，不引入新的合并操作语义）。
 
+## 按触达目标规格闭包（S39 / on-touch-v1）
+
+### 流程位置
+
+S39 嵌入既有 launched change，不新增子流程：
+
+```text
+plan
+  write-proposal
+  write-tasks  ← 识别触达场景、计算闭包、按 canonical target 去重
+  plan-exit    ← 仍是唯一方案确认门
+spec
+  write-delta  ← 每目标一份最终态 delta；每文件完成立即勾 task
+  spec-exit
+merge/spec-complete
+  shared evaluator 纵深检查 → merge-executor apply
+slice / implement / verify / deliver
+  既有语义不变
+```
+
+不得插入 `baseline` section/subflow/node/gate/marker。全自动/半自动对 plan-exit、spec-exit、merge 等授权规则保持现状。
+
+### Plan 产物契约
+
+新提案在 proposal 写：
+
+```yaml
+baseline_closure:
+  policy: on-touch-v1
+  schema_version: 1
+  unit: canonical-merge-target-path
+  delta_cardinality: exactly-one-per-non-skip-target
+  effective_view: merged-resources-plus-current-change-deltas
+  ambiguity: block-before-existing-plan-exit
+  standalone_baseline_required: false
+  jit_confirmation: disabled
+  touched_scenario_ids: [S39]
+  targets:
+    - category: scenario
+      scenario_ids: [S39]
+      mode: CREATE
+      delta_path: "deltas/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md"
+      reason: "新增场景需要完整时序。"
+      evidence: ["target_absent: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md"]
+      missing_evidence: []
+```
+
+唯一 fenced YAML 内的 `touched_scenario_ids[] + targets[]` 是权威计划；每个 target 固定字段和组合规则见 baseline-closure §5.1–5.3，人读表只作投影。tasks 中每个 MODIFY/CREATE target 恰一 checkbox；plan 必须 proposal P==tasks T，spec/merge 必须 P==T==deltas D。AMBIGUOUS 未清零、SKIP 缺 evidence、漏 touched scenario 维度或任一集合差异时 plan 不完整。
+
+### Delta cardinality 与最终态
+
+- delta path 与最终 target path 按既有目录映射一一对应。
+- 同 canonical target 不得出现多条 task；若多个场景共享主文档，必须聚合为一份 delta。
+- 目标存在：MODIFY；同文件可组合 MODIFIED/ADDED。
+- 目标缺失：CREATE；不新增名为 CREATE 的 merge 操作。Markdown 用 ADDED 章节，API/DB non-Markdown 用可剥离的 ADDED 首行控制行加完整 payload；内容必须满足 `spec/baseline-closure.md` 的完整度。
+- 禁止以不同临时文件名表达同一 target 的“先基线、后增量”；merge 不定义顺序或 last-wins。
+
+### Effective view
+
+delta producer 后续步骤必须读取“已合并 target + 当前 change 同 target 唯一 delta”的预期结果。其它 change、archive、seed staging 不得叠加。API 从有效时序派生；测试从有效需求/场景/API/DB 派生。
+
+### change-lint 与 merge 纵深防御
+
+- plan 阶段校验闭包声明、模式、target 唯一/存在性与 AMBIGUOUS。
+- spec 阶段双向对账 task/delta、CREATE 完整度并继续执行 L1–L8。
+- merge 消费点复用同一 evaluator；plan 后模式/磁盘事实漂移时 fail-closed。
+- legacy 提案无 policy 且无新模式时保持兼容；使用模式却删除声明必须违规。
+
+### 缺失目标 apply
+
+merge-executor 对 CREATE 在 apply 前再次确认目标缺失，以 ADDED 内容构造完整新文件。全部 MODIFY/CREATE、新 scenario/decision counter 与 resource_index 在同一事务写入；失败回滚且不写 SPEC_MERGED。不得静默覆盖外部刚创建的目标。
+
+### adopted 与 seed
+
+`baseline_seed_state` 三态、coverage/provenance 与 baseline-seed 命令保留，但不再是 change prerequisite 或默认 next action。committed/fresh seed 只作证据加速。安全 open run/未提交 staging 排除后可继续；未终结 journal 必须在同一锁内恢复，失败硬报 `baseline_commit_in_progress` 并禁止读取半新 resources/index。adopted 自动 skip 只豁免 Initial 完整性，后续按触达场景判断 API/DB/编排适用性。
+
+### 明确禁止
+
+- `[baseline]` 任务、嵌套 change、双 delta、CREATE 新 marker；
+- JIT advisory、逐区域人工确认、verified/confirmed 写回、baseline_warnings；
+- 以代码推断历史 Why；
+- 在 plan-exit 批准前提前产 Markdown delta（既有 GUI prototype 例外不变）；
+- 在 write-tasks 预填 `[code]` 切片。
