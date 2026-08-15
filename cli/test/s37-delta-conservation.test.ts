@@ -19,7 +19,7 @@ import {
   resolveModifiedSectionKeys,
 } from '../src/lib/change-lint.js';
 import { parseTestCaseIds, extractStructuredTestIds } from '../src/lib/proposal-lifecycle.js';
-import { makeTempRoot, scaffoldProject } from './helpers.js';
+import { makeTempRoot, scaffoldProject, withCompleteClarification } from './helpers.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_ROOT = resolve(HERE, '..');
@@ -72,12 +72,12 @@ function setupProject(o: StOpts = {}): { root: string; slug: string; dir: string
   writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core', createdAt: '2026-08-01T00:00:00.000Z' }));
   const dir = join(root, 'logos', 'changes', slug);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'proposal.md'), [
+  writeFileSync(join(dir, 'proposal.md'), withCompleteClarification([
     '# 变更提案：feat', '', '> module: core', '',
     '## 变更原因', '需要新能力。', '', '## 变更类型', '代码级修复', '',
     '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '需要 CLI 代码、测试和 reporter 实现。',
-  ].join('\n'));
+  ].join('\n')));
   writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/test/` — 更新用例\n\n## [code] 代码实现\n');
   if (o.target) {
     const t = join(root, o.target.rel);
@@ -587,9 +587,9 @@ describe('S37 — 契约、同源与零漂移', () => {
     }
   });
 
-  it('UT-S37-31: 零回归——枚举 35 码闭合；合法 delta 零 L8 违规、L1–L7 判据不受影响', () => {
-    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(35);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(35);
+  it('UT-S37-31: 零回归——枚举 36 码闭合；合法 delta 零 L8 违规、L1–L7 判据不受影响', () => {
+    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(36);
+    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(36);
     // 合法形态全过：纯 ADDED / 全量 MODIFIED / 整节 REMOVED / 成对部分删除
     const legalDeltas = [
       delta('ADDED', '新章节', table('SMOKE-core-99')),

@@ -4,6 +4,7 @@ import { basename, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = process.cwd();
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const runnerPattern = /^smoke-.+\.(?:sh|js|mjs|cjs)$/;
 const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'logos']);
 const resultPath = resolve(
@@ -52,6 +53,23 @@ if (runners.length === 0) {
 let failed = false;
 for (const runner of runners) {
   const { command, args, cwd } = commandFor(runner);
+  if (runner === 'website/scripts/smoke-releases.mjs') {
+    console.log('正在刷新网站 smoke 构建产物');
+    let preparationFailed = false;
+    for (const args of [['run', 'generate:releases'], ['exec', '--', 'astro', 'build']]) {
+      const build = spawnSync(npmCommand, args, {
+        cwd,
+        stdio: 'inherit',
+        env: process.env,
+      });
+      if (build.status !== 0) {
+        failed = true;
+        preparationFailed = true;
+        break;
+      }
+    }
+    if (preparationFailed) continue;
+  }
   console.log(`Running ${runner}`);
   const result = spawnSync(command, args, {
     cwd,

@@ -1,3 +1,68 @@
+# 部署报告：plan-decision-clarification / OpenLogos 0.13.25（2026-08-15）
+
+## 一、部署摘要
+
+- **模块 / 提案**：core / `plan-decision-clarification`。
+- **授权依据**：`openlogos next --auto` 已对 `deliver-entry` 放行；`GATE_AUTO_PASSED` 中存在 `gate_id=deliver-entry`，时间为 `2026-08-15T04:43:46.916Z`。
+- **目标环境**：当前开发机 npm 全局环境；命令入口 `/opt/homebrew/bin/openlogos`。
+- **部署时间**：2026-08-15T04:44:58Z 至 2026-08-15T04:46:19Z。
+- **版本变化**：全局 `@miniidealab/openlogos` 从 `0.13.24` 升级到 `0.13.25`。
+- **结论**：本地全局部署 **PASS**；未执行 smoke、archive、launch、npm publish、tag、GitHub Release、官网部署或 git push。
+
+## 二、部署前检查
+
+| 检查项 | 结果 |
+|---|---|
+| `VERIFY_PASS` | **PASS**：提案 marker 在场 |
+| 版本一致性 | **PASS**：`cli/package.json`、插件元数据与 `CHANGELOG.md` 均为 `0.13.25` |
+| TypeScript 构建 | **PASS**：`npm run build` 退出码 0 |
+| CLI 全量测试 | **PASS**：61 个测试文件，1752/1752 项通过 |
+| Website reporter 测试 | **PASS**：3/3 项通过 |
+| `npm pack --dry-run` | **PASS**：版本 `0.13.25`，402 个文件 |
+| 安装前命令 | `/opt/homebrew/bin/openlogos`，版本 `0.13.24` |
+| 环境 | Node `v23.10.0`；npm `10.9.2`；全局根 `/opt/homebrew/lib/node_modules` |
+
+## 三、候选包与回滚包
+
+候选包：
+
+- 路径：`/private/tmp/openlogos-local-deploy-0.13.25.43Z3sO/candidate/miniidealab-openlogos-0.13.25.tgz`
+- SHA-256：`137f0dfdfa0f6785ecd7fb5d97125b1e7d7f6da70a9c9fee7139b002aeaf8d82`
+- 包内版本：CLI `0.13.25`，Claude 插件元数据 `0.13.25`
+- 包内关键资产：`dist/index.js`、`spec/schema/status.schema.json`、`spec/schema/next.schema.json`、`skills/change-writer/SKILL.md` 均在场
+
+回滚包：
+
+- 来源：npm registry 的 `@miniidealab/openlogos@0.13.24` 官方 tarball
+- 路径：`/private/tmp/openlogos-local-deploy-0.13.25.43Z3sO/rollback/miniidealab-openlogos-0.13.24.tgz`
+- SHA-256：`80c0ea7945632105634e285186acfaef875a89ff7748406c1a9c9cb5512fdf79`
+- 包内版本：`0.13.24`
+- 回滚命令：`npm install -g /private/tmp/openlogos-local-deploy-0.13.25.43Z3sO/rollback/miniidealab-openlogos-0.13.24.tgz`
+- 回滚后核对：重新解析命令并确认 `openlogos --version` 返回 `0.13.24`
+
+## 四、全局安装与安装后核对
+
+| 动作 / 检查 | 结果 |
+|---|---|
+| `npm install -g <0.13.25 candidate tarball>` | **PASS**：14 个包完成更新 |
+| 重新解析命令 | **PASS**：`/opt/homebrew/bin/openlogos` |
+| `openlogos --version` | **PASS**：精确返回 `0.13.25` |
+| 全局包 / 插件版本 | **PASS**：均为 `0.13.25` |
+| 两份 JSON Schema | **PASS**：status / next 均来自本次安装包 |
+| change-writer Skill | **PASS**：随包在场 |
+| 本轮修复 | **PASS**：全局运行时代码含 pending 模板、占位理由保护与重复 YAML 围栏保护 |
+
+本次仅替换本机 npm 全局 CLI，无数据库或配置迁移，无常驻服务需要重启。
+
+## 五、边界与后续门禁
+
+1. 本工作单元未运行 `openlogos smoke`；`SMOKE-core-59`～`SMOKE-core-61` 留给独立 smoke 门禁。
+2. 未运行 `openlogos archive` 或 `openlogos launch`。
+3. 未创建或推送 tag，未执行 npm publish、GitHub Release、官网部署或 git push。
+4. 本地全局部署成功后由 `openlogos deploy-done` 受控勾选 `[deploy]` 任务并写 `DEPLOY_DONE`；不得手写 marker。
+
+---
+
 # 部署报告：baseline-on-touch / OpenLogos 0.13.24（2026-08-10）
 
 ## 一、部署摘要

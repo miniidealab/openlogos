@@ -7,6 +7,7 @@ import { normalizeSandboxConfig, runSandboxedCommand, buildInitialSandboxData, t
 import { parseJsonl } from './verify.js';
 import {
   checkSmokeCoverage,
+  resolveSmokeCommand,
   extractSmokeIdsFromContent,
   type SmokeCoverageCheck,
   type SmokeCoverageDiagnostic,
@@ -202,7 +203,7 @@ function readSmokeConfig(root: string): {
     if (config.smoke?.command) command = config.smoke.command;
     sandbox = normalizeSandboxConfig(config.smoke);
   } catch { /* use defaults */ }
-  return { command, resultPath, reportPath, sandbox };
+  return { command: resolveSmokeCommand(root, command) ?? undefined, resultPath, reportPath, sandbox };
 }
 
 export function smoke(format: OutputFormat = 'text', environment?: string) {

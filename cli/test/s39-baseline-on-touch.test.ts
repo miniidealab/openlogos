@@ -31,6 +31,7 @@ import {
   applyBaselineClosureBatch, BASELINE_CLOSURE_APPLY_JOURNAL, recoverBaselineClosureApply,
 } from '../src/lib/baseline-apply.js';
 import { extractUniqueAuthoritySection } from '../src/lib/markdown-scan.js';
+import { withCompleteClarification } from './helpers.js';
 
 type Mode = 'MODIFY' | 'CREATE' | 'SKIP' | 'AMBIGUOUS';
 interface RawTarget {
@@ -112,11 +113,11 @@ function setup(ids: string[] = ['S39']): Fixture {
 }
 
 function proposalText(f: Fixture): string {
-  return [
+  return withCompleteClarification([
     '# 变更提案', '', '> module: core', '', '## 基线闭包计划', '',
     '```yaml', stringifyYaml({ baseline_closure: f.closure }).trimEnd(), '```', '',
     '## 变更类型', '设计级', '', '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否',
-  ].join('\n');
+  ].join('\n'));
 }
 
 function writeFixture(f: Fixture, checked: boolean, withDeltas: boolean, overrides = new Map<string, string>()): void {

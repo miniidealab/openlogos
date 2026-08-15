@@ -522,10 +522,16 @@ function smokeContractSelfDescription() {
       // ① 响应版本必须在 schema 支持集内
       assert(data.contract && supportedVersions[name].includes(v),
         `${name} data.contract.version(${v}) 不在 packed ${name} schema 支持集(${supportedVersions[name]})`);
-      // ② 条件版本一致性：任一 module 输出 features ⟺ 1.1.0；否则 1.0.0
+      // ② 条件版本一致性：clarification 优先使用 1.2.0；否则 features 使用 1.1.0；基础响应使用 1.0.0。
       const hasFeatures = Array.isArray(data.modules) && data.modules.some(m => m.features !== undefined);
-      assert(v === (hasFeatures ? '1.1.0' : '1.0.0'),
-        `${name} 条件版本失配: hasFeatures=${hasFeatures} 但 contract.version=${v}`);
+      const hasClarification = name === 'status'
+        ? (Array.isArray(data.modules) && data.modules.some(m => m.active_change?.plan_state?.clarification !== undefined))
+          || data.plan_state?.clarification !== undefined
+        : (Array.isArray(data.modules) && data.modules.some(m => m.plan_state?.clarification !== undefined))
+          || data.plan_state?.clarification !== undefined;
+      const expectedVersion = hasClarification ? '1.2.0' : hasFeatures ? '1.1.0' : '1.0.0';
+      assert(v === expectedVersion,
+        `${name} 条件版本失配: hasFeatures=${hasFeatures}, hasClarification=${hasClarification} 但 contract.version=${v}`);
     }
     const active = statusData.modules.find(item => item.id === 'core').active_change;
     assert(['pre-implement', 'implement', 'post-implement'].includes(active.step_meta?.phase), `step_meta.phase 非法: ${active.step_meta?.phase}`);

@@ -7,7 +7,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
 import { next } from '../src/commands/next.js';
 import { status, collectStatusData } from '../src/commands/status.js';
 import { verify } from '../src/commands/verify.js';
@@ -56,7 +56,7 @@ function setupLaunchedProposal(root: string, slug = 'feat'): string {
     '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
     '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '概述。'].join('\n');
-  writeFileSync(join(dir, 'proposal.md'), proposal);
+  writeFileSync(join(dir, 'proposal.md'), withCompleteClarification(proposal));
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
   writeFileSync(join(dir, 'SPEC_MERGED'), '');
   // contract-self-description 切片1（C2）：loop_state 挂出判据收紧为四事实合取——既有 loop 激活类
@@ -124,9 +124,9 @@ describe('S27 — loop 派生（next/status）', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
     // 设计级提案 + [delta] 全勾 → ready-to-merge（前沿远未到 verify）
-    writeFileSync(join(dir, 'proposal.md'), ['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', '设计级', '',
+    writeFileSync(join(dir, 'proposal.md'), withCompleteClarification(['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', '设计级', '',
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯文档',
-      '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '概述。'].join('\n'));
+      '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '概述。'].join('\n')));
     writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n');
     writeOverlay(root, 'launched', setLoop('launched', 3));
     writeLedger(join(dir, 'LOOP_ITERS'), [row(1, 'fail')]); // 即便有账本，前沿未到 verify → 不阻塞
@@ -142,9 +142,9 @@ describe('S27 — loop 派生（next/status）', () => {
     const dir = join(root, 'logos', 'changes', 'feat');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
-    writeFileSync(join(dir, 'proposal.md'), ['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', '设计级', '',
+    writeFileSync(join(dir, 'proposal.md'), withCompleteClarification(['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', '设计级', '',
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯文档',
-      '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '概述。'].join('\n'));
+      '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '概述。'].join('\n')));
     writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n');
     writeOverlay(root, 'launched', setLoop('launched', 3));
     writeLedger(join(dir, 'LOOP_ITERS'), [row(1, 'fail')]);

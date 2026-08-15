@@ -15,7 +15,7 @@ import { allocateDecisionRecordIds, parseDecisionFilenameDxx, applyDecisionRecor
 import { DELTA_TO_RESOURCE } from '../src/lib/delta-classify.js';
 import { readProjectYaml } from '../src/lib/project-yaml.js';
 import { scanCandidateFiles, inferResourceDesc } from '../src/lib/sync-resource-index.js';
-import { makeTempRoot, scaffoldProject } from './helpers.js';
+import { makeTempRoot, scaffoldProject, withCompleteClarification } from './helpers.js';
 
 const CLI_ROOT = resolve(dirname(new URL(import.meta.url).pathname), '..');
 function spawnCli(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
@@ -52,7 +52,7 @@ function setupProj(o: ProjOpts = {}): { root: string; slug: string; dir: string 
     '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '需要 CLI 代码、测试和 reporter 实现。',
   ].join('\n');
-  writeFileSync(join(dir, 'proposal.md'), proposal);
+  writeFileSync(join(dir, 'proposal.md'), withCompleteClarification(proposal));
   const deltaTasks = ['- [ ] 产出 delta 到 `deltas/test/` — 更新用例'];
   if (o.decisionsDeltaTask) deltaTasks.push('- [ ] 产出 delta 到 `deltas/decisions/core-D07-x.md` — 决策记录');
   writeFileSync(join(dir, 'tasks.md'), `# 任务\n\n## [delta] 规格变更\n${deltaTasks.join('\n')}\n\n## [code] 代码实现\n`);

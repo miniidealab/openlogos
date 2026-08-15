@@ -10,7 +10,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
 import { status } from '../src/commands/status.js';
@@ -35,13 +35,13 @@ function filledWithoutTestIds(): string {
 }
 
 function filledWithOverview(overview: string): string {
-  return [
+  return withCompleteClarification([
     '# 变更提案：feat', '', '## 变更原因', '需要新能力。', '', '## 变更类型', '设计级', '',
     '## 变更范围', '- 影响的功能规格：core-01', '', '## 部署影响',
     '- 是否需要部署：否', '- 部署原因：纯文档', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     '## 变更概述', overview,
-  ].join('\n');
+  ].join('\n'));
 }
 
 function codeRequiredProposal(): string {

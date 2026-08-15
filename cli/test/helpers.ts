@@ -4,6 +4,49 @@ import { tmpdir } from 'node:os';
 import { vi, type MockInstance } from 'vitest';
 
 /**
+ * 为历史测试夹具补上一个已完成的 clarification@1 区块。
+ *
+ * 生产代码必须把缺少该区块的 writing/legacy 提案判为待回填；旧测试若关注的并非
+ * 决策澄清本身，应显式调用本 helper，避免无关用例被新 plan 出口门抢占。
+ */
+export function withCompleteClarification(content: string): string {
+  if (/^##\s+(?:决策澄清|Decision Clarification)\s*$/m.test(content)) return content;
+  return `${content.trimEnd()}\n\n## 决策澄清\n\n\`\`\`yaml\n` + [
+    'schema: openlogos/clarification@1',
+    'mode: adaptive',
+    'status: complete',
+    'impacts:',
+    '  data:',
+    '    status: none',
+    '    reason: 测试夹具不涉及数据影响',
+    '  compatibility:',
+    '    status: none',
+    '    reason: 测试夹具不涉及兼容性影响',
+    '  security_privacy:',
+    '    status: none',
+    '    reason: 测试夹具不涉及安全或隐私影响',
+    '  public_release:',
+    '    status: none',
+    '    reason: 测试夹具不涉及公开发布',
+    '  external_commitment:',
+    '    status: none',
+    '    reason: 测试夹具不涉及外部承诺',
+    'decisions:',
+    '  - id: C99',
+    '    category: deployment',
+    '    question: 测试夹具是否需要部署？',
+    '    answer: 沿用夹具中的部署声明',
+    '    rationale: 该决定仅用于隔离非澄清用例',
+    '    source: user',
+    '    affects:',
+    '      - proposal',
+    '    rejected_options: []',
+    'unresolved: []',
+    'defaults: []',
+  ].join('\n') + '\n```\n';
+}
+
+/**
  * Create an isolated temp directory that mimics an OpenLogos project root.
  * Returns { root, cleanup }.
  */

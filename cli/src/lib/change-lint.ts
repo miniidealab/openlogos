@@ -18,6 +18,7 @@ import {
   extractStructuredTestIds,
   extractTaskSectionItems,
 } from './proposal-lifecycle.js';
+import { evaluateProposalClarification } from './clarification.js';
 import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import {
   DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError,
@@ -84,6 +85,7 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'delta_target_unplanned',
   'create_target_incomplete',
   'non_markdown_delta_invalid',
+  'clarification_contract_invalid',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -871,6 +873,22 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
         path: relTasks,
         message: `需代码的提案在当前证据等级（${evidence.stage}）下无可采信的 UT/ST/SMOKE ID`,
         fix_hint: '在 tasks.md 的 [delta] 规划测试规格 delta（目标含 `deltas/test/`），或在 proposal.md 的「## 复用测试 ID」小节按固定语法列出已存在的具体 ID（如 UT-S09-02）',
+      });
+    }
+  }
+
+  // 决策澄清协议：与 proposal 完成谓词复用同一 evaluator，逐项汇总结构/类别/依赖问题。
+  const clarification = evaluateProposalClarification(
+    proposalContent,
+    resolveProposalDeploymentDecision(proposalDir).deployment_required,
+  );
+  if ((clarification.present || !existsSync(join(proposalDir, 'SPEC_MERGED'))) && !clarification.valid) {
+    for (const issue of clarification.issues) {
+      pushViolation(acc, 3, {
+        code: 'clarification_contract_invalid',
+        path: relProposal,
+        message: `决策澄清契约非法：${issue}`,
+        fix_hint: '按 openlogos/clarification@1 补齐五类 impacts、合法 CXX/依赖、匹配的 user 决定与可恢复 unresolved；未知主版本请升级 CLI',
       });
     }
   }

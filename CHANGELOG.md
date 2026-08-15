@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.25] - 2026-08-14
+
+### Added
+
+- **Plan 阶段决策澄清协议（plan-decision-clarification）** — proposal 中新增中英文 `clarification@1` 结构，统一表达五类影响、条件性必选用户决定、稳定未决队首与完整 `next_decision`；部署与公开发布分别决策，避免授权语义互相替代。
+- `status --format json` 与 `next --format json` 共享 `plan_state.clarification` builder，契约按条件升级到 `1.2.0`；writing、legacy 缺区块和未知主版本均保守停止，`next --auto` 不会替用户接受推荐答案。
+- `change-lint` 新增 clarification 跨字段一致性诊断；新增发布后 smoke runner，覆盖全局安装版本一致性、已安装 CLI 的 clarification Schema 以及部署决定缺失时的 fail-closed 行为。
+
+### Changed
+
+- proposal 完成谓词现在同时要求决策澄清已完成；默认中英文模板携带可直接填写的 `clarification@1` 区块。
+
 ## [0.13.24] - 2026-08-05
 
 > 本版本随 tag 一并首次对外发布 `0.13.23` 的内容（`0.13.23` 本地候选版从未推送 tag / 发布 npm）。

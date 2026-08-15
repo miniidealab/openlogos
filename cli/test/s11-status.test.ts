@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass, withCompleteClarification } from './helpers.js';
 import {
   listFiles,
   collectStatusData,
@@ -109,14 +109,14 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
   it('UT-S11-12: validates [deploy] section against proposal deployment decision', () => {
     const proposalDir = join(root, 'logos', 'changes', 'conflict');
     mkdirSync(proposalDir, { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), [
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification([
       '# 变更提案：conflict',
       '',
       '## 部署影响',
       '- 是否需要部署：否',
       '- 部署原因：文档变更',
       '- 是否需要 smoke：否',
-    ].join('\n'));
+    ].join('\n')));
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
@@ -196,7 +196,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
   it('UT-S11-16: proposal 正文引用 `是 / 否` 不应影响模板完成判定', () => {
     const proposalDir = join(root, 'logos', 'changes', 'placeholder-in-body');
     mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), [
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification([
       '# 变更提案：placeholder-in-body',
       '',
       '## 变更原因',
@@ -218,7 +218,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
       '',
       '## 变更概述',
       '修复模板判定逻辑。',
-    ].join('\n'));
+    ].join('\n')));
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
@@ -434,7 +434,7 @@ describe('S11 Scenario Tests — status command', () => {
     );
     const proposalDir = join(root, 'logos', 'changes', slug);
     mkdirSync(proposalDir, { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
     writeFileSync(join(proposalDir, 'tasks.md'), tasks);
     return proposalDir;
   }
@@ -703,7 +703,7 @@ describe('S11 Scenario Tests — status command', () => {
     writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
     const proposalDir = join(root, 'logos', 'changes', 'my-feature');
     mkdirSync(proposalDir, { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [ ] write delta\n');
 
     const data = collectStatusData(root);
@@ -901,7 +901,7 @@ describe('S11 Scenario Tests — status command', () => {
     writeFileSync(guardPath, JSON.stringify({ activeChange: 'my-feature', module: 'core', createdAt: new Date().toISOString() }));
     const proposalDir = join(root, 'logos', 'changes', 'my-feature');
     mkdirSync(proposalDir, { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',

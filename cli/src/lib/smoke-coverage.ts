@@ -36,6 +36,15 @@ export interface SmokeCoverageOptions {
   resultPath?: string;
 }
 
+/**
+ * 统一 smoke dispatcher 是项目级约定入口；显式配置优先，未配置但入口文件在场时
+ * 使用确定性默认值。这样本地 config 未纳入版本控制时，verify/smoke 仍能识别已交付 runner。
+ */
+export function resolveSmokeCommand(root: string, configured?: string | null): string | null {
+  if (typeof configured === 'string' && configured.trim()) return configured.trim();
+  return existsSync(join(root, 'scripts', 'run-smoke.js')) ? 'node scripts/run-smoke.js' : null;
+}
+
 function uniqueSorted(values: Iterable<string>): string[] {
   return Array.from(new Set(values)).sort();
 }

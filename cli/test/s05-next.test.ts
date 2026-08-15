@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass, withCompleteClarification } from './helpers.js';
 import { next } from '../src/commands/next.js';
 import { detectProposalStep } from '../src/commands/status.js';
 
@@ -298,7 +298,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-06: proposal_step=delta-writing → suggest writing deltas', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [ ] task one');
 
     next();
@@ -318,7 +318,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-06c: real task mentioning 实现代码变更 is not treated as stock template', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n- [x] 实现代码变更（直接修改 src，无需 delta）\n');
 
     expect(detectProposalStep(proposalDir)).toBe('delta-writing');
@@ -326,7 +326,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-07: proposal_step=delta-writing with partial delta tasks → suggest continuing deltas', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [ ] task one\n- [x] task two');
     const deltasDir = join(proposalDir, 'deltas', 'prd');
     mkdirSync(deltasDir, { recursive: true });
@@ -340,7 +340,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-07b: unsupported delta folders do not make a proposal ready to merge', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n- [x] task two');
     mkdirSync(join(proposalDir, 'deltas', 'misc'), { recursive: true });
     writeFileSync(join(proposalDir, 'deltas', 'misc', 'delta1.md'), 'delta content');
@@ -350,7 +350,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-08: proposal_step=ready-to-merge → suggest openlogos merge', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 影响的需求文档：无\n## 变更概述\n真实内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n- [x] task two');
     const deltasDir = join(proposalDir, 'deltas', 'prd');
     mkdirSync(deltasDir, { recursive: true });
@@ -516,7 +516,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-11: structured [delta] section all checked → ready-to-merge', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
@@ -535,7 +535,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-12: structured [delta] section partially checked → delta-writing', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容'));
     writeFileSync(join(proposalDir, 'tasks.md'), [
       '# 实现任务',
       '',
@@ -582,7 +582,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-13c: no-delta docs-only + no [code] section → ready-to-verify', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n文档级\n## 变更范围\n- 无\n## 变更概述\n纯文档调整，无需代码。');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n文档级\n## 变更范围\n- 无\n## 变更概述\n纯文档调整，无需代码。'));
     // 新格式但两个 section 都没有（极端情况）
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [other] 其他\n- [x] 某任务\n');
 
@@ -591,7 +591,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-14: old format tasks (no section tags) falls back to global allTasksChecked', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容');
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n代码级\n## 变更范围\n- 无\n## 变更概述\n真实内容'));
     // 旧格式：无 section 标记，所有任务全勾 + 有 delta 文件 → ready-to-merge
     writeFileSync(join(proposalDir, 'tasks.md'), '# Tasks\n- [x] task one\n- [x] task two\n');
     const deltasDir = join(proposalDir, 'deltas', 'prd');
@@ -910,7 +910,7 @@ describe('S05 Scenario Tests — next --format json', () => {
 
 // ── contract-self-description 切片2（C5）：next data 顶层 contract ──
 describe('S05 — next contract 版本握手（contract-self-description）', () => {
-  it('UT-S05-26: next data 顶层 contract 恒在场且等于 {version:"1.0.0"}（initial 与 launched 均取样）', async () => {
+  it('UT-S05-26: next data 顶层 contract 恒在场，initial 为 1.0.0、clarification writing 为 1.2.0', async () => {
     // initial 全新项目
     const a = makeTempRoot();
     scaffoldProject(a.root, { locale: 'zh' });
@@ -930,7 +930,7 @@ describe('S05 — next contract 版本握手（contract-self-description）', ()
     restore = mockCwd(b.root); cap = captureConsole();
     try { await next('json'); } finally { cap.restore(); restore(); }
     const data = JSON.parse(cap.logs[cap.logs.length - 1]).data;
-    expect(data.contract).toEqual({ version: '1.0.0' });
+    expect(data.contract).toEqual({ version: '1.2.0' });
     b.cleanup();
   });
 });
@@ -944,9 +944,9 @@ describe('S05 — next dispatch/requires_reviewed（contract-self-description）
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
     const dir = join(root, 'logos', 'changes', 'feat');
     mkdirSync(join(dir, 'deltas', 'test'), { recursive: true });
-    writeFileSync(join(dir, 'proposal.md'), ['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', proposalKind, '',
+    writeFileSync(join(dir, 'proposal.md'), withCompleteClarification(['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', proposalKind, '',
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码', '- 影响环境：无',
-      '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '实现 A。'].join('\n'));
+      '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '', '## 变更概述', '实现 A。'].join('\n')));
     writeFileSync(join(dir, 'tasks.md'), tasks);
     writeFileSync(join(dir, 'deltas', 'test', 'core-S05-test-cases.md'), '| UT-S05-90 | 回归 |\n');
     for (const [name, content] of markers) writeFileSync(join(dir, name), content);
@@ -1024,7 +1024,7 @@ describe('S05 — next dispatch/requires_reviewed（contract-self-description）
     for (const f of frontiers) {
       const { root, cleanup } = launchedProposal(f.tasks, f.markers);
       const data = await nextData(root);
-      expect(data.contract).toEqual({ version: '1.0.0' });
+      expect(data.contract).toEqual({ version: '1.2.0' });
       const nn = data.modules[0].next_node;
       expect(nn.id).toBe(f.id);
       expect(nn.dispatch.idempotent).toBe(f.idem);

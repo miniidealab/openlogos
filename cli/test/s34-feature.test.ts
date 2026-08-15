@@ -18,7 +18,7 @@ import type { ProjectYamlFeature, ProjectYamlScenario } from '../src/lib/project
 import { buildModuleFeatures, UNGROUPED_FEATURE_ID } from '../src/lib/feature-grouping.js';
 import { collectStatusData, status } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
-import { CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES } from '../src/lib/step-registry.js';
+import { CONTRACT_VERSION, CONTRACT_VERSION_WITH_CLARIFICATION, CONTRACT_VERSION_WITH_FEATURES } from '../src/lib/step-registry.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -221,12 +221,14 @@ describe('S34 — status/next 集成（条件版本 + 分组）', () => {
     });
     expect(collectStatusData(noFeat).contract.version).toBe(CONTRACT_VERSION); // 1.0.0
 
-    // 打包 schema 为 superset：x-contract-version = 1.1.0，version enum 含两版
+    // 打包 schema 为 superset：x-contract-version = 1.2.0，version enum 含三版
     const repo = join(process.cwd(), '..');
     for (const name of ['status', 'next'] as const) {
       const schema = JSON.parse(readFileSync(join(repo, 'spec', 'schema', `${name}.schema.json`), 'utf-8'));
-      expect(schema['x-contract-version']).toBe(CONTRACT_VERSION_WITH_FEATURES);
-      expect(schema.$defs.contract.properties.version.enum).toEqual([CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES]);
+      expect(schema['x-contract-version']).toBe(CONTRACT_VERSION_WITH_CLARIFICATION);
+      expect(schema.$defs.contract.properties.version.enum).toEqual([
+        CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES, CONTRACT_VERSION_WITH_CLARIFICATION,
+      ]);
     }
   });
 

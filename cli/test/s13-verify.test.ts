@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, lstatSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
 import {
   parseJsonl,
   parseJsonlWithDiagnostics,
@@ -96,7 +96,7 @@ describe('S13 — 自动流程证据分层诊断', () => {
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
     const dir = join(root, 'logos', 'changes', 'feat');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'proposal.md'), [
+    writeFileSync(join(dir, 'proposal.md'), withCompleteClarification([
       '# 变更提案：feat',
       '',
       '## 变更原因',
@@ -118,7 +118,7 @@ describe('S13 — 自动流程证据分层诊断', () => {
       '',
       '## 变更概述',
       '实现自动流程诊断。',
-    ].join('\n'));
+    ].join('\n')));
     writeFileSync(join(dir, 'tasks.md'), [
       '# 任务',
       '',
@@ -145,7 +145,7 @@ describe('S13 — 自动流程证据分层诊断', () => {
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
     const dir = join(root, 'logos', 'changes', 'feat');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'proposal.md'), [
+    writeFileSync(join(dir, 'proposal.md'), withCompleteClarification([
       '# 变更提案：feat',
       '',
       '## 变更原因',
@@ -167,7 +167,7 @@ describe('S13 — 自动流程证据分层诊断', () => {
       '',
       '## 变更概述',
       '实现自动流程诊断。',
-    ].join('\n'));
+    ].join('\n')));
     writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [x] d\n');
     mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
     writeFileSync(join(root, 'logos/resources/verify/test-results.jsonl'), [

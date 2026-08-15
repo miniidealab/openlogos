@@ -10,6 +10,7 @@ import {
   authorityScan, extractUniqueAuthoritySection, isTableDelimiterRow, tableRowCells,
 } from './markdown-scan.js';
 import { listEvidenceTestDeltaFiles } from './delta-classify.js';
+import { evaluateProposalClarification, type ClarificationOutput } from './clarification.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
 import type { ModuleInfo } from '../commands/status.js';
 
@@ -88,6 +89,7 @@ export interface PlanState {
   tasks_execution_total: number;
   tasks_execution_scope: TasksExecutionScope;
   diagnostic?: string;
+  clarification?: ClarificationOutput;
 }
 
 const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'spec', 'skills'] as const;
@@ -137,7 +139,7 @@ export function isDeploymentSectionTemplateFilled(content: string): boolean {
 export function isProposalTemplateFilled(content: string): boolean {
   const normalized = content.trim();
   if (!normalized) return false;
-  return normalized.includes('## 变更原因')
+  const baseFilled = normalized.includes('## 变更原因')
     && normalized.includes('## 变更类型')
     && normalized.includes('## 变更范围')
     && normalized.includes('## 变更概述')
@@ -145,7 +147,11 @@ export function isProposalTemplateFilled(content: string): boolean {
     && !normalized.includes('[需求级 / 设计级 / 接口级 / 代码级]')
     && !normalized.includes('[列表]')
     && !normalized.includes('[用 1-3 段话概述具体改什么]')
+    && !normalized.includes('[Describe what will change in 1-3 paragraphs]')
     && isDeploymentSectionTemplateFilled(normalized);
+  if (!baseFilled) return false;
+  const deploymentRequired = parseProposalDeploymentDecision(normalized)?.deployment_required ?? null;
+  return evaluateProposalClarification(normalized, deploymentRequired).output.status === 'complete';
 }
 
 export function isTasksTemplateFilled(content: string): boolean {
@@ -786,6 +792,11 @@ export function derivePlanState(
   const sections = parseTaskSections(taskText);
   const execution = resolveTasksExecution(sections);
   const proposalFilled = isProposalTemplateFilled(proposalContent);
+  const clarificationEvaluation = evaluateProposalClarification(
+    proposalContent,
+    parseProposalDeploymentDecision(proposalContent)?.deployment_required ?? null,
+  );
+  const includeClarification = clarificationEvaluation.present || step === 'writing' || step === 'ready-to-delta';
   const tasksTemplateFilled = isTasksTemplateFilled(taskText) && sections !== null;
   const planApproved = existsSync(join(proposalDir, PLAN_APPROVED_MARKER))
     || (step !== 'writing' && step !== 'ready-to-delta');
@@ -814,6 +825,7 @@ export function derivePlanState(
     tasks_execution_total: execution.total,
     tasks_execution_scope: execution.scope,
     ...(diagnostic ? { diagnostic } : {}),
+    ...(includeClarification ? { clarification: clarificationEvaluation.output } : {}),
   };
 }
 

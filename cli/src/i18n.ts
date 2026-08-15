@@ -633,6 +633,33 @@ design_system_fallback_reason: ""
 pages: []                   # 每项 {id, prototype: core-NN-<slug>.html, description}
 \`\`\`
 
+## 决策澄清
+
+\`\`\`yaml
+schema: openlogos/clarification@1
+mode: adaptive
+status: pending
+impacts:
+  data:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无数据高影响选择
+  compatibility:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无兼容高影响选择
+  security_privacy:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无安全隐私高影响选择
+  public_release:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无公开发布高影响选择
+  external_commitment:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无外部承诺高影响选择
+decisions: []
+unresolved: []
+defaults: []
+\`\`\`
+
 ## 变更概述
 [用 1-3 段话概述具体改什么]
 `;
@@ -668,6 +695,33 @@ ui_impact: false            # Does this change touch the UI (only meaningful for
 design_system_mode: generated   # generated | fallback (fallback requires design_system_fallback_reason)
 design_system_fallback_reason: ""
 pages: []                   # each item {id, prototype: core-NN-<slug>.html, description}
+\`\`\`
+
+## Decision Clarification
+
+\`\`\`yaml
+schema: openlogos/clarification@1
+mode: adaptive
+status: pending
+impacts:
+  data:
+    status: none
+    reason: change-writer must confirm from repository facts that no high-impact data choice is pending
+  compatibility:
+    status: none
+    reason: change-writer must confirm from repository facts that no high-impact compatibility choice is pending
+  security_privacy:
+    status: none
+    reason: change-writer must confirm from repository facts that no high-impact security or privacy choice is pending
+  public_release:
+    status: none
+    reason: change-writer must confirm from repository facts that no public release choice is pending
+  external_commitment:
+    status: none
+    reason: change-writer must confirm from repository facts that no external commitment choice is pending
+decisions: []
+unresolved: []
+defaults: []
 \`\`\`
 
 ## Summary

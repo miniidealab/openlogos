@@ -6,7 +6,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
 import { collectSmokeData, extractSmokeDefinedIds, smoke } from '../src/commands/smoke.js';
 import { detectRuntimeWriteProtection, DEPENDENCY_DIR_EXEMPT_INFO } from '../src/lib/sandbox.js';
-import { checkSmokeCoverage, discoverSmokeRunners } from '../src/lib/smoke-coverage.js';
+import { checkSmokeCoverage, discoverSmokeRunners, resolveSmokeCommand } from '../src/lib/smoke-coverage.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
 import { deployDone } from '../src/commands/deploy-done.js';
@@ -99,6 +99,7 @@ describe('S19 Unit Tests — smoke cases', () => {
   it('UT-S19-SMOKE-03: dispatcher 可发现 smoke runner', () => {
     mkdirSync(join(root, 'scripts'), { recursive: true });
     mkdirSync(join(root, 'website/scripts'), { recursive: true });
+    expect(resolveSmokeCommand(root, null)).toBeNull();
     writeFileSync(join(root, 'scripts/smoke-core.sh'), '#!/usr/bin/env bash\n');
     writeFileSync(join(root, 'website/scripts/smoke-releases.mjs'), 'process.exit(0);\n');
 
@@ -106,6 +107,9 @@ describe('S19 Unit Tests — smoke cases', () => {
       'scripts/smoke-core.sh',
       'website/scripts/smoke-releases.mjs',
     ]);
+    writeFileSync(join(root, 'scripts/run-smoke.js'), '#!/usr/bin/env node\n');
+    expect(resolveSmokeCommand(root, null)).toBe('node scripts/run-smoke.js');
+    expect(resolveSmokeCommand(root, 'bash scripts/custom-smoke.sh')).toBe('bash scripts/custom-smoke.sh');
   });
 
   it('UT-S19-07: smoke skip 计入有效通过率', () => {
@@ -623,7 +627,7 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(out).not.toContain('openlogos smoke');
   });
 
-  it('ST-S19-06: 缺少 DEPLOY_DONE 时拒绝 smoke 门禁推进', () => {
+  it('UT-S19-05 / ST-S19-06: 缺少 DEPLOY_DONE 时拒绝 smoke 门禁推进', () => {
     writeLaunchedModule();
     const proposalDir = join(root, 'logos', 'changes', 'need-deploy-marker');
     mkdirSync(proposalDir, { recursive: true });
@@ -667,7 +671,7 @@ describe('S19 Scenario Tests — smoke command', () => {
     expect(existsSync(join(proposalDir, 'SMOKE_PASS'))).toBe(false);
   });
 
-  it('ST-S19-07: 重新标记部署完成后旧 smoke 结论失效', async () => {
+  it('UT-S19-06 / ST-S19-07: 重新标记部署完成后旧 smoke 结论失效', async () => {
     writeLaunchedModule();
     const proposalDir = join(root, 'logos', 'changes', 'runtime-change');
     mkdirSync(proposalDir, { recursive: true });

@@ -58,6 +58,35 @@ function withTempProject(prefix, fn) {
   }
 }
 
+function completeClarificationSection() {
+  return [
+    '## 决策澄清', '', '```yaml',
+    'schema: openlogos/clarification@1',
+    'mode: adaptive',
+    'status: complete',
+    'impacts:',
+    '  data:',
+    '    status: none',
+    '    reason: 冒烟夹具不改变数据结构或数据处理方式',
+    '  compatibility:',
+    '    status: none',
+    '    reason: 冒烟夹具不改变对外兼容契约',
+    '  security_privacy:',
+    '    status: none',
+    '    reason: 冒烟夹具不处理安全或隐私数据',
+    '  public_release:',
+    '    status: none',
+    '    reason: 冒烟夹具不执行公开发布',
+    '  external_commitment:',
+    '    status: none',
+    '    reason: 冒烟夹具不产生外部承诺',
+    'decisions: []',
+    'unresolved: []',
+    'defaults: []',
+    '```', '',
+  ];
+}
+
 function scaffoldLintFixture(root, opts = {}) {
   const slug = opts.slug ?? 'lint-fixture';
   mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
@@ -74,6 +103,7 @@ function scaffoldLintFixture(root, opts = {}) {
     '## 变更范围', '- 影响的功能规格：core-01', '', '## 部署影响',
     '- 是否需要部署：否', '- 部署原因：冒烟夹具', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
+    ...completeClarificationSection(),
     '## 变更概述', '纯文档更新，无需代码。',
   ].join('\n'));
   writeFileSync(join(root, 'logos/changes', slug, 'tasks.md'),

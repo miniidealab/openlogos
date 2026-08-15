@@ -18,7 +18,7 @@ import {
   type SandboxData,
 } from '../lib/sandbox.js';
 import { getDeployTasks } from './status.js';
-import { checkSmokeCoverage, type SmokeCoverageCheck } from '../lib/smoke-coverage.js';
+import { checkSmokeCoverage, resolveSmokeCommand, type SmokeCoverageCheck } from '../lib/smoke-coverage.js';
 import { deriveAutomationDiagnostic, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 
 export interface TestResult {
@@ -354,7 +354,7 @@ function readSmokeCommandConfig(root: string): { command: string | null; resultP
   } catch {
     // 使用默认 smoke 配置。
   }
-  return { command, resultPath };
+  return { command: resolveSmokeCommand(root, command), resultPath };
 }
 
 function applySmokePrecheck(root: string, data: VerifyData): VerifyData {

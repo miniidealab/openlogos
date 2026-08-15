@@ -9,7 +9,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
 import { next } from '../src/commands/next.js';
 import { status } from '../src/commands/status.js';
 import { gateForProposalStep } from '../src/lib/flow-derive.js';
@@ -21,14 +21,14 @@ afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 /** 已填提案（deploy/smoke 经 ## 部署影响 字段控制）。 */
 function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): string {
-  return [
+  return withCompleteClarification([
     '# 变更提案：feat', '', '## 变更原因', '需要新能力。', '', '## 变更类型', '设计级', '',
     '## 变更范围', '- 影响的功能规格：core-01-feature-specs', '', '## 部署影响',
     `- 是否需要部署：${deploy}`, '- 部署原因：说明', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', `- 是否需要 smoke：${smoke}`, '',
     '## 变更概述', '概述。',
     '', '## 复用测试 ID', '', '- UT-S24-23 — 回归覆盖', '- UT-S24-24 — 回归覆盖', '- ST-S24-10 — 回归覆盖',
-  ].join('\n');
+  ].join('\n'));
 }
 
 function codeRequiredProposal(): string {

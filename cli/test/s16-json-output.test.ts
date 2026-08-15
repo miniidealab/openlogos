@@ -855,18 +855,17 @@ describe('S16 — JSON Schema 发布与生产者一致性（contract-self-descri
     return JSON.parse(readFileSync(join(SCHEMA_DIR, `${name}.schema.json`), 'utf-8'));
   }
 
-  it('UT-S16-06: contract.version 与两份打包 schema 版本映射（add-feature-model 条件版本 superset）', async () => {
-    // add-feature-model（S34，delta-F1=B）：契约由单 const 版本升级为**条件版本**——
-    // schema 为向后兼容 superset，x-contract-version = 最高支持版本 1.1.0，$id 版本段同步为 1.1.0，
-    // version 由 const 放宽为 enum ["1.0.0","1.1.0"]（响应无 features 时 1.0.0、有 features 时 1.1.0）。
-    const { CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES } = await import('../src/lib/step-registry.js');
+  it('UT-S16-06: contract.version 与两份打包 schema 版本映射（clarification 条件版本 superset）', async () => {
+    // schema 为向后兼容 superset，1.2.0 新增 plan_state.clarification；旧响应仍支持 1.0/1.1。
+    const { CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES, CONTRACT_VERSION_WITH_CLARIFICATION } = await import('../src/lib/step-registry.js');
     for (const name of ['status', 'next'] as const) {
       const schema = loadSchema(name);
-      expect(schema['x-contract-version']).toBe(CONTRACT_VERSION_WITH_FEATURES);
-      expect(schema.$id.endsWith(`/${CONTRACT_VERSION_WITH_FEATURES}`)).toBe(true); // $id 版本段 = superset 最高版本
+      expect(schema['x-contract-version']).toBe(CONTRACT_VERSION_WITH_CLARIFICATION);
+      expect(schema.$id.endsWith(`/${CONTRACT_VERSION_WITH_CLARIFICATION}`)).toBe(true); // $id 版本段 = superset 最高版本
       expect(schema.properties.contract.$ref ?? schema.$defs.contract).toBeTruthy();
-      // 支持集恰为两版基线 + 含 feature 版
-      expect(schema.$defs.contract.properties.version.enum).toEqual([CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES]);
+      expect(schema.$defs.contract.properties.version.enum).toEqual([
+        CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES, CONTRACT_VERSION_WITH_CLARIFICATION,
+      ]);
       // 根级 allOf 条件约束存在：version==1.0.0 ⟹ 无 features
       expect(Array.isArray(schema.allOf) && schema.allOf.length >= 1).toBe(true);
     }
@@ -935,7 +934,7 @@ describe('S16 — JSON Schema 发布与生产者一致性（contract-self-descri
     // 等价 pack 产物面：files=[...,'spec'] + prepack 拷贝 → 以仓内 spec/schema 为包内 schema 事实源
     const ajv = await ajv2020();
     const { next } = await import('../src/commands/next.js');
-    const { CONTRACT_VERSION } = await import('../src/lib/step-registry.js');
+    const { CONTRACT_VERSION_WITH_CLARIFICATION } = await import('../src/lib/step-registry.js');
     const { root, cleanup } = makeTempRoot();
     scaffoldProject(root, { locale: 'zh' });
     // launched 活跃提案 fixture（含 step_meta/facts 的活跃形态）
@@ -956,8 +955,8 @@ describe('S16 — JSON Schema 发布与生产者一致性（contract-self-descri
     expect(ajv.validate(loadSchema('status'), sData), JSON.stringify(ajv.errors)).toBe(true);
     const ajv2 = await ajv2020();
     expect(ajv2.validate(loadSchema('next'), nData), JSON.stringify(ajv2.errors)).toBe(true);
-    expect(sData.contract.version).toBe(CONTRACT_VERSION);
-    expect(nData.contract.version).toBe(CONTRACT_VERSION);
+    expect(sData.contract.version).toBe(CONTRACT_VERSION_WITH_CLARIFICATION);
+    expect(nData.contract.version).toBe(CONTRACT_VERSION_WITH_CLARIFICATION);
     // 只验生产者：消费方保守模式不在本用例（归 runlogos R5）
     cleanup();
   });

@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
 import { deriveOverlayView } from '../src/lib/flow-overlay-derive.js';
 import { applyOverlay, loadBuiltinFlow } from '../src/lib/flow.js';
 import { status } from '../src/commands/status.js';
@@ -48,7 +48,7 @@ function fillProposal(root: string, slug = 'feat') {
     '## 变更范围', '- 影响：core-01', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯文档',
     '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '概述。'].join('\n');
-  writeFileSync(join(root, 'logos', 'changes', slug, 'proposal.md'), proposal);
+  writeFileSync(join(root, 'logos', 'changes', slug, 'proposal.md'), withCompleteClarification(proposal));
   writeFileSync(join(root, 'logos', 'changes', slug, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [ ] 产出 delta\n');
 }
 function runJson(root: string, fn: () => void): any {
@@ -184,7 +184,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
-    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
@@ -205,7 +205,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
-    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
@@ -226,7 +226,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
-    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
@@ -247,7 +247,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
-    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
@@ -522,7 +522,7 @@ describe('S25 — overlay 驱动派生（command: status / next）', () => {
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
-    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [x] 实现 x\n');
     writeFileSync(join(proposalDir, 'CUSTOM_VERIFY'), 'x'); // 自定义 marker
     writeOverlay(root, 'launched',
@@ -539,7 +539,7 @@ describe('S25 — overlay 驱动派生（command: status / next）', () => {
       '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯文档',
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
-    writeFileSync(join(proposalDir, 'proposal.md'), proposal);
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
     // [delta] 全勾 → 固定 tag 逻辑判 ready-to-merge
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [x] 产出 delta\n');
     // 试图把 write-delta 的 section tag 改成 custom（本切片不承诺生效）

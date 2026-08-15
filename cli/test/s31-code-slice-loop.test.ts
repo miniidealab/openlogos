@@ -13,7 +13,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
 import { detectProposalStep, status, type ModuleInfo } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
 import { verify } from '../src/commands/verify.js';
@@ -28,13 +28,13 @@ afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function filled(): string {
-  return [
+  return withCompleteClarification([
     '# 变更提案：feat', '', '## 变更原因', '需要新能力。', '', '## 变更类型', '设计级', '',
     '## 变更范围', '- 影响的功能规格：core-01', '', '## 部署影响',
     '- 是否需要部署：否', '- 部署原因：纯文档', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '概述。',
-  ].join('\n');
+  ].join('\n'));
 }
 
 function codeRequiredProposal(): string {

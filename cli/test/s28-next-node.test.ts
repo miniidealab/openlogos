@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, withCompleteClarification } from './helpers.js';
 import { next } from '../src/commands/next.js';
 import { status } from '../src/commands/status.js';
 import { resolveNextNode } from '../src/lib/flow-overlay-derive.js';
@@ -42,10 +42,10 @@ function setSingleModule(root: string, lifecycle: 'initial' | 'launched') {
   writeFileSync(join(root, 'logos', 'logos-project.yaml'),
     `project:\n  name: "t"\nmodules:\n  - id: core\n    name: core\n    lifecycle: ${lifecycle}\n`);
 }
-const PROPOSAL = (kind = '代码级') => ['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', kind, '',
+const PROPOSAL = (kind = '代码级') => withCompleteClarification(['# 变更提案：feat', '', '## 变更原因', 'x。', '', '## 变更类型', kind, '',
   '## 变更范围', '- 影响：core', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：纯代码',
   '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
-  '## 变更概述', '概述。'].join('\n');
+  '## 变更概述', '概述。'].join('\n'));
 function codeRequiredProposal(): string {
   return PROPOSAL('代码级修复').replace('概述。', '需要 CLI 状态派生代码、测试和 reporter 实现。');
 }
@@ -455,8 +455,8 @@ describe('S28 — next_node.dispatch 派发契约（contract-self-description）
     const status = runStatusJson(root);
     const next = await runNextJson(root);
     // 白名单内必须出现的差异
-    expect(status.contract).toEqual({ version: '1.0.0' });
-    expect(next.contract).toEqual({ version: '1.0.0' });
+    expect(status.contract).toEqual({ version: '1.2.0' });
+    expect(next.contract).toEqual({ version: '1.2.0' });
     expect(status.modules[0].active_change.step_meta).toEqual({ phase: 'pre-implement', kind: 'residency' });
     expect(status.modules[0].active_change.facts).toMatchObject({ spec_complete: true, slices_approved: false });
     expect(next.modules[0].next_node.dispatch).toBeTruthy();

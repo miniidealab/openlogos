@@ -109,6 +109,35 @@ function standardTargets(ids = ['S39']) {
   ];
 }
 
+function completeClarificationSection() {
+  return [
+    '## 决策澄清', '', '```yaml',
+    'schema: openlogos/clarification@1',
+    'mode: adaptive',
+    'status: complete',
+    'impacts:',
+    '  data:',
+    '    status: none',
+    '    reason: 冒烟夹具不改变数据结构或数据处理方式',
+    '  compatibility:',
+    '    status: none',
+    '    reason: 冒烟夹具不改变对外兼容契约',
+    '  security_privacy:',
+    '    status: none',
+    '    reason: 冒烟夹具不处理安全或隐私数据',
+    '  public_release:',
+    '    status: none',
+    '    reason: 冒烟夹具不执行公开发布',
+    '  external_commitment:',
+    '    status: none',
+    '    reason: 冒烟夹具不产生外部承诺',
+    'decisions: []',
+    'unresolved: []',
+    'defaults: []',
+    '```', '',
+  ];
+}
+
 const scenarioDelta = [
   '## ADDED — S39 完整场景', '', '# S39 目标', '## 参与者', '- User', '- CLI',
   '## 前置与后置', '前置、后置。', '```mermaid', 'sequenceDiagram', '  participant U as User',
@@ -153,6 +182,7 @@ function writeProposal(root, slug, targets, opts = {}) {
     JSON.stringify({ baseline_closure: fixedClosure(targets, opts.touched ?? ['S39']) }, null, 2), '```', '',
     '## 变更类型', opts.code === false ? '纯文档' : '设计级', '',
     '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否',
+    '', ...completeClarificationSection(),
   ].join('\n');
   writeFileSync(join(dir, 'proposal.md'), proposal);
   const tasks = targets.filter(t => t.delta_path).map(t => `- [${opts.checked ? 'x' : ' '}] [${t.mode}] \`${t.delta_path}\`：${t.reason}`).join('\n');

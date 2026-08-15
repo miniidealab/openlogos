@@ -997,7 +997,11 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
 
   const result: NextData = {
     // add-feature-model（S34，delta-F1=B）：条件版本——响应含任一 modules[].features 时 1.1.0，否则 1.0.0
-    contract: { version: contractVersion((data.modules ?? []).some(m => m.features !== undefined)) },
+    contract: { version: contractVersion(
+      (data.modules ?? []).some(m => m.features !== undefined),
+      (moduleItems ?? []).some(m => m.plan_state?.clarification !== undefined)
+        || basePlanState?.clarification !== undefined,
+    ) },
     action,
     command,
     detail,

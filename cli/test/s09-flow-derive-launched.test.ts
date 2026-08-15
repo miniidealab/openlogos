@@ -9,7 +9,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot } from './helpers.js';
+import { makeTempRoot, withCompleteClarification } from './helpers.js';
 import { detectProposalStep, collectStatusData, type ModuleInfo } from '../src/commands/status.js';
 import { detectProposalStepViaFlow } from '../src/lib/flow-derive.js';
 import { STEP_TO_CURRENT_BUILTIN } from '../src/lib/flow-overlay-derive.js';
@@ -44,14 +44,14 @@ function makeProposal(opts: ProposalOpts): { dir: string; root: string } {
 
 /** 已填提案（deploy/smoke 经 ## 部署影响 字段控制）。 */
 function filled(deploy: '是' | '否' = '否', smoke: '是' | '否' = '否'): string {
-  return [
+  return withCompleteClarification([
     '# 变更提案：feat', '', '## 变更原因', '需要新能力。', '', '## 变更类型', '设计级', '',
     '## 变更范围', '- 影响的功能规格：core-01-feature-specs', '', '## 部署影响',
     `- 是否需要部署：${deploy}`, '- 部署原因：说明', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', `- 是否需要 smoke：${smoke}`, '',
     '## 变更概述', '概述。',
     '', '## 复用测试 ID', '', '- UT-S09-28 — 回归覆盖', '- ST-S09-28 — 回归覆盖', '- ST-S09-29 — 回归覆盖',
-  ].join('\n');
+  ].join('\n'));
 }
 /** 已填正文但部署字段为占位符 → 提案级决策为 null，回退 tasks 源（smoke_required=null）。 */
 function undeclaredDeploy(): string {
