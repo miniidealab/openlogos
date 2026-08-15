@@ -1,3 +1,60 @@
+# 部署报告：baseline-on-touch / OpenLogos 0.13.24（2026-08-10）
+
+## 一、部署摘要
+
+- **部署范围**：仅本机全局 npm；未部署服务器端。
+- **候选来源**：仓库提交 `3e7af96`，`cli/package.json`、`cli/package-lock.json` 与插件清单均已是 `0.13.24`，因此无需修改源码或版本文件。
+- **部署时间**：2026-08-10T21:18:54-07:00。
+- **升级结果**：本机全局 `@miniidealab/openlogos` 已由 `0.13.23` 升级到 `0.13.24`。
+- **命令入口**：`/opt/homebrew/bin/openlogos`。
+- **结论**：本机全局部署 **PASS**；服务器端与公开发布链路均未执行。
+
+## 二、发布前校验
+
+| 检查项 | 结果 |
+|---|---|
+| 已归档提案的 `VERIFY_PASS` | **PASS** |
+| CLI 全量测试 | **PASS**：60 个测试文件，1701/1701 用例通过 |
+| TypeScript 构建 | **PASS**：`npm run build` 退出码 0 |
+| 本地候选打包 | **PASS**：`miniidealab-openlogos-0.13.24.tgz`，398 个文件 |
+| 包版本与内容 | **PASS**：包版本为 `0.13.24`；闭包判定器、Markdown 扫描器、`change-lint`、`merge-apply`、闭包规格、Skills 与三类插件模板均在包内 |
+
+候选包：
+
+- 路径：`/private/tmp/openlogos-local-deploy-0.13.24.N74XW7/candidate/miniidealab-openlogos-0.13.24.tgz`
+- SHA-256：`dc5f41c682c3fa1463638b79ad3f14fcaec85f906f3c8ab9a780ce650c7e34cd`
+
+## 三、本机部署与安装后检查
+
+| 动作 | 结果 |
+|---|---|
+| `npm install -g <本地 0.13.24 tarball>` | **PASS** |
+| `command -v openlogos` | `/opt/homebrew/bin/openlogos` |
+| `openlogos --version` | `0.13.24` |
+| 全局 npm 包版本 | `@miniidealab/openlogos@0.13.24` |
+| 关键文件存在性 | **PASS**：`baseline-closure.js`、`markdown-scan.js`、`change-lint.js`、`merge-apply.js`、闭包规格、Skills 与插件模板均存在 |
+| 命令可发现性 | **PASS**：`adopt`、`baseline-seed`、`change-lint`、`merge-apply` 均出现在全局 CLI 帮助中 |
+
+本版本无数据库迁移、无常驻服务，也未改动任何项目源码。
+
+## 四、回滚点
+
+- 部署前版本：`0.13.23`。
+- 回滚包：`/private/tmp/openlogos-local-deploy-0.13.24.N74XW7/rollback/miniidealab-openlogos-0.13.23.tgz`。
+- 回滚包 SHA-256：`4bed5c40b3f998021f7f359ac6e858df15f37457a7ad9777937ffaef1784df66`。
+- 回滚命令：`npm install -g /private/tmp/openlogos-local-deploy-0.13.24.N74XW7/rollback/miniidealab-openlogos-0.13.23.tgz`。
+- 回滚后校验：`openlogos --version` 应恢复为 `0.13.23`。
+
+## 五、明确未执行的动作
+
+1. 未部署任何服务器端、Cloudflare Pages 或官网资源。
+2. 未执行 `npm publish`、创建或推送 tag、GitHub Actions、GitHub Release、`git push`。
+3. 未执行 `openlogos smoke`；本轮授权范围是本机全局部署，smoke 仍保留为独立确认点。
+4. 未执行 `openlogos deploy-done`；`baseline-on-touch` 已归档，归档提案及其 `[deploy]` 任务保持只读。
+5. 工作区既有的 `website/` 字体与发布数据未被本次部署修改或纳入操作。
+
+---
+
 # 部署报告：release-0-13-21（2026-08-02）
 
 ## 一、部署摘要

@@ -1,17 +1,83 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.13.20",
-  "updatedAt": "2026-07-30T00:07:56.513Z",
-  "generatedAt": "2026-07-30T00:07:56.513Z",
-  "versionCount": 81,
+  "latestVersion": "0.13.24",
+  "updatedAt": "2026-08-05T03:38:12.771Z",
+  "generatedAt": "2026-08-05T03:38:12.771Z",
+  "versionCount": 83,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.13.20"
+    "latest": "0.13.24"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.13.24",
+      "publishedAt": "2026-08-05T03:38:12.348Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.24",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.24",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.24.tgz",
+      "gitHead": null,
+      "size": 1101492,
+      "sizeLabel": "1.1 MB",
+      "unpackedSize": 4226664,
+      "unpackedSizeLabel": "4.0 MB",
+      "fileCount": 385,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "决策记录沉淀能力（S38，decision-record-capability） — issue #12 补充观察（设计决策理由只沉淀在 archive 的 proposal 里，归档即失联、检索率最低）的承诺跟进：为「为什么这样设计」在 logos/resources/ 中安排正式沉淀位置，使决策理由成为当前有效规格的一部分、可被 AI 与人直接检索。"
+      ],
+      "fixSummary": [
+        "openlogos change 多模块无 core 时静默挂靠 modules[0]（change-module-fail-closed，issue #17） — 多模块项目 logos-project.yaml 无 core 模块且未传 --module 时，resolveModule() 静默回退到 modules[0]，且提示文案谎称「默认挂靠 core」；错误归属被持久化到 .openlogos-guard 与 proposal.md，常到后续门禁才暴露。现改为 fail-closed：非零退出、列出全部合法 module id 并给出可运行的重试命令，且在建目录/写 guard 之前拦截（失败原子、不残留半成品）；同时修正文案使提示与实际选中模块一致。既有三条正确路径（显式 --module / 单模块自动挂靠 / 多模块含 core 默认挂靠）行为逐字节零改动。配套决策记录 core-D01（决策记录能力上线后首条 dogfood）。",
+        "CI / 工程卫生 — 根治 tag 发布语料漏入库（force-add logos/resources/ 被测语料）并升级 GitHub Actions 清除 Node 20 弃用告警；清零 master CI lint 门 6 处未使用符号；移除 ci.yml 无法在 CI 运行的 verify 步骤与从未启用 GitHub Pages、每次必败的 website.yml。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.24: English value summary entries are missing; English fix summary entries are missing."
+    },
+    {
+      "version": "0.13.22",
+      "publishedAt": "2026-08-03T03:12:50.904Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.13.22",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.13.22",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.13.22.tgz",
+      "gitHead": null,
+      "size": 1078578,
+      "sizeLabel": "1.0 MB",
+      "unpackedSize": 4151390,
+      "unpackedSizeLabel": "4.0 MB",
+      "fileCount": 381,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3"
+      },
+      "distTags": [],
+      "valueSummary": [
+        "openlogos impact — 生命周期变更影响分类契约（ci-change-impact-contract，S36） — 新增只读命令，供下游 CI 依据 Git changed paths 判定一次 push（任意 base..head 区间）是否只是纯生命周期簿记（logos/.openlogos-guard、logos/changes/、logos/resources/verify/、logos/.runtime/**），使纯 openlogos archive 等簿记提交不再被 fail-closed 分类器误判为制品变更。支持 --base/--head（安全修订解析三层防线）与 --stdin [--prefix]（monorepo）双输入模式，全链路 fail-closed；契约见 spec/change-impact.md 与 spec/cli-json-output.md §3.16。"
+      ],
+      "fixSummary": [
+        "change-lint / merge 的 L8 delta 条目守恒门加固（merge-conservation-archive-audit） — 场景表身份键从「辖属子路径」升级为「辖属子路径 + 同子路径内表序号」，封死同一标题下多张合法场景表被去重坍缩、历史快照副本为正式场景条目的隐式删除背书的绕过；配套 change-lint 与 merge 两道事前主门一致拒绝。",
+        "publish.yml 官网生产部署缺 --branch master — tag checkout 为 detached HEAD 时分支名为 HEAD，wrangler pages deploy 一律发成 Preview、生产 openlogos.ai 不更新；补 --branch master 使 tag 触发的发布直达生产分支，消除每次发版后需本地手工补发生产的缺陷。"
+      ],
+      "valueSummaryEn": [],
+      "fixSummaryEn": [],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.13.22: English value summary entries are missing; English fix summary entries are missing."
+    },
     {
       "version": "0.13.20",
       "publishedAt": "2026-07-30T00:07:56.186Z",
@@ -31,9 +97,7 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "存量项目逆向建种子基线（S33，brownfield-adopter 系列） — openlogos adopt 接入存量项目后由 AI driver 逆向扫描建立现状基线；openlogos baseline-seed 作为 CLI 唯一写入入口（两阶段 staging + commit journal 崩溃一致性 + 模块级事务锁）；provenance 权威载体为文档内具名章节，覆盖率按 tombstone 分母法纯计数。",
         "status / next 机器契约自描述（contract-self-description） — JSON 响应新增 contract.version 版本握手、step_meta、结构化 facts，供 RunLogos 等机器消费方稳定解析。",
