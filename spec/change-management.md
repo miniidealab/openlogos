@@ -690,3 +690,108 @@ merge-executor 对 CREATE 在 apply 前再次确认目标缺失，以 ADDED 内�
 - 以代码推断历史 Why；
 - 在 plan-exit 批准前提前产 Markdown delta（既有 GUI prototype 例外不变）；
 - 在 write-tasks 预填 `[code]` 切片。
+
+## Plan 阶段决策澄清协议（openlogos/clarification@1）
+
+### 目的与不变量
+
+决策澄清用于防止 proposal 在高影响选择尚未由人确认时被形式化填满。它属于 `write-proposal` 节点内部协议，必须遵守以下不变量：
+
+1. 不新增 lifecycle、subflow、flow node、human gate、marker 或 `proposal_step` 枚举值。
+2. `plan-exit` 仍是唯一完整方案批准门；澄清完成不等于批准。
+3. `proposal.md` 是澄清状态唯一持久化事实源；宿主不得维护第二份权威完成状态。
+4. 简单、事实充分的提案不得因协议增加固定问卷。
+5. `--auto` 是流程执行授权，不是未决高影响方案的答案。
+
+### 事实优先与高影响判定
+
+change-writer 在提问前必须读取仓库、配置、规格、Git/CI 和运行环境中可可靠获得的事实。已有模块/owner/API/DB、部署环境、Secret/ServiceAccount 声明、兼容政策、测试和运行状态不得作为事实问题反问用户。
+
+仓库事实不足以唯一确定，且答案会改变下列任一内容时，事项属于高影响用户决定：产品目标/边界，责任归属/唯一 writer/跨模块契约，数据与迁移，兼容与版本，权限/安全/隐私，部署与回滚，公开发布，成本/供应商/法律或不可逆外部承诺，验收证据与明确不做范围。
+
+低影响、可逆、不改变外部契约且受既有规范约束的实现细节可由 Agent 采用推荐默认值并记录在 `defaults`，不占用用户决策轮次。
+
+### proposal 澄清区块
+
+新提案模板必须包含：
+
+```yaml
+schema: openlogos/clarification@1
+mode: adaptive
+status: pending
+impacts:
+  data: {status: none, reason: "..."}
+  compatibility: {status: none, reason: "..."}
+  security_privacy: {status: none, reason: "..."}
+  public_release: {status: none, reason: "..."}
+  external_commitment: {status: none, reason: "..."}
+decisions: []
+unresolved: []
+defaults: []
+```
+
+`mode` 为 `adaptive|deep|provided`；`status` 为 `pending|complete`（`invalid` 可由 CLI 派生）；每个 impact 的 status 为 `none|required` 且 reason 去空白后非空。`none` 表示无需本次用户选择，允许“没有影响”或“已有事实/政策唯一决定”；`required` 表示仍需用户选择。
+
+决策局部 ID 使用 CXX，与长期 DXX 分离。决策类别为 `product|ownership|data|compatibility|security_privacy|deployment|release|external_commitment|acceptance`。已确认决定至少含 id、category、question、answer、rationale、source、affects 和主要被否方案；`source` 为 `user|policy|repository_fact`。
+
+未决项必须包含 id、category、depends_on、question、impact、recommendation、recommendation_reason 和至多两个真实 options。每个尚未满足的条件性必选类别必须恰有一个同类别 unresolved；缺失或重复时返回 `clarification-contract-invalid`，不得形成只有类别 reason、没有完整问题数据的 pending。
+
+Agent 在持久化前必须完成稳定拓扑排序：依赖边优先，同一可用层按规范类别顺序，再按 CXX 数字升序。每项依赖只能在 decisions 或数组前序项中；`unresolved[0]` 的依赖必须全部在 decisions。CLI 永远只读取 `unresolved[0]`，不得跳过、重排或猜测问题。用户回答后，Agent 将当前项以 `source:user` 移入 decisions，再按相同规则重算并持久化队列。
+
+### 条件性必选人类决定
+
+| 声明/事实 | 必须存在的用户决定 | 缺失诊断 |
+|---|---|---|
+| `impacts.data.status=required` | `category=data, source=user` | `data-clarification-required` |
+| `impacts.compatibility.status=required` | `category=compatibility, source=user` | `compatibility-clarification-required` |
+| `impacts.security_privacy.status=required` | `category=security_privacy, source=user` | `security-privacy-clarification-required` |
+| proposal 需要部署 | `category=deployment, source=user` | `deployment-clarification-required` |
+| `impacts.public_release.status=required` | `category=release, source=user` | `release-clarification-required` |
+| `impacts.external_commitment.status=required` | `category=external_commitment, source=user` | `external-commitment-clarification-required` |
+
+部署决定至少覆盖目标环境、部署方式、回滚与成功/smoke 证据。部署和公开发布是两个独立类别：本地/生产部署决定不能代替 npm/tag/GitHub Release 等公开发布决定，反之亦然。
+
+推荐答案、Agent 默认值、policy/repository_fact 来源或 `next --auto` 不能满足 `required`。产品、ownership、acceptance 由 Agent 语义扫描触发；一旦列入 unresolved，同样必须由用户回答。
+
+可恢复 pending 的不变量是“未满足类别、对应 unresolved、完整 next_decision”三者闭环。结构化六类 unresolved 队首使用类别专属 reason；product、ownership、acceptance 等纯语义队首使用 `high-impact-user-decision-required`。
+
+### 完成与 fail-closed
+
+`proposal_filled` 在原有条件上同时要求：
+
+```text
+clarification 结构合法
+AND impacts 五类完整、status/reason 合法
+AND 每个未满足的条件性必选类别恰有一个同类别 unresolved
+AND unresolved 为稳定拓扑序且队首依赖全部已在 decisions
+AND 每个 required 类别都有匹配 source=user 决定
+AND (deployment_required=false OR 有 deployment/source=user 决定)
+AND clarification.status=complete
+AND unresolved 为空
+AND decisions 之间无冲突
+```
+
+区块存在但 schema、mode、impact、CXX、category、source、依赖、队列顺序、必选类别/unresolved 闭环或状态不合法时返回 `clarification-contract-invalid`，不得降级到 legacy 完成逻辑。合法 pending 必须至少有一个 unresolved，并输出非空完整 `next_decision`；存在未决时保持 `proposal_step=writing`、`next_node.id=write-proposal`。
+
+### `next --auto` 边界
+
+auto 可以消费仓库事实、显式项目政策、已记录用户决定和低风险可逆默认值；不能选择 recommendation 或回答 unresolved。遇到 pending/invalid 时不得写 `PLAN_APPROVED`、`GATE_AUTO_PASSED`，不得进入 write-tasks/Delta/实现，并输出机器可读原因与完整 `next_decision`。
+
+### 方案决策与执行授权分层
+
+- proposal 澄清：决定“方案怎么定”。
+- plan-exit：决定“是否批准完整方案”。
+- merge、verify、部署、smoke、archive、push：决定“现在是否执行动作”。
+
+人工模式继续逐门明确授权。`next --auto` 可提供既有 run-scoped standing authorization，但不扩大为替用户回答方案。达到实现迭代上限且测试未通过仍是不可绕过的硬红线。公开发布的方案决定与 npm/tag/Release 等实际操作权限分别校验。
+
+### 历史兼容
+
+- 新版 CLI 新建提案必须生成合法区块。
+- 已越过 plan 的历史提案不回退。
+- 仍在 writing 且无区块的历史提案按 legacy 状态展示并提示由 change-writer 补齐；CLI status/next 不自动改写 proposal。
+- 区块一旦存在立即严格校验；未知 clarification 主版本原样输出检测到的 schema，以 `status=invalid`、`clarification-upgrade-required`、null next_decision 保守停止，并须通过 1.2 输出 Schema。
+
+### OpenLogos 与宿主边界
+
+OpenLogos 负责模板、解析、结构校验、必选类别匹配、完成谓词、JSON Schema、auto fail-closed、历史兼容、跨进程重读及 UT/ST。RunLogos 等宿主负责暂停/恢复、一次展示一个决定、把用户原文答案交回 Agent，以及真实 Agent 行为评测；宿主只消费 CLI JSON，不解析 proposal 判完成。

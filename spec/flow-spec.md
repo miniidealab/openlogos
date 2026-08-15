@@ -1157,3 +1157,100 @@ agent dispatch 的完成校验不得只输出 pass/fail。OpenLogos / driver 至
 - **状态写入唯一入口**：`baseline_seed_state` 与逆向目标文件的唯一写入者是 CLI；producer 不直接修改 YAML 或标准 `logos/resources/**`。
 - **安全 partial 与提案前沿**：仅有 open run / 未提交 staging 且无未终结 journal 时，排除 staging 后继续 change；无活跃提案时主动作仍为 change，有活跃提案时保持真实 `proposal_step`/`next_node`。seed 恢复只作非阻断 advisory。
 - **崩溃一致性硬门**：`prepared`/`committing` 等未终结 journal 不是安全 partial。机器入口必须在同一模块锁内、读取 resources/index/coverage 前先恢复；无法恢复时非零返回 `baseline_commit_in_progress`，不输出正常 coverage、seed 状态派生或业务主动作，也不得读取半新集合。
+
+## Plan 阶段决策澄清完成谓词（clarification@1）
+
+### 拓扑不变
+
+launched flow 的 plan 子流程仍为：
+
+```text
+write-proposal -> write-tasks -> plan-exit
+```
+
+本协议不新增 node、subflow、gate、marker、when flag 或 `proposal_step` 值。澄清是 `write-proposal.done_when` 所依赖的 `proposal_filled` 内部谓词增强；`plan-exit` 仍是唯一完整方案批准门。
+
+### 权威事实
+
+澄清权威状态只来自活跃提案 `proposal.md` 的 `openlogos/clarification@1` 区块及 proposal 既有部署声明。CLI 每次派生都从磁盘重读，不消费宿主缓存或聊天上下文。
+
+归一化事实：
+
+```text
+clarification_contract_valid
+clarification_status
+clarification_unresolved_count
+clarification_required_categories[]
+clarification_next_decision
+deployment_required
+```
+
+`clarification_required_categories` 只包含尚未满足的用户决定类别，由 impacts、proposal 部署声明及 unresolved 语义类别合并、去重，再按 `product -> ownership -> data -> compatibility -> security_privacy -> deployment -> release -> external_commitment -> acceptance` 固定排序。complete 时为空；RunLogos 不重新推导。
+
+### `proposal_filled` 增强定义
+
+```text
+proposal_filled := legacy_proposal_fields_filled
+  AND deployment_and_ui_structures_valid
+  AND clarification_contract_valid
+  AND every unmet conditional category has exactly one same-category unresolved item
+  AND unresolved is stably topologically sorted with head dependencies in decisions
+  AND clarification_status == complete
+  AND clarification_unresolved_count == 0
+  AND every impacts.*.status=required has matching category/source=user decision
+  AND (NOT deployment_required OR has category=deployment/source=user decision)
+```
+
+匹配规则中 `public_release` 映射为决定类别 `release`；其它 impacts key 与 category 同名。policy、repository_fact、recommendation 和 default 都不能满足 `required`。
+
+### 前沿派生
+
+| 条件 | proposal_step | next_node | plan_ready |
+|---|---|---|---|
+| 合法 complete、无未决、必选类别全满足，tasks 尚未完成 | 依既有规则进入 tasks | `write-tasks` | false |
+| 合法 complete、tasks 已完成、未过 plan 门 | `ready-to-delta` | `plan-exit` | true |
+| 合法 pending：必选类别缺决定且有对应完整 unresolved | `writing` | `write-proposal` | false |
+| 必选类别缺决定但对应 unresolved 缺失/重复 | `writing` | `write-proposal` | false，contract invalid |
+| 区块存在但 invalid | `writing` | `write-proposal` | false |
+| writing legacy 缺区块 | `writing` | `write-proposal` | false，附补齐诊断 |
+| 已越过 plan 的 legacy 提案 | 保持既有后续步骤 | 依既有 flow | 不回退 |
+
+不得新增 `clarifying` proposal_step，也不得用 `write-tasks` 是否存在绕过增强谓词。
+
+### reason 优先级
+
+同一 proposal 同时存在多项问题时，稳定选择顺序：
+
+1. `clarification-contract-invalid` 或 `clarification-upgrade-required`
+2. 队首为 `data`：`data-clarification-required`
+3. 队首为 `compatibility`：`compatibility-clarification-required`
+4. 队首为 `security_privacy`：`security-privacy-clarification-required`
+5. 队首为 `deployment`：`deployment-clarification-required`
+6. 队首为 `release`：`release-clarification-required`
+7. 队首为 `external_commitment`：`external-commitment-clarification-required`
+8. 队首为 `product`、`ownership` 或 `acceptance`：`high-impact-user-decision-required`
+
+reason 完全由合法队首类别决定，因此类别专属 reason 与完整 `next_decision` 同时存在。完整未满足集合仍通过 `required_categories` 输出；单个 reason 只表示当前阻塞原因。
+
+### `next --auto` 求值
+
+在任何可跳 gate 求值前先计算 `proposal_filled`。若 clarification pending/invalid：
+
+- `next_node.id=write-proposal`；
+- `gate_auto_passed=false` 或省略，不写任何 gate 审计；
+- 不调用 plan marker writer；
+- 不进入 write-tasks、write-delta、no-delta spec-complete 或 plan-slices；
+- 返回 `plan_state.clarification` 和完整 `next_decision`。
+
+只有增强 `proposal_filled=true` 后，既有 `--auto` standing authorization 和 skippable gate 语义才开始生效。
+
+### 兼容派生
+
+1. 新模板区块存在：严格按 @1 解析，非法即 fail-closed。
+2. writing legacy 无区块：返回补齐诊断，不由 status/next 写文件。
+3. 已有 plan 批准证据或处于更后阶段：不得因缺区块回退。
+4. 未知 schema 主版本：保持 write-proposal 并提示升级；消费方不得猜测字段。
+
+### 与执行门的正交关系
+
+clarification 只约束方案形成，不替代 plan/spec/slice/deliver 门。人工模式下 merge、verify、部署、smoke、archive、push 继续逐次授权；auto 模式只使用既有运行域授权。`gate:implement:loop-exhausted` 仍为任何模式不可绕过的未收敛硬红线。

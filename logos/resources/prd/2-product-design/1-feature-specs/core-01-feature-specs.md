@@ -1537,3 +1537,148 @@ effective view = 已合并目标 + 当前 change 同目标 delta 的预期合并
 - 无 API/DB 的 CLI 场景能给出证据化 SKIP，不制造空规格。
 - adopted 项目不运行 baseline-seed 也能完成首个 change 的 plan/spec/merge。
 - 任何 seed 状态下均无 JIT 确认、可信度升级或额外人类门。
+
+## 2.36 Plan 阶段决策澄清协议（openlogos/clarification@1）
+
+### 2.36.1 目标与流程边界
+
+决策澄清是 `write-proposal` 节点内部的完成协议，不新增 lifecycle、subflow、node、gate、marker 或 `proposal_step` 枚举值。流程保持：
+
+```text
+write-proposal（事实扫描 → 影响声明 → 逐个澄清 → 持久化）
+  -> write-tasks
+  -> plan-exit
+```
+
+`clarification.status=complete` 只说明 proposal 内容具备完成条件；`plan-exit` 仍是唯一方案批准门。
+
+### 2.36.2 proposal 结构
+
+```yaml
+schema: openlogos/clarification@1
+mode: adaptive
+status: pending
+impacts:
+  data:
+    status: none
+    reason: 无数据库、持久化数据迁移、删除或所有权转移
+  compatibility:
+    status: none
+    reason: 不改变既有外部契约和版本兼容承诺
+  security_privacy:
+    status: none
+    reason: 不增加权限、Secret、个人数据或外部访问范围
+  public_release:
+    status: none
+    reason: 不执行公开发布或生产开放
+  external_commitment:
+    status: none
+    reason: 不引入付费服务、供应商锁定、法律承诺或不可逆外部影响
+decisions: []
+unresolved: []
+defaults: []
+```
+
+- `mode`：闭合枚举 `adaptive | deep | provided`。
+- `status`：闭合枚举 `pending | complete | invalid`；`invalid` 为 CLI 派生状态，不要求 Agent主动持久化。
+- `impacts.*.status`：闭合枚举 `none | required`；每项 `reason` 为去空白后非空字符串。
+- `none` 表示不需要本次用户决定，而非强制宣称“完全没有影响”；仓库事实或项目政策已唯一确定方案时也可使用，但理由必须说明依据。
+- `required` 表示必须存在同类别、`source: user` 的已确认决定，否则保持 `pending`。
+
+### 2.36.3 决策数据结构
+
+已确认决定：
+
+```yaml
+decisions:
+  - id: C01
+    category: deployment
+    question: 该版本部署到哪里、如何回滚？
+    answer: 仅安装到当前开发机 npm 全局环境；失败恢复 0.13.24
+    rationale: 先验证真实安装包，不扩大为公开发布
+    source: user
+    affects:
+      - 部署方案
+      - smoke
+    rejected_options:
+      - 直接发布 npm 和 GitHub Release
+```
+
+未决决定：
+
+```yaml
+unresolved:
+  - id: C02
+    category: compatibility
+    depends_on: [C01]
+    question: 是否接受 breaking change？
+    impact: 决定版本语义、旧客户端兼容与回滚范围
+    recommendation: 保持向后兼容
+    recommendation_reason: 降低宿主升级风险
+    options:
+      - id: backward-compatible
+        label: 保持兼容
+        tradeoff: 实现成本略高
+      - id: breaking
+        label: 允许破坏性变更
+        tradeoff: 需要迁移窗口和明确版本边界
+```
+
+- CXX 为提案局部编号，格式 `^C(?:0[1-9]|[1-9]\d+)$`，在 `decisions + unresolved` 内唯一。
+- `category` 闭合枚举：`product | ownership | data | compatibility | security_privacy | deployment | release | external_commitment | acceptance`。
+- 已确认决定的 `source` 闭合枚举：`user | policy | repository_fact`。条件性必选类别只接受 `user`；事实/政策决定可记录，但不能冒充用户选择。
+- `depends_on` 只能引用已存在 CXX，不得自依赖或形成环；尚未满足依赖的事项不得成为 `next_decision`。
+- 每个尚未满足的条件性必选类别必须恰有一个同类别 unresolved；缺失或重复时为 `clarification-contract-invalid`，不得构造无 `next_decision` 的 pending。
+- Agent 在持久化前对 unresolved 做稳定拓扑排序：先满足 `depends_on`，同一可用层按类别固定顺序，再按 CXX 数字升序。数组中每项的依赖只能位于 decisions 或它之前；`unresolved[0]` 的依赖必须全部位于 decisions。
+- `unresolved[0]` 是当前唯一可展示问题；CLI 不跳项、不重排。队首必须带问题、影响、推荐答案和推荐理由，真实备选最多两个；队首依赖未满足时整个契约 invalid。
+- `defaults` 只保存低影响、可逆、不改变外部契约且受既有规范约束的实现默认值。
+
+### 2.36.4 条件性必选类别
+
+| 触发源 | 必选决定类别 | 最低确认内容 | 缺失 reason |
+|---|---|---|---|
+| `impacts.data.status=required` | `data` | 迁移/删除主体、数据保留、失败恢复、可接受损失 | `data-clarification-required` |
+| `impacts.compatibility.status=required` | `compatibility` | 兼容范围、弃用周期、版本与生效语义 | `compatibility-clarification-required` |
+| `impacts.security_privacy.status=required` | `security_privacy` | 权限、Secret、隐私范围、审计要求 | `security-privacy-clarification-required` |
+| proposal“是否需要部署：是” | `deployment` | 目标环境、部署方式、回滚、成功/smoke 证据 | `deployment-clarification-required` |
+| `impacts.public_release.status=required` | `release` | 发布渠道、公开范围、版本/tag 与撤回方式 | `release-clarification-required` |
+| `impacts.external_commitment.status=required` | `external_commitment` | 成本、供应商/法律承诺、退出与不可逆影响 | `external-commitment-clarification-required` |
+
+本地部署与公开发布必须分别判断：`deployment` 决定不能满足 `release`，反之亦然。产品、ownership、acceptance 由 Agent 语义扫描发现；一旦进入未决队列，同样必须由用户回答。
+
+合法 pending 必须可恢复：每个未满足类别均有对应 unresolved，且队首始终可以直接交给用户。结构化六类队首使用表中类别专属 reason；只有 `product`、`ownership`、`acceptance` 等纯语义队首使用 `high-impact-user-decision-required`。
+
+### 2.36.5 完成谓词
+
+```text
+proposal_filled = 原有模板字段完成
+  AND 部署/UI 等既有结构合法
+  AND clarification schema/mode/impacts/CXX/依赖合法
+  AND 每个尚未满足的条件性必选类别恰有一个同类别 unresolved
+  AND unresolved 已按稳定拓扑序持久化且队首依赖全部已确认
+  AND 每个 impacts.*.status=required 都有匹配 category、source=user 的决定
+  AND (deployment_required=false OR 有 deployment/source=user 决定)
+  AND clarification.status=complete
+  AND clarification.unresolved.length=0
+```
+
+区块存在但非法时必须 fail-closed，不得回退到 legacy 完成逻辑。`complete + unresolved 非空`、必选类别不匹配、重复 ID、未知 schema 均为非法或未完成。
+
+### 2.36.6 CLI 与宿主展示契约
+
+`status --format json` 与 `next --format json` 在 `plan_state.clarification` 输出同一语义：schema、mode、status、required、`required_categories`、未决数量、稳定 reason 和完整 `next_decision`。`required_categories` 只列尚未满足的用户决定类别，去重并按 `product -> ownership -> data -> compatibility -> security_privacy -> deployment -> release -> external_commitment -> acceptance` 排序；complete 时必须为空。
+
+RunLogos 只消费 CLI JSON：暂停当前 Driver、一次展示一个决定、提交“决策 ID + 用户原文答案”、重新派发 Agent。RunLogos 不解析 proposal 判完成，不维护私有决策状态机。
+
+### 2.36.7 兼容与授权语义
+
+- 新版 CLI 新建 proposal 默认包含澄清区块。
+- 已越过 plan 的历史提案不回退。
+- 仍在 writing 且无区块的历史提案按 legacy 状态展示，并提示 change-writer 补齐；区块一旦出现即严格校验。
+- 未知 clarification 主版本保守停止：输出检测到的原始 `schema`（如 `openlogos/clarification@2`）、`status=invalid`、`reason=clarification-upgrade-required`、空 required_categories、零未决计数和 null next_decision；该形态必须通过 1.2 输出 Schema。
+- `next --auto` 是运行域执行授权，不是高影响问题的答案；未决事项存在时不写批准 marker，不推进到 tasks/Delta。
+- 人工模式的 merge、verify、部署、smoke、archive、push 保持独立执行确认点；公开发布另行取得对应操作权限。
+
+### 2.36.8 OpenLogos / RunLogos 验收边界
+
+OpenLogos 验证解析、结构、谓词、状态派生、JSON Schema、历史兼容、跨进程恢复和 auto fail-closed。RunLogos 验证 Driver 暂停/恢复、单问题渲染、用户回答再派发，以及真实 Agent 是否先查事实、逐问并准确持久化。CLI 单测不得伪造真实 Agent 行为已经达标。

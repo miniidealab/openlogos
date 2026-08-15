@@ -28,7 +28,7 @@ scenario_counter:
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 3
+  next_id: 5
 modules:
   - id: core
     name: 核心功能
@@ -516,6 +516,43 @@ resource_index:
     desc: D02 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
   - path: spec/baseline-closure.md
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-01-cli-interaction-design.md
+    desc: 产品功能规格。涉及交互设计、功能边界、Skill 行为定义时必读。
+  - path: logos/resources/prd/2-product-design/1-feature-specs/core-02-skills-interaction-design.md
+    desc: 产品功能规格。涉及交互设计、功能边界、Skill 行为定义时必读。
+  - path: logos/resources/prd/2-product-design/2-page-design/core-01-cli-terminal.md
+    desc: 产品交互原型。涉及 CLI 终端输出样式或 AI Skill 对话脚本时必读。
+  - path: logos/resources/prd/2-product-design/2-page-design/core-02-skills-dialogue.md
+    desc: 产品交互原型。涉及 CLI 终端输出样式或 AI Skill 对话脚本时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S02-prd-writer.md
+    desc: S02 场景时序图。涉及 S02 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S03-product-designer.md
+    desc: S03 场景时序图。涉及 S03 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md
+    desc: S04 场景时序图。涉及 S04 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-api-db-designer.md
+    desc: S05 场景时序图。涉及 S05 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md
+    desc: S06 场景时序图。涉及 S06 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md
+    desc: S07 场景时序图。涉及 S07 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync.md
+    desc: S08 场景时序图。涉及 S08 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-management.md
+    desc: S09 场景时序图。涉及 S09 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S11-status.md
+    desc: S11 场景时序图。涉及 S11 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md
+    desc: S12 场景时序图。涉及 S12 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S13-verify.md
+    desc: S13 场景时序图。涉及 S13 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S18-tour.md
+    desc: S18 场景时序图。涉及 S18 实现细节、API 设计、异常分支时必读。
+  - path: logos/resources/decisions/core-D03-plan-decision-clarification.md
+    desc: D03 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
+  - path: logos/resources/decisions/core-D04-deployment-plan-user-decision.md
+    desc: D04 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
 
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号

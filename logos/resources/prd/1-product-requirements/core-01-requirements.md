@@ -1351,3 +1351,41 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 5. 代码、测试、配置只能证明存量事实；本次 change 提供新增 Why 与验收意图。证据不足时以 `AMBIGUOUS` 停在现有 plan-exit 前，不猜测、不产半成品。
 6. adopted 项目的历史自动 `skip_phases` 只豁免 Initial 完整性，不能永久压掉后续 change 中实际适用的 API/DB/场景目标。
 7. 不新增 `[baseline]` section、baseline task、gate、marker、JIT advisory、`verified:true` 写回或 `baseline_warnings`；唯一人类方案门仍是既有 `plan-exit`。
+
+## S09 Plan 阶段决策澄清协议第一版
+
+### 背景与用户价值
+
+复杂变更在形成 proposal 时可能同时涉及产品边界、责任归属、数据迁移、兼容策略、安全隐私、部署、公开发布和验收标准。若 Agent 为了尽快填满模板而把推荐答案当成用户决定，后续 Delta、实现和发布都会建立在未经确认的假设上。
+
+OpenLogos 必须在既有 `write-proposal -> write-tasks -> plan-exit` 内提供可恢复、可校验的决策澄清协议。该协议只在存在高影响未决事项时要求人类回答；简单且事实充分的变更保持零额外问答。
+
+### 功能需求
+
+1. Agent 在提问前必须读取仓库、配置、规格、Git/CI 和运行环境中可可靠获得的事实；事实问题不得反问用户。
+2. 新 proposal 必须包含 `openlogos/clarification@1` 结构化区块，持久化模式、状态、影响声明、已确认决定、未决队列和低风险默认值。
+3. `adaptive` 模式只在存在高影响未决事项时逐问；`deep` 完整扫描高影响决策树；`provided` 校验用户已提供的决定，不跳过一致性检查。
+4. 每轮只向用户提出一个当前最上游的决定，并同时说明影响、推荐答案、推荐理由及至多两个真实备选。
+5. 高影响决策至少覆盖 `product`、`ownership`、`data`、`compatibility`、`security_privacy`、`deployment`、`release`、`external_commitment`、`acceptance` 九类。
+6. `impacts` 固定声明 `data`、`compatibility`、`security_privacy`、`public_release`、`external_commitment` 五类条件性风险；每类为 `none|required` 并提供非空理由。
+7. `none` 表示本次无需用户选择：可能没有影响，也可能已有仓库事实或项目政策把方案唯一确定；`required` 表示仍存在必须由用户选择的高影响方案。
+8. proposal 声明需要部署时，必须有 `category: deployment`、`source: user` 的决定，覆盖目标环境、部署方式、回滚方案和成功/smoke 证据。
+9. 任一 `impacts.*.status=required` 时，必须有匹配 `category`、`source: user` 的决定；`public_release` 对应 `category: release`。推荐答案、Agent 默认值、`--auto` 和已有文档均不能冒充用户确认。
+10. 每个尚未满足的条件性必选类别必须恰有一个同类别、内容完整的 `unresolved` 项；缺失或重复时契约非法，不能产生没有问题数据的 pending 死锁。
+11. 产品范围、责任归属和验收标准由 Agent 结合语义识别；命中高影响歧义时同样进入未决队列，但不得把所有简单提案变成固定问卷。
+12. Agent 必须在持久化前按依赖拓扑、固定类别顺序和 CXX 数字顺序稳定排序；`unresolved[0]` 的全部依赖必须已在 decisions，否则契约非法，CLI 不得跳项或自行重排。
+13. 已确认决定和未决队列必须落入 proposal，跨进程和跨会话重读结果一致；RunLogos 等宿主不维护第二份权威状态。
+14. `clarification.status=complete` 只表示 `write-proposal` 具备完成条件，不等于方案已批准；最终仍复用 `plan-exit`。
+15. `next --auto` 仅提供既有流程执行授权，不能替用户回答未决高影响方案；存在未决事项时必须 fail-closed 并保持在 `write-proposal`。
+16. 方案决策与执行授权必须分层：人工模式下 merge、verify、部署执行、smoke、archive、push 继续按各自确认点处理；公开发布不能由本地部署或普通 push 授权自然推导。
+
+### 验收条件
+
+- 简单、事实充分且五类影响均为 `none + reason` 的提案可以直接完成澄清，不增加问答。
+- `impacts` 缺字段、状态非法、理由为空、重复 CXX、依赖不存在、循环依赖或完成状态与未决队列冲突时，返回 `clarification-contract-invalid`。
+- 数据、兼容、安全隐私、公开发布、外部承诺或部署任一必选类别缺少匹配用户决定时，`proposal_filled=false`，`status/next` 保持 `write-proposal`。
+- 上述缺失决定若有同类别完整 unresolved，则为可恢复 pending 并输出完整 `next_decision`；若缺少或重复对应 unresolved，则返回 `clarification-contract-invalid`。
+- `status/next --format json` 输出稳定、去重的 `required_categories` 和完整 `next_decision`，宿主无需解析 Markdown 推导完成状态。
+- `next --auto` 遇到未决高影响决定时不写 `PLAN_APPROVED` 或 `GATE_AUTO_PASSED`，不进入 `write-tasks`、Delta 或实现。
+- 已越过 plan 的历史提案不回退；仍在 writing 且缺少区块的历史提案获得补齐提示；未知 schema 版本保守停止。
+- 本能力的 OpenLogos UT/ST 与 reporter 全部通过；真实 Agent 是否先查事实、一次一问和准确记录由 RunLogos 行为评测负责。

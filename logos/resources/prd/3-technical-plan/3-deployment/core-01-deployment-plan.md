@@ -371,3 +371,65 @@ graph TB
 ### 发布门结论
 
 本能力需要部署且需要 smoke；verify PASS 后方可执行 `[deploy]`，部署完成后由既有 `openlogos smoke` 独立门判定。此处不新增 baseline 专用部署门。
+
+## 二十三、决策澄清协议 v0.13.25 本地全局部署检查
+
+### 部署目标与边界
+
+- 目标版本：OpenLogos CLI 与插件元数据 `0.13.25`。
+- 目标环境：当前开发机的 npm 全局环境。
+- 交付方式：从已完成实现且 verify PASS 的工作树构建 CLI，生成本地 npm tarball，再以 tarball 全局安装。
+- 数据迁移：无；本次只扩展 proposal 模板、CLI JSON 契约、Skill 和测试能力。
+- 明确排除：不创建/推送 `v0.13.25` Git 标签，不执行 npm publish，不创建 GitHub Release，不部署官网，不因本地安装自然推导任何公开发布授权。
+
+### 部署前条件
+
+1. 规格已经合并，代码与测试切片全部完成，OpenLogos reporter 已记录本提案 UT/ST 结果。
+2. `openlogos verify` 已由相应授权方执行并得到 PASS。
+3. `cli/package.json`、`plugin/.claude-plugin/plugin.json` 和 `CHANGELOG.md` 均声明 0.13.25，构建产物与包内容不含旧版本漂移。
+4. 已确认本地部署决定：目标环境、tarball 全局安装方式、0.13.24 回滚来源和 smoke 成功证据均有 `source: user` 记录。
+5. 安装前记录当前 `openlogos` 命令解析路径、全局包版本与 Node/npm 环境；准备可重新安装的 0.13.24 tarball 或等价、可验证的回滚来源。
+
+### 构建与打包步骤
+
+在仓库根目录按项目现行脚本完成依赖检查、TypeScript 构建、测试和 npm 包内容检查，然后在 `cli/` 包目录生成 tarball。tarball 文件名和摘要必须写入部署报告，不以工作区源码版本代替安装包版本。
+
+建议核对项：
+
+- 包内包含 CLI 可执行入口、`spec/schema/status.schema.json`、`spec/schema/next.schema.json` 和所需 Skills。
+- 包内不包含提案临时文件、guard、测试结果或凭据。
+- `npm pack --dry-run`/等价检查显示版本为 0.13.25。
+- 实际 tarball 的 `package.json.version` 为 0.13.25。
+
+### 本机全局安装
+
+1. 仅在 verify PASS 且部署执行获得授权后，使用刚生成的 0.13.25 tarball执行 npm 全局安装。
+2. 安装后重新解析 `openlogos` 命令路径，避免 shell 缓存或另一个 prefix 下的旧二进制造成假成功。
+3. `openlogos --version` 必须返回精确值 `0.13.25`；运行时读取到的 schema 与 Skill 必须来自本次安装包。
+4. 部署报告记录：环境、安装前版本、tarball 路径/摘要、安装后版本、命令路径、执行时间、回滚包和结果。
+5. 完成部署执行后按既有 `deploy-done` 受控流程记录部署完成；不得手写部署完成 marker。
+
+### 部署后 smoke
+
+部署完成后由独立 `openlogos smoke` 人类确认点执行 `SMOKE-core-59`～`SMOKE-core-61`：
+
+- `SMOKE-core-59`：全局命令路径与版本/包元数据均为 0.13.25。
+- `SMOKE-core-60`：已安装 CLI 的 status/next JSON 暴露 clarification 状态、`required_categories` 和完整 `next_decision`。
+- `SMOKE-core-61`：需要部署但缺用户 deployment 决定的 proposal 被 fail-closed，且 `next --auto` 不越过 `write-proposal`。
+
+smoke 未执行或未 PASS 时不得归档本提案。
+
+### 失败处理与回滚
+
+以下任一情况立即停止继续推进并恢复 0.13.24：构建/打包失败、全局安装失败、命令解析到错误路径、版本不是 0.13.25、运行时 schema/Skill 缺失、任一 smoke 失败。
+
+回滚步骤：
+
+1. 使用部署前准备的 0.13.24 tarball或等价来源重新执行 npm 全局安装。
+2. 重新解析命令路径并确认 `openlogos --version` 返回 0.13.24。
+3. 记录失败阶段、错误输出、已恢复版本和遗留诊断材料；不得用公开 npm 发布、tag 或远端 push 作为本地回滚手段。
+4. 修复后重新从 verify 开始，重新获得所需执行授权并重走部署/smoke。
+
+### 授权边界
+
+proposal 内的 deployment 决定确认“采用什么部署方案”；实际安装仍属于部署执行授权。人工模式下 verify、部署、smoke 分别确认；全自动模式只按既有 run-scoped standing authorization 推进。无论哪种模式，公开发布都必须由独立 `release` 决定和相应执行权限覆盖。

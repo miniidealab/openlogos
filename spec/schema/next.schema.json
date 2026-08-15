@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openlogos.dev/schema/next/1.1.0",
+  "$id": "https://openlogos.dev/schema/next/1.2.0",
   "title": "openlogos next --format json 机器契约（data 对象）",
-  "x-contract-version": "1.1.0",
-  "$comment": "向后兼容 superset schema，最高支持契约版本 1.1.0（add-feature-model，条件版本 delta-F1=B，透传自 status 分组）。本 schema 同时校验 contract.version 为 1.0.0（无 modules[].features）与 1.1.0（可含 features）两版响应；根级 allOf 约束 version==1.0.0 ⟹ 无 features、features present ⟹ 1.1.0，故 pre-feature 响应逐字节保持 1.0.0。JSON Schema dialect = draft 2020-12。校验对象 = envelope 的 data 字段。未知可选字段策略：additionalProperties 全局放开；消费方遇未知字段/枚举值走保守分支（见 spec/cli-json-output.md）。必填集锁核心承诺：data.contract 恒在场；next_node 出现时 id/name/subflow_id/dispatch 恒在场且 dispatch 为完整三字段对象（artifacts_hint:[] 是「产物未知」合法语义）。发布与版本映射（调整）：响应 data.contract.version ∈ 本 schema 支持集 {1.0.0,1.1.0} 且 features⟹1.1.0，CI 校验。",
+  "x-contract-version": "1.2.0",
+  "$comment": "向后兼容 superset schema，最高支持契约版本 1.2.0。1.2.0 增加 plan_state.clarification；响应出现 clarification 时必须声明 1.2.0。1.0.0/1.1.0 响应不得出现 clarification。JSON Schema dialect = draft 2020-12；校验对象 = envelope 的 data 字段；additionalProperties 保持放开，未知值由消费方保守处理。",
   "type": "object",
   "required": [
     "contract"
@@ -51,6 +51,9 @@
     },
     "auto_execute": {
       "type": "boolean"
+    },
+    "plan_state": {
+      "$ref": "#/$defs/planState"
     }
   },
   "allOf": [
@@ -83,6 +86,50 @@
         }
       },
       "$comment": "条件版本（add-feature-model delta-F1=B）：contract.version==1.0.0 ⟹ 任何 module 都不得含 features；features 存在即强制 version 为 1.1.0，pre-feature 响应逐字节保持 1.0.0"
+    },
+    {
+      "if": {
+        "required": [
+          "contract"
+        ],
+        "properties": {
+          "contract": {
+            "properties": {
+              "version": {
+                "enum": [
+                  "1.0.0",
+                  "1.1.0"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "plan_state": {
+            "not": {
+              "required": [
+                "clarification"
+              ]
+            }
+          },
+          "modules": {
+            "items": {
+              "properties": {
+                "plan_state": {
+                  "not": {
+                    "required": [
+                      "clarification"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "$comment": "契约 1.0.0/1.1.0 不得输出 clarification；出现任一 clarification 必须声明 1.2.0。"
     }
   ],
   "$defs": {
@@ -96,9 +143,10 @@
         "version": {
           "enum": [
             "1.0.0",
-            "1.1.0"
+            "1.1.0",
+            "1.2.0"
           ],
-          "$comment": "条件版本（add-feature-model delta-F1=B）：响应无任何 modules[].features 时为 1.0.0（与 pre-feature 逐字节一致）；任一 module 输出 features 时为 1.1.0。根级 allOf 约束 features⟺1.1.0。升级规则见 spec/cli-json-output.md"
+          "$comment": "1.0.0 为基础契约；1.1.0 支持 feature 分组；1.2.0 支持 plan_state.clarification。出现 clarification 必须使用 1.2.0。"
         }
       }
     },
@@ -500,6 +548,9 @@
             "$ref": "#/$defs/feature"
           },
           "$comment": "add-feature-model：透传 status 的 feature 分组（1.1.0 minor 新增）。省略当且仅当 module 无注册 feature 且无场景带 feature 键；否则输出（含 __ungrouped__ 降级桶）"
+        },
+        "plan_state": {
+          "$ref": "#/$defs/planState"
         }
       },
       "allOf": [
@@ -548,6 +599,382 @@
           }
         }
       ]
+    },
+    "clarificationOption": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "tradeoff"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tradeoff": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "clarificationNextDecision": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "category",
+            "question",
+            "impact",
+            "recommendation",
+            "recommendation_reason",
+            "options"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^C(?:0[1-9]|[1-9]\\d+)$"
+            },
+            "category": {
+              "enum": [
+                "product",
+                "ownership",
+                "data",
+                "compatibility",
+                "security_privacy",
+                "deployment",
+                "release",
+                "external_commitment",
+                "acceptance"
+              ]
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1
+            },
+            "impact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recommendation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recommendation_reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "options": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/clarificationOption"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "clarification": {
+      "type": "object",
+      "required": [
+        "schema",
+        "mode",
+        "status",
+        "required",
+        "required_categories",
+        "unresolved_decisions",
+        "next_decision_id",
+        "reason",
+        "next_decision"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "schema": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^openlogos/clarification@[1-9]\\d*$",
+          "$comment": "proposal 中实际检测到的 schema；unknown 主版本在 invalid/upgrade 分支原样输出，legacy missing 可为 null"
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "$comment": "complete/pending 分支收紧为 adaptive/deep/provided；invalid 可为 null 或检测原值"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "complete",
+            "invalid"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "required_categories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "product",
+              "ownership",
+              "data",
+              "compatibility",
+              "security_privacy",
+              "deployment",
+              "release",
+              "external_commitment",
+              "acceptance"
+            ]
+          },
+          "maxItems": 9,
+          "$comment": "只列尚未满足类别；complete/invalid 为空。固定顺序由共享 builder 与负向测试保证。"
+        },
+        "unresolved_decisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_decision_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^C(?:0[1-9]|[1-9]\\d+)$"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_decision": {
+          "$ref": "#/$defs/clarificationNextDecision"
+        }
+      },
+      "$comment": "oneOf 约束 complete/pending/invalid 跨字段组合。next_decision_id 与 next_decision.id 相等、required_categories 固定顺序无法用标准 Draft 2020-12 完整表达，由 status/next 共用 builder 与负向契约测试保证。",
+      "oneOf": [
+        {
+          "title": "complete",
+          "properties": {
+            "schema": {
+              "const": "openlogos/clarification@1"
+            },
+            "mode": {
+              "enum": [
+                "adaptive",
+                "deep",
+                "provided"
+              ]
+            },
+            "status": {
+              "const": "complete"
+            },
+            "required": {
+              "const": false
+            },
+            "required_categories": {
+              "type": "array",
+              "maxItems": 0
+            },
+            "unresolved_decisions": {
+              "const": 0
+            },
+            "next_decision_id": {
+              "type": "null"
+            },
+            "reason": {
+              "type": "null"
+            },
+            "next_decision": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "title": "pending-recoverable",
+          "properties": {
+            "schema": {
+              "const": "openlogos/clarification@1"
+            },
+            "mode": {
+              "enum": [
+                "adaptive",
+                "deep",
+                "provided"
+              ]
+            },
+            "status": {
+              "const": "pending"
+            },
+            "required": {
+              "const": true
+            },
+            "required_categories": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 9
+            },
+            "unresolved_decisions": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "next_decision_id": {
+              "type": "string",
+              "pattern": "^C(?:0[1-9]|[1-9]\\d+)$"
+            },
+            "reason": {
+              "enum": [
+                "high-impact-user-decision-required",
+                "data-clarification-required",
+                "compatibility-clarification-required",
+                "security-privacy-clarification-required",
+                "deployment-clarification-required",
+                "release-clarification-required",
+                "external-commitment-clarification-required"
+              ]
+            },
+            "next_decision": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/clarificationNextDecision"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$comment": "合法 pending 必须可恢复并携带完整当前问题；类别专属 reason 与队首 category 的一致性、ID 相等由共享 builder 测试保证。"
+        },
+        {
+          "title": "invalid-normalized",
+          "properties": {
+            "status": {
+              "const": "invalid"
+            },
+            "required": {
+              "const": true
+            },
+            "required_categories": {
+              "type": "array",
+              "maxItems": 0
+            },
+            "unresolved_decisions": {
+              "const": 0
+            },
+            "next_decision_id": {
+              "type": "null"
+            },
+            "reason": {
+              "enum": [
+                "clarification-contract-invalid",
+                "clarification-upgrade-required",
+                "legacy-clarification-backfill-required"
+              ]
+            },
+            "next_decision": {
+              "type": "null"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "reason": {
+                    "const": "clarification-upgrade-required"
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "schema": {
+                    "type": "string",
+                    "pattern": "^openlogos/clarification@[1-9]\\d*$",
+                    "not": {
+                      "const": "openlogos/clarification@1"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "reason": {
+                    "const": "legacy-clarification-backfill-required"
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "schema": {
+                    "type": "null"
+                  },
+                  "mode": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "schema": {
+                    "type": "string",
+                    "pattern": "^openlogos/clarification@[1-9]\\d*$",
+                    "not": {
+                      "const": "openlogos/clarification@1"
+                    }
+                  }
+                },
+                "required": [
+                  "schema"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "reason": {
+                    "const": "clarification-upgrade-required"
+                  }
+                }
+              }
+            }
+          ],
+          "$comment": "invalid 归一化为零未决/null next；未知主版本在 schema 字段原样输出且不得伪装 @1。"
+        }
+      ]
+    },
+    "planState": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "plan_ready": {
+          "type": "boolean"
+        },
+        "clarification": {
+          "$ref": "#/$defs/clarification"
+        }
+      }
     }
   }
 }

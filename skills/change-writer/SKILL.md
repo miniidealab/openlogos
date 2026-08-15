@@ -601,3 +601,140 @@ baseline_closure:
 - 同目标双 delta。
 
 真实信息不足只在既有 plan-exit 前以 AMBIGUOUS 一次性列出，不建立逐区域确认流程。
+
+## Step 1 补充：Plan 阶段决策澄清协议（clarification@1）
+
+> 本节替代“信息不足最多追问 2 轮”的固定轮次策略。目标不是多问，而是只问必须由人决定的高影响事项，并按依赖逐个收敛。适用于 launched 变更的 `write-proposal`；不新增 flow node 或 gate。
+
+### 1. 先查事实，禁止把可查询事项反问用户
+
+开始提问前依次读取：
+
+1. `logos/logos-project.yaml`、`logos/logos.config.json` 与活跃 guard；
+2. 相关 PRD、产品设计、架构、场景、API、DB、部署、测试和决策记录；
+3. 相关代码、依赖版本、运行配置、Secret/ServiceAccount 声明；
+4. 可观测的 Git、CI、测试、发布和运行状态。
+
+已有模块/owner/契约/环境/版本/测试等事实由 Agent 自己查询。只有事实和项目政策不足以唯一决定、且答案会改变范围或风险边界的事项才能进入用户未决队列。提问时应附已查证事实，避免让用户重复提供仓库信息。
+
+### 2. 建立结构化影响声明
+
+在 proposal 的 `## 决策澄清` 中写入：
+
+```yaml
+schema: openlogos/clarification@1
+mode: adaptive
+status: pending
+impacts:
+  data: {status: none, reason: "<事实或政策依据>"}
+  compatibility: {status: none, reason: "<事实或政策依据>"}
+  security_privacy: {status: none, reason: "<事实或政策依据>"}
+  public_release: {status: none, reason: "<事实或政策依据>"}
+  external_commitment: {status: none, reason: "<事实或政策依据>"}
+decisions: []
+unresolved: []
+defaults: []
+```
+
+五类 impact 的 status 只能是 `none|required`，reason 必须非空：
+
+- `none`：无需本次用户选择；可能没有影响，也可能已有事实/政策唯一确定。
+- `required`：仍存在必须由用户选择的高影响方案，必须建立或匹配 `source:user` 决定。
+
+部署不在 impacts 重复声明；从 proposal“是否需要部署”派生。需要部署时必须加入 deployment 类用户决定，内容至少覆盖目标环境、部署方式、回滚和成功/smoke 证据。
+
+### 3. 高影响分类与必问触发
+
+决策类别闭合为：
+
+```text
+product, ownership, data, compatibility, security_privacy,
+deployment, release, external_commitment, acceptance
+```
+
+以下条件命中时必须由用户决定：
+
+| 条件 | 必须匹配的决定 |
+|---|---|
+| `data=required` | `category:data, source:user` |
+| `compatibility=required` | `category:compatibility, source:user` |
+| `security_privacy=required` | `category:security_privacy, source:user` |
+| proposal 需要部署 | `category:deployment, source:user` |
+| `public_release=required` | `category:release, source:user` |
+| `external_commitment=required` | `category:external_commitment, source:user` |
+
+产品目标/成功信号、责任归属/唯一 writer/跨模块契约、验收证据/明确不做范围虽然不在固定 impacts 五类中，出现真实歧义时同样必须进入 unresolved。不得用 `--auto`、recommendation、policy/repository_fact 来源或低风险 defaults 代替 required 的 user 决定。
+
+本地部署与公开发布必须分开：确认安装到本机或生产环境，不等于允许 npm publish、Git tag、GitHub Release、官网开放或 push；反向亦然。
+
+### 4. 构造依赖有序的未决队列
+
+优先级：
+
+1. 产品目标、成功信号和硬边界；
+2. 责任归属、唯一 writer 和跨模块契约；
+3. 数据、迁移、兼容与版本语义；
+4. 权限、安全、隐私、成本和不可逆承诺；
+5. 部署、发布、生效、失败与回滚语义；
+6. 验收证据和明确不做范围；
+7. 可逆内部实现细节（记录 default，不提问）。
+
+每个尚未满足的条件性必选类别必须恰有一个同类别 unresolved；不能只写 `required` 而不生成完整问题，也不能为同一类别生成两个候选当前项。每个未决事项使用 proposal 局部 CXX，含 category、depends_on、question、impact、recommendation、recommendation_reason 和至多两个真实 options。
+
+写盘前执行稳定拓扑排序：先按 depends_on 建图；每一层可用项按 `product -> ownership -> data -> compatibility -> security_privacy -> deployment -> release -> external_commitment -> acceptance` 排序，同类别按 CXX 数字升序。每项依赖只能在 decisions 或数组前序项中，`unresolved[0]` 的依赖必须全部在 decisions。CLI 只读队首，不会替 Agent 跳项或排序；若队首依赖未满足，提案 invalid。
+
+### 5. 一次只问一个决定
+
+每轮对用户只输出：
+
+- 当前 CXX 的一个问题；
+- 为什么影响后续方案；
+- 推荐答案与具体理由；
+- 必要时 1～2 个真实备选及代价。
+
+不要输出批量问题清单。用户回答后保存“决策 ID + 用户原文答案”，将当前项移入 decisions，写 `source:user`、选择理由、影响范围和主要被否方案，再根据答案生成/修正后续问题。
+
+### 6. 每轮立即持久化
+
+proposal 是唯一事实源。每次事实扫描、用户回答或队列变化后立即更新 impacts/decisions/unresolved/defaults；不能只把结论留在聊天上下文。重开会话时先读取现有 CXX，已确认项不重问，编号不重用。
+
+若发现已确认决定互相冲突，新增最上游冲突解决项并保持 pending，不得私自覆盖用户原文。只有满足 S38 升格判据的长期不变量/跨组件取舍才另产 DXX；普通 CXX 不污染长期决策目录。
+
+### 7. 完成与预算耗尽
+
+只有同时满足下列条件才写 `status: complete` 并继续生成 tasks：
+
+1. impacts 结构完整合法；
+2. 每个 required 类别都有匹配 `source:user` 决定；
+3. 每个尚未满足的 required 类别恰有一个内容完整的同类别 unresolved；
+4. 需要部署时已有 deployment/user 决定；
+5. unresolved 为空且 decisions 无冲突；
+6. proposal 已明确目标、范围、契约、部署影响、回滚和验收证据；
+7. 可逆实现细节已记录 defaults；
+8. `provided` 模式的用户决定已通过事实/政策一致性检查。
+
+轮次预算由宿主/运行环境控制，不使用固定“最多 2 轮”。预算耗尽仍未收敛时，必须持久化当前 decisions 与剩余 unresolved，保持 `status: pending`，一次性汇报剩余数量并停在 write-proposal；不得循环刷问，也不得带猜测生成完整 proposal/tasks。
+
+### 8. 简单直通与模式
+
+- `adaptive`：默认；事实扫描后没有高影响未决则 `impacts=none+reason`、`unresolved=[]`、`status=complete`，零额外问答。
+- `deep`：用户明确要求深入澄清时完整走高影响树，但仍只问真实决策。
+- `provided`：用户给出完整决定时不主动追加问题，但必须做结构、事实与冲突校验。
+
+不使用 `auto` 作为澄清模式名，避免与 `next --auto` 执行授权混淆；不使用 `off`，避免被误解为跳过一致性检查。
+
+### 9. OpenLogos / RunLogos 边界
+
+OpenLogos 定义 proposal 结构、完成谓词、CLI JSON、fail-closed 和测试；change-writer 负责事实扫描与准确持久化。RunLogos 等宿主负责暂停/恢复、一次展示一个决定、把用户原文交回 Agent及真实行为评测。宿主只消费 `plan_state.clarification`，不得另建权威状态或自行解析 proposal 判完成。
+
+### 10. 交付前自检
+
+- [ ] 五类 impacts 字段、status、reason 完整。
+- [ ] 每个 required 类别均有匹配 user 决定或当前 unresolved。
+- [ ] 每个未满足 required 类别恰有一个同类别完整 unresolved；不存在 required+空队列或重复类别项。
+- [ ] deployment 与 release 分开判定。
+- [ ] CXX 唯一、依赖存在且无环；队列已稳定拓扑排序，队首依赖全部已确认。
+- [ ] 每个 unresolved 有影响、推荐和理由，当前仅展示一项。
+- [ ] complete 时 unresolved 为空且必选类别全满足。
+- [ ] `--auto` 未被写成用户答案或方案来源。
+- [ ] 方案决策未与 merge/verify/deploy/smoke/archive/push 执行授权混淆。
