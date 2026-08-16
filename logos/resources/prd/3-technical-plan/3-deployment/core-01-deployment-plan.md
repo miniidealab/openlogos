@@ -433,3 +433,61 @@ smoke 未执行或未 PASS 时不得归档本提案。
 ### 授权边界
 
 proposal 内的 deployment 决定确认“采用什么部署方案”；实际安装仍属于部署执行授权。人工模式下 verify、部署、smoke 分别确认；全自动模式只按既有 run-scoped standing authorization 推进。无论哪种模式，公开发布都必须由独立 `release` 决定和相应执行权限覆盖。
+
+## 二十四、切片感知 verify v0.13.26 本地全局部署检查
+
+### 部署目标与边界
+
+- 目标版本：当前 `0.13.25` 的下一 patch `0.13.26`。
+- 目标环境：当前开发机 npm 全局环境。
+- 交付物：本地构建的 tarball、制品 SHA-256、实际安装版本与 smoke 报告。
+- 明确不授权：npm publish、Git tag、GitHub Release、官网发布、远端部署或 git push。
+
+### 部署前条件
+
+1. `openlogos verify` 已 final PASS，且本提案的 `[code]` 全部完成。
+2. 人类明确授权执行部署。
+3. 保存当前全局 `0.13.25` 的命令路径、npm prefix、版本输出和可重新安装 tarball；记录其 SHA-256。
+4. 新包的 package/plugin 版本均为 `0.13.26`，包含更新后的 spec、Skill 与 JSON Schema。
+5. `npm pack --dry-run` 或等价包内容检查确认不含工作区临时状态和凭证。
+
+### 构建与本机安装
+
+```bash
+cd cli
+npm test
+npm run build
+npm pack
+shasum -a 256 miniidealab-openlogos-0.13.26.tgz
+npm install -g ./miniidealab-openlogos-0.13.26.tgz
+```
+
+部署执行必须记录实际 tarball 文件名、哈希、全局 prefix、命令解析路径和安装时间。不得在本阶段执行 `npm publish`。
+
+### 部署后成功证据
+
+1. 新 shell 的 `openlogos --version` 精确为 `0.13.26`，命令路径位于预期 npm 全局 prefix。
+2. 全局包中存在 `skills/slice-planner/SKILL.md`、`spec/test-slice-manifest.md` 与对应 JSON Schema。
+3. 隔离临时项目验证五切片依次 checkpoint PASS，前四片不生成 `VERIFY_PASS`，最后 checkpoint 后 final 全量 PASS。
+4. 验证缺 manifest 输出 `test-slice-manifest-missing` 与 `plan-slices`，恢复后可续跑且 `LOOP_ITERS` 未增加。
+5. 验证 checkpoint 真实失败在进程重启后仍归属相同 `attempted_slice_id`。
+6. 所有 smoke 结果由统一 reporter 写入，独立 `openlogos smoke` 门禁通过后才允许归档。
+
+### 数据与迁移
+
+无业务数据迁移。新 manifest/checkpoint 文件只位于活跃提案目录；旧多切片活跃提案由 `plan-slices` 恢复，不批量改写。未知 manifest 主版本保持原文件并阻塞。
+
+### 回滚方案
+
+任一版本、包内容、checkpoint/final、恢复或 reporter 检查失败时：
+
+```bash
+npm install -g ./miniidealab-openlogos-0.13.25.tgz
+openlogos --version
+```
+
+回滚成功标准是新 shell 中版本精确返回 `0.13.25`、命令路径恢复到原 prefix，且原 tarball 哈希匹配部署前记录。保留 `0.13.26` 失败制品、日志和临时 fixture 用于诊断；不得以重发同版本掩盖失败。
+
+### 门禁结论
+
+本节只定义部署步骤，不构成执行授权。verify 通过后仍须人类明确授权部署；部署完成后须另行授权 `openlogos smoke`。

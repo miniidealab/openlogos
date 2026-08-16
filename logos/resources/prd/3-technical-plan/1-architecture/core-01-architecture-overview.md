@@ -1327,3 +1327,79 @@ apply 事务顺序：
 6. 不新增 baseline 状态、JIT 确认、verified 写回、baseline/JIT gate 或专用 marker；API/DB 整文件首行控制语法不属于确认状态，且合并后不得留在目标中。
 7. 未触达区域零写入、零迁移、零强制 seed 成本。
 8. proposal `touched_scenario_ids` 与 `targets[]` 是独立全集；L9 以它们发现漏场景/漏维度，不允许任务集合自证完备。
+
+## 二十七、切片验收事实、Gate 与恢复架构
+
+### 27.1 组件与单一事实源
+
+```text
+已合并规格 + tasks.md
+        │
+        ▼
+slice-planner ──原子写──► TEST_SLICE_MANIFEST.json
+                              │
+                 ┌────────────┴────────────┐
+                 ▼                         ▼
+       SliceVerificationService      status/next adapter
+                 │                         │
+        ┌────────┴────────┐                └──► plan-slices recovery action
+        ▼                 ▼
+ verify collector   SLICE_CHECKPOINTS.jsonl
+        │
+        ├──► VERIFY_PASS / VERIFY_FAIL
+        └──► LOOP_ITERS(attempted_slice_id)
+```
+
+`SliceVerificationService` 是 manifest 解析、fingerprint 校验、attempted slice 恢复、eligible/pending 集合和模式选择的唯一计算点。verify、status、next 与 automation diagnostic 只能消费该服务的不可变结果，不得各自扫描 checkbox 或实现集合算法。
+
+### 27.2 文件职责
+
+| 文件 | 写入者 | 语义 |
+|---|---|---|
+| `TEST_SLICE_MANIFEST.json` | `slice-planner` | 稳定切片身份、测试唯一归属、runner selector、task/spec fingerprint |
+| `SLICE_CHECKPOINTS.jsonl` | `openlogos verify` | append-only checkpoint 结果；有效 PASS 以 `slice_id + manifest_sha256` 为身份 |
+| `LOOP_ITERS` | `openlogos verify` | 真实 Gate 尝试；checkpoint 行携 `verify_mode` 与 `attempted_slice_id` |
+| `VERIFY_PASS` | `openlogos verify` | 仅 final 全量 Gate PASS |
+| `VERIFY_FAIL` | `openlogos verify` | eligible 或 final 的真实失败；manifest 恢复态不写 |
+
+所有文件位于活跃提案目录。checkpoint 读取先按 manifest 哈希过滤；过期 manifest 的旧行保留审计但不参与当前完成判定。写入使用追加或临时文件加原子 rename，禁止半写 manifest 被读取为有效。
+
+### 27.3 状态推导
+
+1. spec-complete 且 `[code]` 已规划后加载 manifest。
+2. manifest 缺失或可恢复失效：返回 `recovery_required`，映射到 `plan-slices`；不进入测试 Gate。
+3. manifest 有效：从有效 PASS checkpoint 中恢复 `confirmed_slice_ids`，按 manifest 顺序选择第一个未确认切片为 `attempted_slice_id`。
+4. 有 attempted slice 时进入 `slice-checkpoint`；即使其 task checkbox 已勾选也不前移身份。
+5. 无 attempted slice 且 code section 完成时进入 `final`；否则返回 `slice-task-state-inconsistent`。
+
+checkpoint PASS 使下一次推导前移一片；checkpoint FAIL 保持同一片。final PASS 才使 `code_slices_green` 成立并允许 implement loop 出环。
+
+### 27.4 失败域隔离
+
+- manifest 缺失、已知 schema 非法或 fingerprint 漂移：规划恢复域，不写测试失败或消耗代码 repair budget。
+- eligible 测试失败、结果非法、eligible 覆盖不足：当前 slice repair 域，写带 attempted identity 的失败事实。
+- final 全量失败：最终回归 repair 域，pending 必须为空。
+- 未知 manifest 主版本、测试归属歧义、未知 ID：保守阻塞域，禁止静默覆盖或猜测。
+
+恢复重试预算由宿主管理，与 `LOOP_ITERS.max_iters` 正交。OpenLogos 只给出结构化恢复动作和有效性判定，不持有宿主 dispatch 次数。
+
+### 27.5 OpenLogos 与 RunLogos 边界
+
+OpenLogos 输出 `reason`、`next_node`、`dispatch.artifacts_hint` 和 `slice_verification_state`；RunLogos 负责将动作转换为 Agent 指令、维持幂等 work unit、等待完成屏障并重调 canonical `next/verify`。完成屏障必须重新调用 OpenLogos 的 manifest validator，不接受“文件存在”或 Agent 自报 done。RunLogos 不解析 `tasks.md` 判断归属，不写 checkpoint/marker，不修改 Gate 结论。
+
+### 27.6 实现映射
+
+- 新增共享 manifest schema/types、validator 与 fingerprint helper。
+- `verify.ts` 在执行 runner 前完成 manifest 预检和 selector 选择，收集后按 eligible 集合判 Gate。
+- `flow-derive`/`flow-next-node` 消费共享状态，缺 manifest 时把前沿映射回 `plan-slices`。
+- JSON Schema 与文本输出同步增加 mode、eligible、pending、attempted、manifest/checkpoint 状态。
+- slice-planner 负责初次生成与恢复重建，verify 永不写 manifest。
+
+### 27.7 架构不变量
+
+1. 一个变更测试 ID 在 manifest 中恰好归属一个切片。
+2. attempted slice 从 manifest + checkpoint 恢复，不从“第一个未勾 checkbox”反推。
+3. pending 不是测试结果，不进入覆盖率分母。
+4. checkpoint PASS 不等于最终 VERIFY_PASS。
+5. 缺 manifest 是可恢复规划动作，不是代码失败。
+6. final 始终覆盖全部已定义非 manual 测试。

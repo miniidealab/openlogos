@@ -256,3 +256,28 @@
 ### 回滚验收
 
 若任一用例失败，按部署方案重新安装准备好的 0.13.24 包，并确认新 shell 中 `openlogos --version` 返回 0.13.24。回滚只恢复本机全局 CLI，不触发公开发布动作；失败原因、原 0.13.25 tarball 摘要和恢复结果写入部署/冒烟报告。
+
+## 二十三、切片感知 verify v0.13.26 本地全局安装冒烟用例
+
+> 适用部署：`make-verify-slice-aware`。仅在 final verify PASS、用户明确授权把 `0.13.26` tarball 安装到本机 npm 全局环境、且部署完成受控落标后，由独立 `openlogos smoke` 门禁执行。所有用例通过统一 smoke dispatcher 与 OpenLogos reporter 写结果；不得手工生成 `SMOKE_PASS`。
+
+### 冒烟测试用例补充
+
+| ID | 用例 | 前置条件 | 操作 | 通过标准 | 失败处理 |
+|---|---|---|---|---|---|
+| SMOKE-core-62 | 全局版本与协议资产一致 | 已从记录哈希的本地 tarball 全局安装；新 shell | 检查命令路径/版本、全局 package/plugin 元数据和包内容 | 版本均精确 `0.13.26`；包含 slice-planner、`spec/test-slice-manifest.md` 与 1.1.0 JSON Schema | 任一不符即 FAIL，停止后续归档并回滚 0.13.25 |
+| SMOKE-core-63 | 五切片 checkpoint 到 final | 隔离临时项目；有效五切片 manifest；各片 runner/reporter 可独立执行 | 依序为 5 片写交付结果并各运行 verify，最后再运行 final | 每轮 eligible/pending 正确；前 5 次仅写对应 PASS checkpoint、不写最终 `VERIFY_PASS`；final 覆盖全部 defined 并写 PASS | 保留 fixture、manifest/checkpoint/JSON 输出；回滚并诊断 |
+| SMOKE-core-64 | 真实失败跨进程锁定 attempted slice | 承接第2片，先勾 task 但 reporter 置 fail | verify FAIL→退出 shell/重启→next/verify→修复 PASS | 两次失败都携同一第2片 ID，只计真实失败；修复 PASS 后才前移第3片 | 任何串片、iteration 虚增或 pending 入分母即 FAIL |
+| SMOKE-core-65 | 缺 manifest 的 RunLogos 恢复合同 | 隔离多切片提案已部分 checkpoint，删除 manifest；使用 consumer harness 模拟宿主 | next JSON→按 plan-slices 动作派恢复→validator→next/verify | 首次 reason=`test-slice-manifest-missing`，无 Gate/loop 副作用；恢复保留 tasks/checkpoint，从原 attempted 续跑；consumer 不解析 Markdown | 文件存在但 validator 不过不得继续；失败保留动作/violation，回滚 |
+| SMOKE-core-66 | final 硬门与 0.13.25 回滚可用 | 五片 checkpoint 全过；准备 final 缺一条结果 fixture；保留 0.13.25 tarball/hash | 先执行 final 负例，再补齐通过；随后在隔离验证窗口演练重新安装旧包并复核版本 | 负例必须 FAIL 且缺失 ID 不列 pending；补齐后 PASS；回滚演练精确恢复 `0.13.25` 与原命令路径，再按部署决定恢复新包或结束 | final 假通过、回滚失败或版本漂移即阻断 archive |
+
+### 环境隔离与证据
+
+- 所有 fixture 位于安全临时目录，不修改真实活跃提案、guard 或项目资源。
+- 记录 tarball SHA-256、npm prefix、命令解析路径、每次 verify JSON、manifest/checkpoint/loop 哈希与 reporter 结果。
+- 不执行 npm publish、Git tag、GitHub Release、官网部署或 git push。
+- 任一 SMOKE ID 缺 reporter 行、非 PASS 或未实际执行，统一门禁不得生成 `SMOKE_PASS`。
+
+### 回滚验收
+
+失败时重新安装部署前保存且哈希匹配的 `miniidealab-openlogos-0.13.25.tgz`。新 shell 的 `openlogos --version` 必须精确为 `0.13.25`，命令路径位于原 npm prefix；回滚结果和失败制品路径写入部署/冒烟报告。

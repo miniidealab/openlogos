@@ -125,3 +125,35 @@
 - [ ] dispatch 恒完整对象 + schema 校验通过：UT-S28-34
 - [ ] 更新后 R8 锚回归（既有 8 字段不漂移、仅增两 key）：UT-S28-35、ST-S28-11
 - [ ] next schema 反面用例（固定字段缺失必失败、null 正例通过）：UT-S28-36
+
+## 十二、manifest 恢复动作与宿主合同测试
+
+> 以下用例实现必须包含精确 ID，并通过 OpenLogos reporter 产出结果。RunLogos 行为以契约夹具/consumer harness 验证，不在本仓库实现其源码。
+
+### 12.1 单元测试用例补充
+
+| ID | 描述 | 前置条件 | 输入 | 预期输出 |
+|---|---|---|---|---|
+| UT-S28-37 | missing 返回 plan-slices | spec-complete 多切片提案缺 manifest | `next --format json` | stable reason、plan-slices、slice-planner、完整 dispatch/artifacts；非 verify FAIL |
+| UT-S28-38 | invalid 可恢复派发 | v1 缺 required 字段或 selector 空 | next | reason=invalid，给 violations 与恢复动作，不覆盖原文件 |
+| UT-S28-39 | stale 可恢复派发 | task/spec fingerprint 不匹配 | status/next | 两命令同源 stale；next 派恢复，status 不写文件 |
+| UT-S28-40 | unsupported 保守阻塞 | schema=`@2` | next | reason=unsupported，不派覆盖式 Agent、不写任何状态 |
+| UT-S28-41 | 恢复态 Gate 零副作用 | 预置 marker/loop/checkpoint 哈希 | status/next/verify | 三入口不写 `VERIFY_FAIL` 或 loop；verify runner 调用数为 0 |
+| UT-S28-42 | dispatch 幂等字段与 artifacts | missing fixture | 读取 next_node | `idempotent=true`、timeout 合法；artifacts 至少 tasks、测试规格、manifest |
+| UT-S28-43 | 完成屏障拒绝文件存在假完成 | Agent 写出空/重复归属 manifest | validator | 非零/invalid，宿主不得续推；violation 稳定排序 |
+| UT-S28-44 | 恢复成功后 canonical 重算 | 有效重建 manifest，原 attempted 有 checkpoint 状态 | 重调 next | 从 OpenLogos 状态返回正确 code/verify 前沿，不使用宿主缓存预计节点 |
+
+### 12.2 场景测试用例补充
+
+| ID | 描述 | 覆盖步骤 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S28-12 | 缺 manifest 自动恢复闭环 | S28 主路径 | next→消费 JSON 派 Agent→validator→next | 无人工停流；恢复后继续原 attempted slice；宿主未解析 tasks 归属 |
+| ST-S28-13 | 非法产物有界重试 | S28 重试 | 第1次 Agent 产重复归属→屏障拒绝→同 work unit 修复→通过 | 重投幂等、checkbox/checkpoint 不变、code repair iteration 不变 |
+| ST-S28-14 | 歧义/重试耗尽升级阻塞 | S28 异常 | 构造无法唯一归属或连续非法直至上限 | 停止自动派发，保留 violations/dispatch 证据；不伪造 Gate FAIL 或成功 |
+
+### 12.3 覆盖度校验
+
+- [ ] missing/invalid/stale/unsupported 分流：UT-S28-37～UT-S28-40
+- [ ] 零副作用与 dispatch：UT-S28-41、UT-S28-42
+- [ ] validator 完成屏障与重算：UT-S28-43、UT-S28-44
+- [ ] 宿主恢复/重试/阻塞：ST-S28-12～ST-S28-14

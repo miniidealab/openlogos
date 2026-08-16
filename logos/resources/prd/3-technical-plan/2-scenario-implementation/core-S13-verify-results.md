@@ -246,3 +246,81 @@ verify 诊断不得无条件传播到后续 `status` / `next` 的所有前沿。
 3. 若失败证据属于上一提案、上一轮已离开的 flow 阶段或过期 acceptance report，`status` / `next` 不得把它提升为当前提案的 `suggested_next_node:"code"`。
 
 该边界不削弱 verify 本身的诊断能力；它只限制诊断在非当前前沿中的跨阶段抢占。
+
+## 切片 checkpoint 与 final verify 时序
+
+### 目标
+
+在多切片实现期只验收当前可交付集合，并在全部切片通过后执行最终全量验收；任何模式都不得伪造未来测试结果。
+
+### 参与者
+
+- 用户或自动化宿主
+- OpenLogos CLI
+- SliceVerificationService
+- 测试 runner / OpenLogos reporter
+- manifest、checkpoint、marker 与 loop 账本
+
+### 前置条件
+
+- 活跃 launched 提案已完成 spec-complete 与切片规划。
+- `TEST_SLICE_MANIFEST.json` 有效；若无效则转 S28/S32 恢复路径。
+- 测试规格中的 UT/ST/SMOKE ID 已定稿。
+
+```mermaid
+sequenceDiagram
+    actor Caller as 用户/宿主
+    participant CLI as openlogos verify
+    participant SV as SliceVerificationService
+    participant Runner as 测试 runner
+    participant State as manifest/checkpoint/marker/loop
+
+    Caller->>CLI: verify [--format json]
+    CLI->>SV: 加载并校验 manifest + checkpoint
+    alt 仍有未确认切片
+        SV-->>CLI: mode=slice-checkpoint, attempted, eligible, pending
+        CLI->>Runner: 以 runner_selectors 执行 eligible 测试
+        Runner-->>CLI: reporter JSONL
+        alt eligible 全覆盖且通过
+            CLI->>State: 追加 slice PASS checkpoint
+            CLI->>State: 清除本 slice 的 VERIFY_FAIL
+            CLI-->>Caller: checkpoint PASS，不写 VERIFY_PASS
+        else eligible 真实失败
+            CLI->>State: 写 VERIFY_FAIL + LOOP_ITERS(attempted_slice_id)
+            CLI-->>Caller: checkpoint FAIL，repair 锁定同一 slice
+        end
+    else 所有切片已确认且任务完成
+        SV-->>CLI: mode=final, eligible=全部定义, pending=[]
+        CLI->>Runner: 执行全量测试
+        Runner-->>CLI: reporter JSONL
+        alt 全量通过
+            CLI->>State: 写 VERIFY_PASS，清 VERIFY_FAIL
+            CLI-->>Caller: final PASS
+        else 全量失败
+            CLI->>State: 写 VERIFY_FAIL + final LOOP_ITERS
+            CLI-->>Caller: final FAIL
+        end
+    end
+```
+
+### 步骤说明
+
+1. verify 在运行任何测试前校验 manifest 和 fingerprint。
+2. 服务以有效 PASS checkpoint 恢复 attempted slice，不读取“下一未勾 checkbox”决定身份。
+3. checkpoint 运行基线回归、已确认切片与 attempted slice；未来切片只进入 pending。
+4. CLI 按 eligible 集合执行既有结果合法性、去重、覆盖和通过率硬门。
+5. checkpoint PASS 仅追加检查点；final PASS 才写最终 marker。
+
+### 异常与边界
+
+- manifest 缺失/可恢复失效：测试不启动，转 `plan-slices`，不写失败事实。
+- reporter 出现 pending ID：视为结果越界并失败，不把它吸收入 eligible。
+- checkbox 已勾但 checkpoint 未通过：attempted identity 保持不变。
+- checkpoint 重试得到相同 PASS：幂等，不追加重复有效事实。
+- final 发现任何未覆盖 ID：全量失败，绝不改列 pending。
+
+### 追溯
+
+- 需求：S13/S16/S27/S31 多切片验收边界。
+- 规格：功能规格 §2.37；`spec/test-slice-manifest.md`。
+- 测试：UT-S13-56～UT-S13-64、ST-S13-15～ST-S13-17。

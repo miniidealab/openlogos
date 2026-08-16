@@ -2612,3 +2612,94 @@ deployment, release, external_commitment, acceptance
 - writing legacy 缺区块时输出 backfill reason；status/next 不自动写 proposal。
 - additionalProperties 继续放开以支持 1.x 增量；消费方对未知 enum/schema 走保守分支。
 - RunLogos 只依赖本 JSON 契约展示一个决定，不读取 proposal 判完成；真实 Agent 行为不属于 CLI JSON 合格声明。
+
+## 切片验收与 manifest 恢复 JSON 契约
+
+### 契约版本
+
+本能力为 1.x 向后兼容增量，`data.contract.version` 升为 `1.1.0`，对应打包的 status、next 与 verify JSON Schema。消费方必须按 schema 校验 `output.data`；未知字段可忽略，未知枚举值或未知 manifest 主版本必须走保守分支。
+
+### verify data
+
+manifest 有效且进入 Gate 时，verify data 增加：
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| `verify_mode` | `slice-checkpoint \| final` | 必填 |
+| `attempted_slice_id` | `string \| null` | checkpoint 非空；final 为 null |
+| `eligible_test_ids` | `string[]` | 去重、字典序稳定；Gate 覆盖率分母 |
+| `pending_test_ids` | `string[]` | 去重、字典序稳定；与 eligible 互斥；final 为空 |
+| `manifest` | object | `status=valid`、path、schema、task/spec fingerprint、sha256 |
+| `checkpoint` | object | 当前 result 与稳定排序的 `confirmed_slice_ids` |
+
+`uncovered_test_ids` 必须是 `eligible_test_ids − covered_test_ids`，不得包含 pending。checkpoint PASS 的 `gate.result` 可为 `PASS`，但 `checkpoint.final=false` 且不得据此生成最终 `VERIFY_PASS`。
+
+### status/next slice_verification_state
+
+处于多切片 slice/implement 阶段时，status 与 next 暴露同源对象：
+
+```json
+{
+  "slice_verification_state": {
+    "manifest_status": "valid",
+    "verify_mode": "slice-checkpoint",
+    "attempted_slice_id": "slice-02-runner",
+    "confirmed_slice_ids": ["slice-01-manifest"],
+    "eligible_test_ids": ["ST-S31-12", "UT-S31-28"],
+    "pending_test_ids": ["ST-S31-13", "UT-S31-29"]
+  }
+}
+```
+
+数组稳定排序；同一磁盘状态在 status/next 中逐字段同义。单切片 legacy、docs-only 或已越过 final 的兼容路径可省略整个对象。
+
+### 恢复动作
+
+manifest 缺失或可恢复失效时，next data 必须包含：
+
+```json
+{
+  "reason": "test-slice-manifest-missing",
+  "slice_verification_state": {
+    "manifest_status": "missing",
+    "verify_mode": null,
+    "attempted_slice_id": null,
+    "confirmed_slice_ids": [],
+    "eligible_test_ids": [],
+    "pending_test_ids": []
+  },
+  "next_node": {
+    "id": "plan-slices",
+    "name": "恢复测试—切片清单",
+    "subflow_id": "slice",
+    "skill": "slice-planner",
+    "working_agent": null,
+    "review_agent": null,
+    "pre_script": null,
+    "post_script": null,
+    "dispatch": {
+      "idempotent": true,
+      "timeout_seconds": 900,
+      "artifacts_hint": ["tasks.md", "TEST_SLICE_MANIFEST.json", "logos/resources/test/"]
+    }
+  }
+}
+```
+
+稳定 reason 枚举：
+
+- `test-slice-manifest-missing`
+- `test-slice-manifest-invalid`
+- `test-slice-manifest-stale`
+- `test-slice-manifest-unsupported`
+- `test-slice-assignment-ambiguous`
+
+前三者可派发恢复；后两者保守阻塞并给出诊断，不自动覆盖。恢复态不得同时宣称 verify Gate FAIL，不写 marker 或 loop 行。
+
+### LOOP_ITERS 扩展
+
+新增可选字段 `verify_mode` 与 `attempted_slice_id`。checkpoint 失败两者分别为 `slice-checkpoint` 与非空稳定 ID；final 行为 `final` 与 null。旧行缺字段继续可读，但不能用于恢复新 manifest 的 attempted identity。
+
+### 宿主消费规则
+
+RunLogos 只消费 `reason`、`next_node`、`dispatch` 与状态对象，不读取 proposal/tasks 判完成。派发完成后必须重新调用 OpenLogos 获取 canonical 状态；相同恢复动作应按 idempotent 语义重投。未知字段忽略，未知 enum/schema 不能猜测为成功。

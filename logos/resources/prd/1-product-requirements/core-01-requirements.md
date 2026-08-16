@@ -1389,3 +1389,54 @@ OpenLogos 必须在既有 `write-proposal -> write-tasks -> plan-exit` 内提供
 - `next --auto` 遇到未决高影响决定时不写 `PLAN_APPROVED` 或 `GATE_AUTO_PASSED`，不进入 `write-tasks`、Delta 或实现。
 - 已越过 plan 的历史提案不回退；仍在 writing 且缺少区块的历史提案获得补齐提示；未知 schema 版本保守停止。
 - 本能力的 OpenLogos UT/ST 与 reporter 全部通过；真实 Agent 是否先查事实、一次一问和准确记录由 RunLogos 行为评测负责。
+
+## S13/S16/S27/S28/S31/S32 多切片验收边界与自动恢复要求
+
+### 用户价值
+
+多切片提案必须允许每一片在其真实交付范围内独立验收，同时继续保留最终全量回归硬门。未来切片尚未实现不得被伪装成 pass/skip，也不得被计入当前覆盖率分母。自动化宿主在缺少机器清单时应获得可执行恢复动作，而不是把流程停在无法修复的失败态。
+
+### 验收条件
+
+#### 正常：当前切片 checkpoint 只计算 eligible 测试
+
+- **GIVEN** 活跃提案已由 `slice-planner` 生成有效 `TEST_SLICE_MANIFEST.json`，且仍有未完成切片
+- **WHEN** 用户执行 `openlogos verify`
+- **THEN** 命令以 `slice-checkpoint` 模式运行；覆盖率分母只包含基线回归、已通过 checkpoint 的切片和本轮 attempted slice 所属测试；后续切片测试列入 `pending_test_ids`，不产生 reporter 结果
+
+#### 正常：checkpoint 通过推进但不伪造最终通过
+
+- **GIVEN** 当前 attempted slice 的 eligible 测试全部覆盖且通过
+- **WHEN** checkpoint Gate 收敛
+- **THEN** CLI 以稳定 `slice_id` 追加 checkpoint 事实，清除该切片的失败态并允许推进下一片；不得写最终 `VERIFY_PASS`
+
+#### 正常：所有切片完成后执行 final
+
+- **GIVEN** manifest 中所有切片均已有通过 checkpoint，且 `[code]` 顶层与子任务全部勾选
+- **WHEN** 用户再次执行 `openlogos verify`
+- **THEN** 命令切换为 `final`，以全部已定义非 manual 测试为覆盖率分母并维持 100% 覆盖和一致性硬门；只有 final 通过才写 `VERIFY_PASS`
+
+#### 异常：真实 eligible 失败锁定同一切片
+
+- **GIVEN** 当前 attempted slice 的 eligible 测试存在失败、非法结果或覆盖不足
+- **WHEN** checkpoint Gate 失败
+- **THEN** CLI 写入带稳定 `attempted_slice_id` 的失败事实与 `LOOP_ITERS`，repair 仍指向该切片且只消耗该切片预算；checkbox 是否已前移不得改变归属
+
+#### 恢复：缺少或可恢复失效的 manifest
+
+- **GIVEN** 多切片代码提案已完成 spec-complete，但 `TEST_SLICE_MANIFEST.json` 缺失、schema 非法或 fingerprint 漂移且可由既有规格确定性重建
+- **WHEN** 用户或宿主调用 `status`、`next` 或 `verify`
+- **THEN** OpenLogos 不写 `VERIFY_FAIL`、不追加代码 repair 迭代，输出稳定原因和 `next_node.id=plan-slices`、`skill=slice-planner`、所需 artifacts；RunLogos 等宿主可据此派发 Agent 重建并自动重试
+
+#### 异常：恢复仍存在真实歧义
+
+- **GIVEN** 测试 ID 无法唯一归属切片，或有未知、重复归属且多次恢复仍非法
+- **WHEN** 恢复校验运行
+- **THEN** 流程以明确诊断保守阻塞，保留既有 `[code]`、checkbox 与 checkpoint，不得静默猜测归属或退回全量误失败
+
+### 非目标
+
+- 不降低 final verify 的全量覆盖要求。
+- 不为未来测试写 pass/skip 结果。
+- 不允许宿主解析 `tasks.md` 建立第二套验收算法。
+- 不把本机全局安装授权扩展为 npm publish、Git tag、GitHub Release、官网发布或 push。

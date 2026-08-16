@@ -795,3 +795,43 @@ auto 可以消费仓库事实、显式项目政策、已记录用户决定和低
 ### OpenLogos 与宿主边界
 
 OpenLogos 负责模板、解析、结构校验、必选类别匹配、完成谓词、JSON Schema、auto fail-closed、历史兼容、跨进程重读及 UT/ST。RunLogos 等宿主负责暂停/恢复、一次展示一个决定、把用户原文答案交回 Agent，以及真实 Agent 行为评测；宿主只消费 CLI JSON，不解析 proposal 判完成。
+
+## 切片感知 verify 生命周期与恢复门
+
+### 状态推进
+
+多切片代码提案在 `SPEC_MERGED` 后由 slice-planner 同时产出 `[code]` 与 `TEST_SLICE_MANIFEST.json`。slice-exit 批准后进入 implement；此后每个切片必须先获得有效 PASS checkpoint，最后再通过 final 全量 verify。
+
+```text
+plan-slices
+  → slice-exit
+  → code(slice N)
+  → verify(slice-checkpoint N)
+     ├─ PASS → code(slice N+1)
+     ├─ FAIL → repair(slice N)
+     └─ manifest recovery → plan-slices(recover)
+  → verify(final)
+     ├─ PASS → deliver
+     └─ FAIL → repair(final regression)
+```
+
+checkpoint PASS 只追加 `SLICE_CHECKPOINTS.jsonl`，不得写最终 `VERIFY_PASS`。final 仅在所有 manifest slice 均有匹配当前 manifest 哈希的 PASS checkpoint、且 `[code]` section 完成时可进入；final PASS 才满足 verify Gate。
+
+### 失败与预算
+
+- `slice-checkpoint` 的 eligible 测试真实失败：写 `VERIFY_FAIL` 与带 `attempted_slice_id` 的 `LOOP_ITERS`，repair 锁定同一切片。
+- checkpoint PASS：属于正常推进，不消耗 repair budget。
+- 后续切片 pending：不是结果也不是失败，不写 marker/loop 行。
+- manifest 缺失、已知版本非法或 fingerprint 漂移：属于可恢复规划状态，不写 `VERIFY_FAIL`、不追加 `LOOP_ITERS`。
+- final FAIL：按全量回归失败处理，pending 必须为空。
+
+### 恢复前沿
+
+当多切片 implement 提案没有有效 manifest 时，status/next/verify 必须回到 `plan-slices` 恢复前沿，并输出稳定 reason 与 slice-planner dispatch。恢复只允许重建 manifest，不重置 `SPEC_MERGED`、`SLICES_APPROVED`、`[code]` 文本/checkbox 或有效 checkpoint。完成后重新调用 canonical 状态派生，禁止宿主直接跳到 code/verify。
+
+### 授权与兼容
+
+- 恢复动作是既有实现流程内的可重复内容生产，不新增人类 gate；slice-exit、verify、deploy、smoke、archive、push 的既有授权语义不变。
+- 单切片、docs-only 和已越过 final 的 legacy 提案不因缺 manifest 回退。
+- 仍处于多切片 implement 的 legacy 提案必须恢复，禁止临时解析 tasks 形成私有事实。
+- `gate:implement:loop-exhausted` 仍是任何模式不可自动绕过的硬红线；manifest 恢复预算与其独立。

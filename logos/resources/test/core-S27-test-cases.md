@@ -128,3 +128,35 @@ change-flow-redesign 让内置 launched `implement` 携带默认 loop 定义（`
 - [ ] 旧空 marker 兼容（挂出但省略 activated_at）：UT-S27-30
 - [ ] docs-only（code_required=false）永不挂：UT-S27-31
 - [ ] slice_state 常驻口径不变：UT-S27-28
+
+## 七、切片推进与 repair budget 隔离测试
+
+> 以下用例实现必须包含精确 ID，并由 OpenLogos reporter 写入结果。
+
+### 7.1 单元测试用例补充
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S27-33 | pending 不计 iteration | 有未来切片 pending，当前 eligible PASS | 写 loop/checkpoint | checkpoint 写 PASS；`LOOP_ITERS` 行数不变 |
+| UT-S27-34 | missing manifest 不计 iteration | 缺 manifest，记录 loop 初始字节 | verify 预检 | 返回恢复动作；loop、marker、checkpoint 零写 |
+| UT-S27-35 | stale manifest 不计 iteration | task/spec fingerprint 漂移 | status/next/verify | 均派恢复且 iteration 不变 |
+| UT-S27-36 | 真实 checkpoint FAIL 计同片 | attempted=A，eligible fail | 连续执行两次失败 verify | 两行均 `verify_mode=slice-checkpoint, attempted_slice_id=A`；iteration 增 2 |
+| UT-S27-37 | checkbox 前移不改变失败归属 | A checkbox 已勾、A 无 PASS checkpoint | 派生 loop/current | repair 仍指 A，不误用 tasks 的下一片 B |
+| UT-S27-38 | checkpoint PASS 正常前移 | A FAIL 后修复为 PASS | verify 后 next | 清 A 失败态、确认 A、next 指 B；PASS 不新增失败计次 |
+| UT-S27-39 | final FAIL 账本语义 | 全部 checkpoint/任务完成，final regression fail | verify | 追加 `verify_mode=final, attempted_slice_id=null`；不撤销历史 checkpoint |
+| UT-S27-40 | loop-exhausted 红线保持 | 同 slice 真实失败达到 max_iters | `next --auto` | `gate:implement:loop-exhausted`、skippable=false，不因恢复能力自动放行 |
+
+### 7.2 场景测试用例补充
+
+| ID | 描述 | 覆盖步骤 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S27-11 | 五切片全绿零 repair 消耗 | S27 正常路径 | 五片逐片 checkpoint PASS→final PASS | 正常推进不产生失败 loop 行；final 后 converged=true |
+| ST-S27-12 | 第二片失败修复后继续 | S27 repair | 第1片 PASS→第2片 FAIL 两次→修复 PASS→其余 PASS→final | 仅两次失败计次且归属第2片；后续切片不受污染 |
+| ST-S27-13 | 恢复重试与 repair 预算正交 | S27/S28 | 缺 manifest 恢复两次（首份非法、次份有效）→当前片 FAIL | 两次恢复不计 code iteration；只有最后真实 FAIL 计 1 次 |
+
+### 7.3 覆盖度校验
+
+- [ ] 正常推进/pending 零计次：UT-S27-33、UT-S27-38、ST-S27-11
+- [ ] manifest 恢复零计次：UT-S27-34、UT-S27-35、ST-S27-13
+- [ ] 稳定同片 repair：UT-S27-36、UT-S27-37、ST-S27-12
+- [ ] final 与上限红线：UT-S27-39、UT-S27-40

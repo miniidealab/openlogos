@@ -139,3 +139,39 @@
 - [ ] SLICES_APPROVED 结构化 marker 写入（schema/approved_at）：UT-S32-29、ST-S32-09
 - [ ] marker 幂等（已存在不重写、approved_at 不刷新）：UT-S32-30
 - [ ] 旧空 marker 兼容读（视为已批准、省略 activated_at）：UT-S32-31
+
+## 十一、manifest 生成、唯一归属与漂移预检测试
+
+> 以下用例实现必须包含精确 ID，并由 OpenLogos reporter 写入结果。
+
+### 11.1 单元测试用例补充
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S32-32 | 合法 v1 manifest | 2 个顶层 slice、真实测试 ID 与 selector | validator | valid；切片顺序、tasks 映射、归属与路径全部通过 |
+| UT-S32-33 | slice_id 唯一与格式 | 重复 ID、非法字符、超长三 fixture | validator | 分别返回稳定字段路径与 invalid/duplicate code |
+| UT-S32-34 | 测试 ID 漏配 | 变更测试集合 C 有一个 ID 不在 owned | validator | `test-slice-test-id-missing`，runner 不启动 |
+| UT-S32-35 | 测试 ID 重复归属 | 同 ID 在两片 owned | validator | `test-slice-test-id-duplicate`/ambiguous，不自动选择 |
+| UT-S32-36 | 未知测试 ID | owned 含未在已合并规格定义的 ID | validator | `test-slice-test-id-unknown`，给 spec target 诊断 |
+| UT-S32-37 | runner selector 必填可执行 | selector 空、重复或不能覆盖 owned | validator | invalid；精确指出 slice 与 selector |
+| UT-S32-38 | task fingerprint 规范化 | 仅勾选/尾空白变化，再改 task 语义 | 重算 fingerprint | 前两者哈希不变；语义变化哈希改变并 stale |
+| UT-S32-39 | spec fingerprint 漂移 | 测试文档换行规范化、再改 ID/期望 | 重算 fingerprint | CRLF/LF 规范化后稳定；语义改动触发 stale |
+| UT-S32-40 | 稳定 slice ID 重建 | manifest 缺失，既有 tasks 不变 | 恢复两次 | 两次 ID、顺序、owned、selector 逐字节一致 |
+| UT-S32-41 | 恢复保留进度 | tasks 部分勾选、checkpoint 已有 | 运行恢复模式 | 只替换 manifest；tasks/SLICES_APPROVED/checkpoint 字节不变 |
+| UT-S32-42 | 原子写崩溃安全 | 旧有效 manifest + 临时文件写/校验/rename 各故障点 | 故障注入后重读 | 只见旧完整或新完整文件；无半 JSON 被采信 |
+
+### 11.2 场景测试用例补充
+
+| ID | 描述 | 覆盖步骤 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S32-10 | 初次规划 tasks+manifest 共同收敛 | S32 初次模式 | 基于已合并规格规划三片→写 tasks/manifest→validator | 顶层顺序一致，所有变更测试唯一归属，fingerprint 可重算，slice-exit 可达 |
+| ST-S32-11 | 缺 manifest 确定性恢复 | S32 恢复 | 部分实现后删除 manifest→恢复两次 | 切片边界/checkbox/checkpoint 保留；manifest 两次逐字节稳定（除 generated_at 按幂等规则保持） |
+| ST-S32-12 | 测试规格变化触发 stale 后重建 | S32 漂移 | 合并新增测试 ID→next 报 stale→恢复 | 新 ID 唯一归属、spec fingerprint 更新，旧 checkpoint 仅按哈希隔离不误确认 |
+| ST-S32-13 | 歧义 fail-closed | S32 异常 | 构造一个 ID 同时匹配两个无优先级切片 | Agent/validator 报 ambiguous，tasks 与旧 manifest 不改写，流程不进入 code |
+
+### 11.3 覆盖度校验
+
+- [ ] schema/slice ID/selector：UT-S32-32、UT-S32-33、UT-S32-37
+- [ ] 漏配/重复/未知/歧义：UT-S32-34～UT-S32-36、ST-S32-13
+- [ ] fingerprints 与 stale：UT-S32-38、UT-S32-39、ST-S32-12
+- [ ] 稳定恢复与原子性：UT-S32-40～UT-S32-42、ST-S32-10、ST-S32-11

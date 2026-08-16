@@ -500,3 +500,49 @@ pass_rate_pct == 100
 | `directory-convention.md` | 定义 `logos/resources/verify/` 目录位置 |
 | `logos.config.json` | `verify.result_path` 可覆盖默认路径 |
 | `openlogos verify` 命令 | 读取此格式文件，生成验收报告 |
+
+## 切片 checkpoint 的结果集合与 pending 语义
+
+### 三个集合
+
+切片感知 verify 必须在读取 reporter JSONL 前确定以下互斥/包含关系：
+
+- `eligible_test_ids`：本轮必须有合法最终结果、参与覆盖率与 Gate 的测试。
+- `pending_test_ids`：属于未来未确认切片，尚不要求结果且不进入分母。
+- `defined_test_ids`：已合并测试规格中全部非 manual ID，满足 `eligible ∪ pending ⊆ defined`。
+
+checkpoint 下 eligible 为基线回归、已确认切片与 attempted slice 的并集；pending 为其余 owned tests。final 下 eligible 等于全部 defined，pending 为空。
+
+### reporter 处理
+
+1. reporter 格式、合法 `status`、timestamp 去重与手工用例排除沿用既有规则。
+2. 覆盖率只按 eligible 计算：
+
+```text
+covered = eligible ∩ latest_result_ids
+uncovered = eligible − covered
+coverage = |covered| / |eligible|
+```
+
+3. pending 没有结果是合法状态，不生成 pass/skip 行，不进入 uncovered。
+4. reporter 若意外输出 pending ID，保留该行供诊断但不得使未来切片提前确认；严格模式以 `result_outside_eligible_scope` 失败。
+5. 未在 defined 中的结果仍按既有 unknown ID 硬门失败。
+
+### 基线回归集合
+
+`baseline_test_ids = defined_test_ids − manifest_owned_test_ids`。它在每个 checkpoint 都属于 eligible，用于阻止当前切片破坏未触达能力。manifest owned 集合必须只包含本提案新增或修改的测试 ID；不得把全项目测试都分配到切片以逃避基线定义。
+
+### checkpoint/final 报告
+
+验收报告新增 mode、attempted slice、eligible/pending 数量和 ID 清单、manifest fingerprint、confirmed slices。checkpoint PASS 明确标注“切片检查点通过，非最终验收”，不得产生最终 `VERIFY_PASS`。final 报告继续给出全量覆盖率与 Gate 结论。
+
+### checkpoint 账本
+
+`SLICE_CHECKPOINTS.jsonl` 每行至少包含：`schema`、`slice_id`、`manifest_sha256`、`result`、`eligible_test_ids_sha256`、`timestamp`。有效完成只采信当前 manifest 哈希的最新 PASS；相同 identity 的重复 PASS 幂等。FAIL 可留作审计，但 attempted identity 由“缺少有效 PASS 的首片”恢复。
+
+### 安全边界
+
+- pending 不是 reporter status，允许的结果状态枚举不新增 `pending`。
+- checkpoint 不降低非法状态、unknown ID、重复结果和 100% eligible coverage 硬门。
+- final 不允许 pending，不接受部分结果。
+- manifest 恢复态不读取旧 JSONL 计算 Gate，不生成验收报告假失败。

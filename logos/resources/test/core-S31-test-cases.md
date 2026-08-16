@@ -182,3 +182,36 @@ S31 既有 “空 `[code]` 退化为 `tests_green`” 仅适用于无代码产�
 ### 覆盖度校验补充
 - [ ] slice-exit 未批准不进 implement loop / 不挂 loop_state：UT-S31-26、ST-S31-11
 - [ ] SLICES_APPROVED 写入后才挂 loop_state 并进入逐片循环：UT-S31-27、ST-S31-11
+
+## 十二、逐片 checkpoint、final 与重启恢复测试
+
+> 以下用例实现必须包含精确 ID，并由 OpenLogos reporter 写入结果。
+
+### 12.1 单元测试用例补充
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S31-28 | attempted 由 checkpoint 而非 checkbox 选择 | 3 片；第1片 PASS；第2片 task 已勾但无 PASS | 派生 current | attempted=第2片；第3片不得前移 |
+| UT-S31-29 | checkpoint PASS 前移一片 | 第2片 eligible 全绿 | 写 checkpoint 后重派生 | confirmed 新增第2片、attempted=第3片 |
+| UT-S31-30 | checkpoint FAIL 保持同片 | 第2片 fail，tasks current 已是第3片 | 派生 next_node | code/repair 提示携第2片稳定 ID，并输出任务状态不一致诊断 |
+| UT-S31-31 | checkpoint 哈希隔离 | 同 slice 有旧 manifest 哈希 PASS | 加载当前 manifest | 旧行不确认当前 slice，保留审计 |
+| UT-S31-32 | PASS checkpoint 幂等 | 当前 identity 已 PASS | 重复追加请求 | 文件不新增等价 PASS 行，confirmed 不重复 |
+| UT-S31-33 | final 前置要求 tasks+checkpoints | 分别缺 task 完成或缺一片 PASS | 派生 mode | 两例都不进 final，返回明确不一致/当前片 |
+| UT-S31-34 | final PASS 才收敛 | tasks/checkpoints 全完成但无 final PASS | 派生 `code_slices_green` | false；final PASS 后才 true |
+| UT-S31-35 | final FAIL 保留 checkpoint | final regression fail | 写 marker/ledger | `VERIFY_FAIL` 在，历史 checkpoint 字节不变，可修复后重跑 final |
+| UT-S31-36 | 重启确定性 | 保存 manifest/checkpoint/tasks 后新进程加载 | 比对进程前后状态 | attempted、confirmed、mode、集合逐字段相同 |
+
+### 12.2 场景测试用例补充
+
+| ID | 描述 | 覆盖步骤 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S31-12 | 五切片 checkpoint→final | S31 主路径 | 五片依序实现/verify，最后 final | 每片仅确认自己；前五次无最终 PASS；final 全量通过后收敛 |
+| ST-S31-13 | checkbox 提前勾选不串片 | S31 异常 | 第2片先勾→失败→next→修复→通过 | next 始终锁第2片至 PASS，之后才到第3片 |
+| ST-S31-14 | 响应丢失后幂等恢复 | S31 重启 | checkpoint PASS 落盘后模拟进程退出/响应丢失→重试 | 不重复 PASS 行，直接恢复下一片，iteration 不虚增 |
+| ST-S31-15 | final 回归失败再修复 | S31 final | 全 checkpoint→final FAIL→修复→final PASS | 第一次不出环且 checkpoint 保留；第二次写最终 PASS 并进入 deliver 前沿 |
+
+### 12.3 覆盖度校验
+
+- [ ] attempted 身份与前移：UT-S31-28～UT-S31-30、ST-S31-13
+- [ ] 哈希/幂等/重启：UT-S31-31、UT-S31-32、UT-S31-36、ST-S31-14
+- [ ] final 前置与收敛：UT-S31-33～UT-S31-35、ST-S31-12、ST-S31-15

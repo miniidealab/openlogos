@@ -329,3 +329,41 @@ D = deltas/ 中可合并文件映射后的 canonical target 集合
 ### Legacy 兼容
 
 未声明 on-touch-v1 且任务无模式的历史提案按原格式解析。任何任务已使用 `[MODIFY]`/`[CREATE]` 时，proposal 缺策略声明视为结构错误，不能退回 legacy。
+
+## [code] 切片与 TEST_SLICE_MANIFEST 映射
+
+### 结构职责
+
+`tasks.md` 的 `[code]` section 继续承载人读任务、父子 checkbox 与实现进度；`TEST_SLICE_MANIFEST.json` 承载机器稳定的 `slice_id`、测试唯一归属、runner selector 和 fingerprint。两者互相校验，但 verify 与宿主不得从 task 自然语言临时重建归属。
+
+### 顶层切片映射
+
+- manifest 的 `slices[]` 数量和顺序必须与 `[code]` 顶层 checkbox 一致。
+- 每个 manifest slice 的 `task_text` 等于对应顶层 checkbox 去除列表/checkbox 语法后的规范化文本。
+- 每个顶层 task 对应唯一 `slice_id`；缩进 checkbox 属于父切片，不生成独立 slice ID。
+- `slice_id` 在 checkbox 勾选、空白格式化和重试时保持稳定；切片语义文本变化必须刷新 task fingerprint 并触发 stale 校验。
+
+### fingerprint
+
+`task_fingerprint` 对 `[code]` section 的规范化结构计算 SHA-256：保留顶层顺序、规范化 task 文本与父子关系；忽略 checkbox 的 checked 状态、行尾空白和无语义空行。这样勾选进度不会使 manifest 失效，重切片或改写语义会使其 stale。
+
+`spec_fingerprint` 由 manifest 声明的测试规格目标及其规范化内容计算，必须覆盖 owned ID 的定义。任何测试新增、删除、重命名或语义内容变化均触发重建；测试结果 JSONL 不参与 fingerprint。
+
+### 完成判定
+
+```text
+slices_planned = code_section_has_real_top_level_tasks ∧ manifest_valid
+slice_task_done(slice) = parent_checked ∧ every(child_checked)
+slice_checkpoint_done(slice) = current_manifest_has_PASS_checkpoint(slice_id)
+ready_for_final = every(slice_task_done) ∧ every(slice_checkpoint_done)
+```
+
+任务完成与 checkpoint 完成是独立事实；前者不能代替后者。父 checkbox 先勾选但 checkpoint 未通过时，OpenLogos 仍以该 slice 为 attempted。
+
+### 恢复约束
+
+恢复模式只能写 manifest，不得修改 `[code]` 文本、顺序、父子结构或 checkbox。若既有 tasks 无法为测试建立唯一归属，slice-planner 必须返回歧义，不能为通过 validator 而偷偷重切。初次规划同时写 tasks 与 manifest；恢复重建只替换 manifest。
+
+### Legacy
+
+单切片代码提案、docs-only 提案和已越过 final 的历史提案可以没有 manifest，并沿用既有 tasks 解析。处于多切片 implement 的历史提案缺 manifest 时，`slices_planned` 不视为完整，进入 `plan-slices` 恢复动作，但保留当前 checkbox。

@@ -28,7 +28,7 @@ scenario_counter:
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 5
+  next_id: 6
 modules:
   - id: core
     name: 核心功能
@@ -553,6 +553,11 @@ resource_index:
     desc: D03 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
   - path: logos/resources/decisions/core-D04-deployment-plan-user-decision.md
     desc: D04 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
+
+  - path: logos/resources/decisions/core-D05-slice-verification-ownership-and-recovery.md
+    desc: D05 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
+  - path: spec/test-slice-manifest.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
 
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号

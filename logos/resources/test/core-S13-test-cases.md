@@ -196,3 +196,36 @@
 - [ ] 运行期写保护不可用时能力分层（always FAIL / auto warn 披露残留风险）：UT-S13-55
 - [ ] 白名单结果文件位于 node_modules 下定点采集回收：UT-S13-52
 - [ ] pnpm 依赖修复式写入端到端 verify PASS：ST-S13-14
+
+## 十四、切片 checkpoint/final verify 测试
+
+> 覆盖 S13 切片感知 Gate。以下用例实现必须使用测试名中的精确 ID，并通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`；pending 不得伪造 reporter 行。
+
+### 14.1 单元测试用例补充
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S13-56 | checkpoint eligible/pending 集合公式 | 3 切片 manifest；第 1 片已 PASS；第 2 片 attempted | 派生 verify scope | eligible=基线∪第1片∪第2片；pending=第3片；集合互斥、稳定排序 |
+| UT-S13-57 | pending 不进入 uncovered 分母 | 同上，仅 reporter 缺第3片结果 | 收集并计算覆盖率 | uncovered 不含第3片；coverage 只按 eligible，Gate 可 PASS |
+| UT-S13-58 | checkpoint PASS 只写检查点 | attempted eligible 全部 pass | 执行 marker/ledger 写入 | 追加当前 manifest 哈希的 PASS checkpoint；不写 `VERIFY_PASS`，不追加失败迭代 |
+| UT-S13-59 | checkpoint FAIL 锁定稳定 slice | task checkbox 已提前勾选，attempted eligible 有 fail | 执行 verify | 写 `VERIFY_FAIL` 与 `LOOP_ITERS.attempted_slice_id`；下一次仍选原 slice |
+| UT-S13-60 | checkpoint PASS 幂等 | 同一 manifest/eligible 已有等价 PASS 行 | 重复 verify | 不重复追加等价 checkpoint；状态前移一次 |
+| UT-S13-61 | final 使用全部 defined ID | 所有 slice checkpoint PASS 且 code 完成 | 派生 scope | mode=final、attempted=null、eligible=全部非 manual、pending=[] |
+| UT-S13-62 | final 覆盖不足硬失败 | final 缺任一后期 slice 结果 | 执行 verify | uncovered 含缺失 ID、写 `VERIFY_FAIL`、不写 `VERIFY_PASS` |
+| UT-S13-63 | reporter 输出 pending ID 越界 | checkpoint runner 意外写未来 ID | 收集结果 | 返回 `result_outside_eligible_scope`；未来 slice 不提前确认 |
+| UT-S13-64 | manifest 恢复态零失败副作用 | 多切片提案缺 manifest，已有 marker/loop 快照 | 调 verify 预检 | 返回恢复诊断；runner 未启动；`VERIFY_FAIL`、checkpoint、`LOOP_ITERS` 字节不变 |
+
+### 14.2 场景测试用例补充
+
+| ID | 描述 | 覆盖步骤 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S13-15 | 三切片 checkpoint 到 final 闭环 | S13 主路径 | 逐片实现并各执行 verify，最后再执行 final | 前三轮分别只确认当前片且不写最终 PASS；final 全量通过后才写 `VERIFY_PASS` |
+| ST-S13-16 | checkbox 前移与进程重启不串片 | S13 重启边界 | 第2片 checkbox 先勾→checkpoint FAIL→退出进程→重启 verify | 两次失败均归属第2片，repair budget 只计真实失败，不误指第3片 |
+| ST-S13-17 | 缺 manifest 恢复后续跑 | S13/S28/S32 恢复 | 删除 manifest→verify→按动作重建→重试 | 首次无 Gate 副作用；重建有效后从原 attempted slice 继续，已确认 checkpoint 保留 |
+
+### 14.3 覆盖度校验
+
+- [ ] eligible/pending 与分母：UT-S13-56、UT-S13-57、UT-S13-63
+- [ ] checkpoint marker/账本/幂等：UT-S13-58～UT-S13-60
+- [ ] final 全量硬门：UT-S13-61、UT-S13-62、ST-S13-15
+- [ ] 恢复与重启：UT-S13-64、ST-S13-16、ST-S13-17

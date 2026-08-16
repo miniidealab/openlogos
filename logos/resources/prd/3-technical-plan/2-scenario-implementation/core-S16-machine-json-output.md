@@ -112,3 +112,62 @@ sequenceDiagram
 - **触发条件**：响应 `contract.version` 与 `spec/schema/` 打包 schema 的内嵌契约版本号不一致。
 - **期望响应**：CI 校验失败（生产者侧红线），阻止发布；不存在运行时自动降级分支。
 - **副作用**：无。
+
+## 切片验收与恢复动作机器输出时序
+
+### 目标
+
+让 CI 与 RunLogos 无需解析 Markdown，即可区分 checkpoint、final、pending 与 manifest 恢复，并在跨进程重启后继续同一 attempted slice。
+
+### 参与者与前置条件
+
+- 调用方：CI、RunLogos 或其他机器消费者。
+- 生产者：`status`、`next`、`verify --format json`。
+- 权威服务：SliceVerificationService。
+- 前置：活跃提案已进入切片规划或实现阶段。
+
+```mermaid
+sequenceDiagram
+    participant Host as 机器消费者
+    participant Cmd as status/next/verify
+    participant SV as SliceVerificationService
+    participant Schema as 打包 JSON Schema
+
+    Host->>Cmd: --format json
+    Cmd->>SV: derive(manifest, checkpoints, tasks)
+    alt manifest 有效
+        SV-->>Cmd: mode/attempted/eligible/pending/checkpoint
+        Cmd->>Schema: 以 data 校验生产者输出
+        Cmd-->>Host: ok envelope + slice_verification_state
+    else manifest 缺失或可恢复失效
+        SV-->>Cmd: recovery_required + stable reason
+        Cmd->>Schema: 校验 recovery action
+        Cmd-->>Host: next_node=plan-slices + artifacts
+    else 未知版本或归属歧义
+        SV-->>Cmd: blocked diagnostic
+        Cmd-->>Host: 保守错误 envelope，不推进
+    end
+```
+
+### 输出规则
+
+1. verify data 必须输出 `verify_mode: slice-checkpoint|final`；恢复态不伪造 verify mode。
+2. checkpoint 输出非空 `attempted_slice_id`，final 明确输出 `null`。
+3. `eligible_test_ids` 与 `pending_test_ids` 去重、稳定排序、互斥；final 的 pending 恒为空。
+4. `manifest.status` 枚举为 `valid|missing|invalid|stale|unsupported`，并携 path/schema/fingerprint（不可得字段为 null）。
+5. status/next 的 `slice_verification_state` 与 verify 使用同一派生值；next 在恢复态给出 `plan-slices` 的完整 dispatch。
+6. 所有新增字段进入版本化 JSON Schema；1.x 消费方忽略未知字段，但未知 enum 或 manifest 主版本必须保守处理。
+
+### 异常与边界
+
+- 恢复态不是测试 FAIL：不得同时输出 `gate.result=FAIL` 或写失败 marker。
+- checkpoint 的 pending 不得混入 `uncovered_test_ids`。
+- 进程重启后，attempted identity 由 manifest/checkpoint 重算，输出保持稳定。
+- 单切片 legacy 提案沿用旧 final 输出；新增字段可省略以保持兼容。
+- RunLogos 只消费 JSON 动作；不得以本地文件扫描覆盖 `reason` 或 `next_node`。
+
+### 追溯
+
+- 需求：S16、S28。
+- 规格：功能规格 §2.37.5～§2.37.7；`spec/cli-json-output.md`。
+- 测试：UT-S16-10～UT-S16-17、ST-S16-03～ST-S16-04。

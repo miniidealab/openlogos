@@ -135,3 +135,57 @@
 3. **exit 2（检查红）**：按每条 violation 的 fix_hint 逐条修复后重跑，直至 exit 0；禁止带红交付。常见红项：`[code]` 切片引用的测试 ID 含占位/通配写法（L3 拒绝采信——切片必须引用 merge 后规格中的**真实** UT/ST/SMOKE ID）、切片任务误写进 `[delta]`/`[deploy]` 导致结构异常（L1/L5）。
 4. **exit 1（操作错误）**：按 stderr message 排障后重跑。
 5. 该命令只读、非人类确认点；通过 lint **不**等于通过 slice-exit 门——删后续证伪门与用户批准仍按既有流程执行。
+
+## 测试—切片 manifest 生产与恢复职责
+
+### 交付物扩展
+
+slice-planner 在 spec-complete 后不再只写 `tasks.md` 的 `[code]` section；凡代码提案包含两个及以上顶层切片，还必须在活跃提案根目录原子生成 `TEST_SLICE_MANIFEST.json`。`[code]` 与 manifest 必须在同一轮规划中共同收敛，任一无效均不得报告完成。
+
+### 初次生成模式
+
+1. 完成既有六维评分、垂直/横向判别与删后续证伪门。
+2. 从已合并测试规格提取本提案新增或修改的真实 UT/ST/SMOKE ID；禁止占位、通配和不存在 ID。
+3. 为每个顶层切片生成稳定 `slice_id`，推荐格式 `slice-<两位序号>-<规范化短名>`；输入不变时重复运行必须逐字节稳定。
+4. 每个变更测试 ID 必须恰好出现在一个切片的 `owned_test_ids`；共享基线回归不重复归属。
+5. 为每片填写非空 `runner_selectors`，selector 必须能让 runner 执行该片 owned tests，并允许 verify 叠加基线回归。
+6. 计算规范化 `[code]` section 的 `task_fingerprint`，以及本提案涉及的已合并测试规格内容 `spec_fingerprint`；算法统一为 SHA-256、小写十六进制。
+7. 先写同目录临时文件，完成 schema、唯一归属、ID 存在性、selector 与 fingerprint 读回校验后原子 rename。
+
+manifest 最小结构：
+
+```json
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "example-change",
+  "module": "core",
+  "task_fingerprint": "sha256:<64-hex>",
+  "spec_fingerprint": "sha256:<64-hex>",
+  "slices": [
+    {
+      "slice_id": "slice-01-capability",
+      "task_text": "端到端能力切片",
+      "owned_test_ids": ["UT-S01-01", "ST-S01-01"],
+      "runner_selectors": ["UT-S01-01", "ST-S01-01"]
+    }
+  ]
+}
+```
+
+示例中的 change、测试 ID 与哈希只说明结构，实际交付必须替换为当前提案真实值。
+
+### 恢复重建模式
+
+当 OpenLogos 输出 `next_node.id=plan-slices` 且 reason 为 manifest 缺失、已知版本非法或 stale 时：
+
+- 保留既有 `[code]` 切片文本、顺序、父子层级、全部 checkbox 和 `SLICES_APPROVED`；禁止重新评分、重新切片或清空任务。
+- 保留可由既有切片文本确定的稳定 `slice_id`。旧 manifest 可读时沿用其 ID；完全缺失时由规范化顺序与文本确定性重建。
+- 读取 `SLICE_CHECKPOINTS.jsonl` 仅用于验证身份兼容，禁止改写、删除或伪造 checkpoint。
+- 重新从已合并规格计算 owned IDs、selectors 与 fingerprints，仅替换 manifest。
+- 若一个 ID 无法唯一归属、既有切片文本漂移导致身份无法保持，必须输出歧义并停止，不得猜测。
+
+### 完成屏障与读回
+
+交付前必须从磁盘重新读取 `tasks.md` 与 manifest，并验证：schema 主版本受支持；change/module 匹配；slice ID/测试 ID 无重复；变更测试集合无遗漏、无未知 ID；每片 selector 非空；task/spec fingerprint 可重算一致；manifest 的切片顺序与 `[code]` 顶层顺序一致。
+
+RunLogos 或其他宿主的 Agent 自报 done 不是完成证据。宿主必须使用 OpenLogos 提供的 validator/状态派生重算上述谓词；失败时按 violation 幂等修复。manifest 可恢复重试预算与代码 repair budget 完全分离。

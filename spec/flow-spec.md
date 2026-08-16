@@ -1254,3 +1254,67 @@ reason 完全由合法队首类别决定，因此类别专属 reason 与完整 `
 ### 与执行门的正交关系
 
 clarification 只约束方案形成，不替代 plan/spec/slice/deliver 门。人工模式下 merge、verify、部署、smoke、archive、push 继续逐次授权；auto 模式只使用既有运行域授权。`gate:implement:loop-exhausted` 仍为任何模式不可绕过的未收敛硬红线。
+
+## implement loop 的 checkpoint/final 与 plan-slices 恢复派生
+
+### 激活条件
+
+当 launched 活跃提案满足 `code_required=true ∧ spec_complete=true ∧ slices_planned=true` 且 `[code]` 含两个及以上顶层切片时，切片感知 verify 必须启用。启用后 `TEST_SLICE_MANIFEST.json` 是切片身份与测试归属的机器事实源。
+
+### 前沿优先级
+
+派生顺序必须固定：
+
+1. seed journal 恢复硬门；
+2. proposal/spec/slice 既有前置门；
+3. manifest 有效性；
+4. attempted slice/checkpoint；
+5. final Gate 与 deliver。
+
+manifest 缺失或已知可恢复失效在步骤 3 返回：
+
+```text
+proposal_step: ready-to-implement | coding | verify-failed（保持兼容枚举）
+reason: test-slice-manifest-missing | test-slice-manifest-invalid | test-slice-manifest-stale
+next_node.id: plan-slices
+next_node.skill: slice-planner
+dispatch.idempotent: true
+```
+
+该恢复前沿覆盖普通 code/verify 前沿，但不改写 proposal_step 枚举，不写 gate marker。未知 manifest 主版本或归属歧义返回保守阻塞诊断，不派发覆盖式恢复。
+
+### checkpoint 派生
+
+```text
+confirmed = manifest 中存在当前 manifest_sha256 的 PASS checkpoint 的 slice
+attempted = manifest 顺序中第一个不在 confirmed 的 slice
+mode = attempted 存在 ? slice-checkpoint : final-candidate
+```
+
+checkpoint PASS 后 attempted 前移，属于正常切片推进；checkpoint FAIL 后 attempted 不变，进入同片 repair。`slice_state.current` 可以继续展示任务进度，但 loop 的验收归属必须使用 `attempted_slice_id`，两者不一致时以后者为权威并输出诊断。
+
+### loop 计数
+
+- 只有 checkpoint/final 的真实 Gate FAIL 追加 `LOOP_ITERS`。
+- checkpoint 行必须携 `verify_mode=slice-checkpoint` 与非空 `attempted_slice_id`。
+- manifest recovery、pending、checkpoint PASS 不增加 iteration。
+- checkpoint PASS 之后的新切片拥有独立 repair 归属；`max_iters` 的既有总上限语义保持不变，但诊断同时输出当前 slice 的失败次数。
+- final FAIL 可追加 `verify_mode=final`、`attempted_slice_id=null`。
+
+### 收敛公式
+
+```text
+all_slice_checkpoints_green = every(manifest.slices has current-hash PASS checkpoint)
+final_green = latest final verify result is PASS
+code_slices_green = section_complete:code ∧ all_slice_checkpoints_green ∧ final_green
+```
+
+checkpoint PASS 不再直接等同 `tests_green`；只有 final PASS 可以令 implement loop 出环。`VERIFY_PASS` 缺失时即使所有切片 checkpoint 已通过也不得进入 deliver。
+
+### 重启与幂等
+
+派生只读 manifest、checkpoint、tasks 与 marker；同一磁盘状态输出确定。checkbox 先前移但 checkpoint 未落盘时 attempted 不变；checkpoint 已落盘但响应丢失时重试前移且不重复追加。恢复成功后宿主必须重调 `next`，不得缓存恢复前沿后的预计节点。
+
+### 授权边界
+
+`plan-slices` 恢复不新增人类 gate，也不授权 merge/verify/deploy/smoke/archive/push。`gate:implement:loop-exhausted` 的不可自动放行规则保持不变；宿主恢复重试预算不映射为 loop iteration。

@@ -78,3 +78,34 @@ JSON 契约的字节级实例。
 - [ ] schema 发布 / prepack 包内容验证：UT-S16-07、ST-S16-02
 - [ ] 未知枚举保守语义契约文档化：UT-S16-08
 - [ ] non-Markdown 整文件 delta 合并后产物可解析且无标记行：UT-S16-09
+
+## 六、切片验收 JSON 与 Schema 测试
+
+> 以下用例实现必须把精确 ID 写入测试名，并通过 OpenLogos reporter 产出结果。
+
+### 6.1 单元测试用例补充
+
+| ID | 描述 | 前置条件 | 输入 | 预期输出 |
+|---|---|---|---|---|
+| UT-S16-10 | checkpoint verify 字段完整 | 有效 3 切片 manifest，第2片 attempted | `verify --format json` | `verify_mode=slice-checkpoint`、attempted 非空、eligible/pending 互斥且排序稳定、manifest/checkpoint 对象完整 |
+| UT-S16-11 | final 字段约束 | 全部 checkpoint 与任务完成 | `verify --format json` | `verify_mode=final`、`attempted_slice_id=null`、pending=[]、eligible=全部定义 ID |
+| UT-S16-12 | pending 与 uncovered 分离 | checkpoint 缺未来片结果 | JSON 输出 | pending 含未来 ID，uncovered 不含；coverage 分母等于 eligible 长度 |
+| UT-S16-13 | missing 恢复动作完整 | 多切片提案缺 manifest | `next --format json` | reason=`test-slice-manifest-missing`；plan-slices 的 8 hint 字段与 dispatch 三字段齐全 |
+| UT-S16-14 | invalid/stale/unsupported 枚举分流 | 三类 manifest fixture | status/next | invalid/stale 可恢复派发；unsupported 保守阻塞、不覆盖 |
+| UT-S16-15 | status/next 状态同源 | 同一磁盘 checkpoint 状态 | 分别取两命令 data | `slice_verification_state` 逐字段同义，无独立算法漂移 |
+| UT-S16-16 | 1.1.0 Schema 正反例 | 打包 status/next/verify schema | 校验合法对象，再删除/错型关键字段 | 合法 data 全部通过；checkpoint attempted=null、final pending 非空、dispatch 缺字段等反例失败 |
+| UT-S16-17 | legacy 可省略新增对象 | 单切片、docs-only、已越过 final 三 fixture | status/next/verify JSON | 兼容路径可省略 slice 状态且通过 1.1.0 schema，不被误派恢复 |
+
+### 6.2 场景测试用例补充
+
+| ID | 描述 | 覆盖步骤 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S16-03 | checkpoint→final JSON 状态序列 | S16/S13 | 三切片逐轮调用 status/next/verify 并保存 data | attempted、confirmed、eligible、pending 按 checkpoint 稳定演进；final 归零 pending；每份 data 过随包 schema |
+| ST-S16-04 | RunLogos 只靠 JSON 完成恢复 | S16/S28 | consumer 不读文件，仅消费 missing action 派发恢复并重调 next | 可完成恢复并取得 code/verify 前沿；无 Markdown 解析或私有 Gate 判断 |
+
+### 6.3 覆盖度校验
+
+- [ ] verify mode 与集合字段：UT-S16-10～UT-S16-12、ST-S16-03
+- [ ] 恢复动作与枚举：UT-S16-13、UT-S16-14、ST-S16-04
+- [ ] 同源派生与 schema：UT-S16-15、UT-S16-16
+- [ ] legacy：UT-S16-17
