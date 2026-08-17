@@ -68,8 +68,8 @@ function npmValue(args) {
 }
 
 function smokeInstalledVersion() {
-  const expected = '0.13.25';
   const localPackage = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf-8'));
+  const expected = localPackage.version;
   const localPlugin = JSON.parse(readFileSync(join(repoRoot, 'plugin/.claude-plugin/plugin.json'), 'utf-8'));
   if (localPackage.version !== expected || localPlugin.version !== expected) {
     throw new Error(`仓库版本元数据不一致：cli=${localPackage.version} plugin=${localPlugin.version}`);
