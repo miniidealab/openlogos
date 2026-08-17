@@ -1,0 +1,7 @@
+{
+  "type": "baseline_closure_spec_complete",
+  "policy": "on-touch-v1",
+  "slug": "fix-scenario-create-completeness-contract",
+  "manifest_sha256": "75e669ba4c6d96d2dd5c2145bfa3905c5dd25be20092995e1ca5bfba0764a765",
+  "completed_at": "2026-08-17T02:45:34.618Z"
+}
