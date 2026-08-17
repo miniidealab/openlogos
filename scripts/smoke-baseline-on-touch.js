@@ -501,11 +501,14 @@ failed = !runCase('SMOKE-core-69', () => {
   });
 
   if (process.env.OPENLOGOS_BIN) return;
-  const rollbackTarball = process.env.OPENLOGOS_ROLLBACK_TARBALL;
-  const deployTarball = process.env.OPENLOGOS_DEPLOY_TARBALL;
-  const rollbackSha = process.env.OPENLOGOS_ROLLBACK_SHA256;
+  const rollbackTarball = process.env.OPENLOGOS_S39_ROLLBACK_TARBALL
+    || process.env.OPENLOGOS_ROLLBACK_TARBALL;
+  const deployTarball = process.env.OPENLOGOS_S39_DEPLOY_TARBALL
+    || process.env.OPENLOGOS_DEPLOY_TARBALL;
+  const rollbackSha = process.env.OPENLOGOS_S39_ROLLBACK_SHA256
+    || process.env.OPENLOGOS_ROLLBACK_SHA256;
   if (!rollbackTarball || !deployTarball || !rollbackSha) {
-    throw new Error('缺少 OPENLOGOS_ROLLBACK_TARBALL / OPENLOGOS_DEPLOY_TARBALL / OPENLOGOS_ROLLBACK_SHA256');
+    throw new Error('缺少 S39 专用或兼容的 rollback/deploy tarball 与 SHA-256 环境变量');
   }
   if (sha(readFileSync(rollbackTarball)) !== rollbackSha) throw new Error('0.13.26 回滚 tarball 哈希不一致');
   const originalPath = resolvedOpenlogosPath();
