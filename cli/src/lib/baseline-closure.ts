@@ -18,7 +18,12 @@ import {
 } from '@hyperjump/json-schema/openapi-3-0';
 import { validate as compileOpenApi31 } from '@hyperjump/json-schema/openapi-3-1';
 import { parseDocument } from 'yaml';
-import { authorityScan } from './markdown-scan.js';
+import {
+  authorityScan,
+  scanMarkdownAuthorityStructure,
+  type AuthorityHeadingNode,
+  type MarkdownAuthorityStructure,
+} from './markdown-scan.js';
 import {
   extractStructuredTestIds,
   extractTaskSectionItems,
@@ -759,15 +764,6 @@ const CREATE_REQUIREMENTS: Partial<Record<BaselineClosureCategory, Array<{ label
     { label: '验收', re: /验收|acceptance/i },
     { label: '非目标', re: /非目标|non[- ]?goal/i },
   ],
-  scenario: [
-    { label: '目标', re: /目标|goal/i },
-    { label: '参与者', re: /参与者|participant/i },
-    { label: '前后置', re: /前置|后置|precondition|postcondition/i },
-    { label: 'sequenceDiagram', re: /sequenceDiagram/ },
-    { label: '步骤', re: /步骤|主路径|main path/i },
-    { label: '异常/边界', re: /异常|边界|exception|boundary/i },
-    { label: '追溯', re: /追溯|trace/i },
-  ],
   architecture: [
     { label: '边界', re: /边界|boundary/i },
     { label: '数据/控制流', re: /数据流|控制流|data flow|control flow/i },
@@ -802,14 +798,165 @@ const CREATE_REQUIREMENTS: Partial<Record<BaselineClosureCategory, Array<{ label
   ],
 };
 
+const SCENARIO_STEP_HEADINGS = new Set([
+  '步骤说明', '主路径步骤', '主路径', '主流程', '正常流程', 'main path',
+]);
+
+function normalizedHeading(value: string): string {
+  return value.trim().toLocaleLowerCase('en-US');
+}
+
+function matchingHeadings(
+  structure: MarkdownAuthorityStructure,
+  predicate: (text: string) => boolean,
+): AuthorityHeadingNode[] {
+  return structure.headings.filter(heading => predicate(normalizedHeading(heading.text)));
+}
+
+function sectionEnd(structure: MarkdownAuthorityStructure, heading: AuthorityHeadingNode): number {
+  return structure.headings.find(candidate => candidate.line > heading.line && candidate.level <= heading.level)?.line
+    ?? structure.lines.length;
+}
+
+function sectionHasAuthorityBody(
+  structure: MarkdownAuthorityStructure,
+  heading: AuthorityHeadingNode,
+): boolean {
+  const end = sectionEnd(structure, heading);
+  const headingLines = new Set(structure.headings.map(item => item.line));
+  for (let i = heading.line + 1; i < end; i++) {
+    if (structure.scan.masked[i] || headingLines.has(i)) continue;
+    if (structure.scan.text[i].trim().length > 0) return true;
+  }
+  return false;
+}
+
+function requiredSectionProblem(
+  structure: MarkdownAuthorityStructure,
+  predicate: (text: string) => boolean,
+  label: string,
+): string | null {
+  const headings = matchingHeadings(structure, predicate);
+  if (headings.length === 0) return `${label}章节缺失`;
+  if (!headings.some(heading => sectionHasAuthorityBody(structure, heading))) return `${label}章节为空`;
+  return null;
+}
+
+function uniqueSectionProblems(
+  structure: MarkdownAuthorityStructure,
+  predicate: (text: string) => boolean,
+  label: string,
+): string[] {
+  const headings = matchingHeadings(structure, predicate);
+  if (headings.length === 0) return [`${label}章节缺失`];
+  if (headings.length > 1) return [`${label}章节重复`];
+  return sectionHasAuthorityBody(structure, headings[0]) ? [] : [`${label}章节为空`];
+}
+
+function stepSectionProblems(
+  structure: MarkdownAuthorityStructure,
+  heading: AuthorityHeadingNode,
+): string[] {
+  const end = sectionEnd(structure, heading);
+  let currentRun = 0;
+  let longestRun = 0;
+  let itemCount = 0;
+  let hasEmptyItem = false;
+  for (let i = heading.line + 1; i < end; i++) {
+    if (structure.scan.masked[i]) {
+      currentRun = 0;
+      continue;
+    }
+    const line = structure.scan.text[i];
+    const item = line.match(/^ {0,3}\d+[.)](?:[ \t]+(.*))?$/);
+    if (item) {
+      itemCount++;
+      currentRun++;
+      longestRun = Math.max(longestRun, currentRun);
+      if (!(item[1] ?? '').trim()) hasEmptyItem = true;
+      continue;
+    }
+    if (line.trim() === '' || (currentRun > 0 && /^(?: {2,}|\t)\S/.test(line))) continue;
+    currentRun = 0;
+  }
+  const problems: string[] = [];
+  if (itemCount === 0) problems.push('步骤章节无有序列表');
+  else {
+    if (longestRun < 3) problems.push('步骤有序列表少于 3 项');
+    if (hasEmptyItem) problems.push('步骤有序列表存在空项');
+  }
+  return problems;
+}
+
+function mermaidProblems(structure: MarkdownAuthorityStructure): string[] {
+  const diagrams = structure.fences
+    .filter(fence => fence.closed && normalizedHeading(fence.info) === 'mermaid')
+    .map(fence => fence.content.split(/\r?\n/)
+      .map(line => line.trim()).filter(line => line.length > 0 && !line.startsWith('%%')))
+    .filter(lines => lines[0]?.toLocaleLowerCase('en-US') === 'sequencediagram');
+  if (diagrams.length === 0) return ['时序缺合法 Mermaid sequenceDiagram'];
+  const complete = diagrams.some(lines => {
+    const participants = lines.filter(line => /^(?:participant|actor)\s+\S+/i.test(line));
+    const messages = lines.filter(line => /^\s*\S+\s*(?:-->>|->>|-->|->)\+?\s*\S+\s*:/.test(line));
+    return participants.length >= 2 && messages.length >= 1;
+  });
+  if (complete) return [];
+  const problems: string[] = [];
+  if (!diagrams.some(lines => lines.filter(line => /^(?:participant|actor)\s+\S+/i.test(line)).length >= 2)) {
+    problems.push('Mermaid sequenceDiagram 参与者少于 2');
+  }
+  if (!diagrams.some(lines => lines.some(line => /^\s*\S+\s*(?:-->>|->>|-->|->)\+?\s*\S+\s*:/.test(line)))) {
+    problems.push('Mermaid sequenceDiagram 缺消息');
+  }
+  return problems;
+}
+
+/** S39 §17：scenario CREATE 只采信 Markdown 权威结构，不再以全文关键词判完整。 */
+function scenarioCreateCompletenessProblems(payload: string): string[] {
+  const structure = scanMarkdownAuthorityStructure(payload);
+  const problems: string[] = [];
+  const goal = requiredSectionProblem(structure, text => /^(?:场景)?目标$|^goal$/i.test(text), '目标');
+  if (goal) problems.push(goal);
+  const participants = requiredSectionProblem(
+    structure, text => /^(?:参与者|participants?)$/i.test(text), '参与者',
+  );
+  if (participants) problems.push(participants);
+  const pre = requiredSectionProblem(
+    structure, text => /前置|preconditions?/i.test(text), '前置',
+  );
+  const post = requiredSectionProblem(
+    structure, text => /后置|postconditions?/i.test(text), '后置',
+  );
+  if (pre || post) problems.push(pre && post ? '前后置章节缺失或为空' : (pre ?? post)!);
+
+  problems.push(...mermaidProblems(structure));
+
+  const stepHeadings = matchingHeadings(structure, text => SCENARIO_STEP_HEADINGS.has(text));
+  if (stepHeadings.length === 0) problems.push('步骤章节缺失');
+  else if (stepHeadings.length > 1) problems.push('步骤章节重复');
+  else problems.push(...stepSectionProblems(structure, stepHeadings[0]));
+
+  problems.push(...uniqueSectionProblems(
+    structure,
+    text => /^(?:异常|边界|异常(?:与|及|\/|&)边界|异常路径|边界条件|exceptions?|boundar(?:y|ies)|exceptions?\s*(?:and|&|\/)\s*boundar(?:y|ies))$/i.test(text),
+    '异常/边界',
+  ));
+  problems.push(...uniqueSectionProblems(
+    structure, text => /^(?:追溯|可追溯性|trace|traceability)$/i.test(text), '追溯',
+  ));
+  if (structure.malformed.length > 0) problems.push(`Markdown 结构无法确定：${structure.malformed.join('、')}`);
+  return problems;
+}
+
 function createCompletenessProblems(category: BaselineClosureCategory, content: string): string[] {
   const create = markdownCreatePayload(content);
   if (create.problems.length > 0) return create.problems;
+  const payload = create.payload;
+  if (/\b(?:TODO|TBD)\b|后续补充|\[(?:新增|修改).*内容\]/i.test(payload)) return ['含模板/TODO 骨架'];
+  if (category === 'scenario') return scenarioCreateCompletenessProblems(payload);
   const reqs = CREATE_REQUIREMENTS[category];
   // spec/skill/deployment/smoke 不在 §11 的 CREATE 类别注册表内，不用通用词表臆造完整度判据。
   if (!reqs) return [];
-  const payload = create.payload;
-  if (/\b(?:TODO|TBD)\b|后续补充|\[(?:新增|修改).*内容\]/i.test(payload)) return ['含模板/TODO 骨架'];
   const missing = reqs.filter(r => !r.re.test(payload)).map(r => r.label);
   if (category === 'test') {
     const ids = extractStructuredTestIds(payload);

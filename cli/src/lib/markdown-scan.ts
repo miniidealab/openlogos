@@ -28,6 +28,30 @@ export interface AuthoritySectionResult {
   content: string | null;
 }
 
+/** 场景 CREATE 完整性校验使用的权威 ATX 标题节点。 */
+export interface AuthorityHeadingNode {
+  level: number;
+  text: string;
+  line: number;
+}
+
+/** 围栏本身不是普通权威正文，但合法 mermaid 围栏可作为时序证据。 */
+export interface AuthorityFenceNode {
+  info: string;
+  content: string;
+  startLine: number;
+  endLine: number;
+  closed: boolean;
+}
+
+export interface MarkdownAuthorityStructure {
+  lines: string[];
+  scan: AuthorityScan;
+  headings: AuthorityHeadingNode[];
+  fences: AuthorityFenceNode[];
+  malformed: string[];
+}
+
 interface AuthorityAtxHeading {
   level: number;
   text: string;
@@ -184,6 +208,49 @@ function parseAuthorityHeading(scan: AuthorityScan, index: number): AuthorityHea
   const atx = parseAuthorityAtxHeading(scan.text[index]);
   if (atx) return { ...atx, endIndex: index };
   return parseAuthoritySetextHeading(scan, index);
+}
+
+/**
+ * 扫描场景 CREATE 所需的权威 Markdown 结构。
+ *
+ * 普通标题只收集围栏/注释/缩进代码之外的 ATX 标题；围栏则单独保留 info string 与正文，
+ * 让调用方只能从完整且明确标记为 mermaid 的围栏采信时序证据。
+ */
+export function scanMarkdownAuthorityStructure(content: string): MarkdownAuthorityStructure {
+  const lines = content.split(/\r?\n/);
+  const scan = authorityScan(lines);
+  const headings: AuthorityHeadingNode[] = [];
+  const fences: AuthorityFenceNode[] = [];
+  const malformed: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!scan.masked[i]) {
+      const heading = parseAuthorityAtxHeading(scan.text[i]);
+      if (heading) headings.push({ ...heading, line: i });
+      continue;
+    }
+    if (scan.region[i] !== 'fence-open') continue;
+    const open = lines[i].match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (!open) continue;
+    let end = i + 1;
+    while (end < lines.length && scan.region[end] !== 'fence-close') end++;
+    const closed = end < lines.length;
+    fences.push({
+      info: open[2].trim(),
+      content: lines.slice(i + 1, closed ? end : lines.length).join('\n'),
+      startLine: i,
+      endLine: closed ? end : lines.length - 1,
+      closed,
+    });
+    if (!closed) malformed.push('未闭合 fenced code block');
+    i = closed ? end : lines.length;
+  }
+
+  const last = lines.length - 1;
+  if (last >= 0 && scan.region[last] === 'comment' && !lines[last].includes('-->')) {
+    malformed.push('未闭合 HTML 注释');
+  }
+  return { lines, scan, headings, fences, malformed };
 }
 
 /**

@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -163,6 +163,28 @@ function removeMergedTarget(f: Fixture, target: RawTarget): void {
   unlinkSync(join(f.root, canonicalTargetFromDeltaPath(target.delta_path!)!));
 }
 
+function scenarioViolations(content: string) {
+  const f = setup();
+  const scenario = targetOf(f, 'scenario');
+  scenario.mode = 'CREATE';
+  removeMergedTarget(f, scenario);
+  writeFixture(f, true, true, new Map([[scenario.delta_path!, content]]));
+  return evaluate(f).violations.filter(violation => violation.code === 'create_target_incomplete');
+}
+
+function snapshotTree(root: string): Map<string, string> {
+  const result = new Map<string, string>();
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const absolute = join(dir, entry.name);
+      if (entry.isDirectory()) walk(absolute);
+      else if (entry.isFile()) result.set(absolute.slice(root.length + 1), sha(readFileSync(absolute)));
+    }
+  };
+  walk(root);
+  return result;
+}
+
 function configureDeploymentDecision(
   f: Fixture,
   deploymentRequired: boolean,
@@ -247,10 +269,12 @@ const deploymentAuthoritySpoofs: Array<{
 ];
 
 const fullScenario = [
-  '## ADDED — S39 完整场景', '', '# S39：目标', '', '## 参与者', '- User', '- CLI', '',
-  '## 前置与后置', '前置成立；后置一致。', '', '```mermaid', 'sequenceDiagram',
+  '## ADDED — S39 完整场景', '', '# S39：目标', '', '## 场景目标', '形成可观察的完整场景。', '',
+  '## 参与者', '- User', '- CLI', '', '## 前置条件', '前置成立。', '', '## 成功后置条件', '后置一致。', '',
+  '```mermaid', 'sequenceDiagram',
   '  participant U as User', '  participant C as CLI', '  U->>C: 执行步骤', '```', '',
-  '## 主路径步骤', '1. 执行。', '', '## 异常与边界', '- 异常失败关闭。', '', '## 追溯', '- P04 / UT-S39-12',
+  '## 主路径步骤', '1. 用户发起。', '2. CLI 校验。', '3. CLI 返回。', '',
+  '## 异常与边界', '- 异常失败关闭。', '', '## 追溯', '- P04 / UT-S39-12',
 ].join('\n');
 
 const fullTest = [
@@ -704,6 +728,79 @@ describe('S39 单元测试——闭包、路径、完整度与协议', () => {
     writeFileSync(yamlPath, base.replace('  database: sqlite\n', ''));
     expect(validateAndStripNonMarkdownDelta(good, 'CREATE', path, { root: f.root }).message).toContain('未声明 SQL 方言');
   });
+
+  it('UT-S39-28: canonical 与兼容标题矩阵只按权威 ATX 标题识别', () => {
+    const aliases = ['步骤说明', '主路径步骤', '主路径', '主流程', '正常流程', 'main path'];
+    for (const [index, alias] of aliases.entries()) {
+      const level = index % 2 === 0 ? '##' : '###';
+      let fixture = fullScenario.replace('## 主路径步骤', `${level} ${alias}`);
+      if (index === aliases.length - 1) fixture = fixture.replace(/\n/g, '\r\n');
+      expect(scenarioViolations(fixture), alias).toEqual([]);
+    }
+    expect(fullScenario.replace('## 主路径步骤', '## 步骤说明')).toContain('## 步骤说明');
+  });
+
+  it('UT-S39-29: 散文、围栏、HTML 注释与 Mermaid 消息不能冒充步骤章节', () => {
+    const stepBlock = '## 主路径步骤\n1. 用户发起。\n2. CLI 校验。\n3. CLI 返回。\n';
+    const withoutSteps = fullScenario.replace(stepBlock, '');
+    const fixtures = [
+      withoutSteps.replace('## 追溯', '普通散文提到步骤说明与主流程。\n\n## 追溯'),
+      withoutSteps.replace('## 追溯', '```markdown\n## 步骤说明\n1. 假步骤\n2. 假步骤\n3. 假步骤\n```\n\n## 追溯'),
+      withoutSteps.replace('## 追溯', '~~~text\n## 主流程\n1. 假步骤\n2. 假步骤\n3. 假步骤\n~~~\n\n## 追溯'),
+      withoutSteps.replace('## 追溯', '<!--\n## 正常流程\n1. 假步骤\n2. 假步骤\n3. 假步骤\n-->\n\n## 追溯'),
+      withoutSteps,
+    ];
+    for (const fixture of fixtures) {
+      const violations = scenarioViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].message).toContain('步骤章节缺失');
+    }
+  });
+
+  it('UT-S39-30: 唯一步骤章节必须有连续且非空的三项有序列表', () => {
+    expect(scenarioViolations(fullScenario)).toEqual([]);
+    const two = fullScenario.replace('\n3. CLI 返回。', '');
+    expect(scenarioViolations(two)[0].message).toContain('步骤有序列表少于 3 项');
+    const empty = fullScenario.replace('2. CLI 校验。', '2.');
+    expect(scenarioViolations(empty)[0].message).toContain('步骤有序列表存在空项');
+    const unordered = fullScenario
+      .replace('1. 用户发起。', '- 用户发起。')
+      .replace('2. CLI 校验。', '- CLI 校验。')
+      .replace('3. CLI 返回。', '- CLI 返回。');
+    expect(scenarioViolations(unordered)[0].message).toContain('步骤章节无有序列表');
+    const duplicate = fullScenario.replace('## 异常与边界', '### 主流程\n1. 重复一。\n2. 重复二。\n3. 重复三。\n\n## 异常与边界');
+    expect(scenarioViolations(duplicate)[0].message).toContain('步骤章节重复');
+    const otherSectionNumbers = unordered.replace('- 异常失败关闭。', '1. 异常一。\n2. 异常二。\n3. 异常三。');
+    expect(scenarioViolations(otherSectionNumbers)[0].message).toContain('步骤章节无有序列表');
+  });
+
+  it('UT-S39-31: Mermaid 时序只采信完整 mermaid sequenceDiagram', () => {
+    expect(scenarioViolations(fullScenario)).toEqual([]);
+    expect(scenarioViolations(fullScenario.replace('```mermaid', '```text'))[0].message)
+      .toContain('时序缺合法 Mermaid sequenceDiagram');
+    expect(scenarioViolations(fullScenario.replace('  participant C as CLI\n', ''))[0].message)
+      .toContain('参与者少于 2');
+    expect(scenarioViolations(fullScenario.replace('  U->>C: 执行步骤\n', ''))[0].message)
+      .toContain('缺消息');
+    const commented = fullScenario.replace(
+      '```mermaid\nsequenceDiagram', '<!--\n```mermaid\nsequenceDiagram',
+    ).replace('  U->>C: 执行步骤\n```', '  U->>C: 执行步骤\n```\n-->');
+    expect(scenarioViolations(commented)[0].message).toContain('时序缺合法 Mermaid sequenceDiagram');
+  });
+
+  it('UT-S39-32: 异常/边界与追溯章节必须唯一且有权威正文', () => {
+    expect(scenarioViolations(fullScenario)).toEqual([]);
+    expect(scenarioViolations(fullScenario.replace('## 异常与边界\n- 异常失败关闭。', '## 异常与边界'))[0].message)
+      .toContain('异常/边界章节为空');
+    expect(scenarioViolations(fullScenario.replace('## 追溯\n- P04 / UT-S39-12', '## 追溯'))[0].message)
+      .toContain('追溯章节为空');
+    expect(scenarioViolations(fullScenario.replace('## 异常与边界\n- 异常失败关闭。\n\n', ''))[0].message)
+      .toContain('异常/边界章节缺失');
+    const duplicate = fullScenario.replace('## 追溯', '## 边界\n- 边界正文。\n\n## 追溯');
+    expect(scenarioViolations(duplicate)[0].message).toContain('异常/边界章节重复');
+    const sampleOnly = fullScenario.replace('- P04 / UT-S39-12', '```text\n追溯样例\n```');
+    expect(scenarioViolations(sampleOnly)[0].message).toContain('追溯章节为空');
+  });
 });
 
 describe('S39 场景测试——plan/spec/merge 纵深闭环', () => {
@@ -813,6 +910,88 @@ describe('S39 场景测试——plan/spec/merge 纵深闭环', () => {
     }));
     expect(evaluate(f).violations).toEqual([]);
     expect(existsSync(journalPath(f.root, runId))).toBe(false);
+  });
+
+  it('ST-S39-14: 四份历史场景以主流程标题通过且 fixture 不被改写', () => {
+    const archived = [
+      'core-S27-loop-iterate.md', 'core-S28-next-node.md',
+      'core-S31-code-slice-loop.md', 'core-S32-slice-planning.md',
+    ];
+    const archiveRoot = join(process.cwd(), '..', 'logos/changes/archive/20260816-0030-make-verify-slice-aware',
+      'deltas/prd/3-technical-plan/2-scenario-implementation');
+    for (const file of archived) {
+      const original = readFileSync(join(archiveRoot, file), 'utf-8');
+      const fixture = original.replace(/^### 步骤\s*$/m, '### 主流程');
+      expect(fixture, file).toContain('### 主流程');
+      expect(scenarioViolations(fixture), file).toEqual([]);
+      expect(readFileSync(join(archiveRoot, file), 'utf-8'), file).toBe(original);
+    }
+  });
+
+  it('ST-S39-15: canonical 场景贯穿 change-lint 与 merge 同源预检', () => {
+    const f = setup();
+    const scenario = targetOf(f, 'scenario');
+    scenario.mode = 'CREATE';
+    removeMergedTarget(f, scenario);
+    const canonical = fullScenario.replace('## 主路径步骤', '## 步骤说明');
+    const overrides = new Map<string, string>();
+    for (const target of f.closure.targets.filter(item => item.delta_path !== null)) {
+      overrides.set(target.delta_path!, `## ADDED — ${target.category} 受控补充\n\n最终态内容。\n`);
+    }
+    overrides.set(scenario.delta_path!, canonical);
+    overrides.set(targetOf(f, 'test').delta_path!, [
+      '## ADDED — S39 结构合同测试', '', '| ID | 场景 |', '|---|---|',
+      '| UT-S39-28 | canonical 标题 |', '| ST-S39-15 | lint/merge 同源 |', '',
+    ].join('\n'));
+    writeFixture(f, true, true, overrides);
+    writeFileSync(join(f.root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: f.slug, module: 'core' }));
+
+    const lint = spawnSync(process.execPath, [CLI_DIST, 'change-lint', '--slug', f.slug, '--format', 'json'], {
+      cwd: f.root, encoding: 'utf-8', timeout: 20_000,
+    });
+    expect(lint.status, `${lint.stdout}\n${lint.stderr}`).toBe(0);
+    expect(JSON.parse(lint.stdout).data.pass).toBe(true);
+
+    const merge = spawnSync(process.execPath, [CLI_DIST, 'merge', f.slug], {
+      cwd: f.root, encoding: 'utf-8', timeout: 20_000,
+    });
+    expect(merge.status, merge.stderr).toBe(0);
+    expect(existsSync(join(f.proposalDir, 'MERGE_PROMPT.md'))).toBe(true);
+    expect(existsSync(join(f.root, canonicalTargetFromDeltaPath(scenario.delta_path!)!))).toBe(false);
+    expect(canonical.split('\n').slice(1).join('\n')).not.toMatch(/^## ADDED\b/m);
+  });
+
+  it('ST-S39-16: 真正缺步骤时 lint/merge 同源失败且项目字节不变', () => {
+    const f = setup();
+    const scenario = targetOf(f, 'scenario');
+    scenario.mode = 'CREATE';
+    removeMergedTarget(f, scenario);
+    const invalid = fullScenario.replace(
+      '## 主路径步骤\n1. 用户发起。\n2. CLI 校验。\n3. CLI 返回。\n',
+      '普通散文提到步骤，但没有权威步骤章节。\n',
+    );
+    writeFixture(f, true, true, new Map([[scenario.delta_path!, invalid]]));
+    writeFileSync(join(f.root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: f.slug, module: 'core' }));
+    const before = snapshotTree(f.root);
+
+    const lint = spawnSync(process.execPath, [CLI_DIST, 'change-lint', '--slug', f.slug, '--format', 'json'], {
+      cwd: f.root, encoding: 'utf-8', timeout: 20_000,
+    });
+    expect(lint.status).toBe(2);
+    const lintEnvelope = JSON.parse(lint.stdout);
+    expect(lintEnvelope.data.violations.some((violation: { code: string; message: string }) => (
+      violation.code === 'create_target_incomplete' && violation.message.includes('步骤章节缺失')
+    ))).toBe(true);
+    expect(snapshotTree(f.root)).toEqual(before);
+
+    const merge = spawnSync(process.execPath, [CLI_DIST, 'merge', f.slug], {
+      cwd: f.root, encoding: 'utf-8', timeout: 20_000,
+    });
+    expect(merge.status).not.toBe(0);
+    expect(merge.stderr).toContain('create_target_incomplete');
+    expect(existsSync(join(f.proposalDir, 'MERGE_PROMPT.md'))).toBe(false);
+    expect(existsSync(join(f.proposalDir, 'SPEC_MERGED'))).toBe(false);
+    expect(snapshotTree(f.root)).toEqual(before);
   });
 
   it('ST-S39-13: API/DB CREATE+MODIFY 与 Markdown/counter/index/marker 同批提交，末段故障整批回滚', () => {

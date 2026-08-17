@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * SMOKE-core-54..58 — baseline-on-touch 发布后真实安装包冒烟。
+ * SMOKE-core-54..58、67..69 — baseline-on-touch / 场景 CREATE 合同发布后真实安装包冒烟。
  * 默认只调用全局已部署 openlogos；OPENLOGOS_BIN 仅供显式本地调试。
  */
 import {
-  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process';
 
 const repoRoot = process.cwd();
 const resultPath = resolve(repoRoot, process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl');
+const selectedCaseIds = new Set((process.env.OPENLOGOS_SMOKE_CASES || '').split(',').map(value => value.trim()).filter(Boolean));
 
 function report(id, status, error) {
   mkdirSync(dirname(resultPath), { recursive: true });
@@ -51,6 +52,44 @@ function assertInstalledVersion() {
 function withTemp(prefix, fn) {
   const root = mkdtempSync(join(tmpdir(), prefix));
   try { return fn(root); } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+function snapshotTree(root) {
+  const snapshot = new Map();
+  const walk = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const absolute = join(dir, entry.name);
+      if (entry.isDirectory()) walk(absolute);
+      else if (entry.isFile()) snapshot.set(absolute.slice(root.length + 1), sha(readFileSync(absolute)));
+    }
+  };
+  walk(root);
+  return JSON.stringify([...snapshot.entries()].sort(([a], [b]) => a.localeCompare(b, 'en')));
+}
+
+function resolvedOpenlogosPath() {
+  const lookup = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['openlogos'], { encoding: 'utf-8' });
+  if (lookup.status !== 0) throw new Error(`无法解析全局 openlogos 路径：${lookup.stderr}`);
+  return `${lookup.stdout}`.trim().split(/\r?\n/)[0];
+}
+
+function npmGlobalRoot() {
+  const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['root', '-g'], { encoding: 'utf-8' });
+  if (result.status !== 0) throw new Error(`无法解析 npm global root：${result.stderr}`);
+  return `${result.stdout}`.trim();
+}
+
+function npmGlobalPrefix() {
+  const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['prefix', '-g'], { encoding: 'utf-8' });
+  if (result.status !== 0) throw new Error(`无法解析 npm global prefix：${result.stderr}`);
+  return `${result.stdout}`.trim();
+}
+
+function installGlobalTarball(path) {
+  const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '-g', path], {
+    encoding: 'utf-8', env: process.env,
+  });
+  if (result.status !== 0) throw new Error(`npm install -g ${path} 失败：${result.stderr || result.stdout}`);
 }
 
 function targetPath(deltaPath) {
@@ -139,9 +178,11 @@ function completeClarificationSection() {
 }
 
 const scenarioDelta = [
-  '## ADDED — S39 完整场景', '', '# S39 目标', '## 参与者', '- User', '- CLI',
-  '## 前置与后置', '前置、后置。', '```mermaid', 'sequenceDiagram', '  participant U as User',
-  '  participant C as CLI', '  U->>C: 执行步骤', '```', '## 主路径步骤', '1. 执行。',
+  '## ADDED — S39 完整场景', '', '# S39 目标', '## 场景目标', '验证完整场景。',
+  '## 参与者', '- User', '- CLI', '## 前置条件', '前置成立。', '## 成功后置条件', '后置一致。',
+  '## 时序图', '```mermaid', 'sequenceDiagram', '  participant U as User',
+  '  participant C as CLI', '  U->>C: 执行步骤', '```', '## 步骤说明',
+  '1. 用户发起。', '2. CLI 校验。', '3. CLI 返回。',
   '## 异常与边界', '- 异常关闭。', '## 追溯', '- P04',
 ].join('\n') + '\n';
 
@@ -263,7 +304,27 @@ function writeApplyManifest(root, dir, slug, targets) {
   return manifestRel;
 }
 
+function scenarioCreateTargets() {
+  const targets = standardTargets();
+  const scenario = targets.find(target => target.category === 'scenario');
+  scenario.mode = 'CREATE';
+  scenario.evidence = [`target_absent: ${targetPath(scenario.delta_path)}`];
+  return targets;
+}
+
+function prepareScenarioCreate(root, content, slug = 'scenario-create-contract') {
+  baseProject(root);
+  const targets = scenarioCreateTargets();
+  const dir = writeProposal(root, slug, targets, { checked: true, deltas: true });
+  const scenario = targets.find(target => target.category === 'scenario');
+  const test = targets.find(target => target.category === 'test');
+  writeFileSync(join(dir, scenario.delta_path), content);
+  writeFileSync(join(dir, test.delta_path), testDelta);
+  return { dir, targets, scenario };
+}
+
 function runCase(id, fn) {
+  if (selectedCaseIds.size > 0 && !selectedCaseIds.has(id)) return true;
   try { fn(); report(id, 'pass'); } catch (e) { report(id, 'fail', e); return false; }
   return true;
 }
@@ -356,5 +417,109 @@ failed = !runCase('SMOKE-core-58', () => withTemp('touch-smoke-58-', root => {
   const launched = readFileSync(join(repoRoot, 'spec/flow/launched.yaml'), 'utf-8');
   if ((launched.match(/^\s*-\s+id:\s*plan\s*$/gm) ?? []).length !== 1 || /add-baseline-docs/.test(launched)) throw new Error('plan gate 数量或 baseline fixture 回归');
 })) || failed;
+
+failed = !runCase('SMOKE-core-67', () => {
+  const expectedVersion = '0.13.27';
+  const packageJson = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf-8'));
+  if (packageJson.version !== expectedVersion) throw new Error(`待部署包版本 ${packageJson.version} != ${expectedVersion}`);
+
+  const packageRoot = process.env.OPENLOGOS_BIN
+    ? repoRoot
+    : join(npmGlobalRoot(), '@miniidealab/openlogos');
+  const assetPaths = process.env.OPENLOGOS_BIN
+    ? [
+      'spec/baseline-closure.md', 'spec/change-management.md',
+      'skills/change-writer/SKILL.md', 'skills/scenario-architect/SKILL.md',
+    ]
+    : [
+      'spec/baseline-closure.md', 'spec/change-management.md',
+      'skills/change-writer/SKILL.md', 'skills/scenario-architect/SKILL.md',
+    ];
+  for (const asset of assetPaths) if (!existsSync(join(packageRoot, asset))) throw new Error(`安装包缺少 ${asset}`);
+
+  if (!process.env.OPENLOGOS_BIN) {
+    const commandPath = resolvedOpenlogosPath();
+    const prefix = npmGlobalPrefix();
+    if (!commandPath.startsWith(resolve(prefix))) throw new Error(`openlogos 路径不在 npm prefix：${commandPath}`);
+    const installed = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'));
+    const claude = JSON.parse(readFileSync(join(packageRoot, 'claude-plugin-template/.claude-plugin/plugin.json'), 'utf-8'));
+    const codex = JSON.parse(readFileSync(join(packageRoot, 'codex-plugin-template/plugin.json'), 'utf-8'));
+    for (const [name, version] of [['CLI', installed.version], ['Claude plugin', claude.version], ['Codex plugin', codex.version]]) {
+      if (version !== expectedVersion) throw new Error(`${name} 版本 ${version} != ${expectedVersion}`);
+    }
+  }
+}) || failed;
+
+failed = !runCase('SMOKE-core-68', () => {
+  const aliases = ['步骤说明', '主流程', '主路径步骤', '主路径', '正常流程', 'main path'];
+  for (const alias of aliases) withTemp('touch-smoke-68-valid-', root => {
+    const content = scenarioDelta.replace('## 步骤说明', `## ${alias}`);
+    prepareScenarioCreate(root, content, `valid-${aliases.indexOf(alias)}`);
+    const before = snapshotTree(root);
+    const lint = runCli(root, ['change-lint', '--format', 'json']);
+    if (lint.status !== 0 || envelope(lint).data.pass !== true) throw new Error(`${alias} 未通过：${lint.stdout}${lint.stderr}`);
+    if (snapshotTree(root) !== before) throw new Error(`${alias} lint 非只读`);
+  });
+
+  const stepBlock = '## 步骤说明\n1. 用户发起。\n2. CLI 校验。\n3. CLI 返回。\n';
+  const invalid = [
+    scenarioDelta.replace(stepBlock, '普通散文提到步骤但没有章节。\n'),
+    scenarioDelta.replace(stepBlock, '```markdown\n## 步骤说明\n1. 假一\n2. 假二\n3. 假三\n```\n'),
+    scenarioDelta.replace('2. CLI 校验。\n3. CLI 返回。\n', ''),
+    scenarioDelta.replace('```mermaid', '```text'),
+    scenarioDelta.replace('## 异常与边界\n- 异常关闭。', '## 异常与边界'),
+    scenarioDelta.replace('## 追溯\n- P04', '## 追溯'),
+  ];
+  for (const [index, content] of invalid.entries()) withTemp('touch-smoke-68-invalid-', root => {
+    prepareScenarioCreate(root, content, `invalid-${index}`);
+    const before = snapshotTree(root);
+    const lint = runCli(root, ['change-lint', '--format', 'json']);
+    const data = envelope(lint).data;
+    if (lint.status !== 2 || !data.violations.some(v => v.code === 'create_target_incomplete')) {
+      throw new Error(`反例 ${index} 未 fail-closed：${lint.stdout}${lint.stderr}`);
+    }
+    if (snapshotTree(root) !== before) throw new Error(`反例 ${index} lint 非只读`);
+  });
+}) || failed;
+
+failed = !runCase('SMOKE-core-69', () => {
+  withTemp('touch-smoke-69-', root => {
+    const invalid = scenarioDelta.replace(
+      '## 步骤说明\n1. 用户发起。\n2. CLI 校验。\n3. CLI 返回。\n',
+      '普通散文包含步骤，但没有权威步骤章节。\n',
+    );
+    const { dir } = prepareScenarioCreate(root, invalid, 'missing-steps');
+    const before = snapshotTree(root);
+    const lint = runCli(root, ['change-lint', '--format', 'json']);
+    if (lint.status !== 2 || !envelope(lint).data.violations.some(v => v.code === 'create_target_incomplete')) {
+      throw new Error(`缺步骤 lint 未拒绝：${lint.stdout}${lint.stderr}`);
+    }
+    const merge = runCli(root, ['merge', 'missing-steps']);
+    if (merge.status === 0 || !`${merge.stderr}`.includes('create_target_incomplete')) throw new Error('缺步骤 merge 未拒绝');
+    if (existsSync(join(dir, 'MERGE_PROMPT.md')) || existsSync(join(dir, 'SPEC_MERGED'))) throw new Error('失败留下 merge 产物');
+    if (snapshotTree(root) !== before) throw new Error('lint/merge 失败改变项目字节');
+  });
+
+  if (process.env.OPENLOGOS_BIN) return;
+  const rollbackTarball = process.env.OPENLOGOS_ROLLBACK_TARBALL;
+  const deployTarball = process.env.OPENLOGOS_DEPLOY_TARBALL;
+  const rollbackSha = process.env.OPENLOGOS_ROLLBACK_SHA256;
+  if (!rollbackTarball || !deployTarball || !rollbackSha) {
+    throw new Error('缺少 OPENLOGOS_ROLLBACK_TARBALL / OPENLOGOS_DEPLOY_TARBALL / OPENLOGOS_ROLLBACK_SHA256');
+  }
+  if (sha(readFileSync(rollbackTarball)) !== rollbackSha) throw new Error('0.13.26 回滚 tarball 哈希不一致');
+  const originalPath = resolvedOpenlogosPath();
+  try {
+    installGlobalTarball(rollbackTarball);
+    const rolledBack = runCli(repoRoot, ['--version']);
+    if (rolledBack.status !== 0 || `${rolledBack.stdout}`.trim() !== '0.13.26') throw new Error('未精确恢复 0.13.26');
+    if (resolvedOpenlogosPath() !== originalPath) throw new Error('回滚后命令路径漂移');
+  } finally {
+    installGlobalTarball(deployTarball);
+  }
+  const restored = runCli(repoRoot, ['--version']);
+  if (restored.status !== 0 || `${restored.stdout}`.trim() !== '0.13.27') throw new Error('回滚演练后未恢复 0.13.27');
+  if (resolvedOpenlogosPath() !== originalPath) throw new Error('恢复 0.13.27 后命令路径漂移');
+}) || failed;
 
 process.exit(failed ? 1 : 0);
