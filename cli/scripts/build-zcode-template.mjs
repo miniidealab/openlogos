@@ -44,4 +44,4 @@ manifest.version = pkg.version;
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 
 mkdirSync(join(target, 'agents'), { recursive: true });
-console.log(`ZCode template prepared: ${target}`);
+console.error(`ZCode template prepared: ${target}`);
