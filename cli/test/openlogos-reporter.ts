@@ -52,11 +52,25 @@ function loadDefinedIds(): Set<string> {
   return ids;
 }
 
+function loadEligibleIds(): Set<string> | undefined {
+  const raw = process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
+  if (!raw) return undefined;
+  try {
+    const ids = JSON.parse(raw) as unknown;
+    if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string')) return undefined;
+    return new Set(ids);
+  } catch {
+    return undefined;
+  }
+}
+
 export default class OpenLogosReporter implements Reporter {
   private definedIds = new Set<string>();
+  private eligibleIds: Set<string> | undefined;
 
   onInit() {
     this.definedIds = loadDefinedIds();
+    this.eligibleIds = loadEligibleIds();
     mkdirSync(dirname(RESULT_PATH), { recursive: true });
     writeFileSync(RESULT_PATH, '');
   }
@@ -84,7 +98,7 @@ export default class OpenLogosReporter implements Reporter {
 
       const nameForMatch = typeof task.fullName === 'string' ? task.fullName : task.name;
       const ids = [...new Set([...nameForMatch.matchAll(ID_RE)].map(match => match[0]))]
-        .filter(id => this.definedIds.has(id));
+        .filter(id => this.definedIds.has(id) && (!this.eligibleIds || this.eligibleIds.has(id)));
       if (ids.length === 0) continue;
 
       const r = task.result;
