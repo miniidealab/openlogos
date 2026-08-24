@@ -28,7 +28,7 @@ scenario_counter:
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 6
+  next_id: 7
 modules:
   - id: core
     name: 核心功能
@@ -557,6 +557,11 @@ resource_index:
   - path: logos/resources/decisions/core-D05-slice-verification-ownership-and-recovery.md
     desc: D05 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
   - path: spec/test-slice-manifest.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+
+  - path: logos/resources/decisions/core-D06-ai-tool-adapter-boundary.md
+    desc: D06 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
+  - path: spec/zcode-plugin.md
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
 
 conventions:
