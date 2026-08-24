@@ -1,0 +1,172 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "zcode-adapter-foundation",
+  "module": "core",
+  "task_fingerprint": "sha256:c04554be495be9c4c4d8a0cfcc13fb63299e9d982851902af4dd0e9b3f1a8418",
+  "spec_fingerprint": "sha256:7b24e8da74f5e7957a74a17217321ae5b4bd2a57ddf101f203a3311ef71a5389",
+  "generated_at": "2026-08-24T13:20:29.956Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-zcode-guard-runtime",
+      "task_text": "实现 ZCode 会话上下文与写入硬门禁闭环：交付 ZCode 原生插件 manifest、SessionStart/PreToolUse hooks、共享 SessionContextService/GuardDecisionService 与每次调用重读状态语义，并实现含 OpenLogos reporter 的 UT-S09-188..197、ST-S09-73..76。",
+      "owned_test_ids": [
+        "ST-S09-73",
+        "ST-S09-74",
+        "ST-S09-75",
+        "ST-S09-76",
+        "UT-S09-188",
+        "UT-S09-189",
+        "UT-S09-190",
+        "UT-S09-191",
+        "UT-S09-192",
+        "UT-S09-193",
+        "UT-S09-194",
+        "UT-S09-195",
+        "UT-S09-196",
+        "UT-S09-197"
+      ],
+      "runner_selectors": [
+        "ST-S09-73",
+        "ST-S09-74",
+        "ST-S09-75",
+        "ST-S09-76",
+        "UT-S09-188",
+        "UT-S09-189",
+        "UT-S09-190",
+        "UT-S09-191",
+        "UT-S09-192",
+        "UT-S09-193",
+        "UT-S09-194",
+        "UT-S09-195",
+        "UT-S09-196",
+        "UT-S09-197"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-zcode-init-adopt",
+      "task_text": "实现 ZCode 初始化与存量项目接入闭环：把 zcode 纳入 AiToolAdapterRegistry 的标量/数组/all 解析，以 ManagedAssetTransaction 原子部署且保留用户 `.zcode/config.json`，并实现含 OpenLogos reporter 的 UT-S01-100..107、ST-S01-15..17、UT-S20-20..26、ST-S20-14..16。",
+      "owned_test_ids": [
+        "ST-S01-15",
+        "ST-S01-16",
+        "ST-S01-17",
+        "ST-S20-14",
+        "ST-S20-15",
+        "ST-S20-16",
+        "UT-S01-100",
+        "UT-S01-101",
+        "UT-S01-102",
+        "UT-S01-103",
+        "UT-S01-104",
+        "UT-S01-105",
+        "UT-S01-106",
+        "UT-S01-107",
+        "UT-S20-20",
+        "UT-S20-21",
+        "UT-S20-22",
+        "UT-S20-23",
+        "UT-S20-24",
+        "UT-S20-25",
+        "UT-S20-26"
+      ],
+      "runner_selectors": [
+        "ST-S01-15",
+        "ST-S01-16",
+        "ST-S01-17",
+        "ST-S20-14",
+        "ST-S20-15",
+        "ST-S20-16",
+        "UT-S01-100",
+        "UT-S01-101",
+        "UT-S01-102",
+        "UT-S01-103",
+        "UT-S01-104",
+        "UT-S01-105",
+        "UT-S01-106",
+        "UT-S01-107",
+        "UT-S20-20",
+        "UT-S20-21",
+        "UT-S20-22",
+        "UT-S20-23",
+        "UT-S20-24",
+        "UT-S20-25",
+        "UT-S20-26"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S01-test-cases.md",
+        "logos/resources/test/core-S20-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-zcode-sync-launch",
+      "task_text": "实现 ZCode 同步与 launched 生命周期刷新闭环：让 sync/launch 仅经 registry 刷新 ZCode 插件资产，覆盖幂等、失败回滚、用户配置保留和 launched 策略刷新，并实现含 OpenLogos reporter 的 UT-S08-15..20、ST-S08-16..18、UT-S14-06..09、ST-S14-19..20。",
+      "owned_test_ids": [
+        "ST-S08-16",
+        "ST-S08-17",
+        "ST-S08-18",
+        "ST-S14-19",
+        "ST-S14-20",
+        "UT-S08-15",
+        "UT-S08-16",
+        "UT-S08-17",
+        "UT-S08-18",
+        "UT-S08-19",
+        "UT-S08-20",
+        "UT-S14-06",
+        "UT-S14-07",
+        "UT-S14-08",
+        "UT-S14-09"
+      ],
+      "runner_selectors": [
+        "ST-S08-16",
+        "ST-S08-17",
+        "ST-S08-18",
+        "ST-S14-19",
+        "ST-S14-20",
+        "UT-S08-15",
+        "UT-S08-16",
+        "UT-S08-17",
+        "UT-S08-18",
+        "UT-S08-19",
+        "UT-S08-20",
+        "UT-S14-06",
+        "UT-S14-07",
+        "UT-S14-08",
+        "UT-S14-09"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S08-test-cases.md",
+        "logos/resources/test/core-S14-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-04-zcode-staging-smoke",
+      "task_text": "实现真实 tarball/ZCode staging 验收执行器闭环：把 plugin-zcode 模板纳入 npm pack，提供真实 ZCode CLI 的 manifest/SessionStart/PreToolUse/安装/重装/回滚 smoke runner、dispatcher 与 JSONL reporter，并覆盖 SMOKE-core-100..107；不得执行 npm publish、Git tag、GitHub Release、官网发布或 git push。",
+      "owned_test_ids": [
+        "SMOKE-core-100",
+        "SMOKE-core-101",
+        "SMOKE-core-102",
+        "SMOKE-core-103",
+        "SMOKE-core-104",
+        "SMOKE-core-105",
+        "SMOKE-core-106",
+        "SMOKE-core-107"
+      ],
+      "runner_selectors": [
+        "SMOKE-core-100",
+        "SMOKE-core-101",
+        "SMOKE-core-102",
+        "SMOKE-core-103",
+        "SMOKE-core-104",
+        "SMOKE-core-105",
+        "SMOKE-core-106",
+        "SMOKE-core-107"
+      ],
+      "spec_targets": [
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}

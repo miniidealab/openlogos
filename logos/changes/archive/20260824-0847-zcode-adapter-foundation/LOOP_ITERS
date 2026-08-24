@@ -1,0 +1,1 @@
+{"iter":1,"node":"verify","result":"fail","module":"core","timestamp":"2026-08-24T14:26:41.478Z","verify_mode":"slice-checkpoint","attempted_slice_id":"slice-01-zcode-guard-runtime","slice":"slice-01-zcode-guard-runtime"}
