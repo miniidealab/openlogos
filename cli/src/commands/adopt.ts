@@ -14,6 +14,8 @@ import {
   deployAiToolAssets,
   deploySpecs,
   expandAiTools,
+  preflightAiToolAssets,
+  preflightInstructionFiles,
   writeInstructionFiles,
 } from './init.js';
 import type { Locale } from '../i18n.js';
@@ -78,7 +80,7 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
     const parsedAiTool = parseAiTool(options.aiTool);
     if (!parsedAiTool) {
       console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-      console.error('Supported values: claude-code, opencode, codex, cursor, other, all');
+      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, other, all');
       process.exit(1);
     }
     aiTool = parsedAiTool;
@@ -89,6 +91,15 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   const detected = detectProjectName(root);
   const projectName = name?.trim() || detected.name;
   const sourceLabel = detectSourceLabel(root);
+  const deployTools = expandAiTools(aiTool);
+  try {
+    preflightAiToolAssets(root, deployTools);
+    if (deployTools.includes('zcode')) preflightInstructionFiles(root, locale, aiTool, true);
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+    return;
+  }
 
   console.log('\n$ openlogos adopt\n');
   console.log(`? 检测到已有项目：${projectName}（来自 ${sourceLabel}）`);
@@ -112,7 +123,6 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   writeInstructionFiles(root, locale, aiTool, true);
   console.log('✓ 写入 AGENTS.md / CLAUDE.md');
 
-  const deployTools = expandAiTools(aiTool);
   deployAiToolAssets(root, deployTools, locale, true, 'deployed');
   const specResult = deploySpecs(root);
   if (specResult && specResult.count > 0) {

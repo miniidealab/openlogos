@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { deploySkills, deployOpenCodePlugin, deployCodexPlugin, expandAiTools, writeInstructionFiles } from './init.js';
+import { deployAiToolAssets, expandAiTools, writeInstructionFiles } from './init.js';
 import { syncLogosProjectName } from './sync.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
@@ -105,14 +105,7 @@ export function launch(moduleArg?: string) {
     syncLogosProjectName(root, projectName);
     writeInstructionFiles(root, locale, rawAiTool, true);
 
-    for (const tool of aiTools) {
-      const deployResult = deploySkills(root, tool, locale, true);
-      if (deployResult && deployResult.count > 0) {
-        console.log(`  ✓ ${t(locale, 'launch.rulesUpdated', { target: deployResult.target })}`);
-      }
-    }
-    if (aiTools.includes('opencode')) deployOpenCodePlugin(root, locale);
-    if (aiTools.includes('codex')) deployCodexPlugin(root, locale);
+    deployAiToolAssets(root, aiTools, locale, true, 'synced');
 
     console.log(`\n${t(locale, 'launch.done', { module: targetId })}`);
     console.log(t(locale, 'launch.hint1'));
@@ -148,16 +141,6 @@ export function launch(moduleArg?: string) {
     }
   }
 
-  // Mark module as launched
-  mod.lifecycle = 'launched';
-  writeFileSync(yamlPath, stringifyYaml(yaml, { lineWidth: 0 }));
-
-  // Fix 5: remove stale project-level lifecycle from config
-  if ('lifecycle' in config) {
-    delete config['lifecycle'];
-    writeFileSync(configPath, JSON.stringify(config, null, 2));
-  }
-
   const isLaunched = true;
   const rawAiTool = config.aiTool ?? 'cursor';
   const aiTools = expandAiTools(rawAiTool);
@@ -167,19 +150,16 @@ export function launch(moduleArg?: string) {
 
   writeInstructionFiles(root, locale, rawAiTool, isLaunched);
 
-  for (const tool of aiTools) {
-    const deployResult = deploySkills(root, tool, locale, isLaunched);
-    if (deployResult && deployResult.count > 0) {
-      console.log(`  ✓ ${t(locale, 'launch.rulesUpdated', { target: deployResult.target })}`);
-    }
-  }
+  deployAiToolAssets(root, aiTools, locale, isLaunched, 'synced');
 
-  if (aiTools.includes('opencode')) {
-    deployOpenCodePlugin(root, locale);
-  }
+  // 所有 Adapter 资产成功后才提交 lifecycle，防止 ZCode 或其它宿主失败造成伪 launched。
+  mod.lifecycle = 'launched';
+  writeFileSync(yamlPath, stringifyYaml(yaml, { lineWidth: 0 }));
 
-  if (aiTools.includes('codex')) {
-    deployCodexPlugin(root, locale);
+  // Fix 5: remove stale project-level lifecycle from config
+  if ('lifecycle' in config) {
+    delete config['lifecycle'];
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
   }
 
   console.log(`\n${t(locale, 'launch.done', { module: targetId })}`);

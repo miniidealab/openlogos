@@ -48,12 +48,12 @@ Usage:
 Commands:
   init [name]        Initialize a new OpenLogos project structure
                        --locale <en|zh>            Set language (skip prompt)
-                       --ai-tool <claude-code|opencode|codex|cursor|other|all>  Set AI tool (skip prompt)
-                       --aitool <claude-code|opencode|codex|cursor|other|all>   Alias for --ai-tool
+                       --ai-tool <claude-code|opencode|codex|cursor|zcode|other|all>  Set AI tool (skip prompt)
+                       --aitool <claude-code|opencode|codex|cursor|zcode|other|all>   Alias for --ai-tool
   adopt [name]       Adopt an existing project into OpenLogos
                        --locale <en|zh>            Set language (skip prompt)
-                       --ai-tool <claude-code|opencode|codex|cursor|other|all>  Set AI tool (skip prompt)
-                       --aitool <claude-code|opencode|codex|cursor|other|all>   Alias for --ai-tool
+                       --ai-tool <claude-code|opencode|codex|cursor|zcode|other|all>  Set AI tool (skip prompt)
+                       --aitool <claude-code|opencode|codex|cursor|zcode|other|all>   Alias for --ai-tool
   sync               Regenerate AI instruction files (AGENTS.md, CLAUDE.md)
   status             Show current project phase and suggest next steps
                        --module <id>               Filter to a specific module

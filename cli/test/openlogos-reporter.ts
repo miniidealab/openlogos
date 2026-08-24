@@ -111,6 +111,8 @@ export default class OpenLogosReporter implements Reporter {
           status,
           timestamp: new Date().toISOString(),
         };
+        const scenario = id.match(/-(S\d{2})-/)?.[1];
+        if (scenario) record.scenario = scenario;
         if (durationMs !== undefined) record.duration_ms = Math.round(durationMs);
         if (error) record.error = error.slice(0, 500);
 

@@ -12,8 +12,19 @@ import {
   DEFAULT_SANDBOX_ROOT,
   backfillVerifyPreRunConfig,
 } from '../lib/verify-config.js';
+import {
+  type AiTool,
+  type AiToolId,
+  ZCODE_PLUGIN_REL_DIR,
+  createZCodeAgentsInstruction,
+  deployZCodeAssets,
+  expandRegisteredAiTools,
+  localizedZCodeResult,
+  parseRegisteredAiTool,
+  preflightZCodeTarget,
+} from '../lib/ai-tool-adapter.js';
 
-export type AiTool = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'other' | 'all';
+export type { AiTool } from '../lib/ai-tool-adapter.js';
 
 const OPENLOGOS_BEGIN_MARKER = '<!-- OPENLOGOS:BEGIN -->';
 const OPENLOGOS_END_MARKER = '<!-- OPENLOGOS:END -->';
@@ -27,38 +38,12 @@ const CODEX_HOOK_REL_PATH = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/hooks/session-sta
 const CODEX_LEGACY_PLUGIN_REL_DIR = '.codex-plugin';
 const CODEX_LEGACY_HOOK_REL_PATH = `${CODEX_LEGACY_PLUGIN_REL_DIR}/hooks/session-start.sh`;
 
-const ALL_DEPLOYABLE_AI_TOOLS: Exclude<AiTool, 'all'>[] = ['claude-code', 'opencode', 'codex', 'cursor'];
-
-function isDeployableAiTool(value: unknown): value is Exclude<AiTool, 'all'> {
-  return value === 'claude-code'
-    || value === 'opencode'
-    || value === 'codex'
-    || value === 'cursor'
-    || value === 'other';
-}
-
 export function parseAiTool(value: unknown): AiTool | undefined {
-  if (value === 'all' || isDeployableAiTool(value)) return value;
-  return undefined;
+  return parseRegisteredAiTool(value);
 }
 
-export function expandAiTools(rawAiTool: unknown): Exclude<AiTool, 'all'>[] {
-  const rawValues = Array.isArray(rawAiTool) ? rawAiTool : [rawAiTool];
-  const collected: Exclude<AiTool, 'all'>[] = [];
-
-  for (const value of rawValues) {
-    if (value === 'all') {
-      collected.push(...ALL_DEPLOYABLE_AI_TOOLS);
-      continue;
-    }
-
-    if (isDeployableAiTool(value)) {
-      collected.push(value);
-    }
-  }
-
-  const normalized = Array.from(new Set(collected));
-  return normalized.length > 0 ? normalized : ['cursor'];
+export function expandAiTools(rawAiTool: unknown): AiToolId[] {
+  return expandRegisteredAiTools(rawAiTool);
 }
 
 export function resolveDocsAiTool(rawAiTool: unknown): AiTool {
@@ -83,12 +68,12 @@ export function resolveDocsAiToolForTarget(rawAiTool: unknown, target: 'agents' 
   return 'cursor';
 }
 
-export function mergeAiToolConfig(existingRawAiTool: unknown, requestedAiTool: AiTool): AiTool | Exclude<AiTool, 'all'>[] {
+export function mergeAiToolConfig(existingRawAiTool: unknown, requestedAiTool: AiTool): AiTool | AiToolId[] {
   const existingTools = expandAiTools(existingRawAiTool ?? 'cursor');
   const mergedTools = requestedAiTool === 'all'
     ? [
-        ...ALL_DEPLOYABLE_AI_TOOLS,
-        ...existingTools.filter(tool => !ALL_DEPLOYABLE_AI_TOOLS.includes(tool)),
+        ...expandRegisteredAiTools('all'),
+        ...existingTools.filter(tool => !expandRegisteredAiTools('all').includes(tool)),
       ]
     : [...existingTools, ...expandAiTools(requestedAiTool)];
 
@@ -184,6 +169,7 @@ async function resolveProjectName(locale: Locale, root: string, explicitName?: s
 }
 
 function detectAiToolFromEnv(): AiTool {
+  if (process.env.ZCODE_PLUGIN_ROOT) return 'zcode';
   if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_CODE) return 'claude-code';
   return 'claude-code';
 }
@@ -192,7 +178,7 @@ async function chooseLocale(): Promise<Locale> {
   if (!isTTY()) {
     console.error('Error: --locale is required in non-interactive mode.');
     console.error('');
-    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|other|all>] [name]');
+    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|zcode|other|all>] [name]');
     console.error('');
     console.error('Ask the user to choose a language first:');
     console.error('  --locale en    English');
@@ -218,6 +204,7 @@ export async function chooseAiTool(locale: Locale): Promise<AiTool> {
   console.log(t(locale, 'init.aiToolCursor'));
   console.log(t(locale, 'init.aiToolOther'));
   console.log(t(locale, 'init.aiToolAll') + '\n');
+  console.log('  7. ZCode\n');
 
   const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
   if (answer === '2') return 'opencode';
@@ -225,6 +212,7 @@ export async function chooseAiTool(locale: Locale): Promise<AiTool> {
   if (answer === '4') return 'cursor';
   if (answer === '5') return 'other';
   if (answer === '6') return 'all';
+  if (answer === '7') return 'zcode';
   return 'claude-code';
 }
 
@@ -328,6 +316,38 @@ export function findCodexPluginTemplateSource(): string | null {
   if (existsSync(devTemplate)) return devTemplate;
 
   return null;
+}
+
+export function findZCodePluginTemplateSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+  const packageTemplate = join(currentDir, '..', '..', 'zcode-plugin-template');
+  if (existsSync(packageTemplate)) return packageTemplate;
+  const devTemplate = join(currentDir, '..', '..', '..', 'plugin-zcode');
+  return existsSync(devTemplate) ? devTemplate : null;
+}
+
+export function preflightAiToolAssets(root: string, aiTools: AiToolId[]): void {
+  if (!aiTools.includes('zcode')) return;
+  const source = findZCodePluginTemplateSource();
+  if (!source) throw new Error('ZCode plugin template not found.');
+  preflightZCodeTarget(root, source);
+}
+
+export function preflightInstructionFiles(
+  root: string,
+  locale: Locale,
+  rawAiTool: unknown,
+  isLaunched: boolean,
+): void {
+  for (const [fileName, target] of [['AGENTS.md', 'agents'], ['CLAUDE.md', 'claude']] as const) {
+    const file = join(root, fileName);
+    const existing = existsSync(file) ? readFileSync(file, 'utf8') : null;
+    mergeInstructionFileContent(
+      existing,
+      createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, target), target, isLaunched),
+    );
+  }
 }
 
 function mergeCodexConfig(root: string): { created: boolean; updated: boolean } {
@@ -1131,7 +1151,7 @@ type DeployLogMode = 'deployed' | 'synced';
 
 export function deployAiToolAssets(
   root: string,
-  aiTools: Exclude<AiTool, 'all'>[],
+  aiTools: AiToolId[],
   locale: Locale,
   isLaunched: boolean,
   mode: DeployLogMode = 'deployed',
@@ -1141,7 +1161,7 @@ export function deployAiToolAssets(
   const codexMessageKey = mode === 'synced' ? 'init.codexPluginSynced' : 'init.codexPluginDeployed';
   const claudeMessageKey = mode === 'synced' ? 'init.claudePluginSynced' : 'init.claudePluginDeployed';
 
-  for (const tool of aiTools) {
+  for (const tool of aiTools.filter(tool => tool !== 'zcode')) {
     const deployResult = deploySkills(root, tool, locale, isLaunched);
     if (deployResult && deployResult.count > 0) {
       console.log(`  ✓ ${t(locale, skillMessageKey, { count: String(deployResult.count), target: deployResult.target })}`);
@@ -1199,6 +1219,18 @@ export function deployAiToolAssets(
         }
       }
     }
+  }
+
+  if (aiTools.includes('zcode')) {
+    const source = findZCodePluginTemplateSource();
+    if (!source) throw new Error('ZCode plugin template not found.');
+    const claudeTemplate = findClaudePluginTemplateSource();
+    const result = deployZCodeAssets(root, source, {
+      skills: findSkillsSource(),
+      commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+      agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
+    });
+    console.log(`  ✓ ${localizedZCodeResult(locale, result)}`);
   }
 }
 
@@ -1512,6 +1544,9 @@ function skillBasePath(aiTool: AiTool | undefined, target: 'agents' | 'claude' |
   if (aiTool === 'codex' && target === 'agents') {
     return CODEX_OPENLOGOS_SKILLS_REL_DIR;
   }
+  if (aiTool === 'zcode' && target === 'agents') {
+    return `${ZCODE_PLUGIN_REL_DIR}/skills`;
+  }
   return 'logos/skills';
 }
 
@@ -1723,7 +1758,7 @@ export type Lifecycle = 'initial' | 'active';
 
 export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool = 'cursor'): string {
   const aiToolValue: AiTool | AiTool[] = aiTool === 'all'
-    ? ALL_DEPLOYABLE_AI_TOOLS
+    ? expandRegisteredAiTools('all')
     : aiTool;
   return JSON.stringify({
     name,
@@ -1903,6 +1938,10 @@ ${generateStep4ExecutionRules(locale)}
 ${generateDocumentPostEditVerify(locale)}
 `;
 
+  if (aiTool === 'zcode' && target === 'agents') {
+    content += '\n## ZCode 宿主指令\n' + createZCodeAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+  }
+
   if (includeSkills) {
     const skillAutoLoadInstr = locale === 'zh'
       ? `**重要**：当你识别到当前 Phase 后，必须先读取对应的 Skill 文件（使用上方 Phase 检测逻辑中指定的路径），按 Skill 中定义的步骤逐步执行。不要跳过 Skill 文件直接生成内容。\n`
@@ -2041,7 +2080,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       const requestedAiTool = parseAiTool(options.aiTool);
       if (!requestedAiTool) {
         console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-        console.error('Supported values: claude-code, opencode, codex, cursor, other, all');
+        console.error('Supported values: claude-code, opencode, codex, cursor, zcode, other, all');
         process.exit(1);
       }
 
@@ -2055,6 +2094,16 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
 
       const locale: Locale = config.locale === 'zh' ? 'zh' : 'en';
       const requestedTools = expandAiTools(requestedAiTool);
+      try {
+        preflightAiToolAssets(root, requestedTools);
+        if (requestedTools.includes('zcode')) {
+          preflightInstructionFiles(root, locale, mergeAiToolConfig(config.aiTool, requestedAiTool), readProjectLaunched(root));
+        }
+      } catch (error) {
+        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+        return;
+      }
       config.aiTool = mergeAiToolConfig(config.aiTool, requestedAiTool);
       const verifyBackfill = ensureVerifyPreRunConfig(root, config);
       writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -2096,7 +2145,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
     const parsedAiTool = parseAiTool(options.aiTool);
     if (!parsedAiTool) {
       console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-      console.error('Supported values: claude-code, opencode, codex, cursor, other, all');
+      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, other, all');
       process.exit(1);
     }
     aiTool = parsedAiTool;
@@ -2104,6 +2153,15 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
     aiTool = await chooseAiTool(locale);
   }
   const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
+  const deployTools = expandAiTools(aiTool);
+  try {
+    preflightAiToolAssets(root, deployTools);
+    if (deployTools.includes('zcode')) preflightInstructionFiles(root, locale, aiTool, false);
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+    return;
+  }
 
   const sourceLabel: Record<NameSource, string> = {
     'argument': '',
@@ -2137,7 +2195,6 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   writeManagedInstructionFile(root, 'CLAUDE.md', createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'claude'), 'claude', false));
   console.log(`  ✓ CLAUDE.md`);
 
-  const deployTools = expandAiTools(aiTool);
   deployAiToolAssets(root, deployTools, locale, false, 'deployed');
 
   const specResult = deploySpecs(root);
