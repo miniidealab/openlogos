@@ -81,7 +81,7 @@ describe('Qoder sync/launch — S08/S14', () => {
   });
 
   it('UT-S08-22: all 通过 Registry 稳定包含 Qoder', () => {
-    expect(expandAiTools('all')).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']);
+    expect(expandAiTools('all')).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder', 'workbuddy']);
   });
 
   it('UT-S08-23: 托管目录未知文件进入 preserved 且不被删除', () => {

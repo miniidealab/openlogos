@@ -82,7 +82,7 @@ describe('Qoder Adapter — S01/S20', () => {
   });
 
   it('UT-S01-109: all 稳定展开既有四宿主与 Qoder 且无重复', () => {
-    expect(expandAiTools(['all', 'qoder'])).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']);
+    expect(expandAiTools(['all', 'qoder'])).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder', 'workbuddy']);
     expect(() => new AiToolAdapterRegistry([
       aiToolAdapterRegistry.get('qoder'),
       aiToolAdapterRegistry.get('qoder'),

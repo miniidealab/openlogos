@@ -81,7 +81,7 @@ describe('ZCode Adapter — S01/S20', () => {
   });
 
   it('UT-S01-101: all 稳定展开既有四宿主与 ZCode 且无重复', () => {
-    expect(expandAiTools(['all', 'zcode'])).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']);
+    expect(expandAiTools(['all', 'zcode'])).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder', 'workbuddy']);
   });
 
   it('UT-S01-102: Registry 拒绝重复与未知 id 并枚举合法集合', () => {

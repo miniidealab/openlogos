@@ -1,6 +1,6 @@
 {
   "name": "@miniidealab/openlogos",
-  "version": "0.13.25",
+  "version": "0.13.28",
   "description": "CLI tool for the OpenLogos software engineering methodology",
   "type": "module",
   "bin": {
@@ -10,8 +10,9 @@
     "build": "npx tsc",
     "build:zcode-template": "node scripts/build-zcode-template.mjs",
     "build:qoder-template": "node scripts/build-qoder-template.mjs",
-    "prepack": "npm run build && npm run build:zcode-template && npm run build:qoder-template && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true});require('fs').cpSync('../plugin-opencode/template','./opencode-plugin-template',{recursive:true});require('fs').cpSync('../plugin-codex','./codex-plugin-template',{recursive:true});require('fs').cpSync('../plugin','./claude-plugin-template',{recursive:true})\"",
-    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true});require('fs').rmSync('./opencode-plugin-template',{recursive:true,force:true});require('fs').rmSync('./codex-plugin-template',{recursive:true,force:true});require('fs').rmSync('./claude-plugin-template',{recursive:true,force:true});require('fs').rmSync('./zcode-plugin-template',{recursive:true,force:true});require('fs').rmSync('./qoder-plugin-template',{recursive:true,force:true})\"",
+    "build:workbuddy-template": "node scripts/build-workbuddy-template.mjs",
+    "prepack": "npm run build && npm run build:zcode-template && npm run build:qoder-template && npm run build:workbuddy-template && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true});require('fs').cpSync('../plugin-opencode/template','./opencode-plugin-template',{recursive:true});require('fs').cpSync('../plugin-codex','./codex-plugin-template',{recursive:true});require('fs').cpSync('../plugin','./claude-plugin-template',{recursive:true})\"",
+    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true});require('fs').rmSync('./opencode-plugin-template',{recursive:true,force:true});require('fs').rmSync('./codex-plugin-template',{recursive:true,force:true});require('fs').rmSync('./claude-plugin-template',{recursive:true,force:true});require('fs').rmSync('./zcode-plugin-template',{recursive:true,force:true});require('fs').rmSync('./qoder-plugin-template',{recursive:true,force:true});require('fs').rmSync('./workbuddy-plugin-template',{recursive:true,force:true})\"",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "lint": "eslint src/",
@@ -51,6 +52,7 @@
     "codex-plugin-template",
     "zcode-plugin-template",
     "qoder-plugin-template",
+    "workbuddy-plugin-template",
     "claude-plugin-template"
   ],
   "devDependencies": {

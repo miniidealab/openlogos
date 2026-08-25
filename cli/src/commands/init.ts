@@ -16,16 +16,21 @@ import {
   type AiTool,
   type AiToolId,
   QODER_PLUGIN_REL_DIR,
+  WORKBUDDY_PLUGIN_REL_DIR,
   ZCODE_PLUGIN_REL_DIR,
   createQoderAgentsInstruction,
+  createWorkBuddyAgentsInstruction,
   createZCodeAgentsInstruction,
   deployQoderAssets,
+  deployWorkBuddyAssets,
   deployZCodeAssets,
   expandRegisteredAiTools,
   localizedQoderResult,
+  localizedWorkBuddyResult,
   localizedZCodeResult,
   parseRegisteredAiTool,
   preflightQoderTarget,
+  preflightWorkBuddyTarget,
   preflightZCodeTarget,
 } from '../lib/ai-tool-adapter.js';
 
@@ -65,6 +70,7 @@ export function resolveDocsAiToolForTarget(rawAiTool: unknown, target: 'agents' 
       || tools.includes('opencode')
       || tools.includes('zcode')
       || tools.includes('qoder')
+      || tools.includes('workbuddy')
       || tools.includes('other');
     if (tools.includes('codex') && !needsSharedLogosSkills) return 'codex';
     return 'all';
@@ -176,6 +182,7 @@ async function resolveProjectName(locale: Locale, root: string, explicitName?: s
 }
 
 function detectAiToolFromEnv(): AiTool {
+  if (process.env.CODEBUDDY_PLUGIN_ROOT) return 'workbuddy';
   if (process.env.QODER_PLUGIN_ROOT) return 'qoder';
   if (process.env.ZCODE_PLUGIN_ROOT) return 'zcode';
   if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_CODE) return 'claude-code';
@@ -186,7 +193,7 @@ async function chooseLocale(): Promise<Locale> {
   if (!isTTY()) {
     console.error('Error: --locale is required in non-interactive mode.');
     console.error('');
-    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|zcode|qoder|other|all>] [name]');
+    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|zcode|qoder|workbuddy|other|all>] [name]');
     console.error('');
     console.error('Ask the user to choose a language first:');
     console.error('  --locale en    English');
@@ -213,7 +220,8 @@ export async function chooseAiTool(locale: Locale): Promise<AiTool> {
   console.log(t(locale, 'init.aiToolOther'));
   console.log(t(locale, 'init.aiToolAll') + '\n');
   console.log('  7. ZCode');
-  console.log('  8. Qoder\n');
+  console.log('  8. Qoder');
+  console.log('  9. WorkBuddy\n');
 
   const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
   if (answer === '2') return 'opencode';
@@ -223,6 +231,7 @@ export async function chooseAiTool(locale: Locale): Promise<AiTool> {
   if (answer === '6') return 'all';
   if (answer === '7') return 'zcode';
   if (answer === '8') return 'qoder';
+  if (answer === '9') return 'workbuddy';
   return 'claude-code';
 }
 
@@ -346,6 +355,15 @@ export function findQoderPluginTemplateSource(): string | null {
   return existsSync(devTemplate) ? devTemplate : null;
 }
 
+export function findWorkBuddyPluginTemplateSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+  const packageTemplate = join(currentDir, '..', '..', 'workbuddy-plugin-template');
+  if (existsSync(packageTemplate)) return packageTemplate;
+  const devTemplate = join(currentDir, '..', '..', '..', 'plugin-workbuddy');
+  return existsSync(devTemplate) ? devTemplate : null;
+}
+
 export function preflightAiToolAssets(root: string, aiTools: AiToolId[]): void {
   if (aiTools.includes('zcode')) {
     const source = findZCodePluginTemplateSource();
@@ -356,6 +374,11 @@ export function preflightAiToolAssets(root: string, aiTools: AiToolId[]): void {
     const source = findQoderPluginTemplateSource();
     if (!source) throw new Error('Qoder plugin template not found.');
     preflightQoderTarget(root, source);
+  }
+  if (aiTools.includes('workbuddy')) {
+    const source = findWorkBuddyPluginTemplateSource();
+    if (!source) throw new Error('WorkBuddy plugin template not found.');
+    preflightWorkBuddyTarget(root, source);
   }
 }
 
@@ -1186,7 +1209,7 @@ export function deployAiToolAssets(
   const codexMessageKey = mode === 'synced' ? 'init.codexPluginSynced' : 'init.codexPluginDeployed';
   const claudeMessageKey = mode === 'synced' ? 'init.claudePluginSynced' : 'init.claudePluginDeployed';
 
-  for (const tool of aiTools.filter(tool => tool !== 'zcode' && tool !== 'qoder')) {
+  for (const tool of aiTools.filter(tool => tool !== 'zcode' && tool !== 'qoder' && tool !== 'workbuddy')) {
     const deployResult = deploySkills(root, tool, locale, isLaunched);
     if (deployResult && deployResult.count > 0) {
       console.log(`  ✓ ${t(locale, skillMessageKey, { count: String(deployResult.count), target: deployResult.target })}`);
@@ -1268,6 +1291,18 @@ export function deployAiToolAssets(
       agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
     });
     console.log(`  ✓ ${localizedQoderResult(locale, result)}`);
+  }
+
+  if (aiTools.includes('workbuddy')) {
+    const source = findWorkBuddyPluginTemplateSource();
+    if (!source) throw new Error('WorkBuddy plugin template not found.');
+    const claudeTemplate = findClaudePluginTemplateSource();
+    const result = deployWorkBuddyAssets(root, source, {
+      skills: findSkillsSource(),
+      commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+      agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
+    });
+    console.log(`  ✓ ${localizedWorkBuddyResult(locale, result)}`);
   }
 }
 
@@ -1586,6 +1621,9 @@ function skillBasePath(aiTool: AiTool | undefined, target: 'agents' | 'claude' |
   }
   if (aiTool === 'qoder' && target === 'agents') {
     return `${QODER_PLUGIN_REL_DIR}/skills`;
+  }
+  if (aiTool === 'workbuddy' && target === 'agents') {
+    return `${WORKBUDDY_PLUGIN_REL_DIR}/skills`;
   }
   return 'logos/skills';
 }
@@ -1984,6 +2022,9 @@ ${generateDocumentPostEditVerify(locale)}
   if (aiTool === 'qoder' && target === 'agents') {
     content += '\n## Qoder 宿主指令\n' + createQoderAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
   }
+  if (aiTool === 'workbuddy' && target === 'agents') {
+    content += '\n## WorkBuddy 宿主指令\n' + createWorkBuddyAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+  }
 
   if (includeSkills) {
     const skillAutoLoadInstr = locale === 'zh'
@@ -2123,7 +2164,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       const requestedAiTool = parseAiTool(options.aiTool);
       if (!requestedAiTool) {
         console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-        console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, other, all');
+        console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, workbuddy, other, all');
         process.exit(1);
       }
 
@@ -2139,7 +2180,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       const requestedTools = expandAiTools(requestedAiTool);
       try {
         preflightAiToolAssets(root, requestedTools);
-        if (requestedTools.includes('zcode') || requestedTools.includes('qoder')) {
+        if (requestedTools.includes('zcode') || requestedTools.includes('qoder') || requestedTools.includes('workbuddy')) {
           preflightInstructionFiles(root, locale, mergeAiToolConfig(config.aiTool, requestedAiTool), readProjectLaunched(root));
         }
       } catch (error) {
@@ -2188,7 +2229,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
     const parsedAiTool = parseAiTool(options.aiTool);
     if (!parsedAiTool) {
       console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, other, all');
+      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, workbuddy, other, all');
       process.exit(1);
     }
     aiTool = parsedAiTool;
@@ -2199,7 +2240,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   const deployTools = expandAiTools(aiTool);
   try {
     preflightAiToolAssets(root, deployTools);
-    if (deployTools.includes('zcode') || deployTools.includes('qoder')) preflightInstructionFiles(root, locale, aiTool, false);
+    if (deployTools.includes('zcode') || deployTools.includes('qoder') || deployTools.includes('workbuddy')) preflightInstructionFiles(root, locale, aiTool, false);
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);

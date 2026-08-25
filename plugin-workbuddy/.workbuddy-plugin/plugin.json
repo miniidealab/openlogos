@@ -1,7 +1,7 @@
 {
   "name": "openlogos",
   "version": "0.13.28",
-  "description": "OpenLogos 方法论与变更门禁的 ZCode 原生插件",
+  "description": "OpenLogos 方法论与变更门禁的 WorkBuddy 原生插件",
   "author": {
     "name": "MiniIdeaLab"
   },
