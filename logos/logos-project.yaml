@@ -563,6 +563,8 @@ resource_index:
     desc: D06 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
   - path: spec/zcode-plugin.md
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+  - path: spec/qoder-plugin.md
+    desc: Qoder 原生插件规范。涉及 Qoder 插件布局、Skills、Commands、Agents、Hooks、SessionStart 与 PreToolUse 协议时必读。
 
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
