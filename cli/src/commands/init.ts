@@ -15,12 +15,17 @@ import {
 import {
   type AiTool,
   type AiToolId,
+  QODER_PLUGIN_REL_DIR,
   ZCODE_PLUGIN_REL_DIR,
+  createQoderAgentsInstruction,
   createZCodeAgentsInstruction,
+  deployQoderAssets,
   deployZCodeAssets,
   expandRegisteredAiTools,
+  localizedQoderResult,
   localizedZCodeResult,
   parseRegisteredAiTool,
+  preflightQoderTarget,
   preflightZCodeTarget,
 } from '../lib/ai-tool-adapter.js';
 
@@ -58,6 +63,8 @@ export function resolveDocsAiToolForTarget(rawAiTool: unknown, target: 'agents' 
   if (target === 'agents') {
     const needsSharedLogosSkills = tools.includes('claude-code')
       || tools.includes('opencode')
+      || tools.includes('zcode')
+      || tools.includes('qoder')
       || tools.includes('other');
     if (tools.includes('codex') && !needsSharedLogosSkills) return 'codex';
     return 'all';
@@ -169,6 +176,7 @@ async function resolveProjectName(locale: Locale, root: string, explicitName?: s
 }
 
 function detectAiToolFromEnv(): AiTool {
+  if (process.env.QODER_PLUGIN_ROOT) return 'qoder';
   if (process.env.ZCODE_PLUGIN_ROOT) return 'zcode';
   if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_CODE) return 'claude-code';
   return 'claude-code';
@@ -178,7 +186,7 @@ async function chooseLocale(): Promise<Locale> {
   if (!isTTY()) {
     console.error('Error: --locale is required in non-interactive mode.');
     console.error('');
-    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|zcode|other|all>] [name]');
+    console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|zcode|qoder|other|all>] [name]');
     console.error('');
     console.error('Ask the user to choose a language first:');
     console.error('  --locale en    English');
@@ -204,7 +212,8 @@ export async function chooseAiTool(locale: Locale): Promise<AiTool> {
   console.log(t(locale, 'init.aiToolCursor'));
   console.log(t(locale, 'init.aiToolOther'));
   console.log(t(locale, 'init.aiToolAll') + '\n');
-  console.log('  7. ZCode\n');
+  console.log('  7. ZCode');
+  console.log('  8. Qoder\n');
 
   const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
   if (answer === '2') return 'opencode';
@@ -213,6 +222,7 @@ export async function chooseAiTool(locale: Locale): Promise<AiTool> {
   if (answer === '5') return 'other';
   if (answer === '6') return 'all';
   if (answer === '7') return 'zcode';
+  if (answer === '8') return 'qoder';
   return 'claude-code';
 }
 
@@ -327,11 +337,26 @@ export function findZCodePluginTemplateSource(): string | null {
   return existsSync(devTemplate) ? devTemplate : null;
 }
 
+export function findQoderPluginTemplateSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+  const packageTemplate = join(currentDir, '..', '..', 'qoder-plugin-template');
+  if (existsSync(packageTemplate)) return packageTemplate;
+  const devTemplate = join(currentDir, '..', '..', '..', 'plugin-qoder');
+  return existsSync(devTemplate) ? devTemplate : null;
+}
+
 export function preflightAiToolAssets(root: string, aiTools: AiToolId[]): void {
-  if (!aiTools.includes('zcode')) return;
-  const source = findZCodePluginTemplateSource();
-  if (!source) throw new Error('ZCode plugin template not found.');
-  preflightZCodeTarget(root, source);
+  if (aiTools.includes('zcode')) {
+    const source = findZCodePluginTemplateSource();
+    if (!source) throw new Error('ZCode plugin template not found.');
+    preflightZCodeTarget(root, source);
+  }
+  if (aiTools.includes('qoder')) {
+    const source = findQoderPluginTemplateSource();
+    if (!source) throw new Error('Qoder plugin template not found.');
+    preflightQoderTarget(root, source);
+  }
 }
 
 export function preflightInstructionFiles(
@@ -1161,7 +1186,7 @@ export function deployAiToolAssets(
   const codexMessageKey = mode === 'synced' ? 'init.codexPluginSynced' : 'init.codexPluginDeployed';
   const claudeMessageKey = mode === 'synced' ? 'init.claudePluginSynced' : 'init.claudePluginDeployed';
 
-  for (const tool of aiTools.filter(tool => tool !== 'zcode')) {
+  for (const tool of aiTools.filter(tool => tool !== 'zcode' && tool !== 'qoder')) {
     const deployResult = deploySkills(root, tool, locale, isLaunched);
     if (deployResult && deployResult.count > 0) {
       console.log(`  ✓ ${t(locale, skillMessageKey, { count: String(deployResult.count), target: deployResult.target })}`);
@@ -1231,6 +1256,18 @@ export function deployAiToolAssets(
       agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
     });
     console.log(`  ✓ ${localizedZCodeResult(locale, result)}`);
+  }
+
+  if (aiTools.includes('qoder')) {
+    const source = findQoderPluginTemplateSource();
+    if (!source) throw new Error('Qoder plugin template not found.');
+    const claudeTemplate = findClaudePluginTemplateSource();
+    const result = deployQoderAssets(root, source, {
+      skills: findSkillsSource(),
+      commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+      agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
+    });
+    console.log(`  ✓ ${localizedQoderResult(locale, result)}`);
   }
 }
 
@@ -1546,6 +1583,9 @@ function skillBasePath(aiTool: AiTool | undefined, target: 'agents' | 'claude' |
   }
   if (aiTool === 'zcode' && target === 'agents') {
     return `${ZCODE_PLUGIN_REL_DIR}/skills`;
+  }
+  if (aiTool === 'qoder' && target === 'agents') {
+    return `${QODER_PLUGIN_REL_DIR}/skills`;
   }
   return 'logos/skills';
 }
@@ -1941,6 +1981,9 @@ ${generateDocumentPostEditVerify(locale)}
   if (aiTool === 'zcode' && target === 'agents') {
     content += '\n## ZCode 宿主指令\n' + createZCodeAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
   }
+  if (aiTool === 'qoder' && target === 'agents') {
+    content += '\n## Qoder 宿主指令\n' + createQoderAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+  }
 
   if (includeSkills) {
     const skillAutoLoadInstr = locale === 'zh'
@@ -2080,7 +2123,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       const requestedAiTool = parseAiTool(options.aiTool);
       if (!requestedAiTool) {
         console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-        console.error('Supported values: claude-code, opencode, codex, cursor, zcode, other, all');
+        console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, other, all');
         process.exit(1);
       }
 
@@ -2096,7 +2139,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       const requestedTools = expandAiTools(requestedAiTool);
       try {
         preflightAiToolAssets(root, requestedTools);
-        if (requestedTools.includes('zcode')) {
+        if (requestedTools.includes('zcode') || requestedTools.includes('qoder')) {
           preflightInstructionFiles(root, locale, mergeAiToolConfig(config.aiTool, requestedAiTool), readProjectLaunched(root));
         }
       } catch (error) {
@@ -2145,7 +2188,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
     const parsedAiTool = parseAiTool(options.aiTool);
     if (!parsedAiTool) {
       console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, other, all');
+      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, other, all');
       process.exit(1);
     }
     aiTool = parsedAiTool;
@@ -2156,7 +2199,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   const deployTools = expandAiTools(aiTool);
   try {
     preflightAiToolAssets(root, deployTools);
-    if (deployTools.includes('zcode')) preflightInstructionFiles(root, locale, aiTool, false);
+    if (deployTools.includes('zcode') || deployTools.includes('qoder')) preflightInstructionFiles(root, locale, aiTool, false);
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);

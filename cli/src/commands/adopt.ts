@@ -80,7 +80,7 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
     const parsedAiTool = parseAiTool(options.aiTool);
     if (!parsedAiTool) {
       console.error(`Error: unsupported AI tool "${options.aiTool}".`);
-      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, other, all');
+      console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, other, all');
       process.exit(1);
     }
     aiTool = parsedAiTool;
@@ -94,7 +94,7 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   const deployTools = expandAiTools(aiTool);
   try {
     preflightAiToolAssets(root, deployTools);
-    if (deployTools.includes('zcode')) preflightInstructionFiles(root, locale, aiTool, true);
+    if (deployTools.includes('zcode') || deployTools.includes('qoder')) preflightInstructionFiles(root, locale, aiTool, true);
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);

@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact|new",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${QODER_PLUGIN_ROOT}/hooks/runtime.mjs",
+              "session"
+            ],
+            "timeoutMs": 5000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|.*",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${QODER_PLUGIN_ROOT}/hooks/runtime.mjs",
+              "guard"
+            ],
+            "timeoutMs": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

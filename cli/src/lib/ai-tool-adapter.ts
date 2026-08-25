@@ -13,12 +13,19 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
-export type AiToolId = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'zcode' | 'other';
+export type AiToolId = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'zcode' | 'qoder' | 'other';
 export type AiTool = AiToolId | 'all';
 
 export interface AiToolCapabilities {
   lifecycle: Array<'init' | 'sync' | 'launch' | 'adopt'>;
   assets: Array<'agents' | 'plugin' | 'hooks'>;
+  instructions?: boolean;
+  skills?: boolean;
+  commands?: boolean;
+  agents?: boolean;
+  plugin?: boolean;
+  sessionStart?: boolean;
+  preToolUse?: boolean;
 }
 
 export interface AiToolAdapterDefinition {
@@ -32,6 +39,20 @@ const DEFAULT_ADAPTERS: AiToolAdapterDefinition[] = [
   { id: 'codex', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents', 'plugin', 'hooks'] } },
   { id: 'cursor', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents'] } },
   { id: 'zcode', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents', 'plugin', 'hooks'] } },
+  {
+    id: 'qoder',
+    capabilities: {
+      lifecycle: ['init', 'sync', 'launch', 'adopt'],
+      assets: ['agents', 'plugin', 'hooks'],
+      instructions: true,
+      skills: true,
+      commands: true,
+      agents: true,
+      plugin: true,
+      sessionStart: true,
+      preToolUse: true,
+    },
+  },
   { id: 'other', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents'] } },
 ];
 
@@ -85,8 +106,15 @@ export function expandRegisteredAiTools(rawAiTool: unknown): AiToolId[] {
 }
 
 export const ZCODE_PLUGIN_REL_DIR = '.zcode/plugins/openlogos';
+export const QODER_PLUGIN_REL_DIR = '.qoder/plugins/openlogos';
 
 export interface ZCodeDeploymentResult {
+  target: string;
+  status: 'installed' | 'updated' | 'unchanged';
+  preserved: string[];
+}
+
+export interface QoderDeploymentResult {
   target: string;
   status: 'installed' | 'updated' | 'unchanged';
   preserved: string[];
@@ -284,4 +312,156 @@ export function createZCodeAgentsInstruction(locale: 'zh' | 'en', lifecycle: str
   return locale === 'zh'
     ? `OpenLogos ZCode 指令：当前 lifecycle=${lifecycle}。直接读取根 AGENTS.md 与插件 skills；不得依赖子目录 AGENTS、include 或 CLAUDE.md。`
     : `OpenLogos ZCode instructions: lifecycle=${lifecycle}. Read the root AGENTS.md and plugin skills directly; do not depend on nested AGENTS, include directives, or CLAUDE.md.`;
+}
+
+export function validateQoderTemplate(source: string): void {
+  const required = [
+    '.qoder-plugin/plugin.json',
+    'skills',
+    'commands',
+    'agents',
+    'hooks/hooks.json',
+    'hooks/runtime.mjs',
+    'hooks/runtime.cjs',
+  ];
+  for (const relative of required) {
+    if (!existsSync(join(source, relative))) throw new Error(`Qoder 模板缺少：${relative}`);
+  }
+  let manifest: Record<string, unknown>;
+  let hooks: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(readFileSync(join(source, '.qoder-plugin', 'plugin.json'), 'utf8')) as Record<string, unknown>;
+    hooks = JSON.parse(readFileSync(join(source, 'hooks', 'hooks.json'), 'utf8')) as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(`Qoder 插件 JSON 无法解析：${error instanceof Error ? error.message : '未知错误'}`);
+  }
+  if (manifest.name !== 'openlogos') throw new Error('Qoder plugin identity 必须为 openlogos');
+  const hooksText = JSON.stringify(hooks);
+  if (!hooksText.includes('${QODER_PLUGIN_ROOT}') || !hooksText.includes('runtime.mjs')) {
+    throw new Error('Qoder hooks 必须以 QODER_PLUGIN_ROOT argv-safe 定位 hooks/runtime.mjs');
+  }
+  for (const file of walkFiles(source).filter(file =>
+    /^skills\/[^/]+\/SKILL\.md$/.test(file)
+      || /^commands\/[^/]+\.md$/.test(file)
+      || /^agents\/[^/]+\.md$/.test(file))) {
+    const content = readFileSync(join(source, file), 'utf8');
+    if (!/^---\n[\s\S]+?\n---\n/.test(content.replace(/\r\n/g, '\n'))) {
+      throw new Error(`Qoder Markdown frontmatter 非法：${file}`);
+    }
+  }
+}
+
+export function preflightQoderTarget(root: string, source: string): void {
+  validateQoderTemplate(source);
+  const target = join(root, ...QODER_PLUGIN_REL_DIR.split('/'));
+  if (!existsSync(target)) return;
+  const targetManifest = join(target, '.qoder-plugin', 'plugin.json');
+  if (!existsSync(targetManifest)) {
+    if (readdirSync(target).length > 0) throw new Error(`Qoder 目标存在不完整或未知 owner：${QODER_PLUGIN_REL_DIR}`);
+    return;
+  }
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(readFileSync(targetManifest, 'utf8')) as Record<string, unknown>;
+  } catch {
+    throw new Error(`Qoder 目标 manifest 无法解析：${targetManifest}`);
+  }
+  if (manifest.name !== 'openlogos') {
+    throw new Error(`Qoder 目标 owner 冲突：${QODER_PLUGIN_REL_DIR}（owner=${String(manifest.name || 'unknown')}）`);
+  }
+}
+
+class QoderManagedAssetTransaction {
+  constructor(private readonly source: string, private readonly target: string) {}
+
+  commit(): 'installed' | 'updated' {
+    const parent = dirname(this.target);
+    mkdirSync(parent, { recursive: true });
+    const transactionRoot = mkdtempSync(join(parent, '.openlogos-qoder-txn-'));
+    const staging = join(transactionRoot, basename(this.target));
+    const backup = join(transactionRoot, `${basename(this.target)}.backup`);
+    try {
+      if (existsSync(this.target)) cpSync(this.target, staging, { recursive: true, force: false });
+      else mkdirSync(staging, { recursive: true });
+      cpSync(this.source, staging, { recursive: true, force: true });
+      validateQoderTemplate(staging);
+      const existed = existsSync(this.target);
+      if (existed) renameSync(this.target, backup);
+      if (process.env.OPENLOGOS_QODER_TXN_FAIL_AT === 'after-backup') throw new Error('注入的 Qoder 事务故障');
+      renameSync(staging, this.target);
+      if (existsSync(backup)) rmSync(backup, { recursive: true, force: true });
+      rmSync(transactionRoot, { recursive: true, force: true });
+      return existed ? 'updated' : 'installed';
+    } catch (error) {
+      if (!existsSync(this.target) && existsSync(backup)) renameSync(backup, this.target);
+      rmSync(transactionRoot, { recursive: true, force: true });
+      throw error;
+    }
+  }
+}
+
+export function deployQoderAssets(
+  root: string,
+  source: string,
+  sharedAssets: { skills?: string | null; commands?: string | null; agents?: string | null } = {},
+): QoderDeploymentResult {
+  const preparedRoot = mkdtempSync(join(tmpdir(), 'openlogos-qoder-prepared-'));
+  const prepared = join(preparedRoot, 'openlogos');
+  cpSync(source, prepared, { recursive: true });
+  if (sharedAssets.skills && existsSync(sharedAssets.skills)) {
+    const target = join(prepared, 'skills');
+    cpSync(sharedAssets.skills, target, { recursive: true, force: true });
+    for (const name of readdirSync(target)) {
+      const file = join(target, name, 'SKILL.md');
+      if (!existsSync(file)) continue;
+      const content = readFileSync(file, 'utf8');
+      if (!content.replace(/\r\n/g, '\n').startsWith('---\n')) {
+        const description = `OpenLogos ${name} 方法论 Skill`.replace(/"/g, '\\"');
+        writeFileSync(file, `---\nname: "${name}"\ndescription: "${description}"\n---\n\n${content}`);
+      }
+    }
+  }
+  if (sharedAssets.commands && existsSync(sharedAssets.commands)) cpSync(sharedAssets.commands, join(prepared, 'commands'), { recursive: true, force: true });
+  if (sharedAssets.agents && existsSync(sharedAssets.agents)) cpSync(sharedAssets.agents, join(prepared, 'agents'), { recursive: true, force: true });
+  preflightQoderTarget(root, prepared);
+  const config = join(root, '.qoder', 'settings.json');
+  const configBefore = existsSync(config) ? readFileSync(config) : null;
+  const target = join(root, ...QODER_PLUGIN_REL_DIR.split('/'));
+  const preserved = existsSync(target)
+    ? walkFiles(target).filter(file => !existsSync(join(prepared, file))).map(file => `${QODER_PLUGIN_REL_DIR}/${file}`)
+    : [];
+  try {
+    const status = sourceTreeMatches(prepared, target)
+      ? 'unchanged'
+      : new QoderManagedAssetTransaction(prepared, target).commit();
+    if (configBefore && !readFileSync(config).equals(configBefore)) throw new Error('.qoder/settings.json 被意外修改');
+    return {
+      target: QODER_PLUGIN_REL_DIR,
+      status,
+      preserved: [...(configBefore ? ['.qoder/settings.json'] : []), ...preserved],
+    };
+  } finally {
+    rmSync(preparedRoot, { recursive: true, force: true });
+  }
+}
+
+export function localizedQoderResult(locale: 'zh' | 'en', result: QoderDeploymentResult): string {
+  const action = locale === 'zh'
+    ? ({ installed: '已安装', updated: '已更新', unchanged: '未变化' } as const)[result.status]
+    : result.status;
+  const preserved = result.preserved.length > 0
+    ? (locale === 'zh' ? `；已保留 ${result.preserved.join('、')}` : `; preserved ${result.preserved.join(', ')}`)
+    : '';
+  const session = result.status === 'unchanged'
+    ? ''
+    : (locale === 'zh' ? '；请新建 Qoder CLI session 使插件快照生效' : '; start a new Qoder CLI session to load the plugin snapshot');
+  return locale === 'zh'
+    ? `Qoder 插件${action}到 ${result.target}${preserved}${session}`
+    : `Qoder plugin ${action} at ${result.target}${preserved}${session}`;
+}
+
+export function createQoderAgentsInstruction(locale: 'zh' | 'en', lifecycle: string): string {
+  return locale === 'zh'
+    ? `OpenLogos Qoder 指令：当前 lifecycle=${lifecycle}。直接读取根 AGENTS.md 与插件 skills；不得依赖 AGENTS.local.md、.qoder/rules 或其它用户资产表达关键流程约束。`
+    : `OpenLogos Qoder instructions: lifecycle=${lifecycle}. Read the root AGENTS.md and plugin skills directly; do not depend on AGENTS.local.md, .qoder/rules, or other user assets for critical workflow rules.`;
 }

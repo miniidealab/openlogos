@@ -81,7 +81,7 @@ describe('ZCode sync/launch — S08/S14', () => {
   });
 
   it('UT-S08-16: all 通过 Registry 稳定包含 ZCode', () => {
-    expect(expandAiTools('all')).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode']);
+    expect(expandAiTools('all')).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']);
   });
 
   it('UT-S08-17: 托管目录未知文件进入 preserved 且不被删除', () => {

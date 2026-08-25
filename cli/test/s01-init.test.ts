@@ -268,7 +268,7 @@ describe('S01 Unit Tests — aiTool config merge', () => {
   });
 
   it('UT-S01-44: mergeAiToolConfig expands all to every deployable target', () => {
-    expect(mergeAiToolConfig('cursor', 'all')).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode']);
+    expect(mergeAiToolConfig('cursor', 'all')).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']);
   });
 });
 
@@ -287,9 +287,9 @@ describe('S01 Unit Tests — packaging and usage text', () => {
     const indexText = readFileSync(join(rootDir, 'cli', 'src', 'index.ts'), 'utf-8');
     const initText = readFileSync(join(rootDir, 'cli', 'src', 'commands', 'init.ts'), 'utf-8');
 
-    expect(indexText).toContain('--ai-tool <claude-code|opencode|codex|cursor|zcode|other|all>');
-    expect(indexText).toContain('--aitool <claude-code|opencode|codex|cursor|zcode|other|all>');
-    expect(initText).toContain('--ai-tool <claude-code|opencode|codex|cursor|zcode|other|all>');
+    expect(indexText).toContain('--ai-tool <claude-code|opencode|codex|cursor|zcode|qoder|other|all>');
+    expect(indexText).toContain('--aitool <claude-code|opencode|codex|cursor|zcode|qoder|other|all>');
+    expect(initText).toContain('--ai-tool <claude-code|opencode|codex|cursor|zcode|qoder|other|all>');
   });
 });
 
@@ -1383,7 +1383,7 @@ describe('S01 Scenario Tests — init command', () => {
     await init(undefined, { aiTool: 'all' });
 
     const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
-    expect(updatedConfig.aiTool).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode']);
+    expect(updatedConfig.aiTool).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']);
     expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
