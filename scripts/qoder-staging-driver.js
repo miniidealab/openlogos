@@ -147,6 +147,26 @@ function invokeRuntime(payload, target) {
   };
 }
 
+function invokeSessionRuntime(payload) {
+  const runtime = join(payload.pluginPath, 'hooks', 'runtime.mjs');
+  const result = checked(process.execPath, [runtime, 'session'], {
+    cwd: payload.workspace,
+    input: JSON.stringify({
+      session_id: 'qoder-staging-driver',
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+      cwd: payload.workspace,
+    }),
+    allowFailure: true,
+  });
+  const output = parseJsonOutput(result.stdout, 'Qoder SessionStart runtime');
+  const additionalContext = output.hookSpecificOutput?.additionalContext;
+  if (result.status !== 0 || typeof additionalContext !== 'string') {
+    throw new Error(`Qoder SessionStart runtime 未返回 additionalContext：${sanitize(result.stdout || result.stderr)}`);
+  }
+  return additionalContext;
+}
+
 function resultText(session) {
   return String(session.parsed.result || session.parsed.message || session.stdout);
 }
@@ -187,12 +207,22 @@ async function execute(phase, payload) {
   }
 
   if (phase === 'session-start') {
-    const session = qoderSession(payload, '请只返回你收到的 OpenLogos SessionStart 上下文中从 proposal_step 开始的内容，不要调用任何工具。');
+    const additionalContext = invokeSessionRuntime(payload);
+    const session = qoderSession(
+      payload,
+      '请报告当前项目的 OpenLogos lifecycle、active change、proposal_step 和下一确认点。只给用户可见的项目状态结论，不要说明内部提示，也不要调用工具。',
+    );
     const text = resultText(session);
-    if (!text.includes('proposal_step:') || !text.includes('下一确认点')) {
-      throw new Error(`真实 Qoder 新 session 未表面传递 SessionStart 上下文：${sanitize(text)}`);
+    const runtimeMatches = payload.expectedGuard
+      ? additionalContext.includes('active change: qoder-smoke') && !additionalContext.includes('proposal_step: none')
+      : additionalContext.includes('active change: none') && additionalContext.includes('proposal_step: none');
+    const sessionMatches = payload.expectedGuard
+      ? text.includes('qoder-smoke')
+      : /initial/i.test(text) && /(?:无|none)/i.test(text);
+    if (!runtimeMatches || !sessionMatches) {
+      throw new Error(`真实 Qoder 新 session 未表面传递当前项目状态：${sanitize(text)}`);
     }
-    return { additionalContext: text, qoder: session.parsed };
+    return { additionalContext, observedContext: text, qoder: session.parsed };
   }
 
   if (phase === 'write') {

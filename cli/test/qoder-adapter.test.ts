@@ -9,7 +9,8 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   createAgentsMd,
   createLogosConfig,
@@ -102,8 +103,12 @@ describe('Qoder Adapter — S01/S20', () => {
     const manifest = JSON.parse(readFileSync(join(source!, '.qoder-plugin', 'plugin.json'), 'utf8'));
     expect(manifest.name).toBe('openlogos');
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
-    const buildScript = readFileSync(join(source!, '..', 'cli', 'scripts', 'build-qoder-template.mjs'), 'utf8');
+    const buildScript = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'build-qoder-template.mjs'), 'utf8');
     expect(buildScript).toContain('manifest.version = pkg.version');
+    expect(buildScript).not.toContain("join(repoRoot, 'plugin', 'agents')");
+    expect(buildScript).toContain("cpSync(join(source, 'commands')");
+    const agent = readFileSync(join(source!, 'agents', 'change-reviewer.md'), 'utf8');
+    expect(agent).not.toContain('model: sonnet');
   });
 
   it('UT-S01-112: Qoder 模板的 Skills、Commands、Agents、Hooks/runtime 完整可解析', () => {

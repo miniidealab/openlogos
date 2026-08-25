@@ -21,7 +21,23 @@ rmSync(target, { recursive: true, force: true });
 cpSync(source, target, { recursive: true });
 cpSync(join(repoRoot, 'skills'), join(target, 'skills'), { recursive: true, force: true });
 cpSync(join(repoRoot, 'plugin', 'commands'), join(target, 'commands'), { recursive: true, force: true });
-cpSync(join(repoRoot, 'plugin', 'agents'), join(target, 'agents'), { recursive: true, force: true });
+cpSync(join(source, 'commands'), join(target, 'commands'), { recursive: true, force: true });
+
+for (const name of readdirSync(join(target, 'commands'))) {
+  if (!name.endsWith('.md')) continue;
+  const command = join(target, 'commands', name);
+  let content = readFileSync(command, 'utf8').replaceAll('--ai-tool claude-code', '--ai-tool qoder');
+  if (name === 'next.md') {
+    content = content.replace(
+      'Run `${CLAUDE_PLUGIN_ROOT}/bin/openlogos-phase --plain` to detect the current project phase.',
+      'Run `openlogos next` in the project root directory to detect the current project phase.',
+    );
+  }
+  if (name === 'status.md') {
+    content = content.replaceAll('${CLAUDE_PLUGIN_ROOT}', '${QODER_PLUGIN_ROOT}');
+  }
+  writeFileSync(command, content);
+}
 
 for (const name of readdirSync(join(target, 'skills'))) {
   const skill = join(target, 'skills', name, 'SKILL.md');
