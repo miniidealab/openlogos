@@ -119,9 +119,12 @@ describe('Qoder Adapter — S01/S20', () => {
   it('UT-S01-113: QODER_PLUGIN_ROOT 通过 args 单元素安全定位含空格/元字符的 runtime', () => {
     const hooks = JSON.parse(readFileSync(join(findQoderPluginTemplateSource()!, 'hooks/hooks.json'), 'utf8'));
     const command = hooks.hooks.SessionStart[0].hooks[0];
+    expect(command.type).toBe('command');
     expect(command.command).toBe('node');
     expect(command.args[0]).toBe('${QODER_PLUGIN_ROOT}/hooks/runtime.mjs');
     expect(command.args).toHaveLength(2);
+    expect(command.timeout).toBe(5);
+    expect(command.timeoutMs).toBeUndefined();
   });
 
   it('UT-S01-114: 不同 owner 的同名目标在预检阶段被阻断', () => {

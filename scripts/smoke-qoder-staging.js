@@ -156,7 +156,7 @@ async function smoke(id, fn) {
   }
 }
 
-await smoke('SMOKE-core-100', () => {
+await smoke('SMOKE-core-108', () => {
   if (process.env.OPENLOGOS_QODER_STAGING !== '1') throw new Error('OPENLOGOS_QODER_STAGING 必须显式为 1');
   const tarball = requireFile('OPENLOGOS_TARBALL');
   const qoderBin = requireFile('OPENLOGOS_QODER_BIN');
@@ -197,7 +197,7 @@ await smoke('SMOKE-core-100', () => {
   return [evidence];
 });
 
-await smoke('SMOKE-core-101', () => {
+await smoke('SMOKE-core-109', () => {
   if (!context) throw new Error('tarball 前置失败');
   const workspace = join(context.staging, 'workspace');
   mkdirSync(workspace, { recursive: true });
@@ -210,7 +210,7 @@ await smoke('SMOKE-core-101', () => {
   return [installed.evidence];
 });
 
-await smoke('SMOKE-core-102', () => {
+await smoke('SMOKE-core-110', () => {
   if (!context?.workspace) throw new Error('plugin 安装前置失败');
   const inventory = runDriver('inventory', context);
   for (const key of ['skills', 'commands', 'agents', 'hooks']) {
@@ -219,7 +219,7 @@ await smoke('SMOKE-core-102', () => {
   return [inventory.evidence];
 });
 
-await smoke('SMOKE-core-103', () => {
+await smoke('SMOKE-core-111', () => {
   if (!context?.workspace) throw new Error('workspace 前置失败');
   const noGuard = runDriver('session-start', { ...context, expectedGuard: false });
   writeDeltaState(context.workspace);
@@ -233,7 +233,7 @@ await smoke('SMOKE-core-103', () => {
   return [noGuard.evidence, withGuard.evidence];
 });
 
-await smoke('SMOKE-core-104', () => {
+await smoke('SMOKE-core-112', () => {
   if (!context?.workspace) throw new Error('workspace 前置失败');
   const target = join(context.workspace, 'logos', 'changes', 'qoder-smoke', 'deltas', 'spec', 'demo.md');
   const allow = runDriver('write', { ...context, target, content: '# allowed\n', expectedDecision: 'allow' });
@@ -241,7 +241,7 @@ await smoke('SMOKE-core-104', () => {
   return [allow.evidence];
 });
 
-await smoke('SMOKE-core-105', () => {
+await smoke('SMOKE-core-113', () => {
   if (!context?.workspace) throw new Error('workspace 前置失败');
   const source = join(context.workspace, 'src.txt');
   writeFileSync(source, 'stable\n');
@@ -262,7 +262,7 @@ await smoke('SMOKE-core-105', () => {
   return [denied.evidence];
 });
 
-await smoke('SMOKE-core-106', () => {
+await smoke('SMOKE-core-114', () => {
   if (!context?.workspace) throw new Error('workspace 前置失败');
   runCli(context.entry, context.workspace, ['sync']);
   runCli(context.entry, context.workspace, ['sync']);
@@ -273,7 +273,7 @@ await smoke('SMOKE-core-106', () => {
   return [lifecycle.evidence];
 });
 
-await smoke('SMOKE-core-107', () => {
+await smoke('SMOKE-core-115', () => {
   if (!context?.entry) throw new Error('tarball 前置失败');
   const previousTarball = requireFile('OPENLOGOS_PREVIOUS_TARBALL');
   const regressionRoot = join(context.staging, 'existing-hosts');

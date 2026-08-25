@@ -5,13 +5,13 @@
         "matcher": "startup|resume|clear|compact|new",
         "hooks": [
           {
-            "type": "process",
+            "type": "command",
             "command": "node",
             "args": [
               "${QODER_PLUGIN_ROOT}/hooks/runtime.mjs",
               "session"
             ],
-            "timeoutMs": 5000
+            "timeout": 5
           }
         ]
       }
@@ -21,13 +21,13 @@
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|.*",
         "hooks": [
           {
-            "type": "process",
+            "type": "command",
             "command": "node",
             "args": [
               "${QODER_PLUGIN_ROOT}/hooks/runtime.mjs",
               "guard"
             ],
-            "timeoutMs": 5000
+            "timeout": 5
           }
         ]
       }
