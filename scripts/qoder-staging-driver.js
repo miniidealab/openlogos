@@ -264,10 +264,7 @@ async function execute(phase, payload) {
     validation(payload);
     if (before !== afterFirst || afterFirst !== afterSecond) throw new Error('连续 sync 后 Qoder 托管资产不幂等');
 
-    const adopted = join(payload.staging, 'adopted-workspace');
-    mkdirSync(adopted, { recursive: true });
-    writeFileSync(join(adopted, 'package.json'), '{"name":"qoder-adopted-staging"}\n');
-    checked(process.execPath, [payload.entry, 'adopt', 'qoder-adopted-staging', '--locale', 'zh', '--ai-tool', 'qoder'], { cwd: adopted });
+    const adopted = payload.workspace;
     const adoptedPlugin = join(adopted, '.qoder', 'plugins', 'openlogos');
     const launchBefore = directoryHash(adoptedPlugin);
     checked(process.execPath, [payload.entry, 'launch'], { cwd: adopted });

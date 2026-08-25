@@ -50,6 +50,8 @@ describe('Qoder staging smoke runner 合同', () => {
     expect(source).toContain("'--print'");
     expect(source).toContain('invokeSessionRuntime(payload)');
     expect(source).toContain('用户可见的项目状态结论');
+    expect(source).toContain('const adopted = payload.workspace');
+    expect(source).not.toContain("join(payload.staging, 'adopted-workspace')");
     expect(source).not.toContain('请只返回你收到的 OpenLogos SessionStart 上下文');
     expect(source).not.toMatch(/npm\s+publish|git\s+push|git\s+tag|gh\s+release/);
   });
