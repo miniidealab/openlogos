@@ -279,7 +279,11 @@ async function execute(phase, payload) {
   }
 
   if (phase === 'rollback') {
-    runQoder(payload, ['plugins', 'uninstall', 'openlogos@local', '--scope', 'local', '--keep-data', '--json'], { allowFailure: true });
+    runQoder(
+      { ...payload, workspace: payload.installWorkspace || payload.workspace },
+      ['plugins', 'uninstall', 'openlogos@local', '--scope', 'local', '--keep-data', '--json'],
+      { allowFailure: true },
+    );
     const rollbackRoot = join(payload.staging, 'rollback-install');
     mkdirSync(rollbackRoot, { recursive: true });
     checked(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--prefix', rollbackRoot, '--no-audit', '--no-fund', payload.previousTarball]);

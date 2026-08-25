@@ -199,15 +199,21 @@ await smoke('SMOKE-core-108', () => {
 
 await smoke('SMOKE-core-109', () => {
   if (!context) throw new Error('tarball 前置失败');
-  const workspace = join(context.staging, 'workspace');
-  mkdirSync(workspace, { recursive: true });
-  runCli(context.entry, workspace, ['init', 'qoder-smoke', '--locale', 'zh', '--ai-tool', 'qoder']);
-  runCli(context.entry, workspace, ['launch']);
-  const pluginPath = join(workspace, '.qoder', 'plugins', 'openlogos');
-  const installed = runDriver('install', { workspace, pluginPath, qoderBin: context.qoderBin, evidenceRoot });
+  const initWorkspace = join(context.staging, 'init-workspace');
+  mkdirSync(initWorkspace, { recursive: true });
+  runCli(context.entry, initWorkspace, ['init', 'qoder-smoke', '--locale', 'zh', '--ai-tool', 'qoder']);
+  const initPluginPath = join(initWorkspace, '.qoder', 'plugins', 'openlogos');
+  const installed = runDriver('install', { workspace: initWorkspace, pluginPath: initPluginPath, qoderBin: context.qoderBin, evidenceRoot });
   if (installed.data.plugin?.identity !== 'openlogos') throw new Error('Qoder 未发现唯一 openlogos identity');
+
+  const workspace = join(context.staging, 'adopted-workspace');
+  mkdirSync(workspace, { recursive: true });
+  writeFileSync(join(workspace, 'package.json'), '{"name":"qoder-smoke-adopted"}\n');
+  runCli(context.entry, workspace, ['adopt', 'qoder-smoke', '--locale', 'zh', '--ai-tool', 'qoder']);
+  const pluginPath = join(workspace, '.qoder', 'plugins', 'openlogos');
   context.workspace = workspace;
   context.pluginPath = pluginPath;
+  context.installWorkspace = initWorkspace;
   return [installed.evidence];
 });
 

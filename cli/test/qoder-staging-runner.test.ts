@@ -26,7 +26,9 @@ describe('Qoder staging smoke runner 合同', () => {
     expect(source).toContain('OPENLOGOS_SMOKE_RESULT_PATH');
     expect(source).toContain("environment: 'staging'");
     expect(source).toContain("activeChange() !== 'qoder-adapter-foundation'");
-    expect(source).toContain("runCli(context.entry, workspace, ['launch'])");
+    expect(source).toContain("runCli(context.entry, initWorkspace, ['init'");
+    expect(source).toContain("runCli(context.entry, workspace, ['adopt'");
+    expect(source).toContain('context.installWorkspace = initWorkspace');
     for (let id = 108; id <= 115; id += 1) {
       expect(source).toContain(`await smoke('SMOKE-core-${id}'`);
     }
