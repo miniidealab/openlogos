@@ -4,7 +4,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  lstatSync,
   readFileSync,
+  readdirSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   statSync,
@@ -32,6 +35,8 @@ if (process.argv.includes('--self-test')) {
     ids: SMOKE_IDS,
     required_env: [
       'OPENLOGOS_WORKBUDDY_STAGING=1',
+      'OPENLOGOS_WORKBUDDY_APP',
+      'OPENLOGOS_WORKBUDDY_AUTH_HOME',
       'OPENLOGOS_WORKBUDDY_BIN',
       'OPENLOGOS_WORKBUDDY_DRIVER',
       'OPENLOGOS_TARBALL',
@@ -97,6 +102,77 @@ function requireFile(name) {
   return absolute;
 }
 
+function requireDirectory(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`缺少 ${name}`);
+  const absolute = realpathSync(resolve(value));
+  if (!statSync(absolute).isDirectory()) throw new Error(`${name} 不是目录：${absolute}`);
+  return absolute;
+}
+
+function isolatedEnv(profile) {
+  const configRoot = join(profile, '.config');
+  const cacheRoot = join(profile, '.cache');
+  const codexRoot = join(profile, '.codex');
+  for (const directory of [profile, configRoot, cacheRoot, codexRoot]) mkdirSync(directory, { recursive: true });
+  return {
+    ...process.env,
+    HOME: profile,
+    USERPROFILE: profile,
+    XDG_CONFIG_HOME: configRoot,
+    XDG_CACHE_HOME: cacheRoot,
+    CODEX_HOME: codexRoot,
+    OPENLOGOS_CODEX_PERSONAL_HOME: profile,
+    CODEBUDDY_CONFIG_DIR: join(profile, '.codebuddy'),
+  };
+}
+
+function probeWorkBuddyApplication(workBuddyApp) {
+  if (process.platform !== 'darwin') throw new Error('当前真实 WorkBuddy app metadata 探测仅支持 macOS staging');
+  const infoPlist = join(workBuddyApp, 'Contents', 'Info.plist');
+  if (!existsSync(infoPlist)) throw new Error(`WorkBuddy app 缺少 Info.plist：${infoPlist}`);
+  const result = checked('/usr/bin/plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', infoPlist]);
+  const version = result.stdout.trim();
+  if (!/^\d+\.\d+\.\d+(?:[-+].+)?$/.test(version)) throw new Error(`无法识别 WorkBuddy app 版本：${sanitize(version)}`);
+  return version;
+}
+
+function hashPathState(target) {
+  if (!existsSync(target)) return 'absent';
+  const hash = createHash('sha256');
+  function walk(current, relativePath = '.') {
+    const stat = lstatSync(current);
+    hash.update(`${relativePath}\0${stat.isDirectory() ? 'directory' : stat.isSymbolicLink() ? 'symlink' : 'file'}\0`);
+    if (stat.isSymbolicLink()) {
+      hash.update(readlinkSync(current));
+      return;
+    }
+    if (stat.isDirectory()) {
+      for (const name of readdirSync(current).sort()) walk(join(current, name), relativePath === '.' ? name : `${relativePath}/${name}`);
+      return;
+    }
+    hash.update(readFileSync(current));
+  }
+  walk(target);
+  return hash.digest('hex');
+}
+
+function snapshotHostBoundary() {
+  const hostHome = process.env.HOME;
+  if (!hostHome) throw new Error('无法确定真实用户 Home，不能证明 staging 隔离');
+  const boundaries = [
+    '.agents/plugins/marketplace.json',
+    '.codex/plugins/cache/personal/openlogos',
+    '.codex/config.toml',
+    '.codebuddy',
+    '.workbuddy/memory',
+    '.workbuddy/settings.json',
+    '.workbuddy/plugins',
+    '.workbuddy/user-state.json',
+  ];
+  return Object.fromEntries(boundaries.map(item => [item, hashPathState(join(hostHome, item))]));
+}
+
 function runDriver(phase, payload) {
   const driver = requireFile('OPENLOGOS_WORKBUDDY_DRIVER');
   const result = checked(process.execPath, [driver, phase], {
@@ -113,8 +189,9 @@ function runDriver(phase, payload) {
   return { data: parsed, evidence };
 }
 
-function runCli(entry, cwd, args) {
-  return checked(process.execPath, [entry, ...args], { cwd });
+function runCli(entry, cwd, args, profile) {
+  if (!profile) throw new Error('OpenLogos CLI 调用缺少隔离 profile');
+  return checked(process.execPath, [entry, ...args], { cwd, env: isolatedEnv(profile) });
 }
 
 function writeDeltaState(workspace) {
@@ -136,6 +213,7 @@ function writeDeltaState(workspace) {
 let failed = false;
 let staging = null;
 let context = null;
+let hostBoundaryBefore = null;
 
 async function smoke(id, fn) {
   const startedAt = Date.now();
@@ -151,9 +229,14 @@ async function smoke(id, fn) {
 await smoke('SMOKE-core-116', () => {
   if (process.env.OPENLOGOS_WORKBUDDY_STAGING !== '1') throw new Error('OPENLOGOS_WORKBUDDY_STAGING 必须显式为 1');
   const tarball = requireFile('OPENLOGOS_TARBALL');
+  const workBuddyApp = requireDirectory('OPENLOGOS_WORKBUDDY_APP');
+  const workBuddyAuthHome = requireDirectory('OPENLOGOS_WORKBUDDY_AUTH_HOME');
   const workBuddyBin = requireFile('OPENLOGOS_WORKBUDDY_BIN');
   requireFile('OPENLOGOS_WORKBUDDY_DRIVER');
+  const workBuddyVersion = probeWorkBuddyApplication(workBuddyApp);
   staging = mkdtempSync(join(tmpdir(), 'openlogos-workbuddy-staging-'));
+  const profile = join(staging, 'profile');
+  hostBoundaryBefore = snapshotHostBoundary();
   const installRoot = join(staging, 'install');
   mkdirSync(installRoot, { recursive: true });
   checked(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--prefix', installRoot, '--no-audit', '--no-fund', tarball]);
@@ -169,14 +252,33 @@ await smoke('SMOKE-core-116', () => {
     'package/workbuddy-plugin-template/commands/',
     'package/workbuddy-plugin-template/agents/',
   ]) if (!listing.includes(required)) throw new Error(`tarball 缺少 ${required}`);
-  const cliVersion = runCli(entry, staging, ['--version']).stdout.trim();
+  const cliVersion = runCli(entry, staging, ['--version'], profile).stdout.trim();
   if (cliVersion !== '0.13.28') throw new Error(`tarball CLI 版本不是 0.13.28：${cliVersion}`);
   const tarballHash = sha256(tarball);
-  artifactFacts = { ...artifactFacts, tarball_sha256: tarballHash };
-  const artifact = { tarball, size: statSync(tarball).size, sha256: tarballHash, cli_version: cliVersion, entry, package_root: packageRoot };
+  artifactFacts = { ...artifactFacts, workbuddy_version: workBuddyVersion, tarball_sha256: tarballHash };
+  const artifact = {
+    tarball,
+    size: statSync(tarball).size,
+    sha256: tarballHash,
+    cli_version: cliVersion,
+    workbuddy_app: workBuddyApp,
+    workbuddy_version: workBuddyVersion,
+    entry,
+    package_root: packageRoot,
+  };
   const evidence = join(evidenceRoot, 'tarball.json');
   writeFileSync(evidence, JSON.stringify(artifact, null, 2) + '\n');
-  context = { ...artifact, staging, entry, packageRoot, workBuddyBin, profile: join(staging, 'profile') };
+  context = {
+    ...artifact,
+    staging,
+    entry,
+    packageRoot,
+    workBuddyApp,
+    workBuddyVersion,
+    workBuddyBin,
+    workBuddyAuthHome,
+    profile,
+  };
   return [evidence];
 });
 
@@ -185,11 +287,11 @@ await smoke('SMOKE-core-117', () => {
   const workspace = join(context.staging, 'adopted-workspace');
   mkdirSync(workspace, { recursive: true });
   writeFileSync(join(workspace, 'package.json'), '{"name":"workbuddy-smoke-adopted"}\n');
-  runCli(context.entry, workspace, ['adopt', 'workbuddy-smoke', '--locale', 'zh', '--ai-tool', 'workbuddy']);
+  runCli(context.entry, workspace, ['adopt', 'workbuddy-smoke', '--locale', 'zh', '--ai-tool', 'workbuddy'], context.profile);
   const pluginPath = join(workspace, '.workbuddy', 'plugins', 'openlogos');
   context = { ...context, workspace, pluginPath };
   const capability = runDriver('capability', context);
-  artifactFacts = { ...artifactFacts, workbuddy_version: capability.data.version };
+  artifactFacts = { ...artifactFacts, workbuddy_version: capability.data.appVersion };
   if (capability.data.plugin?.name !== 'openlogos') throw new Error('真实 WorkBuddy 未发现唯一 openlogos identity');
   return [capability.evidence];
 });
@@ -266,7 +368,7 @@ await smoke('SMOKE-core-123', () => {
   const previousTarball = requireFile('OPENLOGOS_PREVIOUS_TARBALL');
   const regressionRoot = join(context.staging, 'existing-hosts');
   mkdirSync(regressionRoot, { recursive: true });
-  runCli(context.entry, regressionRoot, ['init', 'host-regression', '--locale', 'en', '--ai-tool', 'all']);
+  runCli(context.entry, regressionRoot, ['init', 'host-regression', '--locale', 'en', '--ai-tool', 'all'], context.profile);
   for (const required of [
     '.claude/commands/openlogos/status.md',
     '.opencode/plugins/openlogos.js',
@@ -277,7 +379,13 @@ await smoke('SMOKE-core-123', () => {
   ]) if (!existsSync(join(regressionRoot, required))) throw new Error(`既有六宿主回归缺少 ${required}`);
   const rollback = runDriver('rollback', { ...context, previousTarball, regressionRoot });
   if (rollback.data.restored !== true || rollback.data.restoredVersion !== '0.13.27' || rollback.data.userAssetsPreserved !== true) throw new Error('真实回滚证据不完整');
-  return [rollback.evidence];
+  const hostBoundaryAfter = snapshotHostBoundary();
+  if (JSON.stringify(hostBoundaryBefore) !== JSON.stringify(hostBoundaryAfter)) {
+    throw new Error('隔离 staging 修改了真实用户 Home 的 Codex、WorkBuddy 配置、插件或记忆边界');
+  }
+  const boundaryEvidence = join(evidenceRoot, 'host-home-boundary.json');
+  writeFileSync(boundaryEvidence, JSON.stringify({ before: hostBoundaryBefore, after: hostBoundaryAfter, unchanged: true }, null, 2) + '\n');
+  return [rollback.evidence, boundaryEvidence];
 });
 
 if (staging && process.env.OPENLOGOS_KEEP_WORKBUDDY_STAGING !== '1') rmSync(staging, { recursive: true, force: true });

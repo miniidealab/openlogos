@@ -1,3 +1,394 @@
+# 部署报告：workbuddy-adapter-foundation / OpenLogos 0.13.28（2026-08-25，成功）
+
+## 一、最终结论
+
+- **模块 / 提案**：core / `workbuddy-adapter-foundation`。
+- **授权与门禁**：用户明确授权修复后重新 verify 并再次部署；最终 `openlogos verify` 为 Gate 3.6 PASS，1608/1608 覆盖、1598 通过、0 失败、10 跳过。
+- **执行时间**：2026-08-25T15:52:15Z 至 2026-08-25T16:08:33Z；正式 smoke 前修复后重部署为 retry6。
+- **结论**：隔离 staging 部署 **PASS**；`SMOKE-core-116`～`SMOKE-core-123` 在 retry6 真实执行 8/8 PASS。
+- **边界**：正式 `openlogos smoke --env staging` 已完成；未执行 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+## 二、制品、宿主与隔离证据
+
+| 检查项 | 最终结果 |
+|---|---|
+| 候选 tarball | `/private/tmp/openlogos-workbuddy-staging-20260825/artifacts/miniidealab-openlogos-0.13.28.tgz` |
+| 候选 SHA-256 | `b2bef7b29dfa8d5c8a7ea8a1bff9523f9787d0864aa7e59285c1403fdb4daf47` |
+| 回滚 tarball / SHA-256 | `0.13.27` / `4ac012469a28e669156233d8a567ea95eb392f719d816cb23d4fabfc4cee7434` |
+| WorkBuddy app | `5.3.14`，从 `/Applications/WorkBuddy.app/Contents/Info.plist` 独立探测 |
+| 内置 CodeBuddy engine | `2.115.0`，只作协议诊断，不参与 WorkBuddy app 最低版本判断 |
+| 插件 identity | `openlogos@0.13.28`，真实 `plugin validate` 与新 session 探测通过 |
+| 组件发现 | 真实宿主以受限 `Glob,Read` 发现 18 Skills、10 Commands、1 Agent；`--agent change-reviewer` 返回 `OPENLOGOS_AGENT_READY` |
+| 隔离 profile | OpenLogos 子进程显式使用一次性 HOME/USERPROFILE/XDG/CODEX_HOME/个人 marketplace 根；WorkBuddy 使用一次性 `CODEBUDDY_CONFIG_DIR` 且禁用原生记忆读写 |
+| 真实 Home 边界 | Codex marketplace/cache/config、`.codebuddy`、WorkBuddy memory/settings/plugins/user-state 的不透明 SHA-256 前后逐项一致 |
+
+## 三、真实宿主闭环
+
+1. `SMOKE-core-116`：真实 tarball 隔离安装、CLI 精确版本 `0.13.28` 与随包 WorkBuddy 资产清单通过。
+2. `SMOKE-core-117`：WorkBuddy app `5.3.14` 与 engine `2.115.0` 分源取证；插件、SessionStart、PreToolUse capability 通过。
+3. `SMOKE-core-118`：组件发现为 18/10/1，发现与 Agent 调用均首试通过；合成 settings、用户插件与原生记忆字节保持不变。
+4. `SMOKE-core-119`～`121`：新 session 观察到磁盘派生上下文；允许写入实际落盘；源码、项目外与 symlink 逃逸均得到真实宿主阻断及 runtime exit 2、`continue=false`、非空 reason。
+5. `SMOKE-core-122`：连续两次 `sync` 和两次 `launch` 的托管插件哈希不变，原生记忆零写入。
+6. `SMOKE-core-123`：`init --ai-tool all` 的七宿主资产在隔离 profile 中生成；真实用户 Codex/WorkBuddy 边界不变；独立安装回滚包恢复 `0.13.27`。
+
+## 四、失败修复闭环与证据
+
+- retry2 / retry3 证明 app/engine 版本拆分与 OpenLogos Home 隔离已生效，但隔离 WorkBuddy session 缺少登录态。
+- retry4 使用只读登录 Home、一次性 CodeBuddy 配置和禁用记忆环境后达到 7/8 PASS；组件会话出现一次 exit 0 空输出，未伪造成功。
+- retry5 对只读组件发现和无副作用 Agent probe 各允许一次可追溯重试，实际均在第 1 次成功；写入和 Hook 阶段不重试，最终 8/8 PASS。
+- 正式 smoke 首轮暴露多宿主 runner 共用 tarball 环境与显式候选版本探测缺陷；修复 dispatcher 的宿主专属制品路由和 baseline 候选版本判断后，`openlogos verify` 再次以 1608/1608 覆盖、0 失败通过。
+- retry6 使用修复后工作区重新执行真实 WorkBuddy staging：8/8 PASS，真实用户 Home 边界前后哈希一致，回滚恢复 `0.13.27`。
+- 最终证据目录：`logos/resources/verify/evidence/workbuddy-adapter-foundation-staging-20260825-retry6/`；聚焦 reporter 为其中 `focused-smoke-results.jsonl`。
+
+## 五、正式 smoke 修复闭环
+
+1. 首轮正式 `openlogos smoke --env staging` 定义 93 项，执行 69 项、通过 57 项、失败 12 项、未覆盖 24 项。失败摘要显示通用 runner 误用全局 `0.13.27`、三个宿主共用一组候选/回滚 tarball、`SMOKE-core-67` 固定期望旧版本、`SMOKE-core-66` 缺少历史回滚输入，以及 WorkBuddy staging 未被正式 dispatcher 激活。
+2. 修复 `scripts/run-smoke.js`，为 ZCode、Qoder、WorkBuddy 分别路由宿主专属候选与回滚制品；修复 `scripts/smoke-baseline-on-touch.js`，显式 `OPENLOGOS_BIN` 时按当前候选包版本验收，未显式覆盖时继续保持全局 `0.13.27` 合同。对应 runner 合同测试与最终 `openlogos verify` 均通过。
+3. 使用隔离安装的 `0.13.28` CLI 作为通用正式候选；ZCode/Qoder 继续验证 `0.13.27` 候选与 `0.13.24` 回滚，WorkBuddy 验证 `0.13.28` 候选与 `0.13.27` 回滚，`SMOKE-core-66` 使用已校验的 `0.13.25` 历史制品。未改变全局 `openlogos@0.13.27`。
+4. 修复后重新执行 retry6 staging 部署并登记 `DEPLOY_DONE`，随后正式 smoke 为 93/93 执行、93 通过、0 失败、0 跳过、0 未覆盖，覆盖率与通过率均为 100%，Gate 3.8 **PASS**；`SMOKE_PASS` 在场，`SMOKE_FAIL` 不在场。
+5. WorkBuddy 正式证据镜像：`logos/resources/verify/evidence/workbuddy-adapter-foundation-staging-20260825-retry6/formal-pass/`；Qoder/ZCode 回归证据分别镜像到既有 evidence 目录的 `formal-workbuddy-regression-pass/`。smoke sandbox 对工作区非白名单构建输出保持写入拒绝，依赖与网站构建只发生在一次性沙箱中，不回收到工作区。
+
+---
+
+# 部署报告：workbuddy-adapter-foundation / OpenLogos 0.13.28（2026-08-25，失败）
+
+## 一、部署摘要
+
+- **模块 / 提案**：core / `workbuddy-adapter-foundation`。
+- **授权依据**：最终 `openlogos verify` 已通过，用户明确授权继续隔离 staging 部署，并确认 WorkBuddy 5.3.14 已安装和登录。
+- **目标环境**：`/private/tmp/openlogos-workbuddy-staging-20260825/` 下的一次性 npm prefix、workspace 与 CodeBuddy 配置目录；真实应用 `/Applications/WorkBuddy.app`。
+- **执行时间**：2026-08-25T15:20:00Z 至 2026-08-25T15:27:06Z。
+- **结论**：**FAILED / 已安全回滚**。WorkBuddy-only tarball、插件、真实新 session、allow/deny Hook 与 sync/launch 均通过，但 `init --ai-tool all` 刷新了真实用户级 Codex OpenLogos 缓存，违反隔离 staging 和用户资产边界；未写入 `DEPLOY_DONE`，未执行正式 `openlogos smoke`。
+- **外部副作用边界**：未执行 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+## 二、门禁、制品与环境
+
+| 检查项 | 结果 |
+|---|---|
+| `VERIFY_PASS` | **PASS**：`logos/changes/workbuddy-adapter-foundation/VERIFY_PASS` 在场 |
+| CLI 隔离构建 | **PASS**：`npm ci`、`npm run build` 退出码 0 |
+| CLI 隔离全量测试 | **PASS**：75 个测试文件、1937/1937 项通过 |
+| 候选 tarball | `/private/tmp/openlogos-workbuddy-staging-20260825/artifacts/miniidealab-openlogos-0.13.28.tgz` |
+| 候选 SHA-256 | `b2bef7b29dfa8d5c8a7ea8a1bff9523f9787d0864aa7e59285c1403fdb4daf47` |
+| 回滚 tarball | `/private/tmp/openlogos-workbuddy-staging-20260825/artifacts/miniidealab-openlogos-0.13.27.tgz` |
+| 回滚 SHA-256 | `4ac012469a28e669156233d8a567ea95eb392f719d816cb23d4fabfc4cee7434` |
+| 隔离安装版本 | 候选 `0.13.28`、回滚 `0.13.27` 均由独立 npm prefix 实际执行 `openlogos --version` 验证 |
+| WorkBuddy 应用 | `/Applications/WorkBuddy.app`，Info.plist 版本 `5.3.14` |
+| WorkBuddy 内置引擎 | `/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy`，版本 `2.115.0` |
+
+候选 tarball 清单已证明包含 `dist/index.js`、`.workbuddy-plugin/plugin.json`、Skills、Commands、Agents、`hooks/hooks.json`、`hooks/runtime.mjs` 与 `spec/workbuddy-plugin.md`。上一版本未发布到 npm registry；回滚包从部署前正在工作的全局 `@miniidealab/openlogos@0.13.27` 安装态只读封装，并经独立安装验证。
+
+## 三、WorkBuddy-only 真实宿主证据
+
+1. `init --ai-tool workbuddy`、`adopt --ai-tool workbuddy` 均从候选 tarball 的隔离 CLI 执行成功，插件 identity 为 `openlogos`、版本为 `0.13.28`。
+2. WorkBuddy 内置真实引擎执行 `plugin validate` 通过；真实 `--plugin-dir` 新 session 返回 `OPENLOGOS_PLUGIN_READY`，并实际加载 tarball 插件的 WorkBuddy 指令与 Skills。
+3. 真实 WorkBuddy Write 将当前提案允许的 `proposal.md` 写入成功；对 `src-blocked.txt` 的真实 Write 返回“plan 阶段仅允许当前提案 proposal.md 与 tasks.md”，宿主回复 `DENIED`。
+4. 被拒目标保持 SHA-256 `2b92ea252be0fbc26f70317cdaa7b6411ea634b50d55338cd8c495e4dbf25d1d`；同一 tarball runtime 补充返回 exit 2、`continue=false`、`permissionDecision=deny` 与非空 reason。
+5. 合成 `.workbuddy/settings.json`、用户插件和原生记忆字节均保持不变；原生记忆 SHA-256 为 `46a68661744fa30b11deb5b225c5b2264b27af3588a67540663ab60c36e8a0c7`。`AGENTS.md` 仅追加 OpenLogos managed block，原用户首行仍在场。
+6. 连续两次 `sync` 与两次 `launch` 后插件目录 SHA-256 始终为 `3d6e19b2180f3354cd6b9d80d0daac8de65dec375476f9c89419b5dd63c026ce`，原生记忆继续保持不变。
+
+## 四、失败点与回滚
+
+1. `init --ai-tool all` 虽在一次性 workspace 执行，却刷新了真实 `~/.codex/plugins/cache/personal/openlogos`，将 OpenLogos 缓存切换到 `0.13.28`。这是隔离 profile 未贯穿 CLI 子进程的真实缺陷，不能把该回归判为 PASS。
+2. 立即停止后续部署，用已校验的 `0.13.27` tarball 在独立 rollback workspace 重建既有宿主资产；最终 `~/.codex/plugins/cache/personal/openlogos/0.13.27` 在场，`0.13.28` 缓存不在场，全局 `/opt/homebrew/bin/openlogos --version` 精确返回 `0.13.27`。
+3. WorkBuddy staging driver 另有两处真实协议口径错误：它把内置引擎版本 `2.115.0` 与 WorkBuddy 应用最低版本 `5.3.5` 直接比较；并调用当前引擎不存在的 `agents --json`。真实应用版本应从 app metadata 单独取证，组件发现应改用当前宿主支持的协议或真实 session 证据。
+4. 由于上述缺陷属于当前提案代码，且项目规则要求发现 bug 后先报告、等待用户决定，本轮未直接修改 runner/driver，也未执行 `openlogos deploy-done --env staging`。
+
+## 五、修复建议与后续门禁
+
+1. 让 staging runner 对所有候选 CLI 调用显式传递隔离用户目录，并增加“真实 Home 最近写入为零”的失败断言；`all` 回归不得刷新真实 Codex marketplace、cache 或 config。
+2. 将 WorkBuddy app 版本与内置 CodeBuddy engine 版本拆为两个字段，最低版本门只约束 app 版本；保留内置引擎版本用于协议兼容诊断。
+3. 用 WorkBuddy 5.3.14 实际支持的插件/组件发现方式替换 `agents --json`，并增加真实 `--plugin-dir` 参数解析回归。
+4. 修复后重新运行 `openlogos verify`，再重新获得部署授权并执行隔离 staging；只有部署成功后才能受控运行 `openlogos deploy-done --env staging`，随后另行授权正式 smoke。
+
+---
+
+# 部署报告：qoder-adapter-foundation / OpenLogos 0.13.27（2026-08-24）
+
+## 一、部署摘要
+
+- **模块 / 提案**：core / `qoder-adapter-foundation`。
+- **授权依据**：最终 `openlogos verify` 已通过，用户明确授权部署到隔离 staging，并在配置 DeepSeek BYOK、最小请求成功后要求继续。
+- **目标环境**：本机一次性 init / adopted staging workspace；真实 Qoder CLI `1.1.29`；真实 npm tarball `0.13.27`。
+- **最终执行时间**：2026-08-24T20:45:53-0700 至 2026-08-24T20:47:49-0700。
+- **结论**：真实 tarball 安装、Qoder 插件发现、资源 inventory、SessionStart、PreToolUse allow / hard deny、sync / launch 幂等、既有宿主回归与回滚演练全部 **PASS**；聚焦 `SMOKE-core-108`～`SMOKE-core-115` 为 8/8 PASS，隔离 staging 部署完成。
+- **状态边界**：本节记录的是部署阶段的聚焦 staging 验证，不替代后续正式 `openlogos smoke` 人类确认点；未执行 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+## 二、部署前门禁与制品
+
+| 检查项 | 结果 |
+|---|---|
+| 最终 verify | **PASS**：1557/1557 执行，1547 通过、0 失败、10 跳过、0 未覆盖，覆盖率与通过率均 100% |
+| CLI 全量测试 | **PASS**：71 个测试文件、1883/1883 项通过 |
+| smoke 覆盖预检 | **PASS**：本提案 8 个 Qoder smoke ID 均被 runner 发现 |
+| 候选 tarball | `/private/tmp/openlogos-qoder-deploy-f517993/retry2/miniidealab-openlogos-0.13.27.tgz` |
+| 候选大小 | `1,655,234` 字节 |
+| 候选 SHA-256 | `4ac012469a28e669156233d8a567ea95eb392f719d816cb23d4fabfc4cee7434` |
+| 回滚 tarball | `/private/tmp/openlogos-qoder-deploy-f517993/previous/miniidealab-openlogos-0.13.24.tgz` |
+| 回滚 SHA-256 | `80c0ea7945632105634e285186acfaef875a89ff7748406c1a9c9cb5512fdf79` |
+| Qoder CLI | `/Users/huangxianglong/.qoder/entry/qoder`，版本 `1.1.29` |
+| 模型通道 | DeepSeek BYOK：`deepseek/deepseek-v4-flash-pg`；真实会话 `total_credits=0` |
+
+候选包包含 `dist/index.js`、`.qoder-plugin/plugin.json`、`hooks/hooks.json`、`runtime.mjs`、`runtime.cjs`、Skills、Commands 与 Agent。Qoder 模板保留宿主专用 Agent，init 命令使用 `--ai-tool qoder`，next 命令直接调用 `openlogos next`；Hook 使用 Qoder 1.1.29 支持的 command 协议。
+
+## 三、真实 Qoder staging 结果
+
+| Smoke ID | 结果 | 证据 / 结论 |
+|---|---|---|
+| SMOKE-core-108 | **PASS** | 候选 tarball 隔离安装，CLI 版本、大小、SHA-256 与随包 Qoder 资产一致 |
+| SMOKE-core-109 | **PASS** | 真实 `qoder plugins validate/install/enable/list` 发现唯一 `openlogos` identity，版本 `0.13.27` |
+| SMOKE-core-110 | **PASS** | 发现 18 个 Skills、10 个 Commands、1 个 Agent、2 个 command Hooks |
+| SMOKE-core-111 | **PASS** | 无 guard / 有 guard 的真实新 session 均与磁盘 lifecycle、active change、proposal_step 和下一确认点一致 |
+| SMOKE-core-112 | **PASS** | 真实 Qoder Write 写入当前提案允许路径，内容落盘且 decision 为 allow |
+| SMOKE-core-113 | **PASS** | 源码、项目外绝对路径、`..` / symlink 逃逸与 runtime 异常均 fail-closed；runtime 返回 deny、reason 与 exit 2，目标保持不变 |
+| SMOKE-core-114 | **PASS** | 连续 sync 与两次 adopted launch 均为 `unchanged`，最终资产哈希为 `5ab94b515a46f42df7ad7b5e61ea5b02a0a55fedcbf9e2142c4630b1cbf9bd99` |
+| SMOKE-core-115 | **PASS** | 五个既有宿主最小回归在场；回滚包恢复为 `0.13.24`，用户资产保持 |
+
+DeepSeek BYOK 解除原 Qoder credit limit 阻塞。真实会话响应明确记录模型 `deepseek/deepseek-v4-flash-pg`、`total_cost_usd=0` 与 `total_credits=0`；凭据未写入报告、reporter 或证据文件。
+
+## 四、失败修复闭环与回滚
+
+1. 首轮真实模型请求因 Qoder credit limit 失败；保留原失败 reporter 与证据，未将失败改写为 pass。用户配置 DeepSeek BYOK 并完成最小请求后继续。
+2. BYOK 后发现 SessionStart 取证提示会触发宿主保密拒绝；改为直接核对 runtime 原始 `additionalContext`，同时让真实 Qoder 仅报告用户可见项目状态。
+3. 初始 init fixture 按设计不启用 hard guard，且不能绕过 verify / deploy / smoke 门禁直接 launch；因此拆分为 init fixture（真实插件安装）与 adopted launched fixture（SessionStart、Write、hard deny、sync / launch）。
+4. 首次拆分后 `sync-launch` driver 又对已 adopted 目录重复执行 adopt，被 CLI 正确拒绝；修复为复用现有 adopted fixture 后，retry5 8/8 PASS。
+5. 每次失败均继续执行安全回滚。最终演练卸载 staging 的 local Qoder plugin，在隔离 npm prefix 安装上一 tarball并确认 CLI 精确恢复为 `0.13.24`；未覆盖真实用户工作区、全局 Qoder settings 或未知 owner 插件。
+
+## 五、证据索引与后续门禁
+
+- 最终聚焦 reporter：`logos/resources/verify/smoke-results.jsonl` 中 2026-08-25T03:45:55Z～03:47:49Z 的 SMOKE-core-108～115，8/8 PASS。
+- 最终证据目录：`logos/resources/verify/evidence/qoder-adapter-foundation-staging-20260824-retry5/`。
+- `tarball.json`：候选包、CLI 与 Qoder 路径/版本；`install.json`：真实插件安装与资源发现；`inventory.json`：资源清单。
+- `session-start.json`、`write.json`、`hard-deny.json`：真实模型会话、允许写入与 runtime exit 2 硬阻断证据；`sync-launch.json`：重复刷新幂等哈希；`rollback.json`：`0.13.24` 回滚与用户资产保持。
+- 之前的额度、SessionStart 取证、initial hard-guard 与重复 adopt 失败证据分别保留在本提案 staging evidence 的初始、retry、retry2 / retry3 与 retry4 目录中。
+- 部署完成已登记；正式 smoke 结果与修复闭环见下一节。
+
+## 六、正式 smoke 修复闭环
+
+1. 用户明确授权后执行首轮 `openlogos smoke --env staging --format json`：定义 85 项，执行 69 项，67 项通过、2 项失败、16 项未覆盖。`SMOKE-core-66` 缺少 0.13.25 回滚包，`SMOKE-core-69` 缺少 0.13.26 / 0.13.27 回滚恢复输入；Qoder 108～115 与 ZCode 100～107 未进入正式账本。
+2. 0.13.25 回滚包继续使用只读历史制品，SHA-256 为 `7a6d7053dc3b11df69f86d01e25367ebc06fba9c447cf85a8daec705a2f2cade`。从对应历史提交 `33d61f0` 的只读快照重建 0.13.26 回滚包，版本精确为 `0.13.26`，SHA-256 为 `c3b1b454a5e10c4719ac7db3f5550ea8430d93ba1550290f4fcf799a0891f48b`；恢复包继续使用当前 0.13.27 候选制品，SHA-256 为 `4ac012469a28e669156233d8a567ea95eb392f719d816cb23d4fabfc4cee7434`。
+3. 两个真实宿主 runner 原来只按提案 guard 激活，而正式 smoke 在隔离 sandbox 中还需要显式 staging 激活。修复为“匹配宿主提案或对应 `OPENLOGOS_*_STAGING=1`”后，Qoder / ZCode runner 定向回归 5/5 PASS；修复提交为 `df22fcc`。
+4. 修复后重新执行 `openlogos verify`：1557/1557 执行，1547 通过、0 失败、10 跳过、0 未覆盖，覆盖率与通过率均 100%；随后受控执行 `openlogos deploy-done --env staging` 清理旧 `SMOKE_FAIL`。
+5. 第二轮正式 smoke 的历史 1～69 已 69/69 PASS，但证据目录被错误设置为原工作区绝对路径，OS sandbox 写保护在 runner 首条 reporter 前正确阻断写入，因此 100～115 仍未覆盖。未降低沙箱强度；第三轮把证据写入隔离 `/private/tmp`，完成后机械镜像到项目 evidence 目录。
+6. 第三轮正式 smoke：85/85 执行、85 通过、0 失败、0 跳过、0 未覆盖，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。全局 `openlogos` 已恢复并核对为 `0.13.27`；`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 在场，`SMOKE_FAIL` 不在场。
+7. Qoder 正式证据镜像：`logos/resources/verify/evidence/qoder-adapter-foundation-staging-20260824-retry5/formal-pass/`；ZCode 回归证据镜像：`logos/resources/verify/evidence/zcode-adapter-foundation-staging-20260824/formal-qoder-regression-pass/`。本轮未执行 archive、npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+---
+
+# 部署报告：zcode-adapter-foundation / OpenLogos 0.13.27（2026-08-24）
+
+## 一、部署摘要
+
+- **模块 / 提案**：core / `zcode-adapter-foundation`。
+- **授权依据**：提案 `VERIFY_PASS` 已落盘，用户明确授权推进 staging 部署与 smoke。
+- **目标环境**：本机隔离 staging；真实 ZCode Desktop `3.8.1`、真实 ZCode CLI `0.16.3`、真实 npm tarball `0.13.27`。
+- **staging 工作区**：`/private/tmp/openlogos-zcode-staging-workspace`。
+- **结论**：真实 tarball 构建与隔离安装、ZCode marketplace 安装、插件发现、Hook 协议、既有宿主回归和回滚演练均 **PASS**；`SMOKE-core-100..107` 聚焦执行 8/8 PASS，正式 `openlogos smoke` 77/77 PASS。
+- **明确边界**：未执行 `npm publish`、Git tag、GitHub Release、官网或 Cloudflare 部署、`git push`。
+
+## 二、制品与运行环境
+
+| 检查项 | 结果 |
+|---|---|
+| CLI 全量测试 | **PASS**：67 个测试文件、1830/1830 项通过 |
+| 候选 tarball | `/private/tmp/openlogos-zcode-deploy.aBvd1j/miniidealab-openlogos-0.13.27.tgz` |
+| 候选大小 | `1,445,112` 字节 |
+| 候选 SHA-256 | `29641b5a1ad3a41b6f290eb96c8609723c2104ebae05f0effb9518f253ec1222` |
+| 隔离 CLI | `0.13.27`；入口位于 tarball 隔离安装目录，未命中全局旧版本 |
+| ZCode Desktop | `3.8.1`，已由用户截图确认真实客户端运行 |
+| ZCode CLI | `0.16.3`；入口 `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs` |
+| 插件 identity | `openlogos@openlogos-staging`，启用状态为 `true`，版本 `0.13.27` |
+| tarball 来源一致性 | **PASS**：fixture 生成的 manifest/runtime 与 ZCode 缓存安装件 SHA-256 一致 |
+
+候选包已证明包含 `dist/index.js`、ZCode `.zcode-plugin/plugin.json`、`hooks/hooks.json`、`runtime/hook-runtime.js`、Skills、Commands、Agents 和所需规格。插件 marketplace 由候选 tarball 的隔离安装目录生成，不引用仓库 `plugin-zcode` 源目录。
+
+## 三、真实 ZCode 发现与 Hook 验证
+
+1. ZCode CLI 发现已启用插件 `openlogos@openlogos-staging`，并报告 18 个 Skills、10 个 Commands、1 个 Subagent 和 2 个 runnable Hooks。
+2. `SessionStart` 在无 guard 与存在 guard 两种磁盘状态下均动态重读上下文，输出包含 `proposal_step` 与“下一确认点”。
+3. `PreToolUse` 允许当前提案 delta 路径写入；目标文件实际写入并核对内容成功。
+4. `PreToolUse` 对阶段外源码、项目根外路径和 symlink 逃逸三类目标均返回 `permissionDecision=deny` 与 exit `2`，目标哈希保持不变。
+5. 连续两次 `sync` 与 `launch` 的第二次资产结果均为 `unchanged`；Claude Code、OpenCode、Codex、Cursor 的最小资产回归均在场。
+
+聚焦 smoke 首轮为 7/8 PASS：`SMOKE-core-102` 因临时 driver 假定 command 对象含 `pluginName` 字段而误筛为空；真实 ZCode `commands list` 使用 `source=plugin` 与插件根路径标识。修正取证筛选后第二轮 8/8 PASS，未修改产品业务代码，也未掩盖首轮失败。
+
+## 四、回滚演练
+
+- 回滚包：`/Users/huangxianglong/Downloads/miniidealab-openlogos-0.13.24.tgz`。
+- 回滚包 SHA-256：`dc5f41c682c3fa1463638b79ad3f14fcaec85f906f3c8ab9a780ce650c7e34cd`。
+- 在独立 npm prefix 中真实安装回滚包，CLI 精确恢复为 `0.13.24`。
+- 既有项目 `AGENTS.md` / `CLAUDE.md` 哈希保持不变；当前 staging ZCode 插件仍保持 `0.13.27`，证明回滚演练未破坏用户资产或正在验证的安装件。
+
+## 五、证据索引
+
+证据目录：`logos/resources/verify/evidence/zcode-adapter-foundation-staging-20260824/`。
+
+- `tarball.json`：候选路径、大小、SHA-256、CLI 与 ZCode 版本。
+- `install.json`：真实 ZCode 插件 identity、版本、启用状态与 tarball 来源哈希。
+- `inventory.json`：Skills、Commands、Agent 与 Hooks 清单。
+- `session-start.json`、`write.json`、`hard-deny.json`：上下文、允许写入与 exit 2 硬阻断原始结果。
+- `sync-launch.json`：重复刷新幂等证据。
+- `rollback.json`：`0.13.24` 回滚安装与用户资产保持证据。
+- `focused-smoke-results.jsonl`：`SMOKE-core-100..107` 第二轮 8/8 PASS reporter。
+- `zcode-staging-driver.mjs`：本次真实 ZCode CLI 取证桥接脚本快照。
+- `formal/`：正式 `openlogos smoke` 中再次执行 ZCode staging runner 生成的原始证据。
+
+## 六、部署门禁结论
+
+staging 部署与正式 smoke 均已完成。`DEPLOY_DONE`、`SMOKE_PASS` 在场，`VERIFY_FAIL`、`SMOKE_FAIL` 不在场；OpenLogos 当前已满足归档前置门禁。本轮没有执行 archive 或任何公开发布动作。
+
+## 七、正式 smoke 修复闭环
+
+1. 首轮正式 `openlogos smoke --format json` 执行 77 项，60 项通过、17 项失败、0 项未覆盖。`SMOKE-core-100..107` 首轮均已通过。
+2. 其中 16 项失败同源于 `build-zcode-template.mjs` 把诊断文字写入 stdout，污染历史 runner 对 `npm pack --json` 的解析；修复为写入 stderr 后，`npm pack --json` 可直接解析。
+3. 修复后候选 tarball 大小和 SHA-256 均保持不变，仍为 `1,445,112` 字节与 `29641b5a1ad3a41b6f290eb96c8609723c2104ebae05f0effb9518f253ec1222`；CLI 全量测试再次 1830/1830 PASS。
+4. 剩余 `SMOKE-core-66` 失败是缺少历史 `0.13.25` 回滚包。从提交 `7fc35a6074188cb1232fe857d0b7cfe6a87f3331` 的只读快照重建真实 tarball，路径 `/private/tmp/openlogos-rollback-0.13.25.8HD5s9/artifacts/miniidealab-openlogos-0.13.25.tgz`，SHA-256 为 `7a6d7053dc3b11df69f86d01e25367ebc06fba9c447cf85a8daec705a2f2cade`。
+5. 修复后重新执行 `openlogos verify`：1507/1507 执行、1497 通过、10 跳过、0 失败、覆盖率与通过率均 100%。随后重新执行 `openlogos deploy-done --env staging`，受控清除首轮 `SMOKE_FAIL` 并恢复 `ready-to-smoke`。
+6. 第二轮正式 smoke：77/77 执行、77 通过、0 失败、0 跳过、0 未覆盖，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。
+
+---
+
+# 部署报告：fix-scenario-create-completeness-contract / OpenLogos 0.13.27（2026-08-16）
+
+## 一、部署摘要
+
+- **模块 / 提案**：core / `fix-scenario-create-completeness-contract`。
+- **授权依据**：本提案 `VERIFY_PASS` 已落盘，用户明确要求打开任务列表并执行本提案的部署任务。
+- **目标环境**：当前开发机 npm 全局环境；命令入口 `/opt/homebrew/bin/openlogos`，全局 prefix `/opt/homebrew`。
+- **部署时间**：2026-08-16T21:13:54-0700 至 2026-08-16T21:16:06-0700。
+- **版本变化**：全局 `@miniidealab/openlogos` 从 `0.13.26` 升级到 `0.13.27`。
+- **结论**：本地全局部署、安装态 SMOKE-core-67～69 与正式 `openlogos smoke` 均 **PASS**；未执行 npm publish、Git tag、GitHub Release、官网部署、远端部署、archive 或 git push。
+
+## 二、部署前检查
+
+| 检查项 | 结果 |
+|---|---|
+| `VERIFY_PASS` | **PASS**：`fix-scenario-create-completeness-contract/VERIFY_PASS` 在场 |
+| `[code]` 切片 | **PASS**：1/1 已完成 |
+| 安装前命令 / 版本 | `/opt/homebrew/bin/openlogos` / `0.13.26` |
+| 环境 | Node `v23.10.0`；npm `10.9.2`；全局根 `/opt/homebrew/lib/node_modules` |
+| CLI 全量测试 | **PASS**：63 个测试文件，1778/1778 项通过 |
+| TypeScript 构建 | **PASS**：`npm run build` 退出码 0 |
+| `npm pack --dry-run` | **PASS**：版本 `0.13.27`，408 个文件，未发现提案状态、guard、测试结果或凭据 |
+
+## 三、候选包与回滚包
+
+候选包：
+
+- 路径：`/private/tmp/openlogos-local-deploy-0.13.27.NxvfrV/candidate/miniidealab-openlogos-0.13.27.tgz`
+- SHA-256：`ce28568a551cc72008f99d7322525add6639a4ecff2575557dfd7e8e02883efd`
+- 包内版本：CLI、Claude 插件元数据、Codex 插件元数据均为 `0.13.27`
+- 包内关键资产：`spec/baseline-closure.md`、`spec/change-management.md`、`skills/change-writer/SKILL.md`、`skills/scenario-architect/SKILL.md` 均在场
+
+回滚包：
+
+- 路径：`/private/tmp/openlogos-local-deploy-0.13.26.fCmSmo/candidate/miniidealab-openlogos-0.13.26.tgz`
+- SHA-256：`544d5fc31bdafe135a8980c9ee2cb283b4c1911d8ec52ee64586e4b4c85c5f5a`
+- 回滚命令：`npm install -g /private/tmp/openlogos-local-deploy-0.13.26.fCmSmo/candidate/miniidealab-openlogos-0.13.26.tgz`
+- 回滚后核对：新 shell 中 `command -v openlogos` 应为 `/opt/homebrew/bin/openlogos`，`openlogos --version` 应精确返回 `0.13.26`
+
+## 四、全局安装与安装后核对
+
+| 动作 / 检查 | 结果 |
+|---|---|
+| `npm install -g <0.13.27 candidate tarball>` | **PASS**：14 个包完成更新 |
+| 重新解析命令 | **PASS**：`/opt/homebrew/bin/openlogos` |
+| `openlogos --version` | **PASS**：精确返回 `0.13.27` |
+| 全局 package / Claude / Codex 版本 | **PASS**：均为 `0.13.27` |
+| baseline closure / change management 规格与两个 Skill | **PASS**：均来自本次安装包 |
+| 数据迁移 / 服务重启 | 不适用：无业务数据迁移、无常驻服务 |
+
+## 五、安装态 smoke 与回滚演练
+
+1. `SMOKE-core-67` **PASS**：全局命令路径位于 npm prefix，CLI/package/plugin 版本和四项合同资产一致。
+2. `SMOKE-core-68` **PASS**：六种合法步骤标题全部通过；散文/围栏伪命中、不足三步、伪 Mermaid、空异常与空追溯全部 fail-closed，且 change-lint 保持只读。
+3. `SMOKE-core-69` **PASS**：缺步骤的 change-lint exit 2、merge 非零且项目字节不变；真实安装 0.13.26 回滚包后版本与路径精确恢复，再安装同一 0.13.27 候选包恢复成功。
+4. reporter 已将三项结果写入 `logos/resources/verify/smoke-results.jsonl`，最终全局版本为 `0.13.27`。
+
+## 六、边界与后续门禁
+
+1. 本轮仅执行当前开发机的 npm 全局部署；无公开发布、远端部署或数据迁移。
+2. 部署完成状态必须由 `openlogos deploy-done` 受控写入，不手写 `DEPLOY_DONE`。
+3. 正式 `openlogos smoke` 已在独立授权后执行并 PASS；archive 仍是下一独立人类确认点。
+4. 未解决风险：无已知部署或 smoke 阻塞；sandbox 继续按兼容模式报告构建产物写入告警，不影响本次 Gate 结果。
+
+## 七、正式 smoke 修复闭环
+
+1. 首轮 `openlogos smoke --format json` 执行 69 项，67 项通过；`SMOKE-core-59` 与 `SMOKE-core-62` 因历史 runner 把安装版本分别固定为 0.13.26 和 0.13.26，而当前安装版本为 0.13.27，Gate 返回 FAIL。本提案新增的 `SMOKE-core-67`～`SMOKE-core-69` 首轮已全部通过。
+2. 预检同时识别到历史 `SMOKE-core-66` 与新 `SMOKE-core-69` 共用 `OPENLOGOS_ROLLBACK_*` 但要求不同回滚版本；S39 runner 已改用 `OPENLOGOS_S39_*` 专用输入并保留旧变量回退兼容，修复提交为 `888ecaf`。
+3. 历史安装版本断言已改为读取当前 `cli/package.json`，只放宽跨 patch 的运行版本来源；`SMOKE-core-66` 对 0.13.25 回滚包及 `SMOKE-core-69` 对 0.13.26 回滚包的精确版本和哈希断言保持不变。前向兼容修复提交为 `1548f04`。
+4. 修复后定向回归通过，`openlogos verify` 再次 PASS（1458 通过、0 失败、10 跳过，覆盖率与通过率 100%），smoke 覆盖预检 PASS。
+5. 重新安装同一确定性 0.13.27 制品，SHA-256 仍为 `ce28568a551cc72008f99d7322525add6639a4ecff2575557dfd7e8e02883efd`；`openlogos deploy-done` 清理首轮 `SMOKE_FAIL` 并恢复 `ready-to-smoke`。
+6. 第二轮正式 smoke：69/69 执行、69 通过、0 失败、0 跳过、0 未覆盖，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。
+
+---
+
+# 部署报告：make-verify-slice-aware / OpenLogos 0.13.26（2026-08-16）
+
+## 一、部署摘要
+
+- **模块 / 提案**：core / `make-verify-slice-aware`。
+- **授权依据**：用户在 `VERIFY_PASS` 落盘后明确要求执行本提案部署任务，并授权部署完成后持续执行 smoke、失败修复、重新部署与重试。
+- **目标环境**：当前开发机 npm 全局环境；命令入口 `/opt/homebrew/bin/openlogos`，全局 prefix `/opt/homebrew`。
+- **部署时间**：2026-08-16T07:17:55Z 至 2026-08-16T07:18:59Z。
+- **版本变化**：全局 `@miniidealab/openlogos` 从 `0.13.25` 升级到 `0.13.26`。
+- **结论**：本地全局部署与部署后 smoke 均 **PASS**；未执行 npm publish、Git tag、GitHub Release、官网部署、远端部署或 git push。
+
+## 二、部署前检查
+
+| 检查项 | 结果 |
+|---|---|
+| `VERIFY_PASS` | **PASS**：`make-verify-slice-aware/VERIFY_PASS` 在场 |
+| `[code]` 切片 | **PASS**：5/5 已完成 |
+| 安装前命令 / 版本 | `/opt/homebrew/bin/openlogos` / `0.13.25` |
+| 环境 | Node `v23.10.0`；npm `10.9.2`；全局根 `/opt/homebrew/lib/node_modules` |
+| CLI 全量测试 | **PASS**：63 个测试文件，1770/1770 项通过 |
+| TypeScript 构建 | **PASS**：`npm run build` 退出码 0 |
+| `npm pack --dry-run` | **PASS**：版本 `0.13.26`，408 个文件，未发现提案状态、guard、测试结果或凭据 |
+
+## 三、候选包与回滚包
+
+候选包：
+
+- 路径：`/private/tmp/openlogos-local-deploy-0.13.26.fCmSmo/candidate/miniidealab-openlogos-0.13.26.tgz`
+- SHA-256：`544d5fc31bdafe135a8980c9ee2cb283b4c1911d8ec52ee64586e4b4c85c5f5a`
+- 包内版本：CLI `0.13.26`，Claude 插件元数据 `0.13.26`
+- 包内关键资产：`dist/index.js`、`skills/slice-planner/SKILL.md`、`spec/test-slice-manifest.md`、`spec/schema/status.schema.json`、`spec/schema/next.schema.json`、`spec/schema/verify.schema.json` 均在场
+
+回滚包：
+
+- 路径：`/private/tmp/openlogos-local-deploy-0.13.26.fCmSmo/rollback/miniidealab-openlogos-0.13.25.tgz`
+- SHA-256：`137f0dfdfa0f6785ecd7fb5d97125b1e7d7f6da70a9c9fee7139b002aeaf8d82`
+- 回滚命令：`npm install -g /private/tmp/openlogos-local-deploy-0.13.26.fCmSmo/rollback/miniidealab-openlogos-0.13.25.tgz`
+- 回滚后核对：新 shell 中 `command -v openlogos` 应为 `/opt/homebrew/bin/openlogos`，`openlogos --version` 应精确返回 `0.13.25`
+
+## 四、全局安装与安装后核对
+
+| 动作 / 检查 | 结果 |
+|---|---|
+| `npm install -g <0.13.26 candidate tarball>` | **PASS**：14 个包完成更新 |
+| 重新解析命令 | **PASS**：`/opt/homebrew/bin/openlogos` |
+| `openlogos --version` | **PASS**：精确返回 `0.13.26` |
+| 全局包 / 插件版本 | **PASS**：均为 `0.13.26` |
+| 切片 Skill / 规范 / 三份 JSON Schema | **PASS**：均来自本次安装包 |
+| 数据迁移 / 服务重启 | 不适用：无业务数据迁移、无常驻服务 |
+
+## 五、边界与后续门禁
+
+1. 本轮只执行本机 npm 全局安装；公开发布与远端动作均未授权、未执行。
+2. 部署完成状态由 `openlogos deploy-done` 受控写入，不手写 `DEPLOY_DONE`。
+3. 部署后已按用户本轮明确授权执行 `openlogos smoke`，最终 Gate 3.8 PASS；本提案已到达可归档前沿，但本轮未执行 archive。
+
+## 六、部署后 smoke 与修复闭环
+
+1. 首轮 `openlogos smoke --format json` 执行 66 项：65 项通过，`SMOKE-core-66` 失败。失败摘要为 smoke runner 未收到已保存的 `0.13.25` 回滚包路径，因而按默认值在沙箱工作区根目录查找 `miniidealab-openlogos-0.13.25.tgz`。
+2. 根因是部署输入未传递，不是 `0.13.26` 候选包运行时失败。runner 已声明支持 `OPENLOGOS_ROLLBACK_TARBALL` 与 `OPENLOGOS_ROLLBACK_SHA256`；修复时显式传入本报告第三节记录的回滚包绝对路径与 SHA-256。
+3. 按用户授权重新安装同一候选 tarball；安装后命令路径仍为 `/opt/homebrew/bin/openlogos`，版本仍精确为 `0.13.26`，候选 SHA-256 仍为 `544d5fc31bdafe135a8980c9ee2cb283b4c1911d8ec52ee64586e4b4c85c5f5a`。
+4. 第二轮 `openlogos smoke --format json`：66/66 执行、66 通过、0 失败、0 跳过、0 未覆盖，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。
+5. `SMOKE-core-62`～`SMOKE-core-66` 全部通过；其中 `SMOKE-core-66` 已在隔离 npm prefix 中真实安装回滚包并确认版本精确恢复为 `0.13.25`，未改写当前全局 `0.13.26`。
+
+---
+
 # 部署报告：plan-decision-clarification / OpenLogos 0.13.25（2026-08-15）
 
 ## 一、部署摘要

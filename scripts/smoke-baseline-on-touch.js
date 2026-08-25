@@ -419,8 +419,8 @@ failed = !runCase('SMOKE-core-58', () => withTemp('touch-smoke-58-', root => {
 })) || failed;
 
 failed = !runCase('SMOKE-core-67', () => {
-  const expectedVersion = '0.13.27';
   const packageJson = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf-8'));
+  const expectedVersion = process.env.OPENLOGOS_BIN ? packageJson.version : '0.13.27';
   if (packageJson.version !== expectedVersion) throw new Error(`待部署包版本 ${packageJson.version} != ${expectedVersion}`);
 
   const packageRoot = process.env.OPENLOGOS_BIN

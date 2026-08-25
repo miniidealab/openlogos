@@ -15,9 +15,9 @@ const PHASES = ['capability', 'inventory', 'session-start', 'write', 'hard-deny'
 if (process.argv.includes('--self-test')) {
   process.stdout.write(JSON.stringify({
     schema: 'openlogos/workbuddy-staging-driver@1',
-    minimum_version: '5.3.5',
+    minimum_app_version: '5.3.5',
     phases: PHASES,
-    real_cli_commands: ['--version', 'plugin validate', '--plugin-dir', '--print', 'agents --json'],
+    real_cli_commands: ['--version', 'plugin validate', '--plugin-dir', '--print', '--tools Read,Glob', '--agent'],
     public_release_commands: [],
   }) + '\n');
   process.exit(0);
@@ -54,11 +54,29 @@ function parseJsonOutput(output, label) {
   throw new Error(`${label} 未输出 JSON：${sanitize(text)}`);
 }
 
-function workBuddyEnv(payload) {
+function openLogosEnv(payload) {
   return {
     ...process.env,
     HOME: payload.profile,
+    USERPROFILE: payload.profile,
+    XDG_CONFIG_HOME: join(payload.profile, '.config'),
+    XDG_CACHE_HOME: join(payload.profile, '.cache'),
+    CODEX_HOME: join(payload.profile, '.codex'),
+    OPENLOGOS_CODEX_PERSONAL_HOME: payload.profile,
     CODEBUDDY_CONFIG_DIR: join(payload.profile, '.codebuddy'),
+  };
+}
+
+function workBuddyEnv(payload) {
+  return {
+    ...openLogosEnv(payload),
+    HOME: payload.workBuddyAuthHome,
+    USERPROFILE: payload.workBuddyAuthHome,
+    CODEBUDDY_CONFIG_DIR: join(payload.profile, '.codebuddy'),
+    CODEBUDDY_DISABLE_AUTO_MEMORY: '1',
+    CODEBUDDY_MEMORY_ENABLED: '0',
+    CODEBUDDY_TEAM_MEMORY_ENABLED: '0',
+    CODEBUDDY_TYPED_MEMORY_ENABLED: '0',
   };
 }
 
@@ -71,22 +89,46 @@ function runWorkBuddy(payload, args, options = {}) {
   });
 }
 
-function workBuddySession(payload, prompt, tools = '') {
-  const result = runWorkBuddy(payload, [
+function workBuddySession(payload, prompt, options = {}) {
+  const args = [
     '--plugin-dir', payload.pluginPath,
     '--print',
     '--no-session-persistence',
     '--output-format', 'json',
     '--permission-mode', 'acceptEdits',
-    '--tools', tools,
+    '--tools', options.tools || '',
     '--max-turns', '4',
-    prompt,
-  ], { allowFailure: true });
-  const parsed = parseJsonOutput(result.stdout, 'WorkBuddy headless session');
-  if (result.status !== 0 || parsed.is_error === true) {
-    throw new Error(`WorkBuddy headless session 未成功：${sanitize(result.stderr || result.stdout)}`);
+  ];
+  if (options.agent) args.push('--agent', options.agent);
+  args.push(prompt);
+  const maxAttempts = Number.isInteger(options.attempts) && options.attempts > 0 ? options.attempts : 1;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const result = runWorkBuddy(payload, args, { allowFailure: true });
+      if (result.status !== 0 && !String(result.stdout).trim()) {
+        throw new Error(`WorkBuddy headless session 失败（exit=${result.status}）：${sanitize(result.stderr)}`);
+      }
+      const output = parseJsonOutput(result.stdout, 'WorkBuddy headless session');
+      const parsed = Array.isArray(output)
+        ? [...output].reverse().find(item => item && item.type === 'result')
+        : output;
+      if (!parsed || typeof parsed !== 'object') throw new Error('WorkBuddy headless session 缺少最终 result 事件');
+      if (result.status !== 0 || parsed.is_error === true) {
+        throw new Error(`WorkBuddy headless session 未成功：${sanitize(result.stderr || result.stdout)}`);
+      }
+      return {
+        parsed,
+        stdout: sanitize(result.stdout),
+        stderr: sanitize(result.stderr),
+        exitCode: result.status,
+        attempt,
+      };
+    } catch (error) {
+      lastError = error;
+    }
   }
-  return { parsed, stdout: sanitize(result.stdout), stderr: sanitize(result.stderr), exitCode: result.status };
+  throw lastError;
 }
 
 function versionTuple(raw) {
@@ -132,6 +174,7 @@ function validatePlugin(payload) {
 function invokeRuntime(payload, mode, event) {
   const result = checked(process.execPath, [join(payload.pluginPath, 'hooks', 'runtime.mjs'), mode], {
     cwd: payload.workspace,
+    env: openLogosEnv(payload),
     input: JSON.stringify(event),
     allowFailure: true,
   });
@@ -142,6 +185,18 @@ function sessionText(session) {
   return String(session.parsed.result || session.parsed.message || session.stdout);
 }
 
+function parseEmbeddedJson(value, label) {
+  if (value && typeof value === 'object') return value;
+  const text = String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try { return JSON.parse(text); } catch { /* 继续尝试提取对象 */ }
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch { /* 由统一错误收口 */ }
+  }
+  throw new Error(`${label} 未返回结构化 JSON：${sanitize(text)}`);
+}
+
 async function readPayload() {
   let raw = '';
   for await (const chunk of process.stdin) {
@@ -149,7 +204,7 @@ async function readPayload() {
     if (raw.length > 2 * 1024 * 1024) throw new Error('driver 输入超过 2 MiB');
   }
   const payload = JSON.parse(raw);
-  for (const key of ['workspace', 'pluginPath', 'workBuddyBin', 'profile']) {
+  for (const key of ['workspace', 'pluginPath', 'workBuddyBin', 'workBuddyVersion', 'workBuddyAuthHome', 'profile']) {
     if (typeof payload[key] !== 'string' || payload[key].length === 0) throw new Error(`driver 缺少 ${key}`);
   }
   mkdirSync(payload.profile, { recursive: true });
@@ -158,27 +213,52 @@ async function readPayload() {
 
 async function execute(phase, payload) {
   if (phase === 'capability') {
-    const versionResult = runWorkBuddy(payload, ['--version']);
-    const version = versionTuple(versionResult.stdout || versionResult.stderr);
-    if (!atLeast(version.parts, [5, 3, 5])) throw new Error(`WorkBuddy ${version.text} 低于 5.3.5`);
+    const appVersion = versionTuple(payload.workBuddyVersion);
+    if (!atLeast(appVersion.parts, [5, 3, 5])) throw new Error(`WorkBuddy app ${appVersion.text} 低于 5.3.5`);
+    const engineVersionResult = runWorkBuddy(payload, ['--version']);
+    const engineVersion = versionTuple(engineVersionResult.stdout || engineVersionResult.stderr);
     const plugin = validatePlugin(payload);
-    const probe = workBuddySession(payload, '只回复 OPENLOGOS_PLUGIN_READY，不调用工具。', '');
+    const probe = workBuddySession(payload, '只回复 OPENLOGOS_PLUGIN_READY，不调用工具。');
     if (!sessionText(probe).includes('OPENLOGOS_PLUGIN_READY')) throw new Error('真实 WorkBuddy --plugin-dir 新会话探测失败');
     const hooks = JSON.parse(readFileSync(join(payload.pluginPath, 'hooks', 'hooks.json'), 'utf8'));
     if (!hooks.hooks?.SessionStart || !hooks.hooks?.PreToolUse) throw new Error('WorkBuddy 缺少扩展 Hook capability');
-    return { version: version.text, plugin: plugin.manifest, validation: plugin.validation, session: probe.parsed };
+    return {
+      appVersion: appVersion.text,
+      engineVersion: engineVersion.text,
+      plugin: plugin.manifest,
+      validation: plugin.validation,
+      session: probe.parsed,
+    };
   }
 
   if (phase === 'inventory') {
     validatePlugin(payload);
-    const agents = runWorkBuddy(payload, ['--plugin-dir', payload.pluginPath, 'agents', '--json'], { allowFailure: true });
-    if (agents.status !== 0) throw new Error(`WorkBuddy agents --json 失败：${sanitize(agents.stderr || agents.stdout)}`);
-    const session = workBuddySession(payload, '列出当前 openlogos 插件可发现的 Skills、Commands、Agents；只返回紧凑 JSON，不调用工具。', '');
-    const inventory = sessionText(session);
-    for (const expected of ['skill', 'command', 'agent']) {
-      if (!inventory.toLowerCase().includes(expected)) throw new Error(`WorkBuddy inventory 未证明 ${expected}`);
+    const session = workBuddySession(
+      payload,
+      `必须使用 Glob 和 Read 检查当前已加载插件目录 ${JSON.stringify(payload.pluginPath)} 的 skills、commands、agents；最后只回复一行紧凑 JSON，精确键为 skills、commands、agents，值为各目录实际文件名去扩展名后的字符串数组。`,
+      { tools: 'Read,Glob', attempts: 2 },
+    );
+    const inventory = parseEmbeddedJson(sessionText(session), 'WorkBuddy component inventory');
+    for (const [kind, expected] of [
+      ['skills', 'change-writer'],
+      ['commands', 'status'],
+      ['agents', 'change-reviewer'],
+    ]) {
+      const names = Array.isArray(inventory[kind]) ? inventory[kind].map(item => String(item).toLowerCase()) : [];
+      if (!names.some(name => name.includes(expected))) throw new Error(`WorkBuddy inventory 未发现 ${kind}/${expected}`);
     }
-    return { agents: parseJsonOutput(agents.stdout, 'WorkBuddy agents'), observedInventory: inventory };
+    const agentProbe = workBuddySession(
+      payload,
+      '只回复 OPENLOGOS_AGENT_READY，不调用工具。',
+      { agent: 'change-reviewer', attempts: 2 },
+    );
+    if (!sessionText(agentProbe).includes('OPENLOGOS_AGENT_READY')) throw new Error('WorkBuddy 无法调用 change-reviewer agent');
+    return {
+      observedInventory: inventory,
+      discoveryAttempts: session.attempt,
+      agentInvocationAttempts: agentProbe.attempt,
+      agentInvocation: agentProbe.parsed,
+    };
   }
 
   if (phase === 'session-start') {
@@ -187,7 +267,7 @@ async function execute(phase, payload) {
     });
     const context = runtime.output.hookSpecificOutput?.additionalContext;
     if (runtime.exitCode !== 0 || typeof context !== 'string') throw new Error('SessionStart runtime 未产生上下文');
-    const session = workBuddySession(payload, '报告当前 OpenLogos lifecycle、active change、proposal_step 与下一确认点；只回复可见状态，不调用工具。', '');
+    const session = workBuddySession(payload, '报告当前 OpenLogos lifecycle、active change、proposal_step 与下一确认点；只回复可见状态，不调用工具。');
     const observed = sessionText(session);
     const expected = payload.expectedGuard ? 'workbuddy-smoke' : 'none';
     if (!context.includes(`active change: ${expected}`)) throw new Error('SessionStart 磁盘上下文与期望不一致');
@@ -197,7 +277,7 @@ async function execute(phase, payload) {
 
   if (phase === 'write') {
     const rawTarget = relative(payload.workspace, payload.target).split('\\').join('/');
-    const session = workBuddySession(payload, `必须且仅使用 Write 工具把精确内容 ${JSON.stringify(payload.content)} 写入项目相对路径 ${JSON.stringify(rawTarget)}，完成后只回复 DONE。`, 'Write');
+    const session = workBuddySession(payload, `必须且仅使用 Write 工具把精确内容 ${JSON.stringify(payload.content)} 写入项目相对路径 ${JSON.stringify(rawTarget)}，完成后只回复 DONE。`, { tools: 'Write' });
     if (!existsSync(payload.target) || readFileSync(payload.target, 'utf8') !== payload.content) throw new Error('真实 WorkBuddy allow 后未执行写入');
     return { permissionDecision: 'allow', exitCode: 0, workbuddy: session.parsed };
   }
@@ -206,7 +286,7 @@ async function execute(phase, payload) {
     const responses = [];
     for (const target of payload.targets) {
       const rawTarget = target.startsWith(payload.workspace) ? relative(payload.workspace, target).split('\\').join('/') : target;
-      const session = workBuddySession(payload, `必须使用 Write 工具尝试把 blocked 写入 ${JSON.stringify(rawTarget)}；失败后不要改用其它工具。`, 'Write');
+      const session = workBuddySession(payload, `必须使用 Write 工具尝试把 blocked 写入 ${JSON.stringify(rawTarget)}；失败后不要改用其它工具。`, { tools: 'Write' });
       const runtime = invokeRuntime(payload, 'guard', {
         session_id: 'workbuddy-staging-driver', hook_event_name: 'PreToolUse', cwd: payload.workspace,
         tool_name: 'Write', tool_input: { file_path: rawTarget, content: 'blocked' },
@@ -221,13 +301,13 @@ async function execute(phase, payload) {
 
   if (phase === 'sync-launch') {
     const before = directoryHash(payload.pluginPath);
-    checked(process.execPath, [payload.entry, 'sync'], { cwd: payload.workspace });
+    checked(process.execPath, [payload.entry, 'sync'], { cwd: payload.workspace, env: openLogosEnv(payload) });
     const first = directoryHash(payload.pluginPath);
-    checked(process.execPath, [payload.entry, 'sync'], { cwd: payload.workspace });
+    checked(process.execPath, [payload.entry, 'sync'], { cwd: payload.workspace, env: openLogosEnv(payload) });
     const second = directoryHash(payload.pluginPath);
-    checked(process.execPath, [payload.entry, 'launch'], { cwd: payload.workspace });
+    checked(process.execPath, [payload.entry, 'launch'], { cwd: payload.workspace, env: openLogosEnv(payload) });
     const launchFirst = directoryHash(payload.pluginPath);
-    checked(process.execPath, [payload.entry, 'launch'], { cwd: payload.workspace });
+    checked(process.execPath, [payload.entry, 'launch'], { cwd: payload.workspace, env: openLogosEnv(payload) });
     const launchSecond = directoryHash(payload.pluginPath);
     if (before !== first || first !== second || second !== launchFirst || launchFirst !== launchSecond) throw new Error('WorkBuddy sync/launch 托管资产不幂等');
     validatePlugin(payload);
@@ -240,7 +320,10 @@ async function execute(phase, payload) {
     checked(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--prefix', rollbackRoot, '--no-audit', '--no-fund', payload.previousTarball]);
     const previousEntry = join(rollbackRoot, 'node_modules', '@miniidealab', 'openlogos', 'dist', 'index.js');
     if (!existsSync(previousEntry)) throw new Error('0.13.27 tarball 无法恢复 CLI entry');
-    const restoredVersion = checked(process.execPath, [previousEntry, '--version'], { cwd: payload.regressionRoot }).stdout.trim();
+    const restoredVersion = checked(process.execPath, [previousEntry, '--version'], {
+      cwd: payload.regressionRoot,
+      env: openLogosEnv(payload),
+    }).stdout.trim();
     return { restored: restoredVersion === '0.13.27', restoredVersion, userAssetsPreserved: existsSync(payload.regressionRoot) };
   }
 

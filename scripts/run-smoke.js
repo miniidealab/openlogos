@@ -44,6 +44,32 @@ function commandFor(runner) {
   return { command: 'node', args: [runnerFromBase], cwd: join(root, baseDir) };
 }
 
+function environmentFor(runner) {
+  const env = {
+    ...process.env,
+    OPENLOGOS_SMOKE_RESULT_PATH: resultPath,
+  };
+  const hostArtifacts = {
+    'scripts/smoke-zcode-staging.js': {
+      tarball: process.env.OPENLOGOS_ZCODE_TARBALL,
+      previousTarball: process.env.OPENLOGOS_ZCODE_PREVIOUS_TARBALL,
+    },
+    'scripts/smoke-qoder-staging.js': {
+      tarball: process.env.OPENLOGOS_QODER_TARBALL,
+      previousTarball: process.env.OPENLOGOS_QODER_PREVIOUS_TARBALL,
+    },
+    'scripts/smoke-workbuddy-staging.js': {
+      tarball: process.env.OPENLOGOS_WORKBUDDY_TARBALL,
+      previousTarball: process.env.OPENLOGOS_WORKBUDDY_PREVIOUS_TARBALL,
+    },
+  };
+  const artifacts = hostArtifacts[runner];
+  if (!artifacts) return env;
+  if (artifacts.tarball) env.OPENLOGOS_TARBALL = artifacts.tarball;
+  if (artifacts.previousTarball) env.OPENLOGOS_PREVIOUS_TARBALL = artifacts.previousTarball;
+  return env;
+}
+
 const runners = discoverRunners();
 if (runners.length === 0) {
   console.error('No smoke runners found. Expected files matching scripts/smoke-*.sh or scripts/smoke-*.js.');
@@ -74,10 +100,7 @@ for (const runner of runners) {
   const result = spawnSync(command, args, {
     cwd,
     stdio: 'inherit',
-    env: {
-      ...process.env,
-      OPENLOGOS_SMOKE_RESULT_PATH: resultPath,
-    },
+    env: environmentFor(runner),
   });
   if (result.status !== 0) failed = true;
 }
