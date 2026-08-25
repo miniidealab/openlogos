@@ -202,6 +202,7 @@ await smoke('SMOKE-core-109', () => {
   const workspace = join(context.staging, 'workspace');
   mkdirSync(workspace, { recursive: true });
   runCli(context.entry, workspace, ['init', 'qoder-smoke', '--locale', 'zh', '--ai-tool', 'qoder']);
+  runCli(context.entry, workspace, ['launch']);
   const pluginPath = join(workspace, '.qoder', 'plugins', 'openlogos');
   const installed = runDriver('install', { workspace, pluginPath, qoderBin: context.qoderBin, evidenceRoot });
   if (installed.data.plugin?.identity !== 'openlogos') throw new Error('Qoder 未发现唯一 openlogos identity');

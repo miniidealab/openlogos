@@ -216,9 +216,10 @@ async function execute(phase, payload) {
     const runtimeMatches = payload.expectedGuard
       ? additionalContext.includes('active change: qoder-smoke') && !additionalContext.includes('proposal_step: none')
       : additionalContext.includes('active change: none') && additionalContext.includes('proposal_step: none');
+    const lifecycle = additionalContext.match(/^OpenLogos lifecycle: ([^\n]+)/)?.[1];
     const sessionMatches = payload.expectedGuard
       ? text.includes('qoder-smoke')
-      : /initial/i.test(text) && /(?:无|none)/i.test(text);
+      : Boolean(lifecycle && text.toLowerCase().includes(lifecycle.toLowerCase()) && /(?:无|none)/i.test(text));
     if (!runtimeMatches || !sessionMatches) {
       throw new Error(`真实 Qoder 新 session 未表面传递当前项目状态：${sanitize(text)}`);
     }
