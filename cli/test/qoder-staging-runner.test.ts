@@ -19,13 +19,13 @@ describe('Qoder staging smoke runner 合同', () => {
     expect(contract.public_release_commands).toEqual([]);
   });
 
-  it('dispatcher 可发现 runner，runner 使用 JSONL reporter 并在非本提案时安全退出', () => {
+  it('dispatcher 可发现 runner，runner 使用 JSONL reporter，并支持显式 staging 在隔离 sandbox 执行', () => {
     const dispatcher = readFileSync(join(repoRoot, 'scripts', 'run-smoke.js'), 'utf8');
     const source = readFileSync(runner, 'utf8');
     expect(dispatcher).toContain('smoke-');
     expect(source).toContain('OPENLOGOS_SMOKE_RESULT_PATH');
     expect(source).toContain("environment: 'staging'");
-    expect(source).toContain("activeChange() !== 'qoder-adapter-foundation'");
+    expect(source).toContain("activeChange() !== 'qoder-adapter-foundation' && process.env.OPENLOGOS_QODER_STAGING !== '1'");
     expect(source).toContain("runCli(context.entry, initWorkspace, ['init'");
     expect(source).toContain("runCli(context.entry, workspace, ['adopt'");
     expect(source).toContain('context.installWorkspace = initWorkspace');

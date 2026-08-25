@@ -46,7 +46,7 @@ if (process.argv.includes('--self-test')) {
   process.exit(0);
 }
 
-if (activeChange() !== 'qoder-adapter-foundation') process.exit(0);
+if (activeChange() !== 'qoder-adapter-foundation' && process.env.OPENLOGOS_QODER_STAGING !== '1') process.exit(0);
 
 const evidenceRoot = resolve(
   repoRoot,

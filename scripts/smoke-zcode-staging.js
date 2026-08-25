@@ -46,7 +46,7 @@ if (process.argv.includes('--self-test')) {
   process.exit(0);
 }
 
-if (activeChange() !== 'zcode-adapter-foundation') process.exit(0);
+if (activeChange() !== 'zcode-adapter-foundation' && process.env.OPENLOGOS_ZCODE_STAGING !== '1') process.exit(0);
 
 const evidenceRoot = resolve(
   repoRoot,

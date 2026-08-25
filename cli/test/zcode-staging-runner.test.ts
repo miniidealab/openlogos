@@ -18,13 +18,13 @@ describe('ZCode staging smoke runner 合同', () => {
     expect(contract.public_release_commands).toEqual([]);
   });
 
-  it('dispatcher 可发现 runner，runner 使用 JSONL reporter 并在非本提案时安全退出', () => {
+  it('dispatcher 可发现 runner，runner 使用 JSONL reporter，并支持显式 staging 在隔离 sandbox 执行', () => {
     const dispatcher = readFileSync(join(repoRoot, 'scripts', 'run-smoke.js'), 'utf8');
     const source = readFileSync(runner, 'utf8');
     expect(dispatcher).toContain('smoke-');
     expect(source).toContain('OPENLOGOS_SMOKE_RESULT_PATH');
     expect(source).toContain("environment: 'staging'");
-    expect(source).toContain("activeChange() !== 'zcode-adapter-foundation'");
+    expect(source).toContain("activeChange() !== 'zcode-adapter-foundation' && process.env.OPENLOGOS_ZCODE_STAGING !== '1'");
     expect(source).not.toMatch(/npm\s+publish|git\s+push|git\s+tag|gh\s+release/);
   });
 });
