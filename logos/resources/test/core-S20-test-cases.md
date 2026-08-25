@@ -151,3 +151,31 @@
 - ST-S20-17 在 adopt 后验证 change 工作区创建可达性，但不得把 Qoder CLI 运行作为 change 命令的前置。
 - 内嵌 OpenLogos reporter，将全部 ID 写入 `logos/resources/verify/test-results.jsonl`，含 `status`、`timestamp`、`duration_ms`、`scenario: "S20"`，失败含 `error`。
 - ST-S20-18/19 以目录快照、owner 清单和 SHA-256 证明保护/回滚；reporter 写入失败使测试失败。
+
+## WorkBuddy 存量项目接入测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S20-34 | adopt 参数与持久化 | `workbuddy` 解析并持久化规范 id，不写猜测别名 |
+| UT-S20-35 | adopted + launched 一次规划 | 不先写 initial 再覆盖，资产内容匹配 launched lifecycle |
+| UT-S20-36 | 项目指令合并 | 只维护完整 marker，marker 外内容逐字节保留，残缺 marker blocked |
+| UT-S20-37 | settings 与用户插件保护 | 非 OpenLogos owner 全部 preserved，identity 冲突不覆盖 |
+| UT-S20-38 | 原生记忆保护 | 不读取内容、不写入/清空/迁移，前后不透明证据一致 |
+| UT-S20-39 | 总事务回滚 | logos/config/index/spec/插件任一步失败全部恢复，不留半套状态 |
+| UT-S20-40 | 接入后 change 可达性 | 成功后 status/next/change 走既有方法论主路径，无 WorkBuddy 分叉 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S20-20 | 带既有资产的 `adopt --ai-tool workbuddy` | 插件与配置成功，项目指令、settings、用户插件和原生记忆保留 |
+| ST-S20-21 | marker/identity/权限冲突 | 首个写入前阻断或总事务回滚，精确诊断，无伪造完成态 |
+| ST-S20-22 | 接入后首个 change | 新 session 可发现插件，change 创建可达且 guard 按 proposal_step 生效 |
+
+### 自动化与证据要求
+
+- 隔离 fixture 必须预置项目指令、settings、不同 identity 插件、未知文件和原生记忆样本。
+- 对成功与失败路径保存所有不可由 OpenLogos 拥有的资产前后哈希，并断言配置只含规范 id。
+- 每个用例通过 OpenLogos reporter 追加 `test_id`、`scenario_id="S20"`、`status`、`duration_ms`、`evidence` 到结果账本。

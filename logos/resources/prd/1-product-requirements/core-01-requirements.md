@@ -1554,3 +1554,58 @@ OpenLogos 使用者应能在 `init`、`adopt`、`sync` 与 `launch` 中选择 Qo
 - 必须由本提案真实 tarball 与真实 Qoder CLI 新 session 在隔离 staging 验证插件发现、Skills/Commands/Agents、SessionStart、PreToolUse allow/deny、sync/launch 幂等和既有宿主回归。
 - 不新增 HTTP/RPC/消息 API，不涉及数据库迁移。
 - 不实现 TRAE/TraeCode、WorkBuddy 或其它新宿主；不授权 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+## WorkBuddy 完整宿主集成需求
+
+### 用户价值
+
+OpenLogos 使用者应能在 `init`、`adopt`、`sync` 与 `launch` 中选择 WorkBuddy，并获得与既有宿主同等级的指令、Skills、Commands、Agents、SessionStart 上下文和 PreToolUse 写入硬门禁。接入不得要求 OpenLogos 读取或改写 WorkBuddy 原生记忆，也不得改变未选择 WorkBuddy 的历史配置和既有宿主行为。
+
+### P02 公共宿主能力要求
+
+1. AI 工具规范值新增 `workbuddy`；标量、数组和 `all` 均须支持，`all` 按 Registry 稳定顺序包含 WorkBuddy 并排除 `other`。
+2. WorkBuddy capability 必须显式声明 instructions、skills、commands、agents、plugin、sessionStart、preToolUse；生命周期入口只消费能力，不得按宿主名推断。
+3. WorkBuddy 插件模板及 runtime 必须进入 `0.13.28` 真实 npm tarball；源码存在但制品缺少任何声明资产时，构建或部署预检失败。
+4. Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder 的规范值、目标路径、配置合并和输出契约保持兼容；未知工具继续 fail loud。
+
+### WorkBuddy 资产、记忆与 Hook 要求
+
+1. 原生插件使用 `.workbuddy-plugin/plugin.json`，并提供 `skills/`、`commands/`、必要的 `agents/`、`hooks/hooks.json` 与共享 Node.js runtime；Hook 不写入技能 frontmatter。
+2. Hook 命令以 `${CODEBUDDY_PLUGIN_ROOT}` 定位 runtime，不虚构 WorkBuddy 专属环境变量，不硬编码用户安装目录。
+3. WorkBuddy 原生记忆属于宿主和用户。OpenLogos 不读取、写入、清空、迁移或把它当作授权状态；同步、接入和回滚前后原生记忆必须保持不变。
+4. `SessionStart` 只从项目磁盘事实生成 module、active change、`proposal_step`、可写范围和下一确认点，不读取个性化记忆，输出不构成授权。
+5. `PreToolUse` 每次调用重新读取 guard 与提案状态。allow 返回 `permissionDecision: "allow"`；deny 返回 `permissionDecision: "deny"`、非空原因并以退出码 2 阻断。
+6. OpenLogos 只拥有自身插件 identity 和托管片段；WorkBuddy settings、其它插件、项目自有资产和原生记忆均须保留。
+
+### 场景验收条件
+
+#### S01 初始化
+
+- `--ai-tool workbuddy` 生成配置、托管指令和完整原生插件资产；`--ai-tool all` 包含 WorkBuddy，重复规划幂等。
+- 模板缺失、manifest/Hook 非法、owner 冲突或 marker 残缺时，在覆盖用户资产前失败并报告精确路径。
+
+#### S08 同步
+
+- `sync` 只刷新 OpenLogos 托管的 WorkBuddy 资产，保留 settings、其它插件、未知文件和原生记忆。
+- 只有全部 Adapter 成功后才刷新 `.openlogos-sync.json`；WorkBuddy 暂存、替换或读回失败时回滚且版本戳不变。
+
+#### S09 变更生命周期
+
+- 新 WorkBuddy session 的 SessionStart 注入当前磁盘状态；已有会话不承诺热刷新。
+- PreToolUse 覆盖 CLI 与桌面端潜在写工具别名；无 guard、越界路径、未知潜在写工具、解析失败和决策异常均 fail-closed。
+
+#### S14 launched 刷新
+
+- `launch` 经 Registry 刷新 WorkBuddy launched 指令、Skills、Commands、Agents 与 Hooks；全部 Adapter 成功后才提交 lifecycle。
+- adopted + launched 重复执行幂等，用户 settings、插件、项目资产和原生记忆保持不变。
+
+#### S20 存量接入
+
+- `adopt --ai-tool workbuddy` 在保留既有项目指令、settings、用户插件和原生记忆的前提下部署 OpenLogos 插件，并继续引导首个 change。
+- 冲突或中途失败不得留下半套配置、插件或伪造接入完成信息。
+
+### 部署与非目标
+
+- 必须使用本提案构建的 `0.13.28` 真实 npm tarball，在隔离 staging 的 WorkBuddy 5.3.5+ 新会话验证插件发现、组件、SessionStart、PreToolUse allow/deny、记忆零写入、幂等与回滚。
+- 不新增 HTTP/RPC/消息 API，不涉及数据库迁移，不实现公开发布。
+- 本提案不授权 npm publish、Git tag、GitHub Release、官网部署或 `git push`。

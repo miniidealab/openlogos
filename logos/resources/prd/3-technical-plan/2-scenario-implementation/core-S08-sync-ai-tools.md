@@ -292,3 +292,62 @@ sequenceDiagram
 - 需求：S08 Qoder 同步验收。
 - 架构：29.5 状态读取与路径安全、29.6 资产事务与提交顺序。
 - 测试：UT-S08-21～UT-S08-26、ST-S08-19～ST-S08-21。
+
+## S08 WorkBuddy 托管插件幂等同步时序
+
+### 场景目标
+
+`sync` 依据 Registry 刷新当前 lifecycle 的 WorkBuddy 托管资产，只在所有 Adapter 成功后更新同步版本戳。
+
+### 前置与后置条件
+
+- 前置：项目已初始化，配置可能为历史单值、数组或 `all`。
+- 成功后置：托管资产收敛，用户 settings、插件、项目资产和原生记忆不变，版本戳最后更新。
+- 失败后置：本次变更全部回滚，版本戳保持旧值。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as Sync Command
+    participant R as Adapter Registry
+    participant W as WorkBuddy Adapter
+    participant T as Managed Asset Transaction
+    participant V as Sync Version Stamp
+    U->>C: openlogos sync
+    C->>R: expand(config.aiTool)
+    R-->>C: 稳定 Adapter 列表
+    C->>W: planAssets(current lifecycle)
+    W-->>T: managed 差异 + preserved 边界
+    alt 全部 Adapter 成功
+        T->>T: 暂存、原子替换、读回
+        T-->>C: updated/unchanged/preserved
+        C->>V: 最后写 version 与 syncedAt
+        C-->>U: 完整结果与新 session 提示
+    else 任一步失败
+        T->>T: 回滚
+        T-->>C: blocked/error
+        C-->>U: 非零退出；版本戳不变
+    end
+```
+
+### 步骤与不变量
+
+1. 历史配置未选 WorkBuddy 时不得自动加入；只有 `all` 按新 Registry 稳定包含它。
+2. Adapter 仅更新 identity、managed marker 或已知清单可证明属于 OpenLogos 的资产；未知文件 preserved 或冲突 blocked。
+3. 原生记忆不进入扫描内容、差异或备份，只比较不透明边界证据以确认未被触碰。
+4. 任一 Adapter 暂存、替换或读回失败，恢复本次事务全部备份。
+5. 全部成功后才写 `.openlogos-sync.json`；重复同步输出 `unchanged` 并保持内容哈希稳定。
+
+### 异常
+
+- `EX-WB-S08-1`：历史配置无 WorkBuddy 时只同步原宿主。
+- `EX-WB-S08-2`：托管目录混入用户文件时禁止目录镜像删除。
+- `EX-WB-S08-3`：rename、权限或读回失败时回滚且版本戳不变。
+
+### 追溯
+
+- 需求：S08 WorkBuddy 同步验收。
+- 架构：30.2 资产模型、30.4 生命周期与事务顺序。
+- 测试：UT-S08-27～UT-S08-32、ST-S08-22～ST-S08-24。

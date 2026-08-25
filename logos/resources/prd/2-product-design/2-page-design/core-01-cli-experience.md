@@ -1865,3 +1865,84 @@ Next action: finish the planned deltas, then explicitly authorize merge.
 - 中英文结构 key 一致；路径、ID、命令、协议字段与错误码不翻译。
 - 不承诺 Qoder IDE 与 CLI 的产品特有输出完全一致。
 - 成功文案不得暗示 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 git push 已完成。
+
+## 2.38 WorkBuddy 宿主选择、执行反馈与错误体验
+
+### 2.38.1 `init` / `adopt` 选择
+
+交互列表由 Registry 枚举，在 Qoder 后增加 WorkBuddy，并保留 Other 与 All：
+
+```text
+? 选择 AI 工具：
+  Claude Code
+  OpenCode
+  Codex
+  Cursor
+  ZCode
+  Qoder
+  WorkBuddy
+  Other
+  All supported tools
+```
+
+非交互入口接受 `--ai-tool workbuddy`。非法值回显实际输入，并由 Registry 派生支持列表；不得把 `codebuddy` 或其它猜测值静默归一化为 WorkBuddy。
+
+### 2.38.2 逐资产成功反馈
+
+```text
+✓ WorkBuddy plugin manifest: .workbuddy-plugin/plugin.json
+✓ WorkBuddy Skills deployed: <count>
+✓ WorkBuddy Commands deployed: <count>
+✓ WorkBuddy Agents deployed: <count>
+✓ WorkBuddy hooks deployed: SessionStart, PreToolUse
+ℹ WorkBuddy native memory was not read or modified.
+ℹ Start a new WorkBuddy session to verify refreshed plugin and hooks.
+```
+
+`unchanged` 可聚合；`preserved` 和 `blocked` 必须逐项显示项目相对路径或隔离 staging 路径及原因，不泄露无关的用户目录信息。
+
+### 2.38.3 `sync` / `launch` 反馈
+
+```text
+✓ WorkBuddy OpenLogos plugin synced
+✓ WorkBuddy managed assets: <updated> updated, <unchanged> unchanged
+ℹ Preserved WorkBuddy settings, user plugins, project assets, and native memory
+✓ Sync version stamp updated after all adapters succeeded
+```
+
+任一 Adapter 失败时输出失败宿主、精确目标、回滚结果和版本戳/lifecycle 未提交事实。`launch` 成功后说明 launched 资产已刷新并要求新 session；adopted + launched 重复执行以 `unchanged` 收敛。
+
+### 2.38.4 版本与真实宿主前置
+
+隔离 staging 部署必须明确展示：
+
+```text
+OpenLogos package: 0.13.28 (<tarball-sha256>)
+WorkBuddy version: <detected-version> (required: >= 5.3.5)
+Plugin capability: discovered
+Extended hooks capability: available
+Public release: disabled
+```
+
+版本过低、WorkBuddy 不可执行、插件未发现或 Hook capability 缺失时阻断 staging 完成态，并给出安装/升级或能力检查建议；不得以模拟协议测试代替真实宿主成功提示。
+
+### 2.38.5 Hook 门禁反馈
+
+WorkBuddy deny 的用户可见原因至少包含事实和恢复动作：
+
+```text
+OpenLogos guard denied this write.
+Active change: workbuddy-adapter-foundation
+Proposal step: delta-writing
+Allowed scope: logos/changes/workbuddy-adapter-foundation/deltas/** and tasks.md
+Target: cli/src/commands/init.ts
+Next action: finish the planned deltas, then explicitly authorize merge.
+```
+
+状态读取失败时显示“无法安全判断，写入已阻断”，不得伪装成无 guard 或默认 writing。SessionStart 可以解释当前状态，但不能作为写入授权凭据。
+
+### 2.38.6 非目标与可访问性
+
+- 本节是 CLI 文本体验，不生成 WorkBuddy GUI 原型。
+- 中英文结构 key 一致；路径、ID、命令、协议字段、版本和错误码不翻译。
+- 成功反馈不得暗示 npm publish、Git tag、GitHub Release、官网部署或 `git push` 已完成。

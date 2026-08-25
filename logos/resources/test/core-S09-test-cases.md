@@ -600,3 +600,36 @@
 - 所有 deny 用例同时断言响应体、permissionDecisionReason、exit code 2 和候选目标 SHA-256；一般非零不能计为 hard deny PASS。
 - 内嵌 OpenLogos reporter，将全部 ID 写入 `logos/resources/verify/test-results.jsonl`，字段含 `status`、`timestamp`、`duration_ms`、`scenario: "S09"`，失败含 `error`。
 - ST-S09-77～80 的合同层可自动化模拟宿主；真实 Qoder CLI 证据由 SMOKE-core-111～113 复验，二者不可互相替代。
+
+## WorkBuddy SessionStart 与 PreToolUse 测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S09-208 | SessionStart 合法输出 | `hookEventName=SessionStart`、`additionalContext` 非空、stdout 单一 JSON、exit 0 |
+| UT-S09-209 | SessionStart 磁盘事实 | 包含 module、slug、proposal_step、精确范围与确认点，不读取原生记忆 |
+| UT-S09-210 | CLI 工具名归一化 | `Write`/`Edit`/`Bash` 映射到共享动作 |
+| UT-S09-211 | 桌面工具名归一化 | `write_to_file`/`replace_in_file`/`execute_command` 映射正确 |
+| UT-S09-212 | 字段归一化 | snake_case/camelCase 输入在无冲突时得到同一规范事件 |
+| UT-S09-213 | allow 合同 | allow 决策输出 `permissionDecision=allow` 且 exit 0 |
+| UT-S09-214 | deny 合同 | deny 输出非空 reason、`permissionDecision=deny` 且 exit 2 |
+| UT-S09-215 | proposal_step allowlist | delta-writing 只允许当前提案 delta/tasks，ready-to-merge 立即收紧 |
+| UT-S09-216 | 每次调用重读 | 同一 session 修改磁盘状态后下一次决策采用新事实，不使用缓存 |
+| UT-S09-217 | 路径与未知工具 fail-closed | traversal、symlink 逃逸和未知潜在写工具均 deny |
+| UT-S09-218 | 损坏输入与异常封装 | 空/超限/非法 JSON、缺字段、状态或决策异常均协议 deny + exit 2；exit 1 不算通过 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S09-81 | 新 WorkBuddy session 上下文 | 从真实项目磁盘派生阶段信息，原生记忆夹具不被读取或修改 |
+| ST-S09-82 | 允许当前 delta 写入 | 合法路径 allow 后工具执行，reporter 记录证据 |
+| ST-S09-83 | 阻断源码/越界/路径逃逸 | 工具不执行、目标哈希不变、deny reason 可操作、exit 2 |
+| ST-S09-84 | 同会话阶段跃迁与异常 | delta-writing→ready-to-merge 立即收紧；解析/状态异常 fail-closed |
+
+### 自动化与证据要求
+
+- 使用真实 runtime 子进程，通过 stdin/stdout/stderr 与真实退出码断言；不得直接调用内部函数替代 ST。
+- 对 allow/deny 前后目标哈希、guard/tasks 快照和原生记忆不透明证据留档。
+- 每个用例通过 OpenLogos reporter 写入 `test_id`、`scenario_id="S09"`、`status`、`duration_ms`、`evidence`；只有 deny 协议与 exit 2 同时成立才可 pass。

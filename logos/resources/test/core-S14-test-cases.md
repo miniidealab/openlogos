@@ -72,3 +72,27 @@
 - 既有宿主回归使用结构化资产清单或 golden，不只断言零退出。
 - 内嵌 OpenLogos reporter，将全部 ID 写入 `logos/resources/verify/test-results.jsonl`，含 `status`、`timestamp`、`duration_ms`、`scenario: "S14"`，失败含 `error`。
 - 新 session 只验证插件/静态上下文快照；PreToolUse 仍另行断言每次磁盘重读。
+
+## WorkBuddy launched 刷新测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S14-14 | Registry 驱动 launched 计划 | 只有配置选择 WorkBuddy 时规划，命令无宿主名称分支 |
+| UT-S14-15 | launched 资产范围 | 覆盖托管指令、Skills、Commands、Agents、Hooks，不包含用户资产或原生记忆 |
+| UT-S14-16 | 提交顺序与失败回滚 | 全部 Adapter 读回后才提交 lifecycle；任一失败整体恢复 |
+| UT-S14-17 | adopted 幂等与回归 | 重复刷新收敛为 unchanged；既有宿主计划、用户资产哈希不变 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S14-23 | adopted 模块 WorkBuddy launch | launched 插件原子刷新，lifecycle 最后提交，提示新 session |
+| ST-S14-24 | 重复 launch 与故障注入 | 正常重复幂等；WorkBuddy 读回失败时所有宿主回滚、lifecycle 不变 |
+
+### 自动化与证据要求
+
+- 同时覆盖 normal 已 launched 的既有 no-op 与 adopted 已 launched 的幂等刷新，不得混淆两种语义。
+- 保存 lifecycle、各 Adapter 托管资产、用户插件/settings/原生记忆的前后哈希。
+- 每个用例通过 OpenLogos reporter 追加 `test_id`、`scenario_id="S14"`、`status`、`duration_ms`、`evidence` 到结果账本。

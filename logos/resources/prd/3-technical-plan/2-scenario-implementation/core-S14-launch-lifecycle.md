@@ -242,3 +242,56 @@ sequenceDiagram
 - 需求：S14 Qoder launched 刷新验收。
 - 架构：29.6 资产事务与提交顺序。
 - 测试：UT-S14-10～UT-S14-13、ST-S14-21～ST-S14-22。
+
+## S14 WorkBuddy launched 插件刷新与提交时序
+
+### 场景目标
+
+`launch` 经 Registry 刷新 WorkBuddy launched 指令和插件组件，只有全部 Adapter 成功后才提交 lifecycle。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant L as Launch Command
+    participant R as Adapter Registry
+    participant W as WorkBuddy Adapter
+    participant T as Managed Asset Transaction
+    U->>L: launch <module>
+    L->>L: 校验 module/bootstrap 门禁
+    L->>R: expand(config.aiTool)
+    R-->>L: 稳定 Adapter 列表
+    L->>W: planAssets(launched)
+    W-->>T: launched 差异 + preserved 边界
+    alt 全部成功
+        T->>T: 原子刷新并读回
+        T-->>L: DeployResult
+        L->>L: 最后提交 lifecycle=launched
+        L-->>U: 结果、记忆未触碰、新 session 提示
+    else 冲突或失败
+        T->>T: 回滚
+        T-->>L: blocked/error
+        L-->>U: 非零退出；lifecycle 不变
+    end
+```
+
+### 步骤与不变量
+
+1. normal、adopted 和历史 skipped 继续沿用既有 launch 门禁；WorkBuddy 不改变语义。
+2. Registry 只返回配置选择的 Adapter；历史配置未选 WorkBuddy 时不得刷新其资产。
+3. launched 计划覆盖托管指令、Skills、Commands、Agents、Hooks/runtime，不包含 settings、其它插件和原生记忆。
+4. 全部目标预检、提交和读回成功后才写 lifecycle；任一 Adapter 失败回滚整体事务。
+5. adopted + launched 重复执行只刷新差异并以 `unchanged` 收敛，不重复安装、不改写用户资产。
+
+### 异常
+
+- `EX-WB-S14-1`：normal 已 launched 时保持既有零码 no-op。
+- `EX-WB-S14-2`：adopted 已 launched 且托管资产落后时幂等刷新，lifecycle 不重复改写。
+- `EX-WB-S14-3`：WorkBuddy 模板、owner 或读回失败时回滚所有已选 Adapter，lifecycle 不变。
+
+### 追溯
+
+- 需求：S14 WorkBuddy launched 刷新验收。
+- 架构：30.4 生命周期与事务顺序。
+- 测试：UT-S14-14～UT-S14-17、ST-S14-23～ST-S14-24。

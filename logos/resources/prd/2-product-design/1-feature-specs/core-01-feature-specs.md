@@ -1934,3 +1934,78 @@ Qoder 官方事件的公共输入为 snake_case。Adapter 对 `session_id`、`tr
 - S09：SessionStart、PreToolUse allow/deny、exit 2、每次重读与 fail-closed。
 - S14：launched 刷新、提交顺序、幂等和既有宿主零漂移。
 - S20：存量项目安全接入、配置持久化与 change 可达性。
+
+## 2.40 WorkBuddy 薄 Adapter、记忆隔离与原生插件功能规格
+
+### 2.40.1 目标与边界
+
+本功能在既有 `AiToolAdapterRegistry`、托管资产事务、会话上下文服务和 guard 决策服务之上增加 WorkBuddy 薄 Adapter。共享层拥有宿主选择、资产事务和 OpenLogos 方法论事实；Adapter 只映射 WorkBuddy 插件布局、事件字段、工具名、stdout/stderr 与退出码。
+
+WorkBuddy 原生记忆不属于 Adapter 数据源或写入目标。功能仅涉及本地 CLI、文件资产和 Hook 子进程协议，不新增远程 API、数据库或后台服务。
+
+### 2.40.2 WorkBuddy capability 与 Registry 语义
+
+- 规范 id 为 `workbuddy`，display name 为 `WorkBuddy`；不发明 `codebuddy` 等持久化别名。
+- capability 声明 `instructions=true`、`skills=true`、`commands=true`、`agents=true`、`plugin=true`、`sessionStart=true`、`preToolUse=true`。
+- 标量/数组解析持久化规范 id；`all` 按稳定顺序增加 WorkBuddy 并排除 `other`。
+- 历史配置未选择 WorkBuddy 时不得自动部署；未知值返回 Registry 派生的结构化错误和支持列表。
+
+### 2.40.3 原生插件布局与所有权
+
+随包模板采用：
+
+```text
+workbuddy-plugin-template/
+├── .workbuddy-plugin/plugin.json
+├── skills/<openlogos-skill>/SKILL.md
+├── commands/<openlogos-command>.md
+├── agents/<openlogos-agent>.md
+└── hooks/
+    ├── hooks.json
+    └── runtime.mjs
+```
+
+- manifest 的 identity 稳定且版本与 npm 包版本同源；`0.13.28` tarball 必须包含所有声明资产。
+- 组件使用约定目录或合法声明，禁止同一路径重复注册；Hook 配置只放在 `hooks/hooks.json`。
+- Hook 命令使用 `${CODEBUDDY_PLUGIN_ROOT}` 以 argv-safe 方式定位 runtime。
+- OpenLogos 仅拥有自身插件 identity 与托管片段；settings、其它 identity 插件、未知文件及用户资产不在清理范围。
+
+### 2.40.4 静态指令、会话上下文与原生记忆
+
+1. 静态项目指令承载稳定方法论和命令说明，不承载随提案变化的授权状态。
+2. SessionStart 从磁盘重新读取项目索引、guard、active slug 与 `proposal_step`，输出非空 `additionalContext`。
+3. WorkBuddy 原生记忆由宿主和用户独占。OpenLogos 不探测内容、不注入记忆、不清空或迁移记忆，也不以记忆存在与否决定写入权限。
+4. SessionStart 失败不得虚构状态；PreToolUse 的实时磁盘决策始终高于静态指令和会话上下文。
+
+### 2.40.5 Hook runtime 合同
+
+Runtime 从 stdin 读取单个 JSON 事件，stdout 只输出协议 JSON，诊断写 stderr：
+
+1. `SessionStart` 校验事件字段，调用共享上下文服务，输出 `hookSpecificOutput.hookEventName="SessionStart"` 和非空 `additionalContext`，成功 exit 0。
+2. `PreToolUse` 归一化 CLI 的 `Write`/`Edit`/`Bash` 与桌面端 `write_to_file`/`replace_in_file`/`execute_command` 等工具名，以及 snake_case/camelCase 输入字段。
+3. allow 输出 `permissionDecision="allow"` 并 exit 0；deny 输出 `permissionDecision="deny"`、非空 reason 并 exit 2。
+4. 非法 JSON、缺字段、未知潜在写工具、路径规范化失败、状态矛盾或决策异常均显式 deny；其它非零退出不得冒充安全阻断。
+
+### 2.40.6 生命周期行为
+
+| 入口 | WorkBuddy 行为 | 提交条件 |
+|---|---|---|
+| `init` | 解析 `workbuddy`/`all`，规划 initial 指令和完整插件 | 全部目标预检、暂存、读回成功 |
+| `adopt` | 合并存量指令并部署 adopted + launched 插件 | 用户 settings、插件、项目资产和记忆 preserved |
+| `sync` | 刷新托管资产与当前 lifecycle 文案 | 全部 Adapter 成功后写同步版本戳 |
+| `launch` | 刷新 launched Skills/Commands/Agents/Hooks | 全部 Adapter 成功后提交 lifecycle |
+
+### 2.40.7 兼容、探测与错误体验
+
+- WorkBuddy 5.3.5+ 是 staging 最低版本；部署前必须探测版本、插件发现和扩展 Hook capability，不能只凭文件存在判定支持。
+- Plugin/Hook 刷新后以新 session 验证；旧 session 不承诺热加载。
+- owner 冲突、非法 manifest/hooks、tarball 缺资产或读回失败均在总成功前阻断，输出精确路径、回滚状态和未提交事实。
+- 既有宿主的配置、资产计划与输出结构由回归测试锁定；合同测试不能替代真实 WorkBuddy smoke。
+
+### 2.40.8 验收摘要
+
+- S01：workbuddy/all 解析、capability、随包模板、冲突保护和原子初始化。
+- S08：托管刷新、用户资产与记忆保留、回滚、版本戳和幂等。
+- S09：SessionStart、PreToolUse 工具名归一化、allow/deny、exit 2、每次重读与 fail-closed。
+- S14：launched 刷新、提交顺序、幂等及既有宿主零漂移。
+- S20：存量项目安全接入、配置持久化、记忆零写入和 change 可达性。

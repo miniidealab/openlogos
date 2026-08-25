@@ -269,3 +269,63 @@ sequenceDiagram
 - 需求：S20 Qoder 存量接入验收。
 - 架构：29.2 Qoder 资产模型、29.6 资产事务与提交顺序。
 - 测试：UT-S20-27～UT-S20-33、ST-S20-17～ST-S20-19。
+
+## S20 WorkBuddy 存量项目安全接入时序
+
+### 场景目标
+
+在不覆盖项目既有指令、WorkBuddy settings、用户插件和原生记忆的前提下，部署 OpenLogos WorkBuddy 插件并直接进入首个 change 主路径。
+
+### 前置与后置条件
+
+- 前置：目录为可接入的存量项目，尚未形成完整 OpenLogos 项目。
+- 成功后置：配置持久化 `workbuddy`，adopted + launched 资产一次收敛，用户边界不变。
+- 失败后置：logos、配置、索引、spec 和插件作为同一事务回滚。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant A as Adopt Command
+    participant R as Adapter Registry
+    participant W as WorkBuddy Adapter
+    participant T as Managed Asset Transaction
+    U->>A: adopt --ai-tool workbuddy
+    A->>A: 扫描项目与存量资产
+    A->>R: parse(workbuddy)
+    R-->>A: WorkBuddy capability
+    A->>W: planAssets(adopted + launched)
+    W-->>T: 目标、owner、preserved 边界
+    T->>T: 全量预检配置/marker/路径/冲突
+    alt 全部合法
+        T->>T: 原子提交项目与 Adapter 资产
+        T-->>A: installed/unchanged/preserved
+        A-->>U: 接入报告、新 session 与 change 指引
+    else 冲突或中途失败
+        T->>T: 回滚整个接入事务
+        T-->>A: blocked/error
+        A-->>U: 非零退出与恢复建议
+    end
+```
+
+### 步骤与不变量
+
+1. 宿主选择由 Registry 枚举和解析，配置只持久化规范 id `workbuddy`。
+2. adopted module 直接规划 launched 变体，不先落 initial 再覆盖。
+3. 首个写入前全量校验项目指令 marker、插件 identity、模板、所有目标和回滚能力。
+4. WorkBuddy settings 和原生记忆只作为不可写边界；OpenLogos 不读取个性化记忆内容。
+5. 成功提示新 session 装载插件，并继续既有 S39 规格闭包/首个 change；WorkBuddy 不引入方法论分叉。
+
+### 异常
+
+- `EX-WB-S20-1`：项目指令托管 marker 残缺时任何写入前阻断。
+- `EX-WB-S20-2`：插件路径属于不同 identity 时 blocked，不覆盖或改名规避。
+- `EX-WB-S20-3`：已有 settings、用户插件或原生记忆时全部 preserved，前后证据一致。
+- `EX-WB-S20-4`：提交中途失败时整个接入事务回滚，不伪造完成状态。
+
+### 追溯
+
+- 需求：S20 WorkBuddy 存量接入验收。
+- 架构：30.2 资产模型、30.4 生命周期与事务顺序。
+- 测试：UT-S20-34～UT-S20-40、ST-S20-20～ST-S20-22。

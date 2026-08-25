@@ -389,3 +389,74 @@ stdout 输出同一事件的 `permissionDecision="deny"` 与非空 `permissionDe
 ### 权威参考
 
 - Qoder CLI Hooks：`https://docs.qoder.com/cli/hooks`
+
+## WorkBuddy / CodeBuddy PreToolUse 适配合同
+
+### 配置与启动位置
+
+- OpenLogos WorkBuddy plugin 使用 `hooks/hooks.json` 注册 SessionStart 与 PreToolUse；不得把 Hook 写进 Skill/Command/Agent frontmatter 或重复注册。
+- Hook 命令通过双引号包裹的 `${CODEBUDDY_PLUGIN_ROOT}` 或等价 argv-safe 形式定位随包 runtime，不使用虚构变量或仓库源码路径。
+- OpenLogos 不覆盖 WorkBuddy settings、permissions、其它插件或原生记忆；Hook owner 仅限自身 plugin identity。
+
+### 输入与工具归一化
+
+Runtime 从 stdin 限长读取一个 JSON 对象，将官方事件字段的 snake_case/camelCase 兼容形态归一化为宿主无关结构。两套同义字段冲突、类型错误、尾随多对象或缺失必需字段时 deny。
+
+| 内部动作 | WorkBuddy/CodeBuddy 工具名示例 | 处理 |
+|---|---|---|
+| write | `Write`、`write_to_file` | 提取全部候选目标并做路径校验 |
+| edit | `Edit`、`replace_in_file` | 同时校验源/目标或所有编辑路径 |
+| command | `Bash`、`execute_command` | 分析直接和间接写盘；不能证明只读时按潜在写操作处理 |
+| unknown | 未知工具 | 若可能写盘则 fail-closed，不以未识别为 allow |
+
+`cwd` 和输入路径不是信任根。项目根从 OpenLogos 配置事实解析，所有候选经绝对化、realpath、symlink 和边界校验后交给共享服务。
+
+### 共享 `proposal_step` 决策
+
+WorkBuddy Adapter 不实现 allowlist，只调用共享 `GuardDecisionService`。服务每次 PreToolUse 重读 guard、active slug、tasks 与 `proposal_step`：
+
+| 状态 | 写入规则 |
+|---|---|
+| initial | 沿用既有 initial 规则 |
+| launched 无 guard | 源码、规格及其它非安全写入 deny |
+| writing / ready-to-delta | 仅当前阶段 proposal/tasks 与既有精确例外 |
+| delta-writing | 仅当前提案 `deltas/**` 和对应 `tasks.md` |
+| ready-to-merge | 停止 delta 写入并提示 merge 人类确认点 |
+| merge-generated | 仅 MERGE_PROMPT 指定合并目标 |
+| coding | 仅批准切片的业务代码、UT/ST、reporter 和 tasks |
+
+不同 active slug、路径逃逸、symlink 逃逸、guard/tasks 状态矛盾、未知 owner 和决策异常均 deny；WorkBuddy 宿主不得扩大阶段范围。
+
+### 输出与退出语义
+
+#### 放行
+
+stdout 输出一条合法 JSON，`hookSpecificOutput.hookEventName="PreToolUse"`、`permissionDecision="allow"` 且 `continue=true`；exit 0。日志只写 stderr。
+
+#### 阻断
+
+stdout 输出同一事件的 `permissionDecision="deny"`、`continue=false` 与非空 `permissionDecisionReason`（或官方当前等价 reason 字段）；同时 exit 2。测试必须同时观察响应、reason、退出码和目标未变化。若具体宿主版本对 `continue` 与 hard deny 的组合有额外约束，以“工具绝不执行”为不变量，并在真实 WorkBuddy 5.3.5+ capability probe 中锁定实际协议。
+
+#### 异常
+
+非法/超限 JSON、缺字段、未知潜在写工具、项目根/状态解析失败或共享服务异常必须捕获并转为协议 deny + exit 2。exit 1 或未结构化异常不得作为 hard guard 成功证据。
+
+### SessionStart 配合与记忆隔离
+
+- SessionStart exit 0，输出 `hookEventName="SessionStart"` 与非空 `additionalContext`，内容来自磁盘 lifecycle、slug、`proposal_step`、范围和下一确认点。
+- SessionStart 不读取 WorkBuddy 原生记忆，也不是授权凭据；PreToolUse 每次重读磁盘。
+- 插件/Hook 刷新后以新 session 验证；旧 session 的下一次 PreToolUse 仍必须按最新事实收紧。
+
+### 安全验证矩阵
+
+- CLI/桌面工具名、snake_case/camelCase、相等双字段、冲突字段。
+- allow、源码、提案外、`..`、绝对路径、symlink、未知工具与间接写盘。
+- 无 guard、delta-writing、ready-to-merge、merge-generated、coding 与同会话阶段变化。
+- 损坏 stdin、runtime/状态异常、stdout 污染、exit 0/2/其它非零。
+- UT/ST 与真实 WorkBuddy 5.3.5+ smoke 均断言目标哈希；直接调用 wrapper/runtime 不替代真实宿主。
+
+### 权威参考
+
+- CodeBuddy Hooks：`https://www.codebuddy.cn/docs/cli/hooks`
+- CodeBuddy Permissions：`https://www.codebuddy.cn/docs/cli/permissions`
+- WorkBuddy Changelog（5.3.5 扩展插件 Hook）：`https://www.codebuddy.cn/docs/workbuddy/Changelog`

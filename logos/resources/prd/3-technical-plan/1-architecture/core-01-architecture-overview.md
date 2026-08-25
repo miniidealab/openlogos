@@ -1715,3 +1715,75 @@ plan all adapters → validate → stage → verify bytes/mode
 3. 所有已选 Adapter 成功后才提交 lifecycle/版本戳和全局成功。
 4. hard guard 必须同时具备可观察 deny、非空原因、exit 2 与目标未变化证据。
 5. 真实 tarball + 真实 Qoder CLI smoke 不得被源码合同测试替代。
+
+## 三十、WorkBuddy 薄 Adapter、记忆隔离与真实宿主架构
+
+### 30.1 组件边界
+
+```mermaid
+flowchart LR
+  C[init/adopt/sync/launch] --> R[AiToolAdapterRegistry]
+  R --> W[WorkBuddyAdapter]
+  W --> P[ManagedAssetTransaction]
+  P --> F[WorkBuddy 原生插件资产]
+  H[hooks/runtime.mjs] --> N[WorkBuddyHookNormalizer]
+  N --> S[SessionContextService]
+  N --> G[GuardDecisionService]
+  M[WorkBuddy 原生记忆]:::external
+  W -. 不读取/不写入 .-> M
+  classDef external fill:#eee,stroke:#777,stroke-dasharray: 4 4
+```
+
+- Registry 仍是规范 id、稳定顺序、alias 冲突和 capability 的唯一来源；新增 `workbuddy` 不允许四个生命周期命令出现新的宿主名称分支。
+- WorkBuddyAdapter 只规划插件布局和宿主协议映射；共享事务、状态派生和 guard 判定不复制到 Adapter。
+- 原生记忆是明确的外部边界，不进入 OpenLogos asset inventory、状态输入、备份、同步或回滚集合。
+
+### 30.2 资产模型与 owner
+
+| 资产 | OpenLogos owner | 策略 |
+|---|---:|---|
+| `.workbuddy-plugin/plugin.json` | 是 | identity 匹配后原子更新 |
+| `skills/`、`commands/`、`agents/` 托管文件 | 是 | 清单级更新，不做目录镜像删除 |
+| `hooks/hooks.json`、`hooks/runtime.mjs` | 是 | 协议校验、暂存、读回 |
+| WorkBuddy settings、其它插件、未知文件 | 否 | preserve；冲突时 block |
+| WorkBuddy 原生记忆 | 否 | 禁止读写、迁移、清空和授权依赖 |
+
+模板使用 `.workbuddy-plugin/plugin.json`，Hook 命令通过 `${CODEBUDDY_PLUGIN_ROOT}` 定位 runtime。manifest 版本与 npm 包版本同源，`0.13.28` 制品清单必须覆盖所有声明组件。
+
+### 30.3 Hook 归一化与决策流水线
+
+```text
+stdin JSON
+  → 限长/类型/事件校验
+  → WorkBuddy CLI/桌面工具名与字段归一化
+  → cwd + 目标 realpath/symlink 边界校验
+  → 每次从磁盘读取 guard、slug、tasks、proposal_step
+  → SessionContextService 或 GuardDecisionService
+  → WorkBuddy 协议 JSON（stdout）+ 诊断（stderr）+ exit code
+```
+
+- SessionStart 仅提供说明性上下文，不能缓存为授权；它不读取宿主记忆。
+- PreToolUse 将 `Write`/`Edit`/`Bash` 和 `write_to_file`/`replace_in_file`/`execute_command` 等映射到共享动作，未知潜在写工具 fail-closed。
+- allow 为 `permissionDecision=allow` + exit 0；deny 为 `permissionDecision=deny` + 非空 reason + exit 2。解析或决策异常必须被包装为同一 deny 合同。
+
+### 30.4 生命周期与事务顺序
+
+1. `init`/`adopt`/`sync`/`launch` 先由 Registry 选择 Adapter，再收集所有资产计划。
+2. 全量预检 owner、marker、manifest、hooks、tarball 清单和目标可写性。
+3. 在隔离暂存区生成并校验内容，按稳定顺序原子替换，再从磁盘读回。
+4. 任一步失败回滚所有已选 Adapter 的本次变更；同步版本戳和 lifecycle 最后提交。
+5. 成功后要求新 WorkBuddy session 装载插件；同一旧 session 的 PreToolUse 仍每次重读磁盘事实。
+
+### 30.5 capability probe 与兼容边界
+
+- 仓库 UT/ST 验证合同和事务；隔离 staging 使用 `0.13.28` 真实 npm tarball 与 WorkBuddy 5.3.5+ 验证版本、插件发现、组件和扩展 Hook capability。
+- “文件已复制”不等于宿主已支持；真实 capability 缺失时部署和 smoke 保持未完成。
+- 既有 Adapter 的规范值、目标、资产哈希语义和输出结构保持回归锁定；历史配置未选择 WorkBuddy 时不自动部署。
+- 本架构不授权公开 npm 发布、Git tag、GitHub Release、官网部署或 push。
+
+### 30.6 失败模型
+
+- manifest/Hook 非法、制品缺资产、owner 冲突或读回失败：写入前阻断或全事务回滚。
+- 版本低于 5.3.5、插件未发现或 Hook capability 不可用：隔离 staging 失败，不用 mock 冒充。
+- 非法事件、路径逃逸、状态矛盾、未知潜在写工具或 runtime 异常：显式 deny + exit 2。
+- 原生记忆前后证据发生变化：部署/smoke 失败并回滚 OpenLogos 托管资产，不尝试改写记忆“修复”。

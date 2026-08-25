@@ -128,3 +128,32 @@
 - ST-S01-20 比较执行前后完整目录快照和用户文件 SHA-256，不能只断言退出码。
 - 测试内嵌 OpenLogos reporter，将本节每个 ID 的 `id`、`status`、`duration_ms`、`timestamp`、`scenario: "S01"` 追加到 `logos/resources/verify/test-results.jsonl`；失败含 `error`。
 - reporter 写入失败必须使对应测试失败，不能吞掉或延后补写。
+
+## WorkBuddy 初始化测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S01-116 | `workbuddy` 参数解析 | 返回唯一规范 id，大小写策略与 Registry 一致，不接受虚构别名 |
+| UT-S01-117 | `all` 稳定展开 | 在 Qoder 后包含 WorkBuddy，排除 `other`，无重复 |
+| UT-S01-118 | capability 声明 | instructions/skills/commands/agents/plugin/sessionStart/preToolUse 均为 true |
+| UT-S01-119 | 插件资产规划 | 精确包含 manifest、Skills、Commands、Agents、hooks.json、runtime |
+| UT-S01-120 | 插件命令与协议静态校验 | 使用 `CODEBUDDY_PLUGIN_ROOT`，Hook 不写入 frontmatter，不重复注册 |
+| UT-S01-121 | `0.13.28` tarball 清单 | 真实打包结果包含全部 WorkBuddy 模板与 runtime，版本同源 |
+| UT-S01-122 | owner/marker 冲突预检 | 首个写入前 blocked，精确报告冲突路径，不覆盖用户资产 |
+| UT-S01-123 | 原生记忆和用户资产排除 | settings、其它插件、未知文件、原生记忆均不进入 ManagedAsset 写计划 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S01-21 | `init --ai-tool workbuddy` 成功 | 配置、指令、完整插件原子落盘并读回；结果逐资产可审计 |
+| ST-S01-22 | `init --ai-tool all` 与重复执行 | WorkBuddy 稳定包含；第二次收敛为 unchanged，既有宿主结果零漂移 |
+| ST-S01-23 | 冲突/模板缺失失败 | 总事务回滚，无半初始化；用户 settings、插件和原生记忆前后证据一致 |
+
+### 自动化与证据要求
+
+- UT 必须从真实模板目录或真实 `npm pack --json` 结果取证，不得用手写清单冒充制品覆盖。
+- ST 使用隔离临时 HOME/workspace，并保存配置、托管资产、用户资产和原生记忆边界的前后哈希。
+- 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，至少包含 `test_id`、`scenario_id="S01"`、`status`、`duration_ms`、`evidence`；失败不得写 pass。

@@ -691,3 +691,60 @@ sequenceDiagram
 - 需求：S09 Qoder Hook 与 hard guard 验收。
 - 架构：29.4 事件归一化与映射、29.5 状态读取与路径安全。
 - 测试：UT-S09-198～UT-S09-207、ST-S09-77～ST-S09-80。
+
+## S09 WorkBuddy SessionStart 与 PreToolUse 硬门禁时序
+
+### 场景目标
+
+新 WorkBuddy session 获得磁盘派生的阶段上下文；每次潜在写操作由 PreToolUse 重新读取状态并执行与既有宿主一致的 hard guard。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant W as WorkBuddy
+    participant A as WorkBuddy Hook Adapter
+    participant S as SessionContextService
+    participant G as GuardDecisionService
+    U->>W: 启动新 session
+    W->>A: SessionStart(event)
+    A->>S: 从项目磁盘派生上下文
+    S-->>A: module/slug/proposal_step/范围/确认点
+    A-->>W: additionalContext, exit 0
+    W-->>U: 展示上下文
+    U->>W: 请求工具操作
+    W->>A: PreToolUse(tool, input)
+    A->>A: 归一化字段、工具名与路径
+    A->>G: 重读 guard、tasks 与 proposal_step
+    alt 当前 allowlist 内
+        G-->>A: allow
+        A-->>W: permissionDecision=allow, exit 0
+        W->>W: 执行工具
+    else 越界或异常
+        G-->>A: deny + reason
+        A-->>W: permissionDecision=deny, exit 2
+        W-->>U: 阻断并展示恢复动作
+    end
+```
+
+### 归一化合同
+
+1. CLI 工具 `Write`、`Edit`、`Bash` 与桌面工具 `write_to_file`、`replace_in_file`、`execute_command` 映射为共享动作；snake_case/camelCase 字段归一化后再判定。
+2. Hook 从 stdin 限长读取单个 JSON，stdout 只输出协议 JSON，诊断写 stderr。
+3. SessionStart 不读取 WorkBuddy 原生记忆，不作为授权缓存；旧会话提示不能扩大下一次 PreToolUse 权限。
+4. PreToolUse 每次重新解析 realpath/symlink、active slug、`proposal_step` 和 allowlist。
+5. allow 为 `permissionDecision="allow"` + exit 0；deny 为 `permissionDecision="deny"` + 非空 reason + exit 2。
+
+### 异常
+
+- `EX-WB-S09-1`：空输入、非法 JSON、缺字段或类型错误转换为协议 deny + exit 2。
+- `EX-WB-S09-2`：`..`、绝对路径或 symlink 落到 allowlist 外时 deny，目标哈希不变。
+- `EX-WB-S09-3`：未知潜在写工具和 runtime/状态异常 fail-closed；exit 1 不计作安全阻断。
+- `EX-WB-S09-4`：同会话从 delta-writing 进入 ready-to-merge 后，下一次调用立即收紧。
+
+### 追溯
+
+- 需求：S09 WorkBuddy Hook 与 hard guard 验收。
+- 架构：30.3 Hook 流水线、30.6 失败模型。
+- 测试：UT-S09-208～UT-S09-218、ST-S09-81～ST-S09-84。

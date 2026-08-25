@@ -129,3 +129,30 @@
 - 幂等比较 manifest、组件、runtime、AGENTS managed block 与用户资产哈希，不把合法 syncedAt 当内容漂移。
 - 内嵌 OpenLogos reporter，将全部 ID 写入 `logos/resources/verify/test-results.jsonl`，字段含 `status`、`timestamp`、`duration_ms`、`scenario: "S08"`，失败含 `error`。
 - ST-S08-21 保存版本戳和所有 Adapter 目标树前后快照；reporter 写入失败使测试失败。
+
+## WorkBuddy 同步测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S08-27 | 历史配置兼容 | 未选择 WorkBuddy 的单值/数组不自动部署，`all` 才包含它 |
+| UT-S08-28 | lifecycle 模板选择 | initial/launched 选择正确且由 capability 驱动 |
+| UT-S08-29 | 托管资产差异 | 只更新 OpenLogos owner；用户 settings、插件和未知文件 preserved |
+| UT-S08-30 | 原生记忆零写入 | 记忆路径/内容不进入扫描、计划、暂存、备份或回滚集合 |
+| UT-S08-31 | 失败回滚与版本戳 | 暂存、替换、权限或读回失败均回滚，版本戳保持旧值 |
+| UT-S08-32 | 幂等与结果分类 | 第二次同步哈希稳定，结果正确区分 updated/unchanged/preserved/blocked |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S08-22 | WorkBuddy 托管插件升级 | 只刷新托管资产，成功后最后写 `.openlogos-sync.json` |
+| ST-S08-23 | 混合宿主与用户资产 | 全部 Adapter 稳定执行；settings、用户插件和原生记忆字节不变 |
+| ST-S08-24 | WorkBuddy 提交中途失败 | 已写资产全部恢复，不输出 Sync complete，不更新版本戳 |
+
+### 自动化与证据要求
+
+- 测试夹具必须包含未知插件文件、不同 identity 插件、settings 和不透明记忆样本，并对前后哈希作断言。
+- 故障注入覆盖暂存、rename 和读回三个位置，证明事务和版本戳顺序。
+- 每个用例通过 OpenLogos reporter 追加 `test_id`、`scenario_id="S08"`、`status`、`duration_ms`、`evidence` 到 `logos/resources/verify/test-results.jsonl`。

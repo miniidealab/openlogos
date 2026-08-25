@@ -670,3 +670,65 @@ openlogos --version
 ### 完成判据
 
 只有 SMOKE-core-108～SMOKE-core-115 全部产生可追溯 PASS、制品与回滚证据齐全，且无公开发布、部署或 push 外部副作用，才能判定本提案 staging 部署完成。
+
+## WorkBuddy Adapter v0.13.28 隔离 staging 部署方案
+
+### 部署目标与授权边界
+
+- 仅在隔离 staging 安装本提案构建的 `0.13.28` 真实 npm tarball，并由真实 WorkBuddy 5.3.5+ 验证插件、组件和 Hook。
+- 禁止 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署和 `git push`。
+- 本节只定义未来步骤；必须在代码实现、verify PASS 和用户另行授权部署后执行。
+
+### 前置条件
+
+1. 所有代码切片、UT/ST 和 reporter 完成，最终 `openlogos verify` 为 PASS。
+2. staging 具备受支持的 Node.js/npm 和真实 WorkBuddy 5.3.5+；记录绝对路径、版本及新 session 启动证据。
+3. 保存部署前 OpenLogos CLI、插件状态、上一可用 `0.13.27` tarball 和 SHA-256，确保可离线回滚。
+4. 使用一次性 init/adopt workspace 与隔离 WorkBuddy profile/plugin 根，不读取生产凭据或真实用户工作区。
+5. 对 settings、用户插件、项目资产和原生记忆建立脱敏的前后不透明证据；不得读取记忆正文。
+
+### 制品构建与证明
+
+未来获授权后按仓库真实脚本执行 build/test/pack：
+
+1. 依据锁文件安装依赖，执行构建、全部测试及 reporter 完整性检查。
+2. 在 `cli/` 运行真实 `npm pack`；禁止 workspace link、源码直跑或公开 registry 包替代。
+3. 记录 package name、精确版本 `0.13.28`、tarball 路径、字节数和 SHA-256。
+4. 列出 tarball，证明包含编译 CLI、`.workbuddy-plugin/plugin.json`、Skills、Commands、Agents、`hooks/hooks.json`、runtime 和相关规范。
+5. 从隔离目录安装 tarball，记录 `openlogos --version` 与解析路径，排除全局旧版本。
+
+### 真实 capability probe 与安装
+
+1. 执行真实 WorkBuddy 版本探测，要求 `>=5.3.5`；无法识别或版本过低即停止。
+2. 按官方插件安装/启用流程加载 tarball 产物生成的插件，不引用仓库模板源码。
+3. 由真实宿主证明唯一插件 identity 可发现，Skills/Commands/Agents 可列出，扩展 SessionStart/PreToolUse Hook capability 可用。
+4. 插件或 Hook capability 缺失时不得仅凭文件存在继续，也不得用 mock/直接调用 runtime 冒充。
+5. 刷新后始终启动新 WorkBuddy session；旧 session 不作为成功或失败的唯一依据。
+
+### staging 验证顺序
+
+1. 空项目执行 `init --ai-tool workbuddy`，存量 fixture 执行 `adopt --ai-tool workbuddy`，另验证 `all` 稳定展开。
+2. 核对配置、plugin identity、资产清单与用户边界前后证据。
+3. 在真实新 session 验证插件、Skills、Commands、Agents 和 SessionStart 磁盘上下文。
+4. 在 delta-writing 中执行一项允许写入，再请求源码、提案外和 symlink 逃逸写入；验证 allow/deny、reason、exit code 与文件哈希。
+5. 连续 sync、两次 adopted launch，每次刷新后重开 session，证明第二次托管资产 unchanged。
+6. 对 Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder 执行最小回归。
+
+### 证据清单
+
+- build/test/reporter 状态，tarball 路径、版本、大小、SHA-256 和完整清单。
+- OpenLogos 与 WorkBuddy 的真实路径、版本、隔离 profile/workspace 标识及 capability probe 原始脱敏输出。
+- 插件/组件发现、SessionStart、PreToolUse allow/deny 的 stdout/stderr/exit code 与目标 SHA-256。
+- settings、用户插件、项目资产、原生记忆边界前后证据，两次 sync/launch 差异和既有宿主回归。
+- 回滚演练及恢复后的 CLI 版本、插件状态和边界哈希。
+
+### 失败与回滚
+
+- 任一 build、test、pack、安装、版本、真实插件发现、Hook hard guard、记忆零写入或回归失败即停止，不产生部署成功结论。
+- 禁用/卸载本次隔离 WorkBuddy 插件和 `0.13.28` CLI，重新安装已校验 SHA-256 的 `0.13.27` tarball，启动新 session。
+- 校验恢复后的 CLI 版本、插件状态和用户边界证据；保留脱敏失败日志与失败制品。
+- 回滚只作用于隔离 staging；不修改真实用户 WorkBuddy settings、工作区、原生记忆或未知插件。
+
+### 完成判据
+
+只有 SMOKE-core-116～SMOKE-core-123 全部产生可追溯 PASS、制品/capability/回滚证据齐全，且没有公开发布或 push 副作用，才能判定 staging 部署完成。

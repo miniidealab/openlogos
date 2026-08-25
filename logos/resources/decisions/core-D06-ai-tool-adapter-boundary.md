@@ -98,3 +98,43 @@ Qoder Adapter 的所有权严格限于宿主协议和资产布局：
 - Qoder Plugin Reference：`https://docs.qoder.com/cli/plugins-reference`
 - Qoder Hooks：`https://docs.qoder.com/cli/hooks`
 - 关联规范：`spec/qoder-plugin.md`、`spec/agents-md.md`、`spec/pretooluse-guard.md`
+
+## D06 WorkBuddy Adapter 落地补充
+
+### WorkBuddy 落地结论
+
+WorkBuddy 作为 D06 下的第三个后续薄 Adapter 接入。稳定 id 为 `workbuddy`；Registry 继续独占规范值、capability、`all` 展开和稳定顺序，init/adopt/sync/launch 只消费 Adapter 合同，不新增 WorkBuddy 名称分支。
+
+WorkBuddy Adapter 的所有权仅限宿主协议和资产布局：
+
+1. 使用 `.workbuddy-plugin/plugin.json` 与 `skills/`、`commands/`、`agents/`、`hooks/hooks.json` 交付插件组件。
+2. Hook 子进程通过官方 `${CODEBUDDY_PLUGIN_ROOT}` 定位共享 Node.js runtime，不发明变量，不依赖仓库源码或当前 shell。
+3. SessionStart 只映射共享 `SessionContextService` 的磁盘事实，不读取 WorkBuddy 原生记忆，也不构成授权。
+4. PreToolUse 只归一化 WorkBuddy/CodeBuddy 的事件字段、CLI/桌面工具名和输出/退出语义；最终 allow/deny 委托共享 `GuardDecisionService`。
+5. WorkBuddy 原生记忆属于宿主和用户，明确排除在 OpenLogos 资产、状态、同步、备份和回滚集合之外。
+
+### D06 不变量在 WorkBuddy 上的证明义务
+
+- 未选择 `workbuddy` 的历史配置保持原行为；`all` 新展开显式包含 WorkBuddy，并由既有六宿主回归锁定。
+- OpenLogos 只更新可证明由自身拥有的 plugin identity 与 managed block；settings、其它插件、项目资产、未知文件和原生记忆默认 preserved。
+- 每次 PreToolUse 重读 lifecycle、active change 和 `proposal_step`；静态指令、SessionStart 或原生记忆不得成为授权缓存。
+- allow 必须 exit 0；deny 必须有非空 reason 并 exit 2。非法输入、未知潜在写工具、路径逃逸、状态矛盾和共享决策异常 fail-closed。
+- lifecycle 与同步版本戳只在全部 Adapter 事务成功后提交；模板缺失、owner 冲突、协议损坏或读回失败不得产生总成功。
+- `0.13.28` tarball 缺声明资产必须预检失败；真实 WorkBuddy 5.3.5+ 的插件/Hook capability 和 smoke 不得由 mock 替代。
+
+### 版本与部署决策
+
+- 本能力目标版本为 `0.13.28`，部署对象是本提案构建的真实 npm tarball。
+- 仅在 verify PASS 且用户另行授权后部署到隔离 staging；使用真实 WorkBuddy 5.3.5+ 新 session 验证。
+- 不执行 npm publish、Git tag、GitHub Release、官网部署或 `git push`。
+
+### WorkBuddy 落地来源
+
+- 提案：`workbuddy-adapter-foundation`
+- 用户决策：隔离 staging 的真实 `0.13.28` npm tarball + WorkBuddy 5.3.5+ 验证，不公开发布。
+- WorkBuddy Plugins：`https://www.codebuddy.cn/docs/workbuddy/Plugins`
+- CodeBuddy Plugin Reference：`https://www.codebuddy.cn/docs/cli/plugins-reference`
+- WorkBuddy Memory：`https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Memory`
+- CodeBuddy Hooks：`https://www.codebuddy.cn/docs/cli/hooks`
+- WorkBuddy Changelog：`https://www.codebuddy.cn/docs/workbuddy/Changelog`
+- 关联规范：`spec/workbuddy-plugin.md`、`spec/agents-md.md`、`spec/pretooluse-guard.md`

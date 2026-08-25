@@ -387,3 +387,43 @@
 - [x] PreToolUse allow/hard deny：SMOKE-core-112 / SMOKE-core-113
 - [x] sync/launch 幂等与用户资产：SMOKE-core-114
 - [x] 既有五宿主回归与 staging 回滚：SMOKE-core-115
+
+## WorkBuddy v0.13.28 真实 tarball 与真实宿主 staging smoke
+
+### 范围与统一前置条件
+
+- 环境：隔离 staging；安装本提案真实 `npm pack` tarball，禁止 workspace link、源码直跑或公开包替代。
+- 宿主：真实 WorkBuddy 5.3.5+，记录绝对路径、版本、隔离 profile/plugin 根与新 session 标识。
+- 安全：一次性 init/adopt workspace；不执行 npm publish、Git tag、GitHub Release、官网部署或 `git push`。
+- 运行器：统一 smoke dispatcher 必须发现本节全部 ID，并写入配置声明的 smoke JSONL 结果路径。
+
+### 冒烟测试用例
+
+| ID | 验证点 | 操作 | 通过标准与证据 |
+|---|---|---|---|
+| SMOKE-core-116 | `0.13.28` 真实 tarball 与身份 | build/test/pack、记录 SHA-256、隔离安装 | 实际 CLI 来自该 tarball；版本精确 0.13.28；清单含全部 WorkBuddy 插件资产/runtime |
+| SMOKE-core-117 | WorkBuddy 版本、插件发现与 Hook capability | 探测真实 5.3.5+，按官方流程安装/启用插件并开新 session | 唯一 OpenLogos identity 可发现；扩展 SessionStart/PreToolUse capability 可用；不引用仓库源码 |
+| SMOKE-core-118 | Skills/Commands/Agents 与记忆边界 | 在真实会话列出并调用最小无副作用入口，比较边界证据 | 声明组件可发现且 locale 正确；settings、用户插件、项目资产和原生记忆未被读取性改写 |
+| SMOKE-core-119 | SessionStart 磁盘上下文 | 无 guard/有 guard 各开新 session | additionalContext 与 lifecycle/proposal_step/范围/确认点一致，不依赖原生记忆 |
+| SMOKE-core-120 | PreToolUse allow | delta-writing 下由真实 WorkBuddy 执行允许的 delta fixture 写入 | `permissionDecision=allow`、exit 0，工具执行，内容和审计证据一致 |
+| SMOKE-core-121 | PreToolUse hard deny | 请求源码、提案外、`..`、symlink 逃逸，并注入 runtime/状态异常 | 均执行前 deny、reason 非空、exit 2；exit 1 不计通过；目标哈希不变 |
+| SMOKE-core-122 | sync/launch 幂等与记忆零写入 | 连续 sync、两次 adopted launch，每次刷新后开新 session | 第二次托管资产 unchanged；用户边界和原生记忆证据不变；新 session 为 launched |
+| SMOKE-core-123 | 既有宿主回归与真实回滚 | 跑六个既有宿主最小回归；禁用插件并恢复 0.13.27 tarball | Claude Code/OpenCode/Codex/Cursor/ZCode/Qoder 契约不变；版本、插件状态和用户边界恢复可证 |
+
+### 判定与 reporter 合同
+
+- 每个 runner 写一行合法 JSONL，至少含 `id`、`status`、`timestamp`、`duration_ms`、`environment: "staging"`、WorkBuddy 版本和 tarball SHA-256；失败包含 `error` 与证据路径。
+- SMOKE-core-116～123 任一缺失、skip、fail、未发现或 reporter 未写入，都不得生成 `SMOKE_PASS`。
+- SMOKE-core-120/121 必须保留脱敏的真实 WorkBuddy Hook 响应、stderr、exit code、tool input 摘要和文件 SHA-256；直接调用 runtime 不算真实宿主通过。
+- SMOKE-core-118/122 只记录记忆边界的不透明前后证据，不收集或输出记忆正文。
+- SMOKE-core-123 必须实际演练隔离回滚，不得用“已有方案”替代。
+
+### 覆盖度校验
+
+- [x] 真实 tarball 与精确版本：SMOKE-core-116
+- [x] WorkBuddy 5.3.5+、插件和扩展 Hook capability：SMOKE-core-117
+- [x] Skills/Commands/Agents 与原生记忆零写入：SMOKE-core-118
+- [x] SessionStart：SMOKE-core-119
+- [x] PreToolUse allow/hard deny：SMOKE-core-120 / SMOKE-core-121
+- [x] sync/launch 幂等和用户边界：SMOKE-core-122
+- [x] 既有六宿主回归与 staging 回滚：SMOKE-core-123

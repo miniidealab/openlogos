@@ -296,3 +296,53 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 
 - Qoder CLI Memory：`https://docs.qoder.com/cli/memory`
 - Qoder Plugin Reference：`https://docs.qoder.com/cli/plugins-reference`
+
+## WorkBuddy 静态指令、会话上下文与原生记忆边界
+
+### 指令入口与三层职责
+
+当 `aiTool=workbuddy` 或 `all` 展开包含 WorkBuddy 时，OpenLogos 按 Adapter capability 部署静态项目指令和原生插件资产。三类上下文必须分离：
+
+| 层 | 内容 | 是否可授权写入 |
+|---|---|---:|
+| 静态项目指令 | 项目索引、语言、Why→What→How、Delta/guard、确认点 | 否 |
+| SessionStart | 从磁盘派生的 lifecycle、slug、`proposal_step`、范围与下一动作 | 否 |
+| PreToolUse | 每次调用重新读取磁盘并作 allow/deny | 是，唯一 hard guard |
+
+`AGENTS.md`、`CODEBUDDY.md` 或宿主可读取的等价静态指令只能作为指导；任何文件名差异由 WorkBuddy Adapter/能力探测封装，不得改变 OpenLogos 方法论内容或被当作 hard guard。
+
+### 托管片段与用户内容保护
+
+1. 复用既有 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` 合并 helper；完整 marker 只替换内部，无 marker 保留用户原文后追加，残缺/交错/重复 marker fail loud。
+2. init/adopt/sync/launch 调用同一事务实现，大小写真实路径、locale 和回滚语义一致。
+3. OpenLogos 只维护自身托管片段和插件 identity；WorkBuddy settings、其它插件、项目自有指令/资产和未知文件不得格式化、重命名或删除。
+4. sync/launch 后提示启动新 WorkBuddy session 获取插件与 SessionStart 快照，不宣称旧会话已热刷新。
+
+### Skills、Commands 与 Agents 分组
+
+| 类型 | OpenLogos 位置 | 展示规则 |
+|---|---|---|
+| 方法论 Skills | WorkBuddy plugin `skills/<name>/SKILL.md` | 列真实随包名称与用途，保持 OpenLogos owner |
+| Commands | plugin `commands/<name>.md` | 列调用名称和人类确认点，不伪装成 Skill |
+| Agents | plugin `agents/<name>.md` | 只列真实随包 Agent，不生成不存在角色 |
+| 项目/用户能力 | 其它插件、项目资产 | 单独分组，保留原 owner，不由 sync 吸收 |
+
+### 原生记忆边界
+
+- WorkBuddy 原生记忆由宿主和用户独占。OpenLogos 不读取正文、不生成条目、不清空、迁移、导入或导出记忆。
+- 原生记忆不得成为 lifecycle、active slug、`proposal_step` 或 allowlist 的事实源，也不得作为身份、授权或 smoke 成功凭据。
+- 自动化与 staging 只能保留不透明的前后证据证明“未触碰”，不得把记忆内容复制进日志、reporter 或提案产物。
+- 静态指令或 SessionStart 与原生记忆冲突时，PreToolUse 基于当前磁盘状态的决策优先。
+
+### 一致性与验证
+
+- Registry 是 WorkBuddy 指令与插件资产生成的唯一入口；生命周期命令不得拼接宿主分支。
+- 静态清单、plugin manifest 与 `0.13.28` tarball 实际组件必须一致；缺失、重复 identity 或非法 frontmatter/Hook 配置阻断预检。
+- UT/ST 覆盖用户内容保留、marker、zh/en、initial/launched/adopted、workbuddy/all 与记忆零写入。
+- staging 由真实 WorkBuddy 5.3.5+ 新 session 证明静态指令和组件可用，同时由 PreToolUse 独立证明 hard guard。
+
+### 权威参考
+
+- WorkBuddy Plugins：`https://www.codebuddy.cn/docs/workbuddy/Plugins`
+- CodeBuddy Plugin Technical Reference：`https://www.codebuddy.cn/docs/cli/plugins-reference`
+- WorkBuddy Memory：`https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Memory`

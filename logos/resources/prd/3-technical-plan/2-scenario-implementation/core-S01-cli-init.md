@@ -245,3 +245,61 @@ sequenceDiagram
 - 需求：S01 Qoder 初始化验收。
 - 架构：29.2 Qoder 资产模型、29.6 资产事务与提交顺序。
 - 测试：UT-S01-108～UT-S01-115、ST-S01-18～ST-S01-20。
+
+## S01 WorkBuddy 原生插件原子初始化时序
+
+### 场景目标
+
+通过 `init --ai-tool workbuddy|all` 部署完整 WorkBuddy 原生插件，同时保护用户 settings、插件、项目资产和原生记忆。
+
+### 前置与后置条件
+
+- 前置：项目未初始化；选择值可由 Registry 解析；随包模板完整。
+- 成功后置：配置持久化规范 id，托管指令和插件全部读回成功，用户资产与记忆不变。
+- 失败后置：不留下半初始化目录或部分插件，不打印总成功。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI
+    participant R as Adapter Registry
+    participant W as WorkBuddy Adapter
+    participant T as Managed Asset Transaction
+    U->>C: init --ai-tool workbuddy|all
+    C->>R: parse + expand
+    R-->>C: 稳定列表（含 workbuddy）
+    C->>W: planAssets(initial)
+    W-->>T: 指令、manifest、Skills、Commands、Agents、Hooks
+    T->>T: 校验 owner/marker/模板/制品并暂存
+    alt 全部合法
+        T->>T: 原子提交并读回
+        T-->>C: DeployResult
+        C-->>U: 逐资产结果、记忆未触碰、新 session 提示
+    else 冲突或缺失
+        T->>T: 回滚
+        T-->>C: blocked + 精确路径
+        C-->>U: 非零退出
+    end
+```
+
+### 步骤与不变量
+
+1. Registry 负责 `workbuddy` 和 `all`，CLI 不维护 WorkBuddy 分支。
+2. Adapter 规划 `.workbuddy-plugin/plugin.json`、约定组件、`hooks/hooks.json` 与 runtime；命令使用 `${CODEBUDDY_PLUGIN_ROOT}`。
+3. 事务层在首个写入前验证模板、manifest、Hook、marker、owner 和所有目标可写性。
+4. WorkBuddy settings、其它插件、项目未知文件和原生记忆只做边界证明，不进入写计划。
+5. 全部资产提交并读回后才写配置和打印成功；重复初始化规划必须幂等。
+
+### 异常
+
+- `EX-WB-S01-1`：`0.13.28` tarball 缺任一声明资产时，首个项目写入前失败。
+- `EX-WB-S01-2`：目标属于不同插件 identity 时 blocked，用户插件字节不变。
+- `EX-WB-S01-3`：托管 marker 残缺或 Hook 配置非法时总事务不提交。
+
+### 追溯
+
+- 需求：S01 WorkBuddy 初始化验收。
+- 架构：30.2 资产模型、30.4 生命周期与事务顺序。
+- 测试：UT-S01-116～UT-S01-123、ST-S01-21～ST-S01-23。
