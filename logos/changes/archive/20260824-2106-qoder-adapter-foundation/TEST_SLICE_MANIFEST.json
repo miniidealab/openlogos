@@ -1,0 +1,59 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "qoder-adapter-foundation",
+  "module": "core",
+  "task_fingerprint": "sha256:3f08f50f7c0d4d9325f110024254e244eeca33802dcb49ae893da871b2489bba",
+  "spec_fingerprint": "sha256:d6bed6845aa52e2c68ea6482cceac3fc7e982ddf2ba76a9cdbec920a08fa03ae",
+  "generated_at": "2026-08-25T00:00:00.000Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-qoder-lifecycle",
+      "task_text": "切片 1：交付 Qoder 插件生命周期闭环——把 `qoder` 接入 Adapter Registry、参数解析与 `all` 展开，原子完成 init/adopt/sync/launch 的托管资产、用户资产保护、回滚、版本戳、双语反馈、模板校验与 npm tarball 打包；同步实现/更新定向 UT/ST、OpenLogos `test-results.jsonl` reporter、真实 Qoder CLI `scripts/smoke-*` runner 与 `smoke-results.jsonl` reporter，并接入现有 smoke command 后执行覆盖预检（覆盖 UT-S01-108、UT-S01-109、UT-S01-110、UT-S01-111、UT-S01-112、UT-S01-113、UT-S01-114、UT-S01-115、ST-S01-18、ST-S01-19、ST-S01-20、UT-S08-21、UT-S08-22、UT-S08-23、UT-S08-24、UT-S08-25、UT-S08-26、ST-S08-19、ST-S08-20、ST-S08-21、UT-S14-10、UT-S14-11、UT-S14-12、UT-S14-13、ST-S14-21、ST-S14-22、UT-S20-27、UT-S20-28、UT-S20-29、UT-S20-30、UT-S20-31、UT-S20-32、UT-S20-33、ST-S20-17、ST-S20-18、ST-S20-19、SMOKE-core-108、SMOKE-core-109、SMOKE-core-110、SMOKE-core-114、SMOKE-core-115）。",
+      "owned_test_ids": [
+        "UT-S01-108", "UT-S01-109", "UT-S01-110", "UT-S01-111", "UT-S01-112", "UT-S01-113", "UT-S01-114", "UT-S01-115",
+        "ST-S01-18", "ST-S01-19", "ST-S01-20",
+        "UT-S08-21", "UT-S08-22", "UT-S08-23", "UT-S08-24", "UT-S08-25", "UT-S08-26",
+        "ST-S08-19", "ST-S08-20", "ST-S08-21",
+        "UT-S14-10", "UT-S14-11", "UT-S14-12", "UT-S14-13", "ST-S14-21", "ST-S14-22",
+        "UT-S20-27", "UT-S20-28", "UT-S20-29", "UT-S20-30", "UT-S20-31", "UT-S20-32", "UT-S20-33",
+        "ST-S20-17", "ST-S20-18", "ST-S20-19",
+        "SMOKE-core-108", "SMOKE-core-109", "SMOKE-core-110", "SMOKE-core-114", "SMOKE-core-115"
+      ],
+      "runner_selectors": [
+        "UT-S01-108", "UT-S01-109", "UT-S01-110", "UT-S01-111", "UT-S01-112", "UT-S01-113", "UT-S01-114", "UT-S01-115",
+        "ST-S01-18", "ST-S01-19", "ST-S01-20",
+        "UT-S08-21", "UT-S08-22", "UT-S08-23", "UT-S08-24", "UT-S08-25", "UT-S08-26",
+        "ST-S08-19", "ST-S08-20", "ST-S08-21",
+        "UT-S14-10", "UT-S14-11", "UT-S14-12", "UT-S14-13", "ST-S14-21", "ST-S14-22",
+        "UT-S20-27", "UT-S20-28", "UT-S20-29", "UT-S20-30", "UT-S20-31", "UT-S20-32", "UT-S20-33",
+        "ST-S20-17", "ST-S20-18", "ST-S20-19",
+        "SMOKE-core-108", "SMOKE-core-109", "SMOKE-core-110", "SMOKE-core-114", "SMOKE-core-115"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S01-test-cases.md",
+        "logos/resources/test/core-S08-test-cases.md",
+        "logos/resources/test/core-S14-test-cases.md",
+        "logos/resources/test/core-S20-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-qoder-hard-guard",
+      "task_text": "切片 2：交付 Qoder SessionStart 与 PreToolUse hard guard 闭环——在 Qoder Hook 边界完成 snake_case 输入归一化、磁盘状态逐次重读、共享 proposal_step/active change 上下文、路径安全、allow/deny 映射、permissionDecisionReason、exit 2 与异常 fail-closed，并保持共享 runtime 和其它宿主协议不漂移；同步实现/更新定向 UT/ST、OpenLogos `test-results.jsonl` reporter、真实 Qoder CLI `scripts/smoke-*` runner 与 `smoke-results.jsonl` reporter并执行覆盖预检（覆盖 UT-S09-198、UT-S09-199、UT-S09-200、UT-S09-201、UT-S09-202、UT-S09-203、UT-S09-204、UT-S09-205、UT-S09-206、UT-S09-207、ST-S09-77、ST-S09-78、ST-S09-79、ST-S09-80、SMOKE-core-111、SMOKE-core-112、SMOKE-core-113）。",
+      "owned_test_ids": [
+        "UT-S09-198", "UT-S09-199", "UT-S09-200", "UT-S09-201", "UT-S09-202", "UT-S09-203", "UT-S09-204", "UT-S09-205", "UT-S09-206", "UT-S09-207",
+        "ST-S09-77", "ST-S09-78", "ST-S09-79", "ST-S09-80",
+        "SMOKE-core-111", "SMOKE-core-112", "SMOKE-core-113"
+      ],
+      "runner_selectors": [
+        "UT-S09-198", "UT-S09-199", "UT-S09-200", "UT-S09-201", "UT-S09-202", "UT-S09-203", "UT-S09-204", "UT-S09-205", "UT-S09-206", "UT-S09-207",
+        "ST-S09-77", "ST-S09-78", "ST-S09-79", "ST-S09-80",
+        "SMOKE-core-111", "SMOKE-core-112", "SMOKE-core-113"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}
