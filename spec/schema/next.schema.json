@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openlogos.dev/schema/next/1.2.0",
+  "$id": "https://openlogos.dev/schema/next/1.3.0",
   "title": "openlogos next --format json 机器契约（data 对象）",
-  "x-contract-version": "1.2.0",
-  "$comment": "向后兼容 superset schema，最高支持契约版本 1.2.0。1.2.0 增加 plan_state.clarification；响应出现 clarification 时必须声明 1.2.0。1.0.0/1.1.0 响应不得出现 clarification。JSON Schema dialect = draft 2020-12；校验对象 = envelope 的 data 字段；additionalProperties 保持放开，未知值由消费方保守处理。",
+  "x-contract-version": "1.3.0",
+  "$comment": "向后兼容 superset schema，最高支持契约版本 1.3.0。1.3.0 增加 Plan Package evaluation、completion issues；next 额外增加 dispatch completion。JSON Schema dialect = draft 2020-12；校验对象 = envelope 的 data 字段；additionalProperties 保持放开，未知值由消费方保守处理。",
   "type": "object",
   "required": [
     "contract"
@@ -57,6 +57,9 @@
     },
     "plan_state": {
       "$ref": "#/$defs/planState"
+    },
+    "plan_package": {
+      "$ref": "#/$defs/planPackage"
     }
   },
   "allOf": [
@@ -147,9 +150,10 @@
           "enum": [
             "1.0.0",
             "1.1.0",
-            "1.2.0"
+            "1.2.0",
+            "1.3.0"
           ],
-          "$comment": "1.0.0 为基础契约；1.1.0 支持 feature 分组；1.2.0 支持 plan_state.clarification。出现 clarification 必须使用 1.2.0。"
+          "$comment": "1.0.0 为基础契约；1.1.0 支持 feature；1.2.0 支持 clarification；1.3.0 支持 Plan Package evaluation 与 completion issues。"
         }
       }
     },
@@ -210,6 +214,9 @@
             "type": "string"
           },
           "$comment": "[] = 「产物未知」契约语义：消费方不得据此判死，只能升级观察"
+        },
+        "completion": {
+          "$ref": "#/$defs/completionExpectation"
         }
       }
     },
@@ -608,73 +615,264 @@
     },
     "sliceVerificationState": {
       "type": "object",
-      "required": ["manifest_status", "verify_mode", "attempted_slice_id", "confirmed_slice_ids", "eligible_test_ids", "pending_test_ids", "manifest", "checkpoint"],
+      "required": [
+        "manifest_status",
+        "verify_mode",
+        "attempted_slice_id",
+        "confirmed_slice_ids",
+        "eligible_test_ids",
+        "pending_test_ids",
+        "manifest",
+        "checkpoint"
+      ],
       "additionalProperties": true,
       "properties": {
-        "manifest_status": { "enum": ["valid", "missing", "invalid", "stale", "unsupported"] },
-        "verify_mode": { "type": ["string", "null"], "enum": ["slice-checkpoint", "final", null] },
-        "attempted_slice_id": { "type": ["string", "null"] },
-        "confirmed_slice_ids": { "$ref": "#/$defs/stringArray" },
-        "eligible_test_ids": { "$ref": "#/$defs/stringArray" },
-        "pending_test_ids": { "$ref": "#/$defs/stringArray" },
-        "reason": { "type": "string" },
-        "human_action_required": { "type": "boolean" },
-        "test_change_set": { "$ref": "#/$defs/testChangeSetSummary" },
-        "violations": { "type": "array", "items": { "$ref": "#/$defs/sliceViolation" } },
-        "manifest": { "$ref": "#/$defs/sliceManifestSummary" },
-        "checkpoint": { "$ref": "#/$defs/sliceCheckpointSummary" }
+        "manifest_status": {
+          "enum": [
+            "valid",
+            "missing",
+            "invalid",
+            "stale",
+            "unsupported"
+          ]
+        },
+        "verify_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "slice-checkpoint",
+            "final",
+            null
+          ]
+        },
+        "attempted_slice_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confirmed_slice_ids": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "eligible_test_ids": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "pending_test_ids": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "human_action_required": {
+          "type": "boolean"
+        },
+        "test_change_set": {
+          "$ref": "#/$defs/testChangeSetSummary"
+        },
+        "violations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sliceViolation"
+          }
+        },
+        "manifest": {
+          "$ref": "#/$defs/sliceManifestSummary"
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/sliceCheckpointSummary"
+        }
       },
       "allOf": [
-        { "if": { "properties": { "verify_mode": { "const": "slice-checkpoint" } }, "required": ["verify_mode"] }, "then": { "properties": { "attempted_slice_id": { "type": "string", "minLength": 1 } } } },
-        { "if": { "properties": { "verify_mode": { "const": "final" } }, "required": ["verify_mode"] }, "then": { "properties": { "attempted_slice_id": { "type": "null" }, "pending_test_ids": { "maxItems": 0 } } } }
+        {
+          "if": {
+            "properties": {
+              "verify_mode": {
+                "const": "slice-checkpoint"
+              }
+            },
+            "required": [
+              "verify_mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "attempted_slice_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verify_mode": {
+                "const": "final"
+              }
+            },
+            "required": [
+              "verify_mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "attempted_slice_id": {
+                "type": "null"
+              },
+              "pending_test_ids": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
       ]
     },
     "stringArray": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "uniqueItems": true
     },
     "testChangeSetSummary": {
       "type": "object",
-      "required": ["status", "schema", "sha256", "changed_test_ids", "removed_test_ids"],
+      "required": [
+        "status",
+        "schema",
+        "sha256",
+        "changed_test_ids",
+        "removed_test_ids"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["valid", "invalid"] },
-        "schema": { "type": ["string", "null"] },
-        "sha256": { "type": ["string", "null"] },
-        "changed_test_ids": { "$ref": "#/$defs/stringArray" },
-        "removed_test_ids": { "$ref": "#/$defs/stringArray" }
+        "status": {
+          "enum": [
+            "valid",
+            "invalid"
+          ]
+        },
+        "schema": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "changed_test_ids": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "removed_test_ids": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "sliceViolation": {
       "type": "object",
-      "required": ["code", "path", "message", "fix_hint"],
+      "required": [
+        "code",
+        "path",
+        "message",
+        "fix_hint"
+      ],
       "additionalProperties": false,
       "properties": {
-        "code": { "type": "string" }, "path": { "type": "string" },
-        "message": { "type": "string" }, "fix_hint": { "type": "string" }
+        "code": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "fix_hint": {
+          "type": "string"
+        }
       }
     },
     "sliceManifestSummary": {
       "type": "object",
-      "required": ["status", "path", "schema", "task_fingerprint", "spec_fingerprint", "sha256"],
+      "required": [
+        "status",
+        "path",
+        "schema",
+        "task_fingerprint",
+        "spec_fingerprint",
+        "sha256"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["valid", "missing", "invalid", "stale", "unsupported"] },
-        "path": { "type": "string" }, "schema": { "type": ["string", "null"] },
-        "task_fingerprint": { "type": ["string", "null"] },
-        "spec_fingerprint": { "type": ["string", "null"] },
-        "sha256": { "type": ["string", "null"] }
+        "status": {
+          "enum": [
+            "valid",
+            "missing",
+            "invalid",
+            "stale",
+            "unsupported"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "schema": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spec_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "sliceCheckpointSummary": {
       "type": "object",
-      "required": ["final", "result", "confirmed_slice_ids"],
+      "required": [
+        "final",
+        "result",
+        "confirmed_slice_ids"
+      ],
       "additionalProperties": false,
       "properties": {
-        "final": { "type": "boolean" },
-        "result": { "type": ["string", "null"], "enum": ["PASS", "FAIL", null] },
-        "confirmed_slice_ids": { "$ref": "#/$defs/stringArray" }
+        "final": {
+          "type": "boolean"
+        },
+        "result": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "PASS",
+            "FAIL",
+            null
+          ]
+        },
+        "confirmed_slice_ids": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "clarificationOption": {
@@ -1050,8 +1248,182 @@
         },
         "clarification": {
           "$ref": "#/$defs/clarification"
+        },
+        "plan_package": {
+          "$ref": "#/$defs/planPackage"
+        },
+        "completion_contract_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "completion_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/completionIssue"
+          }
+        },
+        "proposal_filled": {
+          "type": "boolean"
+        },
+        "tasks_plan_filled": {
+          "type": "boolean"
+        },
+        "tasks_code_required": {
+          "type": "boolean"
+        },
+        "tasks_code_slices_filled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "completionIssue": {
+      "type": "object",
+      "required": [
+        "code",
+        "path",
+        "message",
+        "fix_hint"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "section_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "actual": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fix_hint": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "planPackage": {
+      "type": "object",
+      "required": [
+        "schema",
+        "contract_version",
+        "ready",
+        "proposal",
+        "tasks",
+        "issues"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "openlogos/plan-package-evaluation@1"
+        },
+        "contract_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "proposal": {
+          "type": "object",
+          "required": [
+            "filled",
+            "issues"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "filled": {
+              "type": "boolean"
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/completionIssue"
+              }
+            }
+          }
+        },
+        "tasks": {
+          "type": "object",
+          "required": [
+            "plan_filled",
+            "code_required",
+            "code_slices_filled",
+            "issues"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "plan_filled": {
+              "type": "boolean"
+            },
+            "code_required": {
+              "type": "boolean"
+            },
+            "code_slices_filled": {
+              "type": "boolean"
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/completionIssue"
+              }
+            }
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/completionIssue"
+          }
+        }
+      }
+    },
+    "completionExpectation": {
+      "type": "object",
+      "required": [
+        "command",
+        "expected",
+        "expected_proposal_step"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "string",
+              "number",
+              "null"
+            ]
+          }
+        },
+        "expected_proposal_step": {
+          "$ref": "#/$defs/proposalStep"
         }
       }
     }
   }
 }
+

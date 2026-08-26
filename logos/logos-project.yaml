@@ -183,6 +183,10 @@ scenarios:
     name: 管理 feature 分组
     module: core
     feature: F07
+  - id: S35
+    name: 提案计划产物左移硬检查（change-lint）
+    module: core
+    feature: F04
   - id: S39
     name: 提案规划时按触达目标形成规格闭包
     module: core

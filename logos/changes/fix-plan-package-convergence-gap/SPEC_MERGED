@@ -1,0 +1,94 @@
+{
+  "type": "baseline_closure_spec_complete",
+  "policy": "on-touch-v1",
+  "slug": "fix-plan-package-convergence-gap",
+  "manifest_sha256": "c5f05ee1f24b766a14390184b6de39f3ffaf409ffbf3b6b7940e77ccbaa6f10e",
+  "completed_at": "2026-08-26T13:06:22.191Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-plan-package-convergence-gap",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S05-14",
+      "ST-S05-15",
+      "ST-S08-28",
+      "ST-S08-29",
+      "ST-S09-88",
+      "ST-S09-89",
+      "ST-S09-90",
+      "ST-S11-36",
+      "ST-S11-37",
+      "ST-S35-16",
+      "ST-S35-17",
+      "ST-S35-18",
+      "UT-S05-30",
+      "UT-S05-31",
+      "UT-S05-32",
+      "UT-S05-33",
+      "UT-S05-34",
+      "UT-S08-38",
+      "UT-S08-39",
+      "UT-S08-40",
+      "UT-S08-41",
+      "UT-S08-42",
+      "UT-S09-110a-neg",
+      "UT-S09-224",
+      "UT-S09-225",
+      "UT-S09-226",
+      "UT-S09-227",
+      "UT-S09-228",
+      "UT-S09-229",
+      "UT-S09-230",
+      "UT-S09-231",
+      "UT-S09-232",
+      "UT-S09-63",
+      "UT-S11-58",
+      "UT-S11-59",
+      "UT-S11-60",
+      "UT-S11-61",
+      "UT-S11-62",
+      "UT-S35-100",
+      "UT-S35-101",
+      "UT-S35-102",
+      "UT-S35-103",
+      "UT-S35-104",
+      "UT-S35-105",
+      "UT-S35-106",
+      "UT-S35-107",
+      "UT-S35-108",
+      "UT-S35-109",
+      "UT-S35-110",
+      "UT-S35-111"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S05-test-cases.md",
+        "before_sha256": "743956aab50eb3e82201e3c211e97e573cc84a10d6e2b1af35ec4b76e6e34571",
+        "after_sha256": "9e6b750d99a249e6aef6b1d4cc68e7d6695baacce1a3667bf1773993bf8ffc20"
+      },
+      {
+        "target_path": "logos/resources/test/core-S08-test-cases.md",
+        "before_sha256": "ba02ee0f966248eac43b997cc92145f2c5386e1c7d7a4f51c404b798a2b2a96f",
+        "after_sha256": "d4e7d5a8e8d3f4675de8725a5518ac7ef8c61f8b494418764dc056ed38143bc2"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "30d924730da2be34411cee1054eedd435051aa3bf54c20b55a97bf77c54eb797",
+        "after_sha256": "9a237a080511002aea85e7aa5ef1f4bad83ab8b330d3dd2ded10bbb1cd74cd61"
+      },
+      {
+        "target_path": "logos/resources/test/core-S11-test-cases.md",
+        "before_sha256": "1bd62fe0013c8a410197dbabdabb93897d07963698f19ed87fed01aed6da8c0d",
+        "after_sha256": "597747b333d7b7c83402b7216f47292327ac4ed07bde59e8aa516e82ba6e2c8e"
+      },
+      {
+        "target_path": "logos/resources/test/core-S35-test-cases.md",
+        "before_sha256": "460578f0707f77c975677c258d344448226cd731ae6170906807b0197ebb105c",
+        "after_sha256": "96c06a8512593fa333a772b23e875bab1422ef70caa085c484793f6c29bcc0ad"
+      }
+    ],
+    "sha256": "sha256:4bafca8a232055e50cac0cb138165cefff88cb72759844ec173aa6d1ea593824"
+  }
+}
