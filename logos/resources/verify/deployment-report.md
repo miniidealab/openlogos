@@ -1,3 +1,77 @@
+# 部署报告：trae-local-negative-smoke / OpenLogos 0.13.29（2026-08-25，本地隔离部署成功）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `trae-local-negative-smoke`。
+- **授权与门禁**：`openlogos verify` 已通过并生成 `VERIFY_PASS`；用户明确授权执行部署及后续 smoke。
+- **目标环境**：`local-isolated`；一次性根为 `/private/tmp/openlogos-trae-local-negative.nPfuJt`，所有 HOME、npm prefix/cache、workspace 与 evidence 写入均位于该根内。
+- **执行时间**：2026-08-26T03:56:12Z 至 2026-08-26T03:56:18Z。
+- **结论**：真实 `0.13.29` 候选 tarball 安装、TRAE 负向边界、七宿主回归与 `0.13.29 → 0.13.28 → 0.13.29` 回滚恢复全部 **PASS**；第四轮正式 smoke 为 99/99 PASS，Gate 3.8 **PASS**。
+- **能力结论**：TRAE capability 继续为 **BLOCKED**、non-deployable；本地部署对象是 OpenLogos CLI，不是 TRAE Adapter 或插件。
+
+## 二、制品与隔离证据
+
+| 检查项 | 结果 |
+|---|---|
+| 候选 tarball | `/private/tmp/openlogos-trae-local-negative.nPfuJt/artifacts/miniidealab-openlogos-0.13.29.tgz` |
+| 候选 identity | `@miniidealab/openlogos@0.13.29`；1,863,090 字节 |
+| 候选 SHA-256 | `cccb01674f75dc1219f03d78c8c3c0a6672f2c436bfc00fd98a9e1a096db804c` |
+| 回滚 tarball | `/private/tmp/openlogos-workbuddy-staging-20260825/artifacts/miniidealab-openlogos-0.13.28.tgz` |
+| 回滚 identity | `@miniidealab/openlogos@0.13.28`；1,861,272 字节 |
+| 回滚 SHA-256 | `b2bef7b29dfa8d5c8a7ea8a1bff9523f9787d0864aa7e59285c1403fdb4daf47` |
+| 最终 CLI 入口 | `<LOCAL_ROOT>/prefix/node_modules/@miniidealab/openlogos/dist/index.js` |
+| 最终 CLI 版本 | `0.13.29` |
+| 可写根 | `home`、`prefix`、`cache`、`workspace`、`evidence`，realpath 均位于一次性根 |
+| 真实用户边界 | 未读取真实 HOME；未写全局 npm；未启动 TRAE；未读取原生记忆正文 |
+
+候选制品由当前仓库 `cli/` 执行 build 与 `npm pack` 产生；回滚制品复用此前本地部署中已生成的真实 `0.13.28` tarball，并重新核验包名、版本、大小和 SHA-256。没有从公共 registry 动态解析回滚版本，也没有使用目录、link、workspace CLI 或全局 CLI 替代 tarball。
+
+## 三、部署检查与回滚恢复
+
+1. 候选 tarball 安装到一次性 npm prefix，实际入口 realpath 位于隔离根，`--version` 精确返回 `0.13.29`。
+2. 安装态执行 `init --ai-tool trae` 返回 exit 1，首次写入未发生；合成 `.trae/**`、settings、账号占位、`enabled_folders`、未知文件及不透明记忆的清单、大小和 SHA-256 全部不变。
+3. `init --ai-tool all` 与 `sync` 只使用稳定七宿主：Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder、WorkBuddy；配置含 `trae` 时在事务前 exit 1 且无部分提交。
+4. 同一隔离 prefix 已实际安装并核验 `0.13.28`，随后从原候选 tarball 恢复 `0.13.29`；恢复后再次执行显式 TRAE 负向检查，exit 1，用户边界不变。
+5. 部署演练结果覆盖 SMOKE-core-124～SMOKE-core-129 六项断言且全部 PASS；这些临时结果只作为部署证据，不替代 `DEPLOY_DONE` 后由 `openlogos smoke --env local-isolated` 产生的正式结果。
+
+## 四、证据、清理与风险
+
+- 临时部署证据：`/private/tmp/openlogos-trae-local-negative.nPfuJt/evidence/`；仅含制品 identity、脱敏隔离路径、退出码、稳定宿主集合与合成 fixture 哈希。
+- 回滚点：固定 `0.13.28` tarball；部署已在同一 prefix 完成回滚并恢复候选。失败时可直接丢弃具体一次性根，不影响真实用户安装。
+- 清理策略：正式 smoke 完成前保留一次性根和两个 tarball；smoke 通过后可删除本次显式创建的 `/private/tmp/openlogos-trae-local-negative.nPfuJt`，不得使用宽泛递归目标。
+- 未解决风险：无；正式 smoke 已执行，SMOKE-core-124～129 与全量回归均通过并生成 `SMOKE_PASS`。
+- 公开副作用：未执行 npm publish/dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`；未修改真实 TRAE 国际版/CN、真实用户 `.trae/**` 或全局 npm 安装。
+
+## 五、首轮 Smoke 失败与 retry2 重部署
+
+1. 首轮 `openlogos smoke --env local-isolated` 没有把通用 runner 的 `OPENLOGOS_BIN` 指向隔离候选，因此 SMOKE-core-51、59、62 正确发现全局 `openlogos@0.13.27` 与仓库 `0.13.29` 不一致；SMOKE-core-66 还缺少固定 `0.13.25` 回滚 tarball。ZCode/Qoder/WorkBuddy runner 未启用，导致 SMOKE-core-100～123 未覆盖。Gate 3.8 为 FAIL，没有伪造或复用历史 PASS。
+2. 失败根因是正式 smoke 输入未完整路由，不是 TRAE runner 或候选 tarball 失败。修复策略是不降低断言：通用 runner 显式使用隔离安装的 `0.13.29` CLI；SMOKE-core-66 注入 SHA-256 为 `7a6d7053dc3b11df69f86d01e25367ebc06fba9c447cf85a8daec705a2f2cade` 的真实 `0.13.25` tarball；历史宿主 runner 使用各自已验证的专属制品、驱动和外置证据目录。
+3. retry2 在 `/private/tmp/openlogos-trae-local-negative.nPfuJt/retry2-root` 重新完成候选安装、显式 TRAE 拒绝、七宿主排除与 `0.13.29 → 0.13.28 → 0.13.29` 回滚恢复，SMOKE-core-124～129 的部署演练再次 6/6 PASS。
+4. retry2 预检确认真实 ZCode CLI `0.16.3`、Qoder CLI `1.1.29`、WorkBuddy engine `2.115.0` 及三个 staging driver 的自描述合同可用；正式 smoke 仍不得启动 TRAE 或改变 D06 BLOCKED 结论。
+
+## 六、第二轮 Smoke 失败与 retry3 重部署
+
+1. 第二轮正式 smoke 已执行 99/99、覆盖率 100%；94 项通过，唯一失败组为 SMOKE-core-117～121。失败输出证明 dispatcher 引用了旧 WorkBuddy driver：它仍错误比较 engine `2.115.0` 与 app 最低版本 `5.3.5`，仍调用不存在的 `agents --json`，并导致后续会话空输出。
+2. 修复没有改写 smoke 断言，而是把 WorkBuddy runner 的 driver 输入切换为当前仓库已经 verify 的修复版：app `5.3.14` 与 engine `2.115.0` 分源取证，组件由受限 `Read,Glob` 真实会话发现，并保留 Agent、SessionStart、allow/hard deny、sync/launch、回滚和真实 Home 哈希断言。
+3. 修复版 WorkBuddy runner 已先行定向真实执行 SMOKE-core-116～123，8/8 PASS；证据位于 `/private/tmp/openlogos-trae-local-negative.nPfuJt/workbuddy-focused-evidence/`，真实用户 Home 边界前后不变。
+4. retry3 在 `/private/tmp/openlogos-trae-local-negative.nPfuJt/retry3-root` 再次完成 TRAE 候选安装、负向检查与双 tarball 回滚恢复，部署演练 SMOKE-core-124～129 为 6/6 PASS。随后重新登记同环境 `DEPLOY_DONE`，再执行第三轮正式 smoke。
+
+## 七、第三轮 Smoke 瞬态失败与 retry4 重部署
+
+1. 第三轮正式 smoke 已执行 99/99、98 项通过；唯一失败为 Qoder SMOKE-core-112，真实允许写入会话一次性返回 `Repeated tool call was denied`。TRAE、WorkBuddy、ZCode 与全部通用 runner 均通过。
+2. 历史与当前 Qoder driver 字节一致，且同一 runner 在第二轮已通过；当前提案不改写 Qoder driver，也不降低真实 Write 断言。按原合同定向重跑 Qoder SMOKE-core-108～115，8/8 PASS，其中 SMOKE-core-112 实际写入成功，SMOKE-core-113 hard deny 仍真实通过。
+3. Qoder retry4 证据位于 `/private/tmp/openlogos-trae-local-negative.nPfuJt/qoder-focused-retry4-evidence/`；该结果仅用于确认瞬态恢复，不复制进正式 smoke 账本。
+4. retry4 在 `/private/tmp/openlogos-trae-local-negative.nPfuJt/retry4-root` 再次完成 TRAE 候选安装、负向检查和 `0.13.29 → 0.13.28 → 0.13.29` 恢复，部署演练 6/6 PASS；随后重新登记 `DEPLOY_DONE` 并从空正式账本重跑全部 smoke。
+
+## 八、第四轮正式 Smoke 最终结果
+
+1. 第四轮 `openlogos smoke --env local-isolated` 从空正式账本重新执行全部 runner：定义 99、执行 99、通过 99、失败 0、跳过 0、未覆盖 0，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。
+2. TRAE SMOKE-core-124～129 使用候选 SHA-256 `cccb01674f75dc1219f03d78c8c3c0a6672f2c436bfc00fd98a9e1a096db804c` 与回滚 SHA-256 `b2bef7b29dfa8d5c8a7ea8a1bff9523f9787d0864aa7e59285c1403fdb4daf47`，环境为 `local-isolated`，六项均含真实脱敏 evidence。
+3. 通用 runner 显式解析隔离 `openlogos@0.13.29`；ZCode/Qoder/WorkBuddy 使用各自已验证的历史专属制品和真实宿主 driver。第四轮没有复用定向结果，Qoder SMOKE-core-112/113 与 WorkBuddy SMOKE-core-116～123 均在正式账本重新通过。
+4. `DEPLOY_DONE`、`SMOKE_PASS` 在场，`SMOKE_FAIL` 不在场。TRAE capability 仍为 **BLOCKED**，没有注册 TRAE、启动 TRAE、读取真实记忆正文或执行 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署、`git push`。
+
+---
+
 # 部署报告：workbuddy-adapter-foundation / OpenLogos 0.13.28（2026-08-25，成功）
 
 ## 一、最终结论
