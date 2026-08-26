@@ -1704,22 +1704,41 @@ OpenLogos 验证解析、结构、谓词、状态派生、JSON Schema、历史�
 
 ## 2.37 切片感知 verify 与 manifest 自动恢复
 
-### 2.37.1 权威输入
+### 2.37 切片感知 verify 与 manifest 自动恢复
 
-多切片代码提案在 spec-complete 后必须由 `slice-planner` 于提案根目录原子写入 `TEST_SLICE_MANIFEST.json`。manifest 至少包含 `schema`、`change`、`module`、`task_fingerprint`、`spec_fingerprint`、有序 `slices[]`；每个切片包含稳定 `slice_id`、精确 `task_text`、唯一 `owned_test_ids[]` 和非空 `runner_selectors[]`。
+### 2.37.1 双层权威输入
 
-OpenLogos 负责校验：schema 版本可识别；change/module 匹配；slice ID 唯一且在重建时稳定；所有本提案新增或修改的真实 UT/ST/SMOKE ID 恰好归属一个切片；ID 均存在于已合并测试规格；task/spec fingerprint 与当前有效视图一致。`tasks.md` 只用于 slice-planner 生成输入和人读展示，不由 verify 或宿主临时解析为归属事实。
+多切片代码提案使用两层、职责不同的机器事实：
 
-### 2.37.2 模式选择与集合公式
+1. `SPEC_MERGED.test_change_set` 由 OpenLogos `merge-apply` 在规格原子提交时生成，schema 为 `openlogos/test-change-set@1`，权威声明本提案真实新增/修改集合 C、删除集合 R 及正式测试 target 的 before/after identity。
+2. `TEST_SLICE_MANIFEST.json` 由 `slice-planner` 在 spec-complete 后原子写入，schema 仍为 `openlogos/test-slice-manifest@1`，只负责把 C 唯一分配到已规划代码切片。
+
+change set 先于 slice manifest 校验。slice-planner、verify 和宿主均不得从 Delta、Git 历史或 `tasks.md` 自行推断 C；`tasks.md` 只用于切片生成输入与人读展示。
+
+`openlogos/test-change-set@1` 顶层精确字段为 `schema`、`change`、`module`、`source`、`changed_test_ids`、`removed_test_ids`、`targets`、`sha256`。`source` 固定为 `semantic-before-after-diff`；`targets[]` 精确包含 `target_path`、`before_sha256`、`after_sha256`。数组去重并按 ASCII 排序，payload hash 排除自身字段且不含时间戳。
+
+### 2.37.2 语义差异与集合公式
 
 设：
 
 - `D`：已合并测试规格中全部非 manual 测试 ID；
-- `C`：manifest 中全部 `owned_test_ids`；
+- `C`：已校验 change set 的 `changed_test_ids`，即本提案新增或规范化定义真实变化的 ID；
+- `R`：已校验 change set 的 `removed_test_ids`；
+- `O`：slice manifest 中全部 `owned_test_ids` 的并集；
 - `B = D − C`：未被本提案修改的基线回归集合；
 - `P`：已有 PASS checkpoint 的切片集合；
 - `A`：按 manifest 顺序第一个没有 PASS checkpoint 的 attempted slice；
 - `owned(X)`：切片集合 X 拥有的测试 ID 并集。
+
+必须先满足：
+
+```text
+O = C
+C ∩ R = ∅
+∀i≠j: owned(slice_i) ∩ owned(slice_j) = ∅
+```
+
+同 ID 前后规范化记录相同则留在 B；不同则进入 C。新增进入 C；删除只进入 R；跨 target 迁移视为修改。`MODIFIED` Delta 中原样携带测试行不构成 C。
 
 当 `A` 存在时，`mode=slice-checkpoint`：
 
@@ -1730,38 +1749,46 @@ pending_test_ids  = C − owned(P) − owned({A})
 
 当不存在 `A` 且 `[code]` 顶层及子任务全部完成时，`mode=final`：`eligible_test_ids=D`、`pending_test_ids=[]`。不存在 `A` 但任务未完成属于状态不一致，保守诊断且不得写最终通过。
 
-### 2.37.3 checkpoint Gate
+### 2.37.3 结构化测试定义
 
-- checkpoint 只按 `eligible_test_ids` 计算 covered/uncovered/pass/fail/skip；`pending_test_ids` 单独呈现，绝不进入分母或 reporter。
-- PASS 时向 `SLICE_CHECKPOINTS.jsonl` 追加绑定 `slice_id` 与 manifest 哈希的 PASS 事实，不写 `VERIFY_PASS`；再次执行相同 checkpoint 幂等，不重复追加等价 PASS。
-- FAIL 时写 `VERIFY_FAIL`，并向 `LOOP_ITERS` 追加带 `attempted_slice_id`、`verify_mode=slice-checkpoint` 的真实失败；下一次 repair 仍锁定该 slice，不能因 checkbox 前移切到后续片。
-- checkpoint PASS 后清除当前切片产生的 `VERIFY_FAIL`，下一次派生选择新的首个未通过切片。
+只解析 authority 区域内具有表头与分隔行、首个逻辑单元格精确为 canonical UT/ST/SMOKE ID 的 Markdown 数据行。围栏代码、HTML 注释、普通散文与示例字符串不构成定义；escaped pipe 和 inline-code pipe 必须按逻辑单元格处理。
 
-### 2.37.4 final Gate
+规范化记录由 target 路径、列身份、列顺序和有序单元格语义组成。LF/CRLF、表格对齐、单元格外围空白和测试行顺序差异不构成修改；列身份、列顺序、内部文本、代码、前置、输入或期望变化均构成修改。任一前态/后态全局重复 ID、非法 UTF-8 或不可唯一解析表格在首写前失败。
 
-final 保持既有全量定义、合法状态、去重、一致性和 100% 覆盖要求。final PASS 才能写 `VERIFY_PASS` 并允许进入 deliver；final FAIL 写 `VERIFY_FAIL`，输出 `verify_mode=final`，不得将缺失结果改列 pending。
+### 2.37.4 checkpoint Gate
 
-### 2.37.5 缺失与漂移恢复
+- checkpoint 只按 `eligible_test_ids` 计算 covered/uncovered/pass/fail/skip；`pending_test_ids` 单独呈现，不进入分母或 reporter。
+- PASS 向 `SLICE_CHECKPOINTS.jsonl` 追加绑定 slice manifest 哈希的事实，不写 `VERIFY_PASS`；等价 PASS 幂等。
+- FAIL 写 `VERIFY_FAIL` 与带稳定 `attempted_slice_id` 的 `LOOP_ITERS`；repair 锁定同一 slice。
+- checkpoint PASS 后清除该切片失败态，下一次选择新的首个未通过切片。
 
-多切片提案缺少 manifest 时，或 manifest 因 schema/fingerprint/测试集合变化而可恢复失效时，OpenLogos 输出恢复态而非 Gate FAIL：
+### 2.37.5 final Gate
 
-- `reason` 使用稳定枚举：`test-slice-manifest-missing`、`test-slice-manifest-invalid` 或 `test-slice-manifest-stale`；
-- `next_node.id=plan-slices`、`next_node.skill=slice-planner`；
-- `next_node.dispatch.artifacts_hint` 至少包含 `tasks.md`、已合并测试规格和 `TEST_SLICE_MANIFEST.json`；
-- verify 返回可诊断操作结果，不写 `VERIFY_FAIL`、`LOOP_ITERS` 或 checkpoint。
+final 保持既有全量定义、合法状态、去重、一致性和 100% 覆盖要求。final PASS 才写 `VERIFY_PASS` 并允许进入 deliver；final FAIL 不得把缺失结果改列 pending。
 
-RunLogos 等宿主只消费该动作，派发 Agent 以恢复模式重建 manifest，并以 OpenLogos 可重算的 manifest 有效性作为完成屏障。恢复必须保留既有 `[code]` 文本、checkbox 与可验证 checkpoint；同一 dispatch 重入幂等。只有归属存在歧义、恢复产物持续非法或超过宿主有界重试时，才升级为阻塞。
+### 2.37.6 恢复与阻塞分层
 
-### 2.37.6 机器输出
+change set 有效而 slice manifest 缺失、schema 非法或 fingerprint 漂移时，保持既有恢复态：
 
-`verify --format json` 的 data 增加：`verify_mode`、`attempted_slice_id`、`eligible_test_ids`、`pending_test_ids`、`manifest`（status/path/schema/fingerprint）和 `checkpoint`（result/confirmed_slice_ids）。`attempted_slice_id` 在 final 为 `null`。status/next 暴露同源的 `slice_verification_state`，不得各自复制集合算法。
+- `reason` 为 `test-slice-manifest-missing|invalid|stale`；
+- `next_node.id=plan-slices`、`skill=slice-planner`；
+- recovery 只重建 manifest，保留 `[code]`、checkbox、批准与有效 checkpoint；
+- 不写 `VERIFY_FAIL`、`LOOP_ITERS` 或 checkpoint。
 
-### 2.37.7 兼容边界
+change set 缺失、未知 schema、payload hash/target identity 失配时，不得派 `plan-slices`。输出 `manifest_status=invalid`、`reason=test-slice-manifest-invalid`、精确 `test-slice-change-set-*` violation 与 `human_action_required=true`，runner/Gate/loop/checkpoint 均零副作用。slice-planner 无权伪造 merge 前态。
 
-- 单切片或无需代码的历史提案没有 manifest 时继续按既有 final 全量语义，不强制恢复。
-- 已越过 final 且存在合法 `VERIFY_PASS` 的历史提案不因升级回退。
-- 仍处于多切片 implement 的无 manifest 提案必须走恢复，不允许从任务自然语言静默推导。
-- 未知 manifest 主版本 fail-closed，并输出升级诊断；不得自动覆盖未知版本文件。
+### 2.37.7 机器输出与单一入口
+
+`verify --format json` 继续输出 `verify_mode`、`attempted_slice_id`、`eligible_test_ids`、`pending_test_ids`、manifest 与 checkpoint 摘要；status/next 暴露同源 `slice_verification_state`。所有命令必须调用同一 change-set reader 与 slice-state 派生函数，命令层不得直接扫描 Delta 或解析 marker 建立第二套算法。
+
+### 2.37.8 兼容边界
+
+- 单切片或无需代码的历史提案继续按既有 final 全量语义。
+- 已有合法 final `VERIFY_PASS` 的 legacy marker 不因升级回退。
+- `type=no_delta_spec_complete` 且确无 mergeable delta 时可信派生 `C=[]、R=[]`。
+- 旧活跃 marker 无可信 before snapshot 时保守阻塞，迁移必须另立带可信快照的流程。
+- 未知 change-set 或 slice-manifest 主版本均 fail-closed，不得自动覆盖。
+- RunLogos 的 invalid manifest 消费与 recovery 生产接线不在本功能内改变。
 
 ## 2.38 公共 AI Tool Adapter Registry 与 ZCode 功能规格
 
