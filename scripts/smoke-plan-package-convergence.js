@@ -65,10 +65,10 @@ function snapshot(root) {
   };
   walk(root); return out;
 }
-function project(prefix = 'plan-package-smoke-') {
+function project(prefix = 'plan-package-smoke-', locale = 'zh') {
   const root = mkdtempSync(join(tmpdir(), prefix));
   mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
-  writeFileSync(join(root, 'logos/logos.config.json'), JSON.stringify({ name: 'smoke', locale: 'zh', aiTool: 'codex', documents: {}, sourceRoots: { src: ['src'], test: ['test'] } }, null, 2));
+  writeFileSync(join(root, 'logos/logos.config.json'), JSON.stringify({ name: 'smoke', locale, aiTool: 'codex', documents: {}, sourceRoots: { src: ['src'], test: ['test'] } }, null, 2));
   writeFileSync(join(root, 'logos/logos-project.yaml'), 'project:\n  name: smoke\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\n    product_type: cli\n');
   return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
@@ -87,11 +87,67 @@ function evidence(id, payload) {
   const path = join(evidenceRoot, `${id}.json`); writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
   return relative(repoRoot, path).replace(/\\/g, '/');
 }
-function createChangeFixture() {
-  const f = project();
-  const result = run('openlogos', ['change', 'plan-smoke'], f.root);
-  checked(result, 'openlogos change plan-smoke');
-  return { ...f, dir: join(f.root, 'logos/changes/plan-smoke') };
+function clarification(locale) {
+  const title = locale === 'en' ? 'Decision Clarification' : '决策澄清';
+  const reasons = locale === 'en'
+    ? ['No data impact.', 'No compatibility choice.', 'No security or privacy impact.', 'No public release.', 'No external commitment.']
+    : ['无数据影响。', '无兼容选择。', '无安全隐私影响。', '无公开发布。', '无外部承诺。'];
+  return [`## ${title}`, '', '```yaml',
+    'schema: openlogos/clarification@1', 'mode: adaptive', 'status: complete',
+    'impacts:', '  data:', '    status: none', `    reason: ${reasons[0]}`,
+    '  compatibility:', '    status: none', `    reason: ${reasons[1]}`,
+    '  security_privacy:', '    status: none', `    reason: ${reasons[2]}`,
+    '  public_release:', '    status: none', `    reason: ${reasons[3]}`,
+    '  external_commitment:', '    status: none', `    reason: ${reasons[4]}`,
+    'decisions: []', 'unresolved: []', 'defaults: []', '```', '',
+  ].join('\n');
+}
+function filledProposal(locale, slug) {
+  if (locale === 'en') return [
+    `# Change Proposal: ${slug}`, '', '> module: core', '',
+    '## Reason', 'Fix the Plan Package convergence bug.', '',
+    '## Change Type', 'Code level fix.', '',
+    '## Scope', '- CLI Plan Package evaluation.', '',
+    '## Deployment Impact',
+    '- Deployment required: no', '- Deployment reason: local smoke fixture', '- Affected environments: local',
+    '- Data migration involved: no', '- Rollback plan required: no', '- Smoke required: no', '',
+    '## Summary', 'Use one evaluator for all Plan Package consumers.', '', clarification(locale),
+  ].join('\n');
+  return [
+    `# 变更提案：${slug}`, '', '> module: core', '',
+    '## 变更原因', '修复 Plan Package 收敛故障。', '',
+    '## 变更类型', '代码级缺陷修复。', '',
+    '## 变更范围', '- CLI Plan Package evaluator。', '',
+    '## 部署影响',
+    '- 是否需要部署：否', '- 部署原因：本地 smoke fixture', '- 影响环境：本地',
+    '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
+    '## 变更概述', '让所有 Plan Package 消费方共用一个 evaluator。', '', clarification(locale),
+  ].join('\n');
+}
+function filledTasks(locale) {
+  const title = locale === 'en' ? '# Tasks' : '# 任务';
+  const delta = locale === 'en' ? 'Specification changes' : '规格变更';
+  const code = locale === 'en' ? 'Code implementation' : '代码实现';
+  const detail = locale === 'en' ? 'Add Plan Package regression cases.' : '增加 Plan Package 回归用例。';
+  return `${title}\n\n## [delta] ${delta}\n- [ ] \`deltas/test/core-S35-test-cases.md\`：${detail}\n\n## [code] ${code}\n`;
+}
+function fillChangeFixture(f) {
+  writeFileSync(join(f.dir, 'proposal.md'), filledProposal(f.locale, f.slug));
+  writeFileSync(join(f.dir, 'tasks.md'), filledTasks(f.locale));
+  const target = join(f.root, 'logos/resources/test/core-S35-test-cases.md');
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, '| ID | 用例 |\n|---|---|\n| UT-S35-100 | Plan Package 回归 |\n');
+}
+function createChangeFixture(locale = 'zh', slug = `plan-smoke-${locale}`) {
+  const f = project(`plan-package-smoke-${locale}-`, locale);
+  const result = run('openlogos', ['change', slug], f.root);
+  checked(result, `openlogos change ${slug}`);
+  const dir = join(f.root, 'logos/changes', slug);
+  return {
+    ...f, dir, locale, slug,
+    scaffoldProposal: readFileSync(join(dir, 'proposal.md'), 'utf8'),
+    scaffoldTasks: readFileSync(join(dir, 'tasks.md'), 'utf8'),
+  };
 }
 
 const context = {
@@ -121,29 +177,44 @@ await smoke('SMOKE-core-135', async () => {
 });
 
 await smoke('SMOKE-core-136', async () => {
-  const f = createChangeFixture();
-  try {
-    const proposal = readFileSync(join(f.dir, 'proposal.md'), 'utf8'); const tasks = readFileSync(join(f.dir, 'tasks.md'), 'utf8');
-    for (const title of ['变更原因', '变更类型', '变更范围', '部署影响', '决策澄清', '变更概述']) if (!proposal.includes(`## ${title}`)) throw new Error(`缺 canonical 章节 ${title}`);
-    if (!tasks.includes('## [code]') || /^- \[ \].+$/m.test(tasks.split('## [code]')[1] ?? '')) throw new Error('[code] 不是空锚点');
-    writeFileSync(join(f.dir, 'proposal.md'), proposal.replace('## 变更概述', '## 核心设计'));
-    writeFileSync(join(f.dir, 'tasks.md'), `${tasks.trimEnd()}\n- [ ] 提前编码\n`);
-    const lint = run('openlogos', ['change-lint', '--slug', 'plan-smoke', '--format', 'json'], f.root);
-    if (lint.status !== 2) throw new Error(`双错 lint exit=${lint.status}`);
-    const issues = JSON.parse(lint.stdout).data.plan_package.issues;
-    for (const code of ['proposal_required_section_missing', 'tasks_code_entry_before_spec_complete']) {
-      const issue = issues.find(row => row.code === code);
-      if (!issue || !issue.path || !issue.section_id || !issue.expected || !issue.fix_hint) throw new Error(`${code} 字段不完整`);
-    }
-    return { issues: issues.map(row => ({ code: row.code, path: row.path, section: row.section_id })), snapshot: snapshot(f.root) };
-  } finally { f.cleanup(); }
+  const localeResults = [];
+  for (const locale of ['zh', 'en']) {
+    const f = createChangeFixture(locale);
+    try {
+      const titles = locale === 'en'
+        ? ['Reason', 'Change Type', 'Scope', 'Deployment Impact', 'Decision Clarification', 'Summary']
+        : ['变更原因', '变更类型', '变更范围', '部署影响', '决策澄清', '变更概述'];
+      for (const title of titles) if (!f.scaffoldProposal.includes(`## ${title}`)) throw new Error(`${locale} scaffold 缺 canonical 章节 ${title}`);
+      const codeSection = f.scaffoldTasks.split('## [code]')[1] ?? '';
+      if (!f.scaffoldTasks.includes('## [code]') || /^- \[[ xX]\].+$/m.test(codeSection)) throw new Error(`${locale} scaffold 的 [code] 不是空锚点`);
+
+      fillChangeFixture(f);
+      const ready = run('openlogos', ['change-lint', '--slug', f.slug, '--format', 'json'], f.root);
+      if (ready.status !== 0 || JSON.parse(ready.stdout).data.plan_package.ready !== true) throw new Error(`${locale} 合法 fixture 未 ready`);
+      const summary = locale === 'en' ? ['## Summary', '## Core Design'] : ['## 变更概述', '## 核心设计'];
+      writeFileSync(join(f.dir, 'proposal.md'), readFileSync(join(f.dir, 'proposal.md'), 'utf8').replace(summary[0], summary[1]));
+      writeFileSync(join(f.dir, 'tasks.md'), `${readFileSync(join(f.dir, 'tasks.md'), 'utf8').trimEnd()}\n- [ ] ${locale === 'en' ? 'Premature coding' : '提前编码'}\n`);
+      const lint = run('openlogos', ['change-lint', '--slug', f.slug, '--format', 'json'], f.root);
+      if (lint.status !== 2) throw new Error(`${locale} 双错 lint exit=${lint.status}`);
+      const issues = JSON.parse(lint.stdout).data.plan_package.issues;
+      const expectedCodes = ['proposal_required_section_missing', 'tasks_code_entry_before_spec_complete'];
+      if (JSON.stringify(issues.map(row => row.code)) !== JSON.stringify(expectedCodes)) throw new Error(`${locale} issues 不精确`);
+      for (const code of expectedCodes) {
+        const issue = issues.find(row => row.code === code);
+        if (!issue || !issue.path || !issue.section_id || !issue.expected || !issue.fix_hint) throw new Error(`${locale} ${code} 字段不完整`);
+      }
+      localeResults.push({ locale, issues: issues.map(row => ({ code: row.code, path: row.path, section: row.section_id })), snapshot: snapshot(f.root) });
+    } finally { f.cleanup(); }
+  }
+  return { locales: localeResults };
 });
 
 await smoke('SMOKE-core-137', async () => {
   const f = createChangeFixture();
   try {
+    fillChangeFixture(f);
     const before = snapshot(f.root); const evaluation = planModule.evaluatePlanPackage(f.root, f.dir);
-    const lint = run('openlogos', ['change-lint', '--format', 'json'], f.root);
+    const lint = run('openlogos', ['change-lint', '--slug', f.slug, '--format', 'json'], f.root);
     const status = run('openlogos', ['status', '--format', 'json'], f.root);
     const next = run('openlogos', ['next', '--format', 'json'], f.root);
     for (const [name, result] of [['lint', lint], ['status', status], ['next', next]]) if (result.status !== 0) throw new Error(`${name} exit=${result.status}`);
@@ -185,7 +256,9 @@ await smoke('SMOKE-core-140', async () => {
   const rollback = install(context.rollback); const restored = install(context.candidate); context.entry = restored;
   const f = createChangeFixture();
   try {
-    if (!readFileSync(join(f.dir, 'tasks.md'), 'utf8').includes('## [code]')) throw new Error('恢复候选后最小 scaffold 失败');
+    fillChangeFixture(f);
+    const lint = run('openlogos', ['change-lint', '--slug', f.slug, '--format', 'json'], f.root);
+    if (lint.status !== 0 || JSON.parse(lint.stdout).data.plan_package.ready !== true) throw new Error('恢复候选后最小正例失败');
     return { candidate: context.candidate.sha256, rollback: context.rollback.sha256, rollback_entry: rollback.entry, restored_entry: restored.entry, public_side_effects: [] };
   } finally { f.cleanup(); }
 });

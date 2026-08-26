@@ -219,11 +219,21 @@ function writeProposal(root, slug, targets, opts = {}) {
     const path = join(root, targetPath(t.delta_path)); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, '# Existing\n');
   }
   const proposal = [
-    '# Touch smoke', '', '> module: core', '', '## 基线闭包计划', '', '```yaml',
+    '# Touch smoke', '', '> module: core', '',
+    '## 变更原因', '验证 baseline-on-touch 发布态闭环。', '',
+    '## 变更类型', opts.code === false ? '设计级（纯文档）' : '设计级', '',
+    '## 变更范围', '- 仅修改隔离 smoke 临时项目中的规格夹具。', '',
+    '## 部署影响',
+    '- 是否需要部署：否',
+    '- 部署原因：仅验证隔离 smoke 夹具',
+    '- 影响环境：隔离临时目录',
+    '- 是否涉及数据迁移：否',
+    '- 是否需要回滚预案：否',
+    '- 是否需要 smoke：否', '',
+    '## 变更概述', '验证基线闭包计划、受控合并与失败回滚。', '',
+    ...completeClarificationSection(),
+    '## 基线闭包计划', '', '```yaml',
     JSON.stringify({ baseline_closure: fixedClosure(targets, opts.touched ?? ['S39']) }, null, 2), '```', '',
-    '## 变更类型', opts.code === false ? '纯文档' : '设计级', '',
-    '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否',
-    '', ...completeClarificationSection(),
   ].join('\n');
   writeFileSync(join(dir, 'proposal.md'), proposal);
   const tasks = targets.filter(t => t.delta_path).map(t => `- [${opts.checked ? 'x' : ' '}] [${t.mode}] \`${t.delta_path}\`：${t.reason}`).join('\n');

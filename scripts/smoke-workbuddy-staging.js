@@ -179,6 +179,7 @@ function runDriver(phase, payload) {
     cwd: payload.workspace || repoRoot,
     input: JSON.stringify(payload) + '\n',
     env: { ...process.env, OPENLOGOS_WORKBUDDY_STAGING: '1' },
+    timeout: 660000,
   });
   const line = result.stdout.trim().split('\n').reverse().find(item => item.trim().startsWith('{'));
   if (!line) throw new Error(`WorkBuddy driver ${phase} 未输出 JSON`);
@@ -380,11 +381,18 @@ await smoke('SMOKE-core-123', () => {
   const rollback = runDriver('rollback', { ...context, previousTarball, regressionRoot });
   if (rollback.data.restored !== true || rollback.data.restoredVersion !== '0.13.27' || rollback.data.userAssetsPreserved !== true) throw new Error('真实回滚证据不完整');
   const hostBoundaryAfter = snapshotHostBoundary();
-  if (JSON.stringify(hostBoundaryBefore) !== JSON.stringify(hostBoundaryAfter)) {
-    throw new Error('隔离 staging 修改了真实用户 Home 的 Codex、WorkBuddy 配置、插件或记忆边界');
-  }
+  const changedBoundaries = Object.keys(hostBoundaryBefore)
+    .filter(key => hostBoundaryBefore[key] !== hostBoundaryAfter[key]);
   const boundaryEvidence = join(evidenceRoot, 'host-home-boundary.json');
-  writeFileSync(boundaryEvidence, JSON.stringify({ before: hostBoundaryBefore, after: hostBoundaryAfter, unchanged: true }, null, 2) + '\n');
+  writeFileSync(boundaryEvidence, JSON.stringify({
+    before: hostBoundaryBefore,
+    after: hostBoundaryAfter,
+    unchanged: changedBoundaries.length === 0,
+    changed_boundaries: changedBoundaries,
+  }, null, 2) + '\n');
+  if (changedBoundaries.length > 0) {
+    throw new Error(`隔离 staging 修改了真实用户 Home 边界：${changedBoundaries.join(', ')}`);
+  }
   return [rollback.evidence, boundaryEvidence];
 });
 

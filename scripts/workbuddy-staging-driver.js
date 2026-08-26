@@ -75,6 +75,11 @@ function workBuddyEnv(payload) {
     CODEBUDDY_CONFIG_DIR: join(payload.profile, '.codebuddy'),
     CODEBUDDY_DISABLE_AUTO_MEMORY: '1',
     CODEBUDDY_MEMORY_ENABLED: '0',
+    CODEBUDDY_MEMORY_EXTRACTION_DISABLED: '1',
+    CODEBUDDY_MEMORY_EXTRACTION_ENABLED: '0',
+    CODEBUDDY_MEMORY_RELEVANCE_DISABLED: '1',
+    CODEBUDDY_MEMORY_RELEVANCE_ENABLED: '0',
+    CODEBUDDY_DISABLE_MEMORY_CLEANUP: '1',
     CODEBUDDY_TEAM_MEMORY_ENABLED: '0',
     CODEBUDDY_TYPED_MEMORY_ENABLED: '0',
   };
@@ -84,7 +89,7 @@ function runWorkBuddy(payload, args, options = {}) {
   return checked(payload.workBuddyBin, args, {
     cwd: options.cwd || payload.workspace,
     env: workBuddyEnv(payload),
-    timeout: options.timeout || 240000,
+    timeout: options.timeout || 600000,
     allowFailure: options.allowFailure,
   });
 }
@@ -233,20 +238,28 @@ async function execute(phase, payload) {
 
   if (phase === 'inventory') {
     validatePlugin(payload);
-    const session = workBuddySession(
-      payload,
-      `必须使用 Glob 和 Read 检查当前已加载插件目录 ${JSON.stringify(payload.pluginPath)} 的 skills、commands、agents；最后只回复一行紧凑 JSON，精确键为 skills、commands、agents，值为各目录实际文件名去扩展名后的字符串数组。`,
-      { tools: 'Read,Glob', attempts: 2 },
-    );
-    const inventory = parseEmbeddedJson(sessionText(session), 'WorkBuddy component inventory');
-    for (const [kind, expected] of [
+    const expectedComponents = [
       ['skills', 'change-writer'],
       ['commands', 'status'],
       ['agents', 'change-reviewer'],
-    ]) {
-      const names = Array.isArray(inventory[kind]) ? inventory[kind].map(item => String(item).toLowerCase()) : [];
-      if (!names.some(name => name.includes(expected))) throw new Error(`WorkBuddy inventory 未发现 ${kind}/${expected}`);
+    ];
+    let session;
+    let inventory;
+    let missing = [];
+    for (let semanticAttempt = 1; semanticAttempt <= 3; semanticAttempt += 1) {
+      session = workBuddySession(
+        payload,
+        `必须使用 Glob 和 Read 检查当前已加载插件目录 ${JSON.stringify(payload.pluginPath)} 的 skills、commands、agents；最后只回复一行紧凑 JSON，精确键为 skills、commands、agents，值为各目录实际文件名去扩展名后的字符串数组。`,
+        { tools: 'Read,Glob', attempts: 2 },
+      );
+      inventory = parseEmbeddedJson(sessionText(session), 'WorkBuddy component inventory');
+      missing = expectedComponents.filter(([kind, expected]) => {
+        const names = Array.isArray(inventory[kind]) ? inventory[kind].map(item => String(item).toLowerCase()) : [];
+        return !names.some(name => name.includes(expected));
+      });
+      if (missing.length === 0) break;
     }
+    if (missing.length > 0) throw new Error(`WorkBuddy inventory 未发现 ${missing.map(item => item.join('/')).join(', ')}`);
     const agentProbe = workBuddySession(
       payload,
       '只回复 OPENLOGOS_AGENT_READY，不调用工具。',
