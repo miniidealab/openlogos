@@ -52,6 +52,8 @@ export type BaselineClosureApplyInput = NonMarkdownApplyInput | PreparedApplyInp
 export interface BaselineClosureApplyHook {
   /** 故障注入/宿主审计钩子；抛错会触发整批回滚。 */
   afterWrite?(targetPath: string, index: number): void;
+  /** 全部目标已落盘但 backup/journal 尚未清理时执行；抛错仍可整批回滚。 */
+  validateCommitted?(): void;
 }
 
 export interface BaselineClosureApplySuccess {
@@ -424,6 +426,7 @@ export function applyBaselineClosureBatch(
       writeJournal(proposalDir, journal);
       hook.afterWrite?.(w.targetPath, i);
     }
+    hook.validateCommitted?.();
     journal.phase = 'committed';
     writeJournal(proposalDir, journal);
     const applied = prepared.writes.map(w => ({ target_path: w.targetPath, mode: w.mode, sha256: w.newSha256 }));

@@ -22,6 +22,7 @@ import {
   listRunIds, readRunRecord, BaselineCommitInProgressError,
 } from '../lib/baseline-seed-txn.js';
 import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
+import { deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
 
 function commitInProgressCoverage(seedState: BaselineSeedState): BaselineCoverage {
   return {
@@ -213,6 +214,7 @@ export interface ModuleStatusItem {
   loop_state?: LoopState;
   // change-flow-redesign 切片6：代码切片循环状态（仅切片循环 until=code_slices_green 激活时输出）
   slice_state?: SliceState;
+  slice_verification_state?: SliceVerificationState;
   // S30：builtin gate（verify/deploy/smoke）接 cmd: 时的 observe-pending 承载（仅 cmd gate 时输出）
   cmd_gate?: CmdGate;
   automation_diagnostic?: AutomationDiagnostic;
@@ -295,6 +297,7 @@ export interface StatusData {
   loop_state?: LoopState;
   // change-flow-redesign 切片6：代码切片循环状态顶层回退（legacy 无 modules[] 时）
   slice_state?: SliceState;
+  slice_verification_state?: SliceVerificationState;
   // S30：builtin cmd gate 顶层回退（仅 legacy 无 modules[] 时；有 modules[] 时挂 modules[].cmd_gate）
   cmd_gate?: CmdGate;
   automation_diagnostic?: AutomationDiagnostic;
@@ -505,6 +508,16 @@ function buildModuleStatusItem(
       ? join(root, 'logos', 'changes', guardActiveChange) : null;
     const loopState = deriveLoopState(root, mod, launchedProposalDir, isMultiModule);
     const sliceState = deriveSliceStateIfActive(root, mod, launchedProposalDir, isMultiModule);
+    const sliceVerificationState = launchedProposalDir && guardActiveChange
+      ? deriveSliceVerificationState(root, launchedProposalDir, {
+          change: guardActiveChange,
+          module: guardModule ?? mod.id,
+        })
+      : null;
+    if (activeChange && sliceVerificationState) {
+      activeChange.facts.slices_planned = sliceVerificationState.manifest_status === 'valid';
+      if (sliceVerificationState.reason) activeChange.reason = sliceVerificationState.reason as ProposalBlockReason;
+    }
     const rawAutomationDiagnostic = launchedProposalDir
       ? deriveAutomationDiagnostic(root, { proposalDir: launchedProposalDir, loopState, sliceState })
       : null;
@@ -698,6 +711,18 @@ function buildModuleStatusItem(
             : `Loop round ${loopState.iteration}/${loopState.max_iters} not green — fix and rerun openlogos verify.`);
     }
 
+    if (activeChange && sliceVerificationState?.reason) {
+      const recoverable = ['test-slice-manifest-missing', 'test-slice-manifest-invalid', 'test-slice-manifest-stale']
+        .includes(sliceVerificationState.reason);
+      suggestion = recoverable
+        ? (locale === 'zh'
+            ? `测试—切片清单需要恢复（${sliceVerificationState.reason}）；派发 slice-planner 保留任务与 checkpoint 并重建 manifest。`
+            : `Test-slice manifest recovery required (${sliceVerificationState.reason}); dispatch slice-planner without changing tasks/checkpoints.`)
+        : (locale === 'zh'
+            ? `测试—切片清单保守阻塞（${sliceVerificationState.reason}），请先人工消歧或升级兼容。`
+            : `Test-slice manifest is conservatively blocked (${sliceVerificationState.reason}); resolve ambiguity or compatibility first.`);
+    }
+
     // S30：当前前沿 builtin gate（verify/deploy/smoke）接 cmd: 时输出 cmd_gate（observe，不执行）。
     // overlay-added 当前节点优先（其 cmd 由 overlay_nodes/current_node + pending_cmd 承载），不与 builtin gate 重叠。
     const cmdGateDesc = (activeChange && !(overlay && overlay.current_node))
@@ -723,6 +748,7 @@ function buildModuleStatusItem(
       ...(overlay && overlay.current_node ? { current_node: overlay.current_node } : {}),
       ...(loopStateForOutput(loopState, activeChange?.proposal_step) ? { loop_state: loopStateForOutput(loopState, activeChange?.proposal_step)! } : {}),
       ...(sliceState ? { slice_state: sliceState } : {}),
+      ...(sliceVerificationState ? { slice_verification_state: sliceVerificationState } : {}),
       ...(cmdGateDesc ? { cmd_gate: cmdGateDesc } : {}),
       ...(rawAutomationDiagnostic && canConsumeAutomationDiagnosticAtStep(activeChange?.proposal_step)
         ? { automation_diagnostic: rawAutomationDiagnostic }
@@ -1238,6 +1264,7 @@ function collectStatusDataLocked(root: string, filterModuleId?: string, cmdEval?
       (modules ?? []).some(m => m.features !== undefined),
       (modules ?? []).some(m => m.active_change?.plan_state?.clarification !== undefined)
         || topPlanState?.clarification !== undefined,
+      (modules ?? []).some(m => m.slice_verification_state !== undefined),
     ) },
     phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
     ...(modules !== undefined ? { modules } : {}),

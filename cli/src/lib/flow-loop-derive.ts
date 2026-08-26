@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { loadFlow, findActivatedLoop, type Flow } from './flow.js';
 import { isCodeRequiredForProposal, deriveProposalFacts, readSlicesApprovedAt } from './proposal-lifecycle.js';
 import type { ModuleInfo } from '../commands/status.js';
+import { deriveSliceVerificationState } from './test-slice-manifest.js';
 
 export interface LoopState {
   subflow_id: string;
@@ -33,6 +34,8 @@ export interface LoopIterRow {
   module?: string;
   timestamp?: string;
   slice?: string; // change-flow-redesign：切片循环（until=code_slices_green）激活时记录本轮尝试的切片
+  verify_mode?: 'slice-checkpoint' | 'final';
+  attempted_slice_id?: string | null;
 }
 
 /** 账本路径：launched = 提案目录、initial = logos/resources/verify/。 */
@@ -101,8 +104,15 @@ export function deriveLoopState(
     const code = readCodeSection(proposalDir);
     const hasCodeSlices = code.total > 0;
     const codeRequired = isCodeRequiredForProposal(proposalDir);
-    converged = hasCodeSlices
-      ? testsGreen && code.done === code.total // 复合收敛：父切片及子任务全勾 ∧ 测试绿
+    const sliceVerification = deriveSliceVerificationState(root, proposalDir, { module: mod.id });
+    const finalGreen = existsSync(join(proposalDir, 'VERIFY_PASS'));
+    converged = hasCodeSlices && sliceVerification
+      ? finalGreen
+        && sliceVerification.manifest_status === 'valid'
+        && sliceVerification.verify_mode === 'final'
+        && code.done === code.total
+      : hasCodeSlices
+        ? testsGreen && code.done === code.total // legacy 多切片无 manifest 的兼容路径
       : (!codeRequired && testsGreen);              // 空 [code] 仅在无需代码时退化为 tests_green
   }
   const escalated = iteration >= act.max_iters && !converged;

@@ -35,6 +35,9 @@
     "slice_state": {
       "$ref": "#/$defs/sliceState"
     },
+    "slice_verification_state": {
+      "$ref": "#/$defs/sliceVerificationState"
+    },
     "plan_state": {
       "$ref": "#/$defs/planState"
     }
@@ -438,6 +441,9 @@
         "slice_state": {
           "$ref": "#/$defs/sliceState"
         },
+        "slice_verification_state": {
+          "$ref": "#/$defs/sliceVerificationState"
+        },
         "features": {
           "type": "array",
           "items": {
@@ -445,6 +451,77 @@
           },
           "$comment": "add-feature-model：可选 feature 分组（1.1.0 minor 新增）。省略当且仅当 module 无注册 feature 且无场景带 feature 键；否则输出（含未知/跨 module 引用触发的 __ungrouped__ 降级桶）"
         }
+      }
+    },
+    "sliceVerificationState": {
+      "type": "object",
+      "required": ["manifest_status", "verify_mode", "attempted_slice_id", "confirmed_slice_ids", "eligible_test_ids", "pending_test_ids", "manifest", "checkpoint"],
+      "additionalProperties": true,
+      "properties": {
+        "manifest_status": { "enum": ["valid", "missing", "invalid", "stale", "unsupported"] },
+        "verify_mode": { "type": ["string", "null"], "enum": ["slice-checkpoint", "final", null] },
+        "attempted_slice_id": { "type": ["string", "null"] },
+        "confirmed_slice_ids": { "$ref": "#/$defs/stringArray" },
+        "eligible_test_ids": { "$ref": "#/$defs/stringArray" },
+        "pending_test_ids": { "$ref": "#/$defs/stringArray" },
+        "reason": { "type": "string" },
+        "human_action_required": { "type": "boolean" },
+        "test_change_set": { "$ref": "#/$defs/testChangeSetSummary" },
+        "violations": { "type": "array", "items": { "$ref": "#/$defs/sliceViolation" } },
+        "manifest": { "$ref": "#/$defs/sliceManifestSummary" },
+        "checkpoint": { "$ref": "#/$defs/sliceCheckpointSummary" }
+      },
+      "allOf": [
+        { "if": { "properties": { "verify_mode": { "const": "slice-checkpoint" } }, "required": ["verify_mode"] }, "then": { "properties": { "attempted_slice_id": { "type": "string", "minLength": 1 } } } },
+        { "if": { "properties": { "verify_mode": { "const": "final" } }, "required": ["verify_mode"] }, "then": { "properties": { "attempted_slice_id": { "type": "null" }, "pending_test_ids": { "maxItems": 0 } } } }
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "testChangeSetSummary": {
+      "type": "object",
+      "required": ["status", "schema", "sha256", "changed_test_ids", "removed_test_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["valid", "invalid"] },
+        "schema": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"] },
+        "changed_test_ids": { "$ref": "#/$defs/stringArray" },
+        "removed_test_ids": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "sliceViolation": {
+      "type": "object",
+      "required": ["code", "path", "message", "fix_hint"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" }, "path": { "type": "string" },
+        "message": { "type": "string" }, "fix_hint": { "type": "string" }
+      }
+    },
+    "sliceManifestSummary": {
+      "type": "object",
+      "required": ["status", "path", "schema", "task_fingerprint", "spec_fingerprint", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["valid", "missing", "invalid", "stale", "unsupported"] },
+        "path": { "type": "string" }, "schema": { "type": ["string", "null"] },
+        "task_fingerprint": { "type": ["string", "null"] },
+        "spec_fingerprint": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"] }
+      }
+    },
+    "sliceCheckpointSummary": {
+      "type": "object",
+      "required": ["final", "result", "confirmed_slice_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "final": { "type": "boolean" },
+        "result": { "type": ["string", "null"], "enum": ["PASS", "FAIL", null] },
+        "confirmed_slice_ids": { "$ref": "#/$defs/stringArray" }
       }
     },
     "clarificationOption": {

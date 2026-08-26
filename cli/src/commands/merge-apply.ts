@@ -23,6 +23,9 @@ import {
   type BaselineClosureApplyInput,
 } from '../lib/baseline-apply.js';
 import { runChangeLint, SLUG_STRICT_RE } from '../lib/change-lint.js';
+import {
+  buildTestChangeSet, readTestChangeSet, type TestChangeSetInputTarget,
+} from '../lib/test-change-set.js';
 
 const MANIFEST_SCHEMA = 'openlogos/baseline-merge-apply@1' as const;
 const GENERATED_PROMPT_MARKER = 'MERGE_PROMPT_GENERATED';
@@ -239,7 +242,12 @@ export function mergeApply(slug: string | undefined, manifestArg: string | undef
 
   const guardPath = join(root, 'logos', '.openlogos-guard');
   let active = '';
-  try { active = JSON.parse(readFileSync(guardPath, 'utf-8')).activeChange ?? ''; } catch { /* 统一在下一行拒绝 */ }
+  let activeModule = 'core';
+  try {
+    const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+    active = guard.activeChange ?? '';
+    if (typeof guard.module === 'string' && guard.module.trim()) activeModule = guard.module.trim();
+  } catch { /* 统一在下一行拒绝 */ }
   if (active !== slug) fail(proposalDir, `active guard=${active || '<missing>'} 与 ${slug} 不一致`);
   if (!existsSync(join(proposalDir, 'MERGE_PROMPT.md')) || !existsSync(join(proposalDir, GENERATED_PROMPT_MARKER))) {
     fail(proposalDir, '必须先由 openlogos merge 生成受控 MERGE_PROMPT');
@@ -272,6 +280,7 @@ export function mergeApply(slug: string | undefined, manifestArg: string | undef
     preparedByTarget.set(entry.target_path, entry);
   }
   const inputs: BaselineClosureApplyInput[] = [];
+  const testTargets: TestChangeSetInputTarget[] = [];
   try {
     for (const target of plan.targets.filter(item => item.targetPath !== null)) {
       if (isNonMarkdownTarget(target)) {
@@ -283,7 +292,15 @@ export function mergeApply(slug: string | undefined, manifestArg: string | undef
       } else {
         const entry = preparedByTarget.get(target.targetPath!);
         if (!entry) throw new Error(`manifest 缺计划目标：${target.targetPath}`);
-        inputs.push(preparedInput(root, proposalDir, target, entry));
+        const input = preparedInput(root, proposalDir, target, entry);
+        inputs.push(input);
+        if (target.category === 'test' && input.kind === 'prepared') {
+          testTargets.push({
+            targetPath: entry.target_path,
+            beforeBytes: entry.before_sha256 === null ? null : readFileSync(join(root, ...entry.target_path.split('/'))),
+            afterBytes: Buffer.isBuffer(input.bytes) ? Buffer.from(input.bytes) : Buffer.from(input.bytes),
+          });
+        }
         preparedByTarget.delete(target.targetPath!);
       }
     }
@@ -305,9 +322,14 @@ export function mergeApply(slug: string | undefined, manifestArg: string | undef
     }
   } catch (e) { fail(proposalDir, String(e)); }
 
+  let testChangeSet;
+  try {
+    testChangeSet = buildTestChangeSet({ change: slug, module: activeModule, targets: testTargets });
+  } catch (error) { fail(proposalDir, String(error)); }
   const marker = Buffer.from(`${JSON.stringify({
     type: 'baseline_closure_spec_complete', policy: 'on-touch-v1', slug,
     manifest_sha256: sha(readFileSync(manifestPath)), completed_at: new Date().toISOString(),
+    test_change_set: testChangeSet,
   }, null, 2)}\n`);
   inputs.push({
     kind: 'prepared', targetPath: relative(root, join(proposalDir, 'SPEC_MERGED')).replace(/\\/g, '/'),
@@ -318,6 +340,15 @@ export function mergeApply(slug: string | undefined, manifestArg: string | undef
   const result = applyBaselineClosureBatch(root, proposalDir, inputs, {
     afterWrite(targetPath) {
       if (faultTarget && targetPath === faultTarget) throw new Error(`test fault after ${targetPath}`);
+    },
+    validateCommitted() {
+      if (faultTarget === 'post-read') throw new Error('test fault at post-read');
+      const check = readTestChangeSet(root, proposalDir, {
+        change: slug,
+        module: activeModule,
+        targetPaths: testTargets.map(target => target.targetPath),
+      });
+      if (!check.valid) throw new Error(`${check.code}：${check.message}`);
     },
   });
   if (!result.ok) fail(proposalDir, `${result.error}（rolled_back=${result.rolled_back}）`);

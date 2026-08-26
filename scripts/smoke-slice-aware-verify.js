@@ -136,10 +136,18 @@ function fixture() {
     'decisions: []', 'unresolved: []', 'defaults: []', '```', '',
   ].join('\n'));
   writeFileSync(join(proposalDir, 'tasks.md'), taskLines());
-  writeFileSync(join(proposalDir, 'SPEC_MERGED'), '');
   writeFileSync(join(proposalDir, 'SLICES_APPROVED'), '');
   const table = ['| ID | 用例 |', '|---|---|', ...ids.flat().map(id => `| ${id} | ${id} |`)].join('\n');
   writeFileSync(join(root, specTarget), table);
+  const changeSetPayload = {
+    schema: 'openlogos/test-change-set@1', change: slug, module: 'core',
+    source: 'semantic-before-after-diff', changed_test_ids: ids.flat().sort(), removed_test_ids: [],
+    targets: [{ target_path: specTarget, before_sha256: null, after_sha256: sha256(Buffer.from(table)) }],
+  };
+  const testChangeSet = { ...changeSetPayload, sha256: prefixedHash(Buffer.from(JSON.stringify(changeSetPayload), 'utf8')) };
+  writeFileSync(join(proposalDir, 'SPEC_MERGED'), `${JSON.stringify({
+    type: 'baseline_closure_spec_complete', test_change_set: testChangeSet,
+  }, null, 2)}\n`);
   writeFileSync(join(proposalDir, 'deltas', 'test', 'core-S90-test-cases.md'), table);
   const specFingerprint = prefixedHash(Buffer.from(`${specTarget}\0${table}\0`, 'utf8'));
   const manifest = {

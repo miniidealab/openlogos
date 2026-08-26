@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.30] - 2026-08-26
+
+### Fixed
+
+- 多切片测试归属改由 merge 时生成的 canonical before/final 语义差异驱动，不再把 Delta 中原样携带的基线测试 ID 误判为 changed。
+- `SPEC_MERGED.test_change_set` 与 resources、metadata 同事务提交并后置复核；status、next、change-lint、verify 和 slice manifest validator 共享同一严格读取器，缺失、篡改或 identity 漂移均 fail-closed。
+
+### Changed
+
+- 本地候选版本升级为 `0.13.30`，提供固定 tarball 的 npm 全局安装、`0.13.29` 回滚恢复与负向 smoke；不包含任何公开发布动作。
+
 ## [0.13.25] - 2026-08-14
 
 ### Added

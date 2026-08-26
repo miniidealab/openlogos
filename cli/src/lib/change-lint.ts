@@ -37,6 +37,7 @@ import {
   listBaselineSeedModuleIds,
   withRecoveredReadLocks,
 } from './baseline-seed-txn.js';
+import { readTestChangeSet, type TestChangeSetReadResult } from './test-change-set.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
@@ -692,6 +693,7 @@ export type ChangeLintRunResult =
       warnings: ChangeLintWarning[];
       checks: { id: number; label: string; violations: number }[];
       baseline_closure?: BaselineClosureSummary;
+      test_change_set?: TestChangeSetReadResult;
     }
   | { ok: false; errorCode: ChangeLintOpErrorCode; message: string };
 
@@ -1056,5 +1058,11 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   return {
     ok: true, slug, violations: sorted, warnings, checks,
     ...(closure.summary ? { baseline_closure: closure.summary } : {}),
+    ...(postMerge ? {
+      test_change_set: readTestChangeSet(root, proposalDir, {
+        change: slug,
+        module: moduleCtx.moduleId,
+      }),
+    } : {}),
   };
 }

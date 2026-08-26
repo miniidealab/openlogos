@@ -1,5 +1,38 @@
 # website-release-feed 实现清单
 
+## fix-test-slice-changed-id-semantic-diff（三个自闭环切片）
+
+### 实现范围
+
+- merge-apply 以 Markdown authority table parser 对测试规格 before/final 字节做语义差异，生成严格 `openlogos/test-change-set@1`，并与 resources、metadata、`SPEC_MERGED` 同事务提交。
+- `applyBaselineClosureBatch()` 在备份清理前执行后置重读复核；resource、metadata、marker rename 或 post-read 任一故障均整批回滚。
+- TestChangeSetReader 校验 schema、固定键序、canonical hash、change/module、target identity 与 after hash；status、next、change-lint、slice validator、verify 共享 C/R 与 provenance。
+- slice manifest 只允许 `changed_test_ids` 唯一归属；baseline/removed owned、changed 漏配、多片重复、来源缺失/篡改均在 runner 前 fail-closed，来源错误不得误派 `plan-slices`。
+- CLI 与 Claude/Codex/ZCode/Qoder/WorkBuddy 插件版本统一为 `0.13.30`；新增固定本地 tarball 的全局 candidate/`0.13.29` rollback smoke runner，不含公开发布命令。
+
+### 覆盖切片与真实用例
+
+- [x] 切片 1：UT-S39-33～UT-S39-38、ST-S39-17～ST-S39-19。
+- [x] 切片 2：UT-S32-43～UT-S32-49、ST-S32-14～ST-S32-16。
+- [x] 切片 3：SMOKE-core-130～SMOKE-core-134（runner/reporter/dispatcher 已实现；真实本机全局执行等待 verify 与部署、smoke 授权）。
+
+### 主要产物
+
+- `cli/src/lib/test-change-set.ts`、`cli/src/lib/test-slice-manifest.ts`、`cli/src/lib/baseline-apply.ts`
+- `cli/src/commands/merge-apply.ts`、`cli/src/commands/status.ts`、`cli/src/commands/next.ts`、`cli/src/commands/verify.ts`
+- `cli/src/lib/change-lint.ts`、`cli/src/lib/proposal-lifecycle.ts`、`cli/src/lib/flow-loop-derive.ts`
+- `cli/test/test-change-set.test.ts`、`cli/test/slice-aware-verify.test.ts`
+- `spec/schema/status.schema.json`、`spec/schema/next.schema.json`、`spec/schema/verify.schema.json`
+- `scripts/smoke-test-change-set-local-global.js`、`scripts/smoke-slice-aware-verify.js`、`scripts/run-smoke.js`
+
+### 验证
+
+- `cd cli && npm run build`：通过。
+- `cd cli && npm run lint`：通过。
+- `cd cli && npm test`：80 个测试文件、1992/1992 通过；新增 S39/S32 真实 UT/ST ID 由 OpenLogos reporter 逐条记录。
+- `node scripts/smoke-test-change-set-local-global.js --self-test`：五个 smoke ID、`local-global` 环境、candidate/rollback 输入和公开发布零调用合同通过。
+- 未执行 `openlogos verify`、本机全局安装、真实 rollback 或 smoke；这些操作保留至对应人类授权节点。
+
 ## win32-archive-watcher-handshake（单一自闭环切片）
 
 ### 范围

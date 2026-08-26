@@ -66,6 +66,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_TRAE_LOCAL_TARBALL,
       previousTarball: process.env.OPENLOGOS_TRAE_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-test-change-set-local-global.js': {
+      tarball: process.env.OPENLOGOS_TEST_CHANGE_SET_TARBALL,
+      previousTarball: process.env.OPENLOGOS_TEST_CHANGE_SET_ROLLBACK_TARBALL,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;

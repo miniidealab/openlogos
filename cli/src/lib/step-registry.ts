@@ -29,9 +29,9 @@ export const CONTRACT_VERSION_WITH_CLARIFICATION = '1.2.0';
  * add-feature-model（S34，delta-F1=B）：条件版本选择器——status/next 发射 `contract.version` 的唯一入口。
  * @param hasFeatures 本次响应是否含任一 `modules[].features` 字段。
  */
-export function contractVersion(hasFeatures: boolean, hasClarification = false): string {
+export function contractVersion(hasFeatures: boolean, hasClarification = false, hasSliceVerification = false): string {
   if (hasClarification) return CONTRACT_VERSION_WITH_CLARIFICATION;
-  return hasFeatures ? CONTRACT_VERSION_WITH_FEATURES : CONTRACT_VERSION;
+  return hasFeatures || hasSliceVerification ? CONTRACT_VERSION_WITH_FEATURES : CONTRACT_VERSION;
 }
 
 export type StepPhase = 'pre-implement' | 'implement' | 'post-implement';

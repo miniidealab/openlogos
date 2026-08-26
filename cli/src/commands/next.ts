@@ -27,6 +27,7 @@ import { writePlanApprovedMarker } from '../lib/ui-provenance.js';
 import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
 import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 import { BaselineCommitInProgressError } from '../lib/baseline-seed-txn.js';
+import { deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
 
 export interface NextModuleItem {
   id: string;
@@ -54,6 +55,7 @@ export interface NextModuleItem {
   current_node?: CurrentNode;
   loop_state?: LoopState;
   slice_state?: SliceState;
+  slice_verification_state?: SliceVerificationState;
   next_node?: NextNode;
   cmd_gate?: CmdGate;
   automation_diagnostic?: AutomationDiagnostic;
@@ -80,6 +82,7 @@ export interface NextData {
   loop_state?: LoopState;
   // change-flow-redesign 切片6：代码切片循环状态（仅切片循环激活时附带）
   slice_state?: SliceState;
+  slice_verification_state?: SliceVerificationState;
   // S30：builtin cmd gate 承载（仅 cmd gate observe-pending 时附带）
   cmd_gate?: CmdGate;
   automation_diagnostic?: AutomationDiagnostic;
@@ -105,6 +108,27 @@ export interface NextData {
   cmd_satisfied?: boolean;
   // brownfield-adopter（S33）：现状基线覆盖率（legacy 无 modules 时挂顶层；有 modules 时挂 modules[].baseline_coverage）
   baseline_coverage?: BaselineCoverage;
+}
+
+function manifestRecoveryNode(state: SliceVerificationState): NextNode | null {
+  if (state.human_action_required) return null;
+  if (!['test-slice-manifest-missing', 'test-slice-manifest-invalid', 'test-slice-manifest-stale']
+    .includes(state.reason ?? '')) return null;
+  return {
+    id: 'plan-slices',
+    name: '恢复测试—切片清单',
+    subflow_id: 'slice',
+    skill: 'slice-planner',
+    working_agent: null,
+    review_agent: null,
+    pre_script: null,
+    post_script: null,
+    dispatch: {
+      idempotent: true,
+      timeout_seconds: 900,
+      artifacts_hint: ['tasks.md', 'TEST_SLICE_MANIFEST.json', 'logos/resources/test/'],
+    },
+  };
 }
 
 /** 在活跃提案目录追加一行 GATE_AUTO_PASSED JSONL 审计（总是追加、不去重）。 */
@@ -143,7 +167,9 @@ function isSliceExitAutoReady(root: string, slug: string): boolean {
   const tasksPath = join(dir, 'tasks.md');
   if (!existsSync(tasksPath)) return false;
   const content = readFileSync(tasksPath, 'utf-8');
-  return isTasksCodeFilled(content);
+  if (!isTasksCodeFilled(content)) return false;
+  const state = deriveSliceVerificationState(root, dir, { change: slug });
+  return state == null || state.manifest_status === 'valid';
 }
 
 /** S39：adopted 三态只影响可选证据说明，绝不劫持无提案时的主 action/command。 */
@@ -548,6 +574,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       const cn = data.modules![i].current_node;
       const ls = data.modules![i].loop_state;
       const ss = data.modules![i].slice_state;
+      const sv = data.modules![i].slice_verification_state;
       const cg = data.modules![i].cmd_gate;
       const ad = data.modules![i].automation_diagnostic;
       // expose-code-required-field：把 status active_change.code_required 平铺到 next 的 module 级（仅活跃提案时）。
@@ -566,6 +593,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
         ...(cn ? { current_node: cn } : {}),
         ...(ls ? { loop_state: ls } : {}),
         ...(ss ? { slice_state: ss } : {}),
+        ...(sv ? { slice_verification_state: sv } : {}),
         ...(cg ? { cmd_gate: cg } : {}),
         ...(ad ? { automation_diagnostic: ad } : {}),
         ...(cr !== undefined ? { code_required: cr } : {}),
@@ -869,6 +897,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   const baseLoopState = data.modules === undefined ? data.loop_state : undefined;
   // slice_state：同构挂载——有 modules[] 时挂 modules[].slice_state，legacy 才回退顶层
   const baseSliceState = data.modules === undefined ? data.slice_state : undefined;
+  const baseSliceVerificationState = data.modules === undefined ? data.slice_verification_state : undefined;
   const basePlanState = data.modules === undefined ? data.plan_state : undefined;
 
   // S28：next_node 编排提示——modules[] 各项 + legacy 顶层。R4 auto 放行默认省略；
@@ -916,6 +945,25 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       const nn = withSlice(nextNodeFor(sm, gap), sm.loop_state, sm.slice_state, smAtVerify);
       return nn ? { ...item, next_node: nn } : item;
     });
+    moduleItems = moduleItems.map((item, index) => {
+      const state = data.modules![index].slice_verification_state;
+      if (!state?.reason) return item;
+      const recovery = manifestRecoveryNode(state);
+      const nextItem: NextModuleItem = {
+        ...item,
+        reason: state.reason as ProposalBlockReason,
+        action: recovery
+          ? `恢复测试—切片清单（${state.reason}）`
+          : `测试—切片清单保守阻塞（${state.reason}）`,
+        command: null,
+        detail: recovery
+          ? '派发 slice-planner 保留 [code]、checkbox、SLICES_APPROVED 与 checkpoint，仅原子重建 manifest；完成后重新调用 canonical next。'
+          : '未知主版本或归属歧义不得自动覆盖；请人工消歧或升级兼容后重试。',
+        ...(recovery ? { next_node: recovery } : {}),
+      };
+      if (!recovery) delete nextItem.next_node;
+      return nextItem;
+    });
   }
   let baseNextNode: NextNode | undefined;
   if (data.modules === undefined && !commandLevelTop) {
@@ -927,6 +975,9 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       automation_diagnostic: data.automation_diagnostic,
       active_change: data.proposal_step ? { proposal_step: data.proposal_step, slug: data.active_change ?? undefined } : null,
     }, gateAutoPassed && !planGateAutoConsumed && !sliceGateAutoConsumed), data.loop_state, data.slice_state, baseAtVerify) ?? undefined;
+    if (baseSliceVerificationState?.reason) {
+      baseNextNode = manifestRecoveryNode(baseSliceVerificationState) ?? undefined;
+    }
   }
 
   // M2 切片 1b：cmd 执行后，顶层 action/detail 反映命令结果（done 续推 / 未通过重试 / 超时）
@@ -978,7 +1029,12 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
   // 供无人值守 driver 自动执行。硬红线排除：卡在 overlay 节点 / loop 阻塞（含达上限 loop-exhausted）/ failed 步骤均不置。
   // gate_auto_passed（flow 门）与 auto_execute（非门命令步骤）正交，同一响应至多一个为真。
   let autoExecute = false;
-  if (auto && autoEnabled && !blockedByOverlayNode && !blockedByHardLoop && !recoverableGlobalVerify && topActiveChange) {
+  const blockedBySliceManifest = Boolean(
+    baseSliceVerificationState?.reason
+      || moduleItems?.some(item => item.active_change === topActiveChange && item.slice_verification_state?.reason),
+  );
+  if (auto && autoEnabled && !blockedByOverlayNode && !blockedByHardLoop
+    && !blockedBySliceManifest && !recoverableGlobalVerify && topActiveChange) {
     let autoCmd: string | null = null;
     if (topProposalStep === 'ready-to-verify') autoCmd = 'openlogos verify';
     else if (topProposalStep === 'ready-to-smoke') autoCmd = 'openlogos smoke';
@@ -1001,6 +1057,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       (data.modules ?? []).some(m => m.features !== undefined),
       (moduleItems ?? []).some(m => m.plan_state?.clarification !== undefined)
         || basePlanState?.clarification !== undefined,
+      (moduleItems ?? []).some(m => m.slice_verification_state !== undefined)
+        || baseSliceVerificationState !== undefined,
     ) },
     action,
     command,
@@ -1012,6 +1070,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     ...(baseCurrentNode ? { current_node: baseCurrentNode } : {}),
     ...(baseLoopState ? { loop_state: baseLoopState } : {}),
     ...(baseSliceState ? { slice_state: baseSliceState } : {}),
+    ...(baseSliceVerificationState ? { slice_verification_state: baseSliceVerificationState } : {}),
     ...(data.modules === undefined && data.cmd_gate ? { cmd_gate: data.cmd_gate } : {}),
     ...(data.modules === undefined && data.automation_diagnostic ? { automation_diagnostic: data.automation_diagnostic } : {}),
     ...(basePlanState ? { plan_state: basePlanState } : {}),

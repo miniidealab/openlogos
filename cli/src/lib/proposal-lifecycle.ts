@@ -4,7 +4,7 @@ import { parseStrictTimestampMs } from './timestamp.js';
 // 循环导入（安全性见 detectProposalStep 注释）：仅函数声明跨界调用、无顶层跨界求值。
 import { detectMintedStepViaFlow } from './flow-derive.js';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { listFiles } from './list-files.js';
 import {
   authorityScan, extractUniqueAuthoritySection, isTableDelimiterRow, tableRowCells,
@@ -13,6 +13,7 @@ import { listEvidenceTestDeltaFiles } from './delta-classify.js';
 import { evaluateProposalClarification, type ClarificationOutput } from './clarification.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
 import type { ModuleInfo } from '../commands/status.js';
+import { deriveSliceVerificationState } from './test-slice-manifest.js';
 
 export type ProposalStep =
   | 'writing'
@@ -76,7 +77,13 @@ export interface CodePlanningDiagnostic {
 
 export type ProposalBlockReason =
   | 'no_delta_spec_marker_missing'
-  | 'code_change_requires_real_test_ids';
+  | 'code_change_requires_real_test_ids'
+  | 'test-slice-manifest-missing'
+  | 'test-slice-manifest-invalid'
+  | 'test-slice-manifest-stale'
+  | 'test-slice-manifest-unsupported'
+  | 'test-slice-assignment-ambiguous'
+  | 'slice-task-state-inconsistent';
 
 export type TasksExecutionScope = 'delta' | 'deploy' | 'code' | 'none';
 
@@ -636,9 +643,13 @@ export function deriveProposalFacts(proposalDir: string, tasksContent?: string):
   const taskText = tasksContent ?? (existsSync(join(proposalDir, 'tasks.md'))
     ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '');
   const sections = parseTaskSections(taskText);
+  const codeFilled = isTasksCodeFilled(taskText);
+  const sliceVerification = codeFilled
+    ? deriveSliceVerificationState(resolve(proposalDir, '../../..'), proposalDir)
+    : null;
   return {
     spec_complete: hasSpecCompleteMarker(proposalDir),
-    slices_planned: isTasksCodeFilled(taskText),
+    slices_planned: codeFilled && (sliceVerification == null || sliceVerification.manifest_status === 'valid'),
     slices_approved: existsSync(join(proposalDir, SLICES_APPROVED_MARKER)),
     code_required: isCodeRequiredForProposal(proposalDir, taskText, sections),
     has_delta_tasks: (sections?.delta?.total ?? 0) > 0,
