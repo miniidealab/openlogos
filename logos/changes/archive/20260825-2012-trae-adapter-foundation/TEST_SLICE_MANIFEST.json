@@ -1,0 +1,83 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "trae-adapter-foundation",
+  "module": "core",
+  "task_fingerprint": "sha256:fa54206f2afb91fbe123557c28a496a60d6da944e6152d23eb9686f988fb5101",
+  "spec_fingerprint": "sha256:f2a169e7d5eff27361e009018e3624d2f19d32037fa655c6f71ac32cca373833",
+  "generated_at": "2026-08-26T03:00:00.000Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-trae-init-exclusion",
+      "task_text": "切片 1：交付 TRAE non-deployable 初始化闭环——以真实 `AiToolAdapterRegistry`、帮助/交互支持列表和 `init` 资产计划证明不注册 `trae`/TraeCode、`all` 仅稳定展开既有七宿主、显式 `trae` 在首个写入前 fail loud 且 `.trae/**` 零触达；同步实现 Vitest 与全局 OpenLogos reporter（覆盖 UT-S01-124、UT-S01-125、UT-S01-126、UT-S01-127、ST-S01-24、ST-S01-25）。",
+      "owned_test_ids": [
+        "ST-S01-24",
+        "ST-S01-25",
+        "UT-S01-124",
+        "UT-S01-125",
+        "UT-S01-126",
+        "UT-S01-127"
+      ],
+      "runner_selectors": [
+        "ST-S01-24",
+        "ST-S01-25",
+        "UT-S01-124",
+        "UT-S01-125",
+        "UT-S01-126",
+        "UT-S01-127"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S01-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-trae-sync-exclusion",
+      "task_text": "切片 2：交付 TRAE non-deployable 同步闭环——让 `sync` 对配置中的未知 `trae` 在迁移、索引、资产事务和版本戳写入前 fail loud，保持既有七宿主计划/顺序/哈希语义，并证明 Rules、Skills、Agents、Hooks、MCP、settings 与不透明记忆不进入扫描、暂存、备份或回滚；同步实现 Vitest 与全局 OpenLogos reporter（覆盖 UT-S08-33、UT-S08-34、UT-S08-35、UT-S08-36、ST-S08-25、ST-S08-26）。",
+      "owned_test_ids": [
+        "ST-S08-25",
+        "ST-S08-26",
+        "UT-S08-33",
+        "UT-S08-34",
+        "UT-S08-35",
+        "UT-S08-36"
+      ],
+      "runner_selectors": [
+        "ST-S08-25",
+        "ST-S08-26",
+        "UT-S08-33",
+        "UT-S08-34",
+        "UT-S08-35",
+        "UT-S08-36"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S08-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-trae-guard-exclusion",
+      "task_text": "切片 3：交付 TRAE hard guard 非适配闭环——以真实 Registry、现有 Hook normalizer/runtime 注册与生命周期状态输入证明不存在 TRAE SessionStart/PreToolUse 映射，不读取或修改 `enabled_folders`、settings、账号、Rules、Skills、Agents、MCP 与记忆，不把 wrapper 直调或软控制当作 capability PASS，同时回归已支持宿主每次重读、deny reason、退出语义与目标哈希不变；同步实现 Vitest 与全局 OpenLogos reporter（覆盖 UT-S09-219、UT-S09-220、UT-S09-221、UT-S09-222、UT-S09-223、ST-S09-85、ST-S09-86、ST-S09-87）。",
+      "owned_test_ids": [
+        "ST-S09-85",
+        "ST-S09-86",
+        "ST-S09-87",
+        "UT-S09-219",
+        "UT-S09-220",
+        "UT-S09-221",
+        "UT-S09-222",
+        "UT-S09-223"
+      ],
+      "runner_selectors": [
+        "ST-S09-85",
+        "ST-S09-86",
+        "ST-S09-87",
+        "UT-S09-219",
+        "UT-S09-220",
+        "UT-S09-221",
+        "UT-S09-222",
+        "UT-S09-223"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    }
+  ]
+}
