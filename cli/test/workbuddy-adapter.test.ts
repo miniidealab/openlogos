@@ -128,7 +128,7 @@ describe('WorkBuddy Adapter — S01/S20', () => {
     expect(createAgentsMd('zh', 'workbuddy', 'agents', true)).toContain('.workbuddy/plugins/openlogos/skills');
   });
 
-  it('UT-S01-121: 0.13.28 真实 npm pack 清单包含完整 WorkBuddy 模板且版本同源', () => {
+  it('UT-S01-121: 当前真实 npm pack 清单包含完整 WorkBuddy 模板且版本同源', () => {
     const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
     const packRoot = mkdtempSync(join(tmpdir(), 'openlogos-workbuddy-pack-'));
     try {
@@ -140,7 +140,7 @@ describe('WorkBuddy Adapter — S01/S20', () => {
       expect(packed.status, packed.stderr).toBe(0);
       const packResult = JSON.parse(packed.stdout)[0];
       const paths = new Set(packResult.files.map((file: { path: string }) => file.path));
-      expect(packResult.version).toBe('0.13.28');
+      expect(packResult.version).toBe('0.13.29');
       expect(JSON.parse(readFileSync(join(packRoot, 'workbuddy-plugin-template/.workbuddy-plugin/plugin.json'), 'utf8')).version).toBe(packResult.version);
       for (const required of [
         'workbuddy-plugin-template/.workbuddy-plugin/plugin.json',

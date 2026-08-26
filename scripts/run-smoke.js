@@ -62,6 +62,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_WORKBUDDY_TARBALL,
       previousTarball: process.env.OPENLOGOS_WORKBUDDY_PREVIOUS_TARBALL,
     },
+    'scripts/smoke-trae-local-negative.js': {
+      tarball: process.env.OPENLOGOS_TRAE_LOCAL_TARBALL,
+      previousTarball: process.env.OPENLOGOS_TRAE_ROLLBACK_TARBALL,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
