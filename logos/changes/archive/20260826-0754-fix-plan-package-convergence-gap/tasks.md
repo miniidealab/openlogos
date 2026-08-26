@@ -40,9 +40,9 @@
 
 ## [deploy] 本机全局部署任务
 
-- [ ] verify 通过并另获部署授权后，记录全局 `openlogos` 版本、realpath、npm prefix，并固定 0.13.30 tarball 与 SHA-256。
-- [ ] 构建 `@miniidealab/openlogos@0.13.31` tarball，核验 CLI/插件版本、Plan 合同、Skill/模板资产 hash、内容清单与 SHA-256 后安装。
-- [ ] 在隔离环境及本机全局入口验证 init/change/sync、缓存刷新、只读零写入与用户资产不覆盖，并生成部署报告。
-- [ ] 实际演练 `0.13.31 → 0.13.30 → 0.13.31`；失败立即恢复部署前状态，随后等待独立 smoke 授权。
+- [x] verify 通过并另获部署授权后，记录全局 `openlogos` 版本、realpath、npm prefix，并固定 0.13.30 tarball 与 SHA-256。
+- [x] 构建 `@miniidealab/openlogos@0.13.31` tarball，核验 CLI/插件版本、Plan 合同、Skill/模板资产 hash、内容清单与 SHA-256 后安装。
+- [x] 在隔离环境及本机全局入口验证 init/change/sync、缓存刷新、只读零写入与用户资产不覆盖，并生成部署报告。
+- [x] 实际演练 `0.13.31 → 0.13.30 → 0.13.31`；失败立即恢复部署前状态，随后等待独立 smoke 授权。
 
 > 部署任务不授权 smoke、npm publish、dist-tag、Git tag、GitHub Release、官网部署或 git push。
