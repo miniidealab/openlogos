@@ -2,12 +2,13 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
-import { deploySpecs, deployAiToolAssets, expandAiTools, ensureVerifyPreRunConfig, printVerifyPreRunBackfillResult, writeInstructionFiles } from './init.js';
+import { deploySpecs, deployAiToolAssets, ensureVerifyPreRunConfig, printVerifyPreRunBackfillResult, writeInstructionFiles } from './init.js';
 import { syncResourceIndex } from '../lib/sync-resource-index.js';
 import { VERSION } from '../lib/json-output.js';
 import { migrateProjectLifecycle, migrateBaselineProvenance } from '../lib/migrate-lifecycle.js';
 import { withRecoveredReadLocks, listProjectModuleIds } from '../lib/baseline-seed-txn.js';
 import { syncGuiOverlay, readModulesMissingProductType } from '../lib/ui-first.js';
+import { resolveConfiguredAiTools } from '../lib/ai-tool-adapter.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -100,7 +101,8 @@ export function sync() {
   const projectName = config.name || 'Unnamed Project';
   const locale = readLocale(root);
   const rawAiTool = config.aiTool ?? 'cursor';
-  const aiTools = expandAiTools(rawAiTool);
+  // 配置文件可能被人工修改；未知 Adapter 必须在迁移、索引、资产事务和版本戳写入前失败。
+  const aiTools = resolveConfiguredAiTools(rawAiTool);
 
   // brownfield-adopter（S33 / F7）：在**任何迁移/写副作用之前**取所有模块锁形成**读锁区间** + 恢复未终结提交，
   // 并把「迁移 → 扫描 → 索引 → 部署」全程置于同一锁区间（杜绝门检查与实际写/读之间 writer 插入的 TOCTOU）。

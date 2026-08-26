@@ -119,6 +119,23 @@ export function expandRegisteredAiTools(rawAiTool: unknown): AiToolId[] {
   return unique.length > 0 ? unique : ['cursor'];
 }
 
+/**
+ * 严格解析持久化配置中的 AI 工具列表。
+ *
+ * 交互式入口会先通过 parseRegisteredAiTool 校验用户输入；同步入口读取的却是
+ * 可被人工修改的配置文件，因此不能把未知值静默降级为 cursor。必须在任何同步
+ * 写入发生前失败，避免看似成功但实际遗漏目标宿主。
+ */
+export function resolveConfiguredAiTools(rawAiTool: unknown): AiToolId[] {
+  const rawValues = Array.isArray(rawAiTool) ? rawAiTool : [rawAiTool];
+  for (const value of rawValues) {
+    if (value !== 'all' && !aiToolAdapterRegistry.has(value)) {
+      throw new Error(`未知的 AI Adapter id：${String(value)}`);
+    }
+  }
+  return expandRegisteredAiTools(rawAiTool);
+}
+
 export const ZCODE_PLUGIN_REL_DIR = '.zcode/plugins/openlogos';
 export const QODER_PLUGIN_REL_DIR = '.qoder/plugins/openlogos';
 export const WORKBUDDY_PLUGIN_REL_DIR = '.workbuddy/plugins/openlogos';
