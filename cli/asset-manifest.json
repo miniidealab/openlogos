@@ -1,0 +1,42 @@
+{
+  "schema": "openlogos/asset-manifest@1",
+  "version": "0.13.31",
+  "planContractVersion": "1.3.0",
+  "skills": [
+    {
+      "path": "skills/change-writer/SKILL.md",
+      "sha256": "cc46919dccf7f0a9fe2c504d8383af27e2265375f876aa4cd5ee55721586ae3d"
+    },
+    {
+      "path": "skills/change-writer/SKILL.en.md",
+      "sha256": "18ddb7ecf8695cb5d8a93f20317c03d48a890547aa966bbde3e0deede2c05de6"
+    }
+  ],
+  "templates": [
+    {
+      "path": "dist/i18n.js",
+      "sha256": "438f308cedd0a0cece3c9e4847b6dd7112f1c683ae6e1e59bf6982be0f5fde74"
+    }
+  ],
+  "schemas": [
+    {
+      "path": "spec/schema/next.schema.json",
+      "sha256": "780a02947eb8984897e5e9924df20f64837e95728e5ffa02ca09f48bc0462abf"
+    },
+    {
+      "path": "spec/schema/status.schema.json",
+      "sha256": "72832c33404d69351a352eef01b1d02218f3c21ba36fe9e7bb450893da8ec2ca"
+    }
+  ],
+  "plugins": [
+    {
+      "path": "claude-plugin-template/.claude-plugin/plugin.json",
+      "sha256": "d98cf5bdabf93d992392fc063af11caf9de6d8a42684f72949e3b536d3ca68b3"
+    },
+    {
+      "path": "claude-plugin-template/skills/change-writer/SKILL.md",
+      "sha256": "93374b6696d47227a1b67ee7fa9dd3bf9938c1f2664def139041f07667c2e5ab"
+    }
+  ],
+  "payloadHash": "201c44787fc97e7b917faec1a0868cfc1883a59c2502156dd992ff29b10dc65c"
+}

@@ -1265,6 +1265,8 @@ function collectStatusDataLocked(root: string, filterModuleId?: string, cmdEval?
       (modules ?? []).some(m => m.active_change?.plan_state?.clarification !== undefined)
         || topPlanState?.clarification !== undefined,
       (modules ?? []).some(m => m.slice_verification_state !== undefined),
+      (modules ?? []).some(m => m.active_change?.plan_state?.plan_package !== undefined)
+        || topPlanState?.plan_package !== undefined,
     ) },
     phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
     ...(modules !== undefined ? { modules } : {}),

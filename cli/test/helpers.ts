@@ -4,14 +4,34 @@ import { tmpdir } from 'node:os';
 import { vi, type MockInstance } from 'vitest';
 
 /**
- * 为历史测试夹具补上一个已完成的 clarification@1 区块。
+ * 为关注点不在 plan scaffold 的历史测试夹具补齐 canonical Plan Package。
  *
  * 生产代码必须把缺少该区块的 writing/legacy 提案判为待回填；旧测试若关注的并非
  * 决策澄清本身，应显式调用本 helper，避免无关用例被新 plan 出口门抢占。
  */
 export function withCompleteClarification(content: string): string {
-  if (/^##\s+(?:决策澄清|Decision Clarification)\s*$/m.test(content)) return content;
-  return `${content.trimEnd()}\n\n## 决策澄清\n\n\`\`\`yaml\n` + [
+  let normalized = content.trimEnd();
+  const additions: string[] = [];
+  const canonicalHints = ['变更原因', '变更类型', '变更范围', '部署影响', '变更概述']
+    .filter(title => new RegExp(`^##\\s+${title}\\s*$`, 'm').test(normalized)).length;
+  if (canonicalHints >= 2) {
+    if (!/^##\s+变更原因\s*$/m.test(normalized)) additions.push('## 变更原因\n测试夹具需要覆盖既有行为。');
+    if (!/^##\s+变更类型\s*$/m.test(normalized)) additions.push('## 变更类型\n代码级');
+    if (!/^##\s+变更范围\s*$/m.test(normalized)) additions.push('## 变更范围\n- 测试夹具');
+    if (!/^##\s+部署影响\s*$/m.test(normalized)) additions.push([
+      '## 部署影响',
+      '- 是否需要部署：否',
+      '- 部署原因：测试夹具不产生部署影响',
+      '- 影响环境：无',
+      '- 是否涉及数据迁移：否',
+      '- 是否需要回滚预案：否',
+      '- 是否需要 smoke：否',
+    ].join('\n'));
+    if (!/^##\s+变更概述\s*$/m.test(normalized)) additions.push('## 变更概述\n测试夹具保持既有行为。');
+  }
+  if (additions.length > 0) normalized += `\n\n${additions.join('\n\n')}`;
+  if (/^##\s+(?:决策澄清|Decision Clarification)\s*$/m.test(normalized)) return normalized;
+  return `${normalized}\n\n## 决策澄清\n\n\`\`\`yaml\n` + [
     'schema: openlogos/clarification@1',
     'mode: adaptive',
     'status: complete',

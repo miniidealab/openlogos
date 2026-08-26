@@ -38,6 +38,8 @@ import {
   withRecoveredReadLocks,
 } from './baseline-seed-txn.js';
 import { readTestChangeSet, type TestChangeSetReadResult } from './test-change-set.js';
+import { evaluatePlanPackage } from './plan-package.js';
+import { type PlanPackageEvaluation } from './plan-package-contract.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
@@ -46,6 +48,18 @@ export type { DeltaEntryClassification, MergeDisposition, LintValidity };
 // ── violation code 闭合注册表（35 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
 
 export const CHANGE_LINT_VIOLATION_CODES = [
+  // L0 Plan Package 统一完成合同
+  'proposal_required_section_missing',
+  'proposal_required_section_duplicate',
+  'proposal_required_section_empty',
+  'proposal_placeholder_remaining',
+  'proposal_change_type_invalid',
+  'proposal_deployment_fields_invalid',
+  'proposal_clarification_invalid',
+  'tasks_template_remaining',
+  'tasks_code_entry_before_spec_complete',
+  'tasks_code_section_missing',
+  'tasks_deployment_conflict',
   // L1–L6（7 码）
   'tasks_sections_unparsable',
   'tasks_code_header_missing',
@@ -692,6 +706,7 @@ export type ChangeLintRunResult =
       violations: ChangeLintViolation[];
       warnings: ChangeLintWarning[];
       checks: { id: number; label: string; violations: number }[];
+      plan_package: PlanPackageEvaluation;
       baseline_closure?: BaselineClosureSummary;
       test_change_set?: TestChangeSetReadResult;
     }
@@ -833,6 +848,17 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   const relTasks = `logos/changes/${slug}/tasks.md`;
   const relProposal = `logos/changes/${slug}/proposal.md`;
   const acc: CheckAcc = { violations: [], seq: new Map(), order: new Map() };
+
+  // L0：所有 plan 消费方共用的唯一完成契约。
+  const planPackage = evaluatePlanPackage(root, proposalDir);
+  for (const completionIssue of planPackage.issues) {
+    pushViolation(acc, 0, {
+      code: completionIssue.code,
+      path: completionIssue.path,
+      message: completionIssue.message,
+      fix_hint: completionIssue.fix_hint,
+    });
+  }
 
   const sections = parseTaskSections(tasksContent);
   const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
@@ -1038,6 +1064,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   const countFor = (check: number) => sorted.filter(v => acc.order.get(v)!.check === check).length;
 
   const checks: { id: number; label: string; violations: number }[] = [
+    { id: 0, label: 'Plan Package 完成合同', violations: countFor(0) },
     { id: 1, label: 'tasks.md 结构可解析', violations: countFor(1) },
     { id: 2, label: '[code] 标题在场（空段占位合法）', violations: countFor(2) },
     { id: 3, label: '测试证据在场（分阶段证据模型）', violations: countFor(3) },
@@ -1056,7 +1083,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {
-    ok: true, slug, violations: sorted, warnings, checks,
+    ok: true, slug, violations: sorted, warnings, checks, plan_package: planPackage,
     ...(closure.summary ? { baseline_closure: closure.summary } : {}),
     ...(postMerge ? {
       test_change_set: readTestChangeSet(root, proposalDir, {

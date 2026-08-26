@@ -49,7 +49,8 @@ function setupProj(o: ProjOpts = {}): { root: string; slug: string; dir: string 
     '# 变更提案：feat', '', '> module: core', '',
     '## 变更原因', '需要新能力。', '', '## 变更类型', '设计级变更', '',
     ...(o.decisionSection ? ['## 已确定的设计决策', '- D07 选 X 而非 Y，因为不变量约束。', ''] : []),
-    '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否', '',
+    '## 部署影响', '- 是否需要部署：否', '- 部署原因：本地测试', '- 影响环境：无',
+    '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '需要 CLI 代码、测试和 reporter 实现。',
   ].join('\n');
   writeFileSync(join(dir, 'proposal.md'), withCompleteClarification(proposal));
@@ -128,7 +129,7 @@ describe('S38 决策记录 — change-lint warning + JSON 契约（UT）', () =>
     // [delta] 段只规划测试文件；deltas/decisions/ 仅出现在 [code] 段说明文字里 → 非权威任务 → warning 仍在
     const tasks = [
       '## [delta] 规格变更', '- [ ] 产出 `deltas/test/x.md`', '',
-      '## [code] 代码实现', '- [ ] 实现 deltas/decisions/core-D07-x.md 的落盘逻辑',
+      '## [code] 代码实现', '实现阶段会处理 deltas/decisions/core-D07-x.md 的落盘逻辑（非权威任务）',
     ].join('\n');
     const w = computeDecisionRecordWarnings(propSection, tasks, false);
     expect(w).toHaveLength(1);
@@ -527,7 +528,7 @@ describe('S38 决策记录 — CLI 端到端（ST）', () => {
     // 覆写 tasks：[delta] 只规划测试；deltas/decisions/ 仅在 [code] 段
     writeFileSync(join(dir, 'tasks.md'), [
       '# 任务', '', '## [delta] 规格变更', '- [ ] 产出 `deltas/test/x.md`', '',
-      '## [code] 代码实现', '- [ ] 实现 deltas/decisions/core-D07-x.md 落盘',
+      '## [code] 代码实现', '实现阶段会处理 deltas/decisions/core-D07-x.md 落盘（非权威任务）',
     ].join('\n'));
     const j = spawnCli(root, ['change-lint', '--slug', 'feat', '--format', 'json']);
     const env = parseEnv(j.stdout);

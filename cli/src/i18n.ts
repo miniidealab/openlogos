@@ -729,7 +729,7 @@ defaults: []
 `;
 }
 
-export function tasksTemplate(locale: Locale): string {
+export function tasksTemplate(locale: Locale, launched = false): string {
   if (locale === 'zh') {
     return `# 实现任务
 
@@ -738,7 +738,7 @@ export function tasksTemplate(locale: Locale): string {
 - [ ] 更新产品设计文档的功能规格
 
 ## [code] 代码实现
-- [ ] 实现代码变更
+${launched ? '' : '- [ ] 实现代码变更'}
 `;
   }
   return `# Implementation Tasks
@@ -748,7 +748,7 @@ export function tasksTemplate(locale: Locale): string {
 - [ ] Update product design feature specs
 
 ## [code] Code Implementation
-- [ ] Implement code changes
+${launched ? '' : '- [ ] Implement code changes'}
 `;
 }
 

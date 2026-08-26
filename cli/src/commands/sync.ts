@@ -9,6 +9,10 @@ import { migrateProjectLifecycle, migrateBaselineProvenance } from '../lib/migra
 import { withRecoveredReadLocks, listProjectModuleIds } from '../lib/baseline-seed-txn.js';
 import { syncGuiOverlay, readModulesMissingProductType } from '../lib/ui-first.js';
 import { resolveConfiguredAiTools } from '../lib/ai-tool-adapter.js';
+import {
+  bundledManifestPath, readBundledAssetManifest, validateAssetManifest, writeSyncStamp,
+} from '../lib/asset-manifest.js';
+import { dirname } from 'node:path';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -103,6 +107,8 @@ export function sync() {
   const rawAiTool = config.aiTool ?? 'cursor';
   // 配置文件可能被人工修改；未知 Adapter 必须在迁移、索引、资产事务和版本戳写入前失败。
   const aiTools = resolveConfiguredAiTools(rawAiTool);
+  const assetManifest = readBundledAssetManifest();
+  validateAssetManifest(assetManifest, dirname(bundledManifestPath()));
 
   // brownfield-adopter（S33 / F7）：在**任何迁移/写副作用之前**取所有模块锁形成**读锁区间** + 恢复未终结提交，
   // 并把「迁移 → 扫描 → 索引 → 部署」全程置于同一锁区间（杜绝门检查与实际写/读之间 writer 插入的 TOCTOU）。
@@ -229,8 +235,5 @@ export function sync() {
 
   // S08 版本戳（EX-11.1）：仅成功路径落盘——失败退出（配置缺失 / baseline_commit_in_progress）零写副作用，
   // 避免失败的 sync 刷新版本戳造成「看似已同步」的假象。幂等覆盖，始终反映最近一次成功 sync。
-  writeFileSync(
-    join(root, 'logos', '.openlogos-sync.json'),
-    JSON.stringify({ cliVersion: VERSION, syncedAt: new Date().toISOString() }, null, 2) + '\n',
-  );
+  writeSyncStamp(join(root, 'logos', '.openlogos-sync.json'), assetManifest);
 }

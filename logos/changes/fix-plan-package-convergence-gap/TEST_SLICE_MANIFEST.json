@@ -1,0 +1,156 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-plan-package-convergence-gap",
+  "module": "core",
+  "task_fingerprint": "sha256:34c36365026dcbeabe0f4bdadbf5554dd6d49762d6b767c4de3f0f086869c3b1",
+  "spec_fingerprint": "sha256:58ad0d65c611aa63520c2760048ec2b51bd63517fcd6a74f5495287f82a384fc",
+  "generated_at": "2026-08-26T13:06:22.191Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-plan-package-lint",
+      "task_text": "切片1：Plan Package 生产与 L0 诊断闭环——实现 locale-aware canonical section registry、proposal/tasks launched scaffold、统一 evaluator 及 proposal-lifecycle wrapper、change-lint L0 投影、历史 marker 旁路、fixture/golden 与 OpenLogos reporter；同步实现/ALREADY回归 `SMOKE-core-136` runner 与 smoke reporter/dispatcher 接入（覆盖 `UT-S09-63`、`UT-S09-110a-neg`、`UT-S09-224`、`UT-S09-225`、`UT-S09-226`、`UT-S09-227`、`UT-S09-228`、`UT-S09-229`、`UT-S09-230`、`UT-S09-231`、`ST-S09-88`、`ST-S09-89`、`UT-S35-100`、`UT-S35-101`、`UT-S35-102`、`UT-S35-103`、`UT-S35-104`、`UT-S35-105`、`UT-S35-106`、`UT-S35-107`、`UT-S35-108`、`UT-S35-109`、`UT-S35-110`、`UT-S35-111`、`ST-S35-16`、`ST-S35-17`、`ST-S35-18`、`SMOKE-core-136`）",
+      "owned_test_ids": [
+        "ST-S09-88",
+        "ST-S09-89",
+        "ST-S35-16",
+        "ST-S35-17",
+        "ST-S35-18",
+        "UT-S09-110a-neg",
+        "UT-S09-224",
+        "UT-S09-225",
+        "UT-S09-226",
+        "UT-S09-227",
+        "UT-S09-228",
+        "UT-S09-229",
+        "UT-S09-230",
+        "UT-S09-231",
+        "UT-S09-63",
+        "UT-S35-100",
+        "UT-S35-101",
+        "UT-S35-102",
+        "UT-S35-103",
+        "UT-S35-104",
+        "UT-S35-105",
+        "UT-S35-106",
+        "UT-S35-107",
+        "UT-S35-108",
+        "UT-S35-109",
+        "UT-S35-110",
+        "UT-S35-111"
+      ],
+      "runner_selectors": [
+        "ST-S09-88",
+        "ST-S09-89",
+        "ST-S35-16",
+        "ST-S35-17",
+        "ST-S35-18",
+        "UT-S09-110a-neg",
+        "UT-S09-224",
+        "UT-S09-225",
+        "UT-S09-226",
+        "UT-S09-227",
+        "UT-S09-228",
+        "UT-S09-229",
+        "UT-S09-230",
+        "UT-S09-231",
+        "UT-S09-63",
+        "UT-S35-100",
+        "UT-S35-101",
+        "UT-S35-102",
+        "UT-S35-103",
+        "UT-S35-104",
+        "UT-S35-105",
+        "UT-S35-106",
+        "UT-S35-107",
+        "UT-S35-108",
+        "UT-S35-109",
+        "UT-S35-110",
+        "UT-S35-111"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/core-S35-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-plan-state-contract",
+      "task_text": "切片2：Plan Package 状态与下一步机器契约闭环——让 status、next、flow derive 只消费共享 evaluation，输出 1.3.0 plan_state/completion_issues/dispatch completion，同步更新 JSON Schema、fixture/golden、OpenLogos reporter 与只读快照；实现/ALREADY回归 `SMOKE-core-137` runner 与 smoke reporter/dispatcher 接入（覆盖 `UT-S05-30`、`UT-S05-31`、`UT-S05-32`、`UT-S05-33`、`UT-S05-34`、`ST-S05-14`、`ST-S05-15`、`UT-S11-58`、`UT-S11-59`、`UT-S11-60`、`UT-S11-61`、`UT-S11-62`、`ST-S11-36`、`ST-S11-37`、`SMOKE-core-137`）",
+      "owned_test_ids": [
+        "ST-S05-14",
+        "ST-S05-15",
+        "ST-S11-36",
+        "ST-S11-37",
+        "UT-S05-30",
+        "UT-S05-31",
+        "UT-S05-32",
+        "UT-S05-33",
+        "UT-S05-34",
+        "UT-S11-58",
+        "UT-S11-59",
+        "UT-S11-60",
+        "UT-S11-61",
+        "UT-S11-62"
+      ],
+      "runner_selectors": [
+        "ST-S05-14",
+        "ST-S05-15",
+        "ST-S11-36",
+        "ST-S11-37",
+        "UT-S05-30",
+        "UT-S05-31",
+        "UT-S05-32",
+        "UT-S05-33",
+        "UT-S05-34",
+        "UT-S11-58",
+        "UT-S11-59",
+        "UT-S11-60",
+        "UT-S11-61",
+        "UT-S11-62"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S05-test-cases.md",
+        "logos/resources/test/core-S11-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-managed-assets-sync",
+      "task_text": "切片3：Plan Contract 托管资产与 sync 身份闭环——生成 `openlogos/asset-manifest@1`，对账 package/plugin/Skill/template/schema hash，扩展 sync stamp、同 semver 缓存漂移诊断、幂等/回滚与用户资产保护，同步 fixture、OpenLogos reporter 以及 `SMOKE-core-135`、`SMOKE-core-138`、`SMOKE-core-139`、`SMOKE-core-140` runner、smoke reporter/dispatcher 与覆盖预检接入（覆盖 `UT-S08-38`、`UT-S08-39`、`UT-S08-40`、`UT-S08-41`、`UT-S08-42`、`ST-S08-28`、`ST-S08-29`、`SMOKE-core-135`、`SMOKE-core-138`、`SMOKE-core-139`、`SMOKE-core-140`）",
+      "owned_test_ids": [
+        "ST-S08-28",
+        "ST-S08-29",
+        "UT-S08-38",
+        "UT-S08-39",
+        "UT-S08-40",
+        "UT-S08-41",
+        "UT-S08-42"
+      ],
+      "runner_selectors": [
+        "ST-S08-28",
+        "ST-S08-29",
+        "UT-S08-38",
+        "UT-S08-39",
+        "UT-S08-40",
+        "UT-S08-41",
+        "UT-S08-42"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S08-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-04-test-id-convergence",
+      "task_text": "切片4：历史测试 ID 原子自举收敛——TestChangeSet before 侧容纳重复候选并跳过历史歧义行，after 侧继续严格唯一/UTF-8/表结构门，匹配任一 before 候选时保持 unchanged，重编号/修复行进入 changed，并以受控 merge-apply ST、零写回负例和 OpenLogos reporter 闭环（覆盖 `UT-S09-232`、`ST-S09-90`）",
+      "owned_test_ids": [
+        "ST-S09-90",
+        "UT-S09-232"
+      ],
+      "runner_selectors": [
+        "ST-S09-90",
+        "UT-S09-232"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    }
+  ]
+}

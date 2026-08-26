@@ -185,7 +185,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
     writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
-    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
       '  - op: add', '    after: generate-merge-prompt',
@@ -206,7 +206,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
     writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
-    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
       '  - op: add', '    after: write-delta',
@@ -227,7 +227,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
     writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
-    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
       '  - op: add', '    before: write-delta',
@@ -248,7 +248,7 @@ describe('S25 — overlay 驱动派生（unit: deriveOverlayView）', () => {
       '- 影响环境：无', '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
       '## 变更概述', '概述。'].join('\n');
     writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification(proposal));
-    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n- [ ] 实现 x\n');
+    writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [code] 代码实现\n');
     writeOverlay(root, 'launched', [
       'extends: builtin:launched@v1', 'overlay:',
       '  - op: add', '    after: write-proposal',

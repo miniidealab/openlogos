@@ -106,7 +106,7 @@ const UT: UtCase[] = [
   { ut: 'UT-S09-26', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['SPEC_MERGED'] }).dir },
   { ut: 'UT-S09-27', expected: 'ready-to-implement', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_PARTIAL, markers: ['MERGED'] }).dir },
   { ut: 'UT-S09-28', expected: 'ready-to-verify', build: () => makeProposal({ proposal: filled(), tasks: DELTA_DONE_CODE_DONE, markers: ['SPEC_MERGED'] }).dir },
-  { ut: 'UT-S09-29', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir },
+  { ut: 'UT-S09-29', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir },
   { ut: 'UT-S09-30', expected: 'ready-to-verify', build: () => makeProposal({ proposal: filled(), tasks: OLDFMT_DONE, markers: ['SPEC_MERGED'] }).dir },
   { ut: 'UT-S09-31', expected: 'ready-to-merge', build: () => withMergeableDelta(makeProposal({ proposal: filled(), tasks: OLDFMT_DONE }).dir) },
   { ut: 'UT-S09-32', expected: 'delta-writing', build: () => withMergeableDelta(makeProposal({ proposal: filled(), tasks: OLDFMT_PARTIAL }).dir) },
@@ -131,10 +131,10 @@ const UT: UtCase[] = [
   { ut: 'UT-S09-50', expected: 'verify-passed', mk: DEP, build: () => makeProposal({ proposal: filled('是', '是'), tasks: DELTA_DONE, markers: ['VERIFY_PASS'] }).dir },
   // fix-nodelta-proposal-routing：纯代码提案（无 [delta]）spec/merge 空过 → slice/implement，绝不 delta-writing（见 spec/flow-spec.md §12.6）
   { ut: 'UT-S09-55', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir },
-  { ut: 'UT-S09-56', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_PARTIAL }).dir },
-  { ut: 'UT-S09-57', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_PARTIAL, markers: ['SLICES_APPROVED'] }).dir },
+  { ut: 'UT-S09-56', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir },
+  { ut: 'UT-S09-57', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['SLICES_APPROVED'] }).dir },
   { ut: 'UT-S09-58', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['PLAN_APPROVED'] }).dir },
-  { ut: 'UT-S09-59', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir },
+  { ut: 'UT-S09-59', expected: 'spec-complete-required', build: () => makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir },
   // UT-S09-60：红线断言（无 [delta] 任意组合都不派 write-delta）见下方独立 it 块
   { ut: 'UT-S09-61', expected: 'delta-writing', build: () => makeProposal({ proposal: filled(), tasks: OLDFMT_PARTIAL }).dir },
 ];
@@ -293,10 +293,10 @@ describe('S09 纯代码提案（无 [delta]）派生（fix-nodelta-proposal-rout
 
   it('ST-S09-28: ViaFlow == 旧 detectProposalStep 在无 [delta] fixture 逐一等价', () => {
     expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir)).toBe('spec-complete-required');
-    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_PARTIAL }).dir)).toBe('spec-complete-required');
-    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_PARTIAL, markers: ['SLICES_APPROVED'] }).dir)).toBe('spec-complete-required');
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir)).toBe('spec-complete-required');
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['SLICES_APPROVED'] }).dir)).toBe('spec-complete-required');
     expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['PLAN_APPROVED'] }).dir)).toBe('spec-complete-required');
-    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_DONE }).dir)).toBe('spec-complete-required');
+    expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY }).dir)).toBe('spec-complete-required');
     expect(eq(makeProposal({ proposal: filled(), tasks: CODE_EMPTY, markers: ['SPEC_MERGED'] }).dir)).toBe('ready-to-implement');
     expect(eq(makeProposal({ proposal: filled(), tasks: CODE_PARTIAL, markers: ['SPEC_MERGED', 'SLICES_APPROVED'] }).dir)).toBe('coding');
     expect(eq(makeProposal({ proposal: filled(), tasks: CODE_DONE, markers: ['SPEC_MERGED'] }).dir)).toBe('ready-to-verify');

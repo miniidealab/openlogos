@@ -1059,6 +1059,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
         || basePlanState?.clarification !== undefined,
       (moduleItems ?? []).some(m => m.slice_verification_state !== undefined)
         || baseSliceVerificationState !== undefined,
+      (moduleItems ?? []).some(m => m.plan_state?.plan_package !== undefined)
+        || basePlanState?.plan_package !== undefined,
     ) },
     action,
     command,

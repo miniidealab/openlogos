@@ -76,18 +76,23 @@ function canonicalCell(cell: string): string {
   return cell.trim();
 }
 
-export function scanTestDefinitions(targetPath: string, bytes: Buffer): Map<string, TestDefinitionRecord> {
+function scanTestDefinitionCandidates(
+  targetPath: string,
+  bytes: Buffer,
+  allowDuplicateIds: boolean,
+  allowAmbiguousRows: boolean,
+): Map<string, TestDefinitionRecord[]> {
   const text = strictUtf8(bytes, targetPath);
   const lines = text.split('\n');
   const scan = authorityScan(lines);
-  const records = new Map<string, TestDefinitionRecord>();
+  const records = new Map<string, TestDefinitionRecord[]>();
 
   for (let index = 0; index + 1 < lines.length; index++) {
     if (scan.masked[index] || scan.masked[index + 1] || !isTableDelimiterRow(scan.text[index + 1])) continue;
     const headers = tableRowCells(scan.text[index]).map(canonicalCell);
     const delimiters = tableRowCells(scan.text[index + 1]);
     if (headers.length < 2 || headers.length !== delimiters.length || headers.some(item => item === '')) continue;
-    if (new Set(headers).size !== headers.length) {
+    if (new Set(headers).size !== headers.length && !allowAmbiguousRows) {
       throw new Error(`test-change-set-ambiguous-table：${targetPath}:${index + 1}`);
     }
 
@@ -97,14 +102,20 @@ export function scanTestDefinitions(targetPath: string, bytes: Buffer): Map<stri
       const candidate = cells[0] ?? '';
       if (TEST_ID_RE.test(candidate)) {
         if (cells.length !== headers.length) {
+          if (allowAmbiguousRows) {
+            row++;
+            continue;
+          }
           throw new Error(`test-change-set-ambiguous-table：${targetPath}:${row + 1}`);
         }
-        if (records.has(candidate)) throw new Error(`test-change-set-duplicate-id：${candidate}`);
-        records.set(candidate, {
+        const existing = records.get(candidate) ?? [];
+        if (!allowDuplicateIds && existing.length > 0) throw new Error(`test-change-set-duplicate-id：${candidate}`);
+        existing.push({
           target_path: targetPath,
           column_identity: headers,
           cell_semantics: cells,
         });
+        records.set(candidate, existing);
       }
       row++;
     }
@@ -113,13 +124,27 @@ export function scanTestDefinitions(targetPath: string, bytes: Buffer): Map<stri
   return records;
 }
 
-function collectSide(targets: TestChangeSetInputTarget[], side: 'before' | 'after'): Map<string, TestDefinitionRecord> {
+export function scanTestDefinitions(targetPath: string, bytes: Buffer): Map<string, TestDefinitionRecord> {
+  return new Map([...scanTestDefinitionCandidates(targetPath, bytes, false, false)]
+    .map(([id, records]) => [id, records[0]]));
+}
+
+function collectBefore(targets: TestChangeSetInputTarget[]): Map<string, TestDefinitionRecord[]> {
+  const all = new Map<string, TestDefinitionRecord[]>();
+  for (const target of targets) {
+    if (target.beforeBytes === null) continue;
+    for (const [id, records] of scanTestDefinitionCandidates(target.targetPath, target.beforeBytes, true, true)) {
+      all.set(id, [...(all.get(id) ?? []), ...records]);
+    }
+  }
+  return all;
+}
+
+function collectAfter(targets: TestChangeSetInputTarget[]): Map<string, TestDefinitionRecord> {
   const all = new Map<string, TestDefinitionRecord>();
   for (const target of targets) {
-    const bytes = side === 'before' ? target.beforeBytes : target.afterBytes;
-    if (bytes === null) continue;
-    for (const [id, record] of scanTestDefinitions(target.targetPath, bytes)) {
-      if (all.has(id)) throw new Error(`test-change-set-duplicate-id：${side}:${id}`);
+    for (const [id, record] of scanTestDefinitions(target.targetPath, target.afterBytes)) {
+      if (all.has(id)) throw new Error(`test-change-set-duplicate-id：after:${id}`);
       all.set(id, record);
     }
   }
@@ -146,13 +171,13 @@ export function buildTestChangeSet(input: {
   const sortedTargets = [...input.targets].sort((a, b) => a.targetPath < b.targetPath ? -1 : a.targetPath > b.targetPath ? 1 : 0);
   const targetPaths = sortedTargets.map(target => target.targetPath);
   if (new Set(targetPaths).size !== targetPaths.length) throw new Error('test-change-set-target-duplicate');
-  const before = collectSide(sortedTargets, 'before');
-  const after = collectSide(sortedTargets, 'after');
+  const before = collectBefore(sortedTargets);
+  const after = collectAfter(sortedTargets);
   const changed: string[] = [];
   const removed: string[] = [];
   for (const [id, record] of after) {
-    const old = before.get(id);
-    if (!old || recordBytes(old) !== recordBytes(record)) changed.push(id);
+    const oldCandidates = before.get(id) ?? [];
+    if (!oldCandidates.some(old => recordBytes(old) === recordBytes(record))) changed.push(id);
   }
   for (const id of before.keys()) if (!after.has(id)) removed.push(id);
   const payload: Omit<TestChangeSetV1, 'sha256'> = {

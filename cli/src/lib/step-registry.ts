@@ -24,12 +24,14 @@ export const CONTRACT_VERSION = '1.0.0';
 /** add-feature-model（S34）：含 feature 分组时的契约版本。 */
 export const CONTRACT_VERSION_WITH_FEATURES = '1.1.0';
 export const CONTRACT_VERSION_WITH_CLARIFICATION = '1.2.0';
+export const CONTRACT_VERSION_WITH_PLAN_PACKAGE = '1.3.0';
 
 /**
  * add-feature-model（S34，delta-F1=B）：条件版本选择器——status/next 发射 `contract.version` 的唯一入口。
  * @param hasFeatures 本次响应是否含任一 `modules[].features` 字段。
  */
-export function contractVersion(hasFeatures: boolean, hasClarification = false, hasSliceVerification = false): string {
+export function contractVersion(hasFeatures: boolean, hasClarification = false, hasSliceVerification = false, hasPlanPackage = false): string {
+  if (hasPlanPackage) return CONTRACT_VERSION_WITH_PLAN_PACKAGE;
   if (hasClarification) return CONTRACT_VERSION_WITH_CLARIFICATION;
   return hasFeatures || hasSliceVerification ? CONTRACT_VERSION_WITH_FEATURES : CONTRACT_VERSION;
 }

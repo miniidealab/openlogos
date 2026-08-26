@@ -9,7 +9,7 @@
  * 见 spec/flow-spec.md §12 / spec/cli-json-output.md §3.6/§3.7。
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { loadFlow, readOverlay, FlowError, fanoutDone, readProjectCmdTimeout, type Flow, type FlowNode, type Lifecycle } from './flow.js';
 import { listFiles } from './list-files.js';
 import {
@@ -509,7 +509,16 @@ export interface NextNode {
   slice_children?: Array<{ text: string; checked: boolean }>;
   // contract-self-description 切片3（C4）：派发契约——恒为完整对象（resolved 物化，无二义分支）。
   // driver 据 idempotent 判重投安全、timeout_seconds 设看门狗、artifacts_hint 做产物提示（[]=产物未知，不得据此判死）。
-  dispatch: { idempotent: boolean; timeout_seconds: number; artifacts_hint: string[] };
+  dispatch: {
+    idempotent: boolean;
+    timeout_seconds: number;
+    artifacts_hint: string[];
+    completion?: {
+      command: string;
+      expected: { '/data/pass': true; '/data/plan_package/ready': true };
+      expected_proposal_step: 'ready-to-delta';
+    };
+  };
   // contract-self-description 切片3（C4）：执行前置评审对象（仅节点显式声明时输出；driver 的 priorReviewNode 表退化为消费本声明）。
   requires_reviewed?: string[];
 }
@@ -588,6 +597,13 @@ export function resolveNextNode(
         dispatch: requireMaterializedDispatch(n),
         ...(buildRequiresReviewed(n, opts.proposalDir) ?? {}),
       };
+      if (opts.proposalDir && (n.id === 'write-proposal' || n.id === 'write-tasks')) {
+        node.dispatch.completion = {
+          command: `openlogos change-lint --slug ${basename(opts.proposalDir)} --format json`,
+          expected: { '/data/pass': true, '/data/plan_package/ready': true },
+          expected_proposal_step: 'ready-to-delta',
+        };
+      }
       // R8（fix-next-node-slice-exit-frontier）：ready-to-implement 前沿随 [code] 是否脱模板二分——
       // plan-slices 已完成（tasks_code_filled）且 slice-exit 门未放行（无 SLICES_APPROVED）→ 前沿在门上，
       // 附加 gate_id（`<subflow.id>-<gate.position>`），示意宿主不得重派 slice-planner、按人类门处理。

@@ -116,7 +116,8 @@ function proposalText(f: Fixture): string {
   return withCompleteClarification([
     '# 变更提案', '', '> module: core', '', '## 基线闭包计划', '',
     '```yaml', stringifyYaml({ baseline_closure: f.closure }).trimEnd(), '```', '',
-    '## 变更类型', '设计级', '', '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否',
+    '## 变更类型', '设计级', '', '## 部署影响', '- 是否需要部署：否', '- 部署原因：本地测试', '- 影响环境：无',
+    '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否',
   ].join('\n'));
 }
 

@@ -90,7 +90,7 @@ describe('S31 — ready-to-delta 驻留态检测', () => {
   it('UT-S31-05: 纯代码提案（无 [delta] section）缺 SPEC_MERGED → spec-complete-required（非 ready-to-delta/delta-writing）', () => {
     // support-nodelta-spec-complete：无 [delta] 纯代码提案不再 spec/merge 空过。
     // 关键仍是「不落 ready-to-delta / delta-writing」，而是停 no-delta spec-complete。
-    const { dir } = makeProposal('# 任务\n\n## [code] 代码实现\n- [ ] 实现 x');
+    const { dir } = makeProposal('# 任务\n\n## [code] 代码实现\n');
     expect(detectProposalStepViaFlow(dir)).toBe('spec-complete-required');
     expect(detectProposalStep(dir)).toBe('spec-complete-required');
   });

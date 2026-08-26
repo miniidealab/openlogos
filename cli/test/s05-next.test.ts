@@ -524,7 +524,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [x] 产出 delta 文件到 deltas/api/ — 更新 API',
       '',
       '## [code] 代码实现',
-      '- [ ] 实现代码',
+      '（切片由 merge 后的 slice-planner 规划）',
     ].join('\n'));
     const deltasDir = join(proposalDir, 'deltas', 'api');
     mkdirSync(deltasDir, { recursive: true });
@@ -544,7 +544,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
       '- [ ] 产出 delta 文件到 deltas/prd/ — 更新需求文档',
       '',
       '## [code] 代码实现',
-      '- [ ] 实现代码',
+      '（切片由 merge 后的 slice-planner 规划）',
     ].join('\n'));
 
     expect(detectProposalStep(proposalDir)).toBe('delta-writing');
@@ -582,7 +582,7 @@ describe('S05 Unit Tests — next command (launched lifecycle, with guard)', () 
 
   it('UT-S05-13c: no-delta docs-only + no [code] section → ready-to-verify', () => {
     const proposalDir = setupLaunchedWithGuard('my-feature');
-    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n文档级\n## 变更范围\n- 无\n## 变更概述\n纯文档调整，无需代码。'));
+    writeFileSync(join(proposalDir, 'proposal.md'), withCompleteClarification('# 变更提案\n## 变更原因\n真实内容\n## 变更类型\n设计级（纯文档）\n## 变更范围\n- 无\n## 变更概述\n纯文档调整，无需代码。'));
     // 新格式但两个 section 都没有（极端情况）
     writeFileSync(join(proposalDir, 'tasks.md'), '# 实现任务\n\n## [other] 其他\n- [x] 某任务\n');
 
@@ -930,7 +930,7 @@ describe('S05 — next contract 版本握手（contract-self-description）', ()
     restore = mockCwd(b.root); cap = captureConsole();
     try { await next('json'); } finally { cap.restore(); restore(); }
     const data = JSON.parse(cap.logs[cap.logs.length - 1]).data;
-    expect(data.contract).toEqual({ version: '1.2.0' });
+    expect(data.contract).toEqual({ version: '1.3.0' });
     b.cleanup();
   });
 });
@@ -1024,7 +1024,7 @@ describe('S05 — next dispatch/requires_reviewed（contract-self-description）
     for (const f of frontiers) {
       const { root, cleanup } = launchedProposal(f.tasks, f.markers);
       const data = await nextData(root);
-      expect(data.contract).toEqual({ version: '1.2.0' });
+      expect(data.contract).toEqual({ version: '1.3.0' });
       const nn = data.modules[0].next_node;
       expect(nn.id).toBe(f.id);
       expect(nn.dispatch.idempotent).toBe(f.idem);

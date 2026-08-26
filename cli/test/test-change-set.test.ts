@@ -1,3 +1,6 @@
+/**
+ * 用例名中的 UT/ST ID 由 Vitest 全局 OpenLogos reporter 写入 test-results.jsonl。
+ */
 import { createHash } from 'node:crypto';
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
@@ -105,6 +108,58 @@ describe('canonical test change set', () => {
     expect(() => scanTestDefinitions('logos/resources/test/a.md', Buffer.from([0xff]))).toThrow('test-change-set-invalid-utf8');
     const ambiguous = Buffer.from('| ID | ID |\n|---|---|\n| UT-S10-121 | a |\n');
     expect(() => scanTestDefinitions('logos/resources/test/a.md', ambiguous)).toThrow('test-change-set-ambiguous-table');
+  });
+
+  it('UT-S09-232: 历史 before 重复、after 唯一时单向收敛，after 重复仍拒绝', () => {
+    const before = Buffer.from([
+      '| ID | 描述 |', '|---|---|',
+      '| UT-S09-62 | 保留定义 |', '| UT-S09-62 | 待重编号定义 |',
+      '| UT-S09-110a-neg | 历史歧义定义 | 多余单元格 |', '',
+    ].join('\n'));
+    const after = table([
+      ['UT-S09-62', '保留定义'], ['UT-S09-231', '待重编号定义'], ['UT-S09-110a-neg', '历史歧义定义'],
+    ]);
+    const changeSet = buildTestChangeSet({
+      change: 'fixture', module: 'core', targets: [target('logos/resources/test/core-S09-test-cases.md', before, after)],
+    });
+    expect(changeSet.changed_test_ids).toEqual(['UT-S09-110a-neg', 'UT-S09-231']);
+    expect(changeSet.removed_test_ids).toEqual([]);
+    expect(() => buildTestChangeSet({
+      change: 'fixture', module: 'core', targets: [target('logos/resources/test/core-S09-test-cases.md', before, before)],
+    })).toThrow('test-change-set-duplicate-id：UT-S09-62');
+  });
+
+  it('ST-S09-90: 历史重复基线经受控 apply 原子收敛并通过 marker 后置复核', () => {
+    const { root, proposalDir } = tempRoot();
+    const resource = 'logos/resources/test/core-S09-test-cases.md';
+    const marker = 'logos/changes/change-set-fixture/SPEC_MERGED';
+    const before = table([['UT-S09-62', '保留定义'], ['UT-S09-62', '待重编号定义']]);
+    const after = table([['UT-S09-62', '保留定义'], ['UT-S09-231', '待重编号定义']]);
+    mkdirSync(dirname(join(root, resource)), { recursive: true });
+    writeFileSync(join(root, resource), before);
+    const changeSet = buildTestChangeSet({
+      change: 'change-set-fixture', module: 'core', targets: [target(resource, before, after)],
+    });
+    const markerBytes = Buffer.from(`${JSON.stringify({
+      type: 'baseline_closure_spec_complete', test_change_set: changeSet,
+    }, null, 2)}\n`);
+    const applied = applyBaselineClosureBatch(root, proposalDir, [
+      { kind: 'prepared', targetPath: resource, mode: 'MODIFY', bytes: after },
+      { kind: 'prepared', targetPath: marker, mode: 'CREATE', bytes: markerBytes },
+    ], {
+      validateCommitted() {
+        const result = readTestChangeSet(root, proposalDir, {
+          change: 'change-set-fixture', module: 'core', targetPaths: [resource],
+        });
+        if (!result.valid) throw new Error(`${result.code}：${result.message}`);
+      },
+    });
+    expect(applied.ok).toBe(true);
+    expect([...scanTestDefinitions(resource, readFileSync(join(root, resource))).keys()])
+      .toEqual(['UT-S09-62', 'UT-S09-231']);
+    expect(readTestChangeSet(root, proposalDir, {
+      change: 'change-set-fixture', module: 'core', targetPaths: [resource],
+    })).toMatchObject({ valid: true, value: { changed_test_ids: ['UT-S09-231'], removed_test_ids: [] } });
   });
 
   it('UT-S39-37: 后置复核 fault 仍回滚 resources、metadata 与 marker', () => {

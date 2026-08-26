@@ -24,8 +24,6 @@ import {
   resolveProposalDeploymentDecision,
   getDeploySectionSummary,
   parseTaskSections,
-  isProposalTemplateFilled,
-  isTasksTemplateFilled,
   isTasksCodeFilled,
   isCodeRequiredForProposal,
   isCodeRequiredButUnplanned,
@@ -40,6 +38,7 @@ import type { ProposalStep } from './proposal-lifecycle.js';
 import { mintStep, type MintedStep } from './step-registry.js';
 import type { ModuleInfo, PhaseProgressItem } from '../commands/status.js';
 import { deriveUiImpact } from './ui-first.js';
+import { evaluatePlanPackage } from './plan-package.js';
 
 /** node id → 原 PHASE_KEYS（13 个 1:1）。维护在 code 侧以保持 spec/flow/*.yaml 纯净。 */
 export const NODE_TO_PHASE_KEY: Record<string, string> = {
@@ -537,9 +536,9 @@ function detectProposalStepViaFlowRaw(
   if (anyExists(m.mergePrompt)) return 'merge-generated';
 
   // write-proposal.done_when（proposal_package_filled = proposal.md + tasks.md 均脱模板）
-  const proposalContent = existsSync(join(proposalDir, 'proposal.md'))
-    ? readFileSync(join(proposalDir, 'proposal.md'), 'utf-8') : '';
-  if (!isProposalTemplateFilled(proposalContent) || !isTasksTemplateFilled(tasksContent)) {
+  if (!existsSync(join(proposalDir, 'proposal.md')) || !existsSync(join(proposalDir, 'tasks.md'))) return 'writing';
+  const planPackage = evaluatePlanPackage(root, proposalDir);
+  if (!planPackage.ready) {
     return 'writing';
   }
 

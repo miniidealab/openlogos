@@ -226,7 +226,7 @@ describe('S11 Unit Tests — proposal deployment decision', () => {
       '- [x] 产出 delta 文件',
       '',
       '## [code] 代码实现',
-      '- [ ] 修复 status',
+      '（切片由 merge 后的 slice-planner 规划）',
     ].join('\n'));
     writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
 
@@ -507,7 +507,7 @@ describe('S11 Scenario Tests — status command', () => {
     '- [ ] 更新测试用例',
     '',
     '## [code] 代码实现',
-    '- [ ] 实现状态诊断',
+    '（切片由 merge 后的 slice-planner 规划）',
   ].join('\n');
 
   function writeStaleVerifyFailure(passId = 'UT-S11-stale-pass') {
@@ -909,7 +909,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 产出 delta 文件到 deltas/api/ — 更新 API',
       '',
       '## [code] 代码实现',
-      '- [ ] 实现代码',
+      '（切片由 merge 后的 slice-planner 规划）',
     ].join('\n'));
 
     const data = collectStatusData(root);
@@ -1077,8 +1077,8 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 产出 delta 文件',
       '- [ ] 更新测试用例',
       '',
-      '## [code] 代码实现',
-      '- [ ] 实现状态诊断',
+    '## [code] 代码实现',
+    '（切片由 merge 后的 slice-planner 规划）',
     ].join('\n'));
     mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
     writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
@@ -1099,7 +1099,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 产出 delta 文件',
       '',
       '## [code] 代码实现',
-      '- [ ] 实现状态诊断',
+      '（切片由 merge 后的 slice-planner 规划）',
     ].join('\n'));
     mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
     writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
@@ -1242,7 +1242,7 @@ describe('S11 Scenario Tests — status command', () => {
       '- [x] 产出 delta 文件',
       '',
       '## [code] 代码实现',
-      '- [ ] 修复 status',
+      '（切片由 merge 后的 slice-planner 规划）',
     ].join('\n'));
     mkdirSync(join(proposalDir, 'deltas', 'prd'), { recursive: true });
     writeFileSync(join(proposalDir, 'deltas', 'prd', 'delta.md'), 'delta');
@@ -2139,7 +2139,7 @@ describe('S11 — contract / step_meta / 步骤注册表（contract-self-descrip
   it('UT-S11-51: status data 顶层 contract 恒在场且等于 {version:"1.0.0"}', () => {
     const { root, cleanup } = launchedFixture();
     const data = runStatus(root);
-    expect(data.contract).toEqual({ version: '1.0.0' });
+    expect(data.contract).toEqual({ version: '1.3.0' });
     cleanup();
   });
 
@@ -2221,7 +2221,7 @@ describe('S11 — contract / step_meta / 步骤注册表（contract-self-descrip
   it('ST-S11-35: contract/step_meta/facts 端到端一致（与 loop_state 挂出判据同源）', () => {
     const { root, cleanup } = launchedFixture();
     const data = runStatus(root);
-    expect(data.contract).toEqual({ version: '1.0.0' });
+    expect(data.contract).toEqual({ version: '1.3.0' });
     const ac = data.modules[0].active_change;
     expect(ac.proposal_step).toBe('ready-to-implement');
     expect(ac.step_meta).toEqual({ phase: 'pre-implement', kind: 'residency' });

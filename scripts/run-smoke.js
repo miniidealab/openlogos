@@ -70,6 +70,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_TEST_CHANGE_SET_TARBALL,
       previousTarball: process.env.OPENLOGOS_TEST_CHANGE_SET_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-plan-package-convergence.js': {
+      tarball: process.env.OPENLOGOS_PLAN_CONVERGENCE_TARBALL,
+      previousTarball: process.env.OPENLOGOS_PLAN_CONVERGENCE_ROLLBACK_TARBALL,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;

@@ -267,7 +267,7 @@ describe('S09 clarification@1 — 完成谓词、JSON 与 auto', () => {
   it('UT-S09-172: status 输出完整 clarification', () => {
     const { root } = setup(pendingDoc('data', 'data'));
     const data = collectStatusData(root);
-    expect(data.contract.version).toBe('1.2.0');
+    expect(data.contract.version).toBe('1.3.0');
     expect(data.modules![0].active_change!.plan_state!.clarification).toMatchObject({ next_decision_id: 'C01', required_categories: ['data'] });
   });
 
@@ -465,7 +465,7 @@ describe('S09 clarification@1 — 场景测试', () => {
     const doc = completeDoc(); doc.schema = 'openlogos/clarification@2';
     const { root, dir } = setup(doc); const before = readFileSync(join(dir, 'proposal.md'), 'utf8');
     const data = await nextData(root, true); const { ajv, schema } = ajvFor('next');
-    expect(data.contract.version).toBe('1.2.0');
+    expect(data.contract.version).toBe('1.3.0');
     expect(ajv.validate(schema, data), JSON.stringify(ajv.errors)).toBe(true);
     expect(readFileSync(join(dir, 'proposal.md'), 'utf8')).toBe(before);
   });

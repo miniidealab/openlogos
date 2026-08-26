@@ -455,8 +455,8 @@ describe('S28 — next_node.dispatch 派发契约（contract-self-description）
     const status = runStatusJson(root);
     const next = await runNextJson(root);
     // 白名单内必须出现的差异
-    expect(status.contract).toEqual({ version: '1.2.0' });
-    expect(next.contract).toEqual({ version: '1.2.0' });
+    expect(status.contract).toEqual({ version: '1.3.0' });
+    expect(next.contract).toEqual({ version: '1.3.0' });
     expect(status.modules[0].active_change.step_meta).toEqual({ phase: 'pre-implement', kind: 'residency' });
     expect(status.modules[0].active_change.facts).toMatchObject({ spec_complete: true, slices_approved: false });
     expect(next.modules[0].next_node.dispatch).toBeTruthy();

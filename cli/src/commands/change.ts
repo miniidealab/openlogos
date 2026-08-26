@@ -130,7 +130,8 @@ export function change(slug?: string, moduleArg?: string) {
     writeFileSync(join(changePath, 'proposal.md'), proposalTemplate(locale, slug, moduleId));
     console.log(`  ✓ logos/changes/${slug}/proposal.md`);
 
-    writeFileSync(join(changePath, 'tasks.md'), tasksTemplate(locale));
+    const launched = allModules.find(module => module.id === moduleId)?.lifecycle === 'launched';
+    writeFileSync(join(changePath, 'tasks.md'), tasksTemplate(locale, launched));
     console.log(`  ✓ logos/changes/${slug}/tasks.md`);
 
     console.log(`  ✓ logos/changes/${slug}/deltas/`);

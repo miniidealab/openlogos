@@ -75,7 +75,8 @@ function setupProject(o: StOpts = {}): { root: string; slug: string; dir: string
   writeFileSync(join(dir, 'proposal.md'), withCompleteClarification([
     '# 变更提案：feat', '', '> module: core', '',
     '## 变更原因', '需要新能力。', '', '## 变更类型', '代码级修复', '',
-    '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否', '',
+    '## 部署影响', '- 是否需要部署：否', '- 部署原因：本地测试', '- 影响环境：无',
+    '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     '## 变更概述', '需要 CLI 代码、测试和 reporter 实现。',
   ].join('\n')));
   writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/test/` — 更新用例\n\n## [code] 代码实现\n');
@@ -587,9 +588,9 @@ describe('S37 — 契约、同源与零漂移', () => {
     }
   });
 
-  it('UT-S37-31: 零回归——枚举 36 码闭合；合法 delta 零 L8 违规、L1–L7 判据不受影响', () => {
-    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(36);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(36);
+  it('UT-S37-31: 零回归——枚举 47 码闭合；合法 delta 零 L8 违规、L1–L7 判据不受影响', () => {
+    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(47);
+    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(47);
     // 合法形态全过：纯 ADDED / 全量 MODIFIED / 整节 REMOVED / 成对部分删除
     const legalDeltas = [
       delta('ADDED', '新章节', table('SMOKE-core-99')),

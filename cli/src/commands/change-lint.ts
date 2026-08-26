@@ -91,6 +91,7 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
     console.log(JSON.stringify(makeEnvelope(COMMAND, {
       slug: result.slug,
       pass,
+      plan_package: result.plan_package,
       violations: result.violations,
       // S38（delta-r1 F4）：warnings 仅非空时出现，否则整个字段省略（零漂移，契约见 cli-json-output §3.15）
       ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
@@ -136,6 +137,17 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
 /** violation code → 检查项编号（仅文本渲染用；排序与归属由 lib 的生成序保证）。 */
 function checkOfCode(code: string): number {
   switch (code) {
+    case 'proposal_required_section_missing':
+    case 'proposal_required_section_duplicate':
+    case 'proposal_required_section_empty':
+    case 'proposal_placeholder_remaining':
+    case 'proposal_change_type_invalid':
+    case 'proposal_deployment_fields_invalid':
+    case 'proposal_clarification_invalid':
+    case 'tasks_template_remaining':
+    case 'tasks_code_entry_before_spec_complete':
+    case 'tasks_code_section_missing':
+    case 'tasks_deployment_conflict': return 0;
     case 'tasks_sections_unparsable': return 1;
     case 'tasks_code_header_missing': return 2;
     case 'code_change_requires_real_test_ids': return 3;

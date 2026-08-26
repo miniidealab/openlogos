@@ -116,7 +116,7 @@ const DELTA_DONE_CODE_TEMPLATE = '# 任务\n\n## [delta] 规格变更\n- [x] d\n
 const DELTA_DONE_CODE_SLICES = '# 任务\n\n## [delta] 规格变更\n- [x] d\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2';
 const PURE_DELTA = '# 任务\n\n## [delta] 规格变更\n- [x] d';
 // fix-nodelta-proposal-routing：纯代码提案（无 [delta]，含空/切片 [code]）
-const PURE_CODE_TEMPLATE = '# 任务\n\n## [code] 代码实现\n- [ ] [切片清单占位]';
+const PURE_CODE_TEMPLATE = '# 任务\n\n## [code] 代码实现\n';
 const PURE_CODE_SLICES = '# 任务\n\n## [code] 代码实现\n- [ ] 切片1\n- [ ] 切片2';
 
 // ── 一、slice 子流程 / write-tasks 结构定义（builtin flow 直测）──

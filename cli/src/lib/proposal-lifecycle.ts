@@ -14,6 +14,10 @@ import { evaluateProposalClarification, type ClarificationOutput } from './clari
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
 import type { ModuleInfo } from '../commands/status.js';
 import { deriveSliceVerificationState } from './test-slice-manifest.js';
+import { evaluateProposalStructure } from './plan-package-contract.js';
+import type { CompletionIssue, PlanPackageEvaluation } from './plan-package-contract.js';
+import { evaluatePlanPackage } from './plan-package.js';
+import { deriveManagedAssetsDiagnostic, readBundledAssetManifest, type ManagedAssetsDiagnostic } from './asset-manifest.js';
 
 export type ProposalStep =
   | 'writing'
@@ -95,6 +99,14 @@ export interface PlanState {
   tasks_execution_done: number;
   tasks_execution_total: number;
   tasks_execution_scope: TasksExecutionScope;
+  plan_package: PlanPackageEvaluation;
+  completion_contract_version: string;
+  completion_issues: CompletionIssue[];
+  proposal_filled: boolean;
+  tasks_plan_filled: boolean;
+  tasks_code_required: boolean;
+  tasks_code_slices_filled: boolean;
+  managed_assets: ManagedAssetsDiagnostic;
   diagnostic?: string;
   clarification?: ClarificationOutput;
 }
@@ -146,7 +158,10 @@ export function isDeploymentSectionTemplateFilled(content: string): boolean {
 export function isProposalTemplateFilled(content: string): boolean {
   const normalized = content.trim();
   if (!normalized) return false;
-  const baseFilled = normalized.includes('## 变更原因')
+  // 新 scaffold 走 Plan Package evaluator；旧已启动提案保留缺 deployment
+  // canonical 章节的读取兼容，避免因 CLI 升级直接回退 writing。
+  const strictFilled = evaluateProposalStructure(normalized).length === 0;
+  const legacyFilled = normalized.includes('## 变更原因')
     && normalized.includes('## 变更类型')
     && normalized.includes('## 变更范围')
     && normalized.includes('## 变更概述')
@@ -154,8 +169,8 @@ export function isProposalTemplateFilled(content: string): boolean {
     && !normalized.includes('[需求级 / 设计级 / 接口级 / 代码级]')
     && !normalized.includes('[列表]')
     && !normalized.includes('[用 1-3 段话概述具体改什么]')
-    && !normalized.includes('[Describe what will change in 1-3 paragraphs]')
     && isDeploymentSectionTemplateFilled(normalized);
+  const baseFilled = strictFilled || legacyFilled;
   if (!baseFilled) return false;
   const deploymentRequired = parseProposalDeploymentDecision(normalized)?.deployment_required ?? null;
   return evaluateProposalClarification(normalized, deploymentRequired).output.status === 'complete';
@@ -802,17 +817,18 @@ export function derivePlanState(
   const taskText = tasksContent ?? (existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '');
   const sections = parseTaskSections(taskText);
   const execution = resolveTasksExecution(sections);
-  const proposalFilled = isProposalTemplateFilled(proposalContent);
+  const planPackage = evaluatePlanPackage(resolve(proposalDir, '../../..'), proposalDir);
+  const proposalFilled = planPackage.proposal.filled;
   const clarificationEvaluation = evaluateProposalClarification(
     proposalContent,
     parseProposalDeploymentDecision(proposalContent)?.deployment_required ?? null,
   );
   const includeClarification = clarificationEvaluation.present || step === 'writing' || step === 'ready-to-delta';
-  const tasksTemplateFilled = isTasksTemplateFilled(taskText) && sections !== null;
+  const tasksTemplateFilled = planPackage.tasks.plan_filled && sections !== null;
   const planApproved = existsSync(join(proposalDir, PLAN_APPROVED_MARKER))
     || (step !== 'writing' && step !== 'ready-to-delta');
   const conflict = deploymentDecision.deployment_decision_conflict;
-  const planReady = proposalFilled && tasksTemplateFilled && !conflict;
+  const planReady = planPackage.ready && !conflict;
   const planGatePending = step === 'ready-to-delta' && !planApproved && planReady;
 
   let diagnostic: string | undefined;
@@ -835,6 +851,14 @@ export function derivePlanState(
     tasks_execution_done: execution.done,
     tasks_execution_total: execution.total,
     tasks_execution_scope: execution.scope,
+    plan_package: planPackage,
+    completion_contract_version: planPackage.contract_version,
+    completion_issues: planPackage.issues,
+    proposal_filled: planPackage.proposal.filled,
+    tasks_plan_filled: planPackage.tasks.plan_filled,
+    tasks_code_required: planPackage.tasks.code_required,
+    tasks_code_slices_filled: planPackage.tasks.code_slices_filled,
+    managed_assets: deriveManagedAssetsDiagnostic(resolve(proposalDir, '../../..'), readBundledAssetManifest()),
     ...(diagnostic ? { diagnostic } : {}),
     ...(includeClarification ? { clarification: clarificationEvaluation.output } : {}),
   };

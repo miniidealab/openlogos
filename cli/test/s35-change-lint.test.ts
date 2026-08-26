@@ -965,7 +965,7 @@ describe('S35 — 同源锚与契约', () => {
     }
   });
 
-  it('UT-S35-21 / UT-S35-37: 违规集契约——四字段必填、36 码闭合（含 clarification 契约）、排序稳定', () => {
+  it('UT-S35-21 / UT-S35-37: 违规集契约——四字段必填、47 码闭合（含 Plan Package）、排序稳定', () => {
     const { root, dir } = setup({
       proposal: proposalMd({ deploy: '是', reuseLines: ['- UT-S99-99 — 不存在'] }),
       tasks: '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/prd/`', // 缺 [code]、无测试规划 → L2+L3；deploy 是无 [deploy] → L5
@@ -975,7 +975,7 @@ describe('S35 — 同源锚与契约', () => {
     const { violations } = lintViolations(root);
     expect(violations.length).toBeGreaterThanOrEqual(4);
     const registry = new Set<string>(CHANGE_LINT_VIOLATION_CODES);
-    expect(registry.size).toBe(36); // clarification@1 新增一项跨字段契约诊断
+    expect(registry.size).toBe(47); // 原 36 码 + Plan Package L0 的 11 个闭合问题码
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');
@@ -1415,6 +1415,8 @@ describe('S35 — ST 场景测试', () => {
     // 全序：L2（tasks.md）→ L3 proposal.md 三条按源位置出现序 → L3 tasks.md 无证据 → L5 proposal.md
     const violations = violationsVia(f1.root);
     expect(violations.map((v: any) => v.code)).toEqual([
+      'tasks_code_section_missing',
+      'tasks_deployment_conflict',
       'tasks_code_header_missing',
       'code_change_requires_real_test_ids', 'code_change_requires_real_test_ids', 'code_change_requires_real_test_ids',
       'code_change_requires_real_test_ids',
