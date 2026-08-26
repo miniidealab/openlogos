@@ -243,7 +243,7 @@ function scanHeadings(lines: string[], masked: boolean[], text: string[]): DocHe
 interface RegistryIdExtraction {
   flat: Set<string>;
   /**
-   * code-r3/r5 F3：场景表行 ID 携带**表身份键**——`<辖属子路径> <同子路径内表序号>`。
+   * code-r3/r5 F3：场景表行 ID 携带**表身份键**——`<辖属子路径><NUL><同子路径内表序号>`。
    * 辖属子路径 = 章节根以下的辖属标题链（`父 > 子` 连接；直接辖属为空串）；表序号 = 该子路径下
    * 合格场景表在文档序中的 0 基位次（code-r5 F3：同一子路径下多张合法场景表不再共享身份被 `Set` 坍缩，
    * 历史快照副本不能为正式表的删除背书）。
@@ -255,7 +255,7 @@ interface RegistryIdExtraction {
 
 const IDENTITY_SEP = '\u0000'; // NUL：标题源文本绝不含此字符，作 <子路径, 序号> 分隔符不与子路径内容冲突
 
-/** 组装表身份键：`<子路径> <0 基表序号>`。 */
+/** 组装表身份键：`<子路径><NUL><0 基表序号>`。 */
 function makeTableIdentity(subPathKey: string, ordinal: number): string {
   return `${subPathKey}${IDENTITY_SEP}${ordinal}`;
 }
@@ -518,7 +518,10 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
       flat: new Set<string>(), scenarioRows: new Map<string, Set<string>>(), scenarioTableCount: new Map<string, number>(),
     };
     for (const b of modifiedBlocks) {
-      const r = extractRegistryIds(b.lines, contextTitle);
+      // MODIFIED 控制行只负责定位，不会写入最终文档；唯一命中的目标根标题会原位保留。
+      // 因此 retained 必须按真实最终章节重建，且根标题身份只能来自解析结果，不能扫描 anchor 文本猜测。
+      const effectiveLines = [`${'#'.repeat(hit.level)} ${hit.text}`, ...b.lines];
+      const r = extractRegistryIds(effectiveLines, contextTitle, true);
       for (const id of r.flat) retained.flat.add(id);
       for (const [id, idents] of r.scenarioRows) {
         const set = retained.scenarioRows.get(id) ?? new Set<string>();

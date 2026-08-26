@@ -1,6 +1,6 @@
 /**
  * S37 — delta 条目守恒门（merge-conservation-archive-audit）。
- * 用例 ID 与 logos/resources/test/core-S37-test-cases.md 严格对齐（UT-S37-01..31 / ST-S37-01..06）。
+ * 用例 ID 与 logos/resources/test/core-S37-test-cases.md 严格对齐（UT-S37-01..36 / ST-S37-01..08）。
  * 测试结果由全局 OpenLogos reporter（test/openlogos-reporter.ts，vitest.config.ts 注册）
  * 写入 logos/resources/verify/test-results.jsonl。
  */
@@ -611,6 +611,74 @@ describe('S37 — 契约、同源与零漂移', () => {
     expect(result.violations).toEqual([]);
     expect(result.checks.find(c => c.id === 8)?.violations).toBe(0);
   });
+
+  it('UT-S37-32: SXX 根标题由唯一命中的真实 heading 重建', () => {
+    const target = '# t\n\n## S10 人工刷新恢复保证\n旧正文。\n';
+    const d = delta('MODIFIED', 'S10 人工刷新恢复保证', '新正文，不重复根标题。');
+    expect(evaluateDeltaConservation(d, target)).toEqual([]);
+  });
+
+  it('UT-S37-33: DXX 根标题由唯一命中的真实 heading 重建', () => {
+    const target = '# t\n\n## D12：评审恢复决策\n旧正文。\n';
+    const d = delta('MODIFIED', 'D12：评审恢复决策', '新正文，不重复根标题。');
+    expect(evaluateDeltaConservation(d, target)).toEqual([]);
+  });
+
+  it('UT-S37-34: 数字节号根标题由唯一命中的真实 heading 重建', () => {
+    const target = '# t\n\n## 2.3 恢复规则\n旧正文。\n';
+    const d = delta('MODIFIED', '2.3 恢复规则', '新正文，不重复根标题。');
+    expect(evaluateDeltaConservation(d, target)).toEqual([]);
+  });
+
+  it('UT-S37-35: 根标题保留不掩盖内嵌场景、测试、节号与场景表身份删除', () => {
+    const target = [
+      '# t', '', '## S10 根场景',
+      '### S11 内嵌场景', '说明。',
+      '### 测试用例', table('UT-S37-99'),
+      '### 2.3 内嵌规则', '规则。',
+      '### 场景地图', '| 编号 | 场景名称 |', '|---|---|', '| S12 | 子场景 |', '',
+    ].join('\n');
+    const full = [
+      '### S11 内嵌场景', '说明。',
+      '### 测试用例', table('UT-S37-99'),
+      '### 2.3 内嵌规则', '规则。',
+      '### 场景地图', '| 编号 | 场景名称 |', '|---|---|', '| S12 | 子场景 |',
+    ];
+    const cases = [
+      { missing: 'S11', body: full.filter(line => line !== '### S11 内嵌场景' && line !== '说明。') },
+      { missing: 'UT-S37-99', body: full.filter(line => !line.includes('UT-S37-99')) },
+      { missing: '2.3', body: full.filter(line => line !== '### 2.3 内嵌规则' && line !== '规则。') },
+      { missing: 'S12', body: full.filter(line => !line.includes('| S12 |')) },
+    ];
+    for (const c of cases) {
+      const vs = evaluateDeltaConservation(delta('MODIFIED', 'S10 根场景', c.body.join('\n')), target);
+      expect(vs, c.missing).toHaveLength(1);
+      expect(vs[0].code, c.missing).toBe('delta_implicit_id_removal');
+      expect(vs[0].message, c.missing).toContain(c.missing);
+      expect(vs[0].message, c.missing).not.toContain('既有 ID：S10');
+    }
+  });
+
+  it('UT-S37-36: 标题路径只采信最终命中标题；0/多命中继续 fail-closed', () => {
+    const target = [
+      '# t', '',
+      '## S11 D20 9.9 父章节',
+      '### S10 叶章节',
+      '#### S11 内嵌场景',
+      '正文。', '',
+    ].join('\n');
+    const path = 'S11 D20 9.9 父章节 > S10 叶章节';
+    expect(evaluateDeltaConservation(delta('MODIFIED', path, '#### S11 内嵌场景\n新正文。'), target)).toEqual([]);
+    const missing = evaluateDeltaConservation(delta('MODIFIED', path, '新正文。'), target);
+    expect(codesOf(missing)).toEqual(['delta_implicit_id_removal']);
+    expect(missing[0].message).toContain('既有 ID：S11');
+    expect(missing).toHaveLength(1); // 父路径中的 D20 / 9.9 未被当作叶章节的 existing 或 retained
+    expect(codesOf(evaluateDeltaConservation(delta('MODIFIED', '不存在 > S10 叶章节', '正文。'), target)))
+      .toEqual(['delta_section_anchor_unresolvable']);
+    const duplicated = `${target}\n## S11 D20 9.9 父章节\n### S10 叶章节\n正文。\n`;
+    expect(codesOf(evaluateDeltaConservation(delta('MODIFIED', path, '正文。'), duplicated)))
+      .toEqual(['delta_section_anchor_unresolvable']);
+  });
 });
 
 /* ========== ST — 真实 CLI 端到端 ========== */
@@ -770,5 +838,57 @@ describe('S37 — ST 场景测试', () => {
     expect(spawnCli(root, ['change-lint', '--format', 'json']).status).toBe(2);
     const after = snapshotTree(root);
     expect([...after.entries()].sort()).toEqual([...before.entries()].sort());
+  });
+
+  it('ST-S37-07: 合法 SXX/DXX/数字根 ID Delta 经真实 lint 文本与 JSON 入口放行且只读', { timeout: 120_000 }, () => {
+    const fixtures = [
+      { title: 'S10 人工刷新恢复保证', body: '新正文，不重复 S10。' },
+      { title: 'D12：评审恢复决策', body: '新正文，不重复 D12。' },
+      { title: '2.3 恢复规则', body: '新正文，不重复 2.3。' },
+    ];
+    for (const f of fixtures) {
+      const target = `# t\n\n## ${f.title}\n旧正文。\n`;
+      const project = setupProject({
+        deltaRel: SMOKE_DELTA_REL,
+        deltaContent: delta('MODIFIED', f.title, f.body),
+        target: { rel: SMOKE_REL, content: target },
+      });
+      const before = snapshotTree(project.root);
+      const textResult = spawnCli(project.root, ['change-lint']);
+      expect(textResult.status, f.title).toBe(0);
+      const jsonResult = spawnCli(project.root, ['change-lint', '--format', 'json']);
+      expect(jsonResult.status, f.title).toBe(0);
+      expect(JSON.parse(jsonResult.stdout.trim()).data.pass, f.title).toBe(true);
+      expect([...snapshotTree(project.root).entries()].sort(), f.title).toEqual([...before.entries()].sort());
+    }
+  });
+
+  it('ST-S37-08: lint/merge 对合法根 ID 同源放行，对内嵌 ID 真删除同源拒绝', { timeout: 120_000 }, () => {
+    const target = '# t\n\n## S10 根场景\n### S11 内嵌场景\n旧正文。\n';
+    const legal = setupProject({
+      deltaRel: SMOKE_DELTA_REL,
+      deltaContent: delta('MODIFIED', 'S10 根场景', '### S11 内嵌场景\n新正文。'),
+      target: { rel: SMOKE_REL, content: target },
+    });
+    expect(spawnCli(legal.root, ['change-lint']).status).toBe(0);
+    expect(spawnCli(legal.root, ['merge', legal.slug]).status).toBe(0);
+    expect(existsSync(join(legal.dir, 'MERGE_PROMPT.md'))).toBe(true);
+
+    const illegal = setupProject({
+      deltaRel: SMOKE_DELTA_REL,
+      deltaContent: delta('MODIFIED', 'S10 根场景', '新正文，删除了内嵌场景。'),
+      target: { rel: SMOKE_REL, content: target },
+    });
+    const lintResult = spawnCli(illegal.root, ['change-lint']);
+    expect(lintResult.status).toBe(2);
+    expect(lintResult.stdout).toContain('S11');
+    expect(lintResult.stdout).not.toMatch(/既有 ID：S10(?:\D|$)/);
+    const mergeResult = spawnCli(illegal.root, ['merge', illegal.slug]);
+    expect(mergeResult.status).toBe(1);
+    expect(mergeResult.stderr).toContain('S11');
+    expect(mergeResult.stderr).not.toMatch(/既有 ID：S10(?:\D|$)/);
+    expect(existsSync(join(illegal.dir, 'MERGE_PROMPT.md'))).toBe(false);
+    expect(existsSync(join(illegal.dir, 'MERGE_PROMPT_GENERATED'))).toBe(false);
+    expect(existsSync(join(illegal.dir, 'SPEC_MERGED'))).toBe(false);
   });
 });
