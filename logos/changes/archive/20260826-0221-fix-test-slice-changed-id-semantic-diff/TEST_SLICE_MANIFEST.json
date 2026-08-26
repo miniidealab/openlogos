@@ -1,0 +1,91 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-test-slice-changed-id-semantic-diff",
+  "module": "core",
+  "task_fingerprint": "sha256:0c4674e9747d8f584d2ea2e53edf8e857b5a2ece39c7b29f9f35c257961eabbe",
+  "spec_fingerprint": "sha256:bf341cb9e358e82c2315be88787f8821e6f72ee1b860db2c967b26303494a82c",
+  "generated_at": "2026-08-26T08:26:54.957Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-merge-change-set",
+      "task_text": "切片 1：实现 merge 时 canonical test change set 闭环（authority table parser、before/final semantic diff、canonical hash、`merge-apply` 原子 marker/后置复核/fault rollback），同步业务代码、UT/ST、OpenLogos reporter 与必要 golden（覆盖 UT-S39-33、UT-S39-34、UT-S39-35、UT-S39-36、UT-S39-37、UT-S39-38、ST-S39-17、ST-S39-18、ST-S39-19）。",
+      "owned_test_ids": [
+        "ST-S39-17",
+        "ST-S39-18",
+        "ST-S39-19",
+        "UT-S39-33",
+        "UT-S39-34",
+        "UT-S39-35",
+        "UT-S39-36",
+        "UT-S39-37",
+        "UT-S39-38"
+      ],
+      "runner_selectors": [
+        "ST-S39-17",
+        "ST-S39-18",
+        "ST-S39-19",
+        "UT-S39-33",
+        "UT-S39-34",
+        "UT-S39-35",
+        "UT-S39-36",
+        "UT-S39-37",
+        "UT-S39-38"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S39-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-consume-change-set",
+      "task_text": "切片 2：实现 canonical change set 消费与分层恢复闭环（共享 TestChangeSetReader、slice manifest validator、status/next/change-lint/verify 同源 C/R、invalid fail-closed 与 valid manifest recovery），同步业务代码、UT/ST、OpenLogos reporter 与 JSON schema/golden（覆盖 UT-S32-43、UT-S32-44、UT-S32-45、UT-S32-46、UT-S32-47、UT-S32-48、UT-S32-49、ST-S32-14、ST-S32-15、ST-S32-16）。",
+      "owned_test_ids": [
+        "ST-S32-14",
+        "ST-S32-15",
+        "ST-S32-16",
+        "UT-S32-43",
+        "UT-S32-44",
+        "UT-S32-45",
+        "UT-S32-46",
+        "UT-S32-47",
+        "UT-S32-48",
+        "UT-S32-49"
+      ],
+      "runner_selectors": [
+        "ST-S32-14",
+        "ST-S32-15",
+        "ST-S32-16",
+        "UT-S32-43",
+        "UT-S32-44",
+        "UT-S32-45",
+        "UT-S32-46",
+        "UT-S32-47",
+        "UT-S32-48",
+        "UT-S32-49"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S32-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-local-global-smoke",
+      "task_text": "切片 3：完成 0.13.30 本机全局交付闭环（版本元数据与 CHANGELOG、`scripts/smoke-*` runner、`smoke-results.jsonl` reporter、`scripts/run-smoke.js` 接入及 smoke 覆盖预检），保留 0.13.29 回滚且禁止公开发布（覆盖 SMOKE-core-130、SMOKE-core-131、SMOKE-core-132、SMOKE-core-133、SMOKE-core-134）。",
+      "owned_test_ids": [
+        "SMOKE-core-130",
+        "SMOKE-core-131",
+        "SMOKE-core-132",
+        "SMOKE-core-133",
+        "SMOKE-core-134"
+      ],
+      "runner_selectors": [
+        "SMOKE-core-130",
+        "SMOKE-core-131",
+        "SMOKE-core-132",
+        "SMOKE-core-133",
+        "SMOKE-core-134"
+      ],
+      "spec_targets": [
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}

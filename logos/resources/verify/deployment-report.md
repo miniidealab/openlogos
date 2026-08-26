@@ -1,3 +1,60 @@
+# 部署报告：fix-test-slice-changed-id-semantic-diff / OpenLogos 0.13.30（2026-08-26，本机全局部署成功）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-test-slice-changed-id-semantic-diff`。
+- **授权与门禁**：最终 `openlogos verify` 已通过并生成 `VERIFY_PASS`；用户明确授权执行本机全局部署和后续 smoke。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；验证项目使用一次性 fixture `/private/tmp/openlogos-test-change-set-deploy-fixture.QQ6e29`。
+- **执行时间**：截至 `2026-08-26T09:07:15Z`。
+- **结论**：真实 `0.13.30` tarball 构建、安装态入口证明、一次性 fixture 只读启动以及 `0.13.30 → 0.13.29 → 0.13.30` 回滚恢复演练全部 **PASS**；最终全局版本为 `0.13.30`。
+- **最终门禁**：独立 `openlogos smoke --env local-global` 已完成；SMOKE-core-130～SMOKE-core-134 与全量回归均通过，Gate 3.8 PASS。
+
+## 二、部署前快照与制品
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前全局入口 | `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| 部署前版本 | `0.13.27` |
+| npm global prefix / root | `/opt/homebrew` / `/opt/homebrew/lib/node_modules` |
+| 部署前离线快照 | `logos/resources/verify/test-change-set-deployment-evidence/artifacts/miniidealab-openlogos-0.13.27.tgz`；1,655,234 字节 |
+| 部署前快照 SHA-256 | `4ac012469a28e669156233d8a567ea95eb392f719d816cb23d4fabfc4cee7434` |
+| 候选 tarball | `logos/resources/verify/test-change-set-deployment-evidence/artifacts/miniidealab-openlogos-0.13.30.tgz`；1,874,701 字节；643 个条目 |
+| 候选 SHA-256 | `3f34c3b8aa6781a27d2c08ec75294001ffe9916195f5d534ae2a59d57db4b386` |
+| 回滚 tarball | `/private/tmp/openlogos-trae-local-negative.nPfuJt/artifacts/miniidealab-openlogos-0.13.29.tgz`；1,863,090 字节 |
+| 回滚 SHA-256 | `cccb01674f75dc1219f03d78c8c3c0a6672f2c436bfc00fd98a9e1a096db804c` |
+
+候选包 identity 为 `@miniidealab/openlogos@0.13.30`，`bin.openlogos` 指向 `dist/index.js`。`cli/package.json`、lockfile 根包和 Claude/Codex/ZCode/Qoder/WorkBuddy 五类有版本字段的插件 manifest 均为 `0.13.30`。tarball 已确认包含 `dist/index.js`、`dist/lib/test-change-set.js`、`dist/lib/test-slice-manifest.js`、`spec/test-slice-manifest.md`、`spec/baseline-closure.md` 与五类插件资产。
+
+## 三、构建、安装与入口证明
+
+1. 最终 verify 已确认 1661/1661 用例执行、失败 0、覆盖率和通过率均为 100%；部署阶段再次执行 `npm run build`、`npm run lint` 和真实 `npm pack`，均退出 0。
+2. 候选使用显式本地 tarball 执行 `npm install -g --ignore-scripts`；未使用目录、workspace link、源码入口或 registry 包。
+3. 安装后 `command -v openlogos` 为 `/opt/homebrew/bin/openlogos`，realpath 为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，`openlogos --version` 精确返回 `0.13.30`。
+4. 安装态关键文件 SHA-256 与 tarball 一致：`dist/index.js` 为 `a12f1e852da188d355402d5ca43c86a7e349562d73da102d869e64989bb73158`，`dist/lib/test-change-set.js` 为 `97d74e9d4cf60e753985df436e9087749c7a761c86da69b0bef0990335836c87`，`dist/lib/test-slice-manifest.js` 为 `4a1dcece03a92ec142eb60c9f7da7b82c2b43b734776b1370ed7fa452b5d53f5`。
+5. 一次性 fixture 中由真实全局入口执行 `status --format json` 成功，lifecycle 为 `launched`、`active_change=null`、fixture guard 不在场；协议资产读取通过，未对本仓库活跃提案执行 merge 事故夹具。
+
+## 四、回滚与恢复演练
+
+1. 从固定本地 `0.13.29` tarball 替换全局安装后，入口仍位于同一 `/opt/homebrew` prefix，CLI 与五类插件版本均精确为 `0.13.29`；一次性 fixture 的只读 status 检查通过。
+2. 再从原始候选 tarball 恢复 `0.13.30`，入口、CLI/插件版本、关键文件 SHA-256 和 fixture 只读启动全部再次通过。
+3. 最终全局状态为 `@miniidealab/openlogos@0.13.30`。若后续 smoke 暴露安装态问题，可使用已固定的 `0.13.29` tarball 回滚；若需恢复部署前状态，可使用本节固定的 `0.13.27` 快照。
+
+## 五、风险与副作用审计
+
+- 未解决风险：无；正式 smoke 已验证事故六 ID、removed/篡改、跨进程稳定和真实回滚。
+- 用户数据边界：未修改真实用户项目、AI 工具配置、账号、记忆、凭据或未知全局包；只替换明确识别的全局 OpenLogos 包。
+- 公开副作用：未执行 npm publish、npm dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`，未读取 npm token 或 registry 凭据。
+
+## 六、正式 Smoke 失败修复与最终结果
+
+1. 首轮 `openlogos smoke --env local-global` 已真实执行：定义 104、执行 74、通过 73、失败 1、未覆盖 30。SMOKE-core-130～SMOKE-core-134 当轮已 5/5 PASS；唯一失败是 SMOKE-core-66 缺少固定 `0.13.25` 回滚 tarball，未覆盖项为未显式激活的 ZCode/Qoder/WorkBuddy/TRAE 历史真实宿主回归。
+2. 修复未改源码或降低断言：补入已验证的 `0.13.25` tarball（SHA-256 `7a6d7053dc3b11df69f86d01e25367ebc06fba9c447cf85a8daec705a2f2cade`），并逐包复核后显式路由 ZCode `0.13.27/0.13.24`、Qoder `0.13.27/0.13.24`、WorkBuddy `0.13.28/0.13.27`、TRAE `0.13.29/0.13.28` 的本地制品、真实宿主入口和当前 driver。
+3. 按用户授权重新安装同一 SHA-256 的 `0.13.30` 候选，入口与 `test-change-set.js` 哈希再次匹配；随后受控执行 `openlogos deploy-done --env local-global`，清理首轮 `SMOKE_FAIL` 后从空正式账本重新运行全量 smoke。
+4. 第二轮正式结果：定义 104、执行 104、通过 104、失败 0、跳过 0、未覆盖 0，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。SMOKE-core-130～SMOKE-core-134 均绑定候选 SHA-256 `3f34c3b8aa6781a27d2c08ec75294001ffe9916195f5d534ae2a59d57db4b386`、回滚 SHA-256 `cccb01674f75dc1219f03d78c8c3c0a6672f2c436bfc00fd98a9e1a096db804c` 与全局入口 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+5. 最终 `VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 在场，`SMOKE_FAIL` 不在场；全局 `openlogos --version` 为 `0.13.30`。网站 smoke 只在一次性 sandbox 构建，未部署网站，也未产生任何公开发布或 push 副作用。
+
+---
+
 # 部署报告：trae-local-negative-smoke / OpenLogos 0.13.29（2026-08-25，本地隔离部署成功）
 
 ## 一、部署结论
