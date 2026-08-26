@@ -38,6 +38,11 @@
 | UT-S37-29 | L4 承认 REMOVED-ITEMS | 含合法 `REMOVED-ITEMS` 块（配对 MODIFIED）的 delta 过 L4；仅含 REMOVED-ITEMS 无物质变更块的 delta 判非法 | 与 §2.33.4 约定一致 |
 | UT-S37-30 | 映射一致性回归（F5） | 读取 `DELTA_TO_RESOURCE` 常量与 `spec/change-management.md`、change-writer 目录映射表声明 | 三方一致：`spec → 根 spec/`、`skills → 根 skills/`（非 `logos/skills/`）、其余类目 → `logos/resources/**` |
 | UT-S37-31 | 零回归：L1–L7 零漂移 | 既有 L1–L7 golden 夹具全量重跑 | 输出逐字节不变（L8 仅新增，不改既有判据） |
+| UT-S37-32 | SXX 根标题由控制锚保留 | 目标为 `## S10 人工刷新恢复保证`，Delta 为同锚 MODIFIED 且正文不重复 S10 | 违规集合为空；根标题由唯一命中的真实 heading 重建，不要求虚构 `### S10` |
+| UT-S37-33 | DXX 根标题由控制锚保留 | 目标为 `## D12：评审恢复决策`，Delta 为同锚 MODIFIED 且正文不重复 D12 | 违规集合为空；D12 不误报 `delta_implicit_id_removal` |
+| UT-S37-34 | 数字节号根标题由控制锚保留 | 目标为 `## 2.3 恢复规则`，Delta 为同锚 MODIFIED 且正文不重复 2.3 | 违规集合为空；2.3 不误报 `delta_implicit_id_removal` |
+| UT-S37-35 | 根标题保留不掩盖内嵌 ID 删除 | 目标根标题为 S10，正文含 `### S11`、测试表 ID、编号小节与带身份场景表行；逐类从 MODIFIED 正文删除 | 不报告 S10；只对真正缺失的内嵌 ID 逐结构位置/表身份报告 `delta_implicit_id_removal` |
+| UT-S37-36 | 标题路径只采信最终命中标题 | 路径锚父标题含其它 SXX/DXX/数字 token，目标叶标题唯一命中；另造 0 命中与多命中对照 | retained 只重建叶目标的真实 level/text；父路径 token 不背书，0/多命中仍 `delta_section_anchor_unresolvable` |
 
 ## 二、场景测试（ST，走真实 CLI 入口在临时项目运行）
 
@@ -49,3 +54,5 @@
 | ST-S37-04 | 歧义锚端到端拒绝（F3） | delta 用单段锚指向重复 7 次的真实 smoke 标题 | lint exit 2 报 `delta_section_anchor_unresolvable`；merge 拒绝；改标题路径锚后放行 |
 | ST-S37-05 | 合法提案零漂移 | 对不含守恒违规的既有形态提案（纯 ADDED / 全量 MODIFIED / 整节 REMOVED）跑 lint + merge | 与引入 L8 前行为一致；merge 输出零漂移 |
 | ST-S37-06 | 只读性 | `change-lint` 运行前后临时项目全量文件集合与内容哈希不变 | 完全不变（延续 S35 只读红线，L8 不引入写入） |
+| ST-S37-07 | 合法根 ID Delta lint 放行 | 临时项目分别构造 S10、D12、2.3 根标题目标与正文不重复根 ID 的同锚 MODIFIED，走真实 `openlogos change-lint` 文本/JSON 入口 | 三类均 exit 0、`pass=true`、无 L8 violation；运行前后项目字节不变 |
+| ST-S37-08 | lint/merge 同源根 ID 闭环 | 对合法根 ID 提案先 lint 再运行 `openlogos merge <slug>`；对根保留但内嵌 S11/测试 ID 缺失的对照提案运行两命令 | 合法提案 lint exit 0 且 merge 生成 `MERGE_PROMPT.md`；非法对照两侧均只报告真实缺失 ID，merge 非零且不写 prompt/marker |

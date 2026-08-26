@@ -1136,7 +1136,7 @@ Git 的 `--name-status` 输出始终相对 **git top-level**；而 OpenLogos 只
 ```
 对每个被 MODIFIED / REMOVED / REMOVED-ITEMS 锚定的主文档章节 sec：
   违规集合(sec) = sec 的既有结构化 ID 集合
-               − delta 中锚定 sec 的新内容（MODIFIED 块正文）的结构化 ID 集合
+               − delta 中锚定 sec 的真实最终章节（唯一命中的目标根标题 + MODIFIED 块正文）的结构化 ID 集合
                − 锚定 sec 的 REMOVED-ITEMS 块点名 ID 集合
                −（sec 被整节 REMOVED 时：sec 全部既有 ID，视为随章节显式删除）
 要求：每个 sec 的违规集合 == ∅
@@ -1144,6 +1144,7 @@ Git 的 `--name-status` 输出始终相对 **git top-level**；而 OpenLogos 只
 
 - **结构化归属（防散文绕过）**：ID 的「存在」与「保留」都只认**结构位置**——测试 ID 只从测试表 **ID 首列单元格**抽取；场景 ID 只从 `## SXX:` 形态章节标题与场景总览 / 场景地图表**行首列**抽取；节号只从**标题行**抽取。散文提及、非 ID 列单元格、代码围栏内引用一律**不计入**——在正文里写一句「SMOKE-core-03 已删除」不构成保留，也不构成显式删除。
 - **逐章节对账（防跨节背书）**：保留必须发生在 **ID 原所在章节**锚定的块内；A 章节的 MODIFIED 块中出现 B 章节的 ID，不为 B 章节的删除背书。
+- **根标题属于最终结构**：`MODIFIED` 控制行不进入最终文档，但它唯一解析出的目标根标题会原位保留。因此 retained 的结构化抽取输入必须等价于真实合并结果：先用命中的 heading level/text 重建根标题，再拼接 MODIFIED 正文。正文无需也不得为了过门重复 `### S10`、`### D12` 或 `### 2.3`。
 - **违规判定**：违规集合中每个 ID 产生一条 `delta_implicit_id_removal` violation（含缺失 ID、所属章节锚、fix_hint：「补回该章节 MODIFIED 块的结构条目，或用锚定该章节的 REMOVED-ITEMS 块点名」）。
 - **反向校验**：REMOVED-ITEMS 点名的 ID 不属于其锚定章节的既有结构化 ID 集合 → `delta_removed_unknown_id`（含拼写不存在与「点名了别的章节的 ID」两种形态）。
 - **新文件跳过**：目标主文档不存在（delta 创建全新文档）时跳过守恒——无既有条目可保。
@@ -1156,6 +1157,8 @@ Git 的 `--name-status` 输出始终相对 **git top-level**；而 OpenLogos 只
   - **标题路径锚**：`## MODIFIED — 四、smoke runner 覆盖强制规则发布后冒烟用例 > 二、冒烟测试用例补充`——以 ` > ` 连接父级到目标级标题，用于目标标题在文档中重复时唯一定位（真实语料：`core-smoke-test-cases.md` 中 `### 二、冒烟测试用例补充` 重复 7 次，分属不同父章节）。
 - **解析规则（确定性，禁止猜测）**：锚在目标主文档中解析到 **0 个或 ≥2 个**章节 → fail-closed，产生 `delta_section_anchor_unresolvable` violation（诊断区分 not-found / ambiguous 与候选位置列表）；判据**不得**取第一个命中、不得合并同名章节、不得按 delta 内容反猜目标。
 - 该定位规则同时约束三方：change-lint L8、`openlogos merge` 消费点、merge-executor 应用 delta 时的人工定位（歧义即暂停询问，与「冲突时询问」原则一致）。
+- **安全重建规则**：只有锚唯一命中后，才可使用目标文档中的 `hit.level + hit.text` 重建 retained 根标题；不得从单段锚或标题路径锚字符串直接扫描 ID，因为父路径或标题散文可能提及其它 ID。锚 0 命中或多命中时仍只报 `delta_section_anchor_unresolvable`，不建立任何 retained 根标题。
+- **最小豁免边界**：重建只证明目标根标题自身仍在最终章节中；原章节内嵌 `SXX`/`DXX`/编号标题、测试表 ID 与带身份场景表行仍按原结构位置逐项对账，缺失时照常报 `delta_implicit_id_removal`。
 
 #### 2.33.3 ID 模式注册表（单点维护）
 

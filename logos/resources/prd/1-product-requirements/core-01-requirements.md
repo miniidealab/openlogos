@@ -1316,6 +1316,7 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 6. **archive 审计定位（audit-only）**：提案一旦归档，其内容仅供审计——archive 不是任何规格内容的事实源；`logos/resources/` 必须自足（当前有效规格必须存在于 resources，任何流程 / Skill / CLI 不得依赖读取 archive 内容）；archive 过期后可整体或部分删除，删除不损失任何当前有效信息（含 `MERGE_PROMPT.md` 等纯派生物）。写入 `spec/change-management.md` 与 `spec/directory-convention.md`。
 7. **残差如实标注**：仅「结构化 ID 条目内部的无编号散文」不在机器门内（删散文与改写散文机器不可分，改写是 MODIFIED 正当用途）；散文所在章节的整体消失仍被章节级 ID 守恒抓住。
 8. **零回归**：既有 L1–L7 行为、merge 对合法 delta 的消费行为、`ADDED / MODIFIED / REMOVED` 三标记基本语义均不变；守恒门是新增拒绝分支（`REMOVED-ITEMS` 为新增纯声明性标记，不引入新的合并操作语义）。新增 3 个 violation code 扩册进 `ChangeLintViolationCode` 闭合枚举（26 码，`spec/cli-json-output.md` §3.15）。
+9. **根标题身份按最终章节结构保留**：当 `MODIFIED` 锚唯一命中以稳定 ID 开头的目标根标题（如 `## S10 ...`、`## D12：...`、`## 2.3 ...`）时，控制锚已经保留该根标题身份；L8 必须按“命中的真实根标题 + MODIFIED 正文”计算 retained，不得要求正文重复根标题，也不得误报根 ID 被删除。该豁免只覆盖命中的根标题自身；章节内嵌标题、测试表、场景表等真正消失的既有 ID 仍须逐结构位置报 `delta_implicit_id_removal`。
 
 ## S38: 决策记录沉淀能力（决策理由入 resources）
 
