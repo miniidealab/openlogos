@@ -16,7 +16,7 @@
  * （IMPACT_GIT_DIFF_FAILED / IMPACT_INPUT_INVALID）。契约见 spec/change-impact.md 与
  * spec/cli-json-output.md §3.16。
  */
-import { readFileSync } from 'node:fs';
+import { readSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { makeEnvelope, makeErrorEnvelope, type OutputFormat } from '../lib/json-output.js';
 import { readLocale, t, type Locale } from '../i18n.js';
@@ -71,6 +71,32 @@ function parseImpactArgs(args: string[]): ImpactArgs {
  */
 const GIT_MAX_BUFFER_BYTES = 256 * 1024 * 1024;
 
+/**
+ * Node 23 在 macOS 的 spawn pipe 上可能让同步 fd=0 短暂返回 EAGAIN；readFileSync(0)
+ * 会把合法的大 name-status 流误判成操作错误。保持同步命令边界，短暂退避后继续读到 EOF。
+ */
+function readStdinUtf8(): string {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  while (true) {
+    let count: number;
+    try { count = readSync(0, buffer, 0, buffer.length, null); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EAGAIN') {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1);
+        continue;
+      }
+      throw error;
+    }
+    if (count === 0) break;
+    total += count;
+    if (total > GIT_MAX_BUFFER_BYTES) throw new Error(`stdin exceeds ${GIT_MAX_BUFFER_BYTES} bytes`);
+    chunks.push(Buffer.from(buffer.subarray(0, count)));
+  }
+  return Buffer.concat(chunks, total).toString('utf8');
+}
+
 function gitReadOnly(cwd: string, args: string[]): string {
   return execFileSync('git', args, {
     cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: GIT_MAX_BUFFER_BYTES,
@@ -117,7 +143,7 @@ export function impact(args: string[], format: OutputFormat = 'text'): void {
   if (opts.stdin) {
     prefix = opts.prefix ?? '';
     try {
-      stream = readFileSync(0, 'utf-8');
+      stream = readStdinUtf8();
     } catch (e) {
       opError(format, 'IMPACT_INPUT_INVALID', `failed to read stdin: ${e instanceof Error ? e.message : String(e)}`);
     }

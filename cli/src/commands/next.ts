@@ -28,6 +28,7 @@ import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
 import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 import { BaselineCommitInProgressError } from '../lib/baseline-seed-txn.js';
 import { deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
+import type { MergeTransactionProjection } from '../lib/merge-transaction.js';
 
 export interface NextModuleItem {
   id: string;
@@ -91,6 +92,7 @@ export interface NextData {
   product_type_confirmation?: ProductTypeConfirmation;
   // proposal-ui-ux-first 切片3：前置能力门 capability surface（与 status 同构，仅能力就绪时附带）。
   capabilities?: { ui_prototype_render: true };
+  merge_transaction?: MergeTransactionProjection;
   // S28：next_node 编排提示（仅有当前节点时附带；命令级建议/auto 放行/loop 达上限省略）
   next_node?: NextNode;
   // 切片 C：仅 --auto 模式附带，默认 next 省略（保持 1:1）
@@ -1061,6 +1063,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
         || baseSliceVerificationState !== undefined,
       (moduleItems ?? []).some(m => m.plan_state?.plan_package !== undefined)
         || basePlanState?.plan_package !== undefined,
+      data.merge_transaction !== undefined,
     ) },
     action,
     command,
@@ -1079,6 +1082,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     // proposal-ui-ux-first 切片1：与 status 同构，直接透传 collectStatusData 计算的顶层诊断（省略即省略）。
     ...(data.product_type_confirmation ? { product_type_confirmation: data.product_type_confirmation } : {}),
     ...(data.capabilities ? { capabilities: data.capabilities } : {}),
+    ...(data.merge_transaction ? { merge_transaction: data.merge_transaction } : {}),
     ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
     ...(autoExecute ? { auto_execute: true } : {}),

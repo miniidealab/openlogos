@@ -74,6 +74,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_PLAN_CONVERGENCE_TARBALL,
       previousTarball: process.env.OPENLOGOS_PLAN_CONVERGENCE_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-merge-transaction-candidate.js': {
+      tarball: process.env.OPENLOGOS_MERGE_TRANSACTION_TARBALL,
+      previousTarball: process.env.OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;

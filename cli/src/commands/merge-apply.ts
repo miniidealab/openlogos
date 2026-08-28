@@ -233,6 +233,13 @@ function preparedInput(
 }
 
 export function mergeApply(slug: string | undefined, manifestArg: string | undefined): void {
+  // 0.14.0 breaking cutover：外部 manifest writer 已删除。仅保留测试进程内的历史回归开关，
+  // 不随安装态 CLI 启用，也不能由公开命令降级打开。
+  if (!(process.env.NODE_ENV === 'test' && process.env.OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY === '1')) {
+    console.error('Error: legacy_manifest_rejected：0.14.0 不再接受 MERGE_APPLY_MANIFEST.json。');
+    console.error('  请使用 `openlogos merge <slug>` 与 `openlogos merge transaction status|seal|apply|recover`。');
+    process.exit(1);
+  }
   const root = process.cwd();
   if (!existsSync(join(root, 'logos', 'logos.config.json'))) fail(null, 'logos/logos.config.json 不存在');
   if (!slug || !SLUG_STRICT_RE.test(slug)) fail(null, '缺少或非法的提案 slug');

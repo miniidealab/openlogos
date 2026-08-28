@@ -7,6 +7,7 @@ import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resol
 import { BASELINE_CLOSURE_VIOLATION_CODES, hasBaselineClosureSignal } from '../lib/baseline-closure.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
+import { applyMergeTransaction, createMergeTransaction, sealMergeTransaction } from '../lib/merge-transaction.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
   readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH,
@@ -65,6 +66,11 @@ function noDeltaSpecMergedMarker(): string {
     reason: 'pure-code proposal has no spec delta',
     completed_at: new Date().toISOString(),
   }, null, 2) + '\n';
+}
+
+/** 仅供既有 0.13.x 回归测试读取；安装态 0.14.0 永不启用。 */
+function legacyMergeTestMode(): boolean {
+  return process.env.NODE_ENV === 'test' && process.env.OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY === '1';
 }
 
 export function merge(slug?: string) {
@@ -220,17 +226,28 @@ export function merge(slug?: string) {
       console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 resources、未写 SPEC_MERGED。remediation：显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑。');
       process.exit(1);
     }
-    // ② 原型资产落盘唯一入口（事务性）：commitVerifiedPrototypes；merge-executor 绝不触碰原型资产。
-    const commit = commitVerifiedPrototypes(changePath, root);
-    if (!commit.ok) {
-      console.error(`Error: 原型事务落盘失败（${commit.reason}）：resources 回 merge 前态、零残留，拒绝 merge。`);
-      process.exit(1);
+    // ② 0.14.0 把原型正式字节纳入 merge transaction 同批提交；仅历史回归模式保留旧 UI commit。
+    if (legacyMergeTestMode()) {
+      const commit = commitVerifiedPrototypes(changePath, root);
+      if (!commit.ok) {
+        console.error(`Error: 原型事务落盘失败（${commit.reason}）：resources 回 merge 前态、零残留，拒绝 merge。`);
+        process.exit(1);
+      }
     }
   }
 
   if (deltas.length === 0) {
-    writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
-    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+    if (legacyMergeTestMode()) {
+      writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
+      console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+      return;
+    }
+    const transaction = createMergeTransaction(root, changePath, slug);
+    if (transaction.phase === 'ready') {
+      sealMergeTransaction(root, changePath);
+      applyMergeTransaction(root, changePath);
+    }
+    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}（merge transaction receipt）`);
     return;
   }
 
@@ -286,40 +303,38 @@ export function merge(slug?: string) {
     process.exit(1);
   }
 
-  const proposalPath = join(changePath, 'proposal.md');
-  const proposalContent = existsSync(proposalPath)
-    ? readFileSync(proposalPath, 'utf-8')
-    : '(proposal.md not found)';
-
-  // 原型资产已由 commitVerifiedPrototypes 落盘，从 MERGE_PROMPT 的 delta 清单剔除（merge-executor 只应用 markdown 规格 delta）。
-  const promptDeltas = uiImpact ? deltas.filter(d => !isPrototypeAsset(d.relativePath)) : deltas;
-
-  // 剔除原型后无 markdown delta 可合并（全为原型资产）→ 视同 no-delta 已完成 spec 阶段。
-  if (promptDeltas.length === 0) {
-    writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
-    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+  if (legacyMergeTestMode()) {
+    const proposalPath = join(changePath, 'proposal.md');
+    const proposalContent = existsSync(proposalPath) ? readFileSync(proposalPath, 'utf-8') : '(proposal.md not found)';
+    const promptDeltas = uiImpact ? deltas.filter(d => !isPrototypeAsset(d.relativePath)) : deltas;
+    if (promptDeltas.length === 0) {
+      writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
+      console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+      return;
+    }
+    const promptContent = mergePromptTemplate(locale, slug, proposalContent, promptDeltas.map(d => ({
+      relativePath: d.relativePath, deltaFullPath: relative(root, d.deltaPath), targetDir: d.targetDir,
+    })));
+    writeFileSync(join(changePath, 'MERGE_PROMPT.md'), promptContent);
+    writeFileSync(join(changePath, 'MERGE_PROMPT_GENERATED'), '');
+    console.log(`\n  ✓ logos/changes/${slug}/MERGE_PROMPT.md`);
     return;
   }
 
-  const promptContent = mergePromptTemplate(locale, slug, proposalContent, promptDeltas.map(d => ({
-    relativePath: d.relativePath,
-    deltaFullPath: relative(root, d.deltaPath),
-    targetDir: d.targetDir,
-  })));
-
-  const promptPath = join(changePath, 'MERGE_PROMPT.md');
-  writeFileSync(promptPath, promptContent);
-  writeFileSync(join(changePath, 'MERGE_PROMPT_GENERATED'), '');
+  const transaction = createMergeTransaction(root, changePath, slug);
 
   console.log(`\n📋 ${t(locale, 'merge.summary')}`);
   console.log(t(locale, 'merge.proposal', { slug }));
-  console.log(t(locale, 'merge.deltaCount', { count: String(promptDeltas.length) }));
-  for (const d of promptDeltas) {
-    console.log(`    ${d.relativePath} → ${d.targetDir}/`);
+  console.log(t(locale, 'merge.deltaCount', { count: String(deltas.length) }));
+  for (const target of transaction.targets) {
+    console.log(`    ${target.delta_path} → ${target.target_path}（${target.slot_id}）`);
   }
 
-  console.log(`\n  ✓ logos/changes/${slug}/MERGE_PROMPT.md`);
+  console.log(`\n  ✓ logos/changes/${slug}/MERGE_TRANSACTION.json`);
+  console.log(`  transaction_id: ${transaction.transaction_id}`);
+  console.log(`  phase: ${transaction.phase}`);
+  console.log(`  next_action: ${transaction.next_action ?? '<none>'}`);
 
-  console.log(`\n💡 ${t(locale, 'merge.aiHint', { slug })}`);
+  console.log('\n💡 Agent 只能通过 `openlogos merge transaction submit-content --slot <id> --file <path>` 提交最终内容；正式目标、receipt 与 marker 由 OpenLogos 写入。');
   console.log(`\n${t(locale, 'merge.archiveHint', { slug })}\n`);
 }

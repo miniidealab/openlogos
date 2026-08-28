@@ -831,7 +831,7 @@ describe('S08 Scenario Tests — sync command', () => {
     const second = JSON.parse(raw);
     expect(second.cliVersion).toBe(VERSION);
     expect(Object.keys(second).sort()).toEqual(['cliVersion', 'managedAssetsHash', 'planContractVersion', 'syncedAt']);
-    expect(second.planContractVersion).toBe('1.3.0');
+    expect(second.planContractVersion).toBe('1.4.0');
     expect(second.managedAssetsHash).toMatch(/^[a-f0-9]{64}$/);
     // 整体覆盖（非追加）：文件始终是单一 JSON 对象
     expect((raw.match(/"cliVersion"/g) ?? []).length).toBe(1);

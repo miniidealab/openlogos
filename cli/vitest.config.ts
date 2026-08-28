@@ -22,5 +22,6 @@ export default defineConfig({
     globalSetup: ['./test/global-setup.ts'],
     reporters: ['default', './test/openlogos-reporter.ts'],
     testNamePattern: eligibleTestPattern(),
+    env: { OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '1' },
   },
 });

@@ -857,14 +857,15 @@ describe('S16 — JSON Schema 发布与生产者一致性（contract-self-descri
 
   it('UT-S16-06: contract.version 与两份打包 schema 版本映射（clarification 条件版本 superset）', async () => {
     // schema 为向后兼容 superset，1.2.0 新增 plan_state.clarification；旧响应仍支持 1.0/1.1。
-    const { CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES, CONTRACT_VERSION_WITH_CLARIFICATION, CONTRACT_VERSION_WITH_PLAN_PACKAGE } = await import('../src/lib/step-registry.js');
+    const { CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES, CONTRACT_VERSION_WITH_CLARIFICATION, CONTRACT_VERSION_WITH_PLAN_PACKAGE, CONTRACT_VERSION_WITH_MERGE_TRANSACTION } = await import('../src/lib/step-registry.js');
     for (const name of ['status', 'next'] as const) {
       const schema = loadSchema(name);
-      expect(schema['x-contract-version']).toBe(CONTRACT_VERSION_WITH_PLAN_PACKAGE);
-      expect(schema.$id.endsWith(`/${CONTRACT_VERSION_WITH_PLAN_PACKAGE}`)).toBe(true); // $id 版本段 = superset 最高版本
+      expect(schema['x-contract-version']).toBe(CONTRACT_VERSION_WITH_MERGE_TRANSACTION);
+      expect(schema.$id.endsWith(`/${CONTRACT_VERSION_WITH_MERGE_TRANSACTION}`)).toBe(true); // $id 版本段 = superset 最高版本
       expect(schema.properties.contract.$ref ?? schema.$defs.contract).toBeTruthy();
       expect(schema.$defs.contract.properties.version.enum).toEqual([
         CONTRACT_VERSION, CONTRACT_VERSION_WITH_FEATURES, CONTRACT_VERSION_WITH_CLARIFICATION, CONTRACT_VERSION_WITH_PLAN_PACKAGE,
+        CONTRACT_VERSION_WITH_MERGE_TRANSACTION,
       ]);
       // 根级 allOf 条件约束存在：version==1.0.0 ⟹ 无 features
       expect(Array.isArray(schema.allOf) && schema.allOf.length >= 1).toBe(true);

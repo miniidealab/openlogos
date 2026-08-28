@@ -77,9 +77,10 @@ Commands:
   change <slug>      Create a change proposal for iterative updates
                        --module <id>               Assign proposal to a specific module
   change-lint [--slug <slug>]   检查活跃提案的计划产物（proposal/tasks/deltas）是否交付合格（只读）
-  merge <slug>       Generate MERGE_PROMPT.md for AI to execute delta merging
-  merge-apply <slug> Atomically apply an approved on-touch merge manifest
-                       --manifest <path>           Strict final-bytes manifest inside proposal dir
+  merge <slug>       Create or resume the OpenLogos-owned merge transaction
+  merge transaction  Operate the canonical transaction (status / submit-content / seal / apply / recover)
+                       --slug <slug>               Defaults to the active guard change
+  merge-apply        Removed in 0.14.0; always rejects legacy external manifests
   archive <slug>     Archive a completed change proposal
   detect             Show CLI version and project detection info
   index              Generate an AI-ready prompt to rebuild resource_index with file-content-based desc
@@ -242,6 +243,11 @@ async function main() {
       break;
     }
     case 'merge': {
+      if (args[1] === 'transaction') {
+        const { mergeTransactionCommand } = await import('./commands/merge-transaction.js');
+        mergeTransactionCommand(args[2], args.slice(3), format);
+        break;
+      }
       const { merge } = await import('./commands/merge.js');
       merge(args[1]);
       break;

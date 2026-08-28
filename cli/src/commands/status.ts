@@ -23,6 +23,7 @@ import {
 } from '../lib/baseline-seed-txn.js';
 import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
 import { deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
+import { readMergeTransactionIfPresent, type MergeTransactionProjection } from '../lib/merge-transaction.js';
 
 function commitInProgressCoverage(seedState: BaselineSeedState): BaselineCoverage {
   return {
@@ -308,6 +309,7 @@ export interface StatusData {
   // proposal-ui-ux-first 切片3：前置能力门 capability surface（F2 R6）。
   // 仅当 logos/.session-capabilities.json 含 ui_prototype_render:true 时出现；缺失=降级（省略，golden 零漂移）。
   capabilities?: { ui_prototype_render: true };
+  merge_transaction?: MergeTransactionProjection;
 }
 
 // Phase paths indexed by PHASE_KEYS order
@@ -1257,6 +1259,9 @@ function collectStatusDataLocked(root: string, filterModuleId?: string, cmdEval?
   const topReason = (projectProposalDir && proposalStep && existsSync(projectProposalDir))
     ? getProposalStepReason(projectProposalDir, proposalStep)
     : null;
+  const mergeTransaction = activeChange
+    ? readMergeTransactionIfPresent(join(root, 'logos', 'changes', activeChange))
+    : null;
 
   return {
     // add-feature-model（S34，delta-F1=B）：条件版本——响应含任一 modules[].features 时 1.1.0，否则 1.0.0
@@ -1267,6 +1272,7 @@ function collectStatusDataLocked(root: string, filterModuleId?: string, cmdEval?
       (modules ?? []).some(m => m.slice_verification_state !== undefined),
       (modules ?? []).some(m => m.active_change?.plan_state?.plan_package !== undefined)
         || topPlanState?.plan_package !== undefined,
+      mergeTransaction !== null,
     ) },
     phases: phases.map(p => ({ key: p.key, label: p.label, done: p.done, skipped: p.skipped, files: p.files })),
     ...(modules !== undefined ? { modules } : {}),
@@ -1283,6 +1289,7 @@ function collectStatusDataLocked(root: string, filterModuleId?: string, cmdEval?
     ...(topPlanState ? { plan_state: topPlanState } : {}),
     ...(productTypeConfirmation ? { product_type_confirmation: productTypeConfirmation } : {}),
     ...(buildCapabilities(root) ? { capabilities: buildCapabilities(root)! } : {}),
+    ...(mergeTransaction ? { merge_transaction: mergeTransaction } : {}),
     active_proposals: activeProposals.map(p => ({
       name: p.name,
       has_proposal: p.hasProposal,

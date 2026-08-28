@@ -1,7 +1,7 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.13.31",
-  "planContractVersion": "1.3.0",
+  "version": "0.14.0",
+  "planContractVersion": "1.4.0",
   "skills": [
     {
       "path": "skills/change-writer/SKILL.md",
@@ -10,6 +10,14 @@
     {
       "path": "skills/change-writer/SKILL.en.md",
       "sha256": "18ddb7ecf8695cb5d8a93f20317c03d48a890547aa966bbde3e0deede2c05de6"
+    },
+    {
+      "path": "skills/merge-executor/SKILL.md",
+      "sha256": "545f3813668c7a259facf9021779fd614611f8458174040ebea3e0406e744dc7"
+    },
+    {
+      "path": "skills/merge-executor/SKILL.en.md",
+      "sha256": "50f388025e01eba4bd84e86d15b447330294ece19e138b1e428e17ee136c719e"
     }
   ],
   "templates": [
@@ -21,22 +29,26 @@
   "schemas": [
     {
       "path": "spec/schema/next.schema.json",
-      "sha256": "780a02947eb8984897e5e9924df20f64837e95728e5ffa02ca09f48bc0462abf"
+      "sha256": "f9c844bb5922f3c9e8d6e69be484023a82264fa9c6caede2455a7c6c5b79b07b"
     },
     {
       "path": "spec/schema/status.schema.json",
-      "sha256": "72832c33404d69351a352eef01b1d02218f3c21ba36fe9e7bb450893da8ec2ca"
+      "sha256": "775dfd18da23172d83b893633ac65ef7c81efb0bd261f799db8bf46f051f081e"
+    },
+    {
+      "path": "spec/schema/merge-transaction.schema.json",
+      "sha256": "59a5fa2984e7d70b979461d64af022ed1e63e6f25790d857aaaed41ad9a54ce2"
     }
   ],
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "d98cf5bdabf93d992392fc063af11caf9de6d8a42684f72949e3b536d3ca68b3"
+      "sha256": "900b2a903590f41cb941c4e0bf5f18e2bb88c9ce2e5a79ce84cc79700677e5ce"
     },
     {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
       "sha256": "93374b6696d47227a1b67ee7fa9dd3bf9938c1f2664def139041f07667c2e5ab"
     }
   ],
-  "payloadHash": "201c44787fc97e7b917faec1a0868cfc1883a59c2502156dd992ff29b10dc65c"
+  "payloadHash": "07e1d24ee3b5941f854e9216afb4e3a60ad43e7b95f3e9998b8c018d9b6e6a5d"
 }
