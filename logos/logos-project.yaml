@@ -28,7 +28,7 @@ scenario_counter:
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 7
+  next_id: 8
 modules:
   - id: core
     name: 核心功能
@@ -569,6 +569,11 @@ resource_index:
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
   - path: spec/qoder-plugin.md
     desc: Qoder 原生插件规范。涉及 Qoder 插件布局、Skills、Commands、Agents、Hooks、SessionStart 与 PreToolUse 协议时必读。
+
+  - path: logos/resources/decisions/core-D07-merge-transaction-single-authority.md
+    desc: D07 决策记录。涉及合并事务单一权威、content slot、原子 apply、completed receipt、旧 manifest 断代与 RunLogos 跨仓边界时必读。
+  - path: spec/schema/merge-transaction.schema.json
+    desc: Merge transaction 公共 JSON Schema。涉及 phase、classification、allowed_actions、next_action、content slot 与 completed receipt 机器合同时必读。
 
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号

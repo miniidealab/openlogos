@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openlogos.dev/schema/next/1.3.0",
+  "$id": "https://openlogos.dev/schema/next/1.4.0",
   "title": "openlogos next --format json 机器契约（data 对象）",
-  "x-contract-version": "1.3.0",
-  "$comment": "向后兼容 superset schema，最高支持契约版本 1.3.0。1.3.0 增加 Plan Package evaluation、completion issues；next 额外增加 dispatch completion。JSON Schema dialect = draft 2020-12；校验对象 = envelope 的 data 字段；additionalProperties 保持放开，未知值由消费方保守处理。",
+  "x-contract-version": "1.4.0",
+  "$comment": "向后兼容 superset schema，最高支持契约版本 1.4.0。1.4.0 增加 merge transaction phase、allowed_actions、next_action 与 completed receipt 投影；JSON Schema dialect = draft 2020-12；校验对象 = envelope 的 data 字段；additionalProperties 保持放开，未知值由消费方保守处理。",
   "type": "object",
   "required": [
     "contract"
@@ -60,6 +60,9 @@
     },
     "plan_package": {
       "$ref": "#/$defs/planPackage"
+    },
+    "merge_transaction": {
+      "$ref": "#/$defs/mergeTransaction"
     }
   },
   "allOf": [
@@ -151,9 +154,10 @@
             "1.0.0",
             "1.1.0",
             "1.2.0",
-            "1.3.0"
+            "1.3.0",
+            "1.4.0"
           ],
-          "$comment": "1.0.0 为基础契约；1.1.0 支持 feature；1.2.0 支持 clarification；1.3.0 支持 Plan Package evaluation 与 completion issues。"
+          "$comment": "1.0.0 为基础契约；1.1.0 支持 feature；1.2.0 支持 clarification；1.3.0 支持 Plan Package evaluation 与 completion issues；1.4.0 支持 merge transaction 动作投影。"
         }
       }
     },
@@ -564,6 +568,9 @@
         },
         "plan_state": {
           "$ref": "#/$defs/planState"
+        },
+        "merge_transaction": {
+          "$ref": "#/$defs/mergeTransaction"
         }
       },
       "allOf": [
@@ -1423,7 +1430,196 @@
           "$ref": "#/$defs/proposalStep"
         }
       }
+    },
+    "mergeTransaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "transaction_id",
+        "slug",
+        "phase",
+        "classification",
+        "allowed_actions",
+        "next_action",
+        "target_set_sha256",
+        "seal_sha256",
+        "content_slots",
+        "receipt"
+      ],
+      "properties": {
+        "schema": {
+          "const": "openlogos/merge-transaction@1"
+        },
+        "transaction_id": {
+          "type": "string",
+          "pattern": "^mtx_[A-Za-z0-9_-]+$"
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "collecting",
+            "ready",
+            "sealed",
+            "applying",
+            "completed",
+            "failed"
+          ]
+        },
+        "classification": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "invalid_phase",
+                "action_not_allowed",
+                "content_slot_missing",
+                "slot_identity_mismatch",
+                "source_hash_mismatch",
+                "before_hash_mismatch",
+                "target_set_mismatch",
+                "seal_mismatch",
+                "apply_conflict",
+                "receipt_mismatch",
+                "legacy_manifest_rejected",
+                "unsupported_contract",
+                "recovery_required",
+                "internal_failure"
+              ]
+            }
+          ]
+        },
+        "allowed_actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "submit_content",
+              "seal",
+              "apply",
+              "recover",
+              "abort"
+            ]
+          }
+        },
+        "next_action": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "submit_content",
+                "seal",
+                "apply",
+                "recover",
+                "abort"
+              ]
+            }
+          ]
+        },
+        "target_set_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "seal_sha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          ]
+        },
+        "content_slots": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "required",
+            "submitted",
+            "missing_slot_ids"
+          ],
+          "properties": {
+            "required": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "submitted": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "missing_slot_ids": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "receipt": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "transaction_id",
+                "seal_sha256",
+                "target_set_sha256",
+                "closure_sha256",
+                "receipt_sha256",
+                "target_count",
+                "completed_at"
+              ],
+              "properties": {
+                "transaction_id": {
+                  "type": "string",
+                  "pattern": "^mtx_[A-Za-z0-9_-]+$"
+                },
+                "seal_sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "target_set_sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "closure_sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "receipt_sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "target_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "completed_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   }
 }
-
