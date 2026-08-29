@@ -7,6 +7,7 @@ import {
   applyMergeTransaction, createMergeTransaction, readMergeTransaction, recoverMergeTransaction,
   sealMergeTransaction, submitMergeContent,
 } from '../src/lib/merge-transaction.js';
+import { validateRunLogosCandidateEvidence } from '../../scripts/lib/runlogos-candidate-evidence.mjs';
 
 const roots: string[] = [];
 const repoRoot = resolve(import.meta.dirname, '../..');
@@ -25,8 +26,6 @@ function fixture(): { root: string; proposalDir: string; slug: string } {
   put(root, 'logos/logos.config.json', '{"locale":"zh","project":{"type":"cli"}}\n');
   put(root, 'logos/.openlogos-guard', `${JSON.stringify({ activeChange: slug, module: 'core' })}\n`);
   put(root, 'logos/logos-project.yaml', 'project:\n  name: Fixture\nscenario_counter:\n  next_id: 2\ndecision_counter:\n  next_id: 7\nresource_index:\n  - path: logos/resources/prd/1-product-requirements/core-01.md\n    desc: 基线\n');
-  put(root, 'spec/schema/merge-transaction.schema.json', readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'), 'utf8'));
-  put(root, 'spec/cli-json-output.md', readFileSync(join(repoRoot, 'spec/cli-json-output.md'), 'utf8'));
   put(root, 'spec/example.md', '# 根规格\n');
   put(root, 'logos/resources/prd/1-product-requirements/core-01.md', '# 需求基线\n');
   put(root, `logos/changes/${slug}/deltas/decisions/core-D07-choice.md`, '## ADDED — D07 事务权威\n\n正文\n');
@@ -105,6 +104,8 @@ const applyIds = [
 describe('OpenLogos merge transaction', () => {
   it(`${controlIds}: 状态机、身份、slot、schema 与只读投影保持单一权威`, async () => {
     const f = fixture();
+    expect(existsSync(join(f.root, 'spec/schema/merge-transaction.schema.json'))).toBe(false);
+    expect(existsSync(join(f.root, 'spec/cli-json-output.md'))).toBe(false);
     const first = createMergeTransaction(f.root, f.proposalDir, f.slug);
     const golden = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures/merge-transaction-golden.json'), 'utf8')) as { transaction_id: string };
     expect(first.transaction_id).toBe(golden.transaction_id);
@@ -187,5 +188,23 @@ describe('OpenLogos merge transaction', () => {
     expect(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'), 'utf8')).toContain('openlogos/merge-transaction@1');
     expect(readFileSync(join(repoRoot, 'skills/merge-executor/SKILL.md'), 'utf8')).toContain('Merge transaction');
     expect(readFileSync(join(repoRoot, 'scripts/smoke-merge-transaction-candidate.js'), 'utf8')).toContain('SMOKE-core-150');
+    const bridgeSource = readFileSync(join(repoRoot, 'scripts/run-runlogos-merge-transaction-candidate-e2e.mjs'), 'utf8');
+    expect(bridgeSource).toContain('run-openlogos-merge-transaction-candidate-e2e.mjs');
+    expect(bridgeSource).toContain('adopt-openlogos-merge-transaction-authority');
+    expect(bridgeSource).toContain("['clone', '--quiet', '--no-hardlinks'");
+    const evidence = {
+      schema: 'runlogos/openlogos-candidate-e2e@1', passed: true,
+      candidate: { version: '0.14.0' },
+      scenarios: [
+        { scenario: 'create', phase: 'completed', apply_count: 1 },
+        { scenario: 'modify', phase: 'completed', apply_count: 1 },
+        { scenario: 'mixed', phase: 'completed', apply_count: 1 },
+        { scenario: 'response-lost', phase: 'completed', apply_count: 1, response_lost_injected: true },
+      ],
+    };
+    expect(validateRunLogosCandidateEvidence(evidence)).toBe(evidence);
+    expect(() => validateRunLogosCandidateEvidence({ ...evidence, passed: false })).toThrow(/通过状态/);
+    expect(() => validateRunLogosCandidateEvidence({ ...evidence, used_mock: true })).toThrow(/禁止项/);
+    expect(() => validateRunLogosCandidateEvidence({ ...evidence, scenarios: evidence.scenarios.slice(0, 3) })).toThrow(/完整覆盖/);
   });
 });

@@ -1,0 +1,376 @@
+## ADDED — spec/schema/merge-transaction.schema.json（新文件，整文件）
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openlogos/merge-transaction@1",
+  "title": "OpenLogos Merge Transaction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "transaction_id",
+    "slug",
+    "phase",
+    "classification",
+    "allowed_actions",
+    "next_action",
+    "target_set_sha256",
+    "seal_sha256",
+    "content_slots",
+    "receipt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "openlogos/merge-transaction@1"
+    },
+    "transaction_id": {
+      "type": "string",
+      "pattern": "^mtx_[A-Za-z0-9_-]+$"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "phase": {
+      "$ref": "#/$defs/phase"
+    },
+    "classification": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/classification"
+        }
+      ]
+    },
+    "allowed_actions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "next_action": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/action"
+        }
+      ]
+    },
+    "target_set_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "seal_sha256": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha256"
+        }
+      ]
+    },
+    "schema_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "contract_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "content_slots": {
+      "$ref": "#/$defs/contentSlotSummary"
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/targetIdentity"
+      }
+    },
+    "receipt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/receipt"
+        }
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "enum": [
+              "collecting",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "seal_sha256": {
+            "type": "null"
+          },
+          "receipt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "enum": [
+              "sealed",
+              "applying",
+              "completed"
+            ]
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "seal_sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "type": "null"
+          },
+          "allowed_actions": {
+            "maxItems": 0
+          },
+          "next_action": {
+            "type": "null"
+          },
+          "receipt": {
+            "$ref": "#/$defs/receipt"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "$ref": "#/$defs/classification"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "collecting",
+        "ready",
+        "sealed",
+        "applying",
+        "completed",
+        "failed"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "submit_content",
+        "seal",
+        "apply",
+        "recover",
+        "abort"
+      ]
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "invalid_phase",
+        "action_not_allowed",
+        "content_slot_missing",
+        "slot_identity_mismatch",
+        "source_hash_mismatch",
+        "before_hash_mismatch",
+        "target_set_mismatch",
+        "seal_mismatch",
+        "apply_conflict",
+        "receipt_mismatch",
+        "legacy_manifest_rejected",
+        "unsupported_contract",
+        "recovery_required",
+        "internal_failure"
+      ]
+    },
+    "contentSlotSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "submitted",
+        "missing_slot_ids"
+      ],
+      "properties": {
+        "required": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "submitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_slot_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "targetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot_id",
+        "delta_path",
+        "target_path",
+        "mode",
+        "source_sha256",
+        "before_sha256",
+        "content_sha256"
+      ],
+      "properties": {
+        "slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delta_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "CREATE",
+            "MODIFY"
+          ]
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "before_sha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha256"
+            }
+          ]
+        },
+        "content_sha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha256"
+            }
+          ]
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transaction_id",
+        "seal_sha256",
+        "target_set_sha256",
+        "closure_sha256",
+        "receipt_sha256",
+        "target_count",
+        "completed_at"
+      ],
+      "properties": {
+        "transaction_id": {
+          "type": "string",
+          "pattern": "^mtx_[A-Za-z0-9_-]+$"
+        },
+        "seal_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "target_set_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "closure_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "target_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
+import { validateRunLogosCandidateEvidence } from './lib/runlogos-candidate-evidence.mjs';
 
 export const MERGE_TRANSACTION_SMOKE_IDS = Array.from({ length: 10 }, (_, index) => `SMOKE-core-${141 + index}`);
 const EXPECTED_VERSION = '0.14.0';
@@ -37,6 +38,7 @@ const requiredFile = name => {
 };
 const candidate = requiredFile('OPENLOGOS_MERGE_TRANSACTION_TARBALL');
 const rollback = requiredFile('OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL');
+const candidateCommand = resolve(process.env.OPENLOGOS_CANDIDATE_BIN);
 const candidateBin = requiredFile('OPENLOGOS_CANDIDATE_BIN');
 const packageRoot = realpathSync(join(dirname(candidateBin), '..'));
 
@@ -97,16 +99,12 @@ await smoke('SMOKE-core-150', async () => {
   const command = process.env.OPENLOGOS_RUNLOGOS_VERIFY_COMMAND;
   if (!command) throw new Error('缺少 OPENLOGOS_RUNLOGOS_VERIFY_COMMAND');
   const result = run('/bin/sh', ['-c', command], repoRoot, {
-    ...process.env, OPENLOGOS_CANDIDATE_BIN: candidateBin,
+    ...process.env, OPENLOGOS_CANDIDATE_BIN: candidateCommand,
     OPENLOGOS_CANDIDATE_VERSION: EXPECTED_VERSION,
     OPENLOGOS_CANDIDATE_TARBALL_SHA256: hash(readFileSync(candidate)),
   });
   const output = checked(result, 'RunLogos 真实跨仓 E2E');
-  const evidence = JSON.parse(output);
-  if (evidence.status !== 'pass' || evidence.used_source_checkout || evidence.used_mock || evidence.precreated_completed) {
-    throw new Error('RunLogos evidence 未证明冻结全局 candidate 的真实 E2E');
-  }
-  return evidence;
+  return validateRunLogosCandidateEvidence(JSON.parse(output));
 });
 
 process.exit(process.exitCode ?? 0);

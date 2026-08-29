@@ -1204,12 +1204,20 @@ function evaluateBaselineClosureLocked(options: EvaluateBaselineClosureOptions):
     const ext = posix.extname(item.entry.relativePath).toLowerCase();
     const nonMarkdown = (target.category === 'api' && ['.yaml', '.yml', '.json'].includes(ext))
       || (target.category === 'database' && ext === '.sql');
+    const prototypeAsset = target.category === 'feature'
+      && key.startsWith('logos/resources/prd/2-product-design/2-page-design/')
+      && ['.html', '.css', '.svg'].includes(ext);
     if (nonMarkdown) {
       const checked = validateAndStripNonMarkdownDelta(content, target.mode as 'MODIFY' | 'CREATE', key, { root });
       if (!checked.ok) {
         violations.push(closureViolation('non_markdown_delta_invalid', `logos/changes/${slug}/${item.entry.relativePath}`,
           checked.message ?? 'non-Markdown delta 无效',
           '按精确首行协议声明 canonical target；只剥离首行后对 OpenAPI/SQL payload 做严格解析/执行预检'));
+      }
+    } else if (prototypeAsset) {
+      if (content.trim() === '') {
+        violations.push(closureViolation('create_target_incomplete', `logos/changes/${slug}/${item.entry.relativePath}`,
+          'prototype CREATE payload 为空', '写入经 UI provenance 校验的非空原型资产'));
       }
     } else if (target.mode === 'CREATE') {
       const missing = createCompletenessProblems(target.category, content);

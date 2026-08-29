@@ -78,17 +78,21 @@ function createTargets(kind) {
   }));
 }
 function submit(root, proposalDir, tx, invalidFirst = false) {
-  for (const target of tx.targets) {
+  const targets = new Map(txModule.listMergeTransactionPlanTargets(proposalDir).map(target => [target.slot_id, target]));
+  for (const slot of tx.content_slots.items) {
+    const target = targets.get(slot.slot_id);
+    if (!target) throw new Error(`缺少 slot plan target：${slot.slot_id}`);
     if (target.target_path.startsWith('spec/') || /\.(?:html|css|svg)$/.test(target.target_path)) continue;
     const title = target.target_path.includes('D07') ? 'D07 smoke' : target.target_path.includes('core-01.md') ? 'smoke requirement' : `smoke requirement ${Number(/core-(\d+)/.exec(target.target_path)?.[1] ?? 9) - 9}`;
-    const contentPath = join(root, `${target.slot_id}.content`);
+    const contentPath = join(root, ...slot.staging_path.split('/'));
+    mkdirSync(dirname(contentPath), { recursive: true });
     if (invalidFirst) {
       writeFileSync(contentPath, `## ADDED — ${title}\n`);
-      const rejected = run(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', target.slot_id, '--file', contentPath, '--format', 'json']);
+      const rejected = run(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', slot.slot_id, '--file', contentPath, '--format', 'json']);
       if (rejected.status === 0) throw new Error('validator retry 首次非法内容未被拒绝');
     }
     writeFileSync(contentPath, `# ${title}\n`);
-    json(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', target.slot_id, '--file', contentPath]);
+    json(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', slot.slot_id, '--file', contentPath]);
   }
 }
 async function execute(targets, options = {}) {

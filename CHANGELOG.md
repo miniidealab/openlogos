@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 本地候选版本升级为 `0.13.30`，提供固定 tarball 的 npm 全局安装、`0.13.29` 回滚恢复与负向 smoke；不包含任何公开发布动作。
 
+## [0.13.27] - 2026-08-16
+
+### Fixed
+
+- 场景 CREATE 完整性校验改为解析 Markdown 权威结构，兼容 `主流程` 等历史步骤标题并拒绝散文关键词误命中。
+- 校验真实有序步骤、Mermaid 时序图、异常/边界与追溯内容，并保持 change-lint/merge 失败无副作用。
+
+## [0.13.26] - 2026-08-15
+
+### Added
+
+- 多切片提案的 `TEST_SLICE_MANIFEST.json`、增量 checkpoint 与 final 全量验收协议。
+- status、next、verify 的切片验证状态、恢复动作和 1.1.0 JSON Schema。
+- 缺失或漂移清单的确定性恢复合同，以及真实安装环境下的切片 smoke 回归。
+
 ## [0.13.25] - 2026-08-14
 
 ### Added

@@ -31,18 +31,18 @@ When the user's request is vague or they ask "what should I do next":
 3. Provide a ready-to-use prompt the user can directly say
 4. Never start generating documents without confirming key information
 
-Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件并按其步骤执行）：
-- `logos/resources/prd/1-product-requirements/` 为空 → Phase 1 → **读取 `logos/skills/prd-writer/SKILL.md` 并按其步骤执行**
-- 需求存在但 `2-product-design/` 为空 → Phase 2 → **读取 `logos/skills/product-designer/SKILL.md` 并按其步骤执行**
-- 设计存在但 `3-technical-plan/1-architecture/` 为空 → Phase 3 Step 0 → **读取 `logos/skills/architecture-designer/SKILL.md` 并按其步骤执行**
-- 架构存在但 `3-technical-plan/2-scenario-implementation/` 为空 → Phase 3 Step 1 → **读取 `logos/skills/scenario-architect/SKILL.md` 并按其步骤执行**
-- 场景存在但 `logos/resources/api/` 为空 → Phase 3 Step 2 → **读取 `logos/skills/api-designer/SKILL.md` 和 `logos/skills/db-designer/SKILL.md` 并按其步骤执行**
-- API / DB 设计完成后但 `3-technical-plan/3-deployment/` 为空 → Phase 3 Step 3 → **读取 `logos/skills/deployment-designer/SKILL.md` 并按其步骤执行**
-- 部署方案存在但 `logos/resources/test/` 为空 → Phase 3 Step 4a → **读取 `logos/skills/test-writer/SKILL.md` 并按其步骤执行**（如需部署需同时设计 smoke）
-- 测试用例存在但 `logos/resources/scenario/` 为空 → Phase 3 Step 4b → **读取 `logos/skills/test-orchestrator/SKILL.md` 并按其步骤执行**（仅 API 项目）
-- 编排测试存在但 `logos/resources/implementation/` 为空 → Phase 3 Step 5 → **读取 `logos/skills/code-implementor/SKILL.md` 并按其步骤执行**（完成后可用 `logos/skills/code-reviewer/SKILL.md` 进行代码审查）
-- 代码已生成但 `logos/resources/verify/acceptance-report.md` 不存在 → Phase 3 Step 6（运行测试后 `openlogos verify`）
-- 部署完成但 `smoke-report.md` / `SMOKE_PASS` 缺失 → Phase 3 Step 8（`openlogos smoke`，人类确认点）
+Phase 检测逻辑：
+- `logos/resources/prd/1-product-requirements/` 为空 → 建议 Phase 1（prd-writer）
+- 需求存在但 `2-product-design/` 为空 → 建议 Phase 2（product-designer）
+- 设计存在但 `3-technical-plan/1-architecture/` 为空 → 建议 Phase 3 Step 0（architecture-designer）
+- 架构存在但 `3-technical-plan/2-scenario-implementation/` 为空 → 建议 Phase 3 Step 1（scenario-architect）
+- 场景存在但 `logos/resources/api/` 为空 → 建议 Phase 3 Step 2（api-designer + db-designer）
+- API / DB 设计完成后但 `3-technical-plan/3-deployment/` 为空 → 建议 Phase 3 Step 3（deployment-designer）
+- 部署方案存在但 `logos/resources/test/` 为空 → 建议 Phase 3 Step 4a（test-writer；如需部署需同时设计 smoke）
+- 测试用例存在但 `logos/resources/scenario/` 为空 → 建议 Phase 3 Step 4b（test-orchestrator，仅 API 项目）
+- 编排测试存在但 `logos/resources/implementation/` 为空 → 建议 Phase 3 Step 5（code-implementor）
+- 代码已生成但 `logos/resources/verify/acceptance-report.md` 不存在 → 建议 Phase 3 Step 6（运行测试后 `openlogos verify`）
+- 部署完成但 `smoke-report.md` / `SMOKE_PASS` 缺失 → 建议 Phase 3 Step 8（`openlogos smoke`）
 
 文件命名规范（模块前缀）：
 - 所有设计文档遵循 `<module>-<序号>-<类型>.md` 格式，初始项目默认使用 `core-` 前缀
@@ -70,27 +70,6 @@ Step 5 分批执行提示词（可直接复用）：
 
 **目的**：避免工具声称已保存、但实际未落盘或路径错误导致内容「丢失」而不自知。
 
-
-## Active Skills
-**重要**：当你识别到当前 Phase 后，必须先读取对应的 Skill 文件（使用上方 Phase 检测逻辑中指定的路径），按 Skill 中定义的步骤逐步执行。不要跳过 Skill 文件直接生成内容。
-
-- `logos/skills/project-init/SKILL.md` — 项目初始化与结构搭建
-- `logos/skills/prd-writer/SKILL.md` — 需求文档编写
-- `logos/skills/product-designer/SKILL.md` — 产品设计与原型
-- `logos/skills/ui-ux-pro-max/SKILL.md` — UI/UX 设计智能（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。Phase 2 处理 GUI 类产品（Web / Mobile / Desktop）设计时由 product-designer 自动调用。
-- `logos/skills/architecture-designer/SKILL.md` — 技术架构与技术选型
-- `logos/skills/scenario-architect/SKILL.md` — 业务场景建模与时序图
-- `logos/skills/api-designer/SKILL.md` — OpenAPI 规格设计
-- `logos/skills/db-designer/SKILL.md` — 数据库 Schema 设计
-- `logos/skills/deployment-designer/SKILL.md` — 部署方案与 smoke 策略设计（Step 3）
-- `logos/skills/test-writer/SKILL.md` — 单元测试 + 场景测试用例设计（Step 4a）
-- `logos/skills/test-orchestrator/SKILL.md` — API 编排测试设计（Step 4b，仅 API 项目）
-- `logos/skills/code-implementor/SKILL.md` — 基于规格链的代码与测试代码生成（Step 5）
-- `logos/skills/code-reviewer/SKILL.md` — 代码审查与规范检查
-- `logos/skills/change-writer/SKILL.md` — 变更提案编写与影响分析
-- `logos/skills/slice-planner/SKILL.md` — merge 后 [code] 切片规划：六维打分 + 垂直/横向判别器 + 删后续证伪门（launched 变更下 [code] 切片的唯一事实源）
-- `logos/skills/deployment-executor/SKILL.md` — verify 通过后的人类确认部署执行
-- `logos/skills/merge-executor/SKILL.md` — 通过 MERGE_PROMPT.md 执行 Delta 合并
 
 ## ⛔ 变更管理（强制执行）
 

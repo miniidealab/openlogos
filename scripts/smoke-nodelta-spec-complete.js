@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSyn
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { seedInstalledMergeContract } from './lib/seed-installed-merge-contract.mjs';
 
 const repoRoot = process.cwd();
 const resultPath = resolve(repoRoot, process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl');
@@ -63,6 +64,7 @@ function scaffoldLaunchedProject(root, slug, proposalOverview) {
       sandbox_mode: 'off',
     },
   }, null, 2));
+  seedInstalledMergeContract(root, { candidateBin: process.env.OPENLOGOS_BIN, fallbackRoot: repoRoot });
   writeFileSync(join(root, 'logos/logos-project.yaml'), [
     'project:',
     '  name: nodelta-smoke-fixture',
@@ -125,7 +127,7 @@ function noDeltaMergeReachesPlanSlices() {
     const markerPath = join(root, 'logos/changes', slug, 'SPEC_MERGED');
     if (!existsSync(markerPath)) throw new Error('SPEC_MERGED was not written');
     const marker = JSON.parse(readFileSync(markerPath, 'utf-8'));
-    if (marker.type !== 'no_delta_spec_complete') {
+    if (marker.type !== 'merge_transaction_complete' || !marker.transaction_id || !marker.receipt_sha256) {
       throw new Error(`unexpected marker: ${JSON.stringify(marker)}`);
     }
 

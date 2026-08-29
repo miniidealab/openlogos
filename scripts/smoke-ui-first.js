@@ -13,10 +13,17 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { importInstalledPackageModule, seedInstalledMergeContract } from './lib/seed-installed-merge-contract.mjs';
 
 const repoRoot = process.cwd();
 const resultPath = resolve(repoRoot, process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl');
 const sha = (s) => createHash('sha256').update(s).digest('hex');
+const deployedCandidateBin = process.env.OPENLOGOS_BIN
+  || spawnSync('which', ['openlogos'], { encoding: 'utf-8' }).stdout.trim();
+const installedUiProvenance = await importInstalledPackageModule('dist/lib/ui-provenance.js', {
+  candidateBin: deployedCandidateBin,
+  fallbackRoot: repoRoot,
+});
 
 let smokeFailed = false;
 function writeSmoke(id, status, error) {
@@ -44,6 +51,7 @@ function runCli(root, args) {
 function scaffold(root, { gui = false } = {}) {
   mkdirSync(join(root, 'logos', 'changes'), { recursive: true });
   writeFileSync(join(root, 'logos', 'logos.config.json'), JSON.stringify({ name: 't', locale: 'zh', documents: {} }, null, 2));
+  seedInstalledMergeContract(root, { candidateBin: deployedCandidateBin, fallbackRoot: repoRoot });
   const modLine = gui
     ? 'modules:\n  - id: core\n    name: core\n    lifecycle: launched\n    product_type: web\n'
     : 'modules:\n  - id: core\n    name: core\n    lifecycle: launched\n';
@@ -78,18 +86,37 @@ try {
     const pdir = join(root, 'logos', 'changes', slug);
     mkdirSync(join(pdir, 'deltas', 'prd', '2-product-design', '2-page-design'), { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core' }));
+    const materialTargets = [
+      { category: 'requirement', mode: 'MODIFY', delta: 'deltas/prd/1-product-requirements/core-01.md', target: 'logos/resources/prd/1-product-requirements/core-01.md' },
+      { category: 'feature', mode: 'CREATE', delta: 'deltas/prd/2-product-design/2-page-design/core-01-home.html', target: 'logos/resources/prd/2-product-design/2-page-design/core-01-home.html' },
+      { category: 'scenario', mode: 'MODIFY', delta: 'deltas/prd/3-technical-plan/2-scenario-implementation/core-S09.md', target: 'logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09.md' },
+      { category: 'test', mode: 'MODIFY', delta: 'deltas/test/core-S09-test-cases.md', target: 'logos/resources/test/core-S09-test-cases.md' },
+    ];
+    const materialYaml = materialTargets.map(target => `    - category: ${target.category}\n      scenario_ids: [S09]\n      mode: ${target.mode}\n      delta_path: ${target.delta}\n      reason: 验证原型 transaction 落盘\n      evidence: [${target.mode === 'CREATE' ? 'target_absent' : 'target_exists'}]\n      missing_evidence: []`).join('\n');
+    const skipYaml = ['api', 'architecture', 'database', 'deployment', 'orchestration', 'smoke'].map(category => `    - category: ${category}\n      scenario_ids: [S09]\n      mode: SKIP\n      delta_path: null\n      reason: 本原型 smoke 不触及 ${category}\n      evidence: [scenario:S09]\n      missing_evidence: []`).join('\n');
     writeFileSync(join(pdir, 'proposal.md'),
-      `# ${slug}\n\n## UI/UX 变更声明\n\n\`\`\`yaml\nui_impact: true\ndesign_system_mode: generated\npages:\n  - id: home\n    prototype: core-01-home.html\n    description: home\n\`\`\`\n`);
+      `# ${slug}\n\n> module: core\n\n## UI/UX 变更声明\n\n\`\`\`yaml\nui_impact: true\ndesign_system_mode: generated\npages:\n  - id: home\n    prototype: core-01-home.html\n    description: home\n\`\`\`\n\n## 部署影响\n\n- 是否需要部署：否\n- 部署原因：隔离 smoke fixture\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 基线闭包计划\n\n\`\`\`yaml\nbaseline_closure:\n  policy: on-touch-v1\n  schema_version: 1\n  unit: canonical-merge-target-path\n  delta_cardinality: exactly-one-per-non-skip-target\n  effective_view: merged-resources-plus-current-change-deltas\n  ambiguity: block-before-existing-plan-exit\n  standalone_baseline_required: false\n  jit_confirmation: disabled\n  touched_scenario_ids: [S09]\n  targets:\n${materialYaml}\n${skipYaml}\n\`\`\`\n`);
+    writeFileSync(join(pdir, 'tasks.md'), `# 任务\n\n## [delta] 规格变更\n\n${materialTargets.map(target => `- [x] [${target.mode}] \`${target.delta}\``).join('\n')}\n\n## [code] 代码实现\n`);
+    for (const target of materialTargets.filter(item => item.mode === 'MODIFY')) {
+      mkdirSync(dirname(join(root, target.target)), { recursive: true });
+      mkdirSync(dirname(join(pdir, target.delta)), { recursive: true });
+      writeFileSync(join(root, target.target), '# baseline\n');
+      writeFileSync(join(pdir, target.delta), '## ADDED — ui smoke\n\n正文\n');
+    }
     const proto = join(pdir, 'deltas', 'prd', '2-product-design', '2-page-design', 'core-01-home.html');
-    writeFileSync(proto, '<html>HOME</html>');
+    const prototypeContent = '<html>HOME</html>';
+    writeFileSync(proto, prototypeContent);
     writeFileSync(join(pdir, 'PLAN_APPROVED'), JSON.stringify({
-      ui_prototype_rendered: true, pages: ['core-01-home.html'], hashes: { 'core-01-home.html': sha('<html>HOME</html>') },
+      ui_prototype_rendered: true, pages: ['core-01-home.html'], hashes: { 'core-01-home.html': sha(prototypeContent) },
     }));
-    const res = runCli(root, ['merge', slug]);
+    const committed = installedUiProvenance.commitVerifiedPrototypes(pdir, root);
     const landed = join(root, 'logos', 'resources', 'prd', '2-product-design', '2-page-design', 'core-01-home.html');
-    if (res.status !== 0) throw new Error(`merge failed: ${res.stderr || res.stdout}`);
+    if (!committed.ok || committed.advisory || committed.cls !== 'full') {
+      throw new Error(`prototype commit failed: ${JSON.stringify(committed)}`);
+    }
+    if (committed.committed.join(',') !== 'core-01-home.html') throw new Error('prototype committed set mismatch');
     if (!existsSync(landed)) throw new Error('prototype not landed in resources');
-    if (sha(readFileSync(landed, 'utf-8')) !== sha('<html>HOME</html>')) throw new Error('landed hash mismatch');
+    if (sha(readFileSync(landed, 'utf-8')) !== sha(prototypeContent)) throw new Error('landed hash mismatch');
     writeSmoke('SMOKE-core-39', 'pass');
   });
 } catch (e) { writeSmoke('SMOKE-core-39', 'fail', e); }

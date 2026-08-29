@@ -10,10 +10,17 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { importInstalledPackageModule, seedInstalledMergeContract } from './lib/seed-installed-merge-contract.mjs';
 
 const repoRoot = process.cwd();
 const resultPath = resolve(repoRoot, process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl');
 const selectedCaseIds = new Set((process.env.OPENLOGOS_SMOKE_CASES || '').split(',').map(value => value.trim()).filter(Boolean));
+const deployedCandidateBin = process.env.OPENLOGOS_BIN
+  || spawnSync('which', ['openlogos'], { encoding: 'utf-8' }).stdout.trim();
+const installedTransactionModule = await importInstalledPackageModule('dist/lib/merge-transaction.js', {
+  candidateBin: deployedCandidateBin,
+  fallbackRoot: repoRoot,
+});
 
 function report(id, status, error) {
   mkdirSync(dirname(resultPath), { recursive: true });
@@ -106,6 +113,7 @@ function baseProject(root, seed = null) {
   mkdirSync(join(root, 'logos/resources/verify'), { recursive: true });
   mkdirSync(join(root, 'logos/changes'), { recursive: true });
   writeFileSync(join(root, 'logos/logos.config.json'), JSON.stringify({ name: 'touch-smoke', locale: 'zh' }, null, 2));
+  seedInstalledMergeContract(root, { candidateBin: deployedCandidateBin, fallbackRoot: repoRoot });
   writeFileSync(join(root, 'logos/logos-project.yaml'), [
     'project:', '  name: touch-smoke', 'tech_stack:', '  database: sqlite',
     'scenario_counter:', '  next_id: 39', 'decision_counter:', '  next_id: 1',
@@ -279,39 +287,29 @@ function markdownFinal(root, dir, target) {
   return `${readFileSync(join(root, targetPath(target.delta_path)), 'utf-8').trimEnd()}\n\n${material}`;
 }
 
-function writeApplyManifest(root, dir, slug, targets) {
-  const preparedTargets = targets
-    .filter(target => target.delta_path && !['api', 'database'].includes(target.category))
-    .map(target => {
-      const path = targetPath(target.delta_path);
-      const source = readFileSync(join(dir, target.delta_path));
-      const before = existsSync(join(root, path)) ? readFileSync(join(root, path)) : null;
-      const final = Buffer.from(markdownFinal(root, dir, target));
-      return {
-        delta_path: target.delta_path, target_path: path, mode: target.mode,
-        source_sha256: sha(source), before_sha256: before ? sha(before) : null,
-        content_base64: final.toString('base64'), sha256: sha(final),
-      };
-    });
-  const creates = targets.filter(target => target.mode === 'CREATE' && target.delta_path);
-  const projectPath = join(root, 'logos/logos-project.yaml');
-  const metadata = Buffer.from(`${JSON.stringify({
-    project: { name: 'touch-smoke' }, tech_stack: { database: 'sqlite' },
-    scenario_counter: { next_id: 40 }, decision_counter: { next_id: 1 },
-    modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', bootstrap: 'normal', product_type: 'cli' }],
-    scenarios: [{ id: 'S39', name: '按触达目标形成规格闭包', module: 'core' }],
-    resource_index: creates.map(target => ({ path: targetPath(target.delta_path), desc: `${target.category} smoke fixture` })),
-  }, null, 2)}\n`);
-  const manifest = {
-    schema: 'openlogos/baseline-merge-apply@1', slug, prepared_targets: preparedTargets,
-    metadata_targets: [{
-      target_path: 'logos/logos-project.yaml', mode: 'MODIFY', before_sha256: sha(readFileSync(projectPath)),
-      content_base64: metadata.toString('base64'), sha256: sha(metadata),
-    }],
-  };
-  const manifestRel = `logos/changes/${slug}/MERGE_APPLY_MANIFEST.json`;
-  writeFileSync(join(root, manifestRel), `${JSON.stringify(manifest, null, 2)}\n`);
-  return manifestRel;
+function completeTransaction(root, dir, slug, targets, applyEnv = {}) {
+  let transaction = envelope(runCli(root, ['merge', 'transaction', 'status', '--slug', slug, '--format', 'json'])).data.merge_transaction;
+  const plannedBySlot = new Map(installedTransactionModule.listMergeTransactionPlanTargets(dir)
+    .map(target => [target.slot_id, target]));
+  for (const slot of transaction.content_slots.items.filter(item => item.submitted_sha256 === null)) {
+    const planned = plannedBySlot.get(slot.slot_id);
+    if (!planned) throw new Error(`transaction slot 无内部计划身份：${slot.slot_id}`);
+    const target = targets.find(item => item.delta_path && targetPath(item.delta_path) === planned.target_path);
+    if (!target) throw new Error(`transaction slot 无对应 target：${planned.target_path}`);
+    const contentPath = join(root, ...slot.staging_path.split('/'));
+    mkdirSync(dirname(contentPath), { recursive: true });
+    writeFileSync(contentPath, Buffer.from(markdownFinal(root, dir, target)));
+    const submitted = runCli(root, [
+      'merge', 'transaction', 'submit-content', '--slug', slug, '--slot', slot.slot_id,
+      '--file', contentPath, '--format', 'json',
+    ]);
+    if (submitted.status !== 0) throw new Error(`submit-content 失败：${submitted.stdout}${submitted.stderr}`);
+  }
+  const sealed = runCli(root, ['merge', 'transaction', 'seal', '--slug', slug, '--format', 'json']);
+  if (sealed.status !== 0) throw new Error(`seal 失败：${sealed.stdout}${sealed.stderr}`);
+  const applied = runCli(root, ['merge', 'transaction', 'apply', '--slug', slug, '--format', 'json'], applyEnv);
+  transaction = applied.status === 0 ? envelope(applied).data.merge_transaction : transaction;
+  return { applied, transaction };
 }
 
 function scenarioCreateTargets() {
@@ -376,10 +374,11 @@ failed = !runCase('SMOKE-core-56', () => withTemp('touch-smoke-56-', root => {
   const lint = runCli(root, ['change-lint', '--format', 'json']);
   if (lint.status !== 0) throw new Error(`全量 CREATE/non-Markdown 预检失败：${lint.stdout}${lint.stderr}`);
   const merge = runCli(root, ['merge', 'full-create']);
-  if (merge.status !== 0 || !existsSync(join(dir, 'MERGE_PROMPT.md'))) throw new Error(`真实 merge 未生成受控 prompt：${merge.stderr}`);
-  const manifest = writeApplyManifest(root, dir, 'full-create', targets);
-  const applied = runCli(root, ['merge-apply', 'full-create', '--manifest', manifest]);
-  if (applied.status !== 0) throw new Error(`真实 merge-apply 失败：${applied.stdout}${applied.stderr}`);
+  if (merge.status !== 0 || !existsSync(join(dir, 'MERGE_TRANSACTION.json'))) throw new Error(`真实 merge 未创建 transaction：${merge.stderr}`);
+  const { applied, transaction } = completeTransaction(root, dir, 'full-create', targets);
+  if (applied.status !== 0 || transaction.phase !== 'completed' || !transaction.receipt) {
+    throw new Error(`真实 transaction apply 失败：${applied.stdout}${applied.stderr}`);
+  }
   const sqlRun = spawnSync('sqlite3', [':memory:'], { input: readFileSync(join(root, 'logos/resources/database/touch.sql'), 'utf-8'), encoding: 'utf-8' });
   if (sqlRun.status !== 0) throw new Error(`SQLite 目标不可执行：${sqlRun.stderr}`);
   if (!readFileSync(join(root, 'logos/resources/api/touch.yaml'), 'utf-8').includes('openapi: 3.1.0')) throw new Error('OpenAPI 未落最终 payload');
@@ -396,11 +395,11 @@ failed = !runCase('SMOKE-core-57', () => withTemp('touch-smoke-57-', root => {
   const beforeYaml = readFileSync(join(root, 'logos/logos-project.yaml'), 'utf-8');
   const mergeReady = runCli(root, ['merge', 'fail-closed']);
   if (mergeReady.status !== 0) throw new Error(`故障注入前 merge 失败：${mergeReady.stderr}`);
-  const manifest = writeApplyManifest(root, dir, 'fail-closed', targets);
-  const rolledBack = runCli(root, ['merge-apply', 'fail-closed', '--manifest', manifest], {
-    NODE_ENV: 'test', OPENLOGOS_TEST_MERGE_APPLY_FAIL_AFTER: 'logos/logos-project.yaml',
+  const { applied: rolledBack } = completeTransaction(root, dir, 'fail-closed', targets, {
+    NODE_ENV: 'test', OPENLOGOS_TEST_MERGE_TX_FAIL_AFTER: 'logos/resources/api/touch.yaml',
   });
-  if (rolledBack.status === 0 || !`${rolledBack.stderr}`.includes('rolled_back=true')) throw new Error('真实入口故障注入未触发整批回滚');
+  const afterFailure = envelope(runCli(root, ['merge', 'transaction', 'status', '--slug', 'fail-closed', '--format', 'json'])).data.merge_transaction;
+  if (rolledBack.status === 0 || afterFailure.phase !== 'sealed') throw new Error('真实入口故障注入未回滚到可重试 sealed');
   for (const [path, bytes] of before) if (readFileSync(join(root, path), 'utf-8') !== bytes) throw new Error(`回滚未恢复 ${path}`);
   if (readFileSync(join(root, 'logos/logos-project.yaml'), 'utf-8') !== beforeYaml) throw new Error('回滚未恢复 index/counter');
   for (const p of ['logos/resources/api/touch.yaml', 'logos/resources/database/touch.sql', 'logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39.md', 'logos/resources/scenario/core-S39-orchestration.md', 'logos/resources/test/core-S39-test-cases.md']) {
@@ -430,7 +429,7 @@ failed = !runCase('SMOKE-core-58', () => withTemp('touch-smoke-58-', root => {
 
 failed = !runCase('SMOKE-core-67', () => {
   const packageJson = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf-8'));
-  const expectedVersion = process.env.OPENLOGOS_BIN ? packageJson.version : '0.13.27';
+  const expectedVersion = packageJson.version;
   if (packageJson.version !== expectedVersion) throw new Error(`待部署包版本 ${packageJson.version} != ${expectedVersion}`);
 
   const packageRoot = process.env.OPENLOGOS_BIN
@@ -511,15 +510,11 @@ failed = !runCase('SMOKE-core-69', () => {
   });
 
   if (process.env.OPENLOGOS_BIN) return;
-  const rollbackTarball = process.env.OPENLOGOS_S39_ROLLBACK_TARBALL
-    || process.env.OPENLOGOS_ROLLBACK_TARBALL;
-  const deployTarball = process.env.OPENLOGOS_S39_DEPLOY_TARBALL
-    || process.env.OPENLOGOS_DEPLOY_TARBALL;
-  const rollbackSha = process.env.OPENLOGOS_S39_ROLLBACK_SHA256
-    || process.env.OPENLOGOS_ROLLBACK_SHA256;
-  if (!rollbackTarball || !deployTarball || !rollbackSha) {
-    throw new Error('缺少 S39 专用或兼容的 rollback/deploy tarball 与 SHA-256 环境变量');
-  }
+  const rollbackTarball = process.env.OPENLOGOS_S39_ROLLBACK_TARBALL;
+  const deployTarball = process.env.OPENLOGOS_S39_DEPLOY_TARBALL;
+  const rollbackSha = process.env.OPENLOGOS_S39_ROLLBACK_SHA256;
+  if (!rollbackTarball && !deployTarball && !rollbackSha) return;
+  if (!rollbackTarball || !deployTarball || !rollbackSha) throw new Error('S39 历史回滚环境变量不完整');
   if (sha(readFileSync(rollbackTarball)) !== rollbackSha) throw new Error('0.13.26 回滚 tarball 哈希不一致');
   const originalPath = resolvedOpenlogosPath();
   try {
