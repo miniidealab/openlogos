@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SMOKE-core-141..150 — OpenLogos 0.14.0 本机全局候选与 RunLogos 接缝。
+ * SMOKE-core-141..156 — OpenLogos 0.14.0 本机全局候选与消费者合同接缝。
  * 只消费部署阶段冻结的本地制品/绝对命令，不执行 publish、Git、Release 或远程部署。
  */
 import { createHash } from 'node:crypto';
@@ -9,19 +9,26 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 
 export const MERGE_TRANSACTION_SMOKE_IDS = Array.from({ length: 10 }, (_, index) => `SMOKE-core-${141 + index}`);
+export const MERGE_TRANSACTION_CONSUMER_SMOKE_IDS = Array.from({ length: 6 }, (_, index) => `SMOKE-core-${151 + index}`);
 const EXPECTED_VERSION = '0.14.0';
 const repoRoot = process.cwd();
 const resultPath = resolve(repoRoot, process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl');
 
 if (process.argv.includes('--self-test')) {
   console.log(JSON.stringify({
-    ids: MERGE_TRANSACTION_SMOKE_IDS,
+    ids: [...MERGE_TRANSACTION_SMOKE_IDS, ...MERGE_TRANSACTION_CONSUMER_SMOKE_IDS],
     candidate_version: EXPECTED_VERSION,
     required_env: [
       'OPENLOGOS_MERGE_TRANSACTION_TARBALL', 'OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL',
       'OPENLOGOS_CANDIDATE_BIN', 'OPENLOGOS_RUNLOGOS_VERIFY_COMMAND',
+      'OPENLOGOS_RUNLOGOS_CONSUMER_COMMAND', 'OPENLOGOS_STACKED_CHANGE_EVIDENCE',
     ],
-    required_paths: ['spec/schema/merge-transaction.schema.json', 'skills/merge-executor/SKILL.md', 'skills/merge-executor/SKILL.en.md'],
+    required_paths: [
+      'spec/schema/merge-transaction.schema.json', 'spec/schema/status.schema.json', 'spec/schema/next.schema.json',
+      'skills/merge-executor/SKILL.md', 'skills/merge-executor/SKILL.en.md',
+      'dist/lib/merge-transaction-semantic.js', 'dist/lib/merge-transaction-candidate.js',
+      'spec/golden/merge-transaction-completed.json',
+    ],
     public_release_commands: [],
   }));
   process.exit(0);
@@ -39,6 +46,12 @@ const candidate = requiredFile('OPENLOGOS_MERGE_TRANSACTION_TARBALL');
 const rollback = requiredFile('OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL');
 const candidateBin = requiredFile('OPENLOGOS_CANDIDATE_BIN');
 const packageRoot = realpathSync(join(dirname(candidateBin), '..'));
+const packagedPaths = [
+  'spec/schema/merge-transaction.schema.json', 'spec/schema/status.schema.json', 'spec/schema/next.schema.json',
+  'skills/merge-executor/SKILL.md', 'skills/merge-executor/SKILL.en.md',
+  'dist/lib/merge-transaction-semantic.js', 'dist/lib/merge-transaction-candidate.js',
+  'spec/golden/merge-transaction-completed.json',
+];
 
 function run(command, args, cwd = repoRoot, env = process.env) {
   return spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 600_000 });
@@ -65,16 +78,32 @@ async function smoke(id, action) {
 
 const version = () => checked(run(candidateBin, ['--version']), 'openlogos --version');
 const transactionHelp = () => readFileSync(join(packageRoot, 'dist/index.js'), 'utf8').includes("args[1] === 'transaction'");
+const candidateFacts = () => ({
+  schema: 'openlogos/merge-transaction-candidate@1',
+  command_path: candidateBin,
+  cli_version: version(),
+  candidate_tarball_sha256: hash(readFileSync(candidate)),
+  merge_transaction_schema_sha256: hash(readFileSync(join(packageRoot, 'spec/schema/merge-transaction.schema.json'))),
+  status_schema_sha256: hash(readFileSync(join(packageRoot, 'spec/schema/status.schema.json'))),
+  next_schema_sha256: hash(readFileSync(join(packageRoot, 'spec/schema/next.schema.json'))),
+  contract_sha256: hash(readFileSync(join(packageRoot, 'spec/cli-json-output.md'))),
+  semantic_validator: 'openlogos/merge-transaction-semantic@1',
+});
+function assertSameFacts(actual, label) {
+  const expected = candidateFacts();
+  for (const [key, value] of Object.entries(expected)) {
+    if (actual?.[key] !== value) throw new Error(`${label} candidate fact 漂移：${key}`);
+  }
+}
 
 await smoke('SMOKE-core-141', async () => {
   if (version() !== EXPECTED_VERSION) throw new Error(`候选版本不是 ${EXPECTED_VERSION}`);
   return { candidate_bin: candidateBin, version: EXPECTED_VERSION };
 });
 await smoke('SMOKE-core-142', async () => {
-  const paths = ['spec/schema/merge-transaction.schema.json', 'skills/merge-executor/SKILL.md', 'skills/merge-executor/SKILL.en.md'];
-  const hashes = Object.fromEntries(paths.map(path => [path, hash(readFileSync(join(packageRoot, path)))]));
+  const hashes = Object.fromEntries(packagedPaths.map(path => [path, hash(readFileSync(join(packageRoot, path)))]));
   if (!transactionHelp()) throw new Error('安装态缺 merge transaction 命令入口');
-  return { paths: hashes, tarball_sha256: hash(readFileSync(candidate)) };
+  return { paths: hashes, candidate: candidateFacts() };
 });
 
 // 143～149 必须由部署阶段生成的真实 CLI fixture harness 执行；它接收冻结的全局命令，
@@ -92,6 +121,67 @@ for (const id of MERGE_TRANSACTION_SMOKE_IDS.slice(2, 9)) {
     return result;
   });
 }
+
+for (const id of MERGE_TRANSACTION_CONSUMER_SMOKE_IDS.slice(0, 4)) {
+  await smoke(id, async () => {
+    const harness = process.env.OPENLOGOS_MERGE_TRANSACTION_FIXTURE_HARNESS
+      ? requiredFile('OPENLOGOS_MERGE_TRANSACTION_FIXTURE_HARNESS')
+      : realpathSync(join(repoRoot, 'scripts/merge-transaction-smoke-fixtures.js'));
+    const output = checked(run(process.execPath, [harness, '--case', id, '--openlogos', candidateBin], repoRoot, {
+      ...process.env, OPENLOGOS_CANDIDATE_TARBALL: candidate, OPENLOGOS_ROLLBACK_TARBALL: rollback,
+    }), `${id} 消费者合同 fixture`);
+    const result = JSON.parse(output);
+    if (result.id !== id || result.status !== 'pass' || result.precreated_completed === true) throw new Error(`${id} fixture 证据无效`);
+    return result;
+  });
+}
+
+await smoke('SMOKE-core-155', async () => {
+  const command = process.env.OPENLOGOS_RUNLOGOS_CONSUMER_COMMAND;
+  if (!command) throw new Error('缺少 OPENLOGOS_RUNLOGOS_CONSUMER_COMMAND');
+  const facts = candidateFacts();
+  const output = checked(run('/bin/sh', ['-c', command], repoRoot, {
+    ...process.env,
+    OPENLOGOS_CANDIDATE_FACTS: JSON.stringify(facts),
+  }), 'RunLogos 修正消费者合同 E2E');
+  const evidence = JSON.parse(output);
+  assertSameFacts(evidence.candidate, 'RunLogos');
+  if (evidence.status !== 'pass' || evidence.used_source_checkout || evidence.used_mock
+    || evidence.read_private_transaction !== false || evidence.derived_commit_paths !== false
+    || !/^sha256:[a-f0-9]{64}$/.test(evidence.receipt_sha256 ?? '')) {
+    throw new Error('RunLogos evidence 未证明只消费公共 slot/action/receipt 合同');
+  }
+  return {
+    candidate: facts,
+    receipt_sha256: evidence.receipt_sha256,
+    public_contract_only: true,
+  };
+});
+
+await smoke('SMOKE-core-156', async () => {
+  const evidencePath = requiredFile('OPENLOGOS_STACKED_CHANGE_EVIDENCE');
+  const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
+  const expectedNewIds = MERGE_TRANSACTION_CONSUMER_SMOKE_IDS;
+  if (evidence.old?.smoke_id !== 'SMOKE-core-150'
+    || JSON.stringify(evidence.followup?.smoke_ids) !== JSON.stringify(expectedNewIds)
+    || !evidence.old?.slug || !evidence.followup?.slug || evidence.old.slug === evidence.followup.slug) {
+    throw new Error('stacked slug 的 smoke ID 或 slug 归属无效');
+  }
+  for (const side of ['old', 'followup']) {
+    const item = evidence[side];
+    for (const field of ['guard_path', 'marker_path']) {
+      if (!item?.[field] || !existsSync(realpathSync(resolve(item[field])))) throw new Error(`${side}.${field} 不存在`);
+    }
+    if (item.candidate_tarball_sha256 !== candidateFacts().candidate_tarball_sha256) throw new Error(`${side} candidate hash 漂移`);
+  }
+  return {
+    old_slug: evidence.old.slug,
+    followup_slug: evidence.followup.slug,
+    old_smoke_id: evidence.old.smoke_id,
+    followup_smoke_ids: evidence.followup.smoke_ids,
+    evidence_only: true,
+  };
+});
 
 await smoke('SMOKE-core-150', async () => {
   const command = process.env.OPENLOGOS_RUNLOGOS_VERIFY_COMMAND;

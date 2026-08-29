@@ -83,6 +83,10 @@ function environmentFor(runner) {
   if (!artifacts) return env;
   if (artifacts.tarball) env.OPENLOGOS_TARBALL = artifacts.tarball;
   if (artifacts.previousTarball) env.OPENLOGOS_PREVIOUS_TARBALL = artifacts.previousTarball;
+  if (runner === 'scripts/smoke-merge-transaction-candidate.js') {
+    if (artifacts.tarball) env.OPENLOGOS_MERGE_TRANSACTION_TARBALL = artifacts.tarball;
+    if (artifacts.previousTarball) env.OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL = artifacts.previousTarball;
+  }
   return env;
 }
 

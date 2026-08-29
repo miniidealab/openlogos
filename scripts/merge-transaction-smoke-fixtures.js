@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** 安装态 merge transaction fixture harness；仅写系统临时目录。 */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -12,7 +13,7 @@ const value = name => {
 };
 const id = value('--case');
 const cli = value('--openlogos');
-if (!/^SMOKE-core-14[3-9]$/.test(id ?? '') || !cli) throw new Error('需要 --case SMOKE-core-143..149 --openlogos <absolute>');
+if (!/^(?:SMOKE-core-14[3-9]|SMOKE-core-15[1-4])$/.test(id ?? '') || !cli) throw new Error('需要 --case SMOKE-core-143..149/151..154 --openlogos <absolute>');
 const candidate = realpathSync(resolve(cli));
 const packageRoot = realpathSync(join(dirname(candidate), '..'));
 const assetRoot = existsSync(join(packageRoot, 'spec')) ? packageRoot : realpathSync(join(packageRoot, '..'));
@@ -34,6 +35,7 @@ function json(root, args, env = {}) {
   if (result.status !== 0) throw new Error(`${args.join(' ')}：${result.stderr}`);
   return JSON.parse(result.stdout).data.merge_transaction;
 }
+const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 function targetYaml(target) {
   return [
     `    - category: ${target.category}`,
@@ -74,33 +76,54 @@ function createTargets(kind) {
     category: 'requirement', mode: 'CREATE',
     delta: `deltas/prd/1-product-requirements/core-${String(index + 10).padStart(2, '0')}.md`,
     path: `logos/resources/prd/1-product-requirements/core-${String(index + 10).padStart(2, '0')}.md`,
-    title: `smoke requirement ${index + 1}`,
+    title: 'smoke requirement',
   }));
 }
-function submit(root, proposalDir, tx, invalidFirst = false) {
-  for (const target of tx.targets) {
-    if (target.target_path.startsWith('spec/') || /\.(?:html|css|svg)$/.test(target.target_path)) continue;
-    const title = target.target_path.includes('D07') ? 'D07 smoke' : target.target_path.includes('core-01.md') ? 'smoke requirement' : `smoke requirement ${Number(/core-(\d+)/.exec(target.target_path)?.[1] ?? 9) - 9}`;
-    const contentPath = join(root, `${target.slot_id}.content`);
+function submit(root, proposalDir, tx, targets, invalidFirst = false, stagingNegatives = false) {
+  const title = targets.some(target => target.path.includes('D07')) ? 'D07 smoke' : 'smoke requirement';
+  for (const descriptor of tx.content_slots.items) {
+    const contentPath = join(root, ...descriptor.staging_path.split('/'));
+    mkdirSync(dirname(contentPath), { recursive: true });
+    const atomicWrite = content => {
+      const temp = join(dirname(contentPath), `.content.${process.pid}.tmp`);
+      writeFileSync(temp, content);
+      renameSync(temp, contentPath);
+    };
+    if (stagingNegatives) {
+      const wrong = join(root, `${descriptor.slot_id}.wrong`);
+      writeFileSync(wrong, `# ${title}\n`);
+      const rejected = run(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', descriptor.slot_id, '--file', wrong, '--format', 'json']);
+      if (rejected.status === 0) throw new Error('非声明 staging path 未被拒绝');
+      const outside = join(root, `${descriptor.slot_id}.outside`);
+      writeFileSync(outside, `# ${title}\n`);
+      symlinkSync(outside, contentPath);
+      const symlinkRejected = run(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', descriptor.slot_id, '--file', contentPath, '--format', 'json']);
+      if (symlinkRejected.status === 0) throw new Error('staging symlink 未被拒绝');
+      rmSync(contentPath, { force: true });
+    }
     if (invalidFirst) {
-      writeFileSync(contentPath, `## ADDED — ${title}\n`);
-      const rejected = run(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', target.slot_id, '--file', contentPath, '--format', 'json']);
+      atomicWrite(`## ADDED — ${title}\n`);
+      const rejected = run(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', descriptor.slot_id, '--file', contentPath, '--format', 'json']);
       if (rejected.status === 0) throw new Error('validator retry 首次非法内容未被拒绝');
     }
-    writeFileSync(contentPath, `# ${title}\n`);
-    json(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', target.slot_id, '--file', contentPath]);
+    atomicWrite(`# ${title}\n`);
+    json(root, ['merge', 'transaction', 'submit-content', '--slug', tx.slug, '--slot', descriptor.slot_id, '--file', contentPath]);
   }
 }
 async function execute(targets, options = {}) {
   const f = fixture(targets);
   try {
+    let observed = null;
     let tx = txModule.createMergeTransaction(f.root, f.proposalDir, f.slug);
-    submit(f.root, f.proposalDir, tx, options.invalidFirst);
+    submit(f.root, f.proposalDir, tx, targets, options.invalidFirst, options.stagingNegatives);
     if (options.observe) {
-      const status = json(f.root, ['merge', 'transaction', 'status', '--slug', f.slug]);
+      const statusEnvelope = JSON.parse(run(f.root, ['status', '--format', 'json']).stdout).data;
+      const status = statusEnvelope.merge_transaction;
       const statusTree = readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json'));
-      const next = JSON.parse(run(f.root, ['next', '--format', 'json']).stdout).data.merge_transaction;
+      const nextEnvelope = JSON.parse(run(f.root, ['next', '--format', 'json']).stdout).data;
+      const next = nextEnvelope.merge_transaction;
       if (JSON.stringify(status) !== JSON.stringify(next) || !statusTree.equals(readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json')))) throw new Error('status/next 只读投影不一致');
+      observed = { status_data: statusEnvelope, next_data: nextEnvelope };
     }
     tx = json(f.root, ['merge', 'transaction', 'seal', '--slug', f.slug]);
     if (options.failOnce) {
@@ -112,7 +135,60 @@ async function execute(targets, options = {}) {
     const completed = json(f.root, ['merge', 'transaction', 'apply', '--slug', f.slug]);
     const repeated = json(f.root, ['merge', 'transaction', 'apply', '--slug', f.slug]);
     if (completed.phase !== 'completed' || JSON.stringify(completed.receipt) !== JSON.stringify(repeated.receipt)) throw new Error('completed receipt 不幂等');
-    return { transaction_id: completed.transaction_id, receipt_sha256: completed.receipt.receipt_sha256, target_count: completed.receipt.target_count };
+    if (options.validateClosure) {
+      const finalPaths = completed.receipt.final_hashes.map(item => item.path);
+      const artifactPaths = completed.artifact_hashes.map(item => item.path);
+      const union = [...new Set([...finalPaths, ...artifactPaths])].sort();
+      if (finalPaths.some(path => artifactPaths.includes(path)) || JSON.stringify(union) !== JSON.stringify(completed.receipt.commit_paths)) {
+        throw new Error('completed receipt 闭包不守恒');
+      }
+      for (const item of [...completed.receipt.final_hashes, ...completed.artifact_hashes]) {
+        if (sha256(readFileSync(join(f.root, ...item.path.split('/')))) !== item.sha256) throw new Error(`公开 hash 不可重算：${item.path}`);
+      }
+    }
+    return { transaction_id: completed.transaction_id, receipt_sha256: completed.receipt.receipt_sha256, target_count: completed.receipt.target_count, commit_paths: completed.receipt.commit_paths, ...(observed ?? {}) };
+  } finally { f.cleanup(); }
+}
+
+async function executeAbortContract() {
+  const phases = ['collecting', 'ready', 'sealed'];
+  const evidence = [];
+  for (const phase of phases) {
+    const f = fixture(createTargets('create'));
+    try {
+      let tx = txModule.createMergeTransaction(f.root, f.proposalDir, f.slug);
+      if (phase !== 'collecting') {
+        submit(f.root, f.proposalDir, tx, createTargets('create'));
+        tx = json(f.root, ['merge', 'transaction', 'status', '--slug', f.slug]);
+      }
+      if (phase === 'sealed') tx = json(f.root, ['merge', 'transaction', 'seal', '--slug', f.slug]);
+      if (tx.phase !== phase) throw new Error(`abort fixture phase 漂移：${tx.phase} != ${phase}`);
+      const first = json(f.root, ['merge', 'transaction', 'abort', '--slug', f.slug]);
+      const terminalBytes = readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json'));
+      const second = json(f.root, ['merge', 'transaction', 'abort', '--slug', f.slug]);
+      if (first.phase !== 'failed' || first.classification !== 'aborted' || first.allowed_actions.length !== 0
+        || first.next_action !== null || first.receipt !== null || first.aborted_at !== second.aborted_at
+        || !terminalBytes.equals(readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json')))
+        || existsSync(join(f.proposalDir, 'MERGE_RECEIPT.json')) || existsSync(join(f.proposalDir, 'SPEC_MERGED'))) {
+        throw new Error(`abort ${phase} 终态、清理或幂等不成立`);
+      }
+      evidence.push({ phase, transaction_id: first.transaction_id, aborted_at: first.aborted_at });
+    } finally { f.cleanup(); }
+  }
+  return { phases: evidence };
+}
+
+async function executeActionParity() {
+  const f = fixture(createTargets('create'));
+  try {
+    const tx = txModule.createMergeTransaction(f.root, f.proposalDir, f.slug);
+    const help = run(f.root, ['--help']);
+    if (help.status !== 0 || !help.stdout.includes('submit-content / seal / apply / recover / abort')) throw new Error('安装态 help 缺 action-command parity');
+    const unknown = run(f.root, ['merge', 'transaction', 'future-action', '--slug', f.slug, '--format', 'json']);
+    if (unknown.status === 0) throw new Error('未知 action 未 fail-closed');
+    const aborted = json(f.root, ['merge', 'transaction', 'abort', '--slug', f.slug]);
+    if (tx.next_action !== 'submit_content' || aborted.classification !== 'aborted') throw new Error('已知 action 与命令执行不一致');
+    return { known_actions: ['submit_content', 'seal', 'apply', 'recover', 'abort'], unknown_rejected: true };
   } finally { f.cleanup(); }
 }
 
@@ -126,5 +202,9 @@ else if (id === 'SMOKE-core-147') {
   const ui = await execute(createTargets('ui'));
   evidence = { no_delta: noDelta, ui };
 } else if (id === 'SMOKE-core-148') evidence = await execute(createTargets('modify'), { observe: true });
-else evidence = await execute(createTargets('modify'), { failOnce: true });
+else if (id === 'SMOKE-core-149') evidence = await execute(createTargets('modify'), { failOnce: true });
+else if (id === 'SMOKE-core-151') evidence = await executeActionParity();
+else if (id === 'SMOKE-core-152') evidence = await execute(createTargets('create'), { stagingNegatives: true });
+else if (id === 'SMOKE-core-153') evidence = await execute(createTargets('mixed'), { validateClosure: true });
+else evidence = await executeAbortContract();
 console.log(JSON.stringify({ id, status: 'pass', precreated_completed: false, ...evidence }));

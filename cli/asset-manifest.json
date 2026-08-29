@@ -13,11 +13,11 @@
     },
     {
       "path": "skills/merge-executor/SKILL.md",
-      "sha256": "545f3813668c7a259facf9021779fd614611f8458174040ebea3e0406e744dc7"
+      "sha256": "07225c622bb92b9e0804897e259db3d658d45cdfa22e9402e6fdaea37ffab03b"
     },
     {
       "path": "skills/merge-executor/SKILL.en.md",
-      "sha256": "50f388025e01eba4bd84e86d15b447330294ece19e138b1e428e17ee136c719e"
+      "sha256": "36e72e316ca9573df41b192213782d37de8e2e7648e8a76838e3256e568bb8e8"
     }
   ],
   "templates": [
@@ -29,15 +29,15 @@
   "schemas": [
     {
       "path": "spec/schema/next.schema.json",
-      "sha256": "f9c844bb5922f3c9e8d6e69be484023a82264fa9c6caede2455a7c6c5b79b07b"
+      "sha256": "4fa2f8dca139e8cc068a675bc701a9bc83543d05fe2b5f587fa7dca39e530620"
     },
     {
       "path": "spec/schema/status.schema.json",
-      "sha256": "775dfd18da23172d83b893633ac65ef7c81efb0bd261f799db8bf46f051f081e"
+      "sha256": "c388a1873343b536b9d7a07028fc163ae6bf0e1677a567b841d49aef6a843029"
     },
     {
       "path": "spec/schema/merge-transaction.schema.json",
-      "sha256": "59a5fa2984e7d70b979461d64af022ed1e63e6f25790d857aaaed41ad9a54ce2"
+      "sha256": "bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421"
     }
   ],
   "plugins": [
@@ -50,5 +50,5 @@
       "sha256": "93374b6696d47227a1b67ee7fa9dd3bf9938c1f2664def139041f07667c2e5ab"
     }
   ],
-  "payloadHash": "07e1d24ee3b5941f854e9216afb4e3a60ad43e7b95f3e9998b8c018d9b6e6a5d"
+  "payloadHash": "fd3edb1088f115ff2063bea9606f88a881372e0386d904bb500bd3ab60e1c53a"
 }
