@@ -1,0 +1,82 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_d9043acf49f53408e55fe1d4",
+  "seal_sha256": "sha256:fc28064a91135ade32b37686f40d768766f0c84b391aa130464d090cca84b276",
+  "target_set_sha256": "sha256:4ad71f5604c9122cccec995249f4eb9bcf7a0a67ddca5f06e3ce4daacecae351",
+  "closure_sha256": "sha256:9cd5744fb456dd39ee7d7122dc111b9abd40680c6210ea32fc9de2db9af2d717",
+  "target_count": 6,
+  "plan_sha256": "sha256:8b2f8e67ff64e0b835385fe843138b81fbfdcb31e5985439dac69da414b9c87f",
+  "change": "release-0-14-1-local",
+  "module": "core",
+  "changed_paths": [
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md"
+  ],
+  "created_paths": [],
+  "final_hashes": [
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:072d399b2f6662246f2201e2f09f0480b5b2456fc8d9ad4fcf0a8f755881cfc0"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:296e3c094a8fd03009e85167aa6e3117c5676b156cb824b4987ee1ce3c8384bf"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "sha256": "sha256:78cfcfa3071fb6d85201f41699299b81f24ea43fd25329c7121a1515321da85a"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "sha256": "sha256:4277da9a4655fa484ea1aa31b534b6272d0c9b026ba4168acbbcaa643015e123"
+    },
+    {
+      "path": "logos/resources/test/core-S19-test-cases.md",
+      "sha256": "sha256:e01167baeda3cce29ed54a5fa49381f209803e073cd8712af6a32a0b52c06d15"
+    },
+    {
+      "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "sha256": "sha256:c3edb4f48078fa05cca1af5614a10ceb1f7a4b9e8ce578073b04243198ef37a2"
+    }
+  ],
+  "metadata_summaries": [],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "release-0-14-1-local",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S19-15",
+      "UT-S19-22",
+      "UT-S19-23"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "0ada3f14ba014dffc00b65d65d372ca742b179c4d876e6534baa72969bec6bd3",
+        "after_sha256": "e01167baeda3cce29ed54a5fa49381f209803e073cd8712af6a32a0b52c06d15"
+      }
+    ],
+    "sha256": "sha256:9e216ec308f47d0e811c7697a2e85ff0d58360eb2350a12b57d4cf4a7f3b46ca"
+  },
+  "spec_merged": {
+    "path": "logos/changes/release-0-14-1-local/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/release-0-14-1-local/MERGE_RECEIPT.json",
+    "logos/changes/release-0-14-1-local/SPEC_MERGED",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md"
+  ],
+  "completed_at": "2026-08-30T03:17:17.706Z",
+  "receipt_sha256": "sha256:b804985ff0f1ce087290890b3e2e3e1f0e20bde3576d40bd72dbf2708972454b"
+}

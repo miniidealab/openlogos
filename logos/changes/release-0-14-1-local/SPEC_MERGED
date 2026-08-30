@@ -1,0 +1,27 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_d9043acf49f53408e55fe1d4",
+  "seal_sha256": "sha256:fc28064a91135ade32b37686f40d768766f0c84b391aa130464d090cca84b276",
+  "receipt_sha256": "sha256:b804985ff0f1ce087290890b3e2e3e1f0e20bde3576d40bd72dbf2708972454b",
+  "completed_at": "2026-08-30T03:17:17.706Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "release-0-14-1-local",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S19-15",
+      "UT-S19-22",
+      "UT-S19-23"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "0ada3f14ba014dffc00b65d65d372ca742b179c4d876e6534baa72969bec6bd3",
+        "after_sha256": "e01167baeda3cce29ed54a5fa49381f209803e073cd8712af6a32a0b52c06d15"
+      }
+    ],
+    "sha256": "sha256:9e216ec308f47d0e811c7697a2e85ff0d58360eb2350a12b57d4cf4a7f3b46ca"
+  }
+}
