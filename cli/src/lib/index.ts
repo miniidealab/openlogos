@@ -15,3 +15,4 @@ export {
 } from './json-output.js';
 
 export * from './archive-watch.js';
+export * from './local-release-candidate.js';

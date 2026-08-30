@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 const EXPECTED_SCHEMA = 'runlogos/openlogos-candidate-e2e@1';
-const EXPECTED_VERSION = '0.14.0';
+const EXPECTED_VERSION = '0.14.1';
 const EXPECTED_SCENARIOS = Object.freeze(['create', 'modify', 'mixed', 'response-lost']);
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');

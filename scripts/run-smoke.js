@@ -78,6 +78,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_MERGE_TRANSACTION_TARBALL,
       previousTarball: process.env.OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-release-0-14-1-local.js': {
+      tarball: process.env.OPENLOGOS_RELEASE_0_14_1_TARBALL,
+      previousTarball: process.env.OPENLOGOS_RELEASE_0_14_1_ROLLBACK_TARBALL,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -94,6 +98,7 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-baseline-on-touch.js',
   'scripts/smoke-plan-package-convergence.js',
   'scripts/smoke-test-change-set-local-global.js',
+  'scripts/smoke-release-0-14-1-local.js',
 ]);
 
 function restoreGlobalCandidate(runner) {

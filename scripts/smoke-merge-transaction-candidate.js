@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SMOKE-core-141..156 — OpenLogos 0.14.0 本机全局候选与消费者合同接缝。
+ * SMOKE-core-141..156 — 始于 OpenLogos 0.14.0 的本机全局候选与消费者合同接缝。
  * 只消费部署阶段冻结的本地制品/绝对命令，不执行 publish、Git、Release 或远程部署。
  */
 import { createHash } from 'node:crypto';
@@ -11,7 +11,7 @@ import { validateRunLogosCandidateEvidence } from './lib/runlogos-candidate-evid
 
 export const MERGE_TRANSACTION_SMOKE_IDS = Array.from({ length: 10 }, (_, index) => `SMOKE-core-${141 + index}`);
 export const MERGE_TRANSACTION_CONSUMER_SMOKE_IDS = Array.from({ length: 6 }, (_, index) => `SMOKE-core-${151 + index}`);
-const EXPECTED_VERSION = '0.14.0';
+const EXPECTED_VERSION = '0.14.1';
 const repoRoot = process.cwd();
 const resultPath = resolve(repoRoot, process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl');
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-08-30
+
+### Changed
+
+- 本地候选版本升级为 `0.14.1`，统一 CLI、五类随包插件、asset manifest 与 candidate evidence 的当前版本身份。
+- 增加固定 tarball 的隔离 `pack → install → self-check → 0.14.0 rollback → 0.14.1 restore` 验证，以及本机全局部署后的 SMOKE-core-157～159 runner/reporter。
+- 本次候选仅用于本机 npm 全局部署；不执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 git push。
+
 ## [0.13.30] - 2026-08-26
 
 ### Fixed

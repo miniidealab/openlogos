@@ -567,7 +567,7 @@ describe('OpenLogos merge transaction', () => {
 
     checked(npmCommand, ['install', '--prefix', installRoot, '--force', '--ignore-scripts', '--no-audit', '--no-fund', tarball], repoRoot);
     const current = candidateFacts(entry, tarball, packageRoot);
-    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.0');
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.1');
     expect(checked(process.execPath, [entry, '--help'], root)).toContain('submit-content / seal / apply / recover / abort');
     expect(current.merge_transaction_schema_sha256).toBe(sha256(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'))));
     expect(current.status_schema_sha256).toBe(sha256(readFileSync(join(repoRoot, 'spec/schema/status.schema.json'))));
@@ -607,9 +607,9 @@ describe('OpenLogos merge transaction', () => {
     expect(existsSync(join(packageRoot, 'spec/golden/merge-transaction-completed.json'))).toBe(false);
   }, 120_000);
 
-  it('ST-S16-07 UT-S19-12 UT-S19-13 UT-S19-14 UT-S19-15 UT-S19-16 UT-S19-17 UT-S19-18 ST-S19-10 ST-S19-11 ST-S19-12 ST-S19-13: 0.14.0 安装态合同与命令入口自描述一致', () => {
+  it('ST-S16-07 UT-S19-12 UT-S19-13 UT-S19-14 UT-S19-15 UT-S19-16 UT-S19-17 UT-S19-18 ST-S19-10 ST-S19-11 ST-S19-12 ST-S19-13: 当前安装态合同与命令入口自描述一致', () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf8')) as { version: string; files: string[] };
-    expect(pkg.version).toBe('0.14.0');
+    expect(pkg.version).toBe('0.14.1');
     expect(pkg.files).toContain('spec');
     expect(readFileSync(join(repoRoot, 'cli/src/index.ts'), 'utf8')).toContain("args[1] === 'transaction'");
     expect(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'), 'utf8')).toContain('openlogos/merge-transaction@1');
@@ -621,7 +621,7 @@ describe('OpenLogos merge transaction', () => {
     expect(bridgeSource).toContain("['clone', '--quiet', '--no-hardlinks'");
     const evidence = {
       schema: 'runlogos/openlogos-candidate-e2e@1', passed: true,
-      candidate: { version: '0.14.0' },
+      candidate: { version: '0.14.1' },
       scenarios: [
         { scenario: 'create', phase: 'completed', apply_count: 1, final_path_count: 15, artifact_path_count: 2, commit_path_count: 17 },
         { scenario: 'modify', phase: 'completed', apply_count: 1, final_path_count: 15, artifact_path_count: 2, commit_path_count: 17 },

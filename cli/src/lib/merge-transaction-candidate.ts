@@ -1,8 +1,9 @@
 import { isAbsolute } from 'node:path';
 import { MERGE_TRANSACTION_SEMANTIC_SCHEMA } from './merge-transaction-semantic.js';
+import { LOCAL_RELEASE_CANDIDATE_VERSION } from './local-release-candidate.js';
 
 export const MERGE_TRANSACTION_CANDIDATE_SCHEMA = 'openlogos/merge-transaction-candidate@1' as const;
-export const MERGE_TRANSACTION_CANDIDATE_VERSION = '0.14.0' as const;
+export const MERGE_TRANSACTION_CANDIDATE_VERSION = LOCAL_RELEASE_CANDIDATE_VERSION;
 
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
 

@@ -49,7 +49,8 @@ export function mergeSha256(bytes: string | Buffer): string {
 }
 
 export function computeMergeReceiptSha256(receipt: Omit<MergeTransactionReceipt, 'receipt_sha256'> | MergeTransactionReceipt): string {
-  const { receipt_sha256: _identity, ...payload } = receipt as MergeTransactionReceipt;
+  const payload = { ...receipt } as Partial<MergeTransactionReceipt>;
+  delete payload.receipt_sha256;
   return mergeSha256(canonicalMergeJson(payload));
 }
 
