@@ -1,0 +1,124 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_74d927ac89c0a538fbc2b150",
+  "seal_sha256": "sha256:fd21306a0ce0a3c2395f323dea5a5a73d03bbaa6bc1b734232fb0f2ea9f63815",
+  "receipt_sha256": "sha256:78af0b189be4e98f11e466fdae94901513aba309d414c9ffb8dda0db57a1134e",
+  "completed_at": "2026-08-30T16:21:23.287Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "institutionalize-single-authority-design-gate",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-163",
+      "SMOKE-core-164",
+      "SMOKE-core-165",
+      "SMOKE-core-166",
+      "SMOKE-core-167",
+      "ST-S04-01",
+      "ST-S06-01",
+      "ST-S06-02",
+      "ST-S07-01",
+      "ST-S07-02",
+      "ST-S09-104",
+      "ST-S09-105",
+      "ST-S12-01",
+      "ST-S16-11",
+      "ST-S19-17",
+      "ST-S35-19",
+      "ST-S35-20",
+      "ST-S35-21",
+      "UT-S04-01",
+      "UT-S04-02",
+      "UT-S04-03",
+      "UT-S04-04",
+      "UT-S06-01",
+      "UT-S06-02",
+      "UT-S06-03",
+      "UT-S06-04",
+      "UT-S06-05",
+      "UT-S06-06",
+      "UT-S07-01",
+      "UT-S07-02",
+      "UT-S07-03",
+      "UT-S07-04",
+      "UT-S07-05",
+      "UT-S07-06",
+      "UT-S09-266",
+      "UT-S09-267",
+      "UT-S09-268",
+      "UT-S09-269",
+      "UT-S09-270",
+      "UT-S12-01",
+      "UT-S12-02",
+      "UT-S12-03",
+      "UT-S12-04",
+      "UT-S12-05",
+      "UT-S12-06",
+      "UT-S16-35",
+      "UT-S16-36",
+      "UT-S16-37",
+      "UT-S19-26",
+      "UT-S19-27",
+      "UT-S19-28",
+      "UT-S35-112",
+      "UT-S35-113",
+      "UT-S35-114",
+      "UT-S35-115",
+      "UT-S35-116",
+      "UT-S35-117",
+      "UT-S35-118",
+      "UT-S35-119",
+      "UT-S35-120"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S04-test-cases.md",
+        "before_sha256": null,
+        "after_sha256": "fe2e7f3eea538fe467d7cf05264bdbcb2907563bce380f4e90addd370f810d7e"
+      },
+      {
+        "target_path": "logos/resources/test/core-S06-test-cases.md",
+        "before_sha256": null,
+        "after_sha256": "70aa40fee30e00f77f1b8db497e11ae425170207f3bb2122a83410a8045f2c5e"
+      },
+      {
+        "target_path": "logos/resources/test/core-S07-test-cases.md",
+        "before_sha256": null,
+        "after_sha256": "f2c0d5c8068f90d14bd8707aa8b2b0e378f3df65102dea7c8aeeef9f75b00bf1"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "d085ef5632ab984f635c47427eeb41aad21846eb1d0a8496ccfecae172652dad",
+        "after_sha256": "44914b41afc98aad5121c3382e5899d6c8ebb6c6c02f21cf941cc78daa73b87e"
+      },
+      {
+        "target_path": "logos/resources/test/core-S12-test-cases.md",
+        "before_sha256": null,
+        "after_sha256": "ebbda109ce290b2f4162c8cbd2ec5d92c9a6a64eaf2829c88c3efb1bd9246dda"
+      },
+      {
+        "target_path": "logos/resources/test/core-S16-test-cases.md",
+        "before_sha256": "89d13171521f3c682dd8bbf904c79a0934be0732aafce93897aed15980972a15",
+        "after_sha256": "9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58"
+      },
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "f8738714227a21b3bf7b198144dc1bd4cab1fb568efec542b64c6b1b7dfedff1",
+        "after_sha256": "8729f4cb3c4b5f0261c3ebfd9ffb405d8b5b223dbebe57978ac865467cfd6421"
+      },
+      {
+        "target_path": "logos/resources/test/core-S35-test-cases.md",
+        "before_sha256": "96c06a8512593fa333a772b23e875bab1422ef70caa085c484793f6c29bcc0ad",
+        "after_sha256": "a8f25f895aef62c0e94b690019da727c1df3b7b0d27643defc54099621c3c1de"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "a7d1166e9e426314fdea1e69466e84d00fac84fdde6d0466c1d540356ac5f470",
+        "after_sha256": "ecb7cc471a6d09aac83b6176fc2c8203993384c1ceb49c3388915aee9a2a6f69"
+      }
+    ],
+    "sha256": "sha256:5a6dc93546a7fda125ba6d86d5eaa6be468f1c3b2d5ad604ee2f868e2395fefc"
+  }
+}
