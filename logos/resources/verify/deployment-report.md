@@ -1,4 +1,13 @@
-# 部署报告：complete-merge-transaction-consumer-contract / OpenLogos 0.14.0（2026-08-29，本机全局 candidate 部署成功）
+# 部署报告：complete-merge-transaction-consumer-contract / OpenLogos 0.14.0（2026-08-29，正式 smoke 完成）
+
+## 零、最终结论与旧事务迁移
+
+- 旧格式自举事务 `mtx_9e1d4e740a19e8fc8c7c2be2` 的 29 个正式目标逐字节匹配旧 receipt，未发现 target drift；迁移仅重写当前提案私有的 `MERGE_TRANSACTION.json`、`MERGE_RECEIPT.json` 与 `SPEC_MERGED` 元数据，没有重写任何正式 target。
+- 迁移后 transaction 保持 `phase=completed`，`final_hashes=29`、`artifact_hashes=2`、`commit_paths=31`，新 receipt identity 为 `sha256:8338bd943c157de9fa76f9b9efa61a7fa432c6a35928716c18e7f8336bf36eb9`；当前 0.14.0 semantic validator 重新读取并通过。
+- RunLogos canonical E2E 真实覆盖 CREATE、MODIFY、mixed、response-lost；OpenLogos smoke 消费 canonical evidence，不读取私有 transaction 文件，也不自行推导 Git 提交集。
+- 正式 `openlogos smoke --env local-global --format json` 于 `2026-08-30T02:01:16Z` 完成 **126/126 PASS**，失败、跳过、未覆盖均为 0，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。
+- `SMOKE-core-151`～`SMOKE-core-156` 均绑定最终候选 SHA-256 `6c82b8a806866c356cdad05ca15f4969cb4d9d61ba4318f97ae114b6d4245546`；旧 slug 通过已归档目录及其 `SMOKE_PASS` 证明归属，follow-up 通过独立 worktree guard/marker 证明归属。
+- smoke 收尾已恢复本机全局 `/opt/homebrew/bin/openlogos`，版本精确为 `0.14.0`，realpath 仍为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；未执行 npm publish、Git tag、GitHub Release、网站部署或 `git push`。
 
 ## 一、部署结论
 
@@ -6,7 +15,7 @@
 - **授权与门禁**：最终 `openlogos verify` 已通过并生成 `VERIFY_PASS`；用户明确授权执行本机全局部署与后续 smoke。
 - **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；隔离预检 prefix 位于 `/private/tmp/openlogos-complete-merge-deploy.K9DWrh/isolated-prefix`。
 - **执行时间**：截至 `2026-08-29T05:41:03Z`。
-- **结论**：修正后的 `0.14.0` candidate 已完成全量测试、build、npm pack、隔离安装合同自检和本机全局安装，部署阶段全部 **PASS**。
+- **结论**：修正后的 `0.14.0` candidate 已完成全量测试、build、npm pack、隔离安装合同自检、本机全局安装与正式 smoke，全部 **PASS**。
 - **公开副作用**：未执行 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
 
 ## 二、部署前快照与回滚点
@@ -54,10 +63,10 @@ tarball 已确认包含三份 next/status/merge-transaction schema、中文和�
 
 ## 六、风险、回滚与后续 smoke
 
-- 当前未解决的产品风险：无部署阶段失败；正式 smoke 尚需验证 SMOKE-core-151～156 的完整跨仓证据。
+- 当前未解决的产品风险：无；SMOKE-core-151～156 的完整跨仓证据已通过正式 smoke。
 - 任何后续安装态失败均先执行固定回滚命令，再清除 shell 命令缓存并复核入口、realpath 和 `0.14.0` 版本。
-- SMOKE-core-155 需要 RunLogos 真实消费者命令；SMOKE-core-156 需要两个 stacked slug 的 guard/marker/candidate hash 归属证据。不得用源码、mock、手工 receipt 或复制 marker 代替。
-- 本报告仅证明部署成功；`SMOKE_PASS` 只能由已获授权的独立 `openlogos smoke` 真实生成。
+- SMOKE-core-155 已消费 RunLogos 真实 canonical E2E；SMOKE-core-156 已验证两个 stacked slug 的 archive/guard/marker/candidate hash 独立归属。
+- `SMOKE_PASS` 已由获授权的独立 `openlogos smoke` 真实生成，`SMOKE_FAIL` 不在场。
 
 ---
 

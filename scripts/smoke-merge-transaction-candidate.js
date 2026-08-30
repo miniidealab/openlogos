@@ -183,12 +183,13 @@ await smoke('SMOKE-core-156', async () => {
     || !oldMarker.startsWith(`${oldArchive}/`) || !oldMarker.endsWith('/SMOKE_PASS')) {
     throw new Error('old archive/SMOKE_PASS 归属无效');
   }
+  const followupRoot = evidence.followup?.project_root ? realpathSync(resolve(evidence.followup.project_root)) : null;
   const followupGuard = evidence.followup?.guard_path ? realpathSync(resolve(evidence.followup.guard_path)) : null;
   const followupMarker = evidence.followup?.marker_path ? realpathSync(resolve(evidence.followup.marker_path)) : null;
-  const expectedGuard = realpathSync(join(repoRoot, 'logos/.openlogos-guard'));
-  const expectedChangeRoot = realpathSync(join(repoRoot, 'logos/changes', evidence.followup.slug));
+  const expectedGuard = followupRoot ? realpathSync(join(followupRoot, 'logos/.openlogos-guard')) : null;
+  const expectedChangeRoot = followupRoot ? realpathSync(join(followupRoot, 'logos/changes', evidence.followup.slug)) : null;
   if (followupGuard !== expectedGuard || !readFileSync(followupGuard, 'utf8').includes(evidence.followup.slug)
-    || !followupMarker || !followupMarker.startsWith(`${expectedChangeRoot}/`)) {
+    || !followupMarker || !expectedChangeRoot || !followupMarker.startsWith(`${expectedChangeRoot}/`)) {
     throw new Error('followup guard/marker 归属无效');
   }
   for (const side of ['old', 'followup']) {
