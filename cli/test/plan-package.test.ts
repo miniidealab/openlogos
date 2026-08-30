@@ -40,6 +40,9 @@ function clarification(locale: 'zh' | 'en'): string {
 }
 
 function proposal(locale: 'zh' | 'en' = 'zh'): string {
+  const authority = ['## Authority Impact', '', '```yaml', 'authority_impact:',
+    '  schema: openlogos/authority-impact@1', '  applicability: not_applicable',
+    '  evidence: [仅测试 Plan Package 结构，不改变业务事实归属]', '```', ''].join('\n');
   if (locale === 'en') return [
     '# Change Proposal: feat', '', '> module: core', '',
     '## Reason', 'Fix a plan convergence bug.', '',
@@ -48,7 +51,7 @@ function proposal(locale: 'zh' | 'en' = 'zh'): string {
     '## Deployment Impact',
     '- Deployment required: no', '- Deployment reason: local tests only', '- Affected environments: local',
     '- Data migration involved: no', '- Rollback plan required: no', '- Smoke required: no', '',
-    '## Summary', 'Use one evaluator for all plan consumers.', '', clarification('en'),
+    '## Summary', 'Use one evaluator for all plan consumers.', '', authority, clarification('en'),
   ].join('\n');
   return [
     '# 变更提案：feat', '', '> module: core', '',
@@ -58,7 +61,7 @@ function proposal(locale: 'zh' | 'en' = 'zh'): string {
     '## 部署影响',
     '- 是否需要部署：否', '- 部署原因：仅本地测试', '- 影响环境：本地',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
-    '## 变更概述', '让所有 plan 消费方共用一个 evaluator。', '', clarification('zh'),
+    '## 变更概述', '让所有 plan 消费方共用一个 evaluator。', '', authority, clarification('zh'),
   ].join('\n');
 }
 

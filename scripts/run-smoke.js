@@ -89,6 +89,10 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_RELEASE_0_14_2_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_RELEASE_0_14_2_CANDIDATE_BIN,
     },
+    'scripts/smoke-authority-closure-candidate.js': {
+      tarball: process.env.OPENLOGOS_AUTHORITY_CLOSURE_TARBALL,
+      previousTarball: process.env.OPENLOGOS_AUTHORITY_CLOSURE_ROLLBACK_TARBALL,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;

@@ -1,4 +1,5 @@
 import { authorityScan } from './markdown-scan.js';
+import type { AuthorityClosureSummary } from './authority-closure.js';
 
 export const PLAN_PACKAGE_SCHEMA = 'openlogos/plan-package-evaluation@1' as const;
 export const PLAN_PACKAGE_CONTRACT_VERSION = '1';
@@ -22,6 +23,11 @@ export type PlanPackageIssueCode =
   | 'proposal_change_type_invalid'
   | 'proposal_deployment_fields_invalid'
   | 'proposal_clarification_invalid'
+  | 'authority_impact_declaration_missing'
+  | 'authority_impact_malformed'
+  | 'authority_fact_reference_missing'
+  | 'authority_closure_incomplete'
+  | 'authority_cutover_unclosed'
   | 'tasks_template_remaining'
   | 'tasks_code_entry_before_spec_complete'
   | 'tasks_code_section_missing'
@@ -30,7 +36,7 @@ export type PlanPackageIssueCode =
 export interface CompletionIssue {
   code: PlanPackageIssueCode;
   path: string;
-  section_id?: PlanSectionId | 'code' | 'delta' | 'deploy';
+  section_id?: PlanSectionId | 'authority_impact' | 'code' | 'delta' | 'deploy';
   line?: number;
   actual?: string;
   expected?: string;
@@ -50,6 +56,7 @@ export interface PlanPackageEvaluation {
     issues: CompletionIssue[];
   };
   issues: CompletionIssue[];
+  authority_closure?: AuthorityClosureSummary;
 }
 
 interface AuthoritySection {
@@ -65,6 +72,9 @@ const ISSUE_ORDER: PlanPackageIssueCode[] = [
   'proposal_required_section_empty', 'proposal_placeholder_remaining',
   'proposal_change_type_invalid', 'proposal_deployment_fields_invalid',
   'proposal_clarification_invalid', 'tasks_template_remaining',
+  'authority_impact_declaration_missing', 'authority_impact_malformed',
+  'authority_fact_reference_missing', 'authority_closure_incomplete',
+  'authority_cutover_unclosed',
   'tasks_code_entry_before_spec_complete', 'tasks_code_section_missing',
   'tasks_deployment_conflict',
 ];

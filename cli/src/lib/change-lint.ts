@@ -40,6 +40,7 @@ import {
 import { readTestChangeSet, type TestChangeSetReadResult } from './test-change-set.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import { type PlanPackageEvaluation } from './plan-package-contract.js';
+import { AUTHORITY_CLOSURE_ISSUE_CODES } from './authority-closure.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
@@ -56,6 +57,11 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'proposal_change_type_invalid',
   'proposal_deployment_fields_invalid',
   'proposal_clarification_invalid',
+  'authority_impact_declaration_missing',
+  'authority_impact_malformed',
+  'authority_fact_reference_missing',
+  'authority_closure_incomplete',
+  'authority_cutover_unclosed',
   'tasks_template_remaining',
   'tasks_code_entry_before_spec_complete',
   'tasks_code_section_missing',
@@ -707,6 +713,7 @@ export type ChangeLintRunResult =
       warnings: ChangeLintWarning[];
       checks: { id: number; label: string; violations: number }[];
       plan_package: PlanPackageEvaluation;
+      authority_closure?: PlanPackageEvaluation['authority_closure'];
       baseline_closure?: BaselineClosureSummary;
       test_change_set?: TestChangeSetReadResult;
     }
@@ -851,8 +858,9 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
 
   // L0：所有 plan 消费方共用的唯一完成契约。
   const planPackage = evaluatePlanPackage(root, proposalDir);
+  const authorityCodes = new Set<string>(AUTHORITY_CLOSURE_ISSUE_CODES);
   for (const completionIssue of planPackage.issues) {
-    pushViolation(acc, 0, {
+    pushViolation(acc, authorityCodes.has(completionIssue.code) ? 10 : 0, {
       code: completionIssue.code,
       path: completionIssue.path,
       message: completionIssue.message,
@@ -1051,7 +1059,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   const sorted = [...acc.violations].sort((a, b) => {
     const oa = acc.order.get(a)!;
     const ob = acc.order.get(b)!;
-    if (oa.check !== ob.check) return oa.check - ob.check;
+    const layer = (check: number) => check === 10 ? 0.5 : check;
+    if (oa.check !== ob.check) return layer(oa.check) - layer(ob.check);
     if (a.path !== b.path) return a.path < b.path ? -1 : 1;
     if (oa.seq !== ob.seq) return oa.seq - ob.seq;
     if (a.code !== b.code) return a.code < b.code ? -1 : 1;
@@ -1065,6 +1074,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
 
   const checks: { id: number; label: string; violations: number }[] = [
     { id: 0, label: 'Plan Package 完成合同', violations: countFor(0) },
+    ...(planPackage.authority_closure ? [{ id: 10, label: 'Authority Closure 权威闭包', violations: countFor(10) }] : []),
     { id: 1, label: 'tasks.md 结构可解析', violations: countFor(1) },
     { id: 2, label: '[code] 标题在场（空段占位合法）', violations: countFor(2) },
     { id: 3, label: '测试证据在场（分阶段证据模型）', violations: countFor(3) },
@@ -1084,6 +1094,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
 
   return {
     ok: true, slug, violations: sorted, warnings, checks, plan_package: planPackage,
+    ...(planPackage.authority_closure ? { authority_closure: planPackage.authority_closure } : {}),
     ...(closure.summary ? { baseline_closure: closure.summary } : {}),
     ...(postMerge ? {
       test_change_set: readTestChangeSet(root, proposalDir, {

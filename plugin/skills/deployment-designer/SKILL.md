@@ -1,3 +1,8 @@
+---
+name: deployment-designer
+description: "OpenLogos skill: deployment-designer"
+---
+
 # Skill: Deployment Designer
 
 > 在代码实现前输出完整部署方案：部署拓扑、环境配置、发布命令、数据迁移、回滚策略和部署后冒烟测试方案。该 Skill 是 Phase 3 Step 3 的执行入口。

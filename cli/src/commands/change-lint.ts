@@ -92,6 +92,7 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
       slug: result.slug,
       pass,
       plan_package: result.plan_package,
+      ...(result.authority_closure ? { authority_closure: result.authority_closure } : {}),
       violations: result.violations,
       // S38（delta-r1 F4）：warnings 仅非空时出现，否则整个字段省略（零漂移，契约见 cli-json-output §3.15）
       ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
@@ -148,6 +149,11 @@ function checkOfCode(code: string): number {
     case 'tasks_code_entry_before_spec_complete':
     case 'tasks_code_section_missing':
     case 'tasks_deployment_conflict': return 0;
+    case 'authority_impact_declaration_missing':
+    case 'authority_impact_malformed':
+    case 'authority_fact_reference_missing':
+    case 'authority_closure_incomplete':
+    case 'authority_cutover_unclosed': return 10;
     case 'tasks_sections_unparsable': return 1;
     case 'tasks_code_header_missing': return 2;
     case 'code_change_requires_real_test_ids': return 3;

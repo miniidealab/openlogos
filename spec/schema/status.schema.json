@@ -1242,7 +1242,25 @@
           "items": {
             "$ref": "#/$defs/completionIssue"
           }
+        },
+        "authority_closure": {
+          "$ref": "#/$defs/authorityClosure"
         }
+      }
+    },
+    "authorityClosure": {
+      "type": "object",
+      "required": ["schema", "applicability", "facts_total", "facts_closed", "projections", "retired_shadow_sources", "unresolved", "pass"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "openlogos/authority-closure-evaluation@1" },
+        "applicability": { "enum": ["required", "not_applicable"] },
+        "facts_total": { "type": "integer", "minimum": 0 },
+        "facts_closed": { "type": "integer", "minimum": 0 },
+        "projections": { "type": "integer", "minimum": 0 },
+        "retired_shadow_sources": { "type": "integer", "minimum": 0 },
+        "unresolved": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "boolean" }
       }
     },
     "mergeTransaction": {

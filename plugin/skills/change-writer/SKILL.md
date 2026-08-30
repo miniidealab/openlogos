@@ -88,36 +88,53 @@ Generate using the following template and write to `logos/changes/<slug>/proposa
 
 ### Step 5: Generate tasks.md
 
-Automatically break down the task checklist based on the change type and impact scope. Only list the phases that need updating:
+Automatically break down the task checklist using structured section format based on the change type and impact scope. See `spec/tasks-spec.md` for the full format specification.
+
+**Format rules**:
+- `## [delta] <description>` section: only list delta document output tasks, each item corresponds to one delta file
+- `## [code] <description>` section: only list code implementation tasks that directly modify source files — no delta output
+- Both sections are optional: code-only proposals have only `[code]`, spec-only proposals have only `[delta]`
+- **Never mix**: delta tasks must not appear in `[code]` section; code tasks must not appear in `[delta]` section
+
+**Requirement-level / Design-level change template** (delta + code):
 
 ```markdown
 # Implementation Tasks
 
-## Phase 1: Document Changes
-- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Update acceptance criteria for S0x in requirement documents
-- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Add/modify scenario in the scenario overview table
-
-## Phase 2: Design Changes
-- [ ] Output delta file to `deltas/prd/2-product-design/1-feature-specs/` — Update interaction design for S0x in functional specs
+## [delta] Spec Changes
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Update acceptance criteria for S0x
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Add/modify scenario in overview table
+- [ ] Output delta file to `deltas/prd/2-product-design/1-feature-specs/` — Update interaction design for S0x
 - [ ] Output delta file to `deltas/prd/2-product-design/2-page-design/` — Update prototypes
-
-## Phase 3: Technical Changes
 - [ ] Output delta file to `deltas/prd/3-technical-plan/1-architecture/` — Update technical architecture
 - [ ] Output delta file to `deltas/prd/3-technical-plan/2-scenario-implementation/` — Update sequence diagram for S0x
 - [ ] Output delta file to `deltas/api/` — Update API YAML
 - [ ] **Validate API YAML** — all files in `logos/resources/api/` must be valid YAML and valid OpenAPI 3.x (all `description`/`summary` values containing `:` or special chars must be double-quoted)
 - [ ] Output delta file to `deltas/database/` — Update DB DDL
 - [ ] Output delta file to `deltas/scenario/` — Update orchestration test cases
-- [ ] Implement code changes (modify `src/` directly — no delta needed)
+
+## [code] Code Implementation
+- [ ] Implement business logic in src/xxx
+- [ ] Write corresponding tests
+```
+
+**Code-only fix template** (no delta):
+
+```markdown
+# Implementation Tasks
+
+## [code] Code Implementation
+- [ ] Fix the issue in src/xxx
+- [ ] Update corresponding tests
 ```
 
 ### Step 6: Output Delta Files
 
-**When to trigger**: After tasks.md is filled in and the user has confirmed the proposal, produce delta files item by item per the task checklist.
+**When to trigger**: After tasks.md is filled in and the user has confirmed the proposal, produce delta files item by item per the `[delta]` section task checklist.
 
-#### Directory Mapping
+**Important**: Only execute tasks in the `[delta]` section. Tasks in the `[code]` section are executed after spec merge (SPEC_MERGED).
 
-Delta files are written to the corresponding subdirectory under `logos/changes/<slug>/deltas/`, mirroring the `logos/resources/` structure:
+When producing delta files, write them under `logos/changes/<slug>/deltas/` with paths that mirror `logos/resources/`:
 
 | Target main document directory | Delta subdirectory |
 |---|---|
@@ -125,47 +142,9 @@ Delta files are written to the corresponding subdirectory under `logos/changes/<
 | `logos/resources/api/` | `deltas/api/` |
 | `logos/resources/database/` | `deltas/database/` |
 | `logos/resources/scenario/` | `deltas/scenario/` |
+| `logos/resources/test/` | `deltas/test/` |
 
-`prd/` subdirectories map as follows:
-
-| Target main document subdirectory | Delta subdirectory |
-|---|---|
-| `logos/resources/prd/1-product-requirements/` | `deltas/prd/1-product-requirements/` |
-| `logos/resources/prd/2-product-design/1-feature-specs/` | `deltas/prd/2-product-design/1-feature-specs/` |
-| `logos/resources/prd/2-product-design/2-page-design/` | `deltas/prd/2-product-design/2-page-design/` |
-| `logos/resources/prd/3-technical-plan/1-architecture/` | `deltas/prd/3-technical-plan/1-architecture/` |
-| `logos/resources/prd/3-technical-plan/2-scenario-implementation/` | `deltas/prd/3-technical-plan/2-scenario-implementation/` |
-
-Code implementation (`src/`, `test/`) does **not** produce delta files — modify source files directly.
-
-#### File Naming
-
-Use the **same name** as the target main document (including subdirectory levels). For example:
-- Target: `logos/resources/api/core-api.yaml` → delta: `deltas/api/core-api.yaml`
-- Target: `logos/resources/prd/1-product-requirements/core-01-requirements.md` → delta: `deltas/prd/1-product-requirements/core-01-requirements.md`
-
-#### File Format
-
-Each delta file uses `ADDED / MODIFIED / REMOVED` markers, with each block corresponding to one section in the main document:
-
-```markdown
-## ADDED — [New section title]
-[Complete content to add]
-
-## MODIFIED — [Modified section title]
-[Complete updated content — replaces the same-named section in the main document during merge]
-
-## REMOVED — [Deleted section title]
-[Explain the reason for deletion — the same-named section will be removed from the main document during merge]
-```
-
-#### Behavioral Rules
-
-- After completing each delta file, immediately update the corresponding item in `tasks.md` from `[ ]` to `[x]`
-- **Do NOT directly modify documents under `logos/resources/`** — all spec changes must go through delta files and be merged via `openlogos merge`
-- After all deltas are produced, remind the user to explicitly authorize running `openlogos merge <slug>`
-
-### Step 7: Guide Follow-up Actions (Chain-driven)
+Preserve nested directories. Example: `logos/resources/prd/1-product-requirements/core-01-requirements.md` maps to `deltas/prd/1-product-requirements/core-01-requirements.md`; `logos/resources/test/core-S01-test-cases.md` maps to `deltas/test/core-S01-test-cases.md`.
 
 Provide a ready-to-use prompt that allows the user to kick off chain execution of all tasks with a single command:
 
@@ -174,10 +153,9 @@ Provide a ready-to-use prompt that allows the user to kick off chain execution o
 
 Chain execution behavior rules:
 1. AI reads `tasks.md` and executes items sequentially
-2. **After completing each task, immediately update that item in `tasks.md` from `[ ]` to `[x]`** (AI does this proactively — no user reminder needed)
-3. After completing each task, report a summary of changes and automatically prompt "Continue to the next item?"
-4. After the user says "Continue" or provides adjustments, proceed to the next item
-5. After all tasks are completed, remind the user to explicitly authorize running `openlogos merge <slug>`
+2. After completing each task, report a summary of changes and automatically prompt "Continue to the next item?"
+3. After the user says "Continue" or provides adjustments, proceed to the next item
+4. After all tasks are completed, remind the user to explicitly authorize running `openlogos merge <slug>`
 
 **Key principle**: Do not make the user manually track the task checklist — AI should proactively drive the process.
 
@@ -213,3 +191,41 @@ The following prompts can be copied directly for use with AI:
 **Execute tasks (after proposal is completed)**:
 - `Follow tasks.md and help me progressively update all affected documents for S02`
 - `Help me fix the 500 error on the S02 login endpoint and re-verify`
+
+> This section supersedes earlier examples that populate `[code]` during plan authoring. It shares the same machine contract as the Chinese source.
+
+### Preserve the CLI scaffold
+
+Read the CLI-created `proposal.md` and `tasks.md` before editing. Preserve canonical headings, section order, and machine-readable blocks; replace placeholders in place. Extra design sections are allowed, but they never replace canonical reason/type/scope/deployment/summary/clarification sections.
+
+### Keep `[code]` empty during plan
+
+For a code-required change, retain an empty `## [code] Code Implementation` heading and write no checkbox below it. Real code slices are produced only after spec-complete by slice-planner using merged specifications and real test IDs. Remove the exact legacy template line `- [ ] Implement code changes` if present.
+
+### Read back and verify twice
+
+After writing, read the actual files from disk and run from the project root:
+
+```bash
+openlogos change-lint --slug <slug> --format json
+openlogos next --format json
+```
+
+Report “ready for approval” only when lint exits 0 with `data.pass=true`, and next reports `plan_state.plan_ready=true` plus `proposal_step=ready-to-delta`. Consume every structured issue and repair the pointed artifact in the same producer run. Never infer completion from prose or checkbox counts.
+
+### Delta and authorization boundary
+
+After explicit plan approval, execute only `[delta]` tasks. Read every written Delta back, check off the matching task, and rerun change-lint to exit 0. Do not run merge without separate explicit authorization.
+
+### Managed asset versioning
+
+If the project sync stamp has an older Plan contract or managed-asset hash than the CLI package, require `openlogos sync` and a new Agent session. Never treat different Skill bytes under the same semver as equivalent, and never overwrite project-owned Skills.
+
+## authority_impact 提案生产合同（规范引用）
+
+
+先读取 `spec/authority-closure.md`。本 Skill 只生产当前 change 的 impact 计划，不重建项目 Authority Registry 或复制根规范。
+
+影响分析时先判断触发：共享业务事实/完成谓词、projection、owner/writer/mutation/recovery/cutover、消费者本地重算风险。每个新或仍 writing 的提案必须有唯一 `openlogos/authority-impact@1`。required 分支引用 Registry 或当前 CREATE authority target，列出 projections、retired shadow sources、forbidden fallbacks、cutover 和真实 UT/ST/SMOKE IDs；not_applicable 分支只含非空可核验证据。
+
+任何 unresolved、未知 fact 引用、空 cutover、测试 ID 不真实或影子来源未退休都不得报告 plan 完成。Delta 仍遵守 P=T=D、一目标一文件、写后读回和逐文件勾选；`[code]` 在 merge 前保持空白。全部 Delta 完成后运行 change-lint，等待独立 merge 授权。

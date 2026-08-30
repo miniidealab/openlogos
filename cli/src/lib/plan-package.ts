@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { evaluateProposalClarification } from './clarification.js';
+import { authorityClosureSummary, evaluateAuthorityClosure } from './authority-closure.js';
 import {
   extractTaskSectionItems, isCodeRequiredForProposal, isTasksCodeFilled,
   isTasksTemplateFilled, parseTaskSections, resolveProposalDeploymentDecision, countMergeableDeltaFiles,
@@ -32,6 +33,13 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
   const clarification = evaluateProposalClarification(proposalContent, deployment.deployment_required);
   if (!historical && (!clarification.valid || clarification.output.status !== 'complete')) {
     proposalIssues.push(taskIssue('proposal_clarification_invalid', proposalRel, `决策澄清契约非法：${clarification.issues.join('；')}`, '按 openlogos/clarification@1 补齐并完成决策澄清。', { section_id: 'clarification', expected: 'openlogos/clarification@1 status=complete' }));
+  }
+  const authorityClosure = evaluateAuthorityClosure(root, proposalDir, proposalContent);
+  if (authorityClosure) {
+    for (const authorityIssue of authorityClosure.issues) {
+      proposalIssues.push(taskIssue(authorityIssue.code, authorityIssue.path, authorityIssue.message,
+        authorityIssue.fix_hint, { section_id: 'authority_impact' }));
+    }
   }
   const sections = parseTaskSections(tasksContent);
   const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
@@ -67,5 +75,6 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
       issues: taskSorted,
     },
     issues,
+    ...(authorityClosure ? { authority_closure: authorityClosureSummary(authorityClosure) } : {}),
   };
 }

@@ -4,12 +4,16 @@
   "planContractVersion": "1.4.0",
   "skills": [
     {
+      "path": "skills/architecture-designer/SKILL.md",
+      "sha256": "6056344746d542d14b87586880fee0a70ba66b556f738f9c84a63fa1f30e60ac"
+    },
+    {
       "path": "skills/change-writer/SKILL.md",
-      "sha256": "cc46919dccf7f0a9fe2c504d8383af27e2265375f876aa4cd5ee55721586ae3d"
+      "sha256": "152c460117ece9248b0528a2151215303a1325f01686b6aba57a958043bab562"
     },
     {
       "path": "skills/change-writer/SKILL.en.md",
-      "sha256": "18ddb7ecf8695cb5d8a93f20317c03d48a890547aa966bbde3e0deede2c05de6"
+      "sha256": "cc515b35b702b6a29a6996295d1ceb5a5108973173677491e03fd4132e1a6900"
     },
     {
       "path": "skills/merge-executor/SKILL.md",
@@ -18,22 +22,46 @@
     {
       "path": "skills/merge-executor/SKILL.en.md",
       "sha256": "e913a7acc0798572902d00c79160901794ca1267a27f5bb1682398c84174804e"
+    },
+    {
+      "path": "skills/scenario-architect/SKILL.md",
+      "sha256": "992ff544333b446a19860e2d9c1cc15788434dffd19b841ff088c1a9784e9318"
+    },
+    {
+      "path": "skills/deployment-designer/SKILL.md",
+      "sha256": "9315d1a93f0562c1ab9b54fc331a4b343945a410c3f287db881e579df0aa70d3"
+    },
+    {
+      "path": "skills/test-writer/SKILL.md",
+      "sha256": "bc337b887829bd7b0d24b12b5d0a6a10fbdaa8f4aa2aff99c3ee206f78af2005"
+    },
+    {
+      "path": "skills/code-reviewer/SKILL.md",
+      "sha256": "94dcf9e59a1e279e4ad71ea0b4a15b73d9624c12b05024fdbbe68f704d1f5009"
     }
   ],
   "templates": [
     {
+      "path": "dist/lib/authority-closure.js",
+      "sha256": "a097a5f8cf7fad56c47123383c2e1f7e562268734ae97e6b6133e688c195b556"
+    },
+    {
       "path": "dist/i18n.js",
-      "sha256": "438f308cedd0a0cece3c9e4847b6dd7112f1c683ae6e1e59bf6982be0f5fde74"
+      "sha256": "438a5130de67fffcbe6faf0e8611a9098ccc4dd527e99ea955e8f997e888a445"
     }
   ],
   "schemas": [
     {
+      "path": "spec/authority-closure.md",
+      "sha256": "4a2d4d60cec77e2e4965e686fe1fb0bcf50876f34c56de8cf75540ce3c506c39"
+    },
+    {
       "path": "spec/schema/next.schema.json",
-      "sha256": "4fa2f8dca139e8cc068a675bc701a9bc83543d05fe2b5f587fa7dca39e530620"
+      "sha256": "0af3aca15f3af5ac7093b85b1e294ec912331c740cc43661ff663dbd9dcb5d12"
     },
     {
       "path": "spec/schema/status.schema.json",
-      "sha256": "c388a1873343b536b9d7a07028fc163ae6bf0e1677a567b841d49aef6a843029"
+      "sha256": "7d7dd2f09dac55dc5eb9d808ada92a1a70f3975e6a4c2764fbba1d526451fd9c"
     },
     {
       "path": "spec/schema/merge-transaction.schema.json",
@@ -47,8 +75,28 @@
     },
     {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
-      "sha256": "93374b6696d47227a1b67ee7fa9dd3bf9938c1f2664def139041f07667c2e5ab"
+      "sha256": "e03f933ba26aec7eed20e04178f6ff275e7cd45961e2c3e6f2e531add2af1534"
+    },
+    {
+      "path": "claude-plugin-template/skills/architecture-designer/SKILL.md",
+      "sha256": "7fc4cad54f04aba5f6f4dd6b65326c66b64185e09eede67f96dc6c1dfbad9d06"
+    },
+    {
+      "path": "claude-plugin-template/skills/scenario-architect/SKILL.md",
+      "sha256": "69003530de66542aa734c1f9fdd8d443633b7ce9c5e6cae69e4735e3adde3366"
+    },
+    {
+      "path": "claude-plugin-template/skills/deployment-designer/SKILL.md",
+      "sha256": "c2ca65ffd3d74809ff06e28896c6465dd812daf7234d416f59f91170362bf4eb"
+    },
+    {
+      "path": "claude-plugin-template/skills/test-writer/SKILL.md",
+      "sha256": "004b1bed885b888dae9611dbca2f680f57eca4fa16d58c80656cb3d5e0bea284"
+    },
+    {
+      "path": "claude-plugin-template/skills/code-reviewer/SKILL.md",
+      "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "b0f7e61165fb5961b1a6651f0bdb335faeeb0dc2325049eecd8bf70cb669f22c"
+  "payloadHash": "3f644817aa1992420cef049800a0da4b9a30187db2bfaeda90c3e98aac4c109f"
 }

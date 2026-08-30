@@ -27,7 +27,7 @@ import { collectStatusData } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
 import { proposalTemplate } from '../src/i18n.js';
 import { runChangeLint } from '../src/lib/change-lint.js';
-import { captureConsole, makeTempRoot, mockCwd, scaffoldProject } from './helpers.js';
+import { captureConsole, makeTempRoot, mockCwd, scaffoldProject, withNotApplicableAuthority } from './helpers.js';
 
 type Doc = Record<string, any>;
 const cleanups: Array<() => void> = [];
@@ -118,7 +118,7 @@ function setup(doc: Doc | null, deploy = false): { root: string; dir: string } {
   writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'feat', module: 'core' }));
   const dir = join(root, 'logos', 'changes', 'feat');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'proposal.md'), proposal(doc, deploy));
+  writeFileSync(join(dir, 'proposal.md'), withNotApplicableAuthority(proposal(doc, deploy)));
   writeFileSync(join(dir, 'tasks.md'), '# 实现任务\n\n## [delta] 规格变更\n- [ ] 产出 delta\n\n## [code] 代码实现\n');
   return { root, dir };
 }
