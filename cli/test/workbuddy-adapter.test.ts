@@ -140,7 +140,7 @@ describe('WorkBuddy Adapter — S01/S20', () => {
       expect(packed.status, packed.stderr).toBe(0);
       const packResult = JSON.parse(packed.stdout)[0];
       const paths = new Set(packResult.files.map((file: { path: string }) => file.path));
-      expect(packResult.version).toBe('0.14.1');
+      expect(packResult.version).toBe('0.14.2');
       expect(JSON.parse(readFileSync(join(packRoot, 'workbuddy-plugin-template/.workbuddy-plugin/plugin.json'), 'utf8')).version).toBe(packResult.version);
       for (const required of [
         'workbuddy-plugin-template/.workbuddy-plugin/plugin.json',

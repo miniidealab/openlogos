@@ -43,6 +43,32 @@ export interface TestDefinitionRecord {
   cell_semantics: string[];
 }
 
+export type TestChangeSetBuildErrorCode =
+  | 'test-change-set-invalid-utf8'
+  | 'test-change-set-ambiguous-table'
+  | 'test-change-set-duplicate-id'
+  | 'test-change-set-target-duplicate'
+  | 'test-change-set-overlap';
+
+/**
+ * preflight 归因只读取结构化事实，禁止从 message 反向解析 target path。
+ * targetPaths 始终去重并按 ASCII 排序，便于跨进程稳定重放。
+ */
+export class TestChangeSetBuildError extends Error {
+  public readonly targetPaths: string[];
+
+  constructor(
+    public readonly code: TestChangeSetBuildErrorCode,
+    message: string,
+    targetPaths: string[],
+    public readonly retryable = true,
+  ) {
+    super(message);
+    this.name = 'TestChangeSetBuildError';
+    this.targetPaths = asciiSort(targetPaths);
+  }
+}
+
 export type TestChangeSetReadResult =
   | { valid: true; value: TestChangeSetV1 }
   | { valid: false; code: string; message: string; path: string };
@@ -67,7 +93,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function strictUtf8(bytes: Buffer, targetPath: string): string {
   const text = bytes.toString('utf8');
-  if (!Buffer.from(text, 'utf8').equals(bytes)) throw new Error(`test-change-set-invalid-utf8：${targetPath}`);
+  if (!Buffer.from(text, 'utf8').equals(bytes)) {
+    throw new TestChangeSetBuildError(
+      'test-change-set-invalid-utf8',
+      `test-change-set-invalid-utf8：${targetPath}`,
+      [targetPath],
+    );
+  }
   return text.replace(/\r\n?/g, '\n');
 }
 
@@ -93,7 +125,11 @@ function scanTestDefinitionCandidates(
     const delimiters = tableRowCells(scan.text[index + 1]);
     if (headers.length < 2 || headers.length !== delimiters.length || headers.some(item => item === '')) continue;
     if (new Set(headers).size !== headers.length && !allowAmbiguousRows) {
-      throw new Error(`test-change-set-ambiguous-table：${targetPath}:${index + 1}`);
+      throw new TestChangeSetBuildError(
+        'test-change-set-ambiguous-table',
+        `test-change-set-ambiguous-table：${targetPath}:${index + 1}`,
+        [targetPath],
+      );
     }
 
     let row = index + 2;
@@ -106,10 +142,20 @@ function scanTestDefinitionCandidates(
             row++;
             continue;
           }
-          throw new Error(`test-change-set-ambiguous-table：${targetPath}:${row + 1}`);
+          throw new TestChangeSetBuildError(
+            'test-change-set-ambiguous-table',
+            `test-change-set-ambiguous-table：${targetPath}:${row + 1}`,
+            [targetPath],
+          );
         }
         const existing = records.get(candidate) ?? [];
-        if (!allowDuplicateIds && existing.length > 0) throw new Error(`test-change-set-duplicate-id：${candidate}`);
+        if (!allowDuplicateIds && existing.length > 0) {
+          throw new TestChangeSetBuildError(
+            'test-change-set-duplicate-id',
+            `test-change-set-duplicate-id：${candidate}`,
+            [targetPath],
+          );
+        }
         existing.push({
           target_path: targetPath,
           column_identity: headers,
@@ -144,7 +190,14 @@ function collectAfter(targets: TestChangeSetInputTarget[]): Map<string, TestDefi
   const all = new Map<string, TestDefinitionRecord>();
   for (const target of targets) {
     for (const [id, record] of scanTestDefinitions(target.targetPath, target.afterBytes)) {
-      if (all.has(id)) throw new Error(`test-change-set-duplicate-id：after:${id}`);
+      const previous = all.get(id);
+      if (previous) {
+        throw new TestChangeSetBuildError(
+          'test-change-set-duplicate-id',
+          `test-change-set-duplicate-id：after:${id}`,
+          [previous.target_path, target.targetPath],
+        );
+      }
       all.set(id, record);
     }
   }
@@ -170,7 +223,15 @@ export function buildTestChangeSet(input: {
 }): TestChangeSetV1 {
   const sortedTargets = [...input.targets].sort((a, b) => a.targetPath < b.targetPath ? -1 : a.targetPath > b.targetPath ? 1 : 0);
   const targetPaths = sortedTargets.map(target => target.targetPath);
-  if (new Set(targetPaths).size !== targetPaths.length) throw new Error('test-change-set-target-duplicate');
+  if (new Set(targetPaths).size !== targetPaths.length) {
+    const duplicates = targetPaths.filter((path, index) => targetPaths.indexOf(path) !== index);
+    throw new TestChangeSetBuildError(
+      'test-change-set-target-duplicate',
+      'test-change-set-target-duplicate',
+      duplicates,
+      false,
+    );
+  }
   const before = collectBefore(sortedTargets);
   const after = collectAfter(sortedTargets);
   const changed: string[] = [];
@@ -194,7 +255,14 @@ export function buildTestChangeSet(input: {
     })),
   };
   const overlap = payload.changed_test_ids.filter(id => payload.removed_test_ids.includes(id));
-  if (overlap.length > 0) throw new Error(`test-change-set-overlap：${overlap.join('、')}`);
+  if (overlap.length > 0) {
+    throw new TestChangeSetBuildError(
+      'test-change-set-overlap',
+      `test-change-set-overlap：${overlap.join('、')}`,
+      targetPaths,
+      false,
+    );
+  }
   return { ...payload, sha256: hashPayload(payload) };
 }
 

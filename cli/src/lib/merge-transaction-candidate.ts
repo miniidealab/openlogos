@@ -16,6 +16,8 @@ export interface MergeTransactionCandidateFacts {
   status_schema_sha256: string;
   next_schema_sha256: string;
   contract_sha256: string;
+  merge_executor_skill_sha256: string;
+  merge_transaction_golden_sha256: string;
   semantic_validator: typeof MERGE_TRANSACTION_SEMANTIC_SCHEMA;
 }
 
@@ -23,6 +25,7 @@ export interface MergeTransactionCandidateCheck {
   install_ok: boolean;
   self_check_ok: boolean;
   contract_match: boolean;
+  behavior_ok: boolean;
 }
 
 export interface MergeTransactionCandidateDecision {
@@ -38,7 +41,8 @@ export interface MergeTransactionRollbackCommand {
 const FACT_KEYS = [
   'schema', 'command_path', 'cli_version', 'candidate_tarball_sha256',
   'merge_transaction_schema_sha256', 'status_schema_sha256', 'next_schema_sha256',
-  'contract_sha256', 'semantic_validator',
+  'contract_sha256', 'merge_executor_skill_sha256', 'merge_transaction_golden_sha256',
+  'semantic_validator',
 ] as const;
 
 function assertHash(value: string, field: string): void {
@@ -58,7 +62,8 @@ export function freezeMergeTransactionCandidateFacts(input: MergeTransactionCand
   if (input.semantic_validator !== MERGE_TRANSACTION_SEMANTIC_SCHEMA) throw new Error('candidate_fact_invalid:semantic_validator');
   for (const field of [
     'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
-    'next_schema_sha256', 'contract_sha256',
+    'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',
+    'merge_transaction_golden_sha256',
   ] as const) assertHash(input[field], field);
   return Object.freeze({ ...input });
 }
@@ -74,7 +79,8 @@ export function assertMergeTransactionCandidateMatch(
   const invalidated = new Set(invalidatedHashes);
   for (const field of [
     'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
-    'next_schema_sha256', 'contract_sha256',
+    'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',
+    'merge_transaction_golden_sha256',
   ] as const) {
     if (invalidated.has(frozenActual[field])) throw new Error(`candidate_hash_invalidated:${field}`);
   }
@@ -91,7 +97,7 @@ export function decideMergeTransactionCandidate(
 ): MergeTransactionCandidateDecision {
   const frozenPrevious = freezeMergeTransactionCandidateFacts(previous);
   const frozenCandidate = freezeMergeTransactionCandidateFacts(candidate);
-  if (check.install_ok && check.self_check_ok && check.contract_match) {
+  if (check.install_ok && check.self_check_ok && check.contract_match && check.behavior_ok) {
     return { action: 'keep-candidate', selected: frozenCandidate };
   }
   return { action: 'restore-previous', selected: frozenPrevious };

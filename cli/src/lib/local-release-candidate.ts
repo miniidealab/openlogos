@@ -2,8 +2,8 @@ import { basename, isAbsolute, relative } from 'node:path';
 
 export const LOCAL_RELEASE_CANDIDATE_SCHEMA = 'openlogos/local-release-candidate@1' as const;
 export const LOCAL_RELEASE_PACKAGE_NAME = '@miniidealab/openlogos' as const;
-export const LOCAL_RELEASE_CANDIDATE_VERSION = '0.14.1' as const;
-export const LOCAL_RELEASE_ROLLBACK_VERSION = '0.14.0' as const;
+export const LOCAL_RELEASE_CANDIDATE_VERSION = '0.14.2' as const;
+export const LOCAL_RELEASE_ROLLBACK_VERSION = '0.14.1' as const;
 
 export const LOCAL_RELEASE_PLUGIN_MANIFEST_PATHS = [
   'claude-plugin-template/.claude-plugin/plugin.json',
@@ -85,7 +85,7 @@ export function assertLocalReleaseCommandGraph(commands: readonly LocalReleaseCo
   }
 }
 
-/** 生成只引用固定 0.14.0 tarball 的可复制回滚与版本复核命令。 */
+/** 生成只引用固定 0.14.1 tarball 的可复制回滚与版本复核命令。 */
 export function buildLocalReleaseRollbackPlan(
   prefix: string,
   rollbackTarball: string,

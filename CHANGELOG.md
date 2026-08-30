@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-08-30
+
+### Fixed
+
+- merge transaction 在 seal 前构建并绑定确定性 preflight，严格扫描 test-change-set；可归因 Agent 内容错误原子退回同一事务的 collecting/missing slot，避免错误进入 applying 后无法修复。
+- 兼容缺少 preflight 的 0.14.1 sealed 事务：首写前校验通过则沿用旧 seal，失败时只 reopen 实际责任 slot；mixed、OpenLogos、unknown 与首写后状态保持 fail-closed。
+
+### Changed
+
+- 本地候选版本升级为 `0.14.2`，增加固定 0.14.1 回滚、安装态 preflight/reopen 与 RunLogos 恢复 smoke runner；不包含公开发布、全局安装、RunLogos 写入或 git push。
+
 ## [0.14.1] - 2026-08-30
 
 ### Changed

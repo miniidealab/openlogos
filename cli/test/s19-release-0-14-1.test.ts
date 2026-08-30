@@ -122,8 +122,8 @@ function createCandidateTarball(root: string): { tarball: string; files: Set<str
   return { tarball: join(root, meta.filename), files: new Set(meta.files.map(item => item.path)), version: meta.version };
 }
 
-describe('S19 — OpenLogos 0.14.1 本地全局 patch candidate', () => {
-  it('UT-S19-22: 当前 0.14.1 identity 全源一致且历史 0.14.0 语义保留', () => {
+describe('S19 — OpenLogos 本地全局 patch candidate', () => {
+  it('UT-S19-22: 当前 candidate identity 全源一致且历史 0.14.0 语义保留', () => {
     const versionSources = [
       'cli/package.json', 'cli/package-lock.json',
       'plugin/.claude-plugin/plugin.json', 'plugin-codex/plugin.json',
@@ -131,7 +131,7 @@ describe('S19 — OpenLogos 0.14.1 本地全局 patch candidate', () => {
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
     ];
     for (const path of versionSources) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.1');
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.2');
 
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest;
     validateAssetManifest(assetManifest, cliRoot);
@@ -167,13 +167,13 @@ describe('S19 — OpenLogos 0.14.1 本地全局 patch candidate', () => {
     expect(readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8')).toContain('## [0.14.1]');
   });
 
-  it('UT-S19-23: 旧/混合证据和公开发布动作 fail-closed，回滚只使用固定 0.14.0 tarball', () => {
+  it('UT-S19-23: 旧/混合证据和公开发布动作 fail-closed，回滚只使用固定 previous tarball', () => {
     const packageRoot = '/opt/openlogos/lib/node_modules/@miniidealab/openlogos';
     const valid: LocalReleaseCandidateIdentity = {
       schema: LOCAL_RELEASE_CANDIDATE_SCHEMA,
       package_name: LOCAL_RELEASE_PACKAGE_NAME,
       package_version: LOCAL_RELEASE_CANDIDATE_VERSION,
-      plugin_versions: Object.fromEntries(LOCAL_RELEASE_PLUGIN_MANIFEST_PATHS.map(path => [path, '0.14.1'])) as LocalReleaseCandidateIdentity['plugin_versions'],
+      plugin_versions: Object.fromEntries(LOCAL_RELEASE_PLUGIN_MANIFEST_PATHS.map(path => [path, LOCAL_RELEASE_CANDIDATE_VERSION])) as LocalReleaseCandidateIdentity['plugin_versions'],
       asset_manifest_version: LOCAL_RELEASE_CANDIDATE_VERSION,
       tarball_sha256: `sha256:${'a'.repeat(64)}`,
       command_path: `${packageRoot}/dist/index.js`,
@@ -199,7 +199,7 @@ describe('S19 — OpenLogos 0.14.1 本地全局 patch candidate', () => {
       { command: 'npm', args: ['install', '--prefix', '/tmp/openlogos-prefix', '/tmp/openlogos-0.14.1.tgz'] },
     ])).not.toThrow();
 
-    const rollbackTarball = '/tmp/openlogos-0.14.0.tgz';
+    const rollbackTarball = '/tmp/openlogos-0.14.1.tgz';
     const plan = buildLocalReleaseRollbackPlan('/tmp/openlogos-prefix', rollbackTarball, '/tmp/openlogos-prefix/bin/openlogos');
     expect(plan).toHaveLength(3);
     expect(plan[1].args.at(-1)).toBe(rollbackTarball);
@@ -207,7 +207,7 @@ describe('S19 — OpenLogos 0.14.1 本地全局 patch candidate', () => {
     expect(() => buildLocalReleaseRollbackPlan('relative', rollbackTarball, '/tmp/openlogos-prefix/bin/openlogos')).toThrow('prefix');
   });
 
-  it('ST-S19-15: 隔离 prefix 真实 pack、安装、自检、0.14.0 回滚与 0.14.1 恢复', () => {
+  it('ST-S19-15: 隔离 prefix 真实 pack、安装、自检、previous 回滚与 current 恢复', () => {
     const root = mkdtempSync(join(tmpdir(), 'openlogos-release-0-14-1-'));
     roots.push(root);
     const rollbackTarball = createRollbackTarball(root);

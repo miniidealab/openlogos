@@ -13,13 +13,17 @@ import {
   applyBaselineClosureBatch, recoverBaselineClosureApply,
   BASELINE_CLOSURE_APPLY_JOURNAL, type BaselineClosureApplyInput,
 } from './baseline-apply.js';
-import { buildTestChangeSet, type TestChangeSetInputTarget } from './test-change-set.js';
+import {
+  buildTestChangeSet, TestChangeSetBuildError,
+  type TestChangeSetInputTarget, type TestChangeSetV1,
+} from './test-change-set.js';
 import {
   assertMergeTransactionSemantics, computeMergeReceiptSha256,
   mergeSha256,
 } from './merge-transaction-semantic.js';
 
 export const MERGE_TRANSACTION_SCHEMA = 'openlogos/merge-transaction@1' as const;
+export const MERGE_PREFLIGHT_SCHEMA = 'openlogos/merge-preflight@1' as const;
 export const MERGE_TRANSACTION_FILE = 'MERGE_TRANSACTION.json';
 export const MERGE_TRANSACTION_SCHEMA_PATH = 'spec/schema/merge-transaction.schema.json';
 const CONTRACT_PATH = 'spec/cli-json-output.md';
@@ -77,6 +81,32 @@ interface StoredTarget {
   sealed_sha256: string | null;
 }
 
+export interface MergePreflightTarget {
+  path: string;
+  mode: 'CREATE' | 'MODIFY';
+  producer: 'agent' | 'openlogos';
+  before_sha256: string | null;
+  final_sha256: string;
+}
+
+export interface MergePreflightView {
+  schema: typeof MERGE_PREFLIGHT_SCHEMA;
+  transaction_id: string;
+  plan_sha256: string;
+  target_set_sha256: string;
+  targets: MergePreflightTarget[];
+  test_change_set_sha256: string;
+  final_target_paths: string[];
+  sha256: string;
+}
+
+export interface MergePreflightErrorFact {
+  code: string;
+  target_paths: string[];
+  producer: 'agent' | 'openlogos' | 'mixed' | 'unknown';
+  retryable: boolean;
+}
+
 export interface MergeTransactionPathHash {
   path: string;
   sha256: string;
@@ -125,6 +155,8 @@ interface StoredTransaction {
   schema_sha256: string;
   contract_sha256: string;
   seal_sha256: string | null;
+  /** 0.14.1 sealed 事务没有该内部字段，读取时必须兼容缺席。 */
+  preflight?: MergePreflightView | null;
   targets: StoredTarget[];
   receipt: MergeTransactionReceipt | null;
   artifact_hashes?: MergeTransactionPathHash[];
@@ -384,7 +416,7 @@ export function createMergeTransaction(root: string, proposalDir: string, slug: 
     phase: planned.targets.some(target => target.producer === 'agent') ? 'collecting' : 'ready', classification: null,
     plan_sha256: planned.planHash, target_set_sha256: targetSet,
     schema_sha256: digest(readFileSync(schemaPath)), contract_sha256: digest(readFileSync(contractPath)),
-    seal_sha256: null, targets: planned.targets, receipt: null, artifact_hashes: [], aborted_at: null,
+    seal_sha256: null, preflight: null, targets: planned.targets, receipt: null, artifact_hashes: [], aborted_at: null,
     created_at: now, updated_at: now,
   };
   writeStored(proposalDir, tx);
@@ -519,20 +551,208 @@ function validateAgentSemantics(root: string, proposalDir: string, target: Store
   }
 }
 
+interface PreparedMergeClosure {
+  preflight: MergePreflightView;
+  targetBytes: Map<string, Buffer>;
+  metadata: Buffer | null;
+  testChangeSet: TestChangeSetV1;
+}
+
+class MergePreflightBuildError extends Error {
+  constructor(public readonly fact: MergePreflightErrorFact, message: string) {
+    super(message);
+    this.name = 'MergePreflightBuildError';
+  }
+}
+
+function producerForPaths(tx: StoredTransaction, targetPaths: string[]): MergePreflightErrorFact['producer'] {
+  if (targetPaths.length === 0) return 'unknown';
+  const producers = new Set<'agent' | 'openlogos'>();
+  for (const path of targetPaths) {
+    const matches = tx.targets.filter(target => target.target_path === path);
+    if (matches.length !== 1) return 'unknown';
+    producers.add(matches[0].producer);
+  }
+  if (producers.size !== 1) return 'mixed';
+  return [...producers][0];
+}
+
+/**
+ * 结构化 target path 到可修复 slot 的唯一映射。返回 null 表示 mixed/OpenLogos/unknown，
+ * 调用方必须整体 fail-closed；错误 message 不参与输入。
+ */
+export function attributeMergePreflightError(
+  targets: ReadonlyArray<Pick<StoredTarget, 'slot_id' | 'target_path' | 'producer'>>,
+  fact: MergePreflightErrorFact,
+): string[] | null {
+  if (!fact.retryable || fact.producer !== 'agent' || fact.target_paths.length === 0) return null;
+  const slots: string[] = [];
+  for (const path of sortedUnique(fact.target_paths)) {
+    const matches = targets.filter(target => target.target_path === path);
+    if (matches.length !== 1 || matches[0].producer !== 'agent') return null;
+    slots.push(matches[0].slot_id);
+  }
+  return sortedUnique(slots);
+}
+
+function structuredPreflightError(tx: StoredTransaction, error: unknown): MergePreflightBuildError {
+  if (error instanceof MergePreflightBuildError) return error;
+  if (error instanceof TestChangeSetBuildError) {
+    const producer = producerForPaths(tx, error.targetPaths);
+    return new MergePreflightBuildError({
+      code: error.code,
+      target_paths: sortedUnique(error.targetPaths),
+      producer,
+      retryable: error.retryable && producer === 'agent',
+    }, error.message);
+  }
+  return new MergePreflightBuildError({
+    code: 'merge-preflight-internal',
+    target_paths: [],
+    producer: 'unknown',
+    retryable: false,
+  }, error instanceof Error ? error.message : String(error));
+}
+
+function computeSealSha256(tx: StoredTransaction, hashes: Array<{ slot_id: string; content_sha256: string }>, preflight?: MergePreflightView | null): string {
+  return digest(canonical({
+    transaction_id: tx.transaction_id,
+    target_set_sha256: tx.target_set_sha256,
+    hashes,
+    ...(preflight ? { preflight_sha256: preflight.sha256 } : {}),
+  }));
+}
+
+/** 纯只读构建；调用方只有在完整成功后才可写 transaction phase。 */
+function buildMergePreflight(root: string, proposalDir: string, tx: StoredTransaction): PreparedMergeClosure {
+  const targetBytes = new Map<string, Buffer>();
+  const targets: MergePreflightTarget[] = [];
+  const tests: TestChangeSetInputTarget[] = [];
+  try {
+    for (const target of tx.targets) {
+      let bytes: Buffer;
+      try {
+        bytes = contentFor(root, proposalDir, tx, target);
+        if (target.producer === 'agent') validateAgentSemantics(root, proposalDir, target, bytes);
+      } catch (error) {
+        const source = error instanceof Error ? error.message : String(error);
+        throw new MergePreflightBuildError({
+          code: error instanceof MergeTransactionError ? error.classification : 'merge-preflight-content-invalid',
+          target_paths: [target.target_path],
+          producer: target.producer,
+          retryable: target.producer === 'agent',
+        }, source);
+      }
+      targetBytes.set(target.target_path, bytes);
+      targets.push({
+        path: target.target_path,
+        mode: target.mode,
+        producer: target.producer,
+        before_sha256: target.before_sha256,
+        final_sha256: digest(bytes),
+      });
+      if (target.category === 'test' || target.target_path.startsWith('logos/resources/test/')) tests.push({
+        targetPath: target.target_path,
+        beforeBytes: target.mode === 'MODIFY' ? readFileSync(join(root, ...target.target_path.split('/'))) : null,
+        afterBytes: bytes,
+      });
+    }
+    const metadata = metadataBytes(root, tx);
+    if (metadata) {
+      const metadataPath = 'logos/logos-project.yaml';
+      targets.push({
+        path: metadataPath,
+        mode: 'MODIFY',
+        producer: 'openlogos',
+        before_sha256: digest(readFileSync(join(root, ...metadataPath.split('/')))),
+        final_sha256: digest(metadata),
+      });
+    }
+    const testChangeSet = buildTestChangeSet({ change: tx.slug, module: tx.module, targets: tests });
+    const sortedTargets = [...targets].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+    const base: Omit<MergePreflightView, 'sha256'> = {
+      schema: MERGE_PREFLIGHT_SCHEMA,
+      transaction_id: tx.transaction_id,
+      plan_sha256: tx.plan_sha256,
+      target_set_sha256: tx.target_set_sha256,
+      targets: sortedTargets,
+      test_change_set_sha256: testChangeSet.sha256,
+      final_target_paths: sortedUnique(sortedTargets.map(target => target.path)),
+    };
+    return {
+      preflight: { ...base, sha256: digest(canonical(base)) },
+      targetBytes,
+      metadata,
+      testChangeSet,
+    };
+  } catch (error) {
+    throw structuredPreflightError(tx, error);
+  }
+}
+
+function hasApplyArtifacts(proposalDir: string): boolean {
+  return [
+    'MERGE_RECEIPT.json', 'SPEC_MERGED', BASELINE_CLOSURE_APPLY_JOURNAL,
+    `${BASELINE_CLOSURE_APPLY_JOURNAL}.tmp`, '.baseline-closure-apply-txn',
+  ].some(path => existsSync(join(proposalDir, path)));
+}
+
+function reopenForPreflightError(
+  proposalDir: string,
+  tx: StoredTransaction,
+  error: MergePreflightBuildError,
+): never {
+  const fact = error.fact;
+  const rejectedSlots = attributeMergePreflightError(tx.targets, fact);
+  if (!rejectedSlots || !['ready', 'sealed'].includes(tx.phase) || hasApplyArtifacts(proposalDir)) {
+    throw new MergeTransactionError('internal_failure', error.message, false, projectMergeTransaction(tx, proposalDir));
+  }
+  const rejectedTargets = rejectedSlots.map(slot => tx.targets.find(target => target.slot_id === slot)!);
+  const faultAt = process.env.NODE_ENV === 'test' ? process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT : undefined;
+  if (faultAt === 'before-rename') {
+    throw new MergeTransactionError('internal_failure', 'test fault before reopen rename', true, projectMergeTransaction(tx, proposalDir));
+  }
+  tx.phase = 'collecting';
+  tx.classification = 'slot_identity_mismatch';
+  tx.seal_sha256 = null;
+  tx.preflight = null;
+  tx.preflight = null;
+  for (const target of tx.targets) target.sealed_sha256 = null;
+  for (const target of rejectedTargets) target.content_sha256 = null;
+  tx.updated_at = new Date().toISOString();
+  writeStored(proposalDir, tx);
+  if (faultAt === 'after-rename') {
+    throw new MergeTransactionError('slot_identity_mismatch', 'test fault after reopen rename', true, projectMergeTransaction(tx, proposalDir));
+  }
+  for (const target of rejectedTargets) {
+    try { rmSync(slotPath(proposalDir, tx, target.slot_id), { force: true }); } catch { /* 状态已提交，清理尽力而为。 */ }
+    try { rmSync(dirname(stagingPath(proposalDir, tx, target.slot_id)), { recursive: true, force: true }); } catch { /* 同上。 */ }
+    if (faultAt === 'during-cleanup') {
+      throw new MergeTransactionError('slot_identity_mismatch', 'test fault during reopen cleanup', true, projectMergeTransaction(tx, proposalDir));
+    }
+  }
+  throw new MergeTransactionError(
+    'slot_identity_mismatch', error.message, true, projectMergeTransaction(tx, proposalDir),
+  );
+}
+
 export function sealMergeTransaction(root: string, proposalDir: string): MergeTransactionProjection {
   const tx = readStored(proposalDir);
   if (tx.phase === 'sealed' || tx.phase === 'completed') return projectMergeTransaction(tx, proposalDir);
   if (tx.phase !== 'ready') throw new MergeTransactionError('content_slot_missing', 'content slot 尚未齐备', true, projectMergeTransaction(tx, proposalDir));
   validateFrozenIdentity(root, proposalDir, tx);
+  let prepared: PreparedMergeClosure;
+  try { prepared = buildMergePreflight(root, proposalDir, tx); } catch (error) {
+    return reopenForPreflightError(proposalDir, tx, structuredPreflightError(tx, error));
+  }
   const hashes = tx.targets.map(target => {
-    const bytes = contentFor(root, proposalDir, tx, target);
-    if (target.producer === 'agent') validateAgentSemantics(root, proposalDir, target, bytes);
-    const hash = digest(bytes);
+    const hash = digest(prepared.targetBytes.get(target.target_path)!);
     target.content_sha256 = hash;
     target.sealed_sha256 = hash;
     return { slot_id: target.slot_id, content_sha256: hash };
   });
-  tx.seal_sha256 = digest(canonical({ transaction_id: tx.transaction_id, target_set_sha256: tx.target_set_sha256, hashes }));
+  tx.preflight = prepared.preflight;
+  tx.seal_sha256 = computeSealSha256(tx, hashes, prepared.preflight);
   tx.phase = 'sealed';
   tx.classification = null;
   tx.updated_at = new Date().toISOString();
@@ -649,29 +869,39 @@ export function applyMergeTransaction(root: string, proposalDir: string): MergeT
   if (tx.phase === 'applying') return recoverMergeTransaction(root, proposalDir);
   if (tx.phase !== 'sealed' || !tx.seal_sha256) throw new MergeTransactionError('action_not_allowed', 'transaction 尚未 sealed', false, projectMergeTransaction(tx, proposalDir));
   validateFrozenIdentity(root, proposalDir, tx);
-  for (const target of tx.targets) if (digest(contentFor(root, proposalDir, tx, target)) !== target.sealed_sha256) {
-    throw new MergeTransactionError('seal_mismatch', `sealed content 漂移：${target.target_path}`, false, projectMergeTransaction(tx, proposalDir));
+  const sealedHashes = tx.targets.map(target => {
+    const hash = digest(contentFor(root, proposalDir, tx, target));
+    if (hash !== target.sealed_sha256) {
+      throw new MergeTransactionError('seal_mismatch', `sealed content 漂移：${target.target_path}`, false, projectMergeTransaction(tx, proposalDir));
+    }
+    return { slot_id: target.slot_id, content_sha256: hash };
+  });
+  if (computeSealSha256(tx, sealedHashes, tx.preflight) !== tx.seal_sha256) {
+    throw new MergeTransactionError('seal_mismatch', 'seal identity 漂移', false, projectMergeTransaction(tx, proposalDir));
+  }
+  let prepared: PreparedMergeClosure;
+  try { prepared = buildMergePreflight(root, proposalDir, tx); } catch (error) {
+    const structured = structuredPreflightError(tx, error);
+    if (tx.preflight == null) return reopenForPreflightError(proposalDir, tx, structured);
+    throw new MergeTransactionError('seal_mismatch', structured.message, false, projectMergeTransaction(tx, proposalDir));
+  }
+  if (tx.preflight && canonical(prepared.preflight) !== canonical(tx.preflight)) {
+    throw new MergeTransactionError('seal_mismatch', 'sealed preflight identity 漂移', false, projectMergeTransaction(tx, proposalDir));
   }
   tx.phase = 'applying'; tx.updated_at = new Date().toISOString(); writeStored(proposalDir, tx);
   const inputs: BaselineClosureApplyInput[] = [];
-  const tests: TestChangeSetInputTarget[] = [];
   const closure: MergeTransactionPathHash[] = [];
   for (const target of tx.targets) {
-    const bytes = contentFor(root, proposalDir, tx, target);
+    const bytes = prepared.targetBytes.get(target.target_path)!;
     inputs.push({ kind: 'prepared', targetPath: target.target_path, mode: target.mode, bytes });
     closure.push({ path: target.target_path, sha256: digest(bytes) });
-    if (target.category === 'test') tests.push({
-      targetPath: target.target_path,
-      beforeBytes: target.mode === 'MODIFY' ? readFileSync(join(root, ...target.target_path.split('/'))) : null,
-      afterBytes: bytes,
-    });
   }
-  const metadata = metadataBytes(root, tx);
+  const metadata = prepared.metadata;
   if (metadata) {
     inputs.push({ kind: 'prepared', targetPath: 'logos/logos-project.yaml', mode: 'MODIFY', bytes: metadata });
     closure.push({ path: 'logos/logos-project.yaml', sha256: digest(metadata) });
   }
-  const testChangeSet = buildTestChangeSet({ change: tx.slug, module: tx.module, targets: tests });
+  const testChangeSet = prepared.testChangeSet;
   const completedAt = new Date().toISOString();
   const receiptPath = relative(root, join(proposalDir, 'MERGE_RECEIPT.json')).replace(/\\/g, '/');
   const markerPath = relative(root, join(proposalDir, 'SPEC_MERGED')).replace(/\\/g, '/');

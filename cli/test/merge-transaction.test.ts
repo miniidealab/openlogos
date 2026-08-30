@@ -9,9 +9,9 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import {
-  abortMergeTransaction, applyMergeTransaction, createMergeTransaction,
+  abortMergeTransaction, applyMergeTransaction, attributeMergePreflightError, createMergeTransaction,
   listMergeTransactionPlanTargets, MERGE_TRANSACTION_ACTION_COMMANDS,
-  mergeTransactionCommandForAction, readMergeTransaction, recoverMergeTransaction,
+  MergeTransactionError, mergeTransactionCommandForAction, readMergeTransaction, recoverMergeTransaction,
   sealMergeTransaction, submitMergeContent,
 } from '../src/lib/merge-transaction.js';
 import {
@@ -24,6 +24,7 @@ import {
   type MergeTransactionCandidateFacts,
 } from '../src/lib/merge-transaction-candidate.js';
 import { validateAndStripNonMarkdownDelta } from '../src/lib/baseline-closure.js';
+import { buildTestChangeSet, TestChangeSetBuildError } from '../src/lib/test-change-set.js';
 import { validateRunLogosCandidateEvidence } from '../../scripts/lib/runlogos-candidate-evidence.mjs';
 
 const roots: string[] = [];
@@ -49,6 +50,9 @@ function checked(command: string, args: string[], cwd: string): string {
 }
 
 function candidateFacts(commandPath: string, tarball: string, packageRoot: string): MergeTransactionCandidateFacts {
+  const assetHash = (path: string): string => existsSync(join(packageRoot, ...path.split('/')))
+    ? sha256(readFileSync(join(packageRoot, ...path.split('/'))))
+    : sha256(Buffer.from(`absent:${path}`));
   return freezeMergeTransactionCandidateFacts({
     schema: MERGE_TRANSACTION_CANDIDATE_SCHEMA,
     command_path: resolve(commandPath),
@@ -58,6 +62,8 @@ function candidateFacts(commandPath: string, tarball: string, packageRoot: strin
     status_schema_sha256: sha256(readFileSync(join(packageRoot, 'spec/schema/status.schema.json'))),
     next_schema_sha256: sha256(readFileSync(join(packageRoot, 'spec/schema/next.schema.json'))),
     contract_sha256: sha256(readFileSync(join(packageRoot, 'spec/cli-json-output.md'))),
+    merge_executor_skill_sha256: assetHash('skills/merge-executor/SKILL.md'),
+    merge_transaction_golden_sha256: assetHash('spec/golden/merge-transaction-completed.json'),
     semantic_validator: 'openlogos/merge-transaction-semantic@1',
   });
 }
@@ -151,8 +157,82 @@ function prepare(f = fixture()) {
   return { ...f, tx };
 }
 
+function preflightFixture(afterContents: string[]) {
+  const root = mkdtempSync(join(tmpdir(), 'openlogos-merge-preflight-'));
+  roots.push(root);
+  const slug = 'preflight-fixture';
+  const proposalDir = join(root, 'logos', 'changes', slug);
+  put(root, 'logos/logos.config.json', '{"locale":"zh","project":{"type":"cli"}}\n');
+  put(root, 'logos/.openlogos-guard', `${JSON.stringify({ activeChange: slug, module: 'core' })}\n`);
+  put(root, 'logos/logos-project.yaml', 'project:\n  name: Preflight Fixture\nscenario_counter:\n  next_id: 40\nresource_index: []\n');
+  const targets = afterContents.map((content, index) => {
+    const suffix = String(index + 1).padStart(2, '0');
+    const targetPath = `logos/resources/test/core-S${suffix}-test-cases.md`;
+    const deltaPath = `deltas/test/core-S${suffix}-test-cases.md`;
+    put(root, targetPath, `# 测试 ${suffix}\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S${suffix}-01 | 旧定义 |\n`);
+    const body = content.includes('## 测试矩阵') ? content.split('## 测试矩阵')[1].replace(/^\s*/, '') : content;
+    put(root, `logos/changes/${slug}/${deltaPath}`, `## MODIFIED — 测试矩阵\n\n${body}`);
+    return { targetPath, deltaPath, content };
+  });
+  const yamlTargets = targets.map(({ targetPath, deltaPath }) => `    - category: test\n      scenario_ids: [S09]\n      mode: MODIFY\n      delta_path: ${deltaPath}\n      reason: preflight fixture\n      evidence: [target_exists]\n      missing_evidence: []`).join('\n');
+  put(root, `logos/changes/${slug}/proposal.md`, `# preflight fixture\n\n## 基线闭包计划\n\n\`\`\`yaml\nbaseline_closure:\n  policy: on-touch-v1\n  schema_version: 1\n  unit: canonical-merge-target-path\n  delta_cardinality: exactly-one-per-non-skip-target\n  effective_view: merged-resources-plus-current-change-deltas\n  ambiguity: block-before-existing-plan-exit\n  standalone_baseline_required: false\n  jit_confirmation: disabled\n  touched_scenario_ids: [S09]\n  targets:\n${yamlTargets}\n\`\`\`\n`);
+  put(root, `logos/changes/${slug}/tasks.md`, '# 任务\n\n## [delta] 规格变更\n\n## [code] 代码实现\n');
+  let tx = createMergeTransaction(root, proposalDir, slug);
+  for (const target of listMergeTransactionPlanTargets(proposalDir)) {
+    const configured = targets.find(item => item.targetPath === target.target_path)!;
+    const descriptor = tx.content_slots.items.find(item => item.slot_id === target.slot_id)!;
+    const staging = atomicStage(root, descriptor.staging_path, configured.content);
+    tx = submitMergeContent(proposalDir, target.slot_id, staging);
+  }
+  return { root, proposalDir, slug, tx, targets };
+}
+
+function canonicalForTest(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalForTest).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalForTest(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function forceLegacySealed(
+  f: ReturnType<typeof preflightFixture>,
+  replacements: Map<number, string> = new Map(),
+  producerOverrides: Map<number, 'agent' | 'openlogos'> = new Map(),
+) {
+  const path = join(f.proposalDir, 'MERGE_TRANSACTION.json');
+  const stored = JSON.parse(readFileSync(path, 'utf8'));
+  delete stored.preflight;
+  stored.phase = 'sealed';
+  stored.classification = null;
+  stored.targets.forEach((target: Record<string, unknown>, index: number) => {
+    const replacement = replacements.get(index);
+    if (replacement !== undefined) {
+      const contentPath = join(f.proposalDir, 'merge-content', stored.transaction_id, `${target.slot_id}.content`);
+      mkdirSync(resolve(contentPath, '..'), { recursive: true });
+      writeFileSync(contentPath, replacement);
+      target.content_sha256 = sha256(Buffer.from(replacement));
+    }
+    if (producerOverrides.has(index)) target.producer = producerOverrides.get(index);
+    target.sealed_sha256 = target.content_sha256;
+  });
+  const hashes = stored.targets.map((target: Record<string, unknown>) => ({
+    slot_id: target.slot_id,
+    content_sha256: target.content_sha256,
+  }));
+  stored.seal_sha256 = sha256(Buffer.from(canonicalForTest({
+    transaction_id: stored.transaction_id,
+    target_set_sha256: stored.target_set_sha256,
+    hashes,
+  })));
+  writeFileSync(path, `${JSON.stringify(stored, null, 2)}\n`);
+  return stored;
+}
+
 afterEach(() => {
   delete process.env.OPENLOGOS_TEST_MERGE_TX_FAIL_AFTER;
+  delete process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT;
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -174,6 +254,341 @@ const applyIds = [
 ].join(' ');
 
 describe('OpenLogos merge transaction', () => {
+  it('UT-S09-261: 新事务在 seal 首写前拒绝歧义 after，并只退回责任 slot', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const f = preflightFixture([invalid]);
+    const formalBefore = readFileSync(join(f.root, f.targets[0].targetPath));
+    let caught: MergeTransactionError | null = null;
+    try { sealMergeTransaction(f.root, f.proposalDir); } catch (error) {
+      if (error instanceof MergeTransactionError) caught = error;
+      else throw error;
+    }
+    expect(caught).toMatchObject({ classification: 'slot_identity_mismatch', retryable: true });
+    expect(caught?.transaction).toMatchObject({
+      phase: 'collecting', classification: 'slot_identity_mismatch',
+      allowed_actions: ['submit_content', 'abort'], next_action: 'submit_content',
+    });
+    expect(caught?.transaction?.content_slots.missing_slot_ids).toEqual([f.tx.content_slots.items[0].slot_id]);
+    expect(readFileSync(join(f.root, f.targets[0].targetPath))).toEqual(formalBefore);
+    for (const artifact of ['BASELINE_CLOSURE_APPLY_JOURNAL.json', '.baseline-closure-apply-txn', 'MERGE_RECEIPT.json', 'SPEC_MERGED']) {
+      expect(existsSync(join(f.proposalDir, artifact))).toBe(false);
+    }
+
+    const repaired = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 新定义 |\n';
+    const descriptor = readMergeTransaction(f.proposalDir).content_slots.items[0];
+    const staging = atomicStage(f.root, descriptor.staging_path, repaired);
+    submitMergeContent(f.proposalDir, descriptor.slot_id, staging);
+    expect(sealMergeTransaction(f.root, f.proposalDir)).toMatchObject({ phase: 'sealed', classification: null });
+  });
+
+  it('UT-S16-33: retryable CLI 错误与 status/next 读取同一 collecting 投影', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const f = preflightFixture([invalid]);
+    const seal = spawnSync(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'seal', '--slug', f.slug, '--format', 'json'], { cwd: f.root, encoding: 'utf8' });
+    expect(seal.status).toBe(1);
+    const envelope = JSON.parse(seal.stderr.trim());
+    expect(envelope.error.details).toMatchObject({
+      transaction_id: f.tx.transaction_id, phase: 'collecting', classification: 'slot_identity_mismatch',
+      allowed_actions: ['submit_content', 'abort'], next_action: 'submit_content', retryable: true,
+    });
+    const status = spawnSync(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'status', '--format', 'json'], { cwd: f.root, encoding: 'utf8' });
+    const next = spawnSync(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'next', '--format', 'json'], { cwd: f.root, encoding: 'utf8' });
+    expect(status.status, status.stderr).toBe(0);
+    expect(next.status, next.stderr).toBe(0);
+    const statusTx = JSON.parse(status.stdout).data.merge_transaction;
+    const nextTx = JSON.parse(next.stdout).data.merge_transaction;
+    expect(nextTx).toEqual(statusTx);
+    expect(statusTx).toMatchObject({ transaction_id: f.tx.transaction_id, phase: 'collecting', next_action: 'submit_content' });
+  });
+
+  it('UT-S39-56: after 严格扫描输出结构化 target paths，before 历史歧义保持兼容', () => {
+    const invalidUtf8 = Buffer.from([0xff, 0xfe]);
+    const ambiguous = Buffer.from('| 用例ID | 目标 |\n|---|---|\n| UT-S01-01 |\n');
+    const duplicate = Buffer.from('| 用例ID | 目标 |\n|---|---|\n| UT-S01-01 | A |\n| UT-S01-01 | B |\n');
+    for (const [bytes, code] of [
+      [invalidUtf8, 'test-change-set-invalid-utf8'],
+      [ambiguous, 'test-change-set-ambiguous-table'],
+      [duplicate, 'test-change-set-duplicate-id'],
+    ] as const) {
+      expect(() => buildTestChangeSet({ change: 'x', module: 'core', targets: [{ targetPath: 'logos/resources/test/core-S01-test-cases.md', beforeBytes: null, afterBytes: bytes }] }))
+        .toThrowError(expect.objectContaining({ code, targetPaths: ['logos/resources/test/core-S01-test-cases.md'] }));
+    }
+    const pathA = 'logos/resources/test/core-S01-test-cases.md';
+    const pathB = 'logos/resources/test/core-S02-test-cases.md';
+    try {
+      buildTestChangeSet({ change: 'x', module: 'core', targets: [
+        { targetPath: pathB, beforeBytes: null, afterBytes: Buffer.from('| 用例ID | 目标 |\n|---|---|\n| UT-S01-01 | B |\n') },
+        { targetPath: pathA, beforeBytes: Buffer.from('| 用例ID | 目标 |\n|---|---|\n| UT-S01-01 |\n'), afterBytes: Buffer.from('| 用例ID | 目标 |\n|---|---|\n| UT-S01-01 | A |\n') },
+      ] });
+      throw new Error('预期 duplicate 错误');
+    } catch (error) {
+      expect(error).toBeInstanceOf(TestChangeSetBuildError);
+      expect((error as TestChangeSetBuildError).targetPaths).toEqual([pathA, pathB]);
+    }
+  });
+
+  it('UT-S39-57: preflight canonical hash 绑定 seal，并在 apply 首写前拒绝 metadata 漂移', () => {
+    const first = prepare();
+    sealMergeTransaction(first.root, first.proposalDir);
+    const stored = JSON.parse(readFileSync(join(first.proposalDir, 'MERGE_TRANSACTION.json'), 'utf8'));
+    expect(stored.preflight).toMatchObject({ schema: 'openlogos/merge-preflight@1', transaction_id: stored.transaction_id });
+    expect(stored.preflight.targets.map((target: { path: string }) => target.path)).toEqual(
+      [...stored.preflight.targets.map((target: { path: string }) => target.path)].sort(),
+    );
+    expect(stored.preflight.final_target_paths).toEqual([...stored.preflight.final_target_paths].sort());
+    expect(stored.seal_sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(JSON.stringify(stored.preflight)).not.toContain('completed_at');
+    writeFileSync(join(first.root, 'logos/logos-project.yaml'), `${readFileSync(join(first.root, 'logos/logos-project.yaml'), 'utf8')}# metadata drift\n`);
+    expect(() => applyMergeTransaction(first.root, first.proposalDir)).toThrow(/preflight identity 漂移/);
+    expect(readMergeTransaction(first.proposalDir).phase).toBe('sealed');
+    expect(existsSync(join(first.proposalDir, 'BASELINE_CLOSURE_APPLY_JOURNAL.json'))).toBe(false);
+  });
+
+  it('UT-S05-46: legacy reopen 后 next_action 只由 collecting/missing slot 派生', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const f = preflightFixture([invalid]);
+    forceLegacySealed(f);
+    expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow();
+    expect(readMergeTransaction(f.proposalDir)).toMatchObject({
+      transaction_id: f.tx.transaction_id, phase: 'collecting', classification: 'slot_identity_mismatch',
+      allowed_actions: ['submit_content', 'abort'], next_action: 'submit_content',
+      content_slots: { submitted: 0, missing_slot_ids: [f.tx.content_slots.items[0].slot_id] },
+    });
+  });
+
+  it('ST-S05-21: status 与 next 跨进程稳定重放 reopened collecting 投影', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const f = preflightFixture([invalid]);
+    forceLegacySealed(f);
+    expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow();
+    const status = checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'status', '--format', 'json'], f.root);
+    const next = checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'next', '--format', 'json'], f.root);
+    const statusTx = JSON.parse(status).data.merge_transaction;
+    const nextTx = JSON.parse(next).data.merge_transaction;
+    expect(nextTx).toEqual(statusTx);
+    expect(nextTx).toMatchObject({ phase: 'collecting', next_action: 'submit_content' });
+  });
+
+  it('UT-S09-262: 0.14.1 legacy sealed 只清空实际拒绝 slot 并保留事务身份', () => {
+    const validA = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | A |\n';
+    const validB = '# 测试 02\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S02-01 | B |\n';
+    const invalid = validA.replace('| A |', '|');
+    const f = preflightFixture([validA, validB]);
+    const legacy = forceLegacySealed(f, new Map([[0, invalid]]));
+    expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow();
+    const reopened = JSON.parse(readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json'), 'utf8'));
+    expect(reopened).toMatchObject({
+      transaction_id: legacy.transaction_id, plan_sha256: legacy.plan_sha256,
+      target_set_sha256: legacy.target_set_sha256, phase: 'collecting', seal_sha256: null,
+    });
+    expect(reopened.targets[0].content_sha256).toBeNull();
+    expect(reopened.targets[1].content_sha256).toBe(legacy.targets[1].content_sha256);
+    expect(reopened.targets.every((target: Record<string, unknown>) => target.sealed_sha256 === null)).toBe(true);
+  });
+
+  it('UT-S09-263: 多 target 仅在全部唯一归因 Agent 时共同 reopen', () => {
+    const duplicateA = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | A |\n';
+    const duplicateB = '# 测试 02\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | B |\n';
+    const allAgent = preflightFixture([duplicateA, duplicateB]);
+    forceLegacySealed(allAgent);
+    expect(() => applyMergeTransaction(allAgent.root, allAgent.proposalDir)).toThrow();
+    expect(readMergeTransaction(allAgent.proposalDir).content_slots.missing_slot_ids).toHaveLength(2);
+
+    const frozenTargets = [
+      { slot_id: 'slot-agent', target_path: 'logos/resources/test/a.md', producer: 'agent' as const },
+      { slot_id: 'slot-core', target_path: 'spec/a.md', producer: 'openlogos' as const },
+    ];
+    expect(attributeMergePreflightError(frozenTargets, {
+      code: 'duplicate', target_paths: ['logos/resources/test/a.md', 'spec/a.md'], producer: 'mixed', retryable: true,
+    })).toBeNull();
+    expect(attributeMergePreflightError(frozenTargets, {
+      code: 'unknown', target_paths: ['message/forged.md'], producer: 'unknown', retryable: true,
+    })).toBeNull();
+  });
+
+  it('UT-S09-264: reopen 在 rename 前保持 sealed，rename 后保持完整 collecting', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    for (const [fault, expectedPhase] of [
+      ['before-rename', 'sealed'], ['after-rename', 'collecting'], ['during-cleanup', 'collecting'],
+    ] as const) {
+      const f = preflightFixture([invalid]);
+      forceLegacySealed(f);
+      process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT = fault;
+      expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow(`test fault ${fault === 'during-cleanup' ? 'during reopen cleanup' : fault.replace('-', ' reopen ')}`);
+      const stored = JSON.parse(readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json'), 'utf8'));
+      expect(stored.phase).toBe(expectedPhase);
+      if (expectedPhase === 'collecting') {
+        expect(stored.seal_sha256).toBeNull();
+        expect(stored.targets.every((target: Record<string, unknown>) => target.sealed_sha256 === null)).toBe(true);
+      }
+      delete process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT;
+    }
+  });
+
+  it('UT-S09-265: journal/receipt/marker/正式漂移与 applying 均禁止倒退 collecting', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    for (const artifact of ['BASELINE_CLOSURE_APPLY_JOURNAL.json', 'MERGE_RECEIPT.json', 'SPEC_MERGED']) {
+      const f = preflightFixture([invalid]);
+      forceLegacySealed(f);
+      writeFileSync(join(f.proposalDir, artifact), '{}\n');
+      expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow();
+      expect(JSON.parse(readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json'), 'utf8')).phase).toBe('sealed');
+    }
+    const drift = preflightFixture([invalid]);
+    forceLegacySealed(drift);
+    writeFileSync(join(drift.root, drift.targets[0].targetPath), '# 正式新字节\n');
+    expect(() => applyMergeTransaction(drift.root, drift.proposalDir)).toThrow(/正式目标已漂移/);
+    expect(readMergeTransaction(drift.proposalDir).phase).toBe('sealed');
+
+    const applying = preflightFixture([invalid]);
+    const stored = forceLegacySealed(applying);
+    stored.phase = 'applying';
+    writeFileSync(join(applying.proposalDir, 'MERGE_TRANSACTION.json'), `${JSON.stringify(stored, null, 2)}\n`);
+    expect(readMergeTransaction(applying.proposalDir)).toMatchObject({ phase: 'applying', allowed_actions: ['recover'] });
+    expect(applyMergeTransaction(applying.root, applying.proposalDir).phase).toBe('sealed');
+  });
+
+  it('ST-S09-102: legacy CLI apply→reopen→submit→reseal→apply 保持同一事务', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const valid = invalid.replace('| UT-S01-01 |\n', '| UT-S01-01 | 修复 |\n');
+    const f = preflightFixture([invalid]);
+    forceLegacySealed(f);
+    const failed = spawnSync(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'apply', '--slug', f.slug, '--format', 'json'], { cwd: f.root, encoding: 'utf8' });
+    expect(failed.status).toBe(1);
+    expect(JSON.parse(failed.stderr).error.details).toMatchObject({ phase: 'collecting', retryable: true });
+    const reopened = readMergeTransaction(f.proposalDir);
+    const slot = reopened.content_slots.items[0];
+    atomicStage(f.root, slot.staging_path, valid);
+    checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'submit-content', '--slug', f.slug, '--slot', slot.slot_id, '--file', slot.staging_path, '--format', 'json'], f.root);
+    checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'seal', '--slug', f.slug, '--format', 'json'], f.root);
+    const completed = JSON.parse(checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'apply', '--slug', f.slug, '--format', 'json'], f.root)).data.merge_transaction;
+    expect(completed).toMatchObject({ transaction_id: f.tx.transaction_id, phase: 'completed' });
+    expect(completed.receipt.receipt_sha256).toBe(computeMergeReceiptSha256(completed.receipt));
+  });
+
+  it('ST-S09-103: response-lost 后可由 status 重放并重复修复同一 rejected slot', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const valid = invalid.replace('| UT-S01-01 |\n', '| UT-S01-01 | 最终修复 |\n');
+    const f = preflightFixture([invalid]);
+    forceLegacySealed(f);
+    expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow();
+    for (const attempt of [invalid, valid]) {
+      const projected = readMergeTransaction(f.proposalDir);
+      const slot = projected.content_slots.items[0];
+      const staging = atomicStage(f.root, slot.staging_path, attempt);
+      submitMergeContent(f.proposalDir, slot.slot_id, staging);
+      if (attempt === invalid) expect(() => sealMergeTransaction(f.root, f.proposalDir)).toThrow();
+      else expect(sealMergeTransaction(f.root, f.proposalDir).phase).toBe('sealed');
+    }
+    expect(applyMergeTransaction(f.root, f.proposalDir)).toMatchObject({ transaction_id: f.tx.transaction_id, phase: 'completed' });
+  });
+
+  it('UT-S11-74: 残留私有字节不参与 reopened status 投影', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const f = preflightFixture([invalid]);
+    forceLegacySealed(f);
+    process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT = 'after-rename';
+    expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow();
+    const slot = readMergeTransaction(f.proposalDir).content_slots.items[0];
+    const privatePath = join(f.proposalDir, 'merge-content', f.tx.transaction_id, `${slot.slot_id}.content`);
+    expect(existsSync(privatePath)).toBe(true);
+    expect(readMergeTransaction(f.proposalDir)).toMatchObject({ phase: 'collecting', content_slots: { submitted: 0, missing_slot_ids: [slot.slot_id] } });
+  });
+
+  it('ST-S11-43: rename 崩溃窗口跨进程只观察完整 sealed 或完整 collecting', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    for (const [fault, phase] of [['before-rename', 'sealed'], ['after-rename', 'collecting']] as const) {
+      const f = preflightFixture([invalid]);
+      forceLegacySealed(f);
+      process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT = fault;
+      expect(() => applyMergeTransaction(f.root, f.proposalDir)).toThrow();
+      delete process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT;
+      const status = JSON.parse(checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'status', '--slug', f.slug, '--format', 'json'], f.root)).data.merge_transaction;
+      expect(status.phase).toBe(phase);
+    }
+  });
+
+  it('UT-S16-34: new/legacy/reopened/completed 公共 projection 不泄漏 preflight 字段', async () => {
+    const valid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 合法 |\n';
+    const invalid = valid.replace('| 合法 |', '|');
+    const fresh = preflightFixture([valid]);
+    const sealed = sealMergeTransaction(fresh.root, fresh.proposalDir);
+    const completed = applyMergeTransaction(fresh.root, fresh.proposalDir);
+    const legacy = preflightFixture([invalid]);
+    forceLegacySealed(legacy);
+    expect(() => applyMergeTransaction(legacy.root, legacy.proposalDir)).toThrow();
+    const reopened = readMergeTransaction(legacy.proposalDir);
+    const { default: Ajv2020 } = await import('ajv/dist/2020.js');
+    const { default: addFormats } = await import('ajv-formats');
+    const ajv = new Ajv2020({ strict: false }); addFormats(ajv);
+    const validate = ajv.compile(JSON.parse(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'), 'utf8')));
+    for (const projection of [sealed, reopened, completed]) {
+      expect(validate(projection), JSON.stringify(validate.errors)).toBe(true);
+      expect(JSON.stringify(projection)).not.toMatch(/preflight_sha256|target_paths|"producer"/);
+    }
+  });
+
+  it('ST-S16-10: CLI 错误落盘后可跨进程修复并读回 completed', () => {
+    const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
+    const valid = invalid.replace('| UT-S01-01 |\n', '| UT-S01-01 | 修复 |\n');
+    const f = preflightFixture([invalid]);
+    forceLegacySealed(f);
+    const apply = spawnSync(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'apply', '--format', 'json'], { cwd: f.root, encoding: 'utf8' });
+    expect(JSON.parse(apply.stderr).error.details).toMatchObject({ phase: 'collecting', retryable: true });
+    const status = JSON.parse(checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'status', '--format', 'json'], f.root)).data.merge_transaction;
+    const slot = status.content_slots.items[0];
+    atomicStage(f.root, slot.staging_path, valid);
+    checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'submit-content', '--slot', slot.slot_id, '--file', slot.staging_path, '--format', 'json'], f.root);
+    checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'seal', '--format', 'json'], f.root);
+    checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'apply', '--format', 'json'], f.root);
+    expect(JSON.parse(checked(process.execPath, [join(repoRoot, 'cli/dist/index.js'), 'merge', 'transaction', 'status', '--format', 'json'], f.root)).data.merge_transaction.phase).toBe('completed');
+  });
+
+  it('UT-S39-58: target→slot 归因不解析错误 message 且 mixed 组整体 fail-closed', () => {
+    const a = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | message: spec/fake.md |\n';
+    const b = '# 测试 02\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | B |\n';
+    const agent = preflightFixture([a, b]);
+    forceLegacySealed(agent);
+    expect(() => applyMergeTransaction(agent.root, agent.proposalDir)).toThrow();
+    expect(readMergeTransaction(agent.proposalDir).content_slots.missing_slot_ids).toHaveLength(2);
+    const targets = [
+      { slot_id: 'slot-a', target_path: 'logos/resources/test/a.md', producer: 'agent' as const },
+      { slot_id: 'slot-b', target_path: 'spec/b.md', producer: 'openlogos' as const },
+    ];
+    expect(attributeMergePreflightError(targets, {
+      code: 'duplicate', target_paths: ['logos/resources/test/a.md', 'spec/b.md'], producer: 'mixed', retryable: true,
+    })).toBeNull();
+    expect(attributeMergePreflightError(targets, {
+      code: 'duplicate', target_paths: ['logos/resources/test/a.md'], producer: 'agent', retryable: true,
+    })).toEqual(['slot-a']);
+  });
+
+  it('ST-S39-27: sealed view 同时守恒 test-change-set、metadata 与最终路径并完成 apply', () => {
+    const f = fixture();
+    const proposalPath = join(f.proposalDir, 'proposal.md');
+    const testTarget = 'logos/resources/test/core-S39-test-cases.md';
+    const testDelta = 'deltas/test/core-S39-test-cases.md';
+    put(f.root, testTarget, '# S39\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S39-01 | 旧 |\n');
+    put(f.root, `logos/changes/${f.slug}/${testDelta}`, '## MODIFIED — 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S39-01 | 新 |\n');
+    const proposal = readFileSync(proposalPath, 'utf8').replace('\n```\n', `\n    - category: test\n      scenario_ids: [S09]\n      mode: MODIFY\n      delta_path: ${testDelta}\n      reason: 完整 preflight fixture\n      evidence: [target_exists]\n      missing_evidence: []\n\`\`\`\n`);
+    writeFileSync(proposalPath, proposal);
+    let tx = createMergeTransaction(f.root, f.proposalDir, f.slug);
+    for (const target of listMergeTransactionPlanTargets(f.proposalDir).filter(item => item.producer === 'agent')) {
+      const content = target.target_path === testTarget
+        ? '# S39\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S39-01 | 新 |\n'
+        : target.mode === 'CREATE' ? '# D07 事务权威\n' : '# 需求基线\n\n## 事务需求\n\n正文\n';
+      const slot = tx.content_slots.items.find(item => item.slot_id === target.slot_id)!;
+      tx = submitMergeContent(f.proposalDir, target.slot_id, atomicStage(f.root, slot.staging_path, content));
+    }
+    sealMergeTransaction(f.root, f.proposalDir);
+    const stored = JSON.parse(readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json'), 'utf8'));
+    expect(stored.preflight.test_change_set_sha256).toMatch(/^sha256:/);
+    expect(stored.preflight.final_target_paths).toContain('logos/logos-project.yaml');
+    expect(stored.preflight.final_target_paths).toContain(testTarget);
+    const completed = applyMergeTransaction(f.root, f.proposalDir);
+    expect(completed.receipt?.test_change_set).toMatchObject({ changed_test_ids: ['UT-S39-01'] });
+    expect(completed.receipt?.final_hashes.map(item => item.path)).toEqual(stored.preflight.final_target_paths);
+  });
   it('UT-S09-251 UT-S09-252 UT-S09-253 ST-S09-99 UT-S11-71 UT-S16-28: 声明 staging path 是唯一 Agent 写入与 submit 入口', async () => {
     const f = fixture();
     let tx = createMergeTransaction(f.root, f.proposalDir, f.slug);
@@ -462,6 +877,122 @@ describe('OpenLogos merge transaction', () => {
     expect(existsSync(join(f.proposalDir, 'SPEC_MERGED'))).toBe(false);
   });
 
+  it('UT-S19-24: 0.14.2 candidate facts 同时冻结 schema/contract/skill/golden hashes', () => {
+    const hash = (char: string) => `sha256:${char.repeat(64)}`;
+    const facts = freezeMergeTransactionCandidateFacts({
+      schema: MERGE_TRANSACTION_CANDIDATE_SCHEMA,
+      command_path: '/opt/openlogos/dist/index.js',
+      cli_version: '0.14.2',
+      candidate_tarball_sha256: hash('1'),
+      merge_transaction_schema_sha256: hash('2'),
+      status_schema_sha256: hash('3'),
+      next_schema_sha256: hash('4'),
+      contract_sha256: hash('5'),
+      merge_executor_skill_sha256: hash('6'),
+      merge_transaction_golden_sha256: hash('7'),
+      semantic_validator: 'openlogos/merge-transaction-semantic@1',
+    });
+    expect(facts.cli_version).toBe('0.14.2');
+    for (const field of [
+      'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
+      'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',
+      'merge_transaction_golden_sha256',
+    ] as const) {
+      expect(() => assertMergeTransactionCandidateMatch(facts, { ...facts, [field]: hash('a') })).toThrow(`candidate_fact_mismatch:${field}`);
+    }
+    expect(() => freezeMergeTransactionCandidateFacts({ ...facts, private_transaction_path: '/tmp/private' } as never)).toThrow('candidate_fact_invalid:fields');
+  });
+
+  it('UT-S19-25: 0.14.1→0.14.2 任一安装/自检/合同/行为失败均完整选择 rollback', () => {
+    const base = freezeMergeTransactionCandidateFacts({
+      schema: MERGE_TRANSACTION_CANDIDATE_SCHEMA,
+      command_path: '/opt/openlogos/dist/index.js',
+      cli_version: MERGE_TRANSACTION_CANDIDATE_VERSION,
+      candidate_tarball_sha256: `sha256:${'1'.repeat(64)}`,
+      merge_transaction_schema_sha256: `sha256:${'2'.repeat(64)}`,
+      status_schema_sha256: `sha256:${'3'.repeat(64)}`,
+      next_schema_sha256: `sha256:${'4'.repeat(64)}`,
+      contract_sha256: `sha256:${'5'.repeat(64)}`,
+      merge_executor_skill_sha256: `sha256:${'6'.repeat(64)}`,
+      merge_transaction_golden_sha256: `sha256:${'7'.repeat(64)}`,
+      semantic_validator: 'openlogos/merge-transaction-semantic@1',
+    });
+    const candidate = freezeMergeTransactionCandidateFacts({
+      ...base,
+      candidate_tarball_sha256: `sha256:${'8'.repeat(64)}`,
+      merge_executor_skill_sha256: `sha256:${'9'.repeat(64)}`,
+    });
+    for (const failed of ['install_ok', 'self_check_ok', 'contract_match', 'behavior_ok'] as const) {
+      const checks = { install_ok: true, self_check_ok: true, contract_match: true, behavior_ok: true, [failed]: false };
+      expect(decideMergeTransactionCandidate(base, candidate, checks)).toEqual({ action: 'restore-previous', selected: base });
+    }
+    expect(decideMergeTransactionCandidate(base, candidate, {
+      install_ok: true, self_check_ok: true, contract_match: true, behavior_ok: true,
+    })).toEqual({ action: 'keep-candidate', selected: candidate });
+    expect(buildMergeTransactionRollbackCommands('/tmp/openlogos-prefix', '/tmp/openlogos-0.14.1.tgz')).toEqual([
+      { command: 'npm', args: ['uninstall', '--prefix', '/tmp/openlogos-prefix', '--ignore-scripts', '@miniidealab/openlogos'] },
+      { command: 'npm', args: ['install', '--prefix', '/tmp/openlogos-prefix', '--force', '--ignore-scripts', '--no-audit', '--no-fund', '/tmp/openlogos-0.14.1.tgz'] },
+    ]);
+  });
+
+  it('ST-S19-16: 真实 0.14.2 pack/install、preflight/reopen 与 0.14.1 rollback/restore', () => {
+    const root = mkdtempSync(join(tmpdir(), 'openlogos-0142-candidate-'));
+    roots.push(root);
+    const oldSource = join(root, 'old-source');
+    mkdirSync(join(oldSource, 'dist'), { recursive: true });
+    writeFileSync(join(oldSource, 'package.json'), `${JSON.stringify({
+      name: '@miniidealab/openlogos', version: '0.14.1', type: 'module',
+      bin: { openlogos: 'dist/index.js' }, files: ['dist'],
+    }, null, 2)}\n`);
+    writeFileSync(join(oldSource, 'dist/index.js'), '#!/usr/bin/env node\nif (process.argv.includes("--version")) console.log("0.14.1");\n');
+    const parsePack = (stdout: string): { filename: string } => {
+      const start = stdout.indexOf('[');
+      if (start < 0) throw new Error(`npm pack 输出缺 JSON：${stdout}`);
+      return JSON.parse(stdout.slice(start))[0];
+    };
+    const oldMeta = parsePack(checked(npmCommand, ['pack', oldSource, '--pack-destination', root, '--json', '--ignore-scripts'], repoRoot));
+    const oldTarball = join(root, oldMeta.filename);
+
+    const isolatedSource = join(root, 'candidate-source');
+    const isolatedCli = join(isolatedSource, 'cli');
+    const generatedPackageDirs = new Set([
+      'node_modules', 'skills', 'spec', 'opencode-plugin-template', 'codex-plugin-template',
+      'claude-plugin-template', 'zcode-plugin-template', 'qoder-plugin-template', 'workbuddy-plugin-template',
+    ]);
+    cpSync(join(repoRoot, 'cli'), isolatedCli, {
+      recursive: true,
+      filter: source => source === join(repoRoot, 'cli') || !generatedPackageDirs.has(source.slice(join(repoRoot, 'cli').length + 1).split('/')[0]),
+    });
+    for (const dir of ['skills', 'spec', 'plugin-opencode', 'plugin-codex', 'plugin', 'plugin-zcode', 'plugin-qoder', 'plugin-workbuddy']) {
+      cpSync(join(repoRoot, dir), join(isolatedSource, dir), { recursive: true });
+    }
+    symlinkSync(join(repoRoot, 'cli/node_modules'), join(isolatedCli, 'node_modules'));
+    const candidateMeta = parsePack(checked(npmCommand, ['pack', isolatedCli, '--pack-destination', root, '--json'], repoRoot));
+    const candidateTarball = join(root, candidateMeta.filename);
+    const prefix = join(root, 'prefix');
+    const install = (tarball: string) => checked(npmCommand, ['install', '--prefix', prefix, '--force', '--ignore-scripts', '--no-audit', '--no-fund', tarball], repoRoot);
+    const uninstall = () => checked(npmCommand, ['uninstall', '--prefix', prefix, '--ignore-scripts', '@miniidealab/openlogos'], repoRoot);
+    install(oldTarball);
+    const entry = join(prefix, 'node_modules/@miniidealab/openlogos/dist/index.js');
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.1');
+    uninstall(); install(candidateTarball);
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.2');
+    for (const id of ['SMOKE-core-160', 'SMOKE-core-161']) {
+      const evidence = JSON.parse(checked(process.execPath, [join(repoRoot, 'scripts/merge-preflight-reopen-smoke-fixtures.js'), '--case', id, '--openlogos', entry], repoRoot));
+      expect(evidence).toMatchObject({ id, status: 'pass' });
+    }
+    uninstall(); install(oldTarball);
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.1');
+    uninstall(); install(candidateTarball);
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.2');
+    const selfTest = JSON.parse(checked(process.execPath, [join(repoRoot, 'scripts/smoke-release-0-14-2-preflight-reopen.js'), '--self-test'], repoRoot));
+    expect(selfTest).toMatchObject({
+      ids: ['SMOKE-core-160', 'SMOKE-core-161', 'SMOKE-core-162'],
+      candidate_version: '0.14.2', rollback_version: '0.14.1', public_release_commands: [],
+    });
+    expect(readFileSync(join(repoRoot, 'scripts/run-smoke.js'), 'utf8')).toContain('smoke-release-0-14-2-preflight-reopen.js');
+  }, 120_000);
+
   it('UT-S19-20: 部署记录与 RunLogos handoff 对旧 candidate 任一 hash 均 fail-closed', () => {
     const hashA = `sha256:${'a'.repeat(64)}`;
     const hashB = `sha256:${'b'.repeat(64)}`;
@@ -474,11 +1005,14 @@ describe('OpenLogos merge transaction', () => {
       status_schema_sha256: hashA,
       next_schema_sha256: hashA,
       contract_sha256: hashA,
+      merge_executor_skill_sha256: hashA,
+      merge_transaction_golden_sha256: hashA,
       semantic_validator: 'openlogos/merge-transaction-semantic@1',
     });
     for (const field of [
       'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
       'next_schema_sha256', 'contract_sha256',
+      'merge_executor_skill_sha256', 'merge_transaction_golden_sha256',
     ] as const) {
       const old = { ...current, [field]: hashB };
       expect(() => assertMergeTransactionCandidateMatch(current, old)).toThrow(`candidate_fact_mismatch:${field}`);
@@ -497,14 +1031,16 @@ describe('OpenLogos merge transaction', () => {
       status_schema_sha256: `sha256:${'3'.repeat(64)}`,
       next_schema_sha256: `sha256:${'4'.repeat(64)}`,
       contract_sha256: `sha256:${'5'.repeat(64)}`,
+      merge_executor_skill_sha256: `sha256:${'8'.repeat(64)}`,
+      merge_transaction_golden_sha256: `sha256:${'9'.repeat(64)}`,
       semantic_validator: 'openlogos/merge-transaction-semantic@1',
     });
     const candidate = { ...previous, candidate_tarball_sha256: `sha256:${'6'.repeat(64)}`, contract_sha256: `sha256:${'7'.repeat(64)}` };
-    for (const failed of ['install_ok', 'self_check_ok', 'contract_match'] as const) {
-      const check = { install_ok: true, self_check_ok: true, contract_match: true, [failed]: false };
+    for (const failed of ['install_ok', 'self_check_ok', 'contract_match', 'behavior_ok'] as const) {
+      const check = { install_ok: true, self_check_ok: true, contract_match: true, behavior_ok: true, [failed]: false };
       expect(decideMergeTransactionCandidate(previous, candidate, check)).toEqual({ action: 'restore-previous', selected: previous });
     }
-    expect(decideMergeTransactionCandidate(previous, candidate, { install_ok: true, self_check_ok: true, contract_match: true }))
+    expect(decideMergeTransactionCandidate(previous, candidate, { install_ok: true, self_check_ok: true, contract_match: true, behavior_ok: true }))
       .toEqual({ action: 'keep-candidate', selected: candidate });
     expect(() => assertMergeTransactionCandidateRestored(previous, candidate)).toThrow('candidate_rollback_mixed_assets');
     expect(() => assertMergeTransactionCandidateRestored(previous, previous)).not.toThrow();
@@ -567,7 +1103,7 @@ describe('OpenLogos merge transaction', () => {
 
     checked(npmCommand, ['install', '--prefix', installRoot, '--force', '--ignore-scripts', '--no-audit', '--no-fund', tarball], repoRoot);
     const current = candidateFacts(entry, tarball, packageRoot);
-    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.1');
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.2');
     expect(checked(process.execPath, [entry, '--help'], root)).toContain('submit-content / seal / apply / recover / abort');
     expect(current.merge_transaction_schema_sha256).toBe(sha256(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'))));
     expect(current.status_schema_sha256).toBe(sha256(readFileSync(join(repoRoot, 'spec/schema/status.schema.json'))));
@@ -595,7 +1131,7 @@ describe('OpenLogos merge transaction', () => {
     expect(statusSchema(observed.status_data), JSON.stringify(statusSchema.errors)).toBe(true);
     expect(nextSchema(observed.next_data), JSON.stringify(nextSchema.errors)).toBe(true);
 
-    const decision = decideMergeTransactionCandidate(previous, current, { install_ok: true, self_check_ok: true, contract_match: false });
+    const decision = decideMergeTransactionCandidate(previous, current, { install_ok: true, self_check_ok: true, contract_match: false, behavior_ok: true });
     expect(decision).toEqual({ action: 'restore-previous', selected: previous });
     const rollbackCommands = buildMergeTransactionRollbackCommands(resolve(installRoot), resolve(oldTarball));
     expect(rollbackCommands).toHaveLength(2);
@@ -609,7 +1145,7 @@ describe('OpenLogos merge transaction', () => {
 
   it('ST-S16-07 UT-S19-12 UT-S19-13 UT-S19-14 UT-S19-15 UT-S19-16 UT-S19-17 UT-S19-18 ST-S19-10 ST-S19-11 ST-S19-12 ST-S19-13: 当前安装态合同与命令入口自描述一致', () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf8')) as { version: string; files: string[] };
-    expect(pkg.version).toBe('0.14.1');
+    expect(pkg.version).toBe('0.14.2');
     expect(pkg.files).toContain('spec');
     expect(readFileSync(join(repoRoot, 'cli/src/index.ts'), 'utf8')).toContain("args[1] === 'transaction'");
     expect(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'), 'utf8')).toContain('openlogos/merge-transaction@1');

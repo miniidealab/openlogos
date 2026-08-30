@@ -84,6 +84,11 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_RELEASE_0_14_1_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_RELEASE_0_14_1_CANDIDATE_BIN,
     },
+    'scripts/smoke-release-0-14-2-preflight-reopen.js': {
+      tarball: process.env.OPENLOGOS_RELEASE_0_14_2_TARBALL,
+      previousTarball: process.env.OPENLOGOS_RELEASE_0_14_2_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_RELEASE_0_14_2_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
