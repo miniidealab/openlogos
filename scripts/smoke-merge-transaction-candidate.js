@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
+import { validateRunLogosCandidateEvidence } from './lib/runlogos-candidate-evidence.mjs';
 
 export const MERGE_TRANSACTION_SMOKE_IDS = Array.from({ length: 10 }, (_, index) => `SMOKE-core-${141 + index}`);
 export const MERGE_TRANSACTION_CONSUMER_SMOKE_IDS = Array.from({ length: 6 }, (_, index) => `SMOKE-core-${151 + index}`);
@@ -44,6 +45,7 @@ const requiredFile = name => {
 };
 const candidate = requiredFile('OPENLOGOS_MERGE_TRANSACTION_TARBALL');
 const rollback = requiredFile('OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL');
+const candidateCommand = resolve(process.env.OPENLOGOS_CANDIDATE_BIN);
 const candidateBin = requiredFile('OPENLOGOS_CANDIDATE_BIN');
 const packageRoot = realpathSync(join(dirname(candidateBin), '..'));
 const packagedPaths = [
@@ -142,18 +144,26 @@ await smoke('SMOKE-core-155', async () => {
   const facts = candidateFacts();
   const output = checked(run('/bin/sh', ['-c', command], repoRoot, {
     ...process.env,
+    OPENLOGOS_CANDIDATE_BIN: candidateCommand,
+    OPENLOGOS_CANDIDATE_VERSION: EXPECTED_VERSION,
+    OPENLOGOS_CANDIDATE_TARBALL_SHA256: facts.candidate_tarball_sha256,
     OPENLOGOS_CANDIDATE_FACTS: JSON.stringify(facts),
   }), 'RunLogos 修正消费者合同 E2E');
   const evidence = JSON.parse(output);
-  assertSameFacts(evidence.candidate, 'RunLogos');
-  if (evidence.status !== 'pass' || evidence.used_source_checkout || evidence.used_mock
-    || evidence.read_private_transaction !== false || evidence.derived_commit_paths !== false
-    || !/^sha256:[a-f0-9]{64}$/.test(evidence.receipt_sha256 ?? '')) {
-    throw new Error('RunLogos evidence 未证明只消费公共 slot/action/receipt 合同');
-  }
+  validateRunLogosCandidateEvidence(evidence, {
+    commandPath: candidateCommand,
+    tarballSha256: facts.candidate_tarball_sha256,
+  });
   return {
     candidate: facts,
-    receipt_sha256: evidence.receipt_sha256,
+    receipt_summary: evidence.scenarios.map(item => ({
+      scenario: item.scenario,
+      transaction_identity_hash: item.transaction_identity_hash,
+      final_path_count: item.final_path_count,
+      artifact_path_count: item.artifact_path_count,
+      commit_path_count: item.commit_path_count,
+      apply_count: item.apply_count,
+    })),
     public_contract_only: true,
   };
 });
@@ -167,12 +177,24 @@ await smoke('SMOKE-core-156', async () => {
     || !evidence.old?.slug || !evidence.followup?.slug || evidence.old.slug === evidence.followup.slug) {
     throw new Error('stacked slug 的 smoke ID 或 slug 归属无效');
   }
+  const oldArchive = evidence.old?.archive_path ? realpathSync(resolve(evidence.old.archive_path)) : null;
+  const oldMarker = evidence.old?.marker_path ? realpathSync(resolve(evidence.old.marker_path)) : null;
+  if (!oldArchive || !oldMarker || !oldArchive.endsWith(`-${evidence.old.slug}`)
+    || !oldMarker.startsWith(`${oldArchive}/`) || !oldMarker.endsWith('/SMOKE_PASS')) {
+    throw new Error('old archive/SMOKE_PASS 归属无效');
+  }
+  const followupGuard = evidence.followup?.guard_path ? realpathSync(resolve(evidence.followup.guard_path)) : null;
+  const followupMarker = evidence.followup?.marker_path ? realpathSync(resolve(evidence.followup.marker_path)) : null;
+  const expectedGuard = realpathSync(join(repoRoot, 'logos/.openlogos-guard'));
+  const expectedChangeRoot = realpathSync(join(repoRoot, 'logos/changes', evidence.followup.slug));
+  if (followupGuard !== expectedGuard || !readFileSync(followupGuard, 'utf8').includes(evidence.followup.slug)
+    || !followupMarker || !followupMarker.startsWith(`${expectedChangeRoot}/`)) {
+    throw new Error('followup guard/marker 归属无效');
+  }
   for (const side of ['old', 'followup']) {
-    const item = evidence[side];
-    for (const field of ['guard_path', 'marker_path']) {
-      if (!item?.[field] || !existsSync(realpathSync(resolve(item[field])))) throw new Error(`${side}.${field} 不存在`);
+    if (evidence[side].candidate_tarball_sha256 !== candidateFacts().candidate_tarball_sha256) {
+      throw new Error(`${side} candidate hash 漂移`);
     }
-    if (item.candidate_tarball_sha256 !== candidateFacts().candidate_tarball_sha256) throw new Error(`${side} candidate hash 漂移`);
   }
   return {
     old_slug: evidence.old.slug,
@@ -187,16 +209,15 @@ await smoke('SMOKE-core-150', async () => {
   const command = process.env.OPENLOGOS_RUNLOGOS_VERIFY_COMMAND;
   if (!command) throw new Error('缺少 OPENLOGOS_RUNLOGOS_VERIFY_COMMAND');
   const result = run('/bin/sh', ['-c', command], repoRoot, {
-    ...process.env, OPENLOGOS_CANDIDATE_BIN: candidateBin,
+    ...process.env, OPENLOGOS_CANDIDATE_BIN: candidateCommand,
     OPENLOGOS_CANDIDATE_VERSION: EXPECTED_VERSION,
     OPENLOGOS_CANDIDATE_TARBALL_SHA256: hash(readFileSync(candidate)),
   });
   const output = checked(result, 'RunLogos 真实跨仓 E2E');
-  const evidence = JSON.parse(output);
-  if (evidence.status !== 'pass' || evidence.used_source_checkout || evidence.used_mock || evidence.precreated_completed) {
-    throw new Error('RunLogos evidence 未证明冻结全局 candidate 的真实 E2E');
-  }
-  return evidence;
+  return validateRunLogosCandidateEvidence(JSON.parse(output), {
+    commandPath: candidateCommand,
+    tarballSha256: hash(readFileSync(candidate)),
+  });
 });
 
 process.exit(process.exitCode ?? 0);
