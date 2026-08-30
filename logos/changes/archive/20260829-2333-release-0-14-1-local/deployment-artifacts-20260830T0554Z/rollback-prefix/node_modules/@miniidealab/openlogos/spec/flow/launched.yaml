@@ -1,0 +1,181 @@
+#
+# 内置 flow 模板：launched（变更生命周期流程）
+# change-flow-redesign：前段 propose 拆为 plan/spec/merge 三段；deliver 门改 skippable:true；
+# implement loop 默认激活切片循环（until: code_slices_green, max_iters: 30）。
+# split-slice-planner-stage：[code] 切片从 plan 段剥离，merge 后新增独立 slice 子流程
+#   （节点 plan-slices，skill: slice-planner），出口 slice-exit 门 + ready-to-implement 驻留态；
+#   write-tasks 仅产 [delta]/[deploy]，不再产 [code]。
+# auto-full-unattended：openlogos next --auto = 全自动 / 无人值守（standing run-scoped 授权）——
+#   一次性授权该提案全链路自动跑到底。--auto 除自动放行 skippable:true 的 human gate 外，
+#   还以 standing 授权自动执行「代码已绿之后」的 CLI 盖章/发布步骤 verify/smoke/archive/git push
+#   （git push 无需 marker：PreToolUse guard 安全白名单本就放行 git push，全自动由指令文本授权自动 push）。
+#   每次自动放行向提案目录 GATE_AUTO_PASSED 追加审计行。
+#   loop-exhausted 退出门（skippable:false）保留硬红线，任何模式含 --auto 都绝不自动放行。
+#   半自动（无 --auto）所有人类确认点行为完全不变。本 delta 仅在 smoke/archive 节点附近加注释，
+#   skippable 值一律不动。
+# contract-self-description：顶层新增 defaults.dispatch.timeout_seconds（timeout 唯一默认值源 fallback）；
+#   每个节点新增 dispatch 派发元数据（idempotent / timeout_seconds / artifacts_hint，逐节点人工声明、
+#   不从 produces/done_when 推导，基准见 flow-spec「派发元数据」章节）；apply-merge 另声明
+#   requires_reviewed: [proposal, delta]（driver 的 priorReviewNode 本地映射表退化为消费该声明）。
+#   注意：implement 的 loop 定义仍默认在场，但 loop_state 挂出收紧为 implement 进入判据
+#   （code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved，见 flow-spec §12.2），
+#   本文件的 loop 定义不变。向后兼容扩展：flow 文件 schema version: 1 保持不变。
+# 这是产品唯一源头；项目实例 logos/flow/launched.yaml 可 extends: builtin:launched 后只写差异。
+# 注：YAML 模板无 md 章节，本 delta 按整文件替换合并。
+version: 1
+flow: launched
+
+# contract-self-description：dispatch.timeout_seconds 的唯一默认值源（fallback）；
+# 节点未显式声明 timeout_seconds 时取此值；显式声明的特例节点（code 3600 / deploy 1800）优先于 defaults；
+# 项目 overlay 覆盖 defaults 只影响未显式声明的节点；resolved 时物化进每个节点。
+defaults:
+  dispatch:
+    timeout_seconds: 900
+
+subflows:
+  # ── 方案：写提案 + 划分 [delta]/[deploy]（写 delta 前批准方案）──────────
+  - id: plan
+    name: 方案
+    nodes:
+      - id: write-proposal
+        name: 编写提案
+        skill: change-writer
+        working_agent: null
+        review_agent: null
+        produces: proposal.md
+        done_when: proposal_filled            # proposal.md 脱模板
+        # 内容产出类：重派发安全
+        dispatch: { idempotent: true, artifacts_hint: ["proposal.md"] }
+
+      - id: write-tasks
+        name: 划分 tasks
+        skill: change-writer
+        produces: tasks.md
+        done_when: tasks_delta_filled         # tasks.md 的 [delta]/[deploy] 脱模板（[code] 改由 merge 后 slice 段产出）
+        dispatch: { idempotent: true, artifacts_hint: ["tasks.md"] }
+    gate: { type: human, skippable: true }     # 批准方案；对应 ready-to-delta 驻留态，gate_id=plan-exit
+
+  # ── 规格：写 delta（审 delta + 授权合并的关键门）────────────
+  - id: spec
+    name: 规格变更
+    when: delta_required                       # 纯代码提案（无 [delta]）整段跳过
+    nodes:
+      - id: write-delta
+        name: 编写 delta
+        skill: change-writer
+        produces: deltas/
+        done_when: section_complete:delta      # 对应 delta-writing → ready-to-merge
+        dispatch: { idempotent: true, artifacts_hint: ["deltas/"] }
+    gate: { type: human, skippable: true }     # 审 delta + 授权合并（关键门，change-reviewer 介入点）
+
+  # ── 合并：生成 MERGE_PROMPT 并应用 delta（纯代码提案整段跳过）──
+  - id: merge
+    name: 合并
+    when: delta_required
+    nodes:
+      - id: generate-merge-prompt
+        name: 生成合并指令
+        skill: merge-executor
+        produces: null
+        done_when: any_present:[MERGE_PROMPT_GENERATED, MERGE_PROMPT.md]
+        # 生成类：重复生成合并指令安全
+        dispatch: { idempotent: true, artifacts_hint: ["MERGE_PROMPT.md", "MERGE_PROMPT_GENERATED"] }
+      - id: apply-merge
+        name: 应用合并
+        skill: merge-executor
+        produces: null
+        done_when: any_present:[SPEC_MERGED, MERGED]
+        # 一次性落盘类：对规格树的合并写入，重投不安全
+        dispatch: { idempotent: false, artifacts_hint: ["logos/resources/**", "SPEC_MERGED"] }
+        # contract-self-description：执行前置评审对象声明（提案与 delta 均须已评审）
+        requires_reviewed: [proposal, delta]
+    gate: { type: none }
+
+  # ── 切片：merge 后对已合并规格 + 真实测试 ID 划分 [code] 切片 ──
+  # split-slice-planner-stage：独立环节，唯一事实源；纯文档提案（无代码产出）整段跳过。
+  - id: slice
+    name: 切片规划
+    when: code_required                        # 纯文档提案（无 [code] 产出）整段跳过
+    nodes:
+      - id: plan-slices
+        name: 划分切片
+        skill: slice-planner
+        working_agent: null
+        review_agent: null
+        produces: tasks.md                     # 仅产出 [code] section
+        # 规划完成 = [code] section 脱模板（切片已写出，此时全部未勾），区别于 implement.code 的 section_complete:code（全勾=实现完成）。
+        done_when: tasks_code_filled           # [code] 切片清单脱模板 → ready-to-implement
+        dispatch: { idempotent: true, artifacts_hint: ["tasks.md"] }
+    gate: { type: human, skippable: true }     # 批准切片划分；对应 ready-to-implement 驻留态，gate_id=slice-exit
+
+  # ── 实现：code + verify（默认激活切片循环，收敛=全部切片完成且测试绿）──
+  - id: implement
+    name: 实现
+    nodes:
+      - id: code
+        name: 代码实现
+        skill: code-implementor
+        working_agent: null
+        review_agent: null
+        produces: null
+        done_when: section_complete:code       # 对应 coding → ready-to-verify
+        # 实现类：逐片实现可续跑、重派发安全，timeout 取实现类 3600
+        dispatch: { idempotent: true, timeout_seconds: 3600, artifacts_hint: ["tasks.md", "logos/resources/verify/test-results.jsonl"] }
+      - id: verify
+        name: 验收
+        skill: null                            # openlogos verify 驱动
+        produces: null
+        done_when: marker:VERIFY_PASS
+        fail_when: marker:VERIFY_FAIL          # 对应 verify-failed
+        # verify 命令节点：重跑安全
+        dispatch: { idempotent: true, artifacts_hint: ["VERIFY_PASS"] }
+    # 默认激活切片循环：收敛 = section_complete:code ∧ tests_green；max_iters 达上限升级 loop-exhausted gate（skippable:false）
+    # auto-full-unattended：loop-exhausted 退出门保留硬红线，--auto 也绝不自动放行（仅 set-loop 的 exhausted_gate.skippable:true 可单点 opt-in）；此处 skippable 不动。
+    # contract-self-description：loop 定义在场 ≠ loop_state 挂出；挂出判据见 flow-spec §12.2（implement 进入判据），本行定义不变。
+    loop: { until: code_slices_green, max_iters: 30 }
+    gate: { type: none }
+
+  # ── 交付：deploy + smoke ───────────────────────────────────
+  - id: deliver
+    name: 交付
+    nodes:
+      # 注意：launched 流程中 deployment_required / smoke_required 取【提案级】决策
+      # （resolveProposalDeploymentDecision，依据 proposal.md + [deploy] section），非模块默认。
+      - id: deploy
+        name: 部署执行
+        skill: deployment-executor
+        when: deployment_required
+        produces: null
+        done_when: marker:DEPLOY_DONE          # 对应 ready-to-deploy → deploy-done
+        # 一次性执行类：重投不安全，timeout 取部署类 1800
+        dispatch: { idempotent: false, timeout_seconds: 1800, artifacts_hint: ["DEPLOY_DONE"] }
+      - id: smoke
+        name: 冒烟
+        skill: null                            # openlogos smoke 驱动
+        when: smoke_required
+        produces: null
+        # auto-full-unattended：全自动 --auto 下，smoke（openlogos smoke）经 standing run-scoped 授权自动执行，
+        # 自动放行向提案目录 GATE_AUTO_PASSED 追加审计行；半自动（无 --auto）维持人工确认。skippable 值不动。
+        done_when: marker:SMOKE_PASS           # 对应 ready-to-smoke → smoke-passed
+        fail_when: marker:SMOKE_FAIL           # 对应 smoke-failed
+        # smoke 命令节点：重跑安全
+        dispatch: { idempotent: true, artifacts_hint: ["SMOKE_PASS"] }
+    # entry gate：部署前确认。skippable:true → 无人值守 --auto 可自动放行并写 GATE_AUTO_PASSED
+    # （部署目标可能是测试环境而非生产）；默认/手动模式仍停下等人确认。
+    gate: { type: human, position: entry, skippable: true }
+
+  # ── 收尾：归档 ─────────────────────────────────────────────
+  - id: close
+    name: 收尾
+    nodes:
+      - id: archive
+        name: 归档
+        skill: null                            # openlogos archive 驱动
+        # auto-full-unattended：全自动 --auto 下，archive（openlogos archive）经 standing run-scoped 授权自动执行，
+        # 自动放行向提案目录 GATE_AUTO_PASSED 追加审计行。
+        # 半自动（无 --auto）维持人工确认。
+        produces: null
+        done_when: archived
+        # 一次性执行类：归档搬移目录，重投不安全
+        dispatch: { idempotent: false, artifacts_hint: ["logos/changes/archive/**"] }
+    gate: { type: none }

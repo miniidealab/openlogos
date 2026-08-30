@@ -1,0 +1,534 @@
+#!/usr/bin/env bash
+# OpenLogos Phase Detector — lightweight shell script for Claude Code plugin hooks.
+# Reads logos/logos.config.json and scans logos/resources/ to determine current phase.
+#
+# When called from SessionStart hook: outputs JSON with systemMessage + additionalContext.
+# When called directly (e.g. from commands): outputs plain text.
+#
+# Usage:
+#   ./openlogos-phase              → JSON output (for hooks)
+#   ./openlogos-phase --plain      → plain text output (for commands / terminal)
+
+set -euo pipefail
+
+MODE="json"
+if [ "${1:-}" = "--plain" ]; then
+  MODE="plain"
+fi
+
+has_files() {
+  local dir="$1"
+  [ -d "$dir" ] && find "$dir" -type f ! -name '.gitkeep' -maxdepth 3 2>/dev/null | head -1 | grep -q .
+}
+
+# 从 logos-project.yaml 读取 scenarios[].id 列表，空格分隔
+# 若字段不存在或解析失败，返回空字符串
+get_scenario_ids() {
+  local yaml_file="logos/logos-project.yaml"
+  if [ ! -f "$yaml_file" ]; then
+    echo ""
+    return
+  fi
+  if command -v python3 &>/dev/null; then
+    python3 - "$yaml_file" <<'PYEOF' 2>/dev/null || echo ""
+import sys, re
+path = sys.argv[1]
+content = open(path).read()
+# 简单解析 scenarios 块中的 id 字段（不依赖 PyYAML）
+in_scenarios = False
+ids = []
+for line in content.splitlines():
+    if re.match(r'^scenarios\s*:', line):
+        in_scenarios = True
+        continue
+    if in_scenarios:
+        # 遇到新的顶层字段则退出
+        if re.match(r'^[a-zA-Z]', line):
+            break
+        m = re.match(r'\s+-?\s*id\s*:\s*["\']?(\S+?)["\']?\s*$', line)
+        if m:
+            ids.append(m.group(1))
+print(' '.join(ids))
+PYEOF
+  elif command -v node &>/dev/null; then
+    node - "$yaml_file" <<'JSEOF' 2>/dev/null || echo ""
+const fs = require('fs');
+const content = fs.readFileSync(process.argv[1], 'utf-8');
+const ids = [];
+let inScenarios = false;
+for (const line of content.split('\n')) {
+  if (/^scenarios\s*:/.test(line)) { inScenarios = true; continue; }
+  if (inScenarios) {
+    if (/^[a-zA-Z]/.test(line)) break;
+    const m = line.match(/\s+-?\s*id\s*:\s*["']?(\S+?)["']?\s*$/);
+    if (m) ids.push(m[1]);
+  }
+}
+console.log(ids.join(' '));
+JSEOF
+  else
+    echo ""
+  fi
+}
+
+# 检查某个 phase 下所有已声明场景是否都有对应文件
+# 参数: $1=目录, $2=文件名 glob 模式(不含SXX前缀), $3=扩展名(如 .md 或 .yaml .yml)
+# 返回: 0=全部完成, 1=有缺失; 缺失的 ID 输出到 stdout
+check_scenarios_complete() {
+  local dir="$1"
+  local ext_pattern="$2"   # 例如 "*.md" 或 "*.yaml *.yml"
+  local scenario_ids
+  scenario_ids=$(get_scenario_ids)
+
+  if [ -z "$scenario_ids" ]; then
+    # 无 scenarios 声明，降级为旧逻辑
+    echo "__fallback__"
+    return 0
+  fi
+
+  local missing=""
+  for sid in $scenario_ids; do
+    local found=false
+    for pat in $ext_pattern; do
+      if find "$dir" -maxdepth 1 -name "${sid}-${pat}" 2>/dev/null | grep -q .; then
+        found=true
+        break
+      fi
+    done
+    if [ "$found" = "false" ]; then
+      missing="$missing $sid"
+    fi
+  done
+
+  if [ -n "$missing" ]; then
+    echo "$missing"
+    return 1
+  fi
+  return 0
+}
+
+CONFIG="logos/logos.config.json"
+
+if [ ! -f "$CONFIG" ]; then
+  if [ "$MODE" = "json" ]; then
+    echo '{"systemMessage":"Not an OpenLogos project"}'
+  else
+    echo "⚠ This is not an OpenLogos project (logos/logos.config.json not found)."
+    echo "Run \`openlogos init\` to initialize."
+  fi
+  exit 0
+fi
+
+LOCALE="en"
+LIFECYCLE="initial"
+PROJECT_NAME=""
+STATUS_JSON=""
+STATUS_LIFECYCLE=""
+STATUS_ACTIVE_CHANGE=""
+STATUS_PROPOSAL_STEP=""
+STATUS_PLAN_STATE_SUMMARY=""
+
+if command -v python3 &>/dev/null; then
+  LOCALE=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
+  PROJECT_NAME=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('name',''))" 2>/dev/null || echo "")
+elif command -v node &>/dev/null; then
+  LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
+  PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
+fi
+
+if command -v openlogos &>/dev/null; then
+  STATUS_JSON=$(openlogos status --format json 2>/dev/null || echo "")
+fi
+
+if [ -n "$STATUS_JSON" ]; then
+  if command -v python3 &>/dev/null; then
+    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('lifecycle',''))" 2>/dev/null || echo "")
+    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; mods=data.get('modules') or []; print(active or next((m.get('active_change',{}).get('slug','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('slug')), ''))" 2>/dev/null || echo "")
+    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); step=data.get('proposal_step') or ''; mods=data.get('modules') or []; print(step or next((m.get('active_change',{}).get('proposal_step','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('proposal_step')), ''))" 2>/dev/null || echo "")
+    STATUS_PLAN_STATE_SUMMARY=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; ps=data.get('plan_state'); mods=data.get('modules') or [];
+for m in mods:
+  ac=m.get('active_change') if isinstance(m.get('active_change'),dict) else None
+  if not ac: continue
+  if active and ac.get('slug') != active: continue
+  ps = ps or ac.get('plan_state'); break
+print('' if not isinstance(ps,dict) else 'plan_ready=%s, plan_gate_pending=%s, plan_approved=%s, tasks_execution=%s/%s %s' % (str(bool(ps.get('plan_ready'))).lower(), str(bool(ps.get('plan_gate_pending'))).lower(), str(bool(ps.get('plan_approved'))).lower(), ps.get('tasks_execution_done',0), ps.get('tasks_execution_total',0), ps.get('tasks_execution_scope','none')))" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};console.log(data.lifecycle||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.slug);console.log(data.active_change||mod?.active_change?.slug||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.proposal_step);console.log(data.proposal_step||mod?.active_change?.proposal_step||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_PLAN_STATE_SUMMARY=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const active=data.active_change||'';let ps=data.plan_state;for(const m of data.modules||[]){const ac=m.active_change;if(!ac) continue;if(active&&ac.slug!==active) continue;ps=ps||ac.plan_state;break;}console.log(!ps?'':\`plan_ready=\${!!ps.plan_ready}, plan_gate_pending=\${!!ps.plan_gate_pending}, plan_approved=\${!!ps.plan_approved}, tasks_execution=\${ps.tasks_execution_done??0}/\${ps.tasks_execution_total??0} \${ps.tasks_execution_scope||'none'}\`)}catch(e){console.log('')}})" 2>/dev/null || echo "")
+  fi
+fi
+
+# 从 logos-project.yaml 的 modules[].lifecycle 推导项目级 lifecycle
+# 任意模块标记为 launched 则项目为 launched
+# skip_phases 只读取 lifecycle=initial 的模块，避免多模块时误跳过其他模块的阶段
+YAML_FILE="logos/logos-project.yaml"
+SKIP_API=false
+SKIP_DATABASE=false
+SKIP_SCENARIO=false
+
+if [ -f "$YAML_FILE" ]; then
+  if grep -q 'lifecycle.*launched' "$YAML_FILE" 2>/dev/null; then
+    LIFECYCLE="launched"
+  fi
+
+  # 只从 initial 模块读取 skip_phases，用 awk 解析避免 heredoc 语法问题
+  _skip_result=""
+  if command -v python3 &>/dev/null; then
+    _py_script=$(mktemp "${TMPDIR:-/tmp}/openlogos_skip.XXXXXX")
+    cat > "$_py_script" << 'PYEOF'
+import sys, re
+path = sys.argv[1]
+content = open(path).read()
+in_modules = False
+current_lifecycle = 'initial'
+current_skip = []
+all_skip = []
+for line in content.splitlines():
+    if re.match(r'^modules\s*:', line):
+        in_modules = True
+        continue
+    if in_modules:
+        if re.match(r'^[a-zA-Z]', line) and not re.match(r'^\s', line):
+            break
+        if re.match(r'\s+-\s+id\s*:', line):
+            if current_lifecycle == 'initial':
+                all_skip.extend(current_skip)
+            current_lifecycle = 'initial'
+            current_skip = []
+        m = re.search(r'lifecycle\s*:\s*(\S+)', line)
+        if m:
+            current_lifecycle = m.group(1).strip('"\'')
+        m = re.search(r'skip_phases\s*:\s*\[([^\]]*)\]', line)
+        if m:
+            current_skip = [s.strip().strip('"\'') for s in m.group(1).split(',') if s.strip()]
+if current_lifecycle == 'initial':
+    all_skip.extend(current_skip)
+print(' '.join(set(all_skip)))
+PYEOF
+    _skip_result=$(python3 "$_py_script" "$YAML_FILE" 2>/dev/null || echo "")
+    rm -f "$_py_script"
+  elif command -v node &>/dev/null; then
+    _js_script=$(mktemp "${TMPDIR:-/tmp}/openlogos_skip.XXXXXX")
+    cat > "$_js_script" << 'JSEOF'
+const fs = require('fs');
+const content = fs.readFileSync(process.argv[2], 'utf-8');
+let inModules = false, curLifecycle = 'initial', curSkip = [], allSkip = [];
+for (const line of content.split('\n')) {
+  if (/^modules\s*:/.test(line)) { inModules = true; continue; }
+  if (inModules) {
+    if (/^[a-zA-Z]/.test(line) && !/^\s/.test(line)) break;
+    if (/\s+-\s+id\s*:/.test(line)) {
+      if (curLifecycle === 'initial') allSkip.push(...curSkip);
+      curLifecycle = 'initial'; curSkip = [];
+    }
+    const lm = line.match(/lifecycle\s*:\s*(\S+)/);
+    if (lm) curLifecycle = lm[1].replace(/['"]/g, '');
+    const sm = line.match(/skip_phases\s*:\s*\[([^\]]*)\]/);
+    if (sm) curSkip = sm[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean);
+  }
+}
+if (curLifecycle === 'initial') allSkip.push(...curSkip);
+console.log([...new Set(allSkip)].join(' '));
+JSEOF
+    _skip_result=$(node "$_js_script" "$YAML_FILE" 2>/dev/null || echo "")
+    rm -f "$_js_script"
+  else
+    # 降级：全文 grep（多模块时可能误判，但总比不跳过好）
+    grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'api'      && _skip_result="$_skip_result api"
+    grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'database' && _skip_result="$_skip_result database"
+    grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'scenario' && _skip_result="$_skip_result scenario"
+  fi
+
+  echo "$_skip_result" | grep -q '\bapi\b'      && SKIP_API=true      || true
+  echo "$_skip_result" | grep -q '\bdatabase\b' && SKIP_DATABASE=true  || true
+  echo "$_skip_result" | grep -q '\bscenario\b' && SKIP_SCENARIO=true  || true
+fi
+
+if [ -n "$STATUS_LIFECYCLE" ]; then
+  LIFECYCLE="$STATUS_LIFECYCLE"
+fi
+
+P1="logos/resources/prd/1-product-requirements"
+P2="logos/resources/prd/2-product-design"
+P3_ARCH="logos/resources/prd/3-technical-plan/1-architecture"
+P3_SCEN="logos/resources/prd/3-technical-plan/2-scenario-implementation"
+P_API="logos/resources/api"
+P_DATABASE="logos/resources/database"
+P_TEST="logos/resources/test"
+P_SCENARIO="logos/resources/scenario"
+P_VERIFY="logos/resources/verify"
+
+PHASE=""
+SKILL=""
+SKILL_DESC=""
+
+# 向后看兜底逻辑：后续阶段已有文件时，自动跳过空的 api/database/scenario 目录
+# 与 CLI 的 lastDoneIdx 逻辑对应，向后兼容无 skip_phases 的旧项目
+if [ "$SKIP_API" = "false" ] && ! has_files "$P_API"; then
+  if has_files "$P_TEST" || has_files "$P_SCENARIO" || has_files "$P_VERIFY"; then
+    SKIP_API=true
+  fi
+fi
+if [ "$SKIP_DATABASE" = "false" ] && ! has_files "$P_DATABASE"; then
+  if has_files "$P_TEST" || has_files "$P_SCENARIO" || has_files "$P_VERIFY"; then
+    SKIP_DATABASE=true
+  fi
+fi
+if [ "$SKIP_SCENARIO" = "false" ] && ! has_files "$P_SCENARIO"; then
+  if has_files "$P_VERIFY"; then
+    SKIP_SCENARIO=true
+  fi
+fi
+
+if ! has_files "$P1"; then
+  PHASE="Phase 1: Product Requirements"
+  SKILL="prd-writer"
+  SKILL_DESC="Write product requirements documents"
+elif ! has_files "$P2"; then
+  PHASE="Phase 2: Product Design"
+  SKILL="product-designer"
+  SKILL_DESC="Create product design specifications"
+elif ! has_files "$P3_ARCH"; then
+  PHASE="Phase 3 Step 0: Architecture Design"
+  SKILL="architecture-designer"
+  SKILL_DESC="Design technical architecture"
+elif ! has_files "$P3_SCEN"; then
+  PHASE="Phase 3 Step 1: Scenario Modeling"
+  SKILL="scenario-architect"
+  SKILL_DESC="Model business scenarios as sequence diagrams"
+else
+  # Phase 3-1 目录有文件，进一步检查场景完整性
+  _scen_missing=$(check_scenarios_complete "$P3_SCEN" "*.md" || true)
+  if [ "$_scen_missing" = "__fallback__" ]; then
+    : # 无 scenarios 声明，视为完成，继续向下走
+  elif [ -n "$_scen_missing" ]; then
+    PHASE="Phase 3 Step 1: Scenario Modeling (incomplete: missing${_scen_missing})"
+    SKILL="scenario-architect"
+    SKILL_DESC="Complete remaining scenario sequence diagrams"
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if [ "$SKIP_API" = "true" ]; then
+    : # skip api phase
+  elif ! has_files "$P_API"; then
+    PHASE="Phase 3 Step 2: API & Database Design"
+    SKILL="api-designer"
+    SKILL_DESC="Design OpenAPI specifications (also run db-designer)"
+  else
+    # Phase 3-2 目录有文件，检查场景完整性
+    _api_missing=$(check_scenarios_complete "$P_API" "*.yaml *.yml" || true)
+    if [ "$_api_missing" = "__fallback__" ]; then
+      : # 降级，继续
+    elif [ -n "$_api_missing" ]; then
+      PHASE="Phase 3 Step 2: API & Database Design (incomplete: missing${_api_missing})"
+      SKILL="api-designer"
+      SKILL_DESC="Complete remaining API designs"
+    fi
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if [ "$SKIP_DATABASE" = "true" ]; then
+    : # skip database phase
+  elif ! has_files "$P_DATABASE"; then
+    PHASE="Phase 3 Step 2: Database Design"
+    SKILL="db-designer"
+    SKILL_DESC="Design database schema (DDL)"
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if ! has_files "$P_TEST"; then
+    PHASE="Phase 3 Step 3a: Test Cases"
+    SKILL="test-writer"
+    SKILL_DESC="Write test case documents"
+  else
+    # Phase 3-3a 目录有文件，检查场景完整性
+    _test_missing=$(check_scenarios_complete "$P_TEST" "*.md" || true)
+    if [ "$_test_missing" = "__fallback__" ]; then
+      : # 降级，继续
+    elif [ -n "$_test_missing" ]; then
+      PHASE="Phase 3 Step 3a: Test Cases (incomplete: missing${_test_missing})"
+      SKILL="test-writer"
+      SKILL_DESC="Complete remaining test case documents"
+    fi
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if [ "$SKIP_SCENARIO" = "true" ]; then
+    : # skip scenario/orchestration phase
+  elif ! has_files "$P_SCENARIO"; then
+    PHASE="Phase 3 Step 3b: Orchestration Tests"
+    SKILL="test-orchestrator"
+    SKILL_DESC="Design API orchestration test scenarios"
+  fi
+fi
+
+if [ -z "$PHASE" ]; then
+  if ! has_files "$P_VERIFY"; then
+    PHASE="Phase 3 Step 4-5: Code Generation & Verification"
+    SKILL="code-reviewer"
+    SKILL_DESC="Generate code and run verification"
+  else
+    PHASE="All phases complete"
+    SKILL=""
+  fi
+fi
+
+# Build language policy text
+if [ "$LOCALE" = "zh" ]; then
+  LANG_POLICY="Language Policy: ALL output MUST be in Chinese (中文)."
+else
+  LANG_POLICY="Language Policy: ALL output MUST be in English."
+fi
+
+# GUI UI-first overlay detection: the project instance flow (logos/flow/launched.yaml)
+# has the write-ui-prototype node injected only for GUI projects. When present we grant
+# a plan-stage exception allowing the page-design prototype delta.
+ui_first_exception_text() {
+  local active="$1"
+  if [ -f "logos/flow/launched.yaml" ] && grep -q 'write-ui-prototype' "logos/flow/launched.yaml" 2>/dev/null; then
+    echo " 例外：GUI 项目且本次触及 UI（ui_impact）时，允许在 plan 阶段产出 page-design 原型 delta（logos/changes/$active/deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 仍禁于 plan 阶段。"
+  else
+    echo ""
+  fi
+}
+
+change_management_message() {
+  local active="$1"
+  local step="${2:-}"
+  local plan_state="${3:-}"
+  local base="Change Management: ACTIVE — guard file detected. Active change proposal: '$active'."
+  local confirm="openlogos merge, openlogos verify, openlogos smoke, openlogos archive, deployment, and git push are human confirmation points: AI must not execute them without explicit user authorization."
+  local ui_exc
+  ui_exc="$(ui_first_exception_text "$active")"
+
+  case "$step" in
+    writing)
+      echo "$base Current proposal step: writing. Allowed files: logos/changes/$active/proposal.md and logos/changes/$active/tasks.md. Do not write deltas or source code yet.${ui_exc} $confirm"
+      ;;
+    ready-to-delta)
+      echo "$base Current proposal step: ready-to-delta. The plan is ready for approval; plan gate is pending and after approval or openlogos next --auto, proceed to delta-writing. ${plan_state:+Plan state: $plan_state. }Tasks execution 0/N means execution has not started, not planning failure. Do not modify source code or logos/resources/** directly.${ui_exc} $confirm"
+      ;;
+    delta-writing|implementing|in-progress)
+      echo "$base Current proposal step: delta-writing. Allowed files: logos/changes/$active/deltas/** and logos/changes/$active/tasks.md. Continue producing delta files and check off [delta] tasks; do not modify logos/resources/** or source code directly before merge/coding stages. $confirm"
+      ;;
+    ready-to-merge)
+      echo "$base Current proposal step: ready-to-merge. Stop writing deltas and ask the user to explicitly authorize: openlogos merge $active. $confirm"
+      ;;
+    merge-generated)
+      echo "$base Current proposal step: merge-generated. Follow logos/changes/$active/MERGE_PROMPT.md to merge specs, then write logos/changes/$active/SPEC_MERGED when done. $confirm"
+      ;;
+    coding|ready-to-verify|verify-failed)
+      echo "$base Current proposal step: $step. Implement only the [code] section scope from logos/changes/$active/tasks.md, including source code, tests, reporter, and required snapshots; update tasks.md when complete. $confirm"
+      ;;
+    verify-passed|deploy-done|smoke-passed)
+      echo "$base Current proposal step: $step. Verification/delivery is complete for this step; ask the user to explicitly authorize openlogos archive $active when appropriate. $confirm"
+      ;;
+    ready-to-deploy)
+      echo "$base Current proposal step: ready-to-deploy. Deployment requires explicit human authorization before any deployment action. $confirm"
+      ;;
+    ready-to-smoke|smoke-failed)
+      echo "$base Current proposal step: $step. Smoke requires explicit human authorization before running openlogos smoke. $confirm"
+      ;;
+    *)
+      echo "$base Current proposal step is unknown. Run openlogos status or openlogos next to confirm the current proposal step before modifying files; keep changes within the active proposal scope. $confirm"
+      ;;
+  esac
+}
+
+# Detect guard file for active lifecycle
+GUARD_FILE="logos/.openlogos-guard"
+GUARD_STATUS=""
+ACTIVE_CHANGE="$STATUS_ACTIVE_CHANGE"
+PROPOSAL_STEP="$STATUS_PROPOSAL_STEP"
+
+if [ "$LIFECYCLE" = "launched" ] && [ -z "$ACTIVE_CHANGE" ] && [ -f "$GUARD_FILE" ]; then
+  if command -v python3 &>/dev/null; then
+    ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    ACTIVE_CHANGE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); console.log(d.activeChange||'')" 2>/dev/null || echo "")
+  fi
+fi
+
+# Build change management text
+if [ "$LIFECYCLE" = "launched" ]; then
+  if [ -n "$ACTIVE_CHANGE" ]; then
+    GUARD_STATUS="🔓 Active change: $ACTIVE_CHANGE — modify files within the scope of this proposal only."
+    CHANGE_MGMT=$(change_management_message "$ACTIVE_CHANGE" "${PROPOSAL_STEP:-}" "${STATUS_PLAN_STATE_SUMMARY:-}")
+  else
+    GUARD_STATUS="⛔ NO active change proposal. You MUST run openlogos change <slug> before modifying any code."
+    CHANGE_MGMT="Change Management: ACTIVE — ⛔ NO guard file found. Before modifying ANY source code, you MUST first run openlogos change <slug> to create a change proposal. Direct code changes without a proposal are FORBIDDEN."
+  fi
+else
+  CHANGE_MGMT="Change Management: Initial development — follow Phase progression, no change proposals needed."
+  if [ "$PHASE" = "All phases complete" ]; then
+    CHANGE_MGMT="$CHANGE_MGMT Run openlogos launch to activate change management."
+  fi
+fi
+
+# Build status line for systemMessage (user-visible, keep short)
+if [ -n "$GUARD_STATUS" ]; then
+  STATUS_LINE="📊 OpenLogos: $PHASE | $GUARD_STATUS"
+elif [ -n "$SKILL" ]; then
+  STATUS_LINE="📊 OpenLogos: $PHASE → use $SKILL skill"
+else
+  STATUS_LINE="📊 OpenLogos: $PHASE"
+fi
+
+# proposal-ui-ux-first 切片3：前置能力门 capability surface（读 logos/.session-capabilities.json）。
+# 缺失=降级模式（不注入 capabilities 段）；仅用于 plan-exit 前模式选择，plan-exit 后强制语义以 PLAN_APPROVED 为准。
+CAPABILITIES=""
+CAP_FILE="logos/.session-capabilities.json"
+if [ -f "$CAP_FILE" ]; then
+  UI_RENDER=""
+  if command -v python3 &>/dev/null; then
+    UI_RENDER=$(python3 -c "import json;print('true' if json.load(open('$CAP_FILE')).get('ui_prototype_render') is True else '')" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    UI_RENDER=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CAP_FILE','utf-8'));console.log(d.ui_prototype_render===true?'true':'')" 2>/dev/null || echo "")
+  fi
+  if [ "$UI_RENDER" = "true" ]; then
+    CAPABILITIES="Capabilities: ui_prototype_render=true (rendered UI confirmation available; capability 仅用于 plan-exit 前模式选择——就绪→渲染确认模式，plan-exit 后以 PLAN_APPROVED 为准)."
+  fi
+fi
+
+# Build full context for additionalContext (Claude-visible)
+CONTEXT="=== OpenLogos Project Context ===
+Project: $PROJECT_NAME
+Locale: $LOCALE
+Lifecycle: $LIFECYCLE
+Current Phase: $PHASE"
+
+if [ -n "$SKILL" ]; then
+  CONTEXT="$CONTEXT
+Suggested Skill: $SKILL ($SKILL_DESC)"
+fi
+
+CONTEXT="$CONTEXT
+$LANG_POLICY${CAPABILITIES:+
+$CAPABILITIES}
+$CHANGE_MGMT
+=== End OpenLogos Context ==="
+
+if [ "$MODE" = "json" ]; then
+  # Escape special characters for JSON
+  CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || printf '%s' "$CONTEXT" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.stringify(d)))" 2>/dev/null)
+
+  cat <<ENDJSON
+{
+  "systemMessage": "$STATUS_LINE",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": $CONTEXT_ESCAPED
+  }
+}
+ENDJSON
+else
+  echo ""
+  echo "$CONTEXT"
+  echo ""
+fi

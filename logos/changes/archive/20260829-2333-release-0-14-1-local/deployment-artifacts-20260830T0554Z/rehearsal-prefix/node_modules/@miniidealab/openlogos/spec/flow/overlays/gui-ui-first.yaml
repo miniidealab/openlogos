@@ -1,0 +1,61 @@
+# 方法论 GUI 项目 overlay 源：gui-ui-first
+# ─────────────────────────────────────────────────────────────────────────────
+# 本文件是【方法论为 GUI 产品项目提供的 UI-first flow overlay 唯一源】，属可注入资产。
+# 注入机制（flow-spec §10 overlay / extends）：
+#   - product_type 唯一源 = logos-project.yaml 的 modules[].product_type
+#     （枚举 web|desktop|mobile|cli|api|library|skills|service；GUI 集合 = {web, desktop, mobile}；字段缺失 = 非 GUI）。
+#   - 注入在【项目实例级】：openlogos init / sync 在【项目含 ≥1 GUI 模块】时，把本文件的
+#     两个 op:add 合并进【项目实例】logos/flow/launched.yaml（该实例 extends: builtin:launched@v1）。
+#   - 节点是否参与由 module-aware when: ui_impact（针对【活跃提案所属 module】的 product_type 求值）决定：
+#     活跃提案 module 为非 GUI（product_type ∈ {cli,api,library,skills,service} 或缺失）→ 节点 skip，特性零启用、流程零改动。
+#   - builtin spec/flow/launched.yaml【绝不硬编码】这两个节点（若硬编码为 builtin 节点，其
+#     done_when: cmd: 会被判 FLOW_SCHEMA_INVALID；cmd: 仅 overlay-add 及白名单 overlay-modify gate 合法，
+#     见 flow-spec §9.2 / §10.3）。
+# 两节点均为 overlay-add，故【合法】使用 done_when: cmd:（富对账 / hash 校验），落在 launched flow、
+# 提案目录求值根可用（§9.1）。节点语义详见 flow-spec.md「## ADDED — GUI UI-first overlay 节点与 ui_impact when-flag」。
+#
+# 本文件是纯 overlay 片段（op 列表）；init / sync 注入时将其并入项目实例的顶层 overlay:，
+# 项目实例头部为：
+#   version: 1
+#   flow: launched
+#   extends: builtin:launched@v1
+#   overlay:
+#     <本文件的 op 列表>
+overlay:
+  # ── 节点一：write-ui-prototype（plan-exit 门前产逐页原型 + 令牌）──────────────
+  # after: write-tasks → 落在 launched plan subflow 内、plan-exit（gate）门之前。
+  - op: add
+    after: write-tasks
+    node:
+      id: write-ui-prototype
+      name: 产出 UI 原型
+      skill: change-writer            # change-writer 调用 ui-ux-pro-max（product-designer Step 5a 子流程）
+      when: ui_impact                 # module-aware：活跃提案所属 module 的 product_type ∈ GUI + 声明段 ui_impact:true 才参与，否则 skip
+      produces: deltas/prd/2-product-design/2-page-design/
+      # 富对账 checker（done_when: cmd: 合法，因本节点为 overlay-add）：
+      #   done_when 语义随提案 UI/UX 变更声明段的 design_system_mode（flow-spec §9 / ## ADDED · F2）：
+      #     - generated：要求合法非空 design-system.json（ui-ux-pro-max 令牌，禁伪造）；
+      #     - fallback ：不要求 design-system.json，只要非空 design_system_fallback_reason（降级原因）；
+      #   两种模式都要：逐页非空原型 + 声明清单==产出文件（basename 集合一致）+ 记录逐文件内容 hash，
+      #   全部满足才 exit 0 → 节点 done → plan-exit 门可放行。
+      done_when: "cmd:openlogos check-ui-prototype"
+
+  # ── 节点二：verify-ui-provenance（merge 前拦原型漂移）───────────────────────
+  # before: generate-merge-prompt → 落在 launched merge subflow 入口、原型落盘 resources 之前。
+  - op: add
+    before: generate-merge-prompt
+    node:
+      id: verify-ui-provenance
+      name: 校验 UI provenance
+      when: ui_impact                 # module-aware：同节点一，活跃提案 module 非 GUI / 未声明 ui_impact 则 skip
+      produces: null
+      # 单 done_when: cmd:（无 fail_when，避开决策 B「同节点双 cmd:」）；命令内部【三分支】，
+      # 与 F4 R7「持久化批准记录（PLAN_APPROVED）为唯一键」一致（与 merge / 落盘同一分支）：
+      #   1. PLAN_APPROVED 含 UI provenance（ui_prototype_rendered:true + pages + hashes）→
+      #      重算 2-page-design/ 现值 hash 与固化 hashes 比对：完好且全匹配 → exit 0（节点 done → 放行）；
+      #      缺失 / 损坏 / 失配 → 非 0（fail closed 阻断，显式重入 plan 刷新后重放）。
+      #   2. legacy/degraded，或【旧空 marker 且无任何「曾渲染」证据】（无 ui_prototype_rendered、无 hashes）→
+      #      记 advisory 后 exit 0（节点 done → merge 可达）；← 新增第三成功分支，解旧空 marker 永久卡死。
+      #   3. 部分 / 损坏 provenance（ui_prototype_rendered:true 但缺 / 空 hashes）→
+      #      不得误判 legacy → fail closed（非 0）。
+      done_when: "cmd:openlogos check-ui-hash-match"

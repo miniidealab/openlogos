@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@miniidealab/openlogos": "file:../miniidealab-openlogos-0.14.1.tgz"
+  }
+}

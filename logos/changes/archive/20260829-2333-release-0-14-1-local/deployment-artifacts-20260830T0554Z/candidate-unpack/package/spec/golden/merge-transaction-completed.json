@@ -1,0 +1,73 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_completed_golden",
+  "slug": "completed-golden",
+  "phase": "completed",
+  "classification": null,
+  "allowed_actions": [],
+  "next_action": null,
+  "target_set_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "seal_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "schema_sha256": "sha256:bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421",
+  "contract_sha256": "sha256:ad215013d8226a08ccafbb8a888eb9bba22814ba38abb58363c5055f82933d35",
+  "content_slots": {
+    "required": 1,
+    "submitted": 1,
+    "missing_slot_ids": [],
+    "items": [
+      {
+        "slot_id": "slot_completed_golden",
+        "target_ref": "target_completed_golden",
+        "staging_path": "logos/changes/completed-golden/merge-staging/mtx_completed_golden/slot_completed_golden/content",
+        "required": true,
+        "content_encoding": "utf8-raw",
+        "max_bytes": 20971520,
+        "write_protocol": "atomic-rename",
+        "submitted_sha256": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      }
+    ]
+  },
+  "receipt": {
+    "transaction_id": "mtx_completed_golden",
+    "seal_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "target_set_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "closure_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "target_count": 1,
+    "plan_sha256": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "change": "completed-golden",
+    "module": "core",
+    "changed_paths": [],
+    "created_paths": [
+      "logos/resources/decisions/core-D01-golden.md"
+    ],
+    "final_hashes": [
+      {
+        "path": "logos/resources/decisions/core-D01-golden.md",
+        "sha256": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    ],
+    "metadata_summaries": [],
+    "test_change_set": null,
+    "spec_merged": {
+      "path": "logos/changes/completed-golden/SPEC_MERGED"
+    },
+    "commit_paths": [
+      "logos/changes/completed-golden/MERGE_RECEIPT.json",
+      "logos/changes/completed-golden/SPEC_MERGED",
+      "logos/resources/decisions/core-D01-golden.md"
+    ],
+    "completed_at": "2026-01-01T00:00:00.000Z",
+    "receipt_sha256": "sha256:0cf60ca93c3db9e31934ce5c8fb5ba96ed6846e88621e0aa2a08f8b53b176def"
+  },
+  "artifact_hashes": [
+    {
+      "path": "logos/changes/completed-golden/MERGE_RECEIPT.json",
+      "sha256": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    {
+      "path": "logos/changes/completed-golden/SPEC_MERGED",
+      "sha256": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    }
+  ],
+  "aborted_at": null
+}

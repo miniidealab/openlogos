@@ -1,0 +1,152 @@
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { readLocale, t } from '../i18n.js';
+import { deployAiToolAssets, expandAiTools, writeInstructionFiles } from './init.js';
+import { syncLogosProjectName } from './sync.js';
+import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
+import { isAdoptedBootstrap } from '../lib/project-yaml.js';
+function hasFile(path) {
+    return existsSync(path);
+}
+function reportHasPass(path) {
+    if (!existsSync(path))
+        return false;
+    try {
+        return /\bPASS\b/.test(readFileSync(path, 'utf-8'));
+    }
+    catch {
+        return false;
+    }
+}
+export function moduleDeploymentRequired(yaml, mod) {
+    if (mod.deployment_required === false)
+        return false;
+    if (Array.isArray(mod.skip_phases) && mod.skip_phases.includes('deployment'))
+        return false;
+    const gates = yaml.deployment_gates && typeof yaml.deployment_gates === 'object'
+        ? yaml.deployment_gates
+        : {};
+    if (gates[mod.id]?.deployment_required === false)
+        return false;
+    return true;
+}
+function moduleSmokeRequired(yaml, mod) {
+    if (!moduleDeploymentRequired(yaml, mod))
+        return false;
+    const gates = yaml.deployment_gates && typeof yaml.deployment_gates === 'object'
+        ? yaml.deployment_gates
+        : {};
+    if (gates[mod.id]?.smoke_required === false)
+        return false;
+    return true;
+}
+export function launch(moduleArg) {
+    const root = process.cwd();
+    const configPath = join(root, 'logos', 'logos.config.json');
+    const locale = readLocale(root);
+    if (!existsSync(configPath)) {
+        console.error('Error: logos/logos.config.json not found.');
+        console.error('Run `openlogos init` first to initialize the project.');
+        process.exit(1);
+    }
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    // Run migration for old projects before deriving state
+    const migration = migrateProjectLifecycle(root);
+    if (migration.migrated && migration.autoMarked) {
+        console.log(t(locale, 'launch.migrationAuto', { module: migration.autoMarked }));
+    }
+    else if (migration.migrated && migration.warned) {
+        console.error(t(locale, 'launch.migrationWarn'));
+    }
+    const yamlPath = join(root, 'logos', 'logos-project.yaml');
+    if (!existsSync(yamlPath)) {
+        console.error('Error: logos/logos-project.yaml not found.');
+        process.exit(1);
+    }
+    const yaml = parseYaml(readFileSync(yamlPath, 'utf-8')) ?? {};
+    const modules = Array.isArray(yaml.modules) ? yaml.modules : [];
+    // Resolve target module id
+    let targetId;
+    if (moduleArg) {
+        targetId = moduleArg;
+    }
+    else if (modules.length === 1) {
+        targetId = modules[0].id;
+    }
+    else if (modules.length === 0) {
+        console.error('Error: No modules registered in logos-project.yaml.');
+        process.exit(1);
+    }
+    else {
+        const ids = modules.map(m => m.id).join(', ');
+        console.error(t(locale, 'launch.multiModuleError', { modules: ids }));
+        process.exit(1);
+    }
+    const mod = modules.find(m => m.id === targetId);
+    if (!mod) {
+        console.error(t(locale, 'launch.moduleNotFound', { module: targetId }));
+        process.exit(1);
+    }
+    const isBootstrapAdopted = isAdoptedBootstrap(mod.bootstrap);
+    if (isBootstrapAdopted) {
+        if (mod.lifecycle !== 'launched') {
+            mod.lifecycle = 'launched';
+            writeFileSync(yamlPath, stringifyYaml(yaml, { lineWidth: 0 }));
+        }
+        const rawAiTool = config.aiTool ?? 'cursor';
+        const aiTools = expandAiTools(rawAiTool);
+        const projectName = config.name || 'Unnamed Project';
+        syncLogosProjectName(root, projectName);
+        writeInstructionFiles(root, locale, rawAiTool, true);
+        deployAiToolAssets(root, aiTools, locale, true, 'synced');
+        console.log(`\n${t(locale, 'launch.done', { module: targetId })}`);
+        console.log(t(locale, 'launch.hint1'));
+        console.log(t(locale, 'launch.hint2'));
+        console.log('');
+        return;
+    }
+    if (mod.lifecycle === 'launched' && migration.autoMarked !== targetId) {
+        console.log(`\n${t(locale, 'launch.moduleAlreadyLaunched', { module: targetId })}\n`);
+        return;
+    }
+    const verifyReportPath = join(root, 'logos', 'resources', 'verify', 'acceptance-report.md');
+    if (!reportHasPass(verifyReportPath)) {
+        console.error(t(locale, 'launch.verifyRequired', { module: targetId }));
+        process.exit(1);
+    }
+    if (moduleDeploymentRequired(yaml, mod)) {
+        const deploymentReportPath = join(root, 'logos', 'resources', 'verify', 'deployment-report.md');
+        if (!hasFile(deploymentReportPath)) {
+            console.error(t(locale, 'launch.deployRequired', { module: targetId }));
+            process.exit(1);
+        }
+    }
+    if (moduleSmokeRequired(yaml, mod)) {
+        const smokeReportPath = join(root, 'logos', 'resources', 'verify', 'smoke-report.md');
+        if (!reportHasPass(smokeReportPath)) {
+            console.error(t(locale, 'launch.smokeRequired', { module: targetId }));
+            process.exit(1);
+        }
+    }
+    const isLaunched = true;
+    const rawAiTool = config.aiTool ?? 'cursor';
+    const aiTools = expandAiTools(rawAiTool);
+    const projectName = config.name || 'Unnamed Project';
+    syncLogosProjectName(root, projectName);
+    writeInstructionFiles(root, locale, rawAiTool, isLaunched);
+    deployAiToolAssets(root, aiTools, locale, isLaunched, 'synced');
+    // 所有 Adapter 资产成功后才提交 lifecycle，防止 ZCode 或其它宿主失败造成伪 launched。
+    mod.lifecycle = 'launched';
+    writeFileSync(yamlPath, stringifyYaml(yaml, { lineWidth: 0 }));
+    // Fix 5: remove stale project-level lifecycle from config
+    if ('lifecycle' in config) {
+        delete config['lifecycle'];
+        writeFileSync(configPath, JSON.stringify(config, null, 2));
+    }
+    console.log(`\n${t(locale, 'launch.done', { module: targetId })}`);
+    console.log(t(locale, 'launch.hint1'));
+    console.log(t(locale, 'launch.hint2'));
+    console.log('');
+}
+//# sourceMappingURL=launch.js.map

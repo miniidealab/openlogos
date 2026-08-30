@@ -1,0 +1,20 @@
+{
+  "name": "openlogos",
+  "description": "OpenLogos methodology plugin — structured AI-driven development with Why → What → How progression",
+  "version": "0.14.1",
+  "author": {
+    "name": "MiniIdeaLab",
+    "url": "https://github.com/miniidealab"
+  },
+  "homepage": "https://openlogos.ai",
+  "repository": "https://github.com/miniidealab/openlogos",
+  "license": "Apache-2.0",
+  "keywords": [
+    "methodology",
+    "openlogos",
+    "ai-development",
+    "skills",
+    "requirements",
+    "scenario-driven"
+  ]
+}

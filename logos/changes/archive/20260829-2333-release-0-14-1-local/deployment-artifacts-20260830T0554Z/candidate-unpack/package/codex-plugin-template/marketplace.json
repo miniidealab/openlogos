@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    {
+      "id": "openlogos",
+      "name": "OpenLogos",
+      "path": ".agents/plugins/openlogos",
+      "plugin": ".agents/plugins/openlogos/.codex-plugin/plugin.json",
+      "description": "OpenLogos methodology skills and session context for Codex"
+    }
+  ]
+}

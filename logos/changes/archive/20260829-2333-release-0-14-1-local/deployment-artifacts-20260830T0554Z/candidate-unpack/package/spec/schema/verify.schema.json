@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openlogos.dev/schema/verify/1.1.0",
+  "title": "openlogos verify --format json 机器契约（data 对象）",
+  "x-contract-version": "1.1.0",
+  "$comment": "向后兼容 superset schema：legacy verify 使用 1.0.0；含切片验证字段时使用 1.1.0。校验对象是 envelope.data。",
+  "type": "object",
+  "required": ["contract", "summary", "gate", "failed_cases", "uncovered_cases", "skipped_cases", "consistency", "checklist", "ac_trace", "pre_run", "smoke_precheck", "sandbox", "report_path"],
+  "additionalProperties": true,
+  "properties": {
+    "contract": {
+      "type": "object",
+      "required": ["version"],
+      "additionalProperties": true,
+      "properties": { "version": { "enum": ["1.0.0", "1.1.0"] } }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["defined_count", "ut_count", "st_count", "manual_count", "executed_count", "passed_count", "failed_count", "skipped_count", "uncovered_count", "coverage_pct", "pass_rate_pct"],
+      "additionalProperties": true,
+      "properties": {
+        "defined_count": { "type": "integer", "minimum": 0 }, "ut_count": { "type": "integer", "minimum": 0 },
+        "st_count": { "type": "integer", "minimum": 0 }, "manual_count": { "type": "integer", "minimum": 0 },
+        "executed_count": { "type": "integer", "minimum": 0 }, "passed_count": { "type": "integer", "minimum": 0 },
+        "failed_count": { "type": "integer", "minimum": 0 }, "skipped_count": { "type": "integer", "minimum": 0 },
+        "uncovered_count": { "type": "integer", "minimum": 0 }, "coverage_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "pass_rate_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "gate": {
+      "type": "object", "required": ["result", "reason"], "additionalProperties": true,
+      "properties": { "result": { "enum": ["PASS", "FAIL"] }, "reason": { "type": ["string", "null"] } }
+    },
+    "failed_cases": { "type": "array", "items": { "type": "object", "required": ["id", "error"], "properties": { "id": { "type": "string" }, "error": { "type": "string" } } } },
+    "uncovered_cases": { "$ref": "#/$defs/stringArray" },
+    "skipped_cases": { "$ref": "#/$defs/stringArray" },
+    "consistency": { "type": "object" },
+    "checklist": { "type": "object" },
+    "ac_trace": { "type": "object" },
+    "pre_run": { "type": "object" },
+    "smoke_precheck": { "type": "object" },
+    "sandbox": { "type": "object" },
+    "report_path": { "type": "string" },
+    "verify_mode": { "enum": ["slice-checkpoint", "final"] },
+    "attempted_slice_id": { "type": ["string", "null"] },
+    "eligible_test_ids": { "$ref": "#/$defs/stringArray" },
+    "pending_test_ids": { "$ref": "#/$defs/stringArray" },
+    "manifest": { "$ref": "#/$defs/sliceManifestSummary" },
+    "checkpoint": { "$ref": "#/$defs/sliceCheckpointSummary" }
+    ,"test_change_set": { "$ref": "#/$defs/testChangeSetSummary" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "contract": { "properties": { "version": { "const": "1.0.0" } } } }, "required": ["contract"] },
+      "then": { "not": { "anyOf": [
+        { "required": ["verify_mode"] }, { "required": ["attempted_slice_id"] }, { "required": ["eligible_test_ids"] },
+        { "required": ["pending_test_ids"] }, { "required": ["manifest"] }, { "required": ["checkpoint"] }
+      ] } }
+    },
+    {
+      "if": { "properties": { "contract": { "properties": { "version": { "const": "1.1.0" } } } }, "required": ["contract"] },
+      "then": { "required": ["verify_mode", "attempted_slice_id", "eligible_test_ids", "pending_test_ids", "manifest", "checkpoint"] }
+    },
+    {
+      "if": { "properties": { "verify_mode": { "const": "slice-checkpoint" } }, "required": ["verify_mode"] },
+      "then": { "properties": { "attempted_slice_id": { "type": "string", "minLength": 1 }, "checkpoint": { "properties": { "final": { "const": false } } } } }
+    },
+    {
+      "if": { "properties": { "verify_mode": { "const": "final" } }, "required": ["verify_mode"] },
+      "then": { "properties": { "attempted_slice_id": { "type": "null" }, "pending_test_ids": { "maxItems": 0 }, "checkpoint": { "properties": { "final": { "const": true } } } } }
+    }
+  ],
+  "$defs": {
+    "stringArray": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "testChangeSetSummary": {
+      "type": "object",
+      "required": ["status", "schema", "sha256", "changed_test_ids", "removed_test_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["valid", "invalid"] },
+        "schema": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"] },
+        "changed_test_ids": { "$ref": "#/$defs/stringArray" },
+        "removed_test_ids": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "sliceManifestSummary": {
+      "type": "object",
+      "required": ["status", "path", "schema", "task_fingerprint", "spec_fingerprint", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "const": "valid" }, "path": { "type": "string" }, "schema": { "type": "string" },
+        "task_fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "spec_fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "sliceCheckpointSummary": {
+      "type": "object",
+      "required": ["final", "result", "confirmed_slice_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "final": { "type": "boolean" },
+        "result": { "type": ["string", "null"], "enum": ["PASS", "FAIL", null] },
+        "confirmed_slice_ids": { "$ref": "#/$defs/stringArray" }
+      }
+    }
+  }
+}

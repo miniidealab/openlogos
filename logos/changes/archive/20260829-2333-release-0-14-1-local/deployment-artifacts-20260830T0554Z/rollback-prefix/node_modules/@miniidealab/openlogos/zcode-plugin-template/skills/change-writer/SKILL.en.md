@@ -1,0 +1,217 @@
+# Skill: Change Writer
+
+> Assist in writing change proposals — analyze the scope of change impact, generate a structured proposal.md and a phase-based tasks.md, ensuring changes are traceable and impact is controllable.
+
+## Trigger Conditions
+
+- User has just run `openlogos change <slug>` and wants AI help filling in the proposal
+- User describes a need to modify, add, or remove a scenario/feature
+- User mentions "change proposal", "iteration", "requirement change"
+
+## Prerequisites
+
+1. Project is initialized (`logos/logos.config.json` exists)
+2. Change proposal directory has been created by CLI (`logos/changes/<slug>/` exists)
+3. Main documents are readable (effective documents exist in `logos/resources/`)
+
+If prerequisites are not met, prompt the user to run `openlogos change <slug>` to create the proposal directory first.
+
+## Core Capabilities
+
+1. Understand the user's intended change
+2. Scan existing documents in `logos/resources/` to identify the affected scope
+3. Determine the change type based on change propagation rules (Requirement-level / Design-level / Interface-level / Code-level)
+4. Generate a compliant proposal.md
+5. Automatically break down tasks.md by change type
+
+## Execution Steps
+
+### Step 1: Understand the Change Intent
+
+Confirm the following information with the user (ask follow-up questions if insufficient, up to 2 rounds):
+
+- **What is the change**: What needs to be added, modified, or removed?
+- **Reason for the change**: Why is this change needed? Is it from requirement feedback, a bug, or an optimization?
+- **Related scenarios**: Which existing scenario IDs are involved (S01, S02...)?
+
+### Step 2: Analyze the Impact Scope
+
+Scan documents in `logos/resources/` to determine the impact scope:
+
+1. Read requirement documents (`prd/1-product-requirements/`) to check related scenario definitions
+2. Read product design (`prd/2-product-design/`) to check related functional specs and prototypes
+3. Read technical plans (`prd/3-technical-plan/`) to check related sequence diagrams
+4. Read API documents (`api/`) to check related endpoints
+5. Read DB documents (`database/`) to check related table structures
+6. Read orchestration tests (`scenario/`) to check related test cases
+
+### Step 3: Determine the Change Type
+
+Refer to change propagation rules to determine the change type and minimum update scope:
+
+| Change Type | Minimum Updates Required |
+|-------------|------------------------|
+| Requirement-level change | Full chain (Requirements → Design → Architecture → API/DB → Orchestration → Code) |
+| Design-level change | Prototypes + Scenarios + API/DB + Orchestration + Code |
+| Interface-level change | API/DB + Orchestration + Code |
+| Code-level fix | Code + Re-verification |
+
+### Step 4: Generate proposal.md
+
+Generate using the following template and write to `logos/changes/<slug>/proposal.md`:
+
+```markdown
+# Change Proposal: [Change Name]
+
+## Reason for Change
+[Why is this change needed? What requirement/feedback/bug does it originate from?]
+
+## Change Type
+[Requirement-level / Design-level / Interface-level / Code-level]
+
+## Change Scope
+- Affected requirement documents: [List, down to filename and section]
+- Affected functional specs: [List]
+- Affected business scenarios: [Scenario ID list]
+- Affected APIs: [Endpoint list]
+- Affected DB tables: [Table name list]
+- Affected orchestration tests: [List]
+
+## Change Summary
+[Describe in 1-3 paragraphs what specifically will change]
+```
+
+### Step 5: Generate tasks.md
+
+Automatically break down the task checklist using structured section format based on the change type and impact scope. See `spec/tasks-spec.md` for the full format specification.
+
+**Format rules**:
+- `## [delta] <description>` section: only list delta document output tasks, each item corresponds to one delta file
+- `## [code] <description>` section: only list code implementation tasks that directly modify source files — no delta output
+- Both sections are optional: code-only proposals have only `[code]`, spec-only proposals have only `[delta]`
+- **Never mix**: delta tasks must not appear in `[code]` section; code tasks must not appear in `[delta]` section
+
+**Requirement-level / Design-level change template** (delta + code):
+
+```markdown
+# Implementation Tasks
+
+## [delta] Spec Changes
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Update acceptance criteria for S0x
+- [ ] Output delta file to `deltas/prd/1-product-requirements/` — Add/modify scenario in overview table
+- [ ] Output delta file to `deltas/prd/2-product-design/1-feature-specs/` — Update interaction design for S0x
+- [ ] Output delta file to `deltas/prd/2-product-design/2-page-design/` — Update prototypes
+- [ ] Output delta file to `deltas/prd/3-technical-plan/1-architecture/` — Update technical architecture
+- [ ] Output delta file to `deltas/prd/3-technical-plan/2-scenario-implementation/` — Update sequence diagram for S0x
+- [ ] Output delta file to `deltas/api/` — Update API YAML
+- [ ] **Validate API YAML** — all files in `logos/resources/api/` must be valid YAML and valid OpenAPI 3.x (all `description`/`summary` values containing `:` or special chars must be double-quoted)
+- [ ] Output delta file to `deltas/database/` — Update DB DDL
+- [ ] Output delta file to `deltas/scenario/` — Update orchestration test cases
+
+## [code] Code Implementation
+- [ ] Implement business logic in src/xxx
+- [ ] Write corresponding tests
+```
+
+**Code-only fix template** (no delta):
+
+```markdown
+# Implementation Tasks
+
+## [code] Code Implementation
+- [ ] Fix the issue in src/xxx
+- [ ] Update corresponding tests
+```
+
+### Step 6: Output Delta Files
+
+**When to trigger**: After tasks.md is filled in and the user has confirmed the proposal, produce delta files item by item per the `[delta]` section task checklist.
+
+**Important**: Only execute tasks in the `[delta]` section. Tasks in the `[code]` section are executed after spec merge (SPEC_MERGED).
+
+When producing delta files, write them under `logos/changes/<slug>/deltas/` with paths that mirror `logos/resources/`:
+
+| Target main document directory | Delta subdirectory |
+|---|---|
+| `logos/resources/prd/` | `deltas/prd/` |
+| `logos/resources/api/` | `deltas/api/` |
+| `logos/resources/database/` | `deltas/database/` |
+| `logos/resources/scenario/` | `deltas/scenario/` |
+| `logos/resources/test/` | `deltas/test/` |
+
+Preserve nested directories. Example: `logos/resources/prd/1-product-requirements/core-01-requirements.md` maps to `deltas/prd/1-product-requirements/core-01-requirements.md`; `logos/resources/test/core-S01-test-cases.md` maps to `deltas/test/core-S01-test-cases.md`.
+
+Provide a ready-to-use prompt that allows the user to kick off chain execution of all tasks with a single command:
+
+- **Requirement-level / Design-level changes** (multiple tasks): Suggest the user say "Follow tasks.md and help me progressively update all affected documents for S0x"
+- **Code-level fixes** (fewer tasks): Suggest the user say "Help me fix the [issue description] for S0x and re-verify"
+
+Chain execution behavior rules:
+1. AI reads `tasks.md` and executes items sequentially
+2. After completing each task, report a summary of changes and automatically prompt "Continue to the next item?"
+3. After the user says "Continue" or provides adjustments, proceed to the next item
+4. After all tasks are completed, remind the user to explicitly authorize running `openlogos merge <slug>`
+
+**Key principle**: Do not make the user manually track the task checklist — AI should proactively drive the process.
+
+**`openlogos merge` and `openlogos archive` are human confirmation points**:
+- AI must not execute these commands without explicit user authorization
+- When the user explicitly requests execution (including via `/openlogos:merge` or `/openlogos:archive` slash commands), AI may execute them
+- Must not be triggered implicitly in scenarios like "continue", "finish up", or "follow the process"
+
+AI is only responsible for driving content modifications and must not advance proposal state without explicit authorization.
+
+## Output Specification
+
+- File format: Markdown
+- Storage location: `logos/changes/<slug>/`
+- Filenames: `proposal.md` and `tasks.md` (overwrite the CLI-generated templates)
+
+## Best Practices
+
+- **Overestimate the impact scope**: Missing an update in one link is more dangerous than double-checking
+- **Change type determines workload**: Help users understand before they start that changing one requirement may require a full-chain update
+- **tasks.md is the execution checklist**: Check off each item with `[x]` upon completion for easy progress tracking
+- **Follow the process even for small changes**: A change that appears to be "just one API line" may affect orchestration tests and code
+
+## Recommended Prompts
+
+The following prompts can be copied directly for use with AI:
+
+**Fill in proposal**:
+- `Help me fill in the change proposal <slug>`
+- `I want to add a "remember password" feature to the S02 login scenario, help me analyze the impact scope`
+- `This bug fix only involves the code layer, help me quickly write a proposal`
+
+**Execute tasks (after proposal is completed)**:
+- `Follow tasks.md and help me progressively update all affected documents for S02`
+- `Help me fix the 500 error on the S02 login endpoint and re-verify`
+
+> This section supersedes earlier examples that populate `[code]` during plan authoring. It shares the same machine contract as the Chinese source.
+
+### Preserve the CLI scaffold
+
+Read the CLI-created `proposal.md` and `tasks.md` before editing. Preserve canonical headings, section order, and machine-readable blocks; replace placeholders in place. Extra design sections are allowed, but they never replace canonical reason/type/scope/deployment/summary/clarification sections.
+
+### Keep `[code]` empty during plan
+
+For a code-required change, retain an empty `## [code] Code Implementation` heading and write no checkbox below it. Real code slices are produced only after spec-complete by slice-planner using merged specifications and real test IDs. Remove the exact legacy template line `- [ ] Implement code changes` if present.
+
+### Read back and verify twice
+
+After writing, read the actual files from disk and run from the project root:
+
+```bash
+openlogos change-lint --slug <slug> --format json
+openlogos next --format json
+```
+
+Report “ready for approval” only when lint exits 0 with `data.pass=true`, and next reports `plan_state.plan_ready=true` plus `proposal_step=ready-to-delta`. Consume every structured issue and repair the pointed artifact in the same producer run. Never infer completion from prose or checkbox counts.
+
+### Delta and authorization boundary
+
+After explicit plan approval, execute only `[delta]` tasks. Read every written Delta back, check off the matching task, and rerun change-lint to exit 0. Do not run merge without separate explicit authorization.
+
+### Managed asset versioning
+
+If the project sync stamp has an older Plan contract or managed-asset hash than the CLI package, require `openlogos sync` and a new Agent session. Never treat different Skill bytes under the same semver as equivalent, and never overwrite project-owned Skills.

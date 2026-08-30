@@ -1,3 +1,85 @@
+# 部署报告：release-0-14-1-local / OpenLogos 0.14.1（2026-08-30，本机全局部署完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `release-0-14-1-local`。
+- **授权与门禁**：`openlogos verify` 已 PASS；用户明确授权本机全局部署、随后直接 smoke，以及失败后的修复—重部署—重跑闭环。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`，global root `/opt/homebrew/lib/node_modules`。
+- **执行时间**：`2026-08-30T05:58:48Z`。
+- **结论**：真实 `@miniidealab/openlogos@0.14.1` tarball 已完成构建、解包校验、隔离安装、公共 transaction 自检、`0.14.1 → 0.14.0 → 0.14.1` 隔离回滚恢复、本机全局安装与安装态身份校验，全部通过。
+- **数据迁移 / 服务启动**：无 / 不适用；唯一环境变更为替换已识别的本机全局 OpenLogos npm 包。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+## 二、部署前快照与固定回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前命令 / realpath | `/opt/homebrew/bin/openlogos` / `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| 部署前版本 | `0.14.0` |
+| 部署前 package 身份 | package、Claude/Codex/ZCode/Qoder/WorkBuddy 五类插件与 asset manifest 全部为 `0.14.0`；package root 不是 symlink |
+| 固定回滚 tarball | `/Users/huangxianglong/gitlab/openlogos/logos/changes/archive/20260829-2333-release-0-14-1-local/deployment-artifacts-20260830T0554Z/miniidealab-openlogos-0.14.0.tgz`；1,955,838 字节 |
+| 回滚 SHA-256 | `646bcb6c3c6bb32c86eca6c094a74c21254a6478c7ec40bf8823f1e5219e6df0` |
+| 回滚试装 | 隔离 prefix 安装成功；入口精确返回 `0.14.0`，全部 package/plugin/asset 版本一致 |
+
+可复制恢复命令：
+
+```bash
+npm install -g --ignore-scripts --no-audit --no-fund /Users/huangxianglong/gitlab/openlogos/logos/changes/archive/20260829-2333-release-0-14-1-local/deployment-artifacts-20260830T0554Z/miniidealab-openlogos-0.14.0.tgz
+/bin/zsh -lic 'command -v openlogos && openlogos --version'
+```
+
+## 三、0.14.1 候选制品
+
+| 检查项 | 结果 |
+|---|---|
+| candidate tarball | `/Users/huangxianglong/gitlab/openlogos/logos/changes/archive/20260829-2333-release-0-14-1-local/deployment-artifacts-20260830T0554Z/miniidealab-openlogos-0.14.1.tgz` |
+| package / bin | `@miniidealab/openlogos@0.14.1` / `dist/index.js` |
+| 压缩 / 解压大小 | 1,959,450 / 8,094,386 字节 |
+| 文件数 | 678 |
+| candidate SHA-256 | `f93317d4c287aea11fb7c9ab8704aa19fb37407388b86d139eea413fc91db7e7` |
+| asset payload hash | `9fb261ea7f7008dadbd8a3e2b34ff7d7588a66f59f9a94807697ab76b75fec1c` |
+| merge transaction schema | `sha256:bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421` |
+| CLI contract | `sha256:ad215013d8226a08ccafbb8a888eb9bba22814ba38abb58363c5055f82933d35` |
+| merge-executor 中文 / 英文 Skill | `sha256:07225c622bb92b9e0804897e259db3d658d45cdfa22e9402e6fdaea37ffab03b` / `sha256:36e72e316ca9573df41b192213782d37de8e2e7648e8a76838e3256e568bb8e8` |
+
+`npm pack` 已重跑 prepack，package、五类插件和 asset manifest 版本全部精确为 `0.14.1`；asset manifest 逐项 hash 校验通过。构建前的正式 verify 已执行 85 个测试文件，2037 PASS、19 skip、0 fail；OpenLogos 验收定义用例 1853/1853 覆盖，Gate PASS。
+
+## 四、隔离演练
+
+1. 0.14.1 从固定 candidate tarball 安装到提案专用隔离 prefix，入口精确返回 `0.14.1`。
+2. 使用该安装态绝对入口完成 CREATE/MODIFY content slots、status/next 公共投影、seal/apply、completed receipt 闭包、未知 action 拒绝和 abort parity；transaction schema/contract hash 与候选一致。
+3. candidate evidence validator 接受同源 0.14.1 package/plugin/asset/tarball/entry facts。
+4. 同一隔离 prefix 实际执行 `0.14.1 → 0.14.0 → 0.14.1`；每一步版本和全部 package/plugin/asset 身份一致。
+5. 隔离 fixture 未读取私有 transaction 文件，未修改本仓正式 target/receipt/marker，也未触达真实用户项目。
+
+## 五、本机全局安装与身份证明
+
+1. 执行 `npm install -g --ignore-scripts --no-audit --no-fund <固定 0.14.1 tarball>`，exit 0；未使用 registry、workspace link、源码入口或目录安装。
+2. 新 login shell 中 `command -v openlogos` 为 `/opt/homebrew/bin/openlogos`，realpath 为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，版本精确为 `0.14.1`。
+3. 全局 package root 不是 symlink；package、Claude/Codex/ZCode/Qoder/WorkBuddy 五类插件和 asset manifest 全部为 `0.14.1`。
+4. 全局 asset payload、transaction schema/contract、canonical 中英文 Skill hash 与候选解包事实一致。
+5. 全局 candidate evidence 绑定 tarball SHA-256 `f93317d4…db7e7`、绝对入口和 package root，校验通过。
+
+## 六、失败处置、风险与后续 smoke
+
+- 打包校验期间曾出现两次仅影响部署编排的检查器错误：npm prepack 日志先于 JSON 输出，以及本机 `C.UTF-8` locale / zsh 特殊变量冲突；均已改用稳健 JSON 边界、Node.js SHA-256 和非特殊变量复核，制品本身未失败，错误发生时尚未触碰全局安装。
+- 未解决风险：无；固定 0.14.0 回滚包与候选包均保留在提案 artifacts 目录。
+- 若后续 smoke 失败，先按失败证据修复；涉及全局身份不一致时使用本报告固定回滚命令恢复 0.14.0，修复后从同一 0.14.1 candidate 重新部署并重跑 smoke。
+- 用户已在本轮明确授权部署后直接执行 `openlogos smoke`；部署完成状态将由 `openlogos deploy-done --env local-global` 受控生成，不手写 `DEPLOY_DONE` 或 `SMOKE_PASS`。
+
+## 七、首轮 smoke 失败修复与重新部署
+
+1. 首轮正式 smoke 执行 72/129：71 项通过、1 项失败、57 项未覆盖；本提案新增的 SMOKE-core-157～159 均真实通过。失败和未覆盖首先暴露历史 runner 的固定 tarball、宿主 driver 与环境路由未完整注入。
+2. 进一步核对已合并规格后确认一处产品回归：实现提交曾把历史 SMOKE-core-141～156 的固定 0.14.0 candidate 与 RunLogos evidence validator 机械改为 0.14.1，违反“既有 SMOKE-core-141～156 保持不变”。修复提交为 `3a999f2`，同时增加 UT-S19-22 历史版本边界断言。
+3. 修复后定向测试 2 个文件、16 项全部通过；重新执行正式 `openlogos verify --format json`，1853/1853 已执行，1843 通过、10 跳过、0 失败、0 未覆盖，Gate PASS。
+4. 重新运行完整 prepack/npm pack，retry candidate 位于 `deployment-artifacts-20260830T0607Z/miniidealab-openlogos-0.14.1.tgz`。它与首次部署 candidate 逐字节相同，大小仍为 1,959,450 字节，SHA-256 仍为 `f93317d4c287aea11fb7c9ab8704aa19fb37407388b86d139eea413fc91db7e7`；原因是本次修复仅影响仓库 smoke runner/测试，不改变 npm 包载荷。
+5. 仍按部署闭环从 retry tarball 重新执行全局安装；新 login shell 的入口为 `/opt/homebrew/bin/openlogos`，版本为 `0.14.1`，package、五类插件与 asset manifest 均为 `0.14.1`。下一轮 smoke 将注入历史 runner 各自冻结的真实制品与宿主驱动，不复用首轮结果。
+6. 第二轮环境预检又发现统一 dispatcher 原来让历史 0.14.0 runner 与当前 0.14.1 runner 共用 `OPENLOGOS_CANDIDATE_BIN`，无法在同一空账本中同时满足两种身份。提交 `b60b782` 增加两个 runner 专属入口的路由并保留通用变量兼容；定向测试 3/3 PASS，随后再次完整 verify 为 1853/1853 执行、0 失败、0 未覆盖、Gate PASS。该修复同样不改变 npm package 载荷。
+7. 第二轮正式 smoke 从空账本执行 123/129：120 项通过、3 项失败、6 项未覆盖。SMOKE-core-124～129 未覆盖是 TRAE 负向 runner 缺少显式 `OPENLOGOS_TRAE_LOCAL_NEGATIVE=1`；SMOKE-core-150/155 失败是 RunLogos 冻结合同要求绝对入口 `/opt/homebrew/bin/openlogos@0.14.0`，隔离 0.14.0 入口不能替代；SMOKE-core-156 失败是已归档 follow-up 的旧 guard 路径不再存在。提交 `cdcb7d4` 让 dispatcher 在历史 runner 前临时安装其冻结 0.14.0 candidate、结束后恢复 0.14.1，并在当前 runner 前再次准备 0.14.1；定向测试 3/3 PASS，完整 verify 再次 1853/1853、Gate PASS。下一轮将显式激活 TRAE，并在一次性 Git 副本中重建已归档 stacked slug 的 guard/marker 归属 fixture。
+8. 第三轮正式 smoke 从空账本重新执行全部 129 个定义用例：129 通过、0 失败、0 跳过、0 未覆盖，覆盖率与通过率均为 100%，Gate 3.8 PASS。历史 SMOKE-core-141～156 使用冻结的 0.14.0 tarball、绝对全局入口、真实 RunLogos canonical E2E 与一次性归属 fixture；SMOKE-core-124～129 显式负向激活并全部通过；本提案 SMOKE-core-157～159 继续绑定 0.14.1 candidate SHA-256 `f93317d4c287aea11fb7c9ab8704aa19fb37407388b86d139eea413fc91db7e7`。调度结束后全局入口恢复为 `/opt/homebrew/bin/openlogos@0.14.1`，`SMOKE_PASS` 在场、`SMOKE_FAIL` 不在场，公开发布副作用仍为零。
+
+---
+
 # 部署报告：complete-merge-transaction-consumer-contract / OpenLogos 0.14.0（2026-08-29，正式 smoke 完成）
 
 ## 零、最终结论与旧事务迁移

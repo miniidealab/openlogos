@@ -1,0 +1,80 @@
+import type { OutputFormat } from '../lib/json-output.js';
+import type { ProposalStep, ProposalBlockReason, PlanState, CmdGate, ProductTypeConfirmation } from './status.js';
+import type { BaselineSeedState, BaselineCoverage } from '../lib/baseline-provenance.js';
+import type { CurrentNode, NextNode } from '../lib/flow-overlay-derive.js';
+import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
+import type { StepMeta } from '../lib/step-registry.js';
+import type { FeatureGroupItem } from '../lib/feature-grouping.js';
+import type { ProposalFacts } from '../lib/proposal-lifecycle.js';
+import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
+import { type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
+import { type SliceVerificationState } from '../lib/test-slice-manifest.js';
+import type { MergeTransactionProjection } from '../lib/merge-transaction.js';
+export interface NextModuleItem {
+    id: string;
+    name: string;
+    lifecycle: 'initial' | 'launched';
+    bootstrap?: 'normal' | 'adopted';
+    action: string;
+    command: string | null;
+    detail: string;
+    active_change: string | null;
+    proposal_step: ProposalStep | null;
+    reason?: ProposalBlockReason;
+    deployment_decision_conflict?: boolean;
+    deployment_decision_conflict_reason?: string | null;
+    deployment_warnings?: string[];
+    plan_state?: PlanState;
+    code_planning_diagnostic?: CodePlanningDiagnostic;
+    code_required?: boolean;
+    facts?: ProposalFacts;
+    step_meta?: StepMeta;
+    current_node?: CurrentNode;
+    loop_state?: LoopState;
+    slice_state?: SliceState;
+    slice_verification_state?: SliceVerificationState;
+    next_node?: NextNode;
+    cmd_gate?: CmdGate;
+    automation_diagnostic?: AutomationDiagnostic;
+    baseline_seed_state?: BaselineSeedState;
+    baseline_coverage?: BaselineCoverage;
+    features?: FeatureGroupItem[];
+}
+export interface NextData {
+    contract: {
+        version: string;
+    };
+    action: string;
+    command: string | null;
+    detail: string;
+    active_change: string | null;
+    proposal_step: string | null;
+    reason?: ProposalBlockReason;
+    modules?: NextModuleItem[];
+    current_node?: CurrentNode;
+    loop_state?: LoopState;
+    slice_state?: SliceState;
+    slice_verification_state?: SliceVerificationState;
+    cmd_gate?: CmdGate;
+    automation_diagnostic?: AutomationDiagnostic;
+    plan_state?: PlanState;
+    product_type_confirmation?: ProductTypeConfirmation;
+    capabilities?: {
+        ui_prototype_render: true;
+    };
+    merge_transaction?: MergeTransactionProjection;
+    next_node?: NextNode;
+    auto?: boolean;
+    gate_id?: string | null;
+    skippable?: boolean | null;
+    gate_auto_passed?: boolean;
+    auto_execute?: boolean;
+    cmd_node_id?: string;
+    cmd_predicate_field?: 'done_when' | 'fail_when';
+    cmd_exit_code?: number | null;
+    cmd_timed_out?: boolean;
+    cmd_satisfied?: boolean;
+    baseline_coverage?: BaselineCoverage;
+}
+export declare function next(format?: OutputFormat, moduleId?: string, auto?: boolean): Promise<void>;
+//# sourceMappingURL=next.d.ts.map

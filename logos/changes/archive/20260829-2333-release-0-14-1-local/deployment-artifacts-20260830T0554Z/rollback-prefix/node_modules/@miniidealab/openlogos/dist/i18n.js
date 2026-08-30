@@ -1,0 +1,827 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+export function readLocale(root) {
+    const configPath = join(root, 'logos', 'logos.config.json');
+    if (!existsSync(configPath))
+        return 'en';
+    try {
+        const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+        if (config.locale === 'zh')
+            return 'zh';
+    }
+    catch { /* ignore */ }
+    return 'en';
+}
+const messages = {
+    en: {
+        // init
+        'init.creating': 'Creating OpenLogos project structure for "{name}"{source}...',
+        'init.done': 'Project initialized. Next steps:',
+        'init.step1': '  1. Review logos/logos.config.json to verify project settings',
+        'init.nameTip': '  Tip: Project name "{name}" was auto-detected{source}.\n       To change it, edit logos/logos.config.json and run `openlogos sync`.',
+        'init.pythonMissingHeader': 'Note: Python 3 was not detected on this machine.',
+        'init.pythonMissingBody': '  The built-in ui-ux-pro-max skill (professional UI/UX design intelligence)\n  requires Python 3.x to run. With Python 3 installed, Phase 2 will\n  automatically deliver style / color / font / component recommendations\n  for GUI products (Web / Mobile / Desktop).\n  Install:\n    macOS:  brew install python3\n    Ubuntu: sudo apt install python3\n    Windows: winget install Python.Python.3.12\n  This does not block OpenLogos — other skills work as usual.',
+        'init.step2': '  2. Start with Phase 1: tell AI "Help me write requirements"',
+        'init.step3': '  3. Run `openlogos status` to check progress at any time',
+        'init.nameConflict': 'Project name conflict detected:',
+        'init.nameChoice1': '  1. "{name}"  ← your input',
+        'init.nameChoice2': '  2. "{name}"     ← from {source}',
+        'init.namePrompt': 'Which name would you like to use? [1/2] (default: 1): ',
+        'init.langPrompt': 'Your choice [1/2] (default: 1): ',
+        'init.aiToolHeader': 'Choose AI coding tool / 选择 AI 编码工具:',
+        'init.aiToolClaudeCode': '  1. Claude Code (default)',
+        'init.aiToolOpenCode': '  2. OpenCode',
+        'init.aiToolCodex': '  3. Codex',
+        'init.aiToolCursor': '  4. Cursor',
+        'init.aiToolOther': '  5. Other',
+        'init.aiToolAll': '  6. All (deploy for all tools)',
+        'init.aiToolPrompt': 'Your choice [1/2/3/4/5/6] (default: 1): ',
+        'init.skillsDeployed': '{count} skills deployed to {target}',
+        'init.skillsSynced': '{count} skills synced to {target}',
+        'init.opencodePluginDeployed': 'OpenCode plugin deployed to {target}',
+        'init.opencodePluginSynced': 'OpenCode plugin synced to {target}',
+        'init.opencodeConfigCreated': 'opencode.json created with recommended permission defaults',
+        'init.opencodeConfigUpdated': 'opencode.json merged with missing recommended permission defaults',
+        'init.opencodeCommandsDeployed': 'OpenCode slash commands deployed to .opencode/commands/ ({count} files)',
+        'init.codexPluginDeployed': 'Codex plugin deployed to {target}',
+        'init.codexPluginSynced': 'Codex plugin synced to {target}',
+        'init.codexConfigCreated': '.codex/config.toml created with plugin and hook configuration',
+        'init.codexConfigUpdated': '.codex/config.toml merged with plugin and hook configuration',
+        'init.codexPersonalPluginInstalled': 'Codex personal marketplace refreshed: openlogos@personal',
+        'init.codexPersonalPluginInstallFailed': 'Codex personal plugin install failed; run `codex plugin add openlogos@personal` manually after sync.',
+        'init.codexProjectSkillsPreserved': 'Project-specific Codex skills/plugins were preserved outside the OpenLogos namespace.',
+        'init.claudePluginDeployed': 'Claude Code plugin deployed: {commandCount} commands, {agentCount} agents → .claude/',
+        'init.claudePluginSynced': 'Claude Code plugin synced: {commandCount} commands, {agentCount} agents → .claude/',
+        'init.claudePluginSkipped': 'Claude Code plugin already deployed (.claude/commands/openlogos/ exists), skipped',
+        'init.claudeHooksUpdated': '.claude/settings.json updated with SessionStart hook',
+        'sync.indexAdded': '{count} new file(s) added to logos-project.yaml resource_index',
+        'sync.indexNoop': 'logos-project.yaml resource_index is already up to date',
+        'sync.scenariosModuleAdded': '{count} scenario(s) backfilled with module field in logos-project.yaml',
+        // status
+        'phase.1': 'Phase 1 · Requirements (WHY)',
+        'phase.2': 'Phase 2 · Product Design (WHAT)',
+        'phase.3-0': 'Phase 3-0 · Architecture',
+        'phase.3-1': 'Phase 3-1 · Scenario Modeling',
+        'phase.3-2-api': 'Phase 3-2 · API Design',
+        'phase.3-2-db': 'Phase 3-2 · Database Design',
+        'phase.3-3-deployment': 'Phase 3-3 · Deployment Plan',
+        'phase.3-4a': 'Phase 3-4a · Test Case Design (Unit + Scenario)',
+        'phase.3-4b': 'Phase 3-4b · API Orchestration Tests',
+        'phase.3-5': 'Phase 3-5 · Code Implementation',
+        'phase.3-6': 'Phase 3-6 · Test Acceptance (verify)',
+        'phase.3-7-deploy': 'Phase 3-7 · Deployment Execution',
+        'phase.3-8-smoke': 'Phase 3-8 · Deployment Smoke Test',
+        'status.modules': 'Modules',
+        'status.activeProposals': 'Active Change Proposals',
+        'status.activeChange': 'Active Change',
+        'status.proposalStepLabel': 'Step',
+        'status.proposalStep.writing': 'writing — fill in proposal.md and tasks.md',
+        'status.proposalStep.ready-to-delta': 'plan ready — approve the plan (incl. slicing) before writing deltas',
+        'status.proposalStep.delta-writing': 'writing deltas — update change delta files',
+        'status.proposalStep.implementing': 'writing deltas — update change delta files',
+        'status.proposalStep.in-progress': 'writing deltas — update change delta files',
+        'status.proposalStep.ready-to-merge': 'ready to merge — explicitly request `openlogos merge` to proceed',
+        'status.proposalStep.merge-generated': 'merge instructions generated — ask AI to merge specs',
+        'status.proposalStep.spec-complete-required': 'spec-complete required — run no-delta merge before planning code slices',
+        'status.proposalStep.test-id-required': 'test IDs required — add or reference real UT/ST/SMOKE IDs before planning code slices',
+        'status.proposalStep.ready-to-implement': 'slices pending — approve the [code] slicing (slice-exit gate) before implementing',
+        'status.proposalStep.coding': 'coding — implement code from merged specs',
+        'status.proposalStep.ready-to-verify': 'ready to verify — explicitly request `openlogos verify`',
+        'status.proposalStep.verify-passed': 'verify passed — explicitly request `openlogos archive` to close',
+        'status.proposalStep.verify-failed': 'verify failed — fix issues and run `openlogos verify` again',
+        'status.proposalStep.ready-to-deploy': 'ready to deploy — deployment requires explicit human authorization',
+        'status.proposalStep.deploy-done': 'deployment done',
+        'status.proposalStep.ready-to-smoke': 'ready for smoke — explicitly request `openlogos smoke`',
+        'status.proposalStep.smoke-passed': 'smoke passed — explicitly request `openlogos archive` to close',
+        'status.proposalStep.smoke-failed': 'smoke failed — fix environment or smoke checks and run `openlogos smoke` again',
+        'status.deployTasks': 'Deployment tasks',
+        'status.allDone': 'All phases complete.',
+        'status.allDoneHint': '   → Or run `openlogos launch` to start iteration development',
+        'status.suggestNext': 'Suggested next step: {label}',
+        'suggest.phase1': 'Tell AI: "Help me write requirements"',
+        'suggest.phase2': 'Tell AI: "Do product design based on requirements"',
+        'suggest.phase3-0': 'Tell AI: "Help me design the technical architecture"',
+        'suggest.phase3-1': 'Tell AI: "Help me draw S01 sequence diagram"',
+        'suggest.phase3-2-api': 'Tell AI: "Help me design the API"',
+        'suggest.phase3-2-db': 'Tell AI: "Help me design the database"',
+        'suggest.phase3-3-deployment': 'Tell AI: "Help me design the deployment plan"',
+        'suggest.phase3-4a': 'Tell AI: "Help me design test cases"',
+        'suggest.phase3-4b': 'Tell AI: "Help me design orchestration tests"',
+        'suggest.phase3-5': 'Tell AI: "Execute Phase 3 Step 5 — implement business code and tests"',
+        'suggest.phase3-6': 'Run your tests, then explicitly request `openlogos verify`',
+        'suggest.phase3-7-deploy': 'Deployment requires explicit human authorization. Ask AI to execute the deployment plan only after confirming.',
+        'suggest.phase3-8-smoke': 'Explicitly request `openlogos smoke` after deployment is complete',
+        'suggest.fallback': 'Continue improving documents',
+        // verify
+        'verify.title': 'OpenLogos Test Verification',
+        'verify.readingResults': 'Reading test results: {path}',
+        'verify.readingCases': 'Reading test cases: logos/resources/test/',
+        'verify.summary': 'Results Summary',
+        'verify.totalDefined': 'Total defined:  {count} cases ({ut} UT + {st} ST)',
+        'verify.totalExecuted': 'Total executed: {count} cases',
+        'verify.passed': 'Passed:      {count}',
+        'verify.failed': 'Failed:       {count}',
+        'verify.skipped': 'Skipped:     {count}',
+        'verify.manual': 'Manual (excluded): {count}',
+        'verify.coverage': 'Coverage:  {pct}%  ({covered}/{total})',
+        'verify.passRate': 'Pass rate: {pct}%  ({passed}/{total})',
+        'verify.gatePass': 'Gate 3.6: PASS',
+        'verify.gateFail': 'Gate 3.6: FAIL',
+        'verify.gateFailCoverage': 'Gate 3.6: FAIL (incomplete coverage)',
+        'verify.failedCases': 'Failed cases:',
+        'verify.uncoveredCases': 'Uncovered cases ({count}):',
+        'verify.reportPath': 'Report: {path}',
+        'verify.noResults': 'No test results found at {path}.\nRun your tests first, then try again.',
+        'verify.noCases': 'No test case specs found in logos/resources/test/.\nRun test design (Step 3a) first.',
+        'verify.checklistTitle': 'Design-time Coverage (Layer 1)',
+        'verify.checklistSummary': 'Checklist: {checked}/{total} assertions confirmed',
+        'verify.checklistUnchecked': 'Unchecked assertions ({count}):',
+        'verify.gateFailChecklist': 'Gate 3.6: FAIL (design-time checklist incomplete)',
+        'verify.acTitle': 'Acceptance Criteria Traceability (Layer 3)',
+        'verify.acSummary': 'AC traceability: {passed}/{total} criteria passed',
+        'verify.acFailed': 'Failing criteria ({count}):',
+        'verify.gateFailAc': 'Gate 3.6: FAIL (acceptance criteria not fully traced)',
+        'verify.preRunConfigAdded': 'verify pre-run config detected and written: {command}',
+        'verify.preRunConfigTodo': 'verify pre-run config could not be inferred; please fill verify.pre_run_command or verify.regression_command manually.',
+        'verify.preRunCompatSkipped': 'verify.pre_run_command is kept for compatibility but not executed because two-phase verify is configured.',
+        'verify.coverageLocalDiag': 'Current project does not have a verify pre-run command; incomplete coverage may be caused by running only a partial test set.',
+        'verify.coverageLocalSuggestionPreRun': 'Set verify.pre_run_command in logos/logos.config.json to generate a complete test-results.jsonl in one run.',
+        'verify.coverageLocalSuggestionTwoPhase': 'If the project uses regression + incremental testing, set verify.regression_command and verify.incremental_command, and use last-write-wins merging.',
+        'verify.preRunModeNone': 'verify pre-run mode: none',
+        'verify.preRunModeSingle': 'verify pre-run mode: single-stage',
+        'verify.preRunModeTwoPhase': 'verify pre-run mode: two-phase',
+        'verify.preRunStageLine': '[{status}] {stage}: {command} (exit={exit}, duration={duration})',
+        'verify.sandboxSummary': 'verify sandbox: mode={mode}, status={status}, isolated={isolated}, write_denied={writeDenied}',
+        'smoke.sandboxSummary': 'smoke sandbox: mode={mode}, status={status}, isolated={isolated}, write_denied={writeDenied}',
+        'verify.deployTasksTitle': 'Deployment tasks',
+        'verify.deployHumanGate': 'Deployment is a human confirmation point. AI must not start deployment without explicit authorization.',
+        'verify.deployAiHint': 'After authorization, AI must read the merged deployment plan and this proposal, then execute the [deploy] tasks one by one.',
+        'deployDone.title': 'OpenLogos deploy-done',
+        'deployDone.proposal': 'Proposal: {slug}',
+        'deployDone.environment': 'Environment: {environment}',
+        'deployDone.marker': 'Marker: {path}',
+        'deployDone.deployTasks': 'Deployment tasks: {checked}/{total}',
+        'deployDone.clearedSmokeMarkers': 'Cleared stale smoke markers: {markers}',
+        'deployDone.nextSmoke': 'Next: explicitly request `{command}`.',
+        'deployDone.nextArchive': 'Next: explicitly request `{command}`.',
+        'deployDone.error.projectNotInitialized': 'logos/logos.config.json not found.',
+        'deployDone.error.noActiveChange': 'No active change proposal found. Run this command only after verify has passed for an active proposal.',
+        'deployDone.error.changeNotFound': 'Change proposal \'{slug}\' not found.',
+        'deployDone.error.verifyNotPassed': 'Verification has not passed. Run `openlogos verify` first and resolve any VERIFY_FAIL marker.',
+        'deployDone.error.decisionConflict': 'Deployment decision conflict. {reason}',
+        'deployDone.error.notRequired': 'This proposal does not require deployment. Archive it after verification passes.',
+        'deployDone.error.deployTasksMissing': 'No non-empty [deploy] section was found in tasks.md.',
+        'deployDone.error.deploymentReportMissing': 'Deployment report is missing: {path}.',
+        // change
+        'change.creating': 'Creating change proposal: {slug}',
+        'change.done': 'Change proposal created. Next steps:',
+        'change.step1': '  1. Tell AI: "Help me fill in change proposal {slug}"',
+        'change.step2': '  2. AI will analyze impact and fill in proposal.md + tasks.md',
+        'change.step3': '  3. Then work through tasks.md, putting deltas in deltas/',
+        'change.step4': '  4. When done, explicitly request `openlogos merge {slug}` to generate merge instructions',
+        'change.guardConflict': 'Error: Active change proposal \'{activeChange}\' is still in progress.',
+        'change.guardConflictHint': 'Finish it and explicitly request `openlogos archive {activeChange}` before creating a new proposal.',
+        'change.guardInvalid': 'Error: logos/.openlogos-guard is invalid.',
+        'change.guardInvalidHint': 'Fix or remove the guard file before creating a new proposal.',
+        'change.moduleAuto': 'Module: {module} (auto-detected, only one module registered)',
+        'change.moduleDefault': 'Module: {module} (defaulted to core — use --module <id> to specify another)',
+        'change.moduleAssigned': 'Module: {module}',
+        'change.moduleNotFound': 'Error: Module \'{module}\' not found in logos-project.yaml.',
+        'change.moduleNotFoundAvailable': 'Available modules: {modules}',
+        'change.moduleNotFoundHint': 'Run `openlogos module list` to see available modules.',
+        'change.moduleNoCore': 'Error: this project has multiple modules and no `core`; cannot infer change ownership.',
+        'change.moduleNoCoreRetryHeader': 'Retry with one of:',
+        // merge
+        'merge.summary': 'Merge Summary:',
+        'merge.proposal': '  - Change proposal: {slug}',
+        'merge.deltaCount': '  - Delta files: {count}',
+        'merge.aiHint': 'Tell AI: "Read logos/changes/{slug}/MERGE_PROMPT.md and execute merge"',
+        'merge.noDelta': 'No delta files in logos/changes/{slug}/deltas/ — no-delta spec-complete marker written.',
+        'merge.alreadyMerged': 'Specs already merged for \'{slug}\' (SPEC_MERGED exists) — nothing to do.',
+        'merge.conservationRejected': 'Error: delta entry-conservation check failed (S37): {path} — refusing to generate MERGE_PROMPT; no markers written.',
+        'merge.conservationHint': '  Fix: carry the full remaining section content in the same-anchor MODIFIED block, or name each removed ID in a same-anchor REMOVED-ITEMS block (`- <ID> — <reason>`); use a heading-path anchor (`parent > target`) when the title repeats. Run `openlogos change-lint` first to locate all violations at the producing side.',
+        'merge.archiveHint': 'Next, ask AI to execute logos/changes/{slug}/MERGE_PROMPT.md and write SPEC_MERGED after specs are actually merged. Then implement code, run `openlogos verify`, and explicitly request `openlogos archive {slug}` after verification passes.',
+        // launch
+        'launch.done': '✓ Module "{module}" launched! Change management is now active.',
+        'launch.hint1': '  From now on, modifications to existing documents require a change proposal.',
+        'launch.hint2': '  Run `openlogos change <slug>` to start a new change proposal.',
+        'launch.rulesUpdated': 'AI rules updated in {target}',
+        'launch.moduleAlreadyLaunched': 'Module "{module}" is already launched. No action needed.',
+        'launch.multiModuleError': 'Multiple modules found ({modules}). Please specify: `openlogos launch <module-id>`',
+        'launch.moduleNotFound': 'Module "{module}" not found in logos-project.yaml.',
+        'launch.migrationAuto': 'Migrated: module "{module}" auto-marked as launched (was config.lifecycle: active).',
+        'launch.migrationWarn': 'Warning: config.lifecycle is "active" but no module is marked launched. Run `openlogos launch <module-id>` to migrate.',
+        'launch.suggest': 'Run `openlogos launch` to activate change management for future iterations.',
+        'launch.verifyRequired': 'Module "{module}" cannot launch before `openlogos verify` passes and writes logos/resources/verify/acceptance-report.md.',
+        'launch.deployRequired': 'Module "{module}" requires deployment before launch. Complete deployment and write logos/resources/verify/deployment-report.md first.',
+        'launch.smokeRequired': 'Module "{module}" requires deployment smoke before launch. Explicitly run `openlogos smoke` and write logos/resources/verify/smoke-report.md first.',
+        // next
+        'next.title': 'Next Step',
+        'next.nextNode': 'Next node',
+        'flow.rawBuiltin': 'built-in @{version}',
+        'flow.resolvedApplied': 'resolved · project overlay applied',
+        'flow.resolvedNoOverlay': 'resolved · no project overlay',
+        'flow.notSkippable': 'not skippable',
+        'flow.resolvedHint': 'Tip: use --resolved to view the effective flow after applying project overlay.',
+        'next.createChange': 'Create a change proposal before modifying any code',
+        'next.createChangeDetail': 'Run `openlogos change <slug>` to create a new change proposal and activate the guard.',
+        'next.fillProposal': 'Fill in proposal.md and tasks.md for the active change',
+        'next.fillProposalDetail': 'Tell AI: "Help me fill in change proposal {slug}" — AI will analyze impact and complete the proposal.',
+        'next.writeDeltas': 'Write delta documents',
+        'next.writeDeltasDetail': 'Tell AI: "Continue writing delta files for {slug}" — keep changes under logos/changes/{slug}/deltas/. When all delta tasks are checked, explicitly request `openlogos merge {slug}`.',
+        'next.approvePlan': 'Approve the plan (proposal/tasks and [code] slicing)',
+        'next.approvePlanDetail': 'Review and approve proposal.md + tasks.md (incl. [code] slicing) at the plan gate. In --auto the plan-exit gate auto-passes (audited). After approval, write delta files for {slug}.',
+        'next.startCoding': 'Start implementing per tasks.md',
+        'next.startCodingDetail': 'Tell AI: "Execute tasks in logos/changes/{slug}/tasks.md" — implement code and write tests. Check off each [code] task when done.',
+        'next.planSlices': 'Plan [code] slices (slice-planner)',
+        'next.planSlicesDetail': 'Tell AI: run slice-planner for {slug} — slice the [code] section against the merged specs + real test IDs (six-dim scoring, vertical/horizontal discriminator, delete-the-rest falsification gate), then approve at the slice-exit gate.',
+        'next.runVerify': 'Run verification',
+        'next.runVerifyDetail': 'Explicitly request `openlogos verify` to run acceptance tests.',
+        'next.archive': 'Archive the proposal',
+        'next.archiveDetail': 'Explicitly request `openlogos archive {slug}` to close this proposal.',
+        'next.authorizeDeploy': 'Authorize deployment',
+        'next.authorizeDeployDetail': 'Deployment is a human confirmation point. If ready, explicitly ask AI to execute the deployment tasks for {slug} from the merged deployment plan.',
+        'next.runSmoke': 'Run deployment smoke tests',
+        'next.runSmokeDetail': 'Explicitly request `openlogos smoke` after deployment is complete.',
+        'next.fixAndSmoke': 'Fix smoke failures and re-run smoke',
+        'next.fixAndSmokeDetail': 'Fix the deployment environment or smoke checks, then explicitly request `openlogos smoke` again.',
+        'next.fixAndVerify': 'Fix issues and re-verify',
+        'next.fixAndVerifyDetail': 'Fix the failing tests, then explicitly request `openlogos verify` again.',
+        'next.continueImpl': 'Continue implementation and run tests',
+        'next.continueImplDetail': 'When all tasks are done, explicitly request `openlogos merge {slug}` to generate merge instructions.',
+        'next.merge': 'Generate merge instructions',
+        'next.mergeDetail': 'Explicitly request `openlogos merge {slug}` to generate MERGE_PROMPT.md.',
+        'next.executeMerge': 'Execute spec merge',
+        'next.executeMergeDetail': 'Ask AI to read logos/changes/{slug}/MERGE_PROMPT.md, merge deltas into logos/resources, commit docs, then write logos/changes/{slug}/SPEC_MERGED.',
+        'next.specCompleteRequired': 'Complete no-delta spec marker',
+        'next.specCompleteRequiredDetail': 'Explicitly request `openlogos merge {slug}` to write the no-delta SPEC_MERGED marker before planning [code] slices.',
+        'next.testIdRequired': 'Add real test IDs',
+        'next.testIdRequiredDetail': 'Add or explicitly reference real UT/ST/SMOKE IDs for {slug}; `plan-slices` is blocked until test IDs are stable.',
+        'next.launch': 'Activate change management for future iterations',
+        'next.phaseDetail': 'Current phase: {phase}',
+        // archive
+        'archive.done': '✓ Change proposal \'{slug}\' archived.',
+        'archive.path': '  logos/changes/{slug}/ → logos/changes/archive/{slug}/',
+        'archive.watch.failed': 'Error [{code}]: archive watcher handshake failed ({reason}).',
+        'archive.watch.details': '  Instances: {details}',
+        'archive.watch.incompatible': 'A RunLogos instance cannot coordinate this protocol. Upgrade openlogos CLI or close that instance, then retry.',
+        'archive.watch.legacyBusy': 'Error: Windows could not move the proposal directory. An older RunLogos instance or another program may still be watching it; upgrade or close the application, then retry.',
+        'archive.watch.reconciled': '  Archive completion was reconciled from disk state after an operation error.',
+        // impact (S36)
+        'impact.header': 'impact: lifecycle_only = {value}',
+        'impact.filesHeader': 'files ({count}):',
+        'impact.nonLifecycleHeader': 'non-lifecycle paths ({count}):',
+        'impact.operationsLine': 'operations: {ops}',
+        'impact.changesLine': 'changes: {changes}',
+        'impact.reasonsHeader': 'reasons:',
+        'impact.footerTrue': 'Conclusion: all changes are lifecycle bookkeeping (safe to skip artifact build). CI must read only lifecycle_only.',
+        'impact.footerFalse': 'Conclusion: not lifecycle-only (fail-closed). CI must read only lifecycle_only.',
+    },
+    zh: {
+        // init
+        'init.creating': 'Creating OpenLogos project structure for "{name}"{source}...',
+        'init.done': '项目初始化完成。下一步：',
+        'init.step1': '  1. 检查 logos/logos.config.json 确认项目配置',
+        'init.nameTip': '  提示：项目名 "{name}" 是自动探测的{source}。\n       如需修改，编辑 logos/logos.config.json 后运行 `openlogos sync`。',
+        'init.pythonMissingHeader': '提示：未检测到 Python 3。',
+        'init.pythonMissingBody': '  内置的 ui-ux-pro-max skill（专业 UI/UX 设计智能）需要 Python 3.x 才能运行。\n  安装后，在 Phase 2 做 GUI 类产品（Web / 移动 / 桌面）设计时即可自动获得\n  风格 / 配色 / 字体 / 组件库推荐。\n  安装方式：\n    macOS:  brew install python3\n    Ubuntu: sudo apt install python3\n    Windows: winget install Python.Python.3.12\n  此提示不影响 OpenLogos 主流程，其他 skill 可正常使用。',
+        'init.step2': '  2. 开始 Phase 1：对 AI 说「帮我写需求文档」',
+        'init.step3': '  3. 随时运行 `openlogos status` 查看进度',
+        'init.nameConflict': '检测到项目名不一致：',
+        'init.nameChoice1': '  1. "{name}"  ← 你的输入',
+        'init.nameChoice2': '  2. "{name}"     ← 来自 {source}',
+        'init.namePrompt': '使用哪个名称？[1/2]（默认 1）：',
+        'init.langPrompt': '请选择 [1/2]（默认 1）：',
+        'init.aiToolHeader': '选择 AI 编码工具:',
+        'init.aiToolClaudeCode': '  1. Claude Code（默认）',
+        'init.aiToolOpenCode': '  2. OpenCode',
+        'init.aiToolCodex': '  3. Codex',
+        'init.aiToolCursor': '  4. Cursor',
+        'init.aiToolOther': '  5. 其他',
+        'init.aiToolAll': '  6. 全部（为所有工具初始化）',
+        'init.aiToolPrompt': '请选择 [1/2/3/4/5/6]（默认: 1）: ',
+        'init.skillsDeployed': '{count} 个 Skills 已部署到 {target}',
+        'init.skillsSynced': '{count} 个 Skills 已同步到 {target}',
+        'init.opencodePluginDeployed': 'OpenCode 插件已部署到 {target}',
+        'init.opencodePluginSynced': 'OpenCode 插件已同步到 {target}',
+        'init.opencodeConfigCreated': '已创建 opencode.json，并写入推荐权限默认值',
+        'init.opencodeConfigUpdated': '已为 opencode.json 补齐缺失的推荐权限默认值',
+        'init.opencodeCommandsDeployed': 'OpenCode 斜杠命令已部署到 .opencode/commands/（{count} 个文件）',
+        'init.codexPluginDeployed': 'Codex 插件已部署到 {target}',
+        'init.codexPluginSynced': 'Codex 插件已同步到 {target}',
+        'init.codexConfigCreated': '已创建 .codex/config.toml，并写入插件与 hook 配置',
+        'init.codexConfigUpdated': '已为 .codex/config.toml 补齐插件与 hook 配置',
+        'init.codexPersonalPluginInstalled': '已刷新 Codex 个人 marketplace：openlogos@personal',
+        'init.codexPersonalPluginInstallFailed': 'Codex 个人插件安装失败；请在 sync 后手动运行 `codex plugin add openlogos@personal`。',
+        'init.codexProjectSkillsPreserved': '已保留项目专属 Codex skills/plugins，未放入 OpenLogos 命名空间。',
+        'init.claudePluginDeployed': 'Claude Code 插件已部署：{commandCount} 个命令，{agentCount} 个 agent → .claude/',
+        'init.claudePluginSynced': 'Claude Code 插件已同步：{commandCount} 个命令，{agentCount} 个 agent → .claude/',
+        'init.claudePluginSkipped': 'Claude Code 插件已存在（.claude/commands/openlogos/ 已有文件），跳过部署',
+        'init.claudeHooksUpdated': '.claude/settings.json 已写入 SessionStart hook',
+        'sync.indexAdded': '{count} 个新文件已补录到 logos-project.yaml resource_index',
+        'sync.indexNoop': 'logos-project.yaml resource_index 已是最新，无需补录',
+        'sync.scenariosModuleAdded': '{count} 个 scenario 已补全 module 字段到 logos-project.yaml',
+        // status
+        'phase.1': 'Phase 1 · 需求文档 (WHY)',
+        'phase.2': 'Phase 2 · 产品设计 (WHAT)',
+        'phase.3-0': 'Phase 3-0 · 技术架构',
+        'phase.3-1': 'Phase 3-1 · 场景建模',
+        'phase.3-2-api': 'Phase 3-2 · API 设计',
+        'phase.3-2-db': 'Phase 3-2 · 数据库设计',
+        'phase.3-3-deployment': 'Phase 3-3 · 部署方案',
+        'phase.3-4a': 'Phase 3-4a · 测试用例设计（单元 + 场景）',
+        'phase.3-4b': 'Phase 3-4b · API 编排测试',
+        'phase.3-5': 'Phase 3-5 · 代码实现',
+        'phase.3-6': 'Phase 3-6 · 测试验收（verify）',
+        'phase.3-7-deploy': 'Phase 3-7 · 部署执行',
+        'phase.3-8-smoke': 'Phase 3-8 · 部署冒烟测试（smoke）',
+        'status.modules': '模块',
+        'status.activeProposals': '活跃变更提案',
+        'status.activeChange': '活跃变更',
+        'status.proposalStepLabel': '当前步骤',
+        'status.proposalStep.writing': '填写提案 — 请完善 proposal.md 和 tasks.md',
+        'status.proposalStep.ready-to-delta': '方案待批准 — 批准方案（含切片划分）后开始撰写 Delta',
+        'status.proposalStep.delta-writing': '撰写 Delta — 更新变更增量文档',
+        'status.proposalStep.implementing': '撰写 Delta — 更新变更增量文档',
+        'status.proposalStep.in-progress': '撰写 Delta — 更新变更增量文档',
+        'status.proposalStep.ready-to-merge': '可合并 — 明确授权执行 merge，再明确授权执行归档',
+        'status.proposalStep.merge-generated': '合并指令已生成 — 等待 AI 合并主规格',
+        'status.proposalStep.spec-complete-required': '需完成规格阶段 — 先执行 no-delta merge 写入 SPEC_MERGED，再规划代码切片',
+        'status.proposalStep.test-id-required': '需补测试 ID — 先补充或显式复用真实 UT/ST/SMOKE ID，再规划代码切片',
+        'status.proposalStep.ready-to-implement': '切片待批准 — 批准 [code] 切片划分（slice-exit 门）后开始实现',
+        'status.proposalStep.coding': '编码中 — 按已合并规格实现代码',
+        'status.proposalStep.ready-to-verify': '待验收 — 明确授权执行 `openlogos verify`',
+        'status.proposalStep.verify-passed': '验收通过 — 明确授权执行 `openlogos archive` 归档',
+        'status.proposalStep.verify-failed': '验收未通过 — 修复问题后重新运行 `openlogos verify`',
+        'status.proposalStep.ready-to-deploy': '待部署 — 部署必须由人类明确授权',
+        'status.proposalStep.deploy-done': '部署完成',
+        'status.proposalStep.ready-to-smoke': '待冒烟测试 — 明确授权执行 `openlogos smoke`',
+        'status.proposalStep.smoke-passed': '冒烟测试通过 — 明确授权执行 `openlogos archive` 归档',
+        'status.proposalStep.smoke-failed': '冒烟测试未通过 — 修复环境或 smoke 检查后重新运行 `openlogos smoke`',
+        'status.deployTasks': '部署任务',
+        'status.allDone': '所有阶段已完成！',
+        'status.allDoneHint': '   → 或运行 `openlogos launch` 开始迭代开发',
+        'status.suggestNext': '建议下一步：{label}',
+        'suggest.phase1': '对 AI 说：「帮我写需求文档」',
+        'suggest.phase2': '对 AI 说：「基于需求文档做产品设计」',
+        'suggest.phase3-0': '对 AI 说：「帮我设计技术架构」',
+        'suggest.phase3-1': '对 AI 说：「帮我画 S01 的时序图」',
+        'suggest.phase3-2-api': '对 AI 说：「帮我设计 API」',
+        'suggest.phase3-2-db': '对 AI 说：「帮我设计数据库」',
+        'suggest.phase3-3-deployment': '对 AI 说：「帮我设计部署方案」',
+        'suggest.phase3-4a': '对 AI 说：「帮我设计测试用例」',
+        'suggest.phase3-4b': '对 AI 说：「帮我设计编排测试」',
+        'suggest.phase3-5': '对 AI 说：「请按 Phase 3 Step 5 执行代码实现」',
+        'suggest.phase3-6': '运行测试后明确授权执行 `openlogos verify`',
+        'suggest.phase3-7-deploy': '部署必须由人类明确授权。确认后再要求 AI 按部署方案执行部署。',
+        'suggest.phase3-8-smoke': '部署完成后明确授权执行 `openlogos smoke`',
+        'suggest.fallback': '继续完善文档',
+        // verify
+        'verify.title': 'OpenLogos 测试验收',
+        'verify.readingResults': '读取测试结果：{path}',
+        'verify.readingCases': '读取测试用例：logos/resources/test/',
+        'verify.summary': '结果摘要',
+        'verify.totalDefined': '定义用例：  {count} 个（{ut} UT + {st} ST）',
+        'verify.totalExecuted': '执行用例：  {count} 个',
+        'verify.passed': '通过：    {count}',
+        'verify.failed': '失败：     {count}',
+        'verify.skipped': '跳过：     {count}',
+        'verify.manual': '人工用例（已排除）：{count}',
+        'verify.coverage': '覆盖度：{pct}%（{covered}/{total}）',
+        'verify.passRate': '通过率：{pct}%（{passed}/{total}）',
+        'verify.gatePass': 'Gate 3.6：PASS',
+        'verify.gateFail': 'Gate 3.6：FAIL',
+        'verify.gateFailCoverage': 'Gate 3.6：FAIL（覆盖不完整）',
+        'verify.failedCases': '失败用例：',
+        'verify.uncoveredCases': '未覆盖用例（{count}）：',
+        'verify.reportPath': '报告：{path}',
+        'verify.noResults': '未找到测试结果文件：{path}\n请先运行测试，再重试。',
+        'verify.noCases': '未找到测试用例规格文件（logos/resources/test/）。\n请先完成测试设计（Step 3a）。',
+        'verify.checklistTitle': '设计时覆盖度（Layer 1）',
+        'verify.checklistSummary': '覆盖度校验：{checked}/{total} 项确认',
+        'verify.checklistUnchecked': '未确认项（{count}）：',
+        'verify.gateFailChecklist': 'Gate 3.6：FAIL（设计时覆盖度校验未通过）',
+        'verify.acTitle': '验收条件追溯（Layer 3）',
+        'verify.acSummary': '验收追溯：{passed}/{total} 个验收条件通过',
+        'verify.acFailed': '未通过的验收条件（{count}）：',
+        'verify.gateFailAc': 'Gate 3.6：FAIL（验收条件追溯未完全通过）',
+        'verify.preRunConfigAdded': '已检测到并写入 verify 预跑配置：{command}',
+        'verify.preRunConfigTodo': '无法推断 verify 预跑配置，请手动填写 verify.pre_run_command 或 verify.regression_command。',
+        'verify.preRunCompatSkipped': 'verify.pre_run_command 作为兼容配置保留，但由于已配置两阶段 verify，本次未执行该命令。',
+        'verify.coverageLocalDiag': '当前项目未配置 verify 预跑命令，覆盖不足可能是因为只运行了局部测试。',
+        'verify.coverageLocalSuggestionPreRun': '在 logos/logos.config.json 中配置 verify.pre_run_command，一次运行生成完整 test-results.jsonl。',
+        'verify.coverageLocalSuggestionTwoPhase': '如果项目采用回归 + 增量测试，可配置 verify.regression_command 与 verify.incremental_command，并使用 last-write-wins 合并结果。',
+        'verify.preRunModeNone': 'verify 预跑模式：无',
+        'verify.preRunModeSingle': 'verify 预跑模式：单阶段',
+        'verify.preRunModeTwoPhase': 'verify 预跑模式：双阶段',
+        'verify.preRunStageLine': '[{status}] {stage}：{command}（exit={exit}，duration={duration}）',
+        'verify.sandboxSummary': 'verify 沙箱：mode={mode}，status={status}，isolated={isolated}，write_denied={writeDenied}',
+        'smoke.sandboxSummary': 'smoke 沙箱：mode={mode}，status={status}，isolated={isolated}，write_denied={writeDenied}',
+        'verify.deployTasksTitle': '部署任务',
+        'verify.deployHumanGate': '部署是人类确认点。AI 未经明确授权不得发起部署。',
+        'verify.deployAiHint': '获得授权后，AI 必须读取合并后的部署方案和当前提案，再逐项执行 [deploy] 任务。',
+        'deployDone.title': 'OpenLogos deploy-done',
+        'deployDone.proposal': '提案：{slug}',
+        'deployDone.environment': '环境：{environment}',
+        'deployDone.marker': '标记：{path}',
+        'deployDone.deployTasks': '部署任务：{checked}/{total}',
+        'deployDone.clearedSmokeMarkers': '已清理过期 smoke 标记：{markers}',
+        'deployDone.nextSmoke': '下一步：明确授权执行 `{command}`。',
+        'deployDone.nextArchive': '下一步：明确授权执行 `{command}`。',
+        'deployDone.error.projectNotInitialized': '未找到 logos/logos.config.json。',
+        'deployDone.error.noActiveChange': '未找到活跃变更提案。请仅在活跃提案 verify 通过后执行此命令。',
+        'deployDone.error.changeNotFound': '变更提案 \'{slug}\' 不存在。',
+        'deployDone.error.verifyNotPassed': '验收尚未通过。请先运行 `openlogos verify`，并解决任何 VERIFY_FAIL 标记。',
+        'deployDone.error.decisionConflict': '部署决策冲突。{reason}',
+        'deployDone.error.notRequired': '当前提案不需要部署。验收通过后可直接归档。',
+        'deployDone.error.deployTasksMissing': 'tasks.md 中缺少非空 [deploy] section。',
+        'deployDone.error.deploymentReportMissing': '缺少部署报告：{path}。',
+        // change
+        'change.creating': '创建变更提案：{slug}',
+        'change.done': '变更提案已创建。下一步：',
+        'change.step1': '  1. 对 AI 说：「帮我填写变更提案 {slug}」',
+        'change.step2': '  2. AI 将分析影响范围并填写 proposal.md + tasks.md',
+        'change.step3': '  3. 然后按 tasks.md 逐项产出 delta 文件到 deltas/',
+        'change.step4': '  4. 完成后明确授权执行 `openlogos merge {slug}` 生成合并指令',
+        'change.guardConflict': 'Error: 当前活动变更提案 \'{activeChange}\' 尚未完成。',
+        'change.guardConflictHint': '请先完成该提案，并明确授权执行 `openlogos archive {activeChange}` 后再创建新提案。',
+        'change.guardInvalid': 'Error: logos/.openlogos-guard 内容无效。',
+        'change.guardInvalidHint': '请先修复或删除 guard 文件，再创建新提案。',
+        'change.moduleAuto': '归属模块：{module}（自动挂靠，当前只有一个模块）',
+        'change.moduleDefault': '归属模块：{module}（默认挂靠 core，可用 --module <id> 指定其他模块）',
+        'change.moduleAssigned': '归属模块：{module}',
+        'change.moduleNotFound': 'Error: 模块 \'{module}\' 在 logos-project.yaml 中不存在。',
+        'change.moduleNotFoundAvailable': '可用模块：{modules}',
+        'change.moduleNotFoundHint': '运行 `openlogos module list` 查看可用模块。',
+        'change.moduleNoCore': 'Error: 当前项目包含多个模块且未配置 core，无法推断变更归属。',
+        'change.moduleNoCoreRetryHeader': '请任选一个模块重试：',
+        // merge
+        'merge.summary': '合并摘要：',
+        'merge.proposal': '  - 变更提案：{slug}',
+        'merge.deltaCount': '  - Delta 文件：{count} 个',
+        'merge.aiHint': '对 AI 说：「读取 logos/changes/{slug}/MERGE_PROMPT.md 并执行合并」',
+        'merge.noDelta': 'logos/changes/{slug}/deltas/ 中没有 delta 文件，已写入 no-delta spec-complete 标记。',
+        'merge.conservationRejected': 'Error: delta 条目守恒检查未通过（S37）：{path}——拒绝生成 MERGE_PROMPT，未写任何 marker。',
+        'merge.conservationHint': '  修复方式：把缺失 ID 的条目补回同锚 MODIFIED 块的结构位置（携带整节全量内容），或新增同锚 REMOVED-ITEMS 块逐行点名（`- <ID> — <删除原因>`）；锚歧义时改用标题路径锚（父级标题 > 目标标题）。可先运行 `openlogos change-lint` 在产出点定位全部违规。',
+        'merge.alreadyMerged': '提案 \'{slug}\' 的规格已合并（SPEC_MERGED 存在），无需重复操作。',
+        'merge.archiveHint': '下一步让 AI 执行 logos/changes/{slug}/MERGE_PROMPT.md，真正合并主规格后写入 SPEC_MERGED。之后再实现代码、运行 `openlogos verify`，验收通过后明确授权执行 `openlogos archive {slug}`。',
+        // launch
+        'launch.done': '✓ 模块 "{module}" 已 launch！变更管理已激活。',
+        'launch.hint1': '  从现在起，修改已有文档必须先创建变更提案。',
+        'launch.hint2': '  运行 `openlogos change <slug>` 创建新的变更提案。',
+        'launch.rulesUpdated': 'AI 规则已更新到 {target}',
+        'launch.moduleAlreadyLaunched': '模块 "{module}" 已处于 launched 状态，无需重复操作。',
+        'launch.multiModuleError': '存在多个模块（{modules}），请明确指定：`openlogos launch <module-id>`',
+        'launch.moduleNotFound': '模块 "{module}" 在 logos-project.yaml 中不存在。',
+        'launch.migrationAuto': '已迁移：模块 "{module}" 自动标记为 launched（原 config.lifecycle: active）。',
+        'launch.migrationWarn': '警告：config.lifecycle 为 "active" 但没有模块标记为 launched，请运行 `openlogos launch <module-id>` 完成迁移。',
+        'launch.suggest': '运行 `openlogos launch` 激活变更管理，开始迭代开发。',
+        'launch.verifyRequired': '模块 "{module}" 尚不能 launch：必须先通过 `openlogos verify` 并写入 logos/resources/verify/acceptance-report.md。',
+        'launch.deployRequired': '模块 "{module}" 需要先完成部署才能 launch。请先完成部署并写入 logos/resources/verify/deployment-report.md。',
+        'launch.smokeRequired': '模块 "{module}" 需要先完成部署冒烟测试才能 launch。请明确授权执行 `openlogos smoke` 并写入 logos/resources/verify/smoke-report.md。',
+        // next
+        'next.title': '下一步',
+        'next.nextNode': '下一节点',
+        'flow.rawBuiltin': '内置模板 @{version}',
+        'flow.resolvedApplied': 'resolved · 已应用项目 overlay',
+        'flow.resolvedNoOverlay': 'resolved · 无项目 overlay',
+        'flow.notSkippable': '不可跳过',
+        'flow.resolvedHint': '提示：使用 --resolved 查看应用项目 overlay 后的生效流程。',
+        'next.createChange': '修改代码前必须先创建变更提案',
+        'next.createChangeDetail': '运行 `openlogos change <slug>` 创建变更提案并激活 guard。',
+        'next.fillProposal': '填写活跃变更的 proposal.md 和 tasks.md',
+        'next.fillProposalDetail': '对 AI 说：「帮我填写变更提案 {slug}」— AI 将分析影响范围并完善提案。',
+        'next.writeDeltas': '撰写 delta 文档',
+        'next.writeDeltasDetail': '对 AI 说：「继续为 {slug} 产出 delta 文件」— 所有变更都写入 logos/changes/{slug}/deltas/，delta 任务全部勾选后再明确授权执行 `openlogos merge {slug}`。',
+        'next.approvePlan': '批准方案（proposal/tasks 与 [code] 切片划分）',
+        'next.approvePlanDetail': '在 plan 门 review 并批准 proposal.md + tasks.md（含 [code] 切片划分）；--auto 模式下 plan-exit 门自动放行（留审计）。批准后为 {slug} 产出 delta 文件。',
+        'next.startCoding': '按 tasks.md 开始编码实现',
+        'next.startCodingDetail': '对 AI 说：「执行 logos/changes/{slug}/tasks.md 中的任务」— 实现代码并编写测试，完成后勾选 [code] section 所有任务。',
+        'next.planSlices': '规划 [code] 切片（slice-planner）',
+        'next.planSlicesDetail': '对 AI 说：为 {slug} 运行 slice-planner — 对已合并规格 + 真实测试 ID 划分 [code] 切片（六维打分 + 垂直/横向判别器 + 删后续证伪门），然后在 slice-exit 门确认。',
+        'next.runVerify': '运行验收测试',
+        'next.runVerifyDetail': '明确授权执行 `openlogos verify` 运行验收测试。',
+        'next.archive': '归档提案',
+        'next.archiveDetail': '明确授权执行 `openlogos archive {slug}` 归档本次变更。',
+        'next.authorizeDeploy': '授权执行部署',
+        'next.authorizeDeployDetail': '部署是人类确认点。确认后，请明确要求 AI 基于合并后的部署方案执行 {slug} 的部署任务。',
+        'next.runSmoke': '运行部署冒烟测试',
+        'next.runSmokeDetail': '部署完成后明确授权执行 `openlogos smoke`。',
+        'next.fixAndSmoke': '修复冒烟问题并重新运行',
+        'next.fixAndSmokeDetail': '修复部署环境或 smoke 检查问题后，再明确授权执行 `openlogos smoke`。',
+        'next.fixAndVerify': '修复问题并重新验收',
+        'next.fixAndVerifyDetail': '修复失败的测试用例，然后明确授权重新执行 `openlogos verify`。',
+        'next.continueImpl': '继续实现并运行测试',
+        'next.continueImplDetail': '所有任务完成后，明确授权执行 `openlogos merge {slug}` 生成合并指令。',
+        'next.merge': '生成合并指令',
+        'next.mergeDetail': '明确授权执行 `openlogos merge {slug}`，生成 MERGE_PROMPT.md。',
+        'next.executeMerge': '执行规格合并',
+        'next.executeMergeDetail': '让 AI 读取 logos/changes/{slug}/MERGE_PROMPT.md，将 delta 合入 logos/resources，提交规格文档后写入 logos/changes/{slug}/SPEC_MERGED。',
+        'next.specCompleteRequired': '完成 no-delta 规格阶段标记',
+        'next.specCompleteRequiredDetail': '明确授权执行 `openlogos merge {slug}` 写入 no-delta SPEC_MERGED 后，再进入 [code] 切片规划。',
+        'next.testIdRequired': '补充真实测试 ID',
+        'next.testIdRequiredDetail': '先为 {slug} 补充或显式复用真实 UT/ST/SMOKE ID；测试 ID 稳定前不得进入 `plan-slices`。',
+        'next.launch': '激活变更管理，开始迭代开发',
+        'next.phaseDetail': '当前阶段：{phase}',
+        // archive
+        'archive.done': '✓ 变更提案 \'{slug}\' 已归档。',
+        'archive.path': '  logos/changes/{slug}/ → logos/changes/archive/{slug}/',
+        'archive.watch.failed': '错误 [{code}]：归档 watcher 握手失败（{reason}）。',
+        'archive.watch.details': '  实例：{details}',
+        'archive.watch.incompatible': '检测到无法协调该协议的 RunLogos 实例；请升级 openlogos CLI 或关闭该实例后重试。',
+        'archive.watch.legacyBusy': '错误：Windows 无法移动提案目录，可能有旧版 RunLogos 或其他程序仍在监听；请升级或关闭应用后重试。',
+        'archive.watch.reconciled': '  归档操作报错后已依据磁盘状态调和为成功。',
+        // impact (S36)
+        'impact.header': 'impact: lifecycle_only = {value}',
+        'impact.filesHeader': '文件（{count}）：',
+        'impact.nonLifecycleHeader': '非 lifecycle 路径（{count}）：',
+        'impact.operationsLine': '推断操作：{ops}',
+        'impact.changesLine': '涉及提案：{changes}',
+        'impact.reasonsHeader': '原因：',
+        'impact.footerTrue': '结论：全部变更为生命周期簿记（可跳过制品构建）。CI 只应读取 lifecycle_only 字段。',
+        'impact.footerFalse': '结论：非纯生命周期变更（fail-closed）。CI 只应读取 lifecycle_only 字段。',
+    },
+};
+export function t(locale, key, vars) {
+    let msg = messages[locale]?.[key] ?? messages['en'][key] ?? key;
+    if (vars) {
+        for (const [k, v] of Object.entries(vars)) {
+            msg = msg.replaceAll(`{${k}}`, v);
+        }
+    }
+    return msg;
+}
+// Phase label key mapping (used by status.ts)
+export const PHASE_KEYS = [
+    'phase.1', 'phase.2', 'phase.3-0', 'phase.3-1',
+    'phase.3-2-api', 'phase.3-2-db', 'phase.3-3-deployment',
+    'phase.3-4a', 'phase.3-4b', 'phase.3-5', 'phase.3-6',
+    'phase.3-7-deploy', 'phase.3-8-smoke',
+];
+export const SUGGEST_KEYS = {
+    'phase.1': 'suggest.phase1',
+    'phase.2': 'suggest.phase2',
+    'phase.3-0': 'suggest.phase3-0',
+    'phase.3-1': 'suggest.phase3-1',
+    'phase.3-2-api': 'suggest.phase3-2-api',
+    'phase.3-2-db': 'suggest.phase3-2-db',
+    'phase.3-3-deployment': 'suggest.phase3-3-deployment',
+    'phase.3-4a': 'suggest.phase3-4a',
+    'phase.3-4b': 'suggest.phase3-4b',
+    'phase.3-5': 'suggest.phase3-5',
+    'phase.3-6': 'suggest.phase3-6',
+    'phase.3-7-deploy': 'suggest.phase3-7-deploy',
+    'phase.3-8-smoke': 'suggest.phase3-8-smoke',
+};
+// --- Long-form templates ---
+export function proposalTemplate(locale, slug, module) {
+    const createdAt = new Date().toISOString().slice(0, 10);
+    const meta = module ? `\n> module: ${module} | created: ${createdAt}\n` : '';
+    if (locale === 'zh') {
+        return `# 变更提案：${slug}
+${meta}
+## 变更原因
+[为什么要做这个变更？来源于哪个需求/反馈/Bug？]
+
+## 变更类型
+[需求级 / 设计级 / 接口级 / 代码级]
+
+## 变更范围
+- 影响的需求文档：[列表]
+- 影响的功能规格：[列表]
+- 影响的业务场景：[列表]
+- 影响的 API：[列表]
+- 影响的 DB 表：[列表]
+- 影响的编排测试：[列表]
+
+## 部署影响
+- 是否需要部署：是 / 否
+- 部署原因：[说明为什么需要或不需要部署]
+- 影响环境：[本地 / 测试 / 预发 / 生产 / 无]
+- 是否涉及数据迁移：是 / 否
+- 是否需要回滚预案：是 / 否
+- 是否需要 smoke：是 / 否
+
+## UI/UX 变更声明
+
+\`\`\`yaml
+ui_impact: false            # 本次是否触及界面（GUI 项目才有意义）
+design_system_mode: generated   # generated | fallback（fallback 时须填 design_system_fallback_reason）
+design_system_fallback_reason: ""
+pages: []                   # 每项 {id, prototype: core-NN-<slug>.html, description}
+\`\`\`
+
+## 决策澄清
+
+\`\`\`yaml
+schema: openlogos/clarification@1
+mode: adaptive
+status: pending
+impacts:
+  data:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无数据高影响选择
+  compatibility:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无兼容高影响选择
+  security_privacy:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无安全隐私高影响选择
+  public_release:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无公开发布高影响选择
+  external_commitment:
+    status: none
+    reason: 待 change-writer 按仓库事实确认本次无外部承诺高影响选择
+decisions: []
+unresolved: []
+defaults: []
+\`\`\`
+
+## 变更概述
+[用 1-3 段话概述具体改什么]
+`;
+    }
+    return `# Change Proposal: ${slug}
+${meta}
+## Reason
+[Why is this change needed? Which requirement/feedback/bug triggered it?]
+
+## Change Type
+[Requirements / Design / Interface / Code]
+
+## Scope
+- Affected requirements: [list]
+- Affected feature specs: [list]
+- Affected scenarios: [list]
+- Affected APIs: [list]
+- Affected DB tables: [list]
+- Affected orchestration tests: [list]
+
+## Deployment Impact
+- Deployment required: yes / no
+- Deployment reason: [Explain why deployment is or is not required]
+- Affected environments: [local / test / staging / production / none]
+- Data migration involved: yes / no
+- Rollback plan required: yes / no
+- Smoke required: yes / no
+
+## UI/UX Change Declaration
+
+\`\`\`yaml
+ui_impact: false            # Does this change touch the UI (only meaningful for GUI projects)
+design_system_mode: generated   # generated | fallback (fallback requires design_system_fallback_reason)
+design_system_fallback_reason: ""
+pages: []                   # each item {id, prototype: core-NN-<slug>.html, description}
+\`\`\`
+
+## Decision Clarification
+
+\`\`\`yaml
+schema: openlogos/clarification@1
+mode: adaptive
+status: pending
+impacts:
+  data:
+    status: none
+    reason: change-writer must confirm from repository facts that no high-impact data choice is pending
+  compatibility:
+    status: none
+    reason: change-writer must confirm from repository facts that no high-impact compatibility choice is pending
+  security_privacy:
+    status: none
+    reason: change-writer must confirm from repository facts that no high-impact security or privacy choice is pending
+  public_release:
+    status: none
+    reason: change-writer must confirm from repository facts that no public release choice is pending
+  external_commitment:
+    status: none
+    reason: change-writer must confirm from repository facts that no external commitment choice is pending
+decisions: []
+unresolved: []
+defaults: []
+\`\`\`
+
+## Summary
+[Describe what will change in 1-3 paragraphs]
+`;
+}
+export function tasksTemplate(locale, launched = false) {
+    if (locale === 'zh') {
+        return `# 实现任务
+
+## [delta] 规格变更
+- [ ] 更新需求文档的场景和验收条件
+- [ ] 更新产品设计文档的功能规格
+
+## [code] 代码实现
+${launched ? '' : '- [ ] 实现代码变更'}
+`;
+    }
+    return `# Implementation Tasks
+
+## [delta] Spec Changes
+- [ ] Update requirements scenarios and acceptance criteria
+- [ ] Update product design feature specs
+
+## [code] Code Implementation
+${launched ? '' : '- [ ] Implement code changes'}
+`;
+}
+export function mergePromptTemplate(locale, slug, proposalContent, deltas) {
+    if (locale === 'zh') {
+        let prompt = `# 合并指令
+
+## 变更提案
+- 提案名称：${slug}
+- 提案目录：logos/changes/${slug}/
+
+## 提案内容
+
+${proposalContent}
+
+## 需要合并的 Delta 文件
+
+`;
+        for (let i = 0; i < deltas.length; i++) {
+            const d = deltas[i];
+            prompt += `### ${i + 1}. ${d.relativePath}
+
+- Delta 文件：\`${d.deltaFullPath}\`
+- 目标目录：\`${d.targetDir}/\`
+- 操作：读取 delta 中的 ADDED / MODIFIED / REMOVED 标记，合并到目标目录中对应的主文档
+
+`;
+        }
+        prompt += `## 执行要求
+
+1. 逐个 Delta 文件处理，每处理完一个报告修改摘要
+2. 对于 ADDED 标记：在主文档的指定位置插入新内容
+3. 对于 MODIFIED 标记：替换主文档中同名章节的内容
+4. 对于 REMOVED 标记：从主文档中删除对应章节
+5. 保持主文档的原有格式和风格
+6. 如果主文档有"最后更新"时间戳，同步更新
+7. 所有变更完成后，列出修改清单
+8. 所有变更合并完成后，自动执行 git commit（告知用户，无需确认）：
+   git add -A && git commit -m "docs(${slug}): merge spec deltas"
+   然后提示用户：按更新后的规格实现代码，代码完成后运行 \`openlogos verify\` 验收，验收通过后明确授权执行 \`openlogos archive ${slug}\`。
+`;
+        return prompt;
+    }
+    let prompt = `# Merge Instruction
+
+## Change Proposal
+- Proposal: ${slug}
+- Directory: logos/changes/${slug}/
+
+## Proposal Content
+
+${proposalContent}
+
+## Delta Files to Merge
+
+`;
+    for (let i = 0; i < deltas.length; i++) {
+        const d = deltas[i];
+        prompt += `### ${i + 1}. ${d.relativePath}
+
+- Delta file: \`${d.deltaFullPath}\`
+- Target directory: \`${d.targetDir}/\`
+- Action: Read ADDED / MODIFIED / REMOVED markers in the delta and merge into the corresponding main document in the target directory
+
+`;
+    }
+    prompt += `## Execution Requirements
+
+1. Process each delta file one by one, report a summary after each
+2. For ADDED markers: insert new content at the specified location in the main document
+3. For MODIFIED markers: replace the content of the same-named section in the main document
+4. For REMOVED markers: delete the corresponding section from the main document
+5. Preserve the original formatting and style of the main document
+6. If the main document has a "last updated" timestamp, update it
+7. After all changes are complete, list the modification summary
+8. After all changes are merged, automatically run git commit (inform user, no confirmation needed):
+   git add -A && git commit -m "docs(${slug}): merge spec deltas"
+   Then prompt the user: implement code per the updated specs, run \`openlogos verify\` after code is complete, and explicitly authorize \`openlogos archive ${slug}\` after verification passes.
+`;
+    return prompt;
+}
+export function conventionsForYaml(locale) {
+    if (locale === 'zh') {
+        return `conventions:
+  - "遵循 OpenLogos 三层推进模型（Why → What → How）"
+  - "每次变更必须先创建 logos/changes/ 变更提案"`;
+    }
+    return `conventions:
+  - "Follow the OpenLogos three-layer progression (Why → What → How)"
+  - "Every change must start with a logos/changes/ change proposal"`;
+}
+export function conventionsForAgentsMd(locale) {
+    if (locale === 'zh') {
+        return `- 遵循 OpenLogos 三层推进模型（Why → What → How）
+- 每次变更必须先创建 logos/changes/ 变更提案`;
+    }
+    return `- Follow the OpenLogos three-layer progression (Why → What → How)
+- Every change must start with a logos/changes/ change proposal`;
+}
+//# sourceMappingURL=i18n.js.map

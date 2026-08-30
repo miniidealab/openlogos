@@ -1,0 +1,406 @@
+---
+name: "scenario-architect"
+description: "OpenLogos scenario-architect 方法论 Skill"
+---
+# Skill: Scenario Architect
+
+> 将 Phase 1/2 已定义的业务场景展开为技术时序图，让 API 设计自然浮现，并设计完整的异常用例。场景编号沿用 Phase 1 定义。
+
+## 触发条件
+
+- 用户要求画时序图、设计业务场景或进行场景建模
+- 用户提到 "Phase 3 Step 1"、"场景驱动"、"技术方案设计"
+- 已有需求文档和产品设计文档（含场景定义），需要开始技术实现
+- 用户指定某个场景编号（如 S01）需要展开为时序图
+
+## 核心能力
+
+1. 读取 Phase 1/2 的场景定义和验收条件，作为时序图的输入
+2. 为每个场景绘制 Mermaid 时序图（严格遵循编号规范）
+3. 为关键步骤撰写说明文字（解释"为什么"而非"做什么"）
+4. 识别每个步骤的异常情况，设计结构化的异常用例
+5. 生成场景概览文档（场景地图 + 场景索引）
+
+## 与 Phase 1/2 的衔接
+
+**Phase 3 不再从零识别场景。** 场景在 Phase 1 已定义（`S01`, `S02`...），Phase 2 已细化交互流程，Step 0 已确定技术架构和选型。Phase 3 Step 1 的工作是将同一个场景从"交互视角"展开为"技术视角"，时序图的参与方应与架构图中的系统组件一致：
+
+| 输入（来自 Phase 1/2） | 输出（Phase 3） |
+|------------------------|----------------|
+| 场景编号和名称 | 时序图标题保留编号 |
+| 触发条件 | 时序图的起始箭头 |
+| 主路径描述 | 时序图的 Step 序列 |
+| GIVEN/WHEN/THEN（业务级） | 时序图步骤的行为描述 |
+| 异常验收条件 | EX 异常用例（技术级） |
+| 涉及的页面和交互（Phase 2） | 参与方识别 |
+
+## 执行步骤
+
+### Step 0: 确认场景清单（强制，建模前必须执行）
+
+在开始任何场景时序图绘制之前，**必须**先完成场景清单的确认：
+
+1. 读取 `logos/logos-project.yaml`，检查是否已有 `scenarios` 字段。
+
+   **情况 A：`scenarios` 字段不存在**
+
+   停止建模，要求用户先确认完整的场景清单。结合需求文档（Phase 1）、产品设计文档（Phase 2）和架构概要（Phase 3 Step 0），整理出候选清单，向用户逐一确认：
+
+   - 每个场景的编号（`S01`、`S02`...）和名称
+   - 是否有遗漏的核心用户旅程？
+   - 是否有遗漏的管理后台或系统级场景？
+
+   确认后，将清单写入 `logos/logos-project.yaml`：
+
+   ```yaml
+   scenarios:
+     - id: S01
+       name: <场景名称>
+     - id: S02
+       name: <场景名称>
+     # ...
+   ```
+
+   **情况 B：`scenarios` 字段已存在**
+
+   展示当前清单，并询问用户是否有遗漏或调整：
+
+   > 当前场景清单共 N 个：S01（xxx）、S02（xxx）...
+   > 请确认是否完整，或告知需要新增/调整的场景。
+
+   只有用户明确确认清单无误后，才进入 Step 1 开始建模。
+
+2. 确认清单后，告知用户当前已完成哪些场景（`<module>-SXX-*.md` 文件存在），还剩哪些场景待建模，然后按用户指示开始目标场景的建模。
+
+---
+
+### Step 1: 加载场景上下文
+
+读取 Phase 1 需求文档、Phase 2 产品设计文档和 Phase 3 Step 0 技术架构概要中的场景定义。**不要重新发明场景**——直接沿用已有编号和描述。参与方命名应与架构图中的系统组件保持一致。
+
+**场景粒度前置检查（绘制时序图之前必须执行）：**
+
+在继续之前，先验证 Phase 1 中的场景定义是否粒度合理。检查以下反模式：
+
+- **单 API 场景**：如果一个场景的主路径只有 1-2 个步骤（如"创建任务"= 仅 `POST /api/tasks`），粒度过细
+- **CRUD 碎片化**：如果场景列表中对同一实体出现了独立的"创建X"、"查询X"、"更新X"、"删除X"场景，应合并为目标导向的场景
+- **缺少业务目标**：如果场景的结果只是"数据被写入/读取了"，说明缺少真正的用户目标
+
+**如果检测到以上任何反模式**：停止绘制时序图，建议回到 Phase 1 按业务目标重新组织场景。为粒度过细的场景绘制时序图会将问题传导到 API 设计、测试用例和代码实现。
+
+确认每个场景的：
+- **场景编号**：沿用 Phase 1 的 `S01`, `S02`...（或 Phase 2 的子场景 `S01.1`）
+- **参与方**：从 Phase 2 的交互流程中识别涉及哪些系统组件
+- **主路径**：从 Phase 1/2 的验收条件中提取正常流程
+- **已知异常**：从 Phase 1/2 的异常验收条件中提取
+
+### Step 2: 绘制时序图
+
+为每个场景绘制 Mermaid 时序图，**严格遵循以下规范**：
+
+**编号规范**：
+- 每个箭头必须带 `Step N:` 编号前缀
+- 编号从 1 开始连续递增
+- 每个箭头附一行行为描述：`HTTP方法 /api/路径 — 一句话说明`
+
+**⚠️ 单行约束（强制）**：
+- 每条箭头（`->>` 或 `-->>`）的全部内容**必须写在同一行**，禁止在描述文字中插入换行
+- 若描述文字过长，优先**精简措辞**，而不是拆行
+- 需要补充的细节（如 UI 按钮、副作用说明等）应写在时序图**下方的"步骤说明"列表**中，不得折入箭头行内
+- 违反此规则会导致 mermaid 引擎解析失败、markdown 渲染出错
+
+**⚠️ Mermaid sequenceDiagram 语法安全（强制）**：
+- 参与方别名必须使用短 ASCII 标识，如 `U`、`W`、`API`、`DB`，避免在别名中放 `/`、空格、括号或中文。
+- `participant <别名> as <显示名>` 的显示名保持简短；复杂技术栈、端口、API 路径和补充说明放到时序图下方的"步骤说明"。
+- 箭头消息保持单行，可写 `POST /api/path`，但不要在消息中塞入多行 JSON、长错误体、HTML、Markdown 表格或大量括号嵌套。
+- JSON 示例、错误码列表、字段解释和副作用说明必须下沉到"步骤说明"或"异常用例"，不要放进 Mermaid 消息行。
+- 拿不准时优先精简图中消息，让图表达调用顺序，让正文承载细节。
+
+**参与方规范**：
+- 使用短别名：`U`（User/Browser）、`W`（Web/Frontend）、`SB`（Supabase）、`DB`（Database）
+- 每个参与方的全名在 `participant` 声明中注明
+
+**场景编号规范**：
+- 文档标题格式：`S01: 邮箱注册 — 时序图`
+- 一个场景一个文件，编号对应 Phase 1
+
+**格式示例**：
+
+```mermaid
+sequenceDiagram
+    participant U as User/Browser
+    participant W as Web (Astro)
+    participant SB as Supabase Auth
+    participant DB as Supabase DB
+
+    U->>W: Step 1: POST /api/auth/register — 提交 {email, password, referral_code?}
+    W->>SB: Step 2: supabase.auth.signUp(email, password, metadata) — 发起用户创建
+    SB-->>W: Step 3: 返回 {user, session} 或 error
+    W->>DB: Step 4: INSERT INTO profiles — 写入用户扩展信息
+    DB-->>W: Step 5: 返回写入结果
+    W-->>U: Step 6: 返回注册结果 + 提示验证邮件
+```
+
+### Step 3: 撰写步骤叙事
+
+在时序图之后，用**连续编号列表**将所有步骤逐一写出来，形成人类可以从头到尾流畅阅读的线性叙事。
+
+**格式规范**：
+
+1. **每一步都必须写出来**——不跳步，不省略。简单步骤一行带过，复杂步骤在下方用 `>` blockquote 补充说明
+2. **每一步必须有明确的主语**——读者不需要猜"这是谁做的"。主语使用参与方表中的别名或全名
+3. **编号与时序图的 Step N 严格对应**
+4. **正常流程和异常用例分开写**——正常流程在前，异常用例在后。正常流程中只在触发异常的步骤后标注 `→ 见 EX-N.M` 引用，不展开异常内容
+
+**正常流程格式示例**：
+
+````markdown
+## 步骤说明
+
+1. **开发者**在终端输入 `openlogos init my-project`。
+2. **CLI** 检查 `logos/logos.config.json` 是否已存在。如果已存在 → 见 EX-2.1。
+3. **CLI** 在终端显示语言选择菜单（1. English / 2. 中文）。如果终端为非 TTY → 见 EX-3.1。
+
+> 语言选择放在 `init` 阶段（而非全局配置），因为这是用户与 OpenLogos 的第一次接触，此时确认语言最自然。
+
+4. **开发者**选择语言（输入 1 或 2）。
+5. **CLI** 从 `package.json` / `Cargo.toml` / `pyproject.toml` / 目录名中探测项目名。如果用户传入的 name 与配置文件名不一致 → 见 EX-5.1。
+
+> 优先级链：命令行参数 > package.json > Cargo.toml > pyproject.toml > 目录名。scoped name 自动去掉 `@org/` 前缀。
+
+6. **CLI** 依次创建 11 个目录（`logos/resources/prd/...` 等），每个目录写入 `.gitkeep`。
+7. **CLI** 写入 `logos/logos.config.json`（含 locale + 5 个文档模块定义）。
+8. **CLI** 写入 `logos/logos-project.yaml`（含空 tech_stack + conventions）。
+9. **CLI** 写入 `AGENTS.md` 和 `CLAUDE.md`（含 Phase detection logic）。
+10. **CLI** 在终端输出创建的文件清单和下一步建议。
+````
+
+**异常用例格式示例**：
+
+````markdown
+## 异常用例
+
+### EX-2.1: 项目已初始化
+
+- **触发条件**：Step 2 检测到 `logos/logos.config.json` 已存在
+- **期望响应**：stderr 输出 `Error: logos/logos.config.json already exists in current directory.`，exit(1)
+- **副作用**：不创建任何文件，不覆盖已有配置
+
+### EX-3.1: 非 TTY 环境
+
+- **触发条件**：Step 3 检测到 `process.stdin.isTTY` 为 false（CI 管道 / 管道输入）
+- **期望响应**：跳过语言选择交互，默认 `locale = 'en'`
+- **副作用**：无，流程直接进入 Step 5
+
+### EX-5.1: 项目名冲突
+
+- **触发条件**：Step 5 中用户传入的 `name` 与 `package.json`（或其他配置文件）中的名称不一致
+- **期望响应**：显示两个选项让用户选择，非 TTY 环境自动使用用户传入的名称
+- **副作用**：无，选择后继续 Step 6
+````
+
+**叙事原则**：
+- **不跳步**：哪怕一个步骤只值一行（如"CLI 写入文件"），也要写出来，保持编号连续
+- **主语先行**：每一步以粗体主语开头，让读者一眼看到"谁在做"
+- **补充说明用 blockquote**：需要解释"为什么"或设计决策时，在步骤下方用 `>` blockquote 展开，不打断阅读节奏
+- **异常用例独立成段**：正常流程中只放 `→ 见 EX-N.M` 引用，异常的触发条件、期望响应、副作用在文档下方的「异常用例」章节展开
+
+### Step 4: 设计异常用例
+
+将 Phase 1/2 中已识别的异常验收条件展开为技术级异常用例，并补充 Phase 1/2 未覆盖的技术异常（如服务不可用、数据库写入失败等）：
+
+```markdown
+#### 异常用例
+
+##### EX-2.1: 邮箱已注册（← Phase 1 S01 异常验收条件）
+- **触发条件**：提交的 email 已存在于 auth.users 表
+- **期望响应**：HTTP 409 `{ code: "EMAIL_EXISTS", message: "邮箱已注册" }`
+- **副作用**：不创建任何记录，不发送邮件
+
+##### EX-2.2: Supabase Auth 服务不可用（技术异常，Phase 1 未覆盖）
+- **触发条件**：Supabase Auth 服务超时或返回 5xx
+- **期望响应**：HTTP 503 `{ code: "AUTH_SERVICE_UNAVAILABLE", message: "认证服务暂时不可用" }`
+- **副作用**：记录错误日志，触发告警
+
+##### EX-4.1: profiles 写入失败（技术异常，Phase 1 未覆盖）
+- **触发条件**：INSERT INTO profiles 违反唯一约束或 RLS 拒绝
+- **期望响应**：HTTP 500 `{ code: "PROFILE_CREATE_FAILED", message: "用户配置创建失败" }`
+- **副作用**：auth.users 中的记录已创建但 profiles 未创建（需要补偿机制）
+```
+
+**异常用例编号规则**：`EX-{步骤编号}.{序号}`
+
+### Step 5: 生成场景概览文档
+
+汇总所有场景的技术实现状态：
+
+```markdown
+# 业务场景概览（技术实现）
+
+## 场景地图
+| 编号 | 场景名称 | Phase 1 | Phase 2 | Phase 3 时序图 | API | 编排 | 状态 |
+|------|---------|---------|---------|--------------|-----|------|------|
+| S01  | 邮箱注册 | ✅ | ✅ | ✅ | ✅ | 🔲 | 进行中 |
+| S02  | 密码登录 | ✅ | ✅ | 🔲 | 🔲 | 🔲 | 待开始 |
+
+## 场景依赖关系
+[说明场景之间的前置/后置关系]
+
+## 场景索引
+[每个场景的文件链接，贯穿三个 Phase]
+```
+
+## 输出规范
+
+- **场景概览**：`logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md`
+- **场景文档**：`logos/resources/prd/3-technical-plan/2-scenario-implementation/<module>-{场景编号}-{场景名}.md`（从 `logos-project.yaml` 的 `modules[]` 读取当前模块，默认为 `core`；生成前必须读取 `scenario_counter.next_id` 取号，生成后立即将 `next_id` 加 1 写回）
+- 时序图使用 Mermaid 格式（可在 Markdown 中直接渲染）
+- 异常用例使用 `EX-N.M` 编号，全局唯一
+- 每个场景文档包含：时序图 + 步骤说明 + 异常用例
+- **场景编号必须与 Phase 1/2 一致**
+
+## 实践经验
+
+- **不要从零识别场景**：Phase 3 的场景来自 Phase 1 的需求文档。如果发现了 Phase 1 没有的场景，应该回到 Phase 1 补充
+- **Phase 1/2 的异常是输入**：Phase 1 写的"异常：邮箱已注册"，在 Phase 3 要展开为带 HTTP 状态码和响应体的技术规格
+- **先画主路径再补异常**：不要试图在第一遍就画出所有分支，先把主路径画清楚
+- **异常用例的覆盖策略**：每个涉及外部调用（数据库、第三方服务）的步骤至少 1 个异常用例
+- **步骤编号维护**：当需要在中间插入步骤时，重新编号所有后续步骤，并同步更新所有 EX 引用
+- **参与方粒度**：在微服务架构中，每个服务是一个参与方；在单体应用中，按逻辑层划分（Web、Auth、DB）
+- **时序图是 API 的来源**：时序图中跨系统边界的箭头就是需要设计的 API——如果一个 API 在时序图中找不到出处，它很可能不应该存在
+
+## 推荐提示词
+
+以下提示词可以直接复制给 AI 使用：
+
+- `帮我画 S01 的时序图`
+- `帮我对所有 P0 场景做场景建模`
+- `帮我给 S03 补充异常用例的时序图`
+- `基于产品设计，帮我做技术场景建模`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有场景时序图产出后，**必须**将新生成的文档追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-00-scenario-overview.md
+    desc: 场景实现概览索引。涉及全量场景分类、参与方、实现文档映射关系时必读。
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-<slug>.md
+    desc: S01 <场景名称>场景时序图。涉及 S01 实现细节、API 设计、异常分支时必读。
+  # 每个场景文件均需单独一条
+```
+
+**不执行此步骤将导致 api-designer/db-designer 等后续 Skill 无法感知时序图的存在，AI 将无法从正确的源头推导 API 设计。**
+
+## Step 补充：为场景分配 feature 分组（add-feature-model）
+
+在 module 与 scenario 之间存在**可选的 feature（功能）分组层**。生成新场景时，scenario-architect 应顺手维护 feature 归属（与维护 `scenario_counter` 同为 AI 职责，CLI 不代劳）。
+
+### 生成场景时分配 feature
+
+1. **取 scenario 号**（既有流程）：读 `logos-project.yaml` 的 `scenario_counter.next_id` → 用作 `SXX` → `+1` 写回。
+2. **判断 feature 归属**：新场景属于哪个功能域（能力域）？
+   - 命中已有 feature → 在 `scenarios[]` 该场景条目写 `feature: F0X`。
+   - 需要新建 feature → 读 `feature_counter.next_id` 取号 `F0X`（缺失时 `configured_next_id = feature_counter?.next_id ?? 1`，从 `F01` 起）、`+1` 写回，向 `features[]` 追加 `{id, name, module, spec?}`（`module` 必为该场景所属 module；`spec` 可选链接 feature-specs 文档序号，如 `core-01`），再给场景写 `feature: F0X`。
+   - 暂不确定 → **可不写 `feature`**（合法：该场景落入所属 module 的"未分组"桶，不阻断）。
+
+### feature 编号约束（务必遵守）
+
+- feature ID 项目全局唯一、格式 `F0X`，**严禁不同 module 从 F01 重号**（与 scenario 同策）。
+- 计数器冲突恢复（防 off-by-one 重号）：`configured_next_id = feature_counter?.next_id ?? 1`，`allocated = max(configured_next_id, max(existing)+1)`，用 `allocated` 创建、持久化 `feature_counter.next_id = allocated + 1`。
+  - **工作示例**：已有最大 `F05`、`feature_counter.next_id=3`（异常态）→ `configured_next_id=3`，`allocated=max(3, 5+1)=6` → 分配 `F06`、持久化 `next_id=7`、下次分配 `F07`；**绝不复用已存在 ID**。
+- 详见 `spec/module-naming-convention.md` 的「feature 功能分组编号规范」。
+
+### 存量项目回填引导
+
+存量项目场景已平铺、无 feature 归属时，引导用户运行 `openlogos feature-backfill`：CLI 生成 `logos/feature-backfill-prompt.md`（打包场景清单 + 现有 feature-specs 文档 + 当前 yaml），AI 据此语义聚类回写 `features[]` / `scenario.feature` / `feature_counter`（幂等、只补未分组、非强制）。
+
+## S39 delta 模式：目标存在则修改，缺失则全量创建
+
+### 触发
+
+change-writer 的 on-touch-v1 闭包判定把某 scenario target 标为 MODIFY/CREATE，并咨询本 Skill 生成内容时启用。当前 change-writer 保持最终 delta 文件所有权；本 Skill 返回内容与校验结果，不得另写第二份同目标 delta。
+
+### 输入
+
+- proposal 中本次 Why/验收；
+- 已合并需求/feature/architecture；
+- 当前 change 的 effective view；
+- 可重算代码/测试/配置现状证据；
+- 拟定 feature/scenario 身份与模式。
+
+不得从代码推断历史 Why，不读取其它 change/archive/partial seed staging。
+
+### MODIFY
+
+目标存在时读取完整被触及章节：
+
+- 已有锚用 MODIFIED，并携整节全量内容遵守 S37；
+- 需要新章节时可在同一 delta 用 ADDED；
+- 多场景共享 overview/traceability 时把所有变更交回同一 target delta。
+
+### CREATE
+
+目标缺失时返回可独立成立的完整场景文档，至少包含：
+
+1. 标题、SXX、feature、来源；
+2. 场景目标与用户价值；
+3. 参与者及职责；
+4. 前置/成功后置条件；
+5. 完整 Mermaid `sequenceDiagram` 主路径；
+6. 步骤说明；
+7. alt/异常/边界用例；
+8. 与 requirement/API/DB/test/decision 的追溯；
+9. 明确非目标与安全边界。
+
+禁止只给 skeleton/TODO。CREATE 仍由 change-writer 写 `## ADDED — ...（全新场景文档）`，不使用 CREATE marker。
+
+### API/DB 派生接口
+
+输出必须明确：
+
+- 哪些交互是 HTTP/RPC/消息边界，供 api-designer 判定；
+- 哪些步骤读写持久化，供 db-designer 判定；
+- 主/异常路径与验收点，供 test-writer/test-orchestrator 生成真实用例。
+
+若无法判断，把具体缺口返回 change-writer 标 AMBIGUOUS；不在 delta-writing 启动 JIT 人工确认。
+
+### 完成检查
+
+- 时序参与者与步骤说明一一对应；
+- API 先有时序来源；异常至少覆盖输入、依赖、并发/幂等或权限中适用项；
+- 无 verified/confirmed/baseline warning 写入；
+- 返回的目标路径与 change-writer 提供的 canonical target 一致。
+
+## 场景 CREATE canonical 结构与兼容校验
+
+### 适用与输出所有权
+
+当 change-writer 依据 on-touch-v1 把场景目标标为 CREATE 并咨询本 Skill 时，返回的完整文档必须遵循 `spec/baseline-closure.md` §17。change-writer 仍是目标唯一 Delta writer；本 Skill 不另写第二份文件。
+
+### canonical 章节与内容门
+
+新场景固定使用：`场景目标`、`参与者`、`前置条件`、`成功后置条件`、`时序图`、`步骤说明`、`异常与边界`、`追溯`。其中步骤标题只能写 `## 步骤说明`，不得为新文档选择同义标题。
+
+步骤说明必须满足：
+
+1. 唯一一个步骤章节；
+2. 至少 3 个非空有序列表项；
+3. 每项有明确主语；
+4. 与 Mermaid `Step N` 主路径一一对应；
+5. 异常只在正常步骤中引用，详细内容放 `异常与边界`。
+
+时序图必须位于合法 `mermaid` fence，声明 `sequenceDiagram`、至少两个适用参与者和至少一条消息；每条消息保持单行并带 `Step N:`。异常/边界与追溯章节都必须包含非空权威正文，不得用注释、代码样例或占位文本满足完整度。
+
+### 兼容读取说明
+
+CLI 为读取存量文档兼容 `步骤说明`、`主路径步骤`、`主路径`、`主流程`、`正常流程`、`main path` 的精确标题。该集合不改变本 Skill 的 canonical 输出，也不允许用“标题或散文包含步骤二字”代替真实有序列表。
+
+### 返回前检查
+
+- 从磁盘或待返回最终文本重读：标题唯一、至少 3 步、列表非空、Mermaid 参与者/消息齐备、异常/追溯非空。
+- 明确 API/RPC/消息与持久化派生结论，供 api-designer/db-designer 判定适用或 SKIP。
+- 给出需求 AC、EX 与真实 UT/ST ID 追溯；不使用通配或占位 ID。
+- 将检查结论交回 change-writer；最终由 change-writer 运行 `openlogos change-lint` 到 exit 0。

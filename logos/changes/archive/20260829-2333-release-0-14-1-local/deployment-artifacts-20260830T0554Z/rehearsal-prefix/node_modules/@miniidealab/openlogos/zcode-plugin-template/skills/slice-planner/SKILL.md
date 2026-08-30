@@ -1,0 +1,195 @@
+---
+name: "slice-planner"
+description: "OpenLogos slice-planner 方法论 Skill"
+---
+# Skill: Slice Planner（切片规划）
+
+> 在变更 **merge 之后、implement 之前**，把已合并规格拆成"良构 `[code]` 切片"，写入 `tasks.md` 的 `[code]` section。
+> 这是 launched 变更下 `[code]` 切片的**唯一事实源**——切几片、每片做什么，**只在此处用六维打分 + 删后续证伪门决定一次**；下游 `code-implementor` 只逐行消费，不再重复打分、不再自行分批。
+
+## 触发条件
+
+- `openlogos next` 落在 `ready-to-implement` 驻留态 / `plan-slices` 节点（宿主 driver 注入"规划切片"上下文）
+- 用户在变更 merge 完成后说"划分切片"、"写 `[code]`"、"规划实现任务"
+
+## 前置依赖（强制，缺一不可）
+
+1. 活跃提案存在且已完成 spec-complete：提案目录有 `SPEC_MERGED`（或 `MERGED`）marker。
+   - 含 `[delta]` 提案：该 marker 表示 delta 已真实合入主规格。
+   - 无 `[delta]` 的纯代码提案：该 marker 必须由 no-delta `openlogos merge <slug>` 写入，表示本次没有规格 delta 但规格阶段已完成。
+2. 规格 delta 已合并进主文档，或 no-delta `SPEC_MERGED` 明确记录本次无需文档 delta。
+3. **测试用例已合并、ID 已定**：相关 `logos/resources/test/*-test-cases.md` 或显式复用声明含真实 `UT-Sxx-..` / `ST-Sxx-..` / `SMOKE-*` ID。
+
+> 若以上任一不满足（尤其缺 `SPEC_MERGED` 或测试 ID 未定），说明尚未到切片时机。**禁止用占位 ID 切片**，提示先完成 no-delta merge / merge 或补齐真实测试 ID。这正是本环节挪到 spec-complete 后的根本原因：对**已定稿规格 + 真实测试 ID**切，而非对草案或隐含假设猜。
+
+## 核心职责
+
+唯一交付物：`tasks.md` 的 `## [code]` section——一组**过了删后续证伪门**的良构切片，每条末尾标注其覆盖的真实 `UT-Sxx-..` / `ST-Sxx-..`。
+
+不产 `proposal.md`、不产 `[delta]`、不产 `[deploy]`（那是 `change-writer` 的职责），不写业务代码（那是 `code-implementor` 的职责）。
+
+## 执行步骤
+
+### Step 1: 读已合并规格 + 真实测试 ID
+
+读 `logos/changes/<slug>/proposal.md` 的变更范围，再读已合并进 `logos/resources/` 的架构 / 场景 / 功能规格与 `test/*-test-cases.md`，列出本次要落地的代码能力清单与可用的 `UT/ST` ID 全集。
+
+### Step 2: 六维打分（决定"是否大任务"）
+
+| 维度 | 0 分 | 1 分 | 2 分 |
+|---|---|---|---|
+| 影响范围 | 1 个文件或局部函数 | 2-5 个相关文件 | 跨模块 / 跨服务 / 跨端 |
+| 行为复杂度 | 单一路径 bugfix | 2-3 个分支 | 多场景 / 状态机 / 异步流程 |
+| 契约变化 | 无 | CLI/API 输出小改 | API/DB/flow/兼容契约变更 |
+| 测试规模 | 1-3 个用例 | 4-8 个用例 | 9+ 个用例或多类测试矩阵 |
+| 风险等级 | 易回滚 | 有兼容性风险 | 涉数据、安全、部署、迁移 |
+| 不确定性 | 原因明确 | 1 个待验证假设 | 多个未知点 / 需要探索 |
+
+- **0-7 分 = 不是大任务 → 单切片**。即使含代码 + 测试 + reporter + golden，也只写 1 条 `[code]`。
+- **8 分及以上 = 大任务 → 进入 Step 3 尝试垂直拆分**。
+
+### Step 3: 垂直/横向判别器（选对切片轴）
+
+只有按**子能力垂直拆分**才算合格；**禁止按工种 / 层 / 文件横切**。给每片起名后看名字落在哪类：
+
+- 🚩 **横向红旗（禁止，命中即推倒重切）**：片名是层 / 文件 / 工种——
+  "地基 / 底座 / 读写 / 管道 / 接线 / helper / 工具函数 / config 接入 / schema / 类型 / 数据层（单独）/ UI 展示（单独）/ 写测试 / 补 reporter / 重拍 golden"。
+  一组切片若读起来像"**先建底座 → 再写逻辑 → 再补工具 → 最后接 UI**"，就是把**施工顺序当成了切片**，必须重切。
+- ✅ **垂直合格**：片名是**一条端到端能力线 / 一个场景 / 一个独立子模块的完整闭环**——数据→逻辑→产出→该片测试 一并落在同一片内。
+
+### Step 4: 删后续证伪门（强制，必须写出逐片结论）
+
+拟好 N 片后，**逐片**自问两题：
+
+- **(a) 删后续能否独立过全量 verify**：把切片 i+1..N 全部删掉、只做切片 i，`openlogos verify`（永远全量回归）能绿吗？
+- **(b) 是否端到端可观察**：切片 i 做完是否产生了一条端到端、可观察的能力，而不只是给后续片**铺管道 / 接线**？
+
+任一题答"否" → 切片 i **不自闭环** → **向前合并**进依赖它的那一片，重跑本门。
+
+> ⚠️ 为什么是这道门：切片只 scope `code` 的上下文注入、**不 scope verify**。一个"地基片"（铺好没人用，(b) 否）或"前向依赖片"（逻辑依赖还没落地的后续片，(a) 否）做完跑全量 verify 必然飘红，循环无法出环，会死锁在 `verify-failed`。删后续门就是在切片阶段**提前证伪**这种横切。
+
+**必须把这一轮逐片自问的结论写进 `tasks.md` 的 `[code]` 开头**（哪几片合并、为何合并），作为切片决策的留痕。
+
+### Step 5: 逃生口（大任务但拆不开 → 显式单切）
+
+评分 ≥8 但**任何垂直切法都过不了 Step 4 的删后续门**（典型：能力原子、各部分互相咬死，如"三信号互相依赖的完成判定"）→ **保留 1 条切片**，并在任务里写明"评分达大任务，但 <原因> 不可安全垂直拆分，故单片"。
+
+这是**合规结果，不是偷懒**。不确定两片能否各自闭环时，一律合并（`SKILL.md` 硬规则：不确定时合并）。
+
+### Step 6: 写 `[code]` section
+
+1. **每条 = 一个自闭环切片**：业务代码 + 该片 UT/ST + OpenLogos reporter + 必要 golden baseline，**不依赖同批后续切片**。
+2. **有序、无前向依赖**：从上到下串行实现（v1 不建模 DAG）；被依赖的片排前。
+3. **标注真实用例 ID**：每条末尾标注覆盖的 `UT-Sxx-..` / `ST-Sxx-..`，与已合并 `test/*-test-cases.md` 对齐（**此时 ID 已定，不再用占位**）。
+4. **禁止按工种拆**：实现代码 / 写测试 / 写 reporter / 更新 golden / 补文档注释，必须合并进同一自闭环切片，不得各自成片。
+5. **空 `[code]`**：纯 docs/delta 提案无代码产出时，`[code]` 可为空——切片循环退化为 `tests_green`，不影响。
+
+**Smoke 用例变更的强制闭环**：当本提案新增/修改 `logos/resources/test/smoke/*.md`，`[code]` 切片文本必须列出新增 `SMOKE-*` ID、要求实现/更新 `scripts/smoke-*` runner、写 `smoke-results.jsonl` reporter、接入 `logos.config.json.smoke.command` 或 `scripts/run-smoke.js`，并要求完成后跑 smoke 覆盖预检。
+
+写完后**从磁盘读回 `[code]` section** 向用户展示原文确认落盘。
+
+## 输出规范
+
+- 只写 `tasks.md` 的 `## [code]` section（及其开头的删后续自检结论注释）；不动 `proposal.md`、`[delta]`、`[deploy]`。
+- 完成后提醒用户：切片已就绪，可在 `slice-exit` 门确认后进入 implement 切片循环。
+
+## 示例
+
+**单切片（0-7 分，或 ≥8 但原子不可拆）**：
+
+```markdown
+## [code] 代码实现
+> 删后续自检：评分 10 但三信号（心跳/完成令牌/产物核验）互相咬死，任何横切都过不了全量 verify，故单片。
+- [ ] 单切片：实现三信号完成判定握手（terminal 心跳 + 进度令牌读写 + helper/env 注入 + 产物核验 + agent-dead），并同步 UT/ST + reporter（覆盖 UT-S46-01..09、ST-S46-01..03）
+```
+
+**多切片（≥8 且能垂直闭环）**：
+
+```markdown
+## [code] 代码实现
+> 删后续自检：3 片各自删后续可过全量 verify、各有端到端可观察能力，无前向依赖。
+- [ ] 切片1：订单数据层与迁移，同步 DAO UT + reporter（覆盖 UT-S01-01..05）
+- [ ] 切片2：订单 API handler，同步 API ST + reporter（覆盖 ST-S01-01..03）
+- [ ] 切片3：前端订单面板，同步组件 UT/ST + reporter（覆盖 UT-S02-10..18）
+```
+
+## 推荐提示词
+
+- `请按 slice-planner 规划本提案的 [code] 切片：先读已合并规格与真实测试 ID，六维打分，再用垂直/横向判别器与删后续证伪门逐片自检（写出结论），拆不开就显式单切。只写 tasks.md 的 [code] section 并读回确认。`
+
+## 纯代码提案处理规则
+
+当提案无 `[delta]` section 时，slice-planner 不得自行认定 spec/merge 已空过。必须先检查 `SPEC_MERGED`：
+
+- 缺 `SPEC_MERGED`：拒绝切片，提示执行 `openlogos merge <slug>` 生成 no-delta spec-complete marker。
+- 有 `SPEC_MERGED` 但缺真实测试 ID：拒绝切片，提示补充或声明复用真实 UT/ST/SMOKE ID。
+- 两者均满足：按既有六维打分、垂直/横向判别器与删后续证伪门写 `[code]`。
+
+## 硬性交付门：openlogos change-lint（切片产出完成后强制）
+
+> change-lint-shift-left 起，切片规划的交付自检升格为**机器硬门**：`[code]` 切片写入 `tasks.md` 完毕后、报告完成前，必须通过 change-lint。
+
+**规则（强制）**：
+
+1. 切片清单写入 `tasks.md` 后运行：
+   ```bash
+   cd <项目根目录> && openlogos change-lint
+   ```
+2. **exit 0 才可交付**——才允许报告切片规划完成、把控制权交回 driver 或用户。
+3. **exit 2（检查红）**：按每条 violation 的 fix_hint 逐条修复后重跑，直至 exit 0；禁止带红交付。常见红项：`[code]` 切片引用的测试 ID 含占位/通配写法（L3 拒绝采信——切片必须引用 merge 后规格中的**真实** UT/ST/SMOKE ID）、切片任务误写进 `[delta]`/`[deploy]` 导致结构异常（L1/L5）。
+4. **exit 1（操作错误）**：按 stderr message 排障后重跑。
+5. 该命令只读、非人类确认点；通过 lint **不**等于通过 slice-exit 门——删后续证伪门与用户批准仍按既有流程执行。
+
+## 测试—切片 manifest 生产与恢复职责
+
+### 交付物扩展
+
+slice-planner 在 spec-complete 后不再只写 `tasks.md` 的 `[code]` section；凡代码提案包含两个及以上顶层切片，还必须在活跃提案根目录原子生成 `TEST_SLICE_MANIFEST.json`。`[code]` 与 manifest 必须在同一轮规划中共同收敛，任一无效均不得报告完成。
+
+### 初次生成模式
+
+1. 完成既有六维评分、垂直/横向判别与删后续证伪门。
+2. 从已合并测试规格提取本提案新增或修改的真实 UT/ST/SMOKE ID；禁止占位、通配和不存在 ID。
+3. 为每个顶层切片生成稳定 `slice_id`，推荐格式 `slice-<两位序号>-<规范化短名>`；输入不变时重复运行必须逐字节稳定。
+4. 每个变更测试 ID 必须恰好出现在一个切片的 `owned_test_ids`；共享基线回归不重复归属。
+5. 为每片填写非空 `runner_selectors`，selector 必须能让 runner 执行该片 owned tests，并允许 verify 叠加基线回归。
+6. 计算规范化 `[code]` section 的 `task_fingerprint`，以及本提案涉及的已合并测试规格内容 `spec_fingerprint`；算法统一为 SHA-256、小写十六进制。
+7. 先写同目录临时文件，完成 schema、唯一归属、ID 存在性、selector 与 fingerprint 读回校验后原子 rename。
+
+manifest 最小结构：
+
+```json
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "example-change",
+  "module": "core",
+  "task_fingerprint": "sha256:<64-hex>",
+  "spec_fingerprint": "sha256:<64-hex>",
+  "slices": [
+    {
+      "slice_id": "slice-01-capability",
+      "task_text": "端到端能力切片",
+      "owned_test_ids": ["UT-S01-01", "ST-S01-01"],
+      "runner_selectors": ["UT-S01-01", "ST-S01-01"]
+    }
+  ]
+}
+```
+
+示例中的 change、测试 ID 与哈希只说明结构，实际交付必须替换为当前提案真实值。
+
+### 恢复重建模式
+
+当 OpenLogos 输出 `next_node.id=plan-slices` 且 reason 为 manifest 缺失、已知版本非法或 stale 时：
+
+- 保留既有 `[code]` 切片文本、顺序、父子层级、全部 checkbox 和 `SLICES_APPROVED`；禁止重新评分、重新切片或清空任务。
+- 保留可由既有切片文本确定的稳定 `slice_id`。旧 manifest 可读时沿用其 ID；完全缺失时由规范化顺序与文本确定性重建。
+- 读取 `SLICE_CHECKPOINTS.jsonl` 仅用于验证身份兼容，禁止改写、删除或伪造 checkpoint。
+- 重新从已合并规格计算 owned IDs、selectors 与 fingerprints，仅替换 manifest。
+- 若一个 ID 无法唯一归属、既有切片文本漂移导致身份无法保持，必须输出歧义并停止，不得猜测。
+
+### 完成屏障与读回
+
+交付前必须从磁盘重新读取 `tasks.md` 与 manifest，并验证：schema 主版本受支持；change/module 匹配；slice ID/测试 ID 无重复；变更测试集合无遗漏、无未知 ID；每片 selector 非空；task/spec fingerprint 可重算一致；manifest 的切片顺序与 `[code]` 顶层顺序一致。
+
+RunLogos 或其他宿主的 Agent 自报 done 不是完成证据。宿主必须使用 OpenLogos 提供的 validator/状态派生重算上述谓词；失败时按 violation 幂等修复。manifest 可恢复重试预算与代码 repair budget 完全分离。

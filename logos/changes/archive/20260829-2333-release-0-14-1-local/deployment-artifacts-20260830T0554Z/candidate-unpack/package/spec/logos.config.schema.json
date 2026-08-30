@@ -1,0 +1,283 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openlogos.ai/schemas/logos.config.json",
+  "title": "OpenLogos Project Configuration",
+  "description": "logos.config.json 是 OpenLogos 项目的核心配置文件（位于 logos/ 目录下），定义项目的基本信息和文档模块结构。",
+  "type": "object",
+  "required": ["name", "documents"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "项目名称"
+    },
+    "description": {
+      "type": "string",
+      "description": "项目描述"
+    },
+    "maxOpenTabs": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 20,
+      "description": "RunLogos 中最大打开标签页数（仅 RunLogos 使用）"
+    },
+    "modules": {
+      "type": "array",
+      "description": "代码模块定义（保留字段，供 RunLogos 使用）",
+      "items": {
+        "type": "object"
+      }
+    },
+    "fileModules": {
+      "type": "object",
+      "description": "文件级模块映射（保留字段，供 RunLogos 使用）"
+    },
+    "locale": {
+      "type": "string",
+      "enum": ["en", "zh"],
+      "default": "en",
+      "description": "CLI and RunLogos display language"
+    },
+    "documents": {
+      "type": "object",
+      "description": "文档模块定义。每个 key 是模块标识符，value 定义模块的标签、路径和文件匹配模式。",
+      "additionalProperties": {
+        "$ref": "#/definitions/DocumentModule"
+      }
+    },
+    "verify": {
+      "type": "object",
+      "description": "测试验收配置（可选）。配置 openlogos verify 的行为。",
+      "properties": {
+        "result_path": {
+          "type": "string",
+          "default": "logos/resources/verify/test-results.jsonl",
+          "description": "最终测试结果 JSONL 文件路径（相对项目根目录）。两阶段模型合并后也写入此路径"
+        },
+        "pre_run_command": {
+          "type": "string",
+          "description": "兼容字段：单阶段测试命令。配置后 openlogos verify 会先执行此命令再读取结果"
+        },
+        "regression_command": {
+          "type": "string",
+          "description": "回归测试命令。配置后 openlogos verify 会在增量测试前执行"
+        },
+        "incremental_command": {
+          "type": "string",
+          "description": "增量测试命令。配置后 openlogos verify 会在回归测试后执行"
+        },
+        "regression_result_path": {
+          "type": "string",
+          "description": "回归阶段 JSONL 结果路径。未配置时 CLI 必须通过快照或等价机制保留阶段结果"
+        },
+        "incremental_result_path": {
+          "type": "string",
+          "description": "增量阶段 JSONL 结果路径。未配置时 CLI 必须通过快照或等价机制保留阶段结果"
+        },
+        "merge_results": {
+          "type": "string",
+          "enum": ["last-write-wins"],
+          "default": "last-write-wins",
+          "description": "两阶段结果合并策略。同一用例 ID 多次出现时，最后一次结果生效"
+        },
+        "sandbox_mode": {
+          "type": "string",
+          "enum": ["off", "auto", "always"],
+          "default": "off",
+          "description": "verify 沙箱执行模式；auto 表示默认隔离，环境不支持时可降级并告警，always 表示必须隔离"
+        },
+        "sandbox_root": {
+          "type": "string",
+          "default": "/private/tmp",
+          "description": "verify 沙箱工作根目录。沙箱执行器应在此目录内运行命令"
+        },
+        "sandbox_deny_workspace_write": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否禁止 verify 预跑命令写入仓库工作区；true 时必须阻断工作区写入"
+        },
+        "test_command": {
+          "type": "string",
+          "description": "旧字段，保留兼容。建议使用 pre_run_command"
+        }
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "description": "部署后冒烟测试配置（可选）。配置 openlogos smoke 的行为。",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "冒烟测试命令。openlogos smoke 会先执行此命令再读取结果"
+        },
+        "result_path": {
+          "type": "string",
+          "default": "logos/resources/verify/smoke-results.jsonl",
+          "description": "冒烟测试结果 JSONL 文件路径（相对项目根目录）"
+        },
+        "report_path": {
+          "type": "string",
+          "default": "logos/resources/verify/smoke-report.md",
+          "description": "冒烟测试报告输出路径（相对项目根目录）"
+        },
+        "sandbox_mode": {
+          "type": "string",
+          "enum": ["off", "auto", "always"],
+          "default": "off",
+          "description": "smoke 沙箱执行模式；auto 表示默认隔离，环境不支持时可降级并告警，always 表示必须隔离"
+        },
+        "sandbox_root": {
+          "type": "string",
+          "default": "/private/tmp",
+          "description": "smoke 沙箱工作根目录。沙箱执行器应在此目录内运行命令"
+        },
+        "sandbox_deny_workspace_write": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否禁止 smoke 命令写入仓库工作区；true 时必须阻断工作区写入"
+        }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "description": "可编排研发流程配置（可选）。",
+      "properties": {
+        "cmd_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "flow 节点 cmd: 谓词的项目级默认超时秒数（节点级 cmd_timeout_seconds 优先；二者均须整数 ≥ 1）"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceRoots": {
+      "type": "object",
+      "description": "源代码根目录配置。由 code-implementor skill 自动写入，或用户手动配置。",
+      "properties": {
+        "src": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["src"],
+          "description": "业务代码根目录列表（相对项目根目录）"
+        },
+        "test": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["test"],
+          "description": "测试代码根目录列表（相对项目根目录）"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "DocumentModule": {
+      "type": "object",
+      "required": ["label", "path", "pattern"],
+      "properties": {
+        "label": {
+          "$ref": "#/definitions/I18nLabel",
+          "description": "模块显示名称（支持多语言）"
+        },
+        "path": {
+          "type": "string",
+          "description": "模块根目录的相对路径（相对于 logos.config.json 所在目录）"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "文件匹配的 glob 模式"
+        }
+      }
+    },
+    "I18nLabel": {
+      "type": "object",
+      "required": ["en"],
+      "properties": {
+        "en": {
+          "type": "string",
+          "description": "英文标签"
+        },
+        "zh": {
+          "type": "string",
+          "description": "中文标签"
+        }
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "name": "My SaaS Project",
+      "description": "A SaaS product following OpenLogos methodology",
+      "locale": "en",
+      "documents": {
+        "prd": {
+          "label": { "en": "Product Docs", "zh": "产品文档" },
+          "path": "./resources/prd",
+          "pattern": "**/*.{md,html,htm,pdf}"
+        },
+        "api": {
+          "label": { "en": "API Docs", "zh": "API 文档" },
+          "path": "./resources/api",
+          "pattern": "**/*.{yaml,yml,json}"
+        },
+        "test": {
+          "label": { "en": "Test Cases", "zh": "测试用例" },
+          "path": "./resources/test",
+          "pattern": "**/*.md"
+        },
+        "scenario": {
+          "label": { "en": "Scenarios", "zh": "业务场景" },
+          "path": "./resources/scenario",
+          "pattern": "**/*.json"
+        },
+        "database": {
+          "label": { "en": "Database", "zh": "数据库" },
+          "path": "./resources/database",
+          "pattern": "**/*.sql"
+        },
+        "verify": {
+          "label": { "en": "Verify Reports", "zh": "验收报告" },
+          "path": "./resources/verify",
+          "pattern": "**/*.{jsonl,md}"
+        },
+        "changes": {
+          "label": { "en": "Change Proposals", "zh": "变更提案" },
+          "path": "./changes",
+          "pattern": "**/*.{md,json}"
+        }
+      },
+      "verify": {
+        "result_path": "logos/resources/verify/test-results.jsonl",
+        "pre_run_command": "npm test",
+        "sandbox_mode": "auto",
+        "sandbox_root": "/private/tmp",
+        "sandbox_deny_workspace_write": true
+      },
+      "smoke": {
+        "command": "npm run smoke",
+        "result_path": "logos/resources/verify/smoke-results.jsonl",
+        "report_path": "logos/resources/verify/smoke-report.md",
+        "sandbox_mode": "auto",
+        "sandbox_root": "/private/tmp",
+        "sandbox_deny_workspace_write": true
+      }
+    },
+    {
+      "name": "Two Phase Verify Project",
+      "documents": {},
+      "verify": {
+        "result_path": "logos/resources/verify/test-results.jsonl",
+        "regression_command": "npm test",
+        "incremental_command": "npm run test:changed",
+        "regression_result_path": "logos/resources/verify/test-results.regression.jsonl",
+        "incremental_result_path": "logos/resources/verify/test-results.incremental.jsonl",
+        "merge_results": "last-write-wins",
+        "sandbox_mode": "auto",
+        "sandbox_root": "/private/tmp",
+        "sandbox_deny_workspace_write": true
+      }
+    }
+  ]
+}

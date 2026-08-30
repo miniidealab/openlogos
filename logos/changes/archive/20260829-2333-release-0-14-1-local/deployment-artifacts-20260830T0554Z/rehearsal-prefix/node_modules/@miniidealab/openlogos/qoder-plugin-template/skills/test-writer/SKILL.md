@@ -1,0 +1,407 @@
+---
+name: "test-writer"
+description: "OpenLogos test-writer 方法论 Skill"
+---
+# Skill: Test Writer
+
+> 基于时序图、API 规格和 DB 约束，为每个业务场景设计单元测试用例和场景测试用例。适用于所有项目类型（API 服务、CLI 工具、前端应用、库等），是代码生成前的必要前置步骤。
+
+## 触发条件
+
+- 用户要求设计测试用例或测试方案
+- 用户提到 "Phase 3 Step 4a"、"Step 4a"、"测试先行"、"测试设计"
+- 已有场景时序图，需要在写代码前设计测试
+- 用户指定某个场景编号（如 S01）需要设计测试
+
+## 前置依赖
+
+- `logos/resources/prd/3-technical-plan/2-scenario-implementation/` 中包含场景时序图（**必需**）
+- `logos/resources/prd/3-technical-plan/3-deployment/` 中包含部署方案（如项目需要部署则必需）
+- `logos/resources/api/` 中包含 API 规格（有则读取，无则跳过——非 API 项目可能没有）
+- `logos/resources/database/` 中包含 DB DDL（有则读取，无则跳过）
+- `logos/resources/prd/1-product-requirements/` 中包含需求文档（用于追溯验收条件）
+
+**不可跳过**：无论项目类型如何，Step 4a（本 Skill）都必须执行。若部署方案声明需要部署，本 Skill 必须一并设计部署后冒烟测试。
+
+## 核心能力
+
+1. 从 API 字段约束（类型、格式、长度、枚举）中提取单元测试用例
+2. 从 DB 约束（UNIQUE、CHECK、NOT NULL、FK）中提取单元测试用例
+3. 从业务规则和 EX 异常用例中的单点错误处理提取单元测试用例
+4. 从时序图 Step 序列提取场景测试用例（主路径）
+5. 从 EX 异常用例提取场景测试用例（异常路径）
+6. 从部署方案提取 smoke 测试用例（仅需要部署的项目）
+7. 从 Phase 1/2 验收条件反向校验测试覆盖完整性
+
+## 执行步骤
+
+### Step 1: 加载场景上下文
+
+读取以下文件建立完整上下文：
+
+- 场景时序图（`logos/resources/prd/3-technical-plan/2-scenario-implementation/`）
+- 部署方案（`logos/resources/prd/3-technical-plan/3-deployment/`）—— 如果项目需要部署
+- API YAML（`logos/resources/api/`）—— 如果存在
+- DB DDL（`logos/resources/database/`）—— 如果存在
+- Phase 1 需求文档（验收条件）
+- Phase 2 产品设计文档（交互级验收条件）
+
+确认当前场景的：
+- **Step 数量**：时序图中有多少个 Step
+- **EX 数量**：有多少个异常用例
+- **API 端点**：涉及哪些端点及其字段约束
+- **DB 表**：涉及哪些表及其约束
+
+### Step 2: 设计单元测试用例
+
+从三类来源提取单元测试用例：
+
+#### 2a: API 字段约束
+
+逐个检查 API 端点的 `requestBody` 和 `parameters`：
+
+- `type` → 类型错误用例（传入错误类型）
+- `format`（email、uuid、date-time）→ 格式校验用例
+- `minLength` / `maxLength` → 边界值用例（刚好达到、超出 1 位）
+- `required` → 必填缺失用例
+- `enum` → 枚举值用例（合法值 + 非法值）
+- `minimum` / `maximum` → 数值范围用例
+
+#### 2b: DB 约束
+
+逐个检查相关表的约束：
+
+- `UNIQUE` → 重复插入用例
+- `NOT NULL` → 空值插入用例
+- `CHECK` → 违反检查条件的用例
+- `FOREIGN KEY` → 引用不存在记录的用例
+- `DEFAULT` → 不传值时默认值验证
+
+#### 2c: 业务规则
+
+从时序图 Step 说明和 EX 异常用例中提取单点业务逻辑：
+
+- 权限检查（未登录、无权限）
+- 状态机转换（只有特定状态才能执行操作）
+- 限流 / 频控规则
+- 数据计算逻辑（金额计算、折扣规则）
+
+**每个单元测试用例格式**：
+
+| 字段 | 说明 |
+|------|------|
+| ID | `UT-{场景编号}-{序号}`，如 `UT-S01-01` |
+| 描述 | 测试什么行为 |
+| 来源 | 约束出处（如 `auth.yaml → register → email: format:email`） |
+| 前置条件 | 测试前需要的状态 |
+| 输入 | 具体输入值 |
+| 预期输出 | 期望的返回值或错误信息 |
+
+### Step 3: 设计场景测试用例
+
+从两类来源提取场景测试用例：
+
+#### 3a: 主路径（时序图 Step 序列）
+
+将时序图的完整 Step 1 → Step N 视为一次端到端代码调用链：
+
+- 确定场景的入口和出口
+- 标注每个 Step 之间的数据传递（前一步输出作为后一步输入）
+- 验证最终状态（数据库记录、返回值）
+
+#### 3b: 异常路径（EX 异常用例）
+
+将每个 EX 异常用例展开为场景测试用例：
+
+- 标注异常在哪个 Step 触发
+- 验证异常触发后的处理逻辑（错误返回、补偿/回滚）
+- 验证异常未影响其他数据的完整性
+
+**每个场景测试用例格式**：
+
+| 字段 | 说明 |
+|------|------|
+| ID | `ST-{场景编号}-{序号}`，如 `ST-S01-01`；无法自动化的用例加 `[manual]` 后缀，如 `ST-S01-05 [manual]` |
+| 描述 | 测试什么场景流程 |
+| 覆盖 Steps | 覆盖时序图的哪些 Step（如 `Step 1→6`）或哪个 EX（如 `EX-2.1`） |
+| 前置条件 | 测试前需要的状态和数据 |
+| 操作序列 | 按 Step 顺序的操作列表 |
+| 预期结果 | 最终状态（返回值 + 数据库状态 + 副作用） |
+
+#### 3c: `[manual]` 标记规则
+
+以下类型的 ST 用例**必须**在 ID 后追加 `[manual]` 标记，`openlogos verify` 会将其从覆盖率计算中排除，不计入 `defined_count`，不出现在 `uncovered_cases`：
+
+- 需要真实 TTY / PTY 渲染（如 CLI 交互式提示、颜色输出、光标控制、进度条）
+- 需要跨窗口或多进程协作（如打开新终端窗口、进程间通信）
+- 需要人工视觉验证（截图对比、UI 渲染效果、字体/颜色感知）
+- 依赖外部硬件或不可模拟的环境（摄像头、蓝牙、特定操作系统 GUI）
+
+**判断标准**：如果该用例在 CI 无头环境中无法稳定运行并自动断言结果，就应加 `[manual]`。
+
+#### 3d: 部署后冒烟测试（需要部署时）
+
+当部署方案存在且声明需要部署时，必须设计 smoke 测试用例。冒烟测试验证“部署后的环境是否可用”，不替代 UT/ST/API 编排测试。
+
+从部署方案中提取以下用例：
+
+- 健康检查：服务进程、HTTP health endpoint、CLI version 或桌面应用启动检查
+- 核心入口：主页、登录页、主 API、主命令
+- 数据库迁移：关键表/字段存在、迁移版本正确、初始化数据可读
+- 静态资源：前端 bundle、图片、CSS、字体或下载资源可访问
+- 配置与密钥：必要环境变量存在且没有使用测试占位值
+- 关键链路：最小可用用户路径，例如登录、创建一条核心记录、读取结果
+- 日志与监控：部署后没有阻断性错误
+
+**每个 smoke 用例格式**：
+
+| 字段 | 说明 |
+|------|------|
+| ID | `SMOKE-{模块}-{序号}`，如 `SMOKE-core-01` |
+| 描述 | 验证什么部署后行为 |
+| 来源 | 部署方案章节或检查项 |
+| 目标环境 | local / staging / production |
+| 前置条件 | 部署完成、迁移完成、必要配置存在 |
+| 操作 | 执行的命令、请求或访问动作 |
+| 预期结果 | 返回码、页面状态、日志、数据库状态 |
+
+**同步生成 code 阶段任务要求**：
+
+只要本轮新增或修改 `SMOKE-*` 用例，后续 `tasks.md` 的 `[code]` section 必须包含 smoke runner / reporter / dispatcher 闭环任务。测试设计阶段需要在交付说明中明确提醒 change-writer/code-implementor：
+
+- 实现或更新 `scripts/smoke-*.sh`、`scripts/smoke-*.js` 或等效 smoke runner，且 runner 必须覆盖新增或修改的 `SMOKE-*` ID。
+- smoke runner 必须写入 `logos/resources/verify/smoke-results.jsonl`，或写入 `logos.config.json.smoke.result_path` 指定路径。
+- `logos.config.json.smoke.command` 必须能执行新增 runner；推荐接入统一 `scripts/run-smoke.js` smoke dispatcher 自动发现 `scripts/smoke-*`。
+- code 阶段完成前必须运行 smoke 覆盖预检或等效检查，确认新增 `SMOKE-*` 不在 uncovered cases 中。
+
+### Step 4: 覆盖度校验
+
+反向校验测试用例是否覆盖了所有关键约束：
+
+- [ ] Phase 1 每个正常验收条件至少对应 1 个 ST 用例
+- [ ] Phase 1 每个异常验收条件至少对应 1 个 ST 或 UT 用例
+- [ ] 每个 EX 异常用例至少对应 1 个 ST 用例
+- [ ] API 每个 `required` 字段至少 1 个 UT 用例
+- [ ] DB 每个 `UNIQUE` / `CHECK` 约束至少 1 个 UT 用例
+- [ ] 如需要部署，部署方案中的每个部署后检查项至少对应 1 个 SMOKE 用例
+
+如有未覆盖项，补充用例或向用户说明理由。
+
+### Step 5: 验收条件追溯
+
+将 Phase 1 需求文档中的每个 GIVEN/WHEN/THEN 验收条件提取出来，为每条分配一个追溯 ID，并关联到覆盖该条件的测试用例 ID。
+
+#### 验收条件 ID 规则
+
+- 格式：`{场景编号}-AC-{两位序号}`，如 `S01-AC-01`、`S01-AC-02`
+- 按需求文档中出现的顺序编号，正常和异常条件统一编号
+- 同一场景的 AC ID 必须连续且唯一
+
+#### 追溯表填写规则
+
+1. 从需求文档读取当前场景的所有验收条件（正常 + 异常）
+2. 为每条验收条件分配 AC ID
+3. 找到覆盖该条件的测试用例 ID（可以是 UT 或 ST），填入「覆盖用例」列
+4. 每个 AC 至少关联 1 个测试用例；如果无法覆盖，在「覆盖用例」列注明原因
+
+`openlogos verify` 会解析此追溯表，将 AC → 用例 ID → 运行结果三层联动，生成完整的验收追溯报告。
+
+### Step 6: 输出测试用例规格文档
+
+按场景输出 Markdown 格式的测试用例规格文档。若需要部署，同时输出 smoke 测试用例规格文档。
+
+### Step 7: 引导后续操作
+
+根据项目类型引导用户进入下一步：
+
+- **涉及 API** → 「继续进入 Step 4b 设计 API 编排测试？」
+- **不涉及 API** → 「测试设计已完成，建议进入代码生成：对我说『按 S01 的规格帮我实现』」
+
+## 输出规范
+
+- **文件格式**：Markdown
+- **存放位置**：`logos/resources/test/`
+- **命名规则**：`<module>-{场景编号}-test-cases.md`（如 `core-S01-test-cases.md`；从 `logos-project.yaml` 的 `modules[]` 读取当前模块，默认为 `core`）
+- 每个文件包含：单元测试用例（按来源分组）+ 场景测试用例（主路径 + 异常路径）
+- **Smoke 存放位置**：`logos/resources/test/smoke/`
+- **Smoke 命名规则**：`<module>-smoke-test-cases.md`
+- 用例 ID 全局唯一：`UT-{场景编号}-{序号}` / `ST-{场景编号}-{序号}` / `SMOKE-{module}-{序号}`
+
+### 文档结构模板
+
+```markdown
+# {场景编号}: {场景名称} — 测试用例
+
+## 一、单元测试用例
+
+### 1.1 {分组名称}（来源：{约束出处}）
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S01-01 | ... | ... | ... | ... | ... |
+
+## 二、场景测试用例
+
+### 2.1 主路径：{场景名称}
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S01-01 | ... | Step 1→6 | ... | ... | ... |
+
+### 2.2 异常路径
+
+| ID | 描述 | 覆盖 EX | 前置条件 | 触发条件 | 预期结果 |
+|----|------|--------|---------|---------|---------|
+| ST-S01-02 | ... | EX-2.1 | ... | ... | ... |
+
+### 2.3 人工验证用例（[manual]）
+
+> 以下用例需要真实 TTY/PTY 渲染或人工视觉验证，无法在 CI 中自动断言，标记为 [manual]。
+> `openlogos verify` 不会将其计入覆盖率，也不会报告为未覆盖。
+
+| ID | 描述 | 覆盖 Steps | 验证方式 |
+|----|------|-----------|---------|
+| ST-S01-05 [manual] | 交互式提示颜色和光标渲染正确 | Step 2 | 人工在真实终端观察 |
+
+## 三、覆盖度校验
+
+- [x] Phase 1 正常验收条件：全部覆盖
+- [x] Phase 1 异常验收条件：全部覆盖
+- [x] EX 异常用例：全部覆盖
+- [x] API required 字段：全部覆盖
+- [x] DB UNIQUE/CHECK 约束：全部覆盖
+
+## 四、验收条件追溯
+
+| AC ID | 验收条件 | 覆盖用例 |
+|-------|---------|---------|
+| S01-AC-01 | 正常：全新项目初始化 — 创建完整目录结构 | ST-S01-01 |
+| S01-AC-02 | 正常：显式项目名与配置文件不一致时确认 | ST-S01-02 |
+| S01-AC-03 | 异常：项目已初始化 — 显示错误提示 | ST-S01-03, UT-S01-05 |
+```
+
+### Smoke 文档结构模板
+
+```markdown
+# {module}: 部署后冒烟测试用例
+
+## 一、冒烟测试范围
+
+| 环境 | 覆盖范围 | 说明 |
+|------|----------|------|
+| staging | 健康检查、核心 API、迁移检查 | launch 前必跑 |
+
+## 二、冒烟测试用例
+
+| ID | 描述 | 来源 | 目标环境 | 前置条件 | 操作 | 预期结果 |
+|----|------|------|----------|----------|------|----------|
+| SMOKE-core-01 | 健康检查接口可访问 | 部署方案：部署后检查 | staging | 服务已部署 | GET /health | 200 OK |
+
+## 三、覆盖度校验
+
+- [x] 健康检查：已覆盖
+- [x] 核心入口：已覆盖
+- [x] 数据库迁移：已覆盖
+- [x] 静态资源：已覆盖
+- [x] 关键链路：已覆盖
+```
+
+## 用例 ID 合约
+
+用例 ID（`UT-S01-01`、`ST-S01-01`）是设计文档与运行时的**绑定合约**：
+
+- 在 test-cases.md 中定义的 ID，必须在生成的测试代码中被原样使用
+- 测试代码的 reporter 会把每个用例的 ID 和运行结果写入 JSONL 文件
+- `openlogos verify` 通过 ID 将运行结果映射回测试用例规格，自动判定验收
+- `SMOKE-*` 由 smoke 测试脚本写入 `smoke-results.jsonl`，供 `openlogos smoke` 判定
+- 修改用例 ID 时必须同步修改对应测试代码或 smoke 脚本中的 ID
+
+详细的 JSONL 格式定义和各语言 reporter 代码模板见 `logos/spec/test-results.md`。
+
+## 实践经验
+
+- **测试用例是设计文档，不是代码**：本 Skill 产出的是 Markdown 格式的测试用例规格，具体的测试代码在 Step 5 代码生成阶段由 AI 基于此规格实现
+- **先单元后场景**：单元测试用例覆盖单个函数的正确性，场景测试覆盖跨模块串联——先确保积木正确，再验证积木拼接
+- **不要遗漏 DB 约束**：很多 Bug 来自数据库层面的约束违反，DB 约束是单元测试用例的重要来源
+- **场景测试关注数据传递**：Step 间的数据传递（前一步输出 → 后一步输入）是最容易出错的地方
+- **EX 异常用例必须有对应的场景测试**：时序图中标注的每个 EX 都应该在场景测试中有体现
+- **边界值优先**：单元测试用例优先覆盖边界值（刚好合法、刚好非法），而不是随机值
+- **与 test-orchestrator 互补**：本 Skill 设计代码层面的测试（函数调用级），test-orchestrator 设计 API 层面的测试（HTTP 请求级）。二者共同覆盖"测试金字塔"的不同层级
+- **用例 ID 是跨阶段合约**：ID 贯穿 test-cases.md → 测试代码 → test-results.jsonl → acceptance-report.md，任何一处不一致都会导致 `openlogos verify` 报告不完整
+
+## 推荐提示词
+
+以下提示词可以直接复制给 AI 使用：
+
+- `帮我设计测试用例`
+- `帮我设计 S01 的单元测试和场景测试`
+- `帮我给所有 P0 场景设计测试用例`
+- `帮我检查 S01 的测试覆盖度`
+
+## ⚠️ 收尾步骤（强制）：更新 resource_index
+
+完成本 Skill 的所有测试用例文档产出后，**必须**将新生成的文件追加写入 `logos/logos-project.yaml` 的 `resource_index` 字段：
+
+```yaml
+resource_index:
+  # ...已有条目...
+  - path: logos/resources/test/core-S01-test-cases.md
+    desc: S01 <场景名称>测试用例。涉及 UT-S01（单元测试）与 ST-S01（场景测试）的实现与验收时必读。
+  # 每个场景的测试用例文件均需单独一条
+```
+
+**不执行此步骤将导致 code-implementor 无法感知测试用例规格，AI 在生成测试代码时无法与用例 ID 对齐，最终 `openlogos verify` 将报告覆盖度不足。**
+
+## S39 delta 模式：触达场景的完整 UT/ST 与唯一测试 delta
+
+### 强制适用
+
+所有 on-touch-v1 触达场景都必须有 UT/ST 规格；测试类别不能 SKIP。API 编排由 test-orchestrator 另行补充，但不能替代本 Skill 的单元/场景测试。
+
+### 输入事实源
+
+读取 effective requirement、feature、scenario、architecture、API、DB 与当前 change 已产 deltas。测试不得基于旧主文档平行猜测。现有测试代码可证明存量覆盖，但不能替代本次新增验收规格。
+
+### MODIFY
+
+- 测试目标存在时，在同一个 canonical target delta 中加入/修改所有相关 UT/ST；
+- MODIFIED 测试表必须携既有 ID 全量结构，遵守 S37；新增章节可同文件 ADDED；
+- 多场景共享测试文件时合并一 task/一 delta；
+- 不把“补历史测试”与“新增测试”拆成两份 delta。
+
+### CREATE
+
+目标缺失时返回完整测试规格，至少包含：
+
+1. 场景/需求来源与测试边界；
+2. 真实且全局不冲突的 `UT-<scenario>-<id>` 与 `ST-<scenario>-<id>`；
+3. 主路径、异常、边界、权限/并发/幂等中适用项；
+4. 输入/fixture、操作、精确期望；
+5. requirement/scenario/API/DB 追溯；
+6. OpenLogos reporter 要求：实现结果写 `logos/resources/verify/test-results.jsonl`；
+7. 覆盖度与不可由其它层替代的说明。
+
+禁止占位 ID、通配族名、TODO、只有标题无表格。真实 ID 必须在 delta 阶段定稿，供 merge 后 slice-planner 使用。
+
+### baseline-on-touch 必测矩阵
+
+- canonical target 去重与 mode；
+- effective view；
+- CREATE 类别完整度；
+- API/DB 适用与 SKIP；
+- seed required/安全 partial/seeded 均不阻断；未终结 journal 无法恢复时必须以 `baseline_commit_in_progress` 在任何资源读取前硬阻断；
+- adopted skip 冲突；
+- AMBIGUOUS 停在现有 plan-exit；
+- 无 JIT/verified/baseline warning 回归；
+- task 每文件立即勾选与 plan/spec/merge 共享判据。
+
+### 输出所有权
+
+本 Skill 返回测试表、真实 ID 清单与 reporter/runner 影响给 change-writer；change-writer 写目标唯一 delta。若新增/修改 smoke 测试，还必须提示部署方案与 runner/reporter/dispatcher 实现影响，不能只补规格。
+
+### 完成检查
+
+- 全部验收/异常分支至少有一个真实 ID；
+- ID 与现有主规格、当前 change 其它 deltas 无冲突；
+- CREATE 文档自足；MODIFY 守恒；
+- 不使用 seed coverage/verified 作为测试通过条件。

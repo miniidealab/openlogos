@@ -1,0 +1,173 @@
+import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
+export const MERGE_TRANSACTION_SEMANTIC_SCHEMA = 'openlogos/merge-transaction-semantic@1';
+const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const PHASES = new Set(['collecting', 'ready', 'sealed', 'applying', 'completed', 'failed']);
+const ACTIONS = new Set(['submit_content', 'seal', 'apply', 'recover', 'abort']);
+const CLASSIFICATIONS = new Set([
+    'invalid_phase', 'action_not_allowed', 'content_slot_missing', 'slot_identity_mismatch',
+    'source_hash_mismatch', 'before_hash_mismatch', 'target_set_mismatch', 'seal_mismatch',
+    'apply_conflict', 'receipt_mismatch', 'legacy_manifest_rejected', 'unsupported_contract',
+    'recovery_required', 'internal_failure', 'aborted',
+]);
+const PROJECTION_KEYS = [
+    'schema', 'transaction_id', 'slug', 'phase', 'classification', 'allowed_actions', 'next_action',
+    'target_set_sha256', 'seal_sha256', 'schema_sha256', 'contract_sha256', 'content_slots',
+    'receipt', 'artifact_hashes', 'aborted_at',
+].sort();
+export function canonicalMergeJson(value) {
+    if (Array.isArray(value))
+        return `[${value.map(canonicalMergeJson).join(',')}]`;
+    if (value && typeof value === 'object') {
+        return `{${Object.entries(value)
+            .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+            .map(([key, item]) => `${JSON.stringify(key)}:${canonicalMergeJson(item)}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+export function mergeSha256(bytes) {
+    return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+}
+export function computeMergeReceiptSha256(receipt) {
+    const payload = { ...receipt };
+    delete payload.receipt_sha256;
+    return mergeSha256(canonicalMergeJson(payload));
+}
+function same(left, right) {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+function sortedUnique(values) {
+    return [...new Set(values)].sort();
+}
+function validPath(path) {
+    if (!path || path.startsWith('/') || path.includes('\\') || path.includes('\0'))
+        return false;
+    const normalized = posix.normalize(path);
+    return normalized === path && normalized !== '.' && !normalized.startsWith('../')
+        && !normalized.split('/').includes('..');
+}
+function expectedActions(tx) {
+    if (tx.phase === 'collecting')
+        return ['submit_content', 'abort'];
+    if (tx.phase === 'ready')
+        return ['seal', 'abort'];
+    if (tx.phase === 'sealed')
+        return ['apply', 'abort'];
+    if (tx.phase === 'applying')
+        return ['recover'];
+    if (tx.phase === 'failed' && tx.classification === 'recovery_required')
+        return ['recover'];
+    return [];
+}
+export function validateMergeTransactionSemantics(tx) {
+    const violations = [];
+    const add = (code, path, message) => { violations.push({ code, path, message }); };
+    if (JSON.stringify(Object.keys(tx).sort()) !== JSON.stringify(PROJECTION_KEYS))
+        add('projection_fields_invalid', '$', '公共投影字段集合不符合冻结合同');
+    if (tx.schema !== 'openlogos/merge-transaction@1')
+        add('schema_identity_mismatch', '$.schema', 'schema identity 不受支持');
+    if (!PHASES.has(tx.phase))
+        add('phase_unknown', '$.phase', '未知 phase 必须 fail-closed');
+    if (tx.classification !== null && !CLASSIFICATIONS.has(tx.classification))
+        add('classification_unknown', '$.classification', '未知 classification 必须 fail-closed');
+    for (const [index, action] of tx.allowed_actions.entries()) {
+        if (!ACTIONS.has(action))
+            add('action_unknown', `$.allowed_actions[${index}]`, '未知 action 必须 fail-closed');
+    }
+    if (tx.next_action !== null && !ACTIONS.has(tx.next_action))
+        add('action_unknown', '$.next_action', '未知 next_action 必须 fail-closed');
+    for (const [path, value] of [
+        ['$.target_set_sha256', tx.target_set_sha256], ['$.schema_sha256', tx.schema_sha256],
+        ['$.contract_sha256', tx.contract_sha256], ['$.seal_sha256', tx.seal_sha256],
+    ])
+        if (value !== null && !SHA256_PATTERN.test(value))
+            add('hash_invalid', path, 'hash 必须是小写 sha256');
+    const expected = expectedActions(tx);
+    if (!same(tx.allowed_actions, expected))
+        add('action_mapping_mismatch', '$.allowed_actions', 'phase/classification 与 allowed_actions 不一致');
+    if (tx.next_action !== (expected[0] ?? null))
+        add('next_action_mismatch', '$.next_action', 'next_action 不是规范动作序列的唯一首项');
+    const items = tx.content_slots.items;
+    const itemIds = items.map(item => item.slot_id);
+    if (!same(itemIds, sortedUnique(itemIds)))
+        add('slot_order_mismatch', '$.content_slots.items', 'slot descriptor 必须按 slot_id 去重稳定排序');
+    if (tx.content_slots.required !== items.filter(item => item.required).length)
+        add('slot_count_mismatch', '$.content_slots.required', 'required 与必需 slot 数不一致');
+    if (tx.content_slots.submitted !== items.filter(item => item.submitted_sha256 !== null).length)
+        add('slot_count_mismatch', '$.content_slots.submitted', 'submitted 与已提交 slot 数不一致');
+    const missing = items.filter(item => item.required && item.submitted_sha256 === null).map(item => item.slot_id);
+    if (!same(tx.content_slots.missing_slot_ids, missing))
+        add('slot_missing_mismatch', '$.content_slots.missing_slot_ids', 'missing_slot_ids 与 descriptor 状态不一致');
+    for (const [index, item] of items.entries()) {
+        if (!validPath(item.staging_path))
+            add('path_invalid', `$.content_slots.items[${index}].staging_path`, 'staging_path 必须是规范项目根相对路径');
+        if (item.content_encoding !== 'utf8-raw' || item.write_protocol !== 'atomic-rename' || item.max_bytes < 1) {
+            add('slot_protocol_mismatch', `$.content_slots.items[${index}]`, 'slot 写协议字段不合法');
+        }
+        if (item.submitted_sha256 !== null && !SHA256_PATTERN.test(item.submitted_sha256))
+            add('hash_invalid', `$.content_slots.items[${index}].submitted_sha256`, 'submitted hash 不合法');
+    }
+    if (tx.phase !== 'completed' && (tx.receipt !== null || tx.artifact_hashes.length > 0)) {
+        add('terminal_projection_mismatch', '$', '非 completed 投影不得包含 receipt/artifact_hashes');
+    }
+    if (tx.classification === 'aborted') {
+        if (tx.phase !== 'failed' || tx.aborted_at === null || tx.receipt !== null || tx.artifact_hashes.length > 0) {
+            add('aborted_projection_mismatch', '$', 'aborted 必须是无 receipt/artifact 的 failed 终态');
+        }
+    }
+    else if (tx.aborted_at !== null)
+        add('aborted_projection_mismatch', '$.aborted_at', '非 aborted 投影不得包含 aborted_at');
+    if (tx.phase === 'completed') {
+        const receipt = tx.receipt;
+        if (!receipt)
+            add('completed_receipt_missing', '$.receipt', 'completed 必须包含 receipt');
+        else {
+            const changed = receipt.changed_paths;
+            const created = receipt.created_paths;
+            const finalPaths = receipt.final_hashes.map(item => item.path);
+            const artifactPaths = tx.artifact_hashes.map(item => item.path);
+            const commitPaths = receipt.commit_paths;
+            for (const [name, values] of [['changed_paths', changed], ['created_paths', created], ['final_hashes', finalPaths], ['artifact_hashes', artifactPaths], ['commit_paths', commitPaths]]) {
+                if (!same(values, sortedUnique(values)))
+                    add('path_set_not_canonical', `$.${name}`, `${name} 必须去重并稳定排序`);
+                if (values.some(path => !validPath(path)))
+                    add('path_invalid', `$.${name}`, `${name} 含非法路径`);
+            }
+            if (changed.some(path => created.includes(path)))
+                add('payload_path_overlap', '$.receipt', 'changed_paths 与 created_paths 不得重叠');
+            const payloadPaths = sortedUnique([...changed, ...created]);
+            if (!same(finalPaths, payloadPaths))
+                add('final_hashes_mismatch', '$.receipt.final_hashes', 'final_hashes 必须精确覆盖 payload paths');
+            if (finalPaths.some(path => artifactPaths.includes(path)))
+                add('artifact_overlap', '$.artifact_hashes', 'final_hashes 与 artifact_hashes 不得重叠');
+            if (!same(sortedUnique([...finalPaths, ...artifactPaths]), commitPaths))
+                add('commit_paths_mismatch', '$.receipt.commit_paths', 'commit_paths 必须等于 final/artifact 路径并集');
+            const expectedArtifacts = sortedUnique([
+                receipt.spec_merged.path,
+                receipt.commit_paths.find(path => path.endsWith('/MERGE_RECEIPT.json')) ?? '',
+            ].filter(Boolean));
+            if (!same(artifactPaths, expectedArtifacts))
+                add('artifact_paths_mismatch', '$.artifact_hashes', 'artifact_hashes 必须只覆盖 receipt 与 SPEC_MERGED');
+            if (receipt.receipt_sha256 !== computeMergeReceiptSha256(receipt))
+                add('receipt_identity_mismatch', '$.receipt.receipt_sha256', 'receipt_sha256 无法从排除自身字段的 canonical payload 重算');
+            if (receipt.transaction_id !== tx.transaction_id || receipt.target_set_sha256 !== tx.target_set_sha256 || receipt.seal_sha256 !== tx.seal_sha256) {
+                add('receipt_identity_mismatch', '$.receipt', 'receipt 与外层事务身份不一致');
+            }
+            for (const [index, item] of [...receipt.final_hashes, ...tx.artifact_hashes].entries()) {
+                if (!SHA256_PATTERN.test(item.sha256))
+                    add('hash_invalid', `$.hashes[${index}].sha256`, '路径 hash 不合法');
+            }
+        }
+    }
+    return {
+        schema: MERGE_TRANSACTION_SEMANTIC_SCHEMA,
+        ok: violations.length === 0,
+        violations: violations.sort((a, b) => a.path.localeCompare(b.path) || a.code.localeCompare(b.code)),
+    };
+}
+export function assertMergeTransactionSemantics(tx) {
+    const result = validateMergeTransactionSemantics(tx);
+    if (!result.ok)
+        throw new Error(result.violations.map(item => `${item.code}@${item.path}: ${item.message}`).join('；'));
+}
+//# sourceMappingURL=merge-transaction-semantic.js.map

@@ -1,0 +1,7 @@
+{
+  "schema": "openlogos/plan-approval@1",
+  "approved_by": "user",
+  "approval_scope": "proposal.md + tasks.md",
+  "ui_prototype_rendered": false,
+  "approved_at": "2026-08-30T03:07:38.942Z"
+}

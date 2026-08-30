@@ -1,0 +1,551 @@
+/**
+ * flow-derive — M1 切片 B1：initial 模块的 phase 派生引擎。
+ *
+ * 把硬编码的 PHASE_KEYS / PHASE_SUBPATHS / SCENARIO_PHASES / SKIP_PHASE_MAP 改为从 **builtin**
+ * initial flow（spec/flow/initial.yaml）派生，再经 code 侧 node-id→phase-key 映射产出与现状
+ * 逐字节一致的 phase_progress / 顶层 phases[] / current_phase。
+ *
+ * 规则（见 docs/orchestratable-flow-design.md、spec/flow-spec.md §12，与 status.ts 原逻辑 1:1）：
+ * - 只用 builtin flow，**不应用项目 overlay**（overlay 驱动留后续切片）。
+ * - 两套 legacy done 语义由消费端决定：顶层 phases[] = any-present、per-module = all-present（场景覆盖）。
+ * - 场景文件保留 legacy `includes()` 子串匹配（非 glob）。
+ *
+ * 切片 B2：新增 `detectProposalStepViaFlow`——launched 模块的 ProposalStep 改由 builtin
+ * launched flow 派生。launched.yaml 提供节点序列与 done_when/fail_when 的 marker/section 名；
+ * marker 非对称优先级与提案级部署决策（resolveProposalDeploymentDecision）作为引擎规则保留，
+ * 逐分支镜像旧 detectProposalStep（1:1 不改行为）。
+ */
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { isAdoptedBootstrap } from './project-yaml.js';
+import { loadBuiltinFlow, loadFlow, FlowError, fanoutDone, readProjectCmdTimeout } from './flow.js';
+import { listFiles } from './list-files.js';
+import { resolveProposalDeploymentDecision, getDeploySectionSummary, parseTaskSections, isTasksCodeFilled, isCodeRequiredForProposal, isCodeRequiredButUnplanned, hasRealTestIdsForProposal, countMergeableDeltaFiles, allTasksChecked, hasSmokeCasesForProposal, PLAN_APPROVED_MARKER, SLICES_APPROVED_MARKER, } from './proposal-lifecycle.js';
+import { mintStep } from './step-registry.js';
+import { deriveUiImpact } from './ui-first.js';
+import { evaluatePlanPackage } from './plan-package.js';
+/** node id → 原 PHASE_KEYS（13 个 1:1）。维护在 code 侧以保持 spec/flow/*.yaml 纯净。 */
+export const NODE_TO_PHASE_KEY = {
+    'prd': 'phase.1',
+    'product-design': 'phase.2',
+    'architecture': 'phase.3-0',
+    'scenario-modeling': 'phase.3-1',
+    'api-design': 'phase.3-2-api',
+    'db-design': 'phase.3-2-db',
+    'deployment-design': 'phase.3-3-deployment',
+    'test-cases': 'phase.3-4a',
+    'orchestration-test': 'phase.3-4b',
+    'code': 'phase.3-5',
+    'verify': 'phase.3-6',
+    'deploy': 'phase.3-7-deploy',
+    'smoke': 'phase.3-8-smoke',
+};
+/**
+ * S28：phase key → builtin node id 的**显式正向映射**（next_node 解析 initial 当前节点用）。
+ * 故意独立成表而非反查 `NODE_TO_PHASE_KEY`，避免实现误用反向查找。
+ */
+export const PHASE_KEY_TO_NODE_ID = {
+    'phase.1': 'prd',
+    'phase.2': 'product-design',
+    'phase.3-0': 'architecture',
+    'phase.3-1': 'scenario-modeling',
+    'phase.3-2-api': 'api-design',
+    'phase.3-2-db': 'db-design',
+    'phase.3-3-deployment': 'deployment-design',
+    'phase.3-4a': 'test-cases',
+    'phase.3-4b': 'orchestration-test',
+    'phase.3-5': 'code',
+    'phase.3-6': 'verify',
+    'phase.3-7-deploy': 'deploy',
+    'phase.3-8-smoke': 'smoke',
+};
+const BOOTSTRAP_WHEN = 'bootstrap != adopted';
+/**
+ * 构建有序 phase plan（顺序 == 原 PHASE_KEYS）。
+ * 默认读 builtin；传入 root 时读 **resolved flow（含 overlay）**——使 initial 的 overlay
+ * skip/modify/reorder 真正驱动派生（无 overlay 时 resolved==builtin，逐字节不变）。
+ */
+export function buildInitialPhasePlan(root) {
+    const flow = root ? loadFlow(root, { lifecycle: 'initial', resolved: true }).flow : loadBuiltinFlow('initial');
+    const items = [];
+    for (const sub of flow.subflows) {
+        for (const node of sub.nodes) {
+            const phaseKey = NODE_TO_PHASE_KEY[node.id];
+            if (!phaseKey)
+                continue;
+            const produces = node.produces ?? '';
+            // fan-out 节点的 produces 是文件模式（含 {scenario}），扫描路径取其目录；
+            // 其余为目录（去末尾斜杠）或报告文件路径（原样，listFiles 支持文件）。
+            const subpath = node.for_each
+                ? produces.slice(0, produces.lastIndexOf('/'))
+                : produces.replace(/\/+$/, '');
+            items.push({
+                phaseKey,
+                subpath,
+                isScenario: Boolean(node.for_each),
+                whenExpr: node.when ?? null,
+                nodeId: node.id,
+                overlaySkipped: node.skipped === true,
+                // S29：仅 done_when:all_present 的 fan-out 节点带阈值（校验已保证合法挂载）；未设置则 undefined
+                ...(node.coverage_threshold != null ? { coverageThreshold: node.coverage_threshold } : {}),
+            });
+        }
+    }
+    return items;
+}
+function whenContext(mod) {
+    const skip = mod.skip_phases ?? [];
+    const deployment_required = mod.deployment_required !== false && !skip.includes('deployment');
+    return {
+        api_enabled: !skip.includes('api'),
+        db_enabled: !skip.includes('database'),
+        scenario_enabled: !skip.includes('scenario'),
+        deployment_required,
+        smoke_required: deployment_required && mod.smoke_required !== false,
+    };
+}
+/**
+ * 求值 node.when。支持最小表达式集：`flag` / `not flag` / `bootstrap != adopted`。
+ * 返回 true = 节点参与流程；false = 该节点被跳过。
+ */
+function evalWhen(expr, mod, ctx) {
+    const e = expr.trim();
+    if (e === BOOTSTRAP_WHEN)
+        return !isAdoptedBootstrap(mod.bootstrap);
+    if (e.startsWith('not ')) {
+        const flag = e.slice(4).trim();
+        return !ctx[flag];
+    }
+    return Boolean(ctx[e]);
+}
+/** 求值单个节点的 `when`：无 when 视为参与；用于 overlay 节点走查（flow-overlay-derive）。 */
+export function evalNodeWhen(when, mod) {
+    if (!when)
+        return true;
+    return evalWhen(when, mod, whenContext(mod));
+}
+/**
+ * 复现 deriveExplicitSkipPhaseKeys：返回因显式 `when`（非 bootstrap）为假而跳过的 phase key 集合。
+ * 用于多模块全局 skip 交集。
+ */
+export function flowExplicitSkipPhaseKeys(mod, plan = buildInitialPhasePlan()) {
+    const ctx = whenContext(mod);
+    const skip = new Set();
+    for (const item of plan) {
+        if (!item.whenExpr || item.whenExpr === BOOTSTRAP_WHEN)
+            continue;
+        if (!evalWhen(item.whenExpr, mod, ctx))
+            skip.add(item.phaseKey);
+    }
+    return skip;
+}
+/**
+ * 复现 deriveModulePhaseProgress：per-module 派生（场景阶段 all-present 覆盖度）。
+ * 与 status.ts 原算法 1:1（仅数据来源改为 builtin flow plan）。
+ */
+export function deriveModulePhaseProgressViaFlow(root, mod, scenarios, isMultiModule = false, plan = buildInitialPhasePlan(root)) {
+    const progress = {};
+    const ctx = whenContext(mod);
+    for (const item of plan) {
+        const key = item.phaseKey;
+        const dir = join(root, item.subpath);
+        // overlay op:skip 标记的内置节点 → skipped（M2 切片 1a：initial overlay skip 生效）
+        if (item.overlaySkipped) {
+            progress[key] = { done: false, skipped: true };
+            continue;
+        }
+        // bootstrap-adopted：phase.1/2/3-0 的 when 为 `bootstrap != adopted`，adopted 时跳过并标 reason
+        if (item.whenExpr === BOOTSTRAP_WHEN && isAdoptedBootstrap(mod.bootstrap)) {
+            progress[key] = { done: false, skipped: true, skip_reason: 'bootstrap-adopted' };
+            continue;
+        }
+        // 其余显式 when 为假 → 跳过（== deriveExplicitSkipPhaseKeys）
+        if (item.whenExpr && item.whenExpr !== BOOTSTRAP_WHEN && !evalWhen(item.whenExpr, mod, ctx)) {
+            progress[key] = { done: false, skipped: true };
+            continue;
+        }
+        if (item.isScenario) {
+            // 场景阶段：per-module 全覆盖才 done（legacy includes 子串匹配）
+            const suffix = key === 'phase.3-1' ? '' : '-test-cases';
+            const covered = [];
+            const missing = [];
+            for (const s of scenarios) {
+                const pattern = `${mod.id}-${s.id}`;
+                const files = listFiles(dir);
+                const found = files.some(f => f.includes(pattern) && (suffix === '' || f.includes(suffix)));
+                if (found)
+                    covered.push(s.id);
+                else
+                    missing.push(s.id);
+            }
+            // S29：fan-out 聚合阈值。复用共享 fanoutDone（缺省=全覆盖 all_present；设阈值时 covered/total>=阈值；total==0 维持现状）。
+            const total = scenarios.length;
+            progress[key] = {
+                done: fanoutDone(covered.length, total, item.coverageThreshold),
+                skipped: false,
+                scenario_coverage: { total, covered: covered.length, missing },
+            };
+        }
+        else {
+            // 非场景阶段：多模块按 {module}- 前缀过滤，单模块任意文件
+            const allFiles = listFiles(dir);
+            const files = isMultiModule
+                ? allFiles.filter(f => (f.split('/').pop() ?? f).startsWith(`${mod.id}-`))
+                : allFiles;
+            progress[key] = { done: files.length > 0, skipped: false };
+        }
+    }
+    // fallback-skip：已完成 phase 之前的空 phase 标 skipped（NON_FALLBACK 除外）
+    const keys = plan.map(p => p.phaseKey);
+    const lastDoneIdx = keys.reduce((acc, k, i) => (progress[k].done ? i : acc), -1);
+    for (let i = 0; i < lastDoneIdx; i++) {
+        if (!progress[keys[i]].done && !NON_FALLBACK_SKIP_PHASE_KEYS.has(keys[i]))
+            progress[keys[i]].skipped = true;
+    }
+    const currentPhase = keys.find(k => !progress[k].done && !progress[k].skipped) ?? null;
+    return { progress, currentPhase };
+}
+/** 与 status.ts NON_FALLBACK_SKIP_PHASES 对齐（免于 fallback-skip 的 phase）。 */
+export const NON_FALLBACK_SKIP_PHASE_KEYS = new Set([
+    'phase.3-3-deployment',
+    'phase.3-7-deploy',
+    'phase.3-8-smoke',
+]);
+// ── 切片 B2：launched 模块 ProposalStep 派生 ──
+/** S30：cmd gate 的 marker 占位——永不存在的文件名 → status/watch 下该 gate 恒「未满足、停门前」。 */
+const CMD_GATE_SENTINEL = '.__openlogos_cmd_gate_never__';
+function markerName(pred) {
+    // S30：cmd: 字段不抽 marker 名，返回永不存在的占位（status/watch 停门前；next 走 cmd 回灌）
+    if (typeof pred === 'string' && pred.startsWith('cmd:'))
+        return CMD_GATE_SENTINEL;
+    if (!pred || !pred.startsWith('marker:')) {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 期望 marker: 谓词，实际为 ${pred}`);
+    }
+    return pred.slice('marker:'.length).trim();
+}
+function anyPresentList(pred) {
+    if (!pred || !pred.startsWith('any_present:')) {
+        throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 期望 any_present: 谓词，实际为 ${pred}`);
+    }
+    const inner = pred.slice('any_present:'.length).trim().replace(/^\[|\]$/g, '');
+    return inner.split(',').map(s => s.trim()).filter(Boolean);
+}
+/**
+ * 提取生命周期 marker/section 名（flow 声明，引擎据此判定）。
+ * 默认 builtin；传入 root 时读 **resolved flow（含 overlay）**——使 launched 的
+ * `modify`（改 marker 名）经 flow 流入检测（无 overlay 时 resolved==builtin）。
+ */
+function extractLaunchedMarkers(root) {
+    const flow = root ? loadFlow(root, { lifecycle: 'launched', resolved: true }).flow : loadBuiltinFlow('launched');
+    const byId = {};
+    for (const sub of flow.subflows)
+        for (const n of sub.nodes)
+            byId[n.id] = n;
+    const need = (id) => {
+        const n = byId[id];
+        if (!n)
+            throw new FlowError('FLOW_SCHEMA_INVALID', `launched flow 缺少节点 ${id}`);
+        return n;
+    };
+    // S30：收集 launched gate 上的 cmd 字段（overlay-modify 时）→ cmdGates
+    const cmdGates = {};
+    const collectCmd = (nodeId, field) => {
+        const pred = byId[nodeId]?.[field];
+        if (typeof pred === 'string' && pred.startsWith('cmd:')) {
+            cmdGates[`${nodeId}.${field}`] = { node_id: nodeId, field, command: pred.slice('cmd:'.length).trim() };
+        }
+    };
+    for (const id of ['verify', 'deploy', 'smoke']) {
+        collectCmd(id, 'done_when');
+        collectCmd(id, 'fail_when');
+    }
+    return {
+        verifyFail: markerName(need('verify').fail_when),
+        verifyPass: markerName(need('verify').done_when),
+        mergePrompt: anyPresentList(need('generate-merge-prompt').done_when),
+        merged: anyPresentList(need('apply-merge').done_when),
+        deployDone: markerName(need('deploy').done_when),
+        smokeFail: markerName(need('smoke').fail_when),
+        smokePass: markerName(need('smoke').done_when),
+        cmdGates,
+    };
+}
+// ── proposal-ui-ux-first 切片1：ui_impact 派生 + plan 阶段原型 delta 例外 ──
+/**
+ * launched flow 的可派生 when-flag `ui_impact`（module-aware）。
+ * = 活跃提案所属 module 的 product_type ∈ GUI（web/desktop/mobile）
+ *   && proposal.md「UI/UX 变更声明」段 ui_impact:true。
+ * 直接转调 ui-first 的 deriveUiImpact（唯一数据源 = logos-project.yaml + proposal.md 声明段）。
+ * 非 GUI 模块（含缺字段）恒 false；声明 ui_impact:false 亦 false。
+ */
+export function deriveUiImpactFlag(root, moduleId, proposalDir) {
+    return deriveUiImpact(root, moduleId, proposalDir);
+}
+/** 原型 delta 相对路径前缀（overlay produces：deltas/prd/2-product-design/2-page-design/）。 */
+const PROTOTYPE_DELTA_PREFIX = join('prd', '2-product-design', '2-page-design');
+/**
+ * 判据：提案的可合并 delta **仅**为 `deltas/prd/2-product-design/2-page-design/*.html` 原型文件
+ * （至少一个原型 html，且无任何其它规格 delta）。
+ * - 无任何原型 html（含无 delta）→ false（非「仅原型」）。
+ * - 存在任何 **非** 2-page-design/*.html 的可合并 delta（如 1-feature-specs/*.md、api/*.yaml）→ false。
+ * - 仅原型且全为 .html → true。
+ * 纯判据、无副作用；用于 plan 阶段「原型 delta 例外」（原型不应误判进入 spec/delta-writing）。
+ */
+export function isPrototypeOnlyDelta(proposalDir) {
+    let prototypeCount = 0;
+    let otherCount = 0;
+    for (const category of MERGE_SUPPORTED_DELTA_DIRS_FOR_UI) {
+        for (const rel of listFiles(join(proposalDir, 'deltas', category))) {
+            const full = join(category, rel);
+            const isPrototype = full.startsWith(PROTOTYPE_DELTA_PREFIX + '/') && full.endsWith('.html');
+            if (isPrototype)
+                prototypeCount++;
+            else
+                otherCount++;
+        }
+    }
+    return prototypeCount > 0 && otherCount === 0;
+}
+/**
+ * 判据：plan 阶段是否应「进入 spec」（离开 ready-to-delta 门前态）。
+ * ui_impact 为真时启用「原型 delta 例外」：
+ *   - 仅 2-page-design/*.html 原型 delta（无非原型规格 delta）且未 PLAN_APPROVED → **不进 spec**（仍 plan）；
+ *   - 出现任何非原型规格 delta，或 plan-exit 已放行（PLAN_APPROVED）→ 进入 spec。
+ * ui_impact 为假（含非 GUI）→ 恢复原逻辑：有任意可合并 delta 或 PLAN_APPROVED 即进 spec。
+ * 该判据仅描述「delta 尚未勾选（checked===0）」这一支的门前语义，供 detect 主体最小接入。
+ */
+export function shouldEnterSpec(proposalDir, uiImpact) {
+    const planApproved = existsSync(join(proposalDir, PLAN_APPROVED_MARKER));
+    if (planApproved)
+        return true;
+    const mergeableCount = countMergeableDeltaFiles(proposalDir);
+    if (mergeableCount === 0)
+        return false;
+    // 有可合并 delta：ui_impact 时，若仅原型 html → 仍门前（不进 spec）；否则进 spec。
+    if (uiImpact && isPrototypeOnlyDelta(proposalDir))
+        return false;
+    return true;
+}
+/** isPrototypeOnlyDelta 扫描的 delta 类目（与 countMergeableDeltaFiles 的 MERGE_SUPPORTED_DELTA_DIRS 对齐）。 */
+const MERGE_SUPPORTED_DELTA_DIRS_FOR_UI = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'spec', 'skills'];
+/**
+ * 读活跃提案所属 module id（guard 文件 module 字段）；缺失/损坏 → undefined。
+ * ui_impact 为 module-aware，需据此定位 product_type；缺 module 时 deriveUiImpactFlag 恒 false（安全默认）。
+ */
+function activeModuleId(root) {
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    if (!existsSync(guardPath))
+        return undefined;
+    try {
+        const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+        return typeof guard.module === 'string' && guard.module.trim() ? guard.module.trim() : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+/**
+ * 复现 detectProposalStep：launched 模块 ProposalStep 改由 builtin launched flow 派生。
+ * marker/section 名来自 launched.yaml；分支优先级（VERIFY_FAIL 全局最先、SMOKE 仅在 deploy 完成子块内）
+ * 与提案级部署决策（resolveProposalDeploymentDecision）为引擎规则，1:1 镜像旧逻辑。
+ */
+// ── contract-self-description（code review r2-F5）：检测器唯一铸造出口 ──
+// 内部 raw 检测仍以字面量表达分支结论（派生逻辑的自然写法），但**对外唯一出口**一律经
+// mintStep() 校验并成对携带 step_meta——注册表缺条目的新步骤在此 fail loud，无法静默流出。
+// 测试注入缝：仅供生产者漂移注入测试驱动真实 status/next 生产路径产出未来步骤。
+let stepDetectorOverrideForTest = null;
+export function __setStepDetectorOverrideForTest(fn) {
+    stepDetectorOverrideForTest = fn;
+}
+/** 检测器成对铸造出口：status/next 消费 {proposal_step, step_meta} 成对结果（C1 唯一铸造点）。 */
+export function detectMintedStepViaFlow(proposalDir, moduleDefaults = {}, cmdEval) {
+    const raw = detectProposalStepViaFlowRaw(proposalDir, moduleDefaults, cmdEval);
+    const effective = stepDetectorOverrideForTest ? stepDetectorOverrideForTest(proposalDir, raw) : raw;
+    return mintStep(effective);
+}
+/** 兼容出口（既有测试/调用面）：同样经注册表铸造校验后返回步骤值。 */
+export function detectProposalStepViaFlow(proposalDir, moduleDefaults = {}, cmdEval) {
+    return detectMintedStepViaFlow(proposalDir, moduleDefaults, cmdEval).proposal_step;
+}
+function detectProposalStepViaFlowRaw(proposalDir, moduleDefaults = {}, cmdEval) {
+    // proposalDir = <root>/logos/changes/<slug> → root 上溯三级（读 resolved launched flow 含 overlay）
+    const root = join(proposalDir, '..', '..', '..');
+    const m = extractLaunchedMarkers(root);
+    const exists = (name) => existsSync(join(proposalDir, name));
+    const anyExists = (names) => names.some(exists);
+    // S30：cmd gate 满足判定——marker 字段走 existsSync；cmd 字段仅当 next 回灌 cmdEval 命中时为真（status/watch 恒 false → 停门前）
+    const cmdMet = (nodeId, field) => Boolean(cmdEval && cmdEval.node_id === nodeId && cmdEval.field === field && cmdEval.satisfied);
+    const gateMet = (nodeId, field, marker) => (`${nodeId}.${field}` in m.cmdGates) ? cmdMet(nodeId, field) : exists(marker);
+    const tasksContent = existsSync(join(proposalDir, 'tasks.md'))
+        ? readFileSync(join(proposalDir, 'tasks.md'), 'utf-8') : '';
+    if (anyExists(m.merged)
+        && isCodeRequiredForProposal(proposalDir, tasksContent)
+        && !isTasksCodeFilled(tasksContent)
+        && !hasRealTestIdsForProposal(proposalDir, tasksContent)) {
+        return 'test-id-required';
+    }
+    if (anyExists(m.merged) && isCodeRequiredButUnplanned(proposalDir, tasksContent)) {
+        return 'ready-to-implement';
+    }
+    // verify.fail_when（VERIFY_FAIL / cmd）—— 全局最先
+    if (gateMet('verify', 'fail_when', m.verifyFail))
+        return 'verify-failed';
+    // verify.done_when（VERIFY_PASS / cmd）—— 进入 deliver/deploy 子块
+    if (gateMet('verify', 'done_when', m.verifyPass)) {
+        const deploy = getDeploySectionSummary(tasksContent);
+        const hasDeployTasks = Boolean(deploy && deploy.total > 0);
+        const deploymentDecision = resolveProposalDeploymentDecision(proposalDir, moduleDefaults);
+        if (deploymentDecision.deployment_decision_conflict)
+            return 'verify-passed';
+        if (deploymentDecision.deployment_required !== true)
+            return 'verify-passed';
+        if (!hasDeployTasks)
+            return 'ready-to-deploy';
+        // S30：deploy.done_when 为 cmd-gate 时，cmd 是「deploy 是否 done」的唯一裁判——
+        // 不再被 deployTasksChecked（人类勾选 [deploy]）拦住（cmd exit 0 即过门，否则停门前）。marker deploy 行为不变。
+        const deployIsCmdGate = 'deploy.done_when' in m.cmdGates;
+        const deployDone = gateMet('deploy', 'done_when', m.deployDone);
+        const deployTasksChecked = deploy.checked === deploy.total;
+        if (!deployDone || (!deployIsCmdGate && !deployTasksChecked))
+            return 'ready-to-deploy';
+        // smoke.fail_when/done_when —— 仅在 deploy 完成子块内评估（非全局优先）
+        if (gateMet('smoke', 'fail_when', m.smokeFail))
+            return 'smoke-failed';
+        if (gateMet('smoke', 'done_when', m.smokePass))
+            return 'smoke-passed';
+        if (deploymentDecision.smoke_required === false)
+            return 'deploy-done';
+        if (deploymentDecision.smoke_required === true)
+            return 'ready-to-smoke';
+        if (hasSmokeCasesForProposal(proposalDir))
+            return 'ready-to-smoke';
+        return 'deploy-done';
+    }
+    // apply-merge.done_when（SPEC_MERGED | MERGED）
+    if (anyExists(m.merged)) {
+        const sections = parseTaskSections(tasksContent);
+        if (sections !== null) {
+            const code = sections['code'];
+            const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
+            if (codeRequired && !isTasksCodeFilled(tasksContent) && !hasRealTestIdsForProposal(proposalDir, tasksContent)) {
+                return 'test-id-required';
+            }
+            // section_complete legacy 语义：present-but-empty（total=0）不算完成
+            if (!code && codeRequired)
+                return 'ready-to-implement';
+            if (!code || (code.total > 0 && code.checked === code.total))
+                return 'ready-to-verify';
+            // split-slice-planner-stage：[code] 有未完成切片，slice-exit 门未放行（无 SLICES_APPROVED）→ ready-to-implement；放行后 → coding。
+            if (!exists(SLICES_APPROVED_MARKER))
+                return 'ready-to-implement';
+            return 'coding';
+        }
+        return 'ready-to-verify';
+    }
+    // generate-merge-prompt.done_when（MERGE_PROMPT_GENERATED | MERGE_PROMPT.md）
+    if (anyExists(m.mergePrompt))
+        return 'merge-generated';
+    // write-proposal.done_when（proposal_package_filled = proposal.md + tasks.md 均脱模板）
+    if (!existsSync(join(proposalDir, 'proposal.md')) || !existsSync(join(proposalDir, 'tasks.md')))
+        return 'writing';
+    const planPackage = evaluatePlanPackage(root, proposalDir);
+    if (!planPackage.ready) {
+        return 'writing';
+    }
+    // write-delta.done_when（section_complete:delta）/ code（section_complete:code）
+    const sections = parseTaskSections(tasksContent);
+    if (sections !== null) {
+        const delta = sections['delta'];
+        const code = sections['code'];
+        if (!delta) {
+            // support-nodelta-spec-complete：无 [delta] 只表示不需要写 delta，不代表 spec-complete。
+            // 需要代码的 no-delta 提案必须先通过 openlogos merge 写 no-delta SPEC_MERGED。
+            if (isCodeRequiredForProposal(proposalDir, tasksContent, sections))
+                return 'spec-complete-required';
+            if (!code || (code.total > 0 && code.checked === code.total))
+                return 'ready-to-verify';
+            if (!exists(SLICES_APPROVED_MARKER))
+                return 'ready-to-implement';
+            return 'coding';
+        }
+        if (delta.total > 0 && delta.checked === delta.total)
+            return 'ready-to-merge';
+        // change-flow-redesign：delta 尚未启动且 plan 门未消费 → ready-to-delta（plan 出口驻留态）。
+        // PLAN_APPROVED 是 plan-exit 被 --auto 消费后的状态源；GATE_AUTO_PASSED 仅为审计，不参与派生。
+        // proposal-ui-ux-first：ui_impact 为真时启用「原型 delta 例外」——仅 2-page-design/*.html 原型 delta
+        // （无非原型规格 delta、无 PLAN_APPROVED）视为 plan 门前态 ready-to-delta，不因原型 delta 误判进 delta-writing。
+        // shouldEnterSpec 门控 ui_impact：非 GUI / 未声明时 uiImpact=false，判据退化为原逻辑（count===0 && !PLAN_APPROVED），逐字节不变。
+        if (delta.checked === 0) {
+            const uiImpact = deriveUiImpactFlag(root, activeModuleId(root), proposalDir);
+            if (!shouldEnterSpec(proposalDir, uiImpact))
+                return 'ready-to-delta';
+        }
+        return 'delta-writing';
+    }
+    // 旧格式兜底
+    const mergeableDeltaCount = countMergeableDeltaFiles(proposalDir);
+    if (mergeableDeltaCount > 0 && allTasksChecked(tasksContent))
+        return 'ready-to-merge';
+    return 'delta-writing';
+}
+/**
+ * S30：proposal_step → 其前沿 gate 节点 id（仅「停门前」三步）。
+ * **不含 *-failed**：节点已被非 cmd 字段（或 cmd 命中）解析为 failed → 非 pending 前沿，
+ * 不输出 cmd_gate、next 也不再求值 cmd（B3 frontier；如 done_when:cmd + fail_when:marker:VERIFY_FAIL 命中失败）。
+ */
+const STEP_TO_GATE_NODE = {
+    'ready-to-verify': 'verify',
+    'ready-to-deploy': 'deploy',
+    'ready-to-smoke': 'smoke',
+};
+/**
+ * S30：派生当前前沿 builtin gate 的 cmd_gate 描述符（含生效超时）；非 cmd-gate / 非相关 step → null。
+ * fail_when 优先于 done_when（前沿 next 先评 fail）。供 status/watch/next 输出 cmd_gate + next 求值取命令。
+ */
+export function deriveLaunchedCmdGate(root, proposalStep) {
+    const nodeId = STEP_TO_GATE_NODE[proposalStep];
+    if (!nodeId)
+        return null;
+    const m = extractLaunchedMarkers(root);
+    const desc = m.cmdGates[`${nodeId}.fail_when`] ?? m.cmdGates[`${nodeId}.done_when`];
+    if (!desc)
+        return null;
+    // timeout：节点级 cmd_timeout_seconds > 项目级 flow.cmd_timeout_seconds > 60s。
+    // 项目级用校验版 readProjectCmdTimeout——非法值 fail loud（FLOW_SCHEMA_INVALID），与执行路径一致。
+    const flow = loadFlow(root, { lifecycle: 'launched', resolved: true }).flow;
+    let nodeTimeout = null;
+    for (const s of flow.subflows)
+        for (const n of s.nodes)
+            if (n.id === nodeId)
+                nodeTimeout = n.cmd_timeout_seconds ?? null;
+    const projectTimeout = readProjectCmdTimeout(root);
+    return { ...desc, timeout_seconds: nodeTimeout ?? projectTimeout ?? 60 };
+}
+/**
+ * proposal_step → 其所处的 launched subflow gate 的映射（引擎规则）。
+ * change-flow-redesign 后三个可跳人类停顿点：ready-to-delta（plan 出口）、
+ * ready-to-merge（spec 出口，由原 propose 改）、ready-to-deploy（deliver 入口）。
+ * gate_id 由 gateForProposalStep 按 `<subflow.id>-<position>` 派生 → plan-exit / spec-exit / deliver-entry。
+ */
+const STEP_TO_GATE_SUBFLOW = {
+    'ready-to-delta': 'plan',
+    'ready-to-merge': 'spec',
+    'ready-to-implement': 'slice', // split-slice-planner-stage：gate_id 派生为 slice-exit
+    'ready-to-deploy': 'deliver',
+};
+/**
+ * 取某 proposal_step 对应 launched gate 的 `{gate_id, skippable}`；无对应 human gate 时返回 null。
+ * gate_id 与 skippable 均从 builtin launched flow 派生（flow 漂移由 S24 守卫测试兜底）。
+ */
+export function gateForProposalStep(step) {
+    const subflowId = STEP_TO_GATE_SUBFLOW[step];
+    if (!subflowId)
+        return null;
+    const flow = loadBuiltinFlow('launched');
+    const sub = flow.subflows.find(s => s.id === subflowId);
+    if (!sub || !sub.gate || sub.gate.type !== 'human')
+        return null;
+    const position = sub.gate.position ?? 'exit';
+    return { gate_id: `${subflowId}-${position}`, skippable: Boolean(sub.gate.skippable) };
+}
+//# sourceMappingURL=flow-derive.js.map

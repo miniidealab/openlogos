@@ -1,0 +1,9 @@
+{
+  "name": "openlogos",
+  "version": "0.14.1",
+  "description": "OpenLogos 方法论与变更门禁的 ZCode 原生插件",
+  "author": {
+    "name": "MiniIdeaLab"
+  },
+  "license": "Apache-2.0"
+}

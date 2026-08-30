@@ -1,0 +1,2049 @@
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync, chmodSync, rmSync } from 'node:fs';
+import { join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
+import { createInterface } from 'node:readline';
+import { execSync } from 'node:child_process';
+import { parse as parseYaml } from 'yaml';
+import { t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
+import { DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE, DEFAULT_SANDBOX_MODE, DEFAULT_SANDBOX_ROOT, backfillVerifyPreRunConfig, } from '../lib/verify-config.js';
+import { QODER_PLUGIN_REL_DIR, WORKBUDDY_PLUGIN_REL_DIR, ZCODE_PLUGIN_REL_DIR, createQoderAgentsInstruction, createWorkBuddyAgentsInstruction, createZCodeAgentsInstruction, deployQoderAssets, deployWorkBuddyAssets, deployZCodeAssets, expandRegisteredAiTools, localizedQoderResult, localizedWorkBuddyResult, localizedZCodeResult, parseRegisteredAiTool, preflightQoderTarget, preflightWorkBuddyTarget, preflightZCodeTarget, } from '../lib/ai-tool-adapter.js';
+const OPENLOGOS_BEGIN_MARKER = '<!-- OPENLOGOS:BEGIN -->';
+const OPENLOGOS_END_MARKER = '<!-- OPENLOGOS:END -->';
+const CODEX_OPENLOGOS_PLUGIN_ID = 'openlogos';
+const CODEX_OPENLOGOS_PLUGIN_REL_DIR = '.agents/plugins/openlogos';
+const CODEX_OPENLOGOS_SKILLS_REL_DIR = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/skills`;
+const CODEX_MARKETPLACE_REL_PATH = '.agents/plugins/marketplace.json';
+const CODEX_PERSONAL_MARKETPLACE_REL_PATH = '.agents/plugins/marketplace.json';
+const CODEX_PERSONAL_PLUGIN_REL_DIR = 'plugins/openlogos';
+const CODEX_HOOK_REL_PATH = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/hooks/session-start.sh`;
+const CODEX_LEGACY_PLUGIN_REL_DIR = '.codex-plugin';
+const CODEX_LEGACY_HOOK_REL_PATH = `${CODEX_LEGACY_PLUGIN_REL_DIR}/hooks/session-start.sh`;
+export function parseAiTool(value) {
+    return parseRegisteredAiTool(value);
+}
+export function expandAiTools(rawAiTool) {
+    return expandRegisteredAiTools(rawAiTool);
+}
+export function resolveDocsAiTool(rawAiTool) {
+    const tools = expandAiTools(rawAiTool);
+    return tools.length === 1 ? tools[0] : 'all';
+}
+export function resolveDocsAiToolForTarget(rawAiTool, target) {
+    const tools = expandAiTools(rawAiTool);
+    if (tools.length === 1)
+        return tools[0];
+    if (target === 'agents') {
+        const needsSharedLogosSkills = tools.includes('claude-code')
+            || tools.includes('opencode')
+            || tools.includes('zcode')
+            || tools.includes('qoder')
+            || tools.includes('workbuddy')
+            || tools.includes('other');
+        if (tools.includes('codex') && !needsSharedLogosSkills)
+            return 'codex';
+        return 'all';
+    }
+    if (tools.includes('claude-code'))
+        return 'claude-code';
+    if (tools.includes('other'))
+        return 'other';
+    return 'cursor';
+}
+export function mergeAiToolConfig(existingRawAiTool, requestedAiTool) {
+    const existingTools = expandAiTools(existingRawAiTool ?? 'cursor');
+    const mergedTools = requestedAiTool === 'all'
+        ? [
+            ...expandRegisteredAiTools('all'),
+            ...existingTools.filter(tool => !expandRegisteredAiTools('all').includes(tool)),
+        ]
+        : [...existingTools, ...expandAiTools(requestedAiTool)];
+    const uniqueTools = Array.from(new Set(mergedTools));
+    return uniqueTools.length === 1 ? uniqueTools[0] : uniqueTools;
+}
+export function readConfigName(root) {
+    const pkgPath = join(root, 'package.json');
+    if (existsSync(pkgPath)) {
+        try {
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+            if (pkg.name && typeof pkg.name === 'string') {
+                const name = pkg.name.replace(/^@[^/]+\//, '');
+                return { name, source: 'package.json' };
+            }
+        }
+        catch { /* ignore parse errors */ }
+    }
+    const cargoPath = join(root, 'Cargo.toml');
+    if (existsSync(cargoPath)) {
+        try {
+            const content = readFileSync(cargoPath, 'utf-8');
+            const match = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+            if (match)
+                return { name: match[1], source: 'Cargo.toml' };
+        }
+        catch { /* ignore */ }
+    }
+    const pyprojectPath = join(root, 'pyproject.toml');
+    if (existsSync(pyprojectPath)) {
+        try {
+            const content = readFileSync(pyprojectPath, 'utf-8');
+            const match = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+            if (match)
+                return { name: match[1], source: 'pyproject.toml' };
+        }
+        catch { /* ignore */ }
+    }
+    return null;
+}
+export function detectProjectName(root) {
+    const configName = readConfigName(root);
+    if (configName)
+        return configName;
+    return { name: basename(root), source: 'directory' };
+}
+function askQuestion(prompt) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => {
+        rl.question(prompt, (answer) => {
+            rl.close();
+            resolve(answer.trim());
+        });
+    });
+}
+function isTTY() {
+    return Boolean(process.stdin.isTTY);
+}
+async function resolveProjectName(locale, root, explicitName) {
+    if (!explicitName) {
+        return detectProjectName(root);
+    }
+    const configName = readConfigName(root);
+    if (!configName || configName.name === explicitName) {
+        return { name: explicitName, source: 'argument' };
+    }
+    console.log(`\n⚠ ${t(locale, 'init.nameConflict')}`);
+    console.log(t(locale, 'init.nameChoice1', { name: explicitName }));
+    console.log(t(locale, 'init.nameChoice2', { name: configName.name, source: configName.source }) + '\n');
+    if (!isTTY()) {
+        return { name: explicitName, source: 'argument' };
+    }
+    const answer = await askQuestion(t(locale, 'init.namePrompt'));
+    if (answer === '2') {
+        return configName;
+    }
+    return { name: explicitName, source: 'argument' };
+}
+function detectAiToolFromEnv() {
+    if (process.env.CODEBUDDY_PLUGIN_ROOT)
+        return 'workbuddy';
+    if (process.env.QODER_PLUGIN_ROOT)
+        return 'qoder';
+    if (process.env.ZCODE_PLUGIN_ROOT)
+        return 'zcode';
+    if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_CODE)
+        return 'claude-code';
+    return 'claude-code';
+}
+async function chooseLocale() {
+    if (!isTTY()) {
+        console.error('Error: --locale is required in non-interactive mode.');
+        console.error('');
+        console.error('Usage: openlogos init --locale <en|zh> [--ai-tool <claude-code|opencode|codex|cursor|zcode|qoder|workbuddy|other|all>] [name]');
+        console.error('');
+        console.error('Ask the user to choose a language first:');
+        console.error('  --locale en    English');
+        console.error('  --locale zh    中文');
+        process.exit(1);
+    }
+    console.log('\nChoose language / 选择语言:');
+    console.log('  1. English (default)');
+    console.log('  2. 中文\n');
+    const answer = await askQuestion('Your choice [1/2] (default: 1): ');
+    return answer === '2' ? 'zh' : 'en';
+}
+export async function chooseAiTool(locale) {
+    if (!isTTY())
+        return detectAiToolFromEnv();
+    console.log(`\n${t(locale, 'init.aiToolHeader')}`);
+    console.log(t(locale, 'init.aiToolClaudeCode'));
+    console.log(t(locale, 'init.aiToolOpenCode'));
+    console.log(t(locale, 'init.aiToolCodex'));
+    console.log(t(locale, 'init.aiToolCursor'));
+    console.log(t(locale, 'init.aiToolOther'));
+    console.log(t(locale, 'init.aiToolAll') + '\n');
+    console.log('  7. ZCode');
+    console.log('  8. Qoder');
+    console.log('  9. WorkBuddy\n');
+    const answer = await askQuestion(t(locale, 'init.aiToolPrompt'));
+    if (answer === '2')
+        return 'opencode';
+    if (answer === '3')
+        return 'codex';
+    if (answer === '4')
+        return 'cursor';
+    if (answer === '5')
+        return 'other';
+    if (answer === '6')
+        return 'all';
+    if (answer === '7')
+        return 'zcode';
+    if (answer === '8')
+        return 'qoder';
+    if (answer === '9')
+        return 'workbuddy';
+    return 'claude-code';
+}
+export const SKILL_NAMES = [
+    'project-init',
+    'prd-writer',
+    'product-designer',
+    'ui-ux-pro-max',
+    'architecture-designer',
+    'scenario-architect',
+    'api-designer',
+    'db-designer',
+    'deployment-designer',
+    'test-writer',
+    'test-orchestrator',
+    'code-implementor',
+    'code-reviewer',
+    'change-writer',
+    'slice-planner',
+    'deployment-executor',
+    'merge-executor',
+];
+const MULTI_FILE_SKILLS = new Set([
+    'ui-ux-pro-max',
+]);
+const SKILL_DESCRIPTIONS = {
+    'project-init': { en: 'Project initialization and structure setup', zh: '项目初始化与结构搭建' },
+    'prd-writer': { en: 'Requirements document authoring', zh: '需求文档编写' },
+    'product-designer': { en: 'Product design and prototyping', zh: '产品设计与原型' },
+    'ui-ux-pro-max': { en: 'UI/UX design intelligence (67 styles / 96 palettes / 57 font pairings / 25 charts / 13 stacks). Auto-invoked by product-designer in Phase 2 for GUI products (Web / Mobile / Desktop).', zh: 'UI/UX 设计智能（67 风格 / 96 调色板 / 57 字体配对 / 25 图表 / 13 技术栈）。Phase 2 处理 GUI 类产品（Web / Mobile / Desktop）设计时由 product-designer 自动调用。' },
+    'architecture-designer': { en: 'Technical architecture and technology selection', zh: '技术架构与技术选型' },
+    'scenario-architect': { en: 'Business scenario modeling and sequence diagrams', zh: '业务场景建模与时序图' },
+    'api-designer': { en: 'OpenAPI specification design', zh: 'OpenAPI 规格设计' },
+    'db-designer': { en: 'Database schema design', zh: '数据库 Schema 设计' },
+    'deployment-designer': { en: 'Deployment plan and smoke strategy design (Step 3)', zh: '部署方案与 smoke 策略设计（Step 3）' },
+    'test-writer': { en: 'Unit test + scenario test case design (Step 4a, all projects)', zh: '单元测试 + 场景测试用例设计（Step 4a）' },
+    'test-orchestrator': { en: 'API orchestration test design (Step 4b, API projects only)', zh: 'API 编排测试设计（Step 4b，仅 API 项目）' },
+    'code-implementor': { en: 'Code and test code generation with spec fidelity (Step 5)', zh: '基于规格链的代码与测试代码生成（Step 5）' },
+    'code-reviewer': { en: 'Code review and compliance checking', zh: '代码审查与规范检查' },
+    'change-writer': { en: 'Change proposal writing and impact analysis', zh: '变更提案编写与影响分析' },
+    'slice-planner': { en: 'Post-merge [code] slice planning: six-dim scoring + vertical/horizontal discriminator + delete-the-rest falsification gate (sole source of truth for [code] slicing)', zh: 'merge 后 [code] 切片规划：六维打分 + 垂直/横向判别器 + 删后续证伪门（launched 变更下 [code] 切片的唯一事实源）' },
+    'deployment-executor': { en: 'Human-confirmed deployment execution after verify', zh: 'verify 通过后的人类确认部署执行' },
+    'merge-executor': { en: 'Delta merge execution via MERGE_PROMPT.md', zh: '通过 MERGE_PROMPT.md 执行 Delta 合并' },
+};
+export function findSkillsSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    // npm package layout: <pkg>/dist/commands/init.js → <pkg>/skills/
+    const packageSkills = join(currentDir, '..', '..', 'skills');
+    if (existsSync(packageSkills))
+        return packageSkills;
+    // dev layout: cli/src/commands/init.ts → <repo>/skills/
+    const devSkills = join(currentDir, '..', '..', '..', 'skills');
+    if (existsSync(devSkills))
+        return devSkills;
+    return null;
+}
+export function findSpecSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    const packageSpec = join(currentDir, '..', '..', 'spec');
+    if (existsSync(packageSpec))
+        return packageSpec;
+    const devSpec = join(currentDir, '..', '..', '..', 'spec');
+    if (existsSync(devSpec))
+        return devSpec;
+    return null;
+}
+export function findOpenCodePluginTemplateSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    // npm package layout: <pkg>/dist/commands/init.js → <pkg>/opencode-plugin-template/
+    const packageTemplate = join(currentDir, '..', '..', 'opencode-plugin-template');
+    if (existsSync(packageTemplate))
+        return packageTemplate;
+    // dev layout: cli/src/commands/init.ts → <repo>/plugin-opencode/template/
+    const devTemplate = join(currentDir, '..', '..', '..', 'plugin-opencode', 'template');
+    if (existsSync(devTemplate))
+        return devTemplate;
+    return null;
+}
+export function findCodexPluginTemplateSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    // npm package layout: <pkg>/dist/commands/init.js → <pkg>/codex-plugin-template/
+    const packageTemplate = join(currentDir, '..', '..', 'codex-plugin-template');
+    if (existsSync(packageTemplate))
+        return packageTemplate;
+    // dev layout: cli/src/commands/init.ts → <repo>/plugin-codex/
+    const devTemplate = join(currentDir, '..', '..', '..', 'plugin-codex');
+    if (existsSync(devTemplate))
+        return devTemplate;
+    return null;
+}
+export function findZCodePluginTemplateSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    const packageTemplate = join(currentDir, '..', '..', 'zcode-plugin-template');
+    if (existsSync(packageTemplate))
+        return packageTemplate;
+    const devTemplate = join(currentDir, '..', '..', '..', 'plugin-zcode');
+    return existsSync(devTemplate) ? devTemplate : null;
+}
+export function findQoderPluginTemplateSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    const packageTemplate = join(currentDir, '..', '..', 'qoder-plugin-template');
+    if (existsSync(packageTemplate))
+        return packageTemplate;
+    const devTemplate = join(currentDir, '..', '..', '..', 'plugin-qoder');
+    return existsSync(devTemplate) ? devTemplate : null;
+}
+export function findWorkBuddyPluginTemplateSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    const packageTemplate = join(currentDir, '..', '..', 'workbuddy-plugin-template');
+    if (existsSync(packageTemplate))
+        return packageTemplate;
+    const devTemplate = join(currentDir, '..', '..', '..', 'plugin-workbuddy');
+    return existsSync(devTemplate) ? devTemplate : null;
+}
+export function preflightAiToolAssets(root, aiTools) {
+    if (aiTools.includes('zcode')) {
+        const source = findZCodePluginTemplateSource();
+        if (!source)
+            throw new Error('ZCode plugin template not found.');
+        preflightZCodeTarget(root, source);
+    }
+    if (aiTools.includes('qoder')) {
+        const source = findQoderPluginTemplateSource();
+        if (!source)
+            throw new Error('Qoder plugin template not found.');
+        preflightQoderTarget(root, source);
+    }
+    if (aiTools.includes('workbuddy')) {
+        const source = findWorkBuddyPluginTemplateSource();
+        if (!source)
+            throw new Error('WorkBuddy plugin template not found.');
+        preflightWorkBuddyTarget(root, source);
+    }
+}
+export function preflightInstructionFiles(root, locale, rawAiTool, isLaunched) {
+    for (const [fileName, target] of [['AGENTS.md', 'agents'], ['CLAUDE.md', 'claude']]) {
+        const file = join(root, fileName);
+        const existing = existsSync(file) ? readFileSync(file, 'utf8') : null;
+        mergeInstructionFileContent(existing, createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, target), target, isLaunched));
+    }
+}
+function mergeCodexConfig(root) {
+    const configDir = join(root, '.codex');
+    const configPath = join(configDir, 'config.toml');
+    const hookBlock = `\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "${CODEX_HOOK_REL_PATH}"\ntimeout = 5\nasync = false\nstatusMessage = "Loading OpenLogos phase context..."\n`;
+    mkdirSync(configDir, { recursive: true });
+    if (!existsSync(configPath)) {
+        writeFileSync(configPath, hookBlock);
+        return { created: true, updated: true };
+    }
+    const existing = readFileSync(configPath, 'utf-8');
+    let content = existing;
+    let changed = false;
+    const legacyHookCleanup = removeLegacyOpenLogosCodexHookBlocks(content);
+    if (legacyHookCleanup.changed) {
+        content = legacyHookCleanup.content;
+        changed = true;
+    }
+    const openLogosPluginBlockCleanup = removeTomlTableBlock(content, '[plugins.openlogos]');
+    if (openLogosPluginBlockCleanup.changed) {
+        content = openLogosPluginBlockCleanup.content;
+        changed = true;
+    }
+    const hasOpenLogosHook = content.includes(`command = "${CODEX_HOOK_REL_PATH}"`);
+    if (!hasOpenLogosHook) {
+        content += hookBlock;
+        changed = true;
+    }
+    if (changed) {
+        writeFileSync(configPath, content);
+    }
+    return { created: false, updated: changed };
+}
+function removeLegacyOpenLogosCodexHookBlocks(content) {
+    const lines = content.split('\n');
+    const kept = [];
+    let changed = false;
+    for (let i = 0; i < lines.length;) {
+        if (lines[i]?.trim() !== '[[hooks.SessionStart]]') {
+            kept.push(lines[i]);
+            i++;
+            continue;
+        }
+        const block = [];
+        block.push(lines[i]);
+        i++;
+        while (i < lines.length) {
+            const trimmed = lines[i].trim();
+            const startsNewTomlTable = trimmed.startsWith('[')
+                && trimmed !== '[[hooks.SessionStart.hooks]]'
+                && !trimmed.startsWith('[hooks.SessionStart.');
+            if (startsNewTomlTable)
+                break;
+            block.push(lines[i]);
+            i++;
+        }
+        const blockText = block.join('\n');
+        const isLegacyOpenLogosHook = blockText.includes(`command = "${CODEX_LEGACY_HOOK_REL_PATH}"`)
+            || blockText.includes(`command = "./${CODEX_LEGACY_HOOK_REL_PATH}"`);
+        if (isLegacyOpenLogosHook) {
+            changed = true;
+            continue;
+        }
+        kept.push(...block);
+    }
+    return { content: kept.join('\n'), changed };
+}
+function removeTomlTableBlock(content, tableHeader) {
+    const lines = content.split('\n');
+    const kept = [];
+    let changed = false;
+    for (let i = 0; i < lines.length;) {
+        if (lines[i]?.trim() !== tableHeader) {
+            kept.push(lines[i]);
+            i++;
+            continue;
+        }
+        changed = true;
+        i++;
+        while (i < lines.length) {
+            const trimmed = lines[i].trim();
+            if (trimmed.startsWith('['))
+                break;
+            i++;
+        }
+    }
+    return { content: kept.join('\n'), changed };
+}
+function createCodexMarketplaceEntry() {
+    return {
+        name: CODEX_OPENLOGOS_PLUGIN_ID,
+        source: {
+            source: 'local',
+            path: `./${CODEX_OPENLOGOS_PLUGIN_REL_DIR}`,
+        },
+        policy: {
+            installation: 'AVAILABLE',
+            authentication: 'ON_INSTALL',
+        },
+        category: 'Engineering',
+    };
+}
+function createCodexPersonalMarketplaceEntry() {
+    return {
+        name: CODEX_OPENLOGOS_PLUGIN_ID,
+        source: {
+            source: 'local',
+            path: `./${CODEX_PERSONAL_PLUGIN_REL_DIR}`,
+        },
+        policy: {
+            installation: 'AVAILABLE',
+            authentication: 'ON_INSTALL',
+        },
+        category: 'Engineering',
+    };
+}
+function upsertCodexMarketplace(root) {
+    const marketplacePath = join(root, CODEX_MARKETPLACE_REL_PATH);
+    mkdirSync(dirname(marketplacePath), { recursive: true });
+    const entry = createCodexMarketplaceEntry();
+    if (!existsSync(marketplacePath)) {
+        writeFileSync(marketplacePath, JSON.stringify({
+            name: basename(root),
+            interface: {
+                displayName: `${basename(root)} project plugins`,
+            },
+            plugins: [entry],
+        }, null, 2));
+        return { created: true, updated: true };
+    }
+    let data;
+    try {
+        data = JSON.parse(readFileSync(marketplacePath, 'utf-8'));
+    }
+    catch {
+        return { created: false, updated: false };
+    }
+    const plugins = Array.isArray(data.plugins)
+        ? data.plugins
+        : [];
+    const index = plugins.findIndex((item) => {
+        if (typeof item !== 'object' || item === null)
+            return false;
+        const record = item;
+        return record.id === CODEX_OPENLOGOS_PLUGIN_ID
+            || record.name === CODEX_OPENLOGOS_PLUGIN_ID
+            || record.name === 'OpenLogos';
+    });
+    let changed = false;
+    if (typeof data.name !== 'string' || data.name.length === 0) {
+        data.name = basename(root);
+        changed = true;
+    }
+    if (!data.interface || typeof data.interface !== 'object' || Array.isArray(data.interface)) {
+        data.interface = { displayName: `${basename(root)} project plugins` };
+        changed = true;
+    }
+    if (index >= 0) {
+        const current = plugins[index];
+        const { id: _id, path: _path, plugin: _plugin, description: _description, ...preserved } = current;
+        void _id;
+        void _path;
+        void _plugin;
+        void _description;
+        const merged = { ...preserved, ...entry };
+        if (JSON.stringify(current) !== JSON.stringify(merged)) {
+            plugins[index] = merged;
+            changed = true;
+        }
+    }
+    else {
+        plugins.push(entry);
+        changed = true;
+    }
+    if (data.plugins !== plugins) {
+        data.plugins = plugins;
+        changed = true;
+    }
+    if (changed) {
+        writeFileSync(marketplacePath, JSON.stringify(data, null, 2));
+    }
+    return { created: false, updated: changed };
+}
+function upsertCodexPersonalMarketplace(home) {
+    const marketplacePath = join(home, CODEX_PERSONAL_MARKETPLACE_REL_PATH);
+    mkdirSync(dirname(marketplacePath), { recursive: true });
+    const entry = createCodexPersonalMarketplaceEntry();
+    if (!existsSync(marketplacePath)) {
+        writeFileSync(marketplacePath, JSON.stringify({
+            name: 'personal',
+            interface: {
+                displayName: 'Personal',
+            },
+            plugins: [entry],
+        }, null, 2));
+        return { created: true, updated: true, path: marketplacePath };
+    }
+    let data;
+    try {
+        data = JSON.parse(readFileSync(marketplacePath, 'utf-8'));
+    }
+    catch {
+        return { created: false, updated: false, path: marketplacePath };
+    }
+    const plugins = Array.isArray(data.plugins)
+        ? data.plugins
+        : [];
+    const index = plugins.findIndex((item) => {
+        if (typeof item !== 'object' || item === null)
+            return false;
+        const record = item;
+        return record.id === CODEX_OPENLOGOS_PLUGIN_ID
+            || record.name === CODEX_OPENLOGOS_PLUGIN_ID
+            || record.name === 'OpenLogos';
+    });
+    let changed = false;
+    if (data.name !== 'personal') {
+        data.name = 'personal';
+        changed = true;
+    }
+    if (!data.interface || typeof data.interface !== 'object' || Array.isArray(data.interface)) {
+        data.interface = { displayName: 'Personal' };
+        changed = true;
+    }
+    if (index >= 0) {
+        const current = plugins[index];
+        const { id: _id, path: _path, plugin: _plugin, description: _description, ...preserved } = current;
+        void _id;
+        void _path;
+        void _plugin;
+        void _description;
+        const merged = { ...preserved, ...entry };
+        if (JSON.stringify(current) !== JSON.stringify(merged)) {
+            plugins[index] = merged;
+            changed = true;
+        }
+    }
+    else {
+        plugins.push(entry);
+        changed = true;
+    }
+    if (data.plugins !== plugins) {
+        data.plugins = plugins;
+        changed = true;
+    }
+    if (changed) {
+        writeFileSync(marketplacePath, JSON.stringify(data, null, 2));
+    }
+    return { created: false, updated: changed, path: marketplacePath };
+}
+function writeCodexRootCompatibilityPlugin(root) {
+    const legacyDir = join(root, CODEX_LEGACY_PLUGIN_REL_DIR);
+    const pluginJsonPath = join(legacyDir, 'plugin.json');
+    if (existsSync(pluginJsonPath) && readCodexPluginName(pluginJsonPath) !== CODEX_OPENLOGOS_PLUGIN_ID) {
+        return { created: false, updated: false, skipped: true };
+    }
+    mkdirSync(legacyDir, { recursive: true });
+    const manifest = {
+        name: CODEX_OPENLOGOS_PLUGIN_ID,
+        version: '0.13.4',
+        description: 'OpenLogos methodology — Why→What→How structured AI-driven development',
+        skills: `./${CODEX_OPENLOGOS_SKILLS_REL_DIR}/`,
+        interface: {
+            display_name: 'OpenLogos',
+            short_description: 'Structured development: PRD → Design → Scenarios → API → Code',
+            default_prompt: ['What should I do next in the OpenLogos workflow?'],
+        },
+    };
+    const next = `${JSON.stringify(manifest, null, 2)}\n`;
+    const created = !existsSync(pluginJsonPath);
+    if (!created && readFileSync(pluginJsonPath, 'utf-8') === next) {
+        return { created: false, updated: false, skipped: false };
+    }
+    writeFileSync(pluginJsonPath, next);
+    return { created, updated: true, skipped: false };
+}
+function readCodexPluginName(pluginJsonPath) {
+    try {
+        const data = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
+        return typeof data?.name === 'string' ? data.name : null;
+    }
+    catch {
+        return null;
+    }
+}
+function removeLegacyOpenLogosCodexPlugin(root) {
+    const legacyDir = join(root, CODEX_LEGACY_PLUGIN_REL_DIR);
+    const pluginJsonPath = join(legacyDir, 'plugin.json');
+    if (!existsSync(pluginJsonPath))
+        return false;
+    if (readCodexPluginName(pluginJsonPath) !== CODEX_OPENLOGOS_PLUGIN_ID)
+        return false;
+    rmSync(legacyDir, { recursive: true, force: true });
+    return true;
+}
+function resolveCodexPersonalHome() {
+    return process.env.OPENLOGOS_CODEX_PERSONAL_HOME || homedir();
+}
+function shouldSkipCodexPersonalSync() {
+    if (process.env.OPENLOGOS_DISABLE_CODEX_PERSONAL_SYNC === '1')
+        return true;
+    return Boolean((process.env.VITEST || process.env.VITEST_WORKER_ID) && !process.env.OPENLOGOS_CODEX_PERSONAL_HOME);
+}
+function shouldSkipCodexPluginInstall() {
+    return process.env.OPENLOGOS_SKIP_CODEX_PLUGIN_INSTALL === '1'
+        || Boolean(process.env.VITEST || process.env.VITEST_WORKER_ID);
+}
+function installCodexPersonalPlugin() {
+    if (shouldSkipCodexPluginInstall())
+        return { status: 'skipped' };
+    try {
+        execSync('codex plugin add openlogos@personal --json', { stdio: 'pipe' });
+        return { status: 'installed' };
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { status: 'failed', error: message };
+    }
+}
+function deployCodexPersonalPlugin(root, locale) {
+    if (shouldSkipCodexPersonalSync()) {
+        return {
+            skipped: true,
+            plugin: { created: false, updated: false },
+            marketplace: { created: false, updated: false },
+            install: { status: 'skipped' },
+        };
+    }
+    const home = resolveCodexPersonalHome();
+    const personalPluginDir = join(home, CODEX_PERSONAL_PLUGIN_REL_DIR);
+    const projectPluginDir = join(root, CODEX_OPENLOGOS_PLUGIN_REL_DIR);
+    const created = !existsSync(personalPluginDir);
+    rmSync(personalPluginDir, { recursive: true, force: true });
+    copyDirRecursive(projectPluginDir, personalPluginDir);
+    const skillsSource = findSkillsSource();
+    if (skillsSource && existsSync(skillsSource)) {
+        writeCodexSkillsToTarget(join(personalPluginDir, 'skills'), skillsSource, locale);
+    }
+    const marketplace = upsertCodexPersonalMarketplace(home);
+    const install = installCodexPersonalPlugin();
+    return {
+        skipped: false,
+        plugin: { created, updated: true, path: personalPluginDir },
+        marketplace,
+        install,
+    };
+}
+function countSkillDirs(path) {
+    if (!existsSync(path))
+        return 0;
+    try {
+        return readdirSync(path, { withFileTypes: true })
+            .filter(entry => entry.isDirectory())
+            .length;
+    }
+    catch {
+        return 0;
+    }
+}
+function detectCodexProjectSkillBoundary(root, legacyOpenLogosPluginRemoved = false) {
+    const legacySkillCount = countSkillDirs(join(root, '.agents', 'skills'));
+    let projectPluginCount = 0;
+    const pluginsDir = join(root, '.agents', 'plugins');
+    if (existsSync(pluginsDir)) {
+        try {
+            projectPluginCount = readdirSync(pluginsDir, { withFileTypes: true })
+                .filter(entry => entry.isDirectory() && entry.name !== CODEX_OPENLOGOS_PLUGIN_ID)
+                .length;
+        }
+        catch { /* ignore unreadable project plugin dirs */ }
+    }
+    return {
+        legacySkillCount,
+        projectPluginCount,
+        hasLegacyPlugin: existsSync(join(root, '.codex-plugin')),
+        legacyOpenLogosPluginRemoved,
+    };
+}
+export function deployCodexPlugin(root, locale = 'en') {
+    const source = findCodexPluginTemplateSource();
+    if (!source || !existsSync(source))
+        return null;
+    const pluginDir = join(root, CODEX_OPENLOGOS_PLUGIN_REL_DIR);
+    const codexPluginDir = join(pluginDir, '.codex-plugin');
+    const hooksDir = join(pluginDir, 'hooks');
+    mkdirSync(codexPluginDir, { recursive: true });
+    mkdirSync(hooksDir, { recursive: true });
+    const pluginJsonSrc = join(source, 'plugin.json');
+    const hookSrc = join(source, 'session-start.sh');
+    if (!existsSync(pluginJsonSrc) || !existsSync(hookSrc))
+        return null;
+    copyFileSync(pluginJsonSrc, join(codexPluginDir, 'plugin.json'));
+    const hookDest = join(hooksDir, 'session-start.sh');
+    copyFileSync(hookSrc, hookDest);
+    try {
+        chmodSync(hookDest, 0o755);
+    }
+    catch { /* ignore on platforms that don't support chmod */ }
+    const marketplaceResult = upsertCodexMarketplace(root);
+    const configResult = mergeCodexConfig(root);
+    const legacyOpenLogosPluginRemoved = removeLegacyOpenLogosCodexPlugin(root);
+    const compatibilityPlugin = writeCodexRootCompatibilityPlugin(root);
+    const personal = deployCodexPersonalPlugin(root, locale);
+    const boundary = detectCodexProjectSkillBoundary(root, legacyOpenLogosPluginRemoved);
+    const targetLabel = locale === 'zh'
+        ? '.agents/plugins/openlogos/ + ~/.agents/plugins/marketplace.json + ~/.codex plugin cache + .codex/config.toml'
+        : '.agents/plugins/openlogos/ + ~/.agents/plugins/marketplace.json + ~/.codex plugin cache + .codex/config.toml';
+    return { target: targetLabel, config: configResult, marketplace: marketplaceResult, personal, compatibilityPlugin, boundary };
+}
+function mergeOpenCodeConfig(root) {
+    const configPath = join(root, 'opencode.json');
+    const defaultConfig = {
+        '$schema': 'https://opencode.ai/config.json',
+        permission: {
+            bash: 'ask',
+            edit: 'ask',
+            read: 'allow',
+            glob: 'allow',
+            grep: 'allow',
+            skill: 'allow',
+        },
+    };
+    if (!existsSync(configPath)) {
+        writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
+        return { created: true, updated: true };
+    }
+    let changed = false;
+    let data = {};
+    try {
+        data = JSON.parse(readFileSync(configPath, 'utf-8'));
+    }
+    catch {
+        // invalid json: keep file intact and skip merge
+        return { created: false, updated: false };
+    }
+    if (!data['$schema']) {
+        data['$schema'] = 'https://opencode.ai/config.json';
+        changed = true;
+    }
+    const permission = (data.permission && typeof data.permission === 'object' && !Array.isArray(data.permission))
+        ? data.permission
+        : {};
+    const defaults = defaultConfig.permission;
+    for (const [key, value] of Object.entries(defaults)) {
+        if (!(key in permission)) {
+            permission[key] = value;
+            changed = true;
+        }
+    }
+    data.permission = permission;
+    if (changed) {
+        writeFileSync(configPath, JSON.stringify(data, null, 2));
+    }
+    return { created: false, updated: changed };
+}
+export function findClaudePluginTemplateSource() {
+    const currentFile = fileURLToPath(import.meta.url);
+    const currentDir = dirname(currentFile);
+    // npm package layout: <pkg>/dist/commands/init.js → <pkg>/claude-plugin-template/
+    const packageTemplate = join(currentDir, '..', '..', 'claude-plugin-template');
+    if (existsSync(packageTemplate))
+        return packageTemplate;
+    // dev layout: cli/src/commands/init.ts → <repo>/plugin/
+    const devTemplate = join(currentDir, '..', '..', '..', 'plugin');
+    if (existsSync(devTemplate))
+        return devTemplate;
+    return null;
+}
+/**
+ * Merges the openlogos PreToolUse guard hook into .claude/settings.json.
+ * Idempotent: only appends if the hook command is not already present.
+ */
+function mergeClaudePreToolUseGuard(root, guardRelPath) {
+    const settingsPath = join(root, '.claude', 'settings.json');
+    if (!existsSync(settingsPath))
+        return; // SessionStart merge creates it first
+    let data = {};
+    try {
+        data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    }
+    catch {
+        return; // Malformed JSON — skip
+    }
+    const hookEntry = { type: 'command', command: guardRelPath };
+    // Check if already registered under PreToolUse
+    const hooks = data['hooks'];
+    const preToolUse = hooks?.['PreToolUse'];
+    const alreadyRegistered = Array.isArray(preToolUse) &&
+        preToolUse.some((group) => {
+            if (typeof group !== 'object' || group === null)
+                return false;
+            const g = group;
+            return Array.isArray(g['hooks']) &&
+                g['hooks'].some((h) => {
+                    if (typeof h !== 'object' || h === null)
+                        return false;
+                    return h['command'] === guardRelPath;
+                });
+        });
+    if (alreadyRegistered)
+        return;
+    if (!data['hooks'] || typeof data['hooks'] !== 'object') {
+        data['hooks'] = {};
+    }
+    const hooksObj = data['hooks'];
+    if (!Array.isArray(hooksObj['PreToolUse'])) {
+        hooksObj['PreToolUse'] = [];
+    }
+    hooksObj['PreToolUse'].push({
+        matcher: 'Edit|Write|Bash',
+        hooks: [hookEntry],
+    });
+    writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+}
+/**
+ * Merges the openlogos SessionStart hook into .claude/settings.json.
+ * Idempotent: only appends if the hook command is not already present.
+ * Returns whether the file was created or updated.
+ */
+function mergeClaudeSettings(root, binRelPath) {
+    const settingsDir = join(root, '.claude');
+    const settingsPath = join(settingsDir, 'settings.json');
+    mkdirSync(settingsDir, { recursive: true });
+    const hookEntry = {
+        type: 'command',
+        command: binRelPath,
+    };
+    if (!existsSync(settingsPath)) {
+        const initial = {
+            hooks: {
+                SessionStart: [{ hooks: [hookEntry] }],
+            },
+        };
+        writeFileSync(settingsPath, JSON.stringify(initial, null, 2));
+        return { created: true, updated: true };
+    }
+    let data = {};
+    try {
+        data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    }
+    catch {
+        // Malformed JSON — leave file intact, skip merge
+        return { created: false, updated: false };
+    }
+    // Check if the hook command is already registered
+    const hooks = data['hooks'];
+    const sessionStart = hooks?.['SessionStart'];
+    const alreadyRegistered = Array.isArray(sessionStart) &&
+        sessionStart.some((group) => {
+            if (typeof group !== 'object' || group === null)
+                return false;
+            const g = group;
+            return Array.isArray(g['hooks']) &&
+                g['hooks'].some((h) => {
+                    if (typeof h !== 'object' || h === null)
+                        return false;
+                    return h['command'] === binRelPath;
+                });
+        });
+    if (alreadyRegistered)
+        return { created: false, updated: false };
+    // Append the hook entry
+    if (!data['hooks'] || typeof data['hooks'] !== 'object') {
+        data['hooks'] = {};
+    }
+    const hooksObj = data['hooks'];
+    if (!Array.isArray(hooksObj['SessionStart'])) {
+        hooksObj['SessionStart'] = [];
+    }
+    hooksObj['SessionStart'].push({ hooks: [hookEntry] });
+    writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+    return { created: false, updated: true };
+}
+export function deployClaudeCodePlugin(root, locale = 'en') {
+    const source = findClaudePluginTemplateSource();
+    if (!source || !existsSync(source))
+        return null;
+    // Idempotency check: if commands dir already has files, skip deployment
+    const commandsTargetDir = join(root, '.claude', 'commands', 'openlogos');
+    if (existsSync(commandsTargetDir)) {
+        try {
+            const existing = readdirSync(commandsTargetDir).filter(f => f.endsWith('.md'));
+            if (existing.length > 0) {
+                return { commandCount: 0, agentCount: 0, hooksUpdated: false, skipped: true };
+            }
+        }
+        catch { /* fall through to deploy */ }
+    }
+    // Deploy commands: plugin/commands/*.md → .claude/commands/openlogos/
+    let commandCount = 0;
+    const commandsSrcDir = join(source, 'commands');
+    if (existsSync(commandsSrcDir)) {
+        mkdirSync(commandsTargetDir, { recursive: true });
+        for (const file of readdirSync(commandsSrcDir).filter(f => f.endsWith('.md'))) {
+            copyFileSync(join(commandsSrcDir, file), join(commandsTargetDir, file));
+            commandCount++;
+        }
+    }
+    // Deploy agents: plugin/agents/*.md → .claude/agents/
+    let agentCount = 0;
+    const agentsSrcDir = join(source, 'agents');
+    if (existsSync(agentsSrcDir)) {
+        const agentsTargetDir = join(root, '.claude', 'agents');
+        mkdirSync(agentsTargetDir, { recursive: true });
+        for (const file of readdirSync(agentsSrcDir).filter(f => f.endsWith('.md'))) {
+            copyFileSync(join(agentsSrcDir, file), join(agentsTargetDir, file));
+            agentCount++;
+        }
+    }
+    // Deploy bin: plugin/bin/openlogos-phase → .claude/openlogos/bin/openlogos-phase
+    const binSrc = join(source, 'bin', 'openlogos-phase');
+    const binTargetDir = join(root, '.claude', 'openlogos', 'bin');
+    const binRelPath = '.claude/openlogos/bin/openlogos-phase';
+    if (existsSync(binSrc)) {
+        mkdirSync(binTargetDir, { recursive: true });
+        const binDest = join(binTargetDir, 'openlogos-phase');
+        copyFileSync(binSrc, binDest);
+        try {
+            chmodSync(binDest, 0o755);
+        }
+        catch { /* ignore on platforms that don't support chmod */ }
+    }
+    // Deploy bin: plugin/bin/guard-check → .claude/openlogos/bin/guard-check
+    const guardSrc = join(source, 'bin', 'guard-check');
+    const guardRelPath = '.claude/openlogos/bin/guard-check';
+    if (existsSync(guardSrc)) {
+        mkdirSync(binTargetDir, { recursive: true });
+        const guardDest = join(binTargetDir, 'guard-check');
+        copyFileSync(guardSrc, guardDest);
+        try {
+            chmodSync(guardDest, 0o755);
+        }
+        catch { /* ignore on platforms that don't support chmod */ }
+    }
+    // Merge SessionStart hook into .claude/settings.json
+    const settingsResult = mergeClaudeSettings(root, binRelPath);
+    // Merge PreToolUse guard hook into .claude/settings.json
+    mergeClaudePreToolUseGuard(root, guardRelPath);
+    void locale; // locale reserved for future use
+    return {
+        commandCount,
+        agentCount,
+        hooksUpdated: settingsResult.updated,
+        skipped: false,
+    };
+}
+export function deployOpenCodePlugin(root, locale = 'en') {
+    const source = findOpenCodePluginTemplateSource();
+    if (!source || !existsSync(source))
+        return null;
+    const pluginTargetDir = join(root, '.opencode', 'plugins');
+    mkdirSync(pluginTargetDir, { recursive: true });
+    const sourceFile = join(source, 'openlogos.js');
+    if (!existsSync(sourceFile))
+        return null;
+    copyFileSync(sourceFile, join(pluginTargetDir, 'openlogos.js'));
+    const configResult = mergeOpenCodeConfig(root);
+    let commandCount = 0;
+    const commandsSourceDir = join(source, 'commands');
+    if (existsSync(commandsSourceDir)) {
+        const commandsTargetDir = join(root, '.opencode', 'commands');
+        mkdirSync(commandsTargetDir, { recursive: true });
+        for (const file of readdirSync(commandsSourceDir).filter(f => f.endsWith('.md'))) {
+            copyFileSync(join(commandsSourceDir, file), join(commandsTargetDir, file));
+            commandCount++;
+        }
+    }
+    return {
+        target: locale === 'zh' ? '.opencode/plugins/openlogos.js + opencode.json' : '.opencode/plugins/openlogos.js + opencode.json',
+        config: configResult,
+        commandCount,
+    };
+}
+export function deploySpecs(root) {
+    const source = findSpecSource();
+    if (!source || !existsSync(source))
+        return null;
+    const targetDir = join(root, 'logos', 'spec');
+    mkdirSync(targetDir, { recursive: true });
+    const files = readdirSync(source).filter(f => f.endsWith('.md') || f.endsWith('.json'));
+    for (const file of files) {
+        copyFileSync(join(source, file), join(targetDir, file));
+    }
+    return { count: files.length };
+}
+function readProjectLaunched(root) {
+    const yamlPath = join(root, 'logos', 'logos-project.yaml');
+    if (!existsSync(yamlPath))
+        return false;
+    try {
+        const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
+        if (Array.isArray(yaml?.modules)) {
+            return yaml.modules.some(m => m.lifecycle === 'launched');
+        }
+    }
+    catch { /* ignore invalid project index */ }
+    return false;
+}
+export function deployAiToolAssets(root, aiTools, locale, isLaunched, mode = 'deployed') {
+    const skillMessageKey = mode === 'synced' ? 'init.skillsSynced' : 'init.skillsDeployed';
+    const opencodeMessageKey = mode === 'synced' ? 'init.opencodePluginSynced' : 'init.opencodePluginDeployed';
+    const codexMessageKey = mode === 'synced' ? 'init.codexPluginSynced' : 'init.codexPluginDeployed';
+    const claudeMessageKey = mode === 'synced' ? 'init.claudePluginSynced' : 'init.claudePluginDeployed';
+    for (const tool of aiTools.filter(tool => tool !== 'zcode' && tool !== 'qoder' && tool !== 'workbuddy')) {
+        const deployResult = deploySkills(root, tool, locale, isLaunched);
+        if (deployResult && deployResult.count > 0) {
+            console.log(`  ✓ ${t(locale, skillMessageKey, { count: String(deployResult.count), target: deployResult.target })}`);
+        }
+    }
+    if (aiTools.includes('opencode')) {
+        const pluginResult = deployOpenCodePlugin(root, locale);
+        if (pluginResult) {
+            console.log(`  ✓ ${t(locale, opencodeMessageKey, { target: pluginResult.target })}`);
+            if (pluginResult.config.created) {
+                console.log(`  ✓ ${t(locale, 'init.opencodeConfigCreated')}`);
+            }
+            else if (pluginResult.config.updated) {
+                console.log(`  ✓ ${t(locale, 'init.opencodeConfigUpdated')}`);
+            }
+            if (pluginResult.commandCount > 0) {
+                console.log(`  ✓ ${t(locale, 'init.opencodeCommandsDeployed', { count: String(pluginResult.commandCount) })}`);
+            }
+        }
+    }
+    if (aiTools.includes('codex')) {
+        const codexResult = deployCodexPlugin(root, locale);
+        if (codexResult) {
+            console.log(`  ✓ ${t(locale, codexMessageKey, { target: codexResult.target })}`);
+            if (codexResult.config.created) {
+                console.log(`  ✓ ${t(locale, 'init.codexConfigCreated')}`);
+            }
+            else if (codexResult.config.updated) {
+                console.log(`  ✓ ${t(locale, 'init.codexConfigUpdated')}`);
+            }
+            if (codexResult.personal.install.status === 'installed') {
+                console.log(`  ✓ ${t(locale, 'init.codexPersonalPluginInstalled')}`);
+            }
+            else if (codexResult.personal.install.status === 'failed') {
+                console.warn(`  ⚠ ${t(locale, 'init.codexPersonalPluginInstallFailed')}`);
+            }
+            if (codexResult.boundary.legacySkillCount > 0
+                || codexResult.boundary.projectPluginCount > 0
+                || codexResult.boundary.hasLegacyPlugin) {
+                console.log(`  ℹ ${t(locale, 'init.codexProjectSkillsPreserved')}`);
+            }
+        }
+    }
+    if (aiTools.includes('claude-code')) {
+        const claudeResult = deployClaudeCodePlugin(root, locale);
+        if (claudeResult) {
+            if (claudeResult.skipped) {
+                console.log(`  ℹ ${t(locale, 'init.claudePluginSkipped')}`);
+            }
+            else {
+                console.log(`  ✓ ${t(locale, claudeMessageKey, { commandCount: String(claudeResult.commandCount), agentCount: String(claudeResult.agentCount) })}`);
+                if (claudeResult.hooksUpdated) {
+                    console.log(`  ✓ ${t(locale, 'init.claudeHooksUpdated')}`);
+                }
+            }
+        }
+    }
+    if (aiTools.includes('zcode')) {
+        const source = findZCodePluginTemplateSource();
+        if (!source)
+            throw new Error('ZCode plugin template not found.');
+        const claudeTemplate = findClaudePluginTemplateSource();
+        const result = deployZCodeAssets(root, source, {
+            skills: findSkillsSource(),
+            commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+            agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
+        });
+        console.log(`  ✓ ${localizedZCodeResult(locale, result)}`);
+    }
+    if (aiTools.includes('qoder')) {
+        const source = findQoderPluginTemplateSource();
+        if (!source)
+            throw new Error('Qoder plugin template not found.');
+        const claudeTemplate = findClaudePluginTemplateSource();
+        const result = deployQoderAssets(root, source, {
+            skills: findSkillsSource(),
+            commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+            agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
+        });
+        console.log(`  ✓ ${localizedQoderResult(locale, result)}`);
+    }
+    if (aiTools.includes('workbuddy')) {
+        const source = findWorkBuddyPluginTemplateSource();
+        if (!source)
+            throw new Error('WorkBuddy plugin template not found.');
+        const claudeTemplate = findClaudePluginTemplateSource();
+        const result = deployWorkBuddyAssets(root, source, {
+            skills: findSkillsSource(),
+            commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+            agents: claudeTemplate ? join(claudeTemplate, 'agents') : null,
+        });
+        console.log(`  ✓ ${localizedWorkBuddyResult(locale, result)}`);
+    }
+}
+function countMarker(content, marker) {
+    return content.split(marker).length - 1;
+}
+function normalizeForLegacyCompare(content) {
+    return content.replace(/\r\n/g, '\n').trim();
+}
+function withoutManagedMarkers(content) {
+    return content
+        .replace(new RegExp(`^\\s*${OPENLOGOS_BEGIN_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'gm'), '')
+        .replace(new RegExp(`^\\s*${OPENLOGOS_END_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'gm'), '')
+        .trim();
+}
+export function createManagedInstructionBlock(generatedContent) {
+    const body = withoutManagedMarkers(generatedContent);
+    return `${OPENLOGOS_BEGIN_MARKER}\n${body}\n${OPENLOGOS_END_MARKER}\n`;
+}
+export function mergeInstructionFileContent(existingContent, generatedContent) {
+    const block = createManagedInstructionBlock(generatedContent);
+    if (existingContent === null || existingContent.length === 0)
+        return block;
+    const beginCount = countMarker(existingContent, OPENLOGOS_BEGIN_MARKER);
+    const endCount = countMarker(existingContent, OPENLOGOS_END_MARKER);
+    if (beginCount !== endCount || beginCount > 1) {
+        throw new Error('Invalid OpenLogos managed block markers: expected exactly one complete block or no markers.');
+    }
+    if (beginCount === 1) {
+        const beginIndex = existingContent.indexOf(OPENLOGOS_BEGIN_MARKER);
+        const endIndex = existingContent.indexOf(OPENLOGOS_END_MARKER);
+        if (endIndex < beginIndex) {
+            throw new Error('Invalid OpenLogos managed block markers: end marker appears before begin marker.');
+        }
+        return existingContent.slice(0, beginIndex) + block.trimEnd() + existingContent.slice(endIndex + OPENLOGOS_END_MARKER.length);
+    }
+    if (normalizeForLegacyCompare(existingContent) === normalizeForLegacyCompare(generatedContent)) {
+        return block;
+    }
+    let prefix = existingContent;
+    if (!prefix.endsWith('\n'))
+        prefix += '\n';
+    if (!prefix.endsWith('\n\n'))
+        prefix += '\n';
+    return prefix + block;
+}
+function resolveInstructionFilePath(root, fileName) {
+    const desired = fileName.toLowerCase();
+    const entries = readdirSync(root);
+    const exactEntry = entries.find(entry => entry === fileName);
+    if (exactEntry)
+        return join(root, exactEntry);
+    const matches = entries.filter(entry => entry.toLowerCase() === desired);
+    if (matches.length === 1)
+        return join(root, matches[0]);
+    if (matches.length > 1) {
+        throw new Error(`Multiple case variants found for ${fileName}: ${matches.join(', ')}`);
+    }
+    return join(root, fileName);
+}
+export function writeManagedInstructionFile(root, fileName, generatedContent) {
+    const targetPath = resolveInstructionFilePath(root, fileName);
+    const existing = existsSync(targetPath) ? readFileSync(targetPath, 'utf-8') : null;
+    writeFileSync(targetPath, mergeInstructionFileContent(existing, generatedContent));
+    return targetPath;
+}
+export function writeInstructionFiles(root, locale, rawAiTool, isLaunched) {
+    writeManagedInstructionFile(root, 'AGENTS.md', createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'agents'), 'agents', isLaunched));
+    writeManagedInstructionFile(root, 'CLAUDE.md', createAgentsMd(locale, resolveDocsAiToolForTarget(rawAiTool, 'claude'), 'claude', isLaunched));
+}
+export function generatePolicyMdc(locale, isLaunched = false) {
+    const langSection = locale === 'zh'
+        ? `## ⚠️ 语言策略（最高优先级）
+
+本项目的文档语言为 **中文**（配置于 \`logos/logos.config.json\` → \`locale: "zh"\`）。
+
+**你的所有输出——包括生成的文档、代码注释、回复消息——必须使用中文。**
+即使 Skill 文件使用其他语言编写，你的输出也必须是中文。
+违反此规则将导致产出不可用。`
+        : `## ⚠️ Language Policy (Highest Priority)
+
+This project's document language is **English** (configured in \`logos/logos.config.json\` → \`locale: "en"\`).
+
+**ALL your output — including generated documents, code comments, and responses — MUST be in English.**
+Even if Skill files are written in another language, your output MUST be in English.
+Violating this rule will render the output unusable.`;
+    const changeMgmtSection = isLaunched
+        ? (locale === 'zh'
+            ? `## ⛔ 变更管理（强制执行）
+
+本项目使用 \`logos/.openlogos-guard\` 锁文件来追踪活跃变更。
+- **有 guard 文件** → 可以修改代码，但只能在该提案范围内修改
+- **无 guard 文件** → **禁止修改任何源代码**，必须先运行 \`openlogos change <slug>\`
+
+### 行为约束
+- 发现 bug/问题时：只输出分析和方案，**禁止直接修改代码**
+- 修改代码前：先确认 guard 文件存在且修改在提案范围内
+- 唯一例外：纯 typo 修复、\`.gitignore\`/\`README.md\` 等非方法论文件`
+            : `## ⛔ Change Management (Enforced)
+
+This project uses \`logos/.openlogos-guard\` lock file to track active changes.
+- **Guard file exists** → you may modify code, but only within the scope of that proposal
+- **No guard file** → **modifying source code is FORBIDDEN** — run \`openlogos change <slug>\` first
+
+### Behavioral Constraints
+- When you discover a bug/issue: only output analysis and proposed fix — do NOT modify code directly
+- Before modifying code: verify the guard file exists and changes are within the proposal scope
+- Only exception: pure typo fixes, \`.gitignore\`/\`README.md\` and other non-methodology files`)
+        : (locale === 'zh'
+            ? `## 变更管理（自动判断）
+
+**判断依据**：检查 \`logos-project.yaml\` 中是否存在 \`lifecycle: launched\` 的模块。
+- **存在任何 launched 模块** → 必须先创建变更提案，再修改任何代码或文档
+- **不存在任何 launched 模块** → 按 Phase 推进即可，无需变更提案
+
+当前项目处于初始开发阶段，按照 Phase 1 → 2 → 3 的顺序逐步创建文档。
+首轮开发完成后，运行 \`openlogos launch\` 激活变更管理。`
+            : `## Change Management (Auto-detect)
+
+**How to determine**: Check \`logos-project.yaml\` for any module with \`lifecycle: launched\`.
+- **Any launched module exists** → you MUST create a change proposal before modifying any code or documents
+- **No launched modules** → follow the Phase progression, no change proposals needed
+
+This project is currently in initial development — follow the Phase 1 → 2 → 3 progression to create documents.
+After the first full cycle is complete, run \`openlogos launch\` to activate change management.`);
+    return `---
+description: "OpenLogos — Project Policy: Language & Change Management (always active)"
+alwaysApply: true
+---
+
+${langSection}
+
+${changeMgmtSection}
+`;
+}
+function resolveSkillFile(sourceDir, skillName, locale) {
+    if (locale === 'en') {
+        const enPath = join(sourceDir, skillName, 'SKILL.en.md');
+        if (existsSync(enPath))
+            return enPath;
+    }
+    const defaultPath = join(sourceDir, skillName, 'SKILL.md');
+    if (existsSync(defaultPath))
+        return defaultPath;
+    return null;
+}
+function hasYamlFrontmatter(content) {
+    return /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(content);
+}
+export function createCodexSkillContent(skillName, content) {
+    if (hasYamlFrontmatter(content))
+        return content;
+    const description = SKILL_DESCRIPTIONS[skillName]?.en ?? skillName;
+    return `---\nname: ${JSON.stringify(skillName)}\ndescription: ${JSON.stringify(description)}\n---\n\n${content}`;
+}
+function writeCodexSkillsToTarget(targetDir, source, locale) {
+    let count = 0;
+    for (const name of SKILL_NAMES) {
+        const skillDir = join(targetDir, name);
+        mkdirSync(skillDir, { recursive: true });
+        const srcPath = resolveSkillFile(source, name, locale);
+        if (srcPath) {
+            const content = readFileSync(srcPath, 'utf-8');
+            writeFileSync(join(skillDir, 'SKILL.md'), createCodexSkillContent(name, content));
+            count++;
+        }
+    }
+    return count;
+}
+function copyDirRecursive(src, dest) {
+    mkdirSync(dest, { recursive: true });
+    for (const entry of readdirSync(src, { withFileTypes: true })) {
+        const srcPath = join(src, entry.name);
+        const destPath = join(dest, entry.name);
+        if (entry.isDirectory()) {
+            copyDirRecursive(srcPath, destPath);
+        }
+        else if (entry.isFile()) {
+            copyFileSync(srcPath, destPath);
+        }
+    }
+}
+function deployMultiFileSkillAssets(source, root) {
+    const logosSkillsDir = join(root, 'logos', 'skills');
+    for (const name of MULTI_FILE_SKILLS) {
+        const srcDir = join(source, name);
+        if (!existsSync(srcDir))
+            continue;
+        copyDirRecursive(srcDir, join(logosSkillsDir, name));
+    }
+}
+function isPython3Available() {
+    try {
+        execSync('python3 --version', { stdio: 'ignore' });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+function maybePrintPythonHint(locale) {
+    if (isPython3Available())
+        return;
+    const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
+    console.log('');
+    console.log(yellow(t(locale, 'init.pythonMissingHeader')));
+    console.log(t(locale, 'init.pythonMissingBody'));
+}
+export function ensureVerifyPreRunConfig(root, config) {
+    return backfillVerifyPreRunConfig(root, config);
+}
+export function printVerifyPreRunBackfillResult(locale, result, prefix = '  ') {
+    if (result.status === 'added' && result.command) {
+        console.log(`${prefix}✓ ${t(locale, 'verify.preRunConfigAdded', { command: result.command })}`);
+    }
+    else if (result.status === 'todo') {
+        console.log(`${prefix}⚠ ${t(locale, 'verify.preRunConfigTodo')}`);
+    }
+}
+export function deploySkills(root, aiTool, locale = 'en', isLaunched = false, skillsSource) {
+    const source = skillsSource ?? findSkillsSource();
+    if (!source || !existsSync(source))
+        return null;
+    deployMultiFileSkillAssets(source, root);
+    let count = 0;
+    if (aiTool === 'cursor') {
+        const targetDir = join(root, '.cursor', 'rules');
+        mkdirSync(targetDir, { recursive: true });
+        for (const name of SKILL_NAMES) {
+            const srcPath = resolveSkillFile(source, name, locale);
+            if (srcPath) {
+                const content = readFileSync(srcPath, 'utf-8');
+                const desc = SKILL_DESCRIPTIONS[name]?.en ?? name;
+                const mdc = `---\ndescription: "OpenLogos — ${desc}"\nalwaysApply: false\n---\n\n${content}`;
+                writeFileSync(join(targetDir, `${name}.mdc`), mdc);
+                count++;
+            }
+        }
+        writeFileSync(join(targetDir, 'openlogos-policy.mdc'), generatePolicyMdc(locale, isLaunched));
+        return { target: '.cursor/rules/', count };
+    }
+    if (aiTool === 'codex') {
+        const targetDir = join(root, CODEX_OPENLOGOS_SKILLS_REL_DIR);
+        count = writeCodexSkillsToTarget(targetDir, source, locale);
+        return { target: `${CODEX_OPENLOGOS_SKILLS_REL_DIR}/`, count };
+    }
+    const targetDir = join(root, 'logos', 'skills');
+    for (const name of SKILL_NAMES) {
+        const skillDir = join(targetDir, name);
+        mkdirSync(skillDir, { recursive: true });
+        const srcPath = resolveSkillFile(source, name, locale);
+        if (srcPath) {
+            copyFileSync(srcPath, join(skillDir, 'SKILL.md'));
+            count++;
+        }
+    }
+    return { target: 'logos/skills/', count };
+}
+function shouldIncludeActiveSkills(aiTool, target) {
+    if (aiTool === 'all')
+        return true;
+    if (aiTool === 'cursor')
+        return target === 'agents';
+    if (aiTool === 'claude-code')
+        return target === 'claude';
+    if (aiTool === 'opencode')
+        return target === 'agents';
+    if (aiTool === 'codex')
+        return target === 'agents';
+    return true;
+}
+function skillBasePath(aiTool, target) {
+    if (aiTool === 'codex' && target === 'agents') {
+        return CODEX_OPENLOGOS_SKILLS_REL_DIR;
+    }
+    if (aiTool === 'zcode' && target === 'agents') {
+        return `${ZCODE_PLUGIN_REL_DIR}/skills`;
+    }
+    if (aiTool === 'qoder' && target === 'agents') {
+        return `${QODER_PLUGIN_REL_DIR}/skills`;
+    }
+    if (aiTool === 'workbuddy' && target === 'agents') {
+        return `${WORKBUDDY_PLUGIN_REL_DIR}/skills`;
+    }
+    return 'logos/skills';
+}
+function generateActiveSkillsSection(locale, aiTool, target) {
+    if (aiTool === 'codex' && target === 'agents') {
+        const headingOfficial = locale === 'zh' ? '### OpenLogos 方法论 Skills' : '### OpenLogos Methodology Skills';
+        const headingProject = locale === 'zh' ? '### 项目专属 Skills' : '### Project-Specific Skills';
+        const projectNote = locale === 'zh'
+            ? '项目插件技能使用 `$<plugin>:<skill>` 命名空间（例如 `$adcn:release-guard`），位于 `.agents/plugins/<plugin>/skills/`；历史或 repo-scoped local skill 保留在 `.agents/skills/`，不得描述为 OpenLogos 官方技能。'
+            : 'Project plugin skills use the `$<plugin>:<skill>` namespace (for example `$adcn:release-guard`) from `.agents/plugins/<plugin>/skills/`; legacy or repo-scoped local skills remain under `.agents/skills/` and must not be described as official OpenLogos skills.';
+        let section = `${headingOfficial}\n`;
+        for (const name of SKILL_NAMES) {
+            const desc = SKILL_DESCRIPTIONS[name]?.[locale] ?? SKILL_DESCRIPTIONS[name]?.en ?? name;
+            section += `- \`$openlogos:${name}\` — \`${CODEX_OPENLOGOS_SKILLS_REL_DIR}/${name}/SKILL.md\` — ${desc}\n`;
+        }
+        section += `\n${headingProject}\n- ${projectNote}\n`;
+        return section;
+    }
+    let section = '';
+    if (target === 'claude' && aiTool === 'claude-code') {
+        section += locale === 'zh'
+            ? '### OpenLogos 方法论 Skills\n'
+            : '### OpenLogos Methodology Skills\n';
+    }
+    const basePath = skillBasePath(aiTool, target);
+    for (const name of SKILL_NAMES) {
+        const desc = SKILL_DESCRIPTIONS[name]?.[locale] ?? SKILL_DESCRIPTIONS[name]?.en ?? name;
+        const skillBase = MULTI_FILE_SKILLS.has(name) ? 'logos/skills' : basePath;
+        section += `- \`${skillBase}/${name}/SKILL.md\` — ${desc}\n`;
+    }
+    if (target === 'claude' && aiTool === 'claude-code') {
+        section += locale === 'zh'
+            ? '\n### 项目专属 Skills\n- `.claude/skills/<skill>/SKILL.md` 中的项目技能保持项目归属，不会进入 OpenLogos 官方插件或 `logos/skills/`；如存在，请按项目语义单独调用和维护。\n'
+            : '\n### Project-Specific Skills\n- Project skills under `.claude/skills/<skill>/SKILL.md` remain project-owned and are not copied into the OpenLogos official plugin or `logos/skills/`; when present, invoke and maintain them by project semantics.\n';
+    }
+    return section;
+}
+function skillPath(name, aiTool, target) {
+    return `${skillBasePath(aiTool, target)}/${name}/SKILL.md`;
+}
+function generatePhaseDetectionPlain(locale) {
+    if (locale === 'zh') {
+        return `Phase 检测逻辑：
+- \`logos/resources/prd/1-product-requirements/\` 为空 → 建议 Phase 1（prd-writer）
+- 需求存在但 \`2-product-design/\` 为空 → 建议 Phase 2（product-designer）
+- 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → 建议 Phase 3 Step 0（architecture-designer）
+- 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → 建议 Phase 3 Step 1（scenario-architect）
+- 场景存在但 \`logos/resources/api/\` 为空 → 建议 Phase 3 Step 2（api-designer + db-designer）
+- API / DB 设计完成后但 \`3-technical-plan/3-deployment/\` 为空 → 建议 Phase 3 Step 3（deployment-designer）
+- 部署方案存在但 \`logos/resources/test/\` 为空 → 建议 Phase 3 Step 4a（test-writer；如需部署需同时设计 smoke）
+- 测试用例存在但 \`logos/resources/scenario/\` 为空 → 建议 Phase 3 Step 4b（test-orchestrator，仅 API 项目）
+- 编排测试存在但 \`logos/resources/implementation/\` 为空 → 建议 Phase 3 Step 5（code-implementor）
+- 代码已生成但 \`logos/resources/verify/acceptance-report.md\` 不存在 → 建议 Phase 3 Step 6（运行测试后 \`openlogos verify\`）
+- 部署完成但 \`smoke-report.md\` / \`SMOKE_PASS\` 缺失 → 建议 Phase 3 Step 8（\`openlogos smoke\`）
+
+文件命名规范（模块前缀）：
+- 所有设计文档遵循 \`<module>-<序号>-<类型>.md\` 格式，初始项目默认使用 \`core-\` 前缀
+- 场景实现文件：\`<module>-SXX-<slug>.md\`（如 \`core-S01-cli-init.md\`）
+- 测试用例文件：\`<module>-SXX-test-cases.md\`（如 \`core-S01-test-cases.md\`）
+- 场景编号全局唯一，由 \`logos-project.yaml\` 的 \`scenario_counter.next_id\` 维护，严禁不同模块从 S01 重新开始
+- 多模块状态：\`openlogos status\` 聚合展示所有模块（in-progress 置顶）；\`openlogos next\` 单模块直接建议，多模块并列列出，无 in-progress 时提示 \`module add\``;
+    }
+    return `Phase detection logic:
+- \`logos/resources/prd/1-product-requirements/\` is empty → suggest Phase 1 (prd-writer)
+- requirements exist but \`2-product-design/\` is empty → suggest Phase 2 (product-designer)
+- design exists but \`3-technical-plan/1-architecture/\` is empty → suggest Phase 3 Step 0 (architecture-designer)
+- architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → suggest Phase 3 Step 1 (scenario-architect)
+- scenarios exist but \`logos/resources/api/\` is empty → suggest Phase 3 Step 2 (api-designer + db-designer)
+- API / DB design is complete but \`3-technical-plan/3-deployment/\` is empty → suggest Phase 3 Step 3 (deployment-designer)
+- deployment plan exists but \`logos/resources/test/\` is empty → suggest Phase 3 Step 4a (test-writer; design smoke when deployment is required)
+- test cases exist but \`logos/resources/scenario/\` is empty → suggest Phase 3 Step 4b (test-orchestrator, API projects only)
+- orchestration tests exist but \`logos/resources/implementation/\` is empty → suggest Phase 3 Step 5 (code-implementor)
+- code generated but \`logos/resources/verify/acceptance-report.md\` is missing → suggest Phase 3 Step 6 (run tests then \`openlogos verify\`)
+- deployment is done but \`smoke-report.md\` / \`SMOKE_PASS\` is missing → suggest Phase 3 Step 8 (\`openlogos smoke\`)
+
+File naming convention (module prefix):
+- All design documents follow \`<module>-<number>-<type>.md\` format; default module is \`core-\` prefix
+- Scenario implementation files: \`<module>-SXX-<slug>.md\` (e.g. \`core-S01-cli-init.md\`)
+- Test case files: \`<module>-SXX-test-cases.md\` (e.g. \`core-S01-test-cases.md\`)
+- Scenario numbers are globally unique, maintained by \`scenario_counter.next_id\` in \`logos-project.yaml\`; never restart from S01 for a new module
+- Multi-module status: \`openlogos status\` shows all modules (in-progress first); \`openlogos next\` gives direct suggestion for single module, lists all for multiple, prompts \`module add\` when none in-progress`;
+}
+function generatePhaseDetectionWithSkills(locale, aiTool, target) {
+    if (locale === 'zh') {
+        return `Phase 检测逻辑（检测到对应阶段时，**必须先读取** Skill 文件并按其步骤执行）：
+- \`logos/resources/prd/1-product-requirements/\` 为空 → Phase 1 → **读取 \`${skillPath('prd-writer', aiTool, target)}\` 并按其步骤执行**
+- 需求存在但 \`2-product-design/\` 为空 → Phase 2 → **读取 \`${skillPath('product-designer', aiTool, target)}\` 并按其步骤执行**
+- 设计存在但 \`3-technical-plan/1-architecture/\` 为空 → Phase 3 Step 0 → **读取 \`${skillPath('architecture-designer', aiTool, target)}\` 并按其步骤执行**
+- 架构存在但 \`3-technical-plan/2-scenario-implementation/\` 为空 → Phase 3 Step 1 → **读取 \`${skillPath('scenario-architect', aiTool, target)}\` 并按其步骤执行**
+- 场景存在但 \`logos/resources/api/\` 为空 → Phase 3 Step 2 → **读取 \`${skillPath('api-designer', aiTool, target)}\` 和 \`${skillPath('db-designer', aiTool, target)}\` 并按其步骤执行**
+- API / DB 设计完成后但 \`3-technical-plan/3-deployment/\` 为空 → Phase 3 Step 3 → **读取 \`${skillPath('deployment-designer', aiTool, target)}\` 并按其步骤执行**
+- 部署方案存在但 \`logos/resources/test/\` 为空 → Phase 3 Step 4a → **读取 \`${skillPath('test-writer', aiTool, target)}\` 并按其步骤执行**（如需部署需同时设计 smoke）
+- 测试用例存在但 \`logos/resources/scenario/\` 为空 → Phase 3 Step 4b → **读取 \`${skillPath('test-orchestrator', aiTool, target)}\` 并按其步骤执行**（仅 API 项目）
+- 编排测试存在但 \`logos/resources/implementation/\` 为空 → Phase 3 Step 5 → **读取 \`${skillPath('code-implementor', aiTool, target)}\` 并按其步骤执行**（完成后可用 \`${skillPath('code-reviewer', aiTool, target)}\` 进行代码审查）
+- 代码已生成但 \`logos/resources/verify/acceptance-report.md\` 不存在 → Phase 3 Step 6（运行测试后 \`openlogos verify\`）
+- 部署完成但 \`smoke-report.md\` / \`SMOKE_PASS\` 缺失 → Phase 3 Step 8（\`openlogos smoke\`，人类确认点）
+
+文件命名规范（模块前缀）：
+- 所有设计文档遵循 \`<module>-<序号>-<类型>.md\` 格式，初始项目默认使用 \`core-\` 前缀
+- 场景实现文件：\`<module>-SXX-<slug>.md\`（如 \`core-S01-cli-init.md\`）
+- 测试用例文件：\`<module>-SXX-test-cases.md\`（如 \`core-S01-test-cases.md\`）
+- 场景编号全局唯一，由 \`logos-project.yaml\` 的 \`scenario_counter.next_id\` 维护，严禁不同模块从 S01 重新开始
+- 多模块状态：\`openlogos status\` 聚合展示所有模块（in-progress 置顶）；\`openlogos next\` 单模块直接建议，多模块并列列出，无 in-progress 时提示 \`module add\``;
+    }
+    return `Phase detection logic (**when a phase is detected, you MUST read the corresponding Skill file and follow its steps**):
+- \`logos/resources/prd/1-product-requirements/\` is empty → Phase 1 → **read \`${skillPath('prd-writer', aiTool, target)}\` and follow its steps**
+- requirements exist but \`2-product-design/\` is empty → Phase 2 → **read \`${skillPath('product-designer', aiTool, target)}\` and follow its steps**
+- design exists but \`3-technical-plan/1-architecture/\` is empty → Phase 3 Step 0 → **read \`${skillPath('architecture-designer', aiTool, target)}\` and follow its steps**
+- architecture exists but \`3-technical-plan/2-scenario-implementation/\` is empty → Phase 3 Step 1 → **read \`${skillPath('scenario-architect', aiTool, target)}\` and follow its steps**
+- scenarios exist but \`logos/resources/api/\` is empty → Phase 3 Step 2 → **read \`${skillPath('api-designer', aiTool, target)}\` and \`${skillPath('db-designer', aiTool, target)}\` and follow their steps**
+- API / DB design is complete but \`3-technical-plan/3-deployment/\` is empty → Phase 3 Step 3 → **read \`${skillPath('deployment-designer', aiTool, target)}\` and follow its steps**
+- deployment plan exists but \`logos/resources/test/\` is empty → Phase 3 Step 4a → **read \`${skillPath('test-writer', aiTool, target)}\` and follow its steps** (design smoke when deployment is required)
+- test cases exist but \`logos/resources/scenario/\` is empty → Phase 3 Step 4b → **read \`${skillPath('test-orchestrator', aiTool, target)}\` and follow its steps** (API projects only)
+- orchestration tests exist but \`logos/resources/implementation/\` is empty → Phase 3 Step 5 → **read \`${skillPath('code-implementor', aiTool, target)}\` and follow its steps** (after completion, use \`${skillPath('code-reviewer', aiTool, target)}\` for code review)
+- code generated but \`logos/resources/verify/acceptance-report.md\` is missing → Phase 3 Step 6 (run tests then \`openlogos verify\`)
+- deployment is done but \`smoke-report.md\` / \`SMOKE_PASS\` is missing → Phase 3 Step 8 (\`openlogos smoke\`, human confirmation point)
+
+File naming convention (module prefix):
+- All design documents follow \`<module>-<number>-<type>.md\` format; default module is \`core-\` prefix
+- Scenario implementation files: \`<module>-SXX-<slug>.md\` (e.g. \`core-S01-cli-init.md\`)
+- Test case files: \`<module>-SXX-test-cases.md\` (e.g. \`core-S01-test-cases.md\`)
+- Scenario numbers are globally unique, maintained by \`scenario_counter.next_id\` in \`logos-project.yaml\`; never restart from S01 for a new module
+- Multi-module status: \`openlogos status\` shows all modules (in-progress first); \`openlogos next\` gives direct suggestion for single module, lists all for multiple, prompts \`module add\` when none in-progress`;
+}
+function generateStep4ExecutionRules(locale) {
+    if (locale === 'zh') {
+        return `Step 5 执行规则（大任务）：
+1. 大任务可按场景/子模块分批实现，但每一批必须闭环
+2. 每一批必须同时包含：业务代码 + UT/ST 测试代码 + OpenLogos reporter
+3. 输出代码前，先列出本批覆盖的 UT/ST 用例 ID，并确保与 \`logos/resources/test/*.md\` 对齐
+4. 不允许将全部测试推迟到最终批次统一补写
+
+Step 5 分批执行提示词（可直接复用）：
+- \`请按 Phase 3 Step 5 执行本次实现。若任务较大可分批，但每批必须同时交付：（1）业务代码，（2）对应 UT/ST 测试代码，（3）写入 logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。输出代码前请先列出本批覆盖的 UT/ST 用例 ID。\``;
+    }
+    return `Step 5 execution rules (large tasks):
+1. Large implementation can be split by scenario/module, but each batch must be closed-loop
+2. Each batch must include business code + UT/ST test code + OpenLogos reporter
+3. Before generating code, list the UT/ST case IDs covered in this batch and keep IDs aligned with \`logos/resources/test/*.md\`
+4. Do not postpone all tests to the final batch
+
+Ready-to-use prompt for Step 5 batch execution:
+- \`Please execute Phase 3 Step 5 for this scope. If the task is large, split into batches, but each batch must deliver: (1) business code, (2) matching UT/ST test code, (3) OpenLogos reporter writing to logos/resources/verify/test-results.jsonl. Before outputting code, list the UT/ST IDs covered in this batch.\``;
+}
+function generateDocumentPostEditVerify(locale) {
+    if (locale === 'zh') {
+        return `## 文档修改后的验证（强制）
+
+每次**写入或修改** Markdown / 文本类规格文档（例如 \`logos/resources/\`、\`logos/changes/\`、\`logos/spec/\` 或项目根 \`spec/\` 下的 \`.md\`，以及根目录 \`AGENTS.md\` / \`CLAUDE.md\`）后：
+
+1. **必须**用当前环境可用的方式**从磁盘重新读取**本次修改涉及的片段（例如 Read 工具、或终端 \`sed\` / \`rg\`），向用户展示**文件中的实际原文**（可省略无关段落并标注 \`...\`）。
+2. **禁止**仅以自然语言概括「已改为……」作为唯一交付物，而不附带可对照的原文佐证。
+3. **例外**：纯 typo 或单字符标点修改时，至少读回**受影响的那一行**，或展示等价的 diff 片段。
+
+**目的**：避免工具声称已保存、但实际未落盘或路径错误导致内容「丢失」而不自知。
+`;
+    }
+    return `## Document Edit Verification (Required)
+
+After every **write or modify** operation on Markdown / text specification files (e.g. \`.md\` under \`logos/resources/\`, \`logos/changes/\`, \`logos/spec/\` or project-root \`spec/\`, plus root \`AGENTS.md\` / \`CLAUDE.md\`):
+
+1. You **MUST** re-read the affected span **from disk** using whatever means the environment provides (e.g. Read tool, or terminal \`sed\` / \`rg\`), and show the user the **actual file text** (you may omit unrelated parts with \`...\`).
+2. You **MUST NOT** deliver only a prose summary like "it now says…" without verifiable on-disk excerpts.
+3. **Exception**: for pure typos or single-character punctuation fixes, at minimum re-read and show **the affected line** or an equivalent diff hunk.
+
+**Rationale**: avoid silent failures when the model believes the file was saved but the write did not land or the wrong path was used.
+`;
+}
+export const REFERENCE_SUBDIRECTORIES = [
+    'requirement',
+    'todolist',
+    'code',
+    'image',
+    'temp',
+    'note',
+];
+export const DIRECTORIES = [
+    'logos/resources/prd/1-product-requirements',
+    'logos/resources/prd/2-product-design/1-feature-specs',
+    'logos/resources/prd/2-product-design/2-page-design',
+    'logos/resources/prd/3-technical-plan/1-architecture',
+    'logos/resources/prd/3-technical-plan/2-scenario-implementation',
+    'logos/resources/prd/3-technical-plan/3-deployment',
+    'logos/resources/api',
+    'logos/resources/database',
+    'logos/resources/test',
+    'logos/resources/test/smoke',
+    'logos/resources/scenario',
+    'logos/resources/implementation',
+    'logos/resources/verify',
+    'logos/resources/reference',
+    ...REFERENCE_SUBDIRECTORIES.map(dir => `logos/resources/reference/${dir}`),
+    'logos/changes',
+    'logos/changes/archive',
+];
+export function createLogosConfig(name, locale, aiTool = 'cursor') {
+    const aiToolValue = aiTool === 'all'
+        ? expandRegisteredAiTools('all')
+        : aiTool;
+    return JSON.stringify({
+        name,
+        locale,
+        aiTool: aiToolValue,
+        description: '',
+        documents: {
+            prd: {
+                label: { en: 'Product Docs', zh: '产品文档' },
+                path: './resources/prd',
+                pattern: '**/*.{md,html,htm,pdf}',
+            },
+            api: {
+                label: { en: 'API Docs', zh: 'API 文档' },
+                path: './resources/api',
+                pattern: '**/*.{yaml,yml,json}',
+            },
+            test: {
+                label: { en: 'Test Cases', zh: '测试用例' },
+                path: './resources/test',
+                pattern: '**/*.md',
+            },
+            scenario: {
+                label: { en: 'Scenarios', zh: '业务场景' },
+                path: './resources/scenario',
+                pattern: '**/*.json',
+            },
+            database: {
+                label: { en: 'Database', zh: '数据库' },
+                path: './resources/database',
+                pattern: '**/*.sql',
+            },
+            implementation: {
+                label: { en: 'Implementation', zh: '实现清单' },
+                path: './resources/implementation',
+                pattern: '**/*.md',
+            },
+            verify: {
+                label: { en: 'Verify Reports', zh: '验收报告' },
+                path: './resources/verify',
+                pattern: '**/*.{jsonl,md}',
+            },
+            changes: {
+                label: { en: 'Change Proposals', zh: '变更提案' },
+                path: './changes',
+                pattern: '**/*.{md,json}',
+            },
+        },
+        sourceRoots: {
+            src: ['src'],
+            test: ['test'],
+        },
+        verify: {
+            result_path: 'logos/resources/verify/test-results.jsonl',
+            sandbox_mode: DEFAULT_SANDBOX_MODE,
+            sandbox_root: DEFAULT_SANDBOX_ROOT,
+            sandbox_deny_workspace_write: DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
+        },
+        smoke: {
+            result_path: 'logos/resources/verify/smoke-results.jsonl',
+            report_path: 'logos/resources/verify/smoke-report.md',
+            sandbox_mode: DEFAULT_SANDBOX_MODE,
+            sandbox_root: DEFAULT_SANDBOX_ROOT,
+            sandbox_deny_workspace_write: DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
+        },
+    }, null, 2);
+}
+export function createLogosProject(name, locale) {
+    return `project:
+  name: "${name}"
+  description: ""
+  methodology: "OpenLogos"
+
+tech_stack: {}
+
+scenario_counter:
+  next_id: 1
+
+modules:
+  - id: core
+    name: ${locale === 'zh' ? '核心功能' : 'Core'}
+    lifecycle: initial
+    # skip_phases: [api, scenario]   # 由 architecture-designer Skill 在技术选型后填写
+    # 可选值: api（无 HTTP API）, database（无数据库）, scenario（无 API 编排测试）, deployment（无部署执行与 smoke 门禁）
+    # deployment_required: false   # 纯文档、纯库或明确无需部署的模块可设为 false
+
+resource_index: []
+
+${conventionsForYaml(locale)}
+`;
+}
+export function createAdoptLogosProject(name, locale) {
+    return `project:
+  name: "${name}"
+  description: ""
+  methodology: "OpenLogos"
+
+tech_stack: {}
+
+scenario_counter:
+  next_id: 1
+
+modules:
+  - id: core
+    name: ${locale === 'zh' ? '核心功能' : 'Core'}
+    lifecycle: launched
+    bootstrap: adopted
+    baseline_seed_state: required
+    skip_phases: [api, database, scenario]
+    deployment_required: true
+
+deployment_gates:
+  core:
+    deployment_required: true
+    smoke_required: true
+    environments:
+      - staging
+
+resource_index: []
+
+${conventionsForYaml(locale)}
+`;
+}
+export function createAgentsMd(locale, aiTool, target, isLaunched = false) {
+    const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
+    const langPolicy = locale === 'zh'
+        ? `## ⚠️ 语言策略（最高优先级）
+
+本项目的文档语言为 **中文**（配置于 \`logos/logos.config.json\` → \`locale: "zh"\`）。
+
+**你的所有输出——包括生成的文档、代码注释、回复消息——必须使用中文。**
+即使 Skill 文件使用其他语言编写，你的输出也必须是中文。
+违反此规则将导致产出不可用。
+`
+        : `## ⚠️ Language Policy (Highest Priority)
+
+This project's document language is **English** (configured in \`logos/logos.config.json\` → \`locale: "en"\`).
+
+**ALL your output — including generated documents, code comments, and responses — MUST be in English.**
+Even if Skill files are written in another language, your output MUST be in English.
+Violating this rule will render the output unusable.
+`;
+    let content = `# AI Assistant Instructions
+
+This project follows the **OpenLogos** methodology.
+Read \`logos/logos-project.yaml\` first to understand the project resource index.
+
+## Project Context
+- Config: \`logos/logos.config.json\`
+- Resource Index: \`logos/logos-project.yaml\`
+
+${langPolicy}
+## Methodology Rules
+1. Never write code without first completing the design documents
+2. Follow the Why → What → How progression
+3. All API designs must originate from scenario sequence diagrams
+4. All code changes must have corresponding API orchestration tests
+5. Use the Delta change workflow for iterations (see logos/changes/ directory)
+6. All generated test code must include an OpenLogos reporter (see logos/spec/test-results.md)
+
+## Interaction Guidelines
+When the user's request is vague or they ask "what should I do next":
+1. Scan \`logos/resources/\` to determine the current project phase
+2. Suggest the specific next step based on what's missing
+3. Provide a ready-to-use prompt the user can directly say
+4. Never start generating documents without confirming key information
+
+${includeSkills ? generatePhaseDetectionWithSkills(locale, aiTool, target) : generatePhaseDetectionPlain(locale)}
+
+${generateStep4ExecutionRules(locale)}
+
+${generateDocumentPostEditVerify(locale)}
+`;
+    if (aiTool === 'zcode' && target === 'agents') {
+        content += '\n## ZCode 宿主指令\n' + createZCodeAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+    }
+    if (aiTool === 'qoder' && target === 'agents') {
+        content += '\n## Qoder 宿主指令\n' + createQoderAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+    }
+    if (aiTool === 'workbuddy' && target === 'agents') {
+        content += '\n## WorkBuddy 宿主指令\n' + createWorkBuddyAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+    }
+    if (includeSkills) {
+        const skillAutoLoadInstr = locale === 'zh'
+            ? `**重要**：当你识别到当前 Phase 后，必须先读取对应的 Skill 文件（使用上方 Phase 检测逻辑中指定的路径），按 Skill 中定义的步骤逐步执行。不要跳过 Skill 文件直接生成内容。\n`
+            : `**IMPORTANT**: When you identify the current Phase, you MUST first read the corresponding Skill file (using the path specified in the Phase detection logic above) and follow its steps sequentially. Do NOT skip the Skill file and generate content directly.\n`;
+        content += `
+## Active Skills
+${skillAutoLoadInstr}
+${generateActiveSkillsSection(locale, aiTool, target)}`;
+    }
+    const changeMgmt = isLaunched
+        ? (locale === 'zh'
+            ? `## ⛔ 变更管理（强制执行）
+
+### Guard 机制
+本项目使用 \`logos/.openlogos-guard\` 锁文件来追踪活跃变更。
+- **有 guard 文件** → 可以修改代码，但 **只能在该提案范围内** 修改
+- **无 guard 文件** → **禁止修改任何源代码**，必须先运行 \`openlogos change <slug>\`
+
+### 变更流程
+1. 运行 \`openlogos change <slug>\` 创建提案（自动写入 guard 文件）
+2. 使用 change-writer Skill 填写 \`proposal.md\` + \`tasks.md\`
+3. **等待用户确认后** 再开始产出 delta
+4. delta 产出完成后提醒用户明确授权运行 \`openlogos merge <slug>\`
+5. merge 完成后 AI 自动 commit 规格文档（告知用户，无需确认）
+6. 按合并后的规格实现代码，完成后 AI 自动 commit 代码（告知用户，无需确认）
+7. 提醒用户明确授权运行 \`openlogos verify\` 验收
+8. 如存在 \`[deploy]\` section，验收通过后提醒用户明确授权 AI 按部署方案执行部署
+9. 部署完成后提醒用户明确授权运行 \`openlogos smoke\`
+10. verify 通过且无部署任务，或部署完成且 smoke 通过后，提醒用户明确授权运行 \`openlogos archive <slug>\`（自动删除 guard 文件）
+11. archive 完成后 AI 自动 commit 归档（告知用户，无需确认）
+12. 提醒用户确认是否执行 \`git push\`（人类确认点）
+
+**两档授权语义（半自动 / 全自动）：**
+- **半自动 / 手动模式（默认，无 \`--auto\`）**：\`openlogos merge\`、\`openlogos verify\`、部署执行、\`openlogos smoke\`、\`openlogos archive\` 和 \`git push\` 是人类确认点。AI 未经用户明确授权不得自行执行；用户明确要求执行（包括使用对应 slash command）时，AI 可以代为执行。不得在"顺手完成流程"、"按流程走完"等隐式场景中自动触发。
+- **全自动 / 无人值守模式（\`openlogos next --auto\`）**：用户选择 \`--auto\` 即构成对该提案全链路的 standing 授权——AI driver 被授权**自动执行** verify、部署、smoke、archive、git push（以及可跳 flow 门 plan/spec/slice/deliver），无需逐步人类确认。\`git push\` 无需额外机制（PreToolUse guard 安全白名单本就放行）。
+- **硬红线（任何模式、含 \`--auto\` 都不放行）**：达迭代上限仍未过测试的未收敛代码（\`gate:implement:loop-exhausted\`）——全自动也照常阻塞，**绝不放行未通过测试的代码**。
+
+### 行为约束
+- **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
+- **修改代码前**：先确认 guard 文件存在且当前修改在提案范围内
+- **唯一例外**：纯 typo 修复（不改变语义）、\`.gitignore\`/\`README.md\` 等非方法论文件
+
+**违反此规则将破坏项目的变更可追溯性。**
+`
+            : `## ⛔ Change Management (Enforced)
+
+### Guard Mechanism
+This project uses \`logos/.openlogos-guard\` lock file to track active changes.
+- **Guard file exists** → you may modify code, but **only within the scope of that proposal**
+- **No guard file** → **modifying source code is FORBIDDEN** — run \`openlogos change <slug>\` first
+
+### Change Workflow
+1. Run \`openlogos change <slug>\` to create a proposal (automatically writes guard file)
+2. Fill in \`proposal.md\` + \`tasks.md\` using the change-writer Skill
+3. **Wait for user approval** before producing any delta
+4. After delta is complete, remind the user to explicitly authorize running \`openlogos merge <slug>\`
+5. After merge, AI automatically commits spec documents (inform user, no confirmation needed)
+6. Implement code per the updated specs; AI automatically commits code when done (inform user, no confirmation needed)
+7. Remind the user to explicitly authorize running \`openlogos verify\` for acceptance
+8. If a \`[deploy]\` section exists, after verification passes remind the user to explicitly authorize AI to deploy from the deployment plan
+9. After deployment, remind the user to explicitly authorize running \`openlogos smoke\`
+10. When verify passes with no deployment tasks, or deployment is done and smoke passes, remind the user to explicitly authorize running \`openlogos archive <slug>\` (auto-removes guard file)
+11. After archive, AI automatically commits the archive (inform user, no confirmation needed)
+12. Remind the user to confirm whether to run \`git push\` (human confirmation point)
+
+**Two-tier authorization (semi-auto / full-auto):**
+- **Semi-auto / manual mode (default, no \`--auto\`)**: \`openlogos merge\`, \`openlogos verify\`, deployment execution, \`openlogos smoke\`, \`openlogos archive\`, and \`git push\` are human confirmation points. AI must not execute them without explicit user authorization. When the user explicitly requests execution (including via the corresponding slash commands), AI may execute them. Must not be triggered implicitly in scenarios like "continue" or "follow the process".
+- **Full-auto / unattended mode (\`openlogos next --auto\`)**: choosing \`--auto\` constitutes standing authorization for the whole proposal chain — the AI driver is authorized to **automatically run** verify, deployment, smoke, archive, and git push (plus the skippable flow gates plan/spec/slice/deliver) without per-step human confirmation. \`git push\` needs no extra mechanism (the PreToolUse guard's safe whitelist already allows it).
+- **Hard red line (never auto-passed in ANY mode, including \`--auto\`)**: un-converged code that still fails tests after hitting the iteration cap (\`gate:implement:loop-exhausted\`) — full-auto stays blocked and **never releases code that did not pass tests**.
+
+### Behavioral Constraints
+- **When you discover a bug/issue**: only output analysis and proposed fix — **do NOT modify code directly** — wait for the user to decide whether to create a change proposal
+- **Before modifying code**: verify the guard file exists and your changes are within the proposal scope
+- **Only exception**: pure typo fixes (no semantic change), \`.gitignore\`/\`README.md\` and other non-methodology files
+
+**Violating this rule will break the project's change traceability.**
+`)
+        : (locale === 'zh'
+            ? `## 变更管理（自动判断）
+
+**判断依据**：检查 \`logos-project.yaml\` 中是否存在 \`lifecycle: launched\` 的模块。
+- **存在任何 launched 模块** → 必须先创建变更提案（\`logos/changes/\`），再修改任何代码或文档
+- **不存在任何 launched 模块** → 按 Phase 推进即可，无需变更提案
+
+首轮开发完成后运行 \`openlogos launch\` 激活变更管理。
+`
+            : `## Change Management (Auto-detect)
+
+**How to determine**: Check \`logos-project.yaml\` for any module with \`lifecycle: launched\`.
+- **Any launched module exists** → you MUST create a change proposal (\`logos/changes/\`) before modifying any code or documents
+- **No launched modules** → follow the Phase progression, no change proposals needed
+
+After the first cycle is complete, run \`openlogos launch\` to activate change management.
+`);
+    const cliRule = locale === 'zh'
+        ? `## ⚠️ openlogos CLI 规则
+
+运行任何 \`openlogos\` 命令之前，**必须先 cd 到项目根目录**（即 \`logos/logos.config.json\` 所在目录）。
+在子目录（如 \`src/\`、\`src-tauri/\`）下直接运行会导致 \`logos.config.json not found\` 错误。
+
+正确写法：
+\`\`\`bash
+cd <项目根目录> && openlogos <command>
+\`\`\`
+`
+        : `## ⚠️ openlogos CLI Rule
+
+Before running any \`openlogos\` command, you **MUST cd to the project root** (the directory containing \`logos/logos.config.json\`).
+Running from a subdirectory (e.g. \`src/\`, \`src-tauri/\`) will cause a \`logos.config.json not found\` error.
+
+Correct usage:
+\`\`\`bash
+cd <project-root> && openlogos <command>
+\`\`\`
+`;
+    content += `
+${changeMgmt}
+${cliRule}
+## Conventions
+${conventionsForAgentsMd(locale)}
+`;
+    return content;
+}
+export async function init(name, options) {
+    const root = process.cwd();
+    const configPath = join(root, 'logos', 'logos.config.json');
+    if (existsSync(configPath)) {
+        if (options?.aiTool !== undefined) {
+            const requestedAiTool = parseAiTool(options.aiTool);
+            if (!requestedAiTool) {
+                console.error(`Error: unsupported AI tool "${options.aiTool}".`);
+                console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, workbuddy, other, all');
+                process.exit(1);
+            }
+            let config;
+            try {
+                config = JSON.parse(readFileSync(configPath, 'utf-8'));
+            }
+            catch {
+                console.error('Error: failed to parse logos/logos.config.json.');
+                process.exit(1);
+            }
+            const locale = config.locale === 'zh' ? 'zh' : 'en';
+            const requestedTools = expandAiTools(requestedAiTool);
+            try {
+                preflightAiToolAssets(root, requestedTools);
+                if (requestedTools.includes('zcode') || requestedTools.includes('qoder') || requestedTools.includes('workbuddy')) {
+                    preflightInstructionFiles(root, locale, mergeAiToolConfig(config.aiTool, requestedAiTool), readProjectLaunched(root));
+                }
+            }
+            catch (error) {
+                console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+                process.exit(1);
+                return;
+            }
+            config.aiTool = mergeAiToolConfig(config.aiTool, requestedAiTool);
+            const verifyBackfill = ensureVerifyPreRunConfig(root, config);
+            writeFileSync(configPath, JSON.stringify(config, null, 2));
+            const isLaunched = readProjectLaunched(root);
+            console.log(`\nAdding AI tool target(s) to existing OpenLogos project: ${requestedTools.join(', ')}\n`);
+            writeInstructionFiles(root, locale, config.aiTool, isLaunched);
+            console.log('  ✓ AGENTS.md updated');
+            console.log('  ✓ CLAUDE.md updated');
+            printVerifyPreRunBackfillResult(locale, verifyBackfill);
+            deployAiToolAssets(root, requestedTools, locale, isLaunched, 'synced');
+            const specResult = deploySpecs(root);
+            if (specResult && specResult.count > 0) {
+                console.log(`  ✓ ${specResult.count} specs synced to logos/spec/`);
+            }
+            console.log('\nAI tool target update complete.\n');
+            return;
+        }
+        console.error('Error: logos/logos.config.json already exists in current directory.');
+        console.error('This directory has already been initialized as an OpenLogos project.');
+        const hasManifest = existsSync(join(root, 'package.json'))
+            || existsSync(join(root, 'Cargo.toml'))
+            || existsSync(join(root, 'pyproject.toml'));
+        if (hasManifest) {
+            console.error('Tip: If this is an existing project, use `openlogos adopt` instead.');
+        }
+        console.error('Use `openlogos init --ai-tool <tool>` to add a target AI tool, or `openlogos sync` to refresh the current configuration.');
+        process.exit(1);
+    }
+    const locale = options?.locale === 'zh' ? 'zh' : options?.locale === 'en' ? 'en' : await chooseLocale();
+    let aiTool;
+    if (options?.aiTool !== undefined) {
+        const parsedAiTool = parseAiTool(options.aiTool);
+        if (!parsedAiTool) {
+            console.error(`Error: unsupported AI tool "${options.aiTool}".`);
+            console.error('Supported values: claude-code, opencode, codex, cursor, zcode, qoder, workbuddy, other, all');
+            process.exit(1);
+        }
+        aiTool = parsedAiTool;
+    }
+    else {
+        aiTool = await chooseAiTool(locale);
+    }
+    const { name: projectName, source: nameSource } = await resolveProjectName(locale, root, name);
+    const deployTools = expandAiTools(aiTool);
+    try {
+        preflightAiToolAssets(root, deployTools);
+        if (deployTools.includes('zcode') || deployTools.includes('qoder') || deployTools.includes('workbuddy'))
+            preflightInstructionFiles(root, locale, aiTool, false);
+    }
+    catch (error) {
+        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+        return;
+    }
+    const sourceLabel = {
+        'argument': '',
+        'package.json': ' ← from package.json',
+        'Cargo.toml': ' ← from Cargo.toml',
+        'pyproject.toml': ' ← from pyproject.toml',
+        'directory': ' ← from directory name',
+    };
+    console.log(`\n${t(locale, 'init.creating', { name: projectName, source: sourceLabel[nameSource] })}\n`);
+    for (const dir of DIRECTORIES) {
+        const fullPath = join(root, dir);
+        mkdirSync(fullPath, { recursive: true });
+        writeFileSync(join(fullPath, '.gitkeep'), '');
+        console.log(`  ✓ ${dir}/`);
+    }
+    const initialConfig = JSON.parse(createLogosConfig(projectName, locale, aiTool));
+    const verifyBackfill = ensureVerifyPreRunConfig(root, initialConfig);
+    writeFileSync(join(root, 'logos', 'logos.config.json'), JSON.stringify(initialConfig, null, 2));
+    console.log(`  ✓ logos/logos.config.json`);
+    printVerifyPreRunBackfillResult(locale, verifyBackfill);
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
+    console.log(`  ✓ logos/logos-project.yaml`);
+    writeManagedInstructionFile(root, 'AGENTS.md', createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'agents'), 'agents', false));
+    console.log(`  ✓ AGENTS.md`);
+    writeManagedInstructionFile(root, 'CLAUDE.md', createAgentsMd(locale, resolveDocsAiToolForTarget(aiTool, 'claude'), 'claude', false));
+    console.log(`  ✓ CLAUDE.md`);
+    deployAiToolAssets(root, deployTools, locale, false, 'deployed');
+    const specResult = deploySpecs(root);
+    if (specResult && specResult.count > 0) {
+        console.log(`  ✓ ${specResult.count} specs deployed to logos/spec/`);
+    }
+    const isAutoDetected = nameSource !== 'argument';
+    const nameHint = isAutoDetected
+        ? `\n${t(locale, 'init.nameTip', { name: projectName, source: sourceLabel[nameSource] })}\n`
+        : '';
+    console.log(`\n${t(locale, 'init.done')}`);
+    console.log(t(locale, 'init.step1'));
+    if (nameHint)
+        console.log(nameHint);
+    console.log(t(locale, 'init.step2'));
+    console.log(t(locale, 'init.step3') + '\n');
+    maybePrintPythonHint(locale);
+}
+//# sourceMappingURL=init.js.map

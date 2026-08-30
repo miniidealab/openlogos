@@ -1,0 +1,548 @@
+# 测试结果格式规范
+
+> 版本：0.1.0
+>
+> 本文档定义 OpenLogos 的标准化测试结果输出格式。AI 在生成测试代码时必须内嵌 reporter，按此格式输出每个用例的运行结果，供 `openlogos verify` 读取和验收。
+
+## 概述
+
+OpenLogos 不绑定任何测试框架。取而代之的做法是：**AI 在生成测试代码时内嵌一个小型 reporter**，测试运行后自动将每个用例的结果追加写入统一格式的文件。`openlogos verify` 命令只需读取该文件即可完成验收判定。
+
+这套机制的核心优势：
+
+- **零框架依赖**：vitest、jest、pytest、go test、cargo test 均可产出同一格式
+- **零适配成本**：`openlogos verify` 只解析一种格式
+- **AI 天然能做**：reporter 代码不超过 20 行，AI 在生成测试代码时顺手写入
+- **用例 ID 是原生的**：不需要从测试名称里正则提取，ID 直接是数据字段
+
+## 文件路径
+
+测试结果文件的默认路径为：
+
+```
+logos/resources/verify/test-results.jsonl
+```
+
+可通过 `logos.config.json` 的 `verify.result_path` 字段自定义路径。
+
+## 格式：JSONL
+
+文件格式为 **JSONL**（JSON Lines）——每行一个独立的 JSON 对象，以换行符分隔。
+
+选择 JSONL 而非完整 JSON 数组的理由：
+
+| 特性 | JSONL | JSON 数组 |
+|------|-------|----------|
+| 追加写入 | 直接 append 一行 | 需维护数组闭合括号 |
+| 流式读取 | 逐行解析 | 需读完整个文件 |
+| 部分损坏 | 一行损坏不影响其他行 | 括号不匹配则整个文件不可解析 |
+| 跨语言写入 | `JSON.stringify(obj) + "\n"` | 需手动管理逗号和括号 |
+
+## 字段定义
+
+每行是一个 JSON 对象，包含以下字段：
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `id` | string | 是 | 用例 ID，与 `test-cases.md` 中的 `UT-xx` / `ST-xx` 完全一致 |
+| `status` | `"pass"` \| `"fail"` \| `"skip"` | 是 | 运行结果 |
+| `duration_ms` | number | 否 | 执行耗时（毫秒） |
+| `timestamp` | string (ISO 8601) | 否 | 执行时间，如 `2026-04-03T15:30:01Z` |
+| `error` | string | `status=fail` 时必需 | 失败原因（断言错误信息） |
+| `scenario` | string | 否 | 场景编号（如 `S01`），用于验证 ID 前缀一致性 |
+
+### 示例
+
+```jsonl
+{"id":"UT-S01-01","status":"pass","duration_ms":12,"timestamp":"2026-04-03T15:30:01Z"}
+{"id":"UT-S01-02","status":"fail","duration_ms":45,"timestamp":"2026-04-03T15:30:01Z","error":"Expected exit code 0, got 1"}
+{"id":"UT-S01-03","status":"skip","timestamp":"2026-04-03T15:30:01Z"}
+{"id":"ST-S01-01","status":"pass","duration_ms":230,"timestamp":"2026-04-03T15:30:02Z","scenario":"S01"}
+```
+
+### 字段约束
+
+- `id` 必须匹配正则 `^(UT|ST)-S\d{2}-\d{2,3}$`
+- `status` 仅允许三个值：`pass`、`fail`、`skip`
+- `error` 在 `status=fail` 时必须提供，其他状态可省略
+- 同一个 `id` 如果出现多次（如重试），`openlogos verify` 按「同 ID timestamp 去重全序规则」取最新一次的结果（完整算法见「JSONL 结果账本一致性与 Gate 判据 → 归一化规则」；该 ID 存在任一缺失/非法 `timestamp` 时整组退回文件行序 last-wins，等价旧行为——旧 reporter 不写 `timestamp`，产物零行为变化）
+
+### `[manual]` 标记用例
+
+在 `test-cases.md` 中，无法自动化执行的用例（如需要真实 TTY/PTY 渲染、跨窗口操作、人工视觉验证的 ST 用例）应在 ID 后追加 `[manual]` 标记：
+
+```markdown
+| ST-S01-05 [manual] | 需要真实 PTY 渲染的交互测试 | ... |
+```
+
+`[manual]` 用例的行为规则：
+
+- **不写入 JSONL**：`[manual]` 用例不由自动化测试执行，不产出 JSONL 记录
+- **不计入 `defined_count`**：`openlogos verify` 扫描 test-cases.md 时跳过这类用例，不计入覆盖率分母
+- **不出现在 `uncovered_cases`**：不会因为缺少运行结果而报告为未覆盖
+- **单独计入 `manual_count`**：在 summary 中以独立字段展示，方便感知人工用例数量
+- **AC trace 中标记为 `MANUAL_PENDING`**：若某个验收条件（AC）关联的用例全部为 `[manual]`，该 AC 标记为 `🔵 MANUAL`（人工待验），不触发 Gate 3.5 失败
+
+## 运行约定
+
+### `verify.pre_run_command`（兼容配置）
+
+`verify.pre_run_command` 保持兼容，用于单阶段全量测试。配置后，`openlogos verify` 在读取 `verify.result_path` 前执行该命令：
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "pre_run_command": "npx vitest run"
+  }
+}
+```
+
+此字段适用于只需要一条命令生成完整 `test-results.jsonl` 的项目。若同时配置两阶段字段，`openlogos verify` 优先执行两阶段模型，并在输出中标记 `pre_run_command` 作为兼容配置保留。
+
+**为什么需要预跑配置**：reporter 每次运行测试时会清空 `test-results.jsonl`，若只跑部分场景的测试（如变更提案只涉及 S03），JSONL 将缺少其他场景（S01、S02）的结果，导致 `openlogos verify` 覆盖率不足而失败。配置预跑命令后，verify 会先跑完整测试再读取结果，覆盖率始终完整。
+
+常见框架对应命令：
+
+| 测试框架 | pre_run_command |
+|---------|----------------|
+| vitest | `npx vitest run` |
+| jest | `npx jest` |
+| pytest | `pytest` |
+| go test | `go test ./...` |
+| cargo test | `cargo test` |
+
+> `code-implementor` Skill 在生成测试代码后会自动检查并写入此字段，无需手动配置。
+
+### `verify.regression_command` 与 `verify.incremental_command`
+
+两阶段模型用于先运行回归测试，再运行增量测试：
+
+```json
+{
+  "verify": {
+    "result_path": "logos/resources/verify/test-results.jsonl",
+    "regression_command": "npm test",
+    "incremental_command": "npm run test:changed",
+    "regression_result_path": "logos/resources/verify/test-results.regression.jsonl",
+    "incremental_result_path": "logos/resources/verify/test-results.incremental.jsonl",
+    "merge_results": "last-write-wins"
+  }
+}
+```
+
+执行语义：
+1. 若配置 `regression_command`，先执行回归测试。
+2. 若配置 `incremental_command`，再执行增量测试。
+3. CLI 合并阶段结果，写入 `result_path`。
+4. 同一个用例 ID 多次出现时（含跨阶段重复），按**「同 ID timestamp 去重全序规则」**取一条生效记录（contract-self-description 统一算法，见「归一化规则」第 5 条）：该 ID 全部 `timestamp` 合法 → 绝对时刻最新优先、同刻按合并后文件行序后者优先；存在任一缺失/非法 → 该 ID 整组退回合并后文件行序 last-wins。**两阶段合并与单文件去重不得各自实现两套语义**。
+5. 若未配置阶段结果路径，CLI 必须用临时快照或等价机制避免第二阶段 reporter 清空第一阶段结果。
+
+**`merge_results: "last-write-wins"` 配置值语义升级（contract-self-description）**：枚举值名称保留（**兼容名称，不新增枚举、不要求迁移**），其规范语义即上述统一全序算法——对不写 `timestamp` 的旧 reporter 产物，算法必然命中「整组退回行序 last-wins」分支，行为与旧名字面含义逐字节一致（零行为变化）；写 `timestamp` 的新 reporter 则取真正最新的执行证据。该配置语义以 S13 测试用例为验收锚（两阶段合并路径的 timestamp 去重回归）。
+
+### `verify.sandbox_mode` / `smoke.sandbox_mode`
+
+OpenLogos 的 JSONL reporter 仍然负责写入测试结果，但当 `verify` 或 `smoke` 开启沙箱模式时，reporter 和命令执行器的职责必须分离：
+
+- reporter 只写配置声明的结果文件；
+- CLI 负责在沙箱中执行测试命令；
+- CLI 负责回收结果文件并阻断仓库工作区的额外写入。
+
+### 新增约束
+- `verify.sandbox_mode="always"` 时，测试命令不得直接写入仓库根目录中的非白名单路径。
+- `smoke.sandbox_mode="always"` 时，`smoke.command` 不得直接写入仓库根目录中的非白名单路径。
+- 若测试脚本在沙箱内失败，CLI 必须保留失败输出，并在 JSON / 文本结果中暴露 `sandbox` 诊断。
+- 阶段化结果路径（`regression_result_path` / `incremental_result_path`）与沙箱隔离可以同时存在，二者不冲突。
+
+### 覆盖不足诊断
+
+当项目没有配置 `pre_run_command`、`regression_command` 或 `incremental_command`，且 verify 发现覆盖不足时，CLI 必须诊断这可能是只运行了局部测试导致，并建议配置 verify 预跑命令。
+
+该诊断不改变 Gate 判定：覆盖不足仍为 FAIL。
+
+### 清空策略
+
+每次完整测试运行前，reporter 应**清空**（truncate）对应阶段的结果文件，确保文件只包含最近一次运行的结果。推荐方式：
+
+- 在测试套件的 `globalSetup` 或等效钩子中清空文件
+- 或者 reporter 的初始化阶段写入空文件
+
+两阶段模型下，回归阶段和增量阶段可以写入不同结果文件；如果两个阶段都写入默认 `result_path`，CLI 必须在阶段之间保留快照，确保最终合并结果不会丢失第一阶段覆盖。
+
+### reporter 输出建议
+```json
+{"id":"UT-S13-01","status":"pass","duration_ms":12,"timestamp":"2026-04-10T10:00:00Z"}
+```
+
+当启用沙箱时，reporter 不需要知道沙箱实现细节，但可在错误消息中保留命令上下文，便于 CLI 汇总诊断。
+
+### 兼容性
+- 现有 reporter 仍然按原格式工作，不需要新增字段。
+- CLI 新增的沙箱执行器不得改变 `test-results.jsonl` 的基本 schema。
+
+### 目录创建
+
+reporter 在写入前应确保 `logos/resources/verify/` 目录存在（`mkdir -p` 等效操作）。
+
+### 分批闭环执行约定（大任务）
+
+当 Phase 3 Step 5 采用“分批生成”时，reporter 仍按一次完整测试运行的口径输出结果，并遵循以下约束：
+
+1. **用例 ID 对齐**：每一批开始前先声明本批覆盖的 `UT-xx` / `ST-xx`，测试代码中写入的 `id` 必须与 `logos/resources/test/*.md` 完全一致
+2. **清空策略一致**：无论是否分批，执行“本批完整测试”前都必须先清空结果文件，避免混入旧批次数据
+3. **重复 ID 判定**：同一 `id` 在同次运行中出现多条记录（如重试）时，`openlogos verify` 仍以最后一条为准
+4. **批次可独立验收**：建议每一批产出后立即运行测试并校验 JSONL，可在批次内尽早发现“只写业务未写测试”或 ID 不匹配问题
+
+## AI 生成 reporter 代码模板
+
+以下是各语言的 reporter 参考实现。AI 在 Phase 3 Step 5（代码生成，由 `code-implementor` Skill 驱动）时，应根据项目的 `tech_stack` 选择对应语言的模板，嵌入到测试代码中。
+
+### 推荐：共享 reporter 文件模式
+
+**不要在每个测试文件里内联 reporter 代码**。多文件项目应创建一个共享工具文件，统一 import：
+
+```
+<test-root>/
+└── helpers/
+    └── reporter.ts    ← 所有测试文件从这里 import
+```
+
+这样做的好处：
+- 路径配置只有一处，不会因为文件位置不同导致写入路径错误
+- 新增测试文件时只需 import，不会遗漏 reporter
+- 清空策略（truncate）只在一处维护
+
+### TypeScript (vitest / jest)
+
+````typescript
+import { appendFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+const RESULT_PATH = 'logos/resources/verify/test-results.jsonl';
+let initialized = false;
+
+function reportResult(
+  id: string,
+  status: 'pass' | 'fail' | 'skip',
+  error?: string,
+  durationMs?: number,
+) {
+  if (!initialized) {
+    mkdirSync(dirname(RESULT_PATH), { recursive: true });
+    writeFileSync(RESULT_PATH, '');
+    initialized = true;
+  }
+  const record: Record<string, unknown> = {
+    id,
+    status,
+    timestamp: new Date().toISOString(),
+  };
+  if (durationMs !== undefined) record.duration_ms = durationMs;
+  if (error) record.error = error;
+  appendFileSync(RESULT_PATH, JSON.stringify(record) + '\n');
+}
+````
+
+在测试用例中使用：
+
+````typescript
+import { describe, it, expect } from 'vitest';
+
+describe('S01: CLI Init', () => {
+  it('UT-S01-01: should detect project name from package.json', () => {
+    const start = Date.now();
+    try {
+      const result = detectProjectName('/path/to/project');
+      expect(result.name).toBe('my-project');
+      reportResult('UT-S01-01', 'pass', undefined, Date.now() - start);
+    } catch (e) {
+      reportResult('UT-S01-01', 'fail', String(e), Date.now() - start);
+      throw e;
+    }
+  });
+});
+````
+
+### Python (pytest)
+
+````python
+# conftest.py
+import json
+import os
+import time
+import re
+import pytest
+
+RESULT_PATH = "logos/resources/verify/test-results.jsonl"
+_initialized = False
+
+
+def _ensure_file():
+    global _initialized
+    if not _initialized:
+        os.makedirs(os.path.dirname(RESULT_PATH), exist_ok=True)
+        open(RESULT_PATH, "w").close()
+        _initialized = True
+
+
+def _extract_test_id(nodeid: str) -> str | None:
+    """Extract UT-S01-01 or ST-S01-01 from test function name."""
+    match = re.search(r"(UT|ST)_S\d{2}_\d{2,3}", nodeid)
+    if match:
+        return match.group().replace("_", "-")
+    return None
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call":
+        _ensure_file()
+        test_id = _extract_test_id(item.nodeid)
+        if not test_id:
+            return
+        record = {
+            "id": test_id,
+            "status": "pass" if report.passed else "fail",
+            "duration_ms": round(report.duration * 1000),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        if report.failed:
+            record["error"] = str(report.longrepr)[:500]
+        with open(RESULT_PATH, "a") as f:
+            f.write(json.dumps(record) + "\n")
+````
+
+Python 测试函数命名约定——用下划线替代连字符：
+
+````python
+def test_UT_S01_01_detect_project_name():
+    result = detect_project_name("/path/to/project")
+    assert result["name"] == "my-project"
+````
+
+### Go
+
+````go
+package testutil
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+const ResultPath = "logos/resources/verify/test-results.jsonl"
+
+var (
+	once sync.Once
+	mu   sync.Mutex
+)
+
+type TestResult struct {
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	DurationMs int64  `json:"duration_ms,omitempty"`
+	Timestamp  string `json:"timestamp"`
+	Error      string `json:"error,omitempty"`
+}
+
+func ReportResult(id, status string, durationMs int64, err string) {
+	once.Do(func() {
+		os.MkdirAll(filepath.Dir(ResultPath), 0o755)
+		os.WriteFile(ResultPath, nil, 0o644)
+	})
+	r := TestResult{
+		ID:         id,
+		Status:     status,
+		DurationMs: durationMs,
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		Error:      err,
+	}
+	b, _ := json.Marshal(r)
+	mu.Lock()
+	defer mu.Unlock()
+	f, _ := os.OpenFile(ResultPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	defer f.Close()
+	fmt.Fprintf(f, "%s\n", b)
+}
+````
+
+## Smoke 结果与覆盖预检
+
+部署后 smoke 用例使用同一类 JSONL 结果格式，但默认写入：
+
+```text
+logos/resources/verify/smoke-results.jsonl
+```
+
+可通过 `logos.config.json.smoke.result_path` 覆盖该路径。每行仍为一个 JSON 对象：
+
+```json
+{ "id": "SMOKE-core-01", "status": "pass", "timestamp": "2026-06-28T00:00:00.000Z", "scenario": "cli version" }
+```
+
+当提案新增或修改 `logos/resources/test/smoke/*.md`，code 阶段必须同步实现可执行 smoke 闭环：
+
+- `scripts/smoke-*.sh`、`scripts/smoke-*.js` 或等效 smoke runner 必须覆盖新增或修改的 `SMOKE-*` ID。
+- runner 必须写入 `smoke-results.jsonl` 或 `smoke.result_path` 指定路径。
+- `smoke.command` 必须能执行新增 runner；推荐配置为 `node scripts/run-smoke.js` 统一 dispatcher，由 dispatcher 自动发现并运行 `scripts/smoke-*`。
+- `openlogos verify` / code completion gate 可执行 smoke 覆盖预检：若本提案新增 smoke ID 但缺少 runner、reporter 或执行结果，应输出 `smoke_runner_missing`、`smoke_reporter_missing` 或 `smoke_cases_uncovered`，并阻断 code 完成。
+
+推荐项目在根目录提供：
+
+```json
+{
+  "smoke": {
+    "command": "node scripts/run-smoke.js",
+    "result_path": "logos/resources/verify/smoke-results.jsonl"
+  }
+}
+```
+
+`scripts/run-smoke.js` 负责发现并顺序运行 `scripts/smoke-*.sh` / `scripts/smoke-*.js`。runner 可通过 `OPENLOGOS_SMOKE_RESULT_PATH` 读取目标结果路径，避免硬编码。
+
+## JSONL 结果账本一致性与 Gate 判据
+
+`openlogos verify` 读取 `test-results.jsonl` 时，必须把“结果格式合法”和“统计自洽”作为 Gate PASS 的前置条件。
+
+### skip 结果的有效通过语义
+
+`status:"skip"` 表示用例已被当前测试运行明确处理，但因本机环境、外部依赖、部署目标或平台能力限制未实际执行断言。它不同于未覆盖：
+
+- skip 结果必须由 reporter 显式写入 JSONL；
+- skip 计入 `executed_count`，并使对应定义用例计入 covered；
+- skip 计入 `skipped_count`，并继续暴露在 `skipped_cases` / 报告的跳过列表中；
+- skip 不计入 `failed_count`，也不作为 Gate 失败原因；
+- 在计算通过率时，skip 视为有效通过，使用 `(passed_count + skipped_count) / executed_count`。
+
+该语义只适用于合法、已定义、非 `[manual]` 的自动化结果。非法 JSON、未知 ID、manual ID、缺失 `fail.error` 等账本一致性错误仍必须使 Gate FAIL。
+
+### 归一化规则
+
+1. 每行必须是 JSON 对象。
+2. 每条记录必须包含字符串 `id` 和 `status`。
+3. `status` 只能为 `pass`、`fail` 或 `skip`。
+4. `status="fail"` 时必须提供非空 `error`。
+5. 同一 `id` 多次出现时，在**合法记录**之间按「同 ID timestamp 去重全序规则」取一条生效记录（contract-self-description，替代旧「最后一条合法记录生效」行序规则）：
+   1. 先对该 ID 的每条记录严格解析 `timestamp`（ISO 8601，含时区偏移归一为绝对时刻）；非法格式一律按「缺失」处理；
+   2. **该 ID 全部记录时间戳均合法** → 按绝对时刻比较取最新；同一时刻（含不同时区表示的同刻）→ 文件行序后者优先；
+   3. **该 ID 存在任一缺失/非法时间戳** → 该 ID 整组退回文件行序 last-wins（等价旧行为——不对不完整证据做时间猜测，对齐宁慢勿错杀原则，也保证旧 reporter 产物零行为变化）。
+
+   去重按 ID 分组独立进行；一个 ID 退回行序不影响其他 ID 按时间戳去重。旧 reporter（完全不写 `timestamp`）的账本对每个 ID 均命中第 3 条 → 与旧版结论逐字节一致，**零行为变化**。实现测试必须覆盖混合情况：乱序追加、缺失+合法混排、非法格式、异时区同刻。
+6. 非法记录必须进入诊断集合，不得被静默丢弃后继续 PASS（去重只在合法记录之间进行，不吞非法行）。
+
+### ID 对齐规则
+
+1. 自动化结果 ID 必须与 `logos/resources/test/**/*.md` 中定义的非 `[manual]` `UT-*` / `ST-*` 用例完全一致。
+2. 未定义 ID 必须被报告为 `unknown_test_result_id`。
+3. `[manual]` 用例不得写入 JSONL；若出现，应报告为 `manual_test_result_id`。
+
+### 统计不变量
+
+去重（按上文「同 ID timestamp 去重全序规则」）并过滤为合法自动化结果后，verify 汇总必须满足：
+
+```text
+passed_count + failed_count + skipped_count == executed_count
+executed_count <= defined_count
+covered_count + uncovered_count == defined_count
+```
+
+通过率必须按有效通过数计算：
+
+```text
+effective_passed_count = passed_count + skipped_count
+pass_rate_pct = executed_count > 0 ? round(effective_passed_count / executed_count * 100) : 0
+```
+
+若 `failed_count == 0`，还必须满足：
+
+```text
+passed_count + skipped_count == executed_count
+pass_rate_pct == 100
+```
+
+任一不变量失败时，`gate.result` 必须为 `FAIL`，`gate.reason` 必须非空，推荐使用 `result_ledger_inconsistent` 或具体错误码。
+
+**与去重规则的关系（contract-self-description）**：上述守恒不变量与「JSON 输出建议」的 `consistency` 契约均在**去重后**的结果集上计算；去重规则的变更只影响「同一 ID 多条记录取哪一条」，**不改变 `consistency` 既有契约**（字段形态、`ok` 判据、FAIL 语义均不变）。极端场景（乱序追加的 jsonl）下 verify 结论可能与旧版不同——这正是改造目的：取真正最新的执行证据，而非文件末尾的陈旧证据。
+
+### JSON 输出建议
+
+`openlogos verify --format json` 应输出可选 `consistency` 字段，供自动化消费方展示诊断：
+
+```json
+{
+  "consistency": {
+    "ok": false,
+    "reasons": ["unknown_test_result_id", "result_count_mismatch"],
+    "unknown_result_ids": ["UT-S13-GHOST"],
+    "manual_result_ids": [],
+    "invalid_results": [
+      {"line": 3, "id": "UT-S13-X", "reason": "invalid_status"}
+    ],
+    "count_mismatches": ["passed_failed_skipped_ne_executed"]
+  }
+}
+```
+
+当 `consistency.ok === false` 时，任何客户端都必须把 verify 视为未通过；不得仅因 `failed_count == 0` 和 `uncovered_count == 0` 继续推进 archive、deploy 或 release。
+
+## 与其他规范的关系
+
+| 规范 | 关系 |
+|------|------|
+| `test-writer` Skill | 定义用例 ID（`UT-xx` / `ST-xx`），是 JSONL 中 `id` 字段的来源 |
+| `test-orchestrator` Skill | API 编排测试也可产出同格式 JSONL |
+| `directory-convention.md` | 定义 `logos/resources/verify/` 目录位置 |
+| `logos.config.json` | `verify.result_path` 可覆盖默认路径 |
+| `openlogos verify` 命令 | 读取此格式文件，生成验收报告 |
+
+## 切片 checkpoint 的结果集合与 pending 语义
+
+### 三个集合
+
+切片感知 verify 必须在读取 reporter JSONL 前确定以下互斥/包含关系：
+
+- `eligible_test_ids`：本轮必须有合法最终结果、参与覆盖率与 Gate 的测试。
+- `pending_test_ids`：属于未来未确认切片，尚不要求结果且不进入分母。
+- `defined_test_ids`：已合并测试规格中全部非 manual ID，满足 `eligible ∪ pending ⊆ defined`。
+
+checkpoint 下 eligible 为基线回归、已确认切片与 attempted slice 的并集；pending 为其余 owned tests。final 下 eligible 等于全部 defined，pending 为空。
+
+### reporter 处理
+
+1. reporter 格式、合法 `status`、timestamp 去重与手工用例排除沿用既有规则。
+2. 覆盖率只按 eligible 计算：
+
+```text
+covered = eligible ∩ latest_result_ids
+uncovered = eligible − covered
+coverage = |covered| / |eligible|
+```
+
+3. pending 没有结果是合法状态，不生成 pass/skip 行，不进入 uncovered。
+4. reporter 若意外输出 pending ID，保留该行供诊断但不得使未来切片提前确认；严格模式以 `result_outside_eligible_scope` 失败。
+5. 未在 defined 中的结果仍按既有 unknown ID 硬门失败。
+
+### 基线回归集合
+
+`baseline_test_ids = defined_test_ids − manifest_owned_test_ids`。它在每个 checkpoint 都属于 eligible，用于阻止当前切片破坏未触达能力。manifest owned 集合必须只包含本提案新增或修改的测试 ID；不得把全项目测试都分配到切片以逃避基线定义。
+
+### checkpoint/final 报告
+
+验收报告新增 mode、attempted slice、eligible/pending 数量和 ID 清单、manifest fingerprint、confirmed slices。checkpoint PASS 明确标注“切片检查点通过，非最终验收”，不得产生最终 `VERIFY_PASS`。final 报告继续给出全量覆盖率与 Gate 结论。
+
+### checkpoint 账本
+
+`SLICE_CHECKPOINTS.jsonl` 每行至少包含：`schema`、`slice_id`、`manifest_sha256`、`result`、`eligible_test_ids_sha256`、`timestamp`。有效完成只采信当前 manifest 哈希的最新 PASS；相同 identity 的重复 PASS 幂等。FAIL 可留作审计，但 attempted identity 由“缺少有效 PASS 的首片”恢复。
+
+### 安全边界
+
+- pending 不是 reporter status，允许的结果状态枚举不新增 `pending`。
+- checkpoint 不降低非法状态、unknown ID、重复结果和 100% eligible coverage 硬门。
+- final 不允许 pending，不接受部分结果。
+- manifest 恢复态不读取旧 JSONL 计算 Gate，不生成验收报告假失败。

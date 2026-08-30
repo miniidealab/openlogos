@@ -1,0 +1,1 @@
+{"version":3,"file":"flow.d.ts","sourceRoot":"","sources":["../../src/commands/flow.ts"],"names":[],"mappings":"AASA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,uBAAuB,CAAC;AAK1D,MAAM,WAAW,eAAe;IAC9B,QAAQ,CAAC,EAAE,OAAO,CAAC;IACnB,SAAS,CAAC,EAAE,MAAM,CAAC;CACpB;AA0DD,wBAAgB,QAAQ,CAAC,MAAM,GAAE,YAAqB,EAAE,IAAI,GAAE,eAAoB,GAAG,IAAI,CA8CxF"}

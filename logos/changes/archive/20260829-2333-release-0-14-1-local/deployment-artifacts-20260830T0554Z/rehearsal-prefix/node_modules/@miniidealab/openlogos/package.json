@@ -1,0 +1,72 @@
+{
+  "name": "@miniidealab/openlogos",
+  "version": "0.14.1",
+  "description": "CLI tool for the OpenLogos software engineering methodology",
+  "type": "module",
+  "bin": {
+    "openlogos": "dist/index.js"
+  },
+  "scripts": {
+    "build": "npx tsc",
+    "build:zcode-template": "node scripts/build-zcode-template.mjs",
+    "build:qoder-template": "node scripts/build-qoder-template.mjs",
+    "build:workbuddy-template": "node scripts/build-workbuddy-template.mjs",
+    "prepack": "npm run build && npm run build:zcode-template && npm run build:qoder-template && npm run build:workbuddy-template && node -e \"require('fs').cpSync('../skills','./skills',{recursive:true});require('fs').cpSync('../spec','./spec',{recursive:true});require('fs').cpSync('../plugin-opencode/template','./opencode-plugin-template',{recursive:true});require('fs').cpSync('../plugin-codex','./codex-plugin-template',{recursive:true});require('fs').cpSync('../plugin','./claude-plugin-template',{recursive:true})\" && node scripts/build-asset-manifest.mjs",
+    "postpack": "node -e \"require('fs').rmSync('./skills',{recursive:true,force:true});require('fs').rmSync('./spec',{recursive:true,force:true});require('fs').rmSync('./opencode-plugin-template',{recursive:true,force:true});require('fs').rmSync('./codex-plugin-template',{recursive:true,force:true});require('fs').rmSync('./claude-plugin-template',{recursive:true,force:true});require('fs').rmSync('./zcode-plugin-template',{recursive:true,force:true});require('fs').rmSync('./qoder-plugin-template',{recursive:true,force:true});require('fs').rmSync('./workbuddy-plugin-template',{recursive:true,force:true})\"",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "openlogos",
+    "software-engineering",
+    "methodology",
+    "ai",
+    "cli"
+  ],
+  "author": "MiniIdea",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://openlogos.ai",
+  "bugs": {
+    "url": "https://github.com/miniidealab/openlogos/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miniidealab/openlogos.git",
+    "directory": "cli"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "README.md",
+    "asset-manifest.json",
+    "dist",
+    "skills",
+    "spec",
+    "opencode-plugin-template",
+    "codex-plugin-template",
+    "zcode-plugin-template",
+    "qoder-plugin-template",
+    "workbuddy-plugin-template",
+    "claude-plugin-template"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^25.5.0",
+    "ajv-formats": "^3.0.1",
+    "eslint": "^9.39.4",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@hyperjump/json-schema": "1.17.7",
+    "yaml": "^2.8.3"
+  }
+}

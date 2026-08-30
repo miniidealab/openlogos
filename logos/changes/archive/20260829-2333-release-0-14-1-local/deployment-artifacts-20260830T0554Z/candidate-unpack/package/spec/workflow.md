@@ -1,0 +1,564 @@
+# 研发工作流定义
+
+> 版本：0.3.0
+>
+> 本文档定义 OpenLogos 的三层推进工作流：WHY → WHAT → HOW。这是方法论的核心骨架，所有 Skills 和工具都围绕这个工作流设计。
+
+## 核心设计：场景贯穿
+
+**场景（Scenario）是贯穿整个研发生命周期的锚。** 同一个场景在三个 Phase 中被逐层展开：
+
+```
+场景 S01: 邮箱注册
+
+Phase 1 (WHY)  → 谁需要？解决什么痛点？正常/异常预期是什么？
+Phase 2 (WHAT) → 用户看到什么页面？交互流程是什么？状态怎么变？
+Phase 3 (HOW)  → 系统调用链是什么？API 是什么？DB 怎么写？怎么测？
+```
+
+场景编号（`S01`, `S02`...）全局唯一，从 Phase 1 定义开始，一路带到 Phase 3 验收完成。不需要额外维护追溯矩阵——场景本身就是追溯链。
+
+## 总览
+
+```
+Phase 1: WHY — 为什么做
+├── 用户研究 → 痛点提炼 → 场景识别 → 优先级排序
+├── 产出：需求文档（场景驱动 + GIVEN/WHEN/THEN 验收条件）
+└── 质量门禁 → Gate 1
+
+Phase 2: WHAT — 做什么
+├── 信息架构 → 场景交互细化 → 功能规格 → HTML 原型
+├── 产出：产品设计文档 + HTML 原型（按场景组织）
+└── 质量门禁 → Gate 2
+
+Phase 3: HOW — 如何做
+├── Step 0: 技术架构概要（整体架构、技术选型、部署约束）
+├── Step 1: 场景 → 时序图 → API 浮现
+├── Step 2: API 细节设计 → DB 推导
+├── Step 3: 部署方案设计（部署拓扑、环境配置、发布命令、回滚策略、冒烟测试方案）
+├── Step 4: 测试设计（测试先行）
+│   ├── 4a: 单元测试 + 场景测试用例设计（所有项目）
+│   └── 4b: API 编排测试设计（仅 API 项目）
+├── Step 5: AI 驱动代码生成 + 测试代码
+├── Step 6: 测试验收（openlogos verify 自动化判定）
+├── Step 7: 部署执行（人类确认后由 AI 按部署方案执行）
+├── Step 8: 部署后冒烟测试（openlogos smoke）
+└── 质量门禁 → Gate 3.0 ~ Gate 3.8
+```
+
+## 场景编号规则
+
+- **格式**：`S{两位数字}`，如 `S01`、`S02`
+- **子场景**：当 Phase 2/3 中发现场景需要拆分时，使用 `S01.1`、`S01.2` 格式
+- **全局唯一**：一个场景编号在整个项目生命周期中始终对应同一件事
+- **场景 ≠ 功能**：一个功能可能涉及多个场景，一个场景可能跨多个功能
+
+## Phase 1: WHY — 需求层
+
+### 目标
+
+搞清楚要解决什么问题，识别核心业务场景，为每个场景定义业务层面的验收条件。
+
+### 工作内容
+
+1. **用户研究**：理解目标用户、痛点、使用场景
+2. **痛点提炼**：每条痛点有因果链（原因 → 痛点 → 后果）
+3. **场景识别**：将痛点和需求转化为具体的用户场景，分配场景编号
+4. **优先级排序**：按场景排列优先级（P0 / P1 / P2）
+5. **验收条件编写**：为每个核心场景编写 GIVEN/WHEN/THEN
+
+### 产出物
+
+需求文档，标准结构：
+
+- 产品背景与目标（定位、核心目标、用户画像）—— 全局
+- 用户痛点分析（因果链格式）—— 全局
+- 核心场景定义（场景表 + 每个场景的验收条件）—— **场景驱动**
+- 约束与边界（技术/资源约束 + "不做"清单）—— 全局
+
+### 场景定义格式（Phase 1 粒度）
+
+```markdown
+### S01: 场景名称
+
+- **触发条件**：谁在什么情况下进入这个场景
+- **用户价值**：解决什么痛点（追溯痛点编号）
+- **优先级**：P0
+- **主路径**：[自然语言描述正常流程]
+
+#### 验收条件
+
+##### 正常：[场景名称]
+- **GIVEN** [初始条件]
+- **WHEN** [用户操作]
+- **THEN** [期望结果]
+
+##### 异常：[异常场景名称]
+- **GIVEN** [初始条件]
+- **WHEN** [操作] + [异常触发]
+- **THEN** [错误处理行为]
+```
+
+### Gate 1 检查项
+
+- [ ] 每条痛点有因果链
+- [ ] 核心场景已识别并编号（`S01`, `S02`...）
+- [ ] 每个 P0/P1 场景有 GIVEN/WHEN/THEN 验收条件（至少 1 正常 + 1 异常）
+- [ ] 目标用户画像具体到可描述一个真实的人
+- [ ] 场景优先级已排序
+- [ ] "不做"清单明确
+
+## Phase 2: WHAT — 产品设计层
+
+### 目标
+
+设计具体的解决方案。以 Phase 1 的场景为骨架，为每个场景细化交互流程、页面设计和功能规格。
+
+### 工作内容
+
+1. **信息架构设计**：产品结构、导航层级、内容组织
+2. **场景交互细化**：为每个场景定义完整的页面流转和交互细节
+3. **功能规格撰写**：每个场景涉及的功能的详细描述 + 交互级 GIVEN/WHEN/THEN
+4. **HTML 原型设计**：使用 AI 直接生成 HTML 页面作为产品原型
+5. **设计规范制定**：全局 UI 规范
+
+### 产出物
+
+- 产品设计文档（信息架构 + 功能规格，按场景组织）
+- HTML 产品原型
+- 全局设计规范
+
+### 场景展开（Phase 2 粒度）
+
+Phase 2 在 Phase 1 场景的基础上增加交互细节：
+
+- 涉及哪些页面 / 组件
+- 页面间跳转逻辑
+- 表单字段和校验规则
+- 各种状态（加载、空、错误）的展示
+- 更精细的 GIVEN/WHEN/THEN（精确到按钮和 UI 元素级别）
+
+如果 Phase 1 的一个场景过大，此阶段可以拆分为子场景（`S01.1`, `S01.2`）。
+
+### Gate 2 检查项
+
+- [ ] 每个 P0/P1 场景有详细的交互规格 + GIVEN/WHEN/THEN 验收条件
+- [ ] 所有核心页面有 HTML 原型
+- [ ] 异常情况已考虑（错误 / 空 / 加载状态）
+- [ ] 场景编号与 Phase 1 一致（可有子场景拆分）
+
+## Phase 3: HOW — 技术实现层
+
+### Step 0: 技术架构概要
+
+在进入逐场景的技术实现之前，先建立项目的技术全局视图。这一步确保后续的时序图、API 设计和代码生成都在一致的架构约束下进行。
+
+**工作内容**：
+
+1. **系统架构图**：绘制整体架构拓扑（前端、后端、数据库、第三方服务、消息队列等），明确系统边界和交互方式
+2. **技术选型清单**：语言、框架、数据库、部署方式等核心决策，每项附选型理由
+3. **部署约束**：明确目标部署形态、运行环境边界、依赖服务类型；完整部署步骤不在本步骤展开
+4. **非功能性约束**：性能目标、安全要求、可扩展性、可观测性等
+5. **更新 `logos-project.yaml`**：将确定的技术栈写入 `tech_stack` 字段
+
+**产出物**：
+
+- 架构概要文档：`logos/resources/prd/3-technical-plan/1-architecture/01-architecture-overview.md`
+- `logos-project.yaml` 的 `tech_stack` 字段已更新
+
+**适用策略**：
+
+- 简单项目（单体 + 单数据库）：用一段文字 + 一张简图即可，不需要长篇大论
+- 复杂项目（微服务、多数据库、消息队列）：需要详细的架构决策记录
+
+**Gate 3.0**：架构概要文档完成，技术栈已确认并写入 `logos-project.yaml`。
+
+### Step 1: 场景建模（时序图）
+
+将 Phase 1/2 的场景展开为 Mermaid 时序图。时序图中的跨系统调用箭头就是需要的 API。时序图的参与方应与 Step 0 架构图中的系统组件一致。
+
+**时序图规范**：
+- 每个箭头带 `Step N:` 编号前缀
+- 每个箭头附一行行为描述
+- 参与方明确标注系统组件
+- 文档标题保留场景编号：`S01: 邮箱注册 — 时序图`
+
+**Gate 3.1**：所有核心场景时序图完成，API 端点清晰可见。
+
+### Step 2: API 细节设计 → DB 推导
+
+基于时序图浮现的 API 端点，设计详细规格（OpenAPI 3.0 YAML）。API 的请求/响应结构确定后，DB 表结构自然推导。
+
+**Gate 3.2**：API YAML 和 DB DDL 完成，相互一致。
+
+### Step 3: 部署方案设计
+
+部署方案是 Phase 3 HOW 链路的一等产物。只在架构概要中写“部署拓扑”不够，Initial 阶段必须在代码实现前形成可执行、可验证、可回滚的部署方案。
+
+**工作内容**：
+
+1. **目标环境**：明确本地、测试、预发、生产等环境的部署目标和用途
+2. **部署拓扑**：描述服务、数据库、对象存储、反向代理、域名、证书、第三方服务之间的关系
+3. **配置与密钥**：列出环境变量、密钥来源、不可提交配置和本地替代方案
+4. **构建与发布命令**：明确构建、迁移、启动、发布、重启命令
+5. **数据迁移策略**：说明 schema 迁移、初始化数据、迁移回滚方式
+6. **回滚策略**：明确应用回滚、配置回滚、数据回滚和失败中止条件
+7. **部署后检查清单**：定义健康检查、核心链路、日志和监控检查
+8. **冒烟测试方案**：设计部署后必须运行的 smoke 用例，供 `openlogos smoke` 执行
+
+**产出物**：
+
+- 部署方案文档：`logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`
+- 可选 smoke 用例文档：`logos/resources/test/smoke/core-smoke-test-cases.md`
+
+**Gate 3.3**：部署方案完成，包含部署步骤、回滚策略和冒烟测试方案。
+
+### Step 4: 测试设计（测试先行）
+
+在写代码之前，先设计完整的测试体系。测试设计分为两个子步骤，覆盖三层测试金字塔，并在需要部署时同步设计部署冒烟测试。
+
+#### Step 4a: 单元测试 + 场景测试用例设计（所有项目）
+
+**适用范围**：所有项目类型（API 服务、CLI 工具、前端应用、库等），不可跳过。
+
+为每个场景设计两类测试用例：
+
+- **单元测试用例**：针对单个函数/方法的输入输出正确性
+  - 来源：API 字段约束（类型、格式、长度）、DB 约束（UNIQUE、CHECK、NOT NULL）、业务规则、EX 异常用例中的单点错误处理
+  - 关注：边界值、无效输入、异常返回
+
+- **场景测试用例**：针对完整场景流程在代码层面的串联
+  - 来源：时序图 Step 序列（主路径）、EX 异常用例（异常路径）、Phase 1/2 验收条件
+  - 关注：跨模块调用链的正确性、数据在 Step 间的传递、异常发生时的补偿/回滚逻辑
+
+- **部署冒烟测试用例**：仅在部署方案声明需要部署时设计
+  - 来源：部署方案中的健康检查、核心入口、迁移检查、静态资源检查、关键用户链路
+  - 关注：部署后的环境是否可用，不替代 UT/ST/API 编排测试
+
+**产出物**：
+
+- 测试用例规格文档（Markdown），存放在 `logos/resources/test/`，按场景分文件
+- 部署冒烟测试用例（Markdown），建议存放在 `logos/resources/test/smoke/`
+
+**Gate 3.4a**：核心场景的单元测试和场景测试用例已设计；如需要部署，部署冒烟测试也已设计。
+
+#### Step 4b: API 编排测试设计（仅 API 项目）
+
+**适用范围**：涉及 API 的项目。纯 CLI 工具、前端库等不涉及 API 的项目可跳过此步骤。
+
+为每个场景设计 API 编排测试用例：
+
+- **正常流程编排**：主路径的 API 调用链
+- **异常流程编排**：`EX-{步骤编号}.{序号}` 格式
+- **边界用例**：合法但非主路径的变体
+
+**产出物**：编排测试文件（JSON），存放在 `logos/resources/scenario/`。
+
+**Gate 3.4b**：编排覆盖所有正常流程 + 核心异常流程。
+
+### Step 5: AI 驱动代码生成 + 测试代码（code-implementor Skill）
+
+AI 面前已有完整上下文（原型 + 场景 + API + DB + 部署方案 + 测试用例 + 编排），此时生成的代码质量远高于直接写代码。按场景逐个生成、逐个验证。使用 `code-implementor` Skill 引导 AI 加载完整规格上下文、按场景分批实现、并确保代码与规格严格一致。
+
+代码生成同时包括：
+- **业务代码**：按时序图 Step 逐步实现
+- **单元测试代码**：基于 Step 4a 的单元测试用例规格实现
+- **场景测试代码**：基于 Step 4a 的场景测试用例规格实现
+- **部署相关代码**：部署方案中要求的健康检查、迁移脚本、启动脚本或构建脚本
+- **OpenLogos reporter 集成**：测试代码内嵌标准 reporter，将用例结果写入 `logos/resources/verify/test-results.jsonl` 或配置的阶段结果路径（格式见 [test-results.md](./test-results.md)）
+- **verify 预跑配置检查**：代码完成前必须检查 `logos.config.json` 是否存在 `verify.pre_run_command`、`verify.regression_command` 或 `verify.incremental_command`；缺失时必须补齐或明确说明无法推断
+- **smoke runner 覆盖预检**：若本提案新增或修改 `logos/resources/test/smoke/*.md`，代码完成前必须同步实现 smoke runner / reporter / dispatcher。新增 `SMOKE-*` 必须被 `scripts/smoke-*` 或等效 runner 覆盖，runner 必须写入 `smoke-results.jsonl` 或 `smoke.result_path`，且 `smoke.command` 必须可执行该 runner；预检发现 `smoke_runner_missing`、`smoke_reporter_missing` 或 `smoke_cases_uncovered` 时不得标记 code 完成。
+
+**Step 5 标准交付（不可拆分）**：
+
+- 仅提交业务代码，不提交对应测试代码，视为 **Step 5 未完成**
+- 仅提交测试代码，不包含对应业务实现，视为 **Step 5 未完成**
+- 交付必须满足“业务代码 + UT/ST 测试代码 + reporter”三要素齐备，方可进入 Gate 3.5
+
+**大任务分批规则（允许分批，但每批闭环）**：
+
+- 允许将大任务按场景或子模块拆成多批次执行
+- 每一批都必须形成最小闭环：**本批业务实现 + 本批对应测试 + 本批 reporter 可用**
+- 每一批开始前，应先声明本批覆盖的用例 ID（UT/ST），确保与 `logos/resources/test/*.md` 可追溯
+- 不允许将测试无限期后置到最终批次统一补写
+
+**Gate 3.5**：代码已审核，单元测试通过，已具备部署方案要求的健康检查和启动能力。
+
+### Step 6: 测试验收
+
+运行所有测试来验证代码，使用 `openlogos verify` 自动化判定验收结果。
+
+**进入 Step 6 的前置门禁**：
+
+- 仅当 Step 5 达到“业务代码 + UT/ST 测试代码 + reporter”完整交付时，才允许进入 Step 6
+- 若发现“仅业务代码、无对应测试”或“测试代码缺少 reporter”，必须回到 Step 5 补齐后再执行验收
+- Step 6 不承担“补写测试代码”的职责；其职责是对已完成的 Step 5 产物做自动化判定
+- 项目应配置 verify 预跑命令；若无法推断，必须在交付说明中明确风险与手动配置方式
+
+**verify / smoke 沙箱执行标准**：
+
+`openlogos verify` 与 `openlogos smoke` 的命令执行属于运行时安全边界，不能只依赖 prompt 约束。CLI 必须支持在 `logos.config.json` 中配置沙箱策略，并在执行前置测试命令或 `smoke.command` 时按策略处理。
+
+配置入口：
+
+```json
+{
+  "verify": {
+    "sandbox_mode": "auto",
+    "sandbox_root": "/private/tmp",
+    "sandbox_deny_workspace_write": true
+  },
+  "smoke": {
+    "sandbox_mode": "auto",
+    "sandbox_root": "/private/tmp",
+    "sandbox_deny_workspace_write": true
+  }
+}
+```
+
+沙箱模式：
+
+| 模式 | 行为 |
+|------|------|
+| `off` | 关闭沙箱，保持历史行为 |
+| `auto` | 优先使用沙箱；环境不支持时降级并输出告警 |
+| `always` | 必须使用沙箱；无法隔离或检测到工作区写入时直接失败 |
+
+verify 顺序：
+1. 读取 `verify.sandbox_*` 与预跑命令配置。
+2. 若配置 `regression_command` / `incremental_command`，按两阶段模型执行。
+3. 若只配置 `pre_run_command`，按单阶段模型执行。
+4. 若 `sandbox_mode != "off"`，所有预跑命令必须通过沙箱执行器运行。
+5. 执行结束后，仅允许回收配置声明的结果文件到 `verify.result_path`、`verify.regression_result_path` 或 `verify.incremental_result_path`。
+6. 读取结果并计算 Gate 3.5。
+7. 文本与 JSON 输出必须暴露沙箱模式、是否隔离、失败原因和修复建议。
+
+smoke 顺序：
+1. 完成提案级部署决策、`DEPLOY_DONE` 与 smoke 门禁检查。
+2. 读取 `smoke.sandbox_*` 与 `smoke.command`。
+3. 若配置 `smoke.command` 且 `sandbox_mode != "off"`，通过沙箱执行器运行。
+4. 执行结束后，仅允许回收 `smoke.result_path` 指向的结果文件。
+5. 读取 smoke 用例与结果并计算 Gate 3.8。
+6. 文本与 JSON 输出必须暴露沙箱模式、是否隔离、失败原因和修复建议。
+
+工作区写入保护：
+- 当 `sandbox_deny_workspace_write=true` 时，沙箱执行器必须阻止预跑命令或 smoke 命令写入仓库根目录中的非白名单路径。
+- 白名单仅包含配置声明的结果文件、报告文件和 CLI 显式生成的门禁标记。
+- **白名单回收采用定点采集**：copy-back 对白名单声明的每个路径在沙箱副本内存在即拷回，不依赖快照 diff；白名单路径位于审计豁免目录（如 `node_modules`）下也照常回收——白名单回收优先于豁免。
+- `always` 模式下，一旦检测到非白名单写入，命令必须失败。
+- `auto` 模式下，无法启用写入保护时必须输出告警，并在 JSON `sandbox.status` 中标记为 `warn`。
+
+依赖目录豁免（fix-sandbox-node-modules-write-audit）：
+- 沙箱副本内**规范化并统一分隔符后，存在至少一个完整路径段严格等于 `node_modules`** 的路径视为沙箱内一次性依赖目录，**不参与**非白名单写入判定（典型来源：pnpm 11 `verifyDepsBeforeRun=install` 在沙箱副本内自动 install/repair 重写 `node_modules/.bin/*`）；禁止子串/前缀/后缀匹配，`node_modules-cache` 等近似名称不豁免。
+- 该豁免为执行器内置固定规则，不是项目可配置白名单；不得开放项目级通用 allow-path 配置。
+- 基线 / 命令后快照遍历直接跳过豁免目录；豁免生效时以 JSON `sandbox.infos`（可选、additive）输出一条信息级说明，`sandbox.status` 不因此改变，文本输出以 `ℹ️` 渲染一次。
+
+symlink 隔离与运行期写保护（先于依赖目录豁免生效）：
+- 复制 workspace 进沙箱必须保持 symlink 原始目标字面量（等价 `verbatimSymlinks` 语义），复制后执行 realpath containment 校验；存在逃逸链接按「无法隔离」处理：`always` 失败、`auto` 降级为非隔离执行并告警。
+- 命令执行期间必须由 OS 级写保护（macOS `sandbox-exec` 拒写原 workspace 子树 / Linux bubblewrap 只读绑定 / 等价机制）在**写入发生前**阻断对原 workspace 的写入，覆盖运行期新建或改写（retarget）的 symlink。
+- 运行期写保护机制不可用时按能力分层：`always` 命令失败并说明原因；`auto` 继续沙箱执行但 `sandbox.status=warn` 并披露残留风险。
+
+兼容性：
+- 未配置 `sandbox_mode` 的历史项目等价于 `off`，不得破坏既有 verify / smoke 行为。
+- `init`、`adopt`、`sync` 可以为新项目补齐推荐配置，但不得覆盖用户已有沙箱配置。
+
+**验收流程**：
+
+1. AI 在 Step 5 生成测试代码时，内嵌 OpenLogos reporter（见 [test-results.md](./test-results.md)）
+2. 用户明确授权运行 `openlogos verify`
+3. CLI 根据 `logos.config.json` 执行 `pre_run_command`，或按 `regression_command` → `incremental_command` 顺序执行两阶段测试
+4. CLI 合并阶段结果，读取 JSONL + `logos/resources/test/*.md` 中的用例 ID → 自动计算验收结果
+
+**验收三层判定**：
+
+- **覆盖度**：JSONL 中出现的用例 ID / test-cases.md 中定义的全部用例 ID
+- **通过率**：status=pass 的用例数 / JSONL 中的总用例数
+- **需求追溯**（可选）：test-cases.md 中声明的覆盖范围是否覆盖 Phase 1 验收条件
+
+**覆盖不足诊断**：
+
+- 未配置任何 verify 预跑命令且覆盖不足时，CLI 必须提示可能只运行了局部测试
+- 诊断必须建议配置 `verify.pre_run_command`，或配置 `verify.regression_command` + `verify.incremental_command`
+
+**验收结果**：
+
+- 全部通过 → 生成 `logos/resources/verify/acceptance-report.md`，终端输出 PASS
+- 有失败或未覆盖 → 生成报告并列出问题项，终端输出 FAIL，退出码为 1
+
+**Gate 3.6**：`openlogos verify` 输出 PASS（所有用例通过 + 覆盖度 100%）。
+
+### Step 7: 部署执行
+
+部署执行是高风险动作，必须由人类明确确认后才能发起。AI 不得因为 `openlogos verify` 通过而自动部署。
+
+部署执行只在以下条件同时满足时进入：
+- 活跃提案 `proposal.md` 声明需要部署
+- `tasks.md` 存在 `[deploy]` section
+- `openlogos verify` 已通过并写入 `VERIFY_PASS`
+- 用户明确授权 AI 按部署方案执行部署
+
+**执行要求**：
+
+1. 用户明确授权执行部署
+2. AI 读取部署方案、当前提案、`[deploy]` 任务和已合并主规格
+3. AI 按部署方案逐项执行部署任务
+4. 每个关键命令执行前说明目的和影响范围
+5. 部署完成后生成 `logos/resources/verify/deployment-report.md`
+6. 若处于变更提案流程，写入 `logos/changes/<slug>/DEPLOY_DONE`
+
+**Gate 3.7**：部署完成，部署报告已生成，必要的部署标记已写入。
+
+### Step 8: 部署后冒烟测试
+
+冒烟测试使用独立 CLI 命令 `openlogos smoke`，不并入 `openlogos verify`。
+
+职责边界：
+
+- `openlogos verify`：验收代码实现是否满足 UT / ST / API 编排测试
+- `openlogos smoke`：验收部署后的环境是否可用
+
+`openlogos smoke` 应验证：
+
+- 服务健康检查可访问
+- 核心页面或 API 可访问
+- 数据库迁移已生效
+- 静态资源加载正常
+- 关键登录 / 初始化 / 主流程可用
+- 日志或监控中没有阻断性错误
+
+`openlogos smoke` 只在以下条件同时满足时进入：
+- 活跃提案声明 `是否需要 smoke：是`
+- 部署已完成并写入 `DEPLOY_DONE`
+- 用户明确授权运行 `openlogos smoke`
+
+提案声明无需部署或无需 smoke 时，verify PASS 或 deploy done 后应建议 archive，而不是展示 smoke 为下一步。
+
+**产出物**：
+
+- `logos/resources/verify/smoke-results.jsonl`
+- `logos/resources/verify/smoke-report.md`
+
+**Gate 3.8**：`openlogos smoke` 输出 PASS。Initial 阶段只有在 Gate 3.8 通过后，`openlogos status` 才建议 `openlogos launch`。
+
+## 场景的三级展开
+
+同一个场景在三个 Phase 中逐层细化：
+
+| Phase | 视角 | 关注点 | 验收粒度 |
+|-------|------|--------|---------|
+| Phase 1 | 业务 | 谁需要？为什么？期望什么结果？ | 业务行为级 GIVEN/WHEN/THEN |
+| Phase 2 | 交互 | 看到什么？怎么操作？状态怎么变？ | UI 元素级 GIVEN/WHEN/THEN |
+| Phase 3 | 技术 | 调用链是什么？接口返回什么？数据库写什么？ | 三层测试（单元 + 场景 + 编排）+ `openlogos verify` 自动化验收 |
+
+三层验收条件逐层细化，最终在 Phase 3 的测试中变成可自动执行的验证：单元测试覆盖函数级正确性，场景测试覆盖跨模块流程，API 编排测试覆盖端到端调用链。测试结果通过标准化的 JSONL 格式（见 [test-results.md](./test-results.md)）输出，`openlogos verify` 自动读取并生成验收报告。不需要额外的追溯矩阵——**场景编号就是追溯链，用例 ID 就是验收锚点**。
+
+## 变更提案资料一致性
+
+变更提案的 `proposal.md` 和 `tasks.md` 必须保持部署决策一致：
+
+1. `proposal.md` 的 `## 部署影响` 是部署决策入口，必须明确是否需要部署、是否需要 smoke、影响环境和回滚要求。
+2. `tasks.md` 的 `[deploy]` section 是部署执行任务入口，只能在提案声明需要部署时存在。
+3. `proposal.md` 声明无需部署时，`tasks.md` 不得包含 `[deploy]` section。
+4. `proposal.md` 声明需要部署时，`tasks.md` 必须包含 `[deploy]` section。
+5. `proposal.md` 声明需要 smoke 时，必须同时声明需要部署；smoke 不得脱离部署单独存在。
+6. 部署决策冲突时，CLI 和 AI 都必须采用保守策略：提示修正提案资料，不继续执行部署、smoke 或归档主动作。
+
+该一致性约束应在 AI 填写提案时前置自检，并在 CLI 的 `status` / `next` 中作为运行时护栏。
+
+## plan gate 等待态与无人值守闭环
+
+在 launched 变更中，`proposal.md` 与 `tasks.md` 已脱模板后，流程进入 plan 出口门等待态。该等待态必须与任务执行进度分离：
+
+- `ready-to-delta` 表示方案已完成，等待 `plan-exit` 人工批准或 `next --auto` 自动消费。
+- `tasks.md` 中 `[delta]` / `[deploy]` checkbox 表示后续执行清单进度；`0/N` 是“尚未执行”，不是“未规划”。
+- `PLAN_APPROVED` 或实际 delta 产出才表示 plan gate 已消费；`GATE_AUTO_PASSED` 只作为审计，不作为默认状态源。
+
+AI / driver 在 proposal/tasks 工作单元结束前必须执行前沿校验：
+
+1. 若状态仍为 `writing`，说明 proposal/tasks 尚未完成或结构冲突，必须修正后再结束。
+2. 若状态为 `ready-to-delta`，应报告“方案已完成，plan gate 待批准/auto 消费”，不得报告 blocked 或任务规划失败。
+3. 若在全自动模式下调用 `next --auto` 并消费 `plan-exit`，且响应含 `gate_auto_passed=true` 与 `next_node.id=="write-delta"`，driver 必须继续派发 delta-writing。
+4. 若 `tasks_execution_done < tasks_execution_total`，只说明 delta/deploy/code 执行任务尚未完成，不得将其折叠为 proposal/tasks 规划失败。
+
+该规则用于 RunLogos / AI 宿主的自动调度健壮性：可恢复的等待态必须输出可行动诊断和下一前沿；只有 proposal/tasks 真实未脱模板、部署决策冲突、越权产物或不可恢复的人类决策缺口才可阻断。
+
+## 迭代规则
+
+功能迭代**必须**按同样的分层工作流推进，使用 Delta 变更管理（详见 [change-management.md](./change-management.md)）。不允许跳过中间环节直接改代码。
+
+迭代变更遵循"规格驱动代码"原则，完整顺序为：
+
+```
+proposal / tasks（明确是否需要部署）
+→ delta 产出
+→ merge（规格落地）
+→ 代码实现
+→ verify（验收代码）
+→ deploy（仅当提案级需要部署，人类确认后执行）
+→ smoke（仅当提案级需要 smoke 且已部署）
+→ archive
+→ git push
+```
+
+- **merge 之后才能写代码**：代码必须基于合并后的主文档实现，不允许基于 delta 草稿直接写代码
+- **verify 在代码实现之后**：verify 验收的是代码，不是规格文档
+- **deploy 在 verify 通过之后**：部署必须由人类明确确认，AI 不得自动发起
+- **smoke 在部署之后**：冒烟测试验收部署环境，不替代 verify
+- **verify / deploy / smoke 失败只修对应产物**：不需要重走 merge 流程，除非发现规格本身错误
+- **git push 是人类确认点**：archive 完成后 AI 提示用户确认，不得自动推送。**例外（auto-full-unattended）**：全自动 / 无人值守模式下（`openlogos next --auto` 的 standing run-scoped 授权——用户选 `--auto` 即一次性授权该提案全链路自动跑到底），archive 完成即由 standing 授权自动 `git push`，并向活跃提案目录的 `GATE_AUTO_PASSED` 追加审计行。`git push` 无需任何 marker 或 guard 改动——PreToolUse guard 的安全白名单本就放行 `git push`、从不拦截（见 [pretooluse-guard.md](./pretooluse-guard.md)）；全自动由生成的指令文本授权 AI 自动 push，半自动 / 手动模式（无 `--auto`）由指令文本要求人工确认，行为完全不变。
+
+### Windows 外部归档 watcher 握手
+
+- 仅当 `process.platform === "win32"` 时，`openlogos archive <slug>` 才读取 `logos/.runtime/archive-watch/v1/`；macOS/Linux 不读写协议文件、不校验 token、不等待，直接沿用既有 rename 路径。
+- Windows 下先清理过期协议对象并快照项目匹配的活跃租约。快照为空时立即走快路径；非空时原子写 `prepare.json`，只有 `expectedInstances` 全部写出 `released` ACK 后才允许 rename。
+- ACK 超时、实例 `failed`、未知协议主版本、缺少 `prepare` 能力或 rename 的 `EPERM`/`EACCES`/`EBUSY` 均 fail-closed：不删除 guard、不自动重试，并输出稳定 `ARCHIVE_WATCH_*` 错误码。
+- RunLogos 宿主只可通过与项目、slug、协议及有效期绑定的子进程变量 `OPENLOGOS_ARCHIVE_WATCH_PREPARED` 跳过外部握手；不存在长期全局逃生开关。
+- rename 异常或进程重跑时以 live/archive/guard 磁盘三态裁决，磁盘已归档则写 `reconciledFromDisk:true`，矛盾则拒绝继续。真实 Windows watcher + rename 端到端验证在打包后由 Windows 机器执行；非 Windows 开发机只运行注入式 `fs/platform/env/clock` 协议测试。
+
+迭代可能导致场景变更：新增场景、修改已有场景、废弃场景。所有变更通过 `logos/changes/` 提案管理，场景编号一旦分配不复用。
+
+## 无人值守恢复策略
+
+### 可恢复失败
+
+无人值守流程中，可恢复失败是指系统已经掌握足够证据继续推进修复的失败，包括：
+
+- 局部切片完成但全量 verify 失败；
+- artifacts 声明遗漏但可从磁盘事实更正；
+- reporter 缺失少量 test ID，且当前切片可重派补齐；
+- driver 缺少验证规则但能输出明确缺口。
+
+### 恢复动作
+
+可恢复失败必须输出下一步动作：
+
+- `repair` / `code`：用于全量 verify failed；
+- `re-dispatch-current-slice`：用于切片合同未满足；
+- `correct-artifacts`：用于完成回报 artifacts 声明错误；
+- `rerun-focused-tests`：用于 focused tests 缺失或 reporter 缺失；
+- `human-review`：仅用于必须人工判断的情况。
+
+### hard block
+
+hard block 仅适用于：
+
+- 达到不可跳硬红线；
+- 连续无产物、无测试、无状态变化；
+- 越权修改或工作单元范围冲突；
+- 外部依赖不可用且无法继续模拟或降级；
+- 明确需要人类产品/风险决策。
+
+任何 hard block 都必须说明为什么不能自动恢复，并提供恢复所需的人类动作。
+
+## 无文档 delta 也必须保留 spec-complete 追溯
+
+OpenLogos 的 Why → What → How 链路不要求每个提案都修改规格文档，但要求每个进入实现的提案都能证明规格阶段已经定稿。纯代码级提案没有 PRD / API / DB / 场景 delta 时，不能把“没有 delta”解释为“规格阶段天然完成且可直接实现”。
+
+方法论规则：
+
+1. **Why / What 不变也要留痕**：纯代码提案应在 proposal 中说明复用哪些既有需求、场景与测试 ID。
+2. **spec-complete 是状态，不等于文档修改**：无 delta 时通过 no-delta merge 写入 `SPEC_MERGED`，表达“本次无需文档 delta，规格阶段已确认完成”。
+3. **How 必须绑定真实测试 ID**：代码切片必须绑定真实 UT/ST/SMOKE ID；测试 ID 未稳定时不得切片。
+4. **slice-planner 不补方法论缺口**：它只消费已完成 spec-complete 与真实测试 ID，不负责替上游判断是否可以进入实现。
+
+这保证“无文档 delta”的轻量修复仍保持可追溯，而不会把切片规划建立在隐含假设或占位测试 ID 上。
