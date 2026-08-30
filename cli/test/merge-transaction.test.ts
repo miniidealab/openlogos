@@ -915,12 +915,12 @@ describe('OpenLogos merge transaction', () => {
     expect(existsSync(join(f.proposalDir, 'SPEC_MERGED'))).toBe(false);
   });
 
-  it('UT-S19-24: 0.14.2 candidate facts 同时冻结 schema/contract/skill/golden hashes', () => {
+  it('UT-S19-24: 当前 candidate facts 同时冻结 schema/contract/skill/golden hashes', () => {
     const hash = (char: string) => `sha256:${char.repeat(64)}`;
     const facts = freezeMergeTransactionCandidateFacts({
       schema: MERGE_TRANSACTION_CANDIDATE_SCHEMA,
       command_path: '/opt/openlogos/dist/index.js',
-      cli_version: '0.14.2',
+      cli_version: MERGE_TRANSACTION_CANDIDATE_VERSION,
       candidate_tarball_sha256: hash('1'),
       merge_transaction_schema_sha256: hash('2'),
       status_schema_sha256: hash('3'),
@@ -930,7 +930,7 @@ describe('OpenLogos merge transaction', () => {
       merge_transaction_golden_sha256: hash('7'),
       semantic_validator: 'openlogos/merge-transaction-semantic@1',
     });
-    expect(facts.cli_version).toBe('0.14.2');
+    expect(facts.cli_version).toBe('0.14.3');
     for (const field of [
       'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
       'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',
@@ -941,7 +941,7 @@ describe('OpenLogos merge transaction', () => {
     expect(() => freezeMergeTransactionCandidateFacts({ ...facts, private_transaction_path: '/tmp/private' } as never)).toThrow('candidate_fact_invalid:fields');
   });
 
-  it('UT-S19-25: 0.14.1→0.14.2 任一安装/自检/合同/行为失败均完整选择 rollback', () => {
+  it('UT-S19-25: previous→0.14.3 任一安装/自检/合同/行为失败均完整选择 rollback', () => {
     const base = freezeMergeTransactionCandidateFacts({
       schema: MERGE_TRANSACTION_CANDIDATE_SCHEMA,
       command_path: '/opt/openlogos/dist/index.js',
@@ -973,7 +973,7 @@ describe('OpenLogos merge transaction', () => {
     ]);
   });
 
-  it('ST-S19-16: 真实 0.14.2 pack/install、preflight/reopen 与 0.14.1 rollback/restore', () => {
+  it('ST-S19-16: 真实 0.14.3 pack/install、preflight/reopen 与 0.14.1 rollback/restore', () => {
     const root = mkdtempSync(join(tmpdir(), 'openlogos-0142-candidate-'));
     roots.push(root);
     const oldSource = join(root, 'old-source');
@@ -1014,7 +1014,7 @@ describe('OpenLogos merge transaction', () => {
     const entry = join(prefix, 'node_modules/@miniidealab/openlogos/dist/index.js');
     expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.1');
     uninstall(); install(candidateTarball);
-    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.2');
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe(MERGE_TRANSACTION_CANDIDATE_VERSION);
     for (const id of ['SMOKE-core-160', 'SMOKE-core-161']) {
       const evidence = JSON.parse(checked(process.execPath, [join(repoRoot, 'scripts/merge-preflight-reopen-smoke-fixtures.js'), '--case', id, '--openlogos', entry], repoRoot));
       expect(evidence).toMatchObject({ id, status: 'pass' });
@@ -1022,7 +1022,7 @@ describe('OpenLogos merge transaction', () => {
     uninstall(); install(oldTarball);
     expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.1');
     uninstall(); install(candidateTarball);
-    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.2');
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe(MERGE_TRANSACTION_CANDIDATE_VERSION);
     const selfTest = JSON.parse(checked(process.execPath, [join(repoRoot, 'scripts/smoke-release-0-14-2-preflight-reopen.js'), '--self-test'], repoRoot));
     expect(selfTest).toMatchObject({
       ids: ['SMOKE-core-160', 'SMOKE-core-161', 'SMOKE-core-162'],
@@ -1141,7 +1141,7 @@ describe('OpenLogos merge transaction', () => {
 
     checked(npmCommand, ['install', '--prefix', installRoot, '--force', '--ignore-scripts', '--no-audit', '--no-fund', tarball], repoRoot);
     const current = candidateFacts(entry, tarball, packageRoot);
-    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe('0.14.2');
+    expect(checked(process.execPath, [entry, '--version'], root).trim()).toBe(MERGE_TRANSACTION_CANDIDATE_VERSION);
     expect(checked(process.execPath, [entry, '--help'], root)).toContain('submit-content / seal / apply / recover / abort');
     expect(current.merge_transaction_schema_sha256).toBe(sha256(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'))));
     expect(current.status_schema_sha256).toBe(sha256(readFileSync(join(repoRoot, 'spec/schema/status.schema.json'))));
@@ -1183,7 +1183,7 @@ describe('OpenLogos merge transaction', () => {
 
   it('ST-S16-07 UT-S19-12 UT-S19-13 UT-S19-14 UT-S19-15 UT-S19-16 UT-S19-17 UT-S19-18 ST-S19-10 ST-S19-11 ST-S19-12 ST-S19-13: 当前安装态合同与命令入口自描述一致', () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf8')) as { version: string; files: string[] };
-    expect(pkg.version).toBe('0.14.2');
+    expect(pkg.version).toBe(MERGE_TRANSACTION_CANDIDATE_VERSION);
     expect(pkg.files).toContain('spec');
     expect(readFileSync(join(repoRoot, 'cli/src/index.ts'), 'utf8')).toContain("args[1] === 'transaction'");
     expect(readFileSync(join(repoRoot, 'spec/schema/merge-transaction.schema.json'), 'utf8')).toContain('openlogos/merge-transaction@1');

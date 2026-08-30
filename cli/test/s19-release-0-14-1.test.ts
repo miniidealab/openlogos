@@ -122,7 +122,7 @@ function createCandidateTarball(root: string): { tarball: string; files: Set<str
   return { tarball: join(root, meta.filename), files: new Set(meta.files.map(item => item.path)), version: meta.version };
 }
 
-describe('S19 — OpenLogos 本地全局 patch candidate', () => {
+describe('S19 — OpenLogos 本地全局 candidate', () => {
   it('UT-S19-22: 当前 candidate identity 全源一致且历史 0.14.0 语义保留', () => {
     const versionSources = [
       'cli/package.json', 'cli/package-lock.json',
@@ -131,7 +131,7 @@ describe('S19 — OpenLogos 本地全局 patch candidate', () => {
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
     ];
     for (const path of versionSources) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.2');
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.3');
 
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest;
     validateAssetManifest(assetManifest, cliRoot);
@@ -196,10 +196,10 @@ describe('S19 — OpenLogos 本地全局 patch candidate', () => {
     }
     expect(() => assertLocalReleaseCommandGraph([
       { command: 'npm', args: ['pack', '--json'] },
-      { command: 'npm', args: ['install', '--prefix', '/tmp/openlogos-prefix', '/tmp/openlogos-0.14.1.tgz'] },
+      { command: 'npm', args: ['install', '--prefix', '/tmp/openlogos-prefix', '/tmp/openlogos-0.14.2.tgz'] },
     ])).not.toThrow();
 
-    const rollbackTarball = '/tmp/openlogos-0.14.1.tgz';
+    const rollbackTarball = '/tmp/openlogos-0.14.2.tgz';
     const plan = buildLocalReleaseRollbackPlan('/tmp/openlogos-prefix', rollbackTarball, '/tmp/openlogos-prefix/bin/openlogos');
     expect(plan).toHaveLength(3);
     expect(plan[1].args.at(-1)).toBe(rollbackTarball);

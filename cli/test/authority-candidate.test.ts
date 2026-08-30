@@ -23,7 +23,7 @@ function assetFixture() {
     writeFileSync(sourcePath, `authority-asset-${index}\n`);
     return { group: path.startsWith('skills/') ? 'skills' : path.startsWith('spec/') ? 'schemas' : 'plugins', path, sourcePath };
   });
-  return { root, manifest: buildAssetManifest('0.14.2', '1.4.0', sources) };
+  return { root, manifest: buildAssetManifest('0.14.3', '1.4.0', sources) };
 }
 
 function identity(version: string, suffix: string): InstalledIdentity {
@@ -53,7 +53,7 @@ describe('S19 Authority Closure candidate', () => {
   });
 
   it('UT-S19-28: rollback 恢复冻结旧身份且 candidate 重装幂等', () => {
-    const candidate = identity('0.14.2', 'candidate'); const rollback = identity('0.14.1', 'rollback');
+    const candidate = identity('0.14.3', 'candidate'); const rollback = identity('0.14.2', 'rollback');
     expect(validateAuthorityRollback({ candidate_before: candidate, frozen_rollback: rollback, rollback_actual: { ...rollback }, candidate_after: { ...candidate } })).toEqual({ pass: true, failures: [] });
     expect(validateAuthorityRollback({ candidate_before: candidate, frozen_rollback: rollback, rollback_actual: candidate, candidate_after: rollback }).pass).toBe(false);
   });
@@ -63,7 +63,7 @@ describe('S19 Authority Closure candidate', () => {
     const manifest = readBundledAssetManifest(join(cliRoot, 'asset-manifest.json'));
     expect(validateAuthorityCandidateAssets(manifest, cliRoot)).toEqual([]);
     expect(validateAuthorityCutover(AUTHORITY_CUTOVER_ORDER.map(event => ({ event, success: true }))).pass).toBe(true);
-    const candidate = identity(manifest.version, `candidate-${manifest.payloadHash}`); const rollback = identity('0.14.1', 'rollback');
+    const candidate = identity(manifest.version, `candidate-${manifest.payloadHash}`); const rollback = identity('0.14.2', 'rollback');
     expect(validateAuthorityRollback({ candidate_before: candidate, frozen_rollback: rollback, rollback_actual: { ...rollback }, candidate_after: { ...candidate } }).pass).toBe(true);
     const runner = readFileSync(resolve(cliRoot, '..', 'scripts', 'smoke-authority-closure-candidate.js'), 'utf8');
     for (const field of ['candidate_identity', 'entry_realpath', 'tarball_sha256', 'asset_payload_hash']) expect(runner).toContain(field);
