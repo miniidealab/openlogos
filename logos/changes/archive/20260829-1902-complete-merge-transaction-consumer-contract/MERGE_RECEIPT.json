@@ -1,0 +1,279 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_9e1d4e740a19e8fc8c7c2be2",
+  "seal_sha256": "sha256:0286f4d46867bdd5e8066ee1106313763aae263ba698cb0d9c4f7a07977e9710",
+  "target_set_sha256": "sha256:c9582b0c3bf0316f23e6db1a3878ddeea41f6216c3df4f511f5fc5f5bacac922",
+  "closure_sha256": "sha256:8235cdda46cfcb868c8a3ff5431943e2fafc188abec546eac77960ec747f1aba",
+  "target_count": 29,
+  "plan_sha256": "sha256:fe80073110d0f195e3cab2b17342b1673e44a7a94ba2a6c5659fe1a7ab976cd0",
+  "change": "complete-merge-transaction-consumer-contract",
+  "module": "core",
+  "changed_paths": [
+    "logos/resources/decisions/core-D07-merge-transaction-single-authority.md",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-management.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S11-status-progress.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S05-test-cases.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S11-test-cases.md",
+    "logos/resources/test/core-S16-test-cases.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/core-S39-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "skills/merge-executor/SKILL.en.md",
+    "skills/merge-executor/SKILL.md",
+    "spec/baseline-closure.md",
+    "spec/change-management.md",
+    "spec/cli-json-output.md",
+    "spec/flow-spec.md",
+    "spec/schema/merge-transaction.schema.json",
+    "spec/schema/next.schema.json",
+    "spec/schema/status.schema.json",
+    "spec/tasks-spec.md"
+  ],
+  "created_paths": [],
+  "final_hashes": [
+    {
+      "path": "logos/resources/decisions/core-D07-merge-transaction-single-authority.md",
+      "sha256": "sha256:255074d690e88a26b0dd2deb7ae4611a664e2cb88045e06a2fdd87cc36fd6e26"
+    },
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:94c2a2664b415b6b8c4f8f914b1487dcfb82b45083569428e0eb82499eca05a6"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:ab286708a93b9a30f440813b308b98abbdd86ce6991005f96834954215c9fef3"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "sha256": "sha256:81ef7840a37b374aaf14bfa640fe54bf62b20057d855d016295e454482d45978"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+      "sha256": "sha256:7a456c1bf257e7a6ba0d220a305199f296c958d16f417d1d31c2b30f8e710b0c"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "sha256": "sha256:378e4645a7ff8b7f445d4de11e6acee8d7dca3830406640aae2eb274bfbeff03"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-management.md",
+      "sha256": "sha256:84ccb0bb186c0564021b29df4a87af53588c72f0fada935d27ea0d3869535264"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S11-status-progress.md",
+      "sha256": "sha256:6c387f16b1c90ff2919cd5db2b69b08b5ec5556e1e956392425e28fecffcf23c"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "sha256": "sha256:5982620be6de48798af3fff8884681f37f2d9adeda0353c953887c1f7d4bbd4b"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "sha256": "sha256:1e20fe4924b50950c9fc344df537f7a0da67dde1cbd00c4d769333f63ca65d03"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md",
+      "sha256": "sha256:3a5a8be5ca2d56b286e50b3cddfecc87701de4f1072e348512b0fd3e14a2308d"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "sha256": "sha256:548cda84730d8a95751ca546b09b1dd874288efe0648f2bfba74072b9be3e450"
+    },
+    {
+      "path": "logos/resources/test/core-S05-test-cases.md",
+      "sha256": "sha256:99ca68f27008e84598c33b7d614386191636c5e8abeea858fecca2d569baf812"
+    },
+    {
+      "path": "logos/resources/test/core-S09-test-cases.md",
+      "sha256": "sha256:12841f599ef2bf9e01f0b579126f59cf4e7e7610bab0b1b0787e6638acef942d"
+    },
+    {
+      "path": "logos/resources/test/core-S11-test-cases.md",
+      "sha256": "sha256:7209252cc20bacb103b02d5294b01a0b0b0eef01feb7e2f76dca4c623371e69c"
+    },
+    {
+      "path": "logos/resources/test/core-S16-test-cases.md",
+      "sha256": "sha256:7155917bec5ec87993855291e7bc9187ad9557a8e9fa2f00e9ead1e74ba11685"
+    },
+    {
+      "path": "logos/resources/test/core-S19-test-cases.md",
+      "sha256": "sha256:0ada3f14ba014dffc00b65d65d372ca742b179c4d876e6534baa72969bec6bd3"
+    },
+    {
+      "path": "logos/resources/test/core-S39-test-cases.md",
+      "sha256": "sha256:0f19c413280acdf67dba3027d21c3f15af6863a90b1d7e062d3d3ccac0ed464f"
+    },
+    {
+      "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "sha256": "sha256:68d641bb9bada6a7f23920dfc7f22db9d49f49a6b19bffe410a04931d6726143"
+    },
+    {
+      "path": "skills/merge-executor/SKILL.en.md",
+      "sha256": "sha256:36e72e316ca9573df41b192213782d37de8e2e7648e8a76838e3256e568bb8e8"
+    },
+    {
+      "path": "skills/merge-executor/SKILL.md",
+      "sha256": "sha256:07225c622bb92b9e0804897e259db3d658d45cdfa22e9402e6fdaea37ffab03b"
+    },
+    {
+      "path": "spec/baseline-closure.md",
+      "sha256": "sha256:d8b8362071f8e827f5672579cd158da7423f3daef6d3fd2aa64f4f7e5ee5a22d"
+    },
+    {
+      "path": "spec/change-management.md",
+      "sha256": "sha256:4d51efadf0404e74b451c34f164f089c8a7c6bcf94ed80107ad0acd3f0c2c9e5"
+    },
+    {
+      "path": "spec/cli-json-output.md",
+      "sha256": "sha256:ad215013d8226a08ccafbb8a888eb9bba22814ba38abb58363c5055f82933d35"
+    },
+    {
+      "path": "spec/flow-spec.md",
+      "sha256": "sha256:2a0b69d98f875b0cb227d33cf4c82cd367bd9954970294dfe73fa957d5a87b10"
+    },
+    {
+      "path": "spec/schema/merge-transaction.schema.json",
+      "sha256": "sha256:bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421"
+    },
+    {
+      "path": "spec/schema/next.schema.json",
+      "sha256": "sha256:4fa2f8dca139e8cc068a675bc701a9bc83543d05fe2b5f587fa7dca39e530620"
+    },
+    {
+      "path": "spec/schema/status.schema.json",
+      "sha256": "sha256:c388a1873343b536b9d7a07028fc163ae6bf0e1677a567b841d49aef6a843029"
+    },
+    {
+      "path": "spec/tasks-spec.md",
+      "sha256": "sha256:e221c5896b3346bc717b8a76ac8bbba43cdc2b17bc992fdb7c3016c92a93d408"
+    }
+  ],
+  "metadata_summaries": [],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "complete-merge-transaction-consumer-contract",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S05-20",
+      "ST-S09-100",
+      "ST-S09-101",
+      "ST-S09-99",
+      "ST-S11-42",
+      "ST-S16-09",
+      "ST-S19-14",
+      "ST-S39-26",
+      "UT-S05-43",
+      "UT-S05-44",
+      "UT-S05-45",
+      "UT-S09-251",
+      "UT-S09-252",
+      "UT-S09-253",
+      "UT-S09-254",
+      "UT-S09-255",
+      "UT-S09-256",
+      "UT-S09-257",
+      "UT-S09-258",
+      "UT-S09-259",
+      "UT-S09-260",
+      "UT-S11-71",
+      "UT-S11-72",
+      "UT-S11-73",
+      "UT-S16-28",
+      "UT-S16-29",
+      "UT-S16-30",
+      "UT-S16-31",
+      "UT-S16-32",
+      "UT-S19-19",
+      "UT-S19-20",
+      "UT-S19-21",
+      "UT-S39-51",
+      "UT-S39-52",
+      "UT-S39-53",
+      "UT-S39-54",
+      "UT-S39-55"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S05-test-cases.md",
+        "before_sha256": "6f02442a3a72b95554d8480f1fc04324ccc085e98c09a2cc804b484ad30c4f85",
+        "after_sha256": "99ca68f27008e84598c33b7d614386191636c5e8abeea858fecca2d569baf812"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "da0c0a27968cf6780d070e157bc41ea0b9800e67863b386c3692edeb9d87fce1",
+        "after_sha256": "12841f599ef2bf9e01f0b579126f59cf4e7e7610bab0b1b0787e6638acef942d"
+      },
+      {
+        "target_path": "logos/resources/test/core-S11-test-cases.md",
+        "before_sha256": "2bfa1ebf4b9a079338b743bc893b335682e8595990b4e805bfa02a3436f1b489",
+        "after_sha256": "7209252cc20bacb103b02d5294b01a0b0b0eef01feb7e2f76dca4c623371e69c"
+      },
+      {
+        "target_path": "logos/resources/test/core-S16-test-cases.md",
+        "before_sha256": "aed19f79416637f8ef4307a8d5507d92fa66a65b081aac8a519b19bd6c5d283d",
+        "after_sha256": "7155917bec5ec87993855291e7bc9187ad9557a8e9fa2f00e9ead1e74ba11685"
+      },
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "4d7d000d1382194ab892f5a35115dc1c26c26182407d496eefc614ff1b004f14",
+        "after_sha256": "0ada3f14ba014dffc00b65d65d372ca742b179c4d876e6534baa72969bec6bd3"
+      },
+      {
+        "target_path": "logos/resources/test/core-S39-test-cases.md",
+        "before_sha256": "e40d708061a21d182880aaad713534ad39b4a3338b9f1919d5866f8fb2c45d75",
+        "after_sha256": "0f19c413280acdf67dba3027d21c3f15af6863a90b1d7e062d3d3ccac0ed464f"
+      }
+    ],
+    "sha256": "sha256:7a58dde8437a1a3bb74a531800f471e257f011af5e1fab4b6bb61cfe038059cd"
+  },
+  "spec_merged": {
+    "path": "logos/changes/complete-merge-transaction-consumer-contract/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/complete-merge-transaction-consumer-contract/MERGE_RECEIPT.json",
+    "logos/changes/complete-merge-transaction-consumer-contract/SPEC_MERGED",
+    "logos/resources/decisions/core-D07-merge-transaction-single-authority.md",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-management.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S11-status-progress.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S05-test-cases.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S11-test-cases.md",
+    "logos/resources/test/core-S16-test-cases.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/core-S39-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "skills/merge-executor/SKILL.en.md",
+    "skills/merge-executor/SKILL.md",
+    "spec/baseline-closure.md",
+    "spec/change-management.md",
+    "spec/cli-json-output.md",
+    "spec/flow-spec.md",
+    "spec/schema/merge-transaction.schema.json",
+    "spec/schema/next.schema.json",
+    "spec/schema/status.schema.json",
+    "spec/tasks-spec.md"
+  ],
+  "completed_at": "2026-08-29T04:49:49.019Z",
+  "receipt_sha256": "sha256:8338bd943c157de9fa76f9b9efa61a7fa432c6a35928716c18e7f8336bf36eb9"
+}

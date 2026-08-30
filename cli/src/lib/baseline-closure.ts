@@ -612,6 +612,19 @@ function validateOpenApi(payload: string, extension: string): string | null {
   return null;
 }
 
+function validateOpenLogosRootJsonSchema(payload: string): string | null {
+  const parsed = duplicateAwareObject(payload, '.json');
+  if (!parsed.value) return `JSON Schema 严格解析失败：${parsed.error}`;
+  const root = parsed.value;
+  if (typeof root.$schema !== 'string' || root.$schema !== 'https://json-schema.org/draft/2020-12/schema') {
+    return '根 JSON Schema 必须声明 draft 2020-12 `$schema`';
+  }
+  if (typeof root.$id !== 'string' || root.$id.trim() === '') return '根 JSON Schema 必须声明非空 `$id`';
+  if (root.type !== 'object') return '根 JSON Schema 顶层 type 必须为 object';
+  if (!asRecord(root.properties) || Object.keys(asRecord(root.properties)!).length === 0) return '根 JSON Schema 必须声明非空 properties';
+  return null;
+}
+
 export type DatabaseDialect = 'sqlite' | 'postgresql' | 'mysql';
 
 function normalizeDatabaseDialect(value: string): DatabaseDialect | null {
@@ -707,8 +720,10 @@ export function validateAndStripNonMarkdownDelta(
       : options.root ? resolveProjectDatabaseDialect(options.root) : { error: '缺少项目根，无法确定 SQL 方言' };
     if (!resolved.dialect) return { ok: false, message: resolved.error ?? '无法确定 SQL 方言' };
     problem = validateSql(payload, resolved.dialect);
+  } else if (/^spec\/schema\/[a-z0-9][a-z0-9.-]*\.json$/.test(canonicalTargetPath)) {
+    problem = validateOpenLogosRootJsonSchema(payload);
   } else {
-    return { ok: false, message: '整文件协议只支持 API YAML/YML/JSON 与 database SQL' };
+    return { ok: false, message: '整文件协议只支持 API YAML/YML/JSON、database SQL 与受控根 spec/schema JSON' };
   }
   return problem ? { ok: false, message: problem } : { ok: true, payload };
 }

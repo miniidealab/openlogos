@@ -3,12 +3,13 @@ import { isAbsolute, join, resolve } from 'node:path';
 import type { OutputFormat } from '../lib/json-output.js';
 import { makeEnvelope, VERSION } from '../lib/json-output.js';
 import {
-  applyMergeTransaction, createMergeTransaction, MergeTransactionError,
-  readMergeTransaction, recoverMergeTransaction, sealMergeTransaction, submitMergeContent,
+  abortMergeTransaction, applyMergeTransaction, createMergeTransaction, MergeTransactionError,
+  MERGE_TRANSACTION_ACTION_COMMANDS, readMergeTransaction, recoverMergeTransaction,
+  sealMergeTransaction, submitMergeContent,
   type MergeTransactionProjection,
 } from '../lib/merge-transaction.js';
 
-type TransactionCommand = 'status' | 'submit-content' | 'seal' | 'apply' | 'recover';
+type TransactionCommand = 'status' | 'submit-content' | 'seal' | 'apply' | 'recover' | 'abort';
 
 function resolveIdentity(root: string, explicitSlug?: string): { slug: string; proposalDir: string } {
   let slug = explicitSlug;
@@ -64,8 +65,9 @@ export function mergeTransactionCommand(
 ): void {
   const root = process.cwd();
   if (!existsSync(join(root, 'logos', 'logos.config.json'))) emitError(format, new Error('logos/logos.config.json 不存在'));
-  if (!['status', 'submit-content', 'seal', 'apply', 'recover'].includes(subcommand ?? '')) {
-    emitError(format, new Error('用法：openlogos merge transaction status|submit-content|seal|apply|recover [--slug <slug>]'));
+  const supported = ['status', ...Object.values(MERGE_TRANSACTION_ACTION_COMMANDS)];
+  if (!supported.includes(subcommand ?? '')) {
+    emitError(format, new Error(`用法：openlogos merge transaction ${supported.join('|')} [--slug <slug>]`));
   }
   const command = subcommand as TransactionCommand;
   const slugIndex = args.indexOf('--slug');
@@ -77,6 +79,7 @@ export function mergeTransactionCommand(
     else if (command === 'seal') result = sealMergeTransaction(root, proposalDir);
     else if (command === 'apply') result = applyMergeTransaction(root, proposalDir);
     else if (command === 'recover') result = recoverMergeTransaction(root, proposalDir);
+    else if (command === 'abort') result = abortMergeTransaction(proposalDir);
     else {
       const slotIndex = args.indexOf('--slot');
       const fileIndex = args.indexOf('--file');
@@ -85,7 +88,7 @@ export function mergeTransactionCommand(
       if (!slot || !fileArg) throw new MergeTransactionError('slot_identity_mismatch', 'submit-content 需要 --slot 与 --file', true);
       const file = isAbsolute(fileArg) ? fileArg : resolve(root, fileArg);
       if (!existsSync(file)) throw new MergeTransactionError('slot_identity_mismatch', `content 文件不存在：${fileArg}`, true);
-      result = submitMergeContent(proposalDir, slot, readFileSync(file));
+      result = submitMergeContent(proposalDir, slot, file);
     }
     if (result.slug !== slug) throw new MergeTransactionError('target_set_mismatch', 'transaction slug 漂移', false, result);
     emit(format, result);

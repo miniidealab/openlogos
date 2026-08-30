@@ -1,3 +1,75 @@
+# 部署报告：complete-merge-transaction-consumer-contract / OpenLogos 0.14.0（2026-08-29，正式 smoke 完成）
+
+## 零、最终结论与旧事务迁移
+
+- 旧格式自举事务 `mtx_9e1d4e740a19e8fc8c7c2be2` 的 29 个正式目标逐字节匹配旧 receipt，未发现 target drift；迁移仅重写当前提案私有的 `MERGE_TRANSACTION.json`、`MERGE_RECEIPT.json` 与 `SPEC_MERGED` 元数据，没有重写任何正式 target。
+- 迁移后 transaction 保持 `phase=completed`，`final_hashes=29`、`artifact_hashes=2`、`commit_paths=31`，新 receipt identity 为 `sha256:8338bd943c157de9fa76f9b9efa61a7fa432c6a35928716c18e7f8336bf36eb9`；当前 0.14.0 semantic validator 重新读取并通过。
+- RunLogos canonical E2E 真实覆盖 CREATE、MODIFY、mixed、response-lost；OpenLogos smoke 消费 canonical evidence，不读取私有 transaction 文件，也不自行推导 Git 提交集。
+- 正式 `openlogos smoke --env local-global --format json` 于 `2026-08-30T02:01:16Z` 完成 **126/126 PASS**，失败、跳过、未覆盖均为 0，覆盖率与通过率均为 100%，Gate 3.8 **PASS**。
+- `SMOKE-core-151`～`SMOKE-core-156` 均绑定最终候选 SHA-256 `6c82b8a806866c356cdad05ca15f4969cb4d9d61ba4318f97ae114b6d4245546`；旧 slug 通过已归档目录及其 `SMOKE_PASS` 证明归属，follow-up 通过独立 worktree guard/marker 证明归属。
+- smoke 收尾已恢复本机全局 `/opt/homebrew/bin/openlogos`，版本精确为 `0.14.0`，realpath 仍为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；未执行 npm publish、Git tag、GitHub Release、网站部署或 `git push`。
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `complete-merge-transaction-consumer-contract`。
+- **授权与门禁**：最终 `openlogos verify` 已通过并生成 `VERIFY_PASS`；用户明确授权执行本机全局部署与后续 smoke。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；隔离预检 prefix 位于 `/private/tmp/openlogos-complete-merge-deploy.K9DWrh/isolated-prefix`。
+- **执行时间**：截至 `2026-08-29T05:41:03Z`。
+- **结论**：修正后的 `0.14.0` candidate 已完成全量测试、build、npm pack、隔离安装合同自检、本机全局安装与正式 smoke，全部 **PASS**。
+- **公开副作用**：未执行 npm publish、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+## 二、部署前快照与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前全局入口 | `/opt/homebrew/bin/openlogos` |
+| 部署前 realpath | `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| 部署前版本 | `0.14.0`（旧 candidate） |
+| npm global prefix / root | `/opt/homebrew` / `/opt/homebrew/lib/node_modules` |
+| 回滚 tarball | `/private/tmp/openlogos-complete-merge-deploy.K9DWrh/rollback-openlogos-0.14.0-678717240cd7.tgz`；1,932,307 字节 |
+| 回滚 SHA-256 | `678717240cd70dc75ba25b41699d11c704caf0a2effed1ba0c1a42ade2ccee17` |
+| 可复制回滚命令 | `npm install -g /private/tmp/openlogos-complete-merge-deploy.K9DWrh/rollback-openlogos-0.14.0-678717240cd7.tgz --ignore-scripts` |
+
+回滚包由部署前正在工作的全局安装字节使用 `npm pack --ignore-scripts` 只读封装，已验证版本为 `0.14.0`，并包含 `dist/index.js`、merge transaction schema 与中英文 merge-executor Skill。
+
+## 三、新 candidate 制品与构建结果
+
+| 检查项 | 结果 |
+|---|---|
+| candidate tarball | `/private/tmp/openlogos-complete-merge-deploy.K9DWrh/miniidealab-openlogos-0.14.0.tgz`；1,955,834 字节 |
+| candidate SHA-256 | `6c82b8a806866c356cdad05ca15f4969cb4d9d61ba4318f97ae114b6d4245546` |
+| package identity | `@miniidealab/openlogos@0.14.0` |
+| CLI 全量测试 | 83 个测试文件，2052/2052 PASS |
+| TypeScript build / npm pack | PASS / PASS；674 个打包文件 |
+| merge transaction schema SHA-256 | `bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421` |
+| CLI contract SHA-256 | `ad215013d8226a08ccafbb8a888eb9bba22814ba38abb58363c5055f82933d35` |
+| completed golden SHA-256 | `57368754cdcc798e27287cdb0c97e354e319e69fc4800acc54047bfdba7c46c6` |
+
+tarball 已确认包含三份 next/status/merge-transaction schema、中文和英文 merge-executor Skill、semantic validator、candidate validator、completed golden 与 CLI 入口。旧 candidate hash 已由新 tarball/hash 事实取代，但回滚制品继续保留。
+
+## 四、隔离安装与消费者合同自检
+
+1. candidate 以显式 tarball 安装到一次性 prefix；绝对入口为 `/private/tmp/openlogos-complete-merge-deploy.K9DWrh/isolated-prefix/bin/openlogos`，realpath 位于该 prefix 的 npm 包内，版本精确为 `0.14.0`。
+2. `merge transaction` help 暴露 status、submit-content、seal、apply、recover、abort，已知 action 与命令面一致。
+3. 使用隔离安装的绝对 CLI 实跑 fixture：SMOKE-core-151、SMOKE-core-152、SMOKE-core-153、SMOKE-core-154 均 PASS；覆盖 abort/action parity、声明 staging path、completed 无环 receipt 和 abort 三阶段清理/幂等。
+4. fixture 均位于一次性目录，不读取源码 CLI、不预造 completed receipt，不修改本仓正式规格或 marker。
+
+## 五、本机全局安装与身份冻结
+
+1. 使用新 candidate 的显式绝对 tarball执行 `npm install -g --ignore-scripts`，未使用 registry、目录 link 或 workspace 入口。
+2. 安装后 `command -v openlogos` 为 `/opt/homebrew/bin/openlogos`，realpath 为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，版本精确返回 `0.14.0`。
+3. 全局包内 schema、contract、golden hash 与隔离安装结果完全一致；双语 Skill、semantic validator、candidate validator 均在场。
+4. 无数据库或业务数据迁移；未修改 RunLogos 代码、旧提案 guard 或旧 slug marker。
+
+## 六、风险、回滚与后续 smoke
+
+- 当前未解决的产品风险：无；SMOKE-core-151～156 的完整跨仓证据已通过正式 smoke。
+- 任何后续安装态失败均先执行固定回滚命令，再清除 shell 命令缓存并复核入口、realpath 和 `0.14.0` 版本。
+- SMOKE-core-155 已消费 RunLogos 真实 canonical E2E；SMOKE-core-156 已验证两个 stacked slug 的 archive/guard/marker/candidate hash 独立归属。
+- `SMOKE_PASS` 已由获授权的独立 `openlogos smoke` 真实生成，`SMOKE_FAIL` 不在场。
+
+---
+
 # 部署报告：refresh-merge-transaction-cross-repo-plan / OpenLogos 0.14.0（2026-08-29，最终消费者合同接缝刷新）
 
 ## 一、当前结论

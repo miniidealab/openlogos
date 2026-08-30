@@ -7,7 +7,9 @@ import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resol
 import { BASELINE_CLOSURE_VIOLATION_CODES, hasBaselineClosureSignal } from '../lib/baseline-closure.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
-import { applyMergeTransaction, createMergeTransaction, sealMergeTransaction } from '../lib/merge-transaction.js';
+import {
+  applyMergeTransaction, createMergeTransaction, listMergeTransactionPlanTargets, sealMergeTransaction,
+} from '../lib/merge-transaction.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
   readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH,
@@ -326,8 +328,9 @@ export function merge(slug?: string) {
   console.log(`\n📋 ${t(locale, 'merge.summary')}`);
   console.log(t(locale, 'merge.proposal', { slug }));
   console.log(t(locale, 'merge.deltaCount', { count: String(deltas.length) }));
-  for (const target of transaction.targets) {
-    console.log(`    ${target.delta_path} → ${target.target_path}（${target.slot_id}）`);
+  for (const target of listMergeTransactionPlanTargets(changePath)) {
+    const writeHint = target.staging_path ? `，staging=${target.staging_path}` : '，OpenLogos producer';
+    console.log(`    ${target.delta_path} → ${target.target_ref}（${target.slot_id}${writeHint}）`);
   }
 
   console.log(`\n  ✓ logos/changes/${slug}/MERGE_TRANSACTION.json`);

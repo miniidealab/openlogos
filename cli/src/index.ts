@@ -78,7 +78,7 @@ Commands:
                        --module <id>               Assign proposal to a specific module
   change-lint [--slug <slug>]   检查活跃提案的计划产物（proposal/tasks/deltas）是否交付合格（只读）
   merge <slug>       Create or resume the OpenLogos-owned merge transaction
-  merge transaction  Operate the canonical transaction (status / submit-content / seal / apply / recover)
+  merge transaction  Operate the canonical transaction (status / submit-content / seal / apply / recover / abort)
                        --slug <slug>               Defaults to the active guard change
   merge-apply        Removed in 0.14.0; always rejects legacy external manifests
   archive <slug>     Archive a completed change proposal

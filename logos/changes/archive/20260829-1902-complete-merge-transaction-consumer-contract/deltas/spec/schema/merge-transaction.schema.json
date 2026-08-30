@@ -1,0 +1,679 @@
+## MODIFIED — spec/schema/merge-transaction.schema.json（整文件替换）
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openlogos/merge-transaction@1",
+  "title": "OpenLogos Merge Transaction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "transaction_id",
+    "slug",
+    "phase",
+    "classification",
+    "allowed_actions",
+    "next_action",
+    "target_set_sha256",
+    "seal_sha256",
+    "content_slots",
+    "receipt",
+    "schema_sha256",
+    "contract_sha256",
+    "artifact_hashes",
+    "aborted_at"
+  ],
+  "properties": {
+    "schema": {
+      "const": "openlogos/merge-transaction@1"
+    },
+    "transaction_id": {
+      "type": "string",
+      "pattern": "^mtx_[A-Za-z0-9_-]+$"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "phase": {
+      "$ref": "#/$defs/phase"
+    },
+    "classification": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/classification"
+        }
+      ]
+    },
+    "allowed_actions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "next_action": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/action"
+        }
+      ]
+    },
+    "target_set_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "seal_sha256": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha256"
+        }
+      ]
+    },
+    "schema_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "contract_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "content_slots": {
+      "$ref": "#/$defs/contentSlotSummary"
+    },
+    "receipt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/receipt"
+        }
+      ]
+    },
+    "artifact_hashes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/pathHash"
+      }
+    },
+    "aborted_at": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "enum": [
+              "collecting",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "seal_sha256": {
+            "type": "null"
+          },
+          "receipt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "enum": [
+              "sealed",
+              "applying",
+              "completed"
+            ]
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "seal_sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "type": "null"
+          },
+          "allowed_actions": {
+            "maxItems": 0
+          },
+          "next_action": {
+            "type": "null"
+          },
+          "receipt": {
+            "$ref": "#/$defs/receipt"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "$ref": "#/$defs/classification"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "artifact_hashes": {
+            "minItems": 2
+          },
+          "aborted_at": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "classification": {
+            "const": "aborted"
+          }
+        },
+        "required": [
+          "classification"
+        ]
+      },
+      "then": {
+        "properties": {
+          "phase": {
+            "const": "failed"
+          },
+          "allowed_actions": {
+            "maxItems": 0
+          },
+          "next_action": {
+            "type": "null"
+          },
+          "receipt": {
+            "type": "null"
+          },
+          "artifact_hashes": {
+            "maxItems": 0
+          },
+          "aborted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "phase": {
+              "const": "completed"
+            }
+          },
+          "required": [
+            "phase"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "artifact_hashes": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "$comment": "failed/recovery_required 仅允许 recover",
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "failed"
+          },
+          "classification": {
+            "const": "recovery_required"
+          }
+        },
+        "required": [
+          "phase",
+          "classification"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allowed_actions": {
+            "const": [
+              "recover"
+            ]
+          },
+          "next_action": {
+            "const": "recover"
+          },
+          "receipt": {
+            "type": "null"
+          },
+          "artifact_hashes": {
+            "maxItems": 0
+          },
+          "aborted_at": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "failed 的普通 fatal 分类不允许自动动作",
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "failed"
+          },
+          "classification": {
+            "not": {
+              "enum": [
+                "aborted",
+                "recovery_required"
+              ]
+            }
+          }
+        },
+        "required": [
+          "phase",
+          "classification"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allowed_actions": {
+            "maxItems": 0
+          },
+          "next_action": {
+            "type": "null"
+          },
+          "receipt": {
+            "type": "null"
+          },
+          "artifact_hashes": {
+            "maxItems": 0
+          },
+          "aborted_at": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "applying 阶段不得暴露 abort",
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "applying"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allowed_actions": {
+            "not": {
+              "contains": {
+                "const": "abort"
+              }
+            }
+          },
+          "next_action": {
+            "not": {
+              "const": "abort"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "collecting",
+        "ready",
+        "sealed",
+        "applying",
+        "completed",
+        "failed"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "submit_content",
+        "seal",
+        "apply",
+        "recover",
+        "abort"
+      ]
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "invalid_phase",
+        "action_not_allowed",
+        "content_slot_missing",
+        "slot_identity_mismatch",
+        "source_hash_mismatch",
+        "before_hash_mismatch",
+        "target_set_mismatch",
+        "seal_mismatch",
+        "apply_conflict",
+        "receipt_mismatch",
+        "legacy_manifest_rejected",
+        "unsupported_contract",
+        "recovery_required",
+        "internal_failure",
+        "aborted"
+      ]
+    },
+    "contentSlotSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "submitted",
+        "missing_slot_ids",
+        "items"
+      ],
+      "properties": {
+        "required": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "submitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_slot_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slotDescriptor"
+          }
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transaction_id",
+        "seal_sha256",
+        "target_set_sha256",
+        "closure_sha256",
+        "receipt_sha256",
+        "target_count",
+        "plan_sha256",
+        "change",
+        "module",
+        "changed_paths",
+        "created_paths",
+        "final_hashes",
+        "metadata_summaries",
+        "test_change_set",
+        "spec_merged",
+        "commit_paths",
+        "completed_at"
+      ],
+      "properties": {
+        "transaction_id": {
+          "type": "string",
+          "pattern": "^mtx_[A-Za-z0-9_-]+$"
+        },
+        "seal_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "target_set_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "closure_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "target_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plan_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "change": {
+          "type": "string",
+          "minLength": 1
+        },
+        "module": {
+          "type": "string",
+          "minLength": 1
+        },
+        "changed_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          }
+        },
+        "created_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          }
+        },
+        "final_hashes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/pathHash"
+          }
+        },
+        "metadata_summaries": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "test_change_set": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "spec_merged": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+            }
+          }
+        },
+        "commit_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          }
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "pathHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "slotDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot_id",
+        "target_ref",
+        "staging_path",
+        "required",
+        "content_encoding",
+        "max_bytes",
+        "write_protocol",
+        "submitted_sha256"
+      ],
+      "properties": {
+        "slot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "staging_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "content_encoding": {
+          "const": "utf8-raw"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "write_protocol": {
+          "const": "atomic-rename"
+        },
+        "submitted_sha256": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha256"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$comment": "本 Schema 校验字段、枚举与可表达的阶段条件；路径集合相等/互斥、计数守恒、稳定排序、receipt canonical identity 与完整 phase-action 映射还必须通过 openlogos/merge-transaction-semantic@1 canonical semantic validator。"
+}
