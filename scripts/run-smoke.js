@@ -77,16 +77,19 @@ function environmentFor(runner) {
     'scripts/smoke-merge-transaction-candidate.js': {
       tarball: process.env.OPENLOGOS_MERGE_TRANSACTION_TARBALL,
       previousTarball: process.env.OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_MERGE_TRANSACTION_CANDIDATE_BIN,
     },
     'scripts/smoke-release-0-14-1-local.js': {
       tarball: process.env.OPENLOGOS_RELEASE_0_14_1_TARBALL,
       previousTarball: process.env.OPENLOGOS_RELEASE_0_14_1_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_RELEASE_0_14_1_CANDIDATE_BIN,
     },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
   if (artifacts.tarball) env.OPENLOGOS_TARBALL = artifacts.tarball;
   if (artifacts.previousTarball) env.OPENLOGOS_PREVIOUS_TARBALL = artifacts.previousTarball;
+  if (artifacts.candidateBin) env.OPENLOGOS_CANDIDATE_BIN = artifacts.candidateBin;
   if (runner === 'scripts/smoke-merge-transaction-candidate.js') {
     if (artifacts.tarball) env.OPENLOGOS_MERGE_TRANSACTION_TARBALL = artifacts.tarball;
     if (artifacts.previousTarball) env.OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL = artifacts.previousTarball;
