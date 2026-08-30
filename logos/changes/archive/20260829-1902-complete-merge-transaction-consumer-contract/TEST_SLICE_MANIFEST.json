@@ -1,0 +1,130 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "complete-merge-transaction-consumer-contract",
+  "module": "core",
+  "task_fingerprint": "sha256:8b04ee9dfb219dba06d4f5461c0fa73ab2febcb7a99e69997c191da759dbc4d8",
+  "spec_fingerprint": "sha256:ee062211a9344140d0b64f5ea30dd90fca2438a886eac66b6a89073db77530a3",
+  "generated_at": "2026-08-29T04:49:49.019Z",
+  "provenance": {
+    "transaction_id": "mtx_9e1d4e740a19e8fc8c7c2be2",
+    "seal_sha256": "sha256:0286f4d46867bdd5e8066ee1106313763aae263ba698cb0d9c4f7a07977e9710",
+    "target_set_sha256": "sha256:c9582b0c3bf0316f23e6db1a3878ddeea41f6216c3df4f511f5fc5f5bacac922",
+    "receipt_sha256": "sha256:3690c60aa284046a6f3601cd814228b42d3d77f6ac2463ca9cfdf4e1d27ab43d"
+  },
+  "slices": [
+    {
+      "slice_id": "slice-01-completed-consumer-contract",
+      "task_text": "切片 1：实现成功 merge transaction 公共消费者闭环（公共 slot descriptor/staging path、原子写入与精确 submit、seal/apply、completed 无环 receipt、payload/artifact hashes 与 commit_paths 精确闭包、response-lost 幂等、私有制品清理、status 只读投影、精确 Git staging，并补齐 OpenLogos producer 对根 `spec/schema/*.json` 整文件 Delta 的受控自举产出），同步业务代码、UT/ST、OpenLogos reporter、Schema 与必要 golden；更新安装态 smoke runner、`scripts/run-smoke.js` dispatcher、`smoke-results.jsonl` reporter 和覆盖预检（覆盖 UT-S09-251、UT-S09-252、UT-S09-253、UT-S09-257、UT-S09-258、UT-S09-259、UT-S09-260、ST-S09-99、ST-S09-101、UT-S11-71、UT-S11-72、UT-S16-28、UT-S16-29、UT-S39-51、UT-S39-52、UT-S39-53、UT-S39-54、UT-S39-55、ST-S39-26、SMOKE-core-152、SMOKE-core-153）。",
+      "owned_test_ids": [
+        "ST-S09-101",
+        "ST-S09-99",
+        "ST-S39-26",
+        "UT-S09-251",
+        "UT-S09-252",
+        "UT-S09-253",
+        "UT-S09-257",
+        "UT-S09-258",
+        "UT-S09-259",
+        "UT-S09-260",
+        "UT-S11-71",
+        "UT-S11-72",
+        "UT-S16-28",
+        "UT-S16-29",
+        "UT-S39-51",
+        "UT-S39-52",
+        "UT-S39-53",
+        "UT-S39-54",
+        "UT-S39-55"
+      ],
+      "runner_selectors": [
+        "ST-S09-101",
+        "ST-S09-99",
+        "ST-S39-26",
+        "UT-S09-251",
+        "UT-S09-252",
+        "UT-S09-253",
+        "UT-S09-257",
+        "UT-S09-258",
+        "UT-S09-259",
+        "UT-S09-260",
+        "UT-S11-71",
+        "UT-S11-72",
+        "UT-S16-28",
+        "UT-S16-29",
+        "UT-S39-51",
+        "UT-S39-52",
+        "UT-S39-53",
+        "UT-S39-54",
+        "UT-S39-55"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/core-S11-test-cases.md",
+        "logos/resources/test/core-S16-test-cases.md",
+        "logos/resources/test/core-S39-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-abort-action-authority",
+      "task_text": "切片 2：实现 abort 终态与 action-command 权威闭环（新增 `merge transaction abort`，限定 collecting/ready/sealed，failed/aborted 稳定幂等与私有制品清理，普通 fatal 零动作、recovery_required 仅 recover、未知 action fail-closed，以及 status/next 与真实子命令一一对应），同步业务代码、UT/ST、OpenLogos reporter、Schema 与必要 golden；更新安装态 smoke runner、`scripts/run-smoke.js` dispatcher、`smoke-results.jsonl` reporter 和覆盖预检（覆盖 UT-S05-43、UT-S05-44、UT-S05-45、ST-S05-20、UT-S09-254、UT-S09-255、UT-S09-256、ST-S09-100、UT-S11-73、ST-S11-42、UT-S16-30、UT-S16-31、UT-S16-32、SMOKE-core-151、SMOKE-core-154）。",
+      "owned_test_ids": [
+        "ST-S05-20",
+        "ST-S09-100",
+        "ST-S11-42",
+        "UT-S05-43",
+        "UT-S05-44",
+        "UT-S05-45",
+        "UT-S09-254",
+        "UT-S09-255",
+        "UT-S09-256",
+        "UT-S11-73",
+        "UT-S16-30",
+        "UT-S16-31",
+        "UT-S16-32"
+      ],
+      "runner_selectors": [
+        "ST-S05-20",
+        "ST-S09-100",
+        "ST-S11-42",
+        "UT-S05-43",
+        "UT-S05-44",
+        "UT-S05-45",
+        "UT-S09-254",
+        "UT-S09-255",
+        "UT-S09-256",
+        "UT-S11-73",
+        "UT-S16-30",
+        "UT-S16-31",
+        "UT-S16-32"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S05-test-cases.md",
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/core-S11-test-cases.md",
+        "logos/resources/test/core-S16-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-candidate-cross-repo-handoff",
+      "task_text": "切片 3：实现可部署修正 candidate 与跨仓交接闭环（修正后 `0.14.0` pack/install/self-check/rollback、三份 Schema/双语 merge-executor Skill/semantic validator/abort/golden 入包、旧 candidate hash 拒绝，以及只暴露冻结公共事实的 RunLogos handoff），同步业务代码、UT/ST、OpenLogos reporter 与必要 golden；更新真实安装态及跨仓 smoke runner、`scripts/run-smoke.js` dispatcher、`smoke-results.jsonl` reporter，并对 SMOKE-core-151～156 执行覆盖预检（覆盖 ST-S16-09、UT-S19-19、UT-S19-20、UT-S19-21、ST-S19-14、SMOKE-core-155、SMOKE-core-156）。",
+      "owned_test_ids": [
+        "ST-S16-09",
+        "ST-S19-14",
+        "UT-S19-19",
+        "UT-S19-20",
+        "UT-S19-21"
+      ],
+      "runner_selectors": [
+        "ST-S16-09",
+        "ST-S19-14",
+        "UT-S19-19",
+        "UT-S19-20",
+        "UT-S19-21"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S16-test-cases.md",
+        "logos/resources/test/core-S19-test-cases.md"
+      ]
+    }
+  ]
+}

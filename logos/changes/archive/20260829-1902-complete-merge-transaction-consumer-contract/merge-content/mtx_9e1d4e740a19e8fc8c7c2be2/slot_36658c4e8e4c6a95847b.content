@@ -1,0 +1,278 @@
+# S11: 查看阶段进度与活跃变更 — 测试用例
+
+## 一、单元测试用例
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S11-01 | 计算阶段完成度 | status phase logic | 有资源文件 | status | 返回正确完成度 |
+| UT-S11-11 | 解析 proposal.md 的部署影响 | deployment decision parser | `proposal.md` 含部署影响 | proposal content | 返回 deployment_required、smoke_required、reason |
+| UT-S11-12 | `[deploy]` section 与部署决策一致性校验 | tasks parser | proposal/tasks 已存在 | proposal + tasks | 返回一致或冲突状态 |
+| UT-S11-13 | 提案级部署决策优先于模块级默认值 | status proposal logic | 模块 deployment_required=true，提案声明无需部署 | status | active_change 使用提案级决策 |
+| UT-S11-14 | 统计 deployment_progress 仅使用 `[deploy]` section | tasks deploy parser | proposal/workspace 已存在 | tasks.md | 返回 checked、total、percent、status、label |
+| UT-S11-15 | deployment_document 必须指向 tasks.md | status document resolver | 活跃提案存在 | proposal workspace | 返回 path/name/exists，且 name 固定为 tasks.md |
+| UT-S11-16 | proposal 正文引用 ``是 / 否`` 不应影响模板完成判定 | status proposal logic | proposal 部署字段已明确、正文包含 ``是 / 否``、delta 任务已完成 | status | proposal_step=ready-to-merge |
+| UT-S11-17 | proposal 部署字段值仍为 `是 / 否` 时保持 writing | status proposal logic | proposal 的部署影响字段仍保留模板占位符 | status | proposal_step=writing |
+| UT-S11-18 | proposal 部署字段模板值不解析为 true | deployment decision parser | `proposal.md` 的部署字段仍为 `是 / 否` | proposal content | deployment_required=null，smoke_required=null，不产生部署冲突 |
+| UT-S11-19 | `DEPLOY_DONE` 与 `[deploy]` 全勾共同决定离开 ready-to-deploy | S21/status | `DEPLOY_DONE` 存在但 `[deploy]` 未全勾，或 `[deploy]` 全勾但缺少 `DEPLOY_DONE` | status step detection | 仍返回 `ready-to-deploy` |
+| UT-S11-20 | `DEPLOY_DONE` 与 `[deploy]` 全勾且需要 smoke 时进入 ready-to-smoke | S21/status | `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾、`smoke_required=true` | status step detection | 返回 `ready-to-smoke` |
+| UT-S11-21 | `DEPLOY_DONE` 与 `[deploy]` 全勾且无需 smoke 时进入 deploy-done | S21/status | `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾、`smoke_required=false` | status step detection | 返回 `deploy-done` |
+| UT-S11-bootstrap-01 | bootstrap=adopted 时 Phase 1~3 不报错 | status 逻辑 | 模块 bootstrap=adopted，Phase 1~3 目录为空 | status | Phase 1~3 输出「已跳过」，不输出错误或未完成 |
+| UT-S11-bootstrap-02 | bootstrap=adopted JSON 输出含 bootstrap 字段 | status --format json | 模块 bootstrap=adopted | status --format json | JSON 中 modules[].bootstrap = adopted |
+| UT-S11-bootstrap-03 | bootstrap=skipped 历史兼容时 JSON 输出仍按接入模式处理 | status --format json | 模块 bootstrap=skipped | status --format json | JSON 中 modules[].bootstrap 至少按接入模式读取，不回退为 initial |
+
+## 二、场景测试用例
+### 2.1 主路径
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-01 | 显示阶段面板 | Step 1→8 | 已初始化 | status | 输出阶段与建议 |
+| ST-S11-08 | 无需部署提案 verify PASS 后显示可归档 | Step 1→8 | 活跃提案声明无需部署、无 `[deploy]` section、VERIFY_PASS 存在 | status | proposal_step 为 verify-passed，建议 archive |
+| ST-S11-09 | 需要部署提案 verify PASS 后显示部署任务 | Step 1→8 | 活跃提案声明需要部署、存在 `[deploy]` section、VERIFY_PASS 存在 | status | proposal_step 为 ready-to-deploy，展示 deploy_tasks |
+| ST-S11-10 | status JSON 暴露提案级部署决策 | Step 1→8 | 存在活跃提案 | status --format json | active_change 包含 deployment_required、smoke_required、deployment_reason、deployment_decision_source |
+| ST-S11-12 | status JSON 暴露部署进度摘要和任务文档入口 | Step 1→8 | 存在活跃提案且 `[deploy]` section 已填写 | status --format json | active_change 包含 deployment_progress、deployment_document，且进度只统计 deploy section |
+| ST-S11-13 | deploy 进度不受 `[code]` 任务影响 | Step 1→8 | `[code]` 与 `[deploy]` section 同时存在 | status --format json | deployment_progress 不统计 `[code]` 任务 |
+| ST-S11-14 | proposal 正文引用 ``是 / 否`` 时仍可进入 ready-to-merge | Step 1→8 | 活跃提案部署字段已明确、正文包含 ``是 / 否``、`[delta]` 已全勾且存在 delta 文件 | status --format json | active_change.proposal_step=ready-to-merge，且无部署决策冲突 |
+| ST-S11-15 | 空提案模板不显示部署决策冲突 | Step 1→8 | `openlogos change` 刚创建空提案，proposal/tasks 均未填写 | status --format json | proposal_step=writing，deployment_decision_conflict=false，不提示缺少 `[deploy]` section |
+| ST-S11-16 | status 展示 deploy-done 受控落标后的状态 | S11 Step 4→8 / S21 | 活跃提案已执行 `openlogos deploy-done` | `openlogos status --format json` | `deployment_progress.status=done`，`proposal_step=ready-to-smoke` 或 `deploy-done` |
+| ST-S11-17 | deploy 进度完成但无 DEPLOY_DONE 不视为部署完成 | S11 Step 4→8 / S21 | `[deploy]` section 已全勾但缺少 `DEPLOY_DONE` | `openlogos status --format json` | `proposal_step=ready-to-deploy`，不进入 smoke 或 archive |
+| ST-S11-bootstrap-01 | 存量项目接入状态面板正确显示已跳过 | Step 1→8（接入模式分支） | adopt 完成，无活跃提案 | 执行 status | Phase 1~3 显示「文档基线已跳过（存量项目接入）」 |
+| ST-S11-bootstrap-02 | 历史 skipped 接入状态面板正确显示已跳过 | Step 1→8（接入模式分支） | bootstrap=skipped，且无活跃提案 | 执行 status | Phase 1~3 显示「文档基线已跳过（存量项目接入）」 |
+
+## 三、异常测试用例
+| ID | 描述 | 覆盖异常 | 前置条件 | 操作序列 | 预期结果 |
+|----|------|----------|---------|---------|---------|
+| ST-S11-EX-6.1 | 历史提案缺少部署决策时回退兼容来源 | EX-6.1 | proposal 缺少结构化部署影响 | status --format json | 使用 `[deploy]` 或模块默认值，并标注 deployment_decision_source |
+| ST-S11-EX-6.2 | 部署决策冲突时阻断流程 | EX-6.2 | proposal 与 tasks 冲突 | status / next | 输出冲突警告并阻止进入部署流程 |
+| ST-S11-EX-6.3 | deploy section 缺失时进度应降级 | EX-6.3 | proposal 需要部署但 tasks 缺少 `[deploy]` | status --format json | deployment_progress.status=unavailable 且 conflict=true |
+
+## 四、golden characterization 归属（status 既有 JSON 行为锚点）
+
+`cli/test/golden-baseline.test.ts` 对 S11 `status --format json` 的既有输出做 characterization 快照（不新增 S11 用例，也不改既有用例语义），在 fixture 矩阵（initial-adopted / initial-fresh / launched 各 ProposalStep 态 / 无部署 / 纯代码）上录制当前真实输出作为基线。
+
+归属说明：
+- 该 golden 测试**表征**（characterize）S11 现状行为，而非定义新需求；本切片（flow-engine-foundation）应**全部通过**。
+- 其作用是在后续 flow 派生切换切片（切片 B：用 `lib/flow.ts` 派生替换现有 `PHASE_KEYS` / `ProposalStep` 逻辑）时，作为"1:1 不改行为"的等价锚点——若派生切换导致 `status --format json` 输出漂移，golden 快照将立即失败。
+- golden 测试不替代 S11 既有 UT/ST 用例，二者并存：S11 用例验证规格定义的具体字段与状态机；golden 快照锁定整段 JSON 的字节级等价。
+
+## 五、flow-derive 引擎单元测试用例（initial 派生）
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S11-22 | `when` 求值：bootstrap=adopted 跳过 prd/product-design/architecture | flow-derive when | builtin initial flow + 模块 bootstrap=adopted | deriveModulePhaseProgress | phase.1/phase.2/phase.3-0 标 skipped 且 skip_reason=bootstrap-adopted |
+| UT-S11-23 | `when` 求值：`api`/`db`/`scenario` skip_phases 映射到对应节点跳过 | flow-derive when | skip_phases 含 api/database/scenario | derive | phase.3-2-api / phase.3-2-db / phase.3-4b 标 skipped |
+| UT-S11-24 | `when` 求值：`deployment_required` 来源（skip_phases:[deployment] 或 deployment_required=false） | flow-derive when | 任一关闭部署的声明 | derive | phase.3-7-deploy 与 phase.3-8-smoke 均标 skipped |
+| UT-S11-25 | `when` 求值：smoke_required 未声明视为 true（仅 deploy 节点活跃，smoke 不被跳） | flow-derive when | module.smoke_required 未声明、deployment_required=true | derive | phase.3-8-smoke 不被 skip |
+| UT-S11-26 | `when` 求值：smoke_required=false 仅关闭 smoke、保留 deploy | flow-derive when | module.smoke_required=false、deployment_required=true | derive | phase.3-7-deploy 活跃、phase.3-8-smoke 标 skipped |
+| UT-S11-27 | `done_when: dir_nonempty` 判定（目录非空即 done） | flow-derive done_when | 目标目录含文件 | derive | 对应 phase done=true |
+| UT-S11-28 | `done_when: file:<path>` 判定（verify/deploy/smoke 报告文件存在） | flow-derive done_when | acceptance-report.md 存在 | derive | phase.3-6 done=true |
+| UT-S11-29 | fan-out 覆盖数据：场景全覆盖产 covered/total/missing 且 done | flow-derive fan-out | 每个场景均有对应文件 | derive | scenario_coverage.missing=[]、done=true |
+| UT-S11-30 | fan-out 覆盖数据：partial 覆盖时 missing 非空且 done=false | flow-derive fan-out | 仅部分场景有文件 | derive | scenario_coverage.missing 含未覆盖 id、done=false |
+| UT-S11-31 | node-id → phase-key 映射 13 个 1:1 完整且无遗漏/冲突 | flow-derive 映射表 | builtin initial flow | 遍历映射表 | 13 个 node 精确映射到 PHASE_KEYS，覆盖且唯一 |
+| UT-S11-32 | 顶层 phases[] 场景阶段 = any-present | flow-derive 顶层 | 场景目录有任意文件（未全覆盖） | 顶层 phases[] 派生 | 该场景 phase done=true（any-present） |
+| UT-S11-33 | per-module 场景阶段 = all-present（与顶层 any-present 区分） | flow-derive per-module | 场景目录有文件但未全覆盖 | derive per-module | 该 phase done=false（all-present） |
+| UT-S11-34 | 非场景阶段顶层 = 扫整个目录 any-present | flow-derive 顶层 | 目录含任意（含他模块前缀）文件 | 顶层 phases[] | done=true |
+| UT-S11-35 | 非场景阶段 per-module 多模块按 `{module}-` 前缀过滤 | flow-derive per-module | 多模块项目，目录仅含他模块前缀文件 | derive per-module | 当前模块该 phase done=false |
+| UT-S11-36 | 标准零填充 ID 相邻不串台（`S01` vs `S11`） | flow-derive fan-out | 仅存在 `core-S11-*.md`、目标场景为标准 `S01` | derive | `S01` 不因 `core-S11-*.md` 误判 covered（标准 SXX 方案下无串台） |
+| UT-S11-37 | 多模块全局 skip 交集：仅全部 initial 模块都 skip 才置顶层 skipped | flow-derive 顶层交集 | 两模块仅其一 skip api | 顶层 phases[] | phase.3-2-api 不被标 skipped |
+| UT-S11-38 | fallback-skip：无 skip_phases 老项目空 phase 在已完成 phase 前自动 skipped | flow-derive fallback | 无 skip_phases、靠后 phase 已 done | derive | 其前的空 phase 标 skipped（NON_FALLBACK_SKIP_PHASES 除外），current_phase 不漂移 |
+| UT-S11-39 | 非标准/合成 ID 保留 legacy `includes()` 子串命中 | flow-derive fan-out | **合成 fixture**：目标场景 `S1`、仅存在 `core-S11-*.md`（非标准非零填充 ID） | derive | `S1` 因子串命中 `core-S11-*.md` 判 covered——**如实保留旧子串行为**（glob 精确匹配是未来有意修正，本切片不改）|
+
+## 六、测试期「新派生 == 旧逻辑」并跑等价场景测试用例
+
+> 以下 ST **仅存在于测试期**：对同一 fixture 同时跑新 `flow-derive` 与旧
+> `deriveModulePhaseProgress` / 顶层 `phases[]`，断言两者结果相等。**不进入生产 CLI 路径。**
+> 断言矩阵覆盖兼容性全集。
+
+| ID | 描述 | 覆盖 fixture | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-18 | normal 模块新旧派生等价 | initial-fresh / 半成品 | 普通 initial 模块、无 skip | 并跑新旧派生 | phase_progress 与顶层 phases[] 逐字段相等 |
+| ST-S11-19 | adopted 模块新旧派生等价 | initial-adopted | bootstrap=adopted | 并跑 | phase.1/2/3-0 skip_reason 一致，整体相等 |
+| ST-S11-20 | skip_phases 含 api/db/scenario 时等价 | skipped | skip_phases=[api,database,scenario] | 并跑 | 对应 phase skipped 一致 |
+| ST-S11-21 | 无 skip_phases 老项目（fallback-skip）等价 | legacy | 无 skip_phases、靠后 phase 已 done | 并跑 | 兜底 skipped 与 current_phase 一致 |
+| ST-S11-22 | `skip_phases:[deployment]` 等价 | skip-deployment | skip_phases 含 deployment | 并跑 | phase.3-7-deploy / phase.3-8-smoke skipped 一致 |
+| ST-S11-23 | `deployment_required=false` 等价 | no-deploy | module.deployment_required=false | 并跑 | deploy/smoke phase skipped 一致 |
+| ST-S11-24 | `smoke_required=false` 等价（保留 deploy） | no-smoke | smoke_required=false、需部署 | 并跑 | 仅 smoke phase skipped 一致 |
+| ST-S11-25 | `smoke_required` 未声明（默认 true）等价 | default-smoke | 未声明 smoke_required、需部署 | 并跑 | smoke phase 不 skip，一致 |
+| ST-S11-26 | 单模块全局 skip 等价 | single-module-skip | 单 initial 模块带 skip | 并跑 | 顶层与 per-module 一致 |
+| ST-S11-27 | 多模块全局 skip 交集等价 | multi-module-skip | 多 initial 模块、部分 skip | 并跑 | 顶层交集 skipped 一致 |
+| ST-S11-28 | 非场景阶段多模块前缀过滤等价 | multi-module-prefix | 多模块、目录含混合前缀文件 | 并跑 | per-module 前缀过滤 done 一致 |
+| ST-S11-29 | partial 场景覆盖等价 | partial-scenario | 部分场景缺文件 | 并跑 | scenario_coverage 与 done 一致 |
+| ST-S11-30 | 场景文件名碰撞 / 相邻 ID 等价（legacy includes） | scenario-id-collision | 存在相邻 ID 场景文件 | 并跑 | includes 子串命中结果一致（保留旧行为） |
+
+## 七、SessionStart 消费 status 结构化状态测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S11-40 | SessionStart 优先读取顶层 active_change / proposal_step | status JSON consumer | `status --format json` 顶层包含 `active_change=feat`、`proposal_step=delta-writing` | 执行 SessionStart 解析逻辑 | 解析结果使用顶层 slug 和 step，生成 delta-writing 范围文案 |
+| UT-S11-41 | SessionStart 顶层缺失时回退 modules[].active_change | status JSON consumer | 顶层 `active_change=null`，`modules[0].active_change.slug=feat`、`proposal_step=delta-writing` | 执行 SessionStart 解析逻辑 | 解析结果使用模块级 active_change，并生成 delta-writing 范围文案 |
+| UT-S11-42 | SessionStart 不把 suggestion 当作唯一事实源 | status JSON consumer | `status --format json` 同时含 `proposal_step=ready-to-merge` 和中文 suggestion | 执行 SessionStart 解析逻辑 | 按 `proposal_step` 输出 merge 确认点文案，不通过自然语言 suggestion 推断文件范围 |
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-31 | status 的 delta-writing 状态驱动 SessionStart 写入范围 | S11 Step 3→8 | launched 项目有 active guard，`openlogos status --format json` 输出 `proposal_step=delta-writing` | SessionStart 调用 status 并生成上下文 | 上下文与 status/next 一致：允许 `deltas/**` + `tasks.md`，不允许直接写 `logos/resources/**` 或源码 |
+
+## 八、ready-to-delta 状态分层与 plan_state 测试
+
+> 覆盖 `status --format json` / SessionStart / UI 消费 `plan_state` 的分层语义，确保 `tasks.md` 执行进度不再被误读为任务规划失败。用例实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+| ID | 用例 | 覆盖点 | 前置条件 | 操作 | 期望 |
+|---|---|---|---|---|---|
+| UT-S11-43 | ready-to-delta 输出 plan_state pending | JSON 契约 | 活跃提案 proposal/tasks 已脱模板，`proposal_step=ready-to-delta`，无 `PLAN_APPROVED` | `openlogos status --format json` 或 collectStatusData | `plan_state.plan_ready==true`；`plan_gate_pending==true`；`plan_approved==false`；`tasks_template_filled==true` |
+| UT-S11-44 | tasks 执行进度与 plan_ready 解耦 | checkbox 分层 | 同 UT-S11-43，`[delta]` checkbox 为 `0/N` | 读取 `plan_state` | `tasks_execution_done==0`、`tasks_execution_total==N`，且 `plan_ready` 仍为 true |
+| UT-S11-45 | proposal/tasks 冲突优先于 plan gate pending | 冲突诊断 | `proposal.md` 声明无需部署但 `tasks.md` 存在 `[deploy]` section | `status --format json` | `deployment_decision_conflict==true`；`plan_state.plan_ready==false`；诊断说明冲突，不输出 plan gate pending 成功态 |
+| UT-S11-46 | PLAN_APPROVED 后 plan_gate_pending 关闭 | gate 消费状态源 | 活跃提案存在 `PLAN_APPROVED`，delta 尚未写完 | `status --format json` | `plan_state.plan_gate_pending==false`；`plan_state.plan_approved==true`；`proposal_step` 为 `delta-writing` 或后续 |
+| ST-S11-32 | RunLogos 面板可区分规划完成与执行 0/N | 消费方分层 | 构造 `ready-to-delta + tasks_execution_done=0` 的 JSON | 面板/driver 诊断适配层消费 | 展示“方案已完成，等待批准/auto 消费”；不展示“任务规划失败” |
+| ST-S11-33 | SessionStart 使用 plan_state 而非 suggestion 猜测 | SessionStart 消费 | `status --format json` 含 `plan_state.plan_gate_pending=true`，suggestion 文案可本地化变化 | 执行 SessionStart 解析逻辑 | 输出 plan gate 等待态文案；不因中文 suggestion 或 checkbox 比例改变写入范围 |
+
+## 九、status 中 automation_diagnostic 前沿边界测试
+
+> 以下用例含 OpenLogos reporter。用例名必须带 `UT-S11-47` / `ST-S11-34` 等 ID，供 verify 抽取覆盖。
+
+### 9.1 单元测试用例补充
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-47 | `ready-to-delta` 不挂载可驱动 repair 的 diagnostic | status JSON | 活跃提案 `proposal_step=ready-to-delta`，存在历史 verify 失败证据 | `status --format json` | 保留 `proposal_step=="ready-to-delta"`；不输出 `automation_diagnostic.suggested_next_node=="code"` |
+| UT-S11-48 | `delta-writing` 不被 global verify failed 改写 | status JSON | `PLAN_APPROVED` 存在、`[delta]` 未完成，同时存在失败 acceptance report | `status --format json` | 保留 `proposal_step=="delta-writing"`；delta 进度照常输出；不输出 repair/code 前沿 |
+| UT-S11-49 | `ready-to-merge` status 保留 merge 前沿 | status JSON | `[delta]` 全勾且存在 delta 文件，历史 `test-results.jsonl` 有失败 | `status --format json` | `proposal_step=="ready-to-merge"`；不因 stale diagnostic 回退到 `verify-failed` 或 `coding` |
+| UT-S11-50 | 未规划切片的 `ready-to-implement` 保留 plan-slices | status JSON | `SPEC_MERGED` 在场、`code_required=true`、`[code]` 缺失或模板态、历史 verify failed | `status --format json` | `proposal_step=="ready-to-implement"`；诊断不得建议 `code` / `verify` repair |
+
+### 9.2 场景测试用例补充
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-34 | status 不让 stale verify diagnostic 污染 plan/spec/slice 前沿 | S11 Step 3→8 | 构造同一提案依次处于 `ready-to-delta`、`delta-writing`、`ready-to-merge`、未规划切片的 `ready-to-implement`，并放入历史失败证据 | 分别执行 `openlogos status --format json` | 每个状态均保留自身 `proposal_step`；不输出可驱动 repair/code 的 `automation_diagnostic` |
+
+### 9.3 覆盖度校验补充
+
+- [ ] status 非 code/verify 前沿不挂载可驱动 repair 诊断：UT-S11-47、UT-S11-48、UT-S11-49、UT-S11-50、ST-S11-34
+
+## 十、契约自描述字段与步骤注册表测试（contract-self-description）
+
+> 覆盖 D1（contract 握手）、D2（step_meta 与步骤注册表 + CI lint）、D3（facts 权威事实块）在 `status --format json` 上的生产者契约，以及 D9 的生产者一致性漂移注入验收（含「pre-implement 步骤不输出 loop_state」反面锚）。本节用例编号顺延既有最大编号（UT-S11-50 / ST-S11-34）。`active_change` 新增 `step_meta` / `facts` 走既有可控扩展口径：仅有活跃提案的 golden 同步更新，无活跃提案项目零漂移（D8）。用例实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 10.1 单元测试用例补充
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S11-51 | status JSON data 顶层 contract 在场且版本为 1.0.0 | D1 contract 握手 | 任意 fixture（有无活跃提案均取样） | `status --format json` | `data.contract` 恒在场且等于 `{"version":"1.0.0"}` |
+| UT-S11-52 | active_change.step_meta 在场且取值经注册表映射 | D2 步骤注册表 | launched 活跃提案，抽样多个步骤 fixture | `status --format json` | `modules[].active_change.step_meta = {phase, kind}` 恒在场；抽样断言与注册表一致：writing→`{pre-implement, produce}`、ready-to-merge→`{pre-implement, gate}`、coding→`{implement, produce}`、verify-passed→`{post-implement, residency}`；phase ∈ pre-implement\|implement\|post-implement、kind ∈ produce\|gate\|command-required\|residency |
+| UT-S11-53 | active_change.facts 六布尔字段在场且与磁盘权威事实一致 | D3 facts 事实块 | launched 活跃提案：SPEC_MERGED 在场、`[code]` 含真实脱占位条目、无 SLICES_APPROVED、无 VERIFY_PASS | `status --format json` | `facts = {spec_complete, slices_planned, slices_approved, code_required, has_delta_tasks, verify_pass}` 六字段全在场且均为布尔；该 fixture 下 `spec_complete==true`、`slices_planned==true`、`slices_approved==false`、`verify_pass==false`；取值与 CLI 权威判定（`hasSpecCompleteMarker` / `isTasksCodeFilled` / marker 在场性）同一份计算 |
+| UT-S11-54 | 无活跃提案时不输出 step_meta/facts，contract 仍在场 | D1/D3 零漂移边界 | launched 无活跃提案（或 initial 模块） | `status --format json` | `modules[].active_change==null`，输出不含 `step_meta` / `facts`；`data.contract` 仍在场（无活跃提案项目除 contract 外零额外漂移） |
+| UT-S11-55 | 注册表 lint：字面量 proposal_step 不经注册表即失败 | D2 CI lint | cli/src 全量源码 | 全仓静态扫描 lint 测试 | 任何「字面量赋给 proposal_step 却不经 `step-registry.ts` 注册表」的代码路径 → 测试失败并指出文件位置；现有全部铸造点（原 `detectProposalStep` / `detectProposalStepViaFlow` 双镜像及 status/next 覆盖点）收敛后 lint 通过 |
+| UT-S11-56 | 生产者一致性漂移注入：新注册步骤三方同步 | D9 漂移注入 | 测试内注册全新步骤 `x-future-step`（phase=pre-implement, kind=produce） | 注册后跑生产者一致性测试 | 注册表 / `step_meta` 输出 / 打包 schema 三方同步，schema 校验通过（含 step_meta 必填）；任一方遗漏 → 测试失败 |
+| UT-S11-57 | 漂移注入反面锚：pre-implement 步骤不输出 loop_state | D9 反面锚（D4 激活判据） | 承接 UT-S11-56：活跃提案当前步骤为 `x-future-step`（phase=pre-implement） | `status --format json` | 输出**不含** `loop_state`（`pre-implement + loop_state` 是非法组合，测试断言其不存在，而非将其固化为合法夹具）；`slice_state` 常驻口径不受影响 |
+
+### 10.2 场景测试用例补充
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-35 | status 契约自描述字段端到端互相一致 | Step 1→8 | 同一 launched 提案依次构造 ready-to-merge → ready-to-implement（未批准切片）→ coding 三个状态 | 每个状态执行 `openlogos status --format json` | 三次输出均满足：`data.contract.version=="1.0.0"`；`step_meta` 与 `proposal_step` 经同一注册表映射（ready-to-implement→`{pre-implement, residency}`、coding→`{implement, produce}`）；`facts` 与 `loop_state` 挂出判据同源——前两个状态 `facts.slices_approved==false` 且无 `loop_state`，coding 状态四事实全真且 `loop_state` 挂出 |
+
+### 10.3 覆盖度校验补充
+
+- [ ] status data 顶层 contract 在场且 =1.0.0：UT-S11-51
+- [ ] step_meta 在场与注册表取值正确：UT-S11-52、ST-S11-35
+- [ ] facts 在场与权威取值正确：UT-S11-53、ST-S11-35
+- [ ] 无活跃提案零漂移边界：UT-S11-54
+- [ ] 注册表 lint（字面量不经注册表 → 失败）：UT-S11-55
+- [ ] 漂移注入三方同步 + pre-implement 不输出 loop_state 反面锚：UT-S11-56、UT-S11-57
+
+## baseline-on-touch：status journal 恢复门测试
+
+> 本节补充 S11 status 的事务一致性回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S11-B01 | 安全 partial 仍输出正常 status | adopted、仅 open run/未提交 staging、无未终结 journal | `status` / `status --format json` | staging 被排除；成功 envelope 的 `baseline_seed_state=partial`；正常阶段/提案前沿可读取 |
+| UT-S11-B02 | 未终结 journal 恢复失败硬阻断 | journal=`prepared|committing`，staging/backup 损坏使前滚与回滚均失败；对 resources/index/coverage 读取点设哨兵 | `status --format json` | 非零 `baseline_commit_in_progress` error envelope；读取哨兵均为 0；不输出伪成功 modules/coverage/action |
+| UT-S11-B03 | journal 可恢复后只读一致集合 | 分别准备可前滚全新与可回滚全旧夹具 | `status --format json` | 恢复与读取位于同一锁序；输出只匹配完整全新或全旧 fixture，不出现混合 hash/index/state |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S11-B01 | status/next 对安全 partial 与未终结事务分流 | 先构造仅 staging 的 partial，再在多文件 rename/index/state 各崩溃点构造可恢复/不可恢复 journal | 分别执行 status 与 next，并记录标准资源读取哨兵 | 安全 partial 两入口成功且 staging 不采信；可恢复夹具只读全旧/全新；不可恢复夹具两入口均硬报 `baseline_commit_in_progress`、读取计数为 0 |
+
+### golden 边界
+
+- 无 journal、已成功恢复及安全 partial 的既有 status golden 只按本案明确改变的 seed/action 字段重拍。
+- 不可恢复 journal 是操作错误夹具，不得录成正常 status golden，也不得以“始终输出 baseline_seed_state”覆盖错误 envelope。
+
+> 测试实现必须写 OpenLogos reporter；只读性用临时项目全量文件清单与逐文件 SHA-256 前后比较证明。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-58 | plan_state 挂载完整 evaluation | S11 Step 2→6 | 活跃 writing plan | collect status | plan_package、version、issues 与投影字段一致 |
+| UT-S11-59 | ready 投影与 evaluator 同义 | S11 Step 3 | ready true/false 参数化 | status mapper | plan_ready 精确等于 evaluation.ready，不可被 checkbox 覆盖 |
+| UT-S11-60 | issue 稳定排序与字段保真 | S11 Step 3 | 多文件多行问题 | 两次 collect | code/path/section/line/actual/expected/fix_hint 顺序逐字节一致 |
+| UT-S11-61 | evaluator 操作错误不吞成成功态 | EX-3.1 | proposal 不可读/解析器抛错 | status | error envelope、非零；无 plan_ready 成功对象 |
+| UT-S11-62 | 历史旁路维持真实前沿 | EX-6.1 | marker + 旧模板 | status derive | proposal_step 不回退，warning 不改变 plan_state |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-36 | status/lint/next/flow 四方同源 | Step 1→6 | 合法与多类非法 fixture | 连续运行四消费者 | ready、三态、issues 完全一致；schema 1.3.0 通过 |
+| ST-S11-37 | status 所有路径只读 | EX-3.1、EX-6.1 | ready/invalid/operation-error/history fixture | 前后全量快照并运行 status | 文件集合与 hash 完全不变，无 marker/cache/stamp 写入 |
+
+### 追溯与覆盖
+
+- S11-AC-Plan-01 统一观测：UT-S11-58～UT-S11-60、ST-S11-36。
+- S11-AC-Plan-02 操作错误：UT-S11-61、ST-S11-37。
+- S11-AC-Plan-03 历史与只读：UT-S11-62、ST-S11-37。
+
+## S11 合并事务只读状态测试用例
+
+### 单元测试
+
+| 用例 ID | 验证目标 | 关键断言 |
+|---|---|---|
+| UT-S11-63 | collecting 快照 | identity、slot summary、waiting/retryable 与 actions 字段同源 |
+| UT-S11-64 | sealed 快照 | sealed hash 冻结，allowed_actions 仅 status/apply |
+| UT-S11-65 | applying 快照 | 显示恢复阶段且不伪造 completed receipt |
+| UT-S11-66 | completed 快照 | receipt/commit_paths/final hashes 稳定且重复读取不刷新时间 |
+| UT-S11-67 | failed 快照 | fatal code/stage/field_path 保留，failed 为终态 |
+| UT-S11-68 | status 零副作用 | 调用前后 transaction 外项目树与 marker 集合 hash 不变 |
+| UT-S11-69 | 可恢复 journal | status 先收敛 journal，只输出全旧或全新一致视图 |
+| UT-S11-70 | 不可恢复 journal | 返回操作错误/fatal，不降级为正常 proposal_step |
+
+### 场景测试
+
+| 用例 ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S11-38 | 多 phase 轮询 | 真实 CLI 连续轮询只随底层事实变化，未写任何 marker |
+| ST-S11-39 | apply 中断后 status | 重启恢复后状态与正式目标树一致，不暴露半新计数 |
+| ST-S11-40 | completed response lost | 新进程读取同 receipt，不依赖 Git/宿主 ledger 重建 |
+| ST-S11-41 | status/next 对账 | 两命令 transaction identity/phase/classification/actions 完全一致 |
+
+### Runner 与 Reporter
+
+- UT 通过 filesystem snapshot fixture 断言只读性与 journal 恢复分支。
+- ST 调用真实 `openlogos status --format json` 与 `next --format json`，响应必须通过打包 schema。
+- 每个 ID 写入 OpenLogos reporter；只读断言的 evidence 至少包含调用前后树 hash 与 marker 集合 hash。
+
+## S11 完整公共事务只读投影测试用例
+
+
+### 单元测试
+
+| 用例 ID | 验证目标 | 关键断言 |
+|---|---|---|
+| UT-S11-71 | slot descriptors 只读投影 | collecting/ready 的 status 原样返回完整 `content_slots.items[]`，重复读取不创建或刷新 staging 文件 |
+| UT-S11-72 | completed 完整投影 | status 同时返回 receipt payload final hashes 与外层 artifact hashes，交叉校验后精确覆盖 commit_paths |
+| UT-S11-73 | aborted 稳定投影 | failed/aborted 的 `aborted_at` 稳定、receipt=null、动作清空，重复读取不触发清理或恢复 |
+
+### 场景测试
+
+| 用例 ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S11-42 | 跨进程只读重放 | 对 collecting、completed、aborted fixture 两次运行真实 status，公共 transaction 投影 canonical bytes 相同且项目树 hash 不变 |
+
+### Runner、Reporter 与追溯
+
+- UT/ST 都比较调用前后全项目文件集合与逐文件 SHA-256；ST 使用新进程和打包 Schema 校验响应。
+- 每个 ID 必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`，evidence 至少含前后树 hash、投影摘要 hash 与 phase。
+- slot：UT-S11-71；completed：UT-S11-72；aborted：UT-S11-73；跨进程只读：ST-S11-42。
