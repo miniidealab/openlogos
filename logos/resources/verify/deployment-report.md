@@ -1,3 +1,69 @@
+# 部署报告：fix-merge-transaction-preflight-reopen / OpenLogos 0.14.2（2026-08-30，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-merge-transaction-preflight-reopen`。
+- **授权与门禁**：四轮切片验收依次确认三个 checkpoint 与 final gate；最终 `openlogos verify` 为 1863/1863 已执行、1853 通过、10 个既有 skip、0 fail、0 uncovered，`VERIFY_PASS` 在场。用户已明确授权本机部署及随后 smoke，并曾明确授权修复 RunLogos 异常后继续同一 merge 直至成功。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；隔离矩阵 prefix `/private/tmp/openlogos-0142-deploy-matrix.Ifwqxz/prefix`。
+- **执行时间**：`2026-08-30T11:51:15Z`。
+- **当前结论**：最终固定字节的 `@miniidealab/openlogos@0.14.2` 已完成 build、真实 npm pack、包内容校验、隔离安装/回滚矩阵、本机全局安装、安装态 preflight/reopen 自检和完整正式 smoke；132/132 通过、0 失败、0 跳过、0 未覆盖，Gate 3.8 PASS。
+- **数据迁移 / 服务启动**：无 / 不适用；环境变更仅为将已识别的本机全局 OpenLogos npm 包从 0.14.1 替换为 0.14.2。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+
+## 二、部署前快照与固定回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前命令 / realpath | `/opt/homebrew/bin/openlogos` / `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| 部署前版本 | `0.14.1` |
+| 部署前 package / asset SHA-256 | `9a76c0a5aba27bc64eb2f238c4c2f9b7812c869732288089d44a6d366526ceaf` / `7a53f9b24571e3802e3ff04af99c949725114afae0fa4cb475bfee78ed7d23e1` |
+| 固定回滚 tarball | `/Users/huangxianglong/.cache/openlogos/deploy/fix-merge-transaction-preflight-reopen/miniidealab-openlogos-0.14.1.tgz`；1,959,450 字节 |
+| 回滚 SHA-256 | `f93317d4c287aea11fb7c9ab8704aa19fb37407388b86d139eea413fc91db7e7` |
+| 回滚来源 | npm registry 未发布 0.14.1，固定版本下载返回 `ETARGET`；改从部署前已安装且正常工作的全局 0.14.1 目录执行 `npm pack --ignore-scripts`，打包前后 package/asset hash 未变化。 |
+
+可复制恢复命令：
+
+```bash
+npm install -g --force --ignore-scripts --no-audit --no-fund /Users/huangxianglong/.cache/openlogos/deploy/fix-merge-transaction-preflight-reopen/miniidealab-openlogos-0.14.1.tgz
+/bin/zsh -lic 'command -v openlogos && openlogos --version'
+```
+
+## 三、0.14.2 候选制品与身份
+
+| 检查项 | 结果 |
+|---|---|
+| candidate tarball | `/Users/huangxianglong/.cache/openlogos/deploy/fix-merge-transaction-preflight-reopen/self-heal-2/miniidealab-openlogos-0.14.2.tgz` |
+| 压缩大小 / 文件数 | 1,975,386 字节 / 678 |
+| candidate SHA-256 | `49307b1a0061c92747e18a5aa26dc995fdd6feb04d29911b76683f05d6174ca5` |
+| package / Claude plugin / asset version | `0.14.2` / `0.14.2` / `0.14.2` |
+| merge transaction schema SHA-256 | `bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421` |
+| status / next schema SHA-256 | `c388a1873343b536b9d7a07028fc163ae6bf0e1677a567b841d49aef6a843029` / `4fa2f8dca139e8cc068a675bc701a9bc83543d05fe2b5f587fa7dca39e530620` |
+| CLI JSON contract SHA-256 | `28e0b774f58e61f93ebf7064f96e3999209211139b416f692ca45e3ee3d472a7` |
+| merge-executor Skill / completed golden SHA-256 | `1490d2b110488440d45dd157d0f057c34c5e34857d11eaa81d9974875a60907f` / `57368754cdcc798e27287cdb0c97e354e319e69fc4800acc54047bfdba7c46c6` |
+| asset manifest SHA-256 | `6d2bce36e0499b28c559f43dba57668f234113568fc3e27d326369c709bb2bfd` |
+
+tarball 已确认包含编译 CLI、merge transaction semantic validator、merge/status/next schema、CLI contract、merge-executor Skill、completed golden 与 asset manifest。
+
+## 四、隔离矩阵与安装态检查
+
+1. 在同一隔离 npm prefix 真实执行 `0.14.1 → 0.14.2 → 0.14.1 → 0.14.2`，四次绝对入口版本均与预期一致，无混装。
+2. 隔离安装态 `SMOKE-core-160` 通过：新事务歧义 after 表在 seal 前返回 retryable collecting，修正后同事务 seal/apply 至 completed。
+3. 隔离安装态 `SMOKE-core-161` 通过：legacy sealed 事务只清理错误 slot，保留无关 submitted hash，修正后同事务 completed。
+4. 使用同一 candidate SHA-256 执行全局安装；新 shell 的命令、realpath、版本与 package/plugin/asset identity 均正确。
+5. 全局安装态关键 schema/contract/Skill/golden/asset hash 与隔离 candidate 逐项一致；再次运行 `SMOKE-core-160`、`SMOKE-core-161` 均通过。
+
+## 五、失败处置、自愈与最终 smoke
+
+1. registry 不存在 0.14.1；在覆盖全局前已用现役安装字节生成并验证离线回滚包，未放宽回滚要求。
+2. RunLogos 真实事务首次 apply 正确 reopen，只拒绝 `UT-S44-24` 所在 slot并保留其余 14 个 slot。补齐六列表格后，恢复阶段又暴露 receipt schema envelope 与排序口径不一致；实现已统一为 codepoint 排序，并兼容归一化旧 locale-sorted receipt。事务 `mtx_7e0341e3719feccd22ef7615` 最终保持同一 identity completed，receipt 为 `sha256:3e775f8fea464c7a30e7733d55d7dd3e3947dbceab60d86958d152b281aedea9`。
+3. 自愈后的最终 candidate SHA-256 为 `49307b1a…ca5`；重新执行完整 verify：1863 个定义用例全部执行，1853 通过、10 个既有 skip、0 失败、0 未覆盖，Gate PASS。
+4. 前两轮 smoke 先暴露历史制品环境未注入，后暴露历史 RunLogos runner误用了当前演进脚本。最终轮改用与 0.14.0 候选身份匹配的冻结 harness，SMOKE-core-141～156 全部通过。
+5. WorkBuddy 首轮真机诊断发现真实授权 HOME 的 `.workbuddy/memory` 会被宿主 CLI 写入，因而 SMOKE-core-123 按合同失败。后续以 APFS 写时复制的临时授权快照承载登录态和全部会话写入；116～123 全部通过，最终正式轮没有再次修改真实 HOME。首轮由宿主 CLI 产生的 memory 文件变更未在未获额外授权时擅自覆盖或删除。
+6. 最终 `openlogos smoke` 于 2026-08-30 完成 132/132 PASS；失败、跳过和未覆盖均为 0，覆盖率与通过率均为 100%，Gate 3.8 PASS。SMOKE-core-160～162 分别绑定最终 0.14.2 tarball、固定 0.14.1 回滚包和真实 RunLogos completed receipt。
+7. 调度结束后全局 `/opt/homebrew/bin/openlogos` 已恢复为 0.14.2；安装态 `dist/lib/merge-transaction.js` SHA-256 为 `d5a52f92eca392f3a3c27e1152550ef14516fe18a5c975caa1d40c4916aefa1b`。`DEPLOY_DONE`、`SMOKE_PASS` 在场，未执行 archive、npm publish、tag、release、网站部署或 `git push`。
+
+---
+
 # 部署报告：release-0-14-1-local / OpenLogos 0.14.1（2026-08-30，本机全局部署完成）
 
 ## 一、部署结论
