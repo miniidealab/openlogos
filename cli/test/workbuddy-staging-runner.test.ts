@@ -87,6 +87,6 @@ describe('WorkBuddy staging smoke runner 合同', () => {
       expect(dispatcher).toContain(`OPENLOGOS_${host}_PREVIOUS_TARBALL`);
     }
     expect(dispatcher).toContain('env: environmentFor(runner)');
-    expect(baseline).toContain("process.env.OPENLOGOS_BIN ? packageJson.version : '0.13.27'");
+    expect(baseline).toContain('const expectedVersion = packageJson.version');
   });
 });

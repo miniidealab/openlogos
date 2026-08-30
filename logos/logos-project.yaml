@@ -164,7 +164,7 @@ scenarios:
     module: core
     feature: F06
   - id: S30
-    name: "openlogos"
+    name: "OpenLogos"
     module: core
     feature: F06
   - id: S31
@@ -563,6 +563,12 @@ resource_index:
   - path: spec/test-slice-manifest.md
     desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
 
+  - path: spec/schema/verify.schema.json
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+
+  - path: logos/resources/implementation/core-S39-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+
   - path: logos/resources/decisions/core-D06-ai-tool-adapter-boundary.md
     desc: D06 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。
   - path: spec/zcode-plugin.md
@@ -570,10 +576,29 @@ resource_index:
   - path: spec/qoder-plugin.md
     desc: Qoder 原生插件规范。涉及 Qoder 插件布局、Skills、Commands、Agents、Hooks、SessionStart 与 PreToolUse 协议时必读。
 
+  - path: logos/resources/implementation/core-fix-modified-anchor-root-id-false-removal-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+  - path: logos/resources/implementation/core-trae-adapter-foundation-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+  - path: logos/resources/implementation/core-trae-local-negative-smoke-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+  - path: logos/resources/implementation/core-workbuddy-adapter-foundation-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+  - path: logos/resources/implementation/core-zcode-adapter-foundation-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+  - path: spec/workbuddy-plugin.md
+    desc: 方法论规范文档。涉及对应规范定义、格式约定时必读。
+
+  - path: logos/resources/implementation/core-fix-plan-package-convergence-gap-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+
   - path: logos/resources/decisions/core-D07-merge-transaction-single-authority.md
     desc: D07 决策记录。涉及合并事务单一权威、content slot、原子 apply、completed receipt、旧 manifest 断代与 RunLogos 跨仓边界时必读。
   - path: spec/schema/merge-transaction.schema.json
     desc: Merge transaction 公共 JSON Schema。涉及 phase、classification、allowed_actions、next_action、content slot 与 completed receipt 机器合同时必读。
+
+  - path: logos/resources/implementation/core-refresh-merge-transaction-cross-repo-plan-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
 
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号

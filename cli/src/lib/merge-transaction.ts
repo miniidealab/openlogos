@@ -3,6 +3,7 @@ import {
   realpathSync, renameSync, rmSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseDocument, stringify } from 'yaml';
 import {
   parseBaselineClosurePlan, validateAndStripNonMarkdownDelta,
@@ -23,6 +24,23 @@ export const MERGE_TRANSACTION_FILE = 'MERGE_TRANSACTION.json';
 export const MERGE_TRANSACTION_SCHEMA_PATH = 'spec/schema/merge-transaction.schema.json';
 const CONTRACT_PATH = 'spec/cli-json-output.md';
 const SLOT_LIMIT_BYTES = 20 * 1024 * 1024;
+
+function bundledContractPath(relativePath: string): string {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(moduleDir, '..', '..', ...relativePath.split('/')),
+    join(moduleDir, '..', '..', '..', ...relativePath.split('/')),
+  ];
+  const resolved = candidates.find(candidate => existsSync(candidate));
+  if (!resolved) {
+    throw new MergeTransactionError(
+      'unsupported_contract',
+      `安装态缺少 merge transaction 契约资产：${relativePath}`,
+      false,
+    );
+  }
+  return resolved;
+}
 
 export type MergeTransactionPhase = 'collecting' | 'ready' | 'sealed' | 'applying' | 'completed' | 'failed';
 export type MergeTransactionAction = 'submit_content' | 'seal' | 'apply' | 'recover' | 'abort';
@@ -359,8 +377,8 @@ export function createMergeTransaction(root: string, proposalDir: string, slug: 
   const targetSet = digest(canonical(planned.targets.map(({ content_sha256: _c, sealed_sha256: _s, ...target }) => target)));
   const id = `mtx_${plainHash(digest(`${planned.planHash}:${targetSet}`)).slice(0, 24)}`;
   const now = new Date().toISOString();
-  const schemaPath = join(root, ...MERGE_TRANSACTION_SCHEMA_PATH.split('/'));
-  const contractPath = join(root, ...CONTRACT_PATH.split('/'));
+  const schemaPath = bundledContractPath(MERGE_TRANSACTION_SCHEMA_PATH);
+  const contractPath = bundledContractPath(CONTRACT_PATH);
   const tx: StoredTransaction = {
     schema: MERGE_TRANSACTION_SCHEMA, transaction_id: id, slug, module: planned.module,
     phase: planned.targets.some(target => target.producer === 'agent') ? 'collecting' : 'ready', classification: null,

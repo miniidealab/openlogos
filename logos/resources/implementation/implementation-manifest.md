@@ -33,6 +33,42 @@
 - `node scripts/smoke-test-change-set-local-global.js --self-test`：五个 smoke ID、`local-global` 环境、candidate/rollback 输入和公开发布零调用合同通过。
 - 未执行 `openlogos verify`、本机全局安装、真实 rollback 或 smoke；这些操作保留至对应人类授权节点。
 
+## make-verify-slice-aware（五个自闭环切片）
+
+### 实现范围
+
+- 新增 `TEST_SLICE_MANIFEST.json` v1 严格校验、task/spec fingerprint、测试 ID 唯一归属、原子写入和 `SLICE_CHECKPOINTS.jsonl` 幂等账本。
+- `verify` 按 manifest/checkpoint 派生 `slice-checkpoint` 与 `final`：pending 不进入覆盖分母，未来结果越界失败，只有 final PASS 写 `VERIFY_PASS`。
+- status/next/verify 暴露同源切片状态；missing/invalid/stale 派发 `plan-slices` 恢复，unsupported/ambiguous 保守阻塞，恢复态不启动 runner、不写 Gate/loop 状态。
+- implement loop 使用 manifest 中稳定的 attempted slice；checkbox 提前勾选不串片，真实 checkpoint FAIL 才消耗 repair iteration，loop-exhausted 红线保持不可自动放行。
+- CLI、Claude 插件与 Codex 插件版本统一为 `0.13.26`；随包发布 status/next/verify Schema、slice-planner 与 manifest 规范，并新增 `SMOKE-core-62..66` 真实安装 runner。
+
+### 覆盖切片与真实用例
+
+- [x] 切片 1：UT-S13-56、UT-S13-57、UT-S13-58、UT-S13-60、UT-S13-63、UT-S16-10、UT-S16-12、UT-S32-32、UT-S32-33、UT-S32-34、UT-S32-35、UT-S32-36、UT-S32-37、UT-S32-38、UT-S32-39、UT-S32-42、ST-S32-10。
+- [x] 切片 2：UT-S13-64、ST-S13-17、UT-S16-13、UT-S16-14、UT-S16-15、UT-S16-17、ST-S16-04、UT-S27-34、UT-S27-35、ST-S27-13、UT-S28-37、UT-S28-38、UT-S28-39、UT-S28-40、UT-S28-41、UT-S28-42、UT-S28-43、UT-S28-44、ST-S28-12、ST-S28-13、ST-S28-14、UT-S32-40、UT-S32-41、ST-S32-11、ST-S32-12、ST-S32-13。
+- [x] 切片 3：UT-S13-59、ST-S13-16、UT-S27-33、UT-S27-36、UT-S27-37、UT-S27-38、UT-S27-40、ST-S27-12、UT-S31-28、UT-S31-29、UT-S31-30、UT-S31-31、UT-S31-32、UT-S31-36、ST-S31-13、ST-S31-14。
+- [x] 切片 4：UT-S13-61、UT-S13-62、ST-S13-15、UT-S16-11、ST-S16-03、UT-S27-39、ST-S27-11、UT-S31-33、UT-S31-34、UT-S31-35、ST-S31-12、ST-S31-15。
+- [x] 切片 5：UT-S16-16、SMOKE-core-62、SMOKE-core-63、SMOKE-core-64、SMOKE-core-65、SMOKE-core-66。
+
+### 主要产物
+
+- `cli/src/lib/test-slice-manifest.ts`
+- `cli/src/commands/verify.ts`、`cli/src/commands/status.ts`、`cli/src/commands/next.ts`
+- `cli/src/lib/proposal-lifecycle.ts`、`cli/src/lib/flow-loop-derive.ts`、`cli/src/lib/step-registry.ts`
+- `cli/test/slice-aware-verify.test.ts`、`cli/vitest.config.ts`
+- `spec/schema/status.schema.json`、`spec/schema/next.schema.json`、`spec/schema/verify.schema.json`
+- `scripts/smoke-slice-aware-verify.js`、`scripts/run-smoke.js`
+- `logos/resources/verify/test-results.jsonl`（全局 OpenLogos reporter）
+
+### 验证
+
+- `cd cli && npm run build`：通过。
+- `cd cli && npx vitest run test/slice-aware-verify.test.ts`：17/17 通过。
+- `cd cli && npm test`：62 个测试文件、1769/1769 通过；manifest 中 72 个 UT/ST ID 均有最新 pass reporter 记录。
+- `cd cli && npm pack --dry-run --json`：通过；候选包版本为 0.13.26，包含三份 JSON Schema、slice-planner、`spec/test-slice-manifest.md` 与编译后的 manifest 实现。
+- `scripts/smoke-slice-aware-verify.js` 已通过语法检查并由统一 dispatcher 可达；部署后的 `openlogos smoke` 与 0.13.25 tarball 隔离回滚演练尚未执行，保留至人类授权节点。
+
 ## win32-archive-watcher-handshake（单一自闭环切片）
 
 ### 范围

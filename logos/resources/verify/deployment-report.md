@@ -61,6 +61,140 @@ tarball 已确认包含三份 next/status/merge-transaction schema、中文和�
 
 ---
 
+# 部署报告：refresh-merge-transaction-cross-repo-plan / OpenLogos 0.14.0（2026-08-29，最终消费者合同接缝刷新）
+
+## 一、当前结论
+
+- **目标环境**：本机 npm 全局 OpenLogos，命令路径 `/opt/homebrew/bin/openlogos`。
+- **最终候选制品**：`logos/resources/verify/merge-transaction-deployment-evidence/artifacts/miniidealab-openlogos-0.14.0.tgz`，SHA-256 `6c82b8a806866c356cdad05ca15f4969cb4d9d61ba4318f97ae114b6d4245546`。
+- **安装态证明**：全局 `dist/index.js`、`dist/lib/merge-transaction.js` 与 `spec/schema/merge-transaction.schema.json` 已逐文件对比最终 tarball，SHA-256 全部一致；`openlogos --version` 为 `0.14.0`。
+- **RunLogos 前置**：`adopt-openlogos-merge-transaction-authority` 已完成最终 verify 与归档，真实 candidate E2E runner 已覆盖 CREATE、MODIFY、mixed、response-lost。
+- **最终门禁**：`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 在场，`SMOKE_FAIL` 不在场；正式 smoke 已 120/120 PASS，失败、跳过、未覆盖均为 0，Gate 3.8 PASS。
+- **跨仓接缝结果**：`SMOKE-core-150` 绑定候选 SHA-256 `6c82b8a806866c356cdad05ca15f4969cb4d9d61ba4318f97ae114b6d4245546`，RunLogos CREATE、MODIFY、mixed、response-lost 四场景均为 `completed` 且各执行一次 apply；response-lost 注入证据在场。
+
+## 二、本次刷新、回滚与风险
+
+1. 将旧 `678717240cd7…` 候选保留为 `miniidealab-openlogos-0.14.0-initial-678717240cd7.tgz`，并把最终 `6c82b8a…` 候选固化到 canonical 0.14.0 制品路径。
+2. 本轮未重新安装全局 npm 包：磁盘比对已经证明当前全局安装与最终制品一致，避免无意义覆盖。
+3. 无数据迁移、无服务启动、无 npm publish、Git tag、GitHub Release、网站部署或 push。
+4. 回滚点仍为 `miniidealab-openlogos-0.13.31.tgz`；若本轮 smoke 失败，保留 `SMOKE_FAIL` 并停止归档。
+5. 正式 `openlogos smoke --env local-global --format json` 于 `2026-08-29` 完成 120/120 PASS；`SMOKE-core-141`～`SMOKE-core-150` 全部绑定最终候选，RunLogos canonical evidence 校验通过，当前全局入口仍为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`、版本仍为 `0.14.0`。
+
+---
+
+# 部署报告：refresh-merge-transaction-cross-repo-plan / OpenLogos 0.14.0（2026-08-28，本机全局部署完成，等待 RunLogos 联调）
+
+## 一、当前结论
+
+- **模块 / 提案**：core / `refresh-merge-transaction-cross-repo-plan`。
+- **授权与门禁**：用户已明确授权部署、smoke 以及失败后的修复—重部署—重跑闭环；部署前 `VERIFY_PASS` 在场，最终 verify 为 1792 通过、0 失败、10 跳过、0 未覆盖。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`，global root `/opt/homebrew/lib/node_modules`。
+- **执行时间**：部署自检截至 `2026-08-28T14:23:54Z`。
+- **当前状态**：候选包已构建并安装；`openlogos --version` 精确返回 `0.14.0`。第三轮正式 smoke 已 120/120 执行、119 PASS、0 未覆盖；唯一失败为 RunLogos 0.14 消费端尚未实现，因此 Gate 3.8 仍为 FAIL，未生成 `SMOKE_PASS`。
+
+## 二、部署前快照与制品
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前版本 / 入口 | `0.13.31` / `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| 回滚 tarball | `logos/resources/verify/merge-transaction-deployment-evidence/artifacts/miniidealab-openlogos-0.13.31.tgz`；1,897,735 字节 |
+| 回滚 SHA-256 | `fe8d2983ab9f11b1084f729bf8f781c7fe664e1636d0d2c5237d88da8d0266cb` |
+| 候选 tarball | `logos/resources/verify/merge-transaction-deployment-evidence/artifacts/miniidealab-openlogos-0.14.0.tgz`；1,932,307 字节 |
+| 候选 SHA-256 | `678717240cd70dc75ba25b41699d11c704caf0a2effed1ba0c1a42ade2ccee17` |
+
+由于 npm registry 不存在 `@miniidealab/openlogos@0.13.31`，在线获取回滚包返回 `ETARGET`；本次改为从部署前已安装的全局目录执行本地 `npm pack --ignore-scripts`，冻结了可离线恢复、identity 为 `@miniidealab/openlogos@0.13.31` 的回滚包。
+
+## 三、构建、安装与安装态证明
+
+1. 候选执行 `npm test -- --reporter=dot`：84 个测试文件、2045 项测试全部通过；`npm run build` 与真实 `npm pack` 成功。
+2. 候选包 identity 为 `@miniidealab/openlogos@0.14.0`，`bin.openlogos` 指向 `dist/index.js`；包内包含 merge transaction schema、next/status schema、中英文 merge-executor Skill、`dist/commands/merge-transaction.js`、`dist/lib/merge-transaction.js` 与 `asset-manifest.json`。
+3. 已使用显式本地候选 tarball执行全局安装；命令路径为 `/opt/homebrew/bin/openlogos`，realpath 为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，版本为 `0.14.0`。
+4. 安装态帮助包含 `merge transaction status/submit-content/seal/apply/recover`；旧 `merge-apply` 入口以 `legacy_manifest_rejected` 明确拒绝旧 manifest。
+5. merge transaction schema SHA-256 为 `59a5fa2984e7d70b979461d64af022ed1e63e6f25790d857aaaed41ad9a54ce2`；CLI JSON 合同为 `23e776b1157415b2200357217069161ed2767d215beeaa5b512c5488a6f2ab10`；中文 / 英文 merge Skill 分别为 `545f3813668c7a259facf9021779fd614611f8458174040ebea3e0406e744dc7` / `50f388025e01eba4bd84e86d15b447330294ece19e138b1e428e17ee136c719e`。
+6. asset manifest schema 为 `openlogos/asset-manifest@1`，版本为 `0.14.0`，Plan contract 为 `1.4.0`，payload hash 为 `07e1d24ee3b5941f854e9216afb4e3a60ad43e7b95f3e9998b8c018d9b6e6a5d`；源码、tarball 与安装态关键资产哈希一致。
+
+## 四、首轮 smoke 修复与重新验收
+
+1. 首轮正式 smoke 为 71 通过、8 失败、41 未覆盖；SMOKE-core-141～149 已通过，SMOKE-core-150 因缺少真实 RunLogos 命令失败。
+2. 修复安装态事务从临时项目根读取 `spec/schema/merge-transaction.schema.json` 与 `spec/cli-json-output.md` 的错误：现在只读取随 CLI 分发的权威契约资产，缺失时返回稳定 `unsupported_contract`。
+3. 将 SMOKE-core-56/57/09/39 的旧 `MERGE_PROMPT / merge-apply / no_delta_spec_complete` 断言迁移为 0.14 transaction 的 slot、seal、apply、原子回滚和 receipt 断言；历史 S39 版本检查改为当前候选版本，历史回滚制品仅在完整提供时执行。
+4. 补齐原型 HTML/CSS/SVG 作为 feature CREATE 的非空资产完整度路径，使 UI provenance 通过后可纳入 transaction 同批落盘。
+5. 修复后聚焦 smoke 全部通过；全量 UT 为 84 个文件、2045/2045，通过后重新执行正式 verify：1792 通过、0 失败、10 跳过、0 未覆盖，Gate PASS。
+6. 已重新构建候选并按本报告更新后的大小与 SHA-256 全局安装；安装态 `openlogos --version` 仍精确为 `0.14.0`，且已确认包含新的 bundled-contract 定位逻辑。
+
+## 五、回滚、迁移与副作用
+
+- 回滚命令：`npm install -g /Users/huangxianglong/gitlab/openlogos/logos/resources/verify/merge-transaction-deployment-evidence/artifacts/miniidealab-openlogos-0.13.31.tgz`。
+- 本期无数据迁移、无服务启动；部署对象仅为本机 npm 全局 CLI。
+- 未执行 npm publish、npm dist-tag、Git tag、GitHub Release、网站部署或 `git push`。
+- 第三轮正式 smoke 后确认的唯一阻塞：当前 RunLogos 源码与已安装 1.0.2 均无可直接调用的 0.14 merge transaction 消费端；`SMOKE-core-150` 因缺少 `OPENLOGOS_RUNLOGOS_VERIFY_COMMAND` 失败。RunLogos 同名活跃提案明确限定为只刷新 reference、不得实现接入代码，故不能在当前 OpenLogos 工作单中越权补写。
+- `SMOKE_FAIL` 在场、`SMOKE_PASS` 不在场；不得 archive。下一步必须在 RunLogos 创建并批准正式 `adopt-openlogos-merge-transaction-authority` 实现提案，完成真实 candidate E2E 后把其命令作为 `OPENLOGOS_RUNLOGOS_VERIFY_COMMAND` 回传，再重跑本仓正式 smoke。
+
+---
+
+# 部署报告：fix-plan-package-convergence-gap / OpenLogos 0.13.31（2026-08-26，本机全局部署成功）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-plan-package-convergence-gap`。
+- **授权与门禁**：用户已明确授权部署与 smoke；修复后重新执行 `openlogos verify --format json`，Gate PASS，1709/1709 用例已执行，失败与未覆盖均为 0。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；隔离安装、Plan Package fixture 与 Codex 个人资产验证均使用 `/private/tmp` 一次性目录。
+- **执行时间**：截至 `2026-08-26T14:51:02Z`。
+- **结论**：真实 `0.13.31` tarball 构建、六方版本、Plan contract 1.3.0、asset manifest、隔离 init/change/sync、全局安装以及 `0.13.31 → 0.13.30 → 0.13.31` 回滚恢复演练全部 PASS；最终全局版本为 `0.13.31`。
+- **最终门禁**：部署自检 SMOKE-core-135～SMOKE-core-140 已 6/6 PASS；正式 `openlogos smoke --env local-global` 已 110/110 PASS，Gate 3.8 PASS。
+
+## 二、部署前快照与制品
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前版本 / 入口 | `0.13.30` / `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| npm global prefix / root | `/opt/homebrew` / `/opt/homebrew/lib/node_modules` |
+| 候选 tarball | `logos/resources/verify/plan-package-deployment-evidence/artifacts/miniidealab-openlogos-0.13.31.tgz`；1,897,735 字节；656 个条目 |
+| 候选 SHA-256 | `fe8d2983ab9f11b1084f729bf8f781c7fe664e1636d0d2c5237d88da8d0266cb` |
+| 回滚 tarball | `logos/resources/verify/test-change-set-deployment-evidence/artifacts/miniidealab-openlogos-0.13.30.tgz`；1,874,701 字节 |
+| 回滚 SHA-256 | `3f34c3b8aa6781a27d2c08ec75294001ffe9916195f5d534ae2a59d57db4b386` |
+
+候选包 identity 为 `@miniidealab/openlogos@0.13.31`。CLI package、Claude/Codex/ZCode/Qoder/WorkBuddy 五类插件 manifest 均为 `0.13.31`；包内 `asset-manifest.json` schema 为 `openlogos/asset-manifest@1`，Plan contract 为 `1.3.0`，payload hash 为 `201c44787fc97e7b917faec1a0868cfc1883a59c2502156dd992ff29b10dc65c`，7 项托管资产逐项哈希校验通过。
+
+## 三、构建、隔离验证与全局入口证明
+
+1. `npm run lint`、`npm run build` 与 83 个 Vitest 文件共 2040 项测试全部退出 0；真实 `npm pack` 成功，候选 SHA-256 与本节记录一致。
+2. 候选先安装到 `/private/tmp` 独立 npm prefix，CLI 精确返回 `0.13.31`；隔离 fixture 的 init、两次 sync、change、change-lint、status 与 next 均完成，模板 L0 诊断符合合同。
+3. 候选使用显式本地 tarball 执行 `npm install -g --ignore-scripts`；未使用 registry 包、workspace link 或源码入口。安装后 `openlogos --version` 为 `0.13.31`，realpath 为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+4. 安装态重新加载 `dist/lib/asset-manifest.js` 并验证 package root，版本、Plan contract 与 payload hash 全部一致。
+
+## 四、回滚与恢复演练
+
+1. 首次升级 `0.13.30 → 0.13.31` 后，版本、入口和安装态 asset manifest 校验通过。
+2. 使用固定回滚包真实降级到 `0.13.30`，版本与入口校验通过。
+3. 再使用原始候选包恢复 `0.13.31`，版本、入口与 payload hash 再次通过；部署自检中的 SMOKE-core-140 又执行了一轮相同回滚恢复并通过。
+4. 最终全局状态为 `@miniidealab/openlogos@0.13.31`。如正式 smoke 暴露不可恢复问题，可用本报告固定的 `0.13.30` tarball 恢复部署前状态。
+
+## 五、部署自检失败修复与复验
+
+1. 首轮专属部署自检中 SMOKE-core-135/138/139/140 通过，SMOKE-core-136 因 JSON 解析中止失败，SMOKE-core-137 因 `change-lint exit=2` 失败。
+2. 根因是 smoke runner 把 `openlogos change` 生成的待填写 scaffold 直接当作合法 Plan Package；模板占位产生大量 issues，并使 JSON 诊断被截断。CLI evaluator 与既有 UT/ST 无偏差。
+3. 修复 `scripts/smoke-plan-package-convergence.js`：真实验证中英文 scaffold 后先填成合法 proposal/tasks，再注入精确双错误；四方一致与回滚后最小复测均从合法 fixture 起步。
+4. 修复后 Plan Package 定向 25 项测试通过；专属部署自检 SMOKE-core-135～SMOKE-core-140 全部通过；完整 verify 再次 Gate PASS。
+
+## 六、正式 smoke 修复闭环
+
+1. 首轮正式 smoke 暴露三类 runner 兼容问题：`npm pack --json` 前置资产日志导致解析失败，baseline-on-touch 历史夹具未满足 Plan Package L0，WorkBuddy 认证 Home 错指向 `.codebuddy`。修复后 core CLI 16/16、baseline 关键四项与 WorkBuddy 聚焦 8/8 PASS。
+2. `npm pack --json` runner 改为从首个 JSON 数组开始解析；baseline fixture 补齐六个 canonical proposal 章节、完整部署字段与 clarification；SMOKE-core-49 按正式规格加入 Plan Package `1.3.0` 条件版本优先级。
+3. WorkBuddy 改用真实用户 Home 读取认证，但配置仍定向一次性 profile；单会话上限提高到 600 秒、driver 上限提高到 660 秒，inventory 对结构合法但漏项的模型响应执行最多三次语义重试。
+4. WorkBuddy staging 显式关闭 auto/team/typed memory、memory extraction、relevance 与 cleanup 通道；聚焦复测证明 Codex、`.codebuddy`、WorkBuddy memory/settings/plugins/user-state 等八类真实 Home 边界哈希前后一致。
+5. 正式 smoke 中观察到长驻 WorkBuddy Desktop 每 10 分钟独立刷新 `.workbuddy/memory`；未停止用户进程、未放宽零写入断言，而是在后台刷新后的稳定窗口重跑。最终 110 项全部执行并通过，失败、跳过、未覆盖均为 0，覆盖率与通过率均为 100%。
+6. 最终 smoke 的历史回滚 runner 一度把全局 CLI 留在 `0.13.30`；收尾已从原始候选 tarball 恢复并核对为 `0.13.31`，realpath 仍为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+
+## 七、风险与副作用审计
+
+- 公开副作用：未执行 npm publish、npm dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+- 数据与凭据：未读取或写入 npm token、registry 凭据、业务数据或远端账号。
+- 用户资产：sync 自检以哈希证明未知用户资产逐字节不变；Codex 个人资产验证定向到一次性目录。
+- 正式 smoke：110/110 PASS，Gate 3.8 PASS；`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 在场，`SMOKE_FAIL` 不在场。
+
+---
+
 # 部署报告：fix-test-slice-changed-id-semantic-diff / OpenLogos 0.13.30（2026-08-26，本机全局部署成功）
 
 ## 一、部署结论

@@ -95,7 +95,7 @@ function smokeInstalledVersion() {
   if (installedPackage.version !== expected || installedPlugin.version !== expected) {
     throw new Error(`全局安装包版本不一致：package=${installedPackage.version} plugin=${installedPlugin.version}`);
   }
-  for (const relativePath of ['spec/schema/status.schema.json', 'spec/schema/next.schema.json', 'skills/change-writer/SKILL.md']) {
+  for (const relativePath of ['spec/schema/status.schema.json', 'spec/schema/next.schema.json', 'spec/schema/verify.schema.json', 'skills/change-writer/SKILL.md']) {
     if (!existsSync(join(packageRoot, relativePath))) throw new Error(`全局安装包缺少 ${relativePath}`);
   }
 }

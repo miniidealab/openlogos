@@ -90,6 +90,23 @@ function environmentFor(runner) {
   return env;
 }
 
+const globalMutatingRunners = new Set([
+  'scripts/smoke-baseline-on-touch.js',
+  'scripts/smoke-plan-package-convergence.js',
+  'scripts/smoke-test-change-set-local-global.js',
+]);
+
+function restoreGlobalCandidate(runner) {
+  const tarball = process.env.OPENLOGOS_GLOBAL_RESTORE_TARBALL;
+  if (!tarball || !globalMutatingRunners.has(runner)) return true;
+  const restored = spawnSync(npmCommand, ['install', '-g', resolve(tarball)], {
+    cwd: root,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  return restored.status === 0;
+}
+
 const runners = discoverRunners();
 if (runners.length === 0) {
   console.error('No smoke runners found. Expected files matching scripts/smoke-*.sh or scripts/smoke-*.js.');
@@ -123,6 +140,7 @@ for (const runner of runners) {
     env: environmentFor(runner),
   });
   if (result.status !== 0) failed = true;
+  if (!restoreGlobalCandidate(runner)) failed = true;
 }
 
 process.exit(failed ? 1 : 0);

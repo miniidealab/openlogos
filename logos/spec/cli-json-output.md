@@ -406,8 +406,8 @@ openlogos status --format json  # JSON 格式
 | `modules[].active_change.deployment_decision_conflict` | boolean | 是 | `proposal.md` 与 `[deploy]` section 是否冲突 |
 | `modules[].active_change.deployment_decision_conflict_reason` | string \| null | 否 | 冲突原因摘要；无冲突时为 null |
 | `modules[].suggestion` | string | 是 | 针对该模块的下一步建议（本地化文本） |
-| `modules[].baseline_seed_state` | string | 否（非 adopted 模块省略；**adopted 模块恒输出**） | brownfield-adopter（S33）：`required｜partial｜seeded`；`bootstrap=adopted` 模块**无条件输出**（含活跃提案与 `baseline_commit_in_progress` 降级分支）——explicit 显式值优先，yaml 缺省（legacy）时经共享 helper `effectiveBaselineSeedState` 派生（有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`，见架构 core-06 §4.1）；**无 `unknown` 取值、无「缺省 → 字段缺失」路径**（baseline-seed-legacy-default-unify）。不新增 `baseline_seed_state_source` 字段 |
-| `modules[].baseline_coverage` | object | 否 | S33 现状基线覆盖率；仅 `bootstrap=adopted` 且基线派生可用时输出（不随 `baseline_seed_state` 的恒输出扩展），`status`/`next` 字段一致。见 §3.12 |
+| `modules[].baseline_seed_state` | string | 否（非 adopted 模块省略；adopted 模块在**恢复门通过后的正常成功 envelope** 中恒输出） | brownfield-adopter（S33）：`required｜partial｜seeded`。正常路径 explicit 优先；yaml 缺省时经共享 helper `effectiveBaselineSeedState` 派生（有候选+open run→`partial`、有候选无 open run→`seeded`、无候选→`required`），无 `unknown`。若未终结 journal 无法恢复，命令返回 `baseline_commit_in_progress` 操作错误 envelope，在调用 helper 或读取候选前停止；错误态不输出正常 `data.modules[]`，也不承诺派生本字段。不新增 `baseline_seed_state_source` 字段 |
+| `modules[].baseline_coverage` | object | 否 | S33 现状基线覆盖率；仅 `bootstrap=adopted`、恢复门通过且基线派生可用的正常成功 envelope 输出，`status`/`next` 字段一致。见 §3.12 |
 | `active_proposals` | array | 是 | 活跃变更提案列表 |
 | `active_proposals[].name` | string | 是 | 提案目录名 |
 | `active_proposals[].has_proposal` | boolean | 是 | 是否存在 proposal.md |
@@ -421,6 +421,8 @@ openlogos status --format json  # JSON 格式
 | `yaml_diagnostics` | object \| null | 否 | `logos-project.yaml` 的解析诊断；存在可恢复/不可恢复错误时返回 |
 | `yaml_diagnostics.parse_status` | string | 是 | `"recovered"` 或 `"error"`；`recovered` 表示已从 AST 恢复可用的 `modules` 等数据 |
 | `yaml_diagnostics.messages` | string[] | 是 | 诊断消息摘要 |
+
+以上“必填/恒输出”约束只适用于正常成功 envelope。`baseline_commit_in_progress` 使用 §6 通用错误 envelope：`error.data` 只可携从最小安全元数据取得的 `module`、`run_id`、`journal_phase` 与修复提示，不得为补齐正常字段读取 resources/index/coverage。
 
 **step_meta 与步骤注册表（contract-self-description）**
 
@@ -470,7 +472,7 @@ openlogos status --format json  # JSON 格式
 
 ### 3.12 现状基线覆盖率字段（baseline_coverage，brownfield-adopter S33）
 
-`bootstrap=adopted` 且无活跃提案的模块下，`status`/`next --format json` 在 `modules[].baseline_coverage` 输出现状基线覆盖率对象（`next` 挂 `modules[].baseline_coverage`，legacy 无 `modules[]` 才回退顶层 `baseline_coverage`）。字段：
+`bootstrap=adopted` 模块在 journal 恢复门通过、覆盖率派生可用的正常成功响应中，`status`/`next --format json` 通过 `modules[].baseline_coverage` 输出现状 seed 的机器信息（`next` 挂 `modules[].baseline_coverage`；legacy 无 `modules[]` 才回退顶层）。该对象不决定业务主动作。字段：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -480,16 +482,17 @@ openlogos status --format json  # JSON 格式
 | `tombstones` | number | `denominator` 内的 tombstone 数（仍计入；纯机器字段，不进人读引导语） |
 | `source` | string | `derived-index`（用了 `baseline_index` 派生索引）｜`documents`（直接从文档权威章节重算） |
 | `freshness` | string | `fresh｜stale｜unknown`；索引 `source_hash` 与文档实时聚合 hash 不符时为 `stale`，此时不输出貌似精确的计数结论 |
-| `recovery` | object | **仅 `state==partial` 且存在活跃提案时出现**：结构化恢复 advisory `{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`——不改写 `proposal_step`、不阻断 change |
-| `commit_in_progress` | boolean | 仅恢复门无法取模块锁（提交进行中）时置 `true`：机器消费者**不把当前集合当权威**（不据其算覆盖率/报 seeded） |
+| `recovery` | object | 仅安全 `partial`（只有 open run/未提交 staging，已确认无未终结 journal）且存在可执行重试时可出现：`{ available:true, entry:"openlogos baseline-seed commit --run-id <id>", run_id }`；无可提交 run 时 `entry` 可指向重新 `begin`。有无活跃提案均只作非阻断 advisory，不改写顶层 action/next_node/proposal_step |
 
-**partial 与活跃提案的优先级**：**无活跃提案**时 partial 主 `action`/`next_node` 指向 `openlogos baseline-seed` 恢复入口；**有活跃提案**时 `action`/`next_node`/`proposal_step` 保持该提案真实前沿，partial 恢复仅作 `recovery` advisory、不阻断 change。**只读已合并主文档**：覆盖率从各产物 `## 逆向基线来源` 章节实时聚合（可再经 `logos-project.yaml` 的 `baseline_index` 缓存加速 + 新鲜度对账），merge 前的未合并 delta 不计入；机器读取入口读前先经恢复门（取模块锁 + 检测未终结 journal → 先恢复，否则 `baseline_commit_in_progress`）。
+**默认动作与提案优先级**：恢复门通过后，无活跃提案时 `required`、安全 `partial`、`seeded` 的主 `action`/`next_node` 均指向 `openlogos change <slug>`；有活跃提案时保持该提案真实 `action`/`next_node`/`proposal_step`。seed begin/commit 仅为显式可选旁路。覆盖率只读已合并主文档的 `## 逆向基线来源`；未合并 delta 和 staging 不计入。
+
+**事务硬门**：`prepared`/`committing` 等未终结 journal 不是正常 `partial` 分支。机器读取入口必须在同一模块锁内、读取任何 resources/index/coverage 或调用 legacy 状态 helper 之前先恢复；无法恢复时非零返回 `baseline_commit_in_progress` 通用错误 envelope，不输出正常 `modules[]`、`baseline_seed_state`、`baseline_coverage`、change/seed action，也不得读取半新集合。
 
 > 注（drop-baseline-confirmation）：人工确认机制删除后，`verify --format json` **不再输出** `data.baseline_warnings`——`verify` 对 `verified:false` 逆向 spec 既不产软告警、也不硬失败（grandfather 豁免存量代码，verify 从不因逆向候选 fail）。
 >
-> 注（drop-coverage-human-verified）：覆盖率退化为**纯逆向候选计数**——`human_verified`（分子）、`human_verified_delta`、`coverage`（比值）三字段**已删**（此前 drop-baseline-confirmation 冻结保留，现干净删除）。因该形态尚未对用户发布、无兼容负担，`spec/schema/*.json` 与 golden 均不含 `baseline_coverage`，故 schema / golden / `contract.version` 均**无改动**。
+> 注（drop-coverage-human-verified）：覆盖率退化为**纯逆向候选计数**——`human_verified`（分子）、`human_verified_delta`、`coverage`（比值）三字段**已删**。因该形态尚未对用户发布、无兼容负担，`spec/schema/*.json` 与 golden 均不含 `baseline_coverage`，故 schema / golden / `contract.version` 均无改动。
 >
-> 注（plain-baseline-guidance）：覆盖率**仅作 JSON 机器字段**——`status`/`next` 的**人读引导语不再展示覆盖率行**（seeded 只提示「现状基线已建立；可正常发起 openlogos change」），`tombstone`/`逆向候选` 等内部记账概念不向用户暴露。`baseline_coverage` JSON 字段表**不变**。
+> 注（plain-baseline-guidance）：覆盖率仅作 JSON 机器字段；`status`/`next` 人读不展示覆盖率行，`tombstone`/`逆向候选` 等内部记账概念不向用户暴露。
 
 ### 3.13 `openlogos baseline-seed --format json`（brownfield-adopter S33）
 
@@ -1600,7 +1603,7 @@ initial 用 `current_phase → PHASE_KEY_TO_NODE_ID`（显式正向 map，**不*
 - **【R3】cmd 瞬态求值（overlay-add 节点 + builtin verify/deploy/smoke cmd gate，S30）**：`next_node` 取**本次响应 cmd 求值（cmdEval 回灌）后**的最终节点——`done_when:cmd` `exit 0` 续推 → 指向**续推后**节点（**不**指向已 done 的 cmd 节点/gate）；`fail_when:cmd` `exit 0` → 该节点/gate `failed` → 指向**该 cmd 节点/gate**；cmd 非 0/超时 → 指向**该 cmd 节点/gate**（求值后 `active`/停门前）；budget=1 遇第二个 cmd → 指向**第二个 pending cmd** 节点/gate。builtin gate id 取 `cmd_gate.node_id`。
 - **【R4】`--auto` 放行**：`gate_auto_passed === true` 时默认**省略 `next_node`**（放行后宿主走 gate 的 command，下一节点待重新 `next` 派生）。**例外一：`gate_id === "plan-exit"` 时，CLI 已写入 `PLAN_APPROVED` 并重新派生到 `write-delta`，本次响应必须输出 `next_node.id == "write-delta"`。例外二（split-slice-planner-stage）：仅当 `gate_id === "slice-exit"`、`gate_auto_passed === true` 且 CLI 已确认 `[code]` 满足 `tasks_code_filled` 时，CLI 才会写入 `SLICES_APPROVED` 并重新派生到 `coding` / `code` 前沿，本次响应必须输出 `next_node.id == "code"`。若 `[code]` 未脱模板，则 `slice-exit` 尚未到达，不适用 R4 放行例外；响应必须按 R8 走 `plan-slices` 节点前沿。** `--auto` 放行态下 `next_node` 不带 `gate_id`（门已被消费，非"待批准"，见 R8）。
 - **【R7】loop 阻塞**：未达上限 → `next_node` = loop subflow 的**工作节点**（overlay `current_node` 优先；否则 resolved flow 中 `id == "code"` 且未 `skipped` 的节点，**非 `verify`**，对齐 action「修代码」）；`code` 缺失/被 overlay `skip` → **省略**（仅 initial 等**合法 resolved flow**——launched 对 builtin `code` 的 `skip`/`reorder` 在派生入口已 `FLOW_SCHEMA_INVALID`、走不到此省略）；达上限（`escalated`）→ **省略**（宿主读 `loop_state.escalated`）。与 `loop_state` 互补：环状态看 `loop_state`，这一轮派哪个节点的 skill/agent 看 `next_node`。
-- **【R5】命令级建议**：当前建议不指向某 flow node（`all_done` / launched 无 active proposal → `openlogos change <slug>` / 补 baseline → `openlogos change add-baseline-docs` / `openlogos launch` 等）→ **省略 `next_node`**。`plan-exit` / `slice-exit` auto 消费后已分别指向真实 `write-delta` / `code` 节点，不按命令级建议省略。
+- **【R5】命令级建议**：当前建议不指向某 flow node（`all_done` / launched 或 adopted 无 active proposal → `openlogos change <slug>` / `openlogos launch` 等）→ **省略 `next_node`**。恢复门通过后的 `required`、安全 `partial`、`seeded` 共用同一 direct-change 分支，不存在 `add-baseline-docs` fixture。`plan-exit` / `slice-exit` auto 消费后已分别指向真实 `write-delta` / `code` 节点，不按命令级建议省略。
 - **【R8】切片出口门前沿（默认 `next`，含半自动/手动；本次修复）**：`proposal_step == "ready-to-implement"` 是「`plan-slices` 节点完成判定 `tasks_code_filled` 二分」的驻留态，`next_node` 据此二分（落地 `spec/flow-spec.md` §12.5(2)/§12.6(2) 已规定的前沿）：
   - `[code]` 仍为模板（未 `tasks_code_filled`）→ `plan-slices` 未完成，前沿 = 该节点：`next_node.id == "plan-slices"`、**不带** `gate_id`。默认 `next` 与 `next --auto` 在此前沿上一致：宿主应派 slice-planner 规划切片，CLI 不得自动消费 `slice-exit`。
   - `[code]` 已脱模板（`tasks_code_filled`）且 `SLICES_APPROVED` **不存在** → `plan-slices` 完成、前沿移到 `slice` 出口门：`next_node.id == "plan-slices"` **并附加** `next_node.gate_id == "slice-exit"`（宿主**不得**再派 slice-planner；半自动/手动停等人类在 `slice-exit` 门确认，`--auto` 则按 R4 例外二自动放行、消费后 `next_node.id == "code"` 且无 `gate_id`）。
@@ -2359,3 +2362,475 @@ git diff --no-relative --name-status -z <base> <head> | openlogos impact --stdin
 - 判定完成 → stdout success envelope；操作错误 → stderr error envelope（错误码见 §6.1：`IMPACT_GIT_DIFF_FAILED` / `IMPACT_INPUT_INVALID`）。默认（无 `--format json`）输出人读文本，stdout 无 JSON。
 - **命名回归红线**：data 递归键集合必须恰为上表声明的键（全 snake_case，§1.1），不得出现未声明键（防实现内部 camelCase 类型名泄漏到 stdout）。
 - 命令全程只读（项目内外零写入）；路径语义、坐标系与修订参数安全的权威声明见根 `spec/change-impact.md`。
+
+## change-lint L9 与 seed 非阻断动作契约（S39）
+
+### 1. change-lint 的 baseline_closure 摘要
+
+仅当 proposal 激活 `baseline_closure.policy: on-touch-v1`（或 tasks 已出现新模式）时，`change-lint --format json` 的成功 envelope `data` 增加：
+
+```json
+{
+  "baseline_closure": {
+    "policy": "on-touch-v1",
+    "stage": "plan",
+    "touched_scenarios": 2,
+    "targets_declared": 9,
+    "targets_total": 7,
+    "modify": 4,
+    "create": 3,
+    "skip": 2,
+    "ambiguous": 0,
+    "planned_delta_targets": 7,
+    "actual_delta_targets": 0
+  }
+}
+```
+
+字段全部必填：
+
+| 字段 | 类型 | 语义 |
+|---|---|---|
+| `policy` | string | 固定 `on-touch-v1` |
+| `stage` | `plan|spec` | `[delta]` 未全勾且未齐文件为 plan；全勾/文件齐备为 spec |
+| `touched_scenarios` | non-negative integer | proposal `touched_scenario_ids[]` 去重后的数量 |
+| `targets_declared` | non-negative integer | proposal `targets[]` 全部条目数，含 SKIP/AMBIGUOUS |
+| `targets_total` | non-negative integer | 非 SKIP 目标数，即 MODIFY+CREATE |
+| `modify` / `create` | non-negative integer | 各模式 target 数 |
+| `skip` | non-negative integer | proposal 矩阵中的证据化 SKIP 数，不计入 target/task |
+| `ambiguous` | non-negative integer | 未决数；>0 必有 violation |
+| `planned_delta_targets` | non-negative integer | tasks 中 canonical target 去重后的数量；必须与 targets_total 对账 |
+| `actual_delta_targets` | non-negative integer | 当前 deltas 中 mergeable canonical target 数 |
+
+以上计数的权威来源固定：`touched_scenarios`、`targets_declared`、`targets_total`、`modify`、`create`、`skip`、`ambiguous` 只从 proposal 的严格解析对象计算；`planned_delta_targets` 只从 tasks 计算；`actual_delta_targets` 只从 deltas 计算。不得用 tasks/deltas 倒推 SKIP/AMBIGUOUS，也不得在 proposal malformed 时伪造成功摘要。
+
+legacy proposal 未激活 L9 时**整个 `baseline_closure` 字段省略**，保证旧 JSON 逐字节零回归。字段是 change-lint 产物摘要，不写回 proposal/tasks/YAML。
+
+### 2. ChangeLintViolationCode 扩册
+
+现有 26 码后新增以下 9 码，闭合枚举总数为 35：
+
+```text
+baseline_closure_declaration_missing
+baseline_closure_malformed
+baseline_closure_target_missing
+delta_target_duplicate
+delta_target_mode_mismatch
+baseline_closure_ambiguous
+delta_target_unplanned
+create_target_incomplete
+non_markdown_delta_invalid
+```
+
+- `baseline_closure_malformed`：唯一 fenced YAML 无法解析、重复 key、schema_version/字段/类型/模式组合/排序非法，含 SKIP 缺 evidence 或 AMBIGUOUS 缺 missing_evidence。
+- `baseline_closure_target_missing`：`touched_scenario_ids` 的强制/条件维度 disposition 不完整，或 proposal non-skip target 在 tasks 缺失。
+- `non_markdown_delta_invalid`：API/DB 整文件 marker/target 声明/后缀/语法或类别校验失败（协议见 merge-executor 与 baseline-closure）。
+
+它们沿用现有 `violations[]` item：`code`、`path`、`message`、`fix_hint` 必填，`flow_reason` 仅真实同源时可选。不得进入 `warnings[]`；warning 通道及 `decision_record_section_without_delta` 的“非空才出现”规则不变。
+
+### 3. 排序与 exit code
+
+- 全序扩为 L1→L9，再按项目根相对 path、code、message 字典序。
+- L9 任一 violation 使 `pass:false`、exit 2；命令操作错误仍 exit 1；全过 exit 0。
+- 多个 target 违规必须全部返回，不因首条短路；但操作错误一旦确定仍遵守既有读取终止红线。
+- text 与 JSON 共享同一 violations 集合及顺序。
+
+### 4. 阶段与对账语义
+
+- plan：实际 delta 可为 0；不因未完成 task 缺文件报 `delta_target_unplanned`。
+- spec：完成 task 与实际 delta 双向一致；CREATE 完整度生效。
+- 部分 delta 在场：对在场文件立即执行 L4/L6/L8/L9 内容检查，未完成任务不误判为缺失。
+- `stage` 只描述 lint 证据阶段，不新增 proposal_step/flow node。
+- plan 先校验 proposal `touched_scenario_ids`/`targets[]`，再做 `P==T`；spec 再做 `P==T==D`。集合差异必须逐 target 报告，不能只比较计数。
+
+### 5. status/next 的 baseline 字段与 action
+
+`baseline_coverage`、`baseline_seed_state` 的既有字段、shape、可选/恒在场规则保持。新增约束：
+
+- `state ∈ {required,partial,seeded}` 不得单独把无提案的默认 action 改成“必须 baseline-seed”；在无未终结 journal 时主 action 必须创建 change。
+- 有活跃提案时 action/next_node 由 proposal flow 派生，baseline 数据只能是旁路信息。
+- partial/open run 的未提交 staging 不得计入任何 `targets_total`/存在性判断。
+- 未终结 journal 必须先在读锁内恢复；无法恢复时命令返回 `baseline_commit_in_progress` 操作错误，不输出正常 `baseline_closure`/coverage 派生结果，也不得读取半新 resources 后继续。
+- 本变更不删除字段、不改变 contract.version major；legacy 无 L9 响应保持逐字节旧输出。
+
+### 6. 示例：重复目标
+
+```json
+{
+  "code": "delta_target_duplicate",
+  "path": "logos/changes/pay/deltas/test/core-S12-test-cases.md",
+  "message": "2 个 delta tasks 映射到同一 canonical target logos/resources/test/core-S12-test-cases.md",
+  "fix_hint": "把多个场景的测试变化聚合为一条 task 和一份最终态 delta"
+}
+```
+
+### 7. 示例：CREATE 不完整
+
+```json
+{
+  "code": "create_target_incomplete",
+  "path": "logos/changes/pay/deltas/prd/3-technical-plan/2-scenario-implementation/core-S40-pay.md",
+  "message": "CREATE 场景文档缺少 sequenceDiagram、异常/边界",
+  "fix_hint": "在同一 delta 中补齐完整场景文档；不要创建第二份基线 delta"
+}
+```
+
+## Plan 阶段决策澄清 JSON 契约（clarification@1）
+
+### 契约版本
+
+`status --format json` 与 `next --format json` 在输出 `plan_state.clarification` 时使用 `data.contract.version="1.2.0"`。这是 1.x 的向后兼容可选字段扩展：
+
+- 1.0.0：无 feature 分组、无 clarification。
+- 1.1.0：保留现有 feature 分组契约，不输出 clarification。
+- 1.2.0：可输出 clarification；feature 分组仍按既有条件输出。
+
+响应出现任一 `plan_state.clarification` 必须声明 1.2.0；声明 1.0.0/1.1.0 时不得出现 clarification。`clarification.schema` 表示 proposal 中实际检测到的协议值；遇未知主版本必须原样输出（如 `openlogos/clarification@2`），以可通过 1.2 Schema 的 invalid 分支保守停止，禁止伪装成 @1。
+
+### 输出位置与同义性
+
+- status：`data.modules[].active_change.plan_state.clarification`；如现有实现同时提供兼容顶层 `data.plan_state`，其 clarification 必须同义。
+- next：`data.modules[].plan_state.clarification`；如现有实现同时提供兼容顶层 `data.plan_state`，其 clarification 必须同义。
+- 同一磁盘快照下 status 与 next 的 clarification 字段值必须深层一致；next 不自行解析 Markdown 或改变排序。
+
+### 字段定义
+
+```json
+{
+  "plan_state": {
+    "plan_ready": false,
+    "clarification": {
+      "schema": "openlogos/clarification@1",
+      "mode": "adaptive",
+      "status": "pending",
+      "required": true,
+      "required_categories": ["compatibility", "deployment"],
+      "unresolved_decisions": 1,
+      "next_decision_id": "C02",
+      "reason": "high-impact-user-decision-required",
+      "next_decision": {
+        "id": "C02",
+        "category": "compatibility",
+        "question": "是否保持旧宿主兼容？",
+        "impact": "决定版本语义和升级窗口",
+        "recommendation": "保持向后兼容",
+        "recommendation_reason": "减少宿主升级风险",
+        "options": [
+          {
+            "id": "backward-compatible",
+            "label": "保持兼容",
+            "tradeoff": "实现成本略高"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| `schema` | string/null | complete/pending 精确为 `openlogos/clarification@1`；unknown invalid 原样输出检测值；legacy missing 可为 null |
+| `mode` | string/null | complete/pending 为 `adaptive\|deep\|provided`；invalid 时允许 null/检测原值 |
+| `status` | string | `pending\|complete\|invalid` |
+| `required` | boolean | status 非 complete、存在 required 类别或 unresolved 时为 true |
+| `required_categories` | string[] | 仅尚未满足类别；去重；闭合类别；固定依赖顺序；complete/invalid 时为空 |
+| `unresolved_decisions` | integer | 非负，等于 proposal unresolved 长度 |
+| `next_decision_id` | string/null | 有当前可回答事项时为对应 CXX，否则 null |
+| `reason` | string/null | 当前阻塞原因；complete 时允许 null |
+| `next_decision` | object/null | 第一版直接输出完整当前问题；无当前事项时 null |
+
+`next_decision` 在非 null 时必含 `id`、`category`、`question`、`impact`、`recommendation`、`recommendation_reason`、`options`。option 必含 `id`、`label`、`tradeoff`；options 最多两个。合法 pending 必须有非 null next_decision，且 `next_decision_id == next_decision.id`；该相等约束由 status/next 共用 builder 与负向契约测试保证。
+
+### 类别与排序
+
+闭合类别：
+
+```text
+product, ownership, data, compatibility, security_privacy,
+deployment, release, external_commitment, acceptance
+```
+
+`required_categories` 按上述顺序输出并去重，只列尚未满足类别。来源包括 proposal impacts、部署声明和 unresolved 高影响类别；宿主不得重新推导或改变顺序。标准 JSON Schema 只校验闭合值与去重，固定顺序由 status/next 共用 builder 与负向契约测试保证。
+
+### 稳定 reason
+
+| reason | 含义 |
+|---|---|
+| `high-impact-user-decision-required` | 当前队首为 product、ownership 或 acceptance 等纯语义高影响决定 |
+| `data-clarification-required` | data required 缺匹配 user 决定 |
+| `compatibility-clarification-required` | compatibility required 缺匹配 user 决定 |
+| `security-privacy-clarification-required` | security_privacy required 缺匹配 user 决定 |
+| `deployment-clarification-required` | proposal 需要部署但缺 deployment/user 决定 |
+| `release-clarification-required` | public_release required 缺 release/user 决定 |
+| `external-commitment-clarification-required` | external_commitment required 缺匹配 user 决定 |
+| `clarification-contract-invalid` | schema/impact/CXX/category/source/依赖/状态非法 |
+| `clarification-upgrade-required` | 未知 clarification schema 主版本 |
+| `legacy-clarification-backfill-required` | writing 历史提案缺区块，需 change-writer 补齐 |
+
+合法 pending 的 reason 由 `unresolved[0].category` 决定：六类结构化触发使用各自专属 reason，product/ownership/acceptance 使用通用 reason。contract invalid/upgrade invalid 优先于 pending。完整集合由 `required_categories` 表达。
+
+### 跨字段一致性
+
+- complete：`required=false`、required_categories 空、unresolved_decisions=0、next_decision_id/reason/next_decision 均为 null。
+- pending：`required=true`、required_categories 至少一项、unresolved_decisions>=1、next_decision_id/reason/next_decision 均非空；schema/mode 为 @1 合法值。
+- invalid：`required=true`、required_categories 空、unresolved_decisions=0、next_decision_id/next_decision 均为 null；reason 为 contract invalid、upgrade required 或 legacy backfill。
+- Schema 用 oneOf 约束三分支。`next_decision_id == next_decision.id` 与 required_categories 固定顺序无法用标准 Draft 2020-12 完整表达，由共享 builder 负向测试拒绝矛盾响应。
+
+未知 @2 示例：
+
+```json
+{
+  "schema": "openlogos/clarification@2",
+  "mode": null,
+  "status": "invalid",
+  "required": true,
+  "required_categories": [],
+  "unresolved_decisions": 0,
+  "next_decision_id": null,
+  "reason": "clarification-upgrade-required",
+  "next_decision": null
+}
+```
+
+### pending/invalid 的 auto 契约
+
+当 `required=true`：
+
+- `proposal_step="writing"`；
+- `next_node.id="write-proposal"`；
+- `plan_ready=false`；
+- `gate_auto_passed` 必须为 false 或省略；
+- `auto_execute=false`；
+- 不写 `PLAN_APPROVED`、`GATE_AUTO_PASSED`，不改 proposal。
+
+`next --auto` 返回成功的机器可读响应以便 Driver 暂停并展示问题，但不得把推荐答案当成已确认决定。结构 invalid/未知版本可按现有操作错误策略返回非零；无论退出码如何，均不得推进流程或写 marker。
+
+### legacy 与未知字段
+
+- 已越过 plan 的历史提案不因缺 clarification 回退，保持原契约版本/字段行为。
+- writing legacy 缺区块时输出 backfill reason；status/next 不自动写 proposal。
+- additionalProperties 继续放开以支持 1.x 增量；消费方对未知 enum/schema 走保守分支。
+- RunLogos 只依赖本 JSON 契约展示一个决定，不读取 proposal 判完成；真实 Agent 行为不属于 CLI JSON 合格声明。
+
+## 切片验收与 manifest 恢复 JSON 契约
+
+### 契约版本
+
+本能力为 1.x 向后兼容增量，`data.contract.version` 升为 `1.1.0`，对应打包的 status、next 与 verify JSON Schema。消费方必须按 schema 校验 `output.data`；未知字段可忽略，未知枚举值或未知 manifest 主版本必须走保守分支。
+
+### verify data
+
+manifest 有效且进入 Gate 时，verify data 增加：
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| `verify_mode` | `slice-checkpoint \| final` | 必填 |
+| `attempted_slice_id` | `string \| null` | checkpoint 非空；final 为 null |
+| `eligible_test_ids` | `string[]` | 去重、字典序稳定；Gate 覆盖率分母 |
+| `pending_test_ids` | `string[]` | 去重、字典序稳定；与 eligible 互斥；final 为空 |
+| `manifest` | object | `status=valid`、path、schema、task/spec fingerprint、sha256 |
+| `checkpoint` | object | 当前 result 与稳定排序的 `confirmed_slice_ids` |
+
+`uncovered_test_ids` 必须是 `eligible_test_ids − covered_test_ids`，不得包含 pending。checkpoint PASS 的 `gate.result` 可为 `PASS`，但 `checkpoint.final=false` 且不得据此生成最终 `VERIFY_PASS`。
+
+### status/next slice_verification_state
+
+处于多切片 slice/implement 阶段时，status 与 next 暴露同源对象：
+
+```json
+{
+  "slice_verification_state": {
+    "manifest_status": "valid",
+    "verify_mode": "slice-checkpoint",
+    "attempted_slice_id": "slice-02-runner",
+    "confirmed_slice_ids": ["slice-01-manifest"],
+    "eligible_test_ids": ["ST-S31-12", "UT-S31-28"],
+    "pending_test_ids": ["ST-S31-13", "UT-S31-29"]
+  }
+}
+```
+
+数组稳定排序；同一磁盘状态在 status/next 中逐字段同义。单切片 legacy、docs-only 或已越过 final 的兼容路径可省略整个对象。
+
+### 恢复动作
+
+manifest 缺失或可恢复失效时，next data 必须包含：
+
+```json
+{
+  "reason": "test-slice-manifest-missing",
+  "slice_verification_state": {
+    "manifest_status": "missing",
+    "verify_mode": null,
+    "attempted_slice_id": null,
+    "confirmed_slice_ids": [],
+    "eligible_test_ids": [],
+    "pending_test_ids": []
+  },
+  "next_node": {
+    "id": "plan-slices",
+    "name": "恢复测试—切片清单",
+    "subflow_id": "slice",
+    "skill": "slice-planner",
+    "working_agent": null,
+    "review_agent": null,
+    "pre_script": null,
+    "post_script": null,
+    "dispatch": {
+      "idempotent": true,
+      "timeout_seconds": 900,
+      "artifacts_hint": ["tasks.md", "TEST_SLICE_MANIFEST.json", "logos/resources/test/"]
+    }
+  }
+}
+```
+
+稳定 reason 枚举：
+
+- `test-slice-manifest-missing`
+- `test-slice-manifest-invalid`
+- `test-slice-manifest-stale`
+- `test-slice-manifest-unsupported`
+- `test-slice-assignment-ambiguous`
+
+前三者可派发恢复；后两者保守阻塞并给出诊断，不自动覆盖。恢复态不得同时宣称 verify Gate FAIL，不写 marker 或 loop 行。
+
+### LOOP_ITERS 扩展
+
+新增可选字段 `verify_mode` 与 `attempted_slice_id`。checkpoint 失败两者分别为 `slice-checkpoint` 与非空稳定 ID；final 行为 `final` 与 null。旧行缺字段继续可读，但不能用于恢复新 manifest 的 attempted identity。
+
+### 宿主消费规则
+
+RunLogos 只消费 `reason`、`next_node`、`dispatch` 与状态对象，不读取 proposal/tasks 判完成。派发完成后必须重新调用 OpenLogos 获取 canonical 状态；相同恢复动作应按 idempotent 语义重投。未知字段忽略，未知 enum/schema 不能猜测为成功。
+
+### 契约版本
+
+status/next 响应出现 `plan_package`、`completion_issues` 或 dispatch `completion` 时，`data.contract.version` 必须为 `1.3.0`。字段只增不改；1.0.0～1.2.0 消费方按未知字段保守兼容。
+
+### PlanPackageEvaluation
+
+```json
+{
+  "schema": "openlogos/plan-package-evaluation@1",
+  "contract_version": "1",
+  "ready": false,
+  "proposal": {"filled": false, "issues": []},
+  "tasks": {
+    "plan_filled": true,
+    "code_required": true,
+    "code_slices_filled": false,
+    "issues": []
+  },
+  "issues": []
+}
+```
+
+status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便于旧 consumer 渐进迁移，`plan_state` 同时可投影 `completion_contract_version`、`completion_issues`、`proposal_filled`、`tasks_plan_filled`、`tasks_code_required`、`tasks_code_slices_filled`。投影存在时必须与对象逐字段一致。
+
+### CompletionIssue
+
+| 字段 | 必需 | 语义 |
+|---|---|---|
+| `code` | 是 | 稳定机器问题码 |
+| `path` | 是 | 项目根相对路径 |
+| `message` | 是 | locale 人读说明 |
+| `fix_hint` | 是 | 可执行修复建议 |
+| `section_id` | 否 | locale-independent section 语义 ID |
+| `line` | 否 | 1-based 行号 |
+| `actual` | 否 | 脱敏实际值 |
+| `expected` | 否 | 期望值或 canonical 标题 |
+
+首版问题码至少包含 proposal required section missing/duplicate/empty、placeholder remaining、change type invalid、deployment fields invalid、clarification invalid、tasks template remaining、code entry before spec-complete、code section missing。数组按共享 evaluator 顺序稳定输出。
+
+### change-lint
+
+检查成功但 L0 未通过仍使用 stdout success envelope、`data.pass=false`、exit 2，并携带 `data.plan_package`。L0 通过后才继续 L1～L9；最终 pass 必须与 plan_package.ready 等价。操作错误仍 stderr error envelope、exit 1。
+
+### dispatch completion
+
+`next_node.dispatch.completion`：
+
+```json
+{
+  "command": "openlogos change-lint --slug fix-x --format json",
+  "expected": {
+    "/data/pass": true,
+    "/data/plan_package/ready": true
+  },
+  "expected_proposal_step": "ready-to-delta"
+}
+```
+
+`expected` 的 key 为 RFC 6901 JSON Pointer，value 为期望标量。未知 completion 字段允许忽略；无法执行或无法证明全部期望时不得报告完成。
+
+### 等价、挂载与兼容
+
+- 单模块 legacy 顶层与 `modules[]` 同构时，plan package 内容必须相同。
+- 历史已越过 plan 的响应可省略新诊断或给 warning，但不得回退 proposal_step。
+- 旧 CLI 无 completion contract 时，新宿主提示升级/sync，不解析 Markdown 猜测。
+
+## Merge transaction JSON 契约（0.14.0）
+
+### 契约版本与命令
+
+`openlogos merge transaction status|seal|apply|recover --format json` 使用公共 schema `openlogos/merge-transaction@1`。`status` 为纯读取；`seal`、`apply`、`recover` 是显式写动作。所有成功输出沿用 CLI 顶层 success envelope，`data.merge_transaction` 必须是该 schema 的有效投影。
+
+### 稳定投影
+
+```json
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_...",
+  "slug": "example-change",
+  "phase": "ready",
+  "classification": null,
+  "allowed_actions": ["seal", "abort"],
+  "next_action": "seal",
+  "target_set_sha256": "sha256:...",
+  "seal_sha256": null,
+  "content_slots": {
+    "required": 2,
+    "submitted": 2,
+    "missing_slot_ids": []
+  },
+  "receipt": null
+}
+```
+
+字段规则：
+
+- `phase` 闭合枚举为 `collecting|ready|sealed|applying|completed|failed`；
+- `allowed_actions` 去重并按 schema 定义的规范顺序输出；
+- `next_action` 为 `allowed_actions` 中唯一推荐动作，无动作时为 `null`；
+- `classification` 仅失败或可恢复异常时非空；
+- `target_set_sha256` 在事务创建时冻结目标身份，`seal_sha256` 仅在 sealed 及之后非空；
+- `content_slots` 只暴露计数与缺失 slot id，不回显完整内容；
+- `receipt` 只在 completed 时非空，且必须包含 transaction/seal/target/closure 的可复核摘要。
+
+### 动作输出
+
+- `seal` 成功：phase 必须为 `sealed`，`seal_sha256` 非空，`next_action` 为 `apply`。
+- `apply` 成功：phase 必须为 `completed`，`allowed_actions=[]`、`next_action=null`、`receipt` 非空。
+- `recover` 成功：返回恢复后的真实 phase；若已 completed，必须返回原 receipt，不制造新 transaction id。
+- `status` 不得改变任何时间戳、journal、slot、target、marker 或 receipt 字节。
+
+### 稳定错误
+
+事务操作失败继续使用标准 error envelope；`error.details` 必须包含 `transaction_id`（可获得时）、`phase`、`classification`、`allowed_actions`、`next_action` 和 `retryable`。classification 闭合枚举至少包含：
+
+`invalid_phase`、`action_not_allowed`、`content_slot_missing`、`slot_identity_mismatch`、`source_hash_mismatch`、`before_hash_mismatch`、`target_set_mismatch`、`seal_mismatch`、`apply_conflict`、`receipt_mismatch`、`legacy_manifest_rejected`、`unsupported_contract`、`recovery_required`、`internal_failure`。
+
+未知 classification 必须 fail-closed；宿主不得按错误消息文本分支。
+
+### status/next 挂载
+
+`openlogos status --format json` 与 `openlogos next --format json` 可在既有 envelope 的 `data.merge_transaction` 挂载同一只读投影。二者必须与 transaction status 在同一仓库快照下逐字段一致；`next` 不得覆盖事务的 `allowed_actions` 或自行改写 `next_action`。
+
+### 安装态自描述
+
+0.14.0 的机器输出必须同时可获得 CLI `version`、transaction schema id、schema SHA-256 与 contract SHA-256，供 RunLogos 在调用前冻结候选安装态。源码版本、包版本与全局命令版本不一致时返回 `unsupported_contract`，不得降级为旧 manifest 流程。
+
+### 兼容优先级
+
+本节覆盖本文档中与 `MERGE_APPLY_MANIFEST.json`、Base64 apply payload 或外部 writer 成功判定冲突的旧段落；历史字段可只读展示，但不得参与 0.14.0 新事务动作。
