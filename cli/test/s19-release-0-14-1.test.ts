@@ -153,7 +153,11 @@ describe('S19 — OpenLogos 0.14.1 本地全局 patch candidate', () => {
     expect(runner).not.toContain('MERGE_TRANSACTION.json');
 
     expect(readFileSync(join(cliRoot, 'src/commands/merge-apply.ts'), 'utf8')).toContain('0.14.0 breaking cutover');
-    expect(readFileSync(join(repoRoot, 'scripts/smoke-merge-transaction-candidate.js'), 'utf8')).toContain('始于 OpenLogos 0.14.0');
+    const historicalRunner = readFileSync(join(repoRoot, 'scripts/smoke-merge-transaction-candidate.js'), 'utf8');
+    const historicalEvidenceValidator = readFileSync(join(repoRoot, 'scripts/lib/runlogos-candidate-evidence.mjs'), 'utf8');
+    expect(historicalRunner).toContain('SMOKE-core-141..156 — OpenLogos 0.14.0');
+    expect(historicalRunner).toContain("const EXPECTED_VERSION = '0.14.0'");
+    expect(historicalEvidenceValidator).toContain("const EXPECTED_VERSION = '0.14.0'");
     expect(readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8')).toContain('## [0.14.1]');
   });
 

@@ -621,7 +621,7 @@ describe('OpenLogos merge transaction', () => {
     expect(bridgeSource).toContain("['clone', '--quiet', '--no-hardlinks'");
     const evidence = {
       schema: 'runlogos/openlogos-candidate-e2e@1', passed: true,
-      candidate: { version: '0.14.1' },
+      candidate: { version: '0.14.0' },
       scenarios: [
         { scenario: 'create', phase: 'completed', apply_count: 1, final_path_count: 15, artifact_path_count: 2, commit_path_count: 17 },
         { scenario: 'modify', phase: 'completed', apply_count: 1, final_path_count: 15, artifact_path_count: 2, commit_path_count: 17 },
