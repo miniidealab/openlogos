@@ -147,6 +147,9 @@ describe('S19 — OpenLogos 0.14.1 本地全局 patch candidate', () => {
     expect(dispatcher).toContain('OPENLOGOS_MERGE_TRANSACTION_CANDIDATE_BIN');
     expect(dispatcher).toContain('OPENLOGOS_RELEASE_0_14_1_CANDIDATE_BIN');
     expect(dispatcher).toContain('env.OPENLOGOS_CANDIDATE_BIN = artifacts.candidateBin');
+    expect(dispatcher).toContain("['scripts/smoke-merge-transaction-candidate.js', process.env.OPENLOGOS_MERGE_TRANSACTION_TARBALL]");
+    expect(dispatcher).toContain("['scripts/smoke-release-0-14-1-local.js', process.env.OPENLOGOS_RELEASE_0_14_1_TARBALL]");
+    expect(dispatcher).toContain('if (!prepareGlobalCandidate(runner))');
     const runner = readFileSync(join(repoRoot, 'scripts/smoke-release-0-14-1-local.js'), 'utf8');
     expect(runner).toContain('OPENLOGOS_SMOKE_RESULT_PATH');
     expect(runner).toContain("appendFileSync(resultPath");

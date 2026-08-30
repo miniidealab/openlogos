@@ -99,10 +99,29 @@ function environmentFor(runner) {
 
 const globalMutatingRunners = new Set([
   'scripts/smoke-baseline-on-touch.js',
+  'scripts/smoke-merge-transaction-candidate.js',
   'scripts/smoke-plan-package-convergence.js',
   'scripts/smoke-test-change-set-local-global.js',
   'scripts/smoke-release-0-14-1-local.js',
 ]);
+
+const globalCandidateRunners = new Map([
+  ['scripts/smoke-merge-transaction-candidate.js', process.env.OPENLOGOS_MERGE_TRANSACTION_TARBALL],
+  ['scripts/smoke-release-0-14-1-local.js', process.env.OPENLOGOS_RELEASE_0_14_1_TARBALL],
+]);
+
+function prepareGlobalCandidate(runner) {
+  const tarball = globalCandidateRunners.get(runner);
+  if (!tarball) return true;
+  const prepared = spawnSync(npmCommand, [
+    'install', '-g', '--ignore-scripts', '--no-audit', '--no-fund', resolve(tarball),
+  ], {
+    cwd: root,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  return prepared.status === 0;
+}
 
 function restoreGlobalCandidate(runner) {
   const tarball = process.env.OPENLOGOS_GLOBAL_RESTORE_TARBALL;
@@ -140,6 +159,10 @@ for (const runner of runners) {
       }
     }
     if (preparationFailed) continue;
+  }
+  if (!prepareGlobalCandidate(runner)) {
+    failed = true;
+    continue;
   }
   console.log(`Running ${runner}`);
   const result = spawnSync(command, args, {
