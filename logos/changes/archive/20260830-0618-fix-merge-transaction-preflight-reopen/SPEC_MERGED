@@ -1,0 +1,70 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_dcd4eb54bac37cc36e4e2ae6",
+  "seal_sha256": "sha256:f9b84bd046c752af8c530e29d98ac14e428eb92230c4e49d4dcae37ee72a85ab",
+  "receipt_sha256": "sha256:ac177234d90846e7a843cf0c490b6454c2761bdb37fc22efedafe0b45923b0a5",
+  "completed_at": "2026-08-30T08:08:31.001Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-merge-transaction-preflight-reopen",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S05-21",
+      "ST-S09-102",
+      "ST-S09-103",
+      "ST-S11-43",
+      "ST-S16-10",
+      "ST-S19-16",
+      "ST-S39-27",
+      "UT-S05-46",
+      "UT-S09-261",
+      "UT-S09-262",
+      "UT-S09-263",
+      "UT-S09-264",
+      "UT-S09-265",
+      "UT-S11-74",
+      "UT-S16-33",
+      "UT-S16-34",
+      "UT-S19-24",
+      "UT-S19-25",
+      "UT-S39-56",
+      "UT-S39-57",
+      "UT-S39-58"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S05-test-cases.md",
+        "before_sha256": "99ca68f27008e84598c33b7d614386191636c5e8abeea858fecca2d569baf812",
+        "after_sha256": "ab7f0fc7c543a24565aa28d4df634ed0b1610ee32893e127b2b52dd2e178b963"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "12841f599ef2bf9e01f0b579126f59cf4e7e7610bab0b1b0787e6638acef942d",
+        "after_sha256": "d085ef5632ab984f635c47427eeb41aad21846eb1d0a8496ccfecae172652dad"
+      },
+      {
+        "target_path": "logos/resources/test/core-S11-test-cases.md",
+        "before_sha256": "7209252cc20bacb103b02d5294b01a0b0b0eef01feb7e2f76dca4c623371e69c",
+        "after_sha256": "10d74fda38b3c55ae3e489bd9afb6d331cefefe9a4b503c02f991781857cb84f"
+      },
+      {
+        "target_path": "logos/resources/test/core-S16-test-cases.md",
+        "before_sha256": "7155917bec5ec87993855291e7bc9187ad9557a8e9fa2f00e9ead1e74ba11685",
+        "after_sha256": "89d13171521f3c682dd8bbf904c79a0934be0732aafce93897aed15980972a15"
+      },
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "e01167baeda3cce29ed54a5fa49381f209803e073cd8712af6a32a0b52c06d15",
+        "after_sha256": "f8738714227a21b3bf7b198144dc1bd4cab1fb568efec542b64c6b1b7dfedff1"
+      },
+      {
+        "target_path": "logos/resources/test/core-S39-test-cases.md",
+        "before_sha256": "0f19c413280acdf67dba3027d21c3f15af6863a90b1d7e062d3d3ccac0ed464f",
+        "after_sha256": "0953a61829e47044cc1a89bb5d1ca8e10f657f803509308fac4abc4ff6ba8fc8"
+      }
+    ],
+    "sha256": "sha256:8ee7f343a5686073ba250b66e1deb1737b492469a0c457a7a0bd34fc7b47f23f"
+  }
+}

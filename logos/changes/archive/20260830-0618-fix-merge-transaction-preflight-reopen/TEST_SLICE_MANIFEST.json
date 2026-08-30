@@ -1,0 +1,95 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-merge-transaction-preflight-reopen",
+  "module": "core",
+  "task_fingerprint": "sha256:30075e1c9c5f712c5820f07a7c558ba3dd877bdfefa9fc78cfcf939c0e4b4066",
+  "spec_fingerprint": "sha256:6c5d41db83f1e1d9c9162a68ed256bc2d49c8ef6aaf5c3ae9f9d8ff7d6ff6aad",
+  "generated_at": "2026-08-30T20:00:00.000Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-new-seal-preflight",
+      "task_text": "切片 1：实现新事务 seal-bound canonical preflight、严格 test-change-set 扫描、单一 Agent slot 结构化归因与 collecting 修复重试闭环，同批补齐 Vitest 用例并复用 OpenLogos reporter（覆盖 UT-S09-261、UT-S16-33、UT-S39-56、UT-S39-57）。",
+      "owned_test_ids": [
+        "UT-S09-261",
+        "UT-S16-33",
+        "UT-S39-56",
+        "UT-S39-57"
+      ],
+      "runner_selectors": [
+        "UT-S09-261",
+        "UT-S16-33",
+        "UT-S39-56",
+        "UT-S39-57"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/core-S16-test-cases.md",
+        "logos/resources/test/core-S39-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-legacy-sealed-reopen",
+      "task_text": "切片 2：实现 legacy sealed 同事务局部 reopen、混合/未知归因 fail-closed、不可逆边界、崩溃安全状态先落盘与 status/next/JSON 跨进程投影闭环，同批补齐 Vitest 用例并复用 OpenLogos reporter（覆盖 UT-S05-46、ST-S05-21、UT-S09-262、UT-S09-263、UT-S09-264、UT-S09-265、ST-S09-102、ST-S09-103、UT-S11-74、ST-S11-43、UT-S16-34、ST-S16-10、UT-S39-58、ST-S39-27）。",
+      "owned_test_ids": [
+        "ST-S05-21",
+        "ST-S09-102",
+        "ST-S09-103",
+        "ST-S11-43",
+        "ST-S16-10",
+        "ST-S39-27",
+        "UT-S05-46",
+        "UT-S09-262",
+        "UT-S09-263",
+        "UT-S09-264",
+        "UT-S09-265",
+        "UT-S11-74",
+        "UT-S16-34",
+        "UT-S39-58"
+      ],
+      "runner_selectors": [
+        "ST-S05-21",
+        "ST-S09-102",
+        "ST-S09-103",
+        "ST-S11-43",
+        "ST-S16-10",
+        "ST-S39-27",
+        "UT-S05-46",
+        "UT-S09-262",
+        "UT-S09-263",
+        "UT-S09-264",
+        "UT-S09-265",
+        "UT-S11-74",
+        "UT-S16-34",
+        "UT-S39-58"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S05-test-cases.md",
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/core-S11-test-cases.md",
+        "logos/resources/test/core-S16-test-cases.md",
+        "logos/resources/test/core-S39-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-candidate-smoke",
+      "task_text": "切片 3：实现 0.14.2 真实候选 pack/install/0.14.1 rollback 闭环，新增并接入 `scripts/run-smoke.js` 的安装态 preflight/reopen/RunLogos smoke runner 与 `smoke-results.jsonl` reporter，完成 smoke 覆盖预检（覆盖 UT-S19-24、UT-S19-25、ST-S19-16、SMOKE-core-160、SMOKE-core-161、SMOKE-core-162）。",
+      "owned_test_ids": [
+        "ST-S19-16",
+        "UT-S19-24",
+        "UT-S19-25"
+      ],
+      "runner_selectors": [
+        "SMOKE-core-160",
+        "SMOKE-core-161",
+        "SMOKE-core-162",
+        "ST-S19-16",
+        "UT-S19-24",
+        "UT-S19-25"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S19-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}
