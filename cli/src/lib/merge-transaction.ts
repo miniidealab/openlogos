@@ -801,7 +801,7 @@ function receiptFor(
   const targetModes = new Map(tx.targets.map(target => [target.target_path, target.mode]));
   const createdPaths = sortedUnique(closure.filter(item => targetModes.get(item.path) === 'CREATE').map(item => item.path));
   const changedPaths = sortedUnique(closure.filter(item => !createdPaths.includes(item.path)).map(item => item.path));
-  const finalHashes = [...closure].sort((a, b) => a.path.localeCompare(b.path));
+  const finalHashes = [...closure].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const metadataSummaries = finalHashes
     .filter(item => !targetModes.has(item.path))
     .map(item => ({ path: item.path, sha256: item.sha256 }));
@@ -946,20 +946,57 @@ export function recoverMergeTransaction(root: string, proposalDir: string): Merg
   if (existsSync(markerPath) && existsSync(receiptPath)) {
     try {
       const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as Record<string, unknown>;
-      const stored = JSON.parse(readFileSync(receiptPath, 'utf8')) as MergeTransactionReceipt;
+      const envelope = JSON.parse(readFileSync(receiptPath, 'utf8')) as Record<string, unknown>;
+      const { schema, ...receiptPayload } = envelope;
+      if (schema !== MERGE_TRANSACTION_SCHEMA) throw new Error('receipt schema mismatch');
+      const stored = receiptPayload as unknown as MergeTransactionReceipt;
       if (marker.transaction_id !== tx.transaction_id || stored.transaction_id !== tx.transaction_id
         || marker.receipt_sha256 !== stored.receipt_sha256
         || computeMergeReceiptSha256(stored) !== stored.receipt_sha256) throw new Error('identity mismatch');
+
+      const finalPaths = stored.final_hashes.map(item => item.path);
+      const payloadPaths = sortedUnique([...stored.changed_paths, ...stored.created_paths]);
+      if (new Set(finalPaths).size !== finalPaths.length
+        || canonical(sortedUnique(finalPaths)) !== canonical(payloadPaths)) throw new Error('receipt payload mismatch');
+      const normalizedFinalHashes = [...stored.final_hashes]
+        .sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+      const normalizedMetadata = [...stored.metadata_summaries]
+        .sort((a, b) => String(a.path) < String(b.path) ? -1 : String(a.path) > String(b.path) ? 1 : 0);
+      const { receipt_sha256: _oldReceiptSha256, ...storedBase } = stored;
+      const normalizedBase: Omit<MergeTransactionReceipt, 'receipt_sha256'> = {
+        ...storedBase,
+        closure_sha256: digest(canonical(normalizedFinalHashes)),
+        final_hashes: normalizedFinalHashes,
+        metadata_summaries: normalizedMetadata,
+      };
+      const normalizedReceipt: MergeTransactionReceipt = {
+        ...normalizedBase,
+        receipt_sha256: computeMergeReceiptSha256(normalizedBase),
+      };
+      const normalizedMarker = { ...marker, receipt_sha256: normalizedReceipt.receipt_sha256 };
+      const normalizedReceiptBytes = Buffer.from(`${JSON.stringify({ schema: MERGE_TRANSACTION_SCHEMA, ...normalizedReceipt }, null, 2)}\n`);
+      const normalizedMarkerBytes = Buffer.from(`${JSON.stringify(normalizedMarker, null, 2)}\n`);
+      const receiptRelative = relative(root, receiptPath).replace(/\\/g, '/');
+      const markerRelative = relative(root, markerPath).replace(/\\/g, '/');
+      const artifactHashes = [
+        { path: receiptRelative, sha256: digest(normalizedReceiptBytes) },
+        { path: markerRelative, sha256: digest(normalizedMarkerBytes) },
+      ].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
       tx.phase = 'completed';
       tx.classification = null;
-      tx.receipt = stored;
-      tx.artifact_hashes = [
-        relative(root, receiptPath).replace(/\\/g, '/'),
-        relative(root, markerPath).replace(/\\/g, '/'),
-      ].sort().map(path => ({ path, sha256: digest(readFileSync(join(root, ...path.split('/')))) }));
+      tx.receipt = normalizedReceipt;
+      tx.artifact_hashes = artifactHashes;
       tx.aborted_at = null;
-      tx.updated_at = stored.completed_at;
+      tx.updated_at = normalizedReceipt.completed_at;
       const projection = projectMergeTransaction(tx, proposalDir);
+      if (!readFileSync(receiptPath).equals(normalizedReceiptBytes)
+        || !readFileSync(markerPath).equals(normalizedMarkerBytes)) {
+        const repaired = applyBaselineClosureBatch(root, proposalDir, [
+          { kind: 'prepared', targetPath: receiptRelative, mode: 'MODIFY', bytes: normalizedReceiptBytes },
+          { kind: 'prepared', targetPath: markerRelative, mode: 'MODIFY', bytes: normalizedMarkerBytes },
+        ]);
+        if (!repaired.ok) throw new Error(`receipt normalization failed: ${repaired.error}`);
+      }
       writeStored(proposalDir, tx);
       cleanupMergePrivateArtifacts(proposalDir, tx);
       return projection;

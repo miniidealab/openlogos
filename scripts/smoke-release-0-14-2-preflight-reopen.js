@@ -112,6 +112,20 @@ function runlogosCase(entry) {
   const slotId = process.env.OPENLOGOS_RUNLOGOS_S44_SLOT_ID;
   const contentFile = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_S44_CONTENT_FILE || ''));
   if (!slotId || !existsSync(contentFile)) throw new Error('缺少 RunLogos S44 slot/content 输入');
+  const initial = JSON.parse(checked(
+    cliRun(entry, root, ['merge', 'transaction', 'status', '--format', 'json']),
+    'RunLogos initial status',
+  )).data.merge_transaction;
+  if (initial.transaction_id !== EXPECTED_RUNLOGOS_TRANSACTION) throw new Error('RunLogos transaction 不符合冻结事实');
+  if (initial.phase === 'completed') {
+    if (!initial.receipt?.receipt_sha256 || initial.content_slots.missing_slot_ids.length !== 0) {
+      throw new Error('RunLogos completed replay 缺少完整 receipt/slot 证据');
+    }
+    return {
+      root, slot_id: slotId, retryable: true, recovered_replay: true,
+      transaction_id: initial.transaction_id, receipt_sha256: initial.receipt.receipt_sha256,
+    };
+  }
   const apply = cliRun(entry, root, ['merge', 'transaction', 'apply', '--format', 'json']);
   if (apply.status === 0) throw new Error('RunLogos legacy apply 未触发预期 reopen');
   const error = JSON.parse(apply.stderr).error;

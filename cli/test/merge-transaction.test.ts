@@ -157,7 +157,7 @@ function prepare(f = fixture()) {
   return { ...f, tx };
 }
 
-function preflightFixture(afterContents: string[]) {
+function preflightFixture(afterContents: string[], targetNames?: string[]) {
   const root = mkdtempSync(join(tmpdir(), 'openlogos-merge-preflight-'));
   roots.push(root);
   const slug = 'preflight-fixture';
@@ -167,8 +167,9 @@ function preflightFixture(afterContents: string[]) {
   put(root, 'logos/logos-project.yaml', 'project:\n  name: Preflight Fixture\nscenario_counter:\n  next_id: 40\nresource_index: []\n');
   const targets = afterContents.map((content, index) => {
     const suffix = String(index + 1).padStart(2, '0');
-    const targetPath = `logos/resources/test/core-S${suffix}-test-cases.md`;
-    const deltaPath = `deltas/test/core-S${suffix}-test-cases.md`;
+    const targetName = targetNames?.[index] ?? `core-S${suffix}-test-cases.md`;
+    const targetPath = `logos/resources/test/${targetName}`;
+    const deltaPath = `deltas/test/${targetName}`;
     put(root, targetPath, `# 测试 ${suffix}\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S${suffix}-01 | 旧定义 |\n`);
     const body = content.includes('## 测试矩阵') ? content.split('## 测试矩阵')[1].replace(/^\s*/, '') : content;
     put(root, `logos/changes/${slug}/${deltaPath}`, `## MODIFIED — 测试矩阵\n\n${body}`);
@@ -643,6 +644,43 @@ describe('OpenLogos merge transaction', () => {
   });
 
   it('UT-S09-257 UT-S09-258 UT-S09-259 UT-S09-260 ST-S09-101 UT-S11-72 UT-S16-29 UT-S39-51 UT-S39-52 UT-S39-53 UT-S39-54 UT-S39-55 ST-S39-26: completed 无环 receipt、重放与精确 Git 白名单闭环', () => {
+    const validA = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | A |\n';
+    const validB = '# 测试 02\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S02-01 | B |\n';
+    const mixedCase = preflightFixture([validA, validB], ['core-S44-test-cases.md', 'S10-test-cases.md']);
+    sealMergeTransaction(mixedCase.root, mixedCase.proposalDir);
+    const mixedCompleted = applyMergeTransaction(mixedCase.root, mixedCase.proposalDir);
+    expect(mixedCompleted.receipt?.final_hashes.map(item => item.path)).toEqual(
+      mixedCompleted.receipt?.final_hashes.map(item => item.path).sort(),
+    );
+    expect(validateMergeTransactionSemantics(mixedCompleted).ok).toBe(true);
+    const mixedReceiptPath = join(mixedCase.proposalDir, 'MERGE_RECEIPT.json');
+    const mixedMarkerPath = join(mixedCase.proposalDir, 'SPEC_MERGED');
+    const legacyEnvelope = JSON.parse(readFileSync(mixedReceiptPath, 'utf8'));
+    const legacyFinalHashes = [...legacyEnvelope.final_hashes]
+      .sort((a: { path: string }, b: { path: string }) => a.path.localeCompare(b.path));
+    legacyEnvelope.final_hashes = legacyFinalHashes;
+    legacyEnvelope.metadata_summaries = [...legacyEnvelope.metadata_summaries]
+      .sort((a: { path: string }, b: { path: string }) => a.path.localeCompare(b.path));
+    legacyEnvelope.closure_sha256 = sha256(Buffer.from(canonicalForTest(legacyFinalHashes)));
+    const { schema: legacySchema, ...legacyReceiptPayload } = legacyEnvelope;
+    legacyEnvelope.receipt_sha256 = computeMergeReceiptSha256(legacyReceiptPayload);
+    const legacyMarker = JSON.parse(readFileSync(mixedMarkerPath, 'utf8'));
+    legacyMarker.receipt_sha256 = legacyEnvelope.receipt_sha256;
+    writeFileSync(mixedReceiptPath, `${JSON.stringify({ schema: legacySchema, ...legacyEnvelope }, null, 2)}\n`);
+    writeFileSync(mixedMarkerPath, `${JSON.stringify(legacyMarker, null, 2)}\n`);
+    const applyingPath = join(mixedCase.proposalDir, 'MERGE_TRANSACTION.json');
+    const applyingStored = JSON.parse(readFileSync(applyingPath, 'utf8'));
+    applyingStored.phase = 'applying';
+    applyingStored.receipt = null;
+    applyingStored.artifact_hashes = [];
+    writeFileSync(applyingPath, `${JSON.stringify(applyingStored, null, 2)}\n`);
+    const recovered = recoverMergeTransaction(mixedCase.root, mixedCase.proposalDir);
+    expect(recovered.phase).toBe('completed');
+    expect(recovered.receipt?.final_hashes.map(item => item.path)).toEqual(
+      recovered.receipt?.final_hashes.map(item => item.path).sort(),
+    );
+    expect(validateMergeTransactionSemantics(recovered).ok).toBe(true);
+
     const f = prepare();
     sealMergeTransaction(f.root, f.proposalDir);
     const completed = applyMergeTransaction(f.root, f.proposalDir);
