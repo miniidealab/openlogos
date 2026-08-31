@@ -87,6 +87,17 @@ function completeClarificationSection() {
   ];
 }
 
+function authorityNotApplicableSection() {
+  return [
+    '## Authority Impact', '', '```yaml',
+    'authority_impact:',
+    '  schema: openlogos/authority-impact@1',
+    '  applicability: not_applicable',
+    '  evidence: [冒烟夹具不改变事实归属、writer、projection 或恢复来源]',
+    '```', '',
+  ];
+}
+
 function scaffoldLintFixture(root, opts = {}) {
   const slug = opts.slug ?? 'lint-fixture';
   mkdirSync(join(root, 'logos/resources/test'), { recursive: true });
@@ -103,6 +114,7 @@ function scaffoldLintFixture(root, opts = {}) {
     '## 变更范围', '- 影响的功能规格：core-01', '', '## 部署影响',
     '- 是否需要部署：否', '- 部署原因：冒烟夹具', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
+    ...authorityNotApplicableSection(),
     ...completeClarificationSection(),
     '## 变更概述', '纯文档更新，无需代码。',
   ].join('\n'));

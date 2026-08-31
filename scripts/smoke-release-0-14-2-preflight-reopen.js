@@ -9,7 +9,8 @@ import {
   appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, renameSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { importInstalledPackageModule } from './lib/seed-installed-merge-contract.mjs';
 
 export const RELEASE_0_14_2_SMOKE_IDS = ['SMOKE-core-160', 'SMOKE-core-161', 'SMOKE-core-162'];
 const EXPECTED_VERSION = '0.14.2';
@@ -30,6 +31,7 @@ if (process.argv.includes('--self-test')) {
     routed_env: ['OPENLOGOS_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
     required_env: ['OPENLOGOS_CANDIDATE_BIN'],
     runlogos_authorization_env: 'OPENLOGOS_RUNLOGOS_RECOVERY_AUTHORIZED',
+    runlogos_archive_env: 'OPENLOGOS_RUNLOGOS_ARCHIVED_CHANGE_DIR',
     public_release_commands: [],
   }));
   process.exit(0);
@@ -104,12 +106,64 @@ function fixtureCase(id, entry) {
   return evidence;
 }
 
-function runlogosCase(entry) {
+async function completedArchivedRunlogosCase(entry, root, archiveInput, slotId) {
+  const archiveRoot = realpathSync(join(root, 'logos/changes/archive'));
+  const archiveDir = realpathSync(resolve(archiveInput));
+  const archiveRelative = relative(archiveRoot, archiveDir);
+  if (!archiveRelative || archiveRelative.startsWith('..') || isAbsolute(archiveRelative)) {
+    throw new Error('RunLogos completed replay 必须指向项目 logos/changes/archive 下的真实归档目录');
+  }
+  const transactionModule = await importInstalledPackageModule('dist/lib/merge-transaction.js', {
+    candidateBin: entry,
+  });
+  const semanticModule = await importInstalledPackageModule('dist/lib/merge-transaction-semantic.js', {
+    candidateBin: entry,
+  });
+  const transaction = transactionModule.readMergeTransaction(archiveDir);
+  semanticModule.assertMergeTransactionSemantics(transaction);
+  if (transaction.transaction_id !== EXPECTED_RUNLOGOS_TRANSACTION || transaction.phase !== 'completed') {
+    throw new Error('RunLogos 归档 transaction 不符合冻结的 completed 事实');
+  }
+  if (!transaction.receipt || transaction.content_slots.missing_slot_ids.length !== 0
+    || transaction.content_slots.submitted !== transaction.content_slots.required) {
+    throw new Error('RunLogos completed replay 缺少完整 receipt/slot 证据');
+  }
+
+  const receipt = JSON.parse(readFileSync(join(archiveDir, 'MERGE_RECEIPT.json'), 'utf8'));
+  const marker = JSON.parse(readFileSync(join(archiveDir, 'SPEC_MERGED'), 'utf8'));
+  const { schema: receiptSchema, ...canonicalReceipt } = receipt;
+  if (receiptSchema !== transaction.schema) throw new Error('RunLogos 归档 receipt schema 不符合事务契约');
+  const receiptSha256 = semanticModule.computeMergeReceiptSha256(canonicalReceipt);
+  if (receipt.transaction_id !== transaction.transaction_id
+    || receipt.receipt_sha256 !== receiptSha256
+    || transaction.receipt.receipt_sha256 !== receiptSha256
+    || marker.transaction_id !== transaction.transaction_id
+    || marker.receipt_sha256 !== receiptSha256) {
+    throw new Error('RunLogos 归档 receipt/SPEC_MERGED 身份或 hash 不一致');
+  }
+  const artifactHashes = {};
+  for (const name of ['MERGE_RECEIPT.json', 'SPEC_MERGED']) {
+    const expected = transaction.artifact_hashes.find(item => item.path.endsWith(`/${name}`));
+    const actual = sha256(readFileSync(join(archiveDir, name)));
+    if (!expected || expected.sha256 !== actual) throw new Error(`RunLogos 归档 ${name} artifact hash 不一致`);
+    artifactHashes[name] = actual;
+  }
+  return {
+    root, archived_change_dir: archiveDir, slot_id: slotId, retryable: true,
+    recovered_replay: true, archived_replay: true,
+    transaction_id: transaction.transaction_id, receipt_sha256: receiptSha256,
+    artifact_hashes: artifactHashes,
+  };
+}
+
+async function runlogosCase(entry) {
   if (process.env.OPENLOGOS_RUNLOGOS_RECOVERY_AUTHORIZED !== '1') {
     throw new Error('SMOKE-core-162 缺少 RunLogos 恢复/继续 merge 明确授权');
   }
   const root = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_ROOT || ''));
   const slotId = process.env.OPENLOGOS_RUNLOGOS_S44_SLOT_ID;
+  const archivedChangeDir = process.env.OPENLOGOS_RUNLOGOS_ARCHIVED_CHANGE_DIR;
+  if (archivedChangeDir) return completedArchivedRunlogosCase(entry, root, archivedChangeDir, slotId);
   const contentFile = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_S44_CONTENT_FILE || ''));
   if (!slotId || !existsSync(contentFile)) throw new Error('缺少 RunLogos S44 slot/content 输入');
   const initial = JSON.parse(checked(
@@ -158,7 +212,7 @@ try {
   for (const id of RELEASE_0_14_2_SMOKE_IDS) {
     const startedAt = Date.now();
     try {
-      const evidence = id === 'SMOKE-core-162' ? runlogosCase(configuredBin) : fixtureCase(id, transition.entry);
+      const evidence = id === 'SMOKE-core-162' ? await runlogosCase(configuredBin) : fixtureCase(id, transition.entry);
       report(id, 'pass', startedAt, {
         cli_realpath: id === 'SMOKE-core-162' ? configuredBin : transition.entry,
         cli_version: EXPECTED_VERSION,

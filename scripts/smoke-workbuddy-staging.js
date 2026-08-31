@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { WORKBUDDY_HOST_BOUNDARY_PATHS } from './lib/workbuddy-host-boundary.mjs';
 
 const SMOKE_IDS = Array.from({ length: 8 }, (_, index) => `SMOKE-core-${116 + index}`);
 const repoRoot = process.cwd();
@@ -160,17 +161,7 @@ function hashPathState(target) {
 function snapshotHostBoundary() {
   const hostHome = process.env.HOME;
   if (!hostHome) throw new Error('无法确定真实用户 Home，不能证明 staging 隔离');
-  const boundaries = [
-    '.agents/plugins/marketplace.json',
-    '.codex/plugins/cache/personal/openlogos',
-    '.codex/config.toml',
-    '.codebuddy',
-    '.workbuddy/memory',
-    '.workbuddy/settings.json',
-    '.workbuddy/plugins',
-    '.workbuddy/user-state.json',
-  ];
-  return Object.fromEntries(boundaries.map(item => [item, hashPathState(join(hostHome, item))]));
+  return Object.fromEntries(WORKBUDDY_HOST_BOUNDARY_PATHS.map(item => [item, hashPathState(join(hostHome, item))]));
 }
 
 function runDriver(phase, payload) {
@@ -232,6 +223,9 @@ await smoke('SMOKE-core-116', () => {
   const tarball = requireFile('OPENLOGOS_TARBALL');
   const workBuddyApp = requireDirectory('OPENLOGOS_WORKBUDDY_APP');
   const workBuddyAuthHome = requireDirectory('OPENLOGOS_WORKBUDDY_AUTH_HOME');
+  if (!existsSync(join(workBuddyAuthHome, '.codebuddy'))) {
+    throw new Error('OPENLOGOS_WORKBUDDY_AUTH_HOME 缺少隔离 .codebuddy 配置快照');
+  }
   const workBuddyBin = requireFile('OPENLOGOS_WORKBUDDY_BIN');
   requireFile('OPENLOGOS_WORKBUDDY_DRIVER');
   const workBuddyVersion = probeWorkBuddyApplication(workBuddyApp);
@@ -278,6 +272,7 @@ await smoke('SMOKE-core-116', () => {
     workBuddyVersion,
     workBuddyBin,
     workBuddyAuthHome,
+    workBuddyHostHome: realpathSync(process.env.HOME),
     profile,
   };
   return [evidence];

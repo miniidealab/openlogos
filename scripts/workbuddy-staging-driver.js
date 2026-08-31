@@ -9,6 +9,7 @@ import {
 import { createHash } from 'node:crypto';
 import { basename, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { buildWorkBuddyWriteDenySandboxProfile } from './lib/workbuddy-host-boundary.mjs';
 
 const PHASES = ['capability', 'inventory', 'session-start', 'write', 'hard-deny', 'sync-launch', 'rollback'];
 
@@ -18,6 +19,7 @@ if (process.argv.includes('--self-test')) {
     minimum_app_version: '5.3.5',
     phases: PHASES,
     real_cli_commands: ['--version', 'plugin validate', '--plugin-dir', '--print', '--tools Read,Glob', '--agent'],
+    host_write_boundary: 'darwin-sandbox-exec',
     public_release_commands: [],
   }) + '\n');
   process.exit(0);
@@ -70,9 +72,9 @@ function openLogosEnv(payload) {
 function workBuddyEnv(payload) {
   return {
     ...openLogosEnv(payload),
-    HOME: payload.workBuddyAuthHome,
-    USERPROFILE: payload.workBuddyAuthHome,
-    CODEBUDDY_CONFIG_DIR: join(payload.profile, '.codebuddy'),
+    HOME: payload.workBuddyHostHome,
+    USERPROFILE: payload.workBuddyHostHome,
+    CODEBUDDY_CONFIG_DIR: join(payload.workBuddyAuthHome, '.codebuddy'),
     CODEBUDDY_DISABLE_AUTO_MEMORY: '1',
     CODEBUDDY_MEMORY_ENABLED: '0',
     CODEBUDDY_MEMORY_EXTRACTION_DISABLED: '1',
@@ -86,7 +88,12 @@ function workBuddyEnv(payload) {
 }
 
 function runWorkBuddy(payload, args, options = {}) {
-  return checked(payload.workBuddyBin, args, {
+  const sandboxed = process.platform === 'darwin';
+  const command = sandboxed ? '/usr/bin/sandbox-exec' : payload.workBuddyBin;
+  const commandArgs = sandboxed
+    ? ['-p', buildWorkBuddyWriteDenySandboxProfile(payload.workBuddyHostHome), payload.workBuddyBin, ...args]
+    : args;
+  return checked(command, commandArgs, {
     cwd: options.cwd || payload.workspace,
     env: workBuddyEnv(payload),
     timeout: options.timeout || 600000,
@@ -209,7 +216,7 @@ async function readPayload() {
     if (raw.length > 2 * 1024 * 1024) throw new Error('driver 输入超过 2 MiB');
   }
   const payload = JSON.parse(raw);
-  for (const key of ['workspace', 'pluginPath', 'workBuddyBin', 'workBuddyVersion', 'workBuddyAuthHome', 'profile']) {
+  for (const key of ['workspace', 'pluginPath', 'workBuddyBin', 'workBuddyVersion', 'workBuddyAuthHome', 'workBuddyHostHome', 'profile']) {
     if (typeof payload[key] !== 'string' || payload[key].length === 0) throw new Error(`driver 缺少 ${key}`);
   }
   mkdirSync(payload.profile, { recursive: true });

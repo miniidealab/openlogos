@@ -185,6 +185,17 @@ function completeClarificationSection() {
   ];
 }
 
+function authorityNotApplicableSection() {
+  return [
+    '## Authority Impact', '', '```yaml',
+    'authority_impact:',
+    '  schema: openlogos/authority-impact@1',
+    '  applicability: not_applicable',
+    '  evidence: [冒烟夹具不改变事实归属、writer、projection 或恢复来源]',
+    '```', '',
+  ];
+}
+
 const scenarioDelta = [
   '## ADDED — S39 完整场景', '', '# S39 目标', '## 场景目标', '验证完整场景。',
   '## 参与者', '- User', '- CLI', '## 前置条件', '前置成立。', '## 成功后置条件', '后置一致。',
@@ -238,6 +249,7 @@ function writeProposal(root, slug, targets, opts = {}) {
     '- 是否涉及数据迁移：否',
     '- 是否需要回滚预案：否',
     '- 是否需要 smoke：否', '',
+    ...authorityNotApplicableSection(),
     '## 变更概述', '验证基线闭包计划、受控合并与失败回滚。', '',
     ...completeClarificationSection(),
     '## 基线闭包计划', '', '```yaml',

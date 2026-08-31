@@ -287,6 +287,14 @@ baseline_closure:
     expect(evalOf(setup(impactNotApplicable())).pass).toBe(true);
     expect(evalOf(setup(impactNotApplicable('[]'))).pass).toBe(false);
     expect(evalOf(setup(impactNotApplicable() .replace('  evidence:', '  facts: []\n  evidence:'))).pass).toBe(false);
+    const repoRoot = join(import.meta.dirname, '../..');
+    for (const script of ['scripts/smoke-change-lint.js', 'scripts/smoke-baseline-on-touch.js']) {
+      const source = readFileSync(join(repoRoot, script), 'utf8');
+      expect(source).toContain('function authorityNotApplicableSection()');
+      expect(source).toContain('schema: openlogos/authority-impact@1');
+      expect(source).toContain('applicability: not_applicable');
+      expect(source).toContain('...authorityNotApplicableSection()');
+    }
   });
 
   it('UT-S35-119: 只采信 effective test view 结构化 ID', () => {

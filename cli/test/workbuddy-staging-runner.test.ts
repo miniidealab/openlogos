@@ -53,6 +53,7 @@ describe('WorkBuddy staging smoke runner 合同', () => {
     expect(contract.real_cli_commands).toContain('--print');
     expect(contract.real_cli_commands).toContain('--tools Read,Glob');
     expect(contract.real_cli_commands).toContain('--agent');
+    expect(contract.host_write_boundary).toBe('darwin-sandbox-exec');
     expect(contract.public_release_commands).toEqual([]);
     const source = readFileSync(driver, 'utf8');
     expect(source).toContain("['plugin', 'validate'");
@@ -63,7 +64,14 @@ describe('WorkBuddy staging smoke runner 合同', () => {
     expect(source).toContain("HOME: payload.profile");
     expect(source).toContain('const appVersion = versionTuple(payload.workBuddyVersion)');
     expect(source).toContain('engineVersion: engineVersion.text');
-    expect(source).toContain('HOME: payload.workBuddyAuthHome');
+    expect(source).toContain("CODEBUDDY_CONFIG_DIR: join(payload.workBuddyAuthHome, '.codebuddy')");
+    expect(source).toContain('HOME: payload.workBuddyHostHome');
+    expect(source).toContain("'/usr/bin/sandbox-exec'");
+    expect(source).toContain('buildWorkBuddyWriteDenySandboxProfile(payload.workBuddyHostHome)');
+    const boundarySource = readFileSync(join(repoRoot, 'scripts/lib/workbuddy-host-boundary.mjs'), 'utf8');
+    expect(boundarySource).toContain("{ path: '.codebuddy', kind: 'tree' }");
+    expect(boundarySource).toContain("{ path: '.workbuddy-key-fallback', kind: 'tree' }");
+    expect(readFileSync(runner, 'utf8')).toContain('WORKBUDDY_HOST_BOUNDARY_PATHS');
     expect(source).toContain("CODEBUDDY_DISABLE_AUTO_MEMORY: '1'");
     expect(source).toContain("item.type === 'result'");
     expect(source).toContain("agent: 'change-reviewer'");

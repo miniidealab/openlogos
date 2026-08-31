@@ -1027,7 +1027,12 @@ describe('OpenLogos merge transaction', () => {
     expect(selfTest).toMatchObject({
       ids: ['SMOKE-core-160', 'SMOKE-core-161', 'SMOKE-core-162'],
       candidate_version: '0.14.2', rollback_version: '0.14.1', public_release_commands: [],
+      runlogos_archive_env: 'OPENLOGOS_RUNLOGOS_ARCHIVED_CHANGE_DIR',
     });
+    const releaseSmokeSource = readFileSync(join(repoRoot, 'scripts/smoke-release-0-14-2-preflight-reopen.js'), 'utf8');
+    expect(releaseSmokeSource).toContain("realpathSync(join(root, 'logos/changes/archive'))");
+    expect(releaseSmokeSource).toContain("semanticModule.assertMergeTransactionSemantics(transaction)");
+    expect(releaseSmokeSource).toContain('semanticModule.computeMergeReceiptSha256(canonicalReceipt)');
     expect(readFileSync(join(repoRoot, 'scripts/run-smoke.js'), 'utf8')).toContain('smoke-release-0-14-2-preflight-reopen.js');
   }, 120_000);
 
