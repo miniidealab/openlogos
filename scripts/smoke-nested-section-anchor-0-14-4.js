@@ -6,7 +6,8 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
-  appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync,
+  appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync,
+  realpathSync, renameSync, writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
@@ -108,6 +109,18 @@ function recoverRunLogos(entry) {
   const runlogosRoot = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_ROOT || ''));
   const contentFile = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_FINAL_CONTENT || ''));
   const status = cliJson(entry, runlogosRoot, ['merge', 'transaction', 'status']);
+  if (status.transaction_id === RUNLOGOS_TRANSACTION_ID && status.phase === 'completed') {
+    if (status.content_slots.required !== 7 || status.content_slots.submitted !== 7
+      || status.content_slots.missing_slot_ids.length !== 0 || !status.receipt?.receipt_sha256) {
+      throw new Error('RunLogos 原 transaction completed 投影不完整');
+    }
+    return {
+      transaction_id: status.transaction_id,
+      receipt_sha256: status.receipt.receipt_sha256,
+      content_slots: status.content_slots,
+      replayed_completed: true,
+    };
+  }
   if (status.transaction_id !== RUNLOGOS_TRANSACTION_ID || status.phase !== 'collecting'
     || status.content_slots.required !== 7 || status.content_slots.submitted !== 6
     || status.content_slots.missing_slot_ids.length !== 1) throw new Error('RunLogos 原 transaction 冻结事实漂移');
@@ -117,6 +130,8 @@ function recoverRunLogos(entry) {
   mkdirSync(dirname(staging), { recursive: true });
   const temporary = join(dirname(staging), `.content.${process.pid}.tmp`);
   writeFileSync(temporary, readFileSync(contentFile));
+  const handle = openSync(temporary, 'r');
+  try { fsyncSync(handle); } finally { closeSync(handle); }
   renameSync(temporary, staging);
   const ready = cliJson(entry, runlogosRoot, ['merge', 'transaction', 'submit-content', '--slot', slotId, '--file', descriptor.staging_path]);
   const sealed = cliJson(entry, runlogosRoot, ['merge', 'transaction', 'seal']);

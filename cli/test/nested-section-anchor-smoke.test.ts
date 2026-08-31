@@ -27,6 +27,9 @@ describe('0.14.4 嵌套章节锚 smoke 合同', () => {
     expect(source.match(/await smoke\('SMOKE-core-168'/g)).toHaveLength(1);
     expect(source).toContain('appendFileSync(resultPath');
     expect(source).toContain('OPENLOGOS_RUNLOGOS_MERGE_AUTHORIZED');
+    expect(source).toContain("status.phase === 'completed'");
+    expect(source).toContain('replayed_completed: true');
+    expect(source).toContain('fsyncSync(handle)');
     expect(source).not.toMatch(/npm\s+publish|git\s+push|git\s+tag|gh\s+release/);
     const dispatcher = readFileSync(join(repoRoot, 'scripts/run-smoke.js'), 'utf8');
     expect(dispatcher).toContain("'scripts/smoke-nested-section-anchor-0-14-4.js'");
