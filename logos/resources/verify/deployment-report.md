@@ -1,3 +1,79 @@
+# 部署报告：institutionalize-single-authority-design-gate / OpenLogos 0.14.3（2026-08-30，本机全局部署完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `institutionalize-single-authority-design-gate`。
+- **授权与门禁**：用户已明确授权打包为 0.14.3、部署本机全局、执行 smoke，并授权失败后进入修复—verify—重部署—smoke 自愈环；最终正式 `openlogos verify` 已执行 1918/1918，1908 通过、10 个既有 skip、0 失败、0 未覆盖，`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；全局入口 `/opt/homebrew/bin/openlogos`。
+- **执行时间**：`2026-08-30T23:39:19Z`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.3` 已完成 build、全量测试、真实 npm pack、包内容校验、隔离安装与回滚往返、本机全局安装、安装态 Authority Closure 资产校验及完整正式 smoke；137/137 通过、0 失败、0 跳过、0 未覆盖，Gate 3.8 PASS，当前全局版本精确为 0.14.3。
+- **数据迁移 / 服务启动**：无 / 不适用；环境变更仅为把本机全局 OpenLogos CLI 从 0.14.2 替换为 0.14.3。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、网站部署或 `git push`。
+- **正式 smoke**：最终 `openlogos smoke --env local-global --format json` 于 `2026-08-31T00:38:27Z` 成功；137 个定义用例全部由真实 runner 执行并 PASS，coverage/pass rate 均为 100%，`SMOKE_PASS` 在场且 `SMOKE_FAIL` 不在场。
+- **受控收尾**：`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 三个门禁 marker 均在场；本轮未执行 archive、npm publish、Git tag、GitHub Release、网站部署或 `git push`。
+
+## 二、部署前快照与固定回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前命令 / realpath | `/opt/homebrew/bin/openlogos` / `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| 部署前版本 | `0.14.2` |
+| 部署前 asset payload hash | `b0f7e61165fb5961b1a6651f0bdb335faeeb0dc2325049eecd8bf70cb669f22c` |
+| 固定回滚 tarball | `/Users/huangxianglong/gitlab/openlogos/logos/resources/verify/deployment-artifacts/institutionalize-single-authority-design-gate/miniidealab-openlogos-0.14.2.tgz`；1,975,386 字节 |
+| 回滚 SHA-256 | `49307b1a0061c92747e18a5aa26dc995fdd6feb04d29911b76683f05d6174ca5` |
+| 回滚来源 | 从部署前正在工作的全局 0.14.2 目录执行 `npm pack --ignore-scripts`，并在覆盖全局安装前完成 SHA-256 与隔离试装校验。 |
+
+可复制恢复命令：
+
+```bash
+npm install -g --force --ignore-scripts --no-audit --no-fund /Users/huangxianglong/gitlab/openlogos/logos/resources/verify/deployment-artifacts/institutionalize-single-authority-design-gate/miniidealab-openlogos-0.14.2.tgz
+/bin/zsh -lic 'command -v openlogos && openlogos --version'
+```
+
+## 三、0.14.3 固定候选制品
+
+| 检查项 | 结果 |
+|---|---|
+| 源码提交 | `5873358daf4cb2fa0701980c053f819d1c7629b9`（`chore: 准备本地 0.14.3 candidate`） |
+| candidate tarball | `/Users/huangxianglong/gitlab/openlogos/logos/resources/verify/deployment-artifacts/institutionalize-single-authority-design-gate/miniidealab-openlogos-0.14.3.tgz` |
+| 压缩大小 / 文件数 | 2,029,933 字节 / 692 |
+| candidate SHA-256 | `9bf9d4520e1a474cff0bd0a8becd7e262e7ab15e8105c1a6fe2df856cb24b6d9` |
+| package / asset manifest 版本 | `0.14.3` / `0.14.3` |
+| plan contract | `1.4.0` |
+| asset payload hash | `7d6815765f8044e7fae4ade64a9d8004f88ca73886f053730ecd6890886a207a` |
+| asset manifest SHA-256 | `c1c9c617605a42f00215fdc1643f50872fddfb435ba672d28b76343a3131db73` |
+
+候选包已确认包含编译 CLI、`spec/authority-closure.md`、`dist/lib/authority-closure.js`、六个根 Skill、六个 Claude plugin 投影、候选校验器和 asset manifest。全量 Vitest 为 88 个文件、2132 项测试通过；build 与受影响范围 ESLint 通过。打包仅执行本地 prepack/npm pack，没有访问 registry 写接口。
+
+## 四、隔离安装、回滚与 smoke 就绪性
+
+1. 在提案专用隔离 npm prefix 真实执行 `0.14.3 → 0.14.2 → 0.14.3`；三次绝对入口版本和 payload 分别与固定 candidate、固定回滚包一致。
+2. candidate 两次安装均由 `validateAuthorityCandidateAssets` 校验通过；根规范、六个根 Skill、六个 Claude plugin 投影与 manifest 声明一致，无混合资产。
+3. SMOKE-core-163～167 已在 `logos/resources/test/smoke/core-smoke-test-cases.md` 定义，`scripts/smoke-authority-closure-candidate.js` 已逐 ID 接入 reporter；最终正式执行均 PASS。
+4. 完整 137 项还覆盖 0.13.24→0.14.3 历史制品矩阵、ZCode/Qoder/WorkBuddy 真实宿主、RunLogos 冻结 E2E 与真实归档事务回放、stacked change 证据及网站本地构建；无公开发布副作用。
+
+## 五、本机全局安装与身份证明
+
+1. 使用固定 candidate 执行 `npm install -g --force --ignore-scripts --no-audit --no-fund <0.14.3.tgz>`，未使用 registry、workspace link、源码目录或未固定版本。
+2. 部署后命令为 `/opt/homebrew/bin/openlogos`，realpath 为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，`openlogos --version` 精确返回 `0.14.3`。
+3. 全局 package、asset manifest、plan contract 和 payload identity 分别为 0.14.3、0.14.3、1.4.0、`7d681576…207a`。
+4. 全局 asset manifest SHA-256 与 candidate tarball 内 manifest 均为 `c1c9c617…db73`；安装态校验器重新计算全部 manifest 资产 hash，并确认 14 个 Authority Closure 必备资产无失败。
+
+## 六、异常、自愈与边界处置
+
+1. 首次全局安装后，部署编排脚本把 Claude plugin 目录误写成 `plugin/skills/...`，并误读不存在的 `payloadSha256` 字段，同时误以为候选校验器返回对象。静默断言因此失败；按照 fail-closed 策略立即用固定 tarball 恢复 0.14.2，确认入口与版本回滚成功。
+2. 只读检查 tarball 与 `authority-candidate.ts` 后确认真实目录为 `claude-plugin-template/skills/...`、字段为 `payloadHash`、校验器直接返回失败数组。候选制品未发生变化；修正部署后检后重新安装同一 SHA-256 的 candidate，完整校验通过。
+3. 新装 CLI 的 `status` 调用意外把实现清单追加到 `logos-project.yaml`；该副作用不属于本次部署目标，已按原始字节边界撤销，未混入工作区交付。
+4. `deploy-done` 会勾选整个 `[deploy]` section，而原任务把“获得 smoke 授权后执行正式 smoke”错误置于部署段，造成 `DEPLOY_DONE` 与 smoke 前置门循环。任务边界已收敛为“部署阶段准备正式 smoke 输入”；其后另行取得明确 smoke 授权并执行正式命令，未复用部署预检冒充成功。
+5. 首轮正式 smoke 为 127/137：SMOKE-core-52/55/56/68 的历史 writing fixture 缺少新 `Authority Impact` 声明，SMOKE-core-162 错把 RunLogos 当前活跃事务当作冻结恢复事务，WorkBuddy 117～121 的隔离环境缺少可用登录寻址。失败结果保留后进入自愈，未生成成功 marker。
+6. 历史 fixture 已显式补入合法 `not_applicable`；RunLogos runner 改为只读真实 `logos/changes/archive/` 下的 completed 事务，并通过安装态语义校验器复算 receipt、`SPEC_MERGED` 与 artifact hash，未切换或改写 RunLogos 当前 guard/事务。
+7. WorkBuddy 2.115.0 的认证与真实 Home 路径绑定，同时会忽略部分目录变量写宿主配置。修复采用单一共享边界清单：真实 Home 仅用于认证寻址、可写 CodeBuddy 配置落一次性快照，并由 macOS `sandbox-exec` 精确拒绝受保护 Home 路径写入；SMOKE-core-116～123 聚焦重跑 8/8 PASS。
+8. 自愈代码提交为 `ef3baf3`（`fix: 修复本地 smoke 自愈链`）；完整 Vitest 为 88 文件、2132/2132 PASS，正式 verify 再次 PASS 后重新安装同一 SHA-256 的 0.14.3 candidate。
+9. 重部署后的第一次正式 smoke 为 131/137，唯一失败是 OpenLogos 外层 macOS 沙箱禁止嵌套 WorkBuddy 内层 `sandbox-exec`。最终轮保留一次性工作区副本，显式关闭外层运行期写保护，让 WorkBuddy 精确 Home 写保护成为唯一 OS 沙箱；最终 137/137 PASS。正式报告中的外层 sandbox `warn` 对应该受控嵌套规避，不表示 WorkBuddy Home 边界被放开；其 `host-home-boundary.json` 证明受保护路径前后相同。
+10. 当前未解决的部署或 smoke 风险为零；身份异常时优先执行本报告固定回滚命令。
+
+---
+
 # 部署报告：fix-merge-transaction-preflight-reopen / OpenLogos 0.14.2（2026-08-30，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论

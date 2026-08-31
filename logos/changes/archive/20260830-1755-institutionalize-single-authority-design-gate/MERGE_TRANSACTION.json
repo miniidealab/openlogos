@@ -1,0 +1,1164 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_74d927ac89c0a538fbc2b150",
+  "slug": "institutionalize-single-authority-design-gate",
+  "module": "core",
+  "phase": "completed",
+  "classification": null,
+  "plan_sha256": "sha256:9c771dce9389a41a96b513d0519929ae8e7bbbeb42327199179bb87e0c9a60f7",
+  "target_set_sha256": "sha256:b07dcd389417a1c271c1152d70fef502e6d1df0535dee350ae06a9db33d71573",
+  "schema_sha256": "sha256:bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421",
+  "contract_sha256": "sha256:28e0b774f58e61f93ebf7064f96e3999209211139b416f692ca45e3ee3d472a7",
+  "seal_sha256": "sha256:fd21306a0ce0a3c2395f323dea5a5a73d03bbaa6bc1b734232fb0f2ea9f63815",
+  "preflight": {
+    "schema": "openlogos/merge-preflight@1",
+    "transaction_id": "mtx_74d927ac89c0a538fbc2b150",
+    "plan_sha256": "sha256:9c771dce9389a41a96b513d0519929ae8e7bbbeb42327199179bb87e0c9a60f7",
+    "target_set_sha256": "sha256:b07dcd389417a1c271c1152d70fef502e6d1df0535dee350ae06a9db33d71573",
+    "targets": [
+      {
+        "path": "logos/logos-project.yaml",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:9ea664e61662b69ad700fa34edb9930f45648790ad55ac897296c52e1eeb9259",
+        "final_sha256": "sha256:cbeac9734d559c75174ea86f05146271b8446fe2a1f5f804f887e6fe9258a3bf"
+      },
+      {
+        "path": "logos/resources/decisions/core-D08-authority-closure.md",
+        "mode": "CREATE",
+        "producer": "agent",
+        "before_sha256": null,
+        "final_sha256": "sha256:980ad63c862cd64c4218d3bf7d7d40b441953764c3890141f9c4388f0fc0efcf"
+      },
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:1c189d1a8f590874d0cdb1dae26a596e651dae415df79195fe067d4cd59cfdae",
+        "final_sha256": "sha256:628774e5692c35a376036d7603836dd11a77edce29586a4a5c7373977221ecc5"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:d4fff1edc3c57e4a64f9a91cdd12207ab3b099ef6b2639d4c881a5824fc42280",
+        "final_sha256": "sha256:fe0e5d5f00e00d9c7b6d7911d504b0e8f60888cd8bffd162aec34d01fd86d746"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:1f5b5e0f71276616bd80759e2a03077e558fd59c27002aff65f03428ef7c43ab",
+        "final_sha256": "sha256:64ea079da1daed87da09a7bb499c64573b93fda16f44cefb02e8caf8fd314b51"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:89ae84b85d8c20b5b2856a2e3f21f5a6d4fc0738959d4d2461c7baa6725798ee",
+        "final_sha256": "sha256:6e90552c304b19297b99324a68130c4a7baa0ca98f638282d7dda8d5b6a38424"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:b376831f429a1b63663dc7057cc0239d86f08d7cdef7024c6565134442dd5cae",
+        "final_sha256": "sha256:eeeae02db9d7e68109cb89a1da79894652dec3f05b69d24e3a5a17e8dfec8c5f"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:dd60fcf5e51d068041c3cd3dfd8785d1e09812ea2bfad0e861ea997ef3f7539e",
+        "final_sha256": "sha256:9c7f958331be090134f1f5666af223a124041ed00193a6c99df40734bf7f39e3"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:f233d995ffd3781f5862c17a70bd9a885cb52b2b24f5319ace7ac2a806fb2bde",
+        "final_sha256": "sha256:c211739fc610bc22aff1f106dd2b90b21ea58e7999d638d0887d5185ef26cff7"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:dc1142cf65c82f7ae7763b9fb8ecdd5e0f25f09c47d2cc0ec8896258a15e5b75",
+        "final_sha256": "sha256:9ede6c301e7687328e62b0b1db8a295dab39f219e7da0cfebfacc3ace18744fb"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:b3eae24175dde0cc52bf8e34421d265e3e093159531b0ebc01e734a3956e0aa9",
+        "final_sha256": "sha256:57914a12fb51f90dc9fb78041a9f96f2c5a69ecdb0c852caa1fdae7587223956"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:e0aa1f7f1de74dacc4e3c2ade005994aca624407bb68dc978dfab1d2f4aa7b65",
+        "final_sha256": "sha256:c1cad1beb183a6fbcd2c6b63edc94b9d8b6cdfd13f3b250e4b86809c42e4a558"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:74639b2eaab6440175a8900fdc95a72fba7c709c0e1a98b3e8248344ead7dc62",
+        "final_sha256": "sha256:04331f07363e37dde2811a7377290b76b63023e340347c5d7d59cd5b74d31ad8"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:53b92c621358cbd2fec613cadd22152d7d6afcec1740c86dc2e4dc3c7073060a",
+        "final_sha256": "sha256:fa9588b9124cd7c9c8b2c8bdb0c557fc431b8d41ee04a15383db85b3266dae83"
+      },
+      {
+        "path": "logos/resources/test/core-S04-test-cases.md",
+        "mode": "CREATE",
+        "producer": "agent",
+        "before_sha256": null,
+        "final_sha256": "sha256:fe2e7f3eea538fe467d7cf05264bdbcb2907563bce380f4e90addd370f810d7e"
+      },
+      {
+        "path": "logos/resources/test/core-S06-test-cases.md",
+        "mode": "CREATE",
+        "producer": "agent",
+        "before_sha256": null,
+        "final_sha256": "sha256:70aa40fee30e00f77f1b8db497e11ae425170207f3bb2122a83410a8045f2c5e"
+      },
+      {
+        "path": "logos/resources/test/core-S07-test-cases.md",
+        "mode": "CREATE",
+        "producer": "agent",
+        "before_sha256": null,
+        "final_sha256": "sha256:f2c0d5c8068f90d14bd8707aa8b2b0e378f3df65102dea7c8aeeef9f75b00bf1"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:d085ef5632ab984f635c47427eeb41aad21846eb1d0a8496ccfecae172652dad",
+        "final_sha256": "sha256:44914b41afc98aad5121c3382e5899d6c8ebb6c6c02f21cf941cc78daa73b87e"
+      },
+      {
+        "path": "logos/resources/test/core-S12-test-cases.md",
+        "mode": "CREATE",
+        "producer": "agent",
+        "before_sha256": null,
+        "final_sha256": "sha256:ebbda109ce290b2f4162c8cbd2ec5d92c9a6a64eaf2829c88c3efb1bd9246dda"
+      },
+      {
+        "path": "logos/resources/test/core-S16-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:89d13171521f3c682dd8bbf904c79a0934be0732aafce93897aed15980972a15",
+        "final_sha256": "sha256:9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58"
+      },
+      {
+        "path": "logos/resources/test/core-S19-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:f8738714227a21b3bf7b198144dc1bd4cab1fb568efec542b64c6b1b7dfedff1",
+        "final_sha256": "sha256:8729f4cb3c4b5f0261c3ebfd9ffb405d8b5b223dbebe57978ac865467cfd6421"
+      },
+      {
+        "path": "logos/resources/test/core-S35-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:96c06a8512593fa333a772b23e875bab1422ef70caa085c484793f6c29bcc0ad",
+        "final_sha256": "sha256:a8f25f895aef62c0e94b690019da727c1df3b7b0d27643defc54099621c3c1de"
+      },
+      {
+        "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:a7d1166e9e426314fdea1e69466e84d00fac84fdde6d0466c1d540356ac5f470",
+        "final_sha256": "sha256:ecb7cc471a6d09aac83b6176fc2c8203993384c1ceb49c3388915aee9a2a6f69"
+      },
+      {
+        "path": "skills/architecture-designer/SKILL.en.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:99d96dfb1f56a13fc94186705711bccc12ed79021682e1997b49456f6efac4e8",
+        "final_sha256": "sha256:419513d5797ffae8d2766fe17261670f7520d8b424aeaf0bde18a99fb82db5d2"
+      },
+      {
+        "path": "skills/architecture-designer/SKILL.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:e37948499806c2fa79dc8c5a1207af13cb6a2176142e180c66f1ca80ee43fd41",
+        "final_sha256": "sha256:6056344746d542d14b87586880fee0a70ba66b556f738f9c84a63fa1f30e60ac"
+      },
+      {
+        "path": "skills/change-writer/SKILL.en.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:18ddb7ecf8695cb5d8a93f20317c03d48a890547aa966bbde3e0deede2c05de6",
+        "final_sha256": "sha256:cc515b35b702b6a29a6996295d1ceb5a5108973173677491e03fd4132e1a6900"
+      },
+      {
+        "path": "skills/change-writer/SKILL.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:cc46919dccf7f0a9fe2c504d8383af27e2265375f876aa4cd5ee55721586ae3d",
+        "final_sha256": "sha256:152c460117ece9248b0528a2151215303a1325f01686b6aba57a958043bab562"
+      },
+      {
+        "path": "skills/code-reviewer/SKILL.en.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:57c28d13b6bae0a266a29ed7c12f53290afd278862bb184715fd1b122f40559c",
+        "final_sha256": "sha256:92945bad8a4e6054e0bf133b544a217c69346324b7897a04f257bb11aecbc30c"
+      },
+      {
+        "path": "skills/code-reviewer/SKILL.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:8890a5938ddf7aa09492d768f803b60fb200b1d4314b6c56631a06222f3cae45",
+        "final_sha256": "sha256:94dcf9e59a1e279e4ad71ea0b4a15b73d9624c12b05024fdbbe68f704d1f5009"
+      },
+      {
+        "path": "skills/deployment-designer/SKILL.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:b7995ed3189ff8cb0a4d879d7e86ad3598eeab54ba683e71356dd5940a5d7488",
+        "final_sha256": "sha256:99ca5aadc4669cea1aeba6e6b13a58057955c2488ad775110df931b655c60573"
+      },
+      {
+        "path": "skills/scenario-architect/SKILL.en.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:09418daaed453cb2f48019aeec45fc186a6448ea0e5edbaa5b316984b0e92b27",
+        "final_sha256": "sha256:bf5465df5c1b9ad58cfaf06f794d728faeb0a593aad42a6d761ede744856ab7f"
+      },
+      {
+        "path": "skills/scenario-architect/SKILL.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:21c63a861f08e2fcae902aef80ea2d8351456876cf2f41106caab3b6c0899af3",
+        "final_sha256": "sha256:992ff544333b446a19860e2d9c1cc15788434dffd19b841ff088c1a9784e9318"
+      },
+      {
+        "path": "skills/test-writer/SKILL.en.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:f4424e59b3d8fa94121561e30aaf1b5f582805d92bf5a1e9d7d0cb99122c43ff",
+        "final_sha256": "sha256:e745a00244d57a24968978018fc717ea467f7e347c366b0f336f6066d92dfcaa"
+      },
+      {
+        "path": "skills/test-writer/SKILL.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:dec73558c9ac2f843b267ba2dfcbba4acb817ba70d26d6a41248fb765f2b9f74",
+        "final_sha256": "sha256:bc337b887829bd7b0d24b12b5d0a6a10fbdaa8f4aa2aff99c3ee206f78af2005"
+      },
+      {
+        "path": "spec/authority-closure.md",
+        "mode": "CREATE",
+        "producer": "openlogos",
+        "before_sha256": null,
+        "final_sha256": "sha256:4a2d4d60cec77e2e4965e686fe1fb0bcf50876f34c56de8cf75540ce3c506c39"
+      },
+      {
+        "path": "spec/change-management.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:d91f3b93282e05facf805bfb972171e71b6998ceee8d3f96987c1f0f5b14b4e5",
+        "final_sha256": "sha256:4d6811181c0fc006ea1015d60c78490f5cc3268ef2017f30d7b1fcb096e03687"
+      },
+      {
+        "path": "spec/cli-json-output.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:28e0b774f58e61f93ebf7064f96e3999209211139b416f692ca45e3ee3d472a7",
+        "final_sha256": "sha256:4e26d6576f90e4b5f9feaa68a7d9facc25841383496ec8314decae28863b95e0"
+      },
+      {
+        "path": "spec/flow-spec.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:a9e88357237791942b1ddcd76973665475fbe6a520d72f9284925965f9902e94",
+        "final_sha256": "sha256:2bcfac880542eda67b7ab67881ef38274c4de7ccb8f6e7ca51551d313249dc26"
+      }
+    ],
+    "test_change_set_sha256": "sha256:5a6dc93546a7fda125ba6d86d5eaa6be468f1c3b2d5ad604ee2f868e2395fefc",
+    "final_target_paths": [
+      "logos/logos-project.yaml",
+      "logos/resources/decisions/core-D08-authority-closure.md",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S04-test-cases.md",
+      "logos/resources/test/core-S06-test-cases.md",
+      "logos/resources/test/core-S07-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S12-test-cases.md",
+      "logos/resources/test/core-S16-test-cases.md",
+      "logos/resources/test/core-S19-test-cases.md",
+      "logos/resources/test/core-S35-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "skills/architecture-designer/SKILL.en.md",
+      "skills/architecture-designer/SKILL.md",
+      "skills/change-writer/SKILL.en.md",
+      "skills/change-writer/SKILL.md",
+      "skills/code-reviewer/SKILL.en.md",
+      "skills/code-reviewer/SKILL.md",
+      "skills/deployment-designer/SKILL.md",
+      "skills/scenario-architect/SKILL.en.md",
+      "skills/scenario-architect/SKILL.md",
+      "skills/test-writer/SKILL.en.md",
+      "skills/test-writer/SKILL.md",
+      "spec/authority-closure.md",
+      "spec/change-management.md",
+      "spec/cli-json-output.md",
+      "spec/flow-spec.md"
+    ],
+    "sha256": "sha256:372acab2415956b22e0f732222112cf374dceff3b23030e168f8b8b16011b55e"
+  },
+  "targets": [
+    {
+      "slot_id": "slot_aff20a3abe9b6c0446b4",
+      "delta_path": "deltas/decisions/core-D08-authority-closure.md",
+      "target_path": "logos/resources/decisions/core-D08-authority-closure.md",
+      "mode": "CREATE",
+      "category": "decision",
+      "producer": "agent",
+      "source_sha256": "sha256:d6bf5e34a88d275017d3f557540f93ccd161d8ac0b9b366c147504500691b007",
+      "before_sha256": null,
+      "content_sha256": "sha256:980ad63c862cd64c4218d3bf7d7d40b441953764c3890141f9c4388f0fc0efcf",
+      "sealed_sha256": "sha256:980ad63c862cd64c4218d3bf7d7d40b441953764c3890141f9c4388f0fc0efcf"
+    },
+    {
+      "slot_id": "slot_c091440df7f4f8c23078",
+      "delta_path": "deltas/prd/1-product-requirements/core-01-requirements.md",
+      "target_path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "mode": "MODIFY",
+      "category": "requirement",
+      "producer": "agent",
+      "source_sha256": "sha256:4524f09bf8193a2ec07024e5ecdecf8eb57673993412bb4227fc9c34b1e1890a",
+      "before_sha256": "sha256:1c189d1a8f590874d0cdb1dae26a596e651dae415df79195fe067d4cd59cfdae",
+      "content_sha256": "sha256:628774e5692c35a376036d7603836dd11a77edce29586a4a5c7373977221ecc5",
+      "sealed_sha256": "sha256:628774e5692c35a376036d7603836dd11a77edce29586a4a5c7373977221ecc5"
+    },
+    {
+      "slot_id": "slot_adbb1b3efd8bbc479c36",
+      "delta_path": "deltas/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "target_path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "mode": "MODIFY",
+      "category": "feature",
+      "producer": "agent",
+      "source_sha256": "sha256:bfc3023cf006392d42abe3ac9732deac0fa246fe0c8c2fb968611db02b393042",
+      "before_sha256": "sha256:d4fff1edc3c57e4a64f9a91cdd12207ab3b099ef6b2639d4c881a5824fc42280",
+      "content_sha256": "sha256:fe0e5d5f00e00d9c7b6d7911d504b0e8f60888cd8bffd162aec34d01fd86d746",
+      "sealed_sha256": "sha256:fe0e5d5f00e00d9c7b6d7911d504b0e8f60888cd8bffd162aec34d01fd86d746"
+    },
+    {
+      "slot_id": "slot_4aa933c63418e2ec03fc",
+      "delta_path": "deltas/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "target_path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "mode": "MODIFY",
+      "category": "architecture",
+      "producer": "agent",
+      "source_sha256": "sha256:919630fe1993c9ac59c60b49bbf649db2814d10f399e289f02c2b4133b18c6fe",
+      "before_sha256": "sha256:1f5b5e0f71276616bd80759e2a03077e558fd59c27002aff65f03428ef7c43ab",
+      "content_sha256": "sha256:64ea079da1daed87da09a7bb499c64573b93fda16f44cefb02e8caf8fd314b51",
+      "sealed_sha256": "sha256:64ea079da1daed87da09a7bb499c64573b93fda16f44cefb02e8caf8fd314b51"
+    },
+    {
+      "slot_id": "slot_345512a3aa2bb2e38a12",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:81da11eb9991a5c68a750b721cfb3ed725f25d7d71639e3bff865ef465ed034c",
+      "before_sha256": "sha256:89ae84b85d8c20b5b2856a2e3f21f5a6d4fc0738959d4d2461c7baa6725798ee",
+      "content_sha256": "sha256:6e90552c304b19297b99324a68130c4a7baa0ca98f638282d7dda8d5b6a38424",
+      "sealed_sha256": "sha256:6e90552c304b19297b99324a68130c4a7baa0ca98f638282d7dda8d5b6a38424"
+    },
+    {
+      "slot_id": "slot_f47b905ee8660f3aa87d",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:1283e29fa9c8bc5c281ec4788dc8bdcd762c700d22d60d7e4167bd3934fcefb1",
+      "before_sha256": "sha256:b376831f429a1b63663dc7057cc0239d86f08d7cdef7024c6565134442dd5cae",
+      "content_sha256": "sha256:eeeae02db9d7e68109cb89a1da79894652dec3f05b69d24e3a5a17e8dfec8c5f",
+      "sealed_sha256": "sha256:eeeae02db9d7e68109cb89a1da79894652dec3f05b69d24e3a5a17e8dfec8c5f"
+    },
+    {
+      "slot_id": "slot_47b24516751adff4f808",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:dc920324d77f83799ff47c7fd6580f70bcfceaaa70b77c8769c3d5a99e6de49e",
+      "before_sha256": "sha256:dd60fcf5e51d068041c3cd3dfd8785d1e09812ea2bfad0e861ea997ef3f7539e",
+      "content_sha256": "sha256:9c7f958331be090134f1f5666af223a124041ed00193a6c99df40734bf7f39e3",
+      "sealed_sha256": "sha256:9c7f958331be090134f1f5666af223a124041ed00193a6c99df40734bf7f39e3"
+    },
+    {
+      "slot_id": "slot_6f07a4324f31f6e4b8d7",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:da7f76816ace589c133e7fe940c5bf4f5b400f2d8231d24e5608e53416bbc98b",
+      "before_sha256": "sha256:f233d995ffd3781f5862c17a70bd9a885cb52b2b24f5319ace7ac2a806fb2bde",
+      "content_sha256": "sha256:c211739fc610bc22aff1f106dd2b90b21ea58e7999d638d0887d5185ef26cff7",
+      "sealed_sha256": "sha256:c211739fc610bc22aff1f106dd2b90b21ea58e7999d638d0887d5185ef26cff7"
+    },
+    {
+      "slot_id": "slot_0a78479d113682bdc129",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:8cf06bd1cb38e66f2a9829464406287c475fa0b6b221e4ea7805dfeceedb3e67",
+      "before_sha256": "sha256:dc1142cf65c82f7ae7763b9fb8ecdd5e0f25f09c47d2cc0ec8896258a15e5b75",
+      "content_sha256": "sha256:9ede6c301e7687328e62b0b1db8a295dab39f219e7da0cfebfacc3ace18744fb",
+      "sealed_sha256": "sha256:9ede6c301e7687328e62b0b1db8a295dab39f219e7da0cfebfacc3ace18744fb"
+    },
+    {
+      "slot_id": "slot_01efae090bcc65e1c475",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:e398ad45dd7f09d7b2f9c4e05be00a5db0f75d423dbeb884ea38d1585dcb71d5",
+      "before_sha256": "sha256:b3eae24175dde0cc52bf8e34421d265e3e093159531b0ebc01e734a3956e0aa9",
+      "content_sha256": "sha256:57914a12fb51f90dc9fb78041a9f96f2c5a69ecdb0c852caa1fdae7587223956",
+      "sealed_sha256": "sha256:57914a12fb51f90dc9fb78041a9f96f2c5a69ecdb0c852caa1fdae7587223956"
+    },
+    {
+      "slot_id": "slot_9c3e6ddc159bafad43cc",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:b4e4e467a5ca26df02ac11029f757d6e206c4bd95d1676207d93eb6bb530672e",
+      "before_sha256": "sha256:e0aa1f7f1de74dacc4e3c2ade005994aca624407bb68dc978dfab1d2f4aa7b65",
+      "content_sha256": "sha256:c1cad1beb183a6fbcd2c6b63edc94b9d8b6cdfd13f3b250e4b86809c42e4a558",
+      "sealed_sha256": "sha256:c1cad1beb183a6fbcd2c6b63edc94b9d8b6cdfd13f3b250e4b86809c42e4a558"
+    },
+    {
+      "slot_id": "slot_afe03c2c1f384a1a1c62",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:4e3c7f54fe362caceef772dbe6de009b6c207e88780d9840b52ad9f7b9237534",
+      "before_sha256": "sha256:74639b2eaab6440175a8900fdc95a72fba7c709c0e1a98b3e8248344ead7dc62",
+      "content_sha256": "sha256:04331f07363e37dde2811a7377290b76b63023e340347c5d7d59cd5b74d31ad8",
+      "sealed_sha256": "sha256:04331f07363e37dde2811a7377290b76b63023e340347c5d7d59cd5b74d31ad8"
+    },
+    {
+      "slot_id": "slot_2492efa0acc81b2cc45e",
+      "delta_path": "deltas/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "target_path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "mode": "MODIFY",
+      "category": "deployment",
+      "producer": "agent",
+      "source_sha256": "sha256:9619e8a16c6ec124d93b0591199a7e16e32c943c57f83b49a503fbd53207bd17",
+      "before_sha256": "sha256:53b92c621358cbd2fec613cadd22152d7d6afcec1740c86dc2e4dc3c7073060a",
+      "content_sha256": "sha256:fa9588b9124cd7c9c8b2c8bdb0c557fc431b8d41ee04a15383db85b3266dae83",
+      "sealed_sha256": "sha256:fa9588b9124cd7c9c8b2c8bdb0c557fc431b8d41ee04a15383db85b3266dae83"
+    },
+    {
+      "slot_id": "slot_ff701dac5c6456ff489d",
+      "delta_path": "deltas/test/core-S04-test-cases.md",
+      "target_path": "logos/resources/test/core-S04-test-cases.md",
+      "mode": "CREATE",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:bce974720d06b21917d9a8520ee956b25f2cd3a168a9d6332e5361638a06dc14",
+      "before_sha256": null,
+      "content_sha256": "sha256:fe2e7f3eea538fe467d7cf05264bdbcb2907563bce380f4e90addd370f810d7e",
+      "sealed_sha256": "sha256:fe2e7f3eea538fe467d7cf05264bdbcb2907563bce380f4e90addd370f810d7e"
+    },
+    {
+      "slot_id": "slot_07ac20dbc8a3a500b838",
+      "delta_path": "deltas/test/core-S06-test-cases.md",
+      "target_path": "logos/resources/test/core-S06-test-cases.md",
+      "mode": "CREATE",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:4d2e9e7277d795cfacb17fecae531d71db27b01e7a22ca4b2866e23bebd6a62a",
+      "before_sha256": null,
+      "content_sha256": "sha256:70aa40fee30e00f77f1b8db497e11ae425170207f3bb2122a83410a8045f2c5e",
+      "sealed_sha256": "sha256:70aa40fee30e00f77f1b8db497e11ae425170207f3bb2122a83410a8045f2c5e"
+    },
+    {
+      "slot_id": "slot_29e8611d0388ed4cd881",
+      "delta_path": "deltas/test/core-S07-test-cases.md",
+      "target_path": "logos/resources/test/core-S07-test-cases.md",
+      "mode": "CREATE",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:1215fec05c4326ef2d21f0f1377144af29621dfa1683347c537fe9d521695735",
+      "before_sha256": null,
+      "content_sha256": "sha256:f2c0d5c8068f90d14bd8707aa8b2b0e378f3df65102dea7c8aeeef9f75b00bf1",
+      "sealed_sha256": "sha256:f2c0d5c8068f90d14bd8707aa8b2b0e378f3df65102dea7c8aeeef9f75b00bf1"
+    },
+    {
+      "slot_id": "slot_924880c60e735608add7",
+      "delta_path": "deltas/test/core-S09-test-cases.md",
+      "target_path": "logos/resources/test/core-S09-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:1a89bc2a469c68c0aec8fe7c8cd5aa137fe2b80d24bdb2b6b98988f72553086e",
+      "before_sha256": "sha256:d085ef5632ab984f635c47427eeb41aad21846eb1d0a8496ccfecae172652dad",
+      "content_sha256": "sha256:44914b41afc98aad5121c3382e5899d6c8ebb6c6c02f21cf941cc78daa73b87e",
+      "sealed_sha256": "sha256:44914b41afc98aad5121c3382e5899d6c8ebb6c6c02f21cf941cc78daa73b87e"
+    },
+    {
+      "slot_id": "slot_d284b21af3ccc6c6b3b7",
+      "delta_path": "deltas/test/core-S12-test-cases.md",
+      "target_path": "logos/resources/test/core-S12-test-cases.md",
+      "mode": "CREATE",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:85e2ecbe86ac33d7bc6272bce474b03abd20a21a1bfe2c13de8fadf461aba3e9",
+      "before_sha256": null,
+      "content_sha256": "sha256:ebbda109ce290b2f4162c8cbd2ec5d92c9a6a64eaf2829c88c3efb1bd9246dda",
+      "sealed_sha256": "sha256:ebbda109ce290b2f4162c8cbd2ec5d92c9a6a64eaf2829c88c3efb1bd9246dda"
+    },
+    {
+      "slot_id": "slot_5cff3cafcf42644eeeec",
+      "delta_path": "deltas/test/core-S16-test-cases.md",
+      "target_path": "logos/resources/test/core-S16-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:f1b16a6a2b2508d21d91acd4d69c92913a72d332910b5120ff604fd008dcf71f",
+      "before_sha256": "sha256:89d13171521f3c682dd8bbf904c79a0934be0732aafce93897aed15980972a15",
+      "content_sha256": "sha256:9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58",
+      "sealed_sha256": "sha256:9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58"
+    },
+    {
+      "slot_id": "slot_f9f25e6368b8262f69a0",
+      "delta_path": "deltas/test/core-S19-test-cases.md",
+      "target_path": "logos/resources/test/core-S19-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:1085cbb6aef3a8736a4218a1c3a6141b0266ab3967467a9b88c5e373f798b3d3",
+      "before_sha256": "sha256:f8738714227a21b3bf7b198144dc1bd4cab1fb568efec542b64c6b1b7dfedff1",
+      "content_sha256": "sha256:8729f4cb3c4b5f0261c3ebfd9ffb405d8b5b223dbebe57978ac865467cfd6421",
+      "sealed_sha256": "sha256:8729f4cb3c4b5f0261c3ebfd9ffb405d8b5b223dbebe57978ac865467cfd6421"
+    },
+    {
+      "slot_id": "slot_afccbf242dc3152c6bef",
+      "delta_path": "deltas/test/core-S35-test-cases.md",
+      "target_path": "logos/resources/test/core-S35-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:e82244ac655793da02b646709f40bf7084a8c3ba66d17b3b561741120877a93c",
+      "before_sha256": "sha256:96c06a8512593fa333a772b23e875bab1422ef70caa085c484793f6c29bcc0ad",
+      "content_sha256": "sha256:a8f25f895aef62c0e94b690019da727c1df3b7b0d27643defc54099621c3c1de",
+      "sealed_sha256": "sha256:a8f25f895aef62c0e94b690019da727c1df3b7b0d27643defc54099621c3c1de"
+    },
+    {
+      "slot_id": "slot_ceabdc398a80f4359bfe",
+      "delta_path": "deltas/test/smoke/core-smoke-test-cases.md",
+      "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "mode": "MODIFY",
+      "category": "smoke",
+      "producer": "agent",
+      "source_sha256": "sha256:7e48c8a3570f9fcafb0070200860f834ed8e5c773b4bb56b5dcc400aa495c271",
+      "before_sha256": "sha256:a7d1166e9e426314fdea1e69466e84d00fac84fdde6d0466c1d540356ac5f470",
+      "content_sha256": "sha256:ecb7cc471a6d09aac83b6176fc2c8203993384c1ceb49c3388915aee9a2a6f69",
+      "sealed_sha256": "sha256:ecb7cc471a6d09aac83b6176fc2c8203993384c1ceb49c3388915aee9a2a6f69"
+    },
+    {
+      "slot_id": "slot_91e0e88870fe9c2d21ff",
+      "delta_path": "deltas/skills/architecture-designer/SKILL.en.md",
+      "target_path": "skills/architecture-designer/SKILL.en.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:a5dc8d8aa04b77e7edec5757ac43f1642814d4b7f34d1f1ce5e8b637474fdabd",
+      "before_sha256": "sha256:99d96dfb1f56a13fc94186705711bccc12ed79021682e1997b49456f6efac4e8",
+      "content_sha256": "sha256:419513d5797ffae8d2766fe17261670f7520d8b424aeaf0bde18a99fb82db5d2",
+      "sealed_sha256": "sha256:419513d5797ffae8d2766fe17261670f7520d8b424aeaf0bde18a99fb82db5d2"
+    },
+    {
+      "slot_id": "slot_8170dba19a3418dbdcc6",
+      "delta_path": "deltas/skills/architecture-designer/SKILL.md",
+      "target_path": "skills/architecture-designer/SKILL.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:5631e647406dd3be74d30516bd62444c359c738c806a96e31e5871f4b4a4a60a",
+      "before_sha256": "sha256:e37948499806c2fa79dc8c5a1207af13cb6a2176142e180c66f1ca80ee43fd41",
+      "content_sha256": "sha256:6056344746d542d14b87586880fee0a70ba66b556f738f9c84a63fa1f30e60ac",
+      "sealed_sha256": "sha256:6056344746d542d14b87586880fee0a70ba66b556f738f9c84a63fa1f30e60ac"
+    },
+    {
+      "slot_id": "slot_47fec7ab5c0537c652fe",
+      "delta_path": "deltas/skills/change-writer/SKILL.en.md",
+      "target_path": "skills/change-writer/SKILL.en.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:563600c5722d6b49f1a76f3cbdb7e130a01e8e27f91006e9ea8875196aeff591",
+      "before_sha256": "sha256:18ddb7ecf8695cb5d8a93f20317c03d48a890547aa966bbde3e0deede2c05de6",
+      "content_sha256": "sha256:cc515b35b702b6a29a6996295d1ceb5a5108973173677491e03fd4132e1a6900",
+      "sealed_sha256": "sha256:cc515b35b702b6a29a6996295d1ceb5a5108973173677491e03fd4132e1a6900"
+    },
+    {
+      "slot_id": "slot_4c5f8ef513f385dc931f",
+      "delta_path": "deltas/skills/change-writer/SKILL.md",
+      "target_path": "skills/change-writer/SKILL.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:4cbea68cc68d02de5a52b4903d70e783069ac9da1ba582b72204954afe6b831b",
+      "before_sha256": "sha256:cc46919dccf7f0a9fe2c504d8383af27e2265375f876aa4cd5ee55721586ae3d",
+      "content_sha256": "sha256:152c460117ece9248b0528a2151215303a1325f01686b6aba57a958043bab562",
+      "sealed_sha256": "sha256:152c460117ece9248b0528a2151215303a1325f01686b6aba57a958043bab562"
+    },
+    {
+      "slot_id": "slot_0658741f146334077210",
+      "delta_path": "deltas/skills/code-reviewer/SKILL.en.md",
+      "target_path": "skills/code-reviewer/SKILL.en.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:f71221e323dbe7825b12760fa456e3f0ec3f1d8137d785a35dfc2aa9ff702f3c",
+      "before_sha256": "sha256:57c28d13b6bae0a266a29ed7c12f53290afd278862bb184715fd1b122f40559c",
+      "content_sha256": "sha256:92945bad8a4e6054e0bf133b544a217c69346324b7897a04f257bb11aecbc30c",
+      "sealed_sha256": "sha256:92945bad8a4e6054e0bf133b544a217c69346324b7897a04f257bb11aecbc30c"
+    },
+    {
+      "slot_id": "slot_26c62111d06921a334fd",
+      "delta_path": "deltas/skills/code-reviewer/SKILL.md",
+      "target_path": "skills/code-reviewer/SKILL.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:1ea6a05402475b82594c1920fed472826f682df78d1531eb5ff038d4c17d3d0f",
+      "before_sha256": "sha256:8890a5938ddf7aa09492d768f803b60fb200b1d4314b6c56631a06222f3cae45",
+      "content_sha256": "sha256:94dcf9e59a1e279e4ad71ea0b4a15b73d9624c12b05024fdbbe68f704d1f5009",
+      "sealed_sha256": "sha256:94dcf9e59a1e279e4ad71ea0b4a15b73d9624c12b05024fdbbe68f704d1f5009"
+    },
+    {
+      "slot_id": "slot_1ee40e3214ac90f9e89e",
+      "delta_path": "deltas/skills/deployment-designer/SKILL.md",
+      "target_path": "skills/deployment-designer/SKILL.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:c8a30048e20e6f35b9eb829edbd6a4cd99c1fb6dca71d435368f1eb7ea66f8ff",
+      "before_sha256": "sha256:b7995ed3189ff8cb0a4d879d7e86ad3598eeab54ba683e71356dd5940a5d7488",
+      "content_sha256": "sha256:99ca5aadc4669cea1aeba6e6b13a58057955c2488ad775110df931b655c60573",
+      "sealed_sha256": "sha256:99ca5aadc4669cea1aeba6e6b13a58057955c2488ad775110df931b655c60573"
+    },
+    {
+      "slot_id": "slot_0d9be6dbc2ca3921467c",
+      "delta_path": "deltas/skills/scenario-architect/SKILL.en.md",
+      "target_path": "skills/scenario-architect/SKILL.en.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:1cde43ee6091d1a3d4e2542bdbf79928b524cea7bbc3d90054fed2474282d270",
+      "before_sha256": "sha256:09418daaed453cb2f48019aeec45fc186a6448ea0e5edbaa5b316984b0e92b27",
+      "content_sha256": "sha256:bf5465df5c1b9ad58cfaf06f794d728faeb0a593aad42a6d761ede744856ab7f",
+      "sealed_sha256": "sha256:bf5465df5c1b9ad58cfaf06f794d728faeb0a593aad42a6d761ede744856ab7f"
+    },
+    {
+      "slot_id": "slot_3d549e8bab58bb1cbe1e",
+      "delta_path": "deltas/skills/scenario-architect/SKILL.md",
+      "target_path": "skills/scenario-architect/SKILL.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:055807f5f58f43b0d4ac697bcfecb9e62b436ae623a7e45d56ec4c92bfff6e61",
+      "before_sha256": "sha256:21c63a861f08e2fcae902aef80ea2d8351456876cf2f41106caab3b6c0899af3",
+      "content_sha256": "sha256:992ff544333b446a19860e2d9c1cc15788434dffd19b841ff088c1a9784e9318",
+      "sealed_sha256": "sha256:992ff544333b446a19860e2d9c1cc15788434dffd19b841ff088c1a9784e9318"
+    },
+    {
+      "slot_id": "slot_117813b718266b018745",
+      "delta_path": "deltas/skills/test-writer/SKILL.en.md",
+      "target_path": "skills/test-writer/SKILL.en.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:2e0cf618fd9619c196c23b734f3153563d02e5de0075ea776dffbf88dff17999",
+      "before_sha256": "sha256:f4424e59b3d8fa94121561e30aaf1b5f582805d92bf5a1e9d7d0cb99122c43ff",
+      "content_sha256": "sha256:e745a00244d57a24968978018fc717ea467f7e347c366b0f336f6066d92dfcaa",
+      "sealed_sha256": "sha256:e745a00244d57a24968978018fc717ea467f7e347c366b0f336f6066d92dfcaa"
+    },
+    {
+      "slot_id": "slot_194941990fac0e3c1d87",
+      "delta_path": "deltas/skills/test-writer/SKILL.md",
+      "target_path": "skills/test-writer/SKILL.md",
+      "mode": "MODIFY",
+      "category": "skill",
+      "producer": "openlogos",
+      "source_sha256": "sha256:46fbcfa27f6e91fb01dace9a8b48dcb2f181ecaf45ec13f2e0dc98dc5da61739",
+      "before_sha256": "sha256:dec73558c9ac2f843b267ba2dfcbba4acb817ba70d26d6a41248fb765f2b9f74",
+      "content_sha256": "sha256:bc337b887829bd7b0d24b12b5d0a6a10fbdaa8f4aa2aff99c3ee206f78af2005",
+      "sealed_sha256": "sha256:bc337b887829bd7b0d24b12b5d0a6a10fbdaa8f4aa2aff99c3ee206f78af2005"
+    },
+    {
+      "slot_id": "slot_6794710edab9e55f40b5",
+      "delta_path": "deltas/spec/authority-closure.md",
+      "target_path": "spec/authority-closure.md",
+      "mode": "CREATE",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:102b3add41b70144982ec39dc25293114cc7dc1e4640d72caf9ebe35f181ecc8",
+      "before_sha256": null,
+      "content_sha256": "sha256:4a2d4d60cec77e2e4965e686fe1fb0bcf50876f34c56de8cf75540ce3c506c39",
+      "sealed_sha256": "sha256:4a2d4d60cec77e2e4965e686fe1fb0bcf50876f34c56de8cf75540ce3c506c39"
+    },
+    {
+      "slot_id": "slot_0b396ca856baa31b92cb",
+      "delta_path": "deltas/spec/change-management.md",
+      "target_path": "spec/change-management.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:85dcd7f227a2bbbc90a092a6344d86bcc73d37ba95a8d8f3ef091299f0ef43ec",
+      "before_sha256": "sha256:d91f3b93282e05facf805bfb972171e71b6998ceee8d3f96987c1f0f5b14b4e5",
+      "content_sha256": "sha256:4d6811181c0fc006ea1015d60c78490f5cc3268ef2017f30d7b1fcb096e03687",
+      "sealed_sha256": "sha256:4d6811181c0fc006ea1015d60c78490f5cc3268ef2017f30d7b1fcb096e03687"
+    },
+    {
+      "slot_id": "slot_5f93a9a7529fe70a40d9",
+      "delta_path": "deltas/spec/cli-json-output.md",
+      "target_path": "spec/cli-json-output.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:db24d650d0145b37d3f4b29c3f0eeaa8a801148cf9f09932ae460485bf880c89",
+      "before_sha256": "sha256:28e0b774f58e61f93ebf7064f96e3999209211139b416f692ca45e3ee3d472a7",
+      "content_sha256": "sha256:4e26d6576f90e4b5f9feaa68a7d9facc25841383496ec8314decae28863b95e0",
+      "sealed_sha256": "sha256:4e26d6576f90e4b5f9feaa68a7d9facc25841383496ec8314decae28863b95e0"
+    },
+    {
+      "slot_id": "slot_332037b11fbc3b1092fa",
+      "delta_path": "deltas/spec/flow-spec.md",
+      "target_path": "spec/flow-spec.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:6db7565d4a55912b6213ffb29563df5a4e3141d87555b5675b00962e110f5992",
+      "before_sha256": "sha256:a9e88357237791942b1ddcd76973665475fbe6a520d72f9284925965f9902e94",
+      "content_sha256": "sha256:2bcfac880542eda67b7ab67881ef38274c4de7ccb8f6e7ca51551d313249dc26",
+      "sealed_sha256": "sha256:2bcfac880542eda67b7ab67881ef38274c4de7ccb8f6e7ca51551d313249dc26"
+    }
+  ],
+  "receipt": {
+    "transaction_id": "mtx_74d927ac89c0a538fbc2b150",
+    "seal_sha256": "sha256:fd21306a0ce0a3c2395f323dea5a5a73d03bbaa6bc1b734232fb0f2ea9f63815",
+    "target_set_sha256": "sha256:b07dcd389417a1c271c1152d70fef502e6d1df0535dee350ae06a9db33d71573",
+    "closure_sha256": "sha256:1d7052bb3512121d35546525e3c5f14064a4faa41d25555861a0c64ec6fadc5d",
+    "target_count": 37,
+    "plan_sha256": "sha256:9c771dce9389a41a96b513d0519929ae8e7bbbeb42327199179bb87e0c9a60f7",
+    "change": "institutionalize-single-authority-design-gate",
+    "module": "core",
+    "changed_paths": [
+      "logos/logos-project.yaml",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S16-test-cases.md",
+      "logos/resources/test/core-S19-test-cases.md",
+      "logos/resources/test/core-S35-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "skills/architecture-designer/SKILL.en.md",
+      "skills/architecture-designer/SKILL.md",
+      "skills/change-writer/SKILL.en.md",
+      "skills/change-writer/SKILL.md",
+      "skills/code-reviewer/SKILL.en.md",
+      "skills/code-reviewer/SKILL.md",
+      "skills/deployment-designer/SKILL.md",
+      "skills/scenario-architect/SKILL.en.md",
+      "skills/scenario-architect/SKILL.md",
+      "skills/test-writer/SKILL.en.md",
+      "skills/test-writer/SKILL.md",
+      "spec/change-management.md",
+      "spec/cli-json-output.md",
+      "spec/flow-spec.md"
+    ],
+    "created_paths": [
+      "logos/resources/decisions/core-D08-authority-closure.md",
+      "logos/resources/test/core-S04-test-cases.md",
+      "logos/resources/test/core-S06-test-cases.md",
+      "logos/resources/test/core-S07-test-cases.md",
+      "logos/resources/test/core-S12-test-cases.md",
+      "spec/authority-closure.md"
+    ],
+    "final_hashes": [
+      {
+        "path": "logos/logos-project.yaml",
+        "sha256": "sha256:cbeac9734d559c75174ea86f05146271b8446fe2a1f5f804f887e6fe9258a3bf"
+      },
+      {
+        "path": "logos/resources/decisions/core-D08-authority-closure.md",
+        "sha256": "sha256:980ad63c862cd64c4218d3bf7d7d40b441953764c3890141f9c4388f0fc0efcf"
+      },
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "sha256": "sha256:628774e5692c35a376036d7603836dd11a77edce29586a4a5c7373977221ecc5"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "sha256": "sha256:fe0e5d5f00e00d9c7b6d7911d504b0e8f60888cd8bffd162aec34d01fd86d746"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+        "sha256": "sha256:64ea079da1daed87da09a7bb499c64573b93fda16f44cefb02e8caf8fd314b51"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md",
+        "sha256": "sha256:6e90552c304b19297b99324a68130c4a7baa0ca98f638282d7dda8d5b6a38424"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md",
+        "sha256": "sha256:eeeae02db9d7e68109cb89a1da79894652dec3f05b69d24e3a5a17e8dfec8c5f"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md",
+        "sha256": "sha256:9c7f958331be090134f1f5666af223a124041ed00193a6c99df40734bf7f39e3"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "sha256": "sha256:c211739fc610bc22aff1f106dd2b90b21ea58e7999d638d0887d5185ef26cff7"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md",
+        "sha256": "sha256:9ede6c301e7687328e62b0b1db8a295dab39f219e7da0cfebfacc3ace18744fb"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+        "sha256": "sha256:57914a12fb51f90dc9fb78041a9f96f2c5a69ecdb0c852caa1fdae7587223956"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+        "sha256": "sha256:c1cad1beb183a6fbcd2c6b63edc94b9d8b6cdfd13f3b250e4b86809c42e4a558"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+        "sha256": "sha256:04331f07363e37dde2811a7377290b76b63023e340347c5d7d59cd5b74d31ad8"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+        "sha256": "sha256:fa9588b9124cd7c9c8b2c8bdb0c557fc431b8d41ee04a15383db85b3266dae83"
+      },
+      {
+        "path": "logos/resources/test/core-S04-test-cases.md",
+        "sha256": "sha256:fe2e7f3eea538fe467d7cf05264bdbcb2907563bce380f4e90addd370f810d7e"
+      },
+      {
+        "path": "logos/resources/test/core-S06-test-cases.md",
+        "sha256": "sha256:70aa40fee30e00f77f1b8db497e11ae425170207f3bb2122a83410a8045f2c5e"
+      },
+      {
+        "path": "logos/resources/test/core-S07-test-cases.md",
+        "sha256": "sha256:f2c0d5c8068f90d14bd8707aa8b2b0e378f3df65102dea7c8aeeef9f75b00bf1"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "sha256": "sha256:44914b41afc98aad5121c3382e5899d6c8ebb6c6c02f21cf941cc78daa73b87e"
+      },
+      {
+        "path": "logos/resources/test/core-S12-test-cases.md",
+        "sha256": "sha256:ebbda109ce290b2f4162c8cbd2ec5d92c9a6a64eaf2829c88c3efb1bd9246dda"
+      },
+      {
+        "path": "logos/resources/test/core-S16-test-cases.md",
+        "sha256": "sha256:9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58"
+      },
+      {
+        "path": "logos/resources/test/core-S19-test-cases.md",
+        "sha256": "sha256:8729f4cb3c4b5f0261c3ebfd9ffb405d8b5b223dbebe57978ac865467cfd6421"
+      },
+      {
+        "path": "logos/resources/test/core-S35-test-cases.md",
+        "sha256": "sha256:a8f25f895aef62c0e94b690019da727c1df3b7b0d27643defc54099621c3c1de"
+      },
+      {
+        "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "sha256": "sha256:ecb7cc471a6d09aac83b6176fc2c8203993384c1ceb49c3388915aee9a2a6f69"
+      },
+      {
+        "path": "skills/architecture-designer/SKILL.en.md",
+        "sha256": "sha256:419513d5797ffae8d2766fe17261670f7520d8b424aeaf0bde18a99fb82db5d2"
+      },
+      {
+        "path": "skills/architecture-designer/SKILL.md",
+        "sha256": "sha256:6056344746d542d14b87586880fee0a70ba66b556f738f9c84a63fa1f30e60ac"
+      },
+      {
+        "path": "skills/change-writer/SKILL.en.md",
+        "sha256": "sha256:cc515b35b702b6a29a6996295d1ceb5a5108973173677491e03fd4132e1a6900"
+      },
+      {
+        "path": "skills/change-writer/SKILL.md",
+        "sha256": "sha256:152c460117ece9248b0528a2151215303a1325f01686b6aba57a958043bab562"
+      },
+      {
+        "path": "skills/code-reviewer/SKILL.en.md",
+        "sha256": "sha256:92945bad8a4e6054e0bf133b544a217c69346324b7897a04f257bb11aecbc30c"
+      },
+      {
+        "path": "skills/code-reviewer/SKILL.md",
+        "sha256": "sha256:94dcf9e59a1e279e4ad71ea0b4a15b73d9624c12b05024fdbbe68f704d1f5009"
+      },
+      {
+        "path": "skills/deployment-designer/SKILL.md",
+        "sha256": "sha256:99ca5aadc4669cea1aeba6e6b13a58057955c2488ad775110df931b655c60573"
+      },
+      {
+        "path": "skills/scenario-architect/SKILL.en.md",
+        "sha256": "sha256:bf5465df5c1b9ad58cfaf06f794d728faeb0a593aad42a6d761ede744856ab7f"
+      },
+      {
+        "path": "skills/scenario-architect/SKILL.md",
+        "sha256": "sha256:992ff544333b446a19860e2d9c1cc15788434dffd19b841ff088c1a9784e9318"
+      },
+      {
+        "path": "skills/test-writer/SKILL.en.md",
+        "sha256": "sha256:e745a00244d57a24968978018fc717ea467f7e347c366b0f336f6066d92dfcaa"
+      },
+      {
+        "path": "skills/test-writer/SKILL.md",
+        "sha256": "sha256:bc337b887829bd7b0d24b12b5d0a6a10fbdaa8f4aa2aff99c3ee206f78af2005"
+      },
+      {
+        "path": "spec/authority-closure.md",
+        "sha256": "sha256:4a2d4d60cec77e2e4965e686fe1fb0bcf50876f34c56de8cf75540ce3c506c39"
+      },
+      {
+        "path": "spec/change-management.md",
+        "sha256": "sha256:4d6811181c0fc006ea1015d60c78490f5cc3268ef2017f30d7b1fcb096e03687"
+      },
+      {
+        "path": "spec/cli-json-output.md",
+        "sha256": "sha256:4e26d6576f90e4b5f9feaa68a7d9facc25841383496ec8314decae28863b95e0"
+      },
+      {
+        "path": "spec/flow-spec.md",
+        "sha256": "sha256:2bcfac880542eda67b7ab67881ef38274c4de7ccb8f6e7ca51551d313249dc26"
+      }
+    ],
+    "metadata_summaries": [
+      {
+        "path": "logos/logos-project.yaml",
+        "sha256": "sha256:cbeac9734d559c75174ea86f05146271b8446fe2a1f5f804f887e6fe9258a3bf"
+      }
+    ],
+    "test_change_set": {
+      "schema": "openlogos/test-change-set@1",
+      "change": "institutionalize-single-authority-design-gate",
+      "module": "core",
+      "source": "semantic-before-after-diff",
+      "changed_test_ids": [
+        "SMOKE-core-163",
+        "SMOKE-core-164",
+        "SMOKE-core-165",
+        "SMOKE-core-166",
+        "SMOKE-core-167",
+        "ST-S04-01",
+        "ST-S06-01",
+        "ST-S06-02",
+        "ST-S07-01",
+        "ST-S07-02",
+        "ST-S09-104",
+        "ST-S09-105",
+        "ST-S12-01",
+        "ST-S16-11",
+        "ST-S19-17",
+        "ST-S35-19",
+        "ST-S35-20",
+        "ST-S35-21",
+        "UT-S04-01",
+        "UT-S04-02",
+        "UT-S04-03",
+        "UT-S04-04",
+        "UT-S06-01",
+        "UT-S06-02",
+        "UT-S06-03",
+        "UT-S06-04",
+        "UT-S06-05",
+        "UT-S06-06",
+        "UT-S07-01",
+        "UT-S07-02",
+        "UT-S07-03",
+        "UT-S07-04",
+        "UT-S07-05",
+        "UT-S07-06",
+        "UT-S09-266",
+        "UT-S09-267",
+        "UT-S09-268",
+        "UT-S09-269",
+        "UT-S09-270",
+        "UT-S12-01",
+        "UT-S12-02",
+        "UT-S12-03",
+        "UT-S12-04",
+        "UT-S12-05",
+        "UT-S12-06",
+        "UT-S16-35",
+        "UT-S16-36",
+        "UT-S16-37",
+        "UT-S19-26",
+        "UT-S19-27",
+        "UT-S19-28",
+        "UT-S35-112",
+        "UT-S35-113",
+        "UT-S35-114",
+        "UT-S35-115",
+        "UT-S35-116",
+        "UT-S35-117",
+        "UT-S35-118",
+        "UT-S35-119",
+        "UT-S35-120"
+      ],
+      "removed_test_ids": [],
+      "targets": [
+        {
+          "target_path": "logos/resources/test/core-S04-test-cases.md",
+          "before_sha256": null,
+          "after_sha256": "fe2e7f3eea538fe467d7cf05264bdbcb2907563bce380f4e90addd370f810d7e"
+        },
+        {
+          "target_path": "logos/resources/test/core-S06-test-cases.md",
+          "before_sha256": null,
+          "after_sha256": "70aa40fee30e00f77f1b8db497e11ae425170207f3bb2122a83410a8045f2c5e"
+        },
+        {
+          "target_path": "logos/resources/test/core-S07-test-cases.md",
+          "before_sha256": null,
+          "after_sha256": "f2c0d5c8068f90d14bd8707aa8b2b0e378f3df65102dea7c8aeeef9f75b00bf1"
+        },
+        {
+          "target_path": "logos/resources/test/core-S09-test-cases.md",
+          "before_sha256": "d085ef5632ab984f635c47427eeb41aad21846eb1d0a8496ccfecae172652dad",
+          "after_sha256": "44914b41afc98aad5121c3382e5899d6c8ebb6c6c02f21cf941cc78daa73b87e"
+        },
+        {
+          "target_path": "logos/resources/test/core-S12-test-cases.md",
+          "before_sha256": null,
+          "after_sha256": "ebbda109ce290b2f4162c8cbd2ec5d92c9a6a64eaf2829c88c3efb1bd9246dda"
+        },
+        {
+          "target_path": "logos/resources/test/core-S16-test-cases.md",
+          "before_sha256": "89d13171521f3c682dd8bbf904c79a0934be0732aafce93897aed15980972a15",
+          "after_sha256": "9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58"
+        },
+        {
+          "target_path": "logos/resources/test/core-S19-test-cases.md",
+          "before_sha256": "f8738714227a21b3bf7b198144dc1bd4cab1fb568efec542b64c6b1b7dfedff1",
+          "after_sha256": "8729f4cb3c4b5f0261c3ebfd9ffb405d8b5b223dbebe57978ac865467cfd6421"
+        },
+        {
+          "target_path": "logos/resources/test/core-S35-test-cases.md",
+          "before_sha256": "96c06a8512593fa333a772b23e875bab1422ef70caa085c484793f6c29bcc0ad",
+          "after_sha256": "a8f25f895aef62c0e94b690019da727c1df3b7b0d27643defc54099621c3c1de"
+        },
+        {
+          "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+          "before_sha256": "a7d1166e9e426314fdea1e69466e84d00fac84fdde6d0466c1d540356ac5f470",
+          "after_sha256": "ecb7cc471a6d09aac83b6176fc2c8203993384c1ceb49c3388915aee9a2a6f69"
+        }
+      ],
+      "sha256": "sha256:5a6dc93546a7fda125ba6d86d5eaa6be468f1c3b2d5ad604ee2f868e2395fefc"
+    },
+    "spec_merged": {
+      "path": "logos/changes/institutionalize-single-authority-design-gate/SPEC_MERGED"
+    },
+    "commit_paths": [
+      "logos/changes/institutionalize-single-authority-design-gate/MERGE_RECEIPT.json",
+      "logos/changes/institutionalize-single-authority-design-gate/SPEC_MERGED",
+      "logos/logos-project.yaml",
+      "logos/resources/decisions/core-D08-authority-closure.md",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S04-scenario-architect.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S04-test-cases.md",
+      "logos/resources/test/core-S06-test-cases.md",
+      "logos/resources/test/core-S07-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S12-test-cases.md",
+      "logos/resources/test/core-S16-test-cases.md",
+      "logos/resources/test/core-S19-test-cases.md",
+      "logos/resources/test/core-S35-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "skills/architecture-designer/SKILL.en.md",
+      "skills/architecture-designer/SKILL.md",
+      "skills/change-writer/SKILL.en.md",
+      "skills/change-writer/SKILL.md",
+      "skills/code-reviewer/SKILL.en.md",
+      "skills/code-reviewer/SKILL.md",
+      "skills/deployment-designer/SKILL.md",
+      "skills/scenario-architect/SKILL.en.md",
+      "skills/scenario-architect/SKILL.md",
+      "skills/test-writer/SKILL.en.md",
+      "skills/test-writer/SKILL.md",
+      "spec/authority-closure.md",
+      "spec/change-management.md",
+      "spec/cli-json-output.md",
+      "spec/flow-spec.md"
+    ],
+    "completed_at": "2026-08-30T16:21:23.287Z",
+    "receipt_sha256": "sha256:78af0b189be4e98f11e466fdae94901513aba309d414c9ffb8dda0db57a1134e"
+  },
+  "artifact_hashes": [
+    {
+      "path": "logos/changes/institutionalize-single-authority-design-gate/MERGE_RECEIPT.json",
+      "sha256": "sha256:02955cffda1416a412355640370151494d48d9d0b659ee4f0acd9d9ef26bab7e"
+    },
+    {
+      "path": "logos/changes/institutionalize-single-authority-design-gate/SPEC_MERGED",
+      "sha256": "sha256:a683c9eed18a3e2de920c38c515005540ee1cce0441a5490e747e89d33c8f755"
+    }
+  ],
+  "aborted_at": null,
+  "created_at": "2026-08-30T16:17:46.789Z",
+  "updated_at": "2026-08-30T16:21:23.287Z"
+}
