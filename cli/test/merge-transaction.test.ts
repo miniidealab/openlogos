@@ -188,6 +188,53 @@ function preflightFixture(afterContents: string[], targetNames?: string[]) {
   return { root, proposalDir, slug, tx, targets };
 }
 
+function nestedAnchorFixture(count = 1, invalidIndex: number | null = null, submit = true) {
+  const root = mkdtempSync(join(tmpdir(), 'openlogos-nested-anchor-'));
+  roots.push(root);
+  const slug = 'nested-anchor-fixture';
+  const proposalDir = join(root, 'logos', 'changes', slug);
+  const parent = '七、项目文件夹动态 watcher 交互规则';
+  const leaf = '7.1 已打开文件外部变化感知';
+  put(root, 'logos/logos.config.json', '{"locale":"zh","project":{"type":"cli"}}\n');
+  put(root, 'logos/.openlogos-guard', `${JSON.stringify({ activeChange: slug, module: 'core' })}\n`);
+  put(root, 'logos/logos-project.yaml', 'project:\n  name: Nested Anchor Fixture\nscenario_counter:\n  next_id: 40\nresource_index: []\n');
+  const targets = Array.from({ length: count }, (_, index) => {
+    const scenario = String(index + 1).padStart(2, '0');
+    const targetPath = `logos/resources/test/core-S${scenario}-test-cases.md`;
+    const deltaPath = `deltas/test/core-S${scenario}-test-cases.md`;
+    const id = `UT-S${scenario}-01`;
+    const before = [
+      `# S${scenario} 测试`, '', `## ${parent}`, '', `### ${leaf}`, '',
+      '| 用例ID | 验证目标 |', '|---|---|', `| ${id} | 旧定义 |`, '',
+      '## 八、其它规则', '', `### ${leaf}`, '', '同名叶保持。', '',
+    ].join('\n');
+    const body = ['| 用例ID | 验证目标 |', '|---|---|', `| ${id} | 新定义 |`].join('\n');
+    const finalParent = index === invalidIndex ? '错误父标题' : parent;
+    const final = before.replace(`## ${parent}\n\n### ${leaf}\n\n| 用例ID | 验证目标 |\n|---|---|\n| ${id} | 旧定义 |`,
+      `## ${finalParent}\n\n### ${leaf}\n\n${body}`);
+    put(root, targetPath, before);
+    put(root, `logos/changes/${slug}/${deltaPath}`, `## MODIFIED — ${parent} > ${leaf}\n\n${body}\n`);
+    return { targetPath, deltaPath, before, final };
+  });
+  const yamlTargets = targets.map(({ deltaPath }) => [
+    '    - category: test', '      scenario_ids: [S09]', '      mode: MODIFY',
+    `      delta_path: ${deltaPath}`, '      reason: nested anchor fixture',
+    '      evidence: [target_exists]', '      missing_evidence: []',
+  ].join('\n')).join('\n');
+  put(root, `logos/changes/${slug}/proposal.md`, `# nested anchor fixture\n\n## 基线闭包计划\n\n\`\`\`yaml\nbaseline_closure:\n  policy: on-touch-v1\n  schema_version: 1\n  unit: canonical-merge-target-path\n  delta_cardinality: exactly-one-per-non-skip-target\n  effective_view: merged-resources-plus-current-change-deltas\n  ambiguity: block-before-existing-plan-exit\n  standalone_baseline_required: false\n  jit_confirmation: disabled\n  touched_scenario_ids: [S09]\n  targets:\n${yamlTargets}\n\`\`\`\n`);
+  put(root, `logos/changes/${slug}/tasks.md`, '# 任务\n\n## [delta] 规格变更\n\n## [code] 代码实现\n');
+  let tx = createMergeTransaction(root, proposalDir, slug);
+  if (submit) {
+    for (const target of listMergeTransactionPlanTargets(proposalDir)) {
+      const configured = targets.find(item => item.targetPath === target.target_path)!;
+      const descriptor = tx.content_slots.items.find(item => item.slot_id === target.slot_id)!;
+      const staging = atomicStage(root, descriptor.staging_path, configured.final);
+      tx = submitMergeContent(proposalDir, target.slot_id, staging);
+    }
+  }
+  return { root, proposalDir, slug, tx, targets, parent, leaf };
+}
+
 function canonicalForTest(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalForTest).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -255,6 +302,96 @@ const applyIds = [
 ].join(' ');
 
 describe('OpenLogos merge transaction', () => {
+  it('UT-S09-271: submit 只持久化安全原始字节，嵌套锚语义延迟到 seal', () => {
+    const f = nestedAnchorFixture(1, 0);
+    expect(f.tx).toMatchObject({ phase: 'ready', classification: null });
+    expect(f.tx.content_slots.items[0].submitted_sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(() => sealMergeTransaction(f.root, f.proposalDir)).toThrowError(MergeTransactionError);
+    const reopened = readMergeTransaction(f.proposalDir);
+    expect(reopened).toMatchObject({ phase: 'collecting', classification: 'slot_identity_mismatch' });
+    expect(reopened.content_slots.missing_slot_ids).toEqual([reopened.content_slots.items[0].slot_id]);
+  });
+
+  it('UT-S09-272: seal 以真实父子标题链验证嵌套锚并拒绝字面量路径伪标题', () => {
+    const valid = nestedAnchorFixture();
+    expect(sealMergeTransaction(valid.root, valid.proposalDir)).toMatchObject({ phase: 'sealed', classification: null });
+
+    const invalid = nestedAnchorFixture(1, 0);
+    const descriptor = invalid.tx.content_slots.items[0];
+    const literal = `${invalid.targets[0].before}\n## ${invalid.parent} > ${invalid.leaf}\n\n伪修复。\n`;
+    const staging = atomicStage(invalid.root, descriptor.staging_path, literal);
+    submitMergeContent(invalid.proposalDir, descriptor.slot_id, staging);
+    expect(() => sealMergeTransaction(invalid.root, invalid.proposalDir)).toThrow(/MODIFIED 章节/);
+    expect(readMergeTransaction(invalid.proposalDir).phase).toBe('collecting');
+  });
+
+  it('UT-S09-273: 七 slot 局部 reopen 只清责任 hash，故障窗口保持完整状态', () => {
+    const f = nestedAnchorFixture(7, 3);
+    const before = readMergeTransaction(f.proposalDir);
+    expect(before.content_slots.items.filter(item => item.submitted_sha256)).toHaveLength(7);
+    expect(() => sealMergeTransaction(f.root, f.proposalDir)).toThrow(/MODIFIED 章节/);
+    const reopened = readMergeTransaction(f.proposalDir);
+    expect(reopened.transaction_id).toBe(before.transaction_id);
+    expect(reopened.target_set_sha256).toBe(before.target_set_sha256);
+    expect(reopened.content_slots.items.filter(item => item.submitted_sha256)).toHaveLength(6);
+    expect(reopened.content_slots.missing_slot_ids).toHaveLength(1);
+
+    process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT = 'before-rename';
+    const crash = nestedAnchorFixture(1, 0);
+    expect(() => sealMergeTransaction(crash.root, crash.proposalDir)).toThrow('test fault before reopen rename');
+    expect(readMergeTransaction(crash.proposalDir).phase).toBe('ready');
+    delete process.env.OPENLOGOS_TEST_MERGE_REOPEN_FAIL_AT;
+  });
+
+  it('UT-S09-274: apply 首写前重验 Agent/OpenLogos producer，旧影子解析器不可达', () => {
+    const nested = nestedAnchorFixture();
+    const sealed = sealMergeTransaction(nested.root, nested.proposalDir);
+    expect(sealed.phase).toBe('sealed');
+    writeFileSync(join(nested.proposalDir, nested.targets[0].deltaPath), '## MODIFIED — 漂移\n\n内容\n');
+    expect(() => applyMergeTransaction(nested.root, nested.proposalDir)).toThrow(/Delta 已漂移/);
+    expect(readFileSync(join(nested.root, nested.targets[0].targetPath), 'utf8')).toBe(nested.targets[0].before);
+
+    const mixed = prepare();
+    expect(sealMergeTransaction(mixed.root, mixed.proposalDir).phase).toBe('sealed');
+    expect(applyMergeTransaction(mixed.root, mixed.proposalDir).phase).toBe('completed');
+    const source = readFileSync(join(repoRoot, 'cli/src/lib/merge-transaction.ts'), 'utf8');
+    expect(source).not.toContain('function parseDeltaSections');
+    expect(source).not.toContain('function applyMarkdownDelta');
+    expect(source).not.toContain('function validateAgentSemantics');
+  });
+
+  it('ST-S09-106: 真实 CLI 完成嵌套锚 submit→status→seal→apply', () => {
+    const f = nestedAnchorFixture(1, null, false);
+    const target = listMergeTransactionPlanTargets(f.proposalDir)[0];
+    const descriptor = f.tx.content_slots.items.find(item => item.slot_id === target.slot_id)!;
+    const staging = atomicStage(f.root, descriptor.staging_path, f.targets[0].final);
+    const cli = join(repoRoot, 'cli/dist/index.js');
+    const invoke = (args: string[]) => JSON.parse(checked(process.execPath, [cli, ...args, '--format', 'json'], f.root));
+    expect(invoke(['merge', 'transaction', 'submit-content', '--slug', f.slug, '--slot', target.slot_id, '--file', staging]).data.merge_transaction.phase).toBe('ready');
+    expect(invoke(['merge', 'transaction', 'status', '--slug', f.slug]).data.merge_transaction.phase).toBe('ready');
+    expect(invoke(['merge', 'transaction', 'seal', '--slug', f.slug]).data.merge_transaction.phase).toBe('sealed');
+    expect(invoke(['merge', 'transaction', 'apply', '--slug', f.slug]).data.merge_transaction.phase).toBe('completed');
+    const final = readFileSync(join(f.root, f.targets[0].targetPath), 'utf8');
+    expect(final).toContain(`## ${f.parent}\n\n### ${f.leaf}`);
+    expect(final).not.toContain(`${f.parent} > ${f.leaf}`);
+  });
+
+  it('ST-S09-107: RunLogos 同形七 slot 在同事务局部恢复并幂等重放 completed', () => {
+    const f = nestedAnchorFixture(7, 6);
+    expect(() => sealMergeTransaction(f.root, f.proposalDir)).toThrow(/MODIFIED 章节/);
+    const reopened = readMergeTransaction(f.proposalDir);
+    const missing = reopened.content_slots.missing_slot_ids[0];
+    const missingTarget = listMergeTransactionPlanTargets(f.proposalDir).find(item => item.slot_id === missing)!;
+    const configured = f.targets.find(item => item.targetPath === missingTarget.target_path)!;
+    const descriptor = reopened.content_slots.items.find(item => item.slot_id === missing)!;
+    const staging = atomicStage(f.root, descriptor.staging_path, configured.final.replace('错误父标题', f.parent));
+    submitMergeContent(f.proposalDir, missing, staging);
+    expect(sealMergeTransaction(f.root, f.proposalDir).transaction_id).toBe(reopened.transaction_id);
+    const completed = applyMergeTransaction(f.root, f.proposalDir);
+    expect(completed).toMatchObject({ transaction_id: reopened.transaction_id, phase: 'completed' });
+    expect(applyMergeTransaction(f.root, f.proposalDir)).toEqual(completed);
+  });
+
   it('UT-S09-261: 新事务在 seal 首写前拒绝歧义 after，并只退回责任 slot', () => {
     const invalid = '# 测试 01\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 |\n';
     const f = preflightFixture([invalid]);
@@ -930,7 +1067,7 @@ describe('OpenLogos merge transaction', () => {
       merge_transaction_golden_sha256: hash('7'),
       semantic_validator: 'openlogos/merge-transaction-semantic@1',
     });
-    expect(facts.cli_version).toBe('0.14.3');
+    expect(facts.cli_version).toBe('0.14.4');
     for (const field of [
       'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
       'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',
@@ -941,7 +1078,7 @@ describe('OpenLogos merge transaction', () => {
     expect(() => freezeMergeTransactionCandidateFacts({ ...facts, private_transaction_path: '/tmp/private' } as never)).toThrow('candidate_fact_invalid:fields');
   });
 
-  it('UT-S19-25: previous→0.14.3 任一安装/自检/合同/行为失败均完整选择 rollback', () => {
+  it('UT-S19-25: previous→0.14.4 任一安装/自检/合同/行为失败均完整选择 rollback', () => {
     const base = freezeMergeTransactionCandidateFacts({
       schema: MERGE_TRANSACTION_CANDIDATE_SCHEMA,
       command_path: '/opt/openlogos/dist/index.js',
@@ -973,7 +1110,7 @@ describe('OpenLogos merge transaction', () => {
     ]);
   });
 
-  it('ST-S19-16: 真实 0.14.3 pack/install、preflight/reopen 与 0.14.1 rollback/restore', () => {
+  it('ST-S19-16: 真实 0.14.4 pack/install、preflight/reopen 与 0.14.1 rollback/restore', () => {
     const root = mkdtempSync(join(tmpdir(), 'openlogos-0142-candidate-'));
     roots.push(root);
     const oldSource = join(root, 'old-source');

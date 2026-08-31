@@ -93,6 +93,11 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_AUTHORITY_CLOSURE_TARBALL,
       previousTarball: process.env.OPENLOGOS_AUTHORITY_CLOSURE_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-nested-section-anchor-0-14-4.js': {
+      tarball: process.env.OPENLOGOS_NESTED_ANCHOR_TARBALL,
+      previousTarball: process.env.OPENLOGOS_NESTED_ANCHOR_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_NESTED_ANCHOR_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -112,11 +117,13 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-plan-package-convergence.js',
   'scripts/smoke-test-change-set-local-global.js',
   'scripts/smoke-release-0-14-1-local.js',
+  'scripts/smoke-nested-section-anchor-0-14-4.js',
 ]);
 
 const globalCandidateRunners = new Map([
   ['scripts/smoke-merge-transaction-candidate.js', process.env.OPENLOGOS_MERGE_TRANSACTION_TARBALL],
   ['scripts/smoke-release-0-14-1-local.js', process.env.OPENLOGOS_RELEASE_0_14_1_TARBALL],
+  ['scripts/smoke-nested-section-anchor-0-14-4.js', process.env.OPENLOGOS_NESTED_ANCHOR_TARBALL],
 ]);
 
 function prepareGlobalCandidate(runner) {

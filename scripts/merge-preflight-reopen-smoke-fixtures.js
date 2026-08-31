@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** SMOKE-core-160/161 安装态 fixture；只写系统临时目录。 */
+/** SMOKE-core-160/161/168 安装态 fixture；只写系统临时目录。 */
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
@@ -15,8 +15,8 @@ const arg = name => {
 };
 const id = arg('--case');
 const cliArg = arg('--openlogos');
-if (!['SMOKE-core-160', 'SMOKE-core-161'].includes(id) || !cliArg) {
-  throw new Error('需要 --case SMOKE-core-160|SMOKE-core-161 --openlogos <absolute>');
+if (!['SMOKE-core-160', 'SMOKE-core-161', 'SMOKE-core-168'].includes(id) || !cliArg) {
+  throw new Error('需要 --case SMOKE-core-160|SMOKE-core-161|SMOKE-core-168 --openlogos <absolute>');
 }
 const cli = realpathSync(resolve(cliArg));
 const packageRoot = realpathSync(join(dirname(cli), '..'));
@@ -162,5 +162,50 @@ function exerciseLegacy() {
   } finally { f.cleanup(); }
 }
 
-const evidence = id === 'SMOKE-core-160' ? exerciseNewSeal() : exerciseLegacy();
+function exerciseNestedAnchor() {
+  const parent = '七、项目文件夹动态 watcher 交互规则';
+  const leaf = '7.1 已打开文件外部变化感知';
+  const root = mkdtempSync(join(tmpdir(), 'openlogos-smoke-core-168-'));
+  const slug = 'smoke-core-168';
+  const proposalDir = join(root, 'logos', 'changes', slug);
+  const targetPath = 'logos/resources/test/core-S09-test-cases.md';
+  const deltaPath = 'deltas/test/core-S09-test-cases.md';
+  const before = `# S09\n\n## ${parent}\n\n### ${leaf}\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S09-01 | 旧定义 |\n\n## 八、其它规则\n\n### ${leaf}\n\n同名叶保持。\n`;
+  const body = '| 用例ID | 验证目标 |\n|---|---|\n| UT-S09-01 | 新定义 |';
+  const final = before.replace('| UT-S09-01 | 旧定义 |', '| UT-S09-01 | 新定义 |');
+  try {
+    put(root, 'logos/logos.config.json', '{"locale":"zh","sourceRoots":{"src":["src"],"test":["test"]}}\n');
+    put(root, 'logos/.openlogos-guard', `${JSON.stringify({ activeChange: slug, module: 'core' })}\n`);
+    put(root, 'logos/logos-project.yaml', 'project:\n  name: nested smoke\nscenario_counter:\n  next_id: 40\nresource_index: []\n');
+    put(root, targetPath, before);
+    put(root, `logos/changes/${slug}/${deltaPath}`, `\`\`\`md\n## MODIFIED — 伪锚\n\`\`\`\n\n## MODIFIED — ${parent} > ${leaf}\n\n${body}\n`);
+    put(root, `logos/changes/${slug}/proposal.md`, `# smoke\n\n## 基线闭包计划\n\n\`\`\`yaml\nbaseline_closure:\n  policy: on-touch-v1\n  schema_version: 1\n  unit: canonical-merge-target-path\n  delta_cardinality: exactly-one-per-non-skip-target\n  effective_view: merged-resources-plus-current-change-deltas\n  ambiguity: block-before-existing-plan-exit\n  standalone_baseline_required: false\n  jit_confirmation: disabled\n  touched_scenario_ids: [S09]\n  targets:\n    - category: test\n      scenario_ids: [S09]\n      mode: MODIFY\n      delta_path: ${deltaPath}\n      reason: 嵌套章节锚安装态 fixture\n      evidence: [target_exists]\n      missing_evidence: []\n\`\`\`\n`);
+    put(root, `logos/changes/${slug}/tasks.md`, '# 任务\n\n## [code] 代码实现\n');
+    const created = txModule.createMergeTransaction(root, proposalDir, slug);
+    const plan = txModule.listMergeTransactionPlanTargets(proposalDir)[0];
+    const descriptor = created.content_slots.items.find(item => item.slot_id === plan.slot_id);
+    const staging = join(root, ...descriptor.staging_path.split('/'));
+    mkdirSync(dirname(staging), { recursive: true });
+    const temp = join(dirname(staging), `.content.${process.pid}.tmp`);
+    writeFileSync(temp, final);
+    renameSync(temp, staging);
+    const ready = json(root, ['merge', 'transaction', 'submit-content', '--slug', slug, '--slot', descriptor.slot_id, '--file', descriptor.staging_path]);
+    if (ready.phase !== 'ready') throw new Error('嵌套锚 submit 未进入 ready');
+    const sealed = json(root, ['merge', 'transaction', 'seal', '--slug', slug]);
+    const completed = json(root, ['merge', 'transaction', 'apply', '--slug', slug]);
+    const official = readFileSync(join(root, targetPath), 'utf8');
+    if (sealed.phase !== 'sealed' || completed.phase !== 'completed'
+      || !official.includes(`## ${parent}\n\n### ${leaf}`)
+      || official.includes(`${parent} > ${leaf}`)) throw new Error('嵌套章节锚安装态闭环不成立');
+    return {
+      transaction_id: completed.transaction_id,
+      receipt_sha256: completed.receipt.receipt_sha256,
+      final_sha256: sha256(Buffer.from(official)),
+      heading_identity: { level: 3, text: leaf, path: [parent, leaf] },
+    };
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+const evidence = id === 'SMOKE-core-160' ? exerciseNewSeal()
+  : id === 'SMOKE-core-161' ? exerciseLegacy() : exerciseNestedAnchor();
 console.log(JSON.stringify({ id, status: 'pass', cli_realpath: cli, ...evidence }));

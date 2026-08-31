@@ -41,6 +41,11 @@ import { readTestChangeSet, type TestChangeSetReadResult } from './test-change-s
 import { evaluatePlanPackage } from './plan-package.js';
 import { type PlanPackageEvaluation } from './plan-package-contract.js';
 import { AUTHORITY_CLOSURE_ISSUE_CODES } from './authority-closure.js';
+import {
+  parseDeltaBlocks,
+  parseMarkdownHeadings,
+  resolveSectionAnchor,
+} from './markdown-section-authority.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
@@ -391,63 +396,6 @@ function allIdsOf(x: RegistryIdExtraction): Set<string> {
   return out;
 }
 
-type DeltaBlockOp = 'ADDED' | 'MODIFIED' | 'REMOVED' | 'REMOVED-ITEMS';
-interface DeltaBlock { op: DeltaBlockOp; anchor: string; markerLine: number; lines: string[] }
-
-/** fence-aware 解析 delta 段标记块（围栏内示例标记不构成块边界——与 L4 同口径；记录 marker 源行号供源位置排序）。 */
-function parseDeltaBlocks(deltaContent: string): DeltaBlock[] {
-  const lines = deltaContent.split(/\r?\n/);
-  const scan = authorityScan(lines);
-  const blocks: DeltaBlock[] = [];
-  let cur: DeltaBlock | null = null;
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = scan.masked[i] ? '' : scan.text[i].trim();
-    const m = trimmed.match(/^##\s+(REMOVED-ITEMS|ADDED|MODIFIED|REMOVED)\b\s*(?:[—-]\s*(.+))?$/);
-    if (m) {
-      if (cur) blocks.push(cur);
-      cur = { op: m[1] as DeltaBlockOp, anchor: stripInlineCode(m[2] ?? '').trim() || (m[2] ?? '').trim(), markerLine: i, lines: [] };
-      continue;
-    }
-    if (cur) cur.lines.push(lines[i]);
-  }
-  if (cur) blocks.push(cur);
-  return blocks;
-}
-
-/**
- * 章节锚解析（S37，fail-closed）：单段锚仅当标题在目标文档唯一时合法；标题路径锚以 ` > ` 连接
- * 父级到目标级（各父段须按序命中候选的祖先链，允许跳级）。0 / ≥2 命中一律不可解析——
- * 禁止取第一个命中、禁止合并同名章节、禁止按 delta 内容反猜。
- */
-function resolveSectionAnchor(headings: DocHeading[], anchor: string): { status: 'ok' | 'not_found' | 'ambiguous'; hit?: DocHeading; candidates: DocHeading[] } {
-  const segments = anchor.split(' > ').map(s => stripInlineCode(s).trim()).filter(s => s.length > 0);
-  if (segments.length === 0) return { status: 'not_found', candidates: [] };
-  const targetText = segments[segments.length - 1];
-  const parents = segments.slice(0, -1);
-  const candidates = headings.filter(h => stripInlineCode(h.text).trim() === targetText);
-  const matched = candidates.filter(h => {
-    // 祖先链：从该标题向前收集 level 严格递减的最近祖先序列（nearest → root）。
-    const ancestors: DocHeading[] = [];
-    let level = h.level;
-    for (let i = headings.indexOf(h) - 1; i >= 0; i--) {
-      if (headings[i].level < level) { ancestors.push(headings[i]); level = headings[i].level; }
-    }
-    // parents（左=更高层级）须按 从右到左 的顺序在祖先链 nearest→root 中依次命中（允许跳级）。
-    let ai = 0;
-    for (let pi = parents.length - 1; pi >= 0; pi--) {
-      let found = false;
-      while (ai < ancestors.length) {
-        if (stripInlineCode(ancestors[ai].text).trim() === parents[pi]) { found = true; ai++; break; }
-        ai++;
-      }
-      if (!found) return false;
-    }
-    return true;
-  });
-  if (matched.length === 1) return { status: 'ok', hit: matched[0], candidates };
-  return { status: matched.length === 0 ? 'not_found' : 'ambiguous', candidates: matched.length > 0 ? matched : candidates };
-}
-
 /** REMOVED-ITEMS 点名行固定语法：`- <ID> — <删除原因>`（仅散文提及不构成点名）。 */
 const REMOVED_ITEMS_LINE_RE = /^-\s+(\S+)\s+—\s*\S/;
 
@@ -473,8 +421,7 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
   const anchored = material.filter(b => b.anchor);
 
   const targetLines = targetContent.split(/\r?\n/);
-  const targetScan = authorityScan(targetLines);
-  const headings = scanHeadings(targetLines, targetScan.masked, targetScan.text);
+  const headings = parseMarkdownHeadings(targetContent);
 
   // code-r2 F5：每条 violation 携带其**真实声明源行**（空锚/锚不可解析/多写者 = 相关 marker 行、
   // unknown = REMOVED-ITEMS 点名行、配对缺陷 = 声明块 marker 行、missing = 造成最终态缺失的 MODIFIED
@@ -514,11 +461,7 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
       continue;
     }
     const hit = resolution.hit!;
-    const hitIndex = headings.indexOf(hit);
-    let end = targetLines.length;
-    for (let i = hitIndex + 1; i < headings.length; i++) {
-      if (headings[i].level <= hit.level) { end = headings[i].line; break; }
-    }
+    const end = hit.endLine;
     const contextTitle = anchor.split(' > ').pop() ?? anchor;
     const existing = extractRegistryIds(targetLines.slice(hit.line, end), contextTitle, true);
     const existingAll = allIdsOf(existing);
@@ -617,9 +560,7 @@ export function resolveModifiedSectionKeys(deltaContent: string, targetContent: 
   if (targetContent === null) return [];
   const blocks = parseDeltaBlocks(deltaContent).filter(b => b.op === 'MODIFIED' && b.anchor);
   if (blocks.length === 0) return [];
-  const targetLines = targetContent.split(/\r?\n/);
-  const targetScan = authorityScan(targetLines);
-  const headings = scanHeadings(targetLines, targetScan.masked, targetScan.text);
+  const headings = parseMarkdownHeadings(targetContent);
   const keys: number[] = [];
   for (const b of blocks) {
     const r = resolveSectionAnchor(headings, b.anchor);

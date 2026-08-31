@@ -21,6 +21,10 @@ import {
   assertMergeTransactionSemantics, computeMergeReceiptSha256,
   mergeSha256,
 } from './merge-transaction-semantic.js';
+import {
+  composeOpenLogosMarkdown,
+  verifyAgentMaterialOutcome,
+} from './markdown-section-authority.js';
 
 export const MERGE_TRANSACTION_SCHEMA = 'openlogos/merge-transaction@1' as const;
 export const MERGE_PREFLIGHT_SCHEMA = 'openlogos/merge-preflight@1' as const;
@@ -478,44 +482,24 @@ function validateFrozenIdentity(root: string, proposalDir: string, tx: StoredTra
   }
 }
 
-function parseDeltaSections(delta: string): Array<{ op: 'ADDED' | 'MODIFIED' | 'REMOVED'; title: string; body: string }> {
-  const matches = [...delta.matchAll(/^## (ADDED|MODIFIED|REMOVED) — (.+)$/gm)];
-  return matches.map((match, index) => ({
-    op: match[1] as 'ADDED' | 'MODIFIED' | 'REMOVED', title: match[2].trim(),
-    body: delta.slice((match.index ?? 0) + match[0].length).replace(/^\r?\n/, '').slice(0,
-      index + 1 < matches.length ? (matches[index + 1].index ?? delta.length) - ((match.index ?? 0) + match[0].length) : undefined).trimEnd(),
-  }));
-}
-
-function applyMarkdownDelta(before: string, delta: string, mode: 'CREATE' | 'MODIFY'): Buffer {
-  const sections = parseDeltaSections(delta);
-  if (sections.length === 0) throw new MergeTransactionError('slot_identity_mismatch', 'Markdown Delta 缺少控制段', true);
-  let output = mode === 'CREATE' ? '' : before.replace(/\s+$/, '');
-  for (const section of sections) {
-    const heading = `## ${section.title}`;
-    const replacement = `${heading}${section.body ? `\n\n${section.body}` : ''}`;
-    const escaped = section.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`^## ${escaped}\\s*$[\\s\\S]*?(?=^#{1,2} |\\s*$)`, 'm');
-    if (section.op === 'ADDED') {
-      if (new RegExp(`^## ${escaped}\\s*$`, 'm').test(output)) throw new MergeTransactionError('slot_identity_mismatch', `ADDED 章节已存在：${section.title}`, true);
-      output = `${output}${output ? '\n\n' : ''}${replacement}`;
-    } else if (section.op === 'MODIFIED') {
-      if (!re.test(output)) throw new MergeTransactionError('slot_identity_mismatch', `MODIFIED 章节不存在：${section.title}`, true);
-      output = output.replace(re, replacement);
-    } else {
-      if (!re.test(output)) throw new MergeTransactionError('slot_identity_mismatch', `REMOVED 章节不存在：${section.title}`, true);
-      output = output.replace(re, '').replace(/\n{3,}/g, '\n\n').trimEnd();
-    }
-  }
-  return Buffer.from(`${output}\n`, 'utf8');
-}
-
 function coreContent(root: string, proposalDir: string, target: StoredTarget): Buffer {
   const delta = readFileSync(join(proposalDir, ...target.delta_path.split('/')));
   const targetAbs = join(root, ...target.target_path.split('/'));
   if (/\.(?:html|css|svg)$/i.test(target.target_path)) return Buffer.from(delta);
   if (target.target_path.endsWith('.md')) {
-    return applyMarkdownDelta(target.mode === 'MODIFY' ? readFileSync(targetAbs, 'utf8') : '', delta.toString('utf8'), target.mode);
+    try {
+      return Buffer.from(composeOpenLogosMarkdown(
+        target.mode === 'MODIFY' ? readFileSync(targetAbs, 'utf8') : '',
+        delta.toString('utf8'),
+        target.mode,
+      ), 'utf8');
+    } catch (error) {
+      throw new MergeTransactionError(
+        'slot_identity_mismatch',
+        error instanceof Error ? error.message : String(error),
+        true,
+      );
+    }
   }
   const checked = validateAndStripNonMarkdownDelta(delta.toString('utf8'), target.mode, target.target_path, { root });
   if (!checked.ok || checked.payload === undefined) throw new MergeTransactionError('slot_identity_mismatch', checked.message ?? 'non-Markdown Delta 无效', true);
@@ -532,22 +516,13 @@ function contentFor(root: string, proposalDir: string, tx: StoredTransaction, ta
   return bytes;
 }
 
-function validateAgentSemantics(root: string, proposalDir: string, target: StoredTarget, finalBytes: Buffer): void {
+function verifyAgentContent(root: string, proposalDir: string, target: StoredTarget, finalBytes: Buffer): void {
   const delta = readFileSync(join(proposalDir, ...target.delta_path.split('/')), 'utf8');
   const final = finalBytes.toString('utf8');
   const before = target.mode === 'MODIFY' ? readFileSync(join(root, ...target.target_path.split('/')), 'utf8') : '';
-  for (const section of parseDeltaSections(delta)) {
-    const escaped = section.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const heading = new RegExp(`^#{1,6}\\s+${escaped}\\s*$`, 'm');
-    if (section.op === 'ADDED' && (!heading.test(final) || heading.test(before))) {
-      throw new MergeTransactionError('slot_identity_mismatch', `ADDED 章节没有形成唯一新增结果：${section.title}`, true);
-    }
-    if (section.op === 'MODIFIED' && (!heading.test(final) || !heading.test(before))) {
-      throw new MergeTransactionError('slot_identity_mismatch', `MODIFIED 章节身份不守恒：${section.title}`, true);
-    }
-    if (section.op === 'REMOVED' && heading.test(final)) {
-      throw new MergeTransactionError('slot_identity_mismatch', `REMOVED 章节仍存在：${section.title}`, true);
-    }
+  const result = verifyAgentMaterialOutcome(delta, before, final);
+  if (!result.ok) {
+    throw new MergeTransactionError('slot_identity_mismatch', result.error ?? 'Agent content 未通过共享章节权威验证', true);
   }
 }
 
@@ -633,7 +608,7 @@ function buildMergePreflight(root: string, proposalDir: string, tx: StoredTransa
       let bytes: Buffer;
       try {
         bytes = contentFor(root, proposalDir, tx, target);
-        if (target.producer === 'agent') validateAgentSemantics(root, proposalDir, target, bytes);
+        if (target.producer === 'agent') verifyAgentContent(root, proposalDir, target, bytes);
       } catch (error) {
         const source = error instanceof Error ? error.message : String(error);
         throw new MergePreflightBuildError({
@@ -962,7 +937,8 @@ export function recoverMergeTransaction(root: string, proposalDir: string): Merg
         .sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
       const normalizedMetadata = [...stored.metadata_summaries]
         .sort((a, b) => String(a.path) < String(b.path) ? -1 : String(a.path) > String(b.path) ? 1 : 0);
-      const { receipt_sha256: _oldReceiptSha256, ...storedBase } = stored;
+      const { receipt_sha256: oldReceiptSha256, ...storedBase } = stored;
+      void oldReceiptSha256;
       const normalizedBase: Omit<MergeTransactionReceipt, 'receipt_sha256'> = {
         ...storedBase,
         closure_sha256: digest(canonical(normalizedFinalHashes)),
