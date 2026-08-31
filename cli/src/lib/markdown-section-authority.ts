@@ -149,6 +149,29 @@ function bodyOf(block: DeltaBlock): string {
   return lines.join('\n');
 }
 
+/**
+ * Delta 块内标题既可能已经按最终目标写成相对子标题，也可能沿用控制块
+ * 下的 H3 起始层级。当最浅正文标题不深于真实目标时，整体下沉到目标
+ * 下一层；已经更深的标题保持原级别。围栏内伪标题不参与重定位。
+ */
+function rebaseDeltaBodyHeadings(body: string, targetLevel: number): string {
+  const headings = parseMarkdownHeadings(body).sort((left, right) => right.start - left.start);
+  if (headings.length === 0) return body;
+  const shallowest = Math.min(...headings.map(heading => heading.level));
+  const shift = Math.max(0, targetLevel + 1 - shallowest);
+  if (shift === 0) return body;
+  let output = body;
+  for (const heading of headings) {
+    const level = heading.level + shift;
+    if (level < 1 || level > 6) {
+      throw new Error(`Delta 正文标题重定位超出 H1-H6：${heading.text}`);
+    }
+    const replacement = heading.rawHeading.replace(/^#{1,6}/, '#'.repeat(level));
+    output = `${output.slice(0, heading.start)}${replacement}${output.slice(heading.headingEnd)}`;
+  }
+  return output;
+}
+
 function sameIdentity(a: ResolvedSectionAnchor, b: ResolvedSectionAnchor): boolean {
   return a.level === b.level && a.text === b.text && a.path.join('\u0000') === b.path.join('\u0000');
 }
@@ -195,7 +218,12 @@ export function verifyAgentMaterialOutcome(
     if (before.status !== 'ok' || final.status !== 'ok' || !sameIdentity(before.hit!, final.hit!)) {
       return { ok: false, identities, error: `MODIFIED 章节身份不守恒：${block.anchor}` };
     }
-    const expectedBody = bodyOf(block).trim();
+    let expectedBody: string;
+    try {
+      expectedBody = rebaseDeltaBodyHeadings(bodyOf(block), before.hit!.level).trim();
+    } catch (error) {
+      return { ok: false, identities, error: error instanceof Error ? error.message : String(error) };
+    }
     if (expectedBody) {
       const actualSection = finalContent.slice(final.hit!.headingEnd, final.hit!.end).trim();
       if (!actualSection.includes(expectedBody)) {
@@ -221,7 +249,7 @@ export function composeOpenLogosMarkdown(
   let output = mode === 'CREATE' ? '' : beforeContent;
   for (const block of blocks) {
     if (!block.anchor) throw new Error(`${block.op} 段缺少章节锚`);
-    const body = bodyOf(block);
+    const rawBody = bodyOf(block);
     const headings = parseMarkdownHeadings(output);
     const resolution = resolveSectionAnchor(headings, block.anchor);
     if (block.op === 'ADDED') {
@@ -236,6 +264,7 @@ export function composeOpenLogosMarkdown(
         level = Math.min(parent.hit!.level + 1, 6);
         insertion = parent.hit!.end;
       }
+      const body = rebaseDeltaBodyHeadings(rawBody, level);
       const prefix = insertion > 0 && !output.slice(0, insertion).endsWith('\n\n') ? '\n' : '';
       const suffix = insertion < output.length && !output.slice(insertion).startsWith('\n') ? '\n' : '';
       const section = `${'#'.repeat(level)} ${title}${body ? `\n\n${body}` : ''}\n`;
@@ -247,6 +276,7 @@ export function composeOpenLogosMarkdown(
       output = spliceSection(output, resolution.hit!, '');
       continue;
     }
+    const body = rebaseDeltaBodyHeadings(rawBody, resolution.hit!.level);
     const nextStartsHeading = resolution.hit!.end < output.length;
     const replacement = `${resolution.hit!.rawHeading}${body ? `\n\n${body}` : ''}${nextStartsHeading ? '\n\n' : '\n'}`;
     output = spliceSection(output, resolution.hit!, replacement);

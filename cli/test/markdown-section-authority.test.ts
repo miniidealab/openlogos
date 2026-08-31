@@ -77,6 +77,15 @@ describe('MarkdownSectionAuthority', () => {
     expect(output).not.toContain(anchor.replace(' > ', ' > '));
     expect(output).not.toContain('UT-S37-01 — 仅作守恒声明');
     expect(verifyAgentMaterialOutcome(delta, before, output).ok).toBe(true);
+
+    const runLogosShapeDelta = [
+      `## MODIFIED — ${anchor}`, '', '新正文。', '',
+      '### 事件与最终态交互', '', '- 原子替换按最终态结算。', '',
+    ].join('\n');
+    const rebased = composeOpenLogosMarkdown(before, runLogosShapeDelta, 'MODIFY');
+    expect(rebased).toContain('#### 事件与最终态交互');
+    expect(rebased).not.toContain('\n### 事件与最终态交互');
+    expect(verifyAgentMaterialOutcome(runLogosShapeDelta, before, rebased).ok).toBe(true);
   });
 
   it('ST-S37-09: lint 与 Agent transaction verifier 对合法路径和歧义路径结论同源', () => {

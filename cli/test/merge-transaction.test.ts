@@ -208,10 +208,14 @@ function nestedAnchorFixture(count = 1, invalidIndex: number | null = null, subm
       '| 用例ID | 验证目标 |', '|---|---|', `| ${id} | 旧定义 |`, '',
       '## 八、其它规则', '', `### ${leaf}`, '', '同名叶保持。', '',
     ].join('\n');
-    const body = ['| 用例ID | 验证目标 |', '|---|---|', `| ${id} | 新定义 |`].join('\n');
+    const body = [
+      '| 用例ID | 验证目标 |', '|---|---|', `| ${id} | 新定义 |`, '',
+      '### 事件与最终态交互', '', '同形规则。',
+    ].join('\n');
+    const finalBody = body.replace('### 事件与最终态交互', '#### 事件与最终态交互');
     const finalParent = index === invalidIndex ? '错误父标题' : parent;
     const final = before.replace(`## ${parent}\n\n### ${leaf}\n\n| 用例ID | 验证目标 |\n|---|---|\n| ${id} | 旧定义 |`,
-      `## ${finalParent}\n\n### ${leaf}\n\n${body}`);
+      `## ${finalParent}\n\n### ${leaf}\n\n${finalBody}`);
     put(root, targetPath, before);
     put(root, `logos/changes/${slug}/${deltaPath}`, `## MODIFIED — ${parent} > ${leaf}\n\n${body}\n`);
     return { targetPath, deltaPath, before, final };

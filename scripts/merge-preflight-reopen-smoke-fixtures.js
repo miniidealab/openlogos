@@ -171,8 +171,11 @@ function exerciseNestedAnchor() {
   const targetPath = 'logos/resources/test/core-S09-test-cases.md';
   const deltaPath = 'deltas/test/core-S09-test-cases.md';
   const before = `# S09\n\n## ${parent}\n\n### ${leaf}\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S09-01 | 旧定义 |\n\n## 八、其它规则\n\n### ${leaf}\n\n同名叶保持。\n`;
-  const body = '| 用例ID | 验证目标 |\n|---|---|\n| UT-S09-01 | 新定义 |';
-  const final = before.replace('| UT-S09-01 | 旧定义 |', '| UT-S09-01 | 新定义 |');
+  const body = '| 用例ID | 验证目标 |\n|---|---|\n| UT-S09-01 | 新定义 |\n\n### 事件与最终态交互\n\n同形规则。';
+  const final = before.replace(
+    '| UT-S09-01 | 旧定义 |',
+    '| UT-S09-01 | 新定义 |\n\n#### 事件与最终态交互\n\n同形规则。',
+  );
   try {
     put(root, 'logos/logos.config.json', '{"locale":"zh","sourceRoots":{"src":["src"],"test":["test"]}}\n');
     put(root, 'logos/.openlogos-guard', `${JSON.stringify({ activeChange: slug, module: 'core' })}\n`);
