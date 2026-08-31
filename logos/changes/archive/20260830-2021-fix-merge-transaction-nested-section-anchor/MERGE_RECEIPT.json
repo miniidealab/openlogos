@@ -1,0 +1,120 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_52754b01443ef0d589819aa6",
+  "seal_sha256": "sha256:07fa46e0e63e6326154bb7c2aed3dad74b55f0886455c2c495410476b89a76d7",
+  "target_set_sha256": "sha256:6f7ab316b4add3ce4432a4cce42a86a034b35a8e8dbeb38a1db2dc735fbb4a3c",
+  "closure_sha256": "sha256:bf05e4b666d3a39c35c9a850e20103b51a84f6b73675abb490d047f86ab1d2ef",
+  "target_count": 9,
+  "plan_sha256": "sha256:969c1aa0de3aec763765ea46694e7ecb514986d2d56c6214817e0543f179a53b",
+  "change": "fix-merge-transaction-nested-section-anchor",
+  "module": "core",
+  "changed_paths": [
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S37-delta-conservation.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S37-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md"
+  ],
+  "created_paths": [],
+  "final_hashes": [
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:4c9cc2561b32a6b489e7846467ba765d601a30aeaa8841dad254fe12946035de"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:e686338e0366457b46dc69e6e5f28d45fb680748aad1759c5b22b69998df1940"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "sha256": "sha256:1633a0173025af340805676a513ce610f69b6252994beb14c14e4aec7f017e57"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "sha256": "sha256:9af0b3f98d400d85a4126d5d7575d1851e54003cf4201f76d67e3e106bc4741c"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S37-delta-conservation.md",
+      "sha256": "sha256:2da939ef9938424a14e194638855f7c00e3ec0e30461c0a8930cc59e1a57ffb1"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "sha256": "sha256:a7810545ed7cb7f5ccef00146d53202805f1fe1852209a711611ca8a556928a9"
+    },
+    {
+      "path": "logos/resources/test/core-S09-test-cases.md",
+      "sha256": "sha256:2d77f4167a37608267b4880d898bf921ca16784aa529b8af1871fb30d2719fcd"
+    },
+    {
+      "path": "logos/resources/test/core-S37-test-cases.md",
+      "sha256": "sha256:a818b534b341537c2059c678e0ff3ca784066f8211b903d5713a4d8b93d1b1f8"
+    },
+    {
+      "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "sha256": "sha256:29f51136ed97109346495fada269e5cea1151f2e5bc654fbbd48e84f25392239"
+    }
+  ],
+  "metadata_summaries": [],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-merge-transaction-nested-section-anchor",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-168",
+      "ST-S09-106",
+      "ST-S09-107",
+      "ST-S37-09",
+      "ST-S37-10",
+      "UT-S09-271",
+      "UT-S09-272",
+      "UT-S09-273",
+      "UT-S09-274",
+      "UT-S37-37",
+      "UT-S37-38",
+      "UT-S37-39",
+      "UT-S37-40"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "44914b41afc98aad5121c3382e5899d6c8ebb6c6c02f21cf941cc78daa73b87e",
+        "after_sha256": "2d77f4167a37608267b4880d898bf921ca16784aa529b8af1871fb30d2719fcd"
+      },
+      {
+        "target_path": "logos/resources/test/core-S37-test-cases.md",
+        "before_sha256": "013c020adb1cb8d2fd543b5b7f4303feea0843512f25d21eaa0540adaab9d154",
+        "after_sha256": "a818b534b341537c2059c678e0ff3ca784066f8211b903d5713a4d8b93d1b1f8"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "ecb7cc471a6d09aac83b6176fc2c8203993384c1ceb49c3388915aee9a2a6f69",
+        "after_sha256": "29f51136ed97109346495fada269e5cea1151f2e5bc654fbbd48e84f25392239"
+      }
+    ],
+    "sha256": "sha256:e42b5ae1ca7ffbb7dc5c23f88d0a8d2e8a03e57dda051eef719f16e3e645762c"
+  },
+  "spec_merged": {
+    "path": "logos/changes/fix-merge-transaction-nested-section-anchor/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/fix-merge-transaction-nested-section-anchor/MERGE_RECEIPT.json",
+    "logos/changes/fix-merge-transaction-nested-section-anchor/SPEC_MERGED",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S37-delta-conservation.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S37-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md"
+  ],
+  "completed_at": "2026-08-31T01:56:11.879Z",
+  "receipt_sha256": "sha256:85c0448904cb26b427e5075352427a4c061d6ebc977b743b15e73621bfe2fdc3"
+}

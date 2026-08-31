@@ -1,3 +1,64 @@
+# 部署报告：fix-merge-transaction-nested-section-anchor / OpenLogos 0.14.4（2026-08-30，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-merge-transaction-nested-section-anchor`。
+- **授权与门禁**：用户已明确授权部署、smoke 及 smoke 失败后的修复—重新部署—重跑闭环；正式 `openlogos verify` 已 PASS，`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **执行时间**：`2026-08-31T02:40:48Z`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.4` 已完成真实 npm pack、制品身份核对、隔离安装、嵌套锚事务正例、局部 reopen 回归、`0.14.3→0.14.4→0.14.3→0.14.4` 隔离往返、本机全局安装、RunLogos 原事务恢复和完整正式 smoke，均通过；当前全局版本精确为 `0.14.4`。
+- **数据迁移 / 服务启动**：无 / 不适用；环境变更仅为把本机全局 OpenLogos CLI 从 `0.14.3` 替换为 `0.14.4`。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 `git push`。
+- **正式 smoke**：`openlogos smoke --env local-global --format json` 最终于 `2026-08-31T03:17:58Z` 成功；138/138 定义用例全部执行并 PASS，0 fail、0 skip、0 uncovered，覆盖率与通过率均为 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场。
+- **RunLogos 原事务**：`mtx_e7f7b924499d49f96aaf8a2f` 保持原 identity 完成缺失 slot 写入、submit-content、seal 与 apply；最终 7/7 slot 齐全，receipt SHA-256 为 `edd9bfbe06299291de07a922d85dda303741e0334982c191d419a79ad5244822`。正式 SMOKE-core-168 以 completed replay 验证该 receipt，没有 abort 或创建第二事务。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `ffe598cc4dcd328a4b8a75e5b135503cb0487271` |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/fix-merge-transaction-nested-section-anchor/miniidealab-openlogos-0.14.4.tgz`；2,033,609 字节；696 个文件 |
+| candidate SHA-256 | `90f09b4b49c678fd6e585808a070d230dba16b207a60a2bec8093abbc4ad574f` |
+| candidate 解包大小 | 8,313,495 字节 |
+| candidate asset payload hash | `685ff6535105552b4b5f0d72edbab24e2114344a84080ca472712fca86949587` |
+| 固定回滚 tarball | `logos/resources/verify/deployment-artifacts/fix-merge-transaction-nested-section-anchor/miniidealab-openlogos-0.14.3.tgz`；2,029,933 字节 |
+| 回滚 SHA-256 | `9bf9d4520e1a474cff0bd0a8becd7e262e7ab15e8105c1a6fe2df856cb24b6d9` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` / `0.14.3` |
+
+可复制回滚命令：
+
+```bash
+npm install -g --force --ignore-scripts --no-audit --no-fund /Users/huangxianglong/gitlab/openlogos/logos/resources/verify/deployment-artifacts/fix-merge-transaction-nested-section-anchor/miniidealab-openlogos-0.14.3.tgz
+/bin/zsh -lic 'command -v openlogos && openlogos --version'
+```
+
+## 三、隔离矩阵与全局安装证据
+
+1. candidate 在一次性 prefix 安装后，CLI、package、asset manifest 与 Claude/Codex/ZCode/Qoder/WorkBuddy 五类 plugin manifest 全部为 `0.14.4`；`dist/lib/markdown-section-authority.js` 在场，asset payload hash 与固定 tarball 相同。
+2. 安装态 `SMOKE-core-168` 临时嵌套锚 fixture 完成 submit/status/seal/apply，真实命中 H3 `7.1 已打开文件外部变化感知`，父路径为 `七、项目文件夹动态 watcher 交互规则`；未生成字面量路径标题。
+3. 安装态 `SMOKE-core-160` 本地 reopen 与 `SMOKE-core-161` legacy reopen 均通过；错误 slot 可在同一事务重提，无关 slot 身份不漂移。
+4. 同一隔离 prefix 真实执行固定 `0.14.4→0.14.3→0.14.4`，结合部署前现役 `0.14.3` 冻结点形成 `0.14.3→0.14.4→0.14.3→0.14.4` 往返；每阶段版本与固定制品一致。
+5. 全局安装使用上述 candidate 绝对路径；安装后 `openlogos --version`、package、asset manifest 和五类 plugin manifest 均精确为 `0.14.4`，asset manifest SHA-256 为 `49fa0c0d8a0e2bfa649046c6363be2be1f9922fb12a38c2c633ea733eb441705`。
+6. 自愈后的全局入口再次执行临时 SMOKE-core-168 fixture 为 PASS；transaction 为 `mtx_440e362bd2122f02173f9280`，receipt 为 `sha256:187ed3b17abf80bbe9b2a78d49abaa4bf09d570138ec5a37f41e187abcb88ca1`。
+
+## 四、异常与处置
+
+首次全局安装后的自检脚本误把 package 根资源写成不存在的 `assets/openlogos/package.json`，因此在读取 asset version 时退出。只读检查固定 tarball、安装目录和正式 smoke runner 后确认权威路径是 package 根 `asset-manifest.json`；安装命令此前已成功，CLI/package/五类插件/asset/module 与临时事务逐项复核均通过，故该异常属于部署编排校验路径错误，不是 candidate 缺件，也无需回滚或代码修复。
+
+随后在准备 RunLogos 缺失 Agent slot 的真实 final bytes 时发现：目标锚为 H3，而原 Delta 块内的小节也从 H3 开始；修复前 verifier 会拿未重定位的 Delta 正文做逐字包含判断，使正确下沉为 H4 的合法 final 仍被误报“MODIFIED 章节正文不完整”。该缺口属于本提案嵌套章节锚范围，且此前临时 fixture 只有表格正文，没有覆盖同级子标题。
+
+自愈提交 `ffe598c` 将正文标题重定位收敛到共享 section authority：当 Delta 正文最浅标题不深于真实目标时整体下沉到目标下一层；已经是合法相对子标题的 H4 保持不变，围栏伪标题不参与。Agent verifier 与 OpenLogos composer 消费同一结果；定向回归 46/46、lint、build 均通过，完整 `openlogos verify` 为 1941/1941 已执行、1931 PASS、10 个既有 skip、0 fail、0 uncovered、Gate PASS。
+
+修复后的 RunLogos 同形候选保持正式 before SHA-256 `d8c19bea…8f451` 与 Delta SHA-256 `9420c5ce…c8ee5` 不变，生成 final SHA-256 `8d5e6c7f…f5ddd`；真实叶仍为 H3，五个正文小节均为 H4，共享 verifier PASS。重新 pack 后旧 candidate `417bb51b…1313` 作废；最终固定 candidate 为 `90f09b4b…574f`，已重新完成隔离回滚往返与全局安装态 fixture。
+
+获得用户独立授权后，恢复过程严格复用 RunLogos 原事务：先按公共 status 只补被声明缺失的 slot；seal 依次暴露并局部 reopen 了嵌套架构章节和测试规格的历史结构缺陷。修复后的 Agent final 将嵌套正文标题按真实 H3 锚下沉为 H4；测试 final 收敛 6 个历史重复 UT/ST 定义、补齐 7 个历史表格缺列，并移除 Delta `ADDED` 控制 marker。最终 test change set 未移除任何测试 ID，原事务 7/7 slot、seal、apply 与 receipt 全部闭合。
+
+首轮完整正式 smoke 为 130/138：SMOKE-core-150/155 误把当前 RunLogos 0.14.2 冻结合同用于历史 0.14.0 runner，SMOKE-core-117～122 因 OpenLogos 外层 macOS 沙箱与 WorkBuddy 内层精确 Home 写保护形成嵌套 `sandbox-exec` 而失败。处置时未修改 candidate：重新安装同一 SHA-256 的 0.14.4 tarball，历史用例改用对应的冻结 RunLogos 0.14.0 副本；通过 `OPENLOGOS_SANDBOX_WRITE_PROTECTION=off` 关闭外层运行期保护，保留 WorkBuddy driver 的内层精确写保护。第二轮从空账本重跑 138/138 PASS；外层 sandbox `warn` 是受控嵌套规避，不表示 WorkBuddy Home 边界放开。
+
+当前 `VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 均在场；未 archive、未 npm publish、未创建 tag/release、未部署网站、未 `git push`。
+
+---
+
 # 部署报告：institutionalize-single-authority-design-gate / OpenLogos 0.14.3（2026-08-30，本机全局部署完成）
 
 ## 一、部署结论

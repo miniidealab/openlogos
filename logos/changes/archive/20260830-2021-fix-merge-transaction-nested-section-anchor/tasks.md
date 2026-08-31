@@ -24,10 +24,10 @@ API、数据库、方法论根规范、Skill、长期决策与 API orchestration
 
 ## [deploy] 部署任务
 
-- [ ] 在规格 merge、实现与 `openlogos verify` PASS 后，等待用户明确授权部署；获授权后才将 package/plugin/asset identity 同步提升到 `0.14.4`、构建 npm candidate，并冻结 tarball 路径、大小、文件清单与 SHA-256。
-- [ ] 冻结本机全局 `0.14.3` 的命令入口、realpath、package/plugin/asset identity、固定回滚制品与可复制回滚命令。
-- [ ] 在隔离 npm prefix 安装 candidate，验证嵌套路径锚 submit 成功、seal/apply 正反例及 `0.14.3→0.14.4→0.14.3→0.14.4` 往返恢复；失败不得覆盖全局。
-- [ ] 获得独立全局部署授权后安装固定 candidate；获得 smoke 授权后执行安装态 `SMOKE-core-168`。任何失败均修复后重新 verify/pack/install/smoke，或恢复固定 `0.14.3`，不得伪造通过。
-- [ ] 获得 RunLogos merge 的独立授权后，回到原项目复用 `mtx_e7f7b924499d49f96aaf8a2f`，只重提缺失 slot并完成 seal/apply；失败时按稳定摘要修复并重试，不 abort、不新建 transaction。
+- [x] 在规格 merge、实现与 `openlogos verify` PASS 后，等待用户明确授权部署；获授权后才将 package/plugin/asset identity 同步提升到 `0.14.4`、构建 npm candidate，并冻结 tarball 路径、大小、文件清单与 SHA-256。
+- [x] 冻结本机全局 `0.14.3` 的命令入口、realpath、package/plugin/asset identity、固定回滚制品与可复制回滚命令。
+- [x] 在隔离 npm prefix 安装 candidate，验证嵌套路径锚 submit 成功、seal/apply 正反例及 `0.14.3→0.14.4→0.14.3→0.14.4` 往返恢复；失败不得覆盖全局。
+- [x] 获得独立全局部署授权后安装固定 candidate；获得 smoke 授权后执行安装态 `SMOKE-core-168`。任何失败均修复后重新 verify/pack/install/smoke，或恢复固定 `0.14.3`，不得伪造通过。
+- [x] 获得 RunLogos merge 的独立授权后，回到原项目复用 `mtx_e7f7b924499d49f96aaf8a2f`，只重提缺失 slot并完成 seal/apply；失败时按稳定摘要修复并重试，不 abort、不新建 transaction。
 
 本次提案批准只授权后续 Delta 编写，不构成 OpenLogos merge、verify、部署、smoke、RunLogos merge、archive、公开发布或任何仓库 git push 的 standing 授权。
