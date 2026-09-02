@@ -313,7 +313,7 @@ export function inferLifecycle(root: string): Lifecycle {
   return data?.modules?.some(m => m.lifecycle === 'launched') ? 'launched' : 'initial';
 }
 
-interface OverlayDoc {
+export interface OverlayDoc {
   extends?: string;
   // contract-self-description 切片3（§10.5）：overlay 顶层 defaults（文件级 strategic-merge，先于操作列表应用）
   defaults?: { dispatch?: { timeout_seconds?: number } };

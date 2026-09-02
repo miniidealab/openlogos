@@ -15,6 +15,7 @@ import {
   GUI_OVERLAY_NODE_IDS,
 } from '../src/lib/ui-first.js';
 import { readProjectYaml } from '../src/lib/project-yaml.js';
+import { BUILTIN_VERSIONS } from '../src/lib/flow.js';
 
 // 仓库真实 overlay 源（随 CLI 分发的 spec 唯一源）。
 const REPO_OVERLAY = join(
@@ -124,7 +125,7 @@ describe('S09 — syncGuiOverlay 幂等注入/移除', () => {
     writeFileSync(flowPath, stringifyYaml({
       version: 1,
       flow: 'launched',
-      extends: 'builtin:launched@v1',
+      extends: `builtin:launched@${BUILTIN_VERSIONS.launched}`,
       overlay: [{ op: 'add', after: 'write-tasks', node: { id: 'custom-user-node', name: '用户节点' } }],
     }, { lineWidth: 0 }));
 
@@ -151,7 +152,7 @@ describe('S09 — syncGuiOverlay 幂等注入/移除', () => {
     const flowPath = join(root, 'logos', 'flow', 'launched.yaml');
     mkdirSync(dirname(flowPath), { recursive: true });
     writeFileSync(flowPath, stringifyYaml({
-      version: 1, flow: 'launched', extends: 'builtin:launched@v1',
+      version: 1, flow: 'launched', extends: `builtin:launched@${BUILTIN_VERSIONS.launched}`,
       overlay: [{ op: 'add', after: 'write-tasks', node: { id: 'custom-user-node', name: '用户节点' } }],
     }, { lineWidth: 0 }));
     expect(syncGuiOverlay(root)).toBe('injected');
@@ -269,7 +270,7 @@ describe('S09 — PRODUCT_TYPE_CONFIRMATION_REQUIRED 诊断（sync / status / ne
     const flowPath = join(root, 'logos', 'flow', 'launched.yaml');
     mkdirSync(dirname(flowPath), { recursive: true });
     writeFileSync(flowPath, stringifyYaml({
-      version: 1, flow: 'launched', extends: 'builtin:launched@v1',
+      version: 1, flow: 'launched', extends: `builtin:launched@${BUILTIN_VERSIONS.launched}`,
       overlay: [{ op: 'add', after: 'write-tasks', node: { id: 'custom-user-node', name: '用户节点' } }],
     }, { lineWidth: 0 }));
 

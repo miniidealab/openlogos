@@ -16,6 +16,14 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readProjectYaml, type ProjectYamlData, type ProjectYamlModule } from './project-yaml.js';
+import {
+  BUILTIN_VERSIONS,
+  applyOverlay,
+  loadBuiltinFlow,
+  parseExtends,
+  type Lifecycle,
+  type OverlayDoc,
+} from './flow.js';
 import { authorityScan } from './markdown-scan.js';
 
 /** product_type 合法枚举（spec/logos-project.md）；固定顺序契约：扩展只允许尾部追加。 */
@@ -372,13 +380,65 @@ function readInstanceFlow(root: string): { path: string; doc: Record<string, unk
  * - 保留实例中已有的用户自定义 overlay ops。
  * 返回是否发生写入变更。
  */
+/** GUI overlay 注入的目标 lifecycle（实例文件恒为 logos/flow/launched.yaml） */
+const GUI_OVERLAY_LIFECYCLE: Lifecycle = 'launched';
+
+/** 组装 `builtin:<lifecycle>@<映射值>`——版本号只有这一个来源 */
+function currentExtends(lifecycle: Lifecycle): string {
+  return `builtin:${lifecycle}@${BUILTIN_VERSIONS[lifecycle]}`;
+}
+
+/**
+ * 存量 overlay 的有条件迁移（spec/flow-spec.md §10.1、架构 §三十八.4）。
+ *
+ * 判据是「该 overlay 引用的**全部** node id 在新版本内置模板中是否仍可解析」——
+ * 这恰是 `FLOW_VERSION_MISMATCH` 文案所问的问题本身。判据不另写一套：直接把 overlay
+ * 交给权威 resolver `applyOverlay()` 求值，能解析即全部引用有效，抛
+ * `FLOW_SCHEMA_INVALID` 即存在失效 node id。
+ *
+ * - 全部可解析 → 就地把 `extends` 提升为当前映射值，返回 true；
+ * - 任一失效 → 保持原值，返回 false，让 `FLOW_VERSION_MISMATCH` 继续指向真正要人工复核的对象。
+ *
+ * 幂等：已是当前版本时直接返回 false。只改 `extends` 一个字段，不触碰任何 overlay 操作。
+ */
+function migrateOverlayExtends(doc: Record<string, unknown>): boolean {
+  const target = currentExtends(GUI_OVERLAY_LIFECYCLE);
+  if (doc.extends === target) return false;
+
+  let parsed: { baseline: string; version: string | null };
+  try {
+    parsed = parseExtends(doc.extends as string);
+  } catch {
+    return false; // 无法解析的 extends 不猜测、不改写
+  }
+  // 基线不符（如 initial overlay 误落此处）不属本迁移职责
+  if (parsed.baseline !== GUI_OVERLAY_LIFECYCLE) return false;
+  if (parsed.version === BUILTIN_VERSIONS[GUI_OVERLAY_LIFECYCLE]) return false;
+
+  try {
+    applyOverlay(
+      loadBuiltinFlow(GUI_OVERLAY_LIFECYCLE),
+      { ...(doc as OverlayDoc), extends: target },
+      GUI_OVERLAY_LIFECYCLE,
+    );
+  } catch {
+    return false; // 存在失效 node id → 保持原值并保留告警
+  }
+  doc.extends = target;
+  return true;
+}
+
 export function injectGuiOverlay(root: string): boolean {
   const ops = loadGuiOverlayOps(root);
   if (ops.length === 0) return false;
   const { path, doc } = readInstanceFlow(root);
   doc.version = doc.version ?? 1;
   doc.flow = doc.flow ?? 'launched';
-  if (typeof doc.extends !== 'string') doc.extends = 'builtin:launched@v1';
+  // 内置模板内容版本的唯一权威是 loader 映射（spec/flow-spec.md §10.1、架构 §三十八.2）。
+  // 此处禁止出现任何字面量版本号：写入端与告警判定端读同一映射，结构上不可能失同步。
+  let migrated = false;
+  if (typeof doc.extends !== 'string') doc.extends = currentExtends(GUI_OVERLAY_LIFECYCLE);
+  else migrated = migrateOverlayExtends(doc);
   const existing: OverlayAddOp[] = Array.isArray(doc.overlay) ? doc.overlay as OverlayAddOp[] : [];
   const guiIds = new Set<string>(GUI_OVERLAY_NODE_IDS);
   const present = new Set(existing.map(overlayOpNodeId).filter(Boolean) as string[]);
@@ -392,7 +452,7 @@ export function injectGuiOverlay(root: string): boolean {
       changed = true;
     }
   }
-  if (!changed && existsSync(path)) return false;
+  if (!changed && !migrated && existsSync(path)) return false;
   doc.overlay = merged;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, stringifyYaml(doc, { lineWidth: 0 }));
