@@ -12,6 +12,7 @@ import { loadFlow, findActivatedLoop, type Flow } from './flow.js';
 import { isCodeRequiredForProposal, deriveProposalFacts, readSlicesApprovedAt } from './proposal-lifecycle.js';
 import type { ModuleInfo } from '../commands/status.js';
 import { deriveSliceVerificationState } from './test-slice-manifest.js';
+import { VERIFY_PASS_MARKER } from './proposal-markers.js';
 
 export interface LoopState {
   subflow_id: string;
@@ -105,7 +106,7 @@ export function deriveLoopState(
     const hasCodeSlices = code.total > 0;
     const codeRequired = isCodeRequiredForProposal(proposalDir);
     const sliceVerification = deriveSliceVerificationState(root, proposalDir, { module: mod.id });
-    const finalGreen = existsSync(join(proposalDir, 'VERIFY_PASS'));
+    const finalGreen = existsSync(join(proposalDir, VERIFY_PASS_MARKER));
     converged = hasCodeSlices && sliceVerification
       ? finalGreen
         && sliceVerification.manifest_status === 'valid'

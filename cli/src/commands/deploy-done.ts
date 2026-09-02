@@ -12,6 +12,7 @@ import {
   resolveProposalDeploymentDecision,
   type ModuleInfo,
 } from './status.js';
+import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
 
 const DEPLOYMENT_REPORT_PATH = 'logos/resources/verify/deployment-report.md';
 
@@ -35,7 +36,7 @@ async function isVerifyPassedForDeploy(root: string, proposalDir: string): Promi
   let verify;
   for (const s of flow.subflows) for (const n of s.nodes) if (n.id === 'verify') verify = n;
   // 理论不可达（builtin launched 必有 verify 节点）：退回默认 marker 名
-  if (!verify) return (existsSync(join(proposalDir, 'VERIFY_PASS')) && !existsSync(join(proposalDir, 'VERIFY_FAIL'))) ? { passed: true } : { passed: false };
+  if (!verify) return (existsSync(join(proposalDir, VERIFY_PASS_MARKER)) && !existsSync(join(proposalDir, 'VERIFY_FAIL'))) ? { passed: true } : { passed: false };
   const done = verify.done_when, fail = verify.fail_when;
   // S30·#3（Medium）：与 status 派生（flow-derive markerName）一致——resolved verify 谓词只允许 cmd:/marker:。
   // 其它（如 file:logos/X）是配置错误：fail loud FLOW_SCHEMA_INVALID，绝不落到「未通过」误报 VERIFY_NOT_PASSED

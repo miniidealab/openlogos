@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, linkSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parseStrictTimestampMs } from './timestamp.js';
+import {
+  VERIFY_PASS_MARKER, SLICES_APPROVED_MARKER, PLAN_APPROVED_MARKER, hasSpecCompleteMarker,
+} from './proposal-markers.js';
 // 循环导入（安全性见 detectProposalStep 注释）：仅函数声明跨界调用、无顶层跨界求值。
 import { detectMintedStepViaFlow } from './flow-derive.js';
 
@@ -112,9 +115,12 @@ export interface PlanState {
 }
 
 const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'spec', 'skills'] as const;
-export const PLAN_APPROVED_MARKER = 'PLAN_APPROVED';
+export {
+  PLAN_APPROVED_MARKER, SPEC_MERGED_MARKER, LEGACY_MERGED_MARKER, VERIFY_PASS_MARKER, HISTORICAL_MARKERS,
+  hasSpecCompleteMarker,
+} from './proposal-markers.js';
 // split-slice-planner-stage：slice-exit 门被 --auto 消费后的状态源（类比 PLAN_APPROVED）。
-export const SLICES_APPROVED_MARKER = 'SLICES_APPROVED';
+export { SLICES_APPROVED_MARKER } from './proposal-markers.js';
 
 const DEPLOYMENT_BOOLEAN_TEMPLATE_FIELDS = [
   '是否需要部署',
@@ -635,9 +641,7 @@ export function countMergeableDeltaFiles(proposalDir: string): number {
   return count;
 }
 
-export function hasSpecCompleteMarker(proposalDir: string): boolean {
-  return existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'));
-}
+
 
 // ── contract-self-description 切片1：facts 权威事实块 + 结构化 SLICES_APPROVED ──
 
@@ -668,7 +672,7 @@ export function deriveProposalFacts(proposalDir: string, tasksContent?: string):
     slices_approved: existsSync(join(proposalDir, SLICES_APPROVED_MARKER)),
     code_required: isCodeRequiredForProposal(proposalDir, taskText, sections),
     has_delta_tasks: (sections?.delta?.total ?? 0) > 0,
-    verify_pass: existsSync(join(proposalDir, 'VERIFY_PASS')),
+    verify_pass: existsSync(join(proposalDir, VERIFY_PASS_MARKER)),
   };
 }
 

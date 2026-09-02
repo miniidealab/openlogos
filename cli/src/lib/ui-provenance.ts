@@ -19,8 +19,10 @@ import {
 import { join, basename, resolve, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { isValidPrototypeBasename, readUiUxDeclaration } from './ui-first.js';
+import { PLAN_APPROVED_MARKER } from './proposal-markers.js';
 
-export const PLAN_APPROVED = 'PLAN_APPROVED';
+/** 本文件此前自列一份同名字面量；marker 名的唯一权威在 proposal-markers.ts。 */
+export const PLAN_APPROVED = PLAN_APPROVED_MARKER;
 export const COMMIT_JOURNAL = 'UI_COMMIT_JOURNAL.json';
 const STAGING_DIR = '.ui-commit-staging';
 const BACKUP_DIR = '.ui-commit-backup';

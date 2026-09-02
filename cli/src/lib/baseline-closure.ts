@@ -38,6 +38,7 @@ import {
   listBaselineSeedModuleIds,
   withRecoveredReadLocks,
 } from './baseline-seed-txn.js';
+import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 
 export const BASELINE_CLOSURE_POLICY = 'on-touch-v1' as const;
 
@@ -1061,7 +1062,7 @@ function evaluateBaselineClosureLocked(options: EvaluateBaselineClosureOptions):
 
   const planByTarget = new Map(planMaterial.map(t => [t.canonicalTargetPath!, t]));
   const taskByTarget = new Map(parsedTasks.targets.map(t => [t.canonicalTargetPath, t]));
-  const specMerged = existsSync(join(proposalDir, 'SPEC_MERGED'));
+  const specMerged = existsSync(join(proposalDir, SPEC_MERGED_MARKER));
 
   for (const target of plan.targets) {
     if (target.mode === 'AMBIGUOUS') {

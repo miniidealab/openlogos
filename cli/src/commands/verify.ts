@@ -26,6 +26,7 @@ import {
   type SliceVerificationState,
 } from '../lib/test-slice-manifest.js';
 import { contractVersion } from '../lib/step-registry.js';
+import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
 
 export interface TestResult {
   id: string;
@@ -1242,7 +1243,7 @@ export function verify(format: OutputFormat = 'text') {
         if (existsSync(proposalDir)) {
           if (data.gate.result === 'PASS') {
             if (sliceVerification?.verify_mode !== 'slice-checkpoint') {
-              writeFileSync(join(proposalDir, 'VERIFY_PASS'), '');
+              writeFileSync(join(proposalDir, VERIFY_PASS_MARKER), '');
             }
             for (const marker of ['VERIFY_FAIL']) {
               const markerPath = join(proposalDir, marker);
@@ -1250,7 +1251,7 @@ export function verify(format: OutputFormat = 'text') {
             }
           } else {
             writeFileSync(join(proposalDir, 'VERIFY_FAIL'), '');
-            for (const marker of ['VERIFY_PASS', 'DEPLOY_DONE', 'SMOKE_PASS', 'SMOKE_FAIL']) {
+            for (const marker of [VERIFY_PASS_MARKER, 'DEPLOY_DONE', 'SMOKE_PASS', 'SMOKE_FAIL']) {
               const markerPath = join(proposalDir, marker);
               if (existsSync(markerPath)) rmSync(markerPath, { force: true });
             }

@@ -25,6 +25,7 @@ import {
   composeOpenLogosMarkdown,
   verifyAgentMaterialOutcome,
 } from './markdown-section-authority.js';
+import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 
 export const MERGE_TRANSACTION_SCHEMA = 'openlogos/merge-transaction@1' as const;
 export const MERGE_PREFLIGHT_SCHEMA = 'openlogos/merge-preflight@1' as const;
@@ -685,7 +686,7 @@ function buildMergePreflight(root: string, proposalDir: string, tx: StoredTransa
 
 function hasApplyArtifacts(proposalDir: string): boolean {
   return [
-    'MERGE_RECEIPT.json', 'SPEC_MERGED', BASELINE_CLOSURE_APPLY_JOURNAL,
+    'MERGE_RECEIPT.json', SPEC_MERGED_MARKER, BASELINE_CLOSURE_APPLY_JOURNAL,
     `${BASELINE_CLOSURE_APPLY_JOURNAL}.tmp`, '.baseline-closure-apply-txn',
   ].some(path => existsSync(join(proposalDir, path)));
 }
@@ -835,7 +836,7 @@ export function abortMergeTransaction(proposalDir: string): MergeTransactionProj
   if (!['collecting', 'ready', 'sealed'].includes(tx.phase)) {
     throw new MergeTransactionError('action_not_allowed', `phase=${tx.phase} 禁止 abort`, false, projectMergeTransaction(tx, proposalDir));
   }
-  if (existsSync(join(proposalDir, 'MERGE_RECEIPT.json')) || existsSync(join(proposalDir, 'SPEC_MERGED'))) {
+  if (existsSync(join(proposalDir, 'MERGE_RECEIPT.json')) || existsSync(join(proposalDir, SPEC_MERGED_MARKER))) {
     throw new MergeTransactionError('receipt_mismatch', 'abort 前发现正式 receipt/marker，拒绝破坏性清理', false, projectMergeTransaction(tx, proposalDir));
   }
   cleanupMergePrivateArtifacts(proposalDir, tx);
@@ -897,7 +898,7 @@ export function applyMergeTransaction(root: string, proposalDir: string): MergeT
   const testChangeSet = prepared.testChangeSet;
   const completedAt = new Date().toISOString();
   const receiptPath = relative(root, join(proposalDir, 'MERGE_RECEIPT.json')).replace(/\\/g, '/');
-  const markerPath = relative(root, join(proposalDir, 'SPEC_MERGED')).replace(/\\/g, '/');
+  const markerPath = relative(root, join(proposalDir, SPEC_MERGED_MARKER)).replace(/\\/g, '/');
   const receipt = receiptFor(tx, closure, testChangeSet as unknown as Record<string, unknown>, receiptPath, markerPath, completedAt);
   const receiptBytes = Buffer.from(`${JSON.stringify({ schema: MERGE_TRANSACTION_SCHEMA, ...receipt }, null, 2)}\n`);
   const markerBytes = Buffer.from(`${JSON.stringify({
@@ -934,7 +935,7 @@ export function applyMergeTransaction(root: string, proposalDir: string): MergeT
 export function recoverMergeTransaction(root: string, proposalDir: string): MergeTransactionProjection {
   const tx = readStored(proposalDir);
   if (tx.phase === 'completed') return projectMergeTransaction(tx, proposalDir);
-  const markerPath = join(proposalDir, 'SPEC_MERGED');
+  const markerPath = join(proposalDir, SPEC_MERGED_MARKER);
   const receiptPath = join(proposalDir, 'MERGE_RECEIPT.json');
   if (existsSync(markerPath) && existsSync(receiptPath)) {
     try {

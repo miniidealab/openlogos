@@ -14,6 +14,7 @@ import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
   readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH,
 } from '../lib/ui-provenance.js';
+import { SPEC_MERGED_MARKER } from '../lib/proposal-markers.js';
 
 /** 原型资产：2-page-design 下的 .html（由 commitVerifiedPrototypes 落盘，merge-executor 不碰）。 */
 function isPrototypeAsset(relativePath: string): boolean {
@@ -137,7 +138,7 @@ export function merge(slug?: string) {
     console.log(`  ↺ 检测到残留原型事务 journal，已${recovered === 'rolled_forward' ? '前滚补完' : '回滚'}至一致态。`);
   }
 
-  if (existsSync(join(changePath, 'SPEC_MERGED'))) {
+  if (existsSync(join(changePath, SPEC_MERGED_MARKER))) {
     console.log(`\n✓ ${t(locale, 'merge.alreadyMerged', { slug })}`);
     return;
   }
@@ -240,7 +241,7 @@ export function merge(slug?: string) {
 
   if (deltas.length === 0) {
     if (legacyMergeTestMode()) {
-      writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
+      writeFileSync(join(changePath, SPEC_MERGED_MARKER), noDeltaSpecMergedMarker());
       console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
       return;
     }
@@ -310,7 +311,7 @@ export function merge(slug?: string) {
     const proposalContent = existsSync(proposalPath) ? readFileSync(proposalPath, 'utf-8') : '(proposal.md not found)';
     const promptDeltas = uiImpact ? deltas.filter(d => !isPrototypeAsset(d.relativePath)) : deltas;
     if (promptDeltas.length === 0) {
-      writeFileSync(join(changePath, 'SPEC_MERGED'), noDeltaSpecMergedMarker());
+      writeFileSync(join(changePath, SPEC_MERGED_MARKER), noDeltaSpecMergedMarker());
       console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
       return;
     }

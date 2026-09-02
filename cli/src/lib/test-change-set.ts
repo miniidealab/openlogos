@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { authorityScan, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import { classifyProposalDeltas } from './delta-classify.js';
+import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 
 export const TEST_CHANGE_SET_SCHEMA = 'openlogos/test-change-set@1' as const;
 export const TEST_CHANGE_SET_SOURCE = 'semantic-before-after-diff' as const;
@@ -343,8 +344,8 @@ export function readTestChangeSet(
   proposalDir: string,
   expected: { change: string; module: string; targetPaths?: string[] },
 ): TestChangeSetReadResult {
-  const markerPath = join(proposalDir, 'SPEC_MERGED');
-  if (!existsSync(markerPath)) return invalid('test-slice-change-set-missing', 'SPEC_MERGED 不存在', 'SPEC_MERGED');
+  const markerPath = join(proposalDir, SPEC_MERGED_MARKER);
+  if (!existsSync(markerPath)) return invalid('test-slice-change-set-missing', `${SPEC_MERGED_MARKER} 不存在`, SPEC_MERGED_MARKER);
   let marker: unknown;
   try {
     const source = readFileSync(markerPath, 'utf8');
@@ -352,7 +353,7 @@ export function readTestChangeSet(
     if (document.errors.length > 0) throw new Error(document.errors.map(error => error.message).join('；'));
     marker = JSON.parse(source) as unknown;
   } catch (error) {
-    return invalid('test-slice-change-set-marker', `SPEC_MERGED 无法严格解析：${String(error)}`, 'SPEC_MERGED');
+    return invalid('test-slice-change-set-marker', `${SPEC_MERGED_MARKER} 无法严格解析：${String(error)}`, SPEC_MERGED_MARKER);
   }
   const record = asRecord(marker);
   if (!record || !('test_change_set' in record)) {

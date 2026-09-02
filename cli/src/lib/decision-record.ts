@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import type { Locale } from '../i18n.js';
 import { readProjectYaml } from './project-yaml.js';
 import { syncResourceIndex } from './sync-resource-index.js';
+import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 
 export interface DecisionCandidate {
   /** 文件名中的 DXX 数字（`core-D07-slug.md` → 7）。 */
@@ -226,7 +227,7 @@ export function applyDecisionRecords(root: string, proposalDir: string, locale: 
   const deltaDir = join(proposalDir, 'deltas', 'decisions');
   const decisionsDir = join(root, 'logos', 'resources', 'decisions');
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
-  const specMerged = join(proposalDir, 'SPEC_MERGED');
+  const specMerged = join(proposalDir, SPEC_MERGED_MARKER);
   const journalPath = join(proposalDir, DECISION_APPLY_JOURNAL);
   if (!existsSync(deltaDir)) return { ok: true, applied: [] }; // 无决策 delta → 零改动
 

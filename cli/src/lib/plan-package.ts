@@ -5,7 +5,9 @@ import { authorityClosureSummary, evaluateAuthorityClosure, type AuthorityClosur
 import {
   extractTaskSectionItems, isCodeRequiredForProposal, isTasksCodeFilled,
   isTasksTemplateFilled, parseTaskSections, resolveProposalDeploymentDecision, countMergeableDeltaFiles,
+  hasSpecCompleteMarker,
 } from './proposal-lifecycle.js';
+import { HISTORICAL_MARKERS } from './proposal-markers.js';
 import {
   PLAN_PACKAGE_CONTRACT_VERSION, PLAN_PACKAGE_SCHEMA, evaluateProposalStructure,
   sortCompletionIssues, type CompletionIssue, type PlanPackageEvaluation,
@@ -26,8 +28,7 @@ function taskIssue(code: CompletionIssue['code'], path: string, message: string,
 export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 'zh' | 'en', stage: AuthorityClosureStage = 'spec'): PlanPackageEvaluation {
   const proposalPath = join(proposalDir, 'proposal.md');
   const tasksPath = join(proposalDir, 'tasks.md');
-  const historical = ['PLAN_APPROVED', 'SPEC_MERGED', 'MERGED', 'VERIFY_PASS']
-    .some(marker => existsSync(join(proposalDir, marker)));
+  const historical = HISTORICAL_MARKERS.some(marker => existsSync(join(proposalDir, marker)));
   const proposalContent = existsSync(proposalPath) ? readFileSync(proposalPath, 'utf8') : historical ? '' : readFileSync(proposalPath, 'utf8');
   const tasksContent = existsSync(tasksPath) ? readFileSync(tasksPath, 'utf8') : historical ? '' : readFileSync(tasksPath, 'utf8');
   const proposalRel = projectRelative(root, proposalPath);
@@ -47,7 +48,8 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
   }
   const sections = parseTaskSections(tasksContent);
   const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
-  const specComplete = existsSync(join(proposalDir, 'SPEC_MERGED')) || existsSync(join(proposalDir, 'MERGED'));
+  // §2.50.7 A：spec-complete 只有一个判定实现，消费方一律调用它（含 legacy MERGED 的读法）。
+  const specComplete = hasSpecCompleteMarker(proposalDir);
   const taskIssues: CompletionIssue[] = [];
   if (!historical && !isTasksTemplateFilled(tasksContent)) {
     taskIssues.push(taskIssue('tasks_template_remaining', tasksRel, 'tasks.md 仍含 plan scaffold 占位任务。', '用一文件一任务的真实 [delta]/[deploy] 计划替换模板行。', { section_id: 'delta', expected: '真实 plan 任务' }));

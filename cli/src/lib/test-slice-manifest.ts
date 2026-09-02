@@ -15,6 +15,7 @@ import {
 import { basename, dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { parseDocument } from 'yaml';
 import { readTestChangeSet } from './test-change-set.js';
+import { VERIFY_PASS_MARKER, hasSpecCompleteMarker } from './proposal-markers.js';
 
 export const TEST_SLICE_MANIFEST = 'TEST_SLICE_MANIFEST.json';
 export const SLICE_CHECKPOINTS = 'SLICE_CHECKPOINTS.jsonl';
@@ -357,8 +358,8 @@ function emptyState(
 }
 
 export function shouldUseSliceVerification(proposalDir: string): boolean {
-  if (existsSync(join(proposalDir, 'VERIFY_PASS')) && !existsSync(join(proposalDir, TEST_SLICE_MANIFEST))) return false;
-  if (!existsSync(join(proposalDir, 'SPEC_MERGED')) && !existsSync(join(proposalDir, 'MERGED'))) return false;
+  if (existsSync(join(proposalDir, VERIFY_PASS_MARKER)) && !existsSync(join(proposalDir, TEST_SLICE_MANIFEST))) return false;
+  if (!hasSpecCompleteMarker(proposalDir)) return false;
   const tasksPath = join(proposalDir, 'tasks.md');
   if (!existsSync(tasksPath)) return false;
   const tasks = parseCodeTasks(readFileSync(tasksPath, 'utf8'));

@@ -3,6 +3,7 @@ import { join, relative } from 'node:path';
 import { parseDocument } from 'yaml';
 import { DELTA_TO_RESOURCE, classifyProposalDeltas } from './delta-classify.js';
 import { extractStructuredTestIds, parseReuseDeclaration } from './proposal-lifecycle.js';
+import { HISTORICAL_MARKERS } from './proposal-markers.js';
 
 export const AUTHORITY_IMPACT_SCHEMA = 'openlogos/authority-impact@1' as const;
 export const AUTHORITY_CLOSURE_SCHEMA = 'openlogos/authority-closure-evaluation@1' as const;
@@ -79,7 +80,7 @@ const FACT_KEYS = new Set([
 const CUTOVER_KEYS = new Set(['old_writer_stop', 'new_writer_start', 'rollback_boundary', 'exit_evidence']);
 const FACT_ID_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/;
 const TEST_ID_RE = /^(?:UT|ST|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)*$/;
-const HISTORICAL_MARKERS = ['PLAN_APPROVED', 'SPEC_MERGED', 'MERGED', 'VERIFY_PASS'];
+
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

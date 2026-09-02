@@ -17,6 +17,7 @@ import {
   evaluateTestIdEvidence,
   extractStructuredTestIds,
   extractTaskSectionItems,
+  hasSpecCompleteMarker,
 } from './proposal-lifecycle.js';
 import { evaluateProposalClarification } from './clarification.js';
 import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
@@ -862,7 +863,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     proposalContent,
     resolveProposalDeploymentDecision(proposalDir).deployment_required,
   );
-  if ((clarification.present || !existsSync(join(proposalDir, 'SPEC_MERGED'))) && !clarification.valid) {
+  if ((clarification.present || !hasSpecCompleteMarker(proposalDir)) && !clarification.valid) {
     for (const issue of clarification.issues) {
       pushViolation(acc, 3, {
         code: 'clarification_contract_invalid',
@@ -949,7 +950,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   // SPEC_MERGED 后已没有 merge 前目标快照，拿 delta 再对最终目标做守恒会制造假阳性；纵深守恒必须发生在
   // merge 写 prompt 前。因此 post-merge 只运行 L9 的最终事实/P==T==D 检查，不重放 L8。
   const sectionWriters = new Map<string, string[]>(); // `${targetRel}#${sectionLine}` → 写者 delta relPath 列表（code-r1 F1 跨文件单写者）
-  const postMerge = existsSync(join(proposalDir, 'SPEC_MERGED'));
+  // §2.50.7 A：改用权威判据——持 legacy MERGED 的提案此前被误判为「未 merge」并被重放 L8（假阳性）。
+  const postMerge = hasSpecCompleteMarker(proposalDir);
   for (const entry of postMerge ? [] : deltaEntries) {
     if (!(entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid' && entry.relativePath.endsWith('.md'))) continue;
     const targetRel = deltaTargetProjectPath(entry.relativePath);

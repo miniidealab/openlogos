@@ -26,6 +26,7 @@ import { runChangeLint, SLUG_STRICT_RE } from '../lib/change-lint.js';
 import {
   buildTestChangeSet, readTestChangeSet, type TestChangeSetInputTarget,
 } from '../lib/test-change-set.js';
+import { SPEC_MERGED_MARKER } from '../lib/proposal-markers.js';
 
 const MANIFEST_SCHEMA = 'openlogos/baseline-merge-apply@1' as const;
 const GENERATED_PROMPT_MARKER = 'MERGE_PROMPT_GENERATED';
@@ -259,7 +260,7 @@ export function mergeApply(slug: string | undefined, manifestArg: string | undef
   if (!existsSync(join(proposalDir, 'MERGE_PROMPT.md')) || !existsSync(join(proposalDir, GENERATED_PROMPT_MARKER))) {
     fail(proposalDir, '必须先由 openlogos merge 生成受控 MERGE_PROMPT');
   }
-  if (existsSync(join(proposalDir, 'SPEC_MERGED'))) fail(proposalDir, 'SPEC_MERGED 已存在，拒绝重复 apply');
+  if (existsSync(join(proposalDir, SPEC_MERGED_MARKER))) fail(proposalDir, `${SPEC_MERGED_MARKER} 已存在，拒绝重复 apply`);
 
   const manifestPath = isAbsolute(manifestArg) ? resolve(manifestArg) : resolve(root, manifestArg);
   try {
@@ -339,7 +340,7 @@ export function mergeApply(slug: string | undefined, manifestArg: string | undef
     test_change_set: testChangeSet,
   }, null, 2)}\n`);
   inputs.push({
-    kind: 'prepared', targetPath: relative(root, join(proposalDir, 'SPEC_MERGED')).replace(/\\/g, '/'),
+    kind: 'prepared', targetPath: relative(root, join(proposalDir, SPEC_MERGED_MARKER)).replace(/\\/g, '/'),
     mode: 'CREATE', bytes: marker,
   });
 
