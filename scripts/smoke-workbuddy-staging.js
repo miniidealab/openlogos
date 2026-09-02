@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { WORKBUDDY_HOST_BOUNDARY_PATHS } from './lib/workbuddy-host-boundary.mjs';
+import { exitNotApplicable } from './lib/smoke-not-applicable.mjs';
 
 const SMOKE_IDS = Array.from({ length: 8 }, (_, index) => `SMOKE-core-${116 + index}`);
 const repoRoot = process.cwd();
@@ -48,7 +49,13 @@ if (process.argv.includes('--self-test')) {
   process.exit(0);
 }
 
-if (activeChange() !== 'workbuddy-adapter-foundation' && process.env.OPENLOGOS_WORKBUDDY_STAGING !== '1') process.exit(0);
+if (activeChange() !== 'workbuddy-adapter-foundation' && process.env.OPENLOGOS_WORKBUDDY_STAGING !== '1') {
+  exitNotApplicable(SMOKE_IDS, {
+    reason: 'WorkBuddy staging 宿主未就绪：需活跃变更 workbuddy-adapter-foundation 或 OPENLOGOS_WORKBUDDY_STAGING=1',
+    missing: ['OPENLOGOS_WORKBUDDY_STAGING', 'OPENLOGOS_WORKBUDDY_BIN'],
+    environment: 'workbuddy-staging',
+  });
+}
 
 const evidenceRoot = resolve(repoRoot, process.env.OPENLOGOS_WORKBUDDY_EVIDENCE_DIR
   || `logos/resources/verify/evidence/workbuddy-${new Date().toISOString().replace(/[:.]/g, '-')}`);

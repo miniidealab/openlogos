@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { recordSmokeNotApplicable } from './lib/smoke-not-applicable.mjs';
 
 export const TRAE_LOCAL_SMOKE_IDS = Array.from({ length: 6 }, (_, index) => `SMOKE-core-${124 + index}`);
 export const DEPLOYABLE_AI_TOOLS = ['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder', 'workbuddy'];
@@ -283,7 +284,15 @@ async function main() {
     return;
   }
 
-  if (activeChange() !== 'trae-local-negative-smoke' && process.env.OPENLOGOS_TRAE_LOCAL_NEGATIVE !== '1') return;
+  if (activeChange() !== 'trae-local-negative-smoke' && process.env.OPENLOGOS_TRAE_LOCAL_NEGATIVE !== '1') {
+    // 环境不具备必须留痕（功能规格 §2.48.4）：不适用不是失败，但不得零记录退出
+    recordSmokeNotApplicable(TRAE_LOCAL_SMOKE_IDS, {
+      reason: 'TRAE 本地负向 smoke 未就绪：需活跃变更 trae-local-negative-smoke 或 OPENLOGOS_TRAE_LOCAL_NEGATIVE=1',
+      missing: ['OPENLOGOS_TRAE_LOCAL_NEGATIVE', 'OPENLOGOS_TRAE_LOCAL_TARBALL'],
+      environment: 'trae-local-negative',
+    });
+    return;
+  }
 
   const isolation = createIsolationRoot();
   const evidenceRoot = resolve(repoRoot, process.env.OPENLOGOS_TRAE_LOCAL_EVIDENCE_DIR

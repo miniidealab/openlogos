@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { exitNotApplicable } from './lib/smoke-not-applicable.mjs';
 
 const SMOKE_IDS = Array.from({ length: 8 }, (_, index) => `SMOKE-core-${108 + index}`);
 const repoRoot = process.cwd();
@@ -46,7 +47,13 @@ if (process.argv.includes('--self-test')) {
   process.exit(0);
 }
 
-if (activeChange() !== 'qoder-adapter-foundation' && process.env.OPENLOGOS_QODER_STAGING !== '1') process.exit(0);
+if (activeChange() !== 'qoder-adapter-foundation' && process.env.OPENLOGOS_QODER_STAGING !== '1') {
+  exitNotApplicable(SMOKE_IDS, {
+    reason: 'Qoder staging 宿主未就绪：需活跃变更 qoder-adapter-foundation 或 OPENLOGOS_QODER_STAGING=1',
+    missing: ['OPENLOGOS_QODER_STAGING', 'OPENLOGOS_QODER_BIN'],
+    environment: 'qoder-staging',
+  });
+}
 
 const evidenceRoot = resolve(
   repoRoot,

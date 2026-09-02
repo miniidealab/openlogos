@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { exitNotApplicable } from './lib/smoke-not-applicable.mjs';
 
 const SMOKE_IDS = Array.from({ length: 8 }, (_, index) => `SMOKE-core-${100 + index}`);
 const repoRoot = process.cwd();
@@ -46,7 +47,14 @@ if (process.argv.includes('--self-test')) {
   process.exit(0);
 }
 
-if (activeChange() !== 'zcode-adapter-foundation' && process.env.OPENLOGOS_ZCODE_STAGING !== '1') process.exit(0);
+if (activeChange() !== 'zcode-adapter-foundation' && process.env.OPENLOGOS_ZCODE_STAGING !== '1') {
+  // 环境不具备必须留痕：静默零记录退出会让「不适用」与「该跑没跑」在账本上同形
+  exitNotApplicable(SMOKE_IDS, {
+    reason: 'ZCode staging 宿主未就绪：需活跃变更 zcode-adapter-foundation 或 OPENLOGOS_ZCODE_STAGING=1',
+    missing: ['OPENLOGOS_ZCODE_STAGING', 'OPENLOGOS_ZCODE_BIN', 'OPENLOGOS_ZCODE_DRIVER'],
+    environment: 'zcode-staging',
+  });
+}
 
 const evidenceRoot = resolve(
   repoRoot,
