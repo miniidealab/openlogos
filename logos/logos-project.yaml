@@ -607,6 +607,10 @@ resource_index:
     desc: institutionalize-single-authority-design-gate 创建的 test 基线
   - path: spec/authority-closure.md
     desc: institutionalize-single-authority-design-gate 创建的 spec 基线
+  - path: logos/resources/implementation/core-fix-merge-transaction-nested-section-anchor-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
+  - path: logos/resources/implementation/core-institutionalize-single-authority-design-gate-implementation-manifest.md
+    desc: 实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"
