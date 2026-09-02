@@ -525,3 +525,73 @@ sequenceDiagram
 ### 追溯
 
 UT-S11-74、ST-S11-43以真实磁盘fixture覆盖上述窗口，并继续满足UT-S11-63的collecting projection合同及真只读树hash断言。
+
+## S11 YAML 降级在人类可读通道的告警出口
+
+### 场景目标
+
+`logos-project.yaml` 解析失败后 CLI 走恢复分支，恢复器只抢救 `modules` / `scenarios` / `deployment_gates`，`resource_index` 等字段被丢弃。此前该降级只在机器通道有字段表达，人类可读的 `status` / `next` 输出与健康项目无法区分——最坏的失败模式是「能跑但数据已丢」。本节为降级状态补齐人类可读通道的告警出口，并明确处置权归属。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| U | User | 执行 `status` / `next` |
+| C | OpenLogos CLI | 状态与建议派生 |
+| RD | 项目 YAML 读取器 | 解析、失败时恢复并产出诊断 |
+| DOC | `logos-project.yaml` | 正式文档，可能处于降级态 |
+
+前置：`logos.config.json` 存在。`DOC` 处于三态之一——可解析、可恢复（`recovered`）、不可恢复（`error`）。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as OpenLogos CLI
+    participant RD as 项目 YAML 读取器
+    participant DOC as logos-project.yaml
+
+    U->>C: Step 1: openlogos status / next
+    C->>RD: Step 2: 读取项目 YAML
+    RD->>DOC: Step 3: 读取字节并解析
+    alt 解析成功
+        RD-->>C: Step 4a: 数据 + 无诊断
+        C-->>U: Step 5a: 常规输出（逐字节不变）
+    else 解析失败
+        RD->>RD: Step 4b: 恢复 modules/scenarios/deployment_gates
+        RD-->>C: Step 5b: 恢复数据 + 诊断（解析状态 + 未恢复字段）
+        C-->>U: Step 6b: 常规输出 + 可见告警（状态、未恢复字段、重建入口）
+    end
+    Note over C,DOC: 全程只读，DOC 字节不变
+```
+
+### 步骤说明
+
+1. **用户**执行 `openlogos status` 或 `openlogos next`。
+2. **读取器**解析 `logos-project.yaml`；成功则返回数据且不带诊断。
+3. 解析失败时**读取器**进入恢复分支，抢救可恢复字段并产出诊断：解析状态（`recovered` / `error`）与未被恢复的字段清单。
+4. **CLI** 在人类可读输出中打印可见告警，内容至少包含解析状态、未被恢复的字段名（至少含 `resource_index`）与重建入口 `openlogos index`。
+5. 机器通道的诊断字段语义与结构不变；两通道对同一状态的判断必须一致。
+
+### 投影规则
+
+- **健康项目零新增输出**：解析成功时 `status` / `next` 输出逐字节不变，golden 零漂移。
+- **两条命令同源**：`status` 与 `next` 消费同一诊断，不得只有其一可见。
+- **恢复不等于修复**：告警说明索引已丢失、需人工处置，但 CLI 不代用户改写文件。
+- **只读**：降级态下执行只读命令后 `logos-project.yaml` 字节不变。
+
+### 异常与边界
+
+| 编号 | 触发条件 | 处理 |
+|---|---|---|
+| EX-S11-YD-1 | `recovered`——modules 可恢复但 `resource_index` 丢失 | 常规输出照常渲染，附可见告警并点名 `resource_index` |
+| EX-S11-YD-2 | `error`——无任何字段可恢复 | 输出明确的降级告警，不得呈现为「看起来正常」 |
+| EX-S11-YD-3 | 用户要求 CLI 自动修复 | 不提供自动改写；指向 `openlogos index` 重建入口，由人决定 |
+
+### 追溯
+
+- 需求：AC-YAMLW-04～05。
+- 功能规格：§2.47.3。
+- 架构：§三十八.3。
+- 测试：UT-S11-75～UT-S11-77、ST-S11-44；安装态 SMOKE-core-169。

@@ -299,3 +299,30 @@ UT-S11-63继续验证collecting快照基本字段。本节补充状态文件提�
 ### Runner 与 OpenLogos Reporter
 
 UT-S11-74、ST-S11-43必须由真实状态读取路径执行并逐ID写OpenLogos reporter；禁止mock掉transaction投影或仅比较手工对象。
+
+## S11 YAML 降级告警可见性测试
+
+> 覆盖 `logos-project.yaml` 解析降级时人类可读通道的告警出口。机器通道既有的 `yaml_diagnostics` 语义与结构不变（既有 `ST-JSON-23` 已约定「不得静默回退为看起来正常」），本节把同一约定补齐到 `status` / `next` 的文本输出。
+>
+> 降级态样本必须在一次性 fixture 中构造，**不得改写本仓或用户其它项目的正式文档**。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-75 | `recovered` 态文本输出打印告警并点名未恢复字段 | Step 4b→6b | fixture 的 `logos-project.yaml` 前段 `modules` 完整、后段语法错误（可恢复），且原含 `resource_index` | 采集 `status` 人类可读输出 | 常规状态照常渲染；输出**含**可见告警，文本包含解析状态 `recovered`、未恢复字段名 `resource_index` 与重建入口 `openlogos index` |
+| UT-S11-76 | `error` 态同样可见，不呈现为正常 | Step 4b→6b | fixture 整体损坏、无任何字段可恢复 | 采集 `status` 人类可读输出 | 输出含明确降级告警并标明 `error`；不得输出与健康项目无法区分的结果 |
+| UT-S11-77 | 健康项目零新增输出（golden 零漂移） | Step 4a→5a | fixture 的 `logos-project.yaml` 可正常解析 | 采集 `status` 与 `next` 人类可读输出 | 两条命令输出与本变更前**逐字节一致**；不因本功能新增任何常态行 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-44 | 降级态下 status 与 next 同源告警且只读 | Step 1→6b、EX-S11-YD-1～3 | 一次性 fixture 项目，`logos-project.yaml` 处于 `recovered` 态 | 记录文件 SHA-256 → `openlogos status` → `openlogos next` → 再次记录 SHA-256 | 两条命令均输出可见告警且点名 `resource_index`（两通道对同一状态判断一致）；命令结束后 `logos-project.yaml` **字节不变**，CLI 未代用户改写、未自动重建索引 |
+
+### 追溯与覆盖
+
+- AC-YAMLW-04 降级可见：UT-S11-75、UT-S11-76、ST-S11-44。
+- AC-YAMLW-05 处置权归人、只读不改写：ST-S11-44。
+- golden 零漂移边界：UT-S11-77。
+- 场景：S11 YAML 降级在人类可读通道的告警出口；功能规格：§2.47.3；架构：§三十八.3；既有机器通道锚：`ST-JSON-23`；安装态：SMOKE-core-169。

@@ -332,11 +332,22 @@ overlay:                         # 按 node id 寻址的操作列表（strategic
 （flow 文件 schema 版本，整数）**互不相关**。内置模板内容版本由 **loader 维护一份内部映射**
 作为唯一来源（不依赖 YAML 内字段，避免隐式复用 schema version）：
 
-- 当前映射：`initial → v1`、`launched → v1`。
+- **唯一来源是 loader 中的该映射本身**。本文档与任何测试 fixture 都**不复制**具体版本枚举——
+  复制品会随 bump 腐化，历史上正是这种复制导致写入端产出的 overlay 一出生就「过期」。
+  需要当前值时读映射，不要读文档里的示例。
 - 该映射是 `openlogos flow show` 输出 `builtin_version` 字段、以及 overlay `@vN` 不匹配告警
   （`FLOW_VERSION_MISMATCH`）比对的**唯一依据**。
+- **写入端同样读该映射**：CLI 为项目写出 overlay（如 GUI UI-first 注入）时，
+  `extends` 必须组装为 `builtin:<lifecycle>@<映射值>`，**禁止硬编码任何字面量版本号**。
+  自检判据：CLI 新写出的 overlay 经 overlay 解析后 `warnings` 不得含 `FLOW_VERSION_MISMATCH`
+  ——写者产出立即触发本进程告警，即为该不变量被破坏。
 - 当内置模板（`spec/flow/*.yaml`）内容发生破坏性变更（增删/改名 node、调整结构等）时，
   **必须同步 bump** loader 中该 flow 的内容版本。
+- **存量 overlay 的迁移**：同步命令遇到内容版本落后的存量 overlay 时，按引用可解析性分流——
+  该 overlay 引用的**全部** node id 在新版本内置模板中仍可解析时，自动提升 `extends`
+  至当前映射值并提示；存在任一失效 node id 时保持原值并保留 `FLOW_VERSION_MISMATCH`。
+  该判据等价于告警文案所问的问题本身，因此迁移之后残留的告警一律指向真正需要人工复核的 overlay。
+  迁移幂等，且只改 `extends` 一个字段，不触碰任何 overlay 操作。
 - **禁止**用文件 `version`（schema 版本）隐式充当内容版本。
 
 ### 10.2 overlay skip 在 resolved 输出的表达

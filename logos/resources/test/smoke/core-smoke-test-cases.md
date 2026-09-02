@@ -737,3 +737,44 @@
 - 架构：§37.4～§37.7。
 - 部署：OpenLogos 0.14.4 嵌套章节锚修复本机全局部署方案。
 - UT/ST：UT-S09-271～274、ST-S09-106～107、UT-S37-37～40、ST-S37-09～10。
+
+## OpenLogos 0.14.5 sync YAML 与 overlay 版本安装态 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.5` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 SMOKE-core-169 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.5`；源码入口、workspace link 或手工构造的 fixture 产物不算验收。
+- 全部操作只在一次性临时项目与临时 npm prefix 中进行；**不得触碰本仓或用户其它项目的 `logos-project.yaml` 与 `logos/flow/*.yaml`**。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-169 | 0.14.5 资源索引结构化写入、降级可见与 overlay 版本单一权威 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset/schema/Skill identity；② 在临时目录执行真实 `openlogos init <name> --locale zh --ai-tool claude-code`，确认模板产出 `resource_index: []`；③ 放入 `logos/resources/prd/3-technical-plan/1-architecture/<any>.md` 后执行 `openlogos sync`，读回 `logos-project.yaml` 并用 CLI 捆绑解析器解析；④ 重复 `sync` 两次核对幂等与字节稳定；⑤ 另建含 GUI 模块（`product_type: web`）的 launched fixture，执行 `sync` 后立即执行 `flow show --resolved --lifecycle launched`；⑥ 构造落后 overlay 的正反两例（引用全部可解析 / 含失效 node id）各跑一次 `sync`；⑦ 构造 `recovered` 与 `error` 两态 fixture，分别执行 `status` 与 `next` 并前后比对文件 SHA-256；⑧ 演练 `0.14.4→0.14.5→0.14.4→0.14.5` 并复核每阶段 identity | candidate 各身份绑定同一 tarball；③ 解析无异常且新条目挂在 `resource_index` 下（**上游 Bug 报告三步复现路径在安装态不再复现**）；④ 二三次为 no-op 且文件逐字节稳定；⑤ `flow show` 输出**不含** `FLOW_VERSION_MISMATCH`；⑥ 正例 `extends` 提升至映射值且用户自定义 ops 保留，反例保持原值并继续告警；⑦ 两态下 `status` 与 `next` 均打印可见告警并点名 `resource_index`，且命令前后文件 SHA-256 相同（CLI 未代改写）；⑧ 往返无混装；全程无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-169`，不得依靠通配发现后无条件 PASS。
+2. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、package/plugin/asset hash、临时项目路径（脱敏）、步骤 ③ 的解析结果与新增条目 path、步骤 ④/⑦ 前后的文件 SHA-256、步骤 ⑤/⑥ 的 `warnings[]` 原文与 `extends` 前后值、回滚每阶段 identity。
+3. 临时 fixture 在结果持久化后清理；证据中不得包含用户真实项目路径或文档正文。
+4. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-169` 结果，字段包含 `id/status/timestamp/duration_ms/environment/evidence`。
+- 缺失、skip、重复矛盾、源码直跑、candidate/hash 归属漂移、回滚未恢复，或任一分步判据未取证即报 PASS，均判 FAIL，不得写 `SMOKE_PASS`。
+- 步骤 ⑦ 若观察到 CLI 改写了 fixture 的 `logos-project.yaml`（SHA-256 变化），直接 FAIL——该行为违反「处置权归人」的既定决策。
+
+### 失败、自愈与完成边界
+
+- 临时 fixture 失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.4` 并报告环境状态；未证明全旧或全新时阻断后续动作。
+- 不得为让断言通过而放宽 `FLOW_VERSION_MISMATCH` 判定条件或改写用户正式文档。
+
+### 追溯
+
+- 需求：AC-YAMLW-01～08。
+- 功能规格：§2.47；架构：§三十八；方法论规格：`spec/flow-spec.md` §10.1。
+- 场景：S08、S09、S11；UT/ST：UT-S08-43～46、ST-S08-30～31、UT-S09-275～278、ST-S09-108、UT-S11-75～77、ST-S11-44。
+- 部署方案：OpenLogos 0.14.5 sync YAML 与 overlay 版本修复本机全局部署方案。

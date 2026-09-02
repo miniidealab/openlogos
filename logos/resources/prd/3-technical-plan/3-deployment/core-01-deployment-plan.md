@@ -1366,3 +1366,90 @@ SMOKE-core-163～167 全部通过并写入 `logos/resources/verify/smoke-results
 4. SMOKE-core-168 由真实安装态 runner 唯一 PASS；
 5. RunLogos 原 transaction `mtx_e7f7b924499d49f96aaf8a2f` 在独立授权后 completed，7/7 与 receipt/hash可复算；
 6. npm registry、tag、release、官网和 Git 远端均零副作用。
+
+## OpenLogos 0.14.5 sync YAML 与 overlay 版本修复本机全局部署方案
+
+### 部署目标与授权边界
+
+把「资源索引结构化写入 + 降级告警可见 + overlay 内容版本单一权威与存量有条件迁移」冻结为唯一 `@miniidealab/openlogos@0.14.5` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.4`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。规格 merge、verify、部署、smoke 与 archive 互不替代授权。
+
+**本次为何必须走安装态**：缺陷的触发前提是真实 `openlogos init` 模板产出的 `resource_index: []`，而既有回归测试的 fixture 与该模板形态不一致，正是这一点让缺陷长期漏网。源码测试通过不能替代「安装态真实 init → 放文档 → sync → 解析」这条路径的证据。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT-S08-43～46、ST-S08-30～31、UT-S09-275～278、ST-S09-108、UT-S11-75～77、ST-S11-44 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.4`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash 与最小 `init`/`sync`/`flow show` 行为。
+3. 冻结可离线恢复的 `0.14.4` tarball、SHA-256 与可复制安装命令；若没有固定回滚制品或回滚自检失败，不得覆盖全局。
+4. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合；不得把无关脏工作区字节打入 candidate。
+
+### 0.14.5 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本。
+
+禁止继续以 `0.14.4` 构建新字节。任一 package/plugin/asset 仍为旧版或出现同版异字节，candidate identity 失败，必须重新生成资产、build 与 pack。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行项目规定的完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack --json`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.5` version、内置 flow 模板、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity，旧 SHA-256 立即作废。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.5` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| 缺陷复现路径 | 真实 `init` 新项目 → 放入任意可识别文档 → `sync` → `logos-project.yaml` 可被 CLI 捆绑解析器解析，新条目挂在 `resource_index` 下 |
+| 三形态补录 | 空 flow sequence、空 block、键缺失三种形态补录后均可解析；既有条目、其它顶层键与注释守恒 |
+| 幂等与原子 | 重复 `sync` 不重复追加、无键序/注释漂移；序列化自检失败时目标文件字节不变 |
+| 降级可见 | 人为构造 `recovered` / `error` 两态，`status` 与 `next` 人类可读输出均出现告警并点名 `resource_index`；命令执行后目标文件字节不变 |
+| golden 零漂移 | 健康项目的 `status` / `next` / `flow show` 输出逐字节不变 |
+| overlay 写入端 | GUI 项目 `sync` 写出的 overlay `extends` 等于 loader 映射值，产物无字面量版本号；`flow show --resolved --lifecycle launched` 无版本不匹配告警 |
+| overlay 迁移 | 落后且引用全部可解析 → 自动提升并提示、用户自定义 ops 保留；存在失效 node id → 保持原值并继续告警（负向） |
+| rollback roundtrip | `0.14.4→0.14.5→0.14.4→0.14.5` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局；保留脱敏 fixture 与稳定错误摘要，修复后重新 verify/build/pack/install 全链路。
+
+### 本机全局部署
+
+只有隔离矩阵与 `0.14.4` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.5` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos`、realpath、package root 与安装来源；
+- `openlogos --version` 精确为 `0.14.5`；
+- package/plugin/asset/schema/Skill/runner identity 与 tarball 逐项一致；
+- 在临时 fixture 上跑通最小复现路径与 overlay 版本正反例，reporter 正常写入；
+- 全局旧文件、缓存入口与任一 `0.14.4` 混合资产均不存在。
+
+部署成功只表示固定 candidate 已安装；不生成 `SMOKE_PASS`，不视为公开发布。
+
+### Smoke 与完成条件
+
+获得独立 smoke 授权后，使用本机全局绝对入口执行 SMOKE-core-169，并将逐步证据写入 `logos/resources/verify/smoke-results.jsonl`。smoke 只在一次性临时项目上操作，不得触碰本仓或用户其它项目的 `logos-project.yaml` 与 `logos/flow/*.yaml`。
+
+### 失败、自愈与回滚
+
+- build/pack/隔离/回滚演练失败：不触碰全局，修复后重新 verify 和制品链。
+- 全局安装或身份自检失败：立即使用冻结 `0.14.4` tarball 恢复，并核验 entry/version/assets/最小行为；无法证明恢复完整时报告全局环境不一致并停止。
+- smoke 失败：不得写 `SMOKE_PASS` 或 archive；修复代码后重新 verify、提升/保持合法 candidate identity、pack、部署与 smoke，或恢复固定 `0.14.4`。
+- 任何阶段都不得为让断言通过而改写用户项目的正式文档；降级态样本必须在一次性 fixture 中构造。
+
+### 完成判据
+
+以下证据必须分别成立：
+
+1. 固定 `0.14.5` tarball identity 与隔离矩阵 PASS；
+2. 本机全局 entry/version/package/plugin/asset 全部指向同一 candidate；
+3. `0.14.4↔0.14.5` 回滚/恢复可复制且无混装；
+4. SMOKE-core-169 由真实安装态 runner 唯一 PASS；
+5. 健康项目 golden 零漂移可复核；
+6. npm registry、tag、release、官网和 Git 远端均零副作用。

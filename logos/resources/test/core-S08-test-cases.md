@@ -227,3 +227,33 @@
 - S08-AC-Plan-01 资产可核验：UT-S08-38～UT-S08-40、ST-S08-28。
 - S08-AC-Plan-02 过期/漂移可诊断：UT-S08-39、UT-S08-41、ST-S08-29。
 - S08-AC-Plan-03 用户资产保护：UT-S08-42、ST-S08-28～ST-S08-29。
+
+## S08 resource_index 结构化补录测试用例
+
+> 覆盖 Step 5 补录步骤改为 YAML AST 写入后的三形态、幂等、守恒与原子性。**验收判据必须是「产物可被 CLI 捆绑的 YAML 解析器无异常解析」，不得以「产物包含某段字符串」代替**——既有 `ST-S18-01` 正是因为断言字符串包含、且 fixture 与 `init` 真实模板形态不一致，才长期放过本缺陷。
+>
+> 所有 fixture 的 `logos-project.yaml` 必须取自 `openlogos init` 真实模板产出（含 `resource_index: []` 与 `conventions:` 块），不得使用与模板形态不一致的手工简化文本。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S08-43 | 空 flow sequence 形态首次补录后可解析 | Step 5.5b 形态归一 | `logos-project.yaml` 取自 `init` 真实模板，`resource_index: []`，存在一份未收录的可识别文档 | 执行补录 | 产物经 CLI 捆绑解析器 `parse()` **无异常**；`resource_index` 为承载条目的 block sequence 且含该 path；`conventions` 等其它顶层键与注释守恒 |
+| UT-S08-44 | 空 block 形态补录且既有条目守恒 | Step 5.5b 形态归一 | `resource_index:` 为空 block 且已含 ≥1 既有条目 | 执行补录 | 产物可解析；新条目追加在既有条目之后；既有条目的 path/desc 逐字节不变 |
+| UT-S08-45 | 键缺失时创建键并追加 | Step 5.5b 形态归一 | `logos-project.yaml` 完全不含 `resource_index` 键 | 执行补录 | 产物可解析；新建 `resource_index` 键并承载条目；其它顶层键相对位置与注释不受影响 |
+| UT-S08-46 | 补录幂等且无键序/注释漂移 | Step 5.3 幂等判定 | 已完成一次补录的项目 | 连续再执行两次补录 | 第二、三次为 no-op（added=0）；文件字节与首次补录后逐字节一致，不重复追加已收录 path |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S08-30 | Bug 复现路径三步闭环 | Step 5.1→5.9 | 全新 `openlogos init` 项目（`--locale zh`） | 放入 `logos/resources/prd/3-technical-plan/1-architecture/<any>.md` → 执行 `openlogos sync` → 读回 `logos-project.yaml` | sync 报告新增 1 条；读回内容经 `parse()` 无异常；`resource_index` 下含该 path 与推断出的 desc；**该用例即上游 Bug 报告的三步复现路径，必须逐步等价** |
+| ST-S08-31 | 序列化自检失败时零副作用 | EX-S08-IDX-2 | 在序列化/写盘环节注入故障 | 执行 `openlogos sync` | 命令报错退出；`logos-project.yaml` 字节与执行前**逐字节相同**，不留半成品、不产生临时残留文件 |
+
+### 追溯与覆盖
+
+- AC-YAMLW-01 复现路径修复：UT-S08-43、ST-S08-30。
+- AC-YAMLW-02 三形态与守恒：UT-S08-43～UT-S08-45。
+- AC-YAMLW-03 幂等无漂移：UT-S08-46。
+- AC-YAMLW-05 只读不改写 / 原子：ST-S08-31（写路径原子性；只读路径归 ST-S11-44）。
+- 场景：S08 resource_index 结构化补录时序；架构：§三十八.1；安装态：SMOKE-core-169。

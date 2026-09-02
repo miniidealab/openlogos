@@ -2034,3 +2034,51 @@ OpenLogos 已允许 Delta 使用 `父标题 > 叶标题` 唯一定位重复叶�
 - 场景：S09 Merge Transaction 生命周期、S37 Delta 守恒门。
 - 测试：UT-S09-271～UT-S09-274、ST-S09-106～ST-S09-107、UT-S37-37～UT-S37-40、ST-S37-09～ST-S37-10。
 - 部署后 smoke：SMOKE-core-168。
+
+## S08/S09/S11 项目 YAML 结构化写入与降级可见性要求
+
+### 用户问题与价值
+
+`openlogos init` 产出的 `logos-project.yaml` 模板把资源索引写成空 flow sequence（`resource_index: []`），而 `openlogos sync` 的补录步骤按正则在 `conventions:` 前拼接 block sequence 条目。两者相遇即产出无法被任何符合规范的解析器读取的 YAML——包括 CLI 自身捆绑的解析器。这条路径在「init 建项目 → 放入任意可识别文档 → sync」三步内必然触发。
+
+损坏之后 CLI 不报错：解析失败走恢复分支，恢复器只抢救 `modules` / `scenarios` / `deployment_gates`，`resource_index` 整块被丢弃；而降级诊断在人类可读通道几乎无出口，`status` / `next` 的输出与健康项目无法区分。CLI 生成的 `AGENTS.md` / `CLAUDE.md` 明确指示 AI 先读该文件理解资源索引，于是 AI 在索引为空的情况下继续工作，人与 CLI 都收不到任何信号。
+
+同一根因还有第二个投影：GUI 项目的 flow overlay 由 CLI 写入时硬编码内置模板内容版本字面量，与 loader 维护的版本映射失同步，导致 CLI 刚生成的文件立刻被 CLI 自己告警，真告警被稀释到不可用。
+
+用户需要的是：程序化写入项目正式 YAML 后文件必须仍可解析；一旦降级，必须在人看得见的通道说出来；CLI 自己生成的文件不得一出生就触发自己的告警。
+
+### 核心需求
+
+1. 任何程序化写入 `logos-project.yaml` 的路径，写回后的文件必须能被 CLI 捆绑的 YAML 解析器无异常解析；写入端不得按正则猜测目标键的当前 YAML 形态。
+2. 资源索引补录必须同时正确处理三种既有形态：空 flow sequence（`resource_index: []`）、空 block（`resource_index:`）与键缺失；三者补录后均须可解析，且既有条目、其它顶层键与注释守恒。
+3. 补录保持幂等：已收录路径不重复追加，重复执行不产生键序或注释漂移。
+4. `logos-project.yaml` 解析降级（`recovered` 或 `error`）时，`status` 与 `next` 的人类可读输出必须打印可见告警，并点名未被恢复的字段（至少含 `resource_index`）。机器通道既有的诊断字段语义不变。
+5. CLI 不得自动改写用户已损坏的 `logos-project.yaml`。降级的处置权归人，CLI 只负责让降级可见并指向重建入口。
+6. CLI 写入 flow overlay 时，`extends` 的内容版本必须取自 loader 维护的内置版本映射，不得出现任何字面量版本号；方法论规格文档与测试断言同样不得复制该枚举。
+7. 存量 overlay 的内容版本落后时，同步命令在该 overlay 引用的全部 node id 于新版本内置模板中仍可解析的前提下自动提升并提示；任一引用失效则保持原值并保留版本不匹配告警，使该告警重新只指向真正需要人工复核的对象。
+8. 修复以新的本地 patch candidate `0.14.5` 交付，当前本机全局 `0.14.4` 是冻结回滚基线；禁止用相同 `0.14.4` 版本号承载不同字节。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-YAMLW-01 | 在真实 `openlogos init` 模板上放入任意可识别文档并执行 `openlogos sync` 后，`logos-project.yaml` 仍可被 CLI 捆绑解析器解析，且新条目以合法 block sequence 形态出现在 `resource_index` 下 |
+| AC-YAMLW-02 | 空 flow sequence、空 block 与键缺失三种形态补录后均可解析；既有条目、其它顶层键与注释逐项守恒 |
+| AC-YAMLW-03 | 重复执行同步不重复追加已收录路径，且不产生键序或注释漂移 |
+| AC-YAMLW-04 | 在解析降级的 `logos-project.yaml` 上执行 `status` 与 `next`，人类可读输出均出现可见告警并点名未恢复字段；健康项目的输出逐字节不变 |
+| AC-YAMLW-05 | 在降级项目上执行任何只读命令后 `logos-project.yaml` 字节不变，CLI 不代为改写 |
+| AC-YAMLW-06 | CLI 新写出的 flow overlay 经 overlay 解析后不产生版本不匹配告警；产物中不存在字面量内置版本号 |
+| AC-YAMLW-07 | 存量落后 overlay 在全部引用可解析时被自动提升且用户自定义 overlay 操作保留；存在失效 node id 时保持原值并继续告警 |
+| AC-YAMLW-08 | 固定 `0.14.5` tarball 完成隔离安装与本机全局安装态 smoke，`0.14.4→0.14.5→0.14.4` 往返后各 identity 与 tarball SHA-256 一致 |
+
+### 授权与非目标
+
+- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
+- 不新增或修改命令、phase、classification 与公共 JSON envelope 的字段结构。
+- 不引入自动重建用户资源索引、无条件迁移存量 overlay、或放宽版本不匹配判定来消音告警的做法。
+
+### 追溯
+
+- 场景：S08 同步 AI 工具资产与资源索引、S09 变更生命周期（GUI overlay 注入）、S11 查看阶段进度与活跃变更。
+- 测试：UT-S08-43～UT-S08-46、ST-S08-30～ST-S08-31、UT-S09-275～UT-S09-278、ST-S09-108、UT-S11-75～UT-S11-77、ST-S11-44。
+- 部署后 smoke：SMOKE-core-169。

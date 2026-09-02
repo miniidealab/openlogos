@@ -257,7 +257,7 @@
 | UT-S09-110 | 三层指令资产齐备 | L1/L2/L3 交付物 | 已 sync 的 GUI 项目 | 检查交付物 | (L1) `change-writer`/`product-designer`/`merge-executor` SKILL + checker 说明；(L2) `sync` 重生成的 `AGENTS.md`/`CLAUDE.md` 承载 UI-first 工作流；(L3) **读取真实文件 `spec/flow/overlays/gui-ui-first.yaml`**、经现有 overlay parser/schema 校验为合法 overlay 片段且含两个 `op:add`（`write-ui-prototype`/`verify-ui-provenance`）——而非检索 Markdown 示例文本；三层缺一即指令链断 |
 | UT-S09-110a | GUI overlay 唯一源真实存在、含两个合法 `op:add`，且 `done_when` 命令实际可求值 | `spec/flow/overlays/gui-ui-first.yaml`（唯一源）+ 真实子命令 `openlogos check-ui-prototype`/`openlogos check-ui-hash-match` | 已 sync 的 GUI 项目；准备①合法 `generated` 提案（逐页原型齐全 + 合法 `design-system.json`/令牌 + hash 已记录）与②合法 `fallback` 提案（逐页原型齐全 + `design_system_fallback_reason`、无令牌） | 读取真实文件经 overlay parser/schema 校验；再**实际执行**两个 `done_when` 后端子命令 | 文件存在、解析为合法 overlay 片段；恰含两个 `op:add`——① `write-ui-prototype`（`after: write-tasks`、`when: ui_impact`、`produces: 2-page-design/`、`done_when: cmd:<check-ui-prototype>`）；② `verify-ui-provenance`（`before: generate-merge-prompt`、`when: ui_impact`、`done_when: cmd:<check-ui-hash-match>`）；两节点均合法（overlay-add 允许 `cmd:`）。**不止校验 schema 接受 `cmd:`**：`done_when` 后端为真实子命令 `openlogos check-ui-prototype`/`openlogos check-ui-hash-match`，对上述合法 generated 与 fallback 提案实际求值 → 两命令均 `exit 0` |
 | UT-S09-110a-neg | `done_when` 命令不存在或仍含字面占位符 → 必须失败（负向） | overlay `done_when` 后端可执行性 | 已 sync 的 GUI 项目 | ①将 `done_when: cmd:` 后端指向**不存在的子命令**求值；②或 overlay 仍保留字面 `<check-ui-prototype>`/`<...>` 占位符未被真实子命令名替换；运行/求值 `done_when` | **必须失败**（非零退出/校验失败）：命令不存在无法求值即节点不可 done；overlay 仍含字面 `<...>` 占位=未落地为真实可执行命令，判非法（保证 `cmd:` 后端确为真实子命令而非示意文本） |
-| UT-S09-110b | init/sync 对 GUI 项目注入 overlay 到项目实例 `launched.yaml` | project-init/sync overlay 注入 | 从真实 `logos-project.yaml` 读取 `modules[].product_type`，该模块值 ∈ GUI={`web`,`desktop`,`mobile`}（即项目含 ≥1 GUI 模块） | 运行 init/sync | `spec/flow/overlays/gui-ui-first.yaml` 两个 `op:add` 被并入项目实例 `logos/flow/launched.yaml` 顶层 `overlay:`（该实例 `extends: builtin:launched@v1`）；注入后 plan subflow 含 `write-ui-prototype`、merge subflow 前含 `verify-ui-provenance`（product_type 唯一源 = `logos-project.yaml modules[].product_type`，非凭空给定） |
+| UT-S09-110b | init/sync 对 GUI 项目注入 overlay 到项目实例 `launched.yaml` | project-init/sync overlay 注入 | 从真实 `logos-project.yaml` 读取 `modules[].product_type`，该模块值 ∈ GUI={`web`,`desktop`,`mobile`}（即项目含 ≥1 GUI 模块） | 运行 init/sync | `spec/flow/overlays/gui-ui-first.yaml` 两个 `op:add` 被并入项目实例 `logos/flow/launched.yaml` 顶层 `overlay:`（该实例 `extends` 等于 `builtin:launched@${BUILTIN_VERSIONS.launched}`——由 loader 映射派生，断言不得固化具体版本号）；注入后 plan subflow 含 `write-ui-prototype`、merge subflow 前含 `verify-ui-provenance`（product_type 唯一源 = `logos-project.yaml modules[].product_type`，非凭空给定） |
 | UT-S09-110c | 非 GUI 项目不注入 GUI overlay | project-init/sync overlay 注入 | 从真实 `logos-project.yaml` 读取 `modules[].product_type`，全部模块值 ∈ 非 GUI={`cli`,`api`,`library`,`skills`}（项目无任何 GUI 模块） | 运行 init/sync | **不注入** gui-ui-first overlay；项目实例 `launched.yaml` 不含 `write-ui-prototype`/`verify-ui-provenance`；特性零启用、流程零改动 |
 | UT-S09-110d | `product_type` 字段缺失 → 按非 GUI、overlay 不注入 | project-init/sync overlay 注入（缺字段默认） | 真实 `logos-project.yaml` 的 `modules[]` 条目**完全缺 `product_type` 字段** | 运行 init/sync | 缺失=非 GUI（安全默认）；**overlay 不注入**；项目实例 `launched.yaml` 不含 `write-ui-prototype`/`verify-ui-provenance`；对应 GUI 模块存在时该缺字段模块节点 skip（`ui_impact` 不因缺字段模块置真） |
 | UT-S09-110e | 多模块（一 GUI 一非 GUI）：节点参与由活跃提案 module 的 `product_type` 决定 | module-aware `ui_impact` 派生 | 真实 `logos-project.yaml` 含两模块——`moduleA.product_type=web`（GUI）、`moduleB.product_type=cli`（非 GUI） | 活跃提案分别归属两模块时派生 `ui_impact` | 活跃提案属**非 GUI 模块 B** → `ui_impact==false`、`write-ui-prototype`/`verify-ui-provenance` 节点 skip；活跃提案属 **GUI 模块 A** → `ui_impact==true`、两节点参与（overlay 项目级注入因项目含 ≥1 GUI 模块成立，但**节点参与由 module-aware `ui_impact`＝活跃提案所属 module 的 product_type 决定**，非项目级一刀切） |
@@ -282,6 +282,31 @@
 | UT-S09-122a | 反向移除：删最后一个 GUI 模块 → `sync` 移除 overlay ops 且保留用户 ops | sync 反向移除（F1 反向幂等） | 项目仅一个 GUI 模块（overlay 已注入）、`launched.yaml` 另含用户自定义 overlay op | 删除该 GUI 模块后 `openlogos sync` | 项目不再含任何 GUI 模块 → 按 node id 移除 `gui-ui-first` 两节点；**同一 `launched.yaml` 内用户自定义 overlay op 保持不变** |
 | UT-S09-123 | `--auto` 缺字段模块不被自动判 GUI、输出诊断、不注入 | `--auto` 安全默认（F1） | 已 `launched`、`modules[]` 缺 `product_type` 的 GUI 意图项目、无人值守 | `openlogos next --auto`（含 sync/推进链） | **绝不**自动判为 GUI；保持安全默认（非 GUI、不注入 overlay）；照常暴露 `PRODUCT_TYPE_CONFIRMATION_REQUIRED` 作为 next action；仅显式 `set-product-type` 后才注入 |
 | UT-S09-124 | `service` 为合法枚举且判非 GUI | `PRODUCT_TYPE_ENUM` 尾部扩展 `service`（add-product-type-service） | 已 launched 项目 | `openlogos module set-product-type core service`；重复设同值；`openlogos sync`；读 `status --format json` | 写入成功且幂等（`modules[core].product_type=="service"`，重设同值 no-op）；`isValidProductType('service')===true` 且 `isGuiProductType('service')===false`、`ui_impact` 恒假；`sync` **不注入** `gui-ui-first` overlay；缺字段诊断 `next_action.enum` 为固定顺序 8 值、尾部为 `"service"`（既有 7 值前缀逐字不变） |
+
+### 9.9b overlay extends 版本单一权威与存量有条件迁移（fix-sync-yaml-and-overlay-version）
+
+> 覆盖 overlay 写入端从字面量版本号改为读取 loader 版本映射，以及存量落后 overlay 的有条件迁移。
+>
+> **断言纪律**：期望值一律引用 `BUILTIN_VERSIONS[lifecycle]`，**禁止在 fixture 或期望值中固化任何具体版本号**——既有 `cli/test/s09-ui-sync.test.ts` 的三处 `builtin:launched@v1` fixture 正是把错误形态固化成了断言，使写入端与 loader 映射失同步长期不可见。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S09-275 | 注入器写出的 `extends` 取自 loader 映射 | overlay 注入 Step 3→4a | GUI 项目，`logos/flow/launched.yaml` 不存在或缺 `extends` | 运行注入 | 写出的 `extends` 严格等于 `builtin:launched@${BUILTIN_VERSIONS.launched}`；产物中不存在任何字面量版本号（对产物做「不含硬编码版本」的负向检查） |
+| UT-S09-276 | 写出的 overlay 自解析无版本告警 | overlay 注入 Step 7 自检 | 同上，注入已完成 | 对写出文件执行 `applyOverlay()` | `warnings[]` **不含** `FLOW_VERSION_MISMATCH`；该自检即「写者产出不得立即触发本进程告警」这一不变量的机器判据 |
+| UT-S09-277 | 存量落后且引用全部可解析 → 自动提升并保留用户 ops | overlay 迁移 Step 4b-1 | 既有 `launched.yaml` 的 `extends` 版本落后于映射值，其引用的全部 node id 在新版本内置模板中均可解析，且文件含用户自定义 op `custom-user-node` | 运行 `openlogos sync`；再运行一次 | 首次把 `extends` 提升为映射值并输出已迁移提示；`custom-user-node` 与其它 overlay 操作**逐字节保留**、顺序不变；仅 `extends` 一个字段变化；第二次为 no-op（幂等） |
+| UT-S09-278 | 存量落后但存在失效 node id → 保持原值并继续告警（负向） | overlay 迁移 Step 4b-2 | 既有 `launched.yaml` 版本落后，且其 overlay 引用了一个在新版本内置模板中**已不存在**的 node id | 运行 `openlogos sync`，随后解析该 overlay | `extends` **保持原值不变**；`warnings[]` 仍含 `FLOW_VERSION_MISMATCH`；命令不因此中断。此为迁移判据的关键负向：不得为消音告警而无条件 bump |
+
+#### 9.9b 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-108 | GUI 项目 sync 后端到端无假告警 | Step 1→8 | 含 ≥1 GUI 模块（`product_type` ∈ web/desktop/mobile）的 launched 项目 | `openlogos sync` → `openlogos flow show --resolved --lifecycle launched` | sync 报告 overlay 已注入；紧接着的 `flow show` 输出 **不含** `FLOW_VERSION_MISMATCH`。此为上游 Bug 报告「前后两条命令」复现路径的等价用例，两条命令必须使用同一 CLI 版本 |
+
+#### 9.9b 追溯与覆盖
+
+- AC-YAMLW-06 写入端单一权威：UT-S09-275、UT-S09-276、ST-S09-108。
+- AC-YAMLW-07 存量有条件迁移：UT-S09-277（正向）、UT-S09-278（负向）。
+- 场景：S09 GUI overlay extends 版本取值与存量有条件迁移；功能规格：§2.47.4～§2.47.5；架构：§三十八.2、§三十八.4；方法论规格：`spec/flow-spec.md` §10.1；安装态：SMOKE-core-169。
 
 ### 9.10 双阶段发布状态与跨仓依赖（F2 R7）
 

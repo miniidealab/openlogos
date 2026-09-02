@@ -500,3 +500,77 @@ sequenceDiagram
 
 - 需求：托管资产可核验与过期诊断。
 - 测试：UT-S08-38～UT-S08-42、ST-S08-28～ST-S08-29、SMOKE-core-138～SMOKE-core-139。
+
+## S08 resource_index 结构化补录时序
+
+### 场景目标
+
+细化主时序 Step 5「扫描并补录 resource_index」的内部时序与后置判据。该步骤写的是项目正式文档 `logos-project.yaml`，此前按 `conventions:` 行做文本拼接，在 `init` 模板产出的 `resource_index: []` 上必然写出非法 YAML，且损坏后不自我暴露。本节把该步骤定死为 AST 写入，并规定「产物可解析」这一后置判据。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| C | OpenLogos CLI | `openlogos sync` 主流程 |
+| IDX | 资源索引补录器 | 扫描候选文件、推断 desc、结构化写回 |
+| DOC | `logos-project.yaml` | 项目正式文档，权威状态为其字节与 YAML 文档树 |
+
+前置：`logos.config.json` 与 `logos-project.yaml` 均存在且当前可解析。`DOC` 的 `resource_index` 键处于三种既有形态之一——空 flow sequence、空 block、键缺失。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant C as OpenLogos CLI
+    participant IDX as 资源索引补录器
+    participant DOC as logos-project.yaml
+
+    C->>IDX: Step 5.1: 进入补录步骤
+    IDX->>DOC: Step 5.2: 读取字节并 parseDocument() 得文档树
+    IDX->>IDX: Step 5.3: 从文档树读出已收录 path 集合
+    IDX->>IDX: Step 5.4: 扫描候选文件并推断 desc，得未收录条目
+    alt 无未收录条目
+        IDX-->>C: Step 5.5a: no-op，DOC 字节不变
+    else 存在未收录条目
+        IDX->>IDX: Step 5.5b: 定位或创建 resource_index 节点（归一三种形态）
+        IDX->>IDX: Step 5.6: 追加条目，保留注释与既有键序
+        IDX->>IDX: Step 5.7: 序列化并重新解析自检
+        alt 自检失败
+            IDX-->>C: Step 5.8a: 不写盘，DOC 字节不变，报错
+        else 自检通过
+            IDX->>DOC: Step 5.8b: 写回
+            IDX-->>C: Step 5.9: 返回新增与跳过计数
+        end
+    end
+```
+
+### 步骤说明
+
+1. **补录器**读取 `logos-project.yaml` 字节并解析为 YAML 文档树。禁止在本步骤之后出现任何按正则或行锚定位插入点的分支。
+2. **补录器**从文档树而非正则读出已收录 `path` 集合，据此判定幂等。
+3. **补录器**扫描候选目录并按既有规则推断 desc；无匹配规则的文件计入 skipped，扫描范围与推断规则本次不变。
+4. **补录器**定位 `resource_index` 节点。三种既有形态归一到同一承载条目的序列：空 flow sequence 转为 block sequence，空 block 直接承载，键缺失则创建该键且不影响其它顶层键位置。
+5. **补录器**追加条目后序列化，并对序列化结果重新解析做自检；自检失败不写盘，目标文件字节保持原样。
+
+### 不变量
+
+- **后置判据是可解析性**：写回后的 `logos-project.yaml` 必须能被 CLI 捆绑的解析器无异常解析。以字符串包含为断言不足以覆盖本步骤。
+- **守恒**：既有 `resource_index` 条目、其它顶层键与注释逐项保留。
+- **幂等**：已收录路径不重复追加；重复执行不产生键序或注释漂移。
+- **原子**：写回失败不留半成品。
+- **形态无关**：补录器不对 `resource_index` 的当前形态做假设；同一权威的其它写者（合并事务元数据写入、决策计数器写入）同样不得假定其只以空 block 出现。
+
+### 异常
+
+| 编号 | 触发条件 | 处理 |
+|---|---|---|
+| EX-S08-IDX-1 | 读取阶段 `logos-project.yaml` 已不可解析 | 不进入补录，按降级路径处理并让告警在人类可读通道可见（见 S11 降级告警出口）；不代用户改写文件 |
+| EX-S08-IDX-2 | 序列化自检失败 | 不写盘，目标文件字节不变，报错退出 |
+| EX-S08-IDX-3 | 候选文件无匹配 desc 规则 | 计入 skipped，不写入占位条目 |
+
+### 追溯
+
+- 需求：AC-YAMLW-01～03、AC-YAMLW-05。
+- 功能规格：§2.47.2、§2.47.3。
+- 架构：§三十八.1、§三十八.3。
+- 测试：UT-S08-43～UT-S08-46、ST-S08-30～ST-S08-31；安装态 SMOKE-core-169。

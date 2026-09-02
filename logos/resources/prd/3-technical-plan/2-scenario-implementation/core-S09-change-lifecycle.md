@@ -1212,3 +1212,90 @@ sequenceDiagram
 - 功能规格：§2.46.1～§2.46.5。
 - 架构：§37.2～§37.6。
 - 测试：UT-S09-271～274、ST-S09-106～107；安装态 SMOKE-core-168。
+
+## S09 GUI overlay extends 版本取值与存量有条件迁移
+
+### 场景目标
+
+GUI 项目在 `init` / `sync` 时会把方法论 overlay 唯一源的两个 `op:add` 并入项目实例 `logos/flow/launched.yaml`。此前写入端把 `extends` 的内容版本硬编码为字面量，与 loader 维护的版本映射失同步，导致 CLI 刚写完文件、下一条命令就对该文件报版本不匹配告警。本节定死写入端取值来源，并规定存量 overlay 的有条件迁移判据。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| C | OpenLogos CLI | `init` / `sync` 主流程 |
+| INJ | GUI overlay 注入器 | 读唯一源、按 node id 去重并入项目实例 |
+| VER | flow loader 版本映射 | 内置模板内容版本的唯一权威 |
+| OVL | `logos/flow/launched.yaml` | 项目实例 overlay 文件 |
+
+前置：项目含 ≥1 GUI 模块（`product_type` ∈ {`web`,`desktop`,`mobile`}）。缺字段按非 GUI 处理，不注入。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant C as OpenLogos CLI
+    participant INJ as GUI overlay 注入器
+    participant VER as flow loader 版本映射
+    participant OVL as logos/flow/launched.yaml
+
+    C->>INJ: Step 1: 项目含 GUI 模块，进入注入
+    INJ->>OVL: Step 2: 读取实例（不存在则视为空文档）
+    INJ->>VER: Step 3: 读取当前 lifecycle 的内容版本
+    alt extends 缺失或非字符串
+        INJ->>INJ: Step 4a: 组装 builtin:<lifecycle>@<映射值>
+    else extends 已存在且版本落后
+        INJ->>INJ: Step 4b: 解析该 overlay 引用的全部 node id
+        alt 全部 node id 在新版本仍可解析
+            INJ->>INJ: Step 4b-1: 提升 extends 至映射值，标记已迁移
+        else 存在失效 node id
+            INJ->>INJ: Step 4b-2: 保持原 extends，保留版本不匹配告警
+        end
+    end
+    INJ->>INJ: Step 5: 按 node id 去重并入两个 op:add，保留用户自定义 ops
+    INJ->>OVL: Step 6: 写回
+    INJ->>INJ: Step 7: 自检——解析产物，warnings 不得含版本不匹配告警
+    INJ-->>C: Step 8: 返回是否发生写入变更与是否迁移
+```
+
+### 步骤说明
+
+1. **注入器**仅在项目含 ≥1 GUI 模块时进入；`product_type` 唯一源是 `logos-project.yaml` 的 `modules[].product_type`，缺字段按非 GUI 安全默认。
+2. **注入器**读取 `logos/flow/launched.yaml` 实例；文件不存在时按空文档处理。
+3. **注入器**从 loader 版本映射读取当前 lifecycle 的内容版本。写入端不得持有任何字面量版本号。
+4. `extends` 缺失或非字符串时按映射值组装；已存在且版本落后时进入迁移判据（见下节）。
+5. **注入器**按 node id 去重并入 overlay 唯一源的两个 `op:add`，用户自定义的 overlay 操作原样保留。反向场景（唯一 GUI 模块改为非 GUI）按既有语义移除这两个 node id，同样不触碰用户自定义操作。
+6. 写回后**注入器**对产物自检：解析结果的 `warnings` 不得包含版本不匹配告警。自检不通过即视为不变量被破坏。
+
+### 迁移规则
+
+存量 overlay 的 `extends` 版本落后于映射值时按引用可解析性分流：
+
+| 条件 | 处理 | 输出 |
+|---|---|---|
+| 该 overlay 引用的**全部** node id 在新版本内置模板中仍可解析 | 提升 `extends` 至当前映射值 | 提示已迁移 |
+| 存在任一失效 node id | 保持原 `extends` 不变 | 继续产生版本不匹配告警，指向需人工复核的对象 |
+
+该判据等价于告警文案本身所问的问题，因此迁移之后残留的告警一律是真告警。迁移幂等：对已是当前版本的 overlay 为 no-op，重复同步不产生额外写入。
+
+### 不变量
+
+- 写入端产物中不得出现字面量内置版本号；写入端与告警判定端读同一映射。
+- 非 GUI 项目与缺 `product_type` 的项目零注入、零迁移、流程零改动。
+- overlay 四操作语义、版本告警判定条件与公共 JSON 字段结构零变化。
+- 迁移只改 `extends` 一个字段，不重排、不删改任何 overlay 操作。
+
+### 异常与边界
+
+| 编号 | 触发条件 | 处理 |
+|---|---|---|
+| EX-S09-OVL-1 | 实例 overlay 文件不可解析 | 不迁移、不写回，报错并保留原字节 |
+| EX-S09-OVL-2 | 落后版本且存在失效 node id | 保持原 `extends`，保留告警，不阻断当前命令 |
+| EX-S09-OVL-3 | 写回后自检出现版本不匹配告警 | 视为不变量被破坏，报错；不得通过放宽判定条件消音 |
+
+### 追溯
+
+- 需求：AC-YAMLW-06～07。
+- 功能规格：§2.47.4、§2.47.5。
+- 架构：§三十八.2、§三十八.4。
+- 测试：UT-S09-275～UT-S09-278、ST-S09-108；安装态 SMOKE-core-169。
