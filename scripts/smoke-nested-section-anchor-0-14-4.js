@@ -28,6 +28,7 @@ if (process.argv.includes('--self-test')) {
     required_source_env: ['OPENLOGOS_NESTED_ANCHOR_TARBALL', 'OPENLOGOS_NESTED_ANCHOR_ROLLBACK_TARBALL'],
     routed_env: ['OPENLOGOS_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
     required_runlogos_env: ['OPENLOGOS_RUNLOGOS_ROOT', 'OPENLOGOS_RUNLOGOS_FINAL_CONTENT'],
+    target_slug_env: 'OPENLOGOS_RUNLOGOS_SLUG',
     runlogos_merge_authority_env: 'OPENLOGOS_RUNLOGOS_MERGE_AUTHORIZED',
     transaction_id: RUNLOGOS_TRANSACTION_ID,
     public_release_commands: [],
@@ -108,7 +109,12 @@ function recoverRunLogos(entry) {
   }
   const runlogosRoot = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_ROOT || ''));
   const contentFile = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_FINAL_CONTENT || ''));
-  const status = cliJson(entry, runlogosRoot, ['merge', 'transaction', 'status']);
+  // 经 --slug 显式寻址目标提案：不带 slug 会解析 RunLogos 当前活跃 guard，在原提案归档、
+  // 活跃变更换成别的之后必然拿到另一个事务。目标提案 slug 由 env 显式给出，命中活跃或
+  // 已归档目录都由 CLI 的单点解析器负责——runner 不自建查找逻辑、不改写 guard。
+  const targetSlug = process.env.OPENLOGOS_RUNLOGOS_SLUG;
+  const statusArgs = ['merge', 'transaction', 'status', ...(targetSlug ? ['--slug', targetSlug] : [])];
+  const status = cliJson(entry, runlogosRoot, statusArgs);
   if (status.transaction_id === RUNLOGOS_TRANSACTION_ID && status.phase === 'completed') {
     if (status.content_slots.required !== 7 || status.content_slots.submitted !== 7
       || status.content_slots.missing_slot_ids.length !== 0 || !status.receipt?.receipt_sha256) {
