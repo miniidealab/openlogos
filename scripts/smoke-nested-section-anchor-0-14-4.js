@@ -29,6 +29,7 @@ if (process.argv.includes('--self-test')) {
     routed_env: ['OPENLOGOS_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
     required_runlogos_env: ['OPENLOGOS_RUNLOGOS_ROOT', 'OPENLOGOS_RUNLOGOS_FINAL_CONTENT'],
     target_slug_env: 'OPENLOGOS_RUNLOGOS_SLUG',
+    runlogos_read_cli_env: 'OPENLOGOS_RUNLOGOS_CLI',
     runlogos_merge_authority_env: 'OPENLOGOS_RUNLOGOS_MERGE_AUTHORIZED',
     transaction_id: RUNLOGOS_TRANSACTION_ID,
     public_release_commands: [],
@@ -107,6 +108,12 @@ function recoverRunLogos(entry) {
   if (process.env.OPENLOGOS_RUNLOGOS_MERGE_AUTHORIZED !== '1') {
     throw new Error('缺少 RunLogos merge 独立授权：OPENLOGOS_RUNLOGOS_MERGE_AUTHORIZED=1');
   }
+  // 两件事必须解耦：本用例的 candidate identity/回滚矩阵验证的是 0.14.4 那次发布，
+  // 而「读取已归档的 RunLogos 原事务」需要一个**具备归档只读寻址能力**的 CLI
+  // （该能力 0.14.4 尚不存在）。默认沿用 candidate entry，driver 可显式指定。
+  const readEntry = process.env.OPENLOGOS_RUNLOGOS_CLI
+    ? realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_CLI))
+    : entry;
   const runlogosRoot = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_ROOT || ''));
   const contentFile = realpathSync(resolve(process.env.OPENLOGOS_RUNLOGOS_FINAL_CONTENT || ''));
   // 经 --slug 显式寻址目标提案：不带 slug 会解析 RunLogos 当前活跃 guard，在原提案归档、
@@ -114,7 +121,7 @@ function recoverRunLogos(entry) {
   // 已归档目录都由 CLI 的单点解析器负责——runner 不自建查找逻辑、不改写 guard。
   const targetSlug = process.env.OPENLOGOS_RUNLOGOS_SLUG;
   const statusArgs = ['merge', 'transaction', 'status', ...(targetSlug ? ['--slug', targetSlug] : [])];
-  const status = cliJson(entry, runlogosRoot, statusArgs);
+  const status = cliJson(readEntry, runlogosRoot, statusArgs);
   if (status.transaction_id === RUNLOGOS_TRANSACTION_ID && status.phase === 'completed') {
     if (status.content_slots.required !== 7 || status.content_slots.submitted !== 7
       || status.content_slots.missing_slot_ids.length !== 0 || !status.receipt?.receipt_sha256) {
@@ -139,9 +146,9 @@ function recoverRunLogos(entry) {
   const handle = openSync(temporary, 'r');
   try { fsyncSync(handle); } finally { closeSync(handle); }
   renameSync(temporary, staging);
-  const ready = cliJson(entry, runlogosRoot, ['merge', 'transaction', 'submit-content', '--slot', slotId, '--file', descriptor.staging_path]);
-  const sealed = cliJson(entry, runlogosRoot, ['merge', 'transaction', 'seal']);
-  const completed = cliJson(entry, runlogosRoot, ['merge', 'transaction', 'apply']);
+  const ready = cliJson(readEntry, runlogosRoot, ['merge', 'transaction', 'submit-content', '--slot', slotId, '--file', descriptor.staging_path]);
+  const sealed = cliJson(readEntry, runlogosRoot, ['merge', 'transaction', 'seal']);
+  const completed = cliJson(readEntry, runlogosRoot, ['merge', 'transaction', 'apply']);
   if (ready.transaction_id !== RUNLOGOS_TRANSACTION_ID || sealed.transaction_id !== RUNLOGOS_TRANSACTION_ID
     || completed.transaction_id !== RUNLOGOS_TRANSACTION_ID || completed.phase !== 'completed') {
     throw new Error('RunLogos 原 transaction 未在同一身份下完成');
