@@ -247,7 +247,25 @@ function slotPath(proposalDir: string, tx: StoredTransaction, slotId: string): s
   return join(proposalDir, 'merge-content', tx.transaction_id, `${slotId}.content`);
 }
 
+/**
+ * 项目根定位：**按标记上溯**，不按固定深度。
+ *
+ * 旧实现是 `resolve(proposalDir, '../../..')`，隐含「提案目录恒为
+ * `<root>/logos/changes/<slug>`」这一位置假设。归档提案位于
+ * `<root>/logos/changes/archive/<时间戳>-<slug>`（深一层），固定深度上溯会把
+ * `<root>/logos` 当成项目根，使 `staging_path` 等 project-relative 路径丢掉 `logos/` 前缀。
+ *
+ * 位置性猜测与内容性猜测同属影子源（架构 §三十九.1）：以 `logos/logos.config.json`
+ * 这个真实标记为准，深度多少都不影响。找不到标记时退回旧行为，保证既有夹具零回归。
+ */
 function projectRoot(proposalDir: string): string {
+  let current = resolve(proposalDir);
+  for (let depth = 0; depth < 16; depth++) {
+    if (existsSync(join(current, 'logos', 'logos.config.json'))) return current;
+    const parent = resolve(current, '..');
+    if (parent === current) break;
+    current = parent;
+  }
   return resolve(proposalDir, '..', '..', '..');
 }
 
