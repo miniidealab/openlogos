@@ -113,6 +113,11 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_RESOURCE_INDEX_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_RESOURCE_INDEX_CANDIDATE_BIN,
     },
+    'scripts/smoke-plan-gate-deadlock-0-14-8.js': {
+      tarball: process.env.OPENLOGOS_PLAN_GATE_TARBALL,
+      previousTarball: process.env.OPENLOGOS_PLAN_GATE_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_PLAN_GATE_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -136,6 +141,7 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-sync-yaml-overlay-0-14-5.js',
   'scripts/smoke-archived-addressability-0-14-6.js',
   'scripts/smoke-resource-index-scope-0-14-7.js',
+  'scripts/smoke-plan-gate-deadlock-0-14-8.js',
 ]);
 
 const globalCandidateRunners = new Map([
@@ -145,6 +151,7 @@ const globalCandidateRunners = new Map([
   ['scripts/smoke-sync-yaml-overlay-0-14-5.js', process.env.OPENLOGOS_SYNC_YAML_TARBALL],
   ['scripts/smoke-archived-addressability-0-14-6.js', process.env.OPENLOGOS_ARCHIVED_ADDR_TARBALL],
   ['scripts/smoke-resource-index-scope-0-14-7.js', process.env.OPENLOGOS_RESOURCE_INDEX_TARBALL],
+  ['scripts/smoke-plan-gate-deadlock-0-14-8.js', process.env.OPENLOGOS_PLAN_GATE_TARBALL],
 ]);
 
 function prepareGlobalCandidate(runner) {
