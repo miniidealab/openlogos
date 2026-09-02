@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseDocument } from 'yaml';
 import { DELTA_TO_RESOURCE, classifyProposalDeltas } from './delta-classify.js';
-import { extractStructuredTestIds } from './proposal-lifecycle.js';
+import { extractStructuredTestIds, parseReuseDeclaration } from './proposal-lifecycle.js';
 
 export const AUTHORITY_IMPACT_SCHEMA = 'openlogos/authority-impact@1' as const;
 export const AUTHORITY_CLOSURE_SCHEMA = 'openlogos/authority-closure-evaluation@1' as const;
@@ -16,6 +16,13 @@ export const AUTHORITY_CLOSURE_ISSUE_CODES = [
 ] as const;
 
 export type AuthorityClosureIssueCode = typeof AUTHORITY_CLOSURE_ISSUE_CODES[number];
+
+/**
+ * 校验阶段（架构 §四十一.1～.2）。`tests` 的「必须存在于 effective test view」只在产物本该存在的阶段校验：
+ * plan 阶段该条按定义不可能为真（flow-spec §12.4 定义此刻尚未产出任何 delta），强判即构成死锁。
+ * 结构与 ID 格式校验两阶段同等严格；spec 阶段（change-lint 全量门 / merge preflight）追加存在性，fail-closed。
+ */
+export type AuthorityClosureStage = 'plan' | 'spec';
 
 export interface AuthorityClosureIssue {
   code: AuthorityClosureIssueCode;
@@ -105,10 +112,15 @@ function walkMarkdown(dir: string, output: string[]): void {
   }
 }
 
-/** effective test view 的唯一结构化 ID 读取：已合并测试规格 + 当前合法 test delta。 */
-export function collectEffectiveTestIds(root: string, proposalDir: string): Set<string> {
-  const paths: string[] = [];
-  walkMarkdown(join(root, 'logos', 'resources', 'test'), paths);
+/**
+ * effective test view 的唯一结构化 ID 读取，三个来源（功能规格 §2.50.3）：
+ * ① 已合并测试规格；② 当前提案 mergeable + valid 的 test delta；③ proposal.md 的「## 复用测试 ID」小节。
+ * 来源 ③ 不放宽真实性——`parseReuseDeclaration` 只回 `validIds`，即已在来源 ① 中真实存在的 ID。
+ */
+export function collectEffectiveTestIds(root: string, proposalDir: string, proposalContent?: string): Set<string> {
+  const mergedPaths: string[] = [];
+  walkMarkdown(join(root, 'logos', 'resources', 'test'), mergedPaths);
+  const paths = [...mergedPaths];
   for (const entry of classifyProposalDeltas(proposalDir)) {
     if (entry.category === 'test' && entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid'
       && entry.relativePath.endsWith('.md')) paths.push(join(proposalDir, entry.relativePath));
@@ -116,6 +128,15 @@ export function collectEffectiveTestIds(root: string, proposalDir: string): Set<
   const ids = new Set<string>();
   for (const path of paths) {
     for (const id of extractStructuredTestIds(readFileSync(path, 'utf8'))) ids.add(id);
+  }
+  const proposalPath = join(proposalDir, 'proposal.md');
+  const content = proposalContent ?? (existsSync(proposalPath) ? readFileSync(proposalPath, 'utf8') : '');
+  if (content) {
+    const mergedIds = new Set<string>();
+    for (const path of mergedPaths) {
+      for (const id of extractStructuredTestIds(readFileSync(path, 'utf8'))) mergedIds.add(id);
+    }
+    for (const id of parseReuseDeclaration(content, mergedIds).validIds) ids.add(id);
   }
   return ids;
 }
@@ -206,7 +227,7 @@ export function authorityClosureSummary(evaluation: AuthorityClosureEvaluation):
 /**
  * Authority Impact 的唯一完成判据。函数只读；historical 且从未声明时返回 undefined，避免伪造 not_applicable。
  */
-export function evaluateAuthorityClosure(root: string, proposalDir: string, proposalContent?: string): AuthorityClosureEvaluation | undefined {
+export function evaluateAuthorityClosure(root: string, proposalDir: string, proposalContent?: string, stage: AuthorityClosureStage = 'spec'): AuthorityClosureEvaluation | undefined {
   const proposalPath = join(proposalDir, 'proposal.md');
   const relPath = projectRelative(root, proposalPath);
   const historical = HISTORICAL_MARKERS.some(marker => existsSync(join(proposalDir, marker)));
@@ -255,7 +276,7 @@ export function evaluateAuthorityClosure(root: string, proposalDir: string, prop
     malformed.push(issue('authority_impact_malformed', relPath, 'required 分支必须含非空 trigger_reasons/facts 与 unresolved 数组。',
       '补齐 required 分支 canonical 字段，并确保 facts 非空。'));
   }
-  const knownTests = collectEffectiveTestIds(root, proposalDir);
+  const knownTests = collectEffectiveTestIds(root, proposalDir, content);
   const plannedTargets = collectPlannedAuthorityCreateTargets(content);
   const seenFactIds = new Set<string>();
   let projections = 0;
@@ -295,9 +316,20 @@ export function evaluateAuthorityClosure(root: string, proposalDir: string, prop
     else retired += fact.retired_shadow_sources.length;
     if (!nonEmptyStrings(fact.forbidden_fallbacks)) malformed.push(issue('authority_closure_incomplete', relPath,
       `${factId} 缺少 forbidden_fallbacks。`, `列出 ${factId} 禁止的反向推断与启发式 fallback。`, index));
-    if (!nonEmptyStrings(fact.tests) || !(fact.tests as unknown[]).every(id => nonEmpty(id) && TEST_ID_RE.test(id) && knownTests.has(id))) {
-      malformed.push(issue('authority_closure_incomplete', relPath, `${factId} 引用的 tests 为空、非法或不在 effective test view。`,
-        `仅引用 logos/resources/test 或当前 test delta 表首列中真实存在的测试 ID。`, index));
+    // §2.50.2：plan 阶段只判「结构完备 + ID 格式合法」；「已存在于 effective test view」推迟到 spec 阶段与 merge
+    // preflight——该条在 plan 阶段按定义不可能为真，强判即构成 §四十一.1 的门禁前置不可满足。
+    const testsWellFormed = nonEmptyStrings(fact.tests)
+      && (fact.tests as unknown[]).every(id => nonEmpty(id) && TEST_ID_RE.test(id));
+    const testsResolved = stage === 'plan'
+      || (testsWellFormed && (fact.tests as string[]).every(id => knownTests.has(id)));
+    if (!testsWellFormed || !testsResolved) {
+      malformed.push(issue('authority_closure_incomplete', relPath,
+        !testsWellFormed
+          ? `${factId} 引用的 tests 为空或 ID 格式非法。`
+          : `${factId} 引用的 tests 不在 effective test view：${(fact.tests as string[]).filter(id => !knownTests.has(id)).join('、')}`,
+        !testsWellFormed
+          ? `为 ${factId} 补充非空 tests，每项须符合 UT-/ST-/SMOKE- 测试 ID 格式。`
+          : `仅引用 logos/resources/test、当前 test delta 表首列或「## 复用测试 ID」小节中真实存在的测试 ID。`, index));
     }
 
     if (nonEmpty(fact.authority_ref)) {

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { evaluateProposalClarification } from './clarification.js';
-import { authorityClosureSummary, evaluateAuthorityClosure } from './authority-closure.js';
+import { authorityClosureSummary, evaluateAuthorityClosure, type AuthorityClosureStage } from './authority-closure.js';
 import {
   extractTaskSectionItems, isCodeRequiredForProposal, isTasksCodeFilled,
   isTasksTemplateFilled, parseTaskSections, resolveProposalDeploymentDecision, countMergeableDeltaFiles,
@@ -19,7 +19,11 @@ function taskIssue(code: CompletionIssue['code'], path: string, message: string,
   return { code, path, message, fix_hint: fixHint, ...extra };
 }
 
-export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 'zh' | 'en'): PlanPackageEvaluation {
+/**
+ * @param stage 校验阶段（架构 §四十一.1）。`next` / `status` 的 proposal_step 派生传 'plan'；
+ *              change-lint 全量门与 merge preflight 传 'spec'（默认，fail-closed）。
+ */
+export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 'zh' | 'en', stage: AuthorityClosureStage = 'spec'): PlanPackageEvaluation {
   const proposalPath = join(proposalDir, 'proposal.md');
   const tasksPath = join(proposalDir, 'tasks.md');
   const historical = ['PLAN_APPROVED', 'SPEC_MERGED', 'MERGED', 'VERIFY_PASS']
@@ -34,7 +38,7 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
   if (!historical && (!clarification.valid || clarification.output.status !== 'complete')) {
     proposalIssues.push(taskIssue('proposal_clarification_invalid', proposalRel, `决策澄清契约非法：${clarification.issues.join('；')}`, '按 openlogos/clarification@1 补齐并完成决策澄清。', { section_id: 'clarification', expected: 'openlogos/clarification@1 status=complete' }));
   }
-  const authorityClosure = evaluateAuthorityClosure(root, proposalDir, proposalContent);
+  const authorityClosure = evaluateAuthorityClosure(root, proposalDir, proposalContent, stage);
   if (authorityClosure) {
     for (const authorityIssue of authorityClosure.issues) {
       proposalIssues.push(taskIssue(authorityIssue.code, authorityIssue.path, authorityIssue.message,

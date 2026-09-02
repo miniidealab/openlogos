@@ -798,7 +798,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   const acc: CheckAcc = { violations: [], seq: new Map(), order: new Map() };
 
   // L0：所有 plan 消费方共用的唯一完成契约。
-  const planPackage = evaluatePlanPackage(root, proposalDir);
+  const planPackage = evaluatePlanPackage(root, proposalDir, undefined, 'spec');
   const authorityCodes = new Set<string>(AUTHORITY_CLOSURE_ISSUE_CODES);
   for (const completionIssue of planPackage.issues) {
     pushViolation(acc, authorityCodes.has(completionIssue.code) ? 10 : 0, {
