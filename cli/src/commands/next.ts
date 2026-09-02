@@ -6,7 +6,7 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData, deriveActiveOverlay } from './status.js';
 import type { ProposalStep, ProposalBlockReason, PlanState, CmdGate, ProductTypeConfirmation } from './status.js';
-import { isAdoptedBootstrap, readProjectYaml } from '../lib/project-yaml.js';
+import { formatYamlDegradedLines, isAdoptedBootstrap, readProjectYaml } from '../lib/project-yaml.js';
 import type { BaselineSeedState, BaselineCoverage } from '../lib/baseline-provenance.js';
 import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
 import { gateForProposalStep, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
@@ -1099,6 +1099,9 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     console.log(JSON.stringify(makeEnvelope('next', result)));
     return;
   }
+
+  // AC-YAMLW-04：与 status 同源的降级告警（同一 formatYamlDegradedLines 渲染入口）
+  for (const line of formatYamlDegradedLines(data.yaml_diagnostics, locale)) console.log(line);
 
   console.log(`\n💡 ${t(locale, 'next.title')}\n`);
 

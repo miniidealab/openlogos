@@ -11,7 +11,7 @@ import { FlowError } from '../lib/flow.js';
 import { listFiles } from '../lib/list-files.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
-import { readProjectYaml, isAdoptedBootstrap } from '../lib/project-yaml.js';
+import { readProjectYaml, isAdoptedBootstrap, formatYamlDegradedLines } from '../lib/project-yaml.js';
 import type { BootstrapMode, YamlDiagnostics, ProjectYamlScenario } from '../lib/project-yaml.js';
 import { buildModuleFeatures, formatFeaturesText } from '../lib/feature-grouping.js';
 import type { FeatureGroupItem } from '../lib/feature-grouping.js';
@@ -1366,6 +1366,9 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
 
   const locale = readLocale(root);
   const LINE = '─'.repeat(50);
+
+  // AC-YAMLW-04：降级必须在人类可读通道可见，且与 next 同源；健康项目零新增输出
+  for (const line of formatYamlDegradedLines(data.yaml_diagnostics, locale)) console.log(line);
 
   if (!moduleId) {
     console.log('\n📊 OpenLogos Project Status\n');

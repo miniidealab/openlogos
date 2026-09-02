@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse as parseYaml, parseDocument } from 'yaml';
+import { Document, isMap, parse as parseYaml, parseDocument } from 'yaml';
+import { t, type Locale } from '../i18n.js';
 import type { BaselineSeedState, BaselineIndexEntry } from './baseline-provenance.js';
 
 export type YamlParseStatus = 'recovered' | 'error';
@@ -355,6 +356,7 @@ function normalizeProjectYaml(raw: unknown): ProjectYamlData | null {
 function recoverProjectYamlData(content: string): {
   data: ProjectYamlData | null;
   recovered_fields: string[];
+  dropped_fields: string[];
   messages: string[];
   has_recovered_modules: boolean;
 } {
@@ -405,6 +407,7 @@ function recoverProjectYamlData(content: string): {
   return {
     data: Object.keys(data).length > 0 ? data : null,
     recovered_fields: recoveredFields,
+    dropped_fields: droppedTopLevelFields(doc, recoveredFields),
     has_recovered_modules: hasRecoveredModules,
     messages: collectMessages(
       'logos-project.yaml 存在可恢复的解析错误',
@@ -413,11 +416,50 @@ function recoverProjectYamlData(content: string): {
   };
 }
 
+/**
+ * 文档树里真实存在、但不在恢复范围内的顶层键——即本次降级**丢失**的字段。
+ *
+ * 恢复器只抢救 modules / scenarios / deployment_gates；`resource_index` 等其余顶层键
+ * 一律被丢弃。丢弃本身是既定设计（恢复是为了让 CLI 在部分损坏下仍可用），但**丢了什么
+ * 必须说出来**——否则就是「能跑但数据已丢」这一最坏失败模式（架构 §三十八.3）。
+ *
+ * 键名从 AST 读取，不用正则猜文本形态。
+ */
+function droppedTopLevelFields(doc: Document, recoveredFields: string[]): string[] {
+  const contents = doc.contents;
+  if (!isMap(contents)) return [];
+  const recovered = new Set(recoveredFields);
+  const dropped: string[] = [];
+  for (const pair of contents.items) {
+    const key = typeof pair.key === 'string' ? pair.key : String((pair.key as { value?: unknown })?.value ?? '');
+    if (key && !recovered.has(key) && !dropped.includes(key)) dropped.push(key);
+  }
+  return dropped;
+}
+
+/**
+ * YAML 降级在**人类可读通道**的唯一渲染入口（架构 §三十八.3）。
+ *
+ * `status` 与 `next` 共用它，保证两条命令对同一降级状态给出同源、同措辞的可见告警；
+ * 机器通道继续读 `yaml_diagnostics` 本身，两通道判断一致。
+ * 诊断为 null（解析正常）时返回空数组——健康项目零新增输出，golden 不漂移。
+ */
+export function formatYamlDegradedLines(
+  diagnostics: YamlDiagnostics | null,
+  locale: Locale,
+): string[] {
+  if (!diagnostics) return [];
+  const lines = [`⚠️  ${t(locale, 'yaml.degraded', { status: diagnostics.parse_status })}`];
+  for (const message of diagnostics.messages) lines.push(`     ${message}`);
+  return lines;
+}
+
 function buildDiagnostics(
   status: YamlParseStatus,
   messages: string[],
   recoveredFields: string[] = [],
   hasRecoveredModules: boolean = false,
+  droppedFields: string[] = [],
 ): YamlDiagnostics {
   const finalMessages = [...messages];
   if (status === 'recovered' && recoveredFields.length > 0) {
@@ -425,6 +467,11 @@ function buildDiagnostics(
   }
   if (status === 'error' && !hasRecoveredModules) {
     finalMessages.push('无法从 AST 恢复 modules');
+  }
+  // 点名未被恢复、已随本次降级丢失的字段，并给出重建入口（需求 AC-YAMLW-04）
+  if (droppedFields.length > 0) {
+    finalMessages.push(`未恢复（已丢失）：${droppedFields.join('、')}`);
+    finalMessages.push('修复 logos-project.yaml 后可用 `openlogos index` 重建资源索引');
   }
   return {
     parse_status: status,
@@ -462,6 +509,7 @@ export function readProjectYaml(root: string): ProjectYamlReadResult {
         collectMessages(error, ...recovered.messages),
         recovered.recovered_fields,
         recovered.has_recovered_modules,
+        recovered.dropped_fields,
       ),
     };
   }
