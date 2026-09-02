@@ -9,8 +9,8 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
-  appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync,
-  realpathSync, renameSync, rmSync, writeFileSync,
+  appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
+  realpathSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -93,45 +93,60 @@ function assertInstalledIdentity(expectedVersion) {
   return { entry, version };
 }
 
-/** 一次性夹具：建含真实 merge transaction 的提案 */
-function fixtureProject(entry) {
-  const base = mkdtempSync(join(tmpdir(), 'openlogos-smoke-170-'));
-  const slug = 'archived-addr-fixture';
-  cli(entry, base, ['init', 'addr-proj', '--locale', 'zh', '--ai-tool', 'claude-code']);
-  const write = (rel, content) => {
-    const abs = join(base, rel);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, content);
-  };
-  write('logos/.openlogos-guard', `${JSON.stringify({ activeChange: slug, module: 'core' })}\n`);
-  write('logos/resources/test/core-S01-test-cases.md', '# 测试\n\n## 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 旧定义 |\n');
-  write(`logos/changes/${slug}/deltas/test/core-S01-test-cases.md`, '## MODIFIED — 测试矩阵\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 新定义 |\n');
-  write(`logos/changes/${slug}/proposal.md`, `# fixture\n\n## 基线闭包计划\n\n\`\`\`yaml\nbaseline_closure:\n  policy: on-touch-v1\n  schema_version: 1\n  unit: canonical-merge-target-path\n  delta_cardinality: exactly-one-per-non-skip-target\n  effective_view: merged-resources-plus-current-change-deltas\n  ambiguity: block-before-existing-plan-exit\n  standalone_baseline_required: false\n  jit_confirmation: disabled\n  touched_scenario_ids: [S01]\n  targets:\n    - category: test\n      scenario_ids: [S01]\n      mode: MODIFY\n      delta_path: deltas/test/core-S01-test-cases.md\n      reason: fixture\n      evidence: [target_exists]\n      missing_evidence: []\n\`\`\`\n`);
-  write(`logos/changes/${slug}/tasks.md`, '# 任务\n\n## [delta] 规格变更\n\n## [code] 代码实现\n');
-  return { base, slug };
+/**
+ * 夹具用**仓库中已归档提案的真实事务文件**构造。
+ *
+ * 不用 `openlogos merge` 现造事务：那需要过完整 change-lint 门，与本用例被测的
+ * 「按目录位置寻址」无关；也不改写任何既有归档内容——只把字节复制进一次性目录。
+ */
+function archivedTransactionSource() {
+  const archiveRoot = join(root, 'logos', 'changes', 'archive');
+  if (!existsSync(archiveRoot)) throw new Error('仓库缺少 logos/changes/archive，夹具前提不成立');
+  for (const name of readdirSync(archiveRoot).sort().reverse()) {
+    const dir = join(archiveRoot, name);
+    if (!existsSync(join(dir, 'MERGE_TRANSACTION.json'))) continue;
+    const slug = name.replace(/^\d{8}-\d{4}-/, '');
+    if (slug !== name) return { dir, slug };
+  }
+  throw new Error('归档目录中找不到含 MERGE_TRANSACTION.json 的提案');
 }
+
+/** 一次性夹具项目骨架（不跑 init：只需 logos.config.json 与 guard） */
+function fixtureProject() {
+  const base = mkdtempSync(join(tmpdir(), 'openlogos-smoke-170-'));
+  mkdirSync(join(base, 'logos'), { recursive: true });
+  writeFileSync(join(base, 'logos', 'logos.config.json'), '{"locale":"zh","project":{"type":"cli"}}\n');
+  writeFileSync(join(base, 'logos', '.openlogos-guard'), `${JSON.stringify({ activeChange: 'some-other-change', module: 'core' })}\n`);
+  return base;
+}
+
+const placeProposal = (base, src, dest) => {
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(src, dest, { recursive: true });
+  return dest;
+};
 
 /** 步骤 ②③④⑤：归档寻址、写动作 fail-closed、歧义 */
 function exerciseArchivedAddressability(entry) {
-  const { base, slug } = fixtureProject(entry);
+  const { dir: srcDir, slug } = archivedTransactionSource();
+  const base = fixtureProject();
   try {
-    // 建事务并记录归档前身份
-    const created = cliJson(entry, base, ['merge', 'transaction', 'status', '--slug', slug]);
-    if (created.status !== 0) throw new Error('夹具未产生可读事务，前提不成立');
-    const before = created.json.data.merge_transaction;
+    // 活跃态读一次，作为归档前的身份基线
+    const activeDir = placeProposal(base, srcDir, join(base, 'logos', 'changes', slug));
+    const beforeOut = cliJson(entry, base, ['merge', 'transaction', 'status', '--slug', slug]);
+    if (beforeOut.status !== 0) throw new Error('活跃态事务不可读，夹具前提不成立');
+    const before = beforeOut.json.data.merge_transaction;
 
-    // 模拟 archive：按真实命名规则移动目录（不跑 archive，避免其门禁与本判据无关）
-    const archiveRoot = join(base, 'logos', 'changes', 'archive');
-    mkdirSync(archiveRoot, { recursive: true });
-    const archivedDir = join(archiveRoot, `20260101-1200-${slug}`);
-    renameSync(join(base, 'logos', 'changes', slug), archivedDir);
+    // 放成归档态：logos/changes/archive/<时间戳>-<slug>
+    rmSync(activeDir, { recursive: true, force: true });
+    const archivedDir = placeProposal(base, srcDir, join(base, 'logos', 'changes', 'archive', `20260101-1200-${slug}`));
     const txFile = join(archivedDir, 'MERGE_TRANSACTION.json');
     const txBefore = sha256(readFileSync(txFile));
 
-    // ③ 归档后只读寻址
-    const after = cliJson(entry, base, ['merge', 'transaction', 'status', '--slug', slug]);
-    if (after.status !== 0) throw new Error('归档后无法只读寻址该事务');
-    const tx = after.json.data.merge_transaction;
+    // ③ 归档后只读寻址：身份守恒 + staging_path 仍是完整 project-relative
+    const afterOut = cliJson(entry, base, ['merge', 'transaction', 'status', '--slug', slug]);
+    if (afterOut.status !== 0) throw new Error('归档后无法只读寻址该事务');
+    const tx = afterOut.json.data.merge_transaction;
     if (tx.transaction_id !== before.transaction_id || tx.phase !== before.phase) {
       throw new Error('归档前后事务身份漂移');
     }
@@ -153,13 +168,14 @@ function exerciseArchivedAddressability(entry) {
     if (sha256(readFileSync(txFile)) !== txBefore) throw new Error('写动作拒绝路径产生了副作用');
 
     // ⑤ 歧义 fail-closed
-    cpSync(archivedDir, join(archiveRoot, `20260202-0900-${slug}`), { recursive: true });
+    placeProposal(base, srcDir, join(base, 'logos', 'changes', 'archive', `20260202-0900-${slug}`));
     const ambiguous = cliRaw(entry, base, ['merge', 'transaction', 'status', '--slug', slug]);
     if (ambiguous.status === 0 || !ambiguous.out.includes('多个归档目录')) {
       throw new Error('同 slug 多归档命中未 fail-closed');
     }
 
     return {
+      source_slug: slug,
       transaction_id: tx.transaction_id,
       phase: tx.phase,
       identity_stable: true,

@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { requireEnvOrSkip } from './lib/smoke-not-applicable.mjs';
 
 export const RELEASE_0_14_1_SMOKE_IDS = ['SMOKE-core-157', 'SMOKE-core-158', 'SMOKE-core-159'];
 const EXPECTED_VERSION = '0.14.1';
@@ -41,6 +42,15 @@ if (process.argv.includes('--self-test')) {
   }));
   process.exit(0);
 }
+
+// 环境不具备（缺历史候选制品）必须留痕：静默零记录退出会让「不适用」与「该跑没跑」同形
+requireEnvOrSkip(RELEASE_0_14_1_SMOKE_IDS, [
+  ['OPENLOGOS_RELEASE_0_14_1_TARBALL', 'OPENLOGOS_TARBALL'],
+  ['OPENLOGOS_RELEASE_0_14_1_ROLLBACK_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
+], {
+  reason: '0.14.1 本地全局 smoke 需要 0.14.1 候选与 0.14.0 回滚制品',
+  environment: 'release-0-14-1-local',
+});
 
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 

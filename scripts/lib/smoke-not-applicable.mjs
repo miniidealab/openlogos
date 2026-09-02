@@ -55,6 +55,29 @@ export function recordSmokeNotApplicable(ids, { reason, missing = [], environmen
 }
 
 /**
+ * 制品/环境依赖的通用守卫：任一 env 组均未提供时判定不适用并留痕退出。
+ *
+ * @param {string[]} ids       该 runner 拥有的全部用例 ID
+ * @param {Array<string[]>} envGroups 每组是「主 env 或其 routed 回退」；组内任一存在即视为已提供
+ * @param {object} options     {reason, environment}
+ */
+export function requireEnvOrSkip(ids, envGroups, { reason, environment }) {
+  // 契约自述入口（--self-test / --*-self-test）只输出声明、不执行断言，
+  // 不受制品可用性约束——守卫在此一律放行，避免挡住 runner 的只读契约查询。
+  if (process.argv.some(arg => arg.endsWith('self-test'))) return false;
+  const missing = envGroups
+    .filter(group => !group.some(name => process.env[name]))
+    .map(group => group[0]);
+  if (missing.length === 0) return false;
+  exitNotApplicable(ids, {
+    reason: `${reason}（缺少：${missing.join('、')}）`,
+    missing,
+    environment,
+  });
+  return true;
+}
+
+/**
  * 便捷封装：判定不适用 → 留痕 → 以成功状态退出。
  * 不适用不是失败，故退出码为 0；但账本里必须留下每条用例的 skip。
  */

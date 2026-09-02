@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { requireEnvOrSkip } from './lib/smoke-not-applicable.mjs';
 
 export const PLAN_PACKAGE_SMOKE_IDS = [
   'SMOKE-core-135', 'SMOKE-core-136', 'SMOKE-core-137',
@@ -31,6 +32,15 @@ if (process.argv.includes('--self-test')) {
   }));
   process.exit(0);
 }
+
+// 环境不具备（缺历史候选制品）必须留痕：静默零记录退出会让「不适用」与「该跑没跑」同形
+requireEnvOrSkip(PLAN_PACKAGE_SMOKE_IDS, [
+  ['OPENLOGOS_PLAN_CONVERGENCE_TARBALL', 'OPENLOGOS_TARBALL'],
+  ['OPENLOGOS_PLAN_CONVERGENCE_ROLLBACK_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
+], {
+  reason: 'plan-package 收敛 smoke 需要 0.13.31 候选与回滚制品',
+  environment: 'plan-package-convergence',
+});
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 function run(command, args, cwd = repoRoot, env = process.env) {

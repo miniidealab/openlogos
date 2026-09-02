@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { recordSmokeNotApplicable } from './lib/smoke-not-applicable.mjs';
 
 const repoRoot = process.cwd();
 const expectedVersion = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf8')).version;
@@ -264,6 +265,14 @@ function smoke65() {
   } finally { f.cleanup(); }
 }
 
+/** 制品缺失属「环境不具备」而非失败：返回 null 让调用方留痕 skip（功能规格 §2.48.4） */
+function findRollbackTarballOrNull() {
+  const explicit = process.env.OPENLOGOS_ROLLBACK_TARBALL;
+  const candidate = explicit ? resolve(explicit) : join(repoRoot, 'miniidealab-openlogos-0.13.25.tgz');
+  if (!existsSync(candidate)) return null;
+  return candidate;
+}
+
 function findRollbackTarball() {
   const explicit = process.env.OPENLOGOS_ROLLBACK_TARBALL;
   const candidate = explicit ? resolve(explicit) : join(repoRoot, 'miniidealab-openlogos-0.13.25.tgz');
@@ -275,6 +284,9 @@ function findRollbackTarball() {
   }
   return candidate;
 }
+
+/** 不适用哨兵：由驱动循环唯一落一条 skip 记录 */
+const NOT_APPLICABLE = Symbol('not-applicable');
 
 function smoke66() {
   const f = fixture();
@@ -291,6 +303,14 @@ function smoke66() {
     if (runVerify(f).gate.result !== 'PASS') throw new Error('补齐 final 后未 PASS');
   } finally { f.cleanup(); }
 
+  // 0.13.25 是从未发布的本地候选版本；本机没有该制品时属环境不具备，
+  // 必须写显式 skip 而不是 fail——真实失败与不适用不得混用（功能规格 §2.48.4）。
+  const rollbackCandidate = findRollbackTarballOrNull();
+  if (!rollbackCandidate) {
+    // 返回哨兵而不是自行落记录：驱动循环见函数正常返回即写 pass，
+    // 若在此直接写 skip 会被随后的 pass 覆盖，形成「断言没跑却记成通过」的假通过。
+    return NOT_APPLICABLE;
+  }
   const rollback = findRollbackTarball();
   const prefix = mkdtempSync(join(tmpdir(), 'openlogos-rollback-prefix-'));
   try {
@@ -312,7 +332,17 @@ let failed = false;
 for (const [id, check] of cases) {
   const startedAt = Date.now();
   try {
-    check();
+    const outcome = check();
+    if (outcome === NOT_APPLICABLE) {
+      recordSmokeNotApplicable([id], {
+        reason: '缺少 0.13.25 回滚 tarball（该版本从未发布到 registry，本机无留存）',
+        missing: ['OPENLOGOS_ROLLBACK_TARBALL'],
+        environment: 'slice-aware-verify-rollback',
+        repoRoot,
+      });
+      console.log(`− ${id}（环境不具备，已记 skip）`);
+      continue;
+    }
     writeSmoke(id, 'pass', startedAt);
     console.log(`✓ ${id}`);
   } catch (error) {

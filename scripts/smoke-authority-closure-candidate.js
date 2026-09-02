@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { requireEnvOrSkip } from './lib/smoke-not-applicable.mjs';
 
 export const AUTHORITY_CLOSURE_SMOKE_IDS = [
   'SMOKE-core-163', 'SMOKE-core-164', 'SMOKE-core-165', 'SMOKE-core-166', 'SMOKE-core-167',
@@ -28,6 +29,15 @@ if (process.argv.includes('--self-test')) {
   }));
   process.exit(0);
 }
+
+// 环境不具备（缺历史候选制品）必须留痕：静默零记录退出会让「不适用」与「该跑没跑」同形
+requireEnvOrSkip(AUTHORITY_CLOSURE_SMOKE_IDS, [
+  ['OPENLOGOS_AUTHORITY_CLOSURE_TARBALL', 'OPENLOGOS_TARBALL'],
+  ['OPENLOGOS_AUTHORITY_CLOSURE_ROLLBACK_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
+], {
+  reason: 'Authority Closure 候选 smoke 需要候选与回滚制品',
+  environment: 'authority-closure-candidate',
+});
 
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 const run = (command, args, cwd = repoRoot) => spawnSync(command, args, { cwd, encoding: 'utf8', timeout: 600_000 });

@@ -8,6 +8,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } fro
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { validateRunLogosCandidateEvidence } from './lib/runlogos-candidate-evidence.mjs';
+import { requireEnvOrSkip } from './lib/smoke-not-applicable.mjs';
 
 export const MERGE_TRANSACTION_SMOKE_IDS = Array.from({ length: 10 }, (_, index) => `SMOKE-core-${141 + index}`);
 export const MERGE_TRANSACTION_CONSUMER_SMOKE_IDS = Array.from({ length: 6 }, (_, index) => `SMOKE-core-${151 + index}`);
@@ -34,6 +35,14 @@ if (process.argv.includes('--self-test')) {
   }));
   process.exit(0);
 }
+
+// 环境不具备（缺历史候选制品）必须留痕：静默零记录退出会让「不适用」与「该跑没跑」同形
+requireEnvOrSkip([...MERGE_TRANSACTION_SMOKE_IDS, ...MERGE_TRANSACTION_CONSUMER_SMOKE_IDS], [
+  ['OPENLOGOS_MERGE_TRANSACTION_TARBALL', 'OPENLOGOS_TARBALL'],
+], {
+  reason: 'merge transaction 候选 smoke 需要 0.14.0 候选制品',
+  environment: 'merge-transaction-candidate',
+});
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const requiredFile = name => {
