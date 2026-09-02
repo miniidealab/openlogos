@@ -7,6 +7,24 @@ import type { Locale } from '../i18n.js';
 // 文件扫描
 // ---------------------------------------------------------------------------
 
+/**
+ * 只列出该目录**顶层**的文件，不进入任何子目录。
+ *
+ * 用于 `logos/resources/verify/`：其目录语义是分层的——顶层是验收/冒烟报告（属规格产出），
+ * 子目录是事务工作区、证据包与部署制品（属运行产物）。判据按这条**结构**划线而非枚举目录名，
+ * 未来新增的证据目录因此自动被排除（架构 §四十.1）。
+ */
+function listFilesTopLevel(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && !entry.name.endsWith('.gitkeep'))
+      .map(entry => entry.name);
+  } catch {
+    return [];
+  }
+}
+
 function listFilesRecursive(dir: string): string[] {
   if (!existsSync(dir)) return [];
   try {
@@ -25,8 +43,9 @@ function listFilesRecursive(dir: string): string[] {
 export function scanCandidateFiles(root: string): string[] {
   const results: string[] = [];
 
-  const scanDir = (absDir: string) => {
-    for (const rel of listFilesRecursive(absDir)) {
+  const scanDir = (absDir: string, mode: 'recursive' | 'top-level' = 'recursive') => {
+    const files = mode === 'top-level' ? listFilesTopLevel(absDir) : listFilesRecursive(absDir);
+    for (const rel of files) {
       results.push(relative(root, join(absDir, rel)).replace(/\\/g, '/'));
     }
   };
@@ -38,7 +57,11 @@ export function scanCandidateFiles(root: string): string[] {
   scanDir(join(root, 'logos/resources/test'));
   scanDir(join(root, 'logos/resources/scenario'));
   scanDir(join(root, 'logos/resources/decisions'));
-  scanDir(join(root, 'logos/resources/verify'));
+  // verify/ 只收顶层报告：其子目录是 baseline-seed 事务工作区、证据包与部署制品，
+  // 其中 staging/ 与 resolved/ 存放主文档的**完整副本**——一旦与权威并列进索引，
+  // AI 就在两个同名条目之间无从选择。`logos/spec/baseline-closure.md` 已明文禁止
+  // baseline-seed staging 进入 effective view，而 resource_index 正是一种 effective view。
+  scanDir(join(root, 'logos/resources/verify'), 'top-level');
   scanDir(join(root, 'logos/resources/implementation'));
 
   // spec/
@@ -71,103 +94,115 @@ interface DescRule {
 const RULES: DescRule[] = [
   // 1. 场景总览（放在场景文件之前，更具体）
   {
-    pattern: /logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/(?:[a-z][a-z0-9-]*-)?00-scenario-overview\.md$/,
+    pattern: /^logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/(?:[a-z][a-z0-9-]*-)?00-scenario-overview\.md$/,
     zh: () => '场景实现概览索引。涉及全量场景分类、参与方、实现文档映射关系时必读。',
     en: () => 'Scenario overview index. Required when referencing scenario classification, participants, or document mapping.',
   },
   // 2. 场景时序图：core-S01-cli-init.md → S01 场景时序图
   {
-    pattern: /logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/(?:[a-z][a-z0-9-]*-)?(S\d+)-(.+)\.md$/,
+    pattern: /^logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/(?:[a-z][a-z0-9-]*-)?(S\d+)-(.+)\.md$/,
     zh: (m) => `${m[1]} 场景时序图。涉及 ${m[1]} 实现细节、API 设计、异常分支时必读。`,
     en: (m) => `${m[1]} sequence diagram. Required when working on ${m[1]} implementation, API design, or exception branches.`,
   },
+  // 2b. 场景实现目录兜底：该目录下的非 SXX 文档（baseline-seed 的 scenario-candidates
+  //     等 kind 就属此类——它们按方法论定义就是「尚未分配 SXX 的候选清单」）。
+  //     按**目录**兜底而非按文件名开洞：同目录的其它合法 kind 必须一并覆盖，
+  //     否则下一个 kind 会重犯同样的错（架构 §四十.3）。
+  {
+    pattern: /^logos\/resources\/prd\/3-technical-plan\/2-scenario-implementation\/.+\.md$/,
+    zh: () => '场景实现补充文档（未分配 SXX）。涉及逆向场景候选、依赖关系或入口清单等场景建模输入时必读。',
+    en: () => 'Scenario implementation supporting document (no SXX assigned). Required when referencing reverse-engineered scenario candidates, dependency maps, or entry points.',
+  },
   // 3. 测试用例：core-S01-test-cases.md → S01 测试用例
   {
-    pattern: /logos\/resources\/test\/(?:[a-z][a-z0-9-]*-)?(S\d+)-test-cases\.md$/,
+    pattern: /^logos\/resources\/test\/(?:[a-z][a-z0-9-]*-)?(S\d+)-test-cases\.md$/,
     zh: (m) => `${m[1]} 测试用例。涉及 ${m[1]} 单元测试与场景测试的实现与验收时必读。`,
     en: (m) => `${m[1]} test cases. Required when implementing or verifying ${m[1]} unit and scenario tests.`,
   },
   // 3b. 部署后冒烟测试用例
   {
-    pattern: /logos\/resources\/test\/smoke\/(?:[a-z][a-z0-9-]*-)?([a-z][a-z0-9-]*)-smoke-test-cases\.md$/,
+    pattern: /^logos\/resources\/test\/smoke\/(?:[a-z][a-z0-9-]*-)?([a-z][a-z0-9-]*)-smoke-test-cases\.md$/,
     zh: (m) => `${m[1]} 模块部署后冒烟测试用例。涉及 openlogos smoke 或 launch 前门禁时必读。`,
     en: (m) => `${m[1]} deployment smoke test cases. Required when running openlogos smoke or checking launch gates.`,
   },
   // 3c. 决策记录（S38 decision-record-capability）：core-D01-<slug>.md → D01 决策记录
   {
-    pattern: /logos\/resources\/decisions\/(?:[a-z][a-z0-9-]*-)?(D\d+)-(.+)\.md$/,
+    pattern: /^logos\/resources\/decisions\/(?:[a-z][a-z0-9-]*-)?(D\d+)-(.+)\.md$/,
     zh: (m) => `${m[1]} 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。`,
     en: (m) => `${m[1]} decision record (ADR variant). Required when reviewing the design decision's context, rationale, alternatives, impact, or provenance.`,
   },
   // 4. 技术架构
   {
-    pattern: /logos\/resources\/prd\/3-technical-plan\/1-architecture\/.+\.md$/,
+    pattern: /^logos\/resources\/prd\/3-technical-plan\/1-architecture\/.+\.md$/,
     zh: () => '系统架构概要。涉及技术栈选型、系统组件划分、非功能性约束时必读。',
     en: () => 'System architecture overview. Required when referencing tech stack, system components, or non-functional constraints.',
   },
   // 4b. 部署方案
   {
-    pattern: /logos\/resources\/prd\/3-technical-plan\/3-deployment\/.+\.md$/,
+    pattern: /^logos\/resources\/prd\/3-technical-plan\/3-deployment\/.+\.md$/,
     zh: () => '部署方案。涉及部署拓扑、环境配置、发布命令、回滚策略和 smoke 验证时必读。',
     en: () => 'Deployment plan. Required when referencing deployment topology, environment config, release commands, rollback strategy, or smoke checks.',
   },
   // 5. 功能规格
   {
-    pattern: /logos\/resources\/prd\/2-product-design\/1-feature-specs\/.+\.md$/,
+    pattern: /^logos\/resources\/prd\/2-product-design\/1-feature-specs\/.+\.md$/,
     zh: () => '产品功能规格。涉及交互设计、功能边界、Skill 行为定义时必读。',
     en: () => 'Product feature spec. Required when referencing interaction design, feature scope, or Skill behavior.',
   },
   // 6. 页面/对话设计
   {
-    pattern: /logos\/resources\/prd\/2-product-design\/2-page-design\/.+\.md$/,
+    pattern: /^logos\/resources\/prd\/2-product-design\/2-page-design\/.+\.md$/,
     zh: () => '产品交互原型。涉及 CLI 终端输出样式或 AI Skill 对话脚本时必读。',
     en: () => 'Product interaction prototype. Required when referencing CLI output styles or AI Skill dialogue scripts.',
   },
   // 7. 需求文档
   {
-    pattern: /logos\/resources\/prd\/1-product-requirements\/.+\.md$/,
+    pattern: /^logos\/resources\/prd\/1-product-requirements\/.+\.md$/,
     zh: () => '产品需求文档。涉及产品定位、核心场景、验收条件时必读。',
     en: () => 'Product requirements document. Required when referencing product positioning, scenarios, or acceptance criteria.',
   },
   // 8. API 规格（YAML）
   {
-    pattern: /logos\/resources\/api\/.+\.ya?ml$/,
+    pattern: /^logos\/resources\/api\/.+\.ya?ml$/,
     zh: () => 'OpenAPI 接口规格。涉及 API 端点设计、请求/响应结构、状态码时必读。',
     en: () => 'OpenAPI specification. Required when designing API endpoints, request/response schemas, or status codes.',
   },
   // 9. 数据库 DDL
   {
-    pattern: /logos\/resources\/database\/.+\.sql$/,
+    pattern: /^logos\/resources\/database\/.+\.sql$/,
     zh: () => '数据库 Schema（DDL）。涉及表结构、字段定义、索引策略时必读。',
     en: () => 'Database schema (DDL). Required when referencing table structure, field definitions, or index strategies.',
   },
   // 10. 编排测试（JSON）
   {
-    pattern: /logos\/resources\/scenario\/.+\.json$/,
+    pattern: /^logos\/resources\/scenario\/.+\.json$/,
     zh: () => 'API 编排测试用例。涉及端到端 API 测试流程、测试数据准备时必读。',
     en: () => 'API orchestration test case. Required when working on end-to-end API testing or test data setup.',
   },
-  // 11. 验收报告
+  // 11. 验收报告（只认 verify/ **顶层**）：与候选范围保持一致——子目录是事务工作区、
+  //     证据包与部署制品，它们根本不进候选集合，规则就不该为其宣称语义。
+  //     若此处仍用 `.+`，seed 快照等嵌套路径会被判为「验收报告」，
+  //     使一份场景文档被描述成验收报告（架构 §四十.1／§四十.2）。
   {
-    pattern: /logos\/resources\/verify\/.+\.md$/,
+    pattern: /^logos\/resources\/verify\/[^/]+\.md$/,
     zh: () => '验收报告。涉及 verify、部署或 smoke 结果、覆盖度分析、Gate 判定时必读。',
     en: () => 'Verification report. Required when referencing verify, deployment, or smoke results, coverage analysis, or Gate decisions.',
   },
   // 11b. 实现清单
   {
-    pattern: /logos\/resources\/implementation\/.+\.md$/,
+    pattern: /^logos\/resources\/implementation\/.+\.md$/,
     zh: () => '实现清单。涉及已实现范围、代码路径、测试覆盖和交付摘要时必读。',
     en: () => 'Implementation manifest. Required when referencing implemented scope, code paths, test coverage, or delivery summary.',
   },
   // 12. Skills（只匹配 SKILL.md）
   {
-    pattern: /skills\/([^/]+)\/SKILL\.md$/,
+    pattern: /^skills\/([^/]+)\/SKILL\.md$/,
     zh: (m) => `${m[1]} Skill。使用 ${m[1]} 功能时必读。`,
     en: (m) => `${m[1]} Skill. Required when using the ${m[1]} capability.`,
   },
   // 13. spec 规范文档（md / json）
   {
-    pattern: /spec\/.+\.(md|json)$/,
+    pattern: /^spec\/.+\.(md|json)$/,
     zh: () => '方法论规范文档。涉及对应规范定义、格式约定时必读。',
     en: () => 'Methodology spec document. Required when referencing the corresponding spec or format convention.',
   },

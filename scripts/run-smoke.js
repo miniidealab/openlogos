@@ -108,6 +108,11 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_ARCHIVED_ADDR_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_ARCHIVED_ADDR_CANDIDATE_BIN,
     },
+    'scripts/smoke-resource-index-scope-0-14-7.js': {
+      tarball: process.env.OPENLOGOS_RESOURCE_INDEX_TARBALL,
+      previousTarball: process.env.OPENLOGOS_RESOURCE_INDEX_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_RESOURCE_INDEX_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -130,6 +135,7 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-nested-section-anchor-0-14-4.js',
   'scripts/smoke-sync-yaml-overlay-0-14-5.js',
   'scripts/smoke-archived-addressability-0-14-6.js',
+  'scripts/smoke-resource-index-scope-0-14-7.js',
 ]);
 
 const globalCandidateRunners = new Map([
@@ -138,6 +144,7 @@ const globalCandidateRunners = new Map([
   ['scripts/smoke-nested-section-anchor-0-14-4.js', process.env.OPENLOGOS_NESTED_ANCHOR_TARBALL],
   ['scripts/smoke-sync-yaml-overlay-0-14-5.js', process.env.OPENLOGOS_SYNC_YAML_TARBALL],
   ['scripts/smoke-archived-addressability-0-14-6.js', process.env.OPENLOGOS_ARCHIVED_ADDR_TARBALL],
+  ['scripts/smoke-resource-index-scope-0-14-7.js', process.env.OPENLOGOS_RESOURCE_INDEX_TARBALL],
 ]);
 
 function prepareGlobalCandidate(runner) {
