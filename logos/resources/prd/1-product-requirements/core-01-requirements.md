@@ -2130,3 +2130,53 @@ OpenLogos 已允许 Delta 使用 `父标题 > 叶标题` 唯一定位重复叶�
 - 场景：S09 变更提案与合并事务生命周期、S19 部署后 smoke 门禁。
 - 测试：UT-S09-279～UT-S09-282、ST-S09-109、UT-S19-29～UT-S19-32、ST-S19-18。
 - 部署后 smoke：SMOKE-core-170（并复核 SMOKE-core-168）。
+
+## S08 资源索引候选范围与描述推断锚定要求
+
+### 用户问题与价值
+
+`openlogos sync` 重建 `resource_index` 时存在三个互相叠加的缺陷，净效果是：**棕地项目里，CLI 自己要求产出的权威场景文档永远进不了资源索引；而同一份文档在 baseline-seed 事务工作区下的陈旧快照却进了索引，并被描述得与权威文档逐字相同。**
+
+由于 CLI 生成的 `CLAUDE.md` / `AGENTS.md` 明确要求 AI「先读 `logos/logos-project.yaml` 理解资源索引」，这会把 AI 直接导向过期内容，且 AI 从索引上**无法分辨哪个条目是权威**。
+
+三条缺陷各自的性质不同：
+
+1. **候选范围过宽**：`logos/resources/verify/` 被整棵递归，`baseline-seed-runs/<run>/{staging,resolved,backup}/` 这类事务内部工作区连同其中的主文档完整副本一并进入候选集合。这与已合并的 `logos/spec/baseline-closure.md` 冲突——该规范已明文禁止 baseline-seed staging 进入 effective view，而 `resource_index` 正是喂给 AI 的资源视图。
+2. **路径判据未锚定**：描述推断规则只有结尾锚、没有起始锚，于是嵌套快照路径中内嵌的那段权威路径会整体命中权威规则，快照因此被贴上与权威文档逐字相同的描述。
+3. **权威 kind 无规则**：baseline-seed 把 `scenario-candidates` 定为必需 kind，而场景实现目录的描述规则要求文件名必含 `SXX-`；`scenario-candidates` 按方法论定义就是「尚未分配 SXX 的候选清单」，于是它推断不出描述、永远被跳过。该目录下任何非 `SXX-` 文档同样如此。
+
+用户需要的是：索引里只有权威规格文档，每条描述如实反映其语义，且 CLI 自己定义的产出物一定能被自己的索引识别。
+
+### 核心需求
+
+1. 资源索引的候选集合只包含权威规格文档；事务内部工作区、运行产物与证据包一律不得进入。`logos/resources/verify/` 只收顶层报告文档，其子目录全部排除。
+2. 描述推断的路径判据必须从项目根锚定，禁止子串命中。任何嵌套路径（事务工作区、归档、备份、临时拷贝）都不得冒充权威文档的描述。
+3. baseline-seed 的每个 kind，其规范产出路径都必须能被描述推断识别；`KIND_ENUM` 与描述规则之间须有测试锚定，防止两者再次漂移。
+4. 场景实现目录下的非 `SXX-` 文档必须有兜底描述规则，覆盖该目录的全部合法 kind，而非只为单个文件名开洞。
+5. CLI 不得自动删除 `resource_index` 中的既有条目。修复候选范围后污染不再新增；存量条目的处置权归人。
+6. 修复以新的本地 patch candidate `0.14.7` 交付，当前本机全局 `0.14.6` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-RIDX-01 | `logos/resources/verify/` 的子目录（事务工作区、证据包、部署制品）下的任何文件都不进入候选集合；顶层报告文档仍正常收录 |
+| AC-RIDX-02 | 四步复现路径（init → 放两份权威文档 → 放同名 seed 快照 → sync）产出的索引恰含 2 条权威条目、0 条快照条目 |
+| AC-RIDX-03 | 每条描述推断规则对权威路径命中、对同名嵌套路径不命中；嵌套路径一律推断为无描述 |
+| AC-RIDX-04 | `2-scenario-implementation/` 下的非 `SXX-` 文档（含 `scenario-candidates`）能推断出场景语义的描述，且不被误判为验收报告 |
+| AC-RIDX-05 | baseline-seed `KIND_ENUM` 中每个 kind 的规范产出路径均能推断出非空描述；该对齐由测试锚定 |
+| AC-RIDX-06 | 既有 `resource_index` 条目在 sync 前后逐字不变，CLI 不代用户删除任何条目 |
+| AC-RIDX-07 | 固定 `0.14.7` tarball 完成隔离安装与本机全局安装态验证，`0.14.6→0.14.7→0.14.6` 往返后各 identity 与 tarball SHA-256 一致 |
+
+### 授权与非目标
+
+- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
+- 不新增命令，不改动公共 JSON envelope 的字段结构。
+- 不清理任何项目中既有的过期索引条目，不引入自动剔除机制。
+- 不改变资源索引的写入方式（结构化 AST 写入已在前次变更定案），本次只改候选范围与描述推断。
+
+### 追溯
+
+- 场景：S08 同步 AI 工具资产与资源索引。
+- 测试：UT-S08-47～UT-S08-50、ST-S08-32～ST-S08-33。
+- 部署后 smoke：SMOKE-core-171。

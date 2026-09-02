@@ -828,3 +828,47 @@
 - 功能规格：§2.48；架构：§三十九。
 - 场景：S09、S19；UT/ST：UT-S09-279～282、ST-S09-109、UT-S19-29～32、ST-S19-18。
 - 部署方案：OpenLogos 0.14.6 归档寻址与 smoke 账本修复本机全局部署方案。
+
+## OpenLogos 0.14.7 资源索引扫描与描述规则安装态 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.7` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-171` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.7`；源码入口或 workspace link 不算验收。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的 `logos-project.yaml`**，也不得为构造断言而清理任何既有索引条目。
+- 判据用的 YAML 解析器必须取自**安装态 CLI 自己捆绑的 yaml**，而非 runner 宿主的依赖——判据是「CLI 读这份文件时能不能解析、读到什么」。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-171 | 0.14.7 资源索引候选范围、判据锚定与 kind 对齐 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② 在临时目录执行真实 `openlogos init`，放入两份权威文档（`1-architecture/core-system-map.md`、`2-scenario-implementation/core-scenario-candidates.md`）；③ 在 `verify/baseline-seed-runs/<run>/staging/` 下放同名陈旧快照，并在 `verify/` 顶层放一份 `acceptance-report.md`；④ 执行 `sync` 并用 CLI 捆绑解析器读回索引；⑤ 预置一条指向 `verify/` 子目录的历史条目后再次 `sync`；⑥ 连续 `sync` 两次核对幂等；⑦ 演练 `0.14.6→0.14.7→0.14.6→0.14.7` 并复核每阶段 identity | ④ 索引**恰含 3 条**：两份权威文档 + 顶层 `acceptance-report.md`；**0 条**快照条目；`core-scenario-candidates.md` 在列且描述为场景实现语义、非「验收报告」；`core-system-map.md` 的描述为架构语义且索引中不存在第二条同描述条目；⑤ 预置的历史条目**逐字保留**（CLI 不删除既有条目），且未新增快照条目；⑥ 两次 sync 后文件逐字节相同；⑦ 往返无混装；全程未触碰临时项目之外的任何文件，无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-171`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须为 `SMOKE-core-171` 写显式 `skip` 记录并携带缺失项，禁止静默零记录退出——沿用既有的不适用留痕契约。
+3. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、临时项目路径（脱敏）、④ 步读回的完整 `resource_index` 条目列表（path + desc）、⑤ 步预置条目前后的文件 SHA-256、⑥ 步两次 sync 的 SHA-256、回滚每阶段 identity。
+4. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或文档正文。
+5. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-171` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- 观察到索引中出现任何 `verify/` 子目录路径、出现两条描述相同的同名文档条目，或 `core-scenario-candidates.md` 缺席，直接 FAIL。
+- 观察到 runner 删除了预置的既有条目，直接 FAIL——该行为违反「既有条目处置权归人」的既定决策。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.6` 并报告环境状态；未证明全旧或全新时阻断后续动作。
+- 不得为让断言通过而清理既有索引条目、放宽描述判据或改写用户正式文档。
+
+### 追溯
+
+- 需求：AC-RIDX-01～07。
+- 功能规格：§2.49；架构：§四十。
+- 场景：S08；UT/ST：UT-S08-47～50、ST-S08-32～33。
+- 部署方案：OpenLogos 0.14.7 资源索引扫描与描述规则修复本机全局部署方案。

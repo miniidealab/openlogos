@@ -257,3 +257,37 @@
 - AC-YAMLW-03 幂等无漂移：UT-S08-46。
 - AC-YAMLW-05 只读不改写 / 原子：ST-S08-31（写路径原子性；只读路径归 ST-S11-44）。
 - 场景：S08 resource_index 结构化补录时序；架构：§三十八.1；安装态：SMOKE-core-169。
+
+## S08 候选集合排除与描述推断锚定测试用例
+
+> 覆盖候选集合的排除边界、路径判据的起始锚，以及 baseline-seed kind 与描述规则的对齐。
+>
+> **断言纪律**：`UT-S08-48` 必须**遍历全部规则**做「权威命中 / 同名嵌套不命中」的成对断言，不得只抽查其中一两条——本缺陷的成因正是 17 条规则**全部**缺起始锚，逐条覆盖才是有效的回归锁。`UT-S08-50` 必须从 `KIND_ENUM` 常量本身取值遍历，不得把 kind 名硬编码进测试——硬编码等于再造一次同源漂移。
+>
+> 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S08-47 | `verify/` 只收顶层报告，子目录一律排除 | Step 5.4b～5.4c | fixture 的 `verify/` 下同时存在顶层 `acceptance-report.md` 与子目录文件（`baseline-seed-runs/<run>/staging/…/core-system-map.md`、`evidence/x.md`、`deployment-artifacts/y.md`） | 执行候选扫描 | 候选集合含顶层 `acceptance-report.md`；**不含**任何 `verify/` 子目录下的路径；其余扫描根（prd/test/spec 等）的候选集合与本变更前逐字相同 |
+| UT-S08-48 | 每条规则「权威命中、同名嵌套不命中」 | Step 5.4e 判据锚定 | 取描述规则表中的每一条规则 | 对每条规则各构造一对路径：① 从项目根起的权威路径；② 把该权威路径整体内嵌在 `logos/resources/verify/baseline-seed-runs/<run>/resolved/` 之下的嵌套路径 | ① 推断出该规则的描述；② 推断结果为 `null`。**逐条规则成对断言，不得抽查** |
+| UT-S08-49 | 场景实现目录非 `SXX-` 文档命中兜底规则 | Step 5.4d 兜底分支 | 路径 `logos/resources/prd/3-technical-plan/2-scenario-implementation/core-scenario-candidates.md`，以及同目录的 `core-dependency-map.md`、`core-entry-points.md` | 逐个推断描述 | 三者均返回非 `null` 且为场景实现语义；**不得**是「验收报告」语义；同目录既有 `SXX-` 文档的描述与本变更前逐字相同 |
+| UT-S08-50 | `KIND_ENUM` 每个 kind 的规范产出路径均可识别 | 架构 §四十.3 对齐锚 | 从 `baseline-seed-txn` 的 `KIND_ENUM` 常量遍历取值（不硬编码 kind 名） | 为每个 kind 构造其规范产出路径并推断描述 | 全部返回非 `null`。新增 kind 而未补描述规则时该用例必须失败——这是防止两模块再次漂移的机器锚 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S08-32 | Bug 报告 #02 四步复现路径闭环 | Step 5.4a→5.9 | 全新 `openlogos init` 项目 | 放两份权威文档（`1-architecture/core-system-map.md`、`2-scenario-implementation/core-scenario-candidates.md`）→ 在 `verify/baseline-seed-runs/<run>/staging/` 下放同名陈旧快照 → 执行 `sync` → 读回索引 | 索引**恰含 2 条**权威条目、**0 条**快照条目；`core-scenario-candidates.md` 在列且描述为场景实现语义；产物仍可被 CLI 捆绑解析器解析。**该用例即上游 Bug 报告 #02 的复现路径，必须逐步等价** |
+| ST-S08-33 | 既有条目守恒且 sync 幂等 | Step 5.4→5.9、EX-S08-IDX-4～6 | 索引中预置 3 条既有条目：1 条权威、1 条指向 `verify/` 子目录的历史快照、1 条指向已不存在文件的过期残留 | 连续执行 `sync` 两次 | 三条既有条目**逐字保留**——CLI 不删除任何条目（决策 C01）；快照路径不再被**新增**收录；两次 sync 后文件逐字节相同 |
+
+### 追溯与覆盖
+
+- AC-RIDX-01 候选范围排除：UT-S08-47、ST-S08-32。
+- AC-RIDX-02 四步复现路径产出正确：ST-S08-32。
+- AC-RIDX-03 判据锚定、嵌套不命中：UT-S08-48。
+- AC-RIDX-04 场景目录兜底：UT-S08-49。
+- AC-RIDX-05 kind 与规则对齐锚：UT-S08-50。
+- AC-RIDX-06 既有条目不被改写：ST-S08-33。
+- 场景：S08 候选集合排除与描述推断锚定时序；功能规格：§2.49；架构：§四十；安装态：SMOKE-core-171。
