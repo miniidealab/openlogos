@@ -1453,3 +1453,92 @@ SMOKE-core-163～167 全部通过并写入 `logos/resources/verify/smoke-results
 4. SMOKE-core-169 由真实安装态 runner 唯一 PASS；
 5. 健康项目 golden 零漂移可复核；
 6. npm registry、tag、release、官网和 Git 远端均零副作用。
+
+## OpenLogos 0.14.6 归档寻址与 smoke 账本修复本机全局部署方案
+
+### 部署目标与授权边界
+
+把「归档事务只读寻址 + 写动作 fail-closed + 环境不具备显式 skip」冻结为唯一 `@miniidealab/openlogos@0.14.6` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.5`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须走安装态**：`SMOKE-core-168` 由 runner 调用**全局** `openlogos` 求值，因此「归档事务可寻址」与「Gate 3.8 恢复可达」这两个事实只能在安装态取证；源码 verify 只能证明判据成立，不能证明门禁真的从恒红回到了可用。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT-S09-279～282、ST-S09-109、UT-S19-29～32、ST-S19-18 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.5`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash 与最小 `merge transaction status` / `smoke` 行为。
+3. 冻结可离线恢复的 `0.14.5` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. 冻结一个**已归档**提案的 slug 及其事务 ID / receipt_sha256 作为只读寻址的对照事实；该读取只做证据，不改写任何归档内容。
+5. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.6 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.6`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.5`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.5` 构建新字节。任一 package/plugin/asset 仍为旧版或出现同版异字节，candidate identity 失败。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack --json`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.6` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.6` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| 归档只读寻址 | 对已归档提案以其 slug 只读查询事务，返回的 transaction_id 与 receipt_sha256 与归档前冻结事实一致 |
+| 活跃路径零回归 | 未归档提案经 guard 与显式 slug 两条既有路径解析，输出与 `0.14.5` 逐字节一致 |
+| 写动作 fail-closed | 对归档提案发起 submit-content / seal / apply / recover / abort 全部被拒且给出稳定 classification；事务文件与 receipt 字节不变 |
+| 歧义 fail-closed | 同一 slug 命中多个归档目录时报歧义、不取第一个 |
+| 不适用显式 skip | 缺宿主 / 缺历史制品 / 缺 env 的 runner 为其全部 owned ID 写 skip + 原因并成功退出；账本无零记录退出 |
+| 账本三态 | 真实失败仍判 fail；不存在伪造 pass；skip 在 JSON 与报告的 skipped_cases 中可审计 |
+| 一次性用例重放 | 目标事务已 completed 时走幂等重放核对判 pass，不重复提交、不重新 seal/apply、不新建事务 |
+| rollback roundtrip | `0.14.5→0.14.6→0.14.5→0.14.6` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。
+
+### 本机全局部署
+
+只有隔离矩阵与 `0.14.5` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.6` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos`、realpath、package root 与安装来源；
+- `openlogos --version` 精确为 `0.14.6`；
+- package/plugin/asset/schema/Skill/runner identity 与 tarball 逐项一致；
+- 在临时 fixture 上跑通归档只读寻址与写动作拒绝的最小正反例；
+- 全局旧文件、缓存入口与任一 `0.14.5` 混合资产均不存在。
+
+部署成功只表示固定 candidate 已安装；不生成 `SMOKE_PASS`，不视为公开发布。
+
+### Smoke 与完成条件
+
+获得独立 smoke 授权后，使用本机全局绝对入口执行 `SMOKE-core-170`，并在同一轮账本中复核 `SMOKE-core-168` 由永久失败恢复为可重放通过。
+
+**本次 smoke 的验收目标是门禁本身**：修复前 Gate 3.8 结构上不可达。修复后应观察到——`SMOKE-core-168` 转 pass；环境不具备的用例转为带原因的 skip 并从 uncovered 中消失；Gate 3.8 的结果重新反映真实防线。若 Gate 仍 FAIL，必须逐条给出归因（哪条 fail、哪条仍 uncovered、为何），**不得以放宽判据、伪造记录或改写 guard 收尾**。
+
+### 失败、自愈与回滚
+
+- build/pack/隔离/回滚演练失败：不触碰全局，修复后重新 verify 和制品链。
+- 全局安装或身份自检失败：立即使用冻结 `0.14.5` tarball 恢复并核验；无法证明恢复完整时报告全局环境不一致并停止。
+- smoke 失败：不得写 `SMOKE_PASS` 或 archive；修复后重新 verify、pack、部署与 smoke，或恢复固定 `0.14.5`。
+- 任何阶段都不得为让断言通过而改写已归档提案、guard 或用户正式文档。
+
+### 完成判据
+
+1. 固定 `0.14.6` tarball identity 与隔离矩阵 PASS；
+2. 本机全局 entry/version/package/plugin/asset 全部指向同一 candidate；
+3. `0.14.5↔0.14.6` 回滚/恢复可复制且无混装；
+4. `SMOKE-core-170` 由真实安装态 runner 唯一 PASS，且同轮 `SMOKE-core-168` 恢复通过；
+5. 账本中不存在零记录退出的 runner，skip 均带不适用原因；
+6. npm registry、tag、release、官网和 Git 远端均零副作用。

@@ -1299,3 +1299,86 @@ sequenceDiagram
 - 功能规格：§2.47.4、§2.47.5。
 - 架构：§三十八.2、§三十八.4。
 - 测试：UT-S09-275～UT-S09-278、ST-S09-108；安装态 SMOKE-core-169。
+
+## S09 归档提案的事务只读寻址与写动作 fail-closed
+
+### 场景目标
+
+`openlogos archive` 把提案目录从 `logos/changes/<slug>` 移动到 `logos/changes/archive/<时间戳>-<slug>`，而事务身份解析只查前者。本节补齐归档后的只读寻址时序，并定死「可读不可写」的边界。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| U | User / 消费方 | 执行 `openlogos merge transaction <action>` |
+| ID | 事务身份解析器 | slug → 提案目录 → 事务文件，**单点实现** |
+| G | `logos/.openlogos-guard` | 活跃提案标记（可能不存在或指向别的提案） |
+| A | `logos/changes/archive/` | 归档提案目录 |
+
+前置：目标提案可能处于活跃态或已归档态；已归档提案的 `MERGE_TRANSACTION.json` / `MERGE_RECEIPT.json` 完整留存。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant U as User / 消费方
+    participant ID as 事务身份解析器
+    participant G as .openlogos-guard
+    participant A as changes/archive/
+
+    U->>ID: Step 1: merge transaction <action> [--slug <slug>]
+    alt 显式 --slug
+        ID->>ID: Step 2a: 采用显式 slug
+    else 未指定
+        ID->>G: Step 2b: 读 activeChange
+    end
+    ID->>ID: Step 3: 查 logos/changes/<slug>
+    alt 活跃目录命中
+        ID-->>U: Step 4a: 返回 {slug, proposalDir, archived:false}（读写皆可，既有行为）
+    else 未命中
+        ID->>A: Step 5: 按 <时间戳>-<slug> 后缀查归档目录
+        alt 恰好一个命中
+            ID->>ID: Step 6: 标记 archived:true
+            alt 只读动作（status）
+                ID-->>U: Step 7a: 正常返回事务只读投影
+            else 写动作
+                ID-->>U: Step 7b: fail-closed，稳定 classification，零副作用
+            end
+        else 零命中
+            ID-->>U: Step 8a: 提案不存在
+        else 多命中
+            ID-->>U: Step 8b: fail-closed，要求显式消歧，不取第一个
+        end
+    end
+```
+
+### 步骤说明
+
+1. slug 来源不变：显式 `--slug` 优先，否则读活跃 guard 的 `activeChange`。本节不改变该顺序。
+2. **解析器**先查 `logos/changes/<slug>`；命中即按既有行为返回，读写皆可——未归档路径逐字节零回归。
+3. 未命中时才启用归档查找，按 `<时间戳>-<slug>` 后缀匹配 `logos/changes/archive/` 下的目录。
+4. 命中归档提案时解析结果携带 `archived` 标记：只读动作正常执行；写动作（`submit-content` / `seal` / `apply` / `recover` / `abort`）一律拒绝，给出稳定 classification，且不触碰事务文件、receipt 与任何 marker。
+5. 同一 slug 命中多个归档目录属歧义，fail-closed 要求显式消歧，不得取第一个。
+
+### 不变量
+
+- **查找单点**：本解析器是提案目录查找的唯一实现；runner、跨仓工具与其它消费方一律调用它，不得复制第二套目录拼接规则。
+- **可读不可写**：归档提案只放行只读动作。恢复可读性是为审计与重放判据，不是让已终结变更重新可改写。
+- **禁止绕行**：不得为读取归档事务而把 guard 指回已归档提案——那会挤掉当前正在进行的变更。
+- **零回归**：活跃提案的两条既有解析路径（guard / 显式 slug）行为与输出逐字节不变。
+- **只读即无副作用**：归档态下的只读动作不写入任何文件。
+
+### 异常与边界
+
+| 编号 | 触发条件 | 处理 |
+|---|---|---|
+| EX-S09-ARCH-1 | 归档提案上发起写动作 | fail-closed，稳定 classification，事务文件与 receipt 字节不变 |
+| EX-S09-ARCH-2 | 同一 slug 命中多个归档目录 | fail-closed，报歧义并要求显式消歧 |
+| EX-S09-ARCH-3 | 活跃与归档均未命中 | 维持既有「提案不存在」错误语义 |
+
+### 追溯
+
+- 需求：AC-TXADDR-01～04。
+- 功能规格：§2.48.2。
+- 架构：§三十九.1。
+- 测试：UT-S09-279～UT-S09-282、ST-S09-109；安装态 SMOKE-core-170。

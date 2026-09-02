@@ -2082,3 +2082,51 @@ OpenLogos 已允许 Delta 使用 `父标题 > 叶标题` 唯一定位重复叶�
 - 场景：S08 同步 AI 工具资产与资源索引、S09 变更生命周期（GUI overlay 注入）、S11 查看阶段进度与活跃变更。
 - 测试：UT-S08-43～UT-S08-46、ST-S08-30～ST-S08-31、UT-S09-275～UT-S09-278、ST-S09-108、UT-S11-75～UT-S11-77、ST-S11-44。
 - 部署后 smoke：SMOKE-core-169。
+
+## S09/S19 归档事务只读寻址与 smoke 不适用显式声明要求
+
+### 用户问题与价值
+
+`openlogos archive` 把提案目录从 `logos/changes/<slug>` 移动到 `logos/changes/archive/<时间戳>-<slug>`，而 merge transaction 的身份解析只查前者。于是一个已 completed、receipt 齐备、审计价值最高的事务，在归档那一刻起就无法再经公共命令读取：不带 `--slug` 会解析到当前活跃提案的**另一个**事务，带 `--slug` 则直接报「提案不存在」。跨仓对账、事后复核与任何以「终态可重放」为判据的用例都在此断裂。
+
+第一个撞上这堵墙的是 `SMOKE-core-168`。它是常驻 smoke 套件成员，判据钉死在一个具体事务 ID 上；该事务被 apply 并随提案归档后，用例永久失败，且失败原因与其被测能力毫无关系。这与「把易变的外部状态复制进本该稳定的判据」是同一类错误——只不过复制的不是版本号，而是一个会被消费掉的事务 ID。
+
+与此同时，依赖第三方宿主或历史制品的 smoke runner 在环境不具备时**静默退出且不写任何记录**，使「环境不具备所以没跑」与「本该跑却没跑」在账本上完全同形，都表现为 uncovered。已合并的 S19 口径本已规定 runner 要为每个用例写 `pass|fail|skip`、且 skip 表示环境缺少外部依赖——**规格是对的，是实现没有遵守**。
+
+三者叠加，smoke 门禁从「发布前的真实防线」退化为恒红噪声：`SMOKE-core-168` 恒失败、uncovered 恒不为零，Gate 3.8 结构上不可能 PASS。用户需要的是：已终结的变更仍然可被读取与复核，而门禁的红与绿重新反映真实防线状态。
+
+### 核心需求
+
+1. 事务身份的可寻址性不随提案生命周期消失：提案归档后，仍可通过其 slug 只读定位到该提案的事务与 receipt。
+2. 归档提案只放行只读动作；`submit-content` / `seal` / `apply` / `recover` / `abort` 等写动作一律 fail-closed 并给出稳定 classification。归档意味着该变更已终结，恢复可读性不得让它重新变成可改写状态。
+3. 提案目录的查找逻辑单点收口，消费方（runner、跨仓工具）不得自建第二套查找规则；也不得为读取归档事务而把 guard 指回已归档提案。
+4. 一次性迁移 / 恢复类 smoke 用例的判据必须是**可重放的终态断言**，不得要求被测对象处于某个会被消费掉的中间相位。
+5. smoke runner 在环境不具备（缺第三方宿主、缺历史制品、缺必需 env）时，必须为其全部 owned 用例写显式 `skip` 记录并携带不适用原因，禁止静默零记录退出，也禁止以伪造 `pass` 填补覆盖。
+6. 门禁判据不得为容忍环境缺口而放宽：仍是「存在 fail 即 FAIL、存在 uncovered 即 FAIL」；出路是让不适用变成可审计的 skip，而不是让 uncovered 被接受。
+7. 修复以新的本地 patch candidate `0.14.6` 交付，当前本机全局 `0.14.5` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-TXADDR-01 | 提案归档后，以其原 slug 只读查询事务，返回的 `transaction_id` 与 `receipt_sha256` 与归档前一致 |
+| AC-TXADDR-02 | 未归档提案的解析行为逐字节不变（活跃 guard 与显式 slug 两条既有路径零回归） |
+| AC-TXADDR-03 | 对归档提案发起任何写动作均被拒绝，给出稳定 classification，且事务文件与 receipt 字节不变 |
+| AC-TXADDR-04 | 提案目录查找逻辑在实现中单点存在；runner 与跨仓消费方不含第二套查找规则 |
+| AC-SMOKE-NA-01 | 环境不具备时，runner 为其全部 owned 用例写 `skip` 记录并携带可读的不适用原因；不存在静默零记录退出 |
+| AC-SMOKE-NA-02 | 该批用例不再计入 uncovered，且在 JSON 与 `smoke-report.md` 的 `skipped_cases` 中可审计 |
+| AC-SMOKE-NA-03 | 真实失败仍判 fail，不得被降级为 skip；伪造 pass 填补覆盖被拒绝 |
+| AC-SMOKE-NA-04 | 修复后 `SMOKE-core-168` 由永久失败恢复为可重放通过，Gate 3.8 的结果重新反映真实防线 |
+| AC-TXADDR-05 | 固定 `0.14.6` tarball 完成隔离安装与本机全局安装态验证，`0.14.5→0.14.6→0.14.5` 往返后各 identity 与 tarball SHA-256 一致 |
+
+### 授权与非目标
+
+- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
+- 不新增命令，不改动公共 JSON envelope 的字段结构（`--slug` 与 `skip` 记录均为既有契约要素）。
+- 不引入放宽 `isPass`、伪造记录、把 guard 指回已归档提案，或对归档提案开放写动作的做法。
+
+### 追溯
+
+- 场景：S09 变更提案与合并事务生命周期、S19 部署后 smoke 门禁。
+- 测试：UT-S09-279～UT-S09-282、ST-S09-109、UT-S19-29～UT-S19-32、ST-S19-18。
+- 部署后 smoke：SMOKE-core-170（并复核 SMOKE-core-168）。

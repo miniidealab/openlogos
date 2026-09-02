@@ -880,3 +880,32 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 - 每个 ID 独立通过 OpenLogos reporter 追加到 `logos/resources/verify/test-results.jsonl`，记录脱敏 transaction ID、phase、classification、slot hash集合、preflight/seal/final hash与正式树 before/after hash。
 - 缺失、skip、重复矛盾或一个 happy-path 无条件代报多个 ID 均判失败。
 - 追溯：AC-MT-ANCHOR-01、03～05、07；功能规格 §2.46.3～§2.46.5；架构 §37.4～§37.6；S09 嵌套章节锚恢复时序。
+
+## S09 归档提案的事务只读寻址测试
+
+> 覆盖归档后事务只读可寻址、活跃路径零回归、写动作 fail-closed 与查找逻辑单点。
+>
+> **断言纪律**：归档目录名含时间戳，测试必须由 `openlogos archive` 真实产出或按同一命名规则构造，**禁止把某个具体归档目录名固化进断言**——那正是本提案要根除的「把易变外部状态复制进判据」。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S09-279 | 归档提案可经 slug 只读寻址 | 身份解析 Step 5→7a | 提案已 `archive`，事务为 completed，`MERGE_TRANSACTION.json` / `MERGE_RECEIPT.json` 完整 | 以原 slug 解析并执行只读动作 | 解析命中 `logos/changes/archive/<时间戳>-<slug>`，返回的 `transaction_id` 与 `receipt_sha256` 与归档前**逐字符一致**；结果携带 `archived` 标记 |
+| UT-S09-280 | 活跃提案两条既有路径零回归 | 身份解析 Step 2a/2b→4a | 存在活跃提案与 guard | 分别以显式 `--slug` 与不带 slug 解析 | 均命中 `logos/changes/<slug>`，输出与本变更前逐字节一致；不进入归档查找分支 |
+| UT-S09-281 | 归档提案上的写动作一律 fail-closed | EX-S09-ARCH-1 | 同 UT-S09-279 | 依次发起 `submit-content` / `seal` / `apply` / `recover` / `abort` | 全部拒绝并给出稳定 classification；`MERGE_TRANSACTION.json`、`MERGE_RECEIPT.json` 与任何 marker 的 SHA-256 **执行前后相同** |
+| UT-S09-282 | 同一 slug 多归档命中报歧义，不取第一个 | EX-S09-ARCH-2 | 构造两个 `<不同时间戳>-<同一 slug>` 归档目录 | 以该 slug 解析 | fail-closed 报歧义并要求显式消歧；不返回任一候选，不按时间戳择新或择旧 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-109 | 归档前后同一事务的只读投影一致，且写路径终结 | Step 1→8 | 真实 CLI；一个含 completed 事务的活跃提案 | 归档前读事务 → `openlogos archive` → 归档后以原 slug 再读 → 再对其发起一次写动作 | 归档前后 `transaction_id` / `phase` / slot 计数 / `receipt_sha256` 全一致；写动作被拒且零副作用；全程未改写 guard，当前活跃提案（若有）不受影响 |
+
+### 追溯与覆盖
+
+- AC-TXADDR-01 归档后只读可寻址：UT-S09-279、ST-S09-109。
+- AC-TXADDR-02 活跃路径零回归：UT-S09-280。
+- AC-TXADDR-03 写动作 fail-closed 且零副作用：UT-S09-281、ST-S09-109。
+- AC-TXADDR-04 查找单点、歧义 fail-closed：UT-S09-282（歧义）；单点由 UT-S19-32 从消费方侧反向锁定。
+- 场景：S09 归档提案的事务只读寻址与写动作 fail-closed；功能规格：§2.48.2；架构：§三十九.1；安装态：SMOKE-core-170。

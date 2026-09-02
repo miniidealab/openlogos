@@ -110,11 +110,15 @@ sequenceDiagram
 ```
 
 ### runner 接入要求
+
 - `smoke.command` 可以直接执行单个 runner，也可以执行统一 dispatcher。
 - 推荐 dispatcher 自动发现 `scripts/smoke-*.sh`、`scripts/smoke-*.mjs` 或项目声明的等效 runner。
 - runner 必须使用配置声明的 `smoke.result_path` 写入 JSONL；不得写入硬编码路径后让 CLI 读取不到。
 - runner 对每个实际执行的 smoke case 写入 `{ "id": "SMOKE-...", "status": "pass"|"fail"|"skip", ... }`。
 - smoke PASS 只能来自真实执行结果；禁止为了满足覆盖率直接追加伪造 PASS。
+- **环境不具备时必须写 skip，禁止静默零记录退出**：runner 自检发现缺第三方宿主客户端、缺历史候选制品或缺必需 env 时，必须为其**全部** owned 用例写 `status:"skip"` 记录并以成功状态退出。零记录退出会让「不适用」与「该跑没跑」在账本上同形，两者都只能表现为 uncovered。
+- **skip 必须携带不适用原因**：记录中给出机器可读的缺失项（具体 env 名或制品名），供 JSON 与 `smoke-report.md` 审计；不得只写 `skip` 而不说明为何不适用。
+- **一次性迁移 / 恢复类用例以终态为判据**：其被测对象是会被消费掉的外部事务，判据必须表述为「目标事务处于 completed 且 receipt 自洽」并经 `--slug` 显式寻址，不得要求目标处于某个会被消费的中间相位，也不得依赖它恰好挂在活跃 guard 下。
 
 ### Gate 判定补充
 - defined 来自 `logos/resources/test/smoke/*.md`。
@@ -504,3 +508,94 @@ sequenceDiagram
 
 - 规范：AC-04～AC-08。
 - 测试：UT-S19-26～UT-S19-28、ST-S19-17、SMOKE-core-163～SMOKE-core-167。
+
+## S19 环境不具备的显式 skip 与一次性用例的终态重放
+
+### 场景目标
+
+已合并的「smoke runner / reporter / dispatcher 覆盖检查」与「smoke skip 统计口径」两节已经规定：runner 对每个用例写 `pass|fail|skip`，且 skip 表示当前环境缺少部署目标、外部依赖或平台能力。**规格是对的，问题在实现没有遵守**——依赖第三方宿主或历史制品的 runner 在环境不具备时静默退出且零记录，使「不适用」与「该跑没跑」在账本上完全同形。
+
+本节补齐两条时序：runner 判定不适用时如何留痕，以及一次性迁移 / 恢复类用例如何以终态重放为判据。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| D | Smoke Dispatcher | 发现并调度 runner |
+| S | Smoke Runner | 判定自身可执行性并写结果 |
+| R | `smoke-results.jsonl` | 本轮账本（每轮清空重建） |
+| C | OpenLogos CLI | 读账本、判 Gate |
+
+前置：`VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾与 `smoke_required=true` 等既有门禁不因本节放松。
+
+### 不适用留痕时序
+
+```mermaid
+sequenceDiagram
+    participant D as Smoke Dispatcher
+    participant S as Smoke Runner
+    participant R as smoke-results.jsonl
+    participant C as OpenLogos CLI
+
+    D->>S: Step 1: 调度 runner（按需注入 env / 制品路径）
+    S->>S: Step 2: 自检可执行性（宿主客户端 / 历史制品 / 必需 env）
+    alt 环境具备
+        S->>S: Step 3a: 执行真实断言
+        S-->>R: Step 4a: 为每个 owned ID 写 pass 或 fail
+    else 环境不具备
+        S->>S: Step 3b: 归因到具体缺失项
+        S-->>R: Step 4b: 为**全部** owned ID 写 skip + 不适用原因
+        S-->>D: Step 5b: 以成功状态退出（不适用不是失败）
+    end
+    C->>R: Step 6: 读账本
+    C->>C: Step 7: skip 计入 executed、不计入 uncovered、不计入 failed
+    C-->>C: Step 8: 按既有公式判 Gate（判据不放宽）
+```
+
+### 一次性用例的终态重放时序
+
+迁移 / 恢复类用例的被测对象是会被消费掉的外部事务。判据必须是终态，而非中间相位：
+
+```mermaid
+sequenceDiagram
+    participant S as Smoke Runner
+    participant CLI as 全局 openlogos
+    participant T as 目标事务
+
+    S->>CLI: Step 1: merge transaction status --slug <目标提案 slug>
+    CLI->>T: Step 2: 经单点解析器定位（活跃或已归档）
+    alt 已 completed 且 receipt 自洽
+        T-->>S: Step 3a: 终态投影
+        S->>S: Step 4a: 幂等重放核对（身份 / 相位 / slot 计数 / receipt 摘要）
+        S-->>S: Step 5a: 判 pass，不重复提交、不重新 seal/apply、不新建事务
+    else 处于可推进的中间相位
+        S->>S: Step 4b: 按用例定义推进并核对
+    else 无法寻址或身份漂移
+        S-->>S: Step 4c: 判 fail 并给出稳定归因，不 abort、不新建事务
+    end
+```
+
+### 不变量
+
+- **全部 owned ID 留痕**：不适用时不得只写一条或一条不写；每个 owned 用例都要有 skip 记录。
+- **原因可读**：skip 记录携带机器可读的缺失项（具体 env 名或制品名），供 JSON 与 `smoke-report.md` 审计。
+- **三态不混用**：不适用不是通过（禁止伪造 pass），真实失败不是不适用（禁止降级为 skip）。
+- **判据不放宽**：`isPass` 公式与 skip 统计口径均不变；本节只补全账本完整性。
+- **终态优先**：一次性用例以「completed 且 receipt 自洽」为通过判据；不得把会被消费的中间相位写成必要条件。
+- **显式寻址**：一次性用例必须经 `--slug` 定位目标事务，不得依赖它恰好挂在活跃 guard 下。
+
+### 异常与边界
+
+| 编号 | 触发条件 | 处理 |
+|---|---|---|
+| EX-S19-NA-1 | runner 环境不具备 | 全部 owned ID 写 skip + 原因，成功退出；不得静默零记录 |
+| EX-S19-NA-2 | runner 真实断言失败 | 写 fail，Gate 仍 FAIL；不得降级为 skip |
+| EX-S19-NA-3 | 目标事务已 completed | 走幂等重放核对判 pass；不重复提交或新建事务 |
+| EX-S19-NA-4 | 目标事务无法寻址或身份漂移 | 判 fail 并稳定归因；不得改写 guard 或新建事务绕过 |
+
+### 追溯
+
+- 需求：AC-SMOKE-NA-01～04。
+- 功能规格：§2.48.3～§2.48.5。
+- 架构：§三十九.2。
+- 测试：UT-S19-29～UT-S19-32、ST-S19-18；安装态 SMOKE-core-170（并复核 SMOKE-core-168）。

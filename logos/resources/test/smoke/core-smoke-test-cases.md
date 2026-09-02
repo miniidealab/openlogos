@@ -778,3 +778,53 @@
 - 功能规格：§2.47；架构：§三十八；方法论规格：`spec/flow-spec.md` §10.1。
 - 场景：S08、S09、S11；UT/ST：UT-S08-43～46、ST-S08-30～31、UT-S09-275～278、ST-S09-108、UT-S11-75～77、ST-S11-44。
 - 部署方案：OpenLogos 0.14.5 sync YAML 与 overlay 版本修复本机全局部署方案。
+
+## OpenLogos 0.14.6 归档寻址与 smoke 账本安装态 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.6` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-170` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.6`；源码入口或 workspace link 不算验收。
+- 归档寻址断言只对**已存在的**归档提案做只读核对；不得为构造断言而归档新提案、改写 guard 或改写任何归档内容。临时可写夹具一律建在一次性目录中。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-170 | 0.14.6 归档事务只读寻址、写动作 fail-closed 与不适用显式 skip | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② 在一次性夹具项目中建含 completed 事务的提案，记录其 `transaction_id`/`receipt_sha256` 后执行 `openlogos archive`；③ 以原 slug 只读查询该事务并与归档前冻结事实比对；④ 对该归档提案依次发起 `submit-content`/`seal`/`apply`/`recover`/`abort`，并比对事务文件与 receipt 的 SHA-256；⑤ 构造两个同 slug 不同时间戳的归档目录，核对歧义 fail-closed；⑥ 清空账本执行 `smoke.command`，检查是否存在零记录退出的 runner，并核对不具备环境的用例是否全部以带原因的 skip 出现；⑦ 演练 `0.14.5→0.14.6→0.14.5→0.14.6` 并复核每阶段 identity | ③ 归档前后 `transaction_id`/`phase`/slot 计数/`receipt_sha256` 全一致；④ 五个写动作全部被拒且给出稳定 classification，事务文件与 receipt 字节**执行前后不变**；⑤ 报歧义且不取任一候选；⑥ 账本中不存在零记录退出的 runner，skip 均带可读缺失项且不再计入 uncovered，真实失败仍记 fail；⑦ 往返无混装；全程未改写 guard、未触碰既有归档内容，无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### 同轮复核：SMOKE-core-168 的恢复
+
+`SMOKE-core-170` 与 `SMOKE-core-168` 必须在**同一轮账本**中执行并一并判读：
+
+- `SMOKE-core-168` 应由「永久失败」恢复为「幂等重放通过」——其 runner 经 `--slug` 显式寻址已归档的目标事务，命中 completed 终态后只做只读核对；
+- 若 `SMOKE-core-168` 仍失败，必须给出稳定归因（寻址失败 / 身份漂移 / 授权缺失），**不得**通过改写 guard、abort 或新建事务使其转绿；
+- 该复核是本提案「门禁从恒红回到真实防线」这一目标的唯一端到端证据。
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-170`，不得依靠通配发现后无条件 PASS。
+2. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、归档前后事务身份与 receipt 摘要、五个写动作各自的拒绝 classification、事务文件前后 SHA-256、歧义用例的错误摘要、本轮账本中零记录退出 runner 的数量（应为 0）与 skip 原因清单、回滚每阶段 identity。
+3. 一次性夹具在结果持久化后清理；既有归档提案、guard 与正式目标是审计证据，runner 不得改写或删除。
+4. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-170` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- 观察到任一 runner 零记录退出、skip 缺原因、真实失败被降级为 skip，或出现伪造 pass，直接 FAIL。
+- 观察到 runner 改写了 guard 或既有归档内容，直接 FAIL——该行为违反「可读不可写」的既定边界。
+- 缺失、skip、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 夹具失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.5` 并报告环境状态；未证明全旧或全新时阻断后续动作。
+- Gate 仍 FAIL 时必须逐条归因（哪条 fail、哪条仍 uncovered、为何），不得以放宽判据、伪造记录或改写 guard 收尾。
+
+### 追溯
+
+- 需求：AC-TXADDR-01～05、AC-SMOKE-NA-01～04。
+- 功能规格：§2.48；架构：§三十九。
+- 场景：S09、S19；UT/ST：UT-S09-279～282、ST-S09-109、UT-S19-29～32、ST-S19-18。
+- 部署方案：OpenLogos 0.14.6 归档寻址与 smoke 账本修复本机全局部署方案。
