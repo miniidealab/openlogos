@@ -156,6 +156,15 @@ const PROPOSAL = tests => `# 变更提案：smoke-plan-gate
 - 是否需要回滚预案：否
 - 是否需要 smoke：否
 
+## UI/UX 变更声明
+
+\`\`\`yaml
+ui_impact: false
+design_system_mode: generated
+design_system_fallback_reason: ""
+pages: []
+\`\`\`
+
 ${AUTHORITY_IMPACT(tests)}
 ## 决策澄清
 
@@ -178,7 +187,7 @@ defaults: []
 由唯一 evaluator 按阶段计算完成状态。
 `;
 
-const TASKS = '# 实现任务\n\n## [delta] 规格变更\n\n- [ ] [MODIFY] `deltas/test/core-S99-test-cases.md`：规划 `UT-S99-01`。\n\n## [code] 代码实现\n\n## [deploy] 部署任务\n\n- [ ] 无\n';
+const TASKS = '# 实现任务\n\n## [delta] 规格变更\n\n- [ ] 规划 `deltas/test/core-S99-test-cases.md` 中的 `UT-S99-01`。\n\n## [code] 代码实现\n';
 
 /** 构造一次性 launched 夹具项目 + 活跃提案；绝不手工写 PLAN_APPROVED。 */
 function scaffold(entry, tests) {
@@ -211,9 +220,10 @@ function exercisePlanGate(entry) {
     // ④ 经正常 gate 路径批准：marker 与审计行均由 CLI 写入，未手工创建
     cli(entry, base, ['next', '--auto', '--format', 'json']);
     if (!existsSync(join(dir, 'PLAN_APPROVED'))) throw new Error('plan-exit 未写入 PLAN_APPROVED');
-    const auditPath = join(dir, 'GATE_AUDIT.jsonl');
-    const audit = existsSync(auditPath) ? readFileSync(auditPath, 'utf8') : '';
-    if (!audit.includes('GATE_AUTO_PASSED')) throw new Error('缺少 GATE_AUTO_PASSED 审计行');
+    const auditPath = join(dir, 'GATE_AUTO_PASSED');
+    if (!existsSync(auditPath)) throw new Error('缺少 GATE_AUTO_PASSED 审计文件');
+    const auditLines = readFileSync(auditPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+    if (!auditLines.some(line => line.gate_id === 'plan-exit')) throw new Error('审计中无 plan-exit 放行行');
 
     // ⑤ 批准后派生为 delta-writing，且 test delta 可正常产出（此前被 guard 拦下）
     const stepAfterApproval = stepOf(entry, base);

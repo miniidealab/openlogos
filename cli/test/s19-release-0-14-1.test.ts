@@ -131,7 +131,7 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
     ];
     for (const path of versionSources) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.7');
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.8');
 
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest;
     validateAssetManifest(assetManifest, cliRoot);

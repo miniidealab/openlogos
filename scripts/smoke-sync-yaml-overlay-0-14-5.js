@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
+import { requireEnvOrSkip } from './lib/smoke-not-applicable.mjs';
 
 export const SYNC_YAML_OVERLAY_SMOKE_IDS = ['SMOKE-core-169'];
 const EXPECTED_VERSION = '0.14.5';
@@ -35,6 +36,15 @@ if (process.argv.includes('--self-test')) {
   }));
   process.exit(0);
 }
+
+// 环境不具备（缺候选/回滚制品）必须留痕：沿用不适用契约，禁止硬失败或静默零记录退出
+requireEnvOrSkip(SYNC_YAML_OVERLAY_SMOKE_IDS, [
+  ['OPENLOGOS_SYNC_YAML_TARBALL', 'OPENLOGOS_TARBALL'],
+  ['OPENLOGOS_SYNC_YAML_ROLLBACK_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
+], {
+  reason: 'sync/overlay smoke 需要 0.14.5 候选与 0.14.4 回滚制品',
+  environment: 'sync-yaml-overlay',
+});
 
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 

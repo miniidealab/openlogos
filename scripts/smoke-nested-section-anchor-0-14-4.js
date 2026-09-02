@@ -10,6 +10,7 @@ import {
   realpathSync, renameSync, writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { requireEnvOrSkip } from './lib/smoke-not-applicable.mjs';
 
 export const NESTED_SECTION_ANCHOR_SMOKE_IDS = ['SMOKE-core-168'];
 const EXPECTED_VERSION = '0.14.4';
@@ -36,6 +37,15 @@ if (process.argv.includes('--self-test')) {
   }));
   process.exit(0);
 }
+
+// 环境不具备（缺候选/回滚制品）必须留痕：沿用不适用契约，禁止硬失败或静默零记录退出
+requireEnvOrSkip(NESTED_SECTION_ANCHOR_SMOKE_IDS, [
+  ['OPENLOGOS_NESTED_ANCHOR_TARBALL', 'OPENLOGOS_TARBALL'],
+  ['OPENLOGOS_NESTED_ANCHOR_ROLLBACK_TARBALL', 'OPENLOGOS_PREVIOUS_TARBALL'],
+], {
+  reason: '嵌套章节锚 smoke 需要 0.14.4 候选与 0.14.3 回滚制品',
+  environment: 'nested-section-anchor',
+});
 
 const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
