@@ -2180,3 +2180,58 @@ OpenLogos 已允许 Delta 使用 `父标题 > 叶标题` 唯一定位重复叶�
 - 场景：S08 同步 AI 工具资产与资源索引。
 - 测试：UT-S08-47～UT-S08-50、ST-S08-32～ST-S08-33。
 - 部署后 smoke：SMOKE-core-171。
+
+## S05/S35 门禁前置可满足性与规范补救手段可用性要求
+
+### 用户问题与价值
+
+对任何 launched 变更，只要它**新建**一个 authority fact（`applicability: required` 且 `facts[].change: create`），流程就在 plan 门死锁：
+
+> 要写测试 delta → 需要 `PLAN_APPROVED` → 需要 `proposal_step == ready-to-delta` → 需要 authority closure 通过 → 需要测试 delta。
+
+环上四个组件全部由 CLI 自身提供（含随包分发的 `guard-check`），因此不手工绕过 CLI 就没有合法出路。用户被迫手工创建空的 `PLAN_APPROVED`，代价是绕过 `plan-exit` 派生、丢失 `GATE_AUTO_PASSED` 审计行、并让 UI-first 项目的 provenance 输入为空。
+
+问题的形状是：**门禁的前置条件，依赖了该门之后才被允许产出的产物**。`flow-spec` 对该门所处状态的定义就是「尚未产出任何 delta」，而通过条件却要求 delta 已存在——两个条件不可能同时成立。
+
+同一校验器已经为另一个字段处理过这件事：`authority_ref` 允许指向「尚未创建但已在闭包计划中声明 CREATE」的目标，其实现注释明确写着「plan 阶段 Delta 尚未产出时…」。**「plan 阶段产物尚不存在」这一事实早已被显式建模，只是没有应用到测试证据上。**
+
+第二个相关问题：规范告诉用户可以用「复用测试 ID」小节补救，但该小节从未接入 authority closure 的判定——用户照规范填写也不会被采信。
+
+### 核心需求
+
+1. **门禁前置条件必须在该门所处状态下可满足**。任何门的通过条件，不得依赖只有通过该门之后才被允许产出的产物。
+2. authority fact 的测试证据按阶段分级校验：plan 阶段校验结构完备与 ID 格式合法；「必须存在于 effective test view」的存在性校验落在 spec 阶段（`change-lint` 全量门）与 merge preflight。
+3. **同类判据只有一个实现**：「是否已完成规格阶段」「合法 marker 名集合」「`proposal_step` 取值集合」各只有一处权威定义，消费方一律调用它，不得内联重写或各列一份。
+4. **强度不降**：spec 阶段与 merge preflight 的存在性校验一处都不放宽。引用不存在或笔误的测试 ID 仍必须在合并前被拦下。
+5. 同一校验器对同类产物的阶段宽严必须一致：`tests` 与 `authority_ref` 在 plan 阶段适用同等宽严，不得一个有 plan 兼容、另一个没有。
+6. 规范中列明的每个补救手段，必须在对应校验器中真实可用。「复用测试 ID」小节须被 authority closure 的测试证据来源采信。
+7. 修复以新的本地 patch candidate `0.14.8` 交付，当前本机全局 `0.14.7` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-PLANGATE-01 | 含 `change: create` 的 required fact 提案，在未产出任何 test delta 时可派生到 `proposal_step == ready-to-delta` |
+| AC-PLANGATE-02 | 该提案经 `plan-exit` 正常写入 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED` 审计行，无需手工创建 marker |
+| AC-PLANGATE-03 | plan 阶段仍拒绝 `tests` 为空或 ID 格式非法的 fact，不是无条件放行 |
+| AC-PLANGATE-04 | spec 阶段 `change-lint` 全量门对引用不存在测试 ID 的 fact 仍判 `authority_closure_incomplete` |
+| AC-PLANGATE-05 | merge preflight 对同一情形仍 fail-closed，未因 plan 阶段放宽而削弱 |
+| AC-PLANGATE-06 | `tests` 与 `authority_ref` 在 plan 阶段的宽严一致——同一提案下二者要么都放行、要么都按同一判据拒绝 |
+| AC-PLANGATE-07 | `proposal.md` 的「## 复用测试 ID」小节所列 ID 被 authority closure 的测试证据来源采信 |
+| AC-PLANGATE-08 | 固定 `0.14.8` tarball 完成隔离安装与本机全局安装态验证，`0.14.7→0.14.8→0.14.7` 往返后各 identity 与 tarball SHA-256 一致 |
+| AC-PLANGATE-09 | 「该提案是否已完成规格阶段」只有一个判定实现；全部消费方（含 change-lint）对同一提案得到同一结论，legacy `MERGED` 的读法一致 |
+| AC-PLANGATE-10 | 每一份对外发布的 schema 中的 `proposal_step` 枚举都由测试锚到唯一注册表；仅靠 sha256 冻结不算锚 |
+| AC-PLANGATE-11 | 提案生命周期 marker 的名称只有一处定义；`HISTORICAL_MARKERS` 不得在多处各列一份 |
+
+### 授权与非目标
+
+- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
+- 不新增命令，不改动公共 JSON envelope 的字段结构。
+- **不修改** `guard-check` 的 plan 阶段 delta 白名单，**不修改** `flow-spec` §12.4 对 plan 门状态的定义——本次修复不需要动它们，动它们属独立的流程语义变更。
+- 不引入以手工 marker 绕过 plan-exit 派生的做法。
+
+### 追溯
+
+- 场景：S05 查看下一步建议（`proposal_step` 派生）、S35 提案计划产物左移硬检查（change-lint）。
+- 测试：UT-S05-47～UT-S05-50、ST-S05-22、UT-S35-121～UT-S35-126、ST-S35-22～ST-S35-23。
+- 部署后 smoke：SMOKE-core-172。

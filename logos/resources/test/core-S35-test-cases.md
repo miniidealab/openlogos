@@ -204,3 +204,40 @@ UT-S35-09 反例（同一小节，逐项判定）：
 ### 追溯与 reporter
 
 覆盖 `spec/authority-closure.md` §7～§9、AC-01～AC-08 和五类 violation。所有 UT/ST 使用 OpenLogos reporter 写 `logos/resources/verify/test-results.jsonl`。
+
+## S35 L10 authority closure 分阶段校验测试用例
+
+> 覆盖分阶段校验强度、强度不降、阶段宽严对称与复用测试 ID 接入。
+>
+> **断言纪律**：`UT-S35-123` 的对称性断言必须**同一提案内成对判定** `tests` 与 `authority_ref`——分别用两个提案各测一个字段无法证明「二者对阶段持同一读法」，而那正是本缺陷的根因。`UT-S35-122` 必须证明**放行的 ID 会在 spec 阶段被复核**，只断言 plan 阶段通过等于没测到强度不降。
+>
+> 测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S35-121 | plan 阶段不查 effective view，spec 阶段查 | Step 1→7 | 提案含 required fact，`tests` 引用一个格式合法但尚不存在的 ID；effective test view 为空 | 以 plan 阶段与 spec 阶段各求一次 closure | plan 阶段：通过（不查存在性）；spec 阶段：判 `authority_closure_incomplete` 且诊断点名该未命中 ID |
+| UT-S35-122 | 拦截点后移而非消失（强度不降） | EX-S35-AC-2 | 同上 | 先取 plan 阶段结论，再取 spec 阶段结论 | plan 放行的 ID **必然**在 spec 阶段被复核并拦下；不存在「plan 放行后再无人校验」的路径 |
+| UT-S35-123 | tests 与 authority_ref 阶段宽严对称 | 架构 §四十一.2 | **同一个**提案：`authority_ref` 指向闭包计划中声明 CREATE、尚未创建的目标；`tests` 引用尚不存在但格式合法的 ID | 同一提案内成对求 plan 阶段与 spec 阶段结论 | plan 阶段：二者**同时**放行；spec 阶段：二者按各自存在性判据**同时**收紧。任一阶段出现「一个放行、另一个被拒」即失败 |
+| UT-S35-124 | 复用测试 ID 小节被 closure 采信 | §2.50.3 来源 3 | 已合并测试规格含 `UT-S01-01`；提案 `facts[].tests: [UT-S01-01]`，且在「## 复用测试 ID」小节按固定语法声明复用；无 test delta | spec 阶段求 closure | 通过。同时构造负向：小节列出一个在已合并规格中**不存在**的 ID → 不纳入 effective view，spec 阶段照常拦下 |
+| UT-S35-125 | change-lint 对 legacy MERGED 的读法与权威一致 | EX-S35-SC-1 | 提案目录仅含 legacy `MERGED`、无 `SPEC_MERGED` | 取 `change-lint` 的 post-merge 判定结论，与 `hasSpecCompleteMarker()` 比对；并观察 L8 是否被重放 | 二者结论相等（均为已 spec-complete）；L8 条目守恒**被跳过**，不对 post-merge 提案重放。修复前 `change-lint` 判「未 merge」并重放 L8——本用例即该潜伏缺陷的回归锁 |
+| UT-S35-126 | marker 名与 HISTORICAL_MARKERS 单点 | EX-S35-SC-2 | 已加载 `cli/src/lib/**` 源码 | ① 统计 `HISTORICAL_MARKERS` 的定义处数量；② 统计 `SPEC_MERGED` 以裸字符串字面量出现的文件数 | ① 恰好 1 处定义，其余为 import；② 裸字面量出现在 0 个非权威文件（权威定义文件自身除外）。断言失败信息列出违规文件与行号，便于直接定位 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S35-22 | change-lint 全量门维持强校验 | Step 4→7 | 真实 CLI；提案含 `change: create` 的 required fact | ① `tests` 引用不存在 ID 时跑 `change-lint`；② 补齐对应 test delta 后再跑 | ① L10 判 `authority_closure_incomplete`，整体 FAIL，诊断点名未命中 ID；② L10 通过，整体 PASS。证明 spec 阶段的强校验未因 plan 阶段放宽而削弱 |
+| ST-S35-23 | legacy MERGED 提案不被重放 L8 | Step 4→7 | 真实 CLI；一个持 legacy `MERGED`、无 `SPEC_MERGED` 的提案夹具，其 delta 与最终目标处于「守恒重放会假阳性」的形态 | 对该提案跑 `change-lint` | 走 post-merge 分支，L8 未重放，不产生守恒假阳性；对照组（同一夹具改为持 `SPEC_MERGED`）结论逐字相同——证明两种 marker 布局此后不可区分 |
+
+### 追溯与覆盖
+
+- AC-PLANGATE-03 plan 阶段非放行：UT-S35-121（plan 侧结构校验保留）。
+- AC-PLANGATE-04 spec 阶段强度不降：UT-S35-121、UT-S35-122、ST-S35-22。
+- AC-PLANGATE-05 merge preflight 不降：由 UT-S35-122 的「拦截点后移」判据与既有 merge preflight 用例共同覆盖。
+- AC-PLANGATE-06 阶段宽严对称：UT-S35-123。
+- AC-PLANGATE-07 复用测试 ID 接入：UT-S35-124（含负向）。
+- AC-PLANGATE-09 spec-complete 判据单点（change-lint 一侧）：UT-S35-125、ST-S35-23。
+- AC-PLANGATE-11 marker 名单点：UT-S35-126。
+- 场景：S35 L10 authority closure 的分阶段校验时序；功能规格：§2.50.2～§2.50.4、§2.50.7；架构：§四十一.2、§四十一.4；安装态：SMOKE-core-172。

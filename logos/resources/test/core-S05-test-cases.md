@@ -207,3 +207,35 @@ UT-S05-36继续验证一般validator失败保持collecting。本节新增用例�
 ### Runner 与 OpenLogos Reporter
 
 CLI Vitest runner必须实际执行UT-S05-46、ST-S05-21，并为每个ID向`logos/resources/verify/test-results.jsonl`写一条包含`id/status/timestamp/duration_ms`的OpenLogos reporter记录；任一断言未执行或reporter缺失均不算PASS。
+
+## S05 新建 authority fact 提案的 proposal_step 可达性测试
+
+> 覆盖死锁解除后的 `proposal_step` 派生与 plan 门消费。
+>
+> **断言纪律**：`ST-S05-22` 必须走**正常 gate 消费路径**写入 `PLAN_APPROVED`，**禁止**在夹具中手工创建该 marker——手工创建正是本缺陷当前的绕法，用它构造前提会让这条守门测试失去意义。
+>
+> 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID 供 verify 抽取。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S05-47 | 新建 fact 提案可达 ready-to-delta | Step 3→7a | launched 模块；提案 `applicability: required` 且含 `change: create` 的 fact；`logos/resources/test/` 无该 fact 的闭包测试；**未产出任何 test delta** | 派生 `proposal_step` | `proposal_step == "ready-to-delta"`；`plan_package.ready == true`；`authority_closure.pass == true`。**修复前此处为 `writing`** |
+| UT-S05-48 | plan 阶段非无条件放行（负向） | EX-S05-AC-1～2 | 同上，但分别构造：① `tests: []`；② `tests: ["not-a-test-id"]` | 派生 `proposal_step` | 两种情形均判 `authority_closure_incomplete`，`proposal_step` 停在 `writing`；诊断点名具体 fact 与字段，**不得**出现「尚未完成脱模板」这类与实际原因不符的措辞 |
+| UT-S05-49 | plan-package 使用共享 spec-complete 判据 | EX-S05-SC-1 | 同一提案目录的两种 marker 布局：① 仅 `SPEC_MERGED`；② 仅 legacy `MERGED` | 对同一目录分别取 `plan-package` 的 specComplete 结论与 `hasSpecCompleteMarker()` 的结论 | 两种布局下二者结论均相等；且 `plan-package` 源码中不再存在内联的 marker 文件名判定（断言其调用共享判据，而非各写一份等价逻辑） |
+| UT-S05-50 | next.schema 的 proposalStep 锚到注册表 | EX-S05-SC-2 | 已加载 `REGISTERED_STEPS` 与 `spec/schema/next.schema.json` | 取 schema 中 `proposalStep` 的 `enum`，与 `REGISTERED_STEPS` 键集比对 | 两个集合逐项相等（互无遗漏），断言失败信息列出差集。本用例与既有的 status.schema 锚构成「每份投影各一条锚」——sha256 冻结不计入锚 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S05-22 | 新建 fact 提案端到端走通 plan 门 | Step 1→10 | 真实 CLI；launched 夹具项目；提案含 `change: create` 的 required fact，无 test delta，**无手工创建的 PLAN_APPROVED** | `next --format json` → 经正常 gate 路径批准 → 再次 `next --format json` → 尝试写一份 `deltas/test/*.md` | 首次派生 `ready-to-delta`；批准后 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED` 审计行均由 CLI 写入；再次派生为 `delta-writing`；此时 test delta 可正常产出（此前被 guard 拦下）。全程未手工创建任何 marker |
+
+### 追溯与覆盖
+
+- AC-PLANGATE-01 可达性：UT-S05-47、ST-S05-22。
+- AC-PLANGATE-02 gate 正常消费与审计完整：ST-S05-22。
+- AC-PLANGATE-03 plan 阶段非放行：UT-S05-48。
+- AC-PLANGATE-09 spec-complete 判据单点（派生链一侧）：UT-S05-49。
+- AC-PLANGATE-10 每份发布 schema 各有一致性锚：UT-S05-50。
+- 场景：S05 新建 authority fact 提案的 proposal_step 派生；功能规格：§2.50.2、§2.50.7；架构：§四十一.1、§四十一.4；安装态：SMOKE-core-172。

@@ -167,3 +167,104 @@ sequenceDiagram
 
 - 规范：`spec/authority-closure.md` §7～§9。
 - 测试：UT-S35-112～UT-S35-120、ST-S35-19～ST-S35-21。
+
+## S35 L10 authority closure 的分阶段校验时序
+
+### 场景目标
+
+明确 L10（Authority Closure 权威闭包）在不同调用阶段的校验强度，以及存在性强校验的落点。plan 阶段与 spec 阶段消费同一个评估器，但对「产物此刻是否已存在」持不同判定——这一差别必须由**显式传入的阶段**决定，不由评估器猜测。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| L | change-lint | 全量门，spec 阶段调用方 |
+| PP | plan-package 评估器 | plan 阶段调用方（喂给 next / status） |
+| AC | authority closure 评估器 | 唯一判定实现，按传入阶段分级 |
+| V | effective test view | 已合并测试规格 + 合法 test delta + 复用测试 ID 小节 |
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant PP as plan-package（plan 阶段）
+    participant L as change-lint（spec 阶段）
+    participant AC as authority closure 评估器
+    participant V as effective test view
+
+    PP->>AC: Step 1: evaluate(stage = plan)
+    AC->>AC: Step 2: 结构完备 + tests 非空 + ID 格式合法
+    AC-->>PP: Step 3: 不查 effective view，返回结论
+
+    L->>AC: Step 4: evaluate(stage = spec)
+    AC->>AC: Step 5: 同上全部 plan 阶段校验
+    AC->>V: Step 6: 逐个 ID 查 effective test view
+    alt 全部命中
+        AC-->>L: Step 7a: closure 通过
+    else 任一未命中
+        AC-->>L: Step 7b: authority_closure_incomplete，点名 fact 与未命中 ID
+    end
+```
+
+### effective test view 的三个来源
+
+| # | 来源 | 说明 |
+|---|---|---|
+| 1 | `logos/resources/test/**` | 已合并测试规格 |
+| 2 | 当前提案 `deltas/test/*.md` | 须 mergeable + lint valid |
+| 3 | `proposal.md` 的「## 复用测试 ID」小节 | 按固定语法显式声明复用；所列 ID 仍须真实存在于来源 1 |
+
+来源 3 此前只被 `change-lint` 与 `proposal-lifecycle` 消费，未接入 closure，导致规范列明的补救手段对该检查无效。本节将其纳入同一视图。
+
+### 步骤说明
+
+1. **阶段是显式输入**，不由评估器从上下文推断。同一评估器被两个调用方以不同阶段调用，判定差异只来自该参数。
+2. plan 阶段校验：fact 结构完备、`tests` 非空、每个 ID 符合 `TEST_ID_RE`。**不查** effective view。
+3. spec 阶段校验：plan 阶段全部条件，**加**逐个 ID 在 effective test view 中的存在性。
+4. merge preflight 沿用 spec 阶段强度并 fail-closed，不因 plan 阶段的放宽而削弱。
+5. `authority_ref` 的判定在两个阶段均为「已存在 **或** 闭包计划中声明 CREATE」——与 `tests` 逐阶段同宽同严。
+
+### 不变量
+
+- **强度不降**：spec 阶段与 merge preflight 的存在性校验一处都不放宽；虚假或笔误 ID 仍在合并前被拦。
+- **拦截点后移而非消失**：plan 阶段放行的 ID，必然在 spec 阶段被复核。
+- **阶段对称**：`tests` 与 `authority_ref` 在每个阶段适用同等宽严，可成对断言。
+- **诊断可归因**：失败时点名具体 fact、具体字段、具体未命中 ID，不使用「尚未完成脱模板」这类与实际原因不符的措辞。
+- **零回归**：不含 required fact 的提案，L10 结果逐字不变。
+
+### 异常与边界
+
+| 编号 | 触发条件 | 处理 |
+|---|---|---|
+| EX-S35-AC-1 | plan 阶段 `tests` 为空或 ID 非法 | 判 `authority_closure_incomplete`，点名 fact 与字段 |
+| EX-S35-AC-2 | spec 阶段 `tests` 含不存在的 ID | 判 `authority_closure_incomplete`，点名未命中 ID |
+| EX-S35-AC-3 | 「复用测试 ID」列出的 ID 在已合并规格中不存在 | 不纳入 effective view；spec 阶段照常拦下 |
+| EX-S35-AC-4 | 同一提案下 `tests` 放行而 `authority_ref` 被拒（或反之） | 视为阶段判据不一致的缺陷信号，由对称性测试锚定 |
+
+### 同批收编：change-lint 的 spec-complete 读法归位
+
+**当前的分歧。** `change-lint` 在两处（post-merge 分支判定、L8 守恒是否重放）自行判断提案是否已完成规格阶段，且**只认 `SPEC_MERGED`**；而 `hasSpecCompleteMarker()` 这一权威判据同时接受 legacy `MERGED`。对持 `MERGED` 而无 `SPEC_MERGED` 的提案：
+
+| 组件 | 结论 |
+|---|---|
+| `proposal-lifecycle`（权威） | 已 spec-complete |
+| `plan-package` | 已 spec-complete |
+| `test-slice-manifest` | 已 spec-complete |
+| `change-lint` | **未 merge** |
+
+后果不是「多报一条」，而是 `change-lint` 对一个 post-merge 提案重放 L8 条目守恒——拿 delta 再去对已经合并完的最终目标做守恒比对。`change-lint` 自身的注释已经写明这会制造假阳性，这正是它在识别出 post-merge 时跳过 L8 的原因；只是 legacy `MERGED` 一路没被它识别出来。
+
+本仓归档中 0 例（历史提案都写了 `SPEC_MERGED`），因此这是**潜伏缺陷**：没有现存数据触发它，也就没有任何测试会红。
+
+**修复。** `change-lint` 的两处判定改为调用 `hasSpecCompleteMarker()`。行为变化只有一个方向：持 legacy `MERGED` 的提案从「被重放 L8 并可能假阳性」变为「正确跳过 L8」。持 `SPEC_MERGED` 的提案（即本仓全部现存提案）判定逐字不变。
+
+**marker 名单点化。** `HISTORICAL_MARKERS` 此前在 `plan-package` 与 `authority-closure` 各列一份，`SPEC_MERGED` 作为裸字面量散落 12 个文件。收敛为 `proposal-lifecycle` 单点导出的常量后，新增或改名 marker 只有一个改动点——这也正是分歧得以产生的土壤被移除。
+
+**不变量 C 在本场景的落点**（架构 §四十一.4）：judgement 的实现只能有一处。`change-lint` 是「权威 helper 存在却被绕过，且绕过者读法不同」这一形态的实例。
+
+### 追溯
+
+- 需求：AC-PLANGATE-03～07、AC-PLANGATE-09、AC-PLANGATE-11。
+- 功能规格：§2.50.2～§2.50.4。
+- 架构：§四十一.1、§四十一.2。
+- 测试：UT-S35-121～UT-S35-126、ST-S35-22～ST-S35-23；安装态 SMOKE-core-172。

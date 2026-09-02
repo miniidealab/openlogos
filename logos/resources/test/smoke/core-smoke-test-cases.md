@@ -872,3 +872,46 @@
 - 功能规格：§2.49；架构：§四十。
 - 场景：S08；UT/ST：UT-S08-47～50、ST-S08-32～33。
 - 部署方案：OpenLogos 0.14.7 资源索引扫描与描述规则修复本机全局部署方案。
+
+## OpenLogos 0.14.8 plan 门死锁修复安装态 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.8` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-172` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.8`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建 `PLAN_APPROVED`**——手工创建正是本缺陷当前的绕法，用它构造前提会使本用例失去意义。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-172 | 0.14.8 plan 门死锁解除与强度不降 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② 在临时目录构造 launched 夹具项目与一个活跃提案，其 `authority_impact.applicability: required` 且含 `change: create` 的 fact，`tests` 引用尚不存在但格式合法的 ID，**不产出任何 test delta**；③ 跑 `next --format json` 读 `proposal_step`；④ 经正常 gate 路径批准，核对 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED` 均由 CLI 写入；⑤ 批准后再跑 `next`，并实际写一份 `deltas/test/*.md`；⑥ 负向：把 `tests` 改为空数组与非法 ID 各跑一次 `next`；⑦ 强度不降：对引用不存在 ID 的提案跑 `change-lint`；⑧ 判据单点：从**安装态入口**核验 `HISTORICAL_MARKERS` 定义处数与 `next.schema.json` 的 `proposalStep` ↔ `REGISTERED_STEPS` 一致性；⑨ 演练 `0.14.7→0.14.8→0.14.7→0.14.8` 并复核每阶段 identity | ③ `proposal_step == "ready-to-delta"`（修复前为 `writing`）；④ 两个 marker/审计行均存在且非手工创建；⑤ 派生为 `delta-writing` 且 test delta 写入成功（此前被 guard 拦下）；⑥ 两种负向均判 `authority_closure_incomplete` 并停在 `writing`，诊断点名具体 fact 与字段；⑦ `change-lint` 的 L10 仍 FAIL 并点名未命中 ID——**证明强度不降**；⑧ `HISTORICAL_MARKERS` 恰 1 处定义、两集合逐项相等（证明单点与锚随包分发、非仅 workspace 成立）；⑨ 往返无混装；全程未触碰临时项目之外的任何文件，无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-172`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须为 `SMOKE-core-172` 写显式 `skip` 记录并携带缺失项，禁止静默零记录退出——沿用既有的不适用留痕契约。
+3. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、临时项目路径（脱敏）、③ 与 ⑤ 两次 `proposal_step` 取值、④ 两个 marker 的存在性与来源、⑥ 两种负向的诊断码与点名字段、⑦ `change-lint` 的 L10 结论、⑧ 单点定义处数与枚举差集（应为空）、⑨ 回滚每阶段 identity。
+4. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+5. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-172` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- 观察到 runner 手工创建 `PLAN_APPROVED`，直接 FAIL——那会把被测能力换成绕法。
+- 观察到步骤 ⑦ 的 `change-lint` 通过（即强校验被削弱），直接 FAIL；**死锁解除与强度不降必须同时成立**，缺一即判失败。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.7` 并报告环境状态；未证明全旧或全新时阻断后续动作。
+- 不得为让断言通过而手工写 marker、放宽 spec 阶段校验或改写用户正式文档。
+
+### 追溯
+
+- 需求：AC-PLANGATE-01～11。
+- 功能规格：§2.50；架构：§四十一。
+- 场景：S05、S35；UT/ST：UT-S05-47～50、ST-S05-22、UT-S35-121～126、ST-S35-22～23。
+- 部署方案：OpenLogos 0.14.8 plan 门死锁修复本机全局部署方案。

@@ -1630,3 +1630,93 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 4. `SMOKE-core-171` 由真实安装态 runner 唯一 PASS；
 5. 四步复现路径的索引产出恰含 2 条权威条目、0 条快照条目；
 6. npm registry、tag、release、官网和 Git 远端均零副作用。
+
+## OpenLogos 0.14.8 plan 门死锁修复本机全局部署方案
+
+### 部署目标与授权边界
+
+把「authority closure 分阶段校验 + 复用测试 ID 接入」冻结为唯一 `@miniidealab/openlogos@0.14.8` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.7`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须走安装态**：死锁的观察面是 `openlogos next` 的 `proposal_step` 派生与 `guard-check` 的实际拦截，二者都是安装态行为。源码测试能证明判据分级正确，但「新建 fact 的提案真的能走到 `ready-to-delta` 并被 `plan-exit` 消费」只有在装好的 CLI 上跑一遍才算数。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT-S05-47～48、ST-S05-22、UT-S35-121～124、ST-S35-22 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.7`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash 与最小 `next` / `change-lint` 行为。
+3. 冻结可离线恢复的 `0.14.7` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.8 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.8`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.7`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.7` 构建新字节。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack --json`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.8` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.8` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| 死锁解除 | 含 `change: create` 的 required fact 提案、无任何 test delta 时，`next --format json` 的 `proposal_step == "ready-to-delta"` |
+| plan 门可消费 | 该提案经正常 gate 路径写入 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED`，无需手工创建 marker |
+| plan 非放行 | `tests` 为空或含非法 ID 时，plan 阶段仍判 `authority_closure_incomplete` 并停在 `writing` |
+| spec 强度不降 | `tests` 引用不存在的 ID 时，`change-lint` 全量门仍判 `authority_closure_incomplete` |
+| merge 强度不降 | 同一情形在 merge preflight 仍 fail-closed |
+| 阶段对称 | 同一提案下 `tests` 与 `authority_ref` 在 plan 阶段的判定宽严一致 |
+| 复用测试 ID 生效 | 「## 复用测试 ID」小节所列的既有 ID 被 closure 采信 |
+| 零回归 | 不含 required fact 的提案、fact 全为 `change: modify` 的提案，其 `proposal_step` 与 L10 结果与 `0.14.7` 一致 |
+| 判据单点回归 | 从解包 tarball 的 dist 入口核验：`HISTORICAL_MARKERS` 只有一处定义；`next.schema.json` 的 `proposalStep` 枚举与 `REGISTERED_STEPS` 键集逐项相等——**打包产物本身**而非仅 workspace 满足单点与锚 |
+| rollback roundtrip | `0.14.7→0.14.8→0.14.7→0.14.8` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。
+
+### 本机全局部署
+
+只有隔离矩阵与 `0.14.7` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.8` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos`、realpath、package root 与安装来源；
+- `openlogos --version` 精确为 `0.14.8`；
+- package/plugin/asset/schema/Skill/runner identity 与 tarball 逐项一致；
+- 在临时 fixture 上跑通「新建 fact 提案可达 `ready-to-delta`」与「虚假 ID 仍被 spec 阶段拦下」两个最小正反例；
+- 全局旧文件、缓存入口与任一 `0.14.7` 混合资产均不存在。
+
+部署成功只表示固定 candidate 已安装；不生成 `SMOKE_PASS`，不视为公开发布。
+
+### Smoke 与完成条件
+
+获得独立 smoke 授权后，使用本机全局绝对入口执行 `SMOKE-core-172`，并将逐步证据写入 `logos/resources/verify/smoke-results.jsonl`。
+
+smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，也不得为构造断言而手工创建 `PLAN_APPROVED`。
+
+### 失败、自愈与回滚
+
+- build/pack/隔离/回滚演练失败：不触碰全局，修复后重新 verify 和制品链。
+- 全局安装或身份自检失败：立即使用冻结 `0.14.7` tarball 恢复并核验；无法证明恢复完整时报告全局环境不一致并停止。
+- smoke 失败：不得写 `SMOKE_PASS` 或 archive；修复后重新 verify、pack、部署与 smoke，或恢复固定 `0.14.7`。
+- 任何阶段都不得为让断言通过而手工写 marker、放宽 spec 阶段校验或改写用户正式文档。
+
+### 完成判据
+
+1. 固定 `0.14.8` tarball identity 与隔离矩阵 PASS；
+2. 本机全局 entry/version/package/plugin/asset 全部指向同一 candidate；
+3. `0.14.7↔0.14.8` 回滚/恢复可复制且无混装；
+4. `SMOKE-core-172` 由真实安装态 runner 唯一 PASS；
+5. 死锁解除与强度不降两侧证据同时成立；
+6. npm registry、tag、release、官网和 Git 远端均零副作用。

@@ -384,3 +384,103 @@ sequenceDiagram
 ### 追溯
 
 既有 UT-S05-36、ST-S05-20 继续锚定 validator retry 与动作对称；UT-S05-46、ST-S05-21 专门验证 legacy sealed reopen、残留私有字节与 next 动作同源。
+
+## S05 新建 authority fact 提案的 proposal_step 派生
+
+### 场景目标
+
+补齐「提案新建 authority fact」时 `proposal_step` 的派生时序。此前该类提案会永久停在 `writing`：plan-package 因 authority closure 未通过而 `ready:false`，而使其通过所需的 test delta 又只有越过 plan 门之后才被允许产出。本节明确该状态可达 `ready-to-delta`，并由 `plan-exit` 正常消费。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| U | User / driver | 执行 `openlogos next`（含 `--auto`） |
+| N | next 派生 | 读 plan-package 结果派生 `proposal_step` |
+| PP | plan-package 评估器 | 汇总 proposal 结构、clarification、authority closure |
+| AC | authority closure 评估器 | 按阶段判定 fact 闭合 |
+
+前置：模块 `lifecycle: launched`；活跃提案 `authority_impact.applicability: required`，且至少一个 fact 为 `change: create`；`logos/resources/test/` 中尚无该 fact 的闭包测试（新建 fact 的常态）。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant U as User / driver
+    participant N as next 派生
+    participant PP as plan-package 评估器
+    participant AC as authority closure 评估器
+
+    U->>N: Step 1: openlogos next
+    N->>PP: Step 2: 评估 plan package
+    PP->>AC: Step 3: 以 plan 阶段求 authority closure
+    AC->>AC: Step 4a: 校验 fact 结构完备
+    AC->>AC: Step 4b: 校验 tests 非空且 ID 格式合法
+    Note over AC: 不校验「此刻是否已在 effective test view」——<br/>该状态按 §12.4 定义就是「delta 未启动」
+    alt 结构与格式均合法
+        AC-->>PP: Step 5a: closure 通过（plan 阶段）
+        PP-->>N: Step 6a: proposal.filled=true、ready=true
+        N-->>U: Step 7a: proposal_step = ready-to-delta，next_node = plan-exit
+    else 结构缺失或 ID 格式非法
+        AC-->>PP: Step 5b: authority_closure_incomplete
+        PP-->>N: Step 6b: ready=false
+        N-->>U: Step 7b: proposal_step 停在 writing，诊断指向具体 fact 与字段
+    end
+    U->>N: Step 8: 批准方案（human 门 / --auto）
+    N->>N: Step 9: 写 PLAN_APPROVED 与 GATE_AUTO_PASSED 审计行
+    N-->>U: Step 10: proposal_step = delta-writing，test delta 自此可产出
+```
+
+### 步骤说明
+
+1. **next** 读 plan-package 结果派生 `proposal_step`；本节不改变该派生逻辑本身。
+2. **plan-package** 以 **plan 阶段**求 authority closure——阶段是显式传入的判定输入，不由评估器猜测。
+3. plan 阶段的 `tests` 校验只覆盖「非空」与「ID 格式合法」两条。`tests` 为空或含非法 ID 时照常判 `authority_closure_incomplete`——**这不是无条件放行**。
+4. 存在性校验推迟到 spec 阶段（见 S35）。因此新建 fact 的提案可达 `ready-to-delta`，`plan-exit` 随之可正常消费。
+5. `PLAN_APPROVED` 与 `GATE_AUTO_PASSED` 由既有的 gate 消费路径写入，不需要人手工创建 marker；provenance body 的写入规则不变。
+
+### 不变量
+
+- **可达性**：含 `change: create` 的 required fact 提案，在未产出任何 test delta 时可达 `ready-to-delta`。
+- **非放行**：`tests` 为空或 ID 格式非法时，plan 阶段仍判失败并给出指向具体 fact 与字段的诊断。
+- **阶段对称**：同一提案下 `tests` 与 `authority_ref` 在 plan 阶段的判定宽严一致。
+- **审计完整**：经正常 gate 消费写入 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED`，不得以手工 marker 替代。
+- **零回归**：不含 required fact 的提案、以及 fact 全为 `change: modify` 的提案，其 `proposal_step` 派生逐字不变。
+
+### 异常与边界
+
+| 编号 | 触发条件 | 处理 |
+|---|---|---|
+| EX-S05-AC-1 | fact 的 `tests` 为空 | plan 阶段即判 `authority_closure_incomplete`，停在 `writing` |
+| EX-S05-AC-2 | `tests` 含不符合 `TEST_ID_RE` 的项 | 同上；诊断点名该 fact 与非法项 |
+| EX-S05-AC-3 | `tests` 引用格式合法但并不存在的 ID | plan 阶段放行；spec 阶段由 `change-lint` 拦下（见 S35） |
+
+### 同批收编：spec-complete 判据与 proposal_step 投影
+
+**plan-package 改用共享 spec-complete 判据。** `proposal_step` 派生链上，「该提案是否已完成规格阶段」此前由 `plan-package` 自己内联判定。改为调用 `hasSpecCompleteMarker(proposalDir)`，与 `proposal-lifecycle`、`test-slice-manifest`、`change-lint` 同源。本场景的派生结果不变（两份判定当前等价），改的是**让它们从此不可能不等价**。
+
+**`proposal_step` 的投影与锚。** 取值集合的唯一权威是 `STEP_REGISTRY`：
+
+```
+STEP_REGISTRY（唯一铸造点）
+   ├─ REGISTERED_STEPS ──→ status.schema.json#proposalStep   ← 已有一致性锚
+   └─ REGISTERED_STEPS ──→ next.schema.json#proposalStep     ← 本次补锚
+```
+
+`next.schema.json` 此前只受 sha256 冻结与 ajv 校验。二者都不比对注册表：冻结只说明文件没被动过，ajv 只按该文件自身的枚举校验输出——两者都会在注册表新增步骤后继续全绿，而 `next` 输出一个不在其枚举内的 `proposal_step`。补锚后，**每一份**发布 schema 的 `proposalStep` 都与 `REGISTERED_STEPS` 键集逐项比对。
+
+新增 `proposal_step` 时的失败信号，补锚前后对比：
+
+| 检查 | 补锚前 | 补锚后 |
+|---|---|---|
+| tsc 穷举 `Record<ProposalStep, StepMeta>` | 红 | 红 |
+| status.schema 锚 | 红 | 红 |
+| next.schema 冻结 sha256 | 绿（未改文件） | 绿（未改文件） |
+| next.schema 一致性锚 | **不存在** | **红** |
+
+### 追溯
+
+- 需求：AC-PLANGATE-01～03、AC-PLANGATE-06、AC-PLANGATE-09～10。
+- 功能规格：§2.50.2、§2.50.4。
+- 架构：§四十一.1、§四十一.2。
+- 测试：UT-S05-47～UT-S05-50、ST-S05-22；安装态 SMOKE-core-172。

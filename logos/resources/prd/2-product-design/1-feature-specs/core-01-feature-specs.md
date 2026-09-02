@@ -2725,3 +2725,99 @@ baseline-seed 定义了四个 kind（`system-map`、`scenario-candidates`、`dep
 - ST：ST-S08-32～33。
 - 安装态：SMOKE-core-171。
 - 需求：AC-RIDX-01～07；场景：S08；架构：§四十。
+
+## 2.50 authority closure 的分阶段校验强度
+
+### 2.50.1 功能目标与职责边界
+
+本功能只改 authority closure 判定的**阶段划分**，不改判据本身、不改字段结构、不降低任何一处的最终强度。
+
+要解决的形状是：门禁的通过条件依赖了该门之后才允许产出的产物。修法不是放行，而是把「此刻可判的」与「此刻不可判的」分开——前者在 plan 阶段判，后者推迟到产物本该存在的阶段判。
+
+同一校验器已为 `authority_ref` 做过这件事（允许指向闭包计划中声明 CREATE 但尚未创建的目标），本功能把同一处理对称地应用到 `tests`。
+
+### 2.50.2 分阶段校验强度
+
+| 阶段 | 触发点 | `tests` 的校验强度 | `authority_ref` 的校验强度 |
+|---|---|---|---|
+| plan | plan-package 评估（喂给 `next` / `status` 的 `proposal_step` 派生） | 非空 + 每个 ID 符合 `TEST_ID_RE` | 已存在 **或** 在闭包计划中声明 CREATE |
+| spec | `change-lint` 全量门 | 上述 **加** 必须存在于 effective test view | 同 plan 阶段 |
+| merge | merge preflight | 同 spec 阶段，fail-closed | 同 spec 阶段，fail-closed |
+
+两列在每一行都同宽同严——这正是 §2.50.4 要求的对称性。
+
+**plan 阶段不是无条件放行**：`tests` 为空、含非 `TEST_ID_RE` 的字符串、或含空项，plan 阶段照样判 `authority_closure_incomplete`。放宽的**只有**「该 ID 此刻是否已存在」这一条——而这一条在该阶段按定义不可能为真。
+
+**强度不降**：虚假 ID、笔误 ID、指向从未规划过的测试的 ID，全部会在 spec 阶段与 merge preflight 被拦下。合并前仍有两道强校验，门禁的最终把关能力与修复前完全相同，只是拦截点后移到产物本该存在之后。
+
+### 2.50.3 effective test view 的第三个来源
+
+`proposal.md` 的「## 复用测试 ID」小节按固定语法列出的既有 ID，纳入 effective test view 的来源集合。至此该视图有三个来源：
+
+1. 已合并的 `logos/resources/test/**`；
+2. 当前提案 `deltas/test/*.md`（须 mergeable + lint valid）；
+3. 「## 复用测试 ID」小节显式列出的 ID（须实际存在于来源 1）。
+
+来源 3 单独不能解除 plan 门死锁——新建 fact 没有既有 ID 可复用——但规范早已把它写成用户可用的补救手段，实现却从未采信。规范与实现的漂移应与本次修复一并消除，否则用户照规范填写仍会失败，且失败原因不可归因。
+
+来源 3 不放宽真实性：所列 ID 仍须在已合并测试规格中真实存在，只是允许用户显式声明「我复用它」而不必在 `facts[].tests` 里重复推导。
+
+### 2.50.4 阶段宽严对称
+
+同一校验器对同类产物的阶段宽严必须一致。具体到 authority fact：
+
+- `tests` 与 `authority_ref` 都是「本提案计划产出、此刻可能尚不存在」的产物引用；
+- 因此二者在 plan 阶段适用同等宽严：都只校验结构与规划意图，都不校验此刻是否已落盘；
+- 在 spec 阶段与 merge preflight，二者同样都校验真实存在性。
+
+不对称本身是缺陷信号：它意味着两条判据对「当前处于哪个阶段」持有不同假设，而阶段是同一个事实。
+
+### 2.50.5 不变更的边界
+
+本功能**不触碰**：
+
+- `guard-check` 的 plan 阶段 delta 白名单（仍只放行 page-design 原型）；
+- `flow-spec` §12.4 对 plan 门「delta 未启动」的状态定义；
+- authority fact 的字段集合、`applicability` 触发规则、8 类场景覆盖要求；
+- 公共 JSON envelope 的字段结构与 `authority_closure` 摘要的形状。
+
+分阶段校验不需要动上述任何一项即可解环。动它们属独立的流程语义变更，不应搭车。
+
+### 2.50.6 兼容、失败与发布边界
+
+- 既有提案的判定结果只可能从「plan 阶段失败」变为「plan 阶段通过」，不会有反向变化；spec 阶段与 merge 的判定逐字不变。
+- package / plugin / asset identity 统一提升为本地 candidate `0.14.8`；全局 `0.14.7` 作为固定回滚制品。
+- 不执行 npm publish、dist-tag、Git tag、GitHub Release、官网发布或 git push。
+
+### 2.50.7 同批收编的三处判据单点化
+
+本次一并消除三处「同一事实被两处各自持有」，它们与 §2.50.1～§2.50.4 触达同一批文件、同属判据分裂族：
+
+**A. spec-complete 判定单点**
+
+`hasSpecCompleteMarker(proposalDir)` 是「该提案是否已完成规格阶段」的唯一判定（`SPEC_MERGED || MERGED`，接受 legacy）。全部消费方一律调用它：
+
+| 消费方 | 此前 | 此后 |
+|---|---|---|
+| `plan-package` | 内联 `SPEC_MERGED \|\| MERGED` | 调用权威判据 |
+| `test-slice-manifest` | 内联 `!SPEC_MERGED && !MERGED` | 调用权威判据 |
+| `change-lint` | **只认 `SPEC_MERGED`**（语义不同） | 调用权威判据，读法与其余一致 |
+
+`change-lint` 的读法变更有实际后果：持 legacy `MERGED` 的提案此后被正确识别为 post-merge，不再重放 L8 守恒——按 `change-lint` 自身注释，对 post-merge 提案重放 L8 会产生假阳性。
+
+**B. 发布 schema 的 `proposal_step` 枚举一致性锚**
+
+`proposal_step` 的取值集合以 `STEP_REGISTRY` 为唯一权威。**每一份**对外发布的 schema（`status.schema.json`、`next.schema.json`）的 `proposalStep` 枚举都必须由测试锚到 `REGISTERED_STEPS`。sha256 冻结只能证明文件未被意外改动，**不能证明它与注册表一致**，因此不构成锚。
+
+**C. marker 名单点**
+
+提案生命周期 marker 的名称集合只有一处定义：既有的 `PLAN_APPROVED_MARKER` / `SLICES_APPROVED_MARKER` 之外，补齐 `SPEC_MERGED` 等常量，并把 `HISTORICAL_MARKERS` 收敛为单一导出，消除 `plan-package` 与 `authority-closure` 各列一份的现状。
+
+三者的共同判据：**这个事实有没有一个能被指出来的唯一所有者？两处答案不同时谁说了算？** 答不出即为分裂。
+
+### 2.50.8 验收与追溯
+
+- UT：UT-S05-47～50、UT-S35-121～126。
+- ST：ST-S05-22、ST-S35-22～23。
+- 安装态：SMOKE-core-172。
+- 需求：AC-PLANGATE-01～11；场景：S05、S35；架构：§四十一。
