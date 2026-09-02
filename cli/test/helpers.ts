@@ -125,7 +125,12 @@ export function scaffoldProject(
   mkdirSync(join(root, 'logos'), { recursive: true });
   writeFileSync(join(root, 'logos', 'logos.config.json'), JSON.stringify(config, null, 2));
 
-  const yaml = `project:\n  name: "${name}"\n  description: ""\n  methodology: "OpenLogos"\n`;
+  // fixture 必须与 `openlogos init` 真实模板同形（含 `resource_index: []` 空 flow sequence 与
+  // `conventions:` 块）。历史 fixture 二者皆无，导致补录走 EOF 分支、恰好产出合法 YAML，
+  // 把「`[]` 形态上写出非法 YAML」这条真实路径长期挡在回归之外。
+  const yaml = `project:\n  name: "${name}"\n  description: ""\n  methodology: "OpenLogos"\n\n`
+    + `resource_index: []\n\n`
+    + `conventions:\n  - "遵循 OpenLogos 三层推进模型（Why → What → How）"\n`;
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), yaml);
 
   const dirs = [

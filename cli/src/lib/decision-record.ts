@@ -137,7 +137,10 @@ function persistDecisionCounter(root: string, nextId: number): void {
     return;
   }
   const block = ['decision_counter:', `  next_id: ${nextId}`];
-  const insertBefore = lines.findIndex(l => /^resource_index:\s*$/.test(l) || /^conventions:\s*$/.test(l));
+  // 锚必须容忍 `resource_index` 的三种既有形态（空 block / `[]` flow sequence / 已有条目）——
+  // 只认 `resource_index:\s*$` 会在 `openlogos init` 模板产出的 `resource_index: []` 上漏配，
+  // 把块甩到 EOF，与本函数声明的「resource_index / conventions 恒在其后」不符（架构 §三十八.1）。
+  const insertBefore = lines.findIndex(l => /^resource_index:/.test(l) || /^conventions:/.test(l));
   if (insertBefore >= 0) lines.splice(insertBefore, 0, ...block);
   else { while (lines.length && lines[lines.length - 1] === '') lines.pop(); lines.push(...block, ''); }
   writeFileSync(yamlPath, lines.join('\n'));

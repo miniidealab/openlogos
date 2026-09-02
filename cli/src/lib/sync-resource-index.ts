@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { Document, YAMLSeq, isMap, isSeq, parse as parseYaml, parseDocument } from 'yaml';
 import type { Locale } from '../i18n.js';
 
 // ---------------------------------------------------------------------------
@@ -187,17 +188,23 @@ export function inferResourceDesc(relPath: string, locale: Locale): string | nul
 // 解析现有 resource_index 中已有的 path 集合
 // ---------------------------------------------------------------------------
 
-function parseExistingPaths(yamlContent: string): Set<string> {
+/**
+ * 从 YAML 文档树读出已收录 path 集合（不用正则猜形态）。
+ * 结构不符（非序列、条目非映射、path 非串）的项直接忽略，不参与幂等判定。
+ */
+function parseExistingPaths(doc: Document): Set<string> {
   const paths = new Set<string>();
-  // 匹配 "  - path: some/path" 格式（允许前导空格）
-  for (const m of yamlContent.matchAll(/^\s*-\s+path:\s*(.+)$/gm)) {
-    paths.add(m[1].trim());
+  const node = doc.get('resource_index', true);
+  if (!isSeq(node)) return paths;
+  for (const item of node.items) {
+    const path = isMap(item) ? item.get('path', false) : undefined;
+    if (typeof path === 'string' && path.trim()) paths.add(path.trim());
   }
   return paths;
 }
 
 // ---------------------------------------------------------------------------
-// 将新条目追加到 resource_index 末尾
+// 将新条目追加到 resource_index
 // ---------------------------------------------------------------------------
 
 interface NewEntry {
@@ -205,21 +212,45 @@ interface NewEntry {
   desc: string;
 }
 
-function appendToResourceIndex(yamlContent: string, entries: NewEntry[]): string {
-  if (entries.length === 0) return yamlContent;
+/**
+ * 结构化追加：`parseDocument` → 操作 `resource_index` 节点 → `toString()`。
+ *
+ * 三种既有形态归一到同一承载条目的 block sequence（架构 §三十八.1）：
+ *   - `resource_index: []`（空 flow sequence，`openlogos init` 模板产出）→ 转 block sequence；
+ *   - `resource_index:`（空 block，值为 null）→ 新建序列挂在该键下；
+ *   - 键缺失 → 创建该键（若存在 `conventions` 则插在其前，保持既有文档形状）。
+ *
+ * 禁止再出现按 `conventions:` 之类行锚做文本拼接的分支：那会在 `[]` 形态上产出
+ * 「空 flow sequence 后跟 block sequence」的非法 YAML，且写入时不自我暴露。
+ */
+function appendToResourceIndex(doc: Document, entries: NewEntry[]): void {
+  if (entries.length === 0) return;
 
-  const block = entries
-    .map(e => `  - path: ${e.path}\n    desc: ${e.desc}`)
-    .join('\n');
-
-  // 尝试在 "conventions:" 行之前插入（保持文件结构）
-  if (/^conventions:/m.test(yamlContent)) {
-    return yamlContent.replace(/^(conventions:)/m, `${block}\n\n$1`);
+  let seq = doc.get('resource_index', true);
+  if (!isSeq(seq)) {
+    seq = new YAMLSeq();
+    const contents = doc.contents;
+    const idx = isMap(contents)
+      ? contents.items.findIndex(pair => String(pair.key) === 'resource_index')
+      : -1;
+    if (idx >= 0 && isMap(contents)) {
+      // 键已存在但值不是序列（空 block / 显式 null）：就地换值，保留键位置与其上注释
+      contents.items[idx].value = seq;
+    } else if (isMap(contents)) {
+      const before = contents.items.findIndex(pair => String(pair.key) === 'conventions');
+      const pair = doc.createPair('resource_index', seq);
+      if (before >= 0) contents.items.splice(before, 0, pair);
+      else contents.items.push(pair);
+    } else {
+      doc.set('resource_index', seq);
+    }
   }
+  // `[]` 是 flow sequence，其后不能跟 block 条目——统一落成 block 形态
+  (seq as YAMLSeq).flow = false;
 
-  // 无 conventions 块时追加到文件末尾
-  const trimmed = yamlContent.trimEnd();
-  return `${trimmed}\n${block}\n`;
+  for (const entry of entries) {
+    (seq as YAMLSeq).add(doc.createNode({ path: entry.path, desc: entry.desc }));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +260,8 @@ function appendToResourceIndex(yamlContent: string, entries: NewEntry[]): string
 export interface SyncResourceIndexResult {
   added: number;
   skipped: number;
+  /** true 表示 logos-project.yaml 当前不可解析，本次跳过补录且未写盘（EX-S08-IDX-1） */
+  degraded?: boolean;
 }
 
 /** 扫描项目文档，将尚未收录的文件补录到 logos-project.yaml 的 resource_index */
@@ -239,7 +272,12 @@ export function syncResourceIndex(root: string, locale: Locale): SyncResourceInd
   }
 
   const content = readFileSync(yamlPath, 'utf-8');
-  const existingPaths = parseExistingPaths(content);
+  // EX-S08-IDX-1：目标已不可解析时不进入补录，交由降级告警路径处理，绝不代用户改写
+  const doc = parseDocument(content);
+  if (doc.errors.length > 0) {
+    return { added: 0, skipped: 0, degraded: true };
+  }
+  const existingPaths = parseExistingPaths(doc);
 
   const candidates = scanCandidateFiles(root);
 
@@ -259,7 +297,16 @@ export function syncResourceIndex(root: string, locale: Locale): SyncResourceInd
   }
 
   if (newEntries.length > 0) {
-    const updated = appendToResourceIndex(content, newEntries);
+    appendToResourceIndex(doc, newEntries);
+    const updated = doc.toString({ lineWidth: 0 });
+    // 后置判据＝可解析性（架构 §三十八.1）：自检不过一律不写盘，目标字节保持原样
+    try {
+      parseYaml(updated);
+    } catch (error) {
+      throw new Error(
+        `resource_index 补录后自检失败，已放弃写入 ${relative(root, yamlPath)}：${(error as Error).message}`,
+      );
+    }
     writeFileSync(yamlPath, updated);
   }
 
