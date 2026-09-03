@@ -10,7 +10,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification, mergeAdmissibleProposal, mergeAdmissibleTasks, registerCoreModule } from './helpers.js';
 import { detectProposalStep } from '../src/commands/status.js';
 import { next } from '../src/commands/next.js';
 import { status } from '../src/commands/status.js';
@@ -55,6 +55,7 @@ function setupCmd(tasks: string, markers: string[] = [], slug = 'feat', proposal
   const { root, cleanup } = makeTempRoot();
   cleanups.push(cleanup);
   scaffoldProject(root, { locale: 'zh' });
+    registerCoreModule(root);
   writeFileSync(join(root, 'logos', 'logos-project.yaml'),
     stringifyYaml({ modules: [{ id: 'core', name: 'Core', lifecycle: 'launched' }] }, { lineWidth: 0 }));
   writeFileSync(join(root, 'logos', '.openlogos-guard'),

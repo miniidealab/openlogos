@@ -204,7 +204,13 @@ export function isTasksTemplateFilled(content: string): boolean {
     '- [ ] Update API orchestration test cases',
     '- [ ] Implement code changes',
   ];
-  const lines = new Set(normalized.split(/\r?\n/).map(line => line.trim()));
+  // §12.7 的 auto-reset 把 `[code]` 段重置为 CODE_SECTION_RESET_PLACEHOLDER，其中文取值恰好也在
+  // 上面的脚手架占位清单中。同一字面量在两处含义相反：在 [code] 段它是**正确的重置后状态**，
+  // 在其它段才是「模板未替换」。因此本判据只扫描 [code] 段之外的行——否则流程自愈的产物会被
+  // 判为不合规，构成 §四十一.1 的门禁不可满足（merge 准入消费本判据后即暴露）。
+  const codeSection = extractCodeSectionRaw(normalized);
+  const scanned = codeSection ? normalized.replace(codeSection, '') : normalized;
+  const lines = new Set(scanned.split(/\r?\n/).map(line => line.trim()));
   return !placeholderLines.some(line => lines.has(line));
 }
 

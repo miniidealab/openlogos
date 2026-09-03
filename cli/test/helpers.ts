@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { vi, type MockInstance } from 'vitest';
@@ -217,4 +217,63 @@ export function writeLoopPass(proposalDir: string, module = 'core'): void {
     join(proposalDir, 'LOOP_ITERS'),
     JSON.stringify({ iter: 1, node: 'verify', result: 'pass', module, timestamp: '2026-06-20T00:00:00.000Z' }) + '\n',
   );
+}
+
+/**
+ * 把桩提案补成 **merge 可受理**的合规提案。
+ *
+ * 0.14.9 起 merge 的准入判定等于 change-lint 的完整结论（架构 §四十一.6.1），因此关注点不在
+ * 提案结构的历史 merge 夹具需要显式补齐真实提案必备的要素：`> module:` 头、canonical 章节、
+ * 决策澄清与 Authority Impact。这与 `withCompleteClarification` 是同一类补齐，只是覆盖 merge 准入
+ * 所要求的全集；桩提案（`# Title` 之类）在真实流程中本就不可能通过 plan 门。
+ */
+export function mergeAdmissibleProposal(title = '夹具提案', moduleId = 'core'): string {
+  return withCompleteClarification([
+    `# ${title}`,
+    '',
+    `> module: ${moduleId}`,
+    '',
+    '## 变更原因',
+    '测试夹具需要覆盖既有 merge 行为。',
+    '',
+    '## 变更类型',
+    '需求级变更。',
+    '',
+    '## 变更范围',
+    '- 测试夹具。',
+    '',
+    '## 部署影响',
+    '- 是否需要部署：否',
+    '- 部署原因：测试夹具不产生部署影响',
+    '- 影响环境：无',
+    '- 是否涉及数据迁移：否',
+    '- 是否需要回滚预案：否',
+    '- 是否需要 smoke：否',
+    '',
+    '## 变更概述',
+    '测试夹具保持既有行为。',
+    '',
+  ].join('\n'));
+}
+
+/** 与 `mergeAdmissibleProposal` 配套的最小合规 tasks.md（无 scaffold 占位）。 */
+export function mergeAdmissibleTasks(deltaTasks: string[] = []): string {
+  const items = deltaTasks.length > 0 ? deltaTasks : ['- [ ] 夹具不产出 delta。'];
+  // 不写 [code] 段——夹具不产出代码，避免触发 code_change_requires_real_test_ids。
+  return ['# 实现任务', '', '## [delta] 规格变更', '', ...items, ''].join('\n');
+}
+
+/**
+ * 为夹具项目注册 `core` 模块（与 `openlogos init` 真实模板同形）。
+ *
+ * `scaffoldProject` 刻意不写 `modules:`——部分用例正是要覆盖「yaml 无 modules[]」这一状态
+ * （如 ST-JSON-15、UT-S17-01 与 golden baseline）。但任何 module-aware 判据（L7 UI 门、
+ * 0.14.9 起 merge 准入的模块解析）在无注册表时判 module_unresolved，而真实 init 一定写它。
+ * 因此需要模块的夹具显式调用本函数，不改变其它用例的既有状态。
+ */
+export function registerCoreModule(root: string, lifecycle = 'initial'): void {
+  const path = join(root, 'logos', 'logos-project.yaml');
+  const yaml = readFileSync(path, 'utf8');
+  if (/^modules:/m.test(yaml)) return;
+  writeFileSync(path, `modules:\n  - id: core\n    name: 核心功能\n    lifecycle: ${lifecycle}\n\n${yaml}`);
 }

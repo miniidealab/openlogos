@@ -761,6 +761,13 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     return { ok: false, errorCode: 'artifact_unreadable', message: `无法读取 logos/changes/${slug}/proposal.md` };
   }
 
+  // §2.51.5：缺件必须给出可归因结论而非栈。evaluatePlanPackage 对缺件按既有不变量抛出
+  // （UT-S11-61：操作错误不得吞成成功态），此处转成 artifact_unreadable——既保留「不吞」，
+  // 又让 merge / next 等调用方拿到可定位的诊断。
+  if (!existsSync(join(proposalDir, 'tasks.md'))) {
+    return { ok: false, errorCode: 'artifact_unreadable', message: `无法读取 logos/changes/${slug}/tasks.md` };
+  }
+
   // 模块归属解析（module-aware 判据的唯一权威；proposal.md 步内、tasks.md 前）
   const moduleCtx = resolveProposalModuleContext(root, proposalDir, slug);
   if (!moduleCtx.ok) {

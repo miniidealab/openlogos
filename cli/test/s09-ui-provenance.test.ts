@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, mergeAdmissibleProposal, mergeAdmissibleTasks, registerCoreModule } from './helpers.js';
 import {
   readPlanApproved, writePlanApprovedMarker, classifyProvenance, computePrototypeHashes,
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal, isFullProvenanceValid,
@@ -30,9 +30,21 @@ function guiProject(root: string, slug: string, opts: {
   const proposalDir = join(root, 'logos', 'changes', slug);
   mkdirSync(proposalDir, { recursive: true });
   const uiImpact = opts.uiImpact ?? true;
+  // 0.14.9 起 merge 准入等于 change-lint 完整结论，夹具提案须补齐真实提案必备要素；
+  // UI 声明段仍由本构造器给出（它正是被测对象）。
   writeFileSync(join(proposalDir, 'proposal.md'),
-    `# ${slug}\n\n## UI/UX 变更声明\n\n\`\`\`yaml\nui_impact: ${uiImpact}\ndesign_system_mode: generated\npages:\n  - id: home\n    prototype: core-01-home.html\n    description: home\n\`\`\`\n`);
+    mergeAdmissibleProposal(slug, module).replace(/\n## 决策澄清/,
+      `\n## UI/UX 变更声明\n\n\`\`\`yaml\nui_impact: ${uiImpact}\ndesign_system_mode: generated\npages:\n  - id: home\n    prototype: core-01-home.html\n    description: home\n\`\`\`\n\n## 决策澄清`));
+  writeFileSync(join(proposalDir, 'tasks.md'), mergeAdmissibleTasks());
+  // design_system_mode=generated 要求提案目录存在非空 design-system.json（L7 fail closed）。
+  writeFileSync(join(proposalDir, 'design-system.json'), JSON.stringify({ tokens: { color: { primary: '#000' } } }));
   return proposalDir;
+}
+
+/** 剥离提案的 `> module:` 头——用于刻意构造「模块不可解析」的用例。 */
+function stripModuleHeader(proposalDir: string): void {
+  const path = join(proposalDir, 'proposal.md');
+  writeFileSync(path, readFileSync(path, 'utf-8').replace(/^> module: .*\n\n?/m, ''));
 }
 
 function writePrototype(proposalDir: string, basename: string, content: string): string {
@@ -342,9 +354,13 @@ describe('S09 切片2 — merge 命令级 hash gate 与 F3 段标记（F4 R5/R7�
 
   it('ST-S09-EX-9.1 / SMOKE-core-41: 无段标记 .md delta → merge 报错停下、不写 SPEC_MERGED', () => {
     scaffoldProject(root);
+    registerCoreModule(root);
     const proposalDir = join(root, 'logos', 'changes', 'badmd');
     mkdirSync(join(proposalDir, 'deltas', 'prd', '2-product-design', '1-feature-specs'), { recursive: true });
-    writeFileSync(join(proposalDir, 'proposal.md'), '# bad');
+    // 被测点是「delta 缺段标记」，故提案本身须合规——否则会先被准入预检拦下、测不到段标记门。
+    writeFileSync(join(proposalDir, 'proposal.md'), mergeAdmissibleProposal('bad'));
+    writeFileSync(join(proposalDir, 'tasks.md'), mergeAdmissibleTasks());
+    writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'badmd', module: 'core' }));
     writeFileSync(join(proposalDir, 'deltas', 'prd', '2-product-design', '1-feature-specs', 'core-01-feature-specs.md'), '# 无段标记正文，缺 ADDED/MODIFIED/REMOVED');
     expect(() => merge('badmd')).toThrow('process.exit(1)');
     expect(existsSync(join(proposalDir, 'SPEC_MERGED'))).toBe(false);
@@ -759,7 +775,9 @@ describe('S09 code-r2 F2 — module 事实源均不可解析且无 provenance �
   afterEach(() => { con.restore(); exitSpy.mockRestore(); restoreCwd(); cleanup(); });
 
   it('F2r2-1: legacy 空 marker + proposal 无 `> module:` + guard 缺失 → fail closed（不生成 MERGE_PROMPT/不写 resources/SPEC_MERGED）', () => {
-    const proposalDir = guiProject(root, 'unres1');   // 声明 ui_impact:true、proposal.md 无 module 头
+    const proposalDir = guiProject(root, 'unres1');   // 声明 ui_impact:true
+    // 本用例前提就是「proposal.md 无 `> module:` 头」——合规夹具默认带该头，此处显式剥离。
+    stripModuleHeader(proposalDir);
     rmSync(join(root, 'logos', '.openlogos-guard'), { force: true });   // guard 缺失
     writeFileSync(join(proposalDir, 'PLAN_APPROVED'), '');   // legacy 空 marker（无曾渲染证据）
     writePrototype(proposalDir, 'core-01-home.html', 'HOME');   // 存在 page-design 原型
@@ -771,6 +789,8 @@ describe('S09 code-r2 F2 — module 事实源均不可解析且无 provenance �
 
   it('F2r2-2: guard 缺 module + 无 module 头 + legacy → fail closed', () => {
     const proposalDir = guiProject(root, 'unres2');
+    // 本用例前提就是「proposal.md 无 `> module:` 头」——合规夹具默认带该头，此处显式剥离。
+    stripModuleHeader(proposalDir);
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'unres2' }));   // 无 module
     writeFileSync(join(proposalDir, 'PLAN_APPROVED'), '');
     writePrototype(proposalDir, 'core-01-home.html', 'HOME');

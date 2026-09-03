@@ -19,7 +19,7 @@ import {
   resolveModifiedSectionKeys,
 } from '../src/lib/change-lint.js';
 import { parseTestCaseIds, extractStructuredTestIds } from '../src/lib/proposal-lifecycle.js';
-import { makeTempRoot, scaffoldProject, withCompleteClarification } from './helpers.js';
+import { makeTempRoot, scaffoldProject, withCompleteClarification, mergeAdmissibleProposal, mergeAdmissibleTasks, registerCoreModule } from './helpers.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_ROOT = resolve(HERE, '..');
@@ -65,6 +65,7 @@ function setupProject(o: StOpts = {}): { root: string; slug: string; dir: string
   const { root, cleanup } = makeTempRoot();
   cleanups.push(cleanup);
   scaffoldProject(root, { locale: 'zh' });
+    registerCoreModule(root);
   const slug = 'feat';
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
     modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', product_type: 'cli' }],
@@ -709,7 +710,7 @@ describe('S37 — ST 场景测试', () => {
     const { root, slug, dir } = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: BAD_DELTA, target: { rel: SMOKE_REL, content: SMOKE_TARGET } });
     const r = spawnCli(root, ['merge', slug]);
     expect(r.status).toBe(1);
-    expect(r.stderr).toContain('守恒');
+    expect(r.stderr).toContain('delta_implicit_id_removal');
     expect(r.stderr).toContain('delta_implicit_id_removal');
     expect(existsSync(join(dir, 'MERGE_PROMPT.md'))).toBe(false);
     expect(existsSync(join(dir, 'MERGE_PROMPT_GENERATED'))).toBe(false);

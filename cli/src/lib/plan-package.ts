@@ -60,7 +60,10 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
   }
   const codeItems = extractTaskSectionItems(tasksContent, 'code');
   const specWorkStarted = (sections?.delta?.checked ?? 0) > 0 || countMergeableDeltaFiles(proposalDir) > 0;
-  if (!historical && !specComplete && !specWorkStarted && codeItems.length > 0) {
+  // §四十一.4：「[code] 是否已填」只有一个判据。此前这里用裸 codeItems.length，而 §12.7 的
+  // auto-reset 以 isTasksCodeFilled 为准（它排除 CODE_SECTION_PLACEHOLDERS）。两者对「重置后的
+  // 占位」给出相反结论——自愈产物被本门判为违规，构成门禁不可满足。改用同一权威判据。
+  if (!historical && !specComplete && !specWorkStarted && isTasksCodeFilled(tasksContent)) {
     taskIssues.push(taskIssue('tasks_code_entry_before_spec_complete', tasksRel, 'spec-complete 前 [code] 不得出现 checkbox 切片。', '删除 [code] 下的条目，仅保留空标题。', { section_id: 'code', actual: String(codeItems.length), expected: '0' }));
   }
   if (!historical && deployment.deployment_decision_conflict) {

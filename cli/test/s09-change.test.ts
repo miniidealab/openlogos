@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, mergeAdmissibleProposal, mergeAdmissibleTasks, registerCoreModule } from './helpers.js';
 import { scanDeltas } from '../src/commands/merge.js';
 import { change } from '../src/commands/change.js';
 import { merge } from '../src/commands/merge.js';
@@ -215,6 +215,7 @@ describe('S09 Scenario Tests — change command', () => {
   beforeEach(() => {
     ({ root, cleanup } = makeTempRoot());
     scaffoldProject(root);
+    registerCoreModule(root);
     restoreCwd = mockCwd(root);
     con = captureConsole();
     exitSpy = mockProcessExit();
@@ -300,7 +301,8 @@ describe('S09 Scenario Tests — change command', () => {
     mkdirSync(join(changePath, 'deltas', 'prd'), { recursive: true });
     mkdirSync(join(changePath, 'deltas', 'spec'), { recursive: true });
     mkdirSync(join(changePath, 'deltas', 'reference'), { recursive: true });
-    writeFileSync(join(changePath, 'proposal.md'), '# Delta Only');
+    writeFileSync(join(changePath, 'proposal.md'), mergeAdmissibleProposal('Delta Only'));
+    writeFileSync(join(changePath, 'tasks.md'), mergeAdmissibleTasks());
     writeFileSync(join(changePath, 'deltas', 'prd', 'update.md'), '# PRD delta');
     writeFileSync(join(changePath, 'deltas', 'spec', 'workflow.md'), '# Spec delta');
     writeFileSync(join(changePath, 'deltas', 'reference', 'todo.md'), '# Reference note');
@@ -421,6 +423,7 @@ describe('S09 Scenario Tests — merge command', () => {
   beforeEach(() => {
     ({ root, cleanup } = makeTempRoot());
     scaffoldProject(root);
+    registerCoreModule(root);
     restoreCwd = mockCwd(root);
     con = captureConsole();
     exitSpy = mockProcessExit();
@@ -436,7 +439,8 @@ describe('S09 Scenario Tests — merge command', () => {
   it('ST-S09-05: generate MERGE_PROMPT.md with delta summary', () => {
     const changePath = join(root, 'logos', 'changes', 'fix-bug');
     mkdirSync(join(changePath, 'deltas', 'prd'), { recursive: true });
-    writeFileSync(join(changePath, 'proposal.md'), '# Fix Bug Proposal\n\nContent here.');
+    writeFileSync(join(changePath, 'proposal.md'), mergeAdmissibleProposal('Fix Bug Proposal'));
+    writeFileSync(join(changePath, 'tasks.md'), mergeAdmissibleTasks());
     // proposal-ui-ux-first F3：.md delta 须含 ADDED/MODIFIED/REMOVED 段标记（否则 merge 拒绝、防静默覆盖）
     writeFileSync(join(changePath, 'deltas', 'prd', 'update.md'), '## ADDED — PRD update\n\nContent.');
 
@@ -459,7 +463,8 @@ describe('S09 Scenario Tests — merge command', () => {
     mkdirSync(join(changePath, 'deltas', 'prd', '1-product-requirements'), { recursive: true });
     mkdirSync(join(changePath, 'deltas', 'prd', '3-technical-plan', '2-scenario-implementation'), { recursive: true });
     mkdirSync(join(changePath, 'deltas', 'test'), { recursive: true });
-    writeFileSync(join(changePath, 'proposal.md'), '# Fix Flow Proposal');
+    writeFileSync(join(changePath, 'proposal.md'), mergeAdmissibleProposal('Fix Flow Proposal'));
+    writeFileSync(join(changePath, 'tasks.md'), mergeAdmissibleTasks());
     // proposal-ui-ux-first F3：.md delta 须含 ADDED/MODIFIED/REMOVED 段标记
     writeFileSync(join(changePath, 'deltas', 'prd', '1-product-requirements', '01-req.md'), '## ADDED — Req\n\nreq');
     writeFileSync(join(changePath, 'deltas', 'prd', '3-technical-plan', '2-scenario-implementation', 'S01.md'), '## ADDED — Scenario\n\nscenario');
@@ -485,7 +490,8 @@ describe('S09 Scenario Tests — merge command', () => {
   it('ST-S09-07: no delta files → writes no-delta SPEC_MERGED marker without MERGE_PROMPT', () => {
     const changePath = join(root, 'logos', 'changes', 'empty');
     mkdirSync(join(changePath, 'deltas', 'prd'), { recursive: true });
-    writeFileSync(join(changePath, 'proposal.md'), '# Empty');
+    writeFileSync(join(changePath, 'proposal.md'), mergeAdmissibleProposal('Empty'));
+    writeFileSync(join(changePath, 'tasks.md'), mergeAdmissibleTasks());
 
     merge('empty');
 
@@ -514,6 +520,7 @@ describe('S09 Scenario Tests — archive command', () => {
   beforeEach(() => {
     ({ root, cleanup } = makeTempRoot());
     scaffoldProject(root);
+    registerCoreModule(root);
     restoreCwd = mockCwd(root);
     con = captureConsole();
     exitSpy = mockProcessExit();
@@ -668,6 +675,7 @@ describe('S09 Unit Tests — Windows archive watcher protocol（注入式）', (
   beforeEach(() => {
     ({ root, cleanup } = makeTempRoot());
     scaffoldProject(root);
+    registerCoreModule(root);
   });
 
   afterEach(() => cleanup());
@@ -944,6 +952,7 @@ describe('S09 Scenario Tests — Windows archive watcher handshake（macOS 注�
   beforeEach(() => {
     ({ root, cleanup } = makeTempRoot());
     scaffoldProject(root);
+    registerCoreModule(root);
     con = captureConsole();
     exitSpy = mockProcessExit();
   });

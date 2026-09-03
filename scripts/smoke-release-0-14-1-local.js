@@ -217,10 +217,31 @@ function transactionFixture(label) {
   ].join('\n'));
   put(root, `logos/changes/${slug}/${featureDelta}`, '## ADDED — F02 Smoke 公共合同功能\n\n安装态功能 slot。\n');
   put(root, `logos/changes/${slug}/${scenarioDelta}`, '## ADDED — S19 Smoke 安装态分支\n\n安装态场景 slot。\n');
-  put(root, `logos/changes/${slug}/${testDelta}`, '## ADDED — S19 Smoke 用例扩展\n\n安装态测试 slot。\n');
+  // 需带真实结构化 ID 表——否则 L3 判 code_change_requires_real_test_ids。
+  put(root, `logos/changes/${slug}/${testDelta}`,
+    '## ADDED — S19 Smoke 用例扩展\n\n| ID | 描述 |\n|---|---|\n| UT-S19-90 | 安装态测试 slot |\n');
   put(root, `logos/changes/${slug}/proposal.md`, [
+    // 0.14.9 起 merge 准入等于 change-lint 完整结论：夹具提案须补齐 canonical 章节、
+    // 决策澄清与 Authority Impact，否则会在准入预检被拦下、测不到公共消费者合同。
     '# 0.14.1 安装态公共合同 smoke', '', '> module: core', '',
-    '## 部署影响', '', '- 是否需要部署：否', '- 是否需要 smoke：否', '',
+    '## 变更原因', '', '验证安装态公共消费者合同。', '',
+    '## 变更类型', '', '需求级变更。', '',
+    '## 变更范围', '', '- 临时 fixture。', '',
+    '## 部署影响', '',
+    '- 是否需要部署：否', '- 部署原因：仅临时 fixture', '- 影响环境：无',
+    '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
+    '## 变更概述', '', '临时 fixture 验证公共合同。', '',
+    '## Authority Impact', '', '```yaml',
+    'authority_impact:', '  schema: openlogos/authority-impact@1',
+    '  applicability: not_applicable', '  evidence: [纯 smoke fixture，不改变事实归属]', '```', '',
+    '## 决策澄清', '', '```yaml',
+    'schema: openlogos/clarification@1', 'mode: provided', 'status: complete', 'impacts:',
+    '  data: {status: none, reason: 无数据影响}',
+    '  compatibility: {status: none, reason: 无兼容选择}',
+    '  security_privacy: {status: none, reason: 无安全隐私影响}',
+    '  public_release: {status: none, reason: 无公开发布}',
+    '  external_commitment: {status: none, reason: 无外部承诺}',
+    'decisions: []', 'unresolved: []', 'defaults: []', '```', '',
     '## 基线闭包计划', '', '```yaml',
     'baseline_closure:', '  policy: on-touch-v1', '  schema_version: 1',
     '  unit: canonical-merge-target-path', '  delta_cardinality: exactly-one-per-non-skip-target',

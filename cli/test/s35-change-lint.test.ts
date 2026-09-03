@@ -12,7 +12,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification, mergeAdmissibleProposal, mergeAdmissibleTasks, registerCoreModule } from './helpers.js';
 import {
   parseTestCaseIds, extractStructuredTestIds, classifyTestEvidenceStage, evaluateTestIdEvidence,
   hasRealTestIdsForProposal, parseReuseDeclaration, detectProposalStep,
@@ -88,6 +88,7 @@ function setup(o: SetupOpts = {}): { root: string; dir: string; slug: string } {
   const { root, cleanup } = makeTempRoot();
   cleanups.push(cleanup);
   scaffoldProject(root, { locale: 'zh' });
+    registerCoreModule(root);
   const slug = o.slug ?? 'feat';
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
     modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', product_type: o.productType ?? 'cli' }],
@@ -642,7 +643,12 @@ describe('S35 — L5/L6', () => {
     expect(rFifo.status).toBe(2);
     expect(JSON.parse(rFifo.stdout.trim()).data.violations.map((v: { code: string }) => v.code)).toContain('delta_path_invalid');
     const rFifoMerge = spawnCli(fifo.root, ['merge', 'feat']);
-    expect(rFifoMerge.status).toBe(0); // 无可消费 delta → no-delta 早退（与变更前 isFile 过滤后的行为一致）
+    // 0.14.9 起 merge 准入等于 change-lint 完整结论：lint 判 delta_path_invalid（exit 2），merge 同拒。
+    // 此前 merge 把它当「无可消费 delta」静默 no-delta 早退并写 SPEC_MERGED——lint 说不合格、merge 说合格，
+    // 正是本次消除的分歧。非法 delta 路径不得静默变成 spec-complete。
+    expect(rFifoMerge.status).not.toBe(0);
+    expect(`${rFifoMerge.stdout}${rFifoMerge.stderr}`).toContain('delta_path_invalid');
+    expect(existsSync(join(fifo.dir, 'SPEC_MERGED'))).toBe(false);
     expect(existsSync(join(fifo.dir, 'MERGE_PROMPT.md'))).toBe(false); // pipe.yaml 绝不进入消费清单
     // 既有边界内普通文件 symlink 零漂移对照：仍 mergeable + valid（防修复过度收紧）
     const okSym = setup({ proposal: proposalMd({ codeRequired: false }) });
@@ -879,7 +885,7 @@ describe('S35 — 同源锚与契约', () => {
     expect(codesOf(lintViolations(root).violations)).toContain('delta_template_skeleton');
     const restore = mockCwd(root); const cap = captureConsole(); const ex = mockProcessExit();
     try { merge('feat'); } catch { /* exit(1) */ } finally { cap.restore(); ex.mockRestore(); restore(); }
-    expect(cap.errors.join('\n')).toContain('模板占位字面量未替换');
+    expect(cap.errors.join('\n')).toContain('delta_template_skeleton');
     expect(existsSync(join(dir, 'SPEC_MERGED'))).toBe(false);
     // 分类器 mergeDisposition 与 scanDeltas 消费集合一致（unknown 不消费）——F2：scanDeltas 即分类器投影
     mkdirSync(join(dir, 'deltas', 'unknown'), { recursive: true });
@@ -1334,6 +1340,7 @@ describe('S35 — ST 场景测试', () => {
     const { root, cleanup } = makeTempRoot();
     cleanups.push(cleanup);
     scaffoldProject(root, { locale: 'zh' });
+    registerCoreModule(root);
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
       modules: [{ id: 'core', name: 'Core', lifecycle: 'launched', product_type: 'cli' }],
     }, { lineWidth: 0 }));
@@ -1356,6 +1363,7 @@ describe('S35 — ST 场景测试', () => {
       const { root, cleanup } = makeTempRoot();
       cleanups.push(cleanup);
       scaffoldProject(root, { locale: 'zh' });
+    registerCoreModule(root);
       writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
         modules: [
           { id: 'cli-mod', name: 'A', lifecycle: 'launched', product_type: 'cli' },

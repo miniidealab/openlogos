@@ -4,7 +4,6 @@ import { readLocale, t, mergePromptTemplate } from '../i18n.js';
 import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 // S35 前置重构②③⑤：段标记/模板骨架校验、delta 分类、模块归属解析改为共享判据打包调用（严禁第二份判据）。
 import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
-import { BASELINE_CLOSURE_VIOLATION_CODES, hasBaselineClosureSignal } from '../lib/baseline-closure.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
 import {
@@ -145,39 +144,39 @@ export function merge(slug?: string) {
 
   // S39 merge 纵深防御：任何 reset/UI commit/prompt/marker 写入之前，对已激活 on-touch 的提案
   // 重跑 change-lint 所消费的同一 ClosureEvaluator。legacy（无声明且 tasks 无模式）不得被 L9
-  // 凭空激活；激活判据同样来自 baseline-closure 单点，调用方不复制 YAML/task 正则。
-  let closureActive = false;
-  try {
-    const proposalBytes = existsSync(join(changePath, 'proposal.md'))
-      ? readFileSync(join(changePath, 'proposal.md'), 'utf-8') : '';
-    const tasksBytes = existsSync(join(changePath, 'tasks.md'))
-      ? readFileSync(join(changePath, 'tasks.md'), 'utf-8') : '';
-    closureActive = hasBaselineClosureSignal(proposalBytes, tasksBytes);
-  } catch {
-    console.error('Error: merge 前无法读取 proposal.md/tasks.md 以判定 on-touch 闭包（artifact_unreadable）。');
+  // §12.7 的 auto-reset 必须**先于**准入判定：提前填充的 [code] 正是本流程设计来自动自愈的状态
+  // （幂等、旧内容备份到 CODE_AUTORESET、不阻断）。若把合规门放在自愈之前，就会拒绝流程本该
+  // 自动修好的东西——那是真误伤，而非提案不合规（架构 §四十一.6.3）。
+  resetCodeSection(changePath, 'merge', locale);
+
+  // §2.51.2 / 架构 §四十一.6.1：merge 的准入判定**等于** change-lint 的完整结论。
+  //
+  // 此前这里有两处缩水：① 用 hasBaselineClosureSignal 决定要不要预检——没有 baseline_closure
+  // 声明或 [MODIFY]/[CREATE] 标记的提案整道预检不做；② 即使做了，也只保留
+  // BASELINE_CLOSURE_VIOLATION_CODES 共 9 个码，L10 的 authority 违规与 L0～L7 全部被丢弃。
+  // 于是 change-lint 判 FAIL 并点名具体测试 ID 的提案，在这里被照常放行。
+  //
+  // 另一条 apply 路径（merge-apply.ts）本就是「violations 非空即拒绝」——两条准入路径对同一提案
+  // 给出不同结论，正是「消费方自建缩水副本」这一分裂形态。现收敛为同一判据。
+  const preflight = runChangeLint(root, changePath, slug);
+  if (!preflight.ok) {
+    const prefix = preflight.errorCode === 'module_unresolved' ? '模块归属无法解析；' : '';
+    console.error(`Error: ${prefix}merge 前合规预检无法完成（${preflight.errorCode}）：${preflight.message}`);
     console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
     process.exit(1);
   }
-  if (closureActive) {
-    const closurePreflight = runChangeLint(root, changePath, slug);
-    if (!closurePreflight.ok) {
-      const prefix = closurePreflight.errorCode === 'module_unresolved' ? '模块归属无法解析；' : '';
-      console.error(`Error: ${prefix}merge 前闭包预检无法完成（${closurePreflight.errorCode}）：${closurePreflight.message}`);
-      console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
-      process.exit(1);
+  if (preflight.violations.length > 0) {
+    console.error(`Error: change-lint 未通过（${preflight.violations.length} 项违规），拒绝 merge：`);
+    // §2.51.5：逐条可归因——每条单独输出 code / 路径 / 具体字段 / fix_hint，禁止只给聚合结论。
+    for (const v of preflight.violations) {
+      console.error(`  - [${v.code}] ${v.path}：${v.message}`);
+      if (v.fix_hint) console.error(`      修复：${v.fix_hint}`);
     }
-    const closureCodes = new Set<string>(BASELINE_CLOSURE_VIOLATION_CODES);
-    const closureViolations = closurePreflight.violations.filter(v => closureCodes.has(v.code));
-    if (closureViolations.length > 0) {
-      console.error('Error: on-touch 基线闭包未通过，拒绝 merge：');
-      for (const v of closureViolations) console.error(`  - [${v.code}] ${v.path}：${v.message}`);
-      console.error('  未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index；按 fix_hint 修复后重试。');
-      process.exit(1);
-    }
+    console.error('  未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+    console.error('  自查命令：openlogos change-lint --slug ' + slug + '（其结论与本准入判定同源）');
+    process.exit(1);
   }
 
-  // enforce-slice-stage-ordering §12.7：进入 slice 前 auto-reset 提前填充的 [code]（有 delta 提案落点，trigger:"merge"；幂等，已占位则不动）
-  resetCodeSection(changePath, 'merge', locale);
 
   const deltasDir = join(changePath, 'deltas');
   let deltas: DeltaFile[];
