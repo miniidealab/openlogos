@@ -123,24 +123,49 @@
 
 ## 硬性交付门：openlogos change-lint（切片产出完成后强制）
 
-> change-lint-shift-left 起，切片规划的交付自检升格为**机器硬门**：`[code]` 切片写入 `tasks.md` 完毕后、报告完成前，必须通过 change-lint。
+**本节标题保留原名以锚定既有章节；实际交付门已由 `change-lint` 自查改为事务 `seal`。**
+
+> 切片规划的交付门由**事务 seal** 承担。此前由本 Skill 自行运行 `change-lint` 作为「机器硬门」——但那道门由被检查者自己运行，属自查而非门（架构 §四十三.2）。
 
 **规则（强制）**：
 
-1. 切片清单写入 `tasks.md` 后运行：
-   ```bash
-   cd <项目根目录> && openlogos change-lint
-   ```
-2. **exit 0 才可交付**——才允许报告切片规划完成、把控制权交回 driver 或用户。
-3. **exit 2（检查红）**：按每条 violation 的 fix_hint 逐条修复后重跑，直至 exit 0；禁止带红交付。常见红项：`[code]` 切片引用的测试 ID 含占位/通配写法（L3 拒绝采信——切片必须引用 merge 后规格中的**真实** UT/ST/SMOKE ID）、切片任务误写进 `[delta]`/`[deploy]` 导致结构异常（L1/L5）。
-4. **exit 1（操作错误）**：按 stderr message 排障后重跑。
-5. 该命令只读、非人类确认点；通过 lint **不**等于通过 slice-exit 门——删后续证伪门与用户批准仍按既有流程执行。
+1. 两个 slot 提交完毕后，事务进入 `ready`；执行 `openlogos slice transaction seal` 冻结内容。
+2. **seal 成功才可继续**——seal 会校验 slot 内容的结构合法性与 ID 真实性；失败时按诊断逐条修复后重新 `submit-content`。
+3. 常见拒绝原因：切片引用的测试 ID 含占位/通配写法（必须引用 merge 后规格中的**真实** UT/ST/SMOKE ID）；`slice_id` 格式非法；同一 ID 被多片 owned；变更 ID 未被任何切片 owned。
+4. `apply` 成功后事务转 `completed` 并产出 receipt，两个产物此时才落盘。
+5. 事务 `completed` **不**等于通过 slice-exit 门——删后续证伪门的结论仍需写入 `slot_codesection`，用户批准仍按既有流程执行。
+
+不再要求 slice-planner 自行运行 `change-lint` 作为交付前提；该命令仍可作为只读自查随时使用，但它不是门。
 
 ## 测试—切片 manifest 生产与恢复职责
 
 ### 交付物扩展
 
-slice-planner 在 spec-complete 后不再只写 `tasks.md` 的 `[code]` section；凡代码提案包含两个及以上顶层切片，还必须在活跃提案根目录原子生成 `TEST_SLICE_MANIFEST.json`。`[code]` 与 manifest 必须在同一轮规划中共同收敛，任一无效均不得报告完成。
+slice-planner 是切片内容的**生产者**，不是产物的**写入者**。
+
+spec-complete 后，slice-planner 不再直接写 `tasks.md` 的 `[code]` section，也不再自行生成 `TEST_SLICE_MANIFEST.json`。两个产物由 `openlogos slice transaction apply` 在同一事务中原子写出（根规范 `spec/test-slice-manifest.md` §2.1、架构 §四十三.1）。
+
+交付路径改为向 content slot 提交内容：
+
+| slot id | 提交内容 |
+|---|---|
+| `slot_codesection` | 每片的 `task_text`，以及六维打分与删后续证伪门的逐片结论 |
+| `slot_slices` | 每片的 `slice_id`、`owned_test_ids`、`runner_selectors`、`spec_targets` |
+
+命令：
+
+```bash
+openlogos slice transaction submit-content --slot slot_codesection --file <path>
+openlogos slice transaction submit-content --slot slot_slices --file <path>
+openlogos slice transaction seal
+openlogos slice transaction apply
+```
+
+**`[code]` 与 manifest 的原子一致性由事务保证，不再由本 Skill 的纪律维持。** 任一 slot 内容非法，`submit-content` 即拒绝并点名字段；`apply` 中途失败整体回滚，两产物同时存在或同时不存在。
+
+`task_fingerprint` 由 OpenLogos 依其自己写出的 `tasks.md` 计算——**不要在 slot 内容中提供任何指纹**，提供了也不会被采信。
+
+恢复场景（manifest missing / invalid / stale）由 OpenLogos 创建 `origin=manifest-recovery` 事务，`required` 收窄为仅 `slot_slices`，`[code]` 段冻结。**不要在恢复事务中重新划分切片**——切片划分本身没有问题，问题只在 manifest 失效。
 
 ### 初次生成模式
 

@@ -224,3 +224,102 @@ sequenceDiagram
 - 需求：AC-MERGEGATE-08、AC-MERGEGATE-09。
 - 功能规格：§2.51.7；架构：§四十一.6.1。
 - 测试：UT-S32-50～UT-S32-51、ST-S32-17。
+
+## S32 切片产物经事务原子落盘
+
+### 场景目标
+
+把切片规划的两个 canonical 产物——`tasks.md` 的 `## [code]` 段与 `TEST_SLICE_MANIFEST.json`——从 Agent 直接写文件，改为向事务 content slot 提交内容、由 OpenLogos 在同一次 apply 中原子写出。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| A | slice-planner Agent | 生产切片划分内容，只能 `submit-content` |
+| T | 切片事务 | 状态机、slot 校验、seal/apply |
+| W | 产物写入器 | `writeTestSliceManifestAtomic()` 与 `[code]` 整节替换 |
+| V | `deriveSliceVerificationState()` | manifest 合法性判定 |
+
+前置：提案已 spec-complete（`SPEC_MERGED` 或 legacy `MERGED`）；测试 ID 已定；同一提案同时至多一个活跃切片事务。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant A as slice-planner Agent
+    participant T as 切片事务
+    participant W as 产物写入器
+    participant V as 合法性判定
+
+    A->>T: Step 1: 创建事务（origin=initial-plan）
+    T-->>A: Step 2: 投影——required=2，missing=[slot_codesection, slot_slices]
+    A->>T: Step 3: submit-content --slot slot_codesection（task_text + 打分/证伪结论）
+    A->>T: Step 4: submit-content --slot slot_slices（slice_id / owned_test_ids / runner_selectors / spec_targets）
+    T->>T: Step 5: 两 slot 收齐 → phase=ready
+    A->>T: Step 6: seal
+    T->>T: Step 7: 冻结内容并产出 seal_sha256 → phase=sealed
+    A->>T: Step 8: apply
+    T->>W: Step 9: 整节替换 tasks.md 的 [code] 段
+    T->>T: Step 10: 依**刚写出的** tasks.md 计算 task_fingerprint
+    T->>W: Step 11: 原子写 TEST_SLICE_MANIFEST.json
+    alt 任一步失败
+        T->>W: Step 12a: 回滚已写部分
+        T-->>A: Step 13a: phase=failed + 可归因诊断；两产物同时不存在
+    else 全部成功
+        T->>V: Step 12b: 复核 manifest 合法性
+        T-->>A: Step 13b: phase=completed + receipt
+    end
+```
+
+### 步骤说明
+
+- **Step 3/4 是 Agent 唯一的写动作**。`[code]` 段、manifest、receipt 与 marker 一律由 OpenLogos 写入。
+- **Step 9 为整节替换**：只替换 `## [code]` 段，`[delta]` / `[deploy]` 段及其既有 checkbox 状态字节恒等。
+- **Step 10 是本场景的关键**：指纹由 OpenLogos 依其**自己刚写出**的 `tasks.md` 计算，不接受 Agent 提供。写入者与指纹计算者是同一方、同一时刻，漂移窗口从构造上消失（架构 §四十三.2）。
+- **Step 12a 无半写态**：两产物同时存在或同时不存在。
+- **Step 12b 是复核而非首次判定**：合法性判据仍是既有的 `deriveSliceVerificationState()`，不新建第二套。
+
+### 恢复事务的差异
+
+| | initial-plan | manifest-recovery |
+|---|---|---|
+| 触发 | 首次切片规划 | `deriveSliceVerificationState()` 判 missing / invalid / stale |
+| required slots | `slot_codesection` + `slot_slices` | 仅 `slot_slices` |
+| `[code]` 段 | 由本事务写出 | **冻结，拒绝改写** |
+
+`[code]` 冻结是硬约束：切片划分本身没问题，问题只在 manifest 失效；改写 `[code]` 会把一次修复变成一次重新规划，并使既有 checkpoint 失去意义。
+
+### 复用边界
+
+不新建第二套判据或写入器：
+
+| 复用 | 此前状态 |
+|---|---|
+| `writeTestSliceManifestAtomic()` | 已导出，**调用方 0 处** |
+| `extractChangedTestIds()` | 已导出，**调用方 0 处** |
+| `deriveSliceVerificationState()` | 11 处消费 |
+| `computeTaskFingerprint()` / `computeSpecFingerprint()` | 各 1 处消费 |
+
+前两项正是本场景要接出来的能力，而非重新实现。
+
+### 不变量
+
+1. **写入权唯一**：两产物的字节只由 apply 写出；不存在 Agent 直接写它们的可用路径（架构 §四十三.1）。
+2. **原子性由构造保证**：两产物同时成功或同时回滚，无半写态（架构 §四十三.2）。
+3. **指纹自算**：`task_fingerprint` 不接受外部提供。
+4. **整节守恒**：`[code]` 之外的段与 checkbox 状态字节恒等。
+5. **恢复不改划分**：`manifest-recovery` 下 `[code]` 段字节恒等。
+6. **单活跃事务**：同一提案同时至多一个活跃切片事务。
+
+### 异常与边界
+
+- slot 内容结构非法：`submit-content` 拒绝并点名字段，事务停留在 `collecting`。
+- seal 后再提交内容：动作不在 `allowed_actions` 中，被拒且无副作用。
+- apply 后重复 apply：幂等，返回既有 receipt，不重复写入。
+- 提案未 spec-complete 即创建事务：拒绝，理由指向 spec-complete 前置。
+
+### 追溯
+
+- 需求：AC-SLICETX-03～07、AC-SLICETX-10。
+- 功能规格：§2.53.3～§2.53.6、§2.53.8；架构：§四十三.1、§四十三.2。
+- 测试：UT-S32-52～UT-S32-58、ST-S32-18～ST-S32-19；安装态 SMOKE-core-175。

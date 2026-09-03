@@ -322,3 +322,16 @@ UT-S19-24～25、ST-S19-16逐ID写`test-results.jsonl`。真实npm命令、tarba
 
 - AC-MERGEGATE-10 候选 runner 留痕普遍要求与防遗漏：UT-S19-33、ST-S19-19。
 - 场景：S19 候选 runner 留痕契约的普遍化与元测试；功能规格：§2.51.8；架构：§四十一.6.2。
+
+## S19 切片事务 smoke runner 契约测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S19-34 | 新 runner 已注册且实现留痕契约 | 留痕契约 | 已加载 `scripts/run-smoke.js` 的三处注册表 | 断言切片事务 runner 在 `hostArtifacts` / `globalMutatingRunners` / `globalCandidateRunners` 均已登记，并调用 `requireEnvOrSkip`、具备 `--self-test` 只读入口 | 三处均登记；缺制品时以成功状态退出并写唯一一条带缺失项的 `skip`；不得依靠通配发现后无条件 PASS。该断言由既有 runner 契约元测试的同一判据覆盖 |
+
+### 追溯与覆盖
+
+- AC-SLICETX-12 安装态验证的 runner 前置：UT-S19-34。
+- 场景：S19 切片事务的安装态覆盖要求；功能规格：§2.53.9；架构：§四十三.4。

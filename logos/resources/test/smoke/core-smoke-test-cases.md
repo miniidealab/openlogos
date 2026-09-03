@@ -1006,3 +1006,48 @@
 - 功能规格：§2.52；架构：§四十二。
 - 场景：S35、S39；UT/ST：UT-S39-59～64、ST-S39-28、UT-S35-132～133、ST-S35-25。
 - 部署方案：OpenLogos 0.14.10 SQL 分层校验本机全局部署方案。
+
+## OpenLogos 0.14.11 测试切片事务安装态 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.11` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-175` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.11`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建任何 marker**，**不得手工写 `tasks.md` 的 `[code]` 段或 `TEST_SLICE_MANIFEST.json`**——手工写正是本次要消除的旧路径，用它构造前提会使本用例失去意义。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-175 | 0.14.11 测试切片事务全链与原子回滚 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② 命令面随包可用：从全局入口跑 `slice transaction status`，核对 envelope 的 `schema_sha256` / `contract_sha256` 与冻结值；③ **initial-plan 全链**：临时 launched 项目构造 spec-complete 提案，两次 `submit-content` → `seal` → `apply`；④ 核对两产物同时存在、`task_fingerprint` 与实际 `[code]` 段一致、`[delta]`/`[deploy]` 段字节恒等；⑤ **apply 中途失败整体回滚**：注入失败后核对两产物同时不存在、phase=failed；⑥ **manifest-recovery 全链**：构造 manifest 失效态，经 `next` 取恢复事务投影、提交 `slot_slices` 后 apply，核对 `required=1` 且 `[code]` 段字节恒等；⑦ 归档只读：对归档提案尝试五个写动作；⑧ 旧路径不可用：核对安装态下不存在让外部直接写两产物的命令或入口；⑨ 演练 `0.14.10→0.14.11→0.14.10→0.14.11` 并复核每阶段 identity 与 ③⑥ 的结论 | ② 契约哈希逐字一致；③④ apply 后两产物落盘且一致，非 `[code]` 段字节恒等；⑤ **两产物同时不存在，无半写态**——失败即整体 FAIL；⑥ 恢复事务 `required=1`、`[code]` 字节恒等、仅 manifest 被重写；⑦ 五个写动作均被拒且无副作用；⑧ 无可用旧入口；⑨ 往返无混装且结论不变；全程未触碰临时项目之外的任何文件，无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-175`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须写显式 `skip` 记录并携带缺失项，禁止静默零记录退出——沿用既有的不适用留痕契约。
+3. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、`schema_sha256` 与 `contract_sha256` 实测值、③ 各阶段 phase 序列、④ 两产物路径与指纹一致性结论、⑤ 回滚后两产物的存在性、⑥ 恢复事务的 `required` 与 `[code]` 段哈希前后对比、⑦ 五个写动作的拒绝码、⑧ 旧入口核查依据、⑨ 回滚每阶段 identity。
+4. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+5. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-175` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ⑤ 失败直接 FAIL**：回滚留下半写态意味着原子性未由构造保证，是本次修复的核心目标落空，不得以「其余步骤都过」为由记 pass。
+- 观察到步骤 ③ 或 ⑥ 中 runner 手工写 `[code]` 段或 manifest，直接 FAIL——那会把被测能力换成旧路径。
+- 观察到步骤 ⑧ 仍存在可用旧入口，直接 FAIL；**写入权归位与原子性保证必须同时成立**，缺一即判失败。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ③ 或 ⑤ 失败：立即以固定 `0.14.10` 回滚并报告触发条件——切片流程是本仓自身的关键路径，不得带伤运行。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.10` 并报告环境状态；未证明全旧或全新时阻断后续动作。
+- 不得为让断言通过而手工写产物、放宽 slot 校验或改写用户正式文档。
+
+### 追溯
+
+- 需求：AC-SLICETX-01～12。
+- 功能规格：§2.53；架构：§四十三。
+- 场景：S09、S13、S19、S28、S32；UT/ST：UT-S32-52～58、ST-S32-18～19、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34。
+- 部署方案：OpenLogos 0.14.11 测试切片事务本机全局部署方案。

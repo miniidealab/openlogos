@@ -3004,3 +3004,73 @@ authority_cutover_unclosed
 ### 兼容
 
 既有字段、exit code 和 envelope 不改名。合法 not_applicable 返回 facts/projections/retired/unresolved 全 0、`pass:true`；required malformed 不得降级为 not_applicable。text 输出与 JSON 使用同一 issue 集合。
+
+## openlogos/test-slice-transaction@1 公共合同
+
+### 适用范围
+
+`openlogos slice transaction` 命令族的 JSON envelope 合同。跨仓消费方以 `schema_sha256` 与 `contract_sha256` **精确匹配**消费；缺失投影一律结构化 fail closed，**不得**保留任何回退旧链的分支。
+
+形状与语义沿用已闭环的 `openlogos/merge-transaction@1`，不另发明状态机。
+
+### 投影字段
+
+```json
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_...",
+  "slug": "example-change",
+  "module": "core",
+  "phase": "collecting",
+  "origin": "initial-plan",
+  "classification": null,
+  "retryable": false,
+  "allowed_actions": ["submit_content", "abort"],
+  "next_action": "submit_content",
+  "spec_fingerprint": "sha256:...",
+  "changed_test_ids_sha256": "sha256:...",
+  "content_slots": {
+    "required": 2,
+    "submitted": 0,
+    "missing_slot_ids": ["slot_codesection", "slot_slices"]
+  },
+  "violations": [],
+  "receipt": null
+}
+```
+
+| 字段 | 取值与约束 |
+|---|---|
+| `phase` | `collecting \| ready \| sealed \| applying \| completed \| failed` |
+| `origin` | `initial-plan \| manifest-recovery` |
+| `allowed_actions` | 当前 phase 下允许的动作子集；不在其中的动作被拒并回传本字段 |
+| `content_slots.required` | `initial-plan` 为 2；`manifest-recovery` 收窄为 1（仅 `slot_slices`） |
+| `transaction_id` | `stx_` 前缀；由 OpenLogos 铸造，消费方不得自算 |
+| `receipt` | 仅 `completed` 时非空；含产物路径与哈希 |
+
+### 命令面
+
+| 命令 | 性质 | 归档提案 |
+|---|---|---|
+| `openlogos slice transaction status` | 只读 | 放行 |
+| `openlogos slice transaction submit-content --slot <id> --file <path>` | 写 | 拒绝 |
+| `openlogos slice transaction seal` | 写 | 拒绝 |
+| `openlogos slice transaction apply` | 写 | 拒绝 |
+| `openlogos slice transaction recover` | 写 | 拒绝 |
+| `openlogos slice transaction abort` | 写 | 拒绝 |
+
+Agent 只能 `submit-content`；`tasks.md` 的 `[code]` 段、`TEST_SLICE_MANIFEST.json`、receipt 与 marker 一律由 OpenLogos 写入。
+
+### 契约哈希
+
+成功 envelope 必须继续公开 `schema_sha256` 与 `contract_sha256`。跨仓消费方在任何写动作前校验二者精确匹配；不匹配即 fail closed，不得降级消费。
+
+### 至多一次的责任划分
+
+| 保证 | 责任方 | 载体 |
+|---|---|---|
+| 同一提案同时至多一个活跃切片事务 | OpenLogos | 事务文件 + phase 状态机 |
+| 同一事务的产物至多写入一次 | OpenLogos | `apply` 幂等 + receipt |
+| 同一 `transaction_id` 至多一次物理派发 / 投喂 / 额度 | 宿主 | 宿主既有 WorkUnit 账本，**键为 canonical `transaction_id`** |
+
+第三行留在宿主——OpenLogos 不知道终端投喂与额度。但宿主不再需要自建账本或自算身份，只是把 canonical id 当作既有账本的键。

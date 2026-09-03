@@ -11,12 +11,34 @@ OpenLogos 是协议判定和状态持久化的唯一事实源。slice-planner �
 | 文件 | 位置 | 唯一写入者 | 更新方式 |
 |---|---|---|---|
 | `SPEC_MERGED.test_change_set` | `logos/changes/<slug>/SPEC_MERGED` | `openlogos merge-apply` | 与 resources、metadata、marker 同一 baseline apply 事务；marker 最后写 |
-| `TEST_SLICE_MANIFEST.json` | `logos/changes/<slug>/` | slice-planner | 临时文件校验后原子 rename |
+| `TEST_SLICE_MANIFEST.json` | `logos/changes/<slug>/` | `openlogos slice transaction apply` | 与 `tasks.md` 的 `[code]` 段在同一事务中原子写出；临时文件校验后原子 rename |
+| `tasks.md` 的 `## [code]` 段 | 同上 | `openlogos slice transaction apply` | 整节替换；`[delta]` / `[deploy]` 段与其 checkbox 状态字节恒等 |
 | `SLICE_CHECKPOINTS.jsonl` | 同上 | `openlogos verify` | append-only；等价 PASS 幂等 |
 | `LOOP_ITERS` | 同上 | `openlogos verify` | 仅真实 Gate 尝试 append |
 | `VERIFY_PASS` / `VERIFY_FAIL` | 同上 | `openlogos verify` | 既有 marker 规则；PASS 仅 final |
 
 `merge-apply` 必须在掌握 category=`test` canonical targets 的 before/final 字节时生成 change set；slice-planner、verify、status、next、change-lint、宿主和 code-implementor 均只读。verify、status、next、宿主和 code-implementor 禁止写 manifest；宿主禁止写 checkpoint/marker 或从 `tasks.md`、Delta、Git 建立影子 changed-ID 清单。
+
+### 2.1 写入权与判定权同源
+
+`TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `## [code]` 段是 OpenLogos 判定切片验收前沿的两个 canonical 产物，因此**必须由 OpenLogos 自己写出**（架构 §四十三.1）。
+
+slice-planner 是这两个产物内容的**生产者**，不是**写入者**：它向 `openlogos slice transaction` 的 content slot 提交内容，正式产物、receipt 与 marker 一律由 OpenLogos 写入。此前规格把 slice-planner 记为 manifest 的唯一生产者，而 OpenLogos 虽已导出 `writeTestSliceManifestAtomic()` 却零调用方——实际写出字节的是 Agent，判定权与写入权分离。
+
+### 2.2 两产物的原子一致性
+
+manifest 的 `task_fingerprint` 是对 `tasks.md` 的 `[code]` 段求得的指纹，二者存在硬性一致性约束。该一致性**由构造保证**（架构 §四十三.2）：
+
+- 两个产物在同一次 `apply` 中写出，任一失败整体回滚，不存在半写态；
+- `task_fingerprint` 由 OpenLogos 依其**刚写出**的 `tasks.md` 计算，不接受外部提供。
+
+禁止以纪律、约定或生产者自查替代该保证。特别地，禁止由被检查者自己运行的「交付前自查」充当硬门。
+
+### 2.3 恢复事务
+
+manifest 失效（missing / invalid / stale）时，由 OpenLogos 依 `deriveSliceVerificationState()` 自身结论创建 `origin=manifest-recovery` 的切片事务，`content_slots.required` 收窄为仅切片归属内容，`[code]` 段冻结、拒绝改写。
+
+消费方不得自行判断「这是不是一次恢复」，也不得自行推导可写作用域——两者都从事务投影读出。
 
 ## 3. Manifest Schema v1
 

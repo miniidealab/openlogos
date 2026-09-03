@@ -157,3 +157,18 @@
 - [ ] 零副作用与 dispatch：UT-S28-41、UT-S28-42
 - [ ] validator 完成屏障与重算：UT-S28-43、UT-S28-44
 - [ ] 宿主恢复/重试/阻塞：ST-S28-12～ST-S28-14
+
+## S28 恢复节点创建事务测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S28-45 | 三种失效态均创建恢复事务 | Step 1→5c | 分别构造 manifest missing / invalid / stale 三种状态 | 求 `next` 的前沿 | 三种状态各创建 `origin=manifest-recovery` 事务，前沿携带 canonical `transaction_id` 与 `allowed_actions`，而非仅返回建议节点。修复前 `manifestRecoveryNode()` 只返回 `NextNode`——本用例锁的是执行权归位 |
+| UT-S28-46 | 无失效态不创建；已有事务则幂等 | Step 3a、3b | ① manifest 合法的提案；② 已有活跃恢复事务的提案 | 求 `next` 前沿两次 | ① 不创建任何事务，按既有前沿派生；② 两次返回同一 `transaction_id`，不产生第二个活跃事务。`human_action_required` 与归档提案同样不创建事务 |
+
+### 追溯与覆盖
+
+- AC-SLICETX-07 恢复事务由 OpenLogos 依自身判定创建：UT-S28-45。
+- AC-SLICETX-08 恢复路径返回事务投影、无失效态不创建：UT-S28-45、UT-S28-46。
+- 场景：S28 恢复节点由建议改为创建事务；功能规格：§2.53.6；架构：§四十三.1；安装态：SMOKE-core-175。

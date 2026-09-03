@@ -3003,3 +3003,128 @@ baseline-seed 定义了四个 kind（`system-map`、`scenario-candidates`、`dep
 - ST：ST-S39-28、ST-S35-25。
 - 安装态：SMOKE-core-174。
 - 需求：AC-SQLGATE-01～09；场景：S35、S39；架构：§四十二。
+
+## 2.53 测试切片事务
+
+### 2.53.1 功能目标与职责边界
+
+把 `TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `## [code]` 段从「Agent 直接写出的文件」变为「OpenLogos 事务的产物」。Agent 的职责收窄为**向 content slot 提交内容**；正式产物、receipt 与 marker 一律由 OpenLogos 写入。
+
+本功能**不改**产物 schema、不改切片算法、不改 verify 的分层执行、不改人工门语义。只改一件事：**谁写。**
+
+### 2.53.2 为什么必须是事务而非「让 Agent 写得更小心」
+
+两个产物之间存在硬性一致性约束：manifest 的 `task_fingerprint` 是对 `tasks.md` 的 `[code]` 段求得的指纹。二者由同一个 Agent 分两次写出时，中间存在一个漂移窗口——先写其一、后写其二，或写完 A 后又调整 A 的文本。
+
+现行规格已经要求二者「在同一轮规划中共同收敛」，并把交付前的 `change-lint` 设为硬门。但该硬门由**被检查者自己**运行：Agent 既是生产者又是检查者，检查通过与否取决于它是否真的跑了、跑在了哪个时刻。
+
+**纪律能表达要求，不能提供保证。** 事务提供的是构造保证：两个产物在同一次 apply 中写出，任一失败整体回滚。
+
+### 2.53.3 phase 与命令面
+
+phase 集合与 `openlogos/merge-transaction@1` 完全一致，不另发明状态机：
+
+```
+collecting → ready → sealed → applying → completed
+                                       ↘ failed
+```
+
+| 命令 | 性质 | 说明 |
+|---|---|---|
+| `slice transaction status` | 只读 | 任何阶段可调用，含归档提案 |
+| `slice transaction submit-content --slot <id> --file <path>` | 写 | Agent 唯一可用的写动作 |
+| `slice transaction seal` | 写 | 冻结内容并产出 `seal_sha256` |
+| `slice transaction apply` | 写 | 原子写出两产物、产出 receipt |
+| `slice transaction recover` | 写 | 从中断态恢复到可继续的 phase |
+| `slice transaction abort` | 写 | 显式终止，清理暂存 |
+
+**Agent 只能 `submit-content`**；`[code]` 段、manifest、receipt 与 marker 一律由 OpenLogos 写入。
+
+### 2.53.4 content slot 划分
+
+| slot id | 内容 | 生产者 |
+|---|---|---|
+| `slot_codesection` | `[code]` 切片清单：每片的 `task_text`，以及六维打分与删后续证伪门的逐片结论 | slice-planner Agent |
+| `slot_slices` | 每片的 `slice_id`、`owned_test_ids`、`runner_selectors`、`spec_targets` | slice-planner Agent |
+
+两个 slot 全部 submitted → `ready`；`seal` 冻结；`apply` 原子写出。
+
+**为何拆成两个 slot 而非一个**：它们的生产判据不同——前者是切片划分的**理由**（打分与证伪结论，供人审阅），后者是切片的**机器归属**（ID 集合，供 verify 消费）。分开提交使两类内容各自可校验，也使恢复事务能够只收窄后者。
+
+### 2.53.5 apply 的原子性与守恒
+
+`apply` 在同一事务中完成两件写入，任一失败整体回滚：
+
+1. `tasks.md` 的 `[code]` **整节替换**——`[delta]` / `[deploy]` 段及其既有 checkbox 状态字节恒等；
+2. `TEST_SLICE_MANIFEST.json` 原子写出（复用既有 `writeTestSliceManifestAtomic`）。
+
+**不存在半写态**：两产物同时存在或同时不存在。中途失败时，已写部分回滚，事务转 `failed` 并保留可归因诊断。
+
+`task_fingerprint` 由 OpenLogos 在 apply 时**依其自己刚写出的 `tasks.md` 计算**，不接受外部提供。这从构造上消除了 §2.53.2 描述的漂移窗口——写入者与指纹计算者是同一方，在同一时刻。
+
+### 2.53.6 两种 origin
+
+| origin | 触发 | `content_slots.required` | `[code]` 段 |
+|---|---|---|---|
+| `initial-plan` | 首次切片规划 | `slot_codesection` + `slot_slices` | 由本事务写出 |
+| `manifest-recovery` | `deriveSliceVerificationState()` 判定 missing / invalid / stale | 仅 `slot_slices` | **冻结，拒绝改写** |
+
+恢复事务由 OpenLogos 依自身判定结论创建——消费方不再判断「这是不是一次恢复」，也不再自行推导可写作用域，两者都从事务投影读出。
+
+恢复时 `[code]` 段字节恒等是硬约束：切片划分本身没有问题，问题只在 manifest 失效；改写 `[code]` 会把一次修复变成一次重新规划。
+
+### 2.53.7 公共合同与跨仓锚点
+
+成功 envelope 必须公开 `schema_sha256` 与 `contract_sha256`。跨仓消费方以精确匹配消费，**缺失投影一律 fail closed，不得保留任何回退旧链的分支**。
+
+投影形状：
+
+```json
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_...",
+  "slug": "...", "module": "core",
+  "phase": "collecting",
+  "origin": "initial-plan",
+  "allowed_actions": ["submit_content", "abort"],
+  "next_action": "submit_content",
+  "content_slots": { "required": 2, "submitted": 0, "missing_slot_ids": ["slot_codesection", "slot_slices"] },
+  "spec_fingerprint": "sha256:...",
+  "changed_test_ids_sha256": "sha256:...",
+  "violations": [],
+  "receipt": null
+}
+```
+
+### 2.53.8 与既有能力的复用边界
+
+**不新建第二套判据**：
+
+| 复用 | 来源 |
+|---|---|
+| manifest 合法性判定 | `deriveSliceVerificationState()` |
+| 原子写 manifest | `writeTestSliceManifestAtomic()` |
+| 任务与规格指纹 | `computeTaskFingerprint()` / `computeSpecFingerprint()` |
+| 变更 ID 集合 | `extractChangedTestIds()` |
+| 目录解析与归档只读判据 | merge 事务的 `resolveIdentity()` 与只读动作白名单 |
+
+后两项此前是**零调用方的导出**——本功能正是把它们接出来，而非重新实现。
+
+### 2.53.9 归档与失败边界
+
+- 归档提案仅放行 `status`；写动作被拒且不产生副作用（沿用 merge 事务既有机制）。
+- 历史归档提案内的 manifest 保持原样，不重写、不迁移。
+- 缺事务投影时结构化 fail closed；**不存在**「回落到 Agent 直接写产物」的分支。
+
+### 2.53.10 兼容、失败与发布边界
+
+- 既有已完成提案不受影响；本功能只改变此后新提案的产物落盘路径。
+- package / plugin / asset identity 统一提升为本地 candidate `0.14.11`；全局 `0.14.10` 作为固定回滚制品。
+- 不执行 npm publish、dist-tag、Git tag、GitHub Release、官网发布或 git push。
+
+### 2.53.11 验收与追溯
+
+- UT：UT-S32-52～58、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34。
+- ST：ST-S32-18～19。
+- 安装态：SMOKE-core-175。
+- 需求：AC-SLICETX-01～12；场景：S09、S13、S19、S28、S32；架构：§四十三。

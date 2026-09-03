@@ -1908,3 +1908,111 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 - 需求：AC-SQLGATE-09（及 01～08 的安装态验证）。
 - 功能规格：§2.52.8、§2.52.9；场景：S35、S39。
 - 安装态：SMOKE-core-174。
+
+## OpenLogos 0.14.11 测试切片事务本机全局部署方案
+
+### 部署目标与授权边界
+
+把「测试切片事务权威集中化」冻结为唯一 `@miniidealab/openlogos@0.14.11` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.10`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须走安装态**：新增的是**公共命令面**，且它同时是跨仓消费方的锚点。源码测试证明不了三件事——命令面随包分发且可从全局入口调用；`schema_sha256` / `contract_sha256` 在打包产物中稳定；旧路径（Agent 直接写两产物）在装好的包里确已不可用。**源码里删掉一条路径，与用户装到的包里没有这条路径，是两件事。**
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.10`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash。
+3. 冻结可离线恢复的 `0.14.10` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.11 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.11`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.10`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.10` 构建新字节。
+
+### 跨仓锚点的冻结
+
+本次产出同时是跨仓阶段 B 的输入，须额外冻结并记录在案：
+
+1. `openlogos/test-slice-transaction@1` 的 **`schema_sha256`** 与 **`contract_sha256`**；
+2. 产生上述哈希的固定 tarball SHA-256 与版本号；
+3. 命令面的完整动作集合与各 phase 的 `allowed_actions`。
+
+**跨仓消费方只能锚定上述冻结值**。阶段 A 未产出真实 candidate 前，不得把猜测的 schema 字段或哈希写进消费方提案当作已确认事实。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.11` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.11` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| 命令面随包可用 | `slice transaction status` 可从全局入口调用并返回合法 envelope |
+| 契约哈希稳定 | 成功 envelope 的 `schema_sha256` / `contract_sha256` 与冻结值逐字一致 |
+| **两产物原子写出** | initial-plan 全链后 `[code]` 段与 manifest 同时存在且 `task_fingerprint` 与实际 `[code]` 一致 |
+| **apply 回滚无半写态** | 注入失败后两产物**同时不存在**，事务转 failed 并保留可归因诊断 |
+| 恢复事务 slot 收窄 | `manifest-recovery` 下 `required=1`，`[code]` 段字节恒等，仅 manifest 被重写 |
+| 整节守恒 | apply 后 `[delta]` / `[deploy]` 段与其 checkbox 状态字节恒等 |
+| 归档只读 | 归档提案的写动作被拒且无副作用 |
+| 旧路径不可用 | 安装态下不存在 Agent 直接写两产物的可用入口 |
+| 零回归 | 既有已完成提案的 verify 判定与 `0.14.10` 逐字一致 |
+| rollback roundtrip | `0.14.10→0.14.11→0.14.10→0.14.11` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「两产物原子写出」与「apply 回滚无半写态」失败时必须停止部署并回到实现**——它们是不变量 H 唯一的直接证据。
+
+### 本机全局部署
+
+只有隔离矩阵与 `0.14.10` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.11` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.11`；
+- package / plugin / asset manifest version 全部为 `0.14.11`，无混装；
+- `slice transaction status` 可调用且 envelope 的契约哈希与冻结值一致。
+
+### 自举风险与处置
+
+本仓自身的下一个提案将立即使用新流程，而新 Skill 尚未在实战中验证。这是唯一已知的自举风险，处置方式：
+
+- 部署后的第一个提案由人工全程观察切片阶段，不使用无人值守模式；
+- 若新流程在实战中暴露阻断，立即以固定 `0.14.10` 回滚，不在活动提案中途修补；
+- 不为「执行期间替换 CLI」设计兼容——该情形只出现在自举开发，由人工处理。
+
+### Smoke 与完成条件
+
+部署完成后需独立 smoke 授权，执行 `SMOKE-core-175`。runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口。
+
+### 失败、自愈与回滚
+
+- 隔离矩阵失败：修复后重新 verify / build / pack / install，产生新 candidate identity；不得在旧 tarball 上打补丁。
+- 全局部署后发现切片流程阻断：立即以固定 `0.14.10` tarball 回滚并报告触发条件。
+- 任何阶段不得为让断言通过而放宽判据、跳过违规或伪造记录。
+
+### 完成判据
+
+1. 固定 `0.14.11` tarball identity 与隔离矩阵 PASS（含两条红线）；
+2. `schema_sha256` / `contract_sha256` 已冻结并记录，可供跨仓阶段 B 锚定；
+3. 本机全局安装态 identity 一致、无混装；
+4. `0.14.10↔0.14.11` 回滚/恢复可复制且无混装；
+5. `SMOKE-core-175` PASS 且 Gate 3.8 通过；
+6. 全程无 npm publish、tag、release、官网或 git push 副作用。
+
+### 追溯
+
+- 需求：AC-SLICETX-12（及 01～11 的安装态验证）。
+- 功能规格：§2.53.7、§2.53.10；场景：S09、S13、S19、S28、S32；架构：§四十三.4。
+- 安装态：SMOKE-core-175。

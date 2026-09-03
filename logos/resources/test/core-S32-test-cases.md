@@ -235,3 +235,34 @@
 - AC-MERGEGATE-08 语法与数据一致（切片一侧）：UT-S32-50。
 - AC-MERGEGATE-09 归属校验覆盖扩大且判据不放宽：UT-S32-51、ST-S32-17。
 - 场景：S32 此前不可见的测试 ID 进入切片归属；功能规格：§2.51.7；架构：§四十一.6.1。
+
+## S32 切片事务产物原子落盘测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S32-52 | 两 slot 收齐后原子写出两产物 | Step 1→13b | spec-complete 提案；两 slot 内容合法 | 创建事务 → 提交两 slot → seal → apply | `[code]` 段与 `TEST_SLICE_MANIFEST.json` 同时存在；manifest 的 `task_fingerprint` 与实际 `[code]` 段一致；phase=completed 且 receipt 非空 |
+| UT-S32-53 | apply 中途失败整体回滚，无半写态 | Step 12a→13a | 同上；在写第二个产物前注入失败 | apply | 两产物**同时不存在**；phase=failed 且诊断点名失败环节。**这是不变量 H 唯一的直接证据**——只验证成功路径无法区分「构造保证」与「纪律维持」 |
+| UT-S32-54 | task_fingerprint 由 OpenLogos 自算 | Step 10 | slot 内容中携带一个伪造的 `task_fingerprint` | apply 后读 manifest | 落盘的指纹等于对**实际写出的** `tasks.md` 计算所得，与 slot 中提供的伪造值不同；事务不采信外部指纹 |
+| UT-S32-55 | 整节替换守恒 | Step 9 | `tasks.md` 含 `[delta]`（部分 checkbox 已勾选）与 `[deploy]` 段 | apply | `[code]` 段被替换；`[delta]` / `[deploy]` 段及其 checkbox 状态**字节恒等** |
+| UT-S32-56 | 恢复事务 slot 收窄且 [code] 冻结 | 恢复差异表 | manifest 处于 invalid 态的提案 | 创建 `origin=manifest-recovery` 事务 → 提交 `slot_slices` → apply | `content_slots.required` 为 1；提交 `slot_codesection` 被拒；apply 后 `[code]` 段字节恒等，仅 manifest 被重写 |
+| UT-S32-57 | Agent 直接写产物的路径不存在 | 不变量 1 | 已加载 `cli/src/**` | 扫描 `writeTestSliceManifestAtomic` 与 `[code]` 段写入器的调用方 | 调用方**只在**切片事务的 apply 路径内；不存在命令或导出让外部直接写这两个产物。修复前该函数调用方为 0 处、实际写入者是 Agent——本用例锁的正是写入权归位 |
+| UT-S32-58 | 单活跃事务与 apply 幂等 | 不变量 6、异常边界 | 已有活跃切片事务的提案 | ① 再次创建事务；② completed 后重复 apply | ① 拒绝或返回既有事务，不产生第二个活跃事务；② 幂等，返回既有 receipt，产物字节不变 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S32-18 | 真实 CLI 下 initial-plan 全链 | Step 1→13b | 真实 CLI；spec-complete 的 launched 夹具提案 | `slice transaction status` → 两次 `submit-content` → `seal` → `apply` → `status` | 各阶段 phase 依次为 collecting/ready/sealed/completed；apply 后两产物落盘且一致；envelope 公开 `schema_sha256` 与 `contract_sha256`；全程 Agent 只用了 `submit-content` |
+| ST-S32-19 | 真实 CLI 下恢复全链与写动作白名单 | 恢复差异表、异常边界 | 真实 CLI；manifest 已失效的提案 | ① `next --format json` 取事务投影；② 提交 `slot_slices` 后 `seal`、`apply`；③ 对已 sealed 事务再次 `submit-content` | ① 投影 `origin=manifest-recovery` 且 `required=1`；② apply 后 `[code]` 字节恒等、manifest 恢复合法；③ 动作不在 `allowed_actions` 中被拒且无副作用 |
+
+### 追溯与覆盖
+
+- AC-SLICETX-03 slot 收齐进 ready：UT-S32-52、ST-S32-18。
+- AC-SLICETX-04 原子写与整体回滚：UT-S32-52、UT-S32-53。
+- AC-SLICETX-05 整节守恒：UT-S32-55。
+- AC-SLICETX-06 指纹自算：UT-S32-54。
+- AC-SLICETX-07 恢复 slot 收窄与 `[code]` 冻结：UT-S32-56、ST-S32-19。
+- AC-SLICETX-10 旧路径不存在：UT-S32-57。
+- 场景：S32 切片产物经事务原子落盘；功能规格：§2.53.3～§2.53.6、§2.53.8；架构：§四十三.1、§四十三.2；安装态：SMOKE-core-175。

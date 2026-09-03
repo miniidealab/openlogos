@@ -2346,3 +2346,68 @@ mysql        ✗ mysql SQL parser/隔离执行适配器不可用；拒绝用 SQL
 - 场景：S39 on-touch 基线闭包（non-Markdown delta 校验）、S35 提案计划产物左移硬检查（降级留痕输出）。
 - 测试：UT-S39-59～UT-S39-64、ST-S39-28、UT-S35-132～UT-S35-133、ST-S35-25。
 - 部署后 smoke：SMOKE-core-174。
+
+## 测试切片事务权威集中化要求
+
+### 用户问题与价值
+
+`TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `## [code]` 段是 OpenLogos 判定切片验收前沿的两个 canonical 产物，但**它们的实际写入者是 Agent**。
+
+实证：
+
+```
+writeTestSliceManifestAtomic  →  cli/src/ 中调用方 0 处
+extractChangedTestIds         →  cli/src/ 中调用方 0 处
+```
+
+原子写入器早已导出并可用，却没有任何命令把它接出来——本仓自身最近数个提案的 manifest 均由 Agent 以 `node -e` 手工调用该函数生成。判定权在 OpenLogos，写入权在 Agent。
+
+两个产物的原子一致性目前**只由纪律维持**：`skills/slice-planner/SKILL.md` 写明「`[code]` 与 manifest 必须在同一轮规划中共同收敛，任一无效均不得报告完成」，并把交付前的 `change-lint` 升格为「机器硬门」——但该硬门由**被检查者自己**运行。
+
+后果已在本仓真实发生：`[code]` 任务文本调整导致 `task_fingerprint` 与实际内容失配，只因当时尚未记录 checkpoint 才得以手工重算；若已记录，即落入 stale 恢复态，而恢复过程的事实源又不在 OpenLogos。
+
+`cli/src/commands/next.ts:115` 的 `manifestRecoveryNode()` 能识别三种失效态并发出恢复节点，但它只返回 `NextNode`——**只能建议，不能执行**。
+
+### 核心需求
+
+1. **写入权与判定权同源**：`TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `[code]` 段由 OpenLogos 写出；Agent 只能向事务的 content slot 提交内容。
+2. **原子性由构造保证**：两个产物在同一事务的 apply 中原子写出，任一失败整体回滚，不得留下半写态。
+3. **指纹自算**：`task_fingerprint` 由 OpenLogos 依其自己写出的 `tasks.md` 计算，不接受外部提供——从构造上消除失配窗口。
+4. **公共合同对外可锚**：发布 `openlogos/test-slice-transaction@1`，成功 envelope 公开 `schema_sha256` 与 `contract_sha256`，供跨仓消费方精确匹配。
+5. **恢复由 OpenLogos 判定并执行**：依 `deriveSliceVerificationState()` 自身结论创建 `origin=manifest-recovery` 事务，消费方不再自判是否恢复、不再自算可写作用域。
+6. **沿用既有状态机**：phase 集合与动作语义与 `openlogos/merge-transaction@1` 一致，复用其目录解析与归档只读判据，不新建第二套。
+7. **归档只读**：归档提案仅放行 `status`，写动作被拒且无副作用。
+8. **缺事务即 fail closed**：不存在「缺事务投影时回落到 Agent 直接写产物」的分支。
+9. 修复以新的本地 patch candidate `0.14.11` 交付，当前本机全局 `0.14.10` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-SLICETX-01 | 发布 `openlogos/test-slice-transaction@1`，schema 与 `contract_hash` 固定；成功 envelope 公开 `schema_sha256` 与 `contract_sha256` |
+| AC-SLICETX-02 | 命令面提供 `status/submit-content/seal/apply/recover/abort`；`status` 为纯读取，其余为显式写动作 |
+| AC-SLICETX-03 | 两个 content slot（`slot_codesection`、`slot_slices`）全部 submitted 后事务进入 `ready`；`seal` 冻结内容并产出 `seal_sha256` |
+| AC-SLICETX-04 | `apply` 在同一事务中原子写出 `tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json`；任一失败整体回滚，两产物同时存在或同时不存在 |
+| AC-SLICETX-05 | `apply` 对 `tasks.md` 只替换 `[code]` 整节；`[delta]` / `[deploy]` 段与其既有 checkbox 状态字节恒等 |
+| AC-SLICETX-06 | `task_fingerprint` 由 OpenLogos 依其自写的 `tasks.md` 计算；事务不接受外部提供的指纹 |
+| AC-SLICETX-07 | `origin` 取 `initial-plan \| manifest-recovery`；恢复事务由 `deriveSliceVerificationState()` 的三种失效态创建，`content_slots.required` 收窄为仅 `slot_slices`，且 `[code]` 段字节恒等 |
+| AC-SLICETX-08 | `next` 的恢复路径返回事务投影而非仅建议节点；无失效态时不创建事务 |
+| AC-SLICETX-09 | 归档提案仅放行 `status`；任何写动作被拒且不产生副作用 |
+| AC-SLICETX-10 | 不存在 Agent 直接写两产物的可用路径；缺事务投影时结构化 fail closed，无半写态、无回退旧链分支 |
+| AC-SLICETX-11 | verify 对 manifest 的消费判据与 slice-checkpoint 前沿不因写入权转移而改变（零漂移） |
+| AC-SLICETX-12 | 固定 `0.14.11` tarball 完成隔离安装与本机全局安装态验证，`0.14.10→0.14.11→0.14.10` 往返后各 identity 与 tarball SHA-256 一致 |
+
+### 授权与非目标
+
+- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
+- **不改** `openlogos/test-slice-manifest@1` 产物 schema 本身——只改谁写它。
+- **不改**六维打分、垂直/横向判别器与删后续证伪门的切片算法；那是 slice-planner 的判断力，本次只改产物落盘路径。
+- **不改** `SLICE_CHECKPOINTS.jsonl` 与 verify 的分层执行；**不改** `SLICES_APPROVED` 与 `slice-exit` 的人类确认点语义。
+- **不做**宿主（RunLogos）侧改造——那是跨仓方案的阶段 B，由该仓独立提案消费本次固定 candidate 与 `contract_hash`。
+- 历史归档提案内的 `TEST_SLICE_MANIFEST.json` 保持原样，不重写、不迁移。
+
+### 追溯
+
+- 场景：S32 切片规划、S28 next 节点、S09 变更生命周期、S13 验收结果、S19 部署后冒烟门。
+- 测试：UT-S32-52～58、ST-S32-18～19、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34。
+- 部署后 smoke：SMOKE-core-175。
