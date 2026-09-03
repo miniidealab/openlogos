@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseDocument } from 'yaml';
 import { DELTA_TO_RESOURCE, classifyProposalDeltas } from './delta-classify.js';
+import { authorityScan } from './markdown-scan.js';
 import { extractStructuredTestIds, parseReuseDeclaration } from './proposal-lifecycle.js';
 import { HISTORICAL_MARKERS } from './proposal-markers.js';
 import { isTestId } from './test-id.js';
@@ -99,9 +100,32 @@ function projectRelative(root: string, path: string): string {
   return relative(root, path).replace(/\\/g, '/');
 }
 
-function yamlFences(content: string): string[] {
-  return [...content.matchAll(/(?:^|\n) {0,3}```ya?ml[ \t]*\r?\n([\s\S]*?)\r?\n {0,3}```(?=\n|$)/gi)]
-    .map(match => match[1]);
+/** 带 1-based 行号的围栏，便于诊断点名「命中几处、分别在第几行」。 */
+interface YamlFence { body: string; line: number }
+
+/**
+ * YAML 围栏提取（§2.51.6）：走 `authorityScan` 掩码，与 baseline-closure / clarification /
+ * ui-first 同源。此前这里用裸正则直接扫全文，是四个提取器中唯一不走掩码的——对含嵌套围栏的
+ * 文档（如四反引号 markdown 块内示意一段 yaml）会多命中一个围栏，把示意当成真实声明。
+ */
+function yamlFences(content: string): YamlFence[] {
+  const lines = content.split(/\r?\n/);
+  const scan = authorityScan(lines);
+  const fences: YamlFence[] = [];
+  let open: { line: number; body: string[] } | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    // 只采信 `fence-open` / `fence-close` 定界：嵌套在更外层围栏内的 ```yaml 会被标为 `fence`
+    // （内容），注释与缩进代码中的围栏同理——这正是裸正则会误算的那一类。
+    if (open) {
+      if (scan.region[i] === 'fence-close') { fences.push({ body: open.body.join('\n'), line: open.line }); open = null; }
+      else open.body.push(lines[i]);
+      continue;
+    }
+    if (scan.region[i] === 'fence-open' && /^ {0,3}`{3,}\s*ya?ml[ \t]*$/i.test(lines[i])) {
+      open = { line: i + 1, body: [] };
+    }
+  }
+  return fences;
 }
 
 function walkMarkdown(dir: string, output: string[]): void {
@@ -145,10 +169,28 @@ export function collectEffectiveTestIds(root: string, proposalDir: string, propo
 
 /** plan 阶段 Delta 尚未产出时，只采信合法 baseline_closure 中明确 mode=CREATE + target_absent 的 canonical 映射。 */
 export function collectPlannedAuthorityCreateTargets(content: string): Set<string> {
-  const sources = yamlFences(content).filter(source => /^\s*baseline_closure\s*:/m.test(source));
-  if (sources.length !== 1) return new Set();
+  return planCreateTargets(content).targets;
+}
+
+/**
+ * 与上者同源，但额外回传「为何为空」的可归因原因（§2.51.5）。
+ *
+ * 此前多命中时直接返回空集，plan 阶段的 `authority_ref` 容错随之无声失效——用户只看到
+ * `authority_fact_reference_missing`，真实原因（围栏被多算了一处）完全不可见，诊断指向的位置
+ * 与真实原因不是同一处。现回传命中处的行号，由调用方点名。
+ */
+export function planCreateTargets(content: string): { targets: Set<string>; ambiguity?: string } {
+  const sources = yamlFences(content).filter(fence => /^\s*baseline_closure\s*:/m.test(fence.body));
+  if (sources.length > 1) {
+    return {
+      targets: new Set(),
+      ambiguity: `proposal 中出现 ${sources.length} 处 baseline_closure 声明（第 ${sources.map(f => f.line).join('、')} 行）；`
+        + '必须恰有一处，否则 plan 阶段的 authority_ref CREATE 容错无法确定采信哪一份',
+    };
+  }
+  if (sources.length !== 1) return { targets: new Set() };
   const counts = new Map<string, number>();
-  for (const source of sources) {
+  for (const { body: source } of sources) {
     const doc = parseDocument(source, { uniqueKeys: true, strict: true, prettyErrors: false });
     if (doc.errors.length > 0 || doc.warnings.length > 0) continue;
     const root = doc.toJS() as unknown;
@@ -165,7 +207,7 @@ export function collectPlannedAuthorityCreateTargets(content: string): Set<strin
       counts.set(canonical, (counts.get(canonical) ?? 0) + 1);
     }
   }
-  return new Set([...counts].filter(([, count]) => count === 1).map(([target]) => target));
+  return { targets: new Set([...counts].filter(([, count]) => count === 1).map(([target]) => target)) };
 }
 
 function issue(code: AuthorityClosureIssueCode, path: string, message: string, fixHint: string, factIndex = -1): LocatedIssue {
@@ -176,21 +218,31 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: Set<string>): bool
   return Object.keys(value).every(key => allowed.has(key));
 }
 
-function extractDeclaration(content: string): { kind: 'missing' | 'malformed' | 'found'; value?: Record<string, unknown> } {
-  const candidates: Array<{ source: string; value?: Record<string, unknown>; malformed: boolean }> = [];
-  for (const source of yamlFences(content)) {
+function extractDeclaration(content: string):
+  { kind: 'missing' | 'malformed' | 'found'; value?: Record<string, unknown>; detail?: string } {
+  const candidates: Array<{ line: number; value?: Record<string, unknown>; malformed: boolean }> = [];
+  for (const { body: source, line } of yamlFences(content)) {
     if (!/^\s*authority_impact\s*:/m.test(source)) continue;
     const doc = parseDocument(source, { uniqueKeys: true, strict: true, prettyErrors: false });
     if (doc.errors.length > 0 || doc.warnings.length > 0) {
-      candidates.push({ source, malformed: true });
+      candidates.push({ line, malformed: true });
       continue;
     }
     const root = doc.toJS() as unknown;
     const value = isRecord(root) && isRecord(root.authority_impact) ? root.authority_impact : undefined;
-    candidates.push({ source, value, malformed: !value || Object.keys(root as Record<string, unknown>).length !== 1 });
+    candidates.push({ line, value, malformed: !value || Object.keys(root as Record<string, unknown>).length !== 1 });
   }
   if (candidates.length === 0) return { kind: 'missing' };
-  if (candidates.length !== 1 || candidates[0].malformed || !candidates[0].value) return { kind: 'malformed' };
+  // §2.51.5：多命中必须点名——命中几处、分别在第几行；不得只说「格式非法」。
+  if (candidates.length > 1) {
+    return {
+      kind: 'malformed',
+      detail: `proposal 中出现 ${candidates.length} 处 authority_impact 声明（第 ${candidates.map(c => c.line).join('、')} 行），必须恰有一处`,
+    };
+  }
+  if (candidates[0].malformed || !candidates[0].value) {
+    return { kind: 'malformed', detail: `第 ${candidates[0].line} 行的 authority_impact 声明无法解析为唯一顶层键的合法 YAML` };
+  }
   return { kind: 'found', value: candidates[0].value };
 }
 
@@ -243,8 +295,10 @@ export function evaluateAuthorityClosure(root: string, proposalDir: string, prop
     )]);
   }
   if (declaration.kind === 'malformed' || !declaration.value) {
+    // §2.51.5：点名具体位置，而非只说「不唯一或非法」。
     return summary('required', 0, 0, 0, 0, 0, [issue(
-      'authority_impact_malformed', relPath, 'authority_impact YAML 不唯一、无法严格解析或根结构非法。',
+      'authority_impact_malformed', relPath,
+      declaration.detail ?? 'authority_impact YAML 不唯一、无法严格解析或根结构非法。',
       '仅保留一个 authority_impact YAML 根，并移除重复键、未知根和非法值。',
     )]);
   }
@@ -279,7 +333,8 @@ export function evaluateAuthorityClosure(root: string, proposalDir: string, prop
       '补齐 required 分支 canonical 字段，并确保 facts 非空。'));
   }
   const knownTests = collectEffectiveTestIds(root, proposalDir, content);
-  const plannedTargets = collectPlannedAuthorityCreateTargets(content);
+  const planned = planCreateTargets(content);
+  const plannedTargets = planned.targets;
   const seenFactIds = new Set<string>();
   let projections = 0;
   let retired = 0;
@@ -338,7 +393,11 @@ export function evaluateAuthorityClosure(root: string, proposalDir: string, prop
       const target = fact.authority_ref.split('#', 1)[0].replace(/^\.\//, '');
       if (!target || target.startsWith('/') || target.includes('..')
         || (!existsSync(join(root, target)) && !plannedTargets.has(target))) {
-        malformed.push(issue('authority_fact_reference_missing', relPath, `${factId} 的 authority_ref 无法解析：${fact.authority_ref}`,
+        // 若 CREATE 容错因闭包声明多命中而失效，必须点出真实原因——否则诊断指向 authority_ref
+        // 本身，而真实原因在别处（§2.51.5 / S05 归因路径）。
+        malformed.push(issue('authority_fact_reference_missing', relPath,
+          `${factId} 的 authority_ref 无法解析：${fact.authority_ref}`
+            + (planned.ambiguity ? `；注意：${planned.ambiguity}` : ''),
           '引用已存在 Registry/根规范，或当前唯一 CREATE delta 映射后的 canonical target。', index));
       }
     }
