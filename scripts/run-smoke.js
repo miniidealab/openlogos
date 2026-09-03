@@ -118,6 +118,11 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_PLAN_GATE_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_PLAN_GATE_CANDIDATE_BIN,
     },
+    'scripts/smoke-merge-gate-single-source-0-14-9.js': {
+      tarball: process.env.OPENLOGOS_MERGE_GATE_TARBALL,
+      previousTarball: process.env.OPENLOGOS_MERGE_GATE_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_MERGE_GATE_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -142,6 +147,7 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-archived-addressability-0-14-6.js',
   'scripts/smoke-resource-index-scope-0-14-7.js',
   'scripts/smoke-plan-gate-deadlock-0-14-8.js',
+  'scripts/smoke-merge-gate-single-source-0-14-9.js',
 ]);
 
 const globalCandidateRunners = new Map([
@@ -152,6 +158,7 @@ const globalCandidateRunners = new Map([
   ['scripts/smoke-archived-addressability-0-14-6.js', process.env.OPENLOGOS_ARCHIVED_ADDR_TARBALL],
   ['scripts/smoke-resource-index-scope-0-14-7.js', process.env.OPENLOGOS_RESOURCE_INDEX_TARBALL],
   ['scripts/smoke-plan-gate-deadlock-0-14-8.js', process.env.OPENLOGOS_PLAN_GATE_TARBALL],
+  ['scripts/smoke-merge-gate-single-source-0-14-9.js', process.env.OPENLOGOS_MERGE_GATE_TARBALL],
 ]);
 
 function prepareGlobalCandidate(runner) {
