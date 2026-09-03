@@ -711,7 +711,7 @@ describe('S39 单元测试——闭包、路径、完整度与协议', () => {
     ).ok).toBe(false);
   });
 
-  it('UT-S39-27: SQL 按项目方言路由，SQLite 真执行且缺失/PG/MySQL 不冒充通过', () => {
+  it('UT-S39-27: SQL 按项目方言路由，SQLite 真执行且 PG/MySQL 降级而不冒充', () => {
     const f = setup();
     const path = 'logos/resources/database/touch.sql';
     const good = `## ADDED — ${path}（新文件，整文件）\n${sqlitePayload}`;
@@ -720,11 +720,17 @@ describe('S39 单元测试——闭包、路径、完整度与协议', () => {
     expect(validateAndStripNonMarkdownDelta(good.replace('CREATE TABLE', 'CREATE TABL'), 'CREATE', path, { root: f.root }).ok).toBe(false);
     const yamlPath = join(f.root, 'logos/logos-project.yaml');
     const base = readFileSync(yamlPath, 'utf-8');
+    // 0.14.10 起：非 SQLite 方言不再硬失败（架构 §四十二.1 能力缺失只能降级），但本用例的原意图
+    // ——「不许用 SQLite 冒充该方言」——完整保留，改为正向断言：payload 通过的层级只能是
+    // structure，绝不能是 sqlite 的 execution，即它从未进入 sqlite 执行路径。
     for (const dialect of ['postgresql', 'mysql']) {
       writeFileSync(yamlPath, base.replace('database: sqlite', `database: ${dialect}`));
-      const rejected = validateAndStripNonMarkdownDelta(good, 'CREATE', path, { root: f.root });
-      expect(rejected.ok).toBe(false);
-      expect(rejected.message).toContain('拒绝用 SQLite');
+      const degraded = validateAndStripNonMarkdownDelta(good, 'CREATE', path, { root: f.root });
+      expect(degraded.ok, `${dialect} 不应被阻断`).toBe(true);
+      expect(degraded.tier, `${dialect} 绝不能走 sqlite 的 execution 层`).toBe('structure');
+      expect(degraded.degradation?.dialect).toBe(dialect);
+      expect(degraded.degradation?.reason).toBe('adapter-not-implemented');
+      expect(degraded.degradation?.missing).toContain(dialect);
     }
     writeFileSync(yamlPath, base.replace('  database: sqlite\n', ''));
     expect(validateAndStripNonMarkdownDelta(good, 'CREATE', path, { root: f.root }).message).toContain('未声明 SQL 方言');

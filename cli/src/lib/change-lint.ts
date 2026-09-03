@@ -139,7 +139,7 @@ export interface ChangeLintViolation {
  * 契约（出现/省略、item 闭合字段、稳定排序）以 `spec/cli-json-output.md` §3.15 为唯一事实源；
  * `warnings` 仅在**非空时出现**、否则整个字段省略（零漂移）。item 恰含 code/message/fix_hint（不含 path）。
  */
-export type ChangeLintWarningCode = 'decision_record_section_without_delta';
+export type ChangeLintWarningCode = 'decision_record_section_without_delta' | 'sql_dialect_precheck_skipped';
 
 export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
@@ -1004,6 +1004,14 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   if (closure.active) {
     for (const v of closure.violations) pushViolation(acc, 9, v);
   }
+  // §2.52.7 / 架构 §四十二.2：方言层被跳过必须可见，但不是违规——走 warnings，不影响 L9。
+  const sqlWarnings: ChangeLintWarning[] = (closure.sqlDegradations ?? []).map(notice => ({
+    code: 'sql_dialect_precheck_skipped' as const,
+    message: `${notice.path}：${notice.degradation.detail}（缺失：${notice.degradation.missing.join('、')}；已执行层级：${notice.degradation.tier}）`,
+    fix_hint: notice.degradation.reason === 'adapter-not-installed'
+      ? `安装 ${notice.degradation.missing.join('、')} 后可获得更强的 ${notice.degradation.dialect} 校验层级；结构检查已全部通过，本条不阻断交付`
+      : `${notice.degradation.dialect} 的语法/执行预检适配器尚未实现；结构检查已全部通过，本条不阻断交付`,
+  }));
 
   // 全序稳定排序：①检查项 L1→L9；②path 字典序；③源位置出现序；④code；⑤message
   const sorted = [...acc.violations].sort((a, b) => {
@@ -1039,7 +1047,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry)
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {

@@ -105,11 +105,19 @@ export interface BaselineClosureSummary {
   actual_delta_targets: number;
 }
 
+/** SQL 方言层被跳过的可归因留痕，供调用方经 warnings 通道呈现（§2.52.7）。 */
+export interface SqlDegradationNotice {
+  path: string;
+  degradation: SqlValidationDegradation;
+}
+
 export interface BaselineClosureEvaluation {
   active: boolean;
   plan?: BaselineClosurePlan;
   summary?: BaselineClosureSummary;
   violations: BaselineClosureViolation[];
+  /** 非空才出现；留痕不是违规，不影响 active/violations 的判定（§2.52.7 零漂移）。 */
+  sqlDegradations?: SqlDegradationNotice[];
 }
 
 export interface CanonicalTargetResolution {
@@ -476,10 +484,29 @@ export function parseBaselineClosureTaskTargets(
   return { hasModeSyntax, targets, invalid };
 }
 
+/** SQL 校验实际执行到的层级（架构 §四十二.2：分层校验必须如实自述层级）。 */
+export type SqlValidationTier = 'structure' | 'syntax' | 'execution';
+
+/** 方言层被跳过时的可归因留痕（架构 §四十二.1：能力缺失只能降级，不能阻断）。 */
+export interface SqlValidationDegradation {
+  /** 降级原因：适配器未实现（产品能力）还是未安装（环境能力）。 */
+  reason: 'adapter-not-implemented' | 'adapter-not-installed';
+  dialect: DatabaseDialect;
+  /** 具体缺什么——方言名或二进制名，用于诊断点名。 */
+  missing: string[];
+  /** 实际执行到的层级。降级时恒为 'structure'。 */
+  tier: SqlValidationTier;
+  detail: string;
+}
+
 export interface NonMarkdownDeltaResult {
   ok: boolean;
   payload?: string;
   message?: string;
+  /** SQL delta 专有：实际执行层级；非 SQL 目标为 undefined。 */
+  tier?: SqlValidationTier;
+  /** SQL delta 专有：方言层被跳过时的留痕；未降级时为 undefined。 */
+  degradation?: SqlValidationDegradation;
 }
 
 const NON_MD_MARKER = /^## (ADDED|MODIFIED) — (.+?)(（新文件，整文件）|（整文件替换）)$/;
@@ -663,30 +690,72 @@ export function resolveProjectDatabaseDialect(root: string): { dialect?: Databas
   return { dialect: normalized[0]! };
 }
 
-function validateSql(payload: string, dialect: DatabaseDialect): string | null {
+interface SqlValidationOutcome {
+  problem: string | null;
+  tier: SqlValidationTier;
+  degradation?: SqlValidationDegradation;
+}
+
+/** 结构完整度：五项与方言无关，任何方言、任何适配器可用性下都执行（§2.52.2）。 */
+function validateSqlStructure(payload: string): string | null {
   // 类别最低完整度与真正 parser/执行预检是两层门；关键词只负责提示缺少哪种设计资产。
   if (!/\bCREATE\s+TABLE\b/i.test(payload)) return '缺 CREATE TABLE';
   if (!/\bPRIMARY\s+KEY\b/i.test(payload)) return '缺主键';
   if (!/\b(CONSTRAINT|FOREIGN\s+KEY|UNIQUE|CHECK)\b/i.test(payload)) return '缺约束';
   if (!/\bCREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(payload)) return '缺索引';
   if (!/(migration|migrate|迁移)/i.test(payload) || !/(rollback|回滚)/i.test(payload)) return '缺迁移/回滚语义';
+  return null;
+}
 
-  if (dialect !== 'sqlite') {
-    return `${dialect} SQL parser/隔离执行适配器不可用；拒绝用 SQLite 冒充该方言`;
-  }
+function degrade(
+  dialect: DatabaseDialect,
+  reason: SqlValidationDegradation['reason'],
+  missing: string[],
+  detail: string,
+): SqlValidationOutcome {
+  return { problem: null, tier: 'structure', degradation: { reason, dialect, missing, tier: 'structure', detail } };
+}
+
+/** SQLite 隔离执行预检：BEGIN → payload → 计数 → ROLLBACK，不落盘。 */
+function validateSqliteByExecution(payload: string): SqlValidationOutcome {
   const sqlite = spawnSync('sqlite3', [':memory:'], {
     input: `.bail on\nPRAGMA foreign_keys=ON;\nBEGIN IMMEDIATE;\n${payload}\n`
       + "SELECT 'openlogos_tables=' || count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%';\n"
       + "SELECT 'openlogos_indexes=' || count(*) FROM sqlite_schema WHERE type='index' AND sql IS NOT NULL;\nROLLBACK;\n",
     encoding: 'utf-8', timeout: 10_000,
   });
-  if (sqlite.error) return `SQLite validator 不可用：${sqlite.error.message}`;
-  if (sqlite.status !== 0) return `SQLite 执行预检失败：${(sqlite.stderr || '').trim()}`;
+  // §四十二.1：二进制缺失是**环境能力**缺失，不是提案缺陷——降级而非阻断。
+  if (sqlite.error) {
+    return degrade('sqlite', 'adapter-not-installed', ['sqlite3'],
+      `本机未找到 sqlite3 可执行文件（${sqlite.error.message}）；已完成结构检查，未执行 sqlite 隔离执行预检`);
+  }
+  if (sqlite.status !== 0) return { problem: `SQLite 执行预检失败：${(sqlite.stderr || '').trim()}`, tier: 'execution' };
   const tables = Number(/openlogos_tables=(\d+)/.exec(sqlite.stdout || '')?.[1] ?? 0);
   const indexes = Number(/openlogos_indexes=(\d+)/.exec(sqlite.stdout || '')?.[1] ?? 0);
-  if (tables < 1) return 'SQLite schema 预检后没有用户表';
-  if (indexes < 1) return 'SQLite schema 预检后没有显式索引';
-  return null;
+  if (tables < 1) return { problem: 'SQLite schema 预检后没有用户表', tier: 'execution' };
+  if (indexes < 1) return { problem: 'SQLite schema 预检后没有显式索引', tier: 'execution' };
+  return { problem: null, tier: 'execution' };
+}
+
+/**
+ * SQL delta 校验（§2.52 / 架构 §四十二）。
+ *
+ * 分两层：结构层与方言无关且始终执行；方言层按本机可用适配器路由，不可用时**降级为跳过并留痕**，
+ * 绝不阻断交付。此前的实现对非 SQLite 方言无条件 early return，把「产品尚未实现该适配器」表述为
+ * 「你的 SQL 不合格」——让用户为工具的未完成买单，且对 PG/MySQL 项目没有任何合法出路。
+ *
+ * 不变量：任何方言的 payload 都不得送入其它方言的校验器。降级是**不执行方言层**，
+ * 而非改用别的方言执行——绝无「用 SQLite 兜底」这条路径。
+ */
+function validateSql(payload: string, dialect: DatabaseDialect): SqlValidationOutcome {
+  const structural = validateSqlStructure(payload);
+  if (structural) return { problem: structural, tier: 'structure' };
+
+  if (dialect === 'sqlite') return validateSqliteByExecution(payload);
+
+  // PostgreSQL 的语法级适配器在切片2 接入；此前一律按「未实现」降级。
+  return degrade(dialect, 'adapter-not-implemented', [dialect],
+    `${dialect} 的语法/执行预检适配器尚未实现；已完成结构检查，未执行 ${dialect} 方言校验`);
 }
 
 /**
@@ -720,7 +789,10 @@ export function validateAndStripNonMarkdownDelta(
       ? { dialect: options.databaseDialect }
       : options.root ? resolveProjectDatabaseDialect(options.root) : { error: '缺少项目根，无法确定 SQL 方言' };
     if (!resolved.dialect) return { ok: false, message: resolved.error ?? '无法确定 SQL 方言' };
-    problem = validateSql(payload, resolved.dialect);
+    const outcome = validateSql(payload, resolved.dialect);
+    return outcome.problem
+      ? { ok: false, message: outcome.problem, tier: outcome.tier }
+      : { ok: true, payload, tier: outcome.tier, ...(outcome.degradation ? { degradation: outcome.degradation } : {}) };
   } else if (/^spec\/schema\/[a-z0-9][a-z0-9.-]*\.json$/.test(canonicalTargetPath)) {
     problem = validateOpenLogosRootJsonSchema(payload);
   } else {
@@ -1052,6 +1124,7 @@ function evaluateBaselineClosureLocked(options: EvaluateBaselineClosureOptions):
   if (!parsed.plan) return { active: true, violations: parsed.violations };
   const plan = parsed.plan;
   const violations = [...parsed.violations];
+  const sqlDegradations: SqlDegradationNotice[] = [];
   for (const invalid of parsedTasks.invalid) {
     violations.push(malformed(tasksRel, `task delta 路径无法安全映射：${invalid}`));
   }
@@ -1229,6 +1302,9 @@ function evaluateBaselineClosureLocked(options: EvaluateBaselineClosureOptions):
         violations.push(closureViolation('non_markdown_delta_invalid', `logos/changes/${slug}/${item.entry.relativePath}`,
           checked.message ?? 'non-Markdown delta 无效',
           '按精确首行协议声明 canonical target；只剥离首行后对 OpenAPI/SQL payload 做严格解析/执行预检'));
+      } else if (checked.degradation) {
+        // §2.52.7：降级是留痕不是违规——不进 violations，不影响 L9 通过与否。
+        sqlDegradations.push({ path: `logos/changes/${slug}/${item.entry.relativePath}`, degradation: checked.degradation });
       }
     } else if (prototypeAsset) {
       if (content.trim() === '') {
@@ -1258,7 +1334,8 @@ function evaluateBaselineClosureLocked(options: EvaluateBaselineClosureOptions):
   };
   violations.sort((a, b) => a.path !== b.path ? a.path.localeCompare(b.path, 'en')
     : a.code !== b.code ? a.code.localeCompare(b.code, 'en') : a.message.localeCompare(b.message, 'zh'));
-  return { active: true, plan, summary, violations };
+  // 非空才出现——保持无降级项目的输出逐字节零漂移。
+  return { active: true, plan, summary, violations, ...(sqlDegradations.length > 0 ? { sqlDegradations } : {}) };
 }
 
 /** Effective view：目标不存在视为空；当前 change 同目标必须唯一，否则不定义 last-wins。 */
