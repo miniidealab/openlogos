@@ -108,9 +108,11 @@ export function sliceTransactionCommand(
     } else if (command === 'abort') {
       result = abortTestSliceTransaction(proposalDir);
     } else {
-      // recover：failed 且 classification=recovery_required 时把事务退回 sealed 以便重试 apply。
+      // recover 尚未开放。文案不得断言未发生的前提——「apply 失败已整体回滚」在 apply
+      // 成功却产出非法的现场并不成立，会把用户引向错误的排查方向（功能规格 §2.53.6.2）。
       throw new TestSliceTransactionError('action_not_allowed',
-        'recover 暂未开放：apply 失败已整体回滚，请修正 slot 内容后重新提交');
+        'recover 暂未开放。请以 status 读取事务当前 phase 与 allowed_actions，按其中列出的动作继续；'
+        + 'failed 且 classification=recovery_required 时的出路是修正 slot 内容后重走 submit-content → seal → apply');
     }
     emit(format, result);
   } catch (error) {

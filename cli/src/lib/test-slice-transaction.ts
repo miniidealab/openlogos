@@ -17,7 +17,7 @@
  * 依**刚写出的** `tasks.md` 计算，写入者与指纹计算者是同一方、同一时刻（架构 §四十三.2）。
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractCodeSectionRaw, replaceCodeSectionBody } from './proposal-lifecycle.js';
@@ -209,6 +209,20 @@ export function readTestSliceTransactionIfPresent(proposalDir: string): TestSlic
   return projectTestSliceTransaction(readStored(proposalDir));
 }
 
+/**
+ * 终态集合——`completed` / `failed` 是**可归档历史**，不占「单活跃事务」名额
+ * （spec/test-slice-manifest.md §2.3.1）。把终态计入「已存在」会让恢复入口永久短路：
+ * `completed` 的 allowed_actions 为空，既不能提交也不能中止，而恢复事务又创建不出来。
+ */
+const TERMINAL_PHASES = new Set<TestSliceTransactionPhase>(['completed', 'failed']);
+
+/** 「活跃」的可机械判定条件。规格里这是个形容词，实现里必须是个谓词。 */
+export function isActiveTestSliceTransaction(
+  projection: { phase: TestSliceTransactionPhase } | null | undefined,
+): boolean {
+  return projection != null && !TERMINAL_PHASES.has(projection.phase);
+}
+
 /** manifest 失效的三种态——恢复事务的唯一触发判据，来自 deriveSliceVerificationState。 */
 const RECOVERY_REASONS = new Set([
   'test-slice-manifest-missing', 'test-slice-manifest-invalid', 'test-slice-manifest-stale',
@@ -228,7 +242,8 @@ export function ensureManifestRecoveryTransaction(
   root: string, proposalDir: string, slug: string, module = 'core',
 ): TestSliceTransactionProjection | null {
   const existing = readTestSliceTransactionIfPresent(proposalDir);
-  if (existing) return existing;                       // 单活跃事务，幂等
+  // 只有**非终态**事务占用活跃名额并触发幂等返回；终态事务是历史，不挡新一轮恢复。
+  if (existing && isActiveTestSliceTransaction(existing)) return existing;
   const state = deriveSliceVerificationState(root, proposalDir);
   if (!state || state.human_action_required) return null;   // 人工门优先
   if (!isManifestRecoveryReason(state.reason)) return null;
@@ -236,12 +251,28 @@ export function ensureManifestRecoveryTransaction(
 }
 
 /** 创建事务；已存在则返回既有投影（单活跃事务，幂等）。 */
+/**
+ * 终态事务让位前先归档，避免静默覆盖掉它的 receipt 与 artifact 哈希——
+ * 「可归档历史」是字面意思：不占名额，但不销毁。
+ */
+function archiveTerminalTransaction(proposalDir: string, transactionId: string): void {
+  const source = filePath(proposalDir);
+  if (!existsSync(source)) return;
+  const dir = join(proposalDir, 'slice-transactions');
+  mkdirSync(dir, { recursive: true });
+  renameSync(source, join(dir, `${transactionId}.json`));
+}
+
 export function createTestSliceTransaction(
   _root: string, proposalDir: string, slug: string,
   options: { origin?: TestSliceTransactionOrigin; module?: string } = {},
 ): TestSliceTransactionProjection {
   const existing = readTestSliceTransactionIfPresent(proposalDir);
-  if (existing) return existing;
+  // 非终态事务占用活跃名额 → 幂等返回；终态事务是历史 → 归档后让位，不挡新一轮。
+  if (existing) {
+    if (isActiveTestSliceTransaction(existing)) return existing;
+    archiveTerminalTransaction(proposalDir, existing.transaction_id);
+  }
   const origin = options.origin ?? 'initial-plan';
   const now = new Date().toISOString();
   const changed = extractChangedTestIds(proposalDir);

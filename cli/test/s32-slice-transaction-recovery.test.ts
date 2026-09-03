@@ -69,8 +69,9 @@ function setup(breakage: 'none' | 'missing' | 'invalid' = 'none') {
   submitTestSliceContent(dir, 'slot_slices', slicesFile);
   sealTestSliceTransaction(dir);
   applyTestSliceTransaction(root, dir);
-  // 事务已 completed；移走以模拟「新一轮」
-  rmSync(join(dir, 'TEST_SLICE_TRANSACTION.json'), { force: true });
+  // 事务停在 completed 且**文件保留在场**。此前这里 rmSync 掉 TEST_SLICE_TRANSACTION.json
+  // 来「模拟新一轮」——那一步删除正是缺陷报告所指的人工绕过（消费方去改 OpenLogos 拥有的
+  // 文件），把它写进前提会让「终态不占活跃名额」这条约束在测试中天然不可见。
 
   const manifestPath = join(dir, 'TEST_SLICE_MANIFEST.json');
   if (breakage === 'missing') rmSync(manifestPath, { force: true });
@@ -144,11 +145,15 @@ describe('S28 恢复节点创建事务', () => {
   });
 
   it('UT-S28-46: 无失效态不创建；已有事务则幂等', () => {
-    // manifest 合法 → 不创建
+    // manifest 合法 → 不创建。注意此时磁盘上仍有那个 completed 的 initial-plan 事务，
+    // 断言的是「没有新建恢复事务」，而不是「目录里没有事务文件」——后者只在夹具
+    // 预先删除事务文件时才成立，那正是要消除的人工绕过。
     const ok = setup('none');
     expect(isManifestRecoveryReason(deriveSliceVerificationState(ok.root, ok.dir)?.reason)).toBe(false);
     expect(ensureManifestRecoveryTransaction(ok.root, ok.dir, SLUG)).toBeNull();
-    expect(readTestSliceTransactionIfPresent(ok.dir)).toBeNull();
+    const untouched = readTestSliceTransactionIfPresent(ok.dir)!;
+    expect(untouched.phase).toBe('completed');
+    expect(untouched.origin).toBe('initial-plan');
 
     // 已有活跃事务 → 幂等返回同一 id，不产生第二个
     const broken = setup('invalid');

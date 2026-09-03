@@ -116,6 +116,28 @@ export interface NextData {
   baseline_coverage?: BaselineCoverage;
 }
 
+/**
+ * 把事务投影翻译成与事实一致的指引。任何一句话都必须能从 phase / origin /
+ * allowed_actions 直接读出，不得复用另一分支的模板文案（功能规格 §2.53.6.2）。
+ */
+function describeRecoveryTransaction(tx: TestSliceTransactionProjection): string {
+  const head = `切片事务 ${tx.transaction_id}（origin=${tx.origin}，phase=${tx.phase}）`;
+  if (tx.origin !== 'manifest-recovery') {
+    // 不把 initial-plan 事务讲成恢复事务——它不是。
+    return `${head} 不是恢复事务，无法用于重建 manifest。`
+      + '请核对提案状态；不得绕过事务直接写产物。';
+  }
+  if (tx.allowed_actions.length === 0) {
+    // 终态不接受任何动作，提示「提交内容」只会让用户反复撞墙。
+    return `${head} 已处于终态，不接受任何动作。请重新求 next 以取得新的恢复事务。`;
+  }
+  const missing = tx.content_slots.missing_slot_ids;
+  const step = missing.length > 0
+    ? `向 ${missing.join('、')} 提交内容后 seal、apply`
+    : `内容已收齐，下一步 ${tx.next_action ?? 'seal'}`;
+  return `${head} 已就绪：${step}；[code] 段冻结，仅原子重建 manifest。`;
+}
+
 function manifestRecoveryNode(state: SliceVerificationState): NextNode | null {
   if (state.human_action_required) return null;
   // 三态判据来自切片事务模块的唯一定义（架构 §四十一.4：判据只能有一个实现）。
@@ -981,11 +1003,12 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           : `测试—切片清单保守阻塞（${state.reason}）`,
         command: null,
         detail: recovery
+          // 携带 canonical 事务身份：消费方按 allowed_actions 执行，不自判恢复、不自算作用域。
+          // detail 必须由事务真实的 phase / origin / allowed_actions 推出（功能规格 §2.53.6.2）：
+          // 把 initial-plan 讲成恢复事务、对 allowed_actions=[] 提示「提交内容」、
+          // 或一边说「已就绪」一边渲染「（无缺口）」，都会让用户照做后每个动作都被拒。
           ? (recoveryTransaction
-            // 携带 canonical 事务身份：消费方按 allowed_actions 执行，不自判恢复、不自算作用域。
-            ? `切片事务 ${recoveryTransaction.transaction_id}（origin=${recoveryTransaction.origin}）已就绪：`
-              + `向 ${recoveryTransaction.content_slots.missing_slot_ids.join('、') || '（无缺口）'} 提交内容后 seal、apply；`
-              + '[code] 段冻结，仅原子重建 manifest。'
+            ? describeRecoveryTransaction(recoveryTransaction)
             : '切片事务尚不可用：请核对提案目录与 manifest 状态后重试；不得绕过事务直接写产物。')
           : '未知主版本或归属歧义不得自动覆盖；请人工消歧或升级兼容后重试。',
         ...(recovery ? { next_node: recovery } : {}),
