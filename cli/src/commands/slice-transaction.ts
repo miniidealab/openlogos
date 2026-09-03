@@ -25,13 +25,24 @@ const SUPPORTED: SliceTransactionCommand[] = ['status', 'submit-content', 'seal'
 function emitError(format: OutputFormat, error: unknown): never {
   const txError = error instanceof TestSliceTransactionError ? error : null;
   const message = error instanceof Error ? error.message : String(error);
+  const violations = txError?.violations ?? [];
   if (format === 'json') {
     console.error(JSON.stringify({
       command: 'slice transaction', version: VERSION, timestamp: new Date().toISOString(),
-      error: { code: 'SLICE_TRANSACTION_FAILED', message, details: { classification: txError?.code ?? 'internal_failure' } },
+      error: {
+        code: 'SLICE_TRANSACTION_FAILED',
+        message,
+        // violations 原样带出（code/path/message/fix_hint 四项俱全），不压缩为摘要——
+        // 消费方要靠它定位是哪个 spec_targets 或哪个 task_text 不合格。
+        details: { classification: txError?.code ?? 'internal_failure', violations },
+      },
     }));
   } else {
     console.error(`Error: slice transaction 失败（${txError?.code ?? 'internal_failure'}）：${message}`);
+    for (const v of violations) {
+      console.error(`  - [${v.code}] ${v.path}：${v.message}`);
+      console.error(`      修复：${v.fix_hint}`);
+    }
   }
   process.exit(1);
   throw new Error('unreachable');

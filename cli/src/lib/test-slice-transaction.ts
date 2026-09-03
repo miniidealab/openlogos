@@ -24,7 +24,7 @@ import { extractCodeSectionRaw, replaceCodeSectionBody } from './proposal-lifecy
 import {
   TEST_SLICE_MANIFEST, computeSpecFingerprint, computeTaskFingerprint,
   deriveSliceVerificationState, extractChangedTestIds, writeTestSliceManifestAtomic,
-  type TestSliceManifestSlice, type TestSliceManifestV1,
+  type TestSliceManifestSlice, type TestSliceManifestV1, type TestSliceViolation,
 } from './test-slice-manifest.js';
 
 export const TEST_SLICE_TRANSACTION_SCHEMA = 'openlogos/test-slice-transaction@1' as const;
@@ -68,7 +68,7 @@ export interface TestSliceTransactionProjection {
   spec_fingerprint: string | null;
   changed_test_ids_sha256: string | null;
   content_slots: { required: number; submitted: number; missing_slot_ids: TestSliceSlotId[] };
-  violations: Array<{ code: string; message: string; fix_hint: string }>;
+  violations: TestSliceViolation[];
   receipt: TestSliceTransactionReceipt | null;
   schema_sha256: string;
   contract_sha256: string;
@@ -90,13 +90,20 @@ interface StoredSliceTransaction {
   slots: TestSliceContentSlot[];
   staged: Partial<Record<TestSliceSlotId, string>>;
   receipt: TestSliceTransactionReceipt | null;
+  /** apply 自校验判非法时留存的 validator 结论；原样保真，不压缩为摘要。 */
+  violations: TestSliceViolation[];
   aborted_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export class TestSliceTransactionError extends Error {
-  constructor(public readonly code: string, message: string) { super(message); }
+  constructor(
+    public readonly code: string,
+    message: string,
+    /** 仅 apply 自校验失败时非空：validator 的原始结论，供投影原样带出。 */
+    public readonly violations: TestSliceViolation[] = [],
+  ) { super(message); }
 }
 
 const digest = (bytes: Buffer | string): string =>
@@ -117,7 +124,10 @@ function allowedActions(tx: StoredSliceTransaction): TestSliceTransactionAction[
     case 'sealed': return ['apply', 'abort'];
     case 'applying': return ['recover', 'abort'];
     case 'completed': return [];
-    case 'failed': return tx.classification === 'recovery_required' ? ['recover'] : [];
+    // failed + recovery_required 的出路是「修正 slot 后重走 seal/apply」（S32 异常与边界）。
+    // 不列 recover：命令面尚未开放该动作，把它写进 allowed_actions 会让投影与事实不符
+    // ——用户照着做每次都被拒（功能规格 §2.53.6.2）。
+    case 'failed': return tx.classification === 'recovery_required' ? ['submit_content', 'abort'] : [];
   }
 }
 
@@ -161,7 +171,7 @@ export function projectTestSliceTransaction(tx: StoredSliceTransaction): TestSli
       submitted: submitted.length,
       missing_slot_ids: required.filter(slot => !submitted.includes(slot)),
     },
-    violations: [],
+    violations: tx.violations ?? [],
     receipt: tx.receipt,
     schema_sha256: tx.schema_sha256,
     contract_sha256: tx.contract_sha256,
@@ -246,7 +256,7 @@ export function createTestSliceTransaction(
     seal_sha256: null,
     slots: requiredSlots(origin).map(slot => ({ slot_id: slot, content_sha256: null, sealed_sha256: null })),
     staged: {},
-    receipt: null, aborted_at: null, created_at: now, updated_at: now,
+    receipt: null, violations: [], aborted_at: null, created_at: now, updated_at: now,
   };
   writeStored(proposalDir, tx);
   return projectTestSliceTransaction(tx);
@@ -347,6 +357,17 @@ export function applyTestSliceTransaction(
   if (!existsSync(tasksPath)) {
     throw new TestSliceTransactionError('artifact_unreadable', '提案缺少 tasks.md');
   }
+  // 前置：change set 不可信属于**上游** merge / spec-complete 的阻塞前沿，
+  // 禁止伪装成 slice manifest 问题（spec/test-slice-manifest.md §9）。在写盘之前拦下——
+  // 因此不产生半写态、也不需要回滚，且提示指向 merge 而非「修正 slot 内容」。
+  const precondition = deriveSliceVerificationState(root, proposalDir);
+  if (precondition?.test_change_set?.status === 'invalid') {
+    throw new TestSliceTransactionError('change_set_unavailable',
+      'apply 前置不满足：SPEC_MERGED.test_change_set 不可信。请回到 merge / spec-complete 修复，'
+      + '不要改动 slot 内容——这不是切片划分的问题。',
+      precondition.violations ?? []);
+  }
+
   const tasksBefore = readFileSync(tasksPath, 'utf-8');
   const manifestExisted = existsSync(manifestPath);
   const manifestBefore = manifestExisted ? readFileSync(manifestPath, 'utf-8') : null;
@@ -378,6 +399,18 @@ export function applyTestSliceTransaction(
     };
     writeTestSliceManifestAtomic(manifestPath, manifest);
 
+    // ③ 终态守门：用既有判定器复核刚写出的两产物。原子写入只保证两者同生共死，
+    //    不保证它们合法——事务完全可以原子地写出一对互相一致但业务非法的产物
+    //    然后宣告成功（架构 §四十三.2.1）。判非法即落入下方 catch，走与写盘异常
+    //    完全相同的那一条回滚，不另写一份。
+    const verdict = verifyAppliedManifest(root, proposalDir);
+    if (verdict.status !== 'valid') {
+      throw new TestSliceTransactionError('apply_verification_failed',
+        `apply 写出的产物被判定器判为 ${verdict.status ?? 'unknown'}，已整体回滚：`
+        + `${verdict.violations.length} 条违规。修正 slot 内容后重新提交。`,
+        verdict.violations);
+    }
+
     tx.spec_fingerprint = manifest.spec_fingerprint;
     tx.receipt = {
       transaction_id: tx.transaction_id,
@@ -389,6 +422,7 @@ export function applyTestSliceTransaction(
       ],
     };
     tx.phase = 'completed';
+    tx.violations = [];
     tx.updated_at = tx.receipt.completed_at;
     writeStored(proposalDir, tx);
     return projectTestSliceTransaction(tx);
@@ -399,6 +433,9 @@ export function applyTestSliceTransaction(
     else writeFileSync(manifestPath, manifestBefore);
     tx.phase = 'failed';
     tx.classification = 'recovery_required';
+    // violations 原样留存并进入投影——压缩成单条摘要，消费方就无法定位到底是哪个
+    // spec_targets 或哪个 task_text 不合格（spec/test-slice-manifest.md §2.2.1）。
+    tx.violations = error instanceof TestSliceTransactionError ? error.violations : [];
     tx.updated_at = new Date().toISOString();
     writeStored(proposalDir, tx);
     throw error instanceof TestSliceTransactionError ? error
@@ -407,7 +444,17 @@ export function applyTestSliceTransaction(
   }
 }
 
-/** 复核：apply 后 manifest 被既有判定器判为何种状态。不新建第二套 validator。 */
-export function verifyAppliedManifest(root: string, proposalDir: string): string | null {
-  return deriveSliceVerificationState(root, proposalDir)?.manifest_status ?? null;
+/**
+ * apply 的终态守门人：用**既有**判定器复核刚写出的两产物，不新建第二套 validator。
+ *
+ * 此前本函数只回一个状态字符串，且**全仓零调用方**——复核器在场、注释写明用途，却没有任何
+ * 执行路径经过它，于是「写盘成功即 completed」照旧成立（架构 §四十三.2.1）。现在它由
+ * `applyTestSliceTransaction()` 在置 `completed` 前直接调用，并把 violations 一并返回，
+ * 使失败投影能定位到具体的 `spec_targets` 或 `task_text`。
+ */
+export function verifyAppliedManifest(
+  root: string, proposalDir: string,
+): { status: string | null; violations: TestSliceViolation[] } {
+  const state = deriveSliceVerificationState(root, proposalDir);
+  return { status: state?.manifest_status ?? null, violations: state?.violations ?? [] };
 }

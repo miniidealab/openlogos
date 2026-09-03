@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { join, resolve } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
+import { buildTestChangeSet } from '../src/lib/test-change-set.js';
 import {
   TestSliceTransactionError, applyTestSliceTransaction, createTestSliceTransaction,
   readTestSliceTransactionIfPresent, sealTestSliceTransaction, submitTestSliceContent,
@@ -40,11 +41,23 @@ function setup(tasks = TASKS) {
     modules: [{ id: 'core', name: '核心', lifecycle: 'launched', product_type: 'cli' }],
   }));
   mkdirSync(join(root, 'logos', 'resources', 'test'), { recursive: true });
-  writeFileSync(join(root, 'logos', 'resources', 'test', 'core-S01-test-cases.md'),
-    ['| ID | 描述 |', '|---|---|', '| UT-S01-01 | a |', '| UT-S01-02 | b |', ''].join('\n'));
+  const specRel = 'logos/resources/test/core-S01-test-cases.md';
+  const specBefore = Buffer.from(['| ID | 描述 |', '|---|---|', ''].join('\n'), 'utf8');
+  const specAfter = Buffer.from(['| ID | 描述 |', '|---|---|', '| UT-S01-01 | a |', '| UT-S01-02 | b |', ''].join('\n'), 'utf8');
+  writeFileSync(join(root, specRel), specAfter);
   const dir = join(root, 'logos', 'changes', SLUG);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'SPEC_MERGED'), '{}');
+  // 真实 merge 写出的 SPEC_MERGED 必带 test_change_set。此前夹具写 '{}'，manifest 因此
+  // 恒被判 invalid——但 apply 从不复核产物，测试照样全绿。apply 接入自校验后这类
+  // 「绿着的假前提」才暴露出来，必须按真实 merge 的形状重建。
+  writeFileSync(join(dir, 'SPEC_MERGED'), JSON.stringify({
+    type: 'merge_transaction_complete', transaction_id: 'mtx_fixture', seal_sha256: null,
+    receipt_sha256: null, completed_at: new Date().toISOString(),
+    test_change_set: buildTestChangeSet({
+      change: SLUG, module: 'core',
+      targets: [{ targetPath: specRel, beforeBytes: specBefore, afterBytes: specAfter }],
+    }),
+  }));
   writeFileSync(join(dir, 'tasks.md'), tasks);
   writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: SLUG, module: 'core' }));
   const codeFile = join(root, 'code.txt');
