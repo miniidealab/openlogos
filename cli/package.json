@@ -67,6 +67,7 @@
   },
   "dependencies": {
     "@hyperjump/json-schema": "1.17.7",
+    "pg-query-emscripten": "5.1.0",
     "yaml": "^2.8.3"
   }
 }

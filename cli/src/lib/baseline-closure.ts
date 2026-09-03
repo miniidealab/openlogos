@@ -11,6 +11,7 @@ import {
   dirname, isAbsolute, join, posix, relative, sep,
 } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import {
   validate as compileOpenApi30,
   type Output as OpenApiValidationOutput,
@@ -738,6 +739,76 @@ function validateSqliteByExecution(payload: string): SqlValidationOutcome {
 }
 
 /**
+ * 在一次性子进程中初始化 libpg_query WASM 并解析 stdin 上的 payload，以 JSON 回报判决。
+ * 只做文本到 AST 的转换：不执行、不连库、不落盘、不联网。
+ */
+const PG_PARSE_SCRIPT = [
+  "const entry = process.argv[1];",
+  "let chunks = '';",
+  "process.stdin.setEncoding('utf8');",
+  "process.stdin.on('data', d => { chunks += d; });",
+  "process.stdin.on('end', async () => {",
+  "  try {",
+  "    const mod = require(entry);",
+  "    const factory = typeof mod === 'function' ? mod : mod.default;",
+  "    if (typeof factory !== 'function') throw new Error('模块未暴露工厂函数');",
+  "    const instance = await factory();",
+  "    if (!instance || typeof instance.parse !== 'function') throw new Error('实例未暴露 parse 方法');",
+  "    const parsed = instance.parse(chunks);",
+  "    process.stdout.write(JSON.stringify(parsed.error",
+  "      ? { ok: false, error: String(parsed.error.message) }",
+  "      : { ok: true }));",
+  "  } catch (error) {",
+  "    process.stdout.write(JSON.stringify({ loadFailed: error instanceof Error ? error.message : String(error) }));",
+  "  }",
+  "});",
+].join('\n');
+
+/**
+ * PostgreSQL 语法级校验：走 libpg_query 的 WASM 编译产物——即 PostgreSQL 自身的语法解析器，
+ * 因此**定义上不会误拦合法 PG SQL**。只做文本到 AST 的转换：不执行、不连库、不落盘、不起进程。
+ *
+ * 这是**语法级**而非执行级——它不会发现「引用了不存在的表」这类只有执行才能发现的问题。
+ * 层级自述为 'syntax'，与 SQLite 的 'execution' 明确区别（架构 §四十二.2）。
+ */
+function validatePostgresBySyntax(payload: string): SqlValidationOutcome {
+  // 解析器工厂返回 Promise，而 validateSql 与其三个消费方都是同步的。与其把 async 涟漪扩散到
+  // change-lint / merge / baseline-apply，不如沿用 SQLite 分支既有的 spawnSync 子进程模式——
+  // 判据同步、WASM 在一次性子进程中初始化并随进程退出回收。
+  let entry: string;
+  try {
+    entry = createRequire(import.meta.url).resolve('pg-query-emscripten');
+  } catch (error) {
+    return degrade('postgresql', 'adapter-not-installed', ['pg-query-emscripten'],
+      `PostgreSQL 语法解析器未安装（${error instanceof Error ? error.message : String(error)}）；`
+        + '已完成结构检查，未执行 postgresql 语法预检');
+  }
+  const child = spawnSync(process.execPath, ['-e', PG_PARSE_SCRIPT, entry], {
+    input: payload, encoding: 'utf-8', timeout: 30_000,
+  });
+  if (child.error) {
+    return degrade('postgresql', 'adapter-not-installed', ['pg-query-emscripten'],
+      `PostgreSQL 语法解析器无法运行（${child.error.message}）；已完成结构检查，未执行 postgresql 语法预检`);
+  }
+  const raw = (child.stdout || '').trim();
+  let verdict: { ok?: boolean; error?: string; loadFailed?: string };
+  try {
+    verdict = JSON.parse(raw) as typeof verdict;
+  } catch {
+    return degrade('postgresql', 'adapter-not-installed', ['pg-query-emscripten'],
+      `PostgreSQL 语法解析器返回非预期输出（${(child.stderr || raw).slice(0, 200)}）；`
+        + '已完成结构检查，未执行 postgresql 语法预检');
+  }
+  // 加载失败按「未安装」降级；解析失败才是提案缺陷（§四十二.1 的责任归属）。
+  if (verdict.loadFailed) {
+    return degrade('postgresql', 'adapter-not-installed', ['pg-query-emscripten'],
+      `PostgreSQL 语法解析器无法加载（${verdict.loadFailed}）；已完成结构检查，未执行 postgresql 语法预检`);
+  }
+  if (!verdict.ok) return { problem: `PostgreSQL 语法预检失败：${verdict.error ?? '未知解析错误'}`, tier: 'syntax' };
+  return { problem: null, tier: 'syntax' };
+}
+
+/**
  * SQL delta 校验（§2.52 / 架构 §四十二）。
  *
  * 分两层：结构层与方言无关且始终执行；方言层按本机可用适配器路由，不可用时**降级为跳过并留痕**，
@@ -753,7 +824,10 @@ function validateSql(payload: string, dialect: DatabaseDialect): SqlValidationOu
 
   if (dialect === 'sqlite') return validateSqliteByExecution(payload);
 
-  // PostgreSQL 的语法级适配器在切片2 接入；此前一律按「未实现」降级。
+  if (dialect === 'postgresql') return validatePostgresBySyntax(payload);
+
+  // MySQL 尚无不会误拦合法 SQL 的权威解析器——现有唯一候选实测对合法分区表误拦，
+  // 用它等于把「完全阻断」换成「随机阻断」。按未实现降级，等权威解析器出现再补。
   return degrade(dialect, 'adapter-not-implemented', [dialect],
     `${dialect} 的语法/执行预检适配器尚未实现；已完成结构检查，未执行 ${dialect} 方言校验`);
 }

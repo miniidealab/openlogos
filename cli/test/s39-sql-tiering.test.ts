@@ -79,17 +79,18 @@ describe('S39 SQL 分层判定与能力缺失降级', () => {
 
   it('UT-S39-64: 层级如实自述且不跨方言冒充', () => {
     const tiers = Object.fromEntries(DIALECTS.map(d => [d, validate(d)]));
-    // 三者各自如实：sqlite 走真执行，其余只到结构层
+    // 三者各自如实：sqlite 走真执行，postgresql 走自己的语法解析器，mysql 无适配器故降级
     expect(tiers.sqlite.tier).toBe('execution');
-    expect(tiers.postgresql.tier).toBe('structure');
+    expect(tiers.postgresql.tier).toBe('syntax');
     expect(tiers.mysql.tier).toBe('structure');
-    // 关键：PG/MySQL 绝不进入 sqlite 执行路径——若被冒充，其 tier 会是 execution
+    // 关键：非 sqlite 方言绝不进入 sqlite 执行路径——若被冒充，其 tier 会是 execution
     for (const dialect of ['postgresql', 'mysql'] as const) {
       expect(tiers[dialect].tier, `${dialect} 不得被 sqlite 冒充`).not.toBe('execution');
-      expect(tiers[dialect].degradation!.dialect).toBe(dialect);
     }
-    // 未降级者不得携带留痕——层级自述不能自相矛盾
+    // 未降级者不得携带留痕，降级者必须携带——层级自述不能自相矛盾
     expect(tiers.sqlite.degradation).toBeUndefined();
+    expect(tiers.postgresql.degradation).toBeUndefined();
+    expect(tiers.mysql.degradation!.dialect).toBe('mysql');
   });
 });
 

@@ -723,14 +723,20 @@ describe('S39 单元测试——闭包、路径、完整度与协议', () => {
     // 0.14.10 起：非 SQLite 方言不再硬失败（架构 §四十二.1 能力缺失只能降级），但本用例的原意图
     // ——「不许用 SQLite 冒充该方言」——完整保留，改为正向断言：payload 通过的层级只能是
     // structure，绝不能是 sqlite 的 execution，即它从未进入 sqlite 执行路径。
-    for (const dialect of ['postgresql', 'mysql']) {
+    for (const dialect of ['postgresql', 'mysql'] as const) {
       writeFileSync(yamlPath, base.replace('database: sqlite', `database: ${dialect}`));
-      const degraded = validateAndStripNonMarkdownDelta(good, 'CREATE', path, { root: f.root });
-      expect(degraded.ok, `${dialect} 不应被阻断`).toBe(true);
-      expect(degraded.tier, `${dialect} 绝不能走 sqlite 的 execution 层`).toBe('structure');
-      expect(degraded.degradation?.dialect).toBe(dialect);
-      expect(degraded.degradation?.reason).toBe('adapter-not-implemented');
-      expect(degraded.degradation?.missing).toContain(dialect);
+      const routed = validateAndStripNonMarkdownDelta(good, 'CREATE', path, { root: f.root });
+      expect(routed.ok, `${dialect} 不应被阻断`).toBe(true);
+      // 核心不变量：绝不进入 sqlite 的 execution 层——各方言只能走自己的适配器或降级。
+      expect(routed.tier, `${dialect} 绝不能走 sqlite 的 execution 层`).not.toBe('execution');
+      if (dialect === 'postgresql') {
+        expect(routed.tier).toBe('syntax');            // 走自己的权威解析器
+        expect(routed.degradation).toBeUndefined();
+      } else {
+        expect(routed.tier).toBe('structure');          // 无适配器 → 降级
+        expect(routed.degradation?.dialect).toBe(dialect);
+        expect(routed.degradation?.reason).toBe('adapter-not-implemented');
+      }
     }
     writeFileSync(yamlPath, base.replace('  database: sqlite\n', ''));
     expect(validateAndStripNonMarkdownDelta(good, 'CREATE', path, { root: f.root }).message).toContain('未声明 SQL 方言');
