@@ -587,7 +587,8 @@ const CODE_SECTION_RESET_PLACEHOLDER: Record<string, string> = {
 };
 
 /** 提取 tasks.md 中 `## [code]` section 的原始文本（标题到下一个 `## ` 前），用于 auto-reset 备份。 */
-function extractCodeSectionRaw(content: string): string {
+/** 提取 `## [code]` section 原文（标题到下一个 `## ` 前）。切片事务的整节替换复用同一判据。 */
+export function extractCodeSectionRaw(content: string): string {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];
   let inCode = false;
@@ -601,8 +602,8 @@ function extractCodeSectionRaw(content: string): string {
   return out.join('\n').trimEnd();
 }
 
-/** 把 `## [code]` section body 重置为纯代码模板占位（保留 `## [code]` 标题行）。 */
-function replaceCodeSectionBody(content: string, placeholder: string): string {
+/** 把 `## [code]` section body 换成给定内容（保留 `## [code]` 标题行）。重置与事务写入共用。 */
+export function replaceCodeSectionBody(content: string, placeholder: string): string {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];
   let inCode = false;

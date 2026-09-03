@@ -242,6 +242,17 @@ async function main() {
       change(restArgs[0], moduleArg);
       break;
     }
+    case 'slice': {
+      // 切片事务命令面（openlogos/test-slice-transaction@1）。
+      if (args[1] === 'transaction') {
+        const { sliceTransactionCommand } = await import('./commands/slice-transaction.js');
+        sliceTransactionCommand(args[2], args.slice(3), format);
+        break;
+      }
+      console.error('Usage: openlogos slice transaction <status|submit-content|seal|apply|recover|abort>');
+      process.exit(1);
+      break;
+    }
     case 'merge': {
       if (args[1] === 'transaction') {
         const { mergeTransactionCommand } = await import('./commands/merge-transaction.js');

@@ -43,7 +43,8 @@ function findArchivedProposalDirs(root: string, slug: string): string[] {
  * 但可读 ≠ 可写：归档的语义是「该变更已终结」，恢复可读是为了审计与重放判据，
  * 不是让终结的东西重新可改写。消费方一律调用本函数，禁止自建第二套目录拼接规则。
  */
-function resolveIdentity(
+/** 提案目录解析（活跃或归档）。切片事务命令面复用同一判据，禁止第二份实现。 */
+export function resolveIdentity(
   root: string,
   explicitSlug?: string,
 ): { slug: string; proposalDir: string; archived: boolean } {
