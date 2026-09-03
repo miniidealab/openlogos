@@ -53,7 +53,7 @@
 | ST-S28-EX-1 | launched builtin code skip → 报错（非省略） | EX-1 | launched overlay `skip code` → 派生 | `FLOW_SCHEMA_INVALID`（S25 入口），不进 S28 省略逻辑 |
 | ST-S28-EX-2 | 命令级建议省略（非报错） | EX-2 | all_done / launched 或 adopted 无 active proposal→change / launch | 各正常省略 `next_node`、无报错；adopted 不产生 add-baseline-docs 分支 |
 | ST-S28-EX-3 | initial loop 阻塞 + code 缺失/被 skip → 省略 | EX-3 | initial set-loop + skip code、verify FAIL | 省略 next_node、loop_state 仍在；不报错 |
-| ST-S28-EX-4 | 已存在 PLAN_APPROVED 后重复 next --auto | EX-4 | ready-to-delta 已被消费，尚未产出 delta | `next --auto --format json` | 不再走 auto 放行省略；输出 `next_node.id=="write-delta"` |
+| ST-S28-EX-4 | 已存在 PLAN_APPROVED 后重复 next --auto | EX-4 | ready-to-delta 已被消费、尚未产出 delta 时跑 `next --auto --format json` | 不再走 auto 放行省略；输出 `next_node.id=="write-delta"` |
 
 ## 四、覆盖度校验清单
 - [ ] builtin 当前节点输出 skill（initial phase→node / launched step→node）：UT-S28-01、UT-S28-02、ST-S28-01
