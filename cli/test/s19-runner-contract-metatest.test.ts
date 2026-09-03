@@ -35,6 +35,18 @@ function registryMembership(runner: string): Record<string, boolean> {
 }
 
 describe('S19 候选 runner 留痕契约', () => {
+  it('UT-S19-35: 终态自校验 runner 在三处注册表均已登记且实现留痕契约', () => {
+    const runner = 'scripts/smoke-slice-transaction-terminal-0-14-12.js';
+    expect(registryMembership(runner)).toEqual({
+      hostArtifacts: true, globalMutatingRunners: true, globalCandidateRunners: true,
+    });
+    const source = readFileSync(join(REPO_ROOT, runner), 'utf8');
+    expect(/requireEnvOrSkip\s*\(/.test(source), '未调用 requireEnvOrSkip').toBe(true);
+    expect(/--self-test/.test(source), '无 --self-test 只读入口').toBe(true);
+    // 夹具口径：runner 自身不得把「删除事务文件」写进任何步骤
+    expect(/rmSync\([^)]*TEST_SLICE_TRANSACTION/.test(source), 'runner 不得删除事务文件').toBe(false);
+  });
+
   it('UT-S19-34: 切片事务 runner 在三处注册表均已登记且实现留痕契约', () => {
     const runner = 'scripts/smoke-slice-transaction-0-14-11.js';
     // 逐表断言而非「至少登记一处」——三张表职责不同，漏登任意一张都是不同的静默失效。
