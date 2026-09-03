@@ -290,25 +290,24 @@ function assertTestIdSingleSource(entry) {
   if (offenders.length > 0) throw new Error(`安装态仍有自列测试 ID 正则：${offenders.join('、')}`);
 
   const { isTestId } = createRequire(entry)(join(libDir, 'test-id.js'));
-  const specTest = join(pkg, 'spec');
-  const ids = new Set();
-  const walk = dir => {
-    if (!existsSync(dir)) return;
-    for (const name of readdirSync(dir)) {
-      const path = join(dir, name);
-      if (statSync(path).isDirectory()) walk(path);
-      else if (name.endsWith('.md')) {
-        for (const line of readFileSync(path, 'utf8').split('\n')) {
-          const m = /^\|\s*((?:UT|ST|SMOKE)-[A-Za-z0-9][A-Za-z0-9.\-]*)\s*\|/.exec(line.trim());
-          if (m) ids.add(m[1]);
-        }
-      }
-    }
+
+  // 注意：测试规格（logos/resources/test/**）不随包分发，安装态无从遍历真实语料——
+  // 「已合并规格中每个表格首列 ID 都被接纳」由源码侧 UT-S35-131 覆盖（2127 条）。
+  // 此处改为对**代表性 ID 形态**逐一判定，其中 JSON 系正是放宽前被丢弃的那一类；
+  // 若退回严格语法，accepted 断言立刻失败，而不是像遍历空目录那样恒真。
+  const mustAccept = ['UT-S16-01', 'ST-S35-24', 'SMOKE-core-173', 'UT-JSON-09', 'ST-JSON-21', 'UT-S09-110a-neg'];
+  const mustReject = ['not-a-test-id', 'UT', 'XX-S01-01', ''];
+  const wronglyRejected = mustAccept.filter(id => !isTestId(id));
+  if (wronglyRejected.length > 0) throw new Error(`权威语法拒绝了应接纳的 ID：${wronglyRejected.join('、')}`);
+  const wronglyAccepted = mustReject.filter(id => isTestId(id));
+  if (wronglyAccepted.length > 0) throw new Error(`权威语法接纳了应拒绝的字符串：${wronglyAccepted.join('、')}`);
+
+  return {
+    self_declared_regexes: 0,
+    grammar_accepted: mustAccept,
+    grammar_rejected: mustReject,
+    corpus_check_note: '全量语料一致性由源码侧 UT-S35-131 覆盖；测试规格不随包分发',
   };
-  walk(specTest);
-  const rejected = [...ids].filter(id => !isTestId(id));
-  if (rejected.length > 0) throw new Error(`随包规格中的 ID 不被权威语法接纳：${rejected.join('、')}`);
-  return { self_declared_regexes: 0, packaged_spec_ids: ids.size, rejected: [] };
 }
 
 async function smoke(id, operation) {
