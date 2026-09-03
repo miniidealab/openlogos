@@ -915,3 +915,48 @@
 - 功能规格：§2.50；架构：§四十一。
 - 场景：S05、S35；UT/ST：UT-S05-47～50、ST-S05-22、UT-S35-121～126、ST-S35-22～23。
 - 部署方案：OpenLogos 0.14.8 plan 门死锁修复本机全局部署方案。
+
+## OpenLogos 0.14.9 merge 准入单点化安装态 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.9` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-173` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.9`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建任何 marker**。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-173 | 0.14.9 merge 准入单点化与误伤边界 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **合法提案不被误拦**：构造 change-lint PASS 的完整提案，经正常 gate 路径批准后跑 `merge`；③ 准入同源：对同一提案先跑 `change-lint` 再跑 `merge`，比对两者结论；④ 无信号提案也经预检：构造不含 `baseline_closure` 声明、`[delta]` 任务无 `[MODIFY]`/`[CREATE]` 标记、但 authority fact 引用不存在测试 ID 的提案，跑 `merge`；⑤ 阻断可归因：捕获 ④ 的 stderr；⑥ 围栏单点：构造含四反引号示意块的提案，跑 `next` 取 `proposal_step`；⑦ 语法单点：从安装态 dist 入口核验测试 ID 语法定义处数，并对随包规格的全部表格首列 ID 逐个判定；⑧ 门禁可满足性：对每阶段的合法最小提案在安装态跑对应门；⑨ 演练 `0.14.8→0.14.9→0.14.8→0.14.9` 并复核每阶段 identity | ② `merge` 成功并生成事务——**收紧未造成误伤**；③ 两者结论一致，lint 绿则 merge 绿、lint 红则 merge 红；④ 判 `authority_closure_incomplete` 并拒绝（修复前此处完全不经预检、直接放行）；⑤ 逐条含 code/路径/字段/fix_hint 且点名具体实体，无「L1-L9 未全过」这类聚合结论；⑥ 派生为 `ready-to-delta`，示意块未被误算；⑦ 语法恰 1 处定义、全部表格首列 ID 均被接纳（差集为空）；⑧ 每阶段最小提案均通过；⑨ 往返无混装；全程未触碰临时项目之外的任何文件，无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-173`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须为 `SMOKE-core-173` 写显式 `skip` 记录并携带缺失项，禁止静默零记录退出——沿用既有的不适用留痕契约。
+3. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、临时项目路径（脱敏）、② 的 merge 退出码与事务 id、③ 两次结论的比对结果、④ 的诊断码、⑤ 的逐条诊断条数与是否点名、⑥ 的 `proposal_step`、⑦ 的定义处数与未被接纳 ID 差集、⑧ 各阶段结论、⑨ 回滚每阶段 identity。
+4. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+5. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-173` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ② 失败直接 FAIL**：合法提案被拦下意味着收紧造成了误伤，是本次最需要防的后果，不得以「其余步骤都过」为由记 pass。
+- 观察到步骤 ④ 的 `merge` 通过（即准入未收紧），直接 FAIL；**误伤为零与准入收紧必须同时成立**，缺一即判失败。
+- 观察到 runner 手工创建任何 marker，直接 FAIL——那会把被测能力换成绕法。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ② 失败：立即以固定 `0.14.8` 回滚并报告触发条件——误伤必须在扩散前止住。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.8` 并报告环境状态；未证明全旧或全新时阻断后续动作。
+- 不得为让断言通过而手工写 marker、放宽准入判据或改写用户正式文档。
+
+### 追溯
+
+- 需求：AC-MERGEGATE-01～11。
+- 功能规格：§2.51；架构：§四十一.6。
+- 场景：S05、S09、S13、S19、S32、S35；UT/ST：UT-S05-51、ST-S05-23、UT-S09-283～286、ST-S09-110、UT-S13-65～66、ST-S13-18、UT-S19-33、ST-S19-19、UT-S32-50～51、ST-S32-17、UT-S35-127～131、ST-S35-24。
+- 部署方案：OpenLogos 0.14.9 merge 准入单点化本机全局部署方案。

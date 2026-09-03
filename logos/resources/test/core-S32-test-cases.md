@@ -214,3 +214,24 @@
 - [ ] 不可信 change set 分层阻断：UT-S32-48、ST-S32-16
 - [ ] 跨仓事故精确六 ID：UT-S32-49
 - [ ] 有效 change set 下的 manifest recovery：ST-S32-15
+
+## S32 此前不可见的测试 ID 进入切片归属测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S32-50 | changed 集合接纳 JSON 系 ID | Step 1→4 | 本次 test delta 中含 `UT-JSON-09` 形态的表格首列 ID | 求 `test_change_set` 的变更 ID 集合 | 该 ID 被捕获。**修复前它在筛选阶段即被丢弃、下游完全看不到** |
+| UT-S32-51 | 未归属的 JSON 系 ID 判 manifest invalid | Step 5→7a | changed 集合含 JSON 系 ID；manifest 的任一切片 `owned_test_ids` 都不含它 | 求 `deriveSliceVerificationState` | 判 `test-slice-test-id-missing`、manifest 为 invalid，诊断点名该 ID。**修复前该情形被判 valid（假阴性）**——改动这些用例可以不规划任何切片 |
+
+### 场景测试
+
+| ID | 描述 | covered Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S32-17 | 真实 CLI 下归属校验闭环 | Step 1→7 | 真实 CLI；提案 test delta 含 JSON 系 ID | ① 不为其规划切片，求 manifest 状态；② 把该 ID 加入某切片 `owned_test_ids` 后重求 | ① invalid 并点名未归属 ID；② valid 且进入 slice-checkpoint 模式。证明归属判据本身未放宽，只是被校验的集合变大 |
+
+### 追溯与覆盖
+
+- AC-MERGEGATE-08 语法与数据一致（切片一侧）：UT-S32-50。
+- AC-MERGEGATE-09 归属校验覆盖扩大且判据不放宽：UT-S32-51、ST-S32-17。
+- 场景：S32 此前不可见的测试 ID 进入切片归属；功能规格：§2.51.7；架构：§四十一.6.1。

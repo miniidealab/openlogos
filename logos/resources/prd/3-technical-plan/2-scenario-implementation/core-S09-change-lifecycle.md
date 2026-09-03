@@ -1382,3 +1382,76 @@ sequenceDiagram
 - 功能规格：§2.48.2。
 - 架构：§三十九.1。
 - 测试：UT-S09-279～UT-S09-282、ST-S09-109；安装态 SMOKE-core-170。
+
+## S09 merge 准入判定与 change-lint 同源
+
+### 场景目标
+
+让 `openlogos merge` 对「这个提案能不能进主规格」的判定，等于 `change-lint` 的完整结论；并让拒绝时的诊断足以定位到具体文件与字段。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| U | 用户 / AI | 发起 merge |
+| M | `openlogos merge` | 准入点 |
+| L | `change-lint` evaluator | 合规性的唯一判定 |
+| A | `merge-apply` 路径 | 另一条准入点，判据须与 M 同源 |
+
+前置：活跃 guard 指向该提案；提案目录可读。**不要求**提案带 `baseline_closure` 声明——此前正是该条件使一批提案完全绕过预检。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant U as 用户/AI
+    participant M as openlogos merge
+    participant L as change-lint evaluator
+
+    U->>M: Step 1: openlogos merge <slug>
+    M->>M: Step 2: guard 一致性与事务恢复检查
+    M->>L: Step 3: runChangeLint(root, proposalDir, slug)（无条件）
+    alt evaluator 无法完成
+        L-->>M: Step 4a: ok=false + errorCode
+        M-->>U: Step 5a: 拒绝，输出 errorCode 与 message；不生成 MERGE_PROMPT、不写 SPEC_MERGED
+    else violations 非空
+        L-->>M: Step 4b: 完整 violations 列表
+        M-->>U: Step 5b: 拒绝，**逐条**输出 code / 路径 / 字段 / fix_hint
+    else violations 为空
+        L-->>M: Step 4c: 空列表
+        M->>M: Step 5c: 继续既有的 UI provenance、delta 段标记与多写者检查
+        M-->>U: Step 6: 生成 MERGE_PROMPT 与事务
+    end
+```
+
+### 步骤说明
+
+- **Step 3 无条件**：删除 `closureActive` 条件门。该门此前要求提案带 `baseline_closure` 声明或 `[MODIFY]`/`[CREATE]` 任务标记，没有这些的提案整道预检不做。
+- **Step 4b 不过滤**：删除以 `BASELINE_CLOSURE_VIOLATION_CODES` 过滤违规的缩水判据。任一违规即拒绝，与 `merge-apply.ts` 的既有写法一致。
+- **Step 5b 逐条**：每条违规单独一行，含 `code`、路径、具体字段与 `fix_hint`。禁止「L1-L9 未全过」这类只给聚合结论的输出。
+- **Step 5c 顺序**：合规判定在前，既有的结构检查在后。合规不通过时不进入任何写操作。
+
+### test-change-set 的捕获集变化
+
+`merge` 成功时写入 `SPEC_MERGED.test_change_set`。该集合此前用 `test-change-set` 自列的严格语法提取，遗漏 11 个 JSON 系 ID。改用权威测试 ID 语法后，这些 ID 进入捕获集，其变更不再绕过下游的切片归属与 verify 可选集计算。
+
+变化方向只增不减：不存在此前被捕获、此后遗漏的 ID。
+
+### 不变量
+
+1. **准入判据唯一**：M 与 A 对同一提案目录得到同一准入结论；任一路径都不得自建违规码白名单。
+2. **完整采信**：M 必须采信 L 的全部违规，不得只挑其中一部分（架构 §四十一.6.1）。
+3. **可预测**：用户 merge 前跑 `change-lint`，即可完全预知 M 的结论。
+4. **失败不写**：任何拒绝路径都不得生成 MERGE_PROMPT、写 `SPEC_MERGED`、推进 counter 或 index。
+
+### 异常与边界
+
+- evaluator 自身无法完成（如 `module_unresolved`、`artifact_unreadable`）：按 `ok=false` 分支拒绝，输出 errorCode，不降级为「视为通过」。
+- 历史提案（带 `SPEC_MERGED`/`MERGED`/`VERIFY_PASS` 等 marker）：沿用 `change-lint` 既有的历史旁路，本节不改变其判定。
+- 收紧后被拒绝的提案：其 `change-lint` 必然同样失败，用户可用同一命令自查复现。
+
+### 追溯
+
+- 需求：AC-MERGEGATE-01、AC-MERGEGATE-02、AC-MERGEGATE-05、AC-MERGEGATE-09。
+- 功能规格：§2.51.2、§2.51.5；架构：§四十一.6.1。
+- 测试：UT-S09-283～UT-S09-286、ST-S09-110；安装态 SMOKE-core-173。

@@ -241,3 +241,30 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - AC-PLANGATE-09 spec-complete 判据单点（change-lint 一侧）：UT-S35-125、ST-S35-23。
 - AC-PLANGATE-11 marker 名单点：UT-S35-126。
 - 场景：S35 L10 authority closure 的分阶段校验时序；功能规格：§2.50.2～§2.50.4、§2.50.7；架构：§四十一.2、§四十一.4；安装态：SMOKE-core-172。
+
+## S35 围栏提取单点、可归因诊断与门禁可满足性测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S35-127 | 围栏提取与其余提取器同源 | Step 1→3 | 含嵌套围栏的文档：四反引号 markdown 块内示意一段 `authority_impact` yaml，块外另有一段真实声明 | 分别取 `authority-closure` 与 `baseline-closure`/`clarification`/`ui-first` 的围栏识别结果 | 四者对同一文档得到同一组围栏；`authority-closure` 命中 1 个而非 2 个。**修复前裸正则命中 2 个**——本用例即该差异的回归锁 |
+| UT-S35-128 | 多命中产出诊断而非静默空集 | Step 5b | 文档确实含两段 `baseline_closure` 声明（掩码外） | 调用 `collectPlannedAuthorityCreateTargets` 并取诊断 | 产出点名诊断，说明命中 2 处及各自位置；**不得**静默返回空集。同时断言 plan 阶段的 `authority_ref` 容错未被无声关闭 |
+| UT-S35-129 | 门禁阶段可满足性断言 | 门禁全集 | 为每个阶段构造该阶段的合法最小提案（plan：无任何 delta；spec/merge：含全部已规划 delta、无 `[code]` 切片） | 对每道门在其阶段求判定 | 全部通过。断言失败信息须点名是哪一道门在哪个阶段不可满足——新增在其阶段不可满足的门时立刻变红 |
+| UT-S35-130 | 诊断点名具体对象 | 诊断输出 | 分别构造触发各类 authority 违规的提案 | 收集全部诊断文本 | 每条诊断中出现导致失败的实体本身（fact_id / 测试 ID / 文件路径 / 字段名）；断言不含「为空、非法或不在」这类无法定位的措辞组合 |
+| UT-S35-131 | 测试 ID 语法单点且与已合并规格一致 | 语法权威 | 已加载 `cli/src/lib/**` 源码与 `logos/resources/test/**` | ① 统计测试 ID 语法的定义处数量；② 提取已合并测试规格中全部表格首列 ID，逐个用权威语法判定 | ① 恰好 1 处定义，其余为 import；② **每一个**表格首列 ID 都被接纳，断言失败信息列出未被接纳的 ID。修复前 11 个 `UT-JSON-*`/`ST-JSON-*` 不被接纳——本用例即语法与数据漂移的回归锁 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S35-24 | 真实 CLI 下围栏归位使容错恢复 | Step 1→5 | 真实 CLI；提案含 `change: create` 的 fact，其 `authority_ref` 指向 baseline_closure 中声明 CREATE 的目标；proposal 中另有一段四反引号示意块内含 yaml | ① 跑 `next --format json` 取 `proposal_step`；② 跑 `change-lint` 取诊断 | ① 派生为 `ready-to-delta`——容错正常生效；② 不出现 `authority_fact_reference_missing`。修复前示意块被误算致候选为 2、容错静默失效、派生停在 `writing` 且诊断指向错误位置 |
+
+### 追溯与覆盖
+
+- AC-MERGEGATE-03 诊断点名：UT-S35-130。
+- AC-MERGEGATE-04 门禁可满足性断言：UT-S35-129。
+- AC-MERGEGATE-06 围栏提取单点：UT-S35-127、ST-S35-24。
+- AC-MERGEGATE-07 多命中不静默：UT-S35-128。
+- AC-MERGEGATE-08 语法单点与数据一致：UT-S35-131。
+- 场景：S35 围栏提取单点、可归因诊断与门禁可满足性断言；功能规格：§2.51.3、§2.51.5～§2.51.7；架构：§四十一.6.1、§四十一.6.2；安装态：SMOKE-core-173。

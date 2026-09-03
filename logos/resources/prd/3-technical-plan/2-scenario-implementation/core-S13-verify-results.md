@@ -324,3 +324,70 @@ sequenceDiagram
 - 需求：S13/S16/S27/S31 多切片验收边界。
 - 规格：功能规格 §2.37；`spec/test-slice-manifest.md`。
 - 测试：UT-S13-56～UT-S13-64、ST-S13-15～ST-S13-17。
+
+## S13 权威测试 ID 语法放宽后的 defined 集合与覆盖度口径
+
+### 场景目标
+
+明确测试 ID 语法放宽后，verify 的 `defined` / `eligible` / `pending` 集合如何变化，以及覆盖度判据为何不因分母变大而放宽。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| V | `openlogos verify` | 验收门 |
+| E | `extractDefinedVerificationIds` | 从已合并测试规格提取可验收 ID |
+| G | 测试 ID 语法权威 | 表格首列读法的唯一来源 |
+
+前置：已合并测试规格中存在 11 个 `UT-JSON-*` / `ST-JSON-*` 表格首列 ID（全部在 `core-S16-test-cases.md`）。
+
+### 集合变化时序
+
+```mermaid
+sequenceDiagram
+    participant V as verify
+    participant E as extractDefinedVerificationIds
+    participant G as 测试 ID 语法权威
+
+    V->>E: Step 1: 求 defined 集合
+    E->>G: Step 2: 以表格首列读法逐文件提取（排除 smoke/ 目录）
+    G-->>E: Step 3: 放宽后的语法接纳 JSON 系 ID
+    E-->>V: Step 4: defined 集合较此前增加 11 项
+    V->>V: Step 5: eligible = defined 减去未确认切片的 pending
+    V->>V: Step 6: 覆盖度 = executed ∩ eligible / eligible
+```
+
+**Step 4 的变化方向只增不减**：不存在此前进入 defined、此后被排除的 ID。
+
+**Step 6 的判据不变**：覆盖度与通过率的公式、100% 的门槛、`failed==0` 的要求全部保持。分母变大意味着**这 11 个用例此后必须真实执行并报告**——它们对应的测试代码本就存在（`cli/test/s16-json-output.test.ts` 引用 37 处），此前只是没被计入统计。
+
+### 为何这是修复而非加严
+
+这些用例一直在跑、也一直在通过，只是 verify 看不见它们：
+
+| | 此前 | 此后 |
+|---|---|---|
+| 测试代码是否执行 | 是 | 是 |
+| 是否计入 defined | **否** | 是 |
+| 改动是否受切片归属约束 | **否** | 是 |
+| 缺失时是否被 verify 发现 | **否** | 是 |
+
+所以放宽语法不是把标准降低，而是**把一批一直在暗处的用例纳入统计口径**。若其中某条实际未被执行，verify 会立刻报为未覆盖——那是它本就该被发现的状态。
+
+### 不变量
+
+1. `defined` 集合的提取判据只有一处，即权威语法的表格首列读法。
+2. 语法放宽只增不减；ID 一旦进入 defined 集合，不得因语法调整而静默移出。
+3. 覆盖度与通过率的判据不因分母变化而放宽。
+4. `smoke/` 目录仍被排除在 `defined` 之外——smoke 由独立的 Gate 3.8 统计。
+
+### 异常与边界
+
+- 放宽后某 JSON 系 ID 未被任何测试报告：verify 判其未覆盖并阻断，这是正确行为。
+- 该批 ID 无场景号，不影响切片归属——归属以切片的 `owned_test_ids` 为准，不依赖 ID 中的场景编号。
+
+### 追溯
+
+- 需求：AC-MERGEGATE-08、AC-MERGEGATE-09。
+- 功能规格：§2.51.7；架构：§四十一.6.1。
+- 测试：UT-S13-65～UT-S13-66、ST-S13-18。

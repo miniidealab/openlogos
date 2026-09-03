@@ -484,3 +484,63 @@ STEP_REGISTRY（唯一铸造点）
 - 功能规格：§2.50.2、§2.50.4。
 - 架构：§四十一.1、§四十一.2。
 - 测试：UT-S05-47～UT-S05-50、ST-S05-22；安装态 SMOKE-core-172。
+
+## S05 围栏多命中时 plan 阶段容错失效的归因路径
+
+### 场景目标
+
+`proposal_step` 派生链上，当 proposal 文档含嵌套 YAML 围栏导致候选多命中时，用户必须能从诊断定位到真实原因，而不是收到一条指向别处的误导性错误。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| N | `openlogos next` / `status` | 消费 plan 阶段的 closure 结论 |
+| P | `plan-package` | 派生 `proposal_step` |
+| A | `authority-closure` | plan 阶段判定与 CREATE 目标收集 |
+
+前置：launched 模块；提案含 `applicability: required` 的 authority_impact；proposal 文档中存在嵌套围栏（例如在四反引号 markdown 块内示意一段 yaml 声明）。
+
+### 缺陷的传导路径
+
+```mermaid
+sequenceDiagram
+    participant N as next / status
+    participant P as plan-package
+    participant A as authority-closure
+
+    N->>P: Step 1: 派生 proposal_step
+    P->>A: Step 2: evaluateAuthorityClosure(stage='plan')
+    A->>A: Step 3: 提取含 baseline_closure 的 YAML 围栏
+    Note over A: 裸正则把示意块内的围栏也算进来 → 候选=2
+    A->>A: Step 4: 候选数 ≠ 1 → **静默返回空集**
+    A->>A: Step 5: plannedTargets 为空，authority_ref 的 CREATE 容错失效
+    A-->>P: Step 6: authority_fact_reference_missing
+    P-->>N: Step 7: proposal_step 停在 writing
+```
+
+用户在 Step 7 看到的是「`authority_ref` 无法解析」，于是去检查 `authority_ref` 的拼写和目标文件——**而真实原因在 Step 3**：文档里多了一个被误算的围栏。诊断指向了错误的位置，排查成本极高。
+
+### 修复后的行为
+
+- **Step 3** 改走 `authorityScan` 掩码：示意块内的围栏被掩码覆盖，候选恢复为 1，容错正常生效。
+- **Step 4** 即便候选数仍异常（例如用户真的写了两份声明），也必须产出点名诊断——命中几处、分别在第几行——而非静默返回空集。
+
+两条修复相互独立：前者消除误算，后者保证即使误算发生也可归因。**只做前者不够**——任何新的边界情形都会重新制造不可归因的失败。
+
+### 不变量
+
+1. plan 阶段的 `authority_ref` 容错，其失效必须可归因；不得由静默降级导致。
+2. 诊断指向的位置必须是真实原因所在，不得指向由它派生出的次生症状。
+3. 修复不改变 plan / spec 阶段的判定强度，只改变判据来源与诊断质量。
+
+### 异常与边界
+
+- 用户确实写了两份 `baseline_closure` 声明：诊断点名两处位置，要求删除其一——这是正当拒绝。
+- 文档无任何围栏：行为不变。
+
+### 追溯
+
+- 需求：AC-MERGEGATE-06、AC-MERGEGATE-07。
+- 功能规格：§2.51.5、§2.51.6；架构：§四十一.6.1。
+- 测试：UT-S05-51、ST-S05-23；安装态 SMOKE-core-173。

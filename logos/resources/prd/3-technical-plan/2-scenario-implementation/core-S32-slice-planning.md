@@ -155,3 +155,72 @@ sequenceDiagram
 - 功能规格：§2.37。
 - 方法论：`spec/test-slice-manifest.md`、`spec/baseline-closure.md`。
 - 测试：UT-S32-43～UT-S32-49、ST-S32-14～ST-S32-16。
+
+## S32 此前不可见的测试 ID 进入切片归属
+
+### 场景目标
+
+让此前对 `test-change-set` 不可见的 JSON 系测试 ID 进入 changed / owned 计算，使对这些用例的改动不再绕过切片归属校验。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| M | `merge` | 写入 `SPEC_MERGED.test_change_set` |
+| C | `test-change-set` | 变更 ID 集合的权威 |
+| S | `test-slice-manifest` | 切片归属校验 |
+| G | 测试 ID 语法权威 | 结构化判定读法的唯一来源 |
+
+### 归属校验时序
+
+```mermaid
+sequenceDiagram
+    participant M as merge
+    participant C as test-change-set
+    participant G as 语法权威
+    participant S as slice manifest
+
+    M->>C: Step 1: 从本次 test delta 求变更 ID 集合
+    C->>G: Step 2: 以结构化判定读法筛选
+    G-->>C: Step 3: 放宽后的语法接纳 JSON 系 ID
+    C-->>M: Step 4: 写入 SPEC_MERGED.test_change_set
+    Note over M,S: slice-planner 划分切片
+    S->>C: Step 5: 读 changed ID 集合
+    S->>S: Step 6: 逐个校验是否被某切片 owned
+    alt 存在未归属 ID
+        S-->>S: Step 7a: 判 test-slice-test-id-missing，manifest invalid
+    else 全部归属
+        S-->>S: Step 7b: manifest valid，进入 slice-checkpoint 模式
+    end
+```
+
+**Step 3 的缺陷形态**：此前严格读法要求 ID 形如 `(?:UT|ST)-S\d{2}-…`，JSON 系 ID 不符，在 Step 2 即被丢弃。于是 Step 6 根本看不到它们——修改这些用例的提案可以不为其规划任何切片，校验也不会报错。
+
+**Step 7a 的行为不变**：未归属即 invalid，判据本身不放宽。变化只是**被校验的集合变大了**。
+
+### 对切片规划的影响
+
+| | 此前 | 此后 |
+|---|---|---|
+| 改动 JSON 系用例是否需规划切片 | 否（看不见） | 是 |
+| 未规划时 manifest 状态 | valid（假阴性） | invalid，点名未归属 ID |
+| ID 是否需携带场景号 | —— | 否，归属以 `owned_test_ids` 为准 |
+
+**ID 无场景号不妨碍归属**：切片的归属关系由 manifest 的 `owned_test_ids` 显式声明，不从 ID 中的场景编号推断。`spec_targets` 同样由切片作者显式给出。
+
+### 不变量
+
+1. 变更 ID 集合的筛选判据只有一处，即权威语法的结构化判定读法。
+2. 归属校验的判据不因集合变大而放宽——未归属仍判 invalid。
+3. 集合变化只增不减；不存在此前被捕获、此后遗漏的 ID。
+
+### 异常与边界
+
+- 已归档提案的 manifest 不受影响：其 `test_change_set` 在 merge 时已固化。
+- 若某 JSON 系 ID 被改动但作者未规划切片：manifest 判 invalid 并点名该 ID，属正确拦截。
+
+### 追溯
+
+- 需求：AC-MERGEGATE-08、AC-MERGEGATE-09。
+- 功能规格：§2.51.7；架构：§四十一.6.1。
+- 测试：UT-S32-50～UT-S32-51、ST-S32-17。

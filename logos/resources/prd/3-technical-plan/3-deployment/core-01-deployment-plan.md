@@ -1720,3 +1720,91 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 4. `SMOKE-core-172` 由真实安装态 runner 唯一 PASS；
 5. 死锁解除与强度不降两侧证据同时成立；
 6. npm registry、tag、release、官网和 Git 远端均零副作用。
+
+## OpenLogos 0.14.9 merge 准入单点化本机全局部署方案
+
+### 部署目标与授权边界
+
+把「merge 准入判据与 change-lint 同源 + 三处判据单点化 + 门禁可满足性断言」冻结为唯一 `@miniidealab/openlogos@0.14.9` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.8`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须走安装态**：准入收紧的观察面是「一个 lint 不干净的提案能否合入主规格」。源码测试能证明判据正确，但**判据是否随包分发并在装好的 CLI 上生效**只有安装态能证明。更关键的是误伤面——合法提案是否仍能正常 merge，必须在真实 CLI 上跑一遍完整流程才算数。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.8`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash 与最小 `merge` / `change-lint` 行为。
+3. 冻结可离线恢复的 `0.14.8` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.9 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.9`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.8`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.8` 构建新字节。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.9` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.9` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| **合法提案不被误拦** | change-lint PASS 的提案能正常 merge 并生成事务——这是收紧后最重要的一条 |
+| 准入同源 | 对同一提案，`change-lint` 与 `merge` 的准入结论一致；lint 红则 merge 必红，lint 绿则 merge 必绿 |
+| 无信号提案也经预检 | 不带 `baseline_closure` 声明、也无 `[MODIFY]`/`[CREATE]` 标记的不合规提案同样被拒 |
+| 阻断可归因 | 拒绝输出逐条含 code、路径、具体字段与 fix_hint；不得只给聚合结论 |
+| 诊断点名 | 违规诊断中出现导致失败的实体本身（fact_id / 测试 ID / 文件路径） |
+| 围栏提取单点 | 含嵌套围栏的 proposal 下，authority closure 的候选数与 fence-aware 结果一致；多命中产出点名诊断而非静默空集 |
+| 测试 ID 语法单点 | 从解包 tarball 的 dist 入口核验语法恰一处定义；已合并规格中每个表格首列 ID 都被接纳 |
+| 门禁可满足性 | 每道门的「该阶段合法最小提案」在安装态 CLI 上通过 |
+| 零回归 | 既有合规提案的 `change-lint` 结论与 `0.14.8` 逐字一致 |
+| rollback roundtrip | `0.14.8→0.14.9→0.14.8→0.14.9` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「合法提案不被误拦」失败时必须停止部署并回到实现**——那意味着收紧引入了误伤，是本次最需要防的后果。
+
+### 本机全局部署
+
+只有隔离矩阵与 `0.14.8` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.9` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.9`；
+- package / plugin / asset manifest version 全部为 `0.14.9`，无混装。
+
+### Smoke 与完成条件
+
+部署完成后需独立 smoke 授权，执行 `SMOKE-core-173`。runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口。
+
+### 失败、自愈与回滚
+
+- 隔离矩阵失败：修复后重新 verify / build / pack / install，产生新 candidate identity；不得在旧 tarball 上打补丁。
+- 全局部署后发现误伤：立即以固定 `0.14.8` tarball 回滚，并在报告中说明触发条件。
+- 任何阶段不得为让断言通过而放宽判据、跳过违规或伪造记录。
+
+### 完成判据
+
+1. 固定 `0.14.9` tarball identity 与隔离矩阵 PASS（含「合法提案不被误拦」）；
+2. 本机全局安装态 identity 一致、无混装；
+3. `0.14.8↔0.14.9` 回滚/恢复可复制且无混装；
+4. `SMOKE-core-173` PASS 且 Gate 3.8 通过；
+5. 全程无 npm publish、tag、release、官网或 git push 副作用。
+
+### 追溯
+
+- 需求：AC-MERGEGATE-11（及 01～10 的安装态验证）。
+- 功能规格：§2.51.9；场景：S05、S09、S13、S19、S32、S35。
+- 安装态：SMOKE-core-173。

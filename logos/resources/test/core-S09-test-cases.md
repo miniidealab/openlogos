@@ -909,3 +909,28 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 - AC-TXADDR-03 写动作 fail-closed 且零副作用：UT-S09-281、ST-S09-109。
 - AC-TXADDR-04 查找单点、歧义 fail-closed：UT-S09-282（歧义）；单点由 UT-S19-32 从消费方侧反向锁定。
 - 场景：S09 归档提案的事务只读寻址与写动作 fail-closed；功能规格：§2.48.2；架构：§三十九.1；安装态：SMOKE-core-170。
+
+## S09 merge 准入判定与 change-lint 同源测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S09-283 | merge 准入与 change-lint 结论逐字同源 | Step 3→5 | 两组夹具：① change-lint PASS 的合规提案；② 含任一违规的提案 | 对同一提案目录分别取 `runChangeLint` 的 violations 与 merge 的准入结论 | ① lint 无违规 → merge 放行；② lint 有违规 → merge 拒绝。二者结论在两组夹具上均一致；**不存在 lint 红而 merge 绿的组合** |
+| UT-S09-284 | 无 baseline_closure 信号的提案同样经预检 | Step 3 | 提案不含 `baseline_closure` 声明，`[delta]` 任务也不用 `[MODIFY]`/`[CREATE]` 标记，但 authority fact 的 tests 引用不存在 ID | 发起 merge | 判 `authority_closure_incomplete` 并拒绝。**修复前此处完全不经预检、直接放行**——本用例即该缺口的回归锁 |
+| UT-S09-285 | 拒绝时逐条输出可归因诊断 | Step 5b | 提案含 ≥2 条不同类型的违规 | 捕获 merge 的 stderr | 每条违规单独成行，各含 `code`、文件路径、具体字段与 `fix_hint`；不得只出现「L1-L9 未全过」这类聚合结论；诊断中出现导致失败的实体本身 |
+| UT-S09-286 | test-change-set 捕获此前不可见的 ID | test-change-set 写入 | test delta 中含 `UT-JSON-09` 形态的表格首列 ID | 求本次变更 ID 集合 | 该 ID 被捕获。同时断言集合只增不减——原有严格形态 ID 全部仍在 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S09-110 | 真实 CLI 下 merge 与 change-lint 可预测一致 | Step 1→6 | 真实 CLI；launched 夹具项目；一份 authority fact 引用不存在 ID 的提案 | ① 跑 `change-lint` 记录退出码与违规集；② 跑 `merge` 记录退出码与输出；③ 补齐对应 test delta 后重复 ①②；④ 核对四次结果 | ①②同为失败且 merge 的诊断包含 lint 点名的同一 ID；③④同为成功且生成事务。证明 merge 结果可由 change-lint 完全预知，且失败路径未生成 MERGE_PROMPT、未写 `SPEC_MERGED` |
+
+### 追溯与覆盖
+
+- AC-MERGEGATE-01 准入同源与无条件预检：UT-S09-283、UT-S09-284。
+- AC-MERGEGATE-02 阻断逐条可归因：UT-S09-285。
+- AC-MERGEGATE-05 可预测性：ST-S09-110。
+- AC-MERGEGATE-09 捕获集扩大：UT-S09-286。
+- 场景：S09 merge 准入判定与 change-lint 同源；功能规格：§2.51.2、§2.51.5；架构：§四十一.6.1；安装态：SMOKE-core-173。

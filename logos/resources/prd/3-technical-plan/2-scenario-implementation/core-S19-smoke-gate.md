@@ -599,3 +599,64 @@ sequenceDiagram
 - 功能规格：§2.48.3～§2.48.5。
 - 架构：§三十九.2。
 - 测试：UT-S19-29～UT-S19-32、ST-S19-18；安装态 SMOKE-core-170（并复核 SMOKE-core-168）。
+
+## S19 候选 runner 留痕契约的普遍化与元测试
+
+### 场景目标
+
+把「环境不具备时写显式 skip」从个别 runner 的实现细节，提升为**对全部已注册安装态候选 runner 的普遍要求**，并用元测试防止新增 runner 遗漏。
+
+### 缺陷背景
+
+依赖历史制品的 runner（`SMOKE-core-168` / `169` / `170`）早于留痕契约，缺候选或回滚 tarball 时经 `requiredFile()` 直接抛错、记 `fail`。
+
+这些 tarball 只在各自提案的部署窗口内存在，之后必然缺失。因此**任何后续提案的 Gate 3.8 都会被这三条永久拉黑**——与被测能力毫无关系，也与该提案是否正确毫无关系。
+
+已有的「不适用留痕时序」规格是对的，`scripts/lib/smoke-not-applicable.mjs` 的原语也是对的，缺的是**让规格覆盖到每一个 runner 的机制**：现有 `UT-S19-29`～`UT-S19-31`、`ST-S19-18` 只验证留痕原语本身的行为，不验证「每个 runner 都真的调用了它」。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| R | `scripts/run-smoke.js` | runner 注册表（`hostArtifacts` / `globalMutatingRunners` / `globalCandidateRunners`） |
+| S | 安装态候选 runner | 依赖固定 tarball 的 runner |
+| P | `smoke-not-applicable` | 留痕原语 |
+| T | 契约元测试 | 断言注册表中每项都实现该契约 |
+
+### 元测试时序
+
+```mermaid
+sequenceDiagram
+    participant T as 契约元测试
+    participant R as run-smoke 注册表
+    participant S as 候选 runner 源码
+
+    T->>R: Step 1: 读取 globalCandidateRunners 的全部注册项
+    loop 每个已注册 runner
+        T->>S: Step 2: 读取该 runner 源码
+        T->>T: Step 3: 断言其调用了 requireEnvOrSkip
+        T->>T: Step 4: 断言 --self-test 契约不被守卫挡住
+    end
+    T-->>T: Step 5: 任一注册项未实现契约即失败，并列出文件名
+```
+
+**判据落在注册表而非目录扫描**：候选 runner 的权威清单是 `run-smoke.js` 的注册项。以目录通配发现会把非候选 runner 也卷进来，且新增 runner 若忘记注册，元测试反而发现不了——那是另一类缺陷，由既有的覆盖预检负责。
+
+### 不变量
+
+1. **普遍要求**：`globalCandidateRunners` 中每一项都必须实现留痕契约，无例外名单。
+2. **skip 是诚实的未覆盖**，不是通过：写 skip 的用例不计入 passed，只计入 executed 与 skipped。
+3. **契约不得以放宽 Gate 判据替代**：Gate 3.8 的 `failed==0 && uncovered==0 && diagnostics==0` 公式不变。
+4. **自检契约不受守卫约束**：`--self-test` 类只读查询在缺制品时仍须正常输出声明。
+
+### 异常与边界
+
+- 新增候选 runner 未实现契约：元测试失败并点名文件，实现前不得合入。
+- runner 已实现契约但注册项缺失：属覆盖预检的职责，不由本元测试负责。
+- 历史制品重新可得时：runner 自动从 skip 转为真实断言，无需改代码。
+
+### 追溯
+
+- 需求：AC-MERGEGATE-10。
+- 功能规格：§2.51.8；架构：§四十一.6.2。
+- 测试：UT-S19-33、ST-S19-19。

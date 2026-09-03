@@ -239,3 +239,23 @@ CLI Vitest runner必须实际执行UT-S05-46、ST-S05-21，并为每个ID向`log
 - AC-PLANGATE-09 spec-complete 判据单点（派生链一侧）：UT-S05-49。
 - AC-PLANGATE-10 每份发布 schema 各有一致性锚：UT-S05-50。
 - 场景：S05 新建 authority fact 提案的 proposal_step 派生；功能规格：§2.50.2、§2.50.7；架构：§四十一.1、§四十一.4；安装态：SMOKE-core-172。
+
+## S05 围栏多命中时容错失效的归因测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S05-51 | 嵌套围栏不再使 plan 阶段容错静默失效 | Step 2→7 | launched 模块；提案含 `change: create` 的 required fact，`authority_ref` 指向 baseline_closure 中声明 CREATE 的目标；proposal 中另有一段四反引号 markdown 示意块，块内含一段 `baseline_closure` yaml | 派生 `proposal_step` | 派生为 `ready-to-delta`——示意块被掩码覆盖，候选恢复为 1，CREATE 容错正常生效。**修复前候选为 2、`collectPlannedAuthorityCreateTargets` 静默返回空集，派生停在 `writing` 且诊断误指 `authority_ref`** |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S05-23 | 真实多份声明时诊断指向真实原因 | Step 3→7 | 真实 CLI；提案在掩码外确实写了两段 `baseline_closure` 声明 | ① 跑 `next --format json`；② 跑 `change-lint` 取诊断 | ① 停在 `writing`（正当拒绝）；② 诊断点名「命中 2 处声明」及各自位置，要求删除其一——**而非**报 `authority_fact_reference_missing` 让用户去查 `authority_ref` 拼写。证明诊断指向真实原因而非次生症状 |
+
+### 追溯与覆盖
+
+- AC-MERGEGATE-06 围栏提取单点（派生链一侧）：UT-S05-51。
+- AC-MERGEGATE-07 多命中可归因：ST-S05-23。
+- 场景：S05 围栏多命中时 plan 阶段容错失效的归因路径；功能规格：§2.51.5、§2.51.6；架构：§四十一.6.1；安装态：SMOKE-core-173。
