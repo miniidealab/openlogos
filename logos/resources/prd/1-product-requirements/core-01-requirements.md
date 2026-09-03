@@ -2287,3 +2287,62 @@ OpenLogos 已允许 Delta 使用 `父标题 > 叶标题` 唯一定位重复叶�
 - 场景：S05 查看下一步建议、S09 变更生命周期（merge 准入）、S13 验收结果、S19 部署后冒烟门、S32 切片规划、S35 提案计划产物左移硬检查。
 - 测试：UT-S05-51、ST-S05-23、UT-S09-283～286、ST-S09-110、UT-S13-65～66、ST-S13-18、UT-S19-33、ST-S19-19、UT-S32-50～51、ST-S32-17、UT-S35-127～131、ST-S35-24。
 - 部署后 smoke：SMOKE-core-173。
+
+## SQL delta 分层校验与能力缺失降级要求
+
+### 用户问题与价值
+
+`tech_stack.database` 为 `postgresql` 或 `mysql` 的项目，**任何 `.sql` delta 都交付不了**。校验器在五项结构检查全部通过之后，对非 SQLite 方言无条件返回错误：
+
+```
+sqlite       ✗ SQLite schema 预检后没有用户表      ← 走到了真执行预检
+postgresql   ✗ postgresql SQL parser/隔离执行适配器不可用；拒绝用 SQLite 冒充该方言
+mysql        ✗ mysql SQL parser/隔离执行适配器不可用；拒绝用 SQLite 冒充该方言
+```
+
+那五项结构检查（`CREATE TABLE` / 主键 / 约束 / 索引 / 迁移回滚语义）与方言无关——报错逐级前进正说明它们已全过，只卡在方言闸门。
+
+**「拒绝用 SQLite 冒充该方言」这个判断本身是对的**：用 SQLite 解析 PostgreSQL DDL 会漏掉方言特性、给出虚假通过。缺陷在于拒绝之后没有留下任何可用路径——既无适配器查找，也无配置或环境逃生通道。
+
+同类缺陷不止一处：**SQLite 项目在缺 `sqlite3` 二进制时同样被判失败**。一处是适配器未实现，一处是适配器未安装，本质相同——**环境能力的缺失变成了交付阻断**。
+
+后果不只是不能交付，还会**诱导污染规格真实性**：`spec/baseline-closure.md` 要求 database 维度必须有 disposition、不能默认 SKIP，于是唯一「能过」的做法是把方言谎报为 `sqlite` 或把维度谎报为 SKIP——正是闭包机制想防止的事。
+
+### 核心需求
+
+1. **结构检查与方言无关且始终执行**。五项最低完整度检查不因方言或适配器可用性而跳过。
+2. **能力缺失一律降级，不得阻断**。适配器未实现或未安装时，执行/语法预检降级为跳过，交付照常推进。
+3. **降级必须留痕**。留痕含降级原因、缺失项与实际执行到的层级；不得静默通过。
+4. **层级必须如实自述**。不得以「层级不足」冒充「已通过该层级」——只做了结构检查就不能表述为已通过语法或执行预检。
+5. **绝不用一种方言的校验器冒充另一种**。这是原实现的正确意图，本次必须保住。
+6. PostgreSQL 接入权威语法解析器（libpg_query 的 WASM 编译产物），做到零误拦合法 SQL。
+7. MySQL 暂不接解析器，走结构检查 + 留痕；直到出现不会误拦合法 SQL 的权威解析器。
+8. 修复以新的本地 patch candidate `0.14.10` 交付，当前本机全局 `0.14.9` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-SQLGATE-01 | 五项结构检查在全部方言下一致生效，且不因适配器可用性而跳过 |
+| AC-SQLGATE-02 | `postgresql` 方言下结构完整的 `.sql` delta 通过校验，不再返回「适配器不可用」 |
+| AC-SQLGATE-03 | `mysql` 方言下结构完整的 `.sql` delta 通过校验，并留痕说明未执行语法/执行预检 |
+| AC-SQLGATE-04 | `sqlite3` 二进制缺失时，SQLite 项目同样降级为结构检查并留痕，而非判失败 |
+| AC-SQLGATE-05 | PostgreSQL payload 经权威解析器校验：合法 PG 特性（生成列、分区表、partial 索引、表达式索引、`COMMENT ON`、`ALTER`）全部通过，语法错误被拒 |
+| AC-SQLGATE-06 | 任何方言的 payload 都不会被送入其它方言的校验器——PG/MySQL payload 绝不进入 sqlite 执行路径 |
+| AC-SQLGATE-07 | 校验结果如实自述实际执行到的层级；层级不足时不得表述为已通过该层级 |
+| AC-SQLGATE-08 | 降级留痕经 `change-lint` 的 `warnings` 通道可见，不计入 violations、不影响 L9 通过与否；`warnings` 为空时字段整体省略 |
+| AC-SQLGATE-09 | 固定 `0.14.10` tarball 随包分发解析器且可加载、无 postinstall 脚本；`0.14.9→0.14.10→0.14.9` 往返后各 identity 与 tarball SHA-256 一致 |
+
+### 授权与非目标
+
+- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
+- 不新增命令，不改动公共 JSON envelope 的字段结构。
+- **不接入 MySQL 解析器**：现有唯一候选实测会误拦合法 MySQL 分区表，等于把「完全阻断」换成「随机阻断」。
+- **不引入隔离执行预检**（psql 或容器运行时）——那会把环境能力变成交付前提，正是本次要消除的形态。
+- 不修改 `spec/baseline-closure.md` 对 database 维度 disposition 的要求。
+
+### 追溯
+
+- 场景：S39 on-touch 基线闭包（non-Markdown delta 校验）、S35 提案计划产物左移硬检查（降级留痕输出）。
+- 测试：UT-S39-59～UT-S39-64、ST-S39-28、UT-S35-132～UT-S35-133、ST-S35-25。
+- 部署后 smoke：SMOKE-core-174。

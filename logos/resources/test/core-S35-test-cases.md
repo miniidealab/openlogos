@@ -268,3 +268,23 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - AC-MERGEGATE-07 多命中不静默：UT-S35-128。
 - AC-MERGEGATE-08 语法单点与数据一致：UT-S35-131。
 - 场景：S35 围栏提取单点、可归因诊断与门禁可满足性断言；功能规格：§2.51.3、§2.51.5～§2.51.7；架构：§四十一.6.1、§四十一.6.2；安装态：SMOKE-core-173。
+
+## S35 SQL 校验降级留痕的输出通道测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S35-132 | 降级留痕进 warnings 而非 violations | Step 3c→3d | 提案含一份 `.sql` delta，项目方言为 `mysql`（适配器不可用） | 跑 `change-lint` 并分别取 violations 与 warnings | L9 无 `non_markdown_delta_invalid`、整体通过；warnings 含一条降级项，其 message 点名方言、缺失项与已执行层级，且含 `fix_hint`。断言该条**不在** violations 中 |
+| UT-S35-133 | 无降级时 warnings 字段整体省略（零漂移） | Step 3b→4 | 两组夹具：① 无 `.sql` delta 的提案；② 方言为 sqlite 且 `sqlite3` 可用的提案 | 取 `change-lint --format json` 输出 | 两组的输出均不含 `warnings` 字段（而非含空数组）；与本功能引入前逐字节一致。多份 `.sql` 同时降级时逐份产出 warning，不合并为一条 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S35-25 | 降级与真实违规并存时互不吞并 | Step 3a→3d | 真实 CLI；提案同时含：一份触发降级的 `.sql`（mysql 方言）与一处真实违规（如另一份 delta 缺段标记） | 跑 `change-lint --format json` | violations 含该真实违规、不含降级项；warnings 含降级项、不含该违规；整体判 FAIL 是因真实违规而非降级。修复真实违规后重跑：整体 PASS，warnings 仍保留降级项 |
+
+### 追溯与覆盖
+
+- AC-SQLGATE-08 留痕经 warnings 可见、不计违规、零漂移：UT-S35-132、UT-S35-133、ST-S35-25。
+- 场景：S35 SQL 校验降级留痕的输出通道；功能规格：§2.52.7；架构：§四十二.2；安装态：SMOKE-core-174。

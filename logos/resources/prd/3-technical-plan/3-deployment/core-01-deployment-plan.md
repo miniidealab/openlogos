@@ -1808,3 +1808,103 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 - 需求：AC-MERGEGATE-11（及 01～10 的安装态验证）。
 - 功能规格：§2.51.9；场景：S05、S09、S13、S19、S32、S35。
 - 安装态：SMOKE-core-173。
+
+## OpenLogos 0.14.10 SQL 分层校验本机全局部署方案
+
+### 部署目标与授权边界
+
+把「SQL delta 分层校验 + 能力缺失降级 + PostgreSQL 权威解析器」冻结为唯一 `@miniidealab/openlogos@0.14.10` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.9`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须走安装态**：本次新增运行时依赖。「解析器是否随包分发、在装好的 CLI 中能否加载」是纯安装态事实——源码测试跑的是 workspace 的 `node_modules`，证明不了 tarball 里有它。这是本次相较以往部署最需要安装态验证的一点。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.9`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash 与最小 SQL 校验行为。
+3. 冻结可离线恢复的 `0.14.9` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.10 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.10`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.9`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.9` 构建新字节。
+
+### 新增运行时依赖的冻结与核验
+
+本次首次为 CLI 增加第三个运行时依赖，须额外冻结：
+
+1. 依赖名与**精确版本**（不使用范围符），连同其完整性哈希一并记录；
+2. 从**解包后的 tarball**（非 workspace）核验：解析器目录存在、可被 `createRequire(entry)` 加载、解析一段已知 PG DDL 返回 AST；
+3. 核验其 `package.json` **无 `postinstall` / `preinstall` 等安装脚本**——安装脚本会在用户机器上执行任意代码，是供应链风险；
+4. 记录安装体积增量，并与预期（约 4.4 MB）比对；显著超出须停下核查。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.10` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.10` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| **解析器随包可加载** | 从解包 tarball 的入口加载解析器成功，并对已知 PG DDL 返回 AST——证明它真的随包分发，而非借用 workspace 依赖 |
+| **PG delta 可交付** | `tech_stack.database: postgresql` 的项目，结构完整的 `.sql` delta 通过 change-lint L9 与 merge——这是本次最核心的一条 |
+| PG 语法错被拒 | 同一项目下语法错误的 `.sql` 仍被拒绝并点名错误位置 |
+| **MySQL 降级而非阻断** | `tech_stack.database: mysql` 的项目，结构完整的 `.sql` 通过并产出降级 warning |
+| sqlite3 缺失降级 | 在 PATH 无 `sqlite3` 的环境下，SQLite 项目同样通过并留痕，而非判失败 |
+| 不跨方言冒充 | PG/MySQL payload 未进入 sqlite 执行路径（可由不产生 sqlite 进程 / 无 sqlite 相关诊断佐证） |
+| 结构检查不放宽 | 缺 `CREATE TABLE` / 主键 / 约束 / 索引 / 迁移回滚语义的 payload 在全部方言下仍被拒 |
+| 留痕不计违规 | 降级项目的 change-lint 整体通过，warning 出现在 `warnings` 而非 `violations` |
+| 零回归 | SQLite 项目在 `sqlite3` 可用时仍走隔离执行，结论与 `0.14.9` 逐字一致 |
+| rollback roundtrip | `0.14.9→0.14.10→0.14.9→0.14.10` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「PG delta 可交付」与「MySQL 降级而非阻断」失败时必须停止部署并回到实现**——那意味着本次修复没有真正解除阻断。
+
+### 本机全局部署
+
+只有隔离矩阵与 `0.14.9` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.10` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.10`；
+- package / plugin / asset manifest version 全部为 `0.14.10`，无混装；
+- 解析器存在于全局 package root 下且可加载。
+
+### Smoke 与完成条件
+
+部署完成后需独立 smoke 授权，执行 `SMOKE-core-174`。runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口。
+
+### 失败、自愈与回滚
+
+- 隔离矩阵失败：修复后重新 verify / build / pack / install，产生新 candidate identity；不得在旧 tarball 上打补丁。
+- 全局部署后发现 PG 项目仍被阻断：立即以固定 `0.14.9` tarball 回滚并报告触发条件。
+- 依赖体积或安装脚本核查异常：停止部署并核查供应链，不得以「先装上再说」推进。
+- 任何阶段不得为让断言通过而放宽判据、跳过违规或伪造记录。
+
+### 完成判据
+
+1. 固定 `0.14.10` tarball identity 与隔离矩阵 PASS（含「PG delta 可交付」与「MySQL 降级而非阻断」）；
+2. 解析器随包分发、可加载、无安装脚本，体积增量符合预期；
+3. 本机全局安装态 identity 一致、无混装；
+4. `0.14.9↔0.14.10` 回滚/恢复可复制且无混装；
+5. `SMOKE-core-174` PASS 且 Gate 3.8 通过；
+6. 全程无 npm publish、tag、release、官网或 git push 副作用。
+
+### 追溯
+
+- 需求：AC-SQLGATE-09（及 01～08 的安装态验证）。
+- 功能规格：§2.52.8、§2.52.9；场景：S35、S39。
+- 安装态：SMOKE-core-174。

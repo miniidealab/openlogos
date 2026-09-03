@@ -354,3 +354,61 @@ sequenceDiagram
 - 需求：AC-MERGEGATE-03、AC-MERGEGATE-04、AC-MERGEGATE-06～08。
 - 功能规格：§2.51.3、§2.51.5～§2.51.7；架构：§四十一.6.1、§四十一.6.2。
 - 测试：UT-S35-127～UT-S35-131、ST-S35-24；安装态 SMOKE-core-173。
+
+## S35 SQL 校验降级留痕的输出通道
+
+### 场景目标
+
+让 SQL 方言层的降级留痕经 `change-lint` 的既有 `warnings` 通道可见，且不改变 L9 的通过与否，也不产生输出漂移。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| L | `change-lint` | L9 的判定与输出 |
+| V | `validateSql` | 回传层级结论与降级留痕 |
+| W | `warnings` 通道 | 既有字段，非空才出现 |
+
+### 输出时序
+
+```mermaid
+sequenceDiagram
+    participant L as change-lint
+    participant V as validateSql
+    participant W as warnings
+
+    L->>V: Step 1: 对每份 .sql delta 求校验结论
+    V-->>L: Step 2: { 通过与否, 实际层级, 降级留痕? }
+    alt 未通过
+        L->>L: Step 3a: 计入 L9 violations（non_markdown_delta_invalid）
+    else 通过且无降级
+        L->>L: Step 3b: L9 通过，不产生 warning
+    else 通过但已降级
+        L->>W: Step 3c: 追加一条 warning（原因 / 缺失项 / 已执行层级）
+        L->>L: Step 3d: L9 **照常通过**
+    end
+    L-->>L: Step 4: warnings 非空才输出该字段
+```
+
+### 输出契约
+
+- **不计入 violations**：降级留痕不是违规，不影响 L9 通过与否，也不影响 `change-lint` 的整体退出码。
+- **零漂移**：`warnings` 为空时字段整体省略——与既有约定一致，不因本功能改变无降级项目的输出字节。
+- **可归因**：每条 warning 含 `code` / `message` / `fix_hint`；message 点名方言、缺失项与已执行层级，fix_hint 说明如何获得更强层级（如安装 `sqlite3`）。
+
+### 不变量
+
+1. 降级留痕只出现在 `warnings`，绝不出现在 `violations`。
+2. 无降级的项目，其 `change-lint` 输出与本功能引入前逐字节一致。
+3. warning 的存在与否不改变 merge 的准入结论——merge 只看 violations（S09 已冻结「准入判据等于 change-lint 完整结论」，此处的 violations 集合不因 warning 变化）。
+
+### 异常与边界
+
+- 同一提案多份 `.sql` delta 都降级：逐份产出 warning，不合并为一条——用户需要知道具体是哪一份。
+- 降级与真实违规并存：violations 与 warnings 各自输出，互不吞并。
+
+### 追溯
+
+- 需求：AC-SQLGATE-08。
+- 功能规格：§2.52.7；架构：§四十二.2。
+- 测试：UT-S35-132～UT-S35-133、ST-S35-25；安装态 SMOKE-core-174。

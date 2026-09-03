@@ -259,3 +259,33 @@
 ### Runner 与 OpenLogos Reporter
 
 UT-S39-56～58、ST-S39-27必须调用真实test-change-set scanner、preflight builder、merge transaction与atomic apply路径，逐ID写reporter。禁止只断言错误字符串或绕过正式before/final bytes。
+
+## S39 SQL delta 分层校验与适配器路由测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S39-59 | 结构检查与方言无关且始终执行 | Step 3 | 同一份缺项 payload（分别缺 `CREATE TABLE` / 主键 / 约束 / 索引 / 迁移回滚语义） | 对 sqlite / postgresql / mysql 三种方言各求一次校验 | 每种缺项在**三种方言下**都被拒且点名同一缺项；结构层结论与方言无关。断言其在适配器不可用时同样执行——不得因降级而跳过 |
+| UT-S39-60 | PostgreSQL 走权威解析器且零误拦 | Step 5→7a | `tech_stack.database: postgresql` | 对一批真实 PG 特性逐个求校验：生成列 `GENERATED ALWAYS AS ... STORED`、分区表、枚举+数组、partial 索引 `WHERE`、`USING gin` 表达式索引、`COMMENT ON`、多子句 `ALTER` | 全部通过。**修复前一律返回「适配器不可用」**——本用例即该阻断的回归锁 |
+| UT-S39-61 | PostgreSQL 语法错误被拒并点名 | Step 5→7a | 同上 | 提交语法错误的 PG payload（如 `CREATE TABL`） | 拒绝，诊断含解析器给出的错误位置；证明接入的是真校验而非无条件放行 |
+| UT-S39-62 | MySQL 降级为结构检查并留痕 | Step 7b | `tech_stack.database: mysql`；结构完整的 payload | 求校验 | **通过**（非拒绝），并回传降级留痕，含原因、缺失项与「已完成结构检查、未执行 mysql 语法/执行预检」。修复前返回「适配器不可用」 |
+| UT-S39-63 | sqlite3 缺失时 SQLite 亦降级 | Step 5→7b | `tech_stack.database: sqlite`；PATH 中无 `sqlite3` 二进制 | 求校验 | 通过并留痕，缺失项点名 `sqlite3`。**修复前判 `SQLite validator 不可用` 并阻断**——本用例锁的是报告未覆盖的第二处同类缺陷 |
+| UT-S39-64 | 层级如实自述且不跨方言冒充 | Step 7a/7b | 三种方言各一份结构完整 payload | 收集各自的层级自述；并监视 sqlite 执行路径是否被调用 | 三者层级分别为「隔离执行」「语法解析」「仅结构」，各自如实；PG/MySQL payload **未进入** sqlite 执行路径。这是 `UT-S39-27` 原意图（不冒充通过）的正向断言形态 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S39-28 | 真实 CLI 下 PG 项目可交付完整闭环 | Step 1→7 | 真实 CLI；launched 夹具项目声明 `tech_stack.database: postgresql`；含一份结构完整的 `deltas/database/*.sql` 与配套 Markdown delta | ① 跑 `change-lint`；② 对同一提案跑 merge 事务；③ 换成语法错误的 SQL 重复 ①；④ 换 `mysql` 方言重复 ① | ① L9 通过、整体 PASS；② 事务正常开启；③ L9 判 `non_markdown_delta_invalid` 并点名语法错误位置；④ L9 通过且 `warnings` 含降级留痕。证明「能交付」与「仍拦得住真错误」同时成立 |
+
+### 追溯与覆盖
+
+- AC-SQLGATE-01 结构检查与方言无关：UT-S39-59。
+- AC-SQLGATE-02 PG 可交付：UT-S39-60、ST-S39-28。
+- AC-SQLGATE-03 MySQL 降级留痕：UT-S39-62、ST-S39-28。
+- AC-SQLGATE-04 sqlite3 缺失亦降级：UT-S39-63。
+- AC-SQLGATE-05 PG 权威解析正反例：UT-S39-60、UT-S39-61、ST-S39-28。
+- AC-SQLGATE-06 不跨方言冒充：UT-S39-64。
+- AC-SQLGATE-07 层级如实自述：UT-S39-64。
+- 场景：S39 SQL delta 的分层校验与适配器路由；功能规格：§2.52.2～§2.52.6；架构：§四十二.1、§四十二.2；安装态：SMOKE-core-174。

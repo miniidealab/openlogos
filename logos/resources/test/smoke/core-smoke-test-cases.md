@@ -960,3 +960,49 @@
 - 功能规格：§2.51；架构：§四十一.6。
 - 场景：S05、S09、S13、S19、S32、S35；UT/ST：UT-S05-51、ST-S05-23、UT-S09-283～286、ST-S09-110、UT-S13-65～66、ST-S13-18、UT-S19-33、ST-S19-19、UT-S32-50～51、ST-S32-17、UT-S35-127～131、ST-S35-24。
 - 部署方案：OpenLogos 0.14.9 merge 准入单点化本机全局部署方案。
+
+## OpenLogos 0.14.10 SQL 分层校验安装态 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.10` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-174` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.10`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建任何 marker**，**不得连接任何真实数据库实例**。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-174 | 0.14.10 SQL 分层校验与能力缺失降级 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **解析器随包可加载**：从全局 package root 加载解析器并对已知 PG DDL 求 AST；③ 核验其 package.json 无 postinstall/preinstall 脚本；④ **PG delta 可交付**：临时项目声明 `tech_stack.database: postgresql`，构造结构完整的 `.sql` delta 与配套 Markdown delta，跑 `change-lint` 与 `merge`；⑤ PG 语法错仍被拒：同一项目换成语法错误的 `.sql` 重跑 `change-lint`；⑥ **MySQL 降级而非阻断**：换 `mysql` 方言重跑，取 warnings；⑦ 结构检查不放宽：分别构造缺 `CREATE TABLE` / 主键 / 约束 / 索引 / 迁移回滚语义的 payload，在三种方言下各跑一次；⑧ 不跨方言冒充：核验 PG/MySQL 路径未产生 sqlite 相关诊断；⑨ 演练 `0.14.9→0.14.10→0.14.9→0.14.10` 并复核每阶段 identity 与 ④⑥ 的结论 | ② 加载成功且返回 AST——证明随包分发而非借用 workspace 依赖；③ 无安装脚本；④ `change-lint` L9 通过、整体 PASS，`merge` 正常开启事务——**这是本次最核心的一条，失败即整体 FAIL**；⑤ 判 `non_markdown_delta_invalid` 并含解析器给出的错误位置；⑥ L9 通过且 `warnings` 含降级留痕（点名方言、缺失项、已执行层级），该条不在 violations 中；⑦ 五种缺项在三种方言下全部被拒且点名同一缺项；⑧ 无 sqlite 相关诊断；⑨ 往返无混装且结论不变；全程未触碰临时项目之外的任何文件，未连接数据库，无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-174`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须为 `SMOKE-core-174` 写显式 `skip` 记录并携带缺失项，禁止静默零记录退出——沿用既有的不适用留痕契约。
+3. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、解析器加载结果与 AST 节点计数、安装脚本核查结论、④ 的 `change-lint` 与 `merge` 退出码、⑤ 的诊断码与错误位置、⑥ 的 warning 全文与 violations 计数、⑦ 的 15 组（5 缺项 × 3 方言）结论、⑧ 的核验依据、⑨ 回滚每阶段 identity。
+4. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+5. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；不得连接任何数据库实例；检测到任一远程副作用立即 FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-174` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ④ 失败直接 FAIL**：PG delta 仍不可交付意味着本次修复未真正解除阻断，不得以「其余步骤都过」为由记 pass。
+- 观察到步骤 ⑤ 的语法错被放行（即接入的解析器形同虚设），直接 FAIL；**解除阻断与仍拦得住真错误必须同时成立**，缺一即判失败。
+- 观察到步骤 ⑦ 有任一缺项被放行，直接 FAIL——降级不得波及结构层。
+- 观察到步骤 ② 借用 workspace 依赖而非随包产物，直接 FAIL。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ④ 失败：立即以固定 `0.14.9` 回滚并报告触发条件。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.9` 并报告环境状态；未证明全旧或全新时阻断后续动作。
+- 不得为让断言通过而手工写 marker、放宽结构检查、改用其它方言的校验器兜底，或改写用户正式文档。
+
+### 追溯
+
+- 需求：AC-SQLGATE-01～09。
+- 功能规格：§2.52；架构：§四十二。
+- 场景：S35、S39；UT/ST：UT-S39-59～64、ST-S39-28、UT-S35-132～133、ST-S35-25。
+- 部署方案：OpenLogos 0.14.10 SQL 分层校验本机全局部署方案。

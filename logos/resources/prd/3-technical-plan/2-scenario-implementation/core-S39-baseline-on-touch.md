@@ -370,3 +370,95 @@ metadata/counter/index、test change set hash和最终target paths进入prefligh
 ### 追溯
 
 UT-S39-56～58与ST-S39-27使用歧义after表、多target duplicate、metadata drift和RunLogos S44 fixture，断言preflight hash、结构化归因、零正式写及同transaction完成。
+
+## S39 SQL delta 的分层校验与适配器路由
+
+### 场景目标
+
+让 non-Markdown SQL delta 的校验按「结构层 + 方言层」分开：结构层始终执行且与方言无关；方言层按本机可用适配器路由，不可用时降级为跳过并留痕，绝不阻断交付。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| C | 消费方 | change-lint L9 / merge / baseline-apply 三处 |
+| V | `validateSql` | SQL delta 校验的唯一判定 |
+| R | 方言解析 | 从 `tech_stack.database` 解析方言，缺失/冲突/未知 fail-closed |
+| A | 适配器 | SQLite：`sqlite3` 二进制；PostgreSQL：libpg_query WASM |
+
+前置：delta 首行 marker 合法、payload 已剥离、canonical target 落在 `logos/resources/database/**` 且扩展名为 `.sql`。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant C as 消费方
+    participant V as validateSql
+    participant R as 方言解析
+    participant A as 适配器
+
+    C->>R: Step 1: 从 tech_stack.database 解析方言
+    alt 缺失 / 冲突 / 未知方言
+        R-->>C: Step 2a: fail-closed（判定不变，非本次范围）
+    else 方言明确
+        R-->>V: Step 2b: dialect
+        V->>V: Step 3: 结构完整度五项（与方言无关，始终执行）
+        alt 任一项不满足
+            V-->>C: Step 4a: 拒绝并点名缺哪一项
+        else 结构全过
+            V->>A: Step 5: 按方言查找适配器
+            alt 适配器可用
+                A-->>V: Step 6a: 执行该层校验（SQLite 隔离执行 / PostgreSQL 语法解析）
+                V-->>C: Step 7a: 结论 + 实际执行层级
+            else 适配器未实现或未安装
+                V-->>C: Step 7b: **通过** + 降级留痕（原因 / 缺失项 / 已执行层级）
+            end
+        end
+    end
+```
+
+### 步骤说明
+
+- **Step 3 始终执行**：五项结构检查源码中不引用 `dialect`，本就与方言无关。此前实现亦如此——错误逐级前进正是证据。
+- **Step 5 是查找，不是假定**：SQLite 分支此前已经先 `spawnSync` 再判断可用性；非 SQLite 分支此前直接假定不可用并 early return。本次把「先查找」统一到全部方言。
+- **Step 7b 是通过而非失败**：适配器未实现（PostgreSQL 之外的方言）与未安装（`sqlite3` 缺失）都走这里。交付照常推进（架构 §四十二.1）。
+- **Step 7a/7b 都携带层级**：结论必须自述实际执行到哪一层，消费方据此如实呈现（架构 §四十二.2）。
+
+### 方言路由与强度
+
+| 方言 | 适配器 | 执行层级 |
+|---|---|---|
+| SQLite | `sqlite3` 二进制 | 隔离执行：`BEGIN` → payload → 表/索引计数 → `ROLLBACK` |
+| PostgreSQL | libpg_query WASM | 语法解析（AST），不执行、不连库 |
+| MySQL | 无 | 仅结构 + 留痕 |
+| 上述任一但适配器不可用 | — | 仅结构 + 留痕 |
+
+**PostgreSQL 得到的是语法级而非执行级**——它不会发现「引用了不存在的表」这类只有执行才能发现的问题。此不对称由 Step 7a 的层级自述如实反映。
+
+### 跨方言冒充禁止
+
+- PostgreSQL / MySQL payload **绝不**进入 sqlite 执行路径；
+- 降级是**不执行方言层**，而非改用别的方言执行；
+- 不存在「用 SQLite 兜底」这一路径。
+
+既有 `UT-S39-27`（用例名「不冒充通过」）锁的正是此意图，但实现方式是「必须硬失败」。本场景将其改写为正向断言：断言 PG/MySQL payload 未被送入 sqlite 校验器，而非断言它必然失败。
+
+### 不变量
+
+1. **结构层无条件**：五项检查在全部方言、全部适配器可用性下一致生效。
+2. **能力缺失只降级**：适配器不可用只能降低层级，不得改变通过与否（架构 §四十二.1）。
+3. **层级如实自述**：结论必须携带实际执行层级；不得以结构检查冒充方言校验（架构 §四十二.2）。
+4. **不跨方言冒充**：任何 payload 不得送入其它方言的校验器。
+5. **三消费方同源**：change-lint、merge、baseline-apply 对同一 payload 与方言得到同一层级结论与同一留痕。
+
+### 异常与边界
+
+- 方言缺失、冲突或未知：维持既有 fail-closed，本次不改——那是提案缺陷而非能力缺失。
+- 适配器可用但校验失败（如 PG 语法错误）：正当拒绝，点名错误位置。
+- 适配器加载本身抛错：按「未安装」处理，降级并把错误信息计入留痕的缺失项。
+
+### 追溯
+
+- 需求：AC-SQLGATE-01～07。
+- 功能规格：§2.52.2～§2.52.6；架构：§四十二.1、§四十二.2。
+- 测试：UT-S39-59～UT-S39-64、ST-S39-28；安装态 SMOKE-core-174。
