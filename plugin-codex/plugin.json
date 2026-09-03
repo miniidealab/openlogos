@@ -1,6 +1,6 @@
 {
   "name": "openlogos",
-  "version": "0.14.9",
+  "version": "0.14.10",
   "description": "OpenLogos methodology — Why→What→How structured AI-driven development",
   "skills": "./skills/",
   "interface": {

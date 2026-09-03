@@ -186,8 +186,12 @@ function scaffold(entry, dialect, body) {
   const base = mkdtempSync(join(tmpdir(), 'openlogos-smoke-174-'));
   cli(entry, base, ['init', 'sql-proj', '--locale', 'zh', '--ai-tool', 'claude-code']);
   const yamlPath = join(base, 'logos', 'logos-project.yaml');
-  const yaml = readFileSync(yamlPath, 'utf8').replace(/lifecycle:\s*\S+/, 'lifecycle: launched');
-  writeFileSync(yamlPath, `${yaml}\ntech_stack:\n  database: ${dialect}\n`);
+  // init 模板已含 `tech_stack: {}`——必须替换而非追加，否则 YAML 出现重复键、严格解析直接失败。
+  let yaml = readFileSync(yamlPath, 'utf8').replace(/lifecycle:\s*\S+/, 'lifecycle: launched');
+  yaml = /^tech_stack:/m.test(yaml)
+    ? yaml.replace(/^tech_stack:.*$/m, `tech_stack:\n  database: ${dialect}`)
+    : `${yaml}\ntech_stack:\n  database: ${dialect}\n`;
+  writeFileSync(yamlPath, yaml);
   mkdirSync(join(base, 'logos', 'resources', 'database'), { recursive: true });
   writeFileSync(join(base, TARGET), `${sqlBody()}\n`);
   cli(entry, base, ['change', 'sql-tier']);
@@ -216,7 +220,18 @@ function assertBundledParser(entry) {
   catch (error) { throw new Error(`解析器未随包分发：${error instanceof Error ? error.message : String(error)}`); }
   if (!resolved.startsWith(pkg)) throw new Error(`解析器不在包内（疑似借用 workspace 依赖）：${resolved}`);
 
-  const manifest = JSON.parse(readFileSync(join(dirname(resolved), '..', 'package.json'), 'utf8'));
+  // 从入口文件向上找该依赖自己的 package.json——入口可能位于包根，也可能在子目录，
+  // 用固定的 '..' 会越到 node_modules/ 上（实测踩过）。
+  let depDir = dirname(resolved);
+  let manifestPath = '';
+  for (let i = 0; i < 6; i++) {
+    const candidate = join(depDir, 'package.json');
+    if (existsSync(candidate)) { manifestPath = candidate; break; }
+    depDir = dirname(depDir);
+  }
+  if (!manifestPath) throw new Error(`无法定位解析器的 package.json（自 ${resolved} 上溯）`);
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  if (manifest.name !== 'pg-query-emscripten') throw new Error(`上溯到的 package.json 归属不符：${manifest.name}`);
   const scripts = manifest.scripts ?? {};
   const installScripts = ['preinstall', 'install', 'postinstall'].filter(k => scripts[k]);
   if (installScripts.length > 0) throw new Error(`解析器含安装脚本（供应链风险）：${installScripts.join('、')}`);
