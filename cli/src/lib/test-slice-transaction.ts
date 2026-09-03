@@ -199,6 +199,32 @@ export function readTestSliceTransactionIfPresent(proposalDir: string): TestSlic
   return projectTestSliceTransaction(readStored(proposalDir));
 }
 
+/** manifest 失效的三种态——恢复事务的唯一触发判据，来自 deriveSliceVerificationState。 */
+const RECOVERY_REASONS = new Set([
+  'test-slice-manifest-missing', 'test-slice-manifest-invalid', 'test-slice-manifest-stale',
+]);
+
+export function isManifestRecoveryReason(reason: string | null | undefined): boolean {
+  return RECOVERY_REASONS.has(reason ?? '');
+}
+
+/**
+ * 依 OpenLogos 自身的 manifest 判定结论创建恢复事务；无失效态则不创建（返回 null）。
+ *
+ * 消费方不再判断「这是不是一次恢复」，也不再自行推导可写作用域——两者都从事务投影读出
+ * （功能规格 §2.53.6、架构 §四十三.1）。
+ */
+export function ensureManifestRecoveryTransaction(
+  root: string, proposalDir: string, slug: string, module = 'core',
+): TestSliceTransactionProjection | null {
+  const existing = readTestSliceTransactionIfPresent(proposalDir);
+  if (existing) return existing;                       // 单活跃事务，幂等
+  const state = deriveSliceVerificationState(root, proposalDir);
+  if (!state || state.human_action_required) return null;   // 人工门优先
+  if (!isManifestRecoveryReason(state.reason)) return null;
+  return createTestSliceTransaction(root, proposalDir, slug, { origin: 'manifest-recovery', module });
+}
+
 /** 创建事务；已存在则返回既有投影（单活跃事务，幂等）。 */
 export function createTestSliceTransaction(
   _root: string, proposalDir: string, slug: string,
