@@ -1071,7 +1071,7 @@ describe('OpenLogos merge transaction', () => {
       merge_transaction_golden_sha256: hash('7'),
       semantic_validator: 'openlogos/merge-transaction-semantic@1',
     });
-    expect(facts.cli_version).toBe('0.14.10');
+    expect(facts.cli_version).toBe('0.14.11');
     for (const field of [
       'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
       'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',

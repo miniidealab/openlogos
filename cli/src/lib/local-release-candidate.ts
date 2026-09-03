@@ -2,7 +2,7 @@ import { basename, isAbsolute, relative } from 'node:path';
 
 export const LOCAL_RELEASE_CANDIDATE_SCHEMA = 'openlogos/local-release-candidate@1' as const;
 export const LOCAL_RELEASE_PACKAGE_NAME = '@miniidealab/openlogos' as const;
-export const LOCAL_RELEASE_CANDIDATE_VERSION = '0.14.10' as const;
+export const LOCAL_RELEASE_CANDIDATE_VERSION = '0.14.11' as const;
 export const LOCAL_RELEASE_ROLLBACK_VERSION = '0.14.9' as const;
 
 export const LOCAL_RELEASE_PLUGIN_MANIFEST_PATHS = [
