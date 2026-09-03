@@ -244,6 +244,7 @@ sequenceDiagram
 
 ### 主时序
 
+
 ```mermaid
 sequenceDiagram
     participant A as slice-planner Agent
@@ -262,22 +263,31 @@ sequenceDiagram
     T->>W: Step 9: 整节替换 tasks.md 的 [code] 段
     T->>T: Step 10: 依**刚写出的** tasks.md 计算 task_fingerprint
     T->>W: Step 11: 原子写 TEST_SLICE_MANIFEST.json
-    alt 任一步失败
+    alt 写盘任一步失败
         T->>W: Step 12a: 回滚已写部分
-        T-->>A: Step 13a: phase=failed + 可归因诊断；两产物同时不存在
-    else 全部成功
-        T->>V: Step 12b: 复核 manifest 合法性
-        T-->>A: Step 13b: phase=completed + receipt
+        T-->>A: Step 13a: phase=failed + classification=recovery_required；两产物同时不存在
+    else 写盘成功
+        T->>V: Step 12b: 自校验——deriveSliceVerificationState() 复核刚写出的两产物
+        V-->>T: Step 12c: manifest_status + violations
+        alt 判 invalid / stale
+            T->>W: Step 12d: 整体回滚（与 Step 12a 同一路径）
+            T-->>A: Step 13c: phase=failed + classification=recovery_required + violations 原样带出
+        else 判 valid
+            T-->>A: Step 13b: phase=completed + receipt
+        end
     end
 ```
 
 ### 步骤说明
 
+
 - **Step 3/4 是 Agent 唯一的写动作**。`[code]` 段、manifest、receipt 与 marker 一律由 OpenLogos 写入。
 - **Step 9 为整节替换**：只替换 `## [code]` 段，`[delta]` / `[deploy]` 段及其既有 checkbox 状态字节恒等。
 - **Step 10 是本场景的关键**：指纹由 OpenLogos 依其**自己刚写出**的 `tasks.md` 计算，不接受 Agent 提供。写入者与指纹计算者是同一方、同一时刻，漂移窗口从构造上消失（架构 §四十三.2）。
 - **Step 12a 无半写态**：两产物同时存在或同时不存在。
-- **Step 12b 是复核而非首次判定**：合法性判据仍是既有的 `deriveSliceVerificationState()`，不新建第二套。
+- **Step 12b～12d 是本次补齐的分支。** 此前时序只画到「Step 12b 复核 manifest 合法性」便直接连向 `completed`——**画了复核这一步，却没有画复核结论的去向**。实现照此产出了一个 `verifyAppliedManifest()` 函数，然后没有任何路径调用它：写盘成功即 `completed`，同一进程内的判定器随即判 `invalid`。规格里一条没有分支的复核，落到实现里就是一个没有调用方的函数。
+- **Step 12d 与 Step 12a 是同一条回滚路径**，不是第二份实现。「产出不合法」与「写盘异常」对消费方是同一种失败，只需一套语义：修正 slot 内容后重新提交。
+- **Step 13c 必须保真 violations**：原样带出 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要，否则消费方无法定位是哪个 `spec_targets` 或哪个 `task_text` 不合格。
 
 ### 恢复事务的差异
 
@@ -304,22 +314,29 @@ sequenceDiagram
 
 ### 不变量
 
+
 1. **写入权唯一**：两产物的字节只由 apply 写出；不存在 Agent 直接写它们的可用路径（架构 §四十三.1）。
 2. **原子性由构造保证**：两产物同时成功或同时回滚，无半写态（架构 §四十三.2）。
-3. **指纹自算**：`task_fingerprint` 不接受外部提供。
-4. **整节守恒**：`[code]` 之外的段与 checkbox 状态字节恒等。
-5. **恢复不改划分**：`manifest-recovery` 下 `[code]` 段字节恒等。
-6. **单活跃事务**：同一提案同时至多一个活跃切片事务。
+3. **终态准入**：`completed` 当且仅当自校验判 `valid`；判非法必须整体回滚为 `failed`（架构 §四十三.2.1）。
+4. **复核有调用方**：合法性复核必须位于 apply 的主路径上。只被定义、无人调用的复核函数等同于该约束不存在。
+5. **指纹自算**：`task_fingerprint` 不接受外部提供。
+6. **整节守恒**：`[code]` 之外的段与 checkbox 状态字节恒等。
+7. **恢复不改划分**：`manifest-recovery` 下 `[code]` 段字节恒等。
+8. **单活跃事务**：同一提案同时至多一个**非终态**切片事务；终态事务不占活跃名额。
 
 ### 异常与边界
 
-- slot 内容结构非法：`submit-content` 拒绝并点名字段，事务停留在 `collecting`。
+
+- slot 内容结构非法（缺字段、非 JSON）：`submit-content` 拒绝并点名字段，事务停留在 `collecting`。
+- slot 内容**结构合法但业务非法**（`spec_targets` 指向非测试规格文档、`task_text` 与 `[code]` 行不一致）：`submit-content` 与 `seal` 均放行，由 apply 的自校验拦截并整体回滚（Step 12d）。本提案不在提交点重复该判据——判据只保留一处实现（架构 §四十一.4）。
 - seal 后再提交内容：动作不在 `allowed_actions` 中，被拒且无副作用。
 - apply 后重复 apply：幂等，返回既有 receipt，不重复写入。
+- apply 自校验判非法后重新提交：事务处于 `failed` 且 `classification=recovery_required`，允许修正 slot 后重走 seal / apply。
 - 提案未 spec-complete 即创建事务：拒绝，理由指向 spec-complete 前置。
 
 ### 追溯
 
-- 需求：AC-SLICETX-03～07、AC-SLICETX-10。
-- 功能规格：§2.53.3～§2.53.6、§2.53.8；架构：§四十三.1、§四十三.2。
-- 测试：UT-S32-52～UT-S32-58、ST-S32-18～ST-S32-19；安装态 SMOKE-core-175。
+
+- 需求：AC-SLICETX-03～07、AC-SLICETX-10；AC-SLICEFIX-01～04。
+- 功能规格：§2.53.3～§2.53.6、§2.53.5.1、§2.53.8；架构：§四十三.1、§四十三.2、§四十三.2.1。
+- 测试：UT-S32-52～UT-S32-60、ST-S32-18～ST-S32-20；安装态 SMOKE-core-175、SMOKE-core-176。

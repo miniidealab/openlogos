@@ -2016,3 +2016,101 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 - 需求：AC-SLICETX-12（及 01～11 的安装态验证）。
 - 功能规格：§2.53.7、§2.53.10；场景：S09、S13、S19、S28、S32；架构：§四十三.4。
 - 安装态：SMOKE-core-175。
+
+## OpenLogos 0.14.12 切片事务终态自校验本机全局部署方案
+
+
+### 部署目标与授权边界
+
+把「apply 终态自校验 + 终态事务不堵恢复」冻结为唯一 `@miniidealab/openlogos@0.14.12` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.11`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须部署**：缺陷位于**已发布的 0.14.11 全局 CLI** 中，RunLogos 现场提案正被它永久锁死在 `plan-slices`。只改代码不部署，现场仍在 0.14.11 上，修复不产生任何实际效果。
+
+**本次为何必须走安装态**：要证明的两件事都只在装好的包里才成立——`apply` 的自校验分支确实位于主路径上（而不是又一个零调用方的导出函数），以及终态事务在场时恢复入口确实可达。源码里接上一条调用，与用户装到的包里跑到这条调用，是两件事。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.11`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash。
+3. 冻结可离线恢复的 `0.14.11` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. **回滚制品必须由 `0.14.11` 的实际提交构建，不得用当前工作树打包。** 当前工作树虽然版本串仍是 `0.14.11`，但已包含 `0.14.12` 的修复代码；用它当回滚件，往返演练将验不出任何东西——两端跑的是同一份行为。
+5. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.12 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.12`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.11`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.11` 构建新字节。
+
+### 跨仓锚点的连续性
+
+本次不改变 `openlogos/test-slice-transaction@1` 的 schema 字段，仅**收紧 `completed` 的含义**（从「写盘成功」收紧为「写盘成功且判定为 valid」）。因此：
+
+1. `schema_sha256` 与 `contract_sha256` 若因规范文本更新而变化，必须重新冻结并记录**新旧两组值**，供 RunLogos 侧对照；
+2. 不做主版本跃迁——字段未变，跃迁会迫使消费方无谓适配；
+3. 语义收紧本身必须在部署记录中显式写明：消费方对 `completed` 的既有理解只会变得更强（不再可能拿到非法产物），不需要改代码，但需要知道。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.12` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.12` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| **业务非法 slot 被拦截** | 结构合法但业务非法的 slot 经 seal 后 `apply` **必须失败**；两产物同时恢复到 apply 前字节；`phase=failed`、`classification=recovery_required` |
+| **violations 保真** | 失败投影含 `code`/`path`/`message`/`fix_hint`，可定位到具体 `spec_targets` 值与具体 `task_text` 行 |
+| **修正后可收敛** | 修正两处后重提 → `completed`，manifest 判 `valid`，全程未删除任何 OpenLogos 拥有的文件 |
+| **终态不堵恢复** | 健康 apply 抵达 `completed` 后删除 manifest（**保留事务文件**），仍能创建 `origin=manifest-recovery` 事务，`required=1`、`[code]` 字节恒等 |
+| 投影与事实一致 | 终态事务下 detail 不含「（无缺口）」、不对 `allowed_actions=[]` 提示提交内容；`recover` 文案不含不成立前提 |
+| 零回归 | 既有 `SMOKE-core-175` 的 initial-plan 全链、写盘失败回滚、`[code]` 冻结、归档只读断言全部保持通过 |
+| rollback roundtrip | `0.14.11→0.14.12→0.14.11→0.14.12` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「业务非法 slot 被拦截」与「终态不堵恢复」失败时必须停止部署并回到实现**——它们分别是缺陷 A 与缺陷 B 的直接证据。
+
+### 零回归对照（强制，不可省略）
+
+同一矩阵必须在固定 `0.14.11` 上执行一次并**记录其失败点**：
+
+| 矩阵项 | 在 0.14.11 上的预期表现 |
+|---|---|
+| 业务非法 slot 被拦截 | **失败**——apply 会成功并置 `completed`（缺陷 A） |
+| 终态不堵恢复 | **失败**——返回 `origin=initial-plan` 的终态事务（缺陷 B） |
+
+**若矩阵在 0.14.11 上也全过，说明断言是空转，必须重写矩阵而非放行部署。** 这一条不是形式要求：本次缺陷之所以逃过 `SMOKE-core-175`，正是因为既有断言在有缺陷的版本上同样全绿。
+
+### 本机全局部署
+
+只有隔离矩阵、零回归对照与 `0.14.11` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.12` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.12`；
+- package / plugin / asset manifest version 全部为 `0.14.12`，无混装；
+- `slice transaction status` 可调用且 envelope 的契约哈希与冻结值一致。
+
+### 失败处置与回滚边界
+
+- 隔离矩阵失败：停止部署，回到实现，重新 verify/build/pack。
+- 全局安装后行为异常：立即以固定 `0.14.11` tarball 回滚，并报告触发条件与观察到的现象。
+- 回滚后必须复核 identity 全部回到 `0.14.11`，未证明「全旧或全新」时阻断后续动作。
+- 不得为让矩阵通过而放宽 slot 校验、跳过自校验、手工写产物或删除事务文件。
+
+### 追溯
+
+- 需求：AC-SLICEFIX-01～12。
+- 功能规格：§2.53.5.1、§2.53.6.1、§2.53.6.2；架构：§四十三.2.1。
+- 安装态：SMOKE-core-176；回归：SMOKE-core-175。

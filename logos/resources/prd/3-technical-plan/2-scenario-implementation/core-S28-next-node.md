@@ -102,6 +102,7 @@ return { id: 'plan-slices', name: '恢复测试—切片清单', ... };
 
 ### 主时序
 
+
 ```mermaid
 sequenceDiagram
     participant N as next
@@ -112,39 +113,48 @@ sequenceDiagram
     V-->>N: Step 2: reason ∈ {missing, invalid, stale} 或其它
     alt 非失效态
         N-->>N: Step 3a: 不创建事务，按既有前沿派生
-    else 已存在活跃恢复事务
+    else 已存在**非终态**事务
         N->>T: Step 3b: 读取投影
         T-->>N: Step 4b: 返回现有 transaction_id 与 phase
-    else 失效且无活跃事务
+    else 失效且无非终态事务（含终态事务在场）
         N->>T: Step 3c: 创建 origin=manifest-recovery 事务
         T->>T: Step 4c: required 收窄为仅 slot_slices；[code] 段冻结
         T-->>N: Step 5c: 返回事务投影
     end
-    N-->>N: Step 6: 前沿携带事务投影而非仅建议
+    N-->>N: Step 6: 前沿携带事务投影而非仅建议；detail 依真实 phase / origin / allowed_actions 渲染
 ```
 
 ### 步骤说明
 
+
 - **Step 3a**：无失效态时不创建事务——避免为正常提案凭空产生事务对象。
-- **Step 3b 幂等**：已有活跃恢复事务时返回既有投影，不重复创建。单活跃事务约束由事务侧保证。
+- **Step 3b 的「已存在」只认非终态。** 此前规格写作「已存在**活跃恢复**事务」，实现却读成了「已存在任何事务」：`completed` / `failed` 一并返回，且不区分 `origin`。后果是 `completed` 的 initial-plan 事务占住名额——它 `allowed_actions=[]`，既不能提交也不能中止，而恢复事务永远创建不出来，提案永久锁死在 `plan-slices`。**「活跃」必须在规格里写成可机械判定的条件，而不是一个形容词**：见 §2.53.6.1 的 phase 表。
+- **Step 3c 覆盖「终态事务在场」**：终态是可归档历史，不占活跃名额。恢复入口的可达性是合同的一部分——只要判定为可自动恢复且 `human_action_required=false`，就必须能创建出恢复事务。
 - **Step 4c 收窄 slot**：恢复只需重写 manifest，`[code]` 段冻结（S32 已冻结该约束）。
-- **Step 6 的差别**：消费方读到的是 canonical `transaction_id` 与 `allowed_actions`，不再需要自判恢复模式或自算可写作用域。
+- **Step 6 的 detail 必须由真实字段推出**，不得复用另一分支的模板文案：不把 `origin=initial-plan` 讲成恢复事务、不对 `allowed_actions=[]` 提示「提交内容后 seal、apply」、不把空缺口渲染成「（无缺口）」的同时声称「已就绪」。
 
 ### 不变量
 
+
 1. 三种失效态与恢复事务的映射是唯一的；判定仍来自 `deriveSliceVerificationState()`，不新建第二套。
 2. 无失效态时不创建事务。
-3. 创建是幂等的：同一提案同时至多一个活跃恢复事务。
-4. `next` 本身不写两产物——它只创建/返回事务；写入仍只发生在 apply。
+3. **「已存在活跃事务」只含非终态**：`completed` / `failed` 不占活跃名额，终态事务在场时仍可创建恢复事务。
+4. 创建是幂等的：同一提案同时至多一个**非终态**切片事务。
+5. `next` 本身不写两产物——它只创建/返回事务；写入仍只发生在 apply。
+6. **投影与事实一致**：detail 与 `next_action` 由事务真实 `phase` / `origin` / `allowed_actions` 推出。
+7. **禁止以人工删除 `TEST_SLICE_TRANSACTION.json` 作为恢复手段**，包括在测试夹具中预先删除——该文件由 OpenLogos 拥有，让消费方改它与写入权归属冲突；夹具里删除它会使不变量 3 在测试中天然不可见。
 
 ### 异常与边界
+
 
 - `human_action_required` 时不创建事务（沿用既有短路，人工门优先）。
 - 提案已归档：仅返回只读投影，不创建事务。
 - 事务创建失败：`next` 如实报告失败原因，不降级为「仅建议」——那会让消费方以为可以自行恢复。
+- **终态事务在场且判定可自动恢复**：创建新的 `origin=manifest-recovery` 事务；若因任何原因无法创建，必须给出结构化诊断说明原因，**不得返回那个不接受任何动作的终态事务投影充数**——后者会让消费方按错误指引反复撞墙。
 
 ### 追溯
 
-- 需求：AC-SLICETX-07、AC-SLICETX-08。
-- 功能规格：§2.53.6；架构：§四十三.1。
-- 测试：UT-S28-45～UT-S28-46；安装态 SMOKE-core-175。
+
+- 需求：AC-SLICETX-07、AC-SLICETX-08；AC-SLICEFIX-05～07、AC-SLICEFIX-09。
+- 功能规格：§2.53.6、§2.53.6.1、§2.53.6.2；架构：§四十三.1、§四十三.2.1。
+- 测试：UT-S28-45～UT-S28-48、ST-S28-15；安装态 SMOKE-core-175、SMOKE-core-176。

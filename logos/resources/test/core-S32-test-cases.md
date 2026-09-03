@@ -266,3 +266,29 @@
 - AC-SLICETX-07 恢复 slot 收窄与 `[code]` 冻结：UT-S32-56、ST-S32-19。
 - AC-SLICETX-10 旧路径不存在：UT-S32-57。
 - 场景：S32 切片产物经事务原子落盘；功能规格：§2.53.3～§2.53.6、§2.53.8；架构：§四十三.1、§四十三.2；安装态：SMOKE-core-175。
+
+## S32 apply 终态自校验测试
+
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S32-59 | 业务非法 slot 触发整体回滚，无半写态 | Step 12b→13c | spec-complete 提案；slot 结构合法但业务非法：`spec_targets` 指向非测试规格文档、`task_text` 与 `[code]` 行不一致 | 创建事务 → 提交两 slot → seal → apply | apply 失败；`tasks.md` 与 `TEST_SLICE_MANIFEST.json` **同时**恢复到 apply 前字节（manifest 原不存在则仍不存在）；`phase=failed`、`classification=recovery_required`。**证伪门**：把 apply 的自校验分支去掉后本用例必须变红——若去掉后仍绿，说明断言实际锁的是别的东西 |
+| UT-S32-60 | 修正 slot 后重新提交可正常抵达 completed | Step 12b→13b | 承接 UT-S32-59 的 failed 事务 | 修正 `spec_targets` 与 `task_text` → 重新 submit-content → seal → apply | 事务抵达 `completed` 且出具 receipt；`deriveSliceVerificationState()` 判 manifest 为 `valid`；不需要删除任何 OpenLogos 拥有的文件即可完成修复 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S32-20 | 真实 CLI 下 violations 保真且可定位到字段 | Step 12c→13c | 真实 CLI；业务非法 slot 的 launched 夹具提案 | `submit-content` ×2 → `seal` → `apply` → `status --format json` | apply 以非零退出；失败投影中 violations **原样保留** `code` / `path` / `message` / `fix_hint`，可据此定位到具体的 `spec_targets` 值与具体的 `task_text` 行；不得压缩为单条摘要 |
+
+### 追溯与覆盖
+
+- AC-SLICEFIX-01 apply 写盘后置 completed 前调用既有判定器复核：UT-S32-59。
+- AC-SLICEFIX-02 业务非法 slot 整体回滚且无半写态：UT-S32-59。
+- AC-SLICEFIX-03 violations 保真可定位：ST-S32-20。
+- AC-SLICEFIX-04 修正后可正常 completed：UT-S32-60。
+- 场景：S32 切片产物经事务原子落盘（Step 12b～13c）；功能规格：§2.53.5.1；架构：§四十三.2.1；安装态：SMOKE-core-176。
+
+**用例设计约束**：UT-S32-59 的 slot 内容必须**结构合法**（JSON 合法、四个必填字段齐备），非法只体现在业务层面。若用缺字段或非 JSON 构造，命中的是 `parseSlicesSlot` 的既有结构校验，与本缺陷无关——报告 §七 已明确「只断言结构非法不覆盖本缺陷」。

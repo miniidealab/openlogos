@@ -34,11 +34,42 @@ manifest 的 `task_fingerprint` 是对 `tasks.md` 的 `[code]` 段求得的指�
 
 禁止以纪律、约定或生产者自查替代该保证。特别地，禁止由被检查者自己运行的「交付前自查」充当硬门。
 
+#### 2.2.1 终态条件：completed 当且仅当产物被自身判定器判为 valid
+
+「写盘成功」不是终态条件。`apply` 必须在写盘完成之后、置 `phase=completed` 之前，用**本规范 §8 的同一 validator**（`deriveSliceVerificationState()`）复核它刚写出的两个产物：
+
+| 复核结论 | 终态 | 产物 |
+|---|---|---|
+| `valid` | `completed`，出具 receipt | 保留 |
+| `invalid` / `stale` | `failed`，`classification=recovery_required` | **整体回滚**到 `apply` 前状态 |
+
+判非法时的回滚**复用与写盘异常完全相同的那一条路径**：`tasks.md` 与 manifest 同时恢复，不留半写态。这样「产出不合法」与「写盘异常」在消费方看来是同一种失败，只需一套语义——修正 slot 内容后重新提交。
+
+失败投影必须把 validator 的 violations **原样带出**（保留 `code`、`path`、`message`、`fix_hint`），不得压缩为单条摘要：消费方要靠它定位到底是哪个 `spec_targets` 或哪个 `task_text` 不合格。
+
+不得为此新建第二套宽松 validator。判定权与写入权在同一进程内（§2.1），若在提交终态前不互相对账，判定方就只能事后发现问题、无法事前阻止——这正是「约束没有失败信号」（架构 §四十一.6.2）的形态。**一个只被定义、没有调用方的复核函数，等于没有这条约束。**
+
 ### 2.3 恢复事务
 
 manifest 失效（missing / invalid / stale）时，由 OpenLogos 依 `deriveSliceVerificationState()` 自身结论创建 `origin=manifest-recovery` 的切片事务，`content_slots.required` 收窄为仅切片归属内容，`[code]` 段冻结、拒绝改写。
 
 消费方不得自行判断「这是不是一次恢复」，也不得自行推导可写作用域——两者都从事务投影读出。
+
+#### 2.3.1 「已存在活跃事务」只含非终态
+
+同一提案同时至多一个**活跃**切片事务。「活跃」的定义是**非终态**：
+
+| phase | 是否占用活跃名额 |
+|---|---|
+| `collecting` / `ready` / `sealed` / `applying` | 是 |
+| `completed` / `failed` | **否**——视为可归档历史 |
+
+终态事务在场时，仍必须按当前 canonical 判定另起 `origin=manifest-recovery` 事务。把终态计入「已存在」会让恢复入口永久短路：`completed` 的 `allowed_actions` 为空，既不能提交也不能中止，而恢复事务又创建不出来，提案被永久锁死在 `plan-slices`。
+
+由此派生两条硬性要求：
+
+- **禁止要求消费方删除或改名 `TEST_SLICE_TRANSACTION.json`。** 该文件由 OpenLogos 拥有，让消费方去改它与「事务产物只由 OpenLogos 写」（§2.1）直接冲突。任何把「人工删除事务文件」写进恢复步骤的文档、Skill 或测试夹具都是违规的——**测试夹具尤其**：在夹具里预先删除该文件，等于把人工绕过写进前提，会使本条约束在测试中天然不可见。
+- **投影必须与事实一致。** 终态事务不得被渲染成恢复事务；`allowed_actions` 为空的事务不得被提示「提交内容后 seal、apply」；拒绝动作的文案不得断言未发生的前提（例如在 `apply` 成功的现场声称「apply 失败已整体回滚」）。
 
 ## 3. Manifest Schema v1
 
@@ -174,6 +205,8 @@ validator 必须先通过 TestChangeSetReader 验证 change set，再验证 slic
 
 有效 change set + slice manifest missing/invalid/stale 时，OpenLogos 输出 `next_node.id=plan-slices`、`skill=slice-planner`、`dispatch.idempotent=true` 和 artifacts。slice-planner 恢复模式必须从同一 TestChangeSetReader 返回的 C/R 规划，保留 `[code]` 文本/顺序/checkbox、`SLICES_APPROVED` 和 checkpoint，仅重建 manifest。完全缺失时从规范化 tasks 确定性恢复 slice ID；无法保持身份则阻塞。
 
+恢复入口的可达性是本合同的一部分：**只要判定为可自动恢复（§8 表中「可自动恢复=是」且 `human_action_required=false`），就必须存在一个可创建的恢复事务**，与该提案是否残留终态事务无关（§2.3.1）。若因任何原因无法创建，OpenLogos 必须给出结构化诊断说明原因，而不是返回一个不接受任何动作的事务投影充数——后者会让消费方按错误指引反复撞墙。
+
 change set missing/invalid/unsupported/tampered 时，OpenLogos 必须保持人类可操作的 merge/spec-complete 阻塞前沿，返回对应结构化诊断，禁止伪装成 slice manifest 问题或派 `plan-slices`。RunLogos 只消费该 canonical 动作；宿主不得扫描 Delta、解析 Markdown 表格、调用 Git 或自行推导 C/R。
 
 RunLogos 负责有界派发、重投和完成屏障；屏障必须再次调用 OpenLogos validator。成功后重新调用 canonical `next/verify`。宿主不得自行扫描缺失、解析 tasks 归属、写状态或把恢复次数计入 code repair budget。
@@ -181,6 +214,7 @@ RunLogos 负责有界派发、重投和完成屏障；屏障必须再次调用 O
 ## 10. 崩溃一致性与安全
 
 - manifest 先写同目录临时文件，fsync/关闭后校验，再原子 rename；失败不覆盖旧有效文件。
+- `apply` 的原子性同时覆盖**写盘失败**与**产出非法**两种情形，二者走同一条回滚路径（§2.2.1）；回滚后 `tasks.md` 与 manifest 均恢复到 `apply` 前字节。
 - checkpoint 使用单行 append；截断/非法尾行不采信并返回诊断，不从半行恢复 PASS。
 - checkbox 先勾但 checkpoint 未写：A 不变；checkpoint 已写但响应丢失：重试幂等并前移。
 - 路径必须位于当前提案或声明的测试规格内，拒绝绝对路径、`..` 与符号链接逃逸。

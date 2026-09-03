@@ -172,3 +172,29 @@
 - AC-SLICETX-07 恢复事务由 OpenLogos 依自身判定创建：UT-S28-45。
 - AC-SLICETX-08 恢复路径返回事务投影、无失效态不创建：UT-S28-45、UT-S28-46。
 - 场景：S28 恢复节点由建议改为创建事务；功能规格：§2.53.6；架构：§四十三.1；安装态：SMOKE-core-175。
+
+## S28 终态事务不堵恢复测试
+
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S28-47 | 终态事务在场时仍创建恢复事务 | Step 3c | 走完一次**健康**的 apply 抵达 `completed`（manifest 判 valid），随后让 manifest 失效（missing / invalid / stale），`human_action_required=false`。**事务文件保持在场** | 求 `next` 的前沿 | 创建新的 `origin=manifest-recovery` 事务，`content_slots.required` 收窄为 1、`[code]` 段字节恒等。**证伪门**：把「已存在」判定改回不过滤终态后本用例必须变红 |
+| UT-S28-48 | 「活跃」只含非终态的分相判定 | Step 3b、3c | 分别构造 `collecting` / `ready` / `sealed` / `applying` / `completed` / `failed` 六种 phase 且 manifest 失效的提案 | 逐个求 `next` 前沿 | 前四种返回既有事务（幂等，不新建）；后两种创建新的恢复事务。逐 phase 断言，不得以「至少有一个 phase 通过」代替 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖步骤 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S28-15 | 真实 CLI 下终态死锁不再复现且指引与事实一致 | S28 恢复路径 | 健康 apply → completed → 删除 manifest → `next --format json` → `slice transaction status` → `submit-content --slot slot_slices` → `seal` → `apply` | `next` 返回的 `slice_transaction.origin` 为 `manifest-recovery`（不是 `initial-plan`）；detail 不含「（无缺口）」且不对 `allowed_actions=[]` 的事务提示提交内容；后续提交与 apply 全部成功；全程**未删除或改名 `TEST_SLICE_TRANSACTION.json`** |
+
+### 追溯与覆盖
+
+- AC-SLICEFIX-05 活跃只含非终态、恢复事务 required=1 且 `[code]` 恒等：UT-S28-47、UT-S28-48。
+- AC-SLICEFIX-06 终态在场时 next 返回恢复事务投影：UT-S28-47、ST-S28-15。
+- AC-SLICEFIX-07 detail 与事实一致：ST-S28-15。
+- AC-SLICEFIX-09 夹具不得预先删除事务文件：UT-S28-47、UT-S28-48、ST-S28-15 共同承担。
+- 场景：S28 恢复节点由建议改为创建事务（Step 3b、3c）；功能规格：§2.53.6.1、§2.53.6.2；架构：§四十三.2.1；安装态：SMOKE-core-176。
+
+**夹具口径（强制）**：以上三条用例的前置条件必须是「终态事务**在场**」。既有的 `UT-S28-45` / `UT-S28-46` 夹具先 `rmSync` 掉 `TEST_SLICE_TRANSACTION.json` 再破坏 manifest——那一步删除正是缺陷报告所指的人工绕过，把它写进前提会使本组约束在测试中天然不可见。实现时必须同步修正这两条既有用例的夹具，使其不再依赖删除事务文件。

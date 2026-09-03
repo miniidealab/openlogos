@@ -3053,6 +3053,7 @@ collecting → ready → sealed → applying → completed
 
 ### 2.53.5 apply 的原子性与守恒
 
+
 `apply` 在同一事务中完成两件写入，任一失败整体回滚：
 
 1. `tasks.md` 的 `[code]` **整节替换**——`[delta]` / `[deploy]` 段及其既有 checkbox 状态字节恒等；
@@ -3062,7 +3063,33 @@ collecting → ready → sealed → applying → completed
 
 `task_fingerprint` 由 OpenLogos 在 apply 时**依其自己刚写出的 `tasks.md` 计算**，不接受外部提供。这从构造上消除了 §2.53.2 描述的漂移窗口——写入者与指纹计算者是同一方，在同一时刻。
 
+#### 2.53.5.1 终态自校验：completed 当且仅当产物判 valid
+
+原子写入只保证两个产物**同生共死**，不保证它们**合法**。事务完全可以原子地写出一对互相一致、但业务上非法的产物，然后宣告成功——这正是 0.14.11 的实际行为。
+
+因此 `apply` 在写盘完成之后、置 `phase=completed` 之前，必须用既有的 `deriveSliceVerificationState()` 复核刚写出的产物：
+
+```
+apply
+ ├ ① tasks.md 的 [code] 整节替换（origin=initial-plan 时）
+ ├ ② manifest 原子写出（task_fingerprint 依 ① 的结果自算）
+ ├ ③ 自校验 deriveSliceVerificationState()
+ ├── valid            → phase=completed，出具 receipt
+ └── invalid / stale  → 整体回滚 → phase=failed
+                        classification=recovery_required
+                        violations 原样进投影
+```
+
+三条硬性要求：
+
+- **回滚路径唯一。** ③ 判非法时走的是 ①② 写盘异常完全相同的那一条回滚，不另写一份。「产出不合法」与「写盘异常」在消费方看来是同一种失败，只需一套语义：修正 slot 内容后重新提交。
+- **violations 保真。** 失败投影原样带出 validator 的 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要——消费方要靠它定位到底是哪个 `spec_targets` 或哪个 `task_text` 不合格。
+- **不新建第二套 validator。** 复核复用 §8 判定器。判定权与写入权本就在同一进程内（§2.53.1），若提交终态前不互相对账，判定方只能事后发现、无法事前阻止。
+
+> **一个只被定义、没有调用方的复核函数，等于没有这条约束。** 0.14.11 中 `verifyAppliedManifest()` 已存在且注释写明用途，全仓调用方却为 0——代码审查看到函数在场以为约束成立，测试不覆盖它是因为它根本不在主路径上。
+
 ### 2.53.6 两种 origin
+
 
 | origin | 触发 | `content_slots.required` | `[code]` 段 |
 |---|---|---|---|
@@ -3072,6 +3099,32 @@ collecting → ready → sealed → applying → completed
 恢复事务由 OpenLogos 依自身判定结论创建——消费方不再判断「这是不是一次恢复」，也不再自行推导可写作用域，两者都从事务投影读出。
 
 恢复时 `[code]` 段字节恒等是硬约束：切片划分本身没有问题，问题只在 manifest 失效；改写 `[code]` 会把一次修复变成一次重新规划。
+
+#### 2.53.6.1 「已存在活跃事务」只含非终态
+
+同一提案同时至多一个**活跃**切片事务。「活跃」的判定只认非终态：
+
+| phase | 占用活跃名额 |
+|---|---|
+| `collecting` / `ready` / `sealed` / `applying` | 是 |
+| `completed` / `failed` | **否**——可归档历史 |
+
+终态事务在场时，仍必须按当前 canonical 判定另起恢复事务。把终态计入「已存在」会让恢复入口永久短路：`completed` 的 `allowed_actions` 为空，`submit-content` 与 `abort` 全被拒、`recover` 不开放，而恢复事务又创建不出来——提案永久锁死在 `plan-slices`，且唯一脱困手段变成人工删除 OpenLogos 拥有的事务文件，与 §2.53.1 的写入权归属直接冲突。
+
+**恢复入口的可达性是合同的一部分**：只要判定为可自动恢复且 `human_action_required=false`，就必须存在一个可创建的恢复事务。无法创建时给出结构化诊断说明原因，**不得返回一个不接受任何动作的事务投影充数**。
+
+#### 2.53.6.2 投影必须与事实一致
+
+终态事务下的 `next` 与错误文案受以下约束：
+
+| 禁止 | 现象 |
+|---|---|
+| 把 `origin=initial-plan` 的事务渲染为恢复事务 | 用户以为在恢复，实际在看一个已完结的规划事务 |
+| 对 `allowed_actions=[]` 的事务提示「提交内容后 seal、apply」 | 用户照做，每个动作都被拒 |
+| 把空缺口渲染为「（无缺口）」并同时说「已就绪」 | 两个描述互相矛盾，用户无从判断该做什么 |
+| 拒绝文案断言未发生的前提 | `recover` 说「apply 失败已整体回滚」，而现场 apply 是**成功**的 |
+
+投影与拒绝文案必须由事务的真实 `phase` / `origin` / `allowed_actions` 推出，不得复用另一分支的模板文案。
 
 ### 2.53.7 公共合同与跨仓锚点
 
@@ -3112,9 +3165,18 @@ collecting → ready → sealed → applying → completed
 
 ### 2.53.9 归档与失败边界
 
-- 归档提案仅放行 `status`；写动作被拒且不产生副作用（沿用 merge 事务既有机制）。
-- 历史归档提案内的 manifest 保持原样，不重写、不迁移。
-- 缺事务投影时结构化 fail closed；**不存在**「回落到 Agent 直接写产物」的分支。
+
+归档提案仅放行 `status`：`submit-content` / `seal` / `apply` / `recover` / `abort` 五个写动作一律被拒，且拒绝路径零副作用（拦截发生在任何动作执行之前）。
+
+失败边界：
+
+| 情形 | 终态 | 产物 |
+|---|---|---|
+| 写盘异常 | `failed`，`classification=recovery_required` | 整体回滚 |
+| 产出非法（自校验判 `invalid` / `stale`） | `failed`，`classification=recovery_required` | 整体回滚（同一路径） |
+| 用户主动 `abort` | `aborted` 语义的终态 | 不写产物 |
+
+终态事务不阻断后续恢复（§2.53.6.1）。`recover` 的语义与开放范围以事务真实状态为准，其拒绝文案不得预设某种失败原因。
 
 ### 2.53.10 兼容、失败与发布边界
 

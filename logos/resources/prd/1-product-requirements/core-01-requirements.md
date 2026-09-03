@@ -2411,3 +2411,37 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 - 场景：S32 切片规划、S28 next 节点、S09 变更生命周期、S13 验收结果、S19 部署后冒烟门。
 - 测试：UT-S32-52～58、ST-S32-18～19、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34。
 - 部署后 smoke：SMOKE-core-175。
+
+## 切片事务终态自校验与恢复入口可达要求
+
+
+来源：RunLogos 现场 bug report（`logos/resources/reference/openlogos-slice-transaction-completed-invalid-manifest-deadlock-bug-report.md`，现场事务 `stx_15d02a01933b438d9c45a70e`）。0.14.11 的切片事务能原子写出**业务上非法**的产物并宣告 `completed`，随后自家判定器把这份产物判为 `invalid`；而 `completed` 事务又占住「单活跃事务」名额，使恢复事务永远创建不出来。两者叠加，`plan-slices` 前沿被永久锁死，没有任何 CLI 动作可以脱困。
+
+### 核心需求
+
+1. **终态必须经自身判定器复核**：`apply` 在写盘之后、置 `completed` 之前，必须用本仓既有的 `deriveSliceVerificationState()` 复核刚写出的两个产物；判 `valid` 才可 `completed`。
+2. **判非法即整体回滚**：复核判 `invalid` / `stale` 时，复用与写盘异常完全相同的回滚路径，`tasks.md` 与 manifest 同时恢复到 `apply` 前字节，事务转 `failed`、`classification=recovery_required`。
+3. **violations 保真**：失败投影原样带出 validator 的 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要。
+4. **不新建第二套 validator**：复核必须复用既有判定器；「一个只被定义、没有调用方的复核函数」等同于该约束不存在。
+5. **「活跃事务」只含非终态**：`completed` / `failed` 不占用活跃名额，视为可归档历史；终态事务在场时仍可按 canonical 判定另起 `origin=manifest-recovery` 事务。
+6. **恢复入口可达是合同的一部分**：只要判定为可自动恢复且 `human_action_required=false`，就必须存在可创建的恢复事务；无法创建时须给出结构化诊断，不得返回不接受任何动作的事务投影充数。
+7. **禁止以人工删除事务文件作为恢复手段**：`TEST_SLICE_TRANSACTION.json` 由 OpenLogos 拥有；任何文档、Skill 或**测试夹具**都不得把「先删除该文件」写进恢复前提。
+8. **投影与事实一致**：终态事务不得被渲染成恢复事务；`allowed_actions` 为空的事务不得被提示「提交内容后 seal、apply」；拒绝文案不得断言未发生的前提。
+9. 修复以新的本地 patch candidate `0.14.12` 交付，当前本机全局 `0.14.11` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-SLICEFIX-01 | `apply` 写盘后、置 `completed` 前调用既有 `deriveSliceVerificationState()` 复核；判 `valid` 才 `completed` 并出具 receipt |
+| AC-SLICEFIX-02 | 提交结构合法但**业务非法**的 slot（`spec_targets` 指向非测试规格文档、`task_text` 与 `[code]` 行不一致）后 `apply` 整体回滚：两产物同时恢复到 apply 前字节，`phase=failed`、`classification=recovery_required` |
+| AC-SLICEFIX-03 | 失败投影原样带出 validator 的全部 violations（含 `code` / `path` / `message` / `fix_hint`），可定位到具体的 `spec_targets` 或 `task_text` |
+| AC-SLICEFIX-04 | 修正 slot 内容后重新提交并 `apply`，事务可正常抵达 `completed` 且 manifest 判 `valid` |
+| AC-SLICEFIX-05 | 「已存在活跃事务」的判定只认非终态；`completed` / `failed` 在场时仍可创建 `origin=manifest-recovery` 事务，其 `content_slots.required` 收窄为 1、`[code]` 段字节恒等 |
+| AC-SLICEFIX-06 | 终态事务在场且 manifest 被判 missing / invalid / stale（`human_action_required=false`）时，`next` 返回**恢复事务**投影，`origin=manifest-recovery` |
+| AC-SLICEFIX-07 | 终态事务下 `next` 的 detail 不得把 `initial-plan` 讲成恢复事务、不得对 `allowed_actions=[]` 提示「提交内容后 seal、apply」、不得把缺口渲染为「（无缺口）」 |
+| AC-SLICEFIX-08 | `recover` 的拒绝文案不得断言「apply 失败已整体回滚」这一在 apply 成功现场不成立的前提 |
+| AC-SLICEFIX-09 | 恢复类用例的夹具不得预先删除 `TEST_SLICE_TRANSACTION.json`；必须在终态事务**在场**的前提下断言恢复可用 |
+| AC-SLICEFIX-10 | 既有 `SMOKE-core-175` 的 initial-plan 全链、写盘失败回滚、`[code]` 冻结与归档只读断言全部保持通过（零回归） |
+| AC-SLICEFIX-11 | 新增公开 CLI 级 smoke 全程穿过 `openlogos slice transaction`，不以库级调用作为闭环证据；打到固定 `0.14.11` 上必须失败 |
+| AC-SLICEFIX-12 | 固定 `0.14.12` tarball 完成隔离安装与本机全局安装态验证，`0.14.11→0.14.12→0.14.11` 往返后各 identity 与 tarball SHA-256 一致 |
