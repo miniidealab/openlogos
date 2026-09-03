@@ -27,6 +27,7 @@ import {
 } from '../lib/test-slice-manifest.js';
 import { contractVersion } from '../lib/step-registry.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
+import { TABLE_CELL_ID_RE, VERIFICATION_ID_RE } from '../lib/test-id.js';
 
 export interface TestResult {
   id: string;
@@ -60,7 +61,7 @@ const MANUAL_SUFFIX = /\[manual\]/i;
 const CHECKLIST_PATTERN = /^- \[([ x])\] (.+)$/gm;
 const AC_TABLE_HEADER = /^## 四、验收条件追溯$/m;
 const AC_ROW_PATTERN = /^\|\s*(S\d{2}-AC-\d{2,3})\s*\|([^|]*)\|([^|]*)\|/gm;
-const TABLE_CELL_ID_PATTERN = /^\s*(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*(?:\s*\[manual\])?\s*$/i;
+
 const LINE = '─'.repeat(50);
 
 export interface ChecklistItem {
@@ -558,7 +559,7 @@ function extractDefinedIndex(root: string): DefinedIndex {
 
         const cells = line.split('|').map(cell => cell.trim());
         const firstCell = cells[1] ?? '';
-        if (!TABLE_CELL_ID_PATTERN.test(firstCell)) continue;
+        if (!TABLE_CELL_ID_RE.test(firstCell)) continue;
 
         const id = firstCell.replace(MANUAL_SUFFIX, '').replace(/\s+/g, ' ').trim();
         const isManual = MANUAL_SUFFIX.test(firstCell) || MANUAL_SUFFIX.test(line);
@@ -647,7 +648,7 @@ export function extractAcTrace(root: string): AcTraceEntry[] {
         const acId = match[1].trim();
         const description = match[2].trim();
         const caseIdsRaw = match[3].trim();
-        const caseIdTest = /\b(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/;
+        const caseIdTest = VERIFICATION_ID_RE;
         const linkedCaseIds = caseIdsRaw
           .split(/[,，]/)
           .map(s => s.trim())

@@ -43,7 +43,7 @@
   "templates": [
     {
       "path": "dist/lib/authority-closure.js",
-      "sha256": "235593287639697efc672b139f3a9999d2d415f595897c713975b4a0d8410d7e"
+      "sha256": "c32cf27cfe5848357fd8b223d0101367147ccd1e4934f0c4d9408e478aa27eeb"
     },
     {
       "path": "dist/i18n.js",
@@ -98,5 +98,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "9d896a77a9783a9ffc40514caabb7edc4eedc40b7db1567f4a7cabb3f1d010f8"
+  "payloadHash": "2289522b272d78b959189985b7af5662987ab10ae812ab113b54a2dc2e9d0d08"
 }

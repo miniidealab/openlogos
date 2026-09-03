@@ -3,6 +3,7 @@ import { join, normalize, relative, sep } from 'node:path';
 import { readVerifyConfig } from './verify-config.js';
 import { deriveSliceState } from './flow-loop-derive.js';
 import type { LoopState, SliceState } from './flow-loop-derive.js';
+import { verificationIdScanRe } from './test-id.js';
 
 export type CompletionState =
   | 'slice_done'
@@ -53,7 +54,7 @@ interface RuntimeResult {
   error?: string;
 }
 
-const TEST_ID_RE = /\b(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/g;
+
 const DEFAULT_ALLOWED_PREFIXES = [
   'cli/src/',
   'cli/test/',
@@ -70,7 +71,7 @@ function uniq(values: string[]): string[] {
 }
 
 function extractTestIds(text: string): string[] {
-  return uniq([...text.matchAll(TEST_ID_RE)].map(match => match[0]));
+  return uniq([...text.matchAll(verificationIdScanRe())].map(match => match[0]));
 }
 
 function readFileIfExists(path: string): string {

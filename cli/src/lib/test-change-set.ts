@@ -5,13 +5,14 @@ import { parseDocument } from 'yaml';
 import { authorityScan, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import { classifyProposalDeltas } from './delta-classify.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
+import { isTestId } from './test-id.js';
 
 export const TEST_CHANGE_SET_SCHEMA = 'openlogos/test-change-set@1' as const;
 export const TEST_CHANGE_SET_SOURCE = 'semantic-before-after-diff' as const;
 
 const HASH_RE = /^[0-9a-f]{64}$/;
 const PREFIXED_HASH_RE = /^sha256:[0-9a-f]{64}$/;
-const TEST_ID_RE = /^(?:(?:UT|ST)-S\d{2}-[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*|SMOKE-core-\d+)$/;
+
 const TOP_KEYS = ['schema', 'change', 'module', 'source', 'changed_test_ids', 'removed_test_ids', 'targets', 'sha256'];
 const TARGET_KEYS = ['target_path', 'before_sha256', 'after_sha256'];
 
@@ -137,7 +138,7 @@ function scanTestDefinitionCandidates(
     while (row < lines.length && !scan.masked[row] && scan.text[row].trim() !== '') {
       const cells = tableRowCells(scan.text[row]).map(canonicalCell);
       const candidate = cells[0] ?? '';
-      if (TEST_ID_RE.test(candidate)) {
+      if (isTestId(candidate)) {
         if (cells.length !== headers.length) {
           if (allowAmbiguousRows) {
             row++;
@@ -291,7 +292,7 @@ export function validateTestChangeSet(
   }
   const changed = value.changed_test_ids;
   const removed = value.removed_test_ids;
-  if ([...changed, ...removed].some(id => typeof id !== 'string' || !TEST_ID_RE.test(id))) {
+  if ([...changed, ...removed].some(id => typeof id !== 'string' || !isTestId(id))) {
     return invalid('test-slice-change-set-test-id', 'C/R 含非法测试 ID', '$.test_change_set');
   }
   if (JSON.stringify(changed) !== JSON.stringify(asciiSort(changed as string[]))

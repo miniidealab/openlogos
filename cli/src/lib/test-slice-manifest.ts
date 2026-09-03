@@ -16,6 +16,7 @@ import { basename, dirname, join, posix, relative, resolve, sep } from 'node:pat
 import { parseDocument } from 'yaml';
 import { readTestChangeSet } from './test-change-set.js';
 import { VERIFY_PASS_MARKER, hasSpecCompleteMarker } from './proposal-markers.js';
+import { TABLE_TEST_ID_RE, testIdScanRe } from './test-id.js';
 
 export const TEST_SLICE_MANIFEST = 'TEST_SLICE_MANIFEST.json';
 export const SLICE_CHECKPOINTS = 'SLICE_CHECKPOINTS.jsonl';
@@ -24,9 +25,6 @@ export const SLICE_CHECKPOINT_SCHEMA = 'openlogos/slice-checkpoint@1';
 
 const HASH_RE = /^sha256:[0-9a-f]{64}$/;
 const SLICE_ID_RE = /^[a-z0-9][a-z0-9-]{2,63}$/;
-const TEST_ID_SOURCE = '(?:(?:UT|ST)-S\\d{2}-[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*|SMOKE-core-\\d+)';
-const TEST_ID_RE = new RegExp(`\\b${TEST_ID_SOURCE}`, 'g');
-const TABLE_TEST_ID_RE = new RegExp(`^\\|\\s*(${TEST_ID_SOURCE})\\s*\\|`);
 
 export interface TestSliceManifestSlice {
   slice_id: string;
@@ -366,7 +364,7 @@ export function shouldUseSliceVerification(proposalDir: string): boolean {
   // 只有 slice-planner 合法产出的切片才进入 v1：每个顶层切片都必须标注真实测试 ID。
   // 这同时保留历史“切片1/切片2”无 ID 任务的 legacy final 行为；该类文本不能据以
   // 确定性恢复 owned_test_ids，强行启用只会制造不可恢复歧义。
-  return tasks.length >= 2 && tasks.every(task => (task.text.match(TEST_ID_RE) ?? []).length > 0);
+  return tasks.length >= 2 && tasks.every(task => (task.text.match(testIdScanRe()) ?? []).length > 0);
 }
 
 export function deriveSliceVerificationState(

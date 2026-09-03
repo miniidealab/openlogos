@@ -21,6 +21,7 @@ import { evaluateProposalStructure } from './plan-package-contract.js';
 import type { CompletionIssue, PlanPackageEvaluation } from './plan-package-contract.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import { deriveManagedAssetsDiagnostic, readBundledAssetManifest, type ManagedAssetsDiagnostic } from './asset-manifest.js';
+import { TEST_ID_ANCHORED_RE, testIdScanRe } from './test-id.js';
 
 export type ProposalStep =
   | 'writing'
@@ -224,17 +225,17 @@ export function isTasksCodeFilled(content: string): boolean {
     .some(item => item.text.trim() !== '' && !CODE_SECTION_PLACEHOLDERS.has(item.text.trim()));
 }
 
-const TEST_CASE_ID_PATTERN = /\b(?:UT|ST|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/;
+
 
 function hasTestDeltaSignal(proposalDir: string, tasksContent: string): boolean {
-  if (/\bdeltas\/test\//.test(tasksContent) && TEST_CASE_ID_PATTERN.test(tasksContent)) {
+  if (/\bdeltas\/test\//.test(tasksContent) && testIdScanRe().test(tasksContent)) {
     return true;
   }
 
   for (const file of listFiles(join(proposalDir, 'deltas', 'test'))) {
     const fullPath = join(proposalDir, 'deltas', 'test', file);
     try {
-      if (TEST_CASE_ID_PATTERN.test(readFileSync(fullPath, 'utf-8'))) {
+      if (testIdScanRe().test(readFileSync(fullPath, 'utf-8'))) {
         return true;
       }
     } catch {
@@ -282,7 +283,7 @@ function readIfExists(path: string): string {
  * r4 F20：点号仅允许作段内分隔（如 `01.1`）——候选以 `.` 开头/结尾或含空 dot 段（`xx.`、`a..b`）不构成 ID，
  * 否则 `UT-S99-xx.` 的尾段变成 `xx.`、绕过占位黑名单的整段精确匹配。
  */
-export const TEST_ID_ANCHORED_RE = /^(?:UT|ST|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)*$/;
+export { TEST_ID_ANCHORED_RE } from './test-id.js';
 /** 占位符黑名单：最末段命中即拒绝（大小写不敏感）。 */
 const TEST_ID_PLACEHOLDER_TAILS = new Set(['xx', 'nn', 'tbd', 'todo']);
 /** 通配/未消费尾部字符：候选含任一即整候选拒绝（前缀不采信）。 */
