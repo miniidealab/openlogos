@@ -23,7 +23,29 @@ function registeredCandidateRunners(): string[] {
   return [...block![1].matchAll(/\['([^']+)'/g)].map(m => m[1]);
 }
 
+/** 三处注册表缺一，runner 就会静默不被分派或不做全局隔离——通配发现无法暴露这一点。 */
+function registryMembership(runner: string): Record<string, boolean> {
+  const source = readFileSync(RUN_SMOKE, 'utf8');
+  const table = (re: RegExp) => re.exec(source)?.[1] ?? '';
+  return {
+    hostArtifacts: table(/const hostArtifacts[\s\S]*?=\s*\{([\s\S]*?)\n  \};/).includes(`'${runner}'`),
+    globalMutatingRunners: table(/const globalMutatingRunners = new Set\(\[([\s\S]*?)\]\);/).includes(`'${runner}'`),
+    globalCandidateRunners: table(/const globalCandidateRunners = new Map\(\[([\s\S]*?)\]\);/).includes(`'${runner}'`),
+  };
+}
+
 describe('S19 候选 runner 留痕契约', () => {
+  it('UT-S19-34: 切片事务 runner 在三处注册表均已登记且实现留痕契约', () => {
+    const runner = 'scripts/smoke-slice-transaction-0-14-11.js';
+    // 逐表断言而非「至少登记一处」——三张表职责不同，漏登任意一张都是不同的静默失效。
+    expect(registryMembership(runner)).toEqual({
+      hostArtifacts: true, globalMutatingRunners: true, globalCandidateRunners: true,
+    });
+    const source = readFileSync(join(REPO_ROOT, runner), 'utf8');
+    expect(/requireEnvOrSkip\s*\(/.test(source), '未调用 requireEnvOrSkip').toBe(true);
+    expect(/--self-test/.test(source), '无 --self-test 只读入口').toBe(true);
+  });
+
   it('UT-S19-33: 每个已注册候选 runner 都实现留痕契约', () => {
     const runners = registeredCandidateRunners();
     expect(runners.length).toBeGreaterThan(0);

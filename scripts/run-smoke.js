@@ -128,6 +128,11 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_SQL_TIER_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_SQL_TIER_CANDIDATE_BIN,
     },
+    'scripts/smoke-slice-transaction-0-14-11.js': {
+      tarball: process.env.OPENLOGOS_SLICE_TX_TARBALL,
+      previousTarball: process.env.OPENLOGOS_SLICE_TX_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_SLICE_TX_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -154,6 +159,7 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-plan-gate-deadlock-0-14-8.js',
   'scripts/smoke-merge-gate-single-source-0-14-9.js',
   'scripts/smoke-sql-dialect-tiering-0-14-10.js',
+  'scripts/smoke-slice-transaction-0-14-11.js',
 ]);
 
 const globalCandidateRunners = new Map([
@@ -166,6 +172,7 @@ const globalCandidateRunners = new Map([
   ['scripts/smoke-plan-gate-deadlock-0-14-8.js', process.env.OPENLOGOS_PLAN_GATE_TARBALL],
   ['scripts/smoke-merge-gate-single-source-0-14-9.js', process.env.OPENLOGOS_MERGE_GATE_TARBALL],
   ['scripts/smoke-sql-dialect-tiering-0-14-10.js', process.env.OPENLOGOS_SQL_TIER_TARBALL],
+  ['scripts/smoke-slice-transaction-0-14-11.js', process.env.OPENLOGOS_SLICE_TX_TARBALL],
 ]);
 
 function prepareGlobalCandidate(runner) {
