@@ -2430,6 +2430,33 @@ planned
     - applyMarkdownDelta 精确 H2 匹配器
     - 按叶标题首命中、mtime、文件存在性或 marker 反向裁决
   cutover_exit: UT-S09-271～274、ST-S09-106～107、UT-S37-37～40、ST-S37-09～10 与 SMOKE-core-168 全部通过，且 RunLogos 原 transaction completed
+- fact_id: slice-transaction.terminal-verdict
+  semantic_scope: 某次 apply 写出的产物是否允许进入 completed——判据为「判定器未给出负面结论」，其中判定器按设计不适用（null）与判定 valid 同样放行
+  authority_owner: 切片事务的终态守门
+  canonical_state: verifyAppliedManifest 对刚写出产物的一次求值结果 { status, violations }；status 为 null 表示判定器不适用，非负面结论
+  sole_writer: applyTestSliceTransaction 的终态守门分支
+  mutation_entry: apply 写盘后、置 completed 前的一次 verifyAppliedManifest 调用
+  decision_api: verifyAppliedManifest；其适用性由 shouldUseSliceVerification 决定
+  projections:
+    - id: slice-transaction-projection-phase
+      consumer: slice transaction status/next 投影读取者
+      freshness_proof: 每次 apply 后按当前磁盘产物重新求值，不复用上一次结论
+      rebuild_rule: 重新调用 deriveSliceVerificationState
+      writable: false
+    - id: apply-error-envelope
+      consumer: CLI 失败输出与 RunLogos 面板
+      freshness_proof: 与触发回滚的同一次求值同源，violations 原样带出
+      rebuild_rule: 复跑 verifyAppliedManifest；失败终态必伴随非零 violations
+      writable: false
+  recovery_source: 磁盘上的 tasks.md 与 TEST_SLICE_MANIFEST.json
+  retired_shadow_sources:
+    - treat-null-verdict-as-failure
+  forbidden_shadow_sources:
+    - treat-not-applicable-verdict-as-invalid
+    - treat-null-verdict-as-valid-without-distinguishing-source
+    - split-single-slice-plan-to-satisfy-validator
+    - render-null-status-as-unknown-in-error-message
+  cutover_exit: 单切片计划的 apply 达 completed 且 [code] 正确写出；多切片与业务非法 slot 的既有回滚行为逐项不回归（UT-S32-59～60、ST-S32-20、SMOKE-core-176）；新增 UT-S32-61～64、ST-S32-21 与 SMOKE-core-178 全部通过
 ```
 
 同一 `fact_id` 只有本行；S37 ConservationEvaluator 是该 authority 的守恒消费者，不再私有拥有标题解析器。Registry 的 owner 表达语义组件，sole writer 表达正式状态写入组件，二者不得复制为多个 owner/writer 字段或共同裁决者。
@@ -2912,6 +2939,18 @@ S19 已冻结的 smoke「不适用留痕」处理的是同一形状：环境不�
 | 写盘成功但产出非法时，事务会不会照样宣告成功？ | 非法产物获得成功终态，一致性只是「一致地错」 |
 
 只验证成功路径与写盘异常路径，无法区分这两者：**产出非法在顺利路径上同样表现为「原子写入成功」**。
+
+##### 复核的适用性是前置条件：不适用不是负面结论
+
+复核判据存在**适用范围**时（本实例：`shouldUseSliceVerification()` 对单切片计划按设计恒为假——`owned_test_ids` 的确定性恢复在单切片下没有意义），守门必须先判适用性、再消费复核结论：
+
+> **判定器按设计不适用（返回 `null`）时跳过复核、照常放行终态；只有判定器实际给出的负面结论（`invalid` / `stale` / `unsupported`）才触发整体回滚。**
+
+把「不适用」与「负面结论」合并成同一失败分支（如以 `status !== 'valid'` 作唯一判据），会把复核范围之外的**合法形态**整类误拒——0.14.12～0.14.13 的实例：所有单切片提案的 apply 必然回滚，错误信息「判为 unknown，已整体回滚：0 条违规」。**0 条违规正是判定器根本没运行的特征**：若产物真的非法，违规数必然非零。识别方法同样可机械执行：
+
+> **失败终态是否伴随非零的失败证据？** 失败而证据为零，说明失败结论不是判定器给出的，而是守门把「没有结论」读成了结论。
+
+`null` 也不得被无差别当作 `valid`：放行分支必须显式区分「按设计不适用」与「判为合法」两种来源，否则未来新增的 `null` 来源会被静默放行，失去失败信号（§四十一.6.2 的反向形态）。
 
 ##### 复核器零调用方是本条最隐蔽的违反形态
 

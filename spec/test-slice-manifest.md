@@ -34,20 +34,25 @@ manifest 的 `task_fingerprint` 是对 `tasks.md` 的 `[code]` 段求得的指�
 
 禁止以纪律、约定或生产者自查替代该保证。特别地，禁止由被检查者自己运行的「交付前自查」充当硬门。
 
-#### 2.2.1 终态条件：completed 当且仅当产物被自身判定器判为 valid
+#### 2.2.1 终态条件：completed 当且仅当判定器未给出负面结论
 
-「写盘成功」不是终态条件。`apply` 必须在写盘完成之后、置 `phase=completed` 之前，用**本规范 §8 的同一 validator**（`deriveSliceVerificationState()`）复核它刚写出的两个产物：
+「写盘成功」不是终态条件。`apply` 必须在写盘完成之后、置 `phase=completed` 之前，用**本规范 §8 的同一 validator**（`deriveSliceVerificationState()`，经 `verifyAppliedManifest()` 消费）复核它刚写出的两个产物。复核的**适用性是前置条件**：`shouldUseSliceVerification()` 为假时（当前唯一形态：`tasks.length < 2` 的单切片计划——单切片下 `owned_test_ids` 的确定性恢复没有意义，切片验证按设计不启用）判定器返回 `null`，表示**不适用而非负面结论**。
 
 | 复核结论 | 终态 | 产物 |
 |---|---|---|
+| `null`（判定器按设计不适用） | `completed`，出具 receipt | 保留；manifest 为**惰性产物**——所有消费者统一经 `deriveSliceVerificationState()` 取态，其在盘与否不改变行为 |
 | `valid` | `completed`，出具 receipt | 保留 |
-| `invalid` / `stale` | `failed`，`classification=recovery_required` | **整体回滚**到 `apply` 前状态 |
+| `invalid` / `stale` / `unsupported` | `failed`，`classification=recovery_required` | **整体回滚**到 `apply` 前状态 |
+
+放行分支必须**显式区分** `null` 与 `valid` 两种来源，不得无差别合并——未来新增的 `null` 来源不得被静默放行。禁止把「不适用」读成失败（0.14.12～0.14.13 的缺陷形态：`status !== 'valid'` 使所有单切片提案永久无法写出 `[code]`），也禁止以「把单切片拆成两片满足判定器」作为替代。
 
 判非法时的回滚**复用与写盘异常完全相同的那一条路径**：`tasks.md` 与 manifest 同时恢复，不留半写态。这样「产出不合法」与「写盘异常」在消费方看来是同一种失败，只需一套语义——修正 slot 内容后重新提交。
 
-失败投影必须把 validator 的 violations **原样带出**（保留 `code`、`path`、`message`、`fix_hint`），不得压缩为单条摘要：消费方要靠它定位到底是哪个 `spec_targets` 或哪个 `task_text` 不合格。
+失败投影必须把 validator 的 violations **原样带出**（保留 `code`、`path`、`message`、`fix_hint`），不得压缩为单条摘要：消费方要靠它定位到底是哪个 `spec_targets` 或哪个 `task_text` 不合格。**失败终态必伴随非零 violations**；失败文案不得渲染 `unknown`——「失败终态 + 0 条违规」的组合意味着守门把「没有结论」读成了结论，属违规实现。
 
 不得为此新建第二套宽松 validator。判定权与写入权在同一进程内（§2.1），若在提交终态前不互相对账，判定方就只能事后发现问题、无法事前阻止——这正是「约束没有失败信号」（架构 §四十一.6.2）的形态。**一个只被定义、没有调用方的复核函数，等于没有这条约束。**
+
+本节仅放宽 `completed` 的达成条件（解除对合法单切片形态的误拒），`openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约零变化，不做版本跃迁；消费方对 `completed` 的既有理解不受收紧。
 
 ### 2.3 恢复事务
 

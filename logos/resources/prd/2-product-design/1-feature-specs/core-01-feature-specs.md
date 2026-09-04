@@ -3230,3 +3230,44 @@ apply
 
 - AC-READLOCK-01～08（见需求文档「并发只读命令可用性与读锁 reader 竞争假阳性修复」）。
 - 测试：UT-S33-56～UT-S33-60、ST-S33-10、UT-S11-78～UT-S11-79、ST-S11-45、UT-S20-41～UT-S20-42；安装态：SMOKE-core-177。
+
+## 2.55 切片事务终态判定的三分支语义
+
+### 功能目标
+
+把 apply 终态守门从「判定器判 `valid` 才放行」修正为「判定器未给出负面结论即放行」，显式区分三种判定结果的事务去向与错误呈现，解除单切片提案被守门误拒的阻断；0.14.12 引入的自校验拦截能力（业务非法产物不得进入 `completed`）逐项保留。
+
+### 2.55.1 三种判定结果与事务去向
+
+`verifyAppliedManifest()` 复核刚写出的两产物后，`status` 有三类取值，各自去向如下：
+
+| 判定结果 | 含义 | 事务去向 |
+|---|---|---|
+| `null`（不适用） | `shouldUseSliceVerification()` 为假——本计划形态按设计不使用切片验证（当前唯一来源：`tasks.length < 2` 的单切片计划） | **放行** → `completed`，出具 receipt；manifest 为惰性产物，保留在盘 |
+| `valid` | 判定器实际运行且判产物合法 | 放行 → `completed`，出具 receipt |
+| `invalid` / `stale` / `unsupported` | 判定器实际运行且给出负面结论 | 复用与写盘异常完全相同的那一条回滚路径**整体回滚**，`phase=failed`、`classification=recovery_required`，violations 原样带出 |
+
+- **`null` 不得被无差别当作 `valid`**：放行分支必须显式区分「按设计不适用」与「判为合法」两种来源（如独立分支或显式适用性前置判断），使未来新增的 `null` 来源不会被静默放行。
+- **复核的适用性是前置条件**：不适用即跳过复核，而非把「没有复核结论」读成失败。
+
+### 2.55.2 错误呈现
+
+- 失败文案只在判定器给出负面结论时出现，必须指明实际结论（`invalid` / `stale` / `unsupported`）；**不得渲染 `unknown`**。
+- 回滚必然伴随非零 violations；「失败终态 + 0 条违规」的组合是缺陷特征（判定器没运行却被判失败），修复后不得再出现。
+- violations 保真要求不变：原样带出 `code` / `path` / `message` / `fix_hint`（§2.53.5.1）。
+
+### 2.55.3 单切片计划的完整语义
+
+- 单切片是 slice-planner 的合规产出形态（六维 0–7 分单切；≥8 分不可拆的逃生口显式单切），`[code]` 与 manifest 仍一律经 `slice transaction apply` 原子写出，不开任何绕过通道。
+- 单切片下切片验证按设计不启用：`owned_test_ids` 的确定性恢复没有意义；manifest 为**惰性产物**——所有消费者统一经 `deriveSliceVerificationState()` 取态（单切片恒 `null`、走 legacy verify 路径），manifest 在盘与否不改变行为。
+- **禁止**以「把单切片拆成两片」满足判定器作为替代方案——那是拿方法论换通过。
+
+### 2.55.4 兼容与合同
+
+- `openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约零变化；仅 `completed` 达成条件由「判定器判 `valid`」放宽为「判定器未给出负面结论」（根规范 §2.2.1 同步修订）。
+- 属解除误拒的兼容放宽：只放行此前被误拒的合法场景，不收紧任何既有行为，下游（RunLogos 等）无需适配、不做 schema 版本跃迁。
+
+### 功能验收
+
+- AC-VERDICT-01～07（见需求文档「切片事务终态守门区分判定器不适用与判定为非法」）。
+- 测试：UT-S32-61～UT-S32-64、ST-S32-21、UT-S19-36；安装态：SMOKE-core-178；回归锚：UT-S32-59～UT-S32-60、ST-S32-20、SMOKE-core-176。

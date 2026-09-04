@@ -1152,3 +1152,52 @@
 - 功能规格：§2.54；架构：§四.B。
 - 场景：S11、S20、S33；UT/ST：UT-S33-56～60、ST-S33-10、UT-S11-78～79、ST-S11-45、UT-S20-41～42。
 - 部署方案：OpenLogos 0.14.13 读锁竞争假阳性修复本机全局部署方案。
+
+## OpenLogos 0.14.14 单切片终态判定 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.14` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-178` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.14`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建任何 marker**，**不得手工写 `tasks.md` 的 `[code]` 段或 `TEST_SLICE_MANIFEST.json`**，**不得删除或改名 `TEST_SLICE_TRANSACTION.json` 构造前提**。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-178 | 0.14.14 单切片计划经事务写出 [code] 且三分支守门如实 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **单切片全链**：临时 launched 项目构造 spec-complete 提案，提交**单切片** slot 内容（一条标注真实测试 ID 的切片）→ `seal` → `apply`；③ 核对 `phase=completed`、receipt 出具、`tasks.md` 的 `[code]` 段正确写出且 `[delta]`/`[deploy]` 字节恒等、manifest 落盘、全程输出不含 `unknown`；④ **多切片零回归**：另一临时提案两切片健康全链达 `completed`；再以业务非法 slot（`spec_targets` 指向非测试规格文档）重放 apply，核对整体回滚、`phase=failed`、violations 保真（含 `code`/`path`/`message`/`fix_hint`）且违规数非零；⑤ **终态不堵恢复回归**：单切片 completed 后删除 manifest（保留事务文件），核对仍可创建 `origin=manifest-recovery` 事务、`required=1`、恢复后 `[code]` 字节恒等；⑥ 演练 `0.14.13→0.14.14→0.14.13→0.14.14` 并复核每阶段 identity 与 ②③ 的结论 | ③ **单切片 apply 必须 completed**——若整体回滚且报「判为 unknown……0 条违规」即整体 FAIL，那正是被修复的缺陷；④ 业务非法 slot 必须仍被拦下（守门未被放宽过头），违规数非零；⑤ 恢复能力零回退；⑥ 往返无混装且结论不变；全程无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-178`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须写显式 `skip` 记录并携带缺失项，禁止静默零记录退出。
+3. **全部关键断言必须穿过公开 `openlogos slice transaction` 命令**。以库级函数调用构造或断言的步骤一律不计入闭环证据。
+4. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、② 单切片 slot 内容摘要与 apply 的 phase 序列、③ `[code]` 段写出结论与 manifest 存在性、④ 健康与业务非法两路的结论及 violations 全文、⑤ 恢复事务的 `origin`/`required` 与 `[code]` 段哈希对照、⑥ 回滚每阶段 identity。
+5. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+6. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### 零回归对照（强制）
+
+同一 runner 的步骤 ② 必须在固定 `0.14.13` 上执行一次并**记录其失败点**：单切片 apply 在 0.14.13 上会整体回滚并报「判为 unknown，已整体回滚：0 条违规」（缺陷本身）。**若步骤 ② 在 0.14.13 上也达 completed，说明断言是空转，必须重写用例而非放行部署。** 步骤 ④ 在两版本上行为应一致（业务非法拦截语义不变）。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-178` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ③ 与 ④ 是双红线**：前者失败意味着单切片仍被守门误拒，后者失败意味着放宽越界（业务非法产物获得成功终态）——二者任一失败即整体 FAIL，不得以「其余步骤都过」为由记 pass。
+- 观察到 runner 手工写产物、删除事务文件或以库级调用替代公开命令构造关键断言，直接 FAIL。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ③ 或 ④ 失败：立即以固定 `0.14.13` 回滚并报告触发条件——切片事务是本仓自身与 RunLogos 的关键路径，不得带伤运行。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.13` 并报告环境状态；未证明一致前阻断后续动作。
+- 不得为让断言通过而放宽业务非法拦截、跳过自校验、手工写产物或删除事务文件。
+
+### 追溯
+
+- 需求：AC-VERDICT-01～07。
+- 功能规格：§2.55；架构：§四十三.2.1；根规范：`spec/test-slice-manifest.md` §2.2.1。
+- 场景：S19、S32；UT/ST：UT-S32-61～64、ST-S32-21、UT-S19-36。
+- 部署方案：OpenLogos 0.14.14 单切片终态判定修复本机全局部署方案；回归：SMOKE-core-176。

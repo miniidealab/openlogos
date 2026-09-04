@@ -244,7 +244,6 @@ sequenceDiagram
 
 ### 主时序
 
-
 ```mermaid
 sequenceDiagram
     participant A as slice-planner Agent
@@ -267,27 +266,29 @@ sequenceDiagram
         T->>W: Step 12a: 回滚已写部分
         T-->>A: Step 13a: phase=failed + classification=recovery_required；两产物同时不存在
     else 写盘成功
-        T->>V: Step 12b: 自校验——deriveSliceVerificationState() 复核刚写出的两产物
-        V-->>T: Step 12c: manifest_status + violations
-        alt 判 invalid / stale
-            T->>W: Step 12d: 整体回滚（与 Step 12a 同一路径）
-            T-->>A: Step 13c: phase=failed + classification=recovery_required + violations 原样带出
+        T->>V: Step 12b: 自校验——verifyAppliedManifest() 复核刚写出的两产物
+        V-->>T: Step 12c: { status, violations }
+        alt status=null（判定器按设计不适用，如单切片计划）
+            T-->>A: Step 13b-na: 跳过复核照常放行 → phase=completed + receipt
         else 判 valid
             T-->>A: Step 13b: phase=completed + receipt
+        else 判 invalid / stale / unsupported
+            T->>W: Step 12d: 整体回滚（与 Step 12a 同一路径）
+            T-->>A: Step 13c: phase=failed + classification=recovery_required + violations 原样带出
         end
     end
 ```
 
 ### 步骤说明
 
-
 - **Step 3/4 是 Agent 唯一的写动作**。`[code]` 段、manifest、receipt 与 marker 一律由 OpenLogos 写入。
 - **Step 9 为整节替换**：只替换 `## [code]` 段，`[delta]` / `[deploy]` 段及其既有 checkbox 状态字节恒等。
 - **Step 10 是本场景的关键**：指纹由 OpenLogos 依其**自己刚写出**的 `tasks.md` 计算，不接受 Agent 提供。写入者与指纹计算者是同一方、同一时刻，漂移窗口从构造上消失（架构 §四十三.2）。
 - **Step 12a 无半写态**：两产物同时存在或同时不存在。
-- **Step 12b～12d 是本次补齐的分支。** 此前时序只画到「Step 12b 复核 manifest 合法性」便直接连向 `completed`——**画了复核这一步，却没有画复核结论的去向**。实现照此产出了一个 `verifyAppliedManifest()` 函数，然后没有任何路径调用它：写盘成功即 `completed`，同一进程内的判定器随即判 `invalid`。规格里一条没有分支的复核，落到实现里就是一个没有调用方的函数。
+- **Step 12b～12d 曾是 0.14.12 补齐的分支。** 此前时序只画到「Step 12b 复核 manifest 合法性」便直接连向 `completed`——**画了复核这一步，却没有画复核结论的去向**。实现照此产出了一个 `verifyAppliedManifest()` 函数，然后没有任何路径调用它：写盘成功即 `completed`，同一进程内的判定器随即判 `invalid`。规格里一条没有分支的复核，落到实现里就是一个没有调用方的函数。
+- **Step 12c 的结论按三分支消费（fix-apply-verdict-not-applicable-vs-invalid）**：`status=null` 表示判定器**按设计不适用**（当前唯一来源：单切片计划下 `shouldUseSliceVerification()` 恒为假），与 `valid` 同样放行进入 `completed`——复核的适用性是前置条件，不适用即跳过复核而非判失败（架构 §四十三.2.1）；只有判定器实际给出的负面结论（`invalid` / `stale` / `unsupported`）才走 Step 12d。放行分支须显式区分 `null` 与 `valid` 两种来源，不得无差别合并。0.14.12～0.14.13 曾以 `status !== 'valid'` 作唯一判据，把所有单切片提案的 apply 误判为失败，错误信息「判为 unknown，已整体回滚：0 条违规」——0 条违规正是判定器根本没运行的特征。
 - **Step 12d 与 Step 12a 是同一条回滚路径**，不是第二份实现。「产出不合法」与「写盘异常」对消费方是同一种失败，只需一套语义：修正 slot 内容后重新提交。
-- **Step 13c 必须保真 violations**：原样带出 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要，否则消费方无法定位是哪个 `spec_targets` 或哪个 `task_text` 不合格。
+- **Step 13c 必须保真 violations**：原样带出 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要，否则消费方无法定位是哪个 `spec_targets` 或哪个 `task_text` 不合格；失败文案不得出现 `unknown`，且失败终态必伴随非零 violations。
 
 ### 恢复事务的差异
 
@@ -314,21 +315,21 @@ sequenceDiagram
 
 ### 不变量
 
-
 1. **写入权唯一**：两产物的字节只由 apply 写出；不存在 Agent 直接写它们的可用路径（架构 §四十三.1）。
 2. **原子性由构造保证**：两产物同时成功或同时回滚，无半写态（架构 §四十三.2）。
-3. **终态准入**：`completed` 当且仅当自校验判 `valid`；判非法必须整体回滚为 `failed`（架构 §四十三.2.1）。
+3. **终态准入**：`completed` 当且仅当自校验**未给出负面结论**——判 `valid` 或判定器按设计不适用（`null`）均放行；判 `invalid` / `stale` / `unsupported` 必须整体回滚为 `failed`（架构 §四十三.2.1）。
 4. **复核有调用方**：合法性复核必须位于 apply 的主路径上。只被定义、无人调用的复核函数等同于该约束不存在。
-5. **指纹自算**：`task_fingerprint` 不接受外部提供。
-6. **整节守恒**：`[code]` 之外的段与 checkbox 状态字节恒等。
-7. **恢复不改划分**：`manifest-recovery` 下 `[code]` 段字节恒等。
-8. **单活跃事务**：同一提案同时至多一个**非终态**切片事务；终态事务不占活跃名额。
+5. **不适用不是失败**：判定器按设计不适用时跳过复核照常放行；「失败终态 + 0 条违规」的组合不得出现。放行分支显式区分 `null` 与 `valid` 两种来源。
+6. **指纹自算**：`task_fingerprint` 不接受外部提供。
+7. **整节守恒**：`[code]` 之外的段与 checkbox 状态字节恒等。
+8. **恢复不改划分**：`manifest-recovery` 下 `[code]` 段字节恒等。
+9. **单活跃事务**：同一提案同时至多一个**非终态**切片事务；终态事务不占活跃名额。
 
 ### 异常与边界
 
-
 - slot 内容结构非法（缺字段、非 JSON）：`submit-content` 拒绝并点名字段，事务停留在 `collecting`。
 - slot 内容**结构合法但业务非法**（`spec_targets` 指向非测试规格文档、`task_text` 与 `[code]` 行不一致）：`submit-content` 与 `seal` 均放行，由 apply 的自校验拦截并整体回滚（Step 12d）。本提案不在提交点重复该判据——判据只保留一处实现（架构 §四十一.4）。
+- **单切片计划（`tasks.length < 2`）**：切片验证按设计不启用，Step 12c 得 `status=null` → 照常放行进入 `completed`，`[code]` 正确写出，manifest 为惰性产物保留在盘。单切片是 slice-planner 的合规产出形态（六维 0–7 分单切；≥8 分不可拆的逃生口显式单切），不得以「拆成两片满足判定器」替代。注意由此派生的边界：单切片下业务判据同样不启用（如 `spec_targets` 不受切片验证检查），其兜底由 verify 全量回归与实现阶段承担。
 - seal 后再提交内容：动作不在 `allowed_actions` 中，被拒且无副作用。
 - apply 后重复 apply：幂等，返回既有 receipt，不重复写入。
 - apply 自校验判非法后重新提交：事务处于 `failed` 且 `classification=recovery_required`，允许修正 slot 后重走 seal / apply。
@@ -336,7 +337,6 @@ sequenceDiagram
 
 ### 追溯
 
-
-- 需求：AC-SLICETX-03～07、AC-SLICETX-10；AC-SLICEFIX-01～04。
-- 功能规格：§2.53.3～§2.53.6、§2.53.5.1、§2.53.8；架构：§四十三.1、§四十三.2、§四十三.2.1。
-- 测试：UT-S32-52～UT-S32-60、ST-S32-18～ST-S32-20；安装态 SMOKE-core-175、SMOKE-core-176。
+- 需求：AC-SLICETX-03～07、AC-SLICETX-10；AC-SLICEFIX-01～04；AC-VERDICT-01～05。
+- 功能规格：§2.53.3～§2.53.6、§2.53.5.1、§2.53.8、§2.55；架构：§四十三.1、§四十三.2、§四十三.2.1。
+- 测试：UT-S32-52～UT-S32-64、ST-S32-18～ST-S32-21；安装态 SMOKE-core-175、SMOKE-core-176、SMOKE-core-178。

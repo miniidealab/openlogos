@@ -734,3 +734,37 @@ sequenceDiagram
 恢复类断言**必须在终态事务在场的前提下**构造：先走一次完整的 apply 抵达 `completed`，再让 manifest 失效，然后断言恢复事务可创建。
 
 **禁止在夹具中预先删除或改名 `TEST_SLICE_TRANSACTION.json`。** 该文件由 OpenLogos 拥有，删除它正是缺陷报告中「唯一脱困手段」所指的人工绕过；把绕过写进夹具的前提，会让「终态事务不堵恢复」这条约束在测试中天然不可见——本仓既有的 `UT-S28-45` / `UT-S28-46` 正是因此漏掉了该缺陷。沿用旧夹具口径的用例视为未覆盖。
+
+## S19 单切片事务终态判定的安装态覆盖（fix-apply-verdict-not-applicable-vs-invalid）
+
+### 场景目标
+
+在**已安装的全局包**上证明单切片计划能走完整切片事务抵达 `completed`——即终态守门确实按三分支语义放行「判定器不适用」，而不只是源码里存在这条判据。
+
+### 为何必须走安装态
+
+被修的缺陷正位于已发布的 0.14.13 全局 CLI：源码改一条判据，与用户装到的包在真实 CLI 进程里放行单切片，是两件事。且判据形如「不适用即放行」，在源码级极易被后续改动无声退化——安装态断言把它钉在用户实际形态上。
+
+### 覆盖要求
+
+1. 新增 `SMOKE-core-178`：安装态下构造 spec-complete 的临时提案，提交**单切片** slot 内容（一条标注真实测试 ID 的切片）→ `seal` → `apply`，断言抵达 `completed`、`tasks.md` 的 `[code]` 段正确写出、manifest 落盘、错误输出不含 `unknown`。
+2. 同一 runner 必须回归多切片健康全链与业务非法 slot 的整体回滚（既有 SMOKE-core-176 断言面不回退）。
+3. **零回归对照**：同一单切片断言打到固定 `0.14.13` 上 `apply` **必须失败**（报「判为 unknown……0 条违规」），否则断言空转、必须重写用例而非放行部署。
+
+### 留痕契约
+
+- 修复版 runner 必须在 `scripts/run-smoke.js` **三处注册表逐表登记**（`hostArtifacts` / `globalMutatingRunners` / `globalCandidateRunners`），不得依靠通配发现后无条件 PASS；具备 `--self-test` 只读入口自述 ids / 版本 / 所需 env。
+- 缺 candidate / 回滚 tarball 时必须经 `requireEnvOrSkip` 写**显式 `skip` 记录并携带缺失项**，禁止静默零记录退出。
+- 结果写入 `smoke-results.jsonl` 唯一一条 `SMOKE-core-178` 记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **证伪门**：摘掉三处注册中的任意一处，对应元用例（UT-S19-36）必须变红。
+
+### 不变量
+
+- runner 不执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push。
+- 全部关键断言穿过公开 `openlogos slice transaction` 命令，不以库级调用构造。
+- 不得手工写 `tasks.md` 的 `[code]` 段、`TEST_SLICE_MANIFEST.json`，不得删除或改名 `TEST_SLICE_TRANSACTION.json` 构造前提。
+
+### 追溯
+
+- 需求：AC-VERDICT-01、AC-VERDICT-06；功能规格：§2.55；架构：§四十三.2.1。
+- 测试：UT-S19-36；安装态：SMOKE-core-178；回归：SMOKE-core-176。

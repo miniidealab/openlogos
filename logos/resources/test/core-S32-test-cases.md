@@ -292,3 +292,31 @@
 - 场景：S32 切片产物经事务原子落盘（Step 12b～13c）；功能规格：§2.53.5.1；架构：§四十三.2.1；安装态：SMOKE-core-176。
 
 **用例设计约束**：UT-S32-59 的 slot 内容必须**结构合法**（JSON 合法、四个必填字段齐备），非法只体现在业务层面。若用缺字段或非 JSON 构造，命中的是 `parseSlicesSlot` 的既有结构校验，与本缺陷无关——报告 §七 已明确「只断言结构非法不覆盖本缺陷」。
+
+## S32 终态判定三分支与单切片解阻断测试（fix-apply-verdict-not-applicable-vs-invalid）
+
+> 本节补充 apply 终态守门的三分支回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S32-61 | 单切片计划 apply 达 completed | spec-complete 提案，`[code]` 计划为一条标注真实测试 ID 的切片；两 slot 经 submit-content 收齐并 seal | `apply` | `phase=completed`、receipt 出具；`tasks.md` 的 `[code]` 段正确写出且 `[delta]`/`[deploy]` 字节恒等；manifest 落盘（惰性）；无任何回滚 |
+| UT-S32-62 | 三种判定结果去向矩阵 | 参数化构造三形态：① 单切片（判定器不适用→null）；② 两切片全部合法（valid）；③ 两切片但 slot 业务非法（`spec_targets` 指向非测试规格文档→invalid） | 各自走完整 seal→apply | ① ② 均 `completed`；③ 复用与写盘异常同一条回滚路径整体回滚，`phase=failed`、`classification=recovery_required`、两产物同时恢复到 apply 前字节、violations 原样保真（含 `code`/`path`/`message`/`fix_hint`） |
+| UT-S32-63 | 失败文案不出现 unknown、失败必伴随非零违规 | 沿用 UT-S32-62 的 ③ 夹具 | 检查 apply 失败输出与事务投影 | 错误文案不含字符串 `unknown`；`violations.length > 0`；放行路径（①②）不产生任何失败文案。**证伪门**：把守门判据改回 `status !== 'valid'` 后，① 必然回滚且复现「unknown + 0 条违规」组合，本用例与 UT-S32-61 必须同时变红 |
+| UT-S32-64 | 单切片 completed 后终态不堵恢复 | UT-S32-61 抵达 completed 后删除 manifest（保留事务文件） | 经 canonical 判定取投影并走恢复 | 仍可创建 `origin=manifest-recovery` 事务、`required=1`、`[code]` 段字节恒等——0.14.12 恢复能力对单切片形态同样成立 |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S32-21 | 真实 CLI 单切片全链与多切片零回归 | 临时 launched 项目 ×2：A=单切片计划，B=两切片计划（其一后续换业务非法 slot） | A：submit-content ×2 → seal → apply → 删 manifest → 恢复事务全链；B：健康全链 apply 后，另起夹具重放业务非法 slot 的 apply | A 全链经公开 `openlogos slice transaction` 命令抵达 completed、恢复成功且 `[code]` 冻结；B 健康路径 completed、业务非法路径整体回滚且 violations 保真；两项目相互无干扰、无半写态 |
+
+### 追溯与覆盖
+
+- AC-VERDICT-01 单切片可写出 `[code]`：UT-S32-61、ST-S32-21。
+- AC-VERDICT-02 三分支去向矩阵：UT-S32-62。
+- AC-VERDICT-03 多切片与业务非法不回归：UT-S32-62、ST-S32-21（回归锚：UT-S32-59～UT-S32-60、ST-S32-20）。
+- AC-VERDICT-04 终态不堵恢复：UT-S32-64。
+- AC-VERDICT-05 文案如实：UT-S32-63。
+- 场景：S32 切片产物经事务原子落盘（三分支主时序）；功能规格：§2.55；架构：§四十三.2.1；根规范：`spec/test-slice-manifest.md` §2.2.1。

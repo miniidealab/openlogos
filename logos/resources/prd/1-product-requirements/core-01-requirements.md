@@ -2471,3 +2471,29 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 | AC-READLOCK-06 | 不可恢复 journal 场景下（前滚与回滚均失败），读者即使经重试取到锁仍硬报 `baseline_commit_in_progress`，标准资源读取哨兵为 0（硬门零回退） |
 | AC-READLOCK-07 | 版本身份提升为 `0.14.13`，`0.14.12` 冻结为回滚基线；隔离矩阵与本机全局部署完成后各 identity 一致 |
 | AC-READLOCK-08 | 安装态并发 smoke（SMOKE-core-177）在 `0.14.13` 全过；同一断言打到固定 `0.14.12` 上必须复现并发假阳性（零回归对照，防断言空转） |
+
+## 切片事务终态守门区分判定器不适用与判定为非法
+
+来源：RunLogos 现场 bug report（本仓 reference 目录同名副本 `logos/resources/reference/openlogos-slice-transaction-single-slice-apply-blocked-bug-report.md`，2026-09-04，High）。0.14.12 引入的 apply 终态自校验（AC-SLICEFIX-01～04，能力本身工作正常）把守门判据写成 `verdict.status !== 'valid'`，将「判定器给出负面结论」与「判定器按设计不适用」（单切片计划下 `shouldUseSliceVerification()` 恒为假、判定器返回 `null`）合并成同一失败分支。于是**所有单切片提案的 apply 必然整体回滚**，错误信息「判为 unknown，已整体回滚：0 条违规」——0 条违规正是判定器根本没运行的特征。单切片恰是 slice-planner 方法论下最常见的合规形态（六维 0–7 分单切；≥8 分不可拆的逃生口显式单切）。0.14.13 原样复现（该版修的是 readlock 争用，与本缺陷无关）；本仓上一提案亦被迫拆 2 片绕过（事务 stx_581a5b4af4c5417e871b0f51 首次 apply 留痕）。
+
+### 核心需求
+
+1. **终态守门只对负面结论回滚**：`apply` 写盘后的自校验，仅在判定器实际给出负面结论（`invalid` / `stale` / `unsupported`）时整体回滚置 `failed`；判定器按设计不适用（`null`）与判 `valid` 同样放行进入 `completed`。
+2. **不适用与 valid 显式区分**：`null` 不得被无差别当作 `valid` 处理——放行分支必须显式区分「判为合法」与「按设计不适用」两种来源，未来新增的 `null` 来源不得被静默放行掩盖。
+3. **单切片计划可经事务写出 `[code]`**：一条标注真实测试 ID 的单切片计划走完整事务（submit-content ×2 → seal → apply）必须抵达 `completed`，`tasks.md` 的 `[code]` 段正确写出，manifest 作为惰性产物落盘无害。
+4. **既有能力零回归**：两切片及以上计划的 apply 行为逐项不变；业务非法 slot（`spec_targets` 含非测试规格路径、`task_text` 与 `[code]` 不一致）仍整体回滚、无半写态、violations 保真、`phase=failed`；终态事务不堵恢复（0.14.12 能力不回退）。
+5. **错误文案如实**：失败文案不再出现 `unknown`；「失败终态」与「0 条违规」的组合不得再出现——回滚必然伴随非零违规。
+6. **公共合同零改动**：`openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约不变；仅 `completed` 达成条件由「判定器判 valid」放宽为「判定器未给出负面结论」，属解除误拒的兼容放宽，消费方无需适配。
+7. 修复以新的本地 patch candidate `0.14.14` 交付，当前本机全局 `0.14.13` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-VERDICT-01 | 单切片计划（一条标注真实测试 ID 的 `[code]` 切片）走完整事务后 `apply` 达 `completed`，`tasks.md` 的 `[code]` 段正确写出、receipt 出具 |
+| AC-VERDICT-02 | 三种判定结果去向矩阵成立：不适用（`null`）→ `completed`；`valid` → `completed`；`invalid` / `stale` / `unsupported` → 复用既有那一条回滚路径整体回滚，`phase=failed`、`classification=recovery_required` |
+| AC-VERDICT-03 | 两切片及以上计划的 apply 行为逐项不变；业务非法 slot 仍整体回滚、无半写态、violations 原样保真（`code`/`path`/`message`/`fix_hint`） |
+| AC-VERDICT-04 | 终态事务在场时恢复事务仍可创建（`origin=manifest-recovery`、`required=1`、`[code]` 冻结）——0.14.12 能力不回退 |
+| AC-VERDICT-05 | 失败文案不出现 `unknown`；「失败终态 + 0 条违规」组合不再可能出现 |
+| AC-VERDICT-06 | 单切片安装态 smoke（SMOKE-core-178）在 `0.14.14` 全过；同一断言打到固定 `0.14.13` 上 apply 必须失败（零回归对照，防断言空转） |
+| AC-VERDICT-07 | 版本身份提升为 `0.14.14`，`0.14.13` 冻结为回滚基线；全量 `openlogos verify` PASS，新增用例逐 ID 写入 reporter |
