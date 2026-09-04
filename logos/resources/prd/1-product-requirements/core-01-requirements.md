@@ -2529,3 +2529,26 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 | AC-REPLAN-08 | 0.14.12 恢复回边与 0.14.14 单切片 apply 均不回退 |
 | AC-REPLAN-09 | `SMOKE-core-179` 安装态通过；零回归对照打到固定 `0.14.14` 上 `reopen` 必须被拒且锁死现场复现 |
 | AC-REPLAN-10 | 版本身份提升 `0.14.15`，`0.14.14` 冻结为回滚基线；全量 `openlogos verify` PASS，新增用例逐 ID 写入 reporter |
+
+## 勘误提案的 deployment/smoke 散文订正通道
+
+来源：`errata-single-slice-recovery-semantics`（2026-09-04 归档）范围裁剪说明记录的方法论缺口——on-touch 闭包把 deployment/smoke 维度的 delta 权限硬绑 `deployment_required=true`（`spec/baseline-closure.md` §7），docs-only 勘误提案天然无部署，却因此无法订正该两维度规格中与既有权威语义相矛盾的**散文**，已知错误文本只能滞留等待下一个真实部署提案搭车（实证：SMOKE-core-178 步骤⑤与 0.14.14 部署矩阵「终态不堵恢复」行自 0.14.14 实现阶段发现起滞留两个提案周期）。
+
+### 核心需求
+
+1. **受控 errata 例外**：proposal 明确无需部署时，deployment/smoke 维度 target 仍可为 `MODIFY`，当且仅当其 delta 为**纯散文订正**形态——仅含 `MODIFIED` 块（无 `ADDED` / `REMOVED` / `REMOVED-ITEMS` 块），且 S37 结构化 ID 点数合并前后**完全相等**（SMOKE ID 等稳定 ID 零增删）。
+2. **fail-closed 边界**：判据任一不满足（`CREATE` 模式、含 `ADDED`/`REMOVED`/`REMOVED-ITEMS` 块、ID 集合变化）即按既有 fail-closed 语义拒绝，violation 可归因（`code`/`path`/`message`/`fix_hint` 齐备），不得静默放行或降级为 warning。
+3. **`[deploy]` 一致性不变**：无需部署的提案仍禁止 `[deploy]` section——散文订正不产生任何部署执行任务；部署决策一致性检查（proposal「部署影响」与 tasks 对账）逐字保留。
+4. **既有路径零回归**：`deployment_required=true` 提案的 deployment/smoke 维度行为逐项不变；其余维度（requirement/feature/scenario/UT-ST 强制，architecture/API/DB/orchestration 条件）的适用与 SKIP 判定零变化。
+5. **判据单点**：例外判定实现于既有闭包 evaluator 单点（change-lint L9 与 merge 准入同源消费），不新建第二套 ID 语法或第二处判定；ID 点数复用 S37 守恒门口径。
+6. 修复以新的本地 patch candidate `0.14.16` 交付，当前本机全局 `0.14.15` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-ERRATA-01 | docs-only 勘误提案（`deployment_required=false`）携带 deployment/smoke 散文订正 `MODIFY` delta（仅 MODIFIED 块、ID 零增删）时，`change-lint` L9 与 `openlogos merge` 准入均放行 |
+| AC-ERRATA-02 | 判据任一不满足（CREATE / 含 ADDED、REMOVED、REMOVED-ITEMS 块 / ID 增删）时 fail-closed 拒绝，violation 含 `code`/`path`/`message`/`fix_hint`；无需部署提案携带 `[deploy]` section 仍按既有一致性检查拒绝 |
+| AC-ERRATA-03 | `deployment_required=true` 路径与全部既有维度适用/SKIP 判定零回归 |
+| AC-ERRATA-04 | SMOKE-core-178 步骤⑤与 0.14.14 部署矩阵「终态不堵恢复」行订正后与 §2.55.3/根规范 §2.2.1 权威语义一致；两目标文件 SMOKE ID 与部署断言结构化 ID 零增删（S37 守恒） |
+| AC-ERRATA-05 | 版本身份提升为 `0.14.16`，`0.14.15` 冻结为回滚基线；全量 `openlogos verify` PASS，安装态 SMOKE-core-180 通过且既有矩阵（SMOKE-core-176/178/179）零回归 |

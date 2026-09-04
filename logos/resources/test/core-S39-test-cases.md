@@ -289,3 +289,29 @@ UT-S39-56～58、ST-S39-27必须调用真实test-change-set scanner、preflight 
 - AC-SQLGATE-06 不跨方言冒充：UT-S39-64。
 - AC-SQLGATE-07 层级如实自述：UT-S39-64。
 - 场景：S39 SQL delta 的分层校验与适配器路由；功能规格：§2.52.2～§2.52.6；架构：§四十二.1、§四十二.2；安装态：SMOKE-core-174。
+
+## S39 勘误散文订正通道测试（closeout-deferred-errata-and-closure-gap）
+
+> 本节补充 deployment/smoke 维度 errata 例外的放行矩阵与 fail-closed 回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S39-65 | errata 散文订正放行矩阵 | 构造 docs-only 提案夹具（`deployment_required=false`）：deployment 与 smoke 各一个 `MODIFY` target，delta 仅含 `MODIFIED` 块、目标结构化 ID 集合合并前后完全相等 | 运行 change-lint L9 与 merge 准入同一 evaluator | 两维度 disposition 均放行、`pass=true`；不产生任何 deployment/smoke 相关 violation；`[deploy]` 一致性检查照旧生效（夹具无 `[deploy]` section） |
+| UT-S39-66 | errata 判据不满足 fail-closed | 参数化违例夹具：① target mode=`CREATE`；② delta 含 `ADDED` 块（新增版本节）；③ delta 含 `REMOVED`/`REMOVED-ITEMS` 块；④ MODIFIED 块致目标 ID 集合增删（新增或缺失一个 SMOKE ID）；⑤ 无需部署提案携带 `[deploy]` section | 各自运行同一 evaluator | ①～④ 逐一 fail-closed 拒绝且 violation 含 `code`/`path`/`message`/`fix_hint` 可归因到具体 delta/target；⑤ 按既有部署决策一致性检查拒绝、语义零变化；无任何一例被降级为 warning 或静默放行 |
+| UT-S39-67 | 既有路径零回归 | ① `deployment_required=true` 提案携带 deployment/smoke 实质变更 delta（含 ADDED 版本节）；② `deployment_required=false` 且 deployment/smoke 均 SKIP 的既有合法提案；③ 其余维度（requirement/feature/scenario/UT-ST 强制，architecture/API/DB/orchestration 条件）各取一代表夹具 | 运行同一 evaluator 并与 0.14.15 判定结果逐项对照 | ①②③ 判定结论与 0.14.15 逐项一致——errata 例外只影响「`deployment_required=false` + deployment/smoke MODIFY delta」这一形态，其余组合零行为变化 |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S39-29 | 真实 CLI errata 提案全链 | 临时 launched 项目：构造 docs-only 勘误提案，deployment/smoke 散文订正 delta（仅 MODIFIED、ID 守恒相等）；另构造一个 ID 增删违例变体 | 合法形态：`openlogos change-lint --format json` → `openlogos merge`；违例变体：同序重放 | 合法形态 lint exit 0、`pass=true`，merge 准入放行并进入正常合并流程；违例变体 lint exit 2、merge 拒绝，violation 精确点名违例 delta 与缺陷形态；两路均无半写态、无 marker 残留 |
+
+### 追溯与覆盖
+
+- AC-ERRATA-01 放行矩阵：UT-S39-65、ST-S39-29。
+- AC-ERRATA-02 fail-closed 与 `[deploy]` 一致性：UT-S39-66、ST-S39-29。
+- AC-ERRATA-03 既有路径零回归：UT-S39-67。
+- AC-ERRATA-04/05 文本订正落地与版本身份：由本提案 deployment/smoke delta 的 S37 守恒门与安装态 SMOKE-core-180 承载。
+- 场景：S39 勘误散文订正通道（EX-ERRATA-1/2）；功能规格：§2.57；根规范：`spec/baseline-closure.md` §7。

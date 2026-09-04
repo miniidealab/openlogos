@@ -126,9 +126,24 @@ candidate 首次触达可提升为导航中的 scenario，但不得升级其 pro
 | database | 条件 | 持久化实体/关系/查询/迁移 | 只用内存或无持久化 |
 | UT/ST | 必须 | 所有触达场景 | 不允许 |
 | API orchestration | 条件 | API/interface 适用 | API 确认 SKIP |
-| deployment/smoke | 条件 | proposal deployment_required=true | proposal 明确无需部署 |
+| deployment/smoke | 条件 | proposal deployment_required=true，或满足 §7.1 的 errata 散文订正例外 | proposal 明确无需部署且不适用 §7.1 |
 
 `bootstrap: adopted` 下由接入流程自动写入的 `skip_phases` 只豁免 Initial 完整性，不能代替本表。非 adopted 的明确架构 skip 可作为强证据；与当前意图冲突时必须 AMBIGUOUS/同案修订。
+
+### 7.1 errata 散文订正例外（deployment/smoke 专用，受控）
+
+proposal 明确无需部署（`deployment_required=false`）时，deployment/smoke 维度 target 仍可为 `MODIFY`，当且仅当以下判据**全部**满足（全部机器可判）：
+
+1. **mode=`MODIFY`**：目标为既有文件；`CREATE` 一律拒绝。
+2. **纯散文订正形态**：该 delta 仅含 `MODIFIED` 块；出现 `ADDED` / `REMOVED` / `REMOVED-ITEMS` 任一块即拒绝——不新增版本节/用例/部署步骤，不删除任何章节或条目。
+3. **结构化 ID 守恒相等**：S37 守恒口径下，合并前后目标文件的结构化 ID 集合**完全相等**（零删除且零新增——比一般 MODIFY 的「显式删除可授权」更严）。
+
+约束与边界：
+
+- 判据 2/3 在 delta 在场后由 change-lint L9 与 merge 准入**同源**校验；plan 阶段按 target 声明放行到既有流程，delta 阶段收口。任一不满足按既有 fail-closed 语义拒绝（violation 携带 `code`/`path`/`message`/`fix_hint`），不降级 warning。
+- `[deploy]` section 一致性检查不变：无需部署的提案仍禁止 `[deploy]` section。
+- 本例外**只放宽 disposition 准入**，不豁免任何其它门（段标记、锚唯一定位、S37 守恒、模板占位、路径映射等逐字生效）；deployment/smoke 的**实质变更**仍必须发生在 `deployment_required=true` 的提案中。
+- 来源与实证：`errata-single-slice-recovery-semantics` 范围裁剪说明记录的方法论缺口（SMOKE-core-178 步骤⑤与 0.14.14 部署矩阵行的订正曾因本表旧行滞留两个提案周期）；对齐测试 UT-S39-65～67、ST-S39-29、SMOKE-core-180。
 
 ## 8. 目标模式
 

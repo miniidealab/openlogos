@@ -2261,7 +2261,7 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 | candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
 | **单切片 apply 达 completed** | 临时 spec-complete 提案提交单切片 slot → seal → apply → `completed`；`[code]` 正确写出、manifest 落盘、输出不含 `unknown` |
 | **多切片零回归** | 两切片健康全链 `completed`；业务非法 slot 仍整体回滚、violations 保真且非零 |
-| **终态不堵恢复** | 单切片 completed 后删 manifest（保留事务文件），仍可创建 `origin=manifest-recovery` 事务、`required=1`、`[code]` 字节恒等 |
+| **终态不堵恢复（多切片形态）** | 多切片健康提案 completed 后删 manifest（保留事务文件），仍可创建 `origin=manifest-recovery` 事务、`required=1`、`[code]` 字节恒等；单切片下判定器按设计不适用、manifest 惰性，删除后不产生恢复事务属正确形态 |
 | 零回归 | 既有 `SMOKE-core-176` 的矩阵断言与 `SMOKE-core-177` 的并发断言全部保持通过 |
 | rollback roundtrip | `0.14.13→0.14.14→0.14.13→0.14.14` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
 
@@ -2392,3 +2392,96 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 - 需求：AC-REPLAN-01～10。
 - 功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
 - 安装态：SMOKE-core-179；回归：SMOKE-core-176、SMOKE-core-178。
+
+## OpenLogos 0.14.16 勘误散文订正通道本机全局部署方案
+
+### 部署目标与授权边界
+
+把「勘误提案的 deployment/smoke 散文订正通道」冻结为唯一 `@miniidealab/openlogos@0.14.16` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.15`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须部署**：缺口位于**已发布的 0.14.15 全局 CLI** 的闭包 evaluator 中——docs-only 勘误提案的 deployment/smoke 散文订正在现场仍被 disposition 检查拒绝，已知错误文本只能滞留搭车。只改代码不部署，现场仍在 0.14.15 上，缺口不闭合。
+
+**本次为何必须走安装态**：change-lint L9 与 merge 准入是安装态 CLI 门，例外判据（仅 MODIFIED 块 + ID 守恒相等）在源码级被无声退化即形同虚设；零回归对照（errata 形态在 0.14.15 上必须被拒）也只有安装态才能构造。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.15`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash。
+3. 冻结可离线恢复的 `0.14.15` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. **回滚制品必须由 `0.14.15` 的实际部署提交构建（git worktree checkout），不得用当前工作树打包。** 当前工作树已含 `0.14.16` 的修复代码；用它当回滚件，零回归对照与往返演练将验不出任何东西。
+5. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.16 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.16`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.15`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.15` 构建新字节。
+
+### 跨仓合同的连续性
+
+change-lint / merge 的 violation 合同 schema 与 `openlogos/test-slice-transaction@1` 等跨仓合同**零变化**，仅**放宽 deployment/smoke disposition 的准入**（`deployment_required=false` 下新增受控 errata 散文订正形态）。因此：
+
+1. 不做主版本跃迁——字段与 exit code 语义未变，且只放行此前被拒的合法勘误形态，不收紧任何既有行为，消费方无需适配；
+2. 若根规范文本更新使相关 schema/contract hash 变化，必须重新冻结并记录**新旧两组值**，供 RunLogos 侧对照；
+3. 部署记录须显式写明：docs-only 勘误提案自 0.14.16 起可携带 deployment/smoke 散文订正 delta（判据见功能规格 §2.57.1），其余形态维持 `deployment_required=true` 硬绑不变。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.16` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.16` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| **errata 放行正例** | 临时 launched 项目构造 docs-only 勘误提案（deployment/smoke 散文订正 delta：仅 MODIFIED 块、目标 ID 守恒相等），`change-lint` exit 0、merge 准入放行 |
+| **errata fail-closed 反例** | 同夹具的违例变体（ID 增删 / 含 ADDED 块 / CREATE）逐一被拒，violation 可归因；无需部署提案携带 `[deploy]` section 仍被拒 |
+| **既有能力零回归** | `deployment_required=true` 提案的 deployment/smoke 判定、既有 SKIP 判定、0.14.14 单切片 apply、0.14.15 重划全链与 `SMOKE-core-176`/`SMOKE-core-178`/`SMOKE-core-179` 矩阵断言全部保持通过 |
+| rollback roundtrip | `0.14.15→0.14.16→0.14.15→0.14.16` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「errata 放行正例」与「errata fail-closed 反例」失败时必须停止部署并回到实现**——前者是缺口的直接证据，后者意味着放宽越界（实质变更混入无部署提案，比无法勘误更坏）。
+
+### 零回归对照（强制，不可省略）
+
+同一矩阵必须在固定 `0.14.15` 上执行一次并**记录其失败点**：
+
+| 矩阵项 | 在 0.14.15 上的预期表现 |
+|---|---|
+| errata 放行正例 | **失败**——docs-only 勘误的 deployment/smoke delta 被 disposition 检查拒绝（缺口本身） |
+| errata fail-closed 反例 / 既有能力 | 通过（拒绝语义与既有行为两版本一致） |
+
+**若正例在 0.14.15 上也放行，说明断言是空转，必须重写矩阵而非放行部署。**
+
+### 本机全局部署
+
+只有隔离矩阵、零回归对照与 `0.14.15` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.16` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.16`；
+- package / plugin / asset manifest version 全部为 `0.14.16`，无混装。
+
+### 失败处置与回滚边界
+
+- 隔离矩阵失败：停止部署，回到实现，重新 verify/build/pack。
+- 全局安装后行为异常：立即以固定 `0.14.15` tarball 回滚，并报告触发条件与观察到的现象。
+- 回滚后必须复核 identity 全部回到 `0.14.15`，未证明一致前阻断后续动作。
+- 不得为让矩阵通过而放宽判据、跳过守恒点数、手工写产物或伪造夹具结论。
+
+### 追溯
+
+- 需求：AC-ERRATA-01～05。
+- 功能规格：§2.57；根规范：`spec/baseline-closure.md` §7；场景：S39 勘误散文订正通道（EX-ERRATA-1/2）。
+- 安装态：SMOKE-core-180；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179。

@@ -462,3 +462,33 @@ sequenceDiagram
 - 需求：AC-SQLGATE-01～07。
 - 功能规格：§2.52.2～§2.52.6；架构：§四十二.1、§四十二.2。
 - 测试：UT-S39-59～UT-S39-64、ST-S39-28；安装态 SMOKE-core-174。
+
+## S39 勘误散文订正通道（deployment/smoke errata 例外）
+
+> 来源变更：closeout-deferred-errata-and-closure-gap。承接主场景步骤 6～7（change-lint 侧 ClosureEvaluator 判定）与步骤 10～11（merge 准入同源复核）：deployment/smoke 维度的 disposition 判定新增受控 errata 例外分支，权威判据见根规范 `spec/baseline-closure.md` §7.1 与功能规格 §2.57。
+
+### 判定位置与放行时序
+
+1. **ClosureEvaluator** 在步骤 6 的维度适用性检查中，对 `deployment_required=false` 且 deployment/smoke target 为 `MODIFY` 的提案进入 errata 例外分支（不再直接拒绝）。
+2. plan 阶段（delta 未产出）按 target 声明放行到既有 plan 流程；delta 在场后收口：**change-lint L9 与 merge 准入同源**校验「仅 `MODIFIED` 块 + S37 守恒口径下目标结构化 ID 集合合并前后完全相等」。
+3. 判据全部满足 → 与既有合法维度同样放行（exit 0 / merge 准入通过）；任一不满足 → 走既有 fail-closed 路径（步骤 7 的 exit 2 violation / 步骤 11 的 merge 原子停止）。
+
+### 异常与边界
+
+#### EX-ERRATA-1：docs-only 勘误携带 deployment/smoke 散文订正（放行）
+
+- **触发条件**：proposal 明确无需部署，deployment/smoke 维度 target 为 `MODIFY`，其 delta 仅含 `MODIFIED` 块且目标结构化 ID 集合合并前后完全相等（零增删）。
+- **期望响应**：change-lint L9 与 merge 准入同源放行；其余维度规则与既有门（段标记、锚唯一定位、S37 守恒、模板占位）逐字生效。
+- **副作用**：无新 marker、无新 section；`[deploy]` 一致性检查不变（无需部署仍禁止 `[deploy]`）。
+
+#### EX-ERRATA-2：errata 判据不满足（fail-closed 拒绝）
+
+- **触发条件**：上述形态中出现任一违例——mode 为 `CREATE`、delta 含 `ADDED`/`REMOVED`/`REMOVED-ITEMS` 块、或目标结构化 ID 集合发生任何增删。
+- **期望响应**：按既有 fail-closed 语义拒绝（lint exit 2 / merge 不生成合并指令），violation 携带 `code`/`path`/`message`/`fix_hint` 精确归因；不降级 warning、不静默放行。
+- **副作用**：guard、counter、resource index、资源文件与 marker 全部保持原值。
+
+### 追溯
+
+- 需求：AC-ERRATA-01～05。
+- 功能规格：§2.57；根规范：`spec/baseline-closure.md` §7.1。
+- 测试：UT-S39-65～67、ST-S39-29；安装态：SMOKE-core-180。

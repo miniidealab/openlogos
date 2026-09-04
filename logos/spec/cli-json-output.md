@@ -2834,3 +2834,243 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 ### 兼容优先级
 
 本节覆盖本文档中与 `MERGE_APPLY_MANIFEST.json`、Base64 apply payload 或外部 writer 成功判定冲突的旧段落；历史字段可只读展示，但不得参与 0.14.0 新事务动作。
+
+## Merge transaction 消费者合同完成版（0.14.0）
+
+
+### 命令面
+
+`openlogos merge transaction status|submit-content|seal|apply|recover|abort --slug <slug> --format json`。所有已知 action 必须有唯一子命令；未知 action 或命令注册缺失返回 `unsupported_contract`。
+
+### Content slots
+
+```json
+{
+  "content_slots": {
+    "required": 1,
+    "submitted": 0,
+    "missing_slot_ids": ["slot_x"],
+    "items": [{
+      "slot_id": "slot_x",
+      "target_ref": "target_x",
+      "staging_path": "logos/changes/x/merge-staging/slot_x/content",
+      "required": true,
+      "content_encoding": "utf8-raw",
+      "max_bytes": 20971520,
+      "write_protocol": "atomic-rename",
+      "submitted_sha256": null
+    }]
+  }
+}
+```
+
+items 按 slot_id 排序，不包含 canonical target 可写路径或内容。`submit-content --file` 必须与声明 staging_path 完全相同。
+
+### Completed projection
+
+```json
+{
+  "phase": "completed",
+  "classification": null,
+  "allowed_actions": [],
+  "next_action": null,
+  "receipt": {
+    "transaction_id": "mtx_x",
+    "plan_sha256": "sha256:...",
+    "change": "x",
+    "module": "core",
+    "changed_paths": [],
+    "created_paths": ["logos/resources/example.md"],
+    "final_hashes": [{"path":"logos/resources/example.md","sha256":"sha256:..."}],
+    "metadata_summaries": [],
+    "test_change_set": null,
+    "spec_merged": {"path":"logos/changes/x/SPEC_MERGED"},
+    "commit_paths": ["logos/changes/x/MERGE_RECEIPT.json","logos/changes/x/SPEC_MERGED","logos/resources/example.md"],
+    "receipt_sha256": "sha256:...",
+    "completed_at": "..."
+  },
+  "artifact_hashes": [
+    {"path":"logos/changes/x/MERGE_RECEIPT.json","sha256":"sha256:..."},
+    {"path":"logos/changes/x/SPEC_MERGED","sha256":"sha256:..."}
+  ],
+  "aborted_at": null
+}
+```
+
+`spec_merged` 在 receipt 中只保存 marker 路径与事务身份关系，不保存 marker 文件 SHA-256。`receipt_sha256` 是排除自身字段后的 canonical payload identity；marker 内容可以绑定该 identity，而 marker 文件 SHA-256 只出现在外层 `artifact_hashes`，因此不存在 receipt↔marker hash 环。
+
+JSON Schema 校验字段、类型、枚举和可表达的阶段条件；`openlogos/merge-transaction-semantic@1` canonical semantic validator 进一步校验 path 唯一与稳定排序、final/artifact 路径互斥、二者并集精确等于 commit_paths、summary 计数、receipt identity，以及每个 phase/classification 的精确 action 映射。生产者在输出成功 envelope 前、消费者在执行动作或 Git 提交前都必须同时通过两层校验。
+
+### Aborted projection
+
+abort 只允许于 collecting/ready/sealed。成功与幂等重放均返回 `phase=failed`、`classification=aborted`、actions=[]、next_action=null、receipt=null、artifact_hashes=[] 与稳定 aborted_at。普通 fatal failed 不暴露 abort；recovery_required 只暴露 recover。
+
+### 安装态冻结
+
+成功 envelope 必须继续公开 schema_sha256 与 contract_sha256。RunLogos 在任何 WorkUnit/quota/paste/Agent/正式写入前校验全局入口、0.14.0、slug/transaction identity 和双 hash。
+
+## Merge Transaction Preflight/Reopen JSON 兼容合同（0.14.2）
+
+
+### 字段兼容
+
+公共`openlogos/merge-transaction@1` projection、status/next挂载及错误envelope不新增字段。内部`preflight_sha256`、structured target paths和producer attribution不公开。
+
+### Retryable Error
+
+core必须先成功持久化collecting，再输出：
+
+```json
+{
+  "error": {
+    "code": "slot_identity_mismatch",
+    "details": {
+      "transaction_id": "mtx_...",
+      "phase": "collecting",
+      "classification": "slot_identity_mismatch",
+      "allowed_actions": ["submit_content", "abort"],
+      "next_action": "submit_content",
+      "retryable": true
+    }
+  }
+}
+```
+
+错误details保持既有字段集合，不增加`missing_slot_ids`。消费者以随后status/next中既有`data.merge_transaction.content_slots.missing_slot_ids`取得slot集合。
+
+### Projection 约束
+
+- collecting：`seal_sha256=null`、receipt=null、artifact_hashes=[]；items中rejected `submitted_sha256=null`，其它hash保留。
+- ready：missing空，next_action=seal。
+- sealed：new seal可与legacy seal算法不同，但均为合法SHA-256；transaction/target-set identity不变。
+- applying/recovery：不得投影submit_content。
+- completed：receipt seal必须等于外层当前seal；legacy pass仍绑定legacy seal。
+
+### Error/Status/Next 同源
+
+retryable响应中的phase/actions必须与紧随其后的status/next逐值一致。response lost时status是唯一恢复入口；私有文件和stderr message不是机器事实。fatal/unattributable错误`retryable=false`且不改变missing集合。
+
+### Schema 与 Golden
+
+status.schema、next.schema、merge-transaction.schema和completed golden只需证明无公共字段漂移及新状态组合仍满足既有schema。内部stored transaction可含optional preflight record，但不得被公共projection透传。
+
+## Authority Closure JSON 契约
+
+
+## Authority Closure JSON 契约
+
+### evaluation schema
+
+当新合同适用时，change-lint、status、next 与 flow 的 Plan Package 投影使用同一个对象：
+
+```json
+{
+  "authority_closure": {
+    "schema": "openlogos/authority-closure-evaluation@1",
+    "applicability": "required",
+    "facts_total": 1,
+    "facts_closed": 1,
+    "projections": 4,
+    "retired_shadow_sources": 2,
+    "unresolved": 0,
+    "pass": true
+  }
+}
+```
+
+字段均必填。`applicability` 闭合枚举为 `required|not_applicable`；所有计数是非负整数；`pass` 来自 AuthorityClosureEvaluator，不由 serializer 重新计算。已越过 plan 且从未启用新合同的 legacy proposal 可省略整个对象，不能输出伪造的 `not_applicable`。
+
+### change-lint violations
+
+`ChangeLintViolationCode` 新增：
+
+```text
+authority_impact_declaration_missing
+authority_impact_malformed
+authority_fact_reference_missing
+authority_closure_incomplete
+authority_cutover_unclosed
+```
+
+每项沿用 `code/path/message/fix_hint` 必填合同；不新增 warning 分支。排序层位于现有 Plan Package 结构检查之后、Delta 内容检查之前，同层按 path、fact 源出现序、code、message 全序。任一项使 `pass:false`、exit 2；文件不可读或 parser 无法完成为 exit 1 error envelope。
+
+### 同源与挂载
+
+- change-lint 在 `data.authority_closure` 输出 summary，并把 issues 映射为上述 violations。
+- status/next 的 `plan_state.plan_package` 与 flow 当前节点从同一 evaluation 读取 ready/summary。
+- 同一输入的 summary 必须深相等；命令特有 envelope、timestamp 与其它既有字段不参与比较。
+- 消费者遇未知 schema/code 应保守阻断，不按 message 猜测语义。
+
+### 兼容
+
+既有字段、exit code 和 envelope 不改名。合法 not_applicable 返回 facts/projections/retired/unresolved 全 0、`pass:true`；required malformed 不得降级为 not_applicable。text 输出与 JSON 使用同一 issue 集合。
+
+## openlogos/test-slice-transaction@1 公共合同
+
+### 适用范围
+
+`openlogos slice transaction` 命令族的 JSON envelope 合同。跨仓消费方以 `schema_sha256` 与 `contract_sha256` **精确匹配**消费；缺失投影一律结构化 fail closed，**不得**保留任何回退旧链的分支。
+
+形状与语义沿用已闭环的 `openlogos/merge-transaction@1`，不另发明状态机。
+
+### 投影字段
+
+```json
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_...",
+  "slug": "example-change",
+  "module": "core",
+  "phase": "collecting",
+  "origin": "initial-plan",
+  "classification": null,
+  "retryable": false,
+  "allowed_actions": ["submit_content", "abort"],
+  "next_action": "submit_content",
+  "spec_fingerprint": "sha256:...",
+  "changed_test_ids_sha256": "sha256:...",
+  "content_slots": {
+    "required": 2,
+    "submitted": 0,
+    "missing_slot_ids": ["slot_codesection", "slot_slices"]
+  },
+  "violations": [],
+  "receipt": null
+}
+```
+
+| 字段 | 取值与约束 |
+|---|---|
+| `phase` | `collecting \| ready \| sealed \| applying \| completed \| failed` |
+| `origin` | `initial-plan \| manifest-recovery` |
+| `allowed_actions` | 当前 phase 下允许的动作子集；不在其中的动作被拒并回传本字段 |
+| `content_slots.required` | `initial-plan` 为 2；`manifest-recovery` 收窄为 1（仅 `slot_slices`） |
+| `transaction_id` | `stx_` 前缀；由 OpenLogos 铸造，消费方不得自算 |
+| `receipt` | 仅 `completed` 时非空；含产物路径与哈希 |
+
+### 命令面
+
+| 命令 | 性质 | 归档提案 |
+|---|---|---|
+| `openlogos slice transaction status` | 只读 | 放行 |
+| `openlogos slice transaction submit-content --slot <id> --file <path>` | 写 | 拒绝 |
+| `openlogos slice transaction seal` | 写 | 拒绝 |
+| `openlogos slice transaction apply` | 写 | 拒绝 |
+| `openlogos slice transaction recover` | 写 | 拒绝 |
+| `openlogos slice transaction abort` | 写 | 拒绝 |
+
+Agent 只能 `submit-content`；`tasks.md` 的 `[code]` 段、`TEST_SLICE_MANIFEST.json`、receipt 与 marker 一律由 OpenLogos 写入。
+
+### 契约哈希
+
+成功 envelope 必须继续公开 `schema_sha256` 与 `contract_sha256`。跨仓消费方在任何写动作前校验二者精确匹配；不匹配即 fail closed，不得降级消费。
+
+### 至多一次的责任划分
+
+| 保证 | 责任方 | 载体 |
+|---|---|---|
+| 同一提案同时至多一个活跃切片事务 | OpenLogos | 事务文件 + phase 状态机 |
+| 同一事务的产物至多写入一次 | OpenLogos | `apply` 幂等 + receipt |
+| 同一 `transaction_id` 至多一次物理派发 / 投喂 / 额度 | 宿主 | 宿主既有 WorkUnit 账本，**键为 canonical `transaction_id`** |
+
+第三行留在宿主——OpenLogos 不知道终端投喂与额度。但宿主不再需要自建账本或自算身份，只是把 canonical id 当作既有账本的键。

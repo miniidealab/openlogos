@@ -1166,7 +1166,7 @@
 
 | ID | 场景 | 安装态执行步骤 | PASS 判据 |
 |---|---|---|---|
-| SMOKE-core-178 | 0.14.14 单切片计划经事务写出 [code] 且三分支守门如实 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **单切片全链**：临时 launched 项目构造 spec-complete 提案，提交**单切片** slot 内容（一条标注真实测试 ID 的切片）→ `seal` → `apply`；③ 核对 `phase=completed`、receipt 出具、`tasks.md` 的 `[code]` 段正确写出且 `[delta]`/`[deploy]` 字节恒等、manifest 落盘、全程输出不含 `unknown`；④ **多切片零回归**：另一临时提案两切片健康全链达 `completed`；再以业务非法 slot（`spec_targets` 指向非测试规格文档）重放 apply，核对整体回滚、`phase=failed`、violations 保真（含 `code`/`path`/`message`/`fix_hint`）且违规数非零；⑤ **终态不堵恢复回归**：单切片 completed 后删除 manifest（保留事务文件），核对仍可创建 `origin=manifest-recovery` 事务、`required=1`、恢复后 `[code]` 字节恒等；⑥ 演练 `0.14.13→0.14.14→0.14.13→0.14.14` 并复核每阶段 identity 与 ②③ 的结论 | ③ **单切片 apply 必须 completed**——若整体回滚且报「判为 unknown……0 条违规」即整体 FAIL，那正是被修复的缺陷；④ 业务非法 slot 必须仍被拦下（守门未被放宽过头），违规数非零；⑤ 恢复能力零回退；⑥ 往返无混装且结论不变；全程无 `npm publish`/tag/release/官网/git push 副作用 |
+| SMOKE-core-178 | 0.14.14 单切片计划经事务写出 [code] 且三分支守门如实 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **单切片全链**：临时 launched 项目构造 spec-complete 提案，提交**单切片** slot 内容（一条标注真实测试 ID 的切片）→ `seal` → `apply`；③ 核对 `phase=completed`、receipt 出具、`tasks.md` 的 `[code]` 段正确写出且 `[delta]`/`[deploy]` 字节恒等、manifest 落盘、全程输出不含 `unknown`；④ **多切片零回归**：另一临时提案两切片健康全链达 `completed`；再以业务非法 slot（`spec_targets` 指向非测试规格文档）重放 apply，核对整体回滚、`phase=failed`、violations 保真（含 `code`/`path`/`message`/`fix_hint`）且违规数非零；⑤ **终态不堵恢复回归（多切片形态）**：多切片健康提案 completed 后删除 manifest（保留事务文件），核对仍可创建 `origin=manifest-recovery` 事务、`required=1`、恢复后 `[code]` 字节恒等——单切片下判定器按设计不适用（derive 恒 `null`）、manifest 惰性，删除后**不产生恢复事务**属正确形态，不作恢复断言；⑥ 演练 `0.14.13→0.14.14→0.14.13→0.14.14` 并复核每阶段 identity 与 ②③ 的结论 | ③ **单切片 apply 必须 completed**——若整体回滚且报「判为 unknown……0 条违规」即整体 FAIL，那正是被修复的缺陷；④ 业务非法 slot 必须仍被拦下（守门未被放宽过头），违规数非零；⑤ 恢复能力零回退；⑥ 往返无混装且结论不变；全程无 `npm publish`/tag/release/官网/git push 副作用 |
 
 ### Runner 与证据
 
@@ -1250,3 +1250,52 @@
 - 功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
 - 场景：S19、S28、S32；UT/ST：UT-S32-65～68、ST-S32-22、UT-S28-49、UT-S19-37。
 - 部署方案：OpenLogos 0.14.15 切片重划本机全局部署方案；回归：SMOKE-core-176、SMOKE-core-178。
+
+## OpenLogos 0.14.16 勘误散文订正通道 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.16` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-180` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.16`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建任何 marker**，**不得手工改写夹具提案的 lint/merge 结论**。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-180 | 0.14.16 docs-only 勘误可携带 deployment/smoke 散文订正且判据 fail-closed | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **放行正例**：临时 launched 项目构造 docs-only 勘误提案（`deployment_required=false`），deployment/smoke 各一份散文订正 delta（仅 MODIFIED 块、目标结构化 ID 集合合并前后完全相等），运行 `openlogos change-lint --format json`，核对 exit 0、`pass=true`、无 deployment/smoke disposition violation；③ **fail-closed 反例**：同夹具违例变体逐一重放——ID 增删、含 ADDED 块（新增版本节）、target mode=CREATE、无需部署提案携带 `[deploy]` section——核对逐一 exit 2 且 violation 含 `code`/`path`/`message`/`fix_hint` 精确归因；④ **既有路径零回归**：`deployment_required=true` 夹具的 deployment/smoke 实质变更 delta 照常放行；deployment/smoke 均 SKIP 的既有合法夹具照常通过；⑤ 演练 `0.14.15→0.14.16→0.14.15→0.14.16` 并复核每阶段 identity 与 ②③ 的结论 | ② **正例必须放行**——被拒即缺口未修；③ **反例必须逐一被拒**——任一放行即放宽越界（实质变更混入无部署提案），整体 FAIL；④ 既有判定两形态零变化；⑤ 往返无混装且结论不变；全程无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-180`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须写显式 `skip` 记录并携带缺失项，禁止静默零记录退出。
+3. **全部关键断言必须穿过公开 `openlogos change-lint` / `openlogos merge` 命令**。以库级函数调用构造或断言的步骤一律不计入闭环证据。
+4. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、② 正例夹具的 delta 形态摘要与 lint 结论、③ 每个违例变体的 violation 全文、④ 零回归各断言结论、⑤ 回滚每阶段 identity。
+5. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+6. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### 零回归对照（强制）
+
+同一 runner 的步骤 ② 必须在固定 `0.14.15` 上执行一次并**记录其失败点**：docs-only 勘误的 deployment/smoke delta 在 0.14.15 上会被 disposition 检查拒绝（缺口本身）。**若步骤 ② 在 0.14.15 上也放行，说明断言是空转，必须重写用例而非放行部署。** 步骤 ③④ 在两版本上行为应一致（拒绝与放行语义不变）。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-180` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ② 与 ③ 是双红线**：前者失败意味着勘误通道仍不存在，后者失败意味着放宽越界——任一失败即整体 FAIL，不得以「其余步骤都过」为由记 pass。
+- 观察到 runner 手工改写夹具结论、跳过违例变体或以库级调用替代公开命令构造关键断言，直接 FAIL。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ② 或 ③ 失败：立即以固定 `0.14.15` 回滚并报告触发条件——闭包门是本仓自身与 RunLogos 的关键路径，不得带伤运行。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.15` 并报告环境状态；未证明一致前阻断后续动作。
+- 不得为让断言通过而放宽判据、跳过守恒点数或伪造 violation 结论。
+
+### 追溯
+
+- 需求：AC-ERRATA-01～05。
+- 功能规格：§2.57；根规范：`spec/baseline-closure.md` §7；场景：S19、S39 勘误散文订正通道（EX-ERRATA-1/2）。
+- UT/ST：UT-S39-65～67、ST-S39-29。
+- 部署方案：OpenLogos 0.14.16 勘误散文订正通道本机全局部署方案；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179。

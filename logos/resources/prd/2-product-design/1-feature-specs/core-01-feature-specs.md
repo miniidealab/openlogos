@@ -3345,3 +3345,43 @@ apply
 
 - AC-REPLAN-01～10（见需求文档「已完成切片规划的受控重划」）。
 - 测试：UT-S32-65～UT-S32-68、ST-S32-22、UT-S28-49、UT-S19-37；安装态：SMOKE-core-179；回归锚：UT-S32-59～64、ST-S32-20～21、SMOKE-core-176、SMOKE-core-178。
+
+## 2.57 勘误提案的 deployment/smoke 散文订正通道
+
+### 功能目标
+
+为 docs-only 勘误提案开一条**受控**的 deployment/smoke 维度散文订正通道，消除「已知错误文本只能滞留等待下一个真实部署提案搭车」的方法论缺口（`errata-single-slice-recovery-semantics` 范围裁剪说明记录的缺口②），同时保持「部署/冒烟的实质变更必须绑定部署决策」的原则不被稀释。
+
+### 2.57.1 适用条件与机器判据
+
+proposal 明确无需部署（`deployment_required=false`）时，deployment/smoke 维度 target 仍可为 `MODIFY`，当且仅当以下判据**全部**满足（全部机器可判，无自由裁量）：
+
+| # | 判据 | 判定口径 |
+|---|---|---|
+| 1 | 目标为既有文件 | mode=`MODIFY`；`CREATE` 一律拒绝 |
+| 2 | 纯散文订正形态 | 该 delta 仅含 `MODIFIED` 块；出现 `ADDED` / `REMOVED` / `REMOVED-ITEMS` 任一块即拒绝（不新增版本节/用例/部署步骤，不删除任何章节或条目） |
+| 3 | 结构化 ID 守恒相等 | S37 守恒口径下，合并前后目标文件的结构化 ID 集合**完全相等**（零删除且零新增——比一般 MODIFY 的「显式删除可授权」更严） |
+
+- 判据 2/3 在 delta 在场后由 change-lint L9 与 merge 准入**同源**校验；plan 阶段（delta 未产出）按 target 声明放行到既有 plan 流程，delta 阶段收口。
+- `[deploy]` section 一致性检查不变：无需部署的提案仍禁止 `[deploy]` section。
+
+### 2.57.2 fail-closed 边界
+
+- 判据任一不满足 → 按既有 fail-closed 语义拒绝（lint exit 2 / merge 不生成合并指令），violation 携带 `code`/`path`/`message`/`fix_hint` 可归因；不降级为 warning、不静默放行。
+- 例外**只放宽 disposition 准入**，不豁免任何其它门：段标记、锚唯一定位、S37 守恒、模板占位、路径映射等既有检查逐字生效。
+
+### 2.57.3 与部署绑定原则的关系
+
+- 原则保留：deployment/smoke 的**实质变更**（新增版本节、增删用例/步骤、改变部署行为描述）仍必须发生在 `deployment_required=true` 的提案中——判据 2/3 从构造上排除了实质变更形态。
+- 例外最小：通道只覆盖「订正与既有权威语义相矛盾的散文」这一种形态；其正确性基准是既有已合并权威（如 §2.55.3、根规范），不引入新裁决面。
+- 被否方案：维持硬绑、勘误继续顺延搭车——被否原因是已知错误文本的滞留窗口不可控（实证滞留两个提案周期），且「文本与实现矛盾」本身就是规格作为唯一事实源的完整性缺陷。
+
+### 2.57.4 兼容与合同
+
+- change-lint / merge 的 violation 合同 schema 零变化；例外为解除误拒的兼容放宽，只放行此前被拒的合法勘误形态，不收紧任何既有行为，消费方无需适配。
+- 判定实现于既有闭包 evaluator 单点，change-lint L9 与 merge 准入同源消费（架构单一权威门原则）。
+
+### 功能验收
+
+- AC-ERRATA-01～05（见需求文档「勘误提案的 deployment/smoke 散文订正通道」）。
+- 测试：UT-S39-65～67、ST-S39-29；安装态：SMOKE-core-180；回归锚：既有 L9 用例、SMOKE-core-176/178/179。
