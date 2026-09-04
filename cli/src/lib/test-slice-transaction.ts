@@ -434,10 +434,19 @@ export function applyTestSliceTransaction(
     //    不保证它们合法——事务完全可以原子地写出一对互相一致但业务非法的产物
     //    然后宣告成功（架构 §四十三.2.1）。判非法即落入下方 catch，走与写盘异常
     //    完全相同的那一条回滚，不另写一份。
+    //    三分支消费复核结论（fix-apply-verdict-not-applicable-vs-invalid）：
+    //    - null：判定器**按设计不适用**（单切片计划下 shouldUseSliceVerification 恒假，
+    //      切片验证不启用、manifest 为惰性产物）——不是负面结论，与 valid 显式区分后
+    //      同样放行。复核的适用性是前置条件，不适用即跳过复核而非判失败。
+    //    - valid：判定器实际运行且判合法 → 放行。
+    //    - invalid / stale / unsupported：判定器实际给出的负面结论 → 整体回滚。
+    //    失败终态必伴随非零 violations；文案不渲染 unknown——「失败 + 0 条违规」意味着
+    //    守门把「没有结论」读成了结论（根规范 spec/test-slice-manifest.md §2.2.1）。
     const verdict = verifyAppliedManifest(root, proposalDir);
-    if (verdict.status !== 'valid') {
+    const notApplicable = verdict.status === null;
+    if (!notApplicable && verdict.status !== 'valid') {
       throw new TestSliceTransactionError('apply_verification_failed',
-        `apply 写出的产物被判定器判为 ${verdict.status ?? 'unknown'}，已整体回滚：`
+        `apply 写出的产物被判定器判为 ${verdict.status}，已整体回滚：`
         + `${verdict.violations.length} 条违规。修正 slot 内容后重新提交。`,
         verdict.violations);
     }

@@ -143,6 +143,11 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_READLOCK_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_READLOCK_CANDIDATE_BIN,
     },
+    'scripts/smoke-single-slice-verdict-0-14-14.js': {
+      tarball: process.env.OPENLOGOS_SINGLE_VERDICT_TARBALL,
+      previousTarball: process.env.OPENLOGOS_SINGLE_VERDICT_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_SINGLE_VERDICT_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -172,6 +177,7 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-slice-transaction-0-14-11.js',
   'scripts/smoke-slice-transaction-terminal-0-14-12.js',
   'scripts/smoke-readlock-concurrency-0-14-13.js',
+  'scripts/smoke-single-slice-verdict-0-14-14.js',
 ]);
 
 const globalCandidateRunners = new Map([
@@ -187,6 +193,7 @@ const globalCandidateRunners = new Map([
   ['scripts/smoke-slice-transaction-0-14-11.js', process.env.OPENLOGOS_SLICE_TX_TARBALL],
   ['scripts/smoke-slice-transaction-terminal-0-14-12.js', process.env.OPENLOGOS_SLICE_TERMINAL_TARBALL],
   ['scripts/smoke-readlock-concurrency-0-14-13.js', process.env.OPENLOGOS_READLOCK_TARBALL],
+  ['scripts/smoke-single-slice-verdict-0-14-14.js', process.env.OPENLOGOS_SINGLE_VERDICT_TARBALL],
 ]);
 
 function prepareGlobalCandidate(runner) {
