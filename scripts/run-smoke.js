@@ -153,6 +153,11 @@ function environmentFor(runner) {
       previousTarball: process.env.OPENLOGOS_SLICE_REPLAN_ROLLBACK_TARBALL,
       candidateBin: process.env.OPENLOGOS_SLICE_REPLAN_CANDIDATE_BIN,
     },
+    'scripts/smoke-errata-channel-0-14-16.js': {
+      tarball: process.env.OPENLOGOS_ERRATA_CHANNEL_TARBALL,
+      previousTarball: process.env.OPENLOGOS_ERRATA_CHANNEL_ROLLBACK_TARBALL,
+      candidateBin: process.env.OPENLOGOS_ERRATA_CHANNEL_CANDIDATE_BIN,
+    },
   };
   const artifacts = hostArtifacts[runner];
   if (!artifacts) return env;
@@ -184,6 +189,7 @@ const globalMutatingRunners = new Set([
   'scripts/smoke-readlock-concurrency-0-14-13.js',
   'scripts/smoke-single-slice-verdict-0-14-14.js',
   'scripts/smoke-slice-replan-0-14-15.js',
+  'scripts/smoke-errata-channel-0-14-16.js',
 ]);
 
 const globalCandidateRunners = new Map([
@@ -201,6 +207,7 @@ const globalCandidateRunners = new Map([
   ['scripts/smoke-readlock-concurrency-0-14-13.js', process.env.OPENLOGOS_READLOCK_TARBALL],
   ['scripts/smoke-single-slice-verdict-0-14-14.js', process.env.OPENLOGOS_SINGLE_VERDICT_TARBALL],
   ['scripts/smoke-slice-replan-0-14-15.js', process.env.OPENLOGOS_SLICE_REPLAN_TARBALL],
+  ['scripts/smoke-errata-channel-0-14-16.js', process.env.OPENLOGOS_ERRATA_CHANNEL_TARBALL],
 ]);
 
 function prepareGlobalCandidate(runner) {

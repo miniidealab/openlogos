@@ -1152,6 +1152,36 @@ function addDuplicateViolations(
   }
 }
 
+/**
+ * §7.1 errata 散文订正例外的 delta 形态判据（closeout-deferred-errata-and-closure-gap）：
+ * 仅 MODIFIED 控制块（无 ADDED/REMOVED/REMOVED-ITEMS——从构造上排除新增版本节/用例/步骤
+ * 与任何章节/条目删除），且不新增任何结构化测试 ID；删除侧由 S37 守恒门（change-lint L8
+ * 与 merge 消费点共享的 evaluateDeltaConservation）fail-closed 兜底，两侧合并即
+ * 「合并前后结构化 ID 集合完全相等」（spec/baseline-closure.md §7.1、功能规格 §2.57.1）。
+ */
+function errataProseDeltaProblems(deltaContent: string, targetContent: string | null): string[] {
+  const lines = deltaContent.split(/\r?\n/);
+  const scan = authorityScan(lines);
+  const ops = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    if (scan.masked[i]) continue;
+    const match = scan.text[i].trim().match(/^##\s+(REMOVED-ITEMS|ADDED|MODIFIED|REMOVED)\b/);
+    if (match) ops.add(match[1]);
+  }
+  const problems: string[] = [];
+  if (!ops.has('MODIFIED')) problems.push('errata 散文订正 delta 缺少 MODIFIED 控制块');
+  const forbidden = [...ops].filter(op => op !== 'MODIFIED');
+  if (forbidden.length > 0) {
+    problems.push(`errata 散文订正只允许 MODIFIED 块，出现 ${forbidden.join('、')}（不得新增版本节/用例/部署步骤或删除章节条目）`);
+  }
+  const existing = new Set(extractStructuredTestIds(targetContent ?? ''));
+  const added = [...new Set(extractStructuredTestIds(deltaContent))].filter(id => !existing.has(id));
+  if (added.length > 0) {
+    problems.push(`errata 散文订正不得新增结构化测试 ID：${added.join('、')}（合并前后 ID 集合必须完全相等）`);
+  }
+  return problems;
+}
+
 export interface EvaluateBaselineClosureOptions {
   root: string;
   proposalDir: string;
@@ -1279,8 +1309,32 @@ function evaluateBaselineClosureLocked(options: EvaluateBaselineClosureOptions):
   ): void => {
     if (required === null) return;
     const dispositions = plan.targets.filter(target => target.category === category && target.scenarioIds.includes(scenario));
-    const material = dispositions.some(target => target.mode === 'MODIFY' || target.mode === 'CREATE');
+    const materialTargets = dispositions.filter(target => target.mode === 'MODIFY' || target.mode === 'CREATE');
+    const material = materialTargets.length > 0;
     const skipOnly = dispositions.length > 0 && dispositions.every(target => target.mode === 'SKIP');
+    if (!required && !skipOnly && material) {
+      // §7.1 errata 散文订正例外：无需部署的提案，deployment/smoke 维度 MODIFY target 当且仅当
+      // 其 delta 为纯散文订正形态才放行；delta 未产出（plan 阶段）按 target 声明放行、delta 阶段收口。
+      const errataProblems: string[] = [];
+      const eligible = materialTargets.every(target => {
+        if (target.mode !== 'MODIFY') {
+          errataProblems.push(`${target.deltaPath ?? category}：errata 例外仅接受 MODIFY 既有目标（CREATE 一律拒绝）`);
+          return false;
+        }
+        const content = target.deltaPath ? deltaContents.get(target.deltaPath) : undefined;
+        if (content === undefined) return true;
+        const targetOnDisk = target.targetPath && existsSync(join(root, target.targetPath))
+          ? readFileSync(join(root, target.targetPath), 'utf-8') : null;
+        const problems = errataProseDeltaProblems(content, targetOnDisk);
+        for (const problem of problems) errataProblems.push(`${target.deltaPath}：${problem}`);
+        return problems.length === 0;
+      });
+      if (eligible) return;
+      violations.push(closureViolation('baseline_closure_target_missing', proposalRel,
+        `${scenario} 的 ${category} disposition 与 proposal 决策不一致：决策=不需要，targets=${dispositions.map(d => d.mode).join('/')}；errata 散文订正例外不成立：${errataProblems.join('；')}`,
+        `为 ${scenario} 仅保留带 evidence 的 ${category} SKIP，或按 spec/baseline-closure.md §7.1 提供纯散文订正 MODIFY delta（仅 MODIFIED 块、结构化 ID 集合合并前后完全相等）`));
+      return;
+    }
     if ((required && !material) || (!required && !skipOnly)) {
       violations.push(closureViolation('baseline_closure_target_missing', proposalRel,
         `${scenario} 的 ${category} disposition 与 proposal 决策不一致：决策=${required ? '需要' : '不需要'}，targets=${dispositions.map(d => d.mode).join('/') || '缺失'}`,
