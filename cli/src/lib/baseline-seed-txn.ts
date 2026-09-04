@@ -305,6 +305,57 @@ export function acquireLock(root: string, moduleId: string): boolean {
     try { rmSync(rcTmp, { force: true }); } catch { /* ignore */ }
   }
 }
+// ---- 读路径锁获取有界重试（fix-baseline-readlock-reader-contention，架构 §四.B）----
+// 读临界区毫秒级，两个纯只读命令碰撞即假阳性（现场 8 并发 status 7 失败）。reader-reader
+// 竞争用「排他锁 + 有界指数退避」吸收：预算内取到锁走既有恢复门不变，预算耗尽仍被占用
+// 才维持 baseline_commit_in_progress——语义收窄为「写事务确实在飞行或 journal 不可恢复」。
+// 写路径 begin/commit 不适用（writer-writer 是真互斥冲突，等待只会掩盖上层编排问题）。
+// 等待为同步阻塞（Atomics.wait），不引入 async、不改三个读入口的同步签名。
+export interface ReadLockRetryPolicy {
+  budgetMs: number;
+  backoffMs: readonly number[];       // 退避序列；耗尽后按最后一项封顶
+  sleep: (ms: number) => void;        // 可注入：测试不依赖真实墙钟
+  now: () => number;                  // 可注入时钟
+}
+
+const sleepCell = new Int32Array(new SharedArrayBuffer(4));
+function sleepSync(ms: number): void {
+  Atomics.wait(sleepCell, 0, 0, ms);
+}
+
+export const DEFAULT_READ_LOCK_RETRY: Readonly<ReadLockRetryPolicy> = Object.freeze({
+  budgetMs: 2000,
+  backoffMs: Object.freeze([25, 50, 100, 200, 400]) as readonly number[],
+  sleep: sleepSync,
+  now: () => Date.now(),
+});
+
+let readLockRetryPolicy: ReadLockRetryPolicy = { ...DEFAULT_READ_LOCK_RETRY };
+export function setReadLockRetryPolicyForTests(policy?: Partial<ReadLockRetryPolicy>): void {
+  readLockRetryPolicy = { ...DEFAULT_READ_LOCK_RETRY, ...(policy ?? {}) };
+}
+
+/**
+ * 读路径专用锁获取：首次失败后有界指数退避重试；三个读入口（readGate /
+ * withBaselineReadLock / withRecoveredReadLocks）复用本实现，不各自复制分支。
+ * 写路径（begin/commit）不得调用——保持 fail-fast。
+ */
+export function acquireReadLockWithRetry(root: string, moduleId: string): boolean {
+  if (acquireLock(root, moduleId)) return true;
+  // 同进程已持锁（公共 acquire 拒绝重入）：同一同步调用栈内等待自己释放必死锁，
+  // 保持既有立即失败语义，不消耗重试预算。
+  if (lockHeldByCurrentProcess(root, moduleId)) return false;
+  const policy = readLockRetryPolicy;
+  const start = policy.now();
+  for (let attempt = 0; ; attempt++) {
+    const remaining = policy.budgetMs - (policy.now() - start);
+    if (remaining <= 0) return false;
+    const backoff = policy.backoffMs[Math.min(attempt, policy.backoffMs.length - 1)] ?? 400;
+    policy.sleep(Math.min(backoff, remaining));
+    if (acquireLock(root, moduleId)) return true;
+  }
+}
+
 export function releaseLock(root: string, moduleId: string): void {
   const path = lockPath(root, moduleId);
   const myToken = heldLockTokens.get(moduleId);
@@ -683,8 +734,8 @@ export function readGate(
   if (!pending) return { ok: true };
 
   const held = opts?.lockAlreadyHeld === true;
-  if (!held && !acquireLock(root, moduleId)) {
-    // 锁被占用 → 不把可能半新的集合当权威。
+  if (!held && !acquireReadLockWithRetry(root, moduleId)) {
+    // 预算内等不到锁（写事务在飞行）→ 不把可能半新的集合当权威。
     return { ok: false, error: 'baseline_commit_in_progress' };
   }
   try {
@@ -728,7 +779,7 @@ export function withBaselineReadLock<T>(
 ): { ok: true; value: T } | { ok: false; error: 'baseline_commit_in_progress' } {
   // 外层 withRecoveredReadLocks 已持本模块锁时直接复用同一临界区；公共 acquireLock 语义仍保持“拒绝重入”。
   if (lockHeldByCurrentProcess(root, moduleId)) return { ok: true, value: fn() };
-  if (!acquireLock(root, moduleId)) return { ok: false, error: 'baseline_commit_in_progress' };
+  if (!acquireReadLockWithRetry(root, moduleId)) return { ok: false, error: 'baseline_commit_in_progress' };
   try {
     const pending = findUnfinalizedJournal(root, moduleId);
     if (pending) recoverJournal(root, pending.runId, at);
@@ -774,7 +825,7 @@ export function withRecoveredReadLocks<T>(
     for (const m of sorted) {
       currentModule = m;
       if (lockHeldByCurrentProcess(root, m)) continue;
-      if (!acquireLock(root, m)) return { ok: false, inProgress: [m] };
+      if (!acquireReadLockWithRetry(root, m)) return { ok: false, inProgress: [m] };
       held.push(m);
     }
     for (const m of sorted) {
