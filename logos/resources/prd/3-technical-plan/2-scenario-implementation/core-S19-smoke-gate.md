@@ -768,3 +768,37 @@ sequenceDiagram
 
 - 需求：AC-VERDICT-01、AC-VERDICT-06；功能规格：§2.55；架构：§四十三.2.1。
 - 测试：UT-S19-36；安装态：SMOKE-core-178；回归：SMOKE-core-176。
+
+## S19 切片重划的安装态覆盖（support-slice-replan-on-completed-plan）
+
+### 场景目标
+
+在**已安装的全局包**上证明重划全链真实可走：`completed` → `reopen` → 提交不同划分 → seal/apply → `completed`，且新划分完全替换旧划分、留痕可审计。
+
+### 为何必须走安装态
+
+被修的缺口位于已发布的 0.14.14 全局 CLI（`completed` 无出边）；重划涉及动作准入、留痕、归档、marker 作废与产物整体替换的**多步组合**，任何一步在源码级被无声退化都会让出口重新消失。零回归对照（0.14.14 上 `reopen` 必须被拒、锁死现场复现）也只有安装态能构造。
+
+### 覆盖要求
+
+1. 新增 `SMOKE-core-179`：安装态构造 spec-complete 临时提案 → 首次规划 apply 达 `completed` → `reopen --reason` → 断言进入 `collecting`、`SLICE_REPLANS.jsonl` 留痕含旧 `transaction_id`、旧事务已归档、`[code]`/manifest 暂保旧值 → 提交**不同**划分 → seal/apply → `completed`，断言两产物完全为新划分、无旧残留、`manifest_sha256` 已变化。
+2. 同一 runner 回归：未执行 `reopen` 的 `completed` 行为与 0.14.14 一致（submit-content 仍被拒）；0.14.12/0.14.14 既有能力不回退。
+3. **零回归对照**：同一 `reopen` 步骤打到固定 `0.14.14` 上**必须被拒**（动作不可用），且 completed 后 submit-content/abort 被拒的锁死现场复现——否则断言空转，必须重写用例而非放行部署。
+4. 已批准分支（`SLICES_APPROVED` 在场需确认、确认后作废 marker）不在安装态覆盖——smoke 约束禁止夹具手工创建 marker，该分支由 UT-S32-65 在进程内覆盖。
+
+### 留痕契约
+
+- 修复版 runner 在 `scripts/run-smoke.js` **三处注册表逐表登记**（`hostArtifacts` / `globalMutatingRunners` / `globalCandidateRunners`），具备 `--self-test` 只读入口自述 ids / 版本 / 所需 env。
+- 缺 candidate / 回滚 tarball 时经 `requireEnvOrSkip` 写显式 `skip` 并携带缺失项，禁止静默零记录退出。
+- 结果写入 `smoke-results.jsonl` 唯一一条 `SMOKE-core-179` 记录。
+- **证伪门**：摘掉三处注册中的任意一处，元用例（UT-S19-37）必须变红。
+
+### 不变量
+
+- runner 不执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push。
+- 全部关键断言穿过公开 `openlogos slice transaction` 命令；不得手工写 `[code]` 段、manifest 或删除/改名事务文件构造前提。
+
+### 追溯
+
+- 需求：AC-REPLAN-09；功能规格：§2.56；架构：§四十四。
+- 测试：UT-S19-37；安装态：SMOKE-core-179；回归：SMOKE-core-176、SMOKE-core-178。

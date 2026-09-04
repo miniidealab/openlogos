@@ -2457,6 +2457,39 @@ planned
     - split-single-slice-plan-to-satisfy-validator
     - render-null-status-as-unknown-in-error-message
   cutover_exit: 单切片计划的 apply 达 completed 且 [code] 正确写出；多切片与业务非法 slot 的既有回滚行为逐项不回归（UT-S32-59～60、ST-S32-20、SMOKE-core-176）；新增 UT-S32-61～64、ST-S32-21 与 SMOKE-core-178 全部通过
+- fact_id: slice-transaction.plan-mutability
+  semantic_scope: 某提案当前的切片划分是否仍可变更，以及变更需要满足的条件（未批准可自由重开；已批准需显式确认并作废旧批准）
+  authority_owner: 切片事务状态机
+  canonical_state: 当前事务 phase 与 SLICES_APPROVED 是否在场的联合状态；completed 携带 reopen 出边
+  sole_writer: 切片事务的 reopen 动作（作废当前规划、留痕、归档旧事务并重建 collecting）
+  mutation_entry: openlogos slice transaction reopen（--reason 必填；SLICES_APPROVED 在场须 --confirm-approved）
+  decision_api: slice transaction status 返回的 phase 与 allowed_actions
+  projections:
+    - id: slice-transaction-projection-allowed-actions
+      consumer: slice transaction status/next 投影读取者与 RunLogos 面板
+      freshness_proof: 每次读取按当前事务 phase 与 SLICES_APPROVED 是否在场求值
+      rebuild_rule: 重新读取事务文件与提案目录 marker；不可读时 fail-closed 拒绝重开
+      writable: false
+    - id: next-node-replan-hint
+      consumer: next 的 detail 渲染
+      freshness_proof: 与 allowed_actions 同一次求值同源；已批准后不主动提示
+      rebuild_rule: 依当前事务与 marker 状态重算
+      writable: false
+    - id: replan-audit-trail
+      consumer: 审计读取者（人 / RunLogos）
+      freshness_proof: SLICE_REPLANS.jsonl append-only，每次重开一行
+      rebuild_rule: 只追加不改写；历史行为事实记录，不可重算
+      writable: false
+  recovery_source: 提案目录内的事务文件、SLICES_APPROVED marker 与 SLICE_REPLANS.jsonl
+  retired_shadow_sources:
+    - treat-completed-plan-as-permanently-frozen
+  forbidden_shadow_sources:
+    - manual-delete-transaction-file-to-replan
+    - manual-edit-code-section-to-replan
+    - replan-without-audit-trail
+    - leave-half-old-half-new-code-section-or-manifest
+    - unconditional-replan-after-slices-approved
+  cutover_exit: completed 不再等同于永久冻结、受控重开成为唯一合法重划方式且必须留痕；安装态 smoke 完成「completed → 重开 → 提交不同划分 → apply → completed」全链且新划分完全替换旧划分、无残留（UT-S32-65～68、ST-S32-22、SMOKE-core-179 全部通过；未执行 reopen 时行为与 0.14.14 逐项一致）
 ```
 
 同一 `fact_id` 只有本行；S37 ConservationEvaluator 是该 authority 的守恒消费者，不再私有拥有标题解析器。Registry 的 owner 表达语义组件，sole writer 表达正式状态写入组件，二者不得复制为多个 owner/writer 字段或共同裁决者。
@@ -3013,3 +3046,54 @@ export function verifyAppliedManifest(root, proposalDir) { … }
 - 需求：AC-SLICETX-01～12；功能规格：§2.53。
 - 场景：S09、S13、S19、S28、S32。
 - 测试：UT-S32-52～58、ST-S32-18～19、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34；安装态 SMOKE-core-175。
+
+## 四十四、切片事务的受控重划回边（plan-mutability）
+
+> 承接 §四十三：0.14.12 为切片事务补了「manifest 判非法 → manifest-recovery」的恢复回边，0.14.14 修正了终态守门对「判定器不适用」的误拒。本节补状态机缺失的最后一条边：**manifest 判有效、但规划本身需要重做**。
+
+### 四十四.1 缺口：completed 是没有出边的终态
+
+切片事务状态机中 `completed` 的 `allowed_actions` 为空数组——终态即永久冻结。而 slice-planner 的六维打分含「不确定性」一维（1=一个待验证假设，2=多个未知点），即方法论**承认规划可能建立在待验证假设上**；假设在实现阶段被证伪时，manifest 完全有效（切片数、ID 归属、双指纹均正确），恢复回边不触发，三条出路（将错就错、手改 `[code]`、删事务文件）全部违反本仓已确立的权威合同。承认不确定性、又不给证伪后的修正通道，是状态机与方法论的直接矛盾。
+
+### 四十四.2 受控回边：completed → collecting（reopen）
+
+```mermaid
+stateDiagram-v2
+    [*] --> collecting
+    collecting --> ready: 两 slot 收齐
+    ready --> sealed: seal
+    sealed --> applying: apply
+    applying --> completed: 原子替换两产物 + 终态守门放行
+    applying --> failed: 写盘异常 / 判定器负面结论（整体回滚）
+    failed --> sealed: 修正 slot 后重走 seal
+    completed --> collecting: reopen（受控回边，本节新增）
+```
+
+回边受三重约束，缺一不可：
+
+1. **批准分流**：`SLICES_APPROVED` 不在场可自由重开；在场须显式确认参数，且确认重开即作废该 marker（旧批准不得覆盖新划分）。
+2. **强制留痕**：`SLICE_REPLANS.jsonl` append-only 记录（旧 `transaction_id`、时刻、非空原因、批准在场/确认标记）；无留痕的重开是被禁止的影子路径。
+3. **产物整体替换**：重开时 `[code]` 段与 manifest 保持旧值；替换发生且仅发生在新划分的 apply——半新半旧比无法重划更坏。旧终态事务归档不销毁；旧 checkpoint 因 `manifest_sha256` 失配自然作废，verify 只采信与当前 manifest 匹配的 checkpoint。
+
+### 四十四.3 两条回边的分工
+
+| | reopen（四十四.2） | manifest-recovery（0.14.12） |
+|---|---|---|
+| 修的对象 | **规划**（划分错了） | **manifest**（产物失效了） |
+| 触发判据 | 人的判断 + 留痕原因 | `deriveSliceVerificationState()` 的机器判定 |
+| 新事务 | `initial-plan`，`required=2` | `manifest-recovery`，`required=1` |
+| `[code]` | 新 apply 整体替换 | 冻结拒改 |
+
+不得互相顶替：用恢复回边改划分会破坏 `[code]` 冻结不变量；用重划回边修 manifest 会把一次机械重建变成一次重新规划。恢复事务的 `completed` 同样可被 `reopen`——规划错误与 manifest 曾失效互不冲突。
+
+### 四十四.4 不变量
+
+1. `reopen` 是 `completed` 唯一的出边动作；其余 phase 对它 `action_not_allowed`。
+2. 事务文件不可读或 marker 状态不可判定 → fail-closed 拒绝，无任何写副作用。
+3. 未执行 `reopen` 时，`completed` 的行为与 0.14.14 逐项一致（零回归）。
+4. 公共合同 schema、字段与 slot 契约零变化，仅扩充终态 `allowed_actions` 域。
+
+### 四十四.5 追溯
+
+- 需求：AC-REPLAN-01～10；功能规格：§2.56；根规范：`spec/test-slice-manifest.md` §2.4。
+- 场景：S19、S28、S32；测试：UT-S32-65～68、ST-S32-22、UT-S28-49、UT-S19-37；安装态：SMOKE-core-179。

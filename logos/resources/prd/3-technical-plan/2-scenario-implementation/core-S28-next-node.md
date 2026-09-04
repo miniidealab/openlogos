@@ -158,3 +158,26 @@ sequenceDiagram
 - 需求：AC-SLICETX-07、AC-SLICETX-08；AC-SLICEFIX-05～07、AC-SLICEFIX-09。
 - 功能规格：§2.53.6、§2.53.6.1、§2.53.6.2；架构：§四十三.1、§四十三.2.1。
 - 测试：UT-S28-45～UT-S28-48、ST-S28-15；安装态 SMOKE-core-175、SMOKE-core-176。
+
+## S28 切片已规划未批准时的重划入口（support-slice-replan-on-completed-plan）
+
+### 场景目标
+
+让「切片划分还能改」这一事实在 `next` 中可被发现：切片已规划（当前切片事务 `completed`、`[code]` 与 manifest 在盘）但 `SLICES_APPROVED` 不在场时，`next` 除「开始编码实现」外同时给出重划入口；已批准后不再主动提示。
+
+### 呈现规则
+
+1. **未批准态**：`next` 的 detail 在实现指引之外附一行重划入口——`如需重新划分切片：openlogos slice transaction reopen --reason "<原因>"`。两个出口并列呈现，不互相遮蔽；重划入口不改变 `next` 的主动作与 `command` 字段。
+2. **已批准态**（`SLICES_APPROVED` 在场）：不主动提示重划——重开仍可用但需 `--confirm-approved`，其入口由 reopen 的拒绝文案给出，避免把「已批准的划分可被改写」常态化。
+3. 提示行与 `allowed_actions` 同一次求值同源（架构 §四十四 projections `next-node-replan-hint`）：事务或 marker 状态变化后，下一次 `next` 即反映新状态，不缓存。
+
+### 异常与边界
+
+- 当前事务非 `completed`（collecting/failed 等）：不出现重划入口，既有前沿指引不变。
+- 事务文件缺失或不可读：`next` 维持既有 fail 语义，不渲染基于猜测的重划入口。
+- 重划入口只是提示文案，不构成动作授权——实际重开仍经 `reopen` 的准入检查。
+
+### 追溯
+
+- 需求：AC-REPLAN-07、AC-REPLAN-09；功能规格：§2.56.6；架构：§四十四。
+- 测试：UT-S28-49；安装态：SMOKE-core-179。

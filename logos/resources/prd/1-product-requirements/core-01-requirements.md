@@ -2497,3 +2497,35 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 | AC-VERDICT-05 | 失败文案不出现 `unknown`；「失败终态 + 0 条违规」组合不再可能出现 |
 | AC-VERDICT-06 | 单切片安装态 smoke（SMOKE-core-178）在 `0.14.14` 全过；同一断言打到固定 `0.14.13` 上 apply 必须失败（零回归对照，防断言空转） |
 | AC-VERDICT-07 | 版本身份提升为 `0.14.14`，`0.14.13` 冻结为回滚基线；全量 `openlogos verify` PASS，新增用例逐 ID 写入 reporter |
+
+## 已完成切片规划的受控重划
+
+来源：RunLogos 现场 bug report（本仓 reference 目录同名副本 `logos/resources/reference/openlogos-slice-transaction-completed-plan-cannot-replan-bug-report.md`，2026-09-04，High）。`origin=initial-plan` 的切片事务 apply 成功后 `phase=completed`、`allowed_actions=[]`，切片划分被永久冻结；manifest 完全有效时 manifest-recovery 回边不触发。而「实现阶段才发现切错」是 slice-planner 最常见的失败模式——六维打分的不确定性一维（1=一个待验证假设，2=多个未知点）本就承认规划可能建立在待验证假设上；承认不确定性却不给假设被证伪后的修正通道，互相矛盾。现场（RunLogos `fix-canonical-ledger-id-discipline`）三条出路全被封死：将错就错通不过该片 owned 验收；手工改 `[code]` 段违反事务产物权威；手工删事务文件已被上一份 bug report 列为不接受的闭环证据。0.14.14 活复现（单切片 completed 后 submit-content/abort 均被拒）。
+
+### 核心需求
+
+1. **受控重开路径**：为 `phase=completed` 的切片事务提供重开动作（`reopen`）——作废当前规划、留痕、重建 `origin=initial-plan` 的 `collecting` 事务（`required=2`），供 slice-planner 提交新划分后经既有 seal/apply 完成重划。
+2. **批准状态分流**：`SLICES_APPROVED` 不在场时可自由重开（切片尚未被人类确认，重划不损失承诺）；在场时必须显式确认参数，确认重开即作废既有 `SLICES_APPROVED`（旧批准不得覆盖新划分），未确认则拒绝并给出可执行指引。
+3. **强制留痕**：每次重开向提案目录 `SLICE_REPLANS.jsonl` 追加一条审计记录（`schema: openlogos/slice-replan@1`，含旧 `transaction_id`、重开时刻、非空原因、重开时 `SLICES_APPROVED` 是否在场、是否经显式确认）；留痕 append-only，不得改写历史行。
+4. **产物整体替换**：重开后 `tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json` 保持旧值，直到新划分的 apply 在同一事务中整体替换两产物——任何时刻不得出现半新半旧。
+5. **旧证据作废**：重划后旧 `SLICE_CHECKPOINTS` 因 `manifest_sha256` 失配而不被采信，verify 只认与当前 manifest 匹配的 checkpoint——旧 PASS 不得冒充新划分的收敛证据。
+6. **旧事务不销毁**：重开把旧终态事务归档（`slice-transactions/<id>.json`，复用既有归档语义），receipt 与产物哈希可审计。
+7. **fail-closed**：事务文件不可读、`SLICES_APPROVED` 状态不可判定、已批准未确认三种情形一律拒绝重开，不得半开。
+8. **与 manifest-recovery 分工**：重划回边（规划需重做）与恢复回边（manifest 失效）准入、产物处置、留痕各不相同，不得互相顶替；未执行重开时 `completed` 行为与 0.14.14 逐项一致。
+9. **入口可发现**：切片已规划但未批准时，`next` 除实现入口外同时给出重划入口；已批准后不再主动提示。
+10. 修复以本地 patch candidate `0.14.15` 交付，当前本机全局 `0.14.14` 是冻结回滚基线；公共合同 schema、字段与 slot 契约零变化，仅扩充终态 `allowed_actions` 域。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-REPLAN-01 | `SLICES_APPROVED` 不在场时，`completed` 事务经 `reopen` 进入 `collecting`（`origin=initial-plan`、`required=2`），提交不同划分后 seal/apply 达 `completed` |
+| AC-REPLAN-02 | 重开后新划分对 `[code]` 段与 manifest 整体替换，无旧划分残留；apply 前两产物保持旧值（无半新半旧窗口） |
+| AC-REPLAN-03 | `SLICE_REPLANS.jsonl` 留痕含旧 `transaction_id`、时刻、非空原因、批准在场标记与确认标记；append-only |
+| AC-REPLAN-04 | `SLICES_APPROVED` 在场时未附显式确认参数 → 拒绝并给出可执行指引；附确认参数 → 重开成功且该 marker 被作废 |
+| AC-REPLAN-05 | 事务文件不可读或 marker 状态不可判定时 fail-closed 拒绝重开，无任何写副作用 |
+| AC-REPLAN-06 | 重划后旧 checkpoint 因 `manifest_sha256` 失配不被 verify 采信；旧终态事务归档在 `slice-transactions/` 可审计 |
+| AC-REPLAN-07 | `next` 在切片已规划未批准时给出重划入口；已批准后不提示；未执行 `reopen` 时 `completed` 行为与 0.14.14 逐项一致 |
+| AC-REPLAN-08 | 0.14.12 恢复回边与 0.14.14 单切片 apply 均不回退 |
+| AC-REPLAN-09 | `SMOKE-core-179` 安装态通过；零回归对照打到固定 `0.14.14` 上 `reopen` 必须被拒且锁死现场复现 |
+| AC-REPLAN-10 | 版本身份提升 `0.14.15`，`0.14.14` 冻结为回滚基线；全量 `openlogos verify` PASS，新增用例逐 ID 写入 reporter |

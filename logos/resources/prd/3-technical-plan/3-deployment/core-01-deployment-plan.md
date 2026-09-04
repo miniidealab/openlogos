@@ -2298,3 +2298,97 @@ smoke 只在一次性临时项目上操作；**不得触碰本仓或用户其它
 - 需求：AC-VERDICT-01～07。
 - 功能规格：§2.55；架构：§四十三.2.1；根规范：`spec/test-slice-manifest.md` §2.2.1。
 - 安装态：SMOKE-core-178；回归：SMOKE-core-176、SMOKE-core-177。
+
+## OpenLogos 0.14.15 切片重划本机全局部署方案
+
+### 部署目标与授权边界
+
+把「已完成切片规划的受控重划」冻结为唯一 `@miniidealab/openlogos@0.14.15` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.14`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须部署**：缺口位于**已发布的 0.14.14 全局 CLI** 中——`completed` 无出边，RunLogos 的 `fix-canonical-ledger-id-discipline` 规划被证伪后卡死。只改代码不部署，现场仍在 0.14.14 上，阻断不解除。
+
+**本次为何必须走安装态**：重划是动作准入、留痕、归档、marker 作废与产物整体替换的多步组合，任何一步在源码级被无声退化都会让出口重新消失；零回归对照（0.14.14 上 `reopen` 必须被拒）也只有安装态能构造。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.14`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash。
+3. 冻结可离线恢复的 `0.14.14` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. **回滚制品必须由 `0.14.14` 的实际部署提交构建（git worktree checkout），不得用当前工作树打包。** 当前工作树已含 `0.14.15` 的修复代码；用它当回滚件，零回归对照与往返演练将验不出任何东西。
+5. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.15 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.15`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.14`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.14` 构建新字节。
+
+### 跨仓合同的连续性
+
+`openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约零变化，仅**扩充 `completed` 的 `allowed_actions` 域**（新值 `reopen`）。因此：
+
+1. 不做主版本跃迁——已发布 JSON schema 未枚举切片事务动作域，无校验破坏；本次只增加此前不存在的合法出路，不收紧任何既有行为；
+2. 若根规范文本更新使 `schema_sha256` / `contract_sha256` 变化，必须重新冻结并记录**新旧两组值**，供 RunLogos 侧对照；
+3. 部署记录须显式写明：`completed` 自 0.14.15 起携带 `reopen` 出边，消费方的动作→子命令映射应纳入该动作（未纳入前忽略之即可，不影响既有流程）。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.15` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.15` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| **重划全链** | completed → `reopen --reason` → collecting（`required=2`）→ 提交不同划分 → seal/apply → completed；留痕含旧 `transaction_id`、旧事务归档、marker 作废语义正确 |
+| **产物整体替换** | 重开后 apply 前两产物保持旧值；apply 后完全为新划分、无旧残留、manifest sha 变化 |
+| **未重开零回归** | 不执行 `reopen` 的 completed 行为与 0.14.14 逐项一致（submit-content/abort 仍被拒） |
+| 既有能力零回归 | 0.14.14 单切片 apply、0.14.12 业务非法拦截与终态不堵恢复、`SMOKE-core-176`/`SMOKE-core-178` 矩阵断言全部保持通过 |
+| rollback roundtrip | `0.14.14→0.14.15→0.14.14→0.14.15` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「重划全链」与「产物整体替换」失败时必须停止部署并回到实现**——前者是缺口的直接证据，后者意味着半新半旧（比无法重划更坏）。
+
+### 零回归对照（强制，不可省略）
+
+同一矩阵必须在固定 `0.14.14` 上执行一次并**记录其失败点**：
+
+| 矩阵项 | 在 0.14.14 上的预期表现 |
+|---|---|
+| 重划全链 | **失败**——`reopen` 被拒（动作不可用），completed 后 submit-content/abort 被拒的锁死现场复现（缺口本身） |
+| 未重开零回归 / 既有能力 | 通过（该行为两版本一致） |
+
+**若矩阵在 0.14.14 上也能重开，说明断言是空转，必须重写矩阵而非放行部署。**
+
+### 本机全局部署
+
+只有隔离矩阵、零回归对照与 `0.14.14` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.15` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.15`；
+- package / plugin / asset manifest version 全部为 `0.14.15`，无混装。
+
+### 失败处置与回滚边界
+
+- 隔离矩阵失败：停止部署，回到实现，重新 verify/build/pack。
+- 全局安装后行为异常：立即以固定 `0.14.14` tarball 回滚，并报告触发条件与观察到的现象。
+- 回滚后必须复核 identity 全部回到 `0.14.14`，未证明一致前阻断后续动作。
+- 不得为让矩阵通过而放宽准入、跳过留痕、手工写产物或删除事务文件。
+
+### 追溯
+
+- 需求：AC-REPLAN-01～10。
+- 功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
+- 安装态：SMOKE-core-179；回归：SMOKE-core-176、SMOKE-core-178。

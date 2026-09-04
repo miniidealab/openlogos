@@ -3271,3 +3271,77 @@ apply
 
 - AC-VERDICT-01～07（见需求文档「切片事务终态守门区分判定器不适用与判定为非法」）。
 - 测试：UT-S32-61～UT-S32-64、ST-S32-21、UT-S19-36；安装态：SMOKE-core-178；回归锚：UT-S32-59～UT-S32-60、ST-S32-20、SMOKE-core-176。
+
+## 2.56 已完成切片规划的受控重划
+
+### 功能目标
+
+为 `phase=completed` 的切片事务补一条受控重开路径（`reopen`），使「manifest 判有效但规划需重做」有合法出口；以批准分流、强制留痕与产物整体替换保住切片「一次划定」的约束力——重开是修正通道，不是随意重划的后门。
+
+### 2.56.1 重开动作与准入
+
+- **命令面**：`openlogos slice transaction reopen --reason "<非空原因>" [--confirm-approved]`。`reopen` 进入 `completed` 事务的 `allowed_actions`（两种 origin 的 completed 均适用）；其余 phase 不接受该动作。
+- **准入矩阵**：
+
+| 前置 | 结果 |
+|---|---|
+| `phase=completed` 且 `SLICES_APPROVED` 不在场 | 允许重开 |
+| `phase=completed` 且 `SLICES_APPROVED` 在场、附 `--confirm-approved` | 允许重开，并**作废**既有 `SLICES_APPROVED`（旧批准不得覆盖新划分，slice-exit 门须对新划分重走） |
+| `phase=completed` 且 `SLICES_APPROVED` 在场、未附确认 | 拒绝，文案给出可执行指引（附 `--confirm-approved` 重试） |
+| `--reason` 缺失或为空白 | 拒绝——留痕必须有非空原因 |
+| 事务文件不可读 / marker 状态不可判定 | fail-closed 拒绝，无任何写副作用 |
+| 其它 phase（collecting/ready/sealed/applying/failed） | `action_not_allowed`，既有出路不变 |
+
+### 2.56.2 重开的产物处置
+
+重开在单一动作内按序完成，任一步失败整体不生效：
+
+1. 向提案目录 `SLICE_REPLANS.jsonl` **追加**留痕（见 2.56.3）；
+2. 把旧终态事务**归档**到 `slice-transactions/<transaction_id>.json`（复用既有终态归档语义，receipt 与产物哈希可审计、不销毁）；
+3. 作废 `SLICES_APPROVED`（仅确认重开路径）；
+4. 新建 `origin=initial-plan` 的 `collecting` 事务（`required=2`：`slot_codesection` + `slot_slices`）。
+
+**`[code]` 段与 `TEST_SLICE_MANIFEST.json` 在重开时保持旧值**——整体替换发生且仅发生在新划分的 apply（既有整节替换 + 原子写 manifest 语义），任何时刻不得半新半旧。重开后未 apply 前，消费者读到的仍是旧规划 + 一个 `collecting` 事务，语义自洽。
+
+### 2.56.3 留痕合同
+
+`SLICE_REPLANS.jsonl`（提案目录内，append-only，每行一条）：
+
+```json
+{"schema":"openlogos/slice-replan@1","old_transaction_id":"stx_…","reopened_at":"<ISO8601>","reason":"<非空原因>","slices_approved_present":false,"confirmed":false}
+```
+
+- `slices_approved_present`：重开时 `SLICES_APPROVED` 是否在场；`confirmed`：是否经 `--confirm-approved`。
+- 历史行不得改写或删除；重复重开各自成行。
+
+### 2.56.4 旧证据作废与 checkpoint 采信
+
+- 重划 apply 后 manifest 的 `sha256` 必然变化；**verify 只采信 `manifest_sha256` 与当前 manifest 一致的 `SLICE_CHECKPOINTS` 行**——旧划分的 PASS checkpoint 自然失效，不得冒充新划分的收敛证据。该采信规则由本节明文化并加回归锚定。
+- 旧事务的 receipt 归档可查，但不参与新划分的任何判定。
+
+### 2.56.5 与 manifest-recovery 的分工
+
+| | 重划回边（本节） | 恢复回边（0.14.12） |
+|---|---|---|
+| 触发 | 规划本身需重做（manifest 可完全有效） | manifest missing / invalid / stale |
+| 准入 | `completed` + 批准分流 + 非空原因 | `deriveSliceVerificationState()` 判定的恢复理由 |
+| 新事务 | `origin=initial-plan`，`required=2` | `origin=manifest-recovery`，`required=1` |
+| `[code]` 段 | 由新 apply **整体替换** | **冻结，拒绝改写** |
+| 留痕 | `SLICE_REPLANS.jsonl` 强制 | 无（划分未变） |
+
+两条回边不得互相顶替：manifest 失效走恢复、规划错误走重划；恢复事务的 completed 同样可被 `reopen`（规划错误与 manifest 曾失效无冲突）。
+
+### 2.56.6 next 的重划入口
+
+- 切片已规划（当前事务 `completed` 且 manifest 与 `[code]` 在盘）且 `SLICES_APPROVED` 不在场：`next` 的 detail 在实现入口之外附一行重划入口（`openlogos slice transaction reopen --reason "<原因>"`）。
+- `SLICES_APPROVED` 在场：不主动提示重划（重开仍可用但需显式确认，入口由拒绝文案给出）。
+
+### 2.56.7 兼容与合同
+
+- `openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约零变化；仅扩充 `completed` 的 `allowed_actions` 域（新值 `reopen`）。已发布 JSON schema 未枚举切片事务动作域，无 schema 校验破坏；消费方经安装态 smoke 与 reference bug report 副本获知新出口。
+- 未执行 `reopen` 时，`completed` 的全部行为与 0.14.14 逐项一致。
+
+### 功能验收
+
+- AC-REPLAN-01～10（见需求文档「已完成切片规划的受控重划」）。
+- 测试：UT-S32-65～UT-S32-68、ST-S32-22、UT-S28-49、UT-S19-37；安装态：SMOKE-core-179；回归锚：UT-S32-59～64、ST-S32-20～21、SMOKE-core-176、SMOKE-core-178。

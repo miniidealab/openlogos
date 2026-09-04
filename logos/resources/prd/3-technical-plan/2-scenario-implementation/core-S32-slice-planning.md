@@ -340,3 +340,60 @@ sequenceDiagram
 - 需求：AC-SLICETX-03～07、AC-SLICETX-10；AC-SLICEFIX-01～04；AC-VERDICT-01～05。
 - 功能规格：§2.53.3～§2.53.6、§2.53.5.1、§2.53.8、§2.55；架构：§四十三.1、§四十三.2、§四十三.2.1。
 - 测试：UT-S32-52～UT-S32-64、ST-S32-18～ST-S32-21；安装态 SMOKE-core-175、SMOKE-core-176、SMOKE-core-178。
+
+## S32 已完成规划的受控重划（support-slice-replan-on-completed-plan）
+
+### 场景目标
+
+在切片划分被证实有误时（manifest 完全有效、恢复回边不触发），经受控重开路径作废当前规划、留痕、重建 `collecting` 事务，由 slice-planner 提交新划分并经既有 seal/apply 整体替换两产物。
+
+### 重划时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户 / driver
+    participant T as 切片事务
+    participant A as slice-planner Agent
+    participant W as 产物写入器
+
+    U->>T: reopen --reason "<原因>" [--confirm-approved]
+    T->>T: 准入检查（phase=completed；批准分流；原因非空；事务/marker 可读）
+    T->>T: 追加 SLICE_REPLANS.jsonl 留痕（旧 transaction_id、时刻、原因、批准/确认标记）
+    T->>T: 归档旧终态事务 → slice-transactions/<id>.json
+    T->>T: （确认重开）作废 SLICES_APPROVED
+    T-->>U: 新事务 origin=initial-plan，phase=collecting，required=2
+    Note over T,W: 此刻 [code] 段与 manifest 保持旧值——整体替换只发生在新 apply
+    A->>T: submit-content ×2（新划分）
+    A->>T: seal
+    A->>T: apply
+    T->>W: 整节替换 [code] + 原子写 manifest（既有语义）
+    T-->>A: completed + receipt；旧 checkpoint 因 manifest_sha256 失配作废
+```
+
+### 失败分支（fail-closed，三类）
+
+- **事务文件不可读**：拒绝重开，无任何写副作用（不留痕、不归档、不动 marker）。
+- **`SLICES_APPROVED` 状态不可判定**（I/O 错误等）：同上 fail-closed。
+- **已批准未确认**：拒绝并给出可执行指引（附 `--confirm-approved` 重试）；同样零副作用。
+
+### 不变量
+
+1. `reopen` 是 `completed` 唯一的出边动作；`--reason` 非空是留痕前置。
+2. 留痕 append-only；无留痕的重开是被禁止的影子路径。
+3. 重开 → 新 apply 之间不存在半新半旧窗口：两产物保持旧值直到整体替换。
+4. 旧终态事务归档不销毁；旧 checkpoint 不被新划分的 verify 采信（`manifest_sha256` 失配）。
+5. 确认重开作废 `SLICES_APPROVED`——slice-exit 门须对新划分重走。
+6. 与 manifest-recovery 回边互不顶替（架构 §四十四.3）。
+7. 未执行 `reopen` 时 `completed` 行为与 0.14.14 逐项一致。
+
+### 异常与边界
+
+- 重开后的 `collecting` 事务与首次规划同形：slot 校验、seal preflight、apply 终态守门（三分支）全部复用，不开第二套语义。
+- 重开后再次 `reopen`：新事务非 `completed`，`action_not_allowed`。
+- 重复重开（新划分 apply 后再发现错误）：合法，各自留痕成行。
+- `manifest-recovery` 的 `completed` 同样可 `reopen`（规划错误与 manifest 曾失效无冲突）。
+
+### 追溯
+
+- 需求：AC-REPLAN-01～08；功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
+- 测试：UT-S32-65～UT-S32-68、ST-S32-22；安装态：SMOKE-core-179。

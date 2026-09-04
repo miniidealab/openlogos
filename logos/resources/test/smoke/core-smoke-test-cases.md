@@ -1201,3 +1201,52 @@
 - 功能规格：§2.55；架构：§四十三.2.1；根规范：`spec/test-slice-manifest.md` §2.2.1。
 - 场景：S19、S32；UT/ST：UT-S32-61～64、ST-S32-21、UT-S19-36。
 - 部署方案：OpenLogos 0.14.14 单切片终态判定修复本机全局部署方案；回归：SMOKE-core-176。
+
+## OpenLogos 0.14.15 切片重划 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.15` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-179` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.15`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建任何 marker**（含 `SLICES_APPROVED`——已批准分支由 UT-S32-65 进程内覆盖），**不得手工写 `[code]` 段或 manifest**，**不得删除或改名 `TEST_SLICE_TRANSACTION.json`**。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-179 | 0.14.15 已完成规划经受控重开完成重划 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **首次规划**：临时 launched 项目构造 spec-complete 提案，提交单切片划分 → seal → apply 达 `completed`，记录 manifest sha 与旧 `transaction_id`；③ **重开**：`slice transaction reopen --reason "<原因>"`，核对进入 `collecting`（`origin=initial-plan`、`required=2`）、`SLICE_REPLANS.jsonl` 留痕含旧 `transaction_id` 与非空原因、旧事务归档于 `slice-transactions/`、`[code]`/manifest 仍为旧划分（无半新半旧）；④ **重划**：提交**两切片**新划分 → seal → apply → `completed`，核对 `[code]` 与 manifest 完全为新划分、无旧残留、manifest sha 已变化；⑤ **零回归**：另一临时提案 completed 后不执行 reopen，核对 submit-content/abort 仍被拒、行为与 0.14.14 一致；单切片 apply（0.14.14 能力）与业务非法拦截（0.14.12 能力）不回退；⑥ 演练 `0.14.14→0.14.15→0.14.14→0.14.15` 并复核每阶段 identity 与 ③④ 的结论 | ③ **reopen 必须成功进入 collecting 且留痕/归档齐备**——被拒即缺口未修；④ **新划分必须整体替换**——出现旧划分残留或半新半旧即整体 FAIL；⑤ 未重开的 completed 行为逐项一致（reopen 为唯一新增动作）；⑥ 往返无混装且结论不变；全程无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-179`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须写显式 `skip` 记录并携带缺失项，禁止静默零记录退出。
+3. **全部关键断言必须穿过公开 `openlogos slice transaction` 命令**。以库级函数调用构造或断言的步骤一律不计入闭环证据。
+4. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、② 旧 `transaction_id` 与旧 manifest sha、③ 留痕行原文与归档文件存在性、④ 新旧划分对照结论与新 manifest sha、⑤ 零回归各断言结论、⑥ 回滚每阶段 identity。
+5. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+6. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### 零回归对照（强制）
+
+同一 runner 的步骤 ③ 必须在固定 `0.14.14` 上执行一次并**记录其失败点**：`reopen` 在 0.14.14 上必须被拒（动作不可用），且 completed 后 `submit-content`/`abort` 被拒的锁死现场复现（缺口本身）。**若步骤 ③ 在 0.14.14 上也能重开，说明断言是空转，必须重写用例而非放行部署。** 步骤 ⑤ 在两版本上行为应一致。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-179` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ③ 与 ④ 是双红线**：前者失败意味着重划出口仍不存在，后者失败意味着替换不完整（半新半旧比无法重划更坏）——任一失败即整体 FAIL。
+- 观察到 runner 手工写产物、手工创建 marker、删除事务文件或以库级调用替代公开命令构造关键断言，直接 FAIL。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ③ 或 ④ 失败：立即以固定 `0.14.14` 回滚并报告触发条件——切片事务是本仓自身与 RunLogos 的关键路径，不得带伤运行。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.14` 并报告环境状态；未证明一致前阻断后续动作。
+- 不得为让断言通过而放宽准入、跳过留痕、手工写产物或删除事务文件。
+
+### 追溯
+
+- 需求：AC-REPLAN-01～10。
+- 功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
+- 场景：S19、S28、S32；UT/ST：UT-S32-65～68、ST-S32-22、UT-S28-49、UT-S19-37。
+- 部署方案：OpenLogos 0.14.15 切片重划本机全局部署方案；回归：SMOKE-core-176、SMOKE-core-178。

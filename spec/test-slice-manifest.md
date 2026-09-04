@@ -76,6 +76,20 @@ manifest 失效（missing / invalid / stale）时，由 OpenLogos 依 `deriveSli
 - **禁止要求消费方删除或改名 `TEST_SLICE_TRANSACTION.json`。** 该文件由 OpenLogos 拥有，让消费方去改它与「事务产物只由 OpenLogos 写」（§2.1）直接冲突。任何把「人工删除事务文件」写进恢复步骤的文档、Skill 或测试夹具都是违规的——**测试夹具尤其**：在夹具里预先删除该文件，等于把人工绕过写进前提，会使本条约束在测试中天然不可见。
 - **投影必须与事实一致。** 终态事务不得被渲染成恢复事务；`allowed_actions` 为空的事务不得被提示「提交内容后 seal、apply」；拒绝动作的文案不得断言未发生的前提（例如在 `apply` 成功的现场声称「apply 失败已整体回滚」）。
 
+### 2.4 已完成规划的受控重划
+
+`completed` 不等于永久冻结。切片划分本身被证实有误时（manifest 可完全有效，§2.3 的恢复路径不触发），消费方经受控重开动作重划，**不得**以手工编辑 `[code]` 段、手工写 manifest 或删除/改名 `TEST_SLICE_TRANSACTION.json` 替代——那些是 §2.1 写入权合同下的违规路径。
+
+**准入**：`reopen` 仅对 `phase=completed` 开放（两种 origin 均适用），`--reason` 非空为留痕前置。`SLICES_APPROVED` 不在场可自由重开；在场须显式确认参数，确认重开即作废该 marker（旧批准不得覆盖新划分）。事务文件不可读或 marker 状态不可判定时 fail-closed 拒绝，无任何写副作用。
+
+**动作语义**（单一动作内按序完成，任一步失败整体不生效）：追加 `SLICE_REPLANS.jsonl` 留痕（`schema: openlogos/slice-replan@1`——旧 `transaction_id`、重开时刻、非空原因、批准在场标记、确认标记；append-only，历史行不得改写）→ 归档旧终态事务至 `slice-transactions/<id>.json`（不销毁，receipt 可审计）→（确认路径）作废 `SLICES_APPROVED` → 新建 `origin=initial-plan` 的 `collecting` 事务（`required=2`）。
+
+**产物处置**：重开时 `[code]` 段与 manifest **保持旧值**；整体替换发生且仅发生在新划分的 apply（§2.2 的原子语义复用）——任何时刻不得半新半旧。重划 apply 后 manifest 的 `sha256` 必然变化，**verify 只采信 `manifest_sha256` 与当前 manifest 一致的 checkpoint 行**（§6）——旧划分的 PASS checkpoint 不得冒充新划分的收敛证据。
+
+**与恢复路径互不顶替**：manifest 失效走 §2.3（`manifest-recovery`，`required=1`、`[code]` 冻结）；规划错误走本节（`initial-plan`，`required=2`、新 apply 整体替换）。用恢复路径改划分会破坏 `[code]` 冻结不变量，用重划路径修 manifest 会把机械重建变成重新规划。
+
+**兼容**：本节仅扩充 `completed` 的 `allowed_actions` 域（新值 `reopen`），schema、字段与 slot 契约零变化；未执行 `reopen` 时 `completed` 行为与 0.14.14 逐项一致。
+
 ## 3. Manifest Schema v1
 
 顶层对象：

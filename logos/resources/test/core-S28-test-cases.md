@@ -198,3 +198,16 @@
 - 场景：S28 恢复节点由建议改为创建事务（Step 3b、3c）；功能规格：§2.53.6.1、§2.53.6.2；架构：§四十三.2.1；安装态：SMOKE-core-176。
 
 **夹具口径（强制）**：以上三条用例的前置条件必须是「终态事务**在场**」。既有的 `UT-S28-45` / `UT-S28-46` 夹具先 `rmSync` 掉 `TEST_SLICE_TRANSACTION.json` 再破坏 manifest——那一步删除正是缺陷报告所指的人工绕过，把它写进前提会使本组约束在测试中天然不可见。实现时必须同步修正这两条既有用例的夹具，使其不再依赖删除事务文件。
+
+## S28 重划入口呈现测试（support-slice-replan-on-completed-plan）
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S28-49 | next 重划入口按批准状态分流 | 参数化：① 切片已规划（事务 completed、`[code]`/manifest 在盘）且 `SLICES_APPROVED` 不在场；② 同 ① 但 marker 在场；③ 事务非 completed（collecting） | 各自执行 `next --format json` | ① detail 同时含实现指引与重划入口（`slice transaction reopen --reason`），主动作与 `command` 字段不变；② detail 不含重划入口；③ 不含重划入口且既有前沿指引不变；三态下投影与 `allowed_actions` 同源、无缓存陈旧 |
+
+### 追溯与覆盖
+
+- AC-REPLAN-07 入口可发现与已批准不提示：UT-S28-49。
+- 场景：S28 切片已规划未批准时的重划入口；功能规格：§2.56.6；架构：§四十四 projections `next-node-replan-hint`。

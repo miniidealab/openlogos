@@ -363,3 +363,16 @@ UT-S19-24～25、ST-S19-16逐ID写`test-results.jsonl`。真实npm命令、tarba
 
 - AC-VERDICT-06 安装态 smoke 的 runner 前置：UT-S19-36。
 - 场景：S19 单切片事务终态判定的安装态覆盖；安装态：SMOKE-core-178。
+
+## S19 重划修复版 runner 注册测试
+
+### 单元测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|---|
+| UT-S19-37 | 重划 runner 三处注册且实现留痕契约 | 留痕契约 | 已加载 `scripts/run-smoke.js` 的三处注册表 | 断言 `SMOKE-core-179` runner 在 `hostArtifacts` / `globalMutatingRunners` / `globalCandidateRunners` **逐表**登记，并调用 `requireEnvOrSkip`、具备 `--self-test` 只读入口（自述 ids=[SMOKE-core-179]、candidate=0.14.15、rollback=0.14.14、所需 env） | 三处均登记且失败信息能指出是哪一张表缺失；缺制品时以成功状态退出并写唯一一条带缺失项的 `skip`；不得依靠通配发现后无条件 PASS。**证伪门**：摘掉任意一处注册后本用例必须变红 |
+
+### 追溯与覆盖
+
+- AC-REPLAN-09 安装态 smoke 的 runner 前置：UT-S19-37。
+- 场景：S19 切片重划的安装态覆盖；安装态：SMOKE-core-179。

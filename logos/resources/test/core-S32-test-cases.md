@@ -320,3 +320,32 @@
 - AC-VERDICT-04 终态不堵恢复：UT-S32-64。
 - AC-VERDICT-05 文案如实：UT-S32-63。
 - 场景：S32 切片产物经事务原子落盘（三分支主时序）；功能规格：§2.55；架构：§四十三.2.1；根规范：`spec/test-slice-manifest.md` §2.2.1。
+
+## S32 已完成规划的受控重划测试（support-slice-replan-on-completed-plan）
+
+> 本节补充 reopen 回边的准入、留痕、产物替换与 fail-closed 回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S32-65 | 重开准入矩阵（批准分流） | 参数化三态：① completed + 无 `SLICES_APPROVED`；② completed + marker 在场、未附确认；③ completed + marker 在场、附确认 | 各自执行 `reopen --reason "规划证伪"` | ① 重开成功进入 `collecting`（`origin=initial-plan`、`required=2`）；② 拒绝且文案给出附 `--confirm-approved` 的可执行指引、零副作用（无留痕/归档/marker 变化）；③ 重开成功且 `SLICES_APPROVED` 被作废；`--reason` 缺失或空白一律拒绝 |
+| UT-S32-66 | 留痕字段与 append-only | 连续两次重划（首次规划→reopen→新 apply→再 reopen） | 读取 `SLICE_REPLANS.jsonl` | 两行记录各含 `schema=openlogos/slice-replan@1`、正确的旧 `transaction_id`、时刻、非空原因、`slices_approved_present`/`confirmed` 标记；首行在第二次重开后字节不变（append-only） |
+| UT-S32-67 | 产物整体替换与旧证据作废 | completed（划分 A，含一条与旧 manifest 匹配的 PASS checkpoint）→ reopen → 提交不同划分 B → seal/apply | 对比重开前后与 apply 前后的两产物及 checkpoint 采信 | 重开后、apply 前 `[code]`/manifest 仍为划分 A（无半新半旧窗口）；apply 后两产物完全为划分 B、无 A 残留、`manifest_sha256` 变化；旧 checkpoint 因失配不被 verify 状态采信；旧事务归档于 `slice-transactions/` 且 receipt 可读 |
+| UT-S32-68 | fail-closed 与零回归 | ① 事务文件不可读（权限/损坏夹具）；② 非 completed phase（collecting/failed）执行 reopen；③ completed 不执行 reopen | ①② 执行 `reopen`；③ 执行既有动作集 | ①② 拒绝且无任何写副作用（无留痕/归档/marker 变化）；② 报 `action_not_allowed` 且既有出路不变；③ submit-content/abort 仍被拒、投影与 0.14.14 逐项一致（`reopen` 为唯一新增动作） |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S32-22 | 真实 CLI 重划全链 | 临时 launched 项目，spec-complete 提案 | 首次单切片规划 apply 达 completed → `reopen --reason` → 提交**两切片**新划分 → seal → apply → completed；全程经公开 `openlogos slice transaction` 命令 | 重开后投影 `phase=collecting`、`required=2`；新 apply 后 `[code]` 为两切片、manifest 两条 slice、无旧划分残留；留痕含旧 `transaction_id`；旧事务归档；`manifest-recovery` 的既有路径（另夹具删 manifest）不受影响 |
+
+### 追溯与覆盖
+
+- AC-REPLAN-01/04 准入矩阵与批准分流：UT-S32-65、ST-S32-22。
+- AC-REPLAN-02 整体替换：UT-S32-67、ST-S32-22。
+- AC-REPLAN-03 留痕：UT-S32-66。
+- AC-REPLAN-05/07 fail-closed 与零回归：UT-S32-68。
+- AC-REPLAN-06 旧证据作废与归档：UT-S32-67。
+- AC-REPLAN-08 两回边互不顶替：ST-S32-22（回归锚：UT-S32-59～64、ST-S32-20～21）。
+- 场景：S32 已完成规划的受控重划；功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
