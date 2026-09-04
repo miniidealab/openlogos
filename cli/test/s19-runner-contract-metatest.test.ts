@@ -35,6 +35,27 @@ function registryMembership(runner: string): Record<string, boolean> {
 }
 
 describe('S19 候选 runner 留痕契约', () => {
+  it('UT-S19-37: 切片重划 runner 在三处注册表均已登记且实现留痕契约', () => {
+    const runner = 'scripts/smoke-slice-replan-0-14-15.js';
+    expect(registryMembership(runner)).toEqual({
+      hostArtifacts: true, globalMutatingRunners: true, globalCandidateRunners: true,
+    });
+    const source = readFileSync(join(REPO_ROOT, runner), 'utf8');
+    expect(/requireEnvOrSkip\s*\(/.test(source), '未调用 requireEnvOrSkip').toBe(true);
+    expect(/--self-test/.test(source), '无 --self-test 只读入口').toBe(true);
+    const selfTest = spawnSync(process.execPath, [join(REPO_ROOT, runner), '--self-test'], { encoding: 'utf8' });
+    expect(selfTest.status).toBe(0);
+    expect(JSON.parse(selfTest.stdout)).toMatchObject({
+      ids: ['SMOKE-core-179'],
+      candidate_version: '0.14.15', rollback_version: '0.14.14',
+      required_source_env: ['OPENLOGOS_SLICE_REPLAN_TARBALL', 'OPENLOGOS_SLICE_REPLAN_ROLLBACK_TARBALL'],
+      public_release_commands: [],
+    });
+    // 夹具口径：runner 不得删除事务文件，也不得手工创建 SLICES_APPROVED（已批准分支归 UT-S32-65）
+    expect(/rmSync\([^)]*TEST_SLICE_TRANSACTION/.test(source), 'runner 不得删除事务文件').toBe(false);
+    expect(/writeFileSync\([^)]*SLICES_APPROVED/.test(source), 'runner 不得手工创建 SLICES_APPROVED').toBe(false);
+  });
+
   it('UT-S19-36: 单切片终态判定 runner 在三处注册表均已登记且实现留痕契约', () => {
     const runner = 'scripts/smoke-single-slice-verdict-0-14-14.js';
     expect(registryMembership(runner)).toEqual({

@@ -12,15 +12,15 @@ import { makeEnvelope, VERSION } from '../lib/json-output.js';
 import { resolveIdentity } from './merge-transaction.js';
 import {
   TestSliceTransactionError, abortTestSliceTransaction, applyTestSliceTransaction,
-  createTestSliceTransaction, readTestSliceTransactionIfPresent, sealTestSliceTransaction,
-  submitTestSliceContent, type TestSliceTransactionProjection,
+  createTestSliceTransaction, readTestSliceTransactionIfPresent, reopenTestSliceTransaction,
+  sealTestSliceTransaction, submitTestSliceContent, type TestSliceTransactionProjection,
 } from '../lib/test-slice-transaction.js';
 
-type SliceTransactionCommand = 'status' | 'submit-content' | 'seal' | 'apply' | 'recover' | 'abort';
+type SliceTransactionCommand = 'status' | 'submit-content' | 'seal' | 'apply' | 'recover' | 'abort' | 'reopen';
 
 /** 只读动作白名单——归档提案仅放行这些（架构 §三十九.1）。 */
 const READ_ONLY_COMMANDS = new Set<SliceTransactionCommand>(['status']);
-const SUPPORTED: SliceTransactionCommand[] = ['status', 'submit-content', 'seal', 'apply', 'recover', 'abort'];
+const SUPPORTED: SliceTransactionCommand[] = ['status', 'submit-content', 'seal', 'apply', 'recover', 'abort', 'reopen'];
 
 function emitError(format: OutputFormat, error: unknown): never {
   const txError = error instanceof TestSliceTransactionError ? error : null;
@@ -107,6 +107,12 @@ export function sliceTransactionCommand(
       result = applyTestSliceTransaction(root, proposalDir);
     } else if (command === 'abort') {
       result = abortTestSliceTransaction(proposalDir);
+    } else if (command === 'reopen') {
+      const reasonIndex = args.indexOf('--reason');
+      result = reopenTestSliceTransaction(root, proposalDir, slug, {
+        reason: reasonIndex >= 0 ? (args[reasonIndex + 1] ?? '') : '',
+        confirmApproved: args.includes('--confirm-approved'),
+      });
     } else {
       // recover 尚未开放。文案不得断言未发生的前提——「apply 失败已整体回滚」在 apply
       // 成功却产出非法的现场并不成立，会把用户引向错误的排查方向（功能规格 §2.53.6.2）。

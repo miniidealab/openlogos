@@ -27,10 +27,11 @@ import { writePlanApprovedMarker } from '../lib/ui-provenance.js';
 import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
 import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 import { BaselineCommitInProgressError } from '../lib/baseline-seed-txn.js';
-import { deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
+import { TEST_SLICE_MANIFEST, deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
 import type { MergeTransactionProjection } from '../lib/merge-transaction.js';
 import {
   ensureManifestRecoveryTransaction, isManifestRecoveryReason,
+  readTestSliceTransactionIfPresent,
   type TestSliceTransactionProjection,
 } from '../lib/test-slice-transaction.js';
 
@@ -354,6 +355,26 @@ function buildModuleNextItem(
     detail: '',
     active_change: null, proposal_step: null,
   };
+}
+
+/**
+ * 重划入口提示（功能规格 §2.56.6、架构 §四十四 projections next-node-replan-hint）：
+ * 切片已规划（当前事务 completed、manifest 在盘）且 SLICES_APPROVED 不在场时，
+ * 返回与实现/批准指引并列的重划出口文案；已批准后不主动提示（入口由拒绝文案承载）。
+ * 与 allowed_actions 同一次求值同源：每次调用按当前事务与 marker 状态重算，无缓存。
+ * 事务不可读时维持既有 fail 语义，不渲染基于猜测的入口（返回空串）。
+ */
+export function replanHintFor(root: string, slug: string, step: ProposalStep | null, locale: string): string {
+  if (step !== 'ready-to-implement') return '';
+  const proposalDir = join(root, 'logos', 'changes', slug);
+  try {
+    const sliceTx = readTestSliceTransactionIfPresent(proposalDir);
+    const approved = existsSync(join(proposalDir, 'SLICES_APPROVED'));
+    if (sliceTx?.phase === 'completed' && existsSync(join(proposalDir, TEST_SLICE_MANIFEST)) && !approved) {
+      return t(locale as Parameters<typeof t>[0], 'next.replanHint');
+    }
+  } catch { /* 不可读 → 空串 */ }
+  return '';
 }
 
 function actionForProposalStep(locale: string, step: ProposalStep | null): { action: string; command: string | null; detailKey: string } {
@@ -696,6 +717,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
         action = nextAction.action;
         command = nextAction.command;
         detail = t(locale, nextAction.detailKey, { slug });
+        detail += replanHintFor(root, slug, data.proposal_step, locale);
       }
     }
   } else if (data.all_done) {

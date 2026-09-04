@@ -33,7 +33,7 @@ export const TEST_SLICE_TRANSACTION_FILE = 'TEST_SLICE_TRANSACTION.json';
 export type TestSliceTransactionPhase =
   'collecting' | 'ready' | 'sealed' | 'applying' | 'completed' | 'failed';
 export type TestSliceTransactionAction =
-  'submit_content' | 'seal' | 'apply' | 'recover' | 'abort';
+  'submit_content' | 'seal' | 'apply' | 'recover' | 'abort' | 'reopen';
 export type TestSliceTransactionOrigin = 'initial-plan' | 'manifest-recovery';
 
 /** 两个 content slot：切片划分的**理由**与切片的**机器归属**，判据不同故分开提交。 */
@@ -123,7 +123,9 @@ function allowedActions(tx: StoredSliceTransaction): TestSliceTransactionAction[
     case 'ready': return ['seal', 'submit_content', 'abort'];
     case 'sealed': return ['apply', 'abort'];
     case 'applying': return ['recover', 'abort'];
-    case 'completed': return [];
+    // reopen 是 completed 唯一的出边（架构 §四十四）：manifest 判有效但规划需重做时的
+    // 受控重划回边；与 failed 的「修正 slot 重走」和 manifest-recovery 互不顶替。
+    case 'completed': return ['reopen'];
     // failed + recovery_required 的出路是「修正 slot 后重走 seal/apply」（S32 异常与边界）。
     // 不列 recover：命令面尚未开放该动作，把它写进 allowed_actions 会让投影与事实不符
     // ——用户照着做每次都被拒（功能规格 §2.53.6.2）。
@@ -261,6 +263,84 @@ function archiveTerminalTransaction(proposalDir: string, transactionId: string):
   const dir = join(proposalDir, 'slice-transactions');
   mkdirSync(dir, { recursive: true });
   renameSync(source, join(dir, `${transactionId}.json`));
+}
+
+export const SLICE_REPLANS_FILE = 'SLICE_REPLANS.jsonl';
+
+/**
+ * 受控重划回边（support-slice-replan-on-completed-plan，架构 §四十四、根规范 §2.4）：
+ * completed → collecting。先行全量校验（零副作用的失败面），再按序执行
+ * 「留痕 → 归档旧事务 →（确认路径）作废 SLICES_APPROVED → 重建 collecting」；
+ * 任一步失败回退已做步骤，整体不生效。`[code]` 段与 manifest 在此保持旧值——
+ * 整体替换只发生在新划分的 apply。
+ */
+export function reopenTestSliceTransaction(
+  root: string, proposalDir: string, slug: string,
+  options: { reason: string; confirmApproved?: boolean; module?: string },
+): TestSliceTransactionProjection {
+  const tx = readStored(proposalDir);           // 不可读 → artifact_unreadable，fail-closed
+  assertAllowed(tx, 'reopen');                  // 仅 completed 携带 reopen
+  const reason = (options.reason ?? '').trim();
+  if (reason === '') {
+    throw new TestSliceTransactionError('reopen_reason_required',
+      'reopen 需要非空 --reason "<原因>"——留痕是重划的前置条件，不接受无原因重开');
+  }
+  const markerPath = join(proposalDir, 'SLICES_APPROVED');
+  let approvedPresent = false;
+  let markerBytes: Buffer | null = null;
+  try {
+    approvedPresent = existsSync(markerPath);
+    if (approvedPresent) markerBytes = readFileSync(markerPath);
+  } catch (error) {
+    // marker 状态不可判定 → fail-closed，无任何写副作用（AC-REPLAN-05）。
+    throw new TestSliceTransactionError('artifact_unreadable',
+      `SLICES_APPROVED 状态不可判定，拒绝重开：${error instanceof Error ? error.message : String(error)}`);
+  }
+  const confirmed = options.confirmApproved === true;
+  if (approvedPresent && !confirmed) {
+    throw new TestSliceTransactionError('reopen_confirm_required',
+      '切片划分已获批准（SLICES_APPROVED 在场）。确认要作废既有批准并重划，请附 --confirm-approved 重试；'
+      + '确认重开将同时作废该批准，slice-exit 门须对新划分重走。');
+  }
+
+  // ── 校验全部通过，按序执行；失败回退到全旧 ──
+  const auditPath = join(proposalDir, SLICE_REPLANS_FILE);
+  const auditBefore = existsSync(auditPath) ? readFileSync(auditPath) : null;
+  const auditLine = `${JSON.stringify({
+    schema: 'openlogos/slice-replan@1',
+    old_transaction_id: tx.transaction_id,
+    reopened_at: new Date().toISOString(),
+    reason,
+    slices_approved_present: approvedPresent,
+    confirmed,
+  })}\n`;
+  const archivedPath = join(proposalDir, 'slice-transactions', `${tx.transaction_id}.json`);
+  let auditWritten = false;
+  let archived = false;
+  let markerRemoved = false;
+  try {
+    writeFileSync(auditPath, auditBefore === null ? auditLine : Buffer.concat([auditBefore, Buffer.from(auditLine)]));
+    auditWritten = true;
+    archiveTerminalTransaction(proposalDir, tx.transaction_id);
+    archived = true;
+    if (approvedPresent && confirmed) {
+      rmSync(markerPath, { force: true });
+      markerRemoved = true;
+    }
+    return createTestSliceTransaction(root, proposalDir, slug,
+      { origin: 'initial-plan', module: options.module ?? tx.module });
+  } catch (error) {
+    // 整体不生效：逐步回退已做步骤，保持全旧态。
+    try { if (markerRemoved && markerBytes !== null) writeFileSync(markerPath, markerBytes); } catch { /* 保守保留诊断 */ }
+    try { if (archived) renameSync(archivedPath, filePath(proposalDir)); } catch { /* 保守保留诊断 */ }
+    try {
+      if (auditWritten) {
+        if (auditBefore === null) rmSync(auditPath, { force: true });
+        else writeFileSync(auditPath, auditBefore);
+      }
+    } catch { /* 保守保留诊断 */ }
+    throw error;
+  }
 }
 
 export function createTestSliceTransaction(
