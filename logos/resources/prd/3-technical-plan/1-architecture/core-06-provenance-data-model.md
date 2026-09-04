@@ -257,3 +257,36 @@ admit(candidate, module) ⇔
 > **可选更强实现（真原子可见性）**：若把整版基线写入版本化目录、所有消费者只经一个可原子 rename 的指针/manifest 解析当前版本、commit 只切该单指针，则连人工/Skill 直接读取也原子可见；本 change 因目标为人读的标准路径 Markdown 规格文件，采「恢复门」语义，机器消费者一致性由门保证、不对直接路径人工读取宣称原子可见。
 
 **半提交 run 与 supersede 的恢复权**：带未终结（`prepared`/`committing`）journal 的 run **持有恢复优先权**；同模块新 `begin` 必须**先在锁内跑该 run 的恢复**（前滚或回滚到一致态）再 `supersede`，不得在半提交状态上叠新 run。若选目录级快照 + 单指针切换实现，则消费者只经该原子指针读一致版本，语义等价。
+
+## 四.B、读路径锁获取有界重试退避（补 §4.4，fix-baseline-readlock-reader-contention）
+
+> 本节是 §4.4「多文件提交事务、恢复门与崩溃一致性」的**读路径获取语义补充**。§4.4 的锁 owner、锁文件路径 `<module>.commit.lock`、`linkSync` O_EXCL 仲裁、死锁回收协议、恢复门四步语义与不可恢复硬门本次**逐字保留、不迁移归属**；本节只新增「读者如何拿锁」的时序语义，不改「锁是什么、谁拥有、崩溃后怎么恢复」。
+
+### 4.B.1 问题：排他锁 + 零等待使 reader-reader 假阳性
+
+§4.4 的模块级事务锁是排他锁，`status` / `next` / 覆盖率重算 / resource-index 扫描 / EvidenceScanner 等所有机器读取入口经恢复门取同一把锁。0.14.12 及之前，锁获取对「活进程持锁」立即失败——而读临界区只有毫秒级，两个纯只读命令碰撞即产生 `baseline_commit_in_progress` 假阳性（现场 8 并发 status 7 失败）。这违背恢复门的既有意图：该错误应只在**真冲突**（写事务在飞行或 journal 不可恢复）时出现。
+
+### 4.B.2 语义：读路径有界指数退避重试
+
+- **适用入口**：仅读路径——`withBaselineReadLock`、`withRecoveredReadLocks`、`readGate`。三入口复用同一重试实现，不得各自复制分支。
+- **参数**：默认总预算 2000ms；退避序列 25/50/100/200/400ms，此后单次封顶 400ms 直至预算耗尽；预算与时钟可注入供测试。
+- **判据**：
+  - 预算内取到锁 → 进入既有恢复门四步（①持锁 ②检未终结 journal ③可恢复则先恢复再读 ④不可恢复硬报），行为与无竞争时一致；
+  - 预算耗尽仍被占用 → 返回/抛出 `baseline_commit_in_progress`，error envelope 合同不变。
+- **实现约束**：等待为同步阻塞（如 `Atomics.wait`），不引入 async 侵入、不改三入口同步签名；重试只包裹「获取」动作，临界区内部逻辑零改动。
+
+### 4.B.3 写路径显式排除
+
+`begin` / `commit` 的锁获取保持 fail-fast（`run_locked` / `baseline_commit_in_progress` 立即返回），不适用本节重试：writer-writer 竞争是真实互斥冲突，等待会掩盖上层编排问题，且与「同模块新 `begin` 使旧 run superseded」的显式语义冲突。死锁回收协议（marker 仲裁、孤儿检测、紧邻重读确认后的原子替换）一字不动。
+
+### 4.B.4 不变量
+
+- `baseline_commit_in_progress` 语义收窄为「写事务确实在飞行（预算内等不到锁）或 journal 不可恢复」；错误码、envelope、退出码合同不变。
+- 恢复门语义零回退：不可恢复分支即使经重试取到锁，仍不读半新集合、不派生正常投影。
+- 无 writer、无未终结 journal 时，任意并发度的读取入口必须全部成功且输出与串行执行一致。
+
+### 追溯
+
+- 需求：AC-READLOCK-01～08；功能规格：§2.54。
+- 场景：S11（status 读取门）、S20（adopt 读取门规则 11）、S33（baseline seed 事务与读取门）。
+- 测试：UT-S33-56～UT-S33-60、ST-S33-10；安装态：SMOKE-core-177。

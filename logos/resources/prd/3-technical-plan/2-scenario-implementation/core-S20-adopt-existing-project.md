@@ -329,3 +329,19 @@ sequenceDiagram
 - 需求：S20 WorkBuddy 存量接入验收。
 - 架构：30.2 资产模型、30.4 生命周期与事务顺序。
 - 测试：UT-S20-34～UT-S20-40、ST-S20-20～ST-S20-22。
+
+## S20 读取门锁获取有界重试补充（fix-baseline-readlock-reader-contention）
+
+> 本节补充「步骤说明」规则 11 的**锁获取时序**语义，与架构 §四.B（补 §4.4）同步。规则 11 的既有文本与语义——读取门先在同一模块锁内恢复未终结 seed commit journal、无法恢复返回 `baseline_commit_in_progress`、不得读取半新集合、安全 open run / staging 排除后继续——**逐字不变**。
+
+### 补充语义
+
+1. **锁获取有界重试**：next/status 等读取门入口（含 `openlogos change` / adopt 后首次读取路径经过的 `readGate` / `withBaselineReadLock` / `withRecoveredReadLocks`）取模块锁时，锁被占不再立即失败，而是按架构 §四.B 有界指数退避重试（默认总预算 2000ms、25ms 起步、单次封顶 400ms；预算与时钟可注入）。
+2. **判据**：预算内取到锁 → 走规则 11 既有恢复门逻辑不变；预算耗尽仍被占用 → 按规则 11 返回 `baseline_commit_in_progress`，error envelope 合同不变。
+3. **并发只读不假阳性**：无 writer、无未终结 journal 时，并发的只读入口（如 change 入口读取门与并发 status）互相之间不得触发 `baseline_commit_in_progress`；writer 真持锁（seed commit 在飞行）超预算时仍硬阻断，EX-11.1 的分流语义零回退。
+4. **写路径不变**：baseline-seed `begin` / `commit` 的 fail-fast 与死锁回收协议不适用重试，逐字保留。
+
+### 追溯
+
+- 需求：AC-READLOCK-01～06；功能规格：§2.54；架构：§四.B。
+- 测试：UT-S20-41～UT-S20-42；安装态：SMOKE-core-177。

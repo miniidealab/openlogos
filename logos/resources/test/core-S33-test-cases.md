@@ -141,3 +141,40 @@
 - baseline-seed begin/commit/status、路径安全、candidate key 对账、锁、journal 恢复、partial→seeded 事务测试继续全绿；新增断言明确 safe partial 与未终结 journal 不共享降级分支。
 - status/next 的 `baseline_coverage` 兼容 shape 不删除；改变的是它不再决定主 action。
 - tombstone 分母、legacy 缺省派生与 sync 显式回填规则保持；S39 不新建每场景闭包状态。
+
+## 七、读锁有界重试与 reader 串行化（fix-baseline-readlock-reader-contention）
+
+> 本节补充 baseline seed 事务锁读路径的获取语义回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S33-56 | 读路径锁被占、预算内释放则成功 | 注入可控时钟与预算；夹具持锁并在预算内释放 | 分别经 `withBaselineReadLock` / `withRecoveredReadLocks` / `readGate` 三入口获取 | 三入口均在释放后取到锁并执行临界区；返回值与无竞争时一致；三入口复用同一重试实现（摘除公共实现后三者必须同时变红——证伪门） |
+| UT-S33-57 | 预算耗尽维持既有错误 | 夹具全程持锁；注入时钟推进超过总预算 2000ms | 三入口分别获取 | `withBaselineReadLock` 返回 `{ok:false, error:'baseline_commit_in_progress'}`、`withRecoveredReadLocks` 返回 `{ok:false, inProgress:[module]}`、`readGate` 行为与既有锁占用分支逐字一致；无新错误形态 |
+| UT-S33-58 | 退避序列与参数可注入 | 注入记录型时钟 | 在锁全程被占下获取并记录每次尝试间隔 | 间隔序列为 25/50/100/200/400ms 后封顶 400ms；累计等待不超过注入预算；替换注入预算/时钟后序列相应缩放 |
+| UT-S33-59 | 写路径保持 fail-fast | 夹具持锁 | baseline-seed `begin` 与 `commit` 路径获取锁 | 立即返回 `run_locked` / `baseline_commit_in_progress`，无任何重试或等待；注入时钟零推进 |
+| UT-S33-60 | 不可恢复硬门与死锁回收零回退 | ① journal=`prepared|committing` 且 staging/backup 损坏；② 死进程持锁夹具 | ① 读入口经重试取到锁后执行恢复门；② 读入口获取死进程锁 | ① 前滚与回滚均失败时仍硬报 `baseline_commit_in_progress`，标准资源读取哨兵为 0；② 死锁回收协议（marker 仲裁、原子替换）行为与 0.14.12 逐字一致，回收成功后正常读取 |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S33-10 | 多进程读者串行化不假阳性 | 临时项目无 writer、无未终结 journal；真实多进程、真实时钟 | 8 个独立子进程并发执行经读取门的只读命令；随后在真实 seed commit 持锁期间再并发执行读者 | 第一阶段全部成功、无 `baseline_commit_in_progress`、结束后无残留锁；第二阶段若 commit 持锁超读者预算则读者如实报 `baseline_commit_in_progress`，且 writer 提交不受干扰、结果全新一致 |
+
+### golden 边界
+
+- 锁空闲路径零行为差异，既有 S33 golden 不重拍。
+- 超预算失败复用既有错误 envelope golden；禁止把重试期间的中间状态录入 golden。
+
+> 测试实现必须写 OpenLogos reporter；多进程用例的 evidence 须含各进程退出码、错误码计数与锁文件残留检查结果。
+
+### 追溯与覆盖
+
+- AC-READLOCK-02 重试参数与注入：UT-S33-58。
+- AC-READLOCK-03 预算内成功：UT-S33-56。
+- AC-READLOCK-04 预算耗尽如实报错：UT-S33-57。
+- AC-READLOCK-05 写路径 fail-fast：UT-S33-59。
+- AC-READLOCK-06 硬门与死锁回收零回退：UT-S33-60。
+- AC-READLOCK-01 并发不假阳性：ST-S33-10。
+- 功能规格：§2.54；架构：§四.B；场景：S33 baseline seed 事务与读取门。

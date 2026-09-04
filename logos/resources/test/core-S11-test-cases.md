@@ -326,3 +326,34 @@ UT-S11-74、ST-S11-43必须由真实状态读取路径执行并逐ID写OpenLogos
 - AC-YAMLW-05 处置权归人、只读不改写：ST-S11-44。
 - golden 零漂移边界：UT-S11-77。
 - 场景：S11 YAML 降级在人类可读通道的告警出口；功能规格：§2.47.3；架构：§三十八.3；既有机器通道锚：`ST-JSON-23`；安装态：SMOKE-core-169。
+
+## S11 并发只读读取门有界重试测试（fix-baseline-readlock-reader-contention）
+
+> 本节补充 S11 status 读取门的读锁重试回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S11-78 | status 读锁区间在锁被占时走有界重试 | 注入可控时钟与预算；在 status 某读锁区间进入前由测试夹具持有模块锁，并在预算内（如 300ms 时点）释放 | `status --format json` | 命令成功且输出与无竞争基线逐字段一致；重试退避序列符合 25/50/100/200/400ms 封顶语义；读取哨兵证明恢复门四步在取到锁后才执行 |
+| UT-S11-79 | writer 真持锁超预算仍如实报错 | 夹具全程持有模块锁且注入时钟推进超过总预算 2000ms | `status --format json` | 非零 `baseline_commit_in_progress` error envelope，字段与既有合同逐字一致；不输出任何从半新集合派生的 modules/coverage/action；不干扰持锁方 |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S11-45 | 并发 N 路只读 status 全零退出且投影一致 | 临时项目无 writer、无未终结 journal；不注入时钟（真实并发） | 8 路并发 `status --format json`，收集退出码与输出；随后串行执行一次作为基线 | 8 路全部零退出；各输出的 modules/phase/active_change 投影与串行基线一致；无 `baseline_commit_in_progress`；结束后无残留锁文件 |
+
+### golden 边界
+
+- 既有无竞争路径的 status golden 不重拍——重试语义在锁空闲时零开销、零行为差异。
+- 超预算失败是操作错误夹具，复用既有 `baseline_commit_in_progress` error envelope golden，不得新增第二种错误形态。
+
+> 测试实现必须写 OpenLogos reporter；并发用例须记录各路退出码与错误码计数作为 evidence。
+
+### 追溯与覆盖
+
+- AC-READLOCK-01 并发全零退出：ST-S11-45。
+- AC-READLOCK-03 预算内取锁成功：UT-S11-78。
+- AC-READLOCK-04 真持锁如实报错：UT-S11-79。
+- 场景：S11 并发只读读取门有界重试（EX-RL-1、EX-RL-2）；功能规格：§2.54；架构：§四.B。

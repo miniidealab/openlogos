@@ -331,6 +331,7 @@ sequenceDiagram
 2. `prepared|committing` 等未终结 journal 必须在锁内前滚到全新集合或回滚到全旧集合；恢复成功后才进入原 S11 Step 2。
 3. 无法恢复时返回 `baseline_commit_in_progress` 操作错误；JSON 使用统一 error envelope，可携 module/run/journal 与修复提示，但不得伪装成 `success:true`，也不得输出从半新集合派生的 `modules[].phase_progress`、coverage、active_change 或建议。
 4. 仅 open run/未提交 staging 且无未终结 commit journal 属安全 partial：排除 staging 后继续正常 status，兼容 `baseline_seed_state: partial`。
+5. **读锁获取有界重试（fix-baseline-readlock-reader-contention）**：进入本门取模块锁时，锁被占不再立即失败，而是按架构 §四.B 有界指数退避重试（默认总预算 2000ms、25ms 起步、单次封顶 400ms）；预算内取到锁 → 走上述 1～4 不变；预算耗尽仍被占用 → 按第 3 条返回 `baseline_commit_in_progress`。status 单次执行的每个读锁区间独立适用同一语义。
 
 ### 不变量
 
@@ -595,3 +596,51 @@ sequenceDiagram
 - 功能规格：§2.47.3。
 - 架构：§三十八.3。
 - 测试：UT-S11-75～UT-S11-77、ST-S11-44；安装态 SMOKE-core-169。
+
+## S11 并发只读读取门有界重试（fix-baseline-readlock-reader-contention）
+
+### 时序分支
+
+本节补充「读取门」在锁被占时的重试分支，是「status 的 seed journal 前置恢复门」的获取时序细化：
+
+```mermaid
+sequenceDiagram
+    actor U as 用户或宿主
+    participant C as status/next 等读取入口
+    participant L as 模块级事务锁（排他）
+    participant J as SeedJournalRecovery
+
+    U->>C: 并发执行只读命令
+    C->>L: acquireLock（有界重试）
+    alt 锁空闲或预算内他者释放
+        L-->>C: 取到锁
+        C->>J: 既有恢复门四步（不变）
+        J-->>C: 全旧或全新一致视图
+        C-->>U: 正常输出（与串行执行一致）
+    else writer 真持锁且超预算（默认 2000ms）
+        L-->>C: 预算耗尽
+        C-->>U: baseline_commit_in_progress（合同不变）
+    end
+```
+
+### 异常与边界
+
+#### EX-RL-1：并发只读互撞
+- **触发条件**：无 writer、无未终结 journal，N 个只读命令并发进入读取门（含同一 status 进程内的多个读锁区间与他进程碰撞）。
+- **期望响应**：读者靠排他锁串行化 + 有界重试全部成功；各输出与串行执行逐字段一致；不出现 `baseline_commit_in_progress`。
+- **副作用**：无写入；锁文件在各读临界区结束后不残留。
+
+#### EX-RL-2：writer 真持锁超预算
+- **触发条件**：seed commit 全程持锁且超过读者重试预算。
+- **期望响应**：读者如实返回 `baseline_commit_in_progress`，error envelope 与既有合同逐字一致；不读半新集合。
+- **副作用**：无写入；不干扰 writer 的提交或死锁回收。
+
+### 不变量
+
+- 重试只改变「锁获取」时序；恢复门四步、不可恢复硬门、安全 partial 分流全部零回退。
+- status、next、index、sync、coverage 与 S39 EvidenceScanner 复用同一 `acquireLock` 重试入口，不得各自复制重试分支。
+
+### 追溯
+
+- 需求：AC-READLOCK-01～06；功能规格：§2.54；架构：§四.B。
+- 测试：UT-S11-78～UT-S11-79、ST-S11-45；安装态：SMOKE-core-177。

@@ -2445,3 +2445,29 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 | AC-SLICEFIX-10 | 既有 `SMOKE-core-175` 的 initial-plan 全链、写盘失败回滚、`[code]` 冻结与归档只读断言全部保持通过（零回归） |
 | AC-SLICEFIX-11 | 新增公开 CLI 级 smoke 全程穿过 `openlogos slice transaction`，不以库级调用作为闭环证据；打到固定 `0.14.11` 上必须失败 |
 | AC-SLICEFIX-12 | 固定 `0.14.12` tarball 完成隔离安装与本机全局安装态验证，`0.14.11→0.14.12→0.14.11` 往返后各 identity 与 tarball SHA-256 一致 |
+
+## 并发只读命令可用性与读锁 reader 竞争假阳性修复
+
+来源：RunLogos 现场 bug report（runlogos 仓 `logos/resources/reference/runlogos-cli-panel-transient-status-error-wipes-active-change-bug-report.md` 附录 A，2026-09-03，P1）。0.14.12 及之前版本中，`withBaselineReadLock` / `withRecoveredReadLocks` / `readGate` 三个**读路径**入口取的是模块级排他锁（`<module>.commit.lock`），且锁获取对「活进程持锁」立即失败、零等待零重试。两个纯只读命令互相触发 `baseline_commit_in_progress` 假阳性：现场 8 个并发 `openlogos status --format json`（无任何 writer、无未终结 journal）7 个非零退出；本仓 2026-09-03 在 0.14.12 上原样复现（8 并发 7 失败）。`status` 单次执行含多个读锁区间，碰撞窗口成倍放大；一个基线字段派生失败即导致整条 status 不可读。
+
+### 核心需求
+
+1. **并发只读互不致错**：无 writer 在飞行、无未终结 seed commit journal 时，任意并发度的机器读取命令（`status` / `next` 等所有经读取门的入口）必须全部成功，且各自输出与串行执行时一致。
+2. **读路径锁获取有界重试**：三个读路径入口——`withBaselineReadLock`、`withRecoveredReadLocks`、`readGate`——的锁获取由「一次尝试立即失败」改为「有界指数退避重试」；默认总预算 2000ms，退避序列 25/50/100/200/400ms 起步、单次封顶 400ms；预算与时钟可注入供测试。
+3. **错误码语义收窄而非改写**：`baseline_commit_in_progress` 收窄为「写事务确实在飞行（预算内等不到锁）或 journal 不可恢复」；错误码名称、JSON error envelope 合同、非零退出行为均不变，下游无需适配。
+4. **写路径一字不动**：`begin` / `commit` 的锁获取保持 fail-fast（`run_locked` / `baseline_commit_in_progress` 立即返回）；linkSync O_EXCL 仲裁与死锁回收协议逐字保留。
+5. **恢复门语义零回退**：预算内取到锁 → 走既有恢复门四步逻辑不变；不可恢复 journal 的硬门（不读半新集合、不派生正常投影）不变。
+6. 修复以新的本地 patch candidate `0.14.13` 交付，当前本机全局 `0.14.12` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-READLOCK-01 | 无 writer、无未终结 journal 时，8 路并发 `openlogos status --format json` 全部零退出，各输出的 modules/phase/active_change 投影一致；不出现任何 `baseline_commit_in_progress` |
+| AC-READLOCK-02 | `withBaselineReadLock` / `withRecoveredReadLocks` / `readGate` 的锁获取具备有界指数退避重试：默认总预算 2000ms、25ms 起步、单次封顶 400ms；预算与时钟可注入 |
+| AC-READLOCK-03 | 锁被他者短暂持有、预算内释放时，读者取到锁并走既有恢复门逻辑，输出与无竞争时逐字段一致 |
+| AC-READLOCK-04 | writer 真持锁（seed commit 在飞行）且超预算时，读者仍如实返回 `baseline_commit_in_progress`，error envelope 字段与既有合同逐字一致 |
+| AC-READLOCK-05 | 写路径 `begin` / `commit` 的锁获取保持 fail-fast，无重试、无等待；死锁回收协议行为不变 |
+| AC-READLOCK-06 | 不可恢复 journal 场景下（前滚与回滚均失败），读者即使经重试取到锁仍硬报 `baseline_commit_in_progress`，标准资源读取哨兵为 0（硬门零回退） |
+| AC-READLOCK-07 | 版本身份提升为 `0.14.13`，`0.14.12` 冻结为回滚基线；隔离矩阵与本机全局部署完成后各 identity 一致 |
+| AC-READLOCK-08 | 安装态并发 smoke（SMOKE-core-177）在 `0.14.13` 全过；同一断言打到固定 `0.14.12` 上必须复现并发假阳性（零回归对照，防断言空转） |

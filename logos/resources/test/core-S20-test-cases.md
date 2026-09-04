@@ -179,3 +179,25 @@
 - 隔离 fixture 必须预置项目指令、settings、不同 identity 插件、未知文件和原生记忆样本。
 - 对成功与失败路径保存所有不可由 OpenLogos 拥有的资产前后哈希，并断言配置只含规范 id。
 - 每个用例通过 OpenLogos reporter 追加 `test_id`、`scenario_id="S20"`、`status`、`duration_ms`、`evidence` 到结果账本。
+
+## S20 读取门并发只读不假阳性测试（fix-baseline-readlock-reader-contention）
+
+> 本节补充 S20 读取门（规则 11）的读锁重试回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S20-41 | change/next 入口读取门在 reader 竞争下不假阳性 | adopted 临时项目，无 writer、无未终结 journal；注入可控时钟；夹具短暂持有模块锁并在预算内释放 | 执行经读取门的入口（如 `next` 与 change 前置读取路径） | 入口成功；不出现 `baseline_commit_in_progress`；恢复门四步与安全 partial 分流行为与无竞争时一致 |
+| UT-S20-42 | writer 真持锁时读取门仍硬阻断 | 夹具模拟 seed commit 全程持锁并注入时钟超过总预算 | 执行同一读取门入口 | 非零 `baseline_commit_in_progress`，EX-11.1 分流语义零回退：不读取 resources/index、不输出 change 建议；error envelope 合同不变 |
+
+### 自动化与证据要求
+
+- 两用例复用 S33 的锁注入夹具，不得各自复制重试实现或直接操作锁文件内部格式。
+- 用例结束必须断言无残留锁文件与 marker。
+
+### 追溯与覆盖
+
+- AC-READLOCK-01/03 读者不假阳性：UT-S20-41。
+- AC-READLOCK-04/06 真冲突硬阻断：UT-S20-42。
+- 场景：S20 读取门锁获取有界重试补充（规则 11、EX-11.1）；功能规格：§2.54；架构：§四.B。

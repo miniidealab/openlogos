@@ -1103,3 +1103,52 @@
 - 功能规格：§2.53.5.1、§2.53.6.1、§2.53.6.2；架构：§四十三.2.1。
 - 场景：S19、S28、S32；UT/ST：UT-S32-59～60、ST-S32-20、UT-S28-47～48、ST-S28-15、UT-S19-35。
 - 部署方案：OpenLogos 0.14.12 切片事务终态自校验本机全局部署方案。
+
+## OpenLogos 0.14.13 并发只读读锁重试 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.13` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-177` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.13`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工创建任何 marker**，**不得手工删除或改写模块锁文件与 journal 来构造前提**（人为持锁必须经受控夹具进程以协议内方式持有）。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-177 | 0.14.13 安装态并发只读全零退出与真冲突如实报错 | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **并发复现路径**：临时 adopted 项目内（无 writer、无未终结 journal）8 路并发执行全局 `openlogos status --format json`，收集全部退出码、错误码与输出投影；③ 核对 8 路全部零退出、无 `baseline_commit_in_progress`、各输出 modules/phase 投影一致、结束后无残留 `<module>.commit.lock`；④ **真冲突对照**：受控夹具进程以协议内方式持有模块锁超过读者预算期间执行 status，核对非零退出且错误码为 `baseline_commit_in_progress`、envelope 合同不变；⑤ 释放后重跑 status，核对恢复零退出；⑥ 回归抽查既有 `SMOKE-core-176` 的关键断言（切片事务终态自校验与恢复可达）；⑦ 演练 `0.14.12→0.14.13→0.14.12→0.14.13` 并复核每阶段 identity 与 ②③ 的结论 | ③ **8 路必须全部零退出**——任一路出现 `baseline_commit_in_progress` 即整体 FAIL，那正是被修复的缺陷；④ 真持锁必须如实报错——若成功返回说明硬门被弱化，整体 FAIL；⑤ 释放后可恢复；⑥ 既有断言零回归；⑦ 往返无混装且结论不变；全程无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-177`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须写显式 `skip` 记录并携带缺失项，禁止静默零记录退出。
+3. **并发断言必须由 N 个真实独立 CLI 进程构成**。以单进程库级调用或注入时钟模拟并发的步骤一律不计入闭环证据。
+4. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、② 各路退出码与错误码计数、③ 投影一致性对比结论与锁残留检查、④ 持锁窗口时长与 status 退出码/错误码、⑦ 回滚每阶段 identity。
+5. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+6. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### 零回归对照（强制）
+
+同一 runner 的步骤 ② 必须在固定 `0.14.12` 上执行一次并**记录其失败点**：8 并发中应有多路以 `baseline_commit_in_progress` 非零退出（缺陷本身，2026-09-03 实测 8 路 7 失败）。**若步骤 ② 在 0.14.12 上也全零退出，说明并发断言是空转（并发度或时序未撞锁），必须重写用例而非放行部署。** 步骤 ④ 在两版本上行为应一致（该硬门语义不变）。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-177` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ③ 与 ④ 是双红线**：前者失败意味着并发假阳性未消除，后者失败意味着真冲突硬门被弱化——二者任一失败即整体 FAIL，不得以「其余步骤都过」为由记 pass。
+- 观察到 runner 手工删除锁文件或 journal 构造前提，直接 FAIL。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ③ 或 ④ 失败：立即以固定 `0.14.12` 回滚并报告触发条件——status 读取门是本仓与 RunLogos 面板的关键路径，不得带伤运行。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.12` 并报告环境状态；未证明一致前阻断后续动作。
+- 不得为让断言通过而降低并发度、在读者间插入人工间隔、放宽预算或改写错误码合同。
+
+### 追溯
+
+- 需求：AC-READLOCK-01～08。
+- 功能规格：§2.54；架构：§四.B。
+- 场景：S11、S20、S33；UT/ST：UT-S33-56～60、ST-S33-10、UT-S11-78～79、ST-S11-45、UT-S20-41～42。
+- 部署方案：OpenLogos 0.14.13 读锁竞争假阳性修复本机全局部署方案。
