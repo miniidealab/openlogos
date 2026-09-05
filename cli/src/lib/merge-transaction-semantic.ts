@@ -9,7 +9,7 @@ import type {
 export const MERGE_TRANSACTION_SEMANTIC_SCHEMA = 'openlogos/merge-transaction-semantic@1' as const;
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const PHASES = new Set(['collecting', 'ready', 'sealed', 'applying', 'completed', 'failed']);
-const ACTIONS = new Set(['submit_content', 'seal', 'apply', 'recover', 'abort']);
+const ACTIONS = new Set(['submit_content', 'seal', 'apply', 'recover', 'abort', 'reopen']);
 const CLASSIFICATIONS = new Set([
   'invalid_phase', 'action_not_allowed', 'content_slot_missing', 'slot_identity_mismatch',
   'source_hash_mismatch', 'before_hash_mismatch', 'target_set_mismatch', 'seal_mismatch',
@@ -74,7 +74,10 @@ function expectedActions(tx: MergeTransactionProjection): MergeTransactionAction
   if (tx.phase === 'ready') return ['seal', 'abort'];
   if (tx.phase === 'sealed') return ['apply', 'abort'];
   if (tx.phase === 'applying') return ['recover'];
-  if (tx.phase === 'failed' && tx.classification === 'recovery_required') return ['recover'];
+  // 终态出路（0.14.17，功能规格 §2.58）：fatal failed 可 abort、completed 可 reopen——
+  // 与 merge-transaction.ts 的 allowed() 保持同一映射，二者不得漂移。
+  if (tx.phase === 'failed') return tx.classification === 'recovery_required' ? ['recover'] : ['abort'];
+  if (tx.phase === 'completed') return ['reopen'];
   return [];
 }
 

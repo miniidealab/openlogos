@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.14.16",
+  "version": "0.14.17",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -17,7 +17,7 @@
     },
     {
       "path": "skills/merge-executor/SKILL.md",
-      "sha256": "1490d2b110488440d45dd157d0f057c34c5e34857d11eaa81d9974875a60907f"
+      "sha256": "9e5db93aa885dcea35fb45aa8ec8d473f8979493b04b1c2eeaac3e8952936f73"
     },
     {
       "path": "skills/merge-executor/SKILL.en.md",
@@ -65,13 +65,13 @@
     },
     {
       "path": "spec/schema/merge-transaction.schema.json",
-      "sha256": "bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421"
+      "sha256": "2b7bebc61a68f610446b85dc9d814dc372377252cdb4765d04bce9da69d8e505"
     }
   ],
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "7518fef494855317c366b9428ec35181eca8d473f58195369900754812896685"
+      "sha256": "e924e13a53c9fe8c93005592611be4eaa1c6f6a6aad5698e47121ec96c42e37f"
     },
     {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
@@ -98,5 +98,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "2fd01e3dd913e292ab91ae91bac014474e63a025ae0223715dea2d9c2669d6bf"
+  "payloadHash": "e3d84345af1ce727caa4540534fecbeec173f10cd3dc09d14a193b76b6be08cb"
 }

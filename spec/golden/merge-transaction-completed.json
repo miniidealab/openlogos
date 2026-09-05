@@ -4,8 +4,10 @@
   "slug": "completed-golden",
   "phase": "completed",
   "classification": null,
-  "allowed_actions": [],
-  "next_action": null,
+  "allowed_actions": [
+    "reopen"
+  ],
+  "next_action": "reopen",
   "target_set_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
   "seal_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
   "schema_sha256": "sha256:bfeb05a1577729db52dabff340804c63a99a018815d85789800f0198f1107421",

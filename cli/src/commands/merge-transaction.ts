@@ -5,11 +5,11 @@ import { makeEnvelope, VERSION } from '../lib/json-output.js';
 import {
   abortMergeTransaction, applyMergeTransaction, createMergeTransaction, MergeTransactionError,
   MERGE_TRANSACTION_ACTION_COMMANDS, readMergeTransaction, recoverMergeTransaction,
-  sealMergeTransaction, submitMergeContent,
+  reopenMergeTransaction, sealMergeTransaction, submitMergeContent,
   type MergeTransactionProjection,
 } from '../lib/merge-transaction.js';
 
-type TransactionCommand = 'status' | 'submit-content' | 'seal' | 'apply' | 'recover' | 'abort';
+type TransactionCommand = 'status' | 'submit-content' | 'seal' | 'apply' | 'recover' | 'abort' | 'reopen';
 
 /** status 之外的动作都会写事务、receipt 或 marker；归档提案只放行只读动作。 */
 const READ_ONLY_TRANSACTION_COMMANDS = new Set<TransactionCommand>(['status']);
@@ -138,7 +138,13 @@ export function mergeTransactionCommand(
     else if (command === 'apply') result = applyMergeTransaction(root, proposalDir);
     else if (command === 'recover') result = recoverMergeTransaction(root, proposalDir);
     else if (command === 'abort') result = abortMergeTransaction(proposalDir);
-    else {
+    else if (command === 'reopen') {
+      const reasonIndex = args.indexOf('--reason');
+      result = reopenMergeTransaction(root, proposalDir, slug, {
+        reason: reasonIndex >= 0 ? (args[reasonIndex + 1] ?? '') : '',
+        confirmSpecMerged: args.includes('--confirm-spec-merged'),
+      });
+    } else {
       const slotIndex = args.indexOf('--slot');
       const fileIndex = args.indexOf('--file');
       const slot = slotIndex >= 0 ? args[slotIndex + 1] : undefined;

@@ -181,10 +181,12 @@
             "type": "null"
           },
           "allowed_actions": {
-            "maxItems": 0
+            "const": [
+              "reopen"
+            ]
           },
           "next_action": {
-            "type": "null"
+            "const": "reopen"
           },
           "receipt": {
             "$ref": "#/$defs/receipt"
@@ -250,10 +252,12 @@
             "const": "failed"
           },
           "allowed_actions": {
-            "maxItems": 0
+            "const": [
+              "abort"
+            ]
           },
           "next_action": {
-            "type": "null"
+            "const": "abort"
           },
           "receipt": {
             "type": "null"
@@ -351,10 +355,12 @@
       "then": {
         "properties": {
           "allowed_actions": {
-            "maxItems": 0
+            "const": [
+              "abort"
+            ]
           },
           "next_action": {
-            "type": "null"
+            "const": "abort"
           },
           "receipt": {
             "type": "null"
@@ -421,7 +427,8 @@
         "seal",
         "apply",
         "recover",
-        "abort"
+        "abort",
+        "reopen"
       ]
     },
     "classification": {
@@ -441,7 +448,9 @@
         "unsupported_contract",
         "recovery_required",
         "internal_failure",
-        "aborted"
+        "aborted",
+        "reopen_reason_required",
+        "reopen_confirm_required"
       ]
     },
     "contentSlotSummary": {

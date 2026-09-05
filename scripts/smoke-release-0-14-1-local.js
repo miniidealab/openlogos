@@ -338,9 +338,12 @@ function exerciseAbortAndActionParity(entry) {
     ]);
     if (unknown.status === 0) throw new Error('未知 transaction action 未 fail-closed');
     const aborted = publicJson(entry, fixture.root, ['merge', 'transaction', 'abort', '--slug', fixture.slug]);
+    // 版本双容：0.14.16 及以前 aborted 动作域为空；0.14.17 起携带幂等 abort 出边（§2.58.2）。
+    const abortedActions = JSON.stringify(aborted.allowed_actions);
+    const terminalOk = (abortedActions === '[]' && aborted.next_action === null)
+      || (abortedActions === '["abort"]' && aborted.next_action === 'abort');
     if (status.next_action !== 'submit_content' || aborted.phase !== 'failed'
-      || aborted.classification !== 'aborted' || aborted.receipt !== null
-      || aborted.allowed_actions.length !== 0 || aborted.next_action !== null) {
+      || aborted.classification !== 'aborted' || aborted.receipt !== null || !terminalOk) {
       throw new Error('abort/action parity 公开终态不正确');
     }
     return { known_actions: ['submit_content', 'seal', 'apply', 'recover', 'abort'], unknown_rejected: true };

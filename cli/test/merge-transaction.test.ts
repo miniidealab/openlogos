@@ -885,7 +885,8 @@ describe('OpenLogos merge transaction', () => {
 
   it('UT-S05-43 ST-S05-20 UT-S16-31 UT-S16-32: action-command 注册表与未知值 fail-closed', async () => {
     expect(MERGE_TRANSACTION_ACTION_COMMANDS).toEqual({
-      submit_content: 'submit-content', seal: 'seal', apply: 'apply', recover: 'recover', abort: 'abort',
+      // 0.14.17 终态出路：completed 携带 reopen 出边，消费者映射新增 reopen→reopen（功能规格 §2.58.6）
+      submit_content: 'submit-content', seal: 'seal', apply: 'apply', recover: 'recover', abort: 'abort', reopen: 'reopen',
     });
     for (const [action, command] of Object.entries(MERGE_TRANSACTION_ACTION_COMMANDS)) {
       expect(mergeTransactionCommandForAction(action)).toBe(command);
@@ -926,7 +927,8 @@ describe('OpenLogos merge transaction', () => {
       ].map(path => sha256(readFileSync(join(f.root, ...path.split('/')))));
       const aborted = abortMergeTransaction(f.proposalDir);
       expect(aborted).toMatchObject({
-        phase: 'failed', classification: 'aborted', allowed_actions: [], next_action: null,
+        // 0.14.17 终态出路（§2.58.2）：aborted 属 fatal 分类，携带幂等 abort 出边（重建走归档让位）
+        phase: 'failed', classification: 'aborted', allowed_actions: ['abort'], next_action: 'abort',
         receipt: null, artifact_hashes: [],
       });
       expect(aborted.aborted_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -960,8 +962,9 @@ describe('OpenLogos merge transaction', () => {
     const fatalStored = JSON.parse(readFileSync(fatalPath, 'utf8'));
     fatalStored.phase = 'failed'; fatalStored.classification = 'internal_failure';
     writeFileSync(fatalPath, `${JSON.stringify(fatalStored, null, 2)}\n`);
-    expect(readMergeTransaction(fatal.proposalDir)).toMatchObject({ allowed_actions: [], next_action: null, aborted_at: null });
-    expect(() => abortMergeTransaction(fatal.proposalDir)).toThrow(/禁止 abort/);
+    // 0.14.17 终态出路（§2.58.2）：fatal failed 不再是死局——携带 abort 出边并可幂等转 aborted
+    expect(readMergeTransaction(fatal.proposalDir)).toMatchObject({ allowed_actions: ['abort'], next_action: 'abort', aborted_at: null });
+    expect(abortMergeTransaction(fatal.proposalDir).classification).toBe('aborted');
     fatalStored.classification = 'recovery_required';
     writeFileSync(fatalPath, `${JSON.stringify(fatalStored, null, 2)}\n`);
     expect(readMergeTransaction(fatal.proposalDir)).toMatchObject({ allowed_actions: ['recover'], next_action: 'recover' });
@@ -1023,7 +1026,8 @@ describe('OpenLogos merge transaction', () => {
     sealMergeTransaction(f.root, f.proposalDir);
     const completed = applyMergeTransaction(f.root, f.proposalDir);
     expect(completed.phase).toBe('completed');
-    expect(completed.allowed_actions).toEqual([]);
+    // 0.14.17 终态出路（§2.58.3）：completed 携带唯一 reopen 出边
+    expect(completed.allowed_actions).toEqual(['reopen']);
     expect(completed.receipt?.receipt_sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(readFileSync(join(f.root, 'logos/resources/decisions/core-D07-choice.md'), 'utf8')).toContain('D07');
     expect(readFileSync(join(f.root, 'logos/resources/prd/1-product-requirements/core-01.md'), 'utf8')).toContain('事务需求');
@@ -1071,7 +1075,7 @@ describe('OpenLogos merge transaction', () => {
       merge_transaction_golden_sha256: hash('7'),
       semantic_validator: 'openlogos/merge-transaction-semantic@1',
     });
-    expect(facts.cli_version).toBe('0.14.16');
+    expect(facts.cli_version).toBe('0.14.17');
     for (const field of [
       'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
       'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',

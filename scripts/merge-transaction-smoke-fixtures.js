@@ -166,8 +166,10 @@ async function executeAbortContract() {
       const first = json(f.root, ['merge', 'transaction', 'abort', '--slug', f.slug]);
       const terminalBytes = readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json'));
       const second = json(f.root, ['merge', 'transaction', 'abort', '--slug', f.slug]);
-      if (first.phase !== 'failed' || first.classification !== 'aborted' || first.allowed_actions.length !== 0
-        || first.next_action !== null || first.receipt !== null || first.aborted_at !== second.aborted_at
+      // 0.14.17 终态出路（§2.58.2）：aborted 携带幂等 abort 出边（重建走 merge 的归档让位）
+      if (first.phase !== 'failed' || first.classification !== 'aborted'
+        || JSON.stringify(first.allowed_actions) !== '["abort"]'
+        || first.next_action !== 'abort' || first.receipt !== null || first.aborted_at !== second.aborted_at
         || !terminalBytes.equals(readFileSync(join(f.proposalDir, 'MERGE_TRANSACTION.json')))
         || existsSync(join(f.proposalDir, 'MERGE_RECEIPT.json')) || existsSync(join(f.proposalDir, 'SPEC_MERGED'))) {
         throw new Error(`abort ${phase} 终态、清理或幂等不成立`);

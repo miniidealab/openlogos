@@ -52,12 +52,13 @@ function bundledContractPath(relativePath: string): string {
 }
 
 export type MergeTransactionPhase = 'collecting' | 'ready' | 'sealed' | 'applying' | 'completed' | 'failed';
-export type MergeTransactionAction = 'submit_content' | 'seal' | 'apply' | 'recover' | 'abort';
+export type MergeTransactionAction = 'submit_content' | 'seal' | 'apply' | 'recover' | 'abort' | 'reopen';
 export type MergeTransactionClassification =
   | 'invalid_phase' | 'action_not_allowed' | 'content_slot_missing' | 'slot_identity_mismatch'
   | 'source_hash_mismatch' | 'before_hash_mismatch' | 'target_set_mismatch' | 'seal_mismatch'
   | 'apply_conflict' | 'receipt_mismatch' | 'legacy_manifest_rejected' | 'unsupported_contract'
-  | 'recovery_required' | 'internal_failure' | 'aborted';
+  | 'recovery_required' | 'internal_failure' | 'aborted'
+  | 'reopen_reason_required' | 'reopen_confirm_required';
 
 export const MERGE_TRANSACTION_ACTION_COMMANDS: Readonly<Record<MergeTransactionAction, string>> = Object.freeze({
   submit_content: 'submit-content',
@@ -65,6 +66,7 @@ export const MERGE_TRANSACTION_ACTION_COMMANDS: Readonly<Record<MergeTransaction
   apply: 'apply',
   recover: 'recover',
   abort: 'abort',
+  reopen: 'reopen',
 });
 
 export function mergeTransactionCommandForAction(action: string): string | null {
@@ -316,7 +318,10 @@ function allowed(tx: StoredTransaction): MergeTransactionAction[] {
   if (tx.phase === 'ready') return ['seal', 'abort'];
   if (tx.phase === 'sealed') return ['apply', 'abort'];
   if (tx.phase === 'applying') return ['recover'];
-  if (tx.phase === 'failed') return tx.classification === 'recovery_required' ? ['recover'] : [];
+  // 终态出路（0.14.17，功能规格 §2.58）：fatal failed 可 abort 后经归档让位重建；
+  // completed 携带受控 reopen 出边（提案内二次 merge 通道）。终态不再是死局。
+  if (tx.phase === 'failed') return tx.classification === 'recovery_required' ? ['recover'] : ['abort'];
+  if (tx.phase === 'completed') return ['reopen'];
   return [];
 }
 
@@ -426,8 +431,125 @@ function planTargets(root: string, proposalDir: string, slug: string): { module:
   return { module, targets, planHash };
 }
 
+export const MERGE_REOPENS_FILE = 'MERGE_REOPENS.jsonl';
+
+/**
+ * 终态事务让位前先归档（§2.58.1，对齐切片侧 archiveTerminalTransaction）：
+ * 「可归档历史」是字面意思——不占活跃名额，但 receipt 与哈希不销毁、仅供审计。
+ */
+function archiveMergeTerminalTransaction(proposalDir: string, transactionId: string): void {
+  const source = transactionPath(proposalDir);
+  if (!existsSync(source)) return;
+  const dir = join(proposalDir, 'merge-transactions');
+  mkdirSync(dir, { recursive: true });
+  renameSync(source, join(dir, `${transactionId}.json`));
+  const receipt = join(proposalDir, 'MERGE_RECEIPT.json');
+  if (existsSync(receipt)) renameSync(receipt, join(dir, `${transactionId}.receipt.json`));
+}
+
+/**
+ * completed 受控重开（0.14.17，功能规格 §2.58.3，架构 §四十五）：提案内二次 merge 通道。
+ * 先行全量校验（零副作用的失败面），再按序执行「留痕 → 归档旧事务与 receipt →
+ * （确认路径）作废 SPEC_MERGED → 按当前 delta 重新规划新 collecting 事务」；
+ * 任一步失败回退已做步骤，整体不生效。下游产物不级联删除（指纹自然传导，C01）。
+ */
+export function reopenMergeTransaction(
+  root: string, proposalDir: string, slug: string,
+  options: { reason: string; confirmSpecMerged?: boolean },
+): MergeTransactionProjection {
+  const tx = readStored(proposalDir);
+  if (tx.phase !== 'completed') {
+    throw new MergeTransactionError('action_not_allowed',
+      `phase=${tx.phase} 禁止 reopen（仅 completed 携带受控重开出边）`, false, projectMergeTransaction(tx, proposalDir));
+  }
+  const reason = (options.reason ?? '').trim();
+  if (reason === '') {
+    throw new MergeTransactionError('reopen_reason_required',
+      'reopen 需要非空 --reason "<原因>"——留痕是二次 merge 的前置条件，不接受无原因重开', false,
+      projectMergeTransaction(tx, proposalDir));
+  }
+  const markerPath = join(proposalDir, SPEC_MERGED_MARKER);
+  let specMergedPresent = false;
+  let markerBytes: Buffer | null = null;
+  try {
+    specMergedPresent = existsSync(markerPath);
+    if (specMergedPresent) markerBytes = readFileSync(markerPath);
+  } catch (error) {
+    // marker 状态不可判定 → fail-closed，无任何写副作用（AC-MTXOUT-03）。
+    throw new MergeTransactionError('internal_failure',
+      `SPEC_MERGED 状态不可判定，拒绝重开：${error instanceof Error ? error.message : String(error)}`, false);
+  }
+  const confirmed = options.confirmSpecMerged === true;
+  if (specMergedPresent && !confirmed) {
+    throw new MergeTransactionError('reopen_confirm_required',
+      '规格已合并（SPEC_MERGED 在场）。确认要作废已合并事实并重合并，请附 --confirm-spec-merged 重试；'
+      + '重开将作废 SPEC_MERGED，下游产物经指纹失配自然收敛、不被级联删除', false,
+      projectMergeTransaction(tx, proposalDir));
+  }
+
+  // ── 校验全部通过，按序执行；失败回退到全旧 ──
+  const auditPath = join(proposalDir, MERGE_REOPENS_FILE);
+  const auditBefore = existsSync(auditPath) ? readFileSync(auditPath) : null;
+  const auditLine = `${JSON.stringify({
+    schema: 'openlogos/merge-reopen@1',
+    old_transaction_id: tx.transaction_id,
+    reopened_at: new Date().toISOString(),
+    reason,
+    spec_merged_present: specMergedPresent,
+    confirmed,
+  })}\n`;
+  const archivedTxPath = join(proposalDir, 'merge-transactions', `${tx.transaction_id}.json`);
+  const archivedReceiptPath = join(proposalDir, 'merge-transactions', `${tx.transaction_id}.receipt.json`);
+  const receiptPath = join(proposalDir, 'MERGE_RECEIPT.json');
+  let auditWritten = false;
+  let archived = false;
+  let markerRemoved = false;
+  try {
+    writeFileSync(auditPath, auditBefore === null ? auditLine : Buffer.concat([auditBefore, Buffer.from(auditLine)]));
+    auditWritten = true;
+    archiveMergeTerminalTransaction(proposalDir, tx.transaction_id);
+    archived = true;
+    if (specMergedPresent && confirmed) {
+      rmSync(markerPath, { force: true });
+      markerRemoved = true;
+    }
+    return createMergeTransaction(root, proposalDir, slug);
+  } catch (error) {
+    // 整体不生效：逐步回退已做步骤，保持全旧态。
+    try { if (markerRemoved && markerBytes !== null) writeFileSync(markerPath, markerBytes); } catch { /* 保守保留诊断 */ }
+    try {
+      if (archived) {
+        renameSync(archivedTxPath, transactionPath(proposalDir));
+        if (existsSync(archivedReceiptPath)) renameSync(archivedReceiptPath, receiptPath);
+      }
+    } catch { /* 保守保留诊断 */ }
+    try {
+      if (auditWritten) {
+        if (auditBefore === null) rmSync(auditPath, { force: true });
+        else writeFileSync(auditPath, auditBefore);
+      }
+    } catch { /* 保守保留诊断 */ }
+    throw error;
+  }
+}
+
 export function createMergeTransaction(root: string, proposalDir: string, slug: string): MergeTransactionProjection {
-  if (existsSync(transactionPath(proposalDir))) return projectMergeTransaction(readStored(proposalDir), proposalDir);
+  if (existsSync(transactionPath(proposalDir))) {
+    const existing = readStored(proposalDir);
+    if (existing.phase === 'completed') {
+      // §2.58.1：completed 受保护——已合并事实不得被静默重建，唯一入口是显式 reopen。
+      throw new MergeTransactionError('action_not_allowed',
+        'completed 合并事务在场：已合并事实不得被静默重建。若需提案内二次 merge，请执行 '
+        + 'openlogos merge transaction reopen --reason "<原因>"（SPEC_MERGED 在场须附 --confirm-spec-merged）',
+        false, projectMergeTransaction(existing, proposalDir));
+    }
+    if (existing.phase === 'failed') {
+      // §2.58.1：终态（含 aborted / fatal 分类）不占活跃名额——归档让位后按当前 delta 重新规划。
+      archiveMergeTerminalTransaction(proposalDir, existing.transaction_id);
+    } else {
+      return projectMergeTransaction(existing, proposalDir);
+    }
+  }
   const planned = planTargets(root, proposalDir, slug);
   const targetSet = digest(canonical(planned.targets.map(({ content_sha256: _c, sealed_sha256: _s, ...target }) => target)));
   const id = `mtx_${plainHash(digest(`${planned.planHash}:${targetSet}`)).slice(0, 24)}`;
@@ -833,7 +955,10 @@ function cleanupMergePrivateArtifacts(proposalDir: string, tx: StoredTransaction
 export function abortMergeTransaction(proposalDir: string): MergeTransactionProjection {
   const tx = readStored(proposalDir);
   if (tx.phase === 'failed' && tx.classification === 'aborted') return projectMergeTransaction(tx, proposalDir);
-  if (!['collecting', 'ready', 'sealed'].includes(tx.phase)) {
+  // 终态出路（§2.58.2）：fatal failed（非 recovery_required）允许 abort 转 aborted，
+  // 随后由 createMergeTransaction 的归档让位路径重建；recovery_required 仍走 recover。
+  const fatalFailed = tx.phase === 'failed' && tx.classification !== 'recovery_required';
+  if (!['collecting', 'ready', 'sealed'].includes(tx.phase) && !fatalFailed) {
     throw new MergeTransactionError('action_not_allowed', `phase=${tx.phase} 禁止 abort`, false, projectMergeTransaction(tx, proposalDir));
   }
   if (existsSync(join(proposalDir, 'MERGE_RECEIPT.json')) || existsSync(join(proposalDir, SPEC_MERGED_MARKER))) {
