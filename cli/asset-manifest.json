@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.14.18",
+  "version": "0.14.19",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -47,7 +47,7 @@
     },
     {
       "path": "dist/i18n.js",
-      "sha256": "900fcd32ba2a262fe0eadf566f4af31bbf00492e11a7b253fb166019f6cee6fe"
+      "sha256": "cc19fa96186e2a97af14da761a957b446e7fa1c8ae6fb1ecd8f6d46d199fdf41"
     }
   ],
   "schemas": [
@@ -71,7 +71,7 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "cf0250b9a6ccf530ebfc00e46bd5b1e5d62fe8c713af01dc09e7683b2f80b9d3"
+      "sha256": "ec8dbfd5b78a93744d42c5c95c44a73ddbe8a4bb99719e943e56e27f0897bc31"
     },
     {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
@@ -98,5 +98,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "7752c9bbb60c79558f2eade8e2d2630556a4521a73c88a3c1dd11bef679f2c12"
+  "payloadHash": "edc74a5cc0c261f8fa94f5ddab09b88b071763271fc76db23faad1ddc05dc5e5"
 }

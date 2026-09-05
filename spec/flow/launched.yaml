@@ -20,6 +20,10 @@
 #   注意：implement 的 loop 定义仍默认在场，但 loop_state 挂出收紧为 implement 进入判据
 #   （code_required ∧ spec_complete ∧ slices_planned ∧ slices_approved，见 flow-spec §12.2），
 #   本文件的 loop 定义不变。向后兼容扩展：flow 文件 schema version: 1 保持不变。
+# fix-merge-flow-transaction-contract：generate-merge-prompt.done_when 改认合并事务在盘
+#   （any_present 增 MERGE_TRANSACTION.json；MERGE_PROMPT marker 为 legacy 测试模式兼容影子），
+#   使 0.14.x 生产路径「openlogos merge 开事务」即为该节点 done 事实，消除前沿死区；
+#   artifacts_hint 同步。flow-derive step 推导与本 done_when 同判据（回归钉两处一致，架构「四十七」）。
 # 这是产品唯一源头；项目实例 logos/flow/launched.yaml 可 extends: builtin:launched 后只写差异。
 # 注：YAML 模板无 md 章节，本 delta 按整文件替换合并。
 version: 1
@@ -68,7 +72,7 @@ subflows:
         dispatch: { idempotent: true, artifacts_hint: ["deltas/"] }
     gate: { type: human, skippable: true }     # 审 delta + 授权合并（关键门，change-reviewer 介入点）
 
-  # ── 合并：生成 MERGE_PROMPT 并应用 delta（纯代码提案整段跳过）──
+  # ── 合并：开启合并事务并应用 delta（0.14.x 事务语义；纯代码提案整段跳过）──
   - id: merge
     name: 合并
     when: delta_required
@@ -77,9 +81,10 @@ subflows:
         name: 生成合并指令
         skill: merge-executor
         produces: null
-        done_when: any_present:[MERGE_PROMPT_GENERATED, MERGE_PROMPT.md]
-        # 生成类：重复生成合并指令安全
-        dispatch: { idempotent: true, artifacts_hint: ["MERGE_PROMPT.md", "MERGE_PROMPT_GENERATED"] }
+        # fix-merge-flow-transaction-contract：生产 done 事实 = 合并事务在盘；MERGE_PROMPT marker 仅 legacy 测试模式兼容
+        done_when: any_present:[MERGE_TRANSACTION.json, MERGE_PROMPT_GENERATED, MERGE_PROMPT.md]
+        # 生成类：开事务/重复生成合并指令安全（非终态幂等返回）
+        dispatch: { idempotent: true, artifacts_hint: ["MERGE_TRANSACTION.json", "MERGE_PROMPT.md", "MERGE_PROMPT_GENERATED"] }
       - id: apply-merge
         name: 应用合并
         skill: merge-executor

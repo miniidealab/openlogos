@@ -43,3 +43,9 @@ export function makeErrorEnvelope(command: string, code: string, message: string
     error: { code, message },
   };
 }
+
+/**
+ * status/next 失败路径的「瞬态类」稳定错误码集合（fix-merge-flow-transaction-contract）。
+ * 宿主据此对可自愈失败做有界恢复；集合增删属合同变更，须走 CLI JSON 合同版本并同步回归快照。
+ */
+export const TRANSIENT_STATUS_ERROR_CODES = Object.freeze(['baseline_commit_in_progress'] as const);

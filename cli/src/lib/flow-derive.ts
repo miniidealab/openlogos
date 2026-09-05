@@ -538,7 +538,7 @@ function detectProposalStepViaFlowRaw(
     return 'ready-to-verify';
   }
 
-  // generate-merge-prompt.done_when（MERGE_PROMPT_GENERATED | MERGE_PROMPT.md）
+  // generate-merge-prompt.done_when（MERGE_TRANSACTION.json | legacy MERGE_PROMPT marker——列表从 flow 规格动态解析，判据单源，架构「四十七」）
   if (anyExists(m.mergePrompt)) return 'merge-generated';
 
   // write-proposal.done_when（proposal_package_filled = proposal.md + tasks.md 均脱模板）

@@ -5,6 +5,7 @@ import {
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDocument, stringify } from 'yaml';
+import { VERSION } from './json-output.js';
 import {
   parseBaselineClosurePlan, validateAndStripNonMarkdownDelta,
   type BaselineClosureTarget,
@@ -309,6 +310,23 @@ function readStored(proposalDir: string): StoredTransaction {
   return tx;
 }
 
+/**
+ * 存量事务合同兼容门（fix-merge-flow-transaction-contract，D10 不变量③）：
+ * 事务内记录的 schema/contract 摘要与当前 CLI 不一致时，一律 fail-closed 拒绝写动作；
+ * status 只读投影不受限；abort 不拦——它正是 remediation 出路（abort 后重跑 merge 重开事务）。
+ * 永不承诺就地迁移。
+ */
+function assertContractCompatible(tx: StoredTransaction, proposalDir: string): void {
+  const currentSchema = digest(readFileSync(bundledContractPath(MERGE_TRANSACTION_SCHEMA_PATH)));
+  const currentContract = digest(readFileSync(bundledContractPath(CONTRACT_PATH)));
+  if (tx.schema_sha256 === currentSchema && tx.contract_sha256 === currentContract) return;
+  throw new MergeTransactionError('unsupported_contract',
+    `存量事务合同与当前 CLI 不一致（不支持就地迁移）：事务记录 schema=${tx.schema_sha256}、contract=${tx.contract_sha256}；`
+    + `当前 CLI ${VERSION} schema=${currentSchema}、contract=${currentContract}。`
+    + '处置：openlogos merge transaction abort 后重跑 openlogos merge <slug> 重开事务',
+    false, projectMergeTransaction(tx, proposalDir));
+}
+
 function writeStored(proposalDir: string, tx: StoredTransaction): void {
   atomicWrite(transactionPath(proposalDir), `${JSON.stringify(tx, null, 2)}\n`);
 }
@@ -458,6 +476,7 @@ export function reopenMergeTransaction(
   options: { reason: string; confirmSpecMerged?: boolean },
 ): MergeTransactionProjection {
   const tx = readStored(proposalDir);
+  assertContractCompatible(tx, proposalDir);
   if (tx.phase !== 'completed') {
     throw new MergeTransactionError('action_not_allowed',
       `phase=${tx.phase} 禁止 reopen（仅 completed 携带受控重开出边）`, false, projectMergeTransaction(tx, proposalDir));
@@ -580,6 +599,7 @@ export function submitMergeContent(
   proposalDir: string, slotId: string, submittedFilePath: string,
 ): MergeTransactionProjection {
   const tx = readStored(proposalDir);
+  assertContractCompatible(tx, proposalDir);
   if (!['collecting', 'ready'].includes(tx.phase)) throw new MergeTransactionError('action_not_allowed', '当前 phase 禁止提交 content', false, projectMergeTransaction(tx, proposalDir));
   const target = tx.targets.find(item => item.slot_id === slotId && item.producer === 'agent');
   if (!target) throw new MergeTransactionError('slot_identity_mismatch', `未声明的 slot：${slotId}`, false, projectMergeTransaction(tx, proposalDir));
@@ -854,6 +874,7 @@ function reopenForPreflightError(
 
 export function sealMergeTransaction(root: string, proposalDir: string): MergeTransactionProjection {
   const tx = readStored(proposalDir);
+  assertContractCompatible(tx, proposalDir);
   if (tx.phase === 'sealed' || tx.phase === 'completed') return projectMergeTransaction(tx, proposalDir);
   if (tx.phase !== 'ready') throw new MergeTransactionError('content_slot_missing', 'content slot 尚未齐备', true, projectMergeTransaction(tx, proposalDir));
   validateFrozenIdentity(root, proposalDir, tx);
@@ -984,6 +1005,7 @@ export function abortMergeTransaction(proposalDir: string): MergeTransactionProj
 
 export function applyMergeTransaction(root: string, proposalDir: string): MergeTransactionProjection {
   let tx = readStored(proposalDir);
+  assertContractCompatible(tx, proposalDir);
   if (tx.phase === 'completed') return projectMergeTransaction(tx, proposalDir);
   if (tx.phase === 'applying') return recoverMergeTransaction(root, proposalDir);
   if (tx.phase !== 'sealed' || !tx.seal_sha256) throw new MergeTransactionError('action_not_allowed', 'transaction 尚未 sealed', false, projectMergeTransaction(tx, proposalDir));
