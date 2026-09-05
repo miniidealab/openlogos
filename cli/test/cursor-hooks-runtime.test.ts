@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -63,7 +63,7 @@ describe('Cursor hooks runtime — S09 sessionStart 与部分强度门禁', () =
     buildProject('delta-writing');
     const { output, exitCode } = runtime.run('session', JSON.stringify({ hook_event_name: 'sessionStart', cwd: root }), root);
     expect(exitCode).toBe(0);
-    const context = output.hookSpecificOutput.additionalContext as string;
+    const context = output.additional_context as string;
     expect(context).toContain('lifecycle: launched');
     expect(context).toContain('active change: cursor-adapter-parity');
     expect(context).toContain('proposal_step: delta-writing');
@@ -118,6 +118,12 @@ describe('Cursor hooks runtime — S09 sessionStart 与部分强度门禁', () =
     expect(outside.output.agent_message).toContain(runtime.EDIT_NOT_BLOCKED_LINE);
     const inside = runtime.run('edit', JSON.stringify(editEvent('logos/changes/cursor-adapter-parity/deltas/spec/x.md')), root);
     expect(inside.output).toEqual({});
+    // afterFileEdit 为 observe-only（真实宿主实测）：报告必须落盘审计，且下次 sessionStart 注入未处理提示
+    const auditLog = join(root, '.cursor', 'openlogos-guard-reports.log');
+    expect(existsSync(auditLog)).toBe(true);
+    expect(readFileSync(auditLog, 'utf8')).toContain('cli/src/lib/ai-tool-adapter.ts');
+    const session = runtime.run('session', JSON.stringify({ hook_event_name: 'sessionStart', cwd: root }), root);
+    expect(session.output.additional_context).toContain('openlogos-guard-reports.log');
   });
 
   it('UT-S09-298: 每次调用重读磁盘状态——proposal_step 变化后判定立即反映，无缓存', () => {
@@ -182,7 +188,7 @@ describe('Cursor hooks runtime — S09 sessionStart 与部分强度门禁', () =
     buildProject('delta-writing');
     const session = spawnHook('session', { hook_event_name: 'sessionStart', cwd: root }, root);
     expect(session.status).toBe(0);
-    expect(JSON.parse(session.stdout).hookSpecificOutput.additionalContext).toContain('proposal_step: delta-writing');
+    expect(JSON.parse(session.stdout).additional_context).toContain('proposal_step: delta-writing');
     const denied = spawnHook('shell', shellEvent('rm -rf cli/src'), root);
     expect(denied.status).toBe(2);
     const output = JSON.parse(denied.stdout);
@@ -201,6 +207,7 @@ describe('Cursor hooks runtime — S09 sessionStart 与部分强度门禁', () =
     expect(output.agent_message).toContain('cli/src/edited.ts');
     expect(output.agent_message).toContain('NOT blocked');
     expect(existsSync(join(root, 'cli', 'src', 'edited.ts'))).toBe(true);
+    expect(readFileSync(join(root, '.cursor', 'openlogos-guard-reports.log'), 'utf8')).toContain('cli/src/edited.ts');
   });
 
   it('ST-S09-114: proposal_step 收敛链路——writing/delta-writing/ready-to-merge/coding 下三接线判定一致收敛', () => {

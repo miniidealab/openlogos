@@ -1,3 +1,62 @@
+# 部署报告：cursor-adapter-parity / OpenLogos 0.14.18（2026-09-05，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `cursor-adapter-parity`。
+- **授权与门禁**：用户已明确授权部署 + smoke 及失败修复重试闭环；`openlogos verify` PASS（2122/2122，覆盖率与通过率 100%），`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.18` 已完成真实 npm pack、制品身份核对、隔离 prefix 行为矩阵（8/8，含真实 cursor-agent 三红线实测）、`0.14.17→0.14.18→0.14.17→0.14.18` 隔离往返与零回归对照、本机全局安装；全局版本精确为 `0.14.18`，package/asset-manifest/五类 plugin manifest 全同源，cursor-plugin-template 随包在场。
+- **数据迁移 / 服务启动**：无 / 不适用。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+- **正式 smoke**：`openlogos smoke --env local-global` 最终 PASS——159/159 定义用例全部执行，76 pass、0 fail、83 skip（历史用例环境性 skip，与既有惯例一致），覆盖率与通过率 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场；SMOKE-core-182～189 全部 pass。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `eb2aeb572adaa2b7d0955fb0fff7960ed05f9494`（+ 部署窗口内接线修复，见「四、部署中发现并修复的问题」） |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/cursor-adapter-parity/miniidealab-openlogos-0.14.18.tgz`；2,333,286 字节 |
+| candidate SHA-256 | `070ab5622b02129bf20bfae0ec38415fd5058ce32fe90912a21ec7c7c77f534a` |
+| 作废 candidate | `4dc51983ea2a0ef840dea2e2e47264a1dc97372b47733ad9d53c65c3dd0a35f9`（sessionStart 输出契约修复前的首轮 pack，已被覆盖作废） |
+| 固定回滚 tarball | 同目录 `miniidealab-openlogos-0.14.17.tgz`；2,096,265 字节（0.14.17 部署窗口冻结件，与其 SMOKE-core-181 证据同哈希） |
+| 回滚 SHA-256 | `0850cf9570eab1aa68cb3cbed666fd87235043e675e3c8d0f9e3ca51e4e63c2f` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → dist/index.js / `0.14.17` |
+| 真实宿主 | cursor-agent `2026.09.02-c22c1a3`（部署窗口内自动升级自 `2026.08.31-4057e58`），已登录 |
+
+可复制回滚命令：
+
+```bash
+npm install -g --force --ignore-scripts --no-audit --no-fund /Users/huangxianglong/gitlab/openlogos/logos/resources/verify/deployment-artifacts/cursor-adapter-parity/miniidealab-openlogos-0.14.17.tgz
+/bin/zsh -lic 'command -v openlogos && openlogos --version'
+```
+
+## 三、隔离矩阵与真实宿主实测证据
+
+矩阵以 smoke runner 全套在隔离 prefix 执行（账本 `deployment-artifacts/cursor-adapter-parity/matrix-smoke-results.jsonl`，8/8 PASS）：
+
+1. **SMOKE-core-182** candidate identity：版本 0.14.18、随包 cursor 模板与 `spec/cursor-plugin.md` 齐全。
+2. **SMOKE-core-183/184** init 三件套 / 存量 adopt 迁移：Skills+subagent+hooks 三托管条目落盘，托管 `.mdc` 清理，用户 rules/hooks 条目字节不变。
+3. **SMOKE-core-185（红线）** 真实宿主 Skills 与显式命令发现：cursor-agent 列出方法论 Skills 并可触达 `openlogos-status` 命令技能。
+4. **SMOKE-core-186（红线）** sessionStart 实测注入成功（agent 复述 proposal_step/允许范围行）；**CLI hook 事件覆盖面实测清单：sessionStart、beforeShellExecution、afterShellExecution、afterFileEdit、postToolUse、preToolUse**。
+5. **SMOKE-core-187（红线）** 门禁实测：范围内 shell 放行；越界 `mkdir -p evil-dir` 被真实阻断（目录不存在）且 deny 四要素（Active change/Proposal step/Allowed scope/Target/Next action）完整送达 agent；越界编辑真实发生（文件已改）、审计报告落盘且如实声明 NOT blocked。
+6. **SMOKE-core-188** hooks.json 合并保真/幂等/损坏 fail loud 零写入。
+7. **SMOKE-core-189** 六既有宿主回归 + `0.14.17→0.14.18→0.14.17→0.14.18` 往返无混装；**零回归对照有效**：0.14.17 上 init cursor 仍产 `.mdc` 降级档、无三件套（矩阵不空转）。
+8. 附加实测（部署窗口 probe）：sessionStart 注入的变更管理上下文使 cursor-agent **连续两轮主动拒绝**越界编辑请求——软约束层在真实宿主可观察生效。
+
+## 四、部署中发现并修复的问题（均在全局覆盖前完成，candidate 重新 pack）
+
+1. **sessionStart 输出契约错位**：首版 runtime 沿用 Claude 风格 `hookSpecificOutput.additionalContext`，真实宿主实测不消费；Cursor 消费顶层 `additional_context` 字段。已修正 runtime 并更新 UT/ST。
+2. **afterFileEdit 为 observe-only**：实测任何 stdout 字段（additional_context/agent_message/user_message）都不注入 agent。事后检测报告通道改为「追加落盘 `.cursor/openlogos-guard-reports.log` + 下一次 sessionStart 注入未处理报告提示」，UT/ST 同步锚定。
+3. **能力事实更新（capability honesty 相关）**：cursor-agent 当前版本 CLI **实测已触发 `preToolUse`**（2026-04 论坛口径已过时）。本次仍按 `preToolUse:false` 保守交付（OpenLogos 未接线 pre-edit 硬拦，声明如实）；升级接线 preToolUse 建议走后续独立提案。
+4. 首轮矩阵与首轮正式 smoke 的 SMOKE-core-186 假阴（两种形态）：driver 判定依赖 agent「引用上下文」，agent 会意译或以「不导出系统提示词」为由拒绝引用。最终加固为**确定性哨兵判据**——fixture 注入独特 active change 值 `cursor-inject-probe-4242`，agent 以固定格式答出该值即注入铁证（值只可能来自 sessionStart 注入）。加固后第二轮正式 smoke 159/159、Gate 3.8 PASS。
+
+## 五、异常与未解决风险
+
+- cursor-agent 在部署窗口内自动升级（2026.08.31 → 2026.09.02），矩阵与后续正式 smoke 均在 2026.09.02 上完成，证据一致。
+- 无其它未解决风险。`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 均在场；未 archive、未 npm publish、未创建 tag/release、未部署网站、未 `git push`。
+
+---
+
 # 部署报告：fix-merge-transaction-nested-section-anchor / OpenLogos 0.14.4（2026-08-30，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论

@@ -173,7 +173,7 @@ function sessionContext(root) {
     coding: '完成代码与测试后等待 openlogos verify 人类确认',
     'ready-to-verify': '等待 openlogos verify 人类确认',
   }[state.proposalStep] || '创建变更提案后再修改源码';
-  return [
+  const lines = [
     `OpenLogos lifecycle: ${state.lifecycle}`,
     `active change: ${state.slug || 'none'}`,
     `proposal_step: ${state.proposalStep || 'none'}`,
@@ -181,7 +181,10 @@ function sessionContext(root) {
     GUARD_STRENGTH_LINE,
     '禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push',
     `下一确认点：${nextGate}`,
-  ].join('\n');
+  ];
+  const pending = pendingEditReportNotice(root);
+  if (pending) lines.push(pending);
+  return lines.join('\n');
 }
 
 function resolveCandidate(root, rawPath) {
@@ -294,6 +297,32 @@ function decideShell(root, command) {
 
 const EDIT_NOT_BLOCKED_LINE =
   'This edit was NOT blocked (cursor-agent CLI has no preToolUse). Review and revert if unintended.';
+const EDIT_REPORT_REL_FILE = '.cursor/openlogos-guard-reports.log';
+
+/**
+ * afterFileEdit 是 observe-only（真实宿主实测：任何 stdout 字段都不会注入 agent），
+ * 报告的可达通道 = 追加落盘审计日志 + 下一次 sessionStart 注入未处理报告提示。
+ */
+function appendEditReport(root, report) {
+  try {
+    const target = path.join(root, ...EDIT_REPORT_REL_FILE.split('/'));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.appendFileSync(target, `[${new Date().toISOString()}]\n${report}\n\n`);
+  } catch { /* 审计落盘失败不影响 hook 主流程 */ }
+}
+
+function pendingEditReportNotice(root) {
+  try {
+    const target = path.join(root, ...EDIT_REPORT_REL_FILE.split('/'));
+    if (!fs.existsSync(target)) return null;
+    const content = fs.readFileSync(target, 'utf8');
+    const count = (content.match(/OpenLogos guard/g) || []).length;
+    if (count === 0) return null;
+    return `⚠ 存在 ${count} 条越界编辑事后检测报告未处理，见 ${EDIT_REPORT_REL_FILE}（人工核查并按需回退后可删除该文件）`;
+  } catch {
+    return null;
+  }
+}
 
 function decideEdit(root, filePath) {
   if (typeof filePath !== 'string' || filePath.trim() === '') {
@@ -304,22 +333,21 @@ function decideEdit(root, filePath) {
   const relative = resolveCandidate(root, filePath);
   const scoped = decidePathScope(root, state, relative);
   if (scoped.decision === 'allow') return null;
-  return [
+  const report = [
     '⚠ OpenLogos guard: file edit outside allowed scope detected (post-check).',
     `Edited: ${relative}`,
     `Reason: ${scoped.reason}`,
     `Active change: ${state.slug || 'none'} | Proposal step: ${state.proposalStep || 'none'}`,
     EDIT_NOT_BLOCKED_LINE,
   ].join('\n');
+  appendEditReport(root, report);
+  return report;
 }
 
 function sessionOutput(context) {
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'sessionStart',
-      additionalContext: context,
-    },
-  };
+  // Cursor sessionStart 消费顶层 additional_context 字段（2026.08.31 真实宿主实测确认；
+  // Claude 风格 hookSpecificOutput.additionalContext 不会进入 agent 上下文）。
+  return { additional_context: context };
 }
 
 function shellOutput(result) {
@@ -368,12 +396,13 @@ function shellFailure(reason) {
   return { output: shellOutput({ decision: 'deny', reason: message }), exitCode: 2 };
 }
 
-function editFailure(reason) {
+function editFailure(reason, root) {
   const report = [
     '⚠ OpenLogos guard: 无法安全判断本次编辑（fail-closed 报告），请人工核查。',
     `原因：${reason}`,
     EDIT_NOT_BLOCKED_LINE,
   ].join('\n');
+  if (root) appendEditReport(root, report);
   return { output: editOutput(report), exitCode: 0 };
 }
 
@@ -395,7 +424,7 @@ async function main() {
     const message = error instanceof Error ? error.message : '未知运行时错误';
     process.stderr.write(`OpenLogos Cursor Hook: ${message}\n`);
     const failure = mode === 'edit'
-      ? editFailure(message)
+      ? editFailure(message, findProjectRoot(process.cwd()))
       : mode === 'session'
         ? { output: {}, exitCode: 0 }
         : shellFailure(message);
@@ -409,6 +438,7 @@ module.exports = {
   HookInputError,
   GUARD_STRENGTH_LINE,
   EDIT_NOT_BLOCKED_LINE,
+  EDIT_REPORT_REL_FILE,
   decideEdit,
   decidePathScope,
   decideShell,
