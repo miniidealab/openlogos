@@ -1,0 +1,554 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_d2d5e11e927b86ee38b17620",
+  "slug": "fix-merge-flow-transaction-contract",
+  "module": "core",
+  "phase": "completed",
+  "classification": null,
+  "plan_sha256": "sha256:dbce8a367a740191acffe5803ad011c29363d3ccc51c3362677baae05cc6eb22",
+  "target_set_sha256": "sha256:b6e22f6beaacde58d8d739c08154314840ec5d1553d12e1495b7ba2a158840f3",
+  "schema_sha256": "sha256:2b7bebc61a68f610446b85dc9d814dc372377252cdb4765d04bce9da69d8e505",
+  "contract_sha256": "sha256:a9c0d9936a2f556f8d383e2aa6e212c064b2b1a96c4bf12575749f2d8874a73d",
+  "seal_sha256": "sha256:dfe92e4bf1154efa18a5ac06f8150e775b1804b815be13ce963a96c019955175",
+  "preflight": {
+    "schema": "openlogos/merge-preflight@1",
+    "transaction_id": "mtx_d2d5e11e927b86ee38b17620",
+    "plan_sha256": "sha256:dbce8a367a740191acffe5803ad011c29363d3ccc51c3362677baae05cc6eb22",
+    "target_set_sha256": "sha256:b6e22f6beaacde58d8d739c08154314840ec5d1553d12e1495b7ba2a158840f3",
+    "targets": [
+      {
+        "path": "logos/logos-project.yaml",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:59b446592fecb7d3f5cba407220116d46c9d5a80108b48761a5630dd148f9741",
+        "final_sha256": "sha256:cd09dac9b474d4719156eb4355c9d9d0e121e857ff21073551f712753e271d7f"
+      },
+      {
+        "path": "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md",
+        "mode": "CREATE",
+        "producer": "agent",
+        "before_sha256": null,
+        "final_sha256": "sha256:b0ca2bdfd4bacb8de957343d53cfe9a53e166d1ec79fae21f980fac46b2fed31"
+      },
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:a8a89825dca9d3450d5d8a4d9cb675ce37a119efa5565f53caf7e6422e73493c",
+        "final_sha256": "sha256:291250adf84ffd402eb5481cadcc4600e651b79632e58d66ec486f166f66539c"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:de41ecdb65db437a2bc779d57331369678946c0abf89f424175ecd6cd580553a",
+        "final_sha256": "sha256:9ab1eced0d152ffaba33e1542636512cac938e5b8fa71bc5396803c897f269f2"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:4bda545a10e2f2949fe68ca8cadfba3147660362e1ed2bbe1156e1e8ba6718d2",
+        "final_sha256": "sha256:63400f8f3c45b65b2c18de420c2fe716b1b46e06c47ab5964abffc4c049712d5"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:5d4521b6c1eeaceec821e6a43bafddf363863a936ecdb94db0ad214cfdbba826",
+        "final_sha256": "sha256:7a3a06235b6e6bbf74cb1d39ac55ea46139c826db07f2f649028dc7120f85fbb"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:715c3ac0220bea674633ac59049364f036b79c231f22b3353230ebff25db561a",
+        "final_sha256": "sha256:dc5898a64626982637aaa74ac5cc725f286e6974fc157bde9aa37e21fd8f8cfb"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:0d3dc21d1ceb43b4d8970f6b0ceac38509e44a8a0a8b634866e2138e4e25dbb4",
+        "final_sha256": "sha256:1e2148c513361c1ea9e88ae7bfbc2a5e12c10f98645783bd129900a75b68248f"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:57914a12fb51f90dc9fb78041a9f96f2c5a69ecdb0c852caa1fdae7587223956",
+        "final_sha256": "sha256:aab30eb2472606fdcd65e76d3eec345e622fedec74410c13d7b3b6a7f3fe7786"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:4b175bbfac1e747f6c341179ea17bc7c9e061861308a2541ab702841bd0d9dce",
+        "final_sha256": "sha256:77bc1d4057a82cba22812422187ff5d9790e721cdffca15acd20df07c8b1fb3d"
+      },
+      {
+        "path": "logos/resources/test/core-S05-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:54de72e86a97a1a08858c6b715502895f9af3bd2cd0a5b6cf628ef330d120acb",
+        "final_sha256": "sha256:7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:13062cd6c5880f5096676874ec317318c9091703830eab3a9f66ac885e93ee56",
+        "final_sha256": "sha256:4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e"
+      },
+      {
+        "path": "logos/resources/test/core-S16-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58",
+        "final_sha256": "sha256:75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038"
+      },
+      {
+        "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:23d061472dae7232576877b667b492c9fd43e75eb6f31efb6b9cf8db2be21241",
+        "final_sha256": "sha256:4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f"
+      },
+      {
+        "path": "spec/change-management.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:377a36a447d4d6c1824289b940f26ba4206ddd044e42ff448a7e6cb976901fa7",
+        "final_sha256": "sha256:f13546e71af8cdf5994b94cddef2001f59124dd5e88f844ccdf6c723b0e7b2a0"
+      },
+      {
+        "path": "spec/cli-json-output.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:a9c0d9936a2f556f8d383e2aa6e212c064b2b1a96c4bf12575749f2d8874a73d",
+        "final_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09"
+      },
+      {
+        "path": "spec/flow-spec.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:c9eaefd6e587071ebb5a52798ef9dccae9af29a60c5afbe71fd46d0df9fa9a04",
+        "final_sha256": "sha256:fbe36a62b6a4d304868284e2d2b774e61a5a4da68a5215dddef48193268ab871"
+      }
+    ],
+    "test_change_set_sha256": "sha256:05d5832da638ee8629a275d433ef54ceb310567d1e000d841d10985381526867",
+    "final_target_paths": [
+      "logos/logos-project.yaml",
+      "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+      "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S05-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S16-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "spec/change-management.md",
+      "spec/cli-json-output.md",
+      "spec/flow-spec.md"
+    ],
+    "sha256": "sha256:22900b453b802052b656de3836f82c3421e8ad530da37530222aeb7d905aad3f"
+  },
+  "targets": [
+    {
+      "slot_id": "slot_ec06c7d444e5397ab74f",
+      "delta_path": "deltas/decisions/core-D10-merge-frontier-transaction-fact.md",
+      "target_path": "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md",
+      "mode": "CREATE",
+      "category": "decision",
+      "producer": "agent",
+      "source_sha256": "sha256:ca405bc21bf36d1c05a059a5be89700ba0ca8ad36bdf7e458d6205749cc202e0",
+      "before_sha256": null,
+      "content_sha256": "sha256:b0ca2bdfd4bacb8de957343d53cfe9a53e166d1ec79fae21f980fac46b2fed31",
+      "sealed_sha256": "sha256:b0ca2bdfd4bacb8de957343d53cfe9a53e166d1ec79fae21f980fac46b2fed31"
+    },
+    {
+      "slot_id": "slot_fcd9926103df4e5f76d3",
+      "delta_path": "deltas/prd/1-product-requirements/core-01-requirements.md",
+      "target_path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "mode": "MODIFY",
+      "category": "requirement",
+      "producer": "agent",
+      "source_sha256": "sha256:856f46186444fd02af3670392baec188f69c9486381b6d3d5287f69429d5630d",
+      "before_sha256": "sha256:a8a89825dca9d3450d5d8a4d9cb675ce37a119efa5565f53caf7e6422e73493c",
+      "content_sha256": "sha256:291250adf84ffd402eb5481cadcc4600e651b79632e58d66ec486f166f66539c",
+      "sealed_sha256": "sha256:291250adf84ffd402eb5481cadcc4600e651b79632e58d66ec486f166f66539c"
+    },
+    {
+      "slot_id": "slot_b97f079656bd99fe26f2",
+      "delta_path": "deltas/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "target_path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "mode": "MODIFY",
+      "category": "feature",
+      "producer": "agent",
+      "source_sha256": "sha256:da2fb4b5c03780a3269a762406f1ecc3a39e93400b1dc1e8a17bb5b59ebad9d0",
+      "before_sha256": "sha256:de41ecdb65db437a2bc779d57331369678946c0abf89f424175ecd6cd580553a",
+      "content_sha256": "sha256:9ab1eced0d152ffaba33e1542636512cac938e5b8fa71bc5396803c897f269f2",
+      "sealed_sha256": "sha256:9ab1eced0d152ffaba33e1542636512cac938e5b8fa71bc5396803c897f269f2"
+    },
+    {
+      "slot_id": "slot_152c2653fa973c645d69",
+      "delta_path": "deltas/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+      "target_path": "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+      "mode": "MODIFY",
+      "category": "feature",
+      "producer": "agent",
+      "source_sha256": "sha256:f973bc92b7a38d41faf1e83aeb8faac684f0f88b3ecdecf3feda0b170de937da",
+      "before_sha256": "sha256:4bda545a10e2f2949fe68ca8cadfba3147660362e1ed2bbe1156e1e8ba6718d2",
+      "content_sha256": "sha256:63400f8f3c45b65b2c18de420c2fe716b1b46e06c47ab5964abffc4c049712d5",
+      "sealed_sha256": "sha256:63400f8f3c45b65b2c18de420c2fe716b1b46e06c47ab5964abffc4c049712d5"
+    },
+    {
+      "slot_id": "slot_7d06daf902ee9c1925a7",
+      "delta_path": "deltas/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "target_path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "mode": "MODIFY",
+      "category": "architecture",
+      "producer": "agent",
+      "source_sha256": "sha256:7a8ba7b089ef5f154e7ce0c32cc440ee5cb53e582c0ba8a3e39dd8fa5a9feac2",
+      "before_sha256": "sha256:5d4521b6c1eeaceec821e6a43bafddf363863a936ecdb94db0ad214cfdbba826",
+      "content_sha256": "sha256:7a3a06235b6e6bbf74cb1d39ac55ea46139c826db07f2f649028dc7120f85fbb",
+      "sealed_sha256": "sha256:7a3a06235b6e6bbf74cb1d39ac55ea46139c826db07f2f649028dc7120f85fbb"
+    },
+    {
+      "slot_id": "slot_cc8a91a0be9d06be83ec",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:9a7377917b1ee54f8223b9ef26d6a089dcf0975eb5780c11d1acc46f9c4c92d4",
+      "before_sha256": "sha256:715c3ac0220bea674633ac59049364f036b79c231f22b3353230ebff25db561a",
+      "content_sha256": "sha256:dc5898a64626982637aaa74ac5cc725f286e6974fc157bde9aa37e21fd8f8cfb",
+      "sealed_sha256": "sha256:dc5898a64626982637aaa74ac5cc725f286e6974fc157bde9aa37e21fd8f8cfb"
+    },
+    {
+      "slot_id": "slot_4a7ac43372d22fa1af31",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:9ec2c75c7d03940a39b3fec99257be87529bd1f102e896f07a2b189e62451c96",
+      "before_sha256": "sha256:0d3dc21d1ceb43b4d8970f6b0ceac38509e44a8a0a8b634866e2138e4e25dbb4",
+      "content_sha256": "sha256:1e2148c513361c1ea9e88ae7bfbc2a5e12c10f98645783bd129900a75b68248f",
+      "sealed_sha256": "sha256:1e2148c513361c1ea9e88ae7bfbc2a5e12c10f98645783bd129900a75b68248f"
+    },
+    {
+      "slot_id": "slot_37082c12a50e26642d7d",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:0b16bb74b6686802b48d5b00a04e3bb6cee619f207e49e260d71c06a31a17f58",
+      "before_sha256": "sha256:57914a12fb51f90dc9fb78041a9f96f2c5a69ecdb0c852caa1fdae7587223956",
+      "content_sha256": "sha256:aab30eb2472606fdcd65e76d3eec345e622fedec74410c13d7b3b6a7f3fe7786",
+      "sealed_sha256": "sha256:aab30eb2472606fdcd65e76d3eec345e622fedec74410c13d7b3b6a7f3fe7786"
+    },
+    {
+      "slot_id": "slot_d70862265967e0ce21e5",
+      "delta_path": "deltas/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "target_path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "mode": "MODIFY",
+      "category": "deployment",
+      "producer": "agent",
+      "source_sha256": "sha256:3d8fbbdef23e6609f421a54152285bafcf8240513aff3432d735c842567412b6",
+      "before_sha256": "sha256:4b175bbfac1e747f6c341179ea17bc7c9e061861308a2541ab702841bd0d9dce",
+      "content_sha256": "sha256:77bc1d4057a82cba22812422187ff5d9790e721cdffca15acd20df07c8b1fb3d",
+      "sealed_sha256": "sha256:77bc1d4057a82cba22812422187ff5d9790e721cdffca15acd20df07c8b1fb3d"
+    },
+    {
+      "slot_id": "slot_a1de1e7c6705766a09bf",
+      "delta_path": "deltas/test/core-S05-test-cases.md",
+      "target_path": "logos/resources/test/core-S05-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:62805b24b33c49d6d3446a15169a56ccabd92fc6b9b79ea0f668ad364a41bc66",
+      "before_sha256": "sha256:54de72e86a97a1a08858c6b715502895f9af3bd2cd0a5b6cf628ef330d120acb",
+      "content_sha256": "sha256:7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8",
+      "sealed_sha256": "sha256:7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8"
+    },
+    {
+      "slot_id": "slot_54ef92b35a32d8c220f0",
+      "delta_path": "deltas/test/core-S09-test-cases.md",
+      "target_path": "logos/resources/test/core-S09-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:ccdc6e3b60c6f0484cf1ba51755cc2e556b6b04f699ea36cb5499c89efaa8fac",
+      "before_sha256": "sha256:13062cd6c5880f5096676874ec317318c9091703830eab3a9f66ac885e93ee56",
+      "content_sha256": "sha256:4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e",
+      "sealed_sha256": "sha256:4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e"
+    },
+    {
+      "slot_id": "slot_58031c4ca6ec42f210aa",
+      "delta_path": "deltas/test/core-S16-test-cases.md",
+      "target_path": "logos/resources/test/core-S16-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:fc518294c8dd56610bf47972a61c59ca017ec911150e3715ddf3ece9889f9752",
+      "before_sha256": "sha256:9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58",
+      "content_sha256": "sha256:75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038",
+      "sealed_sha256": "sha256:75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038"
+    },
+    {
+      "slot_id": "slot_0b0e50798d44ebb3788c",
+      "delta_path": "deltas/test/smoke/core-smoke-test-cases.md",
+      "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "mode": "MODIFY",
+      "category": "smoke",
+      "producer": "agent",
+      "source_sha256": "sha256:cb8320044bd166a1c3120ac5be8f5d95c2417587bcee52e087d0cd3de20de7b4",
+      "before_sha256": "sha256:23d061472dae7232576877b667b492c9fd43e75eb6f31efb6b9cf8db2be21241",
+      "content_sha256": "sha256:4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f",
+      "sealed_sha256": "sha256:4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f"
+    },
+    {
+      "slot_id": "slot_92310e7bf9b78d885473",
+      "delta_path": "deltas/spec/change-management.md",
+      "target_path": "spec/change-management.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:5f226ff75de95569b48c049b70b76f43b96aa2c1dcfb87fadca317ad1d1574f1",
+      "before_sha256": "sha256:377a36a447d4d6c1824289b940f26ba4206ddd044e42ff448a7e6cb976901fa7",
+      "content_sha256": "sha256:f13546e71af8cdf5994b94cddef2001f59124dd5e88f844ccdf6c723b0e7b2a0",
+      "sealed_sha256": "sha256:f13546e71af8cdf5994b94cddef2001f59124dd5e88f844ccdf6c723b0e7b2a0"
+    },
+    {
+      "slot_id": "slot_a5bc96f8be23698ebc31",
+      "delta_path": "deltas/spec/cli-json-output.md",
+      "target_path": "spec/cli-json-output.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:4bdd3c4808562c82a9d39e088cc36fdbf4dcd4bde7a29cda873c636d951a8ec6",
+      "before_sha256": "sha256:a9c0d9936a2f556f8d383e2aa6e212c064b2b1a96c4bf12575749f2d8874a73d",
+      "content_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09",
+      "sealed_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09"
+    },
+    {
+      "slot_id": "slot_ac20afa2d40949406523",
+      "delta_path": "deltas/spec/flow-spec.md",
+      "target_path": "spec/flow-spec.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:86d1386993cbc32d301e44aeb560338dbed041c056926dc9781f0bbd2e1df4d3",
+      "before_sha256": "sha256:c9eaefd6e587071ebb5a52798ef9dccae9af29a60c5afbe71fd46d0df9fa9a04",
+      "content_sha256": "sha256:fbe36a62b6a4d304868284e2d2b774e61a5a4da68a5215dddef48193268ab871",
+      "sealed_sha256": "sha256:fbe36a62b6a4d304868284e2d2b774e61a5a4da68a5215dddef48193268ab871"
+    }
+  ],
+  "receipt": {
+    "transaction_id": "mtx_d2d5e11e927b86ee38b17620",
+    "seal_sha256": "sha256:dfe92e4bf1154efa18a5ac06f8150e775b1804b815be13ce963a96c019955175",
+    "target_set_sha256": "sha256:b6e22f6beaacde58d8d739c08154314840ec5d1553d12e1495b7ba2a158840f3",
+    "closure_sha256": "sha256:2df573505ab5e612fe8facd996c4b38cff7ec4945965b84140949c49630b9f44",
+    "target_count": 16,
+    "plan_sha256": "sha256:dbce8a367a740191acffe5803ad011c29363d3ccc51c3362677baae05cc6eb22",
+    "change": "fix-merge-flow-transaction-contract",
+    "module": "core",
+    "changed_paths": [
+      "logos/logos-project.yaml",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+      "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S05-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S16-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "spec/change-management.md",
+      "spec/cli-json-output.md",
+      "spec/flow-spec.md"
+    ],
+    "created_paths": [
+      "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md"
+    ],
+    "final_hashes": [
+      {
+        "path": "logos/logos-project.yaml",
+        "sha256": "sha256:cd09dac9b474d4719156eb4355c9d9d0e121e857ff21073551f712753e271d7f"
+      },
+      {
+        "path": "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md",
+        "sha256": "sha256:b0ca2bdfd4bacb8de957343d53cfe9a53e166d1ec79fae21f980fac46b2fed31"
+      },
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "sha256": "sha256:291250adf84ffd402eb5481cadcc4600e651b79632e58d66ec486f166f66539c"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "sha256": "sha256:9ab1eced0d152ffaba33e1542636512cac938e5b8fa71bc5396803c897f269f2"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+        "sha256": "sha256:63400f8f3c45b65b2c18de420c2fe716b1b46e06c47ab5964abffc4c049712d5"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+        "sha256": "sha256:7a3a06235b6e6bbf74cb1d39ac55ea46139c826db07f2f649028dc7120f85fbb"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+        "sha256": "sha256:dc5898a64626982637aaa74ac5cc725f286e6974fc157bde9aa37e21fd8f8cfb"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "sha256": "sha256:1e2148c513361c1ea9e88ae7bfbc2a5e12c10f98645783bd129900a75b68248f"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+        "sha256": "sha256:aab30eb2472606fdcd65e76d3eec345e622fedec74410c13d7b3b6a7f3fe7786"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+        "sha256": "sha256:77bc1d4057a82cba22812422187ff5d9790e721cdffca15acd20df07c8b1fb3d"
+      },
+      {
+        "path": "logos/resources/test/core-S05-test-cases.md",
+        "sha256": "sha256:7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "sha256": "sha256:4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e"
+      },
+      {
+        "path": "logos/resources/test/core-S16-test-cases.md",
+        "sha256": "sha256:75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038"
+      },
+      {
+        "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "sha256": "sha256:4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f"
+      },
+      {
+        "path": "spec/change-management.md",
+        "sha256": "sha256:f13546e71af8cdf5994b94cddef2001f59124dd5e88f844ccdf6c723b0e7b2a0"
+      },
+      {
+        "path": "spec/cli-json-output.md",
+        "sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09"
+      },
+      {
+        "path": "spec/flow-spec.md",
+        "sha256": "sha256:fbe36a62b6a4d304868284e2d2b774e61a5a4da68a5215dddef48193268ab871"
+      }
+    ],
+    "metadata_summaries": [
+      {
+        "path": "logos/logos-project.yaml",
+        "sha256": "sha256:cd09dac9b474d4719156eb4355c9d9d0e121e857ff21073551f712753e271d7f"
+      }
+    ],
+    "test_change_set": {
+      "schema": "openlogos/test-change-set@1",
+      "change": "fix-merge-flow-transaction-contract",
+      "module": "core",
+      "source": "semantic-before-after-diff",
+      "changed_test_ids": [
+        "SMOKE-core-190",
+        "ST-S05-24",
+        "ST-S05-25",
+        "ST-S09-116",
+        "ST-S09-117",
+        "ST-S16-12",
+        "ST-S16-13",
+        "UT-S05-52",
+        "UT-S05-53",
+        "UT-S05-54",
+        "UT-S05-55",
+        "UT-S09-303",
+        "UT-S09-304",
+        "UT-S09-305",
+        "UT-S09-306",
+        "UT-S09-307",
+        "UT-S09-308",
+        "UT-S16-38",
+        "UT-S16-39",
+        "UT-S16-40",
+        "UT-S16-41"
+      ],
+      "removed_test_ids": [],
+      "targets": [
+        {
+          "target_path": "logos/resources/test/core-S05-test-cases.md",
+          "before_sha256": "54de72e86a97a1a08858c6b715502895f9af3bd2cd0a5b6cf628ef330d120acb",
+          "after_sha256": "7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8"
+        },
+        {
+          "target_path": "logos/resources/test/core-S09-test-cases.md",
+          "before_sha256": "13062cd6c5880f5096676874ec317318c9091703830eab3a9f66ac885e93ee56",
+          "after_sha256": "4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e"
+        },
+        {
+          "target_path": "logos/resources/test/core-S16-test-cases.md",
+          "before_sha256": "9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58",
+          "after_sha256": "75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038"
+        },
+        {
+          "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+          "before_sha256": "23d061472dae7232576877b667b492c9fd43e75eb6f31efb6b9cf8db2be21241",
+          "after_sha256": "4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f"
+        }
+      ],
+      "sha256": "sha256:05d5832da638ee8629a275d433ef54ceb310567d1e000d841d10985381526867"
+    },
+    "spec_merged": {
+      "path": "logos/changes/fix-merge-flow-transaction-contract/SPEC_MERGED"
+    },
+    "commit_paths": [
+      "logos/changes/fix-merge-flow-transaction-contract/MERGE_RECEIPT.json",
+      "logos/changes/fix-merge-flow-transaction-contract/SPEC_MERGED",
+      "logos/logos-project.yaml",
+      "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+      "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S05-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S16-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "spec/change-management.md",
+      "spec/cli-json-output.md",
+      "spec/flow-spec.md"
+    ],
+    "completed_at": "2026-09-05T08:55:41.336Z",
+    "receipt_sha256": "sha256:b480d614fdf658594d17a50138dde4fd35987cf9c634725e0146c6e93ff01e95"
+  },
+  "artifact_hashes": [
+    {
+      "path": "logos/changes/fix-merge-flow-transaction-contract/MERGE_RECEIPT.json",
+      "sha256": "sha256:740731fb3ba6e89bc9ecb5595a38f3b967464b2d28d3cb8ed878e61d0eda6809"
+    },
+    {
+      "path": "logos/changes/fix-merge-flow-transaction-contract/SPEC_MERGED",
+      "sha256": "sha256:db73cc9e99d6113766704aade9f625cb0c69fe791ab27cc3637a68b2ea0ea7f7"
+    }
+  ],
+  "aborted_at": null,
+  "created_at": "2026-09-05T08:55:18.528Z",
+  "updated_at": "2026-09-05T08:55:41.336Z"
+}

@@ -1,0 +1,187 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_d2d5e11e927b86ee38b17620",
+  "seal_sha256": "sha256:dfe92e4bf1154efa18a5ac06f8150e775b1804b815be13ce963a96c019955175",
+  "target_set_sha256": "sha256:b6e22f6beaacde58d8d739c08154314840ec5d1553d12e1495b7ba2a158840f3",
+  "closure_sha256": "sha256:2df573505ab5e612fe8facd996c4b38cff7ec4945965b84140949c49630b9f44",
+  "target_count": 16,
+  "plan_sha256": "sha256:dbce8a367a740191acffe5803ad011c29363d3ccc51c3362677baae05cc6eb22",
+  "change": "fix-merge-flow-transaction-contract",
+  "module": "core",
+  "changed_paths": [
+    "logos/logos-project.yaml",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S05-test-cases.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S16-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/change-management.md",
+    "spec/cli-json-output.md",
+    "spec/flow-spec.md"
+  ],
+  "created_paths": [
+    "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md"
+  ],
+  "final_hashes": [
+    {
+      "path": "logos/logos-project.yaml",
+      "sha256": "sha256:cd09dac9b474d4719156eb4355c9d9d0e121e857ff21073551f712753e271d7f"
+    },
+    {
+      "path": "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md",
+      "sha256": "sha256:b0ca2bdfd4bacb8de957343d53cfe9a53e166d1ec79fae21f980fac46b2fed31"
+    },
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:291250adf84ffd402eb5481cadcc4600e651b79632e58d66ec486f166f66539c"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:9ab1eced0d152ffaba33e1542636512cac938e5b8fa71bc5396803c897f269f2"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+      "sha256": "sha256:63400f8f3c45b65b2c18de420c2fe716b1b46e06c47ab5964abffc4c049712d5"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "sha256": "sha256:7a3a06235b6e6bbf74cb1d39ac55ea46139c826db07f2f649028dc7120f85fbb"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+      "sha256": "sha256:dc5898a64626982637aaa74ac5cc725f286e6974fc157bde9aa37e21fd8f8cfb"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "sha256": "sha256:1e2148c513361c1ea9e88ae7bfbc2a5e12c10f98645783bd129900a75b68248f"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+      "sha256": "sha256:aab30eb2472606fdcd65e76d3eec345e622fedec74410c13d7b3b6a7f3fe7786"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "sha256": "sha256:77bc1d4057a82cba22812422187ff5d9790e721cdffca15acd20df07c8b1fb3d"
+    },
+    {
+      "path": "logos/resources/test/core-S05-test-cases.md",
+      "sha256": "sha256:7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8"
+    },
+    {
+      "path": "logos/resources/test/core-S09-test-cases.md",
+      "sha256": "sha256:4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e"
+    },
+    {
+      "path": "logos/resources/test/core-S16-test-cases.md",
+      "sha256": "sha256:75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038"
+    },
+    {
+      "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "sha256": "sha256:4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f"
+    },
+    {
+      "path": "spec/change-management.md",
+      "sha256": "sha256:f13546e71af8cdf5994b94cddef2001f59124dd5e88f844ccdf6c723b0e7b2a0"
+    },
+    {
+      "path": "spec/cli-json-output.md",
+      "sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09"
+    },
+    {
+      "path": "spec/flow-spec.md",
+      "sha256": "sha256:fbe36a62b6a4d304868284e2d2b774e61a5a4da68a5215dddef48193268ab871"
+    }
+  ],
+  "metadata_summaries": [
+    {
+      "path": "logos/logos-project.yaml",
+      "sha256": "sha256:cd09dac9b474d4719156eb4355c9d9d0e121e857ff21073551f712753e271d7f"
+    }
+  ],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-merge-flow-transaction-contract",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-190",
+      "ST-S05-24",
+      "ST-S05-25",
+      "ST-S09-116",
+      "ST-S09-117",
+      "ST-S16-12",
+      "ST-S16-13",
+      "UT-S05-52",
+      "UT-S05-53",
+      "UT-S05-54",
+      "UT-S05-55",
+      "UT-S09-303",
+      "UT-S09-304",
+      "UT-S09-305",
+      "UT-S09-306",
+      "UT-S09-307",
+      "UT-S09-308",
+      "UT-S16-38",
+      "UT-S16-39",
+      "UT-S16-40",
+      "UT-S16-41"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S05-test-cases.md",
+        "before_sha256": "54de72e86a97a1a08858c6b715502895f9af3bd2cd0a5b6cf628ef330d120acb",
+        "after_sha256": "7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "13062cd6c5880f5096676874ec317318c9091703830eab3a9f66ac885e93ee56",
+        "after_sha256": "4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e"
+      },
+      {
+        "target_path": "logos/resources/test/core-S16-test-cases.md",
+        "before_sha256": "9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58",
+        "after_sha256": "75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "23d061472dae7232576877b667b492c9fd43e75eb6f31efb6b9cf8db2be21241",
+        "after_sha256": "4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f"
+      }
+    ],
+    "sha256": "sha256:05d5832da638ee8629a275d433ef54ceb310567d1e000d841d10985381526867"
+  },
+  "spec_merged": {
+    "path": "logos/changes/fix-merge-flow-transaction-contract/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/fix-merge-flow-transaction-contract/MERGE_RECEIPT.json",
+    "logos/changes/fix-merge-flow-transaction-contract/SPEC_MERGED",
+    "logos/logos-project.yaml",
+    "logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/2-product-design/2-page-design/core-01-cli-experience.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S05-next-guidance.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S16-machine-json-output.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S05-test-cases.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S16-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/change-management.md",
+    "spec/cli-json-output.md",
+    "spec/flow-spec.md"
+  ],
+  "completed_at": "2026-09-05T08:55:41.336Z",
+  "receipt_sha256": "sha256:b480d614fdf658594d17a50138dde4fd35987cf9c634725e0146c6e93ff01e95"
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_a38e8e1fa193427f8a206131",
+  "slug": "fix-merge-flow-transaction-contract",
+  "module": "core",
+  "phase": "completed",
+  "origin": "initial-plan",
+  "classification": null,
+  "spec_fingerprint": "sha256:fa1b1be97e51cd60112e639366bb03079eb019135c782e56c044fb7736f0c135",
+  "changed_test_ids_sha256": "sha256:b6e90133cd01d66abfd2d6dab77c47cf0047b1ce01e3f0df0f8bcf2939d195a9",
+  "schema_sha256": "sha256:6b559356671e8fdbd7b70ef5e74a66c3d26ca81c92e5b4c78bb5d35d8e57e039",
+  "contract_sha256": "sha256:a9c0d9936a2f556f8d383e2aa6e212c064b2b1a96c4bf12575749f2d8874a73d",
+  "seal_sha256": "sha256:5539693e2754da237ce03c236e17478b2ff4f4a54d67949fb082ab10c5d04cca",
+  "slots": [
+    {
+      "slot_id": "slot_codesection",
+      "content_sha256": "sha256:7bb8e98dd6aa9ed7006c68c706e010c8d5700c6624ecc511f4325021d65787fc",
+      "sealed_sha256": "sha256:7bb8e98dd6aa9ed7006c68c706e010c8d5700c6624ecc511f4325021d65787fc"
+    },
+    {
+      "slot_id": "slot_slices",
+      "content_sha256": "sha256:09739ef5603a5158dd51398f4ff2cf2c6ca11cc5a91eea65d4b69b1b04a6daf1",
+      "sealed_sha256": "sha256:09739ef5603a5158dd51398f4ff2cf2c6ca11cc5a91eea65d4b69b1b04a6daf1"
+    }
+  ],
+  "staged": {
+    "slot_codesection": "> 六维打分：影响范围 1（CLI 单包：flow 规格资产 + flow-derive + merge 文案 + status/next + 测试）＋行为复杂度 1（判据替换与文案，无新状态机）＋契约变化 2（flow done 事实、后置条件二分、投影必挂、错误码验收均为合同变更）＋测试规模 2（21 个变更 ID）＋风险 2（涉 0.14.19 部署）＋不确定性 0（判据已由 §2.60/§12.10/四十七 定死）= 8 分 → 大任务，进入垂直拆分。\n> 删后续自检（3 片，逐片结论）：片1 删 2/3——done_when+flow-derive 同源落地后「merge 开事务→前沿推进」端到端可观察（临时项目真实命令链），全量 verify 绿（片2/3 owned ID 由 manifest 归属豁免，既有回归随文案断言同步修）；片2 删 3——投影必挂与错误码注册表合同独立可观察、verify 绿；片3 无后续。三片按 1→2→3 串行、无前向依赖（片3 的 SMOKE runner 断言片1 行为，但 runner 本身在片3 内自闭环交付、安装态执行在部署阶段）。均过 (a)(b)，无向前合并需要。\n\n- [ ] 切片1：merge 前沿事务事实落地——spec/flow/launched.yaml 的 generate-merge-prompt.done_when 改为 any_present:[MERGE_TRANSACTION.json, MERGE_PROMPT_GENERATED, MERGE_PROMPT.md] 且 artifacts_hint 同步、flow-derive step 推导改认同一判据（事务在盘∨legacy marker）、判据两处同源回归、merge（有 delta）收尾提示改事务引导且不含 MERGE_PROMPT.md 字样（幂等/重建情形体现现状）、既有断言随新文案同步，实现含 OpenLogos reporter 的 UT-S05-52～55、ST-S05-24～25、UT-S09-303～307、ST-S09-116～117\n- [ ] 切片2：投影必挂与错误码合同——status/next 在活跃事务在场时 data.merge_transaction 必挂（同快照一致、next 不改写事务动作）、存量事务 contract/schema 失配 fail-closed 稳定码 + details 双方版本摘要 + remediation（abort 后重开、retryable:false）、status/next 失败路径「路径→error.code」注册表回归与瞬态码集合快照，实现含 OpenLogos reporter 的 UT-S09-308、UT-S16-38～41、ST-S16-12～13\n- [ ] 切片3：0.14.19 候选身份与 SMOKE-core-190 runner——package/lockfile/asset-manifest/plugin manifests/LOCAL_RELEASE_*/tripwire/golden 同步 0.14.19（回滚 0.14.18），新增 scripts/smoke-merge-frontier-0-14-19.js（跨组件全链：merge 开事务→status/next 前沿推进→submit/seal/apply→SPEC_MERGED→前沿越过；0.14.18 死区零回归对照；环境缺失显式 skip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl，覆盖 SMOKE-core-190\n",
+    "slot_slices": "[\n  {\n    \"slice_id\": \"slice-01-frontier-transaction-fact\",\n    \"task_text\": \"切片1：merge 前沿事务事实落地——spec/flow/launched.yaml 的 generate-merge-prompt.done_when 改为 any_present:[MERGE_TRANSACTION.json, MERGE_PROMPT_GENERATED, MERGE_PROMPT.md] 且 artifacts_hint 同步、flow-derive step 推导改认同一判据（事务在盘∨legacy marker）、判据两处同源回归、merge（有 delta）收尾提示改事务引导且不含 MERGE_PROMPT.md 字样（幂等/重建情形体现现状）、既有断言随新文案同步，实现含 OpenLogos reporter 的 UT-S05-52～55、ST-S05-24～25、UT-S09-303～307、ST-S09-116～117\",\n    \"owned_test_ids\": [\n      \"UT-S05-52\",\n      \"UT-S05-53\",\n      \"UT-S05-54\",\n      \"UT-S05-55\",\n      \"ST-S05-24\",\n      \"ST-S05-25\",\n      \"UT-S09-303\",\n      \"UT-S09-304\",\n      \"UT-S09-305\",\n      \"UT-S09-306\",\n      \"UT-S09-307\",\n      \"ST-S09-116\",\n      \"ST-S09-117\"\n    ],\n    \"runner_selectors\": [\n      \"UT-S05-52\",\n      \"UT-S05-53\",\n      \"UT-S05-54\",\n      \"UT-S05-55\",\n      \"ST-S05-24\",\n      \"ST-S05-25\",\n      \"UT-S09-303\",\n      \"UT-S09-304\",\n      \"UT-S09-305\",\n      \"UT-S09-306\",\n      \"UT-S09-307\",\n      \"ST-S09-116\",\n      \"ST-S09-117\"\n    ],\n    \"spec_targets\": [\n      \"logos/resources/test/core-S05-test-cases.md\",\n      \"logos/resources/test/core-S09-test-cases.md\"\n    ]\n  },\n  {\n    \"slice_id\": \"slice-02-projection-and-error-codes\",\n    \"task_text\": \"切片2：投影必挂与错误码合同——status/next 在活跃事务在场时 data.merge_transaction 必挂（同快照一致、next 不改写事务动作）、存量事务 contract/schema 失配 fail-closed 稳定码 + details 双方版本摘要 + remediation（abort 后重开、retryable:false）、status/next 失败路径「路径→error.code」注册表回归与瞬态码集合快照，实现含 OpenLogos reporter 的 UT-S09-308、UT-S16-38～41、ST-S16-12～13\",\n    \"owned_test_ids\": [\n      \"UT-S09-308\",\n      \"UT-S16-38\",\n      \"UT-S16-39\",\n      \"UT-S16-40\",\n      \"UT-S16-41\",\n      \"ST-S16-12\",\n      \"ST-S16-13\"\n    ],\n    \"runner_selectors\": [\n      \"UT-S09-308\",\n      \"UT-S16-38\",\n      \"UT-S16-39\",\n      \"UT-S16-40\",\n      \"UT-S16-41\",\n      \"ST-S16-12\",\n      \"ST-S16-13\"\n    ],\n    \"spec_targets\": [\n      \"logos/resources/test/core-S09-test-cases.md\",\n      \"logos/resources/test/core-S16-test-cases.md\"\n    ]\n  },\n  {\n    \"slice_id\": \"slice-03-release-identity-smoke\",\n    \"task_text\": \"切片3：0.14.19 候选身份与 SMOKE-core-190 runner——package/lockfile/asset-manifest/plugin manifests/LOCAL_RELEASE_*/tripwire/golden 同步 0.14.19（回滚 0.14.18），新增 scripts/smoke-merge-frontier-0-14-19.js（跨组件全链：merge 开事务→status/next 前沿推进→submit/seal/apply→SPEC_MERGED→前沿越过；0.14.18 死区零回归对照；环境缺失显式 skip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl，覆盖 SMOKE-core-190\",\n    \"owned_test_ids\": [\n      \"SMOKE-core-190\"\n    ],\n    \"runner_selectors\": [\n      \"SMOKE-core-190\"\n    ],\n    \"spec_targets\": [\n      \"logos/resources/test/smoke/core-smoke-test-cases.md\"\n    ]\n  }\n]"
+  },
+  "receipt": {
+    "transaction_id": "stx_a38e8e1fa193427f8a206131",
+    "completed_at": "2026-09-05T08:59:29.867Z",
+    "seal_sha256": "sha256:5539693e2754da237ce03c236e17478b2ff4f4a54d67949fb082ab10c5d04cca",
+    "artifacts": [
+      {
+        "path": "tasks.md",
+        "sha256": "sha256:df083e412681763d552f58108b69dc98784ddcc07984e9c54bd80b06c6b04eb7"
+      },
+      {
+        "path": "TEST_SLICE_MANIFEST.json",
+        "sha256": "sha256:36810ffa0e4b795af71aa4b95981a6c140a00fc9828a1b72e47cb3ef9d84c097"
+      }
+    ]
+  },
+  "violations": [],
+  "aborted_at": null,
+  "created_at": "2026-09-05T08:59:29.443Z",
+  "updated_at": "2026-09-05T08:59:29.867Z"
+}

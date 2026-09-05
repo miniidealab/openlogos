@@ -1,0 +1,60 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_d2d5e11e927b86ee38b17620",
+  "seal_sha256": "sha256:dfe92e4bf1154efa18a5ac06f8150e775b1804b815be13ce963a96c019955175",
+  "receipt_sha256": "sha256:b480d614fdf658594d17a50138dde4fd35987cf9c634725e0146c6e93ff01e95",
+  "completed_at": "2026-09-05T08:55:41.336Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-merge-flow-transaction-contract",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-190",
+      "ST-S05-24",
+      "ST-S05-25",
+      "ST-S09-116",
+      "ST-S09-117",
+      "ST-S16-12",
+      "ST-S16-13",
+      "UT-S05-52",
+      "UT-S05-53",
+      "UT-S05-54",
+      "UT-S05-55",
+      "UT-S09-303",
+      "UT-S09-304",
+      "UT-S09-305",
+      "UT-S09-306",
+      "UT-S09-307",
+      "UT-S09-308",
+      "UT-S16-38",
+      "UT-S16-39",
+      "UT-S16-40",
+      "UT-S16-41"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S05-test-cases.md",
+        "before_sha256": "54de72e86a97a1a08858c6b715502895f9af3bd2cd0a5b6cf628ef330d120acb",
+        "after_sha256": "7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "13062cd6c5880f5096676874ec317318c9091703830eab3a9f66ac885e93ee56",
+        "after_sha256": "4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e"
+      },
+      {
+        "target_path": "logos/resources/test/core-S16-test-cases.md",
+        "before_sha256": "9411fd6d226046742083778a84c7f50e0482671382773505d408f9143f207c58",
+        "after_sha256": "75ada7f22397a1f71cbc6f2d42021fe173b026a174327f386c8db0098af35038"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "23d061472dae7232576877b667b492c9fd43e75eb6f31efb6b9cf8db2be21241",
+        "after_sha256": "4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f"
+      }
+    ],
+    "sha256": "sha256:05d5832da638ee8629a275d433ef54ceb310567d1e000d841d10985381526867"
+  }
+}
