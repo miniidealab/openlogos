@@ -15,8 +15,8 @@ import {
   BASELINE_CLOSURE_APPLY_JOURNAL, type BaselineClosureApplyInput,
 } from './baseline-apply.js';
 import {
-  buildTestChangeSet, TestChangeSetBuildError,
-  type TestChangeSetInputTarget, type TestChangeSetV1,
+  buildTestChangeSet, forwardMergeTestChangeSets, TestChangeSetBuildError, TEST_CHANGE_SET_SOURCE,
+  type TestChangeSetInputTarget, type TestChangeSetLineageStep, type TestChangeSetV1,
 } from './test-change-set.js';
 import {
   assertMergeTransactionSemantics, computeMergeReceiptSha256,
@@ -759,6 +759,56 @@ function computeSealSha256(tx: StoredTransaction, hashes: Array<{ slot_id: strin
   }));
 }
 
+/**
+ * fix-reopen-test-change-set-forward-merge：受控读取 reopen lineage 的归档 receipt change set。
+ * 只在核心 seal/apply 路径调用（消费者对归档保持 audit-only）；留痕行按时序返回，
+ * abort 祖先（无 receipt）不参与，receipt 无测试事实记空集，身份失配 / 损坏一律 fail-closed。
+ */
+function reopenLineageChangeSets(proposalDir: string, tx: StoredTransaction): TestChangeSetLineageStep[] {
+  const auditPath = join(proposalDir, MERGE_REOPENS_FILE);
+  if (!existsSync(auditPath)) return [];
+  const failClosed = (message: string): never => {
+    throw new MergePreflightBuildError(
+      { code: 'merge-preflight-reopen-lineage-invalid', target_paths: [], producer: 'openlogos', retryable: false },
+      message,
+    );
+  };
+  const steps: TestChangeSetLineageStep[] = [];
+  const lines = readFileSync(auditPath, 'utf8').split('\n').filter(line => line.trim() !== '');
+  for (const line of lines) {
+    let audit: { old_transaction_id?: unknown };
+    try { audit = JSON.parse(line) as { old_transaction_id?: unknown }; } catch (error) {
+      return failClosed(`MERGE_REOPENS.jsonl 留痕行损坏，change set 前滚 fail-closed（不降级为快照 diff）：${auditPath}：${error instanceof Error ? error.message : String(error)}`);
+    }
+    const oldId = audit.old_transaction_id;
+    if (typeof oldId !== 'string' || oldId === '') {
+      return failClosed(`MERGE_REOPENS.jsonl 留痕行缺 old_transaction_id，change set 前滚 fail-closed：${auditPath}`);
+    }
+    const receiptPath = join(proposalDir, 'merge-transactions', `${oldId}.receipt.json`);
+    if (!existsSync(receiptPath)) continue;
+    let receipt: { test_change_set?: unknown };
+    try { receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as { test_change_set?: unknown }; } catch (error) {
+      return failClosed(`归档 receipt 损坏，change set 前滚 fail-closed：${receiptPath}：${error instanceof Error ? error.message : String(error)}`);
+    }
+    const cs = receipt.test_change_set as Record<string, unknown> | null | undefined;
+    if (cs === null || cs === undefined) {
+      steps.push({ changed_test_ids: [], removed_test_ids: [] });
+      continue;
+    }
+    const stringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
+    if (cs.change !== tx.slug || cs.module !== tx.module || cs.source !== TEST_CHANGE_SET_SOURCE) {
+      return failClosed(`归档 receipt 身份失配，change set 前滚 fail-closed：${receiptPath}：`
+        + `receipt change=${String(cs.change)}/module=${String(cs.module)}/source=${String(cs.source)}，`
+        + `当前提案 change=${tx.slug}/module=${tx.module}/source=${TEST_CHANGE_SET_SOURCE}`);
+    }
+    if (!stringArray(cs.changed_test_ids) || !stringArray(cs.removed_test_ids)) {
+      return failClosed(`归档 receipt change set 结构非法，前滚 fail-closed：${receiptPath}`);
+    }
+    steps.push({ changed_test_ids: cs.changed_test_ids, removed_test_ids: cs.removed_test_ids });
+  }
+  return steps;
+}
+
 /** 纯只读构建；调用方只有在完整成功后才可写 transaction phase。 */
 function buildMergePreflight(root: string, proposalDir: string, tx: StoredTransaction): PreparedMergeClosure {
   const targetBytes = new Map<string, Buffer>();
@@ -804,7 +854,11 @@ function buildMergePreflight(root: string, proposalDir: string, tx: StoredTransa
         final_sha256: digest(metadata),
       });
     }
-    const testChangeSet = buildTestChangeSet({ change: tx.slug, module: tx.module, targets: tests });
+    // fix-reopen-test-change-set-forward-merge：提案级累计事实——reopen 留痕在场时前滚合并归档 receipt
+    const testChangeSet = forwardMergeTestChangeSets(
+      buildTestChangeSet({ change: tx.slug, module: tx.module, targets: tests }),
+      reopenLineageChangeSets(proposalDir, tx),
+    );
     const sortedTargets = [...targets].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
     const base: Omit<MergePreflightView, 'sha256'> = {
       schema: MERGE_PREFLIGHT_SCHEMA,

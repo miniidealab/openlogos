@@ -119,7 +119,7 @@ export function driveToPhase(f: ReturnType<typeof frontierFixture>, phase: 'coll
   return applyMergeTransaction(f.root, f.proposalDir);
 }
 
-export function driveToPhase2Apply(f: ReturnType<typeof frontierFixture>) {
+export function driveToPhase2Apply(f: ReturnType<typeof frontierFixture>, options?: { stopBeforeSeal?: boolean }) {
   let tx = readMergeTransaction(f.proposalDir);
   for (const target of listMergeTransactionPlanTargets(f.proposalDir)) {
     const descriptor = tx.content_slots.items.find(item => item.slot_id === target.slot_id)!;
@@ -128,6 +128,7 @@ export function driveToPhase2Apply(f: ReturnType<typeof frontierFixture>) {
     writeFileSync(staging, f.finals[target.target_path]);
     tx = submitMergeContent(f.proposalDir, target.slot_id, staging);
   }
+  if (options?.stopBeforeSeal) return;
   sealMergeTransaction(f.root, f.proposalDir);
   applyMergeTransaction(f.root, f.proposalDir);
 }

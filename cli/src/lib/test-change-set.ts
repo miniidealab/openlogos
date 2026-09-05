@@ -218,6 +218,55 @@ function hashPayload(value: Omit<TestChangeSetV1, 'sha256'>): `sha256:${string}`
   return `sha256:${sha256(Buffer.from(JSON.stringify(value), 'utf8'))}`;
 }
 
+export interface TestChangeSetLineageStep {
+  changed_test_ids: string[];
+  removed_test_ids: string[];
+}
+
+/**
+ * fix-reopen-test-change-set-forward-merge：把 reopen 归档祖先的 change set 按重开时序前滚合并进
+ * 当前快照 diff——changed=(prev∖cur_removed)∪cur_changed、removed=(prev∖cur_changed)∪cur_removed。
+ * targets 与 hash 保持当前事务快照；ancestors 为空时原样返回（无留痕提案逐字节不变）。
+ * 纯函数，只做集合合并；lineage 的 IO 与身份校验归 merge-transaction 的核心 apply 路径。
+ */
+export function forwardMergeTestChangeSets(
+  current: TestChangeSetV1,
+  ancestors: TestChangeSetLineageStep[],
+): TestChangeSetV1 {
+  if (ancestors.length === 0) return current;
+  const changed = new Set<string>();
+  const removed = new Set<string>();
+  const steps: TestChangeSetLineageStep[] = [
+    ...ancestors,
+    { changed_test_ids: current.changed_test_ids, removed_test_ids: current.removed_test_ids },
+  ];
+  for (const step of steps) {
+    for (const id of step.removed_test_ids) changed.delete(id);
+    for (const id of step.changed_test_ids) removed.delete(id);
+    for (const id of step.changed_test_ids) changed.add(id);
+    for (const id of step.removed_test_ids) removed.add(id);
+  }
+  const payload: Omit<TestChangeSetV1, 'sha256'> = {
+    schema: current.schema,
+    change: current.change,
+    module: current.module,
+    source: current.source,
+    changed_test_ids: asciiSort([...changed]),
+    removed_test_ids: asciiSort([...removed]),
+    targets: current.targets,
+  };
+  const overlap = payload.changed_test_ids.filter(id => payload.removed_test_ids.includes(id));
+  if (overlap.length > 0) {
+    throw new TestChangeSetBuildError(
+      'test-change-set-overlap',
+      `test-change-set-overlap：${overlap.join('、')}`,
+      payload.targets.map(target => target.target_path),
+      false,
+    );
+  }
+  return { ...payload, sha256: hashPayload(payload) };
+}
+
 export function buildTestChangeSet(input: {
   change: string;
   module: string;
