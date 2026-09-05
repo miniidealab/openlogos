@@ -1075,7 +1075,7 @@ describe('OpenLogos merge transaction', () => {
       merge_transaction_golden_sha256: hash('7'),
       semantic_validator: 'openlogos/merge-transaction-semantic@1',
     });
-    expect(facts.cli_version).toBe('0.14.17');
+    expect(facts.cli_version).toBe('0.14.18');
     for (const field of [
       'candidate_tarball_sha256', 'merge_transaction_schema_sha256', 'status_schema_sha256',
       'next_schema_sha256', 'contract_sha256', 'merge_executor_skill_sha256',
@@ -1140,13 +1140,13 @@ describe('OpenLogos merge transaction', () => {
     const isolatedCli = join(isolatedSource, 'cli');
     const generatedPackageDirs = new Set([
       'node_modules', 'skills', 'spec', 'opencode-plugin-template', 'codex-plugin-template',
-      'claude-plugin-template', 'zcode-plugin-template', 'qoder-plugin-template', 'workbuddy-plugin-template',
+      'claude-plugin-template', 'zcode-plugin-template', 'qoder-plugin-template', 'workbuddy-plugin-template', 'cursor-plugin-template',
     ]);
     cpSync(join(repoRoot, 'cli'), isolatedCli, {
       recursive: true,
       filter: source => source === join(repoRoot, 'cli') || !generatedPackageDirs.has(source.slice(join(repoRoot, 'cli').length + 1).split('/')[0]),
     });
-    for (const dir of ['skills', 'spec', 'plugin-opencode', 'plugin-codex', 'plugin', 'plugin-zcode', 'plugin-qoder', 'plugin-workbuddy']) {
+    for (const dir of ['skills', 'spec', 'plugin-opencode', 'plugin-codex', 'plugin', 'plugin-zcode', 'plugin-qoder', 'plugin-workbuddy', 'plugin-cursor']) {
       cpSync(join(repoRoot, dir), join(isolatedSource, dir), { recursive: true });
     }
     symlinkSync(join(repoRoot, 'cli/node_modules'), join(isolatedCli, 'node_modules'));
@@ -1262,13 +1262,13 @@ describe('OpenLogos merge transaction', () => {
     const isolatedCli = join(isolatedSource, 'cli');
     const generatedPackageDirs = new Set([
       'node_modules', 'skills', 'spec', 'opencode-plugin-template', 'codex-plugin-template',
-      'claude-plugin-template', 'zcode-plugin-template', 'qoder-plugin-template', 'workbuddy-plugin-template',
+      'claude-plugin-template', 'zcode-plugin-template', 'qoder-plugin-template', 'workbuddy-plugin-template', 'cursor-plugin-template',
     ]);
     cpSync(join(repoRoot, 'cli'), isolatedCli, {
       recursive: true,
       filter: source => source === join(repoRoot, 'cli') || !generatedPackageDirs.has(source.slice(join(repoRoot, 'cli').length + 1).split('/')[0]),
     });
-    for (const dir of ['skills', 'spec', 'plugin-opencode', 'plugin-codex', 'plugin', 'plugin-zcode', 'plugin-qoder', 'plugin-workbuddy']) {
+    for (const dir of ['skills', 'spec', 'plugin-opencode', 'plugin-codex', 'plugin', 'plugin-zcode', 'plugin-qoder', 'plugin-workbuddy', 'plugin-cursor']) {
       cpSync(join(repoRoot, dir), join(isolatedSource, dir), { recursive: true });
     }
     symlinkSync(join(repoRoot, 'cli/node_modules'), join(isolatedCli, 'node_modules'));

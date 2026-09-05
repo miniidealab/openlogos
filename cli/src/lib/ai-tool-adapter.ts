@@ -37,7 +37,21 @@ const DEFAULT_ADAPTERS: AiToolAdapterDefinition[] = [
   { id: 'claude-code', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents', 'plugin', 'hooks'] } },
   { id: 'opencode', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents', 'plugin', 'hooks'] } },
   { id: 'codex', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents', 'plugin', 'hooks'] } },
-  { id: 'cursor', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents'] } },
+  {
+    // cursor-adapter-parity（D09 capability honesty）：三件套补齐；preToolUse 如实声明 false——
+    // cursor-agent CLI hook 事件为子集（sessionStart/beforeShellExecution/afterFileEdit 等），无 preToolUse。
+    id: 'cursor',
+    capabilities: {
+      lifecycle: ['init', 'sync', 'launch', 'adopt'],
+      assets: ['agents', 'plugin', 'hooks'],
+      instructions: true,
+      skills: true,
+      commands: true,
+      agents: true,
+      sessionStart: true,
+      preToolUse: false,
+    },
+  },
   { id: 'zcode', capabilities: { lifecycle: ['init', 'sync', 'launch', 'adopt'], assets: ['agents', 'plugin', 'hooks'] } },
   {
     id: 'qoder',

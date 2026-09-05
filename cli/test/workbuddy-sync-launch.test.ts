@@ -196,7 +196,7 @@ describe('WorkBuddy sync/launch — S08/S14', () => {
     expect(existsSync(join(root, '.claude/commands/openlogos/status.md'))).toBe(true);
     expect(existsSync(join(root, '.opencode/plugins/openlogos.js'))).toBe(true);
     expect(existsSync(join(root, '.agents/plugins/openlogos/.codex-plugin/plugin.json'))).toBe(true);
-    expect(existsSync(join(root, '.cursor/rules/openlogos-policy.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor/skills/prd-writer/SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.zcode/plugins/openlogos/.zcode-plugin/plugin.json'))).toBe(true);
     expect(existsSync(join(root, '.qoder/plugins/openlogos/.qoder-plugin/plugin.json'))).toBe(true);
   });

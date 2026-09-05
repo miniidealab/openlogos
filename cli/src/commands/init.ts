@@ -33,6 +33,14 @@ import {
   preflightWorkBuddyTarget,
   preflightZCodeTarget,
 } from '../lib/ai-tool-adapter.js';
+import {
+  CURSOR_GUARD_STRENGTH_NOTICE_ZH,
+  CURSOR_SKILLS_REL_DIR,
+  createCursorAgentsInstruction,
+  deployCursorAssets,
+  localizedCursorResult,
+  preflightCursorTarget,
+} from '../lib/cursor-adapter.js';
 
 export type { AiTool } from '../lib/ai-tool-adapter.js';
 
@@ -364,6 +372,15 @@ export function findWorkBuddyPluginTemplateSource(): string | null {
   return existsSync(devTemplate) ? devTemplate : null;
 }
 
+export function findCursorPluginTemplateSource(): string | null {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+  const packageTemplate = join(currentDir, '..', '..', 'cursor-plugin-template');
+  if (existsSync(packageTemplate)) return packageTemplate;
+  const devTemplate = join(currentDir, '..', '..', '..', 'plugin-cursor');
+  return existsSync(devTemplate) ? devTemplate : null;
+}
+
 export function preflightAiToolAssets(root: string, aiTools: AiToolId[]): void {
   if (aiTools.includes('zcode')) {
     const source = findZCodePluginTemplateSource();
@@ -379,6 +396,15 @@ export function preflightAiToolAssets(root: string, aiTools: AiToolId[]): void {
     const source = findWorkBuddyPluginTemplateSource();
     if (!source) throw new Error('WorkBuddy plugin template not found.');
     preflightWorkBuddyTarget(root, source);
+  }
+  if (aiTools.includes('cursor')) {
+    const source = findCursorPluginTemplateSource();
+    if (!source) throw new Error('Cursor plugin template not found.');
+    const claudeTemplate = findClaudePluginTemplateSource();
+    preflightCursorTarget(root, {
+      skills: findSkillsSource(),
+      commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+    }, SKILL_NAMES);
   }
 }
 
@@ -1209,11 +1235,27 @@ export function deployAiToolAssets(
   const codexMessageKey = mode === 'synced' ? 'init.codexPluginSynced' : 'init.codexPluginDeployed';
   const claudeMessageKey = mode === 'synced' ? 'init.claudePluginSynced' : 'init.claudePluginDeployed';
 
-  for (const tool of aiTools.filter(tool => tool !== 'zcode' && tool !== 'qoder' && tool !== 'workbuddy')) {
+  for (const tool of aiTools.filter(tool => tool !== 'zcode' && tool !== 'qoder' && tool !== 'workbuddy' && tool !== 'cursor')) {
     const deployResult = deploySkills(root, tool, locale, isLaunched);
     if (deployResult && deployResult.count > 0) {
       console.log(`  ✓ ${t(locale, skillMessageKey, { count: String(deployResult.count), target: deployResult.target })}`);
     }
+  }
+
+  if (aiTools.includes('cursor')) {
+    const source = findCursorPluginTemplateSource();
+    if (!source) throw new Error('Cursor plugin template not found.');
+    // 多文件 Skill 资产（如 ui-ux-pro-max 的 scripts/data）仍落 logos/skills（与其他宿主一致）。
+    const skillsSource = findSkillsSource();
+    if (skillsSource && existsSync(skillsSource)) deployMultiFileSkillAssets(skillsSource, root);
+    const claudeTemplate = findClaudePluginTemplateSource();
+    const result = deployCursorAssets(root, source, {
+      skills: findSkillsSource(),
+      commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+    }, SKILL_NAMES, locale);
+    console.log(`  ✓ ${localizedCursorResult(locale, result)}`);
+    // guard 部分强度提示行（capability honesty，固定必显，不随 locale 翻译协议表述）
+    console.log(`  ℹ ${CURSOR_GUARD_STRENGTH_NOTICE_ZH}`);
   }
 
   if (aiTools.includes('opencode')) {
@@ -1557,7 +1599,7 @@ export function deploySkills(
   root: string,
   aiTool: AiTool,
   locale: Locale = 'en',
-  isLaunched: boolean = false,
+  _isLaunched: boolean = false,
   skillsSource?: string,
 ): { target: string; count: number } | null {
   const source = skillsSource ?? findSkillsSource();
@@ -1567,22 +1609,9 @@ export function deploySkills(
 
   let count = 0;
 
-  if (aiTool === 'cursor') {
-    const targetDir = join(root, '.cursor', 'rules');
-    mkdirSync(targetDir, { recursive: true });
-    for (const name of SKILL_NAMES) {
-      const srcPath = resolveSkillFile(source, name, locale);
-      if (srcPath) {
-        const content = readFileSync(srcPath, 'utf-8');
-        const desc = SKILL_DESCRIPTIONS[name]?.en ?? name;
-        const mdc = `---\ndescription: "OpenLogos — ${desc}"\nalwaysApply: false\n---\n\n${content}`;
-        writeFileSync(join(targetDir, `${name}.mdc`), mdc);
-        count++;
-      }
-    }
-    writeFileSync(join(targetDir, 'openlogos-policy.mdc'), generatePolicyMdc(locale, isLaunched));
-    return { target: '.cursor/rules/', count };
-  }
+  // cursor-adapter-parity：cursor 不再走 .mdc 转换——原生 Agent Skills 由
+  // deployAiToolAssets 的 deployCursorAssets 分支部署（.cursor/skills/），
+  // 历史托管 .mdc 在该分支内完成迁移清理。deploySkills 不再持有 cursor 分支。
 
   if (aiTool === 'codex') {
     const targetDir = join(root, CODEX_OPENLOGOS_SKILLS_REL_DIR);
@@ -1615,6 +1644,9 @@ function shouldIncludeActiveSkills(aiTool: AiTool, target: 'agents' | 'claude'):
 function skillBasePath(aiTool: AiTool | undefined, target: 'agents' | 'claude' | undefined): string {
   if (aiTool === 'codex' && target === 'agents') {
     return CODEX_OPENLOGOS_SKILLS_REL_DIR;
+  }
+  if (aiTool === 'cursor' && target === 'agents') {
+    return CURSOR_SKILLS_REL_DIR;
   }
   if (aiTool === 'zcode' && target === 'agents') {
     return `${ZCODE_PLUGIN_REL_DIR}/skills`;
@@ -2024,6 +2056,9 @@ ${generateDocumentPostEditVerify(locale)}
   }
   if (aiTool === 'workbuddy' && target === 'agents') {
     content += '\n## WorkBuddy 宿主指令\n' + createWorkBuddyAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+  }
+  if (aiTool === 'cursor' && target === 'agents') {
+    content += '\n## Cursor 宿主指令\n' + createCursorAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
   }
 
   if (includeSkills) {

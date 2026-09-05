@@ -110,12 +110,12 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
 
     launch();
 
-    const policyPath = join(root, '.cursor', 'rules', 'openlogos-policy.mdc');
-    expect(existsSync(policyPath)).toBe(true);
-    const policy = readFileSync(policyPath, 'utf-8');
-    expect(policy).toContain('Enforced');
-    expect(policy).toContain('.openlogos-guard');
-    expect(policy).not.toContain('Initial Development');
+    // cursor-adapter-parity：policy 由 AGENTS.md managed block 承载，.mdc 不再生成
+    expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(false);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    const agentsPolicy = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agentsPolicy).toContain('Enforced');
+    expect(agentsPolicy).toContain('.openlogos-guard');
   });
 
   /* ---- explicit module-id ---- */
@@ -265,7 +265,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
 
     launch();
 
-    expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'marketplace.json'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
@@ -319,8 +319,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
     // Rules must be regenerated even though migration already marked module as launched
     const agents = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('Change Management (Enforced)');
-    const policy = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
-    expect(policy).toContain('Enforced');
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
   });
 
   /* ---- Fix 5: config.lifecycle removed after launch ---- */

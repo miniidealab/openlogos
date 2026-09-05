@@ -108,13 +108,13 @@ function createCandidateTarball(root: string): { tarball: string; files: Set<str
   const isolatedCli = join(sourceRoot, 'cli');
   const generated = new Set([
     'node_modules', 'skills', 'spec', 'opencode-plugin-template', 'codex-plugin-template',
-    'claude-plugin-template', 'zcode-plugin-template', 'qoder-plugin-template', 'workbuddy-plugin-template',
+    'claude-plugin-template', 'zcode-plugin-template', 'qoder-plugin-template', 'workbuddy-plugin-template', 'cursor-plugin-template',
   ]);
   cpSync(cliRoot, isolatedCli, {
     recursive: true,
     filter: source => source === cliRoot || !generated.has(source.slice(cliRoot.length + 1).split('/')[0]),
   });
-  for (const dir of ['skills', 'spec', 'plugin-opencode', 'plugin-codex', 'plugin', 'plugin-zcode', 'plugin-qoder', 'plugin-workbuddy']) {
+  for (const dir of ['skills', 'spec', 'plugin-opencode', 'plugin-codex', 'plugin', 'plugin-zcode', 'plugin-qoder', 'plugin-workbuddy', 'plugin-cursor']) {
     cpSync(join(repoRoot, dir), join(sourceRoot, dir), { recursive: true });
   }
   symlinkSync(join(cliRoot, 'node_modules'), join(isolatedCli, 'node_modules'));
@@ -131,7 +131,7 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
     ];
     for (const path of versionSources) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.17');
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.18');
 
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest;
     validateAssetManifest(assetManifest, cliRoot);

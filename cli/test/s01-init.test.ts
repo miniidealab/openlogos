@@ -14,6 +14,7 @@ import {
   deploySkills,
   deployClaudeCodePlugin,
   findClaudePluginTemplateSource,
+  findCursorPluginTemplateSource,
   generatePolicyMdc,
   deployCodexPlugin,
   createCodexSkillContent,
@@ -25,6 +26,7 @@ import {
   SKILL_NAMES,
   init,
 } from '../src/commands/init.js';
+import { deployCursorAssets } from '../src/lib/cursor-adapter.js';
 import { readLocale, t } from '../src/i18n.js';
 
 /* ---------- Readline mock setup ---------- */
@@ -442,7 +444,7 @@ describe('S01 Unit Tests — Claude Code Skill Binding', () => {
 
   it('UT-S01-39: cursor AGENTS.md has Skill paths in Phase detection', () => {
     const output = createAgentsMd('en', 'cursor', 'agents');
-    expect(output).toContain('logos/skills/prd-writer/SKILL.md');
+    expect(output).toContain('.cursor/skills/prd-writer/SKILL.md');
     expect(output).toContain('follow its steps');
   });
 
@@ -472,18 +474,28 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
     expect(existsSync(join(source!, 'prd-writer', 'SKILL.md'))).toBe(true);
   });
 
+  // cursor-adapter-parity：cursor 不再产 .mdc——原生 Agent Skills 部署到 .cursor/skills/，
+  // 语言策略/变更管理策略由 AGENTS.md managed block 与 hooks 门禁承载（UT-S01-23 系列改测新契约）。
+  function deployCursorForTest(root: string, locale: 'zh' | 'en') {
+    const claudeTemplate = findClaudePluginTemplateSource();
+    return deployCursorAssets(root, findCursorPluginTemplateSource()!, {
+      skills: findSkillsSource(),
+      commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+    }, SKILL_NAMES, locale);
+  }
+
   it('UT-S01-23: deploySkills cursor deploys .mdc files (default en)', () => {
+    // 新契约：cursor 原生 Skills 取代 .mdc（cursor-adapter-parity）
     const { root, cleanup } = makeTempRoot();
     try {
-      const result = deploySkills(root, 'cursor', 'en');
-      expect(result).not.toBeNull();
-      expect(result!.target).toBe('.cursor/rules/');
-      expect(result!.count).toBe(17);
-      expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
-
-      const content = readFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), 'utf-8');
+      const result = deployCursorForTest(root, 'en');
+      expect(result.target).toBe('.cursor/skills');
+      expect(result.skillCount).toBeGreaterThanOrEqual(13);
+      expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(root, '.cursor', 'rules'))).toBe(false);
+      const content = readFileSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
       expect(content).toContain('---');
-      expect(content).toContain('alwaysApply: false');
+      expect(content).not.toContain('alwaysApply');
     } finally {
       cleanup();
     }
@@ -492,8 +504,8 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-23b: deploySkills cursor en uses SKILL.en.md content', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      deploySkills(root, 'cursor', 'en');
-      const content = readFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), 'utf-8');
+      deployCursorForTest(root, 'en');
+      const content = readFileSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
       expect(content).toContain('Trigger Conditions');
       expect(content).not.toContain('触发条件');
     } finally {
@@ -504,8 +516,8 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-23c: deploySkills cursor zh uses SKILL.md (Chinese)', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      deploySkills(root, 'cursor', 'zh');
-      const content = readFileSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'), 'utf-8');
+      deployCursorForTest(root, 'zh');
+      const content = readFileSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');
       expect(content).toContain('触发条件');
     } finally {
       cleanup();
@@ -513,15 +525,15 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   });
 
   it('UT-S01-23d: deploySkills cursor deploys openlogos-policy.mdc (initial lifecycle)', () => {
+    // 新契约：policy 不再以 .mdc 承载——语言策略在 AGENTS.md，写入门禁在 hooks 托管条目。
     const { root, cleanup } = makeTempRoot();
     try {
-      deploySkills(root, 'cursor', 'en');
-      const policyPath = join(root, '.cursor', 'rules', 'openlogos-policy.mdc');
-      expect(existsSync(policyPath)).toBe(true);
-      const content = readFileSync(policyPath, 'utf-8');
-      expect(content).toContain('alwaysApply: true');
-      expect(content).toContain('Language Policy (Highest Priority)');
-      expect(content).toContain('Auto-detect');
+      deployCursorForTest(root, 'en');
+      expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(false);
+      const hooks = JSON.parse(readFileSync(join(root, '.cursor', 'hooks.json'), 'utf-8'));
+      expect(Object.keys(hooks.hooks).sort()).toEqual(['afterFileEdit', 'beforeShellExecution', 'sessionStart']);
+      const agents = createAgentsMd('en', 'cursor', 'agents', false);
+      expect(agents).toContain('Language Policy (Highest Priority)');
     } finally {
       cleanup();
     }
@@ -530,11 +542,12 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-23d2: deploySkills cursor active lifecycle has enforced policy with guard', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      deploySkills(root, 'cursor', 'en', 'active');
-      const content = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
-      expect(content).toContain('Change Management (Enforced)');
-      expect(content).toContain('.openlogos-guard');
-      expect(content).not.toContain('Initial Development');
+      deployCursorForTest(root, 'en');
+      const agents = createAgentsMd('en', 'cursor', 'agents', true);
+      expect(agents).toContain('Change Management (Enforced)');
+      expect(agents).toContain('.openlogos-guard');
+      expect(agents).toContain('Cursor 宿主指令');
+      expect(agents).toContain('preToolUse');
     } finally {
       cleanup();
     }
@@ -543,11 +556,11 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
   it('UT-S01-23e: deploySkills cursor zh initial lifecycle policy', () => {
     const { root, cleanup } = makeTempRoot();
     try {
-      deploySkills(root, 'cursor', 'zh');
-      const content = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
-      expect(content).toContain('语言策略（最高优先级）');
-      expect(content).toContain('必须使用中文');
-      expect(content).toContain('自动判断');
+      deployCursorForTest(root, 'zh');
+      const agents = createAgentsMd('zh', 'cursor', 'agents', false);
+      expect(agents).toContain('语言策略（最高优先级）');
+      expect(agents).toContain('必须使用中文');
+      expect(existsSync(join(root, '.cursor', 'rules'))).toBe(false);
     } finally {
       cleanup();
     }
@@ -885,14 +898,13 @@ describe('S01 Scenario Tests — init command', () => {
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).not.toContain('## Active Skills');
 
-    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
-    const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
-    expect(mdcFiles.length).toBe(18);
-    expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    const commandSkills = readdirSync(join(root, '.cursor', 'skills')).filter(f => f.startsWith('openlogos-'));
+    expect(commandSkills.length).toBeGreaterThan(0);
+    expect(existsSync(join(root, '.cursor', 'rules'))).toBe(false);
 
-    const policyContent = readFileSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'), 'utf-8');
-    expect(policyContent).toContain('alwaysApply: true');
-    expect(policyContent).toContain('Language Policy');
+    const agentsPolicy = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
+    expect(agentsPolicy).toContain('Language Policy');
 
     expect(existsSync(join(root, 'logos', 'spec', 'test-results.md'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'spec', 'sql-comment-convention.md'))).toBe(true);
@@ -907,7 +919,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('✓');
     expect(allLogs).toContain('specs deployed');
     expect(allLogs).toContain('Next steps');
-    expect(allLogs).toContain('17 skills deployed to .cursor/rules/');
+    expect(allLogs).toContain('Guard strength on cursor-agent CLI');
   });
 
   it('ST-S01-02: auto-detect project name from directory', async () => {
@@ -973,7 +985,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(config.name).toBe('ci-project');
     expect(config.aiTool).toBe('cursor');
 
-    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
   });
 
   it('ST-S01-04: init preserves existing user root instruction files', async () => {
@@ -1298,7 +1310,7 @@ describe('S01 Scenario Tests — init command', () => {
     await init('all-project', { locale: 'en', aiTool: 'all' });
 
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
 
@@ -1384,7 +1396,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     const updatedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
     expect(updatedConfig.aiTool).toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder', 'workbuddy']);
-    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.opencode', 'plugins', 'openlogos.js'))).toBe(true);

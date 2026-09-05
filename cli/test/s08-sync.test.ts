@@ -88,17 +88,16 @@ describe('S08 Scenario Tests — sync command', () => {
     const claude = readFileSync(join(root, 'CLAUDE.md'), 'utf-8');
     expect(claude).not.toContain('## Active Skills');
 
-    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
-    const mdcFiles = readdirSync(join(root, '.cursor', 'rules')).filter(f => f.endsWith('.mdc'));
-    expect(mdcFiles.length).toBe(18);
-    expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'openlogos-next', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'rules'))).toBe(false);
 
     expect(existsSync(join(root, 'logos', 'spec', 'test-results.md'))).toBe(true);
 
     const allLogs = con.logs.join('\n');
     expect(allLogs).toContain('AGENTS.md updated');
     expect(allLogs).toContain('Sync complete');
-    expect(allLogs).toContain('17 skills synced to .cursor/rules/');
+    expect(allLogs).toContain('Cursor');
     expect(allLogs).toContain('specs synced');
   });
 
@@ -455,7 +454,7 @@ describe('S08 Scenario Tests — sync command', () => {
 
     sync();
 
-    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
   });
 
   it('ST-S08-05b: sync generates Language Policy section for en locale', () => {
@@ -614,7 +613,7 @@ describe('S08 Scenario Tests — sync command', () => {
 
     sync();
 
-    expect(existsSync(join(root, '.cursor', 'rules', 'prd-writer.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'logos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', '.codex-plugin', 'plugin.json'))).toBe(true);
@@ -625,7 +624,7 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(claude).toContain('logos/skills/prd-writer/SKILL.md');
 
     const allLogs = con.logs.join('\n');
-    expect(allLogs).toContain('17 skills synced to .cursor/rules/');
+    expect(allLogs).toContain('Cursor');
     expect(allLogs).toContain('17 skills synced to logos/skills/');
   });
 

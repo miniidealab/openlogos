@@ -195,7 +195,7 @@ describe('Qoder sync/launch — S08/S14', () => {
     expect(existsSync(join(root, '.claude/commands/openlogos/status.md'))).toBe(true);
     expect(existsSync(join(root, '.opencode/plugins/openlogos.js'))).toBe(true);
     expect(existsSync(join(root, '.agents/plugins/openlogos/.codex-plugin/plugin.json'))).toBe(true);
-    expect(existsSync(join(root, '.cursor/rules/openlogos-policy.mdc'))).toBe(true);
+    expect(existsSync(join(root, '.cursor/skills/prd-writer/SKILL.md'))).toBe(true);
   });
 
   it('ST-S14-21: normal launch 先刷新 Qoder，成功后提交 lifecycle 并让新 session 看到 launched', async () => {
