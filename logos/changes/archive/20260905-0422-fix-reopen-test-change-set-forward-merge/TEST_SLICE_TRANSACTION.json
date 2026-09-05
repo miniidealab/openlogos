@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_a265d4b3541d4520a22b5463",
+  "slug": "fix-reopen-test-change-set-forward-merge",
+  "module": "core",
+  "phase": "completed",
+  "origin": "initial-plan",
+  "classification": null,
+  "spec_fingerprint": "sha256:24706dc1f8364c3b7908dfc528a8b35f111b3c817816fffe59b2b50a445d8393",
+  "changed_test_ids_sha256": "sha256:4a53715dcf89a31cbd08d06df71b72ce9196cd119b5867273d220b6ba157a8ee",
+  "schema_sha256": "sha256:6b559356671e8fdbd7b70ef5e74a66c3d26ca81c92e5b4c78bb5d35d8e57e039",
+  "contract_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09",
+  "seal_sha256": "sha256:2cdafbafdcbcb37a11192b013ff1563241ee14e5a329ba951a061a5264d1caee",
+  "slots": [
+    {
+      "slot_id": "slot_codesection",
+      "content_sha256": "sha256:84e7dc518138bb5b56034b4b96af65da3090f010d96ed349dc6890ddefa9c9b3",
+      "sealed_sha256": "sha256:84e7dc518138bb5b56034b4b96af65da3090f010d96ed349dc6890ddefa9c9b3"
+    },
+    {
+      "slot_id": "slot_slices",
+      "content_sha256": "sha256:7165056cdaff29260af5f53727d057f4e787e0878fdaee61edc4dc2b1c77e792",
+      "sealed_sha256": "sha256:7165056cdaff29260af5f53727d057f4e787e0878fdaee61edc4dc2b1c77e792"
+    }
+  ],
+  "staged": {
+    "slot_codesection": "> 六维打分：影响范围 1（cli/src/lib 少量文件+测试+runner）、行为复杂度 2（lineage/边界/失配多分支）、契约变化 2（共享事实语义升格+发布身份）、测试规模 2（10 个新 ID+smoke）、风险 2（含部署）、不确定性 0 → 9 分，大任务，进入垂直拆分。\n> 删后续自检：3 片各自删后续可过全量 verify（未完成切片 ID 由 manifest 归属豁免）、各有端到端可观察能力（片1=reopen 重合并后 changed 提案级完整；片2=消费侧多切片归属成立；片3=0.14.20 身份自证+SMOKE-core-191 runner 自检），无前向依赖；无横向红旗（无地基/接线/纯测试工种片——片2 是消费场景回归能力线，非\"补测试\"工种片）。\n- [ ] 切片1：reopen 前滚合并核心——buildMergePreflight 读 MERGE_REOPENS.jsonl 时序 lineage 与归档 receipt，前滚合并 changed/removed（changed 前滚并集、removed 后写胜出），targets/hash 保持当前快照、sha256 重算；abort 祖先跳过、null 记空集；祖先身份失配/留痕或 receipt 损坏 fail-closed 点名路径；无留痕逐字节不变；preflight test_change_set_sha256 与 SPEC_MERGED 同源；实现含 OpenLogos reporter 的 UT-S09-309～312、ST-S09-118～119\n- [ ] 切片2：reopen 后切片归属消费回归——前滚 change set 下 owned⊆changed 放行、removed 后写胜出触发 test-slice-test-id-unknown、reopen 后多切片规划全链（manifest 校验+按归属豁免+删后续门成立），消费者只读当前 marker、不读归档；实现含 OpenLogos reporter 的 UT-S32-69～70、ST-S32-23\n- [ ] 切片3：0.14.20 候选身份与 SMOKE-core-191 runner——package/lockfile/五 plugin manifest/asset-manifest/LOCAL_RELEASE_CANDIDATE_VERSION=0.14.20、ROLLBACK=0.14.19/tripwire/golden 同步；新增 scripts/smoke-merge-reopen-0-14-20.js（安装态前滚全链+removed 后写胜出+失配 fail-closed+无留痕零回归+0.14.19 空 change set 对照+roundtrip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl，覆盖 SMOKE-core-191\n",
+    "slot_slices": "[\n  {\n    \"slice_id\": \"slice-01-reopen-forward-merge-core\",\n    \"task_text\": \"切片1：reopen 前滚合并核心——buildMergePreflight 读 MERGE_REOPENS.jsonl 时序 lineage 与归档 receipt，前滚合并 changed/removed（changed 前滚并集、removed 后写胜出），targets/hash 保持当前快照、sha256 重算；abort 祖先跳过、null 记空集；祖先身份失配/留痕或 receipt 损坏 fail-closed 点名路径；无留痕逐字节不变；preflight test_change_set_sha256 与 SPEC_MERGED 同源；实现含 OpenLogos reporter 的 UT-S09-309～312、ST-S09-118～119\",\n    \"owned_test_ids\": [\"UT-S09-309\", \"UT-S09-310\", \"UT-S09-311\", \"UT-S09-312\", \"ST-S09-118\", \"ST-S09-119\"],\n    \"runner_selectors\": [\"UT-S09-309\", \"UT-S09-310\", \"UT-S09-311\", \"UT-S09-312\", \"ST-S09-118\", \"ST-S09-119\"],\n    \"spec_targets\": [\"logos/resources/test/core-S09-test-cases.md\"]\n  },\n  {\n    \"slice_id\": \"slice-02-slice-ownership-consumption\",\n    \"task_text\": \"切片2：reopen 后切片归属消费回归——前滚 change set 下 owned⊆changed 放行、removed 后写胜出触发 test-slice-test-id-unknown、reopen 后多切片规划全链（manifest 校验+按归属豁免+删后续门成立），消费者只读当前 marker、不读归档；实现含 OpenLogos reporter 的 UT-S32-69～70、ST-S32-23\",\n    \"owned_test_ids\": [\"UT-S32-69\", \"UT-S32-70\", \"ST-S32-23\"],\n    \"runner_selectors\": [\"UT-S32-69\", \"UT-S32-70\", \"ST-S32-23\"],\n    \"spec_targets\": [\"logos/resources/test/core-S32-test-cases.md\"]\n  },\n  {\n    \"slice_id\": \"slice-03-release-identity-smoke\",\n    \"task_text\": \"切片3：0.14.20 候选身份与 SMOKE-core-191 runner——package/lockfile/五 plugin manifest/asset-manifest/LOCAL_RELEASE_CANDIDATE_VERSION=0.14.20、ROLLBACK=0.14.19/tripwire/golden 同步；新增 scripts/smoke-merge-reopen-0-14-20.js（安装态前滚全链+removed 后写胜出+失配 fail-closed+无留痕零回归+0.14.19 空 change set 对照+roundtrip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl，覆盖 SMOKE-core-191\",\n    \"owned_test_ids\": [\"SMOKE-core-191\"],\n    \"runner_selectors\": [\"SMOKE-core-191\"],\n    \"spec_targets\": [\"logos/resources/test/smoke/core-smoke-test-cases.md\"]\n  }\n]\n"
+  },
+  "receipt": {
+    "transaction_id": "stx_a265d4b3541d4520a22b5463",
+    "completed_at": "2026-09-05T10:53:07.004Z",
+    "seal_sha256": "sha256:2cdafbafdcbcb37a11192b013ff1563241ee14e5a329ba951a061a5264d1caee",
+    "artifacts": [
+      {
+        "path": "tasks.md",
+        "sha256": "sha256:b0148f94a540741cfcbf8ed3de75c32beef477fabf323bbbe6e251bb70fc113a"
+      },
+      {
+        "path": "TEST_SLICE_MANIFEST.json",
+        "sha256": "sha256:429d79b221d610684e2ea6db1622e24d02629b2a1c28757044765e17931c03ec"
+      }
+    ]
+  },
+  "violations": [],
+  "aborted_at": null,
+  "created_at": "2026-09-05T10:53:00.557Z",
+  "updated_at": "2026-09-05T10:53:07.004Z"
+}

@@ -1,0 +1,147 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_e4a231b9ad7e8206c40c62fb",
+  "seal_sha256": "sha256:bc59c6b4bb5865625b93200eb94ee4607e08d6cccd5c803101e69b83deb986f8",
+  "target_set_sha256": "sha256:bf8fb42233452a210bca34f5ea60f67f65c99d289e671620870eddb95737872f",
+  "closure_sha256": "sha256:1547689996cd079683909042f33afa94e1b0b834458ab0206db65ccb24bad04a",
+  "target_count": 12,
+  "plan_sha256": "sha256:0cb925e4e3063dfb25d79eb2471d1ad63288ccea271b43d08cf291e069681f19",
+  "change": "fix-reopen-test-change-set-forward-merge",
+  "module": "core",
+  "changed_paths": [
+    "logos/logos-project.yaml",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S32-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/change-management.md",
+    "spec/test-slice-manifest.md"
+  ],
+  "created_paths": [
+    "logos/resources/decisions/core-D11-test-change-set-proposal-scope.md"
+  ],
+  "final_hashes": [
+    {
+      "path": "logos/logos-project.yaml",
+      "sha256": "sha256:bcd10a745ab6298d821fc3b2bf217a758036a97a2a77e97659dfa1b936311fc2"
+    },
+    {
+      "path": "logos/resources/decisions/core-D11-test-change-set-proposal-scope.md",
+      "sha256": "sha256:bc44a6545a687d3fd16becca7a2a930ae5e5e87235afd06d691f50ab5dc41ec7"
+    },
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:e3c4ddc0e2d480d557d4d68b0626f973b63f2780e33b8d186622e5dac351ed4f"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:87b13b2a0b6e894b9be54fb06eccd91a3c114865b30cab867b0b2651218d1a5c"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+      "sha256": "sha256:1814ea7b20f79c08d1ddb0cec3b31a4b213c23351fd1ab3ba75f90f75d6dded4"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "sha256": "sha256:e453f90fd863905d615deab75e7180689b5fb21b834bd1a5cb3f400ead09640a"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md",
+      "sha256": "sha256:7c68b0ec0609ef64a7f45e68e3dc83847ae2693dc7cea67feb4afcb151e52d68"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "sha256": "sha256:41e729846b50a32974f1a57b6e68f80c5a4b4f536542276225576ef153f31c6b"
+    },
+    {
+      "path": "logos/resources/test/core-S09-test-cases.md",
+      "sha256": "sha256:6b6dcf249e59f62f3f23da8fbcc7e90d4a47ddab675db351c8665ec919b93d42"
+    },
+    {
+      "path": "logos/resources/test/core-S32-test-cases.md",
+      "sha256": "sha256:e731767c8db24ba67e0d9050688d3959b3b6fec3686845ca8efe7c3b29f07201"
+    },
+    {
+      "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "sha256": "sha256:d92a8a6e0b3d0efb8792f2ac19ff230ac5ae9c4dedc866337b96dd7b92f005d6"
+    },
+    {
+      "path": "spec/change-management.md",
+      "sha256": "sha256:8bfe00c1e7efb939d670d271509225201e44e22d3f565b5eefcbdfb7513ccd17"
+    },
+    {
+      "path": "spec/test-slice-manifest.md",
+      "sha256": "sha256:2c18bb8b9a1311e0bb5a67189126ddd0818656b8f332bfbe942d5ca082e63f43"
+    }
+  ],
+  "metadata_summaries": [
+    {
+      "path": "logos/logos-project.yaml",
+      "sha256": "sha256:bcd10a745ab6298d821fc3b2bf217a758036a97a2a77e97659dfa1b936311fc2"
+    }
+  ],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-reopen-test-change-set-forward-merge",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-191",
+      "ST-S09-118",
+      "ST-S09-119",
+      "ST-S32-23",
+      "UT-S09-309",
+      "UT-S09-310",
+      "UT-S09-311",
+      "UT-S09-312",
+      "UT-S32-69",
+      "UT-S32-70"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "4b7dc01a3eebaee709d8f9fd32ad5bb59a64fa14211eaf09ccee4acb0a88830e",
+        "after_sha256": "6b6dcf249e59f62f3f23da8fbcc7e90d4a47ddab675db351c8665ec919b93d42"
+      },
+      {
+        "target_path": "logos/resources/test/core-S32-test-cases.md",
+        "before_sha256": "bc268737ce9afd22825df020a20cc34d27c2122118d4b5a901e24695b1e363ed",
+        "after_sha256": "e731767c8db24ba67e0d9050688d3959b3b6fec3686845ca8efe7c3b29f07201"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "4328ac5905b519083a0e2c10a5afdab310773ee78d11b251b678e63003023d2f",
+        "after_sha256": "d92a8a6e0b3d0efb8792f2ac19ff230ac5ae9c4dedc866337b96dd7b92f005d6"
+      }
+    ],
+    "sha256": "sha256:51230c8b09181cc62075f7fa4e2946d2ae48484cabd37cb5e60c46e895f38cb1"
+  },
+  "spec_merged": {
+    "path": "logos/changes/fix-reopen-test-change-set-forward-merge/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/fix-reopen-test-change-set-forward-merge/MERGE_RECEIPT.json",
+    "logos/changes/fix-reopen-test-change-set-forward-merge/SPEC_MERGED",
+    "logos/logos-project.yaml",
+    "logos/resources/decisions/core-D11-test-change-set-proposal-scope.md",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S32-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/change-management.md",
+    "spec/test-slice-manifest.md"
+  ],
+  "completed_at": "2026-09-05T10:46:40.377Z",
+  "receipt_sha256": "sha256:8ca0a529ce519b70182646f29ca7d3aa5951d28ccd75e613eadb4d31c2216249"
+}

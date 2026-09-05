@@ -1,0 +1,63 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-reopen-test-change-set-forward-merge",
+  "module": "core",
+  "task_fingerprint": "sha256:2fb1d70f9fe030971a16131bad7338b272cc5b4b6ff6ce82b40eed274d4c762c",
+  "spec_fingerprint": "sha256:24706dc1f8364c3b7908dfc528a8b35f111b3c817816fffe59b2b50a445d8393",
+  "generated_at": "2026-09-05T10:53:06.985Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-reopen-forward-merge-core",
+      "task_text": "切片1：reopen 前滚合并核心——buildMergePreflight 读 MERGE_REOPENS.jsonl 时序 lineage 与归档 receipt，前滚合并 changed/removed（changed 前滚并集、removed 后写胜出），targets/hash 保持当前快照、sha256 重算；abort 祖先跳过、null 记空集；祖先身份失配/留痕或 receipt 损坏 fail-closed 点名路径；无留痕逐字节不变；preflight test_change_set_sha256 与 SPEC_MERGED 同源；实现含 OpenLogos reporter 的 UT-S09-309～312、ST-S09-118～119",
+      "owned_test_ids": [
+        "UT-S09-309",
+        "UT-S09-310",
+        "UT-S09-311",
+        "UT-S09-312",
+        "ST-S09-118",
+        "ST-S09-119"
+      ],
+      "runner_selectors": [
+        "UT-S09-309",
+        "UT-S09-310",
+        "UT-S09-311",
+        "UT-S09-312",
+        "ST-S09-118",
+        "ST-S09-119"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-slice-ownership-consumption",
+      "task_text": "切片2：reopen 后切片归属消费回归——前滚 change set 下 owned⊆changed 放行、removed 后写胜出触发 test-slice-test-id-unknown、reopen 后多切片规划全链（manifest 校验+按归属豁免+删后续门成立），消费者只读当前 marker、不读归档；实现含 OpenLogos reporter 的 UT-S32-69～70、ST-S32-23",
+      "owned_test_ids": [
+        "UT-S32-69",
+        "UT-S32-70",
+        "ST-S32-23"
+      ],
+      "runner_selectors": [
+        "UT-S32-69",
+        "UT-S32-70",
+        "ST-S32-23"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S32-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-release-identity-smoke",
+      "task_text": "切片3：0.14.20 候选身份与 SMOKE-core-191 runner——package/lockfile/五 plugin manifest/asset-manifest/LOCAL_RELEASE_CANDIDATE_VERSION=0.14.20、ROLLBACK=0.14.19/tripwire/golden 同步；新增 scripts/smoke-merge-reopen-0-14-20.js（安装态前滚全链+removed 后写胜出+失配 fail-closed+无留痕零回归+0.14.19 空 change set 对照+roundtrip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl，覆盖 SMOKE-core-191",
+      "owned_test_ids": [
+        "SMOKE-core-191"
+      ],
+      "runner_selectors": [
+        "SMOKE-core-191"
+      ],
+      "spec_targets": [
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}
