@@ -1,0 +1,1 @@
+{"id":"SMOKE-core-190","status":"pass","timestamp":"2026-09-05T09:42:26.851Z","duration_ms":11855,"environment":"merge-frontier-staging","evidence":["candidate=0.14.19 sha256:ad6575ded72996f9d4bd2b820c96f5358826cc97bd9f1d57f9f08b76bd8109c3","跨组件全链前沿推进通过","后置条件二分与事务引导文案通过","幂等与终态重建通过","存量失配 fail-closed 稳定码通过","0.14.18 死区零回归对照有效","roundtrip 0.14.18→0.14.19 无混装"]}

@@ -133,6 +133,8 @@ function buildFixture(dir, withDelta = true) {
     put(`logos/changes/${slug}/proposal.md`, `${head}## 复用测试 ID\n\n- UT-S01-01 — 回归覆盖\n\n${clarification}`);
     put(`logos/changes/${slug}/tasks.md`, '# 任务\n\n## [delta] 规格变更\n\n## [code] 代码实现\n');
   }
+  // PLAN_APPROVED 属 HISTORICAL_MARKERS：与 vitest fixture 同形，豁免 authority_impact 声明
+  put(`logos/changes/${slug}/PLAN_APPROVED`, '{}');
   return { slug, finals, proposalDir: join(dir, 'logos', 'changes', slug) };
 }
 
