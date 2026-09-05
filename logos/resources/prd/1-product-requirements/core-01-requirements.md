@@ -2552,3 +2552,29 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 | AC-ERRATA-03 | `deployment_required=true` 路径与全部既有维度适用/SKIP 判定零回归 |
 | AC-ERRATA-04 | SMOKE-core-178 步骤⑤与 0.14.14 部署矩阵「终态不堵恢复」行订正后与 §2.55.3/根规范 §2.2.1 权威语义一致；两目标文件 SMOKE ID 与部署断言结构化 ID 零增删（S37 守恒） |
 | AC-ERRATA-05 | 版本身份提升为 `0.14.16`，`0.14.15` 冻结为回滚基线；全量 `openlogos verify` PASS，安装态 SMOKE-core-180 通过且既有矩阵（SMOKE-core-176/178/179）零回归 |
+
+## 合并事务终态出路与提案内二次 merge 通道
+
+来源：本仓自用发现（2026-09-05 立案）。`createMergeTransaction()` 在事务文件存在时无条件幂等返回既有事务、不区分终态，叠加终态动作域为空（`failed` 非 `recovery_required` → `[]`；`completed` → `[]`；abort 仅 collecting/ready/sealed 可用），形成三个同族死锁面：abort 后提案永久锁死、fatal failed 无受控出路、completed 后无提案内二次 merge 通道（方法论缺口①，`errata-single-slice-recovery-semantics` 与 `closeout-deferred-errata-and-closure-gap` 两案范围裁剪说明立案背书）。唯一脱困手段是人工删除 `MERGE_TRANSACTION.json`，与架构 §三十四（合并事务单一权威）、§四十三（写入权与判定权同源）直接冲突。切片事务侧同族缺陷已由 0.14.12 / 0.14.15 闭环，合并事务侧缺同族出路。
+
+### 核心需求
+
+1. **活跃名额只含非终态**：`openlogos merge` 的创建入口遇终态事务（`failed`——含 `aborted` 与 fatal 分类——或经确认重开的 `completed`）时，先把终态事务归档至提案目录 `merge-transactions/<transaction_id>.json`（receipt 与哈希可审计、不销毁），再按当前 delta 重新规划创建新事务（新 transaction_id、新 plan/target set）；非终态事务保持幂等返回，逐字节不变。
+2. **fatal failed 有受控出路**：`failed` 且 classification 非 `recovery_required` 的事务允许 `abort`（转 `aborted`），从而任何失败终态都可经第 1 条重建；既有 `recovery_required → recover` 路径逐字不变。
+3. **completed 受控重开（二次 merge 通道）**：`openlogos merge transaction reopen --reason "<非空原因>"` 进入 `completed` 的 `allowed_actions`；`SPEC_MERGED` 在场须附显式确认参数方可重开，重开即作废 `SPEC_MERGED`；`--reason` 缺失或空白一律拒绝；其余 phase 报 `action_not_allowed`。
+4. **留痕与归档 append-only**：每次重开向提案目录 `MERGE_REOPENS.jsonl` 追加一行（schema、旧 `transaction_id`、时刻、非空原因、`spec_merged_present`/`confirmed` 标记），历史行不可改写；旧事务与 receipt 归档可查但不参与新事务任何判定。
+5. **指纹自然传导（C01 采纳）**：重开不级联删除任何下游产物（切片事务 / `TEST_SLICE_MANIFEST` / `SLICES_APPROVED` / 已实现代码）；重合并 apply 成功重写 `SPEC_MERGED` 与 receipt 后，`spec_fingerprint` 变化使既有 manifest 经既有判定自然判 stale，走切片侧既有恢复 / 重划回边收敛。任何时刻无半新半旧。
+6. **既有语义零回归**：seal/apply/preflight/receipt 判据与原子性、0.14.2 sealed 内 preflight-reopen（退回 collecting）、abort 的既有拒绝面（存在正式 receipt/marker 时拒绝破坏性清理）逐项不变；投影与拒绝文案由真实 phase/classification 推出。
+7. **合同兼容扩充**：`openlogos/merge-transaction@1` 字段与 exit code 不变，仅扩充终态动作域与消费者映射（`reopen`→`reopen`）；消费方未纳入前忽略即可，不做主版本跃迁。修复以本地 patch candidate `0.14.17` 交付，当前本机全局 `0.14.16` 是冻结回滚基线。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-MTXOUT-01 | aborted 事务在场时重跑 `openlogos merge`：终态事务归档让位、按当前 delta 重新规划出新事务（新 transaction_id、新 plan/target set）；非终态事务仍幂等返回 |
+| AC-MTXOUT-02 | fatal failed（classification 非 `recovery_required`）允许 `abort`；abort 后按 AC-MTXOUT-01 可重建；既有 `recovery_required → recover` 路径逐字不变 |
+| AC-MTXOUT-03 | completed `reopen --reason` 准入矩阵成立：`SPEC_MERGED` 不在场直接重开；在场须附显式确认参数，重开即作废 `SPEC_MERGED` 并留痕；`--reason` 缺失/空白拒绝；其余 phase 报 `action_not_allowed` 且零副作用 |
+| AC-MTXOUT-04 | `MERGE_REOPENS.jsonl` append-only 留痕齐备（schema、旧 transaction_id、时刻、非空原因、spec_merged_present/confirmed）；旧事务与 receipt 归档于 `merge-transactions/`，历史行不可改写 |
+| AC-MTXOUT-05 | 重合并 apply 成功后 `SPEC_MERGED`/receipt 重写为新事实；下游按指纹自然传导收敛（不级联删除），任何时刻无半新半旧 |
+| AC-MTXOUT-06 | 既有语义零回归：seal/apply/preflight/receipt、0.14.2 preflight-reopen、abort 既有拒绝面逐项不变；投影与文案与真实 phase/classification 一致 |
+| AC-MTXOUT-07 | 版本身份提升为 `0.14.17`，`0.14.16` 冻结为回滚基线；全量 `openlogos verify` PASS，SMOKE-core-181 安装态通过且固定 `0.14.16` 对照复现三个死锁面（防断言空转） |

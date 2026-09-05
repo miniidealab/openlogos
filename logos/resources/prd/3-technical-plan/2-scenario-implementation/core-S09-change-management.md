@@ -481,3 +481,56 @@ sequenceDiagram
 - plan/source/before drift：停止并按稳定分类处理，不生成新 transaction规避。
 - journal/recovery错误：只执行 recover/rollback路径。
 - 修正后仍有内容错误：core可再次按同规则只退回新 rejected slots。
+
+## S09-B 合并事务终态出路（abort 重建 / fatal 修复 / completed 受控重开）
+
+> 来源变更：fix-merge-transaction-abort-recover-reopen。承接「S09-B: openlogos merge」与「S09-B 合并事务责任、提交与授权边界」：终态不再是死局，出路受控、留痕、单一权威（功能规格 §2.58；架构 §四十五）。
+
+### 场景目标
+
+提案的合并事务进入任一终态（aborted / fatal failed / completed）后，用户修正 delta 或发现已合并规格有误时，能经公开命令在提案内受控重来，不再依赖人工删除事务文件。
+
+### 主时序（completed 受控重开）
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant M as openlogos merge / merge transaction
+    participant T as 合并事务状态机
+    participant W as 提案目录产物
+
+    U->>M: Step 1: merge transaction reopen --reason "<原因>" --confirm-spec-merged
+    M->>T: Step 2: 准入判定（phase=completed；SPEC_MERGED 在场须确认；reason 非空）
+    T->>W: Step 3: MERGE_REOPENS.jsonl 追加留痕（append-only）
+    T->>W: Step 4: 旧事务归档 merge-transactions/<id>.json（receipt 可审计）
+    T->>W: Step 5: 作废 SPEC_MERGED（确认路径）
+    U->>M: Step 6: 修正 delta 后重跑 openlogos merge
+    M->>T: Step 7: 无活跃事务 → 按当前 delta 重新规划新事务（新 id / plan / target set）
+    U->>T: Step 8: submit-content → seal → apply
+    T->>W: Step 9: apply 成功重写 SPEC_MERGED 与 receipt（新事实）
+```
+
+### 步骤说明
+
+1. **用户**对 completed 事务执行 `reopen`，附非空 `--reason`；`SPEC_MERGED` 在场时另附 `--confirm-spec-merged`。
+2. **合并事务状态机**按准入矩阵判定（功能规格 §2.58.3）；任一前置不满足即拒绝且零副作用。
+3. **状态机**在单一动作内按序完成留痕、归档、作废——任一步失败整体不生效。
+4. **用户**修正 delta 后重跑 `openlogos merge`；创建入口发现无活跃事务，按当前 delta 重新规划（aborted / fatal failed 终态走同一让位路径：归档后直接重建，无需 reopen）。
+5. **用户**重走 submit-content → seal → apply；成功后 `SPEC_MERGED` 与 receipt 重写为新事实，下游按指纹自然传导收敛（C01）。
+
+### 异常与边界
+
+- **abort 后重跑 merge**：aborted 事务被归档让位、按当前 delta 重建新事务——即使 plan/target set 已变化也正确重规划（旧缺陷：无条件幂等返回 aborted 投影）。
+- **fatal failed（非 recovery_required）**：`allowed_actions` 含 `abort`；abort 后走上一条重建。既有 `recovery_required → recover` 逐字不变。
+- **completed + SPEC_MERGED 在场未附确认**：拒绝并给出可执行指引；零副作用（无留痕/归档/作废）。
+- **`--reason` 缺失或空白**：拒绝——留痕必须有非空原因。
+- **非 completed phase 执行 reopen**：`action_not_allowed`，既有出路不变。
+- **事务文件不可读 / marker 不可判定**：fail-closed 拒绝，无任何写副作用。
+- **completed + SPEC_MERGED 完好时直接重跑 merge**：拒绝静默重建，文案指向 reopen 入口——已合并事实不得被无痕覆盖。
+- **重开后未重新 apply 前**：`SPEC_MERGED` 已作废，flow 派生自然退回 merge 前沿；下游既有产物保持旧值（无半新半旧），其失效由重合并后的指纹失配自然传导。
+
+### 追溯
+
+- 需求：AC-MTXOUT-01～07。
+- 功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。
+- 测试：UT-S09-289～292、ST-S09-111；安装态 SMOKE-core-181。

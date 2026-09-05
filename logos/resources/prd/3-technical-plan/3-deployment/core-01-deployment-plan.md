@@ -2485,3 +2485,98 @@ change-lint / merge 的 violation 合同 schema 与 `openlogos/test-slice-transa
 - 需求：AC-ERRATA-01～05。
 - 功能规格：§2.57；根规范：`spec/baseline-closure.md` §7；场景：S39 勘误散文订正通道（EX-ERRATA-1/2）。
 - 安装态：SMOKE-core-180；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179。
+
+## OpenLogos 0.14.17 合并事务终态出路本机全局部署方案
+
+### 部署目标与授权边界
+
+把「合并事务终态出路（spec-mutability）」冻结为唯一 `@miniidealab/openlogos@0.14.17` npm tarball，先在隔离 prefix 完成正反例与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.16`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须部署**：三个死锁面位于**已发布的 0.14.16 全局 CLI** 的合并事务状态机中——abort/fatal/completed 终态在现场只能靠人工删事务文件脱困。只改代码不部署，现场仍在 0.14.16 上，死锁面不消除。
+
+**本次为何必须走安装态**：终态出路是准入、留痕、归档、作废与重建的多步组合，任何一步在源码级被无声退化都会让出路重新消失；零回归对照（三个死锁面在 0.14.16 上必须锁死复现）也只有安装态才能构造。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.16`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash。
+3. 冻结可离线恢复的 `0.14.16` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. **回滚制品必须由 `0.14.16` 的实际部署提交构建（git worktree checkout 或沿用其部署窗口冻结件），不得用当前工作树打包。** 当前工作树已含 `0.14.17` 的修复代码；用它当回滚件，零回归对照与往返演练将验不出任何东西。
+5. 部署输入必须绑定可追溯 source commit 或完整 source hash 集合。
+
+### 0.14.17 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 等随包 plugin manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.17`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.16`，并同步更新以字面量钉住候选版本的发布身份 tripwire 断言。
+
+禁止继续以 `0.14.16` 构建新字节。
+
+### 跨仓合同的连续性
+
+`openlogos/merge-transaction@1` 的字段与 exit code **零变化**，仅**扩充终态 allowed_actions**（`completed`→`reopen`、fatal `failed`→`abort`）与消费者动作映射（`reopen`→`reopen`）。因此：
+
+1. 不做主版本跃迁——只增加此前不存在的合法出路，不收紧任何既有行为；消费方未纳入 `reopen` 前忽略之即可（0.14.15 切片 reopen 同一先例）；
+2. 若根规范文本更新使 `schema_sha256` / `contract_sha256` 变化，必须重新冻结并记录**新旧两组值**，供 RunLogos 侧对照；
+3. 部署记录须显式写明：`completed` 自 0.14.17 起携带 `reopen` 出边、fatal `failed` 携带 `abort` 出边，终态事务不再占用活跃名额。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 而非 workspace/source 入口核对 CLI entry、`0.14.17` version、根规范、Skill、plugin/cache、smoke runner 与 reporter 资产。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+使用 `mktemp -d` 创建一次性 npm prefix，安装固定 `0.14.17` tarball，并从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset/schema/Skill hash 全部来自固定 tarball，无 workspace link |
+| **abort 重建** | 临时项目构造提案 → merge → abort → 重跑 merge：终态归档让位、新事务新 id/plan；修正 delta 后可全链 completed |
+| **completed 重开全链** | completed + SPEC_MERGED → `reopen --reason --confirm-spec-merged`：留痕/归档/作废齐备 → 修正 delta 重合并 → SPEC_MERGED 重写；未附确认被拒零副作用 |
+| **fail-closed 反例** | 空 reason / 非 completed 执行 reopen / completed 未确认直接重跑 merge，逐一被拒且零副作用 |
+| **既有能力零回归** | seal/apply/preflight/receipt 判据、0.14.2 preflight-reopen、非终态幂等返回、abort 既有拒绝面与 `SMOKE-core-176`/`SMOKE-core-178`/`SMOKE-core-179`/`SMOKE-core-180` 矩阵断言全部保持通过 |
+| rollback roundtrip | `0.14.16→0.14.17→0.14.16→0.14.17` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「abort 重建」与「completed 重开全链」失败时必须停止部署并回到实现**——前者是死锁面①的直接证据，后者是缺口①未修的直接证据。
+
+### 零回归对照（强制，不可省略）
+
+同一矩阵必须在固定 `0.14.16` 上执行一次并**记录其失败点**：
+
+| 矩阵项 | 在 0.14.16 上的预期表现 |
+|---|---|
+| abort 重建 | **失败**——重跑 merge 原样返回 aborted 投影、无法重建（死锁面①本身） |
+| completed 重开全链 | **失败**——reopen 动作不可用（缺口①本身） |
+| fail-closed 反例 / 既有能力 | 通过（拒绝与既有行为两版本一致） |
+
+**若矩阵在 0.14.16 上也能重建或重开，说明断言是空转，必须重写矩阵而非放行部署。**
+
+### 本机全局部署
+
+只有隔离矩阵、零回归对照与 `0.14.16` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.17` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.17`；
+- package / plugin / asset manifest version 全部为 `0.14.17`，无混装。
+
+### 失败处置与回滚边界
+
+- 隔离矩阵失败：停止部署，回到实现，重新 verify/build/pack。
+- 全局安装后行为异常：立即以固定 `0.14.16` tarball 回滚，并报告触发条件与观察到的现象。
+- 回滚后必须复核 identity 全部回到 `0.14.16`，未证明一致前阻断后续动作。
+- 不得为让矩阵通过而放宽准入、跳过留痕/归档、手工删事务文件或伪造 marker。
+
+### 追溯
+
+- 需求：AC-MTXOUT-01～07。
+- 功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。
+- 安装态：SMOKE-core-181；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179、SMOKE-core-180。

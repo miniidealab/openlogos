@@ -2490,6 +2490,39 @@ planned
     - leave-half-old-half-new-code-section-or-manifest
     - unconditional-replan-after-slices-approved
   cutover_exit: completed 不再等同于永久冻结、受控重开成为唯一合法重划方式且必须留痕；安装态 smoke 完成「completed → 重开 → 提交不同划分 → apply → completed」全链且新划分完全替换旧划分、无残留（UT-S32-65～68、ST-S32-22、SMOKE-core-179 全部通过；未执行 reopen 时行为与 0.14.14 逐项一致）
+- fact_id: merge-transaction.spec-mutability
+  semantic_scope: 某提案的已合并规格是否仍可在提案内变更，以及变更需要满足的条件（终态不占活跃名额；completed 重开需非空原因，SPEC_MERGED 在场另需显式确认并作废之）
+  authority_owner: 合并事务状态机
+  canonical_state: 当前事务 phase、classification 与 SPEC_MERGED 是否在场的联合状态；completed 携带 reopen 出边、fatal failed 携带 abort 出边
+  sole_writer: 合并事务的终态出路动作（reopen 作废并归档；创建入口对 failed 终态的归档让位）
+  mutation_entry: openlogos merge transaction reopen（--reason 必填；SPEC_MERGED 在场须 --confirm-spec-merged）与 openlogos merge 的终态归档让位路径
+  decision_api: merge transaction status 返回的 phase 与 allowed_actions
+  projections:
+    - id: merge-transaction-projection-allowed-actions
+      consumer: merge transaction status/next 投影读取者与 RunLogos 面板
+      freshness_proof: 每次读取按当前事务 phase、classification 与 SPEC_MERGED 是否在场求值
+      rebuild_rule: 重新读取事务文件与提案目录 marker；不可读时 fail-closed 拒绝重开或重建
+      writable: false
+    - id: next-node-remerge-hint
+      consumer: next 的 detail 渲染
+      freshness_proof: 与 allowed_actions 同一次求值同源
+      rebuild_rule: 依当前事务与 marker 状态重算
+      writable: false
+    - id: merge-reopen-audit-trail
+      consumer: 审计读取者（人 / RunLogos）
+      freshness_proof: MERGE_REOPENS.jsonl append-only，每次重开一行
+      rebuild_rule: 只追加不改写；历史行为事实记录，不可重算
+      writable: false
+  recovery_source: 提案目录内的事务文件、归档事务（merge-transactions/）、SPEC_MERGED marker 与 MERGE_REOPENS.jsonl
+  retired_shadow_sources:
+    - treat-merge-terminal-state-as-permanently-frozen
+  forbidden_shadow_sources:
+    - manual-delete-transaction-file-to-remerge
+    - manual-edit-spec-merged-to-remerge
+    - remerge-without-audit-trail
+    - silently-rebuild-completed-transaction-without-confirm
+    - leave-stale-receipt-as-current-truth
+  cutover_exit: 终态不再等同于永久冻结、终态归档让位 + 受控 reopen 成为唯一合法重合并方式且必须留痕；安装态 smoke 完成「abort → 重建 → 重合并」与「completed → reopen → 修正 delta → 重合并 → SPEC_MERGED 重写」两条全链，且固定 0.14.16 对照复现三个死锁面（UT-S09-289～292、ST-S09-111、SMOKE-core-181 全部通过；未触发终态出路时行为与 0.14.16 逐项一致）
 ```
 
 同一 `fact_id` 只有本行；S37 ConservationEvaluator 是该 authority 的守恒消费者，不再私有拥有标题解析器。Registry 的 owner 表达语义组件，sole writer 表达正式状态写入组件，二者不得复制为多个 owner/writer 字段或共同裁决者。
@@ -3097,3 +3130,25 @@ stateDiagram-v2
 
 - 需求：AC-REPLAN-01～10；功能规格：§2.56；根规范：`spec/test-slice-manifest.md` §2.4。
 - 场景：S19、S28、S32；测试：UT-S32-65～68、ST-S32-22、UT-S28-49、UT-S19-37；安装态：SMOKE-core-179。
+
+## 四十五、合并事务的终态出路（spec-mutability）
+
+> 来源变更：fix-merge-transaction-abort-recover-reopen。对齐 §四十四（切片事务 plan-mutability 回边）：终态不是永久冻结，出路必须受控、留痕、单一权威。
+
+### 45.1 缺陷形态
+
+`createMergeTransaction()` 对既有事务文件无条件幂等返回、不区分终态；叠加终态动作域为空（fatal `failed` → `[]`、`completed` → `[]`），任何终态都只能靠人工删除 `MERGE_TRANSACTION.json` 脱困——与 §三十四（合并事务单一权威）、§四十三（写入权与判定权同源）直接冲突。
+
+### 45.2 架构决策
+
+1. **活跃名额只含非终态**（对齐切片侧 §2.53.6.1）：创建入口遇 `failed`（含 aborted/fatal）先归档（`merge-transactions/<id>.json`）再重新规划；`completed` 受保护，仅经显式 `reopen` 让位，禁止静默重建。
+2. **动作域闭合**：fatal `failed` 扩充 `abort` 出边；`completed` 扩充 `reopen` 出边（`--reason` 必填；`SPEC_MERGED` 在场须 `--confirm-spec-merged`）。任何终态从此都有受控出路，`MergeTransactionService` 仍是 phase / classification / allowed actions 的唯一维护者（§三十四不变）。
+3. **作废靠指纹自然传导**：reopen 只作废 `SPEC_MERGED` + 留痕，不级联删除下游产物；重合并后 `spec_fingerprint` 变化使既有 manifest 判 stale，走切片侧既有恢复 / 重划回边收敛——两侧回边正交、不互相顶替，不新建第二套级联清理。
+4. **与 0.14.2 preflight-reopen 的边界**：preflight-reopen 是 sealed 内、事务身份不变的退回；本节 reopen 是 completed 终态、旧事务归档 + 新事务重建的回边。判据、留痕与归档互不复用。
+
+### 45.3 强制点
+
+- 留痕 `MERGE_REOPENS.jsonl` append-only；归档事务只供审计、不作 fallback 真相源（承 S37 archive audit-only 契约）。
+- 人工删除事务文件 / 手工改写 `SPEC_MERGED` 的旁路显式禁止（Registry forbidden shadow sources）。
+- 投影与拒绝文案由真实 phase / classification / marker 状态推出（承 §2.53.6.2 同族约束）。
+- 追溯：需求 AC-MTXOUT-01～07；功能规格 §2.58；测试 UT-S09-289～292、ST-S09-111、SMOKE-core-181。

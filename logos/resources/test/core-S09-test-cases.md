@@ -950,3 +950,32 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 - AC-SLICETX-02 命令面与动作性质：UT-S09-287。
 - AC-SLICETX-09 归档只读且无副作用：UT-S09-288。
 - 场景：S09 切片事务命令面与归档只读；功能规格：§2.53.3、§2.53.7、§2.53.9；架构：§四十三.1；安装态：SMOKE-core-175。
+
+## S09 合并事务终态出路测试（fix-merge-transaction-abort-recover-reopen）
+
+> 本节补充终态出路（abort 重建 / fatal 修复 / completed 受控重开）的回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 操作 | 预期结果 |
+|---|---|---|---|---|
+| UT-S09-289 | abort 后归档让位重建 | 提案 merge 出 collecting 事务后 `abort`（转 aborted）；随后修改一个 delta 使 plan/target set 变化 | 重跑 `openlogos merge` | 旧事务归档至 `merge-transactions/<旧 id>.json`（receipt 字段与哈希保留可审计）；返回**新**事务（新 transaction_id、按当前 delta 重新规划的 target 集合）；非终态夹具对照组仍幂等返回同一事务 |
+| UT-S09-290 | fatal failed 可 abort 后重来 | 构造 `failed` 且 classification 非 `recovery_required` 的事务夹具 | 检查 `allowed_actions`；执行 `abort` 后重跑 merge | `allowed_actions` 含 `abort`（0.14.16 为空即缺陷特征）；abort 幂等转 aborted；随后按 UT-S09-289 路径重建；`recovery_required → recover` 与 `applying → recover` 逐字不变 |
+| UT-S09-291 | completed reopen 准入矩阵与留痕 | 参数化四态：① completed + 无 `SPEC_MERGED`；② completed + `SPEC_MERGED` 在场、未附确认；③ completed + 在场、附 `--confirm-spec-merged`；④ `--reason` 空白 | 各自执行 `reopen` | ① 直接重开；② 拒绝且文案给出附 `--confirm-spec-merged` 指引、零副作用；③ 重开成功——`MERGE_REOPENS.jsonl` 追加一行（schema=`openlogos/merge-reopen@1`、旧 transaction_id、非空原因、spec_merged_present/confirmed 标记）、旧事务归档、`SPEC_MERGED` 作废；④ 一律拒绝；非 completed phase 执行 reopen 报 `action_not_allowed` |
+| UT-S09-292 | 非终态幂等与既有语义零回归 | ① collecting/ready/sealed 事务在场重跑 merge；② completed + `SPEC_MERGED` 完好直接重跑 merge；③ 0.14.2 preflight-reopen 夹具；④ 存在正式 receipt/marker 时 abort | 各自执行并与 0.14.16 判定逐项对照 | ① 幂等返回同一事务、逐字节不变；② 拒绝静默重建、`fix_hint` 指向 reopen 入口；③ preflight-reopen 语义逐字不变（sealed 内退回 collecting、身份不变）；④ 既有破坏性清理拒绝面不变 |
+
+### 场景测试
+
+| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S09-111 | 真实 CLI 三条出路全链 | 临时 launched 项目，可合并提案 | A：merge → abort → 修正 delta → merge → submit-content → seal → apply 达 completed；B：completed 后 `reopen --reason --confirm-spec-merged` → 修正 delta → 重合并全链 → `SPEC_MERGED` 重写；C：违例矩阵（空 reason / 未确认 / 非 completed reopen）重放 | A 全链经公开命令抵达 completed、旧 aborted 事务归档在场；B 留痕/归档/作废/重写齐备、新旧 receipt 均可审计、下游产物零删除；C 逐一被拒且零副作用、文案与真实 phase 一致；全程无半写态 |
+
+### 追溯与覆盖
+
+- AC-MTXOUT-01 归档让位重建：UT-S09-289、ST-S09-111。
+- AC-MTXOUT-02 fatal 出路：UT-S09-290。
+- AC-MTXOUT-03/04 reopen 准入与留痕归档：UT-S09-291、ST-S09-111。
+- AC-MTXOUT-05 重写与指纹自然传导：ST-S09-111（下游零删除断言）。
+- AC-MTXOUT-06 零回归：UT-S09-292（回归锚：UT-S09-254、ST-S09-100）。
+- AC-MTXOUT-07 版本身份与安装态：SMOKE-core-181（部署方案 0.14.17 节）。
+- 场景：S09-B 合并事务终态出路；功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。

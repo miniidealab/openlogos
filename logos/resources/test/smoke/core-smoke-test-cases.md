@@ -1299,3 +1299,52 @@
 - 功能规格：§2.57；根规范：`spec/baseline-closure.md` §7；场景：S19、S39 勘误散文订正通道（EX-ERRATA-1/2）。
 - UT/ST：UT-S39-65～67、ST-S39-29。
 - 部署方案：OpenLogos 0.14.16 勘误散文订正通道本机全局部署方案；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179。
+
+## OpenLogos 0.14.17 合并事务终态出路 Smoke
+
+### 授权与统一前置
+
+- 仅在 `openlogos verify` PASS、固定 `0.14.17` tarball 隔离矩阵通过、用户已明确授权本机全局部署且部署身份自检通过后执行。
+- 执行 `SMOKE-core-181` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.17`。
+- 全部断言在一次性临时项目中构造。**不得触碰本仓或用户其它项目的活跃提案、guard 与 marker**，**不得手工删除或改名 `MERGE_TRANSACTION.json`**，**不得手工创建、作废或改写 `SPEC_MERGED` 与 `MERGE_REOPENS.jsonl`**。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-181 | 0.14.17 合并事务终态出路（abort 重建 / completed 重开）且判据 fail-closed | ① 核对固定 tarball SHA、全局 entry/realpath/version 与 package/plugin/asset identity；② **abort 重建**：临时 launched 项目构造可合并提案 → `openlogos merge` → `merge transaction abort` → 修正 delta → 重跑 merge，核对旧事务归档至 `merge-transactions/`、新事务新 transaction_id/新 target 集合 → 全链 submit-content → seal → apply 达 completed；③ **completed 重开全链**：另一临时提案 completed（`SPEC_MERGED` 在场）→ `reopen --reason "<原因>" --confirm-spec-merged`，核对 `MERGE_REOPENS.jsonl` 留痕（旧 transaction_id、非空原因、confirmed）、旧事务归档、`SPEC_MERGED` 作废 → 修正 delta 重合并全链 → `SPEC_MERGED` 与 receipt 重写、下游产物零删除；④ **fail-closed 反例**：空 `--reason`、未附确认、非 completed 执行 reopen、completed+`SPEC_MERGED` 完好直接重跑 merge——逐一被拒且零副作用；⑤ **既有能力零回归**：非终态幂等返回、0.14.2 preflight-reopen、`recovery_required → recover` 与 abort 既有拒绝面逐项一致；⑥ 演练 `0.14.16→0.14.17→0.14.16→0.14.17` 并复核每阶段 identity 与 ②③ 的结论 | ② **abort 后必须能重建**——重跑 merge 仍返回 aborted 投影即整体 FAIL（死锁面①）；③ **重开全链必须齐备**——留痕/归档/作废/重写任一缺失即 FAIL（缺口①）；④ 反例必须逐一被拒（放宽越界即 FAIL）；⑤ 既有行为逐项一致；⑥ 往返无混装且结论不变；全程无 `npm publish`/tag/release/官网/git push 副作用 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-181`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选或回滚 tarball）必须写显式 `skip` 记录并携带缺失项，禁止静默零记录退出。
+3. **全部关键断言必须穿过公开 `openlogos merge` / `openlogos merge transaction` 命令**。以库级函数调用构造或断言的步骤一律不计入闭环证据。
+4. evidence 至少包含：tarball 路径/大小/SHA-256、全局入口/realpath/version、② 旧/新 transaction_id 与归档文件存在性、③ 留痕行原文、`SPEC_MERGED` 作废与重写前后对照、④ 每个反例的拒绝结论、⑤ 零回归各断言结论、⑥ 回滚每阶段 identity。
+5. 临时项目在结果持久化后清理；证据中不得包含用户真实项目路径或提案正文。
+6. runner 不得执行 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 git push；检测到任一远程副作用立即 FAIL。
+
+### 零回归对照（强制）
+
+同一 runner 的步骤 ②③ 必须在固定 `0.14.16` 上执行一次并**记录其失败点**：② abort 后重跑 merge 在 0.14.16 上会原样返回 aborted 投影、无法重建（死锁面①本身）；③ `reopen` 在 0.14.16 上动作不可用（缺口①本身）。**若 ②③ 在 0.14.16 上也能重建或重开，说明断言是空转，必须重写用例而非放行部署。** 步骤 ④⑤ 在两版本上行为应一致。
+
+### OpenLogos Smoke Reporter
+
+- 用例向 `logos/resources/verify/smoke-results.jsonl` 写唯一一条 `SMOKE-core-181` 结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+- **步骤 ② 与 ③ 是双红线**：前者失败意味着 abort 死锁未解，后者失败意味着二次 merge 通道仍不存在——任一失败即整体 FAIL，不得以「其余步骤都过」为由记 pass。
+- 观察到 runner 手工删事务文件、手工写 marker/留痕或以库级调用替代公开命令构造关键断言，直接 FAIL。
+- 缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- 临时项目失败：保留脱敏诊断，修复后重新 verify/build/pack/install/smoke；不得只重跑失败断言绕过 candidate identity。
+- 步骤 ② 或 ③ 失败：立即以固定 `0.14.16` 回滚并报告触发条件——合并事务是本仓自身与 RunLogos 的关键路径，不得带伤运行。
+- 全局身份或回滚失败：立即尝试恢复固定 `0.14.16` 并报告环境状态；未证明一致前阻断后续动作。
+- 不得为让断言通过而放宽准入、跳过留痕/归档或伪造 marker 状态。
+
+### 追溯
+
+- 需求：AC-MTXOUT-01～07。
+- 功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。
+- 场景：S09、S19；UT/ST：UT-S09-289～292、ST-S09-111。
+- 部署方案：OpenLogos 0.14.17 合并事务终态出路本机全局部署方案；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179、SMOKE-core-180。

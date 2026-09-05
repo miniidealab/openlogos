@@ -477,3 +477,41 @@ reopen后transaction ID、plan hash、target set不变；旧seal与全部target 
 ### 授权
 
 提案、tasks、Delta或本Skill均不能自授merge/verify/部署/smoke/archive/push权限。执行每个确认点前核对用户明确授权；`--auto`仅在用户真实选择时构成standing授权。
+
+## 0.14.17 终态出路执行合同（abort 重建 / completed reopen）
+
+> 本节补充 0.14.0 消费者合同与 0.14.2 Preflight/Reopen 执行合同：合并事务的**终态**自 0.14.17 起不再是死局。本节只约束 merge-executor / Agent 的消费方式；状态转换、留痕、归档与 marker 一律由 OpenLogos 核心写入。
+
+### 终态出路总则
+
+1. **活跃名额只含非终态**：`failed`（含 aborted 与 fatal 分类）不再占用活跃名额——修正 delta 后重跑 `openlogos merge`，核心会先把终态事务归档至提案目录 `merge-transactions/<transaction_id>.json` 再按当前 delta 重新规划新事务（新 transaction_id / plan / target set）。Agent 不得手工删除或改名事务文件来「腾位」。
+2. **fatal failed 出路**：`failed` 且 classification 非 `recovery_required` 时 `allowed_actions` 含 `abort`；abort 转 aborted 后按第 1 条重建。`recovery_required → recover` 的既有出路逐字不变。
+3. **completed 受控重开（提案内二次 merge）**：`SPEC_MERGED` 写入后发现已合并规格有误时，执行者提示用户授权执行：
+
+   ```bash
+   openlogos merge transaction reopen --reason "<非空原因>" [--confirm-spec-merged]
+   ```
+
+   `SPEC_MERGED` 在场必须附 `--confirm-spec-merged`（重开会**作废** `SPEC_MERGED`）；核心在单一动作内完成留痕（`MERGE_REOPENS.jsonl` append-only）、旧事务归档与作废，任一步失败整体不生效。随后修正 delta、重跑 `openlogos merge` 重建事务并按既有合同重走 submit-content → seal → apply；apply 成功由核心重写 `SPEC_MERGED` 与 receipt。
+
+### 与 0.14.2 preflight-reopen 的边界
+
+- 0.14.2 的 preflight-reopen 发生在 **sealed 内**、事务身份不变（legacy sealed apply 首写前原子退回 collecting）；本节 reopen 发生在 **completed 终态**、旧事务归档 + 新事务重建。两者判据、留痕与恢复流程互不复用，不得互相顶替。
+- `status/next` 中的 `missing_slot_ids` 仍是 preflight 修复的唯一重提集合；终态重建后的新事务按其自己的投影从头收集。
+
+### 下游产物与指纹自然传导（C01）
+
+- 重开**不**级联删除任何下游产物（切片事务、`TEST_SLICE_MANIFEST.json`、`SLICES_APPROVED`、已实现代码）；执行者也**不得**替核心「顺手清理」它们。
+- 重合并成功后 `spec_fingerprint` 变化会使既有 manifest 经 `deriveSliceVerificationState()` 自然判 stale，走切片侧既有恢复（`manifest-recovery`）或重划（slice `reopen`）回边收敛——执行者只跟随 `next` 的派生提示，不自行推导清理动作。
+
+### 禁止事项（在既有清单上追加）
+
+- 不人工删除 / 改名 `MERGE_TRANSACTION.json` 或归档目录内容来重建事务。
+- 不手工创建、作废或改写 `SPEC_MERGED` 与 `MERGE_REOPENS.jsonl`——它们只能由核心的受控动作写入。
+- 不在未获用户明确授权时执行 `reopen`（它作废已合并事实，属人类确认点级动作）；`--auto` standing 授权域内由 driver 按既有规则处置。
+- 不把归档事务或旧 receipt 当作缺失主目标的 fallback 真相源（承 archive audit-only 契约）。
+
+### 身份与完成判定（增补）
+
+- 重建 / 重开后 transaction_id **必然变化**；执行者必须以新投影为准逐字核对身份，不得沿用旧事务的 slot/staging 记忆。
+- merge 成功仍仅由可复算 completed receipt 和匹配 `SPEC_MERGED` 证明；重开历史由 `MERGE_REOPENS.jsonl` 与 `merge-transactions/` 归档审计，不参与完成判定。
