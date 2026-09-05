@@ -28,7 +28,7 @@ scenario_counter:
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 10
+  next_id: 11
 modules:
   - id: core
     name: 核心功能
@@ -615,6 +615,8 @@ resource_index:
     desc: cursor-adapter-parity 创建的 decision 基线
   - path: spec/cursor-plugin.md
     desc: cursor-adapter-parity 创建的 spec 基线
+  - path: logos/resources/decisions/core-D10-merge-frontier-transaction-fact.md
+    desc: fix-merge-flow-transaction-contract 创建的 decision 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

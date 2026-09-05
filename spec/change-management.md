@@ -187,16 +187,22 @@ Delta 文件的目录结构映射主文档目录：
    └── 团队/自审 proposal.md 和 delta 文件
    └── delta 任务全部勾选且存在可合并 delta 后，对应 proposal_step: ready-to-merge
 
-5. 生成合并指令（CLI）【人类确认点；--auto 下 spec-exit 门自动放行】
+5. 开启合并事务（CLI）【人类确认点；--auto 下 spec-exit 门自动放行】
    └── openlogos merge {slug}
-   └── 扫描 deltas/，生成 MERGE_PROMPT.md
-   └── 写入 MERGE_PROMPT_GENERATED，表示“合并指令已生成，等待 AI 合并主规格”
+   └── 校验 deltas/（守恒 L8、模板骨架等）后创建合并事务 MERGE_TRANSACTION.json（phase: collecting）
+   └── 成功后置条件二分（跨仓合同）：no-delta 提案当场写 SPEC_MERGED、前沿即进；
+       有 delta 提案创建（或幂等返回既有非终态 / 终态归档让位后重建）事务——
+       exit 0 + 事务在盘且 phase 合法 = 本跳成功，前沿推进 merge-generated、停在 apply 前为合法中间态
+   └── 对非终态事务重跑 merge 幂等返回现状，不重复创建
+   └── legacy 测试模式（NODE_ENV=test + 内部开关）仍生成 MERGE_PROMPT.md / MERGE_PROMPT_GENERATED，仅供 0.13.x 合同回归；生产路径不产生这两个文件
 
 6. AI 执行合并（merge-executor Skill）
-   └── AI 读取 MERGE_PROMPT.md，逐个 delta 合并到主文档（logos/resources/）
+   └── merge-executor 按事务合同逐 slot 提交最终内容：
+       openlogos merge transaction submit-content → seal → apply
+   └── apply 原子落盘主文档（logos/resources/）、metadata 与 receipt，并由事务最后写入 SPEC_MERGED，
+       表示“主规格已合并，可以开始切片规划/代码实现”
    └── 合并完成后，AI 自动 commit 规格文档变更（告知用户，无需确认）
    └── commit message 格式：docs({slug}): merge spec deltas
-   └── 写入 SPEC_MERGED，表示“主规格已合并，可以开始切片规划/代码实现”
 
 7. 切片规划（slice-planner Skill）【slice 出口 slice-exit 为人类确认点；无人值守 --auto 下可放行】
    └── 前置 auto-reset（enforce-slice-stage-ordering）：进入本步骤前，CLI 已在「进入 slice 段」的确定性动作上自动清理任何提前填充的 [code]——有 delta 提案于 openlogos merge 时、纯代码提案于 plan 门放行（写 PLAN_APPROVED）时，把 [code] 重置为占位并把旧内容备份到提案目录 CODE_AUTORESET（append-only jsonl，可追溯）；故 slice-planner 恒从空 [code] 开始划分。清理幂等、不阻断流程、无人值守自愈（见 spec/flow-spec.md §12.7）
@@ -250,6 +256,8 @@ Delta 文件的目录结构映射主文档目录：
     └── 无人值守 --auto 模式：archive 完成后由 standing 授权自动 push（写 GATE_AUTO_PASSED 审计）
     └── git push 无需任何 marker / guard 改动：PreToolUse guard 安全白名单本就放行 git push，唯一约束是指令文本，全自动放开即可
 ```
+
+**merge 中间态与前沿推进（fix-merge-flow-transaction-contract）**：有 delta 提案在步骤 5 成功后、步骤 6 apply 完成前，`SPEC_MERGED` 尚未落盘、前沿停在 `apply-merge` 节点——这是**合法中间态**，宿主不得判失败；`proposal_step` 于开事务后即推进 `merge-generated`（权威事实 = `MERGE_TRANSACTION.json` 在盘，见 `spec/flow-spec.md` 与架构「四十七」），`status` / `next` 在活跃事务在场时必挂 `data.merge_transaction` 只读投影供分流（契约见 `spec/cli-json-output.md`）。
 
 ### commit 粒度规则
 
@@ -311,20 +319,18 @@ push 是独立的人类确认点（Step 12），AI 必须等待用户明确授�
 
 ### 决策记录沉淀（S38，decision-record-capability）
 
-> 来源变更：decision-record-capability（社区 RFC issue #12 补充观察）。承接「归档定位：audit-only（S37）」——决策理由不再是 archive 的独有内容。
-
 **目的**：把设计决策的**理由**从「只活在 archive 的 proposal 变更原因里」沉淀为 `logos/resources/decisions/` 下可检索的活文档。archive 归档后仅供审计、可删除（S37），若决策理由只活在 proposal 里则归档即失联；决策记录使「为什么这样设计」成为当前有效规格的一部分。
 
 **「变更原因」与「决策记录」分工（升格判据）**：
 - **变更原因**：`proposal.md` 每案必填的叙述性动机，留在 proposal / archive，**不机械复制进 resources**。
 - **决策记录**：`logos/resources/decisions/` 下**少数**值得长期复盘的拍板。满足任一即升格——① 立了未来变更必须遵守的不变量 / 约束；② 在真实备选间取舍且被否项可能被重提；③ 跨多个规格 / 组件。一句话测试：「读合并后的规格本身能否还原这个 why？」能→不升格；会丢 why 与被否方案→才升格。bug 修复 / 机械重构 / 发版 bump / trivial 不升格。
 
-**两阶段 bootstrap（delta-r1 F1）**：`deltas/decisions/` 是尚未注册的 delta 类别，现行 `delta-classify.ts` 会判 `delta_path_invalid`、`openlogos merge` 拒绝生成 `MERGE_PROMPT`；注册该类别属代码、只能 merge 后实现。故引入本能力的变更**先合并能力规格 + 在代码注册 `decisions` 类别与索引扫描**，**首条真实决策记录由后续变更**在注册上线后产出。
+**两阶段 bootstrap（delta-r1 F1）**：`deltas/decisions/` 是尚未注册的 delta 类别，现行 `delta-classify.ts` 会判 `delta_path_invalid`、`openlogos merge` 拒绝创建合并事务（legacy 测试模式下为拒绝生成 `MERGE_PROMPT`）；注册该类别属代码、只能 merge 后实现。故引入本能力的变更**先合并能力规格 + 在代码注册 `decisions` 类别与索引扫描**，**首条真实决策记录由后续变更**在注册上线后产出。
 
 **流程接入（不强制、零负担、走既有 delta 通道；落盘所有者 = merge-executor）**：
 1. change-writer 在 `proposal.md` 新增**可选**「已确定的设计决策」章节（每条含**拟定** `DXX`、决策一句话、理由摘要——拟定号不硬编，最终号由 merge-executor 按公式定）。
 2. 含该章节的提案，`tasks.md` `[delta]` 必须规划 `deltas/decisions/<module>-DXX-<slug>.md` 决策记录 delta。
-3. **`openlogos merge` 只校验 delta（含 `decisions` 类别合法性、S37 守恒 L8）+ 生成 `MERGE_PROMPT` / `MERGE_PROMPT_GENERATED`——不写资源、不改计数器**。
+3. **`openlogos merge` 只校验 delta（含 `decisions` 类别合法性、S37 守恒 L8）+ 创建合并事务（legacy 测试模式为生成 `MERGE_PROMPT` / `MERGE_PROMPT_GENERATED`）——不写资源、不改计数器**。
 4. **merge-executor 在 apply 时**（同一提交内）：按分配公式定号——`base = max(configured_next_id ?? 1, max(【已落盘】DXX，空集=0)+1)`（**基准只含已落盘、不纳入本批待落盘 DXX**，delta-r2 F5），候选按稳定序第 `i` 条 `expected_i = base + i`，校验「文件名==标题==`expected_i`」、拒重复 → 落盘决策记录到 `logos/resources/decisions/` → 持久化 `decision_counter.next_id = base + 候选数`（对齐 `scenario_counter` / `feature_counter` 的 AI 维护语义）→ 更新 `resource_index`（内容化 desc 由 `sync-resource-index.ts` 扩展扫描器生成）→ 事后 ID 点数自检通过后写 `SPEC_MERGED`。失败回滚（不提前消耗编号）、重试幂等。详见 `skills/merge-executor/SKILL.md`。
 5. **不含该章节的提案，全流程行为与现状完全一致（零回归、零负担）**；**不新增 `openlogos decision` CLI 命令**。
 
@@ -336,7 +342,9 @@ push 是独立的人类确认点（Step 12），AI 必须等待用户明确授�
 
 ## MERGE_PROMPT.md 文件规范
 
-`openlogos merge` 命令自动生成的指令文件，结构如下：
+> **legacy 范围（fix-merge-flow-transaction-contract）**：自 0.14.x 起本节仅适用于 **legacy 测试模式**（`NODE_ENV=test` + 内部开关，供 0.13.x 合同回归）；生产路径的 `openlogos merge` 走合并事务（`MERGE_TRANSACTION.json` → submit-content → seal → apply），**不生成本节文件**。守恒 / 模板骨架等校验失败时生产路径同样拒绝创建事务（错误文案中「拒绝生成 MERGE_PROMPT」在事务语义下等价于「拒绝创建合并事务」）。
+
+`openlogos merge` 命令（legacy 测试模式）自动生成的指令文件，结构如下：
 
 ```markdown
 # Merge Instruction
@@ -385,7 +393,7 @@ openlogos archive add-remember-me
 ## AI Skills 集成
 
 - **change-writer**：在 `openlogos change` 后使用，辅助填写 proposal.md 和 tasks.md
-- **merge-executor**：在 `openlogos merge` 后使用，读取 MERGE_PROMPT.md 执行实际合并
+- **merge-executor**：在 `openlogos merge` 后使用——生产路径按合并事务合同逐 slot 提交最终内容（submit-content → seal → apply，`SPEC_MERGED` 由事务写入）；legacy 测试模式读取 MERGE_PROMPT.md 执行实际合并
 
 ## no-delta spec-complete
 
