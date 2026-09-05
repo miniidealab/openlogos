@@ -1,3 +1,57 @@
+# 部署报告：fix-reopen-test-change-set-forward-merge / OpenLogos 0.14.20（2026-09-05，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-reopen-test-change-set-forward-merge`。
+- **授权与门禁**：用户已明确授权部署 + smoke 及失败修复重试闭环；`openlogos verify` 最终轮 PASS（定义 2151、执行 2151、通过 2141、失败 0、跳过 10，覆盖率与通过率 100%，slice 终局 final=true，三切片 checkpoint 全 PASS），`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.20` 已完成真实 npm pack、制品身份核对、隔离 prefix 行为矩阵（SMOKE-core-191 七类证据全 PASS，含固定 0.14.19 空 change set 缺陷对照与 `0.14.19→0.14.20` roundtrip 无混装）、本机全局安装；新 shell 复核 `openlogos --version` 精确 `0.14.20`，package/asset-manifest/五类 plugin manifest 全同源 `0.14.20`。
+- **数据迁移 / 服务启动**：无 / 不适用（历史 SPEC_MERGED 不迁移，新语义只作用于修复后的 apply）。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+- **正式 smoke**：`openlogos smoke` PASS——161/161 定义用例全部执行，69 pass、0 fail、92 skip（历史用例环境性 skip，与既有惯例一致），覆盖率与通过率 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场；SMOKE-core-191 pass（七类证据与隔离矩阵同源，candidate 同哈希 `b252cec4…1fcbf`）。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `3e9c7808432e9bcdea4cb902363ba29c9c3242b0` |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/fix-reopen-test-change-set-forward-merge/miniidealab-openlogos-0.14.20.tgz`；2,340,496 字节；791 文件 |
+| candidate SHA-256 | `b252cec4465806a4555fa2cc2018fb908fc09f71ba9a198bbd9dd28fec01fcbf` |
+| 固定回滚 tarball | `logos/resources/verify/deployment-artifacts/fix-merge-flow-transaction-contract/miniidealab-openlogos-0.14.19.tgz`（0.14.19 部署窗口冻结件） |
+| 回滚 SHA-256 | `ad6575ded72996f9d4bd2b820c96f5358826cc97bd9f1d57f9f08b76bd8109c3` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → dist/index.js / `0.14.19` |
+
+可复制回滚命令：
+
+```bash
+npm install -g --force --ignore-scripts --no-audit --no-fund /Users/huangxianglong/gitlab/openlogos/logos/resources/verify/deployment-artifacts/fix-merge-flow-transaction-contract/miniidealab-openlogos-0.14.19.tgz
+/bin/zsh -lic 'command -v openlogos && openlogos --version'
+```
+
+## 三、隔离矩阵证据（账本 `deployment-artifacts/fix-reopen-test-change-set-forward-merge/matrix-smoke-results.jsonl`）
+
+SMOKE-core-191 runner 在 `mktemp -d` 一次性 npm prefix 从绝对入口执行，七类证据全 PASS：
+
+1. **candidate identity**：`candidate=0.14.20 sha256:b252cec4…1fcbf`，与冻结 tarball 同哈希，无 workspace link。
+2. **reopen 前滚全链（核心验收）**：首轮 merge 全链 changed=[UT-S01-01, UT-S01-02] → 修正非测试目标 delta → reopen --confirm-spec-merged → 幂等重合并 → changed 仍提案级完整、removed 空、sha256 合法。
+3. **removed 后写胜出**：二次 reopen 删除 UT-S01-02 行 → 重合并后 removed=[UT-S01-02]、changed=[UT-S01-01]。
+4. **失配 fail-closed**：隔离副本篡改归档 receipt 身份 → seal 稳定拒绝，stderr 含「身份失配」并点名 `.receipt.json` 路径。
+5. **无留痕零回归**：未 reopen 提案无 `MERGE_REOPENS.jsonl`、change set 正常。
+6. **0.14.19 缺陷对照有效**：固定 0.14.19 上同一 reopen+幂等重合并流程 `changed=[]`（缺陷如实复现，矩阵不空转）。
+7. **rollback roundtrip**：`0.14.19→0.14.20` 每阶段 identity 对应固定制品，无混装。
+
+## 四、部署中发现并修复的问题
+
+- 无。矩阵一次通过；本窗口无 candidate 重新 pack。
+
+## 五、异常与未解决风险
+
+- verify 的 slice-aware 模式逐轮消化三个切片 checkpoint 后进入终局 `final` 并写 `VERIFY_PASS`（与 0.14.19 窗口一致，非缺陷）。
+- 正式 smoke 后复核全局 `openlogos --version` 仍精确 `0.14.20`（smoke roundtrip 仅作用于隔离 prefix）。
+- 无其它未解决风险。`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 均在场；未 archive、未 npm publish、未创建 tag/release、未部署网站、未 `git push`。
+
+---
+
 # 部署报告：fix-merge-flow-transaction-contract / OpenLogos 0.14.19（2026-09-05，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论
