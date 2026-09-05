@@ -1,0 +1,69 @@
+{
+  "docPath": "/Users/huangxianglong/local-gitlab/openlogos/logos/resources/prd/1-product-requirements/01-requirements.md",
+  "comments": [
+    {
+      "id": "c-1775092339801-fkmxcty",
+      "quoteText": "（Cursor、Claude Code 等）",
+      "blockHint": "",
+      "content": "需要把opencode明确写进去，这是一个使用率非常高的ai开发工具",
+      "status": "applied",
+      "createdAt": "2026-04-02T01:12:19.801Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775140367286-2d6ko8k",
+      "quoteText": "「帮我写需求文档」",
+      "blockHint": "",
+      "content": "如何让用户能提供更好的提示词，更好的协同AI工作，这块能如何提供更好的用户体验？",
+      "status": "applied",
+      "createdAt": "2026-04-02T14:32:47.286Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775141220966-3wzws29",
+      "quoteText": "Cursor",
+      "blockHint": "",
+      "content": "请不要提高cursor的优先级，这里明显还可以是claude code或者你opencode，请使用一个通用的名字来描述",
+      "status": "applied",
+      "createdAt": "2026-04-02T14:47:00.966Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775142143955-bshykkm",
+      "quoteText": "三、场景总览",
+      "blockHint": "",
+      "content": "是否缺少技术架构/技术选型的讨论，也就是在产品设计完成之后，不应该直接进入场景S04，应该有个技术整体架构，技术选型的场景",
+      "status": "applied",
+      "createdAt": "2026-04-02T15:02:23.955Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775142812721-j20vccp",
+      "quoteText": "生成 PostgreSQL DDL",
+      "blockHint": "",
+      "content": "这块在数据库决定后才能知道使用哪个sql方言把，有可能还mysql",
+      "status": "applied",
+      "createdAt": "2026-04-02T15:13:32.721Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775142949277-7oou0tg",
+      "quoteText": "核心场景详述",
+      "blockHint": "",
+      "content": "缺少“S06\tAI 辅助设计编排测试”的具体描述吧？",
+      "status": "applied",
+      "createdAt": "2026-04-02T15:15:49.277Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775182640809-tc8rc28",
+      "quoteText": "S09: 发起变更提案",
+      "blockHint": "",
+      "content": "发起变更提案后会穿件目录，并且创建一堆文件，然后呢，这块有一大块空白区域需要我们介入，这块我们再讨论讨论",
+      "status": "applied",
+      "createdAt": "2026-04-03T02:17:20.810Z",
+      "author": "用户"
+    }
+  ],
+  "updatedAt": "2026-04-03T02:41:34.800Z"
+}

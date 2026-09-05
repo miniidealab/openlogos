@@ -1,0 +1,33 @@
+{
+  "docPath": "/Users/huangxianglong/local-gitlab/openlogos/logos/resources/prd/2-product-design/2-page-design/02-skills-dialogue.md",
+  "comments": [
+    {
+      "id": "c-1775190916079-uva2mij",
+      "quoteText": "帮我画 S01 的时序图",
+      "blockHint": "",
+      "content": "时序图和步骤说明是一个整体，这个示例需要做下优化",
+      "status": "applied",
+      "createdAt": "2026-04-03T04:35:16.079Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775191449794-zcwjlu6",
+      "quoteText": "API + DB 连续设计",
+      "blockHint": "",
+      "content": "请给api+db的简单的例子，让用户更有体感",
+      "status": "applied",
+      "createdAt": "2026-04-03T04:44:09.794Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775200994191-xgihfjk",
+      "quoteText": "对我说「帮我更新 S02 的需求文档」开始第一项任务。",
+      "blockHint": "",
+      "content": "既然影响到了全链路，这块只让AI修改需求文档是否合适，这个提示词是否有优化的可能，比如帮我更新S02相关所有文档？",
+      "status": "applied",
+      "createdAt": "2026-04-03T07:23:14.191Z",
+      "author": "用户"
+    }
+  ],
+  "updatedAt": "2026-04-03T12:09:36.698Z"
+}

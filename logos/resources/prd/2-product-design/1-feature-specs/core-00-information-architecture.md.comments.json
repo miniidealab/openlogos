@@ -1,0 +1,24 @@
+{
+  "docPath": "/Users/huangxianglong/local-gitlab/openlogos/logos/resources/prd/2-product-design/1-feature-specs/00-information-architecture.md",
+  "comments": [
+    {
+      "id": "c-1775184430432-0jnevu2",
+      "quoteText": "CLI 命令树结构",
+      "blockHint": "",
+      "content": "新添加的merge命令没有同步到这个文档？",
+      "status": "applied",
+      "createdAt": "2026-04-03T02:47:10.432Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775217788077-nylm5yu",
+      "quoteText": "产品类型判定",
+      "blockHint": "",
+      "content": "test",
+      "status": "pending",
+      "createdAt": "2026-04-03T12:03:08.077Z",
+      "author": "用户"
+    }
+  ],
+  "updatedAt": "2026-04-03T12:03:08.077Z"
+}

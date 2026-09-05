@@ -1,0 +1,33 @@
+{
+  "docPath": "/Users/huangxianglong/local-gitlab/openlogos/logos/resources/prd/2-product-design/1-feature-specs/01-cli-interaction-design.md",
+  "comments": [
+    {
+      "id": "c-1775180827866-4auxwe4",
+      "quoteText": "[name]",
+      "blockHint": "",
+      "content": "这个name可以通过其他方式获取到吗，比如读取cursor/claude code/opencode的配置文件读取到呢？这个name还挺重要的，要是不能获取到，需要给用户提供一个修改的方式？",
+      "status": "applied",
+      "createdAt": "2026-04-03T01:47:07.866Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775185296794-aglp7ky",
+      "quoteText": "帮助信息",
+      "blockHint": "",
+      "content": "缺少新加的merge等命令，请帮我再检查下其他地方还缺少这两个命令的相关处理吗",
+      "status": "applied",
+      "createdAt": "2026-04-03T03:01:36.794Z",
+      "author": "用户"
+    },
+    {
+      "id": "c-1775187351626-yjmuels",
+      "quoteText": "S01: CLI 初始化项目 — 交互规格",
+      "blockHint": "",
+      "content": "请帮我增加一个逻辑，用户主动输入projectname的情况下，仍然读取配置中（比如package.json）的项目名，如果和用户输入的不一致，让用户确认使用哪个，尽量保持一致",
+      "status": "applied",
+      "createdAt": "2026-04-03T03:35:51.626Z",
+      "author": "用户"
+    }
+  ],
+  "updatedAt": "2026-04-03T03:42:38.505Z"
+}
