@@ -3152,3 +3152,76 @@ stateDiagram-v2
 - 人工删除事务文件 / 手工改写 `SPEC_MERGED` 的旁路显式禁止（Registry forbidden shadow sources）。
 - 投影与拒绝文案由真实 phase / classification / marker 状态推出（承 §2.53.6.2 同族约束）。
 - 追溯：需求 AC-MTXOUT-01～07；功能规格 §2.58；测试 UT-S09-289～292、ST-S09-111、SMOKE-core-181。
+
+## 四十六、Cursor 薄 Adapter、hooks 合并写入与部分强度门禁架构
+
+### 46.1 组件边界
+
+Cursor 三件套补齐完全复用 D06 底座：`AiToolAdapterRegistry` 拥有能力声明，共享 SessionContextService / GuardDecisionService 拥有阶段上下文与 guard 决策事实，Cursor Adapter 是薄层——只负责：
+
+1. Cursor 原生 Agent Skills 布局映射（`.cursor/skills/<name>/SKILL.md`，commands 以 `disable-model-invocation: true` Skills 表达）；
+2. `.cursor/hooks.json` 协议字段转换（事件名、stdin/stdout JSON 契约、`permission` 字段、退出码）；
+3. 安装布局与托管 `.mdc` 迁移清单派生。
+
+Adapter 不复制任何决策逻辑；`preToolUse: false` 的能力声明由 Registry 单点持有（capability honesty，D09），所有消费方从声明读取，不得按宿主名推断。
+
+### 46.2 资产模型与 owner
+
+```text
+.cursor/
+├── skills/<openlogos-skill>/SKILL.md     # OpenLogos 托管（含 commands 形式）
+├── agents/change-reviewer.md             # OpenLogos 托管 subagent
+├── hooks.json                            # 共享文件：仅 OpenLogos 托管条目归 OpenLogos
+└── rules/                                # 历史托管 .mdc 待清理；用户自有 rules 永不触碰
+```
+
+- Skills 与 subagent 目录级归 OpenLogos，走既有 `ManagedAssetTransaction` 原子替换。
+- `hooks.json` 是用户共享文件，**不适用**整文件事务替换，采用 46.3 的合并写入。
+- 托管 `.mdc` 清理清单由 OpenLogos Skill 名单静态派生（`<skill-name>.mdc` + `openlogos-policy.mdc`），严禁通配删除。
+
+### 46.3 hooks.json 合并写入
+
+1. 读取 → 解析失败即 fail loud（报告路径，零写入）；不存在则以 `{"version": 1, "hooks": {}}` 起底。
+2. 以托管 command 路径为身份识别 OpenLogos 条目；增改仅限托管条目，其余条目与未知字段原样保留（字节级不变由测试锚定）。
+3. 临时文件写入同目录后 rename 原子落盘；写回后读回校验用户条目未漂移。
+4. 幂等：重复执行零 diff；回滚/卸载仅移除托管条目。
+
+### 46.4 Hook 归一化与部分强度决策流水线
+
+```text
+cursor event                共享服务                     cursor 输出
+sessionStart          →  SessionContextService  →  stdout JSON 上下文注入
+beforeShellExecution  →  GuardDecisionService   →  permission allow/deny + 非空原因（deny 硬阻断）
+afterFileEdit         →  GuardDecisionService   →  越界事后检测报告（不可阻断，固定如实提示）
+```
+
+- 每次事件调用重新读取 guard 与提案状态，无缓存。
+- fail-closed 分横竖两路：shell 路径任何异常一律 deny；编辑路径任何异常一律产出「无法安全判断」报告。
+- IDE 侧 `preToolUse` 完整硬拦由 Cursor 自身按同一 `hooks.json` 生效，OpenLogos 不维护第二份配置、不探测 IDE 存在性。
+
+### 46.5 生命周期与事务顺序
+
+`init` / `adopt` / `sync` / `launch` 统一顺序：
+
+1. Skills + subagent 走 `ManagedAssetTransaction`（staging → 校验 → 原子替换）；
+2. hooks.json 合并写入；
+3. 托管 `.mdc` 清理（迁移完成点）；
+4. 全部 Adapter 成功后才刷新 `.openlogos-sync.json` / 提交 lifecycle。
+
+任一步失败：已替换目录由事务回滚，hooks.json 未写入或已按托管条目回退，`.mdc` 不提前删除——不留半套资产。
+
+### 46.6 capability 实测与兼容边界
+
+- staging 验收以真实 cursor-agent 实测 hook 事件覆盖面为准（sessionStart / beforeShellExecution / afterShellExecution / afterFileEdit / postToolUse / stop 为 2026-04 官方口径，属输入假设而非承诺）；实测结果写入部署报告。
+- 若实测发现 CLI 已支持 `preToolUse`，capability 更新走后续独立提案，本架构的合并写入与流水线无需变更。
+- 其余六宿主的资产计划与输出结构由既有 golden 回归锁定。
+
+### 46.7 失败模型
+
+| 失败面 | 行为 |
+|---|---|
+| 模板缺失 / SKILL.md frontmatter 非法 | 部署前校验失败，报告精确路径 |
+| hooks.json 不可解析 | fail loud，零写入 |
+| 用户条目将被覆盖 | 拒绝写入并报告冲突条目 |
+| 事务中途失败 | 目录回滚 + hooks 回退 + `.mdc` 保留，版本戳不变 |
+| guard 状态不可读 | shell deny / 编辑报告「无法安全判断」 |

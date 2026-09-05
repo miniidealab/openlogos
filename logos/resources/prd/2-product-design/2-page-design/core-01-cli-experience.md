@@ -2000,3 +2000,79 @@ Managed assets: none
 - 目标 OpenLogos 版本为 `0.13.29`，但不构建或安装 TRAE staging tarball；`0.13.28` 回滚路径未触发。
 - 本节只定义 CLI 文本与结构化错误，不生成 TRAE GUI 原型，不修改 TRAE 客户端 UI。
 - 成功或错误反馈不得暗示部署、smoke、npm publish、Git tag、GitHub Release、官网部署或 `git push` 已完成。
+
+## 2.40 Cursor 三件套补齐的选择、迁移反馈与门禁体验
+
+### 2.40.1 `init` / `adopt` 选择
+
+交互列表与 `--ai-tool` 规范值不变（`cursor` 已是既有选项）；变化在于选择 Cursor 后的资产计划从「rules 转换」升级为三件套部署。非法值回显实际输入并由 Registry 派生支持列表。
+
+### 2.40.2 逐资产成功反馈
+
+```text
+✓ Cursor Skills deployed: .cursor/skills/ (<count> skills, <count> commands)
+✓ Cursor subagent deployed: change-reviewer
+✓ Cursor hooks merged: .cursor/hooks.json (sessionStart, beforeShellExecution, afterFileEdit)
+✓ Migrated managed rules: <count> legacy .mdc removed from .cursor/rules/
+ℹ User rules, skills, and hooks entries were preserved.
+ℹ Guard strength on cursor-agent CLI: shell writes hard-blocked; file edits post-checked (no preToolUse in CLI). Full pre-edit blocking applies in Cursor IDE via the same hooks.json.
+ℹ Start a new Cursor session to load refreshed skills and hooks.
+```
+
+`unchanged` 可聚合；`preserved` 和迁移清理清单必须逐项显示项目相对路径，不泄露无关的用户目录信息。guard 强度提示为固定必显行，不得省略或表述为与 claude-code 等价。
+
+### 2.40.3 `sync` / `launch` 反馈
+
+```text
+✓ Cursor OpenLogos assets synced
+✓ Cursor managed assets: <updated> updated, <unchanged> unchanged
+✓ Legacy managed .mdc cleanup: <count> removed (user rules preserved)
+ℹ Preserved user .cursor/rules, .cursor/skills, hooks entries, and unknown files
+✓ Sync version stamp updated after all adapters succeeded
+```
+
+任一 Adapter 失败时输出失败宿主、精确目标、回滚结果和版本戳/lifecycle 未提交事实；`.cursor/hooks.json` 不可解析时报告精确路径并指出未做任何写入。`launch` 成功后说明 launched 资产已刷新并要求新 session；adopted + launched 重复执行以 `unchanged` 收敛。
+
+### 2.40.4 版本与真实宿主前置
+
+隔离 staging 部署必须明确展示：
+
+```text
+OpenLogos package: <version> (<tarball-sha256>)
+cursor-agent version: <detected-version>
+Hook events measured in CLI: sessionStart, beforeShellExecution, afterShellExecution, afterFileEdit, postToolUse, stop
+preToolUse in CLI: not available (declared preToolUse=false)
+Public release: disabled
+```
+
+cursor-agent 不可执行、Skills 未被发现或 sessionStart 实测未触发时阻断 staging 完成态，并给出安装/升级或能力检查建议；hook 事件覆盖面以本次实测为准，不得以 2026-04 文档口径或模拟协议测试代替真实宿主成功提示。
+
+### 2.40.5 Hook 门禁反馈
+
+shell 写入 deny 的用户可见原因至少包含事实和恢复动作：
+
+```text
+OpenLogos guard denied this shell write.
+Active change: cursor-adapter-parity
+Proposal step: delta-writing
+Allowed scope: logos/changes/cursor-adapter-parity/deltas/** and tasks.md
+Target: cli/src/commands/init.ts
+Next action: finish the planned deltas, then explicitly authorize merge.
+```
+
+`afterFileEdit` 检测到越界编辑时输出事后报告：
+
+```text
+⚠ OpenLogos guard: file edit outside allowed scope detected (post-check).
+Edited: cli/src/lib/ai-tool-adapter.ts
+Allowed scope: logos/changes/cursor-adapter-parity/deltas/** and tasks.md
+This edit was NOT blocked (cursor-agent CLI has no preToolUse). Review and revert if unintended.
+```
+
+状态读取失败时 shell 路径显示「无法安全判断，写入已阻断」，编辑路径显示「无法安全判断，请人工核查本次编辑」；不得伪装成无 guard 或默认 writing。sessionStart 可以解释当前状态，但不能作为写入授权凭据。
+
+### 2.40.6 非目标与可访问性
+
+- 本节是 CLI 文本体验，不生成 Cursor GUI 原型。
+- 中英文结构 key 一致；路径、ID、命令、协议字段、版本和错误码不翻译。
+- 成功反馈不得暗示 npm publish、Git tag、GitHub Release、官网部署或 `git push` 已完成。

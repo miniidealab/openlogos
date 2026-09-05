@@ -201,3 +201,29 @@
 - AC-READLOCK-01/03 读者不假阳性：UT-S20-41。
 - AC-READLOCK-04/06 真冲突硬阻断：UT-S20-42。
 - 场景：S20 读取门锁获取有界重试补充（规则 11、EX-11.1）；功能规格：§2.54；架构：§四.B。
+
+## 存量项目 Cursor 接入与迁移测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S20-43 | adopt 解析 cursor 三件套能力 | capability 含 plugin/hooks 且 preToolUse=false；引导链路消费能力而非宿主名 |
+| UT-S20-44 | 存量资产边界扫描 | 用户 rules/skills/hooks 非托管条目全部识别为 preserved，不进入写计划 |
+| UT-S20-45 | 冲突预检 blocked | 同名非托管 Skills 目录或 hooks 条目身份冲突时首个写入前 blocked，报告精确路径 |
+| UT-S20-46 | 迁移完成点 | Skills 部署成功后同次执行清理托管 .mdc；失败路径 .mdc 保留 |
+| UT-S20-47 | 配置持久化后置 | 接入成功才持久化 aiTool；失败不留半套配置 |
+| UT-S20-48 | 后续 change 可达性 | 接入后 next/change 引导链路与其他宿主一致（sessionStart 注入可用） |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S20-23 | `adopt --ai-tool cursor` 成功接入 | 三件套就位、托管 .mdc 迁移完成、用户资产哈希不变、首个 change 引导输出 |
+| ST-S20-24 | 冲突接入 blocked | 预置冲突 fixture 后 adopt 非零退出、零写入、无伪造完成信息 |
+| ST-S20-25 | 中途失败恢复 | 注入事务失败后无半套资产，重跑 adopt 可成功收敛 |
+
+### 自动化与证据要求
+
+- fixture 覆盖「历史 .mdc + 用户自有 rules + 用户 hooks 条目 + 既有项目指令」组合。
+- 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S20"`；失败不得写 pass。

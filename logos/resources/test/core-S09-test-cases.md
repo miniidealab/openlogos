@@ -979,3 +979,34 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 - AC-MTXOUT-06 零回归：UT-S09-292（回归锚：UT-S09-254、ST-S09-100）。
 - AC-MTXOUT-07 版本身份与安装态：SMOKE-core-181（部署方案 0.14.17 节）。
 - 场景：S09-B 合并事务终态出路；功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。
+
+## Cursor sessionStart 与部分强度门禁测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S09-293 | sessionStart 上下文生成 | 输出含 module、active change、proposal_step、可写范围、下一确认点；仅来源于磁盘事实 |
+| UT-S09-294 | sessionStart 静默降级 | CLI 不可用或项目未初始化时输出空对象，不报错、不注入伪状态 |
+| UT-S09-295 | beforeShellExecution allow | 提案范围内 shell 写入返回 permission allow；安全白名单（含 `git push`）语义与既有 guard 一致 |
+| UT-S09-296 | beforeShellExecution deny | 越界 shell 写入 deny，输出含事实四要素（change/step/范围/目标）+ 恢复动作，非空原因 |
+| UT-S09-297 | afterFileEdit 越界报告 | 报告含编辑路径、允许范围与固定「未被阻断（CLI 无 preToolUse）」声明；范围内编辑静默 |
+| UT-S09-298 | 每次调用重读状态 | proposal_step 变化后下一次 hook 判定立即反映，无缓存 |
+| UT-S09-299 | stdin 解析失败 fail-closed | shell 路径 deny；编辑路径产出「无法安全判断」报告 |
+| UT-S09-300 | guard 缺失 fail-closed | 提案目录存在但 guard 缺失时 shell deny，提示先运行 openlogos change |
+| UT-S09-301 | 决策服务异常 fail-closed | 抛异常时同 stdin 失败路径，退出码不伪装成功 |
+| UT-S09-302 | cursor 协议字段转换 | 事件名/permission 字段/退出码符合 .cursor/hooks.json 契约；三接线共用同一共享决策服务实例逻辑 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S09-112 | 新 session 注入 → 越界 shell deny | 端到端：sessionStart 注入后越界 shell 写入被阻断且原因完整 |
+| ST-S09-113 | 越界编辑事后检测 | 原生编辑越界后收到检测报告；文件确已修改（未阻断）且报告如实声明 |
+| ST-S09-114 | proposal_step 收敛链路 | delta-writing → merge 后各步的允许范围随磁盘状态收敛，三接线判定一致 |
+| ST-S09-115 | 异常态全链 fail-closed | guard 损坏/不可读时 shell 全拒、编辑全报告，无静默放行 |
+
+### 自动化与证据要求
+
+- Hook 合同测试以 stdin/stdout JSON 直接驱动接线脚本，保存输入输出与退出码证据。
+- 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。

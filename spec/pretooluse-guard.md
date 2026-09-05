@@ -499,3 +499,49 @@ OpenLogos 不得静默修改工作区信任状态以激活项目命令，也不�
 | 启用 | 项目资产可可靠启用，且不由 Adapter 静默篡改用户信任状态 |
 
 任一客户端或任一异常路径 fail-open，结论均保持 BLOCKED。只有未来独立提案通过完整矩阵后，才能定义 TRAE 工具名、输入字段、stdout/stderr、退出码与共享决策映射。
+
+## Cursor hooks 部分强度门禁适配合同
+
+### 适用范围与强度声明
+
+Cursor 宿主经 `.cursor/hooks.json` 接入 OpenLogos 写入门禁。与 ZCode / Qoder / WorkBuddy 的完整 PreToolUse 硬拦不同，**cursor-agent CLI 不提供 `preToolUse` 事件**，Cursor 适配为部分强度组合（Registry capability 声明 `preToolUse: false`，capability honesty，D09）：
+
+| 事件 | 强度 | 语义 |
+|---|---|---|
+| `beforeShellExecution` | **硬拦** | shell 途径的潜在写入在执行前判定；deny 即阻断 |
+| `afterFileEdit` | **事后检测** | 宿主原生编辑完成后判定；越界产出检测报告，不能撤销编辑 |
+| `preToolUse`（仅 Cursor IDE） | 硬拦（宿主自身行为） | IDE 读取同一 `hooks.json` 自然生效；OpenLogos 不为 IDE 维护第二份配置、不探测宿主形态 |
+
+任何面向用户的表述（CLI 反馈、AGENTS.md 托管段、根规范）必须如实声明 CLI 侧为部分强度，禁止表述为与 claude-code 等价。
+
+### 事件字段归一化
+
+Cursor hook 经 stdin 传入 JSON（snake_case：`hook_event_name`、`workspace_roots`、`conversation_id` 等）。适配层归一化为共享 GuardDecisionService 的统一输入：
+
+- `beforeShellExecution`：取命令文本走既有 Bash 命令判定路径（含安全白名单，如 `openlogos *`、非 push 的 `git *`、`git push`）。
+- `afterFileEdit`：取编辑目标路径走既有文件路径判定路径。
+- 路径判定复用本规范既有白名单规则与 proposal_step 范围收敛逻辑，`.cursor/**` 白名单行同时覆盖 Skills 与 hooks 托管资产的 sync 写入。
+
+### 判定与输出契约
+
+- 每次事件调用重新读取 guard 文件与提案状态，无缓存；判定逻辑与其他宿主共用同一 GuardDecisionService，Cursor 适配层只做字段转换。
+- `beforeShellExecution` allow：输出 `{"permission": "allow"}`，退出码 0。
+- `beforeShellExecution` deny：输出 `{"permission": "deny", "user_message": "<事实+恢复动作>", "agent_message": "<同上>"}`，退出码 2；原因必须包含 active change、proposal_step、允许范围、目标路径与下一步动作。
+- `afterFileEdit` 越界：stdout 输出检测报告（编辑路径、允许范围、固定声明「本次编辑未被阻断（cursor-agent CLI 无 preToolUse），请核查并按需回退」）；范围内静默。
+- 报告不得伪装成阻断；deny 不得缺原因。
+
+### fail-closed 契约
+
+| 异常 | shell 路径行为 | 编辑路径行为 |
+|---|---|---|
+| stdin 不可解析 | deny（退出码 2） | 产出「无法安全判断」报告 |
+| guard 缺失但提案目录存在 | deny，提示先运行 `openlogos change` | 产出报告 |
+| 提案状态文件损坏 / 决策服务异常 | deny | 产出「无法安全判断」报告 |
+
+任何异常路径不得静默放行 shell 写入，不得静默吞掉编辑检测；退出码不得伪装成功。
+
+### 部署与幂等
+
+- 托管条目由 `init` / `adopt` / `sync` / `launch` 合并写入 `.cursor/hooks.json`（`version: 1`）：只增改 OpenLogos 托管条目（以托管 command 路径识别），保留用户条目与未知字段；文件不可解析 fail loud 零写入；重复执行零 diff。
+- 卸载 / 回滚只移除托管条目。
+- 完整资产布局与 hooks.json 合并算法见 `spec/cursor-plugin.md`。

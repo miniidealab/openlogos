@@ -2578,3 +2578,59 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 | AC-MTXOUT-05 | 重合并 apply 成功后 `SPEC_MERGED`/receipt 重写为新事实；下游按指纹自然传导收敛（不级联删除），任何时刻无半新半旧 |
 | AC-MTXOUT-06 | 既有语义零回归：seal/apply/preflight/receipt、0.14.2 preflight-reopen、abort 既有拒绝面逐项不变；投影与文案与真实 phase/classification 一致 |
 | AC-MTXOUT-07 | 版本身份提升为 `0.14.17`，`0.14.16` 冻结为回滚基线；全量 `openlogos verify` PASS，SMOKE-core-181 安装态通过且固定 `0.14.16` 对照复现三个死锁面（防断言空转） |
+
+## Cursor 完整宿主集成（三件套补齐）需求
+
+### 用户价值
+
+OpenLogos 使用者应能在 `init`、`adopt`、`sync` 与 `launch` 中选择 Cursor，并获得与既有三件套宿主同等级的 OpenLogos 指令、原生 Agent Skills、显式命令、change-reviewer subagent、SessionStart 阶段上下文和写入门禁。Cursor CLI（cursor-agent）的 hook 事件为子集，写入门禁的实际强度必须如实声明与呈现，不得为对齐其他宿主而虚标能力。补齐不得改变未选择 Cursor 的历史配置和其他宿主的可观察行为。
+
+### P02 公共宿主能力要求（Cursor 增补）
+
+1. Registry 中 `cursor` 的 capability 由 `assets: ['agents']` 扩为 `assets: ['agents', 'plugin', 'hooks']`，并显式声明 instructions、skills、commands、agents、sessionStart 为 true、`preToolUse: false`（capability honesty：声明必须与宿主实测能力一致）。
+2. 生命周期入口只消费能力声明，不得按宿主名推断；`all` 展开继续按 Registry 稳定顺序包含 `cursor` 并排除 `other`。
+3. Cursor 插件资产模板必须进入本提案构建的真实 npm tarball；源码存在但制品缺少任何声明资产时，构建或部署预检失败。
+4. Claude Code、OpenCode、Codex、ZCode、Qoder、WorkBuddy 的规范值、目标路径、配置合并和输出契约保持兼容；未知工具继续 fail loud。
+
+### Cursor 资产、迁移与 Hook 要求
+
+1. Skills 以 Cursor 原生 Agent Skills 布局部署：`.cursor/skills/<name>/SKILL.md`（frontmatter `name` 与目录名一致），取代历史 `.cursor/rules/*.mdc` 转换产物。
+2. OpenLogos commands 以 `disable-model-invocation: true` 的 Skills 形式部署，用户可用 `/<name>` 显式触发；change-reviewer 以 Cursor subagent 形式部署。
+3. `sync` / `launch` 幂等清理 OpenLogos 托管的历史 `.cursor/rules/*.mdc`（含 `openlogos-policy.mdc`）；用户自有 rules、skills、hooks 与其它文件必须原样保留。
+4. Hook 接线写入 `.cursor/hooks.json`（`version: 1`），采用合并写入：只增改 OpenLogos 托管条目，保留用户既有 hooks；卸载或回滚只移除托管条目。
+5. `sessionStart` hook 只从项目磁盘事实生成 module、active change、`proposal_step`、可写范围和下一确认点，输出不构成授权。
+6. 写入门禁为部分强度组合：`beforeShellExecution` 每次调用重读 guard 与提案状态，deny 时以非空原因阻断 shell 写入；`afterFileEdit` 对越界编辑产出事后检测报告（不能预先阻断宿主原生编辑）。IDE 侧共享同一 `hooks.json` 时按宿主能力自然获得 `preToolUse` 完整硬拦，OpenLogos 不为此维护第二份配置。
+7. 面向用户的输出（init/sync/launch 反馈、根规范、AGENTS.md 托管段）必须如实呈现 CLI 侧 guard 为部分强度，不得声称与 claude-code 等价。
+
+### 场景验收条件
+
+#### S01 初始化
+
+- `--ai-tool cursor` 生成配置、托管指令、`.cursor/skills/` 完整 Skills（含 commands 形式）、change-reviewer subagent 与 `.cursor/hooks.json` 托管条目；`--ai-tool all` 包含 Cursor，重复规划幂等。
+- 模板缺失、SKILL.md frontmatter 非法、hooks.json 不可解析或用户条目将被覆盖时，在覆盖用户资产前失败并报告精确路径。
+
+#### S08 同步
+
+- `sync` 只刷新 OpenLogos 托管的 Cursor 资产：Skills、subagent、hooks 托管条目，并清理托管 `.mdc`；用户自有 rules/skills/hooks、未知文件保持不变。
+- 只有全部 Adapter 成功后才刷新 `.openlogos-sync.json`；Cursor 资产暂存、替换或读回失败时回滚且版本戳不变。
+
+#### S09 变更生命周期
+
+- 新 Cursor session 的 sessionStart 注入当前磁盘状态；已有会话不承诺热刷新。
+- `beforeShellExecution` 对越界 shell 写入 deny 并给出非空原因；`afterFileEdit` 对越界编辑产出检测报告；无 guard、越界路径、解析失败和决策异常均 fail-closed（shell 路径拒绝、编辑路径必报告）。
+
+#### S14 launched 刷新
+
+- `launch` 经 Registry 刷新 Cursor launched 指令、Skills、subagent 与 hooks 托管条目；全部 Adapter 成功后才提交 lifecycle。
+- adopted + launched 重复执行幂等，用户 rules/skills/hooks、项目资产保持不变。
+
+#### S20 存量接入
+
+- `adopt --ai-tool cursor` 在保留既有项目指令、用户 rules/skills/hooks 的前提下部署三件套资产并完成托管 `.mdc` 迁移，继续引导首个 change。
+- 冲突或中途失败不得留下半套资产（如 Skills 已部署但托管 `.mdc` 未清理、hooks 条目残缺），也不得伪造接入完成信息。
+
+### 部署与非目标
+
+- 必须使用本提案构建的真实 npm tarball，在隔离 staging 以真实 cursor-agent CLI 新会话验证 Skills 发现、显式命令触达、sessionStart 注入、`beforeShellExecution` allow/deny、`afterFileEdit` 检测报告、托管 `.mdc` 迁移、幂等与回滚，并实测记录 CLI hook 事件覆盖面（消解 2026-04 论坛口径时效风险）。
+- 不新增 HTTP/RPC/消息 API，不涉及数据库迁移，不实现公开发布。
+- 本提案不授权 npm publish、Git tag、GitHub Release、官网部署或 `git push`。

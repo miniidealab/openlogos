@@ -345,3 +345,59 @@ sequenceDiagram
 
 - 需求：AC-READLOCK-01～06；功能规格：§2.54；架构：§四.B。
 - 测试：UT-S20-41～UT-S20-42；安装态：SMOKE-core-177。
+
+## S20 存量项目 Cursor 三件套接入与 .mdc 迁移时序
+
+### 场景目标
+
+`adopt --ai-tool cursor` 在保留既有项目指令、用户 rules/skills/hooks 与项目资产的前提下部署三件套资产、完成历史托管 `.mdc` 迁移，并继续引导首个 change。
+
+### 前置与后置条件
+
+- 前置：存量项目（可能已有 `.cursor/rules/` 历史托管 `.mdc`、用户自有 rules 或 hooks.json）。
+- 成功后置：三件套资产就位、托管 `.mdc` 已迁移清理、配置持久化，用户资产字节不变，首个 change 引导可达。
+- 失败后置：不留半套资产（Skills 已部署但 `.mdc` 未清理、hooks 条目残缺），不伪造接入完成信息。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI
+    participant R as Adapter Registry
+    participant A as Cursor Adapter
+    participant T as Managed Asset Transaction
+    U->>C: adopt --ai-tool cursor
+    C->>R: parse capability
+    R-->>C: cursor 三件套能力（preToolUse=false）
+    C->>A: planAssets(adopt)
+    A->>A: 扫描既有 .cursor/**（用户资产边界证明）
+    A-->>T: Skills + subagent + hooks 条目 + 托管 .mdc 清理清单
+    T->>T: 暂存 → 校验冲突 → 原子替换 → 读回 → 清理托管 .mdc
+    alt 成功
+        C->>C: 持久化配置
+        C-->>U: 接入汇总 + 迁移清单 + preserved 明细 + 首个 change 引导
+    else 冲突或失败
+        T->>T: 回滚；.mdc 保留
+        C-->>U: blocked + 精确路径，非零退出
+    end
+```
+
+### 步骤与不变量
+
+1. 既有项目的用户 `.cursor/rules/`（非托管名单）、`.cursor/skills/` 非托管目录、hooks 非托管条目全部保留并逐项计入 preserved。
+2. 历史托管 `.mdc`（Skill 名单 + `openlogos-policy.mdc`）在 Skills 部署成功后同一次执行内清理；任何失败路径不提前删除。
+3. 冲突判定在首个写入前完成：目标 Skills 目录存在非 OpenLogos 内容、hooks 托管条目身份冲突时 blocked。
+4. 接入完成后 `openlogos next` / 首个 change 引导链路与其他宿主一致。
+
+### 异常
+
+- `EX-CU-S20-1`：用户已有同名 `.cursor/skills/<openlogos-skill>/` 非托管内容 → blocked，报告冲突路径，零写入。
+- `EX-CU-S20-2`：接入中途失败 → 事务回滚，`.mdc` 保留，配置不持久化，不打印接入成功。
+- `EX-CU-S20-3`：hooks.json 不可解析 → blocked，零写入，给出修复建议。
+
+### 追溯
+
+- 需求：S20 Cursor 存量接入验收。
+- 架构：46.2 资产模型与 owner、46.5 生命周期与事务顺序。
+- 测试：UT-S20-43～UT-S20-48、ST-S20-23～ST-S20-25。

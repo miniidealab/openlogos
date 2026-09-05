@@ -1541,3 +1541,70 @@ sequenceDiagram
 - 需求：AC-SLICETX-01、AC-SLICETX-02、AC-SLICETX-09。
 - 功能规格：§2.53.3、§2.53.7、§2.53.9；架构：§四十三.1。
 - 测试：UT-S09-287～UT-S09-288；安装态 SMOKE-core-175。
+
+## S09 Cursor sessionStart 上下文注入与部分强度门禁链路
+
+### 场景目标
+
+在 Cursor 宿主（cursor-agent CLI 与 IDE 共享 `.cursor/hooks.json`）上，随变更生命周期（`proposal_step`）收敛写入范围：sessionStart 注入当前阶段上下文，`beforeShellExecution` 硬拦越界 shell 写入，`afterFileEdit` 对越界编辑产出事后检测报告；CLI 侧无 `preToolUse`，强度差异如实呈现。
+
+### 前置与后置条件
+
+- 前置：项目已初始化且部署了 Cursor hooks 托管条目；存在或不存在活跃 guard 均为合法输入。
+- 成功后置：新 session 获得与磁盘一致的阶段上下文；越界 shell 写入被 deny（非空原因）；越界编辑产出检测报告；合法写入不受干扰。
+- 失败后置（fail-closed）：状态不可读时 shell 路径 deny、编辑路径产出「无法安全判断」报告；不伪装成无 guard。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    participant CU as Cursor(cursor-agent/IDE)
+    participant SS as sessionStart 接线
+    participant BS as beforeShellExecution 接线
+    participant FE as afterFileEdit 接线
+    participant SC as SessionContextService
+    participant GD as GuardDecisionService
+    participant FS as 项目磁盘状态
+    CU->>SS: 新 session
+    SS->>SC: 请求阶段上下文
+    SC->>FS: 读取 guard / proposal_step / tasks
+    SC-->>SS: module、active change、可写范围、下一确认点
+    SS-->>CU: stdout JSON 注入（不构成授权）
+    CU->>BS: shell 命令（潜在写入）
+    BS->>GD: 判定（每次重读磁盘）
+    alt 范围内
+        GD-->>BS: allow
+        BS-->>CU: permission allow
+    else 越界或状态不可读
+        GD-->>BS: deny + 非空原因
+        BS-->>CU: permission deny（阻断）
+    end
+    CU->>FE: 原生编辑完成事件
+    FE->>GD: 判定（每次重读磁盘）
+    alt 越界或状态不可读
+        FE-->>CU: 事后检测报告（未阻断，提示核查/回退）
+    else 范围内
+        FE-->>CU: 静默
+    end
+```
+
+### 步骤与不变量
+
+1. 三条接线共用共享服务的同一决策逻辑，Adapter 只做 Cursor 协议字段转换；决策无缓存，每次调用重读磁盘。
+2. `proposal_step` 收敛语义与其他宿主一致（如 delta-writing 只放行 `logos/changes/<slug>/deltas/**` 与 tasks.md，安全白名单含 `git push` 等既有规则）。
+3. shell deny 输出必含：事实（active change、proposal_step、允许范围、目标路径）+ 恢复动作。
+4. `afterFileEdit` 报告必须如实声明「本次编辑未被阻断（CLI 无 preToolUse）」；不得把报告表述成阻断。
+5. IDE 侧 `preToolUse` 由 Cursor 按同一 hooks.json 自然硬拦；OpenLogos 不探测宿主形态、不分叉配置。
+6. sessionStart 输出仅供解释状态，不构成写入授权凭据。
+
+### 异常
+
+- `EX-CU-S09-1`：guard 文件缺失且提案目录存在 → shell deny、编辑报告；提示先运行 `openlogos change`。
+- `EX-CU-S09-2`：hook stdin 不可解析 → shell 路径 deny（fail-closed），编辑路径产出「无法安全判断」报告。
+- `EX-CU-S09-3`：决策服务抛异常 → 同 EX-CU-S09-2，且退出码语义不伪装成功。
+
+### 追溯
+
+- 需求：S09 Cursor 变更生命周期验收（Cursor 资产、迁移与 Hook 要求 5/6/7）。
+- 架构：46.4 Hook 归一化与部分强度决策流水线、46.7 失败模型。
+- 测试：UT-S09-293～UT-S09-302、ST-S09-112～ST-S09-115。

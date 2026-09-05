@@ -1348,3 +1348,51 @@
 - 功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。
 - 场景：S09、S19；UT/ST：UT-S09-289～292、ST-S09-111。
 - 部署方案：OpenLogos 0.14.17 合并事务终态出路本机全局部署方案；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179、SMOKE-core-180。
+
+## OpenLogos 0.14.18 Cursor 三件套补齐 Smoke
+
+### 授权与统一前置
+
+- 执行 `SMOKE-core-182`～`SMOKE-core-189` 需要独立 smoke 授权。
+- runner 必须使用 `command -v openlogos` 解析出的本机全局绝对入口，版本精确为 `0.14.18`。
+- 本机具备真实 cursor-agent CLI（记录绝对路径与版本）；全部断言在一次性临时项目与隔离 `.cursor` 根中构造，不触碰本仓或用户其它项目的活跃提案、guard、marker 与真实 Cursor 配置。
+- 宿主交互断言必须穿过真实 cursor-agent 新 session；以 mock 或直接调用 runtime 冒充宿主的步骤不计入闭环证据。
+
+### 冒烟测试用例
+
+| ID | 场景 | 安装态执行步骤 | PASS 判据 |
+|---|---|---|---|
+| SMOKE-core-182 | candidate identity 与随包 cursor 资产 | 核对固定 tarball SHA、全局 entry/realpath/version；解包核对 cursor-plugin-template 全部声明资产与 `spec/cursor-plugin.md` 在包内 | version 精确 0.14.18、无 workspace link；任一声明资产缺失即 FAIL |
+| SMOKE-core-183 | `init --ai-tool cursor` 三件套落盘 | 临时项目 init；核对 `.cursor/skills/`（含 commands 形式）、subagent、hooks 托管三条目、guard 部分强度提示行；另验证 `all` 稳定展开含 cursor | 逐资产读回成功且提示行在场；`all` 顺序稳定 |
+| SMOKE-core-184 | 存量 adopt 与托管 .mdc 迁移 | 预置「历史托管 .mdc + 用户自有 rules + 用户 hooks 条目」fixture → `adopt --ai-tool cursor` | 三件套就位、托管 .mdc 清空、用户 rules 与 hooks 条目字节不变并逐项 preserved |
+| SMOKE-core-185 | 真实宿主 Skills 与显式命令发现 | 新 cursor-agent session 列出/触发 OpenLogos Skill 与 `/<command>` 显式命令 | 真实宿主可发现并触达；发现失败即 FAIL |
+| SMOKE-core-186 | sessionStart 实测与事件覆盖面 | 新 session 核对阶段上下文注入内容与磁盘状态一致；实测记录本机 cursor-agent 的 hook 事件覆盖面清单 | 注入内容与磁盘一致；覆盖面清单写入部署报告；sessionStart 不触发即 FAIL |
+| SMOKE-core-187 | 部分强度门禁实测 | delta-writing 下：允许写入放行；越界 shell 写入观察 deny 与完整原因；真实宿主执行越界原生编辑观察事后检测报告与文件实态 | shell deny 原因四要素齐备；编辑报告如实声明未阻断且文件确已修改；任一伪装成阻断即 FAIL |
+| SMOKE-core-188 | hooks.json 合并保真与幂等 | 用户条目 fixture 上 init/sync 前后比对字节；注入损坏 hooks.json 验证 fail loud 零写入；连续两次 sync | 用户条目零漂移；损坏时零写入且报告精确路径；第二次 sync unchanged 收敛 |
+| SMOKE-core-189 | 既有宿主零回归与回滚往返 | 六既有宿主最小回归矩阵；演练 `0.14.17→0.14.18→0.14.17→0.14.18` 并复核每阶段 identity 与 183/184 结论 | 既有宿主行为两版本一致；往返无混装且结论不变 |
+
+### Runner 与证据
+
+1. `scripts/run-smoke.js` 或受控子 runner 必须显式分派 `SMOKE-core-182`～`SMOKE-core-189`，不得依靠通配发现后无条件 PASS。
+2. 环境不具备时（缺候选/回滚 tarball、cursor-agent 不可执行）必须写显式 `skip` 记录并携带缺失项，禁止静默零记录退出。
+3. 宿主交互步骤保存 cursor-agent 版本、session 证据、hook stdin/stdout/exit code 与目标文件 SHA-256。
+4. 用例向 `logos/resources/verify/smoke-results.jsonl` 逐条写结果，字段含 `id/status/timestamp/duration_ms/environment/evidence`。
+
+### 零回归对照（强制）
+
+`SMOKE-core-183`/`SMOKE-core-184` 的对应操作必须在固定 `0.14.17` 上执行一次并记录：init 只产 `.mdc` 降级档、迁移不存在。若 0.14.17 上也出现三件套，矩阵空转，FAIL。
+
+### OpenLogos Smoke Reporter
+
+- 每条用例唯一一条结果记录；失败不得写 pass；缺失、skip 无原因、重复矛盾、源码直跑、candidate/hash 归属漂移或回滚未恢复均判 FAIL，不得写 `SMOKE_PASS`。
+
+### 失败、自愈与完成边界
+
+- `SMOKE-core-185`～`SMOKE-core-187` 是真实宿主红线：任一失败说明能力假设失效或接线错误，停止并回实现/提案层修订，不得放宽断言。
+- 观察到 runner 绕过真实宿主、虚标 capability 或手工伪造覆盖面记录，直接 FAIL。
+- 全程无 `npm publish`/tag/release/官网/git push 副作用。
+
+### 追溯
+
+- 部署方案：OpenLogos 0.14.18 Cursor 三件套补齐本机全局部署方案。
+- 需求：Cursor 完整宿主集成需求「部署与非目标」。

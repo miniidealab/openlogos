@@ -649,3 +649,64 @@ sequenceDiagram
 - 功能规格：§2.49.2～§2.49.5。
 - 架构：§四十.1～§四十.3。
 - 测试：UT-S08-47～UT-S08-50、ST-S08-32～ST-S08-33；安装态 SMOKE-core-171。
+
+## S08 Cursor 资产幂等同步与托管 .mdc 迁移时序
+
+### 场景目标
+
+`sync` 经 Adapter Registry 幂等刷新 Cursor 托管资产（Skills、subagent、hooks 托管条目），完成托管 `.mdc` → Skills 迁移清理，并保留用户自有 rules、skills、hooks 条目与未知文件。
+
+### 前置与后置条件
+
+- 前置：项目已初始化且 `aiTool` 含 `cursor`（或历史 cursor 项目首次升级到本版本）。
+- 成功后置：托管资产与随包模板一致，托管 `.mdc` 已清理，用户资产字节不变，`.openlogos-sync.json` 版本戳刷新。
+- 失败后置：资产回滚、hooks.json 回退、`.mdc` 保留，版本戳不变。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI
+    participant R as Adapter Registry
+    participant A as Cursor Adapter
+    participant T as Managed Asset Transaction
+    participant H as hooks.json 合并写入器
+    U->>C: openlogos sync
+    C->>R: resolveConfiguredAiTools
+    R-->>C: 含 cursor 的稳定列表
+    C->>A: planAssets(sync)
+    A-->>T: Skills / subagent 刷新计划
+    A-->>H: hooks 托管条目刷新
+    A-->>A: 派生托管 .mdc 清理清单（Skill 名单 + openlogos-policy.mdc）
+    T->>T: 暂存 → 校验 → 原子替换 → 读回
+    H->>H: 仅增改托管条目，用户条目字节不变
+    A->>A: 清理托管 .mdc（用户 rules 保留）
+    alt 全部 Adapter 成功
+        C->>C: 刷新 .openlogos-sync.json
+        C-->>U: updated/unchanged 汇总 + 迁移清理清单 + preserved 明细
+    else 任一失败
+        T->>T: 回滚；hooks 回退；.mdc 不删除
+        C-->>U: 失败宿主、精确目标、版本戳未提交
+    end
+```
+
+### 步骤与不变量
+
+1. 同步顺序固定：Skills/subagent 事务 → hooks 合并 → `.mdc` 清理；清理是迁移完成点，失败路径绝不提前删除 `.mdc`。
+2. 清理清单由 OpenLogos Skill 名单静态派生，逐文件精确匹配；用户自有 `.cursor/rules/` 文件（名字不在托管名单）一律保留并计入 preserved。
+3. 重复 `sync` 幂等：第二次执行 Skills/hooks 零 diff、清理清单为空、输出以 `unchanged` 收敛。
+4. 只有全部 Adapter 成功后才刷新版本戳；其余宿主的行为与输出不受 cursor 刷新影响。
+5. 旧配置兼容：`aiTool` 标量 `"cursor"`、数组与 `all` 展开都进入同一计划路径。
+
+### 异常
+
+- `EX-CU-S08-1`：hooks.json 解析失败 → 本宿主失败，零写入，`.mdc` 保留，版本戳不变。
+- `EX-CU-S08-2`：Skills 事务读回不一致 → 回滚并报告精确路径。
+- `EX-CU-S08-3`：清理清单中某 `.mdc` 已被用户改名/删除 → 跳过该项并如实报告，不视为失败。
+
+### 追溯
+
+- 需求：S08 Cursor 同步验收（Cursor 资产、迁移与 Hook 要求 3/4）。
+- 架构：46.3 hooks.json 合并写入、46.5 生命周期与事务顺序。
+- 测试：UT-S08-51～UT-S08-58、ST-S08-34～ST-S08-36。

@@ -72,10 +72,12 @@ Deployment rules:
 ## Active Skills
 [根据 `logos.config.json` 的 `aiTool` 字段动态生成，并按 OpenLogos 方法论技能与项目专属技能分组]
 
-当 aiTool = "cursor" 时，列出 `.cursor/rules/` 下部署的 OpenLogos `.mdc` 文件：
-- `skills/prd-writer` — `.cursor/rules/prd-writer.mdc`
-- `skills/product-designer` — `.cursor/rules/product-designer.mdc`
-- ...（共 13 项）
+当 aiTool = "cursor" 时，列出 `.cursor/skills/` 下部署的 OpenLogos 原生 Agent Skills：
+- `skills/prd-writer` — `.cursor/skills/prd-writer/SKILL.md`
+- `skills/product-designer` — `.cursor/skills/product-designer/SKILL.md`
+- ...（共 13 项，另含 `disable-model-invocation: true` 的 OpenLogos 显式命令 Skills 与 change-reviewer subagent）
+
+生成内容必须包含固定的 guard 强度说明行：cursor-agent CLI 下写入门禁为部分强度（shell 写入硬拦 + 编辑事后检测，CLI 无 preToolUse）；Cursor IDE 经同一 `.cursor/hooks.json` 获得完整 preToolUse 硬拦。历史 `.cursor/rules/*.mdc` 托管清单已由 Skills 取代，不再生成。
 
 当 aiTool = "claude-code" 或 "other" 时，列出 `logos/skills/` 下部署的 OpenLogos 方法论 `SKILL.md` 文件：
 - `skills/prd-writer` — `logos/skills/prd-writer/SKILL.md`
@@ -189,7 +191,7 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 
 | 工具 | 指令文件 | OpenLogos Skills 部署位置 | 项目专属 Skills 推荐位置 | 处理方式 |
 |------|---------|--------------------------|--------------------------|---------|
-| **Cursor** | `AGENTS.md`（原生支持） | `.cursor/rules/*.mdc` | 项目自有 Cursor 规则目录 | `init` / `sync` 自动部署 OpenLogos 规则，并通过 managed block 合并根指令文件 |
+| **Cursor** | `AGENTS.md`（原生支持） | `.cursor/skills/<skill>/SKILL.md`（原生 Agent Skills，含 `disable-model-invocation` 显式命令与 change-reviewer subagent） | 用户自有 `.cursor/skills/` 与 `.cursor/rules/` | `init` / `sync` 自动部署 OpenLogos Skills 与 hooks 托管条目，清理历史托管 `.mdc`（用户资产保留），并通过 managed block 合并根指令文件 |
 | **Claude Code** | `CLAUDE.md` | `logos/skills/*/SKILL.md` 或 OpenLogos 官方 Claude 插件 | `.claude/skills/<skill>/SKILL.md` 或项目独立 Claude 插件 | `init` / `sync` 自动部署 OpenLogos 托管资产；项目技能单独分组，不归入 `/openlogos:*` |
 | **Codex** | `AGENTS.md` | `.agents/plugins/openlogos/skills/*` | `.agents/plugins/<project-plugin>/skills/*` 或 repo-scoped local skill | `init` / `sync` 自动维护 repo marketplace 的 `openlogos` 条目；项目插件条目原样保留 |
 | **OpenCode（兼容模式）** | `AGENTS.md` | `logos/skills/*/SKILL.md` | 项目自有 OpenCode 插件或规则 | `init` / `sync` 自动部署，并通过 managed block 合并根指令文件 |
@@ -346,3 +348,13 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 - WorkBuddy Plugins：`https://www.codebuddy.cn/docs/workbuddy/Plugins`
 - CodeBuddy Plugin Technical Reference：`https://www.codebuddy.cn/docs/cli/plugins-reference`
 - WorkBuddy Memory：`https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Memory`
+
+## Cursor 原生 Skills、hooks 托管条目与部分强度门禁生成规则
+
+当 `aiTool` 含 `cursor` 时，`init` / `adopt` / `sync` / `launch` 除生成 `AGENTS.md` managed block 外，还托管以下资产（完整契约见 `spec/cursor-plugin.md`）：
+
+1. **原生 Agent Skills**：`.cursor/skills/<skill>/SKILL.md`，frontmatter `name` 与目录名一致、`description` 非空；OpenLogos 显式命令 Skills 额外携带 `disable-model-invocation: true`；change-reviewer 以 Cursor subagent 部署。
+2. **hooks 托管条目**：向 `.cursor/hooks.json` 合并写入 `sessionStart`、`beforeShellExecution`、`afterFileEdit` 三条 OpenLogos 托管条目；只增改托管条目、保留用户条目与未知字段；文件不可解析时 fail loud 零写入。
+3. **托管 `.mdc` 迁移**：历史 `.cursor/rules/<skill>.mdc` 与 `openlogos-policy.mdc` 在 Skills 部署成功后同次执行内清理；清理清单由 OpenLogos Skill 名单静态派生，用户自有 rules 一律保留。
+4. **guard 强度如实呈现**：AGENTS.md 托管段与 CLI 反馈必须声明 cursor-agent CLI 下写入门禁为部分强度（`beforeShellExecution` 硬拦 shell 写入 + `afterFileEdit` 事后检测，CLI 无 `preToolUse`）；Cursor IDE 经同一 `hooks.json` 获得完整 `preToolUse` 硬拦。不得把 CLI 侧表述成与 claude-code 等价（capability honesty，D09）。
+5. **边界**：OpenLogos 只拥有自身托管 Skills 目录、subagent 文件与 hooks 托管条目；用户 `.cursor/**` 其余内容在任何入口下不读改删。

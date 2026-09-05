@@ -291,3 +291,31 @@
 - AC-RIDX-05 kind 与规则对齐锚：UT-S08-50。
 - AC-RIDX-06 既有条目不被改写：ST-S08-33。
 - 场景：S08 候选集合排除与描述推断锚定时序；功能规格：§2.49；架构：§四十；安装态：SMOKE-core-171。
+
+## Cursor 同步刷新与 .mdc 迁移测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S08-51 | sync 计划经 Registry 派生 | cursor 刷新计划仅由 capability 驱动，无宿主名条件分支；标量/数组/all 旧配置进入同一路径 |
+| UT-S08-52 | 托管 .mdc 清理清单派生 | 清单 = OpenLogos Skill 名单 + openlogos-policy.mdc，逐文件精确匹配；用户自有 rules 不入清单 |
+| UT-S08-53 | 迁移顺序不变量 | Skills 事务成功 → hooks 合并 → .mdc 清理；任一前序失败则清理不执行 |
+| UT-S08-54 | hooks.json 幂等合并 | 第二次 sync 托管条目零 diff；用户条目与未知字段字节不变 |
+| UT-S08-55 | 清理项缺失容错 | 清单中 .mdc 已被用户删除/改名时跳过并如实报告，不判失败 |
+| UT-S08-56 | 失败回滚 | Skills 读回不一致或 hooks 解析失败时回滚、.mdc 保留、版本戳不变 |
+| UT-S08-57 | 版本戳后置 | 仅全部 Adapter 成功后刷新 .openlogos-sync.json |
+| UT-S08-58 | 其余宿主零漂移 | claude-code/opencode/codex/zcode/qoder/workbuddy 计划与输出结构回归一致 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S08-34 | 历史 cursor 项目首次升级 sync | 旧 .mdc 项目一次 sync 后 Skills 就位、托管 .mdc 清空、用户 rules 保留且逐项 preserved |
+| ST-S08-35 | 重复 sync 幂等 | 第二次执行 unchanged 收敛、清理清单为空、hooks.json 与用户资产哈希不变 |
+| ST-S08-36 | 中途失败回滚 | 注入 hooks.json 损坏后 sync 失败：零写入、.mdc 保留、版本戳不变、错误含精确路径 |
+
+### 自动化与证据要求
+
+- ST 需构造「历史 .mdc 布局 + 用户自有 rules + 用户自有 hooks 条目」的混合 fixture，保存前后哈希对照。
+- 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S08"`；失败不得写 pass。

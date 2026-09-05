@@ -96,3 +96,26 @@
 - 同时覆盖 normal 已 launched 的既有 no-op 与 adopted 已 launched 的幂等刷新，不得混淆两种语义。
 - 保存 lifecycle、各 Adapter 托管资产、用户插件/settings/原生记忆的前后哈希。
 - 每个用例通过 OpenLogos reporter 追加 `test_id`、`scenario_id="S14"`、`status`、`duration_ms`、`evidence` 到结果账本。
+
+## Cursor launched 刷新测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S14-18 | launch 计划经 Registry 派生 | cursor launched 资产计划仅由 capability 驱动；launched 策略版指令/Skills 与 sync 版可区分 |
+| UT-S14-19 | lifecycle 提交后置 | 任一 Adapter 失败则 lifecycle 不提交；成功后才提交 |
+| UT-S14-20 | launched 幂等 | adopted + launched 重复执行零 diff，以 unchanged 收敛 |
+| UT-S14-21 | 用户资产保留 | launch 刷新前后用户 rules/skills/hooks 条目与项目资产哈希不变；其余宿主行为回归一致 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S14-25 | launch 刷新 cursor launched 资产 | launched 指令、Skills、subagent、hooks 条目落盘读回成功，lifecycle 提交，新 session 提示输出 |
+| ST-S14-26 | launch 中途失败 | 注入 cursor 资产失败后：回滚、lifecycle 不提交、错误含失败宿主与精确目标 |
+
+### 自动化与证据要求
+
+- ST 使用隔离 workspace 从 pre-launch 状态驱动真实 `launch` 代码路径，保存 lifecycle 状态与资产前后哈希。
+- 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S14"`；失败不得写 pass。

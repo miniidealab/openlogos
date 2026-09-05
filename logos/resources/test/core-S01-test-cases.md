@@ -203,3 +203,32 @@
 - [x] 真实候选制品与隔离入口：UT-S01-128、ST-S01-26。
 - [x] 显式 TRAE 首写前拒绝：UT-S01-128、ST-S01-26。
 - [x] `all` 七宿主与 TRAE 用户边界零触达：UT-S01-128、ST-S01-26。
+
+## Cursor 三件套初始化测试用例
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S01-129 | cursor capability 声明 | assets 为 ['agents','plugin','hooks']；instructions/skills/commands/agents/sessionStart=true；preToolUse=false（capability honesty） |
+| UT-S01-130 | `all` 稳定展开含 cursor | Registry 稳定顺序包含 cursor、排除 `other`、无重复；空数组默认语义不变 |
+| UT-S01-131 | Cursor 资产规划 | 精确包含 Skills（含 commands 形式）、change-reviewer subagent、hooks 三托管条目；不含 .mdc 转换产物 |
+| UT-S01-132 | SKILL.md frontmatter 校验 | name 与目录一致、description 非空；commands 形式携带 disable-model-invocation: true；非法 frontmatter 部署前失败 |
+| UT-S01-133 | hooks.json 创建与合并 | 不存在时创建 version:1；存在时仅增托管条目，用户条目字节不变；不可解析 fail loud 零写入 |
+| UT-S01-134 | tarball 清单含 cursor 模板 | 真实打包结果包含全部 cursor-plugin-template 资产，版本同源；缺失即预检失败 |
+| UT-S01-135 | 冲突预检 | 目标 Skills 目录含非 OpenLogos 内容或 hooks 托管条目身份冲突时首个写入前 blocked，精确报告路径 |
+| UT-S01-136 | 用户资产排除 | 用户 rules/skills/hooks 非托管条目与未知文件不进入写计划；成功输出含固定 guard 部分强度提示行 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S01-27 | `init --ai-tool cursor` 成功 | 配置、指令、Skills、subagent、hooks 托管条目原子落盘并读回；结果逐资产可审计 |
+| ST-S01-28 | `init --ai-tool all` 与重复执行 | cursor 稳定包含；第二次收敛为 unchanged，既有宿主结果零漂移 |
+| ST-S01-29 | 冲突/模板缺失失败 | 总事务回滚，hooks.json 零写入，无半初始化；用户资产前后哈希一致 |
+
+### 自动化与证据要求
+
+- UT 必须从真实模板目录或真实 `npm pack --json` 结果取证，不得用手写清单冒充制品覆盖。
+- ST 使用隔离临时 HOME/workspace，并保存配置、托管资产、用户 `.cursor/**` 资产边界的前后哈希。
+- 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，至少包含 `test_id`、`scenario_id="S01"`、`status`、`duration_ms`、`evidence`；失败不得写 pass。

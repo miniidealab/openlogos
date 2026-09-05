@@ -3457,3 +3457,77 @@ proposal 明确无需部署（`deployment_required=false`）时，deployment/smo
 
 - AC-MTXOUT-01～07（见需求文档「合并事务终态出路与提案内二次 merge 通道」）。
 - 测试：UT-S09-289～292、ST-S09-111；安装态：SMOKE-core-181；回归锚：UT-S09-254（abort 三阶段清理）、ST-S09-100、SMOKE-core-56。
+
+## 2.59 Cursor 三件套补齐：原生 Skills、hooks 合并写入与部分强度门禁
+
+### 2.59.1 目标与边界
+
+本功能在既有 `AiToolAdapterRegistry`、托管资产事务、会话上下文服务和 guard 决策服务之上，把 Cursor 从降级档（`assets: ['agents']`，`.cursor/rules/*.mdc` 转换）补齐为三件套宿主。共享层拥有宿主选择、资产事务和 OpenLogos 方法论事实；Cursor Adapter 只映射 Cursor 原生 Agent Skills 布局、`.cursor/hooks.json` 协议字段、事件名与退出码。
+
+功能仅涉及本地 CLI、文件资产和 hook 子进程协议，不新增远程 API、数据库或后台服务。Cursor IDE 专属行为（如 `preToolUse` 完整硬拦）不由 OpenLogos 单独维护配置——IDE 与 CLI 共享同一 `.cursor/hooks.json`，按宿主自身能力自然生效。
+
+### 2.59.2 Cursor capability 与 Registry 语义
+
+- 规范 id 保持 `cursor`，display name `Cursor`；不新增别名。
+- capability 声明 `assets: ['agents', 'plugin', 'hooks']`，且显式声明 `instructions=true`、`skills=true`、`commands=true`、`agents=true`、`sessionStart=true`、**`preToolUse=false`**。
+- **capability honesty 不变量（D09）**：capabilities 声明必须与宿主实测能力一致；`preToolUse=false` 是对 cursor-agent CLI hook 事件子集的如实表达，任何消费方（生命周期入口、RunLogos driver、smoke 验收）不得把 cursor 的写入门禁按完整强度对待。
+- 标量/数组/`all` 解析行为不变：`all` 按 Registry 稳定顺序包含 `cursor` 并排除 `other`；未知值继续返回结构化错误。
+- 空 `aiTool` 数组的既有 Cursor 默认语义保持不变。
+
+### 2.59.3 原生资产布局与所有权
+
+随包模板采用：
+
+```text
+cursor-plugin-template/
+├── skills/<openlogos-skill>/SKILL.md          # 方法论 Skills（模型自动发现）
+├── commands/<openlogos-command>/SKILL.md      # disable-model-invocation: true，显式 /<name> 触发
+├── agents/change-reviewer.md                  # Cursor subagent
+└── hooks/
+    ├── hooks.json                             # OpenLogos 托管条目模板
+    └── runtime.mjs                            # 共享 Node.js hook runtime 的 cursor 接线
+```
+
+部署目标与所有权：
+
+- Skills → `.cursor/skills/<name>/SKILL.md`；frontmatter `name` 必须与目录名一致，`description` 非空；commands 形式的 Skills 额外携带 `disable-model-invocation: true`。
+- subagent → Cursor 约定的项目级 agents 目录。
+- hooks → `.cursor/hooks.json` 合并写入（见 2.59.4）。
+- OpenLogos 只拥有自身托管的 Skills 目录、subagent 文件和 hooks 托管条目；用户自有 rules、skills、hooks、settings 与未知文件一律保留。
+
+### 2.59.4 hooks.json 合并写入策略
+
+`.cursor/hooks.json` 是用户与多方共享的配置文件，不适用整目录事务替换：
+
+1. 文件不存在时创建 `{"version": 1, "hooks": {...}}` 并写入托管条目。
+2. 文件存在时解析 JSON，只增改 OpenLogos 托管条目（以托管 command 路径识别），保留其它条目与未知字段；写回前后用户条目字节级不变。
+3. 文件不可解析时 fail loud，报告精确路径，不覆盖、不清空。
+4. 幂等：重复 `init`/`sync`/`launch` 不产生重复条目；卸载/回滚只移除托管条目。
+
+托管条目：`sessionStart`（阶段上下文注入）、`beforeShellExecution`（shell 写入门禁）、`afterFileEdit`（编辑事后检测）。
+
+### 2.59.5 sessionStart 上下文注入
+
+- 复用共享 SessionContextService：只从项目磁盘事实生成 module、active change、`proposal_step`、可写范围和下一确认点；输出不构成授权。
+- cursor 接线负责把共享输出转换为 Cursor hook stdout JSON 契约；CLI 不可用或项目未初始化时静默返回空对象。
+- 新 session 生效；已有会话不承诺热刷新。
+
+### 2.59.6 部分强度写入门禁
+
+- `beforeShellExecution`：每次调用重新读取 guard 与提案状态，复用共享 GuardDecisionService 的同一决策逻辑；deny 时输出 `permission: "deny"` 与非空原因并阻断。
+- `afterFileEdit`：对越界编辑产出事后检测报告（提示违反变更管理的路径与当前提案范围），不能预先阻断宿主原生编辑——这是 cursor CLI 无 `preToolUse` 的既定边界，不视为缺陷。
+- 异常 fail-closed：无 guard 文件、越界路径、输入解析失败、决策服务异常时，shell 路径一律 deny，编辑路径一律产出报告。
+- 用户可观察输出（CLI 反馈、根规范、AGENTS.md 托管段）必须如实表述「CLI 侧部分强度、IDE 侧完整强度」。
+
+### 2.59.7 托管 .mdc → Skills 迁移
+
+- `sync`/`launch`/`adopt` 部署 Skills 成功后，清理 OpenLogos 托管的 `.cursor/rules/<skill-name>.mdc` 与 `openlogos-policy.mdc`；清理清单由 OpenLogos Skill 名单派生，不做通配删除。
+- 用户自有 `.cursor/rules/` 文件（名字不在托管名单内）一律保留。
+- 迁移与 Skills 部署在同一次刷新内完成；失败回滚时既不留半套 Skills，也不提前删除 `.mdc`。
+- CLI 反馈明确报告迁移结果（清理了哪些托管 `.mdc`）。
+
+### 2.59.8 回归与兼容
+
+- Claude Code、OpenCode、Codex、ZCode、Qoder、WorkBuddy 的配置、资产计划和输出结构由 golden/结构化清单回归锁定，不受本功能影响。
+- 未选择 cursor 的项目不部署任何新资产；历史 cursor 项目在下一次 `sync` 时完成 Skills 迁移。
+- npm 随包校验覆盖 cursor-plugin-template：源码存在但制品缺失任一声明资产时构建/预检失败。

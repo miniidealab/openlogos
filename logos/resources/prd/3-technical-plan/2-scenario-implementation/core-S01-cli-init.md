@@ -407,3 +407,64 @@ sequenceDiagram
 - 单元测试：UT-S01-128。
 - 场景测试：ST-S01-26。
 - Smoke：SMOKE-core-124、SMOKE-core-125、SMOKE-core-126。
+
+## S01 Cursor 三件套原子初始化时序
+
+### 场景目标
+
+通过 `init --ai-tool cursor|all` 部署 Cursor 原生 Agent Skills（含 commands 形式）、change-reviewer subagent 与 `.cursor/hooks.json` 托管 hook 条目，同时保护用户自有 rules、skills、hooks 条目与项目资产。
+
+### 前置与后置条件
+
+- 前置：项目未初始化；选择值可由 Registry 解析；随包 cursor-plugin-template 完整。
+- 成功后置：配置持久化规范 id，托管指令、Skills、subagent 与 hooks 托管条目全部读回成功，用户资产不变。
+- 失败后置：不留下半初始化目录、部分 Skills 或残缺 hooks 条目，不打印总成功。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI
+    participant R as Adapter Registry
+    participant A as Cursor Adapter
+    participant T as Managed Asset Transaction
+    participant H as hooks.json 合并写入器
+    U->>C: init --ai-tool cursor|all
+    C->>R: parse + expand
+    R-->>C: 稳定列表（含 cursor，capability preToolUse=false）
+    C->>A: planAssets(initial)
+    A-->>T: 指令、Skills、commands 形式 Skills、subagent
+    A-->>H: sessionStart / beforeShellExecution / afterFileEdit 托管条目
+    T->>T: 校验模板 / frontmatter / owner 并暂存
+    alt 全部合法
+        T->>T: 原子提交并读回
+        H->>H: 解析既有 hooks.json，仅合并托管条目，读回校验用户条目不变
+        T-->>C: DeployResult
+        C-->>U: 逐资产结果、guard 部分强度提示、新 session 提示
+    else 冲突或缺失
+        T->>T: 回滚（hooks.json 零写入）
+        T-->>C: blocked + 精确路径
+        C-->>U: 非零退出
+    end
+```
+
+### 步骤与不变量
+
+1. Registry 负责 `cursor` 能力声明与 `all` 展开，CLI 不维护 cursor 专属分支；生命周期入口只消费 capability。
+2. Adapter 规划 `.cursor/skills/<name>/SKILL.md`（frontmatter `name` 与目录一致，commands 形式携带 `disable-model-invocation: true`）、change-reviewer subagent 与 hooks 托管条目。
+3. 事务层在首个写入前验证模板、SKILL.md frontmatter、owner 和所有目标可写性；hooks.json 不可解析即 fail loud、零写入。
+4. 用户自有 `.cursor/rules/`、`.cursor/skills/` 非托管目录、hooks 非托管条目和项目未知文件只做边界证明，不进入写计划。
+5. 全部资产提交并读回后才写配置和打印成功（成功输出含固定的 guard 部分强度提示行）；重复初始化规划必须幂等。
+
+### 异常
+
+- `EX-CU-S01-1`：tarball 缺任一声明资产时，首个项目写入前失败。
+- `EX-CU-S01-2`：`.cursor/hooks.json` 不可解析或托管条目将覆盖用户条目时 blocked，文件字节不变。
+- `EX-CU-S01-3`：SKILL.md frontmatter 非法（缺 name/description 或 name 与目录不一致）时总事务不提交。
+
+### 追溯
+
+- 需求：S01 Cursor 初始化验收（P02 Cursor 增补）。
+- 架构：46.2 资产模型、46.3 hooks.json 合并写入、46.5 生命周期与事务顺序。
+- 测试：UT-S01-129～UT-S01-136、ST-S01-27～ST-S01-29。

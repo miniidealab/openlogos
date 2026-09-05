@@ -2580,3 +2580,93 @@ change-lint / merge 的 violation 合同 schema 与 `openlogos/test-slice-transa
 - 需求：AC-MTXOUT-01～07。
 - 功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。
 - 安装态：SMOKE-core-181；回归：SMOKE-core-176、SMOKE-core-178、SMOKE-core-179、SMOKE-core-180。
+
+## OpenLogos 0.14.18 Cursor 三件套补齐本机全局部署方案
+
+### 部署目标与授权边界
+
+把「Cursor 三件套补齐（原生 Skills、hooks 合并写入、部分强度门禁）」冻结为唯一 `@miniidealab/openlogos@0.14.18` npm tarball，先在隔离 prefix 完成含**真实 cursor-agent CLI** 的行为矩阵与回滚演练，再在 verify PASS 且用户明确授权后覆盖本机全局 `openlogos@0.14.17`。部署完成后仍需独立 smoke 授权。
+
+本方案不包含 npm publish、dist-tag、Git tag、GitHub Release、官网/Cloudflare 部署或 git push。
+
+**本次为何必须部署**：cursor 三件套资产（cursor-plugin-template、hooks 接线 runtime）全部随 npm 包分发；不部署则任何 cursor 项目 `sync` 后仍是 0.14.17 的降级档 `.mdc` 转换。
+
+**本次为何必须走安装态 + 真实宿主**：cursor-agent CLI 的 hook 事件覆盖面（sessionStart / beforeShellExecution / afterFileEdit 等）是 2026-04 官方论坛口径的**输入假设**，只有真实 cursor-agent 实测才能消解时效风险；Skills 发现、`disable-model-invocation` 显式命令与 hooks stdin/stdout 契约也只能由真实宿主证明。
+
+### 部署前置与冻结事实
+
+1. 本提案全部 Delta 已 merge，代码切片与 UT/ST 已真实实现并由 OpenLogos reporter 报告，`openlogos verify` 为 PASS。
+2. 冻结当前本机全局 `0.14.17`：`command -v openlogos`、realpath、npm prefix、package root、package/plugin/asset manifest version/hash。
+3. 冻结可离线恢复的 `0.14.17` tarball、SHA-256 与可复制安装命令；没有固定回滚制品或回滚自检失败时不得覆盖全局。
+4. 回滚制品必须由 `0.14.17` 的实际部署提交构建，不得用当前工作树打包。
+5. 本机具备真实 cursor-agent CLI：记录其绝对路径、版本与新 session 启动证据；不可执行时部署停止（不得以 mock 或直接调用 runtime 冒充宿主）。
+6. 使用一次性 workspace 与隔离 HOME/`.cursor` 根验证，不读取真实用户 Cursor 配置。
+
+### 0.14.18 版本与制品身份
+
+实现阶段必须同步以下 identity 后再 build/pack：
+
+- CLI `package.json` 与 lockfile 根包版本；
+- Claude/Codex/ZCode/Qoder/WorkBuddy 及新增 Cursor 随包 plugin/资产模板 manifest 版本；
+- package asset manifest、managed asset hash 与需要携带版本的 schema/golden/runner 元数据；
+- `openlogos --version` 编译输出与 tarball 包名版本；
+- `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.14.18`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.14.17`，并同步更新发布身份 tripwire 断言。
+
+禁止继续以 `0.14.17` 构建新字节。
+
+### 构建与 Tarball 冻结
+
+1. 在仓库真实 CLI package 执行完整 test/build/package-assets 流程。
+2. 执行真实 `npm pack`，记录 tarball 绝对路径、文件名、字节数、文件清单与 SHA-256；后续隔离、全局与恢复安装只能使用该固定 tarball。
+3. 从解包后的 tarball 核对 CLI entry、`0.14.18` version、cursor-plugin-template 全部资产（Skills、commands 形式 Skills、change-reviewer subagent、hooks 模板与 runtime 接线）、根规范 `spec/cursor-plugin.md`、既有宿主资产与 reporter。
+4. 对 tarball 运行 manifest/hash 自检；任何重新 pack 都产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵（含真实 cursor-agent）
+
+使用 `mktemp -d` 创建一次性 npm prefix 与隔离 `.cursor` 根，安装固定 `0.14.18` tarball，从新 shell/绝对入口执行：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/plugin/asset hash 全部来自固定 tarball，无 workspace link |
+| **cursor 三件套 init/adopt** | `init --ai-tool cursor` 与存量 fixture `adopt`：Skills/subagent/hooks 托管条目落盘读回、用户资产 preserved、guard 部分强度提示行在场 |
+| **托管 .mdc 迁移** | 历史 `.mdc` fixture 一次 sync 完成迁移；用户自有 rules 保留；重复 sync unchanged 收敛 |
+| **真实宿主 Skills/命令发现** | 新 cursor-agent session 可发现 OpenLogos Skills，`/<command>` 显式触达 |
+| **sessionStart 实测** | 新 session 注入磁盘阶段上下文；实测记录 CLI hook 事件覆盖面清单（写入部署报告） |
+| **门禁实测** | delta-writing 下允许写入放行；越界 shell 写入 deny + 完整原因；越界原生编辑收到事后检测报告且文件确已修改（如实未阻断） |
+| **hooks.json 合并保真** | 预置用户条目 fixture：init/sync 前后用户条目字节不变；损坏 hooks.json fail loud 零写入 |
+| **既有宿主零回归** | claude-code/opencode/codex/zcode/qoder/workbuddy 最小回归矩阵保持通过 |
+| rollback roundtrip | `0.14.17→0.14.18→0.14.17→0.14.18` 每阶段 entry/version/assets/行为对应固定制品，无混装 |
+
+隔离矩阵任一失败不得覆盖本机全局。**「sessionStart 实测」或「门禁实测」失败时必须停止部署并回到实现**——若实测发现 cursor-agent 当前版本 hook 事件覆盖面与输入假设不符（如 sessionStart 不触发），属于能力假设失效，须回提案层修订而非放宽断言。
+
+### 零回归对照（强制，不可省略）
+
+cursor 相关矩阵项必须在固定 `0.14.17` 上执行一次并记录其表现：
+
+| 矩阵项 | 在 0.14.17 上的预期表现 |
+|---|---|
+| cursor 三件套 init | **降级档**——只产 `.cursor/rules/*.mdc` + AGENTS.md，无 Skills/subagent/hooks（降级事实本身） |
+| 托管 .mdc 迁移 | **不存在**——sync 继续刷新 .mdc |
+| 既有宿主回归 | 通过（两版本一致） |
+
+若 0.14.17 上也能部署三件套，说明矩阵空转，必须重写矩阵而非放行部署。
+
+### 本机全局部署
+
+只有隔离矩阵、零回归对照与 `0.14.17` 回滚演练全部 PASS，且用户明确授权本机部署后，才把同一 SHA-256 的 `0.14.18` tarball 安装到已冻结 npm global prefix。必须在新 shell 中清除命令 hash 并复核：
+
+- `command -v openlogos` 与 realpath 指向全局 prefix，不指向 workspace；
+- `openlogos --version` 精确为 `0.14.18`；
+- package / plugin / asset manifest version 全部为 `0.14.18`，无混装。
+
+### 失败处置与回滚边界
+
+- 隔离矩阵失败：停止部署，回到实现，重新 verify/build/pack。
+- 全局安装后行为异常：立即以固定 `0.14.17` tarball 回滚，并报告触发条件与观察到的现象。
+- 回滚后必须复核 identity 全部回到 `0.14.17`；回滚不触碰任何项目的 `.cursor/**` 用户资产。
+- 不得为让矩阵通过而虚标 capability、跳过真实宿主实测或伪造 hook 事件覆盖面记录。
+
+### 追溯
+
+- 需求：Cursor 完整宿主集成需求「部署与非目标」。
+- smoke：SMOKE-core-182～SMOKE-core-189。

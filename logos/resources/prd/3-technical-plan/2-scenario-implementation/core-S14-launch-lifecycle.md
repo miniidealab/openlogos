@@ -295,3 +295,57 @@ sequenceDiagram
 - 需求：S14 WorkBuddy launched 刷新验收。
 - 架构：30.4 生命周期与事务顺序。
 - 测试：UT-S14-14～UT-S14-17、ST-S14-23～ST-S14-24。
+
+## S14 Cursor launched 资产注册表驱动刷新时序
+
+### 场景目标
+
+`launch` 经 Adapter Registry 刷新 Cursor launched 指令、Skills（含 commands 形式）、change-reviewer subagent 与 hooks 托管条目，并完成尚未迁移项目的托管 `.mdc` 清理；全部 Adapter 成功后才提交 lifecycle。
+
+### 前置与后置条件
+
+- 前置：项目处于可 launch 状态且 `aiTool` 含 `cursor`。
+- 成功后置：launched 版指令与资产落盘并读回成功，lifecycle 提交，用户资产不变。
+- 失败后置：资产回滚、hooks 回退、`.mdc` 保留，lifecycle 不提交。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI
+    participant R as Adapter Registry
+    participant A as Cursor Adapter
+    participant T as Managed Asset Transaction
+    U->>C: openlogos launch
+    C->>R: 列出配置宿主
+    R-->>C: 含 cursor 的稳定列表
+    C->>A: planAssets(launched)
+    A-->>T: launched 指令 + Skills + subagent + hooks 条目 + .mdc 清理
+    T->>T: 暂存 → 校验 → 原子替换 → 读回
+    alt 全部 Adapter 成功
+        C->>C: 提交 lifecycle
+        C-->>U: launched 刷新汇总 + 新 session 提示
+    else 任一失败
+        T->>T: 回滚；lifecycle 不提交
+        C-->>U: 失败宿主与精确目标
+    end
+```
+
+### 步骤与不变量
+
+1. launch 与 sync 共用同一 Adapter 计划路径，只是资产内容切换为 launched 策略版本；CLI 无 cursor 专属分支。
+2. adopted + launched 重复执行幂等，以 `unchanged` 收敛；用户 rules/skills/hooks 条目与项目资产字节不变。
+3. 其余宿主 launched 刷新行为不变，由既有回归锁定。
+4. lifecycle 提交严格后置于全部 Adapter 成功。
+
+### 异常
+
+- `EX-CU-S14-1`：Cursor 资产刷新失败 → lifecycle 不提交，已成功宿主的资产不撤销但版本戳/lifecycle 状态如实报告。
+- `EX-CU-S14-2`：hooks.json 在 launch 时不可解析 → 本宿主失败，零写入。
+
+### 追溯
+
+- 需求：S14 Cursor launched 刷新验收。
+- 架构：46.5 生命周期与事务顺序。
+- 测试：UT-S14-18～UT-S14-21、ST-S14-25～ST-S14-26。
