@@ -3074,3 +3074,39 @@ Agent 只能 `submit-content`；`tasks.md` 的 `[code]` 段、`TEST_SLICE_MANIFE
 | 同一 `transaction_id` 至多一次物理派发 / 投喂 / 额度 | 宿主 | 宿主既有 WorkUnit 账本，**键为 canonical `transaction_id`** |
 
 第三行留在宿主——OpenLogos 不知道终端投喂与额度。但宿主不再需要自建账本或自算身份，只是把 canonical id 当作既有账本的键。
+
+## Merge transaction 终态出路 JSON 合同（0.14.17）
+
+> 本节修订「Merge transaction JSON 契约（0.14.0）」「Merge transaction 消费者合同完成版（0.14.0）」与「Merge Transaction Preflight/Reopen JSON 兼容合同（0.14.2）」中与终态动作域相关的旧描述；历史段落可只读诊断，新事务动作以本节为准。字段、envelope 与 exit code **零变化**——本节只扩充动作域与投影语义，属兼容扩充，不做主版本跃迁。
+
+### 动作域扩充
+
+| phase / 条件 | 0.14.16 及以前 `allowed_actions` | 0.14.17 起 |
+|---|---|---|
+| `failed` 且 `classification=recovery_required` | `["recover"]` | 不变 |
+| `failed` 且其它分类（含 `aborted`、`internal_failure`） | `[]` | `["abort"]`（已是 `aborted` 时幂等返回既有投影） |
+| `completed` | `[]` | `["reopen"]` |
+| 其余 phase | 既有值 | 不变 |
+
+- `MergeTransactionAction` 枚举新增 `reopen`；消费者动作→子命令映射新增 `reopen`→`reopen`。未纳入该动作的既有消费方忽略之即可，不影响既有流程（0.14.15 切片事务 `reopen` 同一先例）。
+- `next_action` 仍只能从 `allowed_actions` 中确定性选出。
+
+### reopen 子命令合同
+
+`openlogos merge transaction reopen --reason "<非空原因>" [--confirm-spec-merged] [--format json]`：
+
+- 仅 `phase=completed` 接受；`SPEC_MERGED` 在场且未附 `--confirm-spec-merged` 时以稳定 classification 拒绝，error envelope 的 `fix_hint` 给出附确认参数的可执行指引，零副作用。
+- 成功 envelope 返回**新建 collecting 事务**的标准投影（新 `transaction_id`、按当前 delta 重新规划的 target/slot 集合）；旧事务以 `merge-transactions/<旧 id>.json` 归档，`MERGE_REOPENS.jsonl` 追加一行 `openlogos/merge-reopen@1` 留痕。
+- `--reason` 缺失或空白、事务/marker 不可读：fail-closed 拒绝，零副作用。
+
+### 创建入口的终态让位投影
+
+`openlogos merge <slug>` 遇终态事务：
+
+- `failed`（含 aborted / fatal）：归档让位后返回**新事务**投影；输出须可区分「归档了旧事务」这一事实（旧 id 进入诊断信息）。
+- `completed` 且 `SPEC_MERGED` 完好：以稳定 classification 拒绝静默重建，`fix_hint` 指向 `merge transaction reopen`。
+- 非终态：幂等返回既有事务投影（逐字节既有行为）。
+
+### 兼容优先级
+
+历史段落中「`completed` 时返回已有 receipt 摘要、不重复合成或写入」的语义对**未 reopen** 的 completed 事务继续成立；「abort 只在 collecting/ready/sealed 执行」修订为上表动作域。`status` 只读动作在任何 phase（含归档后无活跃事务）都不得产生写副作用。消费方遇未知 classification/action 仍应保守阻断，不按 message 猜测语义。
