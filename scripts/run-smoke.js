@@ -82,6 +82,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_GUARD_FIX_TARBALL,
       previousTarball: process.env.OPENLOGOS_GUARD_FIX_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-next-ensure-0-14-23.js': {
+      tarball: process.env.OPENLOGOS_NEXT_ENSURE_TARBALL,
+      previousTarball: process.env.OPENLOGOS_NEXT_ENSURE_ROLLBACK_TARBALL,
+    },
     'scripts/smoke-trae-local-negative.js': {
       tarball: process.env.OPENLOGOS_TRAE_LOCAL_TARBALL,
       previousTarball: process.env.OPENLOGOS_TRAE_ROLLBACK_TARBALL,

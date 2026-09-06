@@ -30,6 +30,7 @@ import { BaselineCommitInProgressError } from '../lib/baseline-seed-txn.js';
 import { TEST_SLICE_MANIFEST, deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
 import type { MergeTransactionProjection } from '../lib/merge-transaction.js';
 import {
+  createTestSliceTransaction,
   ensureManifestRecoveryTransaction, isManifestRecoveryReason,
   readTestSliceTransactionIfPresent,
   type TestSliceTransactionProjection,
@@ -65,6 +66,9 @@ export interface NextModuleItem {
   next_node?: NextNode;
   cmd_gate?: CmdGate;
   automation_diagnostic?: AutomationDiagnostic;
+  // fix-next-ensure-initial-plan-slice-transaction（§2.65）：切片事务 canonical 投影——
+  // manifest-recovery 分支与 ready-to-implement 问即建共用本字段（消费方按存在性消费）。
+  slice_transaction?: TestSliceTransactionProjection;
   // brownfield-adopter（S33）：现状基线种子状态与覆盖率（仅 bootstrap=adopted 且无活跃提案时附带）
   baseline_seed_state?: BaselineSeedState;
   baseline_coverage?: BaselineCoverage;
@@ -1038,6 +1042,31 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       };
       if (!recovery) delete nextItem.next_node;
       return nextItem;
+    });
+    // §2.65 / fix-next-ensure-initial-plan-slice-transaction：initial-plan 事务的问即建——
+    // 发证时机与消费方「投影前置」契约对齐（与 manifest-recovery 分支同层、同构）。
+    // 触发：ready-to-implement（建议节点为 plan-slices 的时刻）∧ 需要代码 ∧ 提案在场 ∧ 无 manifest 失效态。
+    // 无事务则创建并输出投影；已有事务（任意 phase，含终态）只读投影，不重建、不归档（终态归档
+    // 让位只发生在新一轮 createTestSliceTransaction 内，ensure 的读路径不触发它）。
+    moduleItems = moduleItems.map((item, index) => {
+      const sm = data.modules![index];
+      if (sm.slice_verification_state?.reason) return item; // 失效态归 recovery 分支
+      if ((sm.active_change?.proposal_step ?? null) !== 'ready-to-implement') return item;
+      if (item.code_required === false) return item;
+      const slug = sm.active_change?.slug;
+      if (!slug) return item;
+      const proposalDir = join(root, 'logos', 'changes', slug);
+      if (!existsSync(proposalDir)) return item;
+      try {
+        const tx = readTestSliceTransactionIfPresent(proposalDir)
+          ?? createTestSliceTransaction(root, proposalDir, slug, { module: item.id });
+        return { ...item, slice_transaction: tx };
+      } catch (error) {
+        // 创建失败如实反映为「无投影」并携错误信息——不降级为仅建议节点（消费方 fail-closed，
+        // 不误以为可自行恢复；§2.65.2）。
+        const message = error instanceof Error ? error.message : String(error);
+        return { ...item, detail: `${item.detail}\n切片事务尚不可用：${message}；请核对提案目录后重试，不得绕过事务直接写产物。` };
+      }
     });
   }
   let baseNextNode: NextNode | undefined;
