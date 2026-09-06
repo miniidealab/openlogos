@@ -3,7 +3,7 @@
 > 记录日期：2026-09-05（America/Los_Angeles）
 > 来源：RunLogos 提案 `fix-driver-merge-transaction-contract-alignment` 排查期间发现（遗留项 ②），2026-09-05 在 openlogos 0.14.20 安装版与上游源码复核确认**均未修复**
 > 文档性质：跨仓移交 bug report，**不是** openlogos 仓的正式提案；openlogos 仓需自行创建变更提案、完成 Delta 与验收
-> 状态：**已修复（待部署发布）**——提案 `fix-claude-guard-hook-project-dir-and-sync-deploy`（2026-09-05 verify 2160/2160 通过，归档于 `logos/changes/archive/20260905-1818-*`）；三项缺陷全部修复入仓，按用户决策随下一个部署窗口（0.14.21）发布，届时存量项目一次 `openlogos sync` 即补齐硬闸
+> 状态：**已修复并已发布**——修复提案 `fix-claude-guard-hook-project-dir-and-sync-deploy`（归档 `20260905-1818-*`）+ 发布提案 `deploy-0-14-21-guard-hook-release`（归档 `20260905-1944-*`）：0.14.21 已于 2026-09-05 部署本机全局并 smoke 通过（SMOKE-core-192，含 0.14.20 fail-open 对照）；存量项目一次 `openlogos sync` 即补齐硬闸（openlogos 仓自身已实测迁移生效）
 > 检查基线：OpenLogos CLI `0.14.20`（`/opt/homebrew/lib/node_modules/@miniidealab/openlogos`）与 openlogos 仓 `~/gitlab/openlogos` 工作树（HEAD `eb2aeb5`）；实证项目：runlogos（`~/gitlab/runlogos`，launched）
 
 ## 背景一句话

@@ -1,0 +1,31 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_53964799f1b6f5e0f9e9d59c",
+  "seal_sha256": "sha256:d95acd5c6a333193c19e720f540b68c10485d3eb805008795cd196d86b733451",
+  "receipt_sha256": "sha256:6ddb127304835ede883c80e5ab9703749582f91a5d32e0cd7bf5dbd2c485562f",
+  "completed_at": "2026-09-06T02:32:00.644Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "deploy-0-14-21-guard-hook-release",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-192",
+      "UT-S19-38"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "3486f7b5e8b1792d2a1727e3d4d698250a5aeb7cbb45ddfd7c6af157036db5c0",
+        "after_sha256": "21e8a2eab13cdc91d468b6fa7763392f027473a0e108602455ccc27672f03e21"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "d92a8a6e0b3d0efb8792f2ac19ff230ac5ae9c4dedc866337b96dd7b92f005d6",
+        "after_sha256": "a3c5c4744fa019964fb71321aa4926f1359c213e8350b27022011eedbacecb34"
+      }
+    ],
+    "sha256": "sha256:6e5003f073fc527d6983041aae77b427f7f25260a1039862e4e77e66e7653bd5"
+  }
+}

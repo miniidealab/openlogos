@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_19f7d4fa0e3c4d3ca07109fa",
+  "slug": "deploy-0-14-21-guard-hook-release",
+  "module": "core",
+  "phase": "completed",
+  "origin": "initial-plan",
+  "classification": null,
+  "spec_fingerprint": "sha256:b39ff2a50f586954ece1f38803dd430e4fc52dcf6f54aa55511cd6e12b46d2dc",
+  "changed_test_ids_sha256": "sha256:3b50c106e70daaf8843f771b4bbc7e6747ede9f5ac138f3f352dff814d79bcd5",
+  "schema_sha256": "sha256:2c18bb8b9a1311e0bb5a67189126ddd0818656b8f332bfbe942d5ca082e63f43",
+  "contract_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09",
+  "seal_sha256": "sha256:e7dd08d0d1b566923346949c80465df385d6f3abe20c80c0eed057192bb14638",
+  "slots": [
+    {
+      "slot_id": "slot_codesection",
+      "content_sha256": "sha256:2b8cc7c116fa8ce550ec7f54d6ffe3a7642a97cb40b10a891d09ec46c1cb9886",
+      "sealed_sha256": "sha256:2b8cc7c116fa8ce550ec7f54d6ffe3a7642a97cb40b10a891d09ec46c1cb9886"
+    },
+    {
+      "slot_id": "slot_slices",
+      "content_sha256": "sha256:216084ed302bb1d437c1868f0428f10e627d04a859a7471120ea6ae91cc98930",
+      "sealed_sha256": "sha256:216084ed302bb1d437c1868f0428f10e627d04a859a7471120ea6ae91cc98930"
+    }
+  ],
+  "staged": {
+    "slot_codesection": "> 六维打分：影响范围 1（版本身份文件族 + runner + 注册表）、行为复杂度 0（无业务分支）、契约变化 1（候选身份推进）、测试规模 1（2 个新 ID）、风险 1（部署提案但回滚制品固定）、不确定性 0 → 4 分，非大任务，单切片。\n> 删后续自检：单切片无后续可删；身份 bump 与 runner 共享同一候选身份事实，拆开不自闭环。\n- [ ] 单切片：0.14.21 候选身份与 SMOKE-core-192 runner——package/lockfile/五 plugin manifest/asset-manifest/LOCAL_RELEASE_CANDIDATE_VERSION=0.14.21、ROLLBACK=0.14.20/tripwire/golden 同步（UT-S19-38 断言全源一致含 guard-check manifest 条目）；新增 scripts/smoke-guard-hook-0-14-21.js（安装态 guard 全链+fail-closed+存量 sync 补齐+0.14.20 fail-open/资产缺失对照+roundtrip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl；实现含 OpenLogos reporter 的 UT-S19-38、SMOKE-core-192\n",
+    "slot_slices": "[\n  {\n    \"slice_id\": \"slice-01-release-identity-and-smoke\",\n    \"task_text\": \"单切片：0.14.21 候选身份与 SMOKE-core-192 runner——package/lockfile/五 plugin manifest/asset-manifest/LOCAL_RELEASE_CANDIDATE_VERSION=0.14.21、ROLLBACK=0.14.20/tripwire/golden 同步（UT-S19-38 断言全源一致含 guard-check manifest 条目）；新增 scripts/smoke-guard-hook-0-14-21.js（安装态 guard 全链+fail-closed+存量 sync 补齐+0.14.20 fail-open/资产缺失对照+roundtrip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl；实现含 OpenLogos reporter 的 UT-S19-38、SMOKE-core-192\",\n    \"owned_test_ids\": [\"UT-S19-38\", \"SMOKE-core-192\"],\n    \"runner_selectors\": [\"UT-S19-38\", \"SMOKE-core-192\"],\n    \"spec_targets\": [\"logos/resources/test/core-S19-test-cases.md\", \"logos/resources/test/smoke/core-smoke-test-cases.md\"]\n  }\n]\n"
+  },
+  "receipt": {
+    "transaction_id": "stx_19f7d4fa0e3c4d3ca07109fa",
+    "completed_at": "2026-09-06T02:32:31.532Z",
+    "seal_sha256": "sha256:e7dd08d0d1b566923346949c80465df385d6f3abe20c80c0eed057192bb14638",
+    "artifacts": [
+      {
+        "path": "tasks.md",
+        "sha256": "sha256:8da1dc3d6ce50aa0eddf45be8fa8ddda0bece380002fab781698ef30dd3cf867"
+      },
+      {
+        "path": "TEST_SLICE_MANIFEST.json",
+        "sha256": "sha256:dfd629d67865102a7c2b6dfbdaad4e7efbd1507649a657f7d236c8e302697fc7"
+      }
+    ]
+  },
+  "violations": [],
+  "aborted_at": null,
+  "created_at": "2026-09-06T02:32:31.103Z",
+  "updated_at": "2026-09-06T02:32:31.532Z"
+}

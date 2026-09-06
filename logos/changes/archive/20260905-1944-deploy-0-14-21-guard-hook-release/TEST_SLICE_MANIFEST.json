@@ -1,0 +1,26 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "deploy-0-14-21-guard-hook-release",
+  "module": "core",
+  "task_fingerprint": "sha256:c431d4bfd5d3e4952dd9ca5e241b2433572a945de3a3b9049f3af61ea9a640a9",
+  "spec_fingerprint": "sha256:b39ff2a50f586954ece1f38803dd430e4fc52dcf6f54aa55511cd6e12b46d2dc",
+  "generated_at": "2026-09-06T02:32:31.520Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-release-identity-and-smoke",
+      "task_text": "单切片：0.14.21 候选身份与 SMOKE-core-192 runner——package/lockfile/五 plugin manifest/asset-manifest/LOCAL_RELEASE_CANDIDATE_VERSION=0.14.21、ROLLBACK=0.14.20/tripwire/golden 同步（UT-S19-38 断言全源一致含 guard-check manifest 条目）；新增 scripts/smoke-guard-hook-0-14-21.js（安装态 guard 全链+fail-closed+存量 sync 补齐+0.14.20 fail-open/资产缺失对照+roundtrip）并接入 scripts/run-smoke.js 注册表、写 smoke-results.jsonl；实现含 OpenLogos reporter 的 UT-S19-38、SMOKE-core-192",
+      "owned_test_ids": [
+        "UT-S19-38",
+        "SMOKE-core-192"
+      ],
+      "runner_selectors": [
+        "UT-S19-38",
+        "SMOKE-core-192"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S19-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}
