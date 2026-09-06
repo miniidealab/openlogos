@@ -24,6 +24,8 @@ const sources = [
   { group: 'schemas', path: 'spec/schema/status.schema.json', sourcePath: source('spec/schema/status.schema.json', 'spec/schema/status.schema.json') },
   { group: 'schemas', path: 'spec/schema/merge-transaction.schema.json', sourcePath: source('spec/schema/merge-transaction.schema.json', 'spec/schema/merge-transaction.schema.json') },
   { group: 'plugins', path: 'claude-plugin-template/.claude-plugin/plugin.json', sourcePath: source('claude-plugin-template/.claude-plugin/plugin.json', 'plugin/.claude-plugin/plugin.json') },
+  // fix-claude-guard-hook-project-dir-and-sync-deploy：guard-check 纳入托管资产面（版本化哈希）
+  { group: 'plugins', path: 'claude-plugin-template/bin/guard-check', sourcePath: source('claude-plugin-template/bin/guard-check', 'plugin/bin/guard-check') },
   { group: 'plugins', path: 'claude-plugin-template/skills/change-writer/SKILL.md', sourcePath: source('claude-plugin-template/skills/change-writer/SKILL.md', 'plugin/skills/change-writer/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/architecture-designer/SKILL.md', sourcePath: source('claude-plugin-template/skills/architecture-designer/SKILL.md', 'plugin/skills/architecture-designer/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/scenario-architect/SKILL.md', sourcePath: source('claude-plugin-template/skills/scenario-architect/SKILL.md', 'plugin/skills/scenario-architect/SKILL.md') },

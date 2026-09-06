@@ -971,38 +971,64 @@ export function findClaudePluginTemplateSource(): string | null {
   return null;
 }
 
+// fix-claude-guard-hook-project-dir-and-sync-deploy：hook 注册统一为 Claude Code 官方项目根
+// 环境变量形态——相对路径 command 在非项目根 cwd 会话下不可解析（缺陷①），属缺陷而非可选写法。
+export const CLAUDE_GUARD_HOOK_COMMAND = '"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check';
+export const CLAUDE_GUARD_HOOK_LEGACY_COMMAND = '.claude/openlogos/bin/guard-check';
+export const CLAUDE_PHASE_HOOK_COMMAND = '"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase';
+export const CLAUDE_PHASE_HOOK_LEGACY_COMMAND = '.claude/openlogos/bin/openlogos-phase';
+
+/**
+ * hook 数组内的幂等注册 + 旧相对路径条目就地迁移：
+ * legacy command → 改写为新形态；新形态重复条目去重收敛为一条；皆无则不追加（由调用方决定 group 结构）。
+ * 用户自有条目（command 不在新旧集合内）字节不变。返回是否发生修改与新形态是否在场。
+ */
+function migrateClaudeHookEntries(
+  groups: unknown[],
+  command: string,
+  legacyCommands: string[],
+): { changed: boolean; present: boolean } {
+  let changed = false;
+  let seen = 0;
+  for (const group of groups) {
+    if (typeof group !== 'object' || group === null) continue;
+    const g = group as Record<string, unknown>;
+    if (!Array.isArray(g['hooks'])) continue;
+    const kept: unknown[] = [];
+    for (const item of g['hooks'] as unknown[]) {
+      if (typeof item !== 'object' || item === null) { kept.push(item); continue; }
+      const h = item as Record<string, unknown>;
+      let cmd = h['command'];
+      if (typeof cmd === 'string' && legacyCommands.includes(cmd)) {
+        h['command'] = command;
+        cmd = command;
+        changed = true;
+      }
+      if (cmd === command) {
+        seen += 1;
+        if (seen > 1) { changed = true; continue; } // 历史异常态：新旧并存/重复 → 收敛为唯一新形态
+      }
+      kept.push(item);
+    }
+    if (kept.length !== (g['hooks'] as unknown[]).length) g['hooks'] = kept;
+  }
+  return { changed, present: seen > 0 };
+}
+
 /**
  * Merges the openlogos PreToolUse guard hook into .claude/settings.json.
- * Idempotent: only appends if the hook command is not already present.
+ * Idempotent: appends only when absent; legacy relative-path entries are migrated in place.
  */
-function mergeClaudePreToolUseGuard(root: string, guardRelPath: string): void {
+function mergeClaudePreToolUseGuard(root: string): boolean {
   const settingsPath = join(root, '.claude', 'settings.json');
-  if (!existsSync(settingsPath)) return; // SessionStart merge creates it first
+  if (!existsSync(settingsPath)) return false; // SessionStart merge creates it first
 
   let data: Record<string, unknown> = {};
   try {
     data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
   } catch {
-    return; // Malformed JSON — skip
+    return false; // Malformed JSON — skip
   }
-
-  const hookEntry = { type: 'command', command: guardRelPath };
-
-  // Check if already registered under PreToolUse
-  const hooks = data['hooks'] as Record<string, unknown> | undefined;
-  const preToolUse = hooks?.['PreToolUse'];
-  const alreadyRegistered = Array.isArray(preToolUse) &&
-    preToolUse.some((group: unknown) => {
-      if (typeof group !== 'object' || group === null) return false;
-      const g = group as Record<string, unknown>;
-      return Array.isArray(g['hooks']) &&
-        (g['hooks'] as unknown[]).some((h: unknown) => {
-          if (typeof h !== 'object' || h === null) return false;
-          return (h as Record<string, unknown>)['command'] === guardRelPath;
-        });
-    });
-
-  if (alreadyRegistered) return;
 
   if (!data['hooks'] || typeof data['hooks'] !== 'object') {
     data['hooks'] = {};
@@ -1011,12 +1037,20 @@ function mergeClaudePreToolUseGuard(root: string, guardRelPath: string): void {
   if (!Array.isArray(hooksObj['PreToolUse'])) {
     hooksObj['PreToolUse'] = [];
   }
-  (hooksObj['PreToolUse'] as unknown[]).push({
-    matcher: 'Edit|Write|Bash',
-    hooks: [hookEntry],
-  });
-
-  writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+  const groups = hooksObj['PreToolUse'] as unknown[];
+  const { changed, present } = migrateClaudeHookEntries(
+    groups, CLAUDE_GUARD_HOOK_COMMAND, [CLAUDE_GUARD_HOOK_LEGACY_COMMAND],
+  );
+  let updated = changed;
+  if (!present) {
+    groups.push({
+      matcher: 'Edit|Write|Bash',
+      hooks: [{ type: 'command', command: CLAUDE_GUARD_HOOK_COMMAND }],
+    });
+    updated = true;
+  }
+  if (updated) writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+  return updated;
 }
 
 /**
@@ -1024,14 +1058,14 @@ function mergeClaudePreToolUseGuard(root: string, guardRelPath: string): void {
  * Idempotent: only appends if the hook command is not already present.
  * Returns whether the file was created or updated.
  */
-function mergeClaudeSettings(root: string, binRelPath: string): { created: boolean; updated: boolean } {
+function mergeClaudeSettings(root: string): { created: boolean; updated: boolean } {
   const settingsDir = join(root, '.claude');
   const settingsPath = join(settingsDir, 'settings.json');
   mkdirSync(settingsDir, { recursive: true });
 
   const hookEntry = {
     type: 'command',
-    command: binRelPath,
+    command: CLAUDE_PHASE_HOOK_COMMAND,
   };
 
   if (!existsSync(settingsPath)) {
@@ -1052,23 +1086,6 @@ function mergeClaudeSettings(root: string, binRelPath: string): { created: boole
     return { created: false, updated: false };
   }
 
-  // Check if the hook command is already registered
-  const hooks = data['hooks'] as Record<string, unknown> | undefined;
-  const sessionStart = hooks?.['SessionStart'];
-  const alreadyRegistered = Array.isArray(sessionStart) &&
-    sessionStart.some((group: unknown) => {
-      if (typeof group !== 'object' || group === null) return false;
-      const g = group as Record<string, unknown>;
-      return Array.isArray(g['hooks']) &&
-        (g['hooks'] as unknown[]).some((h: unknown) => {
-          if (typeof h !== 'object' || h === null) return false;
-          return (h as Record<string, unknown>)['command'] === binRelPath;
-        });
-    });
-
-  if (alreadyRegistered) return { created: false, updated: false };
-
-  // Append the hook entry
   if (!data['hooks'] || typeof data['hooks'] !== 'object') {
     data['hooks'] = {};
   }
@@ -1076,10 +1093,17 @@ function mergeClaudeSettings(root: string, binRelPath: string): { created: boole
   if (!Array.isArray(hooksObj['SessionStart'])) {
     hooksObj['SessionStart'] = [];
   }
-  (hooksObj['SessionStart'] as unknown[]).push({ hooks: [hookEntry] });
-
-  writeFileSync(settingsPath, JSON.stringify(data, null, 2));
-  return { created: false, updated: true };
+  const groups = hooksObj['SessionStart'] as unknown[];
+  const { changed, present } = migrateClaudeHookEntries(
+    groups, CLAUDE_PHASE_HOOK_COMMAND, [CLAUDE_PHASE_HOOK_LEGACY_COMMAND],
+  );
+  let updated = changed;
+  if (!present) {
+    groups.push({ hooks: [hookEntry] });
+    updated = true;
+  }
+  if (updated) writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+  return { created: false, updated };
 }
 
 export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
@@ -1091,13 +1115,17 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
   const source = findClaudePluginTemplateSource();
   if (!source || !existsSync(source)) return null;
 
-  // Idempotency check: if commands dir already has files, skip deployment
+  // fix-claude-guard-hook-project-dir-and-sync-deploy（缺陷③）：guard 资产（bin + hook 注册/迁移）
+  // 是 sync 托管资产面成员，**恒部署**——不得被 commands 幂等 skip 一并跳过，否则存量项目永远补不齐硬闸。
+  const guardHooksUpdated = deployClaudeGuardAssets(root, source);
+
+  // Idempotency check: if commands dir already has files, skip commands/agents deployment
   const commandsTargetDir = join(root, '.claude', 'commands', 'openlogos');
   if (existsSync(commandsTargetDir)) {
     try {
       const existing = readdirSync(commandsTargetDir).filter(f => f.endsWith('.md'));
       if (existing.length > 0) {
-        return { commandCount: 0, agentCount: 0, hooksUpdated: false, skipped: true };
+        return { commandCount: 0, agentCount: 0, hooksUpdated: guardHooksUpdated, skipped: true };
       }
     } catch { /* fall through to deploy */ }
   }
@@ -1125,10 +1153,25 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
     }
   }
 
+  void locale; // locale reserved for future use
+  return {
+    commandCount,
+    agentCount,
+    hooksUpdated: guardHooksUpdated,
+    skipped: false,
+  };
+}
+
+/**
+ * fix-claude-guard-hook-project-dir-and-sync-deploy：guard 资产两件套的恒部署入口
+ * （init/adopt/sync 共用）——bin 以随包字节刷新（版本化哈希由 asset-manifest 登记），
+ * hook 注册走幂等迁移语义。返回 settings.json 是否发生变更。
+ */
+function deployClaudeGuardAssets(root: string, source: string): boolean {
+  const binTargetDir = join(root, '.claude', 'openlogos', 'bin');
+
   // Deploy bin: plugin/bin/openlogos-phase → .claude/openlogos/bin/openlogos-phase
   const binSrc = join(source, 'bin', 'openlogos-phase');
-  const binTargetDir = join(root, '.claude', 'openlogos', 'bin');
-  const binRelPath = '.claude/openlogos/bin/openlogos-phase';
   if (existsSync(binSrc)) {
     mkdirSync(binTargetDir, { recursive: true });
     const binDest = join(binTargetDir, 'openlogos-phase');
@@ -1138,7 +1181,6 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
 
   // Deploy bin: plugin/bin/guard-check → .claude/openlogos/bin/guard-check
   const guardSrc = join(source, 'bin', 'guard-check');
-  const guardRelPath = '.claude/openlogos/bin/guard-check';
   if (existsSync(guardSrc)) {
     mkdirSync(binTargetDir, { recursive: true });
     const guardDest = join(binTargetDir, 'guard-check');
@@ -1146,19 +1188,13 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
     try { chmodSync(guardDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
   }
 
-  // Merge SessionStart hook into .claude/settings.json
-  const settingsResult = mergeClaudeSettings(root, binRelPath);
+  // Merge SessionStart hook into .claude/settings.json（创建骨架先行）
+  const settingsResult = mergeClaudeSettings(root);
 
   // Merge PreToolUse guard hook into .claude/settings.json
-  mergeClaudePreToolUseGuard(root, guardRelPath);
+  const guardUpdated = mergeClaudePreToolUseGuard(root);
 
-  void locale; // locale reserved for future use
-  return {
-    commandCount,
-    agentCount,
-    hooksUpdated: settingsResult.updated,
-    skipped: false,
-  };
+  return settingsResult.updated || guardUpdated;
 }
 
 export function deployOpenCodePlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean }; commandCount: number } | null {

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, copyFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
 import { deployClaudeCodePlugin, findClaudePluginTemplateSource } from '../src/commands/init.js';
 
@@ -21,13 +21,19 @@ function runGuardCheck(
   root: string,
   toolName: string,
   toolInput: Record<string, unknown>,
+  projectDir?: string | null,
 ): { exitCode: number; stdout: string; stderr: string } {
   const input = JSON.stringify({ tool_name: toolName, tool_input: toolInput });
+  // 默认剥离会话环境的 CLAUDE_PROJECT_DIR（否则脚本会 cd 到真实仓库根）；显式传入时注入
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.CLAUDE_PROJECT_DIR;
+  if (projectDir) env.CLAUDE_PROJECT_DIR = projectDir;
   const result = spawnSync('bash', [GUARD_CHECK_SRC], {
     input,
     cwd: root,
     encoding: 'utf-8',
     timeout: 5000,
+    env,
   });
   return {
     exitCode: result.status ?? 1,
@@ -126,7 +132,8 @@ describe('S09 Unit Tests — guard-check script', () => {
     // makeTempRoot without scaffoldProject — no logos dir
     const { root: emptyRoot, cleanup: emptyCleanup } = makeTempRoot();
     try {
-      const result = runGuardCheck(emptyRoot, 'Edit', { file_path: join(emptyRoot, 'src', 'index.ts') });
+      // 新合同：非 OpenLogos 项目放行要求项目根已确认（CLAUDE_PROJECT_DIR 或 cwd 事实）
+      const result = runGuardCheck(emptyRoot, 'Edit', { file_path: join(emptyRoot, 'src', 'index.ts') }, emptyRoot);
       expect(result.exitCode).toBe(0);
     } finally {
       emptyCleanup();
@@ -146,7 +153,7 @@ describe('S09 Unit Tests — guard-check script', () => {
     expect(existsSync(guardDest)).toBe(true);
 
     // Should be executable
-    const stat = require('node:fs').statSync(guardDest);
+    const stat = statSync(guardDest);
     expect(stat.mode & 0o111).toBeGreaterThan(0);
   });
 
@@ -173,7 +180,7 @@ describe('S09 Unit Tests — guard-check script', () => {
         Array.isArray(g['hooks']) &&
         (g['hooks'] as unknown[]).some((h: unknown) => {
           if (typeof h !== 'object' || h === null) return false;
-          return (h as Record<string, unknown>)['command'] === '.claude/openlogos/bin/guard-check';
+          return (h as Record<string, unknown>)['command'] === '"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check';
         });
     });
     expect(hasGuardHook).toBe(true);

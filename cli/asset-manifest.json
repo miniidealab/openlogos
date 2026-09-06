@@ -74,6 +74,10 @@
       "sha256": "6834e4a3a457c05b6216ac3f4580eba5257d8c52093f6fe0a2b44d40805a3d6b"
     },
     {
+      "path": "claude-plugin-template/bin/guard-check",
+      "sha256": "164ee12d1f7a5f31b7bc6ad7bf3b45dad2dea8af99e564d998c74f107ba02d54"
+    },
+    {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
       "sha256": "e03f933ba26aec7eed20e04178f6ff275e7cd45961e2c3e6f2e531add2af1534"
     },
@@ -98,5 +102,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "240e9ffc8b9d2c3269c6937637290c23c2ea3e9f664352308aae60bc000b5605"
+  "payloadHash": "46ba2de1b22b86b0117322ea95049205c2e7b294ab7a13f926bac6e3f6ccf7ed"
 }

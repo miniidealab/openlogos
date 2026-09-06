@@ -1473,7 +1473,7 @@ describe('S01 Unit Tests — deployClaudeCodePlugin', () => {
     const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf-8'));
     expect(settings.hooks?.SessionStart).toBeDefined();
     const hooks = settings.hooks.SessionStart as Array<{ hooks: Array<{ command: string }> }>;
-    const hasHook = hooks.some(g => g.hooks?.some(h => h.command === '.claude/openlogos/bin/openlogos-phase'));
+    const hasHook = hooks.some(g => g.hooks?.some(h => h.command === '"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase'));
     expect(hasHook).toBe(true);
   });
 

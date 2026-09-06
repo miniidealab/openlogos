@@ -31,12 +31,26 @@ block() {
   exit 2
 }
 
+# ── Step 0: Resolve project root（fix-claude-guard-hook-project-dir-and-sync-deploy）──
+# 一切文件判定以项目根为基准：CLAUDE_PROJECT_DIR 在场即收敛；缺失时仅当 cwd 恰为项目根
+# 可按 cwd 回退（旧版 Claude Code 兼容窗口）；否则 fail-closed——「不知道项目根在哪」
+# 不得落入下方「非 OpenLogos 项目放行」分支。
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+  if ! cd "$CLAUDE_PROJECT_DIR" 2>/dev/null; then
+    printf '{"reason":"openlogos guard: 无法进入 CLAUDE_PROJECT_DIR，fail-closed（请检查该环境变量指向的目录）"}'
+    exit 2
+  fi
+elif [ ! -f "logos/logos.config.json" ]; then
+  printf '{"reason":"openlogos guard: CLAUDE_PROJECT_DIR 缺失且当前目录不是 OpenLogos 项目根，fail-closed（请升级 Claude Code 或从项目根启动会话）"}'
+  exit 2
+fi
+
 # ── Step 1: Check if logos project exists ────────────────────────────────────
 YAML_FILE="logos/logos-project.yaml"
 CONFIG_FILE="logos/logos.config.json"
 
 if [ ! -f "$CONFIG_FILE" ]; then
-  # Not an OpenLogos project — allow everything
+  # Not an OpenLogos project — allow everything（前提：项目根已由 Step 0 确认）
   exit 0
 fi
 
