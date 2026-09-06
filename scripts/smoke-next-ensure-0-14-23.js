@@ -108,7 +108,12 @@ async function setupReadyProject(inst, dir, { specMerged = true } = {}) {
   writeFileSync(join(dir, SPEC_REL), after);
   const proposalDir = join(dir, 'logos', 'changes', SLUG);
   mkdirSync(proposalDir, { recursive: true });
+  writeFileSync(join(proposalDir, 'proposal.md'), '# 变更提案：smoke ensure 夹具\n\n## 变更原因\n\n安装态夹具。\n');
   writeFileSync(join(proposalDir, 'PLAN_APPROVED'), '');
+  // 测试 ID 证据：post-merge 阶段按 delta 测试文件 + 已合并规格中的结构化 ID 判定
+  mkdirSync(join(proposalDir, 'deltas', 'test'), { recursive: true });
+  writeFileSync(join(proposalDir, 'deltas', 'test', 'core-S01-test-cases.md'),
+    '## ADDED — 用例\n\n| ID | 描述 |\n|---|---|\n| UT-S01-01 | a |\n| UT-S01-02 | b |\n');
   if (specMerged) {
     const { buildTestChangeSet } = await import(pathToFileURL(join(inst.pkgRoot, 'dist', 'lib', 'test-change-set.js')).href);
     writeFileSync(join(proposalDir, 'SPEC_MERGED'), JSON.stringify({
