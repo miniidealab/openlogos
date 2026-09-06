@@ -1,3 +1,47 @@
+# 部署报告：fix-next-ensure-initial-plan-slice-transaction / OpenLogos 0.14.23（2026-09-06，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-next-ensure-initial-plan-slice-transaction`（发布内容 = next 问即建修复：initial-plan 切片事务由 `next` 在 ready-to-implement 首达即创建并输出 `slice_transaction` canonical 投影，消除全自动 driver 首达 plan-slices 的鸡生蛋死锁）。
+- **授权与门禁**：用户明确指令「请打开任务列表并执行部署任务，部署完成后请 smoke」（活跃提案即本案，指令中 slug 为上一提案笔误）；`openlogos verify` PASS（2172/2172，覆盖率与通过率 100%），`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.23` 已完成真实 npm pack、制品身份核对（随包 `dist/commands/next.js` 含问即建新字节）、隔离 prefix 行为矩阵（SMOKE-core-194 四类证据全 PASS，含固定 0.14.22 无投影/不落盘缺陷复现对照与 roundtrip 无混装）、本机全局安装；新 shell 复核 `openlogos --version` 精确 `0.14.23`，package/asset-manifest/五类 plugin manifest 全同源。
+- **矩阵首跑失败与修复**：SMOKE-core-194 runner 首跑 FAIL（安装态夹具缺 `proposal.md` 与 `deltas/test` 测试 ID 证据，派生停在 test-id-required 而非 ready-to-implement，误判无投影）；与 UT 夹具对齐后（commit `f1fede9`，runner 为仓侧驱动脚本、不在 tarball 内，candidate identity 不受影响）矩阵 PASS。
+- **数据迁移 / 服务启动**：无 / 不适用（事务文件为提案目录内 CLI 私有运行态）。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+- **正式 smoke**：`openlogos smoke` PASS——164/164 定义用例全部执行，覆盖率与通过率 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场；SMOKE-core-194 pass（证据与隔离矩阵同源，candidate 同哈希 `de042d28…507a5b`）。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `f1fede9` |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/fix-next-ensure-initial-plan-slice-transaction/miniidealab-openlogos-0.14.23.tgz`；2,346,608 字节；791 文件 |
+| candidate SHA-256 | `de042d28db4e143a0da0e1e4dc63a9169557ac9cc4dde4ead8e8164ccf507a5b` |
+| 固定回滚 tarball | `logos/resources/verify/deployment-artifacts/fix-guard-check-external-path-and-stderr/miniidealab-openlogos-0.14.22.tgz`（0.14.22 部署窗口冻结件） |
+| 回滚 SHA-256 | `0bdcefb37a0743575d44c7645169c0c668bbcaaa22e206e7e209325f8a283ac1` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → dist/index.js / `0.14.22` |
+
+可复制回滚命令：
+
+```bash
+npm install -g logos/resources/verify/deployment-artifacts/fix-guard-check-external-path-and-stderr/miniidealab-openlogos-0.14.22.tgz
+openlogos --version   # 期望 0.14.22
+```
+
+## 三、隔离矩阵证据（SMOKE-core-194，`matrix-smoke-results.jsonl` 冻结入库）
+
+| 矩阵项 | 结论 |
+|---|---|
+| candidate identity | `0.14.23`，tarball sha256 `de042d28…507a5b`，随包 next.js 含问即建新字节 |
+| next 问即建（核心验收①） | 安装态构造 ready-to-implement 提案 → `next --format json` 携 `slice_transaction` 投影（`origin=initial-plan`、`phase=collecting`、`required=2`）且事务文件落盘 |
+| 幂等与续用（核心验收②） | 重跑 `next` 投影 `transaction_id` 不变；`submit-content` 续用同一事务不重建 |
+| 非触发场景零回归 | delta-writing 前沿 `next` 不创建事务、不输出该字段 |
+| 0.14.22 缺陷复现对照 | 同场景 `next` 输出**无 `slice_transaction` 字段**且事务文件**不落盘**（缺陷复现）——矩阵未空转 |
+| rollback roundtrip | `0.14.22→0.14.23` 往返无混装，恢复后问即建结论不变 |
+
+---
+
 # 部署报告：fix-guard-check-external-path-and-stderr / OpenLogos 0.14.22（2026-09-06，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论

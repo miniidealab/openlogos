@@ -1,0 +1,1 @@
+{"id":"SMOKE-core-194","status":"pass","timestamp":"2026-09-06T16:09:18.548Z","duration_ms":4478,"environment":"next-ensure-staging","evidence":["candidate=0.14.23 sha256:de042d28db4e143a0da0e1e4dc63a9169557ac9cc4dde4ead8e8164ccf507a5b","问即建投影 + 事务落盘 + 幂等续用 + 非触发零回归 通过","0.14.22 无投影且不落盘缺陷复现对照有效","roundtrip 0.14.22→0.14.23 无混装且问即建结论不变"]}
