@@ -1,0 +1,1 @@
+{"id":"SMOKE-core-193","status":"pass","timestamp":"2026-09-06T15:17:55.688Z","duration_ms":11042,"environment":"guard-fix-staging","evidence":["candidate=0.14.22 sha256:0bdcefb37a0743575d44c7645169c0c668bbcaaa22e206e7e209325f8a283ac1","管辖边界放行 + 拦截 stderr 双通道 + fail-closed stderr + 项目内零回归 通过","0.14.21 误拦截与空 stderr 缺陷复现对照有效","roundtrip 0.14.21→0.14.22 无混装且修复结论不变"]}

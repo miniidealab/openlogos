@@ -1,3 +1,46 @@
+# 部署报告：fix-guard-check-external-path-and-stderr / OpenLogos 0.14.22（2026-09-06，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-guard-check-external-path-and-stderr`（发布内容 = guard-check 两处修复：①管辖边界——项目根之外路径放行，交宿主权限系统；②阻断 reason 双通道——stdout JSON 之外同步 stderr 可读文本）。
+- **授权与门禁**：用户明确指令「请打开任务列表并执行 fix-guard-check-external-path-and-stderr 的部署任务，部署完成后请 smoke」；`openlogos verify` PASS（2165/2165，覆盖率与通过率 100%），`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.22` 已完成真实 npm pack、制品身份核对（随包 guard-check 含管辖边界判定与 block() stderr 输出新字节，sha256 `3edd52591e4ea437d16261f2e322357125f45c2c6b2eb5c8f744a06a8881d74f`，与 asset-manifest 托管条目、仓库源字节三方一致）、隔离 prefix 行为矩阵（SMOKE-core-193 四类证据全 PASS，含固定 0.14.21 误拦截/空 stderr 缺陷复现对照与 roundtrip 无混装且修复结论不变）、本机全局安装；新 shell 复核 `openlogos --version` 精确 `0.14.22`，package/asset-manifest/五类 plugin manifest 全同源。
+- **数据迁移 / 服务启动**：无 / 不适用（guard-check 为无状态判定脚本）。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+- **正式 smoke**：`openlogos smoke` PASS——163/163 定义用例全部执行，覆盖率与通过率 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场；SMOKE-core-193 pass（证据与隔离矩阵同源，candidate 同哈希 `0bdcefb3…8a283ac1`）。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `e7f0476` |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/fix-guard-check-external-path-and-stderr/miniidealab-openlogos-0.14.22.tgz`；2,344,272 字节；791 文件 |
+| candidate SHA-256 | `0bdcefb37a0743575d44c7645169c0c668bbcaaa22e206e7e209325f8a283ac1` |
+| 固定回滚 tarball | `logos/resources/verify/deployment-artifacts/deploy-0-14-21-guard-hook-release/miniidealab-openlogos-0.14.21.tgz`（0.14.21 部署窗口冻结件） |
+| 回滚 SHA-256 | `ac173f5fddff6717bfaf15787ee7ebf9c5029837277e71c20c77370abf5c285f` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → dist/index.js / `0.14.21` |
+
+可复制回滚命令：
+
+```bash
+npm install -g logos/resources/verify/deployment-artifacts/deploy-0-14-21-guard-hook-release/miniidealab-openlogos-0.14.21.tgz
+openlogos --version   # 期望 0.14.21
+```
+
+## 三、隔离矩阵证据（SMOKE-core-193，`matrix-smoke-results.jsonl` 冻结入库）
+
+| 矩阵项 | 结论 |
+|---|---|
+| candidate identity | `0.14.22`，tarball sha256 `0bdcefb3…8a283ac1`，随包 guard-check 新字节与 asset-manifest 条目一致 |
+| 管辖边界（核心验收①） | launched 无提案：Edit 项目外目标（临时 HOME 下 `~/.claude/projects/**` 形态路径、另一临时仓库绝对路径）→ exit 0 放行 |
+| 阻断 stderr 可见性（核心验收②） | 项目内源码 Edit → exit 2 且 stderr 含「变更管理拦截」与 `openlogos change` 指引、stdout `{"reason":…}` JSON 结构不变；Step 0 fail-closed 两形态 → exit 2 且 stderr 非空 |
+| 项目内判定零回归 | 白名单路径放行、有提案放行、`git push` 安全白名单放行——逐项与 0.14.21 一致 |
+| 0.14.21 缺陷复现对照 | 项目外目标 **exit 2 误拦截**（缺陷①复现）；项目内拦截 **stderr 为空**（缺陷②复现）——矩阵未空转 |
+| rollback roundtrip | `0.14.21→0.14.22` 往返无混装，恢复后修复结论不变 |
+
+---
+
 # 部署报告：deploy-0-14-21-guard-hook-release / OpenLogos 0.14.21（2026-09-05，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论

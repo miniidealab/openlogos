@@ -25,9 +25,12 @@ json_get() {
 }
 
 block() {
-  # Emit JSON reason and exit 2 to block the tool call
+  # Emit reason on both channels and exit 2 to block the tool call.
+  # stdout keeps the legacy {"reason":...} JSON (old-protocol hosts); Claude Code
+  # reads stderr for exit 2, so the actionable guidance must also go there.
   local msg="$1"
   printf '{"reason":"%s"}' "$msg"
+  printf '%b\n' "$msg" >&2
   exit 2
 }
 
@@ -37,12 +40,10 @@ block() {
 # 不得落入下方「非 OpenLogos 项目放行」分支。
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
   if ! cd "$CLAUDE_PROJECT_DIR" 2>/dev/null; then
-    printf '{"reason":"openlogos guard: 无法进入 CLAUDE_PROJECT_DIR，fail-closed（请检查该环境变量指向的目录）"}'
-    exit 2
+    block "openlogos guard: 无法进入 CLAUDE_PROJECT_DIR，fail-closed（请检查该环境变量指向的目录）"
   fi
 elif [ ! -f "logos/logos.config.json" ]; then
-  printf '{"reason":"openlogos guard: CLAUDE_PROJECT_DIR 缺失且当前目录不是 OpenLogos 项目根，fail-closed（请升级 Claude Code 或从项目根启动会话）"}'
-  exit 2
+  block "openlogos guard: CLAUDE_PROJECT_DIR 缺失且当前目录不是 OpenLogos 项目根，fail-closed（请升级 Claude Code 或从项目根启动会话）"
 fi
 
 # ── Step 1: Check if logos project exists ────────────────────────────────────
@@ -251,15 +252,21 @@ cwd = os.getcwd()  # /private/var/... (bash resolves symlinks)
 # Resolve cwd symlinks to get canonical form
 real_cwd = os.path.realpath(cwd)
 
-# For the input path, try to resolve symlinks on the directory part
-# (the file itself may not exist yet)
-path_dir = os.path.dirname(path)
-path_base = os.path.basename(path)
+# Resolve the deepest existing ancestor of the (possibly not-yet-created) path,
+# so the /tmp -> /private/tmp symlink is normalized even when the leaf dirs
+# do not exist yet.
+anc = path
+tail = []
+while anc and not os.path.exists(anc):
+    anc, base = os.path.split(anc)
+    tail.append(base)
+    if not base:
+        break
 try:
-    real_dir = os.path.realpath(path_dir) if os.path.exists(path_dir) else path_dir
+    real_anc = os.path.realpath(anc) if anc else anc
 except Exception:
-    real_dir = path_dir
-real_path = os.path.join(real_dir, path_base)
+    real_anc = anc
+real_path = os.path.join(real_anc, *reversed(tail)) if tail else real_anc
 
 # Compute relative path
 try:
@@ -284,12 +291,12 @@ const cwd = process.cwd();
 // Resolve cwd symlinks
 let realCwd = cwd;
 try { realCwd = fs.realpathSync(cwd); } catch {}
-// Resolve directory part of path (file may not exist)
-const dir = path.dirname(p);
-const base = path.basename(p);
-let realDir = dir;
-try { realDir = fs.realpathSync(dir); } catch {}
-const realP = path.join(realDir, base);
+// Resolve the deepest existing ancestor (leaf dirs may not exist yet)
+let anc = p; const tail = [];
+while (anc && !fs.existsSync(anc)) { const parsed = path.parse(anc); if (anc === parsed.root) { break; } tail.push(path.basename(anc)); anc = path.dirname(anc); }
+let realAnc = anc;
+try { realAnc = fs.realpathSync(anc); } catch {}
+const realP = tail.length ? path.join(realAnc, ...tail.reverse()) : realAnc;
 let rel = path.relative(realCwd, realP);
 if (rel.startsWith('..')) {
   const rel2 = path.relative(cwd, p);
@@ -299,13 +306,30 @@ process.stdout.write(rel);
 " "$path" 2>/dev/null)"
   fi
 
-  # Fallback: simple bash stripping
+  # Fallback: simple bash stripping. Jurisdiction first: an absolute path not
+  # under "$(pwd)/" is outside the project root — allow (host permission system
+  # owns everything outside the project; the guard only protects this project).
   if [ -z "$rel_path" ]; then
-    local norm="${path#/}"
-    local cwd_s
-    cwd_s="$(pwd)"
-    cwd_s="${cwd_s#/}"
-    rel_path="${norm#"$cwd_s/"}"
+    case "$path" in
+      /*)
+        local cwd_s
+        cwd_s="$(pwd)"
+        if [[ "$path" != "$cwd_s/"* && "$path" != "$cwd_s" ]]; then
+          return 0
+        fi
+        rel_path="${path#"$cwd_s/"}"
+        ;;
+      *)
+        rel_path="$path"
+        ;;
+    esac
+  fi
+
+  # Jurisdiction boundary (fix-guard-check-external-path-and-stderr): a
+  # normalized rel_path of ".." or "../*" targets outside the project root —
+  # allow before any whitelist prefix matching.
+  if [[ "$rel_path" == ".." || "$rel_path" == ../* ]]; then
+    return 0
   fi
 
   for prefix in "${WHITELIST_PREFIXES[@]}"; do
