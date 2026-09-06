@@ -1,0 +1,43 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_87a6b3e54618f055f1270ea4",
+  "seal_sha256": "sha256:86f63ea4a3e46f99dc0c26d59741d9b32aa89d5264c07e64ed6ce5ac9f09fa81",
+  "receipt_sha256": "sha256:5dda35dc8f20df8e80e24a57f2ea280a5dc9dedc5d785767f1f296727113edcd",
+  "completed_at": "2026-09-05T16:58:50.558Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S01-30",
+      "ST-S08-37",
+      "ST-S09-120",
+      "UT-S01-137",
+      "UT-S01-138",
+      "UT-S08-59",
+      "UT-S08-60",
+      "UT-S09-313",
+      "UT-S09-314"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S01-test-cases.md",
+        "before_sha256": "63416458ceb1b3ddfcda172288fa6d23b36cabba95b6a730101686139114d85c",
+        "after_sha256": "b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658"
+      },
+      {
+        "target_path": "logos/resources/test/core-S08-test-cases.md",
+        "before_sha256": "861962bfe5a3f761731d2a2da03d16f145e9919b39c9528db19faaf52538c3aa",
+        "after_sha256": "cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "6b6dcf249e59f62f3f23da8fbcc7e90d4a47ddab675db351c8665ec919b93d42",
+        "after_sha256": "6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816"
+      }
+    ],
+    "sha256": "sha256:f38f04c5512d5a458b22f7850512f7ef83534c802f60d11753aab2bd07e346db"
+  }
+}

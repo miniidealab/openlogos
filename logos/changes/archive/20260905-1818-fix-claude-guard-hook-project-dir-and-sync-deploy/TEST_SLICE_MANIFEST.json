@@ -1,0 +1,41 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+  "module": "core",
+  "task_fingerprint": "sha256:5b32bb5e93161da34c01d2317c8c8f61a6b7ec94fecd6cee917e06400196dd92",
+  "spec_fingerprint": "sha256:d1e16950ff732f07acceac4b1f2a8cce03ffc82f20a476ea0dfb99ca405b4b20",
+  "generated_at": "2026-09-06T01:05:33.395Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-guard-project-dir-and-sync",
+      "task_text": "单切片：Claude guard hook 三项修复——init/adopt 写入 PreToolUse/SessionStart 的 $CLAUDE_PROJECT_DIR 注册形态与新旧 command 幂等迁移；plugin/bin/guard-check 工作目录收敛（变量在场 cd、缺失且 cwd 非根 fail-closed exit 2 + 诊断，cd 后既有判定零改动）；guard 资产（bin + hook 注册）纳入 openlogos sync 托管资产面（asset-manifest 版本化哈希），存量项目 sync 补齐、幂等零重复；实现含 OpenLogos reporter 的 UT-S01-137～138、ST-S01-30、UT-S08-59～60、ST-S08-37、UT-S09-313～314、ST-S09-120",
+      "owned_test_ids": [
+        "UT-S01-137",
+        "UT-S01-138",
+        "ST-S01-30",
+        "UT-S08-59",
+        "UT-S08-60",
+        "ST-S08-37",
+        "UT-S09-313",
+        "UT-S09-314",
+        "ST-S09-120"
+      ],
+      "runner_selectors": [
+        "UT-S01-137",
+        "UT-S01-138",
+        "ST-S01-30",
+        "UT-S08-59",
+        "UT-S08-60",
+        "ST-S08-37",
+        "UT-S09-313",
+        "UT-S09-314",
+        "ST-S09-120"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S01-test-cases.md",
+        "logos/resources/test/core-S08-test-cases.md",
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    }
+  ]
+}

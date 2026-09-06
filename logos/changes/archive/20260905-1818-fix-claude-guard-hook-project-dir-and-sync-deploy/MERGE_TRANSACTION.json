@@ -1,0 +1,335 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_87a6b3e54618f055f1270ea4",
+  "slug": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+  "module": "core",
+  "phase": "completed",
+  "classification": null,
+  "plan_sha256": "sha256:0ca43b950046b205302e386350e91870b4e1c7f9bbbe97f09d1b54a129c742cb",
+  "target_set_sha256": "sha256:0c38c4f2d2f6ca93d9502c5295a18db1ee7cc1b4c3664172598eaba70a5e5d4e",
+  "schema_sha256": "sha256:2b7bebc61a68f610446b85dc9d814dc372377252cdb4765d04bce9da69d8e505",
+  "contract_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09",
+  "seal_sha256": "sha256:86f63ea4a3e46f99dc0c26d59741d9b32aa89d5264c07e64ed6ce5ac9f09fa81",
+  "preflight": {
+    "schema": "openlogos/merge-preflight@1",
+    "transaction_id": "mtx_87a6b3e54618f055f1270ea4",
+    "plan_sha256": "sha256:0ca43b950046b205302e386350e91870b4e1c7f9bbbe97f09d1b54a129c742cb",
+    "target_set_sha256": "sha256:0c38c4f2d2f6ca93d9502c5295a18db1ee7cc1b4c3664172598eaba70a5e5d4e",
+    "targets": [
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:e3c4ddc0e2d480d557d4d68b0626f973b63f2780e33b8d186622e5dac351ed4f",
+        "final_sha256": "sha256:755f384de8653cd8b2bd795a962868089289cfc9adae7b9874599b966e661cf2"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:87b13b2a0b6e894b9be54fb06eccd91a3c114865b30cab867b0b2651218d1a5c",
+        "final_sha256": "sha256:e28d6d1c3fa36c3933bd23d1fa008ef9e9bfdf49dd9938353e1481536058d138"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:f186dff27cb697166224c930e82bf8e52d49d433b59ce9606e00c9e076edafb2",
+        "final_sha256": "sha256:647e3f6e07f7c7c20904308ff4e5ab5e0c2b8e7ad1b5b325bcee31f0515f5efd"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:1bb82fb68efa8c70f9c1ce0d20394ca12b181b2b5667eebc6cff28de0b13c512",
+        "final_sha256": "sha256:9e614b09af32f475989137fe2eebf776e5e189e4aedbe237cbe36dee4839e270"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:e453f90fd863905d615deab75e7180689b5fb21b834bd1a5cb3f400ead09640a",
+        "final_sha256": "sha256:793421a1f83b34b94aa3c5c27da02de6b13f1fb7e9823726fddbc424fb66c231"
+      },
+      {
+        "path": "logos/resources/test/core-S01-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:63416458ceb1b3ddfcda172288fa6d23b36cabba95b6a730101686139114d85c",
+        "final_sha256": "sha256:b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658"
+      },
+      {
+        "path": "logos/resources/test/core-S08-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:861962bfe5a3f761731d2a2da03d16f145e9919b39c9528db19faaf52538c3aa",
+        "final_sha256": "sha256:cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:6b6dcf249e59f62f3f23da8fbcc7e90d4a47ddab675db351c8665ec919b93d42",
+        "final_sha256": "sha256:6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816"
+      },
+      {
+        "path": "spec/pretooluse-guard.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:dfd32a4c8fe5e089ba18aa32d28beb78e9a499cdedfed369ae8bfd1f83b0d082",
+        "final_sha256": "sha256:10f1b62fbff73e62aded933dd1059e5333a7b34a942fe11cbf471e475094b53e"
+      }
+    ],
+    "test_change_set_sha256": "sha256:f38f04c5512d5a458b22f7850512f7ef83534c802f60d11753aab2bd07e346db",
+    "final_target_paths": [
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/test/core-S01-test-cases.md",
+      "logos/resources/test/core-S08-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "spec/pretooluse-guard.md"
+    ],
+    "sha256": "sha256:95cb8a848a12963ea34c5f0c344cdf52990294bd32687f84582ae317d0003ae4"
+  },
+  "targets": [
+    {
+      "slot_id": "slot_5d1814ee1a18fed392ea",
+      "delta_path": "deltas/prd/1-product-requirements/core-01-requirements.md",
+      "target_path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "mode": "MODIFY",
+      "category": "requirement",
+      "producer": "agent",
+      "source_sha256": "sha256:2b3d03bb7ed7c74de6f27e775813638f1bf8ab7cbb8b55f7665896c3ed6320fc",
+      "before_sha256": "sha256:e3c4ddc0e2d480d557d4d68b0626f973b63f2780e33b8d186622e5dac351ed4f",
+      "content_sha256": "sha256:755f384de8653cd8b2bd795a962868089289cfc9adae7b9874599b966e661cf2",
+      "sealed_sha256": "sha256:755f384de8653cd8b2bd795a962868089289cfc9adae7b9874599b966e661cf2"
+    },
+    {
+      "slot_id": "slot_28026c26b8728dbf7dd3",
+      "delta_path": "deltas/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "target_path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "mode": "MODIFY",
+      "category": "feature",
+      "producer": "agent",
+      "source_sha256": "sha256:a0e2dd59f32bd4047f04c94f2487c0bea5516810e09f0804366f3f1fe8c5c32b",
+      "before_sha256": "sha256:87b13b2a0b6e894b9be54fb06eccd91a3c114865b30cab867b0b2651218d1a5c",
+      "content_sha256": "sha256:e28d6d1c3fa36c3933bd23d1fa008ef9e9bfdf49dd9938353e1481536058d138",
+      "sealed_sha256": "sha256:e28d6d1c3fa36c3933bd23d1fa008ef9e9bfdf49dd9938353e1481536058d138"
+    },
+    {
+      "slot_id": "slot_5d491ae5ddfedc1fa800",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:e52ab3cba7879bfc5547ad73b7b07cbd1edc0f46cb23d88e84aaa46738ae0eed",
+      "before_sha256": "sha256:f186dff27cb697166224c930e82bf8e52d49d433b59ce9606e00c9e076edafb2",
+      "content_sha256": "sha256:647e3f6e07f7c7c20904308ff4e5ab5e0c2b8e7ad1b5b325bcee31f0515f5efd",
+      "sealed_sha256": "sha256:647e3f6e07f7c7c20904308ff4e5ab5e0c2b8e7ad1b5b325bcee31f0515f5efd"
+    },
+    {
+      "slot_id": "slot_042337fdcd779c39a74d",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:849bc649f954b1539977b892a08ba441a1ed22f67e9c0e1537414ae0424e6545",
+      "before_sha256": "sha256:1bb82fb68efa8c70f9c1ce0d20394ca12b181b2b5667eebc6cff28de0b13c512",
+      "content_sha256": "sha256:9e614b09af32f475989137fe2eebf776e5e189e4aedbe237cbe36dee4839e270",
+      "sealed_sha256": "sha256:9e614b09af32f475989137fe2eebf776e5e189e4aedbe237cbe36dee4839e270"
+    },
+    {
+      "slot_id": "slot_6eded349358c78c1119b",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:0716adcd871cf7460088639e0937a7ba811e1947d5fcc150b8e276497bb2fa8a",
+      "before_sha256": "sha256:e453f90fd863905d615deab75e7180689b5fb21b834bd1a5cb3f400ead09640a",
+      "content_sha256": "sha256:793421a1f83b34b94aa3c5c27da02de6b13f1fb7e9823726fddbc424fb66c231",
+      "sealed_sha256": "sha256:793421a1f83b34b94aa3c5c27da02de6b13f1fb7e9823726fddbc424fb66c231"
+    },
+    {
+      "slot_id": "slot_bc6624b66384a80fa8f1",
+      "delta_path": "deltas/test/core-S01-test-cases.md",
+      "target_path": "logos/resources/test/core-S01-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:ef9853eb0e5bc873537c40fb905054512b68bab1631736f5099c9234c579f616",
+      "before_sha256": "sha256:63416458ceb1b3ddfcda172288fa6d23b36cabba95b6a730101686139114d85c",
+      "content_sha256": "sha256:b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658",
+      "sealed_sha256": "sha256:b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658"
+    },
+    {
+      "slot_id": "slot_b1b03d6201e57f51e748",
+      "delta_path": "deltas/test/core-S08-test-cases.md",
+      "target_path": "logos/resources/test/core-S08-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:7d6583b410bd47d59cb72c90f95806afa2efa6bb22241c1e2fd8fb1d3d20ce02",
+      "before_sha256": "sha256:861962bfe5a3f761731d2a2da03d16f145e9919b39c9528db19faaf52538c3aa",
+      "content_sha256": "sha256:cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2",
+      "sealed_sha256": "sha256:cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2"
+    },
+    {
+      "slot_id": "slot_354bad8123c6c5c4aed6",
+      "delta_path": "deltas/test/core-S09-test-cases.md",
+      "target_path": "logos/resources/test/core-S09-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:fea3c03db35a42f6376197402875cce6aea747adfde84edf0e0c0a22a3e2c4b0",
+      "before_sha256": "sha256:6b6dcf249e59f62f3f23da8fbcc7e90d4a47ddab675db351c8665ec919b93d42",
+      "content_sha256": "sha256:6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816",
+      "sealed_sha256": "sha256:6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816"
+    },
+    {
+      "slot_id": "slot_feb7045e2975f35379dd",
+      "delta_path": "deltas/spec/pretooluse-guard.md",
+      "target_path": "spec/pretooluse-guard.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:05ba900094e733af8c5d84aded056c0c163cb0b22d063e65397e66a2e29199c4",
+      "before_sha256": "sha256:dfd32a4c8fe5e089ba18aa32d28beb78e9a499cdedfed369ae8bfd1f83b0d082",
+      "content_sha256": "sha256:10f1b62fbff73e62aded933dd1059e5333a7b34a942fe11cbf471e475094b53e",
+      "sealed_sha256": "sha256:10f1b62fbff73e62aded933dd1059e5333a7b34a942fe11cbf471e475094b53e"
+    }
+  ],
+  "receipt": {
+    "transaction_id": "mtx_87a6b3e54618f055f1270ea4",
+    "seal_sha256": "sha256:86f63ea4a3e46f99dc0c26d59741d9b32aa89d5264c07e64ed6ce5ac9f09fa81",
+    "target_set_sha256": "sha256:0c38c4f2d2f6ca93d9502c5295a18db1ee7cc1b4c3664172598eaba70a5e5d4e",
+    "closure_sha256": "sha256:d7e4b77e36b6ac7516f5a848288c30c5bbd647454295cd576cecf164eb16539a",
+    "target_count": 9,
+    "plan_sha256": "sha256:0ca43b950046b205302e386350e91870b4e1c7f9bbbe97f09d1b54a129c742cb",
+    "change": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+    "module": "core",
+    "changed_paths": [
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/test/core-S01-test-cases.md",
+      "logos/resources/test/core-S08-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "spec/pretooluse-guard.md"
+    ],
+    "created_paths": [],
+    "final_hashes": [
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "sha256": "sha256:755f384de8653cd8b2bd795a962868089289cfc9adae7b9874599b966e661cf2"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "sha256": "sha256:e28d6d1c3fa36c3933bd23d1fa008ef9e9bfdf49dd9938353e1481536058d138"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+        "sha256": "sha256:647e3f6e07f7c7c20904308ff4e5ab5e0c2b8e7ad1b5b325bcee31f0515f5efd"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+        "sha256": "sha256:9e614b09af32f475989137fe2eebf776e5e189e4aedbe237cbe36dee4839e270"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "sha256": "sha256:793421a1f83b34b94aa3c5c27da02de6b13f1fb7e9823726fddbc424fb66c231"
+      },
+      {
+        "path": "logos/resources/test/core-S01-test-cases.md",
+        "sha256": "sha256:b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658"
+      },
+      {
+        "path": "logos/resources/test/core-S08-test-cases.md",
+        "sha256": "sha256:cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "sha256": "sha256:6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816"
+      },
+      {
+        "path": "spec/pretooluse-guard.md",
+        "sha256": "sha256:10f1b62fbff73e62aded933dd1059e5333a7b34a942fe11cbf471e475094b53e"
+      }
+    ],
+    "metadata_summaries": [],
+    "test_change_set": {
+      "schema": "openlogos/test-change-set@1",
+      "change": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+      "module": "core",
+      "source": "semantic-before-after-diff",
+      "changed_test_ids": [
+        "ST-S01-30",
+        "ST-S08-37",
+        "ST-S09-120",
+        "UT-S01-137",
+        "UT-S01-138",
+        "UT-S08-59",
+        "UT-S08-60",
+        "UT-S09-313",
+        "UT-S09-314"
+      ],
+      "removed_test_ids": [],
+      "targets": [
+        {
+          "target_path": "logos/resources/test/core-S01-test-cases.md",
+          "before_sha256": "63416458ceb1b3ddfcda172288fa6d23b36cabba95b6a730101686139114d85c",
+          "after_sha256": "b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658"
+        },
+        {
+          "target_path": "logos/resources/test/core-S08-test-cases.md",
+          "before_sha256": "861962bfe5a3f761731d2a2da03d16f145e9919b39c9528db19faaf52538c3aa",
+          "after_sha256": "cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2"
+        },
+        {
+          "target_path": "logos/resources/test/core-S09-test-cases.md",
+          "before_sha256": "6b6dcf249e59f62f3f23da8fbcc7e90d4a47ddab675db351c8665ec919b93d42",
+          "after_sha256": "6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816"
+        }
+      ],
+      "sha256": "sha256:f38f04c5512d5a458b22f7850512f7ef83534c802f60d11753aab2bd07e346db"
+    },
+    "spec_merged": {
+      "path": "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/SPEC_MERGED"
+    },
+    "commit_paths": [
+      "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/MERGE_RECEIPT.json",
+      "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/SPEC_MERGED",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/test/core-S01-test-cases.md",
+      "logos/resources/test/core-S08-test-cases.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "spec/pretooluse-guard.md"
+    ],
+    "completed_at": "2026-09-05T16:58:50.558Z",
+    "receipt_sha256": "sha256:5dda35dc8f20df8e80e24a57f2ea280a5dc9dedc5d785767f1f296727113edcd"
+  },
+  "artifact_hashes": [
+    {
+      "path": "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/MERGE_RECEIPT.json",
+      "sha256": "sha256:0b8d51985d39d59f246df2f0d10fea35c83bdedd6e37bc8c69fc2e439e12c06a"
+    },
+    {
+      "path": "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/SPEC_MERGED",
+      "sha256": "sha256:c602572e0b08d62d5bbf93cf6181c8d2e3ce105933dea2f603b2ba18fdee532b"
+    }
+  ],
+  "aborted_at": null,
+  "created_at": "2026-09-05T16:58:00.796Z",
+  "updated_at": "2026-09-05T16:58:50.558Z"
+}

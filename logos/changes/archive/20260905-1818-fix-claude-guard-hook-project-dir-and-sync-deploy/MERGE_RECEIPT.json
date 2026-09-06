@@ -1,0 +1,116 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_87a6b3e54618f055f1270ea4",
+  "seal_sha256": "sha256:86f63ea4a3e46f99dc0c26d59741d9b32aa89d5264c07e64ed6ce5ac9f09fa81",
+  "target_set_sha256": "sha256:0c38c4f2d2f6ca93d9502c5295a18db1ee7cc1b4c3664172598eaba70a5e5d4e",
+  "closure_sha256": "sha256:d7e4b77e36b6ac7516f5a848288c30c5bbd647454295cd576cecf164eb16539a",
+  "target_count": 9,
+  "plan_sha256": "sha256:0ca43b950046b205302e386350e91870b4e1c7f9bbbe97f09d1b54a129c742cb",
+  "change": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+  "module": "core",
+  "changed_paths": [
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/test/core-S01-test-cases.md",
+    "logos/resources/test/core-S08-test-cases.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "spec/pretooluse-guard.md"
+  ],
+  "created_paths": [],
+  "final_hashes": [
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:755f384de8653cd8b2bd795a962868089289cfc9adae7b9874599b966e661cf2"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:e28d6d1c3fa36c3933bd23d1fa008ef9e9bfdf49dd9938353e1481536058d138"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+      "sha256": "sha256:647e3f6e07f7c7c20904308ff4e5ab5e0c2b8e7ad1b5b325bcee31f0515f5efd"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+      "sha256": "sha256:9e614b09af32f475989137fe2eebf776e5e189e4aedbe237cbe36dee4839e270"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "sha256": "sha256:793421a1f83b34b94aa3c5c27da02de6b13f1fb7e9823726fddbc424fb66c231"
+    },
+    {
+      "path": "logos/resources/test/core-S01-test-cases.md",
+      "sha256": "sha256:b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658"
+    },
+    {
+      "path": "logos/resources/test/core-S08-test-cases.md",
+      "sha256": "sha256:cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2"
+    },
+    {
+      "path": "logos/resources/test/core-S09-test-cases.md",
+      "sha256": "sha256:6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816"
+    },
+    {
+      "path": "spec/pretooluse-guard.md",
+      "sha256": "sha256:10f1b62fbff73e62aded933dd1059e5333a7b34a942fe11cbf471e475094b53e"
+    }
+  ],
+  "metadata_summaries": [],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S01-30",
+      "ST-S08-37",
+      "ST-S09-120",
+      "UT-S01-137",
+      "UT-S01-138",
+      "UT-S08-59",
+      "UT-S08-60",
+      "UT-S09-313",
+      "UT-S09-314"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S01-test-cases.md",
+        "before_sha256": "63416458ceb1b3ddfcda172288fa6d23b36cabba95b6a730101686139114d85c",
+        "after_sha256": "b45d91deaaf65a842053e72bfa6c10f68b153ccd95ce34a313ae6761578c1658"
+      },
+      {
+        "target_path": "logos/resources/test/core-S08-test-cases.md",
+        "before_sha256": "861962bfe5a3f761731d2a2da03d16f145e9919b39c9528db19faaf52538c3aa",
+        "after_sha256": "cef633f0d14b09f008ae0ba3ef5eecacae1234e2023962c3ed45785561c707a2"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "6b6dcf249e59f62f3f23da8fbcc7e90d4a47ddab675db351c8665ec919b93d42",
+        "after_sha256": "6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816"
+      }
+    ],
+    "sha256": "sha256:f38f04c5512d5a458b22f7850512f7ef83534c802f60d11753aab2bd07e346db"
+  },
+  "spec_merged": {
+    "path": "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/MERGE_RECEIPT.json",
+    "logos/changes/fix-claude-guard-hook-project-dir-and-sync-deploy/SPEC_MERGED",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-cli-init.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S08-sync-ai-tools.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/test/core-S01-test-cases.md",
+    "logos/resources/test/core-S08-test-cases.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "spec/pretooluse-guard.md"
+  ],
+  "completed_at": "2026-09-05T16:58:50.558Z",
+  "receipt_sha256": "sha256:5dda35dc8f20df8e80e24a57f2ea280a5dc9dedc5d785767f1f296727113edcd"
+}

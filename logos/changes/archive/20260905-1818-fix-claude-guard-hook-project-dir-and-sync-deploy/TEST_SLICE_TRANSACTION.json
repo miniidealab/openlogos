@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_b404862774c745678fe88aa3",
+  "slug": "fix-claude-guard-hook-project-dir-and-sync-deploy",
+  "module": "core",
+  "phase": "completed",
+  "origin": "initial-plan",
+  "classification": null,
+  "spec_fingerprint": "sha256:d1e16950ff732f07acceac4b1f2a8cce03ffc82f20a476ea0dfb99ca405b4b20",
+  "changed_test_ids_sha256": "sha256:8518552505eb1d38b2ccd091bca6a9124098295f3c8ab9c62b18b542a0fcd7f7",
+  "schema_sha256": "sha256:2c18bb8b9a1311e0bb5a67189126ddd0818656b8f332bfbe942d5ca082e63f43",
+  "contract_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09",
+  "seal_sha256": "sha256:b7b6e82fcee60fd692873916252dc34d49d1a92adc6d3b0f8cdf4a290da2bfb3",
+  "slots": [
+    {
+      "slot_id": "slot_codesection",
+      "content_sha256": "sha256:c515411ca24654c9f5e8b4ee2711c91f5b82546a66c330c48dd650b71a35fda4",
+      "sealed_sha256": "sha256:c515411ca24654c9f5e8b4ee2711c91f5b82546a66c330c48dd650b71a35fda4"
+    },
+    {
+      "slot_id": "slot_slices",
+      "content_sha256": "sha256:f0a702c01d4ce96d9f91bcf6642a5c17fd3d742300cc4a4620bd2c6dc497676d",
+      "sealed_sha256": "sha256:f0a702c01d4ce96d9f91bcf6642a5c17fd3d742300cc4a4620bd2c6dc497676d"
+    }
+  ],
+  "staged": {
+    "slot_codesection": "> 六维打分：影响范围 1（init.ts/sync 面/plugin/bin/guard-check + 三测试文件）、行为复杂度 1（fail-closed 与新旧迁移少量分支）、契约变化 1（hook 注册形态与资产面登记，无 API/发布面）、测试规模 2（9 个新 ID）、风险 1（不部署、判定语义零变化、易回滚）、不确定性 0 → 6 分，非大任务。\n> 删后续自检：单切片无后续可删；三项修复（注册形态/工作目录收敛/sync 补齐）共享同一幂等迁移语义与同一脚本，拆开则任一片都要引用未落地的另一半（迁移判据或收敛后语义），不自闭环——按 SKILL 硬规则 0-7 分单切。\n- [ ] 单切片：Claude guard hook 三项修复——init/adopt 写入 PreToolUse/SessionStart 的 $CLAUDE_PROJECT_DIR 注册形态与新旧 command 幂等迁移；plugin/bin/guard-check 工作目录收敛（变量在场 cd、缺失且 cwd 非根 fail-closed exit 2 + 诊断，cd 后既有判定零改动）；guard 资产（bin + hook 注册）纳入 openlogos sync 托管资产面（asset-manifest 版本化哈希），存量项目 sync 补齐、幂等零重复；实现含 OpenLogos reporter 的 UT-S01-137～138、ST-S01-30、UT-S08-59～60、ST-S08-37、UT-S09-313～314、ST-S09-120\n",
+    "slot_slices": "[\n  {\n    \"slice_id\": \"slice-01-guard-project-dir-and-sync\",\n    \"task_text\": \"单切片：Claude guard hook 三项修复——init/adopt 写入 PreToolUse/SessionStart 的 $CLAUDE_PROJECT_DIR 注册形态与新旧 command 幂等迁移；plugin/bin/guard-check 工作目录收敛（变量在场 cd、缺失且 cwd 非根 fail-closed exit 2 + 诊断，cd 后既有判定零改动）；guard 资产（bin + hook 注册）纳入 openlogos sync 托管资产面（asset-manifest 版本化哈希），存量项目 sync 补齐、幂等零重复；实现含 OpenLogos reporter 的 UT-S01-137～138、ST-S01-30、UT-S08-59～60、ST-S08-37、UT-S09-313～314、ST-S09-120\",\n    \"owned_test_ids\": [\"UT-S01-137\", \"UT-S01-138\", \"ST-S01-30\", \"UT-S08-59\", \"UT-S08-60\", \"ST-S08-37\", \"UT-S09-313\", \"UT-S09-314\", \"ST-S09-120\"],\n    \"runner_selectors\": [\"UT-S01-137\", \"UT-S01-138\", \"ST-S01-30\", \"UT-S08-59\", \"UT-S08-60\", \"ST-S08-37\", \"UT-S09-313\", \"UT-S09-314\", \"ST-S09-120\"],\n    \"spec_targets\": [\"logos/resources/test/core-S01-test-cases.md\", \"logos/resources/test/core-S08-test-cases.md\", \"logos/resources/test/core-S09-test-cases.md\"]\n  }\n]\n"
+  },
+  "receipt": {
+    "transaction_id": "stx_b404862774c745678fe88aa3",
+    "completed_at": "2026-09-06T01:05:33.401Z",
+    "seal_sha256": "sha256:b7b6e82fcee60fd692873916252dc34d49d1a92adc6d3b0f8cdf4a290da2bfb3",
+    "artifacts": [
+      {
+        "path": "tasks.md",
+        "sha256": "sha256:560470113decb9fa92c30f57e77b729d73d016c0b2c50c03e7586b0ec87ac7e8"
+      },
+      {
+        "path": "TEST_SLICE_MANIFEST.json",
+        "sha256": "sha256:6b3bc43554eb8dcc3228ff759bffed5ba027007d56a608a4d0d2ac8d78bedf11"
+      }
+    ]
+  },
+  "violations": [],
+  "aborted_at": null,
+  "created_at": "2026-09-06T01:05:32.919Z",
+  "updated_at": "2026-09-06T01:05:33.401Z"
+}
