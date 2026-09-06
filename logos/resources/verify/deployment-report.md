@@ -1,3 +1,55 @@
+# 部署报告：deploy-0-14-21-guard-hook-release / OpenLogos 0.14.21（2026-09-05，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `deploy-0-14-21-guard-hook-release`（发布内容 = 已归档提案 `fix-claude-guard-hook-project-dir-and-sync-deploy` 的三项 guard 修复，零新增语义）。
+- **授权与门禁**：用户明确指令「生成提案，完成新版本的部署和 smoke」（更正上一提案的不部署决策，C01 留痕）；`openlogos verify` PASS（2161/2161，覆盖率与通过率 100%），`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.21` 已完成真实 npm pack、制品身份核对（随包 guard-check 含工作目录收敛新字节、asset-manifest 含 guard-check 托管条目）、隔离 prefix 行为矩阵（SMOKE-core-192 六类证据全 PASS，含固定 0.14.20 fail-open/资产缺失对照与 roundtrip 无混装）、本机全局安装；新 shell 复核 `openlogos --version` 精确 `0.14.21`，package/asset-manifest/五类 plugin manifest 全同源。
+- **数据迁移 / 服务启动**：无 / 不适用（settings.json 为幂等合并迁移）。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+- **正式 smoke**：`openlogos smoke` PASS——162/162 定义用例全部执行，覆盖率与通过率 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场；SMOKE-core-192 pass（六类证据与隔离矩阵同源，candidate 同哈希 `ac173f5f…c285f`）。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `951e80f` |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/deploy-0-14-21-guard-hook-release/miniidealab-openlogos-0.14.21.tgz`；2,343,187 字节；791 文件 |
+| candidate SHA-256 | `ac173f5fddff6717bfaf15787ee7ebf9c5029837277e71c20c77370abf5c285f` |
+| 固定回滚 tarball | `logos/resources/verify/deployment-artifacts/fix-reopen-test-change-set-forward-merge/miniidealab-openlogos-0.14.20.tgz`（0.14.20 部署窗口冻结件） |
+| 回滚 SHA-256 | `b252cec4465806a4555fa2cc2018fb908fc09f71ba9a198bbd9dd28fec01fcbf` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → dist/index.js / `0.14.20` |
+
+可复制回滚命令：
+
+```bash
+npm install -g --force --ignore-scripts --no-audit --no-fund /Users/huangxianglong/gitlab/openlogos/logos/resources/verify/deployment-artifacts/fix-reopen-test-change-set-forward-merge/miniidealab-openlogos-0.14.20.tgz
+/bin/zsh -lic 'command -v openlogos && openlogos --version'
+```
+
+## 三、隔离矩阵证据（账本 `deployment-artifacts/deploy-0-14-21-guard-hook-release/matrix-smoke-results.jsonl`）
+
+SMOKE-core-192 runner 在 `mktemp -d` 一次性 npm prefix 从绝对入口执行，六类证据全 PASS：
+
+1. **candidate identity**：`candidate=0.14.21 sha256:ac173f5f…c285f`；随包 guard-check 含 `CLAUDE_PROJECT_DIR` 收敛字节、manifest 托管条目在场。
+2. **guard 全链**：init 新项目两 hook 均 `$CLAUDE_PROJECT_DIR` 新形态；launched 无提案 + 子目录 cwd → Edit 拦截（exit 2 + reason）；写 guard 文件后同一调用放行。
+3. **fail-closed**：变量缺失 + 子目录 cwd → exit 2；变量指向坏目录 → exit 2（均不再静默放行）。
+4. **存量项目 sync 补齐**：无 guard-check、仅旧相对 SessionStart 的项目 sync 后——bin 与随包同字节、PreToolUse 补齐新形态、旧条目迁移；重复 sync settings 字节零变化。
+5. **0.14.20 对照有效**：同一子目录 cwd 场景在固定 0.14.20 上静默放行（fail-open 复现）、sync 不补齐 guard-check（资产缺失复现）——矩阵不空转。
+6. **rollback roundtrip**：`0.14.20→0.14.21` 每阶段 identity 对应固定制品，无混装。
+
+## 四、部署中发现并修复的问题
+
+- 无。矩阵一次通过；本窗口无 candidate 重新 pack。
+
+## 五、异常与未解决风险
+
+- 正式 smoke 后复核全局 `openlogos --version` 仍精确 `0.14.21`；dogfood 镜像经 openlogos sync 自 0.14.21 随包规范同步，本仓 settings.json 的 hook 亦迁移为 $CLAUDE_PROJECT_DIR 新形态。
+- 无未解决风险。`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 均在场；未 archive、未 npm publish、未创建 tag/release、未部署网站、未 `git push`。
+
+---
+
 # 部署报告：fix-reopen-test-change-set-forward-merge / OpenLogos 0.14.20（2026-09-05，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论
