@@ -131,7 +131,7 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
     ];
     for (const path of versionSources) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.21');
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.22');
 
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest;
     validateAssetManifest(assetManifest, cliRoot);
@@ -167,16 +167,10 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     expect(readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8')).toContain('## [0.14.1]');
   });
 
-  it('UT-S19-38: 0.14.21 候选身份全源一致与回滚身份 0.14.20，asset-manifest 含 guard-check 条目且与随包字节一致', () => {
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.21');
-    expect(LOCAL_RELEASE_ROLLBACK_VERSION).toBe('0.14.20');
-    for (const path of [
-      'cli/package.json', 'cli/package-lock.json',
-      'plugin/.claude-plugin/plugin.json', 'plugin-codex/plugin.json',
-      'plugin-zcode/.zcode-plugin/plugin.json', 'plugin-qoder/.qoder-plugin/plugin.json',
-      'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
-    ]) expect(readVersion(join(repoRoot, path)), path).toBe('0.14.21');
-    // guard-check 托管条目（fix-claude-guard-hook-project-dir-and-sync-deploy）随本候选发布：版本化哈希与随包字节一致
+  it('UT-S19-38: 0.14.21 身份转入回滚位（tripwire），guard-check 托管条目与随包字节一致、SMOKE-core-192 runner 保持接线', () => {
+    // 0.14.22 发布后，0.14.21 成为固定回滚身份（历史语义保留，候选身份断言由 UT-S19-39 承载）
+    expect(LOCAL_RELEASE_ROLLBACK_VERSION).toBe('0.14.21');
+    // guard-check 托管条目（fix-claude-guard-hook-project-dir-and-sync-deploy）：版本化哈希与随包字节一致
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest & {
       plugins: Array<{ path: string; sha256: string }>;
     };
@@ -191,6 +185,36 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     expect(dispatcher).toContain("'scripts/smoke-guard-hook-0-14-21.js'");
     const smokeContract = JSON.parse(checked(process.execPath, [join(repoRoot, 'scripts/smoke-guard-hook-0-14-21.js'), '--self-test']));
     expect(smokeContract).toMatchObject({ ids: ['SMOKE-core-192'], public_release_commands: [] });
+  });
+
+  it('UT-S19-39: 0.14.22 候选身份全源一致与回滚身份 0.14.21，asset-manifest 含 guard-check 新字节条目且与随包字节一致', () => {
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.22');
+    expect(LOCAL_RELEASE_ROLLBACK_VERSION).toBe('0.14.21');
+    for (const path of [
+      'cli/package.json', 'cli/package-lock.json',
+      'plugin/.claude-plugin/plugin.json', 'plugin-codex/plugin.json',
+      'plugin-zcode/.zcode-plugin/plugin.json', 'plugin-qoder/.qoder-plugin/plugin.json',
+      'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
+    ]) expect(readVersion(join(repoRoot, path)), path).toBe('0.14.22');
+    // guard-check 托管条目：版本化哈希与随包字节一致，且为含管辖边界判定与 block() stderr 输出的新字节
+    const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest & {
+      plugins: Array<{ path: string; sha256: string }>;
+    };
+    const guardEntry = assetManifest.plugins.find(item => item.path === 'claude-plugin-template/bin/guard-check');
+    expect(guardEntry).toBeDefined();
+    const guardBytes = readFileSync(join(repoRoot, 'plugin/bin/guard-check'));
+    expect(guardEntry!.sha256).toBe(createHash('sha256').update(guardBytes).digest('hex'));
+    const guardText = guardBytes.toString('utf8');
+    // 缺陷①新字节：管辖边界——项目根之外路径放行（白名单匹配前）
+    expect(guardText).toContain('Jurisdiction boundary');
+    expect(guardText).toContain('rel_path" == ".." || "$rel_path" == ../*');
+    // 缺陷②新字节：block() 双通道——stderr 可读 reason
+    expect(guardText).toContain(`printf '%b\\n' "$msg" >&2`);
+    // SMOKE-core-193 runner 已接线
+    const dispatcher = readFileSync(join(repoRoot, 'scripts/run-smoke.js'), 'utf8');
+    expect(dispatcher).toContain("'scripts/smoke-guard-fix-0-14-22.js'");
+    const smokeContract = JSON.parse(checked(process.execPath, [join(repoRoot, 'scripts/smoke-guard-fix-0-14-22.js'), '--self-test']));
+    expect(smokeContract).toMatchObject({ ids: ['SMOKE-core-193'], public_release_commands: [] });
   });
 
   it('UT-S19-23: 旧/混合证据和公开发布动作 fail-closed，回滚只使用固定 previous tarball', () => {

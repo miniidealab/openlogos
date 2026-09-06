@@ -78,6 +78,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_GUARD_HOOK_TARBALL,
       previousTarball: process.env.OPENLOGOS_GUARD_HOOK_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-guard-fix-0-14-22.js': {
+      tarball: process.env.OPENLOGOS_GUARD_FIX_TARBALL,
+      previousTarball: process.env.OPENLOGOS_GUARD_FIX_ROLLBACK_TARBALL,
+    },
     'scripts/smoke-trae-local-negative.js': {
       tarball: process.env.OPENLOGOS_TRAE_LOCAL_TARBALL,
       previousTarball: process.env.OPENLOGOS_TRAE_ROLLBACK_TARBALL,

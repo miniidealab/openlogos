@@ -46,15 +46,29 @@ function runGuard(
   toolName: string,
   toolInput: Record<string, unknown>,
   projectDir?: string | null,
-): { exitCode: number; stdout: string } {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  extraEnv?: Record<string, string>,
+): { exitCode: number; stdout: string; stderr: string } {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...(extraEnv ?? {}) };
   delete env.CLAUDE_PROJECT_DIR;
   if (projectDir) env.CLAUDE_PROJECT_DIR = projectDir;
   const result = spawnSync('bash', [GUARD_CHECK_SRC], {
     input: JSON.stringify({ tool_name: toolName, tool_input: toolInput }),
     cwd, encoding: 'utf-8', timeout: 5000, env,
   });
-  return { exitCode: result.status ?? 1, stdout: result.stdout ?? '' };
+  return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+/**
+ * 构造只让「路径归一化调用」失败的 python3 stub（`-c` 透传真实 python3，其余 exit 1），
+ * 前置到 PATH 后 guard-check 的 rel_path 归一化产出为空 → 强制走 bash 兜底分支。
+ */
+function bashFallbackPath(base: string): string {
+  const realPython = spawnSync('bash', ['-c', 'command -v python3'], { encoding: 'utf-8' }).stdout.trim();
+  const stubDir = join(base, 'stub-bin');
+  mkdirSync(stubDir, { recursive: true });
+  writeFileSync(join(stubDir, 'python3'),
+    `#!/bin/sh\nif [ "$1" = "-c" ]; then exec ${realPython} "$@"; fi\nexit 1\n`, { mode: 0o755 });
+  return `${stubDir}:${process.env.PATH ?? ''}`;
 }
 
 function launchedProject(base: string): void {
@@ -231,6 +245,96 @@ describe('guard-check 工作目录收敛与 fail-closed — S09', () => {
     // 有提案（guard 文件在场）→ 子目录 cwd 放行
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'x', module: 'core' }));
     expect(runGuard(sub, 'Edit', { file_path: join(root, 'src', 'index.ts') }, root).exitCode).toBe(0);
+  });
+
+  it('UT-S09-315: 项目外路径放行（管辖边界）——绝对/相对穿越/Bash 重定向一律放行，项目内阻断不外溢，兜底分支一致', () => {
+    launchedProject(root);
+    mkdirSync(join(root, 'src'), { recursive: true });
+    // 项目外目标：用户级 ~/.claude 记忆文件形态、另一临时目录绝对路径、相对穿越
+    const { root: outside, cleanup: outsideCleanup } = makeTempRoot();
+    try {
+      const externalTargets = [
+        join(outside, '.claude', 'projects', 'x', 'memory', 'a.md'),
+        join(outside, 'other-file.ts'),
+        '../outside-repo/src/x.ts',
+      ];
+      for (const target of externalTargets) {
+        expect(runGuard(root, 'Edit', { file_path: target }, root).exitCode, `Edit ${target}`).toBe(0);
+        expect(runGuard(root, 'Write', { file_path: target }, root).exitCode, `Write ${target}`).toBe(0);
+      }
+      // Bash 命令重定向项目外目标 → 放行；同命令重定向项目内非白名单目标 → 阻断（边界收窄不外溢）
+      const externalRedirect = runGuard(root, 'Bash', { command: `node build.js > ${join(outside, 'out.log')}` }, root);
+      expect(externalRedirect.exitCode).toBe(0);
+      const internalRedirect = runGuard(root, 'Bash', { command: `node build.js > ${join(root, 'src', 'out.log')}` }, root);
+      expect(internalRedirect.exitCode).toBe(2);
+      // 项目内非白名单源码仍阻断
+      expect(runGuard(root, 'Edit', { file_path: join(root, 'src', 'index.ts') }, root).exitCode).toBe(2);
+      // bash 兜底分支（python3 归一化被屏蔽）：项目外放行 / 项目内阻断，与归一化分支一致
+      const fallbackEnv = { PATH: bashFallbackPath(root) };
+      expect(runGuard(root, 'Edit', { file_path: join(outside, 'other-file.ts') }, root, fallbackEnv).exitCode).toBe(0);
+      expect(runGuard(root, 'Edit', { file_path: join(root, 'src', 'index.ts') }, root, fallbackEnv).exitCode).toBe(2);
+      expect(runGuard(root, 'Edit', { file_path: join(root, 'logos', 'changes', 'x', 'p.md') }, root, fallbackEnv).exitCode).toBe(0);
+    } finally { outsideCleanup(); }
+  });
+
+  it('UT-S09-316: 阻断 reason 双通道——stdout JSON 结构不变、stderr 含可操作指引；fail-closed 同合同；放行零 stderr 噪音', () => {
+    launchedProject(root);
+    mkdirSync(join(root, 'src'), { recursive: true });
+    // 常规阻断：stdout 为合法 JSON 且结构与旧版一致；stderr 非空含指引
+    const blocked = runGuard(root, 'Edit', { file_path: join(root, 'src', 'a.ts') }, root);
+    expect(blocked.exitCode).toBe(2);
+    const parsed = JSON.parse(blocked.stdout) as { reason: string };
+    expect(Object.keys(parsed)).toEqual(['reason']);
+    expect(parsed.reason).toContain('变更管理拦截');
+    expect(blocked.stderr.length).toBeGreaterThan(0);
+    expect(blocked.stderr).toContain('变更管理拦截');
+    expect(blocked.stderr).toContain('openlogos change');
+    // Step 0 fail-closed 两形态：stdout JSON 与 stderr 诊断同时在场
+    const badDir = runGuard(root, 'Edit', { file_path: join(root, 'src', 'a.ts') }, join(root, 'no-such-dir'));
+    expect(badDir.exitCode).toBe(2);
+    expect((JSON.parse(badDir.stdout) as { reason: string }).reason).toContain('CLAUDE_PROJECT_DIR');
+    expect(badDir.stderr).toContain('CLAUDE_PROJECT_DIR');
+    const noVar = runGuard(join(root, 'src'), 'Edit', { file_path: join(root, 'src', 'a.ts') }, null);
+    expect(noVar.exitCode).toBe(2);
+    expect((JSON.parse(noVar.stdout) as { reason: string }).reason).toContain('fail-closed');
+    expect(noVar.stderr).toContain('fail-closed');
+    // 全部放行路径 stderr 零噪音
+    const allowCases: Array<[string, Record<string, unknown>]> = [
+      ['Edit', { file_path: join(root, 'logos', 'changes', 'x', 'p.md') }],
+      ['Bash', { command: 'git status' }],
+      ['Read', { file_path: join(root, 'src', 'a.ts') }],
+    ];
+    for (const [tool, input] of allowCases) {
+      const allowed = runGuard(root, tool, input, root);
+      expect(allowed.exitCode, `${tool}`).toBe(0);
+      expect(allowed.stderr, `${tool} stderr`).toBe('');
+    }
+  });
+
+  it('ST-S09-121: 端到端——项目外写放行且可落盘；项目内双通道拦截语义一致；创建提案后放行', () => {
+    launchedProject(root);
+    mkdirSync(join(root, 'src'), { recursive: true });
+    // ① launched 无提案写项目外目标（临时 HOME 下 ~/.claude 形态路径）→ exit 0，后续写入可落盘
+    const { root: fakeHome, cleanup: homeCleanup } = makeTempRoot();
+    try {
+      const memoryFile = join(fakeHome, '.claude', 'projects', 'demo', 'memory', 'note.md');
+      const external = runGuard(root, 'Write', { file_path: memoryFile }, root);
+      expect(external.exitCode).toBe(0);
+      mkdirSync(dirname(memoryFile), { recursive: true });
+      writeFileSync(memoryFile, '# memo\n');
+      expect(readFileSync(memoryFile, 'utf-8')).toBe('# memo\n');
+      // ② 同一项目写项目内源码 → exit 2、stderr 含指引、stdout JSON 可解析且语义与 stderr 一致
+      const blocked = runGuard(root, 'Edit', { file_path: join(root, 'src', 'app.ts') }, root);
+      expect(blocked.exitCode).toBe(2);
+      const parsed = JSON.parse(blocked.stdout) as { reason: string };
+      expect(blocked.stderr).toContain('变更管理拦截');
+      expect(blocked.stderr).toContain('openlogos change');
+      expect(parsed.reason).toContain('变更管理拦截');
+      expect(parsed.reason).toContain('openlogos change');
+      // ③ 创建提案（guard 文件在场）后重放② → exit 0 放行
+      writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'fix-y', module: 'core' }));
+      expect(runGuard(root, 'Edit', { file_path: join(root, 'src', 'app.ts') }, root).exitCode).toBe(0);
+    } finally { homeCleanup(); }
   });
 
   it('ST-S09-120: 子目录 cwd 端到端——无提案 Edit 阻断且 reason 含指引；创建提案后同一调用放行', () => {
