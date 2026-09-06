@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_ee52bacc557b4021b01646b5",
+  "slug": "fix-guard-check-external-path-and-stderr",
+  "module": "core",
+  "phase": "completed",
+  "origin": "initial-plan",
+  "classification": null,
+  "spec_fingerprint": "sha256:8a72855d12a8bfeb8277b26306dfcfc0f3b5c4a3144ec38be645f7cd8b67d7b0",
+  "changed_test_ids_sha256": "sha256:7081c1a63d4319ae901e880ed0df309456f23b35172c7df16131194bcc20f89f",
+  "schema_sha256": "sha256:2c18bb8b9a1311e0bb5a67189126ddd0818656b8f332bfbe942d5ca082e63f43",
+  "contract_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09",
+  "seal_sha256": "sha256:b565bfe108cec77d6a99e4bd746255c78423c5104b08beb68ed17fd337dc38b8",
+  "slots": [
+    {
+      "slot_id": "slot_codesection",
+      "content_sha256": "sha256:e9282ff6f63abdc99fb6acb54ebf7557773e6c9398ecb57ddaee08449567859f",
+      "sealed_sha256": "sha256:e9282ff6f63abdc99fb6acb54ebf7557773e6c9398ecb57ddaee08449567859f"
+    },
+    {
+      "slot_id": "slot_slices",
+      "content_sha256": "sha256:77f516c96fc0c1dbce21086681477e30265d7384b6b6ff6967d1939fc53e7812",
+      "sealed_sha256": "sha256:77f516c96fc0c1dbce21086681477e30265d7384b6b6ff6967d1939fc53e7812"
+    }
+  ],
+  "staged": {
+    "slot_codesection": "> 六维打分：影响范围 1（plugin/bin/guard-check + 版本身份文件族 + runner + 三个测试文件）、行为复杂度 1（管辖边界 python3/node 归一化与 bash 兜底分支 + 阻断双通道输出）、契约变化 1（阻断输出合同补 stderr + 候选身份推进，无 API/DB）、测试规模 1（5 个新 ID）、风险 1（部署提案但回滚制品固定 0.14.21 tarball）、不确定性 0（两缺陷已在 runlogos 本地热修复核成立）→ 5 分，非大任务，单切片。\n> 删后续自检：单切片无后续可删。曾拟拆「guard 修复片」+「0.14.22 身份与 runner 片」：UT-S19-39 断言 asset-manifest 含 guard-check **新字节**哈希、SMOKE-core-193 矩阵同时断言 0.14.22 身份与两处修复行为——前片单独跑全量 verify 时 UT-S19-39（身份仍 0.14.21）必红，(a) 否；后片单独做则 guard 新字节不存在，(b) 亦否。两片共享同一候选发布事实，互相咬死，向前合并为单片。\n- [ ] 单切片：guard-check 管辖边界与阻断双通道修复 + 0.14.22 候选身份与 SMOKE-core-193 runner——`plugin/bin/guard-check` 两处修复（①`is_whitelisted_path` 白名单前缀匹配前先判管辖：python3/node 归一化 `rel_path` 为 `..` 或 `../` 前缀即项目根之外放行，bash 兜底分支绝对路径不位于 `$(pwd)/` 之下放行，项目内判定逐项不变；②`block()` 与 Step 0 两处 fail-closed 在既有 stdout `{\"reason\":…}` JSON 之外以 `printf '%b\\n' >&2` 同步输出可读 reason，放行路径 stderr 零噪音）；0.14.22 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.22`、`ROLLBACK=0.14.21`/tripwire/golden，asset-manifest 含 guard-check 新字节版本化哈希条目）；新增 `scripts/smoke-guard-fix-0-14-22.js`（candidate identity + 项目外放行 + 项目内拦截 stderr 含指引 + fail-closed stderr + 项目内零回归 + 0.14.21 误拦截/空 stderr 缺陷复现对照 + 0.14.21→0.14.22 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S09-315～316、ST-S09-121、UT-S19-39、SMOKE-core-193\n",
+    "slot_slices": "{\n  \"slices\": [\n    {\n      \"slice_id\": \"slice-01-guard-boundary-stderr-and-0-14-22\",\n      \"task_text\": \"单切片：guard-check 管辖边界与阻断双通道修复 + 0.14.22 候选身份与 SMOKE-core-193 runner——`plugin/bin/guard-check` 两处修复（①`is_whitelisted_path` 白名单前缀匹配前先判管辖：python3/node 归一化 `rel_path` 为 `..` 或 `../` 前缀即项目根之外放行，bash 兜底分支绝对路径不位于 `$(pwd)/` 之下放行，项目内判定逐项不变；②`block()` 与 Step 0 两处 fail-closed 在既有 stdout `{\\\"reason\\\":…}` JSON 之外以 `printf '%b\\\\n' >&2` 同步输出可读 reason，放行路径 stderr 零噪音）；0.14.22 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.22`、`ROLLBACK=0.14.21`/tripwire/golden，asset-manifest 含 guard-check 新字节版本化哈希条目）；新增 `scripts/smoke-guard-fix-0-14-22.js`（candidate identity + 项目外放行 + 项目内拦截 stderr 含指引 + fail-closed stderr + 项目内零回归 + 0.14.21 误拦截/空 stderr 缺陷复现对照 + 0.14.21→0.14.22 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S09-315～316、ST-S09-121、UT-S19-39、SMOKE-core-193\",\n      \"owned_test_ids\": [\"UT-S09-315\", \"UT-S09-316\", \"ST-S09-121\", \"UT-S19-39\", \"SMOKE-core-193\"],\n      \"runner_selectors\": [\"UT-S09-315\", \"UT-S09-316\", \"ST-S09-121\", \"UT-S19-39\", \"SMOKE-core-193\"],\n      \"spec_targets\": [\n        \"logos/resources/test/core-S09-test-cases.md\",\n        \"logos/resources/test/core-S19-test-cases.md\",\n        \"logos/resources/test/smoke/core-smoke-test-cases.md\"\n      ]\n    }\n  ]\n}\n"
+  },
+  "receipt": {
+    "transaction_id": "stx_ee52bacc557b4021b01646b5",
+    "completed_at": "2026-09-06T14:51:53.905Z",
+    "seal_sha256": "sha256:b565bfe108cec77d6a99e4bd746255c78423c5104b08beb68ed17fd337dc38b8",
+    "artifacts": [
+      {
+        "path": "tasks.md",
+        "sha256": "sha256:644b9544358b8f7e90814b33f85689ba7bdf2a826b827192032fb54d1ecc98bc"
+      },
+      {
+        "path": "TEST_SLICE_MANIFEST.json",
+        "sha256": "sha256:3bbe34dcd8774d4f0221bd4052e944ac0811134c918920731d6c771e86e19d76"
+      }
+    ]
+  },
+  "violations": [],
+  "aborted_at": null,
+  "created_at": "2026-09-06T14:51:53.488Z",
+  "updated_at": "2026-09-06T14:51:53.905Z"
+}

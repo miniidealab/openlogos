@@ -1,0 +1,17 @@
+{
+  "docPath": "/Users/huangxianglong/gitlab/openlogos/logos/changes/fix-guard-check-external-path-and-stderr/proposal.md",
+  "comments": [
+    {
+      "id": "c-1788701027792-k9mj5wx",
+      "quoteText": "部署影响",
+      "blockHint": "",
+      "content": "请帮我本机全局部署,升级到0.14.22",
+      "status": "applied",
+      "createdAt": "2026-09-06T13:23:47.792Z",
+      "author": "用户",
+      "startOffset": 1216,
+      "endOffset": 1220
+    }
+  ],
+  "updatedAt": "2026-09-06T13:25:26.703Z"
+}

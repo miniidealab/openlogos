@@ -1,0 +1,112 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_3bd16df0753794afa323bb92",
+  "seal_sha256": "sha256:7a2649bd42acdf1b0f51800d3c4534ddea508b5a3f60b6dcc61252f7c0849dba",
+  "target_set_sha256": "sha256:7b1e7678dfd82fd4b2831274f6463387c1fea0fdba1aa830ac97e4396a502bbe",
+  "closure_sha256": "sha256:dad7779b36a4c38fa9d7ae1e37b60396f9a873594e70338d64ac67a60ec3d1c4",
+  "target_count": 9,
+  "plan_sha256": "sha256:ab5aa02391eb83d4d9c2d34614bc500499e7a2027b02be0e2903eef7bd9047fb",
+  "change": "fix-guard-check-external-path-and-stderr",
+  "module": "core",
+  "changed_paths": [
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/pretooluse-guard.md"
+  ],
+  "created_paths": [],
+  "final_hashes": [
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:309147b361853cdfee26c21ef98c350037e559d09f6d4d27f9820bbd0fec1835"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:3174aa0902d132571f612d4f7457129cb8c1cd3bd6a22903185346e534f8396b"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "sha256": "sha256:948df3d43e8600413a15662f9245f65e8b44e26c694d85f587ebf2ad83a1deb1"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "sha256": "sha256:bf4d0a7930fc67763beb139e733aa316fcab74d0f13b15f05e4217ec1e37c451"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "sha256": "sha256:f2a591e7ba28c67a24a79415db5de8492b818f7c68f5d8fbf8a6682060420ef4"
+    },
+    {
+      "path": "logos/resources/test/core-S09-test-cases.md",
+      "sha256": "sha256:68630053ca84c54cad8582e8f0a1bcc30eba9732a99c76e481e4e934e20b71ff"
+    },
+    {
+      "path": "logos/resources/test/core-S19-test-cases.md",
+      "sha256": "sha256:021c56fbe4269515fbe34642d4ad09530bb516409355aa18d8e362a058edf1e3"
+    },
+    {
+      "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "sha256": "sha256:49e91afa6046ef2fd90857bc323b00a1c582964170984bdd65ac87e417ac1a87"
+    },
+    {
+      "path": "spec/pretooluse-guard.md",
+      "sha256": "sha256:2e43d7daa8d5183b0db3182f809083f09e0e42826fc48d049f556cbf2ecb04a9"
+    }
+  ],
+  "metadata_summaries": [],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-guard-check-external-path-and-stderr",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-193",
+      "ST-S09-121",
+      "UT-S09-315",
+      "UT-S09-316",
+      "UT-S19-39"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "6648ddb379cba467be59d97783a539f7865765dfdaeb676bed34336676121816",
+        "after_sha256": "68630053ca84c54cad8582e8f0a1bcc30eba9732a99c76e481e4e934e20b71ff"
+      },
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "21e8a2eab13cdc91d468b6fa7763392f027473a0e108602455ccc27672f03e21",
+        "after_sha256": "021c56fbe4269515fbe34642d4ad09530bb516409355aa18d8e362a058edf1e3"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "a3c5c4744fa019964fb71321aa4926f1359c213e8350b27022011eedbacecb34",
+        "after_sha256": "49e91afa6046ef2fd90857bc323b00a1c582964170984bdd65ac87e417ac1a87"
+      }
+    ],
+    "sha256": "sha256:8eb7f794e4f09e43dd13cf1f8213fd70d56f669bb3ef938fa2725ac00dd93071"
+  },
+  "spec_merged": {
+    "path": "logos/changes/fix-guard-check-external-path-and-stderr/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/fix-guard-check-external-path-and-stderr/MERGE_RECEIPT.json",
+    "logos/changes/fix-guard-check-external-path-and-stderr/SPEC_MERGED",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S09-test-cases.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/pretooluse-guard.md"
+  ],
+  "completed_at": "2026-09-06T13:43:44.621Z",
+  "receipt_sha256": "sha256:44ba936cf2c7ac38037e3373fc48be3252a5c202bf94346216d47f87d4791b78"
+}
