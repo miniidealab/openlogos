@@ -1,0 +1,138 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_d1dd597fda4bdc25d526019c",
+  "seal_sha256": "sha256:8febc9f8119c74f64e09ece5352e98ccf82fc3a9c67ac486254d41860de14c3a",
+  "target_set_sha256": "sha256:8edde506bf4fa4da569cdcf13257b74626e56f9f4483ff569f4ec1191932b07e",
+  "closure_sha256": "sha256:0732eb620ee6b6bad372a35b32e9f10ae4da54cc4da20f4148780d274f6c50fd",
+  "target_count": 12,
+  "plan_sha256": "sha256:226579f8fd11ab2cbfa36ce25aadc3dea95e423f26eb2d9042fe377706ed41b5",
+  "change": "fix-next-ensure-initial-plan-slice-transaction",
+  "module": "core",
+  "changed_paths": [
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S28-next-node.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/core-S28-test-cases.md",
+    "logos/resources/test/core-S32-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/cli-json-output.md",
+    "spec/test-slice-manifest.md"
+  ],
+  "created_paths": [],
+  "final_hashes": [
+    {
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "sha256": "sha256:7ace5b3c02fabec70a3781d81470ef5ca9b13a68ef2e239b00eeed3540408e31"
+    },
+    {
+      "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "sha256": "sha256:af8ff5652b47dbf6793a1c74bef16b956adc57edd72e9e7349d191ebfd7eefab"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "sha256": "sha256:1b7659158d0a37b58ffeef6e1c4df6a9b5d2beb124592a94fc0b9b7eabdb6431"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S28-next-node.md",
+      "sha256": "sha256:b6276c5404104ffba1a9740779d9cc6763c307d8c6100db3e18263ef56f38d6f"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md",
+      "sha256": "sha256:206764cbf05b0b62a528678122f3077a514d0cf8b94741ab0ed4b774ab6ff3f7"
+    },
+    {
+      "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "sha256": "sha256:4160a4513b2873c5d9f78da3a3d3fbfa5625c907c1e11b23385e00939acc08f2"
+    },
+    {
+      "path": "logos/resources/test/core-S19-test-cases.md",
+      "sha256": "sha256:8522d16d9010f929b56cfb1c97f344e69a8f956f2e66598510ca92a2feb4b07c"
+    },
+    {
+      "path": "logos/resources/test/core-S28-test-cases.md",
+      "sha256": "sha256:8b1f41654e64904b3063b59cb739ecf87342e02254e285ca6c9b8b9cbd70957a"
+    },
+    {
+      "path": "logos/resources/test/core-S32-test-cases.md",
+      "sha256": "sha256:6545124fe03c944f4e8c08a2149003e02c771606b2e32985820818e232f99e58"
+    },
+    {
+      "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "sha256": "sha256:17cbd2cbc8c1ebc22ffd1277e6f465f61b99726516421bf9a0daf9cb221efc3d"
+    },
+    {
+      "path": "spec/cli-json-output.md",
+      "sha256": "sha256:9cdcc0da49e10a8e7301218554c4a5858c427bce9ddd895f9e0510039d76f702"
+    },
+    {
+      "path": "spec/test-slice-manifest.md",
+      "sha256": "sha256:6ac9a304caabffff207199897d53610b81add6f290a691ddc3e6ebc484462f8d"
+    }
+  ],
+  "metadata_summaries": [],
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-next-ensure-initial-plan-slice-transaction",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-194",
+      "ST-S28-16",
+      "UT-S19-40",
+      "UT-S28-50",
+      "UT-S28-51",
+      "UT-S28-52",
+      "UT-S32-71",
+      "UT-S32-72"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "021c56fbe4269515fbe34642d4ad09530bb516409355aa18d8e362a058edf1e3",
+        "after_sha256": "8522d16d9010f929b56cfb1c97f344e69a8f956f2e66598510ca92a2feb4b07c"
+      },
+      {
+        "target_path": "logos/resources/test/core-S28-test-cases.md",
+        "before_sha256": "56e72927407b611db997a765f091f4a2ee4f876125266ee20c46f34df09d68d3",
+        "after_sha256": "8b1f41654e64904b3063b59cb739ecf87342e02254e285ca6c9b8b9cbd70957a"
+      },
+      {
+        "target_path": "logos/resources/test/core-S32-test-cases.md",
+        "before_sha256": "e731767c8db24ba67e0d9050688d3959b3b6fec3686845ca8efe7c3b29f07201",
+        "after_sha256": "6545124fe03c944f4e8c08a2149003e02c771606b2e32985820818e232f99e58"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "49e91afa6046ef2fd90857bc323b00a1c582964170984bdd65ac87e417ac1a87",
+        "after_sha256": "17cbd2cbc8c1ebc22ffd1277e6f465f61b99726516421bf9a0daf9cb221efc3d"
+      }
+    ],
+    "sha256": "sha256:a4d440e713d5daab97ed8c12ecf3148b655dbf676e47beeaff29a61cede16fed"
+  },
+  "spec_merged": {
+    "path": "logos/changes/fix-next-ensure-initial-plan-slice-transaction/SPEC_MERGED"
+  },
+  "commit_paths": [
+    "logos/changes/fix-next-ensure-initial-plan-slice-transaction/MERGE_RECEIPT.json",
+    "logos/changes/fix-next-ensure-initial-plan-slice-transaction/SPEC_MERGED",
+    "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+    "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S28-next-node.md",
+    "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md",
+    "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+    "logos/resources/test/core-S19-test-cases.md",
+    "logos/resources/test/core-S28-test-cases.md",
+    "logos/resources/test/core-S32-test-cases.md",
+    "logos/resources/test/smoke/core-smoke-test-cases.md",
+    "spec/cli-json-output.md",
+    "spec/test-slice-manifest.md"
+  ],
+  "completed_at": "2026-09-06T15:47:30.910Z",
+  "receipt_sha256": "sha256:4ace3fd8d0e50d260690234690c3b9dfa41d5253d79243efe2d8716c54184e12"
+}

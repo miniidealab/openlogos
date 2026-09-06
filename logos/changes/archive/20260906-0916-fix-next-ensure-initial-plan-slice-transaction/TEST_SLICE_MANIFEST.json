@@ -1,0 +1,40 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-next-ensure-initial-plan-slice-transaction",
+  "module": "core",
+  "task_fingerprint": "sha256:65aed654b18202e4448ca96dc749bb2c7b6382f2226c52b7ca2b57e293c938bf",
+  "spec_fingerprint": "sha256:bf2993165107f7cf0511509dc5b7e975a72ea889c58c9b5b6d3afa8bf984d1cd",
+  "generated_at": "2026-09-06T15:52:46.347Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-next-ensure-and-0-14-23",
+      "task_text": "单切片：next 问即建修复 + 0.14.23 候选身份与 SMOKE-core-194 runner——`cli/src/commands/next.ts` 在模块产出层（与 manifest-recovery 分支同层、同构）新增 initial-plan ensure：`proposal_step==ready-to-implement` ∧ `[code]` 标题在场切片未填 ∧ 提案未归档且无 manifest 失效态时，无事务则 `createTestSliceTransaction(origin: initial-plan)` 并输出 `slice_transaction` canonical 投影，已有事务（任意 phase 含终态）只读投影不重建不归档，创建失败省略字段且 detail 携错误信息，幂等（`transaction_id` 稳定）；非触发场景（其它 proposal_step/无 `[code]` 标题/无活跃提案/initial）零变化；`submit-content` 用即建保留为幂等兜底；0.14.23 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.23`、`ROLLBACK=0.14.22`/tripwire/golden）；新增 `scripts/smoke-next-ensure-0-14-23.js`（candidate identity + 安装态问即建全链 + 幂等续用 + 非触发零回归 + 0.14.22 无投影缺陷复现对照 + 0.14.22↔0.14.23 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S28-50～52、ST-S28-16、UT-S32-71～72、UT-S19-40、SMOKE-core-194",
+      "owned_test_ids": [
+        "UT-S28-50",
+        "UT-S28-51",
+        "UT-S28-52",
+        "ST-S28-16",
+        "UT-S32-71",
+        "UT-S32-72",
+        "UT-S19-40",
+        "SMOKE-core-194"
+      ],
+      "runner_selectors": [
+        "UT-S28-50",
+        "UT-S28-51",
+        "UT-S28-52",
+        "ST-S28-16",
+        "UT-S32-71",
+        "UT-S32-72",
+        "UT-S19-40",
+        "SMOKE-core-194"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S28-test-cases.md",
+        "logos/resources/test/core-S32-test-cases.md",
+        "logos/resources/test/core-S19-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_e81a7665174e426895c1e68f",
+  "slug": "fix-next-ensure-initial-plan-slice-transaction",
+  "module": "core",
+  "phase": "completed",
+  "origin": "initial-plan",
+  "classification": null,
+  "spec_fingerprint": "sha256:bf2993165107f7cf0511509dc5b7e975a72ea889c58c9b5b6d3afa8bf984d1cd",
+  "changed_test_ids_sha256": "sha256:5f5653be78b470f252db6ff719eadf970ab3cceb9217123e0e554eddb87f4d31",
+  "schema_sha256": "sha256:2c18bb8b9a1311e0bb5a67189126ddd0818656b8f332bfbe942d5ca082e63f43",
+  "contract_sha256": "sha256:eb97ff7744e03a8b84856d73e83f3e66dd9e1d9683d72100c0f7c12d024aee09",
+  "seal_sha256": "sha256:688752916fb4f5df5eeb6607e518f36194c99654ba88ed2ff5aae486c958c5ae",
+  "slots": [
+    {
+      "slot_id": "slot_codesection",
+      "content_sha256": "sha256:994092a20a33ab0fd3a2c123444d4ad0225871d98c91ba2c5bf62b85eaae6578",
+      "sealed_sha256": "sha256:994092a20a33ab0fd3a2c123444d4ad0225871d98c91ba2c5bf62b85eaae6578"
+    },
+    {
+      "slot_id": "slot_slices",
+      "content_sha256": "sha256:90f765cef462306a4286e0aef44c0d49d3f05d66f33e1e7dc8b845e40852e17e",
+      "sealed_sha256": "sha256:90f765cef462306a4286e0aef44c0d49d3f05d66f33e1e7dc8b845e40852e17e"
+    }
+  ],
+  "staged": {
+    "slot_codesection": "> 六维打分：影响范围 1（cli/src/commands/next.ts ensure 分支 + 版本身份文件族 + runner + 四个测试文件）、行为复杂度 1（ensure 四分支：无事务创建/活跃只读/终态只读不归档/失败如实，外加非触发零回归）、契约变化 1（next 输出在 ready-to-implement 新增携带 slice_transaction 投影 + 候选身份推进，无 API/DB）、测试规模 1（8 个新 ID）、风险 1（部署提案但回滚制品固定 0.14.22 tarball）、不确定性 0（死锁机理已由 runlogos 4 提案实证定性，恢复分支有同构先例）→ 5 分，非大任务，单切片。\n> 删后续自检：单切片无后续可删。曾拟拆「next ensure 修复片」+「0.14.23 身份与 runner 片」：UT-S19-40 断言候选身份精确 0.14.23 且 SMOKE-core-194 runner 已接线——前片单独跑全量 verify 时 UT-S19-40（身份仍 0.14.22、runner 不存在）必红，(a) 否；后片单独做则 ensure 新行为不存在，SMOKE-core-194 的问即建断言无字节可验，(b) 亦否。两片共享同一候选发布事实，互相咬死，向前合并为单片。\n- [ ] 单切片：next 问即建修复 + 0.14.23 候选身份与 SMOKE-core-194 runner——`cli/src/commands/next.ts` 在模块产出层（与 manifest-recovery 分支同层、同构）新增 initial-plan ensure：`proposal_step==ready-to-implement` ∧ `[code]` 标题在场切片未填 ∧ 提案未归档且无 manifest 失效态时，无事务则 `createTestSliceTransaction(origin: initial-plan)` 并输出 `slice_transaction` canonical 投影，已有事务（任意 phase 含终态）只读投影不重建不归档，创建失败省略字段且 detail 携错误信息，幂等（`transaction_id` 稳定）；非触发场景（其它 proposal_step/无 `[code]` 标题/无活跃提案/initial）零变化；`submit-content` 用即建保留为幂等兜底；0.14.23 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.23`、`ROLLBACK=0.14.22`/tripwire/golden）；新增 `scripts/smoke-next-ensure-0-14-23.js`（candidate identity + 安装态问即建全链 + 幂等续用 + 非触发零回归 + 0.14.22 无投影缺陷复现对照 + 0.14.22↔0.14.23 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S28-50～52、ST-S28-16、UT-S32-71～72、UT-S19-40、SMOKE-core-194\n",
+    "slot_slices": "{\n  \"slices\": [\n    {\n      \"slice_id\": \"slice-01-next-ensure-and-0-14-23\",\n      \"task_text\": \"单切片：next 问即建修复 + 0.14.23 候选身份与 SMOKE-core-194 runner——`cli/src/commands/next.ts` 在模块产出层（与 manifest-recovery 分支同层、同构）新增 initial-plan ensure：`proposal_step==ready-to-implement` ∧ `[code]` 标题在场切片未填 ∧ 提案未归档且无 manifest 失效态时，无事务则 `createTestSliceTransaction(origin: initial-plan)` 并输出 `slice_transaction` canonical 投影，已有事务（任意 phase 含终态）只读投影不重建不归档，创建失败省略字段且 detail 携错误信息，幂等（`transaction_id` 稳定）；非触发场景（其它 proposal_step/无 `[code]` 标题/无活跃提案/initial）零变化；`submit-content` 用即建保留为幂等兜底；0.14.23 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.23`、`ROLLBACK=0.14.22`/tripwire/golden）；新增 `scripts/smoke-next-ensure-0-14-23.js`（candidate identity + 安装态问即建全链 + 幂等续用 + 非触发零回归 + 0.14.22 无投影缺陷复现对照 + 0.14.22↔0.14.23 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S28-50～52、ST-S28-16、UT-S32-71～72、UT-S19-40、SMOKE-core-194\",\n      \"owned_test_ids\": [\"UT-S28-50\", \"UT-S28-51\", \"UT-S28-52\", \"ST-S28-16\", \"UT-S32-71\", \"UT-S32-72\", \"UT-S19-40\", \"SMOKE-core-194\"],\n      \"runner_selectors\": [\"UT-S28-50\", \"UT-S28-51\", \"UT-S28-52\", \"ST-S28-16\", \"UT-S32-71\", \"UT-S32-72\", \"UT-S19-40\", \"SMOKE-core-194\"],\n      \"spec_targets\": [\n        \"logos/resources/test/core-S28-test-cases.md\",\n        \"logos/resources/test/core-S32-test-cases.md\",\n        \"logos/resources/test/core-S19-test-cases.md\",\n        \"logos/resources/test/smoke/core-smoke-test-cases.md\"\n      ]\n    }\n  ]\n}\n"
+  },
+  "receipt": {
+    "transaction_id": "stx_e81a7665174e426895c1e68f",
+    "completed_at": "2026-09-06T15:52:46.360Z",
+    "seal_sha256": "sha256:688752916fb4f5df5eeb6607e518f36194c99654ba88ed2ff5aae486c958c5ae",
+    "artifacts": [
+      {
+        "path": "tasks.md",
+        "sha256": "sha256:69a8086f8e3cc0ad772a6d0b655d68da555e97745caeefc1bec4a7b98135af42"
+      },
+      {
+        "path": "TEST_SLICE_MANIFEST.json",
+        "sha256": "sha256:1b7a43d09f269f93904f84e33b7a91f1c24155c0455c65f22cd64e6a09e82a11"
+      }
+    ]
+  },
+  "violations": [],
+  "aborted_at": null,
+  "created_at": "2026-09-06T15:52:45.900Z",
+  "updated_at": "2026-09-06T15:52:46.360Z"
+}
