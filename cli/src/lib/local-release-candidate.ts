@@ -2,8 +2,8 @@ import { basename, isAbsolute, relative } from 'node:path';
 
 export const LOCAL_RELEASE_CANDIDATE_SCHEMA = 'openlogos/local-release-candidate@1' as const;
 export const LOCAL_RELEASE_PACKAGE_NAME = '@miniidealab/openlogos' as const;
-export const LOCAL_RELEASE_CANDIDATE_VERSION = '0.14.20' as const;
-export const LOCAL_RELEASE_ROLLBACK_VERSION = '0.14.19' as const;
+export const LOCAL_RELEASE_CANDIDATE_VERSION = '0.14.21' as const;
+export const LOCAL_RELEASE_ROLLBACK_VERSION = '0.14.20' as const;
 
 export const LOCAL_RELEASE_PLUGIN_MANIFEST_PATHS = [
   'claude-plugin-template/.claude-plugin/plugin.json',

@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.14.20",
+  "version": "0.14.21",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -71,7 +71,7 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "6834e4a3a457c05b6216ac3f4580eba5257d8c52093f6fe0a2b44d40805a3d6b"
+      "sha256": "909903e171aafdabd2f5fa9c40b0503b8ab860121edce59fbdd1358f9ccd186b"
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
@@ -102,5 +102,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "46ba2de1b22b86b0117322ea95049205c2e7b294ab7a13f926bac6e3f6ccf7ed"
+  "payloadHash": "71240c940ccee4998518707fe7452de2c1c52954424b3cd397bedb6ed5d9ebd8"
 }
