@@ -12,6 +12,7 @@ import {
   type SmokeCoverageCheck,
   type SmokeCoverageDiagnostic,
 } from '../lib/smoke-coverage.js';
+import { evaluateSmokePrecondition, readLifecycleFacts } from '../lib/lifecycle-gate.js';
 
 const DEFAULT_SMOKE_RESULT_PATH = 'logos/resources/verify/smoke-results.jsonl';
 const DEFAULT_SMOKE_REPORT_PATH = 'logos/resources/verify/smoke-report.md';
@@ -223,6 +224,23 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
   }
 
   const locale = readLocale(root);
+
+  // §2.67.1 前置 fail-closed 门：在读取配置、执行 smoke.command、进入 sandbox 之前判定。
+  // 顺序 ①→②→③→④ 命中即停，只报第一个错误码；拒绝时零副作用——尤其不得先清空
+  // smoke-results.jsonl（下方 command 分支会截断该文件），也绝不补写 DEPLOY_DONE。
+  const facts = readLifecycleFacts(root);
+  if (facts) {
+    const rejection = evaluateSmokePrecondition(facts, (key, vars) => t(locale, key, vars));
+    if (rejection) {
+      if (format === 'json') {
+        console.error(JSON.stringify(makeErrorEnvelope('smoke', rejection.code, rejection.message)));
+      } else {
+        console.error(`Error: [${rejection.code}] ${rejection.message}`);
+      }
+      process.exit(1);
+    }
+  }
+
   const { command, resultPath, reportPath, sandbox } = readSmokeConfig(root);
   const allowedWritePaths = [resultPath, reportPath, 'logos/resources/verify/smoke-report.md'];
   let sandboxData = buildInitialSandboxData(sandbox);

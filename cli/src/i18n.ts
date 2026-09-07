@@ -176,6 +176,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'deployDone.error.notRequired': 'This proposal does not require deployment. Archive it after verification passes.',
     'deployDone.error.deployTasksMissing': 'No non-empty [deploy] section was found in tasks.md.',
     'deployDone.error.deploymentReportMissing': 'Deployment report is missing: {path}.',
+    'smoke.gate.notRequired': 'Active proposal \'{slug}\' does not require smoke. Run `openlogos archive {slug}` after verification passes.',
+    'smoke.gate.decisionConflict': 'Deployment decision conflict. {reason} Fix the deployment decision in proposal.md / tasks.md first.',
+    'smoke.gate.deployNotDone': 'DEPLOY_DONE marker is missing. Complete the deployment, then run `openlogos deploy-done` before smoke.',
+    'smoke.gate.deployTasksIncomplete': 'The [deploy] section in tasks.md still has unchecked items. Finish the [deploy] tasks, then run `openlogos deploy-done`.',
+    'archive.gate.verifyNotPassed': 'Verification has not passed. Run `openlogos verify` and resolve any VERIFY_FAIL marker before archiving.',
+    'archive.gate.deployNotDone': 'This proposal requires deployment but DEPLOY_DONE is missing. Run `openlogos deploy-done` after the deployment is complete. A SMOKE_PASS marker does not imply the deployment was done.',
+    'archive.gate.smokeNotPassed': 'This proposal requires smoke but SMOKE_PASS is missing (or SMOKE_FAIL is present). Run `openlogos smoke` before archiving.',
+    'next.stateInconsistencyHint': 'Inconsistent state detected ({evidence}) while DEPLOY_DONE is missing — run `{remediation}` to reconcile.',
 
     // change
     'change.creating': 'Creating change proposal: {slug}',
@@ -450,6 +458,14 @@ const messages: Record<Locale, Record<string, string>> = {
     'deployDone.error.notRequired': '当前提案不需要部署。验收通过后可直接归档。',
     'deployDone.error.deployTasksMissing': 'tasks.md 中缺少非空 [deploy] section。',
     'deployDone.error.deploymentReportMissing': '缺少部署报告：{path}。',
+    'smoke.gate.notRequired': '活跃提案 \'{slug}\' 不需要 smoke。验收通过后可直接运行 `openlogos archive {slug}`。',
+    'smoke.gate.decisionConflict': '部署决策冲突。{reason} 请先修正 proposal.md / tasks.md 中的部署决策。',
+    'smoke.gate.deployNotDone': '缺少 DEPLOY_DONE 标记。请先完成部署，再运行 `openlogos deploy-done`，然后执行 smoke。',
+    'smoke.gate.deployTasksIncomplete': 'tasks.md 的 [deploy] section 仍有未勾选条目。请补齐 [deploy] 任务后运行 `openlogos deploy-done`。',
+    'archive.gate.verifyNotPassed': '验收尚未通过。归档前请运行 `openlogos verify`，并解决任何 VERIFY_FAIL 标记。',
+    'archive.gate.deployNotDone': '当前提案需要部署，但缺少 DEPLOY_DONE 标记。请在部署完成后运行 `openlogos deploy-done`。SMOKE_PASS 在场也不能反推部署已完成。',
+    'archive.gate.smokeNotPassed': '当前提案需要 smoke，但缺少 SMOKE_PASS 标记（或存在 SMOKE_FAIL）。归档前请运行 `openlogos smoke`。',
+    'next.stateInconsistencyHint': '检测到矛盾事实（{evidence}）但 DEPLOY_DONE 缺失——请运行 `{remediation}` 完成对账。',
 
     // change
     'change.creating': '创建变更提案：{slug}',

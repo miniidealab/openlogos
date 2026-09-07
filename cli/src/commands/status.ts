@@ -88,6 +88,7 @@ import {
   deriveProposalFacts,
 } from '../lib/proposal-lifecycle.js';
 import { contractVersion, mintStep } from '../lib/step-registry.js';
+import { deriveStateInconsistency, readLifecycleFactsAt, type StateInconsistency } from '../lib/lifecycle-gate.js';
 import type { StepMeta } from '../lib/step-registry.js';
 import type {
   ProposalFacts,
@@ -206,6 +207,8 @@ export interface ModuleStatusItem {
     deploy_tasks?: TaskItem[];
     plan_state?: PlanState;
     code_planning_diagnostic?: CodePlanningDiagnostic;
+    // §2.67.3：矛盾事实只读对账投影（仅命中时出现，一致状态下该键不存在——不是 null）。
+    state_inconsistency?: StateInconsistency;
   } | null;
   suggestion: string;
   // M2 切片 1a：overlay 驱动派生（仅存在已到达 overlay-added 节点 / 当前为 overlay-added 时输出）
@@ -501,6 +504,14 @@ function buildModuleStatusItem(
         ...(deployTasks.length > 0 ? { deploy_tasks: deployTasks } : {}),
         plan_state: planState,
         ...(codePlanningDiagnostic ? { code_planning_diagnostic: codePlanningDiagnostic } : {}),
+        // §2.67.3：`DEPLOY_DONE` 缺失但下游存在矛盾证据时挂只读对账投影；一致状态下该键不出现。
+        ...((() => {
+          const inconsistency = deriveStateInconsistency(
+            readLifecycleFactsAt(root, guardActiveChange, guardModule),
+            minted.proposal_step,
+          );
+          return inconsistency ? { state_inconsistency: inconsistency } : {};
+        })()),
       };
     }
 

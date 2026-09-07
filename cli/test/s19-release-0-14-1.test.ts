@@ -131,7 +131,7 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
     ];
     for (const path of versionSources) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.24');
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.25');
 
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest;
     validateAssetManifest(assetManifest, cliRoot);
@@ -209,9 +209,8 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     expect(smokeContract).toMatchObject({ ids: ['SMOKE-core-193'], public_release_commands: [] });
   });
 
-  it('UT-S19-40: 0.14.23 身份转入回滚位（tripwire），next 问即建新字节与 SMOKE-core-194 runner 保持接线', () => {
-    // 0.14.24 发布后，0.14.23 成为固定回滚身份（候选身份断言由 UT-S19-41 承载）
-    expect(LOCAL_RELEASE_ROLLBACK_VERSION).toBe('0.14.23');
+  it('UT-S19-40: next 问即建新字节与 SMOKE-core-194 runner 保持接线（0.14.23 窗口历史锚）', () => {
+    // 0.14.25 起 0.14.23 退出回滚位（回滚身份断言由 UT-S19-45 承载）；本例保留版本无关的内容与接线锚
     // 发布内容自证：next 含 initial-plan 问即建新字节（§2.65 ensure 分支）
     const nextSource = readFileSync(join(cliRoot, 'src/commands/next.ts'), 'utf8');
     expect(nextSource).toContain('initial-plan 事务的问即建');
@@ -222,15 +221,8 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     expect(smokeContract).toMatchObject({ ids: ['SMOKE-core-194'], public_release_commands: [] });
   });
 
-  it('UT-S19-41: 0.14.24 候选身份全源一致与回滚身份 0.14.23，guard-check 路径提取新字节、回滚制品 tripwire 与 SMOKE-core-195 runner 已接线', () => {
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.24');
-    expect(LOCAL_RELEASE_ROLLBACK_VERSION).toBe('0.14.23');
-    for (const path of [
-      'cli/package.json', 'cli/package-lock.json',
-      'plugin/.claude-plugin/plugin.json', 'plugin-codex/plugin.json',
-      'plugin-zcode/.zcode-plugin/plugin.json', 'plugin-qoder/.qoder-plugin/plugin.json',
-      'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
-    ]) expect(readVersion(join(repoRoot, path)), path).toBe('0.14.24');
+  it('UT-S19-41: guard-check 路径提取新字节与 SMOKE-core-195 runner 保持接线（0.14.24 窗口历史锚）', () => {
+    // 0.14.25 起 0.14.24 转入回滚位（候选身份断言由 UT-S19-45 承载）；本例保留版本无关的资产与接线锚
     // 发布内容自证：guard-check 含 Bash 写命令路径提取与逐路径管辖判定新字节，manifest 托管哈希与随包字节一致
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest & {
       plugins: Array<{ path: string; sha256: string }>;
@@ -242,17 +234,42 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     const guardText = guardBytes.toString('utf8');
     expect(guardText).toContain('fix-guard-check-bash-write-target-jurisdiction');
     expect(guardText).toContain("'^(rm|cp|mv|mkdir|touch|chmod|chown) '");
-    // 回滚制品身份 tripwire：固定 0.14.23 tarball 在场且 SHA-256 可校验
-    const rollbackTarball = join(repoRoot,
-      'logos/resources/verify/deployment-artifacts/fix-next-ensure-initial-plan-slice-transaction/miniidealab-openlogos-0.14.23.tgz');
-    expect(existsSync(rollbackTarball)).toBe(true);
-    expect(createHash('sha256').update(readFileSync(rollbackTarball)).digest('hex'))
-      .toBe('de042d28db4e143a0da0e1e4dc63a9169557ac9cc4dde4ead8e8164ccf507a5b');
     // SMOKE-core-195 runner 已接线
     const dispatcher = readFileSync(join(repoRoot, 'scripts/run-smoke.js'), 'utf8');
     expect(dispatcher).toContain("'scripts/smoke-guard-bash-0-14-24.js'");
     const smokeContract = JSON.parse(checked(process.execPath, [join(repoRoot, 'scripts/smoke-guard-bash-0-14-24.js'), '--self-test']));
     expect(smokeContract).toMatchObject({ ids: ['SMOKE-core-195'], public_release_commands: [] });
+  });
+
+  it('UT-S19-45: 0.14.25 候选身份全源一致与回滚身份 0.14.24，回滚制品 tripwire 与 SMOKE-core-196 runner 已接线', () => {
+    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.25');
+    expect(LOCAL_RELEASE_ROLLBACK_VERSION).toBe('0.14.24');
+    for (const path of [
+      'cli/package.json', 'cli/package-lock.json',
+      'plugin/.claude-plugin/plugin.json', 'plugin-codex/plugin.json',
+      'plugin-zcode/.zcode-plugin/plugin.json', 'plugin-qoder/.qoder-plugin/plugin.json',
+      'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
+    ]) expect(readVersion(join(repoRoot, path)), path).toBe('0.14.25');
+    // 发布内容自证：smoke/archive 前置 fail-closed 与只读对账投影三处新字节在场
+    const smokeSource = readFileSync(join(cliRoot, 'src/commands/smoke.ts'), 'utf8');
+    expect(smokeSource).toContain('evaluateSmokePrecondition');
+    const archiveSource = readFileSync(join(cliRoot, 'src/commands/archive.ts'), 'utf8');
+    expect(archiveSource).toContain('evaluateArchiveChain');
+    const gateSource = readFileSync(join(cliRoot, 'src/lib/lifecycle-gate.ts'), 'utf8');
+    expect(gateSource).toContain('deploy_done_missing_with_downstream_evidence');
+    // 回滚制品身份 tripwire：固定 0.14.24 tarball 在场且 SHA-256 可校验
+    const rollbackTarball = join(repoRoot,
+      'logos/resources/verify/deployment-artifacts/fix-guard-check-bash-write-target-jurisdiction/miniidealab-openlogos-0.14.24.tgz');
+    expect(existsSync(rollbackTarball)).toBe(true);
+    expect(createHash('sha256').update(readFileSync(rollbackTarball)).digest('hex'))
+      .toBe('af5d83b064d2e95d06ab622276d17bb1eceddd07e364d18eca80d2f688cf52c1');
+    // SMOKE-core-196 runner 已接线
+    const dispatcher = readFileSync(join(repoRoot, 'scripts/run-smoke.js'), 'utf8');
+    expect(dispatcher).toContain("'scripts/smoke-lifecycle-failclosed-0-14-25.js'");
+    const smokeContract196 = JSON.parse(checked(process.execPath, [
+      join(repoRoot, 'scripts/smoke-lifecycle-failclosed-0-14-25.js'), '--self-test',
+    ]));
+    expect(smokeContract196).toMatchObject({ ids: ['SMOKE-core-196'], public_release_commands: [] });
   });
 
   it('UT-S19-23: 旧/混合证据和公开发布动作 fail-closed，回滚只使用固定 previous tarball', () => {

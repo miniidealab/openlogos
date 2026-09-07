@@ -90,6 +90,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_GUARD_BASH_TARBALL,
       previousTarball: process.env.OPENLOGOS_GUARD_BASH_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-lifecycle-failclosed-0-14-25.js': {
+      tarball: process.env.OPENLOGOS_LIFECYCLE_FC_TARBALL,
+      previousTarball: process.env.OPENLOGOS_LIFECYCLE_FC_ROLLBACK_TARBALL,
+    },
     'scripts/smoke-trae-local-negative.js': {
       tarball: process.env.OPENLOGOS_TRAE_LOCAL_TARBALL,
       previousTarball: process.env.OPENLOGOS_TRAE_ROLLBACK_TARBALL,

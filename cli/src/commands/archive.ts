@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { readLocale, t, type Locale } from '../i18n.js';
+import { evaluateArchiveChain, readLifecycleFactsAt } from '../lib/lifecycle-gate.js';
 import {
   ARCHIVE_WATCH_ERROR_CODES,
   ArchiveWatchError,
@@ -164,6 +165,29 @@ export function archive(slug?: string, options: ArchiveCommandOptions = {}): Arc
     }
     console.error(`Error: Change proposal '${slug}' not found.`);
     process.exit(1);
+  }
+
+  // §2.67.2 完成链条 fail-closed 门：顺序为「链条校验 → 握手 → rename」——必须在 Windows
+  // 握手协调与目录 rename 之前判定。拒绝时零副作用：不移动目录、不删 guard、不建握手请求目录。
+  const guardModuleId = (() => {
+    if (!fs.exists(guardPath)) return null;
+    try {
+      const guard = JSON.parse(fs.readText(guardPath));
+      return guard.activeChange === slug && typeof guard.module === 'string' && guard.module.trim()
+        ? guard.module.trim() : null;
+    } catch { return null; }
+  })();
+  const lifecycleFacts = readLifecycleFactsAt(root, slug, guardModuleId, {
+    exists: path => fs.exists(path),
+    readText: path => fs.readText(path),
+  });
+  if (lifecycleFacts) {
+    const rejection = evaluateArchiveChain(lifecycleFacts, (key, vars) => t(locale, key, vars));
+    if (rejection) {
+      // archive 保持纯文本命令：稳定错误码 + 可执行补救命令写 stderr，非零退出。
+      console.error(`Error: [${rejection.code}] ${rejection.message}`);
+      process.exit(1);
+    }
   }
 
   const archiveDirname = archiveDirName(slug, now());

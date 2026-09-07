@@ -1,0 +1,99 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-deploy-done-leak-failclosed-selfheal",
+  "module": "core",
+  "task_fingerprint": "sha256:a2ac4ad140418fb2c224f04ee9f5fe53a526f42407eb9b7f59e0746c2d8be7c6",
+  "spec_fingerprint": "sha256:0e9f7411766b369a75d02d271637c1275ecb5f84920878685db07f82bcfd0bb3",
+  "generated_at": "2026-09-07T06:38:22.772Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-smoke-precondition-failclosed",
+      "task_text": "切片1：smoke 前置 fail-closed 校验——在 `cli/src/commands/smoke.ts` 执行 `smoke.command` **之前**加四项前置门（①`smoke_required=true` 否则 `SMOKE_NOT_REQUIRED`；②部署决策无冲突否则 `SMOKE_DEPLOY_DECISION_CONFLICT`；③`DEPLOY_DONE` 在场否则 `SMOKE_DEPLOY_NOT_DONE`；④`tasks.md` `[deploy]` 全勾否则 `SMOKE_DEPLOY_TASKS_INCOMPLETE`），顺序 ①→②→③→④ 命中即停只报首个错误码；复用 `readActiveProposalGuard` / `resolveProposalDeploymentDecision` / `[deploy]` section 只读判据，新增只读前置求值不改写任何文件；拒绝时零副作用（不执行 `smoke.command`、不写 `SMOKE_PASS`/`SMOKE_FAIL`、不生成 `smoke-report.md`、不追加 `smoke-results.jsonl`），错误走 stderr 稳定错误码信封、`--format json` 走 `spec/cli-json-output.md` §6 通用 envelope，message 携补救命令（③④ 指向 `openlogos deploy-done`）；禁止 auto-heal 补写 `DEPLOY_DONE`；前置全满足时既有 sandbox 执行、runner/reporter 覆盖预检、gate 判定与 `gate.reason`、skip 统计口径、`--auto` 下 `auto_execute` 信号逐项零回归；同步实现含 OpenLogos reporter 的 UT-S19-42、UT-S19-43、UT-S19-44、ST-S19-20、ST-S19-21",
+      "owned_test_ids": [
+        "UT-S19-42",
+        "UT-S19-43",
+        "UT-S19-44",
+        "ST-S19-20",
+        "ST-S19-21"
+      ],
+      "runner_selectors": [
+        "UT-S19-42",
+        "UT-S19-43",
+        "UT-S19-44",
+        "ST-S19-20",
+        "ST-S19-21"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S19-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-archive-chain-failclosed",
+      "task_text": "切片2：archive 链条 fail-closed 校验——在 `cli/src/commands/archive.ts` 移动提案目录**之前**加三级链条门（①`VERIFY_PASS` 在场且无 `VERIFY_FAIL` 否则 `ARCHIVE_VERIFY_NOT_PASSED`；②仅 `deployment_required=true` 提案要求 `DEPLOY_DONE` 否则 `ARCHIVE_DEPLOY_NOT_DONE`；③仅需部署且需 smoke 提案要求 `SMOKE_PASS` 在场且无 `SMOKE_FAIL` 否则 `ARCHIVE_SMOKE_NOT_PASSED`），顺序 ①→②→③ 命中即停；`SMOKE_PASS` 在场不得反推部署完成；archive 保持纯文本命令（不新增 stdout JSON envelope），错误码文本写 stderr 并非零退出、携补救命令（`openlogos verify` / `openlogos deploy-done` / `openlogos smoke`）；拒绝时零副作用（不移动目录、不删 `logos/.openlogos-guard`、不建 Windows 握手请求目录）；无需部署提案链条只到 ①、`deployment_decision_conflict` 语义不变、Windows 握手顺序仍为「链条校验 → 握手 → rename」；同步实现含 OpenLogos reporter 的 UT-S09-319、UT-S09-320、UT-S09-321、ST-S09-123、ST-S09-124",
+      "owned_test_ids": [
+        "UT-S09-319",
+        "UT-S09-320",
+        "UT-S09-321",
+        "ST-S09-123",
+        "ST-S09-124"
+      ],
+      "runner_selectors": [
+        "UT-S09-319",
+        "UT-S09-320",
+        "UT-S09-321",
+        "ST-S09-123",
+        "ST-S09-124"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-state-inconsistency-projection",
+      "task_text": "切片3：`state_inconsistency` 只读对账投影 + next 对账引导 + S21 唯一 writer 回归——在状态派生侧（`collectStatusData` 及 `next` 消费路径）新增只读投影：活跃提案存在 ∧ `proposal_step` 停在 `ready-to-deploy` ∧ 至少一项矛盾下游证据（`SMOKE_PASS` 在场 / `SMOKE_FAIL` 在场 / `[deploy]` 全勾）时，挂 `modules[].active_change.state_inconsistency`（legacy 单模块可回退顶层同名字段），三字段齐备 `kind=\"deploy_done_missing_with_downstream_evidence\"`、`evidence` 按固定顺序去重（`smoke_pass_marker_present` → `smoke_fail_marker_present` → `deploy_tasks_all_checked`）、`remediation=\"openlogos deploy-done\"`；`next` 命中时在既有部署授权引导后追加一行对账建议（点明矛盾事实与补救命令）；只读不变量：不落盘、不缓存、不改 `proposal_step` 派生、不写任何 marker（尤其不写 `DEPLOY_DONE`）、一致状态下字段不出现（不是 `null`）使既有 status/next golden 逐字不变、`watch` 因复用 `collectStatusData` 自动继承；同步实现含 OpenLogos reporter 的 UT-S05-56、UT-S05-57、ST-S05-26、UT-S11-80、UT-S11-81、ST-S11-46，以及跨命令回归锚 UT-S21-10（四条命令前后 `DEPLOY_DONE` 始终不存在、marker 集合零变化）、UT-S21-11（成功路径 marker 最后写、错误分支三者皆无变化）、ST-S21-04（漏标缺口不扩散 → 补标后全链恢复）",
+      "owned_test_ids": [
+        "UT-S05-56",
+        "UT-S05-57",
+        "ST-S05-26",
+        "UT-S11-80",
+        "UT-S11-81",
+        "ST-S11-46",
+        "UT-S21-10",
+        "UT-S21-11",
+        "ST-S21-04"
+      ],
+      "runner_selectors": [
+        "UT-S05-56",
+        "UT-S05-57",
+        "ST-S05-26",
+        "UT-S11-80",
+        "UT-S11-81",
+        "ST-S11-46",
+        "UT-S21-10",
+        "UT-S21-11",
+        "ST-S21-04"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S05-test-cases.md",
+        "logos/resources/test/core-S11-test-cases.md",
+        "logos/resources/test/core-S21-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-04-release-0-14-25",
+      "task_text": "切片4：0.14.25 候选身份与 SMOKE-core-196 runner——候选身份全链同步（`cli/package.json`/lockfile/五 plugin manifest/`asset-manifest.json` 再生/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.25`、`LOCAL_RELEASE_ROLLBACK_VERSION=0.14.24`，并演替既有版本 pin：UT-S19-41 转历史锚、UT-S19-24 candidate facts 与 s34 golden 同步）；新增 `scripts/smoke-guard-lifecycle-0-14-25.js` 承载 SMOKE-core-196（candidate identity 含随包新字节 → 安装态 fail-closed 拒绝矩阵：缺 `DEPLOY_DONE` smoke 拒绝、`[deploy]` 未全勾 smoke 拒绝、缺 `VERIFY_PASS`/`DEPLOY_DONE`/`SMOKE_PASS` 的 archive 拒绝且零副作用 → `state_inconsistency` 投影在场 → 补标后全链放行 → 固定 0.14.24 对照复现「smoke 照常写 `SMOKE_PASS`、archive 照常成功、无投影字段」防断言空转 → `0.14.24↔0.14.25` roundtrip 无混装），接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；同步实现含 OpenLogos reporter 的 UT-S19-45 与 SMOKE-core-196",
+      "owned_test_ids": [
+        "UT-S19-45",
+        "SMOKE-core-196"
+      ],
+      "runner_selectors": [
+        "UT-S19-45",
+        "SMOKE-core-196"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S19-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}

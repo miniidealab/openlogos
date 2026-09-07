@@ -29,6 +29,7 @@ import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from 
 import { BaselineCommitInProgressError } from '../lib/baseline-seed-txn.js';
 import { TEST_SLICE_MANIFEST, deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
 import type { MergeTransactionProjection } from '../lib/merge-transaction.js';
+import type { StateInconsistency } from '../lib/lifecycle-gate.js';
 import {
   createTestSliceTransaction,
   ensureManifestRecoveryTransaction, isManifestRecoveryReason,
@@ -57,6 +58,9 @@ export interface NextModuleItem {
   code_required?: boolean;
   // contract-self-description 切片1（C3）：facts 权威事实块，同上平铺在 module 级（仅活跃提案时出现）。
   facts?: ProposalFacts;
+  // §2.67.3：矛盾事实只读对账投影。status 挂在 active_change 下；next 的 active_change 是 slug
+  // 字符串，故沿用本文件既有约定平铺在 module 级（仅命中时出现，一致状态下该键不存在）。
+  state_inconsistency?: StateInconsistency;
   // contract-self-description 切片2（C1）：step_meta 同上平铺在 module 级（仅活跃提案时出现）。
   step_meta?: StepMeta;
   current_node?: CurrentNode;
@@ -273,6 +277,7 @@ function buildModuleNextItem(
       deployment_warnings?: string[];
       plan_state?: PlanState;
       code_planning_diagnostic?: CodePlanningDiagnostic;
+      state_inconsistency?: StateInconsistency;
     } | null;
   },
   guardActiveChange: string | null,
@@ -298,9 +303,19 @@ function buildModuleNextItem(
       }
       const step = mod.active_change.proposal_step;
       const { action, command } = actionForProposalStep(locale, step);
+      // §2.67.3：命中对账投影时，在既有部署授权引导之后追加一行显式补救建议——
+      // 点明矛盾事实与补救命令，不再沉默重复「请执行部署任务」。
+      const inconsistency = mod.active_change.state_inconsistency;
+      const detail = inconsistency
+        ? `${mod.suggestion} ${t(locale as Parameters<typeof t>[0], 'next.stateInconsistencyHint', {
+            evidence: inconsistency.evidence.join('、'),
+            remediation: inconsistency.remediation,
+          })}`
+        : mod.suggestion;
       return {
         id: mod.id, name: mod.name, lifecycle: 'launched',
-        action, command, detail: mod.suggestion,
+        action, command, detail,
+        ...(inconsistency ? { state_inconsistency: inconsistency } : {}),
         active_change: mod.active_change.slug, proposal_step: step,
         ...(mod.active_change.reason ? { reason: mod.active_change.reason } : {}),
         ...(mod.active_change.plan_state ? { plan_state: mod.active_change.plan_state } : {}),
@@ -616,6 +631,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           deployment_warnings: m.active_change.deployment_warnings,
           plan_state: m.active_change.plan_state,
           code_planning_diagnostic: m.active_change.code_planning_diagnostic,
+          state_inconsistency: m.active_change.state_inconsistency,
         } : null,
       },
       data.active_change,

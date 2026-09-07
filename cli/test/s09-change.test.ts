@@ -537,6 +537,8 @@ describe('S09 Scenario Tests — archive command', () => {
     const changePath = join(root, 'logos', 'changes', 'done-feature');
     mkdirSync(changePath, { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Done');
+    // §2.67.2 起 archive 链条 ① 对全部提案要求 VERIFY_PASS；本例验证的是链条之后的移动与 guard 释放。
+    writeFileSync(join(changePath, 'VERIFY_PASS'), '');
 
     const guardPath = join(root, 'logos', '.openlogos-guard');
     writeFileSync(guardPath, JSON.stringify({ activeChange: 'done-feature', createdAt: '2026-01-01T00:00:00Z' }));
@@ -560,6 +562,7 @@ describe('S09 Scenario Tests — archive command', () => {
     const changePath = join(root, 'logos', 'changes', 'old-feature');
     mkdirSync(changePath, { recursive: true });
     writeFileSync(join(changePath, 'proposal.md'), '# Old');
+    writeFileSync(join(changePath, 'VERIFY_PASS'), '');
 
     const guardPath = join(root, 'logos', '.openlogos-guard');
     writeFileSync(guardPath, JSON.stringify({ activeChange: 'other-feature', createdAt: '2026-01-01T00:00:00Z' }));
@@ -585,6 +588,7 @@ describe('S09 Scenario Tests — archive command', () => {
   it('ST-S09-10: error when archive already exists with same timestamp', () => {
     const changePath = join(root, 'logos', 'changes', 'dup');
     mkdirSync(changePath, { recursive: true });
+    writeFileSync(join(changePath, 'VERIFY_PASS'), '');
 
     // Compute the expected archive dir name the same way archive.ts does
     const now = new Date();
@@ -664,6 +668,8 @@ function prepareArchiveChange(root: string, slug: string): { changePath: string;
   const guardPath = join(root, 'logos', '.openlogos-guard');
   mkdirSync(changePath, { recursive: true });
   writeFileSync(join(changePath, 'proposal.md'), `# ${slug}`);
+  // §2.67.2 链条 ①：握手用例验证的是「链条校验 → 握手 → rename」中的握手段，故夹具须先过链条。
+  writeFileSync(join(changePath, 'VERIFY_PASS'), '');
   writeFileSync(guardPath, JSON.stringify({ activeChange: slug, createdAt: ARCHIVE_WATCH_TEST_NOW }));
   return { changePath, guardPath };
 }

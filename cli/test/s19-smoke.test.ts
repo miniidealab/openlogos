@@ -176,7 +176,26 @@ describe('S19 Scenario Tests — smoke command', () => {
     mkdirSync(join(proposalDir, 'deltas/test/smoke'), { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core' }));
     writeFileSync(join(proposalDir, 'deltas/test/smoke/core-smoke-test-cases.md'), `| ${id} | temp |`);
+    makeSmokeEligible(proposalDir);
     return proposalDir;
+  }
+
+  /**
+   * §2.67.1 起 smoke 有四项前置 fail-closed 门；本 describe 的用例验证的是门**之后**的
+   * gate / report / 覆盖预检逻辑，故夹具须表达一个合法的 smoke-eligible 提案状态
+   * （声明需部署需 smoke + `[deploy]` 全勾 + DEPLOY_DONE 在场）。
+   */
+  function makeSmokeEligible(proposalDir: string) {
+    mkdirSync(proposalDir, { recursive: true });
+    writeFileSync(join(proposalDir, 'proposal.md'), [
+      '# 变更提案：fixture', '', '## 部署影响',
+      '- 是否需要部署：是', '- 部署原因：夹具', '- 影响环境：staging',
+      '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：是',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'tasks.md'), [
+      '# 实现任务', '', '## [deploy] 部署任务', '- [x] 部署到 staging',
+    ].join('\n'));
+    writeFileSync(join(proposalDir, 'DEPLOY_DONE'), '');
   }
 
   function writeLaunchedModule() {
@@ -198,6 +217,7 @@ describe('S19 Scenario Tests — smoke command', () => {
     const proposalDir = join(root, 'logos', 'changes', 'deploy-feature');
     mkdirSync(proposalDir, { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'deploy-feature', module: 'core' }));
+    makeSmokeEligible(proposalDir);
     writeFileSync(join(proposalDir, 'SMOKE_FAIL'), '');
 
     smoke('text', 'staging');
@@ -218,6 +238,7 @@ describe('S19 Scenario Tests — smoke command', () => {
     const proposalDir = join(root, 'logos', 'changes', 'deploy-feature');
     mkdirSync(proposalDir, { recursive: true });
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'deploy-feature', module: 'core' }));
+    makeSmokeEligible(proposalDir);
 
     expect(() => smoke()).toThrow('process.exit(1)');
 
@@ -272,6 +293,7 @@ describe('S19 Scenario Tests — smoke command', () => {
       activeChange: 'verify-skip-counts-as-pass',
       module: 'core',
     }));
+    makeSmokeEligible(proposalDir);
     writeFileSync(join(proposalDir, 'SMOKE_FAIL'), '');
 
     smoke('json', 'staging');
