@@ -35,5 +35,5 @@
 - [x] 切片4：0.14.25 候选身份与 SMOKE-core-196 runner——候选身份全链同步（`cli/package.json`/lockfile/五 plugin manifest/`asset-manifest.json` 再生/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.25`、`LOCAL_RELEASE_ROLLBACK_VERSION=0.14.24`，并演替既有版本 pin：UT-S19-41 转历史锚、UT-S19-24 candidate facts 与 s34 golden 同步）；新增 `scripts/smoke-guard-lifecycle-0-14-25.js` 承载 SMOKE-core-196（candidate identity 含随包新字节 → 安装态 fail-closed 拒绝矩阵：缺 `DEPLOY_DONE` smoke 拒绝、`[deploy]` 未全勾 smoke 拒绝、缺 `VERIFY_PASS`/`DEPLOY_DONE`/`SMOKE_PASS` 的 archive 拒绝且零副作用 → `state_inconsistency` 投影在场 → 补标后全链放行 → 固定 0.14.24 对照复现「smoke 照常写 `SMOKE_PASS`、archive 照常成功、无投影字段」防断言空转 → `0.14.24↔0.14.25` roundtrip 无混装），接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；同步实现含 OpenLogos reporter 的 UT-S19-45 与 SMOKE-core-196
 
 ## [deploy] 部署任务
-- [ ] 按部署方案 0.14.25 章节执行隔离验证矩阵（fail-closed 拒绝矩阵、对账投影、补标后全链放行、0.14.24 缺陷复现对照、roundtrip 回滚演练），PASS 后覆盖安装 0.14.25 tarball 到本机全局 prefix（`/opt/homebrew`），新 shell 复核 identity 全同源 0.14.25
-- [ ] 确认回滚预案就位（0.14.24 tarball 及 sha256 留痕），完成后运行 `openlogos deploy-done` 受控落标（部署失败不得写 DEPLOY_DONE，输出失败点与回滚建议）
+- [x] 按部署方案 0.14.25 章节执行隔离验证矩阵（fail-closed 拒绝矩阵、对账投影、补标后全链放行、0.14.24 缺陷复现对照、roundtrip 回滚演练），PASS 后覆盖安装 0.14.25 tarball 到本机全局 prefix（`/opt/homebrew`），新 shell 复核 identity 全同源 0.14.25
+- [x] 确认回滚预案就位（0.14.24 tarball 及 sha256 留痕），完成后运行 `openlogos deploy-done` 受控落标（部署失败不得写 DEPLOY_DONE，输出失败点与回滚建议）

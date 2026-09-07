@@ -71,6 +71,17 @@ function scaffoldProject(root, slug, smokeId, command = 'node scripts/run-smoke.
     '    lifecycle: launched',
   ].join('\n'));
   writeFileSync(join(root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: slug, module: 'core' }));
+  // §2.67.1 起 smoke 有四项前置 fail-closed 门；本 runner 验证的是门**之后**的 runner/reporter
+  // 覆盖诊断，故夹具须表达一个合法的 smoke-eligible 提案（声明需部署需 smoke + [deploy] 全勾 + DEPLOY_DONE）。
+  writeFileSync(join(root, 'logos/changes', slug, 'proposal.md'), [
+    '# 变更提案：smoke-coverage-fixture', '', '## 部署影响',
+    '- 是否需要部署：是', '- 部署原因：夹具', '- 影响环境：staging',
+    '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：是',
+  ].join('\n'));
+  writeFileSync(join(root, 'logos/changes', slug, 'tasks.md'), [
+    '# 实现任务', '', '## [deploy] 部署任务', '- [x] 部署到 staging',
+  ].join('\n'));
+  writeFileSync(join(root, 'logos/changes', slug, 'DEPLOY_DONE'), '');
   writeFileSync(join(root, 'logos/resources/test/smoke/core-smoke-test-cases.md'), `| ${smokeId} | temp |\n`);
   writeFileSync(join(root, 'logos/changes', slug, 'deltas/test/smoke/core-smoke-test-cases.md'), `| ${smokeId} | temp |\n`);
 }

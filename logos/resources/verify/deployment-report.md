@@ -1,3 +1,49 @@
+# 部署报告：fix-deploy-done-leak-failclosed-selfheal / OpenLogos 0.14.25（2026-09-07，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-deploy-done-leak-failclosed-selfheal`（发布内容 = 生命周期命令 fail-closed 收口与状态对账：① `openlogos smoke` 四项前置门；② `openlogos archive` 三级链条门；③ `status`/`next`/`watch` 的 `state_inconsistency` 只读对账投影；④ S21 场景文档补齐）。
+- **授权与门禁**：用户明确指令「请帮我运行部署+smoke，遇到问题请修复后重试，直到通过」；`openlogos verify` PASS（2196/2196，覆盖率与通过率 100%，Layer 1 80/80），`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.25` 已完成真实 npm pack、制品身份核对（随包 `dist/lib/lifecycle-gate.js` 含对账投影新字节）、隔离 prefix 行为矩阵（SMOKE-core-196 四类证据全 PASS，含固定 0.14.24 缺陷复现对照与 roundtrip 无混装）、本机全局安装；新 shell 复核 `openlogos --version` 精确 `0.14.25`，package/asset-manifest/五类 plugin manifest 全同源。
+- **落标方式**：部署完成后由 `openlogos deploy-done` **受控落标**（S21 唯一 writer），`[deploy]` 2/2 自动勾选、无过期 smoke 标记需清理；全程未手写 `DEPLOY_DONE`。
+- **数据迁移 / 服务启动**：无 / 不适用（本次为 CLI 命令行为收口与只读派生投影）。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+- **正式 smoke**：`openlogos smoke` PASS——166/166 定义用例全部执行，失败 0，覆盖率与通过率 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场；SMOKE-core-196 pass（证据与隔离矩阵同源，candidate 同哈希 `4f512519…47557a`）。
+- **smoke 首轮失败与修复**：首轮 Gate 3.8 FAIL（166 执行、3 失败）——`SMOKE-core-28/29/30` 出自 `scripts/smoke-smoke-coverage.js`，其临时项目夹具的活跃提案未声明 `smoke_required`，被本次新增的前置门 ① 以 `SMOKE_NOT_REQUIRED` 正确拦下（属 fail-closed 生效的预期后果，非缺陷）。夹具补为 smoke-eligible（声明需部署需 smoke + `[deploy]` 全勾 + `DEPLOY_DONE`）后三例转 pass；该 runner 为仓侧驱动脚本、不在 tarball 内，candidate identity 不受影响。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `d7fb855` |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/fix-deploy-done-leak-failclosed-selfheal/miniidealab-openlogos-0.14.25.tgz`；2,360,576 字节；795 文件 |
+| candidate SHA-256 | `4f5125195045fe33dea2f1246ecb2c40bd2631e34b94764ed90fb9527747557a` |
+| 固定回滚 tarball | `logos/resources/verify/deployment-artifacts/fix-guard-check-bash-write-target-jurisdiction/miniidealab-openlogos-0.14.24.tgz`（0.14.24 部署窗口冻结件） |
+| 回滚 SHA-256 | `af5d83b064d2e95d06ab622276d17bb1eceddd07e364d18eca80d2f688cf52c1` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → dist/index.js / `0.14.24` |
+
+可复制回滚命令：
+
+```bash
+npm install -g logos/resources/verify/deployment-artifacts/fix-guard-check-bash-write-target-jurisdiction/miniidealab-openlogos-0.14.24.tgz
+openlogos --version   # 期望 0.14.24
+```
+
+## 三、隔离矩阵证据（SMOKE-core-196，`matrix-smoke-results.jsonl` 冻结入库）
+
+| 矩阵项 | 结论 |
+|---|---|
+| candidate identity | `0.14.25`，tarball sha256 `4f512519…47557a`，随包 `lifecycle-gate.js` 含 `deploy_done_missing_with_downstream_evidence` 新字节 |
+| smoke fail-closed（核心验收①） | 缺 `DEPLOY_DONE` → `SMOKE_DEPLOY_NOT_DONE` 非零退出、提示含 `openlogos deploy-done`，`smoke.command` 未执行、`SMOKE_PASS`/`smoke-report.md` 均未产生；`[deploy]` 未全勾 → `SMOKE_DEPLOY_TASKS_INCOMPLETE` |
+| archive fail-closed（核心验收②） | 缺 `VERIFY_PASS` → `ARCHIVE_VERIFY_NOT_PASSED`；`SMOKE_PASS` 在场但缺 `DEPLOY_DONE` → `ARCHIVE_DEPLOY_NOT_DONE`（smoke 结论不反推部署完成）；缺 `SMOKE_PASS` → `ARCHIVE_SMOKE_NOT_PASSED`；三者均不移动目录、不删 guard |
+| 对账投影（核心验收③） | 孤儿状态下 `status --format json` 的 `active_change.state_inconsistency` 三字段齐备且 `evidence` 顺序稳定；`next` 人读引导含 `openlogos deploy-done`；四条消费命令均未代写 `DEPLOY_DONE` |
+| 补标后放行（核心验收④） | `openlogos deploy-done` 后 smoke 进入正常执行路径、投影字段消失 |
+| 0.14.24 缺陷复现对照 | 同场景 smoke **照常执行**、archive **照常成功归档**、status **无投影字段**——矩阵未空转 |
+| rollback roundtrip | `0.14.24→0.14.25` 往返无混装，恢复后结论不变 |
+
+---
+
 # 部署报告：fix-guard-check-bash-write-target-jurisdiction / OpenLogos 0.14.24（2026-09-06，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论
