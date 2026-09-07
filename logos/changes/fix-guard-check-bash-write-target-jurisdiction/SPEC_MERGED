@@ -1,0 +1,39 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_09b894e58370b75387a8926b",
+  "seal_sha256": "sha256:0229c50080c424bf33a8660353518ff14d22f11ae44beaf5ebd2301f43d80059",
+  "receipt_sha256": "sha256:3b7093d66e575877e96d54b96553e658fd08fe15bba639aa7eb76c170bb8b4d9",
+  "completed_at": "2026-09-07T00:39:14.480Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-guard-check-bash-write-target-jurisdiction",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-195",
+      "ST-S09-122",
+      "UT-S09-317",
+      "UT-S09-318",
+      "UT-S19-41"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "68630053ca84c54cad8582e8f0a1bcc30eba9732a99c76e481e4e934e20b71ff",
+        "after_sha256": "7273c231c811bd6cf9df22127493611a14a9c3620749862d0870bdd0156212fc"
+      },
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "8522d16d9010f929b56cfb1c97f344e69a8f956f2e66598510ca92a2feb4b07c",
+        "after_sha256": "b85935c3378a37120e0bfe7f995289942b3f7b9b361302eafbcb12d3d3b5d084"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "17cbd2cbc8c1ebc22ffd1277e6f465f61b99726516421bf9a0daf9cb221efc3d",
+        "after_sha256": "5820db155d5e2dcb91639c9d53deb2e7e0516be92d7887449e451ba5f5d33b42"
+      }
+    ],
+    "sha256": "sha256:ab06fab455b13113591d1afa25695120af6ce4d7f4144bf737c68b764f951ca5"
+  }
+}
