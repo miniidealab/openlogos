@@ -28,7 +28,7 @@ scenario_counter:
 feature_counter:
   next_id: 9
 decision_counter:
-  next_id: 12
+  next_id: 13
 modules:
   - id: core
     name: 核心功能
@@ -619,6 +619,8 @@ resource_index:
     desc: fix-merge-flow-transaction-contract 创建的 decision 基线
   - path: logos/resources/decisions/core-D11-test-change-set-proposal-scope.md
     desc: fix-reopen-test-change-set-forward-merge 创建的 decision 基线
+  - path: logos/resources/decisions/core-D12-lifecycle-failclosed-reconciliation.md
+    desc: fix-deploy-done-leak-failclosed-selfheal 创建的 decision 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

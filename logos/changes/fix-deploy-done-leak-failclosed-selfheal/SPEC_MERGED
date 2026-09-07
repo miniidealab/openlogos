@@ -1,0 +1,70 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_66b1857b51e2dbde63b4ffcc",
+  "seal_sha256": "sha256:22f10661a21d8d2a3303e0bcd899ddb3eb683099a409d4e54958d84b1074cbb5",
+  "receipt_sha256": "sha256:34f2983dded3864dfc4ee337a155248d2bf215f8573cc5ba4cd1f473a4318ff6",
+  "completed_at": "2026-09-07T06:28:52.533Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "fix-deploy-done-leak-failclosed-selfheal",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-196",
+      "ST-S05-26",
+      "ST-S09-123",
+      "ST-S09-124",
+      "ST-S11-46",
+      "ST-S19-20",
+      "ST-S19-21",
+      "ST-S21-04",
+      "UT-S05-56",
+      "UT-S05-57",
+      "UT-S09-319",
+      "UT-S09-320",
+      "UT-S09-321",
+      "UT-S11-80",
+      "UT-S11-81",
+      "UT-S19-42",
+      "UT-S19-43",
+      "UT-S19-44",
+      "UT-S19-45",
+      "UT-S21-10",
+      "UT-S21-11"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S05-test-cases.md",
+        "before_sha256": "7aeeb81a16da956b00bf59f3f3f9a76568da522909544a82574cd10fc3fc86d8",
+        "after_sha256": "cbeb8197d89f5fe1cec0e17c866826afdc181ca54b2ddbe4e4e6c012d6c14f0f"
+      },
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "7273c231c811bd6cf9df22127493611a14a9c3620749862d0870bdd0156212fc",
+        "after_sha256": "4f6a8a6e9ed697523397bea07c120ae3c34dfbba658705d7b71ebfe369bb3463"
+      },
+      {
+        "target_path": "logos/resources/test/core-S11-test-cases.md",
+        "before_sha256": "53958219ce9073b264c7652d4970df2be8d08f73a319d8197d3e5852b90eca49",
+        "after_sha256": "b11d20cb8feecb98cbbcebec3a61717f2eeb4e25219b6a0d950776a9a77a983f"
+      },
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "b85935c3378a37120e0bfe7f995289942b3f7b9b361302eafbcb12d3d3b5d084",
+        "after_sha256": "49858cadff19866d3ae0405f13cfb1139f3579c79821ec7f5c47ad85628be2a7"
+      },
+      {
+        "target_path": "logos/resources/test/core-S21-test-cases.md",
+        "before_sha256": "e176ca176608600e8f349f5d721c54b3365aac757372921650c066b59db0474a",
+        "after_sha256": "5a752fdf54833421a3ed7d143ef5aed60141429fd9c40a9787cca5ee0e4ff03b"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "5820db155d5e2dcb91639c9d53deb2e7e0516be92d7887449e451ba5f5d33b42",
+        "after_sha256": "cf8200ab9826924df10071154a91622f80536b5d5b7b3f216355a77c7f5e1f9d"
+      }
+    ],
+    "sha256": "sha256:22ac5d15f5efd15c8d14d50fbc7eab612a8d4ae419b95f89efd99efcd61434c5"
+  }
+}
