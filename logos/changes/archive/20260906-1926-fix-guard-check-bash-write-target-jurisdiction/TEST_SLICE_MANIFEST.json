@@ -1,0 +1,33 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "fix-guard-check-bash-write-target-jurisdiction",
+  "module": "core",
+  "task_fingerprint": "sha256:4d719d161f58d235db06770d700a7b0dc8c0596331bf0cfd74d6f3ae6911b7c0",
+  "spec_fingerprint": "sha256:e01a8181fc0d9c74b49a16239e12511c32d2ff9220fa9437d8b569205bcd0e09",
+  "generated_at": "2026-09-07T01:02:47.613Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-guard-bash-jurisdiction-and-0-14-24",
+      "task_text": "单切片：guard-check Bash 写命令路径提取与逐路径管辖判定 + 0.14.24 候选身份与 SMOKE-core-195 runner——`plugin/bin/guard-check` Bash 分支对命中 `BASH_WRITE_PATTERNS` 的 `rm`/`cp`/`mv`/`mkdir`/`touch`/`chmod`/`chown` 结构化单命令形态跳过 `-` 开头选项 flag 提取全量路径实参（cp/mv 含源与目标），逐路径走既有 `is_whitelisted_path`（0.14.22 管辖边界 + 白名单）——全部路径在项目根之外或白名单内 → exit 0 放行，任一路径在项目内非白名单 → 维持 `block()` 双通道拦截；含变量展开/命令替换/反引号/管道/复合形态解析不出 → 维持现行无条件拦截（fail-closed 不放宽），`BASH_SAFE_PATTERNS`（含 `^git push`）优先级与 `>`/`>>` 重定向目标提取保持不变，python3/node/bash 兜底三运行时同判；0.14.24 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest 再生/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.24`、`ROLLBACK=0.14.23`/UT-S19-39/40 tripwire 演替为版本无关锚）；新增 `scripts/smoke-guard-bash-0-14-24.js`（candidate identity 含随包 guard 新字节与 manifest 条目 + 安装态项目外 rm/cp/mkdir 放行 + 项目内拦截与安全白名单零回归 + 解析不出保守臂 + 固定 0.14.23 误拦缺陷复现对照 + 0.14.23↔0.14.24 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S09-317～318、ST-S09-122、UT-S19-41、SMOKE-core-195",
+      "owned_test_ids": [
+        "UT-S09-317",
+        "UT-S09-318",
+        "ST-S09-122",
+        "UT-S19-41",
+        "SMOKE-core-195"
+      ],
+      "runner_selectors": [
+        "UT-S09-317",
+        "UT-S09-318",
+        "ST-S09-122",
+        "UT-S19-41",
+        "SMOKE-core-195"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/core-S19-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}

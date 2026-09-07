@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-transaction@1",
+  "transaction_id": "stx_52924e6d8a6c4ad2951afb1a",
+  "slug": "fix-guard-check-bash-write-target-jurisdiction",
+  "module": "core",
+  "phase": "completed",
+  "origin": "initial-plan",
+  "classification": null,
+  "spec_fingerprint": "sha256:e01a8181fc0d9c74b49a16239e12511c32d2ff9220fa9437d8b569205bcd0e09",
+  "changed_test_ids_sha256": "sha256:c85c73be22883d84b3083ca034be997118c3ba2e8fee33ea1c81411b7ccd412c",
+  "schema_sha256": "sha256:6ac9a304caabffff207199897d53610b81add6f290a691ddc3e6ebc484462f8d",
+  "contract_sha256": "sha256:9cdcc0da49e10a8e7301218554c4a5858c427bce9ddd895f9e0510039d76f702",
+  "seal_sha256": "sha256:438abefe19cb2e4f706611745fb285bf7ee39e3d4481af390239858ada22822d",
+  "slots": [
+    {
+      "slot_id": "slot_codesection",
+      "content_sha256": "sha256:44705ae50606ff09a011419f963a352ed85f9f3658ad9ea9a806683957ffe4ea",
+      "sealed_sha256": "sha256:44705ae50606ff09a011419f963a352ed85f9f3658ad9ea9a806683957ffe4ea"
+    },
+    {
+      "slot_id": "slot_slices",
+      "content_sha256": "sha256:60be12cf7689ea04ca61b44447bca341646035ce9863801da8a25841a8747ef7",
+      "sealed_sha256": "sha256:60be12cf7689ea04ca61b44447bca341646035ce9863801da8a25841a8747ef7"
+    }
+  ],
+  "staged": {
+    "slot_codesection": "> 六维打分：影响范围 1（plugin/bin/guard-check + 版本身份文件族 + runner + 两个测试文件）、行为复杂度 1（路径提取/逐路径判定/解析不出保守臂三分支）、契约变化 1（guard Bash 放行边界修复 + 候选身份推进，无 API/DB）、测试规模 1（5 个新 ID + 2 个旧 tripwire 演替）、风险 2（安全面判定 + 部署发布，回滚制品固定 0.14.23 tarball）、不确定性 0（缺陷机理已由 runlogos 生产实证与 bug report 定性，0.14.22/0.14.23 有同构发布先例）→ 6 分，非大任务，单切片。\n> 删后续自检：单切片无后续可删。补充证伪：曾拟拆「guard-check Bash 判定修复片」+「0.14.24 身份与 runner 片」——guard-check 字节一改，asset-manifest 托管哈希（UT-S08-59 / UT-S19-38/39 既有断言）必须同步再生，而 manifest 再生与候选身份、SMOKE-core-195 runner 同属一次发布事实；后片单独做则路径提取新行为不存在，SMOKE-core-195 的项目外放行断言无字节可验，(b) 否。两片共享同一组身份/manifest 文件、互相咬死，向前合并为单片。\n- [ ] 单切片：guard-check Bash 写命令路径提取与逐路径管辖判定 + 0.14.24 候选身份与 SMOKE-core-195 runner——`plugin/bin/guard-check` Bash 分支对命中 `BASH_WRITE_PATTERNS` 的 `rm`/`cp`/`mv`/`mkdir`/`touch`/`chmod`/`chown` 结构化单命令形态跳过 `-` 开头选项 flag 提取全量路径实参（cp/mv 含源与目标），逐路径走既有 `is_whitelisted_path`（0.14.22 管辖边界 + 白名单）——全部路径在项目根之外或白名单内 → exit 0 放行，任一路径在项目内非白名单 → 维持 `block()` 双通道拦截；含变量展开/命令替换/反引号/管道/复合形态解析不出 → 维持现行无条件拦截（fail-closed 不放宽），`BASH_SAFE_PATTERNS`（含 `^git push`）优先级与 `>`/`>>` 重定向目标提取保持不变，python3/node/bash 兜底三运行时同判；0.14.24 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest 再生/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.24`、`ROLLBACK=0.14.23`/UT-S19-39/40 tripwire 演替为版本无关锚）；新增 `scripts/smoke-guard-bash-0-14-24.js`（candidate identity 含随包 guard 新字节与 manifest 条目 + 安装态项目外 rm/cp/mkdir 放行 + 项目内拦截与安全白名单零回归 + 解析不出保守臂 + 固定 0.14.23 误拦缺陷复现对照 + 0.14.23↔0.14.24 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S09-317～318、ST-S09-122、UT-S19-41、SMOKE-core-195\n",
+    "slot_slices": "[\n  {\n    \"slice_id\": \"slice-01-guard-bash-jurisdiction-and-0-14-24\",\n    \"task_text\": \"单切片：guard-check Bash 写命令路径提取与逐路径管辖判定 + 0.14.24 候选身份与 SMOKE-core-195 runner——`plugin/bin/guard-check` Bash 分支对命中 `BASH_WRITE_PATTERNS` 的 `rm`/`cp`/`mv`/`mkdir`/`touch`/`chmod`/`chown` 结构化单命令形态跳过 `-` 开头选项 flag 提取全量路径实参（cp/mv 含源与目标），逐路径走既有 `is_whitelisted_path`（0.14.22 管辖边界 + 白名单）——全部路径在项目根之外或白名单内 → exit 0 放行，任一路径在项目内非白名单 → 维持 `block()` 双通道拦截；含变量展开/命令替换/反引号/管道/复合形态解析不出 → 维持现行无条件拦截（fail-closed 不放宽），`BASH_SAFE_PATTERNS`（含 `^git push`）优先级与 `>`/`>>` 重定向目标提取保持不变，python3/node/bash 兜底三运行时同判；0.14.24 候选身份全链同步（package/lockfile/五 plugin manifest/asset-manifest 再生/`LOCAL_RELEASE_CANDIDATE_VERSION=0.14.24`、`ROLLBACK=0.14.23`/UT-S19-39/40 tripwire 演替为版本无关锚）；新增 `scripts/smoke-guard-bash-0-14-24.js`（candidate identity 含随包 guard 新字节与 manifest 条目 + 安装态项目外 rm/cp/mkdir 放行 + 项目内拦截与安全白名单零回归 + 解析不出保守臂 + 固定 0.14.23 误拦缺陷复现对照 + 0.14.23↔0.14.24 roundtrip）并接入 `scripts/run-smoke.js` 注册表、写 `logos/resources/verify/smoke-results.jsonl`、完成后跑 smoke 覆盖预检；实现含 OpenLogos reporter 的 UT-S09-317～318、ST-S09-122、UT-S19-41、SMOKE-core-195\",\n    \"owned_test_ids\": [\n      \"UT-S09-317\",\n      \"UT-S09-318\",\n      \"ST-S09-122\",\n      \"UT-S19-41\",\n      \"SMOKE-core-195\"\n    ],\n    \"runner_selectors\": [\n      \"UT-S09-317\",\n      \"UT-S09-318\",\n      \"ST-S09-122\",\n      \"UT-S19-41\",\n      \"SMOKE-core-195\"\n    ],\n    \"spec_targets\": [\n      \"logos/resources/test/core-S09-test-cases.md\",\n      \"logos/resources/test/core-S19-test-cases.md\",\n      \"logos/resources/test/smoke/core-smoke-test-cases.md\"\n    ]\n  }\n]\n"
+  },
+  "receipt": {
+    "transaction_id": "stx_52924e6d8a6c4ad2951afb1a",
+    "completed_at": "2026-09-07T01:02:47.619Z",
+    "seal_sha256": "sha256:438abefe19cb2e4f706611745fb285bf7ee39e3d4481af390239858ada22822d",
+    "artifacts": [
+      {
+        "path": "tasks.md",
+        "sha256": "sha256:2372830368fe7f6accbcccda8ec7610fc5c50b92566c282040915f66d24af876"
+      },
+      {
+        "path": "TEST_SLICE_MANIFEST.json",
+        "sha256": "sha256:d245f666d94ef89b2936a352a44cc0c2a42494239e4c0d5ffc9a20a66bc0f0c6"
+      }
+    ]
+  },
+  "violations": [],
+  "aborted_at": null,
+  "created_at": "2026-09-07T00:39:16.463Z",
+  "updated_at": "2026-09-07T01:02:47.619Z"
+}

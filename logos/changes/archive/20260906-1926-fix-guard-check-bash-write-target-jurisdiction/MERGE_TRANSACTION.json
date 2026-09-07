@@ -1,0 +1,331 @@
+{
+  "schema": "openlogos/merge-transaction@1",
+  "transaction_id": "mtx_09b894e58370b75387a8926b",
+  "slug": "fix-guard-check-bash-write-target-jurisdiction",
+  "module": "core",
+  "phase": "completed",
+  "classification": null,
+  "plan_sha256": "sha256:d797c5a705bf6d1ebf871185364de7205763895ff925fbffb667938cf87a44af",
+  "target_set_sha256": "sha256:bc7aef892fd7d8630f8d3874dec4548bcc9dde3655bbcf1ac28fdbdb9a344076",
+  "schema_sha256": "sha256:2b7bebc61a68f610446b85dc9d814dc372377252cdb4765d04bce9da69d8e505",
+  "contract_sha256": "sha256:9cdcc0da49e10a8e7301218554c4a5858c427bce9ddd895f9e0510039d76f702",
+  "seal_sha256": "sha256:0229c50080c424bf33a8660353518ff14d22f11ae44beaf5ebd2301f43d80059",
+  "preflight": {
+    "schema": "openlogos/merge-preflight@1",
+    "transaction_id": "mtx_09b894e58370b75387a8926b",
+    "plan_sha256": "sha256:d797c5a705bf6d1ebf871185364de7205763895ff925fbffb667938cf87a44af",
+    "target_set_sha256": "sha256:bc7aef892fd7d8630f8d3874dec4548bcc9dde3655bbcf1ac28fdbdb9a344076",
+    "targets": [
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:7ace5b3c02fabec70a3781d81470ef5ca9b13a68ef2e239b00eeed3540408e31",
+        "final_sha256": "sha256:d7aab79b5e50ad7dcafd68e36be8c8193bf739503ab928d1d6bb2b69288a277c"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:af8ff5652b47dbf6793a1c74bef16b956adc57edd72e9e7349d191ebfd7eefab",
+        "final_sha256": "sha256:815d7ae2d99491e9edf83852ddbbad197ed6976a9ea50593cd0c34906c4a3603"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:948df3d43e8600413a15662f9245f65e8b44e26c694d85f587ebf2ad83a1deb1",
+        "final_sha256": "sha256:3c5f3a17869bf1692f55fa4817da024ec4d48af54f6cc0a8bbfc88227e06d81e"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:1b7659158d0a37b58ffeef6e1c4df6a9b5d2beb124592a94fc0b9b7eabdb6431",
+        "final_sha256": "sha256:502d2533f7ee950c7144f8dce758ea190f6326039bb2947f1ecf999359eea2db"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:4160a4513b2873c5d9f78da3a3d3fbfa5625c907c1e11b23385e00939acc08f2",
+        "final_sha256": "sha256:701fd341f13b6458a27aebdc113e6f88412a54e4cca3270678a8066067e0e60c"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:68630053ca84c54cad8582e8f0a1bcc30eba9732a99c76e481e4e934e20b71ff",
+        "final_sha256": "sha256:7273c231c811bd6cf9df22127493611a14a9c3620749862d0870bdd0156212fc"
+      },
+      {
+        "path": "logos/resources/test/core-S19-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:8522d16d9010f929b56cfb1c97f344e69a8f956f2e66598510ca92a2feb4b07c",
+        "final_sha256": "sha256:b85935c3378a37120e0bfe7f995289942b3f7b9b361302eafbcb12d3d3b5d084"
+      },
+      {
+        "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "mode": "MODIFY",
+        "producer": "agent",
+        "before_sha256": "sha256:17cbd2cbc8c1ebc22ffd1277e6f465f61b99726516421bf9a0daf9cb221efc3d",
+        "final_sha256": "sha256:5820db155d5e2dcb91639c9d53deb2e7e0516be92d7887449e451ba5f5d33b42"
+      },
+      {
+        "path": "spec/pretooluse-guard.md",
+        "mode": "MODIFY",
+        "producer": "openlogos",
+        "before_sha256": "sha256:2e43d7daa8d5183b0db3182f809083f09e0e42826fc48d049f556cbf2ecb04a9",
+        "final_sha256": "sha256:c5454f969b33bb61f86d19923e508222bfe4dd58f4f308110b9873bae801c94d"
+      }
+    ],
+    "test_change_set_sha256": "sha256:ab06fab455b13113591d1afa25695120af6ce4d7f4144bf737c68b764f951ca5",
+    "final_target_paths": [
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S19-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "spec/pretooluse-guard.md"
+    ],
+    "sha256": "sha256:4d69229df129cf7fd9491064b32c7ab0f44a34be2c31905c9ac8b57625588ce6"
+  },
+  "targets": [
+    {
+      "slot_id": "slot_4d777679baf9483997de",
+      "delta_path": "deltas/prd/1-product-requirements/core-01-requirements.md",
+      "target_path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "mode": "MODIFY",
+      "category": "requirement",
+      "producer": "agent",
+      "source_sha256": "sha256:f68206bed1d6b7f5632bae293118c1d168f860f2ba68aeb378f2527843dae071",
+      "before_sha256": "sha256:7ace5b3c02fabec70a3781d81470ef5ca9b13a68ef2e239b00eeed3540408e31",
+      "content_sha256": "sha256:d7aab79b5e50ad7dcafd68e36be8c8193bf739503ab928d1d6bb2b69288a277c",
+      "sealed_sha256": "sha256:d7aab79b5e50ad7dcafd68e36be8c8193bf739503ab928d1d6bb2b69288a277c"
+    },
+    {
+      "slot_id": "slot_848d0e7f3573f4039938",
+      "delta_path": "deltas/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "target_path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "mode": "MODIFY",
+      "category": "feature",
+      "producer": "agent",
+      "source_sha256": "sha256:1888ba6bbdcfc0ba0da69ae9f0e4118b545b8e5c7b77342f52dbb7c116168507",
+      "before_sha256": "sha256:af8ff5652b47dbf6793a1c74bef16b956adc57edd72e9e7349d191ebfd7eefab",
+      "content_sha256": "sha256:815d7ae2d99491e9edf83852ddbbad197ed6976a9ea50593cd0c34906c4a3603",
+      "sealed_sha256": "sha256:815d7ae2d99491e9edf83852ddbbad197ed6976a9ea50593cd0c34906c4a3603"
+    },
+    {
+      "slot_id": "slot_15861310ff04bde4cf6e",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:766f4904f92894902ec8f5f6e95f72b00da74f55e184d6639982a6e3b967ee6c",
+      "before_sha256": "sha256:948df3d43e8600413a15662f9245f65e8b44e26c694d85f587ebf2ad83a1deb1",
+      "content_sha256": "sha256:3c5f3a17869bf1692f55fa4817da024ec4d48af54f6cc0a8bbfc88227e06d81e",
+      "sealed_sha256": "sha256:3c5f3a17869bf1692f55fa4817da024ec4d48af54f6cc0a8bbfc88227e06d81e"
+    },
+    {
+      "slot_id": "slot_58ca3d6310b5c53a1ac3",
+      "delta_path": "deltas/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "target_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "mode": "MODIFY",
+      "category": "scenario",
+      "producer": "agent",
+      "source_sha256": "sha256:3f1465dea664671a17e7ab05cc6582f7d4ef1031fc1f3607211a5215d7df61ef",
+      "before_sha256": "sha256:1b7659158d0a37b58ffeef6e1c4df6a9b5d2beb124592a94fc0b9b7eabdb6431",
+      "content_sha256": "sha256:502d2533f7ee950c7144f8dce758ea190f6326039bb2947f1ecf999359eea2db",
+      "sealed_sha256": "sha256:502d2533f7ee950c7144f8dce758ea190f6326039bb2947f1ecf999359eea2db"
+    },
+    {
+      "slot_id": "slot_d5c7c3c8a4b97c9d0b3b",
+      "delta_path": "deltas/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "target_path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "mode": "MODIFY",
+      "category": "deployment",
+      "producer": "agent",
+      "source_sha256": "sha256:0bb2e6df2f14c2bc8f03330043e6daaa279edbbfc0bb170a0275acc068f6a1c1",
+      "before_sha256": "sha256:4160a4513b2873c5d9f78da3a3d3fbfa5625c907c1e11b23385e00939acc08f2",
+      "content_sha256": "sha256:701fd341f13b6458a27aebdc113e6f88412a54e4cca3270678a8066067e0e60c",
+      "sealed_sha256": "sha256:701fd341f13b6458a27aebdc113e6f88412a54e4cca3270678a8066067e0e60c"
+    },
+    {
+      "slot_id": "slot_06a3f7cd7d887636deb5",
+      "delta_path": "deltas/test/core-S09-test-cases.md",
+      "target_path": "logos/resources/test/core-S09-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:957cc75ad95836f02dc44c643d3919a08de23fb3238633d40f4ef1794c187a7a",
+      "before_sha256": "sha256:68630053ca84c54cad8582e8f0a1bcc30eba9732a99c76e481e4e934e20b71ff",
+      "content_sha256": "sha256:7273c231c811bd6cf9df22127493611a14a9c3620749862d0870bdd0156212fc",
+      "sealed_sha256": "sha256:7273c231c811bd6cf9df22127493611a14a9c3620749862d0870bdd0156212fc"
+    },
+    {
+      "slot_id": "slot_de72ccf927631c2a5921",
+      "delta_path": "deltas/test/core-S19-test-cases.md",
+      "target_path": "logos/resources/test/core-S19-test-cases.md",
+      "mode": "MODIFY",
+      "category": "test",
+      "producer": "agent",
+      "source_sha256": "sha256:c76112cfa1045bb57f1cfcb409a015ca974d5c9711cfd75fbabf98e782cd6d7f",
+      "before_sha256": "sha256:8522d16d9010f929b56cfb1c97f344e69a8f956f2e66598510ca92a2feb4b07c",
+      "content_sha256": "sha256:b85935c3378a37120e0bfe7f995289942b3f7b9b361302eafbcb12d3d3b5d084",
+      "sealed_sha256": "sha256:b85935c3378a37120e0bfe7f995289942b3f7b9b361302eafbcb12d3d3b5d084"
+    },
+    {
+      "slot_id": "slot_7890481e9344f943d0cc",
+      "delta_path": "deltas/test/smoke/core-smoke-test-cases.md",
+      "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "mode": "MODIFY",
+      "category": "smoke",
+      "producer": "agent",
+      "source_sha256": "sha256:d4756155561b0f3fe344cf7f69827eea78df8f6e76969c8d4166ccccfefa8ff4",
+      "before_sha256": "sha256:17cbd2cbc8c1ebc22ffd1277e6f465f61b99726516421bf9a0daf9cb221efc3d",
+      "content_sha256": "sha256:5820db155d5e2dcb91639c9d53deb2e7e0516be92d7887449e451ba5f5d33b42",
+      "sealed_sha256": "sha256:5820db155d5e2dcb91639c9d53deb2e7e0516be92d7887449e451ba5f5d33b42"
+    },
+    {
+      "slot_id": "slot_32cc824f70d61a8fd6ba",
+      "delta_path": "deltas/spec/pretooluse-guard.md",
+      "target_path": "spec/pretooluse-guard.md",
+      "mode": "MODIFY",
+      "category": "spec",
+      "producer": "openlogos",
+      "source_sha256": "sha256:7c5fdeaaae766ddd1c84a9187aa7c519c880e806b5b86d620c7286da1cc8b0de",
+      "before_sha256": "sha256:2e43d7daa8d5183b0db3182f809083f09e0e42826fc48d049f556cbf2ecb04a9",
+      "content_sha256": "sha256:c5454f969b33bb61f86d19923e508222bfe4dd58f4f308110b9873bae801c94d",
+      "sealed_sha256": "sha256:c5454f969b33bb61f86d19923e508222bfe4dd58f4f308110b9873bae801c94d"
+    }
+  ],
+  "receipt": {
+    "transaction_id": "mtx_09b894e58370b75387a8926b",
+    "seal_sha256": "sha256:0229c50080c424bf33a8660353518ff14d22f11ae44beaf5ebd2301f43d80059",
+    "target_set_sha256": "sha256:bc7aef892fd7d8630f8d3874dec4548bcc9dde3655bbcf1ac28fdbdb9a344076",
+    "closure_sha256": "sha256:734188c0db624f380cad505cf82439f1b7126987c2851de7598e8e61bdf709f4",
+    "target_count": 9,
+    "plan_sha256": "sha256:d797c5a705bf6d1ebf871185364de7205763895ff925fbffb667938cf87a44af",
+    "change": "fix-guard-check-bash-write-target-jurisdiction",
+    "module": "core",
+    "changed_paths": [
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S19-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "spec/pretooluse-guard.md"
+    ],
+    "created_paths": [],
+    "final_hashes": [
+      {
+        "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+        "sha256": "sha256:d7aab79b5e50ad7dcafd68e36be8c8193bf739503ab928d1d6bb2b69288a277c"
+      },
+      {
+        "path": "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "sha256": "sha256:815d7ae2d99491e9edf83852ddbbad197ed6976a9ea50593cd0c34906c4a3603"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "sha256": "sha256:3c5f3a17869bf1692f55fa4817da024ec4d48af54f6cc0a8bbfc88227e06d81e"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+        "sha256": "sha256:502d2533f7ee950c7144f8dce758ea190f6326039bb2947f1ecf999359eea2db"
+      },
+      {
+        "path": "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+        "sha256": "sha256:701fd341f13b6458a27aebdc113e6f88412a54e4cca3270678a8066067e0e60c"
+      },
+      {
+        "path": "logos/resources/test/core-S09-test-cases.md",
+        "sha256": "sha256:7273c231c811bd6cf9df22127493611a14a9c3620749862d0870bdd0156212fc"
+      },
+      {
+        "path": "logos/resources/test/core-S19-test-cases.md",
+        "sha256": "sha256:b85935c3378a37120e0bfe7f995289942b3f7b9b361302eafbcb12d3d3b5d084"
+      },
+      {
+        "path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "sha256": "sha256:5820db155d5e2dcb91639c9d53deb2e7e0516be92d7887449e451ba5f5d33b42"
+      },
+      {
+        "path": "spec/pretooluse-guard.md",
+        "sha256": "sha256:c5454f969b33bb61f86d19923e508222bfe4dd58f4f308110b9873bae801c94d"
+      }
+    ],
+    "metadata_summaries": [],
+    "test_change_set": {
+      "schema": "openlogos/test-change-set@1",
+      "change": "fix-guard-check-bash-write-target-jurisdiction",
+      "module": "core",
+      "source": "semantic-before-after-diff",
+      "changed_test_ids": [
+        "SMOKE-core-195",
+        "ST-S09-122",
+        "UT-S09-317",
+        "UT-S09-318",
+        "UT-S19-41"
+      ],
+      "removed_test_ids": [],
+      "targets": [
+        {
+          "target_path": "logos/resources/test/core-S09-test-cases.md",
+          "before_sha256": "68630053ca84c54cad8582e8f0a1bcc30eba9732a99c76e481e4e934e20b71ff",
+          "after_sha256": "7273c231c811bd6cf9df22127493611a14a9c3620749862d0870bdd0156212fc"
+        },
+        {
+          "target_path": "logos/resources/test/core-S19-test-cases.md",
+          "before_sha256": "8522d16d9010f929b56cfb1c97f344e69a8f956f2e66598510ca92a2feb4b07c",
+          "after_sha256": "b85935c3378a37120e0bfe7f995289942b3f7b9b361302eafbcb12d3d3b5d084"
+        },
+        {
+          "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+          "before_sha256": "17cbd2cbc8c1ebc22ffd1277e6f465f61b99726516421bf9a0daf9cb221efc3d",
+          "after_sha256": "5820db155d5e2dcb91639c9d53deb2e7e0516be92d7887449e451ba5f5d33b42"
+        }
+      ],
+      "sha256": "sha256:ab06fab455b13113591d1afa25695120af6ce4d7f4144bf737c68b764f951ca5"
+    },
+    "spec_merged": {
+      "path": "logos/changes/fix-guard-check-bash-write-target-jurisdiction/SPEC_MERGED"
+    },
+    "commit_paths": [
+      "logos/changes/fix-guard-check-bash-write-target-jurisdiction/MERGE_RECEIPT.json",
+      "logos/changes/fix-guard-check-bash-write-target-jurisdiction/SPEC_MERGED",
+      "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+      "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md",
+      "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+      "logos/resources/test/core-S09-test-cases.md",
+      "logos/resources/test/core-S19-test-cases.md",
+      "logos/resources/test/smoke/core-smoke-test-cases.md",
+      "spec/pretooluse-guard.md"
+    ],
+    "completed_at": "2026-09-07T00:39:14.480Z",
+    "receipt_sha256": "sha256:3b7093d66e575877e96d54b96553e658fd08fe15bba639aa7eb76c170bb8b4d9"
+  },
+  "artifact_hashes": [
+    {
+      "path": "logos/changes/fix-guard-check-bash-write-target-jurisdiction/MERGE_RECEIPT.json",
+      "sha256": "sha256:9223980e74f05bb1fbf67213ea52b39d1d62f8703cc5cf958c5dd5f4e4d1d871"
+    },
+    {
+      "path": "logos/changes/fix-guard-check-bash-write-target-jurisdiction/SPEC_MERGED",
+      "sha256": "sha256:0dda77a25a288582d298c4f3d386a868b15b9f640e7fe7440f0847029ac399f2"
+    }
+  ],
+  "aborted_at": null,
+  "created_at": "2026-09-07T00:37:14.243Z",
+  "updated_at": "2026-09-07T00:39:14.480Z"
+}
