@@ -1,6 +1,6 @@
 {
   "name": "@miniidealab/openlogos",
-  "version": "0.14.23",
+  "version": "0.14.24",
   "description": "CLI tool for the OpenLogos software engineering methodology",
   "type": "module",
   "bin": {
