@@ -1,3 +1,46 @@
+# 部署报告：fix-guard-check-bash-write-target-jurisdiction / OpenLogos 0.14.24（2026-09-06，本机全局部署与正式 smoke 完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `fix-guard-check-bash-write-target-jurisdiction`（发布内容 = guard-check Bash 写命令路径提取与逐路径管辖判定：命中 `BASH_WRITE_PATTERNS` 的 `rm`/`cp`/`mv`/`mkdir`/`touch`/`chmod`/`chown` 结构化单命令跳过选项 flag 提取全量路径实参，逐路径走既有 `is_whitelisted_path`——全外/白名单放行，任一项目内非白名单维持拦截；解析不出形态维持无条件拦截 fail-closed）。
+- **授权与门禁**：用户明确指令「验收通过，请打开任务列表并执行部署任务，部署完成后请 smoke」；`openlogos verify` PASS（2176/2176，覆盖率与通过率 100%，Layer 1 80/80），`VERIFY_PASS` 在场。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.14.24` 已完成真实 npm pack、制品身份核对（随包 `claude-plugin-template/bin/guard-check` 与仓内源同字节、含路径提取新字节；prepack 再生 asset-manifest 与已提交字节零漂移）、隔离 prefix 行为矩阵（SMOKE-core-195 四类证据全 PASS，含固定 0.14.23 全外误拦缺陷复现对照与 roundtrip 无混装）、本机全局安装；新 shell 复核 `openlogos --version` 精确 `0.14.24`，package/asset-manifest/五类 plugin manifest 全同源。
+- **数据迁移 / 服务启动**：无 / 不适用（guard-check 为无状态判定脚本，存量项目经 `openlogos sync` 刷新字节）。
+- **公开副作用**：零；未执行 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+- **正式 smoke**：`openlogos smoke` PASS——165/165 定义用例全部执行，覆盖率与通过率 100%，Gate 3.8 PASS，`SMOKE_PASS` 在场；SMOKE-core-195 pass（证据与隔离矩阵同源，candidate 同哈希 `af5d83b0…cf52c1`）；smoke 期间安装态 0.14.24 CLI 将本仓 dogfood 副本 `.claude/openlogos/bin/guard-check` 刷新为新字节（与 `plugin/bin/guard-check` 同源）。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| source commit | `a6581c9` |
+| candidate tarball | `logos/resources/verify/deployment-artifacts/fix-guard-check-bash-write-target-jurisdiction/miniidealab-openlogos-0.14.24.tgz`；2,348,407 字节；791 文件 |
+| candidate SHA-256 | `af5d83b064d2e95d06ab622276d17bb1eceddd07e364d18eca80d2f688cf52c1` |
+| 固定回滚 tarball | `logos/resources/verify/deployment-artifacts/fix-next-ensure-initial-plan-slice-transaction/miniidealab-openlogos-0.14.23.tgz`（0.14.23 部署窗口冻结件） |
+| 回滚 SHA-256 | `de042d28db4e143a0da0e1e4dc63a9169557ac9cc4dde4ead8e8164ccf507a5b` |
+| 部署前入口 / 版本 | `/opt/homebrew/bin/openlogos` → dist/index.js / `0.14.23` |
+
+可复制回滚命令：
+
+```bash
+npm install -g logos/resources/verify/deployment-artifacts/fix-next-ensure-initial-plan-slice-transaction/miniidealab-openlogos-0.14.23.tgz
+openlogos --version   # 期望 0.14.23
+```
+
+## 三、隔离矩阵证据（SMOKE-core-195，`matrix-smoke-results.jsonl` 冻结入库）
+
+| 矩阵项 | 结论 |
+|---|---|
+| candidate identity | `0.14.24`，tarball sha256 `af5d83b0…cf52c1`，随包 guard-check 含路径提取新字节且 manifest 哈希一致 |
+| 项目外放行（核心验收①） | 安装态 launched 无提案：全外实参 `rm -rf`/`cp`/`mkdir -p`/`touch`/`mv` → 一律 exit 0 放行 |
+| 项目内拦截零回归（核心验收②） | `rm <项目内源码>`、混合 `cp <外> <内>` → exit 2 双通道（stdout JSON 结构不变 + stderr 指引）；白名单目标放行、`git push` 安全白名单放行、项目内重定向拦截不变、有提案放行 |
+| 解析不出保守臂（核心验收③） | `$VAR` / `$(…)` / `&&` 复合 → exit 2 维持无条件拦截 |
+| 0.14.23 缺陷复现对照 | 同一全外 `rm -rf`/`cp` 在固定 0.14.23 上 **exit 2 误拦截**（缺陷复现）——矩阵未空转；项目内拦截与安全白名单新旧同判（安全面零放宽） |
+| rollback roundtrip | `0.14.23→0.14.24` 往返无混装，恢复后判定结论不变 |
+
+---
+
 # 部署报告：fix-next-ensure-initial-plan-slice-transaction / OpenLogos 0.14.23（2026-09-06，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论

@@ -478,6 +478,42 @@ case "$TOOL_NAME" in
       if [ -n "$WRITE_TARGET" ] && is_whitelisted_path "$WRITE_TARGET"; then
         exit 0
       fi
+
+      # Path-argument jurisdiction (fix-guard-check-bash-write-target-jurisdiction):
+      # structured single-command write forms extract every path argument (skipping
+      # leading "-" option flags; cp/mv include source and destination) and run each
+      # through is_whitelisted_path — all outside the project root or whitelisted →
+      # allow; any inside and non-whitelisted → keep blocking. Unparseable forms
+      # (variable expansion, command substitution, backticks, pipes, compound
+      # commands, redirects) stay unconditionally blocked (fail-closed).
+      if [ -z "$WRITE_TARGET" ] \
+        && echo "$COMMAND_TRIMMED" | grep -qE '^(rm|cp|mv|mkdir|touch|chmod|chown) ' 2>/dev/null \
+        && ! echo "$COMMAND_TRIMMED" | grep -qE '[$`|;&<>]' 2>/dev/null; then
+        ANY_PATH=0
+        ALL_ALLOWED=1
+        FIRST_WORD=1
+        set -f
+        for ARG in $COMMAND_TRIMMED; do
+          if [ "$FIRST_WORD" -eq 1 ]; then FIRST_WORD=0; continue; fi
+          case "$ARG" in
+            -*) continue ;;
+          esac
+          # Strip simple surrounding quotes; a quoted path with spaces word-splits
+          # into fragments that resolve inside the project → conservative block.
+          ARG="${ARG#\"}"; ARG="${ARG%\"}"; ARG="${ARG#\'}"; ARG="${ARG%\'}"
+          [ -n "$ARG" ] || continue
+          ANY_PATH=1
+          if ! is_whitelisted_path "$ARG"; then
+            ALL_ALLOWED=0
+            break
+          fi
+        done
+        set +f
+        if [ "$ANY_PATH" -eq 1 ] && [ "$ALL_ALLOWED" -eq 1 ]; then
+          exit 0
+        fi
+      fi
+
       block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(echo "$COMMAND_TRIMMED" | head -c 120)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
     fi
 

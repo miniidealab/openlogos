@@ -1,0 +1,1 @@
+{"id":"SMOKE-core-195","status":"pass","timestamp":"2026-09-07T01:29:42.013Z","duration_ms":8810,"environment":"guard-bash-staging","evidence":["candidate=0.14.24 sha256:af5d83b064d2e95d06ab622276d17bb1eceddd07e364d18eca80d2f688cf52c1","项目外放行 + 项目内拦截零回归 + 解析不出保守臂 通过","0.14.23 全外误拦缺陷复现对照有效（项目内拦截与安全白名单同判）","roundtrip 0.14.23→0.14.24 无混装且判定结论不变"]}
