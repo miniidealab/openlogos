@@ -653,17 +653,6 @@ design_system_fallback_reason: ""
 pages: []                   # 每项 {id, prototype: core-NN-<slug>.html, description}
 \`\`\`
 
-## Authority Impact
-
-\`\`\`yaml
-authority_impact:
-  schema: openlogos/authority-impact@1
-  applicability: required
-  trigger_reasons: []       # shared_business_fact | derived_projection | ownership_or_cutover
-  facts: []                 # 每项闭合 fact_id/authority_ref/writer/projection/cutover/tests
-  unresolved: []
-\`\`\`
-
 ## 决策澄清
 
 \`\`\`yaml
@@ -726,17 +715,6 @@ ui_impact: false            # Does this change touch the UI (only meaningful for
 design_system_mode: generated   # generated | fallback (fallback requires design_system_fallback_reason)
 design_system_fallback_reason: ""
 pages: []                   # each item {id, prototype: core-NN-<slug>.html, description}
-\`\`\`
-
-## Authority Impact
-
-\`\`\`yaml
-authority_impact:
-  schema: openlogos/authority-impact@1
-  applicability: required
-  trigger_reasons: []       # shared_business_fact | derived_projection | ownership_or_cutover
-  facts: []                 # each item closes fact_id/authority_ref/writer/projection/cutover/tests
-  unresolved: []
 \`\`\`
 
 ## Decision Clarification

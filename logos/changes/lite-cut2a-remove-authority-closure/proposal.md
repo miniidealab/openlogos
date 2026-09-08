@@ -19,7 +19,7 @@ OpenLogos Lite 减法方案（`logos/resources/reference/openlogos-lite-simplifi
 ## 变更范围
 - 影响的需求文档：`core-01-requirements.md`（删除权威闭包验收要求整节）
 - 影响的功能规格：`core-01-feature-specs.md`（删除 L10 功能小节与分阶段校验小节）
-- 影响的业务场景：S04、S05、S06、S09、S16、S19、S35
+- 影响的业务场景：S04、S05、S06、S07、S09、S12、S16、S19、S35
 - 影响的 API：无
 - 影响的 DB 表：无
 - 影响的编排测试：无
@@ -115,6 +115,8 @@ defaults: []
 
 **明确不做**：L9 基线闭包（下一刀）、L8 降级（见决策 C02 上方 D-CUT2A-2 的同源理由，推迟到 L9 之后）、verify 层级简化（O9，下一刀）。
 
+**已知遗留**：`logos/resources/test/smoke/core-smoke-test-cases.md` 的「Authority Closure 安装态 smoke（SMOKE-core-163～167）」一节验证的能力已随 L10 删除，但本提案声明不需要 smoke，L9 因此正当拒绝在此改动 smoke 规格（`baseline_closure_target_missing`：smoke disposition 与部署决策不一致）。该节留待会真正执行 smoke 的发布提案清理。这 5 条不影响 `openlogos verify`——它只统计 UT/ST。
+
 **已发现的通用缺陷（本提案不修）**：`spec/cli-json-output.md`、`spec/change-management.md`、`spec/authority-closure.md` 三份文档各存在一处**字节完全相同的重复 `## ` 标题**（历史 ADDED delta 在正文中重复了控制块标题所致）。重复标题使该章节的锚永远解析为 ambiguous——**以 delta 机制永久不可寻址**。本次靠改锚到唯一子节绕过，但缺陷本身仍在。建议后续提案为 `openlogos lint-specs` 增加「同文件内重复标题」检查项，并清理存量空标题壳。
 
 ## 基线闭包计划
@@ -129,17 +131,17 @@ baseline_closure:
   ambiguity: block-before-existing-plan-exit
   standalone_baseline_required: false
   jit_confirmation: disabled
-  touched_scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+  touched_scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
   targets:
     - category: requirement
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: MODIFY
       delta_path: "deltas/prd/1-product-requirements/core-01-requirements.md"
       reason: "删除 Authority Closure 权威闭包的验收要求整节；change-lint 检查项要求由 11 项改为 10 项。"
       evidence: ["target_exists: logos/resources/prd/1-product-requirements/core-01-requirements.md"]
       missing_evidence: []
     - category: feature
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: MODIFY
       delta_path: "deltas/prd/2-product-design/1-feature-specs/core-01-feature-specs.md"
       reason: "删除 Authority Closure（L10）功能小节与其分阶段校验小节；change-lint 级别表收敛为 L0–L9。"
@@ -167,11 +169,25 @@ baseline_closure:
       evidence: ["target_exists: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S06-test-design.md"]
       missing_evidence: []
     - category: scenario
+      scenario_ids: [S07]
+      mode: MODIFY
+      delta_path: "deltas/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md"
+      reason: "code-implementor / code-reviewer 的 Shadow Authority 实现与审查扩展节随 L10 删除。"
+      evidence: ["target_exists: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md"]
+      missing_evidence: []
+    - category: scenario
       scenario_ids: [S09]
       mode: MODIFY
       delta_path: "deltas/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md"
       reason: "删除 authority_impact 生命周期时序节；merge 准入判定的表述由「L1–L10」改为「L0–L9」。"
       evidence: ["target_exists: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md"]
+      missing_evidence: []
+    - category: scenario
+      scenario_ids: [S12]
+      mode: MODIFY
+      delta_path: "deltas/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md"
+      reason: "architecture-designer 的 Authority Registry 架构设计节随 L10 删除。"
+      evidence: ["target_exists: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md"]
       missing_evidence: []
     - category: scenario
       scenario_ids: [S16]
@@ -237,11 +253,25 @@ baseline_closure:
       evidence: ["target_exists: logos/resources/test/core-S06-test-cases.md"]
       missing_evidence: []
     - category: test
+      scenario_ids: [S07]
+      mode: MODIFY
+      delta_path: "deltas/test/core-S07-test-cases.md"
+      reason: "整份删除 Shadow Authority 代码审查用例（UT-S07-01～06、ST-S07-01～02 共 8 个）。"
+      evidence: ["target_exists: logos/resources/test/core-S07-test-cases.md"]
+      missing_evidence: []
+    - category: test
       scenario_ids: [S09]
       mode: MODIFY
       delta_path: "deltas/test/core-S09-test-cases.md"
       reason: "整节删除 authority_impact 生命周期用例（7 个）；merge 同源节的「L1–L9」表述改为「L0–L9」。"
       evidence: ["target_exists: logos/resources/test/core-S09-test-cases.md"]
+      missing_evidence: []
+    - category: test
+      scenario_ids: [S12]
+      mode: MODIFY
+      delta_path: "deltas/test/core-S12-test-cases.md"
+      reason: "整份删除 Authority Registry 架构用例（UT-S12-01～06、ST-S12-01 共 7 个）。"
+      evidence: ["target_exists: logos/resources/test/core-S12-test-cases.md"]
       missing_evidence: []
     - category: test
       scenario_ids: [S16]
@@ -265,42 +295,42 @@ baseline_closure:
       evidence: ["target_exists: logos/resources/test/core-S35-test-cases.md"]
       missing_evidence: []
     - category: api
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: SKIP
       delta_path: null
       reason: "无 HTTP/RPC 接口。"
       evidence: ["项目 logos/resources/api/ 为空"]
       missing_evidence: []
     - category: architecture
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: SKIP
       delta_path: null
       reason: "不引入新组件或新边界；纯删除一道 lint 检查。"
       evidence: ["先例：lite-cut1a/1b 同类纯删除变更 architecture=SKIP"]
       missing_evidence: []
     - category: database
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: SKIP
       delta_path: null
       reason: "无业务数据。"
       evidence: ["项目 logos/resources/database/ 为空"]
       missing_evidence: []
     - category: deployment
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: SKIP
       delta_path: null
       reason: "不部署；全局 CLI 保持 0.14.25（减法方案 §13 保险条款）。"
       evidence: ["proposal 部署影响声明为否"]
       missing_evidence: []
     - category: orchestration
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: SKIP
       delta_path: null
       reason: "非 API 项目，无编排测试。"
       evidence: ["项目 logos/resources/scenario/ 为空"]
       missing_evidence: []
     - category: smoke
-      scenario_ids: [S04, S05, S06, S09, S16, S19, S35]
+      scenario_ids: [S04, S05, S06, S07, S09, S12, S16, S19, S35]
       mode: SKIP
       delta_path: null
       reason: "无部署即无 smoke。"

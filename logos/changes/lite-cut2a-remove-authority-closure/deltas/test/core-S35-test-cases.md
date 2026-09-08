@@ -73,7 +73,7 @@
 
 | ID | 描述 | 前置条件 | 操作序列 | 预期结果 |
 |---|---|---|---|---|
-| ST-S35-26 | 真实 CLI 下无 authority_impact 的提案全链通过 | 真实 CLI；一个 `proposal.md` **完全不含** `## Authority Impact` 小节的合规提案 | ① 跑 `change-lint --format json`；② 跑 `merge <slug>` | ① PASS（10/10），envelope 的 issues 中无 `authority_closure_*` 码，`summary` 中无 authority 维度；② merge 成功并写 `SPEC_MERGED`；全程无「缺声明」类诊断 |
+| ST-S35-26 | 真实 CLI 下无 authority_impact 的提案全链通过 | 真实 CLI；一个 `proposal.md` **完全不含** `## Authority Impact` 小节的合规提案 | ① 跑 `change-lint --format json` 与文本形态；② 跑 `merge <slug>`；③ 用 `change` 新建一个提案并读其模板 | ① PASS，`data.violations` 为空，envelope 中不出现 `authority_closure_*` 码、无 authority 维度；文本形态列出的检查项编号上界为 9、无 L10 行（总数随 L7/L9 条件在场而变，最多 10 项）；② merge 成功并写 `SPEC_MERGED`，全程无「缺声明」类诊断；③ 模板不含 `Authority Impact` 小节与 `authority_impact` 字段 |
 
 ### 追溯与覆盖
 

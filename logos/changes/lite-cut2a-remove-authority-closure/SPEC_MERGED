@@ -1,13 +1,15 @@
 {
   "type": "merge_complete",
-  "completed_at": "2026-09-08T03:07:04.906Z",
+  "completed_at": "2026-09-08T03:21:11.650Z",
   "test_change_set": {
     "schema": "openlogos/test-change-set@1",
     "change": "lite-cut2a-remove-authority-closure",
     "module": "core",
     "source": "semantic-before-after-diff",
     "changed_test_ids": [
+      "ST-S09-110",
       "ST-S35-26",
+      "UT-S09-284",
       "UT-S35-127",
       "UT-S35-130",
       "UT-S35-134",
@@ -19,8 +21,11 @@
       "ST-S05-23",
       "ST-S06-01",
       "ST-S06-02",
+      "ST-S07-01",
+      "ST-S07-02",
       "ST-S09-104",
       "ST-S09-105",
+      "ST-S12-01",
       "ST-S16-11",
       "ST-S19-17",
       "ST-S35-19",
@@ -43,11 +48,23 @@
       "UT-S06-04",
       "UT-S06-05",
       "UT-S06-06",
+      "UT-S07-01",
+      "UT-S07-02",
+      "UT-S07-03",
+      "UT-S07-04",
+      "UT-S07-05",
+      "UT-S07-06",
       "UT-S09-266",
       "UT-S09-267",
       "UT-S09-268",
       "UT-S09-269",
       "UT-S09-270",
+      "UT-S12-01",
+      "UT-S12-02",
+      "UT-S12-03",
+      "UT-S12-04",
+      "UT-S12-05",
+      "UT-S12-06",
       "UT-S16-35",
       "UT-S16-36",
       "UT-S16-37",
@@ -86,9 +103,19 @@
         "after_sha256": "8ce2f42e791adfead2426cd603d9afd8c46d75e69b2128801834493febbd6790"
       },
       {
+        "target_path": "logos/resources/test/core-S07-test-cases.md",
+        "before_sha256": "f2c0d5c8068f90d14bd8707aa8b2b0e378f3df65102dea7c8aeeef9f75b00bf1",
+        "after_sha256": "7f942f60ec5decb880bab6fdcecc316fc81d0ea02a42c8420a8299df0b01763b"
+      },
+      {
         "target_path": "logos/resources/test/core-S09-test-cases.md",
         "before_sha256": "b69f6d6442ee40113f06c0bbec4edfe5ff5c516a02e12750077b58d13ca82e14",
-        "after_sha256": "41861de06d723f71f92debb0fa4dc782c187d769c24f62384fc661d7c4eb4ab8"
+        "after_sha256": "0439b9bd7fa560e63ef8443e6db6c06803826fdc8c45812ce73ba19b97a66786"
+      },
+      {
+        "target_path": "logos/resources/test/core-S12-test-cases.md",
+        "before_sha256": "ebbda109ce290b2f4162c8cbd2ec5d92c9a6a64eaf2829c88c3efb1bd9246dda",
+        "after_sha256": "f80ea85df321829e4544e907614d158784ea60d401d1d1b4ff56399b8e236a98"
       },
       {
         "target_path": "logos/resources/test/core-S16-test-cases.md",
@@ -103,9 +130,9 @@
       {
         "target_path": "logos/resources/test/core-S35-test-cases.md",
         "before_sha256": "0ad6c77af4a7b28505372af14c5da126f0d310774ad90be647517fcc744adf0d",
-        "after_sha256": "b99d3b5186b6935d0a84f23ba689459d2d2a0b4f2c0025b2037d3e64d2af313f"
+        "after_sha256": "b82b33fc3aa05530ba92772ad3da5c4d769594aad766a74f858db7f22d0ac8bf"
       }
     ],
-    "sha256": "sha256:2ac08c04125ab1528e097c25cce68c3e7ecd445bfd7b4b8878522fd9a64338e0"
+    "sha256": "sha256:09bfeda543b48da7f51469db6dbc9188b5d66c19e823c85f9acca65d25328547"
   }
 }

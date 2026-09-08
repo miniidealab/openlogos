@@ -21,6 +21,12 @@
 - [x] [MODIFY] `deltas/test/core-S16-test-cases.md`：整节删除 Authority Closure JSON 用例（4 个）。
 - [x] [MODIFY] `deltas/test/core-S19-test-cases.md`：整节删除 Authority Closure candidate/回滚用例（4 个）。
 - [x] [MODIFY] `deltas/test/core-S35-test-cases.md`：删除 L10 两节（20 个）与围栏节中依附 L10 的 2 个用例；保留并改写与 L10 无关的围栏/诊断/ID 语法用例；新增 UT-S35-134/135、ST-S35-26。
+- [x] [MODIFY] `deltas/prd/3-technical-plan/2-scenario-implementation/core-S07-code-generation.md`：code-implementor / code-reviewer 的 Shadow Authority 实现与审查扩展节随 L10 删除。
+- [x] [MODIFY] `deltas/prd/3-technical-plan/2-scenario-implementation/core-S12-architecture-designer.md`：architecture-designer 的 Authority Registry 架构设计节随 L10 删除。
+- [x] [MODIFY] `deltas/test/core-S07-test-cases.md`：整份删除 Shadow Authority 代码审查用例（8 个）。
+- [x] [MODIFY] `deltas/test/core-S12-test-cases.md`：整份删除 Authority Registry 架构用例（7 个）。
 
 ## [code] 代码实现
 
+- [x] 切片1：删除 L10 权威闭包——删除 `cli/src/lib/authority-closure.ts`(419)、`authority-candidate.ts`(100)、`authority-design-gates.ts`(219)，摘除其在 `change-lint.ts` / `plan-package.ts` / `plan-package-contract.ts` / `proposal-markers.ts` / `commands/change-lint.ts` / `i18n.ts` 的接线，change-lint 检查项由 11 项收敛为 10 项（L0～L9）；`change` 命令的提案模板不再生成 `## Authority Impact` 小节；存量 `authority_impact` 块一律忽略而非报错。删除 5 个 L10 专属测试文件（authority-closure / authority-candidate / authority-role-gates / s35-staged-authority-closure / s35-fence-scan-attribution，共 1165 行）。
+- [x] 切片2：围栏与诊断用例脱离 authority 语境——`s35-fence-scan-attribution.test.ts` 随切片1 删除后，把其中与 L10 无关的两条（UT-S35-127 围栏提取同源、UT-S35-130 诊断点名具体对象）按已合并规格改写并迁入新的 `s35-fence-and-diagnostics.test.ts`：提取器对照组由 `authority-closure` 换为 `baseline-closure`/`clarification`/`ui-first`/`plan-package`，诊断断言对象由 fact_id 换为测试 ID / 文件路径 / 字段名 / 章节锚。

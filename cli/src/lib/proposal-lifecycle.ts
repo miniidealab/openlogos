@@ -829,7 +829,7 @@ export function derivePlanState(
   const taskText = tasksContent ?? (existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '');
   const sections = parseTaskSections(taskText);
   const execution = resolveTasksExecution(sections);
-  const planPackage = evaluatePlanPackage(resolve(proposalDir, '../../..'), proposalDir, undefined, 'plan');
+  const planPackage = evaluatePlanPackage(resolve(proposalDir, '../../..'), proposalDir);
   const proposalFilled = planPackage.proposal.filled;
   const clarificationEvaluation = evaluateProposalClarification(
     proposalContent,

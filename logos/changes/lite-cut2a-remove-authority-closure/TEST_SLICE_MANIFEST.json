@@ -1,0 +1,45 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "lite-cut2a-remove-authority-closure",
+  "module": "core",
+  "task_fingerprint": "sha256:856c2b23c58f6a1e1fe747e8026abb5577974ece0976cf71b4ff3896d6ce7add",
+  "spec_fingerprint": "sha256:4e4111504c15cab0af8e58f396aa871011eb1115180a014249278a045eeda9d6",
+  "generated_at": "2026-09-08T03:21:12.406Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-remove-l10",
+      "task_text": "切片1：删除 L10 权威闭包——删除 `cli/src/lib/authority-closure.ts`(419)、`authority-candidate.ts`(100)、`authority-design-gates.ts`(219)，摘除其在 `change-lint.ts` / `plan-package.ts` / `plan-package-contract.ts` / `proposal-markers.ts` / `commands/change-lint.ts` / `i18n.ts` 的接线，change-lint 检查项由 11 项收敛为 10 项（L0～L9）；`change` 命令的提案模板不再生成 `## Authority Impact` 小节；存量 `authority_impact` 块一律忽略而非报错。删除 5 个 L10 专属测试文件（authority-closure / authority-candidate / authority-role-gates / s35-staged-authority-closure / s35-fence-scan-attribution，共 1165 行）。",
+      "owned_test_ids": [
+        "UT-S35-134",
+        "UT-S35-135",
+        "ST-S35-26"
+      ],
+      "runner_selectors": [
+        "UT-S35-134",
+        "UT-S35-135",
+        "ST-S35-26"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+        "logos/resources/test/core-S35-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-fence-tests-reseat",
+      "task_text": "切片2：围栏与诊断用例脱离 authority 语境——`s35-fence-scan-attribution.test.ts` 随切片1 删除后，把其中与 L10 无关的两条（UT-S35-127 围栏提取同源、UT-S35-130 诊断点名具体对象）按已合并规格改写并迁入新的 `s35-fence-and-diagnostics.test.ts`：提取器对照组由 `authority-closure` 换为 `baseline-closure`/`clarification`/`ui-first`/`plan-package`，诊断断言对象由 fact_id 换为测试 ID / 文件路径 / 字段名 / 章节锚。",
+      "owned_test_ids": [
+        "UT-S35-127",
+        "UT-S35-130"
+      ],
+      "runner_selectors": [
+        "UT-S35-127",
+        "UT-S35-130"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S35-test-cases.md",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md"
+      ]
+    }
+  ]
+}

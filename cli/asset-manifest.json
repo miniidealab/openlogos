@@ -47,13 +47,13 @@
     },
     {
       "path": "dist/i18n.js",
-      "sha256": "bfadee526bf8afc1802d646e66d101ef4ddda6fb6b1845d1b46ea1b2ffd7307f"
+      "sha256": "e9c1cc19b306bc11b28f4589ebdc0846c8dd48b0f6d0c3edc62e1276981e224d"
     }
   ],
   "schemas": [
     {
       "path": "spec/authority-closure.md",
-      "sha256": "4a2d4d60cec77e2e4965e686fe1fb0bcf50876f34c56de8cf75540ce3c506c39"
+      "sha256": "66f47ddb738a31645e2b572a019940800236dd6cffafbe2ba4955ccc811efd6c"
     },
     {
       "path": "spec/schema/next.schema.json",
@@ -102,5 +102,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "47cbc111c8397452278dac6368b5bdbc5c3e7aa6ef570fc5945d04f63a111ebe"
+  "payloadHash": "3949ce247da934a2b34b8d501c721b8d720fbd7b8e800ff968b1134e66c9ed8a"
 }

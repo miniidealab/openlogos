@@ -43,7 +43,7 @@ import type { PlanPackageEvaluation } from './plan-package-contract.js';
 
 /** flow 当前节点使用的 Plan Package 投影；只转发唯一 evaluator，不解析 proposal。 */
 export function evaluateFlowPlanPackage(root: string, proposalDir: string): PlanPackageEvaluation {
-  return evaluatePlanPackage(root, proposalDir, undefined, 'plan');
+  return evaluatePlanPackage(root, proposalDir);
 }
 
 /** node id → 原 PHASE_KEYS（13 个 1:1）。维护在 code 侧以保持 spec/flow/*.yaml 纯净。 */

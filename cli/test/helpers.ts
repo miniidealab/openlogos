@@ -30,7 +30,6 @@ export function withCompleteClarification(content: string): string {
     if (!/^##\s+变更概述\s*$/m.test(normalized)) additions.push('## 变更概述\n测试夹具保持既有行为。');
   }
   if (additions.length > 0) normalized += `\n\n${additions.join('\n\n')}`;
-  normalized = withNotApplicableAuthority(normalized);
   if (/^##\s+(?:决策澄清|Decision Clarification)\s*$/m.test(normalized)) return normalized;
   return `${normalized}\n\n## 决策澄清\n\n\`\`\`yaml\n` + [
     'schema: openlogos/clarification@1',
@@ -65,19 +64,6 @@ export function withCompleteClarification(content: string): string {
     'unresolved: []',
     'defaults: []',
   ].join('\n') + '\n```\n';
-}
-
-/** 为只关注其它 plan 维度的历史夹具补显式 Authority Impact，不补 clarification。 */
-export function withNotApplicableAuthority(content: string): string {
-  const normalized = content.trimEnd();
-  if (/^##\s+Authority Impact\s*$/m.test(normalized) || /^\s*authority_impact\s*:/m.test(normalized)) return normalized;
-  return normalized + '\n\n## Authority Impact\n\n```yaml\n' + [
-    'authority_impact:',
-    '  schema: openlogos/authority-impact@1',
-    '  applicability: not_applicable',
-    '  evidence:',
-    '    - 历史测试夹具仅验证既有行为，不改变业务事实归属',
-  ].join('\n') + '\n```';
 }
 
 /**

@@ -18,8 +18,12 @@ const CLI = resolve(__dirname, '..', 'dist', 'index.js');
 const SLUG = 'gate-fixture';
 
 interface Options {
-  /** authority fact 的 tests；引用不存在 ID 时 change-lint 判 L10 违规 */
-  tests?: string[];
+  /**
+   * 违规触发器：`broken` 时产出一个缺 ADDED/MODIFIED/REMOVED 段标记的 delta，
+   * change-lint 判 L4 `delta_missing_section_marker`。
+   * lite-cut2a 之前这里用「authority fact 引用不存在的测试 ID」触发 L10，该检查项已删除。
+   */
+  broken?: boolean;
   /** 是否携带 baseline_closure 声明——此前它决定 merge 要不要做预检 */
   closureSignal?: boolean;
   /** 是否产出 delta（plan 阶段的合法最小提案不含任何 delta） */
@@ -116,7 +120,7 @@ design_system_fallback_reason: ""
 pages: []
 \`\`\`
 
-${impact(options.tests ?? ['UT-S99-01'])}${options.closureSignal ? CLOSURE : ''}
+${options.closureSignal ? CLOSURE : ''}
 ## 决策澄清
 
 \`\`\`yaml
@@ -145,8 +149,6 @@ function setup(options: Options = {}) {
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), stringifyYaml({
     modules: [{ id: 'core', name: '核心', lifecycle: 'launched', product_type: 'cli' }],
   }));
-  mkdirSync(join(root, 'spec'), { recursive: true });
-  writeFileSync(join(root, 'spec', 'gate-authority.md'), '# registry\n');
   const dir = join(root, 'logos', 'changes', SLUG);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'proposal.md'), proposal(options));
@@ -158,8 +160,10 @@ function setup(options: Options = {}) {
   if (options.withDelta) {
     const deltaDir = join(dir, 'deltas', 'test');
     mkdirSync(deltaDir, { recursive: true });
-    writeFileSync(join(deltaDir, 'core-S99-test-cases.md'),
-      '## ADDED — S99 夹具\n\n| ID | 描述 |\n|---|---|\n| UT-S99-01 | 夹具 |\n');
+    writeFileSync(join(deltaDir, 'core-S99-test-cases.md'), options.broken
+      // 缺段标记：merge 绝不静默整份覆盖主文档，change-lint 判 L4
+      ? '没有任何段标记的正文。\n'
+      : '## ADDED — S99 夹具\n\n| ID | 描述 |\n|---|---|\n| UT-S99-01 | 夹具 |\n');
   }
   return { root, dir };
 }
@@ -175,38 +179,37 @@ const mergeOf = (f: { root: string; dir: string }) =>
 describe('S09 merge 准入与 change-lint 同源', () => {
   it('UT-S09-283: 准入结论与 change-lint 逐字同源', () => {
     // ① 合规提案：lint 无违规 → merge 放行
-    const ok = setup({ tests: ['UT-S99-01'], withDelta: true });
+    const ok = setup({ withDelta: true });
     expect(lintOf(ok).violations).toEqual([]);
     expect(mergeOf(ok).status).toBe(0);
 
     // ② 不合规提案：lint 有违规 → merge 拒绝
-    const bad = setup({ tests: ['UT-S97-99'], withDelta: true });
+    const bad = setup({ broken: true, withDelta: true });
     expect(lintOf(bad).violations.length).toBeGreaterThan(0);
     expect(mergeOf(bad).status).not.toBe(0);
   });
 
   it('UT-S09-284: 无 baseline_closure 信号的提案同样经预检', () => {
     // 不带闭包声明、[delta] 任务也无 [MODIFY]/[CREATE] 标记——此前整道预检不做、直接放行
-    const f = setup({ tests: ['UT-S97-99'], closureSignal: false, withDelta: true });
+    const f = setup({ broken: true, closureSignal: false, withDelta: true });
     expect(readFileSync(join(f.dir, 'proposal.md'), 'utf8')).not.toContain('baseline_closure');
-    expect(lintOf(f).violations.some(v => v.code === 'authority_closure_incomplete')).toBe(true);
+    expect(lintOf(f).violations.some(v => v.code === 'delta_missing_section_marker')).toBe(true);
     const merged = mergeOf(f);
     expect(merged.status).not.toBe(0);
-    expect(`${merged.stdout}${merged.stderr}`).toContain('UT-S97-99');
+    expect(`${merged.stdout}${merged.stderr}`).toContain('core-S99-test-cases.md');
     // 失败路径不得留下任何写入
     expect(existsSync(join(f.dir, 'SPEC_MERGED'))).toBe(false);
     expect(existsSync(join(f.dir, 'MERGE_PROMPT.md'))).toBe(false);
   });
 
   it('UT-S09-285: 拒绝时逐条输出可归因诊断', () => {
-    const f = setup({ tests: ['UT-S97-99'], withDelta: true });
+    const f = setup({ broken: true, withDelta: true });
     const merged = mergeOf(f);
     const text = `${merged.stdout}${merged.stderr}`;
     const lint = lintOf(f);
     // 每条违规都单独成行，含 code、路径与具体实体
     for (const v of lint.violations) expect(text).toContain(`[${v.code}]`);
-    expect(text).toContain('修复：');
-    expect(text).toContain('UT-S97-99');
+    expect(text).toContain('core-S99-test-cases.md');
     // 并给出可复现的自查命令
     expect(text).toContain('openlogos change-lint');
     // 禁止只给聚合结论
@@ -214,16 +217,18 @@ describe('S09 merge 准入与 change-lint 同源', () => {
   });
 
   it('ST-S09-110: 真实 CLI 下 merge 可由 change-lint 完全预知', () => {
-    const f = setup({ tests: ['UT-S97-99'], withDelta: true });
-    // ①② 补齐前：两者同为失败，且 merge 诊断含 lint 点名的同一 ID
-    expect(lintOf(f).violations.length).toBeGreaterThan(0);
+    const f = setup({ broken: true, withDelta: true });
+    // ①② 修正前：两者同为失败，且拒绝理由是同一批 code
+    const lintBefore = lintOf(f);
+    expect(lintBefore.violations.length).toBeGreaterThan(0);
     const before = mergeOf(f);
     expect(before.status).not.toBe(0);
-    expect(`${before.stdout}${before.stderr}`).toContain('UT-S97-99');
+    const beforeText = `${before.stdout}${before.stderr}`;
+    for (const v of lintBefore.violations) expect(beforeText).toContain(`[${v.code}]`);
 
-    // ③④ 修正 fact 引用后：两者同为成功
-    const proposalPath = join(f.dir, 'proposal.md');
-    writeFileSync(proposalPath, readFileSync(proposalPath, 'utf8').replace('UT-S97-99', 'UT-S99-01'));
+    // ③④ 修正该违规后：两者同为成功
+    const deltaPath = join(f.dir, 'deltas', 'test', 'core-S99-test-cases.md');
+    writeFileSync(deltaPath, '## ADDED — S99 夹具\n\n| ID | 描述 |\n|---|---|\n| UT-S99-01 | 夹具 |\n');
     expect(lintOf(f).violations).toEqual([]);
     expect(mergeOf(f).status).toBe(0);
   });
@@ -232,11 +237,11 @@ describe('S09 merge 准入与 change-lint 同源', () => {
 describe('S35 门禁阶段可满足性', () => {
   it('UT-S35-129: 每道门在其阶段的合法最小提案均通过', () => {
     // plan 阶段的合法最小提案：完整 proposal/tasks，**不含任何 delta**
-    const plan = setup({ tests: ['UT-S99-01'], withDelta: false });
+    const plan = setup({ withDelta: false });
     expect(detectProposalStepViaFlow(plan.dir)).toBe('ready-to-delta');
 
     // spec / merge 阶段的合法最小提案：含全部已规划 delta，[code] 仍为空标题
-    const spec = setup({ tests: ['UT-S99-01'], withDelta: true });
+    const spec = setup({ withDelta: true });
     const lint = lintOf(spec);
     // 逐门断言：任一门在其阶段不可满足即失败，并点名是哪一道
     const failing = lint.checks.filter(c => c.violations > 0).map(c => `L${c.id} ${c.label}`);

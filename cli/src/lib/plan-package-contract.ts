@@ -1,5 +1,4 @@
 import { authorityScan } from './markdown-scan.js';
-import type { AuthorityClosureSummary } from './authority-closure.js';
 
 export const PLAN_PACKAGE_SCHEMA = 'openlogos/plan-package-evaluation@1' as const;
 export const PLAN_PACKAGE_CONTRACT_VERSION = '1';
@@ -23,11 +22,6 @@ export type PlanPackageIssueCode =
   | 'proposal_change_type_invalid'
   | 'proposal_deployment_fields_invalid'
   | 'proposal_clarification_invalid'
-  | 'authority_impact_declaration_missing'
-  | 'authority_impact_malformed'
-  | 'authority_fact_reference_missing'
-  | 'authority_closure_incomplete'
-  | 'authority_cutover_unclosed'
   | 'tasks_template_remaining'
   | 'tasks_code_entry_before_spec_complete'
   | 'tasks_code_section_missing'
@@ -36,7 +30,7 @@ export type PlanPackageIssueCode =
 export interface CompletionIssue {
   code: PlanPackageIssueCode;
   path: string;
-  section_id?: PlanSectionId | 'authority_impact' | 'code' | 'delta' | 'deploy';
+  section_id?: PlanSectionId | 'code' | 'delta' | 'deploy';
   line?: number;
   actual?: string;
   expected?: string;
@@ -56,10 +50,10 @@ export interface PlanPackageEvaluation {
     issues: CompletionIssue[];
   };
   issues: CompletionIssue[];
-  authority_closure?: AuthorityClosureSummary;
 }
 
-interface AuthoritySection {
+/** 提案中被 PLAN_SECTION_REGISTRY 认领的章节（名称曾为 AuthoritySection，与已删除的 L10 无关）。 */
+interface PlanSection {
   id: PlanSectionId;
   title: string;
   line: number;
@@ -72,9 +66,6 @@ const ISSUE_ORDER: PlanPackageIssueCode[] = [
   'proposal_required_section_empty', 'proposal_placeholder_remaining',
   'proposal_change_type_invalid', 'proposal_deployment_fields_invalid',
   'proposal_clarification_invalid', 'tasks_template_remaining',
-  'authority_impact_declaration_missing', 'authority_impact_malformed',
-  'authority_fact_reference_missing', 'authority_closure_incomplete',
-  'authority_cutover_unclosed',
   'tasks_code_entry_before_spec_complete', 'tasks_code_section_missing',
   'tasks_deployment_conflict',
 ];
@@ -92,7 +83,7 @@ function hasPlaceholder(content: string): boolean {
   return /\[(?:为什么要做这个变更|需求级\s*\/|列表|用\s*1-3\s*段话概述|Why is this change needed|Requirements\s*\/|list\]|Describe what will change)/i.test(content);
 }
 
-function scanSections(content: string): AuthoritySection[] {
+function scanSections(content: string): PlanSection[] {
   const lines = content.replace(/\r\n/g, '\n').split('\n');
   const scan = authorityScan(lines);
   const headings: Array<{ line: number; title: string }> = [];
@@ -101,7 +92,7 @@ function scanSections(content: string): AuthoritySection[] {
     const match = /^ {0,3}##[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/.exec(scan.text[i]);
     if (match) headings.push({ line: i, title: match[1].trim() });
   }
-  const result: AuthoritySection[] = [];
+  const result: PlanSection[] = [];
   for (let index = 0; index < headings.length; index++) {
     const heading = headings[index];
     const id = SECTION_ORDER.find(key => Object.values(PLAN_SECTION_REGISTRY[key]).some(title => title === heading.title));
