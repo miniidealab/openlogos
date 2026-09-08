@@ -27,15 +27,12 @@ import { writePlanApprovedMarker } from '../lib/ui-provenance.js';
 import type { CodePlanningDiagnostic } from '../lib/proposal-lifecycle.js';
 import { canConsumeAutomationDiagnosticAtStep, type AutomationDiagnostic } from '../lib/automation-diagnostic.js';
 import { BaselineCommitInProgressError } from '../lib/baseline-seed-txn.js';
-import { TEST_SLICE_MANIFEST, deriveSliceVerificationState, type SliceVerificationState } from '../lib/test-slice-manifest.js';
+import {
+  TEST_SLICE_MANIFEST, deriveSliceVerificationState, isManifestRecoveryReason,
+  type SliceVerificationState,
+} from '../lib/test-slice-manifest.js';
 import type { MergeTransactionProjection } from '../lib/merge-transaction.js';
 import type { StateInconsistency } from '../lib/lifecycle-gate.js';
-import {
-  createTestSliceTransaction,
-  ensureManifestRecoveryTransaction, isManifestRecoveryReason,
-  readTestSliceTransactionIfPresent,
-  type TestSliceTransactionProjection,
-} from '../lib/test-slice-transaction.js';
 
 export interface NextModuleItem {
   id: string;
@@ -72,7 +69,6 @@ export interface NextModuleItem {
   automation_diagnostic?: AutomationDiagnostic;
   // fix-next-ensure-initial-plan-slice-transaction（§2.65）：切片事务 canonical 投影——
   // manifest-recovery 分支与 ready-to-implement 问即建共用本字段（消费方按存在性消费）。
-  slice_transaction?: TestSliceTransactionProjection;
   // brownfield-adopter（S33）：现状基线种子状态与覆盖率（仅 bootstrap=adopted 且无活跃提案时附带）
   baseline_seed_state?: BaselineSeedState;
   baseline_coverage?: BaselineCoverage;
@@ -123,28 +119,6 @@ export interface NextData {
   cmd_satisfied?: boolean;
   // brownfield-adopter（S33）：现状基线覆盖率（legacy 无 modules 时挂顶层；有 modules 时挂 modules[].baseline_coverage）
   baseline_coverage?: BaselineCoverage;
-}
-
-/**
- * 把事务投影翻译成与事实一致的指引。任何一句话都必须能从 phase / origin /
- * allowed_actions 直接读出，不得复用另一分支的模板文案（功能规格 §2.53.6.2）。
- */
-function describeRecoveryTransaction(tx: TestSliceTransactionProjection): string {
-  const head = `切片事务 ${tx.transaction_id}（origin=${tx.origin}，phase=${tx.phase}）`;
-  if (tx.origin !== 'manifest-recovery') {
-    // 不把 initial-plan 事务讲成恢复事务——它不是。
-    return `${head} 不是恢复事务，无法用于重建 manifest。`
-      + '请核对提案状态；不得绕过事务直接写产物。';
-  }
-  if (tx.allowed_actions.length === 0) {
-    // 终态不接受任何动作，提示「提交内容」只会让用户反复撞墙。
-    return `${head} 已处于终态，不接受任何动作。请重新求 next 以取得新的恢复事务。`;
-  }
-  const missing = tx.content_slots.missing_slot_ids;
-  const step = missing.length > 0
-    ? `向 ${missing.join('、')} 提交内容后 seal、apply`
-    : `内容已收齐，下一步 ${tx.next_action ?? 'seal'}`;
-  return `${head} 已就绪：${step}；[code] 段冻结，仅原子重建 manifest。`;
 }
 
 function manifestRecoveryNode(state: SliceVerificationState): NextNode | null {
@@ -387,9 +361,9 @@ export function replanHintFor(root: string, slug: string, step: ProposalStep | n
   if (step !== 'ready-to-implement') return '';
   const proposalDir = join(root, 'logos', 'changes', slug);
   try {
-    const sliceTx = readTestSliceTransactionIfPresent(proposalDir);
+    // 切片事务删除后，「已规划未批准」直接由结构化产物在场性判定：manifest 在场 ∧ 未批准。
     const approved = existsSync(join(proposalDir, 'SLICES_APPROVED'));
-    if (sliceTx?.phase === 'completed' && existsSync(join(proposalDir, TEST_SLICE_MANIFEST)) && !approved) {
+    if (existsSync(join(proposalDir, TEST_SLICE_MANIFEST)) && !approved) {
       return t(locale as Parameters<typeof t>[0], 'next.replanHint');
     }
   } catch { /* 不可读 → 空串 */ }
@@ -1021,22 +995,6 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
       const recovery = manifestRecoveryNode(state);
       // §2.53.6 / 架构 §四十三.1：恢复的**执行权**归 OpenLogos——此处创建或返回事务投影，
       // 而非仅返回一个建议节点。无失效态不创建；已有活跃事务则幂等返回。
-      let recoveryTransaction: TestSliceTransactionProjection | null = null;
-      if (recovery) {
-        const proposalDir = data.active_change
-          ? join(root, 'logos', 'changes', data.active_change)
-          : null;
-        if (proposalDir && existsSync(proposalDir)) {
-          try {
-            recoveryTransaction = ensureManifestRecoveryTransaction(
-              root, proposalDir, data.active_change!, item.id ?? 'core');
-          } catch {
-            // 事务创建失败如实反映为「无投影」，不降级为「仅建议」——那会让消费方
-            // 以为可以自行恢复（场景 S28 异常边界）。
-            recoveryTransaction = null;
-          }
-        }
-      }
       const nextItem: NextModuleItem = {
         ...item,
         reason: state.reason as ProposalBlockReason,
@@ -1044,45 +1002,14 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
           ? `恢复测试—切片清单（${state.reason}）`
           : `测试—切片清单保守阻塞（${state.reason}）`,
         command: null,
+        // 恢复回归只读建议：next 不创建任何事务、无写副作用，直接指向唯一写入口。
         detail: recovery
-          // 携带 canonical 事务身份：消费方按 allowed_actions 执行，不自判恢复、不自算作用域。
-          // detail 必须由事务真实的 phase / origin / allowed_actions 推出（功能规格 §2.53.6.2）：
-          // 把 initial-plan 讲成恢复事务、对 allowed_actions=[] 提示「提交内容」、
-          // 或一边说「已就绪」一边渲染「（无缺口）」，都会让用户照做后每个动作都被拒。
-          ? (recoveryTransaction
-            ? describeRecoveryTransaction(recoveryTransaction)
-            : '切片事务尚不可用：请核对提案目录与 manifest 状态后重试；不得绕过事务直接写产物。')
+          ? '测试—切片清单需要重建：请重跑 `openlogos slice plan --file <slices.json>`（幂等覆盖），保留既有任务与 checkpoint。'
           : '未知主版本或归属歧义不得自动覆盖；请人工消歧或升级兼容后重试。',
         ...(recovery ? { next_node: recovery } : {}),
-        ...(recoveryTransaction ? { slice_transaction: recoveryTransaction } : {}),
       };
       if (!recovery) delete nextItem.next_node;
       return nextItem;
-    });
-    // §2.65 / fix-next-ensure-initial-plan-slice-transaction：initial-plan 事务的问即建——
-    // 发证时机与消费方「投影前置」契约对齐（与 manifest-recovery 分支同层、同构）。
-    // 触发：ready-to-implement（建议节点为 plan-slices 的时刻）∧ 需要代码 ∧ 提案在场 ∧ 无 manifest 失效态。
-    // 无事务则创建并输出投影；已有事务（任意 phase，含终态）只读投影，不重建、不归档（终态归档
-    // 让位只发生在新一轮 createTestSliceTransaction 内，ensure 的读路径不触发它）。
-    moduleItems = moduleItems.map((item, index) => {
-      const sm = data.modules![index];
-      if (sm.slice_verification_state?.reason) return item; // 失效态归 recovery 分支
-      if ((sm.active_change?.proposal_step ?? null) !== 'ready-to-implement') return item;
-      if (item.code_required === false) return item;
-      const slug = sm.active_change?.slug;
-      if (!slug) return item;
-      const proposalDir = join(root, 'logos', 'changes', slug);
-      if (!existsSync(proposalDir)) return item;
-      try {
-        const tx = readTestSliceTransactionIfPresent(proposalDir)
-          ?? createTestSliceTransaction(root, proposalDir, slug, { module: item.id });
-        return { ...item, slice_transaction: tx };
-      } catch (error) {
-        // 创建失败如实反映为「无投影」并携错误信息——不降级为仅建议节点（消费方 fail-closed，
-        // 不误以为可自行恢复；§2.65.2）。
-        const message = error instanceof Error ? error.message : String(error);
-        return { ...item, detail: `${item.detail}\n切片事务尚不可用：${message}；请核对提案目录后重试，不得绕过事务直接写产物。` };
-      }
     });
   }
   let baseNextNode: NextNode | undefined;

@@ -2,8 +2,8 @@
   "type": "merge_transaction_complete",
   "transaction_id": "mtx_39c15aa6bbf0d5432e29533b",
   "seal_sha256": "sha256:cd8795fde02740fc7cbebc88535259e2017439c28f95db677b8b79a18d3de0d6",
-  "receipt_sha256": "sha256:b963550c190d5ec161e0498332a41904e4e7267858266f1df97f564a589601d3",
-  "completed_at": "2026-09-08T01:44:10.137Z",
+  "receipt_sha256": "sha256:1b13bdc5ad85ed1e0d2843c0034d2092b968dec4e36ef5484b1193f6aed2e5a8",
+  "completed_at": "2026-09-08T01:52:35.866Z",
   "test_change_set": {
     "schema": "openlogos/test-change-set@1",
     "change": "lite-cut1a-remove-slice-transaction",

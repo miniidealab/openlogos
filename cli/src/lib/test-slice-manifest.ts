@@ -355,6 +355,15 @@ function emptyState(
   };
 }
 
+/** manifest 失效的三种态——需要重跑 `openlogos slice plan` 重建的唯一判据。 */
+const RECOVERY_REASONS = new Set([
+  'test-slice-manifest-missing', 'test-slice-manifest-invalid', 'test-slice-manifest-stale',
+]);
+
+export function isManifestRecoveryReason(reason: string | null | undefined): boolean {
+  return RECOVERY_REASONS.has(reason ?? '');
+}
+
 export function shouldUseSliceVerification(proposalDir: string): boolean {
   if (existsSync(join(proposalDir, VERIFY_PASS_MARKER)) && !existsSync(join(proposalDir, TEST_SLICE_MANIFEST))) return false;
   if (!hasSpecCompleteMarker(proposalDir)) return false;

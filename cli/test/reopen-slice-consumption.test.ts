@@ -143,19 +143,14 @@ describe('reopen 后切片归属消费 — S32（fix-reopen-test-change-set-forw
     // 前滚后 changed 提案级完整：首轮 UT-S01-01（本轮幂等）+ 本轮 UT-S01-02
     const marker = JSON.parse(readFileSync(join(f.proposalDir, 'SPEC_MERGED'), 'utf8'));
     expect(marker.test_change_set.changed_test_ids).toEqual(['UT-S01-01', 'UT-S01-02']);
-    // 多切片规划（真实 slice transaction 命令链）：两片各 own 一个 ID → seal/apply 通过
-    const codesection = join(f.root, 'slot_codesection.md');
-    writeFileSync(codesection, '- [ ] 切片1：一号能力（覆盖 UT-S01-01）\n- [ ] 切片2：二号能力（覆盖 UT-S01-02）\n');
-    const slicesSlot = join(f.root, 'slot_slices.json');
-    writeFileSync(slicesSlot, JSON.stringify([
+    // 多切片规划（真实 slice plan 单条受控写入口）：两片各 own 一个 ID → 一次调用落盘
+    const slicesFile = join(f.root, 'slices.json');
+    writeFileSync(slicesFile, JSON.stringify([
       { slice_id: 'slice-01-one', task_text: '切片1：一号能力（覆盖 UT-S01-01）', owned_test_ids: ['UT-S01-01'], runner_selectors: ['UT-S01-01'], spec_targets: [f.targetPath] },
       { slice_id: 'slice-02-two', task_text: '切片2：二号能力（覆盖 UT-S01-02）', owned_test_ids: ['UT-S01-02'], runner_selectors: ['UT-S01-02'], spec_targets: [f.targetPath] },
     ]));
-    expect(invoke(['slice', 'transaction', 'submit-content', '--slot', 'slot_codesection', '--file', codesection], f.root).status).toBe(0);
-    expect(invoke(['slice', 'transaction', 'submit-content', '--slot', 'slot_slices', '--file', slicesSlot], f.root).status).toBe(0);
-    expect(invoke(['slice', 'transaction', 'seal'], f.root).status).toBe(0);
-    const apply = invoke(['slice', 'transaction', 'apply'], f.root);
-    expect(apply.status, apply.stderr).toBe(0);
+    const planned = invoke(['slice', 'plan', '--file', slicesFile], f.root);
+    expect(planned.status, planned.stderr).toBe(0);
     // manifest 落盘且两片归属成立；消费侧派生零 violation
     const manifest = JSON.parse(readFileSync(join(f.proposalDir, 'TEST_SLICE_MANIFEST.json'), 'utf8'));
     expect(manifest.slices.map((s: { slice_id: string }) => s.slice_id)).toEqual(['slice-01-one', 'slice-02-two']);

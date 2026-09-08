@@ -209,11 +209,10 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     expect(smokeContract).toMatchObject({ ids: ['SMOKE-core-193'], public_release_commands: [] });
   });
 
-  it('UT-S19-40: next 问即建新字节与 SMOKE-core-194 runner 保持接线（0.14.23 窗口历史锚）', () => {
-    // 0.14.25 起 0.14.23 退出回滚位（回滚身份断言由 UT-S19-45 承载）；本例保留版本无关的内容与接线锚
-    // 发布内容自证：next 含 initial-plan 问即建新字节（§2.65 ensure 分支）
-    const nextSource = readFileSync(join(cliRoot, 'src/commands/next.ts'), 'utf8');
-    expect(nextSource).toContain('initial-plan 事务的问即建');
+  it('UT-S19-40: SMOKE-core-194 runner 保持接线（0.14.23 窗口历史锚）', () => {
+    // 0.14.25 起 0.14.23 退出回滚位（回滚身份断言由 UT-S19-45 承载）；本例保留版本无关的接线锚。
+    // 「next 含 initial-plan 问即建字节」这一内容锚随 lite-cut1a 删除切片事务而不再成立——
+    // 问即建解决的是「事务须先存在，投影才存在」的鸡生蛋死锁，事务删除后该死锁面整体消失。
     // SMOKE-core-194 runner 已接线
     const dispatcher = readFileSync(join(repoRoot, 'scripts/run-smoke.js'), 'utf8');
     expect(dispatcher).toContain("'scripts/smoke-next-ensure-0-14-23.js'");

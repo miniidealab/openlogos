@@ -157,6 +157,6 @@
     "logos/resources/test/core-S32-test-cases.md",
     "spec/cli-json-output.md"
   ],
-  "completed_at": "2026-09-08T01:44:10.137Z",
-  "receipt_sha256": "sha256:b963550c190d5ec161e0498332a41904e4e7267858266f1df97f564a589601d3"
+  "completed_at": "2026-09-08T01:52:35.866Z",
+  "receipt_sha256": "sha256:1b13bdc5ad85ed1e0d2843c0034d2092b968dec4e36ef5484b1193f6aed2e5a8"
 }
