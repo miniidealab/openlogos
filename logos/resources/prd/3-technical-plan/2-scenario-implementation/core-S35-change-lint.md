@@ -122,153 +122,6 @@ sequenceDiagram
 - 方法论：`spec/change-management.md`、`spec/tasks-spec.md`、`spec/flow-spec.md`、`spec/cli-json-output.md`。
 - 测试：UT-S35-100～UT-S35-111、ST-S35-16～ST-S35-18、SMOKE-core-135～SMOKE-core-140。
 
-## S35 Authority Closure L10 共享求值门
-
-### 场景目标
-
-在 Plan Package 完成判据中加入 Authority Closure，而不让 change-lint、status、next 和 flow 分别维护 parser。L10 只调用 AuthorityClosureEvaluator 并把同一 issues 纳入完成结果。
-
-### 时序图
-
-```mermaid
-sequenceDiagram
-    participant W as change-writer
-    participant L as change-lint
-    participant P as PlanPackageEvaluator
-    participant A as AuthorityClosureEvaluator
-    participant O as status next flow
-    W->>L: Step 1: 检查 proposal/tasks
-    L->>P: Step 2: 求值 Plan Package
-    P->>A: Step 3: 严格解析 authority impact 与引用
-    A-->>P: Step 4: summary + stable issues
-    alt Authority Closure 失败
-        P-->>L: Step 5: ready=false
-        L-->>W: Step 6: exit 2 + 五类 violation
-    else 通过
-        P-->>L: Step 5: ready 按全量维度计算
-        P-->>O: Step 6: 共享同一 evaluation
-    end
-```
-
-### L10 检查项
-
-1. 声明存在且唯一；schema/applicability 分支严格。
-2. fact 引用指向 effective architecture/当前 CREATE authority target。
-3. owner/writer/mutation/projection/freshness/recovery/shadow/test 字段闭合。
-4. cutover old stop/new start/rollback/exit 全部非空，`unresolved=[]`。
-5. test IDs 在 effective test view 中真实存在。
-6. 多问题不首错短路，按 path、fact 源序、code、message 稳定排序。
-
-### 历史与只读边界
-
-新/仍 writing 提案严格检查；已越过 plan 的历史前沿不倒退。L10 全程只读，不写 proposal、marker 或 Registry。操作错误 exit 1；可修复合同红 exit 2；通过 exit 0。
-
-### 追溯
-
-- 规范：`spec/authority-closure.md` §7～§9。
-- 测试：UT-S35-112～UT-S35-120、ST-S35-19～ST-S35-21。
-
-## S35 L10 authority closure 的分阶段校验时序
-
-### 场景目标
-
-明确 L10（Authority Closure 权威闭包）在不同调用阶段的校验强度，以及存在性强校验的落点。plan 阶段与 spec 阶段消费同一个评估器，但对「产物此刻是否已存在」持不同判定——这一差别必须由**显式传入的阶段**决定，不由评估器猜测。
-
-### 参与者与前置条件
-
-| 别名 | 组件 | 说明 |
-|------|------|------|
-| L | change-lint | 全量门，spec 阶段调用方 |
-| PP | plan-package 评估器 | plan 阶段调用方（喂给 next / status） |
-| AC | authority closure 评估器 | 唯一判定实现，按传入阶段分级 |
-| V | effective test view | 已合并测试规格 + 合法 test delta + 复用测试 ID 小节 |
-
-### 主时序
-
-```mermaid
-sequenceDiagram
-    participant PP as plan-package（plan 阶段）
-    participant L as change-lint（spec 阶段）
-    participant AC as authority closure 评估器
-    participant V as effective test view
-
-    PP->>AC: Step 1: evaluate(stage = plan)
-    AC->>AC: Step 2: 结构完备 + tests 非空 + ID 格式合法
-    AC-->>PP: Step 3: 不查 effective view，返回结论
-
-    L->>AC: Step 4: evaluate(stage = spec)
-    AC->>AC: Step 5: 同上全部 plan 阶段校验
-    AC->>V: Step 6: 逐个 ID 查 effective test view
-    alt 全部命中
-        AC-->>L: Step 7a: closure 通过
-    else 任一未命中
-        AC-->>L: Step 7b: authority_closure_incomplete，点名 fact 与未命中 ID
-    end
-```
-
-### effective test view 的三个来源
-
-| # | 来源 | 说明 |
-|---|---|---|
-| 1 | `logos/resources/test/**` | 已合并测试规格 |
-| 2 | 当前提案 `deltas/test/*.md` | 须 mergeable + lint valid |
-| 3 | `proposal.md` 的「## 复用测试 ID」小节 | 按固定语法显式声明复用；所列 ID 仍须真实存在于来源 1 |
-
-来源 3 此前只被 `change-lint` 与 `proposal-lifecycle` 消费，未接入 closure，导致规范列明的补救手段对该检查无效。本节将其纳入同一视图。
-
-### 步骤说明
-
-1. **阶段是显式输入**，不由评估器从上下文推断。同一评估器被两个调用方以不同阶段调用，判定差异只来自该参数。
-2. plan 阶段校验：fact 结构完备、`tests` 非空、每个 ID 符合 `TEST_ID_RE`。**不查** effective view。
-3. spec 阶段校验：plan 阶段全部条件，**加**逐个 ID 在 effective test view 中的存在性。
-4. merge preflight 沿用 spec 阶段强度并 fail-closed，不因 plan 阶段的放宽而削弱。
-5. `authority_ref` 的判定在两个阶段均为「已存在 **或** 闭包计划中声明 CREATE」——与 `tests` 逐阶段同宽同严。
-
-### 不变量
-
-- **强度不降**：spec 阶段与 merge preflight 的存在性校验一处都不放宽；虚假或笔误 ID 仍在合并前被拦。
-- **拦截点后移而非消失**：plan 阶段放行的 ID，必然在 spec 阶段被复核。
-- **阶段对称**：`tests` 与 `authority_ref` 在每个阶段适用同等宽严，可成对断言。
-- **诊断可归因**：失败时点名具体 fact、具体字段、具体未命中 ID，不使用「尚未完成脱模板」这类与实际原因不符的措辞。
-- **零回归**：不含 required fact 的提案，L10 结果逐字不变。
-
-### 异常与边界
-
-| 编号 | 触发条件 | 处理 |
-|---|---|---|
-| EX-S35-AC-1 | plan 阶段 `tests` 为空或 ID 非法 | 判 `authority_closure_incomplete`，点名 fact 与字段 |
-| EX-S35-AC-2 | spec 阶段 `tests` 含不存在的 ID | 判 `authority_closure_incomplete`，点名未命中 ID |
-| EX-S35-AC-3 | 「复用测试 ID」列出的 ID 在已合并规格中不存在 | 不纳入 effective view；spec 阶段照常拦下 |
-| EX-S35-AC-4 | 同一提案下 `tests` 放行而 `authority_ref` 被拒（或反之） | 视为阶段判据不一致的缺陷信号，由对称性测试锚定 |
-
-### 同批收编：change-lint 的 spec-complete 读法归位
-
-**当前的分歧。** `change-lint` 在两处（post-merge 分支判定、L8 守恒是否重放）自行判断提案是否已完成规格阶段，且**只认 `SPEC_MERGED`**；而 `hasSpecCompleteMarker()` 这一权威判据同时接受 legacy `MERGED`。对持 `MERGED` 而无 `SPEC_MERGED` 的提案：
-
-| 组件 | 结论 |
-|---|---|
-| `proposal-lifecycle`（权威） | 已 spec-complete |
-| `plan-package` | 已 spec-complete |
-| `test-slice-manifest` | 已 spec-complete |
-| `change-lint` | **未 merge** |
-
-后果不是「多报一条」，而是 `change-lint` 对一个 post-merge 提案重放 L8 条目守恒——拿 delta 再去对已经合并完的最终目标做守恒比对。`change-lint` 自身的注释已经写明这会制造假阳性，这正是它在识别出 post-merge 时跳过 L8 的原因；只是 legacy `MERGED` 一路没被它识别出来。
-
-本仓归档中 0 例（历史提案都写了 `SPEC_MERGED`），因此这是**潜伏缺陷**：没有现存数据触发它，也就没有任何测试会红。
-
-**修复。** `change-lint` 的两处判定改为调用 `hasSpecCompleteMarker()`。行为变化只有一个方向：持 legacy `MERGED` 的提案从「被重放 L8 并可能假阳性」变为「正确跳过 L8」。持 `SPEC_MERGED` 的提案（即本仓全部现存提案）判定逐字不变。
-
-**marker 名单点化。** `HISTORICAL_MARKERS` 此前在 `plan-package` 与 `authority-closure` 各列一份，`SPEC_MERGED` 作为裸字面量散落 12 个文件。收敛为 `proposal-lifecycle` 单点导出的常量后，新增或改名 marker 只有一个改动点——这也正是分歧得以产生的土壤被移除。
-
-**不变量 C 在本场景的落点**（架构 §四十一.4）：judgement 的实现只能有一处。`change-lint` 是「权威 helper 存在却被绕过，且绕过者读法不同」这一形态的实例。
-
-### 追溯
-
-- 需求：AC-PLANGATE-03～07、AC-PLANGATE-09、AC-PLANGATE-11。
-- 功能规格：§2.50.2～§2.50.4。
-- 架构：§四十一.1、§四十一.2。
-- 测试：UT-S35-121～UT-S35-126、ST-S35-22～ST-S35-23；安装态 SMOKE-core-172。
-
 ## S35 围栏提取单点、可归因诊断与门禁可满足性断言
 
 ### 场景目标
@@ -279,8 +132,8 @@ sequenceDiagram
 
 | 别名 | 组件 | 说明 |
 |---|---|---|
-| C | `change-lint` evaluator | L0～L10 的完整判定 |
-| S | `markdown-scan.authorityScan` | 围栏 / 缩进代码 / HTML 注释掩码的唯一判据 |
+| C | `change-lint` evaluator | L0～L9 的完整判定 |
+| S | `markdown-scan.authorityScan` | 围栏 / 缩进代码 / HTML 注释掩码的唯一判据（函数名承自历史，判据本身与 authority 无关） |
 | G | 测试 ID 语法权威 | 语法与三种具名读法的唯一铸造点 |
 | T | 门禁可满足性断言 | 每道门 × 该阶段合法最小提案 |
 
@@ -288,14 +141,14 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant C as authority-closure
-    participant S as authorityScan
+    participant C as baseline-closure
+    participant S as authorityScan（fence-aware 掩码）
     participant D as 诊断输出
 
     C->>S: Step 1: 对 proposal 全文求掩码
     S-->>C: Step 2: 每行的 masked 位
     C->>C: Step 3: 只在掩码外识别 ```yaml 围栏起止
-    C->>C: Step 4: 过滤出含 authority_impact / baseline_closure 的围栏
+    C->>C: Step 4: 过滤出含 baseline_closure 的围栏
     alt 候选恰为 1
         C->>C: Step 5a: 正常解析
     else 候选为 0 或多于 1
@@ -304,15 +157,15 @@ sequenceDiagram
     end
 ```
 
-**Step 3 的判据变更**：此前 `authority-closure` 用裸正则直接扫全文，是四个 YAML 围栏提取器中唯一不走掩码的。对含嵌套围栏的文档（如四反引号 markdown 块内示意一段 yaml），裸正则比 fence-aware 多命中一个围栏。
+**Step 3 的判据**：全部 YAML 围栏提取器一律走 `markdown-scan` 的 fence-aware 掩码，不得自建裸正则。对含嵌套围栏的文档（如四反引号 markdown 块内示意一段 yaml），裸正则会比 fence-aware 多命中一个围栏——这正是掩码必须单点的原因。
 
-**Step 5b 的行为变更**：`collectPlannedAuthorityCreateTargets` 此前在候选数不为 1 时直接返回空集，plan 阶段的 `authority_ref` 容错随之失效，而用户只看到 `authority_fact_reference_missing`——真实原因（围栏被多算了一个）完全不可见。
+**多命中不得静默降级**：任一围栏提取器在候选数不为 1 时，必须产出点名的诊断，说明命中了几处、分别在哪；不得静默返回空集或取第一个命中。
 
 ### 测试 ID 语法的单点与具名读法
 
 | 读法 | 消费方 | 与权威语法的关系 |
 |---|---|---|
-| 结构化判定 | `test-change-set`、`test-slice-manifest`、`authority-closure` | 完整语法 |
+| 结构化判定 | `test-change-set`、`test-slice-manifest`、`baseline-closure` | 完整语法 |
 | 表格首列提取 | `test-slice-manifest` | 完整语法 + 行首锚定 |
 | 正文扫描 | `automation-diagnostic` | 完整语法减去 SMOKE |
 
@@ -326,7 +179,7 @@ sequenceDiagram
 
 | 阶段 | 合法最小提案含有 | 不含 |
 |---|---|---|
-| plan | 完整 proposal（含 authority_impact 与 baseline_closure）+ tasks（`[delta]` 已规划、`[code]` 空标题） | 任何 delta |
+| plan | 完整 proposal（含 baseline_closure）+ tasks（`[delta]` 已规划、`[code]` 空标题） | 任何 delta |
 | spec / merge | 上述 + 全部已规划 delta | `[code]` 切片 |
 
 断言的价值不在验证当前 11 道门，而在新增门禁时立刻给出失败信号（架构 §四十一.6.2）。

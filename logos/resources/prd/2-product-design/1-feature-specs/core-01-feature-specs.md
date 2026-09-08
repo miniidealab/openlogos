@@ -2293,78 +2293,6 @@ abort 只在 collecting、ready、sealed 可见。成功后固定为 failed/abor
 
 本地 candidate 调用图不得包含 `npm publish`、dist-tag 修改、`git tag`、GitHub Release、官网/Cloudflare 部署或 `git push`。本节只授权生成本地 tarball 与覆盖本机 npm 全局安装；任何远程发布仍需独立提案与明确授权。
 
-## 2.45 Authority Closure 设计门功能规格
-
-### 2.45.1 产品目标与价值
-
-把“单一事实源”从架构建议变成贯穿 plan、scenario、test、review、deploy 的可执行合同。用户在批准方案前即可看到业务事实的唯一 owner/writer、所有投影及切换风险，并由机器门阻断结构缺口。
-
-### 2.45.2 Authority Registry
-
-architecture-designer 在项目架构中维护唯一 Registry。每行固定包含：
-
-| 字段 | 语义 |
-|---|---|
-| `fact_id` | 稳定业务事实身份，不绑定文件名或实现类名 |
-| semantic scope | 该事实回答的唯一业务问题 |
-| authority owner / canonical state | 有权裁决的组件与状态载体 |
-| sole writer / mutation entry | 唯一写者与受控变更入口 |
-| decision/read API | 消费者获得结论的同源入口 |
-| projections | cache/index/marker/receipt/view 等只读派生物 |
-| freshness proof | generation/version/hash/receipt 等同一性证明 |
-| rebuild/recovery source | 投影如何重建、重启从哪里恢复 |
-| forbidden shadow sources | 明确不能用于裁决的旧副本/启发式 |
-| cutover exit | writer 迁移结束的可验证证据 |
-
-Registry 是项目实例源。场景、部署、测试和 code review 只引用 `fact_id`，不得各自维护 owner 表。
-
-### 2.45.3 proposal authority impact
-
-新 scaffold 提供唯一 `authority_impact` YAML：
-
-- `schema: openlogos/authority-impact@1`；
-- `applicability: required|not_applicable`；
-- required 分支包含 `trigger_reasons`、`facts[]` 和 `unresolved[]`；
-- 每个 fact 引用 Registry 或本案 CREATE 的 canonical authority target，并列出 change、projections、freshness、retired shadow sources、forbidden fallbacks、cutover 和真实 test IDs；
-- not_applicable 分支不得带伪造 facts，必须提供非空 evidence；
-- 未知字段、重复 key、空字符串、重复 fact_id、未知 test ID、未清 unresolved 或 required 缺字段均 fail closed。
-
-proposal 是本次变化计划，不复制根规范或项目 Registry；tasks 只是一目标一 Delta 执行投影。
-
-### 2.45.4 AC-01～AC-08 体验
-
-方案页面/CLI 文本按稳定顺序展示：唯一权威、受控写入口、投影血缘、新鲜度、决策同源、恢复同源、有限切换、可证伪验收。任一项未闭合时，诊断必须指出 fact、缺字段和修复入口，而非仅返回“设计不完整”。
-
-允许一个事实有多个物理副本；只要副本可验证、可重建且不能反向裁决，即不会因“有缓存”被误判失败。反之，即便只有两个文件，只要双方都能决定业务结果，也必须报 shadow authority。
-
-### 2.45.5 六角色流水线
-
-1. architecture-designer 建立 Registry。
-2. change-writer 声明 authority impact 并规划权威、投影、退休与测试目标。
-3. scenario-architect 在 sequence diagram 中标注 authority/projection 数据流和恢复。
-4. deployment-designer 关闭旧 writer、启用新入口、重建/校验投影并冻结 rollback boundary。
-5. test-writer 生成 stale/conflict/concurrency/response-lost/restart/cutover 矩阵。
-6. code-reviewer 对旁路写、复制判据、反向推断、heuristic recovery 与长期双写报 Critical。
-
-### 2.45.6 共享求值与机器输出
-
-`PlanPackageEvaluator` 是 authority impact 完成的唯一求值者。change-lint 调用它输出 `authority_closure` summary 和五类稳定 violation；status、next、flow 与 merge 前门消费同一 evaluation，不复刻 Markdown/YAML parser 或完成公式。
-
-summary 至少包含 schema、applicability、facts_total、facts_closed、projections、retired_shadow_sources、unresolved、pass。text/JSON 共享问题集合与稳定排序；机器门只证明结构与引用闭包，语义唯一性由故障测试和 code review 继续证伪。
-
-### 2.45.7 兼容与失败体验
-
-- 新 proposal 与仍 writing 的历史 proposal 缺声明时给可修复诊断；已经存在 `PLAN_APPROVED|SPEC_MERGED|MERGED|VERIFY_PASS` 的提案不倒退。
-- 项目按 fact on-touch 补齐 Registry，不强制一次性回填全部历史架构。
-- 无唯一 owner、旧 writer 无法关闭、freshness 无法证明、恢复仍依赖扫描时，`unresolved` 不得清零。
-- package 中根规范、Skill、evaluator 或 manifest/hash 任一漂移，安装态 smoke 失败并保留回滚证据。
-
-### 2.45.8 验收摘要与非目标
-
-- S04/S06/S07/S09/S12/S16/S19/S35 的 UT/ST 和 SMOKE-core-163～167 全部通过并带 OpenLogos reporter。
-- required 与 not_applicable 正例、五类机器 violation、多问题稳定排序、四消费者同源、投影冲突/重启和 writer cutover 均有独立断言。
-- 不建立全局 authority 服务；不禁止缓存/CQRS/多副本；不修改 API/DB；不把六个 Skill 变成六份规范源。
-
 ## 2.47 项目 YAML 结构化写入、内置版本单一权威与降级告警
 
 ### 2.47.1 功能目标与职责边界
@@ -2561,102 +2489,6 @@ baseline-seed 定义了四个 kind（`system-map`、`scenario-candidates`、`dep
 - 安装态：SMOKE-core-171。
 - 需求：AC-RIDX-01～07；场景：S08；架构：§四十。
 
-## 2.50 authority closure 的分阶段校验强度
-
-### 2.50.1 功能目标与职责边界
-
-本功能只改 authority closure 判定的**阶段划分**，不改判据本身、不改字段结构、不降低任何一处的最终强度。
-
-要解决的形状是：门禁的通过条件依赖了该门之后才允许产出的产物。修法不是放行，而是把「此刻可判的」与「此刻不可判的」分开——前者在 plan 阶段判，后者推迟到产物本该存在的阶段判。
-
-同一校验器已为 `authority_ref` 做过这件事（允许指向闭包计划中声明 CREATE 但尚未创建的目标），本功能把同一处理对称地应用到 `tests`。
-
-### 2.50.2 分阶段校验强度
-
-| 阶段 | 触发点 | `tests` 的校验强度 | `authority_ref` 的校验强度 |
-|---|---|---|---|
-| plan | plan-package 评估（喂给 `next` / `status` 的 `proposal_step` 派生） | 非空 + 每个 ID 符合 `TEST_ID_RE` | 已存在 **或** 在闭包计划中声明 CREATE |
-| spec | `change-lint` 全量门 | 上述 **加** 必须存在于 effective test view | 同 plan 阶段 |
-| merge | merge preflight | 同 spec 阶段，fail-closed | 同 spec 阶段，fail-closed |
-
-两列在每一行都同宽同严——这正是 §2.50.4 要求的对称性。
-
-**plan 阶段不是无条件放行**：`tests` 为空、含非 `TEST_ID_RE` 的字符串、或含空项，plan 阶段照样判 `authority_closure_incomplete`。放宽的**只有**「该 ID 此刻是否已存在」这一条——而这一条在该阶段按定义不可能为真。
-
-**强度不降**：虚假 ID、笔误 ID、指向从未规划过的测试的 ID，全部会在 spec 阶段与 merge preflight 被拦下。合并前仍有两道强校验，门禁的最终把关能力与修复前完全相同，只是拦截点后移到产物本该存在之后。
-
-### 2.50.3 effective test view 的第三个来源
-
-`proposal.md` 的「## 复用测试 ID」小节按固定语法列出的既有 ID，纳入 effective test view 的来源集合。至此该视图有三个来源：
-
-1. 已合并的 `logos/resources/test/**`；
-2. 当前提案 `deltas/test/*.md`（须 mergeable + lint valid）；
-3. 「## 复用测试 ID」小节显式列出的 ID（须实际存在于来源 1）。
-
-来源 3 单独不能解除 plan 门死锁——新建 fact 没有既有 ID 可复用——但规范早已把它写成用户可用的补救手段，实现却从未采信。规范与实现的漂移应与本次修复一并消除，否则用户照规范填写仍会失败，且失败原因不可归因。
-
-来源 3 不放宽真实性：所列 ID 仍须在已合并测试规格中真实存在，只是允许用户显式声明「我复用它」而不必在 `facts[].tests` 里重复推导。
-
-### 2.50.4 阶段宽严对称
-
-同一校验器对同类产物的阶段宽严必须一致。具体到 authority fact：
-
-- `tests` 与 `authority_ref` 都是「本提案计划产出、此刻可能尚不存在」的产物引用；
-- 因此二者在 plan 阶段适用同等宽严：都只校验结构与规划意图，都不校验此刻是否已落盘；
-- 在 spec 阶段与 merge preflight，二者同样都校验真实存在性。
-
-不对称本身是缺陷信号：它意味着两条判据对「当前处于哪个阶段」持有不同假设，而阶段是同一个事实。
-
-### 2.50.5 不变更的边界
-
-本功能**不触碰**：
-
-- `guard-check` 的 plan 阶段 delta 白名单（仍只放行 page-design 原型）；
-- `flow-spec` §12.4 对 plan 门「delta 未启动」的状态定义；
-- authority fact 的字段集合、`applicability` 触发规则、8 类场景覆盖要求；
-- 公共 JSON envelope 的字段结构与 `authority_closure` 摘要的形状。
-
-分阶段校验不需要动上述任何一项即可解环。动它们属独立的流程语义变更，不应搭车。
-
-### 2.50.6 兼容、失败与发布边界
-
-- 既有提案的判定结果只可能从「plan 阶段失败」变为「plan 阶段通过」，不会有反向变化；spec 阶段与 merge 的判定逐字不变。
-- package / plugin / asset identity 统一提升为本地 candidate `0.14.8`；全局 `0.14.7` 作为固定回滚制品。
-- 不执行 npm publish、dist-tag、Git tag、GitHub Release、官网发布或 git push。
-
-### 2.50.7 同批收编的三处判据单点化
-
-本次一并消除三处「同一事实被两处各自持有」，它们与 §2.50.1～§2.50.4 触达同一批文件、同属判据分裂族：
-
-**A. spec-complete 判定单点**
-
-`hasSpecCompleteMarker(proposalDir)` 是「该提案是否已完成规格阶段」的唯一判定（`SPEC_MERGED || MERGED`，接受 legacy）。全部消费方一律调用它：
-
-| 消费方 | 此前 | 此后 |
-|---|---|---|
-| `plan-package` | 内联 `SPEC_MERGED \|\| MERGED` | 调用权威判据 |
-| `test-slice-manifest` | 内联 `!SPEC_MERGED && !MERGED` | 调用权威判据 |
-| `change-lint` | **只认 `SPEC_MERGED`**（语义不同） | 调用权威判据，读法与其余一致 |
-
-`change-lint` 的读法变更有实际后果：持 legacy `MERGED` 的提案此后被正确识别为 post-merge，不再重放 L8 守恒——按 `change-lint` 自身注释，对 post-merge 提案重放 L8 会产生假阳性。
-
-**B. 发布 schema 的 `proposal_step` 枚举一致性锚**
-
-`proposal_step` 的取值集合以 `STEP_REGISTRY` 为唯一权威。**每一份**对外发布的 schema（`status.schema.json`、`next.schema.json`）的 `proposalStep` 枚举都必须由测试锚到 `REGISTERED_STEPS`。sha256 冻结只能证明文件未被意外改动，**不能证明它与注册表一致**，因此不构成锚。
-
-**C. marker 名单点**
-
-提案生命周期 marker 的名称集合只有一处定义：既有的 `PLAN_APPROVED_MARKER` / `SLICES_APPROVED_MARKER` 之外，补齐 `SPEC_MERGED` 等常量，并把 `HISTORICAL_MARKERS` 收敛为单一导出，消除 `plan-package` 与 `authority-closure` 各列一份的现状。
-
-三者的共同判据：**这个事实有没有一个能被指出来的唯一所有者？两处答案不同时谁说了算？** 答不出即为分裂。
-
-### 2.50.8 验收与追溯
-
-- UT：UT-S05-47～50、UT-S35-121～126。
-- ST：ST-S05-22、ST-S35-22～23。
-- 安装态：SMOKE-core-172。
-- 需求：AC-PLANGATE-01～11；场景：S05、S35；架构：§四十一。
-
 ## 2.51 merge 合规判定单点与门禁可满足性保障
 
 ### 2.51.1 功能目标与职责边界
@@ -2698,7 +2530,7 @@ baseline-seed 定义了四个 kind（`system-map`、`scenario-candidates`、`dep
 
 | 来源 | 判定方法 | 本次结论 |
 |---|---|---|
-| 门在其阶段不可满足 | 逐门核对该阶段应有的产物是否足以满足其前置 | 11 道门全部可满足；其中 L8 与 L10 本就是为 merge 前这一刻设计的 |
+| 门在其阶段不可满足 | 逐门核对该阶段应有的产物是否足以满足其前置 | 10 道门全部可满足；其中 L8 本就是为 merge 前这一刻设计的 |
 | 门依赖作者控制不了的外部状态 | 逐门核对其读取范围是否超出提案目录 | 仅 L8 读当前主文档；单活跃提案模型下无并发提案能改动同一章节 |
 
 因此收紧后被拒绝的提案，都是真的不合规。这一结论由 §2.51.3 的可执行断言持续保障，而非一次性人工核对。
@@ -2708,15 +2540,15 @@ baseline-seed 定义了四个 kind（`system-map`、`scenario-candidates`、`dep
 阻断必须让用户知道**改哪个文件的哪一处**。两条硬要求：
 
 1. **逐条输出**：每条违规单独打印 `code`、路径、具体字段与 `fix_hint`；禁止只给「L1-L9 未全过」这类聚合结论。
-2. **点名具体对象**：诊断中必须出现导致失败的实体本身——fact_id、测试 ID、文件路径、字段名。禁止「为空、非法或不在某集合中」这类无法定位的措辞。
+2. **点名具体对象**：诊断中必须出现导致失败的实体本身——测试 ID、文件路径、字段名、章节锚。禁止「为空、非法或不在某集合中」这类无法定位的措辞。
 
-反面教材是本次修复的两处：闭包计划多命中时静默返回空集，用户只看到 `authority_fact_reference_missing` 而无从知道真实原因是围栏被多算了一个；以及此前 authority closure 对测试 ID 的诊断只说「不在 effective test view」而不说是哪一个。
+反面教材是历史上的两处：围栏多命中时静默返回空集，用户只看到一条指向错误位置的诊断，而无从知道真实原因是围栏被多算了一个；以及对测试 ID 的诊断只说「不在 effective test view」而不说是哪一个。
 
 ### 2.51.6 YAML 围栏提取的唯一判据
 
-全部 YAML 围栏提取器共用 `markdown-scan` 的 fence-aware 掩码。`authority-closure` 是最后一个仍用裸正则的提取器，本次并入。
+全部 YAML 围栏提取器共用 `markdown-scan` 的 fence-aware 掩码，不得自建裸正则——裸正则对含嵌套围栏的文档会比 fence-aware 多命中一个围栏。
 
-**多命中不得静默降级**：`extractDeclaration` 与 `collectPlannedAuthorityCreateTargets` 在候选数不为 1 时，必须产出点名的诊断，说明命中了几处、分别在哪。此前后者直接返回空集，使 plan 阶段的 `authority_ref` 容错无声失效。
+**多命中不得静默降级**：任一提取器在候选数不为 1 时，必须产出点名的诊断，说明命中了几处、分别在哪；不得静默返回空集或取第一个命中。
 
 ### 2.51.7 测试 ID 语法的唯一权威与具名读法
 

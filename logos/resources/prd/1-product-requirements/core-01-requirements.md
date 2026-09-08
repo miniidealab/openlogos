@@ -1873,52 +1873,6 @@ RunLogos 不能依赖 OpenLogos 内部磁盘结构，也不能自行发明 stagi
 - 单元/场景测试：UT-S19-22、UT-S19-23、ST-S19-15。
 - 部署后 smoke：SMOKE-core-157、SMOKE-core-158、SMOKE-core-159。
 
-## S04/S06/S07/S09/S12/S16/S19/S35 Authority Closure 方法论门需求
-
-### 用户问题与价值
-
-当同一业务事实由多个组件保存并各自解释时，系统在正常路径可能表现一致，却会在响应丢失、重启、缓存滞后、局部失败或迁移回滚时给出互相冲突的答案。用户需要在设计阶段明确唯一裁决者和所有派生副本的边界，而不是等事故发生后继续叠加 fallback。
-
-价值是让“谁有权决定”在实现前可审阅、在提案阶段可阻断、在测试中可证伪、在部署时可验证，从而使投影陈旧成为可恢复问题，而非语义分叉。
-
-### 范围与适用条件
-
-1. 跨组件、跨进程或跨仓库共享的业务事实/完成谓词。
-2. cache、index、marker、receipt、materialized view、状态摘要和同步副本等投影。
-3. owner、writer、mutation entry、recovery source 或 cutover/rollback 发生变化。
-4. 消费者可能通过扫描、mtime、存在性或启发式规则重新推导权威结论。
-
-纯文案、纯视觉且不改变业务事实归属的变更可以声明不适用，但必须有可核验证据；缺省、空声明或“后续补充”不构成不适用。
-
-### 核心需求
-
-1. 架构设计必须为适用事实分配稳定 `fact_id`，并明确唯一 owner、canonical state、sole writer、mutation entry、decision/read API、投影、freshness proof、重建/恢复来源和 cutover exit。
-2. proposal 必须包含唯一 `openlogos/authority-impact@1`；适用时引用架构 Registry，不适用时说明证据。proposal 不得复制一份独立 Registry。
-3. 场景时序必须区分 command、authority write/read、projection refresh、consumer decision 和恢复路径；同一 fact 出现两个裁决者时回退架构阶段。
-4. 部署方案必须关闭旧 writer、启用新入口、重建/校验投影并明确可逆/不可逆边界；无限期双写不得标为完成。
-5. 测试必须覆盖冲突旧副本、滞后投影、并发 writer、响应丢失、重启重建和切换回滚。
-6. 代码审查必须将旁路写权威、复制判据、投影反推、启发式恢复和未退出双写列为 Critical。
-7. `change-lint`、status、next、flow 和 merge 前消费点必须共享同一个 Authority Closure evaluation，不维护第二份 parser/谓词。
-8. 根 `spec/authority-closure.md` 是方法论唯一规范源；Skill、插件与 cache 是角色化或打包投影，并有 manifest/hash 新鲜度证明。
-
-### 验收条件
-
-- **GIVEN** 新提案适用 Authority Closure，**WHEN** 缺声明、fact 引用、writer/mutation/freshness/recovery/cutover/tests 任一闭包项，**THEN** `change-lint` exit 2、plan 不 ready，并返回稳定 violation 与修复提示。
-- **GIVEN** 变更确实不适用，**WHEN** 声明 `not_applicable` 且证据完整，**THEN** evaluator 通过且不伪造空 Authority Registry。
-- **GIVEN** 同一提案输入，**WHEN** 分别读取 change-lint、status、next 与 flow，**THEN** Authority Closure pass、问题集合和前沿来自同一 evaluation，不出现消费者局部重算。
-- **GIVEN** authority 投影包含冲突旧值，**WHEN** 消费者决策或进程重启恢复，**THEN** 只按 authority identity/action 得出结论，旧投影不能覆盖或反向晋升。
-- **GIVEN** writer ownership 迁移，**WHEN** 旧 writer 未关闭或 cutover exit 无证据，**THEN** plan/部署门失败；完成后只允许新 mutation entry 改权威。
-- **GIVEN** candidate 包安装，**WHEN** 根规范、根 Skill、插件/cache 或 evaluator 资产漂移，**THEN** smoke 失败并允许恢复冻结版本。
-- 所有自动化用例必须以真实 UT/ST/SMOKE ID 通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl` 或 `smoke-results.jsonl`。
-
-### 兼容与非目标
-
-- 已越过 plan 或已归档提案不倒退；新提案与仍 writing 的提案严格执行。
-- 既有项目按触达 fact 渐进补齐，不批量伪造历史 Why。
-- 不禁止缓存、CQRS、多数据库、事件日志、备份或跨区副本；只禁止它们独立裁决同一事实。
-- 不引入全局 God service，不要求所有模块共享数据库或进程。
-- 不修改 HTTP API、数据库 schema、远程发布语义或 RunLogos 代码。
-
 ## S08/S09/S11 项目 YAML 结构化写入与降级可见性要求
 
 ### 用户问题与价值
@@ -2069,56 +2023,39 @@ RunLogos 不能依赖 OpenLogos 内部磁盘结构，也不能自行发明 stagi
 
 ### 用户问题与价值
 
-对任何 launched 变更，只要它**新建**一个 authority fact（`applicability: required` 且 `facts[].change: create`），流程就在 plan 门死锁：
+门禁存在一种结构性缺陷：**门禁的前置条件，依赖了该门之后才被允许产出的产物**。当一道门所处状态的定义是「尚未产出任何 delta」，而它的通过条件却要求 delta 已存在时，两个条件不可能同时成立，用户被迫手工伪造 marker 绕过——代价是绕过正常的 gate 派生、丢失审计行，并让下游消费者的输入为空。
 
-> 要写测试 delta → 需要 `PLAN_APPROVED` → 需要 `proposal_step == ready-to-delta` → 需要 authority closure 通过 → 需要测试 delta。
+2026-09 的 authority closure plan 门死锁即该形态的一个实例（该门已随 L10 一并删除）。缺陷的形状与具体是哪道门无关，因此本节把「门在其所处阶段必须可满足」升格为对**全部门禁**的通用要求，并要求它有可执行的失败信号，而不是靠人逐个复核。
 
-环上四个组件全部由 CLI 自身提供（含随包分发的 `guard-check`），因此不手工绕过 CLI 就没有合法出路。用户被迫手工创建空的 `PLAN_APPROVED`，代价是绕过 `plan-exit` 派生、丢失 `GATE_AUTO_PASSED` 审计行、并让 UI-first 项目的 provenance 输入为空。
-
-问题的形状是：**门禁的前置条件，依赖了该门之后才被允许产出的产物**。`flow-spec` 对该门所处状态的定义就是「尚未产出任何 delta」，而通过条件却要求 delta 已存在——两个条件不可能同时成立。
-
-同一校验器已经为另一个字段处理过这件事：`authority_ref` 允许指向「尚未创建但已在闭包计划中声明 CREATE」的目标，其实现注释明确写着「plan 阶段 Delta 尚未产出时…」。**「plan 阶段产物尚不存在」这一事实早已被显式建模，只是没有应用到测试证据上。**
-
-第二个相关问题：规范告诉用户可以用「复用测试 ID」小节补救，但该小节从未接入 authority closure 的判定——用户照规范填写也不会被采信。
+第二个相关问题：规范中列明的补救手段必须在对应校验器里真实可用。规范告诉用户「可以用某小节补救」，而该小节从未接入判定——用户照规范填写也不会被采信，这类文档与实现的背离同样要有回归锁。
 
 ### 核心需求
 
-1. **门禁前置条件必须在该门所处状态下可满足**。任何门的通过条件，不得依赖只有通过该门之后才被允许产出的产物。
-2. authority fact 的测试证据按阶段分级校验：plan 阶段校验结构完备与 ID 格式合法；「必须存在于 effective test view」的存在性校验落在 spec 阶段（`change-lint` 全量门）与 merge preflight。
-3. **同类判据只有一个实现**：「是否已完成规格阶段」「合法 marker 名集合」「`proposal_step` 取值集合」各只有一处权威定义，消费方一律调用它，不得内联重写或各列一份。
-4. **强度不降**：spec 阶段与 merge preflight 的存在性校验一处都不放宽。引用不存在或笔误的测试 ID 仍必须在合并前被拦下。
-5. 同一校验器对同类产物的阶段宽严必须一致：`tests` 与 `authority_ref` 在 plan 阶段适用同等宽严，不得一个有 plan 兼容、另一个没有。
-6. 规范中列明的每个补救手段，必须在对应校验器中真实可用。「复用测试 ID」小节须被 authority closure 的测试证据来源采信。
-7. 修复以新的本地 patch candidate `0.14.8` 交付，当前本机全局 `0.14.7` 是冻结回滚基线。
+1. **门禁前置条件必须在该门所处状态下可满足**。任何门的通过条件，不得依赖只有通过该门之后才被允许产出的产物。该性质必须由一条遍历门禁全集的断言锁定：为每个阶段构造该阶段的合法最小产物，逐门求判定，任一门在其阶段不可满足即失败并点名是哪道门、哪个阶段。
+2. **同类判据只有一个实现**：「是否已完成规格阶段」「合法 marker 名集合」「`proposal_step` 取值集合」各只有一处权威定义，消费方一律调用它，不得内联重写或各列一份。
+3. **诊断必须可归因**：每条门禁诊断中须出现导致失败的实体本身（测试 ID / 文件路径 / 字段名 / 章节锚），不得只给「为空、非法或不在」这类无法定位的措辞。
+4. 规范中列明的每个补救手段，必须在对应校验器中真实可用。
 
 ### 验收条件
 
 | ID | 验收条件 |
 |---|---|
-| AC-PLANGATE-01 | 含 `change: create` 的 required fact 提案，在未产出任何 test delta 时可派生到 `proposal_step == ready-to-delta` |
-| AC-PLANGATE-02 | 该提案经 `plan-exit` 正常写入 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED` 审计行，无需手工创建 marker |
-| AC-PLANGATE-03 | plan 阶段仍拒绝 `tests` 为空或 ID 格式非法的 fact，不是无条件放行 |
-| AC-PLANGATE-04 | spec 阶段 `change-lint` 全量门对引用不存在测试 ID 的 fact 仍判 `authority_closure_incomplete` |
-| AC-PLANGATE-05 | merge preflight 对同一情形仍 fail-closed，未因 plan 阶段放宽而削弱 |
-| AC-PLANGATE-06 | `tests` 与 `authority_ref` 在 plan 阶段的宽严一致——同一提案下二者要么都放行、要么都按同一判据拒绝 |
-| AC-PLANGATE-07 | `proposal.md` 的「## 复用测试 ID」小节所列 ID 被 authority closure 的测试证据来源采信 |
-| AC-PLANGATE-08 | 固定 `0.14.8` tarball 完成隔离安装与本机全局安装态验证，`0.14.7→0.14.8→0.14.7` 往返后各 identity 与 tarball SHA-256 一致 |
 | AC-PLANGATE-09 | 「该提案是否已完成规格阶段」只有一个判定实现；全部消费方（含 change-lint）对同一提案得到同一结论，legacy `MERGED` 的读法一致 |
 | AC-PLANGATE-10 | 每一份对外发布的 schema 中的 `proposal_step` 枚举都由测试锚到唯一注册表；仅靠 sha256 冻结不算锚 |
 | AC-PLANGATE-11 | 提案生命周期 marker 的名称只有一处定义；`HISTORICAL_MARKERS` 不得在多处各列一份 |
+| AC-MERGEGATE-04 | 门禁全集在其各自阶段均可满足，且该性质由遍历式断言锁定，新增不可满足的门时立刻变红 |
 
 ### 授权与非目标
 
 - 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
 - 不新增命令，不改动公共 JSON envelope 的字段结构。
-- **不修改** `guard-check` 的 plan 阶段 delta 白名单，**不修改** `flow-spec` §12.4 对 plan 门状态的定义——本次修复不需要动它们，动它们属独立的流程语义变更。
+- **不修改** `guard-check` 的 plan 阶段 delta 白名单，**不修改** `flow-spec` §12.4 对 plan 门状态的定义。
 - 不引入以手工 marker 绕过 plan-exit 派生的做法。
 
 ### 追溯
 
 - 场景：S05 查看下一步建议（`proposal_step` 派生）、S35 提案计划产物左移硬检查（change-lint）。
-- 测试：UT-S05-47～UT-S05-50、ST-S05-22、UT-S35-121～UT-S35-126、ST-S35-22～ST-S35-23。
-- 部署后 smoke：SMOKE-core-172。
+- 测试：UT-S35-125、UT-S35-126、UT-S35-129、ST-S35-23。
 
 ## merge 合规判定单点化与门禁可满足性保障要求
 
