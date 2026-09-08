@@ -1,2 +1,0 @@
-{"schema":"openlogos/merge-reopen@1","old_transaction_id":"mtx_39c15aa6bbf0d5432e29533b","reopened_at":"2026-09-08T01:50:04.764Z","reason":"补删 reopen 后切片归属消费回归节：该节 3 个 ID（UT-S32-69/70、ST-S32-23）由 slice transaction 命令面驱动，随事务删除失效，首轮 delta 遗漏","spec_merged_present":true,"confirmed":true}
-{"schema":"openlogos/merge-reopen@1","old_transaction_id":"mtx_39c15aa6bbf0d5432e29533b","reopened_at":"2026-09-08T01:56:14.166Z","reason":"补删 S28 终态事务不堵恢复节：3 个 ID（UT-S28-47/48、ST-S28-15）随事务相位机删除失效，verify 暴露为孤儿 ID","spec_merged_present":true,"confirmed":true}
