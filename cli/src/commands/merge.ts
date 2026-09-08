@@ -291,14 +291,11 @@ export function merge(slug?: string) {
         const targetAbs = join(root, targetRel);
         if (existsSync(targetAbs)) {
           const targetContent = readFileSync(targetAbs, 'utf-8');
-          const conservation = evaluateDeltaConservation(content, targetContent);
-          if (conservation.length > 0) {
-            console.error(t(locale, 'merge.conservationRejected', { path: d.relativePath }));
-            for (const cv of conservation) {
-              console.error(`  - [${cv.code}] ${cv.message}`);
-            }
-            console.error(t(locale, 'merge.conservationHint'));
-            process.exit(1);
+          // §2.73：条目守恒降级为警告——诊断照常逐条给出，但不再阻断合并。
+          // 静默删除由 `openlogos verify` 的孤儿结果检查兜住（规格删了 ID 而测试还在跑即判不一致）。
+          // 例外：锚不可解析是定位失败，`composeOpenLogosMarkdown` 在合成阶段仍会 fail-closed。
+          for (const cv of evaluateDeltaConservation(content, targetContent)) {
+            console.log(`  ⚠️  [${cv.code}] ${d.relativePath}：${cv.message}`);
           }
           // code-r1 F1：跨 delta 文件的同一目标章节多写者 fail-closed（与 lint 共享同一解析辅助）
           for (const key of resolveModifiedSectionKeys(content, targetContent)) {
@@ -311,10 +308,8 @@ export function merge(slug?: string) {
   }
   for (const [k, writers] of conservationSectionWriters) {
     if (writers.length < 2) continue;
-    console.error(t(locale, 'merge.conservationRejected', { path: writers.join('、') }));
-    console.error(`  - [delta_implicit_id_removal] 目标 ${k.split('#')[0]} 的同一章节被 ${writers.length} 个 delta 文件的 MODIFIED 写入——顺序应用下后写覆盖前写；每章节仅允许一个 MODIFIED 写者`);
-    console.error(t(locale, 'merge.conservationHint'));
-    process.exit(1);
+    console.log(`  ⚠️  [delta_implicit_id_removal] 目标 ${k.split('#')[0]} 的同一章节被 ${writers.length} 个 delta 文件的 MODIFIED 写入（${writers.join('、')}）`
+      + '——顺序应用下后写覆盖前写；每章节仅允许一个 MODIFIED 写者');
   }
 
   if (legacyMergeTestMode()) {

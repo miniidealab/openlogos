@@ -1,6 +1,6 @@
 {
   "type": "merge_complete",
-  "completed_at": "2026-09-08T04:09:37.275Z",
+  "completed_at": "2026-09-08T04:15:54.831Z",
   "test_change_set": {
     "schema": "openlogos/test-change-set@1",
     "change": "lite-cut2c-spec-hygiene-and-anchors",
@@ -12,7 +12,12 @@
       "ST-S33-05",
       "ST-S33-06",
       "ST-S33-07",
+      "ST-S37-01",
+      "ST-S37-02",
+      "ST-S37-06",
       "ST-S37-11",
+      "ST-S38-04",
+      "ST-S38-04a",
       "UT-S09-342",
       "UT-S09-343",
       "UT-S27-32",
@@ -21,6 +26,8 @@
       "UT-S33-51",
       "UT-S35-136",
       "UT-S35-137",
+      "UT-S37-26",
+      "UT-S37-27",
       "UT-S37-41"
     ],
     "removed_test_ids": [
@@ -59,7 +66,12 @@
       {
         "target_path": "logos/resources/test/core-S37-test-cases.md",
         "before_sha256": "a818b534b341537c2059c678e0ff3ca784066f8211b903d5713a4d8b93d1b1f8",
-        "after_sha256": "cd83e690cc263003b8ae2b5ae78d51efbb4b61646bb5c58f7afa54155c47b62c"
+        "after_sha256": "ca87d21dcd0b925eebc0f2195d847bd7aa5da3dbce8b77eecc3effbcdff3d316"
+      },
+      {
+        "target_path": "logos/resources/test/core-S38-test-cases.md",
+        "before_sha256": "2ae41bdede2305ffc5b9007c12042d77f830cab01b22ff27c4780c78b2459cb3",
+        "after_sha256": "4b58f5257095d81031c38b3b19140c6a0199398bb344dd6b0f665fd7ae1225eb"
       },
       {
         "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
@@ -67,6 +79,6 @@
         "after_sha256": "31779d29e6fc4e233b9b4324f4135a815cd43f14eee8697e1d29dc56d3ddf62d"
       }
     ],
-    "sha256": "sha256:766f6041e091179efdde17077ccd95ff3e77b6a16211a2eeb0016582cb0b8092"
+    "sha256": "sha256:48beff9c39e147525f6412515f220b413453fd9e21be9305e1e354a90b68644a"
   }
 }

@@ -32,8 +32,8 @@
 | UT-S37-23 | 注册表：场景 ID 识别正反例 | `## S37:` 标题、场景表行首列 `S05` 识别；散文中 `S3` / `S999x` 不识别 | 识别正反例全部符合注册表声明 |
 | UT-S37-24 | 注册表：节号完整 token 文法（F4） | 标题行 `### 2.2b` / `### 2.2c` / `### 2.5a` / `### 2.7A` / `### 2.29.1` / `### 2.29.2` / `### 2.13.1` / `### 2.19.A` / `### 2.19.B` / `### 2.19.C` / `### 2.20.A` / `### 2.20.B` / `### 2.20.C` / `### 2.20.D` 全部识别且互不坍缩（`2.29.1` ≠ `2.29.2` ≠ `2.29`，`2.2b` ≠ `2.2c`，`2.19.A` ≠ `2.19.B` ≠ `2.19`，`2.20.D` ≠ `2.20`）；版本号 `0.13.21`、散文 `1.5`、标题行外 `§2.7` 引用不入集合 | 识别正反例全部符合注册表声明（文法等价 `N(?:\.N)*(?:[A-Za-z]|\.[A-Za-z])?`） |
 | UT-S37-25 | 节号 corpus 回归（F4） | 从当前全部受管规格（feature-specs / cli-experience / requirements / test / smoke）标题生成兼容语料（显式含 `2.19.A`–`2.19.C`、`2.20.A`–`2.20.D` 点分字母段标题） | 语料中全部既有编号标题被识别；逐个删除任一标题（含 `2.19.A`、`2.20.D`）产生守恒违规 |
-| UT-S37-26 | violation 结构与排序 | 构造多文件多违规夹具 | 每条 violation 的 `code`/`path`/`fix_hint` 必填；L8 位于 L7 之后，同 path 按源位置出现序 |
-| UT-S37-27 | 同源锚：lint 与 merge 一致 | 同一夹具分别经 change-lint L8 与 merge 消费点调用 | 两侧 pass/fail 与结构化细节逐字段一致（同一判据函数、同一锚解析器） |
+| UT-S37-26 | 守恒告警结构与排序 | 构造多文件多守恒问题夹具 | 每条 warning 的 `code`/`message`/`fix_hint` 必填；守恒两码出现在 `warnings` 而非 `violations`；`delta_section_anchor_unresolvable` 仍在 violations 且位于 L7 之后（§2.73） |
+| UT-S37-27 | 同源锚：lint 与 merge 一致 | 同一夹具分别经 change-lint 与 merge 消费点调用 | 两侧对同一 delta 得到**逐字段相同的守恒诊断集合**（同一判据函数 `evaluateDeltaConservation`、同一锚解析器）；两侧均不因守恒阻断（§2.73） |
 | UT-S37-28 | 判据纯函数韧性 | 段标记畸形 delta（由 L4 拦截的形态）送入守恒函数 | 不抛未捕获异常；L8 不重复报 L4 已覆盖缺陷 |
 | UT-S37-29 | L4 承认 REMOVED-ITEMS | 含合法 `REMOVED-ITEMS` 块（配对 MODIFIED）的 delta 过 L4；仅含 REMOVED-ITEMS 无物质变更块的 delta 判非法 | 与 §2.33.4 约定一致 |
 | UT-S37-30 | 映射一致性回归（F5） | 读取 `DELTA_TO_RESOURCE` 常量与 `spec/change-management.md`、change-writer 目录映射表声明 | 三方一致：`spec → 根 spec/`、`skills → 根 skills/`（非 `logos/skills/`）、其余类目 → `logos/resources/**` |
@@ -48,12 +48,12 @@
 
 | ID | 检查项 | 用例 | 期望 |
 |----|--------|------|------|
-| ST-S37-01 | lint 端到端拦截 | 临时项目构造含隐式删除 delta 的活跃提案，运行 `openlogos change-lint` | exit 2；stdout 含 L8 违规（`delta_implicit_id_removal` + fix_hint）；`--format json` 违规入 `data.violations` 且 code 属 26 码闭合枚举 |
-| ST-S37-02 | merge 端到端拒绝 | 同提案运行 `openlogos merge <slug>` | 非零退出；不生成 `MERGE_PROMPT.md`；不写任何 marker；stderr 含守恒拒绝文案 |
+| ST-S37-01 | lint 端到端告警 | 临时项目构造含隐式删除 delta 的活跃提案，运行 `openlogos change-lint` | **exit 0**；输出含守恒告警（`delta_implicit_id_removal` + fix_hint）且点名被删 ID；`--format json` 下该码入 `data.warnings` 而非 `data.violations`（§2.73） |
+| ST-S37-02 | merge 端到端放行并告警 | 同提案运行 `openlogos merge <slug>` | **零退出**并写 `SPEC_MERGED`；stdout 含守恒告警并点名被删 ID；空锚物质变更与同锚多写者的诊断照常给出（§2.73） |
 | ST-S37-03 | 部分删除端到端落地（F1） | 构造「MODIFIED 剩余全量 + REMOVED-ITEMS 同锚点名」成对 delta，跑通 merge 生成 MERGE_PROMPT 后**实际应用合并**（按 merge-executor 协议执行到主文档落盘） | merge 放行；合并后主文档**仅**点名 ID 的条目消失，目标章节仍存在、其余全部条目逐字节保留；事后点数公式对账相符 |
 | ST-S37-04 | 歧义锚端到端拒绝（F3） | delta 用单段锚指向重复 7 次的真实 smoke 标题 | lint exit 2 报 `delta_section_anchor_unresolvable`；merge 拒绝；改标题路径锚后放行 |
 | ST-S37-05 | 合法提案零漂移 | 对不含守恒违规的既有形态提案（纯 ADDED / 全量 MODIFIED / 整节 REMOVED）跑 lint + merge | 与引入 L8 前行为一致；merge 输出零漂移 |
-| ST-S37-06 | 只读性 | `change-lint` 运行前后临时项目全量文件集合与内容哈希不变 | 完全不变（延续 S35 只读红线，L8 不引入写入） |
+| ST-S37-06 | 只读性 | `change-lint` 运行前后临时项目全量文件集合与内容哈希不变 | 完全不变（延续 S35 只读红线，守恒检查不引入写入）；命令 exit 0 |
 | ST-S37-07 | 合法根 ID Delta lint 放行 | 临时项目分别构造 S10、D12、2.3 根标题目标与正文不重复根 ID 的同锚 MODIFIED，走真实 `openlogos change-lint` 文本/JSON 入口 | 三类均 exit 0、`pass=true`、无 L8 violation；运行前后项目字节不变 |
 | ST-S37-08 | lint/merge 同源根 ID 闭环 | 对合法根 ID 提案先 lint 再运行 `openlogos merge <slug>`；对根保留但内嵌 S11/测试 ID 缺失的对照提案运行两命令 | 合法提案 lint exit 0 且 merge 生成 `MERGE_PROMPT.md`；非法对照两侧均只报告真实缺失 ID，merge 非零且不写 prompt/marker |
 

@@ -10,12 +10,16 @@
  * 发现问题时非零退出并逐条列出位置，供人判断。
  *
  * ID 语法不在此重新定义——一律经 `lib/test-id.ts` 这一唯一权威判定（严禁第二份判据）。
+ *
+ * §2.72.2 重复标题：同一文件内两处文本完全相同的标题，会让该章节的 delta 锚永远解析为
+ * ambiguous——**整节永久不可寻址**。这比重复 ID 更严重却更隐蔽，故一并检查。
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isTestId } from '../lib/test-id.js';
+import { parseMarkdownHeadings, type ResolvedSectionAnchor } from '../lib/markdown-section-authority.js';
 
-export type LintSpecsCode = 'duplicate_test_id' | 'table_column_mismatch' | 'invalid_test_id';
+export type LintSpecsCode = 'duplicate_test_id' | 'table_column_mismatch' | 'invalid_test_id' | 'duplicate_heading';
 
 export interface LintSpecsFinding {
   code: LintSpecsCode;
@@ -100,6 +104,22 @@ function lintFile(relPath: string, content: string, seenIds: Map<string, string[
     }
     index = row;
   }
+
+  // §2.72.2：**路径锚也无法消歧**的重复标题——文本与祖先链都相同，该章节的 delta 锚永久不可寻址。
+  // 仅文本相同但祖先不同（如不同父节下的「单元测试」）可用 `父级 > 子节` 路径锚定位，不是缺陷。
+  const byPath = new Map<string, ResolvedSectionAnchor[]>();
+  for (const heading of parseMarkdownHeadings(content)) {
+    const key = heading.path.join(' > ');
+    byPath.set(key, [...(byPath.get(key) ?? []), heading]);
+  }
+  for (const [key, group] of byPath) {
+    if (group.length < 2) continue;
+    findings.push({
+      code: 'duplicate_heading', path: relPath, line: group[0].line + 1,
+      message: `标题路径「${key}」在本文件出现 ${group.length} 次（行 ${group.map(h => h.line + 1).join('、')}）`
+        + '——文本与祖先链均相同，路径锚无法消歧；该章节此前不可寻址，现可用 `<标题> [n]` 序数锚精确定位',
+    });
+  }
   return findings;
 }
 
@@ -138,7 +158,7 @@ export function lintSpecs(format: 'text' | 'json' = 'text'): void {
   } else {
     console.log(`\n🔍 lint-specs：扫描 ${result.scanned_files} 个测试规格文件`);
     if (result.ok) {
-      console.log('  ✓ 未发现结构问题（重复 ID / 表格列数 / ID 格式）');
+      console.log('  ✓ 未发现结构问题（重复 ID / 表格列数 / ID 格式 / 重复标题）');
     } else {
       console.log(`  ✗ ${result.findings.length} 项：`);
       for (const f of result.findings) {

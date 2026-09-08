@@ -121,7 +121,12 @@ export interface ChangeLintViolation {
  * 契约（出现/省略、item 闭合字段、稳定排序）以 `spec/cli-json-output.md` §3.15 为唯一事实源；
  * `warnings` 仅在**非空时出现**、否则整个字段省略（零漂移）。item 恰含 code/message/fix_hint（不含 path）。
  */
-export type ChangeLintWarningCode = 'decision_record_section_without_delta' | 'sql_dialect_precheck_skipped';
+export type ChangeLintWarningCode =
+  | 'decision_record_section_without_delta'
+  | 'sql_dialect_precheck_skipped'
+  // §2.73：L8 条目守恒由违规降级为警告——诊断逐字不变，只改严重度分级。
+  | 'delta_implicit_id_removal'
+  | 'delta_removed_unknown_id';
 
 export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
@@ -957,6 +962,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   // 目标主文档不存在（全新文档）跳过；目标存在但不可读 → artifact_unreadable（操作级红线）。
   // SPEC_MERGED 后已没有 merge 前目标快照，拿 delta 再对最终目标做守恒会制造假阳性；纵深守恒必须发生在
   // merge 写 prompt 前。因此 post-merge 只运行 L9 的最终事实/P==T==D 检查，不重放 L8。
+  const conservationWarnings: ChangeLintWarning[] = [];
   const sectionWriters = new Map<string, string[]>(); // `${targetRel}#${sectionLine}` → 写者 delta relPath 列表（code-r1 F1 跨文件单写者）
   // §2.50.7 A：改用权威判据——持 legacy MERGED 的提案此前被误判为「未 merge」并被重放 L8（假阳性）。
   const postMerge = hasSpecCompleteMarker(proposalDir);
@@ -975,7 +981,13 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     const relPath = `logos/changes/${slug}/${entry.relativePath}`;
     const content = deltaContents.get(entry.relativePath) ?? '';
     for (const v of evaluateDeltaConservation(content, targetContent)) {
-      pushViolation(acc, 8, { code: v.code, path: relPath, message: v.message, fix_hint: v.fix_hint });
+      // §2.73：守恒两码降级为警告；锚不可解析是**定位失败**而非守恒判断，保持违规——
+      // 否则用户只会更晚在 merge 合成阶段看到同一个错误。
+      if (v.code === 'delta_section_anchor_unresolvable') {
+        pushViolation(acc, 8, { code: v.code, path: relPath, message: v.message, fix_hint: v.fix_hint });
+      } else {
+        conservationWarnings.push({ code: v.code, message: `${relPath}：${v.message}`, fix_hint: v.fix_hint });
+      }
     }
     for (const key of resolveModifiedSectionKeys(content, targetContent)) {
       const k = `${targetRel}#${key}`;
@@ -988,10 +1000,9 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     if (writers.length < 2) continue;
     const [targetRel] = k.split('#');
     for (const relPath of writers) {
-      pushViolation(acc, 8, {
+      conservationWarnings.push({
         code: 'delta_implicit_id_removal',
-        path: relPath,
-        message: `目标 ${targetRel} 的同一章节被 ${writers.length} 个 delta 文件的 MODIFIED 写入（${writers.join('、')}）——顺序应用下后写覆盖前写；每章节仅允许一个 MODIFIED 写者`,
+        message: `${relPath}：目标 ${targetRel} 的同一章节被 ${writers.length} 个 delta 文件的 MODIFIED 写入（${writers.join('、')}）——顺序应用下后写覆盖前写；每章节仅允许一个 MODIFIED 写者`,
         fix_hint: '把该章节的全部变更合并进单个 delta 文件的单个 MODIFIED 块（携带最终态整节全量内容）',
       });
     }
@@ -1038,7 +1049,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings]
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings, ...conservationWarnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {

@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "lite-cut2c-spec-hygiene-and-anchors",
+  "module": "core",
+  "task_fingerprint": "sha256:5d5d370354c3a8ed23c8efa456ffbf8e66cf6b9a03552809e89d4944b490576d",
+  "spec_fingerprint": "sha256:8c717b713325a5e8df22219d2faea85b04d2235b9795229943063f1539e7da8b",
+  "generated_at": "2026-09-08T04:22:21.778Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-anchor-ordinal",
+      "task_text": "切片1：章节锚序数消歧——`resolveSectionAnchor` 支持可选后缀 `[n]`，在路径锚过滤后的同名候选中按文档序选第 n 处；不带后缀时行为逐字节不变。`verifyAgentMaterialOutcome` 的 REMOVED 后置条件对序数锚改判「同名候选数恰好减一」（原判据「不再存在」对重复标题不成立）。",
+      "owned_test_ids": [
+        "UT-S09-342",
+        "UT-S09-343",
+        "ST-S09-141"
+      ],
+      "runner_selectors": [
+        "UT-S09-342",
+        "UT-S09-343",
+        "ST-S09-141"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-lint-dup-heading-and-l8-warn",
+      "task_text": "切片2：lint-specs 重复标题检查 + L8 降级——`lint-specs` 增加 `duplicate_heading`，只报「文本与祖先链均相同」的重复（仅文本相同但祖先不同者可用路径锚消歧，不算缺陷）；change-lint 的 `delta_implicit_id_removal` 与 `delta_removed_unknown_id` 改走 warnings，`delta_section_anchor_unresolvable` 保持违规；merge 不再因守恒拒绝，改为打印告警后继续；change-lint 文本渲染按 code 打印告警（告警通道现承载多类）。",
+      "owned_test_ids": [
+        "UT-S35-136",
+        "UT-S35-137",
+        "UT-S37-41",
+        "ST-S37-11"
+      ],
+      "runner_selectors": [
+        "UT-S35-136",
+        "UT-S35-137",
+        "UT-S37-41",
+        "ST-S37-11"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/test/core-S35-test-cases.md",
+        "logos/resources/test/core-S37-test-cases.md"
+      ]
+    }
+  ]
+}

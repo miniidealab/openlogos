@@ -482,22 +482,30 @@ describe('S37 — 契约、同源与零漂移', () => {
     });
   }
 
-  it('UT-S37-26: violation 结构与排序——code/path/fix_hint 必填，L8 位于 L7 后，同 path 按 delta 源位置序（code-r1 F5）；跨文件同章节多写者拒绝（code-r1 F1）', () => {
+  it('UT-S37-26: 守恒告警结构与排序——code/message/fix_hint 必填；守恒两码入 warnings，锚不可解析仍入 violations（§2.73）', () => {
     const bad = delta('MODIFIED', '二、冒烟测试用例', table('SMOKE-core-01'))
       + delta('MODIFIED', '不存在的章节', '内容');
     const { root, slug, dir } = lintFixture(bad, SMOKE_TARGET);
     const result = runChangeLint(root, dir, slug);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const l8 = result.violations.filter(v => codesL8.includes(v.code));
-    expect(l8.length).toBeGreaterThanOrEqual(3); // 2 隐式删 + 1 锚
-    for (const v of l8) {
-      expect(v.code).toBeTruthy();
+    // §2.73：守恒两码降级为警告；锚不可解析是定位失败，仍是违规
+    const conservationWarnings = result.warnings.filter(w =>
+      w.code === 'delta_implicit_id_removal' || w.code === 'delta_removed_unknown_id');
+    expect(conservationWarnings.length).toBeGreaterThanOrEqual(2); // 2 隐式删
+    for (const w of conservationWarnings) {
+      expect(w.code).toBeTruthy();
+      expect(w.message).toMatch(/logos\/changes\/feat\/deltas\/test\/smoke\//);
+      expect(w.fix_hint).toBeTruthy();
+    }
+    const anchorViolations = result.violations.filter(v => v.code === 'delta_section_anchor_unresolvable');
+    expect(anchorViolations.length, '锚不可解析仍是违规').toBeGreaterThanOrEqual(1);
+    for (const v of anchorViolations) {
       expect(v.path).toMatch(/^logos\/changes\/feat\/deltas\/test\/smoke\//);
       expect(v.fix_hint).toBeTruthy();
-      expect(v.flow_reason).toBeUndefined(); // L8 无 flow_reason 映射
+      expect(v.flow_reason).toBeUndefined();
     }
-    // L8 全部排在非 L8 之后（生成序 = 检查项序）
+    // 保留的 L8 违规（锚不可解析）仍排在非 L8 之后（生成序 = 检查项序）
     const firstL8 = result.violations.findIndex(v => codesL8.includes(v.code));
     expect(result.violations.slice(firstL8).every(v => codesL8.includes(v.code))).toBe(true);
     expect(result.checks.find(c => c.id === 8)?.label).toContain('条目守恒');
@@ -511,9 +519,14 @@ describe('S37 — 契约、同源与零漂移', () => {
     const lintRes = runChangeLint(r2d, d2d, s2d);
     expect(lintRes.ok).toBe(true);
     if (lintRes.ok) {
-      const seq = lintRes.violations.filter(v => codesL8.includes(v.code)).map(v => v.message);
-      expect(seq[0]).toContain('Z章');
-      expect(seq[1]).toContain('A章');
+      // §2.73：守恒诊断改走 warnings，但生成序不变
+      // 源位置序由判据函数本身保证（上面 zv 的断言）；warnings 通道按合同以 (code, message)
+      // 稳定排序，表达不了源位置序，故此处只断言两侧覆盖同一组锚。
+      const seq = lintRes.warnings.filter(w =>
+        w.code === 'delta_implicit_id_removal' || w.code === 'delta_removed_unknown_id').map(w => w.message);
+      expect(seq).toHaveLength(2);
+      expect(seq.some(m => m.includes('Z章'))).toBe(true);
+      expect(seq.some(m => m.includes('A章'))).toBe(true);
     }
     // code-r2 F5 残留可复现输入：同锚声明跨越另一锚的交错形态——delta 源序为
     // ① MODIFIED — A章（全量，无违规）→ ② MODIFIED — B章（漏 UT-S01-03，先违规）→
@@ -548,11 +561,14 @@ describe('S37 — 契约、同源与零漂移', () => {
     const result = runChangeLint(root, dir, slug);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const lintSide = result.violations.filter(v => codesL8.includes(v.code));
+    // §2.73：两侧仍共享同一判据函数，只是 lint 侧走 warnings 通道（message 带 path 前缀）
+    const lintSide = result.warnings.filter(w =>
+      w.code === 'delta_implicit_id_removal' || w.code === 'delta_removed_unknown_id');
     // merge 侧 = 同一导出函数（merge.ts 打包调用 evaluateDeltaConservation，无第二份判据）
     const mergeSide = evaluateDeltaConservation(bad, SMOKE_TARGET);
-    expect(lintSide.map(v => ({ code: v.code, message: v.message, fix_hint: v.fix_hint })))
-      .toEqual(mergeSide.map(v => ({ code: v.code, message: v.message, fix_hint: v.fix_hint })));
+    expect(lintSide.map(w => ({ code: w.code, fix_hint: w.fix_hint })))
+      .toEqual(mergeSide.map(v => ({ code: v.code, fix_hint: v.fix_hint })));
+    for (const [i, w] of lintSide.entries()) expect(w.message).toContain(mergeSide[i].message);
   });
 
   it('UT-S37-28: 判据纯函数韧性——段标记畸形输入不抛异常、L8 不重复报 L4 缺陷', () => {
@@ -690,31 +706,30 @@ describe('S37 — ST 场景测试', () => {
   const PAIRED_DELTA = delta('MODIFIED', '二、冒烟测试用例', table('SMOKE-core-01', 'SMOKE-core-07'))
     + delta('REMOVED-ITEMS', '二、冒烟测试用例', '- SMOKE-core-03 — 构建流程重构，检查项退役');
 
-  it('ST-S37-01: change-lint 端到端拦截——exit 2、L8 违规与 fix_hint、JSON code 属闭合枚举', { timeout: 120_000 }, () => {
+  it('ST-S37-01: change-lint 端到端告警——exit 0、守恒入 warnings 且点名被删 ID（§2.73）', { timeout: 120_000 }, () => {
     const { root } = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: BAD_DELTA, target: { rel: SMOKE_REL, content: SMOKE_TARGET } });
     const r = spawnCli(root, ['change-lint']);
-    expect(r.status).toBe(2);
+    expect(r.status, '守恒降级后不再阻断').toBe(0);
     expect(r.stdout).toContain('delta_implicit_id_removal');
     expect(r.stdout).toContain('SMOKE-core-03');
-    expect(r.stdout).toMatch(/✗ L8/);
+    expect(r.stdout).toMatch(/✓ L8/);
     const j = spawnCli(root, ['change-lint', '--format', 'json']);
-    expect(j.status).toBe(2);
+    expect(j.status).toBe(0);
     const env = JSON.parse(j.stdout.trim());
-    expect(env.data.pass).toBe(false);
-    for (const v of env.data.violations) {
-      expect(CHANGE_LINT_VIOLATION_CODES).toContain(v.code);
-    }
+    expect(env.data.pass).toBe(true);
+    expect(env.data.warnings.map((w: { code: string }) => w.code)).toContain('delta_implicit_id_removal');
+    expect(env.data.violations ?? []).toEqual([]);
   });
 
-  it('ST-S37-02: merge 端到端拒绝——非零退出、不生成 MERGE_PROMPT、不写任何 marker；空锚物质变更同拒（code-r1 F2）；同锚多写者同拒（code-r1 F1）', { timeout: 120_000 }, () => {
+  it('ST-S37-02: merge 端到端放行并告警；空锚物质变更仍拒（code-r1 F2）——锚不可解析不随守恒降级', { timeout: 120_000 }, () => {
     const { root, slug, dir } = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: BAD_DELTA, target: { rel: SMOKE_REL, content: SMOKE_TARGET } });
     const r = spawnCli(root, ['merge', slug]);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('delta_implicit_id_removal');
-    expect(r.stderr).toContain('delta_implicit_id_removal');
-    expect(existsSync(join(dir, 'MERGE_PROMPT.md'))).toBe(false);
-    expect(existsSync(join(dir, 'MERGE_PROMPT_GENERATED'))).toBe(false);
-    expect(existsSync(join(dir, 'SPEC_MERGED'))).toBe(false);
+    // §2.73：守恒降级后 merge 放行并告警；静默删除由 verify 的孤儿检查兜住
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toContain('delta_implicit_id_removal');
+    expect(r.stdout).toContain('SMOKE-core-03');
+    // 本组夹具在 legacy MERGE_PROMPT 模式下运行（vitest 全局开关），产物是 prompt 而非 marker
+    expect(existsSync(join(dir, 'MERGE_PROMPT.md'))).toBe(true);
     // code-r1 F2：`## MODIFIED` 空锚物质变更——lint exit 2 + merge 拒绝（不生成 MERGE_PROMPT/marker）
     const bare = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: `## MODIFIED\n\n${table('SMOKE-core-01')}\n`, target: { rel: SMOKE_REL, content: SMOKE_TARGET } });
     const lintBare = spawnCli(bare.root, ['change-lint']);
@@ -724,59 +739,56 @@ describe('S37 — ST 场景测试', () => {
     expect(mergeBare.status).toBe(1);
     expect(existsSync(join(bare.dir, 'MERGE_PROMPT.md'))).toBe(false);
     expect(existsSync(join(bare.dir, 'SPEC_MERGED'))).toBe(false);
-    // code-r3 F3：历史引用子节克隆双列表背书删除——lint exit 2 + merge 拒绝（三层锁定之 CLI 两层）
+    // code-r3 F3：历史引用子节克隆双列表背书删除——lint exit 2 + merge 拒绝（三层锁定之 CLI 两层——§2.73 后为告警级）
     const cloneTarget = '# smoke 规格\n\n## 场景地图\n| 编号 | 场景名称 |\n|---|---|\n| S01 | a |\n| S05 | b |\n';
     const cloneDelta = delta('MODIFIED', '场景地图',
       '| 编号 | 场景名称 |\n|---|---|\n| S01 | a |\n\n### 历史引用\n\n| 编号 | 场景名称 |\n| --- | --- |\n| S05 | 仅作历史引用 |');
     const clone = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: cloneDelta, target: { rel: SMOKE_REL, content: cloneTarget } });
     const lintClone = spawnCli(clone.root, ['change-lint']);
-    expect(lintClone.status).toBe(2);
+    expect(lintClone.status).toBe(0);
     expect(lintClone.stdout).toContain('delta_implicit_id_removal');
     const mergeClone = spawnCli(clone.root, ['merge', clone.slug]);
-    expect(mergeClone.status).toBe(1);
-    expect(existsSync(join(clone.dir, 'MERGE_PROMPT.md'))).toBe(false);
-    // code-r4 F3：目标预先含正式条目+历史副本、delta 仅保留历史副本——lint exit 2 + merge 拒绝（三层锁定之 CLI 两层）
+    expect(mergeClone.status).toBe(0);
+    // code-r4 F3：目标预先含正式条目+历史副本、delta 仅保留历史副本——lint exit 2 + merge 拒绝（三层锁定之 CLI 两层——§2.73 后为告警级）
     const dualTarget = '# smoke 规格\n\n## 场景地图\n| 编号 | 场景名称 |\n|---|---|\n| S01 | a |\n| S05 | 正式场景 |\n\n### 历史引用\n| 编号 | 场景名称 |\n|---|---|\n| S05 | 历史快照 |\n';
     const dualDelta = delta('MODIFIED', '场景地图',
       '| 编号 | 场景名称 |\n|---|---|\n| S01 | a |\n\n### 历史引用\n| 编号 | 场景名称 |\n|---|---|\n| S05 | 历史快照 |');
     const dual = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: dualDelta, target: { rel: SMOKE_REL, content: dualTarget } });
     const lintDual = spawnCli(dual.root, ['change-lint']);
-    expect(lintDual.status).toBe(2);
+    expect(lintDual.status).toBe(0);
     expect(lintDual.stdout).toContain('delta_implicit_id_removal');
     const mergeDual = spawnCli(dual.root, ['merge', dual.slug]);
-    expect(mergeDual.status).toBe(1);
-    expect(existsSync(join(dual.dir, 'MERGE_PROMPT.md'))).toBe(false);
-    expect(existsSync(join(dual.dir, 'MERGE_PROMPT_GENERATED'))).toBe(false);
-    // code-r5 F3：同一标题子路径下的正式表与历史快照表（仅普通文本分隔）——lint exit 2 + merge 拒绝（三层锁定之 CLI 两层）
+    expect(mergeDual.status).toBe(0);
+
+    // code-r5 F3：同一标题子路径下的正式表与历史快照表（仅普通文本分隔）——lint exit 2 + merge 拒绝（三层锁定之 CLI 两层——§2.73 后为告警级）
     const sameSubTarget = '# smoke 规格\n\n## 场景地图\n| 编号 | 场景名称 |\n|---|---|\n| S01 | a |\n| S05 | 正式场景 |\n\n历史快照：\n\n| 编号 | 场景名称 |\n|---|---|\n| S05 | 历史快照 |\n';
     const sameSubDelta = delta('MODIFIED', '场景地图',
       '| 编号 | 场景名称 |\n|---|---|\n| S01 | a |\n\n历史快照：\n\n| 编号 | 场景名称 |\n|---|---|\n| S05 | 历史快照 |');
     const sameSub = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: sameSubDelta, target: { rel: SMOKE_REL, content: sameSubTarget } });
     const lintSameSub = spawnCli(sameSub.root, ['change-lint']);
-    expect(lintSameSub.status).toBe(2);
+    expect(lintSameSub.status).toBe(0);
     expect(lintSameSub.stdout).toContain('delta_implicit_id_removal');
     const mergeSameSub = spawnCli(sameSub.root, ['merge', sameSub.slug]);
-    expect(mergeSameSub.status).toBe(1);
-    expect(existsSync(join(sameSub.dir, 'MERGE_PROMPT.md'))).toBe(false);
-    expect(existsSync(join(sameSub.dir, 'MERGE_PROMPT_GENERATED'))).toBe(false);
+    expect(mergeSameSub.status).toBe(0);
+    expect(existsSync(join(sameSub.dir, 'MERGE_PROMPT_GENERATED'))).toBe(true);
     // 正例锁定：同子路径双表**全量保留**时 lint 放行（exit 0，L8 守恒通过），证明修法不误伤合法单写者
     const keepSameSubDelta = delta('MODIFIED', '场景地图',
       '| 编号 | 场景名称 |\n|---|---|\n| S01 | a |\n| S05 | 正式场景 |\n\n历史快照：\n\n| 编号 | 场景名称 |\n|---|---|\n| S05 | 历史快照 |');
     const keepSameSub = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: keepSameSubDelta, target: { rel: SMOKE_REL, content: sameSubTarget } });
     const lintKeep = spawnCli(keepSameSub.root, ['change-lint']);
     expect(lintKeep.stdout).not.toContain('delta_implicit_id_removal');
-    // code-r1 F1：同锚多重 MODIFIED（先全量后缩水）——lint exit 2 + merge 拒绝
+    // code-r1 F1：同锚多重 MODIFIED（先全量后缩水）——§2.73 后为告警级，诊断与点名不变
     const multi = setupProject({
       deltaRel: SMOKE_DELTA_REL,
       deltaContent: delta('MODIFIED', '二、冒烟测试用例', table('SMOKE-core-01', 'SMOKE-core-03', 'SMOKE-core-07'))
         + delta('MODIFIED', '二、冒烟测试用例', table('SMOKE-core-01')),
       target: { rel: SMOKE_REL, content: SMOKE_TARGET },
     });
-    expect(spawnCli(multi.root, ['change-lint']).status).toBe(2);
+    expect(spawnCli(multi.root, ['change-lint']).status).toBe(0);
     const mergeMulti = spawnCli(multi.root, ['merge', multi.slug]);
-    expect(mergeMulti.status).toBe(1);
-    expect(mergeMulti.stderr).toContain('MODIFIED 写者');
-    expect(existsSync(join(multi.dir, 'MERGE_PROMPT.md'))).toBe(false);
+    expect(mergeMulti.status).toBe(0);
+    expect(mergeMulti.stdout).toContain('MODIFIED 写者');
+    expect(existsSync(join(multi.dir, 'MERGE_PROMPT.md'))).toBe(true);
   });
 
   it('ST-S37-03: 部分删除端到端落地（F1）——merge 放行后实际应用，仅点名条目消失、其余保留、事后点数相符', { timeout: 120_000 }, () => {
@@ -836,8 +848,8 @@ describe('S37 — ST 场景测试', () => {
   it('ST-S37-06: 只读性——change-lint 运行前后项目全量文件集合与内容哈希不变', { timeout: 120_000 }, () => {
     const { root } = setupProject({ deltaRel: SMOKE_DELTA_REL, deltaContent: BAD_DELTA, target: { rel: SMOKE_REL, content: SMOKE_TARGET } });
     const before = snapshotTree(root);
-    expect(spawnCli(root, ['change-lint']).status).toBe(2);
-    expect(spawnCli(root, ['change-lint', '--format', 'json']).status).toBe(2);
+    expect(spawnCli(root, ['change-lint']).status).toBe(0);
+    expect(spawnCli(root, ['change-lint', '--format', 'json']).status).toBe(0);
     const after = snapshotTree(root);
     expect([...after.entries()].sort()).toEqual([...before.entries()].sort());
   });
@@ -882,15 +894,15 @@ describe('S37 — ST 场景测试', () => {
       target: { rel: SMOKE_REL, content: target },
     });
     const lintResult = spawnCli(illegal.root, ['change-lint']);
-    expect(lintResult.status).toBe(2);
+    // §2.73：内嵌 ID 真删除由「拒绝」降级为「告警」，点名精度不变
+    expect(lintResult.status).toBe(0);
     expect(lintResult.stdout).toContain('S11');
     expect(lintResult.stdout).not.toMatch(/既有 ID：S10(?:\D|$)/);
     const mergeResult = spawnCli(illegal.root, ['merge', illegal.slug]);
-    expect(mergeResult.status).toBe(1);
-    expect(mergeResult.stderr).toContain('S11');
-    expect(mergeResult.stderr).not.toMatch(/既有 ID：S10(?:\D|$)/);
-    expect(existsSync(join(illegal.dir, 'MERGE_PROMPT.md'))).toBe(false);
-    expect(existsSync(join(illegal.dir, 'MERGE_PROMPT_GENERATED'))).toBe(false);
-    expect(existsSync(join(illegal.dir, 'SPEC_MERGED'))).toBe(false);
+    expect(mergeResult.status).toBe(0);
+    // §2.73：告警走 stdout（不再是拒绝文案），点名精度不变；merge 照常产出
+    expect(mergeResult.stdout).toContain('S11');
+    expect(mergeResult.stdout).not.toMatch(/既有 ID：S10(?:\D|$)/);
+    expect(existsSync(join(illegal.dir, 'MERGE_PROMPT.md'))).toBe(true);
   });
 });

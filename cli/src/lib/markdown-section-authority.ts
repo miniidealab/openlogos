@@ -117,11 +117,33 @@ export function parseMarkdownHeadings(content: string): ResolvedSectionAnchor[] 
   return headings;
 }
 
-/** 标题路径按真实祖先链匹配；0/多命中均 fail-closed。 */
+/** 锚是否携带序数后缀（§2.72.1）；携带时其后置条件按候选计数判定而非「不再存在」。 */
+export function anchorHasOrdinal(anchor: string): boolean {
+  const m = /^(.*?)\s*\[(\d+)\]$/.exec(anchor.trim());
+  return m !== null && Number(m[2]) >= 1;
+}
+
+/** 去掉序数后缀后的裸锚，用于统计同名候选数。 */
+function bareAnchor(anchor: string): string {
+  const m = /^(.*?)\s*\[(\d+)\]$/.exec(anchor.trim());
+  return m !== null && Number(m[2]) >= 1 ? m[1] : anchor;
+}
+
+/**
+ * 章节锚解析：标题路径按真实祖先链匹配；0/多命中均 fail-closed。
+ *
+ * 功能规格 §2.72：支持**可选**序数后缀 `[n]`，在同名候选中按文档序选第 n 处（1 基）。
+ * 不带后缀时行为逐字节不变——重复标题此前使章节永久不可寻址，序数是其唯一出路。
+ */
 export function resolveSectionAnchor(
   headings: readonly ResolvedSectionAnchor[], anchor: string,
 ): SectionAnchorResolution {
-  const segments = anchor.split(' > ').map(segment => stripInlineCode(segment).trim()).filter(Boolean);
+  // 序数只允许出现在锚末尾，且必须是 1 基正整数；其余形态一律按普通标题文本处理。
+  const ordinalMatch = /^(.*?)\s*\[(\d+)\]$/.exec(anchor.trim());
+  const ordinal = ordinalMatch && Number(ordinalMatch[2]) >= 1 ? Number(ordinalMatch[2]) : null;
+  const bare = ordinal === null ? anchor : ordinalMatch![1];
+
+  const segments = bare.split(' > ').map(segment => stripInlineCode(segment).trim()).filter(Boolean);
   if (segments.length === 0) return { status: 'not_found', candidates: [] };
   const target = segments[segments.length - 1];
   const candidates = headings.filter(heading => heading.text === target);
@@ -135,6 +157,15 @@ export function resolveSectionAnchor(
     }
     return true;
   });
+
+  // 序数在**路径锚过滤之后**的同名候选集合内计数，与文档中其它标题无关。
+  if (ordinal !== null) {
+    if (ordinal > matched.length) {
+      return { status: 'not_found', candidates: matched.length > 0 ? matched : candidates };
+    }
+    return { status: 'ok', hit: matched[ordinal - 1], candidates: matched };
+  }
+
   if (matched.length === 1) return { status: 'ok', hit: matched[0], candidates: matched };
   return {
     status: matched.length === 0 ? 'not_found' : 'ambiguous',
@@ -210,6 +241,16 @@ export function verifyAgentMaterialOutcome(
       continue;
     }
     if (block.op === 'REMOVED') {
+      if (anchorHasOrdinal(block.anchor)) {
+        // 序数锚下同名章节本就多处：后置条件是**候选数恰好减一**，而非「不再存在」。
+        const bare = bareAnchor(block.anchor);
+        const beforeCount = resolveSectionAnchor(beforeHeadings, bare).candidates.length;
+        const finalCount = resolveSectionAnchor(finalHeadings, bare).candidates.length;
+        if (before.status !== 'ok' || finalCount !== beforeCount - 1) {
+          return { ok: false, identities, error: `REMOVED 序数章节未恰好删除一处：${block.anchor}（${beforeCount} → ${finalCount}）` };
+        }
+        continue;
+      }
       if (before.status !== 'ok' || final.status !== 'not_found') {
         return { ok: false, identities, error: `REMOVED 章节仍存在或原章节不唯一：${block.anchor}` };
       }

@@ -328,7 +328,7 @@ describe('S38 决策记录 — CLI 端到端（ST）', () => {
     const { root } = setupProj({ decisionSection: true, decisionsDeltaTask: false });
     const text = spawnCli(root, ['change-lint', '--slug', 'feat']);
     expect(text.status).toBe(0);
-    expect(text.stdout).toContain('⚠ 决策记录');
+    expect(text.stdout).toContain('⚠ [decision_record_section_without_delta]');
     expect(text.stdout).toMatch(/PASS（/);
     const j = spawnCli(root, ['change-lint', '--slug', 'feat', '--format', 'json']);
     const env = parseEnv(j.stdout);
@@ -417,7 +417,7 @@ describe('S38 决策记录 — CLI 端到端（ST）', () => {
     expect(existsSync(join(bad.dir, 'SPEC_MERGED'))).toBe(false); // marker 未写
   });
 
-  it('ST-S38-04: 决策记录隐式删除被 merge 拒绝（复用 S37 消费点）', () => {
+  it('ST-S38-04: 决策记录隐式删除产生告警而非拒绝（复用 S37 消费点，§2.73）', () => {
     const target = ['# t', '', '## 决策索引', '### D07 旧决策', '内容', ''].join('\n');
     const { root, dir } = setupProj();
     // 落一个既有决策主文档 + 一个隐式删 D07 的 delta
@@ -428,11 +428,14 @@ describe('S38 决策记录 — CLI 端到端（ST）', () => {
     mkdirSync(dirname(dd), { recursive: true });
     writeFileSync(dd, '## MODIFIED — 决策索引\n（无 D07、无点名）\n');
     const merge = spawnCli(root, ['merge', 'feat']);
-    expect(merge.status).not.toBe(0);
-    expect(existsSync(join(dir, 'MERGE_PROMPT.md'))).toBe(false);
+    // §2.73：守恒降级——merge 放行并告警，点名被删决策编号
+    expect(merge.status, merge.stderr).toBe(0);
+    expect(merge.stdout).toContain('delta_implicit_id_removal');
+    expect(merge.stdout).toContain('D07');
+    expect(existsSync(join(dir, 'MERGE_PROMPT.md'))).toBe(true);
   });
 
-  it('ST-S38-04a: 决策表首列隐式删除被 merge 拒绝（code-r1 F1，真实 CLI 非零退出、不生成 MERGE_PROMPT）', () => {
+  it('ST-S38-04a: 决策表首列隐式删除产生告警（code-r1 F1，真实 CLI 零退出并产出，§2.73）', () => {
     const tableTarget = [
       '# 决策记录', '', '## 决策索引', '',
       '| 编号 | 决策 | 状态 |', '|----|----|----|',
@@ -450,14 +453,17 @@ describe('S38 决策记录 — CLI 端到端（ST）', () => {
       '| D12 | 新决策 | accepted |', '',
     ].join('\n'));
     const merge = spawnCli(root, ['merge', 'feat']);
-    expect(merge.status).not.toBe(0);
-    expect(existsSync(join(dir, 'MERGE_PROMPT.md'))).toBe(false);
+    // §2.73：表首列 DXX 仍在守恒判据内，但由拒绝改为告警
+    expect(merge.status, merge.stderr).toBe(0);
+    expect(merge.stdout).toContain('delta_implicit_id_removal');
+    expect(merge.stdout).toContain('D07');
+    expect(existsSync(join(dir, 'MERGE_PROMPT.md'))).toBe(true);
   });
 
   it('ST-S38-05: 无决策章节提案零回归（change-lint 无 warning、无 warnings 字段、无 decisions/ 落盘）', () => {
     const { root } = setupProj({ decisionSection: false });
     const text = spawnCli(root, ['change-lint', '--slug', 'feat']);
-    expect(text.stdout).not.toContain('⚠ 决策记录');
+    expect(text.stdout).not.toContain('⚠ [decision_record_section_without_delta]');
     const j = spawnCli(root, ['change-lint', '--slug', 'feat', '--format', 'json']);
     expect(Object.prototype.hasOwnProperty.call(parseEnv(j.stdout).data, 'warnings')).toBe(false);
     expect(existsSync(join(root, 'logos', 'resources', 'decisions'))).toBe(false);

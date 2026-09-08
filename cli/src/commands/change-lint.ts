@@ -114,9 +114,10 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
         }
       }
     }
-    // S38：决策记录 warning（提醒级，不改结论 / exit code）
+    // 提醒级 warning（不改结论 / exit code）：决策记录、SQL 方言降级、条目守恒（§2.73）。
+    // 告警通道自 lite-cut2c 起承载多类，故逐条打印 code——否则用户无从分辨来源。
     for (const w of result.warnings) {
-      console.log(`  ⚠ 决策记录：${w.message}`);
+      console.log(`  ⚠ [${w.code}] ${w.message}`);
       console.log(`      建议：${w.fix_hint}`);
     }
     const total = result.checks.length;
