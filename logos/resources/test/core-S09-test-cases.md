@@ -211,19 +211,19 @@
 | UT-S09-86 | `verify-ui-provenance` 置于 merge 之前 | launched.yaml overlay | overlay-add 节点 `verify-ui-provenance`、`before: generate-merge-prompt`、`when: ui_impact` | flow 校验 | 节点位置在 merge 之前（原型落盘 resources 前拦截漂移） |
 | UT-S09-87 | F6 match 分支：完整 provenance 且 hash 匹配 → 经 `verify-ui-provenance` 节点 exit0 done 放行 | `verify-ui-provenance` 的 check-ui-hash-match 命令 | GUI 项目、`ui_impact:true`、`PLAN_APPROVED` 含完整 provenance（`ui_prototype_rendered:true`+`hashes`）、`2-page-design/` 现值 hash == `PLAN_APPROVED.hashes` | 运行 `done_when: cmd:<check-ui-hash-match>` | `exit 0` → 节点 done → merge 放行前进（成功路径经该节点求值达成、非单 fail_when 卡死）；F6 三分支之 match→0 |
 | UT-S09-88 | hash 失配未 done 阻断 | check-ui-hash-match 命令 | 原型批准后被改、现值 hash != `PLAN_APPROVED.hashes` | 运行 checker | 非零 → 节点未 done（active/pending）→ 前向阻断（不前进） |
-| UT-S09-88a | F6 partial 分支：部分 provenance（`ui_prototype_rendered:true` 但缺 hashes）→ 经 `verify-ui-provenance` 节点 fail closed 未 done 阻断 | `verify-ui-provenance` 的 check-ui-hash-match 命令（F6 partial 分支） | GUI 项目、`ui_impact:true`、`PLAN_APPROVED` 含 `ui_prototype_rendered:true` **但缺 `hashes`**（部分 provenance，非空 marker、非完整） | 运行 `done_when: cmd:<check-ui-hash-match>` | **非零退出 → 节点未 done → 阻断（fail closed）**：曾宣称渲染却缺 hashes 无法追溯，不得放行；与 UT-S09-84（空 marker→advisory→0）区分——部分 provenance 非 legacy，不享 advisory；F6 三分支之 partial→fail |
+| UT-S09-88a | F6 partial 分支：部分 provenance（`ui_prototype_rendered:true` 但缺 hashes）→ 经 `verify-ui-provenance` 节点 告警不告警 未 done 告警 | `verify-ui-provenance` 的 check-ui-hash-match 命令（F6 partial 分支） | GUI 项目、`ui_impact:true`、`PLAN_APPROVED` 含 `ui_prototype_rendered:true` **但缺 `hashes`**（部分 provenance，非空 marker、非完整） | 运行 `done_when: cmd:<check-ui-hash-match>` | **非零退出 → 节点未 done → 告警（告警不告警）**：曾宣称渲染却缺 hashes 无法追溯，不得放行；与 UT-S09-84（空 marker→advisory→0）区分——部分 provenance 非 legacy，不享 advisory；F6 三分支之 partial→fail |
 | UT-S09-89 | 单 `done_when: cmd:` 合法（非双 cmd:） | §9.2 决策 B | overlay-add `verify-ui-provenance` 仅设 `done_when: cmd:`、无 `fail_when: cmd:` | flow 校验 | 校验通过（overlay-add 单 cmd: 合法，规避决策 B 禁同节点 done/fail 均 cmd:） |
-| UT-S09-90 | 失配后显式重入 plan 刷新 hashes → 再匹配放行 | 状态转换（诚实边界） | 失配阻断后，显式重入 plan、重跑 producer 产原型、plan-exit 重批刷新 `PLAN_APPROVED.hashes` | 再到 `verify-ui-provenance` | hash 匹配 `exit 0` → done → 放行（非引擎自动 rewind，为显式重入刷新） |
+| UT-S09-90 | 失配后显式重入 plan 刷新 hashes → 再匹配放行 | 状态转换（诚实边界） | 失配告警后，显式重入 plan、重跑 producer 产原型、plan-exit 重批刷新 `PLAN_APPROVED.hashes` | 再到 `verify-ui-provenance` | hash 匹配 `exit 0` → done → 放行（非引擎自动 rewind，为显式重入刷新） |
 
 ### 9.6 merge 命令级强制与跨会话 fail-closed（F4 R5、R7）
 
 | ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
 |----|------|------|---------|------|---------|
 | UT-S09-91 | 直接 `openlogos merge` 命令级强制不可绕过 | merge.ts pre-merge hash gate | `ui_impact:true`、`PLAN_APPROVED` 含 provenance、原型漂移 | 直接执行 `openlogos merge <slug>`（不经 driver flow） | 拒绝 merge：非零退出 + 明确错误；**不生成 MERGE_PROMPT**（命令级 = 真强制点，driver 流与直调均不可绕过） |
-| UT-S09-92 | F4 R7：批准记录含 UI provenance → 永久 fail closed | merge.ts / 强制语义键 | `PLAN_APPROVED` 含 `ui_prototype_rendered:true`+`hashes`、`ui_impact:true` | merge 时 `hashes` 缺失/损坏/失配 | 一律拒绝（非零退出、不生成 `MERGE_PROMPT`、不写 resources、不写 `SPEC_MERGED`）；判据键=持久化 `PLAN_APPROVED` 内容，非消费时会话 capability |
+| UT-S09-92 | F4 R7：批准记录含 UI provenance → 永久告警（不告警） | merge.ts / 强制语义键 | `PLAN_APPROVED` 含 `ui_prototype_rendered:true`+`hashes`、`ui_impact:true` | merge 时 `hashes` 缺失/损坏/失配 | 一律拒绝（非零退出、不生成 `MERGE_PROMPT`、不写 resources、不写 `SPEC_MERGED`）；判据键=持久化 `PLAN_APPROVED` 内容，非消费时会话 capability |
 | UT-S09-93 | 模式选择读会话 capability，强制语义不读 | 模式/强制分离（F4 R7） | plan-exit 前读 `.session-capabilities.json` 选模式；plan-exit 后 merge/落盘/复核 | 分别在两阶段 | plan-exit 前：capability 就绪→渲染确认模式、缺失→降级模式；plan-exit 后：一律以 `PLAN_APPROVED` provenance 为准，**不读** session capability |
-| UT-S09-94 | 对照组：GUI+ui_impact 空 marker（无曾渲染证据）经 `verify-ui-provenance` 节点 advisory exit0 达 merge | F3/F6 legacy-advisory 分支 | GUI 项目、`ui_impact:true`、`PLAN_APPROVED` 空 marker、无任何「曾渲染确认」证据 | 经 `verify-ui-provenance` 节点运行 `check-ui-hash-match` 后 merge | 记 advisory 后 **`exit 0` → 节点 done → merge 可达**（不要求 `hashes`、不阻断）；**经该节点求值达成、非绕过节点**；与 UT-S09-88a（部分 provenance→fail closed）对照，共同界定 F6 legacy-advisory 与 fail-closed 边界 |
-| UT-S09-95 | `commitVerifiedPrototypes()` 落盘入口亦 fail closed | commitVerifiedPrototypes（事务门） | `PLAN_APPROVED` 含 UI provenance、staged 原型 hash 失配 | 事务落盘门 | 在写入任何文件前 abort、拒绝落盘、resources 零残留、不写 `SPEC_MERGED`（不止提示前检查，落盘入口同样 fail closed） |
+| UT-S09-94 | 对照组：GUI+ui_impact 空 marker（无曾渲染证据）经 `verify-ui-provenance` 节点 advisory exit0 达 merge | F3/F6 legacy-advisory 分支 | GUI 项目、`ui_impact:true`、`PLAN_APPROVED` 空 marker、无任何「曾渲染确认」证据 | 经 `verify-ui-provenance` 节点运行 `check-ui-hash-match` 后 merge | 记 advisory 后 **`exit 0` → 节点 done → merge 可达**（不要求 `hashes`、不告警）；**经该节点求值达成、非绕过节点**；与 UT-S09-88a（部分 provenance→告警不告警）对照，共同界定 F6 legacy-advisory 与 告警不告警 边界 |
+| UT-S09-95 | `commitVerifiedPrototypes()` 落盘入口亦 告警不告警 | commitVerifiedPrototypes（事务门） | `PLAN_APPROVED` 含 UI provenance、staged 原型 hash 失配 | 事务落盘门 | 在写入任何文件前 abort、拒绝落盘、resources 零残留、不写 `SPEC_MERGED`（不止提示前检查，落盘入口同样 告警不告警） |
 
 ### 9.7 事务性落盘：单一入口 / staged 校验 / 崩溃恢复（F1 R2、R3）
 
@@ -325,7 +325,7 @@
 | ST-S09-33 | GUI 项目提案阶段产出原型并在 plan 门前可见 | S09 Step 3→6（plan 门前） | GUI 项目、`ui_impact:true`、driver 派发 change-writer | plan 节点判 ui_impact→dispatch change-writer（ui-ux-pro-max）产逐页原型+`design-system.json`（写 `2-page-design/`，guard 放行）→ `check-ui-prototype` 富对账 | 原型在 plan-exit 门前产出且可见；富对账通过节点 done；flow-derive 不因原型 delta 误判进入 spec |
 | ST-S09-33a | 场景级降级贯通：Python3 缺失 → fallback 原型 → checker exit0 → plan-exit 可达 | S09 A3→plan-exit（F2 降级贯通） | GUI 项目、`ui_impact:true`、**无 Python3**（ui-ux-pro-max 令牌不可得）、driver 从 A3 派发 change-writer | ①A3 派发 change-writer→检测无 Python3 走 `fallback`（通用原型、**无令牌**、逐页原型非空、声明段写 `design_system_mode: fallback` + 非空 `design_system_fallback_reason`、不产 `design-system.json`）→写 `2-page-design/`（guard 放行）；②运行 `openlogos check-ui-prototype`；③`write-ui-prototype` 节点收敛；④继续推进至 plan-exit | `check-ui-prototype` **`exit 0`**（fallback 不要求 design-system.json/令牌、不阻塞）→ `write-ui-prototype` 节点 **done** → **一路推进至 plan-exit 可达**（非仅单测 checker，而是 A3→plan-exit 端到端降级不卡死＝F2 核心价值）；对照：`generated` 模式承诺令牌却缺失时端到端 **fail closed**（checker 非零、`write-ui-prototype` 未 done、plan-exit 前阻断），与本 fallback 通路形成对照 |
 | ST-S09-34 | 批准即 UI 确认：面板渲染写 provenance | S09 Step 6→7（批准门） | 渲染面板、原型已产出 | 面板渲染原型→用户批准→写 `PLAN_APPROVED` body（`ui_prototype_rendered:true`+`pages`+`hashes`） | 「批准==UI 已确认」仅当面板实际渲染成立；provenance 记录批准时刻原型清单与逐文件 hash |
-| ST-S09-35 | 批准后原型漂移经 verify-ui-provenance 阻断 | merge 前拦截（F4 R4） | 已写带 hashes 的 `PLAN_APPROVED`、原型批准后被改 | 到 `verify-ui-provenance` 节点重算 hash | 失配→节点未 done→前向阻断（原型未 merge 进 resources）；显式重入 plan 刷新 hashes 后再匹配放行 |
+| ST-S09-35 | 批准后原型漂移经 verify-ui-provenance 告警 | merge 前告警（F4 R4） | 已写带 hashes 的 `PLAN_APPROVED`、原型批准后被改 | 到 `verify-ui-provenance` 节点重算 hash | 失配→节点未 done→前向告警（原型未 merge 进 resources）；显式重入 plan 刷新 hashes 后再匹配放行 |
 | ST-S09-36 | **跨会话验收**：删 capability 文件+重启+改原型+直调 merge 必须拒绝 | F4 R7 跨会话 fail-closed | ①渲染批准写带 `hashes` 的 `PLAN_APPROVED`；②删 `logos/.session-capabilities.json`；③重启进程；④改动原型 | 直接 `openlogos merge <slug>` | **必须拒绝**：不生成 `MERGE_PROMPT`、不写 resources、不写 `SPEC_MERGED`；当前会话 capability 缺失不得降级（「曾渲染确认」证据固化于批准记录）；**同时覆盖 `commitVerifiedPrototypes()` 落盘入口**——事务门亦 fail closed、resources 零残留 |
 | ST-S09-37 | 对照组：旧空 marker 纯 CLI 项目 advisory 放行 | F3 向后兼容对照 | 纯 CLI 项目、`PLAN_APPROVED` 空 marker、无「曾渲染确认」证据 | 直接 `openlogos merge <slug>` | advisory 放行（不要求 hashes、不阻断），与 ST-S09-36 严格分支形成对照 |
 | ST-S09-38 | 崩溃注入：事务落盘崩溃后恢复到全有或全无 | 崩溃恢复（F1 R3） | 多原型落盘、提交中途注入崩溃 | 崩溃→下次 `openlogos merge`/启动检测残留 journal→前滚或回滚 | 恢复到一致的全有或全无态；无部分落盘/未获批残留；恢复后清 journal；随后 apply-merge 后复核 hash 一致 |
@@ -435,102 +435,6 @@
 | ST-S09-54 | 英文 locale 多模块无 core 端到端 fail-closed | 决策表#5（`en`） | `locale: en`，多模块无 core（`[module-a, module-b]`） | `openlogos change s1` | 非零退出；英文 stderr 含原因 + 每个合法 id 一条完整命令（`openlogos change s1 --module module-a` / `--module module-b` 逐字在场、按 modules[] 顺序）；无残留目录/guard；不显示裸 key、无字面 `<id>` |
 | ST-S09-55 | **裸 `--module`（缺值）→ 非零退出 + 用法、零残留（code-r1 F2）** | 决策表#2 前提校验 | 多模块 `[core, module-b]` | `openlogos change probe --module`（末尾缺值） | 非零退出；stderr 含 `--module requires a module id` + `Usage`；**不得**折叠成未传参数而创建 `core` 提案；未创建 `logos/changes/probe/`、未写 guard |
 | ST-S09-56 | **显式非法 --module → 非零退出 + 合法 id 清单（顺序）+ 零残留（code-r1 F1，真实 CLI）** | 决策表#2 | 多模块 `[module-a, module-b]` | `openlogos change probe --module nope` | 非零退出；stderr 含 `模块 'nope'` + 逐字 `module-a`、`module-b`（`module-a` 先于 `module-b`）；未创建 change 目录、未写 guard |
-
-## 十四、Plan 阶段决策澄清协议测试用例（clarification@1）
-
-> 覆盖 proposal 澄清区块解析、影响声明、条件性必选人类决定、完成谓词、status/next JSON、历史兼容、跨进程恢复与 `next --auto` fail-closed。所有测试实现必须使用 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`，测试名包含对应稳定 ID。
-
-### 14.1 结构解析与确定性校验
-
-| ID | 测试名称 | 测试对象 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S09-152 | 提取唯一 clarification@1 YAML 区块 | proposal-lifecycle 解析器 | proposal 含合法决策澄清章节 | 解析 | 得 schema/mode/status/impacts/decisions/unresolved/defaults，字符串去外围空白但不改用户原文 |
-| UT-S09-153 | 五类 impacts 完整合法 | impacts 校验器 | 五类均为 `none` 且 reason 非空 | 校验 | valid；不产生必选类别 |
-| UT-S09-154 | impacts 缞字段 fail-closed | impacts 校验器 | 缺 `security_privacy` | 校验 | invalid，reason=`clarification-contract-invalid` |
-| UT-S09-155 | impacts 未知状态 fail-closed | impacts 校验器 | `data.status=maybe` | 校验 | invalid，不按 none 处理 |
-| UT-S09-156 | impacts 空理由 fail-closed | impacts 校验器 | `compatibility.reason` 仅空白 | 校验 | invalid，reason=`clarification-contract-invalid` |
-| UT-S09-157 | category 闭合枚举 | 决策校验器 | 分别输入九个合法类别与未知类别 | 校验 | 九类均合法；未知类别 invalid |
-| UT-S09-158 | CXX 格式与全局局部唯一 | 决策校验器 | 重复 C01、C00、C001、合法 C01/C10 | 校验 | 仅合法且不重复集合通过 |
-| UT-S09-159 | depends_on 不存在被拒 | 依赖校验器 | C02 依赖不存在 C99 | 校验 | invalid，稳定诊断指出 C99 |
-| UT-S09-160 | depends_on 循环被拒 | 依赖校验器 | C01→C02→C01 | 校验 | invalid，不产生 next_decision |
-| UT-S09-161 | complete 与 unresolved 冲突 | 状态一致性 | `status=complete` 且 unresolved 非空 | 校验 | invalid，不能降级 legacy 完成逻辑 |
-
-### 14.2 条件性必选人类决定
-
-| ID | 测试名称 | 测试对象 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S09-162 | data required 必须匹配用户决定并输出完整问题 | 必选类别匹配 | `data=required`、无 data/user 决定、有一个依赖已满足的完整 data unresolved | status/next/auto 派生 | pending，reason=`data-clarification-required`，三者给出同一非空完整 next_decision，proposal_filled=false，auto 零 marker |
-| UT-S09-163 | compatibility required 必须匹配用户决定并输出完整问题 | 必选类别匹配 | `compatibility=required` 且有完整 compatibility unresolved | 分别提供无决定、policy 决定、user 决定 | 无决定/policy 均返回专属 reason+完整 next；仅 user 决定满足并移除对应 unresolved |
-| UT-S09-164 | security_privacy required 可恢复 pending | 必选类别匹配 | `security_privacy=required`、缺 user 决定、有完整同类 unresolved | status/next/auto 派生 | 专属 reason、同一完整 next_decision、auto 零 marker |
-| UT-S09-165 | 部署字段派生 deployment 必选类别与完整问题 | proposal 部署解析 | “是否需要部署：是”，impacts 全 none，无 user 决定，有完整 deployment unresolved | status/next/auto 派生 | required_categories 含 deployment；专属 reason、同一完整 next、auto 零 marker |
-| UT-S09-166 | public_release 映射 release 类别并输出完整问题 | 必选类别匹配 | `public_release=required`，有完整 release unresolved | 分别提供 deployment/user 与 release/user | deployment 不能满足并返回 release 专属 reason+完整 next；release/user 满足 |
-| UT-S09-167 | external_commitment 可恢复 pending | 必选类别匹配 | `external_commitment=required`、缺 user 决定、有完整同类 unresolved | status/next/auto 派生 | 专属 reason、同一完整 next_decision、auto 零 marker |
-| UT-S09-168 | 推荐答案或非 user source 不得冒充决定 | 必选类别匹配 | required 类别有完整同类 unresolved，另有 recommendation、repository_fact 或 policy 决定 | 派生 | required 仍未满足，使用队首类别专属 reason 并保持完整 next |
-| UT-S09-168a | 必选类别缺对应 unresolved 判 invalid | 闭环校验 | `data=required`、无 data/user 决定且 unresolved 为空；另测同类 unresolved 重复 | status/next/auto 派生 | `status=invalid`、reason=`clarification-contract-invalid`、next=null、auto 零 marker；不形成不可恢复 pending |
-| UT-S09-169 | none 加合法理由不产生问答 | 必选类别匹配 | 五类 none+reason、无需部署、无语义未决 | 派生 | required_categories=[]，允许 complete |
-| UT-S09-170 | required_categories 去重与固定排序 | JSON 派生 | unresolved 与 impacts 重复覆盖多个类别 | 派生 | 按 product→ownership→data→compatibility→security_privacy→deployment→release→external_commitment→acceptance 去重输出 |
-
-### 14.3 完成谓词与 CLI JSON
-
-| ID | 测试名称 | 测试对象 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S09-171 | proposal_filled 加强谓词全真路径 | proposal-lifecycle | 原字段、UI/部署、clarification、必选决定均合法且 unresolved=[] | 计算 | proposal_filled=true，proposal_step 可进入 ready-to-delta |
-| UT-S09-172 | status 输出完整 clarification | status JSON builder/schema | pending C02 | `status --format json` | plan_state.clarification 含 schema/mode/status/required/required_categories/count/id/reason/完整 next_decision，并通过 schema |
-| UT-S09-173 | next 与 status clarification 同义 | next JSON builder/schema | 同一项目快照 | 分别构造 status/next data | clarification 深层语义一致，next 不自行重排/删字段 |
-| UT-S09-174 | 队首依赖未满足直接判契约非法 | 队列拓扑校验 | `unresolved[0]=C02` 且其依赖不在 decisions，C03 虽可回答 | status/next 派生 | `clarification-contract-invalid`、next=null；CLI 不跳到 C03、不重排 proposal |
-| UT-S09-174a | 稳定拓扑序三方选择同一队首 | 队列排序/builder | 多个依赖已满足项，类别与 CXX 不同；proposal 已按固定规则排序 | status、next、新进程重读 | 三者均选择 `unresolved[0]` 同一 CXX；required_categories 顺序一致 |
-| UT-S09-175 | auto pending 不写任何批准 marker | next auto gate | pending 高影响决定 | 执行 auto 派生（marker writer 打桩） | 不写 PLAN_APPROVED/GATE_AUTO_PASSED，不进入 write-tasks/delta，返回稳定 reason |
-| UT-S09-176 | 跨进程重读状态一致 | proposal 文件事实源 | 进程 A 写 decisions/unresolved 后退出 | 进程 B 重新读取 | status、required_categories、队首 CXX、proposal_filled 与 A 一致 |
-
-### 14.4 模板与历史兼容
-
-| ID | 测试名称 | 测试对象 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S09-177 | 新提案模板默认含合法区块 | i18n proposal 模板 | zh/en locale | 生成 proposal | 两种语言均含 schema、五类 impacts、空数组和合法默认值；结构字段名一致 |
-| UT-S09-178 | writing legacy 缺区块仅提示补齐 | legacy 兼容 | 未越过 plan、无 clarification 区块 | status/next | 保持 writing，输出补齐提示；status/next 不自动改写 proposal |
-| UT-S09-179 | 已越过 plan 历史提案不回退 | legacy 兼容 | 已有 PLAN_APPROVED 或更后步骤、无区块 | 派生 | 不回退 write-proposal，不改变既有 marker |
-| UT-S09-180 | 未知 clarification schema 原样表示并保守停止 | schema 版本协商 | `openlogos/clarification@2` | status/next/schema 校验 | 原样输出 @2、status=invalid、required=true、空 categories/零计数/null next、reason=upgrade-required；两响应通过 1.2 Schema |
-| UT-S09-181 | change-lint 汇总结构与类别不一致 | change-lint | 同时含空 reason、required 未匹配与部署缺决定 | lint 纯函数 | 返回确定性 violation 列表与修复提示，不修改 proposal |
-
-### 14.4a JSON Schema 与共享 builder 跨字段负向用例
-
-| ID | 测试名称 | 测试对象 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S09-182 | complete 矛盾组合被 Schema 拒绝 | status/next schema | complete + required=true + categories 非空 + count=1 | 校验 | 两份 Schema 均拒绝 |
-| UT-S09-183 | pending 缺完整当前问题被 Schema 拒绝 | status/next schema | pending + next_decision_id/next_decision=null 或 count=0 | 校验 | 两份 Schema 均拒绝 |
-| UT-S09-184 | invalid 归一化分支通过 Schema | status/next schema | invalid + required=true + 空 categories + count=0 + null next + 合法 invalid reason | 校验 | 两份 Schema 均通过 |
-| UT-S09-185 | next_decision ID 不相等被共享 builder 拒绝 | status/next clarification builder | next_decision_id=C01、next_decision.id=C02 | 构造响应 | builder/契约校验拒绝，status/next 不得发出；记录该相等约束非标准 Schema 能力 |
-| UT-S09-186 | required_categories 非规范顺序被共享 builder 拒绝 | status/next clarification builder | `[deployment,data]` | 构造响应 | builder 规范化或负向校验拒绝；最终只能输出 `[data,deployment]`，status/next 同义 |
-| UT-S09-187 | unknown @2 invalid 是 1.2 Schema 正例 | status/next schema | UT-S09-180 归一化对象 | 校验 | 两份 Schema 均通过，schema 字段保持 @2 |
-
-### 14.5 场景测试用例
-
-| ID | 测试名称 | 场景 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| ST-S09-60 | 简单变更零额外问答直通 | write-proposal 主路径 | facts 充分、五类 none+reason、无需部署 | change-writer 写 complete proposal 后新进程读取 status | proposal_filled=true，可达 write-tasks；无 clarification_required |
-| ST-S09-61 | 部署方案未确认以完整问题阻塞 plan | EX-9.7 | proposal 声明部署是，无 deployment/user 决定，有一个完整 deployment unresolved | status/next/next-auto | 三者均保持 write-proposal并输出同一完整 next；auto 不写 marker；reason=`deployment-clarification-required` |
-| ST-S09-62 | 依赖决策逐个持久化并恢复 | 主路径 | ownership C01 后才可回答 data C02 | 提交 C01，退出并重启，再读取 | C01 在 decisions；仅 C02 成为 next_decision；不会一次输出两问 |
-| ST-S09-63 | 数据迁移 required 经过用户决定后完成 | data 条件触发 | data=required，C01 pending | 用户回答并由 Agent 持久化 source=user | required 匹配、队列清零、其它条件满足时 proposal_filled=true |
-| ST-S09-64 | 部署与公开发布双必选互不替代 | EX-9.8 | 部署是且 public_release=required | 先只确认 deployment，再确认 release | 第一步仍阻塞 release；第二步两类均满足；决定和授权边界可审计 |
-| ST-S09-65 | `next --auto` 不回答 recommendation | auto fail-closed | compatibility required、next_decision 有推荐 | 连续两次 next --auto | 两次均同一 CXX、proposal 字节与批准 marker 不变，无自动选项漂移 |
-| ST-S09-66 | 非法区块跨 status/next 一致失败 | EX-9.10 | 缺 impact 字段且 complete+unresolved | status 与 next JSON | 均返回 clarification-contract-invalid，前沿一致保持 write-proposal |
-| ST-S09-67 | writing legacy 补齐后启用严格校验 | 历史兼容 | legacy writing proposal | 先读取提示，再由 change-writer 写区块，再读取 | 第一次不改文件；第二次按 @1 严格判定；无隐式迁移 |
-| ST-S09-68 | RunLogos 消费所需字段由 CLI 一次给全 | OpenLogos 宿主契约 | pending C02 | next --format json | 完整问题、影响、推荐、理由、options、required_categories 在同一响应；宿主不需读 proposal |
-| ST-S09-69 | 新进程恢复不会重新询问已确认决定 | 跨会话恢复 | C01 已确认、C02 未决 | 关闭并重启 CLI/测试进程 | 不再展示 C01；C02 ID 与内容稳定；decisions 不丢失 |
-| ST-S09-70 | 手动与 auto 执行授权均不替代方案决定 | 授权分层 | 同一 pending 提案分别走手动 next 与 next --auto | 派生前沿 | 两种模式均要求用户回答；仅 clarification complete 后才按各自 gate 语义继续 |
-| ST-S09-71 | required 缺 unresolved 端到端 fail-closed | F1 非法闭环 | data=required、无决定、unresolved=[] | status/next/next-auto | 三者输出 invalid/contract-invalid/null next，前沿 write-proposal，auto 零 marker；宿主不收到不可回答 pending |
-| ST-S09-72 | unknown @2 端到端可表示且零副作用 | EX-9.12 | proposal schema=`openlogos/clarification@2` | status/next/next-auto + 随包 Schema 校验 | 原样 @2 invalid 响应均通过 Schema；reason=upgrade-required，前沿 write-proposal，proposal/marker 字节不变 |
-
-### 14.6 覆盖度校验
-
-- [ ] YAML/impacts/category/CXX/依赖结构：UT-S09-152～UT-S09-161
-- [ ] 六类条件性必选决定、闭环与排序：UT-S09-162～UT-S09-170、UT-S09-168a
-- [ ] 完成谓词、JSON、auto、拓扑队首、跨进程：UT-S09-171～UT-S09-176、UT-S09-174a
-- [ ] 模板、legacy、未知版本、lint：UT-S09-177～UT-S09-181
-- [ ] Schema oneOf 与共享 builder 跨字段约束：UT-S09-182～UT-S09-187
-- [ ] 简单直通与逐问依赖：ST-S09-60、ST-S09-62、ST-S09-63
-- [ ] 部署/发布分离与 auto fail-closed：ST-S09-61、ST-S09-64、ST-S09-65、ST-S09-70
-- [ ] 非法契约、legacy、宿主消费和恢复：ST-S09-66～ST-S09-69、ST-S09-71、ST-S09-72
 
 ## S09 ZCode SessionStart 与 PreToolUse guard 测试
 
@@ -898,3 +802,29 @@
 - AC-ANCHOR-01 序数精确定位：UT-S09-342、ST-S09-141。
 - AC-ANCHOR-02 无后缀零漂移与越界 fail-closed：UT-S09-343。
 - 功能规格：§2.72。
+
+## S09 三处形态订正测试
+
+> 覆盖决策澄清由判定改为文档、UI provenance 由阻断门改为警告、seed 恢复门由硬阻塞改为隔离并继续。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-344 | 决策澄清不再参与任何判定 | 构造四类提案：① 无「## 决策澄清」小节；② 小节存在但 YAML 语法非法；③ `decisions[].id` 不匹配 `C\d+`；④ 完整合法 | 求 `evaluatePlanPackage` 与 `runChangeLint` | 四者结论**逐字段相同**且均无 `proposal_clarification_invalid`；`plan_state` 不含 `clarification` 字段；提案模板仍生成该小节 |
+| UT-S09-345 | UI provenance 失配降为告警 | `PLAN_APPROVED` 含 `ui_prototype_rendered:true` 与 hashes，原型文件在批准后被改动（hash 漂移） | 发起 `merge` | **零退出**并写 `SPEC_MERGED`；输出含 provenance 告警并点名漂移文件；`check-ui-hash-match` 单独运行时**仍如实报失配并非零退出**（诊断能力不减） |
+| UT-S09-346 | 损坏 seed journal 被隔离而非阻塞 | adopted 项目，`<run>/commit-journal.json` 内容损坏（非法 JSON / schema 非法 / 必填字段缺失 三种参数化） | 依次运行 `status` / `next` / `change-lint` | 三者均**零退出**并给出告警；损坏 journal 被重命名为 `<run>.commit-journal.corrupt-<时间戳>.json` 且**内容逐字节保留**；原路径不再存在；可恢复路径（前滚/回滚）与读锁竞争语义逐字不变 |
+
+### 场景测试
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S09-142 | 真实 CLI 下无决策澄清小节的提案全链通过 | 真实 CLI；`proposal.md` **完全不含**「## 决策澄清」小节 | ① `change-lint`；② `merge` | ① PASS 且输出无 clarification 相关诊断；② merge 成功写 `SPEC_MERGED` |
+| ST-S09-143 | flow 不再含 verify-ui-provenance 节点 | 真实 CLI；GUI 项目 `ui_impact:true` 的 launched 提案 | 跑 `next --format json` 取 overlay 节点集合 | 节点集合含 `write-ui-prototype`、**不含** `verify-ui-provenance`；原型产出能力与 `check-ui-prototype` 命令照常可用 |
+
+### 追溯与覆盖
+
+- AC-DEGATE-01 决策澄清不参与判定：UT-S09-344、ST-S09-142。
+- AC-DEGATE-02 UI provenance 降警告且诊断不减：UT-S09-345、ST-S09-143。
+- AC-DEGATE-03 seed 门隔离并继续：UT-S09-346。
+- 功能规格：§2.74。

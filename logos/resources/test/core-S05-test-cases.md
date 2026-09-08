@@ -22,7 +22,7 @@
 | UT-S05-B06 | partial + 索引 stale 双降级 | next 分支 | 安全 `partial` 且 `source_hash` 与文档不符 | next --format json | `state=partial`、`incomplete=true` 且 `freshness=stale`；不输出精确百分比；主动作仍为 change |
 | UT-S05-B07 | partial + 活跃提案不改写 proposal_step | next 分支 | `baseline_seed_state:partial`、存在 guard、无未终结 journal | next --format json | `proposal_step`/`next_node` 为提案真实前沿；安全 open run 的 recovery 诊断存在；不阻断 change |
 | UT-S05-B08 | incomplete 字段稳定 shape | status/next --format json | required / seeded / partial 三态 | 各态 next/status --format json | `baseline_coverage.incomplete` 恒存在为布尔：partial→true、required/seeded→false（不省略） |
-| UT-S05-B09 | 未终结 seed journal 无法恢复时硬阻断 | next 读取门 | journal=`prepared|committing`、故障注入使前滚/回滚均失败 | next / next --format json | 非零返回 `baseline_commit_in_progress`；在读取 resources/index/coverage 前停止；不输出 change 或 baseline-seed 主动作 |
+| UT-S05-B09 | 未终结 seed journal 无法恢复时隔离并继续 | next 读取门 | journal=`prepared|committing`、故障注入使前滚/回滚均失败 | next / next --format json | 非零返回 **零退出并告警**；损坏 journal 重命名为 `<run>.commit-journal.corrupt-<时间戳>.json` 且内容逐字节保留；在读取 resources/index/coverage 前停止；不输出 change 或 baseline-seed 主动作 |
 
 ## 二、场景测试用例
 
@@ -39,7 +39,7 @@
 | ST-S05-B01 | adopted seeded 引导端到端（status/next 一致、不含覆盖率人读行） | Step 1→7（bootstrap 分支） | adopt→seeded、含逆向候选、无提案 | 执行 next 与 status | next 主动作指向 change；两命令 seed 状态/coverage JSON 一致且不含覆盖率人读行；不把 seed 当闭包已完成 |
 | ST-S05-B02 | 安全 partial + 无活跃提案：主动作指向 change | Step 1→7（bootstrap 分支） | `baseline_seed_state:partial`、无 guard、仅 open run/未提交 staging、无未终结 journal | 执行 next 与 status | 两命令一致 `state=partial`/`incomplete=true`；next 主动作指向 `openlogos change <slug>`；seed 恢复仅为非阻断诊断；staging 不进入闭包 |
 | ST-S05-B03 | 安全 partial + 活跃提案：proposal 前沿为主 | Step 1→7（bootstrap 分支） | `baseline_seed_state:partial`、存在 guard、无未终结 journal | 执行 next 与 status | 主 `action`/`next_node`/`proposal_step` 保持提案真实前沿；seed 恢复为旁路诊断；change 不阻断 |
-| ST-S05-B04 | 未终结 journal 恢复失败不读取半新资源 | Step 2→2a（恢复门） | 故障注入在多文件 rename 中断，journal 未终结且 staging/backup 不足以安全恢复 | 执行 next 与 status，并对 resources/index 读取点设哨兵 | 两命令非零返回 `baseline_commit_in_progress`；哨兵证明未读取半新 resources/index/coverage；不输出业务主动作；修复后重试可恢复 |
+| ST-S05-B04 | 未终结 journal 恢复失败即隔离 journal 后继续 | Step 2→2a（恢复门） | 故障注入在多文件 rename 中断，journal 未终结且 staging/backup 不足以安全恢复 | 执行 next 与 status，并对 resources/index 读取点设哨兵 | 两命令非零返回 **零退出并告警**；损坏 journal 重命名为 `<run>.commit-journal.corrupt-<时间戳>.json` 且内容逐字节保留；哨兵证明未读取半新 resources/index/coverage；不输出业务主动作；修复后重试可恢复 |
 | ST-S05-05 | 部署完成标记由 CLI 写入后进入 smoke 建议 | S05 Step 3→7 / S21 | 活跃提案需要部署和 smoke，`deploy-done` 已成功 | 执行 `openlogos next --format json` | 返回 `proposal_step=ready-to-smoke`，不再提示手写 `DEPLOY_DONE` |
 | ST-S05-06 | 部署完成且无需 smoke 后进入归档建议 | S05 Step 3→7 / S21 | 活跃提案需要部署但无需 smoke，`deploy-done` 已成功 | 执行 `openlogos next --format json` | 返回 `proposal_step=deploy-done`，建议 archive |
 

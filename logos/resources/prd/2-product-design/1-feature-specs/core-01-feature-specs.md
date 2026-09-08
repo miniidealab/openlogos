@@ -1492,151 +1492,6 @@ block / escalated 必须包含：
 
 兼容只扩大合法历史标题的读取范围，不 grandfather 依赖散文关键词误通过的残缺文档。RunLogos 普通 `write-delta` lint 屏障属于独立 companion change，不在本能力实现范围内。
 
-## 2.36 Plan 阶段决策澄清协议（openlogos/clarification@1）
-
-### 2.36.1 目标与流程边界
-
-决策澄清是 `write-proposal` 节点内部的完成协议，不新增 lifecycle、subflow、node、gate、marker 或 `proposal_step` 枚举值。流程保持：
-
-```text
-write-proposal（事实扫描 → 影响声明 → 逐个澄清 → 持久化）
-  -> write-tasks
-  -> plan-exit
-```
-
-`clarification.status=complete` 只说明 proposal 内容具备完成条件；`plan-exit` 仍是唯一方案批准门。
-
-### 2.36.2 proposal 结构
-
-```yaml
-schema: openlogos/clarification@1
-mode: adaptive
-status: pending
-impacts:
-  data:
-    status: none
-    reason: 无数据库、持久化数据迁移、删除或所有权转移
-  compatibility:
-    status: none
-    reason: 不改变既有外部契约和版本兼容承诺
-  security_privacy:
-    status: none
-    reason: 不增加权限、Secret、个人数据或外部访问范围
-  public_release:
-    status: none
-    reason: 不执行公开发布或生产开放
-  external_commitment:
-    status: none
-    reason: 不引入付费服务、供应商锁定、法律承诺或不可逆外部影响
-decisions: []
-unresolved: []
-defaults: []
-```
-
-- `mode`：闭合枚举 `adaptive | deep | provided`。
-- `status`：闭合枚举 `pending | complete | invalid`；`invalid` 为 CLI 派生状态，不要求 Agent主动持久化。
-- `impacts.*.status`：闭合枚举 `none | required`；每项 `reason` 为去空白后非空字符串。
-- `none` 表示不需要本次用户决定，而非强制宣称“完全没有影响”；仓库事实或项目政策已唯一确定方案时也可使用，但理由必须说明依据。
-- `required` 表示必须存在同类别、`source: user` 的已确认决定，否则保持 `pending`。
-
-### 2.36.3 决策数据结构
-
-已确认决定：
-
-```yaml
-decisions:
-  - id: C01
-    category: deployment
-    question: 该版本部署到哪里、如何回滚？
-    answer: 仅安装到当前开发机 npm 全局环境；失败恢复 0.13.24
-    rationale: 先验证真实安装包，不扩大为公开发布
-    source: user
-    affects:
-      - 部署方案
-      - smoke
-    rejected_options:
-      - 直接发布 npm 和 GitHub Release
-```
-
-未决决定：
-
-```yaml
-unresolved:
-  - id: C02
-    category: compatibility
-    depends_on: [C01]
-    question: 是否接受 breaking change？
-    impact: 决定版本语义、旧客户端兼容与回滚范围
-    recommendation: 保持向后兼容
-    recommendation_reason: 降低宿主升级风险
-    options:
-      - id: backward-compatible
-        label: 保持兼容
-        tradeoff: 实现成本略高
-      - id: breaking
-        label: 允许破坏性变更
-        tradeoff: 需要迁移窗口和明确版本边界
-```
-
-- CXX 为提案局部编号，格式 `^C(?:0[1-9]|[1-9]\d+)$`，在 `decisions + unresolved` 内唯一。
-- `category` 闭合枚举：`product | ownership | data | compatibility | security_privacy | deployment | release | external_commitment | acceptance`。
-- 已确认决定的 `source` 闭合枚举：`user | policy | repository_fact`。条件性必选类别只接受 `user`；事实/政策决定可记录，但不能冒充用户选择。
-- `depends_on` 只能引用已存在 CXX，不得自依赖或形成环；尚未满足依赖的事项不得成为 `next_decision`。
-- 每个尚未满足的条件性必选类别必须恰有一个同类别 unresolved；缺失或重复时为 `clarification-contract-invalid`，不得构造无 `next_decision` 的 pending。
-- Agent 在持久化前对 unresolved 做稳定拓扑排序：先满足 `depends_on`，同一可用层按类别固定顺序，再按 CXX 数字升序。数组中每项的依赖只能位于 decisions 或它之前；`unresolved[0]` 的依赖必须全部位于 decisions。
-- `unresolved[0]` 是当前唯一可展示问题；CLI 不跳项、不重排。队首必须带问题、影响、推荐答案和推荐理由，真实备选最多两个；队首依赖未满足时整个契约 invalid。
-- `defaults` 只保存低影响、可逆、不改变外部契约且受既有规范约束的实现默认值。
-
-### 2.36.4 条件性必选类别
-
-| 触发源 | 必选决定类别 | 最低确认内容 | 缺失 reason |
-|---|---|---|---|
-| `impacts.data.status=required` | `data` | 迁移/删除主体、数据保留、失败恢复、可接受损失 | `data-clarification-required` |
-| `impacts.compatibility.status=required` | `compatibility` | 兼容范围、弃用周期、版本与生效语义 | `compatibility-clarification-required` |
-| `impacts.security_privacy.status=required` | `security_privacy` | 权限、Secret、隐私范围、审计要求 | `security-privacy-clarification-required` |
-| proposal“是否需要部署：是” | `deployment` | 目标环境、部署方式、回滚、成功/smoke 证据 | `deployment-clarification-required` |
-| `impacts.public_release.status=required` | `release` | 发布渠道、公开范围、版本/tag 与撤回方式 | `release-clarification-required` |
-| `impacts.external_commitment.status=required` | `external_commitment` | 成本、供应商/法律承诺、退出与不可逆影响 | `external-commitment-clarification-required` |
-
-本地部署与公开发布必须分别判断：`deployment` 决定不能满足 `release`，反之亦然。产品、ownership、acceptance 由 Agent 语义扫描发现；一旦进入未决队列，同样必须由用户回答。
-
-合法 pending 必须可恢复：每个未满足类别均有对应 unresolved，且队首始终可以直接交给用户。结构化六类队首使用表中类别专属 reason；只有 `product`、`ownership`、`acceptance` 等纯语义队首使用 `high-impact-user-decision-required`。
-
-### 2.36.5 完成谓词
-
-```text
-proposal_filled = 原有模板字段完成
-  AND 部署/UI 等既有结构合法
-  AND clarification schema/mode/impacts/CXX/依赖合法
-  AND 每个尚未满足的条件性必选类别恰有一个同类别 unresolved
-  AND unresolved 已按稳定拓扑序持久化且队首依赖全部已确认
-  AND 每个 impacts.*.status=required 都有匹配 category、source=user 的决定
-  AND (deployment_required=false OR 有 deployment/source=user 决定)
-  AND clarification.status=complete
-  AND clarification.unresolved.length=0
-```
-
-区块存在但非法时必须 fail-closed，不得回退到 legacy 完成逻辑。`complete + unresolved 非空`、必选类别不匹配、重复 ID、未知 schema 均为非法或未完成。
-
-### 2.36.6 CLI 与宿主展示契约
-
-`status --format json` 与 `next --format json` 在 `plan_state.clarification` 输出同一语义：schema、mode、status、required、`required_categories`、未决数量、稳定 reason 和完整 `next_decision`。`required_categories` 只列尚未满足的用户决定类别，去重并按 `product -> ownership -> data -> compatibility -> security_privacy -> deployment -> release -> external_commitment -> acceptance` 排序；complete 时必须为空。
-
-RunLogos 只消费 CLI JSON：暂停当前 Driver、一次展示一个决定、提交“决策 ID + 用户原文答案”、重新派发 Agent。RunLogos 不解析 proposal 判完成，不维护私有决策状态机。
-
-### 2.36.7 兼容与授权语义
-
-- 新版 CLI 新建 proposal 默认包含澄清区块。
-- 已越过 plan 的历史提案不回退。
-- 仍在 writing 且无区块的历史提案按 legacy 状态展示，并提示 change-writer 补齐；区块一旦出现即严格校验。
-- 未知 clarification 主版本保守停止：输出检测到的原始 `schema`（如 `openlogos/clarification@2`）、`status=invalid`、`reason=clarification-upgrade-required`、空 required_categories、零未决计数和 null next_decision；该形态必须通过 1.2 输出 Schema。
-- `next --auto` 是运行域执行授权，不是高影响问题的答案；未决事项存在时不写批准 marker，不推进到 tasks/Delta。
-- 人工模式的 merge、verify、部署、smoke、archive、push 保持独立执行确认点；公开发布另行取得对应操作权限。
-
-### 2.36.8 OpenLogos / RunLogos 验收边界
-
-OpenLogos 验证解析、结构、谓词、状态派生、JSON Schema、历史兼容、跨进程恢复和 auto fail-closed。RunLogos 验证 Driver 暂停/恢复、单问题渲染、用户回答再派发，以及真实 Agent 是否先查事实、逐问并准确持久化。CLI 单测不得伪造真实 Agent 行为已经达标。
-
 ## 2.37 切片感知 verify 与 manifest 自动恢复
 
 ### 2.37 切片感知 verify 与 manifest 自动恢复
@@ -3301,3 +3156,51 @@ L8 检查「delta 的 MODIFIED 块是否隐式删除了目标章节的既有结�
 ### 2.73.3 追溯
 
 - 测试：UT-S37-41、ST-S37-11、UT-S35-137。
+
+## 2.74 三处能力的形态订正：门 → 警告 / 文档
+
+### 2.74.0 划线原则
+
+减法方案 §5 的裁定：评审、部署、smoke、UI 原型、baseline seed、决策澄清是**产品能力，一个都不删**；它们的问题不是「存在」，而是被实现成了**阻断门 + 状态机 + 审计判据**。正确的减法是能力保留、形态从「门」改成「步骤」。
+
+本节记录三处形态订正的判据。三者的共同点：被删的都不是能力，而是「机器替人做它判不了的判断」这一层。
+
+### 2.74.1 决策澄清：判定 → 文档
+
+| 维度 | 订正前 | 订正后 |
+|---|---|---|
+| 提案模板 | 生成「## 决策澄清」小节 | **不变** |
+| change-writer 填写 | 按 `openlogos/clarification@1` 填写 | **不变**（格式沿用，作为写作约定） |
+| 机器解析 | `evaluateProposalClarification` 全量校验 | 不解析 |
+| 对 plan 完成度 | schema 非法 → `proposal_clarification_invalid` → plan 不完成 | 无影响 |
+| status/next 输出 | `plan_state.clarification` 携带 pending/complete | 不发射该字段 |
+
+**为什么**：「作者是否想清楚了」不是机器能判的。契约实际拦下的是 `id` 不匹配 `C\d+`、`source` 不在三值枚举、`affects` 不是字符串数组这类**字段形态**问题——本次减法自身在 lite-cut2a 就被它拦过一次，改的全是形态。而小节的真实价值（记录取舍供后来者理解）不依赖任何校验。
+
+### 2.74.2 UI provenance：阻断门 → 警告
+
+| 维度 | 订正前 | 订正后 |
+|---|---|---|
+| 原型产出（`write-ui-prototype` 节点） | 保留 | **不变** |
+| `check-ui-prototype` / `check-ui-hash-match` 命令 | 保留 | **不变**（用户主动运行的诊断） |
+| `verify-ui-provenance` overlay 节点 | flow 中的 `done_when` 门 | 移除该节点 |
+| merge 前置 hash 门 | 失配即 fail-closed 拒绝合并 | 打印告警后继续 |
+
+**为什么**：原型 hash 对账要防的是「批准后原型漂移」——这是**审计性质的观察**。按 §10「任何审计产物都不得出现在流程分支的条件里」，它应当可查、可导出、可给用户看，但不参与放行。漂移本身仍会被 `check-ui-hash-match` 如实报告。
+
+### 2.74.3 baseline seed 恢复门：硬阻塞 → 隔离并继续
+
+| 情形 | 订正前 | 订正后 |
+|---|---|---|
+| journal 可前滚 | 自动前滚 | **不变** |
+| journal 可回滚 | 自动回滚 | **不变** |
+| journal 损坏/不可恢复 | 抛 `baseline_commit_in_progress`，只读消费者一并阻塞 | 隔离留存该 journal（重命名为 `<run>.commit-journal.corrupt-<时间戳>.json`）、打印告警并继续 |
+| 读锁被其它活进程持有 | 返回 `inProgress` | **不变**（真实瞬态条件，不是审计判据） |
+
+**为什么这样安全**：这道门保护的读者是 ClosureEvaluator 与 EvidenceScanner——防它们读到半新半旧的资源树。**两者已随 lite-cut2b 的 L9 删除**。当前 merge 的目标集由 `deltas/` 派生、模式按磁盘事实即时判定，部分播种的资源树天然被正确处理：已落盘的目标判 MODIFY、未落盘的判 CREATE，两种都对。继续为一个不存在的读者维持硬阻塞是纯粹的成本。
+
+**为什么隔离而非删除**：损坏的恢复指令是事故现场。留存成本接近零，事后可复盘；直接删除会让同类问题无法归因。
+
+### 2.74.4 追溯
+
+- 测试：UT-S09-344～346、ST-S09-142～143。

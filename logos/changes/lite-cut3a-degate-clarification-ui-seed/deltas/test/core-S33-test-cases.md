@@ -1,6 +1,12 @@
-# S33: 存量项目逆向建种子基线 — 测试用例
+# Delta: core-S33-test-cases.md
 
-## 一、单元测试用例
+> change: lite-cut3a-degate-clarification-ui-seed
+> 目标：`logos/resources/test/core-S33-test-cases.md`
+
+seed 恢复门由「不可恢复即硬阻塞」改为「隔离损坏 journal 后继续」（§2.74.3）。**只改损坏分支**：第七节的读锁有界重试与 reader 串行化用例断言的是锁竞争这一真实瞬态条件，一律不动。
+
+## MODIFIED — 一、单元测试用例
+
 
 | 用例 ID | 名称 | 覆盖点 | 前置 | 输入 | 期望 |
 |---|---|---|---|---|---|
@@ -38,55 +44,9 @@
 | UT-S33-35 | 恢复按 old/new hash 逐目标重判态 + 进度原子写 | commit journal（F10 R5） | 崩溃点：目标已 rename 但 `applied` 未持久化 / backup-move 后 rename 前 / journal 进度写入中断 | 恢复 | 恢复不只依 `applied` 列表，而按每目标 on-disk hash 与 journal old/new 重判态；`applied` 与 journal 阶段切换本身以临时文件+rename 原子写入 |
 | UT-S33-36 | 派生索引旧值 backup/hash 使回滚可执行 | commit journal（F10 R5） | `committing`+staging 缺失回滚 | 恢复回滚 | journal 记录旧索引 hash/backup，回滚后「索引匹配旧集合」可由该来源执行、可断言 |
 
-## 二、场景测试用例
 
-### 2.1 主路径
-| 用例 ID | 名称 | 覆盖步骤 | 前置 | 输入 | 期望 |
-|---|---|---|---|---|---|
-| ST-S33-01 | 显式选择 eager seed 后，AI driver 经 baseline-seed 两阶段建种子基线 | Step 4→9 | adopt 完成、`baseline_seed_state:required`，用户/宿主已显式选择全库预扫 | driver `baseline-seed begin`（逻辑计划含必需 kind）→ 派发 skill 写 staging → `baseline-seed commit` | 产出 system-map + 场景候选清单（含 candidates[]）写入 staging；commit 对 staged 字节校验、必需 kind 齐+全部合法 → 原子提交 + `seeded`；展示「可选现状扫描已完成」（不含覆盖率人读行）；skill/driver 未直接改 YAML、未直接写目标目录；该路径不成为 adopt→change 前置 |
-| ST-S33-04 | 扫描中断→安全 partial→旁路重试→seeded 闭环 | EX-6.1/6.4 | 显式 begin 后仅部分产物落盘，且未进入 `prepared`/`committing` journal | `commit`（partial）→ 运行 next/status → 补齐产物 → 再 `commit` | 首次 commit 写 `partial`；next 主动作仍为 `openlogos change <slug>`，status/next 一致输出 `state=partial`/`incomplete=true`，seed commit/begin 仅为非阻断 recovery；补齐后再 commit 写 `seeded`；全程状态仅由 CLI 写 |
+## MODIFIED — 五、legacy 缺省语义三入口统一（baseline-seed-legacy-default-unify）
 
-### 2.2 异常路径
-| 用例 ID | 名称 | 覆盖点 | 前置 | 输入 | 期望 |
-|---|---|---|---|---|---|
-| ST-S33-EX-01 | CLI-only 不伪造基线且不阻断 change | EX-4.1 | 无可用 AI 会话 | adopt | 保持 `baseline_seed_state:required`，输出可复制的 change 主提示；seed 仅显式可选，不显示已建立 |
-| ST-S33-EX-02 | 扫描失败可重试不回滚 | EX-6.1 | 扫描中途失败且未进入 commit journal | 重试 / next | `baseline_seed_state:partial`；重扫按候选 `key` 覆盖 staging；`logos/` 不回滚；next 主动作仍为 change。若已有未终结 journal，则不得走本分支，必须先恢复或硬报 `baseline_commit_in_progress` |
-| ST-S33-EX-04 | verify 对逆向 spec 无软告警且不硬失败（确认机制移除反向） | EX-15.1 | `verified=false` 逆向 spec | verify | 无现状基线软告警、JSON 无 `baseline_warnings`、不硬失败；verify gate 结果与基线逆向候选无关 |
-| ST-S33-EX-05 | 存量 provenance 保守迁移 | EX-15.2 | 老文档缺章节 | 迁移 | 派生 `unknown`/`legacy-unclassified`，不伪造、不降级 |
-
-## 三、覆盖度校验
-
-- [x] adopt 写枚举状态、不产逆向内容：UT-S33-01/02
-- [x] 一文档多候选 candidates[] 解析 + provenance 派生：UT-S33-03
-- [x] tombstone 计数不虚增 + 零候选 n/a + retire 移出计数 + 合并拆分 + 迁移 + hash 漂移：UT-S33-05/09/10/11/13/14
-- [x] 规范键 hash + alias 继承：UT-S33-07/08
-- [x] 存量迁移保守 + 幂等 + 布尔兼容：UT-S33-15/16、ST-S33-EX-05
-- [x] verify 对逆向 spec 不产软告警、JSON 无 baseline_warnings（确认机制移除反向回归）：UT-S33-17、ST-S33-EX-04
-- [x] AI driver 仅在显式 seed 时作为 producer；能力缺失不伪造且默认 change 可达：ST-S33-01、ST-S33-EX-01/02
-- [x] baseline-seed 两阶段协议（begin 逻辑计划无 hash/staging、必需 kind、路径安全、candidate_keys 一致、commit 幂等/stale/并发/schema/少报不误判/partial 不回退）：UT-S33-18…27、ST-S33-01、EX-6.2/6.3
-- [x] 多文件 commit journal 崩溃一致性 + 读取门（prepared 回滚 / committing 前滚·回滚 / 逐故障点恢复后不变量 / 半提交 supersede / 读取门 committing 先恢复或 baseline_commit_in_progress / prior=seeded 重扫先读不暴露半新 / old·new hash 逐目标重判 + 进度原子写 / 索引旧值 backup 回滚可执行）：UT-S33-28…36、EX-6.5（架构 §4.4）
-- [x] 安全 partial 的 next/status 状态一致、无提案默认 change、有提案保持 proposal 前沿、seed 恢复仅旁路；未终结 journal 恢复失败为独立硬错误：ST-S33-04、EX-6.4（并见 core-S05 UT-S05-B05…B09、ST-S05-B02…B04）
-
-## 四、provenance 扫描侧 alias-aware canonical 采信（provenance-scan-canonical-recompute）
-
-> 测试边界：只读、纯函数级——直接对 `scanModuleCandidates` / `listModuleProvenanceDocs` / `computeCoverage` / `buildBaselineCoverage` 断言；扫描器采信判据 = `key === candidateKey(module, anchor)` 或 `key === candidateKey(module, alias∈aliases)`（与写侧 `baseline-seed` 同强度）。
-
-### 4.1 单元测试用例
-
-| ID | 描述 | 前置条件 | 输入 | 预期输出 |
-|----|------|---------|------|---------|
-| UT-S33-37 | 扫描侧排除不可重算候选（格式合法、hash 失配的示例/编造 key） | 某文档 `## 逆向基线来源` 含候选 `key` 前缀 `core::` 且格式合法（`<module>::<12hex>`），但 `key !== candidateKey('core', anchor)`（教学编造，如 `core::a1b2c3d4e5f6` / anchor `cli:baseline-seed-commit`） | `scanModuleCandidates(root,'core')` / `listModuleProvenanceDocs(root,'core')` | 该候选**不出现**在 `scanModuleCandidates().candidates`；持有它的文档**不出现**在 `listModuleProvenanceDocs()`；`isCanonicalKey` 对该 key 返回 `true`（证明格式校验不足、必须重算） |
-| UT-S33-38 | alias-aware：改名继承 / tombstone 合法候选仍被采信 | ①改名候选：`key === candidateKey('core', 旧anchor)`、当前 `anchor` 为新值、`aliases` 含旧 anchor；②多级改名 A→B→C：`key===candidateKey('core',A)`、`aliases` 含 A、B；③`tombstone` 候选 `key===candidateKey('core',自身anchor)` | `scanModuleCandidates(root,'core')` | 三类候选**均被采信**（出现在 candidates）——判据取「当前 anchor ∪ aliases 任一可重算命中」，不因当前 anchor≠key 派生源而误杀 |
-| UT-S33-39 | 含示例章节的无关文档不污染覆盖率计数 / aggregate_hash / freshness | 一真实基线（若干合法可重算候选）+ 另一文档含 `## 逆向基线来源` 示例章节（不可重算候选） | `computeCoverage(scanModuleCandidates(...).candidates)` 与 `buildBaselineCoverage(...)` | 覆盖率 `denominator`/`tombstones` 与「无示例文档时」**深相等**（幽灵候选不进计数）；`aggregate_hash` 不含示例文档 → 改动/删除该示例文档**不改变** hash、`freshness` 不被打成 `stale` |
-| UT-S33-40 | 采信收紧不改合法基线数值（回归零漂移） | 纯合法基线项目（全部候选可重算，含 active/tombstone 混合） | 采信收紧前后 `scanModuleCandidates` + `computeCoverage` | 候选集合、`aggregate_hash`、覆盖率各字段（`denominator`/`tombstones`）**逐字节/深相等**——本次收紧只排除不可重算幽灵候选，对合法候选零影响 |
-
-### 4.2 覆盖度校验
-- [ ] 扫描侧只采信可重算规范键、排除格式合法 hash 失配的示例 key：UT-S33-37
-- [ ] alias-aware 保留改名继承 / 多级改名 / tombstone 合法候选：UT-S33-38
-- [ ] 示例文档不污染覆盖率分母 / aggregate_hash / freshness：UT-S33-39
-- [ ] 合法基线采信收紧零漂移：UT-S33-40
-
-## 五、legacy 缺省语义三入口统一（baseline-seed-legacy-default-unify）
 
 ### 5.1 单元测试用例
 
@@ -110,7 +70,9 @@
 - [ ] 不可恢复 journal + legacy 缺字段在任何状态派生前硬错误、零读取：UT-S33-47
 - [ ] 正常输出无 unknown + 错误分支不伪造枚举 + 私有缺省规则清零：UT-S33-48
 
-## 六、eager seed 可选化与 S39 证据接口测试
+
+## MODIFIED — 六、eager seed 可选化与 S39 证据接口测试
+
 
 > 所有用例实现必须写入 OpenLogos reporter `logos/resources/verify/test-results.jsonl`。
 
@@ -142,39 +104,3 @@
 - status/next 的 `baseline_coverage` 兼容 shape 不删除；改变的是它不再决定主 action。
 - tombstone 分母、legacy 缺省派生与 sync 显式回填规则保持；S39 不新建每场景闭包状态。
 
-## 七、读锁有界重试与 reader 串行化（fix-baseline-readlock-reader-contention）
-
-> 本节补充 baseline seed 事务锁读路径的获取语义回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
-
-### 单元测试
-
-| ID | 描述 | 前置条件 | 操作 | 预期输出 |
-|---|---|---|---|---|
-| UT-S33-56 | 读路径锁被占、预算内释放则成功 | 注入可控时钟与预算；夹具持锁并在预算内释放 | 分别经 `withBaselineReadLock` / `withRecoveredReadLocks` / `readGate` 三入口获取 | 三入口均在释放后取到锁并执行临界区；返回值与无竞争时一致；三入口复用同一重试实现（摘除公共实现后三者必须同时变红——证伪门） |
-| UT-S33-57 | 预算耗尽维持既有错误 | 夹具全程持锁；注入时钟推进超过总预算 2000ms | 三入口分别获取 | `withBaselineReadLock` 返回 `{ok:false, error:'baseline_commit_in_progress'}`、`withRecoveredReadLocks` 返回 `{ok:false, inProgress:[module]}`、`readGate` 行为与既有锁占用分支逐字一致；无新错误形态 |
-| UT-S33-58 | 退避序列与参数可注入 | 注入记录型时钟 | 在锁全程被占下获取并记录每次尝试间隔 | 间隔序列为 25/50/100/200/400ms 后封顶 400ms；累计等待不超过注入预算；替换注入预算/时钟后序列相应缩放 |
-| UT-S33-59 | 写路径保持 fail-fast | 夹具持锁 | baseline-seed `begin` 与 `commit` 路径获取锁 | 立即返回 `run_locked` / `baseline_commit_in_progress`，无任何重试或等待；注入时钟零推进 |
-| UT-S33-60 | 不可恢复硬门与死锁回收零回退 | ① journal=`prepared|committing` 且 staging/backup 损坏；② 死进程持锁夹具 | ① 读入口经重试取到锁后执行恢复门；② 读入口获取死进程锁 | ① 前滚与回滚均失败时仍硬报 `baseline_commit_in_progress`，标准资源读取哨兵为 0；② 死锁回收协议（marker 仲裁、原子替换）行为与 0.14.12 逐字一致，回收成功后正常读取 |
-
-### 场景测试
-
-| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
-|---|---|---|---|---|
-| ST-S33-10 | 多进程读者串行化不假阳性 | 临时项目无 writer、无未终结 journal；真实多进程、真实时钟 | 8 个独立子进程并发执行经读取门的只读命令；随后在真实 seed commit 持锁期间再并发执行读者 | 第一阶段全部成功、无 `baseline_commit_in_progress`、结束后无残留锁；第二阶段若 commit 持锁超读者预算则读者如实报 `baseline_commit_in_progress`，且 writer 提交不受干扰、结果全新一致 |
-
-### golden 边界
-
-- 锁空闲路径零行为差异，既有 S33 golden 不重拍。
-- 超预算失败复用既有错误 envelope golden；禁止把重试期间的中间状态录入 golden。
-
-> 测试实现必须写 OpenLogos reporter；多进程用例的 evidence 须含各进程退出码、错误码计数与锁文件残留检查结果。
-
-### 追溯与覆盖
-
-- AC-READLOCK-02 重试参数与注入：UT-S33-58。
-- AC-READLOCK-03 预算内成功：UT-S33-56。
-- AC-READLOCK-04 预算耗尽如实报错：UT-S33-57。
-- AC-READLOCK-05 写路径 fail-fast：UT-S33-59。
-- AC-READLOCK-06 硬门与死锁回收零回退：UT-S33-60。
-- AC-READLOCK-01 并发不假阳性：ST-S33-10。
-- 功能规格：§2.54；架构：§四.B；场景：S33 baseline seed 事务与读取门。

@@ -1103,40 +1103,6 @@ agent dispatch 的完成校验不得只输出 pass/fail。OpenLogos / driver 至
   **无法纯机器证明**——既有 acceptance 口径下的荣誉制 + 令牌追溯限制，如实记录、非遗漏。
 - **[code] 触点**：CLI 子命令 `openlogos check-ui-prototype`（项目根 cwd、自行解析活跃提案、exit 0/非 0）由 implement 阶段实现（本 delta 只定契约）。
 
-### 节点二：`verify-ui-provenance`（merge 前拦漂移）
-
-方法论 GUI overlay 以 `op:add` / `before: generate-merge-prompt` 注入，落在 **merge 之前**（原型落盘 resources 之前拦截漂移）：
-
-```yaml
-- op: add
-  before: generate-merge-prompt   # merge subflow 入口、原型落盘 resources 之前
-  node:
-    id: verify-ui-provenance
-    name: 校验 UI provenance
-    when: ui_impact
-    produces: null
-    done_when: "cmd:openlogos check-ui-hash-match"   # 运行时资产必为可执行命令；命令内部三分支
-```
-
-- **单 `done_when: cmd:openlogos check-ui-hash-match`，命令内部【三分支】**（正文示意常写作 `cmd:<check-ui-hash-match>`，运行时资产为可执行命令）：
-  仍是**单 `done_when: cmd:`**（无 `fail_when`），不触发 §9.2 决策 B「同节点 done_when/fail_when 均为 cmd:」；作为 overlay-add 单 cmd:，合法。
-  该节点**仅以 `when: ui_impact` 控参与**，故 GUI `ui_impact:true` 但**旧空 `PLAN_APPROVED`（无曾渲染证据）**的 legacy/degraded 提案**仍会进入本节点**；
-  若命令只有「匹配→0 / 缺失失配→非0」两果，空 marker 无 hashes 将**永远无法匹配**、节点永久未 done → advisory 放行不可达（旧面板卡死）。故命令内部按
-  **持久化批准记录（`PLAN_APPROVED`）**分三支（与 merge / 落盘同一批准记录分支、以持久化记录为键，与 F4 R7 一致）：
-  1. **`PLAN_APPROVED` 含 UI provenance**（`ui_prototype_rendered:true` + `pages` + `hashes`）→ 重算 `2-page-design/` 现值 hash 与固化 `hashes` 比对：
-     **完好且全匹配 → exit 0**（节点 done → 放行前进）；**缺失 / 损坏 / 失配 → 非 0（fail closed 阻断）**。
-  2. **legacy/degraded，或旧空 marker 且无任何「曾渲染」证据**（无 `ui_prototype_rendered`、无 `hashes`）→ **记 advisory 后 exit 0**
-     （节点 done → merge 可达）。**← 新增的第三成功分支**，专解「旧空 marker 永久未 done、advisory 放行不可达」的卡死。
-  3. **部分 / 损坏 provenance**（`ui_prototype_rendered:true` 但缺 / 空 `hashes`）→ **不得**误判为 legacy → **fail closed（非 0）**。
-  即：匹配成功 **或** 合法 legacy（分支 2）都 `exit 0`；失配 / 损坏 / 部分 provenance（分支 1 尾、分支 3）非 0。
-  失配非 0 时节点未 done（active/pending）→ **前向阻断**，remediation 见下方状态转换。
-- **状态转换（诚实边界）**：flow 引擎**前向线性、无跨 subflow 自动回退边**。「退回 plan-exit」**非引擎自动 rewind**——
-  `verify-ui-provenance` 未 done ⇒ 阻断；remediation = **driver / 人工显式重入 plan**（重跑 producer 产原型 + plan-exit 重批，
-  刷新 `PLAN_APPROVED.hashes`）→ 再到该节点时 hash 匹配 `exit 0` → done → 放行。即「失配即卡在未 done + 显式重入刷新」，
-  不假装引擎自动倒转。
-- **与 merge 命令级校验的关系**：本节点只拦 **driver 流**；`openlogos merge <slug>` 直接调用另有命令级 hash gate（见提案 F4 R5，
-  merge.ts 落地），二者互为纵深防御。[code] 触点：CLI 子命令 `openlogos check-ui-hash-match`（项目根 cwd、自行解析活跃提案、内部三分支、exit 0/非 0）由 implement 阶段实现。
-
 ### builtin 不硬编码这两个节点（关键约束）
 
 - **builtin `launched.yaml` 绝不硬编码 `write-ui-prototype` / `verify-ui-provenance`**：若把它们写进 builtin，则它们是
