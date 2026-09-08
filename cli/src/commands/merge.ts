@@ -6,9 +6,7 @@ import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
-import {
-  applyMergeTransaction, createMergeTransaction, listMergeTransactionPlanTargets, sealMergeTransaction,
-} from '../lib/merge-transaction.js';
+import { mergeDirect, MergeDirectError } from '../lib/merge-direct.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
   readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH,
@@ -73,6 +71,24 @@ function noDeltaSpecMergedMarker(): string {
 /** 仅供既有 0.13.x 回归测试读取；安装态 0.14.0 永不启用。 */
 function legacyMergeTestMode(): boolean {
   return process.env.NODE_ENV === 'test' && process.env.OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY === '1';
+}
+
+/**
+ * 直接合并的命令层包装：把 MergeDirectError 映射为稳定退出信息。
+ * §2.69.1 失败语义——任一步失败整批回滚，主文档保持合并前字节，错误信息附 git 回滚点。
+ */
+function runDirectMerge(root: string, changePath: string, slug: string) {
+  try {
+    return mergeDirect(root, changePath, slug);
+  } catch (e) {
+    if (e instanceof MergeDirectError) {
+      console.error(`Error: merge 失败（${e.code}）：${e.message}`);
+      console.error('  logos/resources/ 保持合并前字节，未写 SPEC_MERGED。');
+      console.error('  回滚点：git checkout logos/resources/；修正 delta 后重跑 `openlogos merge ' + slug + '`。');
+      process.exit(1);
+    }
+    throw e;
+  }
 }
 
 export function merge(slug?: string) {
@@ -156,8 +172,8 @@ export function merge(slug?: string) {
   // BASELINE_CLOSURE_VIOLATION_CODES 共 9 个码，L10 的 authority 违规与 L0～L7 全部被丢弃。
   // 于是 change-lint 判 FAIL 并点名具体测试 ID 的提案，在这里被照常放行。
   //
-  // 另一条 apply 路径（merge-apply.ts）本就是「violations 非空即拒绝」——两条准入路径对同一提案
-  // 给出不同结论，正是「消费方自建缩水副本」这一分裂形态。现收敛为同一判据。
+  // 此前另有一条 apply 路径对同一提案给出不同结论，正是「消费方自建缩水副本」这一分裂形态。
+  // 0.15.0 删除该路径后，merge 的准入判定就是 change-lint 的完整结论，唯一一份。
   const preflight = runChangeLint(root, changePath, slug);
   if (!preflight.ok) {
     const prefix = preflight.errorCode === 'module_unresolved' ? '模块归属无法解析；' : '';
@@ -228,7 +244,7 @@ export function merge(slug?: string) {
       console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 resources、未写 SPEC_MERGED。remediation：显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑。');
       process.exit(1);
     }
-    // ② 0.14.0 把原型正式字节纳入 merge transaction 同批提交；仅历史回归模式保留旧 UI commit。
+    // ② 原型正式字节由 commitVerifiedPrototypes 落盘；仅历史回归模式保留旧 UI commit 路径。
     if (legacyMergeTestMode()) {
       const commit = commitVerifiedPrototypes(changePath, root);
       if (!commit.ok) {
@@ -244,12 +260,8 @@ export function merge(slug?: string) {
       console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
       return;
     }
-    const transaction = createMergeTransaction(root, changePath, slug);
-    if (transaction.phase === 'ready') {
-      sealMergeTransaction(root, changePath);
-      applyMergeTransaction(root, changePath);
-    }
-    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}（merge transaction receipt）`);
+    runDirectMerge(root, changePath, slug);
+    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
     return;
   }
 
@@ -323,21 +335,17 @@ export function merge(slug?: string) {
     return;
   }
 
-  const transaction = createMergeTransaction(root, changePath, slug);
+  const result = runDirectMerge(root, changePath, slug);
 
   console.log(`\n📋 ${t(locale, 'merge.summary')}`);
   console.log(t(locale, 'merge.proposal', { slug }));
   console.log(t(locale, 'merge.deltaCount', { count: String(deltas.length) }));
-  for (const target of listMergeTransactionPlanTargets(changePath)) {
-    const writeHint = target.staging_path ? `，staging=${target.staging_path}` : '，OpenLogos producer';
-    console.log(`    ${target.delta_path} → ${target.target_ref}（${target.slot_id}${writeHint}）`);
+  for (const target of result.targets) {
+    console.log(`    → ${target}`);
   }
 
-  console.log(`\n  ✓ logos/changes/${slug}/MERGE_TRANSACTION.json`);
-  console.log(`  transaction_id: ${transaction.transaction_id}`);
-  console.log(`  phase: ${transaction.phase}`);
-  console.log(`  next_action: ${transaction.next_action ?? '<none>'}`);
+  console.log(`\n  ✓ logos/changes/${slug}/${SPEC_MERGED_MARKER}（${result.target_count} 个 canonical target 一次性原子落盘）`);
+  console.log(`  test_change_set: C=${result.test_change_set.changed_test_ids.length} R=${result.test_change_set.removed_test_ids.length}`);
 
-  console.log('\n💡 Agent 只能通过 `openlogos merge transaction submit-content --slot <id> --file <path>` 提交最终内容；正式目标、receipt 与 marker 由 OpenLogos 写入。');
   console.log(`\n${t(locale, 'merge.archiveHint', { slug })}\n`);
 }

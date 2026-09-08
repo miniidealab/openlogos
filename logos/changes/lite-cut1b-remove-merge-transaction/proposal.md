@@ -187,17 +187,17 @@ baseline_closure:
   ambiguity: block-before-existing-plan-exit
   standalone_baseline_required: false
   jit_confirmation: disabled
-  touched_scenario_ids: [S05, S09, S11, S16, S19, S39]
+  touched_scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
   targets:
     - category: requirement
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: MODIFY
       delta_path: "deltas/prd/1-product-requirements/core-01-requirements.md"
       reason: "删除合并事务单一权威、Preflight 与可修复 reopen、嵌套章节锚、终态出路与二次 merge 通道、merge 流程契约自洽等验收要求整节；新增 merge 直接合并与 lint-specs 的验收要求。"
       evidence: ["target_exists: logos/resources/prd/1-product-requirements/core-01-requirements.md"]
       missing_evidence: []
     - category: feature
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: MODIFY
       delta_path: "deltas/prd/2-product-design/1-feature-specs/core-01-feature-specs.md"
       reason: "删除 §2.44 合并事务单一权威、§2.44.10 Preflight 与局部 Reopen、§2.46 嵌套章节锚同源解析、§2.58 终态出路、§2.60 merge 流程契约自洽；新增「merge 直接合并」与「lint-specs 独立结构检查」功能小节。"
@@ -237,6 +237,13 @@ baseline_closure:
       delta_path: "deltas/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md"
       reason: "删除合并事务的安装态覆盖要求节。"
       evidence: ["target_exists: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke-gate.md"]
+      missing_evidence: []
+    - category: scenario
+      scenario_ids: [S32]
+      mode: MODIFY
+      delta_path: "deltas/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md"
+      reason: "reopen 通道随合并事务删除，「reopen 后切片归属」时序节改写为「二次合并（回滚重来）后切片归属」；change set 消费语义与切片归属判据逐字不变。"
+      evidence: ["target_exists: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md"]
       missing_evidence: []
     - category: scenario
       scenario_ids: [S39]
@@ -309,6 +316,13 @@ baseline_closure:
       evidence: ["target_exists: logos/resources/test/core-S19-test-cases.md"]
       missing_evidence: []
     - category: test
+      scenario_ids: [S32]
+      mode: MODIFY
+      delta_path: "deltas/test/core-S32-test-cases.md"
+      reason: "ST-S32-23 的驱动方式由 reopen 重合并改为回滚重来二次合并；UT-S32-69/70 消费语义不变，ID 全部沿用。"
+      evidence: ["target_exists: logos/resources/test/core-S32-test-cases.md"]
+      missing_evidence: []
+    - category: test
       scenario_ids: [S39]
       mode: MODIFY
       delta_path: "deltas/test/core-S39-test-cases.md"
@@ -316,42 +330,42 @@ baseline_closure:
       evidence: ["target_exists: logos/resources/test/core-S39-test-cases.md"]
       missing_evidence: []
     - category: api
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: SKIP
       delta_path: null
       reason: "无 HTTP/RPC 接口。"
       evidence: ["项目 logos/resources/api/ 为空"]
       missing_evidence: []
     - category: architecture
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: SKIP
       delta_path: null
       reason: "不引入新组件或新边界；Registry 两个 fact 的变更由 authority_impact 承载。"
       evidence: ["先例：lite-cut1a 同类纯删除变更 architecture=SKIP"]
       missing_evidence: []
     - category: database
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: SKIP
       delta_path: null
       reason: "无业务数据。"
       evidence: ["项目 logos/resources/database/ 为空"]
       missing_evidence: []
     - category: deployment
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: SKIP
       delta_path: null
       reason: "本提案不部署；0.15.0 发版归后续提案。"
       evidence: ["proposal 声明 是否需要部署：否"]
       missing_evidence: []
     - category: orchestration
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: SKIP
       delta_path: null
       reason: "无 API 编排测试。"
       evidence: ["api disposition=SKIP"]
       missing_evidence: []
     - category: smoke
-      scenario_ids: [S05, S09, S11, S16, S19, S39]
+      scenario_ids: [S05, S09, S11, S16, S19, S32, S39]
       mode: SKIP
       delta_path: null
       reason: "不部署即无 smoke 用例变更。"

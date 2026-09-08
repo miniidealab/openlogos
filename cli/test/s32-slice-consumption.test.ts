@@ -3,7 +3,7 @@
  * 消费侧代码零变化——断言前滚后的提案级 change set 让多切片归属成立、removed 后写胜出。
  */
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   buildTestChangeSet,
@@ -19,7 +19,6 @@ import {
 import { makeTempRoot, scaffoldProject, withCompleteClarification } from './helpers.js';
 import {
   cleanupFixtureRoots,
-  driveToPhase2Apply,
   frontierFixture,
   invoke,
   put,
@@ -95,7 +94,7 @@ function forwardedFixture(options: {
   return { root, dir, forwarded };
 }
 
-describe('reopen 后切片归属消费 — S32（fix-reopen-test-change-set-forward-merge 切片2）', () => {
+describe('二次合并后切片归属消费 — S32', () => {
   it('UT-S32-69: 前滚 change set 下多切片 owned⊆changed 全部放行，reader 只读当前 marker', () => {
     // 首轮 ID（A/B 本轮幂等零变化）由祖先前滚而来，C 为本轮新增
     const f = forwardedFixture({
@@ -128,19 +127,25 @@ describe('reopen 后切片归属消费 — S32（fix-reopen-test-change-set-forw
     ]));
   });
 
-  it('ST-S32-23: 真实命令链——reopen 重合并后多切片规划全链成立', () => {
+  it('ST-S32-23: 真实命令链——二次合并后多切片规划全链成立', () => {
     const f = frontierFixture();
-    // 首轮全链：changed=[UT-S01-01]
-    expect(invoke(['merge', f.slug], f.root).status).toBe(0);
-    driveToPhase2Apply(f);
-    // 修正测试 delta：新增 UT-S01-02 行（守恒保留 UT-S01-01），delta 先落盘再 reopen
+    // 首轮全链：一次调用完成合并，changed=[UT-S01-01]
+    const first = invoke(['merge', f.slug], f.root);
+    expect(first.status, first.stderr).toBe(0);
+    // 「发现 delta 有误」：回滚主文档 + 删 marker（无 reopen 通道），修正 delta 后二次合并。
+    for (const target of Object.keys(f.finals)) {
+      const abs = join(f.root, ...target.split('/'));
+      writeFileSync(abs, target === f.targetPath
+        ? '# 文档\n\n## 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 旧定义 |\n'
+        : '# 文档\n\n## 一、判据\n\n旧正文。\n');
+    }
+    rmSync(join(f.proposalDir, 'SPEC_MERGED'));
     const newTable = '| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 新定义 |\n| UT-S01-02 | 二号用例 |';
     put(f.root, `logos/changes/${f.slug}/deltas/test/core-S01-test-cases.md`, `## MODIFIED — 一、判据\n\n${newTable}\n`);
     f.finals[f.targetPath] = `# 文档\n\n## 一、判据\n\n${newTable}\n`;
-    const reopen = invoke(['merge', 'transaction', 'reopen', '--slug', f.slug, '--reason', '补充二号用例', '--confirm-spec-merged'], f.root);
-    expect(reopen.status, reopen.stderr).toBe(0);
-    driveToPhase2Apply(f);
-    // 前滚后 changed 提案级完整：首轮 UT-S01-01（本轮幂等）+ 本轮 UT-S01-02
+    const second = invoke(['merge', f.slug], f.root);
+    expect(second.status, second.stderr).toBe(0);
+    // 二次合并的 diff 基线是回滚后的合并前字节，故 changed 提案级完整：UT-S01-01 + UT-S01-02
     const marker = JSON.parse(readFileSync(join(f.proposalDir, 'SPEC_MERGED'), 'utf8'));
     expect(marker.test_change_set.changed_test_ids).toEqual(['UT-S01-01', 'UT-S01-02']);
     // 多切片规划（真实 slice plan 单条受控写入口）：两片各 own 一个 ID → 一次调用落盘

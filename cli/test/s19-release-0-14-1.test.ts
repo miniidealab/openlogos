@@ -153,12 +153,16 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     const runner = readFileSync(join(repoRoot, 'scripts/smoke-release-0-14-1-local.js'), 'utf8');
     expect(runner).toContain('OPENLOGOS_SMOKE_RESULT_PATH');
     expect(runner).toContain("appendFileSync(resultPath");
-    expect(runner).toContain("publicJson(entry, fixture.root, ['merge', 'transaction', 'status'");
+    expect(runner).toContain("checked(publicCli(entry, fixture.root, ['merge', fixture.slug]), '公共 merge 一次调用')");
     expect(runner).toContain("publicCli(entry, fixture.root, ['next', '--format', 'json'])");
     expect(runner).not.toContain('scripts/merge-transaction-smoke-fixtures.js');
-    expect(runner).not.toContain('MERGE_TRANSACTION.json');
+    // 原意「runner 不读私有事务文件」在事务删除后升格为「runner 断言该文件不存在」。
+    expect(runner).toContain('存在事务中间态残留');
 
-    expect(readFileSync(join(cliRoot, 'src/commands/merge-apply.ts'), 'utf8')).toContain('0.14.0 breaking cutover');
+    // lite-cut1b：0.14.0 的 legacy apply 拒绝面随合并事务一并删除；历史锚改为「该路径确已消失」，
+    // 与下面 0.14.0 历史 runner/证据校验器的版本锚共同锁定当时的发布身份。
+    expect(existsSync(join(cliRoot, 'src/commands/merge-apply.ts'))).toBe(false);
+    expect(existsSync(join(cliRoot, 'src/lib/merge-transaction.ts'))).toBe(false);
     const historicalRunner = readFileSync(join(repoRoot, 'scripts/smoke-merge-transaction-candidate.js'), 'utf8');
     const historicalEvidenceValidator = readFileSync(join(repoRoot, 'scripts/lib/runlogos-candidate-evidence.mjs'), 'utf8');
     expect(historicalRunner).toContain('SMOKE-core-141..156 — OpenLogos 0.14.0');
@@ -332,7 +336,7 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     install(candidate.tarball);
     const first = installedIdentity(packageRoot, candidate.tarball);
     expect(checked(process.execPath, [entry, '--version'], root)).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(checked(process.execPath, [entry, '--help'], root)).toContain('submit-content / seal / apply / recover / abort');
+    expect(checked(process.execPath, [entry, '--help'], root)).toContain('Merge spec deltas into the baseline in one call');
     const publicContract = JSON.parse(checked(process.execPath, [
       join(repoRoot, 'scripts/smoke-release-0-14-1-local.js'), '--transaction-self-test', resolve(entry),
     ], root));
@@ -341,6 +345,7 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
       'logos/resources/prd/1-product-requirements/core-02-smoke.md',
       'logos/resources/prd/2-product-design/1-feature-specs/core-01-smoke.md',
     ]));
+    expect(publicContract.transaction.changed_test_ids).toContain('UT-S19-90');
     expect(publicContract.action_parity).toMatchObject({ unknown_rejected: true });
 
     const rollbackPlan = buildLocalReleaseRollbackPlan(resolve(prefix), resolve(rollbackTarball), resolve(entry));

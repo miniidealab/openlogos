@@ -270,83 +270,85 @@ function publicFinalContent() {
   ].join('\n');
 }
 
-function atomicSlotWrite(root, stagingPath, content) {
-  const target = join(root, ...stagingPath.split('/'));
-  mkdirSync(dirname(target), { recursive: true });
-  const temp = join(dirname(target), `.content.${process.pid}.tmp`);
-  writeFileSync(temp, content);
-  renameSync(temp, target);
-  return target;
-}
-
-function assertReceiptClosure(root, completed) {
-  const finalPaths = completed.receipt.final_hashes.map(item => item.path);
-  const artifactPaths = completed.artifact_hashes.map(item => item.path);
-  if (finalPaths.some(path => artifactPaths.includes(path))) throw new Error('final/artifact hashes 发生环形重叠');
-  const union = [...new Set([...finalPaths, ...artifactPaths])].sort();
-  if (JSON.stringify(union) !== JSON.stringify([...completed.receipt.commit_paths].sort())) {
-    throw new Error('final/artifact hashes 未守恒覆盖 commit_paths');
-  }
-  for (const item of completed.receipt.final_hashes) {
-    const path = join(root, ...item.path.split('/'));
-    if (sha256(readFileSync(path)) !== item.sha256) throw new Error(`正式目标 hash 不可重算：${item.path}`);
-  }
-}
-
+/**
+ * lite-cut1b：合并事务删除后，安装态公共合同的验证对象改为 `openlogos merge` 一次调用。
+ * 断言口径不降级——仍要求全部 canonical target 落到最终态、marker 携带结构化 change set、
+ * 提交闭包（commit_paths）可枚举，且不存在任何事务中间态残留。
+ */
 function exercisePublicTransaction(entry) {
   const fixture = transactionFixture('complete');
   try {
-    checked(publicCli(entry, fixture.root, ['merge', fixture.slug]), '公共 merge transaction 创建');
-    const status = publicJson(entry, fixture.root, ['merge', 'transaction', 'status', '--slug', fixture.slug]);
-    const nextOutput = checked(publicCli(entry, fixture.root, ['next', '--format', 'json']), '公开 next transaction 投影');
-    const next = JSON.parse(nextOutput)?.data?.merge_transaction;
-    if (!next || JSON.stringify(status) !== JSON.stringify(next)) throw new Error('status/next 公开 transaction 投影不一致');
-    if (status.phase !== 'collecting' || status.content_slots.required !== 4 || status.next_action !== 'submit_content') {
-      throw new Error('CREATE/MODIFY 公共 content slot 集合不正确');
+    checked(publicCli(entry, fixture.root, ['merge', fixture.slug]), '公共 merge 一次调用');
+    const markerPath = join(fixture.root, 'logos', 'changes', fixture.slug, 'SPEC_MERGED');
+    if (!existsSync(markerPath)) throw new Error('公共 merge 未写 SPEC_MERGED');
+    const marker = JSON.parse(readFileSync(markerPath, 'utf8'));
+    if (marker.type !== 'merge_complete') throw new Error(`SPEC_MERGED type 非 merge_complete：${marker.type}`);
+    const cs = marker.test_change_set;
+    if (!cs || cs.schema !== 'openlogos/test-change-set@1') throw new Error('SPEC_MERGED 缺结构化 test_change_set');
+    if (!cs.changed_test_ids.includes('UT-S19-90')) throw new Error('change set 未认出本次新增测试 ID');
+    const commitPaths = [
+      'logos/logos-project.yaml',
+      'logos/resources/prd/1-product-requirements/core-02-smoke.md',
+      'logos/resources/prd/2-product-design/1-feature-specs/core-01-smoke.md',
+      'logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S19-smoke.md',
+      'logos/resources/test/core-S19-test-cases.md',
+    ];
+    for (const path of commitPaths) {
+      const abs = join(fixture.root, ...path.split('/'));
+      if (!existsSync(abs)) throw new Error(`提交闭包缺目标：${path}`);
     }
-    for (const descriptor of status.content_slots.items) {
-      const contentPath = atomicSlotWrite(fixture.root, descriptor.staging_path, publicFinalContent());
-      publicJson(entry, fixture.root, [
-        'merge', 'transaction', 'submit-content', '--slug', fixture.slug,
-        '--slot', descriptor.slot_id, '--file', contentPath,
-      ]);
+    // CREATE 目标已登记进 resource_index；MODIFY 目标已带上新章节。
+    const index = readFileSync(join(fixture.root, 'logos/logos-project.yaml'), 'utf8');
+    if (!index.includes('core-02-smoke.md')) throw new Error('CREATE 目标未登记进 resource_index');
+    const feature = readFileSync(join(fixture.root, 'logos/resources/prd/2-product-design/1-feature-specs/core-01-smoke.md'), 'utf8');
+    if (!feature.includes('F02 Smoke 公共合同功能') || !feature.includes('F01 基础功能')) {
+      throw new Error('MODIFY 目标未在保留既有章节的前提下合入新章节');
     }
-    const sealed = publicJson(entry, fixture.root, ['merge', 'transaction', 'seal', '--slug', fixture.slug]);
-    if (sealed.phase !== 'sealed' || sealed.next_action !== 'apply') throw new Error('公共 seal 投影不正确');
-    const completed = publicJson(entry, fixture.root, ['merge', 'transaction', 'apply', '--slug', fixture.slug]);
-    if (completed.phase !== 'completed' || !completed.receipt?.receipt_sha256) throw new Error('公共 completed receipt 缺失');
-    assertReceiptClosure(fixture.root, completed);
+    // 安装态公共消费者合同：next 必须据 SPEC_MERGED 在场推进过 merge 节点（不再有事务相位可读）
+    const nextOutput = checked(publicCli(entry, fixture.root, ['next', '--format', 'json']), '安装态 next 投影');
+    const nextData = JSON.parse(nextOutput)?.data;
+    if (!nextData) throw new Error('安装态 next 未返回 data');
+    if (nextData.merge_transaction !== undefined) throw new Error('next 仍暴露已删除的 merge_transaction 投影');
+    if (nextData.proposal_step === 'ready-to-merge') throw new Error('SPEC_MERGED 在场后 next 未推进过 merge 节点');
+
+    // 无任何事务中间态残留
+    for (const residue of ['MERGE_TRANSACTION.json', 'MERGE_RECEIPT.json', 'merge-staging', 'merge-content']) {
+      if (existsSync(join(fixture.root, 'logos', 'changes', fixture.slug, residue))) {
+        throw new Error(`存在事务中间态残留：${residue}`);
+      }
+    }
     return {
-      transaction_id: completed.transaction_id,
-      receipt_sha256: completed.receipt.receipt_sha256,
-      schema_sha256: completed.schema_sha256,
-      contract_sha256: completed.contract_sha256,
-      commit_paths: completed.receipt.commit_paths,
+      spec_merged_sha256: sha256(readFileSync(markerPath)),
+      change_set_sha256: cs.sha256,
+      changed_test_ids: cs.changed_test_ids,
+      commit_paths: commitPaths,
     };
   } finally { fixture.cleanup(); }
 }
 
+/** 未知子命令必须 fail-closed；help 必须自描述当前合并语义。 */
 function exerciseAbortAndActionParity(entry) {
   const fixture = transactionFixture('abort');
   try {
-    checked(publicCli(entry, fixture.root, ['merge', fixture.slug]), 'abort fixture transaction 创建');
-    const status = publicJson(entry, fixture.root, ['merge', 'transaction', 'status', '--slug', fixture.slug]);
     const help = checked(publicCli(entry, fixture.root, ['--help']), '安装态 help');
-    if (!help.includes('submit-content / seal / apply / recover / abort')) throw new Error('help 缺少已知 action 命令');
-    const unknown = publicCli(entry, fixture.root, [
-      'merge', 'transaction', 'future-action', '--slug', fixture.slug, '--format', 'json',
-    ]);
-    if (unknown.status === 0) throw new Error('未知 transaction action 未 fail-closed');
-    const aborted = publicJson(entry, fixture.root, ['merge', 'transaction', 'abort', '--slug', fixture.slug]);
-    // 版本双容：0.14.16 及以前 aborted 动作域为空；0.14.17 起携带幂等 abort 出边（§2.58.2）。
-    const abortedActions = JSON.stringify(aborted.allowed_actions);
-    const terminalOk = (abortedActions === '[]' && aborted.next_action === null)
-      || (abortedActions === '["abort"]' && aborted.next_action === 'abort');
-    if (status.next_action !== 'submit_content' || aborted.phase !== 'failed'
-      || aborted.classification !== 'aborted' || aborted.receipt !== null || !terminalOk) {
-      throw new Error('abort/action parity 公开终态不正确');
+    if (!help.includes('Merge spec deltas into the baseline in one call')) {
+      throw new Error('help 未自描述一次调用合并语义');
     }
-    return { known_actions: ['submit_content', 'seal', 'apply', 'recover', 'abort'], unknown_rejected: true };
+    if (help.includes('merge transaction')) throw new Error('help 仍暴露已删除的事务子命令');
+    // 已删除的命令面一律 fail-closed（不得被当成 slug 静默走成别的语义）
+    for (const args of [
+      ['merge', 'transaction', 'status', '--slug', fixture.slug],
+      ['merge-apply', fixture.slug],
+    ]) {
+      if (publicCli(entry, fixture.root, [...args, '--format', 'json']).status === 0) {
+        throw new Error(`已删除/未知命令未 fail-closed：${args.join(' ')}`);
+      }
+    }
+    // 重复 merge：marker 在场即早退，不产生第二次落盘
+    checked(publicCli(entry, fixture.root, ['merge', fixture.slug]), '首次 merge');
+    const again = publicCli(entry, fixture.root, ['merge', fixture.slug]);
+    if (again.status !== 0) throw new Error('已合并提案重跑 merge 应幂等早退');
+    return { known_actions: ['merge', 'lint-specs'], unknown_rejected: true };
   } finally { fixture.cleanup(); }
 }
 

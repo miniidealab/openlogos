@@ -77,10 +77,8 @@ Commands:
   change <slug>      Create a change proposal for iterative updates
                        --module <id>               Assign proposal to a specific module
   change-lint [--slug <slug>]   检查活跃提案的计划产物（proposal/tasks/deltas）是否交付合格（只读）
-  merge <slug>       Create or resume the OpenLogos-owned merge transaction
-  merge transaction  Operate the canonical transaction (status / submit-content / seal / apply / recover / abort / reopen)
-                       --slug <slug>               Defaults to the active guard change
-  merge-apply        Removed in 0.14.0; always rejects legacy external manifests
+  merge <slug>       Merge spec deltas into the baseline in one call (atomic, all-or-nothing)
+  lint-specs         Read-only structural check of test specs (duplicate IDs / table columns / ID format)
   archive <slug>     Archive a completed change proposal
   detect             Show CLI version and project detection info
   index              Generate an AI-ready prompt to rebuild resource_index with file-content-based desc
@@ -115,7 +113,7 @@ Examples:
   openlogos detect --format json
   openlogos change add-remember-me
   openlogos merge add-remember-me
-  openlogos merge-apply add-remember-me --manifest logos/changes/add-remember-me/MERGE_APPLY_MANIFEST.json
+  openlogos lint-specs
   openlogos archive add-remember-me
 
 Learn more: https://openlogos.ai
@@ -249,20 +247,15 @@ async function main() {
       break;
     }
     case 'merge': {
-      if (args[1] === 'transaction') {
-        const { mergeTransactionCommand } = await import('./commands/merge-transaction.js');
-        mergeTransactionCommand(args[2], args.slice(3), format);
-        break;
-      }
+      // 一次调用完成合并（功能规格 §2.69）：无 slot / seal / apply 子命令，无中间相位。
       const { merge } = await import('./commands/merge.js');
       merge(args[1]);
       break;
     }
-    case 'merge-apply': {
-      const manifestIndex = args.indexOf('--manifest');
-      const manifestArg = manifestIndex >= 0 ? args[manifestIndex + 1] : undefined;
-      const { mergeApply } = await import('./commands/merge-apply.js');
-      mergeApply(args[1], manifestArg);
+    case 'lint-specs': {
+      // 只读规格结构检查（功能规格 §2.70）：不参与任何门，结论仅供人判断。
+      const { lintSpecs } = await import('./commands/lint-specs.js');
+      lintSpecs(format);
       break;
     }
     case 'launch':

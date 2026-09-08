@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "lite-cut1b-remove-merge-transaction",
+  "module": "core",
+  "task_fingerprint": "sha256:84c42214752b8ce3226434d100e8851b5d387a39bb04436a98c3331b5bdeeba7",
+  "spec_fingerprint": "sha256:576b076010d8b45575a35d9bb029bddeaf49d9a7a76514794882e4c318da290c",
+  "generated_at": "2026-09-08T02:40:01.946Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-merge-direct",
+      "task_text": "切片1：merge 改直接合并 + 删合并事务外壳——重写 `cli/src/commands/merge.ts` 走新的 `lib/merge-direct.ts`：解析 [delta] 目标集做 P==T==D 与路径合法性校验（前置于写入）→ 逐 canonical target 调 `composeOpenLogosMarkdown` 合成最终字节（内含锚唯一定位、标题 rebase、`verifyAgentMaterialOutcome` 物质结果复验）→ 交 `applyBaselineClosureBatch` 一次性原子落盘（失败整批回滚）→ 末步写含结构化 `test_change_set` 的 `SPEC_MERGED`；删除 `lib/merge-transaction{,-candidate,-semantic}.ts`、`commands/merge-transaction.ts`、`commands/merge-apply.ts` 与 index/next/status 的接线及 4 个事务测试文件；二次合并后切片归属消费（S32）随之改写。",
+      "owned_test_ids": [
+        "UT-S09-340",
+        "UT-S09-341",
+        "UT-S32-69",
+        "UT-S32-70",
+        "ST-S32-23"
+      ],
+      "runner_selectors": [
+        "UT-S09-340",
+        "UT-S09-341",
+        "UT-S32-69",
+        "UT-S32-70",
+        "ST-S32-23"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S09-change-lifecycle.md",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md",
+        "logos/resources/test/core-S09-test-cases.md",
+        "logos/resources/test/core-S32-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-lint-specs",
+      "task_text": "切片2：lint-specs 独立规格结构检查——新增 `cli/src/commands/lint-specs.ts`，对 `logos/resources/test/` 做重复 ID / 表格列数 / ID 格式三项只读检查（ID 语法一律复用 `lib/test-id.ts` 唯一权威，ID 表按结构识别而非表头措辞），接入 index 路由与 help；**不参与 merge / verify / archive / change-lint 任何门**，仅非零退出并逐条列出位置供人判断。",
+      "owned_test_ids": [
+        "ST-S09-140"
+      ],
+      "runner_selectors": [
+        "ST-S09-140"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/test/core-S09-test-cases.md"
+      ]
+    }
+  ]
+}

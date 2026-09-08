@@ -214,7 +214,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.alreadyMerged': 'Specs already merged for \'{slug}\' (SPEC_MERGED exists) — nothing to do.',
     'merge.conservationRejected': 'Error: delta entry-conservation check failed (S37): {path} — refusing to generate MERGE_PROMPT; no markers written.',
     'merge.conservationHint': '  Fix: carry the full remaining section content in the same-anchor MODIFIED block, or name each removed ID in a same-anchor REMOVED-ITEMS block (`- <ID> — <reason>`); use a heading-path anchor (`parent > target`) when the title repeats. Run `openlogos change-lint` first to locate all violations at the producing side.',
-    'merge.archiveHint': 'Next, merge-executor drives the transaction: `openlogos merge transaction submit-content --slot <id> --file <path>` per slot, then `seal`, then `apply` (apply atomically lands specs and writes SPEC_MERGED). `openlogos next` has advanced to the apply-merge node; check data.merge_transaction in status/next for the live phase. Then implement code, run `openlogos verify`, and explicitly request `openlogos archive {slug}` after verification passes.',
+    'merge.archiveHint': 'Specs are merged and SPEC_MERGED is written. Next: implement the code, run `openlogos verify`, and explicitly request `openlogos archive {slug}` after verification passes. To re-merge, run `git checkout logos/resources/`, fix the deltas and rerun `openlogos merge`.',
 
     // launch
     'launch.done': '✓ Module "{module}" launched! Change management is now active.',
@@ -496,7 +496,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'merge.conservationRejected': 'Error: delta 条目守恒检查未通过（S37）：{path}——拒绝生成 MERGE_PROMPT，未写任何 marker。',
     'merge.conservationHint': '  修复方式：把缺失 ID 的条目补回同锚 MODIFIED 块的结构位置（携带整节全量内容），或新增同锚 REMOVED-ITEMS 块逐行点名（`- <ID> — <删除原因>`）；锚歧义时改用标题路径锚（父级标题 > 目标标题）。可先运行 `openlogos change-lint` 在产出点定位全部违规。',
     'merge.alreadyMerged': '提案 \'{slug}\' 的规格已合并（SPEC_MERGED 存在），无需重复操作。',
-    'merge.archiveHint': '下一步由 merge-executor 按事务合同执行：`openlogos merge transaction submit-content --slot <id> --file <path>` 逐 slot 提交 → `seal` → `apply`（apply 原子落盘主规格并写 SPEC_MERGED）。`openlogos next` 已推进到 apply-merge 节点；status/next 的 data.merge_transaction 可随时查看事务相位。之后再实现代码、运行 `openlogos verify`，验收通过后明确授权执行 `openlogos archive {slug}`。',
+    'merge.archiveHint': '规格已合并并写入 SPEC_MERGED。下一步实现代码、运行 `openlogos verify`，验收通过后明确授权执行 `openlogos archive {slug}`。如需重新合并：`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `openlogos merge`。',
 
     // launch
     'launch.done': '✓ 模块 "{module}" 已 launch！变更管理已激活。',

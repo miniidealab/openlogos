@@ -2,14 +2,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import {
-  applyMergeTransaction,
-  createMergeTransaction,
-  listMergeTransactionPlanTargets,
-  readMergeTransaction,
-  sealMergeTransaction,
-  submitMergeContent,
-} from '../src/lib/merge-transaction.js';
 
 export const repoRoot = resolve(import.meta.dirname, '../..');
 export const cli = join(repoRoot, 'cli/dist/index.js');
@@ -23,7 +15,7 @@ export function put(root: string, relative: string, content: string) {
 }
 
 export function invoke(args: string[], cwd: string) {
-  // vitest 全局开 legacy merge 开关供旧合同回归；本 fixture 族测生产事务语义，spawn 时显式关闭。
+  // vitest 全局开 legacy merge 开关供旧合同回归；本 fixture 族测生产合并语义，spawn 时显式关闭。
   const env = { ...process.env, OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '0' };
   return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', timeout: 120000, env });
 }
@@ -101,34 +93,4 @@ export function frontierFixture(withDelta = true) {
   put(root, `logos/changes/${slug}/tasks.md`, `# 任务\n\n${deltaTasks}\n## [code] 代码实现\n`);
   put(root, `logos/changes/${slug}/PLAN_APPROVED`, '{}');
   return { root, slug, proposalDir, targetPath, final, finals };
-}
-
-export function driveToPhase(f: ReturnType<typeof frontierFixture>, phase: 'collecting' | 'ready' | 'sealed' | 'completed') {
-  let tx = createMergeTransaction(f.root, f.proposalDir, f.slug);
-  if (phase === 'collecting') return tx;
-  for (const target of listMergeTransactionPlanTargets(f.proposalDir)) {
-    const descriptor = tx.content_slots.items.find(item => item.slot_id === target.slot_id)!;
-    const staging = join(f.root, descriptor.staging_path);
-    mkdirSync(dirname(staging), { recursive: true });
-    writeFileSync(staging, f.finals[target.target_path]);
-    tx = submitMergeContent(f.proposalDir, target.slot_id, staging);
-  }
-  if (phase === 'ready') return tx;
-  tx = sealMergeTransaction(f.root, f.proposalDir);
-  if (phase === 'sealed') return tx;
-  return applyMergeTransaction(f.root, f.proposalDir);
-}
-
-export function driveToPhase2Apply(f: ReturnType<typeof frontierFixture>, options?: { stopBeforeSeal?: boolean }) {
-  let tx = readMergeTransaction(f.proposalDir);
-  for (const target of listMergeTransactionPlanTargets(f.proposalDir)) {
-    const descriptor = tx.content_slots.items.find(item => item.slot_id === target.slot_id)!;
-    const staging = join(f.root, descriptor.staging_path);
-    mkdirSync(dirname(staging), { recursive: true });
-    writeFileSync(staging, f.finals[target.target_path]);
-    tx = submitMergeContent(f.proposalDir, target.slot_id, staging);
-  }
-  if (options?.stopBeforeSeal) return;
-  sealMergeTransaction(f.root, f.proposalDir);
-  applyMergeTransaction(f.root, f.proposalDir);
 }

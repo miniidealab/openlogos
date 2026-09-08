@@ -61,3 +61,7 @@ reopen 通道随事务终态删除，前滚语义不再有触发场景。`test_c
 ### 自动化与证据要求
 
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+
+## REMOVED — S09 归档提案的事务只读寻址测试
+
+归档提案的事务只读寻址（`transaction_id` / `receipt_sha256` 跨归档一致、归档后写动作 fail-closed、同 slug 多归档歧义）整节依附于合并事务的身份与 receipt。事务删除后既无 `MERGE_TRANSACTION.json` 也无 receipt，寻址对象不复存在，故整节随之删除。归档目录本身的可寻址性不受影响（`archive` 行为与目录布局未变）。

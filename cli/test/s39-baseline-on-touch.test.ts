@@ -319,46 +319,21 @@ const sqlitePayload = [
   'CREATE INDEX idx_touch_name ON touch(name);',
 ].join('\n') + '\n';
 
-function writeProductionApplyManifest(f: Fixture, suffix: string): {
-  manifestRel: string;
-  expected: Map<string, string>;
-  before: Map<string, string>;
-} {
+/** 生产入口用 fixture：写好全部 delta 与 guard，返回各 canonical target 的合并前字节快照。 */
+function productionSnapshot(f: Fixture): Map<string, string> {
   const overrides = new Map<string, string>();
   for (const target of f.closure.targets.filter(item => item.delta_path !== null)) {
     overrides.set(target.delta_path!, target.category === 'test'
-      ? `## ADDED — 受控补充\n\n| ID | 场景 |\n|---|---|\n| UT-S39-01 | ${suffix} |\n| ST-S39-01 | ${suffix} |\n`
-      : `## ADDED — 受控补充\n\n${target.category}-${suffix}\n`);
+      ? '## ADDED — 受控补充\n\n| ID | 场景 |\n|---|---|\n| UT-S39-01 | 生产入口 |\n| ST-S39-01 | 生产入口 |\n'
+      : `## ADDED — 受控补充\n\n${target.category}-生产入口\n`);
   }
   writeFixture(f, true, true, overrides);
-  writeFileSync(join(f.root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: f.slug, module: 'core' }));
-  writeFileSync(join(f.proposalDir, 'MERGE_PROMPT.md'), '# 受控合并指令\n');
-  writeFileSync(join(f.proposalDir, 'MERGE_PROMPT_GENERATED'), '');
-  const expected = new Map<string, string>();
   const before = new Map<string, string>();
-  const prepared = f.closure.targets.filter(item => item.delta_path !== null).map(target => {
+  for (const target of f.closure.targets.filter(item => item.delta_path !== null)) {
     const targetPath = canonicalTargetFromDeltaPath(target.delta_path!)!;
-    const delta = readFileSync(join(f.proposalDir, target.delta_path!), 'utf-8');
-    const prior = readFileSync(join(f.root, targetPath), 'utf-8');
-    const final = `${prior.trimEnd()}\n\n## 受控补充\n\n${target.category}-${suffix}\n`;
-    expected.set(targetPath, final);
-    before.set(targetPath, prior);
-    return {
-      delta_path: target.delta_path,
-      target_path: targetPath,
-      mode: target.mode,
-      source_sha256: sha(delta),
-      before_sha256: sha(prior),
-      content_base64: Buffer.from(final).toString('base64'),
-      sha256: sha(final),
-    };
-  });
-  const manifestRel = `logos/changes/${f.slug}/MERGE_APPLY_MANIFEST.json`;
-  writeFileSync(join(f.root, manifestRel), `${JSON.stringify({
-    schema: 'openlogos/baseline-merge-apply@1', slug: f.slug,
-    prepared_targets: prepared, metadata_targets: [],
-  }, null, 2)}\n`);
-  return { manifestRel, expected, before };
+    before.set(targetPath, readFileSync(join(f.root, targetPath), 'utf-8'));
+  }
+  return before;
 }
 
 describe('S39 单元测试——闭包、路径、完整度与协议', () => {
@@ -1100,31 +1075,39 @@ describe('S39 场景测试——plan/spec/merge 纵深闭环', () => {
     expect(readFileSync(join(f.root, index), 'utf-8')).toContain('S39');
     expect(existsSync(join(f.root, marker))).toBe(true);
 
-    // 真实 merge-executor CLI 入口必须消费同一原子原语；成功写全新，故障写全旧并清除 prompt。
+    // 真实 merge CLI 入口必须消费同一原子原语；成功写全新，故障写全旧且不留 marker。
+    // lite-cut1b：入口从 `merge-apply <manifest>` 收敛为 `merge <slug>` 一次调用，原语不变。
     const production = setup();
-    const successManifest = writeProductionApplyManifest(production, 'success');
-    const success = spawnSync(process.execPath, [CLI_DIST, 'merge-apply', production.slug, '--manifest', successManifest.manifestRel], {
+    const productionBefore = productionSnapshot(production);
+    writeFileSync(join(production.root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: production.slug, module: 'core' }));
+    const success = spawnSync(process.execPath, [CLI_DIST, 'merge', production.slug], {
+      // vitest 全局开 legacy MERGE_PROMPT 开关供 0.13.x 回归；本段测生产合并入口，显式关闭。
       cwd: production.root, encoding: 'utf-8', timeout: 20_000,
+      env: { ...process.env, OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '0' },
     });
     expect(success.status, success.stderr).toBe(0);
-    for (const [path, bytes] of successManifest.expected) {
-      expect(readFileSync(join(production.root, path), 'utf-8')).toBe(bytes);
+    for (const [path, bytes] of productionBefore) {
+      expect(readFileSync(join(production.root, path), 'utf-8'), path).not.toBe(bytes);
     }
     expect(existsSync(join(production.proposalDir, 'SPEC_MERGED'))).toBe(true);
 
     const faulted = setup();
-    const faultManifest = writeProductionApplyManifest(faulted, 'fault');
-    const firstTarget = canonicalTargetFromDeltaPath(targetOf(faulted, 'requirement').delta_path!)!;
-    const failure = spawnSync(process.execPath, [CLI_DIST, 'merge-apply', faulted.slug, '--manifest', faultManifest.manifestRel], {
+    const faultedBefore = productionSnapshot(faulted);
+    writeFileSync(join(faulted.root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: faulted.slug, module: 'core' }));
+    const firstTarget = [...faultedBefore.keys()].sort()[0];
+    const failure = spawnSync(process.execPath, [CLI_DIST, 'merge', faulted.slug], {
       cwd: faulted.root, encoding: 'utf-8', timeout: 20_000,
-      env: { ...process.env, NODE_ENV: 'test', OPENLOGOS_TEST_MERGE_APPLY_FAIL_AFTER: firstTarget },
+      env: {
+        ...process.env, NODE_ENV: 'test',
+        OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '0',
+        OPENLOGOS_TEST_MERGE_FAIL_AFTER: firstTarget,
+      },
     });
     expect(failure.status).not.toBe(0);
-    for (const [path, bytes] of faultManifest.before) {
-      expect(readFileSync(join(faulted.root, path), 'utf-8')).toBe(bytes);
+    for (const [path, bytes] of faultedBefore) {
+      expect(readFileSync(join(faulted.root, path), 'utf-8'), path).toBe(bytes);
     }
     expect(existsSync(join(faulted.proposalDir, 'SPEC_MERGED'))).toBe(false);
-    expect(existsSync(join(faulted.proposalDir, 'MERGE_PROMPT.md'))).toBe(false);
     expect(existsSync(join(faulted.proposalDir, BASELINE_CLOSURE_APPLY_JOURNAL))).toBe(false);
 
     for (const operation of ['MODIFIED', 'REMOVED'] as const) {
@@ -1145,7 +1128,7 @@ describe('S39 场景测试——plan/spec/merge 纵深闭环', () => {
       expect(existsSync(join(invalidCreate.proposalDir, 'SPEC_MERGED'))).toBe(false);
     }
 
-    // merge-apply 在读取 manifest 前重跑同一 L9 evaluator；官方 schema 负例不得绕过纵深防御。
+    // merge 在落盘前重跑同一 L9 evaluator；官方 schema 负例不得绕过纵深防御。
     const invalidApi = setup();
     const invalidApiTarget = targetOf(invalidApi, 'api');
     invalidApiTarget.mode = 'MODIFY';
@@ -1161,15 +1144,17 @@ describe('S39 场景测试——plan/spec/merge 纵深闭环', () => {
       writeFileSync(join(invalidApi.root, targetPath), `# ${target.category} old\n`);
     }
     sortClosureTargets(invalidApi);
-    const invalidManifest = writeProductionApplyManifest(invalidApi, 'invalid-api');
+    const invalidBefore = productionSnapshot(invalidApi);
+    writeFileSync(join(invalidApi.root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: invalidApi.slug, module: 'core' }));
     writeFileSync(join(invalidApi.proposalDir, invalidApiTarget.delta_path!),
       `## MODIFIED — logos/resources/api/touch.yaml（整文件替换）\n${openApiPathParameterMissingRequired}`);
-    const invalidApiApply = spawnSync(process.execPath, [CLI_DIST, 'merge-apply', invalidApi.slug, '--manifest', invalidManifest.manifestRel], {
+    const invalidApiApply = spawnSync(process.execPath, [CLI_DIST, 'merge', invalidApi.slug], {
       cwd: invalidApi.root, encoding: 'utf-8', timeout: 20_000,
+      env: { ...process.env, OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '0' },
     });
     expect(invalidApiApply.status).not.toBe(0);
     expect(invalidApiApply.stderr).toContain('non_markdown_delta_invalid');
-    for (const [path, bytes] of invalidManifest.before) {
+    for (const [path, bytes] of invalidBefore) {
       expect(readFileSync(join(invalidApi.root, path), 'utf-8')).toBe(bytes);
     }
     expect(existsSync(join(invalidApi.proposalDir, 'MERGE_PROMPT.md'))).toBe(false);

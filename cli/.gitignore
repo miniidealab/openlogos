@@ -4,3 +4,13 @@ node_modules/
 
 # Temporary skills copy created by prepack
 skills/
+
+# prepack 生成的插件模板拷贝（各 AI 工具随包资产，非源文件）
+claude-plugin-template/
+codex-plugin-template/
+cursor-plugin-template/
+opencode-plugin-template/
+qoder-plugin-template/
+workbuddy-plugin-template/
+zcode-plugin-template/
+spec/
