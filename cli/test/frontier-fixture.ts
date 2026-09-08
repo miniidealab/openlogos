@@ -64,19 +64,6 @@ export function frontierFixture(withDelta = true) {
   for (const file of files) {
     finals[file.target] = readFileSync(join(root, file.target), 'utf8').replace('旧定义', '新定义').replace('旧正文。', '新正文。');
   }
-  const modifyTarget = (file: { category: string; delta: string }) => [
-    `    - category: ${file.category}`, '      scenario_ids: [S01]', '      mode: MODIFY',
-    `      delta_path: ${file.delta}`, '      reason: fixture', '      evidence: [target_exists]',
-    '      missing_evidence: []',
-  ].join('\n');
-  const skipDim = (category: string) => [
-    `    - category: ${category}`, '      scenario_ids: [S01]', '      mode: SKIP',
-    '      delta_path: null', '      reason: fixture 不适用', '      evidence: [fixture]',
-    '      missing_evidence: []',
-  ].join('\n');
-  const dims = ['api', 'architecture', 'database', 'deployment', 'orchestration', 'smoke'];
-  const modifies = [...files].sort((a, b) => a.delta.localeCompare(b.delta)).map(modifyTarget).join('\n');
-  const targets = `  targets:\n${modifies}\n${dims.map(skipDim).join('\n')}`;
   const deltaTasks = withDelta
     ? `## [delta] 规格变更\n${[...files].sort((a, b) => a.delta.localeCompare(b.delta)).map(f => `- [x] [MODIFY] \`${f.delta}\`：fixture 更新`).join('\n')}\n`
     : '## [delta] 规格变更\n';
@@ -84,9 +71,9 @@ export function frontierFixture(withDelta = true) {
   const head = `# 变更提案：frontier fixture\n\n## 变更原因\n真实原因。\n\n## 变更类型\n设计级\n\n## 变更范围\n- 影响的功能规格：fixture\n\n## 部署影响\n- 是否需要部署：否\n- 部署原因：无\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 变更概述\n概述。\n\n`;
   if (withDelta) {
     put(root, `logos/changes/${slug}/proposal.md`,
-      `${head}${clarification}\n## 基线闭包计划\n\n\`\`\`yaml\nbaseline_closure:\n  policy: on-touch-v1\n  schema_version: 1\n  unit: canonical-merge-target-path\n  delta_cardinality: exactly-one-per-non-skip-target\n  effective_view: merged-resources-plus-current-change-deltas\n  ambiguity: block-before-existing-plan-exit\n  standalone_baseline_required: false\n  jit_confirmation: disabled\n  touched_scenario_ids: [S01]\n${targets}\n\`\`\`\n`);
+      `${head}${clarification}`);
   } else {
-    // no-delta（纯代码）先例：无 baseline_closure 段（legacy fallback）+ 复用测试 ID
+    // no-delta（纯代码）先例：无 delta 可合并，靠「复用测试 ID」小节满足 L3 测试证据
     put(root, `logos/changes/${slug}/proposal.md`,
       `${head}## 复用测试 ID\n\n- UT-S01-01 — 回归覆盖\n\n${clarification}`);
   }

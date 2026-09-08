@@ -54,7 +54,8 @@ describe('S35 测试 ID 语法单点', () => {
 
     // ② 权威语法必须接纳已合并规格中每一个表格首列 ID——语法与数据一旦漂移即红。
     const ids = mergedTableIds();
-    expect(ids.length).toBeGreaterThan(2000);
+    // 下限只用于确认确实扫到了整个语料（而非空集或单文件），不随删除类变更涨落而失效
+    expect(ids.length).toBeGreaterThan(1500);
     const rejected = ids.filter(id => !isTestId(id));
     expect(rejected).toEqual([]);
 

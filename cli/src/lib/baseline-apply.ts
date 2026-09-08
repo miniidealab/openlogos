@@ -26,8 +26,8 @@ import {
 import { dirname, isAbsolute, join, posix, relative, sep } from 'node:path';
 import {
   resolveCanonicalMergeTarget,
-  validateAndStripNonMarkdownDelta,
-} from './baseline-closure.js';
+} from './canonical-target.js';
+import { validateAndStripNonMarkdownDelta } from './non-markdown-delta.js';
 
 export const BASELINE_CLOSURE_APPLY_JOURNAL = 'BASELINE_CLOSURE_APPLY_JOURNAL.json';
 const APPLY_TXN_DIR = '.baseline-closure-apply-txn';

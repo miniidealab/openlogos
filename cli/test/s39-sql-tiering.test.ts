@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
-import { validateAndStripNonMarkdownDelta, type DatabaseDialect } from '../src/lib/baseline-closure.js';
+import { validateAndStripNonMarkdownDelta, type DatabaseDialect } from '../src/lib/non-markdown-delta.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });

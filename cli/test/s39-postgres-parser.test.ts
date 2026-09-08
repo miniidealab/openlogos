@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, mergeAdmissibleProposal, mergeAdmissibleTasks, registerCoreModule } from './helpers.js';
-import { validateAndStripNonMarkdownDelta } from '../src/lib/baseline-closure.js';
+import { validateAndStripNonMarkdownDelta } from '../src/lib/non-markdown-delta.js';
 import { runChangeLint } from '../src/lib/change-lint.js';
 
 const cleanups: Array<() => void> = [];

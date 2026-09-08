@@ -113,16 +113,17 @@ describe('merge 直接合并 — S09（功能规格 §2.69）', () => {
     expectFailure(ambiguous, 'MERGE_DELTA_INVALID', '锚多处');
     expectUntouched(ambiguous, before, '锚多处');
 
-    // (d) P≠T≠D：计划声明 MODIFY 但目标不存在
+    // (d) delta 与目标事实不符：MODIFIED 锚指向的目标不存在（派生模型下模式判为 CREATE，
+    //     整份新文档却带着 MODIFIED 锚）——合成阶段 fail-closed
     const mismatch = frontierFixture();
     const missing = join(mismatch.root, 'logos/resources/prd/1-product-requirements/core-01-requirements.md');
     writeFileSync(missing, '');
     rmSync(missing);
     before = snapshot2(mismatch, missing);
-    expectFailure(mismatch, 'MERGE_TARGET_MISMATCH', 'P≠T≠D');
+    expectFailure(mismatch, 'MERGE_DELTA_INVALID', 'delta 与目标事实不符');
     for (const [target, value] of before) {
       const abs = join(mismatch.root, ...target.split('/'));
-      expect(`${readFileSync(abs, 'utf8')}::${statSync(abs).mtimeMs}`, `P≠T≠D / ${target}`).toBe(value);
+      expect(`${readFileSync(abs, 'utf8')}::${statSync(abs).mtimeMs}`, `delta 与目标事实不符 / ${target}`).toBe(value);
     }
     expect(existsSync(join(mismatch.proposalDir, 'SPEC_MERGED'))).toBe(false);
 

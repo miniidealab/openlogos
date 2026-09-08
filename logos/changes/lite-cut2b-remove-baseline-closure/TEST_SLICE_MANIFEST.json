@@ -1,0 +1,61 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "lite-cut2b-remove-baseline-closure",
+  "module": "core",
+  "task_fingerprint": "sha256:da4fff0bef7da125722b8fc346568b8d05cbd181bcf7f102717a52e92679d714",
+  "spec_fingerprint": "sha256:e90efb522a65a3f109ace3b9450d3b5810cedcd336ce8ba86e2f7aacef2454c9",
+  "generated_at": "2026-09-08T03:50:57.661Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-derive-targets-from-deltas",
+      "task_text": "切片1：merge 目标集改由 delta 文件派生 + 删 L9——把 `lib/baseline-closure.ts`(1518) 拆分：路径映射迁入新模块 `lib/canonical-target.ts`、non-Markdown（OpenAPI/SQL）整文件协议迁入 `lib/non-markdown-delta.ts`，两者逐行保留；计划解析与闭包求值（parseBaselineClosurePlan / evaluateBaselineClosure / effectiveTargetView / scanCommittedEvidenceFiles / hasBaselineClosureSignal / parseBaselineClosureTaskTargets）整体删除。`mergeDirect.planDirectTargets` 改为对 `classifyProposalDeltas` 的可 merge 结果逐个映射 canonical target，模式按目标是否存在即时判定，不读 proposal 任何 YAML；同目标双 delta 与不可映射路径均在写入前 fail-closed。change-lint 摘除 L9（检查项收敛为 L0～L8 共 9 项），`non_markdown_delta_invalid` 由 L9 迁挂 L4，SQL 降级留痕改由 L4 的 degradations 汇集；违规码表由 47 收敛为 39。",
+      "owned_test_ids": [
+        "UT-S39-68",
+        "UT-S39-69",
+        "ST-S39-30",
+        "UT-S39-03",
+        "UT-S39-04",
+        "UT-S39-05",
+        "UT-S39-06"
+      ],
+      "runner_selectors": [
+        "UT-S39-68",
+        "UT-S39-69",
+        "ST-S39-30",
+        "UT-S39-03",
+        "UT-S39-04",
+        "UT-S39-05",
+        "UT-S39-06"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md",
+        "logos/resources/test/core-S39-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-preserved-capabilities-reseat",
+      "task_text": "切片2：保留能力迁座与断言同步——`s39-baseline-on-touch.test.ts` 按存活集合裁剪并改名为 `s39-canonical-target-and-non-markdown.test.ts`（保留 UT-S39-03～06、UT-S39-26～27、ST-S39-13，删除 L9 闭包用例与 CREATE 完整度段）；`s39-errata-prose-channel.test.ts` 随勘误通道删除；SQL/OpenAPI 测试与 `frontier-fixture` 的导入与夹具同步去闭包化；UT-S35-134 的收敛断言由「上界 9」改为「上界 8」，ST-S20-10 的闭包表述随之订正。",
+      "owned_test_ids": [
+        "UT-S39-26",
+        "UT-S39-27",
+        "ST-S39-13",
+        "UT-S35-134",
+        "ST-S20-10"
+      ],
+      "runner_selectors": [
+        "UT-S39-26",
+        "UT-S39-27",
+        "ST-S39-13",
+        "UT-S35-134",
+        "ST-S20-10"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S39-test-cases.md",
+        "logos/resources/test/core-S35-test-cases.md",
+        "logos/resources/test/core-S20-test-cases.md"
+      ]
+    }
+  ]
+}

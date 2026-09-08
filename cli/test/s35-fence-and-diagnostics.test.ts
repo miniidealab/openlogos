@@ -9,7 +9,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
-import { hasBaselineClosureSignal } from '../src/lib/baseline-closure.js';
 import { readUiUxDeclaration } from '../src/lib/ui-first.js';
 import { evaluateProposalClarification } from '../src/lib/clarification.js';
 import { authorityScan, fenceMask, scanMarkdownAuthorityStructure } from '../src/lib/markdown-scan.js';
@@ -132,7 +131,6 @@ describe('S35 围栏提取单点与可归因', () => {
     expect(mask[sampleLine]).toBe(true);
 
     // ② 存活的提取器对同一文档得到同一组围栏：均只见块外那一处真实声明，示意块不构成第二处
-    expect(hasBaselineClosureSignal(f.content, ''), 'baseline-closure 命中块外真实声明').toBe(true);
     const structure = scanMarkdownAuthorityStructure(f.content);
     const closureFences = structure.fences.filter(fence => /ya?ml/i.test(fence.info) && fence.content.includes('baseline_closure:'));
     expect(closureFences, '共享结构扫描中恰有一处 yaml 闭包声明围栏').toHaveLength(1);

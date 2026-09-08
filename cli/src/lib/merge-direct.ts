@@ -17,7 +17,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseDocument } from 'yaml';
 import { applyBaselineClosureBatch, type BaselineClosureApplyInput } from './baseline-apply.js';
-import { parseBaselineClosurePlan, type BaselineClosureTarget } from './baseline-closure.js';
+import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory } from './canonical-target.js';
+import { classifyProposalDeltas, DeltaScanUnreadableError } from './delta-classify.js';
 import { composeOpenLogosMarkdown } from './markdown-section-authority.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 import { buildTestChangeSet, forwardMergeTestChangeSets, type TestChangeSetV1 } from './test-change-set.js';
@@ -62,20 +63,43 @@ function moduleFromGuard(root: string, slug: string): string {
   return 'core';
 }
 
-/** 从 proposal 的 baseline_closure 解析可合并目标集；计划非法即 fail-closed。 */
+/**
+ * 目标集 = `deltas/` 的**无逻辑投影**（功能规格 §2.71）。
+ *
+ * 每个可 merge delta 经 `canonicalTargetFromDeltaPath` 映射为唯一 canonical target，
+ * 模式按磁盘事实即时判定：目标存在为 MODIFY、缺失为 CREATE。
+ *
+ * 本函数**不读取 proposal 的任何 YAML 声明**——计划与事实曾是两份数据，
+ * 其不一致正是手工枚举带来的；现在只有一份。
+ */
 export function planDirectTargets(root: string, proposalDir: string): PlannedTarget[] {
-  const proposalPath = join(proposalDir, 'proposal.md');
-  const parsed = parseBaselineClosurePlan(root, proposalDir, readFileSync(proposalPath, 'utf8'), relative(root, proposalPath));
-  if (!parsed.plan && parsed.violations.length === 0) return [];
-  if (!parsed.plan || parsed.violations.length > 0) {
-    throw new MergeDirectError('MERGE_TARGET_MISMATCH',
-      `baseline closure 计划无效：${parsed.violations[0]?.message ?? '缺少计划'}`);
+  const entries = classifyProposalDeltas(proposalDir);
+  // 错误态先于投影：产物不可读绝不被过滤成空目标集（否则会经 no-delta 早退写成假成功）。
+  const broken = entries.find(e => e.ioError);
+  if (broken) throw new DeltaScanUnreadableError(broken);
+
+  const byTarget = new Map<string, PlannedTarget>();
+  for (const entry of entries) {
+    if (entry.mergeDisposition !== 'mergeable') continue;
+    const targetPath = canonicalTargetFromDeltaPath(entry.relativePath);
+    if (targetPath === null) {
+      throw new MergeDirectError('MERGE_DELTA_INVALID',
+        `delta 路径无法映射为 canonical target（越界、上跳或未知类别目录）：${entry.relativePath}`);
+    }
+    const existing = byTarget.get(targetPath);
+    if (existing) {
+      throw new MergeDirectError('MERGE_TARGET_MISMATCH',
+        `两个 delta 映射到同一 canonical target ${targetPath}：${existing.deltaPath}、${entry.relativePath}`
+        + '——顺序应用下后写会覆盖前写');
+    }
+    byTarget.set(targetPath, {
+      deltaPath: entry.relativePath,
+      targetPath,
+      mode: existsSync(join(root, ...targetPath.split('/'))) ? 'MODIFY' : 'CREATE',
+      category: classifyCanonicalTargetCategory(targetPath) ?? 'unknown',
+    });
   }
-  return parsed.plan.targets
-    .filter((t): t is BaselineClosureTarget & { deltaPath: string; targetPath: string; mode: 'CREATE' | 'MODIFY' } =>
-      t.deltaPath !== null && t.targetPath !== null && (t.mode === 'CREATE' || t.mode === 'MODIFY'))
-    .map(t => ({ deltaPath: t.deltaPath, targetPath: t.targetPath, mode: t.mode, category: t.category }))
-    .sort((a, b) => a.targetPath < b.targetPath ? -1 : a.targetPath > b.targetPath ? 1 : 0);
+  return [...byTarget.values()].sort((a, b) => a.targetPath < b.targetPath ? -1 : a.targetPath > b.targetPath ? 1 : 0);
 }
 
 /** CREATE 目标须登记进 resource_index；无 CREATE 时返回 null（不触碰 metadata）。 */
@@ -120,13 +144,8 @@ export function mergeDirect(root: string, proposalDir: string, slug: string): Me
   for (const target of targets) {
     const deltaAbs = join(proposalDir, ...target.deltaPath.split('/'));
     const targetAbs = join(root, ...target.targetPath.split('/'));
-    const exists = existsSync(targetAbs);
-    if (target.mode === 'CREATE' && exists) {
-      throw new MergeDirectError('MERGE_TARGET_MISMATCH', `CREATE 但目标已存在：${target.targetPath}`);
-    }
-    if (target.mode === 'MODIFY' && !exists) {
-      throw new MergeDirectError('MERGE_TARGET_MISMATCH', `MODIFY 但目标缺失：${target.targetPath}`);
-    }
+    // 模式在 planDirectTargets 中按同一磁盘事实判定，此处只需读取当前字节。
+    const exists = target.mode === 'MODIFY';
     // API / DB canonical target 不是 Markdown 章节文档：其 delta 首行为控制标记、正文即最终字节，
     // 交 baseline-apply 的 non-markdown 入口做标记校验与剥离（与 0.13.x apply 同一判据）。
     if (target.category === 'api' || target.category === 'database') {

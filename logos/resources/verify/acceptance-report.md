@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 1907 |
+| Defined cases | 1811 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 1907 |
-| Passed | 1897 |
+| Executed cases | 1811 |
+| Passed | 1801 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |

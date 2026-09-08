@@ -28,11 +28,8 @@ import {
 import { analyzeUiDeclarationStructure, isGuiProductType } from './ui-first.js';
 import { readProjectYaml } from './project-yaml.js';
 import { evaluateUiPrototype } from '../commands/check-ui-prototype.js';
-import {
-  canonicalTargetFromDeltaPath,
-  evaluateBaselineClosure,
-  type BaselineClosureSummary,
-} from './baseline-closure.js';
+import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory } from './canonical-target.js';
+import { validateAndStripNonMarkdownDelta, type SqlValidationDegradation } from './non-markdown-delta.js';
 import {
   BaselineCommitInProgressError,
   listBaselineSeedModuleIds,
@@ -96,15 +93,6 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'delta_implicit_id_removal',
   'delta_removed_unknown_id',
   'delta_section_anchor_unresolvable',
-  // L9 S39 on-touch 闭包 9 码
-  'baseline_closure_declaration_missing',
-  'baseline_closure_malformed',
-  'baseline_closure_target_missing',
-  'delta_target_duplicate',
-  'delta_target_mode_mismatch',
-  'baseline_closure_ambiguous',
-  'delta_target_unplanned',
-  'create_target_incomplete',
   'non_markdown_delta_invalid',
   'clarification_contract_invalid',
 ] as const;
@@ -649,7 +637,6 @@ export type ChangeLintRunResult =
       warnings: ChangeLintWarning[];
       checks: { id: number; label: string; violations: number }[];
       plan_package: PlanPackageEvaluation;
-      baseline_closure?: BaselineClosureSummary;
       test_change_set?: TestChangeSetReadResult;
     }
   | { ok: false; errorCode: ChangeLintOpErrorCode; message: string };
@@ -874,6 +861,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   }
 
   // L4 / L6：仅对已存在 delta 文件
+  const nonMarkdownDegradations: Array<{ path: string; degradation: SqlValidationDegradation }> = [];
   for (const entry of deltaEntries) {
     const relPath = `logos/changes/${slug}/${entry.relativePath}`;
     if (entry.lintValidity === 'invalid') {
@@ -902,6 +890,27 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
           message: `delta 残留未替换的模板占位字面量：${v.skeletonHits[0]}${v.skeletonHits.length > 1 ? ` 等 ${v.skeletonHits.length} 处` : ''}`,
           fix_hint: '把模板占位字面量（如 `[新增章节标题]`、`[新增的完整内容]`）替换为真实内容——只要残留任一独占占位行即被 lint 与 merge 拒绝',
         });
+      }
+    }
+    // non-Markdown（OpenAPI / SQL）整文件 delta：首行控制标记 + 内容合法性。
+    // lite-cut2b：该判据原挂在 L9 下，L9 删除后迁入 L4——它本就是「delta 形态是否合法」这一类。
+    if (entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid' && !entry.relativePath.endsWith('.md')) {
+      const targetPath = canonicalTargetFromDeltaPath(entry.relativePath);
+      const category = targetPath ? classifyCanonicalTargetCategory(targetPath) : null;
+      if (targetPath && (category === 'api' || category === 'database')) {
+        const targetAbs = join(root, ...targetPath.split('/'));
+        const mode = existsSync(targetAbs) ? 'MODIFY' : 'CREATE';
+        const checked = validateAndStripNonMarkdownDelta(
+          deltaContents.get(entry.relativePath) ?? '', mode, targetPath, { root });
+        if (!checked.ok) {
+          pushViolation(acc, 4, {
+            code: 'non_markdown_delta_invalid',
+            path: relPath,
+            message: checked.message ?? 'non-Markdown delta 不合法',
+            fix_hint: '首行写 `# ADDED|MODIFIED <canonical target 路径>` 控制标记，其后正文即目标最终字节；OpenAPI 须过 3.0/3.1 schema，SQL 须能在空库事务执行并回滚',
+          });
+        }
+        if (checked.degradation) nonMarkdownDegradations.push({ path: relPath, degradation: checked.degradation });
       }
     }
   }
@@ -988,16 +997,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     }
   }
 
-  // L9：S39 on-touch 基线闭包。legacy（无 policy 且 tasks 无 mode）完全省略本检查，保持既有输出零漂移；
-  // 新声明或 mode 语法一旦在场即 fail-closed，所有调用方消费同一 evaluator。
-  const closure = evaluateBaselineClosure({
-    root, proposalDir, slug, proposalContent, tasksContent, deltaEntries, deltaContents,
-  });
-  if (closure.active) {
-    for (const v of closure.violations) pushViolation(acc, 9, v);
-  }
-  // §2.52.7 / 架构 §四十二.2：方言层被跳过必须可见，但不是违规——走 warnings，不影响 L9。
-  const sqlWarnings: ChangeLintWarning[] = (closure.sqlDegradations ?? []).map(notice => ({
+  // §2.52.7 / 架构 §四十二.2：方言层被跳过必须可见，但不是违规——走 warnings，不影响 L4 通过与否。
+  const sqlWarnings: ChangeLintWarning[] = nonMarkdownDegradations.map(notice => ({
     code: 'sql_dialect_precheck_skipped' as const,
     message: `${notice.path}：${notice.degradation.detail}（缺失：${notice.degradation.missing.join('、')}；已执行层级：${notice.degradation.tier}）`,
     fix_hint: notice.degradation.reason === 'adapter-not-installed'
@@ -1005,7 +1006,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
       : `${notice.degradation.dialect} 的语法/执行预检适配器尚未实现；结构检查已全部通过，本条不阻断交付`,
   }));
 
-  // 全序稳定排序：①检查项 L1→L9；②path 字典序；③源位置出现序；④code；⑤message
+  // 全序稳定排序：①检查项 L1→L8；②path 字典序；③源位置出现序；④code；⑤message
   const sorted = [...acc.violations].sort((a, b) => {
     const oa = acc.order.get(a)!;
     const ob = acc.order.get(b)!;
@@ -1032,7 +1033,6 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     { id: 6, label: `delta 路径合法（${mergeableCount} mergeable / ${invalidCount} invalid）`, violations: countFor(6) },
     ...(guiActive ? [{ id: 7, label: 'UI 声明结构合法', violations: countFor(7) }] : []),
     { id: 8, label: '条目守恒（ID 隐式删除拦截）', violations: countFor(8) },
-    ...(closure.active ? [{ id: 9, label: 'on-touch 基线闭包（P/T/D 与 CREATE 完整度）', violations: countFor(9) }] : []),
   ];
 
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
@@ -1043,7 +1043,6 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
 
   return {
     ok: true, slug, violations: sorted, warnings, checks, plan_package: planPackage,
-    ...(closure.summary ? { baseline_closure: closure.summary } : {}),
     ...(postMerge ? {
       test_change_set: readTestChangeSet(root, proposalDir, {
         change: slug,
