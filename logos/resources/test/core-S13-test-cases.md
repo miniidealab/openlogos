@@ -251,15 +251,3 @@
 - AC-MERGEGATE-09 集合只增不减、判据不放宽：UT-S13-66、ST-S13-18。
 - 场景：S13 权威测试 ID 语法放宽后的 defined 集合与覆盖度口径；功能规格：§2.51.7；架构：§四十一.6.1。
 
-## S13 写入权转移后 verify 消费零漂移测试
-
-### 单元测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S13-67 | 同字节同结论——判定不携带写入者假设 | Step 1→5 | 同一份 manifest 内容，分别以「Agent 直接写出」与「事务 apply 写出」两种来源构造 | 对两者各求一次 `deriveSliceVerificationState()` | 两次返回值**深相等**（含 `manifest_status` / `verify_mode` / `attempted_slice_id` / `confirmed_slice_ids` / `eligible_test_ids` / `pending_test_ids`）。**不以「测试仍然通过」作为零漂移证据**——那只能说明没有明显破坏，不能说明结论逐字相同 |
-
-### 追溯与覆盖
-
-- AC-SLICETX-11 verify 消费判据与前沿零漂移：UT-S13-67。
-- 场景：S13 写入权转移后 verify 消费零漂移；功能规格：§2.53.8；架构：§四十三.1。

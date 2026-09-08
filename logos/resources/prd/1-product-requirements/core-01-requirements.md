@@ -2347,105 +2347,6 @@ mysql        ✗ mysql SQL parser/隔离执行适配器不可用；拒绝用 SQL
 - 测试：UT-S39-59～UT-S39-64、ST-S39-28、UT-S35-132～UT-S35-133、ST-S35-25。
 - 部署后 smoke：SMOKE-core-174。
 
-## 测试切片事务权威集中化要求
-
-### 用户问题与价值
-
-`TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `## [code]` 段是 OpenLogos 判定切片验收前沿的两个 canonical 产物，但**它们的实际写入者是 Agent**。
-
-实证：
-
-```
-writeTestSliceManifestAtomic  →  cli/src/ 中调用方 0 处
-extractChangedTestIds         →  cli/src/ 中调用方 0 处
-```
-
-原子写入器早已导出并可用，却没有任何命令把它接出来——本仓自身最近数个提案的 manifest 均由 Agent 以 `node -e` 手工调用该函数生成。判定权在 OpenLogos，写入权在 Agent。
-
-两个产物的原子一致性目前**只由纪律维持**：`skills/slice-planner/SKILL.md` 写明「`[code]` 与 manifest 必须在同一轮规划中共同收敛，任一无效均不得报告完成」，并把交付前的 `change-lint` 升格为「机器硬门」——但该硬门由**被检查者自己**运行。
-
-后果已在本仓真实发生：`[code]` 任务文本调整导致 `task_fingerprint` 与实际内容失配，只因当时尚未记录 checkpoint 才得以手工重算；若已记录，即落入 stale 恢复态，而恢复过程的事实源又不在 OpenLogos。
-
-`cli/src/commands/next.ts:115` 的 `manifestRecoveryNode()` 能识别三种失效态并发出恢复节点，但它只返回 `NextNode`——**只能建议，不能执行**。
-
-### 核心需求
-
-1. **写入权与判定权同源**：`TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `[code]` 段由 OpenLogos 写出；Agent 只能向事务的 content slot 提交内容。
-2. **原子性由构造保证**：两个产物在同一事务的 apply 中原子写出，任一失败整体回滚，不得留下半写态。
-3. **指纹自算**：`task_fingerprint` 由 OpenLogos 依其自己写出的 `tasks.md` 计算，不接受外部提供——从构造上消除失配窗口。
-4. **公共合同对外可锚**：发布 `openlogos/test-slice-transaction@1`，成功 envelope 公开 `schema_sha256` 与 `contract_sha256`，供跨仓消费方精确匹配。
-5. **恢复由 OpenLogos 判定并执行**：依 `deriveSliceVerificationState()` 自身结论创建 `origin=manifest-recovery` 事务，消费方不再自判是否恢复、不再自算可写作用域。
-6. **沿用既有状态机**：phase 集合与动作语义与 `openlogos/merge-transaction@1` 一致，复用其目录解析与归档只读判据，不新建第二套。
-7. **归档只读**：归档提案仅放行 `status`，写动作被拒且无副作用。
-8. **缺事务即 fail closed**：不存在「缺事务投影时回落到 Agent 直接写产物」的分支。
-9. 修复以新的本地 patch candidate `0.14.11` 交付，当前本机全局 `0.14.10` 是冻结回滚基线。
-
-### 验收条件
-
-| ID | 验收条件 |
-|---|---|
-| AC-SLICETX-01 | 发布 `openlogos/test-slice-transaction@1`，schema 与 `contract_hash` 固定；成功 envelope 公开 `schema_sha256` 与 `contract_sha256` |
-| AC-SLICETX-02 | 命令面提供 `status/submit-content/seal/apply/recover/abort`；`status` 为纯读取，其余为显式写动作 |
-| AC-SLICETX-03 | 两个 content slot（`slot_codesection`、`slot_slices`）全部 submitted 后事务进入 `ready`；`seal` 冻结内容并产出 `seal_sha256` |
-| AC-SLICETX-04 | `apply` 在同一事务中原子写出 `tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json`；任一失败整体回滚，两产物同时存在或同时不存在 |
-| AC-SLICETX-05 | `apply` 对 `tasks.md` 只替换 `[code]` 整节；`[delta]` / `[deploy]` 段与其既有 checkbox 状态字节恒等 |
-| AC-SLICETX-06 | `task_fingerprint` 由 OpenLogos 依其自写的 `tasks.md` 计算；事务不接受外部提供的指纹 |
-| AC-SLICETX-07 | `origin` 取 `initial-plan \| manifest-recovery`；恢复事务由 `deriveSliceVerificationState()` 的三种失效态创建，`content_slots.required` 收窄为仅 `slot_slices`，且 `[code]` 段字节恒等 |
-| AC-SLICETX-08 | `next` 的恢复路径返回事务投影而非仅建议节点；无失效态时不创建事务 |
-| AC-SLICETX-09 | 归档提案仅放行 `status`；任何写动作被拒且不产生副作用 |
-| AC-SLICETX-10 | 不存在 Agent 直接写两产物的可用路径；缺事务投影时结构化 fail closed，无半写态、无回退旧链分支 |
-| AC-SLICETX-11 | verify 对 manifest 的消费判据与 slice-checkpoint 前沿不因写入权转移而改变（零漂移） |
-| AC-SLICETX-12 | 固定 `0.14.11` tarball 完成隔离安装与本机全局安装态验证，`0.14.10→0.14.11→0.14.10` 往返后各 identity 与 tarball SHA-256 一致 |
-
-### 授权与非目标
-
-- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
-- **不改** `openlogos/test-slice-manifest@1` 产物 schema 本身——只改谁写它。
-- **不改**六维打分、垂直/横向判别器与删后续证伪门的切片算法；那是 slice-planner 的判断力，本次只改产物落盘路径。
-- **不改** `SLICE_CHECKPOINTS.jsonl` 与 verify 的分层执行；**不改** `SLICES_APPROVED` 与 `slice-exit` 的人类确认点语义。
-- **不做**宿主（RunLogos）侧改造——那是跨仓方案的阶段 B，由该仓独立提案消费本次固定 candidate 与 `contract_hash`。
-- 历史归档提案内的 `TEST_SLICE_MANIFEST.json` 保持原样，不重写、不迁移。
-
-### 追溯
-
-- 场景：S32 切片规划、S28 next 节点、S09 变更生命周期、S13 验收结果、S19 部署后冒烟门。
-- 测试：UT-S32-52～58、ST-S32-18～19、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34。
-- 部署后 smoke：SMOKE-core-175。
-
-## 切片事务终态自校验与恢复入口可达要求
-
-
-来源：RunLogos 现场 bug report（`logos/resources/reference/openlogos-slice-transaction-completed-invalid-manifest-deadlock-bug-report.md`，现场事务 `stx_15d02a01933b438d9c45a70e`）。0.14.11 的切片事务能原子写出**业务上非法**的产物并宣告 `completed`，随后自家判定器把这份产物判为 `invalid`；而 `completed` 事务又占住「单活跃事务」名额，使恢复事务永远创建不出来。两者叠加，`plan-slices` 前沿被永久锁死，没有任何 CLI 动作可以脱困。
-
-### 核心需求
-
-1. **终态必须经自身判定器复核**：`apply` 在写盘之后、置 `completed` 之前，必须用本仓既有的 `deriveSliceVerificationState()` 复核刚写出的两个产物；判 `valid` 才可 `completed`。
-2. **判非法即整体回滚**：复核判 `invalid` / `stale` 时，复用与写盘异常完全相同的回滚路径，`tasks.md` 与 manifest 同时恢复到 `apply` 前字节，事务转 `failed`、`classification=recovery_required`。
-3. **violations 保真**：失败投影原样带出 validator 的 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要。
-4. **不新建第二套 validator**：复核必须复用既有判定器；「一个只被定义、没有调用方的复核函数」等同于该约束不存在。
-5. **「活跃事务」只含非终态**：`completed` / `failed` 不占用活跃名额，视为可归档历史；终态事务在场时仍可按 canonical 判定另起 `origin=manifest-recovery` 事务。
-6. **恢复入口可达是合同的一部分**：只要判定为可自动恢复且 `human_action_required=false`，就必须存在可创建的恢复事务；无法创建时须给出结构化诊断，不得返回不接受任何动作的事务投影充数。
-7. **禁止以人工删除事务文件作为恢复手段**：`TEST_SLICE_TRANSACTION.json` 由 OpenLogos 拥有；任何文档、Skill 或**测试夹具**都不得把「先删除该文件」写进恢复前提。
-8. **投影与事实一致**：终态事务不得被渲染成恢复事务；`allowed_actions` 为空的事务不得被提示「提交内容后 seal、apply」；拒绝文案不得断言未发生的前提。
-9. 修复以新的本地 patch candidate `0.14.12` 交付，当前本机全局 `0.14.11` 是冻结回滚基线。
-
-### 验收条件
-
-| ID | 验收条件 |
-|---|---|
-| AC-SLICEFIX-01 | `apply` 写盘后、置 `completed` 前调用既有 `deriveSliceVerificationState()` 复核；判 `valid` 才 `completed` 并出具 receipt |
-| AC-SLICEFIX-02 | 提交结构合法但**业务非法**的 slot（`spec_targets` 指向非测试规格文档、`task_text` 与 `[code]` 行不一致）后 `apply` 整体回滚：两产物同时恢复到 apply 前字节，`phase=failed`、`classification=recovery_required` |
-| AC-SLICEFIX-03 | 失败投影原样带出 validator 的全部 violations（含 `code` / `path` / `message` / `fix_hint`），可定位到具体的 `spec_targets` 或 `task_text` |
-| AC-SLICEFIX-04 | 修正 slot 内容后重新提交并 `apply`，事务可正常抵达 `completed` 且 manifest 判 `valid` |
-| AC-SLICEFIX-05 | 「已存在活跃事务」的判定只认非终态；`completed` / `failed` 在场时仍可创建 `origin=manifest-recovery` 事务，其 `content_slots.required` 收窄为 1、`[code]` 段字节恒等 |
-| AC-SLICEFIX-06 | 终态事务在场且 manifest 被判 missing / invalid / stale（`human_action_required=false`）时，`next` 返回**恢复事务**投影，`origin=manifest-recovery` |
-| AC-SLICEFIX-07 | 终态事务下 `next` 的 detail 不得把 `initial-plan` 讲成恢复事务、不得对 `allowed_actions=[]` 提示「提交内容后 seal、apply」、不得把缺口渲染为「（无缺口）」 |
-| AC-SLICEFIX-08 | `recover` 的拒绝文案不得断言「apply 失败已整体回滚」这一在 apply 成功现场不成立的前提 |
-| AC-SLICEFIX-09 | 恢复类用例的夹具不得预先删除 `TEST_SLICE_TRANSACTION.json`；必须在终态事务**在场**的前提下断言恢复可用 |
-| AC-SLICEFIX-10 | 既有 `SMOKE-core-175` 的 initial-plan 全链、写盘失败回滚、`[code]` 冻结与归档只读断言全部保持通过（零回归） |
-| AC-SLICEFIX-11 | 新增公开 CLI 级 smoke 全程穿过 `openlogos slice transaction`，不以库级调用作为闭环证据；打到固定 `0.14.11` 上必须失败 |
-| AC-SLICEFIX-12 | 固定 `0.14.12` tarball 完成隔离安装与本机全局安装态验证，`0.14.11→0.14.12→0.14.11` 往返后各 identity 与 tarball SHA-256 一致 |
-
 ## 并发只读命令可用性与读锁 reader 竞争假阳性修复
 
 来源：RunLogos 现场 bug report（runlogos 仓 `logos/resources/reference/runlogos-cli-panel-transient-status-error-wipes-active-change-bug-report.md` 附录 A，2026-09-03，P1）。0.14.12 及之前版本中，`withBaselineReadLock` / `withRecoveredReadLocks` / `readGate` 三个**读路径**入口取的是模块级排他锁（`<module>.commit.lock`），且锁获取对「活进程持锁」立即失败、零等待零重试。两个纯只读命令互相触发 `baseline_commit_in_progress` 假阳性：现场 8 个并发 `openlogos status --format json`（无任何 writer、无未终结 journal）7 个非零退出；本仓 2026-09-03 在 0.14.12 上原样复现（8 并发 7 失败）。`status` 单次执行含多个读锁区间，碰撞窗口成倍放大；一个基线字段派生失败即导致整条 status 不可读。
@@ -2471,64 +2372,6 @@ extractChangedTestIds         →  cli/src/ 中调用方 0 处
 | AC-READLOCK-06 | 不可恢复 journal 场景下（前滚与回滚均失败），读者即使经重试取到锁仍硬报 `baseline_commit_in_progress`，标准资源读取哨兵为 0（硬门零回退） |
 | AC-READLOCK-07 | 版本身份提升为 `0.14.13`，`0.14.12` 冻结为回滚基线；隔离矩阵与本机全局部署完成后各 identity 一致 |
 | AC-READLOCK-08 | 安装态并发 smoke（SMOKE-core-177）在 `0.14.13` 全过；同一断言打到固定 `0.14.12` 上必须复现并发假阳性（零回归对照，防断言空转） |
-
-## 切片事务终态守门区分判定器不适用与判定为非法
-
-来源：RunLogos 现场 bug report（本仓 reference 目录同名副本 `logos/resources/reference/openlogos-slice-transaction-single-slice-apply-blocked-bug-report.md`，2026-09-04，High）。0.14.12 引入的 apply 终态自校验（AC-SLICEFIX-01～04，能力本身工作正常）把守门判据写成 `verdict.status !== 'valid'`，将「判定器给出负面结论」与「判定器按设计不适用」（单切片计划下 `shouldUseSliceVerification()` 恒为假、判定器返回 `null`）合并成同一失败分支。于是**所有单切片提案的 apply 必然整体回滚**，错误信息「判为 unknown，已整体回滚：0 条违规」——0 条违规正是判定器根本没运行的特征。单切片恰是 slice-planner 方法论下最常见的合规形态（六维 0–7 分单切；≥8 分不可拆的逃生口显式单切）。0.14.13 原样复现（该版修的是 readlock 争用，与本缺陷无关）；本仓上一提案亦被迫拆 2 片绕过（事务 stx_581a5b4af4c5417e871b0f51 首次 apply 留痕）。
-
-### 核心需求
-
-1. **终态守门只对负面结论回滚**：`apply` 写盘后的自校验，仅在判定器实际给出负面结论（`invalid` / `stale` / `unsupported`）时整体回滚置 `failed`；判定器按设计不适用（`null`）与判 `valid` 同样放行进入 `completed`。
-2. **不适用与 valid 显式区分**：`null` 不得被无差别当作 `valid` 处理——放行分支必须显式区分「判为合法」与「按设计不适用」两种来源，未来新增的 `null` 来源不得被静默放行掩盖。
-3. **单切片计划可经事务写出 `[code]`**：一条标注真实测试 ID 的单切片计划走完整事务（submit-content ×2 → seal → apply）必须抵达 `completed`，`tasks.md` 的 `[code]` 段正确写出，manifest 作为惰性产物落盘无害。
-4. **既有能力零回归**：两切片及以上计划的 apply 行为逐项不变；业务非法 slot（`spec_targets` 含非测试规格路径、`task_text` 与 `[code]` 不一致）仍整体回滚、无半写态、violations 保真、`phase=failed`；终态事务不堵恢复（0.14.12 能力不回退）。
-5. **错误文案如实**：失败文案不再出现 `unknown`；「失败终态」与「0 条违规」的组合不得再出现——回滚必然伴随非零违规。
-6. **公共合同零改动**：`openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约不变；仅 `completed` 达成条件由「判定器判 valid」放宽为「判定器未给出负面结论」，属解除误拒的兼容放宽，消费方无需适配。
-7. 修复以新的本地 patch candidate `0.14.14` 交付，当前本机全局 `0.14.13` 是冻结回滚基线。
-
-### 验收条件
-
-| ID | 验收条件 |
-|---|---|
-| AC-VERDICT-01 | 单切片计划（一条标注真实测试 ID 的 `[code]` 切片）走完整事务后 `apply` 达 `completed`，`tasks.md` 的 `[code]` 段正确写出、receipt 出具 |
-| AC-VERDICT-02 | 三种判定结果去向矩阵成立：不适用（`null`）→ `completed`；`valid` → `completed`；`invalid` / `stale` / `unsupported` → 复用既有那一条回滚路径整体回滚，`phase=failed`、`classification=recovery_required` |
-| AC-VERDICT-03 | 两切片及以上计划的 apply 行为逐项不变；业务非法 slot 仍整体回滚、无半写态、violations 原样保真（`code`/`path`/`message`/`fix_hint`） |
-| AC-VERDICT-04 | 终态事务在场时恢复事务仍可创建（`origin=manifest-recovery`、`required=1`、`[code]` 冻结）——0.14.12 能力不回退 |
-| AC-VERDICT-05 | 失败文案不出现 `unknown`；「失败终态 + 0 条违规」组合不再可能出现 |
-| AC-VERDICT-06 | 单切片安装态 smoke（SMOKE-core-178）在 `0.14.14` 全过；同一断言打到固定 `0.14.13` 上 apply 必须失败（零回归对照，防断言空转） |
-| AC-VERDICT-07 | 版本身份提升为 `0.14.14`，`0.14.13` 冻结为回滚基线；全量 `openlogos verify` PASS，新增用例逐 ID 写入 reporter |
-
-## 已完成切片规划的受控重划
-
-来源：RunLogos 现场 bug report（本仓 reference 目录同名副本 `logos/resources/reference/openlogos-slice-transaction-completed-plan-cannot-replan-bug-report.md`，2026-09-04，High）。`origin=initial-plan` 的切片事务 apply 成功后 `phase=completed`、`allowed_actions=[]`，切片划分被永久冻结；manifest 完全有效时 manifest-recovery 回边不触发。而「实现阶段才发现切错」是 slice-planner 最常见的失败模式——六维打分的不确定性一维（1=一个待验证假设，2=多个未知点）本就承认规划可能建立在待验证假设上；承认不确定性却不给假设被证伪后的修正通道，互相矛盾。现场（RunLogos `fix-canonical-ledger-id-discipline`）三条出路全被封死：将错就错通不过该片 owned 验收；手工改 `[code]` 段违反事务产物权威；手工删事务文件已被上一份 bug report 列为不接受的闭环证据。0.14.14 活复现（单切片 completed 后 submit-content/abort 均被拒）。
-
-### 核心需求
-
-1. **受控重开路径**：为 `phase=completed` 的切片事务提供重开动作（`reopen`）——作废当前规划、留痕、重建 `origin=initial-plan` 的 `collecting` 事务（`required=2`），供 slice-planner 提交新划分后经既有 seal/apply 完成重划。
-2. **批准状态分流**：`SLICES_APPROVED` 不在场时可自由重开（切片尚未被人类确认，重划不损失承诺）；在场时必须显式确认参数，确认重开即作废既有 `SLICES_APPROVED`（旧批准不得覆盖新划分），未确认则拒绝并给出可执行指引。
-3. **强制留痕**：每次重开向提案目录 `SLICE_REPLANS.jsonl` 追加一条审计记录（`schema: openlogos/slice-replan@1`，含旧 `transaction_id`、重开时刻、非空原因、重开时 `SLICES_APPROVED` 是否在场、是否经显式确认）；留痕 append-only，不得改写历史行。
-4. **产物整体替换**：重开后 `tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json` 保持旧值，直到新划分的 apply 在同一事务中整体替换两产物——任何时刻不得出现半新半旧。
-5. **旧证据作废**：重划后旧 `SLICE_CHECKPOINTS` 因 `manifest_sha256` 失配而不被采信，verify 只认与当前 manifest 匹配的 checkpoint——旧 PASS 不得冒充新划分的收敛证据。
-6. **旧事务不销毁**：重开把旧终态事务归档（`slice-transactions/<id>.json`，复用既有归档语义），receipt 与产物哈希可审计。
-7. **fail-closed**：事务文件不可读、`SLICES_APPROVED` 状态不可判定、已批准未确认三种情形一律拒绝重开，不得半开。
-8. **与 manifest-recovery 分工**：重划回边（规划需重做）与恢复回边（manifest 失效）准入、产物处置、留痕各不相同，不得互相顶替；未执行重开时 `completed` 行为与 0.14.14 逐项一致。
-9. **入口可发现**：切片已规划但未批准时，`next` 除实现入口外同时给出重划入口；已批准后不再主动提示。
-10. 修复以本地 patch candidate `0.14.15` 交付，当前本机全局 `0.14.14` 是冻结回滚基线；公共合同 schema、字段与 slot 契约零变化，仅扩充终态 `allowed_actions` 域。
-
-### 验收条件
-
-| ID | 验收条件 |
-|---|---|
-| AC-REPLAN-01 | `SLICES_APPROVED` 不在场时，`completed` 事务经 `reopen` 进入 `collecting`（`origin=initial-plan`、`required=2`），提交不同划分后 seal/apply 达 `completed` |
-| AC-REPLAN-02 | 重开后新划分对 `[code]` 段与 manifest 整体替换，无旧划分残留；apply 前两产物保持旧值（无半新半旧窗口） |
-| AC-REPLAN-03 | `SLICE_REPLANS.jsonl` 留痕含旧 `transaction_id`、时刻、非空原因、批准在场标记与确认标记；append-only |
-| AC-REPLAN-04 | `SLICES_APPROVED` 在场时未附显式确认参数 → 拒绝并给出可执行指引；附确认参数 → 重开成功且该 marker 被作废 |
-| AC-REPLAN-05 | 事务文件不可读或 marker 状态不可判定时 fail-closed 拒绝重开，无任何写副作用 |
-| AC-REPLAN-06 | 重划后旧 checkpoint 因 `manifest_sha256` 失配不被 verify 采信；旧终态事务归档在 `slice-transactions/` 可审计 |
-| AC-REPLAN-07 | `next` 在切片已规划未批准时给出重划入口；已批准后不提示；未执行 `reopen` 时 `completed` 行为与 0.14.14 逐项一致 |
-| AC-REPLAN-08 | 0.14.12 恢复回边与 0.14.14 单切片 apply 均不回退 |
-| AC-REPLAN-09 | `SMOKE-core-179` 安装态通过；零回归对照打到固定 `0.14.14` 上 `reopen` 必须被拒且锁死现场复现 |
-| AC-REPLAN-10 | 版本身份提升 `0.14.15`，`0.14.14` 冻结为回滚基线；全量 `openlogos verify` PASS，新增用例逐 ID 写入 reporter |
 
 ## 勘误提案的 deployment/smoke 散文订正通道
 
@@ -3027,3 +2870,36 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 ### 非目标
 
 - 除生命周期 fail-closed 与状态对账修复外零新增语义；不执行 npm publish、Git tag、GitHub Release、官网发布或 git push。
+
+## 切片规划单条受控写入口要求
+
+### 用户价值
+
+切片事务把「写一次切片规划」拆成 `submit-content`（×2 slot）→ `seal` → `apply` 共 6 次 CLI 往返，每次都是失败机会；实测某提案 apply 曾因 `task_text` 与 `[code]` 条目非逐字一致而拒绝，该拒绝不保护任何用户可感知价值——实际写入方只有一个顺序执行的 AI，且 `tasks.md` 与 manifest 均受 git 跟踪。同时，**切片规划的结构化产物不得改由 AI 自行写入**：流程判断必须使用结构化数据，若把 `owned_test_ids` 改从 `tasks.md` 散文解析，实测会把正文中「被提及」而非「被拥有」的测试 ID 一并算入，使验收 eligible 集合多算并以缺结果误红。
+
+### 验收条件
+
+#### S32 切片规划
+
+- **GIVEN** 活跃提案处于 ready-to-implement 且 `[code]` 未填
+- **WHEN** 执行 `openlogos slice plan --file <slices.json>`（`slices.json` 含 `slice_id` / `owned_test_ids` / `runner_selectors` / `spec_targets`）
+- **THEN** 命令一次性完成：校验结构化输入 → 写 `tasks.md` 的 `[code]` 段 → 写 `TEST_SLICE_MANIFEST.json` → 依**刚写出的** `tasks.md` 自算 `task_fingerprint`；全过程一次 CLI 往返，无 slot、无 staging、无 seal、无 receipt
+- **AND** 结构化产物的生成权在 CLI，不由 AI 直接写入 manifest
+- **AND** 重复执行幂等：同一 `slices.json` 重跑得到同一 `[code]` 与同一 manifest
+
+#### S32 校验失败零副作用
+
+- **GIVEN** `slices.json` 结构非法（缺字段、`slice_id` 重复、`owned_test_ids` 含未定义 ID）
+- **WHEN** 执行 `openlogos slice plan`
+- **THEN** 非零退出并报稳定错误码，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均不被修改
+
+### 保留不变（零回归边界）
+
+- `verify` 的 `slice-checkpoint` 增量验收（收窄验收分母与实际执行）逐项不变——「每个切片实现后能单独通过验收」是产品能力，不随事务删除。
+- `TEST_SLICE_MANIFEST.json`、`SLICE_CHECKPOINTS.jsonl` 作为结构化事实源保留。
+- `slice_state` / `code_slices_green` / `slice-exit` 切片循环能力保留。
+- `task_fingerprint` / `spec_fingerprint` 保留，其 stale 判定由阻塞降级为警告。
+
+### 非目标
+
+- 不触及合并事务（`merge transaction` 命令族）与 `openlogos merge`——归后续提案。

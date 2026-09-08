@@ -3018,193 +3018,6 @@ baseline-seed 定义了四个 kind（`system-map`、`scenario-candidates`、`dep
 - 安装态：SMOKE-core-174。
 - 需求：AC-SQLGATE-01～09；场景：S35、S39；架构：§四十二。
 
-## 2.53 测试切片事务
-
-### 2.53.1 功能目标与职责边界
-
-把 `TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `## [code]` 段从「Agent 直接写出的文件」变为「OpenLogos 事务的产物」。Agent 的职责收窄为**向 content slot 提交内容**；正式产物、receipt 与 marker 一律由 OpenLogos 写入。
-
-本功能**不改**产物 schema、不改切片算法、不改 verify 的分层执行、不改人工门语义。只改一件事：**谁写。**
-
-### 2.53.2 为什么必须是事务而非「让 Agent 写得更小心」
-
-两个产物之间存在硬性一致性约束：manifest 的 `task_fingerprint` 是对 `tasks.md` 的 `[code]` 段求得的指纹。二者由同一个 Agent 分两次写出时，中间存在一个漂移窗口——先写其一、后写其二，或写完 A 后又调整 A 的文本。
-
-现行规格已经要求二者「在同一轮规划中共同收敛」，并把交付前的 `change-lint` 设为硬门。但该硬门由**被检查者自己**运行：Agent 既是生产者又是检查者，检查通过与否取决于它是否真的跑了、跑在了哪个时刻。
-
-**纪律能表达要求，不能提供保证。** 事务提供的是构造保证：两个产物在同一次 apply 中写出，任一失败整体回滚。
-
-### 2.53.3 phase 与命令面
-
-phase 集合与 `openlogos/merge-transaction@1` 完全一致，不另发明状态机：
-
-```
-collecting → ready → sealed → applying → completed
-                                       ↘ failed
-```
-
-| 命令 | 性质 | 说明 |
-|---|---|---|
-| `slice transaction status` | 只读 | 任何阶段可调用，含归档提案 |
-| `slice transaction submit-content --slot <id> --file <path>` | 写 | Agent 唯一可用的写动作 |
-| `slice transaction seal` | 写 | 冻结内容并产出 `seal_sha256` |
-| `slice transaction apply` | 写 | 原子写出两产物、产出 receipt |
-| `slice transaction recover` | 写 | 从中断态恢复到可继续的 phase |
-| `slice transaction abort` | 写 | 显式终止，清理暂存 |
-
-**Agent 只能 `submit-content`**；`[code]` 段、manifest、receipt 与 marker 一律由 OpenLogos 写入。
-
-### 2.53.4 content slot 划分
-
-| slot id | 内容 | 生产者 |
-|---|---|---|
-| `slot_codesection` | `[code]` 切片清单：每片的 `task_text`，以及六维打分与删后续证伪门的逐片结论 | slice-planner Agent |
-| `slot_slices` | 每片的 `slice_id`、`owned_test_ids`、`runner_selectors`、`spec_targets` | slice-planner Agent |
-
-两个 slot 全部 submitted → `ready`；`seal` 冻结；`apply` 原子写出。
-
-**为何拆成两个 slot 而非一个**：它们的生产判据不同——前者是切片划分的**理由**（打分与证伪结论，供人审阅），后者是切片的**机器归属**（ID 集合，供 verify 消费）。分开提交使两类内容各自可校验，也使恢复事务能够只收窄后者。
-
-### 2.53.5 apply 的原子性与守恒
-
-
-`apply` 在同一事务中完成两件写入，任一失败整体回滚：
-
-1. `tasks.md` 的 `[code]` **整节替换**——`[delta]` / `[deploy]` 段及其既有 checkbox 状态字节恒等；
-2. `TEST_SLICE_MANIFEST.json` 原子写出（复用既有 `writeTestSliceManifestAtomic`）。
-
-**不存在半写态**：两产物同时存在或同时不存在。中途失败时，已写部分回滚，事务转 `failed` 并保留可归因诊断。
-
-`task_fingerprint` 由 OpenLogos 在 apply 时**依其自己刚写出的 `tasks.md` 计算**，不接受外部提供。这从构造上消除了 §2.53.2 描述的漂移窗口——写入者与指纹计算者是同一方，在同一时刻。
-
-#### 2.53.5.1 终态自校验：completed 当且仅当产物判 valid
-
-原子写入只保证两个产物**同生共死**，不保证它们**合法**。事务完全可以原子地写出一对互相一致、但业务上非法的产物，然后宣告成功——这正是 0.14.11 的实际行为。
-
-因此 `apply` 在写盘完成之后、置 `phase=completed` 之前，必须用既有的 `deriveSliceVerificationState()` 复核刚写出的产物：
-
-```
-apply
- ├ ① tasks.md 的 [code] 整节替换（origin=initial-plan 时）
- ├ ② manifest 原子写出（task_fingerprint 依 ① 的结果自算）
- ├ ③ 自校验 deriveSliceVerificationState()
- ├── valid            → phase=completed，出具 receipt
- └── invalid / stale  → 整体回滚 → phase=failed
-                        classification=recovery_required
-                        violations 原样进投影
-```
-
-三条硬性要求：
-
-- **回滚路径唯一。** ③ 判非法时走的是 ①② 写盘异常完全相同的那一条回滚，不另写一份。「产出不合法」与「写盘异常」在消费方看来是同一种失败，只需一套语义：修正 slot 内容后重新提交。
-- **violations 保真。** 失败投影原样带出 validator 的 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要——消费方要靠它定位到底是哪个 `spec_targets` 或哪个 `task_text` 不合格。
-- **不新建第二套 validator。** 复核复用 §8 判定器。判定权与写入权本就在同一进程内（§2.53.1），若提交终态前不互相对账，判定方只能事后发现、无法事前阻止。
-
-> **一个只被定义、没有调用方的复核函数，等于没有这条约束。** 0.14.11 中 `verifyAppliedManifest()` 已存在且注释写明用途，全仓调用方却为 0——代码审查看到函数在场以为约束成立，测试不覆盖它是因为它根本不在主路径上。
-
-### 2.53.6 两种 origin
-
-
-| origin | 触发 | `content_slots.required` | `[code]` 段 |
-|---|---|---|---|
-| `initial-plan` | 首次切片规划 | `slot_codesection` + `slot_slices` | 由本事务写出 |
-| `manifest-recovery` | `deriveSliceVerificationState()` 判定 missing / invalid / stale | 仅 `slot_slices` | **冻结，拒绝改写** |
-
-恢复事务由 OpenLogos 依自身判定结论创建——消费方不再判断「这是不是一次恢复」，也不再自行推导可写作用域，两者都从事务投影读出。
-
-恢复时 `[code]` 段字节恒等是硬约束：切片划分本身没有问题，问题只在 manifest 失效；改写 `[code]` 会把一次修复变成一次重新规划。
-
-#### 2.53.6.1 「已存在活跃事务」只含非终态
-
-同一提案同时至多一个**活跃**切片事务。「活跃」的判定只认非终态：
-
-| phase | 占用活跃名额 |
-|---|---|
-| `collecting` / `ready` / `sealed` / `applying` | 是 |
-| `completed` / `failed` | **否**——可归档历史 |
-
-终态事务在场时，仍必须按当前 canonical 判定另起恢复事务。把终态计入「已存在」会让恢复入口永久短路：`completed` 的 `allowed_actions` 为空，`submit-content` 与 `abort` 全被拒、`recover` 不开放，而恢复事务又创建不出来——提案永久锁死在 `plan-slices`，且唯一脱困手段变成人工删除 OpenLogos 拥有的事务文件，与 §2.53.1 的写入权归属直接冲突。
-
-**恢复入口的可达性是合同的一部分**：只要判定为可自动恢复且 `human_action_required=false`，就必须存在一个可创建的恢复事务。无法创建时给出结构化诊断说明原因，**不得返回一个不接受任何动作的事务投影充数**。
-
-#### 2.53.6.2 投影必须与事实一致
-
-终态事务下的 `next` 与错误文案受以下约束：
-
-| 禁止 | 现象 |
-|---|---|
-| 把 `origin=initial-plan` 的事务渲染为恢复事务 | 用户以为在恢复，实际在看一个已完结的规划事务 |
-| 对 `allowed_actions=[]` 的事务提示「提交内容后 seal、apply」 | 用户照做，每个动作都被拒 |
-| 把空缺口渲染为「（无缺口）」并同时说「已就绪」 | 两个描述互相矛盾，用户无从判断该做什么 |
-| 拒绝文案断言未发生的前提 | `recover` 说「apply 失败已整体回滚」，而现场 apply 是**成功**的 |
-
-投影与拒绝文案必须由事务的真实 `phase` / `origin` / `allowed_actions` 推出，不得复用另一分支的模板文案。
-
-### 2.53.7 公共合同与跨仓锚点
-
-成功 envelope 必须公开 `schema_sha256` 与 `contract_sha256`。跨仓消费方以精确匹配消费，**缺失投影一律 fail closed，不得保留任何回退旧链的分支**。
-
-投影形状：
-
-```json
-{
-  "schema": "openlogos/test-slice-transaction@1",
-  "transaction_id": "stx_...",
-  "slug": "...", "module": "core",
-  "phase": "collecting",
-  "origin": "initial-plan",
-  "allowed_actions": ["submit_content", "abort"],
-  "next_action": "submit_content",
-  "content_slots": { "required": 2, "submitted": 0, "missing_slot_ids": ["slot_codesection", "slot_slices"] },
-  "spec_fingerprint": "sha256:...",
-  "changed_test_ids_sha256": "sha256:...",
-  "violations": [],
-  "receipt": null
-}
-```
-
-### 2.53.8 与既有能力的复用边界
-
-**不新建第二套判据**：
-
-| 复用 | 来源 |
-|---|---|
-| manifest 合法性判定 | `deriveSliceVerificationState()` |
-| 原子写 manifest | `writeTestSliceManifestAtomic()` |
-| 任务与规格指纹 | `computeTaskFingerprint()` / `computeSpecFingerprint()` |
-| 变更 ID 集合 | `extractChangedTestIds()` |
-| 目录解析与归档只读判据 | merge 事务的 `resolveIdentity()` 与只读动作白名单 |
-
-后两项此前是**零调用方的导出**——本功能正是把它们接出来，而非重新实现。
-
-### 2.53.9 归档与失败边界
-
-
-归档提案仅放行 `status`：`submit-content` / `seal` / `apply` / `recover` / `abort` 五个写动作一律被拒，且拒绝路径零副作用（拦截发生在任何动作执行之前）。
-
-失败边界：
-
-| 情形 | 终态 | 产物 |
-|---|---|---|
-| 写盘异常 | `failed`，`classification=recovery_required` | 整体回滚 |
-| 产出非法（自校验判 `invalid` / `stale`） | `failed`，`classification=recovery_required` | 整体回滚（同一路径） |
-| 用户主动 `abort` | `aborted` 语义的终态 | 不写产物 |
-
-终态事务不阻断后续恢复（§2.53.6.1）。`recover` 的语义与开放范围以事务真实状态为准，其拒绝文案不得预设某种失败原因。
-
-### 2.53.10 兼容、失败与发布边界
-
-- 既有已完成提案不受影响；本功能只改变此后新提案的产物落盘路径。
-- package / plugin / asset identity 统一提升为本地 candidate `0.14.11`；全局 `0.14.10` 作为固定回滚制品。
-- 不执行 npm publish、dist-tag、Git tag、GitHub Release、官网发布或 git push。
-
-### 2.53.11 验收与追溯
-
-- UT：UT-S32-52～58、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34。
-- ST：ST-S32-18～19。
-- 安装态：SMOKE-core-175。
-- 需求：AC-SLICETX-01～12；场景：S09、S13、S19、S28、S32；架构：§四十三。
-
 ## 2.54 机器读取命令的并发语义与读锁有界重试
 
 ### 功能目标
@@ -3244,121 +3057,6 @@ apply
 
 - AC-READLOCK-01～08（见需求文档「并发只读命令可用性与读锁 reader 竞争假阳性修复」）。
 - 测试：UT-S33-56～UT-S33-60、ST-S33-10、UT-S11-78～UT-S11-79、ST-S11-45、UT-S20-41～UT-S20-42；安装态：SMOKE-core-177。
-
-## 2.55 切片事务终态判定的三分支语义
-
-### 功能目标
-
-把 apply 终态守门从「判定器判 `valid` 才放行」修正为「判定器未给出负面结论即放行」，显式区分三种判定结果的事务去向与错误呈现，解除单切片提案被守门误拒的阻断；0.14.12 引入的自校验拦截能力（业务非法产物不得进入 `completed`）逐项保留。
-
-### 2.55.1 三种判定结果与事务去向
-
-`verifyAppliedManifest()` 复核刚写出的两产物后，`status` 有三类取值，各自去向如下：
-
-| 判定结果 | 含义 | 事务去向 |
-|---|---|---|
-| `null`（不适用） | `shouldUseSliceVerification()` 为假——本计划形态按设计不使用切片验证（当前唯一来源：`tasks.length < 2` 的单切片计划） | **放行** → `completed`，出具 receipt；manifest 为惰性产物，保留在盘 |
-| `valid` | 判定器实际运行且判产物合法 | 放行 → `completed`，出具 receipt |
-| `invalid` / `stale` / `unsupported` | 判定器实际运行且给出负面结论 | 复用与写盘异常完全相同的那一条回滚路径**整体回滚**，`phase=failed`、`classification=recovery_required`，violations 原样带出 |
-
-- **`null` 不得被无差别当作 `valid`**：放行分支必须显式区分「按设计不适用」与「判为合法」两种来源（如独立分支或显式适用性前置判断），使未来新增的 `null` 来源不会被静默放行。
-- **复核的适用性是前置条件**：不适用即跳过复核，而非把「没有复核结论」读成失败。
-
-### 2.55.2 错误呈现
-
-- 失败文案只在判定器给出负面结论时出现，必须指明实际结论（`invalid` / `stale` / `unsupported`）；**不得渲染 `unknown`**。
-- 回滚必然伴随非零 violations；「失败终态 + 0 条违规」的组合是缺陷特征（判定器没运行却被判失败），修复后不得再出现。
-- violations 保真要求不变：原样带出 `code` / `path` / `message` / `fix_hint`（§2.53.5.1）。
-
-### 2.55.3 单切片计划的完整语义
-
-- 单切片是 slice-planner 的合规产出形态（六维 0–7 分单切；≥8 分不可拆的逃生口显式单切），`[code]` 与 manifest 仍一律经 `slice transaction apply` 原子写出，不开任何绕过通道。
-- 单切片下切片验证按设计不启用：`owned_test_ids` 的确定性恢复没有意义；manifest 为**惰性产物**——所有消费者统一经 `deriveSliceVerificationState()` 取态（单切片恒 `null`、走 legacy verify 路径），manifest 在盘与否不改变行为。
-- **禁止**以「把单切片拆成两片」满足判定器作为替代方案——那是拿方法论换通过。
-
-### 2.55.4 兼容与合同
-
-- `openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约零变化；仅 `completed` 达成条件由「判定器判 `valid`」放宽为「判定器未给出负面结论」（根规范 §2.2.1 同步修订）。
-- 属解除误拒的兼容放宽：只放行此前被误拒的合法场景，不收紧任何既有行为，下游（RunLogos 等）无需适配、不做 schema 版本跃迁。
-
-### 功能验收
-
-- AC-VERDICT-01～07（见需求文档「切片事务终态守门区分判定器不适用与判定为非法」）。
-- 测试：UT-S32-61～UT-S32-64、ST-S32-21、UT-S19-36；安装态：SMOKE-core-178；回归锚：UT-S32-59～UT-S32-60、ST-S32-20、SMOKE-core-176。
-
-## 2.56 已完成切片规划的受控重划
-
-### 功能目标
-
-为 `phase=completed` 的切片事务补一条受控重开路径（`reopen`），使「manifest 判有效但规划需重做」有合法出口；以批准分流、强制留痕与产物整体替换保住切片「一次划定」的约束力——重开是修正通道，不是随意重划的后门。
-
-### 2.56.1 重开动作与准入
-
-- **命令面**：`openlogos slice transaction reopen --reason "<非空原因>" [--confirm-approved]`。`reopen` 进入 `completed` 事务的 `allowed_actions`（两种 origin 的 completed 均适用）；其余 phase 不接受该动作。
-- **准入矩阵**：
-
-| 前置 | 结果 |
-|---|---|
-| `phase=completed` 且 `SLICES_APPROVED` 不在场 | 允许重开 |
-| `phase=completed` 且 `SLICES_APPROVED` 在场、附 `--confirm-approved` | 允许重开，并**作废**既有 `SLICES_APPROVED`（旧批准不得覆盖新划分，slice-exit 门须对新划分重走） |
-| `phase=completed` 且 `SLICES_APPROVED` 在场、未附确认 | 拒绝，文案给出可执行指引（附 `--confirm-approved` 重试） |
-| `--reason` 缺失或为空白 | 拒绝——留痕必须有非空原因 |
-| 事务文件不可读 / marker 状态不可判定 | fail-closed 拒绝，无任何写副作用 |
-| 其它 phase（collecting/ready/sealed/applying/failed） | `action_not_allowed`，既有出路不变 |
-
-### 2.56.2 重开的产物处置
-
-重开在单一动作内按序完成，任一步失败整体不生效：
-
-1. 向提案目录 `SLICE_REPLANS.jsonl` **追加**留痕（见 2.56.3）；
-2. 把旧终态事务**归档**到 `slice-transactions/<transaction_id>.json`（复用既有终态归档语义，receipt 与产物哈希可审计、不销毁）；
-3. 作废 `SLICES_APPROVED`（仅确认重开路径）；
-4. 新建 `origin=initial-plan` 的 `collecting` 事务（`required=2`：`slot_codesection` + `slot_slices`）。
-
-**`[code]` 段与 `TEST_SLICE_MANIFEST.json` 在重开时保持旧值**——整体替换发生且仅发生在新划分的 apply（既有整节替换 + 原子写 manifest 语义），任何时刻不得半新半旧。重开后未 apply 前，消费者读到的仍是旧规划 + 一个 `collecting` 事务，语义自洽。
-
-### 2.56.3 留痕合同
-
-`SLICE_REPLANS.jsonl`（提案目录内，append-only，每行一条）：
-
-```json
-{"schema":"openlogos/slice-replan@1","old_transaction_id":"stx_…","reopened_at":"<ISO8601>","reason":"<非空原因>","slices_approved_present":false,"confirmed":false}
-```
-
-- `slices_approved_present`：重开时 `SLICES_APPROVED` 是否在场；`confirmed`：是否经 `--confirm-approved`。
-- 历史行不得改写或删除；重复重开各自成行。
-
-### 2.56.4 旧证据作废与 checkpoint 采信
-
-- 重划 apply 后 manifest 的 `sha256` 必然变化；**verify 只采信 `manifest_sha256` 与当前 manifest 一致的 `SLICE_CHECKPOINTS` 行**——旧划分的 PASS checkpoint 自然失效，不得冒充新划分的收敛证据。该采信规则由本节明文化并加回归锚定。
-- 旧事务的 receipt 归档可查，但不参与新划分的任何判定。
-
-### 2.56.5 与 manifest-recovery 的分工
-
-| | 重划回边（本节） | 恢复回边（0.14.12） |
-|---|---|---|
-| 触发 | 规划本身需重做（manifest 可完全有效） | manifest missing / invalid / stale |
-| 准入 | `completed` + 批准分流 + 非空原因 | `deriveSliceVerificationState()` 判定的恢复理由 |
-| 新事务 | `origin=initial-plan`，`required=2` | `origin=manifest-recovery`，`required=1` |
-| `[code]` 段 | 由新 apply **整体替换** | **冻结，拒绝改写** |
-| 留痕 | `SLICE_REPLANS.jsonl` 强制 | 无（划分未变） |
-
-两条回边不得互相顶替：manifest 失效走恢复、规划错误走重划；恢复事务的 completed 同样可被 `reopen`（规划错误与 manifest 曾失效无冲突）。
-
-### 2.56.6 next 的重划入口
-
-- 切片已规划（当前事务 `completed` 且 manifest 与 `[code]` 在盘）且 `SLICES_APPROVED` 不在场：`next` 的 detail 在实现入口之外附一行重划入口（`openlogos slice transaction reopen --reason "<原因>"`）。
-- `SLICES_APPROVED` 在场：不主动提示重划（重开仍可用但需显式确认，入口由拒绝文案给出）。
-
-### 2.56.7 兼容与合同
-
-- `openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约零变化；仅扩充 `completed` 的 `allowed_actions` 域（新值 `reopen`）。已发布 JSON schema 未枚举切片事务动作域，无 schema 校验破坏；消费方经安装态 smoke 与 reference bug report 副本获知新出口。
-- 未执行 `reopen` 时，`completed` 的全部行为与 0.14.14 逐项一致。
-
-### 功能验收
-
-- AC-REPLAN-01～10（见需求文档「已完成切片规划的受控重划」）。
-- 测试：UT-S32-65～UT-S32-68、ST-S32-22、UT-S28-49、UT-S19-37；安装态：SMOKE-core-179；回归锚：UT-S32-59～64、ST-S32-20～21、SMOKE-core-176、SMOKE-core-178。
 
 ## 2.57 勘误提案的 deployment/smoke 散文订正通道
 
@@ -3941,3 +3639,51 @@ Claude Code 对 PreToolUse hook 的 exit 2 **读取 stderr** 展示拦截原因�
 - **身份**：UT-S19-45 tripwire 钉 `LOCAL_RELEASE_CANDIDATE_VERSION=0.14.25` / `LOCAL_RELEASE_ROLLBACK_VERSION=0.14.24` 与全源一致。
 - **安装态行为**：SMOKE-core-196 承载——fail-closed 拒绝矩阵（缺标 smoke 拒绝、`[deploy]` 未全勾 smoke 拒绝、缺 `VERIFY_PASS` / 缺 `DEPLOY_DONE` / 缺 `SMOKE_PASS` 的 archive 拒绝且零副作用）、对账投影在场、补标后全链放行、固定 0.14.24 对照（复现 smoke 照常写 `SMOKE_PASS`、archive 照常成功、无投影字段，防断言空转）、roundtrip 无混装。
 - **发布边界**：仅本机全局；部署与 smoke 各为独立人类确认点；矩阵失败停止部署回实现，全局异常按固定 0.14.24 tarball 回滚。
+
+## 2.68 切片规划单条受控写入口（slice plan）
+
+### 2.68.0 问题：六动作事务为不存在的并发写付费
+
+切片事务把「写一次切片规划」拆成 `submit-content`（×2 slot）→ `seal` → `apply` 共 6 次 CLI 往返，用 slot 双哈希与 staging 保证「多方并发写 `[code]` 与 manifest 的原子性」。但实际写入方只有**一个顺序执行的 AI**，且 `tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均受 git 跟踪——误写 `git checkout` 即回滚。实测某提案的 `apply` 曾因 `task_text` 与 `[code]` 条目非逐字一致而拒绝一次，该拒绝不保护任何用户可感知价值。
+
+### 2.68.1 命令合同
+
+```
+openlogos slice plan --file <slices.json> [--format json]
+```
+
+**输入**：结构化 `slices.json`，为切片数组，每项固定含 `slice_id`、`owned_test_ids`、`runner_selectors`、`spec_targets`（字段与既有 manifest 的 `slices` 逐字一致，不新造 schema）。
+
+**行为**（单次调用内顺序完成，无中间相位）：
+
+1. 校验结构化输入：非空数组；`slice_id` 提案内唯一；`owned_test_ids` / `runner_selectors` / `spec_targets` 非空；`owned_test_ids` 中每个 ID 存在于已合并测试规格。
+2. 写 `tasks.md` 的 `[code]` 段（整段替换，`[delta]` / `[deploy]` 段与其勾选状态字节恒等）。
+3. 写 `TEST_SLICE_MANIFEST.json`（temp + 原子 rename）。
+4. 依**刚写出的** `tasks.md` 自算 `task_fingerprint`，依 `spec_targets` 算 `spec_fingerprint`——写入者与指纹计算者同一方、同一时刻，漂移窗口从构造上消失。
+
+**幂等**：同一 `slices.json` 重复执行得到同一 `[code]` 与同一 manifest；重新规划直接重跑本命令，不需要「重开」通道。
+
+**失败零副作用**：任一校验不通过即非零退出并报稳定错误码，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均不被修改。
+
+### 2.68.2 结构化事实源的生成权归属（强制）
+
+**流程判断必须使用结构化数据；非结构化文本只用于展示给用户。**
+
+`owned_test_ids` 是 `verify` 计算 `eligible` 集合的输入，属流程判断数据，因此：
+
+- **不得**改从 `tasks.md` 的 `[code]` 段散文解析——实测该解析会把正文中「被提及」而非「被拥有」的测试 ID 一并算入（某提案实测解析得 23 个 ID，而结构化 manifest 为 21 个，多出的两个在正文里是「转历史锚」这类叙述性提及），使 `eligible` 多算并以缺结果误红。
+- 结构化产物的**生成权留在 CLI**：AI 产出结构化 `slices.json`，由 `slice plan` 校验后写入；AI 不直接写 `TEST_SLICE_MANIFEST.json`。
+
+### 2.68.3 保留不变（零回归边界）
+
+| 保留项 | 说明 |
+|---|---|
+| `verify` 的 `slice-checkpoint` 增量验收 | 收窄验收分母（`eligible = baseline ∪ 已确认切片 ∪ 本次切片`）与收窄实际执行（`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`）逐项不变——「每个切片实现后能单独通过验收」是产品能力 |
+| `TEST_SLICE_MANIFEST.json` / `SLICE_CHECKPOINTS.jsonl` | 结构化事实源，保留 |
+| `deriveSliceVerificationState` / `appendSliceCheckpoint` / manifest 读写 | 结构化数据层，一行不动 |
+| `slice_state` / `code_slices_green` / `slice-exit` | 切片循环能力，保留 |
+| `slice-planner` 六维打分与删后续证伪门 | 切片划分方法论不变，只是产物经 `slice plan` 落盘 |
+
+### 2.68.4 降级项
+
+`task_fingerprint` / `spec_fingerprint` 保留计算与输出，其 **stale 判定由阻塞降级为警告**——呼应「任何审计产物都不得出现在流程分支的条件里」；指纹继续作为可观察诊断。

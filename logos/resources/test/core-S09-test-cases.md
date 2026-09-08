@@ -935,22 +935,6 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 - AC-MERGEGATE-09 捕获集扩大：UT-S09-286。
 - 场景：S09 merge 准入判定与 change-lint 同源；功能规格：§2.51.2、§2.51.5；架构：§四十一.6.1；安装态：SMOKE-core-173。
 
-## S09 切片事务命令面与归档只读测试
-
-### 单元测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S09-287 | 动作白名单按 phase 生效且 envelope 公开契约哈希 | Step 3c→7 | 处于各 phase 的事务夹具 | 对每个 phase 尝试全部六个动作 | 仅 `allowed_actions` 内的动作被执行；越权动作被拒并回传当前 `allowed_actions`，无副作用；成功 envelope 含 `schema_sha256` 与 `contract_sha256` |
-| UT-S09-288 | 归档提案仅放行 status | Step 3b | 已归档且含切片事务的提案 | 依次尝试 `status` 与五个写动作 | `status` 返回只读投影；五个写动作均判 `action_not_allowed` 且不写文件、不推进 phase、不留暂存。目录解析歧义时 fail closed，不猜测目标提案 |
-
-### 追溯与覆盖
-
-- AC-SLICETX-01 契约哈希公开：UT-S09-287。
-- AC-SLICETX-02 命令面与动作性质：UT-S09-287。
-- AC-SLICETX-09 归档只读且无副作用：UT-S09-288。
-- 场景：S09 切片事务命令面与归档只读；功能规格：§2.53.3、§2.53.7、§2.53.9；架构：§四十三.1；安装态：SMOKE-core-175。
-
 ## S09 合并事务终态出路测试（fix-merge-transaction-abort-recover-reopen）
 
 > 本节补充终态出路（abort 重建 / fatal 修复 / completed 受控重开）的回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。

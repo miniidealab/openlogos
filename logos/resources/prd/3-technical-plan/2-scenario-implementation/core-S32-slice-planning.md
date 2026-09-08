@@ -225,179 +225,6 @@ sequenceDiagram
 - 功能规格：§2.51.7；架构：§四十一.6.1。
 - 测试：UT-S32-50～UT-S32-51、ST-S32-17。
 
-## S32 切片产物经事务原子落盘
-
-### 场景目标
-
-把切片规划的两个 canonical 产物——`tasks.md` 的 `## [code]` 段与 `TEST_SLICE_MANIFEST.json`——从 Agent 直接写文件，改为向事务 content slot 提交内容、由 OpenLogos 在同一次 apply 中原子写出。
-
-### 参与者与前置条件
-
-| 别名 | 组件 | 说明 |
-|---|---|---|
-| A | slice-planner Agent | 生产切片划分内容，只能 `submit-content` |
-| T | 切片事务 | 状态机、slot 校验、seal/apply |
-| W | 产物写入器 | `writeTestSliceManifestAtomic()` 与 `[code]` 整节替换 |
-| V | `deriveSliceVerificationState()` | manifest 合法性判定 |
-
-前置：提案已 spec-complete（`SPEC_MERGED` 或 legacy `MERGED`）；测试 ID 已定；同一提案同时至多一个活跃切片事务。
-
-### 主时序
-
-```mermaid
-sequenceDiagram
-    participant A as slice-planner Agent
-    participant T as 切片事务
-    participant W as 产物写入器
-    participant V as 合法性判定
-
-    A->>T: Step 1: 创建事务（origin=initial-plan）
-    T-->>A: Step 2: 投影——required=2，missing=[slot_codesection, slot_slices]
-    A->>T: Step 3: submit-content --slot slot_codesection（task_text + 打分/证伪结论）
-    A->>T: Step 4: submit-content --slot slot_slices（slice_id / owned_test_ids / runner_selectors / spec_targets）
-    T->>T: Step 5: 两 slot 收齐 → phase=ready
-    A->>T: Step 6: seal
-    T->>T: Step 7: 冻结内容并产出 seal_sha256 → phase=sealed
-    A->>T: Step 8: apply
-    T->>W: Step 9: 整节替换 tasks.md 的 [code] 段
-    T->>T: Step 10: 依**刚写出的** tasks.md 计算 task_fingerprint
-    T->>W: Step 11: 原子写 TEST_SLICE_MANIFEST.json
-    alt 写盘任一步失败
-        T->>W: Step 12a: 回滚已写部分
-        T-->>A: Step 13a: phase=failed + classification=recovery_required；两产物同时不存在
-    else 写盘成功
-        T->>V: Step 12b: 自校验——verifyAppliedManifest() 复核刚写出的两产物
-        V-->>T: Step 12c: { status, violations }
-        alt status=null（判定器按设计不适用，如单切片计划）
-            T-->>A: Step 13b-na: 跳过复核照常放行 → phase=completed + receipt
-        else 判 valid
-            T-->>A: Step 13b: phase=completed + receipt
-        else 判 invalid / stale / unsupported
-            T->>W: Step 12d: 整体回滚（与 Step 12a 同一路径）
-            T-->>A: Step 13c: phase=failed + classification=recovery_required + violations 原样带出
-        end
-    end
-```
-
-### 步骤说明
-
-- **Step 3/4 是 Agent 唯一的写动作**。`[code]` 段、manifest、receipt 与 marker 一律由 OpenLogos 写入。
-- **Step 9 为整节替换**：只替换 `## [code]` 段，`[delta]` / `[deploy]` 段及其既有 checkbox 状态字节恒等。
-- **Step 10 是本场景的关键**：指纹由 OpenLogos 依其**自己刚写出**的 `tasks.md` 计算，不接受 Agent 提供。写入者与指纹计算者是同一方、同一时刻，漂移窗口从构造上消失（架构 §四十三.2）。
-- **Step 12a 无半写态**：两产物同时存在或同时不存在。
-- **Step 12b～12d 曾是 0.14.12 补齐的分支。** 此前时序只画到「Step 12b 复核 manifest 合法性」便直接连向 `completed`——**画了复核这一步，却没有画复核结论的去向**。实现照此产出了一个 `verifyAppliedManifest()` 函数，然后没有任何路径调用它：写盘成功即 `completed`，同一进程内的判定器随即判 `invalid`。规格里一条没有分支的复核，落到实现里就是一个没有调用方的函数。
-- **Step 12c 的结论按三分支消费（fix-apply-verdict-not-applicable-vs-invalid）**：`status=null` 表示判定器**按设计不适用**（当前唯一来源：单切片计划下 `shouldUseSliceVerification()` 恒为假），与 `valid` 同样放行进入 `completed`——复核的适用性是前置条件，不适用即跳过复核而非判失败（架构 §四十三.2.1）；只有判定器实际给出的负面结论（`invalid` / `stale` / `unsupported`）才走 Step 12d。放行分支须显式区分 `null` 与 `valid` 两种来源，不得无差别合并。0.14.12～0.14.13 曾以 `status !== 'valid'` 作唯一判据，把所有单切片提案的 apply 误判为失败，错误信息「判为 unknown，已整体回滚：0 条违规」——0 条违规正是判定器根本没运行的特征。
-- **Step 12d 与 Step 12a 是同一条回滚路径**，不是第二份实现。「产出不合法」与「写盘异常」对消费方是同一种失败，只需一套语义：修正 slot 内容后重新提交。
-- **Step 13c 必须保真 violations**：原样带出 `code` / `path` / `message` / `fix_hint`，不得压缩为单条摘要，否则消费方无法定位是哪个 `spec_targets` 或哪个 `task_text` 不合格；失败文案不得出现 `unknown`，且失败终态必伴随非零 violations。
-
-### 恢复事务的差异
-
-| | initial-plan | manifest-recovery |
-|---|---|---|
-| 触发 | 首次切片规划 | `deriveSliceVerificationState()` 判 missing / invalid / stale |
-| required slots | `slot_codesection` + `slot_slices` | 仅 `slot_slices` |
-| `[code]` 段 | 由本事务写出 | **冻结，拒绝改写** |
-
-`[code]` 冻结是硬约束：切片划分本身没问题，问题只在 manifest 失效；改写 `[code]` 会把一次修复变成一次重新规划，并使既有 checkpoint 失去意义。
-
-### 复用边界
-
-不新建第二套判据或写入器：
-
-| 复用 | 此前状态 |
-|---|---|
-| `writeTestSliceManifestAtomic()` | 已导出，**调用方 0 处** |
-| `extractChangedTestIds()` | 已导出，**调用方 0 处** |
-| `deriveSliceVerificationState()` | 11 处消费 |
-| `computeTaskFingerprint()` / `computeSpecFingerprint()` | 各 1 处消费 |
-
-前两项正是本场景要接出来的能力，而非重新实现。
-
-### 不变量
-
-1. **写入权唯一**：两产物的字节只由 apply 写出；不存在 Agent 直接写它们的可用路径（架构 §四十三.1）。
-2. **原子性由构造保证**：两产物同时成功或同时回滚，无半写态（架构 §四十三.2）。
-3. **终态准入**：`completed` 当且仅当自校验**未给出负面结论**——判 `valid` 或判定器按设计不适用（`null`）均放行；判 `invalid` / `stale` / `unsupported` 必须整体回滚为 `failed`（架构 §四十三.2.1）。
-4. **复核有调用方**：合法性复核必须位于 apply 的主路径上。只被定义、无人调用的复核函数等同于该约束不存在。
-5. **不适用不是失败**：判定器按设计不适用时跳过复核照常放行；「失败终态 + 0 条违规」的组合不得出现。放行分支显式区分 `null` 与 `valid` 两种来源。
-6. **指纹自算**：`task_fingerprint` 不接受外部提供。
-7. **整节守恒**：`[code]` 之外的段与 checkbox 状态字节恒等。
-8. **恢复不改划分**：`manifest-recovery` 下 `[code]` 段字节恒等。
-9. **单活跃事务**：同一提案同时至多一个**非终态**切片事务；终态事务不占活跃名额。
-
-### 异常与边界
-
-- slot 内容结构非法（缺字段、非 JSON）：`submit-content` 拒绝并点名字段，事务停留在 `collecting`。
-- slot 内容**结构合法但业务非法**（`spec_targets` 指向非测试规格文档、`task_text` 与 `[code]` 行不一致）：`submit-content` 与 `seal` 均放行，由 apply 的自校验拦截并整体回滚（Step 12d）。本提案不在提交点重复该判据——判据只保留一处实现（架构 §四十一.4）。
-- **单切片计划（`tasks.length < 2`）**：切片验证按设计不启用，Step 12c 得 `status=null` → 照常放行进入 `completed`，`[code]` 正确写出，manifest 为惰性产物保留在盘。单切片是 slice-planner 的合规产出形态（六维 0–7 分单切；≥8 分不可拆的逃生口显式单切），不得以「拆成两片满足判定器」替代。注意由此派生的边界：单切片下业务判据同样不启用（如 `spec_targets` 不受切片验证检查），其兜底由 verify 全量回归与实现阶段承担。
-- seal 后再提交内容：动作不在 `allowed_actions` 中，被拒且无副作用。
-- apply 后重复 apply：幂等，返回既有 receipt，不重复写入。
-- apply 自校验判非法后重新提交：事务处于 `failed` 且 `classification=recovery_required`，允许修正 slot 后重走 seal / apply。
-- 提案未 spec-complete 即创建事务：拒绝，理由指向 spec-complete 前置。
-
-### 追溯
-
-- 需求：AC-SLICETX-03～07、AC-SLICETX-10；AC-SLICEFIX-01～04；AC-VERDICT-01～05。
-- 功能规格：§2.53.3～§2.53.6、§2.53.5.1、§2.53.8、§2.55；架构：§四十三.1、§四十三.2、§四十三.2.1。
-- 测试：UT-S32-52～UT-S32-64、ST-S32-18～ST-S32-21；安装态 SMOKE-core-175、SMOKE-core-176、SMOKE-core-178。
-
-## S32 已完成规划的受控重划（support-slice-replan-on-completed-plan）
-
-### 场景目标
-
-在切片划分被证实有误时（manifest 完全有效、恢复回边不触发），经受控重开路径作废当前规划、留痕、重建 `collecting` 事务，由 slice-planner 提交新划分并经既有 seal/apply 整体替换两产物。
-
-### 重划时序
-
-```mermaid
-sequenceDiagram
-    actor U as 用户 / driver
-    participant T as 切片事务
-    participant A as slice-planner Agent
-    participant W as 产物写入器
-
-    U->>T: reopen --reason "<原因>" [--confirm-approved]
-    T->>T: 准入检查（phase=completed；批准分流；原因非空；事务/marker 可读）
-    T->>T: 追加 SLICE_REPLANS.jsonl 留痕（旧 transaction_id、时刻、原因、批准/确认标记）
-    T->>T: 归档旧终态事务 → slice-transactions/<id>.json
-    T->>T: （确认重开）作废 SLICES_APPROVED
-    T-->>U: 新事务 origin=initial-plan，phase=collecting，required=2
-    Note over T,W: 此刻 [code] 段与 manifest 保持旧值——整体替换只发生在新 apply
-    A->>T: submit-content ×2（新划分）
-    A->>T: seal
-    A->>T: apply
-    T->>W: 整节替换 [code] + 原子写 manifest（既有语义）
-    T-->>A: completed + receipt；旧 checkpoint 因 manifest_sha256 失配作废
-```
-
-### 失败分支（fail-closed，三类）
-
-- **事务文件不可读**：拒绝重开，无任何写副作用（不留痕、不归档、不动 marker）。
-- **`SLICES_APPROVED` 状态不可判定**（I/O 错误等）：同上 fail-closed。
-- **已批准未确认**：拒绝并给出可执行指引（附 `--confirm-approved` 重试）；同样零副作用。
-
-### 不变量
-
-1. `reopen` 是 `completed` 唯一的出边动作；`--reason` 非空是留痕前置。
-2. 留痕 append-only；无留痕的重开是被禁止的影子路径。
-3. 重开 → 新 apply 之间不存在半新半旧窗口：两产物保持旧值直到整体替换。
-4. 旧终态事务归档不销毁；旧 checkpoint 不被新划分的 verify 采信（`manifest_sha256` 失配）。
-5. 确认重开作废 `SLICES_APPROVED`——slice-exit 门须对新划分重走。
-6. 与 manifest-recovery 回边互不顶替（架构 §四十四.3）。
-7. 未执行 `reopen` 时 `completed` 行为与 0.14.14 逐项一致。
-
-### 异常与边界
-
-- 重开后的 `collecting` 事务与首次规划同形：slot 校验、seal preflight、apply 终态守门（三分支）全部复用，不开第二套语义。
-- 重开后再次 `reopen`：新事务非 `completed`，`action_not_allowed`。
-- 重复重开（新划分 apply 后再发现错误）：合法，各自留痕成行。
-- `manifest-recovery` 的 `completed` 同样可 `reopen`（规划错误与 manifest 曾失效无冲突）。
-
-### 追溯
-
-- 需求：AC-REPLAN-01～08；功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
-- 测试：UT-S32-65～UT-S32-68、ST-S32-22；安装态：SMOKE-core-179。
-
 ## S32 change set 提案级语义与 reopen 后切片归属
 
 ### 场景目标
@@ -461,63 +288,74 @@ sequenceDiagram
 - 需求：reopen 后 test change set 提案级前滚需求。
 - 测试：UT-S32-69～70、ST-S32-23、SMOKE-core-191。
 
-## S32 initial-plan 事务创建时机前移（next 问即建，submit-content 用即建降为幂等兜底）
+## S32 切片规划单条受控写入口时序
 
 ### 场景目标
 
-initial-plan 切片事务的创建时机从「首次 `submit-content` 用即建」前移为「`next` 首达 plan-slices 问即建」；用即建保留为幂等兜底，手动流程零回归。消费方（driver）由此在派发 slice-planner 之前就拿到 canonical 投影派生写域，slice-planner 的 `submit-content` 续用同一事务。
+把切片规划的落盘从「六动作事务」收敛为**一次 CLI 调用**：AI 产出结构化 `slices.json`，`openlogos slice plan` 校验后一次性写 `[code]` 段与 `TEST_SLICE_MANIFEST.json` 并自算指纹。结构化产物的生成权留在 CLI，不交给 AI 自行写入。
 
 ### 参与者
 
-- **OpenLogos `next`**：问即建执行者（见 S28 ensure 时序）。
-- **slice-planner**：内容生产者，经 `submit-content` 向 slot 提交内容。
-- **`openlogos slice transaction` 命令族**：事务推进入口。
+- **slice-planner（AI）**：按六维打分与删后续证伪门划分切片，产出**结构化** `slices.json`。
+- **openlogos slice plan（CLI）**：结构化输入的唯一校验者与写入者。
+- **verify**：下游消费者，读 manifest 计算 `eligible` 完成增量验收。
 
 ### 前置条件
 
-提案 spec-complete、`[code]` 标题在场且切片未填。
+活跃提案已 spec-complete（`SPEC_MERGED` 在场）、需要代码实现（`[code]` 标题在场且切片未填）、测试 ID 已在已合并规格中真实存在。
 
 ### 成功后置条件
 
-同一提案自始至终只有一个 initial-plan 事务：`next` 已建 → `submit-content` 直接续用（不重建、不冲突）；无 `next` 前置的手动路径 → `submit-content` 仍按需创建（懒创建零回归）。
+`tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json` 同时落盘且互相一致；`task_fingerprint` 依刚写出的 `tasks.md` 计算；`[delta]` / `[deploy]` 段与其勾选状态字节恒等。
 
 ### 时序图
 
 ```mermaid
 sequenceDiagram
-    participant N as openlogos next（问即建）
-    participant P as slice-planner
-    participant C as slice transaction 命令族
-    participant T as 事务文件
-    N->>T: Step 1: 首达 plan-slices → createTestSliceTransaction(initial-plan)
-    N-->>P: Step 2: 投影（transaction_id=X）随派发上下文注入
-    P->>C: Step 3: submit-content --slot slot_codesection
-    C->>T: Step 4: 读到既有事务 X → 直接续用（用即建条件不成立）
-    P->>C: Step 5: submit-content --slot slot_slices → seal → apply
-    C->>T: Step 6: 事务 X 一路推进至 completed（两产物原子落盘）
+    participant P as slice-planner（AI）
+    participant C as openlogos slice plan
+    participant F as 提案目录
+    participant V as openlogos verify
+    P->>P: Step 1: 六维打分 + 删后续证伪门划分切片
+    P->>C: Step 2: 产出结构化 slices.json 并调用 slice plan --file
+    C->>C: Step 3: 校验（非空/slice_id 唯一/ID 存在于已合并规格）
+    C->>F: Step 4: 写 tasks.md 的 [code] 段（整段替换）
+    C->>F: Step 5: 写 TEST_SLICE_MANIFEST.json（temp + 原子 rename）
+    C->>C: Step 6: 依刚写出的 tasks.md 自算 task_fingerprint
+    C-->>P: Step 7: 返回切片摘要（一次调用完成）
+    V->>F: Step 8: 读 manifest 计算 eligible，逐片增量验收
 ```
 
 ### 步骤说明
 
-1. 问即建触发条件与行为表见 S28 ensure 时序与功能规格 §2.65.2。
-2. 投影经消费方注入 slice-planner 上下文；手动流程可跳过本步。
-3. ~ 4. `submit-content` 的用即建判定不变（「无事务才创建」）；`next` 已建时该条件不成立，直接续用——**不重建、不产生第二事务**。
-5. ~ 6. seal 校验、apply 原子写出与终态守门逐项沿用既有合同（§2.53），本变更零触碰。
+1. **slice-planner** 按既有六维打分与删后续证伪门划分切片——切片划分方法论逐字不变。
+2. **slice-planner** 把结果表达为**结构化** `slices.json`（`slice_id` / `owned_test_ids` / `runner_selectors` / `spec_targets`），一次调用 `openlogos slice plan --file`。
+3. **CLI** 校验结构化输入：数组非空；`slice_id` 提案内唯一；三个数组字段非空；`owned_test_ids` 中每个 ID 存在于已合并测试规格。任一不满足即非零退出、零副作用。
+4. **CLI** 写 `tasks.md` 的 `[code]` 段（整段替换；`[delta]` / `[deploy]` 段与勾选状态字节恒等）。
+5. **CLI** 写 `TEST_SLICE_MANIFEST.json`（temp + fsync + 原子 rename）。
+6. **CLI** 依**刚写出的** `tasks.md` 自算 `task_fingerprint`、依 `spec_targets` 算 `spec_fingerprint`——写入者与指纹计算者同一方同一时刻，漂移窗口从构造上消失。
+7. **CLI** 返回切片摘要；至此一次 CLI 往返完成全部落盘（此前需 6 次）。
+8. **verify** 照既有 `slice-checkpoint` 逻辑读 manifest 计算 `eligible`，逐片增量验收——该能力零改动。
 
 ### 异常与边界
 
-#### EX-59.1：手动流程无 next 前置
-- **触发条件**：人工直接跑 slice-planner，`submit-content` 时无事务在盘。
-- **期望响应**：用即建照旧创建 initial-plan 事务并继续——懒创建路径零回归。
+#### EX-32.20：结构化输入非法
+- **触发条件**：`slices.json` 缺字段、`slice_id` 重复、`owned_test_ids` 含未定义 ID、数组为空。
+- **期望响应**：非零退出并报稳定错误码，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均不被修改（零副作用）。
 - **副作用**：无。
 
-#### EX-59.2：终态事务在场时的问即建
-- **触发条件**：前一轮事务已 `completed`（如切片已规划待 slice-exit），`next` 再次执行。
-- **期望响应**：只读输出该终态投影，不重建、不归档；受控重划仍走既有 `reopen` 通道（§2.56），问即建不成为第二条重划入口。
+#### EX-32.21：重复执行（重新规划）
+- **触发条件**：对同一提案再次执行 `slice plan`（切片调整或纠错）。
+- **期望响应**：幂等覆盖——同一输入得到同一 `[code]` 与同一 manifest；不需要「重开」通道，不产生终态相位。
+- **副作用**：无。
+
+#### EX-32.22：指纹 stale
+- **触发条件**：`[code]` 段或 spec targets 在 `slice plan` 之后被手工改动，导致 manifest 指纹与现状不一致。
+- **期望响应**：**告警而非阻塞**——`status` / `next` / `verify` 输出 stale 诊断并建议重跑 `slice plan`，但不阻断流程推进（审计产物不得出现在流程分支的条件里）。
 - **副作用**：无。
 
 ### 追溯
 
-- 功能规格：§2.65.2 / §2.65.3；场景：S28 ensure 时序。
-- 根规范：`spec/test-slice-manifest.md`（创建时机合同）。
-- 测试：UT-S32-71～72。
+- 需求：切片规划单条受控写入口要求。
+- 功能规格：§2.68。
+- 测试：UT-S32-90、UT-S32-91、ST-S32-40。

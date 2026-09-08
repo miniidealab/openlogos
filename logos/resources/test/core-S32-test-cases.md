@@ -236,120 +236,6 @@
 - AC-MERGEGATE-09 归属校验覆盖扩大且判据不放宽：UT-S32-51、ST-S32-17。
 - 场景：S32 此前不可见的测试 ID 进入切片归属；功能规格：§2.51.7；架构：§四十一.6.1。
 
-## S32 切片事务产物原子落盘测试
-
-### 单元测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S32-52 | 两 slot 收齐后原子写出两产物 | Step 1→13b | spec-complete 提案；两 slot 内容合法 | 创建事务 → 提交两 slot → seal → apply | `[code]` 段与 `TEST_SLICE_MANIFEST.json` 同时存在；manifest 的 `task_fingerprint` 与实际 `[code]` 段一致；phase=completed 且 receipt 非空 |
-| UT-S32-53 | apply 中途失败整体回滚，无半写态 | Step 12a→13a | 同上；在写第二个产物前注入失败 | apply | 两产物**同时不存在**；phase=failed 且诊断点名失败环节。**这是不变量 H 唯一的直接证据**——只验证成功路径无法区分「构造保证」与「纪律维持」 |
-| UT-S32-54 | task_fingerprint 由 OpenLogos 自算 | Step 10 | slot 内容中携带一个伪造的 `task_fingerprint` | apply 后读 manifest | 落盘的指纹等于对**实际写出的** `tasks.md` 计算所得，与 slot 中提供的伪造值不同；事务不采信外部指纹 |
-| UT-S32-55 | 整节替换守恒 | Step 9 | `tasks.md` 含 `[delta]`（部分 checkbox 已勾选）与 `[deploy]` 段 | apply | `[code]` 段被替换；`[delta]` / `[deploy]` 段及其 checkbox 状态**字节恒等** |
-| UT-S32-56 | 恢复事务 slot 收窄且 [code] 冻结 | 恢复差异表 | manifest 处于 invalid 态的提案 | 创建 `origin=manifest-recovery` 事务 → 提交 `slot_slices` → apply | `content_slots.required` 为 1；提交 `slot_codesection` 被拒；apply 后 `[code]` 段字节恒等，仅 manifest 被重写 |
-| UT-S32-57 | Agent 直接写产物的路径不存在 | 不变量 1 | 已加载 `cli/src/**` | 扫描 `writeTestSliceManifestAtomic` 与 `[code]` 段写入器的调用方 | 调用方**只在**切片事务的 apply 路径内；不存在命令或导出让外部直接写这两个产物。修复前该函数调用方为 0 处、实际写入者是 Agent——本用例锁的正是写入权归位 |
-| UT-S32-58 | 单活跃事务与 apply 幂等 | 不变量 6、异常边界 | 已有活跃切片事务的提案 | ① 再次创建事务；② completed 后重复 apply | ① 拒绝或返回既有事务，不产生第二个活跃事务；② 幂等，返回既有 receipt，产物字节不变 |
-
-### 场景测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
-|---|---|---|---|---|---|
-| ST-S32-18 | 真实 CLI 下 initial-plan 全链 | Step 1→13b | 真实 CLI；spec-complete 的 launched 夹具提案 | `slice transaction status` → 两次 `submit-content` → `seal` → `apply` → `status` | 各阶段 phase 依次为 collecting/ready/sealed/completed；apply 后两产物落盘且一致；envelope 公开 `schema_sha256` 与 `contract_sha256`；全程 Agent 只用了 `submit-content` |
-| ST-S32-19 | 真实 CLI 下恢复全链与写动作白名单 | 恢复差异表、异常边界 | 真实 CLI；manifest 已失效的提案 | ① `next --format json` 取事务投影；② 提交 `slot_slices` 后 `seal`、`apply`；③ 对已 sealed 事务再次 `submit-content` | ① 投影 `origin=manifest-recovery` 且 `required=1`；② apply 后 `[code]` 字节恒等、manifest 恢复合法；③ 动作不在 `allowed_actions` 中被拒且无副作用 |
-
-### 追溯与覆盖
-
-- AC-SLICETX-03 slot 收齐进 ready：UT-S32-52、ST-S32-18。
-- AC-SLICETX-04 原子写与整体回滚：UT-S32-52、UT-S32-53。
-- AC-SLICETX-05 整节守恒：UT-S32-55。
-- AC-SLICETX-06 指纹自算：UT-S32-54。
-- AC-SLICETX-07 恢复 slot 收窄与 `[code]` 冻结：UT-S32-56、ST-S32-19。
-- AC-SLICETX-10 旧路径不存在：UT-S32-57。
-- 场景：S32 切片产物经事务原子落盘；功能规格：§2.53.3～§2.53.6、§2.53.8；架构：§四十三.1、§四十三.2；安装态：SMOKE-core-175。
-
-## S32 apply 终态自校验测试
-
-
-### 单元测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|---|
-| UT-S32-59 | 业务非法 slot 触发整体回滚，无半写态 | Step 12b→13c | spec-complete 提案；slot 结构合法但业务非法：`spec_targets` 指向非测试规格文档、`task_text` 与 `[code]` 行不一致 | 创建事务 → 提交两 slot → seal → apply | apply 失败；`tasks.md` 与 `TEST_SLICE_MANIFEST.json` **同时**恢复到 apply 前字节（manifest 原不存在则仍不存在）；`phase=failed`、`classification=recovery_required`。**证伪门**：把 apply 的自校验分支去掉后本用例必须变红——若去掉后仍绿，说明断言实际锁的是别的东西 |
-| UT-S32-60 | 修正 slot 后重新提交可正常抵达 completed | Step 12b→13b | 承接 UT-S32-59 的 failed 事务 | 修正 `spec_targets` 与 `task_text` → 重新 submit-content → seal → apply | 事务抵达 `completed` 且出具 receipt；`deriveSliceVerificationState()` 判 manifest 为 `valid`；不需要删除任何 OpenLogos 拥有的文件即可完成修复 |
-
-### 场景测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
-|---|---|---|---|---|---|
-| ST-S32-20 | 真实 CLI 下 violations 保真且可定位到字段 | Step 12c→13c | 真实 CLI；业务非法 slot 的 launched 夹具提案 | `submit-content` ×2 → `seal` → `apply` → `status --format json` | apply 以非零退出；失败投影中 violations **原样保留** `code` / `path` / `message` / `fix_hint`，可据此定位到具体的 `spec_targets` 值与具体的 `task_text` 行；不得压缩为单条摘要 |
-
-### 追溯与覆盖
-
-- AC-SLICEFIX-01 apply 写盘后置 completed 前调用既有判定器复核：UT-S32-59。
-- AC-SLICEFIX-02 业务非法 slot 整体回滚且无半写态：UT-S32-59。
-- AC-SLICEFIX-03 violations 保真可定位：ST-S32-20。
-- AC-SLICEFIX-04 修正后可正常 completed：UT-S32-60。
-- 场景：S32 切片产物经事务原子落盘（Step 12b～13c）；功能规格：§2.53.5.1；架构：§四十三.2.1；安装态：SMOKE-core-176。
-
-**用例设计约束**：UT-S32-59 的 slot 内容必须**结构合法**（JSON 合法、四个必填字段齐备），非法只体现在业务层面。若用缺字段或非 JSON 构造，命中的是 `parseSlicesSlot` 的既有结构校验，与本缺陷无关——报告 §七 已明确「只断言结构非法不覆盖本缺陷」。
-
-## S32 终态判定三分支与单切片解阻断测试（fix-apply-verdict-not-applicable-vs-invalid）
-
-> 本节补充 apply 终态守门的三分支回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
-
-### 单元测试
-
-| ID | 描述 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|
-| UT-S32-61 | 单切片计划 apply 达 completed | spec-complete 提案，`[code]` 计划为一条标注真实测试 ID 的切片；两 slot 经 submit-content 收齐并 seal | `apply` | `phase=completed`、receipt 出具；`tasks.md` 的 `[code]` 段正确写出且 `[delta]`/`[deploy]` 字节恒等；manifest 落盘（惰性）；无任何回滚 |
-| UT-S32-62 | 三种判定结果去向矩阵 | 参数化构造三形态：① 单切片（判定器不适用→null）；② 两切片全部合法（valid）；③ 两切片但 slot 业务非法（`spec_targets` 指向非测试规格文档→invalid） | 各自走完整 seal→apply | ① ② 均 `completed`；③ 复用与写盘异常同一条回滚路径整体回滚，`phase=failed`、`classification=recovery_required`、两产物同时恢复到 apply 前字节、violations 原样保真（含 `code`/`path`/`message`/`fix_hint`） |
-| UT-S32-63 | 失败文案不出现 unknown、失败必伴随非零违规 | 沿用 UT-S32-62 的 ③ 夹具 | 检查 apply 失败输出与事务投影 | 错误文案不含字符串 `unknown`；`violations.length > 0`；放行路径（①②）不产生任何失败文案。**证伪门**：把守门判据改回 `status !== 'valid'` 后，① 必然回滚且复现「unknown + 0 条违规」组合，本用例与 UT-S32-61 必须同时变红 |
-| UT-S32-64 | 恢复语义按适用性分流 | ① 多切片计划抵达 completed 后删除 manifest（保留事务文件）；② 单切片计划抵达 completed 后删除 manifest（保留事务文件） | 各自经 canonical 判定取投影并尝试恢复 | ① 仍可创建 `origin=manifest-recovery` 事务、`required=1`、`[code]` 段字节恒等——0.14.12 终态不堵恢复能力不回退；② 判定器按设计不适用（derive 恒 `null`）→ **不产生恢复事务**——manifest 为惰性产物、删除后无恢复需求，这是「无需恢复」的正确形态而非堵塞 |
-
-### 场景测试
-
-| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
-|---|---|---|---|---|
-| ST-S32-21 | 真实 CLI 单切片全链与多切片零回归 | 临时 launched 项目 ×3：A=单切片计划，B=两切片健康计划，C=两切片业务非法 slot | A：submit-content ×2 → seal → apply；B：健康全链 apply；C：业务非法 slot 全链 apply | A 全链经公开 `openlogos slice transaction` 命令抵达 completed、`[code]` 正确写出、manifest 落盘、输出不含 `unknown`；B 健康路径 completed；C 整体回滚且 violations 保真、守门文案不含 `unknown`、无半写态；三项目相互无干扰 |
-
-### 追溯与覆盖
-
-- AC-VERDICT-01 单切片可写出 `[code]`：UT-S32-61、ST-S32-21。
-- AC-VERDICT-02 三分支去向矩阵：UT-S32-62。
-- AC-VERDICT-03 多切片与业务非法不回归：UT-S32-62、ST-S32-21（回归锚：UT-S32-59～UT-S32-60、ST-S32-20）。
-- AC-VERDICT-04 终态不堵恢复（多切片形态不回退；单切片按设计无恢复语义）：UT-S32-64。
-- AC-VERDICT-05 文案如实：UT-S32-63。
-- 场景：S32 切片产物经事务原子落盘（三分支主时序）；功能规格：§2.55；架构：§四十三.2.1；根规范：`spec/test-slice-manifest.md` §2.2.1。
-
-## S32 已完成规划的受控重划测试（support-slice-replan-on-completed-plan）
-
-> 本节补充 reopen 回边的准入、留痕、产物替换与 fail-closed 回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
-
-### 单元测试
-
-| ID | 描述 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|
-| UT-S32-65 | 重开准入矩阵（批准分流） | 参数化三态：① completed + 无 `SLICES_APPROVED`；② completed + marker 在场、未附确认；③ completed + marker 在场、附确认 | 各自执行 `reopen --reason "规划证伪"` | ① 重开成功进入 `collecting`（`origin=initial-plan`、`required=2`）；② 拒绝且文案给出附 `--confirm-approved` 的可执行指引、零副作用（无留痕/归档/marker 变化）；③ 重开成功且 `SLICES_APPROVED` 被作废；`--reason` 缺失或空白一律拒绝 |
-| UT-S32-66 | 留痕字段与 append-only | 连续两次重划（首次规划→reopen→新 apply→再 reopen） | 读取 `SLICE_REPLANS.jsonl` | 两行记录各含 `schema=openlogos/slice-replan@1`、正确的旧 `transaction_id`、时刻、非空原因、`slices_approved_present`/`confirmed` 标记；首行在第二次重开后字节不变（append-only） |
-| UT-S32-67 | 产物整体替换与旧证据作废 | completed（划分 A，含一条与旧 manifest 匹配的 PASS checkpoint）→ reopen → 提交不同划分 B → seal/apply | 对比重开前后与 apply 前后的两产物及 checkpoint 采信 | 重开后、apply 前 `[code]`/manifest 仍为划分 A（无半新半旧窗口）；apply 后两产物完全为划分 B、无 A 残留、`manifest_sha256` 变化；旧 checkpoint 因失配不被 verify 状态采信；旧事务归档于 `slice-transactions/` 且 receipt 可读 |
-| UT-S32-68 | fail-closed 与零回归 | ① 事务文件不可读（权限/损坏夹具）；② 非 completed phase（collecting/failed）执行 reopen；③ completed 不执行 reopen | ①② 执行 `reopen`；③ 执行既有动作集 | ①② 拒绝且无任何写副作用（无留痕/归档/marker 变化）；② 报 `action_not_allowed` 且既有出路不变；③ submit-content/abort 仍被拒、投影与 0.14.14 逐项一致（`reopen` 为唯一新增动作） |
-
-### 场景测试
-
-| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
-|---|---|---|---|---|
-| ST-S32-22 | 真实 CLI 重划全链 | 临时 launched 项目，spec-complete 提案 | 首次单切片规划 apply 达 completed → `reopen --reason` → 提交**两切片**新划分 → seal → apply → completed；全程经公开 `openlogos slice transaction` 命令 | 重开后投影 `phase=collecting`、`required=2`；新 apply 后 `[code]` 为两切片、manifest 两条 slice、无旧划分残留；留痕含旧 `transaction_id`；旧事务归档；`manifest-recovery` 的既有路径（另夹具删 manifest）不受影响 |
-
-### 追溯与覆盖
-
-- AC-REPLAN-01/04 准入矩阵与批准分流：UT-S32-65、ST-S32-22。
-- AC-REPLAN-02 整体替换：UT-S32-67、ST-S32-22。
-- AC-REPLAN-03 留痕：UT-S32-66。
-- AC-REPLAN-05/07 fail-closed 与零回归：UT-S32-68。
-- AC-REPLAN-06 旧证据作废与归档：UT-S32-67。
-- AC-REPLAN-08 两回边互不顶替：ST-S32-22（回归锚：UT-S32-59～64、ST-S32-20～21）。
-- 场景：S32 已完成规划的受控重划；功能规格：§2.56；架构：§四十四；根规范：`spec/test-slice-manifest.md` §2.4。
-
 ## reopen 后切片归属消费回归
 
 ### 单元测试
@@ -370,19 +256,31 @@
 - 消费侧断言必须经共享 TestChangeSetReader / validateTestSliceManifest 公开路径，禁止绕过 reader 直读 marker 字段断言。
 - 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
 
-## 事务创建时机前移消费回归
+## S32 切片规划单条受控写入口测试
+
+> 覆盖 `openlogos slice plan --file <slices.json>` 的一次性落盘、结构化校验的零副作用、幂等重规划，以及「结构化事实源不得由散文解析替代」这一不变量。测试实现必须写入 OpenLogos reporter。
 
 ### 单元测试
 
 | ID | 测试点 | 关键断言 |
 |---|---|---|
-| UT-S32-71 | next 已建后 submit-content 幂等续用 | `next` 问即建创建事务 X 后执行 `submit-content --slot slot_codesection`：不重建（`transaction_id` 仍为 X）、slot 正常受理、phase 推进语义与懒创建路径逐项一致；后续 seal/apply 合同零变化 |
-| UT-S32-72 | 懒创建路径零回归 | 无 `next` 前置（事务文件不存在）直接 `submit-content`：用即建照旧创建 initial-plan 事务并受理内容——行为与 0.14.22 逐项一致；终态事务在场时新一轮 `submit-content` 的归档让位语义不变 |
+| UT-S32-90 | 一次调用完成落盘且指纹自算 | 结构化 `slices.json`（2 个切片）→ `openlogos slice plan --file` 一次调用后：`tasks.md` 的 `[code]` 段按切片顺序写入、`TEST_SLICE_MANIFEST.json` 在场且 `slices` 与输入逐字段一致、`task_fingerprint` 等于依**刚写出的** `tasks.md` 重算之值、`spec_fingerprint` 依 `spec_targets` 计算；`[delta]` / `[deploy]` 段与其勾选状态**字节恒等**；全程无 slot / staging / seal / receipt 文件产生 |
+| UT-S32-91 | 结构化校验失败零副作用 | 分别构造：非法 JSON、空数组、缺 `owned_test_ids`、`slice_id` 重复、`owned_test_ids` 含未定义 ID → 各自非零退出并报对应稳定错误码（`SLICE_PLAN_INPUT_INVALID` / `SLICE_PLAN_DUPLICATE_SLICE_ID` / `SLICE_PLAN_UNKNOWN_TEST_ID`）；每种情形下 `tasks.md` 与 `TEST_SLICE_MANIFEST.json` 的字节与 mtime **均不变** |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S32-40 | 规划 → 增量验收 → 重规划幂等的端到端 | 真实 CLI：① `slice plan` 写入 2 切片 → ② `openlogos verify` 以 `slice-checkpoint` 模式运行，`eligible` 仅含基线与切片 1 的 `owned_test_ids`（**证明增量验收能力零回归**）→ ③ 修改 `slices.json` 后重跑 `slice plan`，`[code]` 与 manifest 幂等覆盖、无终态相位、无需重开通道 → ④ 手工改动 `[code]` 造成指纹 stale，`status` / `next` / `verify` 输出 stale **告警但不阻断**（审计产物不参与流程分支判定） |
 
 ### 追溯与覆盖
 
-- 前移后续用：UT-S32-71；懒创建兜底零回归：UT-S32-72。
-- 场景：S32 initial-plan 事务创建时机前移；功能规格：§2.65.2 / §2.65.3；根规范：`spec/test-slice-manifest.md`（创建时机合同）。
+- AC-SLICE-PLAN-01 一次调用完成落盘与指纹自算：UT-S32-90、ST-S32-40 步骤①。
+- AC-SLICE-PLAN-02 校验失败零副作用：UT-S32-91。
+- AC-SLICE-PLAN-03 增量验收能力零回归：ST-S32-40 步骤②。
+- AC-SLICE-PLAN-04 重规划幂等、无终态相位：ST-S32-40 步骤③。
+- AC-SLICE-PLAN-05 指纹 stale 告警不阻断：ST-S32-40 步骤④。
+- 场景：`core-S32-slice-planning.md`「S32 切片规划单条受控写入口时序」；功能规格：§2.68；JSON 契约：`spec/cli-json-output.md`「openlogos slice plan 输出合同」。
 
 ### 自动化与证据要求
 

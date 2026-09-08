@@ -1,0 +1,77 @@
+{
+  "type": "merge_transaction_complete",
+  "transaction_id": "mtx_39c15aa6bbf0d5432e29533b",
+  "seal_sha256": "sha256:cd8795fde02740fc7cbebc88535259e2017439c28f95db677b8b79a18d3de0d6",
+  "receipt_sha256": "sha256:b963550c190d5ec161e0498332a41904e4e7267858266f1df97f564a589601d3",
+  "completed_at": "2026-09-08T01:44:10.137Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "lite-cut1a-remove-slice-transaction",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S32-40",
+      "UT-S32-90",
+      "UT-S32-91"
+    ],
+    "removed_test_ids": [
+      "ST-S28-16",
+      "ST-S32-18",
+      "ST-S32-19",
+      "ST-S32-20",
+      "ST-S32-21",
+      "ST-S32-22",
+      "UT-S09-287",
+      "UT-S09-288",
+      "UT-S13-67",
+      "UT-S28-45",
+      "UT-S28-46",
+      "UT-S28-49",
+      "UT-S28-50",
+      "UT-S28-51",
+      "UT-S28-52",
+      "UT-S32-52",
+      "UT-S32-53",
+      "UT-S32-54",
+      "UT-S32-55",
+      "UT-S32-56",
+      "UT-S32-57",
+      "UT-S32-58",
+      "UT-S32-59",
+      "UT-S32-60",
+      "UT-S32-61",
+      "UT-S32-62",
+      "UT-S32-63",
+      "UT-S32-64",
+      "UT-S32-65",
+      "UT-S32-66",
+      "UT-S32-67",
+      "UT-S32-68",
+      "UT-S32-71",
+      "UT-S32-72"
+    ],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "4f6a8a6e9ed697523397bea07c120ae3c34dfbba658705d7b71ebfe369bb3463",
+        "after_sha256": "041dcd87f9af7043aa7869b2ca3fb2412d49d4faa87c5fa264075943375bcca2"
+      },
+      {
+        "target_path": "logos/resources/test/core-S13-test-cases.md",
+        "before_sha256": "06c1c6916d3cd7e1f43b4cfa1d5180a088fd73f1e05a124a8a24a83422b467b1",
+        "after_sha256": "3637fc7284f77ff44b474d996df01dc2352bd08f1d5d48f7f493127bde262ac2"
+      },
+      {
+        "target_path": "logos/resources/test/core-S28-test-cases.md",
+        "before_sha256": "8b1f41654e64904b3063b59cb739ecf87342e02254e285ca6c9b8b9cbd70957a",
+        "after_sha256": "5c1e0e4639c86aa0a3f1f36ce81d8e949968d42e6146af80c0134fe9ee21b326"
+      },
+      {
+        "target_path": "logos/resources/test/core-S32-test-cases.md",
+        "before_sha256": "6545124fe03c944f4e8c08a2149003e02c771606b2e32985820818e232f99e58",
+        "after_sha256": "ea23febf6e5138ce736882d056bdfa1cfe9c620e4ec7825e4cde9ea75b231879"
+      }
+    ],
+    "sha256": "sha256:43c9f865bf2242772a41e435c4d9045e5fbd8ea06505780aed5fc09106ce7ae1"
+  }
+}
