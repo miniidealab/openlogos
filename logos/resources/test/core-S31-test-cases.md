@@ -154,7 +154,7 @@ S31 既有 “空 `[code]` 退化为 `tests_green`” 仅适用于无代码产�
 
 | ID | 描述 | 覆盖 | 操作 | 期望 |
 |---|---|---|---|---|
-| ST-S31-10 | 全量失败只在 implement loop 中驱动 repair | S31 与 S24/S28 边界 | 用同一失败证据分别构造 `ready-to-merge`、未规划切片 `ready-to-implement`、`coding` | 分别执行 `next --auto --format json` | 前两者不进入 repair；`coding` 输出 repair/code 前沿 |
+|  ST-S31-10 | 全量失败只在 implement loop 中驱动 repair | S31 与 S24/S28 边界 | 用同一失败证据分别构造 `ready-to-merge`、未规划切片 `ready-to-implement`、`coding`；随后分别执行 `next --auto --format json` | 前两者不进入 repair；`coding` 输出 repair/code 前沿  |
 
 ### 10.3 覆盖度校验补充
 

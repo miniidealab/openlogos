@@ -1,0 +1,72 @@
+{
+  "type": "merge_complete",
+  "completed_at": "2026-09-08T04:09:37.275Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "lite-cut2c-spec-hygiene-and-anchors",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "ST-S09-141",
+      "ST-S31-10",
+      "ST-S33-05",
+      "ST-S33-06",
+      "ST-S33-07",
+      "ST-S37-11",
+      "UT-S09-342",
+      "UT-S09-343",
+      "UT-S27-32",
+      "UT-S33-49",
+      "UT-S33-50",
+      "UT-S33-51",
+      "UT-S35-136",
+      "UT-S35-137",
+      "UT-S37-41"
+    ],
+    "removed_test_ids": [
+      "SMOKE-core-163",
+      "SMOKE-core-164",
+      "SMOKE-core-165",
+      "SMOKE-core-166",
+      "SMOKE-core-167"
+    ],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S09-test-cases.md",
+        "before_sha256": "8f395feef582d304c61a562d3bf8dc7798d4e0a0df818232f25395e08614ba7c",
+        "after_sha256": "55a27ef2590a89a4e6a9b7e59b734dc5e4d80af0aa72c9f04179d1dbdb1a38b1"
+      },
+      {
+        "target_path": "logos/resources/test/core-S27-test-cases.md",
+        "before_sha256": "ceac2435e1611f777fad87cd552a7ff964ea9ab2e5e83f5231c369c78e227e93",
+        "after_sha256": "8e0372ca4196e7502dceda9d20d535aeb3280005500d392bb7798e6e47743bf7"
+      },
+      {
+        "target_path": "logos/resources/test/core-S31-test-cases.md",
+        "before_sha256": "b52e05117d8fe3892eb7d0b0a46745f5f650ba6c3ba16ddadc1a60594ba04b06",
+        "after_sha256": "e07591d9d3ab8515b761a06a5e08a5d7fe84f504fd8df34b2f3092766cfb144b"
+      },
+      {
+        "target_path": "logos/resources/test/core-S33-test-cases.md",
+        "before_sha256": "3cb2944c9edac4971b52f4582a6fca431a80c40cb1d7ab78551bdc826dd13953",
+        "after_sha256": "5148808e20ee8a32140cac5c8024ae406978099029b44c32c30805c94af82ccf"
+      },
+      {
+        "target_path": "logos/resources/test/core-S35-test-cases.md",
+        "before_sha256": "898c355394a017bf1db760c7fc17e28f464f35c969f5bdb28946cf75ce566394",
+        "after_sha256": "c3926bbcbfd0b0988f81b31d4c30f4876ec17513257ce74076a0190fa366d33b"
+      },
+      {
+        "target_path": "logos/resources/test/core-S37-test-cases.md",
+        "before_sha256": "a818b534b341537c2059c678e0ff3ca784066f8211b903d5713a4d8b93d1b1f8",
+        "after_sha256": "cd83e690cc263003b8ae2b5ae78d51efbb4b61646bb5c58f7afa54155c47b62c"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "cf8200ab9826924df10071154a91622f80536b5d5b7b3f216355a77c7f5e1f9d",
+        "after_sha256": "31779d29e6fc4e233b9b4324f4135a815cd43f14eee8697e1d29dc56d3ddf62d"
+      }
+    ],
+    "sha256": "sha256:766f6041e091179efdde17077ccd95ff3e77b6a16211a2eeb0016582cb0b8092"
+  }
+}
