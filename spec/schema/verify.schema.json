@@ -3,9 +3,9 @@
   "$id": "https://openlogos.dev/schema/verify/1.1.0",
   "title": "openlogos verify --format json 机器契约（data 对象）",
   "x-contract-version": "1.1.0",
-  "$comment": "向后兼容 superset schema：legacy verify 使用 1.0.0；含切片验证字段时使用 1.1.0。校验对象是 envelope.data。",
+  "$comment": "向后兼容 superset schema：legacy verify 使用 1.0.0；含切片验证字段时使用 1.1.0。校验对象是 envelope.data。0.15.0 起 checklist / ac_trace 不再产出（verify 判定层收敛，见功能规格 §2.75），故不再必填；additionalProperties 放开，存量含该字段的响应仍合法。",
   "type": "object",
-  "required": ["contract", "summary", "gate", "failed_cases", "uncovered_cases", "skipped_cases", "consistency", "checklist", "ac_trace", "pre_run", "smoke_precheck", "sandbox", "report_path"],
+  "required": ["contract", "summary", "gate", "failed_cases", "uncovered_cases", "skipped_cases", "consistency", "pre_run", "smoke_precheck", "sandbox", "report_path"],
   "additionalProperties": true,
   "properties": {
     "contract": {
@@ -35,8 +35,6 @@
     "uncovered_cases": { "$ref": "#/$defs/stringArray" },
     "skipped_cases": { "$ref": "#/$defs/stringArray" },
     "consistency": { "type": "object" },
-    "checklist": { "type": "object" },
-    "ac_trace": { "type": "object" },
     "pre_run": { "type": "object" },
     "smoke_precheck": { "type": "object" },
     "sandbox": { "type": "object" },

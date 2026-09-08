@@ -14,9 +14,12 @@
 
 ## [code] 代码实现
 
+- [x] 切片1：verify 判定层收敛（O9）——Gate 判据由五项收敛为三项（账本一致性、零失败、零未覆盖）；删除 Layer1 覆盖度校验清单与 Layer3 AC 追溯矩阵的解析、判定、Markdown 报告段与 JSON envelope 字段（含 checklist_incomplete / ac_trace_incomplete 两个失败原因码），并同步 spec/schema/verify.schema.json 的必填字段。**ID 覆盖检查（uncovered）完整保留**——它是方案要求留下的唯一那条。
+- [x] 切片2：0.15.0 候选身份与打包验收（O11）——CLI package.json 与 lockfile、五个随包 plugin manifest、asset manifest、LOCAL_RELEASE_CANDIDATE_VERSION 与回滚位同步推进到 0.15.0/0.14.25；旧候选锚 UT-S19-45 退为版本无关接线锚；新增 ST-S19-22 以真实 npm pack + 一次性隔离 npm prefix 证明 candidate identity、破坏性命令面 fail-closed、新命令可用，并**取证本机全局仍为 0.14.25**（§13 保险条款）。
+
 ## [deploy] 部署执行
 
-- [ ] 冻结本机全局 0.14.25 事实（command -v / realpath / version / manifest hash）
-- [ ] 真实 `npm pack` 冻结 0.15.0 tarball 并记录 SHA-256
-- [ ] `mktemp -d` 一次性 npm prefix 安装固定 tarball，执行隔离行为矩阵
-- [ ] 复核本机全局仍为 0.14.25（部署后取证），删除临时 prefix
+- [x] 冻结本机全局 0.14.25 事实（command -v / realpath / version / manifest hash）
+- [x] 真实 `npm pack` 冻结 0.15.0 tarball 并记录 SHA-256
+- [x] `mktemp -d` 一次性 npm prefix 安装固定 tarball，执行隔离行为矩阵
+- [x] 复核本机全局仍为 0.14.25（部署后取证），删除临时 prefix

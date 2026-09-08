@@ -64,18 +64,7 @@ const AC_ROW_PATTERN = /^\|\s*(S\d{2}-AC-\d{2,3})\s*\|([^|]*)\|([^|]*)\|/gm;
 
 const LINE = '─'.repeat(50);
 
-export interface ChecklistItem {
-  checked: boolean;
-  text: string;
-  file: string;
-}
 
-export interface AcTraceEntry {
-  acId: string;
-  description: string;
-  linkedCaseIds: string[];
-  file: string;
-}
 
 export type VerifyPreRunMode = 'none' | 'pre_run_command' | 'two_phase';
 export type VerifyPreRunStage = 'pre_run' | 'regression' | 'incremental';
@@ -127,21 +116,6 @@ export interface VerifyData {
   uncovered_cases: string[];
   skipped_cases: string[];
   consistency: VerifyConsistencyData;
-  checklist: {
-    total: number;
-    checked: number;
-    unchecked_items: Array<{ text: string; file: string }>;
-  };
-  ac_trace: {
-    total: number;
-    passed: number;
-    failed_criteria: Array<{
-      ac_id: string;
-      description: string;
-      linked_case_ids: string[];
-      status: string;
-    }>;
-  };
   pre_run: VerifyPreRunData;
   smoke_precheck: SmokeCoverageCheck;
   sandbox: SandboxData;
@@ -588,77 +562,7 @@ export function extractDefinedIds(root: string): { ids: string[]; utCount: numbe
   return { ids, utCount, stCount, manualCount };
 }
 
-export function extractChecklist(root: string): ChecklistItem[] {
-  const dir = join(root, TEST_CASES_DIR);
-  if (!existsSync(dir)) return [];
 
-  const items: ChecklistItem[] = [];
-  try {
-    const files = readdirSync(dir, { recursive: true })
-      .map(f => String(f))
-      .filter(f => f.endsWith('-test-cases.md'));
-
-    for (const file of files) {
-      const content = readFileSync(join(dir, file), 'utf-8');
-      const sectionStart = content.indexOf('## 三、覆盖度校验');
-      if (sectionStart === -1) continue;
-
-      const sectionEnd = content.indexOf('\n## ', sectionStart + 1);
-      const section = sectionEnd === -1
-        ? content.slice(sectionStart)
-        : content.slice(sectionStart, sectionEnd);
-
-      let match: RegExpExecArray | null;
-      const re = new RegExp(CHECKLIST_PATTERN.source, CHECKLIST_PATTERN.flags);
-      while ((match = re.exec(section)) !== null) {
-        items.push({
-          checked: match[1] === 'x',
-          text: match[2].trim(),
-          file,
-        });
-      }
-    }
-  } catch { /* directory read error */ }
-  return items;
-}
-
-export function extractAcTrace(root: string): AcTraceEntry[] {
-  const dir = join(root, TEST_CASES_DIR);
-  if (!existsSync(dir)) return [];
-
-  const entries: AcTraceEntry[] = [];
-  try {
-    const files = readdirSync(dir, { recursive: true })
-      .map(f => String(f))
-      .filter(f => f.endsWith('-test-cases.md'));
-
-    for (const file of files) {
-      const content = readFileSync(join(dir, file), 'utf-8');
-      if (!AC_TABLE_HEADER.test(content)) continue;
-
-      const sectionStart = content.search(AC_TABLE_HEADER);
-      const sectionEnd = content.indexOf('\n## ', sectionStart + 1);
-      const section = sectionEnd === -1
-        ? content.slice(sectionStart)
-        : content.slice(sectionStart, sectionEnd);
-
-      let match: RegExpExecArray | null;
-      const re = new RegExp(AC_ROW_PATTERN.source, AC_ROW_PATTERN.flags);
-      while ((match = re.exec(section)) !== null) {
-        const acId = match[1].trim();
-        const description = match[2].trim();
-        const caseIdsRaw = match[3].trim();
-        const caseIdTest = VERIFICATION_ID_RE;
-        const linkedCaseIds = caseIdsRaw
-          .split(/[,，]/)
-          .map(s => s.trim())
-          .filter(s => caseIdTest.test(s));
-        entries.push({ acId, description, linkedCaseIds, file });
-      }
-    }
-  } catch { /* directory read error */ }
-  return entries;
-}
 
 export function generateReport(
   defined: string[],
@@ -670,8 +574,6 @@ export function generateReport(
   coveragePct: string,
   passRatePct: string,
   gateResult: 'PASS' | 'FAIL',
-  checklist: ChecklistItem[],
-  acTrace: AcTraceEntry[],
   _resultIds: Set<string>,
   manualCount: number,
   sliceVerification?: SliceVerificationState | null,
@@ -724,58 +626,6 @@ export function generateReport(
       md += `- ${r.id}\n`;
     }
     md += '\n';
-  }
-
-  if (checklist.length > 0) {
-    const checked = checklist.filter(c => c.checked).length;
-    md += `## Design-time Coverage (Layer 1)\n\n`;
-    md += `> Parsed from the "三、覆盖度校验" checklist in test-cases.md. `;
-    md += `These assertions were made by AI at test-design time.\n\n`;
-    md += `| Status | Assertion | Source |\n|--------|-----------|--------|\n`;
-    for (const item of checklist) {
-      const icon = item.checked ? '✅' : '❌';
-      md += `| ${icon} | ${item.text} | ${item.file} |\n`;
-    }
-    md += `\n**${checked}/${checklist.length}** assertions confirmed.\n\n`;
-  }
-
-  if (acTrace.length > 0) {
-    const resultMap = new Map(results.map(r => [r.id, r]));
-    md += `## Acceptance Criteria Traceability (Layer 3)\n\n`;
-    md += `> Traces requirement acceptance criteria → test cases → runtime results.\n\n`;
-    md += `| AC ID | Description | Linked Cases | Runtime Status |\n`;
-    md += `|-------|-------------|-------------|----------------|\n`;
-    for (const ac of acTrace) {
-      const statuses = ac.linkedCaseIds.map(cid => {
-        const r = resultMap.get(cid);
-        if (!r) return `${cid}:🔵manual`;
-        if (r.status === 'pass') return `${cid}:✅`;
-        if (r.status === 'fail') return `${cid}:❌`;
-        return `${cid}:⏭️`;
-      });
-      const automatedIds = ac.linkedCaseIds.filter(cid => resultMap.has(cid));
-      const allManual = ac.linkedCaseIds.length > 0 && automatedIds.length === 0;
-      const allEffectivePass = automatedIds.length > 0
-        && automatedIds.every(cid => ['pass', 'skip'].includes(resultMap.get(cid)?.status ?? ''));
-      const acStatus = ac.linkedCaseIds.length === 0
-        ? '⚠️ no linked cases'
-        : allManual ? '🔵 MANUAL'
-        : allEffectivePass ? '✅ PASS' : '❌ FAIL';
-      md += `| ${ac.acId} | ${ac.description} | ${statuses.join(', ')} | ${acStatus} |\n`;
-    }
-    const acPassed = acTrace.filter(ac => {
-      const automatedIds = ac.linkedCaseIds.filter(cid => resultMap.has(cid));
-      return automatedIds.length > 0
-        && automatedIds.every(cid => ['pass', 'skip'].includes(resultMap.get(cid)?.status ?? ''));
-    }).length;
-    const acManual = acTrace.filter(ac =>
-      ac.linkedCaseIds.length > 0 && !ac.linkedCaseIds.some(cid => resultMap.has(cid)),
-    ).length;
-    const acWithoutLinks = acTrace.filter(ac => ac.linkedCaseIds.length === 0).length;
-    md += `\n**${acPassed}/${acTrace.length}** acceptance criteria passed.`;
-    if (acManual > 0) md += ` 🔵 ${acManual} criteria are manual-only (pending human verification).`;
-    if (acWithoutLinks > 0) md += ` ⚠️ ${acWithoutLinks} criteria have no linked test cases.`;
-    md += '\n\n';
   }
 
   return md;
@@ -916,38 +766,25 @@ export function collectVerifyData(
     countMismatches: buildVerifyCountMismatches(summary),
   });
 
-  const checklist = extractChecklist(root);
-  const acTrace = extractAcTrace(root);
 
-  const checklistUnchecked = checklist.filter(c => !c.checked);
-  const resultMap = new Map(results.map(r => [r.id, r]));
-
-  // AC 失败判定：全 [manual] 的 AC 标记为 MANUAL_PENDING，不计入失败
-  const acFailed = acTrace.filter(ac => {
-    if (ac.linkedCaseIds.length === 0) return true;
-    const automatedIds = ac.linkedCaseIds.filter(cid => resultMap.has(cid));
-    if (automatedIds.length === 0) return false; // 全 manual → MANUAL_PENDING，不失败
-    return !automatedIds.every(cid => ['pass', 'skip'].includes(resultMap.get(cid)?.status ?? ''));
-  });
-
-  const isPass = consistency.ok && failed.length === 0 && uncovered.length === 0
-    && checklistUnchecked.length === 0 && acFailed.length === 0;
+  // §2.75.1：Gate 判据收敛为三项——账本一致性、零失败、零未覆盖。
+  // 设计时覆盖度清单（Layer1）与 AC 追溯矩阵（Layer3）是「人声称覆盖了」，不再参与放行；
+  // 「规格声明的 ID 集合 ⊆ 结果 ID 集合」（uncovered）是不可替代的那一条，完整保留。
+  const isPass = consistency.ok && failed.length === 0 && uncovered.length === 0;
   const gateResult = isPass ? 'PASS' as const : 'FAIL' as const;
 
   let gateReason: string | null = null;
   if (!isPass) {
     if (!consistency.ok) gateReason = 'result_ledger_inconsistent';
     else if (failed.length > 0) gateReason = 'failed_cases';
-    else if (uncovered.length > 0) gateReason = 'incomplete_coverage';
-    else if (checklistUnchecked.length > 0) gateReason = 'checklist_incomplete';
-    else gateReason = 'ac_trace_incomplete';
+    else gateReason = 'incomplete_coverage';
   }
 
   const reportPath = join(root, REPORT_DIR, 'acceptance-report.md');
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, generateReport(
     defined, results, passed, failed, skipped, uncovered,
-    String(coveragePct), String(passRatePct), gateResult, checklist, acTrace, resultIds, manualCount,
+    String(coveragePct), String(passRatePct), gateResult, resultIds, manualCount,
     sliceVerification,
   ));
 
@@ -964,25 +801,6 @@ export function collectVerifyData(
     uncovered_cases: uncovered,
     skipped_cases: skipped.map(r => r.id),
     consistency,
-    checklist: {
-      total: checklist.length,
-      checked: checklist.filter(c => c.checked).length,
-      unchecked_items: checklistUnchecked.map(c => ({ text: c.text, file: c.file })),
-    },
-    ac_trace: {
-      total: acTrace.length,
-      passed: acTrace.length - acFailed.length,
-      failed_criteria: acFailed.map(ac => {
-        const automatedIds = ac.linkedCaseIds.filter(cid => resultMap.has(cid));
-        return {
-          ac_id: ac.acId,
-          description: ac.description,
-          linked_case_ids: ac.linkedCaseIds,
-          status: ac.linkedCaseIds.length === 0 ? 'NO_LINKED_CASES' : 'FAIL',
-        };
-        void automatedIds; // used in filter above
-      }),
-    },
     pre_run: preRun ?? buildInitialPreRunData(config),
     smoke_precheck: checkSmokeCoverage(root, readSmokeCommandConfig(root)),
     sandbox: buildInitialSandboxData(config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' })),
@@ -1275,7 +1093,7 @@ export function verify(format: OutputFormat = 'text') {
   console.log(t(locale, 'verify.readingResults', { path: resultPath }));
   console.log(t(locale, 'verify.readingCases'));
 
-  const { summary, gate, failed_cases, uncovered_cases, consistency, checklist, ac_trace, pre_run } = data;
+  const { summary, gate, failed_cases, uncovered_cases, consistency, pre_run } = data;
 
   console.log(`\n${LINE}`);
   console.log(`📊 ${t(locale, 'verify.summary')}`);
@@ -1328,41 +1146,15 @@ export function verify(format: OutputFormat = 'text') {
     }
   }
 
-  if (checklist.total > 0) {
-    console.log(`\n📋 ${t(locale, 'verify.checklistTitle')}`);
-    console.log(`  ${t(locale, 'verify.checklistSummary', { checked: String(checklist.checked), total: String(checklist.total) })}`);
-    if (checklist.unchecked_items.length > 0) {
-      console.log(`  ⚠️  ${t(locale, 'verify.checklistUnchecked', { count: String(checklist.unchecked_items.length) })}`);
-      for (const item of checklist.unchecked_items) {
-        console.log(`    - ${item.text}  (${item.file})`);
-      }
-    }
-  }
-
-  if (ac_trace.total > 0) {
-    console.log(`\n🔗 ${t(locale, 'verify.acTitle')}`);
-    console.log(`  ${t(locale, 'verify.acSummary', { passed: String(ac_trace.passed), total: String(ac_trace.total) })}`);
-    if (ac_trace.failed_criteria.length > 0) {
-      console.log(`  ⚠️  ${t(locale, 'verify.acFailed', { count: String(ac_trace.failed_criteria.length) })}`);
-      for (const ac of ac_trace.failed_criteria) {
-        const reason = ac.status === 'NO_LINKED_CASES' ? 'no linked cases' : 'case(s) not passing';
-        console.log(`    ${ac.ac_id}: ${ac.description}  (${reason})`);
-      }
-    }
-  }
-
   if (gate.result === 'PASS') {
     console.log(`\n✅ ${t(locale, 'verify.gatePass')}`);
   } else if (gate.reason === 'result_ledger_inconsistent') {
     console.log('\n❌ Gate 3.5: FAIL (result ledger inconsistent)');
   } else if (gate.reason === 'failed_cases') {
     console.log(`\n❌ ${t(locale, 'verify.gateFail')}`);
-  } else if (gate.reason === 'incomplete_coverage') {
-    console.log(`\n❌ ${t(locale, 'verify.gateFailCoverage')}`);
-  } else if (gate.reason === 'checklist_incomplete') {
-    console.log(`\n❌ ${t(locale, 'verify.gateFailChecklist')}`);
   } else {
-    console.log(`\n❌ ${t(locale, 'verify.gateFailAc')}`);
+    // §2.75.1：收敛后仅剩 incomplete_coverage 一种未列举原因
+    console.log(`\n❌ ${t(locale, 'verify.gateFailCoverage')}`);
   }
 
   console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}\n`);

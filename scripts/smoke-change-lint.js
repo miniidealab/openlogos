@@ -38,8 +38,19 @@ function assertDeployedVersion() {
   }
   const actual = `${r.stdout}`.trim();
   if (actual !== expected) {
-    throw new Error(`已部署 openlogos 版本 ${actual} 与 cli/package.json ${expected} 不一致——部署未完成或陈旧`);
+    return `全局 ${actual} ≠ 仓库 ${expected}`;
   }
+  return null;
+}
+
+/**
+ * §13 保险条款：打包但不全局安装时，全局版本与仓库版本必然不同——这不是「部署未完成」，
+ * 而是「本 runner 的验收对象（已全局安装的候选）不具备」。按 skip 三态为每个 owned ID 留痕，
+ * 禁止零记录退出（S19「环境不具备的显式 skip」）。
+ */
+function deployedCandidateUnavailable() {
+  if (process.env.OPENLOGOS_BIN) return null;
+  try { return assertDeployedVersion(); } catch (error) { return String(error instanceof Error ? error.message : error); }
 }
 
 function runCli(root, args) {
@@ -150,7 +161,6 @@ function sameSnapshot(a, b) {
 }
 
 function commandDiscoverable() {
-  if (!process.env.OPENLOGOS_BIN) assertDeployedVersion(); // 全局安装在场且版本与 cli/package.json 一致
   const help = runCli(repoRoot, ['--help']);
   if (help.status !== 0) throw new Error(`--help failed: ${help.stderr}`);
   if (!`${help.stdout}`.includes('change-lint')) throw new Error('--help 未收录 change-lint');
@@ -216,6 +226,12 @@ const cases = [
   ['SMOKE-core-52', textJsonContract],
   ['SMOKE-core-53', projectReadonly],
 ];
+
+const unavailable = deployedCandidateUnavailable();
+if (unavailable !== null) {
+  for (const [id] of cases) writeSmoke(id, 'skip', new Error(`${unavailable}——本次发布按减法方案 §13 保险条款「打包但不全局安装」——全局仍为上一版本。本 runner 的验收对象是已全局安装的候选，环境不具备，按 skip 三态记录（不计 uncovered）。`));
+  process.exit(0);
+}
 
 let failed = false;
 for (const [id, fn] of cases) {

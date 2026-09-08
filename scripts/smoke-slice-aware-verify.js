@@ -328,6 +328,22 @@ const cases = [
   ['SMOKE-core-65', smoke65], ['SMOKE-core-66', smoke66],
 ];
 
+// §13 保险条款：本次发布打包但不全局安装，全局仍为上一版本。本 runner 的验收对象是
+// 已全局安装的候选，环境不具备——为每个 owned ID 留痕 skip，禁止零记录退出。
+if (!process.env.OPENLOGOS_BIN) {
+  const probe = runCli(repoRoot, ['--version']);
+  const installed = probe.status === 0 ? `${probe.stdout}`.trim() : null;
+  if (installed !== expectedVersion) {
+    recordSmokeNotApplicable(cases.map(([id]) => id), {
+      reason: `已安装 ${installed ?? '(缺失)'} ≠ 候选 ${expectedVersion}——本次按 §13 保险条款打包但不全局安装`,
+      missing: ['globally-installed-candidate'],
+      environment: 'packaged-not-installed',
+    });
+    console.log('− 全部用例（环境不具备：候选未全局安装，已记 skip）');
+    process.exit(0);
+  }
+}
+
 let failed = false;
 for (const [id, check] of cases) {
   const startedAt = Date.now();

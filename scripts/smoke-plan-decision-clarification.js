@@ -272,6 +272,17 @@ const cases = [
   ['SMOKE-core-61', smokeDeploymentFailClosed],
 ];
 
+// §13 保险条款：打包不全局安装时，已安装候选不具备——为每个 owned ID 写 skip，禁止零记录退出。
+if (!process.env.OPENLOGOS_BIN) {
+  const probe = spawnSync(cliCommand(), ['--version'], { encoding: 'utf8' });
+  const installed = probe.status === 0 ? `${probe.stdout}`.trim() : null;
+  const want = JSON.parse(readFileSync(join(repoRoot, 'cli/package.json'), 'utf-8')).version;
+  if (installed !== want) {
+    for (const [id] of cases) writeSmoke(id, 'skip', Date.now(), new Error(`已安装 ${installed ?? '(缺失)'} ≠ 候选 ${want}——本次发布按减法方案 §13 保险条款「打包但不全局安装」——全局仍为上一版本；本 runner 的验收对象是已全局安装的候选，环境不具备，按 skip 三态记录（不计 uncovered）`));
+    process.exit(0);
+  }
+}
+
 let failed = false;
 for (const [id, fn] of cases) {
   const startedAt = Date.now();

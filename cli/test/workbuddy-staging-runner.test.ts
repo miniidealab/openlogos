@@ -87,14 +87,12 @@ describe('WorkBuddy staging smoke runner 合同', () => {
     expect(source).not.toMatch(/npm\s+publish|git\s+push|git\s+tag|gh\s+release/);
   });
 
-  it('SMOKE-core-67/100/108/116：dispatcher 为并行宿主路由独立制品，显式候选入口按候选版本验收', () => {
+  it('SMOKE-core-100/108/116：dispatcher 为并行宿主路由独立制品，显式候选入口按候选版本验收', () => {
     const dispatcher = readFileSync(join(repoRoot, 'scripts', 'run-smoke.js'), 'utf8');
-    const baseline = readFileSync(join(repoRoot, 'scripts', 'smoke-baseline-on-touch.js'), 'utf8');
     for (const host of ['ZCODE', 'QODER', 'WORKBUDDY']) {
       expect(dispatcher).toContain(`OPENLOGOS_${host}_TARBALL`);
       expect(dispatcher).toContain(`OPENLOGOS_${host}_PREVIOUS_TARBALL`);
     }
     expect(dispatcher).toContain('env: environmentFor(runner)');
-    expect(baseline).toContain('const expectedVersion = packageJson.version');
   });
 });

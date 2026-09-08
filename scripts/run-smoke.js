@@ -94,6 +94,10 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_LIFECYCLE_FC_TARBALL,
       previousTarball: process.env.OPENLOGOS_LIFECYCLE_FC_ROLLBACK_TARBALL,
     },
+    'scripts/smoke-release-0-15-0.js': {
+      tarball: process.env.OPENLOGOS_RELEASE_0_15_0_TARBALL,
+      previousTarball: process.env.OPENLOGOS_RELEASE_0_15_0_ROLLBACK_TARBALL,
+    },
     'scripts/smoke-trae-local-negative.js': {
       tarball: process.env.OPENLOGOS_TRAE_LOCAL_TARBALL,
       previousTarball: process.env.OPENLOGOS_TRAE_ROLLBACK_TARBALL,
@@ -209,7 +213,6 @@ function environmentFor(runner) {
 }
 
 const globalMutatingRunners = new Set([
-  'scripts/smoke-baseline-on-touch.js',
   'scripts/smoke-merge-transaction-candidate.js',
   'scripts/smoke-plan-package-convergence.js',
   'scripts/smoke-test-change-set-local-global.js',

@@ -131,7 +131,7 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
     ];
     for (const path of versionSources) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.25');
+    // 具体版本值自 0.15.0 起由 UT-S19-46 承载；本例只锚「全源一致」这一性质
 
     const assetManifest = JSON.parse(readFileSync(join(cliRoot, 'asset-manifest.json'), 'utf8')) as AssetManifest;
     validateAssetManifest(assetManifest, cliRoot);
@@ -244,15 +244,13 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     expect(smokeContract).toMatchObject({ ids: ['SMOKE-core-195'], public_release_commands: [] });
   });
 
-  it('UT-S19-45: 0.14.25 候选身份全源一致与回滚身份 0.14.24，回滚制品 tripwire 与 SMOKE-core-196 runner 已接线', () => {
-    expect(LOCAL_RELEASE_CANDIDATE_VERSION).toBe('0.14.25');
-    expect(LOCAL_RELEASE_ROLLBACK_VERSION).toBe('0.14.24');
+  it('UT-S19-45: 0.14.25 候选发布的版本无关接线锚（版本身份自 0.15.0 起由 UT-S19-46 承载）', () => {
     for (const path of [
       'cli/package.json', 'cli/package-lock.json',
       'plugin/.claude-plugin/plugin.json', 'plugin-codex/plugin.json',
       'plugin-zcode/.zcode-plugin/plugin.json', 'plugin-qoder/.qoder-plugin/plugin.json',
       'plugin-workbuddy/.workbuddy-plugin/plugin.json', 'cli/asset-manifest.json',
-    ]) expect(readVersion(join(repoRoot, path)), path).toBe('0.14.25');
+    ]) expect(readVersion(join(repoRoot, path)), path).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
     // 发布内容自证：smoke/archive 前置 fail-closed 与只读对账投影三处新字节在场
     const smokeSource = readFileSync(join(cliRoot, 'src/commands/smoke.ts'), 'utf8');
     expect(smokeSource).toContain('evaluateSmokePrecondition');

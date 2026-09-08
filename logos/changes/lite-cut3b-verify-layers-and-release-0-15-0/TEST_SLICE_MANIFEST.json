@@ -1,0 +1,45 @@
+{
+  "schema": "openlogos/test-slice-manifest@1",
+  "change": "lite-cut3b-verify-layers-and-release-0-15-0",
+  "module": "core",
+  "task_fingerprint": "sha256:f6a280b52061e3c5d79d8ec5b3bd80dd33f740fc7eb0227cea0677e8112e0f2c",
+  "spec_fingerprint": "sha256:6dd397e3d6fdb94da713396b031b7e0d74a66e6c14eea112395c4698b74a2cb1",
+  "generated_at": "2026-09-08T05:29:10.231Z",
+  "slices": [
+    {
+      "slice_id": "slice-01-verify-layer-convergence",
+      "task_text": "切片1：verify 判定层收敛（O9）——Gate 判据由五项收敛为三项（账本一致性、零失败、零未覆盖）；删除 Layer1 覆盖度校验清单与 Layer3 AC 追溯矩阵的解析、判定、Markdown 报告段与 JSON envelope 字段（含 checklist_incomplete / ac_trace_incomplete 两个失败原因码），并同步 spec/schema/verify.schema.json 的必填字段。**ID 覆盖检查（uncovered）完整保留**——它是方案要求留下的唯一那条。",
+      "owned_test_ids": [
+        "UT-S13-67",
+        "UT-S13-68",
+        "ST-S13-19"
+      ],
+      "runner_selectors": [
+        "UT-S13-67",
+        "UT-S13-68",
+        "ST-S13-19"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/test/core-S13-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-release-0-15-0-candidate",
+      "task_text": "切片2：0.15.0 候选身份与打包验收（O11）——CLI package.json 与 lockfile、五个随包 plugin manifest、asset manifest、LOCAL_RELEASE_CANDIDATE_VERSION 与回滚位同步推进到 0.15.0/0.14.25；旧候选锚 UT-S19-45 退为版本无关接线锚；新增 ST-S19-22 以真实 npm pack + 一次性隔离 npm prefix 证明 candidate identity、破坏性命令面 fail-closed、新命令可用，并**取证本机全局仍为 0.14.25**（§13 保险条款）。",
+      "owned_test_ids": [
+        "UT-S19-46",
+        "ST-S19-22"
+      ],
+      "runner_selectors": [
+        "UT-S19-46",
+        "ST-S19-22"
+      ],
+      "spec_targets": [
+        "logos/resources/prd/2-product-design/1-feature-specs/core-01-feature-specs.md",
+        "logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md",
+        "logos/resources/test/core-S19-test-cases.md"
+      ]
+    }
+  ]
+}

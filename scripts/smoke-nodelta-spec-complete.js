@@ -160,7 +160,9 @@ function noDeltaMergeReachesPlanSlices() {
     const markerPath = join(root, 'logos/changes', slug, 'SPEC_MERGED');
     if (!existsSync(markerPath)) throw new Error('SPEC_MERGED was not written');
     const marker = JSON.parse(readFileSync(markerPath, 'utf-8'));
-    if (marker.type !== 'merge_transaction_complete' || !marker.transaction_id || !marker.receipt_sha256) {
+    // lite-cut1b 起 merge 一次调用完成，marker 为 `merge_complete` 且携带结构化 test_change_set；
+    // 事务时代的 transaction_id / receipt_sha256 已随合并事务删除。
+    if (marker.type !== 'merge_complete' || !marker.completed_at || !marker.test_change_set) {
       throw new Error(`unexpected marker: ${JSON.stringify(marker)}`);
     }
 

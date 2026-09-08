@@ -17,3 +17,11 @@
 
 - runner 记录 tarball 路径与 SHA-256、隔离 prefix 路径、每步入口 realpath 与 version。
 - 命令图中不得出现 `npm publish` / `dist-tag` / `git tag` / `gh release` / `git push` / 本机全局 `npm install -g`。
+
+## REMOVED — 十一、baseline-on-touch 发布后冒烟用例（S39）
+
+本节 5 条（SMOKE-core-54～58）验证 baseline-on-touch 闭包在安装态下的行为：权威 targets 与逐场景完备、plan L9、缺失目标全量 CREATE、P/T/D 与模式漂移 fail-closed、无 JIT 回归。change-lint L9 已随 lite-cut2b 删除，本节失去验证对象——**这是 lite-cut2b 应删未删的漏网**，由本次 smoke 首跑暴露。
+
+## REMOVED — 场景 CREATE 完整性修复 v0.13.27 本地全局安装冒烟用例
+
+本节 3 条（SMOKE-core-67～69）验证场景 CREATE 最低完整度（S39-AC-08～12）在安装态下的判定与回滚。该完整度检查属 L9 的 `createCompletenessProblems`，随 L9 删除；其对应的 `#### 2.35.9` 合同也在本提案一并清理。

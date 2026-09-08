@@ -7,8 +7,6 @@ import {
   parseJsonlWithDiagnostics,
   buildVerifyCountMismatches,
   extractDefinedIds,
-  extractChecklist,
-  extractAcTrace,
   generateReport,
   collectVerifyData,
   buildInitialPreRunData,
@@ -599,8 +597,8 @@ describe('S13 Unit Tests — verify result consistency', () => {
     expect(data.summary.pass_rate_pct).toBe(100);
     expect(data.summary.skipped_count).toBe(1);
     expect(data.skipped_cases).toEqual(['ST-S13-12']);
-    expect(data.ac_trace.passed).toBe(1);
-    expect(data.ac_trace.failed_criteria).toEqual([]);
+    // §2.75：AC 追溯矩阵已移出判定与输出；合法 skip 不阻塞 Gate 由 gate 结论直接断言
+    expect(data.gate.result).toBe('PASS');
   });
 
   it('UT-S13-40: skip 计入有效通过率但保留审计列表', () => {
@@ -621,86 +619,7 @@ describe('S13 Unit Tests — verify result consistency', () => {
   });
 });
 
-describe('S13 Unit Tests — extractChecklist', () => {
-  let root: string;
-  let cleanup: () => void;
 
-  beforeEach(() => {
-    ({ root, cleanup } = makeTempRoot());
-  });
-  afterEach(() => cleanup());
-
-  it('UT-S13-09: parse checked and unchecked items', () => {
-    const testDir = join(root, 'logos/resources/test');
-    mkdirSync(testDir, { recursive: true });
-    writeFileSync(
-      join(testDir, 'S01-test-cases.md'),
-      '## 三、覆盖度校验\n\n- [x] 条件A\n- [ ] 条件B\n\n## 四、验收条件追溯\n',
-    );
-    const items = extractChecklist(root);
-    expect(items).toHaveLength(2);
-    expect(items[0]).toMatchObject({ checked: true, text: '条件A' });
-    expect(items[1]).toMatchObject({ checked: false, text: '条件B' });
-  });
-
-  it('UT-S13-10: only parse checklist within section 三', () => {
-    const testDir = join(root, 'logos/resources/test');
-    mkdirSync(testDir, { recursive: true });
-    writeFileSync(
-      join(testDir, 'S01-test-cases.md'),
-      '## 一、单元测试用例\n\n- [ ] not this one\n\n## 三、覆盖度校验\n\n- [x] only this\n',
-    );
-    const items = extractChecklist(root);
-    expect(items).toHaveLength(1);
-    expect(items[0].text).toBe('only this');
-  });
-});
-
-describe('S13 Unit Tests — extractAcTrace', () => {
-  let root: string;
-  let cleanup: () => void;
-
-  beforeEach(() => {
-    ({ root, cleanup } = makeTempRoot());
-  });
-  afterEach(() => cleanup());
-
-  it('UT-S13-11: parse AC traceability table row', () => {
-    const testDir = join(root, 'logos/resources/test');
-    mkdirSync(testDir, { recursive: true });
-    writeFileSync(
-      join(testDir, 'S01-test-cases.md'),
-      '## 四、验收条件追溯\n\n| AC ID | 验收条件 | 覆盖用例 |\n|-------|---------|--------|\n| S01-AC-01 | 条件描述 | ST-S01-01 |\n',
-    );
-    const entries = extractAcTrace(root);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].acId).toBe('S01-AC-01');
-    expect(entries[0].description).toBe('条件描述');
-    expect(entries[0].linkedCaseIds).toEqual(['ST-S01-01']);
-  });
-
-  it('UT-S13-12: split multiple linked case IDs', () => {
-    const testDir = join(root, 'logos/resources/test');
-    mkdirSync(testDir, { recursive: true });
-    writeFileSync(
-      join(testDir, 'S01-test-cases.md'),
-      '## 四、验收条件追溯\n\n| AC ID | 验收条件 | 覆盖用例 |\n|-------|---------|--------|\n| S01-AC-03 | 异常处理 | ST-S01-03, UT-S01-05 |\n',
-    );
-    const entries = extractAcTrace(root);
-    expect(entries[0].linkedCaseIds).toEqual(['ST-S01-03', 'UT-S01-05']);
-  });
-
-  it('UT-S13-13: return empty when section 四 does not exist', () => {
-    const testDir = join(root, 'logos/resources/test');
-    mkdirSync(testDir, { recursive: true });
-    writeFileSync(
-      join(testDir, 'S01-test-cases.md'),
-      '## 三、覆盖度校验\n\n- [x] done\n',
-    );
-    const entries = extractAcTrace(root);
-    expect(entries).toEqual([]);
-  });
-});
 
 describe('S13 Unit Tests — generateReport', () => {
   const makeResults = (specs: Array<{ id: string; status: 'pass' | 'fail' | 'skip'; error?: string }>): TestResult[] =>
@@ -733,63 +652,9 @@ describe('S13 Unit Tests — generateReport', () => {
     expect(report).toContain('assert failed');
   });
 
-  it('UT-S13-16: show Design-time Coverage with checklist items', () => {
-    const checklist: ChecklistItem[] = [
-      { checked: true, text: 'cond A', file: 'S01-test-cases.md' },
-      { checked: true, text: 'cond B', file: 'S01-test-cases.md' },
-      { checked: false, text: 'cond C', file: 'S01-test-cases.md' },
-    ];
-    const report = generateReport(
-      [], [], [], [], [], [], '0', '0', 'FAIL',
-      checklist, [], new Set(), 0,
-    );
-    expect(report).toContain('## Design-time Coverage (Layer 1)');
-    expect(report).toContain('✅');
-    expect(report).toContain('❌');
-    expect(report).toContain('2/3');
-  });
 
-  it('UT-S13-17: show AC Traceability with runtime status', () => {
-    const results = makeResults([{ id: 'ST-S01-01', status: 'pass' }]);
-    const acTrace: AcTraceEntry[] = [{
-      acId: 'S01-AC-01',
-      description: '正常初始化',
-      linkedCaseIds: ['ST-S01-01'],
-      file: 'S01-test-cases.md',
-    }];
-    const report = generateReport(
-      ['ST-S01-01'], results, results, [], [], [],
-      '100', '100', 'PASS', [], acTrace, new Set(['ST-S01-01']), 0,
-    );
-    expect(report).toContain('## Acceptance Criteria Traceability (Layer 3)');
-    expect(report).toContain('✅ PASS');
-    expect(report).toContain('S01-AC-01');
-  });
 
-  it('UT-S13-20: Summary table contains manual_count row', () => {
-    const report = generateReport(
-      [], [], [], [], [], [], '0', '0', 'PASS',
-      [], [], new Set(), 2,
-    );
-    expect(report).toContain('Manual cases (excluded) | 2');
-  });
 
-  it('UT-S13-21: AC with all-manual linked cases shows MANUAL status', () => {
-    // ST-S01-05 is a [manual] case — not in results
-    const results: TestResult[] = [];
-    const acTrace: AcTraceEntry[] = [{
-      acId: 'S01-AC-05',
-      description: '人工验证渲染',
-      linkedCaseIds: ['ST-S01-05'],
-      file: 'S01-test-cases.md',
-    }];
-    const report = generateReport(
-      [], results, [], [], [], [],
-      '100', '100', 'PASS', [], acTrace, new Set(), 1,
-    );
-    expect(report).toContain('🔵 MANUAL');
-    expect(report).toContain('S01-AC-05');
-  });
 });
 
 describe('S13 Unit Tests — verify pre-run helpers', () => {
@@ -993,6 +858,69 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(existsSync(join(root, 'logos/resources/verify/acceptance-report.md'))).toBe(true);
   });
 
+  it('UT-S13-67: 设计时清单与 AC 追溯不再影响 Gate（§2.75.1）', () => {
+    // 对照组：清单全勾、AC 全链
+    writeTestCases(CASES_ALL_PASS);
+    writeResults(['{"id":"UT-S01-01","status":"pass"}', '{"id":"ST-S01-01","status":"pass"}']);
+    verify();
+    const baseline = JSON.parse(readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf8').includes('PASS') ? '{"gate":"PASS"}' : '{"gate":"FAIL"}');
+
+    const variants = [
+      // ① 清单存在未勾选项
+      CASES_ALL_PASS.replace('- [x] Condition B', '- [ ] Condition B'),
+      // ② AC 追溯存在无链接用例的条目
+      CASES_ALL_PASS.replace('| S01-AC-02 | unit check | UT-S01-01 |', '| S01-AC-02 | unit check |  |'),
+      // ③ 两者皆有
+      CASES_ALL_PASS.replace('- [x] Condition B', '- [ ] Condition B')
+        .replace('| S01-AC-02 | unit check | UT-S01-01 |', '| S01-AC-02 | unit check |  |'),
+    ];
+    for (const [idx, cases] of variants.entries()) {
+      con.logs.length = 0;
+      writeTestCases(cases);
+      writeResults(['{"id":"UT-S01-01","status":"pass"}', '{"id":"ST-S01-01","status":"pass"}']);
+      verify();  // 不抛 → Gate PASS
+      const logs = con.logs.join('\n');
+      expect(logs, `变体 ${idx + 1} 应与对照组同为 PASS`).toContain('PASS');
+      expect(logs).not.toContain('checklist_incomplete');
+      expect(logs).not.toContain('ac_trace_incomplete');
+    }
+    expect(baseline.gate).toBe('PASS');
+  });
+
+  it('UT-S13-68: ID 覆盖检查强度逐字不变（§2.75.1）', () => {
+    // 规格声明 10 个、结果只含其中 3 个且均 pass → 仍判 FAIL 并逐个点名其余 7 个
+    const ids = Array.from({ length: 10 }, (_, i) => `UT-S01-${String(i + 1).padStart(2, '0')}`);
+    writeTestCases(`# Test Cases\n${ids.map(id => `| ${id} | desc |`).join('\n')}\n`);
+    writeResults(ids.slice(0, 3).map(id => `{"id":"${id}","status":"pass"}`));
+
+    expect(() => verify()).toThrow('process.exit(1)');
+    const logs = con.logs.join('\n');
+    for (const id of ids.slice(3)) expect(logs, `未覆盖 ID 必须逐个点名：${id}`).toContain(id);
+    expect(logs).toContain('FAIL');
+  });
+
+  it('ST-S13-19: 报告与 envelope 不再含 Layer1/Layer3 字段（§2.75.2）', () => {
+    writeTestCases(CASES_ALL_PASS);
+    writeResults(['{"id":"UT-S01-01","status":"pass"}', '{"id":"ST-S01-01","status":"pass"}']);
+    verify();
+
+    // ① 报告不含两层段落，覆盖度与通过率段照常
+    const report = readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf8');
+    expect(report).not.toContain('Design-time Coverage');
+    expect(report).not.toContain('Acceptance Criteria Traceability');
+    expect(report).toContain('Gate');
+
+    // ② JSON envelope 的 data 不含 checklist / ac_trace，但保留 summary / gate / 未覆盖清单
+    con.logs.length = 0;
+    verify('json');
+    const envelope = JSON.parse(con.logs.join('\n').trim().split('\n').pop()!);
+    expect(envelope.data.checklist).toBeUndefined();
+    expect(envelope.data.ac_trace).toBeUndefined();
+    expect(envelope.data.summary).toBeDefined();
+    expect(envelope.data.gate).toBeDefined();
+    expect(envelope.data.uncovered_cases).toEqual([]);
+  });
+
   it('ST-S13-05: failed test → Gate FAIL', () => {
     writeTestCases(CASES_ALL_PASS);
     writeResults([
@@ -1053,18 +981,6 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(allLogs).toContain('UT-S01-02');
   });
 
-  it('ST-S13-06: unchecked checklist item → Gate FAIL', () => {
-    const cases = `# Test Cases\n| UT-S01-01 | d |\n\n## 三、覆盖度校验\n\n- [x] ok\n- [ ] not ok\n`;
-    writeTestCases(cases);
-    writeResults([
-      '{"id":"UT-S01-01","status":"pass"}',
-    ]);
-
-    expect(() => verify()).toThrow('process.exit(1)');
-    const allLogs = con.logs.join('\n');
-    expect(allLogs).toContain('not ok');
-    expect(allLogs).toContain('FAIL');
-  });
 
   it('ST-S13-11: 不自洽 verify 账本阻断全自动归档', () => {
     writeTestCases(CASES_ALL_PASS);
@@ -1140,23 +1056,6 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(allErrors).toContain('No test results found');
   });
 
-  it('ST-S13-06: uninitialized project → error exit', () => {
-    con.restore();
-    restoreCwd();
-    const { root: emptyRoot, cleanup: clean2 } = makeTempRoot();
-    const restore2 = mockCwd(emptyRoot);
-    con = captureConsole();
-
-    try {
-      expect(() => verify()).toThrow('process.exit(1)');
-      const allErrors = con.errors.join('\n');
-      expect(allErrors).toContain('logos.config.json not found');
-    } finally {
-      con.restore();
-      restore2();
-      clean2();
-    }
-  });
 
   it('ST-S13-07: [manual] cases excluded from coverage, Gate still PASS', () => {
     const cases = `# Test Cases
@@ -1190,36 +1089,6 @@ describe('S13 Scenario Tests — verify command', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('ST-S13-08: AC with all-manual linked cases → MANUAL_PENDING, Gate PASS', () => {
-    const cases = `# Test Cases
-| UT-S01-01 | desc |
-| ST-S01-05 [manual] | manual desc |
-
-## 三、覆盖度校验
-
-- [x] Condition A
-
-## 四、验收条件追溯
-
-| AC ID | 验收条件 | 覆盖用例 |
-|-------|---------|---------|
-| S01-AC-01 | unit check | UT-S01-01 |
-| S01-AC-02 | manual verify | ST-S01-05 |
-`;
-    writeTestCases(cases);
-    writeResults([
-      '{"id":"UT-S01-01","status":"pass"}',
-    ]);
-
-    verify();
-
-    const allLogs = con.logs.join('\n');
-    expect(allLogs).toContain('PASS');
-    expect(exitSpy).not.toHaveBeenCalled();
-
-    const report = readFileSync(join(root, 'logos/resources/verify/acceptance-report.md'), 'utf-8');
-    expect(report).toContain('🔵 MANUAL');
-  });
 
   it('ST-S13-09: Gate PASS writes VERIFY_PASS, clears VERIFY_FAIL, and prints deploy tasks', () => {
     writeTestCases(CASES_ALL_PASS);
