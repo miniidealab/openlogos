@@ -64,7 +64,7 @@ describe('baseline-on-touch 跨场景引导与恢复门', () => {
     expect(existsSync(join(root, 'logos/changes/safe-partial/tasks.md'))).toBe(true);
   });
 
-  it('UT-S20-19: 不可恢复 journal 在 change 写 proposal/tasks/guard 前统一硬阻断', () => {
+  it('UT-S20-19: 不可恢复 journal 在 change 前被隔离留存并继续（§2.74.3）', () => {
     const root = adoptedFixture('required');
     const broken = join(runsRoot(root), 'broken-change');
     mkdirSync(broken, { recursive: true });
@@ -73,10 +73,11 @@ describe('baseline-on-touch 跨场景引导与恢复门', () => {
     const con = captureConsole();
     const exitSpy = mockProcessExit();
     try {
-      expect(() => change('must-not-exist')).toThrow('process.exit(1)');
-      expect(con.errors.join('\n')).toContain('baseline_commit_in_progress');
-      expect(existsSync(join(root, 'logos/changes/must-not-exist'))).toBe(false);
-      expect(existsSync(join(root, 'logos/.openlogos-guard'))).toBe(false);
+      // §2.74.3：损坏 journal 被隔离留存后继续——change 照常创建提案与 guard
+      change('must-not-exist');
+      expect(con.logs.join('\n')).toContain('已隔离留存');
+      expect(existsSync(join(root, 'logos/changes/must-not-exist'))).toBe(true);
+      expect(existsSync(join(root, 'logos/.openlogos-guard'))).toBe(true);
     } finally {
       exitSpy.mockRestore();
       con.restore();

@@ -142,7 +142,6 @@ function checkOfCode(code: string): number {
     case 'proposal_placeholder_remaining':
     case 'proposal_change_type_invalid':
     case 'proposal_deployment_fields_invalid':
-    case 'proposal_clarification_invalid':
     case 'tasks_template_remaining':
     case 'tasks_code_entry_before_spec_complete':
     case 'tasks_code_section_missing':

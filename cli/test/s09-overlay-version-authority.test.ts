@@ -172,9 +172,9 @@ describe('S09 Scenario Tests — overlay 版本端到端', () => {
     const { warnings, flow } = applyOverlay(loadBuiltinFlow('launched'), overlay, 'launched');
 
     expect(warnings.map(w => w.code)).not.toContain('FLOW_VERSION_MISMATCH');
-    // 注入确实生效：两个 GUI 节点可解析
+    // 注入确实生效：GUI 原型节点可解析（§2.74.2 后 overlay 仅此一个节点）
     const ids = JSON.stringify(flow);
     expect(ids).toContain('write-ui-prototype');
-    expect(ids).toContain('verify-ui-provenance');
+    expect(ids).not.toContain('verify-ui-provenance');
   });
 });

@@ -162,10 +162,6 @@ describe('S35 L0 统一 evaluator', () => {
     const text = proposal().replace('代码级缺陷修复。', '其他').replace('- 是否需要部署：否', '- 是否需要部署：待定').replace('修复 plan 收敛故障。', '[为什么要做这个变更？]');
     expect(evaluateProposalStructure(text).map(i => i.code)).toEqual(expect.arrayContaining(['proposal_placeholder_remaining', 'proposal_change_type_invalid', 'proposal_deployment_fields_invalid']));
   });
-  it('UT-S35-103: clarification 失败由共享 evaluator 聚合', () => {
-    const f = setup('zh', proposal().replace('status: complete', 'status: pending'));
-    expect(evaluatePlanPackage(f.root, f.dir).issues).toContainEqual(expect.objectContaining({ code: 'proposal_clarification_invalid', section_id: 'clarification' }));
-  });
   it('UT-S35-104: tasks plan 模板残留', () => {
     const f = setup('zh', proposal(), tasks('', '- [ ] 更新需求文档的场景和验收条件'));
     expect(evaluatePlanPackage(f.root, f.dir).issues.map(i => i.code)).toContain('tasks_template_remaining');

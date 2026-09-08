@@ -31,7 +31,8 @@ export const PRODUCT_TYPE_ENUM = ['web', 'desktop', 'mobile', 'cli', 'api', 'lib
 /** GUI 产品类型集合 = {web,desktop,mobile}。 */
 export const GUI_PRODUCT_TYPES = new Set<string>(['web', 'desktop', 'mobile']);
 /** 方法论 GUI overlay 注入的两个节点 id（按此识别以幂等注入/移除、保留用户 ops）。 */
-export const GUI_OVERLAY_NODE_IDS = ['write-ui-prototype', 'verify-ui-provenance'] as const;
+// §2.74.2：`verify-ui-provenance` 随 UI provenance 降警告而移除；原型产出节点保留。
+export const GUI_OVERLAY_NODE_IDS = ['write-ui-prototype'] as const;
 
 export function isValidProductType(pt: unknown): pt is string {
   return typeof pt === 'string' && (PRODUCT_TYPE_ENUM as readonly string[]).includes(pt);
@@ -461,7 +462,7 @@ export function injectGuiOverlay(root: string): boolean {
 
 /**
  * 幂等移除 GUI overlay ops（反向：项目不再含 GUI 模块时）：
- * - 按 node id 移除 write-ui-prototype / verify-ui-provenance；
+ * - 按 node id 移除 write-ui-prototype；
  * - 用户自定义 overlay ops 一律保留。
  * 返回是否发生写入变更。
  */

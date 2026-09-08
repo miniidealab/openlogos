@@ -31,10 +31,10 @@ export const CONTRACT_VERSION_WITH_MERGE_TRANSACTION = '1.4.0';
  * add-feature-model（S34，delta-F1=B）：条件版本选择器——status/next 发射 `contract.version` 的唯一入口。
  * @param hasFeatures 本次响应是否含任一 `modules[].features` 字段。
  */
-export function contractVersion(hasFeatures: boolean, hasClarification = false, hasSliceVerification = false, hasPlanPackage = false, hasMergeTransaction = false): string {
-  if (hasMergeTransaction) return CONTRACT_VERSION_WITH_MERGE_TRANSACTION;
+export function contractVersion(hasFeatures: boolean, hasSliceVerification = false, hasPlanPackage = false): string {
+  // 1.2.0（clarification）与 1.4.0（merge transaction）不再由本 CLI 发射——其投影分别随
+  // lite-cut3a 与 lite-cut1b 删除。两个常量作为 superset schema 的文档化版本保留。
   if (hasPlanPackage) return CONTRACT_VERSION_WITH_PLAN_PACKAGE;
-  if (hasClarification) return CONTRACT_VERSION_WITH_CLARIFICATION;
   return hasFeatures || hasSliceVerification ? CONTRACT_VERSION_WITH_FEATURES : CONTRACT_VERSION;
 }
 

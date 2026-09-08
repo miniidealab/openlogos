@@ -21,7 +21,6 @@ export type PlanPackageIssueCode =
   | 'proposal_placeholder_remaining'
   | 'proposal_change_type_invalid'
   | 'proposal_deployment_fields_invalid'
-  | 'proposal_clarification_invalid'
   | 'tasks_template_remaining'
   | 'tasks_code_entry_before_spec_complete'
   | 'tasks_code_section_missing'
@@ -65,7 +64,7 @@ const ISSUE_ORDER: PlanPackageIssueCode[] = [
   'proposal_required_section_missing', 'proposal_required_section_duplicate',
   'proposal_required_section_empty', 'proposal_placeholder_remaining',
   'proposal_change_type_invalid', 'proposal_deployment_fields_invalid',
-  'proposal_clarification_invalid', 'tasks_template_remaining',
+  'tasks_template_remaining',
   'tasks_code_entry_before_spec_complete', 'tasks_code_section_missing',
   'tasks_deployment_conflict',
 ];

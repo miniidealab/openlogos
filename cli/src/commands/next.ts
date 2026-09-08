@@ -1100,8 +1100,6 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     // add-feature-model（S34，delta-F1=B）：条件版本——响应含任一 modules[].features 时 1.1.0，否则 1.0.0
     contract: { version: contractVersion(
       (data.modules ?? []).some(m => m.features !== undefined),
-      (moduleItems ?? []).some(m => m.plan_state?.clarification !== undefined)
-        || basePlanState?.clarification !== undefined,
       (moduleItems ?? []).some(m => m.slice_verification_state !== undefined)
         || baseSliceVerificationState !== undefined,
       (moduleItems ?? []).some(m => m.plan_state?.plan_package !== undefined)

@@ -11,7 +11,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { backupDir, journalPath, runsRoot } from '../src/lib/baseline-seed-txn.js';
 import { runChangeLint } from '../src/lib/change-lint.js';
@@ -32,26 +32,28 @@ function asAdopted(root: string, state: 'required' | 'partial' | 'seeded'): void
 }
 
 describe('seed commit journal 读取门 — S05/S11/S33', () => {
-  it('UT-S05-B09 / ST-S05-B04 / UT-S11-B02 / UT-S33-55 / ST-S33-09: 不可恢复 journal 统一硬门', () => {
+  it('UT-S05-B09 / ST-S05-B04 / UT-S11-B02 / UT-S33-55 / ST-S33-09: 不可恢复 journal 隔离留存后继续（§2.74.3）', () => {
     const f = frontierFixture();
     asAdopted(f.root, 'partial');
     const run = join(runsRoot(f.root), 'broken');
     mkdirSync(run, { recursive: true });
     writeFileSync(join(run, 'commit-journal.json'), '{broken');
 
-    // ① 库级消费者：change-lint 取锁恢复失败 → 稳定码硬阻断，不降级读半新资源
+    // ① 库级消费者：恢复失败 → 隔离损坏 journal 后继续（该门保护的读者已随 lite-cut2b 删除）
     const lint = runChangeLint(f.root, f.proposalDir, f.slug);
-    expect(lint.ok).toBe(false);
-    expect(lint.ok === false && lint.errorCode).toBe('baseline_commit_in_progress');
+    expect(lint.ok).toBe(true);
 
-    // ② 真实 CLI 的两个只读消费者同样硬阻断，且都给稳定 error.code
+    // ② 真实 CLI 的两个只读消费者同样零退出
     for (const cmd of ['status', 'next']) {
       const result = invoke([cmd, '--format', 'json'], f.root);
-      expect(result.status, cmd).not.toBe(0);
-      const envelope = JSON.parse(result.stderr.trim().split('\n').pop()!);
-      expect(envelope.error.code, cmd).toBe('baseline_commit_in_progress');
+      expect(result.status, `${cmd}: ${result.stderr}`).toBe(0);
     }
-    // ③ 硬阻断路径零副作用：不写任何 marker
+    // ③ 损坏 journal 被隔离留存，内容逐字节保留
+    expect(existsSync(join(run, 'commit-journal.json'))).toBe(false);
+    const kept = readdirSync(run).find(n => n.includes('.corrupt-'));
+    expect(kept).toBeDefined();
+    expect(readFileSync(join(run, kept!), 'utf8')).toBe('{broken');
+    // ④ 只读路径零副作用：不写任何 marker
     expect(existsSync(join(f.proposalDir, 'SPEC_MERGED'))).toBe(false);
   });
 

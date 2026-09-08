@@ -158,8 +158,8 @@ describe('S33 读锁有界重试与 reader 串行化', () => {
     expect(cmdSrc).not.toContain('acquireReadLockWithRetry');
   });
 
-  it('UT-S33-60: 不可恢复硬门与死锁回收零回退', () => {
-    // ① 不可恢复 journal：损坏 journal + 锁被占 → 重试取到锁后仍硬报，不读半新集合。
+  it('UT-S33-60: 不可恢复 journal 的分层处置与死锁回收零回退', () => {
+    // ① 底层 withBaselineReadLock 不做恢复，只如实报告未终结 journal（分层：raw 报告、wrapper 解决）。
     const broken = join(runsRoot(root), 'broken-retry');
     mkdirSync(broken, { recursive: true });
     writeFileSync(join(broken, 'commit-journal.json'), '{broken');
@@ -172,10 +172,12 @@ describe('S33 读锁有界重试与 reader 串行化', () => {
     expect(sleeps).toBeGreaterThanOrEqual(1);   // 重试确实发生（锁是等到的）
     expect(computeCalls).toBe(0);               // 标准资源读取哨兵为 0——硬门零回退
 
+    // 负责恢复的 withRecoveredReadLocks 则隔离损坏 journal 后继续（§2.74.3）
     holdLockAsOtherProcess(root);
     const r = withRecoveredReadLocks(root, AT, ['core'], () => { computeCalls++; return 'x'; });
-    expect(r).toEqual({ ok: false, inProgress: ['core'] });
-    expect(computeCalls).toBe(0);
+    expect(r).toEqual({ ok: true, value: 'x' });
+    expect(computeCalls).toBe(1);
+    expect(existsSync(join(broken, 'commit-journal.json')), '损坏 journal 已被移走').toBe(false);
     rmSync(broken, { recursive: true, force: true });
 
     // ② 死进程持锁：回收协议行为不变——首次 acquireLock 内完成 marker 仲裁回收，零退避。

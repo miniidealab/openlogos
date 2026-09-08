@@ -954,7 +954,7 @@ export function collectVerifyData(
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
 
   const data = addCoverageDiagnostics(root, {
-    contract: { version: contractVersion(false, false, Boolean(sliceVerification?.verify_mode)) },
+    contract: { version: contractVersion(false, Boolean(sliceVerification?.verify_mode)) },
     summary,
     gate: {
       result: gateResult,

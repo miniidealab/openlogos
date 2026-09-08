@@ -175,15 +175,6 @@ describe('S09 切片2 — check-ui-hash-match 三分支（F4 R4/R7）', () => {
     expect(checkUiHashMatch(dir).ok).toBe(false);
   });
 
-  it('UT-S09-86 / UT-S09-89: verify-ui-provenance overlay 结构（merge 前、单 done_when:cmd）', () => {
-    // 复用真实 overlay 源断言（与 slice1 flow 覆盖同 ID，结构性）
-    const REPO = join(__dirname, '..', '..');
-    const overlay = readFileSync(join(REPO, 'spec', 'flow', 'overlays', 'gui-ui-first.yaml'), 'utf-8');
-    expect(overlay).toContain('verify-ui-provenance');
-    expect(overlay).toContain('before: generate-merge-prompt');   // merge 之前
-    expect(overlay).toContain('done_when: "cmd:openlogos check-ui-hash-match"');
-    expect(/^\s*fail_when:/m.test(overlay)).toBe(false);           // 单 done_when:cmd（无 fail_when 键，决策 B 规避）
-  });
 });
 
 describe('S09 切片2 — commitVerifiedPrototypes 事务落盘（F1 R2/R3）', () => {
@@ -319,15 +310,16 @@ describe('S09 切片2 — merge 命令级 hash gate 与 F3 段标记（F4 R5/R7�
   });
   afterEach(() => { con.restore(); exitSpy.mockRestore(); restoreCwd(); cleanup(); });
 
-  it('UT-S09-91 / UT-S09-92 / ST-S09-36: ui_impact 漂移 → merge 命令级拒绝、不生成 MERGE_PROMPT/SPEC_MERGED', () => {
+  it('UT-S09-91 / UT-S09-92 / ST-S09-36: ui_impact 漂移 → merge 告警后继续（§2.74.2），诊断命令仍如实报失配', () => {
     const proposalDir = guiProject(root, 'drift');
     writePrototype(proposalDir, 'core-01-home.html', 'DRIFTED');
     writePlanApprovedMarker(proposalDir, { ui_prototype_rendered: true, pages: ['core-01-home.html'], hashes: { 'core-01-home.html': sha('HOME') } });
     // 跨会话：删 capability 文件（本就无）——强制语义仍拒绝
-    expect(() => merge('drift')).toThrow('process.exit(1)');
-    expect(existsSync(join(proposalDir, 'MERGE_PROMPT.md'))).toBe(false);
-    expect(existsSync(join(proposalDir, 'SPEC_MERGED'))).toBe(false);
-    expect(con.errors.join('\n')).toContain('UI provenance');
+    // §2.74.2：provenance 是审计性质的观察，降为告警——merge 照常完成
+    merge('drift');
+    expect(con.logs.join('\n')).toContain('UI provenance');
+    // 诊断能力不减：check-ui-hash-match 单独运行仍如实报失配
+    expect(checkUiHashMatch(proposalDir).ok).toBe(false);
   });
 
   it('UT-S09-95(merge) / SMOKE-core-39: ui_impact 匹配 → 原型经 commitVerifiedPrototypes 落盘、merge 成功', () => {
@@ -368,14 +360,14 @@ describe('S09 切片2 — merge 命令级 hash gate 与 F3 段标记（F4 R5/R7�
     expect(con.errors.join('\n')).toContain('段标记');
   });
 
-  it('ST-S09-EX-9.5: 提示前 gate 与落盘门一致 fail closed（同一持久化判据）', () => {
+  it('ST-S09-EX-9.5: 提示前告警与落盘门一致（同一持久化判据，§2.74.2 后均不阻断合并）', () => {
     // 提示前 gate（merge 命令）与 commitVerifiedPrototypes 落盘门对同一漂移原型均 fail closed
     const proposalDir = guiProject(root, 'depth');
     writePrototype(proposalDir, 'core-01-home.html', 'DRIFTED');
     writePlanApprovedMarker(proposalDir, { ui_prototype_rendered: true, pages: ['core-01-home.html'], hashes: { 'core-01-home.html': sha('HOME') } });
     expect(checkUiHashMatch(proposalDir).ok).toBe(false);              // 提示前
     expect(commitVerifiedPrototypes(proposalDir, root).ok).toBe(false); // 落盘时
-    expect(() => merge('depth')).toThrow('process.exit(1)');           // 命令级
+    merge('depth');                                                    // 命令级：告警不阻断
   });
 });
 
@@ -394,17 +386,6 @@ describe('S09 切片2 — ST-34/35 provenance 写入与漂移阻断', () => {
     expect(checkUiHashMatch(proposalDir).ok).toBe(true);
   });
 
-  it('ST-S09-35: 批准后漂移经 verify-ui-provenance 阻断，刷新后放行', () => {
-    const proposalDir = guiProject(root, 'drift2');
-    writePrototype(proposalDir, 'core-01-home.html', 'HOME');
-    writePlanApprovedMarker(proposalDir, { ui_prototype_rendered: true, pages: ['core-01-home.html'], hashes: { 'core-01-home.html': sha('HOME') } });
-    // 批准后漂移
-    writeFileSync(join(proposalDir, PROTOTYPE_DELTA_SUBPATH, 'core-01-home.html'), 'DRIFTED');
-    expect(checkUiHashMatch(proposalDir).ok).toBe(false);   // 阻断
-    // 显式重入 plan 刷新
-    writePlanApprovedMarker(proposalDir, { ui_prototype_rendered: true, pages: ['core-01-home.html'], hashes: { 'core-01-home.html': sha('DRIFTED') } });
-    expect(checkUiHashMatch(proposalDir).ok).toBe(true);    // 放行
-  });
 });
 
 // ── code-r1 修复 ─────────────────────────────────────────────────────────────
@@ -480,26 +461,25 @@ describe('S09 code-r1 F2 — guard/module 解析失败不得静默跳过 UI 强�
     return proposalDir;
   }
 
-  it('F2-1: guard 缺失 → full provenance 漂移仍被 merge 拒绝（触发键=持久化 PLAN_APPROVED）', () => {
+  it('F2-1: guard 缺失 → full provenance 漂移仍被告警且原型不落盘（触发键=持久化 PLAN_APPROVED）', () => {
     const proposalDir = driftedFull('noguard');
     rmSync(join(root, 'logos', '.openlogos-guard'), { force: true });   // 删 guard
-    expect(() => merge('noguard')).toThrow('process.exit(1)');
-    expect(existsSync(join(proposalDir, 'MERGE_PROMPT.md'))).toBe(false);
-    expect(existsSync(join(proposalDir, 'SPEC_MERGED'))).toBe(false);
+    merge('noguard');
+    expect(con.logs.join('\n')).toContain('UI provenance');
   });
 
-  it('F2-2: guard 损坏（非法 JSON）→ 漂移仍被拒绝、不绕过', () => {
+  it('F2-2: guard 损坏（非法 JSON）→ 漂移仍被告警、不静默绕过', () => {
     const proposalDir = driftedFull('corrupt');
     writeFileSync(join(root, 'logos', '.openlogos-guard'), '{ not json');
-    expect(() => merge('corrupt')).toThrow('process.exit(1)');
-    expect(existsSync(join(proposalDir, 'SPEC_MERGED'))).toBe(false);
+    merge('corrupt');
+    expect(con.logs.join('\n')).toContain('UI provenance');
   });
 
-  it('F2-3: guard 缺 module → 漂移仍被拒绝', () => {
+  it('F2-3: guard 缺 module → 漂移仍被告警', () => {
     const proposalDir = driftedFull('nomod');
     writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'nomod' }));  // 无 module
-    expect(() => merge('nomod')).toThrow('process.exit(1)');
-    expect(existsSync(join(proposalDir, 'SPEC_MERGED'))).toBe(false);
+    merge('nomod');
+    expect(con.logs.join('\n')).toContain('UI provenance');
   });
 
   it('F2-4: guard.activeChange 指向别的提案 → merge 拒绝（slug 一致性）', () => {
@@ -845,15 +825,15 @@ describe('S09 code-r2 F3 — 损坏 provenance 成员不得过滤后重判 full'
     expect(classifyProvenance(prov)).toBe('partial');
   });
 
-  it('F3r2-4: merge 入口对损坏 provenance（过滤后本会误判 full）fail closed', () => {
+  it('F3r2-4: merge 入口对损坏 provenance 告警且原型不落盘（过滤后本会误判 full）', () => {
     const restoreCwd = mockCwd(root); const con = captureConsole(); const exitSpy = mockProcessExit();
     try {
       const proposalDir = guiProject(root, 'mergecorrupt');
       writePrototype(proposalDir, 'core-01-home.html', 'HOME');
       // pages 混入非法成员、但合法部分 hash 恰好匹配目录——旧实现会过滤后判 full 放行
       writeFileSync(join(proposalDir, 'PLAN_APPROVED'), JSON.stringify({ ui_prototype_rendered: true, pages: ['core-01-home.html', 7], hashes: { 'core-01-home.html': sha('HOME') } }));
-      expect(() => merge('mergecorrupt')).toThrow('process.exit(1)');
-      expect(existsSync(join(proposalDir, 'SPEC_MERGED'))).toBe(false);
+      merge('mergecorrupt');
+      // 关键不变量：未经批准的原型字节**绝不落盘**
       expect(existsSync(join(root, PROTOTYPE_RESOURCE_SUBPATH, 'core-01-home.html'))).toBe(false);
     } finally { con.restore(); exitSpy.mockRestore(); restoreCwd(); }
   });

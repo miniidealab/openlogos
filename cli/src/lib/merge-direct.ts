@@ -81,6 +81,10 @@ export function planDirectTargets(root: string, proposalDir: string): PlannedTar
   const byTarget = new Map<string, PlannedTarget>();
   for (const entry of entries) {
     if (entry.mergeDisposition !== 'mergeable') continue;
+    // 原型资产（2-page-design 下的 .html）不是章节文档，由 commitVerifiedPrototypes 整份落盘，
+    // 不进 merge 的 canonical target 集合。（此前由闭包计划天然排除；改 delta 派生后需显式排除。）
+    if (entry.relativePath.replace(/\\/g, '/').includes('/2-product-design/2-page-design/')
+      && entry.relativePath.endsWith('.html')) continue;
     const targetPath = canonicalTargetFromDeltaPath(entry.relativePath);
     if (targetPath === null) {
       throw new MergeDirectError('MERGE_DELTA_INVALID',

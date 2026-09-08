@@ -1,6 +1,6 @@
 {
   "type": "merge_complete",
-  "completed_at": "2026-09-08T04:32:49.488Z",
+  "completed_at": "2026-09-08T04:38:25.446Z",
   "test_change_set": {
     "schema": "openlogos/test-change-set@1",
     "change": "lite-cut3a-degate-clarification-ui-seed",
@@ -10,19 +10,29 @@
       "ST-S05-B04",
       "ST-S09-142",
       "ST-S09-143",
-      "ST-S09-35",
+      "ST-S09-40",
+      "ST-S09-41",
+      "ST-S09-42",
       "ST-S11-B01",
       "ST-S20-13",
       "ST-S33-09",
       "UT-S05-B09",
+      "UT-S09-110",
+      "UT-S09-110a",
+      "UT-S09-110c",
+      "UT-S09-110d",
+      "UT-S09-110e",
+      "UT-S09-120",
+      "UT-S09-122",
       "UT-S09-344",
       "UT-S09-345",
       "UT-S09-346",
+      "UT-S09-78",
+      "UT-S09-84",
+      "UT-S09-87",
       "UT-S09-88a",
       "UT-S09-90",
-      "UT-S09-92",
       "UT-S09-94",
-      "UT-S09-95",
       "UT-S11-B02",
       "UT-S20-19",
       "UT-S33-33",
@@ -30,6 +40,7 @@
       "UT-S33-55"
     ],
     "removed_test_ids": [
+      "ST-S09-35",
       "ST-S09-60",
       "ST-S09-61",
       "ST-S09-62",
@@ -80,7 +91,9 @@
       "UT-S09-184",
       "UT-S09-185",
       "UT-S09-186",
-      "UT-S09-187"
+      "UT-S09-187",
+      "UT-S09-86",
+      "UT-S09-89"
     ],
     "targets": [
       {
@@ -91,7 +104,7 @@
       {
         "target_path": "logos/resources/test/core-S09-test-cases.md",
         "before_sha256": "55a27ef2590a89a4e6a9b7e59b734dc5e4d80af0aa72c9f04179d1dbdb1a38b1",
-        "after_sha256": "eeffb2f420c836c968e6c22302461ed5e57f06888063b868ce566a968e7bda63"
+        "after_sha256": "584bfb1b64e844787240c8612cd2845634ddd28be0c719c9d8afd7f735c709b2"
       },
       {
         "target_path": "logos/resources/test/core-S11-test-cases.md",
@@ -109,6 +122,6 @@
         "after_sha256": "a263d5686475af0aea11dfdc84a257eb70cd6cb2b36d7216c67c9d37ca687868"
       }
     ],
-    "sha256": "sha256:a210702ca36ed44953a918867c3c13fe282c9bb4bb60649b3b0edf7fd8943dbb"
+    "sha256": "sha256:0d77d12b7bad827c76c8860cbecee10f0e2a172854c8739e5d0466abff624b83"
   }
 }

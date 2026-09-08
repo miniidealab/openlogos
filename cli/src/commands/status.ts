@@ -1272,8 +1272,6 @@ function collectStatusDataLocked(root: string, filterModuleId?: string, cmdEval?
     // add-feature-model（S34，delta-F1=B）：条件版本——响应含任一 modules[].features 时 1.1.0，否则 1.0.0
     contract: { version: contractVersion(
       (modules ?? []).some(m => m.features !== undefined),
-      (modules ?? []).some(m => m.active_change?.plan_state?.clarification !== undefined)
-        || topPlanState?.clarification !== undefined,
       (modules ?? []).some(m => m.slice_verification_state !== undefined),
       (modules ?? []).some(m => m.active_change?.plan_state?.plan_package !== undefined)
         || topPlanState?.plan_package !== undefined,

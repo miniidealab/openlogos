@@ -10,7 +10,6 @@ import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
 import { readUiUxDeclaration } from '../src/lib/ui-first.js';
-import { evaluateProposalClarification } from '../src/lib/clarification.js';
 import { authorityScan, fenceMask, scanMarkdownAuthorityStructure } from '../src/lib/markdown-scan.js';
 import { runChangeLint } from '../src/lib/change-lint.js';
 
@@ -135,10 +134,7 @@ describe('S35 围栏提取单点与可归因', () => {
     const closureFences = structure.fences.filter(fence => /ya?ml/i.test(fence.info) && fence.content.includes('baseline_closure:'));
     expect(closureFences, '共享结构扫描中恰有一处 yaml 闭包声明围栏').toHaveLength(1);
 
-    // clarification 与 ui-first 走同一掩码：各自只解析到自己小节内的唯一围栏，不受示意块干扰
-    const clarification = evaluateProposalClarification(f.content);
-    expect(clarification.present).toBe(true);
-    expect(clarification.valid, JSON.stringify(clarification.issues ?? [])).toBe(true);
+    // ui-first 与结构扫描走同一掩码：只解析到自己小节内的唯一围栏，不受示意块干扰
     expect(readUiUxDeclaration(f.dir).ui_impact).toBe(false);
 
     // ③ 裸正则的反面：不走掩码时会把示意块也算进来，命中 2 处

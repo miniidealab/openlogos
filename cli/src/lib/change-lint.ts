@@ -19,7 +19,6 @@ import {
   extractTaskSectionItems,
   hasSpecCompleteMarker,
 } from './proposal-lifecycle.js';
-import { evaluateProposalClarification } from './clarification.js';
 import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import {
   DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError,
@@ -58,7 +57,6 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'proposal_placeholder_remaining',
   'proposal_change_type_invalid',
   'proposal_deployment_fields_invalid',
-  'proposal_clarification_invalid',
   'tasks_template_remaining',
   'tasks_code_entry_before_spec_complete',
   'tasks_code_section_missing',
@@ -94,7 +92,6 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'delta_removed_unknown_id',
   'delta_section_anchor_unresolvable',
   'non_markdown_delta_invalid',
-  'clarification_contract_invalid',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -849,21 +846,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     }
   }
 
-  // 决策澄清协议：与 proposal 完成谓词复用同一 evaluator，逐项汇总结构/类别/依赖问题。
-  const clarification = evaluateProposalClarification(
-    proposalContent,
-    resolveProposalDeploymentDecision(proposalDir).deployment_required,
-  );
-  if ((clarification.present || !hasSpecCompleteMarker(proposalDir)) && !clarification.valid) {
-    for (const issue of clarification.issues) {
-      pushViolation(acc, 3, {
-        code: 'clarification_contract_invalid',
-        path: relProposal,
-        message: `决策澄清契约非法：${issue}`,
-        fix_hint: '按 openlogos/clarification@1 补齐五类 impacts、合法 CXX/依赖、匹配的 user 决定与可恢复 unresolved；未知主版本请升级 CLI',
-      });
-    }
-  }
+  // §2.74.1：决策澄清不再被解析——小节作为文档保留，不产生任何 violation 或 warning。
 
   // L4 / L6：仅对已存在 delta 文件
   const nonMarkdownDegradations: Array<{ path: string; degradation: SqlValidationDegradation }> = [];

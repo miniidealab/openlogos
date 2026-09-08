@@ -13,7 +13,6 @@ import {
   authorityScan, extractUniqueAuthoritySection, isTableDelimiterRow, tableRowCells,
 } from './markdown-scan.js';
 import { listEvidenceTestDeltaFiles } from './delta-classify.js';
-import { evaluateProposalClarification, type ClarificationOutput } from './clarification.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
 import type { ModuleInfo } from '../commands/status.js';
 import { deriveSliceVerificationState } from './test-slice-manifest.js';
@@ -112,7 +111,6 @@ export interface PlanState {
   tasks_code_slices_filled: boolean;
   managed_assets: ManagedAssetsDiagnostic;
   diagnostic?: string;
-  clarification?: ClarificationOutput;
 }
 
 const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'spec', 'skills'] as const;
@@ -179,8 +177,8 @@ export function isProposalTemplateFilled(content: string): boolean {
     && isDeploymentSectionTemplateFilled(normalized);
   const baseFilled = strictFilled || legacyFilled;
   if (!baseFilled) return false;
-  const deploymentRequired = parseProposalDeploymentDecision(normalized)?.deployment_required ?? null;
-  return evaluateProposalClarification(normalized, deploymentRequired).output.status === 'complete';
+  // §2.74.1：proposal 是否填好，只看结构与部署声明；决策澄清是文档，不参与该谓词。
+  return true;
 }
 
 export function isTasksTemplateFilled(content: string): boolean {
@@ -831,11 +829,6 @@ export function derivePlanState(
   const execution = resolveTasksExecution(sections);
   const planPackage = evaluatePlanPackage(resolve(proposalDir, '../../..'), proposalDir);
   const proposalFilled = planPackage.proposal.filled;
-  const clarificationEvaluation = evaluateProposalClarification(
-    proposalContent,
-    parseProposalDeploymentDecision(proposalContent)?.deployment_required ?? null,
-  );
-  const includeClarification = clarificationEvaluation.present || step === 'writing' || step === 'ready-to-delta';
   const tasksTemplateFilled = planPackage.tasks.plan_filled && sections !== null;
   const planApproved = existsSync(join(proposalDir, PLAN_APPROVED_MARKER))
     || (step !== 'writing' && step !== 'ready-to-delta');
@@ -872,7 +865,6 @@ export function derivePlanState(
     tasks_code_slices_filled: planPackage.tasks.code_slices_filled,
     managed_assets: deriveManagedAssetsDiagnostic(resolve(proposalDir, '../../..'), readBundledAssetManifest()),
     ...(diagnostic ? { diagnostic } : {}),
-    ...(includeClarification ? { clarification: clarificationEvaluation.output } : {}),
   };
 }
 

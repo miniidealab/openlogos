@@ -229,27 +229,30 @@ export function merge(slug?: string) {
     && readdirSync(protoDeltaDir).some(f => f.endsWith('.html') && statSync(join(protoDeltaDir, f)).isFile());
   const looksUiFirst = decl.ui_impact === true || hasPrototypeHtml;
   if (looksUiFirst && !hasUiProvenanceEvidence && !moduleCtx.ok) {
-    console.error(`Error: 提案声明 ui_impact:true 或存在 page-design 原型，但模块归属无法解析（${moduleCtx.detail}）。`);
-    console.error('  无法确认是否 GUI 项目 → fail closed 拒绝 merge：未生成 MERGE_PROMPT、未写 resources、未写 SPEC_MERGED。补 proposal.md 的 `> module:` 头（并确保模块已注册）后重试。');
-    process.exit(1);
+    // §2.74.2：同属 provenance 观察面，降为告警——模块归属无法解析不影响合并本身的正确性。
+    console.log(`  ⚠️  提案声明 ui_impact:true 或存在 page-design 原型，但模块归属无法解析（${moduleCtx.detail}）。`);
+    console.log('      建议补 proposal.md 的 `> module:` 头（并确保模块已在 logos-project.yaml 注册）。');
   }
 
   const uiImpact = hasUiProvenanceEvidence
     || (moduleCtx.ok && deriveUiImpact(root, moduleCtx.moduleId, changePath));
   if (uiImpact) {
     // ① 命令级 pre-merge hash gate：堵直接调用绕过。full 失配/损坏、partial → fail closed（不生成 MERGE_PROMPT、不写 SPEC_MERGED）。
+    // §2.74.2：原型 hash 对账是**审计性质的观察**（防「批准后漂移」），按 §10 不得出现在流程分支的
+    // 条件里，故降为告警。诊断能力不减——`openlogos check-ui-hash-match` 单独运行仍如实报失配并非零退出。
     const hm = checkUiHashMatch(changePath);
     if (!hm.ok) {
-      console.error(`Error: UI provenance 校验失败（${hm.cls}/${hm.code}）：${hm.detail ?? '批准后原型漂移或 provenance 不完整'}`);
-      console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 resources、未写 SPEC_MERGED。remediation：显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑。');
-      process.exit(1);
+      console.log(`  ⚠️  UI provenance 校验失败（${hm.cls}/${hm.code}）：${hm.detail ?? '批准后原型漂移或 provenance 不完整'}`);
+      console.log('      如需修复：显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑 `openlogos check-ui-hash-match` 复核。');
     }
     // ② 原型正式字节由 commitVerifiedPrototypes 落盘；仅历史回归模式保留旧 UI commit 路径。
     if (legacyMergeTestMode()) {
       const commit = commitVerifiedPrototypes(changePath, root);
       if (!commit.ok) {
-        console.error(`Error: 原型事务落盘失败（${commit.reason}）：resources 回 merge 前态、零残留，拒绝 merge。`);
-        process.exit(1);
+        // §2.74.2：provenance 降警告不等于「把未经批准的字节落盘」——原型落盘是写入事务，
+        // 失败时跳过落盘并告警：合并照常完成，但绝不静默写入未验证内容。
+        console.log(`  ⚠️  原型未落盘（${commit.reason}）：resources 保持 merge 前态、零残留；`
+          + '规格 delta 照常合并。跑 `openlogos check-ui-hash-match` 查看失配详情。');
       }
     }
   }

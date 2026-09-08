@@ -812,6 +812,25 @@ export function listBaselineSeedModuleIds(root: string): string[] {
  * 从而「取锁—检查/恢复—读取」为同一区间。任一模块锁被占用（writer 在飞行）→ 回滚已取锁、返回 inProgress，
  * 调用方据此非零退出、**不做任何扫描/迁移/写副作用**。
  */
+/**
+ * §2.74.3：把不可恢复的 commit journal 隔离留存并告警，使只读消费者得以继续。
+ * 重命名而非删除——损坏的恢复指令是事故现场，留存成本接近零而事后可归因。
+ */
+function quarantineJournal(root: string, runId: string, reason: string): void {
+  const from = journalPath(root, runId);
+  if (!existsSync(from)) return;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const to = join(dirname(from), `${runId}.commit-journal.corrupt-${stamp}.json`);
+  try {
+    renameSync(from, to);
+    console.warn(`  ⚠️  baseline seed journal 不可恢复，已隔离留存：${to}`);
+    console.warn(`      原因：${reason}`);
+    console.warn('      读取继续——目标集由 deltas 派生、模式按磁盘事实判定，部分播种的资源树不影响合并正确性。');
+  } catch (error) {
+    console.warn(`  ⚠️  baseline seed journal 隔离失败（${String(error)}）；读取仍继续。`);
+  }
+}
+
 export function withRecoveredReadLocks<T>(
   root: string,
   at: string,
@@ -830,11 +849,32 @@ export function withRecoveredReadLocks<T>(
     }
     for (const m of sorted) {
       currentModule = m;
-      const pending = findUnfinalizedJournal(root, m);
-      if (pending) recoverJournal(root, pending.runId, at);
+      let pending: { runId: string; journal: CommitJournal } | null = null;
+      try {
+        pending = findUnfinalizedJournal(root, m);
+      } catch (e) {
+        // journal 本身不可解析——扫描阶段即抛。逐个隔离该模块下的损坏 journal 后继续。
+        if (!(e instanceof BaselineCommitInProgressError)) throw e;
+        for (const runId of listRunIds(root)) {
+          try { readJournalStrict(root, runId); } catch { quarantineJournal(root, runId, e.message); }
+        }
+        continue;
+      }
+      if (!pending) continue;
+      try {
+        recoverJournal(root, pending.runId, at);
+      } catch (e) {
+        // §2.74.3：可前滚 / 可回滚路径逐行不变；**不可恢复**时不再硬阻塞——
+        // 这道门保护的读者（ClosureEvaluator / EvidenceScanner）已随 lite-cut2b 的 L9 删除，
+        // 当前 merge 目标集由 deltas 派生、模式按磁盘事实判定，部分播种的资源树天然被正确处理。
+        // 损坏的恢复指令是事故现场：隔离留存而非删除，成本接近零且事后可复盘。
+        if (!(e instanceof BaselineCommitInProgressError)) throw e;
+        quarantineJournal(root, pending.runId, e.message);
+      }
     }
     return { ok: true, value: fn() };
   } catch (e) {
+    // 锁竞争（其它活进程持锁）是真实瞬态条件，不是审计判据——语义保持不变。
     if (e instanceof BaselineCommitInProgressError) return { ok: false, inProgress: [currentModule] };
     throw e;
   } finally {

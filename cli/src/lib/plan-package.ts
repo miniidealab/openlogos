@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { evaluateProposalClarification } from './clarification.js';
 import {
   extractTaskSectionItems, isCodeRequiredForProposal, isTasksCodeFilled,
   isTasksTemplateFilled, parseTaskSections, resolveProposalDeploymentDecision, countMergeableDeltaFiles,
@@ -34,10 +33,8 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
   const tasksRel = projectRelative(root, tasksPath);
   const proposalIssues = historical ? [] : evaluateProposalStructure(proposalContent, proposalRel, locale);
   const deployment = resolveProposalDeploymentDecision(proposalDir);
-  const clarification = evaluateProposalClarification(proposalContent, deployment.deployment_required);
-  if (!historical && (!clarification.valid || clarification.output.status !== 'complete')) {
-    proposalIssues.push(taskIssue('proposal_clarification_invalid', proposalRel, `决策澄清契约非法：${clarification.issues.join('；')}`, '按 openlogos/clarification@1 补齐并完成决策澄清。', { section_id: 'clarification', expected: 'openlogos/clarification@1 status=complete' }));
-  }
+  // §2.74.1：决策澄清自 0.15.0 起是纯文档——模板继续生成、change-writer 继续填写，
+  // 但不再被解析、不再参与 plan 完成度判定。「作者是否想清楚了」不是机器判得了的事。
   const sections = parseTaskSections(tasksContent);
   const codeRequired = isCodeRequiredForProposal(proposalDir, tasksContent, sections);
   // §2.50.7 A：spec-complete 只有一个判定实现，消费方一律调用它（含 legacy MERGED 的读法）。

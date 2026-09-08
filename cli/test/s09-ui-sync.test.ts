@@ -91,11 +91,11 @@ describe('S09 — syncGuiOverlay 幂等注入/移除', () => {
     expect(instanceGuiOverlayNodeIds(root).sort()).toEqual([...GUI_OVERLAY_NODE_IDS].sort());
   });
 
-  it('UT-S09-119: 回填 web 后注入；再 sync 幂等（仍恰两节点、不重复）', () => {
+  it('UT-S09-119: 回填 web 后注入；再 sync 幂等（仍恰一节点、不重复）', () => {
     setupProject(root, [{ id: 'web', lifecycle: 'launched', product_type: 'web' }]);
     expect(syncGuiOverlay(root)).toBe('injected');
     expect(syncGuiOverlay(root)).toBe('unchanged');
-    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(2);
+    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(1);
     expect(instanceGuiOverlayNodeIds(root).sort()).toEqual([...GUI_OVERLAY_NODE_IDS].sort());
   });
 
@@ -108,13 +108,13 @@ describe('S09 — syncGuiOverlay 幂等注入/移除', () => {
     expect(instanceGuiOverlayNodeIds(root)).toEqual([]);
   });
 
-  it('UT-S09-121: 多模块 web+cli 注入成立，instance 含两节点', () => {
+  it('UT-S09-121: 多模块 web+cli 注入成立，instance 含一节点', () => {
     setupProject(root, [
       { id: 'web', lifecycle: 'launched', product_type: 'web' },
       { id: 'core', lifecycle: 'launched', product_type: 'cli' },
     ]);
     expect(syncGuiOverlay(root)).toBe('injected');
-    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(2);
+    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(1);
   });
 
   it('UT-S09-122: 唯一 GUI 改 cli + 用户自定义 op → 移除 GUI 节点、保留 custom-user-node、再 sync 幂等', () => {
@@ -131,7 +131,7 @@ describe('S09 — syncGuiOverlay 幂等注入/移除', () => {
 
     // 先注入 GUI 节点（与用户 op 共存）
     expect(syncGuiOverlay(root)).toBe('injected');
-    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(2);
+    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(1);
 
     // 切 cli → 移除 GUI 节点，保留 custom-user-node
     setProductType(root, 'web', 'cli');
@@ -245,7 +245,7 @@ describe('S09 — PRODUCT_TYPE_CONFIRMATION_REQUIRED 诊断（sync / status / ne
     expect(instanceGuiOverlayNodeIds(root)).toEqual([]);
   });
 
-  it('ST-S09-41: 缺字段→诊断→回填 web→sync 注入→instance 含两节点（端到端迁移）', () => {
+  it('ST-S09-41: 缺字段→诊断→回填 web→sync 注入→instance 含一节点（端到端迁移）', () => {
     setupProject(root, [{ id: 'web', lifecycle: 'launched' }]);
 
     // 缺字段：诊断成立、不注入
@@ -276,7 +276,7 @@ describe('S09 — PRODUCT_TYPE_CONFIRMATION_REQUIRED 诊断（sync / status / ne
 
     sync();
     expect(con.logs.join('\n')).toContain('overlay injected');
-    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(2);
+    expect(instanceGuiOverlayNodeIds(root)).toHaveLength(1);
 
     // 切 cli → 移除 GUI 节点、保留用户 op
     setProductType(root, 'web', 'cli');

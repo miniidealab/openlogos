@@ -184,43 +184,22 @@ describe('S09 ui-flow — GUI overlay applyOverlay/validate 合法性', () => {
     }
   });
 
-  it('UT-S09-78: builtin launched.yaml plan subflow 不含 write-ui-prototype/verify-ui-provenance（仅存在于 loadGuiOverlayOps）', () => {
+  it('UT-S09-78: builtin launched.yaml plan subflow 不含 write-ui-prototype（仅存在于 loadGuiOverlayOps）', () => {
     const builtin = loadBuiltinFlow('launched');
     const ids = builtin.subflows.flatMap(s => s.nodes.map(n => n.id));
     expect(ids).not.toContain('write-ui-prototype');
-    expect(ids).not.toContain('verify-ui-provenance');
     // 两节点仅存在于方法论 overlay 源
     const overlayIds = loadGuiOverlayOps(REPO_ROOT)
       .map(op => (op.node as { id?: string } | undefined)?.id)
       .filter(Boolean);
     expect(overlayIds).toContain('write-ui-prototype');
-    expect(overlayIds).toContain('verify-ui-provenance');
   });
 
-  it('UT-S09-86: overlay 中 verify-ui-provenance 声明 before: generate-merge-prompt → resolved 顺序中位于其前', () => {
-    const builtin = loadBuiltinFlow('launched');
-    const { flow } = applyOverlay(builtin, { overlay: realOverlayOps() as never }, 'launched');
-    const ids = flow.subflows.flatMap(s => s.nodes.map(n => n.id));
-    const provIdx = ids.indexOf('verify-ui-provenance');
-    const mergeIdx = ids.indexOf('generate-merge-prompt');
-    expect(provIdx).toBeGreaterThanOrEqual(0);
-    expect(mergeIdx).toBeGreaterThanOrEqual(0);
-    expect(provIdx).toBeLessThan(mergeIdx);
-  });
 
-  it('UT-S09-89: verify-ui-provenance 仅 done_when: cmd:（无 fail_when）→ applyOverlay/validate 通过（单 cmd: 合法，不触发决策 B）', () => {
-    const builtin = loadBuiltinFlow('launched');
-    const { flow } = applyOverlay(builtin, { overlay: realOverlayOps() as never }, 'launched');
-    const node = flow.subflows.flatMap(s => s.nodes).find(n => n.id === 'verify-ui-provenance')!;
-    expect(node.done_when).toBe('cmd:openlogos check-ui-hash-match');
-    expect(node.fail_when == null).toBe(true); // 无 fail_when → 决策 B（同节点双 cmd:）不触发
-    // resolved flow 已通过 applyOverlay 内的 validateFlow；再显式 validate 一次不抛
-    expect(() => validateFlow(flow, 'resolved')).not.toThrow();
-  });
 
-  it('UT-S09-110: loadGuiOverlayOps 读真实文件、恰两个 op:add（write-ui-prototype / verify-ui-provenance），经 applyOverlay 合法', () => {
+  it('UT-S09-110: loadGuiOverlayOps 读真实文件、恰一个 op:add（write-ui-prototype），经 applyOverlay 合法', () => {
     const ops = loadGuiOverlayOps(REPO_ROOT);
-    expect(ops.length).toBe(2);
+    expect(ops.length).toBe(1);
     for (const op of ops) expect(op.op).toBe('add');
     const ids = ops.map(op => (op.node as { id?: string }).id);
     expect(new Set(ids)).toEqual(new Set(GUI_OVERLAY_NODE_IDS));
@@ -229,14 +208,13 @@ describe('S09 ui-flow — GUI overlay applyOverlay/validate 合法性', () => {
     expect(() => applyOverlay(builtin, { overlay: ops as never }, 'launched')).not.toThrow();
   });
 
-  it('UT-S09-110a: 两 op:add 的 done_when 为真实子命令字符串（不含字面 <...> 占位）', () => {
+  it('UT-S09-110a: op:add 的 done_when 为真实子命令字符串（不含字面 <...> 占位）', () => {
     const ops = loadGuiOverlayOps(REPO_ROOT);
     const byId = Object.fromEntries(ops.map(op => {
       const node = op.node as { id: string; done_when?: string };
       return [node.id, node.done_when];
     }));
     expect(byId['write-ui-prototype']).toBe('cmd:openlogos check-ui-prototype');
-    expect(byId['verify-ui-provenance']).toBe('cmd:openlogos check-ui-hash-match');
     for (const dw of Object.values(byId)) {
       expect(dw).not.toMatch(/[<>]/); // 无字面 <...> 占位
     }
