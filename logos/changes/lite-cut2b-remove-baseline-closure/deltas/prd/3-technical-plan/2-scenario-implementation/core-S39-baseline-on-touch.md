@@ -1,4 +1,11 @@
-# S39：提案规划时按触达目标形成规格闭包
+# Delta: core-S39-baseline-on-touch.md
+
+> change: lite-cut2b-remove-baseline-closure
+> 目标：`logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S39-baseline-on-touch.md`
+
+本文件的通用 H2（`场景目标`/`参与者`/`异常与边界`/`追溯` 等）与后续子场景的同名 H3 重复，章节锚与路径锚均无法唯一定位，故整份以 H1 锚做一次 MODIFY。保留的两节（测试变更集原子 Apply 扩展、SQL delta 分层校验与适配器路由）逐字节复制；删除的是闭包主体、无环提交闭包补充（其引用的 `MERGE_RECEIPT.json` 已随 lite-cut1b 删除）与勘误散文订正通道。
+
+## MODIFIED — S39：提案规划时按触达目标形成规格闭包
 
 > **本场景已重新定界（lite-cut2b）**：原主体「按触达目标形成规格闭包」随 change-lint L9 删除；
 > 现主体为「delta→canonical target 派生」。文档 H1 标题因 delta 机制无法修改文档级标题而暂留旧名，
@@ -269,3 +276,4 @@ sequenceDiagram
 - 需求：AC-SQLGATE-01～07。
 - 功能规格：§2.52.2～§2.52.6；架构：§四十二.1、§四十二.2。
 - 测试：UT-S39-59～UT-S39-64、ST-S39-28；安装态 SMOKE-core-174。
+

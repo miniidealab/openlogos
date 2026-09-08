@@ -1336,28 +1336,6 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 7. **resource_index 收录（delta-r1 F3，需扩展扫描器）**：现行 `cli/src/lib/sync-resource-index.ts` 的 `scanCandidateFiles()` 白名单不含 `decisions`、`inferResourceDesc()` 无 DXX 规则，故必须**扩展统一扫描器**（`scanCandidateFiles()` 纳入 `decisions/`、`inferResourceDesc()` 增 `<module>-DXX-*.md` 内容化 desc 规则），`openlogos index` / `sync` 才能发现新决策记录、生成内容化描述并进入 `resource_index`——直接解 issue #12「需先知道 slug 才找得到」。**不得**声称既有机制自动收录。端到端验收须从「索引无该项」起跑权威 index/sync、断言路径+desc 补入且幂等（ST-S38-06）。
 8. **零回归 + 非目标**：不追溯为存量已归档提案补写决策记录（项目自行按价值挑选沉淀、走正常提案）；不强制所有提案产出决策记录；不实现 archive 保留策略 / `archive --prune`（issue #12 请求 2，团队已暂缓，与本能力正交）；不改 `ADDED / MODIFIED / REMOVED` 语义与既有 merge / archive / change-lint 对无决策章节提案的行为。
 
-## S39: 提案规划时按触达目标形成规格闭包
-
-- **触发条件**：launched 项目创建 change，change-writer 正在依据提案意图规划 `[delta]` tasks。
-- **用户价值**：存量项目无需先建立全局基线；只有真正触达的功能/场景承担补文档成本，并且每个目标只生成一份可合并的最终态 delta。对于新建场景，语义完整的步骤结构不会因同义标题被误拒绝，只有散文关键词的残缺文档也不会误通过。
-- **优先级**：P0。
-- **主路径**：识别受影响 feature/scenario → 按 Why → What → How 枚举需求、功能、时序、架构、API、DB、UT/ST、API 编排、部署/smoke 等适用目标 → 读取“已合并资源 + 当前 change 已产 delta”的有效视图 → 以规范化合并目标路径去重 → 目标存在规划 `MODIFY`、缺失规划 `CREATE`、不适用记录 `SKIP` → 在现有 plan-exit 批准后产出每个目标唯一 delta → 对 CREATE 场景按 Markdown 权威结构校验完整度。
-
-### S39 验收条件
-
-1. 同一规范化目标路径在 `[delta]` 中恰有一个 task、在 `deltas/` 中至多一个文件；多个场景命中同一路径时聚合，不得拆成“基线 delta + 增量 delta”。
-2. `MODIFY` 目标必须存在；既有章节存在时用 `MODIFIED`，章节缺失时可在同一 delta 用 `ADDED`，并遵守 S37 条目守恒。
-3. `CREATE` 目标必须缺失；delta 继续使用既有 `ADDED` 标记，但内容必须是可独立成立的完整文档，不新增 merge 操作。
-4. 触达场景必须有完整时序图与 UT/ST；存在接口边界时必须从时序图派生 API 并补 API 编排测试；存在持久化时必须补 DB 规格；不适用项记录证据化 `SKIP`。
-5. 代码、测试、配置只能证明存量事实；本次 change 提供新增 Why 与验收意图。证据不足时以 `AMBIGUOUS` 停在现有 plan-exit 前，不猜测、不产半成品。
-6. adopted 项目的历史自动 `skip_phases` 只豁免 Initial 完整性，不能永久压掉后续 change 中实际适用的 API/DB/场景目标。
-7. 不新增 `[baseline]` section、baseline task、gate、marker、JIT advisory、`verified:true` 写回或 `baseline_warnings`；唯一人类方案门仍是既有 `plan-exit`。
-8. 新生成的场景统一使用 `## 步骤说明`；读取端兼容 `步骤说明`、`主路径步骤`、`主路径`、`主流程`、`正常流程` 以及既有英文 `main path`，且别名只在围栏与 HTML 注释之外的唯一章节标题处生效。
-9. 步骤章节必须包含至少 3 个非空有序列表项；仅在散文、代码围栏、HTML 注释或样例中出现“步骤”不构成通过证据。
-10. 时序证据必须来自合法 Mermaid 围栏中的 `sequenceDiagram`，至少包含 2 个参与者和 1 条消息；普通围栏或散文示例中的字符串不构成通过证据。
-11. 异常/边界与追溯章节必须存在且包含非空权威正文；空标题、注释或围栏内样例不能满足完整度。
-12. change-lint 与 merge 必须复用同一结构化完整性判据；真正缺少步骤结构的 CREATE 场景必须 fail-closed，且失败不生成 `MERGE_PROMPT.md`、不写资源、不改变 guard/counter/index/marker。
-
 ## S09 Plan 阶段决策澄清协议第一版
 
 ### 背景与用户价值
@@ -2654,3 +2632,32 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 
 - 不触及 change-lint 的 L8 / L9 / L10（归后续提案）。
 - 不触及 1a 已确立的 `slice plan` 与 slice-checkpoint 增量验收。
+
+## merge 目标集由 delta 文件派生要求
+
+### 用户问题与价值
+
+合并需要知道「把哪些 delta 合进哪些主文档」。此前这个集合来自作者在 `proposal.md` 中手工枚举的闭包计划，与磁盘事实是两份数据，因此需要 P==T==D 三方对账来发现它们不一致——而不一致本身正是手工枚举带来的。
+
+真正可靠的事实源是 `deltas/` 目录本身：作者产出了哪些 delta，就要合并哪些目标。这个集合不需要声明，只需要枚举。
+
+### 核心需求
+
+1. **目标集是 `deltas/` 的无逻辑投影**：每个可 merge 的 delta 文件经唯一的路径映射判据得到唯一 canonical target；merge 不读 `proposal.md` 的任何 YAML 声明。
+2. **模式按磁盘事实即时判定**：目标文件存在即 MODIFY、缺失即 CREATE，在 merge 执行时判定。计划与事实分离所导致的「模式漂移」在结构上不再可能发生。
+3. **路径非法即 fail-closed**：无法映射为 canonical target 的 delta（越界、`..`、未知类别目录）必须在写入任何文件前整体失败并点名该文件。
+4. **存量兼容**：历史提案中已写的 `baseline_closure` 块被忽略而非报错，不做迁移。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-DERIVE-01 | merge 目标集等于 `deltas/` 下可 merge delta 的路径映射结果，逐个一一对应；merge 全程不读取 proposal 的 YAML 声明 |
+| AC-DERIVE-02 | 目标存在判 MODIFY、缺失判 CREATE，且在 merge 执行时按磁盘事实判定 |
+| AC-DERIVE-03 | 路径不可映射的 delta 在写入前整体失败并点名文件，`logos/resources/` 零改动 |
+| AC-DERIVE-04 | 存量 `baseline_closure` 块不产生任何 violation 或 warning |
+
+### 追溯
+
+- 场景：S39 delta→canonical target 派生。
+- 测试：UT-S39-68、UT-S39-69、ST-S39-30。

@@ -436,34 +436,6 @@
 | ST-S09-55 | **裸 `--module`（缺值）→ 非零退出 + 用法、零残留（code-r1 F2）** | 决策表#2 前提校验 | 多模块 `[core, module-b]` | `openlogos change probe --module`（末尾缺值） | 非零退出；stderr 含 `--module requires a module id` + `Usage`；**不得**折叠成未传参数而创建 `core` 提案；未创建 `logos/changes/probe/`、未写 guard |
 | ST-S09-56 | **显式非法 --module → 非零退出 + 合法 id 清单（顺序）+ 零残留（code-r1 F1，真实 CLI）** | 决策表#2 | 多模块 `[module-a, module-b]` | `openlogos change probe --module nope` | 非零退出；stderr 含 `模块 'nope'` + 逐字 `module-a`、`module-b`（`module-a` 先于 `module-b`）；未创建 change 目录、未写 guard |
 
-## 十三、S39 闭包接入 change 生命周期测试
-
-> 本节所有测试实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`，记录真实 ID、S09/S39 关联、结果与时间。
-
-### 13.1 单元测试
-
-| ID | 检查项 | 输入 | 期望 |
-|---|---|---|---|
-| UT-S09-147 | write-tasks 接入闭包计划 | launched proposal 含行为变更 | proposal 有 on-touch-v1 声明；tasks 每个非 SKIP 目标含 MODIFY/CREATE |
-| UT-S09-148 | canonical target 聚合 | 两个场景规划同一测试 target | 只产生一条 task；内容来源合并，顺序稳定 |
-| UT-S09-149 | plan-exit 数量不变 | 激活 on-touch-v1 的 resolved flow | 仍只有既有 `plan-exit`；无 baseline gate/node/marker |
-| UT-S09-150 | `[code]` 仍留空 | 提案需要代码且新增测试 delta | plan/spec 阶段 `[code]` 只有占位说明；不提前切片 |
-| UT-S09-151 | 逐文件勾选 | 连续产出两个 delta | 第一文件落盘后对应 task 立即 `[x]`，第二项仍 `[ ]`；全部完成后才全勾 |
-
-### 13.2 场景测试
-
-| ID | 场景 | 步骤 | 期望 |
-|---|---|---|---|
-| ST-S09-57 | 首个棕地 change 无 seed | adopted + seed required，创建提案并完成 plan | 正常到达同一个 plan-exit；不要求 baseline-seed；闭包 tasks 在场 |
-| ST-S09-58 | AMBIGUOUS 停在现有门前 | 构造无法判断持久化选择的提案 | plan 未完成、输出缺口；无新 gate/确认状态；补充选择后复用原 plan-exit |
-| ST-S09-59 | 单目标最终态链路 | 同目标同时需要现状补齐与增量修改 | tasks 一项、deltas 一文件；合并预期同时含现状与增量，不出现 baseline delta |
-
-### 13.3 反向回归
-
-- 既有 GUI UI-first、纯代码 no-delta、slice-planner、半自动/全自动门语义不变。
-- 不产生 `[baseline]` section、JIT advisory、`verified:true`、`baseline_warnings`、第二次 plan approval。
-- `openlogos change lint` 仍表示 slug=`lint` 的既有行为；L9 继续由独立 `change-lint` 命令承载。
-
 ## 十四、Plan 阶段决策澄清协议测试用例（clarification@1）
 
 > 覆盖 proposal 澄清区块解析、影响声明、条件性必选人类决定、完成谓词、status/next JSON、历史兼容、跨进程恢复与 `next --auto` fail-closed。所有测试实现必须使用 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`，测试名包含对应稳定 ID。

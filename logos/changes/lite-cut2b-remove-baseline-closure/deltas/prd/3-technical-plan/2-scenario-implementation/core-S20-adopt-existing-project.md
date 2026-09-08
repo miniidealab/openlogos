@@ -1,5 +1,12 @@
+# Delta: core-S20-adopt-existing-project.md
 
-# S20: 已有项目接入 OpenLogos — 时序图
+> change: lite-cut2b-remove-baseline-closure
+> 目标：`logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S20-adopt-existing-project.md`
+
+本文件的 6 处闭包引用分散在 mermaid 时序图与四个 H2 章节中，其中时序图一处直属 H1、无更细的可寻址章节，故整份以 H1 锚做一次 MODIFY；除这 6 行外逐字节不变。
+
+## MODIFIED — S20: 已有项目接入 OpenLogos — 时序图
+
 
 ```mermaid
 sequenceDiagram
@@ -401,3 +408,4 @@ sequenceDiagram
 - 需求：S20 Cursor 存量接入验收。
 - 架构：46.2 资产模型与 owner、46.5 生命周期与事务顺序。
 - 测试：UT-S20-43～UT-S20-48、ST-S20-23～ST-S20-25。
+

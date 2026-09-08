@@ -85,97 +85,6 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - UT-S35-* — 通配族名（violation：文法拒绝）
 ```
 
-## 五、L9 按触达规格闭包测试（S39）
-
-> 所有 UT/ST 实现必须写入 OpenLogos reporter `logos/resources/verify/test-results.jsonl`。
-
-### 5.1 单元测试
-
-| ID | 检查项 | 用例 | 期望 |
-|---|---|---|---|
-| UT-S35-26 | legacy 不激活 L9 | proposal 无 policy、tasks 无模式 | 只执行 L1–L8；输出逐字节旧形态 |
-| UT-S35-27 | 模式在场但声明缺失 | tasks 有 `[MODIFY]`，proposal 无 closure | `baseline_closure_declaration_missing` |
-| UT-S35-28 | target 规范化去重 | `deltas/test/./x.md` 与 `deltas/test/x.md` | `delta_target_duplicate`，path 指向 canonical target |
-| UT-S35-29 | MODIFY 目标缺失 | `[MODIFY] deltas/test/new.md` | `delta_target_mode_mismatch` |
-| UT-S35-30 | CREATE 目标已存在 | `[CREATE]` 映射到既有目标 | `delta_target_mode_mismatch` |
-| UT-S35-31 | AMBIGUOUS 阻断 | closure 矩阵含 API=AMBIGUOUS | `baseline_closure_ambiguous`，fix_hint 列缺失证据 |
-| UT-S35-32 | plan 阶段未完成 task 不误报文件缺失 | `[delta]` 未全勾、delta 未产 | 不报 `delta_target_unplanned`；其它 plan 检查照常 |
-| UT-S35-33 | 完成 task 缺文件 | task 已 `[x]`、同路径文件不存在 | `delta_target_unplanned` |
-| UT-S35-34 | 实际 delta 无 task | deltas 中有 mergeable 文件但 tasks 未规划 | `delta_target_unplanned` |
-| UT-S35-35 | CREATE 场景不完整 | 新场景 delta 无 sequenceDiagram/异常 | `create_target_incomplete`，列出缺失结构 |
-| UT-S35-36 | CREATE 完整正例 | 场景含目标/参与者/时序/步骤/异常/追溯 | L9 通过；仍继续 L4/L6/L8 |
-| UT-S35-37 | code 注册表闭合与排序 | 枚举所有既有 26 + 新 9 code | 恰 35 个；无表外字符串；排序 L1→L9/path/code 稳定 |
-| UT-S35-38 | malformed/重复 YAML key | 参数化：坏缩进、双 `targets` key、未知 schema_version、未知字段 | `baseline_closure_malformed`；parser 禁止 last-wins |
-| UT-S35-39 | proposal 重复 canonical target | targets 两项 delta_path 规范化后相同 | `delta_target_duplicate`；即使 tasks 只有一项也失败 |
-| UT-S35-40 | touched scenario 漏强制维度 | `touched_scenario_ids:[S05]` 但 targets 无 S05 scenario/test | 每个缺口返回 `baseline_closure_target_missing` |
-| UT-S35-41 | touched scenario 漏条件 disposition | S05 无 api/database/orchestration 等 MODIFY/CREATE/SKIP/AMBIGUOUS 记录 | `baseline_closure_target_missing`，不得默认为 SKIP |
-| UT-S35-42 | SKIP 缺 evidence | mode=SKIP、delta_path=null、evidence=[] | `baseline_closure_malformed`，不得计入合法 skip |
-| UT-S35-43 | AMBIGUOUS 缺 missing_evidence | mode=AMBIGUOUS、missing_evidence=[] | `baseline_closure_malformed`；不得仅靠 mode 字样生成 ambiguous 计数 |
-| UT-S35-44 | proposal/tasks 集合差异 | P-T 与 T-P 各一项 | 分别报漏 task/未声明 task，逐 target 输出；计数相同也不得通过 |
-| UT-S35-45 | API/DB 整文件协议预检 | 参数化合法/非法首行、声明 target 漂移、marker 未剥离、YAML/JSON/SQL 解析失败 | 非法均 `non_markdown_delta_invalid`；合法夹具进入完整度检查 |
-
-### 5.2 场景测试
-
-| ID | 场景 | 操作 | 期望 |
-|---|---|---|---|
-| ST-S35-07 | 新提案 plan PASS | 合法 on-touch-v1 proposal/tasks，无 delta | text/JSON PASS、exit 0，L9 在检查列表 |
-| ST-S35-08 | 重复目标 plan FAIL | 两任务映射同 canonical target | exit 2；JSON violation code/path/fix_hint 完整 |
-| ST-S35-09 | spec 双向对账 | 全部 task 勾选，但缺一 delta且多一未规划 delta | 稳定返回两条 `delta_target_unplanned`，顺序固定 |
-| ST-S35-10 | CREATE 完整度矩阵 | 分别构造 scenario/API/DB/test/orchestration 完整与残缺夹具 | 残缺精确失败；完整通过类别检查 |
-| ST-S35-11 | legacy JSON 零回归 | 对现有 legacy fixture 跑 text/JSON | 与能力上线前逐字节一致，无 L9 violation |
-| ST-S35-12 | 项目级只读 | 对 exit 0/2/1 路径前后做全项目文件/哈希快照 | 文件集合和字节完全不变，无 marker/hash/tasks 改写 |
-| ST-S35-13 | proposal schema 反例矩阵 | 依次运行 malformed、重复 key/target、漏场景维度、SKIP 缺证据、AMBIGUOUS 缺 missing_evidence | text/JSON 同一 violations 集合、exit 2；skip/ambiguous/targets 计数只来自合法 proposal 对象 |
-| ST-S35-14 | P/T/D 三方差集 | 构造 P、T、D 数量相同但成员各有一项不同 | plan 在 P!=T 失败；spec 在 P!=T 或 T!=D 失败；逐成员报告，不以计数相等假通过 |
-| ST-S35-15 | non-Markdown API/DB CREATE/MODIFY 预检 | 使用真实 `.yaml`/`.json` OpenAPI 与 SQLite `.sql` 夹具，覆盖 ADDED/MODIFIED、目标漂移和坏语法 | 合法首行被预演剥离后可解析/执行且无 marker；任一失败 exit 2、项目字节不变 |
-
-### 5.3 交叉判据回归
-
-- 相同夹具在 change-lint 与 merge 消费点得到同一 canonical target、mode/完整度结论。
-- L9 不替代 L4 模板骨架、L6 路径、L7 UI、L8 守恒；可与它们并发返回 violations。
-- warnings[] 的 S38 决策提示语义不变；L9 全部为 violation，不新增 JIT/baseline warning。
-- 操作错误读取顺序与 exit 1 契约不变。
-
-> 全部实现必须由 OpenLogos reporter 逐 ID 写入 `logos/resources/verify/test-results.jsonl`；不得用文件存在、旧结果或手写 PASS 补齐。
-
-### 单元测试
-
-| ID | 检查项 | 用例 | 期望 |
-|---|---|---|---|
-| UT-S35-100 | locale section registry | 中文/英文全部 canonical 标题 | 同一语义 ID 集，标题各 locale 唯一 |
-| UT-S35-101 | proposal missing/duplicate/empty | 三类参数化 summary fixture | 对应三个稳定 code，含 path/section/expected/fix_hint |
-| UT-S35-102 | placeholder/type/deployment | 占位残留、非法类型、重复/非法部署字段 | 精确 issue；不得被其它正文掩盖 |
-| UT-S35-103 | clarification/baseline/UI 聚合 | 三个共享 evaluator 分别失败 | L0 聚合但不复制判据，问题排序稳定 |
-| UT-S35-104 | tasks plan 模板残留 | 中英文 delta scaffold 未替换 | plan_filled=false，模板行可定位 |
-| UT-S35-105 | code 三态 | 空锚点、提前 checkbox、缺标题、merge 后真实切片 | plan/code-required/code-slices 四 fixture 精确结论 |
-| UT-S35-106 | L0 exit 分层 | ready false/true/读取错误 | exit 2/0/1；success/error envelope 分层不变 |
-| UT-S35-107 | wrapper 委托单一 evaluator | 调用旧 proposal/tasks API | 结果来自同一 evaluation，无独立字符串规则 |
-| UT-S35-108 | issue 去重与 canonical 排序 | 多 evaluator 返回同问题及多行问题 | 稳定去重；check/path/line/section/code 顺序固定 |
-| UT-S35-109 | plan 前沿等价范围 | plan、已有 Delta、PLAN_APPROVED、SPEC_MERGED 参数化 | 仅 plan fixture 强制四方等价；历史不回退 |
-| UT-S35-110 | 只读问题不自修 | summary/code 两错误 | evaluator 前后文件/marker hash 不变 |
-| UT-S35-111 | completion/asset contract 绑定 | dispatch contract 与过期 manifest | 合法声明可执行；过期时要求 sync/new session |
-
-### 场景测试
-
-| ID | 场景 | 操作 | 期望 |
-|---|---|---|---|
-| ST-S35-16 | 现场事故完整复现 | proposal 把 summary 改为核心设计，tasks 保留代码模板行；运行四消费者 | change-lint exit 2 且返回两类精确 issue；status/next/flow 均不 ready，用户不可见“可写 Delta” |
-| ST-S35-17 | 修复后四方同时全绿 | 按 issues 新增 canonical summary、删除模板行保留空 code；重跑 | lint pass/plan package/status/next/flow 全部 ready，next ready-to-delta |
-| ST-S35-18 | 项目级只读与历史兼容矩阵 | 对 success/fail/error/history/zh/en fixture 前后快照 | 所有只读路径零写；历史 marker 不回退；文本/JSON issue 集合一致 |
-
-### 问题码与覆盖要求
-
-- proposal：required section missing/duplicate/empty、placeholder、type、deployment、clarification。
-- tasks：template remaining、code entry before spec-complete、code section missing。
-- 组合：同一 fixture 一次返回全部可修问题；操作错误仍 fail-fast。
-- L0 不替代 L1～L9；L0 PASS 后现有检查继续执行，既有 35 码及顺序零回归。
-
-### 验收追溯
-
-- S35-AC-Plan-01 proposal 精确问题：UT-S35-100～UT-S35-103、ST-S35-16。
-- S35-AC-Plan-02 tasks 三态：UT-S35-104～UT-S35-105、ST-S35-16～ST-S35-17。
-- S35-AC-Plan-03 exit 与四方等价：UT-S35-106～UT-S35-109、ST-S35-17。
-- S35-AC-Plan-04 只读/历史/资产：UT-S35-110～UT-S35-111、ST-S35-18。
-
 ## S35 围栏提取单点、可归因诊断与门禁可满足性测试
 
 ### 单元测试
@@ -246,7 +155,7 @@ UT-S35-09 反例（同一小节，逐项判定）：
 
 | ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
 |---|---|---|---|---|
-| UT-S35-134 | 检查项集合收敛为 10 项且其余级别零漂移 | 取一组既有提案夹具（含 legacy、含 required fact 历史块、含完整 delta 三类） | 对每个夹具求 `runChangeLint` 结论 | 检查项恰为 L0～L9 共 10 项，不含任何 L10 条目；`AUTHORITY_CLOSURE_ISSUE_CODES` 不再出现在码表中；每个夹具在 L0～L9 上的 violation 集合与本变更前**逐条相同**（同 code、同 path、同 message） |
+| UT-S35-134 | 检查项集合收敛且其余级别零漂移 | 取一组既有提案夹具（含 legacy、含 required fact 历史块、含完整 delta 三类） | 对每个夹具求 `runChangeLint` 结论 | 检查项编号上界为 8（L0～L8，总数随 L7 等条件在场而变），不含任何 L9/L10 条目；`AUTHORITY_CLOSURE_ISSUE_CODES` 与 `BASELINE_CLOSURE_VIOLATION_CODES` 均不再出现在码表中；每个夹具在保留级别上的 violation 集合与各自变更前**逐条相同**（同 code、同 path、同 message） |
 | UT-S35-135 | 存量 authority_impact 块被忽略而非报错 | 提案含形态各异的历史 `authority_impact` 块：完整 required、not_applicable、字段残缺、YAML 语法非法 | 求 `runChangeLint` 结论 | 四种形态**一律不产生任何 violation 或 warning**；块内容不被解析（断言不出现 fact_id/字段名相关诊断）；提案照常通过并可继续 merge |
 
 ### 场景测试
@@ -257,6 +166,6 @@ UT-S35-09 反例（同一小节，逐项判定）：
 
 ### 追溯与覆盖
 
-- AC-CUT2A-01 检查项收敛为 10 项且其余结论零漂移：UT-S35-134、ST-S35-26。
+- AC-CUT2A-01 检查项收敛且其余结论零漂移：UT-S35-134、ST-S35-26。
 - AC-CUT2A-02 存量声明块忽略而非报错：UT-S35-135。
 - 场景：S35 提案计划产物左移硬检查；功能规格：§2.51.2。
