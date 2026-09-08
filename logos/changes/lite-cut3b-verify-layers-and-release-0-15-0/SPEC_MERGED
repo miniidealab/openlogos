@@ -1,0 +1,39 @@
+{
+  "type": "merge_complete",
+  "completed_at": "2026-09-08T04:59:14.840Z",
+  "test_change_set": {
+    "schema": "openlogos/test-change-set@1",
+    "change": "lite-cut3b-verify-layers-and-release-0-15-0",
+    "module": "core",
+    "source": "semantic-before-after-diff",
+    "changed_test_ids": [
+      "SMOKE-core-197",
+      "SMOKE-core-198",
+      "SMOKE-core-199",
+      "ST-S13-19",
+      "ST-S19-22",
+      "UT-S13-67",
+      "UT-S13-68",
+      "UT-S19-46"
+    ],
+    "removed_test_ids": [],
+    "targets": [
+      {
+        "target_path": "logos/resources/test/core-S13-test-cases.md",
+        "before_sha256": "3637fc7284f77ff44b474d996df01dc2352bd08f1d5d48f7f493127bde262ac2",
+        "after_sha256": "3e526ede85f7c6fe7122fcf3ad3be8e925b61dbc53da7c0a778499d4198ed45a"
+      },
+      {
+        "target_path": "logos/resources/test/core-S19-test-cases.md",
+        "before_sha256": "8a4674ad1056847a903e6c5e397f6d4cf4387d74a7fcfd57f027d14848d0a6ce",
+        "after_sha256": "4ec1e04e49519f18459da1e459f9d22e8853339fd13f8b4e89d583c22c253ae2"
+      },
+      {
+        "target_path": "logos/resources/test/smoke/core-smoke-test-cases.md",
+        "before_sha256": "31779d29e6fc4e233b9b4324f4135a815cd43f14eee8697e1d29dc56d3ddf62d",
+        "after_sha256": "95679a1e040de27feb0d069dba2798453990eca1e555e087a8202ad567dd8963"
+      }
+    ],
+    "sha256": "sha256:d61db7ddb31a26c4f539a94ce0f5b7f5be1187bc4ac0deb4a83a34516a6073c3"
+  }
+}

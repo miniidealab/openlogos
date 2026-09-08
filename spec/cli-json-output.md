@@ -2369,21 +2369,6 @@ git diff --no-relative --name-status -z <base> <head> | openlogos impact --stdin
 
 本能力为 1.x 向后兼容增量，`data.contract.version` 升为 `1.1.0`，对应打包的 status、next 与 verify JSON Schema。消费方必须按 schema 校验 `output.data`；未知字段可忽略，未知枚举值或未知 manifest 主版本必须走保守分支。
 
-### verify data
-
-manifest 有效且进入 Gate 时，verify data 增加：
-
-| 字段 | 类型 | 约束 |
-|---|---|---|
-| `verify_mode` | `slice-checkpoint \| final` | 必填 |
-| `attempted_slice_id` | `string \| null` | checkpoint 非空；final 为 null |
-| `eligible_test_ids` | `string[]` | 去重、字典序稳定；Gate 覆盖率分母 |
-| `pending_test_ids` | `string[]` | 去重、字典序稳定；与 eligible 互斥；final 为空 |
-| `manifest` | object | `status=valid`、path、schema、task/spec fingerprint、sha256 |
-| `checkpoint` | object | 当前 result 与稳定排序的 `confirmed_slice_ids` |
-
-`uncovered_test_ids` 必须是 `eligible_test_ids − covered_test_ids`，不得包含 pending。checkpoint PASS 的 `gate.result` 可为 `PASS`，但 `checkpoint.final=false` 且不得据此生成最终 `VERIFY_PASS`。
-
 ### status/next slice_verification_state
 
 处于多切片 slice/implement 阶段时，status 与 next 暴露同源对象：
@@ -2519,11 +2504,6 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 - 单模块 legacy 顶层与 `modules[]` 同构时，plan package 内容必须相同。
 - 历史已越过 plan 的响应可省略新诊断或给 warning，但不得回退 proposal_step。
 - 旧 CLI 无 completion contract 时，新宿主提示升级/sync，不解析 Markdown 猜测。
-
-## Authority Closure JSON 契约
-
-
-## Authority Closure JSON 契约
 
 ## next 输出的 slice_transaction 投影（initial-plan 问即建）
 

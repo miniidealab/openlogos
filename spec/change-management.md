@@ -860,11 +860,6 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 
 不同 worktree/slug 分别拥有 guard、marker、verify、deploy、smoke 与 archive 证据。旧 SMOKE-core-150 和 follow-up SMOKE-core-151+ 不得互相顶替。
 
-## Authority Closure Plan 合同
-
-
-## Authority Closure Plan 合同
-
 ## 生命周期命令前置链条语义（lifecycle-failclosed-reconciliation）
 
 > 本节把「变更工作流」步骤 11、12 里已隐含的顺序依赖（`SMOKE_PASS` 后才能归档、`DEPLOY_DONE` 存在时才运行 smoke）升格为**命令自身的 fail-closed 前置校验**。20260907 事故证明：只把顺序写在流程说明里，而命令端不设防，一次漏跑 `openlogos deploy-done` 就会让 smoke 照常写 `SMOKE_PASS`、archive 照常归档，缺口被固化进 audit-only 归档记录。

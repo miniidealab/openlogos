@@ -224,8 +224,13 @@ export function verifyAgentMaterialOutcome(
   for (const block of blocks) {
     if (!block.anchor) return { ok: false, identities, error: `${block.op} 段缺少章节锚` };
     const writerKey = `${block.op === 'REMOVED' ? 'remove' : 'write'}\u0000${block.anchor}`;
-    if (writers.has(writerKey)) return { ok: false, identities, error: `章节存在多个物质写者：${block.anchor}` };
-    writers.add(writerKey);
+    // 多写者守卫防的是「两块写同一节」。带序数的 REMOVED 是例外：合成顺序作用于变动中的文档，
+    // 同一序数锚的第 N 块删的是「删掉前 N-1 处之后剩下的第 1 处」，每次都是不同的物理章节。
+    const sequentialOrdinalRemove = block.op === 'REMOVED' && anchorHasOrdinal(block.anchor);
+    if (!sequentialOrdinalRemove) {
+      if (writers.has(writerKey)) return { ok: false, identities, error: `章节存在多个物质写者：${block.anchor}` };
+      writers.add(writerKey);
+    }
     const before = resolveSectionAnchor(beforeHeadings, block.anchor);
     const final = resolveSectionAnchor(finalHeadings, block.anchor);
     identities.push({
@@ -246,8 +251,10 @@ export function verifyAgentMaterialOutcome(
         const bare = bareAnchor(block.anchor);
         const beforeCount = resolveSectionAnchor(beforeHeadings, bare).candidates.length;
         const finalCount = resolveSectionAnchor(finalHeadings, bare).candidates.length;
-        if (before.status !== 'ok' || finalCount !== beforeCount - 1) {
-          return { ok: false, identities, error: `REMOVED 序数章节未恰好删除一处：${block.anchor}（${beforeCount} → ${finalCount}）` };
+        // 后置条件是「候选数确实减少」而非「恰好减一」：同名标题可能**嵌套**（如 `## X` 内嵌 `### X`），
+        // 删除外层必然带走内层，此时 2 → 0 是正确结果。删不掉才是缺陷。
+        if (before.status !== 'ok' || finalCount >= beforeCount) {
+          return { ok: false, identities, error: `REMOVED 序数章节未被删除：${block.anchor}（候选数 ${beforeCount} → ${finalCount}）` };
         }
         continue;
       }
