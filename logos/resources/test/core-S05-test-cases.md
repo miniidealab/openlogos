@@ -162,52 +162,6 @@
 - ST 通过真实 CLI JSON 入口执行，不 mock `next` 输出或手工写 marker。
 - 每个 ID 必须向 `logos/resources/verify/test-results.jsonl` 追加 OpenLogos reporter 记录，至少包含 `id`、`status`、`timestamp`、`duration_ms` 与脱敏 evidence；重复矛盾或缺失 ID 由 verify 判失败。
 
-## S05 消费者动作与终态投影测试用例
-
-
-### 单元测试
-
-| 用例 ID | 验证目标 | 关键断言 |
-|---|---|---|
-| UT-S05-43 | action-command parity | `submit_content/seal/apply/recover/abort` 各自只映射到 `submit-content/seal/apply/recover/abort`；未知 action 不生成命令 |
-| UT-S05-44 | 普通 fatal failed | `classification=fatal` 时 `allowed_actions=[]`、`next_action=null`，不得猜测 abort/recover/apply |
-| UT-S05-45 | aborted 终态投影 | `phase=failed`、`classification=aborted`、`receipt=null`、稳定 `aborted_at`，无后续事务动作 |
-
-### 场景测试
-
-| 用例 ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S05-20 | next 零推导执行 | RunLogos 只执行公共 `next_action` 对应的唯一命令；等待、fatal、aborted 与未知 action 均保守停机 |
-
-### Runner、Reporter 与追溯
-
-- UT 使用固定 transaction projection 与命令注册表；ST 调用真实 `openlogos next --format json`，不得从 phase 或文案猜命令。
-- 每个 ID 必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`，至少包含 `id`、`status`、`timestamp`、`duration_ms` 与脱敏 evidence。
-- 动作对称：UT-S05-43、ST-S05-20；终态隔离：UT-S05-44、UT-S05-45、ST-S05-20。
-
-## S05 Preflight Reopen Next 动作回归
-
-
-### 单元测试
-
-| 用例ID | 验证目标 | 前置/输入 | 关键断言 |
-|---|---|---|---|
-| UT-S05-46 | legacy sealed reopen后的next权威动作 | transaction已由core原子落盘collecting；一个rejected slot hash=null；旧私有字节仍存在 | next只读返回`submit_content`，missing精确为rejected slot；不因残留字节返回seal/apply；未受影响slot保持submitted |
-
-### 场景测试
-
-| 用例ID | 验证目标 | 步骤 | 关键断言 |
-|---|---|---|---|
-| ST-S05-21 | 跨进程response-lost恢复 | legacy apply触发reopen但客户端丢失响应；新进程运行status/next，重提missing slot并再次next | 同transaction从collecting→ready→seal前沿；不创建新transaction、不重提无关slot，重复next零写 |
-
-### 既有合同锚
-
-UT-S05-36继续验证一般validator失败保持collecting。本节新增用例必须有独立fixture和断言，不能通过把ID拼接到其它happy-path测试名宣称覆盖。
-
-### Runner 与 OpenLogos Reporter
-
-CLI Vitest runner必须实际执行UT-S05-46、ST-S05-21，并为每个ID向`logos/resources/verify/test-results.jsonl`写一条包含`id/status/timestamp/duration_ms`的OpenLogos reporter记录；任一断言未执行或reporter缺失均不算PASS。
-
 ## S05 新建 authority fact 提案的 proposal_step 可达性测试
 
 > 覆盖死锁解除后的 `proposal_step` 派生与 plan 门消费。
@@ -259,29 +213,6 @@ CLI Vitest runner必须实际执行UT-S05-46、ST-S05-21，并为每个ID向`log
 - AC-MERGEGATE-06 围栏提取单点（派生链一侧）：UT-S05-51。
 - AC-MERGEGATE-07 多命中可归因：ST-S05-23。
 - 场景：S05 围栏多命中时 plan 阶段容错失效的归因路径；功能规格：§2.51.5、§2.51.6；架构：§四十一.6.1；安装态：SMOKE-core-173。
-
-## merge 事务相位下的 next 引导测试用例
-
-### 单元测试
-
-| ID | 测试点 | 关键断言 |
-|---|---|---|
-| UT-S05-52 | 开事务后前沿立即推进 | merge exit 0（有 delta）后 next 的 proposal_step=merge-generated、next_node.id=apply-merge，不再滞留 generate-merge-prompt |
-| UT-S05-53 | 各相位引导与事务 next_action 一致 | collecting→submit-content、ready→seal、sealed→apply、completed→SPEC_MERGED 已写；next 不改写事务 allowed_actions/next_action |
-| UT-S05-54 | 投影必挂透传 | 活跃事务在场时 next 的 data.merge_transaction 在场且与 merge transaction status 同快照逐字段一致 |
-| UT-S05-55 | failed 相位不冻结前沿 | 事务 failed（aborted/fatal）时前沿仍 merge-generated，引导按 classification 给 abort/recover 指引 |
-
-### 场景测试
-
-| ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S05-24 | 全链前沿推进 | 临时 launched 提案：merge 开事务 → next 即 apply-merge → submit/seal/apply → SPEC_MERGED → next 前沿越过 merge 段 |
-| ST-S05-25 | 幂等重跑不回退 | 非终态事务在场重跑 merge：幂等返回、前沿不回退、无第二事务 |
-
-### 自动化与证据要求
-
-- ST 经真实 `openlogos merge` / `merge transaction` 公开命令驱动，保存各步 status/next JSON 证据。
-- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S05"`；失败不得写 pass。
 
 ## S05 next 矛盾事实对账建议测试
 

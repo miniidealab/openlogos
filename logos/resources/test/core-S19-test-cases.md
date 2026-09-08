@@ -131,58 +131,6 @@
 - [x] dispatcher 发现、六 ID 覆盖及 reporter 审计：UT-S19-11、ST-S19-09。
 - [x] 缺失/skip/fail/证据不符不得产生 PASS：UT-S19-11、ST-S19-09。
 
-## S19 OpenLogos 0.14.0 全局 candidate 测试用例
-
-### 单元测试
-
-| 用例 ID | 验证目标 | 关键断言 |
-|---|---|---|
-| UT-S19-12 | 部署前事实冻结 | 记录旧命令绝对路径、0.13.31 版本、安装来源与可复制回滚命令 |
-| UT-S19-13 | tarball 身份 | package version=0.14.0，文件名/内容/SHA-256 与部署记录一致 |
-| UT-S19-14 | 全局命令解析 | 新 shell 的 `command -v` 与期望全局 bin 一致，排除 shell cache |
-| UT-S19-15 | 随包资产 | schema、双语 Skill、golden 和 contract hash 均存在且匹配源码冻结值 |
-| UT-S19-16 | 公开发布隔离 | 部署命令图不含 publish/tag/release/官网部署/push |
-| UT-S19-17 | 失败回滚 | 任一安装/自检失败执行 0.13.31 回滚并验证路径/版本恢复 |
-| UT-S19-18 | RunLogos candidate 证据 | 只接受绝对全局命令、tarball hash、schema/contract hash 完整集合 |
-
-### 场景测试
-
-| 用例 ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S19-10 | pack→install→self-check | 真实 tarball 安装后版本、help、schema/Skill 与 contract 全部通过 |
-| ST-S19-11 | 安装态 transaction smoke | 全局 CLI 完成 CREATE/MODIFY/mixed/no-delta 与 validator retry |
-| ST-S19-12 | 安装态恢复 | 崩溃与 response-lost 后全局 CLI 收敛同一 completed receipt |
-| ST-S19-13 | 回滚与下游交接 | 故障时恢复 0.13.31；成功时冻结 RunLogos 可消费 candidate facts |
-
-### Runner 与 Reporter
-
-- UT 对部署计划和命令构造做纯函数/临时前缀验证，不触碰用户真实全局环境。
-- ST-S19-10～13 只在 verify PASS 且获得部署授权的隔离部署执行中运行；实际 `openlogos smoke` 仍是独立确认节点。
-- 每个 ID 使用 OpenLogos reporter；evidence 对绝对路径做允许的脱敏，但保留 basename、版本、tarball/schema/contract SHA-256 与回滚结论。
-
-## S19 修正后 0.14.0 candidate 测试用例
-
-
-### 单元测试
-
-| 用例 ID | 验证目标 | 关键断言 |
-|---|---|---|
-| UT-S19-19 | 修正资产入包 | candidate 同时包含更新后三份 Schema、双语 merge-executor Skill、abort 命令与 golden，hash 对应同一冻结合同 |
-| UT-S19-20 | 旧 hash 拒绝 | 旧 0.14.0 candidate 的 tarball/schema/contract 任一 hash 不得被部署记录或 RunLogos handoff 接受 |
-| UT-S19-21 | 修正 candidate 回滚 | 安装、自检或合同对账任一步失败时恢复部署前入口/版本/hash，且不留下混合资产 |
-
-### 场景测试
-
-| 用例 ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S19-14 | 隔离 pack/install/self-check/rollback | 从修正源码 pack，在隔离 prefix 安装并执行 slot/abort/completed golden；故障分支按冻结命令回滚，公开发布副作用为零 |
-
-### Runner、Reporter 与追溯
-
-- verify 阶段只验证隔离 prefix/临时项目；真实全局安装仍须 verify PASS 后单独获得部署授权。
-- 每个 ID 必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`，evidence 保留版本、入口摘要、tarball/schema/contract SHA-256 与回滚结论。
-- 入包/旧 hash：UT-S19-19～20；回滚：UT-S19-21；隔离全链：ST-S19-14。
-
 ## S19 OpenLogos 0.14.1 本地全局 patch 候选测试用例
 
 ### 测试边界
@@ -229,30 +177,6 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - [x] S19-AC-01～04 均有 UT/ST 或 smoke 追溯。
 
 后续 `[code]` 切片必须同时实现或更新覆盖 SMOKE-core-157～159 的 `scripts/smoke-*` runner、OpenLogos smoke reporter 与 `scripts/run-smoke.js` dispatcher 接入；code 完成前必须运行 smoke 覆盖预检，确保三个新增 ID 均不在 uncovered cases 中。
-
-## S19 OpenLogos 0.14.2 候选与回滚测试
-
-
-### 单元测试
-
-| 用例ID | 验证目标 | 输入 | 关键断言 |
-|---|---|---|---|
-| UT-S19-24 | 0.14.2 candidate facts冻结 | package/version/tarball/schema/status/next/contract/skill/golden hashes参数化 | 精确字段、SHA-256和0.14.2 identity全部匹配才接受；任一旧hash、混装资产或私有transaction路径字段fail closed |
-| UT-S19-25 | 安装/回滚选择 | 0.14.1 previous、0.14.2 candidate，pack/install/self-check/contract/behavior矩阵逐项故障 | 任一失败选择完整restore-previous；成功选择candidate；恢复后入口和全部资产等于0.14.1；禁止半新混装 |
-
-### 场景测试
-
-| 用例ID | 验证目标 | 步骤 | 关键断言 |
-|---|---|---|---|
-| ST-S19-16 | 真实pack与隔离回滚 | build/npm pack 0.14.2；隔离prefix运行新seal、legacy reopen、完成；执行0.14.1→0.14.2→0.14.1→0.14.2 | 每次新shell版本/realpath/hash正确；固定tarball可复装；行为矩阵和reporter全过；不触达全局或远程发布 |
-
-### OpenLogos Reporter
-
-UT-S19-24～25、ST-S19-16逐ID写`test-results.jsonl`。真实npm命令、tarball路径/大小/hash和隔离prefix证据必须来自runner实际输出；mock pack或源码直跑不算ST PASS。
-
-### 授权边界
-
-这些自动化测试可在verify沙箱运行；覆盖本机全局、执行smoke和RunLogos恢复仍分别等待用户明确授权。
 
 ## S19 Authority Closure candidate/回滚测试
 

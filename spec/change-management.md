@@ -925,47 +925,6 @@ change-writer 必须填充 CLI scaffold、写后从磁盘读回、运行 change-
 
 该规则是单向兼容门，不是重复 ID 豁免：只有 after 全局唯一、表结构明确、UTF-8 合法且事务全部预检通过才可 apply。任何 after 重复或歧义继续在首写前失败，正式 targets、metadata 与 `SPEC_MERGED` 全部保持旧态。
 
-## Merge transaction 完成、SPEC_MERGED 与归档谓词
-
-### 权威事实
-
-对于 0.14.0 创建或升级的新合并，`merge_completed(change)` 的唯一权威是可读取、可复算且通过 `openlogos/merge-transaction@1` 校验的 completed receipt。进程退出码、Agent 回报、外部 manifest 在场、部分目标存在或单独的 `SPEC_MERGED` 文件均不得独立证明成功。
-
-### 生命周期绑定
-
-变更的 merge 子生命周期映射如下：
-
-| transaction phase | 变更管理语义 | 可推进动作 |
-|---|---|---|
-| `collecting` | 等待必需 content slot | `submit_content`、`abort` |
-| `ready` | 内容齐备、尚未冻结 | `seal`、`abort` |
-| `sealed` | 身份与内容已冻结 | `apply`、`abort` |
-| `applying` | 核心 writer 正在提交或等待恢复 | `recover` |
-| `completed` | receipt 已持久化并校验通过 | 进入切片规划/实现；发现已合并规格有误时可 `reopen`（受控重开，见「Merge transaction 终态出路与提案内二次 merge（0.14.17）」） |
-| `failed` | 稳定失败分类已持久化 | `recovery_required` 时 `recover`；fatal 分类（含 aborted）可 `abort` 后经终态归档让位重建 |
-
-`allowed_actions` 是动作许可的唯一来源；`next_action` 只能从其中确定性选出。Driver、skill 与 UI 不得另建成功谓词或跳过 phase。
-
-### SPEC_MERGED 绑定
-
-`SPEC_MERGED` 是 completed receipt 的提交内投影，不是独立权威。它必须与 resources、metadata 一起由事务 writer 原子落盘，并至少绑定 `transaction_id`、`seal_sha256`、`receipt_sha256` 和完成时间。marker 缺失或不匹配时，事务不得对外投影为 completed；恢复只能根据 journal 与 sealed after hash 修复，不得手工伪造 marker。`SPEC_MERGED` 可且仅可经受控 `reopen` 作废（留痕 + 旧事务归档），随后由新事务的 apply 重写——见「Merge transaction 终态出路与提案内二次 merge（0.14.17）」。
-
-### 归档成功谓词
-
-归档前必须同时满足：
-
-1. 事务 phase 为 `completed`，receipt schema/contract hash 受当前安装态支持；
-2. receipt 中全部 target after hash、metadata closure 与 `SPEC_MERGED` 绑定通过复核；
-3. 合并后的 `[code]` 切片只引用真实 UT/ST ID，并已完成规定的 verify；
-4. 存在 `[deploy]` 时，部署与 smoke 已按独立授权门完成；
-5. RunLogos 要求的跨仓候选验证已引用同一 0.14.0 安装态和 receipt。
-
-任一条件不满足时 archive 必须 fail-closed，并返回稳定 classification 与恢复动作；不得因工作目录看似已含目标文件而放行。
-
-### 历史兼容
-
-0.14.0 可只读展示旧 `MERGE_APPLY_MANIFEST.json` 或旧 marker 的诊断信息，但新合并不得写入、补全或消费该协议。旧描述若与本节冲突，以本节为准。
-
 ## Completed receipt 驱动的精确规格提交
 
 
@@ -984,49 +943,6 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 ### Stacked change
 
 不同 worktree/slug 分别拥有 guard、marker、verify、deploy、smoke 与 archive 证据。旧 SMOKE-core-150 和 follow-up SMOKE-core-151+ 不得互相顶替。
-
-## Merge Transaction Preflight、局部 Reopen 与确认点
-
-
-### 状态机补充
-
-```text
-ready --preflight pass--> sealed --identity pass--> applying --> completed
-  ^                          |
-  |                          +-- legacy attributable preflight fail
-  +---- rejected slots missing -------------------------------+
-```
-
-新事务preflight失败时不形成sealed；legacy sealed只在首写前、错误可唯一归因到Agent slots时退回collecting。公共phase/action/classification集合不变。
-
-### 结构化归因
-
-validator/producer内部错误必须携带稳定code、canonical target paths、producer、retryable。归因只使用冻结target→slot map；message仅供人读。全部错误都在可修复allowlist且全部target唯一映射到Agent slots才可reopen。混合、未知、OpenLogos producer、contract/schema/plan/source/before/seal/path/internal invariant整体fatal，一个slot也不清。
-
-### Reopen 提交点
-
-1. 复核无apply journal/staging/backup、receipt、marker、正式新字节或before drift。
-2. 内存构造collecting snapshot，清外层seal、全部sealed hashes和rejected content hashes。
-3. durable temp+fsync+atomic rename替换transaction；此后才能返回retryable。
-4. best-effort清rejected私有content/staging；残留非权威，status/next不得扫描。
-
-这是一项单文件原子状态转换加可重放垃圾回收，不声称跨文件删除原子。rename前崩溃保留完整sealed；rename后崩溃保留完整collecting。
-
-### Legacy 与不可逆边界
-
-0.14.1 sealed且无preflight record的事务可在apply首写前ephemeral检查。pass沿用legacy seal；fail可reopen并在修正后生成新seal。applying/journal后只recover/rollback；completed幂等，不迁移。
-
-### 消费者动作
-
-retryable error后消费者读取status/next的missing slots，只重提这些slots，再seal/apply。不得写正式target或transaction私有制品，不得abort重建规避validator。status/next/error envelope从持久化projection同源。
-
-### 人类确认点
-
-`PLAN_APPROVED`只消费plan-exit并允许Delta。merge、verify、部署、smoke、RunLogos继续merge、archive、公开发布、git push各自需要明确授权；proposal/tasks/decision/Skill不能自授权。用户显式选择`next --auto`时才有全链路standing语义，且loop-exhausted红线不变。
-
-### 测试与Reporter
-
-新增UT/ST必须是独立可失败断言并写OpenLogos reporter；不得只把UT-S05-36、UT-S09-239、UT-S11-63等ID拼接到happy-path测试名。部署与smoke继续执行各自报告门。
 
 ## Authority Closure Plan 合同
 
@@ -1056,44 +972,6 @@ change-lint、status、next、flow 和 merge precheck 只能消费共享 evaluat
 ### 授权
 
 authority impact 完成只允许到达既有 plan-exit；`PLAN_APPROVED` 只允许产 Delta。merge、verify、部署、smoke、archive、公开发布和 git push 继续按各自确认点授权。
-
-## Merge transaction 终态出路与提案内二次 merge（0.14.17）
-
-> 本节修订终态语义：终态不再等同永久冻结。权威判据与准入矩阵见功能规格 §2.58、架构 §四十五；本节定义变更管理层的谓词与授权边界。
-
-### 活跃名额与归档让位
-
-同一提案同时至多一个**活跃**（非终态）合并事务。`openlogos merge` 创建入口：非终态幂等返回；`failed`（含 aborted 与 fatal 分类）归档至提案目录 `merge-transactions/<transaction_id>.json` 后按当前 delta 重新规划；`completed` 且 `SPEC_MERGED` 完好时拒绝静默重建，唯一入口是显式 `reopen`。归档事务与 receipt 仅供审计，不作任何 fallback 真相源。
-
-### completed reopen 与 SPEC_MERGED 生命周期
-
-- `openlogos merge transaction reopen --reason "<非空原因>" [--confirm-spec-merged]`：`SPEC_MERGED` 在场须显式确认，重开即**作废** `SPEC_MERGED` 并向 `MERGE_REOPENS.jsonl` 追加留痕（append-only，含 schema / 旧 transaction_id / 时刻 / 非空原因 / spec_merged_present / confirmed）；单一动作内留痕、归档、作废按序完成，任一步失败整体不生效。
-- `SPEC_MERGED` 作废期间提案回到未 spec-complete 前沿（既有派生规则自然生效，无新增驻留态）；重合并 apply 成功由事务 writer 重写 `SPEC_MERGED` 与 receipt，作为新的唯一合并事实。
-- **指纹自然传导（不级联删除）**：重开与重合并不删除任何下游产物；`spec_fingerprint` 变化使既有 `TEST_SLICE_MANIFEST` 按既有判定判 stale，经切片侧既有恢复 / 重划回边收敛。任何时刻无半新半旧。
-
-### 授权边界
-
-`reopen` 作废已合并事实，属人类确认点级动作：默认模式下 AI 未经用户明确授权不得执行；`--auto` standing 授权域的处置按既有 §143 规则。abort 后的重建走 `openlogos merge`（其授权语义不变）。
-
-### 谓词更新
-
-`merge_completed(change)` 的权威仍是可复算 completed receipt + 匹配 `SPEC_MERGED`（唯一新增：二者可被受控 reopen 作废后由**新事务**重新建立）。重开历史（留痕 + 归档）参与审计，不参与完成判定。
-
-## reopen 重合并的 test change set 前滚合同（0.14.20）
-
-### 前滚语义
-
-`SPEC_MERGED.test_change_set` 表达**提案级累计事实**（本提案引入/修改/删除了哪些测试 ID），非「最近一次事务的快照 diff」。提案存在 reopen 留痕（`MERGE_REOPENS.jsonl`）时，重合并的 seal/apply 共用构建点必须按重开时序前滚合并各归档 receipt 携带的 `test_change_set`：`changed = (prev_changed ∖ cur_removed) ∪ cur_changed`、`removed = (prev_removed ∖ cur_changed) ∪ cur_removed`；`targets` 与 before/after hash 保持当前事务快照，`sha256` 重算；sealed preflight 的 `test_change_set_sha256` 与最终 marker 同源一致。
-
-### 边界
-
-- 留痕行无对应 receipt（abort 祖先）不参与前滚；receipt `test_change_set` 为 null 记空集。
-- 祖先 receipt 身份（change/module/source）失配或留痕/receipt 损坏：fail-closed 拒绝 seal/apply，点名路径，不静默降级为快照 diff。
-- 无留痕提案行为与 0.14.19 逐字节一致；schema `openlogos/test-change-set@1` 不变；历史已固化 marker 不迁移。
-
-### 权威边界（audit-only 不破）
-
-归档事务与 receipt 对**消费者**保持 audit-only、禁作 fallback 真相源——前滚是核心 apply writer 内部的受控读取，不构成消费者归档通道。消费者（切片校验、slice-aware verify、slice-planner）仍只认当前 `SPEC_MERGED.test_change_set`；读取归档并集裁决、从 delta 或 Git 推导、手改 marker 均属 forbidden fallback。Authority Registry 行：`test-change-set.proposal-scope`。
 
 ## 生命周期命令前置链条语义（lifecycle-failclosed-reconciliation）
 
@@ -1147,3 +1025,16 @@ authority impact 完成只允许到达既有 plan-exit；`PLAN_APPROVED` 只允�
 - **半自动 / 手动**：`smoke` / `archive` 仍各自停在人类确认点等明确授权；获授权后前置链条照常校验。
 - **全自动 `--auto`**：standing 授权放行的是「运行该命令这个动作」，**不跳过前置链条**；链条不满足时同样 fail-closed 拒绝，`GATE_AUTO_PASSED` 审计行不构成对缺口状态的放行依据。这与「自动放行只发生在代码已绿之后」的既有前提一致——链条未闭合时，本就不存在可盖章的成果。
 - **硬红线不变**：`gate:implement:loop-exhausted` 在任何模式下仍照常阻塞。
+
+## merge 直接合并与完成谓词（规范性）
+
+`openlogos merge <slug>` 是规格合并的**唯一写入口**，一次调用完成：
+
+1. 解析 `[delta]` 目标集并做 P==T==D 与路径合法性校验（校验全部前置于写入）；
+2. 逐 canonical target 经合并引擎合成最终字节，引擎内含章节锚唯一定位与物质结果复验；
+3. 全部目标经原子落盘原语一次提交，失败整批回滚；
+4. 末步写 `SPEC_MERGED`（含 `test_change_set`）。
+
+**完成谓词**：`SPEC_MERGED` 在场即 spec-complete。不存在事务相位、receipt 或第二事实源参与该判定——**任何审计产物都不得出现在流程分支的条件里**。
+
+**失败与重来**：合并失败即整批回滚，主文档保持合并前字节；已合并后发现 delta 有误时，`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `merge`。不提供 reopen / abort / recover——不存在需要出路的中间态。

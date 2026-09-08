@@ -721,110 +721,6 @@
 - S09-AC-Plan-04 历史不回退：UT-S09-230。
 - S09-AC-Plan-05 merge 自举收敛：UT-S09-232、ST-S09-90。
 
-## S09 合并事务单一权威测试用例
-
-### 单元测试
-
-| 用例 ID | 验证目标 | 关键断言 |
-|---|---|---|
-| UT-S09-233 | canonical plan 稳定性 | target 排序、mode、source/before、producer/validator 相同则 plan_hash 相同 |
-| UT-S09-234 | plan 漂移 | 任一 canonical identity 改变产生新 plan_hash，旧 transaction 不接受 |
-| UT-S09-235 | opaque identity | target_ref/slot_id 不泄漏可写正式路径且由冻结算法稳定派生 |
-| UT-S09-236 | slot allowlist | 仅声明 write_path 可写；额外、重复、逃逸、symlink 全部拒绝 |
-| UT-S09-237 | 原子替换 | 半写与遗留临时文件不能被 seal；合法 rename 后可读取完整字节 |
-| UT-S09-238 | slot 边界 | 缺失、空、超限、非法编码分别返回稳定 waiting/retryable code |
-| UT-S09-239 | validator 重试 | 内容语义失败保持 collecting，同 transaction 可替换后重试 |
-| UT-S09-240 | seal 冻结 | seal 后 slot hash 和字节不可改变，漂移触发 fatal |
-| UT-S09-241 | apply 全批成功 | resources、metadata、dogfood、test change set、receipt、marker 全部提交 |
-| UT-S09-242 | apply 回滚 | 每个故障注入点均恢复 MODIFY、删除 CREATE/marker并恢复 counter/index |
-| UT-S09-243 | journal 前滚 | marker 前 response lost 后恢复到唯一 completed receipt |
-| UT-S09-244 | 幂等调用 | 重复 seal/apply/status 不重复写入且返回相同 identity/receipt |
-| UT-S09-245 | no-delta | 零 slot transaction 仍生成 completed receipt 和绑定 marker |
-| UT-S09-246 | UI prototype | 原型 target/receipt 必须绑定同一 plan_hash，漂移时 apply 拒绝 |
-| UT-S09-247 | OpenLogos producer | decision/counter/index/dogfood/test change set 不分配 Agent slot |
-| UT-S09-248 | commit_paths | receipt 只含正式产物，排除 slot/journal/staging/backup |
-| UT-S09-249 | 旧命令断代 | `merge-apply --manifest` 固定非零且零正式副作用 |
-| UT-S09-250 | 命名空间隔离 | Plan completion receipt/journal/dispatch 不改变 merge phase |
-
-### 场景测试
-
-| 用例 ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S09-91 | 纯 CREATE transaction | Agent 写 slot→seal→apply→completed，目标与 marker 同批出现 |
-| ST-S09-92 | 纯 MODIFY transaction | before/final hash 校验并原子替换，receipt 可重读 |
-| ST-S09-93 | CREATE/MODIFY/metadata 混合 | 20+ 多根目标、counter/index 与 dogfood 全批一致 |
-| ST-S09-94 | validator 修复闭环 | 第一次 seal retryable，替换 slot 后同 transaction 完成 |
-| ST-S09-95 | no-delta/UI 分支 | 两者均产生同形 transaction receipt，无旁路 marker |
-| ST-S09-96 | apply 崩溃与恢复 | 故障点重启后只得到全旧或全新，不存在半新成功 |
-| ST-S09-97 | response lost | apply 已完成但响应丢失，重试返回同 receipt且不重复 commit |
-| ST-S09-98 | RunLogos 权限边界 | Agent/Driver 对正式 target、metadata、marker 零写入，只消费公共动作 |
-
-### Runner 与 Reporter
-
-- UT 使用 Vitest 覆盖状态机、plan/hash、slot、validator、journal、receipt 和旧命令拒绝。
-- ST 必须通过真实 CLI 子进程和隔离临时项目执行；不得 mock transaction 输出、手工 target/marker 或预造 completed receipt。
-- 每个 ID 必须通过 OpenLogos reporter 追加到 `logos/resources/verify/test-results.jsonl`；故障注入证据包含 transaction_id、phase、stable code 与目标树 hash，但不得泄露绝对临时路径或敏感内容。
-
-## S09 公共 staging、abort 与 completed receipt 测试用例
-
-
-### 单元测试
-
-| 用例 ID | 验证目标 | 关键断言 |
-|---|---|---|
-| UT-S09-251 | 公共 slot descriptor | 每个 slot 稳定返回 `slot_id/target_ref/staging_path/required/content_encoding/max_bytes/write_protocol/submitted_sha256`，不泄漏 canonical target 写权 |
-| UT-S09-252 | submit 路径等值 | `submit-content --file` 仅接受声明 `staging_path`；其它路径、逃逸、symlink 与 canonical target 均在首写前失败 |
-| UT-S09-253 | staging 写协议 | 仅同目录临时文件原子 rename、UTF-8 raw、字节上限及提交后 SHA-256 全部满足时接收 |
-| UT-S09-254 | abort phase allowlist | 只在 collecting/ready/sealed 接受 abort；applying/recovering/completed/failed 均拒绝新 abort |
-| UT-S09-255 | abort 终态与清理 | 成功后固定为 failed/aborted，动作清空、receipt=null，并清理本事务 staging/临时/备份私有制品 |
-| UT-S09-256 | abort 幂等 | 同一已 aborted transaction 重复 abort 返回同 identity 与 `aborted_at`，不新增写入或清理外部路径 |
-| UT-S09-257 | receipt 无环身份 | `receipt_sha256` 只对排除自身字段的 canonical receipt payload 计算；receipt 不包含自身或 marker 的 file hash |
-| UT-S09-258 | completed 提交闭包 | `final_hashes.paths` 与 `artifact_hashes.paths` 互斥，二者并集精确等于 `commit_paths` |
-| UT-S09-259 | response-lost 重建 | completed 响应丢失后新进程返回同 receipt、`receipt_sha256`、artifact hashes 与完成时间 |
-| UT-S09-260 | 私有制品排除 | slot/journal/staging/temp/backup 不进入 final/artifact hashes 或 commit_paths，完成或 abort 后按合同清理 |
-
-### 场景测试
-
-| 用例 ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S09-99 | staging→submit→seal→apply | Agent 原子写声明 staging path，Driver 以同路径 submit，最终得到合法 completed receipt 与精确提交闭包 |
-| ST-S09-100 | abort 清理闭环 | collecting、ready、sealed 三夹具可 abort；重复 abort 幂等，正式 target/metadata/marker 均不变 |
-| ST-S09-101 | response-lost 精确回放 | apply 已完成但响应丢失，新进程只读恢复同一 receipt/hash/commit paths，不重做 apply 或生成第二 receipt |
-
-### Runner、Reporter 与追溯
-
-- UT 使用临时项目、路径逃逸/symlink 负例、canonical JSON 与故障注入；ST 必须走真实 CLI 子进程，禁止预造 receipt。
-- 每个 ID 必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`；evidence 记录脱敏 transaction/receipt/hash、前后树 hash 与清理结果。
-- staging：UT-S09-251～253、ST-S09-99；abort：UT-S09-254～256、ST-S09-100；receipt：UT-S09-257～260、ST-S09-101。
-
-## S09 Seal Preflight、Legacy Reopen 与崩溃边界测试
-
-
-### 单元测试
-
-| 用例ID | 验证目标 | Fixture/故障注入 | 关键断言 |
-|---|---|---|---|
-| UT-S09-261 | 新事务seal前preflight拒绝 | ready事务的after测试表列数歧义 | seal不产生；phase=collecting；问题slot missing；正式树、journal、apply staging/backup、receipt/marker零变化 |
-| UT-S09-262 | 0.14.1 legacy sealed局部reopen | 无preflight record、15个sealed Agent slots，其中一个内容错误 | 同transaction/plan/target-set；只错误slot submitted hash清空；其余14个保留；外层seal与全部sealed hash清空 |
-| UT-S09-263 | 结构化多target归因 | 两个可修复Agent target错误、mixed/OpenLogos/unknown对照组 | 全Agent且唯一映射时共同missing；任一不可归因时一个slot也不清；不解析message文本 |
-| UT-S09-264 | reopen崩溃一致性 | transaction atomic rename前/后及私有cleanup中fault injection | rename前完整sealed；rename后完整collecting；残留私有字节非权威；未受影响slot不删除 |
-| UT-S09-265 | 首写后不可逆边界 | applying、journal prepared/committing、receipt/marker和正式新字节参数化fixture | 全部分支禁止reopen，只暴露recover/稳定fatal；transaction不倒退collecting |
-
-### 场景测试
-
-| 用例ID | 验证目标 | 步骤 | 关键断言 |
-|---|---|---|---|
-| ST-S09-102 | 新/旧事务真实CLI生命周期 | subprocess创建新事务验证seal reject；加载legacy sealed fixture触发reopen、修正、submit、reseal、apply | 新事务错误不sealed；legacy同transaction最终completed；receipt/marker/final hashes有效 |
-| ST-S09-103 | response-lost与重复修复 | reopen响应丢失、status恢复、第一次修复仍失败、第二次修复通过 | 每轮只退回真实rejected slots；其它hash守恒；重复seal/apply幂等；不abort/新建事务 |
-
-### 追溯
-
-UT-S09-239继续锚定一般validator重试；UT-S09-240/242/243继续锚定seal、apply rollback和journal恢复。本节用例专门覆盖跨target preflight、legacy兼容和状态先落盘顺序。
-
-### Runner 与 OpenLogos Reporter
-
-Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。每个ID独立写`test-results.jsonl`；测试名、fixture和reporter ID一一对应，禁止一个happy-path函数无条件为全部ID报PASS。
-
 ## S09 authority_impact 生命周期测试
 
 
@@ -848,38 +744,6 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 ### 追溯与 reporter
 
 覆盖 `openlogos/authority-impact@1`、AC-01～AC-08、历史兼容与授权分层。测试实现必须使用 OpenLogos reporter 写 `logos/resources/verify/test-results.jsonl`。
-
-## S09 嵌套章节锚 Transaction 生命周期测试
-
-### 单元测试
-
-| ID | 验证目标 | Fixture/故障注入 | 精确断言 |
-|---|---|---|---|
-| UT-S09-271 | submit-content 原始字节职责 | Agent target 使用 `父标题 > 叶标题` Delta，final bytes 通过声明 staging path提交；对照路径逃逸、symlink、空/超限、非法 UTF-8、围栏外控制 marker | 合法内容写入 slot hash并使最后 slot 后 phase=ready；submit 不调用 section resolver；安全反例保持 collecting/原 hash且返回既有稳定 classification |
-| UT-S09-272 | seal preflight 嵌套锚 Agent verifier | before/final 含唯一父子标题链，另造字面量路径标题、重复叶、错误父链、0 命中与围栏伪 heading | 合法 final 以真实 `level/text/path/range` 通过并生成 preflight-bound seal；各反例只按共享 resolver 失败，不采信字面量路径或首命中 |
-| UT-S09-273 | 局部 reopen 身份守恒 | 7 个 Agent slots 中 6 个已提交，目标 slot 的嵌套锚物质结果首次错误、第二次正确；在 transaction rename 前后和私有 cleanup 注入故障 | 失败只清目标 content hash并回 collecting；transaction/plan/target-set及其它6个hash不变；修正后同 transaction reseal；任一故障点只有完整 ready/sealed或collecting |
-| UT-S09-274 | apply 重验与 producer 边界 | sealed Agent target、OpenLogos Markdown target及 source/before/content/parser-result 漂移参数化 fixture | Agent 走共享 verifier、OpenLogos 走共享 composer；apply 重算 identity相同才首写；任一漂移在 journal/正式写前失败，公共 schema/phase/action不变 |
-
-### 场景测试
-
-| ID | 场景 | 操作序列 | 精确断言 |
-|---|---|---|---|
-| ST-S09-106 | 真实 CLI 嵌套锚 submit→seal→apply | 临时项目创建父 H2/叶 H3 且其它父下有同名叶的目标与路径锚 Delta；写完整 Agent final 到声明 staging，真实子进程依次 submit-content、status、seal、apply | submit 成功且 ready；seal唯一命中真实父/叶并 sealed；apply completed；正式目标保持 H2/H3、不含字面量路径标题，receipt/final hashes可复算 |
-| ST-S09-107 | RunLogos 同形 6/7 slot局部恢复 | 构造与 `mtx_e7f7b924499d49f96aaf8a2f` 同形的 7-slot临时事务并冻结6个hash；首次 final 制造错误父链触发seal reopen，status后只重提目标slot，再seal/apply；模拟一次响应丢失 | 每轮只目标slot missing，其它6个hash与 transaction identity守恒；新进程status/recover得到唯一状态；最终completed且不abort、不创建新事务、不产生部分写入 |
-
-### 负向与零回归矩阵
-
-- UT-S09-271 必须证明 submit 与 seal 语义门分层，避免把本缺陷回归测试错误放在 submit action。
-- UT-S09-272/ST-S09-106 必须复用 RunLogos 真实标题文本 `七、项目文件夹动态 watcher 交互规则 > 7.1 已打开文件外部变化感知` 至少一次，同时保留脱敏临时路径。
-- UT-S09-274 必须覆盖 Agent/OpenLogos 两种 producer，证明 transaction 私有 `parseDeltaSections`、扁平路径正则和精确 H2 fallback 已不可达。
-- 既有 UT-S09-239～265、ST-S09-94、ST-S09-99、ST-S09-102～103 全量重跑，公共 projection、局部 reopen、崩溃顺序和 receipt 行为零漂移。
-
-### Runner、Reporter 与追溯
-
-- UT 使用 Vitest 临时目录和确定性 fault injection；ST 必须运行真实编译后 CLI 子进程，不 mock transaction projection，不手工改 `MERGE_TRANSACTION.json`、receipt、marker 或正式 target。
-- 每个 ID 独立通过 OpenLogos reporter 追加到 `logos/resources/verify/test-results.jsonl`，记录脱敏 transaction ID、phase、classification、slot hash集合、preflight/seal/final hash与正式树 before/after hash。
-- 缺失、skip、重复矛盾或一个 happy-path 无条件代报多个 ID 均判失败。
-- 追溯：AC-MT-ANCHOR-01、03～05、07；功能规格 §2.46.3～§2.46.5；架构 §37.4～§37.6；S09 嵌套章节锚恢复时序。
 
 ## S09 归档提案的事务只读寻址测试
 
@@ -935,35 +799,6 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 - AC-MERGEGATE-09 捕获集扩大：UT-S09-286。
 - 场景：S09 merge 准入判定与 change-lint 同源；功能规格：§2.51.2、§2.51.5；架构：§四十一.6.1；安装态：SMOKE-core-173。
 
-## S09 合并事务终态出路测试（fix-merge-transaction-abort-recover-reopen）
-
-> 本节补充终态出路（abort 重建 / fatal 修复 / completed 受控重开）的回归；实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
-
-### 单元测试
-
-| ID | 描述 | 前置条件 | 操作 | 预期结果 |
-|---|---|---|---|---|
-| UT-S09-289 | abort 后归档让位重建 | 提案 merge 出 collecting 事务后 `abort`（转 aborted）；随后修改一个 delta 使 plan/target set 变化 | 重跑 `openlogos merge` | 旧事务归档至 `merge-transactions/<旧 id>.json`（receipt 字段与哈希保留可审计）；返回**新**事务（新 transaction_id、按当前 delta 重新规划的 target 集合）；非终态夹具对照组仍幂等返回同一事务 |
-| UT-S09-290 | fatal failed 可 abort 后重来 | 构造 `failed` 且 classification 非 `recovery_required` 的事务夹具 | 检查 `allowed_actions`；执行 `abort` 后重跑 merge | `allowed_actions` 含 `abort`（0.14.16 为空即缺陷特征）；abort 幂等转 aborted；随后按 UT-S09-289 路径重建；`recovery_required → recover` 与 `applying → recover` 逐字不变 |
-| UT-S09-291 | completed reopen 准入矩阵与留痕 | 参数化四态：① completed + 无 `SPEC_MERGED`；② completed + `SPEC_MERGED` 在场、未附确认；③ completed + 在场、附 `--confirm-spec-merged`；④ `--reason` 空白 | 各自执行 `reopen` | ① 直接重开；② 拒绝且文案给出附 `--confirm-spec-merged` 指引、零副作用；③ 重开成功——`MERGE_REOPENS.jsonl` 追加一行（schema=`openlogos/merge-reopen@1`、旧 transaction_id、非空原因、spec_merged_present/confirmed 标记）、旧事务归档、`SPEC_MERGED` 作废；④ 一律拒绝；非 completed phase 执行 reopen 报 `action_not_allowed` |
-| UT-S09-292 | 非终态幂等与既有语义零回归 | ① collecting/ready/sealed 事务在场重跑 merge；② completed + `SPEC_MERGED` 完好直接重跑 merge；③ 0.14.2 preflight-reopen 夹具；④ 存在正式 receipt/marker 时 abort | 各自执行并与 0.14.16 判定逐项对照 | ① 幂等返回同一事务、逐字节不变；② 拒绝静默重建、`fix_hint` 指向 reopen 入口；③ preflight-reopen 语义逐字不变（sealed 内退回 collecting、身份不变）；④ 既有破坏性清理拒绝面不变 |
-
-### 场景测试
-
-| ID | 描述 | 前置/故障注入 | 操作序列 | 预期结果 |
-|---|---|---|---|---|
-| ST-S09-111 | 真实 CLI 三条出路全链 | 临时 launched 项目，可合并提案 | A：merge → abort → 修正 delta → merge → submit-content → seal → apply 达 completed；B：completed 后 `reopen --reason --confirm-spec-merged` → 修正 delta → 重合并全链 → `SPEC_MERGED` 重写；C：违例矩阵（空 reason / 未确认 / 非 completed reopen）重放 | A 全链经公开命令抵达 completed、旧 aborted 事务归档在场；B 留痕/归档/作废/重写齐备、新旧 receipt 均可审计、下游产物零删除；C 逐一被拒且零副作用、文案与真实 phase 一致；全程无半写态 |
-
-### 追溯与覆盖
-
-- AC-MTXOUT-01 归档让位重建：UT-S09-289、ST-S09-111。
-- AC-MTXOUT-02 fatal 出路：UT-S09-290。
-- AC-MTXOUT-03/04 reopen 准入与留痕归档：UT-S09-291、ST-S09-111。
-- AC-MTXOUT-05 重写与指纹自然传导：ST-S09-111（下游零删除断言）。
-- AC-MTXOUT-06 零回归：UT-S09-292（回归锚：UT-S09-254、ST-S09-100）。
-- AC-MTXOUT-07 版本身份与安装态：SMOKE-core-181（部署方案 0.14.17 节）。
-- 场景：S09-B 合并事务终态出路；功能规格：§2.58；架构：§三十四、§四十五；根规范：`spec/change-management.md`、`spec/cli-json-output.md` 终态出路修订。
-
 ## Cursor sessionStart 与部分强度门禁测试用例
 
 ### 单元测试
@@ -994,54 +829,6 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 
 - Hook 合同测试以 stdin/stdout JSON 直接驱动接线脚本，保存输入输出与退出码证据。
 - 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
-
-## merge 前沿事务判据与后置条件二分测试用例
-
-### 单元测试
-
-| ID | 测试点 | 关键断言 |
-|---|---|---|
-| UT-S09-303 | flow-derive 事务判据 | 事务文件在盘（任意相位）→ step 推导 merge-generated；文件不在且无 marker → 停 ready-to-merge |
-| UT-S09-304 | 判据两处同源 | launched.yaml done_when 声明与 flow-derive 推导对同一 fixture 集逐一同判（回归钉一致，单改任一处即红） |
-| UT-S09-305 | legacy marker 兼容 | 仅 MERGE_PROMPT_GENERATED / MERGE_PROMPT.md 在场（legacy 测试模式）同样推进 merge-generated，0.13.x 合同不破 |
-| UT-S09-306 | 后置条件二分 | no-delta：merge 后 SPEC_MERGED 在场、前沿即进；有 delta：merge 后事务在盘、SPEC_MERGED 不在场、前沿 merge-generated |
-| UT-S09-307 | 收尾提示事务引导 | merge（有 delta）stdout 含 submit-content/seal/apply 引导、不含「MERGE_PROMPT.md」字样；幂等/重建情形提示体现现状 |
-| UT-S09-308 | 存量事务失配 fail-closed | contract/schema 摘要失配 fixture：写动作拒绝、classification 稳定、details 含双方版本与摘要 + remediation（abort 后重开）、retryable:false |
-
-### 场景测试
-
-| ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S09-116 | 生产链路无死区全链 | 真实命令链 merge→（status 即 merge-generated）→submit→seal→apply→SPEC_MERGED→status 越过 merge 段；各步 proposal_step 与磁盘事实一致 |
-| ST-S09-117 | 终态出路与前沿协同 | abort 后重跑 merge 归档让位重建：新事务在盘、前沿仍 merge-generated、不死锁；手删事务文件（越权）→ 前沿回退 ready-to-merge |
-
-### 自动化与证据要求
-
-- 判据一致性用例（UT-S09-304）必须同时驱动 flow 规格解析与 flow-derive 两条路径，禁止只测其一。
-- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
-
-## reopen 后 test change set 前滚合并测试用例
-
-### 单元测试
-
-| ID | 测试点 | 关键断言 |
-|---|---|---|
-| UT-S09-309 | 前滚合并规则 | 构造归档 receipt（changed=[A,B]）+ 当前快照 diff（changed=[C]，B 幂等零变化）：前滚后 changed=[A,B,C]；removed 后写胜出（祖先 changed 含 X、当前 removed 含 X → X 只在 removed）；两集合恒不相交、ASCII 排序去重 |
-| UT-S09-310 | 边界情形 | 留痕行无对应 receipt（abort 祖先）跳过；receipt test_change_set 为 null 记空集；targets 与 hash 保持当前快照、sha256 重算且过既有 v1 校验 |
-| UT-S09-311 | 失配与损坏 fail-closed | 祖先 receipt 身份（change/module/source）失配 → seal/apply 拒绝、错误信息含 receipt 路径与双方身份；留痕行或 receipt JSON 损坏 → fail-closed 点名损坏路径；均不静默降级为快照 diff |
-| UT-S09-312 | 无留痕不变与同源 | 无 MERGE_REOPENS.jsonl 的提案 change set 与前滚关闭路径逐字节一致；sealed preflight 的 test_change_set_sha256 与 apply 落盘 SPEC_MERGED.test_change_set.sha256 恒相等 |
-
-### 场景测试
-
-| ID | 场景 | 关键断言 |
-|---|---|---|
-| ST-S09-118 | reopen 幂等重合并全链 | 真实命令链：首次 merge 全链 completed（changed 含全部新增 ID）→ reopen --confirm-spec-merged → 仅修正一个非测试目标、其余 delta 幂等 → 重跑 merge→submit→seal→apply → SPEC_MERGED.changed_test_ids 仍含首轮全部 ID |
-| ST-S09-119 | 多次 reopen 链式前滚 | 连续两次 reopen（每次修正不同目标、测试目标幂等），第二次重合并后 changed 仍提案级完整；每次前滚结果与按留痕行序逐次合并等价 |
-
-### 自动化与证据要求
-
-- ST 用例全部断言穿过公开 `openlogos merge` / `merge transaction` 命令，禁止库级函数直调充当闭环证据。
-- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
 
 ## guard-check 工作目录收敛与 fail-closed 测试用例
 
@@ -1138,3 +925,34 @@ Vitest/subprocess runner必须逐个执行UT-S09-261～265、ST-S09-102～103。
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
 - 零副作用断言必须以**磁盘事实**取证（提案目录仍在 `logos/changes/<slug>/`、`logos/.openlogos-guard` 仍在盘、握手协议目录无新增），不得只断言退出码。
 - 全部断言在一次性临时项目中构造，不得触碰本仓或用户其它项目的活跃提案与 guard。
+
+## S09 merge 直接合并与 lint-specs 测试
+
+> 覆盖 `openlogos merge` 一次调用完成合并、失败零副作用与整批回滚、`SPEC_MERGED` 结构化字段零回归，以及 `openlogos lint-specs` 独立结构检查且不参与任何门。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S09-340 | 一次调用完成合并且 SPEC_MERGED 结构化字段零回归 | 构造 3 个 delta 目标（含 ADDED / MODIFIED / REMOVED 三种块）→ 一次 `merge` 调用后：三个 canonical target 均为最终态、章节锚正确定位、标题层级 rebase 正确；`SPEC_MERGED` 在场且含 `type: merge_complete`、`completed_at`、**`test_change_set`（schema 与字段口径与事务时代逐字段一致）**；提案目录**无** `MERGE_TRANSACTION.json` / `MERGE_RECEIPT.json` / `merge-staging/` / `merge-content/` 任一残留 |
+| UT-S09-341 | 失败零副作用与整批回滚 | 分别构造：delta 缺段标记、章节锚解析到 0 处、章节锚解析到多处、P≠T≠D、`SPEC_MERGED` 已在场 → 各自非零退出并报对应稳定错误码（`MERGE_DELTA_INVALID` / `MERGE_TARGET_MISMATCH` / `MERGE_ALREADY_COMPLETE`）；每种情形下**全部** canonical target 的字节与 mtime 均不变、`SPEC_MERGED` 不被创建；错误 message 含 `git checkout logos/resources/` 回滚提示 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S09-140 | 合并 → 回滚重来 → lint-specs 不参与门的端到端 | 真实 CLI：① `openlogos merge <slug>` 一次调用合并多目标成功，`SPEC_MERGED` 在场 → ② 模拟「发现 delta 有误」：`git checkout logos/resources/` 回滚 + 删除 `SPEC_MERGED`，修正 delta 后重跑 `merge` 成功（**无需 reopen / abort 通道**）→ ③ 在测试规格中植入重复 ID，`openlogos lint-specs` 非零退出并点名该 ID 与位置 → ④ **同一状态下 `openlogos merge` 与 `openlogos verify` 均不因 lint-specs 的结论而阻断**（证明它不参与任何门）|
+
+### 追溯与覆盖
+
+- AC-MERGE-DIRECT-01 一次调用完成合并：UT-S09-340、ST-S09-140 步骤①。
+- AC-MERGE-DIRECT-02 SPEC_MERGED 结构化字段零回归：UT-S09-340。
+- AC-MERGE-DIRECT-03 失败零副作用与整批回滚：UT-S09-341。
+- AC-MERGE-DIRECT-04 回滚后重来无需 reopen 通道：ST-S09-140 步骤②。
+- AC-LINT-SPECS-01 独立结构检查可用：ST-S09-140 步骤③。
+- AC-LINT-SPECS-02 不参与任何门：ST-S09-140 步骤④。
+- 场景：`core-S09-change-lifecycle.md`「S09 merge 直接合并时序」；功能规格：§2.69、§2.70；JSON 契约：`spec/cli-json-output.md`。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。

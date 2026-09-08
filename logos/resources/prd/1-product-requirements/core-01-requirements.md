@@ -1813,38 +1813,6 @@ C ∩ R = ∅
 - 不新增 HTTP API、数据库、第三套宿主 Markdown parser 或隐式审批。
 - 本需求不授权部署、smoke、公开发布或 git push。
 
-## S05/S09/S11/S16/S19/S39 合并事务单一权威与 0.14.0 验收要求
-
-### 用户问题与价值
-
-当前规格合并把目标集合、最终内容、hash、正式写入和完成判定分散给 OpenLogos、Agent 与 RunLogos，容易出现同一提案被不同组件判成不同状态。用户需要一个可恢复、可审计且跨进程一致的合并事务：OpenLogos 独占正式事实，Agent 只提供受限内容，RunLogos 只按公共合同调度。
-
-### 核心需求
-
-1. OpenLogos 必须成为 canonical target、mode、source/before/final hash、phase、error、receipt、正式目标写入及 `SPEC_MERGED` 的唯一权威；RunLogos 和 Agent 不得维护第二份成功事实。
-2. 公共合同必须使用版本化 `openlogos/merge-transaction@1`，并提供 `status`、`seal`、`apply` 三个动作及稳定的 `allowed_actions/next_action`。
-3. Agent 只能读取 OpenLogos 生成的提示与 transaction envelope，并只能原子写入声明的原始字节 content slots；不得生成外部 `MERGE_APPLY_MANIFEST.json`、Base64 payload、metadata target 或正式 marker。
-4. resources、OpenLogos 生成的 metadata、decision/counter/resource index、根 spec/skill dogfood、UI prototype 绑定和 `SPEC_MERGED` 必须属于同一 `plan_hash/transaction_id`，全有或全无。
-5. no-delta 提案必须走零 Agent slot 的同类 transaction，不能旁路手工写 marker；completed receipt 是规格完成、状态推进、切片规划与提交路径的唯一输入。
-6. `status` 必须只读；`next` 与 flow 只能投影 transaction 的 phase、classification 和动作权威，不得猜测重试动作，也不得复用 Plan Package 的 `next_node.dispatch.completion`。
-7. 内容缺失属于 waiting；Agent 内容 validator 失败属于 retryable，可原子替换 slot 后重试 seal；schema、identity、路径、plan 漂移或不可恢复 journal 才属于 fatal，且 failed 为终态。
-8. 本提案必须交付 OpenLogos `0.14.0`：verify 通过并取得部署授权后，以真实 npm tarball 安装到本机全局，执行安装态 smoke，再由 RunLogos 调用该全局 candidate 完成真实跨仓 E2E。
-
-### 验收条件
-
-- CREATE、MODIFY、混合根、20 个以上目标、metadata、no-delta、UI prototype、重复调用、崩溃恢复和 response-lost 均由同一 transaction 收敛到稳定 receipt。
-- 任一正式写入失败时，resources、metadata、counter/index、dogfood 与 marker 恢复为全旧；重试不会生成第二个完成身份。
-- `status` 调用前后项目树和 marker 集合字节不变；`next` 只返回 transaction 明确允许的动作。
-- completed 后重复 status/apply 返回同一 receipt；receipt 精确列出 changed paths、final hashes 和 Git `commit_paths`，私有 slot/journal 不进入提交白名单。
-- 全局 `command -v openlogos` 指向本次安装，`openlogos --version` 精确为 `0.14.0`，随包 schema/Skill 与冻结的 contract hash 一致。
-- RunLogos 不得使用源码相对路径、mock 输出、手工正式写 target 或预造 receipt；OpenLogos 与 RunLogos 两仓验收均通过才算完成。
-
-### 非目标
-
-- 本案不授权 npm publish、Git tag、GitHub Release、官网发布或 git push。
-- 本案不引入 HTTP/RPC/消息 API、数据库或业务数据迁移。
-- 旧 `merge-apply --manifest` 最多保留固定非零升级提示，不得继续形成成功 fallback。
-
 ## S05/S09/S11/S16/S19/S39 消费者合同完成要求
 
 
@@ -1905,47 +1873,6 @@ RunLogos 不能依赖 OpenLogos 内部磁盘结构，也不能自行发明 stagi
 - 单元/场景测试：UT-S19-22、UT-S19-23、ST-S19-15。
 - 部署后 smoke：SMOKE-core-157、SMOKE-core-158、SMOKE-core-159。
 
-## S05/S09/S11/S16/S19/S39 Preflight 与可修复 reopen 验收要求
-
-
-### 用户问题与价值
-
-当合并事务的所有 content slot 已提交后，可由候选字节确定的跨 target 错误不应等到 apply 才暴露，更不应迫使用户 abort 并重建全部正确 slot。OpenLogos 必须在 seal 前发现新事务问题，并允许尚未发生正式写入的旧 sealed 事务只退回真正有问题的 Agent slot。
-
-### 核心需求
-
-1. seal 前必须预演全部确定性合并结果及派生物；失败时不得形成 sealed 快照。
-2. seal 必须绑定 preflight 的 canonical identity；apply 必须在首写前证明重算结果与 sealed view 完全一致。
-3. 当前 0.14.1 已 sealed、无 journal/receipt/marker/正式写入的事务必须可由 0.14.2 首写前兼容检查；不得要求新建 transaction。
-4. 内容错误必须通过结构化 target path 唯一归因，不得解析自然语言消息；OpenLogos producer、contract/schema、plan/hash/path drift 不得伪装成 Agent retry。
-5. reopen 必须保留 transaction ID、plan hash、target set 和无关 slot submitted hash，只把 rejected slot 放回 missing。
-6. reopen 必须先原子落盘 collecting 权威状态，再清理非权威私有字节；任意崩溃点不得产生 sealed-but-missing 或部分正式写入。
-7. status、next 与错误 envelope 必须投影同一个持久化状态：`phase=collecting`、`classification=slot_identity_mismatch`、`retryable=true`、`allowed_actions=[submit_content,abort]`、`next_action=submit_content` 和精确 `missing_slot_ids`。
-8. 一旦进入 applying 或存在 apply journal/backup/staging、receipt、marker、正式 target 新字节，禁止 reopen，只能 recover/rollback。
-
-### 验收条件
-
-| ID | 验收条件 |
-|---|---|
-| AC-MT-PF-01 | 新事务 after 测试表歧义在 seal 前失败，事务为 collecting，正式树及 apply 私有制品零变化 |
-| AC-MT-PF-02 | 合法新事务 seal 绑定 preflight；seal/apply 间任一 before、metadata 或派生 hash 漂移均在首写前拒绝 |
-| AC-MT-PF-03 | 0.14.1 legacy sealed 事务可临时 preflight；通过时保留 legacy seal，失败时局部 reopen |
-| AC-MT-PF-04 | 多个可归因 Agent target 可共同退回；混入任一不可归因或 OpenLogos producer 错误时一个 slot 也不清 |
-| AC-MT-PF-05 | reopen 状态落盘前后故障注入分别收敛为完整 sealed 或权威 collecting，残留私有字节不影响 status/next |
-| AC-MT-PF-06 | RunLogos `mtx_7e0341e3719feccd22ef7615` 只退回 `core-S44-test-cases.md` slot，其余 14 个 slot 保留；修复后同 transaction completed |
-| AC-MT-PF-07 | 0.14.2 tarball、隔离安装、0.14.1 回滚和全局安装态 smoke 均绑定固定 SHA-256；失败不保留混装 |
-
-### 授权边界
-
-提案批准只允许产出 Delta。规格 merge、verify、本机部署、smoke、RunLogos 恢复/继续 merge、archive、公开发布和 git push 均按各自人类确认点执行；任何规格文字或 tasks checkbox 都不能替代授权。
-
-### 非目标
-
-- 不新增公共 phase/action/classification/JSON 字段或人工 reopen 命令。
-- 不修改 abort 终态语义，不放宽测试 ID、表列数、UTF-8、hash、containment 或 symlink 校验。
-- 不迁移 completed、已写 journal 或已发生正式写入的历史事务。
-- 不授权 npm publish、dist-tag、Git tag、GitHub Release、官网部署或 git push。
-
 ## S04/S06/S07/S09/S12/S16/S19/S35 Authority Closure 方法论门需求
 
 ### 用户问题与价值
@@ -1991,49 +1918,6 @@ RunLogos 不能依赖 OpenLogos 内部磁盘结构，也不能自行发明 stagi
 - 不禁止缓存、CQRS、多数据库、事件日志、备份或跨区副本；只禁止它们独立裁决同一事实。
 - 不引入全局 God service，不要求所有模块共享数据库或进程。
 - 不修改 HTTP API、数据库 schema、远程发布语义或 RunLogos 代码。
-
-## S09/S37 Merge Transaction 嵌套章节锚同源解析与 0.14.4 本机恢复要求
-
-### 用户问题与价值
-
-OpenLogos 已允许 Delta 使用 `父标题 > 叶标题` 唯一定位重复叶标题，但 merge transaction 的 Agent slot 语义校验和 OpenLogos Markdown composer 仍可能把整条路径当作一个扁平标题或固定 H2 处理。合法内容因此会在 seal preflight 被误判并局部 reopen，跨仓消费者只能反复重提同一个 slot。用户需要保持原 transaction identity 与已正确提交的 slot，在不伪造字面量路径标题、不 abort、不重建事务的前提下完成合并。
-
-### 核心需求
-
-1. `submit-content` 只校验声明 staging path、普通文件、containment、symlink、UTF-8、大小、Delta 控制 marker 与 slot hash，不负责裁决章节锚语义。
-2. fence-aware Delta 控制块解析、Markdown 标题树、标题路径拆分、唯一锚解析和章节边界计算必须由一个共享模块提供；change-lint、seal/apply 的 Agent semantic verifier 与 OpenLogos Markdown composer 不得保留私有正则或第二套状态机。
-3. `MODIFIED — 父标题 > 叶标题` 只有在标题层级路径唯一命中时才合法。解析结果必须携带目标文档真实 `hit.level`、`hit.text`、完整路径身份和 `[start,end)` 章节边界。
-4. Agent producer 的最终内容必须用同一 resolver 在 before/final 中证明物质操作成立；OpenLogos producer 必须用 before 的真实命中合成最终章节。两条 producer 路径都不得把路径锚字符串写成正式标题。
-5. `ADDED / MODIFIED / REMOVED` 既有操作语义与 `REMOVED-ITEMS` 非物质声明语义保持不变；代码围栏内的伪控制 marker 不得成为 Delta block。
-6. 锚零命中、多命中、层级不匹配、同锚多写者和最终结构漂移继续 fail-closed。失败发生在正式首写前时，不得生成 receipt、marker、apply journal、backup 或部分正式目标。
-7. seal preflight 只能按结构化 target path 将可修复错误归因到唯一 Agent slot；reopen 只清空 rejected slot，保留 transaction ID、plan hash、target set 与其它 submitted content hash。
-8. apply 必须对 sealed 输入重跑同一 verifier/composer 并校验 preflight identity；任何 parser/resolver 结果漂移都按 sealed identity 失败，不静默 rebase。
-9. 修复以新的本地 patch candidate `0.14.4` 交付，当前本机全局 `0.14.3` 是冻结回滚基线；禁止用相同 `0.14.3` 版本号承载不同字节。
-10. 安装态最终验收必须复用 RunLogos 原 transaction `mtx_e7f7b924499d49f96aaf8a2f`，只重提缺失 slot并完成 seal/apply；不得 abort 或创建新 transaction 掩盖失败。
-
-### 验收条件
-
-| ID | 验收条件 |
-|---|---|
-| AC-MT-ANCHOR-01 | RunLogos 同形 `MODIFIED — 父标题 > 叶标题` 的合法 Agent final bytes 可成功 submit，并在 seal preflight 唯一解析 before/final，不产生字面量路径标题 |
-| AC-MT-ANCHOR-02 | 同一夹具经 change-lint、Agent verifier 与 OpenLogos composer 得到相同的唯一命中；真实 `level/text/path/range` 一致 |
-| AC-MT-ANCHOR-03 | fence 内伪 marker、锚零命中、多命中、错误父子层级和同锚多写者稳定拒绝，正式树及事务 apply 制品零变化 |
-| AC-MT-ANCHOR-04 | seal preflight 拒绝可归因 Agent 内容时只退回目标 slot；修正后同 transaction 完成，其它 slot identity/hash 不变 |
-| AC-MT-ANCHOR-05 | apply 重验与 sealed preflight 不一致时首写前失败；不存在 transaction 私有 marker/parser、扁平路径正则或精确 H2 fallback |
-| AC-MT-ANCHOR-06 | 固定 `0.14.4` tarball 完成隔离安装、`0.14.3→0.14.4→0.14.3→0.14.4` 往返和本机全局安装态 smoke，所有 package/plugin/asset identity 与 tarball SHA-256 一致 |
-| AC-MT-ANCHOR-07 | RunLogos 原 transaction 最终为 7/7、sealed/apply/completed，receipt 与正式目标可复算，未发生 abort、新 transaction 或其它 6 个 slot hash 漂移 |
-
-### 授权与非目标
-
-- 本节只定义交付合同，不授权 `openlogos merge`、verify、本机全局部署、smoke、RunLogos merge、archive、公开发布或 git push；每个动作继续使用独立人类确认点。
-- 不新增或修改 merge transaction 公共 schema、phase、classification、action、receipt shape 或 HTTP/API/DB 合同。
-- 不引入内容相似度猜测、首命中回退、双 writer、长期兼容非法字面量路径标题或远程 registry 发布。
-
-### 追溯
-
-- 场景：S09 Merge Transaction 生命周期、S37 Delta 守恒门。
-- 测试：UT-S09-271～UT-S09-274、ST-S09-106～ST-S09-107、UT-S37-37～UT-S37-40、ST-S37-09～ST-S37-10。
-- 部署后 smoke：SMOKE-core-168。
 
 ## S08/S09/S11 项目 YAML 结构化写入与降级可见性要求
 
@@ -2396,32 +2280,6 @@ mysql        ✗ mysql SQL parser/隔离执行适配器不可用；拒绝用 SQL
 | AC-ERRATA-04 | SMOKE-core-178 步骤⑤与 0.14.14 部署矩阵「终态不堵恢复」行订正后与 §2.55.3/根规范 §2.2.1 权威语义一致；两目标文件 SMOKE ID 与部署断言结构化 ID 零增删（S37 守恒） |
 | AC-ERRATA-05 | 版本身份提升为 `0.14.16`，`0.14.15` 冻结为回滚基线；全量 `openlogos verify` PASS，安装态 SMOKE-core-180 通过且既有矩阵（SMOKE-core-176/178/179）零回归 |
 
-## 合并事务终态出路与提案内二次 merge 通道
-
-来源：本仓自用发现（2026-09-05 立案）。`createMergeTransaction()` 在事务文件存在时无条件幂等返回既有事务、不区分终态，叠加终态动作域为空（`failed` 非 `recovery_required` → `[]`；`completed` → `[]`；abort 仅 collecting/ready/sealed 可用），形成三个同族死锁面：abort 后提案永久锁死、fatal failed 无受控出路、completed 后无提案内二次 merge 通道（方法论缺口①，`errata-single-slice-recovery-semantics` 与 `closeout-deferred-errata-and-closure-gap` 两案范围裁剪说明立案背书）。唯一脱困手段是人工删除 `MERGE_TRANSACTION.json`，与架构 §三十四（合并事务单一权威）、§四十三（写入权与判定权同源）直接冲突。切片事务侧同族缺陷已由 0.14.12 / 0.14.15 闭环，合并事务侧缺同族出路。
-
-### 核心需求
-
-1. **活跃名额只含非终态**：`openlogos merge` 的创建入口遇终态事务（`failed`——含 `aborted` 与 fatal 分类——或经确认重开的 `completed`）时，先把终态事务归档至提案目录 `merge-transactions/<transaction_id>.json`（receipt 与哈希可审计、不销毁），再按当前 delta 重新规划创建新事务（新 transaction_id、新 plan/target set）；非终态事务保持幂等返回，逐字节不变。
-2. **fatal failed 有受控出路**：`failed` 且 classification 非 `recovery_required` 的事务允许 `abort`（转 `aborted`），从而任何失败终态都可经第 1 条重建；既有 `recovery_required → recover` 路径逐字不变。
-3. **completed 受控重开（二次 merge 通道）**：`openlogos merge transaction reopen --reason "<非空原因>"` 进入 `completed` 的 `allowed_actions`；`SPEC_MERGED` 在场须附显式确认参数方可重开，重开即作废 `SPEC_MERGED`；`--reason` 缺失或空白一律拒绝；其余 phase 报 `action_not_allowed`。
-4. **留痕与归档 append-only**：每次重开向提案目录 `MERGE_REOPENS.jsonl` 追加一行（schema、旧 `transaction_id`、时刻、非空原因、`spec_merged_present`/`confirmed` 标记），历史行不可改写；旧事务与 receipt 归档可查但不参与新事务任何判定。
-5. **指纹自然传导（C01 采纳）**：重开不级联删除任何下游产物（切片事务 / `TEST_SLICE_MANIFEST` / `SLICES_APPROVED` / 已实现代码）；重合并 apply 成功重写 `SPEC_MERGED` 与 receipt 后，`spec_fingerprint` 变化使既有 manifest 经既有判定自然判 stale，走切片侧既有恢复 / 重划回边收敛。任何时刻无半新半旧。
-6. **既有语义零回归**：seal/apply/preflight/receipt 判据与原子性、0.14.2 sealed 内 preflight-reopen（退回 collecting）、abort 的既有拒绝面（存在正式 receipt/marker 时拒绝破坏性清理）逐项不变；投影与拒绝文案由真实 phase/classification 推出。
-7. **合同兼容扩充**：`openlogos/merge-transaction@1` 字段与 exit code 不变，仅扩充终态动作域与消费者映射（`reopen`→`reopen`）；消费方未纳入前忽略即可，不做主版本跃迁。修复以本地 patch candidate `0.14.17` 交付，当前本机全局 `0.14.16` 是冻结回滚基线。
-
-### 验收条件
-
-| ID | 验收条件 |
-|---|---|
-| AC-MTXOUT-01 | aborted 事务在场时重跑 `openlogos merge`：终态事务归档让位、按当前 delta 重新规划出新事务（新 transaction_id、新 plan/target set）；非终态事务仍幂等返回 |
-| AC-MTXOUT-02 | fatal failed（classification 非 `recovery_required`）允许 `abort`；abort 后按 AC-MTXOUT-01 可重建；既有 `recovery_required → recover` 路径逐字不变 |
-| AC-MTXOUT-03 | completed `reopen --reason` 准入矩阵成立：`SPEC_MERGED` 不在场直接重开；在场须附显式确认参数，重开即作废 `SPEC_MERGED` 并留痕；`--reason` 缺失/空白拒绝；其余 phase 报 `action_not_allowed` 且零副作用 |
-| AC-MTXOUT-04 | `MERGE_REOPENS.jsonl` append-only 留痕齐备（schema、旧 transaction_id、时刻、非空原因、spec_merged_present/confirmed）；旧事务与 receipt 归档于 `merge-transactions/`，历史行不可改写 |
-| AC-MTXOUT-05 | 重合并 apply 成功后 `SPEC_MERGED`/receipt 重写为新事实；下游按指纹自然传导收敛（不级联删除），任何时刻无半新半旧 |
-| AC-MTXOUT-06 | 既有语义零回归：seal/apply/preflight/receipt、0.14.2 preflight-reopen、abort 既有拒绝面逐项不变；投影与文案与真实 phase/classification 一致 |
-| AC-MTXOUT-07 | 版本身份提升为 `0.14.17`，`0.14.16` 冻结为回滚基线；全量 `openlogos verify` PASS，SMOKE-core-181 安装态通过且固定 `0.14.16` 对照复现三个死锁面（防断言空转） |
-
 ## Cursor 完整宿主集成（三件套补齐）需求
 
 ### 用户价值
@@ -2477,85 +2335,6 @@ OpenLogos 使用者应能在 `init`、`adopt`、`sync` 与 `launch` 中选择 Cu
 - 必须使用本提案构建的真实 npm tarball，在隔离 staging 以真实 cursor-agent CLI 新会话验证 Skills 发现、显式命令触达、sessionStart 注入、`beforeShellExecution` allow/deny、`afterFileEdit` 检测报告、托管 `.mdc` 迁移、幂等与回滚，并实测记录 CLI hook 事件覆盖面（消解 2026-04 论坛口径时效风险）。
 - 不新增 HTTP/RPC/消息 API，不涉及数据库迁移，不实现公开发布。
 - 本提案不授权 npm publish、Git tag、GitHub Release、官网部署或 `git push`。
-
-## merge 流程契约自洽（flow 前沿与事务事实同源）需求
-
-### 用户价值
-
-`openlogos merge` 在 0.14.x 生产语义下开启合并事务后，CLI 自身的 flow 前沿必须立即如实推进：用户与宿主 driver 依据 `status` / `next` 即可判断「本跳成功、下一步派 merge-executor」，不再遇到「命令成功但前沿永久冻结」的死区，也不必自行 stat 事务文件推断状态。存量不兼容事务与 status/next 失败必须给出机器可判的稳定错误码与恢复动作。
-
-### 前沿推进要求（方案 A）
-
-1. `spec/flow/launched.yaml` 节点 `generate-merge-prompt` 的 `done_when` 必须包含生产路径真实产生的事实：`any_present:[MERGE_TRANSACTION.json, MERGE_PROMPT_GENERATED, MERGE_PROMPT.md]`（事务在盘即 done；legacy 测试 marker 兼容保留），`artifacts_hint` 同步。
-2. `flow-derive` 的 step 推导与 flow 规格 `done_when` 声明同一判据（前沿判据单源），由回归测试钉两处一致；`proposal_step` 闭合枚举、step 序列与 `merge-generated` 语义名不变。
-3. merge 开事务（含幂等返回既有非终态事务、终态归档让位后重建）后：`proposal_step` 推进 `merge-generated`，`next` 的 `next_node` 为 `apply-merge`（派 merge-executor 走 submit-content → seal → apply）。
-
-### merge 成功后置条件（二分，跨仓合同）
-
-1. **no-delta 提案**：`openlogos merge` 当场写 `SPEC_MERGED`，前沿即进（既有行为，显式成文）。
-2. **有 delta 提案**：`openlogos merge` 创建（或幂等返回 / 重开）`MERGE_TRANSACTION.json`；exit 0 + 事务在盘且 phase 合法 = 宿主判「本跳成功」的充分条件；`SPEC_MERGED` 由事务 apply 写入。
-3. merge 命令收尾提示不得再指向「执行 MERGE_PROMPT.md」；必须引导事务链（submit-content → seal → apply）。
-
-### 机器消费要求（S16）
-
-1. 活跃提案存在合并事务时，`openlogos status --format json` 与 `openlogos next --format json` 的 `data.merge_transaction` **必须**挂载只读投影（从「可挂载」升格），且与 `merge transaction status` 同快照逐字段一致。
-2. contract/schema 摘要失配的存量事务一律 fail-closed 拒绝：错误码稳定，diagnostic 含双方版本与摘要及标准 remediation（`abort` 后重开）；不承诺迁移。
-3. `status` / `next` 所有失败路径必须输出结构化 `error.code`；瞬态类码集合稳定，变更走 CLI JSON 合同版本；任何失败路径退化为纯文本 stderr 视为回归。
-
-### 场景验收条件
-
-#### S05 next 引导
-
-- merge 开事务后 `next` 立即给出 `apply-merge` 派活（不再滞留 `generate-merge-prompt`）；事务各相位（collecting/ready/sealed/completed/failed）下引导与事务 `next_action` 一致，不改写事务动作。
-
-#### S09 变更生命周期
-
-- 生产链路「merge 开事务 → step 推进 merge-generated → apply-merge 派活 → apply 写 SPEC_MERGED → coding」全链可推进；legacy 测试模式（marker 路径）行为保持不变。
-
-#### S16 机器 JSON
-
-- 投影必挂、失败路径结构化错误码、存量事务失配稳定拒绝均由 UT/ST 与安装态 smoke 锚定。
-
-### 部署与非目标
-
-- 必须以 0.14.19 真实 tarball 完成隔离矩阵（含跨组件全链验收与固定 0.14.18 死区零回归对照）后覆盖本机全局；smoke 必跑。
-- 不采用方案 B（不合并 merge 子流节点、不改 step 枚举）；不实现存量事务迁移；不授权 npm publish、Git tag、GitHub Release、官网发布或 `git push`。
-
-## reopen 后 test change set 提案级前滚需求
-
-### 用户价值
-
-对 completed 合并事务执行受控 `reopen` 修正部分目标后，重合并写出的 `SPEC_MERGED.test_change_set` 必须仍然表达「**本提案**引入/修改/删除了哪些测试 ID」，而非「最近一次事务改了哪些」。否则幂等重放的测试目标被算作零变化，`changed_test_ids` 为空或严重缺失，切片规划被迫单切、`owned_test_ids` 维度失真，多切片方案的删后续证伪门必然无法成立（来源：`openlogos-merge-reopen-empty-test-change-set-bug-report.md`，cursor-adapter-parity 0.14.17 现场实测）。
-
-### 前滚合并要求
-
-1. 提案存在 reopen 留痕（`MERGE_REOPENS.jsonl`）时，重合并 apply 写出的 change set 必须由**核心受控路径**按重开时序前滚合并各归档 receipt 携带的 `test_change_set`：`changed = (prev_changed ∖ cur_removed) ∪ cur_changed`、`removed = (prev_removed ∖ cur_changed) ∪ cur_removed`。
-2. `targets` 与 before/after hash 保持**当前事务**快照；`sha256` 按前滚后 payload 重算；changed/removed 保持 ASCII 排序、去重、不相交。
-3. 前滚发生在 seal 与 apply 共用的唯一构建点：preflight 的 `test_change_set_sha256` 与最终 `SPEC_MERGED.test_change_set` 必须同源一致。
-4. 祖先 receipt 身份（change/module/source）失配时 fail-closed 稳定码拒绝，不得静默跳过或猜测；abort 归档的事务无 receipt，天然不参与前滚。
-5. 无 reopen 留痕的提案行为逐字节不变；schema `openlogos/test-change-set@1` 不变。
-
-### 权威与消费边界
-
-1. `SPEC_MERGED.test_change_set` 仍是唯一持久化测试变化事实；消费者（切片校验、slice-aware verify、slice-planner）只认当前 marker，**禁止**自行读取归档事务/receipt 并集裁决（归档对消费者保持 audit-only）。
-2. 前滚是核心 apply writer 内部的受控读取，不构成消费者归档通道，不违反 audit-only 契约。
-3. 历史已固化的 `SPEC_MERGED` 不迁移、不重写；新语义只作用于修复后发生的 apply。
-
-### 场景验收条件
-
-#### S09 merge 事务生命周期
-
-- reopen → 部分幂等重合并（其余目标 before==after）后，`SPEC_MERGED.changed_test_ids` 仍包含首轮引入的全部测试 ID；多次 reopen 链式前滚同样成立。
-- 祖先 receipt 身份失配 → seal/apply fail-closed，错误码稳定并给出处置；无留痕提案与 0.14.19 行为逐字节一致。
-
-#### S32 切片规划
-
-- reopen 重合并后的提案可正常多切片：`owned_test_ids ⊆ changed_test_ids` 校验对本提案真实新增 ID 全部通过，删后续证伪门可成立；`removed` 后写胜出语义在消费侧如实体现。
-
-### 部署与非目标
-
-- 修复必须随 `0.14.20` 部署到本机全局（隔离矩阵含 reopen 前滚全链与固定 `0.14.19` 空 change set 零回归对照；回滚制品固定 0.14.19 tarball）后经独立 smoke 验收。
-- 非目标：不改 `openlogos/test-change-set@1` schema；不为消费者开放归档读取通道；不迁移历史 marker；不执行 npm publish、Git tag、GitHub Release、官网发布或 git push。
 
 ## Claude guard hook 项目根定位与 sync 补齐需求
 
@@ -2903,3 +2682,38 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 ### 非目标
 
 - 不触及合并事务（`merge transaction` 命令族）与 `openlogos merge`——归后续提案。
+
+## merge 直接合并与规格结构检查要求
+
+### 用户价值
+
+合并事务把「把 N 个 delta 合进主文档」拆成 N×3 + 3 次 CLI 往返（11 目标的提案即 36 次），每次都是失败机会；其保护的「多方并发写同一批文件的原子性」在实际场景中不存在——写入方只有一个顺序执行的 AI，且 `logos/resources/` 受 git 跟踪。2026-09-07 的三向死锁（reopen 拒 / abort 拒 / merge 认为已完成）正是该外壳的产物。
+
+同时，seal preflight 承担的**规格结构检查**（重复 ID、表格列数）是真实价值——它曾发现同一测试 ID 被两个用例共用、验收结果被静默覆盖。删除事务不得连带丢失该能力，故同批提供独立命令替代。
+
+### 验收条件
+
+#### S09 merge 直接合并
+
+- **GIVEN** 活跃提案的 `[delta]` 已全部产出且 change-lint 通过
+- **WHEN** 执行 `openlogos merge <slug>`
+- **THEN** 命令**一次调用**完成：读 `deltas/` → 逐目标合成最终字节（含物质结果复验）→ 原子落盘全部目标 → 写含 `test_change_set` 的 `SPEC_MERGED`
+- **AND** 无 content slot、无 staging、无 seal、无 receipt、无相位机
+- **AND** 合并中途任一目标失败即整批回滚，主文档保持合并前字节，并提示 `git checkout logos/resources/` 作为回滚点
+
+#### S09 SPEC_MERGED 结构化字段零回归
+
+- **GIVEN** merge 成功
+- **THEN** `SPEC_MERGED` 含 `test_change_set` 结构化字段，其 schema 与内容口径与事务时代逐字段一致；verify / change-lint / test-slice-manifest 三处消费方读取行为零改动
+
+#### S09 规格结构检查独立可用
+
+- **GIVEN** 测试规格中存在重复 ID 或表格列数异常
+- **WHEN** 执行 `openlogos lint-specs`
+- **THEN** 命令报出重复 ID 与结构问题并非零退出
+- **AND** 该命令**不参与任何门**——merge / verify / archive 均不因其结论而阻断；它是用户主动运行的诊断工具
+
+### 非目标
+
+- 不触及 change-lint 的 L8 / L9 / L10（归后续提案）。
+- 不触及 1a 已确立的 `slice plan` 与 slice-checkpoint 增量验收。

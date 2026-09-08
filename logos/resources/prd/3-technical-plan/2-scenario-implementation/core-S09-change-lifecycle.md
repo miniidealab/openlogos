@@ -838,218 +838,6 @@ sequenceDiagram
 - 需求：S09 scaffold 与 plan gate 验收。
 - 测试：UT-S09-224～UT-S09-230、ST-S09-88～ST-S09-89。
 
-## S09 合并事务单一权威生命周期
-
-### 场景目标
-
-把有 Delta、no-delta 与 UI prototype 提案的规格完成统一到一个 OpenLogos transaction，确保 Agent/RunLogos 不再生产外部 manifest 或直接写正式目标。
-
-### 参与者
-
-- 用户：批准 plan 与后续 merge 人类门；
-- OpenLogos merge：创建或恢复 canonical transaction；
-- merge-executor Agent：只写声明 content slots；
-- OpenLogos seal/apply：校验、冻结并原子提交；
-- RunLogos：消费公共动作并等待 WorkUnit quiescent。
-
-### 前置条件
-
-- plan 已批准，proposal/tasks/deltas 与 baseline closure 对账完成；
-- guard、slug、module 匹配；
-- 不存在同 change 的冲突 transaction 或不可恢复 journal。
-
-### 成功后置条件
-
-- transaction 为 completed，receipt、正式 targets、metadata 与 `SPEC_MERGED` 相互校验；
-- `SPEC_MERGED` 绑定 transaction/plan/receipt hash；
-- 后续 slice-planner 只读取已合并真实 UT/ST ID 与 completed receipt。
-
-### 主时序
-
-```mermaid
-sequenceDiagram
-    actor U as 用户
-    participant M as openlogos merge
-    participant T as MergeTransactionService
-    participant A as merge-executor Agent
-    participant W as RunLogos WorkUnit
-    participant B as BaselineClosureBatch
-    U->>M: Step 1: 授权 merge(change)
-    M->>T: Step 2: buildOrResume(canonical plan)
-    T-->>A: Step 3: envelope + prompt + agent_io
-    A->>T: Step 4: 原子写 required content slots
-    A-->>W: Step 5: done；RunLogos 等待 quiescent
-    W->>T: Step 6: seal(transaction_id)
-    T->>T: Step 7: 校验 slots/validators/hash 并冻结
-    T-->>W: Step 8: sealed + allowed_actions=[status,apply]
-    W->>T: Step 9: apply(transaction_id)
-    T->>B: Step 10: resources + metadata + receipt + marker
-    B-->>T: Step 11: completed 或全批回滚
-    T-->>W: Step 12: immutable completed receipt
-```
-
-### 步骤说明
-
-1. 用户授权 merge，不等于授权代码、部署或公开发布。
-2. OpenLogos 用 proposal closure、tasks、deltas 和正式 before 字节计算唯一 plan；相同输入恢复同一 transaction。
-3. Agent 只获得只读指令与明确 slot allowlist，不获得 canonical target/marker 写权限。
-4. Agent 对 Markdown/普通规格生成最终原始字节并按原子替换协议写 slot；OpenLogos-produced targets 不分配 slot。
-5. RunLogos 只把 WorkUnit 完成当作“内容生产停止”，不把它当作 merge 成功。
-6. 仅在所有相关 WorkUnit quiescent 后调用 seal。
-7. seal 先校验 slot 完整性，再执行类别 validator 与 sealed hash；失败不写正式目标。
-8. sealed 后只允许 status/apply，slot 不可再替换。
-9. RunLogos 按 `next_action=apply` 调用，不自建超时成功判断。
-10. OpenLogos 通过 journal 执行全批原子提交，marker 最后写。
-11. 任一失败恢复全部 before 或由同一 journal 前滚到全新。
-12. completed receipt 是唯一成功证据；重复 apply 返回相同 receipt。
-
-### no-delta 与 UI 分支
-
-- no-delta：transaction 没有 Agent slot，OpenLogos 直接 seal/apply并生成同形 receipt；禁止旁路 touch `SPEC_MERGED`。
-- UI prototype：原型作为 OpenLogos-produced target，或引用绑定同一 `plan_hash` 的不可变 UI receipt；hash 漂移在 apply 前拒绝。
-
-### 异常与边界
-
-#### EX-MT-09-1：Agent response lost
-- **触发条件**：Agent 已原子写完 slot，但 done 响应丢失或 RunLogos 重启。
-- **期望响应**：恢复同一 transaction，status 显示 collecting/sealable；不得清空已校验 slot或重建 target set。
-- **副作用**：无正式写入。
-
-#### EX-MT-09-2：seal validator 失败
-- **触发条件**：某个 Markdown、schema、API/DB 或内容约束失败。
-- **期望响应**：collecting/retryable，精确指向 slot/field；Agent 替换后可重试 seal。
-- **副作用**：无正式写入、无 failed marker。
-
-#### EX-MT-09-3：apply 崩溃
-- **触发条件**：journal 落盘后、marker 前任一点中断。
-- **期望响应**：下次 status/apply 先恢复为全旧或全新；永不暴露半新 completed。
-- **副作用**：由 journal 可证明。
-
-#### EX-MT-09-4：旧外部 manifest 调用
-- **触发条件**：调用 `merge-apply --manifest` 或提供 `MERGE_APPLY_MANIFEST.json`。
-- **期望响应**：固定非零升级提示，不执行任何正式写入，也不 fallback。
-- **副作用**：无。
-
-### 追溯
-
-- 需求：合并事务单一权威验收条件 1～8。
-- 功能规格：§2.44 全节。
-- 测试：UT-S09-233～UT-S09-250、ST-S09-91～ST-S09-98。
-
-## S09 公共 staging、abort 与 completed receipt 时序补充
-
-
-### 主路径：声明 staging 到 completed
-
-```mermaid
-sequenceDiagram
-    participant O as OpenLogos
-    participant R as RunLogos
-    participant A as Agent
-    participant G as Git
-    O-->>R: collecting + content_slots.items(staging_path)
-    R->>A: 仅授权声明 staging_path
-    A->>A: 同目录临时文件写完并 atomic rename
-    A-->>R: WorkUnit quiescent
-    R->>O: submit-content --slot --file=声明路径
-    O->>O: containment/symlink/encoding/size/hash 校验
-    R->>O: seal
-    O-->>R: sealed + next_action=apply
-    R->>O: apply
-    O->>O: 原子提交 payload、receipt、SPEC_MERGED
-    O-->>R: completed receipt + artifact_hashes
-    R->>G: 仅提交 commit_paths
-```
-
-### Abort 分支
-
-```mermaid
-sequenceDiagram
-    participant R as RunLogos
-    participant O as OpenLogos
-    R->>O: abort --slug
-    O->>O: 校验 phase∈collecting|ready|sealed
-    O->>O: 清理 staging/content/backup/journal
-    O-->>R: failed/aborted, actions=[], receipt=null
-    R->>O: 重复 abort
-    O-->>R: 同一 aborted_at，无写入
-```
-
-### Response-lost 与异常
-
-apply 响应丢失后先 status/recover；completed 必须返回同一 receipt payload identity，并从持久化 receipt/marker 字节重建相同 artifact_hashes。file 参数不是声明 staging path、staging 漂移或 union(commit hash paths) 不等于 commit_paths 时，事务不进入 completed。
-
-## S09 Seal Preflight 与 Legacy Sealed Reopen 时序
-
-
-### 场景目标
-
-确保新事务只在全部确定性派生校验通过后 seal；确保尚未首写的 0.14.1 sealed 事务可以在同一 identity 下只退回错误 Agent slot。
-
-### 新事务 Seal 主路径
-
-```mermaid
-sequenceDiagram
-    participant C as Consumer
-    participant M as MergeTransactionService
-    participant P as PreflightBuilder
-    participant S as TransactionStore
-
-    C->>M: seal(transaction)
-    M->>M: validate source/before/content identity
-    M->>P: build(before + candidate finals)
-    P->>P: derive metadata/test-change-set/final paths
-    P-->>M: canonical PreflightView
-    alt preflight pass
-      M->>S: atomic sealed + preflight record + new seal
-      M-->>C: phase=sealed, next_action=apply
-    else attributable content failure
-      M->>S: atomic collecting; rejected slots missing
-      M-->>C: slot_identity_mismatch, retryable=true
-    else fatal/unattributable
-      M-->>C: stable fatal; slots unchanged
-    end
-```
-
-### Legacy Sealed Apply 兼容路径
-
-```mermaid
-sequenceDiagram
-    participant C as Consumer
-    participant M as MergeTransactionService 0.14.2
-    participant P as PreflightBuilder
-    participant S as TransactionStore
-    participant A as AtomicApplyWriter
-
-    C->>M: apply(0.14.1 sealed transaction)
-    M->>M: assert no journal/receipt/marker/official write
-    M->>P: build ephemeral preflight
-    alt pass
-      M->>S: phase=applying (legacy seal unchanged)
-      M->>A: atomic batch
-      A-->>M: committed receipt/marker
-      M-->>C: completed
-    else uniquely attributable Agent error
-      M->>S: atomic collecting snapshot first
-      M->>M: best-effort rejected private cleanup
-      M-->>C: retryable; same transaction
-    else fatal or apply artifacts exist
-      M-->>C: fail closed / recover only
-    end
-```
-
-### 状态与身份规则
-
-- reopen 清除外层 `seal_sha256` 和全部 target `sealed_sha256`；仅 rejected slot `content_sha256` 置 null。
-- 无关 slot submitted hash、transaction ID、plan hash、target set 保持。
-- 修正并重新 submit 后，新 seal生成 preflight record和新 seal；不得恢复旧 seal。
-- legacy pass 不伪造新 seal或修改 transaction identity。
-- applying/journal 后任何失败走 existing recover/rollback；不得调用 reopen helper。
-
-### 追溯
-
-UT-S09-261～265、ST-S09-102～103覆盖 seal拒绝、legacy reopen、多 slot归因、崩溃顺序、不可逆边界和同 transaction完成。
-
 ## S09 authority_impact Plan 生命周期
 
 ### 场景目标
@@ -1096,122 +884,6 @@ sequenceDiagram
 
 - 规范：`openlogos/authority-impact@1`、AC-01～AC-08。
 - 测试：UT-S09-266～UT-S09-270、ST-S09-104～ST-S09-105。
-
-## S09 嵌套章节锚 Slot 的 Seal Preflight 与同事务恢复时序
-
-### 场景目标
-
-让合法 `MODIFIED — 父标题 > 叶标题` Agent content 在原始 slot submit 后通过共享 section-anchor authority 完成 seal/apply；若内容确实不满足嵌套锚合同，只局部 reopen 可归因 slot并保持 transaction 其它身份。
-
-### 参与者
-
-- **消费者/Driver**：只写声明 staging path，调用 transaction 公共 action。
-- **MergeTransactionService**：拥有 submit、seal、reopen、apply 状态转换。
-- **MarkdownSectionAuthority**：共享解析 Delta block、heading tree、路径锚和物质结果。
-- **TransactionStore**：原子持久化 slot hash、phase、seal 与 preflight identity。
-- **AtomicApplyWriter**：在 sealed identity 复核后批量提交正式目标与 receipt。
-
-### 前置条件
-
-- transaction 处于 `collecting`，Delta source、before target、plan 与 target set hash 未漂移。
-- Agent target 的 staging path 已声明，最终内容是合法 UTF-8 普通文件且不含围栏外 Delta 控制 marker。
-- Delta 使用标题路径锚，父标题与叶标题在 before/final heading tree 中形成唯一层级链。
-
-### 成功后置条件
-
-- 同一 transaction 依次达到 ready、sealed、applying、completed，正式目标不含字面量路径标题。
-- preflight/seal/receipt 绑定同一 parser/resolver result 与 source/before/content/final hash。
-- 其它 submitted slot hash、plan hash 与 target set 全程不变；OpenLogos reporter 记录真实 UT/ST 证据。
-
-### 主时序
-
-```mermaid
-sequenceDiagram
-    actor D as Consumer/Driver
-    participant M as MergeTransactionService
-    participant R as MarkdownSectionAuthority
-    participant S as TransactionStore
-    participant A as AtomicApplyWriter
-
-    D->>M: Step 1: submit-content(slot, declared staging file)
-    M->>M: Step 2: validate path/UTF-8/size/marker/hash
-    M->>S: Step 3: persist raw bytes + content_sha256
-    S-->>D: Step 4: phase=ready
-    D->>M: Step 5: seal(transaction)
-    M->>R: Step 6: parse blocks + resolve before/final nested anchor
-    R-->>M: Step 7: unique level/text/path/range + valid material outcome
-    M->>S: Step 8: atomic preflight-bound seal
-    S-->>D: Step 9: phase=sealed, next_action=apply
-    D->>M: Step 10: apply(transaction)
-    M->>R: Step 11: re-evaluate frozen delta/before/final
-    R-->>M: Step 12: same authority identity
-    M->>A: Step 13: atomic batch commit
-    A->>S: Step 14: receipt/marker/final hashes
-    S-->>D: Step 15: completed
-```
-
-### 步骤说明
-
-1. 消费者将完整最终目标写到 transaction 声明的 staging path，再调用 `submit-content`；该动作不解析章节锚。
-2. MergeTransactionService 完成原始字节安全检查并写入 slot hash；最后一个必需 slot 到达时只把 phase 推到 ready。
-3. seal preflight 将冻结 Delta、before 与 final 交给 MarkdownSectionAuthority，一次获得 fence-aware block 与唯一真实 heading hit。
-4. 对 MODIFIED 路径，authority 验证 before/final 的父子链、叶标题 level/text 与完整正文结果，不要求字面量路径 heading。
-5. 验证通过后 transaction 原子写 sealed/preflight identity；apply 首写前对完全相同的冻结输入重验。
-6. 只有 identity 相同才进入 AtomicApplyWriter；完成 receipt 与正式目标 hash 成为恢复来源。
-
-### 可修复局部 Reopen 时序
-
-```mermaid
-sequenceDiagram
-    actor D as Consumer/Driver
-    participant M as MergeTransactionService
-    participant R as MarkdownSectionAuthority
-    participant S as TransactionStore
-
-    D->>M: Step 1: seal(ready transaction)
-    M->>R: Step 2: verify nested anchor material outcome
-    R-->>M: Step 3: retryable error + unique target_path
-    M->>M: Step 4: map target_path to one Agent slot
-    M->>S: Step 5: atomic collecting snapshot first
-    M->>M: Step 6: best-effort rejected private cleanup
-    M-->>D: Step 7: slot_identity_mismatch + missing_slot_ids
-    D->>M: Step 8: rewrite staging + submit same slot
-    M->>S: Step 9: preserve transaction/plan/target-set/other hashes
-    D->>M: Step 10: seal + apply same transaction
-```
-
-### 异常与边界
-
-#### EX-MT-ANCHOR-1：字面量路径标题伪修复
-
-- **触发条件**：final 新增 `## 父标题 > 叶标题`，但真实父/叶层级未按 Delta 修改。
-- **期望响应**：seal preflight 拒绝并只退回该 Agent slot；禁止将伪标题视为唯一 hit。
-- **副作用**：正式目标、receipt、marker、journal 与其它 slot hash 不变。
-
-#### EX-MT-ANCHOR-2：叶标题重复或父链错误
-
-- **触发条件**：只按叶标题可命中多个候选，或 final 将叶标题移到错误父章节。
-- **期望响应**：authority 返回 ambiguous/not-found 或路径身份漂移；不得首命中、合并候选或按正文猜测。
-- **副作用**：若无法唯一归因到 Agent target，则一个 slot 也不清。
-
-#### EX-MT-ANCHOR-3：Apply 重验漂移
-
-- **触发条件**：seal 后 source、before、slot bytes 或 parser result identity 漂移。
-- **期望响应**：首写前以 source/before/seal mismatch fail-closed，不 reopen sealed 新事务，不静默重建 seal。
-- **副作用**：正式树及 apply journal 保持未写。
-
-#### EX-MT-ANCHOR-4：Response lost
-
-- **触发条件**：reopen 或 apply 已原子提交但命令响应丢失。
-- **期望响应**：新进程先读 status/recover，从 transaction/receipt 得到 collecting 或 completed 唯一状态。
-- **副作用**：不扫描残留 slot/staging/marker反推，不 abort、不新建 transaction。
-
-### 追溯
-
-- 需求：AC-MT-ANCHOR-01、03～05、07。
-- 功能规格：§2.46.1～§2.46.5。
-- 架构：§37.2～§37.6。
-- 测试：UT-S09-271～274、ST-S09-106～107；安装态 SMOKE-core-168。
 
 ## S09 GUI overlay extends 版本取值与存量有条件迁移
 
@@ -1299,89 +971,6 @@ sequenceDiagram
 - 功能规格：§2.47.4、§2.47.5。
 - 架构：§三十八.2、§三十八.4。
 - 测试：UT-S09-275～UT-S09-278、ST-S09-108；安装态 SMOKE-core-169。
-
-## S09 归档提案的事务只读寻址与写动作 fail-closed
-
-### 场景目标
-
-`openlogos archive` 把提案目录从 `logos/changes/<slug>` 移动到 `logos/changes/archive/<时间戳>-<slug>`，而事务身份解析只查前者。本节补齐归档后的只读寻址时序，并定死「可读不可写」的边界。
-
-### 参与者与前置条件
-
-| 别名 | 组件 | 说明 |
-|------|------|------|
-| U | User / 消费方 | 执行 `openlogos merge transaction <action>` |
-| ID | 事务身份解析器 | slug → 提案目录 → 事务文件，**单点实现** |
-| G | `logos/.openlogos-guard` | 活跃提案标记（可能不存在或指向别的提案） |
-| A | `logos/changes/archive/` | 归档提案目录 |
-
-前置：目标提案可能处于活跃态或已归档态；已归档提案的 `MERGE_TRANSACTION.json` / `MERGE_RECEIPT.json` 完整留存。
-
-### 主时序
-
-```mermaid
-sequenceDiagram
-    participant U as User / 消费方
-    participant ID as 事务身份解析器
-    participant G as .openlogos-guard
-    participant A as changes/archive/
-
-    U->>ID: Step 1: merge transaction <action> [--slug <slug>]
-    alt 显式 --slug
-        ID->>ID: Step 2a: 采用显式 slug
-    else 未指定
-        ID->>G: Step 2b: 读 activeChange
-    end
-    ID->>ID: Step 3: 查 logos/changes/<slug>
-    alt 活跃目录命中
-        ID-->>U: Step 4a: 返回 {slug, proposalDir, archived:false}（读写皆可，既有行为）
-    else 未命中
-        ID->>A: Step 5: 按 <时间戳>-<slug> 后缀查归档目录
-        alt 恰好一个命中
-            ID->>ID: Step 6: 标记 archived:true
-            alt 只读动作（status）
-                ID-->>U: Step 7a: 正常返回事务只读投影
-            else 写动作
-                ID-->>U: Step 7b: fail-closed，稳定 classification，零副作用
-            end
-        else 零命中
-            ID-->>U: Step 8a: 提案不存在
-        else 多命中
-            ID-->>U: Step 8b: fail-closed，要求显式消歧，不取第一个
-        end
-    end
-```
-
-### 步骤说明
-
-1. slug 来源不变：显式 `--slug` 优先，否则读活跃 guard 的 `activeChange`。本节不改变该顺序。
-2. **解析器**先查 `logos/changes/<slug>`；命中即按既有行为返回，读写皆可——未归档路径逐字节零回归。
-3. 未命中时才启用归档查找，按 `<时间戳>-<slug>` 后缀匹配 `logos/changes/archive/` 下的目录。
-4. 命中归档提案时解析结果携带 `archived` 标记：只读动作正常执行；写动作（`submit-content` / `seal` / `apply` / `recover` / `abort`）一律拒绝，给出稳定 classification，且不触碰事务文件、receipt 与任何 marker。
-5. 同一 slug 命中多个归档目录属歧义，fail-closed 要求显式消歧，不得取第一个。
-
-### 不变量
-
-- **查找单点**：本解析器是提案目录查找的唯一实现；runner、跨仓工具与其它消费方一律调用它，不得复制第二套目录拼接规则。
-- **可读不可写**：归档提案只放行只读动作。恢复可读性是为审计与重放判据，不是让已终结变更重新可改写。
-- **禁止绕行**：不得为读取归档事务而把 guard 指回已归档提案——那会挤掉当前正在进行的变更。
-- **零回归**：活跃提案的两条既有解析路径（guard / 显式 slug）行为与输出逐字节不变。
-- **只读即无副作用**：归档态下的只读动作不写入任何文件。
-
-### 异常与边界
-
-| 编号 | 触发条件 | 处理 |
-|---|---|---|
-| EX-S09-ARCH-1 | 归档提案上发起写动作 | fail-closed，稳定 classification，事务文件与 receipt 字节不变 |
-| EX-S09-ARCH-2 | 同一 slug 命中多个归档目录 | fail-closed，报歧义并要求显式消歧 |
-| EX-S09-ARCH-3 | 活跃与归档均未命中 | 维持既有「提案不存在」错误语义 |
-
-### 追溯
-
-- 需求：AC-TXADDR-01～04。
-- 功能规格：§2.48.2。
-- 架构：§三十九.1。
-- 测试：UT-S09-279～UT-S09-282、ST-S09-109；安装态 SMOKE-core-170。
 
 ## S09 merge 准入判定与 change-lint 同源
 
@@ -1522,54 +1111,6 @@ sequenceDiagram
 - 需求：S09 Cursor 变更生命周期验收（Cursor 资产、迁移与 Hook 要求 5/6/7）。
 - 架构：46.4 Hook 归一化与部分强度决策流水线、46.7 失败模型。
 - 测试：UT-S09-293～UT-S09-302、ST-S09-112～ST-S09-115。
-
-## S09 merge 事务前沿推进生产链路时序（flow 契约自洽）
-
-### 场景目标
-
-launched 变更在 0.14.x 事务语义下，merge 段的 flow 前沿与生产事实全链自洽：「开事务 → step 推进 merge-generated → apply-merge 派活 → 事务 apply 写 SPEC_MERGED → coding」，无死区；legacy 测试模式（marker 路径）行为保持不变。
-
-### 前置与后置条件
-
-- 前置：提案 `ready-to-merge`，merge 获授权。
-- 成功后置：每一步的 `proposal_step` / `next_node` 与磁盘事实一致；`SPEC_MERGED` 后进入 slice/implement 既有链路。
-- 失败后置：事务失败相位不冻结前沿（terminal 走 0.14.17 终态出路：abort 重建 / reopen）；status/next 失败输出结构化 `error.code`。
-
-### 主时序
-
-```mermaid
-sequenceDiagram
-    participant M as openlogos merge
-    participant T as 合并事务
-    participant F as flow-derive/step
-    participant E as merge-executor
-    participant S as SPEC_MERGED
-    M->>T: 创建事务（collecting）
-    T-->>F: 事务在盘 → proposal_step: merge-generated
-    F-->>E: next_node: apply-merge（派活）
-    E->>T: submit-content ×N → seal → apply
-    T->>S: apply 原子落盘并写 SPEC_MERGED
-    S-->>F: 前沿越过 merge 段 → slice/implement 既有链路
-```
-
-### 步骤与不变量
-
-1. `done_when: any_present:[MERGE_TRANSACTION.json, MERGE_PROMPT_GENERATED, MERGE_PROMPT.md]`——事务在盘即 done；legacy 测试 marker 兼容或项，0.13.x 合同回归不破。
-2. merge 幂等：非终态事务在场时重跑 merge 幂等返回、前沿不回退；终态按 §2.58.1 归档让位重建（新事务同样使前沿为 merge-generated）。
-3. `proposal_step` 闭合枚举、step 注册表（merge-generated: pre-implement/command-required）、禁止抢占前沿规则一字不改。
-4. 后置条件二分为跨仓合同：宿主以「exit 0 + 事务在盘且 phase 合法」判本跳成功；「apply 前沿停顿」是合法中间态。
-
-### 异常
-
-- `EX-MF-S09-1`：事务 failed（fatal / aborted）→ 前沿仍 merge-generated（事务在盘），引导按 classification 给 abort/recover；重跑 merge 归档让位重建，不死锁。
-- `EX-MF-S09-2`：手工删除事务文件（越权）→ 前沿回退 ready-to-merge（事实消失），guard/review 层处置，flow 不猜测。
-- `EX-MF-S09-3`：存量事务合同失配 → fail-closed 稳定码 + remediation（abort 后重开），不迁移。
-
-### 追溯
-
-- 需求：merge 流程契约自洽需求「S09 变更生命周期」。
-- 架构：四十七（authority cutover）；功能规格 §2.60.2/§2.60.3。
-- 测试：UT-S09-303～UT-S09-308、ST-S09-116～ST-S09-117、SMOKE-core-190。
 
 ## S09 reopen 重合并的 test change set 前滚时序
 
@@ -1915,3 +1456,78 @@ sequenceDiagram
 ### 与 smoke 门的纵深防御关系
 
 S19 的 smoke 前置门是链条中段，本节的 archive 链条门是末端兜底。本次事故中两道门同时缺席，单点漏标才得以一路走到归档并被固化。两门叠加后：漏标 → smoke 拒绝（缺口在最早处暴露）；即使 smoke 因历史版本或旁路被绕过 → archive 仍拒绝（缺口不被固化）；两门都被绕过的历史提案 → 由 `status` / `next` 的 `state_inconsistency` 对账投影点名（S11 / S05）。
+
+## S09 merge 直接合并时序
+
+### 场景目标
+
+把规格合并从「N×3+3 次 CLI 往返的事务链」收敛为**一次调用**：读 delta → 逐目标合成最终字节（含物质结果复验）→ 一次性原子落盘 → 写含 `test_change_set` 的 `SPEC_MERGED`。失败即整批回滚，git 工作区是回滚点。
+
+### 参与者
+
+- **change-writer（AI）**：产出 `deltas/` 下的 delta 文件。
+- **openlogos merge（CLI）**：合并的唯一执行者与写入者。
+- **合并引擎 `composeOpenLogosMarkdown`**：章节锚定位、标题 rebase、物质结果复验。
+- **原子落盘原语 `applyBaselineClosureBatch`**：全部目标一次提交，失败整批回滚。
+
+### 前置条件
+
+`[delta]` 全部产出、change-lint 通过、`logos/resources/` 工作区干净（便于回滚）。
+
+### 成功后置条件
+
+全部 canonical target 落盘为最终态；`SPEC_MERGED` 在场且含结构化 `test_change_set`；无任何事务中间态文件残留。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant W as change-writer（AI）
+    participant M as openlogos merge
+    participant E as composeOpenLogosMarkdown
+    participant A as applyBaselineClosureBatch
+    participant F as logos/resources
+    W->>M: Step 1: 产出 deltas/ 后调用 merge <slug>
+    M->>M: Step 2: 解析 [delta] 目标集，P==T==D 与路径合法性校验
+    loop 每个 canonical target
+        M->>E: Step 3: 读 delta 与当前主文档，合成最终字节
+        E->>E: Step 4: 锚唯一定位 + 标题 rebase + 物质结果复验
+        E-->>M: Step 5: 返回最终字节（任一不符即在写入前失败）
+    end
+    M->>A: Step 6: 全部目标一次性提交
+    A->>F: Step 7: temp + fsync + rename，失败整批回滚
+    M->>F: Step 8: 写含 test_change_set 的 SPEC_MERGED
+    M-->>W: Step 9: 返回合并摘要（一次调用完成）
+```
+
+### 步骤说明
+
+1. **change-writer** 产出全部 delta 后调用 `openlogos merge <slug>`。
+2. **merge** 解析目标集并做既有 P==T==D 与路径合法性校验——校验全部前置于写入。
+3-5. **合并引擎**逐目标合成最终字节；`verifyAgentMaterialOutcome` 在此复验「delta 是否真被正确应用」，任一目标不符即在写入任何文件前整体失败。
+6-7. **原子落盘原语**一次性提交全部目标，失败整批回滚，主文档保持合并前字节。
+8. **merge** 末步写 `SPEC_MERGED`，含由 `buildTestChangeSet` 构建的结构化 `test_change_set`。
+9. 至此一次 CLI 往返完成合并（此前 11 目标需 36 次）。
+
+### 异常与边界
+
+#### EX-9.20：某目标合成失败
+- **触发条件**：章节锚解析到 0 或多处、delta 段标记缺失、物质结果复验不通过。
+- **期望响应**：在写入任何文件前整体失败并点名该目标与原因；`logos/resources/` 零改动。
+- **副作用**：无。
+
+#### EX-9.21：落盘中途失败
+- **触发条件**：rename 失败、磁盘异常。
+- **期望响应**：整批回滚到合并前字节，不写 `SPEC_MERGED`；错误信息附 `git checkout logos/resources/` 作为兜底回滚点。
+- **副作用**：无半新半旧的主文档。
+
+#### EX-9.22：重新合并
+- **触发条件**：已合并后发现 delta 有误。
+- **期望响应**：`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `openlogos merge`——不存在 reopen 通道，也不需要（无中间态可恢复）。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：merge 直接合并与规格结构检查要求。
+- 功能规格：§2.69。
+- 测试：UT-S09-340、UT-S09-341、ST-S09-140。
