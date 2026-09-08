@@ -1,11 +1,11 @@
 {
   "schema": "openlogos/merge-transaction@1",
-  "transaction_id": "mtx_39c15aa6bbf0d5432e29533b",
-  "seal_sha256": "sha256:cd8795fde02740fc7cbebc88535259e2017439c28f95db677b8b79a18d3de0d6",
-  "target_set_sha256": "sha256:9c13126396a0d9e6edd03786a038d56c47c0c681bf11f5d801174baf481805cf",
-  "closure_sha256": "sha256:e3557e700a4f1ef976178011e91fce888bdf01e5636ab9346204bcf17dbd2642",
+  "transaction_id": "mtx_224408fd0145d8bc3bae2df7",
+  "seal_sha256": "sha256:939c7409b967814dbe5de5fc2798772ebdccf37bd7444d53f7dcbb33407d5136",
+  "target_set_sha256": "sha256:54c939f5c258c5f26b115ba3551d972952ab269b69d9c0f87f5431737a4080ef",
+  "closure_sha256": "sha256:f3f515bd1cf51e88f9754b48bb7fde3cdcc5c6b8be27b50169aed95f1ac94edc",
   "target_count": 11,
-  "plan_sha256": "sha256:c9a4aa43469cb8d68b5aa6211205b0064565dab74ffb49f37f57a6e4094ecc72",
+  "plan_sha256": "sha256:0543c5062f74f2b5d79563852a6ab0b57aeb31f9bc8af643f7d91f9dc01bc596",
   "change": "lite-cut1a-remove-slice-transaction",
   "module": "core",
   "changed_paths": [
@@ -57,7 +57,7 @@
     },
     {
       "path": "logos/resources/test/core-S28-test-cases.md",
-      "sha256": "sha256:5c1e0e4639c86aa0a3f1f36ce81d8e949968d42e6146af80c0134fe9ee21b326"
+      "sha256": "sha256:dc70d9d91f92a3a06a89480339bb37fd56cffd8506c760cc06a57c117e3ecde5"
     },
     {
       "path": "logos/resources/test/core-S32-test-cases.md",
@@ -80,6 +80,7 @@
       "UT-S32-91"
     ],
     "removed_test_ids": [
+      "ST-S28-15",
       "ST-S28-16",
       "ST-S32-18",
       "ST-S32-19",
@@ -91,6 +92,8 @@
       "UT-S13-67",
       "UT-S28-45",
       "UT-S28-46",
+      "UT-S28-47",
+      "UT-S28-48",
       "UT-S28-49",
       "UT-S28-50",
       "UT-S28-51",
@@ -129,7 +132,7 @@
       {
         "target_path": "logos/resources/test/core-S28-test-cases.md",
         "before_sha256": "8b1f41654e64904b3063b59cb739ecf87342e02254e285ca6c9b8b9cbd70957a",
-        "after_sha256": "5c1e0e4639c86aa0a3f1f36ce81d8e949968d42e6146af80c0134fe9ee21b326"
+        "after_sha256": "dc70d9d91f92a3a06a89480339bb37fd56cffd8506c760cc06a57c117e3ecde5"
       },
       {
         "target_path": "logos/resources/test/core-S32-test-cases.md",
@@ -137,7 +140,7 @@
         "after_sha256": "ea23febf6e5138ce736882d056bdfa1cfe9c620e4ec7825e4cde9ea75b231879"
       }
     ],
-    "sha256": "sha256:43c9f865bf2242772a41e435c4d9045e5fbd8ea06505780aed5fc09106ce7ae1"
+    "sha256": "sha256:93988a08a42988c31e29003e5c4d83fd2f1acd0e389e7d7eb2740fd47b80f089"
   },
   "spec_merged": {
     "path": "logos/changes/lite-cut1a-remove-slice-transaction/SPEC_MERGED"
@@ -157,6 +160,6 @@
     "logos/resources/test/core-S32-test-cases.md",
     "spec/cli-json-output.md"
   ],
-  "completed_at": "2026-09-08T01:52:35.866Z",
-  "receipt_sha256": "sha256:1b13bdc5ad85ed1e0d2843c0034d2092b968dec4e36ef5484b1193f6aed2e5a8"
+  "completed_at": "2026-09-08T01:56:17.158Z",
+  "receipt_sha256": "sha256:cc77c0df861af70b1b89820d76129549d3f696a7a74490a1a7bee776f28c4423"
 }
