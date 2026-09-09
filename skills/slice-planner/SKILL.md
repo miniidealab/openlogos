@@ -20,7 +20,9 @@
 
 ## 核心职责
 
-唯一交付物：`tasks.md` 的 `## [code]` section——一组**过了删后续证伪门**的良构切片，每条末尾标注其覆盖的真实 `UT-Sxx-..` / `ST-Sxx-..`。
+唯一交付物：结构化 `slices.json`——一组**过了删后续证伪门**的良构切片，每片含 `slice_id`、`task_text`（写进 `tasks.md` `[code]` 段的条目文本，末尾标注该片覆盖的真实 `UT-Sxx-..` / `ST-Sxx-..`）、`owned_test_ids`、`runner_selectors`、`spec_targets`。
+
+`tasks.md` 的 `## [code]` 段与 `TEST_SLICE_MANIFEST.json` 由 `openlogos slice plan --file <slices.json>` 写出——本 Skill 是切片内容的**生产者**，不是产物的**写入者**（根规范 `spec/test-slice-manifest.md` §2.1、架构 §四十三.1）。**不要手写这两个产物**：`owned_test_ids` 是 verify 计算 eligible 的输入，属流程判断数据，其生成权留在 CLI。
 
 不产 `proposal.md`、不产 `[delta]`、不产 `[deploy]`（那是 `change-writer` 的职责），不写业务代码（那是 `code-implementor` 的职责）。
 
@@ -76,17 +78,18 @@
 
 1. **每条 = 一个自闭环切片**：业务代码 + 该片 UT/ST + OpenLogos reporter + 必要 golden baseline，**不依赖同批后续切片**。
 2. **有序、无前向依赖**：从上到下串行实现（v1 不建模 DAG）；被依赖的片排前。
-3. **标注真实用例 ID**：每条末尾标注覆盖的 `UT-Sxx-..` / `ST-Sxx-..`，与已合并 `test/*-test-cases.md` 对齐（**此时 ID 已定，不再用占位**）。
+3. **标注真实用例 ID**：每条 `task_text` 末尾标注覆盖的 `UT-Sxx-..` / `ST-Sxx-..`，与已合并 `test/*-test-cases.md` 对齐（**此时 ID 已定，不再用占位**）。
 4. **禁止按工种拆**：实现代码 / 写测试 / 写 reporter / 更新 golden / 补文档注释，必须合并进同一自闭环切片，不得各自成片。
 5. **空 `[code]`**：纯 docs/delta 提案无代码产出时，`[code]` 可为空——切片循环退化为 `tests_green`，不影响。
 
-**Smoke 用例变更的强制闭环**：当本提案新增/修改 `logos/resources/test/smoke/*.md`，`[code]` 切片文本必须列出新增 `SMOKE-*` ID、要求实现/更新 `scripts/smoke-*` runner、写 `smoke-results.jsonl` reporter、接入 `logos.config.json.smoke.command` 或 `scripts/run-smoke.js`，并要求完成后跑 smoke 覆盖预检。
+**Smoke 用例变更的强制闭环**：当本提案新增/修改 `logos/resources/test/smoke/*.md`，切片的 `task_text` 必须列出新增 `SMOKE-*` ID、要求实现/更新 `scripts/smoke-*` runner、写 `smoke-results.jsonl` reporter、接入 `logos.config.json.smoke.command` 或 `scripts/run-smoke.js`，并要求完成后跑 smoke 覆盖预检。
 
-写完后**从磁盘读回 `[code]` section** 向用户展示原文确认落盘。
+**落盘方式**：把上述切片写成结构化 `slices.json`，执行 `openlogos slice plan --file <slices.json>`（详见「测试—切片 manifest 生产与恢复职责」）；**不要直接编辑 `tasks.md` 的 `[code]` 段**。命令成功后**从磁盘读回 `[code]` 段**向用户展示原文确认落盘。
 
 ## 输出规范
 
-- 只写 `tasks.md` 的 `## [code]` section（及其开头的删后续自检结论注释）；不动 `proposal.md`、`[delta]`、`[deploy]`。
+- 只产出 `slices.json` 并经 `openlogos slice plan --file <slices.json>` 落盘；该命令只写 `tasks.md` 的 `## [code]` 段与 `TEST_SLICE_MANIFEST.json`，`proposal.md`、`[delta]`、`[deploy]` 与其勾选状态字节恒等。
+- 删后续证伪门的逐片结论写在切片的 `task_text` 里或随命令输出向用户展示；`[code]` 段由命令渲染，不手工加工。
 - 完成后提醒用户：切片已就绪，可在 `slice-exit` 门确认后进入 implement 切片循环。
 
 ## 示例
@@ -111,7 +114,7 @@
 
 ## 推荐提示词
 
-- `请按 slice-planner 规划本提案的 [code] 切片：先读已合并规格与真实测试 ID，六维打分，再用垂直/横向判别器与删后续证伪门逐片自检（写出结论），拆不开就显式单切。只写 tasks.md 的 [code] section 并读回确认。`
+- `请按 slice-planner 规划本提案的 [code] 切片：先读已合并规格与真实测试 ID，六维打分，再用垂直/横向判别器与删后续证伪门逐片自检（写出结论），拆不开就显式单切。把结果写成结构化 slices.json（slice_id / task_text / owned_test_ids / runner_selectors / spec_targets），执行 openlogos slice plan --file <slices.json> 落盘，并读回 [code] 段确认。`
 
 ## 纯代码提案处理规则
 
@@ -123,17 +126,16 @@
 
 ## 硬性交付门：openlogos change-lint（切片产出完成后强制）
 
-**本节标题保留原名以锚定既有章节；实际交付门已由 `change-lint` 自查改为事务 `seal`。**
+**本节标题保留原名以锚定既有章节；实际交付门已由 `change-lint` 自查改为 `openlogos slice plan` 的写盘前校验。**
 
-> 切片规划的交付门由**事务 seal** 承担。此前由本 Skill 自行运行 `change-lint` 作为「机器硬门」——但那道门由被检查者自己运行，属自查而非门（架构 §四十三.2）。
+> 切片规划的交付门由 **`slice plan` 的前置校验**承担。此前由本 Skill 自行运行 `change-lint` 作为「机器硬门」——但那道门由被检查者自己运行，属自查而非门（架构 §四十三.2）。
 
 **规则（强制）**：
 
-1. 两个 slot 提交完毕后，事务进入 `ready`；执行 `openlogos slice transaction seal` 冻结内容。
-2. **seal 成功才可继续**——seal 会校验 slot 内容的结构合法性与 ID 真实性；失败时按诊断逐条修复后重新 `submit-content`。
+1. `slices.json` 写好后执行 `openlogos slice plan --file <slices.json>`。该命令把**全部校验前置于任一写入之前**：结构合法性（非空数组、`slice_id` 唯一且 kebab-case、`task_text` 非空、三个数组字段非空）与 ID 真实性（`owned_test_ids` 全部存在于已合并测试规格）。
+2. **命令成功才可继续**——失败时非零退出并报稳定错误码（`SLICE_PLAN_INPUT_INVALID` / `SLICE_PLAN_DUPLICATE_SLICE_ID` / `SLICE_PLAN_UNKNOWN_TEST_ID` / `SLICE_PLAN_NO_ACTIVE_CHANGE`），`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 字节不变（零副作用）；按诊断逐条修 `slices.json` 后重跑即可，**没有需要清理的中间态**。
 3. 常见拒绝原因：切片引用的测试 ID 含占位/通配写法（必须引用 merge 后规格中的**真实** UT/ST/SMOKE ID）；`slice_id` 格式非法；同一 ID 被多片 owned；变更 ID 未被任何切片 owned。
-4. `apply` 成功后事务转 `completed` 并产出 receipt，两个产物此时才落盘。
-5. 事务 `completed` **不**等于通过 slice-exit 门——删后续证伪门的结论仍需写入 `slot_codesection`，用户批准仍按既有流程执行。
+4. 命令成功即两个产物同时落盘并完成指纹自算；**这不等于**通过 slice-exit 门——删后续证伪门的结论仍需向用户交代，用户批准仍按既有流程执行。
 
 不再要求 slice-planner 自行运行 `change-lint` 作为交付前提；该命令仍可作为只读自查随时使用，但它不是门。
 
@@ -143,29 +145,29 @@
 
 slice-planner 是切片内容的**生产者**，不是产物的**写入者**。
 
-spec-complete 后，slice-planner 不再直接写 `tasks.md` 的 `[code]` section，也不再自行生成 `TEST_SLICE_MANIFEST.json`。两个产物由 `openlogos slice transaction apply` 在同一事务中原子写出（根规范 `spec/test-slice-manifest.md` §2.1、架构 §四十三.1）。
+spec-complete 后，slice-planner **不直接写** `tasks.md` 的 `[code]` section，也**不自行生成** `TEST_SLICE_MANIFEST.json`。两个产物由 `openlogos slice plan` 在单次调用内先后写出（根规范 `spec/test-slice-manifest.md` §2.1、§2.2，架构 §四十三.1）。
 
-交付路径改为向 content slot 提交内容：
+交付路径是**提交结构化输入**：写 `slices.json`，每项固定含——
 
-| slot id | 提交内容 |
+| 字段 | 内容 |
 |---|---|
-| `slot_codesection` | 每片的 `task_text`，以及六维打分与删后续证伪门的逐片结论 |
-| `slot_slices` | 每片的 `slice_id`、`owned_test_ids`、`runner_selectors`、`spec_targets` |
+| `slice_id` | 稳定切片身份，kebab-case，提案内唯一；推荐 `slice-<两位序号>-<规范化短名>` |
+| `task_text` | 该片写进 `[code]` 段的条目文本（末尾标注覆盖的真实 UT/ST ID） |
+| `owned_test_ids` | 该片独占归属的真实测试 ID；禁止占位、通配与不存在 ID |
+| `runner_selectors` | 能让 runner 执行该片 owned tests 的非空 selector |
+| `spec_targets` | 该片涉及的已合并规格文件，项目根相对路径 |
 
 命令：
 
 ```bash
-openlogos slice transaction submit-content --slot slot_codesection --file <path>
-openlogos slice transaction submit-content --slot slot_slices --file <path>
-openlogos slice transaction seal
-openlogos slice transaction apply
+openlogos slice plan --file <slices.json>
 ```
 
-**`[code]` 与 manifest 的原子一致性由事务保证，不再由本 Skill 的纪律维持。** 任一 slot 内容非法，`submit-content` 即拒绝并点名字段；`apply` 中途失败整体回滚，两产物同时存在或同时不存在。
+**`[code]` 与 manifest 的一致性由命令构造保证，不由本 Skill 的纪律维持。** 校验全部前置于写入：任一字段非法即拒绝并点名 `slices[i].<字段>`，两产物字节不变；校验全过之后才顺序写出，不存在半写态。
 
-`task_fingerprint` 由 OpenLogos 依其自己写出的 `tasks.md` 计算——**不要在 slot 内容中提供任何指纹**，提供了也不会被采信。
+`task_fingerprint` 由 OpenLogos 依其**刚写出的** `tasks.md` 计算——**不要在 `slices.json` 中提供任何指纹**，字段不存在，提供了也不会被采信。
 
-恢复场景（manifest missing / invalid / stale）由 OpenLogos 创建 `origin=manifest-recovery` 事务，`required` 收窄为仅 `slot_slices`，`[code]` 段冻结。**不要在恢复事务中重新划分切片**——切片划分本身没有问题，问题只在 manifest 失效。
+**不存在切片事务**：没有 content slot、没有 `submit-content` / `seal` / `apply` / `recover` / `abort` / `reopen`、没有相位与 `allowed_actions`。若看到指向这些命令的旧指引，按本节执行并把该指引视为过期文档；**不要**改写、删除或重命名 `TEST_SLICE_MANIFEST.json` 等 OpenLogos 拥有的产物来「腾位」或「触发恢复」（根规范 §2.3.1）。
 
 ### 初次生成模式
 
@@ -174,43 +176,40 @@ openlogos slice transaction apply
 3. 为每个顶层切片生成稳定 `slice_id`，推荐格式 `slice-<两位序号>-<规范化短名>`；输入不变时重复运行必须逐字节稳定。
 4. 每个变更测试 ID 必须恰好出现在一个切片的 `owned_test_ids`；共享基线回归不重复归属。
 5. 为每片填写非空 `runner_selectors`，selector 必须能让 runner 执行该片 owned tests，并允许 verify 叠加基线回归。
-6. 计算规范化 `[code]` section 的 `task_fingerprint`，以及本提案涉及的已合并测试规格内容 `spec_fingerprint`；算法统一为 SHA-256、小写十六进制。
-7. 先写同目录临时文件，完成 schema、唯一归属、ID 存在性、selector 与 fingerprint 读回校验后原子 rename。
+6. 为每片填写非空 `spec_targets`（项目根相对路径），`spec_fingerprint` 由命令依此计算。
+7. 执行 `openlogos slice plan --file <slices.json>`；命令负责临时文件、读回校验与原子 rename。
 
-manifest 最小结构：
+`slices.json` 最小结构：
 
 ```json
 {
-  "schema": "openlogos/test-slice-manifest@1",
-  "change": "example-change",
-  "module": "core",
-  "task_fingerprint": "sha256:<64-hex>",
-  "spec_fingerprint": "sha256:<64-hex>",
   "slices": [
     {
       "slice_id": "slice-01-capability",
-      "task_text": "端到端能力切片",
+      "task_text": "端到端能力切片：实现 X 并同步 UT/ST + reporter（覆盖 UT-S01-01、ST-S01-01）",
       "owned_test_ids": ["UT-S01-01", "ST-S01-01"],
-      "runner_selectors": ["UT-S01-01", "ST-S01-01"]
+      "runner_selectors": ["UT-S01-01", "ST-S01-01"],
+      "spec_targets": ["logos/resources/test/core-S01-test-cases.md"]
     }
   ]
 }
 ```
 
-示例中的 change、测试 ID 与哈希只说明结构，实际交付必须替换为当前提案真实值。
+示例中的测试 ID 与路径只说明结构，实际交付必须替换为当前提案真实值。`schema` / `change` / `module` / `task_fingerprint` / `spec_fingerprint` / `generated_at` 由命令写入 manifest，**不在输入中提供**。
 
 ### 恢复重建模式
 
 当 OpenLogos 输出 `next_node.id=plan-slices` 且 reason 为 manifest 缺失、已知版本非法或 stale 时：
 
-- 保留既有 `[code]` 切片文本、顺序、父子层级、全部 checkbox 和 `SLICES_APPROVED`；禁止重新评分、重新切片或清空任务。
-- 保留可由既有切片文本确定的稳定 `slice_id`。旧 manifest 可读时沿用其 ID；完全缺失时由规范化顺序与文本确定性重建。
-- 读取 `SLICE_CHECKPOINTS.jsonl` 仅用于验证身份兼容，禁止改写、删除或伪造 checkpoint。
-- 重新从已合并规格计算 owned IDs、selectors 与 fingerprints，仅替换 manifest。
+- **恢复动作就是以相同 `slices.json` 重跑 `openlogos slice plan --file <slices.json>`**——恢复与初次规划是同一个动作，没有恢复事务、恢复相位或 `--recover` 开关。
+- **不要重新评分、重新切片或清空任务**：切片划分本身没有问题，问题只在 manifest 失效。沿用旧划分的 `slice_id` 与 `task_text`（旧 manifest 可读时从中读取；完全缺失时由既有 `[code]` 段的规范化顺序与文本确定性重建）。
+- **不要手工恢复 checkbox**：`slice plan` 逐 `slice_id` 比对 `task_text`——逐字未变则沿用旧勾选状态，变了则重置为未勾选（根规范 §2.3）。这条保留由写入者构造性完成；以「记得把 `[x]` 补回来」作为兜底违反根规范 §2.2「禁止以纪律替代构造保证」。
+- 读取 `SLICE_CHECKPOINTS.jsonl` 仅用于验证身份兼容，禁止改写、删除或伪造 checkpoint；`SLICES_APPROVED` 同样不被 `slice plan` 触碰。
+- 重新从已合并规格核对 owned IDs 与 selectors；`spec_fingerprint` / `task_fingerprint` 由命令重算，不手工提供。
 - 若一个 ID 无法唯一归属、既有切片文本漂移导致身份无法保持，必须输出歧义并停止，不得猜测。
 
 ### 完成屏障与读回
 
-交付前必须从磁盘重新读取 `tasks.md` 与 manifest，并验证：schema 主版本受支持；change/module 匹配；slice ID/测试 ID 无重复；变更测试集合无遗漏、无未知 ID；每片 selector 非空；task/spec fingerprint 可重算一致；manifest 的切片顺序与 `[code]` 顶层顺序一致。
+交付前必须从磁盘重新读取 `tasks.md` 与 `TEST_SLICE_MANIFEST.json`，并验证：schema 主版本受支持；change/module 匹配；slice ID/测试 ID 无重复；变更测试集合无遗漏、无未知 ID；每片 selector 非空；manifest 的切片顺序与 `[code]` 顶层顺序一致；恢复重跑时未被改写的切片其勾选状态如实保留。
 
 RunLogos 或其他宿主的 Agent 自报 done 不是完成证据。宿主必须使用 OpenLogos 提供的 validator/状态派生重算上述谓词；失败时按 violation 幂等修复。manifest 可恢复重试预算与代码 repair budget 完全分离。

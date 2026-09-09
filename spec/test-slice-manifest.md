@@ -10,85 +10,87 @@ OpenLogos 是协议判定和状态持久化的唯一事实源。slice-planner �
 
 | 文件 | 位置 | 唯一写入者 | 更新方式 |
 |---|---|---|---|
-| `SPEC_MERGED.test_change_set` | `logos/changes/<slug>/SPEC_MERGED` | `openlogos merge-apply` | 与 resources、metadata、marker 同一 baseline apply 事务；marker 最后写 |
-| `TEST_SLICE_MANIFEST.json` | `logos/changes/<slug>/` | `openlogos slice transaction apply` | 与 `tasks.md` 的 `[code]` 段在同一事务中原子写出；临时文件校验后原子 rename |
-| `tasks.md` 的 `## [code]` 段 | 同上 | `openlogos slice transaction apply` | 整节替换；`[delta]` / `[deploy]` 段与其 checkbox 状态字节恒等 |
+| `SPEC_MERGED.test_change_set` | `logos/changes/<slug>/SPEC_MERGED` | `openlogos merge` | 与 resources、metadata 同一次原子落盘批次；marker 最后写 |
+| `TEST_SLICE_MANIFEST.json` | `logos/changes/<slug>/` | `openlogos slice plan` | 与 `tasks.md` 的 `[code]` 段在**同一次命令内**顺序写出；临时文件校验后原子 rename |
+| `tasks.md` 的 `## [code]` 段 | 同上 | `openlogos slice plan` | 整节替换（checkbox 按 §2.3 判据逐条目保留）；`[delta]` / `[deploy]` 段与其 checkbox 状态字节恒等 |
 | `SLICE_CHECKPOINTS.jsonl` | 同上 | `openlogos verify` | append-only；等价 PASS 幂等 |
 | `LOOP_ITERS` | 同上 | `openlogos verify` | 仅真实 Gate 尝试 append |
 | `VERIFY_PASS` / `VERIFY_FAIL` | 同上 | `openlogos verify` | 既有 marker 规则；PASS 仅 final |
 
-`merge-apply` 必须在掌握 category=`test` canonical targets 的 before/final 字节时生成 change set；slice-planner、verify、status、next、change-lint、宿主和 code-implementor 均只读。verify、status、next、宿主和 code-implementor 禁止写 manifest；宿主禁止写 checkpoint/marker 或从 `tasks.md`、Delta、Git 建立影子 changed-ID 清单。
+`openlogos merge` 必须在掌握 category=`test` canonical targets 的 before/final 字节时生成 change set；slice-planner、verify、status、next、change-lint、宿主和 code-implementor 均只读。verify、status、next、宿主和 code-implementor 禁止写 manifest；宿主禁止写 checkpoint/marker 或从 `tasks.md`、Delta、Git 建立影子 changed-ID 清单。
 
 ### 2.1 写入权与判定权同源
 
 `TEST_SLICE_MANIFEST.json` 与 `tasks.md` 的 `## [code]` 段是 OpenLogos 判定切片验收前沿的两个 canonical 产物，因此**必须由 OpenLogos 自己写出**（架构 §四十三.1）。
 
-slice-planner 是这两个产物内容的**生产者**，不是**写入者**：它向 `openlogos slice transaction` 的 content slot 提交内容，正式产物、receipt 与 marker 一律由 OpenLogos 写入。此前规格把 slice-planner 记为 manifest 的唯一生产者，而 OpenLogos 虽已导出 `writeTestSliceManifestAtomic()` 却零调用方——实际写出字节的是 Agent，判定权与写入权分离。
+slice-planner 是这两个产物内容的**生产者**，不是**写入者**：它产出结构化 `slices.json`（每项含 `slice_id`、`task_text`、`owned_test_ids`、`runner_selectors`、`spec_targets`）并交 `openlogos slice plan --file <slices.json>` 落盘，正式产物一律由 OpenLogos 写入。此前规格把 slice-planner 记为 manifest 的唯一生产者，而 OpenLogos 虽已导出 `writeTestSliceManifestAtomic()` 却零调用方——实际写出字节的是 Agent，判定权与写入权分离；本条把写入权收回 CLI 的结论不因外壳形态改变而放宽。
+
+结构化输入是这条边界的形态，不是可选风格：`owned_test_ids` 是 verify 计算 eligible 的输入，属流程判断数据，只能来自本命令写入的 manifest，**禁止**从 `[code]` 段散文反解析（`spec/cli-json-output.md`「结构化事实源不变量」）。
 
 ### 2.2 两产物的原子一致性
 
 manifest 的 `task_fingerprint` 是对 `tasks.md` 的 `[code]` 段求得的指纹，二者存在硬性一致性约束。该一致性**由构造保证**（架构 §四十三.2）：
 
-- 两个产物在同一次 `apply` 中写出，任一失败整体回滚，不存在半写态；
-- `task_fingerprint` 由 OpenLogos 依其**刚写出**的 `tasks.md` 计算，不接受外部提供。
+- 两个产物在同一次 `slice plan` 调用内顺序写出，全部校验前置于任一写入之前——校验不通过时两产物字节均不变（零副作用），不存在「先写了一个再发现不合法」的半写态；
+- `task_fingerprint` 由 OpenLogos 依其**刚写出**的 `tasks.md` 计算，不接受外部提供——写入者与指纹计算者同一方、同一时刻，漂移窗口从构造上消失。
 
 禁止以纪律、约定或生产者自查替代该保证。特别地，禁止由被检查者自己运行的「交付前自查」充当硬门。
 
-#### 2.2.1 终态条件：completed 当且仅当判定器未给出负面结论
+本节的不变量与保证它的机制是两件事：机制由「同一 `apply` 事务、失败整体回滚」改为「单命令内校验前置 + 顺序写入 + 指纹即时自算」，**不变量本身逐字不变**。
 
-「写盘成功」不是终态条件。`apply` 必须在写盘完成之后、置 `phase=completed` 之前，用**本规范 §8 的同一 validator**（`deriveSliceVerificationState()`，经 `verifyAppliedManifest()` 消费）复核它刚写出的两个产物。复核的**适用性是前置条件**：`shouldUseSliceVerification()` 为假时（当前唯一形态：`tasks.length < 2` 的单切片计划——单切片下 `owned_test_ids` 的确定性恢复没有意义，切片验证按设计不启用）判定器返回 `null`，表示**不适用而非负面结论**。
+#### 2.2.1 「不适用」不是负面结论
 
-| 复核结论 | 终态 | 产物 |
+`slice plan` 的合法性判定发生在写盘**之前**：结构校验（非空数组、`slice_id` 唯一且 kebab-case、四个数组字段非空、`task_text` 非空）与 ID 真实性校验（`owned_test_ids` 全部存在于已合并测试规格）任一不过即非零退出、报稳定错误码、两产物不被触碰。因此不再需要「写盘后复核、非法则整体回滚」——回滚窗口从构造上不存在。
+
+但「判定器不适用」与「判定器给出负面结论」的区分不随外壳删除而消失，它转移到**消费侧**（`verify` / `status` / `next` / 宿主）：
+
+| `deriveSliceVerificationState()` 结论 | 含义 | 消费方行为 |
 |---|---|---|
-| `null`（判定器按设计不适用） | `completed`，出具 receipt | 保留；manifest 为**惰性产物**——所有消费者统一经 `deriveSliceVerificationState()` 取态，其在盘与否不改变行为 |
-| `valid` | `completed`，出具 receipt | 保留 |
-| `invalid` / `stale` / `unsupported` | `failed`，`classification=recovery_required` | **整体回滚**到 `apply` 前状态 |
+| `null`（判定器按设计不适用） | `shouldUseSliceVerification()` 为假（当前唯一形态：`tasks.length < 2` 的单切片计划——单切片下 `owned_test_ids` 的确定性恢复没有意义，切片验证按设计不启用） | 走既有全量 verify；manifest 为**惰性产物**，其在盘与否不改变行为 |
+| `valid` | 切片验证适用且当前产物合法 | 进入 `slice-checkpoint` 增量验收 |
+| `invalid` / `unsupported` | 负面结论 | 走 §9 恢复动作合同 |
+| `stale` | 指纹漂移（审计观察） | **告警而非阻塞**——审计产物不得出现在流程分支的条件里 |
 
-放行分支必须**显式区分** `null` 与 `valid` 两种来源，不得无差别合并——未来新增的 `null` 来源不得被静默放行。禁止把「不适用」读成失败（0.14.12～0.14.13 的缺陷形态：`status !== 'valid'` 使所有单切片提案永久无法写出 `[code]`），也禁止以「把单切片拆成两片满足判定器」作为替代。
+消费方必须**显式区分** `null` 与 `valid` 两种来源，不得无差别合并——未来新增的 `null` 来源不得被静默放行。禁止把「不适用」读成失败（0.14.12～0.14.13 的缺陷形态：`status !== 'valid'` 使所有单切片提案永久无法写出 `[code]`），也禁止以「把单切片拆成两片满足判定器」作为替代。
 
-判非法时的回滚**复用与写盘异常完全相同的那一条路径**：`tasks.md` 与 manifest 同时恢复，不留半写态。这样「产出不合法」与「写盘异常」在消费方看来是同一种失败，只需一套语义——修正 slot 内容后重新提交。
+负面结论必须把 validator 的 violations **原样带出**（保留 `code`、`path`、`message`、`fix_hint`），不得压缩为单条摘要：消费方要靠它定位到底是哪个 `spec_targets` 或哪个 `task_text` 不合格。**负面结论必伴随非零 violations**；诊断文案不得渲染 `unknown`——「负面结论 + 0 条违规」的组合意味着守门把「没有结论」读成了结论，属违规实现。
 
-失败投影必须把 validator 的 violations **原样带出**（保留 `code`、`path`、`message`、`fix_hint`），不得压缩为单条摘要：消费方要靠它定位到底是哪个 `spec_targets` 或哪个 `task_text` 不合格。**失败终态必伴随非零 violations**；失败文案不得渲染 `unknown`——「失败终态 + 0 条违规」的组合意味着守门把「没有结论」读成了结论，属违规实现。
+不得为此新建第二套宽松 validator。判定权与写入权在同一进程内（§2.1），若在写盘前不互相对账，判定方就只能事后发现问题、无法事前阻止——这正是「约束没有失败信号」（架构 §四十一.6.2）的形态。**一个只被定义、没有调用方的复核函数，等于没有这条约束。**
 
-不得为此新建第二套宽松 validator。判定权与写入权在同一进程内（§2.1），若在提交终态前不互相对账，判定方就只能事后发现问题、无法事前阻止——这正是「约束没有失败信号」（架构 §四十一.6.2）的形态。**一个只被定义、没有调用方的复核函数，等于没有这条约束。**
+### 2.3 恢复重跑与 checkbox 保留
 
-本节仅放宽 `completed` 的达成条件（解除对合法单切片形态的误拒），`openlogos/test-slice-transaction@1` 的 schema、字段与 slot 契约零变化，不做版本跃迁；消费方对 `completed` 的既有理解不受收紧。
+manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVerificationState()` 自身结论输出 `next_node.id=plan-slices`。**恢复动作就是以相同 `slices.json` 重跑 `openlogos slice plan --file <slices.json>`**——不存在恢复事务、恢复相位或 `--recover` 开关，恢复与初次规划是同一个动作。
 
-### 2.3 恢复事务
+恢复重跑必须保住已完成切片的实现进度。该保证**由写入者构造性完成**：
 
-manifest 失效（missing / invalid / stale）时，由 OpenLogos 依 `deriveSliceVerificationState()` 自身结论创建 `origin=manifest-recovery` 的切片事务，`content_slots.required` 收窄为仅切片归属内容，`[code]` 段冻结、拒绝改写。
+- `slice plan` 逐 `slice_id` 判定 checkbox——新输入中某 `slice_id` 的 `task_text` 与其旧值**逐字相等**时，该条目沿用旧 `[code]` 段中的勾选状态；不相等（或该 `slice_id` 是新增）时写为未勾选。
+- 旧值取自在盘旧 manifest 的 `slice_id → task_text` 映射；旧 manifest 缺失或不可解析（manifest missing 的恢复正是此形态）时退化为直接在旧 `[code]` 段中查找同文本条目——判据仍是同一条「文本逐字相等才保留」。
+- 初次规划没有旧 `[code]` 条目与旧 manifest，该规则天然无副作用；因此**不需要**区分「初次」与「恢复」两种调用形态。
 
-消费方不得自行判断「这是不是一次恢复」，也不得自行推导可写作用域——两者都从事务投影读出。
+判据取 `task_text` 逐字相等，理由是它可构造判定：内容没变则既有进度仍然可信；内容变了则进度不再可信，重置为未勾选是安全侧。**禁止**新增开关把「是否保留进度」的判定权外移给调用方——调用方传错即静默丢进度，正是本规范 §2.2 所禁止的「以纪律替代构造保证」；**同样禁止**在文档或 Skill 中写「Agent 记得手工恢复勾选」作为兜底。
 
-#### 2.3.1 「已存在活跃事务」只含非终态
+`slice plan` **不触碰** `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl`：前者是 slice-exit 门的产物、后者是 verify 的账本（§2 写入者表）。checkpoint 的采信仍按 §6 以 `manifest_sha256` 与当前 manifest 一致为准。
 
-同一提案同时至多一个**活跃**切片事务。「活跃」的定义是**非终态**：
+#### 2.3.1 恢复入口的可达性与产物所有权
 
-| phase | 是否占用活跃名额 |
-|---|---|
-| `collecting` / `ready` / `sealed` / `applying` | 是 |
-| `completed` / `failed` | **否**——视为可归档历史 |
-
-终态事务在场时，仍必须按当前 canonical 判定另起 `origin=manifest-recovery` 事务。把终态计入「已存在」会让恢复入口永久短路：`completed` 的 `allowed_actions` 为空，既不能提交也不能中止，而恢复事务又创建不出来，提案被永久锁死在 `plan-slices`。
+恢复入口的可达性是本规范的一部分：**只要判定为可自动恢复（§8 表中「可自动恢复=是」且 `human_action_required=false`），恢复动作就必须真实可执行**。`slice plan` 无前置相位、无活跃名额、无终态短路，任何时刻都接受一次合法输入——这正是删除事务外壳后恢复入口不再可能被永久短路的原因（旧形态下 `completed` 的 `allowed_actions` 为空、恢复事务又创建不出来，提案被永久锁死在 `plan-slices`）。
 
 由此派生两条硬性要求：
 
-- **禁止要求消费方删除或改名 `TEST_SLICE_TRANSACTION.json`。** 该文件由 OpenLogos 拥有，让消费方去改它与「事务产物只由 OpenLogos 写」（§2.1）直接冲突。任何把「人工删除事务文件」写进恢复步骤的文档、Skill 或测试夹具都是违规的——**测试夹具尤其**：在夹具里预先删除该文件，等于把人工绕过写进前提，会使本条约束在测试中天然不可见。
-- **投影必须与事实一致。** 终态事务不得被渲染成恢复事务；`allowed_actions` 为空的事务不得被提示「提交内容后 seal、apply」；拒绝动作的文案不得断言未发生的前提（例如在 `apply` 成功的现场声称「apply 失败已整体回滚」）。
+- **禁止要求消费方删除或改名 OpenLogos 拥有的产物**（`TEST_SLICE_MANIFEST.json` 等）来「腾位」或「触发恢复」。让消费方去改它与「canonical 产物只由 OpenLogos 写」（§2.1）直接冲突。任何把「人工删除产物文件」写进恢复步骤的文档、Skill 或测试夹具都是违规的——**测试夹具尤其**：在夹具里预先删除该文件，等于把人工绕过写进前提，会使本条约束在测试中天然不可见。
+- **文档与投影必须与实际命令面一致。** 恢复指引不得提示已删除的命令面（`slice transaction submit-content / seal / apply / recover / abort / reopen`）；拒绝文案不得断言未发生的前提（例如在写入成功的现场声称「已整体回滚」）。指引不可执行时 Agent 无路可走，会退而写出无人消费的死文件——这是本条被列为硬性要求的实证来由。
 
-### 2.4 已完成规划的受控重划
+### 2.4 已完成规划的重划
 
-`completed` 不等于永久冻结。切片划分本身被证实有误时（manifest 可完全有效，§2.3 的恢复路径不触发），消费方经受控重开动作重划，**不得**以手工编辑 `[code]` 段、手工写 manifest 或删除/改名 `TEST_SLICE_TRANSACTION.json` 替代——那些是 §2.1 写入权合同下的违规路径。
+切片划分本身被证实有误时（manifest 可完全有效，§2.3 的失效恢复不触发），**重划与初次规划是同一个动作**：修改 `slices.json` 后重跑 `openlogos slice plan --file <slices.json>`。不存在 `reopen` 动作、重开留痕文件与终态事务归档。
 
-**准入**：`reopen` 仅对 `phase=completed` 开放（两种 origin 均适用），`--reason` 非空为留痕前置。`SLICES_APPROVED` 不在场可自由重开；在场须显式确认参数，确认重开即作废该 marker（旧批准不得覆盖新划分）。事务文件不可读或 marker 状态不可判定时 fail-closed 拒绝，无任何写副作用。
+**不得**以手工编辑 `[code]` 段或手工写 manifest 替代——那是 §2.1 写入权合同下的违规路径。
 
-**动作语义**（单一动作内按序完成，任一步失败整体不生效）：追加 `SLICE_REPLANS.jsonl` 留痕（`schema: openlogos/slice-replan@1`——旧 `transaction_id`、重开时刻、非空原因、批准在场标记、确认标记；append-only，历史行不得改写）→ 归档旧终态事务至 `slice-transactions/<id>.json`（不销毁，receipt 可审计）→（确认路径）作废 `SLICES_APPROVED` → 新建 `origin=initial-plan` 的 `collecting` 事务（`required=2`）。
+**产物处置**：重跑整体替换 `[code]` 段与 manifest，两者在同一次调用内先后写出（§2.2），任何时刻不得半新半旧。checkbox 按 §2.3 判据**逐条目独立处置**：`task_text` 被改写的切片重置为未勾选，未改写的保留原状态——「划分错了」与「这一片已经做完了」是两件事，不因同批重跑而互相牵连。
 
-**产物处置**：重开时 `[code]` 段与 manifest **保持旧值**；整体替换发生且仅发生在新划分的 apply（§2.2 的原子语义复用）——任何时刻不得半新半旧。重划 apply 后 manifest 的 `sha256` 必然变化，**verify 只采信 `manifest_sha256` 与当前 manifest 一致的 checkpoint 行**（§6）——旧划分的 PASS checkpoint 不得冒充新划分的收敛证据。
+重划 apply 后 manifest 的 `sha256` 必然变化，**verify 只采信 `manifest_sha256` 与当前 manifest 一致的 checkpoint 行**（§6）——旧划分的 PASS checkpoint 不得冒充新划分的收敛证据。
 
-**与恢复路径互不顶替**：manifest 失效走 §2.3（`manifest-recovery`，`required=1`、`[code]` 冻结）；规划错误走本节（`initial-plan`，`required=2`、新 apply 整体替换）。用恢复路径改划分会破坏 `[code]` 冻结不变量，用重划路径修 manifest 会把机械重建变成重新规划。
-
-**兼容**：本节仅扩充 `completed` 的 `allowed_actions` 域（新值 `reopen`），schema、字段与 slot 契约零变化；未执行 `reopen` 时 `completed` 行为与 0.14.14 逐项一致。
+`SLICES_APPROVED` 在场时重跑不自动作废该 marker（`slice plan` 不触碰它，§2.3）；批准与当前划分是否仍匹配，由 slice-exit 门依重跑后的 `[code]` 重新确认。
 
 ## 3. Manifest Schema v1
 
@@ -222,9 +224,11 @@ validator 必须先通过 TestChangeSetReader 验证 change set，再验证 slic
 
 ## 9. 恢复动作合同
 
-有效 change set + slice manifest missing/invalid/stale 时，OpenLogos 输出 `next_node.id=plan-slices`、`skill=slice-planner`、`dispatch.idempotent=true` 和 artifacts。slice-planner 恢复模式必须从同一 TestChangeSetReader 返回的 C/R 规划，保留 `[code]` 文本/顺序/checkbox、`SLICES_APPROVED` 和 checkpoint，仅重建 manifest。完全缺失时从规范化 tasks 确定性恢复 slice ID；无法保持身份则阻塞。
+有效 change set + slice manifest missing/invalid/stale 时，OpenLogos 输出 `next_node.id=plan-slices`、`skill=slice-planner`、`dispatch.idempotent=true` 和 artifacts。slice-planner 恢复模式必须从同一 TestChangeSetReader 返回的 C/R 规划，并**以相同 `slices.json` 重跑 `openlogos slice plan --file <slices.json>`**：`[code]` 文本、顺序与 checkbox 的保留由该命令按 §2.3 的 `task_text` 逐字判据构造性完成，`SLICES_APPROVED` 与 checkpoint 不被触碰，实际重建的只有 manifest。完全缺失时从规范化 tasks 确定性恢复 slice ID；无法保持身份则阻塞。
 
-恢复入口的可达性是本合同的一部分：**只要判定为可自动恢复（§8 表中「可自动恢复=是」且 `human_action_required=false`），就必须存在一个可创建的恢复事务**，与该提案是否残留终态事务无关（§2.3.1）。若因任何原因无法创建，OpenLogos 必须给出结构化诊断说明原因，而不是返回一个不接受任何动作的事务投影充数——后者会让消费方按错误指引反复撞墙。
+**恢复的保留义务落在写入者身上，不落在 Agent 的纪律上**：Skill 与宿主不得以「恢复时记得把勾选补回来」作为保留手段（§2.2「禁止以纪律替代构造保证」），也不得在恢复步骤中要求人工编辑 `[code]` 段或删除 OpenLogos 拥有的产物（§2.3.1）。
+
+恢复入口的可达性是本合同的一部分：**只要判定为可自动恢复（§8 表中「可自动恢复=是」且 `human_action_required=false`），恢复动作就必须真实可执行**（§2.3.1）。若因任何原因不可执行，OpenLogos 必须给出结构化诊断说明原因，而不是给出一条指向已删除命令面的指引充数——后者会让消费方按错误指引反复撞墙，或退而写出无人消费的死文件。
 
 change set missing/invalid/unsupported/tampered 时，OpenLogos 必须保持人类可操作的 merge/spec-complete 阻塞前沿，返回对应结构化诊断，禁止伪装成 slice manifest 问题或派 `plan-slices`。RunLogos 只消费该 canonical 动作；宿主不得扫描 Delta、解析 Markdown 表格、调用 Git 或自行推导 C/R。
 

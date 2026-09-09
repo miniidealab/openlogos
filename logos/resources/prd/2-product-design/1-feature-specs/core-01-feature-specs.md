@@ -2943,16 +2943,16 @@ Claude Code 对 PreToolUse hook 的 exit 2 **读取 stderr** 展示拦截原因�
 openlogos slice plan --file <slices.json> [--format json]
 ```
 
-**输入**：结构化 `slices.json`，为切片数组，每项固定含 `slice_id`、`owned_test_ids`、`runner_selectors`、`spec_targets`（字段与既有 manifest 的 `slices` 逐字一致，不新造 schema）。
+**输入**：结构化 `slices.json`，为切片数组，每项固定含 `slice_id`、`task_text`、`owned_test_ids`、`runner_selectors`、`spec_targets`（字段与既有 manifest 的 `slices` 逐字一致，不新造 schema）。
 
 **行为**（单次调用内顺序完成，无中间相位）：
 
-1. 校验结构化输入：非空数组；`slice_id` 提案内唯一；`owned_test_ids` / `runner_selectors` / `spec_targets` 非空；`owned_test_ids` 中每个 ID 存在于已合并测试规格。
-2. 写 `tasks.md` 的 `[code]` 段（整段替换，`[delta]` / `[deploy]` 段与其勾选状态字节恒等）。
+1. 校验结构化输入：非空数组；`slice_id` 提案内唯一且为 kebab-case；`task_text` 非空；`owned_test_ids` / `runner_selectors` / `spec_targets` 非空；`owned_test_ids` 中每个 ID 存在于已合并测试规格。
+2. 写 `tasks.md` 的 `[code]` 段（整段替换，`[delta]` / `[deploy]` 段与其勾选状态字节恒等；`[code]` 段内条目的勾选状态按 §2.68.5 逐条目保留）。
 3. 写 `TEST_SLICE_MANIFEST.json`（temp + 原子 rename）。
 4. 依**刚写出的** `tasks.md` 自算 `task_fingerprint`，依 `spec_targets` 算 `spec_fingerprint`——写入者与指纹计算者同一方、同一时刻，漂移窗口从构造上消失。
 
-**幂等**：同一 `slices.json` 重复执行得到同一 `[code]` 与同一 manifest；重新规划直接重跑本命令，不需要「重开」通道。
+**幂等**：同一 `slices.json` 重复执行得到同一 `[code]` 与同一 manifest；重新规划直接重跑本命令，不需要「重开」通道。恢复（manifest 失效）与重划（划分本身要改）也走同一条命令，区别只在 `slices.json` 内容是否变化。
 
 **失败零副作用**：任一校验不通过即非零退出并报稳定错误码，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均不被修改。
 
@@ -2978,6 +2978,28 @@ openlogos slice plan --file <slices.json> [--format json]
 ### 2.68.4 降级项
 
 `task_fingerprint` / `spec_fingerprint` 保留计算与输出，其 **stale 判定由阻塞降级为警告**——呼应「任何审计产物都不得出现在流程分支的条件里」；指纹继续作为可观察诊断。
+
+### 2.68.5 恢复与重划语义（checkbox 保留）
+
+**问题**：`[code]` 段是整节替换，旧 body 被丢弃。manifest 中途失效（missing / invalid / stale）时按 `next` 指引重跑 `slice plan`，会把已完成切片的 `[x]` 冲回 `[ ]`——实现进度丢失，而丢失的正是 verify 前沿赖以判断「做到哪了」的事实。
+
+**行为**：`slice plan` 写 `[code]` 段时**逐 `slice_id` 决定勾选状态**：
+
+| 情形 | 该条目写为 |
+|---|---|
+| 新输入中该 `slice_id` 的 `task_text` 与旧值**逐字相等** | 沿用旧 `[code]` 段中该条目的勾选状态 |
+| `task_text` 与旧值不等 | `- [ ]`（未勾选） |
+| 该 `slice_id` 为新增（旧值不存在） | `- [ ]`（未勾选） |
+
+旧值取自在盘旧 `TEST_SLICE_MANIFEST.json` 的 `slice_id → task_text` 映射；旧 manifest 缺失或不可解析（manifest missing 的恢复正是此形态）时，退化为直接在旧 `[code]` 段中查找同文本条目——判据仍是同一条「文本逐字相等才保留」。
+
+**为什么判据是 `task_text` 逐字相等**：它是可构造判定——内容没变则既有进度仍然可信；内容变了则该片要做的事已不同、旧进度不再可信，重置为未勾选是安全侧。
+
+**为什么不设开关**：把「是否保留进度」交给调用方（如 `--recover`），调用方传错即静默丢进度，属根规范 `spec/test-slice-manifest.md` §2.2 明令禁止的「以纪律、约定或生产者自查替代构造保证」；同理也不允许以「Agent 记得手工把勾选补回来」兜底。保留必须由写入者自身构造性完成。
+
+**零回归边界**：初次规划没有旧 `[code]` 条目与旧 manifest，规则天然无副作用——**既有 `slices.json` 输入零改动即得与 0.15.0 逐字一致的行为**，因此不需要区分「初次」与「恢复」两种调用形态，命令面与输入结构均无破坏性变更。
+
+**写域边界**：本规则只作用于 `tasks.md` 的 `[code]` 段。`SLICES_APPROVED`（slice-exit 门产物）与 `SLICE_CHECKPOINTS.jsonl`（`verify` 账本）**不被 `slice plan` 触碰**；重划后 manifest 的 `sha256` 变化，旧划分的 checkpoint 按根规范 §6 自然不被采信。
 
 ## 2.69 merge 直接合并（一次调用完成）
 

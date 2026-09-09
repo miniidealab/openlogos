@@ -287,3 +287,37 @@
 
 - 三条用例均只读当前 `SPEC_MERGED`，不得读取任何历史或归档来源补齐 changed/removed。
 - 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
+
+## S32 slice plan 恢复重跑与 checkbox 保留测试
+
+> 覆盖 `openlogos slice plan` 作为**恢复与重划唯一入口**时的 checkbox 保留判据（功能规格 §2.68.5；根规范 `spec/test-slice-manifest.md` §2.3、§2.4；JSON 契约 `spec/cli-json-output.md`「重跑时的 checkbox 保留」）。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S32-92 | 初次规划零回归 | 提案 `[code]` 为占位（无既有切片条目）且无在盘 `TEST_SLICE_MANIFEST.json` 时执行 `slice plan`：写出的每条 `[code]` 条目均为 `- [ ] <task_text>`，`[code]` 文本、条目顺序与 manifest 内容**与本变更前逐字一致**；`slice_count` / `slice_ids` / `manifest_path` 取值不变。证明恢复语义对初次调用无副作用、既有 `slices.json` 输入零改动即得旧行为 |
+| UT-S32-93 | `task_text` 未变则保留勾选、变更则重置 | 前置：`[code]` 含两条且第一条为 `- [x]`，在盘旧 manifest 的 `slice_id → task_text` 与之对应。① 用**逐字相同**的 `slices.json` 重跑 → 第一条仍为 `- [x]`、第二条仍为 `- [ ]`；② 仅把第一条切片的 `task_text` 改一个字符后重跑 → 该条重置为 `- [ ]`。两次重跑的 `[delta]` / `[deploy]` 段与其勾选状态**字节恒等** |
+| UT-S32-94 | 混合场景逐条目独立判定 | 四片场景：`slice-01` 已勾且 `task_text` 未变、`slice-02` 已勾但 `task_text` 被改写、`slice-03` 未勾且未变、`slice-04` 为新增 `slice_id` → 重跑后依次为 `- [x]` / `- [ ]` / `- [ ]` / `- [ ]`。判定逐条目独立，不因同批中存在被改写的切片而牵连未改写的切片 |
+| UT-S32-95 | 旧 manifest 缺失时按 `[code]` 文本回退匹配 | 前置：`[code]` 含两条且第一条为 `- [x]`，**删除** `TEST_SLICE_MANIFEST.json`（manifest missing 的恢复形态）→ 以相同 `slices.json` 重跑：第一条勾选状态仍保留（判据退化为在旧 `[code]` 段中查找同文本条目，仍是「文本逐字相等才保留」），manifest 被重建且 `task_fingerprint` 等于依**刚写出的** `tasks.md` 重算之值 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S32-41 | manifest 失效 → 恢复重跑 → 进度不丢的端到端 | 真实 CLI：① `slice plan` 写入 2 切片并在 `slice-exit` 写 `SLICES_APPROVED`；② 完成切片 1 后 `openlogos verify` 以 `slice-checkpoint` 模式写入一条 checkpoint，`[code]` 第一条为 `- [x]`；③ 删除 `TEST_SLICE_MANIFEST.json`，`openlogos next` 输出 `next_node.id=plan-slices`、`skill=slice-planner`；④ 以**相同** `slices.json` 重跑 `openlogos slice plan --file` → 第一条仍为 `- [x]`、manifest 重建、`slice_ids` 与重建前一致；⑤ `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl` 的**字节均未变**（`slice plan` 不触碰这两个产物）；⑥ 恢复后 `verify` 继续以 `slice-checkpoint` 模式从切片 2 前进，不要求重跑切片 1 |
+
+### 追溯与覆盖
+
+- AC-SLICE-RECOVER-01 初次规划零回归、无需区分初次/恢复形态：UT-S32-92。
+- AC-SLICE-RECOVER-02 `task_text` 逐字相等才保留勾选，变更即重置：UT-S32-93。
+- AC-SLICE-RECOVER-03 逐条目独立判定（混合场景与新增切片）：UT-S32-94。
+- AC-SLICE-RECOVER-04 旧 manifest 缺失时的回退判据仍保留进度：UT-S32-95、ST-S32-41 步骤④。
+- AC-SLICE-RECOVER-05 `SLICES_APPROVED` 与 checkpoint 不被 `slice plan` 触碰：ST-S32-41 步骤⑤。
+- AC-SLICE-RECOVER-06 恢复后增量验收从未完成切片继续、已完成切片不重跑：ST-S32-41 步骤⑥。
+- 功能规格：§2.68.5；根规范：`spec/test-slice-manifest.md` §2.3、§2.3.1、§2.4、§9；JSON 契约：`spec/cli-json-output.md`「openlogos slice plan 输出合同」。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
+- 保留判据是**构造保证**，因此断言必须直接读回磁盘上的 `tasks.md` 字节比对勾选状态，不得以命令 stdout 的自述作为通过依据。
