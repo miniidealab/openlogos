@@ -2646,6 +2646,7 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 | 字段 | 类型 | 约束 |
 |---|---|---|
 | `slice_id` | string | 提案内唯一，kebab-case |
+| `task_text` | string | 非空；逐字写入 `[code]` 段该切片的 checkbox 条目文本 |
 | `owned_test_ids` | string[] | 非空；每个 ID 必须存在于已合并测试规格 |
 | `runner_selectors` | string[] | 非空 |
 | `spec_targets` | string[] | 非空；项目根相对路径 |
@@ -2672,6 +2673,18 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 **流程判断必须使用结构化数据；非结构化文本只用于展示给用户。**
 
 `owned_test_ids` 是 `verify` 计算 `eligible` 集合的输入，属流程判断数据。因此消费方**禁止**从 `tasks.md` 的 `[code]` 段散文解析该集合——正文中「被提及」的测试 ID（如叙述某 ID 转为历史锚）不等于该切片「拥有」它，实测这种解析会使 `eligible` 多算并以缺结果误红。唯一合法来源是 `TEST_SLICE_MANIFEST.json` 的 `owned_test_ids`。
+
+### 重跑时的 checkbox 保留（规范性）
+
+`slice plan` 既是初次规划入口，也是 manifest 失效恢复与划分重划的入口——三者是同一个动作（根规范 `spec/test-slice-manifest.md` §2.3、§2.4）。因此**重跑不得冲掉已完成切片的实现进度**，该保留由命令**构造性完成**，不设开关、不依赖调用方或 Agent 纪律：
+
+- 逐 `slice_id` 判定：新输入中某 `slice_id` 的 `task_text` 与其旧值**逐字相等**时，该条目在重写后的 `[code]` 段中沿用旧勾选状态（`- [x]` 保持 `- [x]`）；不相等或该 `slice_id` 为新增时写为未勾选（`- [ ]`）。
+- 旧值取自在盘旧 `TEST_SLICE_MANIFEST.json` 的 `slice_id → task_text` 映射；旧 manifest 缺失或不可解析（manifest missing 的恢复正是此形态）时退化为直接在旧 `[code]` 段中查找同文本条目——判据仍是同一条「文本逐字相等才保留」。
+- 初次规划无旧 `[code]` 条目与旧 manifest，规则天然无副作用：**既有输入零改动即得与 0.15.0 逐字一致的行为**，命令面与输入结构不做破坏性变更。
+
+**对输出的影响**：`slice_count`、`slice_ids`、`task_fingerprint`、`spec_fingerprint`、`manifest_path` 五个 `data` 字段的语义与取值口径**均不变**——checkbox 状态不进入 manifest，也不改变 `[code]` 条目的文本与顺序。但 `task_fingerprint` 是对**刚写出的** `tasks.md` 求得的指纹，`- [x]` 与 `- [ ]` 的字节差异会如实反映其中；因此同一 `slices.json` 在「全未勾选」与「部分已勾选」两种在盘态下重跑，得到的 `[code]` 文本相同而 `task_fingerprint` 可以不同。这是指纹如实记录字节的正常表现，不构成 stale 判定的例外——指纹语义按下一节仍为观察性质。
+
+`slice plan` **不触碰** `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl`：前者属 slice-exit 门、后者属 `verify` 账本，均不在本命令的写域内。
 
 ### 指纹语义（降级为观察）
 
