@@ -4,7 +4,7 @@
  * 结构化校验失败零副作用、重规划幂等，以及 slice-checkpoint 增量验收能力零回归。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
 import { planSlices, parseSlicesInput, SlicePlanError } from '../src/commands/slice.js';
@@ -165,5 +165,147 @@ describe('S32 切片规划单条受控写入口', () => {
     const parsed = parseSlicesInput(readFileSync(join(root, 'slices.json'), 'utf-8'),
       new Set(['UT-S99-01', 'ST-S99-01']));
     expect(parsed[0].owned_test_ids).toEqual(['UT-S99-01', 'ST-S99-01']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fix-slice-assets-drift-after-transaction-removal 单切片：
+// `slice plan` 重跑时的 checkbox 逐 slice_id 保留（功能规格 §2.68.5、根规范 §2.3/§2.4）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `[code]` 段中的 checkbox 条目行（按文档序），用于逐字对照勾选状态。 */
+function codeSectionOf(tasks: string): string[] {
+  const lines = tasks.split('\n');
+  const start = lines.findIndex(line => /^## \[code\]/.test(line));
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex(line => /^## /.test(line));
+  return (end < 0 ? rest : rest.slice(0, end)).filter(line => /^- \[[ xX]\]/.test(line));
+}
+
+function readTasks(): string { return readFileSync(join(proposalDir(), 'tasks.md'), 'utf-8'); }
+
+/** 把 `[code]` 中第 index 条（0 基，按文档序数全部 checkbox 条目）标记为已勾选——模拟 code-implementor 完成该切片。 */
+function checkCodeEntry(index: number): void {
+  const lines = readTasks().split('\n');
+  const start = lines.findIndex(line => /^## \[code\]/.test(line));
+  let seen = -1;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^## /.test(lines[i])) break;
+    if (!/^- \[[ xX]\] /.test(lines[i])) continue;
+    seen += 1;
+    if (seen === index) { lines[i] = lines[i].replace(/^- \[[ xX]\] /, '- [x] '); break; }
+  }
+  writeFileSync(join(proposalDir(), 'tasks.md'), lines.join('\n'));
+}
+
+function writeS99Spec(ids: string[]): void {
+  writeFileSync(join(root, 'logos/resources/test/core-S99-test-cases.md'), [
+    '# S99 测试用例', '', '| ID | 测试点 | 关键断言 |', '|---|---|---|',
+    ...ids.map(id => `| ${id} | fixture | 断言 |`),
+  ].join('\n'));
+}
+
+function slice(id: string, text: string, owned: string[]) {
+  return {
+    slice_id: id, task_text: text, owned_test_ids: owned, runner_selectors: owned,
+    spec_targets: ['logos/resources/test/core-S99-test-cases.md'],
+  };
+}
+
+describe('slice plan 恢复重跑与 checkbox 保留', () => {
+  it('UT-S32-92: 初次规划零回归——无旧条目与旧 manifest 时全部写为未勾选', () => {
+    expect(existsSync(join(proposalDir(), TEST_SLICE_MANIFEST))).toBe(false);
+
+    const result = planSlices(root, writeInput(slicesInput()));
+    const tasks = readTasks();
+
+    // 逐字对照：本能力上线前的渲染就是「每条 `- [ ] <task_text>`，按输入顺序」
+    expect(codeSectionOf(tasks)).toEqual([
+      '- [ ] 切片1：实现 alpha 并覆盖 UT-S99-01',
+      '- [ ] 切片2：实现 beta 并覆盖 ST-S99-01',
+    ]);
+    expect(tasks).not.toContain('- [x] 切片');
+    // 其它段与其勾选状态字节恒等
+    expect(tasks).toContain('- [x] 产出 delta');
+    expect(tasks).toContain('- [ ] 部署到 staging');
+    // 输出字段口径不变
+    expect(result.slice_count).toBe(2);
+    expect(result.slice_ids).toEqual(['slice-01-alpha', 'slice-02-beta']);
+    expect(result.manifest_path).toBe(`logos/changes/${SLUG}/${TEST_SLICE_MANIFEST}`);
+  });
+
+  it('UT-S32-93: task_text 逐字未变则保留勾选，变更则重置为未勾选', () => {
+    planSlices(root, writeInput(slicesInput()));
+    checkCodeEntry(0);
+    expect(codeSectionOf(readTasks())[0]).toBe('- [x] 切片1：实现 alpha 并覆盖 UT-S99-01');
+
+    // ① 逐字相同的输入重跑 → 勾选保留
+    planSlices(root, writeInput(slicesInput()));
+    expect(codeSectionOf(readTasks())).toEqual([
+      '- [x] 切片1：实现 alpha 并覆盖 UT-S99-01',
+      '- [ ] 切片2：实现 beta 并覆盖 ST-S99-01',
+    ]);
+    // 其它段与其勾选状态字节恒等
+    expect(readTasks()).toContain('- [x] 产出 delta');
+    expect(readTasks()).toContain('- [ ] 部署到 staging');
+
+    // ② 仅改一个字符 → 该条目重置为未勾选
+    planSlices(root, writeInput([
+      slice('slice-01-alpha', '切片1：实现 alpha 并覆盖 UT-S99-01。', ['UT-S99-01']),
+      slice('slice-02-beta', '切片2：实现 beta 并覆盖 ST-S99-01', ['ST-S99-01']),
+    ]));
+    expect(codeSectionOf(readTasks())).toEqual([
+      '- [ ] 切片1：实现 alpha 并覆盖 UT-S99-01。',
+      '- [ ] 切片2：实现 beta 并覆盖 ST-S99-01',
+    ]);
+  });
+
+  it('UT-S32-94: 混合场景逐条目独立判定，不因同批存在改写切片而牵连', () => {
+    writeS99Spec(['UT-S99-01', 'UT-S99-02', 'UT-S99-03', 'UT-S99-04']);
+    const base = [
+      slice('slice-01-keep', '切片1：保持不变', ['UT-S99-01']),
+      slice('slice-02-rewrite', '切片2：将被改写', ['UT-S99-02']),
+      slice('slice-03-idle', '切片3：未勾也未变', ['UT-S99-03']),
+    ];
+    planSlices(root, writeInput(base));
+    checkCodeEntry(0); // slice-01 已完成
+    checkCodeEntry(1); // slice-02 已完成
+    expect(codeSectionOf(readTasks()).map(l => l.slice(0, 5)))
+      .toEqual(['- [x]', '- [x]', '- [ ]']);
+
+    planSlices(root, writeInput([
+      base[0],                                                      // 未变且已勾 → 保留
+      slice('slice-02-rewrite', '切片2：改写后的新文本', ['UT-S99-02']), // 已勾但改写 → 重置
+      base[2],                                                      // 未变且未勾 → 未勾
+      slice('slice-04-new', '切片4：本轮新增', ['UT-S99-04']),          // 新增 → 未勾
+    ]));
+
+    expect(codeSectionOf(readTasks())).toEqual([
+      '- [x] 切片1：保持不变',
+      '- [ ] 切片2：改写后的新文本',
+      '- [ ] 切片3：未勾也未变',
+      '- [ ] 切片4：本轮新增',
+    ]);
+  });
+
+  it('UT-S32-95: 旧 manifest 缺失时退化为按 [code] 同文本条目匹配', () => {
+    planSlices(root, writeInput(slicesInput()));
+    checkCodeEntry(0);
+
+    // manifest missing 的恢复形态：产物被删，[code] 是唯一残留的旧事实
+    rmSync(join(proposalDir(), TEST_SLICE_MANIFEST));
+    expect(existsSync(join(proposalDir(), TEST_SLICE_MANIFEST))).toBe(false);
+
+    planSlices(root, writeInput(slicesInput()));
+
+    expect(codeSectionOf(readTasks())).toEqual([
+      '- [x] 切片1：实现 alpha 并覆盖 UT-S99-01',
+      '- [ ] 切片2：实现 beta 并覆盖 ST-S99-01',
+    ]);
+    // manifest 重建，且指纹依刚写出的 tasks.md 重算（含保留下来的 `- [x]` 字节）
+    const manifest = JSON.parse(readFileSync(join(proposalDir(), TEST_SLICE_MANIFEST), 'utf-8'));
+    expect(manifest.slices.map((s: { slice_id: string }) => s.slice_id))
+      .toEqual(['slice-01-alpha', 'slice-02-beta']);
+    expect(manifest.task_fingerprint).toBe(computeTaskFingerprint(readTasks()));
   });
 });

@@ -17,7 +17,7 @@
     },
     {
       "path": "skills/merge-executor/SKILL.md",
-      "sha256": "9e5db93aa885dcea35fb45aa8ec8d473f8979493b04b1c2eeaac3e8952936f73"
+      "sha256": "4cbebf716481d5d496d48a8aebff6b08301abba75ff4fa9f4447563ba1fb6a43"
     },
     {
       "path": "skills/merge-executor/SKILL.en.md",
@@ -102,5 +102,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "fd4f5a09481905c23a246077078746b0da6503761e5dea813fdaafa4fa52f62a"
+  "payloadHash": "423761a7b577057655c8947ce4dcd3a1a9e6e71c659e052451634448c938bb23"
 }

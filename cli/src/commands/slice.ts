@@ -15,7 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { OutputFormat } from '../lib/json-output.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
-import { replaceCodeSectionBody } from '../lib/proposal-lifecycle.js';
+import { extractCodeSectionRaw, replaceCodeSectionBody } from '../lib/proposal-lifecycle.js';
 import {
   TEST_SLICE_MANIFEST,
   TEST_SLICE_SCHEMA,
@@ -100,9 +100,67 @@ export function parseSlicesInput(raw: string, definedTestIds: Set<string>): Test
   });
 }
 
+/**
+ * 旧 `[code]` 段中「该条目文本是否**无歧义地已勾选**」（功能规格 §2.68.5）。
+ *
+ * 同一文本出现多次且状态不一致时判未勾选——本规则的安全侧统一为「有疑即未完成」，
+ * 绝不把不确定读成已完成。
+ */
+export function parseCodeSectionCheckState(codeSectionRaw: string): Map<string, boolean> {
+  const seen = new Map<string, boolean>();
+  for (const line of codeSectionRaw.split(/\r?\n/)) {
+    const m = /^- \[([ xX])\]\s+(\S.*)$/.exec(line);
+    if (!m) continue;
+    const text = m[2].trimEnd();
+    const checked = m[1] !== ' ';
+    seen.set(text, seen.has(text) ? (seen.get(text)! && checked) : checked);
+  }
+  return seen;
+}
+
+/**
+ * 逐 `slice_id` 决定新 `[code]` 条目的勾选状态（功能规格 §2.68.5、根规范 §2.3）。
+ *
+ * 判据是 `task_text` **逐字相等**：内容没变则既有进度仍然可信；变了或是新增切片则重置为
+ * 未勾选。旧 manifest 在盘时以其 `slice_id → task_text` 映射为准（`slice_id` 是稳定身份）；
+ * 缺失或不可解析时——manifest missing 的恢复正是此形态——退化为直接在旧 `[code]` 段中查找
+ * 同文本条目，判据仍是同一条。
+ *
+ * 保留由**写入者构造性完成**：不设开关、不由调用方或 Agent 纪律兜底（根规范 §2.2）。
+ */
+export function resolveRetainedCheckState(
+  slices: TestSliceManifestSlice[],
+  oldCodeSectionRaw: string,
+  oldManifestSlices: ReadonlyArray<{ slice_id?: unknown; task_text?: unknown }> | null,
+): boolean[] {
+  const checkedByText = parseCodeSectionCheckState(oldCodeSectionRaw);
+  const oldTextById = new Map<string, string>();
+  for (const row of oldManifestSlices ?? []) {
+    if (typeof row?.slice_id === 'string' && typeof row?.task_text === 'string') {
+      oldTextById.set(row.slice_id, row.task_text);
+    }
+  }
+  return slices.map(slice => {
+    // 旧 manifest 可用：只有该 slice_id 此前就是逐字相同的 task_text 才谈得上保留。
+    if (oldManifestSlices !== null && oldTextById.get(slice.slice_id) !== slice.task_text) return false;
+    return checkedByText.get(slice.task_text) === true;
+  });
+}
+
 /** 由切片数组渲染 `[code]` 段正文；task_text 逐字进入 checkbox 条目。 */
-export function renderCodeSection(slices: TestSliceManifestSlice[]): string {
-  return slices.map(slice => `- [ ] ${slice.task_text}`).join('\n');
+export function renderCodeSection(slices: TestSliceManifestSlice[], retained: boolean[] = []): string {
+  return slices.map((slice, i) => `- [${retained[i] ? 'x' : ' '}] ${slice.task_text}`).join('\n');
+}
+
+/** 读在盘旧 manifest 的 `slices` 数组；文件缺失或不可解析返回 null（触发文本回退判据）。 */
+function readOldManifestSlices(manifestPath: string): Array<Record<string, unknown>> | null {
+  if (!existsSync(manifestPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as { slices?: unknown };
+    return Array.isArray(parsed?.slices) ? parsed.slices as Array<Record<string, unknown>> : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface SlicePlanResult {
@@ -149,7 +207,12 @@ export function planSlices(root: string, slicesFile: string, explicitSlug?: stri
 
   // —— 至此全部校验通过，开始写入 ——
   const tasksPath = join(proposalDir, 'tasks.md');
-  writeFileSync(tasksPath, replaceCodeSectionBody(readFileSync(tasksPath, 'utf8'), renderCodeSection(slices)));
+  const manifestPath = join(proposalDir, TEST_SLICE_MANIFEST);
+  // 整节替换会丢弃旧 body，故勾选状态必须在覆盖**之前**从旧 [code] 与旧 manifest 读出（§2.68.5）。
+  // 初次规划无旧条目也无旧 manifest → retained 全 false，与本能力上线前逐字节一致。
+  const oldTasks = readFileSync(tasksPath, 'utf8');
+  const retained = resolveRetainedCheckState(slices, extractCodeSectionRaw(oldTasks), readOldManifestSlices(manifestPath));
+  writeFileSync(tasksPath, replaceCodeSectionBody(oldTasks, renderCodeSection(slices, retained)));
 
   // 指纹依**刚写出的** tasks.md 计算：写入者与指纹计算者同一方、同一时刻，漂移窗口从构造上消失。
   const specTargets = [...new Set(slices.flatMap(slice => slice.spec_targets))].sort();
@@ -162,7 +225,6 @@ export function planSlices(root: string, slicesFile: string, explicitSlug?: stri
     generated_at: new Date().toISOString(),
     slices,
   };
-  const manifestPath = join(proposalDir, TEST_SLICE_MANIFEST);
   writeTestSliceManifestAtomic(manifestPath, manifest);
 
   return {
