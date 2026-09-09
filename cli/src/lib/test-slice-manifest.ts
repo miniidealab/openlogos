@@ -21,7 +21,11 @@ import { TABLE_TEST_ID_RE, testIdScanRe } from './test-id.js';
 export const TEST_SLICE_MANIFEST = 'TEST_SLICE_MANIFEST.json';
 export const SLICE_CHECKPOINTS = 'SLICE_CHECKPOINTS.jsonl';
 export const TEST_SLICE_SCHEMA = 'openlogos/test-slice-manifest@1';
-export const SLICE_CHECKPOINT_SCHEMA = 'openlogos/slice-checkpoint@1';
+/** 新写入一律 `@2`（根规范 spec/test-slice-manifest.md §6.1、功能规格 §2.77.3）。 */
+export const SLICE_CHECKPOINT_SCHEMA = 'openlogos/slice-checkpoint@2';
+/** 存量账本行的旧 schema：其 `manifest_sha256` 是 manifest **整份文件字节**的哈希。 */
+export const SLICE_CHECKPOINT_SCHEMA_V1 = 'openlogos/slice-checkpoint@1';
+const SLICE_CHECKPOINT_SCHEMA_RE = /^openlogos\/slice-checkpoint@\d+$/;
 
 const HASH_RE = /^sha256:[0-9a-f]{64}$/;
 const SLICE_ID_RE = /^[a-z0-9][a-z0-9-]{2,63}$/;
@@ -62,6 +66,14 @@ export interface SliceManifestSummary {
   schema: string | null;
   task_fingerprint: string | null;
   spec_fingerprint: string | null;
+  /**
+   * manifest 整份文件字节的哈希——**纯审计观察面**。
+   *
+   * 自 checkpoint `@2` 起它不再是采信判据（§6.1）：`@2` 行比对的是判定实质身份，只有存量
+   * `@1` 行仍按本字段匹配。身份**不进入本对象**——`sliceManifestSummary` 是 1.1.0 已发布
+   * 契约（`spec/schema/*.schema.json`，`additionalProperties: false`），加字段即破坏合同，
+   * 而 §2.77.4 的零回归边界要求命令输出逐条不变。
+   */
   sha256: string | null;
 }
 
@@ -100,7 +112,8 @@ interface CodeTask {
 }
 
 interface SliceCheckpointRow {
-  schema: typeof SLICE_CHECKPOINT_SCHEMA;
+  /** 账本 append-only 且允许多版本共存（§6.2），故此处是行**自身**记录的 schema。 */
+  schema: string;
   slice_id: string;
   manifest_sha256: string;
   result: 'PASS' | 'FAIL';
@@ -114,6 +127,52 @@ function sha256(bytes: string | Buffer): string {
 
 function prefixedSha256(bytes: string | Buffer): string {
   return `sha256:${sha256(bytes)}`;
+}
+
+/**
+ * 规范化 JSON：对象键递归字典序、数组**保序**。
+ *
+ * 键序规范化让「同一份判定实质换个书写顺序」得到同一身份；数组保序则是刻意的——
+ * `slices` 的顺序就是切片划分的一部分（§6.1），两片对调即是另一份划分。
+ */
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort()
+      .map(key => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * manifest 的**判定实质身份**（根规范 §6.1、功能规格 §2.77.1）。
+ *
+ * 对 `schema` / `change` / `module` / `slices`（逐字段、保序）/ `task_fingerprint` /
+ * `spec_fingerprint` 求规范化 JSON 的 SHA-256，**排除 `generated_at`**。
+ *
+ * 排除不是实现口味：`generated_at` 是纯写盘时刻，两次调用相差毫秒即不同，而这种不同不携带
+ * 任何关于「划分或其依赖是否改变」的信息，故不得进入流程分支的条件
+ * （`spec/cli-json-output.md`「指纹语义（降级为观察）」）。此前以 manifest 整份**文件字节**
+ * 作身份，正是让这个时间戳事实上决定了 checkpoint 采信——恢复重跑必然作废整本账本。
+ */
+export function computeSliceManifestIdentity(manifest: {
+  schema: string;
+  change: string;
+  module: string;
+  task_fingerprint: string;
+  spec_fingerprint: string;
+  slices: ReadonlyArray<Record<string, unknown>>;
+}): string {
+  return prefixedSha256(Buffer.from(canonicalJson({
+    schema: manifest.schema,
+    change: manifest.change,
+    module: manifest.module,
+    slices: manifest.slices,
+    task_fingerprint: manifest.task_fingerprint,
+    spec_fingerprint: manifest.spec_fingerprint,
+  }), 'utf8'));
 }
 
 function normalizeText(text: string): string {
@@ -322,7 +381,9 @@ function readCheckpointRows(proposalDir: string): SliceCheckpointRow[] {
     if (!line.trim()) continue;
     try {
       const row = JSON.parse(line) as SliceCheckpointRow;
-      if (row.schema === SLICE_CHECKPOINT_SCHEMA
+      // 语法上接纳任何 `openlogos/slice-checkpoint@<major>` 行——账本 append-only 且允许
+      // 多版本共存（§6.2），未知主版本由 checkpointBinding() 保守处置，而非在此丢弃。
+      if (typeof row.schema === 'string' && SLICE_CHECKPOINT_SCHEMA_RE.test(row.schema)
         && typeof row.slice_id === 'string'
         && HASH_RE.test(row.manifest_sha256)
         && (row.result === 'PASS' || row.result === 'FAIL')
@@ -333,6 +394,19 @@ function readCheckpointRows(proposalDir: string): SliceCheckpointRow[] {
     }
   }
   return rows;
+}
+
+/**
+ * 按**行自身的 schema** 决定 `manifest_sha256` 的比对对象（根规范 §6.2、功能规格 §2.77.3）。
+ *
+ * 未知主版本返回 null——保守不采信：该行不进入确认集合，也**不构成 violation、不中断**
+ * validator（§8）。这与 manifest 自身的 `test-slice-manifest-unsupported`（整份产物不可解释，
+ * 必须阻断）是两回事：跳过账本里的一行，不影响其余行的可解释性。
+ */
+function checkpointBinding(row: SliceCheckpointRow): 'identity' | 'file-bytes' | null {
+  if (row.schema === SLICE_CHECKPOINT_SCHEMA) return 'identity';
+  if (row.schema === SLICE_CHECKPOINT_SCHEMA_V1) return 'file-bytes';
+  return null;
 }
 
 function emptyState(
@@ -536,8 +610,17 @@ export function deriveSliceVerificationState(
     }, violations), human_action_required: ambiguous, test_change_set: changeSetSummary };
   }
 
+  // 采信条件按**行自身的 schema** 分派（§6.2）：`@2` 比判定实质身份、`@1` 比 manifest 整份
+  // 文件字节哈希（旧规则逐字不变）、未知主版本保守不采信。身份不匹配的行保留审计，不参与集合。
+  const manifestIdentity = computeSliceManifestIdentity(manifest);
   const confirmedSet = new Set(readCheckpointRows(proposalDir)
-    .filter(row => row.manifest_sha256 === manifestSha && row.result === 'PASS')
+    .filter(row => row.result === 'PASS')
+    .filter(row => {
+      const binding = checkpointBinding(row);
+      if (binding === 'identity') return row.manifest_sha256 === manifestIdentity;
+      if (binding === 'file-bytes') return row.manifest_sha256 === manifestSha;
+      return false;
+    })
     .map(row => row.slice_id));
   const confirmed = manifest.slices.map(slice => slice.slice_id).filter(id => confirmedSet.has(id));
   const attempted = manifest.slices.find(slice => !confirmedSet.has(slice.slice_id)) ?? null;
@@ -595,18 +678,21 @@ export function appendSliceCheckpoint(
   timestamp = new Date().toISOString(),
 ): boolean {
   if (state.manifest_status !== 'valid' || state.verify_mode !== 'slice-checkpoint'
-    || !state.attempted_slice_id || !state.manifest.sha256) return false;
+    || !state.attempted_slice_id || !state.manifest_data) return false;
   const row: SliceCheckpointRow = {
     schema: SLICE_CHECKPOINT_SCHEMA,
     slice_id: state.attempted_slice_id,
-    manifest_sha256: state.manifest.sha256,
+    // 绑定判定实质身份，不是文件字节——恢复重跑重建 manifest 时该值不变（§6.1）。
+    // 身份由 manifest_data 现算，而不是从已发布的 summary 里读：加字段会破坏 1.1.0 契约。
+    manifest_sha256: computeSliceManifestIdentity(state.manifest_data),
     result,
     eligible_test_ids_sha256: eligibleIdsFingerprint(state.eligible_test_ids),
     timestamp,
   };
   if (result === 'PASS') {
     const duplicate = readCheckpointRows(proposalDir).some(existing =>
-      existing.slice_id === row.slice_id
+      existing.schema === row.schema
+      && existing.slice_id === row.slice_id
       && existing.manifest_sha256 === row.manifest_sha256
       && existing.eligible_test_ids_sha256 === row.eligible_test_ids_sha256
       && existing.result === 'PASS');

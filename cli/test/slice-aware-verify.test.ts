@@ -357,9 +357,21 @@ describe('切片 3：稳定 attempted slice 与 repair', () => {
     expect(readFileSync(join(f.dir, 'SLICE_CHECKPOINTS.jsonl'), 'utf8').trim().split('\n')).toHaveLength(1);
     const after = state(f);
     expect(state(f)).toEqual(after);
-    rewriteManifest(f, v => { v.generated_at = '2026-08-16T00:02:00.000Z'; });
+
+    // 哈希隔离：把该行的 manifest_sha256 换成一个**旧划分**的哈希 → 不再确认当前 slice。
+    // 判据换成改写账本行、而不是改 manifest 的 generated_at：自 checkpoint @2 起身份绑定的
+    // 是判定实质（排除 generated_at，根规范 §6.1），空转重跑不作废账本正是本次修正的目的。
+    const ledger = join(f.dir, 'SLICE_CHECKPOINTS.jsonl');
+    const row = JSON.parse(readFileSync(ledger, 'utf8').trim());
+    writeFileSync(ledger, `${JSON.stringify({ ...row, manifest_sha256: `sha256:${'0'.repeat(64)}` })}\n`);
     expect(state(f).confirmed_slice_ids).toEqual([]);
     expect(state(f).attempted_slice_id).toBe('slice-01');
+
+    // 反向锁死：仅 generated_at 变化（恢复重跑的必然形态）**不得**作废账本。
+    writeFileSync(ledger, `${JSON.stringify(row)}\n`);
+    rewriteManifest(f, v => { v.generated_at = '2026-08-16T00:02:00.000Z'; });
+    expect(state(f).confirmed_slice_ids).toEqual(['slice-01']);
+    expect(state(f).attempted_slice_id).toBe('slice-02');
   });
 
   it('UT-S27-40 ST-S27-12：同片真实失败累计且 loop-exhausted 不能被 --auto 放行', async () => {

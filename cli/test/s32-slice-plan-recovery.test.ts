@@ -1,7 +1,7 @@
 /**
  * ST-S32-41：manifest 失效 → 恢复重跑 → 实现进度不丢的端到端（真实 CLI）。
  *
- * 对应功能规格 §2.68.5、根规范 `spec/test-slice-manifest.md` §2.3/§2.4/§9。
+ * 对应功能规格 §2.68.5 / §2.77、根规范 `spec/test-slice-manifest.md` §2.3/§2.4/§6.1/§9。
  * 测试结果由全局 OpenLogos reporter（test/openlogos-reporter.ts）写入
  * logos/resources/verify/test-results.jsonl。
  */
@@ -14,7 +14,7 @@ import { makeTempRoot, scaffoldProject, withCompleteClarification } from './help
 import { buildTestChangeSet } from '../src/lib/test-change-set.js';
 import {
   TEST_SLICE_MANIFEST, SLICE_CHECKPOINTS,
-  appendSliceCheckpoint, deriveSliceVerificationState,
+  appendSliceCheckpoint, computeSliceManifestIdentity, deriveSliceVerificationState,
 } from '../src/lib/test-slice-manifest.js';
 
 const CLI_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -123,8 +123,8 @@ describe('S32 slice plan 恢复重跑与 checkbox 保留（真实 CLI）', () =>
 
     const approvedBefore = readFileSync(join(dir, 'SLICES_APPROVED'));
     const checkpointsBefore = readFileSync(join(dir, SLICE_CHECKPOINTS));
-    const idsBefore = JSON.parse(readFileSync(join(dir, TEST_SLICE_MANIFEST), 'utf-8'))
-      .slices.map((s: { slice_id: string }) => s.slice_id);
+    const manifestBefore = JSON.parse(readFileSync(join(dir, TEST_SLICE_MANIFEST), 'utf-8'));
+    const idsBefore = manifestBefore.slices.map((s: { slice_id: string }) => s.slice_id);
 
     // ③ manifest 失效（missing）：判定器判可自动恢复，next 派 plan-slices
     rmSync(join(dir, TEST_SLICE_MANIFEST));
@@ -149,14 +149,23 @@ describe('S32 slice plan 恢复重跑与 checkbox 保留（真实 CLI）', () =>
     expect(readFileSync(join(dir, 'SLICES_APPROVED'))).toEqual(approvedBefore);
     expect(readFileSync(join(dir, SLICE_CHECKPOINTS))).toEqual(checkpointsBefore);
 
-    // ⑥ 恢复后增量验收能力可用（未退化为全量），且切片1 无需重新实现（其 `- [x]` 已保留）。
-    //    注意：checkpoint 账本按 §6 以 manifest_sha256 绑定身份，重建后的 manifest 必然是新
-    //    sha256，故旧 PASS 行不再被采信、attempted 回到切片1。本切片承诺的是**实现进度**不丢
-    //    （[code] 勾选保留），checkpoint 信用的跨重建保留需另立提案（见交付说明）。
+    // ⑥ 恢复后增量验收从未完成切片继续、已完成切片不重跑（AC-SLICE-RECOVER-06）。
+    //    账本按根规范 §6.1 绑定 manifest 的**判定实质**（排除 generated_at），恢复重建不改变
+    //    身份，故切片1 的 PASS 仍被采信、前沿前移到切片2。
     const after = deriveSliceVerificationState(root, dir, { change: SLUG, module: 'core' })!;
     expect(after.manifest_status).toBe('valid');
     expect(after.verify_mode).toBe('slice-checkpoint');
-    expect(after.confirmed_slice_ids).toEqual([]);
-    expect(after.attempted_slice_id).toBe('slice-01-alpha');
+    expect(after.confirmed_slice_ids).toEqual(['slice-01-alpha']);
+    expect(after.attempted_slice_id).toBe('slice-02-beta');
+
+    // ⑦ 首次规划与恢复后两份 manifest 的 task_fingerprint / spec_fingerprint / 判定实质身份
+    //    分别逐字相等。本条在步骤② 已勾选切片1 **之后**求值，故同时锁住「勾选不参与
+    //    task_fingerprint」（根规范 §4.1）——它是⑥ 能成立的前提。
+    const afterManifest = JSON.parse(readFileSync(join(dir, TEST_SLICE_MANIFEST), 'utf-8'));
+    expect(afterManifest.task_fingerprint).toBe(manifestBefore.task_fingerprint);
+    expect(afterManifest.spec_fingerprint).toBe(manifestBefore.spec_fingerprint);
+    expect(computeSliceManifestIdentity(afterManifest))
+      .toBe(computeSliceManifestIdentity(manifestBefore));
+    expect(afterManifest.generated_at).not.toBe(manifestBefore.generated_at);
   });
 });
