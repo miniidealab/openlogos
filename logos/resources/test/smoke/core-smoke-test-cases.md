@@ -218,8 +218,8 @@
 | ID | 用例 | 前置条件 | 操作 | 通过标准 | 失败处理 |
 |---|---|---|---|---|---|
 | SMOKE-core-59 | 全局命令与安装包版本一致 | 已使用本次生成的本地 tarball 完成 npm 全局安装；部署报告记录安装前路径/版本 | 在干净 shell 中重新解析 `openlogos` 命令，执行 `openlogos --version`，并读取全局安装包的 package/plugin 版本元数据 | 命令路径指向当前 npm 全局 prefix；CLI、`cli/package.json` 与插件元数据均为精确 `0.13.25`；运行时包包含两份 JSON Schema 与 change-writer Skill | 任一版本/路径/包内容不一致即 FAIL，停止后续归档并按部署方案恢复 0.13.24 |
-| SMOKE-core-60 | 已安装 CLI 暴露 clarification JSON 契约 | 使用隔离临时项目，存在合法 pending clarification@1 proposal，当前项为 C02 | 分别执行已安装 CLI 的 `status --format json` 与 `next --format json`，按随包 schema 校验 data | 两者均通过 schema；`plan_state.clarification` 同义，含 schema/mode/status/required、稳定去重 `required_categories`、未决数量、C02 和完整 `next_decision`；next 不要求宿主解析 Markdown | 任一字段缺失、schema 不通过或 status/next 漂移即 FAIL，保留隔离 fixture 和输出供诊断并回滚 |
-| SMOKE-core-61 | 部署必选决定缺失时全局 CLI fail-closed | 隔离临时项目的 proposal 声明“是否需要部署：是”，clarification 结构合法但无 `deployment/source=user` 决定；记录批准 marker 初始不存在 | 依次运行 `status --format json`、`next --format json` 与 `next --auto --format json`，随后重读 proposal 和 marker | 三次均保持 `proposal_step=writing`、`next_node.id=write-proposal`，reason=`deployment-clarification-required`；auto 不写 `PLAN_APPROVED`/`GATE_AUTO_PASSED`，不改 proposal，不进入 tasks/Delta | 任何越门、写 marker、自动采用推荐答案或文件漂移均 FAIL，立即停止归档并恢复 0.13.24 |
+| SMOKE-core-60 | 已安装 CLI 不再发射 clarification 字段（§2.74.1 判定→文档） | 使用隔离临时项目，存在合法 clarification@1 小节的 proposal | 分别执行已安装 CLI 的 `status --format json` 与 `next --format json`，按随包 schema 校验 data | 两者均通过 schema；**均不发射** `plan_state.clarification`（该字段自 lite-cut3a 起退出机器判定面），status/next 口径一致 | 任一路仍发射该字段、schema 不通过或 status/next 漂移即 FAIL，保留隔离 fixture 和输出供诊断并回滚 |
+| SMOKE-core-61 | 部署必选决定缺失不再阻断，且 auto 的只读边界不变（§2.74.1） | 隔离临时项目的 proposal 声明“是否需要部署：是”，clarification 结构合法但无 `deployment/source=user` 决定 | 依次运行 `status --format json`、`next --format json` 与 `next --auto --format json`，随后重读 proposal | 三次均**不以 clarification 为由阻断**、不发射该字段；`next --auto` 不改写 `proposal.md`（澄清自 lite-cut3a 起为文档，不参与流程判定） | 任一路仍产生 `deployment-clarification-required`、仍发射 clarification，或 auto 改写 proposal 即 FAIL，保留 fixture 供诊断并回滚 |
 
 ### 环境隔离与清理
 

@@ -222,6 +222,12 @@ function clarificationFrom(data, command) {
     : module?.plan_state?.clarification;
 }
 
+/**
+ * SMOKE-core-60（订正自 fix-slice-assets-drift-after-transaction-removal）：
+ * 功能规格 §2.74.1 把决策澄清由「判定」降为「文档」——`status` / `next` **不再发射**
+ * `plan_state.clarification`。本用例原断言该字段完整存在，是 de-gate 前的旧契约，
+ * lite-cut3a 漏改；现改为断言新契约：schema 仍通过，且两路命令均不再发射该字段。
+ */
 function smokePendingContract() {
   return withTempProject('compatibility', root => {
     const status = parseEnvelope(runCli(root, ['status', '--format', 'json']), 'status');
@@ -234,14 +240,20 @@ function smokePendingContract() {
     const statusClarification = clarificationFrom(status, 'status');
     const nextClarification = clarificationFrom(next, 'next');
     if (JSON.stringify(statusClarification) !== JSON.stringify(nextClarification)) throw new Error('status/next clarification 漂移');
-    if (statusClarification?.next_decision_id !== 'C02'
-      || statusClarification?.next_decision?.id !== 'C02'
-      || statusClarification?.reason !== 'compatibility-clarification-required') {
-      throw new Error(`pending clarification 不完整：${JSON.stringify(statusClarification)}`);
+    if (statusClarification != null) {
+      throw new Error(`§2.74.1：status/next 不得再发射 plan_state.clarification，实测：${JSON.stringify(statusClarification)}`);
     }
   });
 }
 
+/**
+ * SMOKE-core-61（订正自 fix-slice-assets-drift-after-transaction-removal）：
+ * §2.74.1 起「部署必选决定缺失」不再是阻断门，故原「三路命令必须停在 writing」的断言
+ * 描述的是已删除的能力。现改为断言 de-gate 后仍然成立的两条：① 三路命令均不再以
+ * clarification 为由阻断（不发射该字段、不产生 deployment-clarification-required）；
+ * ② `next --auto` 的**只读边界**不变——不改写 proposal.md（marker 由 auto 正常消费门产生，
+ * 不再作为「越门」证据）。
+ */
 function smokeDeploymentFailClosed() {
   return withTempProject('deployment', root => {
     const proposalPath = join(root, 'logos/changes/feat/proposal.md');
@@ -250,19 +262,12 @@ function smokeDeploymentFailClosed() {
     const next = parseEnvelope(runCli(root, ['next', '--format', 'json']), 'next');
     const auto = parseEnvelope(runCli(root, ['next', '--auto', '--format', 'json']), 'next --auto');
     for (const [name, data] of [['status', status], ['next', next], ['next --auto', auto]]) {
-      const module = data.modules?.[0];
-      const step = name === 'status' ? module?.active_change?.proposal_step : data.proposal_step;
-      const node = name === 'status' ? module?.active_change?.next_node : module?.next_node;
       const clarification = clarificationFrom(data, name === 'status' ? 'status' : 'next');
-      const nodeInvalid = name === 'status' ? false : node?.id !== 'write-proposal';
-      if (step !== 'writing' || nodeInvalid || clarification?.reason !== 'deployment-clarification-required') {
-        throw new Error(`${name} 未 fail-closed：${JSON.stringify({ step, node, clarification })}`);
+      if (clarification != null) {
+        throw new Error(`${name}：§2.74.1 起不得再发射 clarification，实测：${JSON.stringify(clarification)}`);
       }
     }
     if (readFileSync(proposalPath, 'utf-8') !== before) throw new Error('next --auto 改写了 proposal.md');
-    for (const marker of ['PLAN_APPROVED', 'GATE_AUTO_PASSED']) {
-      if (existsSync(join(root, 'logos/changes/feat', marker))) throw new Error(`next --auto 错写 ${marker}`);
-    }
   });
 }
 
