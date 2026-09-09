@@ -2682,13 +2682,37 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 - 旧值取自在盘旧 `TEST_SLICE_MANIFEST.json` 的 `slice_id → task_text` 映射；旧 manifest 缺失或不可解析（manifest missing 的恢复正是此形态）时退化为直接在旧 `[code]` 段中查找同文本条目——判据仍是同一条「文本逐字相等才保留」。
 - 初次规划无旧 `[code]` 条目与旧 manifest，规则天然无副作用：**既有输入零改动即得与 0.15.0 逐字一致的行为**，命令面与输入结构不做破坏性变更。
 
-**对输出的影响**：`slice_count`、`slice_ids`、`task_fingerprint`、`spec_fingerprint`、`manifest_path` 五个 `data` 字段的语义与取值口径**均不变**——checkbox 状态不进入 manifest，也不改变 `[code]` 条目的文本与顺序。但 `task_fingerprint` 是对**刚写出的** `tasks.md` 求得的指纹，`- [x]` 与 `- [ ]` 的字节差异会如实反映其中；因此同一 `slices.json` 在「全未勾选」与「部分已勾选」两种在盘态下重跑，得到的 `[code]` 文本相同而 `task_fingerprint` 可以不同。这是指纹如实记录字节的正常表现，不构成 stale 判定的例外——指纹语义按下一节仍为观察性质。
+**对输出的影响**：`slice_count`、`slice_ids`、`task_fingerprint`、`spec_fingerprint`、`manifest_path` 五个 `data` 字段的语义与取值口径**均不变**——checkbox 状态不进入 manifest，也不改变 `[code]` 条目的文本与顺序。
+
+**checkbox 不参与 `task_fingerprint`（规范性，订正）**：`task_fingerprint` 不是对 `tasks.md` 的字节求哈希，而是对 `[code]` 段的**结构化模型**求哈希——按顶层顺序保留规范化 `task_text` 与父子关系，**`checked` 状态、列表标记、行尾空白与无语义空行一律不参与**（根规范 `spec/test-slice-manifest.md` §4.1）。因此同一 `slices.json` 在「全未勾选」与「部分已勾选」两种在盘态下重跑，`[code]` 文本相同、`task_fingerprint` 也**必然相同**。
+
+> 本段订正 0.15.1 的一处错误表述（原文称「`- [x]` 与 `- [ ]` 的字节差异会如实反映其中……`task_fingerprint` 可以不同」）。该表述与根规范 §4.1 及既有实现均不符，且若被实现者采信，会使勾选后恢复重跑的 manifest 身份发生变化（`task_fingerprint` 是身份组成，见根规范 §6.1），本规范承诺的「恢复保住 checkpoint 账本」随之不成立。
 
 `slice plan` **不触碰** `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl`：前者属 slice-exit 门、后者属 `verify` 账本，均不在本命令的写域内。
 
 ### 指纹语义（降级为观察）
 
-`task_fingerprint` / `spec_fingerprint` 由 `slice plan` 依**刚写出的** `tasks.md` 与 `spec_targets` 即时计算并写入 manifest，供事后诊断。其 **stale 判定为警告而非阻塞**——审计产物不得出现在流程分支的条件里。
+`task_fingerprint` / `spec_fingerprint` 由 `slice plan` 依**刚写出的** `tasks.md` 与 `spec_targets` 即时计算并写入 manifest。二者承担**两种彼此独立的角色**，必须分开对待——混为一谈会得出「同一个字段既不许参与判定又必须参与判定」的假矛盾。
+
+#### 角色一：漂移诊断（观察，不作独立阻塞门）
+
+把在盘 manifest 记录的指纹与**当下重算之值**比较，得出 stale 与否。它回答的是「产物写出之后，它所依据的东西有没有被改过」，属事后诊断。其 **stale 判定为警告而非阻塞**：不得单独构成一道门，不得据此阻断 `status` / `next` / `verify` 的前进。该结论不因本次变更放宽（功能规格 §2.68.4）。
+
+#### 角色二：持久化身份的组成（允许影响 checkpoint 采信）
+
+把指纹**写进 manifest**、并作为其判定实质身份的组成部分。它回答的是另一个问题——「某条已落盘的 PASS checkpoint 属不属于**当前这份**切片划分」，属归属判定。该用法**允许影响流程判定**：checkpoint 的采信按根规范 `spec/test-slice-manifest.md` §6.1 比对身份，`task_fingerprint` 或 `spec_fingerprint` 变化即身份变化，旧账本不再被采信。
+
+两者不冲突，因为比较的对象与产出的结论都不同：角色一比「当下重算 vs 在盘记录」，产出诊断；角色二比「checkpoint 记录的身份 vs 当前 manifest 的身份」，产出归属。**禁止**把角色一的 stale 结论升格为阻塞门；**同样禁止**以角色一的「观察性质」为由把指纹排除出身份——后者会让「划分或其依赖的规格已经变了」这件事在归属判定中不可见，旧绿得以冒充新证据。
+
+#### 不得进入身份的：无判定价值的写盘时刻
+
+`TEST_SLICE_MANIFEST.json` 的 `generated_at` 与上述两者**不同类**：它是纯时间戳，只记录写盘时刻，判定价值为零——两次调用相差毫秒即不同，而这种不同**不携带任何**关于「切片划分或其依赖是否改变」的信息。因此它不得进入任何流程分支的条件，包括 checkpoint 的身份。
+
+**已知违例与订正**：0.15.1 及之前，切片 checkpoint 的采信条件是「行的 `manifest_sha256` 等于 manifest **整份文件字节**的哈希」，而文件字节含 `generated_at`。于是一个无判定价值的时间戳事实上决定了流程分支——以逐字相同的 `slices.json` 恢复重跑（根规范 §2.3）重建 manifest 时 `generated_at` 必然不同，整本 checkpoint 账本随之全部落空，§9 承诺的「恢复仅重建 manifest、保留 checkpoint」名存实亡。订正后 checkpoint 绑定 manifest 的**判定实质身份**（`schema` / `change` / `module` / `slices` / `task_fingerprint` / `spec_fingerprint` 的规范化 JSON SHA-256，排除 `generated_at`），口径见根规范 §6.1。
+
+**对本合同其余部分的影响：无。** `slice plan` 的输入结构、`data` 的五个字段、稳定错误码与零副作用要求逐条不变；`TEST_SLICE_MANIFEST.json` 的 schema、字段与 `generated_at` 亦不变——变的只是 checkpoint 账本拿什么去比对身份。
+
+**判据（供后续实现自检）**：凡「某个值参与流程判定」的地方，都要能回答「它变化时，被判定的事实是否真的变了」。答不上来的（如 `generated_at`），说明绑错了对象；答得上来的（如 `slices`、两个 fingerprint），才有资格进入身份。
 
 ## openlogos merge 直接合并输出合同
 

@@ -1557,3 +1557,33 @@
 
 - runner 记录 tarball 路径与 SHA-256、隔离 prefix 路径、每步入口 realpath 与 version。
 - 命令图中不得出现 `npm publish` / `dist-tag` / `git tag` / `gh release` / `git push` / 本机全局 `npm install -g`。
+
+## OpenLogos 0.15.2 checkpoint 身份绑定安装态 smoke（SMOKE-core-200～202）
+
+> 覆盖 checkpoint 身份绑定在**真实安装态**的行为（功能规格 §2.77；根规范 `spec/test-slice-manifest.md` §6.1～§6.3）。缺陷只在安装态发作——宿主调用的是全局 `openlogos`，仓库内测试绿不代表宿主拿到的判定是对的。全部用例在一次性隔离临时项目内执行，**不得触碰本机全局 prefix 与本仓活跃提案**。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-200 | 安装态恢复重跑保住 checkpoint 账本 | 全局已安装候选版本；`mktemp -d` 一次性临时项目，launched 模块，提案含合法 `[code]`/`[delta]`/`[deploy]` 与已合并测试规格 | ① 全局 `openlogos slice plan --file slices.json` 写入 2 切片；② 为切片 1 追加一条真实 PASS checkpoint 并勾选该条目；③ 删除 `TEST_SLICE_MANIFEST.json`；④ 以**逐字相同**的 `slices.json` 重跑 `slice plan`；⑤ 读全局 `openlogos next --format json` | ④ 后 manifest 重建、`[code]` 首条仍为 `- [x]`；⑤ 的切片派生中**切片 1 仍在 `confirmed_slice_ids`**、前沿指向切片 2；`SLICE_CHECKPOINTS.jsonl` 字节只增不改 | 保留隔离 fixture、两次 manifest 与账本原文供诊断；停止部署，按 `cli/rollback/` 回滚全局 |
+| SMOKE-core-201 | 安装态重划作废旧账本（互为反例） | 同上，续 SMOKE-core-200 的项目状态 | ① 改动 `slices.json`（改写某片 `task_text` 或调整划分）；② 重跑全局 `slice plan`；③ 读 `next --format json` | `confirmed_slice_ids` **变空**、前沿回到第一片——证明身份绑定并非一律放行，「划分真的变了」仍作废旧绿；账本历史行未被删除或重写 | 同上。**本条与 SMOKE-core-200 必须成对通过**：只过其一说明绑定对象仍然错误 |
+| SMOKE-core-202 | 安装态混合账本按行 schema 分派 | 同上；账本中人为并存一条 `openlogos/slice-checkpoint@1` 行（其 `manifest_sha256` 为当前 manifest 的**文件字节**哈希）与候选版本写出的 `@2` 行 | 读全局 `openlogos next --format json` 与 `openlogos verify --format json` 的切片派生 | 两行**各按其 schema** 被采信，对应切片同时进入 `confirmed_slice_ids`；再注入一条未知主版本（`@9`）行 → 该行不被采信，且**不产生 violation、不中断命令**，其余行照常 | 保留账本原文与两条命令输出；混合读失败意味着升级会让在途提案的已确认切片一次性作废，停止部署 |
+
+### 二、执行边界
+
+- 全部用例只在 `mktemp -d` 的一次性项目内读写；结束即删除。**不得**在本仓活跃提案、`logos/resources/` 或本机全局 prefix 上产生任何写入。
+- 命令图中不得出现 `npm publish` / `dist-tag` / `git tag` / `gh release` / `git push`。
+- 判定一律读命令的 `--format json` 结构化输出，不解析文本渲染。
+
+### 三、追溯与覆盖
+
+- AC-SLICE-ID-05 恢复保住账本 / 重划作废账本互为反例（安装态）：SMOKE-core-200、SMOKE-core-201。
+- AC-SLICE-ID-03 混合账本按行分派、AC-SLICE-ID-04 未知主版本保守处置（安装态）：SMOKE-core-202。
+- 功能规格：§2.77；根规范：`spec/test-slice-manifest.md` §6.1～§6.3、§8、§11；仓库内对应用例：UT-S32-96～99、ST-S32-42。
+
+### 四、自动化与证据要求
+
+- runner 记录候选版本号、全局入口 realpath、隔离项目路径，以及每一步的 manifest 身份与账本行原文。
+- 结果写入 smoke reporter（`smoke-results.jsonl`）；失败不得写 pass。
+- SMOKE-core-200 与 SMOKE-core-201 必须**成对**评估：仅 200 通过而 201 失败，等于身份函数退化成常量，属实现缺陷而非环境问题。

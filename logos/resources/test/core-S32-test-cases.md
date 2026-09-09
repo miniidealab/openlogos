@@ -305,7 +305,7 @@
 
 | ID | 场景 | 关键断言 |
 |---|---|---|
-| ST-S32-41 | manifest 失效 → 恢复重跑 → 进度不丢的端到端 | 真实 CLI：① `slice plan` 写入 2 切片并在 `slice-exit` 写 `SLICES_APPROVED`；② 完成切片 1 后 `openlogos verify` 以 `slice-checkpoint` 模式写入一条 checkpoint，`[code]` 第一条为 `- [x]`；③ 删除 `TEST_SLICE_MANIFEST.json`，`openlogos next` 输出 `next_node.id=plan-slices`、`skill=slice-planner`；④ 以**相同** `slices.json` 重跑 `openlogos slice plan --file` → 第一条仍为 `- [x]`、manifest 重建、`slice_ids` 与重建前一致；⑤ `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl` 的**字节均未变**（`slice plan` 不触碰这两个产物）；⑥ 恢复后 `verify` 继续以 `slice-checkpoint` 模式从切片 2 前进，不要求重跑切片 1 |
+| ST-S32-41 | manifest 失效 → 恢复重跑 → 进度不丢的端到端 | 真实 CLI：① `slice plan` 写入 2 切片并在 `slice-exit` 写 `SLICES_APPROVED`；② 完成切片 1 后 `openlogos verify` 以 `slice-checkpoint` 模式写入一条 checkpoint，`[code]` 第一条为 `- [x]`；③ 删除 `TEST_SLICE_MANIFEST.json`，`openlogos next` 输出 `next_node.id=plan-slices`、`skill=slice-planner`；④ 以**相同** `slices.json` 重跑 `openlogos slice plan --file` → 第一条仍为 `- [x]`、manifest 重建、`slice_ids` 与重建前一致；⑤ `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl` 的**字节均未变**（`slice plan` 不触碰这两个产物）；⑥ 恢复后 `deriveSliceVerificationState` 判 `valid` 且 `verify_mode=slice-checkpoint`，**`confirmed_slice_ids` 仍含切片 1**、`attempted_slice_id` 前移到切片 2——账本身份绑定判定实质（根规范 §6.1），恢复重建 manifest 不改变身份，故已完成切片不重跑；⑦ 首次规划与恢复后两份 manifest 的 `task_fingerprint`、`spec_fingerprint` 与判定实质身份**分别逐字相等**——步骤②已把切片 1 勾选，故本条同时锁住「勾选不参与 `task_fingerprint`」（根规范 §4.1），它是⑥能成立的前提 |
 
 ### 追溯与覆盖
 
@@ -314,10 +314,47 @@
 - AC-SLICE-RECOVER-03 逐条目独立判定（混合场景与新增切片）：UT-S32-94。
 - AC-SLICE-RECOVER-04 旧 manifest 缺失时的回退判据仍保留进度：UT-S32-95、ST-S32-41 步骤④。
 - AC-SLICE-RECOVER-05 `SLICES_APPROVED` 与 checkpoint 不被 `slice plan` 触碰：ST-S32-41 步骤⑤。
-- AC-SLICE-RECOVER-06 恢复后增量验收从未完成切片继续、已完成切片不重跑：ST-S32-41 步骤⑥。
-- 功能规格：§2.68.5；根规范：`spec/test-slice-manifest.md` §2.3、§2.3.1、§2.4、§9；JSON 契约：`spec/cli-json-output.md`「openlogos slice plan 输出合同」。
+- AC-SLICE-RECOVER-06 恢复后增量验收从未完成切片继续、已完成切片不重跑：ST-S32-41 步骤⑥、ST-S32-42。
+- 功能规格：§2.68.5、§2.77；根规范：`spec/test-slice-manifest.md` §2.3、§2.3.1、§2.4、§6.1、§9；JSON 契约：`spec/cli-json-output.md`「openlogos slice plan 输出合同」。
+- **AC-SLICE-RECOVER-06 的实现前提**：checkpoint 身份必须绑定判定实质而非 manifest 文件字节，否则 `generated_at` 每次重建都不同、账本必然作废（见「S32 checkpoint 身份绑定测试」与 §2.77.0 的实证）。
 
 ### 自动化与证据要求
 
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
 - 保留判据是**构造保证**，因此断言必须直接读回磁盘上的 `tasks.md` 字节比对勾选状态，不得以命令 stdout 的自述作为通过依据。
+
+## S32 checkpoint 身份绑定测试
+
+> 覆盖 checkpoint 账本的身份绑定：绑定对象为 manifest 的**判定实质**（`schema` / `change` / `module` / `slices` / `task_fingerprint` / `spec_fingerprint` 的规范化 JSON SHA-256，排除 `generated_at`），以及 `openlogos/slice-checkpoint@1` / `@2` 的按行兼容读（功能规格 §2.77；根规范 `spec/test-slice-manifest.md` §6.1～§6.3、§8、§11）。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S32-96 | `generated_at` 不参与身份 | 构造两份 manifest：仅 `generated_at` 不同（其余含 `slices` 顺序、两个 fingerprint 全部逐字相同）→ 身份哈希**相等**；同时两份的**文件字节哈希不相等**（证明旧绑定确会作废账本，本用例即 §2.77.0 实证的回归化） |
+| UT-S32-97 | 判定实质变化即身份变化 | 分别改动：① 某片 `slice_id`；② 某片 `task_text`；③ 某片 `owned_test_ids`；④ 两片顺序对调；⑤ `task_fingerprint`；⑥ `spec_fingerprint` → 六种情形身份**均变化**。顺序对调必须变化——顺序是划分的一部分 |
+| UT-S32-98 | 混合账本按行 schema 分派 | 账本同时含 `@1` 行（`manifest_sha256` = 旧的 manifest 文件字节哈希）与 `@2` 行（= 新身份）→ 两者**各按其 schema 匹配**、同时进入确认集合；把 `@1` 行的值换成新身份则该行不匹配（证明未按行分派会误判） |
+| UT-S32-99 | 未知 checkpoint 主版本保守处置 | 账本含 `openlogos/slice-checkpoint@9` 行 → 该行不进入 `confirmed_slice_ids`、**不产生 violation、不中断 validator**，同账本内 `@1` / `@2` 行照常被采信；与 manifest 自身 `test-slice-manifest-unsupported` 的阻断语义互不牵连 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S32-42 | 恢复保住账本、重划作废账本的互为反例端到端 | 真实 CLI：① `slice plan` 写入 2 切片，切片 1 写入 PASS checkpoint 并勾选；② 删除 `TEST_SLICE_MANIFEST.json` 后以**相同** `slices.json` 重跑 → 重建前后的 `task_fingerprint`、`spec_fingerprint` 与身份**分别相等**（尽管①已勾选切片 1），`confirmed_slice_ids` 仍含切片 1、`attempted_slice_id` 为切片 2、`verify_mode=slice-checkpoint`；③ 改动 `slices.json`（改写某片 `task_text` 或调整划分）后重跑 → `confirmed_slice_ids` **变空**、`attempted_slice_id` 回到第一片；④ 全程 `SLICE_CHECKPOINTS.jsonl` 只增不改，②③ 两步均未删除或重写历史行 |
+
+### 追溯与覆盖
+
+- AC-SLICE-ID-01 `generated_at` 排除在身份之外：UT-S32-96。
+- AC-SLICE-ID-02 判定实质（含 `slices` 顺序、两个 fingerprint）变化即身份变化：UT-S32-97。
+- AC-SLICE-ID-07 勾选变化不改变 `task_fingerprint`，故不改变身份（恢复保账本的前提）：ST-S32-41 步骤⑦、ST-S32-42 步骤②。
+- AC-SLICE-ID-03 `@1` / `@2` 混合账本按行分派：UT-S32-98。
+- AC-SLICE-ID-04 未知主版本保守不采信且不中断：UT-S32-99。
+- AC-SLICE-ID-05 恢复保住账本 / 重划作废账本互为反例：ST-S32-42 步骤②③。
+- AC-SLICE-ID-06 账本 append-only、历史行不改写：ST-S32-42 步骤④。
+- 功能规格：§2.77；根规范：`spec/test-slice-manifest.md` §2.3、§2.4、§6.1～§6.3、§8、§11；JSON 契约：`spec/cli-json-output.md`「指纹语义（降级为观察）」。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
+- UT-S32-96 必须**同时**断言「身份相等」与「文件字节哈希不等」。只断言前者的话，把身份函数错写成常量也能通过——两条一起断言才锁住「换了绑定对象」这件事本身。
+- ST-S32-41 步骤⑦ 与 ST-S32-42 步骤② 的指纹相等断言**必须在切片已勾选之后**求值。若在勾选前比较，「勾选不参与 `task_fingerprint`」这一前提根本没被检验，而它一旦不成立，即使排除了 `generated_at`，恢复后的身份仍会变化、AC-SLICE-RECOVER-06 与 AC-SLICE-ID-05 一并落空。

@@ -13,7 +13,7 @@ OpenLogos 是协议判定和状态持久化的唯一事实源。slice-planner �
 | `SPEC_MERGED.test_change_set` | `logos/changes/<slug>/SPEC_MERGED` | `openlogos merge` | 与 resources、metadata 同一次原子落盘批次；marker 最后写 |
 | `TEST_SLICE_MANIFEST.json` | `logos/changes/<slug>/` | `openlogos slice plan` | 与 `tasks.md` 的 `[code]` 段在**同一次命令内**顺序写出；临时文件校验后原子 rename |
 | `tasks.md` 的 `## [code]` 段 | 同上 | `openlogos slice plan` | 整节替换（checkbox 按 §2.3 判据逐条目保留）；`[delta]` / `[deploy]` 段与其 checkbox 状态字节恒等 |
-| `SLICE_CHECKPOINTS.jsonl` | 同上 | `openlogos verify` | append-only；等价 PASS 幂等 |
+| `SLICE_CHECKPOINTS.jsonl` | 同上 | `openlogos verify` | append-only；等价 PASS 幂等；行 schema 与身份绑定见 §6 |
 | `LOOP_ITERS` | 同上 | `openlogos verify` | 仅真实 Gate 尝试 append |
 | `VERIFY_PASS` / `VERIFY_FAIL` | 同上 | `openlogos verify` | 既有 marker 规则；PASS 仅 final |
 
@@ -69,7 +69,9 @@ manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVe
 
 判据取 `task_text` 逐字相等，理由是它可构造判定：内容没变则既有进度仍然可信；内容变了则进度不再可信，重置为未勾选是安全侧。**禁止**新增开关把「是否保留进度」的判定权外移给调用方——调用方传错即静默丢进度，正是本规范 §2.2 所禁止的「以纪律替代构造保证」；**同样禁止**在文档或 Skill 中写「Agent 记得手工恢复勾选」作为兜底。
 
-`slice plan` **不触碰** `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl`：前者是 slice-exit 门的产物、后者是 verify 的账本（§2 写入者表）。checkpoint 的采信仍按 §6 以 `manifest_sha256` 与当前 manifest 一致为准。
+`slice plan` **不触碰** `SLICES_APPROVED` 与 `SLICE_CHECKPOINTS.jsonl`：前者是 slice-exit 门的产物、后者是 verify 的账本（§2 写入者表）。
+
+**恢复重跑保住的不只是 checkbox，还有 checkpoint 账本。** 恢复以逐字相同的 `slices.json` 重建 manifest，其**判定实质**（`slices`、`task_fingerprint`、`spec_fingerprint`）与重建前完全一致，故按 §6.1 算出的身份不变，已确认切片继续被采信、前沿停在首个未确认切片。这条保证同样**由构造完成**——身份只由判定实质决定，不含 `generated_at` 这类写盘时刻的审计字段（§6.1）。§9「恢复仅重建 manifest、保留 checkpoint」由此从名义变为实质。
 
 #### 2.3.1 恢复入口的可达性与产物所有权
 
@@ -88,7 +90,9 @@ manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVe
 
 **产物处置**：重跑整体替换 `[code]` 段与 manifest，两者在同一次调用内先后写出（§2.2），任何时刻不得半新半旧。checkbox 按 §2.3 判据**逐条目独立处置**：`task_text` 被改写的切片重置为未勾选，未改写的保留原状态——「划分错了」与「这一片已经做完了」是两件事，不因同批重跑而互相牵连。
 
-重划 apply 后 manifest 的 `sha256` 必然变化，**verify 只采信 `manifest_sha256` 与当前 manifest 一致的 checkpoint 行**（§6）——旧划分的 PASS checkpoint 不得冒充新划分的收敛证据。
+重划改变了 `slices`，manifest 的**判定实质身份**随之变化，**verify 只采信身份与当前 manifest 一致的 checkpoint 行**（§6.1）——旧划分的 PASS checkpoint 不得冒充新划分的收敛证据。
+
+该判据必须锚在判定实质上，不能锚在文件字节上：后者对**输入完全没变的空转重跑**也会变化（`generated_at` 每次不同），于是「作废」在两种本该区分的情形里一律发生，这条不变量便失去判别力，同时把 §2.3 的恢复承诺一并推翻。
 
 `SLICES_APPROVED` 在场时重跑不自动作废该 marker（`slice plan` 不触碰它，§2.3）；批准与当前划分是否仍匹配，由 slice-exit 门依重跑后的 `[code]` 重新确认。
 
@@ -174,10 +178,44 @@ R ∩ D = ∅
 每行是独立 JSON 对象：
 
 ```json
-{"schema":"openlogos/slice-checkpoint@1","slice_id":"slice-01-manifest-validation","manifest_sha256":"sha256:3b2f6dd12f46176766b38f21a55d58265f0c6f9f4f221f5c49c88b91b618daef","result":"PASS","eligible_test_ids_sha256":"sha256:ae3fca61d0d812c565ed97c82ff9e779df3fdd879faccc623733425983af5c95","timestamp":"2026-08-15T00:10:00.000Z"}
+{"schema":"openlogos/slice-checkpoint@2","slice_id":"slice-01-manifest-validation","manifest_sha256":"sha256:3b2f6dd12f46176766b38f21a55d58265f0c6f9f4f221f5c49c88b91b618daef","result":"PASS","eligible_test_ids_sha256":"sha256:ae3fca61d0d812c565ed97c82ff9e779df3fdd879faccc623733425983af5c95","timestamp":"2026-08-15T00:10:00.000Z"}
 ```
 
-字段均必填；`result` 为 `PASS|FAIL`。当前完成判定只采信 manifest_sha256 等于当前 manifest 字节哈希的 PASS。相同 `slice_id + manifest_sha256 + eligible_test_ids_sha256 + PASS` 重试不得重复追加。旧哈希行保留审计但不参与确认集合。
+字段均必填；`result` 为 `PASS|FAIL`。
+
+### 6.1 身份绑定：判定实质，不是文件字节
+
+`manifest_sha256` 承载的语义是「这条 PASS 属于**哪一份切片划分**」。自 `openlogos/slice-checkpoint@2` 起，该值为 manifest **判定实质的规范化哈希**：对 `schema`、`change`、`module`、`slices`（逐字段、保序）、`task_fingerprint`、`spec_fingerprint` 求规范化 JSON 的 SHA-256，**排除 `generated_at`**。
+
+排除 `generated_at` 是规范性要求，不是实现口味：它是**无判定价值的写盘时刻**——两次调用相差毫秒即不同，而这种不同不携带任何关于「切片划分或其依赖是否改变」的信息，故不得进入任何流程分支的条件（`spec/cli-json-output.md`「指纹语义（降级为观察）」）。此前该值取 manifest **整份文件字节**的 SHA-256，于是一个只差毫秒的时间戳即可让整本账本失效——§2.3 的恢复重跑以逐字相同的输入重建 manifest 时 `generated_at` 必然不同，§9 承诺的「保留 checkpoint」随之名存实亡。
+
+**这与两个 fingerprint 计入身份并不矛盾。** 指纹有两种角色，被禁止的只是其中一种：把指纹的 stale **漂移诊断**升格为独立阻塞门（功能规格 §2.68.4）——那回答的是「产物写出后依据有没有被改过」。身份回答的是另一个问题：「某条已落盘的 PASS 属不属于**当前这份**划分」，而 `task_fingerprint` / `spec_fingerprint` 恰好是这个问题的答案所在，故必须计入。角色区分见 `spec/cli-json-output.md`「指纹语义（降级为观察）」。反过来说，若以「指纹是观察面」为由把它们排除出身份，「划分或其依赖的规格已经变了」这件事在归属判定中就不可见，旧绿得以冒充新证据。
+
+两侧都由构造保证：
+
+| 情形 | 身份 | 账本 |
+|---|---|---|
+| 恢复重跑（§2.3，输入逐字未变） | 不变 | 已确认切片继续被采信，前沿停在首个未确认切片 |
+| 重划（§2.4，`slices` 变更） | 变化 | 旧划分的 PASS 全部落空，不得冒充新划分的收敛证据 |
+| 规格重合并（`spec_fingerprint` 变化） | 变化 | 旧绿不再是对当前规格的证据，账本作废 |
+
+`spec_fingerprint` 计入身份是有意的：切片所依赖的已合并规格变了，此前的通过就不再是对当前规格的证据。
+
+### 6.2 混合账本与按行兼容读
+
+账本 append-only，历史行不得改写、重写或清空（§10）。因此升级期 `@1` 与 `@2` 行共存是**正常形态**，读取必须按**行自身的 `schema`** 分派：
+
+| 行 schema | `manifest_sha256` 的比对对象 |
+|---|---|
+| `openlogos/slice-checkpoint@2` | §6.1 的判定实质身份 |
+| `openlogos/slice-checkpoint@1` | manifest 整份文件字节的 SHA-256（旧规则，语义逐字不变） |
+| 未知主版本 | 保守不采信：该行不进入确认集合，也不构成 violation、不中断（§11） |
+
+新写入一律 `@2`。**禁止**原地改写 `@1` 行的含义，也禁止把两套规则合并成一套——同一字段名在同一账本内含义可变而无法分辨，消费方将无从判断某一行该按哪套读。不做按行兼容读的后果是确定的：升级瞬间全部在途提案的已确认切片一次性作废，用一轮全量重跑换一个本不需要代价的修复。
+
+### 6.3 采信与幂等
+
+完成判定只采信**身份匹配当前 manifest** 且 `result === "PASS"` 的行。相同 `slice_id + manifest_sha256 + eligible_test_ids_sha256 + PASS` 重试不得重复追加。身份不匹配的行保留审计，但不参与确认集合。
 
 ## 7. verify 模式与集合
 
@@ -222,6 +260,8 @@ validator 必须先通过 TestChangeSetReader 验证 change set，再验证 slic
 
 只有 change set 有效时，slice-manifest 的可恢复状态才可输出 `plan-slices`。任何 change-set violation 都不得写 `VERIFY_FAIL`、checkpoint、`LOOP_ITERS`、tasks 或 manifest，不得启动 runner，也不得派 slice-planner。validator 输出全部 violation、精确字段路径和修复提示，结果排序稳定。
 
+**checkpoint 行的未知主版本不是 violation。** 账本 append-only 且允许多版本共存（§6.2），故读到未知 `schema` 主版本的行时保守处置：该行不进入确认集合，不产生诊断码、不中断 validator、不阻断 runner。这与 manifest 自身的 `test-slice-manifest-unsupported`（整份产物不可解释，必须阻断）是两回事——前者是账本里的一行，跳过它不影响其余行的可解释性。
+
 ## 9. 恢复动作合同
 
 有效 change set + slice manifest missing/invalid/stale 时，OpenLogos 输出 `next_node.id=plan-slices`、`skill=slice-planner`、`dispatch.idempotent=true` 和 artifacts。slice-planner 恢复模式必须从同一 TestChangeSetReader 返回的 C/R 规划，并**以相同 `slices.json` 重跑 `openlogos slice plan --file <slices.json>`**：`[code]` 文本、顺序与 checkbox 的保留由该命令按 §2.3 的 `task_text` 逐字判据构造性完成，`SLICES_APPROVED` 与 checkpoint 不被触碰，实际重建的只有 manifest。完全缺失时从规范化 tasks 确定性恢复 slice ID；无法保持身份则阻塞。
@@ -249,6 +289,8 @@ RunLogos 负责有界派发、重投和完成屏障；屏障必须再次调用 O
 - unknown major 不覆盖、不降级解析。
 - 单切片和已完成 legacy 提案维持旧 final 行为。
 - 正在实现的 legacy 多切片提案必须走恢复动作，禁止以全量 uncovered 误失败。
+- checkpoint 账本允许多版本行共存：`openlogos/slice-checkpoint@1` 与 `@2` 混合是升级期正常形态，按行 `schema` 分派比对（§6.2）；新写入一律 `@2`，历史行不改写。
+- checkpoint 行的未知主版本保守不采信、不阻断（§8）；manifest 自身的未知主版本仍按上条阻断。
 
 ## 12. 验收要求
 

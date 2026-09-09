@@ -3271,3 +3271,73 @@ Gate 通过当且仅当三项同时成立：
 ### 2.76.2 追溯
 
 - 测试：UT-S19-46、ST-S19-22、SMOKE-core-197～199。
+
+## 2.77 切片 checkpoint 的身份绑定
+
+### 2.77.0 问题：一个时间戳作废整本账本
+
+切片增量验收的账本 `SLICE_CHECKPOINTS.jsonl` 里，每条 PASS 用 `manifest_sha256` 标明「这条通过属于哪一份切片划分」。0.15.1 及之前，该值取 `TEST_SLICE_MANIFEST.json` **整份文件字节**的 SHA-256——而 manifest 里有一个 `generated_at: <ISO 时间戳>`。
+
+实证（2026-09-09，隔离临时项目，安装态 0.15.1）：规划两片 → 勾选切片1 → 删除 manifest → 以**同一份 `slices.json`** 恢复重跑，逐字 diff 前后两份 manifest：
+
+```
+7c7
+<   "generated_at": "2026-09-09T02:36:23.870Z",
+---
+>   "generated_at": "2026-09-09T02:36:23.943Z",
+```
+
+只差 73 毫秒的一个时间戳，其余字节全同（`task_fingerprint` 也未变——它只哈希 `[code]` 条目文本与层级，不含勾选状态）。但文件哈希变了，切片1 的 PASS 不再被采信，前沿回到切片1。
+
+这直接推翻了两条已生效的承诺：根规范 `spec/test-slice-manifest.md` §9「恢复模式……保留 `[code]` 文本/顺序/checkbox、`SLICES_APPROVED` 和 checkpoint，仅重建 manifest」——账本文件保留了，但全部不被采信，「保留」名存实亡；以及 S32 的 AC-SLICE-RECOVER-06「恢复后已完成切片不重跑」。
+
+**它同时是一条已被本规格明文禁止的形态**：§2.68.4 与 `spec/cli-json-output.md`「指纹语义（降级为观察）」规定**无判定价值的审计字段不得出现在流程分支的条件里**，而 `generated_at` 正是这样的字段——纯时间戳，其变化不携带任何关于「划分是否改变」的信息。
+
+> 该禁令**不涵盖**两个 fingerprint 计入身份。被禁的是把指纹的 stale **漂移诊断**升格为独立阻塞门；身份回答的是「某条已落盘 PASS 属不属于当前划分」，两者问的不是同一件事。角色区分见 §2.77.1 与 `spec/cli-json-output.md`「指纹语义（降级为观察）」。
+
+**附带损失**：§2.4「重划后旧 checkpoint 不得冒充新划分的收敛证据」在旧绑定下虽然成立，但成立的原因是时间戳——**输入完全没变的空转重跑也会作废账本**，这条不变量因此不具判别力。
+
+### 2.77.1 身份定义
+
+checkpoint 绑定 manifest 的**判定实质**，而非其文件字节：
+
+```
+identity = SHA-256( 规范化 JSON( schema, change, module, slices, task_fingerprint, spec_fingerprint ) )
+```
+
+- `slices` 逐字段、**保序**参与（顺序是划分的一部分）。
+- **排除 `generated_at`**：纯时间戳，判定价值为零。
+- `spec_fingerprint` **计入**：切片所依赖的已合并规格变了，此前的通过就不再是对当前规格的证据，账本理应作废。
+
+`TEST_SLICE_MANIFEST.json` 的 schema、字段与 `generated_at` **一律不变**；`generated_at` 继续作为审计字段存在，只是退出流程判定。
+
+### 2.77.2 三类情形的期望行为
+
+| 情形 | 身份 | 账本 | 用户可观察结果 |
+|---|---|---|---|
+| 恢复重跑（§2.68.5 / 根规范 §2.3，输入逐字未变） | 不变 | 已确认切片继续被采信 | 前沿停在首个未确认切片，已完成切片不重跑 |
+| 重划（根规范 §2.4，`slices` 变更） | 变化 | 旧划分的 PASS 全部落空 | 前沿回到第一片，符合「划分变了、旧绿不作数」 |
+| 规格重合并（`spec_fingerprint` 变化） | 变化 | 账本作废 | 同上 |
+
+前两行是一对互为反例的判据：绑定必须让恢复保住账本、让重划作废账本，两者缺一即说明绑错了对象。
+
+### 2.77.3 混合账本与兼容读
+
+checkpoint 行 schema 升至 `openlogos/slice-checkpoint@2`；账本 append-only，历史行不改写、不重写、不清空。读取按**行自身的 `schema`** 分派：`@2` 行比对 §2.77.1 的身份，`@1` 行比对旧的 manifest 文件字节哈希（语义逐字不变），未知主版本保守不采信且不中断。新写入一律 `@2`。
+
+不做按行兼容读的后果是确定的：升级瞬间全部在途提案的已确认切片一次性作废，等于用一轮全量重跑换一个本不需要代价的修复。
+
+### 2.77.4 零回归边界
+
+| 保留项 | 说明 |
+|---|---|
+| `TEST_SLICE_MANIFEST.json` schema 与字段 | `openlogos/test-slice-manifest@1` 不变，`generated_at` 保留 |
+| `openlogos slice plan` 命令面与输出 | 输入结构、五个 `data` 字段、稳定错误码、零副作用逐条不变 |
+| `verify` 的 `slice-checkpoint` 增量验收 | 收窄分母与收窄执行的算法不变，只是确认集合的判据换了绑定对象 |
+| 等价 PASS 幂等 | `slice_id + manifest_sha256 + eligible_test_ids_sha256 + PASS` 重试不重复追加，规则不变 |
+| `SLICES_APPROVED` / `[code]` 勾选保留 | 不在本次改动范围内，行为不变 |
+
+### 2.77.5 追溯
+
+- 根规范：`spec/test-slice-manifest.md` §2.3、§2.4、§6.1～§6.3、§8、§11；JSON 契约：`spec/cli-json-output.md`「指纹语义（降级为观察）」。
+- 场景：`core-S32`（切片规划与增量验收），不新增场景编号。
