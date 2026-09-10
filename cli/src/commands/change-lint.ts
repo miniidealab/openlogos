@@ -156,8 +156,14 @@ function checkOfCode(code: string): number {
     case 'delta_implicit_id_removal':
     case 'delta_removed_unknown_id':
     case 'delta_section_anchor_unresolvable': return 8;
-    // lite-cut2b：non-Markdown 整文件 delta 的形态校验随 L9 删除迁入 L4。
+    // lite-cut2b：non-Markdown 整文件 delta 的形态校验随旧 L9 删除迁入 L4。
     case 'non_markdown_delta_invalid': return 4;
+    // L9 下游阻塞理由预检（§2.79）——码即 ProposalBlockReason 本身。
+    case 'test-slice-manifest-missing':
+    case 'test-slice-manifest-invalid':
+    case 'test-slice-manifest-unsupported':
+    case 'test-slice-assignment-ambiguous':
+    case 'slice-task-state-inconsistent': return 9;
     default: return 7;
   }
 }

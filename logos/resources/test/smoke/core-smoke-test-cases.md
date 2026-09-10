@@ -1587,3 +1587,34 @@
 - runner 记录候选版本号、全局入口 realpath、隔离项目路径，以及每一步的 manifest 身份与账本行原文。
 - 结果写入 smoke reporter（`smoke-results.jsonl`）；失败不得写 pass。
 - SMOKE-core-200 与 SMOKE-core-201 必须**成对**评估：仅 200 通过而 201 失败，等于身份函数退化成常量，属实现缺陷而非环境问题。
+
+## OpenLogos 0.15.3 slice plan fail-closed 与阻塞理由自检安装态 smoke（SMOKE-core-203～205）
+
+> 覆盖写入侧 fail-closed 与 `change-lint` L9 在**真实安装态**的行为（功能规格 §2.78、§2.79；根规范 `spec/test-slice-manifest.md` §2.2、§2.2.1、§10）。缺陷只在安装态发作——RunLogos 等宿主调用的是全局安装的 `openlogos slice plan` / `change-lint`，仓库改完不重新打包安装，宿主拿到的仍是旧的 fail-open 写入口。全部用例在一次性隔离临时项目内执行，**不得触碰本机全局 prefix 与本仓活跃提案**。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-203 | 安装态非法 `spec_targets` 被写入口拒绝且两产物零改写 | 全局已安装 0.15.3；`mktemp -d` 一次性临时项目，launched 模块，提案已 `SPEC_MERGED` 且测试规格含真实 ID | ① 记录 `tasks.md` 与 `TEST_SLICE_MANIFEST.json`（若在盘）的 SHA-256 与 mtime；② 以某片 `spec_targets` 含非 `logos/resources/test/` 路径的 `slices.json`（复刻 2026-09-10 事故输入）执行全局 `openlogos slice plan --file`；③ 复算两文件的 SHA-256 与 mtime；④ 列出提案目录文件 | ② 退出码为 **2**，stdout 逐条列出 violations（每条含 `code` / `path` / `message` / `fix_hint`，`path` 精确指向出问题的切片与字段）；③ 两文件 SHA-256 与 mtime **均未变**；④ 无临时文件残留。**0.15.2 下该输入被放行、两产物落盘，本条即新旧行为的判别点** | 保留隔离 fixture、`slices.json` 与命令原文；停止部署，按 `cli/rollback/` 回滚全局至 0.15.2 |
+| SMOKE-core-204 | 安装态合法输入零行为变化 | 同上，续 SMOKE-core-203 的项目状态 | ① 依 SMOKE-core-203 的 `fix_hint` 把 `spec_targets` 改为真实测试规格路径后重跑全局 `slice plan`；② 读 `openlogos next --format json`；③ 运行全局 `openlogos verify --format json` | ① 退出码 0，两产物落盘且互相一致，五个 `data` 字段取值与 0.15.2 同输入下**逐字相同**；② 前沿正常推进，无 `test-slice-manifest-invalid`；③ 进入 `slice-checkpoint` 模式，增量验收零回归 | 保留两版本同输入的输出对照；行为漂移即说明收紧越界，停止部署并回滚 |
+| SMOKE-core-205 | 安装态 change-lint 覆盖 8 条阻塞理由 | 同上；在隔离项目内逐条构造使各 `ProposalBlockReason` 成立的最小状态（含直接放置非法在盘 manifest 以模拟历史遗留态） | ① 对每种状态执行全局 `openlogos change-lint --format json`；② 同状态下执行全局 `openlogos next --format json`；③ 比对项目根在 lint 前后的字节快照 | ① 8 条理由**逐条被检出并点名**，7 条进 `violations` 且退出码 2、`test-slice-manifest-stale` 进 `warnings` 且退出码不变；② lint 与 next 的理由及 violations 逐条一致；③ 快照相等（含 guard、marker、`logos-project.yaml` 与 verify 账本），只读红线不破。**0.15.2 下仅 1 条被检出** | 保留每种状态的 lint 与 next 输出原文；覆盖不足意味着自检入口仍不可达，停止部署 |
+
+### 二、执行边界
+
+- 全部用例只在 `mktemp -d` 的一次性项目内读写；结束即删除。**不得**在本仓活跃提案、`logos/resources/` 或本机全局 prefix 上产生任何写入。
+- 命令图中不得出现 `npm publish` / `dist-tag` / `git tag` / `gh release` / `git push`——本次为本地全局部署，不做公网发布。
+- 判定一律读命令的 `--format json` 结构化输出与磁盘字节，不解析文本渲染，也不以命令自述的成功作为通过依据。
+
+### 三、追溯与覆盖
+
+- AC-SLICE-FAILCLOSED-01 / 02 非法输入被拒且两产物零改写（安装态）：SMOKE-core-203。
+- AC-SLICE-FAILCLOSED-05 合法路径零行为变化（安装态）：SMOKE-core-204。
+- AC-LINT-BLOCK-01 / 02 / 06 阻塞理由 8/8 覆盖、与 next 同结论、只读红线（安装态）：SMOKE-core-205。
+- 功能规格：§2.78、§2.79；根规范：`spec/test-slice-manifest.md` §2.2、§2.2.1、§8、§10；仓库内对应用例：UT-S32-100～103、ST-S32-43、UT-S35-138～141、ST-S35-27。
+
+### 四、自动化与证据要求
+
+- runner 记录候选版本号（0.15.3）、全局入口 realpath、隔离项目路径，以及每一步的两产物 SHA-256 与命令退出码。
+- 结果写入 smoke reporter（`smoke-results.jsonl`）；失败不得写 pass。
+- SMOKE-core-203 与 SMOKE-core-204 必须**成对**评估：只过 203 说明收紧过头（合法输入也被拒），只过 204 说明写入口仍是 fail-open——两者共同界定「单向收紧且不产生新失败面」。

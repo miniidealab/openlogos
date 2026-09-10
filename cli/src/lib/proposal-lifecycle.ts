@@ -82,15 +82,25 @@ export interface CodePlanningDiagnostic {
   remediation: string;
 }
 
-export type ProposalBlockReason =
-  | 'no_delta_spec_marker_missing'
-  | 'code_change_requires_real_test_ids'
-  | 'test-slice-manifest-missing'
-  | 'test-slice-manifest-invalid'
-  | 'test-slice-manifest-stale'
-  | 'test-slice-manifest-unsupported'
-  | 'test-slice-assignment-ambiguous'
-  | 'slice-task-state-inconsistent';
+/**
+ * 阻塞理由全集——**运行期数组是类型的唯一来源**（`ProposalBlockReason` 由它派生）。
+ *
+ * 一致性锚（§2.79.2）以本数组为遍历源断言「每条理由都有可达的自检入口」：因为类型即数组，
+ * 新增理由必然进入遍历，未接线时锚挂红。禁止在别处复制一份理由名单——那会让锚失去判别力，
+ * 把机器检查退化回「记得同步」的纪律。
+ */
+export const PROPOSAL_BLOCK_REASONS = [
+  'no_delta_spec_marker_missing',
+  'code_change_requires_real_test_ids',
+  'test-slice-manifest-missing',
+  'test-slice-manifest-invalid',
+  'test-slice-manifest-stale',
+  'test-slice-manifest-unsupported',
+  'test-slice-assignment-ambiguous',
+  'slice-task-state-inconsistent',
+] as const;
+
+export type ProposalBlockReason = typeof PROPOSAL_BLOCK_REASONS[number];
 
 export type TasksExecutionScope = 'delta' | 'deploy' | 'code' | 'none';
 

@@ -3341,3 +3341,124 @@ checkpoint 行 schema 升至 `openlogos/slice-checkpoint@2`；账本 append-only
 
 - 根规范：`spec/test-slice-manifest.md` §2.3、§2.4、§6.1～§6.3、§8、§11；JSON 契约：`spec/cli-json-output.md`「指纹语义（降级为观察）」。
 - 场景：`core-S32`（切片规划与增量验收），不新增场景编号。
+
+## 2.78 slice plan 写入侧 fail-closed 与判据单点化
+
+### 2.78.0 问题：写入口的判据是一份按事故增量长出来的副本
+
+根规范 `spec/test-slice-manifest.md` §10 要求「先写同目录临时文件，fsync/关闭后**校验**，再原子 rename」，§2.2.1 要求「产出非法」与「写盘失败」走同一条处置路径。实现（0.15.2 及之前）三处偏离：
+
+1. `writeTestSliceManifestAtomic()` 是「写 → fsync → close → rename」，**校验那一步不存在**，函数内注释还把违规固化为设计（「写入侧只保证原子替换；完整校验由 `deriveSliceVerificationState` 完成」）。
+2. 写入口**有**校验，但在别处：`parseSlicesInput()` 检查 `slice_id` 格式与重复、四个字段非空、`owned_test_ids` 在已合并测试规格中真实存在——唯独 `spec_targets` 只校验「非空字符串数组」，不校验读取侧硬要求的 `logos/resources/test/` 前缀。
+3. `tasks.md` 先以普通 `writeFileSync` 提交、manifest 后写——manifest 非法时 `tasks.md` 已被改写且无从恢复。
+
+真正的形态不是「忘了校验」，而是**写入口维护着一份判据副本，且这份副本按事故增量生长**：有人踩过幽灵 `owned_test_ids`，就补上那一条；没人踩过 `spec_targets` 前缀，就一直没有。而完整判据（`deriveSliceVerificationState`，每条违规带 `fix_hint`）就在它**已经 import 的同一个文件**里。
+
+**实测后果链**（RunLogos 2026-09-10）：Agent 按 SKILL 字面描述把全部 merge 目标填进 `spec_targets` → `slice plan` 报成功、两产物落盘 → Agent 据此报 `done` → 下游 `next` 判 `test-slice-manifest-invalid` 并给出 4 条带 `fix_hint` 的精确违规 → 驱动只看到前沿未推进，发出 `blocked(no-progress)` 且 `detail` 为 `null`。**精确诊断在传递中丢失，一个当轮可自愈的输入错误升级成停点。**
+
+### 2.78.1 判据单点化（写入侧即读取侧）
+
+`slice plan` 的合法性判定**只有一份判据**：读取侧的 `deriveSliceVerificationState()`。
+
+| 层 | 归属 | 内容 |
+|---|---|---|
+| 纯输入形状检查 | 保留在写入口 | 输入 JSON 可解析、`slices` 为非空数组——这些是「连产物都构造不出来」的前置，不构成第二套判据 |
+| 结构 / 归属 / ID 真实性 / 路径前缀 | **一律交读取侧 validator** | `slice_id` 唯一与词法、四字段非空、`task_text` 非空、`owned_test_ids` 归属与真实性、`spec_targets` 路径前缀与越界，逐条由同一函数判定 |
+
+**禁止在写入口保留与读取侧重叠的手抄检查**，无论其当下是否与读取侧等价。只补一条 `spec_targets` 前缀检查是治标：副本的形态没变，下一条新增判据同一个缺陷原样回来。这与「围栏提取单点」「测试 ID 语法单点」是同一条结论的第三次应用。
+
+### 2.78.2 落盘顺序与拒绝态（fail-closed）
+
+**行为**（替代 §2.68.1 步骤 2～3 的落盘次序，其余步骤不变）：
+
+1. 构造新 `tasks.md` 全文（`[code]` 段整段替换，checkbox 按 §2.68.5 逐条目保留）与新 `TEST_SLICE_MANIFEST.json`，**各写入同目录临时文件**并 fsync/关闭；
+2. 以 `deriveSliceVerificationState()` 对**这一对即将生效的产物**整体判定（判定输入是临时文件内容，不是在盘旧字节）；
+3. 判定为 `valid`（或判定器按设计不适用，即 `null`）→ 两个临时文件逐一原子 rename 为正式产物；
+4. 判定为 `invalid` / `unsupported` → 删除临时文件、非零退出：`tasks.md` 与 `TEST_SLICE_MANIFEST.json` **字节均不变**，旧有效文件不被覆盖。
+
+`stale` 不阻塞落盘（§2.68.4：指纹漂移是观察，不进流程分支）；本次调用刚自算的指纹本就不会 stale，该分支只在兼容读中出现。
+
+### 2.78.3 退出码与输出契约
+
+| 退出码 | 含义 | 输出 |
+|---|---|---|
+| 0 | 规划成功，两产物已落盘 | 既有五个 `data` 字段与人读摘要，逐字不变 |
+| **2** | **产物非法被拒**（validator 给出负面结论） | 逐条列出 violations，**原样保留 `code` / `path` / `message` / `fix_hint`**，顺序稳定；人读模式为「缺什么 / 在哪补 / 补成什么样」三段式；`--format json` 走通用信封，`data.violations` 为结构化数组 |
+| 1 | 操作错误（无活跃提案、`--file` 不存在或不可读、输入非合法 JSON） | 既有稳定错误码（`SLICE_PLAN_NO_ACTIVE_CHANGE` / `SLICE_PLAN_INPUT_INVALID` …）+ stderr error envelope |
+
+退出码分级与 `change-lint`（0 全过 / 2 有违规 / 1 操作错误）对齐。对只判断「是否非零」的既有消费方**零影响**：拒绝态从 1 细化为 2，两者同为非零。
+
+**违规明细不得折叠为一句摘要。** 它们已经带着 `fix_hint`，是 Agent 当轮自愈的全部所需；折叠即等于把可自愈的失败升级为停点——这正是 §2.78.0 后果链第 5 步的成因。
+
+### 2.78.4 零回归边界
+
+| 保留项 | 说明 |
+|---|---|
+| 命令面与输入结构 | `openlogos slice plan --file <slices.json> [--format json]`，`slices.json` 五字段逐字不变 |
+| 合法输入的行为 | 凡能通过下游校验的产出，写入时同样通过——**合法路径零行为变化**，成功输出逐字节不变 |
+| §2.68.5 checkbox 保留 | `task_text` 逐字相等判据不变；校验前置不改变保留算法 |
+| `SLICES_APPROVED` / `SLICE_CHECKPOINTS.jsonl` | 仍不被 `slice plan` 触碰 |
+| manifest schema | `openlogos/test-slice-manifest@1` 与全部字段不变（含 `generated_at`） |
+
+**单向收紧**：凡写入时被拒的产出，在下游本就会被判废；差别只是失败点从「下游拒绝 + 宿主判 no-progress」提前到「命令非零退出 + Agent 当轮可改」。在途提案中已落盘的非法 manifest 不被改写，重跑时按新判据拒绝并给出明细。
+
+### 2.78.5 追溯
+
+- 根规范：`spec/test-slice-manifest.md` §2.2 / §2.2.1 / §10。
+- 场景：`core-S32`（切片规划），不新增场景编号。
+- 相关节：§2.68（`slice plan` 命令合同）、§2.77（checkpoint 身份绑定）。
+
+## 2.79 change-lint 阻塞理由自检全覆盖与可达性一致性锚
+
+### 2.79.0 问题：8 条阻塞理由只有 1 条有自检入口
+
+`ProposalBlockReason` 共 8 条，`change-lint` 只覆盖 1 条：
+
+| 阻塞理由 | 订正前 change-lint |
+|---|---|
+| `code_change_requires_real_test_ids` | 覆盖（L3） |
+| `no_delta_spec_marker_missing` | 未覆盖 |
+| `test-slice-manifest-missing` | 未覆盖 |
+| `test-slice-manifest-invalid` | 未覆盖 |
+| `test-slice-manifest-stale` | 未覆盖 |
+| `test-slice-manifest-unsupported` | 未覆盖 |
+| `test-slice-assignment-ambiguous` | 未覆盖 |
+| `slice-task-state-inconsistent` | 未覆盖 |
+
+后果：Agent 完成 `plan-slices` 后**没有任何入口可以自查产物是否合规**，只能报完成、等下游 `next` 拒绝。而 `change-lint` 的既有定位正是「计划产物左移硬检查」——阻塞理由不接进来，左移就只做了 1/8。
+
+### 2.79.1 新增检查项 L9：下游阻塞理由预检
+
+| # | 检查 | 共享判据 | 生效阶段 |
+|---|------|---------|---------|
+| L9 | 当前提案是否处于任一 `ProposalBlockReason` 阻塞态 | 与 `next` / `status` **同一单点**（`deriveSliceVerificationState` 及提案生命周期 deriver），lint 不新建判据 | 恒生效；各理由按其自身激活条件判定 |
+
+**语义**：L9 回答的问题是「如果我现在报完成，下游会不会拒绝我」。它调用与 `next` / `status` 完全相同的推导函数，把当前会触发的阻塞理由逐条映射为 lint 结果：
+
+- 判据由被复用的 deriver 独占——**lint 不得自建第二套阻塞判定**（同 §2.78.1 的结论，方向相反的同一条边界）；
+- 违规明细**原样带出** validator 的 `code` / `path` / `message` / `fix_hint`，不折叠；
+- 某理由在当前阶段不成立时不报告——例如 delta 未产完时 `SPEC_MERGED` 缺失是正常进度，不是缺陷。L9 只在 deriver 判定其确实阻塞时发声。
+
+**强度分级**：`test-slice-manifest-stale` 出现在 `warnings`（与 §2.68.4「stale 由阻塞降级为警告」一致，不改退出码）；其余 7 条为 violation，命中即 exit 2。
+
+### 2.79.2 一致性锚：阻塞理由 × 自检入口可达性
+
+新增一条**机器检查**：枚举 `ProposalBlockReason` 全集，断言每一条都能被至少一个自检入口（`change-lint` 或对应写入口）检出；新增理由而未接线时该断言挂红。
+
+- 这是 S35 已验证形态的第二次应用。S35 的「语法 × 数据一致性锚」结论是「原始缺陷不是正则写错了，而是没人检查正则与真实数据是否还对得上」；本条把同一个锚从「语法 × 数据」扩展到「**阻塞理由 × 自检入口**」。
+- **不新增任何需要作者手工声明或填写的门。** 反例已有定论：`authority-closure` 因「要求人工预测谁裁决事实并逐字段闭合，属于让人做机器该做的事」在 0.15.0 被整体废止，其废止理由明确记载它「在起草阶段反复拦截作者本身而从未拦下真实的权威设计缺陷」。把本条写成一道要作者自觉满足的 lint 门，就是重犯刚删掉的错。
+- 被否决的替代：①在 `change-lint` 增加「本提案是否为新判据提供了自检入口」检查——要求作者自我声明，重蹈覆辙；②只写进 CONTRIBUTING / AGENTS 作为约定——无执行力，与 SKILL 写错却无人发现是同一形态。
+
+### 2.79.3 零回归边界
+
+| 保留项 | 说明 |
+|---|---|
+| L0～L8 既有检查 | 判据、强度分级与输出格式逐条不变（含 §2.73 的 L8 降级为警告） |
+| 命令面与授权语义 | `openlogos change-lint [--slug] [--format json]`；只读、非人类确认点、项目级零写入红线不变 |
+| 退出码 | 0 全过 / 2 有违规 / 1 操作错误，不变 |
+| `next` / `status` / `verify` | 判定行为零改动——L9 是同一 deriver 的**第二个消费者**，不改变其结论 |
+
+### 2.79.4 追溯
+
+- 场景：`core-S35`（change-lint 左移硬检查）、`core-S32`（切片规划）。
+- 相关节：§2.30（change-lint 检查项矩阵与输出契约）、§2.73（L8 强度分级）、§2.78（写入侧 fail-closed）。

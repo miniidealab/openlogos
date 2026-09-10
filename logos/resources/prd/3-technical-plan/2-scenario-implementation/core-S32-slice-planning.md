@@ -243,7 +243,7 @@ sequenceDiagram
 
 ### 成功后置条件
 
-`tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json` 同时落盘且互相一致；`task_fingerprint` 依刚写出的 `tasks.md` 计算；`[delta]` / `[deploy]` 段与其勾选状态字节恒等。
+`tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json` 同时落盘且互相一致；`task_fingerprint` 依刚写出的 `tasks.md` 计算；`[delta]` / `[deploy]` 段与其勾选状态字节恒等。**产物非法时两者均不落盘**（fail-closed，见下文时序 Step 4～6 与 EX-32.23）。
 
 ### 时序图
 
@@ -255,30 +255,38 @@ sequenceDiagram
     participant V as openlogos verify
     P->>P: Step 1: 六维打分 + 删后续证伪门划分切片
     P->>C: Step 2: 产出结构化 slices.json 并调用 slice plan --file
-    C->>C: Step 3: 校验（非空/slice_id 唯一/ID 存在于已合并规格）
-    C->>F: Step 4: 写 tasks.md 的 [code] 段（整段替换）
-    C->>F: Step 5: 写 TEST_SLICE_MANIFEST.json（temp + 原子 rename）
-    C->>C: Step 6: 依刚写出的 tasks.md 自算 task_fingerprint
-    C-->>P: Step 7: 返回切片摘要（一次调用完成）
-    V->>F: Step 8: 读 manifest 计算 eligible，逐片增量验收
+    C->>C: Step 3: 纯输入形状检查（JSON 可解析 / slices 非空数组）
+    C->>F: Step 4: 写两个临时文件（tasks.md 全文 + manifest），fsync/关闭
+    C->>C: Step 5: 依临时 tasks.md 自算 task_fingerprint、依 spec_targets 算 spec_fingerprint
+    C->>C: Step 6: 以读取侧同一 deriveSliceVerificationState 判定「即将生效的这一对产物」
+    alt 判定 valid（或判定器不适用）
+        C->>F: Step 7a: 两个临时文件逐一原子 rename 为正式产物
+        C-->>P: Step 8a: 返回切片摘要（exit 0，一次调用完成）
+    else 判定 invalid / unsupported
+        C->>F: Step 7b: 删除两个临时文件，正式产物零改写
+        C-->>P: Step 8b: exit 2 + 原样输出 violations（code/path/message/fix_hint）
+        P->>P: Step 9b: 依 fix_hint 当轮改正 slices.json 并重跑（不产生停点）
+    end
+    V->>F: Step 10: 读 manifest 计算 eligible，逐片增量验收
 ```
 
 ### 步骤说明
 
 1. **slice-planner** 按既有六维打分与删后续证伪门划分切片——切片划分方法论逐字不变。
 2. **slice-planner** 把结果表达为**结构化** `slices.json`（`slice_id` / `owned_test_ids` / `runner_selectors` / `spec_targets`），一次调用 `openlogos slice plan --file`。
-3. **CLI** 校验结构化输入：数组非空；`slice_id` 提案内唯一；三个数组字段非空；`owned_test_ids` 中每个 ID 存在于已合并测试规格。任一不满足即非零退出、零副作用。
-4. **CLI** 写 `tasks.md` 的 `[code]` 段（整段替换；`[delta]` / `[deploy]` 段与勾选状态字节恒等）。
-5. **CLI** 写 `TEST_SLICE_MANIFEST.json`（temp + fsync + 原子 rename）。
-6. **CLI** 依**刚写出的** `tasks.md` 自算 `task_fingerprint`、依 `spec_targets` 算 `spec_fingerprint`——写入者与指纹计算者同一方同一时刻，漂移窗口从构造上消失。
-7. **CLI** 返回切片摘要；至此一次 CLI 往返完成全部落盘（此前需 6 次）。
-8. **verify** 照既有 `slice-checkpoint` 逻辑读 manifest 计算 `eligible`，逐片增量验收——该能力零改动。
+3. **CLI** 只做**纯输入形状检查**：输入 JSON 可解析、`slices` 为非空数组——这是构造产物的前置，不是判据。**结构、归属、ID 真实性与 `spec_targets` 路径前缀一律不在此判**（判据单点化，功能规格 §2.78.1；写入口自建判据副本是本次订正的缺陷本体）。
+4. **CLI** 把新 `tasks.md` 全文（`[code]` 整段替换；`[delta]` / `[deploy]` 段与勾选状态字节恒等）与新 `TEST_SLICE_MANIFEST.json` **各写入同目录临时文件**并 fsync/关闭——此时两个正式产物均未被触碰。
+5. **CLI** 依**临时** `tasks.md` 自算 `task_fingerprint`、依 `spec_targets` 算 `spec_fingerprint`——写入者与指纹计算者同一方同一时刻，漂移窗口从构造上消失。
+6. **CLI** 以读取侧同一个 `deriveSliceVerificationState()` 对「即将生效的这一对产物」整体判定；判定输入是临时文件内容，不是在盘旧字节。
+7. **判定通过**（`valid`，或判定器按设计不适用）→ 两个临时文件逐一原子 rename 为正式产物；**判定不通过**（`invalid` / `unsupported`）→ 删除两个临时文件，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 字节均不变。**禁止先以普通写入提交 `tasks.md` 再写 manifest**——那条路径下 manifest 非法时 `tasks.md` 已被改写且无从恢复（根规范 §2.2 两产物原子一致性）。
+8. **CLI** 成功时返回切片摘要（exit 0，一次 CLI 往返完成全部落盘）；失败时 exit 2 并**原样输出** violations（逐条保留 `code` / `path` / `message` / `fix_hint`，顺序稳定），使 slice-planner 在**当轮**改正重跑，不把可自愈的输入错误升级为停点。
+9. **verify** 照既有 `slice-checkpoint` 逻辑读 manifest 计算 `eligible`，逐片增量验收——该能力零改动。
 
 ### 异常与边界
 
 #### EX-32.20：结构化输入非法
 - **触发条件**：`slices.json` 缺字段、`slice_id` 重复、`owned_test_ids` 含未定义 ID、数组为空。
-- **期望响应**：非零退出并报稳定错误码，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均不被修改（零副作用）。
+- **期望响应**：非零退出并报稳定错误码，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均不被修改（零副作用）。输入不可解析、`slices` 非数组或空数组属操作错误（exit 1，稳定错误码）；其余经读取侧 validator 判定，按 EX-32.23 处置（exit 2 + 结构化违规）。
 - **副作用**：无。
 
 #### EX-32.21：重复执行（重新规划）
@@ -291,11 +299,27 @@ sequenceDiagram
 - **期望响应**：**告警而非阻塞**——`status` / `next` / `verify` 输出 stale 诊断并建议重跑 `slice plan`，但不阻断流程推进（审计产物不得出现在流程分支的条件里）。
 - **副作用**：无。
 
+#### EX-32.23：`spec_targets` 非法（写入口 fail-closed 主分支）
+- **触发条件**：`slices.json` 的某片 `spec_targets` 含不在 `logos/resources/test/` 下的路径（例如把全部 merge 目标一并填入）——该形态可通过订正前写入口的手抄检查，却被读取侧判 `test-slice-manifest-invalid`。
+- **期望响应**：临时文件被删除，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 字节**均不变**；exit 2；逐条原样输出 validator violations（含每条的 `path` 与 `fix_hint`），不折叠为一句摘要。
+- **副作用**：无。Agent 依 `fix_hint` 当轮改正重跑即可自愈，不产生 `blocked(no-progress)`。
+
+#### EX-32.24：非法产出发生在 `tasks.md` 已提交之后（订正前形态，必须不可复现）
+- **触发条件**：以订正前的落盘次序（普通 `writeFileSync` 先提交 `tasks.md`，再写 manifest）遇到非法产出。
+- **期望响应**：该次序在订正后**不存在**——校验前置于任一 rename，任何拒绝路径下 `tasks.md` 都保持调用前字节。该分支作为回归断言存在：拒绝发生后 `tasks.md` 的字节与 mtime 均不得变化。
+- **副作用**：无。
+
+#### EX-32.25：合法输入（零行为变化边界）
+- **触发条件**：`slices.json` 合法且能通过下游校验。
+- **期望响应**：与订正前**逐字节一致**——`[code]` 文本与顺序、manifest 内容、五个 `data` 字段、exit 0 摘要均不变。校验前置只增加一次判定，不改变任何合法产出。
+- **副作用**：无。
+
 ### 追溯
 
-- 需求：切片规划单条受控写入口要求。
-- 功能规格：§2.68。
-- 测试：UT-S32-90、UT-S32-91、ST-S32-40。
+- 需求：切片规划单条受控写入口要求；写入侧 fail-closed 与判据单点化要求。
+- 功能规格：§2.68、§2.78。
+- 根规范：`spec/test-slice-manifest.md` §2.2 / §2.2.1 / §10。
+- 测试：UT-S32-90、UT-S32-91、ST-S32-40、UT-S32-100、UT-S32-101、UT-S32-102、UT-S32-103、ST-S32-43。
 
 ## S32 change set 提案级语义与二次合并后切片归属
 

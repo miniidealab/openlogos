@@ -18,6 +18,7 @@ import {
   extractStructuredTestIds,
   extractTaskSectionItems,
   hasSpecCompleteMarker,
+  getProposalStepReason,
 } from './proposal-lifecycle.js';
 import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import {
@@ -35,6 +36,7 @@ import {
   withRecoveredReadLocks,
 } from './baseline-seed-txn.js';
 import { readTestChangeSet, type TestChangeSetReadResult } from './test-change-set.js';
+import { deriveSliceVerificationState } from './test-slice-manifest.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import { type PlanPackageEvaluation } from './plan-package-contract.js';
 import {
@@ -92,6 +94,14 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'delta_removed_unknown_id',
   'delta_section_anchor_unresolvable',
   'non_markdown_delta_invalid',
+  // L9 下游阻塞理由预检（§2.79）——码即 ProposalBlockReason 本身，identity 不被折叠。
+  // `code_change_requires_real_test_ids`（L3 已覆盖）与 `test-slice-manifest-stale`
+  // （降级为 warning，同 §2.68.4）不在此列。
+  'test-slice-manifest-missing',
+  'test-slice-manifest-invalid',
+  'test-slice-manifest-unsupported',
+  'test-slice-assignment-ambiguous',
+  'slice-task-state-inconsistent',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -101,6 +111,12 @@ const FLOW_REASON_MAP: Partial<Record<ChangeLintViolationCode, string>> = {
   tasks_code_header_missing: 'tasks-code-section-missing',
   code_change_requires_real_test_ids: 'code_change_requires_real_test_ids',
   deployment_decision_conflict: 'deployment_decision_conflict',
+  // L9：lint 与 next/status 判据同源，故 code 与 flow_reason 逐字相同（§2.79.1）。
+  'test-slice-manifest-missing': 'test-slice-manifest-missing',
+  'test-slice-manifest-invalid': 'test-slice-manifest-invalid',
+  'test-slice-manifest-unsupported': 'test-slice-manifest-unsupported',
+  'test-slice-assignment-ambiguous': 'test-slice-assignment-ambiguous',
+  'slice-task-state-inconsistent': 'slice-task-state-inconsistent',
 };
 
 export interface ChangeLintViolation {
@@ -123,7 +139,11 @@ export type ChangeLintWarningCode =
   | 'sql_dialect_precheck_skipped'
   // §2.73：L8 条目守恒由违规降级为警告——诊断逐字不变，只改严重度分级。
   | 'delta_implicit_id_removal'
-  | 'delta_removed_unknown_id';
+  | 'delta_removed_unknown_id'
+  // §2.79.1 / §2.68.4：指纹漂移是审计观察，不进流程分支，故 L9 的 stale 走 warning。
+  | 'test-slice-manifest-stale'
+  // 待办步骤而非缺陷：记为 violation 会让 merge 拒绝它自己要写入的 marker（见 L9 实现处注释）。
+  | 'no_delta_spec_marker_missing';
 
 export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
@@ -1000,6 +1020,56 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
       : `${notice.degradation.dialect} 的语法/执行预检适配器尚未实现；结构检查已全部通过，本条不阻断交付`,
   }));
 
+  // ── L9 下游阻塞理由预检（§2.79）────────────────────────────────────────────
+  // 回答的问题是「如果我现在报完成，下游会不会拒绝我」。判据**复用** next / status 的同一
+  // deriver：lint 不得自建第二套阻塞判定（那正是本轮要消除的判据副本形态）。
+  // 理由在当前阶段不成立、或判定器按设计不适用（结论为 null）时一律不报告——
+  // 「不适用」不是负面结论（根规范 §2.2.1）。
+  const blockWarnings: ChangeLintWarning[] = [];
+  const stepReason = getProposalStepReason(proposalDir, undefined, tasksContent);
+  if (stepReason === 'no_delta_spec_marker_missing') {
+    // **待办步骤，不是缺陷**，故走 warning：该理由只在「纯代码提案尚未 no-delta merge」时成立，
+    // 而那正是 merge 本身要消解的状态。merge 的准入判定就是本命令的 violations 全集，
+    // 把它记成 violation 会让 merge 拒绝它自己要修的前置——自检入口反倒成了死锁源。
+    // 可达性由 warning 通道满足（§2.79.2 的锚只要求「能被检出」，不要求严重度）。
+    blockWarnings.push({
+      code: 'no_delta_spec_marker_missing',
+      message: `logos/changes/${slug}/：提案需要代码实现，但 spec-complete marker（SPEC_MERGED）尚未写入`,
+      fix_hint: '对纯代码提案执行 openlogos merge <slug> 写入 no-delta SPEC_MERGED，再进入 plan-slices。',
+    });
+  }
+  const sliceState = deriveSliceVerificationState(root, proposalDir, {
+    change: slug, module: moduleCtx.moduleId,
+  });
+  const sliceReason = sliceState?.reason ?? null;
+  if (sliceReason && sliceReason !== 'code_change_requires_real_test_ids') {
+    const manifestPath = `logos/changes/${slug}/TEST_SLICE_MANIFEST.json`;
+    // 违规明细原样带出：逐条保留 validator 的 code / path / message / fix_hint。
+    // JSON 指针拼在项目相对路径之后（形如 `<manifest>#$.slices[0].owned_test_ids`），
+    // 既满足 lint 的「path 为项目相对路径」契约，又不丢失定位精度。
+    const details = sliceState?.violations ?? [];
+    const rows = details.length > 0 ? details : [{
+      code: sliceReason, path: '$', message: `下游判定为 ${sliceReason}`,
+      fix_hint: '按 next 的恢复指引重跑 openlogos slice plan --file <slices.json>。',
+    }];
+    for (const item of rows) {
+      const path = `${manifestPath}#${item.path}`;
+      if (sliceReason === 'test-slice-manifest-stale') {
+        // 指纹漂移是审计观察，不进流程分支（§2.68.4）：走 warnings，不改退出码。
+        blockWarnings.push({
+          code: 'test-slice-manifest-stale',
+          message: `${path}：${item.message}`,
+          fix_hint: item.fix_hint,
+        });
+        continue;
+      }
+      pushViolation(acc, 9, {
+        code: sliceReason as ChangeLintViolationCode,
+        path, message: item.message, fix_hint: item.fix_hint,
+      });
+    }
+  }
+
   // 全序稳定排序：①检查项 L1→L8；②path 字典序；③源位置出现序；④code；⑤message
   const sorted = [...acc.violations].sort((a, b) => {
     const oa = acc.order.get(a)!;
@@ -1027,12 +1097,13 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     { id: 6, label: `delta 路径合法（${mergeableCount} mergeable / ${invalidCount} invalid）`, violations: countFor(6) },
     ...(guiActive ? [{ id: 7, label: 'UI 声明结构合法', violations: countFor(7) }] : []),
     { id: 8, label: '条目守恒（ID 隐式删除拦截）', violations: countFor(8) },
+    { id: 9, label: '下游阻塞理由预检（ProposalBlockReason 全覆盖）', violations: countFor(9) },
   ];
 
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings, ...conservationWarnings]
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings, ...conservationWarnings, ...blockWarnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {

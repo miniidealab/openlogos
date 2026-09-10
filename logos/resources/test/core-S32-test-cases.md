@@ -358,3 +358,37 @@
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
 - UT-S32-96 必须**同时**断言「身份相等」与「文件字节哈希不等」。只断言前者的话，把身份函数错写成常量也能通过——两条一起断言才锁住「换了绑定对象」这件事本身。
 - ST-S32-41 步骤⑦ 与 ST-S32-42 步骤② 的指纹相等断言**必须在切片已勾选之后**求值。若在勾选前比较，「勾选不参与 `task_fingerprint`」这一前提根本没被检验，而它一旦不成立，即使排除了 `generated_at`，恢复后的身份仍会变化、AC-SLICE-RECOVER-06 与 AC-SLICE-ID-05 一并落空。
+
+## S32 slice plan 写入侧 fail-closed 测试
+
+> 覆盖写入侧判据单点化与 fail-closed 落盘（功能规格 §2.78；根规范 `spec/test-slice-manifest.md` §2.2、§2.2.1、§10；场景 S32「切片规划单条受控写入口时序」EX-32.23～EX-32.25）。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S32-100 | 非法 `spec_targets` 被写入口拒绝 | 构造合法度其余各项均满足、仅某片 `spec_targets` 含不在 `logos/resources/test/` 下路径的 `slices.json`（复刻 2026-09-10 事故输入：把全部 7 个 merge 目标填入）→ `slice plan` **非零退出**且退出码为 2；stdout 逐条列出 validator violations，每条含 `code` / `path` / `message` / `fix_hint` 且 `path` 精确指向出问题的切片与字段。**修复前该输入被写入口放行、两产物照常落盘，直到下游 `next` 才判 `test-slice-manifest-invalid`** |
+| UT-S32-101 | 拒绝时两产物零改写（原子性） | 前置：`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 已有有效内容，记录二者字节与 mtime。以 UT-S32-100 的非法输入执行 → 两文件的**字节与 mtime 均不变**；提案目录下不残留任何临时文件。特别地，`tasks.md` 不得出现「已被新 `[code]` 段覆盖」的中间态——**修复前的实现先以普通 `writeFileSync` 提交 `tasks.md` 再写 manifest，该断言必失败** |
+| UT-S32-102 | 判据取自读取侧单点，写入口无副本 | 参数化构造读取侧 `deriveSliceVerificationState` 判为 `invalid` 的各类输入（`spec_targets` 越界、`owned_test_ids` 未归属 / 不存在、`slice_id` 重复、`task_text` 空、数组字段为空）→ 每一类均被 `slice plan` 拒绝，且其输出的 violation `code` 与直接调用读取侧 validator 对同一产物所得**逐条相等**（集合、顺序、`fix_hint` 全同）。断言写入侧不产生读取侧没有的码、也不遗漏读取侧有的码 |
+| UT-S32-103 | 合法输入零行为变化 | 以既有合法 `slices.json`（≥2 切片）执行 → exit 0；`[code]` 段文本与条目顺序、`TEST_SLICE_MANIFEST.json` 内容、五个 `data` 字段、人读摘要与本变更前**逐字节一致**；`task_fingerprint` 仍等于依刚落盘的 `tasks.md` 重算之值。证明校验前置只增加一次判定，不改变任何合法产出 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S32-43 | 非法输入当轮自愈的端到端 | 真实 CLI，临时项目：① 以含非法 `spec_targets` 的 `slices.json` 执行 `openlogos slice plan --file` → exit 2，两产物字节未变，输出含可定位的 `fix_hint`；② `openlogos next` 此时**不出现** `test-slice-manifest-invalid` 阻塞（因为非法产物根本没有落盘），前沿仍停在 `plan-slices`；③ 依 ① 的 `fix_hint` 把 `spec_targets` 改为 `logos/resources/test/` 下的真实测试规格路径后重跑 → exit 0，两产物落盘且互相一致；④ `openlogos verify` 进入 `slice-checkpoint` 模式，增量验收能力零回归。全程未产生 `blocked(no-progress)` 形态的停点 |
+
+### 追溯与覆盖
+
+- AC-SLICE-FAILCLOSED-01 非法 `spec_targets` 在写入口即被拒绝并给出可定位违规：UT-S32-100、ST-S32-43 步骤①。
+- AC-SLICE-FAILCLOSED-02 拒绝时 `tasks.md` 与 manifest 均零改写、无临时文件残留：UT-S32-101、ST-S32-43 步骤①。
+- AC-SLICE-FAILCLOSED-03 写入侧与读取侧判据逐条同源（无手抄副本）：UT-S32-102。
+- AC-SLICE-FAILCLOSED-04 违规明细原样输出、退出码 2、操作错误仍为 1：UT-S32-100、UT-S32-102。
+- AC-SLICE-FAILCLOSED-05 合法路径零行为变化：UT-S32-103、ST-S32-43 步骤③④。
+- 功能规格：§2.68、§2.78；根规范：`spec/test-slice-manifest.md` §2.2、§2.2.1、§8、§10；场景：S32 EX-32.23～EX-32.25。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
+- 「零改写」必须直接读回磁盘字节（含 mtime）比对，不得以命令 stdout 的自述作为通过依据——本次缺陷的形态正是「命令自称成功而产物不合法」。
+- UT-S32-102 的两侧对照必须调用**同一个** validator 入口取基准值，禁止在测试内复述一份期望违规清单——那会把判据副本从实现搬进测试。

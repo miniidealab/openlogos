@@ -103,12 +103,15 @@ describe('merge 目标集由 delta 文件派生 — S39（§2.71）', () => {
     expect(readFileSync(join(f.proposalDir, 'proposal.md'), 'utf8')).not.toContain('基线闭包计划');
     expect(readFileSync(join(f.proposalDir, 'proposal.md'), 'utf8')).not.toContain('baseline_closure');
 
-    // ① change-lint：检查项编号上界为 8、无 L9 行，envelope 无 baseline_closure
+    // ① change-lint：无 baseline-closure 检查项，envelope 无 baseline_closure
+    // （原断言以「编号上界为 8」表达该结论；§2.79 起 L9 是「下游阻塞理由预检」，
+    //  与基线闭包无关，故改为按语义断言：L9 在场且为该检查项、且本提案通过。）
     const lintText = invoke(['change-lint', '--slug', f.slug], f.root);
     expect(lintText.status, lintText.stderr).toBe(0);
-    expect(lintText.stdout).not.toMatch(/^\s*[✓✗] L9 /m);
+    expect(lintText.stdout).not.toMatch(/基线闭包|baseline[_ ]closure/);
+    expect(lintText.stdout).toMatch(/^\s*✓ L9 下游阻塞理由预检/m);
     const shown = [...lintText.stdout.matchAll(/^\s*[✓✗] L(\d+) /gm)].map(m => Number(m[1]));
-    expect(Math.max(...shown)).toBeLessThanOrEqual(8);
+    expect(Math.max(...shown)).toBeLessThanOrEqual(9);
     const lintJson = invoke(['change-lint', '--slug', f.slug, '--format', 'json'], f.root);
     const envelope = JSON.parse(lintJson.stdout.trim().split('\n').pop()!);
     expect(envelope.data.pass).toBe(true);

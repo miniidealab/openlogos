@@ -186,3 +186,38 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - AC-LINT-DUP-01 重复标题可见且不参与门：UT-S35-136。
 - AC-L8-WARN-01 守恒降级且诊断不变：UT-S35-137。
 - 功能规格：§2.72.2、§2.73。
+
+## S35 阻塞理由自检覆盖与一致性锚测试
+
+> 覆盖 `change-lint` 新增检查项 L9（`ProposalBlockReason` 8/8 自检覆盖）与「阻塞理由 × 自检入口可达性」一致性锚（功能规格 §2.79；场景 S35「阻塞理由自检可达性与一致性锚」）。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-138 | 8 条阻塞理由逐条可被自检检出 | 逐条构造使该理由成立的最小提案状态：`no_delta_spec_marker_missing`（纯代码提案 `[code]` 已规划而 `SPEC_MERGED` 缺失）、`test-slice-manifest-missing` / `-invalid` / `-stale` / `-unsupported`、`test-slice-assignment-ambiguous`、`slice-task-state-inconsistent`、`code_change_requires_real_test_ids` | 对每种状态求 `runChangeLint` | 8 种状态**各自**被检出并点名对应 `ProposalBlockReason`；其中 7 条进 `violations` 且退出码为 2，`test-slice-manifest-stale` 进 `warnings` 且不改退出码。**修复前仅 `code_change_requires_real_test_ids` 一条被检出，其余 7 条 lint 全部 PASS** |
+| UT-S35-139 | L9 与 next/status 同判据同结论 | 同一组提案状态快照 | 依次求 `runChangeLint` 的 L9 结论与 `next` / `status` 的 `reason` 及 violations | 三者的理由取值与 violation 的 `code` / `path` / `message` / `fix_hint` **逐条相等**（集合、顺序全同）；lint 不产生下游没有的结论，也不遗漏下游有的结论。断言 lint 未自建第二套阻塞判定 |
+| UT-S35-140 | 一致性锚：理由全集 × 入口可达性 | 枚举 `ProposalBlockReason` 联合类型全集（当前 8 条） | 对每条理由求「是否存在至少一个自检入口（`change-lint` L3/L9 或 `slice plan` 写入口）能在其成立时检出它」 | 全集逐条可达；断言以**类型全集**为遍历源而非硬编码名单——新增第 9 条理由而未接线时本用例必挂红。允许放宽的方向只有「接入入口」，不得放宽断言本身 |
+| UT-S35-141 | 未阻塞与「判定器不适用」不误报 | ① 提案处于正常进行态（delta 未产完、`SPEC_MERGED` 尚未写入）；② 单切片计划（`deriveSliceVerificationState` 结论为 `null`） | 求 `runChangeLint` | 两种情形 L9 **均无输出**：①「delta 未产完时 marker 缺失」是正常进度不是缺陷；②「判定器按设计不适用」不是负面结论（根规范 §2.2.1）。L0～L8 的结论与本变更前逐条不变 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-27 | Agent 报完成前的自检闭环 | 真实 CLI，临时项目：① 构造 manifest 非法的活跃提案（绕过写入口直接放置非法在盘 manifest，模拟历史遗留态）→ `openlogos change-lint` exit 2 并点名 `test-slice-manifest-invalid`，输出含可定位的 `fix_hint`；② 同一状态下 `openlogos next` 给出的理由与 violations 与 ① **逐条一致**；③ 依 `fix_hint` 以 `openlogos slice plan --file` 重新规划为合法产物 → `change-lint` exit 0；④ 全程 `change-lint` 未写入任何文件（运行前后项目根字节快照相等，含 guard、marker、`logos-project.yaml` 与 verify 账本） |
+
+### 追溯与覆盖
+
+- AC-LINT-BLOCK-01 8 条阻塞理由逐条可被自检检出：UT-S35-138、ST-S35-27 步骤①。
+- AC-LINT-BLOCK-02 L9 与 `next` / `status` 同判据同结论（无第二套判定）：UT-S35-139、ST-S35-27 步骤②。
+- AC-LINT-BLOCK-03 一致性锚以类型全集遍历，新增理由未接线即挂红：UT-S35-140。
+- AC-LINT-BLOCK-04 强度分级：仅 stale 为 warning，其余为 violation：UT-S35-138。
+- AC-LINT-BLOCK-05 未阻塞态与判定器不适用不误报：UT-S35-141。
+- AC-LINT-BLOCK-06 只读红线不变（项目级零写入）：ST-S35-27 步骤④。
+- 功能规格：§2.30、§2.79；场景：S35「阻塞理由自检可达性与一致性锚」；根规范：`spec/test-slice-manifest.md` §2.2.1、§8。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- UT-S35-140 的遍历源必须是 `ProposalBlockReason` 类型全集的运行期投影，禁止在测试内复制一份理由名单——复制即等于把「新增理由要记得同步测试」变回纪律，正是本用例要消除的形态。
+- UT-S35-139 的对照必须调用真实的 `next` / `status` 派生路径取基准值，不得在测试内复述期望 violations。

@@ -162,8 +162,8 @@ describe('S32 切片规划单条受控写入口', () => {
     //    task_text 里「提及」了两个 ID，但某切片是否拥有它们只以 manifest 为准。
     const tasksProse = readFileSync(join(proposalDir(), 'tasks.md'), 'utf-8');
     expect(tasksProse).toContain('UT-S99-01');
-    const parsed = parseSlicesInput(readFileSync(join(root, 'slices.json'), 'utf-8'),
-      new Set(['UT-S99-01', 'ST-S99-01']));
+    // 判据单点化后 parseSlicesInput 只做纯输入形状检查，不再接收已定义 ID 集合（§2.78.1）。
+    const parsed = parseSlicesInput(readFileSync(join(root, 'slices.json'), 'utf-8'));
     expect(parsed[0].owned_test_ids).toEqual(['UT-S99-01', 'ST-S99-01']);
   });
 });

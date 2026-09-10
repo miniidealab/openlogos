@@ -10,11 +10,14 @@ import {
   realpathSync,
   readdirSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { parseDocument } from 'yaml';
 import { readTestChangeSet } from './test-change-set.js';
+
+export { readTestChangeSet };
 import { VERIFY_PASS_MARKER, hasSpecCompleteMarker } from './proposal-markers.js';
 import { TABLE_TEST_ID_RE, testIdScanRe } from './test-id.js';
 
@@ -105,7 +108,7 @@ export interface SliceVerificationState {
   manifest_data?: TestSliceManifestV1;
 }
 
-interface CodeTask {
+export interface CodeTask {
   text: string;
   checked: boolean;
   children: Array<{ text: string; checked: boolean }>;
@@ -438,16 +441,123 @@ export function isManifestRecoveryReason(reason: string | null | undefined): boo
   return RECOVERY_REASONS.has(reason ?? '');
 }
 
+/**
+ * 切片验证是否对**给定的 `[code]` 文本**启用——判据与 {@link shouldUseSliceVerification} 同一份，
+ * 只是把「读在盘 tasks.md」换成「读即将生效的 tasks.md」，供写入侧对**产物生效后**的形态提问。
+ */
+export function shouldUseSliceVerificationForTasks(tasksContent: string): boolean {
+  const tasks = parseCodeTasks(tasksContent);
+  // 只有 slice-planner 合法产出的切片才进入 v1：每个顶层切片都必须标注真实测试 ID。
+  // 这同时保留历史“切片1/切片2”无 ID 任务的 legacy final 行为；该类文本不能据以
+  // 确定性恢复 owned_test_ids，强行启用只会制造不可恢复歧义。
+  return tasks.length >= 2 && tasks.every(task => (task.text.match(testIdScanRe()) ?? []).length > 0);
+}
+
 export function shouldUseSliceVerification(proposalDir: string): boolean {
   if (existsSync(join(proposalDir, VERIFY_PASS_MARKER)) && !existsSync(join(proposalDir, TEST_SLICE_MANIFEST))) return false;
   if (!hasSpecCompleteMarker(proposalDir)) return false;
   const tasksPath = join(proposalDir, 'tasks.md');
   if (!existsSync(tasksPath)) return false;
-  const tasks = parseCodeTasks(readFileSync(tasksPath, 'utf8'));
-  // 只有 slice-planner 合法产出的切片才进入 v1：每个顶层切片都必须标注真实测试 ID。
-  // 这同时保留历史“切片1/切片2”无 ID 任务的 legacy final 行为；该类文本不能据以
-  // 确定性恢复 owned_test_ids，强行启用只会制造不可恢复歧义。
-  return tasks.length >= 2 && tasks.every(task => (task.text.match(testIdScanRe()) ?? []).length > 0);
+  return shouldUseSliceVerificationForTasks(readFileSync(tasksPath, 'utf8'));
+}
+
+/**
+ * 切片产物合法性的**唯一判据**（根规范 §2.2「校验判据必须与读取侧同一单点」、功能规格 §2.78.1）。
+ *
+ * 读取侧（`deriveSliceVerificationState`）与写入侧（`openlogos slice plan` 的落盘前校验）
+ * 调用同一个函数、得到同一组 violations（含 `code` / `path` / `message` / `fix_hint`）。
+ * **写入口不得另抄一份「结构 + 归属 + ID 真实性」检查**——那份副本按事故增量生长，
+ * 与正本的漂移无人检查，正是 fail-open 的真实形态。
+ *
+ * `changedTestIds` 为 null 时跳过「变更 ID 全量归属」对账（无可信 change set，或切片验证
+ * 按设计未启用）；其余判据一律照常执行。
+ */
+export function collectSliceManifestViolations(input: {
+  root: string;
+  manifestRaw: unknown;
+  tasksContent: string;
+  expected?: { change?: string; module?: string };
+  changedTestIds: string[] | null;
+}): { manifest: TestSliceManifestV1 | null; tasks: CodeTask[]; violations: TestSliceViolation[] } {
+  const { root, manifestRaw: raw, tasksContent, expected, changedTestIds } = input;
+  const violations: TestSliceViolation[] = [];
+  const manifest = parseManifestShape(raw, violations);
+  if (!manifest) return { manifest: null, tasks: [], violations };
+
+  const tasks = parseCodeTasks(tasksContent);
+  if (expected?.change && manifest.change !== expected.change) {
+    violations.push(violation('test-slice-manifest-invalid', '$.change', `change=${manifest.change} 与 ${expected.change} 不一致`, '按当前 guard slug 重建。'));
+  }
+  if (expected?.module && manifest.module !== expected.module) {
+    violations.push(violation('test-slice-manifest-invalid', '$.module', `module=${manifest.module} 与 ${expected.module} 不一致`, '按当前 guard module 重建。'));
+  }
+  if (manifest.slices.length !== tasks.length) {
+    violations.push(violation('test-slice-manifest-invalid', '$.slices', 'slices 数量与 [code] 顶层任务数不一致', '保留任务边界并重建 manifest。'));
+  }
+  manifest.slices.forEach((slice, index) => {
+    if (tasks[index] && slice.task_text !== tasks[index].text) {
+      violations.push(violation('test-slice-manifest-stale', `$.slices[${index}].task_text`, 'task_text 与对应 [code] task 不一致', '保留任务文本并重建 manifest/fingerprint。'));
+    }
+  });
+
+  const sliceIds = manifest.slices.map(slice => slice.slice_id);
+  for (const id of new Set(sliceIds)) {
+    if (sliceIds.filter(item => item === id).length > 1) {
+      violations.push(violation('test-slice-id-duplicate', '$.slices', `slice_id 重复：${id}`, '为每个顶层切片生成唯一稳定 ID。'));
+    }
+  }
+  const owned = manifest.slices.flatMap(slice => slice.owned_test_ids);
+  for (const id of new Set(owned)) {
+    if (owned.filter(item => item === id).length > 1) {
+      violations.push(violation('test-slice-test-id-duplicate', '$.slices', `测试 ID 多重归属：${id}`, '人工消歧后仅保留一个 owning slice。'));
+    }
+  }
+  // 归属对账依赖可信 change set。写入侧在切片验证尚未启用（单切片）或无 change set 时
+  // 传 null——跳过的是**输入不存在**的对账，不是放宽判据（§2.2.1「不适用」不是负面结论）。
+  if (changedTestIds !== null) {
+    for (const id of changedTestIds.filter(id => !owned.includes(id))) {
+      violations.push(violation('test-slice-test-id-missing', '$.slices', `变更测试 ID 未归属：${id}`, '把该 ID 归入唯一能力切片。'));
+    }
+    for (const id of owned.filter(id => !changedTestIds.includes(id))) {
+      violations.push(violation('test-slice-test-id-unknown', '$.slices', `owned_test_ids 含非本提案变更 ID：${id}`, '删除未知 ID 或补齐已合并测试规格。'));
+    }
+  }
+
+  const allSpecTargets = uniqSorted(manifest.slices.flatMap(slice => slice.spec_targets));
+  const definitions = new Map<string, string[]>();
+  for (const target of allSpecTargets) {
+    const safe = safeProjectPath(root, target);
+    if (!safe || !safe.startsWith('logos/resources/test/') || !existsSync(join(root, ...safe.split('/')))) {
+      violations.push(violation('test-slice-manifest-invalid', '$.slices[].spec_targets', `非法或不存在的测试规格路径：${target}`, '使用项目根相对的已合并测试规格路径。'));
+      continue;
+    }
+    for (const id of extractTableTestIds(readFileSync(join(root, ...safe.split('/')), 'utf8'))) {
+      definitions.set(id, [...(definitions.get(id) ?? []), safe]);
+    }
+  }
+  manifest.slices.forEach((slice, index) => {
+    const selectors = new Set(slice.runner_selectors);
+    for (const id of slice.owned_test_ids) {
+      const paths = definitions.get(id) ?? [];
+      if (paths.length !== 1 || !slice.spec_targets.includes(paths[0])) {
+        violations.push(violation('test-slice-test-id-unknown', `$.slices[${index}].owned_test_ids`, `${id} 未在该 slice 的唯一 spec_target 中定义`, '修复 spec_targets 或 owned_test_ids。'));
+      }
+      if (!selectors.has(id)) {
+        violations.push(violation('test-slice-manifest-invalid', `$.slices[${index}].runner_selectors`, `selector 未覆盖 owned ID：${id}`, '为该 ID 增加可执行 selector。'));
+      }
+    }
+  });
+
+  const actualTaskFingerprint = computeTaskFingerprint(tasksContent);
+  let actualSpecFingerprint: string | null = null;
+  try { actualSpecFingerprint = computeSpecFingerprint(root, allSpecTargets); } catch { /* 路径违规已报告 */ }
+  if (manifest.task_fingerprint !== actualTaskFingerprint) {
+    violations.push(violation('test-slice-manifest-stale', '$.task_fingerprint', 'task fingerprint 漂移', '保留 checkbox 与任务边界，重建 manifest。'));
+  }
+  if (actualSpecFingerprint && manifest.spec_fingerprint !== actualSpecFingerprint) {
+    violations.push(violation('test-slice-manifest-stale', '$.spec_fingerprint', 'spec fingerprint 漂移', '从已合并测试规格重建 manifest。'));
+  }
+  return { manifest, tasks, violations };
 }
 
 export function deriveSliceVerificationState(
@@ -514,8 +624,10 @@ export function deriveSliceVerificationState(
     human_action_required: true, test_change_set: changeSetSummary };
   }
 
-  const violations: TestSliceViolation[] = [];
-  const manifest = parseManifestShape(raw, violations);
+  const { manifest, tasks, violations } = collectSliceManifestViolations({
+    root, manifestRaw: raw, tasksContent: readFileSync(join(proposalDir, 'tasks.md'), 'utf8'),
+    expected, changedTestIds: changeSet.value.changed_test_ids,
+  });
   const summary: SliceManifestSummary = {
     status: 'invalid', path: relManifest, schema,
     task_fingerprint: typeof record?.task_fingerprint === 'string' ? record.task_fingerprint : null,
@@ -527,78 +639,7 @@ export function deriveSliceVerificationState(
     human_action_required: false,
     test_change_set: changeSetSummary,
   };
-
-  const tasksContent = readFileSync(join(proposalDir, 'tasks.md'), 'utf8');
-  const tasks = parseCodeTasks(tasksContent);
-  if (expected?.change && manifest.change !== expected.change) {
-    violations.push(violation('test-slice-manifest-invalid', '$.change', `change=${manifest.change} 与 ${expected.change} 不一致`, '按当前 guard slug 重建。'));
-  }
-  if (expected?.module && manifest.module !== expected.module) {
-    violations.push(violation('test-slice-manifest-invalid', '$.module', `module=${manifest.module} 与 ${expected.module} 不一致`, '按当前 guard module 重建。'));
-  }
-  if (manifest.slices.length !== tasks.length) {
-    violations.push(violation('test-slice-manifest-invalid', '$.slices', 'slices 数量与 [code] 顶层任务数不一致', '保留任务边界并重建 manifest。'));
-  }
-  manifest.slices.forEach((slice, index) => {
-    if (tasks[index] && slice.task_text !== tasks[index].text) {
-      violations.push(violation('test-slice-manifest-stale', `$.slices[${index}].task_text`, 'task_text 与对应 [code] task 不一致', '保留任务文本并重建 manifest/fingerprint。'));
-    }
-  });
-
-  const sliceIds = manifest.slices.map(slice => slice.slice_id);
-  for (const id of new Set(sliceIds)) {
-    if (sliceIds.filter(item => item === id).length > 1) {
-      violations.push(violation('test-slice-id-duplicate', '$.slices', `slice_id 重复：${id}`, '为每个顶层切片生成唯一稳定 ID。'));
-    }
-  }
-  const owned = manifest.slices.flatMap(slice => slice.owned_test_ids);
-  for (const id of new Set(owned)) {
-    if (owned.filter(item => item === id).length > 1) {
-      violations.push(violation('test-slice-test-id-duplicate', '$.slices', `测试 ID 多重归属：${id}`, '人工消歧后仅保留一个 owning slice。'));
-    }
-  }
   const changedIds = changeSet.value.changed_test_ids;
-  for (const id of changedIds.filter(id => !owned.includes(id))) {
-    violations.push(violation('test-slice-test-id-missing', '$.slices', `变更测试 ID 未归属：${id}`, '把该 ID 归入唯一能力切片。'));
-  }
-  for (const id of owned.filter(id => !changedIds.includes(id))) {
-    violations.push(violation('test-slice-test-id-unknown', '$.slices', `owned_test_ids 含非本提案变更 ID：${id}`, '删除未知 ID 或补齐已合并测试规格。'));
-  }
-
-  const allSpecTargets = uniqSorted(manifest.slices.flatMap(slice => slice.spec_targets));
-  const definitions = new Map<string, string[]>();
-  for (const target of allSpecTargets) {
-    const safe = safeProjectPath(root, target);
-    if (!safe || !safe.startsWith('logos/resources/test/') || !existsSync(join(root, ...safe.split('/')))) {
-      violations.push(violation('test-slice-manifest-invalid', '$.slices[].spec_targets', `非法或不存在的测试规格路径：${target}`, '使用项目根相对的已合并测试规格路径。'));
-      continue;
-    }
-    for (const id of extractTableTestIds(readFileSync(join(root, ...safe.split('/')), 'utf8'))) {
-      definitions.set(id, [...(definitions.get(id) ?? []), safe]);
-    }
-  }
-  manifest.slices.forEach((slice, index) => {
-    const selectors = new Set(slice.runner_selectors);
-    for (const id of slice.owned_test_ids) {
-      const paths = definitions.get(id) ?? [];
-      if (paths.length !== 1 || !slice.spec_targets.includes(paths[0])) {
-        violations.push(violation('test-slice-test-id-unknown', `$.slices[${index}].owned_test_ids`, `${id} 未在该 slice 的唯一 spec_target 中定义`, '修复 spec_targets 或 owned_test_ids。'));
-      }
-      if (!selectors.has(id)) {
-        violations.push(violation('test-slice-manifest-invalid', `$.slices[${index}].runner_selectors`, `selector 未覆盖 owned ID：${id}`, '为该 ID 增加可执行 selector。'));
-      }
-    }
-  });
-
-  const actualTaskFingerprint = computeTaskFingerprint(tasksContent);
-  let actualSpecFingerprint: string | null = null;
-  try { actualSpecFingerprint = computeSpecFingerprint(root, allSpecTargets); } catch { /* 路径违规已报告 */ }
-  if (manifest.task_fingerprint !== actualTaskFingerprint) {
-    violations.push(violation('test-slice-manifest-stale', '$.task_fingerprint', 'task fingerprint 漂移', '保留 checkbox 与任务边界，重建 manifest。'));
-  }
-  if (actualSpecFingerprint && manifest.spec_fingerprint !== actualSpecFingerprint) {
-    violations.push(violation('test-slice-manifest-stale', '$.spec_fingerprint', 'spec fingerprint 漂移', '从已合并测试规格重建 manifest。'));
-  }
 
   if (violations.length > 0) {
     const ambiguous = violations.some(item => item.code === 'test-slice-test-id-duplicate');
@@ -704,9 +745,20 @@ export function appendSliceCheckpoint(
   return true;
 }
 
-export function writeTestSliceManifestAtomic(path: string, manifest: TestSliceManifestV1): void {
+/** 序列化 manifest 为落盘字节（`slice plan` 与临时文件走同一份，杜绝两种字节形态）。 */
+export function serializeTestSliceManifest(manifest: TestSliceManifestV1): Buffer {
+  return Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+}
+
+/**
+ * 把字节写入 `<path>.tmp` 并 fsync/关闭，返回临时文件路径——**不** rename（根规范 §10）。
+ *
+ * 校验发生在这一步之后、rename 之前：调用方读回临时文件内容交
+ * {@link collectSliceManifestViolations} 判定，全过才 {@link commitStagedFile}，
+ * 不过则 {@link discardStagedFile}，正式产物字节零改写。
+ */
+export function stageFileAtomic(path: string, bytes: Buffer): string {
   mkdirSync(dirname(path), { recursive: true });
-  const bytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   const temp = `${path}.tmp`;
   const fd = openSync(temp, 'w');
   try {
@@ -715,6 +767,27 @@ export function writeTestSliceManifestAtomic(path: string, manifest: TestSliceMa
   } finally {
     closeSync(fd);
   }
-  // 写入侧只保证原子替换；完整 schema/归属校验由 deriveSliceVerificationState 完成。
+  return temp;
+}
+
+/** 把已校验通过的临时文件原子 rename 为正式产物。 */
+export function commitStagedFile(temp: string, path: string): void {
   renameSync(temp, path);
+}
+
+/** 校验不通过或异常时删除临时文件；正式产物保持调用前字节。 */
+export function discardStagedFile(temp: string): void {
+  try { if (existsSync(temp)) unlinkSync(temp); } catch { /* 清理失败不改变「正式产物未被触碰」的结论 */ }
+}
+
+/**
+ * 临时文件 → fsync → 原子 rename（根规范 §10）。
+ *
+ * **本函数只承担崩溃一致性，不承担合法性判定**：判定由 {@link collectSliceManifestViolations}
+ * 在 rename 之前完成，写入侧不得自建判据副本（根规范 §2.2、功能规格 §2.78.1）。
+ * 直接调用本函数即跳过该判定，故仅限「产物已判定合法」的调用点使用。
+ */
+export function writeTestSliceManifestAtomic(path: string, manifest: TestSliceManifestV1): void {
+  const temp = stageFileAtomic(path, serializeTestSliceManifest(manifest));
+  commitStagedFile(temp, path);
 }

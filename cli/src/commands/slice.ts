@@ -11,7 +11,7 @@
  * ——正文中「被提及」的测试 ID 不等于该切片「拥有」它。故结构化产物的生成权留在 CLI，
  * AI 只提供结构化 slices.json 输入。
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { OutputFormat } from '../lib/json-output.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
@@ -19,37 +19,80 @@ import { extractCodeSectionRaw, replaceCodeSectionBody } from '../lib/proposal-l
 import {
   TEST_SLICE_MANIFEST,
   TEST_SLICE_SCHEMA,
+  collectSliceManifestViolations,
+  commitStagedFile,
   computeSpecFingerprint,
   computeTaskFingerprint,
-  extractDefinedVerificationIds,
-  writeTestSliceManifestAtomic,
+  discardStagedFile,
+  readTestChangeSet,
+  serializeTestSliceManifest,
+  shouldUseSliceVerificationForTasks,
+  stageFileAtomic,
   type TestSliceManifestSlice,
   type TestSliceManifestV1,
+  type TestSliceViolation,
 } from '../lib/test-slice-manifest.js';
 
 export type SlicePlanErrorCode =
   | 'SLICE_PLAN_NO_ACTIVE_CHANGE'
   | 'SLICE_PLAN_INPUT_INVALID'
   | 'SLICE_PLAN_DUPLICATE_SLICE_ID'
-  | 'SLICE_PLAN_UNKNOWN_TEST_ID';
+  | 'SLICE_PLAN_UNKNOWN_TEST_ID'
+  | 'SLICE_PLAN_ARTIFACT_INVALID';
 
 export class SlicePlanError extends Error {
-  constructor(readonly code: SlicePlanErrorCode, message: string) {
+  /**
+   * `violations` 只在产物被判定不合法时非空——它们由读取侧同一 validator 产出，
+   * 必须**原样带出**（逐条保留 code / path / message / fix_hint、顺序稳定）：
+   * 折叠为一句摘要等于把一个当轮可自愈的失败升级为停点（功能规格 §2.78.3）。
+   */
+  constructor(
+    readonly code: SlicePlanErrorCode,
+    message: string,
+    readonly violations: TestSliceViolation[] = [],
+  ) {
     super(message);
     this.name = 'SlicePlanError';
   }
 }
 
-const SLICE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const ARRAY_FIELDS = ['owned_test_ids', 'runner_selectors', 'spec_targets'] as const;
-
-function nonEmptyStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length > 0
-    && value.every(item => typeof item === 'string' && item.trim() !== '');
+/**
+ * 退出码分级（功能规格 §2.78.3）：产物非法为 2，操作错误为 1。
+ * 对只判断「是否非零」的既有消费方零影响。
+ */
+export function slicePlanExitCode(code: SlicePlanErrorCode): 1 | 2 {
+  return code === 'SLICE_PLAN_ARTIFACT_INVALID' ? 2 : 1;
 }
 
-/** 解析并校验结构化 slices.json；任一失败即抛错，调用方保证零副作用。 */
-export function parseSlicesInput(raw: string, definedTestIds: Set<string>): TestSliceManifestSlice[] {
+/**
+ * 把读取侧 violation 的稳定码映射为写入口的稳定错误码（identity 保留在 `violations` 里）。
+ *
+ * 这不是第二套判据——判定完全由 validator 完成，本函数只为既有消费方保留可分派的顶层码。
+ */
+function slicePlanCodeFor(violations: TestSliceViolation[]): SlicePlanErrorCode {
+  const codes = new Set(violations.map(item => item.code));
+  if (codes.has('test-slice-id-duplicate')) return 'SLICE_PLAN_DUPLICATE_SLICE_ID';
+  if (codes.has('test-slice-test-id-unknown') || codes.has('test-slice-test-id-missing')
+    || codes.has('test-slice-test-id-duplicate')) return 'SLICE_PLAN_UNKNOWN_TEST_ID';
+  return 'SLICE_PLAN_ARTIFACT_INVALID';
+}
+
+const ARRAY_FIELDS = ['owned_test_ids', 'runner_selectors', 'spec_targets'] as const;
+
+/** 纯类型守卫：数组是否为字符串数组（空数组由读取侧判据裁决，不在此拦截）。 */
+function stringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+/**
+ * 解析结构化 `slices.json`——**只做纯输入形状检查**（功能规格 §2.78.1）。
+ *
+ * 保留在此的判据仅限「连产物都构造不出来」的前置：输入是合法 JSON、`slices` 是非空数组、
+ * 各字段类型正确。`slice_id` 词法与唯一性、`task_text` 非空、数组字段非空、`owned_test_ids`
+ * 归属与真实性、`spec_targets` 路径前缀——**一律交读取侧同一 validator 判定**
+ * （{@link collectSliceManifestViolations}），写入口不得再抄一份。
+ */
+export function parseSlicesInput(raw: string): TestSliceManifestSlice[] {
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -62,36 +105,22 @@ export function parseSlicesInput(raw: string, definedTestIds: Set<string>): Test
     throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID', 'slices 必须是非空数组（或含非空 slices 键的对象）');
   }
 
-  const seen = new Set<string>();
   return rows.map((row, index) => {
     const item = row as Record<string, unknown>;
-    const sliceId = item.slice_id;
-    if (typeof sliceId !== 'string' || !SLICE_ID_RE.test(sliceId)) {
-      throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID',
-        `slices[${index}].slice_id 缺失或非法（须为 kebab-case）`);
+    if (typeof item.slice_id !== 'string') {
+      throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID', `slices[${index}].slice_id 必须是字符串`);
     }
-    if (seen.has(sliceId)) {
-      throw new SlicePlanError('SLICE_PLAN_DUPLICATE_SLICE_ID', `slice_id 在提案内重复：${sliceId}`);
-    }
-    seen.add(sliceId);
     for (const field of ARRAY_FIELDS) {
-      if (!nonEmptyStringArray(item[field])) {
+      if (!stringArray(item[field])) {
         throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID',
-          `slices[${index}].${field} 必须是非空字符串数组`);
+          `slices[${index}].${field} 必须是字符串数组`);
       }
     }
-    if (typeof item.task_text !== 'string' || item.task_text.trim() === '') {
-      throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID', `slices[${index}].task_text 必须是非空字符串`);
-    }
-    // owned_test_ids 是 verify 计算 eligible 的输入，必须在已合并测试规格中真实存在，
-    // 否则 eligible 会含幽灵 ID 并以「缺结果」误红。
-    const unknown = (item.owned_test_ids as string[]).filter(id => !definedTestIds.has(id));
-    if (unknown.length > 0) {
-      throw new SlicePlanError('SLICE_PLAN_UNKNOWN_TEST_ID',
-        `slices[${index}] 的 owned_test_ids 含未在已合并测试规格中定义的 ID：${unknown.join('、')}`);
+    if (typeof item.task_text !== 'string') {
+      throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID', `slices[${index}].task_text 必须是字符串`);
     }
     return {
-      slice_id: sliceId,
+      slice_id: item.slice_id,
       task_text: item.task_text,
       owned_test_ids: item.owned_test_ids as string[],
       runner_selectors: item.runner_selectors as string[],
@@ -192,6 +221,43 @@ function resolveActiveProposal(root: string, explicitSlug?: string): { slug: str
 }
 
 /**
+ * 以**读取侧同一判据**判定「即将生效的这一对产物」（根规范 §2.2、功能规格 §2.78.1/§2.78.2）。
+ *
+ * 判定输入是临时文件的内容，不是在盘旧字节。归属对账（变更 ID 是否恰好全部归属）只在
+ * 该对产物**生效后切片验证确实启用**、且 change set 可信时进行——这与读取侧的启用条件
+ * 逐字相同，故两侧对同一对产物给出同一结论。
+ */
+function validateStagedArtifacts(
+  root: string,
+  proposalDir: string,
+  slug: string,
+  tasksTemp: string,
+  manifestTemp: string,
+): TestSliceViolation[] {
+  const tasksContent = readFileSync(tasksTemp, 'utf8');
+  let manifestRaw: unknown;
+  try {
+    manifestRaw = JSON.parse(readFileSync(manifestTemp, 'utf8'));
+  } catch (error) {
+    return [{
+      code: 'test-slice-manifest-invalid', path: '$',
+      message: `manifest 无法严格解析：${String(error)}`,
+      fix_hint: '修复 JSON 或由 slice-planner 原子重建。',
+    }];
+  }
+  let changedTestIds: string[] | null = null;
+  if (shouldUseSliceVerificationForTasks(tasksContent)) {
+    const changeSet = readTestChangeSet(root, proposalDir, { change: slug, module: 'core' });
+    if (changeSet.valid) changedTestIds = changeSet.value.changed_test_ids;
+  }
+  return collectSliceManifestViolations({
+    root, manifestRaw, tasksContent,
+    expected: { change: slug, module: 'core' },
+    changedTestIds,
+  }).violations;
+}
+
+/**
  * 一次性完成切片规划落盘。校验全部前置于写入——任一失败时 tasks.md 与 manifest
  * 均未被触碰（零副作用）。重复执行幂等：同一输入得到同一 [code] 与同一 manifest。
  */
@@ -202,30 +268,57 @@ export function planSlices(root: string, slicesFile: string, explicitSlug?: stri
     throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID', `slices 文件不存在：${slicesFile}`);
   }
 
-  const defined = new Set(extractDefinedVerificationIds(root));
-  const slices = parseSlicesInput(readFileSync(inputPath, 'utf8'), defined);
+  const slices = parseSlicesInput(readFileSync(inputPath, 'utf8'));
 
-  // —— 至此全部校验通过，开始写入 ——
   const tasksPath = join(proposalDir, 'tasks.md');
   const manifestPath = join(proposalDir, TEST_SLICE_MANIFEST);
   // 整节替换会丢弃旧 body，故勾选状态必须在覆盖**之前**从旧 [code] 与旧 manifest 读出（§2.68.5）。
   // 初次规划无旧条目也无旧 manifest → retained 全 false，与本能力上线前逐字节一致。
   const oldTasks = readFileSync(tasksPath, 'utf8');
   const retained = resolveRetainedCheckState(slices, extractCodeSectionRaw(oldTasks), readOldManifestSlices(manifestPath));
-  writeFileSync(tasksPath, replaceCodeSectionBody(oldTasks, renderCodeSection(slices, retained)));
+  const nextTasks = replaceCodeSectionBody(oldTasks, renderCodeSection(slices, retained));
 
-  // 指纹依**刚写出的** tasks.md 计算：写入者与指纹计算者同一方、同一时刻，漂移窗口从构造上消失。
+  // 指纹依**即将生效的** tasks.md 计算：写入者与指纹计算者同一方、同一时刻，漂移窗口从构造上消失。
   const specTargets = [...new Set(slices.flatMap(slice => slice.spec_targets))].sort();
+  let specFingerprint: string;
+  try {
+    specFingerprint = computeSpecFingerprint(root, specTargets);
+  } catch {
+    // spec_targets 路径违规（越界 / 不存在）——判据仍归读取侧，此处只给一个可算的占位，
+    // 让 validator 以「非法或不存在的测试规格路径」原样点名，而不是抛裸异常。
+    specFingerprint = `sha256:${'0'.repeat(64)}`;
+  }
   const manifest: TestSliceManifestV1 = {
     schema: TEST_SLICE_SCHEMA,
     change: slug,
     module: 'core',
-    task_fingerprint: computeTaskFingerprint(readFileSync(tasksPath, 'utf8')),
-    spec_fingerprint: computeSpecFingerprint(root, specTargets),
+    task_fingerprint: computeTaskFingerprint(nextTasks),
+    spec_fingerprint: specFingerprint,
     generated_at: new Date().toISOString(),
     slices,
   };
-  writeTestSliceManifestAtomic(manifestPath, manifest);
+
+  // ── fail-closed 落盘（根规范 §2.2.1 / §10，功能规格 §2.78.2）──
+  // 两产物先各写同目录临时文件并 fsync/关闭；随后以**读取侧同一判据**对「即将生效的这一对
+  // 产物」整体判定；全过才逐一原子 rename，任一不过即删除临时文件——正式产物字节零改写。
+  // 禁止先以普通写入提交 tasks.md 再写 manifest：那条路径下 manifest 非法时 tasks.md 已被
+  // 改写且无从恢复，直接违反 §2.2「两产物的原子一致性」。
+  const tasksTemp = stageFileAtomic(tasksPath, Buffer.from(nextTasks, 'utf8'));
+  let manifestTemp: string | null = null;
+  try {
+    manifestTemp = stageFileAtomic(manifestPath, serializeTestSliceManifest(manifest));
+    const violations = validateStagedArtifacts(root, proposalDir, slug, tasksTemp, manifestTemp);
+    if (violations.length > 0) {
+      throw new SlicePlanError(slicePlanCodeFor(violations),
+        `切片产物未通过校验，两产物均未落盘（${violations.length} 条违规）`, violations);
+    }
+    commitStagedFile(tasksTemp, tasksPath);
+    commitStagedFile(manifestTemp, manifestPath);
+    manifestTemp = null;
+  } finally {
+    if (manifestTemp !== null) discardStagedFile(manifestTemp);
+    discardStagedFile(tasksTemp);
+  }
 
   return {
     slug,
@@ -264,8 +357,23 @@ export function sliceCommand(sub: string | undefined, args: string[], format: Ou
   } catch (error) {
     const code = error instanceof SlicePlanError ? error.code : 'SLICE_PLAN_INPUT_INVALID';
     const message = error instanceof Error ? error.message : String(error);
-    if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('slice plan', code, message)));
-    else console.error(`Error: [${code}] ${message}`);
-    process.exit(1);
+    const violations = error instanceof SlicePlanError ? error.violations : [];
+    if (format === 'json') {
+      // 违规明细原样进结构化输出：消费方靠 code / path / fix_hint 定位，不得只拿到一句摘要。
+      const envelope = { ...makeErrorEnvelope('slice plan', code, message) } as unknown as Record<string, unknown>;
+      if (violations.length > 0) envelope.violations = violations;
+      console.error(JSON.stringify(envelope));
+    } else {
+      console.error(`Error: [${code}] ${message}`);
+      // 人读模式同样逐条原样输出：这些明细已带 fix_hint，是当轮自愈的全部所需（§2.78.3）。
+      for (const item of violations) {
+        console.error(`  - [${item.code}] ${item.path}：${item.message}`);
+        console.error(`    修复：${item.fix_hint}`);
+      }
+      if (violations.length > 0) {
+        console.error('  两产物均未落盘：tasks.md 与 TEST_SLICE_MANIFEST.json 字节保持本次调用前状态。');
+      }
+    }
+    process.exit(slicePlanExitCode(code));
   }
 }
