@@ -42,6 +42,7 @@ import { type PlanPackageEvaluation } from './plan-package-contract.js';
 import {
   parseDeltaBlocks,
   parseMarkdownHeadings,
+  parseRenamedTitle,
   resolveSectionAnchor,
 } from './markdown-section-authority.js';
 
@@ -433,10 +434,13 @@ function renamedReverseMap(blocks: ReturnType<typeof parseDeltaBlocks>): Map<str
   const reverse = new Map<string, string>();
   for (const b of blocks) {
     if (b.op !== 'RENAMED' || !b.anchor) continue;
-    const newTitle = b.lines.map(l => l.trim()).filter(Boolean)[0];
-    if (!newTitle || newTitle.startsWith('#')) continue;
+    // 合法性判据复用 parseRenamedTitle（正文恰一行、非空、不以 # 开头）——本文件不得自建第二份。
+    // 非法块不进映射表：否则一个畸形 RENAMED 会为后续锚提供不该存在的折算，把该报的
+    // 锚不可解析悄悄放行。
+    const parsed = parseRenamedTitle(b);
+    if (!parsed.ok) continue;
     const oldTitle = b.anchor.split(' > ').pop()!.replace(/\s*\[\d+\]$/, '').trim();
-    reverse.set(newTitle, oldTitle);
+    reverse.set(parsed.title, oldTitle);
   }
   return reverse;
 }

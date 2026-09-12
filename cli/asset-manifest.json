@@ -53,7 +53,7 @@
   "schemas": [
     {
       "path": "spec/authority-closure.md",
-      "sha256": "66f47ddb738a31645e2b572a019940800236dd6cffafbe2ba4955ccc811efd6c"
+      "sha256": "5c47787870d285b8261f2af4ead9de7fd10dc2f403076ffc9f7e2ffb65aa7819"
     },
     {
       "path": "spec/schema/next.schema.json",
@@ -102,5 +102,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "1caf3305b425da01de1712b53eb7ebb2d1fe68aeadaf49a761c0bdb5eab3ba98"
+  "payloadHash": "c4fab76e8d74a0a7d6bc7ec6e97af9981076d79642a0378d5f44813fc84d3956"
 }
