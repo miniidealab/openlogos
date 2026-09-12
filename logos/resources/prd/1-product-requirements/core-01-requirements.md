@@ -2684,3 +2684,68 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 
 - 不支持「更名同时改正文」——那是 `RENAMED` + `MODIFIED` 两块的组合，不是一个 op 的职责。
 - 不支持在文档中间**插入**新标题（例如为丢失父标题的孤儿小节补回章节头）。该能力仍缺失，属已知边界，不在本次范围内。
+
+## verify 人工用例判据单一事实源与一致性判据输入要求
+
+### 用户问题与价值
+
+下游 RunLogos 一个**零失败、100% 覆盖**的提案被 Gate 3.5 以「result ledger is inconsistent」拒收，
+而账本与验收报告各自都是自洽的。排查落到 verify 自身的两处判据：
+
+- **判据分叉**：人工用例（manual）的判定不只看测试用例表**首格**里 ID 之后的标记，
+  还对**整行**做 `[manual]` 子串匹配。于是一条**描述列写了裸字面量**的自动化用例被判为人工用例，
+  从 `defined` 删除、从 `executed_count` 的结果过滤中排除；而 `passed_count` / `skipped_count`
+  不经该过滤——同一屏的两个计数器取自不同集合。
+  触发形态毫不刁钻：**「manual 标记排除」这条能力自己的元用例**，描述里必然要写出那个标记。
+- **一致性判据消费展示值**：覆盖率先被 `Math.round` 成整数百分比，一致性判据再拿
+  `coverage_pct === 100` 去比。`defined` 足够大时（实测 6427），少 1 条未覆盖的真实覆盖率 99.98%
+  被舍入成 100，于是「99.98% 覆盖 + 1 条未覆盖」这一**完全自洽**的状态被判为账本矛盾。
+
+两者叠加使下游三条路全红：结果不入账命中前者、结果入账命中后者、改写触发行则破坏
+`SPEC_MERGED` 对已合并测试规格的逐字节封印（merge 后无合法编辑入口）。
+**下游不存在可用绕行**——判据在 CLI 内，必须在此修。
+
+价值：把「某 ID 是不是人工用例」与「账本是否自洽」这两件事各自收敛到**一个**判据上。
+判定认结构位置与事实本身，不认叙述文本，也不认显示形态。
+
+### 核心需求
+
+1. **manual 标记的声明位只在首格**：判定只读测试用例表首格中 ID 之后的标记
+   （`[manual]` / `[manual/<平台>]`）。描述列、断言列、备注列中出现的标记字面量是**叙述文本**，
+   一律不参与判定——与 change-lint「散文里提及 ID 不算保留」同一原则。
+2. **manual 判定单一事实源**：`defined` / `executed` / `passed` / `skipped` / `uncovered` 与报告渲染
+   必须消费**同一个**判定函数。任一计数器自带一套读法即为回归。
+3. **一致性判据只消费精确计数**：`coverage_full_with_uncovered` /
+   `coverage_incomplete_without_uncovered` / `pass_rate_below_100_without_fail` 等判据改用
+   覆盖与通过的**计数比较**；`coverage_pct` / `pass_rate_pct` 仅用于展示，**不得**参与任何判定。
+4. **既有判定强度零放宽**：真人工用例（首格带标记）仍被排除；未定义 ID 与人工 ID 出现在结果中
+   仍判 FAIL；零失败、零未覆盖、账本自洽三项 Gate 判据本身不变。
+5. **诊断必须能自证**：报告内部矛盾时，诊断须点名两个相互矛盾的计数器**取值与来源**，
+   而不是笼统地报「result ledger is inconsistent」——后者会把 CLI 自身的算术分叉归咎于下游账本
+   （实测导致下游约 40 分钟的误方向排查）。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-VERIFY-MANUAL-01 | 首格干净、**描述列含裸标记字面量**的用例被计入 `defined` 与 `executed`，且 `passed + failed + skipped == executed` |
+| AC-VERIFY-MANUAL-02 | 首格带 `[manual]` 或 `[manual/<平台>]` 的用例仍被排除；排除集合与收敛前逐字相同 |
+| AC-VERIFY-MANUAL-03 | `defined` / `executed` / `passed` / `uncovered` 与报告渲染取自同一判定函数（以同一函数被调用断言，非各自实现） |
+| AC-VERIFY-COUNT-01 | `covered == defined - 1` 且 `defined` 足够大时（真实覆盖率 99.5% 以上），**不得**产出 `coverage_full_with_uncovered` |
+| AC-VERIFY-COUNT-02 | 一致性判据的输入为精确计数；把 `coverage_pct` / `pass_rate_pct` 改为任意舍入精度都不改变任何判定结论 |
+| AC-VERIFY-COUNT-03 | 真实矛盾（如结果含未定义 ID、计数确实不等）仍被判出，判定强度不放宽 |
+| AC-VERIFY-MANUAL-04 | 修复进入**本机全局安装态**，并由安装态 smoke 证明（仓内源码修好但安装态未更新不算达成） |
+
+### 非目标
+
+- 不改 CLI 命令面、参数、退出码与 `--format json` 的字段集。
+- 不改 Gate 3.5 的三项判据本身，不放宽任何既有拒收条件。
+- 不执行 `npm publish` / git tag / GitHub Release（C01 用户裁定：只装本机）。
+
+### 追溯
+
+- 场景：S13（verify 结果账本与一致性校验）。
+- 测试：`core-S13-test-cases.md`（UT-S13-69 起、ST-S13-20 起）。
+- 部署后 smoke：`core-smoke-test-cases.md`（SMOKE-core-208 起）。
+- 来源：下游 RunLogos bug report
+  `logos/resources/reference/openlogos-verify-manual-marker-whole-line-count-skew-bug-report.md`。

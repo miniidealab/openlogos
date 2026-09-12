@@ -1675,3 +1675,33 @@
 - runner 记录全局入口 realpath、候选版本、隔离项目路径、delta 原文标题行与落盘标题行两侧字节。
 - 结果写入 smoke reporter（`smoke-results.jsonl`）；失败不得写 pass。
 - 标题比对必须**逐字节**，不得用 `includes` 近似——吞字的表现恰是「其余部分都在、只少了一段」，近似比对会放行。
+
+## verify 判据收敛进入安装态 smoke（SMOKE-core-208）
+
+> 覆盖「修复真的进了全局安装包」这一件事。下游 RunLogos 消费的是**安装态** CLI：仓内源码修好、
+> 安装态未更新，对下游等于没修——阻塞照旧且无人发现（`AC-VERIFY-MANUAL-04`）。
+> 用例在 `mktemp -d` 一次性隔离项目内执行，**只读**全局安装态，不触碰本机全局 prefix 与本仓活跃提案。
+> 判据用**行为断言**而非版本号比较：版本号只说明装了新包，不说明这两条判据真的收敛了。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-208 | 安装态的 verify 判据已收敛：描述列字面量不再误排除，舍入不再触发覆盖矛盾 | 全局已安装本次候选；`mktemp -d` 一次性临时项目，内含最小 OpenLogos 骨架 | ① 在临时项目内写一份测试规格：**A 行**首格为纯自动化 ID、描述列含裸 manual 标记字面量；**B 行**首格带 manual 标记（真人工用例）；另补若干普通 ID 使 `defined` 足够大，且刻意留 **1 条**未覆盖以构造真实覆盖率 ≥ 99.5%；② 按该规格写结果账本（A 行与普通 ID 全 `pass`，B 行无记录，留空的那条无记录）；③ 在临时项目内执行全局 `openlogos verify --format json`；④ 读回 `acceptance-report.md` | ① envelope 的 `summary` 内 `passed + failed + skipped == executed_count`，且 A 行 ID 计入 `executed_count`；② `mismatches` **不含** `coverage_full_with_uncovered` 与 `passed_failed_skipped_ne_executed`；③ `uncovered_count == 1` 并点名那条真实未覆盖的 ID（判定强度不放宽）；④ B 行仍被排除在 `defined` / `executed` 之外；⑤ 控制台 `执行用例` 与报告 `Executed cases` **取值相同** | 保留 envelope、报告 Summary 与临时项目规格片段；若 ①②⑤ 任一不成立说明安装态仍是旧判据 → 停止部署，按 `cli/rollback/` 回滚安装态，不得以「本地源码已修」了事；若 ③④ 不成立说明收敛过头（把真实矛盾或真人工用例也吞了）→ 同样回滚 |
+
+### 二、追溯与覆盖
+
+- AC-VERIFY-MANUAL-01 描述列字面量不影响计入（安装态）：SMOKE-core-208 步骤①③。
+- AC-VERIFY-MANUAL-02 真人工用例判定不变（安装态）：SMOKE-core-208 预期④。
+- AC-VERIFY-COUNT-01 舍入不再触发覆盖矛盾（安装态）：SMOKE-core-208 预期②。
+- AC-VERIFY-COUNT-03 真实矛盾仍被判出（安装态）：SMOKE-core-208 预期③。
+- AC-VERIFY-MANUAL-04 修复进入安装态：本条整体即该验收的唯一证据。
+- 场景：S13 >「人工用例判据的声明位与一致性判据的输入」（EX-7.6、EX-7.7、EX-7.9）；
+  仓库内对应用例：UT-S13-69～75、ST-S13-20～21。
+
+### 三、自动化与证据要求
+
+- runner 记录全局入口 realpath、安装态版本号、隔离项目路径、每一步的命令退出码与 envelope 摘要。
+- 结果写入 smoke reporter（`smoke-results.jsonl`）；**失败不得写 pass**。
+- runner **不得**以「安装态版本号等于本次候选」替代行为断言——版本号相等只证明装了新包，
+  不证明判据收敛；本条要的是可观察的行为差异（`mismatches` 为空 + 计数自洽）。

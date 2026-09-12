@@ -274,3 +274,40 @@
 - AC-VERIFY-LAYER-02 覆盖检查强度不变：UT-S13-68。
 - AC-VERIFY-LAYER-03 去字段：ST-S13-19。
 - 功能规格：§2.75。
+
+## S13 人工用例判据声明位与一致性判据输入测试
+
+> 覆盖 manual 判据只认首格、判定单一事实源、一致性判据只消费精确计数、既有判定强度零放宽。
+> 夹具用一次性隔离项目构造测试规格与结果账本，**不依赖本仓自身的规格内容**（否则夹具会随本仓规格漂移）。
+> 测试实现必须写入 OpenLogos reporter。S13 既有最大 ID 为 UT-S13-68 / ST-S13-19，本组从
+> **UT-S13-69 / ST-S13-20** 连续编号。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S13-69 | 首格干净、描述列含裸标记字面量 → 正常计入 | 隔离项目内规格含一行：首格为纯自动化 ID，描述列出现裸 manual 标记字面量；该 ID 的 `pass` 结果已入账 | 求 verify 的统计摘要 | 该 ID 计入 `defined` 与 `executed_count`；`passed + failed + skipped == executed_count`；不产出任何计数矛盾诊断。以整行匹配的旧判据喂同一夹具**必红**（`executed_count` 少 1） |
+| UT-S13-70 | 真人工用例判定逐字不变 | 两臂：首格分别带 `[manual]` 与 `[manual/<平台>]` 标记 | 逐臂求 `defined` / `executed` / manual 集合 | 两臂均被排除在 `defined` 与 `executed` 之外；排除集合与收敛前**逐字相同** |
+| UT-S13-71 | 只收不放：收敛后的人工集合是收敛前的子集 | 同一份规格，分别以收敛前判据与收敛后判据求人工集合 | 求两个集合的差 | 收敛后 ⊆ 收敛前；差集中的每个 ID 都满足「首格无标记」；不存在收敛后新增的人工 ID |
+| UT-S13-72 | 判定单一事实源 | 以 spy 包裹 manual 判定函数 | 跑一次完整统计与报告渲染 | `defined` / `executed` / `passed` / `uncovered` 与报告渲染**全部**经该函数求值；不存在第二处自带读法（断言 spy 被调用且无旁路） |
+| UT-S13-73 | 一致性判据不得消费舍入值 | `defined = 6427`、`covered = 6426`（真实覆盖率 99.984%，舍入为 100） | 求 `buildVerifyCountMismatches` | **不**产出 `coverage_full_with_uncovered`；`uncovered_count == 1` 并逐个点名。以消费 `coverage_pct` 的旧判据喂同一输入**必红** |
+| UT-S13-74 | 展示精度与判定解耦 | 同一账本，`coverage_pct` / `pass_rate_pct` 分别按 0 / 2 / 4 位小数格式化 | 逐档求判定结论 | 三档的 `mismatches` 集合与 Gate 结论**逐字段相同**——展示精度不得影响任何判定 |
+| UT-S13-75 | 真实矛盾仍被判出（强度不放宽） | 三臂：① 结果含未定义 ID；② 结果含人工 ID；③ `passed + failed + skipped != executed` 的真实不等 | 逐臂求结论 | 三臂分别判 `unknown_test_result_id` / `manual_test_result_id` / `passed_failed_skipped_ne_executed`；收敛不得吞掉任何一条 |
+
+### 场景测试
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S13-20 | 真实 CLI 端到端复现下游阻塞形态 | 真实 CLI；一次性隔离项目复刻下游现场：规格含「描述列写了裸 manual 标记」的元用例、结果账本零 fail、覆盖差 1 条 | ① 跑 `verify`；② 跑 `verify --format json`；③ 读 `acceptance-report.md` | ① Gate 按真实通过率判定，不再出现 `coverage_full_with_uncovered` / `passed_failed_skipped_ne_executed`；② envelope 的 `summary` 内 `passed + failed + skipped == executed_count`，且 `executed_count` 与报告 `Executed cases` 一致；③ 报告与控制台的 `Executed` 取值相同（此前分别为 6427 与 6426） |
+| ST-S13-21 | 矛盾诊断可自证来源 | 人为构造一处真实计数矛盾 | 跑 `verify` 读诊断 | 诊断点名两个相互矛盾的计数器**取值与来源**，而非只给 `result ledger is inconsistent`；据该诊断可直接定位到哪一侧算错 |
+
+### 追溯与覆盖
+
+- AC-VERIFY-MANUAL-01 描述列字面量不影响计入：UT-S13-69、ST-S13-20。
+- AC-VERIFY-MANUAL-02 真人工判定逐字不变：UT-S13-70、UT-S13-71。
+- AC-VERIFY-MANUAL-03 判定单一事实源：UT-S13-72。
+- AC-VERIFY-COUNT-01 舍入不得触发覆盖矛盾：UT-S13-73。
+- AC-VERIFY-COUNT-02 判定输入为精确计数：UT-S13-74。
+- AC-VERIFY-COUNT-03 真实矛盾仍被判出：UT-S13-75。
+- 诊断可自证：ST-S13-21。
+- 场景：S13 >「人工用例判据的声明位与一致性判据的输入」（EX-7.6～EX-7.9）。
