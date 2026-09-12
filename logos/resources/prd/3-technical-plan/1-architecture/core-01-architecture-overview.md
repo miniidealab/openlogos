@@ -1207,131 +1207,6 @@ RunLogos / 外部 driver 负责执行调度：
 - audit / progress 中的失败事件必须保留可恢复原因，不能只保留最终抽象原因。
 - 当 driver 自身无法验证 artifacts 时，应输出 `driver-cannot-validate-artifacts`，而不是推断 agent 虚报。
 
-## 二十六、按触达目标规格闭包架构（S39，baseline-on-touch）
-
-### 26.1 职责边界
-
-S39 分成“语义规划”和“确定性校验”两层：
-
-- **change-writer（语义所有者）**：理解提案意图、识别 feature/scenario、判断 API/DB/架构/测试适用性、区分现状证据与新增意图，生成闭包矩阵及一目标一 task。
-- **共享 closure evaluator（结构事实所有者）**：规范化目标路径、对账磁盘存在性与 `MODIFY|CREATE`、查重、比较 plan 与实际 delta、执行类别最低完整度检查。change-lint 与 merge 只能打包调用，不得复制判据。
-- **专业 Skill（内容生产者）**：按 Why → What → How 顺序读取 effective view，生成场景/API/DB/测试内容，但不得自行创建第二份同目标 delta。
-- **merge-executor（apply 所有者）**：对已通过检查的唯一 delta 做修改或创建、更新元数据与 resource_index，并以事务方式写 `SPEC_MERGED`。
-
-### 26.2 核心数据结构
-
-```ts
-type BaselineClosureMode = "MODIFY" | "CREATE" | "SKIP" | "AMBIGUOUS";
-
-interface BaselineClosureTarget {
-  scenarioIds: string[];
-  category: "requirement" | "feature" | "architecture" | "scenario" |
-    "api" | "database" | "test" | "orchestration" | "deployment" | "smoke" |
-    "spec" | "skill" | "decision";
-  deltaPath: string | null;
-  targetPath: string | null;
-  canonicalTargetPath: string | null;
-  mode: BaselineClosureMode;
-  reason: string;
-  applicabilityEvidence: string[];
-  missingEvidence: string[];
-}
-
-interface BaselineClosurePlan {
-  policy: "on-touch-v1";
-  schemaVersion: 1;
-  touchedScenarioIds: string[];
-  targets: BaselineClosureTarget[];
-}
-```
-
-持久化单一事实源是 proposal `## 基线闭包计划` 下唯一 fenced YAML 的 `baseline_closure` 对象；固定含独立 `touched_scenario_ids[]` 与 `targets[]`。CLI 只把 snake_case 持久字段映射为上述内部 camelCase，不得从 tasks 反向派生 targets，也不得用人读表补漏。tasks 与 deltas 是后续对账集合，不是 SKIP/AMBIGUOUS 或目标全集来源；不新增独立状态文件。
-
-每个持久 target 固定含 `category`、`scenario_ids`、`mode`、`delta_path`、`reason`、`evidence[]`、`missing_evidence[]`。字段/组合、排序、重复 YAML key 与 touched scenario 维度完备规则以 `spec/baseline-closure.md` §5.1–5.3 为唯一规范。parser 必须启用 duplicate-key fail-closed；未知 schema_version 不降级 legacy。
-
-### 26.3 effective view
-
-`EffectiveTargetView(target)` 的唯一公式：
-
-```text
-已合并 target bytes
-  + 当前 change 同 canonical target 的唯一合法 delta 预期结果
-  = 下游生成器读取的 effective view
-```
-
-- 没有当前 delta 时读取主规格；目标缺失且规划 CREATE 时视为空目标。
-- staged/partial baseline-seed、其它活跃/归档 change、未授权草稿不进入 effective view。
-- 同目标出现多个 task、多个 delta 来源或路径归一化冲突时直接失败，不定义“最后一个赢”。
-- API 生成器必须读取有效时序；DB/测试生成器必须读取有效需求、场景和 API，保证 Why → What → How 有序传播。
-
-### 26.4 canonical target resolver
-
-建议新增共享模块 `cli/src/lib/baseline-closure.ts`（最终文件边界由 slice-planner/实现阶段确认），复用 `delta-classify` 的目录映射与 containment：
-
-1. 将 `deltas/prd/**`、`deltas/api/**`、`deltas/database/**`、`deltas/scenario/**`、`deltas/test/**`、`deltas/spec/**`、`deltas/skills/**`、`deltas/decisions/**` 映射到目标根；
-2. 统一 `/`、移除安全的 `.` 段、拒绝 `..`、绝对路径和 symlink escape；
-3. 按平台既有路径大小写策略规范化；
-4. 返回 canonical target path，作为 task 与 delta cardinality 的唯一键。
-
-该 resolver 必须由 change-lint、merge/proposal lifecycle 与 change-writer 产物检查共同消费，禁止各自维护路径映射副本。
-
-### 26.5 plan/spec 两阶段 evaluator
-
-| 阶段 | 输入 | 硬检查 |
-|---|---|---|
-| plan | proposal targets + tasks + 主目标存在性 | 严格 schema；touched scenario 维度完备；`P(proposal non-skip)==T(tasks)`；模式与存在性一致；AMBIGUOUS=0；部署结论一致 |
-| spec | plan 结果 + deltas | `P==T==D(deltas)`；一目标一文件；marker/整文件协议合法；CREATE 最低完整；既有 L4/L6/L7/L8 全过 |
-| merge | spec evaluator 结果 | 纵深重跑结构判据；任何漂移 fail-closed，不生成可 apply 指令 |
-
-legacy proposal 未声明 `baseline_closure.policy: on-touch-v1` 时按既有 L1–L8 兼容，不突然阻塞存量活跃 change；新版提案模板写入策略后 L9 fail-closed。
-
-### 26.6 CREATE 最低完整度检查
-
-最低完整度采用类别注册表而非全文长度：
-
-- scenario：身份/目标、参与者、Mermaid sequenceDiagram、步骤、异常/边界；
-- API：OpenAPI/接口版本、paths/channels、schema、错误、鉴权/兼容；
-- database：实体/DDL、键/约束/索引、迁移/回滚；
-- test：真实 UT/ST ID、主/异常/边界、追溯、OpenLogos reporter；
-- orchestration：请求链、断言、fixture/cleanup、reporter；
-- decision：状态、背景、决策、理由、备选、影响面、来源。
-
-检查只证明结构完整，不声称业务语义正确；业务正确性仍由方案审核与后续测试证明。
-
-### 26.7 CREATE apply 与元数据事务
-
-缺失目标继续使用 `ADDED` 语义，不新增 CREATE merge 操作：Markdown 用 ADDED 章节；API/DB 非 Markdown 用整文件首行 `ADDED` 控制 marker，声明 canonical target 并在 parse/落盘前确定性剥离。MODIFY 的非 Markdown 目标同理用首行 MODIFIED 做整文件替换。merge-executor 在 apply 前确认存在性、marker mode 与声明 target 一致；若 plan 后漂移，停止且不静默覆盖。
-
-apply 事务顺序：
-
-1. 预计算所有 MODIFY/CREATE 目标新字节与旧字节备份；
-2. 校验 canonical target 唯一、CREATE 完整度与 S37 守恒；API/DB 非 Markdown 还须剥离首行 marker 后通过 OpenAPI/YAML/JSON 或方言 SQL parse/执行预检；
-3. 原子写全部目标；
-4. 登记新 scenario/decision 编号并更新 `resource_index`；
-5. 事后点数与路径对账；
-6. 全部成功才写 `SPEC_MERGED`，失败按备份回滚。
-
-本提案 apply 时登记 S39/F04、推进 `scenario_counter.next_id=40`，并在 D02 落盘后推进 `decision_counter.next_id=3`。
-
-### 26.8 seed、skip 与引导实现映射
-
-- `adopt.ts`：完成后主提示改为直接创建 change；兼容字段可继续写入。
-- `next.ts`/`status.ts`：保留 baseline JSON shape，但 seed state 不决定默认 action；活跃提案始终优先。
-- `project-yaml.ts`：对 `bootstrap: adopted` 将历史 `skip_phases` 解释为 Initial 豁免；S39 适用性另由场景证据决定。
-- baseline-seed 恢复门必须位于任何 resources/index/coverage 读取之前并覆盖真实读取；安全 open run/未提交 staging 排除后可继续，未终结 journal 无法恢复则硬报 `baseline_commit_in_progress`，不得运行 closure evaluator。
-- change-lint/i18n：增加 L9 稳定 codes 与 fix_hint；无 JIT warning 通道。
-
-### 26.9 架构不变量
-
-1. canonical target path 一对一映射 task、delta、apply 结果。
-2. 语义判断只有 change-writer 一处；确定性判据只有共享 evaluator 一处。
-3. CREATE 是计划模式；ADDED 是既有 merge 控制语义。Markdown ADDED 为章节，API/DB ADDED 为可剥离整文件首行，两者均不得写进最终目标。
-4. effective view 只含已合并资源与当前 change 的唯一 delta。
-5. API 必须源自时序图；测试必须追溯需求/场景/API/DB。
-6. 不新增 baseline 状态、JIT 确认、verified 写回、baseline/JIT gate 或专用 marker；API/DB 整文件首行控制语法不属于确认状态，且合并后不得留在目标中。
-7. 未触达区域零写入、零迁移、零强制 seed 成本。
-8. proposal `touched_scenario_ids` 与 `targets[]` 是独立全集；L9 以它们发现漏场景/漏维度，不允许任务集合自证完备。
-
 ## 二十七、切片验收事实、Gate 与恢复架构
 
 ### 27.1 组件与单一事实源
@@ -1453,80 +1328,6 @@ OpenLogos 提供 C/R、violation、manifest state、next node 与 Gate 结论；
 5. attempted slice 从 manifest + checkpoint 恢复，不从 checkbox 反推。
 6. pending 不是结果；checkpoint PASS 不等于 final PASS。
 7. final 始终覆盖全部已定义非 manual 测试。
-
-## 场景 CREATE 的结构化 Markdown 完整性架构（S39）
-
-### 组件边界与所有权
-
-- **`ScenarioCreateCompletenessContract`**：持有 canonical 标题、受控读取别名和各结构维度阈值；它是 CLI 校验器的单一事实源。Skill 以文字引用该合同，不在运行时维护第二份正则集合。
-- **`MarkdownAuthorityScanner`**：在原始 delta 中识别 fenced code、HTML 注释、ATX 标题、章节边界、有序列表和 Mermaid fence；只返回权威正文节点，不判断 S39 业务适用性。
-- **`createCompletenessProblems()`**：消费 scanner 结果并按目标类别运行结构校验；scenario 分支不再对整段 payload 执行关键词正则。
-- **change-lint / merge**：继续调用同一个 baseline closure evaluator，前者前移诊断，后者作为纵深防御；二者不得复制标题或完整性算法。
-- **change-writer / scenario-architect**：只负责生成 canonical 文档并在交付前运行 lint，不决定 CLI 如何解析 Markdown。
-
-### 数据与控制流
-
-```mermaid
-flowchart LR
-    Delta["场景 CREATE Delta"] --> Scan["MarkdownAuthorityScanner"]
-    Scan --> Headings["权威标题与章节边界"]
-    Scan --> Lists["有序列表节点"]
-    Scan --> Mermaid["Mermaid 围栏节点"]
-    Headings --> Contract["ScenarioCreateCompletenessContract"]
-    Lists --> Contract
-    Mermaid --> Contract
-    Contract --> Problems["createCompletenessProblems"]
-    Problems --> Lint["change-lint"]
-    Problems --> Merge["merge 纵深预检"]
-```
-
-扫描器只读取当前 change 的目标 delta 字节，不读取其它 change、archive 或 partial seed staging。该能力不持久化新状态，不引入 API/数据库边界。
-
-### 结构合同
-
-```ts
-interface ScenarioCreateCompletenessContract {
-  canonicalStepHeading: '步骤说明';
-  acceptedStepHeadingAliases: readonly [
-    '步骤说明', '主路径步骤', '主路径', '主流程', '正常流程', 'main path'
-  ];
-  minimumOrderedSteps: 3;
-  minimumParticipants: 2;
-  minimumMessages: 1;
-}
-```
-
-标题匹配对去除首尾空白后的完整标题文本做大小写不敏感比较，不做子串命中。步骤别名只在围栏与 HTML 注释之外的 ATX 标题节点生效；散文、链接、表格、代码样例或 Mermaid 消息中的相同文字均不生效。
-
-### 校验算法
-
-1. 复用 authority scan 状态机划分普通正文、fenced code 与 HTML 注释；未闭合围栏按现有 Markdown 安全策略保守排除其后内容。
-2. 收集权威标题及其章节范围；步骤别名命中的章节必须恰好一个，缺失或重复均失败。
-3. 在步骤章节直属正文中收集有序列表项；至少 3 项，每项去除 marker 后正文非空。普通段落、无序列表和其它章节中的编号不计入。
-4. 收集 info string 为 `mermaid` 的 fenced block；其中必须有 `sequenceDiagram`、至少 2 个 `participant|actor` 声明和至少 1 条 `->>|-->>|->|-->` 消息。普通 fence、散文或注释中的字符串不计入。
-5. 异常/边界章节与追溯章节必须各有唯一权威标题，并在排除注释、围栏和空白后含非空正文或列表。
-6. 将所有缺口稳定排序后返回；同一文件可一次报告多个精确缺口，方便 producer 一轮修复。
-
-### 失败策略与诊断
-
-外层 violation code 保持 `create_target_incomplete` 兼容，`message`/`missingEvidence`/`fix_hint` 精确区分：步骤章节缺失或重复、步骤列表少于 3 项或有空项、Mermaid 围栏无效、参与者或消息不足、异常/边界为空、追溯为空。解析器异常、未知结构或目标模式漂移均 fail-closed，不退回全文正则。
-
-change-lint 只读返回 exit 2；merge 在任何资源写入和 `MERGE_PROMPT.md` 生成前重跑同一 evaluator。任一失败不得修改资源、guard、counter、resource index、`SPEC_MERGED` 或其它 marker。
-
-### 实现映射
-
-- `cli/src/lib/baseline-closure.ts`：用结构化 scenario 分支替换现有全文正则表，并保持其它类别判据不变。
-- 现有 authority scan 模块或提取后的共享 Markdown scanner：输出标题、章节、有序列表与 fenced block 结构；不得为 S39 复制第二个 fence/comment 状态机。
-- `cli/test/s39-baseline-on-touch.test.ts`：覆盖 canonical/alias 矩阵、围栏与注释反例、列表阈值、Mermaid 结构和空章节。
-- change-lint/merge 场景测试：覆盖四份历史 fixture 与真实缺步骤时的原子失败。
-
-### 架构不变量
-
-1. canonical 写入与兼容读取分离；兼容别名不能改变新文档输出格式。
-2. 结构证据只来自权威 Markdown 节点，关键词本身永远不是完整性证据。
-3. change-lint 与 merge 对同一字节必须得出相同问题集合。
-4. 本修复只改变 scenario CREATE 完整性，不放宽其它类别、不删除 merge 纵深预检。
-5. RunLogos 的 write-delta lint barrier 是独立 companion change；本仓只保证 CLI/Skill 合同完整。
 
 ## 二十八、AI Tool Adapter Registry 与 ZCode 薄适配架构
 
@@ -2200,430 +2001,6 @@ abort 只在 apply 前进入 failed/aborted，并清理全部私有制品；appl
 
 主要落点为 `cli/src/lib/merge-transaction.ts`、`cli/src/commands/merge-transaction.ts`、公共 schema、status/next projector、安装态 smoke runner 与 reporter。
 
-## 三十五、Merge Transaction Preflight/Reopen 架构
-
-
-### 35.1 组件与所有权
-
-```text
-MergeTransactionService
-  ├─ PreflightBuilder              纯只读构建 canonical view
-  ├─ PreflightValidator            校验 before/final/derived identity
-  ├─ PreflightErrorAttributor      structured target → Agent slot
-  ├─ MergeSealWriter               preflight_sha256 → seal_sha256
-  ├─ MergeReopenWriter             原子 collecting 状态替换
-  └─ BaselineClosureApplyWriter    applying/journal/正式批提交
-```
-
-- `PreflightBuilder` 独占 planned/derived target 聚合，不写 transaction、journal、staging 或正式目标。
-- `PreflightErrorAttributor` 只消费结构化 error 与冻结 target map，不解析 message。
-- `MergeReopenWriter` 只允许首写前转换 sealed/ready→collecting；apply writer 一旦接管即不可逆。
-- status/next 只读取 transaction projection，不读取 merge-content/merge-staging 反推状态。
-
-### 35.2 内部数据模型
-
-```ts
-interface MergePreflightView {
-  schema: 'openlogos/merge-preflight@1';
-  transaction_id: string;
-  plan_sha256: string;
-  target_set_sha256: string;
-  targets: Array<{
-    path: string;
-    mode: 'CREATE' | 'MODIFY';
-    producer: 'agent' | 'openlogos';
-    before_sha256: string | null;
-    final_sha256: string;
-  }>;
-  test_change_set_sha256: string;
-  final_target_paths: string[];
-  sha256: string;
-}
-
-interface MergePreflightErrorFact {
-  code: string;
-  target_paths: string[];
-  producer: 'agent' | 'openlogos' | 'mixed' | 'unknown';
-  retryable: boolean;
-}
-```
-
-数组必须去重稳定排序；hash 使用 canonical serialization。内部 preflight 记录为 optional，以便读取 legacy stored transaction；不进入公共 projection schema。
-
-### 35.3 Seal 与 Apply 同一性
-
-新 seal 同时绑定 content hashes 与 `preflight_sha256`。apply 的首个可变动作之前重算 view：
-
-1. 校验 Delta source、正式 before、slot content/sealed hash；
-2. 重建 planned/derived final bytes；
-3. 重建测试定义与 change set；
-4. 比较 target path 集合及所有 hash；
-5. 完全相等才持久化 `phase=applying` 并进入 batch writer。
-
-metadata 在 seal 后漂移属于 fatal before/derived drift，不允许动态合并新 metadata。
-
-### 35.4 Legacy Sealed 分支
-
-缺 preflight record 且 phase=sealed 的 0.14.1 transaction 进入 legacy branch。它在首写前运行同一 builder/validator：pass 时沿用旧 seal和旧 receipt identity算法；attributable content fail 时执行 reopen。reopen 后的下一次 seal切换到新 preflight算法。completed、applying、存在 journal/receipt/marker 的事务不进入本分支。
-
-### 35.5 Reopen 提交协议
-
-1. 在锁/单 writer 边界内复核无 apply artifacts 和正式 drift。
-2. 计算 rejected slot set；若任一错误不可唯一归因则整体 fatal。
-3. 构造 collecting snapshot：外层 seal null、所有 target sealed hash null、rejected content hash null、其余 content hash不变。
-4. durable temp → fsync → rename → fsync 持久化 transaction。
-5. 状态成功后清理 rejected merge-content/merge-staging；清理幂等且不影响 projection。
-
-禁止跨文件“同时删除”伪原子语义。状态文件是提交点，私有字节删除只是垃圾回收。
-
-### 35.6 不可逆边界与失败分类
-
-| 事实 | 允许动作 |
-|---|---|
-| ready/sealed、无 apply artifacts、可归因 Agent 内容错 | reopen collecting |
-| contract/schema/plan/source/before/seal/path/internal invariant | fail closed，保留 slot |
-| OpenLogos producer 或 mixed/unknown attribution | fail closed，保留 slot |
-| applying/journal/staging/backup/正式新字节 | recover/rollback only |
-| completed receipt + marker | 幂等 completed only |
-
-### 35.7 实现与测试映射
-
-- `cli/src/lib/merge-transaction.ts`：builder 编排、seal/apply/reopen 状态边界。
-- `cli/src/lib/test-change-set.ts`：结构化 target-aware 错误。
-- `cli/src/lib/baseline-apply.ts`：apply 不可逆边界保持不变。
-- `cli/src/lib/merge-transaction-semantic.ts` 与 schemas/golden：公共 projection不增字段、collecting 投影同源。
-- UT/ST 覆盖 fault injection、legacy fixture、多 target attribution、metadata drift、残留私有字节与 reporter；SMOKE覆盖真实 0.14.2 tarball和 RunLogos 原事务。
-
-## 三十六、Authority Closure 单一语义权威架构
-
-### 36.1 边界与所有权
-
-- `spec/authority-closure.md`：方法论合同唯一源，拥有术语、schema 与 AC-01～AC-08。
-- 项目 Architecture Authority Registry：项目级 fact ownership 唯一实例源。
-- `authority_impact`：当前 change 的变化计划，只引用 fact，不重定义 owner 表。
-- `AuthorityClosureEvaluator`：Plan Package 中唯一结构化求值者。
-- Skill：角色执行投影；package/plugin/cache：由根源构建的资产投影。
-- status/next/flow/change-lint/merge precheck：evaluation 消费者，不拥有完成谓词。
-
-### 36.2 Authority Registry 数据模型
-
-```ts
-interface AuthorityFact {
-  fact_id: string;
-  semantic_scope: string;
-  authority_owner: string;
-  canonical_state: string;
-  sole_writer: string;
-  mutation_entry: string;
-  decision_api: string;
-  projections: Array<{
-    id: string;
-    consumer: string;
-    freshness_proof: string;
-    rebuild_rule: string;
-    writable: false;
-  }>;
-  recovery_source: string;
-  forbidden_shadow_sources: string[];
-  cutover_exit: string;
-}
-```
-
-`fact_id` 表达业务问题而非存储路径。canonical state 可由事务文件、数据库行、事件日志或服务状态承载；物理技术不改变其唯一裁决语义。
-
-### 36.3 数据流与控制流
-
-```mermaid
-flowchart LR
-    A[architecture-designer] -->|定义 fact ownership| R[Authority Registry]
-    R -->|fact reference| P[authority_impact]
-    P --> E[AuthorityClosureEvaluator]
-    E --> L[change-lint]
-    E --> S[status]
-    E --> N[next]
-    E --> F[flow]
-    R --> Q[scenario/deployment/test/review]
-    C[canonical authority] -->|generation/hash/receipt| V[read-only projections]
-    V -.禁止反向裁决.-> C
-```
-
-写控制流只允许 `command → mutation_entry → sole_writer → canonical_state → projection refresh`。读控制流优先 `decision_api → authority decision`；读取 projection 时必须携带 freshness identity。恢复控制流只从 canonical authority/receipt 开始，残留投影只能被校验、丢弃或重建。
-
-### 36.4 Authority Closure evaluator
-
-`AuthorityClosureEvaluator` 严格解析唯一 `openlogos/authority-impact@1`，验证 applicability、fact 引用、字段闭包、真实测试 ID、retired shadow source 与 cutover exit。它返回不可变 evaluation：summary、稳定 issues、ready。调用方只能序列化或派生展示，禁止重新按关键词求值。
-
-Plan Package evaluator 组合该结果与现有 proposal/tasks/clarification/baseline/UI 结果；同一输入只求值一次。change-lint/status/next/flow 可共享函数调用或规范化结果，但不能通过复制 parser 达成“看似一致”。
-
-### 36.5 writer cutover 状态机
-
-```text
-planned
-  -> authority identity frozen
-  -> old writer stopped
-  -> new mutation entry enabled
-  -> projections rebuilt
-  -> freshness/negative probes passed
-  -> cutover completed
-```
-
-在 `old writer stopped` 之前允许回滚到旧版本；新 writer 已产生不可逆业务写入后，回滚只能恢复兼容 reader/adapter，不能重新开启旧 writer 形成双权威。每阶段必须有持久化证据和幂等重试语义。
-
-### 36.6 失败与恢复策略
-
-- fact 无唯一 owner/writer：plan blocked，回到架构设计。
-- projection 无 freshness proof：不得作为 decision 输入；先重建或读 authority。
-- 响应丢失/进程重启：按 authority transaction/receipt 查询，不扫描 marker 猜测完成。
-- 旧 writer 未关闭或两个 mutation entry 可写：cutover 未闭合，部署/审查 Critical。
-- evaluator 输入 malformed：fail closed；不得退化为 not_applicable。
-- packaged asset hash 漂移：candidate smoke 失败，恢复冻结安装版本。
-
-### 36.7 实现映射
-
-- parser/evaluator：`cli/src/lib/authority-closure.ts`（名称可在实现切片中按现有模块边界微调，但唯一 evaluator 职责不变）。
-- Plan Package 组合：`cli/src/lib/plan-package.ts`。
-- CLI 输出：`cli/src/lib/change-lint.ts`、status/next/flow 既有 projection 层。
-- proposal scaffold 与资产：CLI templates、根 `skills/`、plugin/build asset manifest。
-- UT/ST：S04/S06/S07/S09/S12/S16/S19/S35；安装态：SMOKE-core-163～167。
-
-### 36.8 架构不变量
-
-1. 一个 `fact_id` 只有一个 authority owner/canonical state/sole writer/mutation entry。
-2. Registry、proposal、Skill、Decision 和根 spec 的职责不重叠；引用不复制。
-3. projection 永不成为 fallback authority，freshness 必须绑定权威 identity。
-4. 所有完成消费者共享 evaluator；不得实现第二状态机或第二 parser。
-5. writer 迁移必须有终点，不能以长期双写换取表面兼容。
-6. 静态门 + 故障注入 + Critical review 共同构成 AC-08，不夸大单一证据能力。
-
-## 三十七、Merge Transaction Section Anchor Authority 架构
-
-### 37.1 Authority Registry 实例
-
-```yaml
-- fact_id: delta.section-anchor-resolution
-  semantic_scope: 给定冻结 Markdown Delta 与 before/final 字节，哪个物质 block 命中哪个真实章节，以及该操作是否可被 seal/apply
-  authority_owner: MarkdownSectionAuthority
-  canonical_state: fence-aware Delta blocks、before/final heading tree 与唯一 ResolvedSectionAnchor(level,text,path,start,end)
-  sole_writer: MergeTransactionService 的受控 seal/apply writer
-  mutation_entry: submit-content 原始 slot 入库；seal preflight 与 apply 首写前重验
-  decision_api: parseDeltaBlocks、resolveSectionAnchor、verifyAgentMaterialOutcome、composeOpenLogosMarkdown
-  projections:
-    - id: change-lint-conservation-result
-      consumer: ChangeLintCommand 与 MergeCommand precheck
-      freshness_proof: Delta source SHA-256 + before SHA-256 + resolver result identity
-      rebuild_rule: 从冻结 Delta 与 before 字节重跑共享 parser/resolver/evaluator
-      writable: false
-    - id: merge-preflight-target-final
-      consumer: MergeSealWriter 与 MergeApplyWriter
-      freshness_proof: transaction/plan/target-set identity + source/before/content/final SHA-256 + preflight SHA-256
-      rebuild_rule: OpenLogos target 由 Delta/before 确定性合成；Agent target 从冻结 slot/hash恢复后重验 before/final
-      writable: false
-    - id: completed-target-section
-      consumer: 正式 resources/spec/skills 读取者
-      freshness_proof: completed receipt + final_hashes + artifact_hashes + seal/preflight identity
-      rebuild_rule: 从 completed transaction receipt 与正式 target hash 校验；不从 marker/mtime 反向重算
-      writable: false
-  recovery_source: MERGE_TRANSACTION.json、冻结 Delta/before/slot hash、preflight/seal identity、apply journal 与 completed receipt
-  forbidden_shadow_sources:
-    - merge-transaction.ts 非 fence-aware parseDeltaSections 正则
-    - validateAgentSemantics 整条路径扁平 heading 正则
-    - applyMarkdownDelta 精确 H2 匹配器
-    - 按叶标题首命中、mtime、文件存在性或 marker 反向裁决
-  cutover_exit: UT-S09-271～274、ST-S09-106～107、UT-S37-37～40、ST-S37-09～10 与 SMOKE-core-168 全部通过，且 RunLogos 原 transaction completed
-- fact_id: slice-transaction.terminal-verdict
-  semantic_scope: 某次 apply 写出的产物是否允许进入 completed——判据为「判定器未给出负面结论」，其中判定器按设计不适用（null）与判定 valid 同样放行
-  authority_owner: 切片事务的终态守门
-  canonical_state: verifyAppliedManifest 对刚写出产物的一次求值结果 { status, violations }；status 为 null 表示判定器不适用，非负面结论
-  sole_writer: applyTestSliceTransaction 的终态守门分支
-  mutation_entry: apply 写盘后、置 completed 前的一次 verifyAppliedManifest 调用
-  decision_api: verifyAppliedManifest；其适用性由 shouldUseSliceVerification 决定
-  projections:
-    - id: slice-transaction-projection-phase
-      consumer: slice transaction status/next 投影读取者
-      freshness_proof: 每次 apply 后按当前磁盘产物重新求值，不复用上一次结论
-      rebuild_rule: 重新调用 deriveSliceVerificationState
-      writable: false
-    - id: apply-error-envelope
-      consumer: CLI 失败输出与 RunLogos 面板
-      freshness_proof: 与触发回滚的同一次求值同源，violations 原样带出
-      rebuild_rule: 复跑 verifyAppliedManifest；失败终态必伴随非零 violations
-      writable: false
-  recovery_source: 磁盘上的 tasks.md 与 TEST_SLICE_MANIFEST.json
-  retired_shadow_sources:
-    - treat-null-verdict-as-failure
-  forbidden_shadow_sources:
-    - treat-not-applicable-verdict-as-invalid
-    - treat-null-verdict-as-valid-without-distinguishing-source
-    - split-single-slice-plan-to-satisfy-validator
-    - render-null-status-as-unknown-in-error-message
-  cutover_exit: 单切片计划的 apply 达 completed 且 [code] 正确写出；多切片与业务非法 slot 的既有回滚行为逐项不回归（UT-S32-59～60、ST-S32-20、SMOKE-core-176）；新增 UT-S32-61～64、ST-S32-21 与 SMOKE-core-178 全部通过
-- fact_id: slice-transaction.plan-mutability
-  semantic_scope: 某提案当前的切片划分是否仍可变更，以及变更需要满足的条件（未批准可自由重开；已批准需显式确认并作废旧批准）
-  authority_owner: 切片事务状态机
-  canonical_state: 当前事务 phase 与 SLICES_APPROVED 是否在场的联合状态；completed 携带 reopen 出边
-  sole_writer: 切片事务的 reopen 动作（作废当前规划、留痕、归档旧事务并重建 collecting）
-  mutation_entry: openlogos slice transaction reopen（--reason 必填；SLICES_APPROVED 在场须 --confirm-approved）
-  decision_api: slice transaction status 返回的 phase 与 allowed_actions
-  projections:
-    - id: slice-transaction-projection-allowed-actions
-      consumer: slice transaction status/next 投影读取者与 RunLogos 面板
-      freshness_proof: 每次读取按当前事务 phase 与 SLICES_APPROVED 是否在场求值
-      rebuild_rule: 重新读取事务文件与提案目录 marker；不可读时 fail-closed 拒绝重开
-      writable: false
-    - id: next-node-replan-hint
-      consumer: next 的 detail 渲染
-      freshness_proof: 与 allowed_actions 同一次求值同源；已批准后不主动提示
-      rebuild_rule: 依当前事务与 marker 状态重算
-      writable: false
-    - id: replan-audit-trail
-      consumer: 审计读取者（人 / RunLogos）
-      freshness_proof: SLICE_REPLANS.jsonl append-only，每次重开一行
-      rebuild_rule: 只追加不改写；历史行为事实记录，不可重算
-      writable: false
-  recovery_source: 提案目录内的事务文件、SLICES_APPROVED marker 与 SLICE_REPLANS.jsonl
-  retired_shadow_sources:
-    - treat-completed-plan-as-permanently-frozen
-  forbidden_shadow_sources:
-    - manual-delete-transaction-file-to-replan
-    - manual-edit-code-section-to-replan
-    - replan-without-audit-trail
-    - leave-half-old-half-new-code-section-or-manifest
-    - unconditional-replan-after-slices-approved
-  cutover_exit: completed 不再等同于永久冻结、受控重开成为唯一合法重划方式且必须留痕；安装态 smoke 完成「completed → 重开 → 提交不同划分 → apply → completed」全链且新划分完全替换旧划分、无残留（UT-S32-65～68、ST-S32-22、SMOKE-core-179 全部通过；未执行 reopen 时行为与 0.14.14 逐项一致）
-- fact_id: merge-transaction.spec-mutability
-  semantic_scope: 某提案的已合并规格是否仍可在提案内变更，以及变更需要满足的条件（终态不占活跃名额；completed 重开需非空原因，SPEC_MERGED 在场另需显式确认并作废之）
-  authority_owner: 合并事务状态机
-  canonical_state: 当前事务 phase、classification 与 SPEC_MERGED 是否在场的联合状态；completed 携带 reopen 出边、fatal failed 携带 abort 出边
-  sole_writer: 合并事务的终态出路动作（reopen 作废并归档；创建入口对 failed 终态的归档让位）
-  mutation_entry: openlogos merge transaction reopen（--reason 必填；SPEC_MERGED 在场须 --confirm-spec-merged）与 openlogos merge 的终态归档让位路径
-  decision_api: merge transaction status 返回的 phase 与 allowed_actions
-  projections:
-    - id: merge-transaction-projection-allowed-actions
-      consumer: merge transaction status/next 投影读取者与 RunLogos 面板
-      freshness_proof: 每次读取按当前事务 phase、classification 与 SPEC_MERGED 是否在场求值
-      rebuild_rule: 重新读取事务文件与提案目录 marker；不可读时 fail-closed 拒绝重开或重建
-      writable: false
-    - id: next-node-remerge-hint
-      consumer: next 的 detail 渲染
-      freshness_proof: 与 allowed_actions 同一次求值同源
-      rebuild_rule: 依当前事务与 marker 状态重算
-      writable: false
-    - id: merge-reopen-audit-trail
-      consumer: 审计读取者（人 / RunLogos）
-      freshness_proof: MERGE_REOPENS.jsonl append-only，每次重开一行
-      rebuild_rule: 只追加不改写；历史行为事实记录，不可重算
-      writable: false
-  recovery_source: 提案目录内的事务文件、归档事务（merge-transactions/）、SPEC_MERGED marker 与 MERGE_REOPENS.jsonl
-  retired_shadow_sources:
-    - treat-merge-terminal-state-as-permanently-frozen
-  forbidden_shadow_sources:
-    - manual-delete-transaction-file-to-remerge
-    - manual-edit-spec-merged-to-remerge
-    - remerge-without-audit-trail
-    - silently-rebuild-completed-transaction-without-confirm
-    - leave-stale-receipt-as-current-truth
-  cutover_exit: 终态不再等同于永久冻结、终态归档让位 + 受控 reopen 成为唯一合法重合并方式且必须留痕；安装态 smoke 完成「abort → 重建 → 重合并」与「completed → reopen → 修正 delta → 重合并 → SPEC_MERGED 重写」两条全链，且固定 0.14.16 对照复现三个死锁面（UT-S09-289～292、ST-S09-111、SMOKE-core-181 全部通过；未触发终态出路时行为与 0.14.16 逐项一致）
-```
-
-同一 `fact_id` 只有本行；S37 ConservationEvaluator 是该 authority 的守恒消费者，不再私有拥有标题解析器。Registry 的 owner 表达语义组件，sole writer 表达正式状态写入组件，二者不得复制为多个 owner/writer 字段或共同裁决者。
-
-### 37.2 组件边界
-
-```text
-MarkdownSectionAuthority
-  ├─ FenceAwareDeltaBlockParser       解析控制块与 REMOVED-ITEMS 声明
-  ├─ FenceAwareHeadingTreeParser      解析真实 ATX heading tree
-  ├─ SectionAnchorResolver            返回唯一 level/text/path/range
-  ├─ AgentMaterialOutcomeVerifier     验证 before/final 的物质操作后置条件
-  └─ OpenLogosMarkdownComposer        从 Delta + before 合成 candidate
-
-ChangeLint ConservationEvaluator ──read──> MarkdownSectionAuthority
-MergeTransaction PreflightBuilder ──read──> MarkdownSectionAuthority
-MergeTransaction Apply Recheck    ──read──> MarkdownSectionAuthority
-MergeSealWriter / ApplyWriter      ──write─> Transaction / canonical targets
-```
-
-- 共享模块预期落在独立 `cli/src/lib/markdown-section-authority.ts`（最终文件名可在实现阶段按现有模块约定调整），不得继续由 `change-lint.ts` 私有导出实现细节。
-- `change-lint.ts` 保留 ID 注册表、existing/retained 对账与 violation 组装，只消费共享 block/hit。
-- `merge-transaction.ts` 保留 transaction 状态机、hash、preflight、归因、reopen、journal 与 batch writer，只消费 verifier/composer 结果。
-- `submitMergeContent()` 不调用 resolver；它只在 transaction writer 边界持久化安全原始字节与 `content_sha256`。
-
-### 37.3 共享解析与身份算法
-
-1. 单次扫描 Markdown，跟踪反引号/波浪线代码围栏，只在围栏外识别 Delta 控制行与 ATX heading。
-2. block parser 按源序返回物质块和声明块；物质块 anchor 为空、同 anchor 多 writer 或无物质块时结构化失败。
-3. heading parser 按 level 维护祖先栈，记录规范化 text、原始行、byte/character range 与父路径。
-4. 单段 anchor 在所有 heading 中精确匹配 text；路径 anchor 逐段匹配完整祖先链。候选数不等于 1 时返回 not-found/ambiguous，不允许内容相似度或首命中 fallback。
-5. 唯一 hit 的章节终点是下一 `level <= hit.level` 的围栏外 heading 起点或 EOF；命中 identity 至少绑定 `level/text/path/start/end`。
-6. change-lint、Agent verifier 与 composer 必须直接消费同一个不可变解析结果；消费者不得重新用 regex 解释 anchor。
-
-### 37.4 两类 producer 的物化合同
-
-#### Agent producer
-
-Agent slot 是最终 target bytes，不由 OpenLogos 替 Agent 重写。seal/apply verifier 以冻结 Delta 与 before/final 的共享解析结果证明：ADDED 形成唯一新节，MODIFIED 的真实叶标题与父路径身份守恒且完整正文落在该节，REMOVED 的原路径消失。失败产生带唯一 `target_paths[]` 的内部 error fact，只有可归因 Agent target 才允许局部 reopen。
-
-#### OpenLogos producer
-
-OpenLogos composer 对 MODIFIED/REMOVED 使用 before hit 的 `[start,end)`；MODIFIED 根标题从真实原始 heading 保留并拼接 block body，REMOVED 删除完整范围。ADDED 沿用既有追加语义。candidate 完成后必须重跑共享 resolver/verifier；未触及范围不得因全局 trim、错误 H2 边界或路径字面化被改写。
-
-`REMOVED-ITEMS` 不进入 composer。它只供 ConservationEvaluator 解释显式条目删除，确保物质写入与审计声明仍是单一职责。
-
-### 37.5 Seal、Reopen 与 Apply 时序
-
-```mermaid
-sequenceDiagram
-    participant C as Consumer
-    participant T as MergeTransactionService
-    participant A as MarkdownSectionAuthority
-    participant S as TransactionStore
-    participant W as AtomicApplyWriter
-
-    C->>T: submit-content(raw final bytes)
-    T->>S: write slot bytes + content_sha256
-    C->>T: seal(transaction)
-    T->>A: parse/resolve/verify(delta,before,final)
-    alt 唯一嵌套锚且物质结果合法
-        A-->>T: immutable result identity
-        T->>S: atomic sealed + preflight_sha256
-        C->>T: apply(transaction)
-        T->>A: re-evaluate frozen inputs
-        A-->>T: same identity
-        T->>W: commit prepared bytes
-        W-->>T: receipt + hashes
-    else 可唯一归因 Agent 内容错误
-        A-->>T: target-scoped retryable error
-        T->>S: atomic collecting; rejected content hash null
-        T-->>C: submit_content same transaction
-    else OpenLogos/mixed/identity 漂移
-        A-->>T: fatal error
-        T-->>C: fail closed; no slot cleared/no official write
-    end
-```
-
-apply 必须比较重算 result/preflight 与 sealed identity；不一致时在 `phase=applying` 和 journal 之前失败。reopen 继续遵守“先 transaction 原子状态、后私有字节清理”，且只允许首写前执行。
-
-### 37.6 Cutover、回滚与证伪
-
-1. 冻结当前 parser/resolver golden、RunLogos transaction identity、其它 6 个 slot hash 与本机全局 `0.14.3` 制品。
-2. 停止 transaction 私有 `parseDeltaSections`、扁平路径正则和精确 H2 matcher；旧函数不得由 feature flag、catch fallback 或 legacy 分支继续可达。
-3. 启用共享 authority，并从同一输入重建 change-lint、preflight 与 composer 投影。
-4. 运行 fence 伪 marker、重复叶标题、错误父链、0/多命中、slot response-lost、apply 重启和旧 parser 冲突负向探针。
-5. 在 candidate 首次产生不可逆正式写入之前可以回滚 `0.14.3`；RunLogos 原 transaction 成功 apply 后不重新启用旧 parser，只允许前滚。
-6. exit evidence 是全部 UT/ST、`0.14.4↔0.14.3` 往返、SMOKE-core-168 与原 transaction completed receipt，单独的安装成功不等于 cutover 完成。
-
-### 37.7 实现与测试映射
-
-| 职责 | 预期实现落点 | 证据 |
-|---|---|---|
-| 共享 block/heading/path/range | `cli/src/lib/markdown-section-authority.ts` | UT-S37-37、UT-S37-38 |
-| Agent material verifier | `cli/src/lib/merge-transaction.ts` 消费共享模块 | UT-S37-39、UT-S09-272 |
-| OpenLogos composer | `cli/src/lib/merge-transaction.ts` 消费共享模块 | UT-S37-40、ST-S37-10 |
-| submit/seal/reopen/apply 生命周期 | merge transaction lib/command 与真实 CLI | UT-S09-271～274、ST-S09-106～107 |
-| 安装态与跨仓恢复 | 固定 `0.14.4` tarball、smoke runner/reporter | SMOKE-core-168 |
-
-所有测试代码必须使用 OpenLogos reporter。API、数据库与 API orchestration 不适用；公共 transaction schema 与 JSON envelope 保持不变。
-
 ## 三十八、项目 YAML 单一 AST 写者与内置版本单一权威架构
 
 本节冻结两条不变量。两者是同一类缺陷的两个投影：**写者自带一份对权威事实的猜测**——一处猜 YAML 的当前形态，一处猜内置模板的当前版本——猜测与权威失同步即产出错误，且都不会在写入时报错。
@@ -3080,57 +2457,6 @@ export function verifyAppliedManifest(root, proposalDir) { … }
 - 场景：S09、S13、S19、S28、S32。
 - 测试：UT-S32-52～58、ST-S32-18～19、UT-S28-45～46、UT-S09-287～288、UT-S13-67、UT-S19-34；安装态 SMOKE-core-175。
 
-## 四十四、切片事务的受控重划回边（plan-mutability）
-
-> 承接 §四十三：0.14.12 为切片事务补了「manifest 判非法 → manifest-recovery」的恢复回边，0.14.14 修正了终态守门对「判定器不适用」的误拒。本节补状态机缺失的最后一条边：**manifest 判有效、但规划本身需要重做**。
-
-### 四十四.1 缺口：completed 是没有出边的终态
-
-切片事务状态机中 `completed` 的 `allowed_actions` 为空数组——终态即永久冻结。而 slice-planner 的六维打分含「不确定性」一维（1=一个待验证假设，2=多个未知点），即方法论**承认规划可能建立在待验证假设上**；假设在实现阶段被证伪时，manifest 完全有效（切片数、ID 归属、双指纹均正确），恢复回边不触发，三条出路（将错就错、手改 `[code]`、删事务文件）全部违反本仓已确立的权威合同。承认不确定性、又不给证伪后的修正通道，是状态机与方法论的直接矛盾。
-
-### 四十四.2 受控回边：completed → collecting（reopen）
-
-```mermaid
-stateDiagram-v2
-    [*] --> collecting
-    collecting --> ready: 两 slot 收齐
-    ready --> sealed: seal
-    sealed --> applying: apply
-    applying --> completed: 原子替换两产物 + 终态守门放行
-    applying --> failed: 写盘异常 / 判定器负面结论（整体回滚）
-    failed --> sealed: 修正 slot 后重走 seal
-    completed --> collecting: reopen（受控回边，本节新增）
-```
-
-回边受三重约束，缺一不可：
-
-1. **批准分流**：`SLICES_APPROVED` 不在场可自由重开；在场须显式确认参数，且确认重开即作废该 marker（旧批准不得覆盖新划分）。
-2. **强制留痕**：`SLICE_REPLANS.jsonl` append-only 记录（旧 `transaction_id`、时刻、非空原因、批准在场/确认标记）；无留痕的重开是被禁止的影子路径。
-3. **产物整体替换**：重开时 `[code]` 段与 manifest 保持旧值；替换发生且仅发生在新划分的 apply——半新半旧比无法重划更坏。旧终态事务归档不销毁；旧 checkpoint 因 `manifest_sha256` 失配自然作废，verify 只采信与当前 manifest 匹配的 checkpoint。
-
-### 四十四.3 两条回边的分工
-
-| | reopen（四十四.2） | manifest-recovery（0.14.12） |
-|---|---|---|
-| 修的对象 | **规划**（划分错了） | **manifest**（产物失效了） |
-| 触发判据 | 人的判断 + 留痕原因 | `deriveSliceVerificationState()` 的机器判定 |
-| 新事务 | `initial-plan`，`required=2` | `manifest-recovery`，`required=1` |
-| `[code]` | 新 apply 整体替换 | 冻结拒改 |
-
-不得互相顶替：用恢复回边改划分会破坏 `[code]` 冻结不变量；用重划回边修 manifest 会把一次机械重建变成一次重新规划。恢复事务的 `completed` 同样可被 `reopen`——规划错误与 manifest 曾失效互不冲突。
-
-### 四十四.4 不变量
-
-1. `reopen` 是 `completed` 唯一的出边动作；其余 phase 对它 `action_not_allowed`。
-2. 事务文件不可读或 marker 状态不可判定 → fail-closed 拒绝，无任何写副作用。
-3. 未执行 `reopen` 时，`completed` 的行为与 0.14.14 逐项一致（零回归）。
-4. 公共合同 schema、字段与 slot 契约零变化，仅扩充终态 `allowed_actions` 域。
-
-### 四十四.5 追溯
-
-- 需求：AC-REPLAN-01～10；功能规格：§2.56；根规范：`spec/test-slice-manifest.md` §2.4。
-- 场景：S19、S28、S32；测试：UT-S32-65～68、ST-S32-22、UT-S28-49、UT-S19-37；安装态：SMOKE-core-179。
-
 ## 四十五、合并事务的终态出路（spec-mutability）
 
 > 来源变更：fix-merge-transaction-abort-recover-reopen。对齐 §四十四（切片事务 plan-mutability 回边）：终态不是永久冻结，出路必须受控、留痕、单一权威。
@@ -3323,3 +2649,90 @@ flowchart LR
 1. 前滚只在核心 apply 路径内发生；任何消费者读取归档 receipt 裁决均属 forbidden fallback。
 2. preflight `test_change_set_sha256` 与 `SPEC_MERGED.test_change_set.sha256` 恒同源（同一构建点产物）。
 3. changed/removed 前滚后仍满足 v1 schema 全部校验（排序、去重、不相交、targets 与 baseline plan 一致）。
+
+## 四十九、环境事实不入 verify 期断言
+
+### 49.1 缺陷形态：不是谁忘了改快照，是流程结构保证它过期
+
+launched flow 的门序恒为 `verify → deploy → smoke`，而升版是 `[deploy]` 的规定动作（部署方案「版本号：`cli/package.json` `version` patch +1」）。两者叠加得到一条可推导的结论：
+
+```text
+verify 恒早于 deploy  ∧  版本号在 deploy 期才改变
+  ⟹ 任何在 verify 期求值、且把包版本号写成字面量的断言，
+     其期望值必然是**上一个**版本 ⟹ 下一次发布后必红
+```
+
+这不是「谁忘了更新快照」的操作失误，而是**结构性必然**。实证：`a16bf6a` 在 S19 修过一次同形态缺陷（发布 tripwire 钉死版本/机器状态），S34 的 golden 快照漏网，0.15.3 发布后 `npm test` 即红——同一形态两次发生，说明单点修补不收敛。
+
+### 49.2 原则
+
+> **环境事实不得进入 verify 期断言的期望值。**
+
+「环境事实」指**不由被测代码决定、而由运行环境或发布动作决定**的值：包版本号、绝对路径、主机名与用户名、墙上时钟、临时目录名、本机全局安装现值。
+
+需要校验这类值时，唯一合规形态是**运行时读取 + 关系断言**：
+
+| 反例（禁止） | 正例（要求） |
+|---|---|
+| `expect(snapshot).toContain('"version":"0.15.2"')` | `expect(tarballVersion).toBe(readPkgVersion())`——两侧都在运行时读取，断言其**关系**相等 |
+| `expect(out).toBe('/tmp/xyz123/logos/...')` | 先按 `<ROOT>` 规范化再比对（`UT-S34-09` 既有手法） |
+| `expect(globalVersion).toBe('0.15.3')` | 断言执行前后**逐字一致**（`ST-S19-22` 步骤⑤），不断言它等于某具体值 |
+
+**边界（同样重要）**：契约字段不是环境事实。`data.contract.version = "1.0.0"` 由被测代码决定、是本项目对外承诺的一部分，**必须**继续逐字节钉死；把它一并「规范化」等于把被测性质当噪声抹掉。判别式是一句话：**这个值变化时，是代码变了还是环境变了？**
+
+### 49.3 守卫：把约定变成会红的门
+
+原则若只写进文档，第三次仍会复发（前两次分别写在 code review 结论与提案概述里，都没拦住）。故立一道**元测试**。
+
+**它的判据必须按「字段语义」分类，不能按「是否等于当前版本」匹配**——这是本节最容易写错、也已经写错过一次的地方（delta-r1 F1）。推导：升版发生在 verify 之后，因此故障快照里钉着的恰恰是**上一个**版本；以「等于当前包版本」为判据的守卫，在真实故障输入上命中数为零。实测佐证：`cli/package.json` 为 `0.15.3` 时，故障快照 `s34-feature.test.ts.snap` 的 envelope 版本是 `0.15.2`，按「等于当前值」扫描全仓，命中集合为空。
+
+判据因此分三类位置：
+
+| 位置类别 | 处置 |
+|---|---|
+| **包版本承载位**（envelope 顶层 `version`、`--version` 输出、tarball/安装包版本） | 出现**任意** `x.y.z` 形态字面量即失败——与它是否等于当前版本无关；该位置的合法形态只有规范化占位符 |
+| **契约版本位**（`data.contract.version`、`spec/schema/*.json` 内嵌契约版本） | 必须是固定字面量断言；守卫不得报错，反过来该位置被规范化成占位符**也判失败** |
+| **叙述文本**（注释、用例标题、文档字符串中的历史版本） | 不是断言期望值，不参与判定 |
+
+守卫本身不含任何版本字面量（判据是「该位置是否允许出现版本」，而非某个具体值），因此不随发布过期。守卫与原则的关系同 §四十一.6.2：**约束必须有失败信号，只被写下、没有检查者的约束等于不存在**；而**判据选错的守卫等于没有守卫**——它会在唯一该拦的那次输入上放行。
+
+### 49.4 与 flow 时序的关系（明示不改）
+
+本节**不主张**调整 `verify → deploy → smoke` 的门序。该时序是正确的（验收先于发布）；缺陷在于让 verify 期断言依赖部署期事实。若未来出现其他「部署期才产生的事实」需要验收，一律沿用 §49.2 的形态（运行时读取 + 关系断言），或把该断言下沉到 smoke（部署后求值），而不是移动门的位置。
+
+## 五十、delta RENAMED op 与章节标题权威
+
+### 50.1 缺陷形态：四个 op 都改不了文档标题
+
+`composeOpenLogosMarkdown` 的实现事实决定了现有四个 op 的能力边界：
+
+| op | 对标题行的作用 | 依据 |
+|---|---|---|
+| `ADDED` | 顶层块**恒发 level 2**（`let level = 2`），层级由锚的父段决定，无法产出 H1 | 合成器 ADDED 分支 |
+| `MODIFIED` | 替换段落正文，**标题行取 `resolution.hit.rawHeading`**——原样保留，改不了标题文本 | 合成器 MODIFY 分支 |
+| `REMOVED` | 整节删除 | — |
+| `REMOVED-ITEMS` | 纯声明，merge 不据其编辑 | — |
+
+于是「把文档 H1 从已删机制名改成现名」这一整类变更，在方法论内**无路可走**：`MODIFIED` 改不了标题，`REMOVED` + `ADDED` 会把整节降级为 H2 并搬到文末。此前的处置一律是「越出 delta 的授权手工改」，代价是该次变更不可追溯、且限制会反复复发。
+
+### 50.2 职责边界
+
+新增第五个 op **`RENAMED`**，职责**恰好一件事**：改写被锚定章节的**标题文本**。
+
+- **不动正文**：段落 body 逐字节保留，`RENAMED` 块自身不携带正文；
+- **不动层级**：新标题沿用原标题行的 `#` 数量，H1 改名后仍是 H1；
+- **不动位置**：章节在文档中的偏移不变（区别于 `REMOVED` + `ADDED` 的「删了再追加到文末」）；
+- **定位语义与既有 op 同源**：走同一个 `resolveSectionAnchor`，支持标题路径锚（`父 > 子`）与序数锚（`<标题> [n]`），命中 0 或多个一律 fail-closed。
+
+由此，`RENAMED` 是四 op 之外**唯一**能作用于标题行的 op，也是**唯一**能作用于 H1 的 op。
+
+### 50.3 与既有 op 的组合与冲突
+
+- 同一 delta 内 `RENAMED` 与其它 op 可共存，按块顺序依次作用于演进中的文档；
+- `RENAMED` 之后若还要改该节正文，用**新标题**作为 `MODIFIED` 的锚（顺序敏感，与既有多块语义一致）；
+- 对同一章节先 `REMOVED` 再 `RENAMED`（或反序）是冲突，第二个块必然锚解析失败——由既有 fail-closed 路径拒绝，不需新增冲突规则；
+- **守恒（L8）不受影响**：`RENAMED` 不增删任何结构化条目，故不产生 `delta_implicit_id_removal` 一类判定；但若新标题与文档中既有标题**重复**，会破坏后续章节可寻址性，须由 `lint-specs` 的 `duplicate_heading` 检查项在人读侧暴露。
+
+### 50.4 为什么不是「放宽 ADDED」
+
+备选方案是让 `ADDED` 支持显式层级（如 `## ADDED — # 新标题`）。否决理由：`ADDED` 的语义是「新增一节内容」，而更名的语义是「同一节换个名字」——把两者塞进一个 op，会让「这节是新的还是旧的」在 delta 文本里不可判别，破坏 `verifyAgentMaterialOutcome` 的物质结果复验（它按 op 分别核对新增/替换/删除的结果形态）。**op 的粒度应与语义对齐**，这与「判据只能有一份」是同一条设计纪律的两面。

@@ -1336,44 +1336,6 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 7. **resource_index 收录（delta-r1 F3，需扩展扫描器）**：现行 `cli/src/lib/sync-resource-index.ts` 的 `scanCandidateFiles()` 白名单不含 `decisions`、`inferResourceDesc()` 无 DXX 规则，故必须**扩展统一扫描器**（`scanCandidateFiles()` 纳入 `decisions/`、`inferResourceDesc()` 增 `<module>-DXX-*.md` 内容化 desc 规则），`openlogos index` / `sync` 才能发现新决策记录、生成内容化描述并进入 `resource_index`——直接解 issue #12「需先知道 slug 才找得到」。**不得**声称既有机制自动收录。端到端验收须从「索引无该项」起跑权威 index/sync、断言路径+desc 补入且幂等（ST-S38-06）。
 8. **零回归 + 非目标**：不追溯为存量已归档提案补写决策记录（项目自行按价值挑选沉淀、走正常提案）；不强制所有提案产出决策记录；不实现 archive 保留策略 / `archive --prune`（issue #12 请求 2，团队已暂缓，与本能力正交）；不改 `ADDED / MODIFIED / REMOVED` 语义与既有 merge / archive / change-lint 对无决策章节提案的行为。
 
-## S09 Plan 阶段决策澄清协议第一版
-
-### 背景与用户价值
-
-复杂变更在形成 proposal 时可能同时涉及产品边界、责任归属、数据迁移、兼容策略、安全隐私、部署、公开发布和验收标准。若 Agent 为了尽快填满模板而把推荐答案当成用户决定，后续 Delta、实现和发布都会建立在未经确认的假设上。
-
-OpenLogos 必须在既有 `write-proposal -> write-tasks -> plan-exit` 内提供可恢复、可校验的决策澄清协议。该协议只在存在高影响未决事项时要求人类回答；简单且事实充分的变更保持零额外问答。
-
-### 功能需求
-
-1. Agent 在提问前必须读取仓库、配置、规格、Git/CI 和运行环境中可可靠获得的事实；事实问题不得反问用户。
-2. 新 proposal 必须包含 `openlogos/clarification@1` 结构化区块，持久化模式、状态、影响声明、已确认决定、未决队列和低风险默认值。
-3. `adaptive` 模式只在存在高影响未决事项时逐问；`deep` 完整扫描高影响决策树；`provided` 校验用户已提供的决定，不跳过一致性检查。
-4. 每轮只向用户提出一个当前最上游的决定，并同时说明影响、推荐答案、推荐理由及至多两个真实备选。
-5. 高影响决策至少覆盖 `product`、`ownership`、`data`、`compatibility`、`security_privacy`、`deployment`、`release`、`external_commitment`、`acceptance` 九类。
-6. `impacts` 固定声明 `data`、`compatibility`、`security_privacy`、`public_release`、`external_commitment` 五类条件性风险；每类为 `none|required` 并提供非空理由。
-7. `none` 表示本次无需用户选择：可能没有影响，也可能已有仓库事实或项目政策把方案唯一确定；`required` 表示仍存在必须由用户选择的高影响方案。
-8. proposal 声明需要部署时，必须有 `category: deployment`、`source: user` 的决定，覆盖目标环境、部署方式、回滚方案和成功/smoke 证据。
-9. 任一 `impacts.*.status=required` 时，必须有匹配 `category`、`source: user` 的决定；`public_release` 对应 `category: release`。推荐答案、Agent 默认值、`--auto` 和已有文档均不能冒充用户确认。
-10. 每个尚未满足的条件性必选类别必须恰有一个同类别、内容完整的 `unresolved` 项；缺失或重复时契约非法，不能产生没有问题数据的 pending 死锁。
-11. 产品范围、责任归属和验收标准由 Agent 结合语义识别；命中高影响歧义时同样进入未决队列，但不得把所有简单提案变成固定问卷。
-12. Agent 必须在持久化前按依赖拓扑、固定类别顺序和 CXX 数字顺序稳定排序；`unresolved[0]` 的全部依赖必须已在 decisions，否则契约非法，CLI 不得跳项或自行重排。
-13. 已确认决定和未决队列必须落入 proposal，跨进程和跨会话重读结果一致；RunLogos 等宿主不维护第二份权威状态。
-14. `clarification.status=complete` 只表示 `write-proposal` 具备完成条件，不等于方案已批准；最终仍复用 `plan-exit`。
-15. `next --auto` 仅提供既有流程执行授权，不能替用户回答未决高影响方案；存在未决事项时必须 fail-closed 并保持在 `write-proposal`。
-16. 方案决策与执行授权必须分层：人工模式下 merge、verify、部署执行、smoke、archive、push 继续按各自确认点处理；公开发布不能由本地部署或普通 push 授权自然推导。
-
-### 验收条件
-
-- 简单、事实充分且五类影响均为 `none + reason` 的提案可以直接完成澄清，不增加问答。
-- `impacts` 缺字段、状态非法、理由为空、重复 CXX、依赖不存在、循环依赖或完成状态与未决队列冲突时，返回 `clarification-contract-invalid`。
-- 数据、兼容、安全隐私、公开发布、外部承诺或部署任一必选类别缺少匹配用户决定时，`proposal_filled=false`，`status/next` 保持 `write-proposal`。
-- 上述缺失决定若有同类别完整 unresolved，则为可恢复 pending 并输出完整 `next_decision`；若缺少或重复对应 unresolved，则返回 `clarification-contract-invalid`。
-- `status/next --format json` 输出稳定、去重的 `required_categories` 和完整 `next_decision`，宿主无需解析 Markdown 推导完成状态。
-- `next --auto` 遇到未决高影响决定时不写 `PLAN_APPROVED` 或 `GATE_AUTO_PASSED`，不进入 `write-tasks`、Delta 或实现。
-- 已越过 plan 的历史提案不回退；仍在 writing 且缺少区块的历史提案获得补齐提示；未知 schema 版本保守停止。
-- 本能力的 OpenLogos UT/ST 与 reporter 全部通过；真实 Agent 是否先查事实、一次一问和准确记录由 RunLogos 行为评测负责。
-
 ## S13/S16/S27/S28/S31/S32 多切片验收边界与自动恢复要求
 
 ### 用户价值
@@ -2695,3 +2657,30 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 - 场景：S13 消费 verify 结果、S19 发布与安装态 smoke。
 - 测试：UT-S13-67～68、ST-S13-19、UT-S19-46、ST-S19-22。
 - 部署后 smoke：SMOKE-core-197～199。
+
+## Delta RENAMED op（文档标题更名）需求
+
+### 背景与问题
+
+四个既有 delta op 无一能改写标题行：`ADDED` 顶层恒发 level 2、`MODIFIED` 保留原标题行、`REMOVED` 整节删除、`REMOVED-ITEMS` 是纯声明。因此「文档标题仍写着已删机制名」这类事实错误，在方法论内**无法修正**——唯一出路是越出 delta 手工改，代价是该次变更不可追溯，且限制会随每一轮减法反复复发。
+
+### 用户故事
+
+作为规格文档的维护者，我需要通过 delta 修改某个章节（含文档级 H1）的标题文本，同时保证正文、层级与位置逐字节不变，以便文档命名能跟随机制演进而不脱离变更追溯链。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-RENAMED-01 | delta 支持 `## RENAMED — <章节锚>` 块；块正文恰一行，即新标题文本 |
+| AC-RENAMED-02 | 应用后目标章节标题文本被替换，**层级不变**（H1 更名后仍是 H1） |
+| AC-RENAMED-03 | 应用后章节正文与子章节**逐字节不变**，章节在文档中的位置不变 |
+| AC-RENAMED-04 | 锚定语义与既有 op 同源：支持标题路径锚与序数锚；命中 0 或多个一律 fail-closed 并给出可定位诊断 |
+| AC-RENAMED-05 | 块正文非恰一行（空、多行、以 `#` 开头）一律拒绝，且拒绝时目标文档零改写 |
+| AC-RENAMED-06 | `change-lint` 接纳含 `RENAMED` 的 delta（不判缺段标记）；`merge` 正确应用；两侧判据同源 |
+| AC-RENAMED-07 | `RENAMED` 不增删结构化条目，故不产生条目守恒（L8）判定 |
+
+### 非目标
+
+- 不支持「更名同时改正文」——那是 `RENAMED` + `MODIFIED` 两块的组合，不是一个 op 的职责。
+- 不支持在文档中间**插入**新标题（例如为丢失父标题的孤儿小节补回章节头）。该能力仍缺失，属已知边界，不在本次范围内。

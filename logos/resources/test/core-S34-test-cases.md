@@ -3,6 +3,7 @@
 > **测试边界（回应 delta-F2）**：CLI **不**取号、**不**分配 feature ID、**不**写 `logos-project.yaml`、**不**执行 AI 回写。`feature_counter` 取号与两步式冲突恢复是 **AI/Skill 指令**，以「生成的 backfill prompt 内容 + scenario-architect Skill 文本」的**静态/快照校验**锁定（校验语义等价的算法表述，字面串以 Skill/prompt 实际用词 `configured_next_id` 为准），而非 CLI 分配逻辑。`feature-backfill` 命令只生成 prompt、打印路径、保证 YAML 字节不变与幂等；AI 按 prompt 回写 YAML 属人工/文档契约后续步骤，不作为 CLI 场景测试的执行动作。
 
 ## 一、单元测试用例
+
 | ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
 |----|------|------|---------|------|---------|
 | UT-S34-01 | 解析 features[] 与 scenario.feature | `project-yaml.normalizeProjectYaml` | yaml 含 `features[]` + `feature_counter` + 场景带 `feature` | 读取 yaml | `ProjectYamlData` 含 `features`、`feature_counter`，`scenario.feature` 被解析 |
@@ -13,7 +14,7 @@
 | UT-S34-06 | 有注册 feature 时三态降级为未分组 | status feature 分组 | 有 ≥1 注册 feature；场景 feature 缺失、指向未知 F、指向跨 module 的 F | 分组 | 三种场景一律入所属 module 的 `__ungrouped__` 桶，不报错 |
 | UT-S34-07 | features[] 成员列表按 YAML 顺序 | status feature 分组 | module 下多 feature、各含多场景 | 分组 | `features[]` 按声明顺序，`scenarios:[{id,name}]` 按 scenarios[] 顺序；`__ungrouped__` 恒末位 |
 | UT-S34-08 | 已登记空成员 feature 仍展示（回应 F4） | status/next/feature list 分组 | `features[]` 登记 F01（module==core）但无场景归属 F01 | 分组 | F01 输出 `scenarios:[]`；status/next 与 feature list 对已输出 feature 集合一致（均含 F01）；无未归属场景时不出 `__ungrouped__` |
-| UT-S34-09 | 纯 pre-feature 项目逐字节完全一致（含 contract.version，回应 F1=B/F9） | status 文本渲染 `status()` + JSON `collectStatusData`→envelope；next 文本 `next()` + JSON next envelope | module 既无注册 feature、且无任何场景带 `feature` 键 | status/next 的文本与 JSON 两种渲染入口 | 省略 `features` 字段；`data.contract.version` **保持 `1.0.0`**；对旧 YAML 的 status/next **文本与 JSON 分别**逐字节 golden 对比，**允许变化集合 = ∅（完全零漂移，含版本字段）** |
+| UT-S34-09 | 纯 pre-feature 项目逐字节完全一致（契约字段守死、环境字段规范化） | status 文本渲染 `status()` + JSON `collectStatusData`→envelope；next 文本 `next()` + JSON next envelope | module 既无注册 feature、且无任何场景带 `feature` 键 | status/next 的文本与 JSON 两种渲染入口；比对前经 `norm()` 规范化**环境事实**：临时根路径 → `<ROOT>`（既有），**CLI 包版本号 → `<PKG_VERSION>`（本次新增，运行时读取 `cli/package.json` 得到当前值再替换）** | 省略 `features` 字段；`data.contract.version` **保持 `1.0.0` 且逐字节守死**（契约字段由被测代码决定，不属环境事实，不得规范化）；对旧 YAML 的 status/next **文本与 JSON 分别**逐字节 golden 对比，**规范化后允许变化集合 = ∅**。修正理由见架构 §四十九：升版恒发生在 verify 之后，钉死包版本的 golden 必然在下次发布后过期（0.15.3 实证） |
 | UT-S34-10 | 条件版本发射：含 features → 1.1.0，无 features → 1.0.0（回应 F1=B） | `step-registry` 版本发射 / json-output / schema | ①带 feature 项目 ②纯 pre-feature 项目 | 读 status/next `--format json` | ①响应 `contract.version==1.1.0` 且含 `modules[].features`；②响应 `contract.version==1.0.0` 且无 `features`；两版均与打包 schema（`x-contract-version` superset 支持集 {1.0.0,1.1.0}）一致（包内容验证测试） |
 | UT-S34-14 | 条件版本 schema 约束反例（回应 F1=B） | `status.schema.json`/`next.schema.json` 根级 allOf | — | 构造响应对象校验 | `{contract.version:"1.0.0", modules:[{id,features:[…]}]}` **不通过**（1.0.0 禁带 features）；`{contract.version:"1.1.0", modules:[{id,features:[…]}]}` 通过；`{contract.version:"1.0.0", modules:[{id}]}`（无 features）通过 |
 | UT-S34-11 | feature-backfill 打印 prompt_path 且不改 yaml（回应 F9） | `feature-backfill` 命令 | 存量项目场景平铺 | 执行 backfill（文本 + `--format json`） | 文本模式 stdout 含路径 `logos/feature-backfill-prompt.md`；`--format json` 的 `data.prompt_path` 等于该路径；写入该 prompt 文件；`logos-project.yaml` 字节不变；重复执行幂等覆盖、退出码 0 |
@@ -98,3 +99,19 @@
 - [ ] 真·新增候选不误杀、仍纳入：UT-S34-26
 - [ ] 重跑幂等、不产生同名孤儿、yaml/provenance 字节不变：UT-S34-27、ST-S34-06
 - [ ] 去重键为 `(module, name)`、跨 module 同名不误剔除：UT-S34-28
+
+## 六、升版后 golden 零假红（环境事实规范化）
+
+> 覆盖架构 §四十九在 S34 四路 golden 上的兑现：升版**不得**使任何一路 golden 变红，而契约字段仍逐字节守死。本节与 `UT-S19-47`（守卫元测试）互补——守卫拦「写下了字面量」，本节证「升版后确实不红」。测试实现必须写入 OpenLogos reporter。
+
+### 6.1 单元测试用例
+
+| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S34-29 | 升版后四路 golden 零假红 | status/next 的 text + JSON 四路 golden 与 `norm()` 规范化 | 纯 pre-feature 项目；在**同一测试内**模拟包版本从 `vA` 变为 `vB`（读取真实 `cli/package.json` 后注入变体，不写盘、不改仓库字节） | 分别以 `vA`、`vB` 生成四路输出并各自 `norm()` 后与 golden 比对 | 四路**均通过**且两次比对结果一致——版本变化不产生任何 diff；同时断言 `data.contract.version` 在两次中**均为 `1.0.0` 且未被规范化替换**（证明规范化只作用于环境字段，没有顺手抹掉被测性质）。**修复前 `vB` 一侧必红**，那正是 0.15.3 发布后的实际形态 |
+
+### 6.2 覆盖度校验
+
+- AC-ENVFACT-03 升版不使 golden 变红：UT-S34-29。
+- AC-ENVFACT-04 规范化不越界抹掉契约字段：UT-S34-29 第二断言、UT-S34-09。
+- 架构：§四十九；相关用例：UT-S19-47（守卫元测试）、UT-S34-09（规范化本体）。

@@ -204,15 +204,6 @@
 | UT-S09-85g | 声明 `prototype` 含 `..` 路径穿越 → 失败 | check-ui-prototype 路径安全（F3） | 声明 `prototype: ../../etc/x.html` 或含 `..` 段 | 运行 checker | 非零退出（`prototype` 须为纯 basename，含 `..`/目录分隔=路径穿越，拒绝） |
 | UT-S09-85h | `PLAN_APPROVED.pages`/`hashes` 键与声明 basename 一致 | PLAN_APPROVED basename 键复用（F3） | 批准时写 body | 读取 `pages`/`hashes` | `pages` 与 `hashes` 键均为声明 `prototype` basename（`core-NN-<slug>.html`）；与声明清单 basename 集合逐一对齐、无第二套键空间 |
 
-### 9.5 verify-ui-provenance 成功路径与阻断（F4 R4）
-
-| ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
-|----|------|------|---------|------|---------|
-| UT-S09-87 | F6 match 分支：完整 provenance 且 hash 匹配 → 经 `openlogos check-ui-hash-match` 判 exit0 | `verify-ui-provenance` 的 check-ui-hash-match 命令 | GUI 项目、`ui_impact:true`、`PLAN_APPROVED` 含完整 provenance（`ui_prototype_rendered:true`+`hashes`）、`2-page-design/` 现值 hash == `PLAN_APPROVED.hashes` | 运行 `done_when: cmd:<check-ui-hash-match>` | `exit 0` → 节点 done → merge 放行前进（成功路径经该节点求值达成、非单 fail_when 卡死）；F6 三分支之 match→0 |
-| UT-S09-88 | hash 失配未 done 阻断 | check-ui-hash-match 命令 | 原型批准后被改、现值 hash != `PLAN_APPROVED.hashes` | 运行 checker | 非零 → 节点未 done（active/pending）→ 前向阻断（不前进） |
-| UT-S09-88a | F6 partial 分支：部分 provenance（`ui_prototype_rendered:true` 但缺 hashes）→ 经 `openlogos check-ui-hash-match` 判非零并点名失配 | `verify-ui-provenance` 的 check-ui-hash-match 命令（F6 partial 分支） | GUI 项目、`ui_impact:true`、`PLAN_APPROVED` 含 `ui_prototype_rendered:true` **但缺 `hashes`**（部分 provenance，非空 marker、非完整） | 运行 `done_when: cmd:<check-ui-hash-match>` | **非零退出 → 节点未 done → 阻断（fail closed）**：曾宣称渲染却缺 hashes 无法追溯，不得放行；与 UT-S09-84（空 marker→advisory→0）区分——部分 provenance 非 legacy，不享 advisory；F6 三分支之 partial→fail |
-| UT-S09-90 | 失配后显式重入 plan 刷新 hashes → 再匹配放行 | 状态转换（诚实边界） | 失配告警后，显式重入 plan、重跑 producer 产原型、plan-exit 重批刷新 `PLAN_APPROVED.hashes` | 再跑 `check-ui-hash-match` 到 `verify-ui-provenance` | hash 匹配 `exit 0` → done → 放行（非引擎自动 rewind，为显式重入刷新） |
-
 ### 9.6 merge 命令级强制与跨会话 fail-closed（F4 R5、R7）
 
 | ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
@@ -825,3 +816,34 @@
 - AC-DEGATE-02 UI provenance 降警告且诊断不减：UT-S09-345、ST-S09-143。
 - AC-DEGATE-03 seed 门隔离并继续：UT-S09-346。
 - 功能规格：§2.74。
+
+## S09 delta RENAMED op 测试
+
+> 覆盖第五个 delta op `RENAMED`（`spec/change-management.md`「Delta `RENAMED` op：章节标题更名」、架构 §五十、需求 AC-RENAMED-01～07）。它是唯一能改写标题行、也是唯一能作用于文档级 H1 的 op。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-347 | `RENAMED` 解析与应用（含 H1、含层级/正文/位置不变量） | 构造含多级标题与表格条目的目标文档 | 参数化：① 对 H2 小节更名；② 对**文档级 H1** 更名；③ 以标题路径锚（`父 > 子`）更名；④ 以序数锚（`<标题> [2]`）在重复标题中精确更名；⑤ 同一 delta 内 `RENAMED` 后再以**新标题**为锚 `MODIFIED` 该节正文 | ①～④ 标题文本被替换、**`#` 数量不变**（H1 仍 H1）、章节正文与子章节**逐字节不变**、章节在文档中的偏移不变（非「删后追加到文末」）；⑤ 两块按序生效，最终标题为新名、正文为 MODIFIED 后内容 |
+| UT-S09-348 | `RENAMED` 的 fail-closed 反例（拒绝时零改写） | 同上 | 参数化：① 锚命中 0 个；② 锚命中多个（未用序数锚消歧）；③ 块正文为空；④ 块正文多行；⑤ 块正文以 `#` 开头 | 五例**均拒绝**并给出可定位诊断（锚类走 `delta_section_anchor_unresolvable` 既有码）；目标文档**字节不变**；`change-lint` 与 `merge` 两侧结论一致（同判据同结论） |
+
+### 场景测试
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|
+| ST-S09-144 | 含 `RENAMED` 的提案端到端 merge | 真实 CLI，临时项目；提案含一个 `RENAMED` 块（目标文档 H1 更名）与一个常规 `MODIFIED` 块 | ① `openlogos change-lint`；② `openlogos merge <slug>`；③ 读回被更名文档与 `SPEC_MERGED` | ① lint 接纳含 `RENAMED` 的 delta（**不判缺段标记**、不产生守恒违规——`RENAMED` 不增删条目）；② merge 一次调用成功并写 `SPEC_MERGED`；③ 目标文档 H1 为新名且层级仍为 H1，正文与其余各节逐字节不变；另一目标的 `MODIFIED` 照常生效 |
+
+### 追溯与覆盖
+
+- AC-RENAMED-01/02/03 语法、层级不变、正文与位置不变：UT-S09-347 ①②。
+- AC-RENAMED-04 锚定语义与既有 op 同源（路径锚 / 序数锚）：UT-S09-347 ③④、UT-S09-348 ①②。
+- AC-RENAMED-05 块正文形态非法即拒绝且零改写：UT-S09-348 ③④⑤。
+- AC-RENAMED-06 lint 接纳 + merge 正确应用 + 两侧同源：ST-S09-144 ①②。
+- AC-RENAMED-07 不产生条目守恒判定：ST-S09-144 ①。
+- 规范：`spec/change-management.md`「Delta `RENAMED` op」；架构：§五十；需求：「Delta RENAMED op（文档标题更名）需求」。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+- 「正文逐字节不变」必须直接比对**磁盘字节**（含子章节），不得只断言标题行——`RENAMED` 的全部风险恰在于顺手改到正文。

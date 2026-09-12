@@ -117,61 +117,6 @@ admit(candidate, module) ⇔
 
 **半提交 run 与 supersede 的恢复权**：带未终结（`prepared`/`committing`）journal 的 run **持有恢复优先权**；同模块新 `begin` 必须**先在锁内跑该 run 的恢复**（前滚或回滚到一致态）再 `supersede`，不得在半提交状态上叠新 run。若选目录级快照 + 单指针切换实现，则消费者只经该原子指针读一致版本，语义等价。
 
-## 七、S39 按触达闭包中的 provenance 与有效视图
-
-### 7.1 seed provenance 的新定位
-
-S33 的 `system-map`、`scenario-candidates`、`baseline_index`、`baseline_coverage` 与 `baseline_seed_state` 继续作为兼容数据模型存在，但在 S39 中只承担**可选证据索引**：帮助 change-writer 更快找到代码入口和场景候选，不能证明产品 Why，也不能使触达场景自动满足规格闭包。
-
-`required`/`partial`/`seeded` 描述 eager seed 子系统自身状态，不描述“项目是否允许 change”。恢复门确认无未终结 journal 或已成功恢复后，三种状态均可进入 S39；无法恢复时按本节事务硬门停止，不能读取半新资源后继续。
-
-### 7.2 闭包证据分类
-
-| 证据类别 | 可证明 | 不可推断 |
-|---|---|---|
-| proposal/用户验收 | 本次变更动机、目标、取舍、期望行为 | 既有实现是否真实如此 |
-| 已合并规格/决策 | 当前声明的系统真相与长期约束 | 未落盘代码一定符合 |
-| 代码/测试/配置/DDL | 存量可观察事实、调用边界、数据结构 | 历史 Why、业务优先级、未来意图 |
-| S33 active/tombstone candidate | 候选入口与逆向来源 | 人工确认、完整闭包、正确业务语义 |
-| 当前 change delta | 本案拟议的目标最终态 | 未经 merge 的项目现状 |
-
-全量 CREATE 文档必须在内容或追溯中区分“现状事实证据”和“本次 change 意图”，不得把 `reverse-engineered` 改写为 `human-verified`。
-
-### 7.3 effective view 采信范围
-
-闭包读取侧只采信：
-
-1. 已合并 `logos/resources/**` 与根 `spec/**`/`skills/**`；
-2. 当前活跃 change 下 canonical target 唯一的合法 delta；
-3. 可重算的仓库事实；
-4. 已原子 commit 的 seed 产物（如存在）。
-
-明确分流：
-
-- **安全 open run / 未提交 staging**：它尚未修改标准目标，可从 effective view 排除；当前 change 可继续从一致的已合并 resources 与代码/测试扫描闭包。
-- **未终结 commit journal（`prepared|committing` 等）**：物理 `logos/resources/**`、`baseline_index` 与状态可能半新。任一机器消费者必须在同一模块锁区间先前滚/回滚，再读取标准目标；无法恢复时硬报 `baseline_commit_in_progress` 并停止，禁止把 seed “降级为不可用”后继续读取这些路径。
-
-其它 change、archive delta、临时 prompt 与 stale seed index 始终排除。只有恢复门证明标准资源集合全旧或全新后，S39 才可运行 EvidenceScanner/closure evaluator。
-
-### 7.4 无确认升级红线
-
-- `verified` 保持冻结兼容字段，S39 不读取它决定是否允许 change，也不写 `true`。
-- 不写 `confirmed_by`、`confirmed_at`、`evidence` 等旧确认升级字段。
-- 不恢复 change-writer JIT advisory、verify `baseline_warnings` 或 human-verified 覆盖率分子。
-- 发现事实错误时走普通新 change 修正规格/代码，不创建“确认基线”专用生命周期。
-
-### 7.5 candidate 首次触达
-
-逆向 candidate 首次被 change 触达时：
-
-1. 以代码/测试重新计算它指向的现状，避免只信 stale 索引；
-2. 识别或分配稳定 feature/scenario 身份；
-3. 生成本次适用的完整规格目标；
-4. merge apply 时登记 scenario/resource_index；
-5. candidate 原 provenance 状态不因导航登记或文档闭包而升级。
-
-因此，“闭包已建立”是合并后规格自足性的结果，不是 provenance 可信度状态，也不新增每场景闭包状态字段。
-
 ## 一.A、扫描侧候选采信：alias-aware canonical 重算（provenance-scan-canonical-recompute）
 
 > 修复 issue「provenance 扫描器把指南文档里的示例章节当真实候选」。根因 = 读侧（扫描）与写侧（`baseline-seed`）校验强度不对齐。

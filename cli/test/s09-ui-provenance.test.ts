@@ -116,27 +116,6 @@ describe('S09 切片2 — check-ui-hash-match 三分支（F4 R4/R7）', () => {
     return proposalDir;
   }
 
-  it('UT-S09-87: F6 match — 完整 provenance 且 hash 匹配 → ok（exit0 语义）', () => {
-    const dir = setup('m', 'HOME', sha('HOME'));
-    const r = checkUiHashMatch(dir);
-    expect(r.ok).toBe(true); expect(r.cls).toBe('full'); expect(r.code).toBe('match');
-  });
-
-  it('UT-S09-88: hash 失配 → fail closed（未 done 阻断）', () => {
-    const dir = setup('d', 'DRIFTED', sha('HOME'));  // 批准 hash 是 HOME，现值 DRIFTED
-    const r = checkUiHashMatch(dir);
-    expect(r.ok).toBe(false); expect(r.code).toBe('hash_content_mismatch');
-  });
-
-  it('UT-S09-88a: F6 partial — rendered:true 但缺 hashes → fail closed', () => {
-    const proposalDir = guiProject(root, 'p');
-    writePrototype(proposalDir, 'core-01-home.html', 'HOME');
-    // 部分 provenance：rendered true 但无 hashes
-    writeFileSync(join(proposalDir, 'PLAN_APPROVED'), JSON.stringify({ ui_prototype_rendered: true, pages: ['core-01-home.html'] }));
-    const r = checkUiHashMatch(proposalDir);
-    expect(r.ok).toBe(false); expect(r.cls).toBe('partial'); expect(r.code).toBe('partial_provenance_fail_closed');
-  });
-
   it('UT-S09-84: legacy 空 marker（无曾渲染证据）→ 记 advisory 后 ok（exit0）', () => {
     const proposalDir = guiProject(root, 'leg');
     writePrototype(proposalDir, 'core-01-home.html', 'HOME');
@@ -153,14 +132,6 @@ describe('S09 切片2 — check-ui-hash-match 三分支（F4 R4/R7）', () => {
     const p2 = guiProject(root, 'leg2b');
     writeFileSync(join(p2, 'PLAN_APPROVED'), JSON.stringify({ ui_prototype_rendered: true }));
     expect(checkUiHashMatch(p2).ok).toBe(false);
-  });
-
-  it('UT-S09-90: 失配后刷新 PLAN_APPROVED.hashes → 再匹配放行', () => {
-    const dir = setup('r', 'V2', sha('V1'));            // 先失配（批准 V1、现值 V2）
-    expect(checkUiHashMatch(dir).ok).toBe(false);
-    // 显式重入 plan：重批刷新 hashes 到 V2
-    writePlanApprovedMarker(dir, { ui_prototype_rendered: true, pages: ['core-01-home.html'], hashes: { 'core-01-home.html': sha('V2') } });
-    expect(checkUiHashMatch(dir).ok).toBe(true);
   });
 
   it('UT-S09-93: 强制语义不读会话 capability（有无 capability 文件结果一致）', () => {

@@ -1,6 +1,13 @@
 import { authorityScan, stripInlineCode } from './markdown-scan.js';
 
-export type DeltaBlockOp = 'ADDED' | 'MODIFIED' | 'REMOVED' | 'REMOVED-ITEMS';
+/**
+ * Delta 物质控制段的 op 集合。
+ *
+ * `RENAMED`（第五个 op）是**唯一**能改写标题行、也是唯一能作用于文档级 H1 的 op：
+ * `ADDED` 顶层块恒发 level 2、`MODIFIED` 的标题行取自被锚定章节的原标题、`REMOVED` 是整节删除。
+ * 规范：`spec/change-management.md`「Delta `RENAMED` op：章节标题更名」；架构 §五十。
+ */
+export type DeltaBlockOp = 'ADDED' | 'MODIFIED' | 'REMOVED' | 'REMOVED-ITEMS' | 'RENAMED';
 
 export interface DeltaBlock {
   op: DeltaBlockOp;
@@ -60,7 +67,8 @@ export function parseDeltaBlocks(deltaContent: string): DeltaBlock[] {
   let current: DeltaBlock | null = null;
   for (let i = 0; i < lines.length; i++) {
     const trimmed = scan.masked[i] ? '' : scan.text[i].trim();
-    const marker = /^##\s+(REMOVED-ITEMS|ADDED|MODIFIED|REMOVED)\b\s*(?:[—-]\s*(.+))?$/.exec(trimmed);
+    // 注意顺序：REMOVED-ITEMS 必须先于 REMOVED 判别（\b 在 `REMOVED-` 处成立，否则被误吞为 REMOVED）。
+    const marker = /^##\s+(REMOVED-ITEMS|ADDED|MODIFIED|REMOVED|RENAMED)\b\s*(?:[—-]\s*(.+))?$/.exec(trimmed);
     if (marker) {
       if (current) blocks.push(current);
       const rawAnchor = marker[2] ?? '';
@@ -207,7 +215,55 @@ function sameIdentity(a: ResolvedSectionAnchor, b: ResolvedSectionAnchor): boole
   return a.level === b.level && a.text === b.text && a.path.join('\u0000') === b.path.join('\u0000');
 }
 
+/**
+ * 把标题段按更名映射改写——`RENAMED` 会改变**其子孙节的 path**，复验必须把这一改名
+ * 折算进身份比较，否则「祖先被更名」会让同 delta 内其它块的身份守恒判定假性失败。
+ */
+function mapSegments(segments: string[], renames: Map<string, string>): string[] {
+  return segments.map(seg => renames.get(seg) ?? seg);
+}
+
+/** 映射锚文本（保留序数后缀 `[n]`，它不是标题的一部分）。 */
+function mapAnchorText(anchor: string, renames: Map<string, string>): string {
+  return anchor.split(' > ').map(part => {
+    const ordinal = /^(.*?)(\s*\[\d+\])$/.exec(part);
+    const base = (ordinal ? ordinal[1] : part).trim();
+    return `${renames.get(base) ?? base}${ordinal ? ordinal[2] : ''}`;
+  }).join(' > ');
+}
+
+/** 身份守恒比较：先把 before 侧按本 delta 的更名映射折算，再与 final 侧比对。 */
+function sameIdentityAfterRenames(
+  before: ResolvedSectionAnchor,
+  final: ResolvedSectionAnchor,
+  renames: Map<string, string>,
+): boolean {
+  if (renames.size === 0) return sameIdentity(before, final);
+  return before.level === final.level
+    && (renames.get(before.text) ?? before.text) === final.text
+    && mapSegments(before.path, renames).join('\u0000') === final.path.join('\u0000');
+}
+
 /** Agent slot 物质结果验证器；只读 before/final，不重写 Agent 字节。 */
+/**
+ * 解析 `RENAMED` 块正文给出的新标题文本（规范：正文**恰好一行**，即新标题，不含 `#` 前缀）。
+ *
+ * 多行、空正文、或以 `#` 开头一律拒绝——RENAMED 只做一件事，块正文承载的信息量必须与之相称；
+ * 放宽任何一条都会让它变成「能顺手改正文/改层级」的第二个 MODIFIED。
+ */
+export function parseRenamedTitle(block: DeltaBlock): { ok: true; title: string } | { ok: false; error: string } {
+  const lines = block.lines.map(line => line.trim()).filter(Boolean);
+  if (lines.length === 0) return { ok: false, error: `RENAMED 块正文为空：${block.anchor}（正文必须恰为一行新标题文本）` };
+  if (lines.length > 1) {
+    return { ok: false, error: `RENAMED 块正文有 ${lines.length} 行：${block.anchor}（正文必须恰为一行新标题文本，RENAMED 不携带正文）` };
+  }
+  const title = lines[0];
+  if (title.startsWith('#')) {
+    return { ok: false, error: `RENAMED 新标题不得带 # 前缀：${block.anchor}（层级沿用原标题，不由块正文指定）` };
+  }
+  return { ok: true, title };
+}
+
 export function verifyAgentMaterialOutcome(
   deltaContent: string,
   beforeContent: string,
@@ -221,6 +277,18 @@ export function verifyAgentMaterialOutcome(
   const beforeHeadings = parseMarkdownHeadings(beforeContent);
   const finalHeadings = parseMarkdownHeadings(finalContent);
   const identities: MaterialOutcomeVerification['identities'] = [];
+  // 本 delta 的更名映射（旧标题 → 新标题）。RENAMED 改的是标题行，其子孙节的 path 随之变化，
+  // 故所有块的 before/final 身份比较都必须先折算这张表——否则「祖先被更名」会误判为身份漂移。
+  const renames = new Map<string, string>();
+  const renameReverse = new Map<string, string>();
+  for (const block of blocks) {
+    if (block.op !== 'RENAMED' || !block.anchor) continue;
+    const parsed = parseRenamedTitle(block);
+    if (!parsed.ok) return { ok: false, identities, error: parsed.error };
+    const oldTitle = block.anchor.split(' > ').pop()!.replace(/\s*\[\d+\]$/, '').trim();
+    renames.set(oldTitle, parsed.title);
+    renameReverse.set(parsed.title, oldTitle);
+  }
   for (const block of blocks) {
     if (!block.anchor) return { ok: false, identities, error: `${block.op} 段缺少章节锚` };
     const writerKey = `${block.op === 'REMOVED' ? 'remove' : 'write'}\u0000${block.anchor}`;
@@ -231,8 +299,18 @@ export function verifyAgentMaterialOutcome(
       if (writers.has(writerKey)) return { ok: false, identities, error: `章节存在多个物质写者：${block.anchor}` };
       writers.add(writerKey);
     }
-    const before = resolveSectionAnchor(beforeHeadings, block.anchor);
-    const final = resolveSectionAnchor(finalHeadings, block.anchor);
+    // 更名后的块以**新标题**为锚（规格「与既有 op 的组合」）；该锚在 before 中不存在，
+    // 故解析失败时用反向映射折回旧标题再试一次。final 侧反之。
+    let before = resolveSectionAnchor(beforeHeadings, block.anchor);
+    if (before.status !== 'ok' && renameReverse.size > 0) {
+      const folded = resolveSectionAnchor(beforeHeadings, mapAnchorText(block.anchor, renameReverse));
+      if (folded.status === 'ok') before = folded;
+    }
+    let final = resolveSectionAnchor(finalHeadings, block.anchor);
+    if (final.status !== 'ok' && renames.size > 0 && block.op !== 'RENAMED') {
+      const folded = resolveSectionAnchor(finalHeadings, mapAnchorText(block.anchor, renames));
+      if (folded.status === 'ok') final = folded;
+    }
     identities.push({
       op: block.op,
       anchor: block.anchor,
@@ -243,6 +321,39 @@ export function verifyAgentMaterialOutcome(
       if (before.status !== 'not_found' || final.status !== 'ok') {
         return { ok: false, identities, error: `ADDED 章节没有形成唯一新增结果：${block.anchor}` };
       }
+      continue;
+    }
+    if (block.op === 'RENAMED') {
+      // 后置条件（规格「语义（只做一件事）」逐条对应）：
+      //   ① 旧锚在 before 唯一命中；② 新标题在 final 唯一命中；
+      //   ③ 层级不变、父链不变（位置不变的可判定投影）；④ 章节正文逐字节不变。
+      const parsed = parseRenamedTitle(block);
+      if (!parsed.ok) return { ok: false, identities, error: parsed.error };
+      if (before.status !== 'ok') {
+        return { ok: false, identities, error: `RENAMED 原章节不存在或不唯一：${block.anchor}` };
+      }
+      const renamedAnchor = [...mapSegments(before.hit!.path.slice(0, -1), renames), parsed.title].join(' > ');
+      const renamed = resolveSectionAnchor(finalHeadings, renamedAnchor);
+      if (renamed.status !== 'ok') {
+        return { ok: false, identities, error: `RENAMED 新标题未形成唯一章节：${parsed.title}` };
+      }
+      if (renamed.hit!.level !== before.hit!.level) {
+        return {
+          ok: false, identities,
+          error: `RENAMED 改变了标题层级：${block.anchor}（H${before.hit!.level} → H${renamed.hit!.level}）`,
+        };
+      }
+      // 正文不变**由构造保证**而非在此比对：RENAMED 块不携带正文，合成器只替换标题行字节。
+      // 此处不能比对 before/final 的整节正文——同一 delta 内的其它块（如对子节的 MODIFIED）
+      // 可以合法地改动该节内部，那不是 RENAMED 干的。复验的职责是身份：标题已改、层级与父链不变。
+      const beforeParents = mapSegments(before.hit!.path.slice(0, -1), renames).join('\u0000');
+      if (renamed.hit!.path.slice(0, -1).join('\u0000') !== beforeParents) {
+        return { ok: false, identities, error: `RENAMED 改变了章节父链：${block.anchor}` };
+      }
+      identities[identities.length - 1] = {
+        ...identities[identities.length - 1],
+        final: renamed.hit!,
+      };
       continue;
     }
     if (block.op === 'REMOVED') {
@@ -263,7 +374,8 @@ export function verifyAgentMaterialOutcome(
       }
       continue;
     }
-    if (before.status !== 'ok' || final.status !== 'ok' || !sameIdentity(before.hit!, final.hit!)) {
+    if (before.status !== 'ok' || final.status !== 'ok'
+      || !sameIdentityAfterRenames(before.hit!, final.hit!, renames)) {
       return { ok: false, identities, error: `MODIFIED 章节身份不守恒：${block.anchor}` };
     }
     let expectedBody: string;
@@ -322,6 +434,15 @@ export function composeOpenLogosMarkdown(
     if (resolution.status !== 'ok') throw new Error(`${block.op} 章节不存在或不唯一：${block.anchor}`);
     if (block.op === 'REMOVED') {
       output = spliceSection(output, resolution.hit!, '');
+      continue;
+    }
+    if (block.op === 'RENAMED') {
+      const parsed = parseRenamedTitle(block);
+      if (!parsed.ok) throw new Error(parsed.error);
+      const hit = resolution.hit!;
+      // 只替换标题行：层级（# 数量）、正文、子章节与章节在文档中的位置全部不动。
+      const heading = `${'#'.repeat(hit.level)} ${parsed.title}`;
+      output = `${output.slice(0, hit.start)}${heading}${output.slice(hit.headingEnd)}`;
       continue;
     }
     const body = rebaseDeltaBodyHeadings(rawBody, resolution.hit!.level);

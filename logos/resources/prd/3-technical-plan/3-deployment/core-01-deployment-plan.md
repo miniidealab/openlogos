@@ -3201,3 +3201,72 @@ fail-closed 与投影矩阵项必须在固定 `0.14.24` 上执行一次并记录
 ### 后续（本提案不含，需独立授权）
 
 runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机全局 `0.15.0` 安装与端到端连通验证（减法方案 §13 阶段 3～4）。
+
+## 发布前检查通则：环境事实不入 verify 期断言
+
+本节是**跨版本恒生效**的发布前检查条目，登记于此以免每次发布重新推导（架构 §四十九）。
+
+### 为什么它必须写进部署方案
+
+升版是本方案的规定动作（各版本条目的第 1 条恒为「版本号：`cli/package.json` `version` patch +1」），而 flow 门序恒为 `verify → deploy → smoke`。两者叠加即得：**verify 恒早于升版**，因此任何在 verify 期求值、又把包版本号写成字面量的断言，其期望值必然是上一个版本，下一次发布后必红。0.15.3 的实证：`UT-S34-09` 的 golden 快照钉死 `"version":"0.15.2"`，升版提交落地后仓库 `npm test` 即红，而该红版本已经全局安装。
+
+### 恒生效检查项（每次发布前逐条核对）
+
+1. **禁止字面量钉死环境事实**：包版本号、绝对路径、主机名、墙上时钟、本机全局安装现值，一律不得作为 verify 期断言的期望值；需要校验时用**运行时读取 + 关系断言**（如 tarball 版本 == `package.json` 版本、执行前后逐字一致）。
+2. **契约字段例外且必须钉死**：`data.contract.version` 与 `spec/schema/*.schema.json` 的内嵌契约版本由被测代码决定，是对外承诺，继续逐字节守死——判别式为「该值变化时是代码变了还是环境变了」。
+3. **守卫元测试必须绿**：`UT-S19-47` / `UT-S19-48` 按**字段语义**判定——包版本承载位（envelope 顶层 `version`、`--version` 输出、tarball 版本）出现**任意** `x.y.z` 形态字面量即失败，契约版本位（`data.contract.version`、随包 schema 内嵌版本）必须保持固定字面量断言，叙述文本不参与判定。**判据不得写成「等于当前包版本」的字符串比较**：升版在 verify 之后，故障快照钉的是上一个版本，那样的守卫恰好在唯一该拦的输入上放行（0.15.3 实证：当前值 `0.15.3`、故障快照 `0.15.2`、命中为空）。
+4. **升版后复跑**：`cd cli && npm test` 必须在**升版之后**再跑一次并为绿——这是对上述三条的实测兑现，不能以 verify 期的历史 PASS 代替。
+
+### 失败处置
+
+任一条不满足即判发布前检查失败：不得打包、不得安装、不得写 `DEPLOY_DONE`。修法一律是「让断言不依赖环境事实」，**禁止**以「更新快照」了事——那正是同形态缺陷两次复发的原因（`a16bf6a` 在 S19 修过一次，S34 漏网）。
+
+## OpenLogos 0.15.4 发布方案（修复发布态红测与减法收尾，本地全局）
+
+### 部署目标与授权边界
+
+把「verify 期不再依赖部署期事实」的修复与减法收尾成果送进**安装态**。当前全局安装的 0.15.3 是一个仓库 `npm test` 为红的版本——仅修仓库不发版，用户手上的 CLI 仍是坏的。
+
+本方案为**本地全局安装**（`npm i -g <tarball>`），不含 `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge、`[code]` 切片实现完成、`openlogos verify` PASS。
+2. 冻结当前本机全局 `0.15.3`：`command -v openlogos`、realpath、npm prefix、`--version`。
+3. 固定回滚基线：保留 0.15.3 tarball 与全局回滚点于 `cli/rollback/`，`LOCAL_RELEASE_ROLLBACK_VERSION=0.15.3`。
+
+### 0.15.4 版本与制品身份
+
+实现阶段必须同步：CLI `package.json` 与 lockfile 根包版本；`cli/asset-manifest.json`；全部随包 plugin manifest（`plugin/`、`plugin-codex/`、`plugin-qoder/`、`plugin-workbuddy/`、`plugin-zcode/`）；`cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION` 提升为 `0.15.4`、`LOCAL_RELEASE_ROLLBACK_VERSION` 置为 `0.15.3`。任一处残留 `0.15.3` 即判失败（`UT-S19-46`）。
+
+### 构建与 Tarball 冻结
+
+1. 仓库真实 CLI package 完整 test/build 流程；**升版后复跑 `npm test` 必须为绿**（发布前检查通则第 4 条）。
+2. 真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256；从解包 tarball 核对 CLI entry、`0.15.4` version 与 asset-manifest 一致性。
+3. 任何重新 pack 产生新 candidate identity。
+
+### 隔离 Prefix 行为矩阵
+
+`mktemp -d` 一次性 npm prefix 安装固定 tarball，从新 shell / 绝对入口执行；全部提案态在一次性临时项目内构造，**不得触碰本机全局 prefix 与本仓活跃提案**：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package/asset hash 全部来自固定 tarball，无 workspace link |
+| 发布身份与版本无关性 | 发布身份校验通过；校验逻辑**不得钉死包版本等环境事实**（三处版本走运行时读取 + 关系断言），但**允许且要求**独立固定的契约版本期望值（`data.contract.version` = `1.0.0`）——两类边界均由 `SMOKE-core-206` 自证 |
+| `RENAMED` op 可用 | 含 `RENAMED` 块的 delta 能被 `change-lint` 接纳并由 `merge` 正确应用（含 H1 更名） |
+| 悬空引用已摘除 | `spec/flow/launched.yaml` 的 `generate-merge-prompt` 不再引用 `MERGE_TRANSACTION.json`；`check-ui-hash-match` 命令已下线 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径且 version 逐字一致 |
+
+### 本机全局部署
+
+矩阵与回滚预案就位后，覆盖安装 0.15.4 tarball 到本机全局 prefix，新 shell 复核 identity 全同源 0.15.4（entry realpath / `--version` / package.json / asset-manifest）。
+
+### 失败处置与回滚边界
+
+- 发布前检查、构建、隔离矩阵任一失败 → 不安装、不写 `DEPLOY_DONE`，输出失败点与回滚建议。
+- 已全局安装后发现问题 → 以 `cli/rollback/` 的 0.15.3 制品回装，无数据迁移、无状态文件需清理。
+
+### 追溯
+
+- 架构：§四十九（环境事实不入 verify 期断言）、§五十（delta `RENAMED` op）。
+- 测试：`UT-S19-46`、`UT-S19-47`、`UT-S34-09`、`UT-S34-29`；安装态 smoke：`SMOKE-core-206`。

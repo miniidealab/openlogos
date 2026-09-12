@@ -44,6 +44,26 @@ function projectRoot(yamlObj: Record<string, unknown>): string {
   return root;
 }
 
+/**
+ * 当前 CLI 包版本——**运行时读取**，测试内不出现任何版本字面量（架构 §四十九）。
+ * 升版发生在 deploy 期、恒晚于 verify，故把它写死在断言里必然在下次发布后过期。
+ */
+const PKG_VERSION: string = (JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
+) as { version: string }).version;
+
+/**
+ * envelope 顶层 `"version"` 是**包版本承载位**（环境事实），必须规范化后再比 golden；
+ * `data.contract.version` 是**契约版本位**（被测性质），逐字节守死、绝不在此替换。
+ *
+ * 判据按**位置**而非取值：正则锚定 `"command":"<cmd>","version":"<x.y.z>"` 这一 envelope 头部序列，
+ * 因此任何版本值都会被规范化——不依赖「等于当前包版本」，升版后同样成立（UT-S19-47/48 守的正是这条）。
+ */
+const PKG_VERSION_SLOT = /("command":"[a-z-]+","version":")\d+\.\d+\.\d+(")/g;
+function normalizePkgVersionSlot(text: string): string {
+  return text.replace(PKG_VERSION_SLOT, '$1<PKG_VERSION>$2');
+}
+
 const CORE_MOD = { id: 'core', name: 'Core', lifecycle: 'initial' };
 const ADMIN_MOD = { id: 'admin', name: 'Admin', lifecycle: 'initial' };
 
@@ -179,7 +199,9 @@ describe('S34 — status/next 集成（条件版本 + 分组）', () => {
         modules: [CORE_MOD],
         scenarios: [sc('S01', 'core')],
       });
-      const norm = (s: string) => s.split(root).join('<ROOT>'); // 临时根路径规范化，仅影响非契约展示字段
+      // 环境事实规范化：临时根路径 → <ROOT>（既有）、envelope 包版本 → <PKG_VERSION>（本次新增）。
+      // 契约字段 data.contract.version 不在规范化范围内，继续逐字节守死。
+      const norm = (s: string) => normalizePkgVersionSlot(s.split(root).join('<ROOT>'));
       const statusText = norm(await runCmd(root, () => status('text')));
       const statusJson = norm(await runCmd(root, () => status('json')));
       const nextText = norm(await runCmd(root, () => next('text')));
@@ -195,8 +217,59 @@ describe('S34 — status/next 集成（条件版本 + 分组）', () => {
       for (const txt of [statusText, nextText]) expect(txt).not.toContain('🗂 features');
       for (const jsonOut of [statusJson, nextJson]) {
         const env = JSON.parse(jsonOut);
+        // 契约版本位：逐字节守死，且**未被**规范化（把被测性质当噪声抹掉同样是缺陷）
         expect(env.data.contract.version).toBe('1.0.0');
         expect(JSON.stringify(env.data)).not.toContain('"features"');
+        // 包版本承载位：已规范化为占位符，golden 中不再出现任何具体版本
+        expect(env.version).toBe('<PKG_VERSION>');
+        expect(jsonOut).not.toContain(PKG_VERSION);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('UT-S34-29: 升版后四路 golden 零假红（环境事实规范化，契约字段不被抹掉）', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2020-01-01T00:00:00.000Z'));
+    try {
+      const root = projectRoot({
+        project: { name: 't' },
+        modules: [CORE_MOD],
+        scenarios: [sc('S01', 'core')],
+      });
+      const norm = (s: string) => normalizePkgVersionSlot(s.split(root).join('<ROOT>'));
+
+      // vA = 真实当前包版本；vB = 同一输出在「升版之后」的形态（读真实值后注入变体，
+      // 不写盘、不改仓库字节——升版本身是 deploy 期动作，verify 期只能模拟其结果）。
+      const vA = PKG_VERSION;
+      const [major, minor, patch] = vA.split('.').map(Number);
+      const vB = `${major}.${minor}.${patch + 1}`;
+      expect(vB).not.toBe(vA);
+
+      const raw = {
+        statusText: await runCmd(root, () => status('text')),
+        statusJson: await runCmd(root, () => status('json')),
+        nextText: await runCmd(root, () => next('text')),
+        nextJson: await runCmd(root, () => next('json')),
+      };
+
+      for (const [route, atA] of Object.entries(raw)) {
+        // 升版后的同一路输出：envelope 包版本承载位从 vA 变为 vB
+        const atB = atA.split(`"version":"${vA}"`).join(`"version":"${vB}"`);
+        // 四路均通过且两次比对结果一致——版本变化不产生任何 diff
+        expect(norm(atB), `${route}: 升版后规范化结果必须与升版前逐字节一致`).toBe(norm(atA));
+      }
+
+      // 规范化没有越界：契约字段在 vA / vB 两侧均为 1.0.0 且未被替换为占位符
+      for (const route of ['statusJson', 'nextJson'] as const) {
+        const atA = raw[route];
+        const atB = atA.split(`"version":"${vA}"`).join(`"version":"${vB}"`);
+        for (const [label, text] of [['vA', atA], ['vB', atB]] as const) {
+          const env = JSON.parse(norm(text));
+          expect(env.data.contract.version, `${route}@${label}: 契约版本必须逐字节守死`).toBe('1.0.0');
+          expect(env.version, `${route}@${label}: 包版本承载位必须已规范化`).toBe('<PKG_VERSION>');
+        }
       }
     } finally {
       vi.useRealTimers();

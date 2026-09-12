@@ -621,108 +621,28 @@ L1 tasks 结构可解析 / L2 `[code]` 标题在场 / L3 分阶段测试证据 /
 
 ## Plan 阶段决策澄清协议（openlogos/clarification@1）
 
-### 目的与不变量
+> **自 0.15.0 起本节为纯文档约定，不参与任何谓词。** 收缩依据是两条实测事实：
+> ① `## 决策澄清` 章节仍是**活结构要求**——change-lint L0 的 canonical 章节清单强制 proposal 含该章节（事实源 `plan-package-contract.ts`），缺章节即 `proposal_required_section_missing`；
+> ② 围绕它的**解析与门禁已删**——`evaluateProposalClarification`、schema 校验、完成谓词与 `plan_state.clarification` 输出均于 lite-cut3a 移除（功能规格 §2.74.1「决策澄清：判定 → 文档」）。
+> 因此本节按「保留结构、删除判定」收缩：`C-ID` 正则、category 九值枚举、source 枚举与 impact 状态机一并删除——它们描述的是一个不再存在的校验器；把它们留在规范里，就是让作者按一份没有检查者的格式书写。
 
-决策澄清用于防止 proposal 在高影响选择尚未由人确认时被形式化填满。它属于 `write-proposal` 节点内部协议，必须遵守以下不变量：
+### 仍然生效的要求
 
-1. 不新增 lifecycle、subflow、flow node、human gate、marker 或 `proposal_step` 枚举值。
-2. `plan-exit` 仍是唯一完整方案批准门；澄清完成不等于批准。
-3. `proposal.md` 是澄清状态唯一持久化事实源；宿主不得维护第二份权威完成状态。
-4. 简单、事实充分的提案不得因协议增加固定问卷。
-5. `--auto` 是流程执行授权，不是未决高影响方案的答案。
+1. **proposal 必须含 `## 决策澄清` 章节**（canonical 章节清单的一员，change-lint L0 强制）。章节缺失或重复即违规。
+2. 章节内容用于**记录本次变更中由人做出的关键取舍**：问题是什么、选了什么、为什么、否决了什么。形式不受机器约束——列表、表格或 YAML 均可，历史提案沿用的 `openlogos/clarification@1` YAML 形态可继续使用，但**不再被解析**。
+3. 事实优先仍是写作纪律：可从仓库、配置、规格、运行环境查得的事实**不得**反问用户；决策澄清记录的是「仓库答不出、必须由人拍板」的那部分。
+4. `plan-exit` 仍是唯一完整方案批准门；决策澄清写没写、写成什么样，都**不构成**批准，也不改变任何 `proposal_step` 派生。
 
-### 事实优先与高影响判定
+### 已删除的部分（不再执行，历史提案中的残留写法无需回改）
 
-change-writer 在提问前必须读取仓库、配置、规格、Git/CI 和运行环境中可可靠获得的事实。已有模块/owner/API/DB、部署环境、Secret/ServiceAccount 声明、兼容政策、测试和运行状态不得作为事实问题反问用户。
+| 曾经的规定 | 现状 |
+|---|---|
+| `status: pending\|complete` 完成状态机与 fail-closed 判定 | 已删（无解析器求值；完成判定见 `spec/flow-spec.md` 的 plan 完成谓词，其中不含澄清项） |
+| `C\d{2}` 形态的 decision ID 正则、category 九值枚举、source 三值枚举 | 已删（无校验器） |
+| `impacts.*.status` 五维状态机与「高影响必问」触发表 | 已删（同上；判断由 change-writer 与人共同承担，不再是机器谓词） |
+| `plan_state.clarification` 的 status/next 输出 | 已删（契约不再发射该字段） |
 
-仓库事实不足以唯一确定，且答案会改变下列任一内容时，事项属于高影响用户决定：产品目标/边界，责任归属/唯一 writer/跨模块契约，数据与迁移，兼容与版本，权限/安全/隐私，部署与回滚，公开发布，成本/供应商/法律或不可逆外部承诺，验收证据与明确不做范围。
-
-低影响、可逆、不改变外部契约且受既有规范约束的实现细节可由 Agent 采用推荐默认值并记录在 `defaults`，不占用用户决策轮次。
-
-### proposal 澄清区块
-
-新提案模板必须包含：
-
-```yaml
-schema: openlogos/clarification@1
-mode: adaptive
-status: pending
-impacts:
-  data: {status: none, reason: "..."}
-  compatibility: {status: none, reason: "..."}
-  security_privacy: {status: none, reason: "..."}
-  public_release: {status: none, reason: "..."}
-  external_commitment: {status: none, reason: "..."}
-decisions: []
-unresolved: []
-defaults: []
-```
-
-`mode` 为 `adaptive|deep|provided`；`status` 为 `pending|complete`（`invalid` 可由 CLI 派生）；每个 impact 的 status 为 `none|required` 且 reason 去空白后非空。`none` 表示无需本次用户选择，允许“没有影响”或“已有事实/政策唯一决定”；`required` 表示仍需用户选择。
-
-决策局部 ID 使用 CXX，与长期 DXX 分离。决策类别为 `product|ownership|data|compatibility|security_privacy|deployment|release|external_commitment|acceptance`。已确认决定至少含 id、category、question、answer、rationale、source、affects 和主要被否方案；`source` 为 `user|policy|repository_fact`。
-
-未决项必须包含 id、category、depends_on、question、impact、recommendation、recommendation_reason 和至多两个真实 options。每个尚未满足的条件性必选类别必须恰有一个同类别 unresolved；缺失或重复时返回 `clarification-contract-invalid`，不得形成只有类别 reason、没有完整问题数据的 pending。
-
-Agent 在持久化前必须完成稳定拓扑排序：依赖边优先，同一可用层按规范类别顺序，再按 CXX 数字升序。每项依赖只能在 decisions 或数组前序项中；`unresolved[0]` 的依赖必须全部在 decisions。CLI 永远只读取 `unresolved[0]`，不得跳过、重排或猜测问题。用户回答后，Agent 将当前项以 `source:user` 移入 decisions，再按相同规则重算并持久化队列。
-
-### 条件性必选人类决定
-
-| 声明/事实 | 必须存在的用户决定 | 缺失诊断 |
-|---|---|---|
-| `impacts.data.status=required` | `category=data, source=user` | `data-clarification-required` |
-| `impacts.compatibility.status=required` | `category=compatibility, source=user` | `compatibility-clarification-required` |
-| `impacts.security_privacy.status=required` | `category=security_privacy, source=user` | `security-privacy-clarification-required` |
-| proposal 需要部署 | `category=deployment, source=user` | `deployment-clarification-required` |
-| `impacts.public_release.status=required` | `category=release, source=user` | `release-clarification-required` |
-| `impacts.external_commitment.status=required` | `category=external_commitment, source=user` | `external-commitment-clarification-required` |
-
-部署决定至少覆盖目标环境、部署方式、回滚与成功/smoke 证据。部署和公开发布是两个独立类别：本地/生产部署决定不能代替 npm/tag/GitHub Release 等公开发布决定，反之亦然。
-
-推荐答案、Agent 默认值、policy/repository_fact 来源或 `next --auto` 不能满足 `required`。产品、ownership、acceptance 由 Agent 语义扫描触发；一旦列入 unresolved，同样必须由用户回答。
-
-可恢复 pending 的不变量是“未满足类别、对应 unresolved、完整 next_decision”三者闭环。结构化六类 unresolved 队首使用类别专属 reason；product、ownership、acceptance 等纯语义队首使用 `high-impact-user-decision-required`。
-
-### 完成与 fail-closed
-
-`proposal_filled` 在原有条件上同时要求：
-
-```text
-clarification 结构合法
-AND impacts 五类完整、status/reason 合法
-AND 每个未满足的条件性必选类别恰有一个同类别 unresolved
-AND unresolved 为稳定拓扑序且队首依赖全部已在 decisions
-AND 每个 required 类别都有匹配 source=user 决定
-AND (deployment_required=false OR 有 deployment/source=user 决定)
-AND clarification.status=complete
-AND unresolved 为空
-AND decisions 之间无冲突
-```
-
-区块存在但 schema、mode、impact、CXX、category、source、依赖、队列顺序、必选类别/unresolved 闭环或状态不合法时返回 `clarification-contract-invalid`，不得降级到 legacy 完成逻辑。合法 pending 必须至少有一个 unresolved，并输出非空完整 `next_decision`；存在未决时保持 `proposal_step=writing`、`next_node.id=write-proposal`。
-
-### `next --auto` 边界
-
-auto 可以消费仓库事实、显式项目政策、已记录用户决定和低风险可逆默认值；不能选择 recommendation 或回答 unresolved。遇到 pending/invalid 时不得写 `PLAN_APPROVED`、`GATE_AUTO_PASSED`，不得进入 write-tasks/Delta/实现，并输出机器可读原因与完整 `next_decision`。
-
-### 方案决策与执行授权分层
-
-- proposal 澄清：决定“方案怎么定”。
-- plan-exit：决定“是否批准完整方案”。
-- merge、verify、部署、smoke、archive、push：决定“现在是否执行动作”。
-
-人工模式继续逐门明确授权。`next --auto` 可提供既有 run-scoped standing authorization，但不扩大为替用户回答方案。达到实现迭代上限且测试未通过仍是不可绕过的硬红线。公开发布的方案决定与 npm/tag/Release 等实际操作权限分别校验。
-
-### 历史兼容
-
-- 新版 CLI 新建提案必须生成合法区块。
-- 已越过 plan 的历史提案不回退。
-- 仍在 writing 且无区块的历史提案按 legacy 状态展示并提示由 change-writer 补齐；CLI status/next 不自动改写 proposal。
-- 区块一旦存在立即严格校验；未知 clarification 主版本原样输出检测到的 schema，以 `status=invalid`、`clarification-upgrade-required`、null next_decision 保守停止，并须通过 1.2 输出 Schema。
-
-### OpenLogos 与宿主边界
-
-OpenLogos 负责模板、解析、结构校验、必选类别匹配、完成谓词、JSON Schema、auto fail-closed、历史兼容、跨进程重读及 UT/ST。RunLogos 等宿主负责暂停/恢复、一次展示一个决定、把用户原文答案交回 Agent，以及真实 Agent 行为评测；宿主只消费 CLI JSON，不解析 proposal 判完成。
+**这条收缩本身是一条判据**：规范中的每一条形式约束都应当有检查者；没有检查者的形式约束只会在起草阶段消耗作者、而拦不下任何真实缺陷——`authority-closure` 因同一理由在 0.15.0 被整体废止。
 
 ## 切片感知 verify 生命周期与恢复门
 
@@ -925,3 +845,41 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 **完成谓词**：`SPEC_MERGED` 在场即 spec-complete。不存在事务相位、receipt 或第二事实源参与该判定——**任何审计产物都不得出现在流程分支的条件里**。
 
 **失败与重来**：合并失败即整批回滚，主文档保持合并前字节；已合并后发现 delta 有误时，`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `merge`。不提供 reopen / abort / recover——不存在需要出路的中间态。
+
+## Delta  op：章节标题更名
+
+### 为什么需要第五个 op
+
+现有四个 op 都不能改写标题行：`ADDED` 顶层块**恒发 level 2**（无法产出 H1）、`MODIFIED` 的标题行取自被锚定章节的原标题（正文可换、标题不可换）、`REMOVED` 是整节删除、`REMOVED-ITEMS` 是纯声明。于是「把文档标题从已删机制名改成现名」这类变更在方法论内无路可走，只能越出 delta 手工改——那会让该次变更不可追溯，且限制反复复发。`RENAMED` 一次性解锁这一整类变更。
+
+### 语法
+
+```markdown
+## RENAMED — <章节锚>
+<新标题文本>
+```
+
+- **锚**：与其它 op 同一套定位语义——支持标题路径锚（`父级标题 > 目标标题`）与序数锚（`<标题> [n]`）；命中 0 或多个一律 fail-closed（`delta_section_anchor_unresolvable`）。
+- **正文**：块正文**恰好一行**，即新标题文本（不含 `#` 前缀）。多行、空正文、或正文以 `#` 开头一律拒绝。
+- **适用层级**：H1–H6，**含文档级 H1**——这是它与其它 op 的关键差别。
+
+### 语义（只做一件事）
+
+| 维度 | `RENAMED` 的行为 |
+|---|---|
+| 标题文本 | 替换为块正文给出的新文本 |
+| 标题层级 | **不变**（沿用原标题行的 `#` 数量；H1 更名后仍是 H1） |
+| 章节正文 | **逐字节不变**（`RENAMED` 块不携带正文内容，故不可能顺手改写） |
+| 章节位置 | **不变**（区别于 `REMOVED` + `ADDED`：后者会把该节删掉再追加到文末并降级为 H2） |
+| 子章节 | 不变（层级与内容均不受影响） |
+
+### 与既有 op 的组合
+
+- 同一 delta 内可与其它 op 共存，按块顺序依次作用于演进中的文档；
+- 更名后若还要改该节正文，用**新标题**作为后续 `MODIFIED` 的锚（顺序敏感，与既有多块语义一致）；
+- 对同一章节的 `REMOVED` 与 `RENAMED` 是冲突：第二个块必然锚解析失败，由既有 fail-closed 路径拒绝，不新增冲突规则；
+- 新标题若与文档中既有标题重复，会破坏后续章节可寻址性——由 `openlogos lint-specs` 的 `duplicate_heading` 在人读侧暴露（该项不参与任何门）。
+
+### 与条目守恒（L8）的关系
+
+`RENAMED` 不增删任何结构化条目（测试表 ID 行、场景表行、编号小节），故**不产生**守恒判定；它也不构成「隐式删除」的载体——正文不在块内，想删也删不掉。这正是把更名做成独立 op、而不是放宽 `MODIFIED` 的理由：op 的粒度与语义对齐，delta 文本才能自证「这节是新的、改了正文、还是只换了名字」。

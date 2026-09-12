@@ -153,7 +153,7 @@ export interface ChangeLintWarning {
 
 // ── L4：validateMarkdownDelta（前置重构②，fence-aware——F4 修正）──
 
-export const SECTION_MARKER_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\b/m;
+export const SECTION_MARKER_RE = /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\b/m;
 
 /**
  * 权威模板占位字面量唯一常量表：覆盖两个权威模板
@@ -186,7 +186,7 @@ export interface MarkdownDeltaValidation {
 
 /**
  * `.md` delta 结构校验（结构规则而非全文词表，**同一份 fence-aware 扫描**同时判两结论——F4）：
- * - missingSectionMarker：围栏外无任何 ADDED/MODIFIED/REMOVED **物质变更**段标记（围栏内示例不算权威标记）。
+ * - missingSectionMarker：围栏外无任何 ADDED/MODIFIED/REMOVED/RENAMED **物质变更**段标记（围栏内示例不算权威标记）。
  *   S37：`REMOVED-ITEMS` 是合法段标记但**纯声明性**（无物质变更载体）——仅含 REMOVED-ITEMS 的 delta 仍判缺物质标记；
  * - templateSkeleton：围栏外 (a) marker 标题本身是占位标题，或 (b) 存在任一独占一行的权威模板
  *   占位符行——不要求正文全部由占位构成，真实内容与残留占位行混合的部分模板同样命中；
@@ -201,7 +201,7 @@ export function validateMarkdownDelta(content: string): MarkdownDeltaValidation 
     if (scan.masked[i]) continue; // 围栏/缩进代码/HTML 注释内的引用不构成权威结构、不得命中
     const trimmed = scan.text[i].trim();
     // 注意顺序：REMOVED-ITEMS 必须先于 REMOVED 判别（\b 在 `REMOVED-` 处成立，否则被误吞为 REMOVED）。
-    const markerMatch = trimmed.match(/^##\s+(REMOVED-ITEMS|ADDED|MODIFIED|REMOVED)\b\s*(?:[—-]\s*(.+))?$/);
+    const markerMatch = trimmed.match(/^##\s+(REMOVED-ITEMS|ADDED|MODIFIED|REMOVED|RENAMED)\b\s*(?:[—-]\s*(.+))?$/);
     if (markerMatch) {
       if (markerMatch[1] !== 'REMOVED-ITEMS') hasMaterialMarker = true;
       const title = stripInlineCode(markerMatch[2] ?? '').trim();
@@ -421,7 +421,9 @@ export interface DeltaConservationViolation {
 export function evaluateDeltaConservation(deltaContent: string, targetContent: string | null): DeltaConservationViolation[] {
   if (targetContent === null) return [];
   const blocks = parseDeltaBlocks(deltaContent);
-  const material = blocks.filter(b => b.op !== 'ADDED');
+  // RENAMED 不参与守恒对账：它不携带正文、不增删任何结构化条目（规格「与条目守恒（L8）的关系」）。
+  // 若把它当 MODIFIED 对账，其单行正文会被读成「整节只剩一行」→ 全节 ID 假性隐式删除。
+  const material = blocks.filter(b => b.op !== 'ADDED' && b.op !== 'RENAMED');
   if (material.length === 0) return [];
   const anchored = material.filter(b => b.anchor);
 

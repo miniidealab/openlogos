@@ -397,56 +397,6 @@ basename 对齐。**绑定 pages + 内容 hash** 是防批准后漂移的键。
 
 **适用范围**：仅 `ui_impact:true` 提案要求这些字段有意义；`ui_impact:false` 不涉及。
 
-## 9. 失效检测点：`verify-ui-provenance` 置于 merge 前
-
-### 9.1 检测点前移到 merge 之前
-
-漂移检测点**置于 merge 之前**（晚于 merge 则漂移原型已落入 resources，太迟）。以 overlay-add 节点
-`verify-ui-provenance` 实现：
-
-```yaml
-- id: verify-ui-provenance
-  before: generate-merge-prompt   # merge 之前
-  when: ui_impact
-  done_when: cmd:openlogos check-ui-hash-match   # 真实可执行子命令（占位 <...> 仅文档示意）
-```
-
-### 9.2 单 `done_when: cmd:` + `check-ui-hash-match` 三分支
-
-`verify-ui-provenance` 用**单个** `done_when: cmd:openlogos check-ui-hash-match`（不用 `fail_when`——
-只给 `fail_when` 则 hash 匹配的成功路径永不 done、流程卡死；且 §9.2 决策 B 禁同节点
-done_when/fail_when 均为 cmd:）。节点**仅单 `done_when: cmd:`（无 `fail_when`）**——三分支逻辑全部
-在命令**内部**实现。
-
-**可执行命令契约（F1b）**：`check-ui-hash-match` 是**真实 CLI 子命令** `openlogos check-ui-hash-match`
-——项目根 cwd、自解析活跃提案、`exit 0` = 放行（node done）、非 0 = 阻断（node 未 done）。规格与
-overlay 源文件中的 `<...>` 占位仅文档示意；**运行时 `done_when` 必须是可执行命令字符串**。
-
-**`check-ui-hash-match` 三分支（F6，与 §11.3 / merge 落盘同一「持久化批准记录」分支一致）**：命令读
-`PLAN_APPROVED` 持久化 provenance（**非会话 capability**）分三支：
-
-1. **含 UI provenance**（`ui_prototype_rendered:true` + `pages` + `hashes`）→ 重算 `2-page-design/`
-   现值 hash 与 `PLAN_APPROVED.hashes` 逐文件比对：`hashes` **完好且全匹配** → `exit 0`（node done、
-   放行）；**缺失 / 损坏 / 失配** → **非 0 fail closed**（node 未 done、前向阻断）。
-2. **legacy/degraded 或旧空 marker 且无任何「曾渲染确认」证据** → **记 advisory 后 `exit 0`**（node
-   done、merge 可达）。**这是新增的第三成功分支**——解决「GUI `ui_impact:true` 但批准记录为旧空
-   `PLAN_APPROVED`（legacy/degraded、无曾渲染证据）的提案，此前因 §9.2 只有两果而永久卡在
-   `verify-ui-provenance`、advisory 放行不可达」的死锁；此类提案的 advisory 放行现**经本节点 `exit 0`
-   达成，而非绕过节点**。
-3. **部分 / 损坏 provenance**（`ui_prototype_rendered:true` 但 `hashes` 缺失 / 为空）→ **不得误判为
-   legacy** → **fail closed（非 0）**。即「曾声明渲染」证据存在但 hash 载体不全，一律按失效处理，不得
-   走第 2 支被放行。
-
-三分支只有第 1 支「完好全匹配」与第 2 支「legacy/advisory」两种成功路径 `exit 0`；第 1 支的
-失配/损坏与第 3 支的部分 provenance 均 `exit` 非 0。单 cmd: 合法（overlay-add，非双 cmd:）。
-
-### 9.3 状态转换（诚实边界）
-
-flow 引擎**前向线性、无跨 subflow 自动回退边**。故「退回 plan-exit」**非引擎自动 rewind**，而是：
-`verify-ui-provenance` 未 done ⇒ 阻断；remediation = **driver/人工显式重入 plan**（重跑 producer 产
-原型 + plan-exit 重批，刷新 `PLAN_APPROVED.hashes`）→ 再到该节点时 hash 匹配 `exit 0` → done →
-放行。即「失配即卡在未 done + 显式重入刷新」，不假装引擎自动倒转。
-
 ## 10. 「批准即确认」的前提精确化
 
 ### 10.1 精确化确认语义
