@@ -57,7 +57,7 @@
 | ST-S37-07 | 合法根 ID Delta lint 放行 | 临时项目分别构造 S10、D12、2.3 根标题目标与正文不重复根 ID 的同锚 MODIFIED，走真实 `openlogos change-lint` 文本/JSON 入口 | 三类均 exit 0、`pass=true`、无 L8 violation；运行前后项目字节不变 |
 | ST-S37-08 | lint/merge 同源根 ID 闭环 | 对合法根 ID 提案先 lint 再运行 `openlogos merge <slug>`；对根保留但内嵌 S11/测试 ID 缺失的对照提案运行两命令 | 合法提案 lint exit 0 且 merge 生成 `MERGE_PROMPT.md`；非法对照两侧均只报告真实缺失 ID，merge 非零且不写 prompt/marker |
 
-## 三、Merge Transaction 共享 Section Anchor Authority 测试
+## 三、共享 Section Anchor Authority 测试
 
 ### 单元测试
 

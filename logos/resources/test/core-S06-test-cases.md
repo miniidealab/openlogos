@@ -1,4 +1,4 @@
-# S06：Authority Closure 测试设计用例
+# S06：测试设计（test-writer）测试用例
 
 > 本文件原有的全部用例（UT-S06-01～06、ST-S06-01～02）验证的是 test-writer 依 Authority Closure 生成 happy/stale/conflict/legacy_writer/restart/rebuild/rollback/reverse_inference 八维必测矩阵。change-lint L10 删除后该矩阵要求不复存在，用例失去验证对象，整体删除。
 >

@@ -1,4 +1,4 @@
-# core-S39: 按触达目标规格闭包测试用例
+# core-S39: merge 目标派生与 delta 协议测试用例
 
 > 场景：S39 baseline-on-touch｜决策：D02｜全部测试实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
 
