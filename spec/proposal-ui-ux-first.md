@@ -581,9 +581,10 @@ UI 时，允许在 plan 阶段产出 page-design 原型 delta（`deltas/prd/2-pr
 逐页原型 + `design-system.json`（写 `2-page-design/`，guard allowlist 放行）→ ③ overlay-add
 `write-ui-prototype` 的 `done_when: cmd:openlogos check-ui-prototype`（真实可执行子命令，`<...>` 仅文档
 示意）富对账通过 → ④ 面板渲染原型、用户批准 → ⑤ 面板/driver 写 `PLAN_APPROVED` body
-（`ui_prototype_rendered` + `pages` + `hashes`）→ ⑥ merge 前 `verify-ui-provenance` 的
-`done_when: cmd:openlogos check-ui-hash-match` 按三分支重算 hash → 含 provenance 完好匹配 / legacy
-advisory 则 done 前进、失配或部分 provenance 则卡未 done。链上每一跳的 actor / 触发 / 产物均已具名。
+（`ui_prototype_rendered` + `pages` + `hashes`）→ ⑥ merge 时按持久化 provenance 重算 hash：
+失配**告警后继续合并**（lite-cut3a 起由阻断门降级为警告，功能规格 §2.74.2；此前由已删节点
+`verify-ui-provenance` 以 `done_when: cmd:` 阻断）。诊断能力不减——`openlogos check-ui-hash-match`
+作为人工入口单独运行时仍如实报失配并非零退出（见 §16 第 7b 条）。链上每一跳的 actor / 触发 / 产物均已具名。
 
 ### 13.7 完整授权链（逐个 actor + 授权依据）
 
@@ -682,12 +683,13 @@ merge-executor 的「整份 create/replace」**仅**适用于 `2-page-design/` �
 7. **严格性以持久化批准记录为键**：模式选择读会话 capability（仅 plan-exit 之前）；强制语义读
    `PLAN_APPROVED` provenance（plan-exit 之后）。含 UI provenance ⇒ merge/落盘/复核三处永久 fail
    closed，会话 capability 缺失不得降级。
-7b. **`check-ui-hash-match` 三分支（F6）**：`verify-ui-provenance` 单 `done_when: cmd:`（无 `fail_when`），
-   命令内部按持久化 `PLAN_APPROVED` provenance 分三支——(1) 含 UI provenance：hashes 完好且全匹配
-   `exit 0`，缺失/损坏/失配 fail closed；(2) legacy/degraded 或旧空 marker 且无「曾渲染确认」证据：
-   记 advisory 后 `exit 0`（第三成功分支，令旧空 marker 的 GUI `ui_impact:true` 提案不永久卡死、
-   advisory 经本节点 `exit 0` 达成而非绕过）；(3) 部分/损坏 provenance（`ui_prototype_rendered:true`
-   但 hashes 缺/空）不得误判 legacy → fail closed。
+7b. **`check-ui-hash-match` 保留为人工诊断入口（节点已删，命令未删）**：flow 节点
+   `verify-ui-provenance` 已于 lite-cut3a 删除，UI provenance 漂移由阻断门降级为 `merge` 的**告警**
+   （功能规格 §2.74.2）——不再有任何节点以 `done_when: cmd:` 调用该命令。但命令**本身保留**，且这是
+   一条**活约束**而非历史遗留：`UT-S09-345` 要求它「单独运行时仍如实报失配并非零退出（诊断能力不减）」、
+   `ST-S09-143` 要求它「照常可用」、`merge.ts` 的告警文案两处主动推荐用户跑它。判其为「无人调用的活命令」
+   而下线是**误判**（本提案前一轮曾做过该判断并被这三条证据证伪）；下一轮减法不得重复。
+   `checkUiHashMatch()` 作为 `merge` 告警判据的三分支语义同样保留，只是不再挂在任何节点的 done_when 上。
 8. **merge 命令级 hash 强制**：直接 `openlogos merge` 与 driver 流一致强制，无绕过路径；single source
    of enforcement。
 9. **freshness 权威点在落盘时刻**：提示前=早失败优化，权威门=落盘时刻校验 staged 字节 + 落盘后

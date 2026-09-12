@@ -428,3 +428,35 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S19"`；失败不得写 pass。
 - 守卫的遍历源必须是**磁盘上的测试资产**，不得改为一份人工维护的文件白名单——白名单会随新增快照静默失效，那正是本守卫要消除的形态。
 - **判据不得退化为「等于当前包版本」的字符串比较**：那样的守卫在升版后必然漏掉故障快照（旧值），UT-S19-48 即为此设的回归锚。
+
+## S19 升版确定性与 manifest 自洽守卫
+
+> 覆盖发布前检查通则第 4～5 条（功能规格 §2.81）：升版收敛为一条确定性动作，派生值由生成器重算；manifest 自洽性有独立失败信号。与 `UT-S19-47` / `UT-S19-48`（环境事实守卫）同族——三者共同守住「发布期事实不得靠人记得」。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S19-49 | `asset-manifest.json` 自洽（payloadHash == payload 现算值） | 仓库任意状态；用例**运行时**读取 manifest，不含任何版本或哈希字面量 | ① 读 `cli/asset-manifest.json`；② 剥去 `payloadHash` 后按既有 canonical 序列化算 SHA-256；③ 与在盘 `payloadHash` 比对 | 相等则通过；不等则**失败**并点名 `payloadHash`、给出 expected/actual 与修法「跑生成器重算，禁止手改」。**修复前的中间态（手改 version 未重算）在本用例上必红**——0.15.4 实证：该状态曾以 12 个文件 72 条 `asset manifest payload hash 不匹配` 的形式暴露，本用例把它收敛为一条点名诊断 |
+| UT-S19-50 | 升版脚本：全载体一次改全、派生值重算、幂等 | 一次性临时仓库副本（**不得改动本仓字节**），预置当前版本 `vA` | ① 以目标版本 `vB` 执行升版脚本；② 检查 8 处身份载体与候选/回滚常量；③ 检查 `asset-manifest.json`；④ 对已是 `vB` 的副本重复执行 | ② 8 处全部为 `vB`，`LOCAL_RELEASE_CANDIDATE_VERSION=vB`、`LOCAL_RELEASE_ROLLBACK_VERSION=vA`，**无一处残留 `vA`**；③ manifest 的 `version` 为 `vB` 且 `payloadHash` 自洽（即由生成器重算而非手写）；④ 重复执行后**字节不变**（幂等）；脚本输出逐项变更清单（文件 → 旧值 → 新值）供复核 |
+
+### 边界与反例
+
+| 情形 | 期望 |
+|---|---|
+| 仅手改 `asset-manifest.json` 的 `version`、不重算 hash | `UT-S19-49` **失败**——这正是要拦的中间态 |
+| 升版脚本对非法目标版本（非 `x.y.z`）执行 | 拒绝且**零改写**：不得留下改了一半的仓库 |
+| `asset-manifest.json` 的 schema 或生成算法 | **不变**——本组只约束「谁来写」，不改产物形态 |
+
+### 追溯与覆盖
+
+- AC-BUMP-01 manifest 自洽有独立失败信号：UT-S19-49。
+- AC-BUMP-02 升版一次写全载体且派生值由生成器重算：UT-S19-50 ②③。
+- AC-BUMP-03 升版幂等且非法输入零改写：UT-S19-50 ④、边界表。
+- 功能规格：§2.81；部署方案：「发布前检查通则」第 4～5 条；相关用例：UT-S19-46（发布身份全源一致）、UT-S19-47/48（环境事实守卫）。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S19"`；失败不得写 pass。
+- `UT-S19-50` 必须在**一次性临时副本**内执行升版脚本——在本仓真实升版会污染工作区，且升版是 `[deploy]` 阶段的动作，不得由 verify 期用例代劳。
+- `UT-S19-49` 的 canonical 序列化必须**复用生产实现**（`asset-manifest.ts` 的同一函数），不得在测试内复述一份序列化规则——那会让守卫与被守对象各算各的。

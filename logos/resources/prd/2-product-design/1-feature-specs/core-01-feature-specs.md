@@ -3412,3 +3412,74 @@ checkpoint 行 schema 升至 `openlogos/slice-checkpoint@2`；账本 append-only
 
 - 场景：`core-S35`（change-lint 左移硬检查）、`core-S32`（切片规划）。
 - 相关节：§2.30（change-lint 检查项矩阵与输出契约）、§2.73（L8 强度分级）、§2.78（写入侧 fail-closed）。
+
+## 2.80 ADDED 标题保真（raw/normalized 分离）
+
+### 2.80.0 问题：定位坐标被当成了落盘内容
+
+`parseDeltaBlocks` 把章节锚存成 `stripInlineCode(rawAnchor)`——这对**定位**是必需的，它让 `` `X` `` 与 `X` 等价匹配。但 `composeOpenLogosMarkdown` 的 `ADDED` 分支又拿这份剥离结果去做**新章节的标题**，而 `stripInlineCode` 是整段删除行内代码、不是脱反引号，于是标题里的 `` `x` `` 段落在落盘时消失。
+
+两处已合并的真实损坏（被吞内容无法从落盘文本反推，须回溯归档 delta 取原文）：
+
+| 目标文件 | delta 里写下的 | 落盘的 | 发生时间 |
+|---|---|---|---|
+| `spec/change-management.md` | ``Delta `RENAMED` op：章节标题更名`` | `Delta  op：章节标题更名` | 2026-09-11 |
+| `spec/cli-json-output.md` | ``3.17 `state_inconsistency` 对账投影字段…`` | `3.17  对账投影字段…` | 2026-09-07 |
+
+### 2.80.1 修法：数据结构上分离两种形式
+
+`DeltaBlock` 同时携带两个字段，用途互不越界：
+
+| 字段 | 内容 | 用途 |
+|---|---|---|
+| `anchor` | `stripInlineCode(rawAnchor)` 后的规范化文本 | **定位**：锚匹配、序数解析、多写者判重 |
+| `rawAnchor` | 原始锚文本，逐字保留 | **产出**：`ADDED` 发射的新章节标题 |
+
+`RENAMED` 的新标题取块正文原文（本就不经规范化），与本节同一条边界。定位路径逐字不变——既有全部锚的匹配语义零改动。
+
+### 2.80.2 复验：补上那道从来没有过的检查者
+
+既有 `verifyAgentMaterialOutcome` 对 `ADDED` 的后置条件是「锚在 final 中唯一命中」。锚与落盘标题被**同一个函数**剥离，两边必然相等——该复验对标题损坏天然盲，这正是两次损坏静默通过的原因。
+
+新增后置条件：**`ADDED` 落盘章节的标题必须与 delta 中写下的原始锚末段逐字相等**。比较用原始形式，不经 `stripInlineCode`——检查者与被检查者不得共用同一条规范化管道（架构 §51.2）。
+
+### 2.80.3 零回归边界
+
+| 保留项 | 说明 |
+|---|---|
+| 锚匹配语义 | `stripInlineCode` 在定位侧行为逐字不变；已合并规格中依赖 `` `X` `` ↔ `X` 等价的锚继续生效 |
+| 不含行内代码的 `ADDED` | `rawAnchor === anchor`，落盘结果逐字节不变 |
+| `MODIFIED` / `REMOVED` / `REMOVED-ITEMS` | 不产出标题，不受影响 |
+| 已损坏的两处标题 | 由本提案的 `RENAMED` delta 就地修复，不做全仓推测性批量替换（信息已丢失，只能逐个回溯原文） |
+
+## 2.81 升版确定性动作
+
+### 2.81.0 问题：把确定性变换交给纪律
+
+发布流程要求把版本号同步到 **8 处身份载体**（`cli/package.json`、lockfile 根包、`cli/asset-manifest.json`、5 份随包 plugin manifest）外加 `local-release-candidate.ts` 的候选/回滚常量。其中 `asset-manifest.json` 有一个陷阱：它的 `payloadHash` 是对**含 `version` 字段的整个 payload** 求的 SHA-256，手改 `version` 后必须**重算**该派生值。
+
+0.15.4 部署实测：按清单手改 9 处后复跑 `npm test`，得到 **12 个文件 72 条失败**，全部是 `asset manifest payload hash 不匹配`。该中间态在 0.15.3 那次同样存在，只是当时没有「升版后复跑 `npm test`」这条通则（0.15.4 新立），`npm pack` 的 `prepack` 顺手重算了 manifest，于是这条红从未被看见。
+
+### 2.81.1 升版收敛为一条确定性动作
+
+提供仓库内脚本（`cli/scripts/bump-version.mjs`），单次执行完成：
+
+1. 读当前版本（不接受版本字面量以外的输入歧义），计算目标版本；
+2. 一次写全部 8 处身份载体 + `LOCAL_RELEASE_CANDIDATE_VERSION` / `LOCAL_RELEASE_ROLLBACK_VERSION`；
+3. **调用既有生成器重算 `cli/asset-manifest.json`**——派生值由生成器产出，不由人手写；
+4. 输出逐项变更清单（文件 → 旧值 → 新值）供复核；
+5. 幂等：对已是目标版本的仓库重复执行，结果字节不变。
+
+**`asset-manifest.json` 自此只由生成器写**，任何手改都是违规路径。
+
+### 2.81.2 守卫：manifest 自洽性必须有独立失败信号
+
+新增元测试断言 `cli/asset-manifest.json` 的 `payloadHash` 等于其 payload 现算值。它的价值不在「发现 hash 错了」——下游 sync 路径本来就会红——而在**诊断形态**：一条点名字段的失败，取代 12 个文件 72 条连锁红。
+
+这与 §2.78「判据单点化」同理：失败点越靠近根因，修复越不依赖运气。
+
+### 2.81.3 零回归边界
+
+- `asset-manifest.json` 的 schema、字段与生成算法**不变**，只是写入者收敛为生成器；
+- 既有 `prepack` 链路不变（它本就调用同一生成器）；
+- 升版脚本是**仓库私有流程**，不进 `openlogos` 命令面（发布是本仓的事，不是用户项目的能力）。

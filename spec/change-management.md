@@ -554,12 +554,6 @@ plan-exit 门前，写入范围**显式且仅放行** `deltas/prd/2-product-desi
 
 **openlogos 可独立发布至 contract-ready**：原型即普通 delta，merge 照常落盘，旧面板仍不崩不阻断；但**核心视觉确认价值须 runlogos 到位并跨仓 smoke 通过才 feature-enabled**。
 
-### 漂移失效检测点（前移到 merge 前，F4 R4）
-
-- **检测点前移**：漂移检测由 **overlay-add 节点 `verify-ui-provenance`** 承载，置于 **merge 之前**（`before: generate-merge-prompt`、`when: ui_impact`），在原型落盘 resources **之前**拦截漂移（放在 merge 之后太迟）。
-- **单 `done_when: cmd:` + `check-ui-hash-match` 三分支（F6）**：`verify-ui-provenance` 用**单个 `done_when: cmd:openlogos check-ui-hash-match`**（无 `fail_when`；三分支逻辑全在命令内部）。该命令是**真实可执行 CLI 子命令**（项目根 cwd、自解析活跃提案、`exit 0`=放行 / 非 0=阻断；文档中 `<...>` 仅示意，运行时须为可执行命令）。命令读**持久化 `PLAN_APPROVED` provenance**（非会话 capability）分三支：**(1) 含 UI provenance**（`ui_prototype_rendered:true` + `pages` + `hashes`）→ 重算 `2-page-design/` 现值 hash 比对 `PLAN_APPROVED.hashes`：完好且全匹配 `exit 0`（节点 done、放行）；缺失 / 损坏 / 失配 **fail closed 非 0**（节点未 done、前向阻断）。**(2) legacy/degraded 或旧空 marker 且无任何「曾渲染确认」证据** → **记 advisory 后 `exit 0`**（节点 done、merge 可达）——**新增第三成功分支**，令 GUI `ui_impact:true` 但批准记录为旧空 `PLAN_APPROVED` 的提案不再永久卡在 `verify-ui-provenance`；此类提案的 advisory 放行现**经本节点 `exit 0` 达成，而非绕过节点**。**(3) 部分 / 损坏 provenance**（`ui_prototype_rendered:true` 但 `hashes` 缺 / 空）→ 不得误判 legacy → **fail closed 非 0**。单 cmd: 合法（overlay-add，非双 cmd:）；只有第 1 支全匹配与第 2 支 advisory 两种成功路径。
-- **状态转换（诚实边界）**：flow 引擎**前向线性、无跨 subflow 自动 rewind**。「退回 plan-exit」**非引擎自动倒转**，而是——失配即卡在未 done，remediation = **driver / 人工显式重入 plan**（重跑 producer 产原型 + plan-exit 重批，刷新 `PLAN_APPROVED.hashes`）→ 再到该节点时 hash 匹配 `exit 0` → done → 放行。
-
 ### F4 R7 红线：严格性以持久化 `PLAN_APPROVED` 为键，绝不因会话 capability 缺失降级
 
 **模式选择**与**强制语义**分离，堵跨会话降级绕过：
@@ -846,7 +840,7 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 
 **失败与重来**：合并失败即整批回滚，主文档保持合并前字节；已合并后发现 delta 有误时，`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `merge`。不提供 reopen / abort / recover——不存在需要出路的中间态。
 
-## Delta  op：章节标题更名
+## Delta RENAMED op：章节标题更名
 
 ### 为什么需要第五个 op
 
@@ -883,3 +877,25 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 ### 与条目守恒（L8）的关系
 
 `RENAMED` 不增删任何结构化条目（测试表 ID 行、场景表行、编号小节），故**不产生**守恒判定；它也不构成「隐式删除」的载体——正文不在块内，想删也删不掉。这正是把更名做成独立 op、而不是放宽 `MODIFIED` 的理由：op 的粒度与语义对齐，delta 文本才能自证「这节是新的、改了正文、还是只换了名字」。
+
+## Delta op 的标题保真规则
+
+本节适用于**全部**产出章节标题的 op（当前为 `ADDED` 与 `RENAMED`）。
+
+### 规则
+
+> **锚的规范化形式只用于定位，产出的标题一律取原始形式。**
+
+- **定位**：章节锚经 `stripInlineCode` 规范化后匹配——`` `X` `` 与 `X` 等价，这条不变；
+- **产出**：`ADDED` 发射的新章节标题取**原始锚文本**（`rawAnchor`），行内代码、反引号与全部排版标记原样保留；`RENAMED` 的新标题取块正文原文，同样不经规范化；
+- **对账**：合并后必须校验「delta 里写下的标题 == 落盘的标题」，且该校验**不得复用与产出同一条规范化管道**——否则两边用同一把尺子量，校验恒真。
+
+### 为什么立这条规则
+
+`stripInlineCode` 是**整段删除**行内代码，不是脱掉反引号。`ADDED` 曾用剥离后的锚做标题，于是标题里的 `` `x` `` 段落在落盘时消失，且既有复验（「锚在 final 唯一命中」）对此天然盲——锚与落盘标题被同一函数剥离，必然相等。
+
+两处真实损坏：本文件的「Delta \`RENAMED\` op」与 `spec/cli-json-output.md` 的「3.17 \`state_inconsistency\` 对账投影字段」，分别发生于 2026-09-11 与 2026-09-07，两次都无人发觉。上位原则见架构 §五十一「规范化形式不得充当产出内容」。
+
+### 损坏的不可逆性
+
+被吞内容**无法从落盘文本反推**——信息已丢失，只能回溯归档 delta 取原文。因此这条规则的价值不在修复，在**拦截**：新增实例由「写下的 == 落盘的」对账当场拦下，不再进入主文档。

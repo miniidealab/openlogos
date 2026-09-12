@@ -2505,7 +2505,7 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 - 历史已越过 plan 的响应可省略新诊断或给 warning，但不得回退 proposal_step。
 - 旧 CLI 无 completion contract 时，新宿主提示升级/sync，不解析 Markdown 猜测。
 
-## 3.17  对账投影字段（lifecycle-failclosed-reconciliation）
+## 3.17 `state_inconsistency` 对账投影字段（lifecycle-failclosed-reconciliation）
 
 `status` / `next`（以及复用 `collectStatusData` 的 `watch`）在检测到**活跃提案的事实矛盾**时输出的只读投影，供宿主面板呈现对账提示。它不改变任何既有字段的语义。
 
