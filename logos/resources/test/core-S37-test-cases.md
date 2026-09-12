@@ -112,3 +112,24 @@
 - AC-L8-WARN-02 merge 不再因守恒拒绝：UT-S37-41。
 - AC-L8-WARN-03 运行期兜底：ST-S37-11。
 - 功能规格：§2.73。
+
+## 四、L8 守恒判据的 RENAMED 折算
+
+> 覆盖「规范与判据分叉」的修复：`spec/change-management.md` 规定更名后以**新标题**作后续块的锚，而 L8 守恒判据在**合并前**文档里解析锚——新标题此刻尚不存在，直接解析必然 not-found。合成器是顺序应用的、不受影响，于是出现「规范要求的写法被 lint 拒绝、真实合并却成功」。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 检查项 | Fixture | 精确期望 |
+|---|---|---|---|
+| UT-S37-42 | L8 对「`RENAMED` + 以新标题为锚的 `MODIFIED`」不得误报锚不可解析 | 目标文档含 `# 旧名` 与其正文；delta 三块按序：`RENAMED — 旧名`（正文为新名）、`MODIFIED — 新名`（携带该节全量内容）、`REMOVED — 某孤儿节` | ① `evaluateDeltaConservation` 返回 **零** `delta_section_anchor_unresolvable`——新标题经反向映射折回旧标题后命中；② `resolveModifiedSectionKeys` 同样折算，返回被更名章节的真实行号（多写者判重不因更名失效）；③ 反例对照：锚既非在盘标题、也不是本 delta 内任何 `RENAMED` 的新标题 → **仍报** `delta_section_anchor_unresolvable`（折算不得放宽真失败）；④ 折算不依赖块顺序之外的信息——`RENAMED` 块正文非单行（非法形态）时不进入映射表 |
+
+### 追溯与覆盖
+
+- AC-RENAME-FOLD-01 lint 侧折算与 compose/复验同源，规范要求的写法不再被拒：UT-S37-42 ①②。
+- AC-RENAME-FOLD-02 折算不放宽真正的锚不可解析：UT-S37-42 ③④。
+- 规范：`spec/change-management.md`「Delta RENAMED op：章节标题更名」与既有 op 的组合；架构：§五十、§五十一。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S37"`；失败不得写 pass。
+- 折算逻辑必须与 `verifyAgentMaterialOutcome` 的同名折算**同源判据**（同一套「新标题 → 旧标题」映射语义）；两侧各写一份即是本提案要消除的那类分叉的复发。

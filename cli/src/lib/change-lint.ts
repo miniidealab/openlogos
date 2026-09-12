@@ -418,6 +418,55 @@ export interface DeltaConservationViolation {
  * 必须为空。目标主文档不存在（targetContent === null，新文件）时无守恒义务。
  * 纯函数、无 IO、不抛未捕获异常（畸形输入产出空块列表，由 L4 先行拦截）。
  */
+/**
+ * 本 delta 内 `RENAMED` 造成的「新标题 → 旧标题」反向映射。
+ *
+ * 规范要求更名后以**新标题**作后续块的锚（`spec/change-management.md`「Delta `RENAMED` op」
+ * 与既有 op 的组合）。但本文件的静态判据在**合并前**的主文档里解析锚——新标题此刻尚不存在，
+ * 直接解析必然 not-found。合成器 `composeOpenLogosMarkdown` 是顺序应用的、不受影响，
+ * 于是出现「规范要求的写法被 lint 拒绝、真实合并却成功」的判据分叉。
+ *
+ * 折算这张表即可消除分叉：解析失败时把新标题折回旧标题重试一次。与
+ * `verifyAgentMaterialOutcome` 的同名折算同源，判据只有一份。
+ */
+function renamedReverseMap(blocks: ReturnType<typeof parseDeltaBlocks>): Map<string, string> {
+  const reverse = new Map<string, string>();
+  for (const b of blocks) {
+    if (b.op !== 'RENAMED' || !b.anchor) continue;
+    const newTitle = b.lines.map(l => l.trim()).filter(Boolean)[0];
+    if (!newTitle || newTitle.startsWith('#')) continue;
+    const oldTitle = b.anchor.split(' > ').pop()!.replace(/\s*\[\d+\]$/, '').trim();
+    reverse.set(newTitle, oldTitle);
+  }
+  return reverse;
+}
+
+/** 按反向映射折算锚文本（保留序数后缀 `[n]`，它不是标题的一部分）。 */
+function foldRenamedAnchor(anchor: string, reverse: Map<string, string>): string {
+  return anchor.split(' > ').map(part => {
+    const ordinal = /^(.*?)(\s*\[\d+\])$/.exec(part);
+    const base = (ordinal ? ordinal[1] : part).trim();
+    return `${reverse.get(base) ?? base}${ordinal ? ordinal[2] : ''}`;
+  }).join(' > ');
+}
+
+/**
+ * 在合并前文档中解析锚；锚是「本 delta 内被 RENAMED 过的新标题」时折回旧标题重试。
+ * 两次都不中才算真的锚不可解析。
+ */
+function resolveAnchorWithRenames(
+  headings: ReturnType<typeof parseMarkdownHeadings>,
+  anchor: string,
+  reverse: Map<string, string>,
+): ReturnType<typeof resolveSectionAnchor> {
+  const direct = resolveSectionAnchor(headings, anchor);
+  if (direct.status === 'ok' || reverse.size === 0) return direct;
+  const folded = foldRenamedAnchor(anchor, reverse);
+  if (folded === anchor) return direct;
+  const second = resolveSectionAnchor(headings, folded);
+  return second.status === 'ok' ? second : direct;
+}
+
 export function evaluateDeltaConservation(deltaContent: string, targetContent: string | null): DeltaConservationViolation[] {
   if (targetContent === null) return [];
   const blocks = parseDeltaBlocks(deltaContent);
@@ -429,6 +478,7 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
 
   const targetLines = targetContent.split(/\r?\n/);
   const headings = parseMarkdownHeadings(targetContent);
+  const renamedReverse = renamedReverseMap(blocks);
 
   // code-r2 F5：每条 violation 携带其**真实声明源行**（空锚/锚不可解析/多写者 = 相关 marker 行、
   // unknown = REMOVED-ITEMS 点名行、配对缺陷 = 声明块 marker 行、missing = 造成最终态缺失的 MODIFIED
@@ -454,7 +504,7 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
   for (const anchor of anchors) {
     const sameAnchor = anchored.filter(b => b.anchor === anchor);
     const groupLine = Math.min(...sameAnchor.map(b => b.markerLine));
-    const resolution = resolveSectionAnchor(headings, anchor);
+    const resolution = resolveAnchorWithRenames(headings, anchor, renamedReverse);
     if (resolution.status !== 'ok') {
       const detail = resolution.status === 'not_found'
         ? '未命中任何章节（not-found）'
@@ -565,12 +615,14 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
  */
 export function resolveModifiedSectionKeys(deltaContent: string, targetContent: string | null): number[] {
   if (targetContent === null) return [];
-  const blocks = parseDeltaBlocks(deltaContent).filter(b => b.op === 'MODIFIED' && b.anchor);
+  const all = parseDeltaBlocks(deltaContent);
+  const blocks = all.filter(b => b.op === 'MODIFIED' && b.anchor);
   if (blocks.length === 0) return [];
   const headings = parseMarkdownHeadings(targetContent);
+  const reverse = renamedReverseMap(all);
   const keys: number[] = [];
   for (const b of blocks) {
-    const r = resolveSectionAnchor(headings, b.anchor);
+    const r = resolveAnchorWithRenames(headings, b.anchor, reverse);
     if (r.status === 'ok') keys.push(r.hit!.line);
   }
   return keys;

@@ -1,6 +1,3 @@
-## Authority Closure 业务事实权威闭包规范
-
-
 # Authority Closure 业务事实权威闭包规范
 
 ## 废止说明
