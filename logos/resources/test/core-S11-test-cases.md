@@ -199,31 +199,6 @@
 - 无 journal、已成功恢复及安全 partial 的既有 status golden 只按本案明确改变的 seed/action 字段重拍。
 - 不可恢复 journal 是操作错误夹具，不得录成正常 status golden，也不得以“始终输出 baseline_seed_state”覆盖错误 envelope。
 
-> 测试实现必须写 OpenLogos reporter；只读性用临时项目全量文件清单与逐文件 SHA-256 前后比较证明。
-
-### 单元测试
-
-| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
-|---|---|---|---|---|---|
-| UT-S11-58 | plan_state 挂载完整 evaluation | S11 Step 2→6 | 活跃 writing plan | collect status | plan_package、version、issues 与投影字段一致 |
-| UT-S11-59 | ready 投影与 evaluator 同义 | S11 Step 3 | ready true/false 参数化 | status mapper | plan_ready 精确等于 evaluation.ready，不可被 checkbox 覆盖 |
-| UT-S11-60 | issue 稳定排序与字段保真 | S11 Step 3 | 多文件多行问题 | 两次 collect | code/path/section/line/actual/expected/fix_hint 顺序逐字节一致 |
-| UT-S11-61 | evaluator 操作错误不吞成成功态 | EX-3.1 | proposal 不可读/解析器抛错 | status | error envelope、非零；无 plan_ready 成功对象 |
-| UT-S11-62 | 历史旁路维持真实前沿 | EX-6.1 | marker + 旧模板 | status derive | proposal_step 不回退，warning 不改变 plan_state |
-
-### 场景测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
-|---|---|---|---|---|---|
-| ST-S11-36 | status/lint/next/flow 四方同源 | Step 1→6 | 合法与多类非法 fixture | 连续运行四消费者 | ready、三态、issues 完全一致；schema 1.3.0 通过 |
-| ST-S11-37 | status 所有路径只读 | EX-3.1、EX-6.1 | ready/invalid/operation-error/history fixture | 前后全量快照并运行 status | 文件集合与 hash 完全不变，无 marker/cache/stamp 写入 |
-
-### 追溯与覆盖
-
-- S11-AC-Plan-01 统一观测：UT-S11-58～UT-S11-60、ST-S11-36。
-- S11-AC-Plan-02 操作错误：UT-S11-61、ST-S11-37。
-- S11-AC-Plan-03 历史与只读：UT-S11-62、ST-S11-37。
-
 ## S11 YAML 降级告警可见性测试
 
 > 覆盖 `logos-project.yaml` 解析降级时人类可读通道的告警出口。机器通道既有的 `yaml_diagnostics` 语义与结构不变（既有 `ST-JSON-23` 已约定「不得静默回退为看起来正常」），本节把同一约定补齐到 `status` / `next` 的文本输出。
@@ -314,3 +289,30 @@
 
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S11"`；失败不得写 pass。
 - 只读断言以调用前后提案目录文件清单与 mtime 比对取证；字段缺席断言必须校验**键不存在**，不得以值为 `null` 通过。
+
+## S11 plan 状态统一观测测试用例
+
+> 测试实现必须写 OpenLogos reporter；只读性用临时项目全量文件清单与逐文件 SHA-256 前后比较证明。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-58 | plan_state 挂载完整 evaluation | S11 Step 2→6 | 活跃 writing plan | collect status | plan_package、version、issues 与投影字段一致 |
+| UT-S11-59 | ready 投影与 evaluator 同义 | S11 Step 3 | ready true/false 参数化 | status mapper | plan_ready 精确等于 evaluation.ready，不可被 checkbox 覆盖 |
+| UT-S11-60 | issue 稳定排序与字段保真 | S11 Step 3 | 多文件多行问题 | 两次 collect | code/path/section/line/actual/expected/fix_hint 顺序逐字节一致 |
+| UT-S11-61 | evaluator 操作错误不吞成成功态 | EX-3.1 | proposal 不可读/解析器抛错 | status | error envelope、非零；无 plan_ready 成功对象 |
+| UT-S11-62 | 历史旁路维持真实前沿 | EX-6.1 | marker + 旧模板 | status derive | proposal_step 不回退，warning 不改变 plan_state |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-36 | status/lint/next/flow 四方同源 | Step 1→6 | 合法与多类非法 fixture | 连续运行四消费者 | ready、三态、issues 完全一致；schema 1.3.0 通过 |
+| ST-S11-37 | status 所有路径只读 | EX-3.1、EX-6.1 | ready/invalid/operation-error/history fixture | 前后全量快照并运行 status | 文件集合与 hash 完全不变，无 marker/cache/stamp 写入 |
+
+### 追溯与覆盖
+
+- S11-AC-Plan-01 统一观测：UT-S11-58～UT-S11-60、ST-S11-36。
+- S11-AC-Plan-02 操作错误：UT-S11-61、ST-S11-37。
+- S11-AC-Plan-03 历史与只读：UT-S11-62、ST-S11-37。

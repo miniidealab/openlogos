@@ -554,37 +554,6 @@
 - UT/ST 必须枚举真实 Registry、normalizer 注册表、生命周期状态输入和 ManagedAsset 计划，并对外部 TRAE fixture 留存前后哈希。
 - 每个用例通过 OpenLogos reporter 写入 `test_id`、`scenario_id="S09"`、`status`、`duration_ms`、`evidence`；失败不得写 pass。
 
-> 所有测试实现必须写 OpenLogos reporter；中英文 fixture 均从真实 `openlogos change` scaffold 起步。
-
-### 单元测试
-
-| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
-|---|---|---|---|---|---|
-| UT-S09-224 | 中文 proposal canonical 章节齐全 | S09 Step 2→3 | locale=zh | `proposalTemplate` | reason/type/scope/deployment/summary/clarification 各恰一次 |
-| UT-S09-225 | 英文 proposal 共享语义 ID | S09 Step 2→3 | locale=en | `proposalTemplate` + registry | 英文 canonical 标题映射同一语义集合 |
-| UT-S09-226 | launched tasks 生成空 code 锚点 | S09 Step 3 | 中文/英文 launched | `tasksTemplate` | 有 `[delta]` scaffold 与空 `[code]`；无代码 checkbox |
-| UT-S09-227 | plan 三态相互独立 | tasks 合同 | 空 code、真实 code slices、纯规格三 fixture | evaluator | plan_filled/code_required/code_slices_filled 精确组合 |
-| UT-S09-228 | summary 改名不能被详细设计替代 | EX-6.1 | 删除 summary，保留核心设计 | evaluator | summary missing，expected 为 locale canonical 标题 |
-| UT-S09-229 | plan code checkbox 精确拒绝 | EX-3.1 | `[code]` 含模板或真实 checkbox | evaluator | code-entry-before-spec-complete；空标题正例通过 |
-| UT-S09-230 | 历史 marker bypass | 历史兼容 | 四类 marker 参数化 | lifecycle derive | 不回退 writing；只允许非阻塞 warning |
-| UT-S09-232 | 历史 before 重复/歧义、after 唯一可收敛 | merge-apply test change set | before 同一 ID 有两条定义且另有列数歧义行；after 保留一条、重编号另一条并修正歧义行 | `buildTestChangeSet` | 不抛 before duplicate/ambiguous；保留 ID unchanged，新 ID 与修复行进入 changed；after 重复/歧义反例仍拒绝 |
-
-### 场景测试
-
-| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
-|---|---|---|---|---|---|
-| ST-S09-88 | 中英文 change→fill→lint→next 全链 | Step 1→8 | 两个 launched fixture | change、按 scaffold 填充、双检查 | 两者 lint PASS、next ready-to-delta，code section 仍空 |
-| ST-S09-89 | 现场双错误一次返回并可修复 | EX-3.1、EX-6.1 | summary 改名 + code 模板行 | lint→按 issues 修复→重跑 | 首轮精确两类 issue；修复后四方一致，无额外人工决定 |
-| ST-S09-90 | 历史重复基线可经真实 merge-apply 原子收敛 | merge apply bootstrap | 正式测试 target 的 before 含重复 ID，manifest after 唯一 | 生成 test change set 并执行受控 apply | apply 成功、after ID 唯一、marker changed/removed 集合准确；after 重复负例零写回滚 |
-
-### 追溯与覆盖
-
-- S09-AC-Plan-01 canonical scaffold：UT-S09-224～UT-S09-226、ST-S09-88。
-- S09-AC-Plan-02 tasks 三态：UT-S09-227、UT-S09-229。
-- S09-AC-Plan-03 现场错误收敛：UT-S09-228、ST-S09-89。
-- S09-AC-Plan-04 历史不回退：UT-S09-230。
-- S09-AC-Plan-05 merge 自举收敛：UT-S09-232、ST-S09-90。
-
 ## S09 merge 准入判定与 change-lint 同源测试
 
 ### 单元测试
@@ -700,6 +669,7 @@
 
 - guard-check 为 bash 脚本：用例以 spawnSync 直接驱动脚本（stdin JSON、cwd、env 三输入矩阵），同时捕获并断言 stdout 与 stderr 两通道，不 mock 文件系统。
 - 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+- `UT-S09-318` 单例在 verify 沙箱内实测 5.2–5.7s（三运行时矩阵 × 五类形态串行驱动 `spawnSync`），逼近 10s 全局上限，故按仓库既有先例（`ST-S19-22`、`ST-S37-01`～`03`）为其单独设 `{ timeout: 120_000 }`。该放宽只作用于 harness 资源上限，**不放宽任何断言**：五类形态的 exit code、双通道输出与三运行时一致性判据逐条不变。
 
 ## S09 archive 链条 fail-closed 校验测试
 
@@ -878,3 +848,36 @@
 
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
 - UT-S09-349 的断言必须比对**落盘文本的标题行原始字节**，不得先做任何规范化——检查者与被检查者共用规范化管道时，检查恒真（本缺陷的成因）。
+
+## S09 canonical scaffold 与 plan 三态测试用例
+
+> 所有测试实现必须写 OpenLogos reporter；中英文 fixture 均从真实 `openlogos change` scaffold 起步。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S09-224 | 中文 proposal canonical 章节齐全 | S09 Step 2→3 | locale=zh | `proposalTemplate` | reason/type/scope/deployment/summary/clarification 各恰一次 |
+| UT-S09-225 | 英文 proposal 共享语义 ID | S09 Step 2→3 | locale=en | `proposalTemplate` + registry | 英文 canonical 标题映射同一语义集合 |
+| UT-S09-226 | launched tasks 生成空 code 锚点 | S09 Step 3 | 中文/英文 launched | `tasksTemplate` | 有 `[delta]` scaffold 与空 `[code]`；无代码 checkbox |
+| UT-S09-227 | plan 三态相互独立 | tasks 合同 | 空 code、真实 code slices、纯规格三 fixture | evaluator | plan_filled/code_required/code_slices_filled 精确组合 |
+| UT-S09-228 | summary 改名不能被详细设计替代 | EX-6.1 | 删除 summary，保留核心设计 | evaluator | summary missing，expected 为 locale canonical 标题 |
+| UT-S09-229 | plan code checkbox 精确拒绝 | EX-3.1 | `[code]` 含模板或真实 checkbox | evaluator | code-entry-before-spec-complete；空标题正例通过 |
+| UT-S09-230 | 历史 marker bypass | 历史兼容 | 四类 marker 参数化 | lifecycle derive | 不回退 writing；只允许非阻塞 warning |
+| UT-S09-232 | 历史 before 重复/歧义、after 唯一可收敛 | merge-apply test change set | before 同一 ID 有两条定义且另有列数歧义行；after 保留一条、重编号另一条并修正歧义行 | `buildTestChangeSet` | 不抛 before duplicate/ambiguous；保留 ID unchanged，新 ID 与修复行进入 changed；after 重复/歧义反例仍拒绝 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S09-88 | 中英文 change→fill→lint→next 全链 | Step 1→8 | 两个 launched fixture | change、按 scaffold 填充、双检查 | 两者 lint PASS、next ready-to-delta，code section 仍空 |
+| ST-S09-89 | 现场双错误一次返回并可修复 | EX-3.1、EX-6.1 | summary 改名 + code 模板行 | lint→按 issues 修复→重跑 | 首轮精确两类 issue；修复后四方一致，无额外人工决定 |
+| ST-S09-90 | 历史重复基线可经真实 merge-apply 原子收敛 | merge apply bootstrap | 正式测试 target 的 before 含重复 ID，manifest after 唯一 | 生成 test change set 并执行受控 apply | apply 成功、after ID 唯一、marker changed/removed 集合准确；after 重复负例零写回滚 |
+
+### 追溯与覆盖
+
+- S09-AC-Plan-01 canonical scaffold：UT-S09-224～UT-S09-226、ST-S09-88。
+- S09-AC-Plan-02 tasks 三态：UT-S09-227、UT-S09-229。
+- S09-AC-Plan-03 现场错误收敛：UT-S09-228、ST-S09-89。
+- S09-AC-Plan-04 历史不回退：UT-S09-230。
+- S09-AC-Plan-05 merge 自举收敛：UT-S09-232、ST-S09-90。
