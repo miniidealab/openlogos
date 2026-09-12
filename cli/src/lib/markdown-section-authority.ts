@@ -11,7 +11,15 @@ export type DeltaBlockOp = 'ADDED' | 'MODIFIED' | 'REMOVED' | 'REMOVED-ITEMS' | 
 
 export interface DeltaBlock {
   op: DeltaBlockOp;
+  /** 规范化锚（`stripInlineCode` 后）——**只用于定位**：锚匹配、序数解析、多写者判重。 */
   anchor: string;
+  /**
+   * 原始锚文本（逐字保留行内代码与反引号）——**只用于产出**：`ADDED` 发射的新章节标题。
+   *
+   * 两者分离是架构 §五十一「规范化形式不得充当产出内容」的落地：`stripInlineCode` 是**整段删除**
+   * 行内代码而非脱反引号，把它的结果拿去当标题会让 `` `x` `` 段落在落盘时消失（已静默发生两次）。
+   */
+  rawAnchor: string;
   markerLine: number;
   lines: string[];
 }
@@ -75,6 +83,7 @@ export function parseDeltaBlocks(deltaContent: string): DeltaBlock[] {
       current = {
         op: marker[1] as DeltaBlockOp,
         anchor: stripInlineCode(rawAnchor).trim() || rawAnchor.trim(),
+        rawAnchor: rawAnchor.trim(),
         markerLine: i,
         lines: [],
       };
@@ -321,6 +330,19 @@ export function verifyAgentMaterialOutcome(
       if (before.status !== 'not_found' || final.status !== 'ok') {
         return { ok: false, identities, error: `ADDED 章节没有形成唯一新增结果：${block.anchor}` };
       }
+      // 标题保真（架构 §五十一、`spec/change-management.md`「Delta op 的标题保真规则」）：
+      // 落盘标题必须与 delta 写下的**原始锚末段**逐字相等。比较**不经** stripInlineCode——
+      // 检查者与被检查者共用同一条规范化管道时检查恒真，那正是两次标题吞字静默通过的机制。
+      // 注意取值来源：`final.hit.text` 是 `parseMarkdownHeadings` 剥离行内代码后的**规范化**文本，
+      // 拿它来比对等于又一次让检查者与被检查者共用同一条管道。故从 `rawHeading` 取**落盘原始标题行**。
+      const expectedTitle = block.rawAnchor.split(' > ').map(item => item.trim()).filter(Boolean).pop();
+      const actualTitle = final.hit!.rawHeading.replace(/^#{1,6}\s*/, '').trim();
+      if (expectedTitle && actualTitle !== expectedTitle) {
+        return {
+          ok: false, identities,
+          error: `ADDED 落盘标题与 delta 不符：写下「${expectedTitle}」，落盘「${actualTitle}」`,
+        };
+      }
       continue;
     }
     if (block.op === 'RENAMED') {
@@ -414,8 +436,11 @@ export function composeOpenLogosMarkdown(
     const resolution = resolveSectionAnchor(headings, block.anchor);
     if (block.op === 'ADDED') {
       if (resolution.status !== 'not_found') throw new Error(`ADDED 章节已存在或不唯一：${block.anchor}`);
+      // 定位用规范化锚（上方 resolution 已按 block.anchor 解析），**产出用原始锚**——
+      // 两者分离见架构 §五十一；用剥离版当标题会把 `x` 段落吞掉（已静默发生两次）。
       const segments = block.anchor.split(' > ').map(item => stripInlineCode(item).trim()).filter(Boolean);
-      const title = segments[segments.length - 1];
+      const rawSegments = block.rawAnchor.split(' > ').map(item => item.trim()).filter(Boolean);
+      const title = rawSegments[rawSegments.length - 1] ?? segments[segments.length - 1];
       let level = 2;
       let insertion = output.length;
       if (segments.length > 1) {

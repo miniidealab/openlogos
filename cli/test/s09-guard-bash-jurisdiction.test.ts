@@ -93,7 +93,10 @@ describe('guard-check Bash 写命令路径提取与逐路径管辖判定 — S09
     } finally { outsideCleanup(); }
   });
 
-  it('UT-S09-318: 任一路径在内拦截 + 解析不出保守臂 + 三运行时一致（安全面零放宽）', () => {
+  // 三运行时 × 多命令矩阵，每例 spawnSync 驱动 bash 脚本——隔离运行 5.2~5.7s，
+  // 全局 10s 阈值余量不足 2 倍；verify 沙箱（工作区复制到临时 prefix、IO 更慢）下必然超时。
+  // 与 ST-S19-22 / ST-S37-01..03 同族（重进程用例显式给超时），不放宽任何断言。
+  it('UT-S09-318: 任一路径在内拦截 + 解析不出保守臂 + 三运行时一致（安全面零放宽）', { timeout: 120_000 }, () => {
     launchedProject(root);
     const { root: outside, cleanup: outsideCleanup } = makeTempRoot();
     try {

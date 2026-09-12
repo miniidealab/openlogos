@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 1796 |
+| Defined cases | 1800 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 1796 |
-| Passed | 1786 |
+| Executed cases | 1800 |
+| Passed | 1790 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-release-red-and-env-fact-guard`, `slice-02-renamed-op-and-dangling-refs`
-- Eligible tests: 1796
+- Confirmed slices: `slice-01-added-title-fidelity`, `slice-02-bump-determinism-and-manifest-guard`
+- Eligible tests: 1800
 - Pending tests: 0
 - Final: true
 
