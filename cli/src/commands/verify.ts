@@ -27,7 +27,7 @@ import {
 } from '../lib/test-slice-manifest.js';
 import { contractVersion } from '../lib/step-registry.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
-import { TABLE_CELL_ID_RE, VERIFICATION_ID_RE } from '../lib/test-id.js';
+import { TABLE_CELL_ID_RE, VERIFICATION_ID_RE, MANUAL_MARKER_RE } from '../lib/test-id.js';
 
 export interface TestResult {
   id: string;
@@ -53,11 +53,14 @@ export interface VerifyConsistencyData {
   outside_eligible_result_ids: string[];
   invalid_results: VerifyInvalidResult[];
   count_mismatches: string[];
+  /** additive：每条计数矛盾点名两个相互矛盾的计数器取值与来源（S13 不变量 6）。 */
+  count_mismatch_details?: Array<{ code: string; left: string; right: string }>;
 }
 
 const TEST_CASES_DIR = 'logos/resources/test';
 const REPORT_DIR = 'logos/resources/verify';
-const MANUAL_SUFFIX = /\[manual\]/i;
+// 标记语法取自 test-id.ts 的唯一权威（`[manual]` / `[manual/<平台>]`），不在此另写一份。
+const MANUAL_SUFFIX = MANUAL_MARKER_RE;
 const CHECKLIST_PATTERN = /^- \[([ x])\] (.+)$/gm;
 const AC_TABLE_HEADER = /^## 四、验收条件追溯$/m;
 const AC_ROW_PATTERN = /^\|\s*(S\d{2}-AC-\d{2,3})\s*\|([^|]*)\|([^|]*)\|/gm;
@@ -536,7 +539,7 @@ function extractDefinedIndex(root: string): DefinedIndex {
         if (!TABLE_CELL_ID_RE.test(firstCell)) continue;
 
         const id = firstCell.replace(MANUAL_SUFFIX, '').replace(/\s+/g, ' ').trim();
-        const isManual = MANUAL_SUFFIX.test(firstCell) || MANUAL_SUFFIX.test(line);
+        const isManual = isManualDeclaration(firstCell);
         if (isManual) {
           manualSet.add(id);
           idSet.delete(id);
@@ -555,6 +558,23 @@ function extractDefinedIndex(root: string): DefinedIndex {
   const utCount = ids.filter(id => id.startsWith('UT-')).length;
   const stCount = ids.filter(id => id.startsWith('ST-')).length;
   return { ids, utCount, stCount, manualCount: manualIds.length, manualIds };
+}
+
+/**
+ * 人工用例判定的**单一事实源**（S13 不变量 1/2；AC-VERIFY-MANUAL-01～03）。
+ *
+ * 标记的**声明位只在表格首格**（ID 之后）。描述列、断言列、备注列里出现的标记字面量是
+ * **叙述文本**，一律不参与判定——与 change-lint「散文里提及 ID 不算保留」同一原则。
+ *
+ * 此前判据还对整行做子串匹配，于是一条描述列写了裸标记字面量的自动化用例
+ *（典型即「manual 标记排除」这条能力自己的元用例）被判成人工用例：从 `defined` 删除、
+ * 从 `executed_count` 的过滤中排除，而 `passed` / `skipped` 不经该过滤——同一屏两个计数器
+ * 取自不同集合，下游一个零失败、100% 覆盖的提案因此被 Gate 3.5 拒收（EX-7.6）。
+ *
+ * 收敛方向**只收不放**：判定结果是收敛前人工集合的子集，真人工用例逐字不变（EX-7.8）。
+ */
+export function isManualDeclaration(firstCell: string): boolean {
+  return MANUAL_SUFFIX.test(String(firstCell ?? ''));
 }
 
 export function extractDefinedIds(root: string): { ids: string[]; utCount: number; stCount: number; manualCount: number } {
@@ -642,28 +662,95 @@ export interface VerifyCountSummary {
   pass_rate_pct: number;
 }
 
-export function buildVerifyCountMismatches(summary: VerifyCountSummary): string[] {
+/**
+ * 精确计数入口（S13 不变量 4；AC-VERIFY-COUNT-01～03）。
+ *
+ * 一致性判据**只消费精确计数**，`coverage_pct` / `pass_rate_pct` 仅用于展示。
+ * 此前判据拿 `Math.round` 后的百分比与 100 做等值比较：`defined` 足够大时
+ * （实测 6427）少 1 条未覆盖的真实覆盖率 99.98% 被舍入成 100，于是
+ * 「99.98% 覆盖 + 1 条未覆盖」这一**完全自洽**的状态被判成账本矛盾（EX-7.7）。
+ *
+ * 缺省时按既有精确计数推导（`covered = defined - uncovered`、
+ * `results = passed + failed + skipped`），因此不传该参数的既有调用方
+ * 也**不再**依赖舍入值——判据不会因入参缺省而退回旧口径。
+ */
+export interface VerifyExactCounts {
+  covered_count?: number;
+  results_count?: number;
+}
+
+export function buildVerifyCountMismatches(summary: VerifyCountSummary, exact: VerifyExactCounts = {}): string[] {
   const mismatches: string[] = [];
+  const coveredCount = Number.isFinite(Number(exact.covered_count))
+    ? Number(exact.covered_count)
+    : summary.defined_count - summary.uncovered_count;
   if (summary.passed_count + summary.failed_count + summary.skipped_count !== summary.executed_count) {
     mismatches.push('passed_failed_skipped_ne_executed');
   }
   if (summary.executed_count > summary.defined_count) {
     mismatches.push('executed_exceeds_defined');
   }
-  if (summary.coverage_pct === 100 && summary.uncovered_count !== 0) {
+  if (coveredCount === summary.defined_count && summary.uncovered_count !== 0) {
     mismatches.push('coverage_full_with_uncovered');
   }
-  if (summary.uncovered_count === 0 && summary.coverage_pct < 100 && summary.defined_count > 0) {
+  if (summary.uncovered_count === 0 && coveredCount !== summary.defined_count && summary.defined_count > 0) {
     mismatches.push('coverage_incomplete_without_uncovered');
   }
   const effectivePassedCount = summary.passed_count + summary.skipped_count;
   if (summary.failed_count === 0 && effectivePassedCount !== summary.executed_count) {
     mismatches.push('effective_passed_ne_executed_without_fail');
   }
-  if (summary.failed_count === 0 && summary.pass_rate_pct < 100 && summary.executed_count > 0) {
+  if (summary.failed_count === 0 && effectivePassedCount !== summary.executed_count && summary.executed_count > 0) {
     mismatches.push('pass_rate_below_100_without_fail');
   }
   return mismatches;
+}
+
+/**
+ * 计数矛盾的**可自证明细**（S13 不变量 6；AC 诊断可自证）。
+ *
+ * 只给一句 `result ledger is inconsistent` 会把 CLI 自身的算术分叉归咎于下游账本——
+ * 实测导致下游约 40 分钟的误方向排查。每条矛盾必须点名**两个相互矛盾的计数器**的取值与来源，
+ * 使复盘能直接定位到哪一侧算错。明细只含计数与来源名，不含用例正文。
+ */
+export function buildCountMismatchDetails(
+  summary: VerifyCountSummary,
+  mismatches: string[],
+  exact: VerifyExactCounts = {},
+): Array<{ code: string; left: string; right: string }> {
+  const covered = Number.isFinite(Number(exact.covered_count))
+    ? Number(exact.covered_count)
+    : summary.defined_count - summary.uncovered_count;
+  const effectivePassed = summary.passed_count + summary.skipped_count;
+  const byCode: Record<string, { left: string; right: string }> = {
+    passed_failed_skipped_ne_executed: {
+      left: `passed+failed+skipped=${summary.passed_count + summary.failed_count + summary.skipped_count}（来源：defined 内的结果行分桶）`,
+      right: `executed_count=${summary.executed_count}（来源：结果行去人工用例过滤）`,
+    },
+    executed_exceeds_defined: {
+      left: `executed_count=${summary.executed_count}（来源：结果行去人工用例过滤）`,
+      right: `defined_count=${summary.defined_count}（来源：已合并测试规格首列提取）`,
+    },
+    coverage_full_with_uncovered: {
+      left: `covered_count=${covered}（来源：defined ∩ 结果 ID）`,
+      right: `defined_count=${summary.defined_count} 且 uncovered_count=${summary.uncovered_count}（来源：defined 差集）`,
+    },
+    coverage_incomplete_without_uncovered: {
+      left: `covered_count=${covered}（来源：defined ∩ 结果 ID）`,
+      right: `defined_count=${summary.defined_count} 且 uncovered_count=0（来源：defined 差集）`,
+    },
+    effective_passed_ne_executed_without_fail: {
+      left: `passed+skipped=${effectivePassed}（来源：defined 内的结果行分桶）`,
+      right: `executed_count=${summary.executed_count}（来源：结果行去人工用例过滤）`,
+    },
+    pass_rate_below_100_without_fail: {
+      left: `passed+skipped=${effectivePassed}（来源：defined 内的结果行分桶）`,
+      right: `executed_count=${summary.executed_count}（来源：结果行去人工用例过滤）`,
+    },
+  };
+  return mismatches
+    .filter(code => byCode[code] != null)
+    .map(code => ({ code, left: byCode[code].left, right: byCode[code].right }));
 }
 
 function buildVerifyConsistency(params: {
@@ -672,6 +759,7 @@ function buildVerifyConsistency(params: {
   manualResultIds: string[];
   outsideEligibleResultIds: string[];
   countMismatches: string[];
+  countMismatchDetails?: Array<{ code: string; left: string; right: string }>;
 }): VerifyConsistencyData {
   const reasons: string[] = [];
   for (const invalid of params.invalidResults) {
@@ -689,6 +777,8 @@ function buildVerifyConsistency(params: {
     outside_eligible_result_ids: params.outsideEligibleResultIds,
     invalid_results: params.invalidResults,
     count_mismatches: params.countMismatches,
+    // additive：矛盾自证明细（旧消费方忽略该字段即保持现状）
+    count_mismatch_details: params.countMismatchDetails ?? [],
   };
 }
 
@@ -758,12 +848,14 @@ export function collectVerifyData(
     coverage_pct: coveragePct,
     pass_rate_pct: passRatePct,
   };
+  const countMismatches = buildVerifyCountMismatches(summary, { covered_count: coveredCount, results_count: results.length });
   const consistency = buildVerifyConsistency({
     invalidResults: parsedResults.invalidResults,
     unknownResultIds,
     manualResultIds,
     outsideEligibleResultIds,
-    countMismatches: buildVerifyCountMismatches(summary),
+    countMismatches: countMismatches,
+    countMismatchDetails: buildCountMismatchDetails(summary, countMismatches, { covered_count: coveredCount, results_count: results.length }),
   });
 
 
@@ -1143,6 +1235,9 @@ export function verify(format: OutputFormat = 'text') {
     }
     if (consistency.count_mismatches.length > 0) {
       console.log(`  count_mismatches: ${consistency.count_mismatches.join(', ')}`);
+      for (const detail of consistency.count_mismatch_details ?? []) {
+        console.log(`    ${detail.code}: ${detail.left} ≠ ${detail.right}`);
+      }
     }
   }
 

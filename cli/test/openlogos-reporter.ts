@@ -38,7 +38,9 @@ function loadDefinedIds(): Set<string> {
       if (!TABLE_CELL_ID_PATTERN.test(firstCell)) continue;
 
       const id = firstCell.replace(MANUAL_SUFFIX, '').replace(/\s+/g, ' ').trim();
-      const isManual = MANUAL_SUFFIX.test(firstCell) || MANUAL_SUFFIX.test(line);
+      // manual 标记只认**首格**，与 verify 的 isManualDeclaration 同源（S13 不变量 1/2）。
+      // 整行匹配会把描述列写了裸标记字面量的自动化用例误判为人工用例，其结果被 reporter 丢弃。
+      const isManual = MANUAL_SUFFIX.test(firstCell);
       if (isManual) {
         manualIds.add(id);
         ids.delete(id);

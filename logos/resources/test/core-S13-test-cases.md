@@ -287,7 +287,7 @@
 | ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
 |---|---|---|---|---|
 | UT-S13-69 | 首格干净、描述列含裸标记字面量 → 正常计入 | 隔离项目内规格含一行：首格为纯自动化 ID，描述列出现裸 manual 标记字面量；该 ID 的 `pass` 结果已入账 | 求 verify 的统计摘要 | 该 ID 计入 `defined` 与 `executed_count`；`passed + failed + skipped == executed_count`；不产出任何计数矛盾诊断。以整行匹配的旧判据喂同一夹具**必红**（`executed_count` 少 1） |
-| UT-S13-70 | 真人工用例判定逐字不变 | 两臂：首格分别带 `[manual]` 与 `[manual/<平台>]` 标记 | 逐臂求 `defined` / `executed` / manual 集合 | 两臂均被排除在 `defined` 与 `executed` 之外；排除集合与收敛前**逐字相同** |
+| UT-S13-70 | 真人工用例判定逐字不变 | 两臂：首格分别带 manual 标记与 manual/平台 标记（本行刻意不写裸标记字面量——判据只看首格，表格行内出现字面量会被整行匹配的旧口径误判，这正是本提案要修的形态） | 逐臂求 `defined` / `executed` / manual 集合 | 两臂均被排除在 `defined` 与 `executed` 之外；排除集合与收敛前**逐字相同** |
 | UT-S13-71 | 只收不放：收敛后的人工集合是收敛前的子集 | 同一份规格，分别以收敛前判据与收敛后判据求人工集合 | 求两个集合的差 | 收敛后 ⊆ 收敛前；差集中的每个 ID 都满足「首格无标记」；不存在收敛后新增的人工 ID |
 | UT-S13-72 | 判定单一事实源 | 以 spy 包裹 manual 判定函数 | 跑一次完整统计与报告渲染 | `defined` / `executed` / `passed` / `uncovered` 与报告渲染**全部**经该函数求值；不存在第二处自带读法（断言 spy 被调用且无旁路） |
 | UT-S13-73 | 一致性判据不得消费舍入值 | `defined = 6427`、`covered = 6426`（真实覆盖率 99.984%，舍入为 100） | 求 `buildVerifyCountMismatches` | **不**产出 `coverage_full_with_uncovered`；`uncovered_count == 1` 并逐个点名。以消费 `coverage_pct` 的旧判据喂同一输入**必红** |

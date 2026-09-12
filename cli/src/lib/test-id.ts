@@ -43,8 +43,14 @@ export const VERIFICATION_ID_RE = new RegExp(`\\b${VERIFICATION_ID_CORE}\\b`);
 /** 表格首列读法：`| <ID> |` 形态的结构化提取。 */
 export const TABLE_TEST_ID_RE = new RegExp(`^\\|\\s*(${TEST_ID_CORE})\\s*\\|`);
 
-/** 表格单元格读法：允许 `[manual]` 后缀，用于 verify 的覆盖度清单。 */
-export const TABLE_CELL_ID_RE = new RegExp(`^\\s*(?:${VERIFICATION_ID_CORE})(?:\\s*\\[manual\\])?\\s*$`, 'i');
+/**
+ * 首格 manual 标记的语法权威（S13 不变量 1）：`[manual]` 或 `[manual/<平台>]`。
+ * 判定与剥离都从这一处取，避免「判据认一种、剥离认另一种」的分叉。
+ */
+export const MANUAL_MARKER_RE = /\[manual(?:\/[A-Za-z0-9_-]+)?\]/i;
+
+/** 表格单元格读法：允许首格 manual 标记后缀，用于 verify 的覆盖度清单。 */
+export const TABLE_CELL_ID_RE = new RegExp(`^\\s*(?:${VERIFICATION_ID_CORE})(?:\\s*\\[manual(?:\\/[A-Za-z0-9_-]+)?\\])?\\s*$`, 'i');
 
 /** 锚定判定：整串是否为合法测试 ID。 */
 export function isTestId(candidate: string): boolean {

@@ -6,25 +6,16 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 1800 |
+| Defined cases | 1809 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 1800 |
-| Passed | 1790 |
+| Executed cases | 1809 |
+| Passed | 1799 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
-
-## Slice Verification
-
-- Mode: `final`
-- Attempted slice: `null`
-- Confirmed slices: `slice-01-added-title-fidelity`, `slice-02-bump-determinism-and-manifest-guard`
-- Eligible tests: 1800
-- Pending tests: 0
-- Final: true
 
 ## Skipped Cases
 
