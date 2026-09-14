@@ -150,7 +150,9 @@ function checkOfCode(code: string): number {
     case 'tasks_code_header_missing': return 2;
     case 'code_change_requires_real_test_ids': return 3;
     case 'delta_missing_section_marker':
-    case 'delta_template_skeleton': return 4;
+    case 'delta_template_skeleton':
+    // §2.82.2（fix-table-test-id-manual-marker）：测试规格 delta ID 表首格可提取性（L4 族）。
+    case 'delta_test_table_id_unextractable': return 4;
     case 'deployment_decision_conflict': return 5;
     case 'delta_path_invalid': return 6;
     case 'delta_implicit_id_removal':

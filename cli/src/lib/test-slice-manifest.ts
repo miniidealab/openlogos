@@ -19,7 +19,7 @@ import { readTestChangeSet } from './test-change-set.js';
 
 export { readTestChangeSet };
 import { VERIFY_PASS_MARKER, hasSpecCompleteMarker } from './proposal-markers.js';
-import { TABLE_TEST_ID_RE, testIdScanRe } from './test-id.js';
+import { matchTableTestIdRow, testIdScanRe, type TableTestIdRow } from './test-id.js';
 
 export const TEST_SLICE_MANIFEST = 'TEST_SLICE_MANIFEST.json';
 export const SLICE_CHECKPOINTS = 'SLICE_CHECKPOINTS.jsonl';
@@ -260,13 +260,18 @@ function safeProjectPath(root: string, raw: string): string | null {
   return normalized;
 }
 
-function extractTableTestIds(content: string): string[] {
-  const ids: string[] = [];
+/** 表格首列读法的行级投影（首格 = 裸 ID + 可选 manual 标记，读法单点在 test-id.ts）。 */
+function extractTableTestRows(content: string): TableTestIdRow[] {
+  const rows: TableTestIdRow[] = [];
   for (const line of content.replace(/\r\n/g, '\n').split('\n')) {
-    const match = TABLE_TEST_ID_RE.exec(line.trim());
-    if (match) ids.push(match[1]);
+    const row = matchTableTestIdRow(line);
+    if (row) rows.push(row);
   }
-  return uniqSorted(ids);
+  return rows;
+}
+
+function extractTableTestIds(content: string): string[] {
+  return uniqSorted(extractTableTestRows(content).map(row => row.id));
 }
 
 function walkMarkdown(dir: string): string[] {
@@ -281,9 +286,17 @@ function walkMarkdown(dir: string): string[] {
 }
 
 export function extractDefinedVerificationIds(root: string): string[] {
-  const ids = walkMarkdown(join(root, 'logos', 'resources', 'test'))
+  // §2.82.4：统一首格解析（容忍 manual 标记）之上，验证定义集合仍经同源 manual 判定排除 manual 行
+  // ——仅过滤 smoke 目录与非 UT/ST 前缀不够：否则带标记 UT/ST 会进入切片 eligible_test_ids，
+  // slice-checkpoint / final 模式下 verify 直接以该集合为 defined，人工用例被错误纳入。
+  const manualIds = new Set<string>();
+  const rows: TableTestIdRow[] = walkMarkdown(join(root, 'logos', 'resources', 'test'))
     .filter(path => !path.includes(`${sep}smoke${sep}`))
-    .flatMap(path => extractTableTestIds(readFileSync(path, 'utf8')))
+    .flatMap(path => extractTableTestRows(readFileSync(path, 'utf8')));
+  for (const row of rows) if (row.manual) manualIds.add(row.id);
+  const ids = rows
+    .map(row => row.id)
+    .filter(id => !manualIds.has(id))
     .filter(id => id.startsWith('UT-') || id.startsWith('ST-'));
   return uniqSorted(ids);
 }

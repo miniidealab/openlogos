@@ -1523,9 +1523,9 @@ pending_test_ids  = C − owned(P) − owned({A})
 
 ### 2.37.3 结构化测试定义
 
-只解析 authority 区域内具有表头与分隔行、首个逻辑单元格精确为 canonical UT/ST/SMOKE ID 的 Markdown 数据行。围栏代码、HTML 注释、普通散文与示例字符串不构成定义；escaped pipe 和 inline-code pipe 必须按逻辑单元格处理。
+只解析 authority 区域内具有表头与分隔行、首个逻辑单元格为「canonical UT/ST/SMOKE ID + 可选 manual 标记」（`[manual]` / `[manual/<平台>]`，S13 认可形态，fix-table-test-id-manual-marker）的 Markdown 数据行；标记的判定与剥离复用 manual 标记语法权威单点，剥离后的**裸 ID 为该行身份**。围栏代码、HTML 注释、普通散文与示例字符串不构成定义；escaped pipe 和 inline-code pipe 必须按逻辑单元格处理。
 
-规范化记录由 target 路径、列身份、列顺序和有序单元格语义组成。LF/CRLF、表格对齐、单元格外围空白和测试行顺序差异不构成修改；列身份、列顺序、内部文本、代码、前置、输入或期望变化均构成修改。任一前态/后态全局重复 ID、非法 UTF-8 或不可唯一解析表格在首写前失败。
+规范化记录由 target 路径、列身份、列顺序和有序单元格语义组成。**manual 标记属于定义语义而非身份**：同一裸 ID 的标记增删或平台变化构成修改（进入 C），不产生新身份、不得被解释为删除加新增。LF/CRLF、表格对齐、单元格外围空白和测试行顺序差异不构成修改；列身份、列顺序、内部文本、代码、前置、输入或期望变化均构成修改。任一前态/后态全局重复 ID（按裸 ID 判定）、非法 UTF-8 或不可唯一解析表格在首写前失败。
 
 ### 2.37.4 checkpoint Gate
 
@@ -2315,14 +2315,16 @@ baseline-seed 定义了四个 kind（`system-map`、`scenario-candidates`、`dep
 | 读法 | 用途 | 与权威语法的关系 |
 |---|---|---|
 | 结构化判定 | `test-change-set` / `test-slice-manifest` 判断字符串是否为合法测试 ID | 完整语法 |
-| 表格首列提取 | 从测试规格表格提取 ID | 完整语法 + 行首锚定 |
+| 表格首列提取 | 从测试规格表格提取 ID | 完整语法 + 行首锚定；**容忍并剥离首格可选 manual 标记**（`[manual]` / `[manual/<平台>]`，S13 不变量 1 认可形态），提取结果恒为**裸 ID** |
 | 正文扫描 | `automation-diagnostic` 在散文中查找 ID 提及 | 完整语法减去 SMOKE（正文提及 SMOKE 不构成用例引用） |
 
 **读法不同是正当的，各自定义不是。** 本次消除的是四份独立演化的定义，不是读法差异本身。
 
+**首格唯一语义（fix-table-test-id-manual-marker）**：「ID 表首格 = 裸 ID + 可选 manual 标记」是表格首列读法的**唯一语义**。标记的判定与剥离复用 manual 标记语法权威（`MANUAL_MARKER_RE`）单点；表格首列提取及其全部消费——语义变更集的定义解析入口（`SPEC_MERGED.test_change_set` 生成路径，合同 §2.37.3 同步修订）、已定义验证 ID 提取、切片清单 `spec_target` 校验——统一到同一「首格 → 裸 ID」解析，同一首格不得再存在宽严不一的第二份读法。**统一的只是解析层，不是输出集合**：各消费方在裸 ID 之上仍按既有语义筛选资格——verify 的已定义验证集合仍经同源 manual 判定排除 manual 行（含切片模式的 `eligible_test_ids` 派生），SMOKE 恒不进 verify 可选集（§2.82.4）；非法首格照常拒绝——既有被拒形态零放宽（详见 §2.82）。
+
 **语法放宽以接纳现存 ID**：已合并规格中 11 个 `UT-JSON-*` / `ST-JSON-*` 此前不被结构化读法接纳，对它们的改动绕过切片归属、也不进 verify 可选集。放宽后这些用例从「静默不可见」变为「被覆盖」。不改名——删除已合并规格中的表格首列 ID 正是条目守恒要拦的形态。
 
-**语法与数据的一致性锚**：断言已合并测试规格中每一个表格首列 ID 都被权威语法接纳。这是本节唯一能防止同类缺陷复发的机制——原始缺陷不是正则写错了，而是**没人检查正则与真实数据是否还对得上**。
+**语法与数据的一致性锚**：断言已合并测试规格中**每一个 ID 表数据行**都能被表格首列读法提取出被权威语法接纳的裸 ID（含带 manual 标记的首格）——**静默跳过即失败**。这是本节唯一能防止同类缺陷复发的机制——原始缺陷不是正则写错了，而是**没人检查正则与真实数据是否还对得上**；而「提取不出的行不进断言集合」的静默跳过正是同一缺陷的第二形态（fix-table-test-id-manual-marker 补盲区，见 §2.82.3）。
 
 ### 2.51.8 安装态候选 runner 的留痕普遍要求
 
@@ -3002,13 +3004,13 @@ seal preflight 承担了规格结构检查（重复 ID、表格列数），它�
 openlogos lint-specs [--format json]
 ```
 
-检查 `logos/resources/test/` 下全部测试规格：
+检查 `logos/resources/test/` 下全部测试规格（**递归**，含 `smoke/` 等子目录——此前仅扫顶层，`smoke/` 子目录整体逃过结构检查，fix-table-test-id-manual-marker 修复）：
 
 | 检查项 | 判据 |
 |---|---|
-| 重复 ID | 同一 `UT-*` / `ST-*` / `SMOKE-*` 在表格首列出现多次 |
+| 重复 ID | 同一 `UT-*` / `ST-*` / `SMOKE-*` 在表格首列出现多次（首格剥离可选 manual 标记后按裸 ID 判重） |
 | 表格列数 | 同一表格内各行管道分隔列数一致 |
-| ID 格式 | 首列 ID 符合 `(UT|ST)-S<数字>-<数字>` / `SMOKE-<模块>-<数字>` |
+| ID 格式 | 首格 = 裸 ID + 可选 manual 标记（`[manual]` / `[manual/<平台>]`，S13 认可形态）；剥离标记后的裸 ID 须被权威锚定读法接纳——合法 manual 行不报 `invalid_test_id` |
 
 **不参与任何门（强制）**：`merge` / `verify` / `archive` / `change-lint` 均不因本命令结论而阻断。它是用户主动运行的只读诊断工具，呼应「任何审计产物都不得出现在流程分支的条件里」。发现问题时非零退出并逐条列出位置，供人判断。
 
@@ -3483,3 +3485,62 @@ checkpoint 行 schema 升至 `openlogos/slice-checkpoint@2`；账本 append-only
 - `asset-manifest.json` 的 schema、字段与生成算法**不变**，只是写入者收敛为生成器；
 - 既有 `prepack` 链路不变（它本就调用同一生成器）；
 - 升版脚本是**仓库私有流程**，不进 `openlogos` 命令面（发布是本仓的事，不是用户项目的能力）。
+
+## 2.82 表格首列读法统一容忍 manual 标记与首格可提取性前移
+
+### 2.82.0 问题：同一首格三份宽严不一的读法，错误爆在无法自修的节点
+
+下游项目实测缺陷（tools.top · runlogos 全自动驱动 · 2026-09-13）：smoke delta 按规格既有约定（S13 认可的首格形态）写 `SMOKE-core-14 [manual]`，merge 后进入 plan-slices 时 `openlogos slice plan` 报 `SLICE_PLAN_UNKNOWN_TEST_ID` 构造性拒绝——切片层的表格首列提取读法（`TABLE_TEST_ID_RE`）要求首格恰为裸 ID，带 manual 标记即整行不匹配，`owned_test_ids` 逐个被判「未在 spec_target 中定义」。此时 delta 已出该节点写权限范围、merge 门已过，执行 agent 有明确修复方案也无法动手——错误发生在**无法自修的节点**，且晚于本可拦截它的一切阶段。
+
+根因是架构 §四十一.2 / §四十一.4 违例——同一产物（ID 表首格）存在多份宽严不一的读法：
+
+| 读法所在 | 对首格 manual 标记的态度 |
+|---|---|
+| verify 单元格读法（`TABLE_CELL_ID_RE`） | 接受 `ID [manual]` / `ID [manual/<平台>]`（S13 不变量 1） |
+| 切片/提取层表格首列读法（`TABLE_TEST_ID_RE`） | 要求首格恰为裸 ID，带标记整行不匹配（静默跳过） |
+| `lint-specs` 首格判定（锚定读法 `isTestId`） | 同样不容忍标记，且扫描不递归、`smoke/` 整体漏扫 |
+
+### 2.82.1 首格唯一语义与实现单点
+
+「ID 表首格 = 裸 ID + 可选 manual 标记（`[manual]` / `[manual/<平台>]`，大小写不敏感）」确立为表格首列读法的唯一语义，实现收敛到测试 ID 语法权威（`test-id.ts`）单点，复用既有 `MANUAL_MARKER_RE`：
+
+- 表格首列提取读法**容忍并剥离** manual 标记，提取结果恒为**裸 ID**；
+- **语义变更集的定义解析入口同步统一（关键消费方）**：`SPEC_MERGED.test_change_set` 由结构化定义扫描（`scanTestDefinitionCandidates`）生成——该入口的首格合同随 §2.37.3 修订为「裸 ID + 可选 manual 标记，裸 ID 为身份、标记属定义语义」。切片归属集合 C 来自该变更集而非 delta 重新推断（§2.37.1），漏掉此入口则 manual ID 不进 `changed_test_ids`、归属对账在写入侧仍报「owned_test_ids 含非本提案变更 ID」——统一必须覆盖到这里才能兑现主目标；**不得通过放宽结构化 ID 字段或伪造变更集绕过**；
+- `extractTableTestIds` 的其余消费（`extractChangedTestIds` / `extractDefinedVerificationIds` / 切片清单 `spec_target` 校验）随之统一到同一首格解析；
+- **统一的是解析层，不是输出集合**：各消费方在裸 ID 之上仍按既有规则筛选资格——`extractDefinedVerificationIds` 与 verify 的 defined/`eligible_test_ids` 派生仍经同源 manual 判定排除 manual 行、恒排除 SMOKE（§2.82.4）；
+- `lint-specs` 首格判定同步容忍标记，不再对合法 manual 行误报 `invalid_test_id`（§2.70.1）；
+- **非法首格照常拒绝**：散文首格、占位尾段（黑名单）、通配等既有被拒形态零放宽。
+
+修复后 `SMOKE-core-XX [manual]` 形态的规格无需任何改写即可通过 `slice plan`——含真实合并生成变更集、启用切片验证（多切片）后的归属对账（`O = C`）全链路，本类停点从此不发生。
+
+### 2.82.2 change-lint 首格可提取性前移检查（归入 L4 delta 形态族）
+
+对 `deltas/test/**` 的 `.md` delta，其 ADDED / MODIFIED 块内**测试 ID 表数据行**的首格若既非「裸 ID + 可选 manual 标记」形态（即表格首列读法提取不出合法裸 ID）→ 违规码 `delta_test_table_id_unextractable`（进 violations，exit 2），message 点名文件、行号与首格原文。
+
+- **归入 L4（delta 形态类）**：与段标记 / 模板骨架检查同族——都是「delta 形态是否合法」；违规码进入 change-lint 闭合码表（注册表单点，闭合断言以权威码表为源）。
+- **判据同源**：与表格首列提取读法共用同一单点实现，不新建第二份正则。
+- **识别口径**：复用既有结构化 ID 表识别规则——首列表头为 `ID`、`用例 ID`、`用例ID`（及其既有大小写/空白语义，对齐 proposal-lifecycle 结构化提取口径）的表格数据行均参与判定，**不得缩小扫描集合**（否则既有规格常用的 `用例 ID` 表头形态会整表绕过前移检查）；散文、非 ID 表、代码围栏内引用不参与。
+- **价值（错误前移到可自修节点）**：write-delta 节点下 delta 文件在 agent 写权限范围内、change-lint 在其命令白名单内——同类形态问题在该节点暴露即由 agent 自行修正闭环，不产生停点、不需要人。
+
+### 2.82.3 一致性锁补盲区（行级扩展）
+
+原一致性锚（UT-S35-131）只断言「被提取出的首列 ID 都被权威语法接纳」——对不匹配的行提取端**静默跳过**，带 manual 标记的行根本不进入被断言的集合，漂移不触发回归锁。扩展为：已合并测试规格中**每一个 ID 表数据行**都必须能被表格首列读法提取出被权威语法接纳的裸 ID；**静默跳过即失败**，断言失败信息点名文件、行号与首格原文。消除「提取不到的行不进断言集合」的漂移通道。
+
+行级断言的语料与枚举口径（缺一即退化为摆设）：
+
+- **语料 = 真实已合并规格**：递归读取实际 `logos/resources/test/**`（含 `smoke/` 子目录），不得以隔离夹具替代——只跑隔离样本无法对日后新增的真实规格形态报警；隔离夹具仅作为断言实现自身的正反例。
+- **枚举独立于提取结果**：数据行的枚举判据（结构化 ID 表的表头识别 + 数据行定位）必须独立于「该行 ID 是否提取成功」，先枚举、再逐行调用权威读法判定——否则又回到「提取不出的行不进集合」的同一盲区。
+
+### 2.82.4 不变式：verify 的 manual 排除语义逐字不变
+
+提取容忍标记 ≠ 改变 manual 判据。verify 层「manual 行排除出 defined/executed」的判据单一事实源与判定结果**逐字不变**（UT-S13-70/72 既有锁不动）；SMOKE 仍不进 verify 可选集。manual 判据仍只认首格标记（S13 不变量 1），本节零触碰。
+
+该不变式对**切片模式同样成立**：`extractDefinedVerificationIds` 在统一提取之上必须继续经同源 manual 判定排除 manual 行（仅过滤 smoke 目录与非 UT/ST 前缀不够——放宽共享提取而不加 manual 过滤，会把带标记 UT/ST 送进切片的 `eligible_test_ids`，`mode=slice-checkpoint` / `final` 下 verify 直接以该集合为 defined，人工用例变成 uncovered 或被入账接纳）。§2.37.2 的 `D`（全部非 manual 测试 ID）定义不变；manual 结果入账仍被拒绝（`manual_test_result_id`）。
+
+### 2.82.5 追溯
+
+- 来源变更：fix-table-test-id-manual-marker（下游 tools.top 实测缺陷，2026-09-13）。
+- 场景：S35「表格首列 manual 标记统一读法与首格可提取性前移」。
+- 功能规格关联：§2.51.7（读法权威）、§2.37.3（语义变更集首格合同）、§2.70.1（lint-specs）。
+- 测试：UT-S35-142～UT-S35-147、ST-S35-28。
+- 代码（以合并后规格为准）：`cli/src/lib/test-id.ts`、`cli/src/lib/test-change-set.ts`、`cli/src/lib/test-slice-manifest.ts`、`cli/src/commands/verify.ts`（defined/eligible 派生的 manual 过滤边界）、`cli/src/commands/lint-specs.ts`、`cli/src/commands/change-lint.ts`。

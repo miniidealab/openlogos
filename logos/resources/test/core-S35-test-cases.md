@@ -221,3 +221,40 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
 - UT-S35-140 的遍历源必须是 `ProposalBlockReason` 类型全集的运行期投影，禁止在测试内复制一份理由名单——复制即等于把「新增理由要记得同步测试」变回纪律，正是本用例要消除的形态。
 - UT-S35-139 的对照必须调用真实的 `next` / `status` 派生路径取基准值，不得在测试内复述期望 violations。
+
+## S35 表格首列 manual 标记统一读法与首格可提取性前移测试
+
+> 覆盖表格首列提取读法容忍并剥离 manual 标记、语义变更集定义解析入口的统一（§2.37.3）、lint-specs 的 manual 容忍与递归扫描、change-lint 首格可提取性前移检查、一致性锁行级扩展（UT-S35-131 系）与 verify manual 排除语义不变式对照（来源变更 fix-table-test-id-manual-marker；功能规格 §2.82、§2.51.7、§2.37.3、§2.70.1）。
+> 除 UT-S35-146 的真实语料臂**必须递归读取实际 `logos/resources/test/**`（含 `smoke/`）**外，其余夹具用一次性隔离项目构造测试规格与 delta、不依赖本仓自身的规格内容。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-142 | 表格首列提取容忍并剥离 manual 标记，各消费方**分别**断言合法输出 | 规格夹具 ID 表首格五形态：`SMOKE-core-14 [manual]`、`UT-S13-70 [manual/windows]`、裸 `UT-S09-02`（正例组）；散文首格「待补 ID」、占位尾段 `UT-S99-xx`（反例组，修复前后同拒） | 分别求各消费方结果：① 表格首列提取读法本体；② 语义变更集定义解析入口（`scanTestDefinitionCandidates`，前后态语义 diff）；③ 切片清单 `spec_target` 定义校验；④ `extractDefinedVerificationIds` | ①②③ 对正例组均以**裸 ID**识别该行（标记剥离、大小写不敏感，判定与剥离经 `MANUAL_MARKER_RE` 单点）：② manual 新增行以裸 ID 进入 `changed_test_ids`、同 ID 标记增减判为修改而非删除+新增；③ `SMOKE-core-14 [manual]` 首格被接纳为 spec_target 内已定义；④ 按既有资格规则筛选——manual UT/ST 行与 SMOKE **不进入**验证定义集合（各消费方分别断言合法输出，**不要求输出同一集合**）；反例组在 ①②③ 照常不提取/不识别——既有被拒形态零放宽 |
+| UT-S35-143 | lint-specs 对合法 manual 行不误报 | 规格夹具含 `SMOKE-core-14 [manual]` 与 `UT-S13-70 [manual/windows]` 首格行，另含一对「同裸 ID 分别以裸形态与带标记形态出现」的行 | 求 lint-specs 结论 | 合法 manual 行不报 `invalid_test_id`；首格剥离标记后按裸 ID 判重——裸/带标记同 ID 两行仍报重复 ID（剥离不吞掉重复检查） |
+| UT-S35-144 | lint-specs 递归扫描 smoke/ 子目录 | 隔离项目 `logos/resources/test/smoke/` 内构造：重复 ID 文件、列数不一致文件；顶层另有一处对照错误 | 求 lint-specs 结论 | `smoke/` 内两类问题均被报告并点名子目录内文件与行号（修复前顶层扫描整体漏过）；顶层对照错误照常报告（递归不丢顶层） |
+| UT-S35-145 | change-lint 首格可提取性前移检查（L4 族），表头口径不缩小 | 活跃提案含 `deltas/test/` 的 `.md` delta；表头三形态 × 首格三形态矩阵：表头分别为 `ID`、`用例 ID`、`用例ID`（对齐既有结构化提取口径），各表内数据行首格分别为 ① `SMOKE-core-77 [manual]`（合法）、② 散文「待补 ID」（不可提取）、③ 占位尾段 `UT-S99-xx`（黑名单拒绝） | 求 `runChangeLint` 结论 | **三种表头下**：① 均无该项违规（合法 manual 行放行）；②③ 均各报一条 `delta_test_table_id_unextractable`（进 violations、exit 2），message 点名文件、行号与首格原文——`用例 ID` / `用例ID` 表头的表不得绕过检查（零误报不得靠缩小扫描集合实现）；该码进入闭合码表（注册表断言以权威码表为源）；散文、非 ID 表、代码围栏内引用不参与判定（零误报对照） |
+| UT-S35-146 | 一致性锁行级扩展：真实语料逐行 + 静默跳过即失败 | 双臂。真实语料臂：递归读取实际 `logos/resources/test/**`（含 `smoke/` 子目录）；隔离正反例臂：隔离规格集注入一行首格带 manual 标记（合法）与一行首格不可提取（非法） | 行级一致性断言：**数据行枚举独立于「ID 是否提取成功」**（先按结构化 ID 表表头识别并枚举全部数据行，再逐行调用权威读法判定），断言每一行都能提取出被权威语法接纳的裸 ID，报告文件、行号与首格原文 | 真实语料臂：当前已合并规格全部 ID 表数据行逐行通过（含 smoke/ 内带 manual 标记首格）——日后新增提取不出的真实规格行时本用例必挂红；隔离臂：带标记行被提取出裸 ID 计入集合（不再静默跳过），不可提取行使断言失败并点名定位。修复前 UT-S35-131 的 `mergedTableIds()` 先用提取正则过滤、不匹配行不进集合——本用例即该盲区的回归锁（UT-S35-131 原 ID 级断言保留，行级断言叠加其上且不得复用「提取成功才入集合」的枚举方式） |
+| UT-S35-147 | verify manual 排除语义不变式对照（含切片两模式） | 三臂。无切片臂：UT-S13-70/72 同构夹具（首格分别带 `[manual]` 与 `[manual/<平台>]`）+ 结果账本；slice-checkpoint 臂与 final 臂：有效切片验证夹具（合法 change set + manifest），规格含带标记 UT/ST 行，账本另注入一条 manual ID 的结果记录 | 修复前后分别求 verify 的 defined / executed / `eligible_test_ids` 集合与 manual 排除判定 | 三臂排除集合与判定结果**逐字不变**：manual 行不进 defined/executed，也**不进切片模式的 `eligible_test_ids`**（`extractDefinedVerificationIds` 在统一提取之上仍经同源 manual 判定过滤——仅过滤 smoke 目录与非 UT/ST 前缀不够，本臂即该泄漏路径的回归锁）；manual 结果入账仍被拒绝（`manual_test_result_id`），不得先被 defined 接纳；manual 判据单一事实源仍只认首格标记（S13 不变量 1）；SMOKE 仍不进 verify 可选集 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-28 | manual 首格规格下 slice plan 端到端转绿（真实变更集 + 归属对账） | 真实 CLI，一次性隔离项目复刻下游缺陷现场：提案测试 delta 新增 `SMOKE-core-14 [manual]` 首格行（S13 认可形态），执行**真实 `openlogos merge`** 生成 `SPEC_MERGED.test_change_set`——断言 `SMOKE-core-14` 以裸 ID 进入真实 `changed_test_ids`；随后以**启用切片验证的多切片夹具**（≥2 切片，归属对账 `O = C` 生效）跑 `openlogos slice plan --file`，含该 ID 的 `owned_test_ids` 不再报 `SLICE_PLAN_UNKNOWN_TEST_ID`（含写入侧「owned_test_ids 含非本提案变更 ID」对账），切片清单成功落盘且 `owned_test_ids` 记录裸 ID——**不得用单切片跳过归属对账来证明修复**；对照组：`owned_test_ids` 引用规格中不存在的 ID 仍被构造性拒绝（收紧回归零放宽） |
+
+### 追溯与覆盖
+
+- 主修·提取读法统一（含语义变更集定义解析入口，§2.37.3）：UT-S35-142、ST-S35-28。
+- 主修·消费边界（统一解析层 ≠ 同一输出集合）：UT-S35-142、UT-S35-147。
+- 辅修·lint-specs（manual 容忍 + 递归）：UT-S35-143、UT-S35-144。
+- 辅修·change-lint 前移检查（表头口径不缩小）：UT-S35-145。
+- 辅修·一致性锁行级扩展（真实语料）：UT-S35-146。
+- 不变式·verify manual 排除语义（含切片两模式）：UT-S35-147。
+- 功能规格：§2.82（§2.51.7、§2.37.3、§2.70.1 同步修订）；场景：S35「表格首列 manual 标记统一读法与首格可提取性前移」；来源变更：fix-table-test-id-manual-marker。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- UT-S35-142 / UT-S35-146 的判定必须调用真实的表格首列读法与一致性断言实现，不得在测试内复制一份正则——复制即再造第二份读法，正是本变更要消除的形态。

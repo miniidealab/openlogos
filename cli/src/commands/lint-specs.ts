@@ -16,7 +16,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isTestId } from '../lib/test-id.js';
+import { isTestId, stripFirstCellManualMarker } from '../lib/test-id.js';
 import { parseMarkdownHeadings, type ResolvedSectionAnchor } from '../lib/markdown-section-authority.js';
 
 export type LintSpecsCode = 'duplicate_test_id' | 'table_column_mismatch' | 'invalid_test_id' | 'duplicate_heading';
@@ -83,7 +83,7 @@ function lintFile(relPath: string, content: string, seenIds: Map<string, string[
     // ID 表按**结构**识别而非表头措辞：语料中既有 `| ID |` 也有 `| 用例ID |`，
     // 只认字面表头会让整类表静默逃过检查（此前正是这样漏掉的）。
     const idTable = /^(?:用例\s*)?(?:ID|编号)$/i.test(headerCells[0] ?? '')
-      || rows.some(r => isTestId(r.cells[0] ?? ''));
+      || rows.some(r => isTestId(stripFirstCellManualMarker(r.cells[0] ?? '')));
     for (const r of rows) {
       if (r.cells.length !== headerCells.length) {
         findings.push({
@@ -92,11 +92,13 @@ function lintFile(relPath: string, content: string, seenIds: Map<string, string[
         });
       }
       if (!idTable) continue;
-      const id = r.cells[0] ?? '';
+      // §2.70.1（fix-table-test-id-manual-marker）：首格 = 裸 ID + 可选 manual 标记；剥离经语法
+      // 权威单点后按裸 ID 判格式与判重——合法 manual 行不再误报 invalid_test_id。
+      const id = stripFirstCellManualMarker(r.cells[0] ?? '');
       if (!isTestId(id)) {
         findings.push({
           code: 'invalid_test_id', path: relPath, line: r.line + 1,
-          message: `ID 列首格不是合法测试 ID：'${id}'`,
+          message: `ID 列首格不是合法测试 ID：'${r.cells[0] ?? ''}'`,
         });
       } else {
         seenIds.set(id, [...(seenIds.get(id) ?? []), `${relPath}:${r.line + 1}`]);
@@ -127,7 +129,12 @@ function lintFile(relPath: string, content: string, seenIds: Map<string, string[
 export function lintSpecsIn(root: string): LintSpecsResult {
   const dir = join(root, 'logos', 'resources', 'test');
   if (!existsSync(dir)) return { ok: true, scanned_files: 0, findings: [] };
-  const files = readdirSync(dir).filter(name => name.endsWith('.md')).sort();
+  // §2.70.1（fix-table-test-id-manual-marker）：递归扫描（含 smoke/ 等子目录）——此前只扫顶层，
+  // smoke/ 整体逃过结构检查。读法统一在先（首格容忍 manual 标记），扫 smoke 才不误报。
+  const files = (readdirSync(dir, { recursive: true }) as string[])
+    .map(name => String(name).split('\\').join('/'))
+    .filter(name => name.endsWith('.md'))
+    .sort();
   const seenIds = new Map<string, string[]>();
   const findings: LintSpecsFinding[] = [];
   for (const name of files) {

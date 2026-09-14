@@ -166,12 +166,12 @@ sequenceDiagram
 | 读法 | 消费方 | 与权威语法的关系 |
 |---|---|---|
 | 结构化判定 | `test-change-set`、`test-slice-manifest`、`baseline-closure` | 完整语法 |
-| 表格首列提取 | `test-slice-manifest` | 完整语法 + 行首锚定 |
+| 表格首列提取 | `test-slice-manifest` | 完整语法 + 行首锚定；容忍并剥离首格可选 manual 标记（`[manual]` / `[manual/<平台>]`），提取结果恒为裸 ID（fix-table-test-id-manual-marker） |
 | 正文扫描 | `automation-diagnostic` | 完整语法减去 SMOKE |
 
-读法差异正当，各自定义不正当。本次消除的是四份独立演化的定义。
+读法差异正当，各自定义不正当。本次消除的是四份独立演化的定义。首格 manual 标记的判定与剥离复用 `MANUAL_MARKER_RE` 单点——同一首格不得存在宽严不一的第二份读法；统一覆盖语义变更集的定义解析入口（§2.37.3 首格合同同步修订）。**统一的是「首格 → 裸 ID」解析层，不是输出集合**：各消费方在裸 ID 之上仍按既有语义筛选资格——verify 的 defined/eligible 派生仍经同源 manual 判定排除 manual 行、SMOKE 恒不进 verify 可选集（功能规格 §2.82.1、§2.82.4）。
 
-**语法与数据的一致性锚**：断言已合并测试规格中每一个表格首列 ID 都被权威语法接纳。原始缺陷不是正则写错了，而是没人检查正则与真实数据是否还对得上——11 个 JSON 系 ID 因此静默失联。
+**语法与数据的一致性锚**：断言已合并测试规格中**每一个 ID 表数据行**都能被表格首列读法提取出被权威语法接纳的裸 ID（含带 manual 标记的首格），**静默跳过即失败**。原始缺陷不是正则写错了，而是没人检查正则与真实数据是否还对得上——11 个 JSON 系 ID 因此静默失联；「提取不出的行不进断言集合」的静默跳过是同一缺陷的第二形态（fix-table-test-id-manual-marker 行级扩展）。
 
 ### 门禁可满足性断言
 
@@ -193,7 +193,7 @@ sequenceDiagram
 1. **围栏判据唯一**：四个提取器对同一文档得到同一组围栏。
 2. **多命中不静默**：候选数异常时必须产出诊断，不得降级为空集或空结论。
 3. **语法唯一、读法具名**：语法恰一处定义；每种读法从其具名派生，不得独立定义。
-4. **语法与数据不漂移**：已合并规格中每个表格首列 ID 都被权威语法接纳。
+4. **语法与数据不漂移**：已合并规格中每一个 ID 表数据行都能被表格首列读法提取出被权威语法接纳的裸 ID（含带 manual 标记的首格）；静默跳过即失败。
 5. **门禁可满足性有断言**：每道门都有对应的「该阶段合法最小提案通过」断言。
 
 ### 异常与边界
@@ -366,3 +366,80 @@ sequenceDiagram
 - 功能规格：§2.30（检查项矩阵与输出契约）、§2.79（L9 与一致性锚）、§2.78（写入侧 fail-closed）。
 - 根规范：`spec/test-slice-manifest.md` §8（诊断码）、§9（恢复动作合同）。
 - 测试：UT-S35-138、UT-S35-139、UT-S35-140、UT-S35-141、ST-S35-27。
+
+## S35 表格首列 manual 标记统一读法与首格可提取性前移
+
+### 场景目标
+
+消除 ID 表首格的读法分裂（verify 单元格读法认 manual 标记、切片提取读法与 lint-specs 不认），把首格形态问题的暴露点从 plan-slices（无法自修节点）前移到 write-delta（agent 可自修节点）。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| W | change-writer / 执行 agent | write-delta 节点内产出测试规格 delta，可自行修正并重跑 change-lint |
+| C | `change-lint` evaluator | L4 delta 形态族新增首格可提取性检查 |
+| G | 测试 ID 语法权威（`test-id.ts`） | 表格首列读法 + `MANUAL_MARKER_RE` 的唯一铸造点 |
+| T | 语义变更集（`SPEC_MERGED.test_change_set`） | merge 时结构化定义扫描以统一首格读法解析定义行，manual ID 以裸 ID 进入 `changed_test_ids`（C 集合） |
+| P | `slice plan` 写入口 | merge 后以同一读法校验 `spec_target` 定义，并对可信变更集做 `O = C` 归属对账 |
+
+前置条件：活跃提案含 `deltas/test/**` 的 `.md` delta；已合并测试规格与 delta 中允许出现 `ID [manual]` / `ID [manual/<平台>]` 首格（S13 认可形态）。
+
+### 首格读法统一与前移检查时序
+
+```mermaid
+sequenceDiagram
+    participant W as 执行 agent（write-delta）
+    participant C as change-lint（L4 族）
+    participant G as 测试 ID 语法权威
+    participant T as 语义变更集（merge）
+    participant P as slice plan（merge 后）
+
+    W->>C: Step 1: 产出 deltas/test/**.md 后运行 change-lint
+    C->>C: Step 2: 定位 ADDED/MODIFIED 块内测试 ID 表数据行
+    C->>G: Step 3: 逐行取首格，剥离可选 manual 标记
+    alt 首格 = 裸 ID + 可选 manual 标记（裸 ID 被权威语法接纳）
+        G-->>C: Step 4a: 提取出裸 ID
+        C-->>W: Step 5a: 该行放行（合法 manual 行不再误报）
+    else 首格不可提取（散文 / 占位尾段 / 通配等）
+        G-->>C: Step 4b: 提取失败
+        C-->>W: Step 5b: delta_test_table_id_unextractable（点名文件、行号、首格原文）
+        W->>C: Step 6: 节点内修正 delta 后重跑，直至 exit 0
+    end
+    Note over W,C: 错误在 agent 写权限范围内闭环，不再漂到 plan-slices 停点
+    T->>G: Step 7: merge 生成 test_change_set——结构化定义扫描以统一首格读法解析
+    G-->>T: Step 8: manual 行以裸 ID 进入 changed_test_ids（C）
+    P->>G: Step 9: slice plan 以同一读法校验 spec_target 定义
+    P->>T: Step 10: 对可信变更集做 O = C 归属对账
+    T-->>P: Step 11: manual ID 在 C 中——对账通过、切片落盘
+```
+
+### 步骤说明
+
+1. **执行 agent** 在 write-delta 节点产出测试规格 delta 并运行 `change-lint`（其命令白名单内）。
+2. **change-lint** 对 `deltas/test/**` 的 `.md` delta，仅识别 ADDED / MODIFIED 块内结构化测试 ID 表的数据行（散文、非 ID 表、围栏内引用不参与）。
+3. **语法权威** 以表格首列读法逐行判定：剥离可选 manual 标记后提取裸 ID；判定与剥离同一单点，不存在第二份正则。
+4. 首格合法（含带 manual 标记形态）→ 放行；不可提取 → 报 `delta_test_table_id_unextractable`，agent 在节点内修正闭环。
+5. merge 时**语义变更集**（`SPEC_MERGED.test_change_set`）的结构化定义扫描以统一首格读法解析定义行——manual 行以裸 ID 为身份进入 `changed_test_ids`（标记属定义语义，§2.37.3 修订）；切片归属集合 C 来自该变更集，不从 delta 重新推断。
+6. merge 后 **slice plan** 以同一读法校验 `spec_target` 定义，并对可信变更集做 `O = C` 归属对账——manual ID 已在 C 中，`SMOKE-core-XX [manual]` 形态规格无需改写即通过（含启用切片验证的多切片形态），`SLICE_PLAN_UNKNOWN_TEST_ID` 类停点从此不发生。
+
+### 不变量
+
+1. **首格唯一语义**：ID 表首格 = 裸 ID + 可选 manual 标记；判定与剥离复用 `MANUAL_MARKER_RE` 单点；语义变更集定义解析入口同受此合同约束（裸 ID 为身份、标记属定义语义）。
+2. **提取容忍 ≠ verify 语义变**：manual 行排除出 defined/executed 的判据单一事实源与判定结果逐字不变（UT-S13-70/72 锁）；SMOKE 仍不进 verify 可选集；切片模式下 `eligible_test_ids` 派生同样不得让 manual UT/ST 进入 defined。
+3. **消费边界**：统一只发生在「首格 → 裸 ID」解析层；各消费方（变更集 / spec_target / verify 定义集合）在裸 ID 之上按既有语义各自筛选资格，不要求输出同一集合。
+4. **零放宽**：散文首格、占位尾段、通配等既有被拒形态照常拒绝。
+5. **lint-specs 递归**：`logos/resources/test/` 扫描递归含 `smoke/` 子目录，首格判定同步容忍 manual 标记。
+6. **前移检查不缩小扫描集合**：结构化 ID 表识别复用既有表头口径（`ID` / `用例 ID` / `用例ID`）。
+
+### 异常与边界
+
+- **EX-M.1：首格不可提取的 delta ID 表行**——触发条件：`deltas/test/**` 的 ID 表数据行首格既非裸 ID 亦非「裸 ID + manual 标记」；期望响应：`delta_test_table_id_unextractable`（violations、exit 2、点名定位）；副作用：无（只读检查）。
+- **EX-M.2：已合并规格中存在提取不出的 ID 表数据行**——触发条件：一致性锁行级断言扫到静默跳过；期望响应：断言失败并点名文件、行号与首格原文，修复方向是修正数据或语法，不得放宽断言本身。
+- **EX-M.3：非 ID 表 / 散文 / 围栏引用**——不参与首格判定，零误报。
+
+### 追溯
+
+- 功能规格：§2.82（§2.51.7、§2.37.3、§2.70.1 同步修订）；架构：§四十一.2、§四十一.4。
+- 测试：UT-S35-142～UT-S35-147、ST-S35-28。
+- 来源变更：fix-table-test-id-manual-marker（下游 tools.top 实测缺陷，2026-09-13）。

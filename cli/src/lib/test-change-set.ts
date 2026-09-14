@@ -5,7 +5,7 @@ import { parseDocument } from 'yaml';
 import { authorityScan, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import { classifyProposalDeltas } from './delta-classify.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
-import { isTestId } from './test-id.js';
+import { isAcceptedTestId, isTestId, stripFirstCellManualMarker } from './test-id.js';
 
 export const TEST_CHANGE_SET_SCHEMA = 'openlogos/test-change-set@1' as const;
 export const TEST_CHANGE_SET_SOURCE = 'semantic-before-after-diff' as const;
@@ -137,8 +137,14 @@ function scanTestDefinitionCandidates(
     let row = index + 2;
     while (row < lines.length && !scan.masked[row] && scan.text[row].trim() !== '') {
       const cells = tableRowCells(scan.text[row]).map(canonicalCell);
-      const candidate = cells[0] ?? '';
-      if (isTestId(candidate)) {
+      // §2.37.3（fix-table-test-id-manual-marker）：首格 = 裸 ID + 可选 manual 标记；剥离后的
+      // **裸 ID 为该行身份**。标记本身留在 cell_semantics（定义语义）——同 ID 标记增删/平台变化
+      // 构成修改（进入 C），不产生新身份。此前带标记首格整行不被识别，manual ID 不进
+      // changed_test_ids，切片归属对账在写入侧误报「owned_test_ids 含非本提案变更 ID」。
+      // 完整接纳规则与表格行级读法同源（code-r1 F2）：占位尾段（UT-S99-xx 等，含带 manual 标记
+      // 形态）在此同被拒绝——不得只在 change-lint 前移检查生效而在变更集被接纳。
+      const candidate = stripFirstCellManualMarker(cells[0] ?? '');
+      if (isAcceptedTestId(candidate)) {
         if (cells.length !== headers.length) {
           if (allowAmbiguousRows) {
             row++;

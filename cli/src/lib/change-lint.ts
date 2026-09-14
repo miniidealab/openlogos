@@ -19,7 +19,10 @@ import {
   extractTaskSectionItems,
   hasSpecCompleteMarker,
   getProposalStepReason,
+  TEST_ID_HEADER_RE,
+  isAcceptedTestId,
 } from './proposal-lifecycle.js';
+import { stripFirstCellManualMarker } from './test-id.js';
 import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import {
   DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError,
@@ -50,7 +53,7 @@ import {
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
 export type { DeltaEntryClassification, MergeDisposition, LintValidity };
 
-// ── violation code 闭合注册表（35 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
+// ── violation code 闭合注册表（43 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
 
 export const CHANGE_LINT_VIOLATION_CODES = [
   // L0 Plan Package 统一完成合同
@@ -64,12 +67,14 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'tasks_code_entry_before_spec_complete',
   'tasks_code_section_missing',
   'tasks_deployment_conflict',
-  // L1–L6（7 码）
+  // L1–L6（8 码）
   'tasks_sections_unparsable',
   'tasks_code_header_missing',
   'code_change_requires_real_test_ids',
   'delta_missing_section_marker',
   'delta_template_skeleton',
+  // §2.82.2（fix-table-test-id-manual-marker）：delta 测试规格 ID 表首格可提取性前移检查（L4 族）
+  'delta_test_table_id_unextractable',
   'deployment_decision_conflict',
   'delta_path_invalid',
   // L7 既有 checker 13 码
@@ -150,6 +155,56 @@ export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
   message: string;
   fix_hint: string;
+}
+
+// ── L4 族：delta 测试规格 ID 表首格可提取性（§2.82.2，fix-table-test-id-manual-marker）──
+
+interface UnextractableTestTableRow {
+  /** 在 delta 文件中的 1 基行号。 */
+  line: number;
+  firstCell: string;
+}
+
+/**
+ * 对 `deltas/test/**` 的 `.md` delta，检查 ADDED / MODIFIED 块内**测试 ID 表数据行**的首格是否
+ * 可被表格首列读法提取——首格既非「裸 ID + 可选 manual 标记」形态（剥离标记后须被权威文法接纳，
+ * 含占位尾段黑名单）即违规。价值：把此前一路放行到 plan-slices（无法自修节点）的首格形态问题，
+ * 前移到 write-delta 节点（delta 在 agent 写权限内、change-lint 在其命令白名单内）暴露闭环。
+ *
+ * 识别口径复用既有结构化 ID 表规则（表头 `ID` / `用例 ID` / `用例ID`，`TEST_ID_HEADER_RE`），
+ * **不得缩小扫描集合**；散文、非 ID 表与围栏内引用（authorityScan 掩码）不参与判定。
+ */
+export function findUnextractableTestTableRows(deltaContent: string): UnextractableTestTableRow[] {
+  const out: UnextractableTestTableRow[] = [];
+  for (const block of parseDeltaBlocks(deltaContent)) {
+    if (block.op !== 'ADDED' && block.op !== 'MODIFIED') continue;
+    const lines = block.lines;
+    const scan = authorityScan(lines);
+    // 表格块 = 连续含 `|` 的未掩码行（对齐 extractStructuredTestIds：兼容无首尾管道的合法表格
+    // 外形，code-r1 F1——以「行首是否为管道」定行会缩小扫描集合、放过非法首格）。
+    let i = 0;
+    while (i < lines.length) {
+      if (scan.masked[i] || !scan.text[i].includes('|')) { i++; continue; }
+      let j = i;
+      while (j < lines.length && !scan.masked[j] && scan.text[j].includes('|')) j++;
+      const blockLines = scan.text.slice(i, j);
+      if (blockLines.length >= 3 && isTableDelimiterRow(blockLines[1])) {
+        const headers = tableRowCells(blockLines[0]).map(cell => cell.trim());
+        const delimiters = tableRowCells(blockLines[1]);
+        if (headers.length > 0 && headers.length === delimiters.length && TEST_ID_HEADER_RE.test(headers[0] ?? '')) {
+          for (let k = 2; k < blockLines.length; k++) {
+            const firstCell = (tableRowCells(blockLines[k])[0] ?? '').trim();
+            if (!isAcceptedTestId(stripFirstCellManualMarker(firstCell))) {
+              // block.lines[n] 对应文件 1 基行号 markerLine + n + 2（markerLine 为 0 基标记行）。
+              out.push({ line: block.markerLine + i + k + 2, firstCell });
+            }
+          }
+        }
+      }
+      i = j;
+    }
+  }
+  return out;
 }
 
 // ── L4：validateMarkdownDelta（前置重构②，fence-aware——F4 修正）──
@@ -956,6 +1011,17 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
           message: `delta 残留未替换的模板占位字面量：${v.skeletonHits[0]}${v.skeletonHits.length > 1 ? ` 等 ${v.skeletonHits.length} 处` : ''}`,
           fix_hint: '把模板占位字面量（如 `[新增章节标题]`、`[新增的完整内容]`）替换为真实内容——只要残留任一独占占位行即被 lint 与 merge 拒绝',
         });
+      }
+      // §2.82.2：测试规格 delta 的 ID 表首格可提取性前移（仅 deltas/test/**）。
+      if (entry.relativePath.replace(/\\/g, '/').startsWith('deltas/test/')) {
+        for (const bad of findUnextractableTestTableRows(deltaContents.get(entry.relativePath) ?? '')) {
+          pushViolation(acc, 4, {
+            code: 'delta_test_table_id_unextractable',
+            path: relPath,
+            message: `delta 测试规格 ID 表第 ${bad.line} 行首格不可提取（非「裸 ID + 可选 manual 标记」形态）：'${bad.firstCell}'`,
+            fix_hint: '把该行首格写成合法测试 ID（可带 `[manual]` / `[manual/<平台>]` 标记，剥离后须为真实非占位 ID），或把非用例行移出 ID 表',
+          });
+        }
       }
     }
     // non-Markdown（OpenAPI / SQL）整文件 delta：首行控制标记 + 内容合法性。

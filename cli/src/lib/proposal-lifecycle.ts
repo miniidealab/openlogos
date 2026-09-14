@@ -20,7 +20,7 @@ import { evaluateProposalStructure } from './plan-package-contract.js';
 import type { CompletionIssue, PlanPackageEvaluation } from './plan-package-contract.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import { deriveManagedAssetsDiagnostic, readBundledAssetManifest, type ManagedAssetsDiagnostic } from './asset-manifest.js';
-import { TEST_ID_ANCHORED_RE, testIdScanRe } from './test-id.js';
+import { TEST_ID_ANCHORED_RE, isAcceptedTestId, stripFirstCellManualMarker, testIdScanRe } from './test-id.js';
 
 export type ProposalStep =
   | 'writing'
@@ -298,18 +298,10 @@ function readIfExists(path: string): string {
  * 否则 `UT-S99-xx.` 的尾段变成 `xx.`、绕过占位黑名单的整段精确匹配。
  */
 export { TEST_ID_ANCHORED_RE } from './test-id.js';
-/** 占位符黑名单：最末段命中即拒绝（大小写不敏感）。 */
-const TEST_ID_PLACEHOLDER_TAILS = new Set(['xx', 'nn', 'tbd', 'todo']);
-/** 通配/未消费尾部字符：候选含任一即整候选拒绝（前缀不采信）。 */
-const TEST_ID_WILDCARD_RE = /[*?[\]]/;
-
-function isAcceptedTestId(candidate: string): boolean {
-  if (TEST_ID_WILDCARD_RE.test(candidate)) return false; // 减法拒绝①：通配族名整候选拒绝
-  if (!TEST_ID_ANCHORED_RE.test(candidate)) return false; // 兼容基线：整串匹配（match[0] === 候选全串）
-  const tail = candidate.split('-').pop() ?? '';
-  if (TEST_ID_PLACEHOLDER_TAILS.has(tail.toLowerCase())) return false; // 减法拒绝②：占位尾段
-  return true;
-}
+// 完整接纳规则（兼容基线 + 减法拒绝①通配 + 减法拒绝②占位尾段）自 fix-table-test-id-manual-marker
+// 起归语法权威 test-id.ts 单点承载——表格行级读法与语义变更集共用同一结论（code-r1 F2），
+// 本模块只转发，不再持有第二份黑名单。
+export { isAcceptedTestId } from './test-id.js';
 
 /**
  * 权威 test-id parser（spec §2.30）：按词法边界切候选（空白/反引号/除 `-` `.` `*` `?` 方括号外的标点），
@@ -327,8 +319,8 @@ export function parseTestCaseIds(text: string): string[] {
   return ids;
 }
 
-/** 约定的 ID 列表头（code-r2 F5）：表格首列表头必须是 ID / 用例 ID 才构成测试规格 ID 列。 */
-const TEST_ID_HEADER_RE = /^(?:用例\s*)?id$/i;
+/** 约定的 ID 列表头（code-r2 F5）：表格首列表头必须是 ID / 用例 ID / 用例ID 才构成测试规格 ID 列。 */
+export const TEST_ID_HEADER_RE = /^(?:用例\s*)?id$/i;
 
 /**
  * 从 markdown **真实测试规格表格**的结构化 ID 列（首列）提取已定义测试 ID（code-r1 F5 / r2 强化）：
@@ -354,7 +346,8 @@ export function extractStructuredTestIds(content: string): string[] {
           // r3 F19：按 GFM 语义稳定提取首 cell（tableRowCells 已处理 \| 转义与 code span 内管道）；
           // 描述列的额外/缺失 cell 不否定首列 ID——corpus 零收窄契约优先。
           const cells = tableRowCells(row);
-          const first = (cells[0] ?? '').replace(/\[manual\]/i, '').trim();
+          // 首格剥离经语法权威单点（覆盖 [manual/<平台>] 变体，此前的字面 [manual] 剥离漏掉平台形态）。
+          const first = stripFirstCellManualMarker(cells[0] ?? '');
           if (isAcceptedTestId(first)) ids.push(first);
         }
       }
