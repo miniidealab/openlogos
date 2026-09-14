@@ -693,6 +693,7 @@ dispatcher 至少应支持：
   - `PLAN_APPROVED` 的 `pages` 与 `hashes` **复用同一 basename 作为键**（`hashes` 的键即各页 `prototype` basename），三方对账全程以该 basename 键对齐。
 - **仅 GUI 项目注入该段**；非 GUI 项目（`product_type` 非 GUI 类）不注入，特性不启用。
 - 该声明段是下游 `flow-derive` / guard / 面板 / checker 的**唯一意图事实源**：不引入第二处判定，避免 `ui_impact` 与文件存在性各说各话。
+- **缺段 = 安全默认 `ui_impact:false` + lint 警告（口径合流，fix-ui-declaration-source-skew-and-missing-degate）**：消费侧 `parseUiUxDeclaration` 对缺段本就定义「安全默认 `ui_impact:false`」；change-lint L7 对 GUI 项目缺段报**警告**（`ui_declaration_missing`，不进入 merge 准入违规集合）并按同一安全默认派生 `ui_impact:false`（语义细则见 §2.83）。产出侧规则不变：GUI 项目的 producer **严禁删除**脚手架生成的声明段（`skills/change-writer/SKILL.md` §Step 6 补充二 ①）；声明段**在场但**损坏或 `ui_impact` 非布尔仍 fail-closed 违规。
 
 #### 2.26.3 「动没动界面」三层判定（plan 阶段执行、去循环依赖）
 
@@ -970,7 +971,7 @@ effectiveBaselineSeedState(root, moduleId, explicit) → { state, legacy }
 | L4 | `.md` delta 含 ADDED/MODIFIED/REMOVED 段标记且脱模板骨架 | 共享 `validateMarkdownDelta` | 仅对已存在 delta 文件 |
 | L5 | 部署决策一致性（proposal × tasks `[deploy]` 互证） | `resolveProposalDeploymentDecision` conflict 判定 | 恒生效 |
 | L6 | delta 路径合法性（正交双结论） | 共享 delta 分类器（lint 读 `lintValidity`） | 仅对已存在 delta 文件 |
-| L7 | GUI 项目 ui_impact 声明结构合法 + `ui_impact:true` 逐页对账 | `evaluateUiPrototype` 纯 evaluator；模块经 proposal-context resolver 解析，`product_type ∈ {web,desktop,mobile}` 激活 | 仅 GUI 项目 |
+| L7 | GUI 项目 ui_impact 声明结构合法 + `ui_impact:true` 逐页对账。**强度分级（§2.83）**：缺段（`ui_declaration_missing`）为**警告** + 派生 `ui_impact:false` 安全默认；段在场但损坏（`ui_declaration_unparsable`）与 `ui_impact` 非布尔（`ui_impact_not_boolean`）仍 fail-closed 违规 | `evaluateUiPrototype` 纯 evaluator；模块经 proposal-context resolver 解析，`product_type ∈ {web,desktop,mobile}` 激活 | 仅 GUI 项目 |
 
 #### L3 分阶段测试证据模型
 
@@ -3544,3 +3545,51 @@ checkpoint 行 schema 升至 `openlogos/slice-checkpoint@2`；账本 append-only
 - 功能规格关联：§2.51.7（读法权威）、§2.37.3（语义变更集首格合同）、§2.70.1（lint-specs）。
 - 测试：UT-S35-142～UT-S35-147、ST-S35-28。
 - 代码（以合并后规格为准）：`cli/src/lib/test-id.ts`、`cli/src/lib/test-change-set.ts`、`cli/src/lib/test-slice-manifest.ts`、`cli/src/commands/verify.ts`（defined/eligible 派生的 manual 过滤边界）、`cli/src/commands/lint-specs.ts`、`cli/src/commands/change-lint.ts`。
+
+## 2.83 UI 声明段判定源统一与缺段降门
+
+### 2.83.0 问题：同一判定的两个事实源 + 拦截时点错位
+
+「项目是否 GUI」此前存在两个事实源：change-lint L7 按 `logos-project.yaml` 的 `product_type ∈ {web,desktop,mobile}` 激活并要求声明段在场（缺段 `ui_declaration_missing` fail-closed 拒绝 merge）；而 producer（change-writer agent）按变更语义与 `tech_stack` 观感自由裁量——desktop 项目里语义偏 CLI 的提案被判「非 GUI」，整篇重写 `proposal.md` 时把脚手架已生成的声明段删掉。两源必然漂移，且 merge 是 producer 已出环的节点：20260914 全自动 run 实测确定性硬停等人（重驱复撞、需人工补段），停点零信息增量——被拦提案的声明段若在场，其值必然是 `ui_impact: false`。
+
+拦截时点亦无收益：缺段拦截的真实保护对象是「GUI 变更漏做原型确认」，但原型渲染确认发生在 **plan-exit**（§2.26.4 proposal-ui-ux-first 合同），merge 时点拦截为时已晚、拦下也无法追溯补渲染；而 `parseUiUxDeclaration` 本就定义「缺段 → `ui_impact:false` 安全默认」（消费侧语义早已收敛），缺段阻断保护不了任何下游判定。
+
+### 2.83.1 强度分级：缺段降为警告 + 派生安全默认
+
+| 形态 | 码 | 调整后强度 |
+|---|---|---|
+| 声明段缺失 | `ui_declaration_missing` | **警告**——出现在 `warnings`（含 `code` / `message` / `fix_hint`，fix_hint 指引补回脚手架声明段），不计入 violations、不影响退出码、**不进入 merge 准入违规集合** |
+| 段在场但 fenced YAML 缺失 / 损坏 / 非对象 | `ui_declaration_unparsable` | **保持违规**（fail-closed，诊断逐字不变） |
+| `ui_impact` 非布尔 | `ui_impact_not_boolean` | **保持违规**（fail-closed，诊断逐字不变） |
+
+- **派生安全默认**：缺段时消费侧派生 `ui_impact:false`，与 §2.26.2 既有「缺段安全默认」口径合流；`ui_impact:true` 的逐页对账仅在声明结构合法且值为 `true` 时进行，判据逐字不变。
+- **warnings 通道复用既有契约**：`--format json` 走 `data.warnings[]`（`spec/cli-json-output.md` §3.15 语义——非空才出现、为空整字段省略、不进 `ChangeLintViolationCode` 闭合枚举的失败性语义、与 `pass` / exit code 正交），无缺段项目输出零漂移。
+- **merge 准入只看 violations**：S09 已冻结「准入判据 = change-lint 完整结论」，violations 集合不因 warning 变化——仅缺段警告的提案 merge 照常放行。先例：§2.73（L8 条目守恒降级为警告）、SQL 校验降级留痕 warnings 通道（§2.52.7）。
+
+### 2.83.2 为什么缺段可降而「在场但写坏」不可降
+
+- **缺段**：拦截无收益（保护对象在 plan-exit、消费语义已收敛为安全默认，见 §2.83.0），阻断的全部产出是无人值守链路的硬停。降为警告后即便未来某个 agent 再犯删段，流程也只警告放行而非硬停。
+- **在场但写坏**（fenced YAML 缺失 / 损坏 / 非对象、`ui_impact` 非布尔）：这是**真歧义**——写了但机器读不出意图，安全默认无从谈起；且脚手架已提供合法骨架，写坏必有因。fail-closed 逐字保留。
+
+### 2.83.3 producer 侧判定源统一（矛盾源头消除，主刀）
+
+change-writer 的 GUI 判定**唯一依据 = `logos-project.yaml` 的 `product_type`**，与 L7 同源（模块归属经同一 proposal-context resolver 语义）；agent 不得按提案语义、变更内容或 `tech_stack` 观感自由裁量项目类型；GUI 模块**严禁删除**脚手架生成的「UI/UX 变更声明」段（本次不动界面就保留段并如实写 `ui_impact: false`）。规则落 `skills/change-writer/SKILL.md` §Step 6 补充二 ①（本提案同批修订，「判错代价可控」句删除）。本节的降门是纵深防线：**规则是不删段，降门只是删了之后的兜底**。
+
+### 2.83.4 零回归边界（不变式）
+
+| 保持不变 |
+|---|
+| `ui_impact` 权威意图源（单一事实源）合同（§2.26.2） |
+| `ui_impact:true` 逐页对账（声明清单 basename 集合 == 产出文件 basename 集合）与 `design_system_mode` 判据（§2.26.7）逐字不变 |
+| 非 GUI 项目 L7 不激活（零输出、零警告） |
+| `module_unresolved` fail-closed（exit 1，不得静默按非 GUI 跳过） |
+| proposal-ui-ux-first 的 plan-exit 原型渲染确认合同（§2.26.4～§2.26.9）零改动 |
+| L1–L6、L8、L9 判据与强度零改动 |
+
+### 2.83.5 追溯
+
+- 来源变更：fix-ui-declaration-source-skew-and-missing-degate（openlogos 仓自身 · runlogos 全自动驱动实测事故，2026-09-14；audit run `drv-mu0svxrh-64i2`，blocked `merge-failed`）。
+- 场景：S35「L7 缺段警告化与 warning 输出通道」。
+- 先例：§2.73（L8 条目守恒降级为警告）、§2.52.7（SQL 校验降级留痕的 warnings 通道）、lite-cut3a「阻断门改警告 / 文档」。
+- 测试：UT-S35-148～UT-S35-152、ST-S35-29。
+- 代码（以合并后规格为准）：`cli/src/lib/ui-first.ts`（`analyzeUiDeclarationStructure` 消费侧分级）、`cli/src/lib/change-lint.ts`（L7 违规 / 警告通道）、`cli/src/commands/change-lint.ts` 与 merge 准入消费点。

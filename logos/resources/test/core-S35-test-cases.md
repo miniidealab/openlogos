@@ -258,3 +258,38 @@ UT-S35-09 反例（同一小节，逐项判定）：
 
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
 - UT-S35-142 / UT-S35-146 的判定必须调用真实的表格首列读法与一致性断言实现，不得在测试内复制一份正则——复制即再造第二份读法，正是本变更要消除的形态。
+
+## S35 L7 缺段警告化与判定源统一测试
+
+> 覆盖 change-lint L7 缺段（`ui_declaration_missing`）由 fail-closed 违规降为警告 + 消费侧派生 `ui_impact:false` 安全默认，以及降门的零回归防伪臂（功能规格 §2.83、§2.26.2、§2.30；场景 S35「L7 缺段警告化与 warning 输出通道」；来源变更 fix-ui-declaration-source-skew-and-missing-degate）。夹具用一次性隔离项目构造，不依赖本仓自身的提案内容。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-148 | 缺段降为警告 + 派生 `ui_impact:false`（20260914 事故形态旧实现必红回归） | GUI 夹具（模块 `product_type: desktop`）；提案 `proposal.md` **完全不含**「UI/UX 变更声明」段，其余合法 | 求 `runChangeLint` 结论；另取消费侧派生的 `ui_impact` 值 | `ui_declaration_missing` 出现在 `warnings`（含 `code` / `message` / `fix_hint`，fix_hint 指引补回脚手架声明段）、**不出现在 `violations`**；退出码不因缺段为 2（无其它违规时 exit 0）；派生 `ui_impact === false`（与 `parseUiUxDeclaration` 安全默认同口径，断言不存在第二处派生判定）。**修复前该码进 violations 且 exit 2——本用例即 20260914 merge 硬停形态的回归锁** |
+| UT-S35-149 | 防伪臂：在场但损坏 / 非布尔仍 fail-closed 逐字不变 | GUI 夹具三形态：① 声明段标题在场但**无 fenced YAML block**；② fenced YAML **语法损坏**；③ YAML 合法但 `ui_impact: "yes"` | 对三形态分别求 `runChangeLint` 结论 | ①② 报 `ui_declaration_unparsable`、③ 报 `ui_impact_not_boolean`——三者均进 `violations`、exit 2；诊断的 code / path / message / fix_hint 与降门前**逐字相同**；三形态均**不产生**任何 `ui_declaration_missing` warning（缺段与写坏是互斥形态，不得双报） |
+| UT-S35-150 | 防伪臂：`ui_impact:true` 逐页对账逐字不变 | GUI 夹具：声明段合法、`ui_impact: true`，声明清单与 `2-page-design/` 产出分别构造**一致 / 缺失 / 额外 / 重复** 四态 | 求 `runChangeLint` 的 L7 对账结论 | 一致态通过；缺失 / 额外 / 重复三态照旧判失败——对账判据（声明清单 basename 集合 == 产出文件 basename 集合）与降门前逐字不变；缺段派生的 `ui_impact:false` **不触发**逐页对账（对账仅对结构合法且声明 `true` 的提案执行） |
+| UT-S35-151 | 防伪臂：非 GUI 不激活 + `module_unresolved` fail-closed 不变 | ① 模块 `product_type: cli` 的提案（同样不含声明段）；② proposal 头无 `> module:` 且 guard 不指向本 slug 的提案 | 对两形态分别求 `runChangeLint` 结论 | ① L7 零输出：无违规**且无任何 `ui_declaration_missing` warning**（非 GUI 缺段不是缺陷，降门不得把 L7 泄漏到非 GUI 模块）；② 仍为操作错误 `module_unresolved`（exit 1，fail-closed）——**不得**因缺段已降门而静默按非 GUI 跳过 |
+| UT-S35-152 | 警告不入 merge 准入违规集合 + warnings 通道零漂移 | ① 仅缺段警告、无任何违规的 GUI 提案；② 缺段警告与一处真实违规（如另一 delta 缺段标记）并存的提案；③ 声明段完整合法的 GUI 提案 | ①② 分别走 merge 准入消费点（与 lint 同源完整结论）；③ 取 `change-lint --format json` 输出 | ① merge 准入放行（violations 为空，warning 不改变准入结论）；② violations 含该真实违规、不含缺段项，warnings 含缺段项、不含该违规，互不吞并——merge 因真实违规拒绝而非因缺段；③ 输出**不含** `warnings` 字段（非空才出现，与降门前逐字节一致） |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-29 | 20260914 事故端到端复现：缺段提案 merge 不再硬停 | 真实 CLI，一次性隔离 GUI 项目（`product_type: desktop`）复刻事故现场：活跃提案 `proposal.md` 被整篇重写为**不含**「UI/UX 变更声明」段、其余 delta 与 tasks 全部合法。① `openlogos change-lint --format json`：exit 0、`data.pass=true`、`violations` 为空、`warnings` 含 `ui_declaration_missing`（含可定位 fix_hint）；② **真实 `openlogos merge`** 不再被缺段挡停——merge 准入通过并继续既有流程（**修复前此步确定性 fail-closed 拒绝，即 audit run `drv-mu0svxrh-64i2` 的 `merge-failed` 停点**）；③ 对照臂（fail-closed 保留）：同构提案改为「段在场但 YAML 损坏」→ `change-lint` exit 2 报 `ui_declaration_unparsable`，merge 拒绝、不写 `SPEC_MERGED`；④ 全程 change-lint 项目级零写入（运行前后项目根字节快照相等） |
+
+### 追溯与覆盖
+
+- 主修·缺段警告化 + 派生安全默认（旧实现必红）：UT-S35-148、ST-S35-29 步骤①②。
+- 防伪臂·在场但损坏 / 非布尔 fail-closed 逐字不变：UT-S35-149、ST-S35-29 步骤③。
+- 防伪臂·`ui_impact:true` 逐页对账逐字不变：UT-S35-150。
+- 防伪臂·非 GUI 不激活 + `module_unresolved` fail-closed：UT-S35-151。
+- 防伪臂·警告不入 merge 准入违规集合 + 零漂移：UT-S35-152。
+- 功能规格：§2.83、§2.26.2、§2.30；场景：S35「L7 缺段警告化与 warning 输出通道」；来源变更：fix-ui-declaration-source-skew-and-missing-degate。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- UT-S35-148 / UT-S35-152 的通道断言必须分别读取 `violations` 与 `warnings` 两个真实输出字段，不得只断言「码出现在输出中」——通道归属正是本变更的语义本体。
+- UT-S35-149 的「逐字相同」对照必须以降门前实现的诊断输出为基准夹具，不得在测试内复述期望文案。

@@ -443,3 +443,81 @@ sequenceDiagram
 - 功能规格：§2.82（§2.51.7、§2.37.3、§2.70.1 同步修订）；架构：§四十一.2、§四十一.4。
 - 测试：UT-S35-142～UT-S35-147、ST-S35-28。
 - 来源变更：fix-table-test-id-manual-marker（下游 tools.top 实测缺陷，2026-09-13）。
+
+## S35 L7 缺段警告化与 warning 输出通道
+
+### 场景目标
+
+让 GUI 项目提案缺失「UI/UX 变更声明」段时，change-lint L7 经既有 `warnings` 通道报警而**不阻断 merge 准入**，消费侧派生 `ui_impact:false` 安全默认；声明段在场但损坏 / `ui_impact` 非布尔仍 fail-closed。消除 20260914 全自动 run 在 merge 时点被缺段硬停的无收益阻断（功能规格 §2.83）。
+
+### 用户价值
+
+desktop / GUI 项目中语义偏 CLI 的提案不再因 producer 误删声明段而在 `openlogos merge` 硬停等人——缺段回落 `ui_impact:false` 安全默认并以警告提示补段；plan-exit 的原型确认合同（真正的保护点）不受影响。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| L | `change-lint` | L7 的判定与输出 |
+| A | `analyzeUiDeclarationStructure` | 声明段结构化分级（缺段 / 损坏 / 非布尔 / 合法）的唯一判据 |
+| P | `parseUiUxDeclaration` | 消费侧安全默认（缺段 → `ui_impact:false`）的既有单点 |
+| W | `warnings` 通道 | 既有字段，非空才出现 |
+| M | merge 准入消费点 | 只读 violations，warning 不改变准入结论 |
+
+前置条件：模块经 proposal-context resolver 解析为 GUI（`product_type ∈ {web,desktop,mobile}`）；非 GUI 模块 L7 不激活，本场景不适用。
+
+### 判定与输出时序
+
+```mermaid
+sequenceDiagram
+    participant L as change-lint
+    participant A as analyzeUiDeclarationStructure
+    participant W as warnings
+    participant M as merge 准入
+
+    L->>A: Step 1: 对 GUI 提案的 proposal.md 求声明段结构
+    alt 声明段缺失
+        A-->>L: Step 2a: ui_declaration_missing
+        L->>W: Step 3a: 追加一条 warning（code / message / fix_hint 指引补回脚手架段）
+        L->>L: Step 4a: 派生 ui_impact:false（与 parseUiUxDeclaration 安全默认同口径），L7 不计违规
+        L->>M: Step 5a: violations 不含该码，merge 准入照常放行
+    else 段在场但 fenced YAML 缺失 / 损坏 / 非对象
+        A-->>L: Step 2b: ui_declaration_unparsable
+        L->>L: Step 3b: 计入 violations（fail-closed，exit 2，merge 拒绝）
+    else ui_impact 非布尔
+        A-->>L: Step 2c: ui_impact_not_boolean
+        L->>L: Step 3c: 计入 violations（fail-closed，exit 2，merge 拒绝）
+    else 结构合法
+        A-->>L: Step 2d: ui_impact 布尔值
+        L->>L: Step 3d: ui_impact:true 时执行既有逐页对账（判据逐字不变）
+    end
+    L-->>L: Step 6: warnings 非空才输出该字段（零漂移）
+```
+
+### 输出契约
+
+- **缺段只出现在 `warnings`，绝不出现在 `violations`**：不影响 L7 通过与否、不影响 `change-lint` 整体退出码、不进入 merge 准入违规集合（S09 已冻结「准入判据 = change-lint 完整结论」，violations 集合不因 warning 变化）。
+- **可归因**：warning 含 `code` / `message` / `fix_hint`；message 点名 proposal.md 与缺失的「UI/UX 变更声明」段，fix_hint 指引按脚手架骨架补回该段（本次不动界面即 `ui_impact: false`）。
+- **零漂移**：`warnings` 为空时字段整体省略——与既有约定一致；无缺段项目的输出不因本功能改变。
+- **派生口径单点**：缺段派生 `ui_impact:false` 与 `parseUiUxDeclaration` 的既有安全默认同口径，不引入第二处判定。
+
+### 不变量
+
+1. 缺段警告与派生安全默认**不改变** `ui_impact:true` 的逐页对账判据（声明清单 basename 集合 == 产出文件 basename 集合，重复 / 额外 / 缺失均失败）。
+2. `ui_declaration_unparsable` / `ui_impact_not_boolean` 仍 fail-closed：进 violations、exit 2、merge 拒绝——诊断的 code / path / message / fix_hint 逐字不变。
+3. 非 GUI 模块 L7 不激活：零输出、零警告；`module_unresolved` 仍为操作错误（exit 1，fail-closed），不得静默按非 GUI 跳过缺段判定。
+4. plan-exit 原型渲染确认合同（§2.26.4～§2.26.9）零改动——本场景只动 merge 时点的缺段强度，不动 plan 时点的确认语义。
+5. 只读红线不变：L7 判定项目级零写入。
+
+### 异常与边界
+
+- **缺段警告与真实违规并存**：violations 与 warnings 各自输出、互不吞并；整体 FAIL 因真实违规而非缺段。
+- **缺段 + `ui_impact:true` 场景不存在**：缺段派生值恒为 `false`，不会触发逐页对账；对账仅对「结构合法且声明 `true`」的提案执行。
+- **历史提案已越过 plan / merge**：沿 EX-10.1 既有口径，不回退、不改写历史。
+
+### 追溯
+
+- 来源变更：fix-ui-declaration-source-skew-and-missing-degate（20260914 全自动 run 实测事故；audit run `drv-mu0svxrh-64i2`）。
+- 功能规格：§2.83（缺段降门与判定源统一）、§2.26.2（安全默认口径合流）、§2.30（检查项矩阵 L7 行）。
+- 先例：§2.73（L8 守恒降级为警告）、本文档「S35 SQL 校验降级留痕的输出通道」。
+- 测试：UT-S35-148～UT-S35-152、ST-S35-29。

@@ -22,6 +22,7 @@ import {
   isDangerousSlug, CHANGE_LINT_VIOLATION_CODES,
 } from '../src/lib/change-lint.js';
 import { evaluateUiPrototype, writeUiPrototypeHashes } from '../src/commands/check-ui-prototype.js';
+import { readUiUxDeclaration, deriveUiImpact, analyzeUiDeclarationStructure } from '../src/lib/ui-first.js';
 import { changeLint } from '../src/commands/change-lint.js';
 import { merge, scanDeltas } from '../src/commands/merge.js';
 
@@ -130,6 +131,13 @@ function lintViolations(root: string, slugArg?: string): { code: number; violati
 }
 
 function codesOf(vs: any[]): string[] { return vs.map(v => v.code); }
+
+/** §2.83：violations 与 warnings 双通道读取（warnings 缺省时归一为空数组，字段省略语义由专门用例断言）。 */
+function lintFull(root: string, slugArg?: string): { code: number; violations: any[]; warnings: any[]; raw: any } {
+  const r = runLint(root, slugArg, 'json');
+  const envelope = JSON.parse(r.logs[r.logs.length - 1]);
+  return { code: r.code, violations: envelope.data.violations, warnings: envelope.data.warnings ?? [], raw: envelope };
+}
 
 /** code-r2 F17：lstat 全类型快照——目录自身（覆盖空目录）、symlink（记 link target、不跟随）、普通文件记 hash。 */
 function snapshotTree(root: string): Map<string, string> {
@@ -704,8 +712,11 @@ describe('S35 — L7 与模块解析', () => {
   });
 
   it('UT-S35-17: 坏声明三新码——缺失 / YAML 损坏 / ui_impact 非布尔 / 围栏示例不构成权威声明', { timeout: 120_000 }, () => {
+    // §2.83：缺段由违规降为警告（channel 细则见 UT-S35-148），本用例改断 warnings 通道
     const missing = guiSetup(null);
-    expect(codesOf(lintViolations(missing.root).violations)).toContain('ui_declaration_missing');
+    const missingR = lintFull(missing.root);
+    expect(codesOf(missingR.warnings)).toContain('ui_declaration_missing');
+    expect(codesOf(missingR.violations)).not.toContain('ui_declaration_missing');
     const broken = guiSetup('ui_impact: [unclosed');
     expect(codesOf(lintViolations(broken.root).violations)).toContain('ui_declaration_unparsable');
     const notBool = guiSetup('ui_impact: "yes"\ndesign_system_mode: generated');
@@ -722,7 +733,7 @@ describe('S35 — L7 与模块解析', () => {
         '~~~',
       ].join('\n') }),
     });
-    expect(codesOf(lintViolations(fencedOnly.root).violations)).toContain('ui_declaration_missing');
+    expect(codesOf(lintFull(fencedOnly.root).warnings)).toContain('ui_declaration_missing');
     // code-r2 F11：普通正文**提及**标题（非真实 heading 行）+ 后随 YAML 示例，不得被解析为权威声明
     const proseMention = guiSetup(null, {
       proposal: proposalMd({ codeRequired: false, extra: [
@@ -733,7 +744,7 @@ describe('S35 — L7 与模块解析', () => {
         '```',
       ].join('\n') }),
     });
-    expect(codesOf(lintViolations(proseMention.root).violations)).toContain('ui_declaration_missing');
+    expect(codesOf(lintFull(proseMention.root).warnings)).toContain('ui_declaration_missing');
     // HTML 注释中的完整声明段同样不构成权威声明
     const commentDecl = guiSetup(null, {
       proposal: proposalMd({ codeRequired: false, extra: [
@@ -746,7 +757,7 @@ describe('S35 — L7 与模块解析', () => {
         '-->',
       ].join('\n') }),
     });
-    expect(codesOf(lintViolations(commentDecl.root).violations)).toContain('ui_declaration_missing');
+    expect(codesOf(lintFull(commentDecl.root).warnings)).toContain('ui_declaration_missing');
     // code-r3 F11①：真实标题 + fenced YAML 全在 HTML 注释内 → 注释 fence 不采信 → unparsable（真实 CLI）
     const commentYaml = guiSetup(null, {
       proposal: proposalMd({ codeRequired: false, extra: [
@@ -783,7 +794,7 @@ describe('S35 — L7 与模块解析', () => {
         '```',
       ].join('\n') }),
     });
-    expect(codesOf(lintViolations(looseHeading.root).violations)).toContain('ui_declaration_missing');
+    expect(codesOf(lintFull(looseHeading.root).warnings)).toContain('ui_declaration_missing');
   });
 
   it('UT-S35-18: L7 跳过——product_type: cli 模块零输出', () => {
@@ -1385,22 +1396,29 @@ describe('S35 — ST 场景测试', () => {
       writeFileSync(join(dir, 'tasks.md'), '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/prd/`\n');
       return { root, slugA };
     };
-    // 真实 CLI（F12）：guard 指向 GUI 模块提案，但 --slug 指向 CLI 模块提案 → L7 不激活（无坏声明违规）
-    const violationsVia = (root: string, slug: string) => {
+    // 真实 CLI（F12）：guard 指向 GUI 模块提案，但 --slug 指向 CLI 模块提案 → L7 不激活（无坏声明输出）。
+    // §2.83：缺段已降为警告——L7 激活探针改读 warnings 通道（violations 恒不含缺段码）。
+    const l7Via = (root: string, slug: string) => {
       const r = spawnCli(root, ['change-lint', '--slug', slug, '--format', 'json']);
       expect([0, 2]).toContain(r.status);
-      return JSON.parse(r.stdout.trim()).data.violations.map((v: any) => v.code);
+      const data = JSON.parse(r.stdout.trim()).data;
+      return {
+        violations: data.violations.map((v: any) => v.code),
+        warnings: (data.warnings ?? []).map((w: any) => w.code),
+      };
     };
     const a = build('cli-mod', 'b');
-    expect(violationsVia(a.root, a.slugA)).not.toContain('ui_declaration_missing');
-    // 反向：--slug 指向 GUI 模块提案（头 gui-mod）→ L7 激活（缺声明段 → ui_declaration_missing）
+    const aR = l7Via(a.root, a.slugA);
+    expect(aR.violations).not.toContain('ui_declaration_missing');
+    expect(aR.warnings).not.toContain('ui_declaration_missing');
+    // 反向：--slug 指向 GUI 模块提案（头 gui-mod）→ L7 激活（缺声明段 → warnings 含 ui_declaration_missing）
     const b = build('gui-mod', 'a');
-    expect(violationsVia(b.root, b.slugA)).toContain('ui_declaration_missing');
+    expect(l7Via(b.root, b.slugA).warnings).toContain('ui_declaration_missing');
     // 无 guard、显式 slug → 按 proposal 头解析
     const c = build('gui-mod', 'a');
     const { root: rootC, slugA: slugC } = c;
     writeFileSync(join(rootC, 'logos', '.openlogos-guard'), ''); // 损坏 guard 等价缺失
-    expect(violationsVia(rootC, slugC)).toContain('ui_declaration_missing');
+    expect(l7Via(rootC, slugC).warnings).toContain('ui_declaration_missing');
   });
 
   it('ST-S35-05: 聚合排序端到端（真实 CLI）——含同 check/code/path ≥3 条逐行违规的精确全序、两次运行同序', { timeout: 120_000 }, () => {
@@ -1469,5 +1487,182 @@ describe('S35 — ST 场景测试', () => {
     expect(spawnCli(g1.root, ['change-lint']).status).toBe(0);
     expect(snapshotTree(g1.root)).toEqual(sg1);
     expect(existsSync(join(g1.dir, 'UI_PROTOTYPE_HASHES.json'))).toBe(false);
+  });
+});
+
+/* ========== §2.83 — L7 缺段警告化与判定源统一（fix-ui-declaration-source-skew-and-missing-degate） ========== */
+
+describe('S35 — L7 缺段警告化与判定源统一', () => {
+  it('UT-S35-148: 缺段降为警告 + 派生 ui_impact:false（20260914 事故形态旧实现必红回归）', () => {
+    const missing = guiSetup(null); // product_type: desktop，proposal 完全不含「UI/UX 变更声明」段
+    const r = lintFull(missing.root);
+    // 通道断言分别读取 violations 与 warnings 两个真实输出字段（通道归属是本变更的语义本体）
+    expect(codesOf(r.violations)).not.toContain('ui_declaration_missing');
+    const w = r.warnings.find((x: any) => x.code === 'ui_declaration_missing');
+    expect(w).toBeDefined();
+    expect(w.message).toContain('proposal.md');
+    expect(w.message).toContain('ui_impact:false'); // 已按安全默认派生
+    expect(w.fix_hint).toContain('UI/UX 变更声明'); // fix_hint 指引补回脚手架声明段
+    expect(w.fix_hint).toContain('ui_impact: false');
+    // 修复前该码进 violations 且 exit 2——现无其它违规时 exit 0
+    expect(r.code).toBe(0);
+    // 派生同口径单点：消费侧 parseUiUxDeclaration 安全默认（缺段 → false），module-aware 派生同为 false
+    expect(readUiUxDeclaration(missing.dir).ui_impact).toBe(false);
+    expect(deriveUiImpact(missing.root, 'core', missing.dir)).toBe(false);
+    // analyzeUiDeclarationStructure 消费侧分级本身不变（缺段仍产出 missing 形态，仅 lint 侧通道降级）
+    expect(analyzeUiDeclarationStructure('# 无声明段')).toEqual(
+      expect.objectContaining({ ok: false, problem: 'ui_declaration_missing' }));
+  });
+
+  it('UT-S35-149: 防伪臂——在场但损坏 / 非布尔仍 fail-closed 违规且诊断逐字不变', () => {
+    // ① 声明段标题在场但无 fenced YAML block
+    const noFence = guiSetup(null, {
+      proposal: proposalMd({ codeRequired: false, extra: '## UI/UX 变更声明\n\n（正文无围栏）' }),
+    });
+    const r1 = lintFull(noFence.root);
+    const v1 = r1.violations.find((v: any) => v.code === 'ui_declaration_unparsable');
+    expect(v1).toBeDefined();
+    expect(v1.message).toBe('声明段缺少 fenced YAML block'); // 诊断逐字不变
+    expect(v1.fix_hint).toBe('在 proposal.md 写入「## UI/UX 变更声明」段（fenced YAML：ui_impact 布尔、design_system_mode、pages 清单）');
+    expect(r1.code).toBe(2);
+    // ② fenced YAML 语法损坏
+    const broken = guiSetup('ui_impact: [unclosed');
+    const r2 = lintFull(broken.root);
+    const v2 = r2.violations.find((v: any) => v.code === 'ui_declaration_unparsable');
+    expect(v2).toBeDefined();
+    expect(v2.message).toMatch(/^声明段 YAML 损坏：/);
+    expect(r2.code).toBe(2);
+    // ③ ui_impact 非布尔
+    const notBool = guiSetup('ui_impact: "yes"\ndesign_system_mode: generated');
+    const r3 = lintFull(notBool.root);
+    const v3 = r3.violations.find((v: any) => v.code === 'ui_impact_not_boolean');
+    expect(v3).toBeDefined();
+    expect(v3.message).toBe('ui_impact 必须为布尔（得到 "yes"）'); // 诊断逐字不变
+    expect(r3.code).toBe(2);
+    // 三形态均不产生 ui_declaration_missing warning（缺段与写坏互斥，不得双报）
+    for (const r of [r1, r2, r3]) {
+      expect(codesOf(r.warnings)).not.toContain('ui_declaration_missing');
+    }
+  });
+
+  it('UT-S35-150: 防伪臂——ui_impact:true 逐页对账逐字不变；缺段派生 false 不触发对账', () => {
+    // 一致态通过（validUiFixture：声明 1 页 + 同名非空文件 + generated 令牌）
+    expect(lintFull(validUiFixture().root).violations).toEqual([]);
+    // 缺失：声明 core-02-x.html 但未产出
+    const declTwo = ['ui_impact: true', 'design_system_mode: generated', 'design_system_fallback_reason: ""', 'pages:',
+      '  - id: home', '    prototype: core-01-home.html', '    description: 首页',
+      '  - id: x', '    prototype: core-02-x.html', '    description: 缺失页'].join('\n');
+    const missingPage = guiSetup(declTwo);
+    const protoDir = join(missingPage.dir, 'deltas', 'prd', '2-product-design', '2-page-design');
+    mkdirSync(protoDir, { recursive: true });
+    writeFileSync(join(protoDir, 'core-01-home.html'), '<html>home</html>');
+    writeFileSync(join(missingPage.dir, 'design-system.json'), JSON.stringify({ palette: 'x' }));
+    const rMissing = lintFull(missingPage.root);
+    expect(codesOf(rMissing.violations)).toContain('prototype_missing');
+    expect(rMissing.code).toBe(2);
+    // 额外：产出未声明文件
+    const extra = validUiFixture();
+    writeFileSync(join(extra.dir, 'deltas', 'prd', '2-product-design', '2-page-design', 'core-09-extra.html'), '<html>x</html>');
+    expect(codesOf(lintFull(extra.root).violations)).toContain('prototype_extra');
+    // 重复：清单内 basename 重复
+    const declDup = ['ui_impact: true', 'design_system_mode: generated', 'design_system_fallback_reason: ""', 'pages:',
+      '  - id: a', '    prototype: core-01-home.html', '    description: 甲',
+      '  - id: b', '    prototype: core-01-home.html', '    description: 乙'].join('\n');
+    const dup = guiSetup(declDup);
+    const dupProto = join(dup.dir, 'deltas', 'prd', '2-product-design', '2-page-design');
+    mkdirSync(dupProto, { recursive: true });
+    writeFileSync(join(dupProto, 'core-01-home.html'), '<html>home</html>');
+    writeFileSync(join(dup.dir, 'design-system.json'), JSON.stringify({ palette: 'x' }));
+    expect(codesOf(lintFull(dup.root).violations)).toContain('prototype_basename_duplicate');
+    // 缺段派生 false 不触发逐页对账：无声明段 + 原型文件在场 → 不产生任何 prototype_* 违规
+    const derived = guiSetup(null);
+    const dProto = join(derived.dir, 'deltas', 'prd', '2-product-design', '2-page-design');
+    mkdirSync(dProto, { recursive: true });
+    writeFileSync(join(dProto, 'core-01-home.html'), '<html>home</html>');
+    const rDerived = lintFull(derived.root);
+    expect(codesOf(rDerived.violations).filter((c: string) => c.startsWith('prototype_'))).toEqual([]);
+    expect(codesOf(rDerived.warnings)).toContain('ui_declaration_missing');
+  });
+
+  it('UT-S35-151: 防伪臂——非 GUI 零输出（含零警告）；module_unresolved 仍 exit 1 fail-closed', () => {
+    // ① product_type: cli，同样无声明段 → L7 双通道零输出（降门不得把 L7 泄漏到非 GUI 模块）
+    const cli = setup({ proposal: proposalMd({ codeRequired: false }) });
+    const r = lintFull(cli.root);
+    const l7codes = ['ui_declaration_missing', 'ui_declaration_unparsable', 'ui_impact_not_boolean'];
+    expect(codesOf(r.violations).filter((c: string) => l7codes.includes(c))).toEqual([]);
+    expect(codesOf(r.warnings)).not.toContain('ui_declaration_missing');
+    // ② proposal 头无 module 且 guard 指向其它 slug → 仍操作错误 module_unresolved（exit 1），
+    //    不得因缺段已降门而静默按非 GUI 跳过
+    const unresolved = setup({
+      proposal: proposalMd({ module: null, codeRequired: false }),
+      guard: { activeChange: 'other-slug', module: 'core' },
+    });
+    const ru = runLint(unresolved.root, 'feat');
+    expect(ru.code).toBe(1);
+    expect(ru.errors.join('\n')).toContain('module_unresolved');
+  });
+
+  it('UT-S35-152: 警告不入 merge 准入违规集合 + warnings 通道零漂移', () => {
+    // ① 仅缺段警告、无任何违规 → merge 消费的 violations 为空（准入放行判据）
+    const onlyWarn = guiSetup(null);
+    const r1 = lintFull(onlyWarn.root);
+    expect(r1.violations).toEqual([]);
+    expect(codesOf(r1.warnings)).toContain('ui_declaration_missing');
+    expect(r1.code).toBe(0);
+    // ② 缺段警告与真实违规并存 → 各自通道互不吞并
+    const both = guiSetup(null);
+    mkdirSync(join(both.dir, 'deltas', 'prd'), { recursive: true });
+    writeFileSync(join(both.dir, 'deltas', 'prd', 'bad.md'), '没有任何段标记的 delta 正文');
+    const r2 = lintFull(both.root);
+    expect(codesOf(r2.violations)).toContain('delta_missing_section_marker');
+    expect(codesOf(r2.violations)).not.toContain('ui_declaration_missing');
+    expect(codesOf(r2.warnings)).toContain('ui_declaration_missing');
+    expect(codesOf(r2.warnings)).not.toContain('delta_missing_section_marker');
+    expect(r2.code).toBe(2); // FAIL 因真实违规而非缺段
+    // ③ 声明段完整合法 → 输出不含 warnings 字段（非空才出现，零漂移）
+    const clean = guiSetup(VALID_UI_DECL);
+    const r3 = lintFull(clean.root);
+    expect(r3.code).toBe(0);
+    expect('warnings' in r3.raw.data).toBe(false);
+  });
+
+  it('ST-S35-29: 20260914 事故端到端复现（真实 CLI）——缺段提案 merge 不再硬停；损坏仍 fail-closed', { timeout: 120_000 }, () => {
+    // 复刻事故现场：desktop GUI 项目，活跃提案 proposal.md 不含「UI/UX 变更声明」段，其余合法（无 delta → no-delta merge）
+    const scene = setup({
+      productType: 'desktop',
+      proposal: proposalMd({ codeRequired: false, uiDeclYaml: null }),
+      tasks: mergeAdmissibleTasks(),
+    });
+    // ① change-lint --format json：exit 0、pass=true、violations 空、warnings 含缺段（可定位 fix_hint）
+    const r1 = spawnCli(scene.root, ['change-lint', '--format', 'json']);
+    expect(r1.status).toBe(0);
+    const env1 = JSON.parse(r1.stdout.trim());
+    expect(env1.data.pass).toBe(true);
+    expect(env1.data.violations).toEqual([]);
+    const w = (env1.data.warnings ?? []).find((x: any) => x.code === 'ui_declaration_missing');
+    expect(w).toBeDefined();
+    expect(w.fix_hint).toContain('UI/UX 变更声明');
+    // ④ 前半：change-lint 项目级零写入（含 guard / marker / yaml）
+    const snapBefore = snapshotTree(scene.root);
+    expect(spawnCli(scene.root, ['change-lint']).status).toBe(0);
+    expect(snapshotTree(scene.root)).toEqual(snapBefore);
+    // ② 真实 merge 不再被缺段挡停（修复前此步确定性 fail-closed 拒绝，即 audit run drv-mu0svxrh-64i2 的 merge-failed 停点）
+    const rMerge = spawnCli(scene.root, ['merge', scene.slug]);
+    expect(rMerge.status).toBe(0);
+    expect(`${rMerge.stdout}${rMerge.stderr}`).not.toContain('ui_declaration_missing');
+    expect(existsSync(join(scene.dir, 'SPEC_MERGED'))).toBe(true);
+    // ③ 对照臂（fail-closed 保留）：段在场但 YAML 损坏 → lint exit 2、merge 拒绝、不写 SPEC_MERGED
+    const brokenScene = setup({
+      productType: 'desktop',
+      proposal: proposalMd({ codeRequired: false, uiDeclYaml: 'ui_impact: [unclosed' }),
+      tasks: mergeAdmissibleTasks(),
+    });
+    const r3 = spawnCli(brokenScene.root, ['change-lint', '--format', 'json']);
+    expect(r3.status).toBe(2);
+    expect(JSON.parse(r3.stdout.trim()).data.violations.map((v: any) => v.code)).toContain('ui_declaration_unparsable');
+    const rMergeBroken = spawnCli(brokenScene.root, ['merge', brokenScene.slug]);
+    expect(rMergeBroken.status).not.toBe(0);
+    expect(`${rMergeBroken.stdout}${rMergeBroken.stderr}`).toContain('ui_declaration_unparsable');
+    expect(existsSync(join(brokenScene.dir, 'SPEC_MERGED'))).toBe(false);
   });
 });

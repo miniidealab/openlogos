@@ -148,6 +148,10 @@ export type ChangeLintWarningCode =
   | 'delta_removed_unknown_id'
   // §2.79.1 / §2.68.4：指纹漂移是审计观察，不进流程分支，故 L9 的 stale 走 warning。
   | 'test-slice-manifest-stale'
+  // §2.83（fix-ui-declaration-source-skew-and-missing-degate）：GUI 项目缺声明段降为警告——
+  // 拦截保护的原型确认在 plan-exit 已兑现，merge 时点阻断无收益；消费侧派生 ui_impact:false
+  // 安全默认（parseUiUxDeclaration 同口径）。在场但损坏 / 非布尔仍 fail-closed 违规。
+  | 'ui_declaration_missing'
   // 待办步骤而非缺陷：记为 violation 会让 merge 拒绝它自己要写入的 marker（见 L9 实现处注释）。
   | 'no_delta_spec_marker_missing';
 
@@ -1059,16 +1063,28 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   }
 
   // L7：仅 GUI 项目（resolver 判定 product_type ∈ GUI）
+  const uiWarnings: ChangeLintWarning[] = [];
   const guiActive = moduleCtx.isGui;
   if (guiActive) {
     const structure = analyzeUiDeclarationStructure(proposalContent);
     if (!structure.ok) {
-      pushViolation(acc, 7, {
-        code: structure.problem,
-        path: relProposal,
-        message: structure.detail,
-        fix_hint: '在 proposal.md 写入「## UI/UX 变更声明」段（fenced YAML：ui_impact 布尔、design_system_mode、pages 清单）',
-      });
+      if (structure.problem === 'ui_declaration_missing') {
+        // §2.83：缺段降为警告 + 派生 ui_impact:false 安全默认——与 parseUiUxDeclaration 的
+        // 「缺段 → false」口径合流（缺段派生值恒 false，天然不触发逐页对账分支）；merge 准入
+        // 只读 violations，仅缺段警告的提案照常放行。在场但写坏（下方 else 分支）仍 fail-closed。
+        uiWarnings.push({
+          code: 'ui_declaration_missing',
+          message: `${relProposal}：${structure.detail}（已按安全默认派生 ui_impact:false）`,
+          fix_hint: '按脚手架骨架补回「## UI/UX 变更声明」段（fenced YAML：ui_impact 布尔、design_system_mode、pages 清单）；本次不动界面即如实写 ui_impact: false',
+        });
+      } else {
+        pushViolation(acc, 7, {
+          code: structure.problem,
+          path: relProposal,
+          message: structure.detail,
+          fix_hint: '在 proposal.md 写入「## UI/UX 变更声明」段（fenced YAML：ui_impact 布尔、design_system_mode、pages 清单）',
+        });
+      }
     } else if (structure.ui_impact) {
       const outcome = evaluateUiPrototype(proposalDir);
       if (outcome.code !== 0) {
@@ -1227,7 +1243,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings, ...conservationWarnings, ...blockWarnings]
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {

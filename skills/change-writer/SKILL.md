@@ -308,16 +308,18 @@ change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `s
 
 判定在 **plan 阶段由 change-writer 执行**，分两层，**依据是「提案意图 + 已规划的 `[delta]` 目标」，而非扫描尚不存在的 delta 文件内容**（plan 阶段无 delta 可扫，「先 delta 还是先原型」构成循环依赖，故不扫 delta 内容）：
 
-1. **先判 `product_type` 是否 ∈ GUI**：从 `logos/logos-project.yaml` 的 `product_type` / `tech_stack` 读取。
-   - ✅ GUI 类：Web 应用 / 移动应用 / 桌面应用（Electron / Tauri / SwiftUI / Jetpack Compose / Qt / WPF / GTK 等）/ 混合型中含 GUI 交付物的部分。
-   - ❌ 非 GUI 类：纯 CLI / Library / AI Skills / 纯 API 服务 / 纯后端服务（`service`：常驻 worker / 定时循环任务 / 消息消费者等，无对外接口）—— 整节跳过、`ui_impact` 恒为 `false`、不注入声明段。
+1. **先判 `product_type` 是否 ∈ GUI——唯一依据 = `logos/logos-project.yaml` 中本提案所属模块的 `product_type` 字段**（fix-ui-declaration-source-skew-and-missing-degate）：
+   - **与 change-lint L7 同源**：L7 按 `product_type ∈ {web, desktop, mobile}` 激活（模块归属经同一 proposal-context resolver 语义解析，见功能规格 §2.30）。change-writer 读**同一个 yaml 字段**、得同一个结论——producer 判定与门判定单源，不存在漂移空间。
+   - **禁止自由裁量**：不得按提案语义、变更内容、`tech_stack` 观感或对代码库的印象改判项目类型。`product_type: desktop`（或 web / mobile）项目里的「纯 CLI 判据修复」提案**仍然是 GUI 项目的提案**——「本次没动界面」表达为 `ui_impact: false`，**绝不**表达为「把项目当作非 GUI、整节跳过」。
+   - **判定映射**：`product_type ∈ {web, desktop, mobile}` → GUI 类，进入第 2 层判定；其余取值（`cli` / `library` / `api` / `service` / skills 等）→ 非 GUI 类，整节跳过、`ui_impact` 恒为 `false`、不注入声明段。
+   - **严禁删除脚手架结构必填段（GUI 模块）**：`openlogos change` 的 proposalTemplate 已为 GUI 项目生成「UI/UX 变更声明」段（默认 `ui_impact: false`）——产物侧本无缺口。整篇重写 `proposal.md` 时**必须原样保留该段**：本次不动界面就保留段并如实写 `ui_impact: false`；仅 `product_type` 非 GUI 的模块才允许该段不存在。
 2. **再判本次是否动界面**（仅当 `product_type ∈ GUI`）：
    - **依据 = 提案意图 + `tasks.md` 已规划的 `[delta]` 目标是否命中 `2-page-design/`，或命中含交互变更的 feature-specs delta**。命中即**强制判为「动了界面」**（`ui_impact:true`）。
    - **窄例外（命中 `2-page-design/` 时）**：仅当目标为**页面原型产物**（`.html`，或含 `pages` 声明）才强制 `ui_impact:true`；若目标是**纯 CLI 体验文本规格**（`.md` 且**无** `pages` 声明），不强制 `ui_impact:true`。
    - **不扫描尚不存在的 delta 内容**（去循环依赖）。
    - 可选多 agent 复核默认**关**，可由 driver 派发。
 
-判定容错优先流程平滑：作为增益功能，判错代价可控（顶多多画一次或退回重设），不追求绝对严谨。
+**删段的真实后果（20260914 事故实证，替代已被证伪的「判错代价可控」断言）**：change-lint L7 按 yaml `product_type` 激活并检查声明段在场性；agent 按提案语义误判「非 GUI」而删掉脚手架段后，全自动 run 的 `openlogos merge` 曾被 `ui_declaration_missing` 在 spec-exit 后挡停——producer 已出环、重驱确定性复撞、需要人工补段才能恢复。判定源不同源导致的删段不是「顶多多画一次或退回重设」，而是无人值守链路的硬停等人。缺段现已由 L7 降为**警告** + 消费侧派生 `ui_impact:false` 安全默认（防线纵深，见功能规格 §2.83），但警告仍是流程噪音且丢失「如实声明」的语义——**规则是不删段，降门只是删了之后的兜底**。声明段在场但写坏（fenced YAML 缺失 / 损坏 / 非对象、`ui_impact` 非布尔）仍 fail-closed 拒绝 merge：脚手架已提供合法骨架，写坏必有因。
 
 ### ② change-writer 作为 plan 节点 producer，被 driver 在 plan-exit 门前 dispatch 产原型
 
