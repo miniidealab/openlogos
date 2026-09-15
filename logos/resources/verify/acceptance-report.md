@@ -17,15 +17,6 @@
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
 
-## Slice Verification
-
-- Mode: `final`
-- Attempted slice: `null`
-- Confirmed slices: `slice-01-shape-gate-forward-parity`, `slice-02-merge-failure-state-tiers`
-- Eligible tests: 1835
-- Pending tests: 0
-- Final: true
-
 ## Skipped Cases
 
 - UT-S13-47
