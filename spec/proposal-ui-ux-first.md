@@ -496,14 +496,82 @@ enforcement）。
   2. **staging**——校验通过的资产先写临时区；
   3. **原子提交**——以原子 rename 逐文件提交（POSIX rename 原子），失败即**回滚**（删 staging +
      用备份还原已提交部分）。
-- **失败语义（无残留）**：任一阶段失败 ⇒ **resources 回到 merge 前状态**（无部分落盘、无未获批
-  内容）、`SPEC_MERGED` 不写、流程标记失败并阻断；remediation = 显式重入 plan 刷新 hashes 后重跑。
-  即**全有或全无、失败零残留**。
+- **失败语义（按已确认状态分档，不得无条件宣称零残留）**：失败处置**一律按 §12.3.2 失败分档表**
+  执行，不得由实现者在「零残留 + 合并照常」与「阻断」之间任选其一：
+  - **完整回滚成立时**（档 P0 / P1）：resources 回到 merge 前状态（无部分落盘、无未获批内容），
+    可如实声明零残留；remediation = 显式重入 plan 刷新 hashes 后重跑。
+  - **完整回滚不成立或状态不可确认时**（档 P2，`rolledBack:false`，reason 形如
+    `commit_failed_rollback_incomplete` / `post_commit_hash_mismatch_rollback_incomplete`）：
+    **禁止宣称零残留**、保留全部恢复材料（staging / backup / journal）、`SPEC_MERGED` 不写、
+    流程标记失败并阻断。
+  「全有或全无」是**事务目标**；当回滚本身失败时，诚实报告优先于口号——把不可确认态描述成
+  「什么都没发生」比不报更有害（用户据此重跑会撞上前置拒绝，或以为原型未动而实际已动）。
 - **进入事务门的判据**：门控一律以持久化 `PLAN_APPROVED` provenance 为准（§11）——含 UI provenance
   时**永久进入严格事务门并 fail closed**，当前会话 capability 缺失一律不得跳过；仅 legacy/degraded 或
   旧空 marker 无「曾渲染」证据时走 §8.1 advisory。**注意：advisory 与严格两条分支都在
   `commitVerifiedPrototypes()` 这一唯一入口内分流**——advisory 只是**跳过严格 hash 校验**、作普通资产
   整份落盘，**而非**走另一条绕过本函数的落盘路径。不存在第二条原型落盘路径。
+
+#### 12.3.1 「唯一入口」必须在安装态真实可执行（不得被测试专用开关门死）
+
+「唯一落盘入口」是**可执行性断言**，不只是代码归属声明。补两条**可判定**约束（来源变更
+fix-merge-prototype-commit-and-phase-module-prefix；实测 0.15.7 违反、0.15.9 复核仍在）：
+
+- **约束 A（安装态可执行）**：`commitVerifiedPrototypes()` 的调用点必须位于 `openlogos merge` 的
+  **正常 `ui_impact` 合并分支**上，即**默认安装态（无任何内部环境变量、`NODE_ENV != 'test'`）执行
+  `openlogos merge <slug>` 时必定被求值**。**禁止**把该调用置于任何测试专用 / 内部开关门内
+  （`legacyMergeTestMode()`、`OPENLOGOS_INTERNAL_*`、`NODE_ENV === 'test'` 等）。被门死的唯一入口
+  **等价于无入口**——排除方（`planDirectTargets()` 把 `2-page-design/*.html` 排出 canonical target
+  集，理由为「由 `commitVerifiedPrototypes` 整份落盘」）此时指向一条死路径，安装态将**静默丢弃**
+  全部原型变更（新增页 / 改版 / 墓碑化），merge 输出零告警，「批准的原型」与「落盘的原型」永久分叉。
+- **约束 A 的判定方式（机器可判）**：验收必须存在**不开** `OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY`
+  的安装态路径用例——html delta 在场时 merge 后 `logos/resources/prd/2-product-design/2-page-design/`
+  下同名文件字节等于 delta 字节。**仅在 legacy 模式下绿的测试不构成覆盖**：它覆盖的恰是那条安装态
+  永不执行的死路径，全绿是假象。
+- **约束 B（落盘结果可观测，禁止静默）**：落盘结果必须进入 `openlogos merge` 的**输出摘要**，与
+  canonical target 同级可见：
+  - 成功时**逐个**列出已 committed 的原型（目标相对路径），数量为零时明确说明「本次无原型资产」；
+  - 落盘未成立时必须**显式打印告警**，并按 §12.3.2 输出**与该档事实相符**的状态声明与恢复动作；
+  - **禁止静默**：既不允许「落盘成功但摘要无痕」，也不允许「未落盘且无告警」。摘要是人与 agent
+    判断「批准的原型是否真的进了 resources」的唯一在线证据。
+- **约定一致性核对（本次失联的直接教训）**：凡以「由 X 负责落盘」为由在别处**排除**某类资产，
+  该排除点的注释与 X 的**实际调用条件**必须同步核对；排除方与落盘方分处两文件时，此核对是
+  `[code]` 的硬要求，不得只改一侧。
+
+#### 12.3.2 原型落盘失败分档表（唯一处置依据）
+
+`commitVerifiedPrototypes()` 的失败**不是单一形态**。既有唯一入口（`cli/src/lib/ui-provenance.ts`）
+已能返回 `ok:false, rolledBack:false` 并**刻意保留**恢复材料；把该调用恢复到安装态后，此分支会真正
+进入生产流程。故失败处置按下表分档，**每档的 `SPEC_MERGED`、退出语义、状态声明、恢复动作均为规定值**：
+
+| 档 | 判据（来自唯一入口返回值） | 磁盘事实 | 状态声明 | `SPEC_MERGED` / 退出 | 恢复动作 |
+|---|---|---|---|---|---|
+| **P0 写入前拒绝** | `ok:false` 且失败发生在写入任何目标字节之前（provenance 不完整、全量 hash 校验失配、staging 失败） | 原型目标目录逐字节等于 merge 前 | 可如实声明「原型未落盘、resources 保持 merge 前态、零残留」 | 规格 delta **照常合并**、`SPEC_MERGED` 照常写、退出语义同正常合并 | `openlogos check-ui-hash-match` 查失配；显式重入 plan 刷新 hashes |
+| **P1 已完整回滚** | `ok:false, rolledBack:true`（reason 形如 `commit_failed:*`、`post_commit_hash_mismatch`） | 已完整还原到 merge 前一致态；恢复材料已清理 | 可声明零残留，但**必须点名**「提交中途失败后已完整回滚」，不得与 P0 混为「未曾尝试写入」 | 同 P0 | 同 P0 |
+| **P2 回滚不完整 / 不可确认** | `ok:false, rolledBack:false`（reason 形如 `commit_failed_rollback_incomplete`、`post_commit_hash_mismatch_rollback_incomplete`） | **可能已有部分原型落盘**；staging / backup / journal **被刻意保留** | **禁止任何零残留措辞**；必须声明「原型可能已部分落盘、状态需核对」并指向保留的 journal | **不写 `SPEC_MERGED`**、**非零退出、阻断流程**（不进 slice/code） | 下次 `openlogos merge` / 启动按 §12.4 journal 前滚或回滚；并给出 `git status`、`git diff logos/resources/` 自查指引 |
+
+规定：
+
+- **不得把 P2 当作 P0 处理**——「provenance 拒落盘仍继续合并」是对**未发生写入**的授权，
+  不是对**掩盖回滚不完整**的授权。
+- **不得仅用 hash 失配模拟全部失败**：验收必须含 `rolledBack:false` 的**注入分支**，
+  否则 P2 档形同未规定。
+- 本表与 §12.3「失败语义」条目是同一规定的两处表述，**以本表为准**；两处不得再出现
+  「任一失败都阻断」或「任一失败都照常合并」这类不分档的绝对句。
+
+#### 12.3.3 写入阶段前置：合成与校验先于任何提交
+
+原型提交与规格 delta 合并是**同一次 merge 的两个写入动作**。若原型先提交、规格后合成，则规格合成
+失败（章节锚不可解析、物质结果复验不通过等）时，原型已落盘而恢复材料已在成功路径上被清理——
+此时 merge 的失败输出仍按既有档 A 声明「保持合并前字节」，**与磁盘事实相反**（S09 EX-9.20、
+EX-9.23 要求合成/准备失败时 `logos/resources/` 零改动）。故规定：
+
+- **顺序约束**：**全部 canonical target 的解析、合成与物质结果复验必须在任何写入动作之前完成**；
+  合成阶段失败时原型**根本不得进入提交**，档 A 的零改动声明因此成立。
+- **材料保留约束**：原型事务提交成功后，其 journal / backup **不得立即清理**，须保留至
+  **规格 canonical target 原子落盘与 `SPEC_MERGED` 写入均成功**；其间任一失败 ⇒ 依 journal
+  回滚原型 + 规格整批回滚，恢复到 merge 前一致态后再统一清理材料；回滚不完整则落入 §12.3.2 档 P2。
+- **唯一入口不变**：以上为同一入口内的阶段划分与材料生命周期调整，**不新增第二条原型落盘路径**。
 
 ### 12.4 消除 verify-to-stage 竞态 + 崩溃恢复（契约级机制 + 硬验收标准）
 

@@ -28,7 +28,8 @@ export type MergeDirectErrorCode =
   | 'MERGE_DELTA_INVALID'
   | 'MERGE_TARGET_MISMATCH'
   | 'MERGE_ALREADY_COMPLETE'
-  | 'MERGE_APPLY_FAILED';
+  | 'MERGE_APPLY_FAILED'
+  | 'MERGE_PROTOTYPE_COMMIT_UNCONFIRMED';
 
 /** §2.69.1 失败语义：git 工作区就是回滚点，故每条错误都自带回滚提示，不依赖命令层补。 */
 const ROLLBACK_HINT = '回滚点：git checkout logos/resources/';
@@ -41,8 +42,17 @@ const ROLLBACK_HINT = '回滚点：git checkout logos/resources/';
  * - `apply-rolled-back`：原语返回 `ok:false` 且 `rolled_back === true` → 档 B
  * - `apply-unconfirmed`：原语返回 `ok:false` 且 `rolled_back !== true`，或错误自原语内部直接
  *   逃出（含 `phase='committed'` 之后清理失败经恢复路径二次抛出）→ 档 C
+ * - `prototype-unconfirmed`：原型事务在**阶段一与阶段二之间**提交且回滚不完整或抛错
+ *   （`commitVerifiedPrototypes` 返回 `rolledBack:false` 或直接抛出，`spec/proposal-ui-ux-first.md`
+ *   §12.3.2 档 P2）→ 档 C，但事实与 `apply-unconfirmed` 不同：markdown 主文档**未进入落盘阶段**、
+ *   `SPEC_MERGED` 未写，不可确认的只有原型资产；状态声明另走一条专用文案，绝不套用
+ *   「主文档可能已是合并后字节」。
+ * - `apply-rolled-back-prototype-unconfirmed`（code-r1 F2）：规格侧**已确认整批回滚**，但原型侧的
+ *   补偿回滚不完整/不可确认 → 档 C。此档存在的唯一理由是：此时若按 `apply-rolled-back` 取档 B，
+ *   输出会宣称「logos/resources/ 保持合并前字节……已整批回滚」——那对原型侧是与磁盘相反的断言。
  */
-export type MergeFailureStage = 'prepare' | 'apply-rolled-back' | 'apply-unconfirmed';
+export type MergeFailureStage = 'prepare' | 'apply-rolled-back' | 'apply-unconfirmed'
+  | 'prototype-unconfirmed' | 'apply-rolled-back-prototype-unconfirmed';
 
 /**
  * 阶段戳以 Symbol 附着在**原错误对象**上，不包装、不替换错误类——`code`、`targetPaths`、原始
@@ -65,7 +75,9 @@ export function stampMergeFailureStage<T>(error: T, stage: MergeFailureStage): T
 export function readMergeFailureStage(error: unknown): MergeFailureStage | null {
   if (error === null || typeof error !== 'object') return null;
   const stage = (error as Record<symbol, unknown>)[MERGE_FAILURE_STAGE];
-  return stage === 'prepare' || stage === 'apply-rolled-back' || stage === 'apply-unconfirmed' ? stage : null;
+  return stage === 'prepare' || stage === 'apply-rolled-back' || stage === 'apply-unconfirmed'
+    || stage === 'prototype-unconfirmed' || stage === 'apply-rolled-back-prototype-unconfirmed'
+    ? stage : null;
 }
 
 export class MergeDirectError extends Error {
@@ -77,7 +89,9 @@ export class MergeDirectError extends Error {
    * 指引（该重跑前先核对状态），不得随消息一起发出（§2.84.3 状态档表）。
    */
   constructor(readonly code: MergeDirectErrorCode, message: string, stage: MergeFailureStage = 'prepare') {
-    super(stage === 'apply-unconfirmed' ? message : `${message}（${ROLLBACK_HINT}）`);
+    super((stage === 'apply-unconfirmed' || stage === 'prototype-unconfirmed'
+      || stage === 'apply-rolled-back-prototype-unconfirmed')
+      ? message : `${message}（${ROLLBACK_HINT}）`);
     this.name = 'MergeDirectError';
     this.stage = stage;
     stampMergeFailureStage(this, stage);
@@ -127,6 +141,12 @@ export function planDirectTargets(root: string, proposalDir: string): PlannedTar
     if (entry.mergeDisposition !== 'mergeable') continue;
     // 原型资产（2-page-design 下的 .html）不是章节文档，由 commitVerifiedPrototypes 整份落盘，
     // 不进 merge 的 canonical target 集合。（此前由闭包计划天然排除；改 delta 派生后需显式排除。）
+    //
+    // ⚠️ 成对约定（§12.3.1「约定一致性核对」）：本处排除的**前提**是落盘方在安装态真实可执行。
+    // 落盘方 = `cli/src/commands/merge.ts` 正常 `ui_impact` 分支经 `MergeDirectHooks.afterPrepare`
+    // 调用的 `commitVerifiedPrototypes()`——**不在** `legacyMergeTestMode()` 等测试专用开关内
+    // （2026-09-14 事故：调用曾被圈进 legacy 门，本处排除随之指向死路径，安装态静默丢弃全部原型）。
+    // 改动任一侧必须同步核对另一侧，不得只改一侧。
     if (entry.relativePath.replace(/\\/g, '/').includes('/2-product-design/2-page-design/')
       && entry.relativePath.endsWith('.html')) continue;
     const targetPath = canonicalTargetFromDeltaPath(entry.relativePath);
@@ -243,7 +263,51 @@ function prepareDirectMerge(root: string, proposalDir: string, slug: string): Di
  * 执行直接合并。**校验全部前置于写入**：任一目标合成失败即在写入任何文件前抛错，
  * `logos/resources/` 零改动；落盘阶段失败由 applyBaselineClosureBatch 整批回滚。
  */
-export function mergeDirect(root: string, proposalDir: string, slug: string): MergeDirectResult {
+/**
+ * 阶段钩子（`spec/proposal-ui-ux-first.md` §12.3.3「写入阶段前置」的承载点）。
+ *
+ * 唯一目的：让**原型事务**挂在「全部 canonical target 解析/合成/物质结果复验完成」之后、
+ * 「任何写入动作」之前，并让其恢复材料的生命周期跟随整次 merge 的成败——而不是把原型提交
+ * 提到合成之前（那会让合成失败时的档 A 零改动声明与磁盘相反）。
+ *
+ * 本类型不改变 merge 自身的任何判定：钩子不参与目标集计算、不影响 `test_change_set`、
+ * 未传钩子时行为与调用序列逐字不变。
+ */
+export interface MergeDirectHooks {
+  /**
+   * 阶段一（零写入的准备/合成/复验）完成、阶段二第一次写入之前调用。
+   * 返回 `{ abort: true, reason }` ⇒ 以 `MERGE_PROTOTYPE_COMMIT_UNCONFIRMED` + `prototype-unconfirmed`
+   * 阶段戳中止合并：不进入落盘、不写 `SPEC_MERGED`。
+   */
+  afterPrepare?(): { abort: boolean; reason?: string } | void;
+  /** 阶段二**全部成功**（规格 canonical target 原子落盘 + `SPEC_MERGED` 写入）之后调用。 */
+  afterCommit?(): void;
+  /**
+   * 阶段二失败之后、抛出之前调用；`rolledBack` 取自落盘原语的结构化返回
+   * （`true` = 规格侧已确认整批回滚；`false` = 规格侧已提交或状态不可确认）。
+   *
+   * 返回值（code-r1 F2）：补偿动作的**结构化结果**必须回传给合并协调层——只有规格与原型
+   * **双方都确认回到旧态**才允许整体取档 B。钩子只打印告警、不回传状态，会让最终报告
+   * 无条件宣称「已整批回滚」，与原型侧磁盘事实相反。
+   */
+  onApplyFailure?(info: { rolledBack: boolean }): PrototypeCompensation | void;
+}
+
+/** 原型侧补偿动作的结构化结果（`MergeDirectHooks.onApplyFailure` 的返回值）。 */
+export interface PrototypeCompensation {
+  /** 原型侧是否**已确认**回到 merge 前一致态。 */
+  consistent: boolean;
+  /** 原型侧是否处于不可确认态（禁止任何零残留声明，恢复材料须保留）。 */
+  unconfirmed: boolean;
+  reason?: string;
+}
+
+export function mergeDirect(
+  root: string,
+  proposalDir: string,
+  slug: string,
+  hooks: MergeDirectHooks = {},
+): MergeDirectResult {
   if (!existsSync(proposalDir)) {
     throw new MergeDirectError('MERGE_NO_ACTIVE_CHANGE', `变更提案不存在：${slug}`);
   }
@@ -261,6 +325,27 @@ export function mergeDirect(root: string, proposalDir: string, slug: string): Me
   }
   const { targets, inputs, markerPath, testChangeSet } = prepared;
 
+  // —— 阶段一与阶段二之间：写入阶段前置钩子（§12.3.3）——此处之前**零写入**，
+  // 故合成失败时原型根本不会进入提交，既有 EX-9.20/EX-9.23 的档 A 零改动声明与磁盘一致。
+  // code-r1 F3：钩子内的真实写入路径（`commitVerifiedPrototypes`）可能**直接抛出**而非返回
+  // `CommitResult`（如 rename 之后 journal 持久化失败、abortTransaction 二次抛出）。未加边界时
+  // 该错误会带着「无阶段戳」进入通用报告，而报告的磁盘回退判据只看规格 apply journal 与
+  // SPEC_MERGED、不看原型 journal ⇒ 被误判为档 A 并宣称「保持合并前字节」。故在此设边界：
+  // 逃出者一律打 `prototype-unconfirmed` 戳（fail-safe 取档 C），保留恢复材料、保留原始错误。
+  let prepareDecision: { abort: boolean; reason?: string } | void;
+  try {
+    prepareDecision = hooks.afterPrepare?.();
+  } catch (error) {
+    throw stampMergeFailureStage(error, 'prototype-unconfirmed');
+  }
+  if (prepareDecision && prepareDecision.abort) {
+    throw new MergeDirectError(
+      'MERGE_PROTOTYPE_COMMIT_UNCONFIRMED',
+      prepareDecision.reason ?? '原型事务状态不可确认，已中止合并',
+      'prototype-unconfirmed',
+    );
+  }
+
   // —— 阶段二：一次性原子落盘，失败整批回滚 ——
   // 故障注入仅在 NODE_ENV=test 下生效（与被删除的事务实现同一形态），用于验收「末段故障整批回滚」。
   const failAfter = process.env.NODE_ENV === 'test' ? process.env.OPENLOGOS_TEST_MERGE_FAIL_AFTER : undefined;
@@ -272,18 +357,44 @@ export function mergeDirect(root: string, proposalDir: string, slug: string): Me
   } catch (error) {
     // 错误自原语**内部**逃出（如 `phase='committed'` 之后 removePrivateArtifacts 失败、其恢复
     // 路径二次抛出）：此刻主文档可能已是新字节、SPEC_MERGED 可能已在场 → 档 C，绝不声明零残留。
+    // 规格侧状态不可确认 ⇒ 钩子据此**不得单独回滚原型**（code-r1 F1）；整体已是档 C。
+    // code-r2 F2：钩子逃出的异常不得取代原始 apply 错误（诊断不降级），也不得改变已成立的档 C。
+    try { hooks.onApplyFailure?.({ rolledBack: false }); }
+    catch { /* 补偿阶段异常：档位已是不可确认，保留原始 apply 错误为主诊断 */ }
     throw stampMergeFailureStage(error, 'apply-unconfirmed');
   }
   if (!result.ok) {
     // §2.84.3 同批订正：旧实现无条件拼接「主文档已回滚至合并前字节」，在 rolled_back === false
     // 时是与磁盘相反的断言。改为按原语的结构化返回派生，不保留第二处硬编码结论。
     const rolledBack = result.rolled_back === true;
-    throw new MergeDirectError(
-      'MERGE_APPLY_FAILED',
-      rolledBack ? `${result.error}；主文档已回滚至合并前字节` : result.error,
-      rolledBack ? 'apply-rolled-back' : 'apply-unconfirmed',
-    );
+    // code-r2 F2：补偿调用必须在**整体阶段戳生成之前**就被异常边界收住——否则抛出的补偿错误会
+    // 带着无阶段戳直接逃出，而 `classifyMergeFailureTier` 的磁盘回退判据只看规格 journal 与
+    // SPEC_MERGED（此刻规格已回滚且已清理）⇒ 判档 A 并宣称「保持合并前字节」，与原型侧相反。
+    let compensation: PrototypeCompensation | void = undefined;
+    let compensationError: Error | null = null;
+    try {
+      compensation = hooks.onApplyFailure?.({ rolledBack });
+    } catch (err) {
+      // 抛出 = 补偿结果不可知 ⇒ fail-safe 按「原型不可确认」处理，恢复材料按约定保留。
+      compensationError = err as Error;
+    }
+    // code-r1 F2：整体档位 = 规格侧结论 ∧ 原型侧补偿结论。原型补偿不可确认时不得取档 B。
+    const protoUnconfirmed = compensation?.unconfirmed === true || compensationError !== null;
+    const stage: MergeFailureStage = protoUnconfirmed
+      ? (rolledBack ? 'apply-rolled-back-prototype-unconfirmed' : 'apply-unconfirmed')
+      : (rolledBack ? 'apply-rolled-back' : 'apply-unconfirmed');
+    // 原始规格失败原因始终保留；补偿阶段的结构化 reason 与逃出异常并列附加，三者都不丢
+    //（诊断不降级——补偿失败的归因必须进入失败报告，不能只落在一行 console 告警里）。
+    const base = (rolledBack && !protoUnconfirmed)
+      ? `${result.error}；主文档已回滚至合并前字节`
+      : result.error;
+    const parts = [base];
+    if (compensation?.reason) parts.push(`原型补偿：${compensation.reason}`);
+    if (compensationError) parts.push(`原型补偿阶段抛出：${compensationError.message}`);
+    throw new MergeDirectError('MERGE_APPLY_FAILED', parts.join('；'), stage);
   }
+
+  hooks.afterCommit?.();
 
   return {
     slug,

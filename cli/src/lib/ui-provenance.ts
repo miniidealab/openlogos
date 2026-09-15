@@ -229,6 +229,21 @@ export interface CommitResult {
   committed: string[];     // 已落盘 basename
   reason?: string;
   rolledBack?: boolean;
+  /**
+   * §12.3.3 材料保留约束：`deferCleanup` 模式下提交成功但 staging/backup/journal **尚未清理**，
+   * 调用方必须在「规格 canonical target 原子落盘 + SPEC_MERGED 写入」均成功后调用
+   * `finalizePrototypeCommit()`，失败则调用 `rollbackPrototypeCommit()`。
+   */
+  pendingCleanup?: boolean;
+}
+
+/** `commitVerifiedPrototypes` 的可选行为开关。 */
+export interface CommitOptions {
+  /**
+   * 延迟清理（§12.3.3）：提交成功后**不**立即删除 staging/backup/journal，把恢复材料保留到
+   * 整次 merge（规格落盘 + SPEC_MERGED）成功之后。默认 false（保持既有语义，供独立调用方使用）。
+   */
+  deferCleanup?: boolean;
 }
 
 interface JournalEntry { basename: string; staged: string; target: string; backup: string | null; done: boolean; }
@@ -264,7 +279,7 @@ function safeRename(from: string, to: string): void {
  * 落盘后复核 target hash。全有或全无、失败零残留。
  * mode 由持久化 provenance 决定：full 严格 hash 校验；legacy advisory（同一入口、不做严格校验）；partial 直接 abort。
  */
-export function commitVerifiedPrototypes(proposalDir: string, root: string): CommitResult {
+export function commitVerifiedPrototypes(proposalDir: string, root: string, opts: CommitOptions = {}): CommitResult {
   const prov = readPlanApproved(proposalDir);
   const cls = classifyProvenance(prov);
   const sourceDir = join(proposalDir, PROTOTYPE_DELTA_SUBPATH);
@@ -359,11 +374,68 @@ export function commitVerifiedPrototypes(proposalDir: string, root: string): Com
     }
   }
 
-  // 成功：清理
+  // 成功：清理（§12.3.3 deferCleanup 模式下把材料留到整次 merge 成功之后，由 finalizePrototypeCommit 清）
+  if (opts.deferCleanup) {
+    return { ok: true, advisory: cls === 'legacy', cls, committed, pendingCleanup: true };
+  }
   rmSync(stagingDir, { recursive: true, force: true });
   rmSync(backupDir, { recursive: true, force: true });
   rmSync(journalPath, { force: true });
   return { ok: true, advisory: cls === 'legacy', cls, committed };
+}
+
+/**
+ * §12.3.3 材料保留约束的提交点：整次 merge（规格 canonical target 原子落盘 + `SPEC_MERGED` 写入）
+ * 成功之后清理原型事务材料。幂等：材料已不在场时返回 ok。
+ *
+ * **不写任何原型字节**——只删除 staging/backup/journal，故不构成第二条原型落盘路径。
+ */
+export function finalizePrototypeCommit(proposalDir: string): { ok: boolean; reason?: string } {
+  try {
+    rmSync(join(proposalDir, STAGING_DIR), { recursive: true, force: true });
+    rmSync(join(proposalDir, BACKUP_DIR), { recursive: true, force: true });
+    rmSync(join(proposalDir, COMMIT_JOURNAL), { force: true });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `finalize_failed:${(err as Error).message}` };
+  }
+}
+
+/**
+ * §12.3.3 材料保留约束的回滚点：原型已提交但**后续**阶段（规格落盘 / `SPEC_MERGED` 写入）失败时，
+ * 依保留的 journal 把原型回滚到 merge 前一致态。
+ *
+ * 复用 `abortTransaction`（与 commit catch、落盘后复核失败、启动恢复同一还原实现，不新增第二份判据）。
+ * 回滚不完整 ⇒ `rolledBack:false` 且**保留全部材料**，调用方据此取档 P2、禁止零残留声明。
+ */
+export function rollbackPrototypeCommit(proposalDir: string): { ok: boolean; rolledBack: boolean; reason?: string } {
+  const journalPath = join(proposalDir, COMMIT_JOURNAL);
+  if (!existsSync(journalPath)) return { ok: true, rolledBack: true, reason: 'no_journal' };
+  const root = resolve(proposalDir, '..', '..', '..');
+  let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(journalPath, 'utf-8')); }
+  catch { return { ok: false, rolledBack: false, reason: 'journal_unreadable' }; }
+  const rec = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed as Record<string, unknown> : null;
+  if (!rec || !Array.isArray(rec.targets) || (rec.intent !== 'commit' && rec.intent !== 'abort')) {
+    return { ok: false, rolledBack: false, reason: 'journal_malformed' };
+  }
+  for (const e of rec.targets as unknown[]) {
+    if (!isValidJournalEntry(e, proposalDir, root)) return { ok: false, rolledBack: false, reason: 'journal_entry_invalid' };
+  }
+  const journal: Journal = { intent: rec.intent, targets: rec.targets as JournalEntry[] };
+  // code-r2 F2：`abortTransaction` 的**第一步**（写 abort intent）不在 try 内，可直接抛出
+  //（如 journal 所在卷满 / 临时文件路径不可写）。本函数是补偿动作的对外契约，必须**永不抛出**——
+  // 逃出的异常会绕过调用方的「不可确认」分档、让整体失败报告退回按规格磁盘快照推断的档 A，
+  // 从而宣称 logos/resources/ 已回到旧态，而原型侧实际仍是新字节。
+  let rb: boolean;
+  try {
+    rb = abortTransaction(journal, join(proposalDir, COMMIT_JOURNAL),
+      join(proposalDir, STAGING_DIR), join(proposalDir, BACKUP_DIR));
+  } catch (err) {
+    // 抛出即「状态不可确认」：恢复材料一律保留（abortTransaction 只在完整回滚成功时才清理）。
+    return { ok: false, rolledBack: false, reason: `rollback_threw:${(err as Error).message}` };
+  }
+  return { ok: rb, rolledBack: rb, reason: rb ? undefined : 'rollback_incomplete' };
 }
 
 /** 该项的 target 是否**已被替换**（据文件系统真实状态，而非仅 done 标志）：done:true，或 staged 已消失（rename 已发生）。 */

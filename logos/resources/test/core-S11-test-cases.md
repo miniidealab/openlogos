@@ -316,3 +316,50 @@
 - S11-AC-Plan-01 统一观测：UT-S11-58～UT-S11-60、ST-S11-36。
 - S11-AC-Plan-02 操作错误：UT-S11-61、ST-S11-37。
 - S11-AC-Plan-03 历史与只读：UT-S11-62、ST-S11-37。
+
+## S11 phase 探测模块前缀命名兼容测试
+
+> 覆盖 `plugin/bin/openlogos-phase` 的 `check_scenarios_complete()` 两项叠加修复：
+> ① **模式必须以字面量到达 `find`**（分词循环期间关闭 pathname expansion，`set -f` / `set +f`
+> 或等价手段）；② 匹配条件由 `-name "${sid}-${pat}"` 改为兼容形态
+> `-name "${sid}-${pat}" -o -name "*-${sid}-${pat}"`。两项缺一不可：**不做 ① 时 `*.md` 会先被展开成
+> 项目根的 `README.md` / `AGENTS.md`，再正确的前缀 glob 也不会被执行到**。断言口径见场景 S11
+> 「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」EX-11.7～EX-11.10、INV-SC1～SC4，
+> 命名规范见 `spec/module-naming-convention.md`；来源变更
+> fix-merge-prototype-commit-and-phase-module-prefix（决策 D1）。
+>
+> **跨实现断言的适用域（重要）**：D1 选定「同口径的独立实现」，故 shell 与 CLI 只在
+> **恒等域**上对账——目标目录内文件全部为 `<module>-SXX-*` 规范命名、且不含其它模块同号文件，
+> 且仅限 CLI 侧确有 per-scenario 判定的 `phase.3-1` / `phase.3-4a` 两个调用点。无前缀历史命名、
+> 其它模块同号文件、`-test-cases` 后缀宽严差异、API 调用点（CLI 侧 `SCENARIO_PHASES` 不含）
+> 均为场景 delta「已知差异清单」中的具名差异，**只作 shell 自身断言、不纳入恒等对账**。
+>
+> 夹具用一次性隔离项目构造，直接以 `bash`/`sh` 子进程运行**源模板** `plugin/bin/openlogos-phase`
+> （不测 `.claude/openlogos/bin/` 的 sync 部署副本）；`openlogos status --format json` 对照臂以真实
+> CLI 子进程取 `scenario_coverage`。只读性用运行前后全量文件清单与逐文件 SHA-256 比对证明。
+> 测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-82 | 模块前缀命名项目三个调用点均零 missing（含真实项目根噪声，修复前必红） | EX-11.7 | 隔离项目 `logos-project.yaml` 声明 4 个场景；场景目录、API 目录、测试目录分别有 `core-SXX-<slug>.md` / `core-SXX-*.yaml` / `core-SXX-test-cases.md` 全覆盖；**项目根同时存在 `README.md`、`AGENTS.md`、`CLAUDE.md` 与一个根级 `*.yaml`**（真实项目常态） | 以项目根为 cwd 运行 `openlogos-phase`，分别取场景时序、API、测试用例三个调用点的 `check_scenarios_complete` 结果 | 三处均返回 0 且 missing 为空；phase 文本不含 `missing`。**修复前必红**：`*.md` / `*.yaml *.yml` 被 cwd 文件名展开后拼出 `S0X-README.md` 等，且即便字面量到达也漏模块前缀，三处全报 missing |
+| UT-S11-83 | 模式字面量到达 `find`，结果不随 cwd 文件集合变化 | EX-11.8、INV-SC4 | 目标目录仅有 `core-S03-demo.md`；对照两态：项目根**无**任何 `.md` / `.yaml` 文件 vs 仅新增一个 `README.md`（API 臂对应新增一个根级 `.yaml`） | 两态下分别运行探测，并捕获实际执行的 `find` 参数（`set -x` 跟踪或等价手段） | 两态 missing 集合**均为空且相等**；捕获到的 `find` 参数中 `-name` 值恒为 `*.md`（API 臂为 `*.yaml` / `*.yml`）字面量，**不出现** `S03-README.md` / `*-S03-README.md` 形态。修复前后一态即红 |
+| UT-S11-84 | 无前缀历史命名向后兼容仍命中（shell 自身断言，不与 CLI 对账） | EX-11.9、约束 3 | 同一夹具改为历史命名 `SXX-<slug>.md` / `SXX-test-cases.md`（无模块前缀） | 同上三个调用点 | shell 侧仍判为全覆盖、missing 为空；放宽匹配不得使历史项目的 missing 集合增大。**明确不断言与 CLI 相等**——CLI 按权威口径 `core-SXX` 子串判 missing，属场景 delta 已知差异清单第 1 行 |
+| UT-S11-85 | 真实缺失仍如实报 missing（不漏报） | EX-11.10、INV-SC3 | 声明 4 个场景，其中 2 个在目标目录下既无 `core-SXX-*` 也无 `SXX-*` 文件；目录内另有 `core-00-scenario-overview.md` 作为干扰 | 同上三个调用点 | missing 恰为那 2 个场景 ID、顺序稳定；`core-00-*` 不被当作任一场景的覆盖。另设**已知差异见证臂**：目录内放入 `web-S03-demo.md` 时 shell 判 S03 已覆盖——该行为按已知差异清单第 2 行**如实记录为预期**，不判红（收紧需另立提案） |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-47 | 恒等域上 SessionStart 探测与 `status` 权威口径 missing 集合逐项相等 | EX-11.7、EX-11.8、EX-11.10 | 两个**恒等域** fixture（全部 `<module>-SXX-*` 规范命名、单模块、项目根含 `README.md` / `AGENTS.md` 噪声）：① 全覆盖；② 部分缺失 | 对每个 fixture 依次跑真实 `openlogos status --format json` 与 `bash plugin/bin/openlogos-phase`，解析两侧 missing 集合，**仅比对 `phase.3-1`（场景时序）与 `phase.3-4a`（测试用例）两个调用点** | 两 fixture 上两侧 missing 集合**逐项相等**（① 均为空、② 相同且非空）。另断言：**修复前 fixture ① 两侧相反**（JSON 空、shell 非空），即本次误导源的回归锁；`openlogos-phase` 全路径**只读**——运行前后文件清单与逐文件 SHA-256 完全不变，无 marker / cache / stamp 写入；探测**不调用 CLI**（断言子进程树中无 node/openlogos 进程，锁定 D1 的零依赖约束）。API 调用点**不参与对账**（CLI 侧 `SCENARIO_PHASES` 无对应判定），仅断言 shell 自身结果与 UT-S11-82 一致 |
+
+### 追溯与覆盖
+
+- 主修·模式字面量到达 `find`、结果不随 cwd 变化（delta-r1 F1 必红臂）：UT-S11-83、UT-S11-82 的根噪声夹具、ST-S11-47 的根噪声 fixture。
+- 主修·模块前缀命名命中、三个调用点同时生效（修复前必红）：UT-S11-82、ST-S11-47 fixture ①。
+- 不变式·无前缀历史命名向后兼容（INV-SC2、约束 3）：UT-S11-84（shell 自身断言）。
+- 不变式·不漏报（INV-SC3）：UT-S11-85、ST-S11-47 fixture ②。
+- 不变式·两条实现在恒等域同口径、域外差异具名（INV-SC1，delta-r1 F2 的适用域收敛）：ST-S11-47 的恒等域限定断言 + UT-S11-85 的已知差异见证臂。
+- 不变式·探测只读且零 CLI 依赖（D1、约束 6）：ST-S11-47 的只读与进程树断言。
+- 方法论规范：`spec/module-naming-convention.md`；场景：S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」（EX-11.7～EX-11.10、INV-SC1～SC4）；来源变更：fix-merge-prototype-commit-and-phase-module-prefix。

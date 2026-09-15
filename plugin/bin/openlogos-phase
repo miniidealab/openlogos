@@ -74,6 +74,20 @@ JSEOF
 # 检查某个 phase 下所有已声明场景是否都有对应文件
 # 参数: $1=目录, $2=文件名 glob 模式(不含SXX前缀), $3=扩展名(如 .md 或 .yaml .yml)
 # 返回: 0=全部完成, 1=有缺失; 缺失的 ID 输出到 stdout
+#
+# 本函数是 per-scenario 覆盖判定的**从属实现**——权威口径是 `cli/src/commands/status.ts`
+# （判据键 `<module>-<scenarioId>`）。两处必须在恒等域（目标目录内全部为 <module>-SXX-*
+# 规范命名、单模块）上得出相同的 missing 集合；域外差异见场景 S11「已知差异清单」。
+#
+# 两条约束（fix-merge-prototype-commit-and-phase-module-prefix）：
+#  ① 扩展名模式必须以**字面量**到达 find 的 -name。`for pat in $ext_pattern` 的未加引用展开
+#     同时触发**文件名展开**：脚本在项目根执行时 `*.md` 会先变成 README.md / AGENTS.md /
+#     CLAUDE.md（API 臂的 `*.yaml *.yml` 同理），拼出的是 `-name S76-AGENTS.md`，与场景文件
+#     毫无关系。故分词期间关闭 pathname expansion（set -f），结束后按进入时的状态恢复——
+#     探测结果不得随 cwd 下有哪些文件而变（INV-SC4）。
+#  ② 匹配取两形态之并：`${sid}-${pat}` 命中无前缀历史命名，`*-${sid}-${pat}` 命中
+#     `spec/module-naming-convention.md` 规定的 <module>-SXX-* 规范命名。一处修正同时
+#     覆盖场景时序 / API / 测试用例三个调用点。放宽匹配不得漏报真实缺失。
 check_scenarios_complete() {
   local dir="$1"
   local ext_pattern="$2"   # 例如 "*.md" 或 "*.yaml *.yml"
@@ -86,11 +100,16 @@ check_scenarios_complete() {
     return 0
   fi
 
+  # 进入时 globbing 已关闭则保持关闭（不擅自改变调用方的 shell 选项）
+  local glob_was_off=false
+  case "$-" in *f*) glob_was_off=true ;; esac
+  set -f
+
   local missing=""
   for sid in $scenario_ids; do
     local found=false
     for pat in $ext_pattern; do
-      if find "$dir" -maxdepth 1 -name "${sid}-${pat}" 2>/dev/null | grep -q .; then
+      if find "$dir" -maxdepth 1 \( -name "${sid}-${pat}" -o -name "*-${sid}-${pat}" \) 2>/dev/null | grep -q .; then
         found=true
         break
       fi
@@ -99,6 +118,8 @@ check_scenarios_complete() {
       missing="$missing $sid"
     fi
   done
+
+  [ "$glob_was_off" = "true" ] || set +f
 
   if [ -n "$missing" ]; then
     echo "$missing"

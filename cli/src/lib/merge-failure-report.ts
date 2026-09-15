@@ -13,8 +13,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BASELINE_CLOSURE_APPLY_JOURNAL, APPLY_TXN_DIR } from './baseline-apply.js';
-import { readMergeFailureStage } from './merge-direct.js';
+import { readMergeFailureStage, type MergeFailureStage } from './merge-direct.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
+import { COMMIT_JOURNAL } from './ui-provenance.js';
 import { classifyProposalDeltas } from './delta-classify.js';
 import { deltaTargetProjectPath } from './change-lint.js';
 import {
@@ -63,6 +64,12 @@ export function classifyMergeFailureTier(error: unknown, facts: MergeFailureDisk
   if (stage === 'prepare') return 'A';
   if (stage === 'apply-rolled-back') return 'B';
   if (stage === 'apply-unconfirmed') return 'C';
+  // §12.3.2 档 P2：原型事务回滚不完整/抛错。仍是「不可确认」档 C，但不可确认的只有原型资产
+  // （markdown 主文档未进入落盘阶段），故文案另走 tierLines 的专用分支。
+  if (stage === 'prototype-unconfirmed') return 'C';
+  // code-r1 F2：规格侧已确认整批回滚、但原型侧补偿不可确认 ⇒ 整体仍是档 C
+  //（取档 B 会宣称「logos/resources/ 保持合并前字节」，对原型侧与磁盘相反）。
+  if (stage === 'apply-rolled-back-prototype-unconfirmed') return 'C';
   if (!facts.readable) return 'C';
   return (facts.journalPresent || facts.markerPresent) ? 'C' : 'A';
 }
@@ -164,7 +171,36 @@ function findShapeViolationLines(content: string): Array<{ line: number; detail:
 }
 
 /** 状态声明与后续动作指引：四要素中的第二、三项，按档派生（§2.84.3 状态档表）。 */
-function tierLines(tier: MergeFailureTier, slug: string, facts: MergeFailureDiskFacts): string[] {
+function tierLines(
+  tier: MergeFailureTier,
+  slug: string,
+  facts: MergeFailureDiskFacts,
+  stage: MergeFailureStage | null = null,
+): string[] {
+  // §12.3.2 档 P2 专用文案：原型事务提交后回滚不完整。禁止任何零残留措辞；同时**不得**套用
+  // 通用档 C 的「主文档可能已是合并后字节」——此刻规格 delta 根本没进入落盘阶段。
+  // code-r1 F2：规格侧已确认回滚、原型侧不可确认。两侧结论必须分别如实陈述，
+  // 绝不合并成一句「logos/resources/ 已整批回滚」。
+  if (stage === 'apply-rolled-back-prototype-unconfirmed') {
+    return [
+      '  规格 delta 已整批回滚至合并前字节，未写 ' + SPEC_MERGED_MARKER + '。',
+      '  但原型事务回滚不完整：部分原型可能仍是新字节，恢复材料已保留'
+        + `（logos/changes/${slug}/${COMMIT_JOURNAL} 与 .ui-commit-staging / .ui-commit-backup）；`
+        + '整体不可宣称 logos/resources/ 已回到合并前态。',
+      '  请先核对实际状态：git status；git diff logos/resources/prd/2-product-design/2-page-design/。'
+        + '下次 `openlogos merge ' + slug + '` 会依 journal 前滚或回滚；核对前不要手工删除恢复材料。',
+    ];
+  }
+  if (stage === 'prototype-unconfirmed') {
+    return [
+      '  原型事务状态不可确认：部分原型可能已落盘，回滚未完整完成，恢复材料已保留'
+        + `（logos/changes/${slug}/${COMMIT_JOURNAL} 与 .ui-commit-staging / .ui-commit-backup）。`,
+      '  规格 delta 未进入落盘阶段：logos/resources/ 下的 markdown 主文档保持合并前字节，未写 '
+        + SPEC_MERGED_MARKER + '。',
+      '  请先核对实际状态：git status；git diff logos/resources/prd/2-product-design/2-page-design/。'
+        + '下次 `openlogos merge ' + slug + '` 会依 journal 前滚或回滚；核对前不要手工删除恢复材料。',
+    ];
+  }
   if (tier === 'A') {
     return [
       '  logos/resources/ 保持合并前字节，未写 SPEC_MERGED。',
@@ -220,6 +256,6 @@ export function describeMergeFailure(
     }
     lines.push(`  涉及 canonical target：${diagnostics.targetPaths.join('、')}`);
   }
-  lines.push(...tierLines(tier, slug, facts));
+  lines.push(...tierLines(tier, slug, facts, readMergeFailureStage(error)));
   return { tier, diagnostics, lines };
 }

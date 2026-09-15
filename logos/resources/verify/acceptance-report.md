@@ -6,16 +6,25 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 1835 |
+| Defined cases | 1846 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 1835 |
-| Passed | 1825 |
+| Executed cases | 1846 |
+| Passed | 1836 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
+
+## Slice Verification
+
+- Mode: `final`
+- Attempted slice: `null`
+- Confirmed slices: `slice-01-merge-prototype-commit-install-path`, `slice-02-phase-probe-module-prefix`
+- Eligible tests: 1846
+- Pending tests: 0
+- Final: true
 
 ## Skipped Cases
 

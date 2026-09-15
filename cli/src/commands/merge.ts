@@ -6,13 +6,149 @@ import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
-import { mergeDirect } from '../lib/merge-direct.js';
+import { mergeDirect, type MergeDirectHooks } from '../lib/merge-direct.js';
 import { describeMergeFailure } from '../lib/merge-failure-report.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
-  readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH,
+  finalizePrototypeCommit, rollbackPrototypeCommit,
+  readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH, PROTOTYPE_RESOURCE_SUBPATH,
+  type CommitResult,
 } from '../lib/ui-provenance.js';
 import { SPEC_MERGED_MARKER } from '../lib/proposal-markers.js';
+
+/**
+ * `spec/proposal-ui-ux-first.md` §12.3.2 原型落盘失败分档。
+ *
+ * **档位只由控制流位置与唯一入口的结构化返回值派生**，绝不从输出文本反推（§2.69.2）：
+ * - `none` / `committed`：`ok:true`，按 committed 是否为空区分；
+ * - `P0` 写入前拒绝：`ok:false` 且 `rolledBack` 字段缺席——唯一入口在写入任何 target 字节之前
+ *   返回（partial provenance、staged 全量 hash 失配），此时磁盘零改动；
+ * - `P1` 已完整回滚：`ok:false, rolledBack:true`；
+ * - `P2` 回滚不完整 / 不可确认：`ok:false, rolledBack:false`，恢复材料被刻意保留。
+ */
+export type PrototypeCommitTier = 'skipped' | 'none' | 'committed' | 'P0' | 'P1' | 'P2';
+
+export interface PrototypeCommitOutcome {
+  tier: PrototypeCommitTier;
+  committed: string[];
+  reason?: string;
+}
+
+export function gradePrototypeCommit(result: CommitResult): PrototypeCommitOutcome {
+  if (result.ok) {
+    return { tier: result.committed.length > 0 ? 'committed' : 'none', committed: [...result.committed] };
+  }
+  if (result.rolledBack === undefined) return { tier: 'P0', committed: [], reason: result.reason };
+  return { tier: result.rolledBack ? 'P1' : 'P2', committed: [], reason: result.reason };
+}
+
+/**
+ * §12.3.1 约束 B：落盘结果进 merge 摘要，与 canonical target 同级可见。
+ * **禁止静默**——成功逐个列出目标相对路径，零个明说「本次无原型资产」，失败打印该档规定的状态声明。
+ */
+export function renderPrototypeSummary(outcome: PrototypeCommitOutcome): string[] {
+  const resourceRel = PROTOTYPE_RESOURCE_SUBPATH.replace(/\\/g, '/');
+  switch (outcome.tier) {
+    case 'skipped':
+      return [];
+    case 'none':
+      return ['  原型落盘：本次无原型资产'];
+    case 'committed':
+      return [
+        `  原型落盘：${outcome.committed.length} 个已提交`,
+        ...outcome.committed.map(b => `    → ${resourceRel}/${b}`),
+      ];
+    case 'P0':
+      return [
+        `  ⚠️  原型未落盘（${outcome.reason ?? 'unknown'}）：resources 保持 merge 前态、零残留；规格 delta 照常合并。`,
+        '      跑 `openlogos check-ui-hash-match` 查看失配详情；或显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑。',
+      ];
+    case 'P1':
+      return [
+        `  ⚠️  原型未落盘（${outcome.reason ?? 'unknown'}）：提交中途失败后**已完整回滚**，resources 保持 merge 前态、零残留；规格 delta 照常合并。`,
+        '      跑 `openlogos check-ui-hash-match` 查看详情；或显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑。',
+      ];
+    case 'P2':
+      // 档 P2 的状态声明由 describeMergeFailure 的 prototype-unconfirmed 专用文案统一输出，
+      // 摘要在此不重复、更不得出现任何零残留措辞（合并已中止，本函数在该档不会被摘要路径调用）。
+      return [`  ⚠️  原型事务状态不可确认（${outcome.reason ?? 'unknown'}）：见上方失败报告。`];
+  }
+}
+
+
+/**
+ * §12.3.3 阶段钩子构造：原型事务的**提交点 / 清理点 / 回滚点**。
+ *
+ * 独立导出以便测试直接把真实钩子挂到 `runDirectMerge`（而不是复刻一份，避免第二份判据）。
+ * `outcome` 为出参：钩子把分档结果写回，供摘要与失败路径读取。
+ */
+export function buildPrototypeHooks(
+  changePath: string,
+  root: string,
+  slug: string,
+  outcome: PrototypeCommitOutcome,
+): MergeDirectHooks {
+  return {
+    afterPrepare() {
+      let graded: PrototypeCommitOutcome;
+      try {
+        graded = gradePrototypeCommit(commitVerifiedPrototypes(changePath, root, { deferCleanup: true }));
+      } catch (err) {
+        // code-r1 F3：唯一入口**抛出**而非返回 CommitResult（如 rename 之后 journal 持久化失败、
+        // abortTransaction 二次抛出）。此时无法证实原型是否已被替换 ⇒ fail-safe 取档 P2：
+        // 保留全部恢复材料、中止合并，绝不按「未写入」声明旧态。
+        outcome.tier = 'P2';
+        outcome.committed = [];
+        outcome.reason = `commit_threw:${(err as Error).message}`;
+        return { abort: true, reason: `原型事务在写入过程中抛出异常，状态不可确认（${(err as Error).message}）` };
+      }
+      outcome.tier = graded.tier;
+      outcome.committed = graded.committed;
+      outcome.reason = graded.reason;
+      // 档 P2：回滚不完整/不可确认 ⇒ 中止合并（不落盘、不写 SPEC_MERGED、非零退出），
+      // 恢复材料保留，状态声明由 describeMergeFailure 的 prototype-unconfirmed 专用文案输出。
+      if (graded.tier === 'P2') {
+        return { abort: true, reason: `原型事务回滚不完整或状态不可确认（${graded.reason ?? 'unknown'}）` };
+      }
+    },
+    afterCommit() {
+      if (outcome.tier !== 'committed') return;
+      const fin = finalizePrototypeCommit(changePath);
+      if (!fin.ok) {
+        console.log(`  ⚠️  原型事务材料清理失败（${fin.reason}）：原型字节已正确落盘，`
+          + `残留材料在 logos/changes/${slug}/ 下，可手工清理或等下次 merge 启动恢复。`);
+      }
+    },
+    onApplyFailure(info) {
+      if (outcome.tier !== 'committed') return;
+      // code-r1 F1：**只有规格侧已确认整批回滚时**才补偿回滚原型。规格侧「已提交或不可确认」
+      // （如 phase='committed' 之后清理失败：主文档已是新字节、SPEC_MERGED 已在场）时单独把原型
+      // 退回旧版，会造出「规格新 / 原型旧」的永久分叉，且销毁补偿材料后重跑也修不回来。
+      if (!info.rolledBack) {
+        console.error('  ⚠️  规格侧状态不可确认（可能已提交）：不单独回滚原型，原型恢复材料全部保留。');
+        console.error('      请核对 git status；git diff logos/resources/ 与 SPEC_MERGED 是否在场后再决定处置。');
+        return { consistent: false, unconfirmed: true, reason: 'spec_state_unconfirmed' };
+      }
+      // 规格侧已确认回滚 ⇒ 依保留的 journal 回滚原型，两侧共同回到 merge 前一致态。
+      // code-r2 F2：补偿调用必须有异常边界——返回失败与直接抛错都要形成「原型不可确认」的
+      // 结构化结果回传给协调层，绝不让异常在整体阶段戳生成前逃出（那会退回档 A 的旧态断言）。
+      let rb: { ok: boolean; rolledBack: boolean; reason?: string };
+      try {
+        rb = rollbackPrototypeCommit(changePath);
+      } catch (err) {
+        rb = { ok: false, rolledBack: false, reason: `rollback_threw:${(err as Error).message}` };
+      }
+      if (rb.rolledBack) {
+        console.error('  原型已依 journal 回滚至 merge 前字节（恢复材料已清理）。');
+        return { consistent: true, unconfirmed: false };
+      }
+      // code-r1 F2：补偿失败必须回传，否则整体会被盖上「已整批回滚」的档 B。
+      console.error(`  ⚠️  原型回滚不完整（${rb.reason ?? 'unknown'}）：部分原型可能仍是新字节，恢复材料已保留，`
+        + '请核对 git diff logos/resources/prd/2-product-design/2-page-design/ 后再重跑 merge。');
+      return { consistent: false, unconfirmed: true, reason: rb.reason };
+    },
+  };
+}
 
 /** 原型资产：2-page-design 下的 .html（由 commitVerifiedPrototypes 落盘，merge-executor 不碰）。 */
 function isPrototypeAsset(relativePath: string): boolean {
@@ -79,6 +215,8 @@ export interface RunDirectMergeDeps {
   merge?: typeof mergeDirect;
   stderr?: (line: string) => void;
   exit?: (code: number) => never;
+  /** §12.3.3 阶段钩子：原型事务的提交点 / 清理点 / 回滚点，透传给 `mergeDirect`。 */
+  hooks?: MergeDirectHooks;
 }
 
 /**
@@ -97,7 +235,7 @@ export function runDirectMerge(root: string, changePath: string, slug: string, d
   const writeErr = deps.stderr ?? ((line: string) => console.error(line));
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   try {
-    return runMerge(root, changePath, slug);
+    return runMerge(root, changePath, slug, deps.hooks ?? {});
   } catch (e) {
     for (const line of describeMergeFailure(changePath, slug, e).lines) writeErr(line);
     return exit(1);
@@ -258,17 +396,25 @@ export function merge(slug?: string) {
       console.log(`  ⚠️  UI provenance 校验失败（${hm.cls}/${hm.code}）：${hm.detail ?? '批准后原型漂移或 provenance 不完整'}`);
       console.log('      如需修复：显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑 `openlogos check-ui-hash-match` 复核。');
     }
-    // ② 原型正式字节由 commitVerifiedPrototypes 落盘；仅历史回归模式保留旧 UI commit 路径。
+    // ② 原型正式字节由 commitVerifiedPrototypes 落盘。
+    //    §12.3.1 约束 A：**正常分支**的调用点在下方 `prototypeHooks.afterPrepare`——安装态
+    //    （无 OPENLOGOS_INTERNAL_*、NODE_ENV!=='test'）执行 `openlogos merge` 时必定被求值。
+    //    此处仅保留历史 MERGE_PROMPT 回归路径（该路径不经 mergeDirect，故钩子不会触发）。
     if (legacyMergeTestMode()) {
       const commit = commitVerifiedPrototypes(changePath, root);
       if (!commit.ok) {
-        // §2.74.2：provenance 降警告不等于「把未经批准的字节落盘」——原型落盘是写入事务，
-        // 失败时跳过落盘并告警：合并照常完成，但绝不静默写入未验证内容。
-        console.log(`  ⚠️  原型未落盘（${commit.reason}）：resources 保持 merge 前态、零残留；`
-          + '规格 delta 照常合并。跑 `openlogos check-ui-hash-match` 查看失配详情。');
+        for (const line of renderPrototypeSummary(gradePrototypeCommit(commit))) console.log(line);
       }
     }
   }
+
+  // §12.3.3 写入阶段前置 + 材料保留：原型事务挂在 mergeDirect 的阶段钩子上——
+  // 全部 canonical target 解析/合成/物质结果复验完成之后才提交原型（合成失败时原型根本不提交），
+  // 且恢复材料保留到「规格原子落盘 + SPEC_MERGED 写入」均成功之后才清理。
+  const prototypeOutcome: PrototypeCommitOutcome = { tier: 'skipped', committed: [] };
+  const prototypeHooks: MergeDirectHooks = uiImpact && !legacyMergeTestMode()
+    ? buildPrototypeHooks(changePath, root, slug, prototypeOutcome)
+    : {};
 
   if (deltas.length === 0) {
     if (legacyMergeTestMode()) {
@@ -276,7 +422,8 @@ export function merge(slug?: string) {
       console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
       return;
     }
-    runDirectMerge(root, changePath, slug);
+    runDirectMerge(root, changePath, slug, { hooks: prototypeHooks });
+    for (const line of renderPrototypeSummary(prototypeOutcome)) console.log(line);
     console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
     return;
   }
@@ -346,7 +493,7 @@ export function merge(slug?: string) {
     return;
   }
 
-  const result = runDirectMerge(root, changePath, slug);
+  const result = runDirectMerge(root, changePath, slug, { hooks: prototypeHooks });
 
   console.log(`\n📋 ${t(locale, 'merge.summary')}`);
   console.log(t(locale, 'merge.proposal', { slug }));
@@ -354,6 +501,8 @@ export function merge(slug?: string) {
   for (const target of result.targets) {
     console.log(`    → ${target}`);
   }
+  // §12.3.1 约束 B：原型落盘结果与 canonical target 同级可见，禁止静默。
+  for (const line of renderPrototypeSummary(prototypeOutcome)) console.log(line);
 
   console.log(`\n  ✓ logos/changes/${slug}/${SPEC_MERGED_MARKER}（${result.target_count} 个 canonical target 一次性原子落盘）`);
   console.log(`  test_change_set: C=${result.test_change_set.changed_test_ids.length} R=${result.test_change_set.removed_test_ids.length}`);

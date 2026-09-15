@@ -614,3 +614,131 @@ sequenceDiagram
 
 - 需求：AC-READLOCK-01～06；功能规格：§2.54；架构：§四.B。
 - 测试：UT-S11-78～UT-S11-79、ST-S11-45；安装态：SMOKE-core-177。
+
+## S11 per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束
+
+### 场景目标
+
+修好 SessionStart phase 探测的 missing 误报，并把「某场景是否已有对应文件」这一判定的**权威口径**
+写死在规格里。误报由**两个叠加缺陷**造成，缺一不可修：
+
+1. **扩展名模式被提前展开**：`plugin/bin/openlogos-phase` 的 `check_scenarios_complete()` 以
+   `for pat in $ext_pattern` 分词，**未加引用的展开同时触发文件名展开**。脚本在项目根执行，根目录
+   通常有 `README.md` / `AGENTS.md` / `CLAUDE.md`，故 `*.md` 在进入循环前就变成了这些**根目录文件名**，
+   实际拼出的是 `find <目标目录> -maxdepth 1 -name S03-README.md -o -name S03-AGENTS.md …`，
+   与场景文件毫无关系。API 调用点的 `*.yaml *.yml` 同理。
+2. **拼出的 glob 漏模块前缀**：即便模式以字面量到达 `find`，`${sid}-${pat}` 也只是 `S03-*.md`，
+   而 `spec/module-naming-convention.md` 规定场景实现与测试用例文件名为 `<module>-SXX-*`
+   （实际叫 `core-S03-….md`），仍然零命中。
+
+对照 `cli/src/commands/status.ts:394-402` 与 `cli/src/lib/flow-derive.ts:229-234`：CLI 侧判据为
+`pattern = ${mod.id}-${s.id}` 的 `includes()` 子串匹配，**带模块前缀、是对的**，故
+`openlogos status --format json` 报无缺失，而 SessionStart 每次启动都报 `missing …`——同一事实、
+两个相反结论。
+
+### 用户价值
+
+SessionStart 注入的 phase 文本是 agent 每次会话的**第一份事实**。误报 missing 会把 agent 直接推向
+「去补早已存在的文件」，是 agent 驱动流程中最前置的误导源，且每次会话重复发生。
+
+### 权威口径（authoritative）
+
+**per-scenario 覆盖判定以 `cli/src/commands/status.ts` 的实现为权威口径**：对每个场景，
+判据键为 `<module>-<scenarioId>`（如 `core-S03`），按本文「initial phase 派生（flow-derive）与两套
+legacy done 语义」一节既定的 legacy `includes()` 子串语义在目标目录内匹配；`phase.3-4a`
+（测试用例）另需含 `-test-cases` 子串。该口径产出的 `scenario_coverage: { total, covered, missing }`
+是 missing 集合的**唯一事实源**。
+
+**权威口径的适用面**：CLI 侧 per-scenario 覆盖判定只覆盖 `SCENARIO_PHASES = { phase.3-1, phase.3-4a }`
+（场景时序、测试用例）——**API 阶段在 CLI 侧没有 per-scenario 覆盖判定**，故不存在可对账的权威集合。
+
+### 同口径约束（SessionStart 探测）
+
+`plugin/bin/openlogos-phase` 的 `check_scenarios_complete()` 必须满足：
+
+- **约束 1（模式字面量到达 `find`）**：扩展名模式**必须以字面量传入 `find` 的 `-name`**，
+  分词过程**不得**对其做文件名展开。实现上须在分词循环前后关闭 / 恢复 pathname expansion
+  （`set -f` … `set +f` 或等价手段），使 `find` 实际收到的参数恒为 `*.md` / `*.yaml` / `*.yml`
+  形态，**与脚本当前工作目录下有哪些文件无关**。这是本次修复的**必要条件**：不做此项，
+  再正确的前缀 glob 也不会被执行到。
+- **约束 2（命中带模块前缀的规范命名）**：必须命中 `<module>-SXX-*`
+  （`spec/module-naming-convention.md`）。仅匹配 `${sid}-${pat}`（无前缀形态）即违反本约束。
+  实现取两形态之并：`-name "${sid}-${pat}" -o -name "*-${sid}-${pat}"`。
+- **约束 3（向后兼容无前缀历史命名）**：既有的 `${sid}-${pat}` 形态必须继续命中，
+  不得因收紧而把历史项目判成 missing。
+- **约束 4（不漏报）**：放宽匹配不得把「真缺失」判成已覆盖——某场景在目标目录下确无任何对应
+  文件时，仍必须如实出现在 missing 集合中。
+- **约束 5（覆盖三个调用点）**：`check_scenarios_complete()` 同时服务场景时序（`*.md`）、
+  API（`*.yaml *.yml`）、测试用例（`*.md`）三处判定，修正在函数内一处完成、三处同时生效。
+- **约束 6（不引入 CLI 依赖）**：`openlogos-phase` 是纯 shell、零依赖的 SessionStart 探测脚本，
+  **不得**改为调用 `openlogos status` 取判据（D1 决策）——反向依赖 CLI 可用性与版本、需在无 `jq`
+  假设下解析 JSON、每次启动多一次 Node 冷启动，且 CLI 不可用时仍需 shell 回退，回退本身又是第二条实现。
+- **约束 7（源模板唯一）**：只改源模板 `plugin/bin/openlogos-phase`；`.claude/openlogos/bin/openlogos-phase`
+  是 `openlogos sync` 的部署副本，不直接改（`spec/proposal-ui-ux-first.md` §13.5）。
+
+### 跨实现一致性的适用域（恒等域与已知差异清单）
+
+D1 选定「同口径的独立实现」而非「调用唯一实现」，因此两条实现**只在双方共享的输入域上恒等**。
+规格必须写明边界，否则会留下不可同时满足的验收要求：
+
+**恒等域（必须逐项相等）**：目标目录内的文件**全部**采用 `<module>-SXX-*` 规范命名、且模块单一
+（目录内不含其它模块的 `SXX` 同号文件）时，`phase.3-1`（场景时序）与 `phase.3-4a`（测试用例）
+两个调用点上，shell 探测的 missing 集合必须与 `status` 的 `scenario_coverage.missing` **逐项相等**。
+这是方法论命名规范下的**常态输入域**，也是本次误报发生的域。
+
+**已知差异清单（明示为口径差异，不纳入恒等断言）**：
+
+| 差异 | shell 探测 | 权威口径（CLI） | 定性 |
+|---|---|---|---|
+| 无前缀历史命名 `SXX-*` | 判为已覆盖（约束 3） | 判为 missing（`core-SXX` 子串不命中） | 有意保留的向后兼容；只作 shell 自身断言 |
+| 其它模块同号文件 `web-SXX-*` | `*-${sid}-${pat}` 会接受 | 不命中 `core-SXX` | 放宽匹配的已知代价；shell 不解析模块归属（约束 6） |
+| 测试用例目录的 `-test-cases` 后缀 | 不作要求（模式为 `*.md`） | `phase.3-4a` 要求含 `-test-cases` | shell 侧更宽；仅在恒等域（规范命名）下两者结论一致 |
+| API 调用点 | 有 per-scenario 判定 | **无**对应判定（`SCENARIO_PHASES` 不含 API） | 无可对账权威集合；只作 shell 自身断言 |
+
+**收紧这些差异需另立提案**——那要求改 CLI 判据或让 shell 解析模块归属，超出本次改动范围与 D1。
+
+### 漂移防护（锚点）
+
+- **INV-SC1（口径唯一 + 适用域显式）**：per-scenario 覆盖判定只有一个权威口径（`status.ts`）；
+  第二实现（`openlogos-phase`）必须声明自己是该口径的从属实现，并由用例在**恒等域**上锁定两者
+  missing 集合相等；域外差异必须在上表中逐条具名，不得隐式存在。
+- **INV-SC2（命名规范一致）**：判定键与 `spec/module-naming-convention.md` 的 `<module>-SXX-*`
+  规范保持一致；命名规范变更时，两处实现必须同批更新。
+- **INV-SC3（不漏报）**：任何为兼容而放宽的匹配，都必须配套「真缺失仍报 missing」的反向用例。
+- **INV-SC4（模式不受 cwd 影响）**：探测结果**不得**随脚本当前工作目录下的文件集合变化；
+  同一项目在任意 cwd 下（根目录有无 `README.md` / `*.yaml`）的 missing 集合必须一致。
+
+### 异常与边界
+
+#### EX-11.7：模块前缀命名项目被 SessionStart 误报 missing（本次缺陷的回归锁）
+- **触发条件**：项目按 `<module>-SXX-*` 规范命名（如 `core-S03-….md`），项目根存在
+  `README.md` / `AGENTS.md`，启动新会话。
+- **期望响应**：SessionStart phase 文本与 `openlogos status --format json` 一致——场景 / API /
+  测试用例三个调用点均零 missing。修复前 shell 侧报 missing、JSON 侧报无缺失，用例必红。
+- **副作用**：修复前 agent 被诱导去重复创建已存在的场景文件。
+
+#### EX-11.8：扩展名模式被 cwd 文件名展开（约束 1 的回归锁）
+- **触发条件**：目标目录下有 `core-S03-demo.md`；仅在项目根新增一个 `README.md`。
+- **期望响应**：missing 集合**不变**（仍为空）。修复前该场景下 `find` 实际执行
+  `-name S03-README.md -o -name '*-S03-README.md'`，返回 `S03`——**仅补前缀 glob 无法修复**。
+- **副作用**：无。
+
+#### EX-11.9：无前缀历史命名项目仍须命中
+- **触发条件**：历史项目文件名为 `S03-….md`（无模块前缀）。
+- **期望响应**：shell 侧仍判为已覆盖，missing 集合不因本次放宽而增大。**该输入不在恒等域内**，
+  不与 CLI 结果对账（CLI 按权威口径判 missing，属已知差异）。
+- **副作用**：无。
+
+#### EX-11.10：真实缺失仍如实报 missing
+- **触发条件**：`logos-project.yaml` 声明了某场景，但目标目录下既无 `<module>-SXX-*` 也无 `SXX-*` 文件。
+- **期望响应**：该场景仍出现在 missing 集合中；在恒等域 fixture 上与 `status` 的
+  `scenario_coverage.missing` 逐项相等。
+- **副作用**：无。
+
+### 追溯
+
+- 方法论规范：`spec/module-naming-convention.md`（`<module>-SXX-*` 命名）；本文「initial phase
+  派生（flow-derive）与两套 legacy done 语义」（子串匹配语义来源）。
+- 场景：本节；消费方约束见本文「SessionStart 消费 status 结构化状态」。
+- 测试：UT-S11-82、UT-S11-83、UT-S11-84、UT-S11-85、ST-S11-47。
+- 来源变更：fix-merge-prototype-commit-and-phase-module-prefix（决策 D1：兼容 glob，不改调 CLI）。

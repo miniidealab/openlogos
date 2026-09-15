@@ -1397,3 +1397,156 @@ sequenceDiagram
 - 功能规格：§2.84.3（默认兜底映射与状态三档）、§2.84.4（诊断可归因）、§2.69.1（失败语义合同，同批补齐）、§2.69.2（`SPEC_MERGED` 结构零回归）。
 - 场景关联：本文档「S09 merge 直接合并时序」（EX-9.20～EX-9.22 逐字保留）、S35「行级形态判据前移与预检-门一致性锁」（同族的前移侧）。
 - 测试：UT-S09-351～UT-S09-354、ST-S09-145。
+
+## S09 merge 原型落盘在安装态的可执行位置与可观测摘要
+
+### 场景目标
+
+把「原型落盘唯一入口」从**代码归属声明**收紧为**安装态可执行事实**：`commitVerifiedPrototypes()`
+必须在 `openlogos merge` 的**正常（非 legacy）** `ui_impact` 合并路径上被调用，落盘结果必须进入
+merge 输出摘要，且**提交时机必须排在全部规格合成与校验之后**、失败处置必须按分档如实声明。
+修复前该调用锁在 `legacyMergeTestMode()` 门内（`NODE_ENV==='test' &&
+OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY==='1'`，注释自述「安装态 0.14.0 永不启用」），而
+`planDirectTargets()` 又以「由 `commitVerifiedPrototypes` 整份落盘」为由把 `2-page-design/*.html`
+排出 canonical target 集——**排除方指向一条安装态永不执行的死路径**，0.15.x 安装态因此根本不存在
+原型落盘通道，原型变更被静默丢弃且 merge 输出零告警。
+
+### 用户价值
+
+`ui_impact` 提案的原型（新增页 / 改版 / 墓碑化）是用户在 plan 出口**亲自确认过**的产物。落盘通道缺失
+意味着「批准的原型」与「resources 中的原型」永久分叉，而 `PLAN_APPROVED.hashes` 对账的是 delta 侧
+字节、resources 侧陈旧不入账——**分叉不产生任何信号**。把调用移到正常分支、把结果写进摘要、
+并让失败声明与磁盘事实一致，使「批准了什么」「落盘了什么」「失败后盘上是什么」三者都可当场对账。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| M | `openlogos merge`（`cli/src/commands/merge.ts`） | 合并唯一执行者；`ui_impact` 分支的宿主 |
+| H | `checkUiHashMatch()` | 批准后漂移检查；失配降为告警（不阻断合并） |
+| E | `composeOpenLogosMarkdown` / `verifyAgentMaterialOutcome` | 规格 delta 合成与物质结果复验（纯计算，不写盘） |
+| P | `commitVerifiedPrototypes()` | 原型资产落盘的**唯一**入口（严格 / advisory 两臂都在其内分流） |
+| A | `applyBaselineClosureBatch` | 规格 canonical target 的原子落盘原语 |
+| T | `planDirectTargets()`（`cli/src/lib/merge-direct.ts`） | 把 `2-page-design/*.html` 排出 canonical target 集的排除方 |
+| F | `logos/resources/` | 合并目标（含 `prd/2-product-design/2-page-design/`） |
+
+前置条件：提案 `ui_impact: true`；`deltas/prd/2-product-design/2-page-design/` 下有原型 html；
+**无任何内部环境变量**（默认安装态，`NODE_ENV != 'test'`）。
+
+### 时序图（写入阶段前置：先算全，后写全）
+
+```mermaid
+sequenceDiagram
+    participant U as 用户/driver
+    participant M as openlogos merge
+    participant H as checkUiHashMatch
+    participant E as 合成与复验
+    participant P as commitVerifiedPrototypes
+    participant A as applyBaselineClosureBatch
+    participant F as logos/resources
+    U->>M: Step 1: openlogos merge slug（安装态，无内部开关）
+    M->>M: Step 2: ui_impact==true 进入 UI 分支
+    M->>H: Step 3: hash 漂移检查（失配仅告警，不阻断）
+    M->>E: Step 4: 解析全部 canonical target 并合成最终字节
+    E-->>M: Step 5: 物质结果复验；任一不符即在任何写入前整体失败
+    M->>P: Step 6: 正常分支调用（不受 legacyMergeTestMode 门控）
+    P->>F: Step 7: verify-all 到 stage 到原子提交原型字节
+    P-->>M: Step 8: 返回 ok/committed 或失败档位与 rolledBack
+    M->>A: Step 9: 规格最终字节一次性原子落盘
+    A-->>M: Step 10: 成功或整批回滚
+    M->>F: Step 11: 写 SPEC_MERGED；此后才清理原型 journal 与 backup
+    M-->>U: Step 12: 摘要列出 canonical target 与原型落盘结果或分档告警
+```
+
+### 步骤说明
+
+1-3. 安装态直接执行 `openlogos merge <slug>`；`ui_impact: true` 进入 UI 分支；`checkUiHashMatch()`
+   按既有语义执行，失配打印告警但**不阻断合并**（语义不变）。
+4-5. **写入阶段前置（`spec/proposal-ui-ux-first.md` §12.3.3 顺序约束）**：**全部 canonical target 的
+   解析、合成与物质结果复验必须在任何写入动作之前完成**。合成阶段失败 ⇒ **原型根本不进入提交**，
+   `logos/resources/` 零改动，既有 EX-9.20 / EX-9.23 的档 A 声明（「保持合并前字节、未写
+   `SPEC_MERGED`」）因此与磁盘事实一致。**禁止**把原型提交排在合成之前。
+6. **`commitVerifiedPrototypes(changePath, root)` 在此处被调用——位于正常 `ui_impact` 分支上，
+   不得包在 `legacyMergeTestMode()` 或任何 `OPENLOGOS_INTERNAL_*` / `NODE_ENV==='test'` 开关内。**
+   该调用在默认安装态必定被求值；被开关门死等价于无入口（§12.3.1 约束 A）。
+7-8. provenance 完整臂：按 §12.3 三段事务落盘，返回 `ok` 与 committed 清单；失败则返回
+   `ok:false` 与 `rolledBack`，按 §12.3.2 分档表定档（P0 写入前拒绝 / P1 已完整回滚 /
+   P2 回滚不完整或不可确认）。
+9-10. 规格最终字节一次性原子落盘；失败整批回滚。
+11. **材料保留约束（§12.3.3）**：原型事务提交成功后，其 journal / backup **不得立即清理**，
+   须保留至规格原子落盘与 `SPEC_MERGED` 写入**均成功**；其间任一失败 ⇒ 依 journal 回滚原型 +
+   规格整批回滚，恢复到 merge 前一致态后再统一清理；回滚不完整则落入档 P2。
+12. **摘要可观测（禁止静默）**：摘要与 canonical target 同级列出原型落盘结果——成功时**逐个**列出
+   已 committed 原型的目标相对路径，零个时明确说明「本次无原型资产」；失败时打印该档规定的
+   状态声明与恢复动作。既不允许「落盘成功但摘要无痕」，也不允许「未落盘且无告警」。
+   `planDirectTargets()` 仍把 `2-page-design/*.html` 排出 canonical target 集（避免重复落盘）；
+   该排除的注释与 Step 6 的实际调用条件是**成对约定**，任一侧变动必须同步核对。
+
+### 不变量
+
+- **INV-P1（安装态可执行）**：默认安装态执行 `openlogos merge`，`ui_impact:true` 提案必定求值
+  `commitVerifiedPrototypes()`；任何把它重新纳入测试专用开关的改动即违反本不变量。
+- **INV-P2（唯一入口不变）**：原型落盘仍只有这一个代码入口，advisory 与严格两臂在其内部分流，
+  merge-executor 与 canonical target 合成路径都不触碰原型资产。
+- **INV-P3（失败声明与磁盘事实一致，按档不按口号）**：失败处置一律按 §12.3.2 分档表——
+  P0 / P1 可声明零残留并照常合并；**P2（`rolledBack:false`）禁止任何零残留措辞**，保留恢复材料、
+  不写 `SPEC_MERGED`、非零退出并阻断。**不得**把 P2 当作 partial provenance 拒绝臂处理。
+- **INV-P4（结果可观测）**：原型落盘结果（成功清单或分档告警）恒在 merge 摘要中可见。
+- **INV-P5（先算全后写全）**：合成与复验完成前不得发生任何写入；原型事务材料在整次 merge
+  成功前不得清理。
+
+### 异常与边界
+
+#### EX-9.25：安装态 `ui_impact` 提案原型落盘通道缺失（本次缺陷的回归锁）
+- **触发条件**：`commitVerifiedPrototypes()` 的调用被置于 `legacyMergeTestMode()` 等测试专用开关内，
+  安装态执行 `openlogos merge`。
+- **期望响应**：**不允许出现**——安装态路径用例（不开 `OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY`）必须
+  断言 merge 后 `logos/resources/prd/2-product-design/2-page-design/` 下同名文件字节等于 delta 字节；
+  该用例在修复前必红。
+- **副作用**：修复前为静默丢弃原型变更且 merge 输出零告警；修复后不存在此态。
+
+#### EX-9.26：partial provenance 拒落盘（档 P0）
+- **触发条件**：`PLAN_APPROVED` provenance 不完整，或全量 hash 校验在写入任何目标字节前失配。
+- **期望响应**：resources 逐字节保持 merge 前态、零残留；输出含「原型未落盘（`<reason>`）」告警与
+  remediation（`openlogos check-ui-hash-match`）；规格 delta 照常合并、`SPEC_MERGED` 照常写入、
+  退出语义同正常合并。
+- **副作用**：无未获批字节进入 resources。
+
+#### EX-9.27：`ui_impact:true` 但本次无原型资产
+- **触发条件**：声明段 `ui_impact: true`，`deltas/prd/2-product-design/2-page-design/` 下无 html。
+- **期望响应**：摘要明确说明「本次无原型资产」，不打印失败告警，不影响规格合并。
+- **副作用**：无。
+
+#### EX-9.28：完整 provenance + 规格合成失败（顺序约束的回归锁）
+- **触发条件**：原型 provenance 与 hashes 均正确，但某规格 delta 的 MODIFIED 章节锚不可解析 /
+  物质结果复验不通过。
+- **期望响应**：失败发生在写入阶段之前 ⇒ **原型未被提交**，`logos/resources/`（含
+  `2-page-design/`）逐字节等于 merge 前；失败输出仍为既有档 A 形态且**与磁盘事实一致**；
+  不写 `SPEC_MERGED`。
+- **副作用**：无。修复前若把原型提交排在合成之前，此时原型已落盘而输出仍称「保持合并前字节」
+  ——本用例即该谎报的回归锁。
+
+#### EX-9.29：原型提交成功 + 规格提交失败（材料保留约束）
+- **触发条件**：原型事务已 `ok:true`，随后 `applyBaselineClosureBatch` 落盘失败或 `SPEC_MERGED`
+  写入失败。
+- **期望响应**：依保留的 journal / backup **回滚原型** + 规格整批回滚，`logos/resources/` 回到
+  merge 前一致态；不写 `SPEC_MERGED`；输出如实说明「原型已回滚」。若原型回滚不完整 ⇒ 转入 EX-9.30。
+- **副作用**：无（回滚完整时）。
+
+#### EX-9.30：原型事务回滚不完整或状态不可确认（档 P2）
+- **触发条件**：唯一入口返回 `ok:false, rolledBack:false`，reason 形如
+  `commit_failed_rollback_incomplete` / `post_commit_hash_mismatch_rollback_incomplete`。
+- **期望响应**：**禁止任何零残留措辞**；声明「原型可能已部分落盘、状态需核对」并指向保留的
+  staging / backup / journal；**不写 `SPEC_MERGED`**、**非零退出、阻断流程**（不进 slice/code）；
+  给出下次 merge / 启动按 §12.4 journal 前滚或回滚，以及 `git status`、`git diff logos/resources/`
+  的自查指引。
+- **副作用**：恢复材料被刻意保留，不得清理。
+
+### 追溯
+
+- 方法论规范：`spec/proposal-ui-ux-first.md` §12.3、§12.3.1（约束 A/B）、§12.3.2（失败分档表）、
+  §12.3.3（写入阶段前置与材料保留）。
+- 场景：本节；与「S09 merge 直接合并时序」的 canonical target 排除约定成对；
+  与「S09 merge 内部错误的稳定失败语义」的状态三档（A/B/C）在原型侧对应 P0/P1/P2，不得互相覆盖。
+- 测试：UT-S09-355、UT-S09-356、UT-S09-357、UT-S09-358、UT-S09-359、ST-S09-146。
+- 来源变更：fix-merge-prototype-commit-and-phase-module-prefix。

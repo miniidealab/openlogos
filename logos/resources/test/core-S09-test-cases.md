@@ -918,3 +918,56 @@
 - 步骤④ 的「不含堆栈」断言必须对 stderr **全文**做负向匹配（栈帧行 / `Node.js v` 行 / 裸错误类名首行三项），不得只断言「含稳定前缀」——两者可同时成立，只查正向会放过堆栈仍被打印的实现。
 - 步骤③ 的零残留断言以合并前后**全树字节快照**比对，不得只检查被 delta 触达的目标文件；该断言只适用于**档 A / B** 情形，不得推广为对全部失败的通用断言。
 - UT-S09-354 与 ST-S09-145 步骤⑥ 的注入必须限定在**一次性隔离项目**的私有事务目录，测试结束前恢复注入并清理；断言须同时读取 stderr 文案与磁盘事实两侧，仅比对文案不足以证明分档正确。
+
+## S09 merge 原型落盘安装态路径测试
+
+> 覆盖 `commitVerifiedPrototypes()` 从 `legacyMergeTestMode()` 门内移出到正常 `ui_impact` 合并分支，
+> 并覆盖随之真正进入生产流程的两类既有风险：**提交时机**（原型不得先于规格合成提交）与
+> **失败分档**（`rolledBack:false` 不得被当作零残留）。断言口径见方法论规范
+> `spec/proposal-ui-ux-first.md` §12.3、§12.3.1 约束 A/B、§12.3.2 失败分档表、§12.3.3 写入阶段前置；
+> 场景 S09「merge 原型落盘在安装态的可执行位置与可观测摘要」EX-9.25～EX-9.30；来源变更
+> fix-merge-prototype-commit-and-phase-module-prefix。
+>
+> **覆盖有效性前提（硬约束）**：本节用例**一律不得**设置 `OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY=1`。
+> 修复前 CLI 自身回归测试恰好只跑 legacy 模式，覆盖的是那条安装态永不执行的死路径，全绿是假象——
+> 本节即该假象的回归锁。**且不得仅用 hash 失配模拟全部失败**：必须含 `rolledBack:false` 的注入分支，
+> 否则档 P2 形同未规定。夹具用一次性隔离项目构造（含 `ui_impact: true` 提案、`PLAN_APPROVED` 及其
+> `hashes`、`deltas/prd/2-product-design/2-page-design/*.html` 与至少一份 markdown 规格 delta）。
+> 测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-355 | 安装态正常分支必定求值 `commitVerifiedPrototypes()`（修复前必红） | `ui_impact:true` 隔离项目，`PLAN_APPROVED.hashes` 与 delta 原型字节一致；**不设** `OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY`，`NODE_ENV` 非 `test` | 以安装态环境调用 merge 主流程，并对 `commitVerifiedPrototypes` 加调用探针 | 探针记录到**恰一次**调用；merge 后 `logos/resources/prd/2-product-design/2-page-design/<page>.html` 存在且**逐字节等于** `deltas/prd/2-product-design/2-page-design/<page>.html`。另设对照臂：把调用重新包回 `legacyMergeTestMode()` 时本用例必红（探针零调用、resources 无该文件）——即缺陷 EX-9.25 的回归锁 |
+| UT-S09-356 | 档 P0：写入前拒绝 ⇒ 零残留 + 告警 + 合并照常 | 同上隔离项目，但 `PLAN_APPROVED` provenance 不完整 / 全量 hash 校验在写入任何目标字节前失配；仍为安装态环境 | 调用 merge 主流程，事后取磁盘事实与输出文本 | ① `2-page-design/` 逐字节保持 merge 前态、无 staging / backup / journal 残留；② 输出含「原型未落盘」告警、携带 `reason` 与 remediation（`openlogos check-ui-hash-match`）；③ **合并照常**：markdown 规格 delta 已落盘、`SPEC_MERGED` 在场、退出语义同正常合并 |
+| UT-S09-357 | 摘要可观测：committed 逐个可见 / 零资产明说 / 失败必有告警（禁止静默） | 三形态：① 两份原型且 provenance 完整；② `ui_impact:true` 但 `2-page-design/` 下无 html；③ 落盘失败（同 UT-S09-356 前置） | 分别运行 merge，解析摘要文本 | ① 摘要与 canonical target **同级**逐个列出两份已 committed 原型的目标相对路径（数量为 2，与磁盘实际落盘文件一一对应）；② 明确说明「本次无原型资产」，不出现失败告警；③ 出现失败告警。三形态均断言**不存在静默态**——落盘成功而摘要无痕、或未落盘而无告警，任一出现即红 |
+| UT-S09-358 | 分档准确：P1 已完整回滚 vs P2 回滚不完整，禁止零残留谎报（F4 必红臂） | 两形态注入唯一入口返回值：① `ok:false, rolledBack:true`（reason `commit_failed:*` 或 `post_commit_hash_mismatch`）；② `ok:false, rolledBack:false`（reason `commit_failed_rollback_incomplete` / `post_commit_hash_mismatch_rollback_incomplete`，且恢复材料被保留） | 分别调 merge 主流程，同时取磁盘事实（原型目录字节、staging/backup/journal 是否在场、`SPEC_MERGED` 是否在场）与输出文本 | ① 档 P1：可声明零残留但**必须点名**「提交中途失败后已完整回滚」，规格照常合并、`SPEC_MERGED` 在场；② 档 P2：输出**不含**「零残留 / 保持 merge 前态 / 未发生写入」任一措辞，含「可能已部分落盘、状态需核对」与 journal 指引及 `git status` / `git diff logos/resources/`；**不写 `SPEC_MERGED`**、非零退出、阻断；并断言恢复材料**仍在磁盘上**（未被清理）。**修复前（把所有失败按 partial provenance 一律「零残留 + 合并照常」处理）② 必红** |
+| UT-S09-359 | 顺序与材料生命周期：合成失败不得已提交原型；规格提交失败须能回滚原型（F3 必红臂） | 两形态：① provenance 与 hashes 均正确，但某规格 delta 的 MODIFIED 章节锚不可解析 / 物质结果复验不通过；② 原型事务已 `ok:true`，随后注入 `applyBaselineClosureBatch` 落盘失败 | 分别调 merge 主流程，事后取 `2-page-design/` 字节、`SPEC_MERGED` 与输出文本 | ① **原型未被提交**：`2-page-design/` 逐字节等于 merge 前，失败输出为既有档 A 形态且与磁盘事实一致，不写 `SPEC_MERGED`；断言探针记录的调用顺序为「合成与复验完成 → 原型提交」，反序即红；② 依保留的 journal / backup **回滚原型**、规格整批回滚，`logos/resources/` 回到 merge 前一致态，输出如实说明「原型已回滚」，不写 `SPEC_MERGED`；另断言原型事务材料在 `SPEC_MERGED` 写入成功前**未被清理**。**修复前若原型提交排在合成之前，① 会出现「原型已落盘而输出称保持合并前字节」的相反声明，本用例即该谎报的回归锁** |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S09-146 | 真实 `openlogos merge` 子进程在安装态端到端落盘原型、可观测且失败声明与磁盘一致 | 一次性隔离项目 + **真实 CLI 子进程**，环境中**不含任何 `OPENLOGOS_INTERNAL_*`**、`NODE_ENV` 非 `test`（复刻 0.15.7/0.15.9 安装态现场）。① 提案 `ui_impact:true`、两份原型 html + 一份 markdown 规格 delta，跑 `openlogos merge <slug>`：退出码 0；`2-page-design/` 下两份文件逐字节等于对应 delta 字节；markdown 目标按既有语义正确合并；`SPEC_MERGED` 在场。② stdout 摘要逐个列出两份 committed 原型路径。③ **档 P0 臂**：另取隔离项目令 provenance 失配，跑真实 merge——原型目录全树逐字节与 merge 前快照相等、无中间态残留，输出含失败告警，规格 delta 仍落盘、`SPEC_MERGED` 仍写入。④ **档 P2 臂**：注入回滚不完整（使 `abortTransaction` 还原失败）跑真实 merge——退出码非零、无裸堆栈、输出**不含**零残留措辞、`SPEC_MERGED` **不在场**、恢复材料仍在磁盘；断言输出的状态声明与此刻磁盘事实一致。⑤ **合成失败臂**：provenance 正确但规格 delta 章节锚不可解析，跑真实 merge——`2-page-design/` 逐字节等于 merge 前（原型未提交），输出档 A 声明与磁盘一致。⑥ **修复前必红对照**：在未修复的构建上跑步骤①，断言 resources 中原型文件缺失或为旧字节且**无任何告警**（静默丢弃）。⑦ **零回归**：非 `ui_impact` 提案的 merge stdout 与 `SPEC_MERGED` 内容同修复前实现逐字节一致 |
+
+### 追溯与覆盖
+
+- 主修·安装态可执行（§12.3.1 约束 A，修复前必红）：UT-S09-355、ST-S09-146 步骤①⑥。
+- 主修·摘要可观测、禁止静默（§12.3.1 约束 B）：UT-S09-357、ST-S09-146 步骤②。
+- 主修·失败分档准确、P2 禁止零残留谎报（§12.3.2，delta-r1 F4 必红臂）：UT-S09-358、ST-S09-146 步骤③④。
+- 主修·写入阶段前置与材料保留（§12.3.3，delta-r1 F3 必红臂）：UT-S09-359、ST-S09-146 步骤⑤。
+- 不变式·唯一入口不变、不重复落盘（INV-P2）：UT-S09-355（恰一次调用）+ ST-S09-146 步骤①（canonical target 集不含 html）。
+- 不变式·档 P0 的零残留与「合并照常」（INV-P3 的 P0 分支）：UT-S09-356、ST-S09-146 步骤③。
+- 不变式·非 `ui_impact` 路径零回归：ST-S09-146 步骤⑦。
+- 方法论规范：`spec/proposal-ui-ux-first.md` §12.3、§12.3.1、§12.3.2、§12.3.3；场景：S09「merge 原型落盘在安装态的可执行位置与可观测摘要」（EX-9.25～EX-9.30）；来源变更：fix-merge-prototype-commit-and-phase-module-prefix。
+
+### 自动化与证据要求
+
+- 全部用例须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`）。
+- 「安装态」须由测试夹具**显式断言**：运行前后校验进程环境中 `OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY`
+  未设置、`NODE_ENV !== 'test'`；夹具不得为求绿而注入该变量。
+- 失败分档**必须由控制流与返回值派生**，断言实现未从输出文本反推档位；另设反证臂：
+  把档位判据改为从 message 文本反推时断言必红。
+- 字节一致性用 SHA-256 逐文件比对；零残留用 merge 前后全量文件清单差集证明；
+  档 P2 的「材料保留」用恢复材料路径的存在性断言证明。
