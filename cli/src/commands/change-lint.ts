@@ -151,8 +151,10 @@ function checkOfCode(code: string): number {
     case 'code_change_requires_real_test_ids': return 3;
     case 'delta_missing_section_marker':
     case 'delta_template_skeleton':
-    // §2.82.2（fix-table-test-id-manual-marker）：测试规格 delta ID 表首格可提取性（L4 族）。
-    case 'delta_test_table_id_unextractable': return 4;
+    // L4 族的 delta 测试规格形态三码：§2.82.2 首格可提取性 + §2.84.2 行级列数 / 表头重复前移。
+    case 'delta_test_table_id_unextractable':
+    case 'delta_test_table_column_mismatch':
+    case 'delta_test_table_duplicate_header': return 4;
     case 'deployment_decision_conflict': return 5;
     case 'delta_path_invalid': return 6;
     case 'delta_implicit_id_removal':

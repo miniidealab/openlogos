@@ -17,6 +17,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isTestId, stripFirstCellManualMarker } from '../lib/test-id.js';
+import { rowColumnsMatchHeader } from '../lib/test-table-shape.js';
 import { parseMarkdownHeadings, type ResolvedSectionAnchor } from '../lib/markdown-section-authority.js';
 
 export type LintSpecsCode = 'duplicate_test_id' | 'table_column_mismatch' | 'invalid_test_id' | 'duplicate_heading';
@@ -85,7 +86,10 @@ function lintFile(relPath: string, content: string, seenIds: Map<string, string[
     const idTable = /^(?:用例\s*)?(?:ID|编号)$/i.test(headerCells[0] ?? '')
       || rows.some(r => isTestId(stripFirstCellManualMarker(r.cells[0] ?? '')));
     for (const r of rows) {
-      if (r.cells.length !== headerCells.length) {
+      // §2.84.1：列数判据走共享单点 `rowColumnsMatchHeader`（与 change-lint 前移检查、
+      // 后态 buildTestChangeSet 同源）。**本命令的扫描集合逐字不变**——仍覆盖全部表格
+      // （不收窄为 ID 表），强度仍为只读诊断、不参与任何门：收敛的是判据，不是范围。
+      if (!rowColumnsMatchHeader(headerCells.length, r.cells.length)) {
         findings.push({
           code: 'table_column_mismatch', path: relPath, line: r.line + 1,
           message: `表格列数不一致：表头 ${headerCells.length} 列，本行 ${r.cells.length} 列（表头行 ${index + 1}）`,

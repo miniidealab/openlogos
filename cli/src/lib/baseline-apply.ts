@@ -30,7 +30,7 @@ import {
 import { validateAndStripNonMarkdownDelta } from './non-markdown-delta.js';
 
 export const BASELINE_CLOSURE_APPLY_JOURNAL = 'BASELINE_CLOSURE_APPLY_JOURNAL.json';
-const APPLY_TXN_DIR = '.baseline-closure-apply-txn';
+export const APPLY_TXN_DIR = '.baseline-closure-apply-txn';
 
 export interface NonMarkdownApplyInput {
   kind: 'non-markdown';
@@ -180,6 +180,12 @@ function parseJournal(proposalDir: string): ApplyJournal | null {
 }
 
 function removePrivateArtifacts(proposalDir: string): void {
+  // 故障注入仅在 NODE_ENV=test 下生效（与 OPENLOGOS_TEST_MERGE_FAIL_AFTER 同一形态）：复刻
+  // 「phase='committed' 落盘完成后清理持续失败」——错误经恢复路径二次抛出、自原语内部逃出，
+  // 此时主文档已是新字节且 SPEC_MERGED 已在场（§2.84.3 档 C 的真实成因）。生产路径零影响。
+  if (process.env.NODE_ENV === 'test' && process.env.OPENLOGOS_TEST_APPLY_CLEANUP_FAIL === '1') {
+    throw new Error('test fault: removePrivateArtifacts 持续失败');
+  }
   const jp = journalPath(proposalDir);
   if (existsSync(jp)) unlinkSync(jp);
   const td = txnDir(proposalDir);

@@ -982,7 +982,7 @@ describe('S35 — 同源锚与契约', () => {
     }
   });
 
-  it('UT-S35-21 / UT-S35-37: 违规集契约——四字段必填、43 码闭合（含 Plan Package L0）、排序稳定', () => {
+  it('UT-S35-21 / UT-S35-37: 违规集契约——四字段必填、45 码闭合（含 Plan Package L0）、排序稳定', () => {
     const { root, dir } = setup({
       proposal: proposalMd({ deploy: '是', reuseLines: ['- UT-S99-99 — 不存在'] }),
       tasks: '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/prd/`', // 缺 [code]、无测试规划 → L2+L3；deploy 是无 [deploy] → L5
@@ -996,7 +996,9 @@ describe('S35 — 同源锚与契约', () => {
     // （码即 ProposalBlockReason 本身）。另两条走 warning 通道：test-slice-manifest-stale
     // 是审计观察、no_delta_spec_marker_missing 是待办步骤，均不进违规码闭合枚举。
     // 42 → 43：§2.82.2（fix-table-test-id-manual-marker）L4 族新增 delta_test_table_id_unextractable。
-    expect(registry.size).toBe(43);
+    // 43 → 45：§2.84.2（fix-merge-preflight-parity-and-bare-throw）L4 族新增
+    // delta_test_table_column_mismatch 与 delta_test_table_duplicate_header。
+    expect(registry.size).toBe(45);
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');

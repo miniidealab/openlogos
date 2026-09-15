@@ -1294,3 +1294,106 @@ sequenceDiagram
 - 需求：merge 直接合并与规格结构检查要求。
 - 功能规格：§2.69。
 - 测试：UT-S09-340、UT-S09-341、ST-S09-140。
+
+## S09 merge 内部错误的稳定失败语义
+
+### 场景目标
+
+让 `openlogos merge` 的失败出口**默认兜底**而非默认放行：任何逃出 `mergeDirect` 的内部错误（含 `test-change-set` 族及任何未来新增的错误类）一律映射为稳定失败形态——稳定前缀与错误码、**按已确认阶段分档的状态声明**、对应的后续动作指引、非零退出——**绝不裸抛 Node 未捕获异常堆栈**，也**绝不把未知或已提交的状态包装成已确认零残留**（功能规格 §2.84.3，补齐 §2.69.1 明文失败语义）。
+
+### 用户价值
+
+CLI 的 stderr 是无人值守下游唯一可得的病灶来源。裸堆栈 + 无错误码 = 下游零诊断：2026-09-14 全自动 run 的账本只剩 `reason:merge-failed, exitCode:1`，人与 agent 都无法从中定位「少写一个管道符」这个真病灶。稳定失败形态让每一次 merge 失败都自带可归因信息与如实的状态指引——**与事实相符是前提**：对已提交后才失败的情形谎报「什么都没发生，改完重跑即可」，比裸堆栈更有害（按该指引重跑会撞上「`SPEC_MERGED` 已存在」的前置拒绝）。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| D | `runDirectMerge` | 命令层失败出口的唯一映射点 |
+| G | `mergeDirect` | 合并主流程（含准备阶段与落盘） |
+| B | `buildTestChangeSet` | 准备阶段抛 `TestChangeSetBuildError` 的典型内部错误源 |
+| A | `applyBaselineClosureBatch` | 原子落盘原语；其结构化返回（`ok` / `rolled_back`）是状态档的事实源之一 |
+| F | `logos/resources/` | 合并目标；失败后的实际字节状态由状态档如实描述 |
+
+前置条件：`change-lint` 准入已通过（或本次失败发生在准入之后的任一内部阶段）；`logos/resources/` 工作区在合并前干净。
+
+### 失败出口时序
+
+```mermaid
+sequenceDiagram
+    participant D as runDirectMerge
+    participant G as mergeDirect
+    participant A as applyBaselineClosureBatch
+    participant F as logos/resources
+    participant E as stderr
+
+    D->>G: Step 1: 调用合并主流程
+    alt 准备阶段失败（目标解析 / 合成 / buildTestChangeSet）
+        G-->>D: Step 2a: 错误逃出，落盘原语尚未被调用
+        D->>E: Step 3a: 档 A——保持合并前字节，未写 SPEC_MERGED + git checkout 回滚点
+    else 落盘原语返回 ok:false
+        A-->>G: Step 2b: {ok:false, rolled_back}
+        G-->>D: Step 3b: 以结构化返回构造错误
+        alt rolled_back === true
+            D->>E: Step 4b: 档 B——落盘中途失败、已整批回滚，字节同合并前
+        else rolled_back !== true
+            D->>E: Step 4c: 档 C——回滚未完成，如实报告并指引核对
+        end
+    else 错误从落盘原语内部直接逃出（含 phase=committed 后的清理失败）
+        A-->>D: Step 2c: 普通内部错误逃逸（主文档已是新字节、SPEC_MERGED 已在场）
+        D->>E: Step 3c: 档 C——禁止声明保持旧字节 / 未写 marker；报告可能已提交 + 可能残留私有事务材料
+    end
+    D->>E: Step 5: 全档共有——稳定前缀 Error: merge 失败（<code>）：<message> 与原始诊断原文
+    D->>D: Step 6: 非零退出（exit 1）
+    Note over D,F: 档位只由控制流位置与落盘原语结构化返回派生；禁止从 message 文本反推状态
+```
+
+### 稳定失败形态（四要素，缺一不可）
+
+| 要素 | 内容 |
+|---|---|
+| 稳定前缀与错误码 | `Error: merge 失败（<code>）：<message>` |
+| 状态声明 | 按已确认阶段分档（见下表），**不是一句固定文案** |
+| 后续动作指引 | 与状态档对应的核对 / 回滚指引 |
+| 退出码 | 非零（`process.exit(1)`） |
+
+### 状态档（唯一事实源 = 结构化数据）
+
+| 档 | 结构化判据 | 声明与指引 |
+|---|---|---|
+| A · 未提交 | 失败发生在调用落盘原语**之前** | `logos/resources/ 保持合并前字节，未写 SPEC_MERGED。` + `回滚点：git checkout logos/resources/；修正 delta 后重跑 openlogos merge <slug>。` |
+| B · 已回滚 | 落盘原语返回 `ok:false` 且 `rolled_back === true` | 同 A 的字节声明，并注明落盘中途失败、已整批回滚 |
+| C · 已提交或不可确认 | 落盘原语返回 `ok:false` 且 `rolled_back !== true`；**或**错误从原语内部直接逃出（含 `phase = 'committed'` 之后的私有材料清理失败） | **禁止**声明保持旧字节 / 未写 marker；如实报告主文档可能已是合并后字节、`SPEC_MERGED` 可能已写入、提案目录可能残留私有事务材料，指引 `git status` / `git diff logos/resources/` 与 marker 在场性核对，并保留原始诊断原文 |
+
+**档 C 存在的事实依据**：`applyBaselineClosureBatch` 在 `journal.phase = 'committed'` 落盘后才清理私有材料；该清理先删 journal 再删私有目录，后一步失败时其 catch 内的恢复函数走**无 journal** 分支再次尝试同一清理并二次抛出，成为逃出 `mergeDirect` 的普通内部错误。此时全部目标与 `SPEC_MERGED`（它就在同一原子批内以 CREATE 落盘）均已是新字节。「所有抛点都在写入前或既有回滚路径上」不是事实，故状态声明不能无条件断言（delta-r1 F2）。
+
+### 不变量
+
+1. **默认兜底**：失败出口不存在「未登记的错误类 ⇒ 裸堆栈」通道；新增任何内部错误类无需改动出口即自动获得稳定形态。
+2. **诊断不降级**：错误类自带的 `code` 原样进入错误码位（如 `test-change-set-ambiguous-table`），`message` 与结构化归因信息（如 `targetPaths`）不被兜底吞掉。
+3. **落盘原语行为逐字不变**：本场景只改失败**信息形态**，不改失败的**时机与副作用**——`applyBaselineClosureBatch` 的准备 / 提交 / 回滚 / 清理时序逐行保留，EX-9.20 / EX-9.21 / EX-9.22 语义逐字保留。**但信息不得超出已确认事实**：状态声明只描述由结构化数据确定的档位，不对未确认状态作断言。
+4. **可归因优先级**：有 delta 侧归属时以「delta 文件 + delta 内行号」为主诊断，后态行号（已标注「合并后态」口径）并列输出作为佐证；归属无法确定时**不得伪造**，显式说明未能归因（功能规格 §2.84.4）。
+5. **默认档为 C（fail-safe）**：阶段无法从结构化事实确定时默认报告「不可确认」，而非默认报告干净；判据禁止从错误 message 文本反向推断（对齐 §2.69.2「流程判断使用结构化数据」）。
+6. **不留第二处硬编码结论**：`mergeDirect` 既有 `MERGE_APPLY_FAILED` 无条件拼接的「主文档已回滚至合并前字节」同批订正为按状态档派生——`rolled_back === false` 时该句同样为假。
+7. **成功路径零漂移**：merge 成功时的输出、`SPEC_MERGED` 内容与 `--format json` 契约逐字节不变。
+
+### 异常与边界
+
+#### EX-9.23：准备阶段内部错误（含 `test-change-set` 族）必须以稳定失败形态收束（档 A）
+- **触发条件**：`mergeDirect` 内部抛出非 `MergeDirectError` 的错误——典型为准备阶段 `buildTestChangeSet` 因 delta 形态问题抛 `TestChangeSetBuildError`（如 `test-change-set-ambiguous-table`：某 ID 表数据行列数 ≠ 表头列数）。
+- **期望响应**：以上述四要素稳定形态收束，状态档为 **A**——stderr 含 `Error: merge 失败（test-change-set-ambiguous-table）：…`、档 A 状态声明与 `git checkout logos/resources/` 回滚点，非零退出；**不得出现 Node 未捕获异常堆栈**（`TestChangeSetBuildError: … at scanTestDefinitionCandidates … Node.js vXX` 形态即判失败）。诊断同时点名产生该行的 delta 文件与 delta 内行号（无法归因时显式声明）。
+- **副作用**：零残留——`logos/resources/` 逐字节保持合并前状态，未写 `SPEC_MERGED`，无半新半旧的主文档，无任何中间态文件。
+- **事故对照**：修复前该错误逃到进程顶层裸抛，账本只剩 `reason:merge-failed, exitCode:1`（audit run `drv-mu1d875x-7ooq`），下游零诊断、需人工用 `tableRowCells` 重扫 delta 才定位到病灶行。
+
+#### EX-9.24：提交完成后的清理失败必须如实报告，不得谎报零残留（档 C）
+- **触发条件**：全部目标与 `SPEC_MERGED` 已原子落盘、`journal.phase` 已置 `committed`，随后 `removePrivateArtifacts` 因 IO 错误失败；其 catch 内的恢复函数在无 journal 分支再次尝试清理并二次抛出，错误逃出 `mergeDirect`。
+- **期望响应**：稳定前缀、错误码、原始诊断与非零退出照常；状态声明取 **档 C**——**不得**出现「保持合并前字节」或「未写 SPEC_MERGED」，须报告主文档可能已是合并后字节、`SPEC_MERGED` 可能已写入、提案目录可能残留私有事务材料，并指引 `git status` / `git diff logos/resources/` 与 marker 在场性核对。
+- **副作用**：主文档为**新字节**、`SPEC_MERGED` **在场**、私有事务材料可能残留——这正是档 A 文案会谎报的状态。
+- **为何不在本提案重做原语**：清理时序与原子落盘机制逐行不变；本提案的范围是失败**语义的准确性**，不是重做提交协议。
+
+### 追溯
+
+- 来源变更：fix-merge-preflight-parity-and-bare-throw（RunLogos 全自动 driver 实测事故，2026-09-14；audit run `drv-mu1d875x-7ooq`）。
+- 功能规格：§2.84.3（默认兜底映射与状态三档）、§2.84.4（诊断可归因）、§2.69.1（失败语义合同，同批补齐）、§2.69.2（`SPEC_MERGED` 结构零回归）。
+- 场景关联：本文档「S09 merge 直接合并时序」（EX-9.20～EX-9.22 逐字保留）、S35「行级形态判据前移与预检-门一致性锁」（同族的前移侧）。
+- 测试：UT-S09-351～UT-S09-354、ST-S09-145。

@@ -2,10 +2,14 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
-import { authorityScan, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
+import { authorityScan } from './markdown-scan.js';
 import { classifyProposalDeltas } from './delta-classify.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
-import { isAcceptedTestId, isTestId, stripFirstCellManualMarker } from './test-id.js';
+import { isTestId } from './test-id.js';
+import {
+  enumerateTestDefinitionTables, findDuplicateHeaderCells,
+  rowColumnsMatchHeader, testDefinitionRowId,
+} from './test-table-shape.js';
 
 export const TEST_CHANGE_SET_SCHEMA = 'openlogos/test-change-set@1' as const;
 export const TEST_CHANGE_SET_SOURCE = 'semantic-before-after-diff' as const;
@@ -105,9 +109,17 @@ function strictUtf8(bytes: Buffer, targetPath: string): string {
   return text.replace(/\r\n?/g, '\n');
 }
 
-/** 只移除外围空白；内部空白、转义与 inline-code 内容均属于语义。 */
-function canonicalCell(cell: string): string {
-  return cell.trim();
+/**
+ * §2.84.4 行号口径标注：本族错误消息中的行号一律指向**合并后态**内容——它由 delta 与当前主
+ * 文档合成得出，磁盘上的主文档此刻可能根本没有该行（20260914 事故即报 `…:771` 而文件只有 741
+ * 行，人与 agent 都无法定位）。标注口径后，读者知道该去 delta 侧找；delta 侧归属由 merge 层
+ * 在兜底映射时补出（§2.84.4「可归因优先级」）。
+ */
+export const AFTER_STATE_LINE_NOTE = '（合并后态行号）';
+
+/** 后态定位串：`<target>:<1 基行号>（合并后态行号）`。 */
+export function afterStateLocation(targetPath: string, line0: number): string {
+  return `${targetPath}:${line0 + 1}${AFTER_STATE_LINE_NOTE}`;
 }
 
 function scanTestDefinitionCandidates(
@@ -121,59 +133,51 @@ function scanTestDefinitionCandidates(
   const scan = authorityScan(lines);
   const records = new Map<string, TestDefinitionRecord[]>();
 
-  for (let index = 0; index + 1 < lines.length; index++) {
-    if (scan.masked[index] || scan.masked[index + 1] || !isTableDelimiterRow(scan.text[index + 1])) continue;
-    const headers = tableRowCells(scan.text[index]).map(canonicalCell);
-    const delimiters = tableRowCells(scan.text[index + 1]);
-    if (headers.length < 2 || headers.length !== delimiters.length || headers.some(item => item === '')) continue;
-    if (new Set(headers).size !== headers.length && !allowAmbiguousRows) {
+  // §2.84.1：表格与数据行的枚举走共享单点 `enumerateTestDefinitionTables`——本处是该口径的
+  // **基准**（后态判据、扫描口径与强度逐字不变），change-lint L4 前移检查派生自同一实现，
+  // 不另写第二份遍历；只共享最后那次整数比较而各自决定「哪些行进入比较」是同一分裂的变体。
+  for (const table of enumerateTestDefinitionTables(lines, scan)) {
+    const headers = table.headers;
+    if (findDuplicateHeaderCells(headers).length > 0 && !allowAmbiguousRows) {
       throw new TestChangeSetBuildError(
         'test-change-set-ambiguous-table',
-        `test-change-set-ambiguous-table：${targetPath}:${index + 1}`,
+        `test-change-set-ambiguous-table：${afterStateLocation(targetPath, table.headerLine)}`,
         [targetPath],
       );
     }
 
-    let row = index + 2;
-    while (row < lines.length && !scan.masked[row] && scan.text[row].trim() !== '') {
-      const cells = tableRowCells(scan.text[row]).map(canonicalCell);
+    for (const { line, cells } of table.rows) {
       // §2.37.3（fix-table-test-id-manual-marker）：首格 = 裸 ID + 可选 manual 标记；剥离后的
       // **裸 ID 为该行身份**。标记本身留在 cell_semantics（定义语义）——同 ID 标记增删/平台变化
       // 构成修改（进入 C），不产生新身份。此前带标记首格整行不被识别，manual ID 不进
       // changed_test_ids，切片归属对账在写入侧误报「owned_test_ids 含非本提案变更 ID」。
       // 完整接纳规则与表格行级读法同源（code-r1 F2）：占位尾段（UT-S99-xx 等，含带 manual 标记
       // 形态）在此同被拒绝——不得只在 change-lint 前移检查生效而在变更集被接纳。
-      const candidate = stripFirstCellManualMarker(cells[0] ?? '');
-      if (isAcceptedTestId(candidate)) {
-        if (cells.length !== headers.length) {
-          if (allowAmbiguousRows) {
-            row++;
-            continue;
-          }
-          throw new TestChangeSetBuildError(
-            'test-change-set-ambiguous-table',
-            `test-change-set-ambiguous-table：${targetPath}:${row + 1}`,
-            [targetPath],
-          );
-        }
-        const existing = records.get(candidate) ?? [];
-        if (!allowDuplicateIds && existing.length > 0) {
-          throw new TestChangeSetBuildError(
-            'test-change-set-duplicate-id',
-            `test-change-set-duplicate-id：${candidate}`,
-            [targetPath],
-          );
-        }
-        existing.push({
-          target_path: targetPath,
-          column_identity: headers,
-          cell_semantics: cells,
-        });
-        records.set(candidate, existing);
+      const candidate = testDefinitionRowId(cells);
+      if (candidate === null) continue;
+      if (!rowColumnsMatchHeader(headers.length, cells.length)) {
+        if (allowAmbiguousRows) continue;
+        throw new TestChangeSetBuildError(
+          'test-change-set-ambiguous-table',
+          `test-change-set-ambiguous-table：${afterStateLocation(targetPath, line)}`,
+          [targetPath],
+        );
       }
-      row++;
+      const existing = records.get(candidate) ?? [];
+      if (!allowDuplicateIds && existing.length > 0) {
+        throw new TestChangeSetBuildError(
+          'test-change-set-duplicate-id',
+          `test-change-set-duplicate-id：${candidate}`,
+          [targetPath],
+        );
+      }
+      existing.push({
+        target_path: targetPath,
+        column_identity: headers,
+        cell_semantics: cells,
+      });
+      records.set(candidate, existing);
     }
-    index = row - 1;
   }
   return records;
 }

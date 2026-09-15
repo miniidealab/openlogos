@@ -23,6 +23,10 @@ import {
   isAcceptedTestId,
 } from './proposal-lifecycle.js';
 import { stripFirstCellManualMarker } from './test-id.js';
+import {
+  enumerateTestDefinitionTables, findDuplicateHeaderCells,
+  rowColumnsMatchHeader, testDefinitionRowId,
+} from './test-table-shape.js';
 import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
 import {
   DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError,
@@ -53,7 +57,7 @@ import {
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
 export type { DeltaEntryClassification, MergeDisposition, LintValidity };
 
-// ── violation code 闭合注册表（43 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
+// ── violation code 闭合注册表（45 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
 
 export const CHANGE_LINT_VIOLATION_CODES = [
   // L0 Plan Package 统一完成合同
@@ -75,6 +79,10 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'delta_template_skeleton',
   // §2.82.2（fix-table-test-id-manual-marker）：delta 测试规格 ID 表首格可提取性前移检查（L4 族）
   'delta_test_table_id_unextractable',
+  // §2.84.2（fix-merge-preflight-parity-and-bare-throw）：行级 / 表级形态判据前移（L4 族）。
+  // 二者合起来覆盖后态 `test-change-set-ambiguous-table` 的全部触发形态。
+  'delta_test_table_column_mismatch',
+  'delta_test_table_duplicate_header',
   'deployment_decision_conflict',
   'delta_path_invalid',
   // L7 既有 checker 13 码
@@ -206,6 +214,66 @@ export function findUnextractableTestTableRows(deltaContent: string): Unextracta
         }
       }
       i = j;
+    }
+  }
+  return out;
+}
+
+export interface TestTableShapeViolation {
+  kind: 'column-mismatch' | 'duplicate-header';
+  /** delta 文件内 1 基行号——可自修实体的定位坐标，不是合并后态行号。 */
+  line: number;
+  headerCount: number;
+  /** column-mismatch 专有：本行单元格数与首格 ID。 */
+  rowCellCount?: number;
+  firstCell?: string;
+  /** duplicate-header 专有：重复出现的表头文本。 */
+  duplicateHeaders?: string[];
+}
+
+/**
+ * §2.84.2：对 `deltas/test/**` 的 `.md` delta，前移后态 `test-change-set-ambiguous-table` 的
+ * **全部**触发形态——数据行列数 ≠ 表头列数、表头重复。
+ *
+ * 枚举口径走共享单点 `enumerateTestDefinitionTables`，与后态 `scanTestDefinitionCandidates`
+ * 逐项一致（不限表头措辞、数据行至空行或掩码行为止、行身份按首格剥离 manual 标记后的合法
+ * 测试 ID）——这正是 delta-r1 F1 指出的要害：只共享整数比较而各自决定进入比较的集合，
+ * 漏扫的行照样在后态被拒。前移侧集合相对旧实现只**扩大**，扩大部分恰为此前已被后态拒绝的
+ * 形态，不新增任何「后态接纳而预检拒绝」的组合。
+ *
+ * 与 §2.82.2 首格可提取性检查正交：后者的适用集合（`TEST_ID_HEADER_RE` 表头族）逐字不变，
+ * 首格非法的行不构成 ID 行、在此不再判列数，同一行不重复报两码。
+ */
+export function findTestTableShapeViolations(deltaContent: string): TestTableShapeViolation[] {
+  const out: TestTableShapeViolation[] = [];
+  for (const block of parseDeltaBlocks(deltaContent)) {
+    if (block.op !== 'ADDED' && block.op !== 'MODIFIED') continue;
+    const lines = block.lines;
+    const scan = authorityScan(lines);
+    // block.lines[n] 对应文件 1 基行号 markerLine + n + 2（markerLine 为 0 基标记行）。
+    const toFileLine = (blockLine: number) => block.markerLine + blockLine + 2;
+    for (const table of enumerateTestDefinitionTables(lines, scan)) {
+      const duplicateHeaders = findDuplicateHeaderCells(table.headers);
+      if (duplicateHeaders.length > 0) {
+        out.push({
+          kind: 'duplicate-header',
+          line: toFileLine(table.headerLine),
+          headerCount: table.headers.length,
+          duplicateHeaders,
+        });
+      }
+      for (const { line, cells } of table.rows) {
+        // 首格非法 → 该行不构成 ID 行，列数判定对其无意义（§2.82.2 各管各的）。
+        if (testDefinitionRowId(cells) === null) continue;
+        if (rowColumnsMatchHeader(table.headers.length, cells.length)) continue;
+        out.push({
+          kind: 'column-mismatch',
+          line: toFileLine(line),
+          headerCount: table.headers.length,
+          rowCellCount: cells.length,
+          firstCell: cells[0] ?? '',
+        });
+      }
     }
   }
   return out;
@@ -1024,6 +1092,25 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
             path: relPath,
             message: `delta 测试规格 ID 表第 ${bad.line} 行首格不可提取（非「裸 ID + 可选 manual 标记」形态）：'${bad.firstCell}'`,
             fix_hint: '把该行首格写成合法测试 ID（可带 `[manual]` / `[manual/<平台>]` 标记，剥离后须为真实非占位 ID），或把非用例行移出 ID 表',
+          });
+        }
+        // §2.84.2：行级 / 表级形态前移——枚举口径与后态 buildTestChangeSet 同源，
+        // 覆盖 `test-change-set-ambiguous-table` 的全部触发形态。
+        for (const bad of findTestTableShapeViolations(deltaContents.get(entry.relativePath) ?? '')) {
+          if (bad.kind === 'column-mismatch') {
+            pushViolation(acc, 4, {
+              code: 'delta_test_table_column_mismatch',
+              path: relPath,
+              message: `delta 测试定义表第 ${bad.line} 行列数与表头不一致：表头 ${bad.headerCount} 列，本行 ${bad.rowCellCount} 列（首格 '${bad.firstCell}'）`,
+              fix_hint: '补齐或删除该行的管道符使其列数等于表头列数——该形态在 merge 内部 buildTestChangeSet 阶段同样被拒（test-change-set-ambiguous-table），此处前移以便当场修正',
+            });
+            continue;
+          }
+          pushViolation(acc, 4, {
+            code: 'delta_test_table_duplicate_header',
+            path: relPath,
+            message: `delta 测试定义表第 ${bad.line} 行表头存在重复列名：${bad.duplicateHeaders?.map(h => `'${h}'`).join('、')}（表头 ${bad.headerCount} 列）`,
+            fix_hint: '把重复的表头列名改为互不相同——该形态在 merge 内部 buildTestChangeSet 阶段同样被拒（test-change-set-ambiguous-table），此处前移以便当场修正',
           });
         }
       }

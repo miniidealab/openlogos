@@ -6,7 +6,8 @@ import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
-import { mergeDirect, MergeDirectError } from '../lib/merge-direct.js';
+import { mergeDirect } from '../lib/merge-direct.js';
+import { describeMergeFailure } from '../lib/merge-failure-report.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
   readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH,
@@ -73,21 +74,33 @@ function legacyMergeTestMode(): boolean {
   return process.env.NODE_ENV === 'test' && process.env.OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY === '1';
 }
 
+export interface RunDirectMergeDeps {
+  /** 仅测试注入：桩化合并实现，用于在不真实落盘的前提下观察失败出口行为。 */
+  merge?: typeof mergeDirect;
+  stderr?: (line: string) => void;
+  exit?: (code: number) => never;
+}
+
 /**
- * 直接合并的命令层包装：把 MergeDirectError 映射为稳定退出信息。
- * §2.69.1 失败语义——任一步失败整批回滚，主文档保持合并前字节，错误信息附 git 回滚点。
+ * 直接合并的命令层包装：失败出口由「**默认放行**未登记错误类」改为「**默认兜底**」（§2.84.3）。
+ *
+ * 旧实现只映射 `MergeDirectError`、其余一律 `throw e`——`TestChangeSetBuildError` 等内部错误类
+ * 因此逃到进程顶层裸抛 Node 未捕获异常堆栈：无稳定前缀、无错误码、无状态声明、无回滚点，
+ * §2.69.1 明文失败语义对它们整体不成立（20260914 下游 driver 实测即卡在此：账本只剩 exit 1）。
+ *
+ * 现在：任何逃出者都产出四要素稳定形态（稳定前缀与错误码 + 按档状态声明 + 后续动作指引 + 非零
+ * 退出）。状态声明按结构化事实分档，**不**无条件断言零残留——committed 之后的清理失败会使
+ * 「保持合并前字节」成为与磁盘相反的断言，那比裸堆栈更有害。
  */
-function runDirectMerge(root: string, changePath: string, slug: string) {
+export function runDirectMerge(root: string, changePath: string, slug: string, deps: RunDirectMergeDeps = {}) {
+  const runMerge = deps.merge ?? mergeDirect;
+  const writeErr = deps.stderr ?? ((line: string) => console.error(line));
+  const exit = deps.exit ?? ((code: number) => process.exit(code));
   try {
-    return mergeDirect(root, changePath, slug);
+    return runMerge(root, changePath, slug);
   } catch (e) {
-    if (e instanceof MergeDirectError) {
-      console.error(`Error: merge 失败（${e.code}）：${e.message}`);
-      console.error('  logos/resources/ 保持合并前字节，未写 SPEC_MERGED。');
-      console.error('  回滚点：git checkout logos/resources/；修正 delta 后重跑 `openlogos merge ' + slug + '`。');
-      process.exit(1);
-    }
-    throw e;
+    for (const line of describeMergeFailure(changePath, slug, e).lines) writeErr(line);
+    return exit(1);
   }
 }
 

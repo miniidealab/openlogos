@@ -881,3 +881,40 @@
 - S09-AC-Plan-03 现场错误收敛：UT-S09-228、ST-S09-89。
 - S09-AC-Plan-04 历史不回退：UT-S09-230。
 - S09-AC-Plan-05 merge 自举收敛：UT-S09-232、ST-S09-90。
+
+## S09 merge 内部错误稳定失败语义测试
+
+> 覆盖 `runDirectMerge` 失败出口由「默认放行未登记错误类」改为「默认兜底」：任何逃出 `mergeDirect` 的内部错误（含 `test-change-set` 族与未来新增错误类）均以稳定四要素形态收束，绝不裸抛 Node 未捕获异常堆栈；**且状态声明按已确认阶段分三档（A 未提交 / B 已回滚 / C 已提交或不可确认），绝不无条件断言零残留**（功能规格 §2.84.3～§2.84.4、§2.69.1；场景 S09「merge 内部错误的稳定失败语义」EX-9.23、EX-9.24；来源变更 fix-merge-preflight-parity-and-bare-throw）。夹具用一次性隔离项目构造，真实 CLI 臂以子进程运行并捕获 stdout / stderr / 退出码。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-351 | 默认兜底：任何内部错误类均映射稳定形态 + **状态声明取档 A**（旧实现必红） | 桩化 `mergeDirect` 在**落盘原语调用之前**分别抛出：① `MergeDirectError`；② `TestChangeSetBuildError('test-change-set-ambiguous-table', …)`；③ 合成的**未登记**内部错误类（无 `code` 字段） | 对三形态分别调 `runDirectMerge` 并捕获 stderr 与退出行为 | 三者均产出四要素稳定形态：稳定前缀 `Error: merge 失败（<code>）：<message>`、**档 A** 状态声明「保持合并前字节，未写 SPEC_MERGED」、`git checkout logos/resources/` 回滚点、非零退出；③ 使用稳定兜底码并附原始 message 与错误类名。**修复前 ②③ 一律 `throw e` 逃到进程顶层裸抛——本用例即该通道的回归锁**。档位须由控制流位置派生，断言实现未从 message 文本反推 |
+| UT-S09-352 | 诊断不降级：`code` 原样入错误码位，结构化归因不被吞 | 桩化抛出 `TestChangeSetBuildError`，`code='test-change-set-ambiguous-table'`、`targetPaths` 含两个目标、message 含后态行号 | 调 `runDirectMerge`，解析 stderr 文本 | 错误码位恰为 `test-change-set-ambiguous-table`（不得被统一替换为通用码）；原始 message 完整出现；`targetPaths` 逐项出现且按既有 ASCII 序稳定；行号标注为「合并后态行号」口径（消除「照磁盘文件找不到该行」的误导） |
+| UT-S09-353 | 可归因优先级 + 归属不可得时不伪造 | ① 后态失败行可反查到唯一 delta 来源（delta 文件 + delta 内行号已知）；② 同一形态但归属无法确定（行不可回溯到单一 delta） | 对两形态分别调 `runDirectMerge` | ① 以「delta 文件 + delta 内行号」为主诊断、后态行号并列作佐证，两者同时在场且 delta 内行号与夹具已知值精确相等；② **不得**输出任何 delta 侧行号，降级为「仅后态行号 + 已标注口径」并显式说明未能归因——断言输出中不出现编造的 delta 路径或行号 |
+| UT-S09-354 | 状态档 B / C 分档正确，提交后失败不谎报零残留（delta-r1 F2 必红臂） | 三形态：① 落盘原语返回 `{ok:false, rolled_back:true}`；② 返回 `{ok:false, rolled_back:false}`；③ **提交后清理失败**——注入使 `phase='committed'` 落盘完成后 `removePrivateArtifacts` 持续失败（其 catch 内恢复函数在无 journal 分支二次抛出），错误从原语内部逃出 | 对三形态分别调 `runDirectMerge`，同时取磁盘事实（目标字节、`SPEC_MERGED` 是否在场） | ① 档 B：声明字节同合并前并注明已整批回滚；②③ 档 C：stderr **不含**「保持合并前字节」与「未写 SPEC_MERGED」任一措辞，含「可能已提交 / 状态需核对」语义与 `git status` / `git diff logos/resources/` 指引，原始诊断原文保留，退出码非零；③ 另断言**状态声明与磁盘事实一致**——此刻目标确为新字节、`SPEC_MERGED` 确在场。**修复前（无条件档 A 文案）③ 会输出与磁盘相反的断言，本用例即该谎报的回归锁**；另设反证臂：把档位判据改为从 message 文本反推时断言必红 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S09-145 | 真实 `openlogos merge` 在 test-change-set 族失败下的稳定失败语义、零残留与分档准确性 | 真实 CLI 子进程，一次性隔离项目复刻 20260914 事故现场：某 `deltas/test/**` delta 的 ID 表数据行列数不一致，**绕过前移预检**直接调 `openlogos merge <slug>`。① 退出码非零；② stderr 含稳定前缀与错误码 `test-change-set-ambiguous-table`、**档 A** 状态声明与 `git checkout logos/resources/` 回滚点（该失败发生在落盘原语调用前）；③ **零残留**：`logos/resources/` 全树逐字节与合并前快照相等，`SPEC_MERGED` 未写入，无任何中间态文件；④ **对照臂（不裸抛）**：断言 stderr **不含**未捕获异常堆栈特征——无 `at <fn> (` 栈帧行、无 `Node.js v` 结尾行、无以错误类名开头的裸 `TestChangeSetBuildError:` 首行；⑤ **成功路径零漂移**：修正该行后重跑 `openlogos merge` 成功，stdout 与 `SPEC_MERGED.test_change_set` 内容同修复前实现逐字节一致；⑥ **档 C 端到端臂**：另取隔离项目，对其提案目录的私有事务目录注入持续删除失败，跑真实 `openlogos merge`——断言退出码非零、无裸堆栈、stderr **不含**「保持合并前字节 / 未写 SPEC_MERGED」，且此刻磁盘上主文档确为新字节、`SPEC_MERGED` 确在场（状态声明与事实一致）；注入恢复后清理临时目录 |
+
+### 追溯与覆盖
+
+- 主修·默认兜底映射 + 档 A（旧实现必红）：UT-S09-351、ST-S09-145 步骤①②④。
+- 主修·**状态分档准确性，提交后失败不谎报零残留**（delta-r1 F2 必红臂）：UT-S09-354、ST-S09-145 步骤⑥。
+- 主修·诊断不降级（code / message / targetPaths / 行号口径）：UT-S09-352、ST-S09-145 步骤②。
+- 主修·可归因优先级与「不得伪造归属」：UT-S09-353。
+- 不变式·档 A 情形下的零残留与原子性事实逐字不变：ST-S09-145 步骤③。
+- 不变式·成功路径零漂移：ST-S09-145 步骤⑤。
+- 功能规格：§2.84.3（含状态三档）、§2.84.4、§2.69.1、§2.69.2；场景：S09「merge 内部错误的稳定失败语义」（EX-9.23、EX-9.24）；来源变更：fix-merge-preflight-parity-and-bare-throw。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+- ST-S09-145 必须以**真实子进程**运行 `openlogos merge` 并捕获 stderr 原文，不得以库内函数调用替代——裸抛与否是进程级顶层行为，库内调用观察不到。
+- 步骤④ 的「不含堆栈」断言必须对 stderr **全文**做负向匹配（栈帧行 / `Node.js v` 行 / 裸错误类名首行三项），不得只断言「含稳定前缀」——两者可同时成立，只查正向会放过堆栈仍被打印的实现。
+- 步骤③ 的零残留断言以合并前后**全树字节快照**比对，不得只检查被 delta 触达的目标文件；该断言只适用于**档 A / B** 情形，不得推广为对全部失败的通用断言。
+- UT-S09-354 与 ST-S09-145 步骤⑥ 的注入必须限定在**一次性隔离项目**的私有事务目录，测试结束前恢复注入并清理；断言须同时读取 stderr 文案与磁盘事实两侧，仅比对文案不足以证明分档正确。

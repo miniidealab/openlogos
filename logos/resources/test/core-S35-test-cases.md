@@ -293,3 +293,43 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
 - UT-S35-148 / UT-S35-152 的通道断言必须分别读取 `violations` 与 `warnings` 两个真实输出字段，不得只断言「码出现在输出中」——通道归属正是本变更的语义本体。
 - UT-S35-149 的「逐字相同」对照必须以降门前实现的诊断输出为基准夹具，不得在测试内复述期望文案。
+
+## S35 行级形态判据前移与预检-门一致性锁测试
+
+> 覆盖后态 `test-change-set-ambiguous-table` 全部触发形态（数据行列数不一致、表头重复）的判据与**枚举口径**双重单点化，及其在 change-lint L4 族的前移（`delta_test_table_column_mismatch` / `delta_test_table_duplicate_header`），以及「凡后态以该码拒的形态、预检必先报」的一致性锁（功能规格 §2.84.1～§2.84.2、§2.84.5；场景 S35「行级形态判据前移与预检-门一致性锁」；来源变更 fix-merge-preflight-parity-and-bare-throw）。夹具用一次性隔离项目与合成 delta 构造，不依赖本仓自身的提案内容。**枚举口径的反例臂是本组测试的核心**——只验证整数比较而不验证「哪些行进入比较」，会把 delta-r1 F1 的两个漏扫盲点锁进预期。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-153 | 列数判据前移必红（20260914 事故形态旧实现必绿） | 合成 `deltas/test/core-S10-test-cases.md`：ADDED 块内 ID 表表头 6 列，`UT-S10-187` 行因少写一个管道符实为 5 列（复刻事故行形态），其余行合法 | 求 `runChangeLint` 结论 | `delta_test_table_column_mismatch` 进 `violations`、exit 2、L 层归属为 L4；**修复前该形态 change-lint 报 PASS（10/10）而 merge 在 `buildTestChangeSet` 抛 `test-change-set-ambiguous-table`——本用例即该「预检全绿 / merge 必炸」组合的回归锁** |
+| UT-S35-154 | 首格合法而列数不一致必被拒，且与首格码不双报 | 合成 delta 三形态：① 首格合法裸 ID + 列数不一致；② 首格合法 `UT-S10-188 [manual]` 标记形态 + 列数不一致；③ 首格非法（散文）+ 列数同时不一致 | 对三形态分别求 `runChangeLint` 结论 | ①② 均报 `delta_test_table_column_mismatch`（manual 标记不豁免列数判定，首格剥离标记后按裸 ID 判身份）；③ **只报** `delta_test_table_id_unextractable`、**不报** 列数码——首格非法的行不构成 ID 行，两检查正交不重复报 |
+| UT-S35-155 | 枚举口径对齐：两个漏扫盲点必红 + 真正合法表零误报 | 合成 delta 四形态：① **表头措辞非 `TEST_ID_HEADER_RE`**（表头为「编号 / 操作 / 断言」三列）而数据行首格为合法测试 ID、该行仅两列（delta-r1 F1 反例一）；② **无首尾管道外形**的两列表，数据行只剩一个裸合法 ID、整行不含管道符（delta-r1 F1 反例二）；③ 完全合法的 ID 表（含 manual 标记行与含行内代码、长文案的单元格）；④ 表格含列数不一致行但**无任何合法测试 ID 首格数据行** | 对四形态分别求 `runChangeLint` 结论，并与同形态合并后态的 `buildTestChangeSet` 结论对照 | ①② **必报** `delta_test_table_column_mismatch`——后态正是按数据行首格判身份、按空行定边界，两者均被后态以 `test-change-set-ambiguous-table` 拒；**修复前前移侧因表头措辞限制与「不含管道符即收束」的块边界而整表 / 整行漏扫，本用例即这两个盲点的回归锁**；③④ 零该码（④ 后态亦不抛，其列数问题由 `lint-specs` 只读诊断承担）。四形态两侧结论必须一致 |
+| UT-S35-156 | 诊断可归因：点名 delta 文件与 **delta 内行号** | 合成 delta：已知某不一致行位于 delta 文件第 N 行（ADDED 标记行之后若干行），表头 6 列、本行 5 列 | 取该违规的 `path` / `line` / `message` | `path` 为该 **delta 文件**相对路径（非合并后态 canonical target）；`line` 恰为 **delta 内 1 基行号 N**（按夹具已知值精确断言，不得只断言「行号非空」）；`message` 同时含表头列数 `6`、本行列数 `5` 与该行首格 ID——足以直接定位到要改的那一行 |
+| UT-S35-157 | 一致性锁：后态 `test-change-set-ambiguous-table` 全码族，预检必先报（任一侧单独收紧即失败） | 夹具集合覆盖该码**全部**触发形态：列数不一致（表头多列 / 少列、行尾多余管道、行内缺管道、manual 标记行）、**表头重复**，并**必须含 delta-r1 F1 两反例**（非 `TEST_ID_HEADER_RE` 表头的测试定义表、数据行不含管道符导致前移侧提前收束）；每个夹具同时具备 delta 形态与其合并后态，另备各夹具「已修正」版本 | 逐夹具双向比对：一侧喂 `runChangeLint`（delta 形态），一侧喂 `buildTestChangeSet`（合并后态，历史兼容开关关闭的正常路径） | 两侧结论逐夹具一致——后态被拒的夹具预检必报对应违规（列数 → `delta_test_table_column_mismatch`，表头重复 → `delta_test_table_duplicate_header`），反之亦然；**已修正版本两侧均通过**（证明前移不是无差别收紧）。**注入式反证臂**：单独放宽预检侧枚举（恢复表头措辞限制或「不含管道符即收束」的块边界）时本断言必红，证明锁覆盖的是枚举口径而非仅整数比较。**边界断言**：`test-change-set-duplicate-id` / `-target-duplicate` / `-overlap` 夹具**不纳入**比对且不因此判红——其需合并后态全局视角，在 delta 片段上不可判定（§2.84.5）；`allowAmbiguousRows` 等历史基线兼容路径同样不纳入 |
+| UT-S35-158 | 表头重复前移（同码另一半触发形态） | 合成 delta：测试定义表的表头含两个同名单元格（如两列都叫「断言」），数据行列数与表头一致、首格为合法测试 ID | 求 `runChangeLint` 结论，并与同形态合并后态的 `buildTestChangeSet` 结论对照 | 预检报 `delta_test_table_duplicate_header`（进 violations、exit 2、L 层归属 L4），message 点名 delta 文件与**表头行的 delta 内行号**及重复的表头文本；后态同形态以 `test-change-set-ambiguous-table` 拒——两侧一致。**修复前预检对此形态零信号**，与列数盲点同属一个错误码的两半 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-30 | 20260914 事故端到端复现：少一个管道符在 write-delta 节点即闭环 | 真实 CLI，一次性隔离项目复刻事故现场：活跃提案的 `deltas/test/core-S10-test-cases.md` 中 `UT-S10-187` 行少写一个管道符，其余 delta 与 tasks 全部合法。① `openlogos change-lint --slug <slug> --format json`：exit 2、`data.pass=false`、`violations` 含 `delta_test_table_column_mismatch`，其 `path` 指向该 delta 文件、`line` 为 delta 内行号（**修复前此步为 PASS 10/10——即事故的盲点**）；② 按诊断补齐该管道符后重跑 `change-lint`：exit 0、PASS，证明诊断足以在本节点自修闭环；③ 续跑**真实 `openlogos merge`**：成功合并、写入 `SPEC_MERGED`（**修复前此步确定性退 1 硬停，即 audit run `drv-mu1d875x-7ooq` 的 `merge-failed` 停点**）；④ 对照臂（后态判据不放宽）：另取同构提案绕过预检直接构建合并后态，`buildTestChangeSet` 仍以 `test-change-set-ambiguous-table` fail-closed 拒绝——前移不等于放宽；⑤ **枚举盲点臂**：另取同构提案，其病灶行改为「表头措辞非 `TEST_ID_HEADER_RE` 的测试定义表中列数不一致的数据行」，重跑步骤①——同样 exit 2 并报该码（修复前此形态整表绕过预检、照样在 merge 硬停）；⑥ 全程 `change-lint` 项目级零写入（运行前后项目根字节快照相等） |
+
+### 追溯与覆盖
+
+- 主修·列数判据前移（旧实现必红）：UT-S35-153、ST-S35-30 步骤①②。
+- 主修·**枚举口径与后态对齐**（delta-r1 F1 两反例必红）：UT-S35-155 形态①②、UT-S35-157 反证臂、ST-S35-30 步骤⑤。
+- 主修·表头重复前移（同码另一半）：UT-S35-158、UT-S35-157。
+- 主修·前移与后态判据同源、正交不双报：UT-S35-154。
+- 防伪臂·真正合法表与无测试 ID 表零误报：UT-S35-155 形态③④、ST-S35-30 步骤⑥。
+- 主修·诊断可归因（点名 delta 文件与 delta 内行号）：UT-S35-156、ST-S35-30 步骤①。
+- 一致性锁·预检-门可满足性（按错误码定边界，含注入式反证臂与不可判定形态的排除断言）：UT-S35-157、ST-S35-30 步骤④。
+- 功能规格：§2.84.1、§2.84.2、§2.84.4、§2.84.5、§2.84.6；场景：S35「行级形态判据前移与预检-门一致性锁」；来源变更：fix-merge-preflight-parity-and-bare-throw。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- UT-S35-156 的行号断言必须对**夹具已知的精确 delta 内行号**比对，不得只断言「有行号」——可归因正是本变更的语义本体。
+- UT-S35-157 的双向比对必须调用两侧**真实实现**（`runChangeLint` 与 `buildTestChangeSet`），不得以复述期望的表驱动替代；注入式反证臂须证明**单独放宽预检侧枚举口径**（而非仅判据）会让断言变红。
+- UT-S35-155 形态①② 与 UT-S35-158 必须同时断言「后态确实拒绝」，以证明前移集合的扩大部分**恰为后态已拒形态**、未新拒后态接纳的形态。
+- ST-S35-30 步骤③ 必须跑**真实 `openlogos merge`** 进程并断言退出码与 `SPEC_MERGED` 在场，不得以库内函数调用替代。

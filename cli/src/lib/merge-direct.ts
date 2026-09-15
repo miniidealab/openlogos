@@ -33,10 +33,54 @@ export type MergeDirectErrorCode =
 /** §2.69.1 失败语义：git 工作区就是回滚点，故每条错误都自带回滚提示，不依赖命令层补。 */
 const ROLLBACK_HINT = '回滚点：git checkout logos/resources/';
 
+/**
+ * merge 失败的**阶段事实**（§2.84.3 状态分档的唯一判据源）。只由控制流位置与落盘原语的结构化
+ * 返回派生，**禁止**从错误 message 文本反推（对齐 §2.69.2「流程判断使用结构化数据」）。
+ *
+ * - `prepare`：失败发生在调用落盘原语**之前**（目标集解析、合成、buildTestChangeSet 等）→ 档 A
+ * - `apply-rolled-back`：原语返回 `ok:false` 且 `rolled_back === true` → 档 B
+ * - `apply-unconfirmed`：原语返回 `ok:false` 且 `rolled_back !== true`，或错误自原语内部直接
+ *   逃出（含 `phase='committed'` 之后清理失败经恢复路径二次抛出）→ 档 C
+ */
+export type MergeFailureStage = 'prepare' | 'apply-rolled-back' | 'apply-unconfirmed';
+
+/**
+ * 阶段戳以 Symbol 附着在**原错误对象**上，不包装、不替换错误类——`code`、`targetPaths`、原始
+ * message 与错误类名全部原样保留（§2.84.3「错误码位不降级」「不吞诊断」）。
+ */
+export const MERGE_FAILURE_STAGE = Symbol.for('openlogos.mergeFailureStage');
+
+/** 给逃出者打阶段戳并原样返回（已有戳则不覆盖：内层更接近事实）。 */
+export function stampMergeFailureStage<T>(error: T, stage: MergeFailureStage): T {
+  if (error !== null && typeof error === 'object'
+    && (error as Record<symbol, unknown>)[MERGE_FAILURE_STAGE] === undefined) {
+    try {
+      Object.defineProperty(error, MERGE_FAILURE_STAGE, { value: stage, enumerable: false, configurable: true });
+    } catch { /* 冻结对象不可标注：命令层按「阶段未知」走 fail-safe 档 C */ }
+  }
+  return error;
+}
+
+/** 读阶段戳；无戳返回 null（命令层改由磁盘事实派生，仍不读 message 文本）。 */
+export function readMergeFailureStage(error: unknown): MergeFailureStage | null {
+  if (error === null || typeof error !== 'object') return null;
+  const stage = (error as Record<symbol, unknown>)[MERGE_FAILURE_STAGE];
+  return stage === 'prepare' || stage === 'apply-rolled-back' || stage === 'apply-unconfirmed' ? stage : null;
+}
+
 export class MergeDirectError extends Error {
-  constructor(readonly code: MergeDirectErrorCode, message: string) {
-    super(`${message}（${ROLLBACK_HINT}）`);
+  readonly stage: MergeFailureStage;
+
+  /**
+   * `stage` 默认 `prepare`——既有抛点全部位于准备阶段，默认值使既有消息与行为逐字不变。
+   * 回滚点提示只在**字节确实停留在合并前态**的两档（A / B）拼接：档 C 下「回滚点」是错误
+   * 指引（该重跑前先核对状态），不得随消息一起发出（§2.84.3 状态档表）。
+   */
+  constructor(readonly code: MergeDirectErrorCode, message: string, stage: MergeFailureStage = 'prepare') {
+    super(stage === 'apply-unconfirmed' ? message : `${message}（${ROLLBACK_HINT}）`);
     this.name = 'MergeDirectError';
+    this.stage = stage;
+    stampMergeFailureStage(this, stage);
   }
 }
 
@@ -127,19 +171,20 @@ function metadataBytes(root: string, slug: string, targets: PlannedTarget[]): Bu
   return Buffer.from(doc.toString({ lineWidth: 0 }), 'utf8');
 }
 
-/**
- * 执行直接合并。**校验全部前置于写入**：任一目标合成失败即在写入任何文件前抛错，
- * `logos/resources/` 零改动；落盘阶段失败由 applyBaselineClosureBatch 整批回滚。
- */
-export function mergeDirect(root: string, proposalDir: string, slug: string): MergeDirectResult {
-  if (!existsSync(proposalDir)) {
-    throw new MergeDirectError('MERGE_NO_ACTIVE_CHANGE', `变更提案不存在：${slug}`);
-  }
-  if (existsSync(join(proposalDir, SPEC_MERGED_MARKER))) {
-    throw new MergeDirectError('MERGE_ALREADY_COMPLETE',
-      `${SPEC_MERGED_MARKER} 已存在；重新合并请先回滚主文档并删除该 marker`);
-  }
+interface DirectMergePreparation {
+  targets: PlannedTarget[];
+  inputs: BaselineClosureApplyInput[];
+  markerPath: string;
+  testChangeSet: TestChangeSetV1;
+}
 
+/**
+ * 准备阶段（§2.69.1 第 1～2 步 + 第 4 步的 test_change_set 构建）：**零写入**。
+ *
+ * 独立成函数是为了让「失败发生在调用落盘原语之前」成为一个**控制流位置事实**——mergeDirect
+ * 对本函数的任何逃出者统一打 `prepare` 戳（档 A），无需从消息文本猜阶段（§2.84.3）。
+ */
+function prepareDirectMerge(root: string, proposalDir: string, slug: string): DirectMergePreparation {
   const targets = planDirectTargets(root, proposalDir);
   const inputs: BaselineClosureApplyInput[] = [];
   const tests: Array<{ targetPath: string; beforeBytes: Buffer | null; afterBytes: Buffer }> = [];
@@ -191,15 +236,53 @@ export function mergeDirect(root: string, proposalDir: string, slug: string): Me
     test_change_set: testChangeSet,
   }, null, 2)}\n`, 'utf8');
   inputs.push({ kind: 'prepared', targetPath: markerPath, mode: 'CREATE', bytes: markerBytes });
+  return { targets, inputs, markerPath, testChangeSet };
+}
+
+/**
+ * 执行直接合并。**校验全部前置于写入**：任一目标合成失败即在写入任何文件前抛错，
+ * `logos/resources/` 零改动；落盘阶段失败由 applyBaselineClosureBatch 整批回滚。
+ */
+export function mergeDirect(root: string, proposalDir: string, slug: string): MergeDirectResult {
+  if (!existsSync(proposalDir)) {
+    throw new MergeDirectError('MERGE_NO_ACTIVE_CHANGE', `变更提案不存在：${slug}`);
+  }
+  if (existsSync(join(proposalDir, SPEC_MERGED_MARKER))) {
+    throw new MergeDirectError('MERGE_ALREADY_COMPLETE',
+      `${SPEC_MERGED_MARKER} 已存在；重新合并请先回滚主文档并删除该 marker`);
+  }
+
+  // —— 阶段一：准备（零写入）——任何逃出者都带 `prepare` 戳，命令层据此取档 A。
+  let prepared: DirectMergePreparation;
+  try {
+    prepared = prepareDirectMerge(root, proposalDir, slug);
+  } catch (error) {
+    throw stampMergeFailureStage(error, 'prepare');
+  }
+  const { targets, inputs, markerPath, testChangeSet } = prepared;
 
   // —— 阶段二：一次性原子落盘，失败整批回滚 ——
   // 故障注入仅在 NODE_ENV=test 下生效（与被删除的事务实现同一形态），用于验收「末段故障整批回滚」。
   const failAfter = process.env.NODE_ENV === 'test' ? process.env.OPENLOGOS_TEST_MERGE_FAIL_AFTER : undefined;
-  const result = applyBaselineClosureBatch(root, proposalDir, inputs, {
-    afterWrite(path) { if (failAfter === path) throw new Error(`test fault after ${path}`); },
-  });
+  let result;
+  try {
+    result = applyBaselineClosureBatch(root, proposalDir, inputs, {
+      afterWrite(path) { if (failAfter === path) throw new Error(`test fault after ${path}`); },
+    });
+  } catch (error) {
+    // 错误自原语**内部**逃出（如 `phase='committed'` 之后 removePrivateArtifacts 失败、其恢复
+    // 路径二次抛出）：此刻主文档可能已是新字节、SPEC_MERGED 可能已在场 → 档 C，绝不声明零残留。
+    throw stampMergeFailureStage(error, 'apply-unconfirmed');
+  }
   if (!result.ok) {
-    throw new MergeDirectError('MERGE_APPLY_FAILED', `${result.error}；主文档已回滚至合并前字节`);
+    // §2.84.3 同批订正：旧实现无条件拼接「主文档已回滚至合并前字节」，在 rolled_back === false
+    // 时是与磁盘相反的断言。改为按原语的结构化返回派生，不保留第二处硬编码结论。
+    const rolledBack = result.rolled_back === true;
+    throw new MergeDirectError(
+      'MERGE_APPLY_FAILED',
+      rolledBack ? `${result.error}；主文档已回滚至合并前字节` : result.error,
+      rolledBack ? 'apply-rolled-back' : 'apply-unconfirmed',
+    );
   }
 
   return {

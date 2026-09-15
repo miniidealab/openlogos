@@ -605,11 +605,13 @@ describe('S37 — 契约、同源与零漂移', () => {
     }
   });
 
-  it('UT-S37-31: 零回归——枚举 43 码闭合；合法 delta 零 L8 违规、既有判据不受影响', () => {
+  it('UT-S37-31: 零回归——枚举 45 码闭合；合法 delta 零 L8 违规、既有判据不受影响', () => {
     // 37 → 42：§2.79 的 L9 接入 5 条 slice/marker 类阻塞理由（码即 ProposalBlockReason）。
     // 42 → 43：§2.82.2（fix-table-test-id-manual-marker）L4 族新增 delta_test_table_id_unextractable。
-    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(43);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(43);
+    // 43 → 45：§2.84.2（fix-merge-preflight-parity-and-bare-throw）L4 族新增
+    //          delta_test_table_column_mismatch 与 delta_test_table_duplicate_header。
+    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(45);
+    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(45);
     // 合法形态全过：纯 ADDED / 全量 MODIFIED / 整节 REMOVED / 成对部分删除
     const legalDeltas = [
       delta('ADDED', '新章节', table('SMOKE-core-99')),

@@ -2973,7 +2973,9 @@ openlogos merge <slug> [--format json]
 3. 全部目标合成完毕后，交 `applyBaselineClosureBatch` **一次性原子落盘**（temp + fsync + rename，失败整批回滚）。
 4. 末步写 `SPEC_MERGED`，含结构化 `test_change_set` 字段（由 `buildTestChangeSet` + `forwardMergeTestChangeSets` 构建）。
 
-**失败语义**：任一步失败即整批回滚，主文档保持合并前字节；错误信息附 `git checkout logos/resources/` 作为回滚点提示。不再有 `recover` / `abort` / `reopen` 出路——**因为不再有需要出路的中间态**。
+**失败语义**：任一步失败即整批回滚，主文档保持合并前字节；错误信息附 `git checkout logos/resources/` 作为回滚点提示。**该合同对整个 merge 出口成立——任一内部错误（含 `test-change-set` 族及任何未来新增的内部错误类）均映射为稳定错误码 + 状态声明 + 后续动作指引 + 非零退出，绝不裸抛 Node 未捕获异常堆栈**：失败出口为**默认兜底**（catch-all）而非默认放行，错误类自带的 `code` 原样进入错误码位、诊断不降级（§2.84.3）。
+
+**状态声明按已确认阶段分档，不是固定文案**：上述「保持合并前字节」适用于**准备阶段失败**与**已确认整批回滚**两档；提交完成后的失败（如 `committed` 之后的私有材料清理异常）、回滚未完成、或阶段无法从结构化事实确定时，**不得**声明保持旧字节或未写 `SPEC_MERGED`，须如实报告可能已提交并指引核对实际状态（§2.84.3 三档表）。判据只认控制流位置与落盘原语的结构化返回，禁止从 message 文本反推。不再有 `recover` / `abort` / `reopen` 出路——**因为不再有需要出路的中间态**。
 
 **重新合并**：`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `openlogos merge`。
 
@@ -3014,6 +3016,16 @@ openlogos lint-specs [--format json]
 | ID 格式 | 首格 = 裸 ID + 可选 manual 标记（`[manual]` / `[manual/<平台>]`，S13 认可形态）；剥离标记后的裸 ID 须被权威锚定读法接纳——合法 manual 行不报 `invalid_test_id` |
 
 **不参与任何门（强制）**：`merge` / `verify` / `archive` / `change-lint` 均不因本命令结论而阻断。它是用户主动运行的只读诊断工具，呼应「任何审计产物都不得出现在流程分支的条件里」。发现问题时非零退出并逐条列出位置，供人判断。
+
+**三处表格读法的归属澄清（§2.84.1，避免把「不参与任何门」误读为「该语义无门」）**：行级列数一致这一语义在流程中共有三个作用点，**判据同源单点、扫描集合与强度各自不同**：
+
+| 作用点 | 作用对象 | 扫描集合 | 强度 |
+|---|---|---|---|
+| 本命令 `table_column_mismatch` | 已合并基线 `logos/resources/test/**` | **全部表格**（不限 ID 表） | 只读诊断，**不参与任何门**（本节上文） |
+| `change-lint` L4 `delta_test_table_column_mismatch` | `deltas/test/**` 的 delta | 结构化 ID 表数据行 | 违规（exit 2），入 merge 准入（§2.84.2） |
+| `test-change-set-ambiguous-table` | 合并后态 | 首格为合法测试 ID 的 ID 表数据行 | fail-closed 后态守门（§2.84.6 逐字不变） |
+
+「本命令不参与任何门」说的是**本命令的结论**不进流程分支，**不等于**该语义在别处无门——同语义在 delta 侧由 L4 前移拦截、在后态由 `test-change-set` 守门。三者的列数判定复用同一纯函数单点，不得各立一份宽严不一的实现（§2.84.1）；本命令自身的扫描集合、诊断文案与强度定位**逐字不变**。
 
 ## 2.71 merge 目标集由 delta 文件派生
 
@@ -3593,3 +3605,137 @@ change-writer 的 GUI 判定**唯一依据 = `logos-project.yaml` 的 `product_t
 - 先例：§2.73（L8 条目守恒降级为警告）、§2.52.7（SQL 校验降级留痕的 warnings 通道）、lite-cut3a「阻断门改警告 / 文档」。
 - 测试：UT-S35-148～UT-S35-152、ST-S35-29。
 - 代码（以合并后规格为准）：`cli/src/lib/ui-first.ts`（`analyzeUiDeclarationStructure` 消费侧分级）、`cli/src/lib/change-lint.ts`（L7 违规 / 警告通道）、`cli/src/commands/change-lint.ts` 与 merge 准入消费点。
+
+## 2.84 行级形态判据同源前移与 merge 内部错误稳定失败语义
+
+### 2.84.0 问题：被宣告「不参与任何门」的判据，在 merge 内部构成无预检硬门
+
+本仓实测缺陷（RunLogos · 全自动 driver · 2026-09-14 · 安装态 0.15.8）：提案 `fix-panel-refresh-identity-shared-mounting` 两轮评审 PASS、spec-exit 门自动通过，driver 执行 `openlogos merge` 退 1 硬停（audit run `drv-mu1d875x-7ooq`，blocked `merge-failed` / `exit-nonzero`）。真病灶是 delta 文件 `deltas/test/S10-test-cases.md` 的 UT-S10-187 行少写一个 `|`（该行 5 格 ≠ 表头 6 格）。
+
+`openlogos change-lint --slug <slug>` 报 **PASS（10/10）**，而 merge 的合规预检就是同一个 `runChangeLint`——预检说没问题，merge 却在 `buildTestChangeSet` 阶段抛 `test-change-set-ambiguous-table`。判据分裂是结构性的：
+
+| 实现 | 作用对象 | 判定集合 | 是否入门 |
+|---|---|---|---|
+| `table_column_mismatch`（`lint-specs`） | 已合并基线 `logos/resources/test/**` | **全部表格**的全部数据行 | §2.70.1 明文「不参与任何门」 |
+| L4 首格可提取性（`findUnextractableTestTableRows`） | delta 的 ID 表数据行 | 只校验**首格**，不校验列数 | 入门（change-lint / merge 预检） |
+| `test-change-set-ambiguous-table` | **合并后态** | 首格为合法测试 ID 的数据行，列数须等于表头 | 事实上的硬门，但**无预检对应物** |
+
+同一语义（行级列数一致）三处实现、宽严不一。被宣告「不参与任何门」的判据，实际上在 merge 内部构成一道**没有预检、没有诊断、没有前移**的硬门——违反 S35 不变量 3（语法唯一、读法具名）与不变量 5（门禁可满足性），属架构 §四十一.4 违例。
+
+尤其刺眼的是：L4 的 `findUnextractableTestTableRows` 逐行遍历的正是同一批 ID 表数据行，且**已经算出了 `headers.length`**，却只校验首格、不校验列数——与 §2.82 修的是同一张表、同一个函数、同一类「下游门比上游预检严」，只差一列之遥。§2.82.0 已把这类形态的代价写清楚：「错误爆在无法自修的节点」。本节修的是同族的另一半。
+
+同批暴露的第二、三层缺陷：
+
+- **失败裸抛**：`TestChangeSetBuildError extends Error` 而非 `MergeDirectError`，`runDirectMerge` 的 catch 只映射 `MergeDirectError`、其余一律 `throw e`。该错误逃到进程顶层，输出 Node 未捕获异常堆栈——既无 `Error: merge 失败（<code>）` 稳定前缀，也无「保持合并前字节」与 `git checkout logos/resources/` 回滚点，§2.69.1 明文失败语义对 test-change-set 整族**当前不成立**，且形态上对任何未来新增的非 `MergeDirectError` 内部错误同样不成立（**默认放行裸抛**，而非默认兜底）。
+- **诊断不可归因**：错误消息给的是 `logos/resources/test/S10-test-cases.md:771`——**合并后态**行号，而该文件在磁盘上只有 741 行。人与 agent 都无法定位：既不知道是后态行号，也不知道对应哪个 delta 文件的哪一行。违反 S35「诊断可归因要求」。
+
+事实澄清（非缺陷）：抛点位于准备阶段、`applyBaselineClosureBatch` 之前，故**零残留**——主文档保持合并前字节、未写 `SPEC_MERGED`。原子性本身没破，破的是失败**语义的可读性**。
+
+### 2.84.1 行级形态判据的唯一语义与实现单点
+
+「**ID 表数据行的列数须等于表头列数**」确立为行级形态判据的唯一语义，实现收敛到共享单点，三处消费方**同源派生，不留第二份判据**：
+
+| 消费方 | 作用对象 | 派生方式 | 强度 |
+|---|---|---|---|
+| `change-lint` L4 族 | delta 的 ID 表数据行（write-delta 节点） | 调用同一判据，**扫描集合与后态对齐** | 违规（exit 2），入 merge 准入 |
+| `test-change-set` | 合并后态的 ID 表数据行 | 判据基准（口径逐字不变） | fail-closed（后态守门） |
+| `lint-specs` | 已合并基线 `logos/resources/test/**` | 调用同一判据 | 只读诊断，§2.70.1 不参与任何门 |
+
+**单点覆盖「判据 + 前移侧扫描集合」，不只覆盖最后那次整数比较**（delta-r1 F1）。把整数比较抽成共享纯函数而让两侧各自决定「哪些行进入比较」，等于把分裂从判据挪到集合——未进入比较的行照样在后态被拒，前移承诺落空。因此：
+
+- **前移侧（`change-lint`）的表格与数据行枚举以后态 `scanTestDefinitionCandidates` 为准逐项对齐**，三处对齐点缺一不可：
+
+  | 对齐项 | 后态既有口径（基准） | 前移侧此前口径（盲点） |
+  |---|---|---|
+  | 表格识别 | 表头行 + 分隔行；表头列数 == 分隔列数、列数 ≥ 2、无空表头格；**不限表头措辞** | 额外要求表头首格匹配 `TEST_ID_HEADER_RE`——表头为「编号 / 操作 / 断言」一类的表整表绕过 |
+  | 数据行边界 | 自分隔行下一行起，至**空行或掩码行**为止 | 至**不含管道符的行**为止——数据行只剩一个裸 ID 时提前收束、该行漏扫 |
+  | 行身份 | 首格剥离 manual 标记后为合法测试 ID 的行 | 同（此项本已一致） |
+
+- **集合只扩大、不新拒**：前移侧扩大的部分**恰为此前已被后态拒绝的形态**——不新增任何「后态接纳而预检拒绝」的组合，既有被接纳的 delta 形态零收紧（净效果仍是同一形态更早被拒、错误更可读）。
+- **§2.82.2 首格可提取性检查的适用集合逐字不变**：它继续只作用于 `TEST_ID_HEADER_RE` 表头族。**两个检查在 L4 内使用不同集合是刻意的**——首格检查若随之扩大，会把后态接纳的散文表首格新判为违规（新拒后态接纳的形态，违反上一条）。
+- **`lint-specs` 定位逐字不变**：继续覆盖已合并基线的**全部表格**（不收窄为 ID 表，否则是零回归破坏），强度仍为只读诊断。
+- **判据函数为纯函数**：入参为表头单元格数与数据行单元格数（或等价的行切片），无 IO、无路径语义，故三处可零代价共享；前移侧的枚举同样由与后态共享的具名扫描实现派生，不另写一份遍历。
+
+### 2.84.2 change-lint 行级列数一致前移检查（归入 L4 delta 形态族）
+
+对 `deltas/test/**` 的 `.md` delta，其 ADDED / MODIFIED 块内的**测试定义表**（按 §2.84.1 与后态对齐的枚举口径识别），新增两条 L4 违规——二者合起来覆盖后态 `test-change-set-ambiguous-table` 的**全部触发形态**：
+
+| 违规码 | 触发形态 | 对应后态抛点 |
+|---|---|---|
+| `delta_test_table_column_mismatch` | 首格剥离 manual 标记后为合法测试 ID 的数据行，其列数 ≠ 表头列数 | 数据行列数不一致 |
+| `delta_test_table_duplicate_header` | 表格的表头单元格去重后数量 < 表头列数（表头重复） | 表头重复 |
+
+- **为什么两条一起前移**：后态**同一个错误码**由这两个形态触发。若只前移列数一侧，一致性锁就只能定义在「列数子族」上——而「哪些形态属于列数子族」本身又成了一份需要人工维护的第二判据，正是本节要消除的分裂形态。按**错误码**定义锁边界，可穷举、无模糊地带（delta-r1 F1）。
+- **归入 L4（delta 形态类）**：与段标记 / 模板骨架 / §2.82.2 首格可提取性同族——都是「delta 形态是否合法」；两个违规码进入 change-lint 闭合码表（注册表单点，闭合断言以权威码表为源），不新增独立命令、不新增 L 层。
+- **message 可归因**：`delta_test_table_column_mismatch` 点名 **delta 文件路径**、**delta 内行号**、**表头列数**与**本行列数**，并附首格 ID；`delta_test_table_duplicate_header` 点名 delta 文件路径、**表头行的 delta 内行号**与重复出现的表头文本——足以直接定位到要改的那一处。
+- **与首格检查的关系**：三检查同族但正交——首格非法走 `delta_test_table_id_unextractable`（§2.82.2，适用集合逐字不变），首格合法而列数不一致走 `delta_test_table_column_mismatch`，表头重复走 `delta_test_table_duplicate_header`。**同一行不重复报列数码与首格码**（首格非法时该行不再判列数，因其根本不构成 ID 行）；表头重复与行级列数可同表并存，各自点名各自的行。
+- **价值（错误前移到可自修节点）**：write-delta 节点下 delta 文件在 agent 写权限范围内、`change-lint` 在其命令白名单内——本类形态在该节点暴露即由 agent 当场修正闭环，**不产生停点、不需要人**。此前它要烧掉一整轮全自动 run 才停在 merge，且停在 agent 已出写权限范围的节点。
+
+### 2.84.3 merge 失败出口改为默认兜底（绝不裸抛）
+
+`runDirectMerge` 的失败出口由「**默认放行**未登记错误类」改为「**默认兜底**」：任何逃出 `mergeDirect` 的错误一律映射为稳定失败形态，不再存在「未登记的错误类 ⇒ 裸堆栈」这条通道。
+
+稳定失败形态（四要素，缺一不可）：
+
+| 要素 | 内容 |
+|---|---|
+| 稳定前缀与错误码 | `Error: merge 失败（<code>）：<message>` |
+| 状态声明 | **按已确认阶段分档**，见下表——不是一句固定文案 |
+| 后续动作指引 | 与状态档对应的核对 / 回滚指引 |
+| 退出码 | 非零（`process.exit(1)`） |
+
+**状态声明必须由结构化事实派生，不得无条件断言「零残留」（delta-r1 F2）。** 「所有抛点都在写入前或既有回滚路径上」这个前提**不成立**：`applyBaselineClosureBatch` 在 `journal.phase = 'committed'` 落盘后才调 `removePrivateArtifacts` 清理私有材料，该清理若失败，其 catch 内的恢复函数在**已无 journal** 的分支会再次尝试同一清理并二次抛出，成为逃出 `mergeDirect` 的普通内部错误——此时主文档已是**新字节**、`SPEC_MERGED`（它就在同一原子批内以 CREATE 落盘）**已在场**。对这种错误输出「保持合并前字节，未写 SPEC_MERGED」是与磁盘事实相反的断言，比裸堆栈更有害：它会把「已提交 + 清理残留」误导成「什么都没发生，改完重跑即可」，而按该指引重跑会撞上「`SPEC_MERGED` 已存在」的前置拒绝。
+
+| 状态档 | 结构化判据（唯一事实源） | 状态声明与指引 |
+|---|---|---|
+| A · 未提交 | 失败发生在调用落盘原语**之前**（目标集解析、合成、`buildTestChangeSet` 等准备阶段） | `logos/resources/ 保持合并前字节，未写 SPEC_MERGED。` + `回滚点：git checkout logos/resources/；修正 delta 后重跑 openlogos merge <slug>。` |
+| B · 已回滚 | 落盘原语返回 `ok:false` **且** `rolled_back === true` | 同 A 的字节声明，并注明「落盘中途失败、已整批回滚」 |
+| C · 已提交或状态不可确认 | 落盘原语返回 `ok:false` 且 `rolled_back !== true`；**或**错误从原语内部直接逃出（含 `committed` 之后的清理失败） | **禁止**声明保持旧字节 / 未写 marker。如实报告：主文档可能已是合并后字节、`SPEC_MERGED` 可能已写入、提案目录下可能残留私有事务材料；指引 `git status` / `git diff logos/resources/` 核对实际状态，检查 `SPEC_MERGED` 是否在场，并保留原始诊断原文 |
+
+- **默认档为 C（fail-safe）**：无法从结构化事实确定阶段时**默认报告不可确认**，而不是默认报告干净。兜底的是错误的**可读性**，不是对磁盘状态的乐观假设。
+- **判据源只认结构化数据**：阶段由控制流位置与落盘原语的结构化返回（`ok` / `rolled_back`）判定，**禁止**从错误 message 文本反向推断状态——对齐 §2.69.2「流程判断使用结构化数据」与 `test-change-set` preflight 归因既有禁令。
+- **同批订正既有硬编码断言**：`mergeDirect` 现有的 `MERGE_APPLY_FAILED` 无条件拼接「主文档已回滚至合并前字节」，在 `rolled_back === false` 时同样为假——改为按同一状态档派生，不保留第二处硬编码结论。
+- **错误码位不降级**：`MergeDirectError` 与 `TestChangeSetBuildError` 的 `code` 字段**原样进入**错误码位（后者如 `test-change-set-ambiguous-table`）；既无 `code` 字段的未知错误类使用稳定兜底码，并附原始 `message` 与错误类名，诊断信息不丢。
+- **这是补齐而非新增语义**：§2.69.1 早已明文「任一步失败即整批回滚……错误信息附 `git checkout logos/resources/` 作为回滚点提示」。本节让该合同对**整个 merge 出口**成立，而非只对已登记的一个错误类成立；同时把该合同中「整批回滚」这一**事实前提**从隐含假设改为**逐次确认**。
+- **不改落盘原语行为**：本节不重做原子落盘机制——`applyBaselineClosureBatch` 的准备、提交、回滚与清理时序逐行不变；改的只是失败出口**如何描述已经发生的事**，不得把未知或已提交状态包装成已确认零残留。
+- **不吞诊断**：兜底映射后进程以非零码退出，stderr 承载全部可归因信息——CLI 的 stderr 是下游自动化唯一可得的病灶来源，裸堆栈 + 无错误码 = 下游零诊断。
+
+### 2.84.4 诊断可归因：后态行号口径标注与 delta 侧归属
+
+- **口径标注**：`test-change-set` 族错误消息中的行号标注为**合并后态**行号（如 `logos/resources/test/core-S10-test-cases.md:771（合并后态行号）`），消除「照着磁盘文件找不到该行」的误导——该文件磁盘上只有 741 行。
+- **delta 侧归属**：merge 层在兜底映射时补出 delta 侧归属——点名**产生该行的 delta 文件与其 delta 内行号**。归属由合并前已知的 delta → canonical target 映射与该 delta 的行级扫描得出；**归属无法确定时不得伪造**，降级为「仅后态行号 + 已标注口径」并显式说明未能归因，不得静默省略。
+- **可归因优先级**：有 delta 侧归属时以 delta 侧为主诊断（那是可自修的实体），后态行号作为佐证并列输出。
+
+### 2.84.5 一致性锁（防再分裂）
+
+新增元测试断言：**凡 `test-change-set` 会以 `test-change-set-ambiguous-table` 在合并后态拒绝的 delta 形态，`change-lint` 必先报出对应违规**。
+
+- **锁的边界按错误码定义（可穷举）**：覆盖 `test-change-set-ambiguous-table` 的**全部**触发形态——数据行列数不一致、表头重复；对应前移侧 `delta_test_table_column_mismatch` 与 `delta_test_table_duplicate_header`（§2.84.2）。按码定义而非按「形态族」描述，边界无模糊地带。
+- **明确不在锁内（有正当理由，非遗漏）**：`test-change-set-duplicate-id` / `-target-duplicate` / `-overlap` 属**需要合并后态全局视角**的身份类判定——同一 ID 是否重复、目标是否交叠，在单个 delta 片段上不可判定，强行前移只会产生假阳性。锁只覆盖在 delta 片段上**可判定**的表级 / 行级形态类。
+- **双向比对**：合成夹具集合对每个形态同时构造 delta 形态与其合并后态，一侧喂 `change-lint`、一侧喂 `buildTestChangeSet`，断言两侧结论逐夹具一致；**任一侧单独收紧即失败**。夹具须含 §2.84.1 三处对齐点各自的反例（非 `TEST_ID_HEADER_RE` 表头、数据行不含管道符导致提前收束、表头重复）。
+- **落点**：这是 S35 不变量 5（门禁可满足性）在**表级 / 行级形态族**上的具体落点——不再允许出现「预检全绿而 merge 必炸」的组合。
+- **不得放宽断言本身**：发现漂移时的修复方向是把两侧判据与枚举口径重新收敛到单点，**不得**靠收窄后态扫描或削弱锁来消红。
+
+### 2.84.6 非目标与零回归边界
+
+**明确非目标：不放宽 `test-change-set` 的后态判据。** 不把列数不一致降级为「告警跳行」——跳行会让该行的测试 ID 静默掉出 `changed_test_ids`，下游切片归属对账将误报「owned_test_ids 含非本提案变更 ID」，与 §2.82.0 记载的事故同族。正确处置是**把错误前移到可自修节点**，而不是放宽后态。
+
+| 保持不变 |
+|---|
+| `test-change-set` 后态判据的强度、扫描口径与拒绝形态（fail-closed，逐字不变）；`allowAmbiguousRows` 等既有历史基线兼容开关语义零改动。前移侧向后态**对齐**，不反向改动后态 |
+| `SPEC_MERGED.test_change_set` 的 schema 与内容口径逐字不变；`verify` / `change-lint` / `test-slice-manifest` 三处消费行为零改动（§2.69.2） |
+| `lint-specs` 的扫描集合（全部表格、递归含 `smoke/`）、`table_column_mismatch` 的诊断文案与「不参与任何门」定位（§2.70.1） |
+| §2.82.1 首格唯一语义、§2.82.2 首格可提取性前移检查**及其适用集合**（`TEST_ID_HEADER_RE` 表头族，不随列数检查扩大）、§2.82.4 verify 的 manual 排除语义 |
+| `applyBaselineClosureBatch` 的准备 / 提交 / 回滚 / 清理时序逐行不变——本节不重做原子落盘机制，只改失败出口如何**描述**已发生的事（§2.84.3） |
+| merge 成功路径零漂移：stdout、`SPEC_MERGED` 内容与 `--format json` 契约逐字节不变 |
+| 既有被接纳的 delta 形态零收紧：前移侧集合只**扩大**，扩大部分恰为此前已被后态拒绝的形态；不新增任何「后态接纳而预检拒绝」的组合 |
+
+### 2.84.7 追溯
+
+- 来源变更：fix-merge-preflight-parity-and-bare-throw（RunLogos 全自动 driver 实测事故，2026-09-14；audit run `drv-mu1d875x-7ooq`，blocked `merge-failed`）。
+- 场景：S35「行级形态判据前移与预检-门一致性锁」、S09「merge 内部错误的稳定失败语义」。
+- 功能规格关联：§2.82（同族前一半：首格读法统一与前移）、§2.69.1（失败语义合同）、§2.70.1（lint-specs 定位）、§2.51（merge 合规判定单点与门禁可满足性）、§2.37.1～§2.37.3（变更集与切片归属）。
+- 先例：§2.82.2（判据前移到 write-delta 节点）、§2.78（写入侧 fail-closed 与判据单点化）。
+- 测试：UT-S35-153～UT-S35-158、ST-S35-30；UT-S09-351～UT-S09-354、ST-S09-145。
+- 代码（以合并后规格为准）：`cli/src/lib/change-lint.ts`（L4 行级列数检查与闭合码表）、`cli/src/lib/test-change-set.ts`（后态判据同源派生与行号口径标注）、`cli/src/commands/merge.ts`（`runDirectMerge` 默认兜底映射、状态档派生与 delta 侧归属）、`cli/src/lib/merge-direct.ts`（`MERGE_APPLY_FAILED` 硬编码状态断言订正）、`cli/src/lib/baseline-apply.ts`（仅结构化返回的阶段事实读取，时序不改）、`cli/src/commands/change-lint.ts`（新码的 L 层映射）、`cli/src/commands/lint-specs.ts`（列数判据同源派生）。
+- 发布：判据只在安装态对宿主生效，本提案归档后须另立 `release-0-15-9` 发版提案按 §2.81 升版（发布动作不在本提案内执行）。
