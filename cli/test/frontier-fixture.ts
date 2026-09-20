@@ -68,7 +68,11 @@ export function frontierFixture(withDelta = true) {
     ? `## [delta] 规格变更\n${[...files].sort((a, b) => a.delta.localeCompare(b.delta)).map(f => `- [x] [MODIFY] \`${f.delta}\`：fixture 更新`).join('\n')}\n`
     : '## [delta] 规格变更\n';
   const clarification = `## 决策澄清\n\n\`\`\`yaml\nschema: openlogos/clarification@1\nmode: adaptive\nstatus: complete\nimpacts:\n  data: {status: none, reason: fixture}\n  compatibility: {status: none, reason: fixture}\n  security_privacy: {status: none, reason: fixture}\n  public_release: {status: none, reason: fixture}\n  external_commitment: {status: none, reason: fixture}\ndecisions: []\nunresolved: []\ndefaults: []\n\`\`\`\n`;
-  const head = `# 变更提案：frontier fixture\n\n## 变更原因\n真实原因。\n\n## 变更类型\n设计级\n\n## 变更范围\n- 影响的功能规格：fixture\n\n## 部署影响\n- 是否需要部署：否\n- 部署原因：无\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 变更概述\n概述。\n\n`;
+  // 变更类型取「需求级」而非「设计级」：本夹具含 deltas/prd/1-product-requirements/ 条目，
+  // 设计级下会命中 S35「变更类型 ↔ delta 层面观测」warning，而 UT-S35-135 的规格要求本夹具
+  // 「一律不产生任何 violation 或 warning」。声明类型与本夹具被测的语义（delta 分类 / 守恒 /
+  // 合并事务）无关，故取全免计的需求级以保持既有规格原意。
+  const head = `# 变更提案：frontier fixture\n\n## 变更原因\n真实原因。\n\n## 变更类型\n需求级\n\n## 变更范围\n- 影响的功能规格：fixture\n\n## 部署影响\n- 是否需要部署：否\n- 部署原因：无\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 变更概述\n概述。\n\n`;
   if (withDelta) {
     put(root, `logos/changes/${slug}/proposal.md`,
       `${head}${clarification}`);

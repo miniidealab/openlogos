@@ -625,6 +625,15 @@ ${meta}
 ## 变更原因
 [为什么要做这个变更？来源于哪个需求/反馈/Bug？]
 
+## 最小实现论证
+
+> S35/S09：本段**不进 canonical 必填章节**——缺段、未填、占位残留三者均不触发任何检查。
+> 它是自律提示，作用在设计发生**之前**；事后的规模信号由 change-lint 的观测 warning 承担。
+
+- 先检索既有机制：[查了哪些既有能力/判据/通道？逐项写明为什么不够用，或如何复用]
+- 为什么不能更小：[能不能只做其中一半？能不能不新建机制？逐条说明为何不行]
+- 本提案主动砍掉的：[列出考虑过但决定不做的设计，各附一句理由]
+
 ## 变更类型
 [需求级 / 设计级 / 接口级 / 代码级]
 
@@ -688,6 +697,16 @@ defaults: []
 ${meta}
 ## Reason
 [Why is this change needed? Which requirement/feedback/bug triggered it?]
+
+## Minimal Implementation Rationale
+
+> S35/S09: this section is **not** a canonical required section — a missing, empty, or
+> placeholder-only section triggers no check. It is a self-discipline prompt that acts
+> *before* the design happens; the after-the-fact scale signal is the change-lint warning.
+
+- Existing mechanisms searched: [which existing capabilities/criteria/channels did you check? say why each is insufficient, or how you reuse it]
+- Why it cannot be smaller: [could you ship only half? could you avoid building anything new? address each]
+- Deliberately cut from this proposal: [designs you considered and decided against, one reason each]
 
 ## Change Type
 [Requirements / Design / Interface / Code]

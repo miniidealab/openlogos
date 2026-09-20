@@ -82,6 +82,83 @@ function hasPlaceholder(content: string): boolean {
   return /\[(?:为什么要做这个变更|需求级\s*\/|列表|用\s*1-3\s*段话概述|Why is this change needed|Requirements\s*\/|list\]|Describe what will change)/i.test(content);
 }
 
+/**
+ * 变更类型的四档分级。与方法论「变更传播规则」的类型名一一对应（部署级不在提案合法集合内，
+ * 故不入本枚举——该偏差是既有的，见 S35 场景「异常与边界」）。
+ */
+export type ChangeTypeLevel = 'requirements' | 'design' | 'interface' | 'code';
+
+/**
+ * 变更类型的**唯一词表**（S35「判据双源与『严禁第二份判据』的落实方式」）。
+ * `isValidChangeType`（合法性，既有语义）与 `resolveChangeType`（解析唯一类型，新增能力）
+ * 都从这里拼装各自的正则——共享的是词表，不是正则；任何一方都不得内联自己的类型字面量。
+ * 顺序即既有正则的交替顺序，改动会破坏 `proposal_change_type_invalid` 的零回归对照。
+ */
+const CHANGE_TYPE_LEXICON: Record<'zh' | 'en', Array<{ level: ChangeTypeLevel; pattern: string }>> = {
+  zh: [
+    { level: 'requirements', pattern: '需求级' },
+    { level: 'design', pattern: '设计级' },
+    { level: 'interface', pattern: '接口级' },
+    { level: 'code', pattern: '代码级' },
+  ],
+  en: [
+    { level: 'requirements', pattern: 'requirements?' },
+    { level: 'design', pattern: 'design' },
+    { level: 'interface', pattern: 'interface' },
+    { level: 'code', pattern: 'code' },
+  ],
+};
+
+/**
+ * 合法性判据（既有语义，逐字节零回归）：正文里**出现过**任一类型词即判合法。
+ * 它只回答「合法吗」，**不能**回答「声明的是哪一类」——`代码级（不涉及设计级或需求级变更）`
+ * 与 `设计级 / 代码级` 都通过本检查。要拿唯一类型必须用 `resolveChangeType`。
+ */
+export function isValidChangeType(content: string, locale: 'zh' | 'en'): boolean {
+  const alt = CHANGE_TYPE_LEXICON[locale].map(e => e.pattern).join('|');
+  return locale === 'zh'
+    ? new RegExp(`(?:${alt})`).test(content)
+    : new RegExp(`(?:${alt})(?:\\s+level)?`, 'i').test(content);
+}
+
+/**
+ * 声明类型解析（S35 新增能力，非既有正则的等价提取）：
+ * ① 取「变更类型」章节正文的首个非空行作为声明主体；② 剥去全角（…）与半角(…)说明文字；
+ * ③ 在剩余文本上全局匹配类型词；④ **恰好命中一个**才返回该类型，0 个或 ≥2 个返回 `null`。
+ * `null` 是歧义信号，消费方一律静默（宁可漏报不误报）——注意歧义正文本身通过
+ * `isValidChangeType`，**不会**触发 `proposal_change_type_invalid`，两条通道同时静默。
+ */
+export function resolveChangeType(content: string, locale: 'zh' | 'en'): ChangeTypeLevel | null {
+  const firstLine = content.replace(/<!--[^]*?-->/g, '')
+    .split('\n').map(line => line.trim()).find(line => line.length > 0);
+  if (!firstLine) return null;
+  // 说明文字里的类型词不参与解析：`代码级（不涉及设计级或需求级变更）` 必须解析为代码级。
+  const stripped = firstLine.replace(/（[^）]*）/g, ' ').replace(/\([^)]*\)/g, ' ');
+  let hits = 0;
+  let found: ChangeTypeLevel | null = null;
+  for (const entry of CHANGE_TYPE_LEXICON[locale]) {
+    const matches = stripped.match(new RegExp(entry.pattern, locale === 'en' ? 'gi' : 'g'));
+    if (!matches) continue;
+    hits += matches.length;
+    found = entry.level;
+  }
+  return hits === 1 ? found : null;
+}
+
+/**
+ * 从整份 proposal.md 解析声明的变更类型：定位「变更类型」canonical 章节后交给 `resolveChangeType`。
+ * 章节缺失 / 为空 / 仍含模板占位 → `null`（那些形态由既有 canonical 判据覆盖，消费方不重复报）。
+ */
+export function resolveProposalChangeType(
+  proposalContent: string,
+  locale: 'zh' | 'en' = detectPlanLocale(proposalContent),
+): ChangeTypeLevel | null {
+  const section = scanSections(proposalContent).find(s => s.id === 'type');
+  if (!section) return null;
+  if (!meaningfulSectionBody(section.content) || hasPlaceholder(section.content)) return null;
+  return resolveChangeType(section.content, locale);
+}
+
 function scanSections(content: string): PlanSection[] {
   const lines = content.replace(/\r\n/g, '\n').split('\n');
   const scan = authorityScan(lines);
@@ -146,8 +223,8 @@ export function evaluateProposalStructure(content: string, path = 'proposal.md',
   }
   const typeSection = sections.find(section => section.id === 'type');
   if (typeSection && meaningfulSectionBody(typeSection.content) && !hasPlaceholder(typeSection.content)) {
-    const valid = locale === 'zh' ? /(?:需求级|设计级|接口级|代码级)/.test(typeSection.content)
-      : /(?:requirements?|design|interface|code)(?:\s+level)?/i.test(typeSection.content);
+    // 判据提取为共享导出（S35）：语义与此前内联正则逐字节相同，change-lint 消费同一词表而非照抄正则。
+    const valid = isValidChangeType(typeSection.content, locale);
     if (!valid) issues.push(issue('proposal_change_type_invalid', path, '变更类型不在允许集合中。', '使用需求级/设计级/接口级/代码级（或英文等价值）。', { section_id: 'type', line: typeSection.line, actual: meaningfulSectionBody(typeSection.content), expected: 'requirements|design|interface|code' }));
   }
   const deployment = sections.find(section => section.id === 'deployment');

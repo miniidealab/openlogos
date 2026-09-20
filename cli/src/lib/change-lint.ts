@@ -45,7 +45,7 @@ import {
 import { readTestChangeSet, type TestChangeSetReadResult } from './test-change-set.js';
 import { deriveSliceVerificationState } from './test-slice-manifest.js';
 import { evaluatePlanPackage } from './plan-package.js';
-import { type PlanPackageEvaluation } from './plan-package-contract.js';
+import { type PlanPackageEvaluation, type ChangeTypeLevel, resolveProposalChangeType } from './plan-package-contract.js';
 import {
   parseDeltaBlocks,
   parseMarkdownHeadings,
@@ -161,7 +161,10 @@ export type ChangeLintWarningCode =
   // 安全默认（parseUiUxDeclaration 同口径）。在场但损坏 / 非布尔仍 fail-closed 违规。
   | 'ui_declaration_missing'
   // 待办步骤而非缺陷：记为 violation 会让 merge 拒绝它自己要写入的 marker（见 L9 实现处注释）。
-  | 'no_delta_spec_marker_missing';
+  | 'no_delta_spec_marker_missing'
+  // S35「变更类型 ↔ delta 层面观测」：声明类型与实际铺开的规格层不相称。**观测启发式，非方法论违规**
+  // ——传播规则给的是「最少需要更新」下界，超出不等于违规，故只走 warning、不进违规码集合。
+  | 'change_type_delta_layer_mismatch';
 
 export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
@@ -859,6 +862,73 @@ export type ChangeLintRunResult =
  * （如「本案不要创建 `deltas/decisions/`」）不再冒充权威任务、不再误抑制 warning。
  * 纯结构判定、复用既有 proposal / tasks 分节解析，无第二份 proposal 解析。
  */
+/**
+ * S35 免计层级表：按声明类型给出**不计入越界**的 delta 层。
+ *
+ * 取界依据（场景 S35「免计层级表」）：代码级免计 `test`——方法论是「代码 + **重新验收**」，
+ * 重新验收可正当地带回归测试规格；接口级再免计传播规则的「API/DB + 编排」；设计级再免计
+ * 「原型 + 场景」与方法论自身产物 `spec` / `skills`；需求级全免计（恒不告警）。
+ *
+ * ⚠️ 本表是**新立的观测启发式**，不是方法论判据的投影：传播规则表头为「最少需要更新」，
+ * 给的是下界不是上界，越界**不等于**违反方法论。诊断文案不得措辞为「违规」。
+ *
+ * ⚠️ 完备性约定：层标识取自分类器唯一事实源 `DELTA_TO_RESOURCE` 的类别（`prd` 细到子目录）。
+ * **新增 delta 类别时本表须同批扩充**——新类别未入表即按「不免计」处理。
+ */
+const CHANGE_TYPE_EXEMPT_LAYERS: Record<ChangeTypeLevel, readonly string[]> = {
+  code: ['test'],
+  interface: ['test', 'api', 'database', 'scenario'],
+  design: ['test', 'api', 'database', 'scenario', 'prd/2-product-design', 'prd/3-technical-plan', 'spec', 'skills'],
+  requirements: [], // 恒不告警，由下方提前返回处理，不走本表
+};
+
+/** 决策留痕是变更自身的元数据、非规格产物，与变更层级正交——各声明类型均免计。 */
+const UNIVERSAL_EXEMPT_LAYERS: readonly string[] = ['decisions'];
+
+/** delta 条目 → 规格层标识：`prd` 细到子目录（取自 relativePath），其余按一级 category。 */
+function deltaLayerOf(entry: DeltaEntryClassification): string {
+  if (entry.category !== 'prd') return entry.category;
+  // `deltas/prd/<sub>/...` → `prd/<sub>`；`deltas/prd/x.md`（无子目录）→ `prd`
+  const parts = entry.relativePath.split('/');
+  return parts.length >= 4 ? `prd/${parts[2]}` : 'prd';
+}
+
+/**
+ * S35「变更类型 ↔ delta 层面观测」：声明类型与实际铺开的规格层不相称时产一条 warning。
+ *
+ * 判据双源均为既有：类型经 `resolveProposalChangeType`（歧义 → `null` → 静默，宁可漏报不误报），
+ * 层级取 `classifyProposalDeltas()` 中 `mergeable + valid` 的**有效条目**——`explicitly_ignored`
+ * / `invalid` / 未知类别 / 根下直放一律不计入，它们本就不进规格层，计入会把 L6 已覆盖的形态
+ * 二次报成层级越界。只在「实际超出声明」方向告警，反向不告警（该形态未观测到，不预造机制）。
+ */
+export function computeChangeTypeLayerWarnings(
+  proposalContent: string,
+  deltaEntries: DeltaEntryClassification[],
+): ChangeLintWarning[] {
+  const level = resolveProposalChangeType(proposalContent);
+  if (level === null || level === 'requirements') return [];
+  const exempt = new Set([...UNIVERSAL_EXEMPT_LAYERS, ...CHANGE_TYPE_EXEMPT_LAYERS[level]]);
+  const overreach = [...new Set(
+    deltaEntries
+      .filter(e => e.mergeDisposition === 'mergeable' && e.lintValidity === 'valid')
+      .map(deltaLayerOf)
+      .filter(layer => layer.length > 0 && !exempt.has(layer)),
+  )].sort();
+  if (overreach.length === 0) return [];
+  const declared = CHANGE_TYPE_DISPLAY[level];
+  return [{
+    code: 'change_type_delta_layer_mismatch',
+    // 措辞约束（场景 S35「输出契约」）：只陈述「不相称、值得看一眼」，不得断言违反方法论。
+    message: `proposal 声明「${declared}」，但本次 delta 还触及了 ${overreach.map(l => `\`${l}\``).join('、')}——声明类型与实际铺开的规格面不相称，值得看一眼`,
+    fix_hint: '确认变更类型声明是否准确（更贴切的类型？），或在「变更范围」说明本次为何需要触及这些层；本项为观测提示，不阻断合并',
+  }];
+}
+
+/** 四档类型的中文显示名（与提案模板措辞一致）。 */
+const CHANGE_TYPE_DISPLAY: Record<ChangeTypeLevel, string> = {
+  requirements: '需求级', design: '设计级', interface: '接口级', code: '代码级',
+};
+
 export function computeDecisionRecordWarnings(
   proposalContent: string,
   tasksContent: string,
@@ -1330,7 +1400,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings]
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...computeChangeTypeLayerWarnings(proposalContent, deltaEntries), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {
