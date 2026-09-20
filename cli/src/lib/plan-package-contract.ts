@@ -128,12 +128,29 @@ export function isValidChangeType(content: string, locale: 'zh' | 'en'): boolean
  * `null` 是歧义信号，消费方一律静默（宁可漏报不误报）——注意歧义正文本身通过
  * `isValidChangeType`，**不会**触发 `proposal_change_type_invalid`，两条通道同时静默。
  */
+/**
+ * 剥去括号说明文字，**深度感知**：正则 `（[^）]*）` 只吃到第一个右括号，
+ * `代码级（修复解析器（局部实现），不涉及需求级）` 会残留「，不涉及需求级）」而多出一个
+ * 类型词，使解析退化为歧义 null（静默漏报）。故按深度逐字符扫描，全角 / 半角同等处理。
+ * 未配对的右括号忽略；未闭合的左括号之后全部视作说明文字（保守吞掉 → 至多静默，不误报）。
+ */
+function stripParentheticals(line: string): string {
+  let out = '';
+  let depth = 0;
+  for (const ch of line) {
+    if (ch === '（' || ch === '(') { depth += 1; continue; }
+    if (ch === '）' || ch === ')') { if (depth > 0) depth -= 1; continue; }
+    if (depth === 0) out += ch;
+  }
+  return out;
+}
+
 export function resolveChangeType(content: string, locale: 'zh' | 'en'): ChangeTypeLevel | null {
   const firstLine = content.replace(/<!--[^]*?-->/g, '')
     .split('\n').map(line => line.trim()).find(line => line.length > 0);
   if (!firstLine) return null;
   // 说明文字里的类型词不参与解析：`代码级（不涉及设计级或需求级变更）` 必须解析为代码级。
-  const stripped = firstLine.replace(/（[^）]*）/g, ' ').replace(/\([^)]*\)/g, ' ');
+  const stripped = stripParentheticals(firstLine);
   let hits = 0;
   let found: ChangeTypeLevel | null = null;
   for (const entry of CHANGE_TYPE_LEXICON[locale]) {

@@ -10,13 +10,15 @@
  * logos/resources/verify/test-results.jsonl。
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringify as stringifyYaml } from 'yaml';
 import { makeTempRoot, scaffoldProject, withCompleteClarification, registerCoreModule } from './helpers.js';
 import { runChangeLint, CHANGE_LINT_VIOLATION_CODES } from '../src/lib/change-lint.js';
+import BASELINE from './fixtures/s35-change-type-baseline.json' with { type: 'json' };
 import {
   evaluateProposalStructure, isValidChangeType, resolveChangeType, resolveProposalChangeType,
 } from '../src/lib/plan-package-contract.js';
@@ -84,6 +86,74 @@ function lint(root: string, dir: string, slug: string) {
   if (!r.ok) throw new Error(`change-lint 操作错误：${r.errorCode} ${r.message}`);
   return r;
 }
+
+/**
+ * 与 `scratchpad/capture-baseline.mjs` **逐字同构**的夹具（同 slug / 同文件布局 / 同正文），
+ * 供零回归锚与上线前实测基线逐字段比对。不得改动——改了就对不上基线。
+ */
+function baselineFixture(changeType: string, deltaPaths: string[], extra: Array<[string, string]> = []) {
+  const { root, cleanup } = makeTempRoot();
+  cleanups.push(cleanup);
+  const slug = 'baseline-fixture';
+  const put = (rel: string, body: string) => {
+    const abs = join(root, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+  };
+  put('logos/logos.config.json', JSON.stringify({ locale: 'zh', project: { name: 'x' } }, null, 2));
+  put('logos/logos-project.yaml',
+    'modules:\n  - id: core\n    name: Core\n    lifecycle: launched\n    product_type: cli\n');
+  put('logos/.openlogos-guard',
+    JSON.stringify({ activeChange: slug, module: 'core', createdAt: '2026-09-20T00:00:00.000Z' }));
+  put(`logos/changes/${slug}/proposal.md`, baselineProposal(changeType));
+  put(`logos/changes/${slug}/tasks.md`,
+    ['# 实现任务', '', '## [delta] 规格变更', '- [ ] 产出 delta 到 `deltas/test/` — 新增用例', '', '## [code] 代码实现', ''].join('\n'));
+  for (const rel of deltaPaths) put(`logos/changes/${slug}/${rel}`, ['## ADDED — 夹具章节', '', '夹具正文，不含模板占位。', ''].join('\n'));
+  for (const [rel, body] of extra) put(`logos/changes/${slug}/${rel}`, body);
+  return { root, dir: join(root, 'logos', 'changes', slug), slug };
+}
+
+/** 与基线脚本同构的 zh/en 提案正文。 */
+function baselineProposalFor(changeType: string, locale: 'zh' | 'en'): string {
+  return locale === 'en' ? proposalBody(changeType, 'en') : baselineProposal(changeType);
+}
+
+function baselineProposal(changeType: string): string {
+  return ['# 变更提案：层面观测夹具', '', '> module: core', '',
+    '## 变更原因', '构造声明类型与 delta 层面的对照。', '',
+    '## 变更类型', changeType, '',
+    '## 变更范围', '- 影响的功能规格：core-01', '',
+    '## 部署影响', '- 是否需要部署：否', '- 部署原因：夹具', '- 影响环境：无',
+    '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
+    '## 变更概述', '需要 CLI 代码、测试和 reporter 实现。', '',
+    '## 决策澄清', '', '```yaml', 'schema: openlogos/clarification@1', 'mode: adaptive',
+    'status: ready', 'impacts:', '  data:', '    status: none', '    reason: 无',
+    'decisions: []', 'unresolved: []', 'defaults: []', '```', ''].join('\n');
+}
+
+/** 整个项目根的逐文件字节指纹——用于「只读命令项目级零写入」断言。 */
+function treeFingerprint(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, rel: string) => {
+    for (const name of readdirSync(dir).sort()) {
+      const abs = join(dir, name);
+      const r = rel ? `${rel}/${name}` : name;
+      if (statSync(abs).isDirectory()) walk(abs, r);
+      else out.push(`${r}:${createHash('sha256').update(readFileSync(abs)).digest('hex')}`);
+    }
+  };
+  walk(root, '');
+  return out;
+}
+
+type BaselineScenario = {
+  ok: boolean; pass?: boolean;
+  checks?: Array<{ id: number; label: string; violations: number }>;
+  violations?: Array<{ code: string; path: string; message: string; fix_hint: string }>;
+  warningCodes?: string[];
+};
+const scenario = (key: string): BaselineScenario =>
+  (BASELINE.lintScenarios as unknown as Record<string, BaselineScenario>)[key];
 
 /** 本 warning 是否出现（以及其条目）。 */
 function warnOf(root: string, dir: string, slug: string) {
@@ -174,8 +244,14 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
     expect(hitUnknown[0].message).toContain('prd/9-unknown-bucket');
   });
 
-  it('UT-S35-166 resolveChangeType·剥括号后唯一命中（zh）', () => {
+  it('UT-S35-166 resolveChangeType·剥括号后唯一命中（zh，含嵌套与残缺括号）', () => {
     expect(resolveChangeType('代码级（不涉及设计级或需求级变更）', 'zh')).toBe('code');
+    // 嵌套说明：正则式「吃到第一个右括号」会残留「，不涉及需求级）」而退化成歧义 null（静默漏报）。
+    expect(resolveChangeType('代码级（修复解析器（局部实现），不涉及需求级）', 'zh')).toBe('code');
+    expect(resolveChangeType('代码级（（三层（更深）嵌套））', 'zh')).toBe('code');
+    // 残缺括号：未闭合的左括号之后全部视作说明文字；孤立右括号忽略——两者都不得误报。
+    expect(resolveChangeType('代码级（未闭合说明，不涉及需求级', 'zh')).toBe('code');
+    expect(resolveChangeType('代码级）孤立右括号', 'zh')).toBe('code');
     const { root, dir, slug } = setup('代码级（不涉及设计级或需求级变更）', [D_PRD3]);
     expect(resolveProposalChangeType(readFileSync(join(dir, 'proposal.md'), 'utf-8'))).toBe('code');
     expect(warnOf(root, dir, slug)).toHaveLength(1);
@@ -192,6 +268,7 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
 
   it('UT-S35-168 英文括号与歧义对称行为（en）', () => {
     expect(resolveChangeType('code level (not a design or requirements level change)', 'en')).toBe('code');
+    expect(resolveChangeType('code level (fix parser (inner bit), not a requirements change)', 'en')).toBe('code');
     expect(resolveChangeType('design / code level', 'en')).toBeNull();
     const en = proposalBody('code level (not a design or requirements level change)', 'en');
     expect(resolveProposalChangeType(en)).toBe('code');
@@ -211,61 +288,75 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
     expect(r.checks.find(c => c.id === 6)).toBeDefined();
   });
 
-  it('UT-S35-170 零回归锚：isValidChangeType 与 proposal_change_type_invalid 语义不变', () => {
-    // 基准夹具＝本能力上线前的两条内联正则（此处仅作对照，不是第二份判据）。
-    const legacy = (content: string, locale: 'zh' | 'en') => locale === 'zh'
-      ? /(?:需求级|设计级|接口级|代码级)/.test(content)
-      : /(?:requirements?|design|interface|code)(?:\s+level)?/i.test(content);
-    const samples: Array<[string, 'zh' | 'en']> = [
-      ['代码级', 'zh'], ['需求级', 'zh'], ['设计级', 'zh'], ['接口级', 'zh'],
-      ['代码级（不涉及设计级或需求级变更）', 'zh'], ['设计级 / 代码级', 'zh'],
-      ['完全没有类型词', 'zh'], ['', 'zh'],
-      ['code level', 'en'], ['design', 'en'], ['requirement', 'en'],
-      ['design / code level', 'en'], ['nothing here', 'en'], ['', 'en'],
-    ];
-    for (const [content, locale] of samples) {
-      expect(isValidChangeType(content, locale), `${locale}:${content}`).toBe(legacy(content, locale));
+  it('UT-S35-170 零回归锚：结构诊断逐字段对齐上线前实测基线', () => {
+    // 基线由 scratchpad/capture-baseline.mjs 在 commit 66889f0（本能力 feat 提交之前）的
+    // cli 构建上实测捕获，随仓落盘于 test/fixtures/。**不是在测试内复述期望文案**。
+    expect(BASELINE.structureDiagnostics.length).toBeGreaterThan(0);
+    for (const sample of BASELINE.structureDiagnostics) {
+      const locale = sample.locale as 'zh' | 'en';
+      const body = baselineProposalFor(sample.content, locale);
+      const actual = evaluateProposalStructure(body, 'proposal.md', locale).map(i => ({
+        code: i.code, path: i.path, section_id: i.section_id ?? null, line: i.line ?? null,
+        actual: i.actual ?? null, expected: i.expected ?? null, message: i.message, fix_hint: i.fix_hint,
+      }));
+      // 完整诊断字段逐字相同（code / path / section_id / line / actual / expected / message / fix_hint）。
+      expect(actual, `${locale}:${sample.content}`).toEqual(sample.issues);
     }
-    // 诊断侧：该码的出现与否与基准一致；出现时结构字段稳定（文案不在测试内复述）。
-    for (const [content, locale] of samples) {
-      if (!content) continue;
-      const body = proposalBody(content, locale);
-      const issues = evaluateProposalStructure(body, 'proposal.md', locale)
-        .filter(i => i.code === 'proposal_change_type_invalid');
-      expect(issues.length === 0, `${locale}:${content}`).toBe(legacy(content, locale));
-      for (const i of issues) {
-        expect(i.section_id).toBe('type');
-        expect(i.expected).toBe('requirements|design|interface|code');
-      }
+    // 判据本体同样对齐基线：合法性结论由基线诊断中该码的有无反推。
+    for (const sample of BASELINE.structureDiagnostics) {
+      const expectValid = !sample.issues.some(i => i.code === 'proposal_change_type_invalid');
+      expect(isValidChangeType(sample.content, sample.locale as 'zh' | 'en'),
+        `${sample.locale}:${sample.content}`).toBe(expectValid);
     }
   });
 
-  it('UT-S35-171 零回归锚：违规码集合与检查项计数不因新 warning 改变', () => {
-    // 新码绝不进闭合枚举，且枚举成员集合本身未被意外扩充。
+  it('UT-S35-171 零回归锚：违规码全集、检查项集合与失败结论对齐上线前实测基线', () => {
+    // ① 违规码**全集**逐字相同——新增任一其它码同样会红，不只是「新 warning 不在其中」。
+    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(BASELINE.violationCodes);
     expect(CHANGE_LINT_VIOLATION_CODES).not.toContain(WARN);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(CHANGE_LINT_VIOLATION_CODES.length);
 
-    // 同一夹具的「命中 warning」与「不命中 warning」两态：检查项集合与逐项计数必须逐字相同。
-    const hit = setup('代码级', [D_PRD3], 'anchor-hit');
-    const quiet = setup('需求级', [D_PRD3], 'anchor-quiet');
-    const rh = lint(hit.root, hit.dir, hit.slug);
-    const rq = lint(quiet.root, quiet.dir, quiet.slug);
-    expect(rh.warnings.map(w => w.code)).toContain(WARN);
-    expect(rq.warnings.map(w => w.code)).not.toContain(WARN);
-    expect(rh.checks.map(c => c.id)).toEqual(rq.checks.map(c => c.id));
-    expect(rh.checks.map(c => c.violations)).toEqual(rq.checks.map(c => c.violations));
-    expect(rh.violations).toHaveLength(0);
-    expect(rq.violations).toHaveLength(0);
+    // ② 逐场景对齐基线：检查项集合（id + label + violations）、violations 完整字段、pass 结论。
+    const cases: Array<[string, string, string[], Array<[string, string]>]> = [
+      ['code+prd3', '代码级', [D_PRD3], []],
+      ['code+test', '代码级', [D_TEST], []],
+      ['requirements+prd3', '需求级', [D_PRD3], []],
+      ['design+prd1', '设计级', [D_PRD1], []],
+      ['ambiguous+prd1', '设计级 / 代码级', [D_PRD1], []],
+      ['nodelta', '代码级', [], []],
+      ['code+prd3+broken', '代码级', [D_PRD3], [['deltas/test/broken.md', '没有任何 ADDED/MODIFIED 段标记的正文\n']]],
+    ];
+    for (const [key, changeType, deltas, extra] of cases) {
+      const base = scenario(key);
+      expect(base, `基线缺场景 ${key}`).toBeDefined();
+      const f = baselineFixture(changeType, deltas, extra);
+      const r = lint(f.root, f.dir, f.slug);
+      expect(r.checks.map(c => ({ id: c.id, label: c.label, violations: c.violations })), `${key}: 检查项集合须对齐基线`)
+        .toEqual(base.checks);
+      expect(r.violations.map(v => ({ code: v.code, path: v.path, message: v.message, fix_hint: v.fix_hint })),
+        `${key}: violations 须对齐基线`).toEqual(base.violations);
+      expect(r.violations.length === 0, `${key}: pass 结论须对齐基线`).toBe(base.pass);
+      // 新 warning 只能出现在 warnings，且基线中该通道的既有内容不得被顶掉。
+      expect(r.violations.map(v => v.code)).not.toContain(WARN);
+      for (const code of base.warningCodes ?? []) expect(r.warnings.map(w => w.code)).toContain(code);
+    }
 
-    // 与真实违规并存：warning 不得把失败结果改成通过，两通道互不吞并。
-    const bad = setup('代码级', [D_PRD3], 'anchor-bad');
-    mkdirSync(join(bad.dir, 'deltas', 'test'), { recursive: true });
-    writeFileSync(join(bad.dir, 'deltas', 'test', 'broken.md'), '没有任何 ADDED/MODIFIED 段标记的正文\n');
+    // ③ 真实违规仍 FAIL：warning 不得把失败结论改成通过，且命令层退出码为 2。
+    const bad = baselineFixture('代码级', [D_PRD3],
+      [['deltas/test/broken.md', '没有任何 ADDED/MODIFIED 段标记的正文\n']]);
     const rb = lint(bad.root, bad.dir, bad.slug);
     expect(rb.violations.length).toBeGreaterThan(0);
-    expect(rb.violations.map(v => v.code)).not.toContain(WARN);
     expect(rb.warnings.map(w => w.code)).toContain(WARN);
-    expect(rb.checks.reduce((n, c) => n + c.violations, 0)).toBe(rb.violations.length);
+    const cli = spawnSync(process.execPath, [join(CLI_ROOT, 'dist', 'index.js'), 'change-lint'], {
+      cwd: bad.root, encoding: 'utf-8', env: { ...process.env, OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '0' },
+    });
+    expect(cli.status, '有真实违规时必须 exit 2').toBe(2);
+    expect(cli.stdout).toMatch(/^FAIL（/m);
+
+    // ④ 无 delta 对照：有效条目为空，恒不告警且结论对齐基线。
+    const nd = baselineFixture('代码级', []);
+    const rn = lint(nd.root, nd.dir, nd.slug);
+    expect(rn.warnings.map(w => w.code)).not.toContain(WARN);
+    expect(rn.checks.map(c => c.id)).toEqual(scenario('nodelta').checks!.map(c => c.id));
   });
 
   it('UT-S35-172 可归因与零漂移：逐项点名、措辞克制、warnings 空则省略', () => {
@@ -337,5 +428,41 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
     expect(la).toEqual(checkLines(c.root));
     expect(la.every(x => x.endsWith(':✓'))).toBe(true);
     for (const j of [ra.json, rb.json, rc.json]) expect(j.data.pass).toBe(true);
+
+    // ⑤b merge 准入一致性：S09 已冻结「准入判定 = change-lint 完整结论」，warning 不进
+    //    violations 故不得改变准入。主臂（命中 warning）必须照常放行并写 SPEC_MERGED；
+    //    反证臂（同夹具另加一条真实违规）必须被拒且不写 marker——证明拒绝来自违规而非 warning。
+    const mergeOf = (root: string, slug: string) => spawnSync(
+      process.execPath, [join(CLI_ROOT, 'dist', 'index.js'), 'merge', slug],
+      { cwd: root, encoding: 'utf-8', env: { ...process.env, OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '0' } });
+    const mMain = mergeOf(a.root, a.slug);
+    expect(mMain.status, `命中 warning 不得改变 merge 准入：${mMain.stderr || mMain.stdout}`).toBe(0);
+    expect(existsSync(join(a.dir, 'SPEC_MERGED'))).toBe(true);
+
+    // 反证臂的违规必须是**只有 change-lint 准入才检出**的形态，否则 merge 自身的 delta 校验
+    // 会先行拒绝，该臂就测不到准入路径（实测：用「delta 缺段标记」构造时，把准入判定短路掉
+    // 本臂仍绿——因为拒绝来自 merge 内部的 validateMarkdownDelta）。故取部署决策冲突
+    // （L5 / tasks_deployment_conflict）：proposal 声明无需部署而 tasks 带 [deploy] section。
+    const d = setup('代码级', [D_PRD3], 'st-violation');
+    writeFileSync(join(d.dir, 'tasks.md'), [
+      '# 实现任务', '', '## [delta] 规格变更', '- [ ] 产出 delta 到 `deltas/test/` — 新增用例', '',
+      '## [code] 代码实现', '', '## [deploy] 部署任务', '- [ ] 发布新版本', '',
+    ].join('\n'));
+    const preBad = run(d.root);
+    expect(preBad.status, '该臂须确有 change-lint 违规').toBe(2);
+    expect((preBad.json.data.violations ?? []).map((x: { code: string }) => x.code))
+      .toContain('tasks_deployment_conflict');
+    const mBad = mergeOf(d.root, d.slug);
+    expect(mBad.status, '准入违规必须挡停 merge').not.toBe(0);
+    expect(existsSync(join(d.dir, 'SPEC_MERGED'))).toBe(false);
+
+    // ⑥ 只读红线：change-lint 运行前后**整个项目根**逐文件字节指纹相等（不止提案目录）。
+    const e = setup('代码级', [D_PRD1, D_SPEC], 'st-readonly');
+    const beforeTree = treeFingerprint(e.root);
+    const ro = run(e.root);
+    expect(ro.status).toBe(0);
+    expect((ro.json.data.warnings ?? []).map((x: { code: string }) => x.code)).toContain(WARN);
+    checkLines(e.root); // 文本形态同样只读
+    expect(treeFingerprint(e.root), 'change-lint 必须项目级零写入').toEqual(beforeTree);
   });
 });

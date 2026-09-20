@@ -1,0 +1,573 @@
+{
+  "_note": "本能力（anti-overdesign-scale-signals）上线前的实测基线。由 scratchpad/capture-baseline.mjs 在 commit 66889f0（feat 提交之前）的 cli 构建上捕获，禁止手改。",
+  "violationCodes": [
+    "code_change_requires_real_test_ids",
+    "delta_implicit_id_removal",
+    "delta_missing_section_marker",
+    "delta_path_invalid",
+    "delta_removed_unknown_id",
+    "delta_section_anchor_unresolvable",
+    "delta_template_skeleton",
+    "delta_test_table_column_mismatch",
+    "delta_test_table_duplicate_header",
+    "delta_test_table_id_unextractable",
+    "deployment_decision_conflict",
+    "design_system_empty",
+    "design_system_invalid",
+    "design_system_missing",
+    "design_system_mode_invalid",
+    "fallback_reason_missing",
+    "fallback_token_forged",
+    "no_pages_declared",
+    "non_markdown_delta_invalid",
+    "proposal_change_type_invalid",
+    "proposal_deployment_fields_invalid",
+    "proposal_placeholder_remaining",
+    "proposal_required_section_duplicate",
+    "proposal_required_section_empty",
+    "proposal_required_section_missing",
+    "prototype_basename_duplicate",
+    "prototype_basename_invalid",
+    "prototype_empty",
+    "prototype_extra",
+    "prototype_missing",
+    "prototype_path_traversal",
+    "slice-task-state-inconsistent",
+    "tasks_code_entry_before_spec_complete",
+    "tasks_code_header_missing",
+    "tasks_code_section_missing",
+    "tasks_deployment_conflict",
+    "tasks_sections_unparsable",
+    "tasks_template_remaining",
+    "test-slice-assignment-ambiguous",
+    "test-slice-manifest-invalid",
+    "test-slice-manifest-missing",
+    "test-slice-manifest-unsupported",
+    "ui_declaration_missing",
+    "ui_declaration_unparsable",
+    "ui_impact_not_boolean"
+  ],
+  "structureDiagnostics": [
+    {
+      "content": "代码级",
+      "locale": "zh",
+      "issues": []
+    },
+    {
+      "content": "需求级",
+      "locale": "zh",
+      "issues": []
+    },
+    {
+      "content": "设计级",
+      "locale": "zh",
+      "issues": []
+    },
+    {
+      "content": "接口级",
+      "locale": "zh",
+      "issues": []
+    },
+    {
+      "content": "代码级（不涉及设计级或需求级变更）",
+      "locale": "zh",
+      "issues": []
+    },
+    {
+      "content": "设计级 / 代码级",
+      "locale": "zh",
+      "issues": []
+    },
+    {
+      "content": "代码级（修复解析器（局部实现），不涉及需求级）",
+      "locale": "zh",
+      "issues": []
+    },
+    {
+      "content": "完全没有类型词",
+      "locale": "zh",
+      "issues": [
+        {
+          "code": "proposal_change_type_invalid",
+          "path": "proposal.md",
+          "section_id": "type",
+          "line": 8,
+          "actual": "完全没有类型词",
+          "expected": "requirements|design|interface|code",
+          "message": "变更类型不在允许集合中。",
+          "fix_hint": "使用需求级/设计级/接口级/代码级（或英文等价值）。"
+        }
+      ]
+    },
+    {
+      "content": "code level",
+      "locale": "en",
+      "issues": [
+        {
+          "code": "proposal_required_section_missing",
+          "path": "proposal.md",
+          "section_id": "clarification",
+          "line": null,
+          "actual": null,
+          "expected": "Decision Clarification",
+          "message": "缺少 canonical 章节：Decision Clarification",
+          "fix_hint": "补充且仅保留一个 `## Decision Clarification` 章节。"
+        }
+      ]
+    },
+    {
+      "content": "design",
+      "locale": "en",
+      "issues": [
+        {
+          "code": "proposal_required_section_missing",
+          "path": "proposal.md",
+          "section_id": "clarification",
+          "line": null,
+          "actual": null,
+          "expected": "Decision Clarification",
+          "message": "缺少 canonical 章节：Decision Clarification",
+          "fix_hint": "补充且仅保留一个 `## Decision Clarification` 章节。"
+        }
+      ]
+    },
+    {
+      "content": "requirement",
+      "locale": "en",
+      "issues": [
+        {
+          "code": "proposal_required_section_missing",
+          "path": "proposal.md",
+          "section_id": "clarification",
+          "line": null,
+          "actual": null,
+          "expected": "Decision Clarification",
+          "message": "缺少 canonical 章节：Decision Clarification",
+          "fix_hint": "补充且仅保留一个 `## Decision Clarification` 章节。"
+        }
+      ]
+    },
+    {
+      "content": "design / code level",
+      "locale": "en",
+      "issues": [
+        {
+          "code": "proposal_required_section_missing",
+          "path": "proposal.md",
+          "section_id": "clarification",
+          "line": null,
+          "actual": null,
+          "expected": "Decision Clarification",
+          "message": "缺少 canonical 章节：Decision Clarification",
+          "fix_hint": "补充且仅保留一个 `## Decision Clarification` 章节。"
+        }
+      ]
+    },
+    {
+      "content": "nothing here",
+      "locale": "en",
+      "issues": [
+        {
+          "code": "proposal_required_section_missing",
+          "path": "proposal.md",
+          "section_id": "clarification",
+          "line": null,
+          "actual": null,
+          "expected": "Decision Clarification",
+          "message": "缺少 canonical 章节：Decision Clarification",
+          "fix_hint": "补充且仅保留一个 `## Decision Clarification` 章节。"
+        },
+        {
+          "code": "proposal_change_type_invalid",
+          "path": "proposal.md",
+          "section_id": "type",
+          "line": 8,
+          "actual": "nothing here",
+          "expected": "requirements|design|interface|code",
+          "message": "变更类型不在允许集合中。",
+          "fix_hint": "使用需求级/设计级/接口级/代码级（或英文等价值）。"
+        }
+      ]
+    }
+  ],
+  "lintScenarios": {
+    "code+prd3": {
+      "ok": true,
+      "checks": [
+        {
+          "id": 0,
+          "label": "Plan Package 完成合同",
+          "violations": 0
+        },
+        {
+          "id": 1,
+          "label": "tasks.md 结构可解析",
+          "violations": 0
+        },
+        {
+          "id": 2,
+          "label": "[code] 标题在场（空段占位合法）",
+          "violations": 0
+        },
+        {
+          "id": 3,
+          "label": "测试证据在场（分阶段证据模型）",
+          "violations": 0
+        },
+        {
+          "id": 4,
+          "label": "delta 段标记与脱模板（1 个 .md delta）",
+          "violations": 0
+        },
+        {
+          "id": 5,
+          "label": "部署决策一致",
+          "violations": 0
+        },
+        {
+          "id": 6,
+          "label": "delta 路径合法（1 mergeable / 0 invalid）",
+          "violations": 0
+        },
+        {
+          "id": 8,
+          "label": "条目守恒（ID 隐式删除拦截）",
+          "violations": 0
+        },
+        {
+          "id": 9,
+          "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+          "violations": 0
+        }
+      ],
+      "violations": [],
+      "warningCodes": [],
+      "pass": true
+    },
+    "code+test": {
+      "ok": true,
+      "checks": [
+        {
+          "id": 0,
+          "label": "Plan Package 完成合同",
+          "violations": 0
+        },
+        {
+          "id": 1,
+          "label": "tasks.md 结构可解析",
+          "violations": 0
+        },
+        {
+          "id": 2,
+          "label": "[code] 标题在场（空段占位合法）",
+          "violations": 0
+        },
+        {
+          "id": 3,
+          "label": "测试证据在场（分阶段证据模型）",
+          "violations": 0
+        },
+        {
+          "id": 4,
+          "label": "delta 段标记与脱模板（1 个 .md delta）",
+          "violations": 0
+        },
+        {
+          "id": 5,
+          "label": "部署决策一致",
+          "violations": 0
+        },
+        {
+          "id": 6,
+          "label": "delta 路径合法（1 mergeable / 0 invalid）",
+          "violations": 0
+        },
+        {
+          "id": 8,
+          "label": "条目守恒（ID 隐式删除拦截）",
+          "violations": 0
+        },
+        {
+          "id": 9,
+          "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+          "violations": 0
+        }
+      ],
+      "violations": [],
+      "warningCodes": [],
+      "pass": true
+    },
+    "requirements+prd3": {
+      "ok": true,
+      "checks": [
+        {
+          "id": 0,
+          "label": "Plan Package 完成合同",
+          "violations": 0
+        },
+        {
+          "id": 1,
+          "label": "tasks.md 结构可解析",
+          "violations": 0
+        },
+        {
+          "id": 2,
+          "label": "[code] 标题在场（空段占位合法）",
+          "violations": 0
+        },
+        {
+          "id": 3,
+          "label": "测试证据在场（分阶段证据模型）",
+          "violations": 0
+        },
+        {
+          "id": 4,
+          "label": "delta 段标记与脱模板（1 个 .md delta）",
+          "violations": 0
+        },
+        {
+          "id": 5,
+          "label": "部署决策一致",
+          "violations": 0
+        },
+        {
+          "id": 6,
+          "label": "delta 路径合法（1 mergeable / 0 invalid）",
+          "violations": 0
+        },
+        {
+          "id": 8,
+          "label": "条目守恒（ID 隐式删除拦截）",
+          "violations": 0
+        },
+        {
+          "id": 9,
+          "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+          "violations": 0
+        }
+      ],
+      "violations": [],
+      "warningCodes": [],
+      "pass": true
+    },
+    "design+prd1": {
+      "ok": true,
+      "checks": [
+        {
+          "id": 0,
+          "label": "Plan Package 完成合同",
+          "violations": 0
+        },
+        {
+          "id": 1,
+          "label": "tasks.md 结构可解析",
+          "violations": 0
+        },
+        {
+          "id": 2,
+          "label": "[code] 标题在场（空段占位合法）",
+          "violations": 0
+        },
+        {
+          "id": 3,
+          "label": "测试证据在场（分阶段证据模型）",
+          "violations": 0
+        },
+        {
+          "id": 4,
+          "label": "delta 段标记与脱模板（1 个 .md delta）",
+          "violations": 0
+        },
+        {
+          "id": 5,
+          "label": "部署决策一致",
+          "violations": 0
+        },
+        {
+          "id": 6,
+          "label": "delta 路径合法（1 mergeable / 0 invalid）",
+          "violations": 0
+        },
+        {
+          "id": 8,
+          "label": "条目守恒（ID 隐式删除拦截）",
+          "violations": 0
+        },
+        {
+          "id": 9,
+          "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+          "violations": 0
+        }
+      ],
+      "violations": [],
+      "warningCodes": [],
+      "pass": true
+    },
+    "ambiguous+prd1": {
+      "ok": true,
+      "checks": [
+        {
+          "id": 0,
+          "label": "Plan Package 完成合同",
+          "violations": 0
+        },
+        {
+          "id": 1,
+          "label": "tasks.md 结构可解析",
+          "violations": 0
+        },
+        {
+          "id": 2,
+          "label": "[code] 标题在场（空段占位合法）",
+          "violations": 0
+        },
+        {
+          "id": 3,
+          "label": "测试证据在场（分阶段证据模型）",
+          "violations": 0
+        },
+        {
+          "id": 4,
+          "label": "delta 段标记与脱模板（1 个 .md delta）",
+          "violations": 0
+        },
+        {
+          "id": 5,
+          "label": "部署决策一致",
+          "violations": 0
+        },
+        {
+          "id": 6,
+          "label": "delta 路径合法（1 mergeable / 0 invalid）",
+          "violations": 0
+        },
+        {
+          "id": 8,
+          "label": "条目守恒（ID 隐式删除拦截）",
+          "violations": 0
+        },
+        {
+          "id": 9,
+          "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+          "violations": 0
+        }
+      ],
+      "violations": [],
+      "warningCodes": [],
+      "pass": true
+    },
+    "nodelta": {
+      "ok": true,
+      "checks": [
+        {
+          "id": 0,
+          "label": "Plan Package 完成合同",
+          "violations": 0
+        },
+        {
+          "id": 1,
+          "label": "tasks.md 结构可解析",
+          "violations": 0
+        },
+        {
+          "id": 2,
+          "label": "[code] 标题在场（空段占位合法）",
+          "violations": 0
+        },
+        {
+          "id": 3,
+          "label": "测试证据在场（分阶段证据模型）",
+          "violations": 0
+        },
+        {
+          "id": 4,
+          "label": "delta 段标记与脱模板（0 个 .md delta）",
+          "violations": 0
+        },
+        {
+          "id": 5,
+          "label": "部署决策一致",
+          "violations": 0
+        },
+        {
+          "id": 6,
+          "label": "delta 路径合法（0 mergeable / 0 invalid）",
+          "violations": 0
+        },
+        {
+          "id": 8,
+          "label": "条目守恒（ID 隐式删除拦截）",
+          "violations": 0
+        },
+        {
+          "id": 9,
+          "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+          "violations": 0
+        }
+      ],
+      "violations": [],
+      "warningCodes": [],
+      "pass": true
+    },
+    "code+prd3+broken": {
+      "ok": true,
+      "checks": [
+        {
+          "id": 0,
+          "label": "Plan Package 完成合同",
+          "violations": 0
+        },
+        {
+          "id": 1,
+          "label": "tasks.md 结构可解析",
+          "violations": 0
+        },
+        {
+          "id": 2,
+          "label": "[code] 标题在场（空段占位合法）",
+          "violations": 0
+        },
+        {
+          "id": 3,
+          "label": "测试证据在场（分阶段证据模型）",
+          "violations": 0
+        },
+        {
+          "id": 4,
+          "label": "delta 段标记与脱模板（2 个 .md delta）",
+          "violations": 1
+        },
+        {
+          "id": 5,
+          "label": "部署决策一致",
+          "violations": 0
+        },
+        {
+          "id": 6,
+          "label": "delta 路径合法（2 mergeable / 0 invalid）",
+          "violations": 0
+        },
+        {
+          "id": 8,
+          "label": "条目守恒（ID 隐式删除拦截）",
+          "violations": 0
+        },
+        {
+          "id": 9,
+          "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+          "violations": 0
+        }
+      ],
+      "violations": [
+        {
+          "code": "delta_missing_section_marker",
+          "path": "logos/changes/baseline-fixture/deltas/test/broken.md",
+          "message": "`.md` delta 缺少围栏外的 ADDED/MODIFIED/REMOVED 段标记（围栏内示例不算权威标记）",
+          "fix_hint": "为每个变更章节添加 `## ADDED — <标题>` / `## MODIFIED — <标题>` / `## REMOVED — <标题>` 标记"
+        }
+      ],
+      "warningCodes": [],
+      "pass": false
+    }
+  }
+}
