@@ -61,38 +61,45 @@
 
 ### Step 4: 生成 proposal.md
 
-按以下模板生成，写入 `logos/changes/<slug>/proposal.md`：
+`openlogos change <slug>` 已经在磁盘上写出完整的 `logos/changes/<slug>/proposal.md` 脚手架。
+**在该文件上原地逐段填写，禁止整篇重写。**
 
-```markdown
-# 变更提案：[变更名称]
+理由：脚手架含若干**不由 lint 强制**的段（当前为「最小实现论证」）。整篇重写会把它们连同正文一起覆盖掉，
+而没有任何检查会报错——这是一个静默丢失。
 
-## 变更原因
-[为什么要做这个变更？来源于哪个需求/反馈/Bug？]
+别把「canonical 段历次都幸存」当作整篇重写安全的证据：那只是 **L0** 在挡着，逼你把它们补回来。
+而这层兜底比你以为的薄——**L7 的「UI/UX 声明段缺失」现已降为警告**（进 `warnings`、不计入 violations、
+不影响退出码、不挡 merge，见功能规格 §2.83.1）；只有该段**在场但结构损坏**（fenced YAML 缺失 / 损坏 /
+非对象、`ui_impact` 非布尔）才 fail-closed 拒绝 merge。它在 20260914 确实硬阻断过一次全自动 run，
+正是那次事故之后被降级的。
 
-## 变更类型
-[需求级 / 设计级 / 接口级 / 部署级 / 代码级]
+所以如今真正被门守住的，只有 **L0 的 6 个 canonical 段**。其余的段——包括曾经硬阻断过的 UI 声明段、
+以及从一开始就不设门的「最小实现论证」——都只能靠「不整篇重写」这条填写规则来保障。
 
-## 变更范围
-- 影响的需求文档：[列表，精确到文件名和章节]
-- 影响的功能规格：[列表]
-- 影响的业务场景：[场景编号列表]
-- 影响的部署方案：[列表]
-- 影响的 API：[端点列表]
-- 影响的 DB 表：[表名列表]
-- 影响的编排测试：[列表]
-- 影响的 smoke 测试：[列表]
+填写规则见本 Skill **§canonical scaffold 保真**（先读脚手架、只替换占位正文、不删段）。此处不再复述，
+也**不要**另写一套等价指令——那就是在制造下一个会漂移的来源。
 
-## 部署影响
-- 是否需要部署：是 / 否
-- 部署原因：[说明为什么需要或不需要部署]
-- 影响环境：[本地 / 测试 / 预发 / 生产 / 无]
-- 是否涉及数据迁移：是 / 否
-- 是否需要回滚预案：是 / 否
-- 是否需要 smoke：是 / 否
+**canonical 必填章节的唯一判据是 `PLAN_SECTION_REGISTRY`（`cli/src/lib/plan-package-contract.ts`）+ change-lint（L0 / L7）。**
+本 Skill 不自列必填章节清单：清单写在文档里就会与脚手架、与判据三方漂移，而「某段是否必填」从来不由文档决定。
+要知道当前必填哪些段，跑 `openlogos change-lint`，别查文档。
 
-## 变更概述
-[用 1-3 段话概述具体改什么]
-```
+**逐段填写要点**（脚手架已给出段名与占位提示，这里只说每段要回答什么、什么算填好）：
+
+- **变更原因** — 为什么要做？来源于哪个需求 / 反馈 / Bug？病灶写到可复现的程度，别停在「不够好」。
+- **最小实现论证** — 三问必答：先检索了哪些既有机制（逐项说为何不够用或如何复用）、为什么不能更小、
+  本提案主动砍掉了什么。**这一段不受任何检查约束，完全靠自律**——它作用在设计发生之前，是防过度设计
+  三批里唯一的事前环节。写不出「砍掉了什么」，通常说明还没想清楚边界。
+- **变更类型** — 需求级 / 设计级 / 接口级 / 代码级，四选一，并在括号里点明判断依据。
+- **变更范围** — 逐类列出受影响的文档 / 场景 / API / DB / 测试 / 代码，精确到文件名与章节；
+  无影响的类别写「无」，不要省略该行。范围必须与 `tasks.md` 的 `[delta]` 目标对账一致（见 Step 5）。
+- **部署影响** — 六个字段全部给出明确布尔或枚举值，它是人工审核依据，也是 `[deploy]` section 的决策源。
+- **UI/UX 变更声明** — GUI 模块必须在场并如实声明 `ui_impact`（判定规则见 Step 6 补充二）。
+- **决策澄清** — 五类 impact 逐项给 status + reason；每条 decision 写清 choice 与 reason，
+  `status: ready` 意味着你认为无待澄清项。
+- **变更概述** — 1-3 段话说清具体改什么，让审阅者不读 delta 也能判断方案是否合理。
+
+按段名给出的要点到此为止——**本步骤不提供、也不得提供任何可整块复制的 proposal 模板**。
+形态来源只有一个：`openlogos change` 写在磁盘上的那份脚手架。
 
 生成 `proposal.md` 后必须先保留部署决策结论，Step 5 生成 `tasks.md` 时必须与该结论一致。
 
@@ -312,7 +319,7 @@ change-flow-redesign 把前段流程拆为 `plan{写提案, 划分tasks}` → `s
    - **与 change-lint L7 同源**：L7 按 `product_type ∈ {web, desktop, mobile}` 激活（模块归属经同一 proposal-context resolver 语义解析，见功能规格 §2.30）。change-writer 读**同一个 yaml 字段**、得同一个结论——producer 判定与门判定单源，不存在漂移空间。
    - **禁止自由裁量**：不得按提案语义、变更内容、`tech_stack` 观感或对代码库的印象改判项目类型。`product_type: desktop`（或 web / mobile）项目里的「纯 CLI 判据修复」提案**仍然是 GUI 项目的提案**——「本次没动界面」表达为 `ui_impact: false`，**绝不**表达为「把项目当作非 GUI、整节跳过」。
    - **判定映射**：`product_type ∈ {web, desktop, mobile}` → GUI 类，进入第 2 层判定；其余取值（`cli` / `library` / `api` / `service` / skills 等）→ 非 GUI 类，整节跳过、`ui_impact` 恒为 `false`、不注入声明段。
-   - **严禁删除脚手架结构必填段（GUI 模块）**：`openlogos change` 的 proposalTemplate 已为 GUI 项目生成「UI/UX 变更声明」段（默认 `ui_impact: false`）——产物侧本无缺口。整篇重写 `proposal.md` 时**必须原样保留该段**：本次不动界面就保留段并如实写 `ui_impact: false`；仅 `product_type` 非 GUI 的模块才允许该段不存在。
+   - **严禁删除脚手架结构必填段（GUI 模块）**：`openlogos change` 的 proposalTemplate 已为 GUI 项目生成「UI/UX 变更声明」段（默认 `ui_impact: false`）——产物侧本无缺口。**填写 `proposal.md` 时该段必须在场并如实声明**：本次不动界面就保留段并如实写 `ui_impact: false`；仅 `product_type` 非 GUI 的模块才允许该段不存在。（脚手架全部段的保真要求见 §canonical scaffold 保真；`proposal.md` 本就不得整篇重写，故本条不以「整篇重写时」为前提。）
 2. **再判本次是否动界面**（仅当 `product_type ∈ GUI`）：
    - **依据 = 提案意图 + `tasks.md` 已规划的 `[delta]` 目标是否命中 `2-page-design/`，或命中含交互变更的 feature-specs delta**。命中即**强制判为「动了界面」**（`ui_impact:true`）。
    - **窄例外（命中 `2-page-design/` 时）**：仅当目标为**页面原型产物**（`.html`，或含 `pages` 声明）才强制 `ui_impact:true`；若目标是**纯 CLI 体验文本规格**（`.md` 且**无** `pages` 声明），不强制 `ui_impact:true`。
@@ -810,7 +817,17 @@ exit 2 时逐条消费 `code/path/message/fix_hint`，只修当前提案被指�
 
 ### canonical scaffold 保真
 
-填写 proposal/tasks 前必须先读取 `openlogos change` 已生成的两个文件。保留 CLI scaffold 的 canonical 标题、section 顺序和机器区块，只替换占位正文；允许新增详细设计章节，但不得删除、改名、合并或翻译 canonical 章节。
+填写 proposal/tasks 前必须先读取 `openlogos change` 已生成的两个文件。
+
+**对 `proposal.md`**：保留 CLI scaffold 的**全部段**——canonical 标题、section 顺序、机器区块，
+以及**不受 lint 强制的非 canonical 段**（如「最小实现论证」）同样不得删除、省略或留空壳；
+只替换占位正文。允许新增详细设计章节，但不得删除、改名、合并或翻译任何既有段。
+**禁止整篇重写 `proposal.md`**：重写必然丢掉不设门的段，而没有检查会告诉你。
+
+**对 `tasks.md`**：本条**不约束 section 的增删**。`tasks.md` 按本次变更的实际范围增删
+`[delta]` / `[code]` / `[deploy]`，规则以 `spec/tasks-spec.md` 为准——纯规格 change 删除 `[code]`，
+纯代码 change 保留空 `[code]` 并走 no-delta spec-complete。把「全部段不得删除」误用到 `tasks.md`，
+会禁掉这些合法删除并导致流程路由错误。
 
 ### plan 阶段 `[code]` 红线
 

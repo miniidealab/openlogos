@@ -585,3 +585,60 @@ sequenceDiagram
 - 来源变更：anti-overdesign-scale-signals（刀二；刀一见 S35「变更类型 ↔ delta 层面观测 warning」）。
 - 需求：`core-01-requirements.md`「S35/S09: 防过度设计的规模信号」验收条件 7–8。
 - 测试：UT-S09-360、UT-S09-361。
+
+## S09-A proposal.md 形态的单一来源约定
+
+`proposal.md` 的形态与必填判据各有且只有一个来源，Skill 与方法论规范均不得再持有第二份。
+
+### 约定
+
+1. **形态唯一来源 = 脚手架**：`openlogos change <slug>` 由 `proposalTemplate`（`cli/src/i18n.ts`）
+   写出的磁盘产物，是 `proposal.md` 章节集合与顺序的唯一事实源，随 CLI 版本演进。
+2. **必填判据唯一来源 = change-lint**：canonical 必填章节由 `PLAN_SECTION_REGISTRY`
+   （`cli/src/lib/plan-package-contract.ts`）经 L0 执行，UI/UX 声明段由 L7 执行。
+   「某段是否必填」不由任何文档决定。**两者强度不同**：L0 违规挡 merge；L7 自 §2.83.1 起
+   缺段仅告警、不挡 merge，只有段在场而结构损坏才 fail-closed。
+3. **禁止第二份来源**：`skills/change-writer/SKILL.md`、`SKILL.en.md` 与 `spec/change-management.md`
+   **不得内嵌可整块复制的 proposal 模板，也不得自列必填章节清单**。需要知道当前章节集合或必填项时，
+   读脚手架产物或跑 `openlogos change-lint`。
+4. **填写方式**：在脚手架产物上**原地逐段填写，禁止整篇重写**。该规则连同脚手架全部段的保真要求，
+   统一写在 `skills/change-writer/SKILL.md` §canonical scaffold 保真（英文版 §Preserve the CLI
+   scaffold），Step 4 指向它而不复述。
+5. **保真范围限定在 `proposal.md`**：§canonical scaffold 保真的「全部段不得删除」只约束 `proposal.md`；
+   `tasks.md` 按本次变更的实际范围增删 `[delta]` / `[code]` / `[deploy]`，规则以 `spec/tasks-spec.md`
+   为准（纯规格 change 删除 `[code]`，纯代码 change 保留空 `[code]`）。
+
+### 要防的失效模式
+
+**脚手架新增一个不设门的段 → 下游按 Skill 的内嵌模板整篇重写 `proposal.md` → 该段被静默覆盖。**
+
+三个环节缺一不可，而第三环没有任何检查会报错：
+
+- canonical 段之所以历次幸存，只因 **L0** 硬卡着，产出方被逼着补回来——lint 掩盖了漂移，
+  而不是消除了漂移。
+- 本次实例：`anti-overdesign-scale-signals` 给脚手架加入的 `## 最小实现论证` 段**刻意不设门**
+  （该提案决策 C03），因此它是当前唯一会静默丢失的段。
+- 同型事故已发生过一次：20260914，产出方删掉「UI/UX 变更声明」段导致全自动 run 的 `openlogos merge`
+  被 `ui_declaration_missing` 在 spec-exit 后挡停。当时的修法是为该段追加一条专属保留指令——
+  **那是「默许整篇重写 + 逐段打补丁」路线，成本随脚手架段数线性增长，且每次都依赖有人记得加**。
+  本约定取消「整篇重写」这个前提，新增段不再需要追加补丁。
+- **该拦截其后已降级，使填写规则成为唯一保障**：按 §2.83.1，`ui_declaration_missing` 现为**警告**
+  （进 `warnings`、不计入 violations、不影响退出码、不挡 merge），仅「段在场但结构损坏」
+  （`ui_declaration_unparsable` / `ui_impact_not_boolean`）仍 fail-closed。也就是说，UI 声明段如今
+  与「最小实现论证」同处一类：**门不再拦缺段，段的存续只靠「不整篇重写」这条填写规则**。
+  当前真正被门守住的只有 L0 的 6 个 canonical 段——这正是本约定把保真范围覆盖到全部段的理由。
+
+### 异常与边界
+
+- **本约定不改变任何 lint 判据**：不动 `PLAN_SECTION_REGISTRY`、不动占位符枚举、不动 L0 / L7 行为，
+  脚手架产物逐字节零回归。
+- **「最小实现论证」维持不设门**：是否升格为 canonical 必填段属新增硬阻断点，须另行征得用户同意，
+  不在本约定范围；其是否被真正填写，由后续提案的 `proposal.md` 观察。
+- **本约定约束的是产出方行为**，无法由机器直接验证「产出方是否照做」。可机器判定的是文本事实：
+  Skill 与 spec 中不存在可整块复制的模板与自列清单、保真条款覆盖非 canonical 段、脚手架产物零回归。
+
+### 追溯
+
+- 来源变更：single-source-proposal-scaffold。
+- 前序变更：anti-overdesign-scale-signals（引入「最小实现论证」段，见 §S09-A 提案脚手架章节清单与「最小实现论证」段）。
+- 测试：UT-S09-362、UT-S09-363、UT-S09-364；脚手架零回归复用 UT-S09-360。

@@ -995,3 +995,31 @@
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
 - UT-S09-360 必须以**真实 `openlogos change` 产物**断言，不得直接调用模板函数取字符串——模板到落盘之间的写入路径同属被测范围。
 - UT-S09-361 的对照臂是本用例的有效性前提：只断言「填妥后零 issue」而不证明「未填时确有 5 项」，无法排除判据被整体削弱的可能。两臂必须同时在场。
+
+## S09 proposal.md 单一来源与防复发测试
+
+> 覆盖「`proposal.md` 形态的单一来源约定」：Step 4 不得再内嵌可整块复制的提案模板、`spec/change-management.md` 不得自列必填章节清单、§canonical scaffold 保真须覆盖**非 canonical 段**且不波及 `tasks.md`（场景 S09-A「proposal.md 形态的单一来源约定」；来源变更 single-source-proposal-scaffold）。三条用例均为**仓库文本静态断言**，读取对象一律是根权威 `skills/`、`spec/`，**不得**读 `logos/skills/`、`logos/spec/` 下的 dogfood 副本（后者由 merge 后同步机制再生成）。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-362 | Step 4 不得再出现可整块复制的提案模板，且须指向既有保真条款 | 根权威 `skills/change-writer/SKILL.md` 与 `SKILL.en.md` | 各自截取 Step 4 段（`### Step 4: 生成 proposal.md` / `### Step 4: Generate proposal.md` 起，至下一个同级标题止），枚举段内全部 fenced code block；另对两份旧模板夹具施加同一判据 | **判据按代码块结构判、不按 `PLAN_SECTION_REGISTRY` 名称命中判**：段内任一 fenced code block 含 **≥3 个 `^## ` 级标题行**即判为「可整块复制的提案骨架」→ 红。两份现行 Step 4 均须判绿；且段内须含「原地逐段填写」「禁止整篇重写」语义与对 §canonical scaffold 保真（en: §Preserve the CLI scaffold）的指向。**负向样例（必须同批在场）**：以本次改动**前**的 zh / en 两份旧模板各作一个夹具，断言**两者都被检出**——现行英文旧模板的四个标题中只有 `Change Type` 精确等于 `PLAN_SECTION_REGISTRY.type.en`，其余三个（`Reason for Change` / `Change Scope` / `Change Summary`）均为旧名称，若判据绑定 registry 精确命中则英文侧只命中 1 项会漏检，把旧模板整块塞回去仍能通过。**正向样例**：新 Step 4 的「逐段填写要点」以列表承载、不置于 fenced code block，断言其不自撞该判据 |
+| UT-S09-363 | `spec/change-management.md` 不得自列必填章节清单，须指向两个唯一来源 | 根权威 `spec/change-management.md` | 截取 `### proposal.md` 小节（至下一个同级标题止），施加与 UT-S09-362 同一的代码块结构判据；并检索其对来源的指向 | 小节内**不存在**含 ≥3 个 `^## ` 标题行的 fenced code block（旧内嵌模板含 5 个，改前必红）；小节须同时点名**形态唯一来源 = 脚手架 `proposalTemplate`** 与**必填判据唯一来源 = change-lint（`PLAN_SECTION_REGISTRY` + L7）**，两者缺一即红；且不得再出现「必须包含」式的自列章节清单。`## 部署影响` 的既有解析规范（人工审核依据、与 `[deploy]` 交叉校验四条）须**逐字保留**，断言其在场——防止借本次删除顺手删掉无关内容 |
+| UT-S09-364 | 保真条款覆盖非 canonical 段，且不波及 `tasks.md`；全文无「整篇重写」前提的保留指令 | 根权威 `skills/change-writer/SKILL.md` 与 `SKILL.en.md` | 截取 §canonical scaffold 保真 / §Preserve the CLI scaffold 整节；另对 `SKILL.md` 全文检索以「整篇重写」为前提的保留指令 | ① 两节均须表明保护范围覆盖**不受 lint 强制的非 canonical 段**——断言其文本点名「最小实现论证」/「Minimal Implementation Rationale」或等义表述（如「不受 lint 强制的段」）；仅写 canonical 标题 / section 顺序 / 机器区块者判红（改前即此形态）。② 两节均须**显式限定不约束 `tasks.md` 的 section 增删**并指向 `spec/tasks-spec.md`；缺该限定即红——`tasks.md` 的 `[code]` 在纯规格 change 中本应删除（`spec/tasks-spec.md` §tasks 结构），保真条款原文同时约束 proposal 与 tasks，不限定会禁掉合法删除并造成流程路由错误。③ `SKILL.md` 全文不得再出现以「整篇重写」为前提的段保留指令（改前 Step 6 补充二 ① 即为此形态），但 `:322` 的 20260914 事故实证段须**逐字保留**，断言其在场 |
+
+### 追溯与覆盖
+
+- Step 4 去模板 + 指向保真条款（含双语负向样例）：UT-S09-362。
+- spec 去清单 + 双唯一来源指向 + 部署解析规范零回归：UT-S09-363。
+- 保真条款覆盖非 canonical 段、范围限定 `proposal.md`、矛盾消解：UT-S09-364。
+- **脚手架产物零回归复用 UT-S09-360**（真实 `openlogos change` 子进程断言 zh / en 产物章节与位置）——本次一行代码不改，不新写回归锚。
+- 场景：S09-A「proposal.md 形态的单一来源约定」；来源变更：single-source-proposal-scaffold。
+- 前序关联：anti-overdesign-scale-signals 的 UT-S09-360、UT-S09-361（「最小实现论证」段本身的模板测试）。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+- 三条用例读取对象必须是根权威 `skills/`、`spec/` 下的文件。断言 dogfood 副本等于放过「根权威未改、副本先行」的漂移，属无效证据。
+- UT-S09-362 的负向样例是本用例的有效性前提：只断言「现行 Step 4 判绿」而不证明「旧模板判红」，无法排除判据写成恒真。两份旧模板夹具须同时在场，且**英文侧不可省**——它正是按 registry 命中数判会漏检的那一侧。
+- 本组用例**不得**修改 `PLAN_SECTION_REGISTRY`、占位符枚举或任一既有 lint 判据以使自身通过。

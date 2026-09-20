@@ -58,28 +58,61 @@ Refer to change propagation rules to determine the change type and minimum updat
 
 ### Step 4: Generate proposal.md
 
-Generate using the following template and write to `logos/changes/<slug>/proposal.md`:
+`openlogos change <slug>` has already written a complete `logos/changes/<slug>/proposal.md` scaffold to disk.
+**Fill it in place, section by section. Never rewrite the file as a whole.**
 
-```markdown
-# Change Proposal: [Change Name]
+Why: the scaffold carries sections that **no lint enforces** (currently "Minimal Implementation Rationale").
+A whole-file rewrite overwrites them along with everything else, and nothing will report an error — a silent
+loss.
 
-## Reason for Change
-[Why is this change needed? What requirement/feedback/bug does it originate from?]
+Do not read "the canonical sections survived every time" as evidence that rewriting is safe: that is **L0**
+blocking and forcing you to put them back. And the backstop is thinner than you think — **L7's "UI/UX
+declaration section missing" is now a warning** (it lands in `warnings`, counts toward neither violations
+nor the exit code, and does not block merge; see feature spec §2.83.1). Only a section that is *present but
+malformed* (missing / corrupt / non-object fenced YAML, or a non-boolean `ui_impact`) still fails closed.
+It did hard-block an unattended run once, on 20260914 — that incident is exactly why it was downgraded.
 
-## Change Type
-[Requirement-level / Design-level / Interface-level / Code-level]
+So the only sections a gate still holds today are **L0's six canonical ones**. Every other section — the UI
+declaration that once hard-blocked, and "Minimal Implementation Rationale" which was never gated at all —
+rests entirely on the rule not to rewrite the file as a whole.
 
-## Change Scope
-- Affected requirement documents: [List, down to filename and section]
-- Affected functional specs: [List]
-- Affected business scenarios: [Scenario ID list]
-- Affected APIs: [Endpoint list]
-- Affected DB tables: [Table name list]
-- Affected orchestration tests: [List]
+For the filling rules see **§Preserve the CLI scaffold** in this Skill (read the scaffold first, replace
+placeholder prose only, delete nothing). They are not restated here, and you must **not** write an equivalent
+set of instructions of your own — that is how the next drifting source gets created.
 
-## Change Summary
-[Describe in 1-3 paragraphs what specifically will change]
-```
+**The single authority for canonical required sections is `PLAN_SECTION_REGISTRY`
+(`cli/src/lib/plan-package-contract.ts`) plus change-lint (L0 / L7).**
+This Skill does not carry its own list of required sections: a list written into prose drifts against both
+the scaffold and the criteria, and whether a section is required was never a documentation decision.
+To learn what is required right now, run `openlogos change-lint` — do not consult prose.
+
+**Section-by-section pointers** (the scaffold already supplies the section names and placeholder hints;
+this only states what each section must answer and what counts as done):
+
+- **Reason for Change** — why now? Which requirement / feedback / bug? State the defect precisely enough
+  to be reproducible; "it isn't good enough" is not a reason.
+- **Minimal Implementation Rationale** — answer all three: which existing mechanisms you searched (and why
+  each is insufficient, or how you reuse it), why it cannot be smaller, and what you deliberately cut.
+  **Nothing checks this section — it rests entirely on self-discipline.** It acts *before* the design happens
+  and is the only ex-ante step among the anti-overdesign measures. If you cannot name what you cut, you
+  usually have not settled the boundary yet.
+- **Change Type** — exactly one of Requirement / Design / Interface / Code level, with the deciding evidence
+  in parentheses.
+- **Scope** — list affected documents / scenarios / APIs / DB tables / tests / code by filename and section;
+  write "none" for unaffected categories rather than dropping the line. Scope must reconcile with the
+  `[delta]` targets in `tasks.md` (see Step 5).
+- **Deployment Impact** — give an explicit value for every field; it is the human review basis and the
+  decision source for the `[deploy]` section.
+- **UI/UX Change Declaration** — GUI modules must keep this section present and declare `ui_impact`
+  truthfully (decision rules in the Step 6 addendum of the Chinese source).
+- **Decision Clarification** — status + reason for each of the five impact categories; every decision needs
+  a choice and a reason. `status: ready` asserts that nothing is left to clarify.
+- **Summary** — 1-3 paragraphs on what concretely changes, enough for a reviewer to judge the approach
+  without reading the deltas.
+
+That is the full extent of the pointers — **this step does not provide, and must not provide, any
+copy-pasteable proposal template.** There is exactly one source for the document's shape: the scaffold
+`openlogos change` wrote to disk.
 
 ### Step 5: Generate tasks.md
 
@@ -191,7 +224,20 @@ The following prompts can be copied directly for use with AI:
 
 ### Preserve the CLI scaffold
 
-Read the CLI-created `proposal.md` and `tasks.md` before editing. Preserve canonical headings, section order, and machine-readable blocks; replace placeholders in place. Extra design sections are allowed, but they never replace canonical reason/type/scope/deployment/summary/clarification sections.
+Read the CLI-created `proposal.md` and `tasks.md` before editing.
+
+**For `proposal.md`**: preserve **every** section of the scaffold — canonical headings, section order,
+machine-readable blocks, and equally the **non-canonical sections that no lint enforces** (such as
+"Minimal Implementation Rationale"), which must not be dropped, omitted, or reduced to an empty shell.
+Replace placeholder prose only. Extra design sections are allowed, but they never replace or remove any
+existing section. **Never rewrite `proposal.md` as a whole**: a rewrite inevitably loses the ungated
+sections, and no check will tell you.
+
+**For `tasks.md`**: this rule does **not** constrain adding or removing sections. `tasks.md` gains and loses
+`[delta]` / `[code]` / `[deploy]` according to the actual scope of the change, governed by
+`spec/tasks-spec.md` — a spec-only change deletes `[code]`, a code-only change keeps an empty `[code]` and
+goes through no-delta spec-complete. Applying "no section may be removed" to `tasks.md` would forbid those
+legitimate deletions and misroute the flow.
 
 ### Keep `[code]` empty during plan
 
