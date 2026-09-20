@@ -333,3 +333,52 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - UT-S35-157 的双向比对必须调用两侧**真实实现**（`runChangeLint` 与 `buildTestChangeSet`），不得以复述期望的表驱动替代；注入式反证臂须证明**单独放宽预检侧枚举口径**（而非仅判据）会让断言变红。
 - UT-S35-155 形态①② 与 UT-S35-158 必须同时断言「后态确实拒绝」，以证明前移集合的扩大部分**恰为后态已拒形态**、未新拒后态接纳的形态。
 - ST-S35-30 步骤③ 必须跑**真实 `openlogos merge`** 进程并断言退出码与 `SPEC_MERGED` 在场，不得以库内函数调用替代。
+
+## S35 变更类型 ↔ delta 层面观测 warning 测试
+
+> 覆盖 change-lint 新增 warning `change_type_delta_layer_mismatch`：声明类型经 `resolveChangeType` 解析（歧义 → `null` → 静默）、实际层级取 `classifyProposalDeltas()` 的 `mergeable + valid` 有效条目、超出免计集合即报，只走既有 `warnings[]` 通道（需求「S35/S09: 防过度设计的规模信号」验收条件 1–6；场景 S35「变更类型 ↔ delta 层面观测 warning」；来源变更 anti-overdesign-scale-signals）。夹具用一次性隔离项目构造提案与 delta，不依赖本仓自身的提案内容。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-159 | 主链路：声明代码级而实有 `prd` delta → 产 warning，exit code 不变 | 隔离项目；提案「变更类型」正文为 `代码级`，`deltas/prd/3-technical-plan/...` 下有一个合法 delta，其余合法 | 求 `runChangeLint` 完整结论与退出码 | `change_type_delta_layer_mismatch` 出现在 `warnings`（含 `code` / `message` / `fix_hint`）、**不出现在** `violations`；无其它违规时 exit **0**——与本能力上线前同夹具的退出码逐字相同 |
+| UT-S35-160 | 免计边界·代码级 + 仅 `test` delta → **不告警** | 同上，声明 `代码级`，delta 只有 `deltas/test/core-SXX-test-cases.md` | 同上 | 本 warning 通道零输出。依据：方法论「代码 + 重新验收」允许回归测试规格随行，`change-writer` 亦允许代码级提案带 delta。**本用例是「下界不是上限」定性的守门用例**，若实现把传播规则当上限即必红 |
+| UT-S35-161 | 免计边界·接口级 + `api` / `database` / `scenario` delta → 不告警 | 声明 `接口级`，三类 delta 各一 | 同上 | 零输出；改为追加一个 `prd/2-product-design` delta 后即产 warning，且 message 只点名 `prd/2-product-design` 一项（不含已免计的三类） |
+| UT-S35-162 | 免计边界·需求级恒不告警 | 声明 `需求级`，delta 覆盖全部八类各一 | 同上 | 本 warning 通道零输出（需求级免计集合为全部层） |
+| UT-S35-163 | `decisions` 与层级正交：任一声明类型下均不告警 | 四组夹具，声明分别为代码级 / 接口级 / 设计级 / 需求级，delta 均**只含** `deltas/decisions/core-DXX-*.md` | 四组分别求结论 | 四组均零输出——决策留痕是变更自身的元数据、非规格产物 |
+| UT-S35-164 | `spec` / `skills` 归设计级及以上 | 四组夹具（代码级 / 接口级 / 设计级 / 需求级），delta 为 `deltas/spec/*.md` 与 `deltas/skills/*.md` 各一 | 四组分别求结论 | 代码级、接口级两组产 warning 且 message 点名 `spec` 与 `skills`；设计级、需求级两组零输出 |
+| UT-S35-165 | `prd` 子目录粒度与未知子目录 | 声明 `设计级`；三组 delta 分别落在 `prd/1-product-requirements` / `prd/2-product-design` / `prd/<未注册子目录>` | 三组分别求结论 | `prd/2-product-design` 组零输出；`prd/1-product-requirements` 组与未知子目录组均产 warning，message 点名具体子目录路径而非笼统的 `prd`——证明判定取自 `relativePath` 的子目录粒度而非一级 `category` |
+| UT-S35-166 | `resolveChangeType`·剥括号后唯一命中（zh） | 「变更类型」正文为 `代码级（不涉及设计级或需求级变更）`，delta 含一个 `prd` 条目 | 直接对 `resolveChangeType` 求值，并求 `runChangeLint` 结论 | 解析为**代码级**（括号内的「设计级」「需求级」不参与匹配）；据此产 warning。**若实现按首个/末个匹配或不剥括号，会解析成设计级或需求级而漏报——本用例即该误判的锁** |
+| UT-S35-167 | `resolveChangeType`·歧义两通道同时静默（zh） | 「变更类型」正文为 `设计级 / 代码级`，delta 含一个 `prd/1-product-requirements` 条目 | 求 `resolveChangeType` 与 `runChangeLint` 完整结论 | `resolveChangeType` 返回 `null`；`warnings` **不含** `change_type_delta_layer_mismatch`；`violations` **不含** `proposal_change_type_invalid`（该正文通过既有包含式合法性检查，本就合法）——断言**两条通道同时静默**，不得因歧义而任一侧报错 |
+| UT-S35-168 | `resolveChangeType`·英文括号与歧义对称行为（en） | en locale 两组：① `code level (not a design or requirements level change)`；② `design / code level`，delta 均含一个 `prd` 条目 | 两组分别求 `resolveChangeType` 与 `runChangeLint` | ① 解析为 code 并产 warning；② 返回 `null` 且两通道静默——与 zh 行为逐项对称。英文正则更宽松（任何含 `code` 的说明文字都命中），本用例锁死剥括号与唯一性判定同样作用于 en |
+| UT-S35-169 | 有效条目口径：`explicitly_ignored` / `invalid` 不计入 | 声明 `代码级`；`deltas/` 下构造 ① `reference/` 条目、② 隐藏文件、③ 路径非法（L6 判 `invalid`）条目、④ 根下直放文件，**无任何** mergeable+valid 的规格层条目 | 求 `runChangeLint` 完整结论 | 本 warning 通道零输出（有效条目集合为空 → 恒不越界）；既有 L6 对 ③④ 的既有诊断逐字不变——证明两者互不吞并、同一形态不被二次报成层级越界 |
+| UT-S35-170 | 零回归锚：`proposal_change_type_invalid` 逐字节不变 | 覆盖既有判定的全部分支：zh/en × 合法单类型 / 合法多类型 / 完全不含类型词 / 空段 / 仍含模板占位 | 对每组求 `evaluateProposalStructure` 诊断，与本能力上线前的基准夹具逐字比对 | 该码的出现与否、`code` / `path` / `message` / `fix_hint` / `section_id` / `actual` / `expected` 全部逐字相同——`isValidChangeType` 提取导出后语义零回归。**对照必须以上线前实现的输出为基准夹具，不得在测试内复述期望文案** |
+| UT-S35-171 | 零回归锚：违规码集合与门禁计数对上线前逐字同形 | ① 仅命中本 warning、无任何违规的提案；② 本 warning 与一处真实违规（如另一 delta 缺段标记）并存的提案；③ 无 delta 的纯代码提案 | ①②③ 分别取 `change-lint --format json` 输出、检查项集合与计数、`data.pass` 与退出码 | `ChangeLintViolationCode` 闭合枚举的成员集合与上线前逐字相同（断言集合本身，不只断言「新码不在其中」）。**三组各自的检查项集合、总数与通过数均与上线前同夹具逐字相同**——不得硬编码 10/10：总数随适用性（如 GUI 项目才激活的 L7）变化，通过数按无违规检查项计。① `pass=true`、exit 0；② **`pass=false`、exit 2、通过数少于总数**——新增 warning **不得**把真实违规的失败结果改成通过；③ 与上线前同形。② 中 violations 含该真实违规、不含本 warning 码，warnings 含本 warning 码、不含该违规，互不吞并 |
+| UT-S35-172 | 可归因与零漂移 | ① 同时越界两层（如 `prd/1-product-requirements` 与 `spec`）的提案；② 完全不越界且无其它 warning 的提案 | ① 取 warning 的 `message` / `fix_hint` 文本；② 取 `--format json` 输出 | ① message **逐项列出**声明类型与两个实际越界的层（不是仅给计数、不是只给首项），fix_hint 指引「确认类型声明是否准确，或说明本次为何需要触及这些层」；且 message 与 fix_hint **均不含**「违反方法论」及等价断言措辞；② 输出**不含** `warnings` 字段（非空才出现，与上线前逐字节一致） |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-31 | 真实 CLI 端到端：观测 warning 出数而不改变任何门禁结论 | 真实 `openlogos change-lint`，一次性隔离项目。① 构造「声明代码级 + 含 `prd` delta」的活跃提案：`openlogos change-lint --format json` **exit 0**、`data.pass=true`、`violations` 为空、`warnings` 含 `change_type_delta_layer_mismatch` 且 message 逐项点名越界层；② **措辞断言**：message 与 fix_hint 均不含「违反方法论」「违规」「不合规」类断言性措辞（本规则是观测启发式，传播规则给的是下界）；③ 对照臂·免计形态（**独立夹具**）：新建提案，声明代码级、delta 只有 `deltas/test/` → 同一命令 exit 0 且输出**不含** `warnings` 字段；④ 对照臂·歧义（**独立夹具，不得复用③**）：新建提案，delta **恢复为含 `deltas/prd/1-product-requirements/`**，「变更类型」正文为 `设计级 / 代码级` → exit 0、无本 warning、亦无 `proposal_change_type_invalid`。**夹具必须带 prd/1 delta 才有鉴别力**：该层既不在设计级也不在代码级的免计集合内，故实现若错误地把歧义解析成两者中任一个都会告警而使本臂红；沿用③的「只有 test」夹具则因 test 对所有类型均免计而恒绿，无法检出错误解析；⑤ **门禁不变**：三臂各自的检查项集合、总数与通过数均与本能力上线前同夹具逐字相同（不硬编码 10/10），三臂 `pass=true`、exit 0，且 `openlogos merge` 准入结论与上线前一致（warning 不进准入违规集合）；⑥ 全程 change-lint 项目级零写入（运行前后项目根字节快照相等） |
+
+### 追溯与覆盖
+
+- 主链路·越界即报且不改退出码：UT-S35-159、ST-S35-31 步骤①。
+- 免计层级表逐类：UT-S35-160（代码级 + test）、UT-S35-161（接口级）、UT-S35-162（需求级）、UT-S35-163（decisions 正交）、UT-S35-164（spec / skills）、UT-S35-165（prd 子目录粒度）。
+- `resolveChangeType` 解析与歧义静默：UT-S35-166（zh 剥括号）、UT-S35-167（zh 歧义两通道静默）、UT-S35-168（en 对称）、ST-S35-31 步骤④。
+- 有效条目口径：UT-S35-169。
+- 零回归锚：UT-S35-170（`proposal_change_type_invalid` 逐字节）、UT-S35-171（违规码集合 + 检查项计数对上线前同形 + 真实违规仍 FAIL）、ST-S35-31 步骤⑤。
+- 可归因、零漂移与措辞约束：UT-S35-172、ST-S35-31 步骤②③。
+- 需求：`core-01-requirements.md`「S35/S09: 防过度设计的规模信号」验收条件 1–6；场景：S35「变更类型 ↔ delta 层面观测 warning」；来源变更：anti-overdesign-scale-signals。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- UT-S35-159 / UT-S35-171 的通道断言必须分别读取 `violations` 与 `warnings` 两个真实输出字段，不得只断言「码出现在输出中」——通道归属正是本能力的语义本体。
+- UT-S35-170 的「逐字节相同」对照必须以本能力上线前实现的诊断输出为基准夹具，不得在测试内复述期望文案。
+- UT-S35-171 必须断言 `ChangeLintViolationCode` 的**成员集合**本身，而不仅断言新码不在其中——集合被意外扩充同样是回归。
+- UT-S35-171 与 ST-S35-31 步骤⑤ **禁止硬编码检查项数字**（如 `10/10`）：基线取本能力上线前同夹具的实测集合与计数，逐字比对。检查项总数随适用性变化，硬编码会把「某检查项意外失活」伪装成通过。
+- ST-S35-31 的③④必须是**两个独立夹具**，④ 的 delta 必须含 `deltas/prd/1-product-requirements/`。复用③的「只有 test」夹具会使④恒绿——test 对所有声明类型均免计，错误解析也检不出来；④的全部鉴别力来自「该层对设计级与代码级都不免计」。
+- **自触发是预期行为**：本提案自身（声明设计级、含 `prd/1-product-requirements` delta）会命中该 warning，UT-S35-165 的对应臂即该形态的锁。后续不得为消除本仓自身的告警而收窄免计层级表——收窄与否由观测期数据决定。

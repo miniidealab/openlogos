@@ -632,3 +632,124 @@ sequenceDiagram
 - 功能规格：§2.84.1～§2.84.2（判据与前移侧扫描集合同源）、§2.84.5（一致性锁边界）、§2.82.2（同族前一半：首格可提取性前移）、§2.70.1（三处读法归属澄清）。
 - 场景关联：本文档「S35 围栏提取单点、可归因诊断与门禁可满足性断言」（不变量 3 与 5）、S09「merge 内部错误的稳定失败语义」。
 - 测试：UT-S35-153～UT-S35-158、ST-S35-30。
+
+## S35 变更类型 ↔ delta 层面观测 warning
+
+### 场景目标
+
+让 `openlogos change-lint` 在提案声明的变更类型与实际铺开的 delta 规格层不相称时，经既有 `warnings` 通道报出 `change_type_delta_layer_mismatch`——**不阻断、不改 exit code、不进违规码集合**。补上「防过度设计」机制唯一缺失的硬底：此前全部产出皆为提示词文本与观测字段，依赖 agent 读了照做，没有一条机器可查的信号（原始诊断④：近 30 个提案中声明「代码级修复」的，实际改了 3–8 个 delta、跨 2–4 层规格）。
+
+### 用户价值
+
+「声明的类型与实际改的面不相称」此前只能靠人工翻提案原文发现，因而无人在数。本 warning 把它变成每次 `change-lint` 都出的一行事实，观测期的分母由此可得；同时因走 warning 通道，不给任何提案新增阻断风险。
+
+### 本节的定性（前置声明，不可省）
+
+**这条规则是本能力新立的观测启发式，不是方法论判据的投影。** 变更传播规则（`spec/change-management.md` §变更传播规则）表头为「**最少**需要更新」——给的是**下界**，不是上界。因此「实际层超出免计集合」**不等于违反方法论**，命中只说明「声明类型与实际铺开的规格面不相称，值得看一眼」。warning 的 `message` / `fix_hint` **不得**措辞为「违反方法论」或等价表述；该约束由 ST 用例断言。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| L | `change-lint` | 本 warning 的判定与输出 |
+| V | `isValidChangeType` | 既有合法性判据的导出形态，语义逐字节零回归，由 `plan-package-contract` 原地调用 |
+| R | `resolveChangeType` | **本次新增**：从「变更类型」章节解析出唯一类型，歧义返回 `null` |
+| T | 类型词表 | V 与 R **共享的同一份**词表（zh/en），严禁第二份 |
+| C | `classifyProposalDeltas()` | 既有分类器，提供逐条 delta 的 `category` 与 `relativePath` |
+| W | `warnings` 通道 | 既有字段，非空才出现 |
+
+前置条件：提案含 `## 变更类型` 章节且正文非空。缺段 / 空段由既有 canonical 章节判据覆盖，本 warning 不激活。
+
+### 判据双源与「严禁第二份判据」的落实方式
+
+既有 `plan-package-contract` 的变更类型正则是 `.test(content)` 的**包含式合法性检查**——「正文里出现过任一类型」即判合法。它**不能**直接确定「声明的是哪一类」：实测 `代码级（不涉及设计级或需求级变更）` 与 `设计级 / 代码级` 两种正文都通过该检查；英文正则更宽松，任何含 `code` 的说明文字都会命中。故本节拆为**两个函数、两种语义**：
+
+1. **`isValidChangeType(content, locale): boolean`** —— 逐字节保留既有正则与语义并导出，`plan-package-contract` 原地改调用。既有 `proposal_change_type_invalid` 的判定结果**零回归**。
+2. **`resolveChangeType(content, locale): ChangeTypeLevel | null`** —— 本次新增能力，供本 warning 使用。
+
+二者**共享同一份类型词表**：这才是「严禁第二份判据」（本文件首部不变量）的正确落实——不是共享正则，而是同一词表上的两种消费方式。change-lint 消费导出，不得照抄任何正则字面量。
+
+### `resolveChangeType` 解析规则
+
+1. 取 `## 变更类型` 章节正文的**首个非空行**作为声明主体（模板形态即单行声明）；
+2. 剥去该行中的括号说明文字——全角 `（…）` 与半角 `(…)`；说明文字里的类型词**不参与**解析；
+3. 在剩余文本上全局匹配类型词；
+4. **恰好命中一个**才返回该类型；命中 **0 个或 ≥2 个**（歧义）返回 `null`。
+
+实测两例：`代码级（不涉及设计级或需求级变更）` 剥括号后唯一命中 → 代码级；`设计级 / 代码级` 命中两个 → `null`。zh / en 两套均适用。
+
+### 免计层级表
+
+| 声明类型 | 不计入越界的 delta 层 | 取此界的依据 |
+|---|---|---|
+| 代码级 | `test` | 方法论「代码 + **重新验收**」——重新验收可正当地带回归测试规格；`skills/change-writer` 亦允许代码级提案带 delta |
+| 接口级 | 上述 + `api` / `database` / `scenario` | 传播规则「API/DB + 编排 + 代码」 |
+| 设计级 | 上述 + `prd/2-product-design` / `prd/3-technical-plan` / `spec` / `skills` | 传播规则「原型 + 场景 + API/DB + 编排」；`spec` / `skills` 是方法论自身产物，改它们至少是设计级 |
+| 需求级 | 全部（恒不告警） | 传播规则「全链路」 |
+| 任意级 | `decisions` | 决策留痕是变更自身的元数据、非规格产物，与变更层级正交 |
+
+**类别完备性约定**：类别集合以分类器唯一事实源 `DELTA_TO_RESOURCE` 为准，当前八类 `prd` / `api` / `database` / `scenario` / `test` / `decisions` / `spec` / `skills`，上表已逐项覆盖。**新增 delta 类别时该表须同批扩充**——新类别未入表即无定义行为，属规格缺口而非实现自由度。
+
+**`prd` 子目录映射**：`prd` 细到子目录（`1-product-requirements` / `2-product-design` / `3-technical-plan`），从 `relativePath` 取；其余类别按一级 `category`。`prd` 下未知子目录按「不在任何免计集合」处理（即对非需求级声明计为越界）。
+
+### 有效条目口径
+
+只统计 `classifyProposalDeltas()` 返回中 `mergeDisposition === 'mergeable'` 且 `lintValidity === 'valid'` 的条目。`explicitly_ignored`（reference / 隐藏文件）、`invalid`、未知类别与 `deltas/` 根下直放文件**一律不计入**——它们本就不进规格层，计入会把既有 L6 已覆盖的形态二次报成层级越界。
+
+### 判定与输出时序
+
+```mermaid
+sequenceDiagram
+    participant L as change-lint
+    participant R as resolveChangeType
+    participant C as classifyProposalDeltas
+    participant W as warnings
+
+    L->>R: Step 1: 对 proposal.md 的「变更类型」章节求唯一类型
+    alt 歧义或无类型词（返回 null）
+        R-->>L: Step 2a: null
+        L->>L: Step 3a: 不告警（宁可漏报不误报），本 warning 通道零输出
+    else 唯一类型
+        R-->>L: Step 2b: requirements | design | interface | code
+        L->>C: Step 3b: 取本提案全部 delta 条目分类
+        C-->>L: Step 4b: 逐条 category / relativePath / mergeDisposition / lintValidity
+        L->>L: Step 5b: 过滤出 mergeable + valid 的有效条目，映射为规格层集合
+        alt 存在超出该类型免计集合的层
+            L->>W: Step 6b: 追加一条 change_type_delta_layer_mismatch（列出声明类型与实际越界的层）
+        else 全部在免计集合内
+            L->>L: Step 6c: 零输出
+        end
+    end
+    L-->>L: Step 7: warnings 非空才输出该字段（零漂移）
+```
+
+### 输出契约
+
+- **只出现在 `warnings`，绝不出现在 `violations`**：不影响任一检查项通过与否、不影响整体退出码、不进入 merge 准入违规集合（S09 已冻结「准入判据 = change-lint 完整结论」，violations 集合不因 warning 变化）。
+- **可归因**：warning 含 `code` / `message` / `fix_hint`；message 点名声明的变更类型与**实际越界的层**（逐项列出，非仅计数），fix_hint 提示「确认类型声明是否准确，或说明本次为何需要触及这些层」。
+- **措辞约束**：message / fix_hint 不得断言提案违反方法论——本规则是观测启发式，传播规则给的是下界。
+- **零漂移**：`warnings` 为空时字段整体省略；无命中提案的输出不因本功能改变。
+
+### 不变量
+
+1. `change_type_delta_layer_mismatch` 进 `ChangeLintWarningCode`，**不进** `ChangeLintViolationCode` 闭合枚举；违规码集合与 10/10 门禁计数逐字节零改动。
+2. 既有任何一条违规码的判据与文案零改动；`isValidChangeType` 提取后 `proposal_change_type_invalid` 的判定结果逐字节零回归。
+3. 单向告警：只在「实际超出声明类型的免计集合」方向报出；反向（声明高层级而实际改得少）**不告警**——该形态未观测到，不预先造机制。
+4. 判据单点：类型词表只有一份，V 与 R 共享；change-lint 消费导出而非照抄正则。
+5. 只读红线不变：本判定为纯函数，项目级零写入。
+6. 本规则不新增 step / gate / marker，不接入 flow 派生。
+
+### 异常与边界
+
+- **声明歧义**（正文命中 ≥2 个类型词）：`resolveChangeType` 返回 `null` → 不告警。注意该正文本身通过既有包含式合法性检查、**不会**触发 `proposal_change_type_invalid`——两条通道同时静默。既有检查只覆盖「完全不含类型词」这一种形态。
+- **「变更类型」章节缺失 / 为空 / 仍含模板占位**：本 warning 不激活，由既有 canonical 章节判据覆盖，不重复报。
+- **零 delta 提案**（纯代码提案）：有效条目集合为空，恒不越界、恒不告警。
+- **本规则的自触发**：声明设计级而带 `prd/1-product-requirements` delta 的提案会命中该 warning——`prd/1` 不在设计级免计集合内。这是**预期行为**而非缺陷：改动 CLI 行为的提案普遍需要同步更新需求文档，故设计级 / 接口级提案将普遍告警。**告警率本身即观测期要测的量**；是否把 `prd/1` 收窄为各级免计，由数据决定，不在零样本期凭推断放宽。
+- **与既有 warning 并存**：多条 warning 各自输出、互不吞并；与 violations 并存时整体 FAIL 因真实违规而非本 warning。
+
+### 追溯
+
+- 来源变更：anti-overdesign-scale-signals（防过度设计三批落地的第三批；前两批已在下游归档 `20260919-2315-add-necessity-review-anti-overdesign`、`20260920-0418-observe-necessity-self-release`）。
+- 需求：`core-01-requirements.md`「S35/S09: 防过度设计的规模信号」验收条件 1–6。
+- 先例：本文档「S35 L7 缺段警告化与 warning 输出通道」（warning 通道形态）、§2.73（L8 守恒降级为警告）。
+- 测试：UT-S35-159～UT-S35-172、ST-S35-31。
