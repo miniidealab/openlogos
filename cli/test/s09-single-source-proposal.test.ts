@@ -47,10 +47,25 @@ function sectionOf(content: string, startRe: RegExp): string {
   return lines.slice(start).join('\n');
 }
 
-/** 段内每个 fenced code block 中 `^## ` 级标题行的最大条数。 */
+/**
+ * 段内每个 fenced code block 中 `^## ` 级标题行的最大条数。
+ *
+ * 围栏识别复用 `authorityScan` 的 `region`——**不得**自写 ```` /```[\s\S]*?```/ ```` 之类的
+ * 正则：那只认三反引号，漏掉同样合法的 `~~~` 围栏与更长的定界串，等于放过「换个围栏字符
+ * 把旧模板塞回去」的规避形态。`region` 同时把 HTML 注释 / 缩进代码里的伪围栏排除在外。
+ */
 function maxSectionHeadingsInAnyFence(segment: string): number {
-  const blocks = segment.match(/```[\s\S]*?```/g) ?? [];
-  return blocks.reduce((max, b) => Math.max(max, (b.match(/^## /gm) ?? []).length), 0);
+  const lines = segment.split('\n');
+  const { region } = authorityScan(lines);
+  let max = 0;
+  let cur = 0;
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (region[i] === 'fence-open') { inFence = true; cur = 0; continue; }
+    if (region[i] === 'fence-close') { max = Math.max(max, cur); inFence = false; cur = 0; continue; }
+    if (inFence && region[i] === 'fence' && /^## /.test(lines[i])) cur++;
+  }
+  return Math.max(max, inFence ? cur : 0); // 段尾截断处的未闭合围栏同样计入
 }
 
 /** 判据：段内任一 fenced block 含 >=3 个 `## ` 标题 = 可整块复制的提案骨架。 */
@@ -94,6 +109,31 @@ const LEGACY_TEMPLATE_SPEC = [
   '## 变更概述', '[用 1-3 段话概述具体改什么]', '```',
 ].join('\n');
 
+/** `~~~` 围栏形态的旧模板：换个合法围栏字符不得成为规避通道（4 个 `## ` 标题）。 */
+const LEGACY_TEMPLATE_EN_TILDE = LEGACY_TEMPLATE_EN.replace(/```/g, '~~~');
+
+/** 更长定界串（````）同样是合法围栏。 */
+const LEGACY_TEMPLATE_ZH_LONG_FENCE = LEGACY_TEMPLATE_ZH.replace(/```/g, '````');
+
+/** `spec/change-management.md` §proposal.md 必须逐字保留的部署决策解析规范（全 6 条）。 */
+const DEPLOYMENT_RULES = [
+  '`## 部署影响` 是人工审核依据。CLI 的部署状态判断以 `tasks.md` 的 `[deploy]` section 和提案目录标记文件为准，不解析自由文本作为唯一依据。',
+  '`## 部署影响` 同时也是提案级部署决策入口。CLI 应从该章节解析结构化决策，并与 `tasks.md` 的 `[deploy]` section 交叉校验：',
+  '- `是否需要部署：否` 时，不得创建 `[deploy]` section；verify PASS 后下一步为 archive。',
+  '- `是否需要部署：是` 时，必须创建 `[deploy]` section，并在 delta 阶段补齐部署方案影响；verify PASS 后下一步为人类确认部署。',
+  '- `是否需要 smoke：是` 只在已部署后生效；smoke 仍由 `openlogos smoke` 独立执行。',
+  '- 旧提案缺少结构化部署影响时，CLI 可回退到 `[deploy]` section 与模块级默认值，但必须标注兼容来源。',
+] as const;
+
+/** `SKILL.md` 必须逐字保留的 20260914 事故实证段（整段，非关键词）。 */
+const INCIDENT_PARAGRAPH =
+  '**删段的真实后果（20260914 事故实证，替代已被证伪的「判错代价可控」断言）**：change-lint L7 按 yaml `product_type` 激活并检查声明段在场性；agent 按提案语义误判「非 GUI」而删掉脚手架段后，全自动 run 的 `openlogos merge` 曾被 `ui_declaration_missing` 在 spec-exit 后挡停——producer 已出环、重驱确定性复撞、需要人工补段才能恢复。判定源不同源导致的删段不是「顶多多画一次或退回重设」，而是无人值守链路的硬停等人。缺段现已由 L7 降为**警告** + 消费侧派生 `ui_impact:false` 安全默认（防线纵深，见功能规格 §2.83），但警告仍是流程噪音且丢失「如实声明」的语义——**规则是不删段，降门只是删了之后的兜底**。声明段在场但写坏（fenced YAML 缺失 / 损坏 / 非对象、`ui_impact` 非布尔）仍 fail-closed 拒绝 merge：脚手架已提供合法骨架，写坏必有因。';
+
+/** 逐字保留检查：返回缺失的片段（空数组 = 全部在场）。 */
+function missingVerbatim(content: string, fragments: readonly string[]): string[] {
+  return fragments.filter(f => !content.includes(f));
+}
+
 /**
  * 「以整篇重写为前提的段保留指令」检出：按句切分后，同句既讲整篇重写又讲保留，
  * 且不带禁止性措辞 —— 即 `整篇重写 proposal.md 时必须原样保留该段` 那一形态。
@@ -121,6 +161,10 @@ describe('S09 proposal.md 单一来源与防复发', () => {
     // 负向样例（有效性前提）：两份旧模板都必须被同一判据检出。
     expect(isCopyableSkeleton(LEGACY_TEMPLATE_ZH)).toBe(true);
     expect(isCopyableSkeleton(LEGACY_TEMPLATE_EN)).toBe(true);
+
+    // 换围栏字符 / 加长定界串不得成为规避通道——判据必须认所有合法 fenced block。
+    expect(isCopyableSkeleton(LEGACY_TEMPLATE_EN_TILDE)).toBe(true);
+    expect(isCopyableSkeleton(LEGACY_TEMPLATE_ZH_LONG_FENCE)).toBe(true);
 
     // 判据不绑定 registry 名称命中：en 旧模板 4 个标题中仅 1 个精确命中，按命中数判会漏检。
     const enRegistryHits = (LEGACY_TEMPLATE_EN.match(/^## (.+)$/gm) ?? [])
@@ -153,10 +197,13 @@ describe('S09 proposal.md 单一来源与防复发', () => {
     expect(sec).toMatch(/PLAN_SECTION_REGISTRY/);
     expect(sec).toMatch(/change-lint/);
 
-    // 部署决策解析规范逐字保留——防止借本次删除顺手删掉无关内容。
-    expect(sec).toContain('`## 部署影响` 是人工审核依据。CLI 的部署状态判断以 `tasks.md` 的 `[deploy]` section 和提案目录标记文件为准，不解析自由文本作为唯一依据。');
-    expect(sec).toContain('`是否需要部署：否` 时，不得创建 `[deploy]` section；verify PASS 后下一步为 archive。');
-    expect(sec).toContain('旧提案缺少结构化部署影响时，CLI 可回退到 `[deploy]` section 与模块级默认值，但必须标注兼容来源。');
+    // 部署决策解析规范**逐字全量**保留——防止借本次删除顺手删掉无关内容。
+    expect(missingVerbatim(sec, DEPLOYMENT_RULES)).toEqual([]);
+
+    // 负向样例：任删一条即须被检出（证明不是只抽查几句）。
+    for (const rule of DEPLOYMENT_RULES) {
+      expect(missingVerbatim(sec.replace(rule, ''), DEPLOYMENT_RULES)).toEqual([rule]);
+    }
   });
 
   it('UT-S09-364 保真条款覆盖非 canonical 段且不波及 tasks.md；全文无「整篇重写」前提的保留指令', () => {
@@ -180,8 +227,11 @@ describe('S09 proposal.md 单一来源与防复发', () => {
     expect(rewritePremisedRetentionSentences(zhAll)).toEqual([]);
     expect(rewritePremisedRetentionSentences(LEGACY_UI_RETENTION_ZH).length).toBeGreaterThan(0);
 
-    // 20260914 事故实证段逐字保留。
-    expect(zhAll).toContain('20260914 事故实证');
-    expect(zhAll).toContain('ui_declaration_missing');
+    // 20260914 事故实证段**整段逐字**保留——只查关键词的话，把正文缩成两个词也能过。
+    expect(missingVerbatim(zhAll, [INCIDENT_PARAGRAPH])).toEqual([]);
+
+    // 负向样例：正文被缩为关键词即须被检出。
+    const gutted = zhAll.replace(INCIDENT_PARAGRAPH, '20260914 事故实证 ui_declaration_missing');
+    expect(missingVerbatim(gutted, [INCIDENT_PARAGRAPH])).toEqual([INCIDENT_PARAGRAPH]);
   });
 });
