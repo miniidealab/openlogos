@@ -25,6 +25,7 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, sep } from 'node:path';
 import {
+  isNonMarkdownCategory,
   resolveCanonicalMergeTarget,
 } from './canonical-target.js';
 import { validateAndStripNonMarkdownDelta } from './non-markdown-delta.js';
@@ -224,8 +225,11 @@ function prepareInputs(
     let payload: Buffer;
     if (input.kind === 'non-markdown') {
       const resolved = resolveCanonicalMergeTarget(root, proposalDir, input.deltaPath);
-      if (!resolved || !['api', 'database'].includes(resolved.semanticCategory ?? '')) {
-        return { error: `non-Markdown delta 路径无法映射为 API/DB canonical target：${input.deltaPath}` };
+      // 类别集合取 `NON_MARKDOWN_CATEGORIES` 单点（见 canonical-target.ts）——此处曾是该白名单的
+      // **第三份字面量**：merge 侧放行、本 apply 侧仍按 `['api','database']` 拒绝，编排 delta
+      // 通过了通道选择却死在落盘前一步。集合的消费方一个都不能漏（S35 不变量 3）。
+      if (!resolved || !isNonMarkdownCategory(resolved.semanticCategory)) {
+        return { error: `non-Markdown delta 路径无法映射为整文件 canonical target：${input.deltaPath}` };
       }
       targetPath = resolved.targetPath;
       targetAbs = join(root, ...targetPath.split('/'));

@@ -1,0 +1,176 @@
+{
+  "_note": "slice-02-lint-merge-predicate-convergence 上线前的实测基线。由 scratchpad/capture-s35-convergence-baseline.mjs 在 git HEAD（两片均未实现）的 cli 构建上捕获——本片触及的三处（锚折算 / RENAMED 映射 / 标题扫描）与 slice-01 零交集，故 HEAD 态即 slice-02 的上线前态。禁止手改。",
+  "fidelityCases": {
+    "added-inline-code-title": {
+      "ok": true,
+      "final": "# 文档\n\n## 一、判据\n\n旧正文。\n\n## 二、`stripInlineCode` 的边界\n\n新章节正文。\n"
+    },
+    "added-nested-inline-code-title": {
+      "ok": true,
+      "final": "# 文档\n\n## 一、判据\n\n旧正文。\n\n## 三、``含 ` 的定界`` 与尾注\n\n新章节正文。\n"
+    },
+    "renamed-inline-code-title": {
+      "ok": true,
+      "final": "# 文档\n\n## 业务 `历史`\n\n正文。\n"
+    },
+    "modified-under-inline-code-title": {
+      "ok": true,
+      "final": "# 文档\n\n## 业务 `正式`\n\n新正文。\n"
+    }
+  },
+  "headings": [
+    {
+      "line": 0,
+      "level": 1,
+      "text": "顶层",
+      "path": [
+        "顶层"
+      ],
+      "rawHeading": "# 顶层 `doc`"
+    },
+    {
+      "line": 2,
+      "level": 2,
+      "text": "业务",
+      "path": [
+        "顶层",
+        "业务"
+      ],
+      "rawHeading": "## 业务 `正式`"
+    },
+    {
+      "line": 16,
+      "level": 3,
+      "text": "子节",
+      "path": [
+        "顶层",
+        "业务",
+        "子节"
+      ],
+      "rawHeading": "### 子节 ``含 ` 的定界``"
+    }
+  ],
+  "anchorProbes": {
+    "业务 `正式`": {
+      "status": "ok",
+      "candidates": 1,
+      "line": 2
+    },
+    "业务": {
+      "status": "ok",
+      "candidates": 1,
+      "line": 2
+    },
+    "顶层 `doc` > 业务 `正式`": {
+      "status": "ok",
+      "candidates": 1,
+      "line": 2
+    },
+    "顶层 > 业务": {
+      "status": "ok",
+      "candidates": 1,
+      "line": 2
+    },
+    "子节 ``含 ` 的定界``": {
+      "status": "ok",
+      "candidates": 1,
+      "line": 16
+    },
+    "子节": {
+      "status": "ok",
+      "candidates": 1,
+      "line": 16
+    }
+  },
+  "renamedCases": {
+    "multi-line": {
+      "merge": {
+        "threw": true,
+        "message": "RENAMED 块正文有 2 行：一、判据（正文必须恰为一行新标题文本，RENAMED 不携带正文）"
+      },
+      "verify": {
+        "ok": false,
+        "error": "RENAMED 块正文有 2 行：一、判据（正文必须恰为一行新标题文本，RENAMED 不携带正文）"
+      },
+      "lintConservation": []
+    },
+    "empty-body": {
+      "merge": {
+        "threw": true,
+        "message": "RENAMED 块正文为空：一、判据（正文必须恰为一行新标题文本）"
+      },
+      "verify": {
+        "ok": false,
+        "error": "RENAMED 块正文为空：一、判据（正文必须恰为一行新标题文本）"
+      },
+      "lintConservation": []
+    },
+    "hash-prefixed": {
+      "merge": {
+        "threw": true,
+        "message": "RENAMED 新标题不得带 # 前缀：一、判据（层级沿用原标题，不由块正文指定）"
+      },
+      "verify": {
+        "ok": false,
+        "error": "RENAMED 新标题不得带 # 前缀：一、判据（层级沿用原标题，不由块正文指定）"
+      },
+      "lintConservation": []
+    },
+    "missing-anchor": {
+      "merge": {
+        "threw": true,
+        "message": "RENAMED 段缺少章节锚"
+      },
+      "verify": {
+        "ok": false,
+        "error": "RENAMED 段缺少章节锚"
+      },
+      "lintConservation": []
+    },
+    "added-then-illegal-rename": {
+      "merge": {
+        "threw": true,
+        "message": "RENAMED 块正文有 2 行：一、判据（正文必须恰为一行新标题文本，RENAMED 不携带正文）"
+      },
+      "verify": {
+        "ok": false,
+        "error": "RENAMED 块正文有 2 行：一、判据（正文必须恰为一行新标题文本，RENAMED 不携带正文）"
+      },
+      "lintConservation": []
+    },
+    "legal-rename-then-modify": {
+      "merge": {
+        "threw": false,
+        "final": "# 文档\n\n## 一、判据（订正后）\n\n新正文。\n"
+      },
+      "verify": {
+        "ok": true,
+        "error": null
+      },
+      "lintConservation": []
+    }
+  },
+  "conservation": [
+    {
+      "code": "delta_implicit_id_removal",
+      "anchor": "场景总览",
+      "message": "MODIFIED —「场景总览」将隐式删除该章节既有 ID：S01（场景表身份：「业务 `正式`」）（未在新内容同一结构位置保留、未被同锚 REMOVED-ITEMS 点名、未随整节 REMOVED 删除）"
+    }
+  ],
+  "decisionDocs": {
+    "plain": "# 提案\n\n## 已确定的设计决策\n\n正文。\n",
+    "trailing-inline-code": "# 提案\n\n## 已确定的设计决策 `C01`\n\n正文。\n",
+    "inline-code-inside": "# 提案\n\n## 已确定的设计`x`决策\n\n正文。\n",
+    "fenced": "# 提案\n\n```markdown\n## 已确定的设计决策\n```\n\n正文。\n"
+  },
+  "decisionSection": {
+    "plain": [
+      "decision_record_section_without_delta"
+    ],
+    "trailing-inline-code": [
+      "decision_record_section_without_delta"
+    ],
+    "inline-code-inside": [],
+    "fenced": []
+  }
+}

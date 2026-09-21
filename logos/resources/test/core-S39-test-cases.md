@@ -104,3 +104,56 @@
 - AC-DERIVE-04 存量声明块被忽略：UT-S39-68。
 - non-Markdown 整文件协议：UT-S39-26、UT-S39-27、ST-S39-13。
 - 场景：S39 delta→canonical target 派生；功能规格：§2.71。
+
+## S39 编排 JSON 整文件协议与类别集合单点测试
+
+> 覆盖 `orchestration` 类别（`logos/resources/scenario/**`）纳入 non-Markdown 整文件通道后的完整判据：类别集合单点、校验入口受理分支、编排 JSON 的五层内容校验、既有类别零回归，以及「错误在准入阶段而非合成阶段暴露」这一前移承诺。场景：S39「编排 JSON 的整文件协议适用与校验入口」。测试实现必须通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+>
+> **断言纪律（三条，均针对本次事故的成因）**：
+> ① 凡涉及合法性判定的用例，**必须经公开入口 `validateAndStripNonMarkdownDelta` 求值**，不得只调内部解析函数（`duplicateAwareObject` 是内部函数，编排路径此前根本走不到它——只测内部函数会让入口缺口继续隐形）。
+> ② UT-S39-72 必须断言错误**发生在 change-lint 阶段**，而不只断言「最终失败」——事故形态正是 lint 全绿、merge 才炸。
+> ③ 夹具在一次性隔离项目内构造，不依赖本仓自身的 `logos/resources/scenario/`（本仓该目录为空，本次修复的是下游项目的可合并性）。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S39-70 | MODIFY：编排 JSON 整文件替换成功且落盘字节等于剥离后正文 | 隔离项目；`logos/resources/scenario/core-auth.json` **已存在**；delta 首行 `## MODIFIED — logos/resources/scenario/core-auth.json（整文件替换）` | 经公开入口求校验，再跑 merge 合成 | 校验通过并返回 payload；合成后目标字节与 delta 剥离 marker 后的正文**逐字节相等**（无重排、无重新序列化、无尾随空白归一）；模式判为 MODIFY 且未读取 `proposal.md` 任何 YAML 声明 |
+| UT-S39-71 | CREATE：目标不存在时整文件新建并登记 resource_index | 同上但目标文件**不存在**；delta 首行 `## ADDED — logos/resources/scenario/core-auth.json（新文件，整文件）` | 同上 | 模式判为 CREATE；目标按 delta 正文落盘；`resource_index` 新增该条目；op 与 mode 不一致（如 CREATE 配 `MODIFIED` 首行）时拒绝并点名 mode 不一致 |
+| UT-S39-72 | 裸 JSON 无 marker：**在 change-lint 阶段**即判违规 | 隔离项目；`deltas/scenario/core-auth.json` 内容为纯 JSON、无控制 marker（事故现场原形态） | ① 跑 `runChangeLint` 取完整结论；② 再跑 merge | ① `violations` 含 `non_markdown_delta_invalid`，`path` 点名该 delta 文件，exit 2——**该断言是本用例的本体**；② merge 的失败不得是该形态的**首次**暴露信号。回归对照：修复前同夹具 lint 判 PASS 且 L4 不扫该文件，本用例即该漏检的锁 |
+| UT-S39-73 | 路径漂移 / JSON 语法错 / 重复键三形态逐一拒绝并点名 | 参数化三组：① marker 声明 target 与 delta 实际 canonical target 不一致；② payload 为非法 JSON；③ payload 含重复键（`{"a":1,"a":2}`） | 经公开入口求校验 | 三组均拒绝；① 点名 marker 声明值与期望的 canonical target 两者；② 点名语法错误位置；③ **由 duplicate-aware 预检拦下**并点名重复键位置——断言不得依赖 `JSON.parse`（其接受重复 key、last-wins，单靠它该组会误判通过） |
+| UT-S39-74 | 编排 JSON 不套用 OpenAPI / 受控根 Schema 校验 | payload 为**合法 JSON 对象但明显不是 OpenAPI 文档**（如 `{"name":"登录","steps":[]}`），亦不符合受控根 spec/schema 形态 | 经公开入口求校验 | **通过**并返回原始 payload；断言求值过程中 OpenAPI 校验器与根 Schema 校验器**均未被调用**（对二者设哨兵），而非仅断言结果通过 |
+| UT-S39-75 | 零回归锚：既有类别与 Markdown 类别行为逐字不变 | ① `logos/resources/api/**` 的 YAML/YML/JSON 合法与非法各一；② `logos/resources/database/**` 的 `.sql` 合法与非法各一（含 SQL 方言分层与适配器不可用的降级留痕）；③ 受控根 `spec/schema/*.json`；④ `prd` / `test` / `spec` / `skills` 四类 Markdown delta | 对①②③经公开入口求校验并与本次上线前基准夹具逐字比对；对④求 merge 通道选择 | ①②③的 `ok` / `message` / `tier` / `degradation` 与上线前**逐字相同**（含 SQL 降级留痕的原因与缺失项）；④ 四类**均走 Markdown 章节合成通道**、不进整文件通道；类别集合的成员恰为 `api` / `database` / `orchestration`，断言集合本身而非仅断言新成员在其中 |
+
+### 场景测试
+
+| ID | 场景 | 前置条件 | 操作序列 | 关键断言 |
+|---|---|---|---|---|
+| ST-S39-31 | 真实 CLI 下复现 toolstop 事故形态并证明其现已通过 | 真实 CLI；一次性隔离 launched 夹具项目；提案含 `deltas/scenario/core-auth.json`（带合法整文件 marker）与一份 Markdown delta | ① 对**裸 JSON 无 marker** 的形态跑 `openlogos change-lint --format json`；② 改为合法 marker 后重跑 ①；③ 对同一提案跑真实 `openlogos merge <slug>` 进程；④ 读回 canonical target 字节；⑤ 对 `api` / `database` 各一份 delta 重复②③；⑥ 在**①的裸 JSON 夹具**（独立夹具，起始无 `SPEC_MERGED`）上跑真实 `openlogos merge <slug>` | ① exit 2、`violations` 含 `non_markdown_delta_invalid` 并点名该 delta，`L4` 检查项 `violations > 0`、`data.pass=false`、**通过数恰少于总数**——**修复前同夹具为 `PASS`**，本臂即事故形态的回归锁；**不得要求本臂通过数与上线前全绿时相等**（这是一次有意的新增拒绝，该断言不可满足）；② PASS、exit 0、全部检查项 `violations` 为 0、通过数等于总数，且**检查项标识集合与总数**与上线前同夹具逐字相同（**禁止硬编码 `10/10`**）；③ 真实进程退出码 0 且写出对应本次成功合并的 `SPEC_MERGED`（不得以库内函数调用替代）；④ 目标字节等于 delta 剥离后正文，逐字节比对；⑤ 既有两类的结论与落盘字节与上线前逐字相同；⑥ **失败分支的事务边界**：真实 merge **非零退出**，结束后夹具内**仍无 `SPEC_MERGED`**，`logos/resources/` 相关目标保持**合并前字节** |
+
+### 追溯与覆盖
+
+- 编排 JSON MODIFY 可合并且字节保真：UT-S39-70、ST-S39-31 步骤③④。
+- 编排 JSON CREATE 可新建并登记 index：UT-S39-71。
+- 裸 JSON 在准入阶段即被拒（前移承诺）：UT-S39-72、ST-S39-31 步骤①。
+- marker 声明 target 漂移被拒：UT-S39-73 形态①。
+- JSON 语法错与重复键被拒并点名位置：UT-S39-73 形态②③。
+- 编排 JSON 不触发 OpenAPI schema 校验：UT-S39-74。
+- 回归锚·`api` / `database` 逐字不变（含 SQL 分层与降级留痕）：UT-S39-75 形态①②、ST-S39-31 步骤⑤。
+- 回归锚·Markdown 类别仍走章节合成：UT-S39-75 形态④。
+- 失败分支的事务边界（非零退出、不写 `SPEC_MERGED`、目标字节不变）：ST-S39-31 步骤⑥。
+- 端到端复现事故形态并断言现已通过：ST-S39-31。
+- 场景：S39「编排 JSON 的整文件协议适用与校验入口」、「non-Markdown 整文件协议的适用类别与派生结论」；来源变更：fix-orchestration-merge-and-predicate-duplication。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S39"`；失败不得写 pass。
+- **全部合法性判定必须经公开入口** `validateAndStripNonMarkdownDelta` 求值。只测内部解析函数的用例不算覆盖——本次缺口的本体正是「内部有能力、入口不受理」，内部函数级断言对其完全不敏感。
+- UT-S39-72 必须分别读取 `runChangeLint` 的 `violations` 与退出码两个真实输出，断言错误**出现在准入阶段**；仅断言「最终不可合并」不算覆盖。
+- UT-S39-73 形态③ 必须构造真实重复键 payload 并断言拒绝；若实现去掉 duplicate-aware 预检而只留 `JSON.parse`，本用例必须变红。
+- UT-S39-74 必须对 OpenAPI 校验器与受控根 Schema 校验器设哨兵证明未被调用，不得只断言结果通过——「通过」在两种实现下都成立，只有调用哨兵能区分。
+- UT-S39-75 的「逐字相同」对照必须以本次上线前实现的输出为基准夹具，不得在测试内复述期望文案；类别集合断言须断言**成员集合本身**，集合被意外扩充同样是回归。
+- ST-S39-31 步骤③⑥ 必须跑**真实 `openlogos merge` 进程**，不得以库内函数调用替代；**`SPEC_MERGED` 的断言按分支相反**——步骤③（合法 marker，成功分支）断言退出码 0 且该标记**在场**；步骤⑥（裸 JSON，失败分支，独立夹具起始无该标记）断言非零退出、该标记**仍不在场**、目标保持合并前字节。失败分支不存在合法理由产生成功标记；复用成功夹具的残留标记只会验证旧状态。
+- ST-S39-31 步骤②⑤ 禁止硬编码检查项数字，基线取上线前同夹具的实测**标识集合与总数**。
+- **「零回归」的边界（与 S35 测试族统一口径）**：对全部夹具恒不变的只有适用检查项的**标识集合**、检查项**总数**与违规码**注册表**；**通过数不是不变量**——本次对裸 JSON 编排 delta 是一次有意的新增拒绝，其所属检查项必然由零违规转为有违规、通过数必然下降。通过数的「与上线前相同」断言只许用于行为不受本次修改影响的回归夹具（UT-S39-75、ST-S39-31 步骤②⑤）；预期改变的输入（步骤①）改为断言「新增违规所属检查项失败 + `data.pass=false` + exit 2 + 通过数少于总数」。
+- 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。

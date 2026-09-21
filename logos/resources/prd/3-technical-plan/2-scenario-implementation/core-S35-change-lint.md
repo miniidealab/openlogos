@@ -753,3 +753,160 @@ sequenceDiagram
 - 需求：`core-01-requirements.md`「S35/S09: 防过度设计的规模信号」验收条件 1–6。
 - 先例：本文档「S35 L7 缺段警告化与 warning 输出通道」（warning 通道形态）、§2.73（L8 守恒降级为警告）。
 - 测试：UT-S35-159～UT-S35-172、ST-S35-31。
+
+## S35 non-Markdown 类别集合单点与 fix_hint 协议派生
+
+### 场景目标
+
+把「哪些 delta 进入 L4 的 non-Markdown 形态判定」这一**枚举口径**，从 `change-lint` 内的字面量收敛为与 merge 合成侧共用的具名常量；并把 `non_markdown_delta_invalid` 的 `fix_hint` 文案从手写字符串改为**由协议常量派生**，使其与实际 marker 形态不可能漂移。
+
+### 用户价值
+
+准入承诺落到实处：此前 `change-lint` 对 `deltas/scenario/*.json` 与 `deltas/api/*.yaml` 之外的非 `.md` delta 不做任何检查，lint 报 `PASS（10/10）` 而 merge 必炸——全自动 run 在 agent 已出写权限范围的节点硬停。收敛后缺口在 write-delta 节点即暴露，agent 当场可改；且 `fix_hint` 照着修就能修对，不必像本次事故中的 gap-repair agent 那样绕开文案、自行去读判据实现。
+
+### 本节的定性（前置声明，不可省）
+
+本节**不是新增约束**，而是既有不变量 3「语法唯一、读法具名」在 **non-Markdown 类别集合**上的一次落实。该不变量已明文规定「只共享最后那次比较、各自决定进入比较的集合，等同于把分裂从判据挪到集合」；类别白名单正是「进入比较的集合」，此前两侧各写一份字面量属该条已禁形态。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| N | `NON_MARKDOWN_CATEGORIES` | 整文件类别集合的唯一定义点（定义归属见 S39） |
+| L | `change-lint` L4 | non-Markdown 形态判定的准入侧（枚举口径消费方） |
+| M | `merge` 合成侧 | 整文件通道选择（同一集合的另一消费方） |
+| P | `NON_MD_MARKER` | 整文件 delta 首行控制 marker 的权威正则 |
+| H | `fix_hint` 生成 | 由 P 派生的修复指引文案，非手写 |
+
+前置：提案含非 `.md` 的 mergeable delta，且其 canonical target 可映射（L6 已通过）。
+
+### 枚举口径收敛与 fix_hint 派生时序
+
+```mermaid
+sequenceDiagram
+    participant A as write-delta agent
+    participant L as change-lint L4
+    participant N as NON_MARKDOWN_CATEGORIES
+    participant V as validateAndStripNonMarkdownDelta
+    participant P as NON_MD_MARKER
+    participant M as openlogos merge
+
+    A->>L: Step 1: 产出非 .md delta 后自查 change-lint
+    L->>N: Step 2: 取集合（不得复述 'api' || 'database' 字面量）
+    N-->>L: Step 3: 类别集合
+    alt canonical target 类别 ∈ 集合
+        L->>V: Step 4: 以 canonical target + 磁盘事实推定的 mode 求校验
+        alt 不合法
+            V-->>L: Step 5a: 点名原因
+            L->>P: Step 6a: 由协议正则派生 fix_hint 期望形态
+            P-->>L: Step 7a: `## ADDED|MODIFIED — <路径>（新文件，整文件|整文件替换）`
+            L-->>A: Step 8a: non_markdown_delta_invalid（exit 2），fix_hint 与协议逐字一致
+        else 合法
+            V-->>L: Step 5b: 通过（降级留痕进 warnings，既有通道不变）
+        end
+    else 类别 ∉ 集合
+        L-->>A: Step 4': 按 .md 章节 delta 既有判定处理
+    end
+    A->>M: Step 9: 全绿后调 merge
+    M->>N: Step 10: 取同一集合选择通道
+    Note over N,M: 单点锁：两侧集合取自同一常量；任一侧单独改写即元测试失败
+```
+
+### 步骤说明
+
+2-3. L4 的「哪些 delta 进入判定」取自 `NON_MARKDOWN_CATEGORIES`，**不得**在 `change-lint` 内重写等价字面量。事故实证：现场 lint 报 `PASS（10/10）`，其中 `L4 delta 段标记与脱模板` 只看了 5 个 `.md`，而 `L6` 同时数出 `8 mergeable`——差的 3 个正是两份 `api/*.yaml` 与那份 `scenario/*.json`，全部漏检；准入放行，故障推迟到合成阶段才爆发。
+4-5. 校验调 `validateAndStripNonMarkdownDelta` 单点，判据与强度与 merge 侧逐字同源；SQL 降级留痕仍走既有 `warnings` 通道。
+6a-8a. `fix_hint` 由 `NON_MD_MARKER` 派生而非手写。现文案 `# ADDED|MODIFIED <canonical target 路径>` 与实际协议 `## ADDED|MODIFIED — <路径>（整文件替换）` 在**井号数、破折号、后缀**三处均不符，照此修复必然再次失败——本次事故中的 gap-repair agent 正是绕开该 fix_hint、自行去读判据实现才写对，属侥幸。
+9-10. merge 取同一常量选择通道；两侧在类别维度上不可能分叉。
+
+### 不变量（本族补齐）
+
+1. **枚举口径同源**：L4 的 non-Markdown 判定集合与 merge 合成侧的通道选择集合取自同一具名常量；任一侧出现等价字面量即违规。这是不变量 3 末句「集合的差异只允许出现在不作『预检必先报』承诺的作用点」的直接落点——L4 恰是作此承诺的作用点，故不享有集合差异豁免。
+2. **fix_hint 与协议不漂移**：`non_markdown_delta_invalid` 的 `fix_hint` 所示 marker 形态由 `NON_MD_MARKER` 派生，与协议逐字一致；不得手写第二份文案。
+3. **诊断可归因**：不合法时点名 delta 文件路径与具体不满足的层（marker / 路径漂移 / 语法 / 重复键），不得以「不合法」笼统作答。
+4. **零回归**：`api` / `database` 两类的既有判定、强度与降级留痕逐字不变；`.md` delta 的既有 L4 判定逐字不变；`ChangeLintViolationCode` 成员集合不因本次扩容。
+
+### 异常与边界
+
+- **类别在集合内但校验入口尚未受理该类别**：视为未修复的缺口而非正常路径——集合与入口须同批（见 S39「类别集合与校验入口是两件必须同批的事」）。
+- **非 `.md` 但类别不在集合内**（如未来出现的非 Markdown `decisions` 目标）：按既有 `.md` 章节判定处理并在新增该类别时同批评估，不得默认落入任一侧。
+- **fix_hint 文案本地化**：派生的是**形态**（井号数、破折号、后缀、占位符位置），解释性措辞仍可随 locale 变化；形态部分不得因翻译而改写。
+- **检查项计数**：本次不新增 L 层、不新增违规码，`change-lint` 检查项总数与集合逐字不变——回归锚须以上线前同夹具实测输出为基准，禁止硬编码 `10/10`。
+
+### 追溯
+
+- 来源变更：fix-orchestration-merge-and-predicate-duplication（toolstop 项目 `tools.top` 全自动 run `drv-muaq05dn-4qs0`，2026-09-21）。
+- 场景关联：本文档「S35 围栏提取单点、可归因诊断与门禁可满足性断言」不变量 3 与 5（本节是其在类别集合上的落点）、「S35 行级形态判据前移与预检-门一致性锁」（同族的前一次落实）；S39「non-Markdown 整文件协议的适用类别与派生结论」（集合定义归属）。
+- 测试：UT-S35-173～UT-S35-176、ST-S35-32。
+
+## S35 锚折算、RENAMED 映射与标题扫描的三处收敛
+
+### 场景目标
+
+把 `change-lint` 与 `markdown-section-authority` 之间**已经产生行为分叉**的三处重复实现收敛为单点，并逐处确定收敛后的唯一判定语义：锚文本折算、`RENAMED` 反向映射（含非法块处置）、Markdown 标题扫描（含标题文本的视图划分）。
+
+### 用户价值
+
+三者与本次故障同族——都是「同一判据的第二份副本」。副本一旦存在，分叉只是时间问题：其中两处**已经**分叉（非法 RENAMED 块 lint 跳过而 merge 拒绝；标题文本 merge 侧剥行内代码而 lint 侧不剥），意味着此刻就存在「预检全绿而 merge 必炸」与「两侧对同一文档看到不同标题」的组合。收敛后这两类组合在结构上不再可能。
+
+### 本节的定性（前置声明，不可省）
+
+本节只收敛**已产生可观测行为差异**的重复，不收敛无分叉证据的重复（如 guard 文件的多处读取）——后者纳入只会放大回归面，独立立案。收敛的判定取向遵循「向决定最终落盘字节的一侧对齐」：merge 是事实权威。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| F | 锚文本折算 | `foldRenamedAnchor`（lint）与 `mapAnchorText`（merge）函数体**逐字节相同** |
+| R | `RENAMED` 反向映射 | lint 与 merge 各建一份，**对非法块的处置已分叉** |
+| S | Markdown 标题扫描 | `scanHeadings`（lint）与 `parseMarkdownHeadings`（merge）各一份，**标题文本口径已分叉** |
+| C | `parseRenamedTitle` | 非法 RENAMED 块的合法性判据（既有单点，两侧均已复用，不改） |
+
+前置：三处均落在本次改动触及的文件内；收敛不改变任何一侧对**合法**输入的既有结论。
+
+### 逐处收敛判定
+
+| 处 | 现状 | 收敛后唯一判定 | 依据 |
+|---|---|---|---|
+| F 锚折算 | 两份函数体逐字节相同，`mapAnchorText` 未导出故被抄了一份 | 导出 `mapAnchorText`，lint 侧删除副本改调共享实现；折算语义（保留序数后缀 `[n]`，它不是标题的一部分）逐字不变 | 无分叉，纯去重；零行为变更 |
+| R RENAMED 反向映射 | lint 与 merge 各建一份映射表；非法块处置**已分叉**：lint `continue` 跳过、merge `return false` 拒绝 | 收敛为单点；非法 RENAMED 块**统一为拒绝**（向 merge 侧对齐），lint 侧现行的跳过作废 | C04：lint 的承诺是「预检必先报」，跳过等于放行一个 merge 必拒的形态，与前移承诺自相矛盾 |
+| S 标题扫描 | 两份扫描；标题文本**已分叉**：merge 侧取 `stripInlineCode(...)`、lint 侧取原始 `.trim()` | 收敛为**一次共享扫描**，同一次扫描同时记录 `rawText` 与 `normalizedText` 两个视图；**消费方按用途各取其一** | C05：收敛的是扫描实现，不是文本视图——见下「标题文本的视图划分」 |
+
+**R 的可合并集合不变**：非法 RENAMED 块这一形态改前改后**都不能合并**（merge 侧本就拒绝）。本次只是把错误从合成阶段提前到预检阶段，回归面最小；不存在「改前能合、改后不能合」的形态。
+
+### 标题文本的视图划分（S 的收敛边界）
+
+`stripInlineCode` 删除的是**整个行内代码片段**，不是仅去掉反引号。因此它对**锚定位**是等价规范化，对**身份**是**有损**的——两者不能共用同一文本视图：
+
+| 消费方 | 取哪个视图 | 理由 |
+|---|---|---|
+| 锚定位（章节锚解析、RENAMED 折算） | `normalizedText` | 向 merge 侧对齐；merge 决定最终落盘字节，是事实权威 |
+| L8 条目守恒的**场景表辖属路径身份** | `rawText` | 身份必须无损：不同辖属标题若坍缩，正式表与历史副本同身份，守恒门被绕过 |
+| 标题**保真**检查 | `rawHeading`（既有，逐字不变） | 保真检查不得与被检查者共用规范化管道——这是既有注释已明文警告的正交路径，本次不触碰 |
+| 决策章节判定 | 须**显式选定**并有用例覆盖 | 不得由「跟着谁改」隐式决定 |
+
+**反例（必须继续被拒）**：基线标题「### 业务 `正式`」下有场景表行 `| S01 | 登录 |`；delta 未声明删除、也未 `RENAMED`，只把该行移到标题「### 业务 `历史`」下。现状 `evaluateDeltaConservation` 返回 `delta_implicit_id_removal` 并点名 S01 与表身份「业务 `正式`」。若把辖属路径身份改用规范化文本，两个辖属路径同时坍缩为「业务」、身份相同，守恒返回空集——正式条目被替换却不再要求声明。**该反例改后仍须被拒**，是本处收敛的验收条件。
+
+### 不变量（本族补齐）
+
+1. **三处各恰一处实现**：锚折算、RENAMED 反向映射、标题扫描在 lint 与 merge 之间各只有一份实现；任一侧出现第二份即违规。
+2. **非法 RENAMED 统一拒绝**：lint 与 merge 对非法 RENAMED 块结论相同（均拒绝），合法性判据仍复用 `parseRenamedTitle` 单点，不新建第三份。
+3. **扫描共享而视图分离**：标题扫描只执行一次，但 `rawText` 与 `normalizedText` 两个视图同时可得；消费方按上表取用，**不得**以「两侧一致」为由让身份消费方改取有损文本。
+4. **守恒强度不降**：上述反例在收敛后仍被 `evaluateDeltaConservation` 拒绝并点名原始表身份；L8 条目守恒的强度逐字不降。
+5. **保真与规范化正交**：标题保真检查继续取 `rawHeading`，不与规范化管道合流。
+6. **合法输入零行为变更**：F 处收敛对任何输入均无行为变更；R 处只对**非法** RENAMED 块改变报错时机（合成 → 预检），S 处只消除「两侧看到不同标题」这一分叉。
+
+### 异常与边界
+
+- **非法 RENAMED 块（正文多行 / 空 / 以 `#` 开头）**：lint 即报并点名该块锚与具体违反项；不再为后续锚提供不该存在的折算。
+- **同一 delta 内 RENAMED 与其它 op 组合**：折算语义不变——更名后以**新标题**作后续块的锚，解析失败时折回旧标题重试一次，两次都不中才算锚不可解析。
+- **标题含行内代码且被用作锚**：锚定位按 `normalizedText` 匹配，与 merge 侧逐字一致；两侧不再出现「lint 判不可解析而 merge 成功」的组合。
+- **标题含行内代码且该标题是场景表的辖属标题**：身份取 `rawText`，行内代码内容参与身份；两个仅在行内代码内容上不同的辖属标题是**不同身份**。
+- **决策章节判定的文本视图**：须在实现中显式选定（而非继承扫描默认值），并有专门用例锁定其结论；未显式选定即视为未完成本处收敛。
+- **不扩大收敛范围**：guard 文件的多处读取虽为重复，但各处结论一致、无分叉证据，不在本次范围内。
+
+### 追溯
+
+- 来源变更：fix-orchestration-merge-and-predicate-duplication；决策 C03（只收敛已分叉的三处）、C04（非法 RENAMED 统一拒绝）、C05（扫描共享、视图分离）。
+- 场景关联：本文档「S35 围栏提取单点、可归因诊断与门禁可满足性断言」不变量 3 与 5；S09「merge 直接合并时序」与 `RENAMED` op 语义。
+- 测试：UT-S35-177～UT-S35-182、ST-S35-33。

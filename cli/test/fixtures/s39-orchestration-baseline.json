@@ -1,0 +1,335 @@
+{
+  "_note": "slice-01-orchestration-full-file-channel 上线前的实测基线。由 scratchpad/capture-s39-baseline.mjs + lint-fixture.mjs 在本切片实现前的 cli 构建上捕获；lintScenarios[].files 即夹具文件内容本身，测试据其物化，构造不可能与捕获时漂移。禁止手改。",
+  "violationCodes": [
+    "code_change_requires_real_test_ids",
+    "delta_implicit_id_removal",
+    "delta_missing_section_marker",
+    "delta_path_invalid",
+    "delta_removed_unknown_id",
+    "delta_section_anchor_unresolvable",
+    "delta_template_skeleton",
+    "delta_test_table_column_mismatch",
+    "delta_test_table_duplicate_header",
+    "delta_test_table_id_unextractable",
+    "deployment_decision_conflict",
+    "design_system_empty",
+    "design_system_invalid",
+    "design_system_missing",
+    "design_system_mode_invalid",
+    "fallback_reason_missing",
+    "fallback_token_forged",
+    "no_pages_declared",
+    "non_markdown_delta_invalid",
+    "proposal_change_type_invalid",
+    "proposal_deployment_fields_invalid",
+    "proposal_placeholder_remaining",
+    "proposal_required_section_duplicate",
+    "proposal_required_section_empty",
+    "proposal_required_section_missing",
+    "prototype_basename_duplicate",
+    "prototype_basename_invalid",
+    "prototype_empty",
+    "prototype_extra",
+    "prototype_missing",
+    "prototype_path_traversal",
+    "slice-task-state-inconsistent",
+    "tasks_code_entry_before_spec_complete",
+    "tasks_code_header_missing",
+    "tasks_code_section_missing",
+    "tasks_deployment_conflict",
+    "tasks_sections_unparsable",
+    "tasks_template_remaining",
+    "test-slice-assignment-ambiguous",
+    "test-slice-manifest-invalid",
+    "test-slice-manifest-missing",
+    "test-slice-manifest-unsupported",
+    "ui_declaration_missing",
+    "ui_declaration_unparsable",
+    "ui_impact_not_boolean"
+  ],
+  "categories": {
+    "logos/resources/api/touch.yaml": "api",
+    "logos/resources/api/touch.json": "api",
+    "logos/resources/database/touch.sql": "database",
+    "spec/schema/demo.json": "spec",
+    "logos/resources/scenario/core-auth.json": "orchestration",
+    "logos/resources/prd/1-product-requirements/a.md": "requirement",
+    "logos/resources/test/a.md": "test",
+    "spec/a.md": "spec",
+    "skills/a.md": "skill"
+  },
+  "entryCases": {
+    "api-yaml-create-ok": {
+      "ok": true,
+      "message": null,
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": true
+    },
+    "api-yaml-modify-ok": {
+      "ok": true,
+      "message": null,
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": true
+    },
+    "api-yaml-target-drift": {
+      "ok": false,
+      "message": "首行 target 与 canonical target 不一致：logos/resources/api/other.yaml",
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": null
+    },
+    "api-yaml-duplicate-key": {
+      "ok": false,
+      "message": "OpenAPI 解析失败：Map keys must be unique",
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": null
+    },
+    "api-yaml-schema-invalid": {
+      "ok": false,
+      "message": "OpenAPI 3.1 官方 schema 校验失败：#/components/securitySchemes/bearerAuth/type enum；#/components/securitySchemes/bearerAuth/scheme validate",
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": null
+    },
+    "api-json-create-ok": {
+      "ok": true,
+      "message": null,
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": true
+    },
+    "db-sql-create-ok": {
+      "ok": true,
+      "message": null,
+      "tier": "execution",
+      "degradation": null,
+      "payloadEqualsBody": true
+    },
+    "db-sql-syntax-bad": {
+      "ok": false,
+      "message": "缺 CREATE TABLE",
+      "tier": "structure",
+      "degradation": null,
+      "payloadEqualsBody": null
+    },
+    "root-schema-create-ok": {
+      "ok": true,
+      "message": null,
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": true
+    },
+    "orchestration-json-modify": {
+      "ok": false,
+      "message": "整文件协议只支持 API YAML/YML/JSON、database SQL 与受控根 spec/schema JSON",
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": null
+    },
+    "orchestration-json-create": {
+      "ok": false,
+      "message": "整文件协议只支持 API YAML/YML/JSON、database SQL 与受控根 spec/schema JSON",
+      "tier": null,
+      "degradation": null,
+      "payloadEqualsBody": null
+    },
+    "db-sql-postgresql": {
+      "ok": true,
+      "message": null,
+      "tier": "syntax",
+      "degradation": null,
+      "payloadEqualsBody": true
+    },
+    "db-sql-mysql": {
+      "ok": true,
+      "message": null,
+      "tier": "structure",
+      "degradation": {
+        "dialect": "mysql",
+        "reason": "adapter-not-implemented"
+      },
+      "payloadEqualsBody": true
+    }
+  },
+  "lintScenarios": {
+    "orch-legal": {
+      "files": {
+        "logos/logos.config.json": "{\"locale\":\"zh\",\"project\":{\"type\":\"cli\"}}\n",
+        "logos/.openlogos-guard": "{\"activeChange\":\"orch-fixture\",\"module\":\"core\"}\n",
+        "logos/logos-project.yaml": "project:\n  name: Orch Fixture\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\nscenario_counter:\n  next_id: 40\nresource_index: []\n",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md": "# 文档\n\n## 一、判据\n\n旧正文。\n",
+        "logos/resources/test/core-S01-test-cases.md": "# 用例\n\n## 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 旧定义 |\n",
+        "logos/changes/orch-fixture/proposal.md": "# 变更提案：编排夹具\n\n## 变更原因\n真实原因。\n\n## 变更类型\n需求级\n\n## 变更范围\n- 影响的功能规格：fixture\n\n## 部署影响\n- 是否需要部署：否\n- 部署原因：无\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 变更概述\n概述。\n\n\n## 决策澄清\n\n```yaml\nschema: openlogos/clarification@1\nmode: adaptive\nstatus: complete\nimpacts:\n  data: {status: none, reason: fixture}\n  compatibility: {status: none, reason: fixture}\n  security_privacy: {status: none, reason: fixture}\n  public_release: {status: none, reason: fixture}\n  external_commitment: {status: none, reason: fixture}\ndecisions: []\nunresolved: []\ndefaults: []\n```\n",
+        "logos/changes/orch-fixture/PLAN_APPROVED": "{}",
+        "logos/changes/orch-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md": "## MODIFIED — 一、判据\n\n新正文。\n",
+        "logos/changes/orch-fixture/deltas/test/core-S01-test-cases.md": "## MODIFIED — 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 新定义 |\n",
+        "logos/changes/orch-fixture/tasks.md": "# 任务\n\n## [delta] 规格变更\n\n- [x] [MODIFY] `deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md`：fixture 更新\n- [x] [MODIFY] `deltas/test/core-S01-test-cases.md`：fixture 用例更新\n- [x] [MODIFY] `deltas/scenario/core-auth.json`：编排目标整文件替换\n\n## [code] 代码实现\n",
+        "logos/resources/scenario/core-auth.json": "{\n  \"name\": \"登录\",\n  \"steps\": []\n}\n",
+        "logos/changes/orch-fixture/deltas/scenario/core-auth.json": "## MODIFIED — logos/resources/scenario/core-auth.json（整文件替换）\n{\n  \"name\": \"登录\",\n  \"steps\": [\n    {\n      \"id\": \"S1\",\n      \"call\": \"POST /login\"\n    }\n  ]\n}\n"
+      },
+      "result": {
+        "ok": true,
+        "checkIds": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          9
+        ],
+        "total": 9,
+        "passed": 9,
+        "pass": true,
+        "violationCodes": [],
+        "checkViolations": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0,
+          "5": 0,
+          "6": 0,
+          "8": 0,
+          "9": 0
+        }
+      }
+    },
+    "orch-bare": {
+      "files": {
+        "logos/logos.config.json": "{\"locale\":\"zh\",\"project\":{\"type\":\"cli\"}}\n",
+        "logos/.openlogos-guard": "{\"activeChange\":\"orch-fixture\",\"module\":\"core\"}\n",
+        "logos/logos-project.yaml": "project:\n  name: Orch Fixture\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\nscenario_counter:\n  next_id: 40\nresource_index: []\n",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md": "# 文档\n\n## 一、判据\n\n旧正文。\n",
+        "logos/resources/test/core-S01-test-cases.md": "# 用例\n\n## 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 旧定义 |\n",
+        "logos/changes/orch-fixture/proposal.md": "# 变更提案：编排夹具\n\n## 变更原因\n真实原因。\n\n## 变更类型\n需求级\n\n## 变更范围\n- 影响的功能规格：fixture\n\n## 部署影响\n- 是否需要部署：否\n- 部署原因：无\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 变更概述\n概述。\n\n\n## 决策澄清\n\n```yaml\nschema: openlogos/clarification@1\nmode: adaptive\nstatus: complete\nimpacts:\n  data: {status: none, reason: fixture}\n  compatibility: {status: none, reason: fixture}\n  security_privacy: {status: none, reason: fixture}\n  public_release: {status: none, reason: fixture}\n  external_commitment: {status: none, reason: fixture}\ndecisions: []\nunresolved: []\ndefaults: []\n```\n",
+        "logos/changes/orch-fixture/PLAN_APPROVED": "{}",
+        "logos/changes/orch-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md": "## MODIFIED — 一、判据\n\n新正文。\n",
+        "logos/changes/orch-fixture/deltas/test/core-S01-test-cases.md": "## MODIFIED — 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 新定义 |\n",
+        "logos/changes/orch-fixture/tasks.md": "# 任务\n\n## [delta] 规格变更\n\n- [x] [MODIFY] `deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md`：fixture 更新\n- [x] [MODIFY] `deltas/test/core-S01-test-cases.md`：fixture 用例更新\n- [x] [MODIFY] `deltas/scenario/core-auth.json`：编排目标整文件替换\n\n## [code] 代码实现\n",
+        "logos/resources/scenario/core-auth.json": "{\n  \"name\": \"登录\",\n  \"steps\": []\n}\n",
+        "logos/changes/orch-fixture/deltas/scenario/core-auth.json": "{\n  \"name\": \"登录\",\n  \"steps\": [\n    {\n      \"id\": \"S1\",\n      \"call\": \"POST /login\"\n    }\n  ]\n}\n"
+      },
+      "result": {
+        "ok": true,
+        "checkIds": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          9
+        ],
+        "total": 9,
+        "passed": 9,
+        "pass": true,
+        "violationCodes": [],
+        "checkViolations": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0,
+          "5": 0,
+          "6": 0,
+          "8": 0,
+          "9": 0
+        }
+      }
+    },
+    "unrelated-violation": {
+      "files": {
+        "logos/logos.config.json": "{\"locale\":\"zh\",\"project\":{\"type\":\"cli\"}}\n",
+        "logos/.openlogos-guard": "{\"activeChange\":\"orch-fixture\",\"module\":\"core\"}\n",
+        "logos/logos-project.yaml": "project:\n  name: Orch Fixture\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\nscenario_counter:\n  next_id: 40\nresource_index: []\n",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md": "# 文档\n\n## 一、判据\n\n旧正文。\n",
+        "logos/resources/test/core-S01-test-cases.md": "# 用例\n\n## 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 旧定义 |\n",
+        "logos/changes/orch-fixture/proposal.md": "# 变更提案：编排夹具\n\n## 变更原因\n真实原因。\n\n## 变更类型\n需求级\n\n## 变更范围\n- 影响的功能规格：fixture\n\n## 部署影响\n- 是否需要部署：否\n- 部署原因：无\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 变更概述\n概述。\n\n\n## 决策澄清\n\n```yaml\nschema: openlogos/clarification@1\nmode: adaptive\nstatus: complete\nimpacts:\n  data: {status: none, reason: fixture}\n  compatibility: {status: none, reason: fixture}\n  security_privacy: {status: none, reason: fixture}\n  public_release: {status: none, reason: fixture}\n  external_commitment: {status: none, reason: fixture}\ndecisions: []\nunresolved: []\ndefaults: []\n```\n",
+        "logos/changes/orch-fixture/PLAN_APPROVED": "{}",
+        "logos/changes/orch-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md": "这段 delta 没有任何控制段标记。\n",
+        "logos/changes/orch-fixture/deltas/test/core-S01-test-cases.md": "## MODIFIED — 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 新定义 |\n",
+        "logos/changes/orch-fixture/tasks.md": "# 任务\n\n## [delta] 规格变更\n\n- [x] [MODIFY] `deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md`：fixture 更新\n- [x] [MODIFY] `deltas/test/core-S01-test-cases.md`：fixture 用例更新\n\n## [code] 代码实现\n"
+      },
+      "result": {
+        "ok": true,
+        "checkIds": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          9
+        ],
+        "total": 9,
+        "passed": 8,
+        "pass": false,
+        "violationCodes": [
+          "delta_missing_section_marker"
+        ],
+        "checkViolations": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 1,
+          "5": 0,
+          "6": 0,
+          "8": 0,
+          "9": 0
+        }
+      }
+    },
+    "nodelta": {
+      "files": {
+        "logos/logos.config.json": "{\"locale\":\"zh\",\"project\":{\"type\":\"cli\"}}\n",
+        "logos/.openlogos-guard": "{\"activeChange\":\"orch-fixture\",\"module\":\"core\"}\n",
+        "logos/logos-project.yaml": "project:\n  name: Orch Fixture\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\nscenario_counter:\n  next_id: 40\nresource_index: []\n",
+        "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S01-flow.md": "# 文档\n\n## 一、判据\n\n旧正文。\n",
+        "logos/resources/test/core-S01-test-cases.md": "# 用例\n\n## 一、判据\n\n| 用例ID | 验证目标 |\n|---|---|\n| UT-S01-01 | 旧定义 |\n",
+        "logos/changes/orch-fixture/proposal.md": "# 变更提案：编排夹具\n\n## 变更原因\n真实原因。\n\n## 变更类型\n需求级\n\n## 变更范围\n- 影响的功能规格：fixture\n\n## 部署影响\n- 是否需要部署：否\n- 部署原因：无\n- 影响环境：无\n- 是否涉及数据迁移：否\n- 是否需要回滚预案：否\n- 是否需要 smoke：否\n\n## 变更概述\n概述。\n\n## 复用测试 ID\n\n- UT-S01-01 — 回归覆盖\n\n## 决策澄清\n\n```yaml\nschema: openlogos/clarification@1\nmode: adaptive\nstatus: complete\nimpacts:\n  data: {status: none, reason: fixture}\n  compatibility: {status: none, reason: fixture}\n  security_privacy: {status: none, reason: fixture}\n  public_release: {status: none, reason: fixture}\n  external_commitment: {status: none, reason: fixture}\ndecisions: []\nunresolved: []\ndefaults: []\n```\n",
+        "logos/changes/orch-fixture/PLAN_APPROVED": "{}",
+        "logos/changes/orch-fixture/tasks.md": "# 任务\n\n## [delta] 规格变更\n\n## [code] 代码实现\n"
+      },
+      "result": {
+        "ok": true,
+        "checkIds": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          9
+        ],
+        "total": 9,
+        "passed": 9,
+        "pass": true,
+        "violationCodes": [],
+        "checkViolations": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0,
+          "5": 0,
+          "6": 0,
+          "8": 0,
+          "9": 0
+        }
+      }
+    }
+  }
+}

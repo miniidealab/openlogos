@@ -27,7 +27,10 @@ import {
   enumerateTestDefinitionTables, findDuplicateHeaderCells,
   rowColumnsMatchHeader, testDefinitionRowId,
 } from './test-table-shape.js';
-import { authorityScan, stripInlineCode, isTableDelimiterRow, tableRowCells } from './markdown-scan.js';
+import {
+  authorityScan, scanHeadingRecords, stripInlineCode, isTableDelimiterRow, tableRowCells,
+  type ScannedHeading,
+} from './markdown-scan.js';
 import {
   DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError,
   type DeltaEntryClassification, type MergeDisposition, type LintValidity,
@@ -35,8 +38,10 @@ import {
 import { analyzeUiDeclarationStructure, isGuiProductType } from './ui-first.js';
 import { readProjectYaml } from './project-yaml.js';
 import { evaluateUiPrototype } from '../commands/check-ui-prototype.js';
-import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory } from './canonical-target.js';
-import { validateAndStripNonMarkdownDelta, type SqlValidationDegradation } from './non-markdown-delta.js';
+import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory, isNonMarkdownCategory } from './canonical-target.js';
+import {
+  nonMarkdownMarkerForm, validateAndStripNonMarkdownDelta, type SqlValidationDegradation,
+} from './non-markdown-delta.js';
 import {
   BaselineCommitInProgressError,
   listBaselineSeedModuleIds,
@@ -47,9 +52,10 @@ import { deriveSliceVerificationState } from './test-slice-manifest.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import { type PlanPackageEvaluation, type ChangeTypeLevel, resolveProposalChangeType } from './plan-package-contract.js';
 import {
+  buildRenameMaps,
+  mapAnchorText,
   parseDeltaBlocks,
   parseMarkdownHeadings,
-  parseRenamedTitle,
   resolveSectionAnchor,
 } from './markdown-section-authority.js';
 
@@ -388,18 +394,31 @@ export const ID_PATTERN_REGISTRY = {
   sectionNumber: /^\d+(?:\.\d+)*(?:[A-Za-z]|\.[A-Za-z])?$/,
 } as const;
 
-interface DocHeading { line: number; level: number; text: string }
+/**
+ * 本文件各标题消费方的**文本视图选择**（C05，经 proposal-r1 F2 修订）。
+ *
+ * 标题扫描已收敛为共享单点 `scanHeadingRecords`（本文件不再自建第二份）；但**扫描共享不等于
+ * 文本视图共享**——`stripInlineCode` 整段删除行内代码，对锚定位是等价规范化、对身份**有损**。
+ * 故每个消费方在此显式选定，不得由「跟着谁改」隐式决定：
+ *
+ * | 消费方 | 视图 | 理由 |
+ * |---|---|---|
+ * | 注册表 ID 抽取（SXX/DXX 标题、节号） | `rawText` | 与上线前逐字同口径，零行为变更 |
+ * | L8 场景表**辖属路径身份** / 语义链 | `rawText` | 身份必须无损——见下方反例 |
+ * | 决策章节判定（`已确定的设计决策`） | `rawText` | 显式选定；与上线前同口径，零行为变更 |
+ * | 章节锚解析 / RENAMED 折算 | `normalizedText` | 由 `parseMarkdownHeadings` 提供，向 merge 侧对齐 |
+ *
+ * **身份视图不得改取 `normalizedText`**：基线 `### 业务 ` + '`正式`' + ` 下的场景行 S01 被移到
+ * `### 业务 ` + '`历史`' + ` 下且未声明删除或 RENAMED 时，现状返回 `delta_implicit_id_removal`
+ * 并点名 S01 与表身份「业务 `正式`」；改用规范化文本后两个辖属路径坍缩为「业务」、身份相同，
+ * 守恒返回空集——正式条目被替换却不再要求声明。冲突时的修复方向是改回无损文本，不是削弱断言。
+ */
+export const HEADING_VIEW = {
+  /** 注册表 ID 抽取、L8 辖属身份与语义链、决策章节判定——**无损身份视图**。 */
+  identity: (heading: ScannedHeading): string => heading.rawText,
+} as const;
 
-/** fence-aware 标题扫描（复用 authorityScan 掩码；围栏 / 缩进代码 / 注释内的 `#` 行不构成标题）。 */
-function scanHeadings(lines: string[], masked: boolean[], text: string[]): DocHeading[] {
-  const out: DocHeading[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (masked[i]) continue;
-    const m = /^(#{1,6})\s+(.+?)\s*$/.exec(text[i]);
-    if (m) out.push({ line: i, level: m[1].length, text: m[2].trim() });
-  }
-  return out;
-}
+type DocHeading = ScannedHeading;
 
 /** 一段行文本的结构化 ID 抽取结果：flat = 无身份维度的类别；scenarioRows = 场景表行 ID → 表身份键集合。 */
 interface RegistryIdExtraction {
@@ -452,15 +471,17 @@ function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirst
   const content = lines.join('\n');
   for (const id of extractStructuredTestIds(content)) flat.add(id);
   const scan = authorityScan(lines);
-  const headings = scanHeadings(lines, scan.masked, scan.text);
+  // 标题扫描取共享单点；本函数的全部消费方取**无损身份视图**（见 HEADING_VIEW）。
+  const headings = scanHeadingRecords(lines, scan.masked, scan.text);
   const rootHeading = chunkRootIsFirstHeading && headings.length > 0 ? headings[0] : null;
   for (const h of headings) {
-    const sm = ID_PATTERN_REGISTRY.scenarioHeading.exec(h.text);
+    const text = HEADING_VIEW.identity(h);
+    const sm = ID_PATTERN_REGISTRY.scenarioHeading.exec(text);
     if (sm) flat.add(sm[1]);
     // S38：决策记录 DXX 标题（结构位置 = 决策记录文档标题），复用 flat 守恒机制
-    const dm = ID_PATTERN_REGISTRY.decisionHeading.exec(h.text);
+    const dm = ID_PATTERN_REGISTRY.decisionHeading.exec(text);
     if (dm) flat.add(dm[1]);
-    const firstToken = h.text.split(/\s+/)[0] ?? '';
+    const firstToken = text.split(/\s+/)[0] ?? '';
     if (ID_PATTERN_REGISTRY.sectionNumber.test(firstToken)) flat.add(firstToken);
   }
   /** 表起始行的辖属子路径（外→内，排除章节根标题）与语义链（含根与 contextTitle，供场景语义判定）。 */
@@ -471,9 +492,11 @@ function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirst
       const h = headings[k];
       if (h.line < tableLine && h.level < level) { nearestUp.push(h); level = h.level; }
     }
-    const subPath = nearestUp.filter(h => h !== rootHeading).map(h => h.text).reverse();
-    const semanticChain = [...nearestUp.map(h => h.text)];
-    if (rootHeading) semanticChain.push(rootHeading.text);
+    // 辖属路径身份与语义链取**无损**标题文本（HEADING_VIEW.identity）——改取规范化文本会让
+    // 仅在行内代码内容上不同的辖属标题坍缩为同一身份，绕过 L8 条目守恒（C05 安全锚）。
+    const subPath = nearestUp.filter(h => h !== rootHeading).map(h => HEADING_VIEW.identity(h)).reverse();
+    const semanticChain = [...nearestUp.map(h => HEADING_VIEW.identity(h))];
+    if (rootHeading) semanticChain.push(HEADING_VIEW.identity(rootHeading));
     if (contextTitle) semanticChain.push(contextTitle);
     return { subPath, semanticChain };
   };
@@ -550,43 +573,27 @@ export interface DeltaConservationViolation {
  * 纯函数、无 IO、不抛未捕获异常（畸形输入产出空块列表，由 L4 先行拦截）。
  */
 /**
- * 本 delta 内 `RENAMED` 造成的「新标题 → 旧标题」反向映射。
+ * 本 delta 内 `RENAMED` 造成的「新标题 → 旧标题」反向映射，取自共享单点 `buildRenameMaps`。
  *
  * 规范要求更名后以**新标题**作后续块的锚（`spec/change-management.md`「Delta `RENAMED` op」
  * 与既有 op 的组合）。但本文件的静态判据在**合并前**的主文档里解析锚——新标题此刻尚不存在，
  * 直接解析必然 not-found。合成器 `composeOpenLogosMarkdown` 是顺序应用的、不受影响，
  * 于是出现「规范要求的写法被 lint 拒绝、真实合并却成功」的判据分叉。
  *
- * 折算这张表即可消除分叉：解析失败时把新标题折回旧标题重试一次。与
- * `verifyAgentMaterialOutcome` 的同名折算同源，判据只有一份。
+ * 折算这张表即可消除分叉：解析失败时把新标题折回旧标题重试一次。
+ *
+ * **非法 RENAMED 块统一为拒绝（C04）**：此前本文件的私有副本对非法块 `continue` 跳过，
+ * merge 侧 `return false` 拒绝——同一形态两个结论。现两侧同走 `buildRenameMaps`，非法即 `error`，
+ * 调用方据此产出 L8 违规（`delta_section_anchor_unresolvable`，与「空锚 fail-closed」同族：
+ * 控制块畸形导致定位失败）。该形态改前改后都不可合并，本次只把报错从合成阶段提前到预检阶段。
  */
-function renamedReverseMap(blocks: ReturnType<typeof parseDeltaBlocks>): Map<string, string> {
-  const reverse = new Map<string, string>();
-  for (const b of blocks) {
-    if (b.op !== 'RENAMED' || !b.anchor) continue;
-    // 合法性判据复用 parseRenamedTitle（正文恰一行、非空、不以 # 开头）——本文件不得自建第二份。
-    // 非法块不进映射表：否则一个畸形 RENAMED 会为后续锚提供不该存在的折算，把该报的
-    // 锚不可解析悄悄放行。
-    const parsed = parseRenamedTitle(b);
-    if (!parsed.ok) continue;
-    const oldTitle = b.anchor.split(' > ').pop()!.replace(/\s*\[\d+\]$/, '').trim();
-    reverse.set(parsed.title, oldTitle);
-  }
-  return reverse;
-}
-
-/** 按反向映射折算锚文本（保留序数后缀 `[n]`，它不是标题的一部分）。 */
-function foldRenamedAnchor(anchor: string, reverse: Map<string, string>): string {
-  return anchor.split(' > ').map(part => {
-    const ordinal = /^(.*?)(\s*\[\d+\])$/.exec(part);
-    const base = (ordinal ? ordinal[1] : part).trim();
-    return `${reverse.get(base) ?? base}${ordinal ? ordinal[2] : ''}`;
-  }).join(' > ');
+function renamedMapsOf(blocks: ReturnType<typeof parseDeltaBlocks>) {
+  return buildRenameMaps(blocks);
 }
 
 /**
  * 在合并前文档中解析锚；锚是「本 delta 内被 RENAMED 过的新标题」时折回旧标题重试。
- * 两次都不中才算真的锚不可解析。
+ * 两次都不中才算真的锚不可解析。折算调**共享实现** `mapAnchorText`（本文件不再持有副本）。
  */
 function resolveAnchorWithRenames(
   headings: ReturnType<typeof parseMarkdownHeadings>,
@@ -595,7 +602,7 @@ function resolveAnchorWithRenames(
 ): ReturnType<typeof resolveSectionAnchor> {
   const direct = resolveSectionAnchor(headings, anchor);
   if (direct.status === 'ok' || reverse.size === 0) return direct;
-  const folded = foldRenamedAnchor(anchor, reverse);
+  const folded = mapAnchorText(anchor, reverse);
   if (folded === anchor) return direct;
   const second = resolveSectionAnchor(headings, folded);
   return second.status === 'ok' ? second : direct;
@@ -604,6 +611,22 @@ function resolveAnchorWithRenames(
 export function evaluateDeltaConservation(deltaContent: string, targetContent: string | null): DeltaConservationViolation[] {
   if (targetContent === null) return [];
   const blocks = parseDeltaBlocks(deltaContent);
+  // C04：非法 RENAMED 块两侧统一为拒绝，且**先于**下方的「无物质块则提前返回」——只含一个畸形
+  // RENAMED 的 delta 同样必须被报出（merge 侧本就拒绝它）。此前本侧对非法块 `continue` 跳过、
+  // 继续用残缺映射表求锚，等于放行一个 merge 必拒的形态，与「预检必先报」自相矛盾。
+  // 复用既有 `delta_section_anchor_unresolvable`（与「空锚 fail-closed」同族：控制块畸形 →
+  // 定位失败），**不新增违规码**——`ChangeLintViolationCode` 成员集合逐字不变。
+  const renamedMaps = renamedMapsOf(blocks);
+  if (renamedMaps.error) {
+    const offending = blocks.find(b => b.op === 'RENAMED');
+    return [{
+      code: 'delta_section_anchor_unresolvable',
+      anchor: offending?.anchor ?? '',
+      message: `非法 \`## RENAMED\` 段：${renamedMaps.error}`,
+      fix_hint: 'RENAMED 块正文必须**恰为一行**新标题文本（非空、不带 `#` 前缀）；'
+        + '它不携带正文、不改层级——需要改正文请另写 `## MODIFIED` 块',
+    }];
+  }
   // RENAMED 不参与守恒对账：它不携带正文、不增删任何结构化条目（规格「与条目守恒（L8）的关系」）。
   // 若把它当 MODIFIED 对账，其单行正文会被读成「整节只剩一行」→ 全节 ID 假性隐式删除。
   const material = blocks.filter(b => b.op !== 'ADDED' && b.op !== 'RENAMED');
@@ -612,7 +635,7 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
 
   const targetLines = targetContent.split(/\r?\n/);
   const headings = parseMarkdownHeadings(targetContent);
-  const renamedReverse = renamedReverseMap(blocks);
+  const renamedReverse = renamedMaps.reverse;
 
   // code-r2 F5：每条 violation 携带其**真实声明源行**（空锚/锚不可解析/多写者 = 相关 marker 行、
   // unknown = REMOVED-ITEMS 点名行、配对缺陷 = 声明块 marker 行、missing = 造成最终态缺失的 MODIFIED
@@ -753,7 +776,11 @@ export function resolveModifiedSectionKeys(deltaContent: string, targetContent: 
   const blocks = all.filter(b => b.op === 'MODIFIED' && b.anchor);
   if (blocks.length === 0) return [];
   const headings = parseMarkdownHeadings(targetContent);
-  const reverse = renamedReverseMap(all);
+  const maps = renamedMapsOf(all);
+  // 非法 RENAMED 块下不产出任何写者键：该 delta 已由 evaluateDeltaConservation fail-closed 拒绝，
+  // 此处再用残缺映射表求锚只会得到不可信的键（C04 两侧统一处置）。
+  if (maps.error) return [];
+  const reverse = maps.reverse;
   const keys: number[] = [];
   for (const b of blocks) {
     const r = resolveAnchorWithRenames(headings, b.anchor, reverse);
@@ -855,7 +882,7 @@ export type ChangeLintRunResult =
  * 决策记录 warning 判据（S38，delta-r1 F4；code-r1/r2 F3 修正范围）：proposal 含「已确定的设计决策」
  * **章节标题**（fence/注释外的真实标题，不采信围栏内示例）、但 `[delta]` 段无任何 `deltas/decisions/`
  * 产出（`[delta]` 段**结构化任务项**规划或实际 mergeable decisions delta 条目均无）→ 提醒补决策记录 delta。
- * code-r1 F3：① 决策章节判定改走 fence-aware 标题扫描（authorityScan + scanHeadings）——围栏内的
+ * code-r1 F3：① 决策章节判定改走 fence-aware 标题扫描（authorityScan + scanHeadingRecords）——围栏内的
  * `## 已确定的设计决策` 示例不再误触发。
  * code-r2 F3：② `deltas/decisions/` 扫描收敛到 `[delta]` 段的**结构化任务项**（复用 proposal-lifecycle
  * 的 extractTaskSectionItems，仅匹配 `- [ ]` / `- [x]` 项正文）——段内的普通说明、HTML 注释、围栏示例
@@ -936,8 +963,10 @@ export function computeDecisionRecordWarnings(
 ): ChangeLintWarning[] {
   const lines = proposalContent.split(/\r?\n/);
   const scan = authorityScan(lines);
-  const hasDecisionSection = scanHeadings(lines, scan.masked, scan.text)
-    .some(h => h.text.includes('已确定的设计决策'));
+  // 视图**显式选定**（C05）：决策章节判定取无损标题文本，与上线前同口径、零行为变更；
+  // 不得因「标题扫描收敛」而隐式跟随锚定位改取规范化文本。
+  const hasDecisionSection = scanHeadingRecords(lines, scan.masked, scan.text)
+    .some(h => HEADING_VIEW.identity(h).includes('已确定的设计决策'));
   if (!hasDecisionSection) return [];
   // code-r2 F3：仅采信 [delta] 段的结构化任务项正文，且先 fence/注释掩码——[delta] 段内的普通说明、
   // HTML 注释、围栏示例（哪怕形如 `- [ ] …deltas/decisions/…`）均被剔除，不构成「已规划」、不误抑制 warning。
@@ -1125,6 +1154,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
 
   // L4 / L6：仅对已存在 delta 文件
   const nonMarkdownDegradations: Array<{ path: string; degradation: SqlValidationDegradation }> = [];
+  /** L4 已就 RENAMED 块形态报过违规的 delta——L8 不再对其重复求守恒（映射表本就不可信）。 */
+  const renamedFormBroken = new Set<string>();
   for (const entry of deltaEntries) {
     const relPath = `logos/changes/${slug}/${entry.relativePath}`;
     if (entry.lintValidity === 'invalid') {
@@ -1136,8 +1167,37 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
       });
     }
     const isPrototypeAsset = entry.relativePath.includes('/2-product-design/2-page-design/') && entry.relativePath.endsWith('.html');
-    if (entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid' && entry.relativePath.endsWith('.md') && !isPrototypeAsset) {
-      const v = validateMarkdownDelta(deltaContents.get(entry.relativePath) ?? '');
+    // code-r1 F2：**先解析 canonical target 与语义类别，再按同一类别判据分派**——此前本处按
+    // `endsWith('.md')` 先行排除，使「进入比较的集合」与 merge 合成侧仍不相同：`deltas/scenario/x.md`
+    // 的类别是 orchestration、merge 会把它交给整文件入口并拒绝，而 lint 按后缀把它当 Markdown
+    // 章节 delta 放行——lint 全绿而 merge 必失败的组合再次成立。后缀不参与通道判定（S39）；
+    // 类别内不支持的扩展名由公开校验入口拒绝。
+    const entryTargetPath = canonicalTargetFromDeltaPath(entry.relativePath);
+    const entryCategory = entryTargetPath ? classifyCanonicalTargetCategory(entryTargetPath) : null;
+    const entryIsNonMarkdown = entryTargetPath !== null && isNonMarkdownCategory(entryCategory);
+    const materialEntry = entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid';
+    if (materialEntry && !entryIsNonMarkdown && entry.relativePath.endsWith('.md') && !isPrototypeAsset) {
+      const deltaText = deltaContents.get(entry.relativePath) ?? '';
+      // code-r1 F1：`RENAMED` **块形态**是纯 delta 形态判据（只看块自身：锚在场、正文恰一行、
+      // 非空、不带 `#`），**不依赖基线主文档**，故归 L4 并先于任何「目标不存在 → 无守恒义务」
+      // 的跳过。此前它依附在 L8 的 `evaluateDeltaConservation` 上，于是两个入口绕过全部校验：
+      // ① 目标尚不存在（同一 delta 先 ADDED 再 RENAMED）；② `## RENAMED` 无锚。两者 merge
+      // 侧均拒绝，lint 侧却零违规——正是本提案要消除的「预检全绿而 merge 必炸」形态。
+      // 复用既有 `delta_section_anchor_unresolvable`（与「空锚 fail-closed」同族：控制块畸形 →
+      // 定位失败），**不新增违规码**。
+      const renamedForm = buildRenameMaps(parseDeltaBlocks(deltaText));
+      if (renamedForm.error) {
+        renamedFormBroken.add(entry.relativePath);
+        const offending = parseDeltaBlocks(deltaText).find(b => b.op === 'RENAMED');
+        pushViolation(acc, 4, {
+          code: 'delta_section_anchor_unresolvable',
+          path: relPath,
+          message: `非法 \`## RENAMED\` 段${offending?.anchor ? `（锚「${offending.anchor}」）` : ''}：${renamedForm.error}`,
+          fix_hint: 'RENAMED 段须写作 `## RENAMED — <目标章节标题>`，块正文**恰为一行**新标题文本'
+            + '（非空、不带 `#` 前缀）；它不携带正文、不改层级——需要改正文请另写 `## MODIFIED` 块',
+        });
+      }
+      const v = validateMarkdownDelta(deltaText);
       if (v.missingSectionMarker) {
         pushViolation(acc, 4, {
           code: 'delta_missing_section_marker',
@@ -1185,26 +1245,30 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
         }
       }
     }
-    // non-Markdown（OpenAPI / SQL）整文件 delta：首行控制标记 + 内容合法性。
+    // non-Markdown（OpenAPI / SQL / 编排 JSON）整文件 delta：首行控制标记 + 内容合法性。
     // lite-cut2b：该判据原挂在 L9 下，L9 删除后迁入 L4——它本就是「delta 形态是否合法」这一类。
-    if (entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid' && !entry.relativePath.endsWith('.md')) {
-      const targetPath = canonicalTargetFromDeltaPath(entry.relativePath);
-      const category = targetPath ? classifyCanonicalTargetCategory(targetPath) : null;
-      if (targetPath && (category === 'api' || category === 'database')) {
-        const targetAbs = join(root, ...targetPath.split('/'));
-        const mode = existsSync(targetAbs) ? 'MODIFY' : 'CREATE';
-        const checked = validateAndStripNonMarkdownDelta(
-          deltaContents.get(entry.relativePath) ?? '', mode, targetPath, { root });
-        if (!checked.ok) {
-          pushViolation(acc, 4, {
-            code: 'non_markdown_delta_invalid',
-            path: relPath,
-            message: checked.message ?? 'non-Markdown delta 不合法',
-            fix_hint: '首行写 `# ADDED|MODIFIED <canonical target 路径>` 控制标记，其后正文即目标最终字节；OpenAPI 须过 3.0/3.1 schema，SQL 须能在空库事务执行并回滚',
-          });
-        }
-        if (checked.degradation) nonMarkdownDegradations.push({ path: relPath, degradation: checked.degradation });
+    // 进入判定的类别集合取 `NON_MARKDOWN_CATEGORIES` 单点，与 merge 合成侧同源；**判据只看语义
+    // 类别、不看后缀**（S35 不变量 3：只共享最后那次比较、各自决定进入比较的集合，等同于把分裂
+    // 从判据挪到集合）。旧写法先按 `.md` 后缀排除，既漏 `deltas/scenario/*.md`，也曾漏整个
+    // scenario 类别。
+    if (materialEntry && entryIsNonMarkdown) {
+      const targetPath = entryTargetPath!;
+      const targetAbs = join(root, ...targetPath.split('/'));
+      const mode = existsSync(targetAbs) ? 'MODIFY' : 'CREATE';
+      const checked = validateAndStripNonMarkdownDelta(
+        deltaContents.get(entry.relativePath) ?? '', mode, targetPath, { root });
+      if (!checked.ok) {
+        pushViolation(acc, 4, {
+          code: 'non_markdown_delta_invalid',
+          path: relPath,
+          message: checked.message ?? 'non-Markdown delta 不合法',
+          // marker 形态由协议常量派生（`nonMarkdownMarkerForm`），禁止手写——手写的那份曾在井号数、
+          // 破折号、后缀三处与实际协议不符，照它修复必然再次失败。解释性措辞可随 locale 变化，形态不可。
+          fix_hint: `首行写 \`${nonMarkdownMarkerForm(mode)}\` 控制标记，其后正文即目标最终字节；`
+            + 'OpenAPI 须过 3.0/3.1 schema，SQL 须能在空库事务执行并回滚，编排 JSON 须语法合法且无重复键',
+        });
       }
+      if (checked.degradation) nonMarkdownDegradations.push({ path: relPath, degradation: checked.degradation });
     }
   }
 
@@ -1268,6 +1332,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   const postMerge = hasSpecCompleteMarker(proposalDir);
   for (const entry of postMerge ? [] : deltaEntries) {
     if (!(entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid' && entry.relativePath.endsWith('.md'))) continue;
+    // L4 已就 RENAMED 块形态报过违规：映射表不可信，再算守恒只会输出派生症状并与 L4 重复报同一码。
+    if (renamedFormBroken.has(entry.relativePath)) continue;
     const targetRel = deltaTargetProjectPath(entry.relativePath);
     if (!targetRel) continue;
     const targetAbs = join(root, targetRel);

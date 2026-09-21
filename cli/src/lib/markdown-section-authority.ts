@@ -1,4 +1,4 @@
-import { authorityScan, stripInlineCode } from './markdown-scan.js';
+import { authorityScan, scanHeadingRecords, stripInlineCode } from './markdown-scan.js';
 
 /**
  * Delta 物质控制段的 op 集合。
@@ -28,11 +28,21 @@ export interface ResolvedSectionAnchor {
   line: number;
   endLine: number;
   level: number;
+  /** **规范化**标题文本（`stripInlineCode` 后）——锚定位视图，匹配与 path 身份均取它。 */
   text: string;
+  /**
+   * **原始**标题文本（去 `#` 与首尾空白，行内代码逐字保留）——无损身份视图。
+   *
+   * 与 `text` 来自**同一次**扫描（`scanHeadingRecords`），行号与层级一一对应。需要无损身份的
+   * 消费方（如 L8 条目守恒的场景表辖属路径）取它，**不得**改取 `text`：`stripInlineCode` 整段
+   * 删除行内代码，辖属标题会坍缩、守恒门被绕过（C05）。
+   */
+  rawText: string;
   path: string[];
   start: number;
   end: number;
   headingEnd: number;
+  /** 标题行**原始字节**（含 `#` 前缀）——只供标题保真检查，不与规范化管道合流。 */
   rawHeading: string;
 }
 
@@ -95,25 +105,29 @@ export function parseDeltaBlocks(deltaContent: string): DeltaBlock[] {
   return blocks;
 }
 
-/** 一次 fence-aware 扫描产生真实 ATX heading tree 与确定性字符范围。 */
+/**
+ * 一次 fence-aware 扫描产生真实 ATX heading tree 与确定性字符范围。
+ *
+ * 标题识别与两个文本视图取自共享单点 `scanHeadingRecords`——本文件**不自建第二份扫描**。
+ * 本结构的 `text` 是锚定位视图（规范化），`rawText` 是无损身份视图，`rawHeading` 是保真视图。
+ */
 export function parseMarkdownHeadings(content: string): ResolvedSectionAnchor[] {
   const records = splitLines(content);
   const lines = records.map(record => record.raw);
   const scan = authorityScan(lines);
   const headings: ResolvedSectionAnchor[] = [];
   const stack: ResolvedSectionAnchor[] = [];
-  for (let i = 0; i < records.length; i++) {
-    if (scan.masked[i]) continue;
-    const match = /^(#{1,6})\s+(.+?)\s*$/.exec(scan.text[i]);
-    if (!match) continue;
-    const level = match[1].length;
-    const text = stripInlineCode(match[2]).trim();
+  for (const record of scanHeadingRecords(lines, scan.masked, scan.text)) {
+    const i = record.line;
+    const level = record.level;
+    const text = record.normalizedText;
     while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop();
     const heading: ResolvedSectionAnchor = {
       line: i,
       endLine: records.length,
       level,
       text,
+      rawText: record.rawText,
       path: [...stack.map(item => item.text), text],
       start: records[i].start,
       end: content.length,
@@ -232,8 +246,13 @@ function mapSegments(segments: string[], renames: Map<string, string>): string[]
   return segments.map(seg => renames.get(seg) ?? seg);
 }
 
-/** 映射锚文本（保留序数后缀 `[n]`，它不是标题的一部分）。 */
-function mapAnchorText(anchor: string, renames: Map<string, string>): string {
+/**
+ * 映射锚文本（保留序数后缀 `[n]`，它不是标题的一部分）——**锚折算的唯一实现**。
+ *
+ * 导出供 `change-lint` 复用：此前该文件因本函数未导出而抄了一份逐字节相同的 `foldRenamedAnchor`，
+ * 属「同一判据的第二份副本」。折算语义（按 ` > ` 分段、`[n]` 后缀不参与折算并原样保留）不变。
+ */
+export function mapAnchorText(anchor: string, renames: Map<string, string>): string {
   return anchor.split(' > ').map(part => {
     const ordinal = /^(.*?)(\s*\[\d+\])$/.exec(part);
     const base = (ordinal ? ordinal[1] : part).trim();
@@ -273,6 +292,41 @@ export function parseRenamedTitle(block: DeltaBlock): { ok: true; title: string 
   return { ok: true, title };
 }
 
+/**
+ * 本 delta 内 `RENAMED` 造成的双向标题映射——**唯一实现**，lint 与 merge 共用。
+ *
+ * - `renames`：旧标题 → 新标题（子孙节 path 折算用）。
+ * - `reverse`：新标题 → 旧标题（合并**前**文档里解析新标题锚时折回重试用）。
+ *
+ * **非法 RENAMED 块一律 fail-closed 返回 `error`（C04）**，两侧处置统一为拒绝。此前 lint 侧
+ * `continue` 跳过、merge 侧 `return false`——同一形态两个结论，等于 lint 放行一个 merge 必拒的
+ * 形态，与「预检必先报」的承诺自相矛盾。该形态改前改后**都不可合并**，本次只把报错从合成阶段
+ * 提前到预检阶段，可合并集合不变。
+ *
+ * 合法性判据复用既有 `parseRenamedTitle` 单点（正文恰一行、非空、不以 `#` 开头），不新建第三份。
+ */
+export function buildRenameMaps(
+  blocks: readonly DeltaBlock[],
+): { renames: Map<string, string>; reverse: Map<string, string>; error?: string } {
+  const renames = new Map<string, string>();
+  const reverse = new Map<string, string>();
+  for (const block of blocks) {
+    if (block.op !== 'RENAMED') continue;
+    // 缺锚的 RENAMED 同样 fail-closed（code-r1 F1）：此前这里 `continue` 静默跳过，而守恒侧又
+    // 把全部 RENAMED 块滤掉，于是「`## RENAMED` 无锚」成为一个绕过全部校验的准入入口。
+    // 消息与 merge 主循环的既有措辞逐字一致，两侧结论与文案都不分叉。
+    if (!block.anchor) return { renames, reverse, error: `${block.op} 段缺少章节锚` };
+    const parsed = parseRenamedTitle(block);
+    // 非法块不进映射表**且**整体拒绝：否则一个畸形 RENAMED 会为后续锚提供不该存在的折算，
+    // 把该报的「锚不可解析」悄悄放行。
+    if (!parsed.ok) return { renames, reverse, error: parsed.error };
+    const oldTitle = block.anchor.split(' > ').pop()!.replace(/\s*\[\d+\]$/, '').trim();
+    renames.set(oldTitle, parsed.title);
+    reverse.set(parsed.title, oldTitle);
+  }
+  return { renames, reverse };
+}
+
 export function verifyAgentMaterialOutcome(
   deltaContent: string,
   beforeContent: string,
@@ -288,16 +342,10 @@ export function verifyAgentMaterialOutcome(
   const identities: MaterialOutcomeVerification['identities'] = [];
   // 本 delta 的更名映射（旧标题 → 新标题）。RENAMED 改的是标题行，其子孙节的 path 随之变化，
   // 故所有块的 before/final 身份比较都必须先折算这张表——否则「祖先被更名」会误判为身份漂移。
-  const renames = new Map<string, string>();
-  const renameReverse = new Map<string, string>();
-  for (const block of blocks) {
-    if (block.op !== 'RENAMED' || !block.anchor) continue;
-    const parsed = parseRenamedTitle(block);
-    if (!parsed.ok) return { ok: false, identities, error: parsed.error };
-    const oldTitle = block.anchor.split(' > ').pop()!.replace(/\s*\[\d+\]$/, '').trim();
-    renames.set(oldTitle, parsed.title);
-    renameReverse.set(parsed.title, oldTitle);
-  }
+  const maps = buildRenameMaps(blocks);
+  if (maps.error) return { ok: false, identities, error: maps.error };
+  const renames = maps.renames;
+  const renameReverse = maps.reverse;
   for (const block of blocks) {
     if (!block.anchor) return { ok: false, identities, error: `${block.op} 段缺少章节锚` };
     const writerKey = `${block.op === 'REMOVED' ? 'remove' : 'write'}\u0000${block.anchor}`;

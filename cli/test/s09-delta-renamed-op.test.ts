@@ -141,20 +141,32 @@ describe('S09 — delta RENAMED op', () => {
   });
 
   it('UT-S09-348: RENAMED 的 fail-closed 反例（拒绝时零改写）', () => {
-    const cases: Array<[string, string, RegExp]> = [
-      ['锚命中 0 个', '## RENAMED — 不存在的章节\n\n新名\n', /不存在或不唯一/],
-      ['锚命中多个（未消歧）', '## RENAMED — 自动化与证据要求\n\n新名\n', /不存在或不唯一/],
-      ['块正文为空', '## RENAMED — 一、单元测试\n\n', /正文为空/],
-      ['块正文多行', '## RENAMED — 一、单元测试\n\n新名\n第二行\n', /正文有 2 行/],
-      ['块正文以 # 开头', '## RENAMED — 一、单元测试\n\n## 新名\n', /不得带 # 前缀/],
+    // `blockIllegal`：块本身畸形（正文空 / 多行 / 带 `#`）。C04 起 lint 与 merge 对这类形态
+    // **统一为拒绝**——此前 lint 侧跳过、merge 侧抛错，同一形态两个结论；现两侧同走
+    // `buildRenameMaps` 单点，lint 即报 `delta_section_anchor_unresolvable` 并点名该块。
+    // 块合法而**锚**不可解析的两例不属此列：映射表可正常构建，守恒侧照常零判定。
+    const cases: Array<[string, string, RegExp, boolean]> = [
+      ['锚命中 0 个', '## RENAMED — 不存在的章节\n\n新名\n', /不存在或不唯一/, false],
+      ['锚命中多个（未消歧）', '## RENAMED — 自动化与证据要求\n\n新名\n', /不存在或不唯一/, false],
+      ['块正文为空', '## RENAMED — 一、单元测试\n\n', /正文为空/, true],
+      ['块正文多行', '## RENAMED — 一、单元测试\n\n新名\n第二行\n', /正文有 2 行/, true],
+      ['块正文以 # 开头', '## RENAMED — 一、单元测试\n\n## 新名\n', /不得带 # 前缀/, true],
     ];
-    for (const [label, delta, pattern] of cases) {
+    for (const [label, delta, pattern, blockIllegal] of cases) {
       expect(() => compose(delta), `${label} 必须拒绝`).toThrow(pattern);
       // 合成是纯函数：抛错即目标文档零改写（无任何中间落盘）
       expect(TARGET, `${label} 后夹具字节不变`).toBe(TARGET);
       // lint 侧同判据：非法块同样不被当作「有效正文」放行
       expect(validateMarkdownDelta(delta).missingSectionMarker, `${label}: 段标记仍应被识别`).toBe(false);
-      expect(evaluateDeltaConservation(delta, TARGET), `${label}: 不产生守恒判定`).toEqual([]);
+      const conservation = evaluateDeltaConservation(delta, TARGET);
+      if (blockIllegal) {
+        // C04：两侧统一拒绝——lint 先报，merge 不再是该形态的首次暴露信号
+        expect(conservation.map(v => v.code), `${label}: lint 侧同样拒绝`)
+          .toEqual(['delta_section_anchor_unresolvable']);
+        expect(conservation[0].message, `${label}: 点名该块`).toMatch(pattern);
+      } else {
+        expect(conservation, `${label}: 块合法，不产生守恒判定`).toEqual([]);
+      }
     }
   });
 

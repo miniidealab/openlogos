@@ -17,6 +17,38 @@ export const CANONICAL_TARGET_CATEGORIES = [
 ] as const;
 export type CanonicalTargetCategory = typeof CANONICAL_TARGET_CATEGORIES[number];
 
+/**
+ * **整文件（non-Markdown）通道的类别集合——唯一定义点。**
+ *
+ * 落在本集合内的 canonical target 不是 Markdown 章节文档：其 delta 首行为控制 marker、
+ * 正文即最终字节，由 `validateAndStripNonMarkdownDelta` 做标记校验与剥离后整文件落盘；
+ * 其余类别走 `composeOpenLogosMarkdown` 章节合成。
+ *
+ * **判据取语义类别，不取文件后缀、也不取 `deltas/` 一级目录名**——`logos/resources/api/*.json`
+ * 与 `logos/resources/scenario/*.json` 同为 `.json` 却属不同类别、走不同的内容校验。
+ *
+ * **两个消费方必须从这里派生，禁止任一侧复述等价字面量**：merge 合成侧的通道选择
+ * （`merge-direct.ts`）与 change-lint 准入侧的 L4 判定（`change-lint.ts`）。S35「语法唯一、
+ * 读法具名」不变量 3：只共享最后那次比较、各自决定进入比较的集合，等同于把分裂从判据挪到集合——
+ * 类别白名单正是「进入比较的集合」。两份字面量正是 toolstop run `drv-muaq05dn-4qs0` 的成因：
+ * lint 报 PASS 而 merge 必炸。
+ *
+ * **新增类别时须同批评估三处**：本集合的成员、`non-markdown-delta.ts` 入口的受理分支、
+ * 该类别的内容校验层级（见 S39「non-Markdown 整文件协议的适用类别与派生结论」）。
+ */
+export const NON_MARKDOWN_CATEGORIES: ReadonlySet<CanonicalTargetCategory> =
+  new Set<CanonicalTargetCategory>(['api', 'database', 'orchestration']);
+
+/**
+ * canonical target 是否走整文件通道。
+ *
+ * 入参放宽到 `string` 是因为 merge 侧的 `DirectTarget.category` 是 `string`（不可解析时落 `'unknown'`）；
+ * 不在集合内（含 `null` / `'unknown'` / 未来的未知类别）一律按 Markdown 章节文档处理。
+ */
+export function isNonMarkdownCategory(category: string | null | undefined): boolean {
+  return category != null && NON_MARKDOWN_CATEGORIES.has(category as CanonicalTargetCategory);
+}
+
 
 export interface CanonicalTargetResolution {
   deltaPath: string;

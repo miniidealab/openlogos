@@ -290,6 +290,68 @@ export function fenceMask(lines: string[]): boolean[] {
 }
 
 /**
+ * 一条 ATX 标题记录——**扫描共享、文本视图分离**（C05）。
+ *
+ * 同一次扫描同时给出两个视图，行号与层级一一对应；消费方按用途各取其一，**不得**混用：
+ *
+ * | 消费方 | 取哪个视图 | 理由 |
+ * |---|---|---|
+ * | 锚定位（章节锚解析、RENAMED 折算） | `normalizedText` | 向 merge 侧对齐；merge 决定最终落盘字节，是事实权威 |
+ * | L8 条目守恒的场景表**辖属路径身份** | `rawText` | 身份必须无损：辖属标题坍缩会让正式表与历史副本同身份，守恒门被绕过 |
+ * | 标题**保真**检查 | `ResolvedSectionAnchor.rawHeading` | 保真检查不得与被检查者共用规范化管道（架构 §五十一，正交路径） |
+ *
+ * `stripInlineCode` 删除的是**整个行内代码片段**而非仅去反引号，故它对锚定位是等价规范化、
+ * 对身份**有损**：基线 `### 业务 ` + '`正式`' + ` 与 ` + '`历史`' + ` 两个辖属路径会同时坍缩为「业务」，
+ * 未声明删除的场景行迁移从 `delta_implicit_id_removal` 变成零违规。两者因此不能共用同一文本视图。
+ */
+export interface ScannedHeading {
+  /** 0 基行号（在传入的 `lines` 中）。 */
+  line: number;
+  /** ATX 级别（`#` 的个数，1–6）。 */
+  level: number;
+  /** **原始**标题文本（去掉 `#` 与首尾空白，行内代码逐字保留）。 */
+  rawText: string;
+  /** **规范化**标题文本（`stripInlineCode` 后再 trim）。 */
+  normalizedText: string;
+}
+
+/**
+ * fence-aware ATX 标题扫描——**唯一实现**。
+ *
+ * 围栏 / 缩进代码 / HTML 注释内的 `#` 行不构成标题（掩码由 `authorityScan` 给出）。
+ * `change-lint` 的注册表 ID 抽取与 `markdown-section-authority` 的 heading tree 都从这里派生，
+ * 严禁任一侧自建第二份扫描——两份副本曾在标题文本口径上分叉（一侧剥行内代码、一侧不剥）。
+ *
+ * 传入已算好的 `masked` / `text` 可复用调用方已有的 `authorityScan` 结果；省略则内部自算一次。
+ */
+export function scanHeadingRecords(
+  lines: string[],
+  masked?: boolean[],
+  text?: string[],
+): ScannedHeading[] {
+  let maskedLines = masked;
+  let textLines = text;
+  if (!maskedLines || !textLines) {
+    const scan = authorityScan(lines);
+    maskedLines = scan.masked;
+    textLines = scan.text;
+  }
+  const out: ScannedHeading[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (maskedLines[i]) continue;
+    const m = /^(#{1,6})\s+(.+?)\s*$/.exec(textLines[i]);
+    if (!m) continue;
+    out.push({
+      line: i,
+      level: m[1].length,
+      rawText: m[2].trim(),
+      normalizedText: stripInlineCode(m[2]).trim(),
+    });
+  }
+  return out;
+}
+
+/**
  * 剥掉一行内的行内代码 span——按 CommonMark 等长 backtick delimiter 成对解析
  * （code-r2 F4：`` ``[占位]`` `` 等任意长度定界符的引用均不得命中权威结构）。
  * 未闭合的 backtick 串保留原文。

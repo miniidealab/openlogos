@@ -1,8 +1,13 @@
 /**
- * non-Markdown（OpenAPI / SQL）整文件 delta 的 marker 协议与内容校验。
+ * non-Markdown（OpenAPI / SQL / 编排 JSON）整文件 delta 的 marker 协议与内容校验。
  *
  * 这类 canonical target 不是 Markdown 章节文档：delta 首行是控制标记、正文即最终字节。
- * 本模块负责标记校验、剥离与内容合法性（OpenAPI 3.0/3.1 schema、SQL 方言分层校验与适配器路由）。
+ * 本模块负责标记校验、剥离与内容合法性（OpenAPI 3.0/3.1 schema、SQL 方言分层校验与适配器路由、
+ * 编排 JSON 的重复键预检与严格语法）。
+ *
+ * **入口的受理范围与 `NON_MARKDOWN_CATEGORIES` 同源**：类别集合里有的类别，这里必须有对应的
+ * 受理分支与已定义的校验层级。只扩集合而不扩受理范围，故障只会从合成阶段的「缺少物质控制段」
+ * 平移为本入口的类别拒绝，仍然不可合并（S39「类别集合与校验入口是两件必须同批的事」）。
  *
  * 承自已删除的 `baseline-closure.ts`：与闭包规划无关，逐行保留；其在 change-lint 中的挂载点
  * 由 L9 迁至 L4（delta 段标记与脱模板）。
@@ -48,7 +53,46 @@ export interface NonMarkdownDeltaResult {
   degradation?: SqlValidationDegradation;
 }
 
-const NON_MD_MARKER = /^## (ADDED|MODIFIED) — (.+?)(（新文件，整文件）|（整文件替换）)$/;
+/**
+ * 整文件 delta 首行控制 marker 的**协议单点**：井号数、op 词、破折号、两种后缀。
+ *
+ * `NON_MD_MARKER` 正则与对外的 fix_hint 形态（`nonMarkdownMarkerForm`）**都从这里派生**，
+ * 二者不可能漂移。此前 change-lint 手写的 fix_hint 是 `# ADDED|MODIFIED <路径>`——井号数、
+ * 破折号、后缀三处全不符，照它修复必然再次失败（事故中的 gap-repair agent 绕开该文案、
+ * 自行去读判据实现才写对，属侥幸）。
+ */
+const NON_MD_MARKER_PROTOCOL = {
+  heading: '##',
+  ops: { CREATE: 'ADDED', MODIFY: 'MODIFIED' },
+  separator: '—',
+  suffixes: { CREATE: '（新文件，整文件）', MODIFY: '（整文件替换）' },
+} as const;
+
+const reEscape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const P = NON_MD_MARKER_PROTOCOL;
+
+const NON_MD_MARKER = new RegExp(
+  `^${reEscape(P.heading)} (${P.ops.CREATE}|${P.ops.MODIFY}) ${reEscape(P.separator)} `
+  + `(.+?)(${reEscape(P.suffixes.CREATE)}|${reEscape(P.suffixes.MODIFY)})$`,
+);
+
+/** payload 内残留控制 marker 的探测式——与首行协议同源，不另写一份前缀。 */
+const NON_MD_MARKER_RESIDUE = new RegExp(
+  `^${reEscape(P.heading)} (?:${P.ops.CREATE}|${P.ops.MODIFY}) ${reEscape(P.separator)} `,
+  'm',
+);
+
+/**
+ * 某 mode 下合法首行 marker 的**形态**，供诊断的 fix_hint 逐字引用。
+ *
+ * 派生的是形态（井号数 / op 词 / 破折号 / 后缀 / 占位符位置）；解释性措辞由调用方按 locale 组织，
+ * 不在本函数内。调用方**禁止**手写该形态。
+ */
+export function nonMarkdownMarkerForm(mode: 'MODIFY' | 'CREATE'): string {
+  const op = mode === 'CREATE' ? P.ops.CREATE : P.ops.MODIFY;
+  const suffix = mode === 'CREATE' ? P.suffixes.CREATE : P.suffixes.MODIFY;
+  return `${P.heading} ${op} ${P.separator} <canonical target 路径>${suffix}`;
+}
 
 function duplicateAwareObject(payload: string, extension: string): { value?: Record<string, unknown>; error?: string } {
   if (extension === '.json') {
@@ -371,7 +415,22 @@ function validateSql(payload: string, dialect: DatabaseDialect): SqlValidationOu
 }
 
 /**
- * 校验并剥离 API/DB non-Markdown delta 首行。返回的 payload 不含 marker，调用方不得把 marker 写入目标。
+ * 编排 JSON（`orchestration` 类别，`logos/resources/scenario/**`）的内容校验。
+ *
+ * 只做**重复键预检 + 严格 JSON 语法**两层：`JSON.parse` 接受重复 key 且 last-wins，故必须先过
+ * `duplicateAwareObject` 的 YAML 1.2 duplicate-aware parser 才能拦住它。
+ *
+ * **不套用 OpenAPI 3.x schema、也不套用受控根 JSON Schema**——编排文件不是 OpenAPI 文档，
+ * 强加 schema 会把一次修复变成一次格式收紧（S39 不变量 4）。通过后返回的是**剥离 marker 后的
+ * 原始 payload 字节**，不重排、不重新序列化。
+ */
+function validateOrchestrationJson(payload: string): string | null {
+  const parsed = duplicateAwareObject(payload, '.json');
+  return parsed.error ? `编排 JSON 不合法：${parsed.error}` : null;
+}
+
+/**
+ * 校验并剥离 API/DB/编排 non-Markdown delta 首行。返回的 payload 不含 marker，调用方不得把 marker 写入目标。
  */
 export function validateAndStripNonMarkdownDelta(
   content: string,
@@ -390,7 +449,7 @@ export function validateAndStripNonMarkdownDelta(
   if (marker[2] !== canonicalTargetPath) return { ok: false, message: `首行 target 与 canonical target 不一致：${marker[2]}` };
   const payload = content.slice(newline + 1);
   if (payload.trim() === '') return { ok: false, message: '剥离 marker 后 payload 为空' };
-  if (/^## (?:ADDED|MODIFIED) — /m.test(payload)) return { ok: false, message: 'payload 内残留控制 marker' };
+  if (NON_MD_MARKER_RESIDUE.test(payload)) return { ok: false, message: 'payload 内残留控制 marker' };
   if (/\b(?:TODO|TBD)\b|后续补充|\[新增的完整内容\]/i.test(payload)) return { ok: false, message: 'payload 含模板/TODO 骨架' };
   const ext = posix.extname(canonicalTargetPath).toLowerCase();
   let problem: string | null;
@@ -405,10 +464,16 @@ export function validateAndStripNonMarkdownDelta(
     return outcome.problem
       ? { ok: false, message: outcome.problem, tier: outcome.tier }
       : { ok: true, payload, tier: outcome.tier, ...(outcome.degradation ? { degradation: outcome.degradation } : {}) };
+  } else if (canonicalTargetPath.startsWith('logos/resources/scenario/') && ext === '.json') {
+    // orchestration：编排测试文件不是 OpenAPI 文档，只做 marker + 语法 + 重复键，不进 schema 校验。
+    problem = validateOrchestrationJson(payload);
   } else if (/^spec\/schema\/[a-z0-9][a-z0-9.-]*\.json$/.test(canonicalTargetPath)) {
     problem = validateOpenLogosRootJsonSchema(payload);
   } else {
-    return { ok: false, message: '整文件协议只支持 API YAML/YML/JSON、database SQL 与受控根 spec/schema JSON' };
+    return {
+      ok: false,
+      message: '整文件协议只支持 API YAML/YML/JSON、database SQL、编排 JSON 与受控根 spec/schema JSON',
+    };
   }
   return problem ? { ok: false, message: problem } : { ok: true, payload };
 }

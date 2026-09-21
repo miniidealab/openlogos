@@ -76,9 +76,29 @@ sequenceDiagram
 - **期望响应**：忽略而非报错，不解析、不校验、不迁移；merge 照常按 `deltas/` 派生目标集。
 - **副作用**：无。
 
-## API 与数据库派生结论
+## non-Markdown 整文件协议的适用类别与派生结论
 
-API / DB canonical target 不是 Markdown 章节文档：其 delta 首行为控制标记、正文即最终字节，由 `validateAndStripNonMarkdownDelta` 做标记校验与剥离后整文件落盘。该协议与闭包规划无关，逐行保留；其在 change-lint 中的挂载点由 L9 迁至 **L4（delta 段标记与脱模板）**。
+**API / DB / 编排 canonical target 不是 Markdown 章节文档**：其 delta 首行为控制标记、正文即最终字节，由 `validateAndStripNonMarkdownDelta` 做标记校验与剥离后整文件落盘。该协议与闭包规划无关，逐行保留；其在 change-lint 中的挂载点由 L9 迁至 **L4（delta 段标记与脱模板）**。
+
+**适用判据是 canonical target 的语义类别，不是文件后缀、也不是 `deltas/` 一级目录名**。判据取 `classifyCanonicalTargetCategory(targetPath)` 的结果，落在 `api` / `database` / `orchestration` 三者之一即走整文件通道，其余类别走 Markdown 章节合成。后缀不参与判定——`logos/resources/api/*.json` 与 `logos/resources/scenario/*.json` 同为 `.json` 却属不同类别、走不同的内容校验；一级目录名同样不参与——它只是路径映射的输入，映射结论才是判据。
+
+**该类别集合恰有一处定义**：导出常量 `NON_MARKDOWN_CATEGORIES`（归属 `canonical-target.ts`，与 `classifyCanonicalTargetCategory` 同文件，因其值域即该函数的值域子集）。**merge 合成侧的通道选择与 change-lint 准入侧的 L4 判定均从该常量派生**，任一侧复述字面量即为违规。依据 S35「语法唯一、读法具名」不变量 3：只共享最后那次比较、各自决定进入比较的集合，等同于把分裂从判据挪到集合——类别白名单正是「进入比较的集合」。
+
+**编排 JSON 的内容校验层级**（`orchestration` 类别，`logos/resources/scenario/**`）：
+
+| 层 | 判据 | 强度 |
+|---|---|---|
+| marker | 首行 `## ADDED\|MODIFIED — <canonical target>（新文件，整文件\|整文件替换）`，op 与 mode 一致 | 拒绝 |
+| 路径一致 | marker 声明 target 与 canonical target 逐字相等（不漂移） | 拒绝 |
+| payload 形态 | 剥离 marker 后非空、无残留控制 marker、无模板/TODO 骨架 | 拒绝 |
+| JSON 语法 | 严格 `JSON.parse`，根须为对象 | 拒绝 |
+| 重复键 | YAML 1.2 duplicate-aware 预检（`JSON.parse` 接受重复 key，故须前置一道） | 拒绝并点名位置 |
+
+**不套用 OpenAPI 3.x schema、也不套用受控根 JSON Schema**——编排文件不是 OpenAPI 文档，强加 schema 会把一次修复变成一次格式收紧。通过上述五层后返回的即是**剥离 marker 后的原始 payload 字节**，不做任何重排或重新序列化。
+
+**类别集合与校验入口是两件必须同批的事**：`validateAndStripNonMarkdownDelta` 的入口分派按 canonical target 前缀受理，此前只认 `logos/resources/api/**` 的 YAML/YML/JSON、`logos/resources/database/**` 的 `.sql`、受控根 `spec/schema/*.json`，其余一律落拒绝分支。故只把 `orchestration` 加进类别集合而不打通入口受理范围，故障只会从合成阶段的「缺少物质控制段」平移为校验器的类别拒绝，仍然不可合并。**登记该入口的受理范围与 `NON_MARKDOWN_CATEGORIES` 同源**：类别集合里有的类别，入口必须有对应的受理分支与校验层级定义。
+
+**新增 delta 类别时该集合须同批评估**：凡新增一个 canonical target 类别（或把既有类别下的目标改为非 Markdown 形态），必须同批判定它属于整文件通道还是章节合成通道，并同批补齐三处——`NON_MARKDOWN_CATEGORIES` 的成员、校验入口的受理分支、该类别的内容校验层级表。与 S35「新增 delta 类别时免计层级表须同批扩充」同构：**默认落入哪一侧都是错的**，未经评估的沉默默认会在下游以「没有任何合法 delta 形态」的形式爆发。
 
 ## 非目标与安全边界
 
@@ -269,3 +289,92 @@ sequenceDiagram
 - 需求：AC-SQLGATE-01～07。
 - 功能规格：§2.52.2～§2.52.6；架构：§四十二.1、§四十二.2。
 - 测试：UT-S39-59～UT-S39-64、ST-S39-28；安装态 SMOKE-core-174。
+
+## S39 编排 JSON 的整文件协议适用与校验入口
+
+### 场景目标
+
+让 `logos/resources/scenario/*.json` 这类**编排测试 canonical target** 具备至少一条合法的 delta 形态：纳入既有 non-Markdown 整文件通道，并把决定「谁走该通道」的类别集合收敛为单一具名常量，使 merge 合成侧与 change-lint 准入侧在类别维度上同源。
+
+### 用户价值
+
+下游项目的 `deltas/scenario/*.json` 此前**两条路全堵**——写裸 JSON 报「Markdown Delta 缺少物质控制段」，补整文件 marker 则因 JSON 基线无章节可锚而报「MODIFIED 章节不存在或不唯一」；CREATE 亦因块数为零失败。作者与 AI agent 没有任何可写的正确形态，全自动 run 在 spec-exit 之后硬停于 merge（toolstop 项目 `tools.top`，run `drv-muaq05dn-4qs0`，2026-09-21）。本场景把该类别的可合并性补齐，并让缺口在**准入阶段**可见而非推迟到合成阶段。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| N | `NON_MARKDOWN_CATEGORIES` | 整文件类别集合的**唯一定义点**（`api` / `database` / `orchestration`） |
+| K | `classifyCanonicalTargetCategory` | canonical target → 语义类别，判据入口（既有，不改） |
+| M | `merge` 合成侧 | 按 N 选择整文件通道或 Markdown 章节合成 |
+| L | `change-lint` L4 | 按 N 决定哪些 delta 进入 non-Markdown 形态判定 |
+| V | `validateAndStripNonMarkdownDelta` | 整文件 delta 的唯一校验入口，按 canonical target 分派受理分支 |
+
+前置：delta 落在 `deltas/scenario/**` 且经 `canonicalTargetFromDeltaPath` 映射成功（该映射既有且已通，本场景不改）。
+
+### 类别集合单点与入口受理时序
+
+```mermaid
+sequenceDiagram
+    participant A as change-writer（AI）
+    participant L as change-lint L4
+    participant N as NON_MARKDOWN_CATEGORIES
+    participant V as validateAndStripNonMarkdownDelta
+    participant M as openlogos merge
+
+    A->>L: Step 1: 产出 deltas/scenario/*.json 后自查 change-lint
+    L->>N: Step 2: 取整文件类别集合（不复述字面量）
+    N-->>L: Step 3: {api, database, orchestration}
+    alt 类别 ∈ 集合
+        L->>V: Step 4: 以 canonical target + mode 求校验
+        V->>V: Step 5: marker / 路径一致 / payload 形态
+        V->>V: Step 6: 按 canonical target 分派受理分支——编排 JSON 走重复键预检 + 严格 JSON.parse
+        alt 任一层不满足
+            V-->>L: Step 7a: 不合法 + 点名原因
+            L-->>A: Step 8a: non_markdown_delta_invalid（exit 2）——fix_hint 由协议常量派生
+        else 全过
+            V-->>L: Step 7b: 合法 + 剥离 marker 后的原始 payload
+            L-->>A: Step 8b: L4 通过
+        end
+    else 类别 ∉ 集合
+        L-->>A: Step 4': 按 Markdown 章节文档判定（既有路径，逐字不变）
+    end
+    A->>M: Step 9: change-lint 全绿后调 merge
+    M->>N: Step 10: 取同一集合选择通道（与 Step 2 同源，不得第二份字面量）
+    M->>V: Step 11: 同一入口、同一判据求最终字节
+    Note over N,M: 单点锁：L 与 M 的类别集合取自同一常量；任一侧改写字面量即元测试失败
+```
+
+### 步骤说明
+
+1. change-writer 按目标主文档形态产出 delta：编排 JSON 写首行控制 marker + 正文即最终字节。
+2-3. L4 从 `NON_MARKDOWN_CATEGORIES` 取集合，**不得**在本文件内重写 `category === 'api' || category === 'database'` 这类字面量——事故现场正是该字面量导致 L4 只扫 5 个 `.md`、而 L6 同时数出 8 个 mergeable，差的 3 个（两份 `api/*.yaml` 与一份 `scenario/*.json`）全部漏检，lint 报 `PASS（10/10）`后故障推迟到合成阶段。
+4-6. 校验入口按 canonical target 分派受理分支：`logos/resources/api/**` 走 OpenAPI 3.x schema、`logos/resources/database/**` 走 SQL 分层校验（见本文档「S39 SQL delta 的分层校验与适配器路由」）、受控根 `spec/schema/*.json` 走根 Schema 校验、`logos/resources/scenario/**` 走**重复键预检 + 严格 `JSON.parse`**。既有三条分支的判据、强度与留痕逐字不变。
+7a-8a. 不合法即 `non_markdown_delta_invalid` 进 violations、exit 2；`fix_hint` 文案由协议常量派生，与实际 marker 形态逐字一致（见 S35「non-Markdown 类别集合单点与 fix_hint 协议派生」）。
+7b-8b. 合法则返回剥离 marker 后的**原始 payload 字节**——不重排、不重新序列化，落盘字节等于 delta 正文。
+9-11. merge 取同一常量选择通道、经同一入口求最终字节；两侧结论在类别维度上不可能分叉。
+
+### 不变量
+
+1. **类别集合唯一**：`NON_MARKDOWN_CATEGORIES` 恰一处定义；merge 与 change-lint 均从其派生，任一侧出现等价字面量即违规。
+2. **判据取语义类别**：通道选择只看 `classifyCanonicalTargetCategory` 的结论，不看后缀、不看 `deltas/` 一级目录名。
+3. **集合与入口同批**：集合内的每个类别在校验入口都有对应受理分支与已定义的校验层级；集合扩容而入口未扩容，等同于未修复。
+4. **编排 JSON 不套 schema**：只做 marker + 路径一致 + payload 形态 + JSON 语法 + 重复键五层；通过即返回原始 payload。
+5. **既有类别零回归**：`api` / `database` / 受控根 `spec/schema` 三条分支的判定、强度与降级留痕逐字不变；Markdown 类别仍走章节合成通道。
+6. **准入先于合成**：凡 merge 合成侧会拒绝的编排 delta 形态，change-lint 必先报——不允许出现「lint 全绿而 merge 必炸」的组合（S35 不变量 5 在本类别上的落点）。
+
+### 异常与边界
+
+- **编排 JSON 写成裸 JSON（无 marker）**：L4 判 `non_markdown_delta_invalid` 并点名首行不合法；**不得**推迟到合成阶段才报——这正是本次事故形态的反例锚。
+- **marker 声明 target 与实际 delta 路径漂移**：拒绝并点名两者，不按实际路径静默纠正。
+- **JSON 语法错误或重复键**：拒绝并点名位置；重复键必须由 duplicate-aware 预检拦下，不得依赖 `JSON.parse`（其接受重复 key，last-wins）。
+- **编排 JSON 内容合法但不是 OpenAPI 文档**：通过——本类别不套用 OpenAPI schema，此为正当形态而非漏网。
+- **根不是对象的 JSON（数组 / 标量）**：拒绝，与既有 non-Markdown 判据同口径。
+- **CREATE 模式（目标尚不存在）**：走 `## ADDED — <路径>（新文件，整文件）`，落盘后登记 `resource_index`；模式仍按磁盘事实即时判定，不读任何 YAML 声明。
+- **本仓自身 `logos/resources/scenario/` 为空**：本场景修复的是**下游项目**该目录的可合并性；openlogos 自身不消费该通道，故端到端验证须在一次性隔离夹具项目内进行。
+
+### 追溯
+
+- 来源变更：fix-orchestration-merge-and-predicate-duplication（toolstop 项目 `tools.top` 全自动 run `drv-muaq05dn-4qs0` 的 `MERGE_DELTA_INVALID` 终局 blocked，2026-09-21）。
+- 场景关联：本文档「non-Markdown 整文件协议的适用类别与派生结论」；S35「non-Markdown 类别集合单点与 fix_hint 协议派生」（准入侧同源）；S09「merge 直接合并时序」（合成与落盘）。
+- 测试：UT-S39-70～UT-S39-75、ST-S39-31。

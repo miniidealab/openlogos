@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseDocument } from 'yaml';
 import { applyBaselineClosureBatch, type BaselineClosureApplyInput } from './baseline-apply.js';
-import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory } from './canonical-target.js';
+import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory, isNonMarkdownCategory } from './canonical-target.js';
 import { classifyProposalDeltas, DeltaScanUnreadableError } from './delta-classify.js';
 import { composeOpenLogosMarkdown } from './markdown-section-authority.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
@@ -215,9 +215,11 @@ function prepareDirectMerge(root: string, proposalDir: string, slug: string): Di
     const targetAbs = join(root, ...target.targetPath.split('/'));
     // 模式在 planDirectTargets 中按同一磁盘事实判定，此处只需读取当前字节。
     const exists = target.mode === 'MODIFY';
-    // API / DB canonical target 不是 Markdown 章节文档：其 delta 首行为控制标记、正文即最终字节，
+    // API / DB / 编排 canonical target 不是 Markdown 章节文档：其 delta 首行为控制标记、正文即最终字节，
     // 交 baseline-apply 的 non-markdown 入口做标记校验与剥离（与 0.13.x apply 同一判据）。
-    if (target.category === 'api' || target.category === 'database') {
+    // 类别集合取 `NON_MARKDOWN_CATEGORIES` 单点（见 canonical-target.ts）——此处**禁止**重写等价字面量：
+    // change-lint L4 与本处曾各写一份 `'api' || 'database'`，正是 toolstop 事故「lint 全绿而 merge 必炸」的成因。
+    if (isNonMarkdownCategory(target.category)) {
       inputs.push({ kind: 'non-markdown', deltaPath: target.deltaPath, mode: target.mode, deltaBytes: readFileSync(deltaAbs) });
       continue;
     }

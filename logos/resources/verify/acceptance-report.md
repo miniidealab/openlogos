@@ -6,16 +6,25 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 1866 |
+| Defined cases | 1885 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 1866 |
-| Passed | 1856 |
+| Executed cases | 1885 |
+| Passed | 1875 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
+
+## Slice Verification
+
+- Mode: `final`
+- Attempted slice: `null`
+- Confirmed slices: `slice-01-orchestration-full-file-channel`, `slice-02-lint-merge-predicate-convergence`
+- Eligible tests: 1885
+- Pending tests: 0
+- Final: true
 
 ## Skipped Cases
 

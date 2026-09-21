@@ -14,3 +14,6 @@ qoder-plugin-template/
 workbuddy-plugin-template/
 zcode-plugin-template/
 spec/
+
+# UT-S35-177 的 merge 侧副本反证在加载态落下的源码变体（用后即删；异常中止时的兜底）
+test/.fold-variant/
