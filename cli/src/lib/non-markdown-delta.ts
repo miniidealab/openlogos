@@ -23,7 +23,15 @@ import {
 } from '@hyperjump/json-schema/openapi-3-0';
 import { validate as compileOpenApi31 } from '@hyperjump/json-schema/openapi-3-1';
 import { parseDocument } from 'yaml';
-import { classifyCanonicalTargetCategory } from './canonical-target.js';
+import { classifyCanonicalTargetCategory, classifyDeltaRoute, isNonMarkdownCategory } from './canonical-target.js';
+import {
+  NON_MD_MARKER, NON_MD_MARKER_RESIDUE, expectedMarkerFor, nonMarkdownMarkerForm,
+} from './whole-file-marker.js';
+
+// 协议形态（井号数 / op / 破折号 / 后缀）下沉到 `whole-file-marker.ts`——定义点仍只有一份，
+// 下沉只为让 `canonical-target.ts` 的三值分流判定能同源消费而不形成依赖环。此处 re-export
+// 以保持既有导入路径不变（调用方仍从本模块取 `nonMarkdownMarkerForm`）。
+export { nonMarkdownMarkerForm };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -51,47 +59,6 @@ export interface NonMarkdownDeltaResult {
   tier?: SqlValidationTier;
   /** SQL delta 专有：方言层被跳过时的留痕；未降级时为 undefined。 */
   degradation?: SqlValidationDegradation;
-}
-
-/**
- * 整文件 delta 首行控制 marker 的**协议单点**：井号数、op 词、破折号、两种后缀。
- *
- * `NON_MD_MARKER` 正则与对外的 fix_hint 形态（`nonMarkdownMarkerForm`）**都从这里派生**，
- * 二者不可能漂移。此前 change-lint 手写的 fix_hint 是 `# ADDED|MODIFIED <路径>`——井号数、
- * 破折号、后缀三处全不符，照它修复必然再次失败（事故中的 gap-repair agent 绕开该文案、
- * 自行去读判据实现才写对，属侥幸）。
- */
-const NON_MD_MARKER_PROTOCOL = {
-  heading: '##',
-  ops: { CREATE: 'ADDED', MODIFY: 'MODIFIED' },
-  separator: '—',
-  suffixes: { CREATE: '（新文件，整文件）', MODIFY: '（整文件替换）' },
-} as const;
-
-const reEscape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const P = NON_MD_MARKER_PROTOCOL;
-
-const NON_MD_MARKER = new RegExp(
-  `^${reEscape(P.heading)} (${P.ops.CREATE}|${P.ops.MODIFY}) ${reEscape(P.separator)} `
-  + `(.+?)(${reEscape(P.suffixes.CREATE)}|${reEscape(P.suffixes.MODIFY)})$`,
-);
-
-/** payload 内残留控制 marker 的探测式——与首行协议同源，不另写一份前缀。 */
-const NON_MD_MARKER_RESIDUE = new RegExp(
-  `^${reEscape(P.heading)} (?:${P.ops.CREATE}|${P.ops.MODIFY}) ${reEscape(P.separator)} `,
-  'm',
-);
-
-/**
- * 某 mode 下合法首行 marker 的**形态**，供诊断的 fix_hint 逐字引用。
- *
- * 派生的是形态（井号数 / op 词 / 破折号 / 后缀 / 占位符位置）；解释性措辞由调用方按 locale 组织，
- * 不在本函数内。调用方**禁止**手写该形态。
- */
-export function nonMarkdownMarkerForm(mode: 'MODIFY' | 'CREATE'): string {
-  const op = mode === 'CREATE' ? P.ops.CREATE : P.ops.MODIFY;
-  const suffix = mode === 'CREATE' ? P.suffixes.CREATE : P.suffixes.MODIFY;
-  return `${P.heading} ${op} ${P.separator} <canonical target 路径>${suffix}`;
 }
 
 function duplicateAwareObject(payload: string, extension: string): { value?: Record<string, unknown>; error?: string } {
@@ -430,7 +397,14 @@ function validateOrchestrationJson(payload: string): string | null {
 }
 
 /**
- * 校验并剥离 API/DB/编排 non-Markdown delta 首行。返回的 payload 不含 marker，调用方不得把 marker 写入目标。
+ * 校验并剥离整文件 delta 首行。返回的 payload 不含 marker，调用方不得把 marker 写入目标。
+ *
+ * 受理范围有两类：① `NON_MARKDOWN_CATEGORIES` 的 API/DB/编排（按各自格式契约做内容校验）；
+ * ② **Markdown 文档类别下的 `.md`**（S39「Markdown 新建文档的整文件协议」新增）——只做
+ * marker + 路径 + 类别闸 + payload 形态四层，**不套 OpenAPI 3.x schema、不做 SQL 方言校验、
+ * 不套受控根 JSON Schema**（Markdown 没有这类语法契约，强加任何一条都会把一次能力补全变成
+ * 一次格式收紧），且**不对 payload 正文标题作任何章节重复判断**：首行 marker 是应被剥离的控制行，
+ * payload 首行的 H1 是文档自己的标题，二者之间不存在「章节重复」这回事。
  */
 export function validateAndStripNonMarkdownDelta(
   content: string,
@@ -443,9 +417,9 @@ export function validateAndStripNonMarkdownDelta(
   const first = content.slice(0, newline).replace(/\r$/, '');
   const marker = NON_MD_MARKER.exec(first);
   if (!marker) return { ok: false, message: '首行控制 marker 不合法' };
-  const expectedOp = mode === 'CREATE' ? 'ADDED' : 'MODIFIED';
-  const expectedSuffix = mode === 'CREATE' ? '（新文件，整文件）' : '（整文件替换）';
-  if (marker[1] !== expectedOp || marker[3] !== expectedSuffix) return { ok: false, message: `首行 mode 与 ${mode} 不一致` };
+  // op 与后缀的期望值取协议单点派生，禁止在此复述字面量（形态漂移即诊断失真）。
+  const expected = expectedMarkerFor(mode);
+  if (marker[1] !== expected.op || marker[3] !== expected.suffix) return { ok: false, message: `首行 mode 与 ${mode} 不一致` };
   if (marker[2] !== canonicalTargetPath) return { ok: false, message: `首行 target 与 canonical target 不一致：${marker[2]}` };
   const payload = content.slice(newline + 1);
   if (payload.trim() === '') return { ok: false, message: '剥离 marker 后 payload 为空' };
@@ -469,6 +443,32 @@ export function validateAndStripNonMarkdownDelta(
     problem = validateOrchestrationJson(payload);
   } else if (/^spec\/schema\/[a-z0-9][a-z0-9.-]*\.json$/.test(canonicalTargetPath)) {
     problem = validateOpenLogosRootJsonSchema(payload);
+  } else if (ext === '.md' && !isNonMarkdownCategory(classifyCanonicalTargetCategory(canonicalTargetPath))) {
+    // **类别闸**（S39 C05）：受理判据取 `NON_MARKDOWN_CATEGORIES` 的**补集**，不是「后缀为 .md」。
+    // `logos/resources/api|database|scenario/**` 下的 `.md` 语义类别仍是 api/database/orchestration，
+    // 落不进本分支、继续走下方 else 的拒绝——它们的格式契约一个字都不放宽。后缀不能**替代**类别，
+    // 只能在类别已判定为 Markdown 文档之后再作一道附加条件。
+    //
+    // **受理边界取共享判定单点**（code-r1 F2）：本入口与 `classifyDeltaRoute` 是同一条受理边界的
+    // 两个消费方，**禁止**在此复述「只在 CREATE 受理」。此前本分支只判后缀与类别、不判 mode，
+    // 于是一个**自洽的** MODIFY marker（`## MODIFIED — <target>（整文件替换）` + mode 为 MODIFY）
+    // 会全部通过——上方第 421 行的 mode 一致性检查只比对 marker 与调用方传入的 mode，对这种自洽
+    // 组合恒成立。而同一输入交 `classifyDeltaRoute` 返回 `invalid-envelope`：两处受理边界分裂，
+    // 公开入口凭空多出一项 delta 明令不开放的能力（Markdown 整文件替换不在本次范围，改已有
+    // Markdown 必须走章节 op）。现改为直接消费该判定，两处不可能再分叉。
+    const route = classifyDeltaRoute({
+      firstLine: first,
+      targetPath: canonicalTargetPath,
+      semanticCategory: classifyCanonicalTargetCategory(canonicalTargetPath),
+      mode,
+    });
+    if (route.kind !== 'whole-file' || route.channel !== 'markdown') {
+      return { ok: false, message: route.reason ?? 'Markdown 整文件封装受理不合法' };
+    }
+    // Markdown 没有语法契约，故本分支**无内容层校验**：marker / 路径一致 / 类别闸 / payload 形态
+    // 四层已在上方全部求值完毕，通过即返回**剥离 marker 后的原始 payload**，不做任何重排、
+    // 重新序列化或换行规整（「正文即最终字节」）。
+    problem = null;
   } else {
     return {
       ok: false,

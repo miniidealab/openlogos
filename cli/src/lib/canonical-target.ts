@@ -10,6 +10,7 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, sep } from 'node:path';
 import { DELTA_TO_RESOURCE } from './delta-classify.js';
+import { expectedMarkerFor, parseWholeFileMarkerLine, type WholeFileMarker } from './whole-file-marker.js';
 
 export const CANONICAL_TARGET_CATEGORIES = [
   'requirement', 'feature', 'architecture', 'scenario', 'api', 'database', 'test',
@@ -49,6 +50,81 @@ export function isNonMarkdownCategory(category: string | null | undefined): bool
   return category != null && NON_MARKDOWN_CATEGORIES.has(category as CanonicalTargetCategory);
 }
 
+
+/** 一份 delta 的读法：章节合成 / 整文件 / 已声明封装但受理不合法。 */
+export type DeltaRouteKind = 'section' | 'whole-file' | 'invalid-envelope';
+
+/** 整文件通道的两条受理来源：按语义类别（既有三类）或按首行封装声明（Markdown 新建）。 */
+export type WholeFileChannel = 'non-markdown' | 'markdown';
+
+export interface DeltaRoute {
+  kind: DeltaRouteKind;
+  /** `kind === 'whole-file'` 时有值。 */
+  channel?: WholeFileChannel;
+  /** 已识别出封装声明时的首行解析结果（`section` 时为 undefined）。 */
+  marker?: WholeFileMarker;
+  /** `kind === 'invalid-envelope'` 时的拒绝原因，可直接作为诊断 message。 */
+  reason?: string;
+}
+
+export interface DeltaRouteInput {
+  /** delta 首行（`firstLineOf` 的结果；调用方不得自行裁剪出别的东西）。 */
+  firstLine: string;
+  /** canonical target 的项目根相对路径。 */
+  targetPath: string;
+  /** 该 target 的语义类别（`classifyCanonicalTargetCategory` 的结果）。 */
+  semanticCategory: CanonicalTargetCategory | null;
+  /** 本次 mode，由**合并前**的磁盘事实判定（目标不存在即 CREATE）。 */
+  mode: 'CREATE' | 'MODIFY';
+}
+
+/**
+ * **delta 分流判定——唯一实现点**（S39「Markdown 新建文档的整文件协议与显式封装分流」）。
+ *
+ * `change-lint` 的 L4 准入侧与 `merge` 的 prepare 分流侧**必须消费本函数并对三值作相同处置**；
+ * 任一侧复述等价条件、或把 `invalid-envelope` 私自降级为 `section`，均为违规——那正是
+ * 20260920 toolstop 事故（lint 报 PASS 而 merge 必炸）的成因。
+ *
+ * **识别与受理是两件事，且识别在先**：
+ * 1. **封装形态识别**（`parseWholeFileMarkerLine`）只看首行是否匹配协议形态，两个 op 与两种后缀
+ *    都算「声明了整文件封装」，不问合法性。首行不匹配的才是章节 delta。
+ * 2. **受理合法性**只对已识别为封装的输入求值，四项合取：后缀 `.md` ∧ 语义类别 ∉
+ *    `NON_MARKDOWN_CATEGORIES` ∧ 本次 mode 为 CREATE 且 marker op/后缀相符 ∧ 声明 target 不漂移。
+ * 3. **结果是三值**：`section` / `whole-file` / `invalid-envelope`。
+ *
+ * 把「受理合法」当成识别的前提，会让一份已声明封装、但声明不自洽的 delta 落回章节路径：
+ * 现行 composer 对 `## ADDED — <正确路径>（整文件替换）` 会**成功**合成出标题
+ * `## <正确路径>（整文件替换）`，而整文件校验器对同一输入返回「首行 mode 与 CREATE 不一致」——
+ * 缺的从来不是校验函数，而是让该输入到得了校验器的识别规则。既有残渣文档正是这么产生的。
+ *
+ * 既有三类（api / database / orchestration）**按语义类别**进入整文件通道，与首行无关，行为逐字不变。
+ */
+export function classifyDeltaRoute(input: DeltaRouteInput): DeltaRoute {
+  // 既有三类：类别驱动，不看首行。marker 合法性仍由 `validateAndStripNonMarkdownDelta` 判定，
+  // 其中也包括「类别命中但扩展名不受理」（如 `logos/resources/api/*.md`）的拒绝——类别闸不放宽。
+  if (isNonMarkdownCategory(input.semanticCategory)) {
+    return { kind: 'whole-file', channel: 'non-markdown' };
+  }
+  const marker = parseWholeFileMarkerLine(input.firstLine);
+  if (!marker) return { kind: 'section' };
+
+  // —— 以下全部是「已识别为封装」之后的受理判定：失败即 `invalid-envelope`，**绝不回退成章节锚** ——
+  const reject = (reason: string): DeltaRoute => ({ kind: 'invalid-envelope', marker, reason });
+  if (posix.extname(input.targetPath).toLowerCase() !== '.md') {
+    return reject(`整文件封装只受理 \`.md\` 与 API/DB/编排目标，本次 canonical target 为 ${input.targetPath}`);
+  }
+  if (input.mode !== 'CREATE') {
+    return reject('Markdown 整文件封装只在 CREATE 模式受理；修改已有文档请用章节 op（ADDED / MODIFIED / REMOVED / RENAMED）');
+  }
+  const expected = expectedMarkerFor(input.mode);
+  if (marker.op !== expected.op || marker.suffix !== expected.suffix) {
+    return reject(`首行 mode 与 ${input.mode} 不一致`);
+  }
+  if (marker.declaredTarget !== input.targetPath) {
+    return reject(`首行 target 与 canonical target 不一致：${marker.declaredTarget}`);
+  }
+  return { kind: 'whole-file', channel: 'markdown', marker };
+}
 
 export interface CanonicalTargetResolution {
   deltaPath: string;

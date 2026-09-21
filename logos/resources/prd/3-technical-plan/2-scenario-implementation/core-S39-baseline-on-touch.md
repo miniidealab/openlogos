@@ -80,7 +80,7 @@ sequenceDiagram
 
 **API / DB / 编排 canonical target 不是 Markdown 章节文档**：其 delta 首行为控制标记、正文即最终字节，由 `validateAndStripNonMarkdownDelta` 做标记校验与剥离后整文件落盘。该协议与闭包规划无关，逐行保留；其在 change-lint 中的挂载点由 L9 迁至 **L4（delta 段标记与脱模板）**。
 
-**适用判据是 canonical target 的语义类别，不是文件后缀、也不是 `deltas/` 一级目录名**。判据取 `classifyCanonicalTargetCategory(targetPath)` 的结果，落在 `api` / `database` / `orchestration` 三者之一即走整文件通道，其余类别走 Markdown 章节合成。后缀不参与判定——`logos/resources/api/*.json` 与 `logos/resources/scenario/*.json` 同为 `.json` 却属不同类别、走不同的内容校验；一级目录名同样不参与——它只是路径映射的输入，映射结论才是判据。
+**适用判据是 canonical target 的语义类别，不是文件后缀、也不是 `deltas/` 一级目录名**。判据取 `classifyCanonicalTargetCategory(targetPath)` 的结果，落在 `api` / `database` / `orchestration` 三者之一即走整文件通道；其余类别**默认**走 Markdown 章节合成，但在「新建 Markdown 文档」这一动作下另有一条**按首行显式封装**的受理路径（见本文档「S39 Markdown 新建文档的整文件协议与显式封装分流」）。后缀不参与判定——`logos/resources/api/*.json` 与 `logos/resources/scenario/*.json` 同为 `.json` 却属不同类别、走不同的内容校验；一级目录名同样不参与——它只是路径映射的输入，映射结论才是判据。
 
 **该类别集合恰有一处定义**：导出常量 `NON_MARKDOWN_CATEGORIES`（归属 `canonical-target.ts`，与 `classifyCanonicalTargetCategory` 同文件，因其值域即该函数的值域子集）。**merge 合成侧的通道选择与 change-lint 准入侧的 L4 判定均从该常量派生**，任一侧复述字面量即为违规。依据 S35「语法唯一、读法具名」不变量 3：只共享最后那次比较、各自决定进入比较的集合，等同于把分裂从判据挪到集合——类别白名单正是「进入比较的集合」。
 
@@ -99,6 +99,8 @@ sequenceDiagram
 **类别集合与校验入口是两件必须同批的事**：`validateAndStripNonMarkdownDelta` 的入口分派按 canonical target 前缀受理，此前只认 `logos/resources/api/**` 的 YAML/YML/JSON、`logos/resources/database/**` 的 `.sql`、受控根 `spec/schema/*.json`，其余一律落拒绝分支。故只把 `orchestration` 加进类别集合而不打通入口受理范围，故障只会从合成阶段的「缺少物质控制段」平移为校验器的类别拒绝，仍然不可合并。**登记该入口的受理范围与 `NON_MARKDOWN_CATEGORIES` 同源**：类别集合里有的类别，入口必须有对应的受理分支与校验层级定义。
 
 **新增 delta 类别时该集合须同批评估**：凡新增一个 canonical target 类别（或把既有类别下的目标改为非 Markdown 形态），必须同批判定它属于整文件通道还是章节合成通道，并同批补齐三处——`NON_MARKDOWN_CATEGORIES` 的成员、校验入口的受理分支、该类别的内容校验层级表。与 S35「新增 delta 类别时免计层级表须同批扩充」同构：**默认落入哪一侧都是错的**，未经评估的沉默默认会在下游以「没有任何合法 delta 形态」的形式爆发。
+
+**Markdown 文档类别的扩展入口在语义类别的补集上**：`.md` 目标能否走整文件通道，判据仍然**先看语义类别**——语义类别落在 `NON_MARKDOWN_CATEGORIES` 内的目标（`logos/resources/api/**`、`logos/resources/database/**`、`logos/resources/scenario/**`）即使后缀是 `.md` 也**不受理**为 Markdown 整文件，仍落各自类别的格式契约或校验入口的拒绝分支。换言之扩展的是该集合的**补集**，不是它本身；三类既有整文件行为逐字不变。这条与上文「后缀不参与判定」并不冲突：后缀不能**替代**类别，只能在类别已经判定为 Markdown 文档之后再作一道附加条件。
 
 ## 非目标与安全边界
 
@@ -378,3 +380,132 @@ sequenceDiagram
 - 来源变更：fix-orchestration-merge-and-predicate-duplication（toolstop 项目 `tools.top` 全自动 run `drv-muaq05dn-4qs0` 的 `MERGE_DELTA_INVALID` 终局 blocked，2026-09-21）。
 - 场景关联：本文档「non-Markdown 整文件协议的适用类别与派生结论」；S35「non-Markdown 类别集合单点与 fix_hint 协议派生」（准入侧同源）；S09「merge 直接合并时序」（合成与落盘）。
 - 测试：UT-S39-70～UT-S39-75、ST-S39-31。
+
+## S39 Markdown 新建文档的整文件协议与显式封装分流
+
+### 场景目标
+
+给 `.md` canonical target 补上**「新建文档」这个动作**：CREATE 模式（目标文件不存在）的 Markdown delta 可以把「正文即最终字节」作为一条合法输入形态，从而让新建文档带上 H1、与同目录既有文档格式一致、落盘逐字可预测。
+
+该动作此前不存在。`ADDED` 顶层块**恒发 level 2**（见 `spec/change-management.md` 的章节 op 语义），因此 CREATE 模式下 delta 唯一可用的 `ADDED` **产不出 H1**，新建文档的作者只有两条路：把 H1 写进 body（与锚文本相同，合成后同名标题出现两次、锚解析 ambiguous，merge 必败），或干脆不写 H1（产出与同目录格格不入的文档）。本节定义第三条、也是唯一正确的一条路。
+
+### 参与者与前置条件
+
+| 参与者 | 职责 |
+|---|---|
+| delta 作者（人或 agent） | 在 CREATE 模式下二选一：写章节 op，或写整文件封装 |
+| `change-lint` L4 | 按**共享适用判据**决定该 delta 走哪条校验路径，并在 write-delta 节点给出可执行 `fix_hint` |
+| `merge` 的 prepare 阶段 | 按**同一个**适用判据分流；Markdown 整文件目标就地校验剥离，产出 prepared 最终字节 |
+| `validateAndStripNonMarkdownDelta` | 整文件 delta 的唯一校验与剥离入口，本节为其新增 Markdown 受理分支 |
+
+前置条件：目标 canonical target 可由 `resolveCanonicalMergeTarget` 解析；本次 mode 由**合并前**的磁盘事实判定（目标文件不存在即 CREATE）。该磁盘事实**只在 spec-complete 之前成立**：合并成功后目标已经存在，若此时再按新写入的事实重判 mode，原本合法的 CREATE 封装会被判成「mode 与 marker 不一致」，把一次成功的合并倒挂成失败。故本节的受理判定与内容校验在 `SPEC_MERGED` 之后**不重放**，见「阶段边界」。
+
+### 分流判据（共享单点，禁止复述）：识别与受理是两件事
+
+**识别与受理必须分开，且识别在先。** 把「受理合法」当成识别的前提，会让一份**已经声明了整文件封装、但声明不自洽**的 delta 因「不满足受理条件」而落回章节路径——那正是残渣文档的产生机制，不是对它的修复。
+
+**第一步：封装形态识别（判别器，只看声明，不问合法性）。** 首行是否匹配整文件控制 marker 的**协议形态**，即 `NON_MD_MARKER` 所定义的 `## <ADDED|MODIFIED> — <任意 target 文本><（新文件，整文件）|（整文件替换）>`。**两个 op 与两种后缀都算「声明了整文件封装」**——识别阶段**不检查** op 与 mode 是否相符、target 是否漂移、类别是否受理。首行不匹配该形态的，才是章节 delta。
+
+**第二步：受理合法性（仅对已识别为封装的输入求值）。** 以下四项的**合取**：
+
+| # | 条件 | 说明 |
+|---|---|---|
+| 1 | canonical target 后缀为 `.md` | 后缀只在类别已判定之后作附加条件，不替代类别 |
+| 2 | 语义类别 ∉ `NON_MARKDOWN_CATEGORIES` | 取既有集合的**补集**；`api` / `database` / `orchestration` 下的 `.md` 一律不受理 |
+| 3 | 本次 mode 为 `CREATE`，且 marker 的 op/后缀与之相符（`ADDED` + `（新文件，整文件）`） | 本节只补「新建」这一个动作；MODIFY 的整文件替换不在本次范围 |
+| 4 | marker 声明的 target 与 canonical target 逐字相等 | 不漂移 |
+
+**第三步：分流结果是三值，不是二值。** 共享判定函数返回以下三者之一：
+
+| 结果 | 触发条件 | 后续动作 |
+|---|---|---|
+| `section` | 第一步未识别出封装声明 | 交 `composeOpenLogosMarkdown` 走章节合成，行为逐字不变 |
+| `whole-file` | 识别出封装 **且** 四项受理条件全部满足 | 剥离首行，正文即最终字节，走 prepared 通道 |
+| `invalid-envelope` | 识别出封装 **但** 任一受理条件不满足 | **fail-closed 拒绝**，`fix_hint` 给出正确的整文件写法；**禁止回退成章节锚**，禁止产出任何合成结果 |
+
+该三值判定**恰有一处实现**（具名导出，归属 `canonical-target.ts`，与 `NON_MARKDOWN_CATEGORIES` 同文件），既有 `isNonMarkdownCategory()` 是它内部消费的子判据。**`change-lint` 的 L4 准入侧与 `merge` 的 prepare 分流侧必须消费同一个函数并对三值结果作相同处置**，任一侧复述等价条件、或把 `invalid-envelope` 私自降级为 `section`，均为违规——这是 S35「语法唯一、读法具名」不变量 3 的直接适用，也是 20260920 toolstop 事故（lint 报 PASS 而 merge 必炸）的成因所在。
+
+### 分流按显式封装，不按 mode 一刀切
+
+**判别器是首行的封装声明形态，不是受理合法性。** 三条路径互斥且穷尽：
+
+- 未声明封装 → **章节写法**。照常交 `composeOpenLogosMarkdown` 走章节合成，`ADDED` / `MODIFIED` / `REMOVED` / `RENAMED` 四个 op 在 CREATE 与 MODIFY 两种模式下的行为**逐字不变**，既有的、不带后缀的 `## ADDED — <锚>` 新建 delta 全部继续可用。
+- 声明封装且受理合法 → **整文件**。剥离首行后的正文即目标最终字节，逐字落盘，H1 得以保留。
+- 声明封装但受理不合法 → **拒绝**。见下。
+
+两种输入格式都是**显式**的，不会解析成同一结果，因此**不需要**靠禁用章节写法来消歧——本节**不**淘汰任何既有写法。
+
+**已声明整文件封装但受理不合法者，直接拒绝、禁止回退成章节锚。** 具体涵盖：marker 的 op/后缀与本次 mode 不符（CREATE 下写 `（整文件替换）`、或对已存在的 `.md` 目标写 `（新文件，整文件）`）、声明 target 与 canonical target 不一致、语义类别落在 `NON_MARKDOWN_CATEGORIES` 内、payload 不过内容校验层级。一律 fail-closed 报错，**不得**降级为「那就当成章节锚吧」。
+
+**这条禁止回退是必须写死的，因为回退恰恰是现状**：首行 `## ADDED — <正确路径>（整文件替换）` 这类输入，现行 composer 会把它当成章节锚成功合成，产出标题 `## <正确路径>（整文件替换）`；而整文件校验器对完全相同的输入返回「首行 mode 与 CREATE 不一致」。缺的从来不是校验函数，而是**让该输入到得了校验器的识别规则**——若识别仍以「封装已经合法」为前提，这条路径依旧走不到校验器，残渣照旧产生。
+
+这也正是本节对「不再新增同类畸形」的**准确**兑现范围：既有 `（新文件，整文件）` 残渣文档的成因就是「带后缀的首行被当成章节标题」，后缀因此被永久写进落盘标题。改后该形态在识别阶段即落入 `invalid-envelope`，被判违规并给出整文件写法的 `fix_hint`。至于「新建文档一律须有 H1」则**不在本节**：作者选择章节写法时仍可产出无 H1 的文档，那是内容规范问题，须另立依据。
+
+### Markdown 整文件 delta 的校验层级
+
+| 层 | 判据 | 强度 |
+|---|---|---|
+| marker | 首行 `## ADDED — <canonical target>（新文件，整文件）`，op 与后缀须与 CREATE 一致（由上游三值判定得出 `whole-file`；不符者已在识别阶段落 `invalid-envelope`） | 拒绝 |
+| 路径一致 | marker 声明 target 与 canonical target 逐字相等（不漂移） | 拒绝 |
+| 类别闸 | 语义类别 ∉ `NON_MARKDOWN_CATEGORIES`（否则落原有拒绝分支） | 拒绝 |
+| payload 形态 | 剥离 marker 后非空、无残留控制 marker、无模板/TODO 骨架 | 拒绝 |
+
+**不套用 OpenAPI 3.x schema、不做 SQL 方言校验、不套用受控根 JSON Schema**——Markdown 没有这类语法契约，强加任何一条都会把一次能力补全变成一次格式收紧。通过上述四层后返回的即是**剥离 marker 后的原始 payload 字节**，不做任何重排、重新序列化或换行规整。
+
+**payload 内的标题不受任何额外限制**：首行控制 marker 是**应被剥离的控制行**，不是会被发射到正文的章节锚；payload 首行的 H1 是文档自己的标题。二者之间**不存在「章节重复」这回事**——不得以「正文标题与控制行文本相同/相似」为由拒绝一份四层全过的 payload。「正文即最终字节」是本节的核心语义，任何对正文标题文本的判断都是未经授权的格式收紧。残留控制 marker 判据针对的是 payload 内**真正的控制行**（`## ADDED — ` / `## MODIFIED — ` 开头的行），与 H1 无关。
+
+### 端到端合同：走 prepared 最终字节通道
+
+Markdown 整文件目标**在 merge 的 prepare 阶段就地完成校验与剥离**，以 prepared 最终字节入列，**不进 `non-markdown` 输入分支**。理由是该分支并非「只是换一个字节来源」，它还改变了两件下游事实：
+
+1. **测试变更账本会被跳过**。prepare 循环在把输入推入 `non-markdown` 后立即 `continue`，而测试目标的 before/after 收集在其后——新建的 `logos/resources/test/*.md` 因此不进 `buildTestChangeSet`，`SPEC_MERGED.test_change_set.changed_test_ids` 与 `targets` 双双为空。该集合须与计划测试目标一致，下游切片与验收**无法**靠「文件已经落盘」补回这一事实。
+2. **落盘复验的类别闸会拒绝它**。apply 侧在调用整文件校验器前，仍按语义类别拒绝非 API/DB/编排的 `non-markdown` 输入；只打通 merge、lint 与校验器三处入口，新建 Markdown 仍会死在落盘准备的前一步。
+
+故合同定为：prepare 阶段取原始字节，定位首行行结束符，`payload = raw.subarray(newline + 1)`（与 apply 侧同一「零格式化」手法），并与校验器返回的 payload 字符串**交叉核对**以确保剥离结果确定；随后以 prepared 形态入列，并**照常进入测试目标收集**。由此 `test_change_set` 不丢，apply 侧的语义类别闸**零改动**、其对 non-Markdown 的 fail-closed 语义逐字保留。
+
+### 阶段边界（spec-complete 前后）
+
+本节的 mode 判定、受理判定与内容校验**全部依赖合并前的磁盘事实**，因此必须有明确的执行窗口：
+
+**这些判定只在 `SPEC_MERGED` 之前执行；合并完成后不重放。** 合并成功后，CREATE 目标已经落盘存在，而提案目录里的原 delta 仍在场——此时若按新写入的事实重跑受理判定，mode 会被判为 MODIFY，原本合法的 `（新文件，整文件）` marker 立刻变成「mode 不符」，一次成功的合并被倒挂成失败，且下游对 `change-lint` 结论的消费全部受污染。
+
+**复用既有完成标记与阶段判断，不新增快照协议、不新增第二套阶段状态。** L8 条目守恒已有完全同型的处理：合并后没有 merge 前的目标快照，拿 delta 再对最终目标做守恒会制造假阳性，故 post-merge 只跑最终事实检查而不重放 L8。本节两类依赖合并前事实的判定（Markdown 整文件受理判定、以及 S35 的 `ADDED` 锚合成后唯一性）适用**同一条**边界与**同一个**完成标记判据。
+
+**判别口径**：post-merge 判定取既有的 spec-complete 完成标记（含 legacy 形态），不得以「目标文件是否存在」自行推断阶段——那恰好是被污染的那个事实。
+
+### 语义边界
+
+**新建可用整文件，改已有用章节 op。** 整文件封装只在 CREATE 模式受理；MODIFY 模式的 Markdown 文档仍然、且只能走章节 op，本次不为 `.md` 开放 `（整文件替换）`——那是存量文档的整份覆盖，与「新建能力」正交，须另立依据。
+
+`（新文件，整文件）` 后缀在本节获得其**第一个 Markdown 类别的消费点**。须澄清一处既往表述：该后缀并非「至今无消费方的预留位」——它已是整文件 marker 协议的既有成员，API 的 YAML/JSON 与 DB 的 SQL 在 CREATE 模式下本就按 mode 断言它。本节做的是**扩展其受理类别**，不是启用一个从未使用的后缀。
+
+**新增 canonical target 类别时须同批评估**这一既有约定，其检查项自本节起为四处：`NON_MARKDOWN_CATEGORIES` 的成员、校验入口的受理分支、该类别的内容校验层级表，以及**该类别下的 `.md` 是否落入 Markdown 整文件通道**。默认落入哪一侧都是错的。
+
+### 不变量
+
+1. **三值判定恰一处实现**：封装识别 + 四项受理条件 + 三值结果只有一份具名实现，lint 与 merge 共同消费并对三值作相同处置；任一侧出现等价复述、或把 `invalid-envelope` 降级为 `section`，即违规。
+2. **类别闸不可绕过**：`api` / `database` / `orchestration` 下的 `.md`，无论 marker 多么合法，都不得被受理为 Markdown 整文件。
+3. **章节写法零行为变更**：首行**未声明**整文件封装的 delta，其合成结果与本次变更前逐字一致。
+4. **不回退**：已**识别**为整文件封装的输入（含 op/后缀与 mode 不符者），任何受理或校验失败都以拒绝收场，不得降级为章节锚解析、不得产出任何合成结果。
+5. **逐字落盘**：受理的 Markdown 整文件 delta，其落盘字节逐字等于剥离首行后的正文，首行 H1 得以保留。
+6. **账本不丢**：经本通道新建的测试规格，其 target 与新增用例 ID 必须出现在 `SPEC_MERGED.test_change_set` 中。
+7. **apply 侧零改动**：落盘复验的语义类别闸不因本节而放宽。
+8. **正文标题不受限**：四层全过的 payload 不因其 H1 文本与控制行相同或相似而被拒绝；不存在「控制行与正文标题构成重复章节」这一判据。
+9. **阶段边界**：依赖合并前事实的判定在 `SPEC_MERGED` 之后不重放；合法的章节 `ADDED` 与合法的 Markdown 整文件 CREATE，在 merge 之后重跑 `change-lint` 均应通过且项目级零写入。
+
+### 异常与边界
+
+- **marker 声明 target 与实际 canonical target 不一致**：拒绝并点名两者；不回退成章节锚，不产出任何合成结果。
+- **CREATE 模式写 `（整文件替换）` 后缀 / 对已存在的 `.md` 目标写 `（新文件，整文件）`**：**先被识别为封装声明**（两种 op/后缀都算声明），再因 mode 与 marker 不符落 `invalid-envelope` 拒绝；**不得**因「未命中 CREATE marker」而回退成章节锚——现行 composer 对前者会成功合成出带后缀的畸形标题，这正是必须堵死的路径。
+- **剥离 marker 后 payload 为空或只含空白**：拒绝。
+- **payload 内残留控制 marker、或含 TODO/占位骨架**：拒绝（与既有 non-Markdown 判据同源，不另写一份）。
+- **首行声明封装、但 target 位写的是章节标题而非 canonical 路径**（历史残渣文档的真实形态，如 `## ADDED — D09：某决策（新文件，整文件）` 而实际目标为 `logos/resources/decisions/core-D09-*.md`）：识别为封装，因 target 不一致落 `invalid-envelope` 拒绝，**不回退成章节锚**。该形态自此不再产生标题残渣。
+- **payload 首行 H1 与控制行文本相同或相似**：**不构成拒绝理由**。控制行被剥离，H1 是文档自身标题，二者之间不存在章节重复关系（见「校验层级」末段）。
+- **`logos/resources/api|database|scenario/**` 下的 `.md` 目标**：类别闸拒绝，落整文件校验入口原有的「不支持的格式」分支；三类既有格式契约与拒绝语义逐字不变。
+- **路径安全判据不放宽**：越界、`..` 上跳、symlink escape 一律拒绝，与既有整文件通道共用同一判据。
+
+### 追溯
+
+- 来源变更：add-markdown-create-whole-file-protocol；决策 C01（显式封装分流、不强制迁移）、C02（复用既有 marker 与后缀）、C04（prepared 最终字节通道）、C05（语义类别闸）。
+- 场景关联：本文档「non-Markdown 整文件协议的适用类别与派生结论」（适用判据的母条款）、「S39 编排 JSON 的整文件协议适用与校验入口」（同族的类别扩展先例）；S35「non-Markdown 类别集合单点与 fix_hint 协议派生」。
+- 测试：UT-S39-76～UT-S39-87、ST-S39-32～ST-S39-33。

@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 1885 |
+| Defined cases | 1907 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 1885 |
-| Passed | 1875 |
+| Executed cases | 1907 |
+| Passed | 1897 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-orchestration-full-file-channel`, `slice-02-lint-merge-predicate-convergence`
-- Eligible tests: 1885
+- Confirmed slices: `slice-01-markdown-create-whole-file-channel`, `slice-02-added-anchor-uniqueness-left-shift`
+- Eligible tests: 1907
 - Pending tests: 0
 - Final: true
 

@@ -1,0 +1,147 @@
+{
+  "_source": "git HEAD (变更前) 编译产物实测输出；生成脚本见 triage 说明，禁止由当前实现重新生成",
+  "composeSections": {
+    "ADDED": "# 文档\n\n## 甲\n\n甲正文。\n\n## 乙\n\n乙正文。\n\n## 丙\n\n丙正文。\n",
+    "MODIFIED": "# 文档\n\n## 甲\n\n甲新正文。\n\n## 乙\n\n乙正文。\n",
+    "REMOVED": "# 文档\n\n## 甲\n\n甲正文。\n\n",
+    "RENAMED": "# 文档\n\n## 甲改名\n\n甲正文。\n\n## 乙\n\n乙正文。\n"
+  },
+  "legacyCreateCompose": "## S99 夹具\n\n| ID | 描述 |\n|---|---|\n| UT-S99-01 | 夹具 |\n",
+  "cleanAddedCompose": "# 文档\n\n## 甲\n\n甲正文。\n\n## S81：WorkBuddy Agent 类型全生命周期\n\n正文。\n",
+  "nonMarkdown": {
+    "apiOk": {
+      "ok": true,
+      "message": null,
+      "tier": null,
+      "payload": "openapi: 3.1.0\ninfo:\n  title: Touch API\n  version: 1.0.0\npaths:\n  /touch:\n    get:\n      operationId: getTouch\n      security:\n        - bearerAuth: []\n      responses:\n        '200':\n          description: ok\n        '400':\n          description: error response\ncomponents:\n  securitySchemes:\n    bearerAuth:\n      type: http\n      scheme: bearer\n  schemas:\n    Touch:\n      type: object\n      deprecated: false # compatibility contract\n"
+    },
+    "apiDuplicateKey": {
+      "ok": false,
+      "message": "OpenAPI 解析失败：Map keys must be unique",
+      "tier": null,
+      "payload": null
+    },
+    "orchOk": {
+      "ok": true,
+      "message": null,
+      "tier": null,
+      "payload": "{\"name\":\"登录\",\"steps\":[]}\n"
+    },
+    "orchDuplicateKey": {
+      "ok": false,
+      "message": "编排 JSON 不合法：Map keys must be unique",
+      "tier": null,
+      "payload": null
+    },
+    "orchModifyReplace": {
+      "ok": true,
+      "message": null,
+      "tier": null,
+      "payload": "{\"name\":\"登录\",\"steps\":[]}\n"
+    },
+    "sqlSqliteOk": {
+      "ok": true,
+      "message": null,
+      "tier": "execution",
+      "payload": "-- migration: create touch table\n-- rollback: DROP TABLE touch;\nCREATE TABLE touch (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL UNIQUE,\n  parent_id INTEGER,\n  CONSTRAINT fk_parent FOREIGN KEY(parent_id) REFERENCES touch(id)\n);\nCREATE INDEX idx_touch_name ON touch(name);\n"
+    },
+    "sqlSqliteBad": {
+      "ok": false,
+      "message": "缺 CREATE TABLE",
+      "tier": "structure",
+      "payload": null
+    },
+    "mdRejectedByCategoryGate": {
+      "ok": false,
+      "message": "整文件协议只支持 API YAML/YML/JSON、database SQL、编排 JSON 与受控根 spec/schema JSON",
+      "tier": null,
+      "payload": null
+    }
+  },
+  "changeLintViolationCodes": [
+    "proposal_required_section_missing",
+    "proposal_required_section_duplicate",
+    "proposal_required_section_empty",
+    "proposal_placeholder_remaining",
+    "proposal_change_type_invalid",
+    "proposal_deployment_fields_invalid",
+    "tasks_template_remaining",
+    "tasks_code_entry_before_spec_complete",
+    "tasks_code_section_missing",
+    "tasks_deployment_conflict",
+    "tasks_sections_unparsable",
+    "tasks_code_header_missing",
+    "code_change_requires_real_test_ids",
+    "delta_missing_section_marker",
+    "delta_template_skeleton",
+    "delta_test_table_id_unextractable",
+    "delta_test_table_column_mismatch",
+    "delta_test_table_duplicate_header",
+    "deployment_decision_conflict",
+    "delta_path_invalid",
+    "design_system_mode_invalid",
+    "no_pages_declared",
+    "prototype_path_traversal",
+    "prototype_basename_invalid",
+    "prototype_basename_duplicate",
+    "prototype_missing",
+    "prototype_extra",
+    "prototype_empty",
+    "design_system_missing",
+    "design_system_invalid",
+    "design_system_empty",
+    "fallback_reason_missing",
+    "fallback_token_forged",
+    "ui_declaration_missing",
+    "ui_declaration_unparsable",
+    "ui_impact_not_boolean",
+    "delta_implicit_id_removal",
+    "delta_removed_unknown_id",
+    "delta_section_anchor_unresolvable",
+    "non_markdown_delta_invalid",
+    "test-slice-manifest-missing",
+    "test-slice-manifest-invalid",
+    "test-slice-manifest-unsupported",
+    "test-slice-assignment-ambiguous",
+    "slice-task-state-inconsistent"
+  ],
+  "changeLintChecks": [
+    {
+      "id": 0,
+      "label": "Plan Package 完成合同"
+    },
+    {
+      "id": 1,
+      "label": "tasks.md 结构可解析"
+    },
+    {
+      "id": 2,
+      "label": "[code] 标题在场（空段占位合法）"
+    },
+    {
+      "id": 3,
+      "label": "测试证据在场（分阶段证据模型）"
+    },
+    {
+      "id": 4,
+      "label": "delta 段标记与脱模板（1 个 .md delta）"
+    },
+    {
+      "id": 5,
+      "label": "部署决策一致"
+    },
+    {
+      "id": 6,
+      "label": "delta 路径合法（1 mergeable / 0 invalid）"
+    },
+    {
+      "id": 8,
+      "label": "条目守恒（ID 隐式删除拦截）"
+    },
+    {
+      "id": 9,
+      "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）"
+    }
+  ],
+  "changeLintViolationsOnCleanFixture": []
+}

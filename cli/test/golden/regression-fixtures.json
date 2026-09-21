@@ -1,0 +1,23 @@
+{
+  "_note": "零回归对照夹具的唯一定义点：golden 生成脚本与测试读同一份，保证基线与断言比较的是同一输入。",
+  "sectionBefore": "# 文档\n\n## 甲\n\n甲正文。\n\n## 乙\n\n乙正文。\n",
+  "sectionOps": {
+    "ADDED": "## ADDED — 丙\n\n丙正文。\n",
+    "MODIFIED": "## MODIFIED — 甲\n\n甲新正文。\n",
+    "REMOVED": "## REMOVED — 乙\n\n不再需要。\n",
+    "RENAMED": "## RENAMED — 甲\n\n甲改名\n"
+  },
+  "legacyCreateDelta": "## ADDED — S99 夹具\n\n| ID | 描述 |\n|---|---|\n| UT-S99-01 | 夹具 |\n",
+  "cleanAddedBefore": "# 文档\n\n## 甲\n\n甲正文。\n",
+  "cleanAddedDelta": "## ADDED — S81：WorkBuddy Agent 类型全生命周期\n\n正文。\n",
+  "nonMarkdown": {
+    "apiTarget": "logos/resources/api/core-api.yaml",
+    "apiPayload": "openapi: 3.1.0\ninfo:\n  title: Touch API\n  version: 1.0.0\npaths:\n  /touch:\n    get:\n      operationId: getTouch\n      security:\n        - bearerAuth: []\n      responses:\n        '200':\n          description: ok\n        '400':\n          description: error response\ncomponents:\n  securitySchemes:\n    bearerAuth:\n      type: http\n      scheme: bearer\n  schemas:\n    Touch:\n      type: object\n      deprecated: false # compatibility contract\n",
+    "orchTarget": "logos/resources/scenario/core-auth.json",
+    "orchPayload": "{\"name\":\"登录\",\"steps\":[]}\n",
+    "orchDuplicateKey": "{\"a\":1,\"a\":2}\n",
+    "sqlTarget": "logos/resources/database/core-db.sql",
+    "sqlPayload": "-- migration: create touch table\n-- rollback: DROP TABLE touch;\nCREATE TABLE touch (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL UNIQUE,\n  parent_id INTEGER,\n  CONSTRAINT fk_parent FOREIGN KEY(parent_id) REFERENCES touch(id)\n);\nCREATE INDEX idx_touch_name ON touch(name);\n",
+    "schemaTarget": "spec/schema/demo.json"
+  }
+}

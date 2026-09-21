@@ -38,7 +38,11 @@ import {
 import { analyzeUiDeclarationStructure, isGuiProductType } from './ui-first.js';
 import { readProjectYaml } from './project-yaml.js';
 import { evaluateUiPrototype } from '../commands/check-ui-prototype.js';
-import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory, isNonMarkdownCategory } from './canonical-target.js';
+import {
+  canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory, classifyDeltaRoute,
+  type DeltaRoute,
+} from './canonical-target.js';
+import { firstLineOf } from './whole-file-marker.js';
 import {
   nonMarkdownMarkerForm, validateAndStripNonMarkdownDelta, type SqlValidationDegradation,
 } from './non-markdown-delta.js';
@@ -53,11 +57,13 @@ import { evaluatePlanPackage } from './plan-package.js';
 import { type PlanPackageEvaluation, type ChangeTypeLevel, resolveProposalChangeType } from './plan-package-contract.js';
 import {
   buildRenameMaps,
+  evaluateAddedAnchorUniqueness,
   mapAnchorText,
   parseDeltaBlocks,
   parseMarkdownHeadings,
   resolveSectionAnchor,
 } from './markdown-section-authority.js';
+import { ADDED_ANCHOR_FIX_HINT } from './added-anchor-outcome.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
@@ -1174,9 +1180,61 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     // 类别内不支持的扩展名由公开校验入口拒绝。
     const entryTargetPath = canonicalTargetFromDeltaPath(entry.relativePath);
     const entryCategory = entryTargetPath ? classifyCanonicalTargetCategory(entryTargetPath) : null;
-    const entryIsNonMarkdown = entryTargetPath !== null && isNonMarkdownCategory(entryCategory);
+    // **分流判定取 `classifyDeltaRoute` 单点**，与 merge prepare 侧同源且对三值作相同处置
+    // （S39）。此前本处只按语义类别判一个布尔，识别不出「已声明整文件封装但受理不合法」这一档；
+    // 那类输入会落回章节路径被 composer 成功合成出带协议后缀的畸形标题——既有标题残渣正是这么来的。
+    //
+    // **阶段边界（S39「阶段边界（spec-complete 前后）」）**：Markdown 整文件的受理判定依赖
+    // **合并前**的磁盘事实（目标不存在即 CREATE）。合并成功后目标已经存在，此时按新写入的事实
+    // 重判 mode，原本合法的 `（新文件，整文件）` marker 立刻变成「mode 不符」，一次成功的合并被
+    // 倒挂成失败。判别取既有 spec-complete 完成标记，**不得**以「目标文件是否存在」自行推断
+    // 阶段——那恰好是被污染的那个事实。与 L8 条目守恒的 post-merge 处理同型。
+    //
+    // **冻结的是「重放」，不是「身份」**（code-r1 F1）：post-merge 必须**保留其整文件身份**，
+    // 只停止依赖 before/mode 的受理判定与内容校验。此前这里把它降级成 `section`，于是已经合法
+    // 落盘的**正文**被当成章节指令解析——正文里一行 `## RENAMED — 术语` 加两段文字，会被
+    // `buildRenameMaps(parseDeltaBlocks(...))` 判成「RENAMED 块正文有 2 行」，一次成功的合并
+    // 在 post-merge lint 上炸掉。整文件协议的核心语义是「正文即最终字节」，正文里出现什么标题
+    // 都不该被读成指令；修复方向是保留身份、跳过章节解析，**不是**回头去限制正文标题。
+    const specComplete = hasSpecCompleteMarker(proposalDir);
+    let entryRoute: DeltaRoute = { kind: 'section' };
+    /** post-merge 冻结：整文件身份保留，但受理判定与内容校验不重放。 */
+    let wholeFileFrozen = false;
+    if (entryTargetPath !== null) {
+      const evaluated = classifyDeltaRoute({
+        firstLine: firstLineOf(deltaContents.get(entry.relativePath) ?? ''),
+        targetPath: entryTargetPath,
+        semanticCategory: entryCategory,
+        mode: existsSync(join(root, ...entryTargetPath.split('/'))) ? 'MODIFY' : 'CREATE',
+      });
+      // 既有三类按语义类别进入整文件通道，与合并前后无关，行为逐字不变；只有 Markdown 整文件
+      // 这条**新增**的、依赖合并前事实的路由受阶段边界约束。
+      // `evaluated.kind !== 'section'` 等价于「首行声明了整文件封装」——声明形态与 mode 无关，
+      // 故它在合并前后都成立，可以安全地用来保留身份（识别口径仍取共享判定，不另写一份）。
+      if (specComplete && evaluated.channel !== 'non-markdown' && evaluated.kind !== 'section') {
+        entryRoute = { kind: 'whole-file', channel: 'markdown', marker: evaluated.marker };
+        wholeFileFrozen = true;
+      } else {
+        entryRoute = evaluated;
+      }
+    }
+    const entryIsWholeFile = entryRoute.kind === 'whole-file';
     const materialEntry = entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid';
-    if (materialEntry && !entryIsNonMarkdown && entry.relativePath.endsWith('.md') && !isPrototypeAsset) {
+    if (materialEntry && entryRoute.kind === 'invalid-envelope') {
+      // 已识别为整文件封装但受理不合法：**fail-closed 拒绝，禁止降级为 `section`**。
+      const declaredMode = entryRoute.marker?.declaredMode ?? 'CREATE';
+      pushViolation(acc, 4, {
+        code: 'non_markdown_delta_invalid',
+        path: relPath,
+        message: entryRoute.reason ?? '整文件封装声明不自洽',
+        fix_hint: '首行已声明整文件封装，两条合法路径二选一：'
+          + `① 走整文件——首行写 \`${nonMarkdownMarkerForm(declaredMode)}\` 控制标记（target 逐字等于 canonical target，`
+          + 'op 与后缀须与本次 mode 相符；Markdown 整文件只在新建目标时受理），其后正文即目标最终字节；'
+          + '② 走章节 op——把首行改成不带整文件后缀的 `## ADDED — <章节标题>`，由锚发射标题、body 不含标题本身',
+      });
+    }
+    if (materialEntry && !entryIsWholeFile && entryRoute.kind !== 'invalid-envelope'
+      && entry.relativePath.endsWith('.md') && !isPrototypeAsset) {
       const deltaText = deltaContents.get(entry.relativePath) ?? '';
       // code-r1 F1：`RENAMED` **块形态**是纯 delta 形态判据（只看块自身：锚在场、正文恰一行、
       // 非空、不带 `#`），**不依赖基线主文档**，故归 L4 并先于任何「目标不存在 → 无守恒义务」
@@ -1196,6 +1254,40 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
           fix_hint: 'RENAMED 段须写作 `## RENAMED — <目标章节标题>`，块正文**恰为一行**新标题文本'
             + '（非空、不带 `#` 前缀）；它不携带正文、不改层级——需要改正文请另写 `## MODIFIED` 块',
         });
+      }
+      // **`ADDED` 锚合成后唯一性的前移点**（S35）：判据与 merge 侧 `verifyAgentMaterialOutcome`
+      // 的 ADDED 分支跨模块同源（共用 `evaluateAddedAnchorOutcome`），并经同一条合成路径取
+      // 合成后文档。此前 lint 侧零覆盖——守恒对账谓词把 ADDED 排除在外、别处亦无等价检查，
+      // 于是 `PASS（10/10）` 与 merge 必炸可以并存（20260921 runlogos S81：199 次 merge 全失败）。
+      //
+      // 三条边界：
+      // ① **通道闸**——只对分流结果为 `section` 的 delta 生效。本分支的进入条件已排除整文件封装
+      //    （含刀一新增的 Markdown 整文件，其首行同为 `## ADDED —`、目标同为 `.md`，按后缀或
+      //    语义类别补集都区分不出来）；修复方向是按通道排除，**不是**给 payload 补路径标题。
+      // ② **阶段边界**——本判据的 before 取合并前字节，`SPEC_MERGED` 之后不重放：合并成功后目标
+      //    已含该章节，拿当前文件当 before 必然返回「没有形成唯一新增结果」，一次成功的合并被
+      //    倒挂成失败。与 L8 条目守恒的 post-merge 处理同型，取同一个完成标记判据。
+      // ③ **复用既有违规码** `delta_section_anchor_unresolvable`（与「空锚 fail-closed」「非法
+      //    RENAMED 块」同族：控制块畸形 → 定位失败），不新增违规码、不改 L4 检查项计数。
+      if (!specComplete && entryTargetPath !== null && !renamedFormBroken.has(entry.relativePath)) {
+        const targetAbs = join(root, ...entryTargetPath.split('/'));
+        const exists = existsSync(targetAbs);
+        let beforeContent = '';
+        let readable = true;
+        if (exists) {
+          try { beforeContent = readFileSync(targetAbs, 'utf-8'); } catch { readable = false; }
+        }
+        const added = readable
+          ? evaluateAddedAnchorUniqueness(beforeContent, deltaText, exists ? 'MODIFY' : 'CREATE')
+          : { ok: true };
+        if (!added.ok) {
+          pushViolation(acc, 4, {
+            code: 'delta_section_anchor_unresolvable',
+            path: relPath,
+            message: added.error ?? 'ADDED 章节没有形成唯一新增结果',
+            fix_hint: ADDED_ANCHOR_FIX_HINT,
+          });
+        }
       }
       const v = validateMarkdownDelta(deltaText);
       if (v.missingSectionMarker) {
@@ -1251,7 +1343,9 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     // 类别、不看后缀**（S35 不变量 3：只共享最后那次比较、各自决定进入比较的集合，等同于把分裂
     // 从判据挪到集合）。旧写法先按 `.md` 后缀排除，既漏 `deltas/scenario/*.md`，也曾漏整个
     // scenario 类别。
-    if (materialEntry && entryIsNonMarkdown) {
+    // post-merge 冻结时跳过内容校验（受理判定依赖合并前事实，重放必产假阳性）；
+    // 身份仍是整文件，故上方章节分支同样不会接手它。
+    if (materialEntry && entryIsWholeFile && !wholeFileFrozen) {
       const targetPath = entryTargetPath!;
       const targetAbs = join(root, ...targetPath.split('/'));
       const mode = existsSync(targetAbs) ? 'MODIFY' : 'CREATE';
@@ -1265,7 +1359,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
           // marker 形态由协议常量派生（`nonMarkdownMarkerForm`），禁止手写——手写的那份曾在井号数、
           // 破折号、后缀三处与实际协议不符，照它修复必然再次失败。解释性措辞可随 locale 变化，形态不可。
           fix_hint: `首行写 \`${nonMarkdownMarkerForm(mode)}\` 控制标记，其后正文即目标最终字节；`
-            + 'OpenAPI 须过 3.0/3.1 schema，SQL 须能在空库事务执行并回滚，编排 JSON 须语法合法且无重复键',
+            + 'OpenAPI 须过 3.0/3.1 schema，SQL 须能在空库事务执行并回滚，编排 JSON 须语法合法且无重复键；'
+            + 'Markdown 文档（新建）只校验 marker / 路径 / 类别 / payload 形态，不套 OpenAPI、SQL 与根 Schema',
         });
       }
       if (checked.degradation) nonMarkdownDegradations.push({ path: relPath, degradation: checked.degradation });

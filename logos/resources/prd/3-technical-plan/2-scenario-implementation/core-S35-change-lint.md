@@ -910,3 +910,92 @@ sequenceDiagram
 - 来源变更：fix-orchestration-merge-and-predicate-duplication；决策 C03（只收敛已分叉的三处）、C04（非法 RENAMED 统一拒绝）、C05（扫描共享、视图分离）。
 - 场景关联：本文档「S35 围栏提取单点、可归因诊断与门禁可满足性断言」不变量 3 与 5；S09「merge 直接合并时序」与 `RENAMED` op 语义。
 - 测试：UT-S35-177～UT-S35-182、ST-S35-33。
+
+## S35 ADDED 锚合成后唯一性的 L4 前移
+
+### 场景目标
+
+把 `ADDED` 块「锚在**合成后文档**中唯一命中」这一判据，从 merge 合成阶段**前移**到 `change-lint` L4，使 write-delta 节点当场可判、当场可改。
+
+该判据此前只存在于 merge 侧的 `verifyAgentMaterialOutcome`：`ADDED` 块要求 `before.status === 'not_found'` 且 `final.status === 'ok'`，否则报「ADDED 章节没有形成唯一新增结果」。lint 侧对此**零覆盖**，故 `PASS（10/10）` 与 merge 必炸可以并存。
+
+### 用户价值
+
+「预检必先报」这一承诺此前对 `ADDED` 不成立。2026-09-21 runlogos 提案 `add-workbuddy-agent-type` 的一份场景 delta，`ADDED` 块在 body 里重复写了一遍与锚同名的 H1，合成后同名标题出现两次、锚解析 ambiguous：`change-lint` 全绿放行，merge 连续失败 **199 次**（05:40:20～05:44:21）后以 `max-hops` 收场，停因面板显示的还不是真因。前移后该形态在 agent 仍握有写权限的节点即暴露，一次即可改对。
+
+### 本节的定性（前置声明，不可省）
+
+本节**不新增约束、不新增违规码**，而是既有一般原则在 `ADDED` 上的一次落实：**凡 merge 合成阶段 fail-closed 的判据，lint 侧必须有同源前移点**。与 20260920 toolstop 事故（non-Markdown 类别集合两侧各写一份字面量，lint 报 PASS 而 merge 必炸）并列登记为**「合成判据未前移」同族形态**——两者的故障面完全一致：agent 在能改的时候被告知没事，在不能改的时候被硬停。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| A | write-delta agent | 判据的受益方，在 lint 阶段即收到可执行诊断 |
+| L | `change-lint` L4 | 判据的前移点（准入侧） |
+| M | `merge` 的 `verifyAgentMaterialOutcome` | 判据的既有所在（合成侧），是事实权威 |
+| U | 合成后唯一性判定 | **两侧共用的具名实现**，不得存在第二份 |
+| C | `evaluateDeltaConservation` | L8 守恒对账，其 `ADDED` 排除语义**逐字不变** |
+
+前置（**三项，缺一不可**）：① 提案含 mergeable delta 且其 canonical target 可映射（L6 已通过）；② 该 delta 经 **S39 的共享三值判定**得出的结果为 **`section`（章节 delta）**；③ 该章节 delta 含至少一个 `ADDED` 物质控制段。
+
+**第 ② 项是本判据的通道闸，不可省、也不可用后缀或语义类别代替。** 整文件封装**全部**排除在本判据之外——既包括 API/DB/编排的 non-Markdown 整文件，也包括**本刀新增的 Markdown 整文件封装**。后者的形态恰好是 `.md` 目标、首行恰好以 `## ADDED —` 开头，靠「是不是 `.md`」或「语义类别是否落在 `NON_MARKDOWN_CATEGORIES` 补集」都区分不出来，必须消费共享分流结果本身。
+
+### 判据内容
+
+对 delta 中的每个 `ADDED` 块，取「已合并 target + 本 delta」的合成结果，断言该块的章节锚在合成后文档中**唯一命中**（`final.status === 'ok'`），且在合成前文档中**不存在**（`before.status === 'not_found'`）。两个条件与 merge 侧 `verifyAgentMaterialOutcome` 的 `ADDED` 分支**逐字同一**。
+
+**同源要求（强制）**：该判定**恰有一处实现**，由 lint 与 merge 共同调用同一个具名导出；lint 侧**不得**另写一份等价判断，也不得只共享「最后那次比较」而各自准备输入。这是不变量 3「语法唯一、读法具名」的直接适用——本族此前已因「各自决定进入比较的集合」而出过一次事故。
+
+**最常见的触发形态是 body 重复标题**：`ADDED` 的锚本身就会被合成器发射为章节标题，若作者又在 body 首行写一遍同名标题，合成后该标题出现两次，`resolveSectionAnchor` 返回 ambiguous，`final.status !== 'ok'` 成立。
+
+### 与 L8 守恒对账的边界
+
+L8 的 `evaluateDeltaConservation` 把 `ADDED`（及 `RENAMED`）排除在守恒物质块之外——谓词 `b.op !== 'ADDED' && b.op !== 'RENAMED'`。**该排除语义不因本节改变**：守恒对账问的是「既有结构化 ID 合并后是否都有去处」，新增章节本就不承载「既有 ID」，把它纳入守恒是答非所问。
+
+本节新增的是一条**独立判据**，与守恒并列而非嵌入其中。两者的分工：守恒管「旧的有没有丢」，本判据管「新的是不是唯一地长出来了」。故 L4 的检查项计数与 `ChangeLintViolationCode` 成员集合**零改动**。
+
+### 阶段边界（spec-complete 前后）
+
+本判据要求 `ADDED` 锚「在**合成前**文档中不存在」，其 before 侧取的是**合并前**的目标字节。因此必须写死执行窗口：
+
+**本判据只在 `SPEC_MERGED` 之前执行；合并完成后不重放。** 合并成功后目标已含该章节，而提案目录里的原 delta 仍在场——此时把当前文件当作 before 重跑本判据，`before.status` 必然不是 `not_found`，判定立即返回「ADDED 章节没有形成唯一新增结果」，一次成功的合并被倒挂成失败，后续阶段对 `change-lint` 结论的消费随之受污染。
+
+**复用既有完成标记与阶段判断，不新增快照协议、不新增第二套阶段状态。** L8 条目守恒已有完全同型的处理并已明文写下理由：合并后没有 merge 前的目标快照，拿 delta 再对最终目标做守恒会制造假阳性，故 post-merge 只跑最终事实检查而不重放 L8。**把依赖 before 的判据挪进 L4 不会自动继承这层保护**，必须在本节显式声明同一条边界、并消费同一个完成标记判据。
+
+**判别口径**：取既有 spec-complete 完成标记（含 legacy 形态），**不得**以「目标章节是否已存在」自行推断阶段——那恰好是被污染的那个事实。本边界与 S39「Markdown 整文件受理判定」的阶段边界是**同一条**，两处不得各写一份。
+
+### 违规码与 fix_hint 契约
+
+复用既有 `delta_section_anchor_unresolvable`——与「空锚 fail-closed」「非法 RENAMED 块」同族：控制块畸形 → 锚定位失败。**不新增违规码**。
+
+`fix_hint` 必须指出该 op 的核心契约：**`ADDED` 的 body 不含章节标题本身，标题由锚发射**。诊断须同时点名该块的锚文本与失败形态（合成后重复命中 / 合成前已存在），使作者不必去读判据实现即可改对——本族此前已有一次「照手写文案修必然再次失败、gap-repair agent 只得绕开文案自行读实现」的教训，`fix_hint` 的信息量是可达性的一部分，不是装饰。
+
+### 不变量
+
+1. **判据恰一处实现**：合成后唯一性判定在 lint 与 merge 之间只有一份实现，任一侧出现第二份即违规。
+2. **两侧结论相同**：对同一份 delta，lint 的判定结论与 merge 合成阶段的结论恒等；不存在「lint 通过而 merge 拒绝」的组合。
+3. **报错时机前移**：合法输入零行为变更；**非法** `ADDED` 块只改变报错时机（合成 → 预检），不改变结论。
+4. **守恒语义不动**：`evaluateDeltaConservation` 对 `ADDED` / `RENAMED` 的排除逐字保留，L8 强度不升不降。
+5. **违规码集合零改动**：不新增 `ChangeLintViolationCode` 成员，L4 检查项计数不变。
+6. **不重复报同一形态**：锚在**合并前**文档已存在这一形态由既有判据覆盖，本判据不就同一事实二次报出。
+7. **通道排除**：共享三值判定结果不为 `section` 的 delta 一律不进入本判据；合法的 Markdown 整文件 CREATE delta 通过真实 L4 时，章节唯一性判定的消费方**不被调用**。
+8. **阶段边界**：`SPEC_MERGED` 之后不重放本判据；合法章节 `ADDED` 与合法 Markdown 整文件 CREATE 在 merge 之后重跑 `change-lint` 均应通过且项目级零写入。
+
+### 异常与边界
+
+- **`ADDED` body 重复写与锚同名的标题**：L4 判违规并点名锚；错误在 `change-lint` 阶段报出，**不再**等到 merge 合成阶段。
+- **合法 `ADDED`（body 不含同名标题）**：通过，合成结果与本次变更前逐字一致。
+- **锚在合并前文档已存在**：仍由既有判据覆盖，本判据不重复报出，避免同形态双报。
+- **`ADDED` 与 `RENAMED` 组合**：合成后唯一性在**折算后**的标题上判定，与 merge 侧的反向映射折算共用同一张表；不因更名而误判身份漂移。
+- **带序数的锚**：序数语义属 `REMOVED` 的多写者例外，与 `ADDED` 无关，本节不触碰。
+- **前移不扩大扫描范围**：本判据只对共享三值判定结果为 `section` 的 delta 的 `ADDED` 物质块生效。
+- **Markdown 整文件封装必须被排除**：其首行 `## ADDED — <canonical target 路径>（新文件，整文件）` 会被现行 `parseDeltaBlocks` 解析成一个 anchor 为「路径 + 后缀」的 `ADDED` 块；把这样一份**合法**的新建 delta 送进本判据，合成后的文档里当然不存在以该路径加后缀命名的章节，`final.status !== 'ok'` 成立，判据会把它误判为违规——合法新建能力当场被 L4 掐断。**修复方向是按通道排除，不是给 payload 补一个路径标题**：往正文塞一个与控制行同名的标题以迎合章节检查，正是残渣文档的成因。
+- **non-Markdown 整文件 delta（API/DB/编排）**：同样按通道排除，与既有处置一致。
+
+### 追溯
+
+- 来源变更：add-markdown-create-whole-file-protocol；与刀一（Markdown 新建文档的整文件协议）互补——刀一给新建文档一条合法写法，刀二保证写错时在预检阶段就说得清楚。
+- 场景关联：本文档「S35 non-Markdown 类别集合单点与 fix_hint 协议派生」（同族形态的前一例）、「S35 行级形态判据前移与预检-门一致性锁」（前移的一般原则）、「S35 锚折算、RENAMED 映射与标题扫描的三处收敛」（折算表单点）；S09「merge 直接合并时序」的 `verifyAgentMaterialOutcome` 复验步。
+- 实证：20260921 runlogos `add-workbuddy-agent-type`，199 次 merge 全失败、停因显示 `max-hops`；20260920 toolstop 事故为同族前例。
+- 测试：UT-S35-183～UT-S35-189、ST-S35-34。

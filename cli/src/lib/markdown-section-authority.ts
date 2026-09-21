@@ -7,6 +7,8 @@ import { authorityScan, scanHeadingRecords, stripInlineCode } from './markdown-s
  * `ADDED` 顶层块恒发 level 2、`MODIFIED` 的标题行取自被锚定章节的原标题、`REMOVED` 是整节删除。
  * 规范：`spec/change-management.md`「Delta `RENAMED` op：章节标题更名」；架构 §五十。
  */
+import { evaluateAddedAnchorOutcome } from './added-anchor-outcome.js';
+
 export type DeltaBlockOp = 'ADDED' | 'MODIFIED' | 'REMOVED' | 'REMOVED-ITEMS' | 'RENAMED';
 
 export interface DeltaBlock {
@@ -327,6 +329,19 @@ export function buildRenameMaps(
   return { renames, reverse };
 }
 
+/**
+ * 带更名折算的锚解析：更名后的块以**新标题**为锚，该锚在 before 中不存在，故解析失败时用映射
+ * 折回旧标题再试一次（final 侧反之）。折算表单点仍是 `buildRenameMaps` + `mapAnchorText`。
+ */
+function resolveWithRenameFold(
+  headings: ResolvedSectionAnchor[], anchor: string, map: Map<string, string>,
+): SectionAnchorResolution {
+  const direct = resolveSectionAnchor(headings, anchor);
+  if (direct.status === 'ok' || map.size === 0) return direct;
+  const folded = resolveSectionAnchor(headings, mapAnchorText(anchor, map));
+  return folded.status === 'ok' ? folded : direct;
+}
+
 export function verifyAgentMaterialOutcome(
   deltaContent: string,
   beforeContent: string,
@@ -358,16 +373,9 @@ export function verifyAgentMaterialOutcome(
     }
     // 更名后的块以**新标题**为锚（规格「与既有 op 的组合」）；该锚在 before 中不存在，
     // 故解析失败时用反向映射折回旧标题再试一次。final 侧反之。
-    let before = resolveSectionAnchor(beforeHeadings, block.anchor);
-    if (before.status !== 'ok' && renameReverse.size > 0) {
-      const folded = resolveSectionAnchor(beforeHeadings, mapAnchorText(block.anchor, renameReverse));
-      if (folded.status === 'ok') before = folded;
-    }
-    let final = resolveSectionAnchor(finalHeadings, block.anchor);
-    if (final.status !== 'ok' && renames.size > 0 && block.op !== 'RENAMED') {
-      const folded = resolveSectionAnchor(finalHeadings, mapAnchorText(block.anchor, renames));
-      if (folded.status === 'ok') final = folded;
-    }
+    const before = resolveWithRenameFold(beforeHeadings, block.anchor, renameReverse);
+    // RENAMED 块的 final 侧不折算（它的新标题就是落盘标题，折算等于自我抵消）。
+    const final = resolveWithRenameFold(finalHeadings, block.anchor, block.op === 'RENAMED' ? new Map() : renames);
     identities.push({
       op: block.op,
       anchor: block.anchor,
@@ -375,8 +383,11 @@ export function verifyAgentMaterialOutcome(
       final: final.status === 'ok' ? final.hit! : null,
     });
     if (block.op === 'ADDED') {
-      if (before.status !== 'not_found' || final.status !== 'ok') {
-        return { ok: false, identities, error: `ADDED 章节没有形成唯一新增结果：${block.anchor}` };
+      // **判据取 `added-anchor-outcome.ts` 单点**，与 change-lint L4 的前移点跨模块同源调用。
+      // 此处禁止内联等价条件：单点要能被「注入式反证」证伪——换掉判据时两侧必须同时翻转。
+      const outcome = evaluateAddedAnchorOutcome(block.anchor, before, final);
+      if (!outcome.ok) {
+        return { ok: false, identities, error: outcome.error };
       }
       // 标题保真（架构 §五十一、`spec/change-management.md`「Delta op 的标题保真规则」）：
       // 落盘标题必须与 delta 写下的**原始锚末段**逐字相等。比较**不经** stripInlineCode——
@@ -468,22 +479,34 @@ function spliceSection(source: string, hit: ResolvedSectionAnchor, replacement: 
   return `${source.slice(0, hit.start)}${replacement}${source.slice(hit.end)}`;
 }
 
-/** OpenLogos producer 的确定性 Markdown composer；REMOVED-ITEMS 只声明、不物化。 */
-export function composeOpenLogosMarkdown(
+/** 合成失败的结构化归因：失败发生在哪个 op 的哪个锚上——供消费方按 op 认领，避免解析消息文本。 */
+interface ComposeFailure { op: DeltaBlockOp | null; anchor: string | null; error: string }
+type ComposeResult = { ok: true; output: string } | { ok: false; failure: ComposeFailure };
+
+/**
+ * 章节合成本体（**不含**末尾的 `verifyAgentMaterialOutcome` 复验）。
+ *
+ * 独立出来是为了让 change-lint 的 `ADDED` 唯一性前移点能拿到「合成后文档」再求判据——两侧因此
+ * 共用同一条合成路径与同一份判据，而不是各自复刻一遍合成。失败以结构化 `failure` 返回而非抛出，
+ * 消费方按 `op` 认领自己该报的那一类，不必解析消息文本。
+ */
+function composeSections(
   beforeContent: string,
   deltaContent: string,
   mode: 'CREATE' | 'MODIFY',
-): string {
+): ComposeResult {
+  const fail = (op: DeltaBlockOp | null, anchor: string | null, error: string): ComposeResult =>
+    ({ ok: false, failure: { op, anchor, error } });
   const blocks = parseDeltaBlocks(deltaContent).filter(block => block.op !== 'REMOVED-ITEMS');
-  if (blocks.length === 0) throw new Error('Markdown Delta 缺少物质控制段');
+  if (blocks.length === 0) return fail(null, null, 'Markdown Delta 缺少物质控制段');
   let output = mode === 'CREATE' ? '' : beforeContent;
   for (const block of blocks) {
-    if (!block.anchor) throw new Error(`${block.op} 段缺少章节锚`);
+    if (!block.anchor) return fail(block.op, null, `${block.op} 段缺少章节锚`);
     const rawBody = bodyOf(block);
     const headings = parseMarkdownHeadings(output);
     const resolution = resolveSectionAnchor(headings, block.anchor);
     if (block.op === 'ADDED') {
-      if (resolution.status !== 'not_found') throw new Error(`ADDED 章节已存在或不唯一：${block.anchor}`);
+      if (resolution.status !== 'not_found') return fail('ADDED', block.anchor, `ADDED 章节已存在或不唯一：${block.anchor}`);
       // 定位用规范化锚（上方 resolution 已按 block.anchor 解析），**产出用原始锚**——
       // 两者分离见架构 §五十一；用剥离版当标题会把 `x` 段落吞掉（已静默发生两次）。
       const segments = block.anchor.split(' > ').map(item => stripInlineCode(item).trim()).filter(Boolean);
@@ -493,7 +516,7 @@ export function composeOpenLogosMarkdown(
       let insertion = output.length;
       if (segments.length > 1) {
         const parent = resolveSectionAnchor(headings, segments.slice(0, -1).join(' > '));
-        if (parent.status !== 'ok') throw new Error(`ADDED 父章节不存在或不唯一：${block.anchor}`);
+        if (parent.status !== 'ok') return fail('ADDED', block.anchor, `ADDED 父章节不存在或不唯一：${block.anchor}`);
         level = Math.min(parent.hit!.level + 1, 6);
         insertion = parent.hit!.end;
       }
@@ -504,14 +527,14 @@ export function composeOpenLogosMarkdown(
       output = `${output.slice(0, insertion)}${prefix}${section}${suffix}${output.slice(insertion)}`;
       continue;
     }
-    if (resolution.status !== 'ok') throw new Error(`${block.op} 章节不存在或不唯一：${block.anchor}`);
+    if (resolution.status !== 'ok') return fail(block.op, block.anchor, `${block.op} 章节不存在或不唯一：${block.anchor}`);
     if (block.op === 'REMOVED') {
       output = spliceSection(output, resolution.hit!, '');
       continue;
     }
     if (block.op === 'RENAMED') {
       const parsed = parseRenamedTitle(block);
-      if (!parsed.ok) throw new Error(parsed.error);
+      if (!parsed.ok) return fail('RENAMED', block.anchor, parsed.error);
       const hit = resolution.hit!;
       // 只替换标题行：层级（# 数量）、正文、子章节与章节在文档中的位置全部不动。
       const heading = `${'#'.repeat(hit.level)} ${parsed.title}`;
@@ -523,7 +546,65 @@ export function composeOpenLogosMarkdown(
     const replacement = `${resolution.hit!.rawHeading}${body ? `\n\n${body}` : ''}${nextStartsHeading ? '\n\n' : '\n'}`;
     output = spliceSection(output, resolution.hit!, replacement);
   }
-  const verification = verifyAgentMaterialOutcome(deltaContent, mode === 'CREATE' ? '' : beforeContent, output);
+  return { ok: true, output };
+}
+
+/** OpenLogos producer 的确定性 Markdown composer；REMOVED-ITEMS 只声明、不物化。 */
+export function composeOpenLogosMarkdown(
+  beforeContent: string,
+  deltaContent: string,
+  mode: 'CREATE' | 'MODIFY',
+): string {
+  const composed = composeSections(beforeContent, deltaContent, mode);
+  if (!composed.ok) throw new Error(composed.failure.error);
+  const verification = verifyAgentMaterialOutcome(
+    deltaContent, mode === 'CREATE' ? '' : beforeContent, composed.output);
   if (!verification.ok) throw new Error(verification.error ?? 'Markdown candidate 未通过共享章节权威重验');
-  return output;
+  return composed.output;
+}
+
+export interface AddedAnchorUniquenessResult { ok: boolean; error?: string; anchor?: string }
+
+/**
+ * **`ADDED` 锚合成后唯一性的 lint 前移点**：对一份**章节** delta 求「每个 ADDED 锚在合成后
+ * 文档中唯一命中、且合成前不存在」的结论。
+ *
+ * 与 merge 侧 `verifyAgentMaterialOutcome` 的 ADDED 分支**跨模块同源**——两者调用同一个
+ * `evaluateAddedAnchorOutcome`，并经同一条 `composeSections` 得到合成后文档。lint 侧不另写
+ * 一份等价判断，也不各自准备进入比较的输入（S35 不变量 3）。
+ *
+ * **只认领 ADDED 自身的失败**：合成阶段若因其它 op 失败（如 MODIFIED 锚不可解析），归各自判据，
+ * 本处返回通过，避免同一事实被两个判据双报。
+ *
+ * **调用方须先确认该 delta 的分流结果为 `section`**：整文件封装（含 Markdown 整文件）的首行
+ * 同为 `## ADDED —`、目标同为 `.md`，把它送进本判据会被误判为「没有形成唯一新增结果」——
+ * 合法新建能力当场被掐断。通道由 `classifyDeltaRoute` 判，本函数不自行推断。
+ */
+export function evaluateAddedAnchorUniqueness(
+  beforeContent: string,
+  deltaContent: string,
+  mode: 'CREATE' | 'MODIFY',
+): AddedAnchorUniquenessResult {
+  const blocks = parseDeltaBlocks(deltaContent).filter(block => block.op !== 'REMOVED-ITEMS');
+  const addedBlocks = blocks.filter(block => block.op === 'ADDED' && block.anchor);
+  if (addedBlocks.length === 0) return { ok: true };
+  const maps = buildRenameMaps(blocks);
+  // RENAMED 块形态畸形：L4 既有判据已报，映射表不可信，本处不重复报派生症状。
+  if (maps.error) return { ok: true };
+  const composed = composeSections(beforeContent, deltaContent, mode);
+  if (!composed.ok) {
+    if (composed.failure.op !== 'ADDED') return { ok: true };
+    return { ok: false, error: composed.failure.error, anchor: composed.failure.anchor ?? undefined };
+  }
+  const beforeHeadings = parseMarkdownHeadings(mode === 'CREATE' ? '' : beforeContent);
+  const finalHeadings = parseMarkdownHeadings(composed.output);
+  for (const block of addedBlocks) {
+    const outcome = evaluateAddedAnchorOutcome(
+      block.anchor,
+      resolveWithRenameFold(beforeHeadings, block.anchor, maps.reverse),
+      resolveWithRenameFold(finalHeadings, block.anchor, maps.renames),
+    );
+    if (!outcome.ok) return { ok: false, error: outcome.error, anchor: block.anchor };
+  }
+  return { ok: true };
 }

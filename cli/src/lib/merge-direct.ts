@@ -17,9 +17,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseDocument } from 'yaml';
 import { applyBaselineClosureBatch, type BaselineClosureApplyInput } from './baseline-apply.js';
-import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory, isNonMarkdownCategory } from './canonical-target.js';
+import { canonicalTargetFromDeltaPath, classifyCanonicalTargetCategory, classifyDeltaRoute } from './canonical-target.js';
 import { classifyProposalDeltas, DeltaScanUnreadableError } from './delta-classify.js';
 import { composeOpenLogosMarkdown } from './markdown-section-authority.js';
+import { validateAndStripNonMarkdownDelta } from './non-markdown-delta.js';
+import { firstLineOf } from './whole-file-marker.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 import { buildTestChangeSet, forwardMergeTestChangeSets, type TestChangeSetV1 } from './test-change-set.js';
 
@@ -215,24 +217,62 @@ function prepareDirectMerge(root: string, proposalDir: string, slug: string): Di
     const targetAbs = join(root, ...target.targetPath.split('/'));
     // 模式在 planDirectTargets 中按同一磁盘事实判定，此处只需读取当前字节。
     const exists = target.mode === 'MODIFY';
+    const rawDelta = readFileSync(deltaAbs);
+    // **分流判定取 `classifyDeltaRoute` 单点**（见 canonical-target.ts）——此处**禁止**重写等价条件：
+    // change-lint L4 与本处曾各写一份 `'api' || 'database'`，正是 toolstop 事故「lint 全绿而 merge 必炸」的成因。
+    // 判定返回三值：`section`（章节合成）/ `whole-file`（整文件）/ `invalid-envelope`（已声明封装但受理
+    // 不合法）。**`invalid-envelope` 绝不降级为 `section`**：回退成章节锚正是既有标题残渣的产生机制。
+    const route = classifyDeltaRoute({
+      firstLine: firstLineOf(rawDelta.toString('utf8')),
+      targetPath: target.targetPath,
+      semanticCategory: classifyCanonicalTargetCategory(target.targetPath),
+      mode: target.mode,
+    });
+    if (route.kind === 'invalid-envelope') {
+      throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：${route.reason}`);
+    }
     // API / DB / 编排 canonical target 不是 Markdown 章节文档：其 delta 首行为控制标记、正文即最终字节，
     // 交 baseline-apply 的 non-markdown 入口做标记校验与剥离（与 0.13.x apply 同一判据）。
-    // 类别集合取 `NON_MARKDOWN_CATEGORIES` 单点（见 canonical-target.ts）——此处**禁止**重写等价字面量：
-    // change-lint L4 与本处曾各写一份 `'api' || 'database'`，正是 toolstop 事故「lint 全绿而 merge 必炸」的成因。
-    if (isNonMarkdownCategory(target.category)) {
-      inputs.push({ kind: 'non-markdown', deltaPath: target.deltaPath, mode: target.mode, deltaBytes: readFileSync(deltaAbs) });
+    if (route.kind === 'whole-file' && route.channel === 'non-markdown') {
+      inputs.push({ kind: 'non-markdown', deltaPath: target.deltaPath, mode: target.mode, deltaBytes: rawDelta });
       continue;
     }
-    const before = exists ? readFileSync(targetAbs, 'utf8') : '';
-    let finalText: string;
-    try {
-      // 引擎内部完成锚唯一定位、标题层级 rebase 与 verifyAgentMaterialOutcome 物质结果复验
-      finalText = composeOpenLogosMarkdown(before, readFileSync(deltaAbs, 'utf8'), target.mode);
-    } catch (error) {
-      throw new MergeDirectError('MERGE_DELTA_INVALID',
-        `${target.targetPath}：${error instanceof Error ? error.message : String(error)}`);
+    let bytes: Buffer;
+    if (route.kind === 'whole-file') {
+      // **Markdown 整文件走 prepared 最终字节通道，不进 `non-markdown` 分支**（S39 C04）。
+      // 理由是该分支并非「只换一个字节来源」：它在推入 inputs 后立即 `continue`，会跳过下方的
+      // 测试目标 before/after 收集，使新建的 `logos/resources/test/*.md` 不进 `buildTestChangeSet`，
+      // `SPEC_MERGED.test_change_set` 的 targets 与 changed_test_ids 双双为空；且 apply 侧仍按语义
+      // 类别拒绝非 API/DB/编排的 non-markdown 输入，落盘准备阶段即失败。就地校验剥离后以 prepared
+      // 入列，既闭合账本、又让 apply 侧的类别闸零改动。
+      const decoded = rawDelta.toString('utf8');
+      if (!Buffer.from(decoded, 'utf8').equals(rawDelta)) {
+        throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：delta 不是合法 UTF-8`);
+      }
+      const checked = validateAndStripNonMarkdownDelta(decoded, target.mode, target.targetPath, { root });
+      if (!checked.ok || checked.payload === undefined) {
+        throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：${checked.message}`);
+      }
+      const newline = rawDelta.indexOf(0x0a);
+      if (newline < 0) throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：缺首行行结束符`);
+      // validator 只删除首行及唯一换行；直接切原 Buffer，保证 payload 字节零格式化（与 apply 侧同一手法），
+      // 并与 validator 返回的 payload 字符串**交叉核对**以确保剥离结果确定。
+      bytes = rawDelta.subarray(newline + 1);
+      if (checked.payload !== bytes.toString('utf8')) {
+        throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：payload 剥离结果不确定`);
+      }
+    } else {
+      const before = exists ? readFileSync(targetAbs, 'utf8') : '';
+      let finalText: string;
+      try {
+        // 引擎内部完成锚唯一定位、标题层级 rebase 与 verifyAgentMaterialOutcome 物质结果复验
+        finalText = composeOpenLogosMarkdown(before, rawDelta.toString('utf8'), target.mode);
+      } catch (error) {
+        throw new MergeDirectError('MERGE_DELTA_INVALID',
+          `${target.targetPath}：${error instanceof Error ? error.message : String(error)}`);
+      }
+      bytes = Buffer.from(finalText, 'utf8');
     }
-    const bytes = Buffer.from(finalText, 'utf8');
     inputs.push({ kind: 'prepared', targetPath: target.targetPath, mode: target.mode, bytes });
     if (target.category === 'test' || target.targetPath.startsWith('logos/resources/test/')) {
       tests.push({ targetPath: target.targetPath, beforeBytes: exists ? readFileSync(targetAbs) : null, afterBytes: bytes });
