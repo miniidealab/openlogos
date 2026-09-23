@@ -152,6 +152,39 @@ export interface ChangeLintViolation {
   message: string;
   fix_hint: string;
   flow_reason?: string;
+  /**
+   * 检查层归属（L0…L9）——**唯一来源**：`pushViolation` 登记本条违规时当场写入。
+   * 计数侧（`countFor` / `checks[].violations`）与呈现侧（命令层渲染循环）消费**同一个值**；
+   * 禁止任何消费方从 `code` 反推层号：同一 code 可合法横跨多层
+   *（`delta_section_anchor_unresolvable` 现同时被 L4 与 L8 使用），入参只有 code 的函数
+   * 结构上无法区分——反推不是「暂时不准」，是原理上不可能准（S35 契约一、C01）。
+   *
+   * 本字段是**呈现层的内部需要**，止于命令层：对外 `--format json` 经
+   * {@link toPublicViolation} 投影后不含它（C03，JSON 契约零漂移）。
+   */
+  check_layer: number;
+}
+
+/** {@link ChangeLintViolation} 中仅供呈现层使用的内部字段名（键名单点，投影与定义同源）。 */
+const VIOLATION_CHECK_LAYER_KEY = 'check_layer' as const;
+
+/**
+ * 违规的**登记入参**形态：层归属由登记点（`pushViolation` 的 `check` 实参）提供，
+ * 调用方不构造、也无法构造——这是「恰有一处来源」的类型级保证。
+ */
+export type ChangeLintViolationDraft = Omit<ChangeLintViolation, typeof VIOLATION_CHECK_LAYER_KEY>;
+
+/** 对外 JSON 输出的 violation 形态：不含层归属字段。 */
+export type PublicChangeLintViolation = ChangeLintViolationDraft;
+
+/**
+ * 对外 JSON 输出投影（C03）：去掉仅供呈现层使用的层归属字段。
+ * 与字段定义同处一文件，命令层无须知道键名；rest 解构保留其余键的原插入序，
+ * 故投影结果与本刀之前的 violation 对象**逐字节相同**。
+ */
+export function toPublicViolation(v: ChangeLintViolation): PublicChangeLintViolation {
+  const { [VIOLATION_CHECK_LAYER_KEY]: _internal, ...rest } = v;
+  return rest;
 }
 
 /**
@@ -1004,16 +1037,24 @@ export function isDangerousSlug(slug: string): boolean {
 interface CheckAcc {
   violations: ChangeLintViolation[];
   seq: Map<string, number>;
-  order: Map<ChangeLintViolation, { check: number; seq: number }>;
+  /**
+   * 违规 → 同（层, path）内的源位置出现序，**仅排序用**。
+   * 层归属刻意**不**存在这里：它只写在 violation 本体的 `check_layer` 上（S35 契约一）——
+   * 旁路再存一份就是第二处来源，两份必然漂移（本刀所修缺陷即此形态）。
+   */
+  order: Map<ChangeLintViolation, number>;
 }
 
-function pushViolation(acc: CheckAcc, check: number, v: ChangeLintViolation): void {
+function pushViolation(acc: CheckAcc, check: number, v: ChangeLintViolationDraft): void {
   const flowReason = FLOW_REASON_MAP[v.code];
-  const out: ChangeLintViolation = flowReason ? { ...v, flow_reason: flowReason } : v;
+  // 层归属在登记的此刻写入本体（唯一来源）。键序：本体字段 → check_layer → flow_reason；
+  // check_layer 经 toPublicViolation 投影剥离后，对外键序与本刀之前逐字相同。
+  const base: ChangeLintViolation = { ...v, check_layer: check };
+  const out: ChangeLintViolation = flowReason ? { ...base, flow_reason: flowReason } : base;
   const key = `${check}|${out.path}`;
   const seq = acc.seq.get(key) ?? 0;
   acc.seq.set(key, seq + 1);
-  acc.order.set(out, { check, seq });
+  acc.order.set(out, seq);
   acc.violations.push(out);
 }
 
@@ -1530,12 +1571,12 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
 
   // 全序稳定排序：①检查项 L1→L8；②path 字典序；③源位置出现序；④code；⑤message
   const sorted = [...acc.violations].sort((a, b) => {
-    const oa = acc.order.get(a)!;
-    const ob = acc.order.get(b)!;
     const layer = (check: number) => check === 10 ? 0.5 : check;
-    if (oa.check !== ob.check) return layer(oa.check) - layer(ob.check);
+    if (a.check_layer !== b.check_layer) return layer(a.check_layer) - layer(b.check_layer);
     if (a.path !== b.path) return a.path < b.path ? -1 : 1;
-    if (oa.seq !== ob.seq) return oa.seq - ob.seq;
+    const sa = acc.order.get(a)!;
+    const sb = acc.order.get(b)!;
+    if (sa !== sb) return sa - sb;
     if (a.code !== b.code) return a.code < b.code ? -1 : 1;
     return a.message < b.message ? -1 : a.message > b.message ? 1 : 0;
   });
@@ -1543,7 +1584,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   const mergeableCount = deltaEntries.filter(e => e.mergeDisposition === 'mergeable').length;
   const invalidCount = deltaEntries.filter(e => e.lintValidity === 'invalid').length;
   const mdDeltaCount = deltaEntries.filter(e => e.mergeDisposition === 'mergeable' && e.relativePath.endsWith('.md')).length;
-  const countFor = (check: number) => sorted.filter(v => acc.order.get(v)!.check === check).length;
+  // 计数侧与呈现侧的同源点：两者都按 violation 本体的 `check_layer` 归层（S35 契约一）。
+  const countFor = (check: number) => sorted.filter(v => v.check_layer === check).length;
 
   const checks: { id: number; label: string; violations: number }[] = [
     { id: 0, label: 'Plan Package 完成合同', violations: countFor(0) },

@@ -1,0 +1,303 @@
+{
+  "l4-only": {
+    "text": {
+      "status": 2,
+      "stdout": "change-lint: lint-render-fixture\n  ✓ L0 Plan Package 完成合同\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L5 部署决策一致\n  ✓ L6 delta 路径合法（2 mergeable / 0 invalid）\n  ✓ L8 条目守恒（ID 隐式删除拦截）\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nFAIL（8/9，1 项违规）\n",
+      "stderr": ""
+    },
+    "json": {
+      "status": 2,
+      "data": {
+        "slug": "lint-render-fixture",
+        "pass": false,
+        "plan_package": {
+          "schema": "openlogos/plan-package-evaluation@1",
+          "contract_version": "1",
+          "ready": true,
+          "proposal": {
+            "filled": true,
+            "issues": []
+          },
+          "tasks": {
+            "plan_filled": true,
+            "code_required": true,
+            "code_slices_filled": false,
+            "issues": []
+          },
+          "issues": []
+        },
+        "violations": [
+          {
+            "code": "delta_section_anchor_unresolvable",
+            "path": "logos/changes/lint-render-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S81-demo.md",
+            "message": "ADDED 章节没有形成唯一新增结果：S81：WorkBuddy Agent 类型全生命周期",
+            "fix_hint": "`ADDED` 的 body **不含章节标题本身**，标题由锚发射——把 body 里与锚同名的那行标题删掉；锚在合并前文档已存在时，请改用 `## MODIFIED — <章节锚>`（整节替换）而不是 `## ADDED`"
+          }
+        ]
+      }
+    },
+    "checks": [
+      {
+        "id": 0,
+        "label": "Plan Package 完成合同",
+        "violations": 0
+      },
+      {
+        "id": 1,
+        "label": "tasks.md 结构可解析",
+        "violations": 0
+      },
+      {
+        "id": 2,
+        "label": "[code] 标题在场（空段占位合法）",
+        "violations": 0
+      },
+      {
+        "id": 3,
+        "label": "测试证据在场（分阶段证据模型）",
+        "violations": 0
+      },
+      {
+        "id": 4,
+        "label": "delta 段标记与脱模板（2 个 .md delta）",
+        "violations": 1
+      },
+      {
+        "id": 5,
+        "label": "部署决策一致",
+        "violations": 0
+      },
+      {
+        "id": 6,
+        "label": "delta 路径合法（2 mergeable / 0 invalid）",
+        "violations": 0
+      },
+      {
+        "id": 8,
+        "label": "条目守恒（ID 隐式删除拦截）",
+        "violations": 0
+      },
+      {
+        "id": 9,
+        "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+        "violations": 0
+      }
+    ]
+  },
+  "l4-and-l8": {
+    "text": {
+      "status": 2,
+      "stdout": "change-lint: lint-render-fixture\n  ✓ L0 Plan Package 完成合同\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L5 部署决策一致\n  ✓ L6 delta 路径合法（3 mergeable / 0 invalid）\n  ✗ L8 [delta_section_anchor_unresolvable]\n      缺什么：ADDED 章节没有形成唯一新增结果：S81：WorkBuddy Agent 类型全生命周期\n      在哪补：logos/changes/lint-render-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S81-demo.md\n      补成什么样：`ADDED` 的 body **不含章节标题本身**，标题由锚发射——把 body 里与锚同名的那行标题删掉；锚在合并前文档已存在时，请改用 `## MODIFIED — <章节锚>`（整节替换）而不是 `## ADDED`\n  ✗ L8 [delta_section_anchor_unresolvable]\n      缺什么：章节锚「不存在的章节」在目标主文档未命中任何章节（not-found）\n      在哪补：logos/changes/lint-render-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S82-demo.md\n      补成什么样：改用标题路径锚唯一定位（`父级标题 > 目标标题`，以 ` > ` 连接）；禁止依赖工具取第一个命中或合并同名章节\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nFAIL（7/9，2 项违规）\n",
+      "stderr": ""
+    },
+    "json": {
+      "status": 2,
+      "data": {
+        "slug": "lint-render-fixture",
+        "pass": false,
+        "plan_package": {
+          "schema": "openlogos/plan-package-evaluation@1",
+          "contract_version": "1",
+          "ready": true,
+          "proposal": {
+            "filled": true,
+            "issues": []
+          },
+          "tasks": {
+            "plan_filled": true,
+            "code_required": true,
+            "code_slices_filled": false,
+            "issues": []
+          },
+          "issues": []
+        },
+        "violations": [
+          {
+            "code": "delta_section_anchor_unresolvable",
+            "path": "logos/changes/lint-render-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S81-demo.md",
+            "message": "ADDED 章节没有形成唯一新增结果：S81：WorkBuddy Agent 类型全生命周期",
+            "fix_hint": "`ADDED` 的 body **不含章节标题本身**，标题由锚发射——把 body 里与锚同名的那行标题删掉；锚在合并前文档已存在时，请改用 `## MODIFIED — <章节锚>`（整节替换）而不是 `## ADDED`"
+          },
+          {
+            "code": "delta_section_anchor_unresolvable",
+            "path": "logos/changes/lint-render-fixture/deltas/prd/3-technical-plan/2-scenario-implementation/core-S82-demo.md",
+            "message": "章节锚「不存在的章节」在目标主文档未命中任何章节（not-found）",
+            "fix_hint": "改用标题路径锚唯一定位（`父级标题 > 目标标题`，以 ` > ` 连接）；禁止依赖工具取第一个命中或合并同名章节"
+          }
+        ]
+      }
+    },
+    "checks": [
+      {
+        "id": 0,
+        "label": "Plan Package 完成合同",
+        "violations": 0
+      },
+      {
+        "id": 1,
+        "label": "tasks.md 结构可解析",
+        "violations": 0
+      },
+      {
+        "id": 2,
+        "label": "[code] 标题在场（空段占位合法）",
+        "violations": 0
+      },
+      {
+        "id": 3,
+        "label": "测试证据在场（分阶段证据模型）",
+        "violations": 0
+      },
+      {
+        "id": 4,
+        "label": "delta 段标记与脱模板（3 个 .md delta）",
+        "violations": 1
+      },
+      {
+        "id": 5,
+        "label": "部署决策一致",
+        "violations": 0
+      },
+      {
+        "id": 6,
+        "label": "delta 路径合法（3 mergeable / 0 invalid）",
+        "violations": 0
+      },
+      {
+        "id": 8,
+        "label": "条目守恒（ID 隐式删除拦截）",
+        "violations": 1
+      },
+      {
+        "id": 9,
+        "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+        "violations": 0
+      }
+    ]
+  },
+  "clean": {
+    "text": {
+      "status": 0,
+      "stdout": "change-lint: lint-render-fixture\n  ✓ L0 Plan Package 完成合同\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L4 delta 段标记与脱模板（2 个 .md delta）\n  ✓ L5 部署决策一致\n  ✓ L6 delta 路径合法（2 mergeable / 0 invalid）\n  ✓ L8 条目守恒（ID 隐式删除拦截）\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nPASS（9/9）\n",
+      "stderr": ""
+    },
+    "json": {
+      "status": 0,
+      "data": {
+        "slug": "lint-render-fixture",
+        "pass": true,
+        "plan_package": {
+          "schema": "openlogos/plan-package-evaluation@1",
+          "contract_version": "1",
+          "ready": true,
+          "proposal": {
+            "filled": true,
+            "issues": []
+          },
+          "tasks": {
+            "plan_filled": true,
+            "code_required": true,
+            "code_slices_filled": false,
+            "issues": []
+          },
+          "issues": []
+        },
+        "violations": []
+      }
+    },
+    "checks": [
+      {
+        "id": 0,
+        "label": "Plan Package 完成合同",
+        "violations": 0
+      },
+      {
+        "id": 1,
+        "label": "tasks.md 结构可解析",
+        "violations": 0
+      },
+      {
+        "id": 2,
+        "label": "[code] 标题在场（空段占位合法）",
+        "violations": 0
+      },
+      {
+        "id": 3,
+        "label": "测试证据在场（分阶段证据模型）",
+        "violations": 0
+      },
+      {
+        "id": 4,
+        "label": "delta 段标记与脱模板（2 个 .md delta）",
+        "violations": 0
+      },
+      {
+        "id": 5,
+        "label": "部署决策一致",
+        "violations": 0
+      },
+      {
+        "id": 6,
+        "label": "delta 路径合法（2 mergeable / 0 invalid）",
+        "violations": 0
+      },
+      {
+        "id": 8,
+        "label": "条目守恒（ID 隐式删除拦截）",
+        "violations": 0
+      },
+      {
+        "id": 9,
+        "label": "下游阻塞理由预检（ProposalBlockReason 全覆盖）",
+        "violations": 0
+      }
+    ]
+  },
+  "_violation_codes": [
+    "proposal_required_section_missing",
+    "proposal_required_section_duplicate",
+    "proposal_required_section_empty",
+    "proposal_placeholder_remaining",
+    "proposal_change_type_invalid",
+    "proposal_deployment_fields_invalid",
+    "tasks_template_remaining",
+    "tasks_code_entry_before_spec_complete",
+    "tasks_code_section_missing",
+    "tasks_deployment_conflict",
+    "tasks_sections_unparsable",
+    "tasks_code_header_missing",
+    "code_change_requires_real_test_ids",
+    "delta_missing_section_marker",
+    "delta_template_skeleton",
+    "delta_test_table_id_unextractable",
+    "delta_test_table_column_mismatch",
+    "delta_test_table_duplicate_header",
+    "deployment_decision_conflict",
+    "delta_path_invalid",
+    "design_system_mode_invalid",
+    "no_pages_declared",
+    "prototype_path_traversal",
+    "prototype_basename_invalid",
+    "prototype_basename_duplicate",
+    "prototype_missing",
+    "prototype_extra",
+    "prototype_empty",
+    "design_system_missing",
+    "design_system_invalid",
+    "design_system_empty",
+    "fallback_reason_missing",
+    "fallback_token_forged",
+    "ui_declaration_missing",
+    "ui_declaration_unparsable",
+    "ui_impact_not_boolean",
+    "delta_implicit_id_removal",
+    "delta_removed_unknown_id",
+    "delta_section_anchor_unresolvable",
+    "non_markdown_delta_invalid",
+    "test-slice-manifest-missing",
+    "test-slice-manifest-invalid",
+    "test-slice-manifest-unsupported",
+    "test-slice-assignment-ambiguous",
+    "slice-task-state-inconsistent"
+  ]
+}

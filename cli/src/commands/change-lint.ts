@@ -9,7 +9,10 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { makeEnvelope, makeErrorEnvelope, type OutputFormat } from '../lib/json-output.js';
-import { runChangeLint, isDangerousSlug, SLUG_STRICT_RE, type ChangeLintOpErrorCode } from '../lib/change-lint.js';
+import {
+  runChangeLint, isDangerousSlug, SLUG_STRICT_RE, toPublicViolation,
+  type ChangeLintOpErrorCode, type ChangeLintRunResult,
+} from '../lib/change-lint.js';
 
 const COMMAND = 'change-lint';
 
@@ -92,27 +95,20 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
       slug: result.slug,
       pass,
       plan_package: result.plan_package,
-      violations: result.violations,
+      // C03：层号止于命令层——对外 JSON 经投影剥离 `check_layer`，字段集合与排序零漂移。
+      violations: result.violations.map(toPublicViolation),
       // S38（delta-r1 F4）：warnings 仅非空时出现，否则整个字段省略（零漂移，契约见 cli-json-output §3.15）
       ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
     })));
   } else {
     console.log(`change-lint: ${result.slug}`);
-    for (const check of result.checks) {
-      if (check.violations === 0) {
-        console.log(`  ✓ L${check.id} ${check.label}`);
-      } else {
-        const checkViolations = result.violations.filter(v => {
-          const l = checkOfCode(v.code);
-          return l === check.id;
-        });
-        for (const v of checkViolations) {
-          console.log(`  ✗ L${check.id} [${v.code}]`);
-          console.log(`      缺什么：${v.message}`);
-          console.log(`      在哪补：${v.path}`);
-          console.log(`      补成什么样：${v.fix_hint}`);
-        }
-      }
+    try {
+      renderChecks(result);
+    } catch (e) {
+      if (!(e instanceof ChangeLintRenderError)) throw e;
+      // fail-loud 的对外形态：稳定错误码 + 点名层与计数 + 非零退出，绝不裸抛未捕获堆栈。
+      console.error(`Error [${e.code}]: ${e.message}`);
+      process.exit(1);
     }
     // 提醒级 warning（不改结论 / exit code）：决策记录、SQL 方言降级、条目守恒（§2.73）。
     // 告警通道自 lite-cut2c 起承载多类，故逐条打印 code——否则用户无从分辨来源。
@@ -133,41 +129,63 @@ export function changeLint(slugArg: string | undefined, format: OutputFormat = '
   process.exit(pass ? 0 : 2);
 }
 
-/** violation code → 检查项编号（仅文本渲染用；排序与归属由 lib 的生成序保证）。 */
-function checkOfCode(code: string): number {
-  switch (code) {
-    case 'proposal_required_section_missing':
-    case 'proposal_required_section_duplicate':
-    case 'proposal_required_section_empty':
-    case 'proposal_placeholder_remaining':
-    case 'proposal_change_type_invalid':
-    case 'proposal_deployment_fields_invalid':
-    case 'tasks_template_remaining':
-    case 'tasks_code_entry_before_spec_complete':
-    case 'tasks_code_section_missing':
-    case 'tasks_deployment_conflict': return 0;
-    case 'tasks_sections_unparsable': return 1;
-    case 'tasks_code_header_missing': return 2;
-    case 'code_change_requires_real_test_ids': return 3;
-    case 'delta_missing_section_marker':
-    case 'delta_template_skeleton':
-    // L4 族的 delta 测试规格形态三码：§2.82.2 首格可提取性 + §2.84.2 行级列数 / 表头重复前移。
-    case 'delta_test_table_id_unextractable':
-    case 'delta_test_table_column_mismatch':
-    case 'delta_test_table_duplicate_header': return 4;
-    case 'deployment_decision_conflict': return 5;
-    case 'delta_path_invalid': return 6;
-    case 'delta_implicit_id_removal':
-    case 'delta_removed_unknown_id':
-    case 'delta_section_anchor_unresolvable': return 8;
-    // lite-cut2b：non-Markdown 整文件 delta 的形态校验随旧 L9 删除迁入 L4。
-    case 'non_markdown_delta_invalid': return 4;
-    // L9 下游阻塞理由预检（§2.79）——码即 ProposalBlockReason 本身。
-    case 'test-slice-manifest-missing':
-    case 'test-slice-manifest-invalid':
-    case 'test-slice-manifest-unsupported':
-    case 'test-slice-assignment-ambiguous':
-    case 'slice-task-state-inconsistent': return 9;
-    default: return 7;
+/**
+ * 呈现层归属漂移的 fail-loud 信号（S35 契约三 / C02）。
+ *
+ * 本刀之前，「某层计数非零却筛不出可打印违规」走 else 分支、循环体零次——**整行消失**
+ * 且不报错、不影响 exit code，缺陷因此隐蔽存在（20260921 实测：L4 整行不见，底部只剩
+ * `FAIL（9/10，1 项违规，1 warning）`）。显式异常让同类漂移在**第一次**发生时即暴露。
+ */
+export class ChangeLintRenderError extends Error {
+  readonly code = 'render_layer_attribution_inconsistent';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChangeLintRenderError';
+  }
+}
+
+/**
+ * 人类可读输出的检查项渲染（S35 契约二·逐条可归因，与 merge 准入输出
+ * `spec/change-management.md` §2.51.5「禁止只给聚合结论」同口径）。
+ *
+ * 归层只读 violation 本体的 `check_layer`（唯一来源）——**不存在**任何从 `code` 反推层号的
+ * 映射（被删除的 `checkOfCode` 即该反推副本：同一 code 已横跨 L4 与 L8，入参只有 code
+ * 的函数结构上无法区分，补 case 补不出来、留作兜底就是留第二份来源，故整函数删除，C01）。
+ *
+ * 每个检查项**恰产生一行结论**：`✓` 行、若干 `✗` 条目、或一个显式异常——不存在「整行消失」
+ * 的第四种可能（不变量 3）。
+ */
+export function renderChecks(result: Extract<ChangeLintRunResult, { ok: true }>): void {
+  let printed = 0;
+  for (const check of result.checks) {
+    const checkViolations = result.violations.filter(v => v.check_layer === check.id);
+    if (checkViolations.length !== check.violations) {
+      throw new ChangeLintRenderError(
+        `检查项 L${check.id}（${check.label}）计数为 ${check.violations}，但按层归属筛出 ${checkViolations.length} 条可打印违规`
+        + '——层归属出现了第二份来源或已漂移；违规详情无法逐条归因，拒绝只输出聚合结论',
+      );
+    }
+    printed += checkViolations.length;
+    if (checkViolations.length === 0) {
+      console.log(`  ✓ L${check.id} ${check.label}`);
+      continue;
+    }
+    for (const v of checkViolations) {
+      console.log(`  ✗ L${check.id} [${v.code}]`);
+      console.log(`      缺什么：${v.message}`);
+      console.log(`      在哪补：${v.path}`);
+      console.log(`      补成什么样：${v.fix_hint}`);
+    }
+  }
+  // 孤儿违规同属「整行消失」形态：某层根本没有检查项行（如层号未登记进 checks），
+  // 该层违规将无声蒸发。逐层计数相等不足以覆盖它，故再锁一次总数。
+  if (printed !== result.violations.length) {
+    const orphans = [...new Set(result.violations.filter(
+      v => !result.checks.some(c => c.id === v.check_layer)).map(v => v.check_layer))].sort((a, b) => a - b);
+    throw new ChangeLintRenderError(
+      `共 ${result.violations.length} 项违规，但只有 ${printed} 项落在检查项行下`
+      + `${orphans.length > 0 ? `；无对应检查项的层号：${orphans.map(l => `L${l}`).join('、')}` : ''}`
+      + '——这些违规不会被打印，拒绝只输出聚合结论',
+    );
   }
 }
