@@ -1,3 +1,67 @@
+# 部署报告：make-phase-banner-informational / OpenLogos 0.15.14（2026-09-23，本机全局部署完成）
+
+## 一、部署结论
+
+- **模块 / 提案**：core / `make-phase-banner-informational`（发布内容 = SessionStart 阶段横幅去排他措辞：`plugin/bin/openlogos-phase` 的 `change_management_message` 中 `coding` / `ready-to-verify` / `verify-failed` 去 `only`、`delta-writing` / `implementing` / `in-progress` 去 `Allowed files:` 与 `do not modify`、`ready-to-merge` 去 `Stop`、未知 step 兜底去范围限定；改为描述性工作重心 + 非排他指引；`guard-check` 与 `status --format json` 零改动）。
+- **授权与门禁**：`openlogos next --auto` 对 deliver 门 `gate_auto_passed=true`（standing run-scoped 授权，RunLogos driver 派发）；`VERIFY_PASS` 在场；status `proposal_step=ready-to-deploy`，部署决策无冲突。
+- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`；入口 `/opt/homebrew/bin/openlogos`，realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+- **当前结论**：固定字节的 `@miniidealab/openlogos@0.15.14` 已完成升版脚本抬版、升版后 build + 全量测试（2285/2285 绿）、真实 npm pack、制品身份核对、隔离 prefix 两臂行为矩阵（MATRIX PASS）与本机全局安装；新 shell 复核 `openlogos --version` 精确 `0.15.14`，package / asset-manifest 同源，安装态 `claude-plugin-template/bin/openlogos-phase` 与仓内源模板逐字节一致。
+- **数据迁移 / 服务启动**：无 / 不适用（纯插件资产文案；存量项目经 `openlogos sync` 刷新横幅字节）。
+- **公开副作用**：零；未执行 npm publish、Git tag、GitHub Release、官网部署或 `git push`。
+- **smoke**：本提案声明 `是否需要 smoke：否`，本工作单元不执行 `openlogos smoke`。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前全局 | `/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；npm prefix `/opt/homebrew`；`openlogos --version` = `0.15.13` |
+| 回滚 tarball | `cli/rollback/miniidealab-openlogos-0.15.13.tgz`（`npm pack --ignore-scripts` 从本机全局目录抓取）；2,454,475 字节 |
+| 回滚 SHA-256 | `f4f41411b1c9707c6594e1adadaad450ee69e2e1be60fe16b40c965c1e19d97e` |
+| candidate tarball | `miniidealab-openlogos-0.15.14.tgz`（真实 `npm pack` 冻结，会话 scratchpad）；2,454,688 字节 |
+| candidate SHA-256 | `7f921c4624bdbf0e38ef6119c9eea94608d6b62e1fd4bc6797c093c25a282ea1` |
+| 解包核对 | package.json `0.15.14`、bin `dist/index.js`、asset-manifest `0.15.14`、payloadHash `6da5ade9…a0d24c` 与仓库逐字一致；`dist/lib/local-release-candidate.js` 候选 `0.15.14` / 回滚 `0.15.13`；随包 `openlogos-phase` 与源模板逐字节一致 |
+
+可复制回滚命令：
+
+```bash
+npm install -g cli/rollback/miniidealab-openlogos-0.15.13.tgz
+openlogos --version   # 期望 0.15.13
+```
+
+## 三、升版与发布前检查
+
+- `node cli/scripts/bump-version.mjs 0.15.14`：8 处身份载体 0.15.13 → 0.15.14，候选/回滚常量 0.15.14 / 0.15.13，`cli/asset-manifest.json` payloadHash 由生成器重算（未手改）；复核唯一残留 `0.15.13` 为回滚常量。
+- 升版后复跑 `cd cli && npm run build && npx vitest run`：144 文件 / 2285 用例全绿（未以 verify 期历史 PASS 代替）。
+- 新增 ST-S11-49 基线只剔除具名易变字段（`timestamp`、顶层 `version`、`managed_assets.expected_hash`），不钉包版本号，符合「发布前检查通则」第 1 条。
+
+## 四、隔离 prefix 行为矩阵（新 0.15.14 臂 vs 旧 0.15.13 对照臂，同一夹具）
+
+| 矩阵项 | 新臂 0.15.14 | 旧臂 0.15.13 |
+|---|---|---|
+| ① `coding` / `ready-to-verify`（真实 CLI）、`verify-failed`（桩） | 排他命中 0 | 均命中 `only` |
+| ② `delta-writing`（真实 CLI）、`implementing` / `in-progress`（桩） | 排他命中 0 | 均命中 `Allowed files:` + `do not modify` |
+| ③ `ready-to-merge`（真实 CLI） | 排他命中 0 | 命中 `Stop` |
+| ④ 未知 step（空 / `some-future-step`，桩） | 排他命中 0，无 `within … scope` | 含 `within … scope` 范围限定 |
+| ⑤ 信息项（slug、step、人类确认点） | 全部在场 | — |
+| ⑥ 对照臂有效性 | — | 上列排他措辞全部复现，差异来自本次升版 |
+| ⑦ `status --format json`（具名剔除易变字段）/ `guard-check` 字节与 5 条输入判定 / 状态行 | 五种真实状态下两臂逐字相同；guard-check 两臂字节相同 | 同左 |
+| 射程外：plan 阶段 `ready-to-delta` | 仍含 `do not modify`（未改，预期） | 同左 |
+| ⑧ 全局零触碰 | 矩阵前后 `command -v` / realpath / `--version` 逐字一致（0.15.13）；两个一次性 prefix 用后即删 | — |
+
+## 五、本机全局安装与复核
+
+- `npm install -g <candidate tarball>`（同一固定字节，SHA-256 `7f921c46…282ea1`）。
+- 新 shell（`zsh -lc`）复核：`command -v openlogos` = `/opt/homebrew/bin/openlogos`，realpath 指向 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，`--version` = `0.15.14`；安装态 package / asset-manifest 均 `0.15.14`，payloadHash `6da5ade9…a0d24c`；本仓 dogfood `status --format json` 正常（version 0.15.14）。
+
+## 六、未解决风险与说明
+
+- **Codex 横幅仍为排他措辞**：`plugin-codex/session-start.sh`（安装态 `codex-plugin-template/session-start.sh`）是独立手写实现，不在本提案代码射程内，仍含 `Allowed files:` / `Stop` / `Implement only` / `do not modify`；Codex 宿主会话仍可能被同类措辞劝退，需另立提案。
+- **射程外残留**：plan 阶段分支（`writing` / `ready-to-delta`）与状态行 `GUARD_STATUS` 的 `… this proposal only.` 未改，按场景 S11「射程之外」留待后续裁定。
+- **上一版 0.15.13 的部署提交缺失**：部署前工作区已有未提交的 0.15.13 升版与 `cli/rollback/miniidealab-openlogos-0.15.12.tgz`（上一提案 fix-lint-violation-check-attribution 归档后的本机部署遗留，全局已为 0.15.13 但无对应 `chore(deploy)` 提交）；本次升版脚本在其之上抬到 0.15.14，两次部署的仓内产物将随本次一并提交。
+- 存量项目需 `openlogos sync` 才会刷新 `.claude/openlogos/bin/openlogos-phase` 部署副本。
+
+---
+
 # 部署报告：fix-deploy-done-leak-failclosed-selfheal / OpenLogos 0.14.25（2026-09-07，本机全局部署与正式 smoke 完成）
 
 ## 一、部署结论

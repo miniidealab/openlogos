@@ -107,7 +107,7 @@
 
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |----|------|-----------|---------|---------|---------|
-| ST-S11-31 | status 的 delta-writing 状态驱动 SessionStart 写入范围 | S11 Step 3→8 | launched 项目有 active guard，`openlogos status --format json` 输出 `proposal_step=delta-writing` | SessionStart 调用 status 并生成上下文 | 上下文与 status/next 一致：允许 `deltas/**` + `tasks.md`，不允许直接写 `logos/resources/**` 或源码 |
+| ST-S11-31 | status 的 delta-writing 状态驱动 SessionStart 工作重心文案 | S11 Step 3→8 | launched 项目有 active guard，`openlogos status --format json` 输出 `proposal_step=delta-writing` | SessionStart 调用 status 并生成上下文 | 上下文与 status/next 一致：说明本阶段典型工作是产出 `deltas/**` 并勾选 `tasks.md` 的 `[delta]`，规格变更经 delta + `openlogos merge` 进入 `logos/resources/**`；**不含** `Allowed files:` 与 `do not modify` 等排他措辞（make-phase-banner-informational 起，横幅不声明可写范围，写入约束由 PreToolUse 层承担） |
 
 ## 八、ready-to-delta 状态分层与 plan_state 测试
 
@@ -363,3 +363,38 @@
 - 不变式·两条实现在恒等域同口径、域外差异具名（INV-SC1，delta-r1 F2 的适用域收敛）：ST-S11-47 的恒等域限定断言 + UT-S11-85 的已知差异见证臂。
 - 不变式·探测只读且零 CLI 依赖（D1、约束 6）：ST-S11-47 的只读与进程树断言。
 - 方法论规范：`spec/module-naming-convention.md`；场景：S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」（EX-11.7～EX-11.10、INV-SC1～SC4）；来源变更：fix-merge-prototype-commit-and-phase-module-prefix。
+
+## S11 SessionStart 阶段横幅去排他措辞测试
+
+> 覆盖场景 S11「SessionStart 阶段横幅的措辞约束（情境信息而非写入授权）」及 EX-11.11～EX-11.15；来源变更 make-phase-banner-informational。
+>
+> 夹具用一次性隔离 launched 项目构造（含 `logos/.openlogos-guard`、提案目录与所需 marker），直接以 `bash` 子进程运行**源模板** `plugin/bin/openlogos-phase`（不测 `.claude/openlogos/bin/` 的 sync 部署副本）。为隔离 step 派生，单元用例通过桩 `openlogos` 可执行文件（置于 `PATH` 首位）返回指定 `proposal_step` 的 `status --format json`；场景用例使用真实 CLI。
+>
+> **排他措辞判定口径**：对横幅中 `Change Management:` 一行做匹配，四类模式为 `\bonly\b`、`Allowed files:`、`\bStop\b`、`do not modify`（均大小写不敏感）。**适用分支**为 plan-exit 之后的全部分支与未知 step 兜底分支；plan 阶段分支（`writing` / `ready-to-delta`）、无 guard 分支与状态行 `GUARD_STATUS` 不在射程内，只作「逐字不变」断言。
+>
+> 测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-86 | 三处原排他分支去排他后仍含提案 slug 与当前 step（修复前必红） | EX-11.11、EX-11.12 | 隔离项目活跃提案 `feat-x`；桩 status 依次返回 `proposal_step` ∈ {`coding`, `ready-to-verify`, `verify-failed`, `delta-writing`, `implementing`, `in-progress`, `ready-to-merge`} | 对每个 step 运行 `openlogos-phase`，取 `Change Management:` 行 | 七个 step 的该行均含 `'feat-x'` 与当前 step 名（`implementing` / `in-progress` 归一显示为 `delta-writing`，与现状一致）；均**不含**四类排他模式。**修复前必红**：`coding` 系命中 `only`，`delta-writing` 系命中 `Allowed files:` 与 `do not modify`，`ready-to-merge` 命中 `Stop` |
+| UT-S11-87 | 四类排他措辞在 plan-exit 之后全部分支零出现 | EX-11.11、措辞约束 2 | 同上夹具；step 枚举取 plan-exit 之后全部已知值：`delta-writing`、`implementing`、`in-progress`、`ready-to-merge`、`merge-generated`、`coding`、`ready-to-verify`、`verify-failed`、`verify-passed`、`deploy-done`、`smoke-passed`、`ready-to-deploy`、`ready-to-smoke`、`smoke-failed` | 逐 step 运行并对 `Change Management:` 行做四类模式匹配 | 全部 step 零命中；断言按 step 逐条报告，任一命中即红并给出 step 与命中片段 |
+| UT-S11-88 | 未知 step 兜底分支同样非排他 | EX-11.14 | 桩 status 分别返回 `proposal_step=""` 与 `proposal_step="some-future-step"` | 运行 `openlogos-phase` | 两臂均进入兜底分支：该行说明 step 未知并建议运行 `openlogos status` / `openlogos next`；四类排他模式零命中；不含 `within … scope` 之类范围限定措辞；仍含提案 slug 与人类确认点语句 |
+| UT-S11-89 | 人工会话所需信息项逐项在场 | EX-11.12、措辞约束 1、5 | 同 UT-S11-86 夹具 | 对 `delta-writing`、`ready-to-merge`、`coding` 三个 step 分别运行 | 三者均含：提案 slug、当前 step、人类确认点语句（`openlogos merge, openlogos verify, openlogos smoke, openlogos archive, deployment, and git push are human confirmation points` 与改动前**逐字相同**）。另逐 step 断言工作重心：`delta-writing` 含 `logos/changes/feat-x/deltas/` 与 `[delta]`；`ready-to-merge` 含 `openlogos merge feat-x` 且表达需用户明确授权；`coding` 含 `logos/changes/feat-x/tasks.md` 与 `[code]`，并提示完成后更新 `tasks.md` |
+| UT-S11-90 | 射程外分支与状态行逐字不变 | EX-11.15、射程之外 | 同一夹具；改动前版本的 `openlogos-phase` 留存为对照副本 | 分别以 `writing`、`ready-to-delta`（含与不含 GUI `write-ui-prototype` overlay）、无 guard 三种状态运行新旧两版 | 新旧两版在这三种状态下的 `Change Management:` 行与 `📊 OpenLogos:` 状态行**逐字相同**（含 `GUARD_STATUS` 的 `… this proposal only.`，其属已知残留，不在本变更射程内） |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-48 | 会话启动于提案 X 的 coding 阶段、随后被派去评审提案 Y 时横幅不再声称排他 | EX-11.13 端到端 | 真实 CLI；隔离 launched 项目中提案 X 处于 `coding`（`PLAN_APPROVED`、`SPEC_MERGED` 在场，`[code]` 有未勾切片）；另建提案 Y 的目录与 `deltas/` | ① 运行 `openlogos-phase` 取 SessionStart 横幅；② 以 PreToolUse 输入格式向 `plugin/bin/guard-check` 喂一条 `Write` 到 `logos/changes/Y/reviews/candidates/delta-r1-demo.md` | ① 横幅含 `'X'` 与 `coding`，**不含** `only` 及其余三类排他模式，不含任何「只能写 X 的 `[code]` 范围」的表述；② `guard-check` 退出码 0（放行）——证明「允许写 Y 的评审文件」与横幅之间不再存在自然语言冲突，实际约束由 PreToolUse 层给出 |
+| ST-S11-49 | `guard-check` 判定与 `status --format json` 输出在改动前后逐字不变 | EX-11.15 | 真实 CLI；同一组隔离夹具覆盖 `delta-writing`、`coding`、`ready-to-merge`、plan 阶段（无 `PLAN_APPROVED`）与无 guard 五种状态；`plugin/bin/guard-check` 与改动前版本逐字节比对 | ① 对每种状态运行 `openlogos status --format json` 并落盘；② 对每种状态向 `guard-check` 喂同一组输入（源码 `Write`、`logos/resources/**` `Write`、`logos/changes/<slug>/deltas/**` `Write`、plan 阶段非 page-design delta `Write`、`echo x > src/a.ts` 形态的 `Bash`）；③ 与改动前基线逐项对比 | `plugin/bin/guard-check` 文件 SHA-256 与改动前相同；每种状态下 status JSON 与基线**逐字相同**（剔除时间戳类易变字段须在测试中具名列出，不得泛化忽略）；`guard-check` 每条输入的退出码与拦截文案与基线逐项相同 |
+
+### 追溯与覆盖
+
+- 主修·三处排他分支同批去排他（EX-11.11，修复前必红）：UT-S11-86、UT-S11-87。
+- 不变式·人工会话信息项不减（EX-11.12）：UT-S11-86、UT-S11-89。
+- 端到端·复用会话跨提案评审不再被横幅劝退（EX-11.13）：ST-S11-48。
+- 边界·未知 step 兜底非排他（EX-11.14）：UT-S11-88。
+- 不变式·命令契约与射程外文案零回归（EX-11.15）：UT-S11-90、ST-S11-49；既有 ST-S11-31 预期结果同步改为非排他口径。

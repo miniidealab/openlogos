@@ -1,0 +1,1311 @@
+{
+  "_note": "改动前基线（make-phase-banner-informational）：guard-check 与 CLI 均未被本变更修改，易变字段具名剔除：timestamp, version, managed_assets.expected_hash。禁止手改。",
+  "guard_check_sha256": "70e44333f7d16b79411aff94480e90d840ed76bf75eefbae459fe6336c2309c6",
+  "states": {
+    "delta-writing": {
+      "status": {
+        "command": "status",
+        "data": {
+          "contract": {
+            "version": "1.3.0"
+          },
+          "phases": [
+            {
+              "key": "phase.1",
+              "label": "Phase 1 · 需求文档 (WHY)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.2",
+              "label": "Phase 2 · 产品设计 (WHAT)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-0",
+              "label": "Phase 3-0 · 技术架构",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-1",
+              "label": "Phase 3-1 · 场景建模",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-api",
+              "label": "Phase 3-2 · API 设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-db",
+              "label": "Phase 3-2 · 数据库设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-3-deployment",
+              "label": "Phase 3-3 · 部署方案",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4a",
+              "label": "Phase 3-4a · 测试用例设计（单元 + 场景）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4b",
+              "label": "Phase 3-4b · API 编排测试",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-5",
+              "label": "Phase 3-5 · 代码实现",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-6",
+              "label": "Phase 3-6 · 测试验收（verify）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-7-deploy",
+              "label": "Phase 3-7 · 部署执行",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-8-smoke",
+              "label": "Phase 3-8 · 部署冒烟测试（smoke）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            }
+          ],
+          "modules": [
+            {
+              "id": "core",
+              "name": "core",
+              "lifecycle": "launched",
+              "bootstrap": "normal",
+              "current_phase": null,
+              "current_phase_label": null,
+              "phase_progress": null,
+              "active_change": {
+                "slug": "feat",
+                "proposal_step": "delta-writing",
+                "proposal_step_label": "撰写 Delta — 更新变更增量文档",
+                "step_meta": {
+                  "phase": "pre-implement",
+                  "kind": "produce"
+                },
+                "has_proposal": true,
+                "has_tasks": true,
+                "tasks_checked": 0,
+                "tasks_total": 1,
+                "delta_count": 0,
+                "code_required": true,
+                "facts": {
+                  "spec_complete": false,
+                  "slices_planned": false,
+                  "slices_approved": false,
+                  "code_required": true,
+                  "has_delta_tasks": true,
+                  "verify_pass": false
+                },
+                "deployment_required": false,
+                "smoke_required": false,
+                "deployment_reason": "夹具无需部署",
+                "deployment_decision_source": "proposal",
+                "deployment_decision_conflict": false,
+                "deployment_decision_conflict_reason": null,
+                "deployment_progress": {
+                  "checked": 0,
+                  "total": 0,
+                  "percent": 0,
+                  "status": "unavailable",
+                  "label": "0/0"
+                },
+                "deployment_document": {
+                  "path": "logos/changes/feat/tasks.md",
+                  "name": "tasks.md",
+                  "exists": true
+                },
+                "plan_state": {
+                  "plan_ready": true,
+                  "plan_gate_pending": false,
+                  "plan_approved": true,
+                  "tasks_template_filled": true,
+                  "tasks_execution_done": 0,
+                  "tasks_execution_total": 1,
+                  "tasks_execution_scope": "delta",
+                  "plan_package": {
+                    "schema": "openlogos/plan-package-evaluation@1",
+                    "contract_version": "1",
+                    "ready": true,
+                    "proposal": {
+                      "filled": true,
+                      "issues": []
+                    },
+                    "tasks": {
+                      "plan_filled": true,
+                      "code_required": true,
+                      "code_slices_filled": false,
+                      "issues": []
+                    },
+                    "issues": []
+                  },
+                  "completion_contract_version": "1",
+                  "completion_issues": [],
+                  "proposal_filled": true,
+                  "tasks_plan_filled": true,
+                  "tasks_code_required": true,
+                  "tasks_code_slices_filled": false,
+                  "managed_assets": {
+                    "status": "missing",
+                    "actual_hash": null,
+                    "reason": "sync-required",
+                    "action": "运行 openlogos sync，并重开 Agent session。",
+                    "requires_session_restart": true
+                  },
+                  "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                },
+                "code_planning_diagnostic": {
+                  "reason": "slices-not-planned",
+                  "tasksPath": "logos/changes/feat/tasks.md",
+                  "remediation": "由 slice-planner 基于已合并规格和真实 UT/ST ID 写入 [code] 切片"
+                }
+              },
+              "suggestion": "继续为 feat 产出 delta 文件，完成后明确授权执行 openlogos merge feat",
+              "slice_state": {
+                "total": 0,
+                "done": 0,
+                "remaining": 0
+              }
+            }
+          ],
+          "product_type_confirmation": {
+            "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+            "level": "warning",
+            "missing_module_ids": [
+              "core"
+            ],
+            "next_action": {
+              "command": "openlogos module set-product-type",
+              "enum": [
+                "web",
+                "desktop",
+                "mobile",
+                "cli",
+                "api",
+                "library",
+                "skills",
+                "service"
+              ],
+              "gui_enum": [
+                "web",
+                "desktop",
+                "mobile"
+              ],
+              "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+            }
+          },
+          "active_proposals": [
+            {
+              "name": "feat",
+              "has_proposal": true,
+              "has_tasks": true,
+              "delta_count": 0
+            }
+          ],
+          "current_phase": "phase.1",
+          "suggestion": "继续为 feat 产出 delta 文件，完成后明确授权执行 openlogos merge feat",
+          "all_done": false,
+          "lifecycle": "launched",
+          "locale": "zh",
+          "source_roots": null,
+          "active_change": "feat",
+          "proposal_step": "delta-writing",
+          "yaml_diagnostics": null
+        }
+      },
+      "guard": {
+        "write-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-resources": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-plan-stage-non-page-design-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "bash-redirect-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    "coding": {
+      "status": {
+        "command": "status",
+        "data": {
+          "contract": {
+            "version": "1.3.0"
+          },
+          "phases": [
+            {
+              "key": "phase.1",
+              "label": "Phase 1 · 需求文档 (WHY)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.2",
+              "label": "Phase 2 · 产品设计 (WHAT)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-0",
+              "label": "Phase 3-0 · 技术架构",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-1",
+              "label": "Phase 3-1 · 场景建模",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-api",
+              "label": "Phase 3-2 · API 设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-db",
+              "label": "Phase 3-2 · 数据库设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-3-deployment",
+              "label": "Phase 3-3 · 部署方案",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4a",
+              "label": "Phase 3-4a · 测试用例设计（单元 + 场景）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4b",
+              "label": "Phase 3-4b · API 编排测试",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-5",
+              "label": "Phase 3-5 · 代码实现",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-6",
+              "label": "Phase 3-6 · 测试验收（verify）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-7-deploy",
+              "label": "Phase 3-7 · 部署执行",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-8-smoke",
+              "label": "Phase 3-8 · 部署冒烟测试（smoke）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            }
+          ],
+          "modules": [
+            {
+              "id": "core",
+              "name": "core",
+              "lifecycle": "launched",
+              "bootstrap": "normal",
+              "current_phase": null,
+              "current_phase_label": null,
+              "phase_progress": null,
+              "active_change": {
+                "slug": "feat",
+                "proposal_step": "coding",
+                "proposal_step_label": "编码中 — 按已合并规格实现代码",
+                "step_meta": {
+                  "phase": "implement",
+                  "kind": "produce"
+                },
+                "has_proposal": true,
+                "has_tasks": true,
+                "tasks_checked": 1,
+                "tasks_total": 2,
+                "delta_count": 1,
+                "code_required": true,
+                "facts": {
+                  "spec_complete": true,
+                  "slices_planned": true,
+                  "slices_approved": true,
+                  "code_required": true,
+                  "has_delta_tasks": true,
+                  "verify_pass": false
+                },
+                "deployment_required": false,
+                "smoke_required": false,
+                "deployment_reason": "夹具无需部署",
+                "deployment_decision_source": "proposal",
+                "deployment_decision_conflict": false,
+                "deployment_decision_conflict_reason": null,
+                "deployment_progress": {
+                  "checked": 0,
+                  "total": 0,
+                  "percent": 0,
+                  "status": "unavailable",
+                  "label": "0/0"
+                },
+                "deployment_document": {
+                  "path": "logos/changes/feat/tasks.md",
+                  "name": "tasks.md",
+                  "exists": true
+                },
+                "plan_state": {
+                  "plan_ready": true,
+                  "plan_gate_pending": false,
+                  "plan_approved": true,
+                  "tasks_template_filled": true,
+                  "tasks_execution_done": 1,
+                  "tasks_execution_total": 1,
+                  "tasks_execution_scope": "delta",
+                  "plan_package": {
+                    "schema": "openlogos/plan-package-evaluation@1",
+                    "contract_version": "1",
+                    "ready": true,
+                    "proposal": {
+                      "filled": true,
+                      "issues": []
+                    },
+                    "tasks": {
+                      "plan_filled": true,
+                      "code_required": true,
+                      "code_slices_filled": true,
+                      "issues": []
+                    },
+                    "issues": []
+                  },
+                  "completion_contract_version": "1",
+                  "completion_issues": [],
+                  "proposal_filled": true,
+                  "tasks_plan_filled": true,
+                  "tasks_code_required": true,
+                  "tasks_code_slices_filled": true,
+                  "managed_assets": {
+                    "status": "missing",
+                    "actual_hash": null,
+                    "reason": "sync-required",
+                    "action": "运行 openlogos sync，并重开 Agent session。",
+                    "requires_session_restart": true
+                  },
+                  "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                }
+              },
+              "suggestion": "按已合并规格实现代码，完成后勾选 [code] section 所有任务",
+              "loop_state": {
+                "subflow_id": "implement",
+                "until": "code_slices_green",
+                "max_iters": 30,
+                "iteration": 0,
+                "converged": false,
+                "escalated": false
+              },
+              "slice_state": {
+                "total": 1,
+                "done": 0,
+                "remaining": 1,
+                "current": "切片：夹具实现（覆盖 UT-S01-01）"
+              },
+              "automation_diagnostic": {
+                "reason": "reporter-missing",
+                "completion_state": "slice_incomplete",
+                "failed_tests": [],
+                "required_test_ids": [
+                  "UT-S01-01"
+                ],
+                "validated_artifacts": [],
+                "missing_artifacts": [
+                  "logos/resources/verify/test-results.jsonl"
+                ],
+                "suggested_next_node": "code",
+                "human_action_required": false,
+                "remediation": "运行该切片对应测试并确保 OpenLogos reporter 写入 test-results.jsonl。"
+              }
+            }
+          ],
+          "product_type_confirmation": {
+            "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+            "level": "warning",
+            "missing_module_ids": [
+              "core"
+            ],
+            "next_action": {
+              "command": "openlogos module set-product-type",
+              "enum": [
+                "web",
+                "desktop",
+                "mobile",
+                "cli",
+                "api",
+                "library",
+                "skills",
+                "service"
+              ],
+              "gui_enum": [
+                "web",
+                "desktop",
+                "mobile"
+              ],
+              "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+            }
+          },
+          "active_proposals": [
+            {
+              "name": "feat",
+              "has_proposal": true,
+              "has_tasks": true,
+              "delta_count": 1
+            }
+          ],
+          "current_phase": "phase.1",
+          "suggestion": "按已合并规格实现代码，完成后勾选 [code] section 所有任务",
+          "all_done": false,
+          "lifecycle": "launched",
+          "locale": "zh",
+          "source_roots": null,
+          "active_change": "feat",
+          "proposal_step": "coding",
+          "yaml_diagnostics": null
+        }
+      },
+      "guard": {
+        "write-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-resources": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-plan-stage-non-page-design-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "bash-redirect-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    "ready-to-merge": {
+      "status": {
+        "command": "status",
+        "data": {
+          "contract": {
+            "version": "1.3.0"
+          },
+          "phases": [
+            {
+              "key": "phase.1",
+              "label": "Phase 1 · 需求文档 (WHY)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.2",
+              "label": "Phase 2 · 产品设计 (WHAT)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-0",
+              "label": "Phase 3-0 · 技术架构",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-1",
+              "label": "Phase 3-1 · 场景建模",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-api",
+              "label": "Phase 3-2 · API 设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-db",
+              "label": "Phase 3-2 · 数据库设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-3-deployment",
+              "label": "Phase 3-3 · 部署方案",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4a",
+              "label": "Phase 3-4a · 测试用例设计（单元 + 场景）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4b",
+              "label": "Phase 3-4b · API 编排测试",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-5",
+              "label": "Phase 3-5 · 代码实现",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-6",
+              "label": "Phase 3-6 · 测试验收（verify）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-7-deploy",
+              "label": "Phase 3-7 · 部署执行",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-8-smoke",
+              "label": "Phase 3-8 · 部署冒烟测试（smoke）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            }
+          ],
+          "modules": [
+            {
+              "id": "core",
+              "name": "core",
+              "lifecycle": "launched",
+              "bootstrap": "normal",
+              "current_phase": null,
+              "current_phase_label": null,
+              "phase_progress": null,
+              "active_change": {
+                "slug": "feat",
+                "proposal_step": "ready-to-merge",
+                "proposal_step_label": "可合并 — 明确授权执行 merge，再明确授权执行归档",
+                "step_meta": {
+                  "phase": "pre-implement",
+                  "kind": "gate"
+                },
+                "has_proposal": true,
+                "has_tasks": true,
+                "tasks_checked": 1,
+                "tasks_total": 1,
+                "delta_count": 1,
+                "code_required": true,
+                "facts": {
+                  "spec_complete": false,
+                  "slices_planned": false,
+                  "slices_approved": false,
+                  "code_required": true,
+                  "has_delta_tasks": true,
+                  "verify_pass": false
+                },
+                "deployment_required": false,
+                "smoke_required": false,
+                "deployment_reason": "夹具无需部署",
+                "deployment_decision_source": "proposal",
+                "deployment_decision_conflict": false,
+                "deployment_decision_conflict_reason": null,
+                "deployment_progress": {
+                  "checked": 0,
+                  "total": 0,
+                  "percent": 0,
+                  "status": "unavailable",
+                  "label": "0/0"
+                },
+                "deployment_document": {
+                  "path": "logos/changes/feat/tasks.md",
+                  "name": "tasks.md",
+                  "exists": true
+                },
+                "plan_state": {
+                  "plan_ready": true,
+                  "plan_gate_pending": false,
+                  "plan_approved": true,
+                  "tasks_template_filled": true,
+                  "tasks_execution_done": 1,
+                  "tasks_execution_total": 1,
+                  "tasks_execution_scope": "delta",
+                  "plan_package": {
+                    "schema": "openlogos/plan-package-evaluation@1",
+                    "contract_version": "1",
+                    "ready": true,
+                    "proposal": {
+                      "filled": true,
+                      "issues": []
+                    },
+                    "tasks": {
+                      "plan_filled": true,
+                      "code_required": true,
+                      "code_slices_filled": false,
+                      "issues": []
+                    },
+                    "issues": []
+                  },
+                  "completion_contract_version": "1",
+                  "completion_issues": [],
+                  "proposal_filled": true,
+                  "tasks_plan_filled": true,
+                  "tasks_code_required": true,
+                  "tasks_code_slices_filled": false,
+                  "managed_assets": {
+                    "status": "missing",
+                    "actual_hash": null,
+                    "reason": "sync-required",
+                    "action": "运行 openlogos sync，并重开 Agent session。",
+                    "requires_session_restart": true
+                  },
+                  "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                },
+                "code_planning_diagnostic": {
+                  "reason": "slices-not-planned",
+                  "tasksPath": "logos/changes/feat/tasks.md",
+                  "remediation": "由 slice-planner 基于已合并规格和真实 UT/ST ID 写入 [code] 切片"
+                }
+              },
+              "suggestion": "明确授权执行 openlogos merge feat",
+              "slice_state": {
+                "total": 0,
+                "done": 0,
+                "remaining": 0
+              }
+            }
+          ],
+          "product_type_confirmation": {
+            "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+            "level": "warning",
+            "missing_module_ids": [
+              "core"
+            ],
+            "next_action": {
+              "command": "openlogos module set-product-type",
+              "enum": [
+                "web",
+                "desktop",
+                "mobile",
+                "cli",
+                "api",
+                "library",
+                "skills",
+                "service"
+              ],
+              "gui_enum": [
+                "web",
+                "desktop",
+                "mobile"
+              ],
+              "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+            }
+          },
+          "active_proposals": [
+            {
+              "name": "feat",
+              "has_proposal": true,
+              "has_tasks": true,
+              "delta_count": 1
+            }
+          ],
+          "current_phase": "phase.1",
+          "suggestion": "明确授权执行 openlogos merge feat",
+          "all_done": false,
+          "lifecycle": "launched",
+          "locale": "zh",
+          "source_roots": null,
+          "active_change": "feat",
+          "proposal_step": "ready-to-merge",
+          "yaml_diagnostics": null
+        }
+      },
+      "guard": {
+        "write-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-resources": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-plan-stage-non-page-design-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "bash-redirect-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    "plan-stage": {
+      "status": {
+        "command": "status",
+        "data": {
+          "contract": {
+            "version": "1.3.0"
+          },
+          "phases": [
+            {
+              "key": "phase.1",
+              "label": "Phase 1 · 需求文档 (WHY)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.2",
+              "label": "Phase 2 · 产品设计 (WHAT)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-0",
+              "label": "Phase 3-0 · 技术架构",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-1",
+              "label": "Phase 3-1 · 场景建模",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-api",
+              "label": "Phase 3-2 · API 设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-db",
+              "label": "Phase 3-2 · 数据库设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-3-deployment",
+              "label": "Phase 3-3 · 部署方案",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4a",
+              "label": "Phase 3-4a · 测试用例设计（单元 + 场景）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4b",
+              "label": "Phase 3-4b · API 编排测试",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-5",
+              "label": "Phase 3-5 · 代码实现",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-6",
+              "label": "Phase 3-6 · 测试验收（verify）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-7-deploy",
+              "label": "Phase 3-7 · 部署执行",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-8-smoke",
+              "label": "Phase 3-8 · 部署冒烟测试（smoke）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            }
+          ],
+          "modules": [
+            {
+              "id": "core",
+              "name": "core",
+              "lifecycle": "launched",
+              "bootstrap": "normal",
+              "current_phase": null,
+              "current_phase_label": null,
+              "phase_progress": null,
+              "active_change": {
+                "slug": "feat",
+                "proposal_step": "ready-to-delta",
+                "proposal_step_label": "方案待批准 — 批准方案（含切片划分）后开始撰写 Delta",
+                "step_meta": {
+                  "phase": "pre-implement",
+                  "kind": "gate"
+                },
+                "has_proposal": true,
+                "has_tasks": true,
+                "tasks_checked": 0,
+                "tasks_total": 1,
+                "delta_count": 0,
+                "code_required": true,
+                "facts": {
+                  "spec_complete": false,
+                  "slices_planned": false,
+                  "slices_approved": false,
+                  "code_required": true,
+                  "has_delta_tasks": true,
+                  "verify_pass": false
+                },
+                "deployment_required": false,
+                "smoke_required": false,
+                "deployment_reason": "夹具无需部署",
+                "deployment_decision_source": "proposal",
+                "deployment_decision_conflict": false,
+                "deployment_decision_conflict_reason": null,
+                "deployment_progress": {
+                  "checked": 0,
+                  "total": 0,
+                  "percent": 0,
+                  "status": "unavailable",
+                  "label": "0/0"
+                },
+                "deployment_document": {
+                  "path": "logos/changes/feat/tasks.md",
+                  "name": "tasks.md",
+                  "exists": true
+                },
+                "plan_state": {
+                  "plan_ready": true,
+                  "plan_gate_pending": true,
+                  "plan_approved": false,
+                  "tasks_template_filled": true,
+                  "tasks_execution_done": 0,
+                  "tasks_execution_total": 1,
+                  "tasks_execution_scope": "delta",
+                  "plan_package": {
+                    "schema": "openlogos/plan-package-evaluation@1",
+                    "contract_version": "1",
+                    "ready": true,
+                    "proposal": {
+                      "filled": true,
+                      "issues": []
+                    },
+                    "tasks": {
+                      "plan_filled": true,
+                      "code_required": true,
+                      "code_slices_filled": false,
+                      "issues": []
+                    },
+                    "issues": []
+                  },
+                  "completion_contract_version": "1",
+                  "completion_issues": [],
+                  "proposal_filled": true,
+                  "tasks_plan_filled": true,
+                  "tasks_code_required": true,
+                  "tasks_code_slices_filled": false,
+                  "managed_assets": {
+                    "status": "missing",
+                    "actual_hash": null,
+                    "reason": "sync-required",
+                    "action": "运行 openlogos sync，并重开 Agent session。",
+                    "requires_session_restart": true
+                  },
+                  "diagnostic": "proposal/tasks 已完成，等待 plan-exit 批准或 next --auto 消费；checkbox 表示后续执行进度。"
+                },
+                "code_planning_diagnostic": {
+                  "reason": "slices-not-planned",
+                  "tasksPath": "logos/changes/feat/tasks.md",
+                  "remediation": "由 slice-planner 基于已合并规格和真实 UT/ST ID 写入 [code] 切片"
+                }
+              },
+              "suggestion": "批准 feat 的方案（proposal/tasks 与 [code] 切片划分）后开始产出 delta；--auto 模式下 plan 门自动放行（留审计）",
+              "slice_state": {
+                "total": 0,
+                "done": 0,
+                "remaining": 0
+              }
+            }
+          ],
+          "product_type_confirmation": {
+            "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+            "level": "warning",
+            "missing_module_ids": [
+              "core"
+            ],
+            "next_action": {
+              "command": "openlogos module set-product-type",
+              "enum": [
+                "web",
+                "desktop",
+                "mobile",
+                "cli",
+                "api",
+                "library",
+                "skills",
+                "service"
+              ],
+              "gui_enum": [
+                "web",
+                "desktop",
+                "mobile"
+              ],
+              "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+            }
+          },
+          "active_proposals": [
+            {
+              "name": "feat",
+              "has_proposal": true,
+              "has_tasks": true,
+              "delta_count": 0
+            }
+          ],
+          "current_phase": "phase.1",
+          "suggestion": "批准 feat 的方案（proposal/tasks 与 [code] 切片划分）后开始产出 delta；--auto 模式下 plan 门自动放行（留审计）",
+          "all_done": false,
+          "lifecycle": "launched",
+          "locale": "zh",
+          "source_roots": null,
+          "active_change": "feat",
+          "proposal_step": "ready-to-delta",
+          "yaml_diagnostics": null
+        }
+      },
+      "guard": {
+        "write-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-resources": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-delta": {
+          "exit": 2,
+          "stdout": "{\"reason\":\"⛔ 变更管理拦截（plan 阶段）：当前提案尚未通过 plan-exit（PLAN_APPROVED 不存在）。\\n\\n目标文件：logos/changes/feat/deltas/test/core-S01-test-cases.md\\n\\nplan 阶段仅允许产出 page-design 原型 delta（deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 请在 plan 通过后（delta-writing）再产出。\"}",
+          "stderr": "⛔ 变更管理拦截（plan 阶段）：当前提案尚未通过 plan-exit（PLAN_APPROVED 不存在）。\n\n目标文件：logos/changes/feat/deltas/test/core-S01-test-cases.md\n\nplan 阶段仅允许产出 page-design 原型 delta（deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 请在 plan 通过后（delta-writing）再产出。\n"
+        },
+        "write-plan-stage-non-page-design-delta": {
+          "exit": 2,
+          "stdout": "{\"reason\":\"⛔ 变更管理拦截（plan 阶段）：当前提案尚未通过 plan-exit（PLAN_APPROVED 不存在）。\\n\\n目标文件：logos/changes/feat/deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-x.md\\n\\nplan 阶段仅允许产出 page-design 原型 delta（deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 请在 plan 通过后（delta-writing）再产出。\"}",
+          "stderr": "⛔ 变更管理拦截（plan 阶段）：当前提案尚未通过 plan-exit（PLAN_APPROVED 不存在）。\n\n目标文件：logos/changes/feat/deltas/prd/3-technical-plan/2-scenario-implementation/core-S01-x.md\n\nplan 阶段仅允许产出 page-design 原型 delta（deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 请在 plan 通过后（delta-writing）再产出。\n"
+        },
+        "bash-redirect-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    },
+    "no-guard": {
+      "status": {
+        "command": "status",
+        "data": {
+          "contract": {
+            "version": "1.0.0"
+          },
+          "phases": [
+            {
+              "key": "phase.1",
+              "label": "Phase 1 · 需求文档 (WHY)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.2",
+              "label": "Phase 2 · 产品设计 (WHAT)",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-0",
+              "label": "Phase 3-0 · 技术架构",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-1",
+              "label": "Phase 3-1 · 场景建模",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-api",
+              "label": "Phase 3-2 · API 设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-2-db",
+              "label": "Phase 3-2 · 数据库设计",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-3-deployment",
+              "label": "Phase 3-3 · 部署方案",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4a",
+              "label": "Phase 3-4a · 测试用例设计（单元 + 场景）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-4b",
+              "label": "Phase 3-4b · API 编排测试",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-5",
+              "label": "Phase 3-5 · 代码实现",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-6",
+              "label": "Phase 3-6 · 测试验收（verify）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-7-deploy",
+              "label": "Phase 3-7 · 部署执行",
+              "done": false,
+              "skipped": false,
+              "files": []
+            },
+            {
+              "key": "phase.3-8-smoke",
+              "label": "Phase 3-8 · 部署冒烟测试（smoke）",
+              "done": false,
+              "skipped": false,
+              "files": []
+            }
+          ],
+          "modules": [
+            {
+              "id": "core",
+              "name": "core",
+              "lifecycle": "launched",
+              "bootstrap": "normal",
+              "current_phase": null,
+              "current_phase_label": null,
+              "phase_progress": null,
+              "active_change": null,
+              "suggestion": "运行 openlogos change <slug> 创建新提案"
+            }
+          ],
+          "product_type_confirmation": {
+            "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+            "level": "warning",
+            "missing_module_ids": [
+              "core"
+            ],
+            "next_action": {
+              "command": "openlogos module set-product-type",
+              "enum": [
+                "web",
+                "desktop",
+                "mobile",
+                "cli",
+                "api",
+                "library",
+                "skills",
+                "service"
+              ],
+              "gui_enum": [
+                "web",
+                "desktop",
+                "mobile"
+              ],
+              "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+            }
+          },
+          "active_proposals": [
+            {
+              "name": "feat",
+              "has_proposal": true,
+              "has_tasks": true,
+              "delta_count": 0
+            }
+          ],
+          "current_phase": "phase.1",
+          "suggestion": "对 AI 说：「帮我写需求文档」",
+          "all_done": false,
+          "lifecycle": "launched",
+          "locale": "zh",
+          "source_roots": null,
+          "active_change": null,
+          "proposal_step": null,
+          "yaml_diagnostics": null
+        }
+      },
+      "guard": {
+        "write-source": {
+          "exit": 2,
+          "stdout": "{\"reason\":\"⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：src/a.ts\\n\\n请先运行 `openlogos change <slug>` 创建变更提案后再修改代码。\"}",
+          "stderr": "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\n\n目标文件：src/a.ts\n\n请先运行 `openlogos change <slug>` 创建变更提案后再修改代码。\n"
+        },
+        "write-resources": {
+          "exit": 2,
+          "stdout": "{\"reason\":\"⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：logos/resources/test/core-S01-test-cases.md\\n\\n请先运行 `openlogos change <slug>` 创建变更提案后再修改代码。\"}",
+          "stderr": "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\n\n目标文件：logos/resources/test/core-S01-test-cases.md\n\n请先运行 `openlogos change <slug>` 创建变更提案后再修改代码。\n"
+        },
+        "write-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "write-plan-stage-non-page-design-delta": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "bash-redirect-source": {
+          "exit": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    }
+  }
+}

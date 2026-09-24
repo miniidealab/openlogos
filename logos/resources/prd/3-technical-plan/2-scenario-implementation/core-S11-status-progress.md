@@ -742,3 +742,79 @@ D1 选定「同口径的独立实现」而非「调用唯一实现」，因此�
 - 场景：本节；消费方约束见本文「SessionStart 消费 status 结构化状态」。
 - 测试：UT-S11-82、UT-S11-83、UT-S11-84、UT-S11-85、ST-S11-47。
 - 来源变更：fix-merge-prototype-commit-and-phase-module-prefix（决策 D1：兼容 glob，不改调 CLI）。
+
+## SessionStart 阶段横幅的措辞约束（情境信息而非写入授权）
+
+### 场景目标
+
+`plugin/bin/openlogos-phase` 在 SessionStart 按 `proposal_step` 渲染的 `Change Management:` 横幅，定位为**情境信息**：告诉 agent「当前是哪个提案、处于哪一步、这一步的典型工作重心是什么、哪些动作是人类确认点」。它**不是写入授权**，不得声明「只能写这些」。
+
+写入约束的唯一承担者是 PreToolUse 层 `guard-check`：有明确判据、可测试、不依赖 agent 的理解力。横幅在约束上只是它的冗余重复，且是无强制力的那一份。
+
+### 为什么横幅不得使用排他措辞
+
+横幅同时具备以下三个性质，使得排他措辞在它身上**不成立**：
+
+1. **无技术强制力。** 活跃提案已过 plan 阶段（`PLAN_APPROVED` 在场）时，`guard-check` 对写操作直接放行（白名单首条即 `logos/changes/`）；横幅用 `only` / `Allowed files:` 声称的限制，没有任何一层在执行。名实不符的排他措辞只会劝退合法写入。
+2. **只在会话启动那一刻正确。** SessionStart 只注入一次；此后提案归档、slug 更换、`proposal_step` 推进，横幅一概不知。宿主复用长生命周期会话时，横幅必然过时。
+3. **不带角色信息。** 横幅只按 `proposal_step` 渲染 producer 视角的工作重心；宿主（如 RunLogos）会把同一会话在 producer / reviewer / triage 等角色间复用，这是横幅无从得知的事实。
+
+三者叠加的实证后果：会话启动于提案 X 的 `coding` 阶段，横幅写 `Implement only the [code] section scope …`；随后宿主派它评审提案 Y 的 delta 并写 `logos/changes/Y/reviews/…`。守规矩的 agent 面对「只能写 X」与「请写 Y」两条自然语言指令无法判定优先级，选择拒写；该提案连续 blocked 58 次，全自动流程停机。
+
+### 措辞约束
+
+适用范围：`change_management_message` 在 **plan-exit 之后**的全部分支——`delta-writing` / `implementing` / `in-progress`、`ready-to-merge`、`merge-generated`、`coding` / `ready-to-verify` / `verify-failed`、`verify-passed` / `deploy-done` / `smoke-passed`、`ready-to-deploy`、`ready-to-smoke` / `smoke-failed`，以及未知 step 兜底分支（`*`）。
+
+1. **必须如实给出的信息项（一项不减）**：当前活跃提案 slug、当前 `proposal_step`、该阶段的**典型工作重心**（如「本阶段通常产出 `logos/changes/<slug>/deltas/**` 并勾选 `[delta]`」「本阶段通常按 `tasks.md` 的 `[code]` 切片实现源码、测试、reporter 与所需快照」「delta 已齐，下一步是 merge」）、以及人类确认点清单（merge / verify / smoke / archive / 部署 / git push）。
+2. **不得使用排他措辞声明可写范围**。以下四类措辞在上述分支中**零出现**：
+   - `only`（如 `Implement only the [code] section scope`）；
+   - `Allowed files:`；
+   - `Stop`（如 `Stop writing deltas`）；
+   - `do not modify`（大小写不敏感，含 `Do not modify`）。
+   同义的中文排他表述（「只能 / 仅允许 / 禁止写入」用于声明可写范围时）同样不得出现。
+3. **工作重心的表述必须是描述性的**：说「本阶段通常做什么」，不说「本阶段只能做什么」。需要提示 merge 前不宜直写主文档时，应表述为「规格变更经 delta + `openlogos merge` 进入 `logos/resources/**`」这类流程事实，而不是 `do not modify` 禁令。
+4. **可写范围以宿主派活与 PreToolUse 层为准**：横幅可附一句非排他的指引——实际写入范围以宿主本次派活说明为准，越界写入由 PreToolUse 守卫拦截——但不得反过来声称横幅本身限定范围。
+5. **人类确认点表述不变**：`… are human confirmation points: AI must not execute them without explicit user authorization.` 是对**动作**的约束（且与 CLAUDE.md 同口径），不是对可写路径的声明，保持原文。
+
+### 射程之外（本节明确不约束）
+
+- **`guard-check` 的任何判据**：白名单、plan 阶段 page-design allowlist、无 guard 时的拦截——全部不变。
+- **`openlogos status --format json` 的结构化输出**：不新增、不修改任何字段；宿主要做精确范围控制，按「SessionStart 消费 status 结构化状态」一节读 `proposal_step` / `next_node` / gate 自行渲染。
+- **无 guard 分支**的阻断提示（`NO guard file found … FORBIDDEN`）：该提示与 `guard-check` 的实际拦截名实一致，不在本节射程内。
+- **plan 阶段分支**（`writing`、`ready-to-delta`）：本变更不改其文案；两分支所处阶段由 `guard-check` 的 plan 阶段 allowlist 部分承担约束，是否同样去排他由后续变更单独裁定。
+- **状态行 `GUARD_STATUS`**（`🔓 Active change: <slug> — modify files within the scope of this proposal only.`）：本变更不改；列为已知残留，由后续变更单独裁定。
+- **角色字段**：不给横幅增加 `role` 一类字段——SessionStart 无从得知宿主后续如何复用会话，加了也只是另一份会过时的快照。
+
+### 异常与边界
+
+#### EX-11.11：三处排他分支须同批去排他
+- **触发条件**：`coding` / `ready-to-verify` / `verify-failed`（`only`）、`delta-writing` / `implementing` / `in-progress`（`Allowed files:` + `do not modify`）、`ready-to-merge`（`Stop`）任一分支仍保留排他措辞。
+- **期望响应**：视为未完成；三处须在同一变更中同批改完。只改被事故命中的那一处，等于为同一事故留下另两颗种子（delta 评审会被 `delta-writing` 分支以完全相同的机理挡住）。
+- **副作用**：无。
+
+#### EX-11.12：人工会话上下文完整性不得因去排他而下降
+- **触发条件**：人工会话（无宿主派活）下启动 SessionStart，活跃提案处于上述任一分支。
+- **期望响应**：横幅仍含当前提案 slug、`proposal_step`、该阶段典型工作重心、人类确认点清单；`delta-writing` 仍提示产出 `deltas/**` 并勾选 `[delta]`，`ready-to-merge` 仍提示 merge 需用户明确授权，`coding` 系仍提示按 `[code]` 实现并在完成后更新 `tasks.md`。去掉的只是排他语气，不是信息。
+- **副作用**：无。
+
+#### EX-11.13：宿主精确范围控制以结构化字段为准
+- **触发条件**：宿主（如 RunLogos）复用一个在提案 X `coding` 阶段启动的会话，派它评审提案 Y 并写 `logos/changes/Y/reviews/…`。
+- **期望响应**：横幅不再声称「只能写 X 的 `[code]` 范围」，与宿主派活说明不构成冲突；实际写入由 `guard-check` 判定（该路径在白名单内，放行）。宿主若需精确范围，读 `status --format json` 的结构化字段自行渲染，不依赖横幅文案。
+- **副作用**：无。
+
+#### EX-11.14：未知 step 兜底分支同样不得排他
+- **触发条件**：`proposal_step` 为空或不在已知枚举内，进入 `*` 兜底分支。
+- **期望响应**：文案如实说明 step 未知，建议运行 `openlogos status` / `openlogos next` 确认；不得出现四类排他措辞，也不得以「keep changes within … scope」之类措辞把横幅当作范围限定。
+- **副作用**：无。
+
+#### EX-11.15：既有信息项与命令契约零回归
+- **触发条件**：本变更落地后，对照改动前运行 `guard-check`（同一组 Edit / Write / Bash 输入）与 `openlogos status --format json`（同一夹具）。
+- **期望响应**：`guard-check` 的放行 / 拦截判定与退出码逐项不变；`status --format json` 输出逐字不变；横幅中人类确认点语句逐字不变；plan 阶段分支与无 guard 分支的文案逐字不变。
+- **副作用**：无。
+
+### 追溯
+
+- 来源变更：make-phase-banner-informational（决策 D-KEEP-INFO-DROP-EXCLUSIVITY、D-FIX-ALL-THREE、D-NO-ROLE-FIELD、D-CONSTRAINT-STAYS-IN-GUARD-CHECK）。
+- 关联章节：本文「SessionStart 消费 status 结构化状态」（读取来源与顺序）、「automation_diagnostic 在 status 中的前沿边界 > 消费方约束」（宿主以结构化字段为准）。
+- 实现位置：`plugin/bin/openlogos-phase` 的 `change_management_message`。
+- 测试：UT-S11-86、UT-S11-87、UT-S11-88、UT-S11-89、UT-S11-90、ST-S11-48、ST-S11-49；既有 ST-S11-31 预期结果同步改为非排他口径。

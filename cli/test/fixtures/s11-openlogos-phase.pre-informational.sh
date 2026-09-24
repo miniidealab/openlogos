@@ -427,10 +427,6 @@ change_management_message() {
   local confirm="openlogos merge, openlogos verify, openlogos smoke, openlogos archive, deployment, and git push are human confirmation points: AI must not execute them without explicit user authorization."
   local ui_exc
   ui_exc="$(ui_first_exception_text "$active")"
-  # make-phase-banner-informational: post-plan branches describe typical work, never an
-  # exclusive write scope — the banner has no enforcement power, is a session-start snapshot,
-  # and carries no role information. Write enforcement lives in the PreToolUse guard-check.
-  local scope_note="This banner is session-start context, not a write allowlist: the actual write scope follows the host's current task assignment, and out-of-bounds writes are blocked by the PreToolUse guard."
 
   case "$step" in
     writing)
@@ -440,16 +436,16 @@ change_management_message() {
       echo "$base Current proposal step: ready-to-delta. The plan is ready for approval; plan gate is pending and after approval or openlogos next --auto, proceed to delta-writing. ${plan_state:+Plan state: $plan_state. }Tasks execution 0/N means execution has not started, not planning failure. Do not modify source code or logos/resources/** directly.${ui_exc} $confirm"
       ;;
     delta-writing|implementing|in-progress)
-      echo "$base Current proposal step: delta-writing. Typical work at this step: produce delta files under logos/changes/$active/deltas/** and check off [delta] tasks in logos/changes/$active/tasks.md; spec changes reach logos/resources/** through deltas plus openlogos merge. $scope_note $confirm"
+      echo "$base Current proposal step: delta-writing. Allowed files: logos/changes/$active/deltas/** and logos/changes/$active/tasks.md. Continue producing delta files and check off [delta] tasks; do not modify logos/resources/** or source code directly before merge/coding stages. $confirm"
       ;;
     ready-to-merge)
-      echo "$base Current proposal step: ready-to-merge. The [delta] tasks are complete; the next step is merge, which requires the user to explicitly authorize: openlogos merge $active. $scope_note $confirm"
+      echo "$base Current proposal step: ready-to-merge. Stop writing deltas and ask the user to explicitly authorize: openlogos merge $active. $confirm"
       ;;
     merge-generated)
       echo "$base Current proposal step: merge-generated. Follow logos/changes/$active/MERGE_PROMPT.md to merge specs, then write logos/changes/$active/SPEC_MERGED when done. $confirm"
       ;;
     coding|ready-to-verify|verify-failed)
-      echo "$base Current proposal step: $step. Typical work at this step: implement the [code] slices listed in logos/changes/$active/tasks.md, including source code, tests, reporter, and required snapshots; update tasks.md when complete. $scope_note $confirm"
+      echo "$base Current proposal step: $step. Implement only the [code] section scope from logos/changes/$active/tasks.md, including source code, tests, reporter, and required snapshots; update tasks.md when complete. $confirm"
       ;;
     verify-passed|deploy-done|smoke-passed)
       echo "$base Current proposal step: $step. Verification/delivery is complete for this step; ask the user to explicitly authorize openlogos archive $active when appropriate. $confirm"
@@ -461,7 +457,7 @@ change_management_message() {
       echo "$base Current proposal step: $step. Smoke requires explicit human authorization before running openlogos smoke. $confirm"
       ;;
     *)
-      echo "$base Current proposal step is unknown. Run openlogos status or openlogos next to confirm the current proposal step. $scope_note $confirm"
+      echo "$base Current proposal step is unknown. Run openlogos status or openlogos next to confirm the current proposal step before modifying files; keep changes within the active proposal scope. $confirm"
       ;;
   esac
 }

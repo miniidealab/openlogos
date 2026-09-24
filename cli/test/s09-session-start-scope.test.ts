@@ -100,7 +100,9 @@ describe('S09/S11 — SessionStart guard 范围注入', () => {
     expect(context).not.toContain('Only modify files within the scope of logos/changes/feat/proposal.md');
   });
 
-  it('UT-S09-52 / ST-S09-27 / ST-S11-31: Codex delta-writing 阶段允许 deltas/tasks', () => {
+  // ST-S11-31 自 make-phase-banner-informational 起改由 s11-phase-banner-informational.test.ts
+  // 对 openlogos-phase 断言非排他工作重心文案；Codex hook 不在该提案代码射程内，本用例断言原样保留。
+  it('UT-S09-52 / ST-S09-27: Codex delta-writing 阶段允许 deltas/tasks', () => {
     const root = tempProject();
     const binDir = installOpenlogosWrapper(root, statusJson({
       active_change: 'feat',
