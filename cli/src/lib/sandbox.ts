@@ -1,8 +1,11 @@
-import { closeSync, constants as fsConstants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, constants as fsConstants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync, writeSync } from 'node:fs';
+import { renameWithRetry } from './fs-retry.js';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { execSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import type { OutputFormat } from './json-output.js';
+import { removeTree } from './fs-remove.js';
 
 export type SandboxMode = 'off' | 'auto' | 'always';
 export type SandboxStatus = 'pass' | 'warn' | 'fail' | 'skipped';
@@ -51,7 +54,19 @@ export interface RuntimeWriteProtection {
   reason?: string;
 }
 
-const DEFAULT_SANDBOX_ROOT = '/private/tmp';
+/**
+ * 历史版本 init / sync 固化进配置的默认根。它只在 darwin 上是有效临时目录；在其它平台上
+ * 视为「未显式配置」，读取时按平台解析（架构 §五十二 52.6）。
+ */
+export const LEGACY_DEFAULT_SANDBOX_ROOT = '/private/tmp';
+
+/**
+ * 沙箱默认根按平台在**读取时**解析，不在生成配置时固化为某台机器的绝对路径：
+ * darwin 为 /private/tmp（sandbox-exec profile 与 realpath 口径），其余为 os.tmpdir()。
+ */
+export function resolveDefaultSandboxRoot(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'darwin' ? LEGACY_DEFAULT_SANDBOX_ROOT : tmpdir();
+}
 const EXEMPT_DIR_NAME = 'node_modules';
 export const DEPENDENCY_DIR_EXEMPT_INFO = '依赖目录 node_modules 为沙箱内一次性目录，不参与写入审计，不会回收到工作区。';
 
@@ -274,7 +289,8 @@ function copyBackAllowedFiles(
         writeSync(fd, readFileSync(src));
         closeSync(fd);
         fd = undefined;
-        renameSync(tmp, dest);
+        // Windows 瞬时文件锁有界重试（架构 §五十二 52.3）；外层循环仍只为 EEXIST 换名
+        renameWithRetry(tmp, dest);
         written = true;
       } catch (error) {
         if (fd !== undefined) closeSync(fd);
@@ -466,13 +482,20 @@ function makeUnsupportedSandboxResult(
   };
 }
 
-export function normalizeSandboxConfig(raw: unknown): NormalizedSandboxConfig {
+export function normalizeSandboxConfig(
+  raw: unknown,
+  platform: NodeJS.Platform = process.platform,
+): NormalizedSandboxConfig {
   const record = asRecord(raw) ?? {};
   const modeRaw = typeof record.sandbox_mode === 'string' ? record.sandbox_mode : 'off';
   const mode: SandboxMode = modeRaw === 'auto' || modeRaw === 'always' ? modeRaw : 'off';
-  const root = typeof record.sandbox_root === 'string' && record.sandbox_root.trim().length > 0
+  const configured = typeof record.sandbox_root === 'string' && record.sandbox_root.trim().length > 0
     ? record.sandbox_root
-    : DEFAULT_SANDBOX_ROOT;
+    : null;
+  // 历史生成的 /private/tmp 在非 darwin 上视为未显式配置；其它用户显式值原样尊重。
+  const root = configured === null || (configured === LEGACY_DEFAULT_SANDBOX_ROOT && platform !== 'darwin')
+    ? resolveDefaultSandboxRoot(platform)
+    : configured;
   const denyWorkspaceWrite = typeof record.sandbox_deny_workspace_write === 'boolean'
     ? record.sandbox_deny_workspace_write
     : true;
@@ -508,7 +531,7 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
   // 后续临时目录、containment 根、profile 路径与 cwd 全程只使用绝对路径
   let sandboxBase = sandbox.root;
   if (!sandboxBase || sandboxBase.trim().length === 0) {
-    sandboxBase = DEFAULT_SANDBOX_ROOT;
+    sandboxBase = resolveDefaultSandboxRoot();
   }
   sandboxBase = resolve(normalizedRoot, sandboxBase);
 
@@ -522,7 +545,7 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
     cpSync(normalizedRoot, sandboxProjectRoot, { recursive: true, verbatimSymlinks: true });
   } catch (error) {
     if (sandboxDir && existsSync(sandboxDir)) {
-      rmSync(sandboxDir, { recursive: true, force: true });
+      removeTree(sandboxDir);
     }
     return makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error);
   }
@@ -530,7 +553,7 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
   // 启动前 realpath containment 校验：逃逸链接按「无法隔离」处理，不进入依赖目录豁免
   const escapingLinks = findEscapingSymlinks(sandboxProjectRoot);
   if (escapingLinks.length > 0) {
-    rmSync(sandboxDir, { recursive: true, force: true });
+    removeTree(sandboxDir);
     const preview = escapingLinks.slice(0, 5).join(', ');
     const suffix = escapingLinks.length > 5 ? ' ...' : '';
     const diagnostics = [`沙箱副本存在解析目标逃逸沙箱的 symlink：${preview}${suffix}`];
@@ -596,7 +619,7 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
 
     if (protectionFailure) {
       if (sandbox.mode === 'always') {
-        rmSync(sandboxDir, { recursive: true, force: true });
+        removeTree(sandboxDir);
         return {
           command: {
             status: 'fail',
@@ -691,6 +714,12 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
     sandboxData.suggestions.push('如需严格隔离，请将 sandbox_mode 设为 always。');
   }
 
-  rmSync(sandboxDir, { recursive: true, force: true });
+  // 收尾清理失败降级为告警：测试已跑完、结论已得出，清理失败不得覆盖命令结果（架构 §五十二 52.6）。
+  try {
+    removeTree(sandboxDir);
+  } catch (error) {
+    sandboxData.diagnostics.push(`沙箱目录清理失败（${commandErrorMessage(error) ?? 'unknown'}）：${sandboxDir}`);
+    if (sandboxData.status === 'pass') sandboxData.status = 'warn';
+  }
   return { command: commandResult, sandbox: sandboxData };
 }

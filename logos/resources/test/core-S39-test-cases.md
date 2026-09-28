@@ -231,3 +231,43 @@
 - ST-S39-32 的账本断言必须读真实 merge 写出的 `SPEC_MERGED` 文件内容，**不得**改为直调 `buildTestChangeSet` 自行喂参——那样绕过的恰是本次要验的分流路径。
 - **「零回归」的边界（与 S35 测试族统一口径）**：对全部夹具恒不变的只有适用检查项的**标识集合**、检查项**总数**与违规码**注册表**；通过数不是不变量。本刀对残渣形态（UT-S39-83）是一次有意的新增拒绝，其所属检查项必然由零违规转为有违规；通过数的「与上线前相同」断言只许用于行为不受本次修改影响的回归夹具（UT-S39-80～82、ST-S39-33 步骤⑤）。
 - 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。
+
+## S39 事务落盘跨平台持久化句柄与 rename 重试测试
+
+> 覆盖架构文档「五十二、Windows 平台兼容约束」52.2 持久化句柄与 52.3 rename 瞬时错误重试；场景 S39「测试变更集原子 Apply 扩展」的原子批写与回滚路径；来源变更 fix-windows-platform-compat（Windows 用户 `openlogos merge` 报 `EPERM: operation not permitted, fsync`）。
+>
+> **夹具口径**：一律在一次性隔离项目内调用真实 `applyBaselineClosureBatch()` / 真实 `openlogos merge`；批次至少含一个 MODIFY Markdown、一个 CREATE Markdown 与一个 non-Markdown 目标。对 `node:fs` 的观测只做**包装记录**（记录 `openSync` 的 flags 与 `fsyncSync` 的 fd 来源），不替换真实文件系统行为——「模拟 Windows 语义」用例仅在 fsync 包装层对只读 fd 抛 `EPERM`，其余调用透传。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S39"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S39-88 | 五条路径的 fsync 句柄均可写且不截断 | 包装记录 `openSync` flags 与 `fsyncSync` fd；批次含 MODIFY（产生 backup） | ① 成功批一次；② 在 `hook.afterWrite` 第 1 个目标后注入 fault 触发回滚一次 | 两次运行中**每一次** `fsyncSync` 调用所用 fd 均来自 flags 为 `'r+'`（或写入原句柄）的 `openSync`，**没有任何一次**来自 `'r'`；五条路径（staging 写入、backup 拷贝、journal 写入、目标 rename 后、回滚恢复 `restoreBackup`）各至少被观测到一次；所有被 fsync 的文件在 fsync 前后字节 SHA-256 相等（`'r+'` 不截断、不写入） |
+| UT-S39-89 | 模拟 Windows「只读句柄拒绝 fsync」语义下成功批与回滚批 | fsync 包装层：fd 若来自 `'r'` 打开则抛 `EPERM`（`code='EPERM'`, `syscall='fsync'`），否则透传 | ① 成功批；② afterWrite fault 回滚批 | ① `ok=true`，全部目标等于 prepared 字节，私有 staging/backup/journal 已清理；② `ok=false` 且 `rolled_back=true`，MODIFY 目标恢复原字节、CREATE 目标不存在、无 journal 残留。**必红对照**：以修复前实现（`openSync(path,'r')`）跑同一夹具，① 返回「无法准备私有 staging/backup」且含 `EPERM` |
+| UT-S39-90 | 非权限类 fsync 失败不被吞、整批回滚 | fsync 包装层：对第 N 次调用抛 `EIO`；N 分别落在 staging、journal、目标 rename 后三个阶段 | 调用 `applyBaselineClosureBatch()` | 三种注入点均返回 `ok=false`，错误文本含 `EIO`；staging 阶段失败时正式目标零写入，commit 阶段失败时 `rolled_back=true` 且全部目标恢复全旧；不存在「捕获后继续」路径（断言调用未在异常后继续执行下一个目标写入） |
+| UT-S39-91 | rename 瞬时锁有界重试后成功 | 以 `platform='win32'` 注入运行时；rename 包装层对目标 rename 前 2 次抛 `EBUSY`（再分别以 `EPERM`、`EACCES` 各跑一遍），第 3 次透传 | 成功批 | `ok=true`；重试次数恰为 2；总等待不超过约 1 秒上限；判据函数与 `archive-watch.ts` 既有 `EPERM/EACCES/EBUSY` 判据为**同一导出实现**（断言调用同一函数，不在测试内另写错误码列表） |
+| UT-S39-92 | rename 重试用尽（仅提交 rename 受阻）/ 非瞬时错误 / 非 win32 不重试 | 故障**只注入到**第 1 个目标的「staged → target」提交 rename（按源路径匹配 `APPLY_TXN_DIR/staging/0.new`），从该调用开始持续到本次 `applyBaselineClosureBatch()` 返回；journal 写入 rename、`restoreBackup` 的 rename 与其它目标 rename 全部透传。① win32 下该 rename 持续 `EBUSY`；② win32 下该 rename 抛 `ENOENT`；③ `platform='darwin'` 下该 rename 抛 `EBUSY` | 成功批 | ① 该 rename 重试至上限后原样抛出 `EBUSY`；恢复路径可用，返回 `ok=false`、`rolled_back=true`，全部目标为全旧、CREATE 目标不存在、私有 staging/backup/journal 已清理；② 不重试、立即抛出，恢复同 ①；③ 不重试（POSIX 行为不变），恢复同 ① |
+| UT-S39-93 | 故障覆盖恢复阶段：如实报告、保留恢复材料、解除后可恢复与重试 | 故障**从**第 1 个目标的提交 rename **开始**，作用于其后本进程内**全部** `renameSync`（含 journal 写入 rename 与 `restoreBackup` 的 rename），win32 下持续 `EBUSY`，**直到**测试显式解除 | ① 调用 `applyBaselineClosureBatch()`；② 检查提案目录；③ 解除故障后调用 `recoverBaselineClosureApply()`；④ 再次调用 `applyBaselineClosureBatch()` | ① `ok=false`、`rolled_back=false`，错误文本含「回滚失败」与 `EBUSY`；② journal 与 backup 仍在（未为满足「无残留」而删除尚需使用的恢复材料），正式目标不存在半提交之外的额外写入；③ 恢复成功，全部目标回到全旧，私有材料被清理；④ 成功，结果同成功批 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S39-34 | Windows 真实文件系统上真实 merge 成功 | S39 原子批写主路径 | **Windows CI job**（windows-latest，真实 NTFS、真实 Node）；一次性隔离 launched 夹具：提案含 MODIFY 功能规格 Markdown、CREATE 测试规格 Markdown、UI 原型 HTML（复现报告中的三目标形态） | ① 真实 `openlogos change-lint --slug <slug>`；② 真实 `openlogos merge <slug>`；③ 读回全部目标与 `SPEC_MERGED` | ① PASS；② 退出码 0，输出不含 `EPERM`；③ 目标字节等于 delta 期望，`SPEC_MERGED` 存在且为最后写入，提案目录无私有事务目录与 journal 残留 |
+| ST-S39-35 | Windows 真实文件系统上 fault 回滚并可重试成功 | S39 事务失败路径 | 同上 Windows CI job；同一夹具；测试钩子在第 2 个目标 rename 后注入 fault（经 `applyBaselineClosureBatch` 的 `hook.afterWrite`，不替换文件系统） | ① 注入 fault 运行 merge 入口；② 对比运行前后项目快照；③ 移除 fault 后重跑 | ① 非零且 `rolled_back=true`；② 快照（文件集合与逐文件 hash、`logos-project.yaml`、无 `SPEC_MERGED`）与运行前相等——**回滚路径在 Windows 上同样完成 fsync**；③ 退出码 0，结果同 ST-S39-34 ③ |
+
+### 追溯与覆盖
+
+- fsync 可写句柄契约（52.2-1/2）：UT-S39-88、UT-S39-89、ST-S39-34。
+- 不以吞错或平台跳过修复（52.2-3）：UT-S39-90。
+- rename 瞬时错误有界重试与判据复用（52.3）：UT-S39-91、UT-S39-92。
+- 故障覆盖恢复阶段时如实报告、保留恢复材料、解除后可恢复：UT-S39-93。
+- 回滚路径在 Windows 可完成：UT-S39-89 ②、ST-S39-35。
+- 场景：S39「测试变更集原子 Apply 扩展」；来源：`logos/resources/reference/openlogos-windows-merge-fsync-bug-report.md`。
+
+### 自动化与证据要求
+
+- ST-S39-34、ST-S39-35 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中以真实文件系统运行；在 POSIX 上可同样运行，但 POSIX 结果**不计入**这两条的覆盖。
+- UT-S39-88 的判定依据是 `openSync` flags 与 fd 的对应关系，不得以「批次成功」代替（POSIX 上 `'r'` 与 `'r+'` 同样成功）。
+- UT-S39-89 必须保留修复前实现的必红对照臂。
+- 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。

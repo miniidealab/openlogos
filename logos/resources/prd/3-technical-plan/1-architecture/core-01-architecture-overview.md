@@ -2782,3 +2782,77 @@ const title = segments[segments.length - 1];   // ← 用的是剥离版
 
 - §四十九「环境事实不入 verify 期断言」管的是**比对侧不该收紧什么**；本节管的是**产出侧不该放宽什么**。两者互补：前者防假红，后者防静默损坏。
 - §四十一.6.2「约束必须有失败信号」是本节 51.2 的上位原则——本节给出该原则的一个具体失效模式：**检查者与被检查者共用同一条规范化管道时，检查恒真**。
+
+## 五十二、Windows 平台兼容约束
+
+来源变更 fix-windows-platform-compat。起因是 Windows 用户报告 `openlogos merge` 在事务 staging 阶段报 `EPERM: operation not permitted, fsync`（`logos/resources/reference/openlogos-windows-merge-fsync-bug-report.md`）；随后的专项排查确认同类问题分布在事务落盘、路径处理、钩子脚本、换行与环境默认值五个面上。它们有同一个结构性成因：**开发机为 macOS、CI 只跑 ubuntu，POSIX 与 Windows 行为不同的地方在本仓没有任何可观测信号**。本节把各面的约束立为规范，使后续代码有可对照的判据、测试有可证伪的目标。
+
+### 52.1 路径分隔符边界
+
+1. **OS 路径与项目相对路径是两种类型，不得混用字符串操作**。由 `path.join` / `resolve` / `relative` / `dirname` / `readdirSync` 得到的是 OS 路径（Windows 为 `\`）；写入 JSON / marker / manifest、与 `logos/...` 形态常量比较、作为 Map key 的是项目相对 posix 路径（`/`）。
+2. OS 路径只经 `node:path` API 取目录、文件名、扩展名，**禁止** `split('/')`、`lastIndexOf('/')`、`startsWith(x + '/')` 等按 `/` 的字符串拆解。
+3. `listFiles`（`cli/src/lib/list-files.ts`）的返回值定义为「相对传入目录、`/` 分隔」的 posix 相对路径——它的全部消费方都把结果当 posix 相对路径使用，统一出口一次消除该类缺陷，消费方不各自 `replace`。
+4. 判定「是否绝对路径」必须同时识别 posix 与 win32 形态（`path.isAbsolute` 或 `path.win32.isAbsolute`），不得以 `startsWith('/')` 代替。
+5. 在 win32 上比较两个来自不同调用的绝对路径（如 journal 中记录的路径与本次运行计算的路径）时，比较前统一大小写（`toLocaleLowerCase('en-US')`，与 `canonical-target.ts` / `baseline-apply.ts` 既有口径同源）；非 win32 保持区分大小写。
+6. 钩子脚本（bash）在比较白名单前缀与 plan 收窄前缀之前，先把相对路径中的 `\` 统一为 `/`；跨盘符无法求相对路径时按「项目根之外」处理（管辖边界既有语义），不得回退为绝对路径再与相对前缀比较。
+
+### 52.2 持久化句柄
+
+1. 对文件执行 fsync 必须经**可写、不截断、不创建**的句柄（`openSync(path, 'r+')`）或写入时的原句柄。Windows 以 `FlushFileBuffers` 实现 fsync，只读句柄返回 `EPERM`；POSIX 两者等价，故本约束对 POSIX 零行为变化。
+2. 事务落盘原语 `fsyncFile`（`cli/src/lib/baseline-apply.ts`）是 staging、backup、journal、目标 rename 后、回滚恢复五条路径的唯一刷新入口；约束落在该单点。
+3. 禁止以捕获 `EPERM` 后跳过、或按平台跳过 fsync 的方式「修复」——那会丢失持久化保证。fsync 的真实失败（如 `EIO`）照常抛出并触发既有整批回滚。
+
+### 52.3 瞬时错误重试分工
+
+Windows 上杀毒软件、搜索索引器、IDE 文件监听会短暂持有文件或目录句柄，使 rename / 删除偶发 `EPERM` / `EACCES` / `EBUSY`。
+
+| 操作 | 机制 | 边界 |
+|---|---|---|
+| 递归删除（`rmSync(..., { recursive: true })`） | **直接使用 Node 内置** `maxRetries` / `retryDelay`（对 `EBUSY` / `EMFILE` / `ENFILE` / `ENOTEMPTY` / `EPERM` 线性退避，耗尽后抛出），经只设默认参数的薄封装统一取值 | 不自建删除重试循环；内置能力不覆盖 `EACCES`——删除时的 `EACCES` 多为真实权限问题，不重试是正确行为 |
+| 文件 / 目录 rename | 共享 helper：仅 `process.platform === 'win32'` 且错误码属于 archive-watch 既有判据（`EPERM` / `EACCES` / `EBUSY`）时有界重试，总等待上限约 1 秒 | Node 无 rename 重试选项，自建范围仅此一处；判据复用 `archive-watch.ts` 既有实现，不另写一份；用尽后原样抛出，调用方既有回滚路径不变 |
+
+跨卷 rename 不是瞬时错误：备份目录必须建在目标**同级目录**（同卷），不得建在 `os.tmpdir()` 下再 rename 过去（项目不在系统盘时 `EXDEV`）。
+
+### 52.4 换行保真
+
+哈希绑定的规格、原型与托管钩子脚本依赖**原始字节**跨机一致（`test-change-set.ts` 的 `after_sha256`、`ui-provenance.ts` 的原型哈希、`baseline-provenance.ts` 的章节 `source_hash`、bash 钩子的 shebang 行）。Git 在 `core.autocrlf=true` 下签出会把 LF 改成 CRLF，使这些对账误报漂移、钩子报 `bash\r`。
+
+1. **预防**：`init` / `sync` 向项目根 `.gitattributes` 写入幂等的 OpenLogos 托管块，对 `logos/**` 与托管钩子 / 运行时目录设 `-text`（关闭换行转换、字节原样；不影响 diff）。托管块以起止标记识别，块外用户内容字节保真；重复执行零 diff。`-text` 只作用于之后的签出。
+2. **存量恢复**（已被转换的工作区）——不依赖 `git add --renormalize`（对 `-text` 路径不会把 CRLF 改回 LF，反而可能把 CRLF 原样纳入索引并扩散到其它机器）：
+   - 托管钩子与运行时脚本本就由 `sync` 以随包可信字节重写，覆盖即恢复。
+   - 哈希绑定的规格与原型：读取 Git index 中该路径的权威 blob；**仅当**工作区字节与「该 blob 的 LF→CRLF 转换结果」逐字节相等（即除换行外无任何本地修改）时，才把工作区写回 blob 原始字节，并用既有哈希复验。
+   - 工作区含换行以外的本地修改、index 不可读、非 Git 仓库、或写回后哈希复验失败：一律不动，逐路径报告需人工处理。
+3. **禁止**：改变哈希算法（如哈希前归一化 `\r\n`，会与存量哈希形成两套口径）、对工作区批量改换行、重签哈希。
+
+### 52.5 外部命令与钩子可移植性
+
+1. **Python 探测**：候选依次 `python3` → `python` → `py -3`，以**实际执行成功**（如 `-c "import sys"` 退出 0）为准，不以 `command -v` 为准——Windows 上 `python3` 可能是可被发现但运行即失败的微软商店占位别名。CLI（`init` 的 Python 提示）、钩子脚本与 `ui-ux-pro-max` Skill 同一口径。
+2. **钩子读 stdin**：node 分支以 `readFileSync(0)` 读取，不得读 `/dev/stdin`（Windows 版 Node 解析为 `<盘>:\dev\stdin`）。node 是 OpenLogos 运行前提，因此 node 分支是钩子输入解析的主路径，Python 仅在真实可执行时使用。
+3. **钩子输入不可解析时 fail-closed**：写入门禁无法得知工具名即已失明，放行等于关闭门禁；Claude Code guard 与 ZCode / Qoder / Cursor 既有 fail-closed 契约对齐（规范见 `spec/pretooluse-guard.md`）。
+4. **调用 npm 全局命令**：Windows 全局入口为 `.cmd` 包装，Node ≥ 18.20 / 20.12 不带 shell 时无法 `spawn`。在 win32 上以 shell 方式调用并逐个引用参数；POSIX 维持直接 `spawn`。
+5. **bash 脚本型 hook**：宿主 hook 配置中以显式 `bash <脚本路径>` 调用，不依赖文件关联或可执行位。
+6. POSIX 专有路径不得作为跨平台默认值（如 `/private/tmp`），默认值在**读取时**按平台解析，不在生成配置时固化为某台机器的绝对路径（见 52.6）。
+
+### 52.6 沙箱默认根
+
+沙箱根目录默认值有三个入口，必须同时闭合：
+
+| 入口 | 位置 | 约束 |
+|---|---|---|
+| init 生成配置 | `cli/src/commands/init.ts`（verify / smoke 配置持久化处） | 不写入绝对 `sandbox_root` |
+| sync 补默认值 | `cli/src/lib/verify-config.ts` `backfillSandboxDefaults` | 不补入 `sandbox_root`（`sandbox_mode` / `sandbox_deny_workspace_write` 照常补） |
+| 读取 | `cli/src/lib/sandbox.ts` `normalizeSandboxConfig` | 未配置时按平台解析：darwin 为 `/private/tmp`，其余为 `os.tmpdir()`；历史生成的默认值 `/private/tmp` 在非 darwin 视为「未显式配置」同样按平台解析；其它用户显式配置值原样尊重 |
+
+沙箱收尾清理使用 52.3 的删除机制；清理最终失败降级为告警，不覆盖已得出的测试结果。
+
+### 52.7 Windows CI 证据
+
+1. CI 设 `windows-latest` **阻断** job，只运行标注为 Windows 回归集的测试文件（全量套件含大量依赖 POSIX 路径 / shell 的既有用例，不纳入）。
+2. 保留真实 Windows Node、真实 Git Bash、真实文件系统；不以 mock `fsync` / mock 文件系统作为 Windows 兼容证据。
+3. 依赖 Python 探测的钩子用例由测试**自身构造并先断言**三种 PATH 条件：(a) `python3` / `python` / `py` 均不可发现；(b) PATH 最前放一个可被发现但执行即非零退出的 `python3` 桩（复现商店占位别名）；(c) 正常 Python 可用。故障注入只作用于 Python 探测的 PATH，不替换被测钩子、node 或文件系统。不依赖 runner 镜像恰好缺少某个命令。
+
+### 52.8 不在本约束范围
+
+- 硬链接锁（`baseline-seed-txn.ts`）在 FAT / exFAT / 部分网络盘不可用：需要新的锁机制，另案。
+- Windows 上沙箱 OS 级写保护：无受支持机制，按既有能力分层降级（`auto` 降级执行、`always` 明确失败），不变。
+- MAX_PATH：staging 为扁平路径、Node fs 支持长路径，不设约束。

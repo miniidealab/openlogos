@@ -81,3 +81,29 @@
 - [ ] overlay-add 显式 dispatch 声明原样透传（含 requires_reviewed）：UT-S25-22、ST-S25-06
 - [ ] 未声明 dispatch → 完整保守默认对象 + schema 校验通过：UT-S25-23、ST-S25-06
 - [ ] `defaults.dispatch.timeout_seconds` 唯一默认值源（fallback）、overlay 可覆盖并物化：UT-S25-24
+
+## 六、派生层路径分隔符跨平台测试（fix-windows-platform-compat）
+
+> 覆盖架构文档「五十二、Windows 平台兼容约束」52.1-2/3（`listFiles` 返回 `/` 分隔的相对路径；OS 路径不按 `/` 字符串拆解）；场景 S25「overlay 驱动 status/next/watch 派生」。缺陷：① `flow-derive.ts` 原型-only delta 判定以 `join` 拼出的反斜杠前缀追加 `'/'` 比较，Windows 下恒假，`ui_impact:true` 仅含原型且未批准的提案被错判进 spec 阶段；② `flow-derive.ts`、`commands/status.ts`、`flow-overlay-derive.ts` 以 `split('/').pop()` 取文件名做模块前缀过滤，`listFiles` 在 Windows 返回反斜杠路径，多模块项目子目录内文件对过滤不可见。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S25"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S25-25 | `listFiles` 返回 `/` 分隔相对路径 | 隔离目录含 `a.md`、`1-feature-specs/core-01-x.md`、`2-page-design/sub/core-02-y.html`、`.gitkeep` | 调用 `listFiles(dir)`（Windows CI 真实运行；POSIX 同跑） | 结果集合恰为 `a.md`、`1-feature-specs/core-01-x.md`、`2-page-design/sub/core-02-y.html`，任一元素不含 `\`；`.gitkeep` 被排除；传入文件路径时返回其 basename（既有行为不变） |
+| UT-S25-26 | 原型-only delta 判定 | 提案 `deltas/prd/2-product-design/2-page-design/core-01-x.html` 一个文件，`ui_impact:true`，无 `PLAN_APPROVED` | 求派生阶段（Windows CI 真实运行；POSIX 同跑） | 判为原型-only，派生停在 `ready-to-delta`，不进入 spec 阶段；追加一个 `deltas/test/core-S01-test-cases.md` 后判为非原型-only。**必红对照**：修复前实现在 Windows 上对单原型输入判为非原型-only |
+| UT-S25-27 | 多模块前缀过滤覆盖子目录文件 | 多模块项目（`core`、`billing`）；`logos/resources/prd/2-product-design/1-feature-specs/core-01-x.md` 存在，`billing` 无产出 | 求 `core` 与 `billing` 的 Phase 2 状态（`flow-derive`、`status`、`flow-overlay-derive` 三个入口各求一次） | 三入口结论一致：`core` Phase 2 为 done、`billing` Phase 2 未完成；前缀过滤作用于文件 basename |
+| UT-S25-28 | 消费方不再各自按 `/` 拆解 | 静态扫描 | 扫描 `cli/src/lib/flow-derive.ts`、`cli/src/commands/status.ts`、`cli/src/lib/flow-overlay-derive.ts` | 对 `listFiles` 结果取文件名处使用 `path.posix.basename`（或等价、以 `/` 为定义分隔符的 posix API）；原型前缀比较以 posix 常量 `prd/2-product-design/2-page-design/` 表达，不再以 `join` 拼接后追加 `'/'` |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S25-07 | Windows 真实 status / next 派生 | S25 派生主路径 | **Windows CI job**（windows-latest）；一次性隔离多模块项目，Phase 2 产出位于子目录；另一 GUI 模块提案仅含原型 delta、未批准；真实 CLI | ① 真实 `openlogos status --format json`；② 真实 `openlogos next --format json` | ① 各模块 Phase 2 状态与 POSIX 上同一夹具逐字段相同；② 原型-only 提案的下一步为原型确认 / 批准，而非写 delta 或 merge |
+
+### 追溯与覆盖
+
+- `listFiles` 出口统一（52.1-3）：UT-S25-25、UT-S25-28。
+- 原型-only 判定：UT-S25-26、ST-S25-07。
+- 多模块过滤：UT-S25-27、ST-S25-07。
+- ST-S25-07 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中运行；夹具在一次性隔离项目内构造。

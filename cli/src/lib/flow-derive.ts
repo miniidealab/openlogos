@@ -16,7 +16,7 @@
  * 逐分支镜像旧 detectProposalStep（1:1 不改行为）。
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { isAdoptedBootstrap } from './project-yaml.js';
 import { loadBuiltinFlow, loadFlow, FlowError, fanoutDone, readProjectCmdTimeout } from './flow.js';
 import { listFiles } from './list-files.js';
@@ -244,7 +244,7 @@ export function deriveModulePhaseProgressViaFlow(
       // 非场景阶段：多模块按 {module}- 前缀过滤，单模块任意文件
       const allFiles = listFiles(dir);
       const files = isMultiModule
-        ? allFiles.filter(f => (f.split('/').pop() ?? f).startsWith(`${mod.id}-`))
+        ? allFiles.filter(f => posix.basename(f).startsWith(`${mod.id}-`))
         : allFiles;
       progress[key] = { done: files.length > 0, skipped: false };
     }
@@ -367,7 +367,7 @@ export function deriveUiImpactFlag(root: string, moduleId: string | undefined, p
 }
 
 /** 原型 delta 相对路径前缀（overlay produces：deltas/prd/2-product-design/2-page-design/）。 */
-const PROTOTYPE_DELTA_PREFIX = join('prd', '2-product-design', '2-page-design');
+const PROTOTYPE_DELTA_PREFIX = 'prd/2-product-design/2-page-design/';
 
 /**
  * 判据：提案的可合并 delta **仅**为 `deltas/prd/2-product-design/2-page-design/*.html` 原型文件
@@ -382,8 +382,8 @@ export function isPrototypeOnlyDelta(proposalDir: string): boolean {
   let otherCount = 0;
   for (const category of MERGE_SUPPORTED_DELTA_DIRS_FOR_UI) {
     for (const rel of listFiles(join(proposalDir, 'deltas', category))) {
-      const full = join(category, rel);
-      const isPrototype = full.startsWith(PROTOTYPE_DELTA_PREFIX + '/') && full.endsWith('.html');
+      const full = `${category}/${rel}`;
+      const isPrototype = full.startsWith(PROTOTYPE_DELTA_PREFIX) && full.endsWith('.html');
       if (isPrototype) prototypeCount++;
       else otherCount++;
     }

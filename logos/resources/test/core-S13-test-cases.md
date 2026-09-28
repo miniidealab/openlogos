@@ -311,3 +311,29 @@
 - AC-VERIFY-COUNT-03 真实矛盾仍被判出：UT-S13-75。
 - 诊断可自证：ST-S13-21。
 - 场景：S13 >「人工用例判据的声明位与一致性判据的输入」（EX-7.6～EX-7.9）。
+
+## S13 沙箱默认根三入口与清理跨平台测试
+
+> 覆盖架构文档「五十二、Windows 平台兼容约束」52.3（递归删除使用 Node 内置重试）与 52.6（沙箱默认根三入口）；场景 S13「运行测试验收并生成报告」的沙箱执行。缺陷：`/private/tmp` 同时存在于 `verify-config.ts` 常量（经 `backfillSandboxDefaults` 补入配置）、`init.ts` 持久化处与 `sandbox.ts` 读取 fallback，且读取时优先使用配置值，在非 darwin 平台不是有效临时目录；`sandbox.ts` 收尾 `rmSync` 无重试且未捕获异常。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S13"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S13-76 | 真实 init 生成的配置不含绝对 `sandbox_root` | 一次性隔离目录 | 真实 `openlogos init`，读取生成的 `logos/logos.config.json` 中 verify / smoke 配置 | 不含 `sandbox_root` 键；`sandbox_mode` 与 `sandbox_deny_workspace_write` 照常存在且为既有默认值 |
+| UT-S13-77 | 读取入口按平台解析默认根 | 配置无 `sandbox_root` | 以 `platform='darwin'`、`'linux'`、`'win32'` 注入分别调用 `normalizeSandboxConfig` | darwin 为 `/private/tmp`；linux 与 win32 为 `os.tmpdir()` 的返回值 |
+| UT-S13-78 | 历史默认值与显式配置区分 | ① `sandbox_root: "/private/tmp"`（历史生成值）；② `sandbox_root: "/data/sbx"`（用户显式值） | 在 `linux` / `win32` 与 `darwin` 下分别读取；并对 ① 的旧配置执行一次真实 `openlogos sync` 后再读取 | ① 在非 darwin 解析为 `os.tmpdir()`、在 darwin 为 `/private/tmp`；② 在所有平台原样为 `/data/sbx`；sync 不向配置补入 `sandbox_root`，也不改写用户已有的 `sandbox_root` 值 |
+| UT-S13-79 | 递归清理传入内置重试参数 | 记录 `rmSync` 调用参数 | 执行一次 `sandbox_mode=auto` 的沙箱运行 | 所有 `recursive: true` 的 `rmSync` 调用均带 `maxRetries > 0` 与 `retryDelay`；不存在自建的删除重试循环（静态扫描 `cli/src` 中递归删除调用点经同一薄封装） |
+| UT-S13-80 | 收尾清理失败降级告警、不覆盖测试结果 | 用户测试命令成功；收尾 `rmSync` 注入持续 `EBUSY` | 执行沙箱运行 | 返回的命令结果仍为 `pass`、exit_code 0；沙箱诊断含清理失败告警（点名沙箱目录）；函数不抛异常 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-22 | Windows 真实 verify 沙箱运行 | S13 沙箱执行主路径 | **Windows CI job**（windows-latest，真实 NTFS）；一次性隔离项目：配置为 `sandbox_mode=auto`，其中一份含历史 `sandbox_root: "/private/tmp"`、一份无该键；测试命令为 `node -e "process.exit(0)"` 并写 OpenLogos reporter 结果 | ① 对两份配置各执行真实 `openlogos verify` 的沙箱运行；② 检查沙箱目录位置与清理结果 | ① 两者均未在 `<盘>:\private\tmp` 下创建目录，沙箱位于 `os.tmpdir()` 下；测试结果被正常采集；② 运行结束后沙箱目录已清理，或清理失败时仅有告警而验收结论不变 |
+
+### 追溯与覆盖
+
+- 默认根三入口（52.6）：UT-S13-76（init 生成）、UT-S13-78（sync 补默认值与历史值）、UT-S13-77（读取）、ST-S13-22。
+- 递归删除内置重试与清理降级（52.3、52.6）：UT-S13-79、UT-S13-80。
+- ST-S13-22 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中运行；夹具在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。

@@ -565,7 +565,7 @@ Cursor hook 经 stdin 传入 JSON（snake_case：`hook_event_name`、`workspace_
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|Bash",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
         "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/openlogos/bin/guard-check" }
         ]
@@ -577,7 +577,9 @@ Cursor hook 经 stdin 传入 JSON（snake_case：`hook_event_name`、`workspace_
 
 SessionStart 同形态（`node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/openlogos-phase-launcher.cjs"` 等价写法）。本节取代早前配置示例中的相对路径 command 形态——相对形态在非项目根 cwd 会话下不可解析，属缺陷而非可选写法。
 
-幂等注册判据必须同时识别新旧两种写法：旧相对路径条目升级迁移为新形态（不并存、不重复）；用户自有 hooks 条目字节保真。
+matcher 覆盖面（fix-windows-platform-compat）：`MultiEdit` 与 `NotebookEdit` 是与 `Edit` / `Write` 同类的文件写入工具，此前未被 matcher 覆盖、写入绕过 guard；`PowerShell` 为 Windows 版 Claude Code 的 shell 工具，按 shell 写入路径判定（见 §Claude Code guard 跨平台可移植性与输入 fail-closed（规范性））。PowerShell 工具名以实施时 Claude Code 实际 hook 输入的 `tool_name` 核实为准；matcher 中列出一个宿主当前不存在的工具名不产生副作用。
+
+幂等注册判据必须同时识别新旧两种写法：旧相对路径条目升级迁移为新形态（不并存、不重复）；旧 matcher（`Edit|Write|Bash`）的 OpenLogos 托管条目同样原地升级为新 matcher，不新增第二条；用户自有 hooks 条目字节保真。
 
 ### 工作目录收敛与 fail-closed（规范性）
 
@@ -714,3 +716,93 @@ begin 所需的逻辑计划 manifest 放在已豁免的 `logos/resources/referen
 
 - 改分发源 `plugin/bin/guard-check`（`is_whitelisted_path` 内在前缀表匹配后追加两条规则）；`.claude/openlogos/bin/guard-check` 等托管副本经既有 init / sync 与资产 manifest 分发获得，不作为独立事实源手改。
 - 其它宿主适配层（zcode/qoder/workbuddy/cursor）若复用同一 guard 判定则随之生效；各自合同不在本节改写范围。
+
+## Claude Code guard 跨平台可移植性与输入 fail-closed（规范性）
+
+来源变更 fix-windows-platform-compat。约束依据见架构文档「五十二、Windows 平台兼容约束」52.1 / 52.4 / 52.5。本节约束分发源 `plugin/bin/guard-check`（及同源的 `plugin/bin/openlogos-phase` 中对应的输入与探测逻辑）；托管副本经既有 init / sync 与资产 manifest 分发获得。
+
+### 缺陷形态
+
+Windows 上 guard-check 读取 `tool_name` 的两条路径同时失效：`python3` 常为可被 `command -v` 发现、但运行即失败的微软商店占位别名；node 分支读 `/dev/stdin`，Windows 版 Node 解析为 `<盘>:\dev\stdin` 而 ENOENT。两步皆败时 `TOOL_NAME` 为空，落入「其它工具一律放行」分支——**launched 项目无活跃提案时 Edit / Write / Bash 全部放行，且无任何报错**。即使 python 可用，原生 Windows 下 `os.path.relpath` / `path.relative` 产出的相对路径为 `\` 分隔，与 `/` 前缀白名单及 plan 阶段 delta 收窄前缀比较，造成误拦与收窄失效。
+
+### 输入解析（规范性）
+
+1. **node 为主路径**：以 `node -e` 解析 hook 输入 JSON，stdin 以 `require('fs').readFileSync(0, 'utf-8')` 读取；**禁止**读取 `/dev/stdin`。node 是 OpenLogos 运行前提，正常环境下该路径必然可用。
+2. **Python 仅在真实可执行时使用**：候选依次 `python3` → `python` → `py -3`，以执行 `-c "import sys"` 退出 0 为可用判据；**禁止**以 `command -v python3` 作为可用判据，**禁止** `if command -v python3 … elif node …` 这种「探测为真即不再尝试 node」的结构。探测结果在一次 hook 调用内复用。
+3. `tool_name`、`tool_input.file_path`、`tool_input.notebook_path`、`tool_input.command`、`ACTIVE_SLUG` 等全部字段读取走同一解析实现，不得各自一套探测。
+
+### 输入不可解析时 fail-closed（规范性）
+
+- stdin 非空、但所有可用解析路径均无法得到 `tool_name`（JSON 非法、解析器全部不可用、字段缺失）时：**exit 2**，reason 说明「guard 无法解析 hook 输入，写入门禁无法判定」并提示检查 node 是否可用；输出遵循 §阻断（exit 2）双通道合同（stdout JSON + stderr 可读文本）。
+- 本条取代 §资料目录与基线 staging 默认路径豁免「三运行时一致（函数层合同）」中「本案不承诺完整 hook 在无 python3 / node 环境下可工作」的边界表述在**结论**上的含义：无运行时时 hook 仍不承诺放行任何写入，而是 fail-closed；该节关于 `is_whitelisted_path` 三分支同判的函数层合同不变。
+- 与 ZCode / Qoder / Cursor / WorkBuddy 适配层既有「解析失败 fail-closed」契约同口径。
+- 不改变的放行：已成功解析出 `tool_name` 且属于只读工具（Read / Glob / Grep 等）时，维持 exit 0。
+
+### 工具覆盖（规范性）
+
+| tool_name | 判定路径 | 目标路径字段 |
+|---|---|---|
+| `Edit` / `Write` / `MultiEdit` | 文件路径判定（白名单、管辖边界、plan 阶段收窄） | `tool_input.file_path` |
+| `NotebookEdit` | 文件路径判定（同上） | `tool_input.notebook_path` |
+| `Bash` | Bash 命令判定（安全白名单 → 写入模式 → 路径提取与逐路径管辖判定） | `tool_input.command` |
+| `PowerShell` | 与 Bash 同一判定流水线，写入模式表追加下表 PowerShell / cmd 写入命令 | `tool_input.command` |
+
+文件路径类工具取不到目标路径字段时按「解析不出」fail-closed（exit 2），不放行。
+
+### PowerShell / cmd 写入检测模式（规范性）
+
+在 §Bash 写入操作检测模式之外，对 `PowerShell` 工具输入及 Cursor `beforeShellExecution`（Windows 下宿主 shell 为 PowerShell）追加以下写入模式（大小写不敏感，命中即视为写入）：
+
+| 模式 | 说明 |
+|---|---|
+| `Set-Content` / `Add-Content` / `Out-File` | 写文件 |
+| `New-Item` / `Remove-Item` / `Copy-Item` / `Move-Item` / `Rename-Item` | 文件系统修改 |
+| 别名 `sc` / `ac` / `ni` / `ri` / `rm` / `del` / `erase` / `rd` / `rmdir` / `cp` / `copy` / `mv` / `move` / `ren` | 同上（以命令词边界匹配） |
+| `>` / `>>`（含无空格形态，如 `echo x>f`） | 重定向写入 |
+| `[System.IO.File]::Write*` / `[IO.File]::Write*` | .NET 写文件 |
+
+命中后的处置与 Bash 相同：能提取出全部目标路径则逐路径走白名单与管辖边界判定；解析不出（变量、子表达式 `$(...)`、管道、复合语句）维持无条件阻断。安全白名单与写入检测的先后顺序见下节——对 Windows shell 输入**不**沿用「安全白名单先判」。
+
+### Windows shell 输入的判定顺序（规范性）
+
+**适用对象**（下称「Windows shell 输入」）：`tool_name` 为 `PowerShell` 的 Claude Code 输入；以及 `process.platform === 'win32'` 时 Cursor 的 `beforeShellExecution` 输入。**不适用**：任何平台上 `tool_name` 为 `Bash` 的输入（含 Windows 版 Claude Code 经 Git Bash 执行的 Bash 工具）与非 win32 平台的 Cursor 输入——它们沿用 §Bash 写命令路径提取与逐路径管辖判定 与 §资料目录与基线 staging 默认路径豁免「Bash 写入复用」中「`BASH_SAFE_PATTERNS` 先判」的既有顺序，本案不改变其任何结论（含 `echo … | tee …` 等既有放行形态）。
+
+**为何需要例外**：`BASH_SAFE_PATTERNS` / `SHELL_SAFE_PATTERNS` 以命令首词判定（如 `^echo `、`^printf `），POSIX 下该取舍是既有合同；但在 Windows shell 中 `echo x>src\a.ts`、`Write-Output x > src\a.ts` 是最常见的写文件方式，若首词命中安全白名单即放行，本节新增的 PowerShell / cmd 重定向检测永远到达不了，Windows 写入门禁的缺口依旧存在。
+
+**判定顺序**：
+
+1. **先识别写入信号**（在剥离单 / 双引号字面量之后扫描）：
+   - 重定向 `>` / `>>`（含无空格形态与 `1>` / `2>` / `*>`），但目标为 `$null`、`NUL`（大小写不敏感）或 `2>&1` 等流合并形态时**不算**写入信号；
+   - 复合形态（`;`、`&&`、`||`、`|`、`&`）中任一段命中上表 PowerShell / cmd 写入模式或既有 `BASH_WRITE_PATTERNS`。
+2. **有写入信号**：安全白名单**不适用于整条命令**，直接进入写入处置——提取全部写入目标路径，逐路径走白名单与管辖边界判定，全部在项目根之外或在白名单内才放行；任一目标解析不出（变量、子表达式、通配符）即阻断。
+3. **无写入信号**：按既有顺序先判安全白名单（放行），再判上表写入模式（命中则按第 2 条处置），均未命中则放行。
+
+**对照结论（规范性示例）**：
+
+| 输入（Windows shell） | 结论 |
+|---|---|
+| `echo x`、`Write-Output x`、`git status`、`openlogos status`、`Get-Content src\a.ts` | 放行（无写入信号，安全白名单或非写入） |
+| `echo x > $null`、`git status 2>&1` | 放行（流合并 / 丢弃不算写入信号） |
+| `echo x>src\a.ts`、`echo x > src/a.ts`、`git log > src\log.txt` | 阻断（有写入信号，安全白名单不适用，目标为受保护路径） |
+| `echo x>logos\resources\reference\n.md`、`echo x > logos/changes/<slug>/n.md`（有活跃提案时按提案范围） | 按目标路径判定：reference 豁免放行 |
+| `echo x > $p` | 阻断（目标解析不出） |
+| `echo x; Remove-Item src\a.ts` | 阻断（复合形态中一段命中写入模式） |
+
+### 路径比较（规范性）
+
+1. `rel_of_cwd` 与 `is_whitelisted_path` 在任何前缀比较之前，把相对路径中的 `\` 统一替换为 `/`；python、node 与 bash 兜底三条归一化分支同判（§三运行时一致 不变）。
+2. Windows 绝对路径（`C:\...` 或 `C:/...`）在 bash 兜底分支同样识别为绝对路径，按项目根前缀（大小写不敏感）判管辖，不得因不以 `/` 开头而落入相对路径分支。
+3. 目标与项目根不在同一盘符、无法求相对路径时，按「项目根之外」处理（§管辖边界 既有语义），不回退为绝对路径再与相对前缀比较。
+
+### 字节保真（规范性）
+
+托管 bash 脚本（`guard-check`、`openlogos-phase`）必须以 LF 字节运行。`init` / `sync` 写入的托管 `.gitattributes` 块对托管钩子目录设 `-text`，已被转换为 CRLF 的托管脚本由 `sync` 以随包字节覆盖恢复（架构文档 52.4）。
+
+### 不变量
+
+- 既有 `WHITELIST_PREFIXES`、`BASH_SAFE_PATTERNS` / `BASH_WRITE_PATTERNS`、管辖边界、plan 阶段原型 allowlist、有活跃提案时的放行语义、拦截文案与 stderr 双通道、exit 2 合同均不变。
+- POSIX 上除「输入不可解析 → fail-closed」与 matcher 覆盖面扩大外，判定结果逐项不变；「Windows shell 输入的判定顺序」例外只作用于其适用对象，`Bash` 工具输入（任何平台）的安全白名单先判顺序不变。
+
+### [code] 触点（本 delta 只定契约）
+
+- 分发源 `plugin/bin/guard-check`、`plugin/bin/openlogos-phase`；`cli/src/commands/init.ts` 的 matcher 常量与幂等升级；`plugin-cursor/hooks/runtime.cjs` 的 `SHELL_WRITE_PATTERNS`；托管副本经 sync 分发，不手改。

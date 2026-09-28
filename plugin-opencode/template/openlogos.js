@@ -6,6 +6,27 @@ import { join } from "node:path";
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const PREFIX = "/openlogos:";
 
+// Windows 上 npm 全局入口为 openlogos.cmd 包装，Node ≥ 18.20 / 20.12 不带 shell 时无法 spawn（架构 §五十二 52.5 第 4 条）。
+// win32 以 shell 方式调用并逐个引用参数：先按 MSVCRT 规则加双引号，再对 cmd 元字符做两层 ^ 转义
+// （外层 cmd 解析一次、.cmd 包装内 %* 展开后再解析一次）。POSIX 维持直接 spawn("openlogos", args)。
+const WIN_CMD_META_RE = /([()\][%!^"`<>&|;, *?])/g;
+
+function quoteWindowsShellArg(arg) {
+  let value = String(arg);
+  value = value.replace(/(\\*)"/g, '$1$1\\"');
+  value = value.replace(/(\\*)$/, "$1$1");
+  value = `"${value}"`;
+  value = value.replace(WIN_CMD_META_RE, "^$1");
+  return value.replace(WIN_CMD_META_RE, "^$1");
+}
+
+function buildOpenLogosSpawn(cliArgs, platform = process.platform) {
+  if (platform === "win32") {
+    return { command: ["openlogos", ...cliArgs.map(quoteWindowsShellArg)].join(" "), args: [], shell: true };
+  }
+  return { command: "openlogos", args: cliArgs, shell: false };
+}
+
 const COMMANDS = {
   status: { cli: ["status"], args: "none" },
   // CLI 暂无 next 子命令，先映射到 status
@@ -64,11 +85,15 @@ async function ensureInitialized(cwd) {
   }
 }
 
-function runOpenLogos(args, cwd, timeoutMs = 15000) {
+function runOpenLogos(args, cwd, timeoutMs = 15000, deps = {}) {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
-    const child = spawn("openlogos", args, { cwd, env: process.env });
+    const spawnImpl = deps.spawnImpl || spawn;
+    const spec = buildOpenLogosSpawn(args, deps.platform || process.platform);
+    const child = spec.shell
+      ? spawnImpl(spec.command, spec.args, { cwd, env: process.env, shell: true })
+      : spawnImpl(spec.command, spec.args, { cwd, env: process.env });
 
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
@@ -136,5 +161,8 @@ export const OpenLogosPlugin = async (ctx) => {
     },
   };
 };
+
+// OpenCode 会把模块的每个导出当作插件初始化函数调用，内部工具只挂在插件函数上供测试使用，不另行导出。
+OpenLogosPlugin.internals = { buildOpenLogosSpawn, quoteWindowsShellArg, runOpenLogos };
 
 export default OpenLogosPlugin;

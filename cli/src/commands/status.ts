@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys, detectProposalStepViaFlow,
   detectMintedStepViaFlow, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
@@ -410,7 +410,7 @@ export function deriveModulePhaseProgress(
       // In single-module projects, any file in the directory counts (backward compat).
       const allFiles = listFiles(dir);
       const files = isMultiModule
-        ? allFiles.filter(f => (f.split('/').pop() ?? f).startsWith(`${mod.id}-`))
+        ? allFiles.filter(f => posix.basename(f).startsWith(`${mod.id}-`))
         : allFiles;
       progress[key] = { done: files.length > 0, skipped: false };
     }

@@ -260,124 +260,11 @@ function decidePathScope(root, state, relative) {
   return { decision: 'allow', reason: '当前 OpenLogos 阶段允许此操作' };
 }
 
-// ── Windows shell 输入（win32 下 beforeShellExecution，宿主 shell 为 PowerShell）──────────────
-// 规范：spec/pretooluse-guard.md §PowerShell / cmd 写入检测模式、§Windows shell 输入的判定顺序。
-// 与 plugin/bin/guard-check 的 PowerShell 分支同判：先识别写入信号，有则安全白名单不适用；
-// 非 win32 平台维持既有「安全白名单先判」顺序，逐条不变。
-const WS_WRITE_WORD = /^(set-content|add-content|out-file|new-item|remove-item|copy-item|move-item|rename-item|sc|ac|ni|ri|rm|del|erase|rd|rmdir|cp|copy|mv|move|ren)$/i;
-const WS_CONTENT_WRITER = /^(set-content|add-content|out-file|sc|ac)$/i;
-const WS_DOTNET_WRITE = /\[(system\.)?io\.file\]::write/i;
-const WS_PATH_FLAG = /^-(path|filepath|literalpath|destination|newname)$/i;
-const WS_VALUE_FLAG = /^-(itemtype|value|encoding|inputobject|type|name)$/i;
-const WS_POSIX_PATH_CMD = /^(rm|cp|mv|mkdir|touch|chmod|chown)$/i;
-// 逗号为 PowerShell 数组分隔：未实现有界数组解析前按不可解析拒绝，避免白名单首目标掩盖后续受保护目标
-const WS_UNPARSEABLE = /[$()`*?@{,]/;
-
-function wsSegmentIsWrite(segment) {
-  const word = segment.split(/\s+/)[0] || '';
-  return WS_WRITE_WORD.test(word) || WS_DOTNET_WRITE.test(segment)
-    || SHELL_WRITE_PATTERNS.some(pattern => pattern.test(segment));
-}
-
-/** 写入段的目标路径；无法结构化提取返回 null。 */
-function wsSegmentTargets(segment) {
-  if (WS_DOTNET_WRITE.test(segment)) return null;
-  const tokens = segment.split(/\s+/).filter(Boolean);
-  const word = tokens[0] || '';
-  const targets = [];
-  if (WS_WRITE_WORD.test(word)) {
-    let nextIsPath = false;
-    let nextIsValue = false;
-    let positional = null;
-    for (const token of tokens.slice(1)) {
-      if (nextIsPath) { targets.push(token); nextIsPath = false; continue; }
-      if (nextIsValue) { nextIsValue = false; continue; }
-      if (WS_PATH_FLAG.test(token)) { nextIsPath = true; continue; }
-      if (WS_VALUE_FLAG.test(token)) { nextIsValue = true; continue; }
-      if (token.startsWith('-')) continue;
-      if (WS_CONTENT_WRITER.test(word)) { if (positional === null) positional = token; } else targets.push(token);
-    }
-    if (WS_CONTENT_WRITER.test(word) && targets.length === 0) {
-      if (positional === null) return null;
-      targets.push(positional);
-    }
-    return targets;
-  }
-  if (WS_POSIX_PATH_CMD.test(word)) return tokens.slice(1).filter(token => !token.startsWith('-'));
-  return null;
-}
-
-/** 与 guard-check is_default_exempt_path 同一规则：reference 资料目录与 baseline-seed run 私有 staging。 */
-function isDefaultExemptPath(root, relative) {
-  const segments = relative.split('/');
-  if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) return false;
-  let walk = root;
-  for (const segment of segments) {
-    walk = path.join(walk, segment);
-    try { if (fs.lstatSync(walk).isSymbolicLink()) return false; } catch { break; }
-  }
-  if (relative === 'logos/resources/reference' || relative.startsWith('logos/resources/reference/')) return true;
-  const runs = 'logos/resources/verify/baseline-seed-runs/';
-  if (!relative.startsWith(runs)) return false;
-  const [runId, after] = relative.slice(runs.length).split('/');
-  if (!runId || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId) || runId.includes('..')) return false;
-  return after === 'staging';
-}
-
-function decideWindowsShell(root, trimmed) {
-  const stripped = trimmed.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
-  const merged = stripped.replace(/[0-9*]?>&[0-9]/g, '');
-  const redirectTargets = [];
-  for (const match of merged.matchAll(/[0-9*]?>>?\s*([^\s;|&<>]*)/g)) {
-    if (/^(\$null|nul)$/i.test(match[1])) continue;
-    redirectTargets.push(match[1]);
-  }
-  const segments = merged.split(/&&|\|\||;|\||&/)
-    .map(segment => segment.trim().split('>')[0].trim())
-    .filter(Boolean);
-  const writeSegments = segments.filter(wsSegmentIsWrite);
-  const signal = redirectTargets.length > 0 || (segments.length > 1 && writeSegments.length > 0);
-  if (!signal) {
-    if (SHELL_SAFE_PATTERNS.some(pattern => pattern.test(trimmed))) {
-      return { decision: 'allow', reason: '安全白名单命令' };
-    }
-    if (writeSegments.length === 0) return { decision: 'allow', reason: '未命中写入模式，按既有 guard 语义放行' };
-  }
-  if (!isLaunched(root)) return { decision: 'allow', reason: 'initial 生命周期不启用变更硬门禁' };
-  const state = readSessionState(root);
-  const targets = [...redirectTargets];
-  for (const segment of writeSegments) {
-    const extracted = wsSegmentTargets(segment);
-    if (extracted === null || extracted.length === 0) {
-      return { decision: 'deny', reason: denyFacts(state, trimmed.slice(0, 120)) };
-    }
-    targets.push(...extracted);
-  }
-  if (targets.length === 0) return { decision: 'deny', reason: denyFacts(state, trimmed.slice(0, 120)) };
-  for (const raw of targets) {
-    const target = raw.replace(/^["']|["']$/g, '');
-    if (target === '' || WS_UNPARSEABLE.test(target)) {
-      return { decision: 'deny', reason: denyFacts(state, raw || trimmed.slice(0, 120)) };
-    }
-    let relative;
-    try {
-      relative = resolveCandidate(root, target.replace(/\\/g, '/'));
-    } catch {
-      return { decision: 'deny', reason: denyFacts(state, target) };
-    }
-    if (isDefaultExemptPath(root, relative)) continue;
-    const scoped = decidePathScope(root, state, relative);
-    if (scoped.decision !== 'allow') return { decision: 'deny', reason: denyFacts(state, relative) };
-  }
-  return { decision: 'allow', reason: '写入目标均在允许范围内' };
-}
-
-function decideShell(root, command, platform = process.platform) {
+function decideShell(root, command) {
   if (typeof command !== 'string' || command.trim() === '') {
     throw new HookInputError('beforeShellExecution 缺少 command');
   }
   const trimmed = command.trim();
-  if (platform === 'win32') return decideWindowsShell(root, trimmed);
   if (SHELL_SAFE_PATTERNS.some(pattern => pattern.test(trimmed))) {
     return { decision: 'allow', reason: '安全白名单命令' };
   }
@@ -555,7 +442,6 @@ module.exports = {
   decideEdit,
   decidePathScope,
   decideShell,
-  decideWindowsShell,
   deriveProposalStep,
   editOutput,
   findProjectRoot,

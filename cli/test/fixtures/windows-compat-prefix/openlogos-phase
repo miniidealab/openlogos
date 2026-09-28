@@ -11,6 +11,11 @@
 
 set -euo pipefail
 
+MODE="json"
+if [ "${1:-}" = "--plain" ]; then
+  MODE="plain"
+fi
+
 has_files() {
   local dir="$1"
   [ -d "$dir" ] && find "$dir" -type f ! -name '.gitkeep' -maxdepth 3 2>/dev/null | head -1 | grep -q .
@@ -24,27 +29,8 @@ get_scenario_ids() {
     echo ""
     return
   fi
-  # node 为主路径（以执行成功为准）；node 不可执行时才用真实可执行的 Python。本函数自包含，
-  # 不依赖脚本顶层变量（可按函数边界单独加载）。
-  if node - "$yaml_file" 2>/dev/null <<'JSEOF'
-const fs = require('fs');
-const content = fs.readFileSync(process.argv[1], 'utf-8');
-const ids = [];
-let inScenarios = false;
-for (const line of content.split('\n')) {
-  if (/^scenarios\s*:/.test(line)) { inScenarios = true; continue; }
-  if (inScenarios) {
-    if (/^[a-zA-Z]/.test(line)) break;
-    const m = line.match(/\s+-?\s*id\s*:\s*["']?(\S+?)["']?\s*$/);
-    if (m) ids.push(m[1]);
-  }
-}
-console.log(ids.join(' '));
-JSEOF
-  then
-    return
-  fi
-  if declare -F has_python >/dev/null && has_python && run_python - "$yaml_file" 2>/dev/null <<'PYEOF'
+  if command -v python3 &>/dev/null; then
+    python3 - "$yaml_file" <<'PYEOF' 2>/dev/null || echo ""
 import sys, re
 path = sys.argv[1]
 content = open(path).read()
@@ -64,10 +50,25 @@ for line in content.splitlines():
             ids.append(m.group(1))
 print(' '.join(ids))
 PYEOF
-  then
-    return
+  elif command -v node &>/dev/null; then
+    node - "$yaml_file" <<'JSEOF' 2>/dev/null || echo ""
+const fs = require('fs');
+const content = fs.readFileSync(process.argv[1], 'utf-8');
+const ids = [];
+let inScenarios = false;
+for (const line of content.split('\n')) {
+  if (/^scenarios\s*:/.test(line)) { inScenarios = true; continue; }
+  if (inScenarios) {
+    if (/^[a-zA-Z]/.test(line)) break;
+    const m = line.match(/\s+-?\s*id\s*:\s*["']?(\S+?)["']?\s*$/);
+    if (m) ids.push(m[1]);
+  }
+}
+console.log(ids.join(' '));
+JSEOF
+  else
+    echo ""
   fi
-  echo ""
 }
 
 # 检查某个 phase 下所有已声明场景是否都有对应文件
@@ -127,46 +128,6 @@ check_scenarios_complete() {
   return 0
 }
 
-# ── Runtime probing（fix-windows-platform-compat，架构 §五十二 52.5）────────────────────
-# node 是 OpenLogos 运行前提，为全部 JSON / YAML 读取的主路径；node 不可执行时才用 Python。
-# Python 候选依次 python3 → python → py -3，以执行 `-c "import sys"` 退出 0 为可用判据，不以 PATH
-# 可发现性为准（Windows 上 python3 常为可被发现、运行即失败的商店占位别名）。探测结果在一次调用内复用。
-NODE_OK=0
-if node -e "" </dev/null >/dev/null 2>&1; then
-  NODE_OK=1
-fi
-OPENLOGOS_PY=""
-detect_python() {
-  [ -n "${OPENLOGOS_PY:-}" ] && return 0
-  OPENLOGOS_PY="none"
-  local cand
-  for cand in "python3" "python" "py -3"; do
-    # shellcheck disable=SC2086
-    if $cand -c "import sys" </dev/null >/dev/null 2>&1; then
-      OPENLOGOS_PY="$cand"
-      return 0
-    fi
-  done
-  return 0
-}
-has_python() {
-  detect_python
-  [ "$OPENLOGOS_PY" != "none" ]
-}
-run_python() {
-  # shellcheck disable=SC2086
-  $OPENLOGOS_PY "$@"
-}
-if [ "$NODE_OK" -ne 1 ]; then
-  detect_python
-fi
-
-
-MODE="json"
-if [ "${1:-}" = "--plain" ]; then
-  MODE="plain"
-fi
-
 CONFIG="logos/logos.config.json"
 
 if [ ! -f "$CONFIG" ]; then
@@ -188,13 +149,12 @@ STATUS_ACTIVE_CHANGE=""
 STATUS_PROPOSAL_STEP=""
 STATUS_PLAN_STATE_SUMMARY=""
 
-if [ "$NODE_OK" -eq 1 ]; then
+if command -v python3 &>/dev/null; then
+  LOCALE=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
+  PROJECT_NAME=$(python3 -c "import json; d=json.load(open('$CONFIG')); print(d.get('name',''))" 2>/dev/null || echo "")
+elif command -v node &>/dev/null; then
   LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
   PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CONFIG','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
-fi
-if [ "$NODE_OK" -ne 1 ] && has_python; then
-  LOCALE=$(run_python -c "import json; d=json.load(open('$CONFIG')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
-  PROJECT_NAME=$(run_python -c "import json; d=json.load(open('$CONFIG')); print(d.get('name',''))" 2>/dev/null || echo "")
 fi
 
 if command -v openlogos &>/dev/null; then
@@ -202,23 +162,22 @@ if command -v openlogos &>/dev/null; then
 fi
 
 if [ -n "$STATUS_JSON" ]; then
-  if [ "$NODE_OK" -eq 1 ]; then
-    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const data=(JSON.parse(d).data)||{};console.log(data.lifecycle||'')}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.slug);console.log(data.active_change||mod?.active_change?.slug||'')}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.proposal_step);console.log(data.proposal_step||mod?.active_change?.proposal_step||'')}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-    STATUS_PLAN_STATE_SUMMARY=$(echo "$STATUS_JSON" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const data=(JSON.parse(d).data)||{};const active=data.active_change||'';let ps=data.plan_state;for(const m of data.modules||[]){const ac=m.active_change;if(!ac) continue;if(active&&ac.slug!==active) continue;ps=ps||ac.plan_state;break;}console.log(!ps?'':\`plan_ready=\${!!ps.plan_ready}, plan_gate_pending=\${!!ps.plan_gate_pending}, plan_approved=\${!!ps.plan_approved}, tasks_execution=\${ps.tasks_execution_done??0}/\${ps.tasks_execution_total??0} \${ps.tasks_execution_scope||'none'}\`)}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-  fi
-  if [ "$NODE_OK" -ne 1 ] && has_python; then
-    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | run_python -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('lifecycle',''))" 2>/dev/null || echo "")
-    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | run_python -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; mods=data.get('modules') or []; print(active or next((m.get('active_change',{}).get('slug','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('slug')), ''))" 2>/dev/null || echo "")
-    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | run_python -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); step=data.get('proposal_step') or ''; mods=data.get('modules') or []; print(step or next((m.get('active_change',{}).get('proposal_step','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('proposal_step')), ''))" 2>/dev/null || echo "")
-    STATUS_PLAN_STATE_SUMMARY=$(echo "$STATUS_JSON" | run_python -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; ps=data.get('plan_state'); mods=data.get('modules') or [];
+  if command -v python3 &>/dev/null; then
+    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('lifecycle',''))" 2>/dev/null || echo "")
+    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; mods=data.get('modules') or []; print(active or next((m.get('active_change',{}).get('slug','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('slug')), ''))" 2>/dev/null || echo "")
+    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); step=data.get('proposal_step') or ''; mods=data.get('modules') or []; print(step or next((m.get('active_change',{}).get('proposal_step','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('proposal_step')), ''))" 2>/dev/null || echo "")
+    STATUS_PLAN_STATE_SUMMARY=$(echo "$STATUS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; ps=data.get('plan_state'); mods=data.get('modules') or [];
 for m in mods:
   ac=m.get('active_change') if isinstance(m.get('active_change'),dict) else None
   if not ac: continue
   if active and ac.get('slug') != active: continue
   ps = ps or ac.get('plan_state'); break
 print('' if not isinstance(ps,dict) else 'plan_ready=%s, plan_gate_pending=%s, plan_approved=%s, tasks_execution=%s/%s %s' % (str(bool(ps.get('plan_ready'))).lower(), str(bool(ps.get('plan_gate_pending'))).lower(), str(bool(ps.get('plan_approved'))).lower(), ps.get('tasks_execution_done',0), ps.get('tasks_execution_total',0), ps.get('tasks_execution_scope','none')))" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
+    STATUS_LIFECYCLE=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};console.log(data.lifecycle||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_ACTIVE_CHANGE=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.slug);console.log(data.active_change||mod?.active_change?.slug||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_PROPOSAL_STEP=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.proposal_step);console.log(data.proposal_step||mod?.active_change?.proposal_step||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+    STATUS_PLAN_STATE_SUMMARY=$(echo "$STATUS_JSON" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const active=data.active_change||'';let ps=data.plan_state;for(const m of data.modules||[]){const ac=m.active_change;if(!ac) continue;if(active&&ac.slug!==active) continue;ps=ps||ac.plan_state;break;}console.log(!ps?'':\`plan_ready=\${!!ps.plan_ready}, plan_gate_pending=\${!!ps.plan_gate_pending}, plan_approved=\${!!ps.plan_approved}, tasks_execution=\${ps.tasks_execution_done??0}/\${ps.tasks_execution_total??0} \${ps.tasks_execution_scope||'none'}\`)}catch(e){console.log('')}})" 2>/dev/null || echo "")
   fi
 fi
 
@@ -237,33 +196,7 @@ if [ -f "$YAML_FILE" ]; then
 
   # 只从 initial 模块读取 skip_phases，用 awk 解析避免 heredoc 语法问题
   _skip_result=""
-  if [ "$NODE_OK" -eq 1 ]; then
-    _js_script=$(mktemp "${TMPDIR:-/tmp}/openlogos_skip.XXXXXX")
-    cat > "$_js_script" << 'JSEOF'
-const fs = require('fs');
-const content = fs.readFileSync(process.argv[2], 'utf-8');
-let inModules = false, curLifecycle = 'initial', curSkip = [], allSkip = [];
-for (const line of content.split('\n')) {
-  if (/^modules\s*:/.test(line)) { inModules = true; continue; }
-  if (inModules) {
-    if (/^[a-zA-Z]/.test(line) && !/^\s/.test(line)) break;
-    if (/\s+-\s+id\s*:/.test(line)) {
-      if (curLifecycle === 'initial') allSkip.push(...curSkip);
-      curLifecycle = 'initial'; curSkip = [];
-    }
-    const lm = line.match(/lifecycle\s*:\s*(\S+)/);
-    if (lm) curLifecycle = lm[1].replace(/['"]/g, '');
-    const sm = line.match(/skip_phases\s*:\s*\[([^\]]*)\]/);
-    if (sm) curSkip = sm[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean);
-  }
-}
-if (curLifecycle === 'initial') allSkip.push(...curSkip);
-console.log([...new Set(allSkip)].join(' '));
-JSEOF
-    _skip_result=$(node "$_js_script" "$YAML_FILE" 2>/dev/null || echo "")
-    rm -f "$_js_script"
-  fi
-  if [ "$NODE_OK" -ne 1 ] && has_python; then
+  if command -v python3 &>/dev/null; then
     _py_script=$(mktemp "${TMPDIR:-/tmp}/openlogos_skip.XXXXXX")
     cat > "$_py_script" << 'PYEOF'
 import sys, re
@@ -295,10 +228,34 @@ if current_lifecycle == 'initial':
     all_skip.extend(current_skip)
 print(' '.join(set(all_skip)))
 PYEOF
-    _skip_result=$(run_python "$_py_script" "$YAML_FILE" 2>/dev/null || echo "")
+    _skip_result=$(python3 "$_py_script" "$YAML_FILE" 2>/dev/null || echo "")
     rm -f "$_py_script"
-  fi
-  if [ "$NODE_OK" -ne 1 ] && ! has_python; then
+  elif command -v node &>/dev/null; then
+    _js_script=$(mktemp "${TMPDIR:-/tmp}/openlogos_skip.XXXXXX")
+    cat > "$_js_script" << 'JSEOF'
+const fs = require('fs');
+const content = fs.readFileSync(process.argv[2], 'utf-8');
+let inModules = false, curLifecycle = 'initial', curSkip = [], allSkip = [];
+for (const line of content.split('\n')) {
+  if (/^modules\s*:/.test(line)) { inModules = true; continue; }
+  if (inModules) {
+    if (/^[a-zA-Z]/.test(line) && !/^\s/.test(line)) break;
+    if (/\s+-\s+id\s*:/.test(line)) {
+      if (curLifecycle === 'initial') allSkip.push(...curSkip);
+      curLifecycle = 'initial'; curSkip = [];
+    }
+    const lm = line.match(/lifecycle\s*:\s*(\S+)/);
+    if (lm) curLifecycle = lm[1].replace(/['"]/g, '');
+    const sm = line.match(/skip_phases\s*:\s*\[([^\]]*)\]/);
+    if (sm) curSkip = sm[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean);
+  }
+}
+if (curLifecycle === 'initial') allSkip.push(...curSkip);
+console.log([...new Set(allSkip)].join(' '));
+JSEOF
+    _skip_result=$(node "$_js_script" "$YAML_FILE" 2>/dev/null || echo "")
+    rm -f "$_js_script"
+  else
     # 降级：全文 grep（多模块时可能误判，但总比不跳过好）
     grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'api'      && _skip_result="$_skip_result api"
     grep 'skip_phases' "$YAML_FILE" 2>/dev/null | grep -q 'database' && _skip_result="$_skip_result database"
@@ -516,11 +473,10 @@ ACTIVE_CHANGE="$STATUS_ACTIVE_CHANGE"
 PROPOSAL_STEP="$STATUS_PROPOSAL_STEP"
 
 if [ "$LIFECYCLE" = "launched" ] && [ -z "$ACTIVE_CHANGE" ] && [ -f "$GUARD_FILE" ]; then
-  if [ "$NODE_OK" -eq 1 ]; then
+  if command -v python3 &>/dev/null; then
+    ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
     ACTIVE_CHANGE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); console.log(d.activeChange||'')" 2>/dev/null || echo "")
-  fi
-  if [ "$NODE_OK" -ne 1 ] && has_python; then
-    ACTIVE_CHANGE=$(run_python -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
   fi
 fi
 
@@ -555,11 +511,10 @@ CAPABILITIES=""
 CAP_FILE="logos/.session-capabilities.json"
 if [ -f "$CAP_FILE" ]; then
   UI_RENDER=""
-  if [ "$NODE_OK" -eq 1 ]; then
+  if command -v python3 &>/dev/null; then
+    UI_RENDER=$(python3 -c "import json;print('true' if json.load(open('$CAP_FILE')).get('ui_prototype_render') is True else '')" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
     UI_RENDER=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CAP_FILE','utf-8'));console.log(d.ui_prototype_render===true?'true':'')" 2>/dev/null || echo "")
-  fi
-  if [ "$NODE_OK" -ne 1 ] && has_python; then
-    UI_RENDER=$(run_python -c "import json;print('true' if json.load(open('$CAP_FILE')).get('ui_prototype_render') is True else '')" 2>/dev/null || echo "")
   fi
   if [ "$UI_RENDER" = "true" ]; then
     CAPABILITIES="Capabilities: ui_prototype_render=true (rendered UI confirmation available; capability 仅用于 plan-exit 前模式选择——就绪→渲染确认模式，plan-exit 后以 PLAN_APPROVED 为准)."
@@ -586,14 +541,7 @@ $CHANGE_MGMT
 
 if [ "$MODE" = "json" ]; then
   # Escape special characters for JSON
-  CONTEXT_ESCAPED=""
-  if [ "$NODE_OK" -eq 1 ]; then
-    CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | node -e "console.log(JSON.stringify(require('fs').readFileSync(0,'utf-8')))" 2>/dev/null || echo "")
-  fi
-  if [ -z "$CONTEXT_ESCAPED" ] && has_python; then
-    CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | run_python -c "import sys,json; print(json.dumps(sys.stdin.buffer.read().decode('utf-8')))" 2>/dev/null || echo "")
-  fi
-  [ -n "$CONTEXT_ESCAPED" ] || CONTEXT_ESCAPED='""'
+  CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || printf '%s' "$CONTEXT" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.stringify(d)))" 2>/dev/null)
 
   cat <<ENDJSON
 {

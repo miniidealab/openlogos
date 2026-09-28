@@ -5,13 +5,14 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
-  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { removeTree } from './fs-remove.js';
+import { renameWithRetry } from './fs-retry.js';
 
 /**
  * Cursor 三件套部署（cursor-adapter-parity）：
@@ -28,6 +29,8 @@ export const CURSOR_AGENTS_REL_DIR = '.cursor/agents';
 export const CURSOR_HOOKS_REL_FILE = '.cursor/hooks.json';
 export const CURSOR_RUNTIME_REL_FILE = '.cursor/hooks/openlogos-runtime.cjs';
 export const CURSOR_LEGACY_RULES_REL_DIR = '.cursor/rules';
+/** 备份目录建在 `.cursor/` 下（目标同级、同卷），不建在 os.tmpdir()——项目不在系统盘时 rename 会 EXDEV（架构 §五十二 52.3）。 */
+export const CURSOR_BACKUP_DIR_PREFIX = '.openlogos-cursor-backup-';
 export const CURSOR_COMMAND_SKILL_PREFIX = 'openlogos-';
 /** 托管 hooks 条目的身份锚：command 含此片段即视为 OpenLogos 托管。 */
 export const CURSOR_MANAGED_HOOK_ANCHOR = 'openlogos-runtime.cjs';
@@ -227,7 +230,7 @@ function atomicWrite(target: string, content: string): void {
   mkdirSync(dirname(target), { recursive: true });
   const temp = join(dirname(target), `.openlogos-cursor-tmp-${process.pid}-${Date.now()}`);
   writeFileSync(temp, content);
-  renameSync(temp, target);
+  renameWithRetry(temp, target);
 }
 
 interface RollbackStep {
@@ -300,7 +303,7 @@ export function deployCursorAssets(
     cpSync(source, prepared, { recursive: true });
     if (sharedAssets.skills && existsSync(sharedAssets.skills)) {
       const skillsTarget = join(prepared, 'skills');
-      rmSync(skillsTarget, { recursive: true, force: true });
+      removeTree(skillsTarget);
       mkdirSync(skillsTarget, { recursive: true });
       for (const name of readdirSync(sharedAssets.skills)) {
         const sourceDir = join(sharedAssets.skills, name);
@@ -317,7 +320,7 @@ export function deployCursorAssets(
       }
     }
     if (sharedAssets.commands && existsSync(sharedAssets.commands)) {
-      rmSync(join(prepared, 'commands'), { recursive: true, force: true });
+      removeTree(join(prepared, 'commands'));
       prepareCommandSkills(sharedAssets.commands, join(prepared, 'commands'));
     }
     if (!existsSync(join(prepared, 'skills'))) mkdirSync(join(prepared, 'skills'), { recursive: true });
@@ -380,7 +383,9 @@ export function deployCursorAssets(
 
     // ── 执行阶段：Skills/subagent → runtime → hooks 合并 → .mdc 清理 ──
     const rollback: RollbackStep[] = [];
-    const backupRoot = mkdtempSync(join(tmpdir(), 'openlogos-cursor-backup-'));
+    const cursorDir = join(root, '.cursor');
+    mkdirSync(cursorDir, { recursive: true });
+    const backupRoot = mkdtempSync(join(cursorDir, CURSOR_BACKUP_DIR_PREFIX));
     let changed = false;
     let installedAny = false;
     try {
@@ -389,14 +394,17 @@ export function deployCursorAssets(
         const existed = existsSync(plan.target);
         if (existed) {
           const backup = join(backupRoot, `skill-${plan.name}`);
-          renameSync(plan.target, backup);
-          rollback.push({ undo: () => { rmSync(plan.target, { recursive: true, force: true }); renameSync(backup, plan.target); } });
+          renameWithRetry(plan.target, backup);
+          rollback.push({ undo: () => { removeTree(plan.target); renameWithRetry(backup, plan.target); } });
         } else {
           installedAny = true;
-          rollback.push({ undo: () => rmSync(plan.target, { recursive: true, force: true }) });
+          rollback.push({ undo: () => removeTree(plan.target) });
         }
+        // 先在同卷备份目录内组装新目录，再整体 rename 到目标位置（安装 rename）。
+        const staged = join(backupRoot, `new-${plan.name}`);
+        cpSync(plan.prepared, staged, { recursive: true });
         mkdirSync(dirname(plan.target), { recursive: true });
-        cpSync(plan.prepared, plan.target, { recursive: true });
+        renameWithRetry(staged, plan.target);
         changed = true;
       }
       const agentBytes = readFileSync(agentSource);
@@ -404,8 +412,8 @@ export function deployCursorAssets(
         const existed = existsSync(agentTarget);
         if (existed) {
           const backup = join(backupRoot, 'agent-change-reviewer.md');
-          renameSync(agentTarget, backup);
-          rollback.push({ undo: () => { rmSync(agentTarget, { force: true }); renameSync(backup, agentTarget); } });
+          renameWithRetry(agentTarget, backup);
+          rollback.push({ undo: () => { rmSync(agentTarget, { force: true }); renameWithRetry(backup, agentTarget); } });
         } else {
           installedAny = true;
           rollback.push({ undo: () => rmSync(agentTarget, { force: true }) });
@@ -461,7 +469,11 @@ export function deployCursorAssets(
         }
       }
 
-      rmSync(backupRoot, { recursive: true, force: true });
+      removeTree(backupRoot);
+      // 前次回滚未完成而保留的备份目录，在本次成功后清理。
+      for (const entry of readdirSync(cursorDir)) {
+        if (entry.startsWith(CURSOR_BACKUP_DIR_PREFIX)) removeTree(join(cursorDir, entry));
+      }
       const skillCount = plannedDirs.filter(plan => !plan.name.startsWith(CURSOR_COMMAND_SKILL_PREFIX)).length;
       const commandCount = plannedDirs.length - skillCount;
       return {
@@ -475,14 +487,24 @@ export function deployCursorAssets(
         preserved,
       };
     } catch (error) {
+      const rollbackFailures: string[] = [];
       for (const step of rollback.reverse()) {
-        try { step.undo(); } catch { /* 保守保留诊断 */ }
+        try { step.undo(); } catch (undoError) {
+          rollbackFailures.push(undoError instanceof Error ? undoError.message : String(undoError));
+        }
       }
-      rmSync(backupRoot, { recursive: true, force: true });
+      if (rollbackFailures.length > 0) {
+        // 回滚未完成：保留备份目录（内含原托管目录），如实报告位置，不做清理。
+        throw new CursorDeployError(
+          `Cursor 托管目录替换失败且回滚未完成：原目录备份保留于 ${backupRoot}，请手动移回后重试`
+            + `（替换：${error instanceof Error ? error.message : String(error)}；回滚：${rollbackFailures.join('；')}）`,
+          CURSOR_SKILLS_REL_DIR);
+      }
+      removeTree(backupRoot);
       throw error;
     }
   } finally {
-    rmSync(preparedRoot, { recursive: true, force: true });
+    removeTree(preparedRoot);
   }
 }
 

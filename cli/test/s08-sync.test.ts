@@ -265,7 +265,7 @@ describe('S08 Scenario Tests — sync command', () => {
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
     expect(codexConfig).toContain('command = "./other.sh"');
-    expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
+    expect(codexConfig).toContain('command = "bash \\".agents/plugins/openlogos/hooks/session-start.sh\\""');
   });
 
   it('ST-S08-04e: sync with codex is idempotent when OpenLogos hook already exists', () => {
@@ -280,7 +280,7 @@ describe('S08 Scenario Tests — sync command', () => {
     sync();
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
-    const hookMatches = codexConfig.match(/command = "\.agents\/plugins\/openlogos\/hooks\/session-start\.sh"/g) ?? [];
+    const hookMatches = codexConfig.match(/command = "bash \\"\.agents\/plugins\/openlogos\/hooks\/session-start\.sh\\""/g) ?? [];
     expect(hookMatches).toHaveLength(1);
   });
 
@@ -337,7 +337,7 @@ describe('S08 Scenario Tests — sync command', () => {
     expect(rootManifest.skills).toBe('./.agents/plugins/openlogos/skills/');
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
     expect(codexConfig).not.toContain('command = ".codex-plugin/hooks/session-start.sh"');
-    expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
+    expect(codexConfig).toContain('command = "bash \\".agents/plugins/openlogos/hooks/session-start.sh\\""');
   });
 
   it('UT-S08-10: sync refreshes official OpenLogos Codex skills', () => {

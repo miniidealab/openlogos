@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, normalize, relative, sep } from 'node:path';
+import * as nodePath from 'node:path';
+import { join, sep } from 'node:path';
 import { readVerifyConfig } from './verify-config.js';
 import { deriveSliceState } from './flow-loop-derive.js';
 import type { LoopState, SliceState } from './flow-loop-derive.js';
@@ -113,14 +114,25 @@ function readAcceptanceFailedTests(root: string): string[] {
   return extractTestIds(failedSection);
 }
 
-function relFromRoot(root: string, artifact: string): string {
-  const normalized = artifact.replace(/\\/g, '/').trim();
+/**
+ * 产物路径 → 项目相对 posix 路径（架构 §五十二 52.1-4）：绝对路径判定同时识别 posix 与 win32 形态
+ * （`C:\\…`、`C:/…`、盘符大小写），项目外绝对路径原样返回（由调用方判越界）。
+ * `pathApi` 仅供测试以 `path.win32` 驱动；生产使用当前平台实现。
+ */
+export function relFromRoot(
+  root: string,
+  artifact: string,
+  pathApi: Pick<typeof nodePath, 'isAbsolute' | 'relative'> = nodePath,
+): string {
+  const trimmed = artifact.trim();
+  const normalized = trimmed.replace(/\\/g, '/');
   if (!normalized) return '';
-  if (normalized.startsWith('/')) {
-    const rel = relative(root, normalized).replace(/\\/g, '/');
-    return rel.startsWith('..') ? normalized : rel;
+  if (pathApi.isAbsolute(trimmed) || /^[A-Za-z]:\//.test(normalized)) {
+    if (!pathApi.isAbsolute(trimmed)) return normalized;
+    const rel = pathApi.relative(root, trimmed).replace(/\\/g, '/');
+    return rel.startsWith('..') || pathApi.isAbsolute(rel) || /^[A-Za-z]:\//.test(rel) ? normalized : rel;
   }
-  return normalize(normalized).replace(/\\/g, '/').replace(/^\.\//, '');
+  return nodePath.posix.normalize(normalized).replace(/^\.\//, '');
 }
 
 function isSafeRelative(path: string): boolean {

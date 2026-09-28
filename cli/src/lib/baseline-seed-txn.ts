@@ -13,7 +13,9 @@ import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync,
   readdirSync, copyFileSync, statSync, lstatSync, realpathSync, linkSync,
 } from 'node:fs';
-import { join, dirname, isAbsolute, normalize, sep } from 'node:path';
+import { renameWithRetry } from './fs-retry.js';
+import { join, dirname, isAbsolute, normalize, sep, posix, win32 } from 'node:path';
+import { platformPathKey } from './canonical-target.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type { BaselineSeedState, BaselineIndexEntry } from './baseline-provenance.js';
@@ -89,7 +91,7 @@ export function atomicWrite(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp-${process.pid}`;
   writeFileSync(tmp, content);
-  renameSync(tmp, path);
+  renameWithRetry(tmp, path); // Windows 瞬时文件锁有界重试（架构 §五十二 52.3）
 }
 export function atomicWriteJson(path: string, obj: unknown): void {
   atomicWrite(path, JSON.stringify(obj, null, 2));
@@ -474,11 +476,7 @@ function readJournalStrict(root: string, runId: string): CommitJournal | null {
     || !transition || !states.has(transition.from) || transition.to !== 'seeded') {
     throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} index/state_transition 非法`);
   }
-  const backupBase = backupDir(root, runId);
-  const backupPath = index.yaml_backup_path;
-  const normalizedBackup = normalize(backupPath);
-  if (!isAbsolute(normalizedBackup)
-    || !(normalizedBackup === backupBase || normalizedBackup.startsWith(backupBase + sep))) {
+  if (!isWithinBackupBase(index.yaml_backup_path, backupDir(root, runId))) {
     throw new BaselineCommitInProgressError(`baseline_commit_in_progress — journal ${runId} yaml backup 路径越界`);
   }
   return raw as CommitJournal;
@@ -822,7 +820,7 @@ function quarantineJournal(root: string, runId: string, reason: string): void {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const to = join(dirname(from), `${runId}.commit-journal.corrupt-${stamp}.json`);
   try {
-    renameSync(from, to);
+    renameWithRetry(from, to);
     console.warn(`  ⚠️  baseline seed journal 不可恢复，已隔离留存：${to}`);
     console.warn(`      原因：${reason}`);
     console.warn('      读取继续——目标集由 deltas 派生、模式按磁盘事实判定，部分播种的资源树不影响合并正确性。');
@@ -880,4 +878,23 @@ export function withRecoveredReadLocks<T>(
   } finally {
     for (const m of held) releaseLock(root, m);
   }
+}
+
+/**
+ * journal 记录的备份绝对路径是否位于本次计算的备份根内（架构 §五十二 52.1-5）。
+ * 两者来自不同调用（不同运行的 cwd 可能大小写不同），win32 上按 `platformPathKey` 口径比较；
+ * 其余平台保持区分大小写。点段经 normalize 消解后再比较，越界判定不放宽。
+ * `platform` 仅供测试注入；生产使用当前平台。
+ */
+export function isWithinBackupBase(
+  backupPath: string,
+  backupBase: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const p = platform === 'win32' ? win32 : posix;
+  const normalizedBackup = p.normalize(backupPath);
+  if (!p.isAbsolute(normalizedBackup)) return false;
+  const candidate = platformPathKey(normalizedBackup, platform);
+  const base = platformPathKey(p.normalize(backupBase), platform);
+  return candidate === base || candidate.startsWith(base.endsWith(p.sep) ? base : base + p.sep);
 }

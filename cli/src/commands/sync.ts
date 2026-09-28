@@ -13,6 +13,8 @@ import {
   bundledManifestPath, readBundledAssetManifest, validateAssetManifest, writeSyncStamp,
 } from '../lib/asset-manifest.js';
 import { dirname } from 'node:path';
+import { ensureManagedGitattributes } from '../lib/gitattributes.js';
+import { formatCrlfRecoveryReport, recoverCrlfWorkspace } from '../lib/crlf-recovery.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -204,6 +206,16 @@ export function sync() {
   const specResult = deploySpecs(root);
   if (specResult && specResult.count > 0) {
     console.log(`  ✓ ${specResult.count} specs synced to logos/spec/`);
+  }
+
+  // 换行保真（架构 §五十二 52.4）：托管 .gitattributes 块防未来转换；存量 CRLF 以 index blob 为基准受控恢复，
+  // 托管钩子 / 运行时脚本已由上方资产部署以随包字节重写。恢复只报告不阻断 sync。
+  if (ensureManagedGitattributes(root)) {
+    console.log('  ✓ .gitattributes OpenLogos managed block updated');
+  }
+  for (const line of formatCrlfRecoveryReport(recoverCrlfWorkspace(root), locale)) {
+    if (line.includes('⚠')) console.warn(line);
+    else console.log(line);
   }
 
   // ========== proposal-ui-ux-first 切片1：GUI overlay 幂等对齐 + 缺 product_type 诊断 ==========

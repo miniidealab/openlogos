@@ -6,12 +6,12 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
-  rmSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
+import { removeTree } from './fs-remove.js';
 
 export const ARCHIVE_WATCH_PROTOCOL = 'openlogos.archive-watch/v1';
 export const ARCHIVE_WATCH_ENV = 'OPENLOGOS_ARCHIVE_WATCH_PREPARED';
@@ -54,7 +54,7 @@ export const nodeArchiveWatchFs: ArchiveWatchFileSystem = {
   },
   rename: renameSync,
   unlink: unlinkSync,
-  removeTree: (path) => rmSync(path, { recursive: true, force: true }),
+  removeTree: (path) => removeTree(path),
   list: (path) => readdirSync(path),
   isSymlink: (path) => lstatSync(path).isSymbolicLink(),
   realpath: (path) => realpathSync.native(path),

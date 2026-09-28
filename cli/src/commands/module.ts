@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, renameSync } from 'node:fs';
-import { join } from 'node:path';
+import * as nodePath from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale } from '../i18n.js';
 import * as readline from 'node:readline';
@@ -120,6 +121,26 @@ function walkAndCollect(dir: string, prefix: string, results: string[]): void {
   }
 }
 
+/**
+ * module rename 的同目录改名目标（架构 §五十二 52.1-2）：OS 路径只经 path API 拆解，
+ * 不按 '/' 字符串拆分——Windows 反斜杠路径下旧实现得到拼坏的相对路径而 ENOENT。
+ * `pathApi` 仅供测试以 `path.win32` 驱动；生产使用当前平台实现。
+ */
+export function renamedModuleFilePath(
+  filePath: string,
+  oldName: string,
+  newName: string,
+  pathApi: Pick<typeof nodePath, 'dirname' | 'basename' | 'join'> = nodePath,
+): string {
+  const base = pathApi.basename(filePath);
+  return pathApi.join(pathApi.dirname(filePath), `${newName}-${base.slice(oldName.length + 1)}`);
+}
+
+/** 项目相对、`/` 分隔的显示路径。 */
+function displayPath(root: string, abs: string): string {
+  return relative(root, abs).split(sep).join('/');
+}
+
 const TEXT_EXTENSIONS = new Set(['.md', '.yaml', '.yml', '.json', '.txt', '.ts', '.js']);
 
 function updateCrossReferences(root: string, oldName: string, newName: string): string[] {
@@ -147,7 +168,7 @@ function updateCrossReferences(root: string, oldName: string, newName: string): 
         );
         if (updated_content !== content) {
           writeFileSync(fullPath, updated_content);
-          updated.push(fullPath.replace(root + '/', ''));
+          updated.push(displayPath(root, fullPath));
         }
       }
     }
@@ -392,18 +413,13 @@ export function moduleRename(oldName: string | undefined, newName: string | unde
   walkAndCollect(resourcesDir, oldName, filesToRename);
 
   for (const filePath of filesToRename) {
-    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-    const base = filePath.substring(filePath.lastIndexOf('/') + 1);
-    const newBase = `${newName}-${base.slice(oldName.length + 1)}`;
-    renameSync(filePath, join(dir, newBase));
+    renameSync(filePath, renamedModuleFilePath(filePath, oldName, newName));
   }
 
   if (filesToRename.length > 0) {
     console.log(`\n✓ Renamed ${filesToRename.length} file(s):`);
     for (const f of filesToRename) {
-      const base = f.substring(f.lastIndexOf('/') + 1);
-      const newBase = `${newName}-${base.slice(oldName.length + 1)}`;
-      console.log(`  ${f.replace(root + '/', '')} → ${newBase}`);
+      console.log(`  ${displayPath(root, f)} → ${nodePath.basename(renamedModuleFilePath(f, oldName, newName))}`);
     }
   } else {
     console.log('  No files found with that prefix.');
@@ -449,7 +465,7 @@ export function moduleRemove(name: string | undefined): void {
   console.log(`\nAbout to remove module "${name}" from logos-project.yaml.`);
   if (affected.length > 0) {
     console.log(`\nThe following ${affected.length} file(s) will NOT be deleted automatically:`);
-    for (const f of affected) console.log(`  ${f.replace(root + '/', '')}`);
+    for (const f of affected) console.log(`  ${displayPath(root, f)}`);
     console.log('\nPlease delete them manually if no longer needed.');
   }
 

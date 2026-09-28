@@ -17,9 +17,7 @@ import {
   openSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmdirSync,
-  rmSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -29,6 +27,8 @@ import {
   resolveCanonicalMergeTarget,
 } from './canonical-target.js';
 import { validateAndStripNonMarkdownDelta } from './non-markdown-delta.js';
+import { renameWithRetry } from './fs-retry.js';
+import { removeTree } from './fs-remove.js';
 
 export const BASELINE_CLOSURE_APPLY_JOURNAL = 'BASELINE_CLOSURE_APPLY_JOURNAL.json';
 export const APPLY_TXN_DIR = '.baseline-closure-apply-txn';
@@ -140,8 +140,13 @@ function proposalIsContained(root: string, proposalDir: string): boolean {
   try { return contained(realpathSync(proposalDir), realpathSync(root)); } catch { return false; }
 }
 
+/**
+ * 刷新必须经可写、不截断、不创建的句柄（架构 §五十二 52.2）：Windows 以 FlushFileBuffers 实现
+ * fsync，只读句柄返回 EPERM；POSIX 上 'r' 与 'r+' 等价。本函数是 staging / backup / journal /
+ * 目标 rename 后 / 回滚恢复五条路径的唯一刷新入口。
+ */
 function fsyncFile(path: string): void {
-  const fd = openSync(path, 'r');
+  const fd = openSync(path, 'r+');
   try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
@@ -163,7 +168,7 @@ function writeJournal(proposalDir: string, journal: ApplyJournal): void {
   const path = journalPath(proposalDir);
   const temp = `${path}.tmp`;
   writeDurable(temp, Buffer.from(`${JSON.stringify(journal, null, 2)}\n`));
-  renameSync(temp, path);
+  renameWithRetry(temp, path);
   fsyncFile(path);
 }
 
@@ -190,7 +195,7 @@ function removePrivateArtifacts(proposalDir: string): void {
   const jp = journalPath(proposalDir);
   if (existsSync(jp)) unlinkSync(jp);
   const td = txnDir(proposalDir);
-  if (existsSync(td)) rmSync(td, { recursive: true, force: true });
+  if (existsSync(td)) removeTree(td);
   const temp = `${jp}.tmp`;
   if (existsSync(temp)) unlinkSync(temp);
 }
@@ -290,7 +295,7 @@ function restoreBackup(targetAbs: string, backupAbs: string): void {
   const temp = `${targetAbs}.baseline-rollback-${process.pid}`;
   copyFileSync(backupAbs, temp);
   fsyncFile(temp);
-  renameSync(temp, targetAbs);
+  renameWithRetry(temp, targetAbs);
   fsyncFile(targetAbs);
 }
 
@@ -306,7 +311,7 @@ export function recoverBaselineClosureApply(
   if (!existsSync(jp)) {
     // 无 journal 的私有 staging 不含权威写入，可确定性清理。
     const td = txnDir(proposalDir);
-    if (existsSync(td)) rmSync(td, { recursive: true, force: true });
+    if (existsSync(td)) removeTree(td);
     return { ok: true, recovered: 'none' };
   }
   const journal = parseJournal(proposalDir);
@@ -407,7 +412,7 @@ export function applyBaselineClosureBatch(
       });
     }
   } catch (e) {
-    if (existsSync(td)) rmSync(td, { recursive: true, force: true });
+    if (existsSync(td)) removeTree(td);
     return { ok: false, error: `无法准备私有 staging/backup：${String(e)}`, rolled_back: true };
   }
 
@@ -426,7 +431,7 @@ export function applyBaselineClosureBatch(
       const current = existingHash(w.targetAbs);
       if (current !== w.oldSha256) throw new Error(`${w.mode} 目标在提交前发生漂移：${w.targetPath}`);
       const stagedAbs = join(proposalDir, ...journal.entries[i].staged_path.split('/'));
-      renameSync(stagedAbs, w.targetAbs);
+      renameWithRetry(stagedAbs, w.targetAbs);
       fsyncFile(w.targetAbs);
       if (hashFile(w.targetAbs) !== w.newSha256) throw new Error(`目标后置哈希不一致：${w.targetPath}`);
       if (w.kind === 'non-markdown' && /^## (?:ADDED|MODIFIED) — /m.test(readFileSync(w.targetAbs, 'utf-8'))) {

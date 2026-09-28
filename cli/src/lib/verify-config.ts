@@ -5,7 +5,6 @@ import { normalizeSandboxConfig, type NormalizedSandboxConfig } from './sandbox.
 export const DEFAULT_VERIFY_RESULT_PATH = 'logos/resources/verify/test-results.jsonl';
 export const DEFAULT_VERIFY_MERGE_STRATEGY = 'last-write-wins';
 export const DEFAULT_SANDBOX_MODE = 'auto';
-export const DEFAULT_SANDBOX_ROOT = '/private/tmp';
 export const DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE = true;
 
 export interface VerifyConfig {
@@ -136,10 +135,8 @@ function backfillSandboxDefaults(target: Record<string, unknown>): boolean {
     target.sandbox_mode = DEFAULT_SANDBOX_MODE;
     changed = true;
   }
-  if (target.sandbox_root === undefined) {
-    target.sandbox_root = DEFAULT_SANDBOX_ROOT;
-    changed = true;
-  }
+  // sandbox_root 不补入：默认根在读取时按平台解析（sandbox.ts resolveDefaultSandboxRoot），
+  // 不把某台机器的临时目录固化进跨机配置（架构 §五十二 52.6）；已有值（含用户显式值）不改写。
   if (target.sandbox_deny_workspace_write === undefined) {
     target.sandbox_deny_workspace_write = DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE;
     changed = true;

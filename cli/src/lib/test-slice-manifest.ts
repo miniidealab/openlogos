@@ -9,10 +9,10 @@ import {
   readFileSync,
   realpathSync,
   readdirSync,
-  renameSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { renameWithRetry } from './fs-retry.js';
 import { basename, dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { parseDocument } from 'yaml';
 import { readTestChangeSet } from './test-change-set.js';
@@ -785,7 +785,8 @@ export function stageFileAtomic(path: string, bytes: Buffer): string {
 
 /** 把已校验通过的临时文件原子 rename 为正式产物。 */
 export function commitStagedFile(temp: string, path: string): void {
-  renameSync(temp, path);
+  // Windows 瞬时文件锁（EPERM/EACCES/EBUSY）有界重试（架构 §五十二 52.3），用尽原样抛出。
+  renameWithRetry(temp, path);
 }
 
 /** 校验不通过或异常时删除临时文件；正式产物保持调用前字节。 */

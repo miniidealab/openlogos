@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import path, { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renameWithRetry } from './fs-retry.js';
 
 export const ASSET_MANIFEST_SCHEMA = 'openlogos/asset-manifest@1' as const;
 
@@ -94,6 +95,15 @@ export function readBundledAssetManifest(path = bundledManifestPath()): AssetMan
   return parsed;
 }
 
+/**
+ * sync 戳临时文件路径：与目标同目录，文件名只经 path API 推导（架构 §五十二 52.1-2）——
+ * 按 `/` 拆分会在 Windows 反斜杠路径下把整条路径（含盘符 `C:`）拼进文件名。
+ * `pathApi` 仅供测试以 `path.win32` 驱动。
+ */
+export function syncStampTempPath(stampPath: string, pathApi: typeof path = path, pid = process.pid): string {
+  return pathApi.join(pathApi.dirname(stampPath), `${pathApi.basename(stampPath)}.tmp-${pid}`);
+}
+
 export function writeSyncStamp(path: string, manifest: AssetManifest, syncedAt = new Date().toISOString()): SyncStamp {
   if (existsSync(path)) {
     try {
@@ -110,9 +120,9 @@ export function writeSyncStamp(path: string, manifest: AssetManifest, syncedAt =
     planContractVersion: manifest.planContractVersion,
     managedAssetsHash: manifest.payloadHash,
   };
-  const temp = join(dirname(path), `.${path.split('/').pop()}.tmp-${process.pid}`);
+  const temp = syncStampTempPath(path);
   writeFileSync(temp, JSON.stringify(stamp, null, 2) + '\n');
-  renameSync(temp, path);
+  renameWithRetry(temp, path);
   return stamp;
 }
 

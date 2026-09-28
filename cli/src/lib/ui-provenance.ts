@@ -14,12 +14,14 @@
  */
 import {
   existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync,
-  renameSync, copyFileSync, statSync,
+  copyFileSync, statSync,
 } from 'node:fs';
 import { join, basename, resolve, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { isValidPrototypeBasename, readUiUxDeclaration } from './ui-first.js';
 import { PLAN_APPROVED_MARKER } from './proposal-markers.js';
+import { removeTree } from './fs-remove.js';
+import { renameWithRetry } from './fs-retry.js';
 
 /** 本文件此前自列一份同名字面量；marker 名的唯一权威在 proposal-markers.ts。 */
 export const PLAN_APPROVED = PLAN_APPROVED_MARKER;
@@ -260,10 +262,11 @@ function ensureDir(d: string): void { mkdirSync(d, { recursive: true }); }
 function writeJournalAtomic(path: string, journal: Journal): void {
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, JSON.stringify(journal, null, 2));
-  renameSync(tmp, path);
+  renameWithRetry(tmp, path);
 }
 function safeRename(from: string, to: string): void {
-  try { renameSync(from, to); }
+  // Windows 瞬时文件锁先经有界重试（架构 §五十二 52.3）；EXDEV 复制回退语义不变
+  try { renameWithRetry(from, to); }
   catch (e) {
     // 跨设备回退：复制 + 删除
     if ((e as NodeJS.ErrnoException).code === 'EXDEV') { copyFileSync(from, to); rmSync(from, { force: true }); }
@@ -299,8 +302,8 @@ export function commitVerifiedPrototypes(proposalDir: string, root: string, opts
   }
 
   // 清理任何残留 staging/backup（幂等）
-  rmSync(stagingDir, { recursive: true, force: true });
-  rmSync(backupDir, { recursive: true, force: true });
+  removeTree(stagingDir);
+  removeTree(backupDir);
   ensureDir(stagingDir);
 
   // ① 全量校验（对 staged 副本）
@@ -317,7 +320,7 @@ export function commitVerifiedPrototypes(proposalDir: string, root: string, opts
     const setOk = expKeys.length === stKeys.length && expKeys.every((k, i) => k === stKeys[i]);
     const contentOk = setOk && expKeys.every(k => stagedHashes[k] === expected[k]);
     if (!setOk || !contentOk) {
-      rmSync(stagingDir, { recursive: true, force: true });
+      removeTree(stagingDir);
       return { ok: false, advisory: false, cls, committed: [], reason: 'hash_mismatch' };
     }
   }
@@ -378,8 +381,8 @@ export function commitVerifiedPrototypes(proposalDir: string, root: string, opts
   if (opts.deferCleanup) {
     return { ok: true, advisory: cls === 'legacy', cls, committed, pendingCleanup: true };
   }
-  rmSync(stagingDir, { recursive: true, force: true });
-  rmSync(backupDir, { recursive: true, force: true });
+  removeTree(stagingDir);
+  removeTree(backupDir);
   rmSync(journalPath, { force: true });
   return { ok: true, advisory: cls === 'legacy', cls, committed };
 }
@@ -392,8 +395,8 @@ export function commitVerifiedPrototypes(proposalDir: string, root: string, opts
  */
 export function finalizePrototypeCommit(proposalDir: string): { ok: boolean; reason?: string } {
   try {
-    rmSync(join(proposalDir, STAGING_DIR), { recursive: true, force: true });
-    rmSync(join(proposalDir, BACKUP_DIR), { recursive: true, force: true });
+    removeTree(join(proposalDir, STAGING_DIR));
+    removeTree(join(proposalDir, BACKUP_DIR));
     rmSync(join(proposalDir, COMMIT_JOURNAL), { force: true });
     return { ok: true };
   } catch (err) {
@@ -473,8 +476,8 @@ function abortTransaction(journal: Journal, journalPath: string, stagingDir: str
   journal.intent = 'abort';
   writeJournalAtomic(journalPath, journal);   // 先持久化 abort intent，崩溃后恢复才会继续回滚而非误前滚
   if (!rollbackAllToOld(journal, journalPath)) return false;
-  rmSync(stagingDir, { recursive: true, force: true });
-  rmSync(backupDir, { recursive: true, force: true });
+  removeTree(stagingDir);
+  removeTree(backupDir);
   rmSync(journalPath, { force: true });
   return true;
 }
@@ -555,8 +558,8 @@ export function recoverCommitJournal(proposalDir: string): 'rolled_forward' | 'r
       e.done = true;
       writeJournalAtomic(journalPath, journal);   // 每步 rename 后原子持久化，磁盘与真实进度同步
     }
-    rmSync(stagingDir, { recursive: true, force: true });
-    rmSync(backupDir, { recursive: true, force: true });
+    removeTree(stagingDir);
+    removeTree(backupDir);
     rmSync(journalPath, { force: true });
     return 'rolled_forward';
   } catch {

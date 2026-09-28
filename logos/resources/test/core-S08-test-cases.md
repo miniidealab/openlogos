@@ -340,3 +340,48 @@
 - S08-AC-Plan-01 资产可核验：UT-S08-38～UT-S08-40、ST-S08-28。
 - S08-AC-Plan-02 过期/漂移可诊断：UT-S08-39、UT-S08-41、ST-S08-29。
 - S08-AC-Plan-03 用户资产保护：UT-S08-42、ST-S08-28～ST-S08-29。
+
+## S08 Windows 平台资产同步与钩子可移植性测试
+
+> 覆盖架构文档「五十二、Windows 平台兼容约束」52.1、52.3、52.4、52.5、52.7；场景 S08「同步 AI 工具资产与资源索引」；来源变更 fix-windows-platform-compat。
+>
+> **夹具口径**：一律在一次性隔离项目内运行真实 `init` / `sync` 入口或其导出函数；「win32 路径形态」用例以 `path.win32` 构造输入或在 Windows CI job 中真实运行，不以字符串替换伪造结论。Python 探测三态（P-none / P-stub / P-real）定义与前置断言要求同 `core-S09-test-cases.md`「S09 guard 跨平台可移植性与输入 fail-closed 测试」夹具口径。Git 相关夹具使用真实 `git` 创建一次性仓库。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S08"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S08-61 | sync 戳临时文件名在反斜杠路径下合法 | 以 win32 路径形态调用 `writeSyncStamp`（Windows CI 真实运行；POSIX 上以 `path.win32` 驱动临时路径推导函数） | stamp 路径 `C:\p\logos\.openlogos-sync.json`，旧 stamp 不存在 | 推导出的临时文件与目标同目录、文件名为 `.openlogos-sync.json.tmp-<pid>`，不含 `:` 与 `\`；写入后 stamp 内容合法；**必红对照**：修复前实现推导出含 `C:` 的非法文件名 |
+| UT-S08-62 | 托管 `.gitattributes` 块幂等写入并保留用户内容 | ① 无 `.gitattributes`；② 已有用户内容 `*.png binary`；③ 已含旧版托管块 | 运行 init / sync 两次 | ① 新建且仅含托管块；② 用户行字节不变、托管块追加一次；③ 托管块原地替换不重复；三者第二次运行零 diff；托管块对 `logos/**` 与托管钩子 / 运行时目录设 `-text` |
+| UT-S08-63 | 存量 CRLF：仅换行被转换的哈希绑定文件写回 index 字节 | 真实 git 仓库：提交 LF 的测试规格 target（其 `after_sha256` 记录于 `SPEC_MERGED.test_change_set`）与原型 HTML（哈希记录于 provenance）；随后把工作区改写为该 blob 的 LF→CRLF 转换结果 | 运行 sync 的存量恢复 | 两文件工作区字节等于 index blob 原始字节；既有哈希复验通过；`git status` 对两路径无修改；sync 输出列出已恢复路径 |
+| UT-S08-64 | 存量 CRLF：有本地修改的文件不动并逐路径报告 | 同上，但工作区在 CRLF 之外另改了一个单元格 | 运行 sync 的存量恢复 | 该文件字节保持不变（本地修改未被覆盖）；sync 输出点名该路径「需人工处理」；未重签哈希；未执行任何批量换行改写 |
+| UT-S08-65 | 存量 CRLF：非 Git 仓库 / index 不可读只报告 | ① 删除 `.git` 的项目；② index 中无该路径 | 运行 sync 的存量恢复 | 均不写任何哈希绑定文件，逐路径报告；sync 不因此失败 |
+| UT-S08-66 | 托管钩子脚本 CRLF 由随包字节恢复 | 托管 `.claude/openlogos/bin/guard-check`、`openlogos-phase` 被改写为 CRLF | 运行 sync | 两脚本与随包字节逐字节一致（LF）；与 asset-manifest 登记 hash 一致 |
+| UT-S08-67 | Cursor skill 备份目录与目标同卷 | 记录 `renameSync` 的源与目标 | 触发需更新托管 skill 的 sync | 备份目录的父目录为目标所在目录（或其同级托管目录），不在 `os.tmpdir()` 下；更新成功后备份目录被清理；注入 fault 时回滚恢复原目录 |
+| UT-S08-68 | ZCode / Qoder / WorkBuddy / Cursor 目录 rename 瞬时锁重试 | `platform='win32'` 注入；rename 包装层**只对**「把新托管目录 rename 到目标位置」这一安装 rename（按目标路径匹配）注入故障，备份 rename 与回滚恢复 rename 透传：① 前 2 次抛 `EPERM` 后透传；② 从首次调用起持续 `EPERM` 直到本次 sync 返回 | 对四个适配器各触发一次需替换托管目录的 sync | ① 四者均成功，重试次数恰为 2；② 重试至上限后抛出，回滚恢复原目录（字节与 sync 前一致）、备份目录被清理，sync 非零退出并点名目录；两者的重试判据均为 archive-watch 既有同一实现；递归删除调用均传入内置 `maxRetries` |
+| UT-S08-72 | 适配器目录故障覆盖回滚阶段：如实报告、保留备份 | `platform='win32'` 注入；故障**从**安装 rename **开始**，作用于其后本进程内**全部**目录 rename（含回滚恢复 rename），持续 `EPERM` **直到**测试显式解除；以 Cursor 与 ZCode 各跑一次 | ① 触发 sync；② 检查目标与备份目录；③ 解除故障后重跑 sync | ① 非零退出，输出如实说明回滚未完成并点名备份目录位置；② 备份目录仍在且内容等于原托管目录（未被清理）；③ sync 成功，托管目录为新版本，残留备份被清理 |
+| UT-S08-69 | init 的 Python 探测以执行成功为准 | P-none、P-stub、P-real 三态 | 调用 init 的 Python 检测 | P-none 与 P-stub 均判「不可用」并给出安装提示（P-stub 不得被判可用）；P-real 判可用且记录所选命令（`python3` / `python` / `py -3` 之一）；不使用 `command -v` 作为判据 |
+| UT-S08-70 | openlogos-phase 与 Codex session-start 三态下正确注入 | 中文 locale 的 launched 项目、存在活跃提案；P-none、P-stub、P-real 三态 | 分别执行分发源 `plugin/bin/openlogos-phase` 与 `plugin-codex/session-start.sh` | 三态输出逐条相同：中文上下文、阶段与活跃提案字段非空；两脚本不含 `/dev/stdin` 字面量；**必红对照**：修复前实现在 P-stub 下输出英文且状态字段为空 |
+| UT-S08-71 | Codex hook 显式 bash、OpenCode 在 win32 以 shell 调 CLI | ① init 生成 Codex `config.toml`；② 以 `platform='win32'` 注入调用 `plugin-opencode` 的 CLI 桥接（`template/openlogos.js` 与 `src/cli-bridge.js`），参数含空格与引号 | ① 读取 SessionStart hook command；② 记录 `spawn` 参数 | ① command 形如 `bash "<相对路径>/session-start.sh"`，POSIX 与 Windows 同一写法；② win32 下以 shell 方式调用且每个参数经引用、参数值原样到达 CLI；非 win32 仍为直接 `spawn("openlogos", args)` |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S08-38 | Windows 真实 init + sync 全流程 | S08 sync 主时序 | **Windows CI job**（windows-latest，真实 NTFS、真实 Node、真实 Git Bash）；一次性隔离目录；真实 CLI | ① 真实 `openlogos init`（Claude + Cursor 目标）；② 修改包内资产版本标识后真实 `openlogos sync`；③ 再次 `openlogos sync`；④ `openlogos status --format json` | ① ② 退出码 0，输出不含 `EINVAL` / `ENOENT` / `EXDEV`；`logos/.openlogos-sync.json` 存在且与当前 manifest 一致；③ 零 diff；④ `managed_assets` 不为 `missing` / `stale` |
+| ST-S08-39 | 存量 CRLF 工作区升级后恢复 | S08 sync + 52.4 存量恢复 | **Windows CI job**；真实 git：在 `core.autocrlf=false` 下提交 LF 的 launched 夹具（含 `SPEC_MERGED.test_change_set` 与原型 provenance）；随后以 `core.autocrlf=true` 另行 clone 得到 CRLF 工作区，并对其中一个规格文件做一处换行以外的未提交修改 | ① 在 CRLF clone 中真实 `openlogos sync`；② 读回各文件字节与 `git status`；③ 运行依赖 `test_change_set` 哈希的读取入口（如 `openlogos status --format json` 中的切片 / 测试变更集诊断） | ① 退出码 0，报告点名被保留的有本地修改文件；② 仅换行被转换的文件恢复为 index 字节、托管钩子为 LF；有本地修改的文件字节不变；③ 不再报 `test-slice-change-set-target-hash`（有本地修改的那一个除外，其诊断如实保留） |
+
+### 追溯与覆盖
+
+- 路径分隔符（52.1-2）：UT-S08-61、ST-S08-38。
+- rename 重试与删除内置重试（52.3）：UT-S08-67、UT-S08-68；故障覆盖回滚阶段时保留备份：UT-S08-72。
+- 换行保真预防与存量恢复（52.4）：UT-S08-62～UT-S08-66、ST-S08-39。
+- Python 探测、`readFileSync(0)`、`.cmd` 调用、bash 显式调用（52.5）：UT-S08-69～UT-S08-71。
+- 来源变更 fix-windows-platform-compat。
+
+### 自动化与证据要求
+
+- 依赖 Python 探测的用例必须先记录并断言所处 PATH 条件，条件不成立判 FAIL 而非 skip。
+- ST-S08-38、ST-S08-39 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中运行；POSIX 结果不计入其覆盖。
+- UT-S08-63～UT-S08-65 必须用真实 `git` 仓库与真实 index，不得以手写 blob 代替。
+- 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。

@@ -1,15 +1,15 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync, chmodSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, readdirSync, chmodSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
+import { ensureManagedGitattributes } from '../lib/gitattributes.js';
 import { parse as parseYaml } from 'yaml';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 import {
   DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
   DEFAULT_SANDBOX_MODE,
-  DEFAULT_SANDBOX_ROOT,
   backfillVerifyPreRunConfig,
 } from '../lib/verify-config.js';
 import {
@@ -41,6 +41,7 @@ import {
   localizedCursorResult,
   preflightCursorTarget,
 } from '../lib/cursor-adapter.js';
+import { removeTree } from '../lib/fs-remove.js';
 
 export type { AiTool } from '../lib/ai-tool-adapter.js';
 
@@ -55,6 +56,12 @@ const CODEX_PERSONAL_PLUGIN_REL_DIR = 'plugins/openlogos';
 const CODEX_HOOK_REL_PATH = `${CODEX_OPENLOGOS_PLUGIN_REL_DIR}/hooks/session-start.sh`;
 const CODEX_LEGACY_PLUGIN_REL_DIR = '.codex-plugin';
 const CODEX_LEGACY_HOOK_REL_PATH = `${CODEX_LEGACY_PLUGIN_REL_DIR}/hooks/session-start.sh`;
+/**
+ * Codex SessionStart hook 以显式 `bash "<脚本>"` 调用（架构 §五十二 52.5 第 5 条）：不依赖文件关联或可执行位，
+ * POSIX 与 Windows 同一写法。TOML 基本字符串内的双引号以 `\"` 转义。
+ */
+export const CODEX_HOOK_COMMAND = `bash "${CODEX_HOOK_REL_PATH}"`;
+const CODEX_HOOK_COMMAND_TOML_LINE = `command = ${JSON.stringify(CODEX_HOOK_COMMAND)}`;
 
 export function parseAiTool(value: unknown): AiTool | undefined {
   return parseRegisteredAiTool(value);
@@ -428,7 +435,7 @@ function mergeCodexConfig(root: string): { created: boolean; updated: boolean } 
   const configDir = join(root, '.codex');
   const configPath = join(configDir, 'config.toml');
 
-  const hookBlock = `\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "${CODEX_HOOK_REL_PATH}"\ntimeout = 5\nasync = false\nstatusMessage = "Loading OpenLogos phase context..."\n`;
+  const hookBlock = `\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\n${CODEX_HOOK_COMMAND_TOML_LINE}\ntimeout = 5\nasync = false\nstatusMessage = "Loading OpenLogos phase context..."\n`;
 
   mkdirSync(configDir, { recursive: true });
 
@@ -450,7 +457,7 @@ function mergeCodexConfig(root: string): { created: boolean; updated: boolean } 
     content = openLogosPluginBlockCleanup.content;
     changed = true;
   }
-  const hasOpenLogosHook = content.includes(`command = "${CODEX_HOOK_REL_PATH}"`);
+  const hasOpenLogosHook = content.includes(CODEX_HOOK_COMMAND_TOML_LINE);
 
   if (!hasOpenLogosHook) {
     content += hookBlock;
@@ -491,7 +498,10 @@ function removeLegacyOpenLogosCodexHookBlocks(content: string): { content: strin
 
     const blockText = block.join('\n');
     const isLegacyOpenLogosHook = blockText.includes(`command = "${CODEX_LEGACY_HOOK_REL_PATH}"`)
-      || blockText.includes(`command = "./${CODEX_LEGACY_HOOK_REL_PATH}"`);
+      || blockText.includes(`command = "./${CODEX_LEGACY_HOOK_REL_PATH}"`)
+      // 旧版直接执行脚本（依赖可执行位）的托管条目：移除后由显式 bash 条目原地替代
+      || blockText.includes(`command = "${CODEX_HOOK_REL_PATH}"`)
+      || blockText.includes(`command = "./${CODEX_HOOK_REL_PATH}"`);
     if (isLegacyOpenLogosHook) {
       changed = true;
       continue;
@@ -756,7 +766,7 @@ function removeLegacyOpenLogosCodexPlugin(root: string): boolean {
 
   if (readCodexPluginName(pluginJsonPath) !== CODEX_OPENLOGOS_PLUGIN_ID) return false;
 
-  rmSync(legacyDir, { recursive: true, force: true });
+  removeTree(legacyDir);
   return true;
 }
 
@@ -805,7 +815,7 @@ function deployCodexPersonalPlugin(root: string, locale: Locale): {
   const personalPluginDir = join(home, CODEX_PERSONAL_PLUGIN_REL_DIR);
   const projectPluginDir = join(root, CODEX_OPENLOGOS_PLUGIN_REL_DIR);
   const created = !existsSync(personalPluginDir);
-  rmSync(personalPluginDir, { recursive: true, force: true });
+  removeTree(personalPluginDir);
   copyDirRecursive(projectPluginDir, personalPluginDir);
 
   const skillsSource = findSkillsSource();
@@ -1019,6 +1029,13 @@ function migrateClaudeHookEntries(
  * Merges the openlogos PreToolUse guard hook into .claude/settings.json.
  * Idempotent: appends only when absent; legacy relative-path entries are migrated in place.
  */
+/**
+ * PreToolUse matcher（spec/pretooluse-guard.md §hook 注册形态）：MultiEdit / NotebookEdit 与 Edit / Write 同类，
+ * PowerShell 为 Windows 版 Claude Code 的 shell 工具。旧 matcher 的托管条目原地升级。
+ */
+export const CLAUDE_GUARD_HOOK_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell';
+const CLAUDE_GUARD_HOOK_LEGACY_MATCHER = 'Edit|Write|Bash';
+
 function mergeClaudePreToolUseGuard(root: string): boolean {
   const settingsPath = join(root, '.claude', 'settings.json');
   if (!existsSync(settingsPath)) return false; // SessionStart merge creates it first
@@ -1042,9 +1059,20 @@ function mergeClaudePreToolUseGuard(root: string): boolean {
     groups, CLAUDE_GUARD_HOOK_COMMAND, [CLAUDE_GUARD_HOOK_LEGACY_COMMAND],
   );
   let updated = changed;
+  // 旧 matcher 的托管条目原地升级（不新增第二条）；用户自有 group 不动。
+  for (const group of groups) {
+    if (typeof group !== 'object' || group === null) continue;
+    const g = group as Record<string, unknown>;
+    const managed = Array.isArray(g['hooks']) && (g['hooks'] as unknown[]).some(item =>
+      typeof item === 'object' && item !== null && (item as Record<string, unknown>)['command'] === CLAUDE_GUARD_HOOK_COMMAND);
+    if (managed && g['matcher'] === CLAUDE_GUARD_HOOK_LEGACY_MATCHER) {
+      g['matcher'] = CLAUDE_GUARD_HOOK_MATCHER;
+      updated = true;
+    }
+  }
   if (!present) {
     groups.push({
-      matcher: 'Edit|Write|Bash',
+      matcher: CLAUDE_GUARD_HOOK_MATCHER,
       hooks: [{ type: 'command', command: CLAUDE_GUARD_HOOK_COMMAND }],
     });
     updated = true;
@@ -1594,17 +1622,29 @@ function deployMultiFileSkillAssets(source: string, root: string): void {
   }
 }
 
-function isPython3Available(): boolean {
-  try {
-    execSync('python3 --version', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+/** Python 探测候选（架构 §五十二 52.5 第 1 条），与钩子脚本、ui-ux-pro-max Skill 同一口径。 */
+export const PYTHON_PROBE_CANDIDATES: ReadonlyArray<{ label: string; command: string; args: string[] }> = [
+  { label: 'python3', command: 'python3', args: [] },
+  { label: 'python', command: 'python', args: [] },
+  { label: 'py -3', command: 'py', args: ['-3'] },
+];
+
+/**
+ * 依次尝试 python3 → python → py -3，以**实际执行成功**（`-c "import sys"` 退出 0）为准，返回所选命令；
+ * 不以 `command -v` / PATH 可发现性为准——Windows 上 `python3` 可能是可被发现但运行即失败的商店占位别名。
+ */
+export function detectPythonCommand(env: NodeJS.ProcessEnv = process.env): string | null {
+  for (const candidate of PYTHON_PROBE_CANDIDATES) {
+    const r = spawnSync(candidate.command, [...candidate.args, '-c', 'import sys'], {
+      env, stdio: 'ignore', timeout: 10_000, windowsHide: true,
+    });
+    if (!r.error && r.status === 0) return candidate.label;
   }
+  return null;
 }
 
 function maybePrintPythonHint(locale: Locale): void {
-  if (isPython3Available()) return;
+  if (detectPythonCommand() !== null) return;
   const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
   console.log('');
   console.log(yellow(t(locale, 'init.pythonMissingHeader')));
@@ -1960,14 +2000,12 @@ export function createLogosConfig(name: string, locale: Locale, aiTool: AiTool =
     verify: {
       result_path: 'logos/resources/verify/test-results.jsonl',
       sandbox_mode: DEFAULT_SANDBOX_MODE,
-      sandbox_root: DEFAULT_SANDBOX_ROOT,
       sandbox_deny_workspace_write: DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
     },
     smoke: {
       result_path: 'logos/resources/verify/smoke-results.jsonl',
       report_path: 'logos/resources/verify/smoke-report.md',
       sandbox_mode: DEFAULT_SANDBOX_MODE,
-      sandbox_root: DEFAULT_SANDBOX_ROOT,
       sandbox_deny_workspace_write: DEFAULT_SANDBOX_DENY_WORKSPACE_WRITE,
     },
   }, null, 2);
@@ -2272,6 +2310,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       printVerifyPreRunBackfillResult(locale, verifyBackfill);
 
       deployAiToolAssets(root, requestedTools, locale, isLaunched, 'synced');
+      ensureManagedGitattributes(root);
 
       const specResult = deploySpecs(root);
       if (specResult && specResult.count > 0) {
@@ -2351,6 +2390,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   console.log(`  ✓ CLAUDE.md`);
 
   deployAiToolAssets(root, deployTools, locale, false, 'deployed');
+  if (ensureManagedGitattributes(root)) console.log('  ✓ .gitattributes');
 
   const specResult = deploySpecs(root);
   if (specResult && specResult.count > 0) {

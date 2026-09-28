@@ -1,6 +1,6 @@
 {
   "_note": "改动前基线（make-phase-banner-informational）：guard-check 与 CLI 均未被本变更修改，易变字段具名剔除：timestamp, version, managed_assets.expected_hash。禁止手改。",
-  "guard_check_sha256": "bbe12f71d5603667c01897d8826729da1d40a46e7390e346051bb64b7fe4ecbb",
+  "guard_check_sha256": "da3e668830945cc96bf1214a9ae8c255fa6ce10e84b8f4ff2aae351ee93d4bd7",
   "states": {
     "delta-writing": {
       "status": {

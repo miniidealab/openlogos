@@ -95,11 +95,26 @@ Search specific domains using the CLI tool below.
 
 ## Prerequisites
 
-Check if Python is installed:
+Detect a **working** Python 3 command. Try the candidates in order and use the first one that actually runs — do not rely on `command -v` / `which` alone, because on Windows `python3` may resolve to a Microsoft Store placeholder alias that is found on PATH but fails when executed:
 
 ```bash
-python3 --version || python --version
+for c in python3 python "py -3"; do
+  if $c -c "import sys; assert sys.version_info >= (3,)" >/dev/null 2>&1; then PY="$c"; break; fi
+done
+echo "${PY:-<none>}"
 ```
+
+PowerShell equivalent:
+
+```powershell
+foreach ($c in @('python3','python','py -3')) {
+  $exe, $rest = $c -split ' ', 2
+  try { & $exe @($rest -split ' ' | Where-Object { $_ }) -c "import sys; assert sys.version_info >= (3,)" 2>$null; if ($LASTEXITCODE -eq 0) { $PY = $c; break } } catch {}
+}
+$PY
+```
+
+**All later examples in this skill write `python3`; substitute the detected command** (e.g. `python` or `py -3` on Windows). If no candidate works, Python is not installed.
 
 If Python is not installed, install it based on user's OS:
 
@@ -117,6 +132,8 @@ sudo apt update && sudo apt install python3
 ```powershell
 winget install Python.Python.3.12
 ```
+
+On Windows the installer provides `python` and `py` (not `python3`); after installing, re-run the detection above — `python` or `py -3` will be selected. If `python3` still opens the Microsoft Store, disable the alias in *Settings → Apps → Advanced app settings → App execution aliases*; the detection above works either way.
 
 ---
 

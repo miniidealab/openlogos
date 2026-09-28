@@ -8,41 +8,6 @@
 
 set -euo pipefail
 
-# ── Runtime probing（fix-windows-platform-compat，架构 §五十二 52.5）────────────────────
-# node 是 OpenLogos 运行前提，为全部 JSON / YAML 读取的主路径；node 不可执行时才用 Python。
-# Python 候选依次 python3 → python → py -3，以执行 `-c "import sys"` 退出 0 为可用判据，不以 PATH
-# 可发现性为准（Windows 上 python3 常为可被发现、运行即失败的商店占位别名）。探测结果在一次调用内复用。
-NODE_OK=0
-if node -e "" </dev/null >/dev/null 2>&1; then
-  NODE_OK=1
-fi
-OPENLOGOS_PY=""
-detect_python() {
-  [ -n "${OPENLOGOS_PY:-}" ] && return 0
-  OPENLOGOS_PY="none"
-  local cand
-  for cand in "python3" "python" "py -3"; do
-    # shellcheck disable=SC2086
-    if $cand -c "import sys" </dev/null >/dev/null 2>&1; then
-      OPENLOGOS_PY="$cand"
-      return 0
-    fi
-  done
-  return 0
-}
-has_python() {
-  detect_python
-  [ "$OPENLOGOS_PY" != "none" ]
-}
-run_python() {
-  # shellcheck disable=SC2086
-  $OPENLOGOS_PY "$@"
-}
-if [ "$NODE_OK" -ne 1 ]; then
-  detect_python
-fi
-
-
 if ! command -v openlogos &>/dev/null; then
   echo "{}"
   exit 0
@@ -55,38 +20,43 @@ fi
 
 STATUS=$(openlogos status --format json 2>/dev/null || echo "")
 
+# Parse JSON using python3 (preferred) or node
+_py_parse() {
+  python3 -c "import sys,json; d=json.load(sys.stdin); $1" 2>/dev/null || echo "$2"
+}
+_node_parse() {
+  node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);$1}catch(e){process.stdout.write('$2')}})" 2>/dev/null || echo "$2"
+}
 
-if [ "$NODE_OK" -eq 1 ]; then
-  LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
-  CONFIG_LIFECYCLE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.lifecycle||'')" 2>/dev/null || echo "")
-  PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
-  STATUS_LIFECYCLE=$(echo "$STATUS" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const r=JSON.parse(d);console.log((r.data||{}).lifecycle||'')}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-  CURRENT_PHASE=$(echo "$STATUS" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const r=JSON.parse(d);console.log((r.data||{}).current_phase||'all-done')}catch(e){console.log('unknown')}})()" 2>/dev/null || echo "unknown")
-  SUGGESTION=$(echo "$STATUS" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const r=JSON.parse(d);console.log((r.data||{}).suggestion||'')}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-  ALL_DONE=$(echo "$STATUS" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const r=JSON.parse(d);console.log((r.data||{}).all_done?'true':'false')}catch(e){console.log('false')}})()" 2>/dev/null || echo "false")
-  ACTIVE_CHANGE=$(echo "$STATUS" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.slug);console.log(data.active_change||mod?.active_change?.slug||'')}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-  PROPOSAL_STEP=$(echo "$STATUS" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.proposal_step);console.log(data.proposal_step||mod?.active_change?.proposal_step||'')}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-  PLAN_STATE_SUMMARY=$(echo "$STATUS" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{try{const data=(JSON.parse(d).data)||{};const active=data.active_change||'';let ps=data.plan_state;for(const m of data.modules||[]){const ac=m.active_change;if(!ac) continue;if(active&&ac.slug!==active) continue;ps=ps||ac.plan_state;break;}console.log(!ps?'':\`plan_ready=\${!!ps.plan_ready}, plan_gate_pending=\${!!ps.plan_gate_pending}, plan_approved=\${!!ps.plan_approved}, tasks_execution=\${ps.tasks_execution_done??0}/\${ps.tasks_execution_total??0} \${ps.tasks_execution_scope||'none'}\`)}catch(e){console.log('')}})()" 2>/dev/null || echo "")
-fi
-if [ "$NODE_OK" -ne 1 ] && has_python; then
-  LOCALE=$(run_python -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
-  CONFIG_LIFECYCLE=$(run_python -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('lifecycle',''))" 2>/dev/null || echo "")
-  PROJECT_NAME=$(run_python -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('name',''))" 2>/dev/null || echo "")
-  STATUS_LIFECYCLE=$(echo "$STATUS" | run_python -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('lifecycle',''))" 2>/dev/null || echo "")
-  CURRENT_PHASE=$(echo "$STATUS" | run_python -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('current_phase') or 'all-done')" 2>/dev/null || echo "unknown")
-  SUGGESTION=$(echo "$STATUS" | run_python -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('suggestion','Run openlogos status for next steps'))" 2>/dev/null || echo "")
-  ALL_DONE=$(echo "$STATUS" | run_python -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('data',{}).get('all_done') else 'false')" 2>/dev/null || echo "false")
-  ACTIVE_CHANGE=$(echo "$STATUS" | run_python -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; mods=data.get('modules') or []; print(active or next((m.get('active_change',{}).get('slug','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('slug')), ''))" 2>/dev/null || echo "")
-  PROPOSAL_STEP=$(echo "$STATUS" | run_python -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); step=data.get('proposal_step') or ''; mods=data.get('modules') or []; print(step or next((m.get('active_change',{}).get('proposal_step','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('proposal_step')), ''))" 2>/dev/null || echo "")
-  PLAN_STATE_SUMMARY=$(echo "$STATUS" | run_python -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; ps=data.get('plan_state'); mods=data.get('modules') or [];
+if command -v python3 &>/dev/null; then
+  LOCALE=$(python3 -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('locale','en'))" 2>/dev/null || echo "en")
+  CONFIG_LIFECYCLE=$(python3 -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('lifecycle',''))" 2>/dev/null || echo "")
+  PROJECT_NAME=$(python3 -c "import json; d=json.load(open('logos/logos.config.json')); print(d.get('name',''))" 2>/dev/null || echo "")
+  STATUS_LIFECYCLE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('lifecycle',''))" 2>/dev/null || echo "")
+  CURRENT_PHASE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('current_phase') or 'all-done')" 2>/dev/null || echo "unknown")
+  SUGGESTION=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('suggestion','Run openlogos status for next steps'))" 2>/dev/null || echo "")
+  ALL_DONE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('data',{}).get('all_done') else 'false')" 2>/dev/null || echo "false")
+  ACTIVE_CHANGE=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; mods=data.get('modules') or []; print(active or next((m.get('active_change',{}).get('slug','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('slug')), ''))" 2>/dev/null || echo "")
+  PROPOSAL_STEP=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); step=data.get('proposal_step') or ''; mods=data.get('modules') or []; print(step or next((m.get('active_change',{}).get('proposal_step','') for m in mods if isinstance(m.get('active_change'),dict) and m.get('active_change',{}).get('proposal_step')), ''))" 2>/dev/null || echo "")
+  PLAN_STATE_SUMMARY=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); active=data.get('active_change') or ''; ps=data.get('plan_state'); mods=data.get('modules') or [];
 for m in mods:
   ac=m.get('active_change') if isinstance(m.get('active_change'),dict) else None
   if not ac: continue
   if active and ac.get('slug') != active: continue
   ps = ps or ac.get('plan_state'); break
 print('' if not isinstance(ps,dict) else 'plan_ready=%s, plan_gate_pending=%s, plan_approved=%s, tasks_execution=%s/%s %s' % (str(bool(ps.get('plan_ready'))).lower(), str(bool(ps.get('plan_gate_pending'))).lower(), str(bool(ps.get('plan_approved'))).lower(), ps.get('tasks_execution_done',0), ps.get('tasks_execution_total',0), ps.get('tasks_execution_scope','none')))" 2>/dev/null || echo "")
-fi
-if [ "$NODE_OK" -ne 1 ] && ! has_python; then
+elif command -v node &>/dev/null; then
+  LOCALE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.locale||'en')" 2>/dev/null || echo "en")
+  CONFIG_LIFECYCLE=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.lifecycle||'')" 2>/dev/null || echo "")
+  PROJECT_NAME=$(node -e "const d=JSON.parse(require('fs').readFileSync('logos/logos.config.json','utf-8')); console.log(d.name||'')" 2>/dev/null || echo "")
+  STATUS_LIFECYCLE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).lifecycle||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+  CURRENT_PHASE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).current_phase||'all-done')}catch(e){console.log('unknown')}})" 2>/dev/null || echo "unknown")
+  SUGGESTION=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).suggestion||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+  ALL_DONE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const r=JSON.parse(d);console.log((r.data||{}).all_done?'true':'false')}catch(e){console.log('false')}})" 2>/dev/null || echo "false")
+  ACTIVE_CHANGE=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.slug);console.log(data.active_change||mod?.active_change?.slug||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+  PROPOSAL_STEP=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const mod=(data.modules||[]).find(m=>m.active_change&&m.active_change.proposal_step);console.log(data.proposal_step||mod?.active_change?.proposal_step||'')}catch(e){console.log('')}})" 2>/dev/null || echo "")
+  PLAN_STATE_SUMMARY=$(echo "$STATUS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const data=(JSON.parse(d).data)||{};const active=data.active_change||'';let ps=data.plan_state;for(const m of data.modules||[]){const ac=m.active_change;if(!ac) continue;if(active&&ac.slug!==active) continue;ps=ps||ac.plan_state;break;}console.log(!ps?'':\`plan_ready=\${!!ps.plan_ready}, plan_gate_pending=\${!!ps.plan_gate_pending}, plan_approved=\${!!ps.plan_approved}, tasks_execution=\${ps.tasks_execution_done??0}/\${ps.tasks_execution_total??0} \${ps.tasks_execution_scope||'none'}\`)}catch(e){console.log('')}})" 2>/dev/null || echo "")
+else
   echo "{}"
   exit 0
 fi
@@ -165,13 +135,11 @@ GUARD_STATUS=""
 
 if [ "$LIFECYCLE" = "launched" ] || [ "$LIFECYCLE" = "active" ]; then
   if [ -z "${ACTIVE_CHANGE:-}" ] && [ -f "$GUARD_FILE" ]; then
-    if [ "$NODE_OK" -eq 1 ]; then
+    if command -v python3 &>/dev/null; then
+      ACTIVE_CHANGE=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
+    elif command -v node &>/dev/null; then
       ACTIVE_CHANGE=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); console.log(d.activeChange||'')" 2>/dev/null || echo "")
-    fi
-    if [ "$NODE_OK" -ne 1 ] && has_python; then
-      ACTIVE_CHANGE=$(run_python -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
-    fi
-    if [ "$NODE_OK" -ne 1 ] && ! has_python; then
+    else
       ACTIVE_CHANGE=""
     fi
   fi
@@ -209,11 +177,10 @@ CAPABILITIES=""
 CAP_FILE="logos/.session-capabilities.json"
 if [ -f "$CAP_FILE" ]; then
   UI_RENDER=""
-  if [ "$NODE_OK" -eq 1 ]; then
+  if command -v python3 &>/dev/null; then
+    UI_RENDER=$(python3 -c "import json;print('true' if json.load(open('$CAP_FILE')).get('ui_prototype_render') is True else '')" 2>/dev/null || echo "")
+  elif command -v node &>/dev/null; then
     UI_RENDER=$(node -e "const d=JSON.parse(require('fs').readFileSync('$CAP_FILE','utf-8'));console.log(d.ui_prototype_render===true?'true':'')" 2>/dev/null || echo "")
-  fi
-  if [ "$NODE_OK" -ne 1 ] && has_python; then
-    UI_RENDER=$(run_python -c "import json;print('true' if json.load(open('$CAP_FILE')).get('ui_prototype_render') is True else '')" 2>/dev/null || echo "")
   fi
   if [ "$UI_RENDER" = "true" ]; then
     CAPABILITIES="Capabilities: ui_prototype_render=true (rendered UI confirmation available; capability 仅用于 plan-exit 前模式选择——就绪→渲染确认模式，plan-exit 后以 PLAN_APPROVED 为准)."
@@ -233,15 +200,13 @@ $CHANGE_MGMT
 === End OpenLogos Context ==="
 
 # JSON-escape context and status line
-if [ "$NODE_OK" -eq 1 ]; then
-  CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | node -e "console.log(JSON.stringify(require('fs').readFileSync(0,'utf-8')))" 2>/dev/null || echo '""')
-  SYS_MSG_ESCAPED=$(printf '%s' "$STATUS_LINE" | node -e "const d=require('fs').readFileSync(0,'utf-8');(()=>{const s=JSON.stringify(d);process.stdout.write(s.slice(1,-1))})()" 2>/dev/null || echo "$STATUS_LINE")
-fi
-if [ "$NODE_OK" -ne 1 ] && has_python; then
-  CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | run_python -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo '""')
-  SYS_MSG_ESCAPED=$(printf '%s' "$STATUS_LINE" | run_python -c "import sys,json; s=sys.stdin.read(); print(json.dumps(s)[1:-1])" 2>/dev/null || echo "$STATUS_LINE")
-fi
-if [ "$NODE_OK" -ne 1 ] && ! has_python; then
+if command -v python3 &>/dev/null; then
+  CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo '""')
+  SYS_MSG_ESCAPED=$(printf '%s' "$STATUS_LINE" | python3 -c "import sys,json; s=sys.stdin.read(); print(json.dumps(s)[1:-1])" 2>/dev/null || echo "$STATUS_LINE")
+elif command -v node &>/dev/null; then
+  CONTEXT_ESCAPED=$(printf '%s' "$CONTEXT" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.stringify(d)))" 2>/dev/null || echo '""')
+  SYS_MSG_ESCAPED=$(printf '%s' "$STATUS_LINE" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const s=JSON.stringify(d);process.stdout.write(s.slice(1,-1))})" 2>/dev/null || echo "$STATUS_LINE")
+else
   CONTEXT_ESCAPED='""'
   SYS_MSG_ESCAPED="$STATUS_LINE"
 fi

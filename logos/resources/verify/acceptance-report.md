@@ -6,16 +6,25 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 1936 |
+| Defined cases | 1987 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 1936 |
-| Passed | 1926 |
+| Executed cases | 1987 |
+| Passed | 1977 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
+
+## Slice Verification
+
+- Mode: `final`
+- Attempted slice: `null`
+- Confirmed slices: `slice-01-merge-durability-windows`, `slice-02-cli-derive-paths-windows`, `slice-03-verify-sandbox-windows`, `slice-04-sync-assets-windows`, `slice-05-guard-hooks-windows`
+- Eligible tests: 1987
+- Pending tests: 0
+- Final: true
 
 ## Skipped Cases
 

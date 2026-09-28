@@ -18,6 +18,7 @@
     "lint": "eslint src/",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:windows": "vitest run test/s39-windows-durability.test.ts test/windows-cli-derive-paths.test.ts test/s13-windows-sandbox.test.ts test/s08-windows-sync.test.ts test/s09-windows-guard.test.ts test/windows-rename-callsites.test.ts",
     "build:cursor-template": "node scripts/build-cursor-template.mjs"
   },
   "keywords": [

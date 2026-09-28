@@ -215,3 +215,19 @@ S31 既有 “空 `[code]` 退化为 `tests_green`” 仅适用于无代码产�
 - [ ] attempted 身份与前移：UT-S31-28～UT-S31-30、ST-S31-13
 - [ ] 哈希/幂等/重启：UT-S31-31、UT-S31-32、UT-S31-36、ST-S31-14
 - [ ] final 前置与收敛：UT-S31-33～UT-S31-35、ST-S31-12、ST-S31-15
+
+## 十三、slice done 产物路径跨平台归一测试（fix-windows-platform-compat）
+
+> 覆盖架构文档「五十二、Windows 平台兼容约束」52.1-4（判定绝对路径须同时识别 posix 与 win32 形态）；场景 S31「代码切片循环」的 `slice done --artifacts` 产物归属校验。缺陷：`cli/src/lib/automation-diagnostic.ts` `relFromRoot` 只把以 `/` 开头的输入视为绝对路径，Windows 绝对路径被当作相对路径处理而判为越界，进入 `missing_artifacts` 诊断。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S31"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S31-37 | Windows 绝对路径归一为项目相对路径 | 项目根 `C:\p`（Windows CI 真实运行；POSIX 上以 `path.win32` 驱动） | 产物参数 `C:\p\cli\src\a.ts`、`c:\p\cli\src\b.ts`（盘符小写）、`C:/p/cli/src/c.ts`、`cli\src\d.ts` | 依次归一为 `cli/src/a.ts`、`cli/src/b.ts`、`cli/src/c.ts`、`cli/src/d.ts`，均判在允许范围内、不进入 `missing_artifacts` / `outOfScope`；**必红对照**：修复前实现把前三者判为越界 |
+| UT-S31-38 | 项目外绝对路径与 posix 行为不变 | ① win32：`D:\other\x.ts`；② posix 项目根 `/p`：`/p/cli/src/a.ts`、`/other/x.ts`、`cli/src/a.ts` | 归一化并判定 | ① 判为项目外（越界）；② 结论与修复前逐条相同（`cli/src/a.ts` 在范围内，`/other/x.ts` 越界） |
+
+### 追溯与覆盖
+
+- 绝对路径识别（52.1-4）：UT-S31-37、UT-S31-38。
+- 来源变更 fix-windows-platform-compat；测试夹具在一次性隔离项目内构造。

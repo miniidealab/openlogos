@@ -178,3 +178,19 @@
 - AC-READLOCK-06 硬门与死锁回收零回退：UT-S33-60。
 - AC-READLOCK-01 并发不假阳性：ST-S33-10。
 - 功能规格：§2.54；架构：§四.B；场景：S33 baseline seed 事务与读取门。
+
+## 八、baseline-seed journal 恢复路径大小写跨平台测试（fix-windows-platform-compat）
+
+> 覆盖架构文档「五十二、Windows 平台兼容约束」52.1-5（win32 上比较来自不同调用的绝对路径前统一大小写）；场景 S33「存量项目逆向建种子基线」的 commit journal 恢复。缺陷：`cli/src/lib/baseline-seed-txn.ts` 恢复时以区分大小写的 `startsWith(backupBase + sep)` 比较 journal 中记录的绝对 `yaml_backup_path` 与本次计算的备份目录；Windows 上两次运行 cwd 大小写不同（如 `c:\proj` 与 `C:\Proj`）即判越界，报 `baseline_commit_in_progress` 且无法自动恢复。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S33"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S33-61 | win32 下备份路径比较大小写不敏感 | 以 `platform='win32'` 注入；journal 记录 `yaml_backup_path` 为 `C:\Proj\logos\resources\verify\baseline-seed-runs\<run_id>\backup\logos-project.yaml`，本次备份根按 `c:\proj` 计算 | 执行 journal 恢复的路径校验 | 判为在备份根内，恢复继续执行；与 `canonical-target.ts` / `baseline-apply.ts` 既有 `toLocaleLowerCase('en-US')` 口径同源（断言调用同一实现或同一规范化函数）；**必红对照**：修复前实现报 `baseline_commit_in_progress`「yaml backup 路径越界」 |
+| UT-S33-62 | 越界判定不放宽、非 win32 保持区分大小写 | ① win32：journal 路径为 `C:\Proj\..\Other\x.yaml` 或另一盘符 `D:\Proj\...`；② `platform='linux'`：journal 路径与备份根仅大小写不同 | 执行 journal 恢复的路径校验 | ① 仍判越界并报 `baseline_commit_in_progress`；② 仍判越界（POSIX 大小写敏感，行为不变） |
+
+### 追溯与覆盖
+
+- win32 绝对路径大小写比较（52.1-5）：UT-S33-61、UT-S33-62。
+- 来源变更 fix-windows-platform-compat；测试夹具在一次性隔离项目内构造。

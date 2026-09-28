@@ -219,7 +219,7 @@ export function resolveCanonicalMergeTarget(
     } catch { return null; }
   }
 
-  const canonicalTargetPath = process.platform === 'win32' ? targetPath.toLocaleLowerCase('en-US') : targetPath;
+  const canonicalTargetPath = platformPathKey(targetPath);
   return {
     deltaPath: normalized,
     targetPath,
@@ -249,4 +249,12 @@ const TASK_CLOSURE_MODE_PREFIX_RE = /^\[(?:MODIFY|CREATE)\](?:\s|$)/;
 
 export function projectRelativePath(root: string, path: string): string {
   return relative(root, path).replace(/\\/g, '/');
+}
+
+/**
+ * 平台路径比较键（架构 §五十二 52.1-5）：win32 文件系统大小写不敏感，比较前统一为
+ * `toLocaleLowerCase('en-US')`；其余平台保持区分大小写。
+ */
+export function platformPathKey(path: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? path.toLocaleLowerCase('en-US') : path;
 }

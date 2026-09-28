@@ -1071,3 +1071,54 @@
 - UT-S09-372 的三运行时环境须由夹具**显式断言**（如 `command -v python3` / `command -v node` 在受控 PATH 下的结果），不得因宿主环境恰好具备 python3 而使兜底分支空过；被测对象必须是从分发源加载的真实函数，夹具断言加载的函数体来自 `plugin/bin/guard-check` 当前字节。
 - 完整 hook 用例（UT-S09-365～371、ST-S09-147～148）须断言运行环境中 python3 或 node 至少一个可用，防止在无运行时环境下因 hook 早退而使负向断言失真。
 - ST-S09-148 的字节一致性以 SHA-256 比对；不得以「文件存在」代替。
+
+## S09 guard 跨平台可移植性与输入 fail-closed 测试
+
+> 覆盖根规范 `spec/pretooluse-guard.md` §Claude Code guard 跨平台可移植性与输入 fail-closed（规范性）、§hook 注册形态（规范性）matcher 覆盖面；架构文档 52.1-6、52.5、52.7；来源变更 fix-windows-platform-compat。
+>
+> **夹具口径**：一律在 `mktemp -d` 一次性隔离项目内构造 launched 模块、**无** `logos/.openlogos-guard`（plan 阶段用例另建活跃提案）；以 stdin JSON + cwd 调用**分发源** `plugin/bin/guard-check`，断言退出码与 stdout / stderr。
+>
+> **Python 探测 PATH 条件（三态，测试自身构造并先断言）**：
+> - **P-none**：PATH 仅含 node、bash 与 coreutils 所在目录；先断言 `python3`、`python`、`py` 均 `command -v` 失败。
+> - **P-stub**：在 P-none 基础上把一个临时目录置于 PATH 最前，内含名为 `python3` 的可执行桩（执行即 `exit 9009`，不读 stdin）；先断言 `command -v python3` 成功且 `python3 -c "import sys"` 非零退出——复现 Windows 商店占位别名。
+> - **P-real**：正常 PATH，先断言至少一个候选（`python3` / `python` / `py -3`）执行 `-c "import sys"` 退出 0。
+>
+> 故障注入**只作用于 Python 探测的 PATH**，不替换被测 hook、node、bash 或文件系统。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-373 | 三态 PATH 下 `tool_name` 均正确解析、判定一致 | 分别在 P-none、P-stub、P-real 下 | Write `src/index.ts`；Write `logos/changes/x/proposal.md`；Read `src/index.ts`；Bash `touch src/a.ts` | 三态结论逐条相同：`src/index.ts` 与 `touch src/a.ts` exit 2 且 stderr 含「变更管理拦截」；提案目录写入 exit 0；Read exit 0。**必红对照**：修复前分发源在 P-stub（及 Windows 上的 P-none）下对 Write `src/index.ts` exit 0 |
+| UT-S09-374 | node 分支不读 `/dev/stdin` | 静态 + 动态：P-none 下运行；对分发源文本断言 | ① 动态：P-none 下 Write `src/index.ts`；② 静态：扫描 `plugin/bin/guard-check` 与 `plugin/bin/openlogos-phase` | ① exit 2（node 成功解析）；② 两文件不含 `/dev/stdin` 字面量，node 读 stdin 处为 `readFileSync(0` 形态 |
+| UT-S09-375 | Python 可用判据是「执行成功」而非「可发现」 | P-stub | 调用 hook 的 Python 探测（按函数边界加载分发源真实实现，不另写副本） | 探测结果不为 `python3`（桩被排除）；探测在一次 hook 调用内只执行一次（以桩内计数文件断言调用次数 ≤ 候选数） |
+| UT-S09-376 | 输入不可解析 fail-closed | P-real | ① stdin 为非法 JSON `{"tool_name":`；② 合法 JSON 但无 `tool_name`；③ 在「P-none 且 PATH 中移除 node」下送合法 Write 输入 | 三者均 exit 2；stdout 为 `{"reason":...}` JSON、stderr 非空且含「无法解析」与检查 node 的提示；不得出现 exit 0 |
+| UT-S09-377 | MultiEdit / NotebookEdit 覆盖与字段缺失 fail-closed | P-real | MultiEdit `file_path=src/a.ts`；NotebookEdit `notebook_path=src/n.ipynb`；NotebookEdit `notebook_path=logos/changes/x/n.ipynb`；Edit 无 `file_path` | 前两者 exit 2；第三者 exit 0（白名单）；第四者 exit 2（解析不出目标路径） |
+| UT-S09-378 | PowerShell 工具写入模式与 Windows shell 判定顺序 | P-real；launched、无 guard | 以 `tool_name="PowerShell"` 调用。阻断臂：`Set-Content src/a.ts x`、`Out-File -FilePath src/a.ts`、`New-Item src/b.ts`、`Remove-Item src/a.ts`、`copy src\a.ts src\b.ts`、`echo x>src/a.ts`、`echo x > src\a.ts`、`git log > src\log.txt`、`[IO.File]::WriteAllText('src/a.ts','x')`、`Set-Content $p x`、`echo x > $p`、`echo x; Remove-Item src\a.ts`；豁免臂：`echo x>logos/resources/reference/n.md`、`Set-Content logos/resources/reference/n.md x`；纯输出 / 安全臂：`echo x`、`Write-Output x`、`echo x > $null`、`git status 2>&1`、`Get-Content src/a.ts`、`openlogos status`、`git status` | 阻断臂全部 exit 2（其中 `echo …>` 与 `git log >` 三条证明安全白名单对有写入信号的 Windows shell 输入不适用）；豁免臂全部 exit 0；纯输出 / 安全臂全部 exit 0；以大小写变体（`set-content`、`ECHO x>src/a.ts`）重跑结论相同 |
+| UT-S09-381 | 判定顺序例外的作用范围：Cursor win32 同判、Bash 工具零回归 | P-real；launched、无 guard | ① 以 `platform='win32'` 注入调用 `plugin-cursor/hooks/runtime.cjs` 的 `beforeShellExecution`，输入 UT-S09-378 的全部阻断臂、豁免臂与纯输出 / 安全臂；② 以 `platform='darwin'` 注入对 Cursor 重跑 `echo x>src/a.ts`、`echo x`；③ 以 `tool_name="Bash"` 调用 guard-check：`echo x > src/a.ts`、`echo x \| tee src/a.ts`、`touch src/a.ts`、`echo x` | ① 与 UT-S09-378 逐条同判（deny / allow 对应 exit 2 / 0）；② ③ 的结论与修复前实现逐条相同（以修复前实现对同一输入的实测结果为基准夹具，不在测试内复述期望）——证明例外不扩散到 `Bash` 工具与非 win32 Cursor |
+| UT-S09-379 | 反斜杠与盘符路径的白名单与管辖判定 | P-real 与 P-none 各跑；以受控输入模拟 Windows 形态路径 | `is_whitelisted_path` 与 `rel_of_cwd` 函数层（加载分发源真实实现）：输入 `logos\changes\x\proposal.md`、`CLAUDE.md`、`.claude\openlogos\bin\x`、`src\a.ts`、`<项目根 win32 形态>\src\a.ts`、`<项目根小写盘符形态>\CLAUDE.md`、另一盘符 `D:\other\x.ts` | 前三者判白名单（返回 0）；`src\a.ts` 非白名单；项目根 win32 绝对形态按项目内判定、盘符大小写不影响结论；另一盘符判为项目根之外（管辖外放行语义）；python / node / bash 兜底三分支同判 |
+| UT-S09-380 | plan 阶段 delta 收窄在反斜杠路径下有效 | 活跃提案处于 plan 阶段（proposal_step 仅放行原型路径） | Write `logos\changes\<slug>\deltas\prd\2-product-design\2-page-design\core-01-x.html`；Write `logos\changes\<slug>\deltas\test\core-S01-test-cases.md` | 前者 exit 0；后者 exit 2（收窄生效）。**必红对照**：修复前实现对后者 exit 0 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-149 | Windows Git Bash 真实执行 guard-check 三态 | S09 guard 拦截时序 | **Windows CI job**（windows-latest，真实 Git Bash、真实 Windows Node）；一次性隔离 launched 项目，无 guard 文件 | 在 P-none、P-stub、P-real 三态下各以 Git Bash 执行分发源 guard-check：Write `src\index.ts`（Windows 绝对路径形态 `C:\...`）、Write `CLAUDE.md`、Bash `touch src/a.ts`、PowerShell `Set-Content src\a.ts x` | 三态结论逐条相同：源码写入与 shell 写入 exit 2 且 stderr 非空；`CLAUDE.md` exit 0；每态先记录并断言 PATH 前置条件成立 |
+| ST-S09-150 | init / sync 部署的 matcher 与托管副本 | S08 sync 托管 guard 资产补齐时序 | 真实 CLI；两个一次性隔离项目：新建 P1；存量 P2 的 `.claude/settings.json` 含旧 matcher `Edit\|Write\|Bash` 的 OpenLogos 条目及一条用户自有 hook | ① P1 真实 `openlogos init`（Claude 目标）；② P2 真实 `openlogos sync`；③ 读取两项目 settings.json 与托管 guard-check | ① ② 后 OpenLogos 条目 matcher 为 `Edit\|Write\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`、各恰一条（旧条目原地升级不并存）；P2 用户自有条目字节不变；托管 guard-check 与分发源逐字节一致；重复 sync 零 diff |
+
+### 追溯与覆盖
+
+- node 主路径与 `readFileSync(0)`：UT-S09-373、UT-S09-374、ST-S09-149。
+- Python 以执行成功为判据：UT-S09-375、UT-S09-373（P-stub）。
+- 输入不可解析 fail-closed：UT-S09-376。
+- matcher 覆盖面与字段缺失 fail-closed：UT-S09-377、ST-S09-150。
+- PowerShell / cmd 写入模式与 Windows shell 判定顺序（含对照臂）：UT-S09-378、ST-S09-149；例外作用范围（Cursor win32 同判、Bash 工具与非 win32 零回归）：UT-S09-381。
+- 路径比较（`\` 归一、盘符、跨盘）：UT-S09-379、UT-S09-380。
+- 来源变更 fix-windows-platform-compat；根规范 `spec/pretooluse-guard.md`。
+
+### 自动化与证据要求
+
+- 每个依赖 Python 探测的用例必须在断言结论之前记录并断言所处 PATH 条件成立；前置条件不成立时用例判 FAIL（而非 skip），防止 runner 镜像变化使用例静默失去覆盖。
+- ST-S09-149 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中运行；POSIX 结果不计入其覆盖。
+- 函数层用例必须加载分发源中的真实实现，不得另写规则副本。
+- 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。

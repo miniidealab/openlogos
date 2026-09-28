@@ -9,7 +9,7 @@
  * 见 spec/flow-spec.md §12 / spec/cli-json-output.md §3.6/§3.7。
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, posix } from 'node:path';
 import { loadFlow, readOverlay, FlowError, fanoutDone, readProjectCmdTimeout, type Flow, type FlowNode, type Lifecycle } from './flow.js';
 import { listFiles } from './list-files.js';
 import {
@@ -112,7 +112,7 @@ function evalPredicate(pred: string, node: FlowNode, ctx: DeriveCtx): boolean {
     const files = listFiles(join(root, dir));
     // 多模块按 {module}- 前缀过滤（与 deriveModulePhaseProgressViaFlow 同语义，Review F1）
     const scoped = ctx.isMultiModule
-      ? files.filter(f => (f.split('/').pop() ?? f).startsWith(`${ctx.mod.id}-`))
+      ? files.filter(f => posix.basename(f).startsWith(`${ctx.mod.id}-`))
       : files;
     return scoped.length > 0;
   }
@@ -143,7 +143,7 @@ function evalPredicate(pred: string, node: FlowNode, ctx: DeriveCtx): boolean {
     return isProposalTemplateFilled(proposal) && isTasksTemplateFilled(tasks);
   }
   if (pred === 'archived') {
-    return proposalDir ? existsSync(join(root, 'logos', 'changes', 'archive', proposalDir.split('/').pop() ?? '')) : false;
+    return proposalDir ? existsSync(join(root, 'logos', 'changes', 'archive', basename(proposalDir))) : false;
   }
   if (pred === 'all_present') {
     const produces = node.produces ?? '';

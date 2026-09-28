@@ -176,7 +176,7 @@ describe('S09 Unit Tests — guard-check script', () => {
     const hasGuardHook = preToolUse.some((group: unknown) => {
       if (typeof group !== 'object' || group === null) return false;
       const g = group as Record<string, unknown>;
-      return g['matcher'] === 'Edit|Write|Bash' &&
+      return g['matcher'] === 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell' &&
         Array.isArray(g['hooks']) &&
         (g['hooks'] as unknown[]).some((h: unknown) => {
           if (typeof h !== 'object' || h === null) return false;

@@ -109,10 +109,11 @@ describe('S01 Unit Tests — createLogosConfig / createLogosProject / createAgen
     expect(parsed.verify.result_path).toBe('logos/resources/verify/test-results.jsonl');
     expect(parsed.verify.pre_run_command).toBeUndefined();
     expect(parsed.verify.sandbox_mode).toBe('auto');
-    expect(parsed.verify.sandbox_root).toBe('/private/tmp');
+    // fix-windows-platform-compat（架构 §五十二 52.6）：默认根在读取时按平台解析，不固化进配置
+    expect(parsed.verify.sandbox_root).toBeUndefined();
     expect(parsed.verify.sandbox_deny_workspace_write).toBe(true);
     expect(parsed.smoke.sandbox_mode).toBe('auto');
-    expect(parsed.smoke.sandbox_root).toBe('/private/tmp');
+    expect(parsed.smoke.sandbox_root).toBeUndefined();
     expect(parsed.smoke.sandbox_deny_workspace_write).toBe(true);
   });
 
@@ -780,8 +781,8 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
       expect(codexConfig).not.toContain('command = ".codex-plugin/hooks/session-start.sh"');
       expect(codexConfig).toContain('command = "./other.sh"');
-      expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
-      const hookMatches = codexConfig.match(/command = "\.agents\/plugins\/openlogos\/hooks\/session-start\.sh"/g) ?? [];
+      expect(codexConfig).toContain('command = "bash \\".agents/plugins/openlogos/hooks/session-start.sh\\""');
+      const hookMatches = codexConfig.match(/command = "bash \\"\.agents\/plugins\/openlogos\/hooks\/session-start\.sh\\""/g) ?? [];
       expect(hookMatches).toHaveLength(1);
     } finally {
       cleanup();
@@ -1235,7 +1236,7 @@ describe('S01 Scenario Tests — init command', () => {
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
     expect(codexConfig).not.toContain('[plugins.openlogos]');
-    expect(codexConfig).toContain('command = ".agents/plugins/openlogos/hooks/session-start.sh"');
+    expect(codexConfig).toContain('command = "bash \\".agents/plugins/openlogos/hooks/session-start.sh\\""');
 
     const marketplace = JSON.parse(readFileSync(join(root, '.agents', 'plugins', 'marketplace.json'), 'utf-8'));
     expect(marketplace.plugins).toEqual(expect.arrayContaining([
@@ -1424,7 +1425,7 @@ describe('S01 Scenario Tests — init command', () => {
     expect(updatedConfig.aiTool).toEqual(['cursor', 'codex']);
 
     const codexConfig = readFileSync(join(root, '.codex', 'config.toml'), 'utf-8');
-    const hookMatches = codexConfig.match(/command = "\.agents\/plugins\/openlogos\/hooks\/session-start\.sh"/g) ?? [];
+    const hookMatches = codexConfig.match(/command = "bash \\"\.agents\/plugins\/openlogos\/hooks\/session-start\.sh\\""/g) ?? [];
     expect(hookMatches).toHaveLength(1);
 
     const skill = readFileSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'), 'utf-8');

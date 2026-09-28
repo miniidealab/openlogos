@@ -5,13 +5,13 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
-  renameSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { removeTree } from './fs-remove.js';
+import { renameWithRetry } from './fs-retry.js';
 
 export type AiToolId = 'claude-code' | 'opencode' | 'codex' | 'cursor' | 'zcode' | 'qoder' | 'workbuddy' | 'other';
 export type AiTool = AiToolId | 'all';
@@ -251,45 +251,108 @@ export function preflightZCodeTarget(root: string, source: string): void {
   }
 }
 
-export class ManagedAssetTransaction {
-  private staging: string | null = null;
-  private backup: string | null = null;
+/**
+ * 回滚阶段自身失败（原托管目录未能从备份恢复）：如实报告，保留备份目录供人工恢复（架构 §五十二 52.3）。
+ * `backupPath` 为保留的原目录备份；下一次成功替换时由 `commitManagedDirectory` 清理残留事务目录。
+ */
+export class ManagedDirectoryRollbackError extends Error {
+  constructor(message: string, readonly target: string, readonly backupPath: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ManagedDirectoryRollbackError';
+  }
+}
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 托管目录整体替换（ZCode / Qoder / WorkBuddy 共用）：staging 与备份建在目标同级事务目录（同卷），
+ * 目录 rename 经 Windows 瞬时错误有界重试 helper；安装失败时从备份恢复原目录，恢复自身失败则保留备份并如实报告。
+ */
+function commitManagedDirectory(options: {
+  label: string;
+  source: string;
+  target: string;
+  validate: (staging: string) => void;
+  faultEnv: string;
+}): 'installed' | 'updated' {
+  const { label, source, target } = options;
+  const parent = dirname(target);
+  mkdirSync(parent, { recursive: true });
+  const txnPrefix = `.openlogos-${label.toLowerCase()}-txn-`;
+  const backupName = `${basename(target)}.backup`;
+  // 前次回滚未完成时，备份是原托管目录（含模板之外的用户文件）的唯一副本：必须先恢复到目标位置，
+  // 再按「旧目录叠加新模板」更新；不能凭新模板安装成功就清除它。目标已存在则无法判定哪份为准，停止并报告。
+  const pending = readdirSync(parent)
+    .filter(entry => entry.startsWith(txnPrefix) && existsSync(join(parent, entry, backupName)))
+    .sort();
+  if (pending.length > 0) {
+    const pendingBackup = join(parent, pending[0], backupName);
+    if (existsSync(target) || pending.length > 1) {
+      throw new ManagedDirectoryRollbackError(
+        `${label} 托管目录存在未恢复的回滚备份：${pending.map(entry => join(parent, entry, backupName)).join('、')}；`
+          + `目标 ${target} ${existsSync(target) ? '已存在' : '缺失'}，无法自动判定以哪份为准，请人工核对后移回再重试`,
+        target, pendingBackup);
+    }
+    try {
+      renameWithRetry(pendingBackup, target);
+    } catch (restoreError) {
+      throw new ManagedDirectoryRollbackError(
+        `${label} 托管目录上次回滚未完成且本次仍无法恢复：${target} 缺失；原目录备份保留于 ${pendingBackup}`
+          + `（${errorMessage(restoreError)}）`,
+        target, pendingBackup, { cause: restoreError });
+    }
+    removeTree(join(parent, pending[0]));
+  }
+  const transactionRoot = mkdtempSync(join(parent, txnPrefix));
+  const staging = join(transactionRoot, basename(target));
+  const backup = join(transactionRoot, `${basename(target)}.backup`);
+  try {
+    if (existsSync(target)) cpSync(target, staging, { recursive: true, force: false });
+    else mkdirSync(staging, { recursive: true });
+    cpSync(source, staging, { recursive: true, force: true });
+    options.validate(staging);
+    const existed = existsSync(target);
+    if (existed) renameWithRetry(target, backup);
+    if (process.env[options.faultEnv] === 'after-backup') throw new Error(`注入的 ${label} 事务故障`);
+    renameWithRetry(staging, target);
+    removeTree(transactionRoot);
+    // 只清理不含备份的残留事务目录（中断遗留的 staging）；含备份者已在开头恢复或阻断，不在此删除。
+    for (const entry of readdirSync(parent)) {
+      if (entry.startsWith(txnPrefix) && !existsSync(join(parent, entry, backupName))) removeTree(join(parent, entry));
+    }
+    return existed ? 'updated' : 'installed';
+  } catch (error) {
+    if (!existsSync(target) && existsSync(backup)) {
+      try {
+        renameWithRetry(backup, target);
+      } catch (restoreError) {
+        throw new ManagedDirectoryRollbackError(
+          `${label} 托管目录替换失败且回滚未完成：${target} 未恢复；原目录备份保留于 ${backup}，请手动移回后重试`
+            + `（替换：${errorMessage(error)}；回滚：${errorMessage(restoreError)}）`,
+          target, backup, { cause: error });
+      }
+    }
+    removeTree(transactionRoot);
+    if (error instanceof Error && !error.message.includes(target)) {
+      error.message = `${label} 托管目录替换失败（${target}）：${error.message}`;
+    }
+    throw error;
+  }
+}
+
+export class ManagedAssetTransaction {
   constructor(
     private readonly source: string,
     private readonly target: string,
   ) {}
 
   commit(): 'installed' | 'updated' | 'unchanged' {
-    const parent = dirname(this.target);
-    mkdirSync(parent, { recursive: true });
-    const transactionRoot = mkdtempSync(join(parent, '.openlogos-zcode-txn-'));
-    this.staging = join(transactionRoot, basename(this.target));
-    this.backup = join(transactionRoot, `${basename(this.target)}.backup`);
-    try {
-      if (existsSync(this.target)) cpSync(this.target, this.staging, { recursive: true, force: false });
-      else mkdirSync(this.staging, { recursive: true });
-      cpSync(this.source, this.staging, { recursive: true, force: true });
-      validateZCodeTemplate(this.staging);
-
-      const existed = existsSync(this.target);
-      if (existed) renameSync(this.target, this.backup);
-      if (process.env.OPENLOGOS_ZCODE_TXN_FAIL_AT === 'after-backup') {
-        throw new Error('注入的 ZCode 事务故障');
-      }
-      renameSync(this.staging, this.target);
-      if (existsSync(this.backup)) rmSync(this.backup, { recursive: true, force: true });
-      rmSync(transactionRoot, { recursive: true, force: true });
-      this.staging = null;
-      this.backup = null;
-      return existed ? 'updated' : 'installed';
-    } catch (error) {
-      if (!existsSync(this.target) && this.backup && existsSync(this.backup)) renameSync(this.backup, this.target);
-      rmSync(transactionRoot, { recursive: true, force: true });
-      this.staging = null;
-      this.backup = null;
-      throw error;
-    }
+    return commitManagedDirectory({
+      label: 'ZCode', source: this.source, target: this.target,
+      validate: validateZCodeTemplate, faultEnv: 'OPENLOGOS_ZCODE_TXN_FAIL_AT',
+    });
   }
 }
 
@@ -337,7 +400,7 @@ export function deployZCodeAssets(
       preserved: [...(configBefore ? ['.zcode/config.json'] : []), ...preserved],
     };
   } finally {
-    rmSync(preparedRoot, { recursive: true, force: true });
+    removeTree(preparedRoot);
   }
 }
 
@@ -427,28 +490,10 @@ class QoderManagedAssetTransaction {
   constructor(private readonly source: string, private readonly target: string) {}
 
   commit(): 'installed' | 'updated' {
-    const parent = dirname(this.target);
-    mkdirSync(parent, { recursive: true });
-    const transactionRoot = mkdtempSync(join(parent, '.openlogos-qoder-txn-'));
-    const staging = join(transactionRoot, basename(this.target));
-    const backup = join(transactionRoot, `${basename(this.target)}.backup`);
-    try {
-      if (existsSync(this.target)) cpSync(this.target, staging, { recursive: true, force: false });
-      else mkdirSync(staging, { recursive: true });
-      cpSync(this.source, staging, { recursive: true, force: true });
-      validateQoderTemplate(staging);
-      const existed = existsSync(this.target);
-      if (existed) renameSync(this.target, backup);
-      if (process.env.OPENLOGOS_QODER_TXN_FAIL_AT === 'after-backup') throw new Error('注入的 Qoder 事务故障');
-      renameSync(staging, this.target);
-      if (existsSync(backup)) rmSync(backup, { recursive: true, force: true });
-      rmSync(transactionRoot, { recursive: true, force: true });
-      return existed ? 'updated' : 'installed';
-    } catch (error) {
-      if (!existsSync(this.target) && existsSync(backup)) renameSync(backup, this.target);
-      rmSync(transactionRoot, { recursive: true, force: true });
-      throw error;
-    }
+    return commitManagedDirectory({
+      label: 'Qoder', source: this.source, target: this.target,
+      validate: validateQoderTemplate, faultEnv: 'OPENLOGOS_QODER_TXN_FAIL_AT',
+    });
   }
 }
 
@@ -493,7 +538,7 @@ export function deployQoderAssets(
       preserved: [...(configBefore ? ['.qoder/settings.json'] : []), ...preserved],
     };
   } finally {
-    rmSync(preparedRoot, { recursive: true, force: true });
+    removeTree(preparedRoot);
   }
 }
 
@@ -579,28 +624,10 @@ class WorkBuddyManagedAssetTransaction {
   constructor(private readonly source: string, private readonly target: string) {}
 
   commit(): 'installed' | 'updated' {
-    const parent = dirname(this.target);
-    mkdirSync(parent, { recursive: true });
-    const transactionRoot = mkdtempSync(join(parent, '.openlogos-workbuddy-txn-'));
-    const staging = join(transactionRoot, basename(this.target));
-    const backup = join(transactionRoot, `${basename(this.target)}.backup`);
-    try {
-      if (existsSync(this.target)) cpSync(this.target, staging, { recursive: true, force: false });
-      else mkdirSync(staging, { recursive: true });
-      cpSync(this.source, staging, { recursive: true, force: true });
-      validateWorkBuddyTemplate(staging);
-      const existed = existsSync(this.target);
-      if (existed) renameSync(this.target, backup);
-      if (process.env.OPENLOGOS_WORKBUDDY_TXN_FAIL_AT === 'after-backup') throw new Error('注入的 WorkBuddy 事务故障');
-      renameSync(staging, this.target);
-      if (existsSync(backup)) rmSync(backup, { recursive: true, force: true });
-      rmSync(transactionRoot, { recursive: true, force: true });
-      return existed ? 'updated' : 'installed';
-    } catch (error) {
-      if (!existsSync(this.target) && existsSync(backup)) renameSync(backup, this.target);
-      rmSync(transactionRoot, { recursive: true, force: true });
-      throw error;
-    }
+    return commitManagedDirectory({
+      label: 'WorkBuddy', source: this.source, target: this.target,
+      validate: validateWorkBuddyTemplate, faultEnv: 'OPENLOGOS_WORKBUDDY_TXN_FAIL_AT',
+    });
   }
 }
 
@@ -645,7 +672,7 @@ export function deployWorkBuddyAssets(
       preserved: [...(settingsBefore ? ['.workbuddy/settings.json'] : []), ...preserved],
     };
   } finally {
-    rmSync(preparedRoot, { recursive: true, force: true });
+    removeTree(preparedRoot);
   }
 }
 
