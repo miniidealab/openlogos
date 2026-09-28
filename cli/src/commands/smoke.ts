@@ -275,7 +275,9 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
       const data = collectSmokeData(root, environment, sandboxData, coverageCheck);
       if (format === 'json') {
         console.log(JSON.stringify(makeEnvelope('smoke', data)));
-        process.exit(1);
+        // 设 exitCode 后返回，保证管道消费方读到完整 envelope（S16 EX-2.6）
+        process.exitCode = 1;
+        return;
       }
       console.error(`\nError: No smoke results found at ${resultPath}.`);
       for (const item of data.diagnostics) {
@@ -341,7 +343,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('smoke', data)));
-    if (data.gate.result !== 'PASS') process.exit(1);
+    // 设 exitCode 后自然退出，保证管道消费方读到完整 envelope（S16 EX-2.6）
+    if (data.gate.result !== 'PASS') process.exitCode = 1;
     return;
   }
 

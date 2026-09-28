@@ -262,3 +262,51 @@ completed receipt 至少包含：transaction/plan/change/module identity、contr
 - Schema：`spec/schema/merge-transaction.schema.json`、next/status schema。
 - 测试：UT-S16-18～UT-S16-27、ST-S16-05～ST-S16-08。
 
+## 非零退出时 JSON envelope 排空后退出
+
+### 背景
+
+stdout 为管道时，Node 以异步方式写出 `console.log` 的内容；`process.exit()` 同步终止进程、不等待写缓冲排空，超出一个管道缓冲的部分被丢弃。envelope 随用例 / 切片数增长，Gate FAIL 或暂停时恰好最大、最需要被完整消费。最小复现（macOS，Node）：输出 200012 字节 JSON 后 `process.exit(1)`，管道只收到 65536 字节；改为设 `process.exitCode = 1` 自然退出，完整收到 200012 字节。
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant Consumer as 消费方（RunLogos driver / CI 脚本）
+    participant CLI as openlogos CLI（verify / smoke）
+    participant Stdout as stdout 管道缓冲
+    participant Node as Node 事件循环
+
+    Consumer->>CLI: spawn `verify|smoke --format json`（stdout=pipe）
+    CLI->>CLI: 计算 data，Gate 非 PASS / manifest 暂停
+    CLI->>Stdout: console.log(JSON.stringify(envelope))（异步写出）
+    CLI->>Node: process.exitCode = 1 | 2，并从命令函数 return
+    Note over CLI,Node: 禁止此处调用 process.exit()——会丢弃未排空的缓冲
+    Node->>Stdout: 事件循环继续排空写缓冲
+    Stdout-->>Consumer: 完整 envelope 字节 + EOF
+    Node-->>Consumer: 进程自然结束，退出码 = exitCode
+    Consumer->>Consumer: JSON.parse 成功，按 data 与退出码分流
+```
+
+### 异常用例
+
+#### EX-2.6: 非零退出时 envelope 被管道截断（已修复的反模式）
+- **触发条件**：`--format json` 且本次以非零退出码结束，stdout 为管道，envelope 超过一个管道缓冲。
+- **期望响应**：envelope 输出后设置 `process.exitCode = <原退出码>` 并从命令函数返回，进程在 stdout 排空后自然退出；消费方读到完整、可 `JSON.parse` 的 envelope，退出码与原语义一致。**禁止**在 envelope 输出后立即调用 `process.exit(<非零>)`。
+- **适用退出点**（四处，退出码语义不变）：
+
+| 位置 | 分支 | 退出码 | 改动要点 |
+|---|---|---|---|
+| `cli/src/commands/verify.ts` `stopForSliceManifestState` | 切片 manifest 非 valid / 无 `verify_mode` 暂停 | 1（`test-slice-manifest-unsupported` / `test-slice-assignment-ambiguous`）或 2 | 返回类型由 `never` 改为 `void`：设 exitCode 后返回；唯一调用点改为 `return` 其结果，保证暂停后不再执行后续判定逻辑 |
+| `cli/src/commands/verify.ts` 主输出 JSON 分支 | Gate 非 PASS | 1 | 设 exitCode 后沿既有 `return` 返回 |
+| `cli/src/commands/smoke.ts` 无结果文件分支 | 无 smoke 结果文件但存在变更用例 | 1 | 设 exitCode 后 `return`，不再落入其后的文本错误输出 |
+| `cli/src/commands/smoke.ts` 主输出 JSON 分支 | Gate 非 PASS | 1 | 设 exitCode 后沿既有 `return` 返回 |
+
+- **副作用**：无。envelope 结构、字段、marker 写入、结果文件与退出码数值均不变。
+- **非目标**：人类可读（text）输出路径的 `process.exit`（输出量小、不被机器以管道完整解析）；`check-ui-hash-match` 等输出很小且为 exit 0 成功路径的命令；不新增统一「输出并退出」helper。
+
+### 追溯
+
+- 需求：`core-01-requirements.md`「S16: 非零退出码下 JSON envelope 完整输出要求」
+- 测试：`core-S16-test-cases.md`「非零退出码下 envelope 完整输出测试」（UT-S16-42～UT-S16-45、ST-S16-05）
+- 来源：RunLogos `BUGREPORT-slice-repair-successor-done-skips-verify-redispatch-loop.md`（run `drv-muhwbw2v-9soz`）

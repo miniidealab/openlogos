@@ -36,6 +36,7 @@ import {
   mockCwd,
   mockProcessExit,
   scaffoldProject,
+  takeExitCode,
   withCompleteClarification,
 } from './helpers.js';
 
@@ -160,6 +161,9 @@ function runVerifyJson(root: string): { data: any; exited: boolean } {
   let exited = false;
   try { verify('json'); } catch { exited = true; }
   finally { exit.mockRestore(); cap.restore(); restore(); }
+  // JSON 暂停 / Gate 非 PASS 分支设 exitCode 后返回（S16 EX-2.6），同样视为非零退出
+  const code = takeExitCode();
+  if (code !== undefined && code !== 0) exited = true;
   const envelope = [...cap.logs, ...cap.errors].map(line => {
     try { return JSON.parse(line); } catch { return null; }
   }).find(item => item?.command === 'verify');

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, writeLoopPass } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, takeExitCode, writeLoopPass } from './helpers.js';
 import { collectSmokeData, extractSmokeDefinedIds, smoke } from '../src/commands/smoke.js';
 import { detectRuntimeWriteProtection, DEPENDENCY_DIR_EXEMPT_INFO } from '../src/lib/sandbox.js';
 import { checkSmokeCoverage, discoverSmokeRunners, resolveSmokeCommand } from '../src/lib/smoke-coverage.js';
@@ -254,7 +254,8 @@ describe('S19 Scenario Tests — smoke command', () => {
       '{"id":"SMOKE-core-01","status":"pass"}',
     ]);
 
-    expect(() => smoke('json')).toThrow('process.exit(1)');
+    smoke('json');
+    expect(takeExitCode()).toBe(1);
 
     const parsed = JSON.parse(con.logs[0]);
     expect(parsed.data.gate.result).toBe('FAIL');
@@ -329,7 +330,8 @@ describe('S19 Scenario Tests — smoke command', () => {
     };
     writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-    expect(() => smoke('json', 'staging')).toThrow('process.exit(1)');
+    smoke('json', 'staging');
+    expect(takeExitCode()).toBe(1);
     const parsed = JSON.parse(con.logs[0]);
     expect(parsed.data.gate.result).toBe('FAIL');
     expect(parsed.data.sandbox.mode).toBe('always');
@@ -479,7 +481,8 @@ describe('S19 Scenario Tests — smoke command', () => {
       '{"id":"SMOKE-core-02","status":"pass"}',
     ]);
 
-    expect(() => smoke('json')).toThrow('process.exit(1)');
+    smoke('json');
+    expect(takeExitCode()).toBe(1);
 
     const parsed = JSON.parse(con.logs[0]);
     expect(parsed.data.gate.result).toBe('FAIL');

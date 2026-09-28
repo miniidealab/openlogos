@@ -1019,16 +1019,19 @@ function activeSliceVerification(root: string): {
 function stopForSliceManifestState(
   format: OutputFormat,
   state: SliceVerificationState,
-): never {
+): void {
   const reason = state.reason ?? 'test-slice-manifest-invalid';
   const data = { reason, slice_verification_state: state };
-  if (format === 'json') console.log(JSON.stringify(makeEnvelope('verify', data)));
-  else {
-    console.error(`✖ verify 暂停：${reason}`);
-    for (const item of state.violations ?? []) console.error(`  - [${item.code}] ${item.path}: ${item.message}`);
+  const code = reason === 'test-slice-manifest-unsupported' || reason === 'test-slice-assignment-ambiguous' ? 1 : 2;
+  if (format === 'json') {
+    console.log(JSON.stringify(makeEnvelope('verify', data)));
+    // 仅 JSON 分支设 exitCode 而非 process.exit：stdout 为管道时须等缓冲排空，否则大 envelope 被截断（S16 EX-2.6）
+    process.exitCode = code;
+    return;
   }
-  process.exit(reason === 'test-slice-manifest-unsupported' || reason === 'test-slice-assignment-ambiguous' ? 1 : 2);
-  throw new Error('unreachable');
+  console.error(`✖ verify 暂停：${reason}`);
+  for (const item of state.violations ?? []) console.error(`  - [${item.code}] ${item.path}: ${item.message}`);
+  process.exit(code);
 }
 
 export function verify(format: OutputFormat = 'text') {
@@ -1067,7 +1070,7 @@ export function verify(format: OutputFormat = 'text') {
 
   const sliceContext = activeSliceVerification(root);
   if (sliceContext && (sliceContext.state.manifest_status !== 'valid' || !sliceContext.state.verify_mode)) {
-    stopForSliceManifestState(format, sliceContext.state);
+    return stopForSliceManifestState(format, sliceContext.state);
   }
   const sliceVerification = sliceContext?.state ?? null;
 
@@ -1174,9 +1177,8 @@ export function verify(format: OutputFormat = 'text') {
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('verify', data)));
-    if (data.gate.result !== 'PASS') {
-      process.exit(1);
-    }
+    // 设 exitCode 后自然退出，保证管道消费方读到完整 envelope（S16 EX-2.6）
+    if (data.gate.result !== 'PASS') process.exitCode = 1;
     return;
   }
 

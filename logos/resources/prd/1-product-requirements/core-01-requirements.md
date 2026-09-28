@@ -2789,3 +2789,40 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 8. **该段不受任何既有检查约束**：**缺段不告警、未填不告警、占位残留不告警**，三者均不影响 lint 结果与 exit code。两重独立原因各自充分——① 既有占位符检查是**枚举特定占位文本**的正则而非泛化 `[...]` 匹配，新段的占位文本不在枚举内（本能力**不**把它加进枚举）；② 该检查只在 canonical 章节白名单循环体内被调用，新段不进白名单。该段是自律提示而非受检约束。
 
 9. **零回归 + 非目标**：不把任一判定做成违规、不新增阻断点或人类门；不把「最小实现论证」列入 canonical 必填章节；不新增命令、配置项、账本或报表；不改 merge / verify / archive 的任何语义；不改 `skills/` 下任何 Skill 文本；不做反向告警；不在零样本期收窄免计层级表（**含本能力自身**——声明设计级而带 `prd/1-product-requirements` delta 的提案会命中该 warning，这是预期行为，收窄与否由观测期数据决定）；不处理「部署级变更」（传播规则表含该类型而合法集合只有四类，该偏差既有且正交）。
+
+## S16: 非零退出码下 JSON envelope 完整输出要求
+
+**动因**：下游 RunLogos driver 以管道读取 `openlogos verify --format json`，Gate FAIL 时 stdout 被截断在管道缓冲边界（RunLogos 侧观测 8192 字节），envelope 不是完整 JSON，driver 只能判 `verify-envelope-invalid-json`，repair prompt 拿不到失败明细（来源：RunLogos `BUGREPORT-slice-repair-successor-done-skips-verify-redispatch-loop.md`，run `drv-muhwbw2v-9soz`）。根因是 CLI 在 `console.log(JSON.stringify(envelope))` 之后**立即** `process.exit(<非零>)`：stdout 为管道时 Node 异步写出，`process.exit` 不等待缓冲排空即终止进程，超出一个管道缓冲的部分被丢弃。只有非零退出分支调用 `process.exit`，因此恰好只有 FAIL / 暂停时截断——而这正是消费方最需要明细的时刻。
+
+**场景**：CI、脚本或 RunLogos 等外部工具以管道（非 TTY、非文件重定向）消费 `openlogos verify --format json` 或 `openlogos smoke --format json` 的 stdout，本次调用以非零退出码结束。
+
+**适用范围**（本要求只约束以下四个 `--format json` 非零退出点）：
+
+| 命令 | 分支 | 退出码 |
+|---|---|---|
+| `verify` | 切片 manifest 状态暂停（manifest 非 valid / 无 `verify_mode`） | 1（`test-slice-manifest-unsupported` / `test-slice-assignment-ambiguous`）或 2（其余暂停原因） |
+| `verify` | 主输出 Gate 非 PASS | 1 |
+| `smoke` | 无 smoke 结果文件但存在变更用例 | 1 |
+| `smoke` | 主输出 Gate 非 PASS | 1 |
+
+**验收条件**：
+
+##### 正常：verify Gate FAIL 时管道读到完整 envelope
+- **GIVEN** 项目状态使 `verify --format json` 的 Gate 非 PASS，且 envelope 序列化后超过一个管道缓冲（> 64KB）
+- **WHEN** 消费方以子进程管道读取 `openlogos verify --format json` 的 stdout 直至 EOF
+- **THEN** 读到的 stdout 为完整 JSON，`JSON.parse` 成功且 `command="verify"`、`data.gate.result` 与 CLI 判定一致；进程退出码为 1
+
+##### 正常：verify 切片 manifest 暂停时管道读到完整 envelope
+- **GIVEN** 活跃切片的测试 manifest 非 valid，`verify` 走暂停分支
+- **WHEN** 消费方以子进程管道读取 `openlogos verify --format json` 的 stdout 直至 EOF
+- **THEN** stdout 为完整、可解析的 envelope，`data.reason` 与 `data.slice_verification_state` 齐全；退出码与既有语义一致（`test-slice-manifest-unsupported` / `test-slice-assignment-ambiguous` 为 1，其余为 2）；暂停后 verify 不继续执行后续判定逻辑
+
+##### 正常：smoke 非零退出时管道读到完整 envelope
+- **GIVEN** `smoke --format json` 走「无结果文件但有变更用例」或「Gate 非 PASS」分支，且 envelope 超过一个管道缓冲
+- **WHEN** 消费方以子进程管道读取 `openlogos smoke --format json` 的 stdout 直至 EOF
+- **THEN** stdout 为完整、可解析的 envelope（`command="smoke"`）；退出码为 1；「无结果文件」分支在 JSON 模式下不再落入其后的文本错误输出
+
+##### 约束：退出方式与兼容性
+1. 上述四个点在 envelope 写出后**不得立即调用 `process.exit`**；改为设置 `process.exitCode = <原退出码>` 并从命令函数返回，由进程在 stdout 排空后自然结束。
+2. 退出码**数值与语义不变**；envelope 结构、字段、marker 写入与结果文件**不变**——消费方只会多拿到此前被截掉的尾部字节。
+3. 非目标：人类可读（text）输出路径的 `process.exit`、`check-ui-hash-match` 等输出很小且为 exit 0 成功路径的命令、统一「输出并退出」helper，均不在本要求范围内。

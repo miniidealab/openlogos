@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, lstatSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, withCompleteClarification } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, takeExitCode, withCompleteClarification } from './helpers.js';
 import {
   parseJsonl,
   parseJsonlWithDiagnostics,
@@ -996,7 +996,8 @@ describe('S13 Scenario Tests — verify command', () => {
       module: 'core',
     }));
 
-    expect(() => verify('json')).toThrow('process.exit(1)');
+    verify('json');
+    expect(takeExitCode()).toBe(1);
 
     const output = JSON.parse(con.logs[0]);
     expect(output.data.gate.result).toBe('FAIL');
@@ -1151,7 +1152,8 @@ describe('S13 Scenario Tests — verify command', () => {
     writeFileSync(join(proposalDir, 'deltas/test/smoke/core-smoke-test-cases.md'), '| SMOKE-NEW-03 | temp |');
     writeFileSync(join(root, 'scripts/smoke-new.sh'), '#!/usr/bin/env bash\nexit 0\n');
 
-    expect(() => verify('json')).toThrow('process.exit(1)');
+    verify('json');
+    expect(takeExitCode()).toBe(1);
 
     const parsed = JSON.parse(con.logs[0]);
     expect(parsed.data.gate.result).toBe('FAIL');

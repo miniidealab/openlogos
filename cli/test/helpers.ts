@@ -183,6 +183,17 @@ export function mockCwd(dir: string): () => void {
  * Mock process.exit to throw instead of killing the process.
  * Returns the spy.
  */
+/**
+ * 读取并清零 `process.exitCode`。S16 EX-2.6 起 verify / smoke 的 JSON 非零退出点改为
+ * 设 exitCode 后返回（不再 process.exit），进程内调用的用例用它断言退出码，并防止
+ * exitCode 泄漏到 vitest worker。
+ */
+export function takeExitCode(): number | string | null | undefined {
+  const code = process.exitCode;
+  process.exitCode = undefined;
+  return code;
+}
+
 export function mockProcessExit(): MockInstance {
   return vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined) => {
     throw new Error(`process.exit(${code})`);

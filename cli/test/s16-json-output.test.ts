@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
-import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit } from './helpers.js';
+import { makeTempRoot, scaffoldProject, captureConsole, mockCwd, mockProcessExit, takeExitCode } from './helpers.js';
 import { collectDetectData, detect } from '../src/commands/detect.js';
 import { collectStatusData, status } from '../src/commands/status.js';
 import { verify } from '../src/commands/verify.js';
@@ -347,7 +347,8 @@ describe('JSON output — verify --format json', () => {
       '{"id":"ST-S01-01","status":"fail","error":"timeout"}',
     ]);
 
-    expect(() => verify('json')).toThrow('process.exit(1)');
+    verify('json');
+    expect(takeExitCode()).toBe(1);
 
     const output = JSON.parse(con.logs[0]);
     expect(output.data.gate.result).toBe('FAIL');
@@ -364,7 +365,8 @@ describe('JSON output — verify --format json', () => {
       '{"id":"ST-S01-01","status":"pass"}',
     ]);
 
-    expect(() => verify('json')).toThrow('process.exit(1)');
+    verify('json');
+    expect(takeExitCode()).toBe(1);
 
     const output = JSON.parse(con.logs[0]);
     expect(output.data.gate.result).toBe('FAIL');
@@ -447,7 +449,8 @@ describe('JSON output — verify --format json', () => {
     writeTestCases(cases);
     writeResults(['{"id":"UT-S01-01","status":"pass"}']);
 
-    expect(() => verify('json')).toThrow('process.exit(1)');
+    verify('json');
+    expect(takeExitCode()).toBe(1);
 
     const output = JSON.parse(con.logs[0]);
     expect(output.data.pre_run.mode).toBe('none');
@@ -467,7 +470,8 @@ describe('JSON output — verify --format json', () => {
       pre_run_command: `node -e "require('fs').writeFileSync('forbidden.txt','x')"`,
     });
 
-    expect(() => verify('json')).toThrow('process.exit(1)');
+    verify('json');
+    expect(takeExitCode()).toBe(1);
 
     const output = JSON.parse(con.logs[0]);
     expect(output.data.gate.result).toBe('FAIL');

@@ -125,3 +125,33 @@ JSON 契约的字节级实例。
 
 - 错误路径枚举用例维护「失败路径 → 期望 error.code」注册表，新增失败路径必须登记，防单路径退化。
 - 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S16"`；失败不得写 pass。
+
+## 非零退出码下 envelope 完整输出测试
+
+> 覆盖需求「S16: 非零退出码下 JSON envelope 完整输出要求」与场景 S16「非零退出时 JSON envelope 排空后退出」EX-2.6；来源变更 fix-json-output-flush-before-exit。
+>
+> **夹具口径**：一律以 `child_process.spawn` 启动真实 CLI 子进程，`stdio[1]='pipe'`（不得用文件重定向或 `execSync` 的内部缓冲替代，二者不经管道缓冲边界，无法复现截断），收集 stdout 全部 chunk 直至 `close` 事件后再拼接解析。夹具须把 envelope 撑到 **> 64KB**（macOS 管道缓冲 65536 字节，Linux 默认同量级），并在断言前先断言「stdout 字节数 > 65536」，防夹具不够大导致用例空过。
+>
+> 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S16"`。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S16-42 | verify Gate FAIL 管道完整输出 | 构造使 Gate 非 PASS 且 envelope > 64KB 的 fixture（大量失败用例结果）；spawn `verify --format json` 经管道读到 EOF：stdout 字节数 > 65536、`JSON.parse` 成功、`command="verify"`、`data.gate.result !== "PASS"`；退出码为 1 |
+| UT-S16-43 | verify 切片 manifest 暂停管道完整输出 | 构造 manifest 非 valid 且 `slice_verification_state` 足以使 envelope > 64KB 的 fixture（大量 violations）；spawn `verify --format json`：`JSON.parse` 成功、`data.reason` 与 `data.slice_verification_state` 齐全；退出码为 2（`test-slice-manifest-unsupported` / `test-slice-assignment-ambiguous` 原因另断言为 1）；stdout 只含一份 envelope（暂停后不再执行后续判定、不输出第二份 JSON） |
+| UT-S16-44 | smoke 非零退出管道完整输出 | 两臂：① 无 smoke 结果文件但存在变更用例；② 有结果但 Gate 非 PASS；各自使 envelope > 64KB。spawn `smoke --format json`：`JSON.parse` 成功、`command="smoke"`；退出码均为 1；臂 ① stderr 不含文本错误 `No smoke results found`（JSON 模式不再落入文本分支） |
+| UT-S16-45 | 立即 `process.exit` 截断必红对照 | 独立最小脚本子进程：输出同样 > 64KB 的 JSON 后立即 `process.exit(1)`，经管道读取断言 **收到字节数 < 实际写出字节数且 `JSON.parse` 抛错**；同一脚本改为 `process.exitCode = 1` 自然退出，断言字节数完整、`JSON.parse` 成功、退出码为 1。该对照证明夹具确实跨越管道缓冲边界，若对照臂未截断（平台缓冲更大）须以加大输出量重试而非放行 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S16-05 | 管道消费方在 FAIL / 暂停时拿到完整 envelope 并分流 | S16 EX-2.6 | launched 项目 fixture，可切换为 verify Gate FAIL、verify manifest 暂停、smoke Gate FAIL 三种状态，各自 envelope > 64KB | 模拟消费方：依次以管道 spawn 三种状态下的 `verify|smoke --format json`，读至 EOF 后 `JSON.parse`，按 `data` 与退出码分流 | 三次均解析成功、无 `invalid-json` 分支；退出码依次为 1 / 2 / 1；verify Gate FAIL 臂可从 `data` 取得全部失败用例明细（条数与 fixture 构造的失败数一致，证明尾部未丢） |
+
+### 覆盖度校验
+
+- [ ] verify Gate FAIL 管道完整输出：UT-S16-42、ST-S16-05
+- [ ] verify manifest 暂停管道完整输出与退出码语义：UT-S16-43、ST-S16-05
+- [ ] smoke 两个非零退出点管道完整输出：UT-S16-44、ST-S16-05
+- [ ] 截断反模式必红对照：UT-S16-45
