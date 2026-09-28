@@ -642,3 +642,100 @@ sequenceDiagram
 - 来源变更：single-source-proposal-scaffold。
 - 前序变更：anti-overdesign-scale-signals（引入「最小实现论证」段，见 §S09-A 提案脚手架章节清单与「最小实现论证」段）。
 - 测试：UT-S09-362、UT-S09-363、UT-S09-364；脚手架零回归复用 UT-S09-360。
+
+## S09 无活跃提案时资料目录与基线 staging 的 guard 放行时序
+
+### 场景目标
+
+launched 项目在**没有活跃提案**时，AI 仍需完成两类不改动规格与源码的正常工作：维护 `logos/resources/reference/` 下的参考资料，以及在用户显式执行基线建立（S33 `openlogos baseline-seed`）时把逆向产物写入 run 私有 staging。guard 对这两类写入默认放行，正式规格、源码与基线事务状态仍受原规则保护。判定契约见根规范 `spec/pretooluse-guard.md` §资料目录与基线 staging 默认路径豁免。
+
+### 参与者与前置条件
+
+- 参与者：用户、AI（宿主会话）、PreToolUse guard（`guard-check`）、OpenLogos CLI（`baseline-seed begin/commit`）、文件系统。
+- 前置：项目至少一个模块 `lifecycle: launched`；`logos/.openlogos-guard` 不存在；guard 由既有 init / sync 部署（S08），分发源为 `plugin/bin/guard-check`。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant AI as AI 会话
+    participant G as guard-check（PreToolUse）
+    participant CLI as openlogos CLI
+    participant FS as 文件系统
+
+    Note over U,FS: 分支 A：维护参考资料（无提案）
+    U->>AI: 整理需求素材 / 笔记到 reference
+    AI->>G: Step 1: Edit/Write file_path=logos/resources/reference/**
+    G->>G: Step 2: 无 guard 文件 → 归一化 rel_path → 管辖边界 → 前缀表 → R-REF
+    G-->>AI: Step 3: 命中 R-REF → exit 0
+    AI->>FS: 写入参考资料
+
+    Note over U,FS: 分支 B：显式基线建立（S33，无提案）
+    U->>AI: 执行 openlogos baseline-seed
+    AI->>FS: Step 4: 逻辑计划 manifest 写入 logos/resources/reference/temp/（R-REF 放行）
+    AI->>CLI: Step 5: openlogos baseline-seed begin --module m --manifest ...（Bash 安全白名单）
+    CLI->>FS: 建 run 目录、staging、run.json（CLI 自身写入，不经 hook）
+    CLI-->>AI: run_id + staging 路径
+    AI->>G: Step 6: Edit/Write 或 mkdir/touch/简单重定向 → baseline-seed-runs/<run_id>/staging/**
+    G->>G: Step 7: R-STAGING 逐段匹配（单层 run_id、段恰为 staging）
+    G-->>AI: exit 0
+    AI->>FS: 写入逆向产物到 staging
+    AI->>CLI: Step 8: openlogos baseline-seed commit --module m --run-id <run_id>
+    CLI->>FS: 校验 staged 字节、nonce、候选键 → 原子提交正式基线
+
+    Note over U,FS: 分支 C：相邻受保护路径（无提案）
+    AI->>G: Step 9: 写 run.json / commit-journal.json / resolved/ / backup/ / 正式规格 / 源码
+    G-->>AI: exit 2 + 变更管理拦截指引（stdout JSON + stderr 双通道）
+```
+
+### 步骤说明
+
+1. AI 以 Edit/Write 写 `logos/resources/reference/` 下任意层级文件。
+2. guard 在无 guard 文件分支，用既有归一化求 `rel_path`，先判管辖边界、再判既有前缀表，再判新增规则 R-REF / R-STAGING。
+3. 命中 R-REF 放行；不要求创建提案或修改白名单配置。
+4. 基线建立前，begin 所需逻辑计划 manifest 写在 `logos/resources/reference/temp/` 等已豁免位置，不额外开放 run 根目录。
+5. `openlogos baseline-seed begin` 属 Bash 安全白名单（`^openlogos `）；CLI 自身签发 run_id、创建 staging 并写 run 记录，返回 staging 路径（S33 既有协议不变）。
+6. AI 按返回路径写入产物：Edit/Write，或 guard 可提取目标的 Bash 形态（`mkdir`/`touch`/简单重定向等）。
+7. guard 对 `rel_path` 逐段匹配 R-STAGING：前 4 段固定、第 5 段为单个合法 run_id、第 6 段恰为 `staging`，后代任意；命中即放行。
+8. `baseline-seed commit` 仍是正式基线的唯一写入入口，begin/commit 校验、nonce、锁与事务恢复全部不变。
+9. 对 run 根状态文件、resolved、backup、`logos/resources/verify/` 其它文件、reference 之外的正式规格与源码，guard 维持原判定：无提案 exit 2。
+
+### 异常用例
+
+#### EX-9.31: 近似名称路径
+- **触发条件**：目标为 `logos/resources/reference-evil/x.md`、`logos/resources/references/x.md`、`.../baseline-seed-runs/<run_id>/staging-backup/x`。
+- **期望响应**：不命中新规则（完整段匹配），按原规则 exit 2。
+
+#### EX-9.32: 缺 run_id 或多层伪 run 路径
+- **触发条件**：`baseline-seed-runs/staging/x.md`（缺 run_id）、`baseline-seed-runs/a/b/staging/x.md`（多层）、run_id 段不满足 `^[A-Za-z0-9][A-Za-z0-9._-]*$` 或含 `..`。
+- **期望响应**：不命中 R-STAGING，exit 2。
+
+#### EX-9.33: run 根状态与恢复材料
+- **触发条件**：写 `baseline-seed-runs/<run_id>/run.json`、`commit-journal.json`、`resolved/**`、`backup/**` 或 `baseline-seed-runs/<module>.commit.lock`。
+- **期望响应**：exit 2；这些文件只由 CLI 写入，豁免不覆盖。
+
+#### EX-9.34: 点段逃逸与符号链接
+- **触发条件**：`logos/resources/reference/../../../src/a.ts` 等含 `..` 的路径；或 reference / staging 下存在指向 `src/` 的符号链接并以其为写入入口。
+- **期望响应**：python3/node 归一化后按真实目标判定 → exit 2；`is_whitelisted_path` 的 bash 兜底分支对含点段的路径不命中新规则（只可更保守）。完整 hook 的读入与 lifecycle 解析依赖 python3 或 node（既有行为不变），兜底一致性在函数层成立，不承诺无运行时环境下完整 hook 可工作。
+
+#### EX-9.35: Bash 混合目标
+- **触发条件**：`cp logos/resources/reference/a.md src/a.md`、`mv logos/resources/verify/baseline-seed-runs/<run_id>/staging/x logos/resources/prd/x` 等任一路径为项目内非白名单。
+- **期望响应**：exit 2（逐路径判定，全部允许才放行）；对未先命中 Bash 安全白名单、进入写模式检查的命令，变量展开、命令替换、管道、复合命令、`tee`/`sed -i` 等解析不出目标的形态维持无条件阻断（如 `tee logos/resources/reference/a.md`）。先命中安全白名单的命令（如 `echo x | tee ...`）按既有优先级放行，本案不改变。
+
+#### EX-9.36: 旧版托管 guard 未更新
+- **触发条件**：项目仍运行未含新规则的旧版托管 `guard-check`（未升级全局 CLI 或未执行 sync）。
+- **期望响应**：两类写入仍被拦截——修复经新版本随包 guard、`openlogos init`（新建项目）与 `openlogos sync`（存量项目，S08「sync 托管 guard 资产补齐时序」）分发，不以手改项目内副本替代。
+
+### 不变量
+
+- 有活跃提案时的放行语义、plan 阶段原型 allowlist、管辖边界、既有前缀表、Bash 安全 / 写入模式与路径提取能力均不变。
+- 不放开整个 `logos/resources/`、`verify/` 或 `baseline-seed-runs/`；不新增配置开关、审批标记或 run 状态解析。
+
+### 追溯
+
+- 根规范：`spec/pretooluse-guard.md` §文件路径白名单（Edit/Write 工具）、§资料目录与基线 staging 默认路径豁免、§Bash 写命令路径提取与逐路径管辖判定。
+- 相关场景：S33 逆向建基线 begin → 写 run staging → commit（`core-01-requirements.md` S33）；S08「sync 托管 guard 资产补齐时序」；S09「guard-check 管辖边界与阻断输出双通道时序」「guard-check Bash 写命令路径提取与逐路径管辖判定时序」（`core-S09-change-lifecycle.md`）。
+- 信息架构：`core-00-information-architecture.md` reference 目录用途。
+- 测试：`core-S09-test-cases.md`「S09 guard 资料目录与基线 staging 默认豁免测试」UT-S09-365～UT-S09-372、ST-S09-147～ST-S09-148；安装态 smoke：SMOKE-core-209、SMOKE-core-210。
+- 来源变更：fix-guard-reference-baseline-staging-whitelist。

@@ -1705,3 +1705,34 @@
 - 结果写入 smoke reporter（`smoke-results.jsonl`）；**失败不得写 pass**。
 - runner **不得**以「安装态版本号等于本次候选」替代行为断言——版本号相等只证明装了新包，
   不证明判据收敛；本条要的是可观察的行为差异（`mismatches` 为空 + 计数自洽）。
+
+## OpenLogos 0.15.15 guard 资料目录与基线 staging 默认豁免安装态 smoke（SMOKE-core-209～210）
+
+> 覆盖「修复真的进了本机全局安装态与其分发出的托管 guard」。guard 是托管资产：仓内源码修好、全局 CLI 或项目托管副本未更新，用户现场的误拦截照旧。用例在 `mktemp -d` 一次性隔离项目内执行，**只读**本机全局安装态（不做安装 / 卸载），不触碰本仓活跃提案与用户其他仓库。判据用**行为断言**：版本号相等只证明装了新包，不证明规则生效。版本号为计划值 `0.15.15`，实际以部署记录的候选版本为准（关系断言：全局 `--version` == 部署记录版本）。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-209 | 安装态身份与托管 guard 放行 / 阻断矩阵 | 本机全局已安装本次候选；`mktemp -d` 一次性临时项目，经全局 `openlogos init` 建立并置 launched，无 guard 文件 | ① 读取全局入口 realpath、`openlogos --version`、全局包内 `asset-manifest.json` 与随包 guard 的 SHA-256；② 以 stdin JSON + cwd 调用临时项目托管 `.claude/openlogos/bin/guard-check`：Write `logos/resources/reference/notes.md`、`logos/resources/reference/a/b/c.md`、`logos/resources/verify/baseline-seed-runs/<run_id>/staging/system-map.md`、`.../staging/scenarios/s.md`；Bash `mkdir -p logos/resources/reference/temp`、`touch .../staging/a.md`；③ 同一 hook 调用：Write `logos/resources/reference-evil/x.md`、`.../baseline-seed-runs/<run_id>/staging-backup/x.md`、`.../baseline-seed-runs/a/b/staging/x.md`、`.../<run_id>/run.json`、`.../<run_id>/commit-journal.json`、`.../<run_id>/resolved/x.md`、`.../<run_id>/backup/x.md`、`logos/resources/verify/test-results.jsonl`、`logos/resources/prd/1-product-requirements/core-01-requirements.md`、`src/index.ts`；Bash `cp logos/resources/reference/a.md src/a.md` | ① `--version` 等于部署记录版本；包内 asset-manifest `payloadHash` 自洽；托管 guard 与随包 guard 逐字节一致；② 全部 exit 0，且未产生 `logos/changes/*` 或 guard 文件；③ 全部 exit 2，stdout 含拦截 JSON、stderr 含可读指引 | 保留隔离项目、hook 输入与输出；① 不成立或 ②③ 任一不符 → 停止后续流程，按部署方案以 `cli/rollback/` 旧制品回装全局，并用旧版 sync 恢复本仓托管副本；不得以「仓内源码已修」了事 |
+| SMOKE-core-210 | 新建 / 存量项目经全局 CLI 分发获得同一规则 | 本机全局已安装本次候选；两个 `mktemp -d` 一次性临时项目：P1 空目录；P2 为已初始化项目，其托管 `guard-check` 预置为上一版本（回滚制品内）的旧字节 | ① P1 执行全局 `openlogos init`；② P2 执行全局 `openlogos sync`；③ 对 P1、P2 的托管 guard 各跑 SMOKE-core-209 步骤②③的核心子集（reference 正向、staging 正向、run.json 负向、源码负向） | ①② 后两份托管 guard 与随包 guard 逐字节一致；P2 sync 前旧字节对 reference 正向输入 exit 2（对照），sync 后 exit 0；③ 两项目结论与 SMOKE-core-209 一致 | 同上；另保留 P2 sync 前后 guard 的 SHA-256 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目内；结束即删除。**不得**触碰本仓活跃提案、`logos/resources/`、用户其他仓库或本机全局 prefix（本节只读全局安装态）。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`——本次为本地全局部署。
+- `<run_id>` 由 runner 以合法 run_id 格式生成；不在断言中硬编码主机路径、墙上时钟或本机全局安装现值（通则第 1 条）。
+
+### 三、追溯与覆盖
+
+- 根规范：`spec/pretooluse-guard.md` §资料目录与基线 staging 默认路径豁免。
+- 场景：S09「无活跃提案时资料目录与基线 staging 的 guard 放行时序」EX-9.31～EX-9.36；S08「sync 托管 guard 资产补齐时序」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.15.15 发布方案（guard 资料目录与基线 staging 默认豁免，本地全局）」。
+- 仓库内对应用例：UT-S09-365～UT-S09-372、ST-S09-147～ST-S09-148。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-guard-reference-staging-0-15-15.js`，由既有 `scripts/run-smoke.js` 发现并执行；记录全局入口 realpath、安装态版本、隔离项目路径、每次 hook 调用的输入、退出码与 stdout/stderr 摘要。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`）；**失败不得写 pass**。
+- runner **不得**以「安装态版本号等于候选」替代行为断言；字节一致性以 SHA-256 比对，不得以「文件存在」代替。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-209、SMOKE-core-210 均被 runner 覆盖。

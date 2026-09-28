@@ -1023,3 +1023,51 @@
 - 三条用例读取对象必须是根权威 `skills/`、`spec/` 下的文件。断言 dogfood 副本等于放过「根权威未改、副本先行」的漂移，属无效证据。
 - UT-S09-362 的负向样例是本用例的有效性前提：只断言「现行 Step 4 判绿」而不证明「旧模板判红」，无法排除判据写成恒真。两份旧模板夹具须同时在场，且**英文侧不可省**——它正是按 registry 命中数判会漏检的那一侧。
 - 本组用例**不得**修改 `PLAN_SECTION_REGISTRY`、占位符枚举或任一既有 lint 判据以使自身通过。
+
+## S09 guard 资料目录与基线 staging 默认豁免测试
+
+> 覆盖根规范 `spec/pretooluse-guard.md` §文件路径白名单（Edit/Write 工具）新增两行与 §资料目录与基线 staging 默认路径豁免；场景 S09「无活跃提案时资料目录与基线 staging 的 guard 放行时序」EX-9.31～EX-9.36；来源变更 fix-guard-reference-baseline-staging-whitelist。
+>
+> **夹具口径**：一律在 `mktemp -d` 一次性隔离项目内构造 launched 模块、**无** `logos/.openlogos-guard`；以 stdin JSON + cwd 调用**分发源** `plugin/bin/guard-check`（ST 另验 init / sync 部署出的托管副本），断言进程退出码与 stdout/stderr。完整 hook 用例一律在 python3 或 node 可用的环境运行（hook 读入与 lifecycle 解析依赖二者之一，既有行为）；`is_whitelisted_path` 的 bash 兜底分支仅在函数层（UT-S09-372）验证。路径以绝对路径与项目根相对路径两种形态各跑一遍。夹具不得修改本仓或用户其他仓库的真实文件。
+>
+> 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-365 | reference 正向：Edit/Write 根文件与多级目录放行 | launched、无 guard | Write `logos/resources/reference/notes.md`；Edit `logos/resources/reference/a/b/c/snippet.ts`；Write `logos/resources/reference/temp/seed-manifest.json` | 三次均 exit 0，stdout 无拦截 JSON、stderr 无指引文本；未创建任何 `logos/changes/*` 目录或 guard 文件 |
+| UT-S09-366 | staging 正向：单层 run_id 的 staging 及后代放行 | launched、无 guard；run_id 取 `core-20260928-001` 等合法值 | Write `logos/resources/verify/baseline-seed-runs/<run_id>/staging/system-map.md`；Write `.../staging/scenarios/core-S01.md`（嵌套） | 均 exit 0 |
+| UT-S09-367 | 近似名称负向（完整段匹配） | 同上 | Write `logos/resources/reference-evil/x.md`、`logos/resources/references/x.md`、`.../baseline-seed-runs/<run_id>/staging-backup/x.md`、`.../baseline-seed-runs/<run_id>/staging.old/x.md` | 均 exit 2，stdout 含「变更管理拦截」JSON，stderr 含可读指引 |
+| UT-S09-368 | 缺 run_id / 多层伪 run / 非法 run_id 负向 | 同上 | Write `.../baseline-seed-runs/staging/x.md`、`.../baseline-seed-runs/a/b/staging/x.md`、`.../baseline-seed-runs/-bad/staging/x.md`、`.../baseline-seed-runs/.hidden/staging/x.md` | 均 exit 2 |
+| UT-S09-369 | 相邻受保护路径负向 + 既有判定零回归 | 同上 | 负向臂 Write：`.../<run_id>/run.json`、`.../<run_id>/commit-journal.json`、`.../<run_id>/resolved/x.md`、`.../<run_id>/backup/x.md`、`.../baseline-seed-runs/core.commit.lock`、`logos/resources/verify/test-results.jsonl`、`logos/resources/verify/baseline-events.jsonl`、`logos/resources/prd/1-product-requirements/core-01-requirements.md`、`logos/resources/test/core-S01-test-cases.md`、`src/index.ts`；零回归臂：`logos/changes/x/proposal.md`、`CLAUDE.md`、项目外路径；活跃提案臂：写入 guard 文件后对 `src/index.ts` 重跑 | 负向臂全部 exit 2；零回归臂全部 exit 0；活跃提案臂 exit 0（有提案语义不变） |
+| UT-S09-370 | 点段逃逸与符号链接不放宽 | 同上；在 `logos/resources/reference/link` 建指向 `src/` 的符号链接 | Write `logos/resources/reference/../../../src/a.ts`、`logos/resources/verify/baseline-seed-runs/<run_id>/staging/../run.json`、`logos/resources/reference/link/a.ts` | 均 exit 2；对照：`logos/resources/reference/a/../b.md`（归一化后仍在 reference 内）在 python3/node 可用时 exit 0 |
+| UT-S09-371 | Bash 写入复用新规则、解析能力不扩展 | 同上 | 放行臂：`mkdir -p logos/resources/reference/temp`、`touch logos/resources/reference/todo.md`、`echo x > logos/resources/reference/n.md`、`mkdir -p logos/resources/verify/baseline-seed-runs/<run_id>/staging/scenarios`、`touch .../staging/a.md`；阻断臂：`cp logos/resources/reference/a.md src/a.md`、`mv .../staging/x logos/resources/prd/x`、`touch .../<run_id>/run.json`、`sed -i 's/a/b/' logos/resources/reference/a.md`、`tee logos/resources/reference/a.md`、`touch $D/a.md`、`mkdir x && touch logos/resources/reference/a.md`；安全臂：`openlogos baseline-seed begin --module core --manifest logos/resources/reference/temp/m.json`、`echo x \| tee logos/resources/reference/a.md`（安全优先级零回归对照） | 放行臂 exit 0；阻断臂 exit 2（逐路径全允许才放行；未命中安全白名单的 `sed -i`/`tee`/变量/复合形态维持无条件阻断）；安全臂 exit 0（`^openlogos `、`^echo ` 安全白名单先判，优先级不变） |
+| UT-S09-372 | `is_whitelisted_path` 函数层 python3 / node / bash 兜底三分支同判 | 隔离项目为 cwd；以不改变 hook 行为的方式加载分发源 `plugin/bin/guard-check` 中**真实的** `WHITELIST_PREFIXES` 与 `is_whitelisted_path`（按函数边界提取后 source，或实现侧提供仅定义函数的加载入口），**不得另写规则副本**；以受控 `PATH` 分别构造「python3 可用」「仅 node 可用」「两者均不可用」三种环境 | 在三种环境下对 UT-S09-365～369、UT-S09-371 涉及的全部**不含点段**路径（绝对与相对两种形态）直接调用该函数，取返回值；另调用含点段输入 `logos/resources/reference/../../../src/a.ts` 与 `logos/resources/reference/a/../b.md` | 不含点段输入三环境返回值逐条相同（R-REF / R-STAGING 正向返回 0，近似名、run 根状态、`verify/` 其它文件、正式规格与源码返回非 0）；含点段输入在 bash 兜底环境下均返回非 0（只可更保守），第一条在任一环境均不得返回 0。**本用例不调用完整 hook**：完整 hook 在无 python3 / node 时于路径判定前按既有逻辑返回，不属本案合同 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-147 | 无提案 begin → staging → commit 端到端，不创建临时提案 | S09 无活跃提案资料/staging 时序 Step 4→9；S33 begin/commit | 一次性隔离项目：模块 `core` 已注册为 adopted、`lifecycle: launched`，无 guard 文件；真实 CLI（`cli/dist/index.js`）与分发源 guard | ① 经 hook（Write）把逻辑计划 manifest 写到 `logos/resources/reference/temp/seed-manifest.json`；② 执行真实 `openlogos baseline-seed begin --module core --manifest <该路径> --format json`，取 run_id 与 staging；③ 经 hook 按返回路径 Write 满足 manifest 的 system-map 与场景候选产物（含一次经 hook 的 `mkdir -p` 建子目录）；④ 执行真实 `baseline-seed commit --module core --run-id <run_id>`；⑤ 经 hook 尝试 Write 同 run 的 `run.json`、`commit-journal.json` 与正式目标文件 | ①③ hook 全部 exit 0；② begin exit 0 且返回的 staging 与 R-STAGING 匹配；④ commit exit 0，正式基线落盘、`baseline_seed_state` 按既有协议更新；⑤ 全部 exit 2；全过程 `logos/changes/` 下无新增目录、`logos/.openlogos-guard` 始终不存在、`logos.config.json` 未被改写 |
+| ST-S09-148 | init / sync 分发的托管 guard 获得同一规则 | S08 sync 托管 guard 资产补齐时序；EX-9.36 | 真实 CLI；两个一次性隔离项目：新建项目 P1；存量项目 P2，其 `.claude/openlogos/bin/guard-check` 预置为未含新规则的旧字节 | ① P1 执行真实 `openlogos init`（Claude 目标），置 launched；② P2 执行真实 `openlogos sync`；③ 对 P1、P2 的托管 `.claude/openlogos/bin/guard-check` 各跑 UT-S09-365～369、UT-S09-371 的核心矩阵（正向 + 近似名 + run 根状态 + 源码 + Bash 混合目标） | ① ② 后两份托管 guard 均与分发源 `plugin/bin/guard-check` 逐字节一致，且与 `cli/asset-manifest.json` 登记 hash 一致；③ 两项目矩阵结论与分发源逐条相同；P2 sync 前旧字节对 reference 正向输入 exit 2（修复前必红对照） |
+
+### 追溯与覆盖
+
+- reference 正向（R-REF）：UT-S09-365、ST-S09-147 ①。
+- staging 正向（R-STAGING）：UT-S09-366、ST-S09-147 ③。
+- 完整段边界（EX-9.31、EX-9.32）：UT-S09-367、UT-S09-368。
+- 相邻受保护路径与零回归（EX-9.33）：UT-S09-369、ST-S09-147 ⑤。
+- 点段与符号链接（EX-9.34）：UT-S09-370、UT-S09-372。
+- Bash 复用与混合目标（EX-9.35）：UT-S09-371。
+- 三运行时一致（函数层）：UT-S09-372。
+- 分发链路（EX-9.36）：ST-S09-148；安装态见 SMOKE-core-209、SMOKE-core-210。
+- 根规范：`spec/pretooluse-guard.md` §资料目录与基线 staging 默认路径豁免；场景：S09「无活跃提案时资料目录与基线 staging 的 guard 放行时序」。
+
+### 自动化与证据要求
+
+- 全部用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，失败不得写 pass。
+- 每条 hook 调用记录输入 JSON、cwd、退出码与 stdout/stderr 摘要；负向断言同时校验 stdout JSON 与 stderr 双通道。
+- UT-S09-372 的三运行时环境须由夹具**显式断言**（如 `command -v python3` / `command -v node` 在受控 PATH 下的结果），不得因宿主环境恰好具备 python3 而使兜底分支空过；被测对象必须是从分发源加载的真实函数，夹具断言加载的函数体来自 `plugin/bin/guard-check` 当前字节。
+- 完整 hook 用例（UT-S09-365～371、ST-S09-147～148）须断言运行环境中 python3 或 node 至少一个可用，防止在无运行时环境下因 hook 早退而使负向断言失真。
+- ST-S09-148 的字节一致性以 SHA-256 比对；不得以「文件存在」代替。

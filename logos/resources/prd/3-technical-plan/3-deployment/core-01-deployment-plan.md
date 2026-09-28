@@ -3322,3 +3322,58 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 架构：§五十一（规范化形式不得充当产出内容）、§四十九（环境事实不入 verify 期断言）。
 - 功能规格：§2.80（ADDED 标题保真）、§2.81（升版确定性动作）。
 - 测试：`UT-S09-349`、`UT-S09-350`、`UT-S19-49`、`UT-S19-50`；安装态 smoke：`SMOKE-core-207`。
+
+## OpenLogos 0.15.15 发布方案（guard 资料目录与基线 staging 默认豁免，本地全局）
+
+### 部署目标与授权边界
+
+把 guard 的两条内置默认豁免（`logos/resources/reference/**` 与 `logos/resources/verify/baseline-seed-runs/<run_id>/staging/**`，根规范 `spec/pretooluse-guard.md` §资料目录与基线 staging 默认路径豁免）送进本机安装态。guard 是随安装包与 sync 分发的托管资产：仓内源码修好而全局 CLI 与项目托管副本不更新，用户现场的误拦截照旧。
+
+授权来源：用户在本提案中明确要求「生成新版本并且部署本机全局」（proposal 决策 C02）。本方案为**本地全局安装**（`npm install -g <tarball>`），**不含** `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`；不批量修改用户其他仓库，本仓托管 guard 通过新全局 CLI 的既有 `openlogos sync` 更新。merge、verify、部署执行、smoke、archive 仍按项目执行门。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge、`[code]` 切片实现完成、`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本；计划时为 `0.15.14`，候选为其下一 patch `0.15.15`。若实施前已被其它提案升版，则候选改为「当时版本的下一 patch」、回滚版本改为「当时版本」，并在部署记录中写明实际值——本节版本号为计划值，不是钉死值。
+3. 冻结当前本机全局：`command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`；实际 prefix 与入口在部署前读取，不在测试或脚本中硬编码主机路径。
+4. 固定回滚制品：当前全局版本（预期 `0.15.14`）的可回装 tarball 保存于 `cli/rollback/`，记录其 SHA-256。
+
+### 0.15.15 版本与制品身份
+
+**经升版脚本 `cli/scripts/bump-version.mjs` 一次完成**（通则第 4 条）：`cli/package.json` 与 lockfile 根包、全部随包 plugin manifest（`plugin/`、`plugin-codex/`、`plugin-qoder/`、`plugin-workbuddy/`、`plugin-zcode/`）、`cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION` / `LOCAL_RELEASE_ROLLBACK_VERSION`，并由既有生成器重算 `cli/asset-manifest.json`（含 `plugin/bin/guard-check` 新 hash）。**禁止手改** `asset-manifest.json` 与派生 hash。任一身份载体残留旧版本即判失败（`UT-S19-46`）；manifest 自洽由 `UT-S19-49` 守。补充本次发布记录（CHANGELOG / 发布说明既有位置）。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm test` 必须为绿（通则第 6 条），含 UT-S09-365～372、ST-S09-147～148；`npm run build` 通过。
+2. 真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256；解包核对 CLI entry、`--version`、asset-manifest 自洽，以及随包 `claude-plugin-template/bin/guard-check` 与仓内 `plugin/bin/guard-check` 逐字节一致。
+
+### 隔离 Prefix 行为矩阵
+
+`mktemp -d` 一次性 npm prefix 安装固定 tarball，从新 shell / 绝对入口执行；全部项目态在一次性临时项目内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| 新建项目分发 | 候选 CLI `openlogos init` 产出的托管 `guard-check` 与随包 guard 逐字节一致 |
+| 存量项目分发 | 预置旧版托管 guard 的临时项目执行候选 `openlogos sync` 后，托管 guard 更新为随包字节 |
+| 放行矩阵 | launched 无提案：reference 根与多级文件、单层 run_id 的 staging 及嵌套文件（Edit/Write 与 `mkdir`/`touch`/简单重定向）→ exit 0 |
+| 阻断矩阵 | 近似名称、缺 run_id / 多层伪 run、run 根 `run.json` / `commit-journal.json` / `resolved/` / `backup/`、`verify/` 其它文件、正式规格与源码、Bash 混合目标 → exit 2 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径且 version 逐字一致 |
+| 回滚演练 | 在隔离 prefix 以 `cli/rollback/` 旧制品回装，`--version` 回到旧版本，旧托管 guard 可由旧版 sync 恢复 |
+
+### 本机全局部署
+
+矩阵与回滚演练通过后，以**同一** tarball 执行 `npm install -g <tarball>` 覆盖本机全局；新 shell 复核 identity 全同源候选版本（entry realpath / `--version` / package.json / asset-manifest）。随后在本仓以新全局 CLI 执行 `openlogos sync`，核对本仓 `.claude/openlogos/bin/guard-check` 与随包 guard 逐字节一致。记录部署身份（版本、tarball SHA-256、入口 realpath）与回滚入口（`cli/rollback/` 制品路径与 SHA-256），再按流程写 `DEPLOY_DONE` 并进入 smoke（SMOKE-core-209、SMOKE-core-210）。
+
+### 失败处置与回滚边界
+
+- 发布前检查、构建、隔离矩阵或回滚演练任一失败 → 不安装全局、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即回滚隔离环境。
+- 已全局安装后发现问题 → 以 `cli/rollback/` 的旧制品 `npm install -g` 回装；若本仓已 sync 新资产，用旧版本既有 `openlogos sync` 恢复托管副本。无数据迁移、无其它状态文件需清理。
+- 不以手改本仓托管 guard 或资产 manifest 作为修复或回滚手段。
+
+### 追溯
+
+- 根规范：`spec/pretooluse-guard.md` §文件路径白名单（Edit/Write 工具）、§资料目录与基线 staging 默认路径豁免。
+- 场景：S09「无活跃提案时资料目录与基线 staging 的 guard 放行时序」；S08「sync 托管 guard 资产补齐时序」。
+- 测试：UT-S09-365～UT-S09-372、ST-S09-147～ST-S09-148、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-209、SMOKE-core-210。
+- 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。

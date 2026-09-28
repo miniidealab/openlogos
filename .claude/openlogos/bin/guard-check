@@ -233,6 +233,55 @@ WHITELIST_PREFIXES=(
   ".openlogos"
 )
 
+# Built-in default exemptions (fix-guard-reference-baseline-staging-whitelist):
+#   R-REF     logos/resources/reference and its descendants (reference material,
+#             not a spec artifact);
+#   R-STAGING logos/resources/verify/baseline-seed-runs/<run_id>/staging and its
+#             descendants — the run-private staging written after
+#             `openlogos baseline-seed begin`; formal baselines still go through
+#             `baseline-seed commit`. <run_id> is exactly one segment matching the
+#             CLI run_id rule. run.json / commit-journal.json / resolved/ / backup/
+#             / locks stay protected.
+# Full-segment matching only; any ".", ".." or empty segment never matches (the
+# bash fallback does not normalize, so it may only be more conservative).
+# Symlinks never match either: the normalizers only resolve the deepest
+# *existing* ancestor, so a dangling link (e.g. reference/new.ts -> src/new.ts)
+# would keep its exempt-looking path while writes follow it into protected
+# files. Any path component (relative to the project root) that is a symlink —
+# dangling or not — makes the exemption decline (fall back to the old rules).
+is_default_exempt_path() {
+  local rel="$1"
+  case "/$rel/" in
+    *//*|*/./*|*/../*) return 1 ;;
+  esac
+  local walk="" seg
+  local -a segs=()
+  IFS='/' read -r -a segs <<< "$rel"
+  for seg in "${segs[@]}"; do
+    walk="${walk:+$walk/}$seg"
+    if [ -L "$walk" ]; then
+      return 1
+    fi
+  done
+  if [[ "$rel" == "logos/resources/reference" || "$rel" == logos/resources/reference/* ]]; then
+    return 0
+  fi
+  local runs="logos/resources/verify/baseline-seed-runs/"
+  if [[ "$rel" == "$runs"* ]]; then
+    local rest="${rel#"$runs"}"
+    [[ "$rest" == */* ]] || return 1
+    local run_id="${rest%%/*}"
+    local after="${rest#*/}"
+    local run_id_re='^[A-Za-z0-9][A-Za-z0-9._-]*$'
+    [[ "$run_id" =~ $run_id_re ]] || return 1
+    [[ "$run_id" == *..* ]] && return 1
+    if [[ "$after" == "staging" || "$after" == staging/* ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 is_whitelisted_path() {
   local path="$1"
 
@@ -337,6 +386,9 @@ process.stdout.write(rel);
       return 0
     fi
   done
+  if is_default_exempt_path "$rel_path"; then
+    return 0
+  fi
   return 1
 }
 

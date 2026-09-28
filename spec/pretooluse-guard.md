@@ -109,6 +109,8 @@ hook 从 stdin 接收 JSON：
 | `.cursor/**` | Cursor 规则目录（sync 写入） |
 | `logos/skills/**` | Skills 目录（sync 写入） |
 | `logos/spec/**` | 规格目录（sync 写入） |
+| `logos/resources/reference` 及 `logos/resources/reference/**` | 参考资料目录（需求素材、待办、代码片段、图片、临时资料与笔记，信息架构既有定义；非规格产物），维护资料不需要变更提案。边界见 §资料目录与基线 staging 默认路径豁免 |
+| `logos/resources/verify/baseline-seed-runs/<run_id>/staging` 及其后代 | 基线建立 run 私有暂存区：`openlogos baseline-seed begin` 签发后由 AI 写入，正式基线仍由 `baseline-seed commit` 校验后原子提交。`<run_id>` 恰占一个路径段。边界见 §资料目录与基线 staging 默认路径豁免 |
 
 ### Bash 命令白名单
 
@@ -650,3 +652,65 @@ guard 的保护目标是**本项目源码的变更可追溯性**，管辖范围�
 
 - `plugin/bin/guard-check` 与其 sync 部署副本 `.claude/openlogos/bin/guard-check` 落实路径提取与逐路径管辖判定（改源、sync 分发部署副本，对齐 dogfooding 铁律；guard-check 为 asset-manifest 托管资产，随 0.14.24 发布刷新存量项目字节）。
 - 其它宿主适配层（zcode/qoder/workbuddy/cursor）合同独立成文，不在本节范围。
+
+## 资料目录与基线 staging 默认路径豁免（规范性）
+
+来源变更 fix-guard-reference-baseline-staging-whitelist。launched 且无活跃提案时，guard 此前拦截两类本不属于「本项目源码 / 规格变更」的正常输入，造成流程自相矛盾：
+
+- **参考资料**：信息架构把 `logos/resources/reference/` 定义为需求素材、待办、代码片段、图片、临时资料与笔记的存放处，维护它不改变任何规格或源码，却被要求先建提案；
+- **基线 staging**：`spec/logos-project.md` 与 S33 规定 AI 在 `begin` 之后把逆向产物写入 `baseline-seed-runs/<run_id>/staging/`、再由 `baseline-seed commit` 校验提交；guard 拦截该写入，逼用户手改白名单或建临时提案。
+
+本节把两类路径纳入内置默认豁免，**不新增配置开关、白名单管理命令、审批标记或 run 状态解析**。
+
+### 匹配规则（按规范化相对路径的完整目录段）
+
+判定对象为 `is_whitelisted_path` 既有归一化产出的项目根相对路径 `rel_path`（管辖边界判定在前，项目外路径已先行放行）。新增两条规则：
+
+| 规则 | 命中条件 |
+|---|---|
+| R-REF | `rel_path` 恰为 `logos/resources/reference`，或以 `logos/resources/reference/` 开头 |
+| R-STAGING | `rel_path` 按 `/` 切段后：前 4 段恰为 `logos` / `resources` / `verify` / `baseline-seed-runs`；第 5 段为 `<run_id>`，满足既有 run_id 标识符约束 `^[A-Za-z0-9][A-Za-z0-9._-]*$` 且不含 `..`；第 6 段恰为 `staging`；其后可有 0 个或多个后代段 |
+
+两条规则共同的保守约束：
+
+1. **完整段匹配**：R-REF 以「恰等于目录」或「目录 + `/`」判定，`reference-evil`、`references` 不命中；R-STAGING 逐段相等比较，`staging-backup`、`staging.old` 不命中。
+2. **单层 run_id**：缺 run_id（`baseline-seed-runs/staging/...` 中 `staging` 被当作 run_id 时，第 6 段须再为 `staging` 才命中）、多层伪 run 路径（`baseline-seed-runs/a/b/staging/...`）不命中。
+3. **点段与空段不命中**：`rel_path` 中任一段为 `.`、`..` 或空段（`//`）时，两条新规则**均不命中**，按原规则判定。python3/node 归一化已消去点段；bash 兜底分支不做词法归一化，此约束保证兜底只会更保守、不会更宽松。
+4. **符号链接不放宽**：python3/node 归一化解析最深已存在祖先的真实路径；reference 或 staging 下指向项目内其他位置的符号链接按解析后的真实路径判定，不因入口位于豁免目录而放行。
+
+### 仍受保护的相邻路径（launched 无提案时照常 exit 2）
+
+| 路径 | 原因 |
+|---|---|
+| `baseline-seed-runs/<run_id>/run.json` | run 记录（含签发 nonce），仅 CLI 写入 |
+| `baseline-seed-runs/<run_id>/commit-journal.json` | 提交日志，事务恢复依据 |
+| `baseline-seed-runs/<run_id>/resolved/**` | commit 对账后的最终内容，恢复用 |
+| `baseline-seed-runs/<run_id>/backup/**` | 提交前备份，回滚用 |
+| `baseline-seed-runs/<module>.commit.lock` 及 run 根目录其它文件 | 模块提交锁与 CLI 受控状态 |
+| `logos/resources/verify/` 下 staging 之外的一切（`test-results.jsonl`、`baseline-events.jsonl`、验收报告等） | 验收证据与审计账本 |
+| `logos/resources/` 下 reference 之外的正式规格（PRD、API、DB、测试规格等）与源码 | 变更可追溯性的保护对象 |
+
+begin 所需的逻辑计划 manifest 放在已豁免的 `logos/resources/reference/temp/` 等位置即可，**不为此开放 run 根目录**。正式基线的唯一写入入口仍是 `baseline-seed commit`（begin/commit 校验、nonce 核对、事务恢复与锁均不变）。
+
+### Bash 写入复用
+
+- Bash 重定向目标（既有 `WRITE_TARGET` 提取）与 `rm`/`cp`/`mv`/`mkdir`/`touch`/`chmod`/`chown` 路径实参（§Bash 写命令路径提取与逐路径管辖判定）均经 `is_whitelisted_path` 判定，自动获得两条新规则，无需另写分支。
+- 逐路径判定语义不变：**全部**提取路径均在项目外或白名单内才放行；混合目标中任一路径为项目内非白名单（如 `cp logos/resources/reference/a.md src/a.md`）→ 阻断。
+- 解析能力不扩展：对**未先命中 `BASH_SAFE_PATTERNS`、进入写模式检查**的命令，变量展开、命令替换、管道、复合命令、`sed -i`/`tee`/`writeFileSync` 等不提取目标的形态维持现行无条件阻断（如 `tee logos/resources/reference/a.md`、`sed -i ... logos/resources/reference/a.md`）；正常文件产出优先使用 Edit/Write。
+- `BASH_SAFE_PATTERNS` 先判的优先级不变：命中安全模式的命令（如以 `echo ` 开头的 `echo x | tee logos/resources/reference/a.md`）在写模式与路径提取之前即放行，本节不改变该既有行为，也不以新增阻断规则覆盖它。
+
+### 三运行时一致（函数层合同）
+
+本条约束对象是 **`is_whitelisted_path` 函数**的三条归一化分支：对不含点段 / 空段的输入，python3 归一化、node 归一化与 bash 兜底三条分支对两条新规则**必须同判**（放行集合与阻断集合一致）；对含点段的原始输入，bash 兜底允许比 python3/node 更保守（不命中新规则），不得更宽松。
+
+**测试层级**：完整 hook 读取 `tool_name` / `tool_input` 与解析模块 lifecycle 依赖 python3 或 node（既有行为，本案不改）；两者均不可用时 hook 在到达路径判定前即按既有逻辑返回，**本案不承诺完整 hook 在无 python3 / node 环境下可工作**，也不为此扩展 hook 的无运行时 JSON / YAML 解析能力。因此：bash 兜底分支的一致性在函数层验证（加载分发源中的真实 `WHITELIST_PREFIXES` 与 `is_whitelisted_path`，在受控 PATH 下调用，不得另写规则副本）；调用完整 hook 的用例限定在 python3 或 node 可用的环境。
+
+### 不变量
+
+- 既有 `WHITELIST_PREFIXES` 前缀表、`BASH_SAFE_PATTERNS` / `BASH_WRITE_PATTERNS`、管辖边界、plan 阶段原型 allowlist、有活跃提案时的放行语义、拦截文案与 stderr 双通道、exit 2 合同均不变。
+- 不放开整个 `logos/resources/`、`logos/resources/verify/` 或 `baseline-seed-runs/`。
+
+### [code] 触点（本 delta 只定契约）
+
+- 改分发源 `plugin/bin/guard-check`（`is_whitelisted_path` 内在前缀表匹配后追加两条规则）；`.claude/openlogos/bin/guard-check` 等托管副本经既有 init / sync 与资产 manifest 分发获得，不作为独立事实源手改。
+- 其它宿主适配层（zcode/qoder/workbuddy/cursor）若复用同一 guard 判定则随之生效；各自合同不在本节改写范围。
