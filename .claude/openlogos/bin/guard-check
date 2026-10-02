@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # OpenLogos Guard Check — PreToolUse hook for Claude Code.
-# Blocks Edit/Write/Bash tool calls when the project is in "launched" lifecycle
-# but no active change proposal (logos/.openlogos-guard) exists.
+# Blocks Edit/Write/MultiEdit/NotebookEdit/Bash/PowerShell tool calls when the project
+# is in "launched" lifecycle but no active change proposal (logos/.openlogos-guard) exists.
 #
-# Input:  JSON on stdin  { "tool_name": "Edit"|"Write"|"Bash", "tool_input": { ... } }
+# Input:  JSON on stdin  { "tool_name": "Edit"|"Write"|"MultiEdit"|"NotebookEdit"|"Bash"|"PowerShell", "tool_input": { ... } }
 # Output: JSON on stdout { "reason": "..." }  (only when blocking)
 # Exit:   0 = allow,  2 = block
 
@@ -11,17 +11,66 @@ set -euo pipefail
 
 # ── Read stdin ────────────────────────────────────────────────────────────────
 INPUT="$(cat)"
-TOOL_NAME="$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null \
-  || echo "$INPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')); process.stdout.write(d.tool_name||'')" 2>/dev/null \
-  || echo "")"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-json_get() {
-  # json_get <json> <key>  — extract a string field with python3 or node
-  local json="$1" key="$2"
-  echo "$json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('$key',''))" 2>/dev/null \
-    || echo "$json" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')); process.stdout.write((d.tool_input||{})['$key']||'')" 2>/dev/null \
-    || echo ""
+# ── Runtime probing（fix-windows-platform-compat，spec/pretooluse-guard.md §跨平台可移植性）──
+# Python 候选依次 python3 → python → py -3，以执行 `-c "import sys"` 退出 0 为可用判据——不以
+# PATH 可发现性为准（Windows 上 python3 常为可被发现、运行即失败的商店占位别名）。探测结果在一次
+# hook 调用内复用：主流程在任何命令替换（子 shell）之前调用一次 detect_python。
+GUARD_PY="${GUARD_PY:-}"
+detect_python() {
+  [ -n "${GUARD_PY:-}" ] && return 0
+  GUARD_PY="none"
+  local cand
+  for cand in "python3" "python" "py -3"; do
+    # shellcheck disable=SC2086
+    if $cand -c "import sys" </dev/null >/dev/null 2>&1; then
+      GUARD_PY="$cand"
+      return 0
+    fi
+  done
+  return 0
+}
+
+has_python() {
+  detect_python
+  [ "$GUARD_PY" != "none" ]
+}
+
+run_python() {
+  # shellcheck disable=SC2086
+  $GUARD_PY "$@"
+}
+
+# json_field <json> <dotted.key> — 全部字段读取的唯一解析实现。node 为主路径（stdin 以
+# readFileSync(0) 读取，禁止读 stdin 设备文件路径——Windows 版 Node 会解析为 <盘>:\dev\stdin）；node 不可用时才用真实可执行的 Python。
+# 成功解析输出字段字符串值（缺失或非字符串为空）并返回 0；所有解析路径均失败返回 1。
+json_field() {
+  local json="$1" key="$2" out
+  if out="$(printf '%s' "$json" | node -e "
+let d;
+try { d = JSON.parse(require('fs').readFileSync(0, 'utf-8')); } catch { process.exit(3); }
+let v = d;
+for (const k of process.argv[1].split('.')) v = (v && typeof v === 'object') ? v[k] : undefined;
+process.stdout.write(typeof v === 'string' ? v : '');
+" "$key" 2>/dev/null)"; then
+    printf '%s' "$out"
+    return 0
+  fi
+  if has_python && out="$(printf '%s' "$json" | run_python -c "
+import sys, json
+try:
+    d = json.loads(sys.stdin.buffer.read().decode('utf-8'))
+except Exception:
+    sys.exit(3)
+v = d
+for k in sys.argv[1].split('.'):
+    v = v.get(k) if isinstance(v, dict) else None
+sys.stdout.buffer.write((v if isinstance(v, str) else '').encode('utf-8'))
+" "$key" 2>/dev/null)"; then
+    printf '%s' "$out"
+    return 0
+  fi
+  return 1
 }
 
 block() {
@@ -57,39 +106,21 @@ fi
 
 # ── Step 2: Determine lifecycle ───────────────────────────────────────────────
 # Check if any module has lifecycle: launched
+# 纯 bash 解析（不依赖 python / node）：输入不可解析时的 fail-closed 必须在无运行时环境下也能到达。
 IS_LAUNCHED=0
 if [ -f "$YAML_FILE" ]; then
-  if python3 -c "
-import sys, re
-content = open('$YAML_FILE').read()
-in_modules = False
-for line in content.splitlines():
-    if re.match(r'^modules\s*:', line):
-        in_modules = True
-        continue
-    if in_modules:
-        if re.match(r'^[a-zA-Z]', line) and not re.match(r'^\s', line):
-            break
-        if re.search(r'lifecycle\s*:\s*[\"\'"]?launched[\"\'"]?', line):
-            sys.exit(0)
-sys.exit(1)
-" 2>/dev/null; then
-    IS_LAUNCHED=1
-  elif node -e "
-const fs = require('fs');
-const content = fs.readFileSync('$YAML_FILE', 'utf-8');
-let inModules = false;
-for (const line of content.split('\n')) {
-  if (/^modules\s*:/.test(line)) { inModules = true; continue; }
-  if (inModules) {
-    if (/^[a-zA-Z]/.test(line) && !/^\s/.test(line)) break;
-    if (/lifecycle\s*:\s*[\"']?launched[\"']?/.test(line)) process.exit(0);
-  }
-}
-process.exit(1);
-" 2>/dev/null; then
-    IS_LAUNCHED=1
-  fi
+  _in_modules=0
+  _top_re='^[a-zA-Z]'
+  _modules_re='^modules[[:space:]]*:'
+  _launched_re="lifecycle[[:space:]]*:[[:space:]]*[\"']?launched"
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    _line="${_line%$'\r'}"
+    if [[ "$_line" =~ $_modules_re ]]; then _in_modules=1; continue; fi
+    if [ "$_in_modules" -eq 1 ]; then
+      [[ "$_line" =~ $_top_re ]] && break
+      if [[ "$_line" =~ $_launched_re ]]; then IS_LAUNCHED=1; break; fi
+    fi
+  done < "$YAML_FILE"
 fi
 
 if [ "$IS_LAUNCHED" -eq 0 ]; then
@@ -97,38 +128,125 @@ if [ "$IS_LAUNCHED" -eq 0 ]; then
   exit 0
 fi
 
-# ── Step 3: Check guard file ──────────────────────────────────────────────────
-GUARD_FILE="logos/.openlogos-guard"
-if [ -f "$GUARD_FILE" ]; then
-  # Active change proposal exists. Normally allow everything within scope, but
-  # while the proposal is still in the plan stage (before plan-exit, i.e. the
-  # PLAN_APPROVED marker does not yet exist) we narrow delta writes: only the
-  # GUI page-design prototype (deltas/prd/2-product-design/2-page-design/*.html)
-  # may be produced in plan stage; all other deltas/** writes are deferred to
-  # delta-writing (after PLAN_APPROVED). Non-delta scope is unaffected.
-  ACTIVE_SLUG=""
-  if command -v python3 &>/dev/null; then
-    ACTIVE_SLUG=$(python3 -c "import json; d=json.load(open('$GUARD_FILE')); print(d.get('activeChange',''))" 2>/dev/null || echo "")
-  elif command -v node &>/dev/null; then
-    ACTIVE_SLUG=$(node -e "const d=JSON.parse(require('fs').readFileSync('$GUARD_FILE','utf-8')); process.stdout.write(d.activeChange||'')" 2>/dev/null || echo "")
+# ── Step 2.5: Parse hook input（fail-closed）────────────────────────────────────
+# stdin 非空但无法解析出 tool_name（JSON 非法、解析器全部不可用、字段缺失）：写入门禁已失明，
+# 放行等于关闭门禁——exit 2 双通道，与 ZCode / Qoder / Cursor 适配层同口径。
+detect_python
+TOOL_NAME=""
+if [ -n "$INPUT" ]; then
+  if ! TOOL_NAME="$(json_field "$INPUT" "tool_name")" || [ -z "$TOOL_NAME" ]; then
+    block "⛔ openlogos guard: 无法解析 hook 输入（tool_name 缺失或 JSON 不可解析），写入门禁无法判定，fail-closed。\\n\\n请检查 node 是否可用（node 是 OpenLogos 运行前提）。"
+  fi
+fi
+
+# hook_target_path — 文件路径类工具的目标路径字段（NotebookEdit 为 notebook_path）
+hook_target_path() {
+  case "$TOOL_NAME" in
+    NotebookEdit) json_field "$INPUT" "tool_input.notebook_path" || true ;;
+    *) json_field "$INPUT" "tool_input.file_path" || true ;;
+  esac
+}
+
+# ── Whitelist & path normalization（Step 3 plan 收窄与 Step 4 共用）──────────────────
+
+# Whitelist: path prefixes always allowed regardless of guard
+WHITELIST_PREFIXES=(
+  "logos/changes/"
+  "logos/.openlogos-guard"
+  "logos/logos-project.yaml"
+  ".claude/"
+  ".opencode/"
+  ".codex-plugin/"
+  ".cursor/"
+  "logos/skills/"
+  "logos/spec/"
+  ".gitignore"
+  "README"
+  "CLAUDE.md"
+  "AGENTS.md"
+  "opencode.json"
+  ".openlogos"
+)
+
+# collapse_dot_segments <path> — 按词法消解 `.` / `..` 段（输入须已统一为 `/` 分隔）。
+# 保留盘符（C:/）或根（/）前缀；绝对路径的 `..` 不越过根；相对路径越出起点的 `..` 保留在开头。
+collapse_dot_segments() {
+  local p="$1" prefix="" seg out=""
+  local -a parts=() stack=()
+  local drive_re='^[A-Za-z]:/'
+  if [[ "$p" =~ $drive_re ]]; then
+    prefix="${p:0:3}"; p="${p:3}"
+  elif [[ "$p" == /* ]]; then
+    prefix="/"; p="${p#/}"
+  fi
+  IFS='/' read -r -a parts <<< "$p"
+  for seg in ${parts[@]+"${parts[@]}"}; do
+    case "$seg" in
+      ''|.) continue ;;
+      ..)
+        if [ "${#stack[@]}" -gt 0 ] && [ "${stack[${#stack[@]}-1]}" != ".." ]; then
+          unset "stack[${#stack[@]}-1]"
+          stack=(${stack[@]+"${stack[@]}"})
+        elif [ -z "$prefix" ]; then
+          stack+=("..")
+        fi
+        ;;
+      *) stack+=("$seg") ;;
+    esac
+  done
+  out="$(IFS=/; printf '%s' "${stack[*]:-}")"
+  if [ -z "$prefix" ] && [ -z "$out" ]; then out="."; fi
+  printf '%s\n' "${prefix}${out}"
+}
+
+# has_dot_segments <raw-path> — 原始输入（`\` 视同 `/`）含 `.` / `..` 段返回 0。
+# 仅用于标记「相对路径由词法消解得出」（盘符分支与 bash 兜底）：此时点段只用于判定管辖边界与相对路径，
+# 项目内目标不再享受白名单 / 默认豁免 / plan 原型放行（符号链接下词法消解与 OS 解析可能不一致，只可更保守）。
+# python / node 分支经 realpath / relative 归一化，维持既有「按归一化结果判定」语义。
+has_dot_segments() {
+  local raw="${1//\\//}"
+  case "/$raw/" in
+    */./*|*/../*) return 0 ;;
+  esac
+  return 1
+}
+
+# _rel_of_cwd_tagged <path> — 输出「<词法点段标记 0|1> <相对路径>」。相对路径为目标相对项目根（cwd）的
+# posix 相对路径；白名单与 plan 收窄共用同一实现。
+# 输出一律把 `\` 统一为 `/`（原生 Windows 下 relpath / path.relative 产出 `\` 分隔）。
+# Windows 绝对路径（C:\... / C:/...）按项目根的 win32 形态（Git Bash `pwd -W`）大小写不敏感前缀比较；
+# 取不到 win32 形态或不同盘符 → 项目根之外（输出 `../` 前缀，管辖外放行语义），不回退为绝对路径。
+# 其余路径依次尝试 python（真实可执行时）→ node → bash 兜底；三条分支同判。
+_rel_of_cwd_tagged() {
+  local p="$1" rel="" lexical=0
+  local win_abs_re='^[A-Za-z]:[/\\]'
+  if [[ "$p" =~ $win_abs_re ]]; then
+    # 先消解点段再比较：C:/Root/.claude/../src/a.ts 实指 src/a.ts，不得以字面前缀命中白名单或误判管辖外
+    local p_w root_w=""
+    p_w="$(collapse_dot_segments "${p//\\//}")"
+    root_w="$(pwd -W 2>/dev/null || true)"
+    if [ -n "$root_w" ]; then
+      root_w="$(collapse_dot_segments "${root_w//\\//}")"
+      root_w="${root_w%/}"
+    fi
+    local nocase_on=0
+    shopt -q nocasematch && nocase_on=1
+    shopt -s nocasematch
+    if [ -n "$root_w" ] && [[ "$p_w" == "$root_w" ]]; then
+      rel="."
+    elif [ -n "$root_w" ] && [[ "$p_w" == "$root_w"/* ]]; then
+      rel="${p_w:$((${#root_w} + 1))}"
+    else
+      rel="../${p_w}"
+    fi
+    [ "$nocase_on" -eq 1 ] || shopt -u nocasematch
+    has_dot_segments "$p" && lexical=1
+    printf '%s %s\n' "$lexical" "$rel"
+    return 0
   fi
 
-  PLAN_STAGE=0
-  if [ -n "$ACTIVE_SLUG" ] && [ ! -f "logos/changes/$ACTIVE_SLUG/PLAN_APPROVED" ]; then
-    PLAN_STAGE=1
-  fi
-
-  if [ "$PLAN_STAGE" -eq 0 ]; then
-    # delta-writing (or no resolvable slug) — regular behavior, allow within scope.
-    exit 0
-  fi
-
-  # Plan stage: enforce the page-design-only allowlist for delta writes.
-  # rel_of_cwd <path> — echo path relative to cwd (reuses same normalization as whitelist).
-  rel_of_cwd() {
-    local p="$1" rel=""
-    if command -v python3 &>/dev/null; then
-      rel="$(python3 - "$p" <<'PYEOF' 2>/dev/null
+  if declare -F has_python >/dev/null && has_python; then
+    rel="$(run_python - "$p" <<'PYEOF' 2>/dev/null
 import sys, os
 path = sys.argv[1]
 cwd = os.getcwd()
@@ -155,83 +273,73 @@ try:
         if not r2.startswith('..'):
             r = r2
 except ValueError:
-    r = path
+    r = '../' + path
 print(r)
 PYEOF
-)"
-    elif command -v node &>/dev/null; then
-      rel="$(node -e "
-const path=require('path'),fs=require('fs');
-const p=process.argv[1],cwd=process.cwd();
-let realCwd=cwd; try{realCwd=fs.realpathSync(cwd);}catch{}
-let anc=p; const tail=[];
-while(anc && !fs.existsSync(anc)){const parsed=path.parse(anc); if(anc===parsed.root){break;} tail.push(path.basename(anc)); anc=path.dirname(anc);}
-let realAnc=anc; try{realAnc=fs.realpathSync(anc);}catch{}
-const realP=tail.length?path.join(realAnc,...tail.reverse()):realAnc;
-let rel=path.relative(realCwd,realP);
-if(rel.startsWith('..')){const r2=path.relative(cwd,p); if(!r2.startsWith('..')) rel=r2;}
+)" || rel=""
+  fi
+
+  if [ -z "$rel" ]; then
+    rel="$(node -e "
+const path = require('path');
+const fs = require('fs');
+const p = process.argv[1];
+const cwd = process.cwd();
+let realCwd = cwd;
+try { realCwd = fs.realpathSync(cwd); } catch {}
+let anc = p; const tail = [];
+while (anc && !fs.existsSync(anc)) { const parsed = path.parse(anc); if (anc === parsed.root) { break; } tail.push(path.basename(anc)); anc = path.dirname(anc); }
+let realAnc = anc;
+try { realAnc = fs.realpathSync(anc); } catch {}
+const realP = tail.length ? path.join(realAnc, ...tail.reverse()) : realAnc;
+let rel = path.relative(realCwd, realP);
+if (rel.startsWith('..')) {
+  const rel2 = path.relative(cwd, p);
+  if (!rel2.startsWith('..')) rel = rel2;
+}
+if (path.isAbsolute(rel)) rel = '../' + rel;
 process.stdout.write(rel);
-" "$p" 2>/dev/null)"
-    fi
-    if [ -z "$rel" ]; then
-      local norm="${p#/}" cwd_s
-      cwd_s="$(pwd)"; cwd_s="${cwd_s#/}"
-      rel="${norm#"$cwd_s/"}"
-    fi
-    echo "$rel"
-  }
+" "$p" 2>/dev/null)" || rel=""
+  fi
 
-  # is_plan_stage_delta_blocked <path> — return 0 (blocked) if path is a delta
-  # write that is NOT the allowed page-design .html prototype.
-  is_plan_stage_delta_blocked() {
-    local rel
-    rel="$(rel_of_cwd "$1")"
-    # Only concerned with this proposal's deltas/ tree.
-    local delta_prefix="logos/changes/$ACTIVE_SLUG/deltas/"
-    if [[ "$rel" != "$delta_prefix"* ]]; then
-      return 1  # not a delta write — not our concern here
-    fi
-    # Allowed: deltas/prd/2-product-design/2-page-design/<name>.html
-    if [[ "$rel" == "${delta_prefix}prd/2-product-design/2-page-design/"*.html ]]; then
-      return 1  # allowed prototype
-    fi
-    return 0  # any other delta in plan stage → blocked
-  }
+  # Fallback: simple bash stripping. Jurisdiction first: an absolute path not
+  # under "$(pwd)/" is outside the project root (host permission system owns
+  # everything outside the project; the guard only protects this project).
+  if [ -z "$rel" ]; then
+    has_dot_segments "$p" && lexical=1
+    case "$p" in
+      /*)
+        local cwd_s
+        cwd_s="$(pwd)"
+        if [[ "$p" == "$cwd_s" ]]; then
+          rel="."
+        elif [[ "$p" == "$cwd_s/"* ]]; then
+          rel="${p#"$cwd_s/"}"
+        else
+          rel="..${p}"
+        fi
+        ;;
+      *)
+        rel="$p"
+        ;;
+    esac
+  fi
 
-  # If not a delta write at all, fall through to normal handling below.
-  case "$TOOL_NAME" in
-    Edit|Write)
-      _FP="$(json_get "$INPUT" "file_path")"
-      if [ -n "$_FP" ] && is_plan_stage_delta_blocked "$_FP"; then
-        block "⛔ 变更管理拦截（plan 阶段）：当前提案尚未通过 plan-exit（PLAN_APPROVED 不存在）。\\n\\n目标文件：$_FP\\n\\nplan 阶段仅允许产出 page-design 原型 delta（deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 请在 plan 通过后（delta-writing）再产出。"
-      fi
-      ;;
-  esac
+  rel="${rel//\\//}"
+  # 点段统一消解（python / node 分支输出已无点段，此处主要约束 bash 兜底）：
+  # logos/changes/../../src/a.ts 不得以字面前缀命中白名单
+  rel="$(collapse_dot_segments "$rel")"
+  while [[ "$rel" == ./* ]]; do rel="${rel#./}"; done
+  printf '%s %s\n' "$lexical" "$rel"
+}
 
-  # Plan-stage but not a blocked delta write — allow within scope.
-  exit 0
-fi
+# rel_of_cwd <path> — 只输出相对路径（plan 收窄与白名单共用 _rel_of_cwd_tagged 同一实现）。
+rel_of_cwd() {
+  local out
+  out="$(_rel_of_cwd_tagged "$1")"
+  printf '%s\n' "${out#? }"
+}
 
-# ── Step 4: Check whitelist ───────────────────────────────────────────────────
-
-# Whitelist: path prefixes always allowed regardless of guard
-WHITELIST_PREFIXES=(
-  "logos/changes/"
-  "logos/.openlogos-guard"
-  "logos/logos-project.yaml"
-  ".claude/"
-  ".opencode/"
-  ".codex-plugin/"
-  ".cursor/"
-  "logos/skills/"
-  "logos/spec/"
-  ".gitignore"
-  "README"
-  "CLAUDE.md"
-  "AGENTS.md"
-  "opencode.json"
-  ".openlogos"
-)
 
 # Built-in default exemptions (fix-guard-reference-baseline-staging-whitelist):
 #   R-REF     logos/resources/reference and its descendants (reference material,
@@ -285,100 +393,21 @@ is_default_exempt_path() {
 is_whitelisted_path() {
   local path="$1"
 
-  # Use Python/Node to normalize both paths.
-  # Key challenge: on macOS /var is a symlink to /private/var.
-  # spawnSync passes cwd=/var/... but bash pwd returns /private/var/...
-  # We normalize by resolving the cwd symlink, then applying the same
-  # symlink substitution to the input path before computing relpath.
-  local rel_path=""
-  if command -v python3 &>/dev/null; then
-    rel_path="$(python3 - "$path" <<'PYEOF' 2>/dev/null
-import sys, os
-
-path = sys.argv[1]
-cwd = os.getcwd()  # /private/var/... (bash resolves symlinks)
-
-# Resolve cwd symlinks to get canonical form
-real_cwd = os.path.realpath(cwd)
-
-# Resolve the deepest existing ancestor of the (possibly not-yet-created) path,
-# so the /tmp -> /private/tmp symlink is normalized even when the leaf dirs
-# do not exist yet.
-anc = path
-tail = []
-while anc and not os.path.exists(anc):
-    anc, base = os.path.split(anc)
-    tail.append(base)
-    if not base:
-        break
-try:
-    real_anc = os.path.realpath(anc) if anc else anc
-except Exception:
-    real_anc = anc
-real_path = os.path.join(real_anc, *reversed(tail)) if tail else real_anc
-
-# Compute relative path
-try:
-    rel = os.path.relpath(real_path, real_cwd)
-    if rel.startswith('..'):
-        # Fallback: try without resolving path symlinks
-        rel2 = os.path.relpath(path, cwd)
-        if not rel2.startswith('..'):
-            rel = rel2
-except ValueError:
-    rel = path
-
-print(rel)
-PYEOF
-)"
-  elif command -v node &>/dev/null; then
-    rel_path="$(node -e "
-const path = require('path');
-const fs = require('fs');
-const p = process.argv[1];
-const cwd = process.cwd();
-// Resolve cwd symlinks
-let realCwd = cwd;
-try { realCwd = fs.realpathSync(cwd); } catch {}
-// Resolve the deepest existing ancestor (leaf dirs may not exist yet)
-let anc = p; const tail = [];
-while (anc && !fs.existsSync(anc)) { const parsed = path.parse(anc); if (anc === parsed.root) { break; } tail.push(path.basename(anc)); anc = path.dirname(anc); }
-let realAnc = anc;
-try { realAnc = fs.realpathSync(anc); } catch {}
-const realP = tail.length ? path.join(realAnc, ...tail.reverse()) : realAnc;
-let rel = path.relative(realCwd, realP);
-if (rel.startsWith('..')) {
-  const rel2 = path.relative(cwd, p);
-  if (!rel2.startsWith('..')) rel = rel2;
-}
-process.stdout.write(rel);
-" "$path" 2>/dev/null)"
-  fi
-
-  # Fallback: simple bash stripping. Jurisdiction first: an absolute path not
-  # under "$(pwd)/" is outside the project root — allow (host permission system
-  # owns everything outside the project; the guard only protects this project).
-  if [ -z "$rel_path" ]; then
-    case "$path" in
-      /*)
-        local cwd_s
-        cwd_s="$(pwd)"
-        if [[ "$path" != "$cwd_s/"* && "$path" != "$cwd_s" ]]; then
-          return 0
-        fi
-        rel_path="${path#"$cwd_s/"}"
-        ;;
-      *)
-        rel_path="$path"
-        ;;
-    esac
-  fi
+  # 归一化（含 macOS /var → /private/var 符号链接、`\` → `/`、盘符与跨盘）统一经 rel_of_cwd。
+  local rel_path="" tagged
+  tagged="$(_rel_of_cwd_tagged "$path")"
+  rel_path="${tagged#? }"
 
   # Jurisdiction boundary (fix-guard-check-external-path-and-stderr): a
   # normalized rel_path of ".." or "../*" targets outside the project root —
   # allow before any whitelist prefix matching.
   if [[ "$rel_path" == ".." || "$rel_path" == ../* ]]; then
     return 0
+  fi
+  # 词法消解得出的项目内点段目标（如 C:/Root/.claude/../src/a.ts；bash 兜底下的 logos/changes/../../src/a.ts）：
+  # 不以任何前缀放行
+  if [ "${tagged:0:1}" = "1" ]; then
+    return 1
   fi
 
   for prefix in "${WHITELIST_PREFIXES[@]}"; do
@@ -481,13 +510,224 @@ BASH_WRITE_PATTERNS=(
   "mkdirSync"
 )
 
+# ── Windows shell 输入（PowerShell 工具）判定（spec/pretooluse-guard.md §PowerShell / cmd 写入检测模式、
+#    §Windows shell 输入的判定顺序）。只作用于 tool_name=PowerShell；Bash 工具维持「安全白名单先判」。
+PS_WRITE_WORD_RE='^(set-content|add-content|out-file|new-item|remove-item|copy-item|move-item|rename-item|sc|ac|ni|ri|rm|del|erase|rd|rmdir|cp|copy|mv|move|ren)$'
+PS_CONTENT_WRITER_RE='^(set-content|add-content|out-file|sc|ac)$'
+PS_DOTNET_WRITE_RE='\[(system\.)?io\.file\]::write'
+PS_PATH_FLAG_RE='^-(path|filepath|literalpath|destination|newname)$'
+PS_VALUE_FLAG_RE='^-(itemtype|value|encoding|inputobject|type|name)$'
+PS_BASH_PATH_CMD_RE='^(rm|cp|mv|mkdir|touch|chmod|chown)$'
+
+ci_match() {
+  # ci_match <text> <ERE> — 大小写不敏感匹配
+  printf '%s\n' "$1" | grep -qiE -- "$2" 2>/dev/null
+}
+
+# ws_segment_is_write <segment> — 段首命令词命中 PowerShell / cmd 写入模式、.NET 写文件，或既有 BASH_WRITE_PATTERNS
+ws_segment_is_write() {
+  local seg="$1" word pattern
+  word="${seg%%[[:space:]]*}"
+  ci_match "$word" "$PS_WRITE_WORD_RE" && return 0
+  ci_match "$seg" "$PS_DOTNET_WRITE_RE" && return 0
+  for pattern in "${BASH_WRITE_PATTERNS[@]}"; do
+    if printf '%s\n' "$seg" | grep -qE -- "$pattern" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ws_segment_targets <segment> — 输出写入段的目标路径（每行一个）；无法结构化提取时返回 1
+ws_segment_targets() {
+  local seg="$1" word tok next_is_path=0 next_is_value=0 named=0 positional=""
+  local -a toks=()
+  ci_match "$seg" "$PS_DOTNET_WRITE_RE" && return 1
+  set -f
+  # shellcheck disable=SC2206
+  toks=($seg)
+  set +f
+  word="${toks[0]:-}"
+  if ci_match "$word" "$PS_WRITE_WORD_RE"; then
+    local i
+    for ((i = 1; i < ${#toks[@]}; i++)); do
+      tok="${toks[$i]}"
+      if [ "$next_is_path" -eq 1 ]; then printf '%s\n' "$tok"; named=1; next_is_path=0; continue; fi
+      if [ "$next_is_value" -eq 1 ]; then next_is_value=0; continue; fi
+      if ci_match "$tok" "$PS_PATH_FLAG_RE"; then next_is_path=1; continue; fi
+      if ci_match "$tok" "$PS_VALUE_FLAG_RE"; then next_is_value=1; continue; fi
+      case "$tok" in -*) continue ;; esac
+      if ci_match "$word" "$PS_CONTENT_WRITER_RE"; then
+        # 写内容类：路径为命名参数或首个位置参数，其余位置参数是写入值
+        [ -z "$positional" ] && positional="$tok"
+      else
+        printf '%s\n' "$tok"
+        named=1
+      fi
+    done
+    if ci_match "$word" "$PS_CONTENT_WRITER_RE" && [ "$named" -eq 0 ]; then
+      [ -n "$positional" ] || return 1
+      printf '%s\n' "$positional"
+    fi
+    return 0
+  fi
+  if ci_match "$word" "$PS_BASH_PATH_CMD_RE"; then
+    local i
+    for ((i = 1; i < ${#toks[@]}; i++)); do
+      case "${toks[$i]}" in -*) continue ;; esac
+      printf '%s\n' "${toks[$i]}"
+    done
+    return 0
+  fi
+  return 1
+}
+
+# ws_target_allowed <raw-target> — 目标可解析且在白名单 / 项目根之外返回 0
+ws_target_allowed() {
+  local t="$1"
+  t="${t#\"}"; t="${t%\"}"; t="${t#\'}"; t="${t%\'}"
+  [ -n "$t" ] || return 1
+  # 逗号为 PowerShell 数组分隔（Set-Content a.md,src/a.ts 写两个目标）：未实现有界数组解析前按不可解析阻断，
+  # 不得把整串交给路径判定而让首个白名单目标掩盖后续受保护目标
+  case "$t" in
+    *'$'*|*'('*|*')'*|*'`'*|*'*'*|*'?'*|*'@'*|*'{'*|*','*) return 1 ;;
+  esac
+  is_whitelisted_path "$t"
+}
+
+windows_shell_block() {
+  block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(printf '%s' "$1" | head -c 120)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
+}
+
+windows_shell_verdict() {
+  local cmd="$1" stripped merged rest target signal=0 pattern
+  local -a redirect_targets=() segments=() write_segments=()
+  # ① 剥离单 / 双引号字面量后扫描写入信号；流合并（2>&1）先移除
+  stripped="$(printf '%s' "$cmd" | sed -E "s/'[^']*'/''/g; s/\"[^\"]*\"/\"\"/g")"
+  merged="$(printf '%s' "$stripped" | sed -E 's/[0-9*]?>&[0-9]//g')"
+  local redirect_re='[0-9*]?>>?[[:space:]]*([^[:space:];|&<>]*)'
+  rest="$merged"
+  while [[ "$rest" =~ $redirect_re ]]; do
+    target="${BASH_REMATCH[1]}"
+    rest="${rest#*"${BASH_REMATCH[0]}"}"
+    if ci_match "$target" '^(\$null|nul)$'; then
+      continue
+    fi
+    redirect_targets+=("$target")
+    signal=1
+  done
+  local split="$merged"
+  split="${split//&&/$'\n'}"
+  split="${split//||/$'\n'}"
+  split="${split//;/$'\n'}"
+  split="${split//|/$'\n'}"
+  split="${split//&/$'\n'}"
+  local seg
+  while IFS= read -r seg; do
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    # 段内重定向由上方单独处理，段首命令判定只看重定向之前的部分
+    seg="${seg%%>*}"
+    seg="${seg%"${seg##*[![:space:]]}"}"
+    [ -n "$seg" ] || continue
+    segments+=("$seg")
+    if ws_segment_is_write "$seg"; then write_segments+=("$seg"); fi
+  done <<< "$split"
+  if [ "${#segments[@]}" -gt 1 ] && [ "${#write_segments[@]}" -gt 0 ]; then
+    signal=1
+  fi
+
+  # ③ 无写入信号：按既有顺序先判安全白名单，再判写入模式
+  if [ "$signal" -eq 0 ]; then
+    for pattern in "${BASH_SAFE_PATTERNS[@]}"; do
+      if printf '%s\n' "$cmd" | grep -qE -- "$pattern" 2>/dev/null; then
+        exit 0
+      fi
+    done
+    [ "${#write_segments[@]}" -gt 0 ] || exit 0
+  fi
+
+  # ② 有写入信号（或无信号但命中写入模式）：安全白名单不适用，逐目标判定
+  local any=0
+  for target in ${redirect_targets[@]+"${redirect_targets[@]}"}; do
+    any=1
+    ws_target_allowed "$target" || windows_shell_block "$cmd"
+  done
+  for seg in ${write_segments[@]+"${write_segments[@]}"}; do
+    local targets
+    if ! targets="$(ws_segment_targets "$seg")" || [ -z "$targets" ]; then
+      windows_shell_block "$cmd"
+    fi
+    while IFS= read -r target; do
+      any=1
+      ws_target_allowed "$target" || windows_shell_block "$cmd"
+    done <<< "$targets"
+  done
+  [ "$any" -eq 1 ] || windows_shell_block "$cmd"
+  exit 0
+}
+
+# ── Step 3: Check guard file ──────────────────────────────────────────────────
+GUARD_FILE="logos/.openlogos-guard"
+if [ -f "$GUARD_FILE" ]; then
+  # Active change proposal exists. Normally allow everything within scope, but
+  # while the proposal is still in the plan stage (before plan-exit, i.e. the
+  # PLAN_APPROVED marker does not yet exist) we narrow delta writes: only the
+  # GUI page-design prototype (deltas/prd/2-product-design/2-page-design/*.html)
+  # may be produced in plan stage; all other deltas/** writes are deferred to
+  # delta-writing (after PLAN_APPROVED). Non-delta scope is unaffected.
+  ACTIVE_SLUG="$(json_field "$(cat "$GUARD_FILE" 2>/dev/null || true)" "activeChange" || true)"
+
+  PLAN_STAGE=0
+  if [ -n "$ACTIVE_SLUG" ] && [ ! -f "logos/changes/$ACTIVE_SLUG/PLAN_APPROVED" ]; then
+    PLAN_STAGE=1
+  fi
+
+  if [ "$PLAN_STAGE" -eq 0 ]; then
+    # delta-writing (or no resolvable slug) — regular behavior, allow within scope.
+    exit 0
+  fi
+
+  # Plan stage: enforce the page-design-only allowlist for delta writes（路径归一化复用 rel_of_cwd）。
+  # is_plan_stage_delta_blocked <path> — return 0 (blocked) if path is a delta
+  # write that is NOT the allowed page-design .html prototype.
+  is_plan_stage_delta_blocked() {
+    local rel tagged
+    tagged="$(_rel_of_cwd_tagged "$1")"
+    rel="${tagged#? }"
+    # Only concerned with this proposal's deltas/ tree.
+    local delta_prefix="logos/changes/$ACTIVE_SLUG/deltas/"
+    if [[ "$rel" != "$delta_prefix"* ]]; then
+      return 1  # not a delta write — not our concern here
+    fi
+    # Allowed: deltas/prd/2-product-design/2-page-design/<name>.html
+    if [ "${tagged:0:1}" != "1" ] && [[ "$rel" == "${delta_prefix}prd/2-product-design/2-page-design/"*.html ]]; then
+      return 1  # allowed prototype
+    fi
+    return 0  # any other delta in plan stage → blocked
+  }
+
+  # If not a delta write at all, fall through to normal handling below.
+  case "$TOOL_NAME" in
+    Edit|Write|MultiEdit|NotebookEdit)
+      _FP="$(hook_target_path)"
+      if [ -n "$_FP" ] && is_plan_stage_delta_blocked "$_FP"; then
+        block "⛔ 变更管理拦截（plan 阶段）：当前提案尚未通过 plan-exit（PLAN_APPROVED 不存在）。\\n\\n目标文件：$_FP\\n\\nplan 阶段仅允许产出 page-design 原型 delta（deltas/prd/2-product-design/2-page-design/*.html）；其余 delta 请在 plan 通过后（delta-writing）再产出。"
+      fi
+      ;;
+  esac
+
+  # Plan-stage but not a blocked delta write — allow within scope.
+  exit 0
+fi
+
 # ── Handle by tool type ───────────────────────────────────────────────────────
 
 case "$TOOL_NAME" in
-  Edit|Write)
-    FILE_PATH="$(json_get "$INPUT" "file_path")"
+  Edit|Write|MultiEdit|NotebookEdit)
+    FILE_PATH="$(hook_target_path)"
     if [ -z "$FILE_PATH" ]; then
-      exit 0  # Can't determine path — allow (fail open)
+      # 文件路径类工具解析不出目标路径：fail-closed（不放行）
+      block "⛔ openlogos guard: 无法从 $TOOL_NAME 输入解析目标路径（file_path / notebook_path 缺失），写入门禁无法判定，fail-closed。"
     fi
     if is_whitelisted_path "$FILE_PATH"; then
       exit 0
@@ -495,8 +735,17 @@ case "$TOOL_NAME" in
     block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：$FILE_PATH\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再修改代码。"
     ;;
 
+  PowerShell)
+    COMMAND="$(json_field "$INPUT" "tool_input.command" || true)"
+    if [ -z "$COMMAND" ]; then
+      exit 0
+    fi
+    COMMAND_TRIMMED="${COMMAND#"${COMMAND%%[![:space:]]*}"}"
+    windows_shell_verdict "$COMMAND_TRIMMED"
+    ;;
+
   Bash)
-    COMMAND="$(json_get "$INPUT" "command")"
+    COMMAND="$(json_field "$INPUT" "tool_input.command" || true)"
     if [ -z "$COMMAND" ]; then
       exit 0
     fi

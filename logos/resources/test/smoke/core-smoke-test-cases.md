@@ -1736,3 +1736,36 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`）；**失败不得写 pass**。
 - runner **不得**以「安装态版本号等于候选」替代行为断言；字节一致性以 SHA-256 比对，不得以「文件存在」代替。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-209、SMOKE-core-210 均被 runner 覆盖。
+
+## OpenLogos 0.15.16 后态测试 ID 重复判据安装态 smoke（SMOKE-core-211～212）
+
+> 覆盖「§2.85 的 lint 前移判据与写作规范真的进了本机全局安装态及其分发出的托管 Skill」。判据只在安装态对宿主生效：仓内源码修好、全局 CLI 未更新，RunLogos 驱动的宿主项目仍会在合成期硬停于 `test-change-set-duplicate-id`。用例在 `mktemp -d` 一次性隔离项目内执行，**只读**本机全局安装态（不做安装 / 卸载），不触碰本仓活跃提案与用户其他仓库。判据用**行为断言**：版本号相等只证明装了新包，不证明判据生效。版本号为计划值 `0.15.16`，实际以部署记录的候选版本为准（关系断言：全局 `--version` == 部署记录版本）。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-211 | 安装态身份与事故形态在 write-delta 节点闭环 | 本机全局已安装本次候选；`mktemp -d` 一次性临时项目，经全局 `openlogos init` 建立并置 launched；以全局 `openlogos change <slug>` 创建提案，proposal.md 与 tasks.md 填为可合并最小形态；目标 `logos/resources/test/core-S09-test-cases.md` 为五个并列 H2（导言、一、二、三、四）含 ID 表的测试用例文档 | ① 读取全局入口 realpath、`openlogos --version`、全局包内 `asset-manifest.json` 与随包 `skills/change-writer/SKILL.md` 的 SHA-256；② 写入 `deltas/test/core-S09-test-cases.md` 为「单块 `## MODIFIED — <导言标题>`、正文抄整份文档」的事故形态，执行全局 `openlogos change-lint --slug <slug> --format json`；③ 续跑全局真实 `openlogos merge <slug>`；④ 把 delta 改为每个 H2 各一个同锚 MODIFIED 块（只携带该章节自己的正文），重跑 ②③ | ① `--version` 等于部署记录版本；包内 asset-manifest `payloadHash` 自洽；随包 Skill 含「整节」边界说明且与本仓 `logos/skills/change-writer/SKILL.md` 逐字节一致；② exit 2、`data.pass=false`、`violations` 含 `delta_test_id_duplicate`，其 `path` 指向该 delta，message 含「合并后态行号」标注、delta 内行号与「疑似整篇改写吞并兄弟章节」提示，fix_hint 含逐章节拆块指引，violation 公开键集合恒为 code / path / message / fix_hint；③ 非零退出、stderr 含「change-lint 未通过」与该码、**不**含「merge 失败（test-change-set-duplicate-id）」、无 `SPEC_MERGED`、目标字节不变；④ lint exit 0 且 PASS，merge 退出码 0 且生成 `SPEC_MERGED`，合并后目标 ID 集合与合并前逐一一致 | 保留隔离项目、两次 delta、lint JSON 与 merge stderr；① 不成立或 ②③④ 任一不符 → 停止后续流程，按部署方案以 `cli/rollback/` 的 `0.15.15` 制品回装全局，并用旧版 sync 恢复本仓托管副本；不得以「仓内源码已修」了事 |
+| SMOKE-core-212 | 合法下沉写法不受影响、整文件纳入 ID 检查 | 本机全局已安装本次候选；四个 `mktemp -d` 一次性临时 launched 项目（同 SMOKE-core-211 的提案脚手架）：P1 目标含 `## 模块甲 > ### 行为` 与 `## 模块乙 > ### 事件与最终态交互`（后者定义 UT-S09-01）；P2 目标含 `## 导言` 与 `## 单元测试`（定义 UT-S09-01）；P3 目标含单个 `## 一、单元测试用例` ID 表；P4 无既有 test 目标 | ① P1 写 `## MODIFIED — 模块甲 > 行为` 正文含 `### 事件与最终态交互` 定义 UT-S09-02；P2 写 `## MODIFIED — 导言` 正文含 `## 单元测试` 定义 UT-S09-02；P3 写 `## MODIFIED — 一、单元测试用例 [1]` 正文首行重复该根标题后接原表；三者各执行全局 `change-lint --format json` 与真实 `openlogos merge`；② P4 写封装合法的 Markdown 整文件 CREATE test delta（首行 `## ADDED — <target>（新文件，整文件）`），payload 内两条同 ID 行，执行 `change-lint --format json`；③ P4 另写一份 target 与 canonical 不一致的整文件 delta（payload 同 ②），执行 `change-lint --format json`；④ 全程前后读取 `command -v openlogos` 与 `--version` | ① 三项目 lint 均 PASS（零 `delta_test_id_duplicate`）、merge 均退出码 0；P1 合并后 `事件与最终态交互` 在 `模块甲 > 行为` 下为 H4 且 `模块乙` 原 H3 保留；P2 合并后 `单元测试` 在 `导言` 下为 H3 且原 `## 单元测试` 保留；P3 合并后 H2 与其下同名 H3 并存、ID 不变；② exit 2 且 `violations` 含 `delta_test_id_duplicate`，path 指向该整文件 delta、message 列出两处 delta 内行号、**不**含「疑似整篇改写」提示；③ 只报 `non_markdown_delta_invalid`、零 `delta_test_id_duplicate`；④ 入口路径与版本逐字一致 | 同上；另保留四个项目的合并后目标字节与 lint JSON；① 任一误红即表示候选把合法下沉写法判为违规，属行为回归，必须回装旧版并回流来源提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目内；结束即删除。**不得**触碰本仓活跃提案、`logos/resources/`、用户其他仓库或本机全局 prefix（本节只读全局安装态）。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`——本次为本地全局部署。
+- 临时项目的 merge 以 `OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY=0` 走直接合并，使 `SPEC_MERGED` 在场性与目标字节成为可断言事实；不在断言中硬编码主机路径、墙上时钟或本机全局安装现值（通则第 1 条）。
+- 夹具 ID 一律使用临时项目私有的 `UT-S09-xx`，与本仓规格 ID 无交集；runner 不读本仓 `logos/changes/`。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.85.1～§2.85.4（判据、新码、三条边界、零回归边界）、§2.84.5（锁边界扩展）。
+- 场景：S35「后态测试 ID 重复判据的同源前移」。
+- 根规范 / Skill：`spec/change-management.md` `deltas/ 目录`、`skills/change-writer/SKILL.md` 守恒写作规范「整节」边界。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.15.16 发布方案（后态测试 ID 重复判据同源前移，本地全局）」。
+- 仓库内对应用例：UT-S35-196（事故必红）、UT-S35-197（拆块必绿）、UT-S35-198（合法下沉）、UT-S35-200（整文件纳入与封装不合法）、UT-S35-201（诊断信号与公开键集合）、ST-S35-36（真实 CLI 端到端）；版本身份 `UT-S19-46` / `UT-S19-49`。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-after-state-test-id-duplicate-0-15-16.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行；记录全局入口 realpath、安装态版本、每个隔离项目路径、每次 lint 的 JSON 摘要（code / path / message 前 200 字）、每次 merge 的退出码与 stderr 首行、合并后目标 ID 集合。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`）；**失败不得写 pass**。
+- runner **不得**以「安装态版本号等于候选」替代行为断言；Skill 字节一致性以 SHA-256 比对，不得以「文件存在」代替；lint 结论以 `--format json` 的 `violations[].code` 判定，不解析人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-211、SMOKE-core-212 均被 runner 覆盖。

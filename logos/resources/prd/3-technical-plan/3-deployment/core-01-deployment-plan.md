@@ -3377,3 +3377,61 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 场景：S09「无活跃提案时资料目录与基线 staging 的 guard 放行时序」；S08「sync 托管 guard 资产补齐时序」。
 - 测试：UT-S09-365～UT-S09-372、ST-S09-147～ST-S09-148、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-209、SMOKE-core-210。
 - 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
+
+## OpenLogos 0.15.16 发布方案（后态测试 ID 重复判据同源前移，本地全局）
+
+### 部署目标与授权边界
+
+把 `change-lint` L4 新判据 `delta_test_id_duplicate`（功能规格 §2.85：lint 侧对触及的 test 目标集合以同一合成器求后态、调用同一 `buildTestChangeSet`，后态 `test-change-set-duplicate-id` 结论即违规）及其写作规范（根规范 `spec/change-management.md` `deltas/ 目录`、`skills/change-writer/SKILL.md` 守恒写作规范「整节」边界）送进本机安装态。判据只在安装态对宿主生效：仓内源码修好而全局 CLI 不更新，RunLogos 驱动的宿主项目仍会在合成期硬停于 `test-change-set-duplicate-id`（缺陷报告 `logos/resources/reference/BUGREPORT-merge-modified-sibling-section-collision-untriaged.md`，audit run `drv-muqfnr6p-fola`）。
+
+授权来源：用户在本提案中明确要求「生成新版本并部署到本机全局」。本方案为**本地全局安装**（`npm install -g <tarball>`），**不含** `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`；不批量修改用户其他仓库，本仓托管 Skill 副本通过新全局 CLI 的既有 `openlogos sync` 更新。merge、verify、部署执行、smoke、archive 仍按项目执行门。
+
+### 部署前置与冻结事实
+
+1. 来源提案 lint-modified-sibling-section-collision 已归档（规格 §2.85 / §2.84.5、S35 场景与测试、根规范与 Skill 已合入主文档；`cli/src/lib/change-lint.ts` 实现与 UT-S35-196～UT-S35-201、ST-S35-36 已 verify PASS）；本提案 `[code]` 切片（升版、CHANGELOG、smoke runner 接线）实现完成、`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本；计划时为 `0.15.15`，候选为其下一 patch `0.15.16`。若实施前已被其它提案升版，则候选改为「当时版本的下一 patch」、回滚版本改为「当时版本」，并在部署记录中写明实际值——本节版本号为计划值，不是钉死值。
+3. 冻结当前本机全局：`command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`；计划时实测为 Homebrew 全局 prefix 下的 `0.15.15`。实际 prefix 与入口在部署前读取，不在测试或脚本中硬编码主机路径。
+4. 固定回滚制品：当前全局版本（预期 `0.15.15`）的可回装 tarball 保存于 `cli/rollback/`，记录其 SHA-256；若该目录尚无 `0.15.15` 制品，则在冻结步骤从当前全局安装态（或同版本源码 `npm pack`）生成后再记录——**先有回滚制品，再动版本号**。
+
+### 0.15.16 版本与制品身份
+
+**经升版脚本 `cli/scripts/bump-version.mjs` 一次完成**（通则第 4 条）：`cli/package.json` 与 lockfile 根包、全部随包 plugin manifest（`plugin/`、`plugin-codex/`、`plugin-qoder/`、`plugin-workbuddy/`、`plugin-zcode/`）、`cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION`（→ `0.15.16`）/ `LOCAL_RELEASE_ROLLBACK_VERSION`（→ `0.15.15`），并由既有生成器重算 `cli/asset-manifest.json`（含 `skills/change-writer/SKILL.md` 合并后的新 hash——该文件已随来源提案 merge 改写，清单在来源提案代码阶段已按先例重算，升版后须再次由生成器写出）。**禁止手改** `asset-manifest.json` 与派生 hash。任一身份载体残留旧版本即判失败（`UT-S19-46`）；manifest 自洽由 `UT-S19-49` 守。在 `CHANGELOG.md` 既有位置补充 `0.15.16` 发布说明（Fixed：change-lint 前移后态测试 ID 重复判据，新码 `delta_test_id_duplicate`；Docs：MODIFIED 替换范围与逐章节拆块写作规范）。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm test` 必须为绿（通则第 6 条），含 UT-S35-196～UT-S35-201、ST-S35-36 与 `UT-S19-46` / `UT-S19-49`；`npm run build` 通过。
+2. 真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256；解包核对 CLI entry、`--version`、asset-manifest 自洽，以及随包 `skills/change-writer/SKILL.md` 与仓内 `skills/change-writer/SKILL.md` 逐字节一致（含「整节」边界与拆块示例）。
+
+### 隔离 Prefix 行为矩阵
+
+`mktemp -d` 一次性 npm prefix 安装固定 tarball，从新 shell / 绝对入口执行；全部项目态在一次性临时项目内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| 事故形态前移 | 临时 launched 项目含五个并列 H2 的测试用例目标与「单块整篇 MODIFIED 吞并兄弟章节」的 test delta：候选 CLI `openlogos change-lint --format json` exit 2，`violations` 含 `delta_test_id_duplicate`，其 `path` 指向该 delta、message 含「合并后态行号」标注与 delta 内行号、fix_hint 含逐章节拆块指引；候选 CLI 真实 `openlogos merge` 于「change-lint 未通过」预检出口非零退出、无 `SPEC_MERGED`、目标字节不变 |
+| 拆块闭环 | 同一临时项目把 delta 改为每个 H2 各一个同锚 MODIFIED：`change-lint` PASS、真实 `openlogos merge` 成功、合并后目标 ID 集合与合并前逐一一致 |
+| 合法下沉边界 | 跨父链同名 H3 相对子节（不同 ID）、同父链同名相对子节（不同 ID）、序数锚 `[1]` 下正文重复根标题三种写法：`change-lint` 零该码且真实 merge 成功 |
+| 整文件纳入 | 封装合法的 Markdown 整文件 CREATE test delta、payload 内两条同 ID 行：`change-lint` 报 `delta_test_id_duplicate`；封装不合法者只报 `non_markdown_delta_invalid` |
+| Skill 分发 | 候选 CLI `openlogos init` / `openlogos sync` 产出的托管 `change-writer/SKILL.md` 与随包字节一致，含「整节」边界说明 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径且 version 逐字一致 |
+| 回滚演练 | 在隔离 prefix 以 `cli/rollback/` 旧制品回装，`--version` 回到旧版本；旧版对事故形态 `change-lint` 为 PASS（对照：证明差异确由候选引入） |
+
+### 本机全局部署
+
+矩阵与回滚演练通过后，以**同一** tarball 执行 `npm install -g <tarball>` 覆盖本机全局；新 shell 复核 identity 全同源候选版本（entry realpath / `--version` / package.json / asset-manifest）。随后在本仓以新全局 CLI 执行 `openlogos sync`，核对本仓 `logos/skills/change-writer/SKILL.md` 与随包 Skill 逐字节一致。记录部署身份（版本、tarball SHA-256、入口 realpath）与回滚入口（`cli/rollback/` 制品路径与 SHA-256），再按流程写 `DEPLOY_DONE` 并进入 smoke（SMOKE-core-211、SMOKE-core-212）。部署记录必须区分**源码回归证据**（`npm test`）与**实际安装态证据**（隔离矩阵与全局复核）。
+
+### 失败处置与回滚边界
+
+- 发布前检查、构建、隔离矩阵或回滚演练任一失败 → 不安装全局、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即回滚隔离环境。
+- 已全局安装后发现问题 → 以 `cli/rollback/` 的 `0.15.15` 制品 `npm install -g` 回装；若本仓已 sync 新资产，用旧版本既有 `openlogos sync` 恢复托管副本。无数据迁移、无其它状态文件需清理。
+- 不以手改本仓托管 Skill 或资产 manifest 作为修复或回滚手段；不以放宽 `change-lint` 判据或合成器复验「让矩阵变绿」。
+
+### 追溯
+
+- 功能规格：§2.85（后态测试 ID 重复判据的同源前移）、§2.84.5（一致性锁边界扩展）、§2.81（升版确定性动作）。
+- 根规范 / Skill：`spec/change-management.md` `deltas/ 目录`（MODIFIED 替换范围）；`skills/change-writer/SKILL.md` 守恒写作规范「整节」边界。
+- 场景：S35「后态测试 ID 重复判据的同源前移」；S19 发布与安装验证。
+- 测试：UT-S35-196～UT-S35-201、ST-S35-36、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-211、SMOKE-core-212。
+- 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
+- 来源提案：release-0-15-16-local（上游 lint-modified-sibling-section-collision）。

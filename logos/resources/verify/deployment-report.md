@@ -1811,3 +1811,75 @@ staging 部署与正式 smoke 均已完成。`DEPLOY_DONE`、`SMOKE_PASS` 在场
 
 ## 七、结论
 本机全局 staging 部署**成功**：0.13.16 已构建、打包、安装，版本一致性、包内容（已删符号清零 + 新产物在场）与部署后即时功能核验（移除生效）全部通过，回滚 tarball 已留存。公开 npm 发布保留为人类确认点。
+
+---
+
+# OpenLogos 0.15.16 本地全局部署报告（release-0-15-16-local）
+
+> 部署方案：`core-01-deployment-plan.md`「OpenLogos 0.15.16 发布方案（后态测试 ID 重复判据同源前移，本地全局）」。授权依据：`openlogos next --auto` 对 deliver 门的本次放行（`gate_auto_passed=true`）。目标环境：**本机 npm 全局 prefix**（`/opt/homebrew`），不含 `npm publish` / dist-tag / Git tag / GitHub Release / `git push`。
+
+## 一、部署前置与冻结事实（实测）
+
+| 项 | 值 |
+|---|---|
+| 提案状态 | `SPEC_MERGED`、`SLICES_APPROVED`、`VERIFY_PASS` 在场；`[deploy]` 两项待执行 |
+| 升版 | `node cli/scripts/bump-version.mjs 0.15.16`：8 处身份载体 0.15.15 → 0.15.16，`LOCAL_RELEASE_CANDIDATE_VERSION` = 0.15.16、`LOCAL_RELEASE_ROLLBACK_VERSION` = 0.15.15，`cli/asset-manifest.json` 由生成器重算（未手改） |
+| 升版后源码回归 | `cd cli && npm test`：153 文件 / 2368 用例全部通过；`npm run build` 通过（通则第 6 条） |
+| 部署前全局 | `command -v openlogos` = `/opt/homebrew/bin/openlogos`；realpath = `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；`npm prefix -g` = `/opt/homebrew`；`openlogos --version` = **0.15.15** |
+| 回滚制品 | `cli/rollback/miniidealab-openlogos-0.15.15.tgz`（从当前全局安装态以 `npm pack --ignore-scripts` 冻结；2458862 字节；SHA-256 `c068103050781ec802afe877090573aa789620a5effbbf9ac8da50a4e4a2b244`；解包 `package.json` 版本 0.15.15，dist / asset-manifest / change-writer Skill 在场） |
+
+## 二、候选制品身份
+
+| 项 | 值 |
+|---|---|
+| 候选 tarball | `logos/resources/verify/deployment-artifacts/release-0-15-16-local/miniidealab-openlogos-0.15.16.tgz`（真实 `npm pack`，847 文件，2500018 字节） |
+| SHA-256 | `4c77046c6b256bb931d19bb973d12e2e392162dc472d351c213008f9d90952bd` |
+| 解包核对 | `package.json` 版本 0.15.16；`asset-manifest.json` payloadHash `1625a957f3b17417…` 自洽且逐文件 hash 与包内字节一致；`dist/lib/change-lint.js` 登记 `delta_test_id_duplicate` |
+| 随包 Skill | `skills/change-writer/SKILL.md` SHA-256 `74d919e9c9717894d9726b01cd91a476858c6608b6fef7fe87163ac5cd563e39`，与仓内分发源逐字节一致，含「整节」的边界说明 |
+| 打包后工作区 | 除升版 / CHANGELOG / 本提案规格与 runner 外无其它漂移（`asset-manifest.json` 与升版后内容一致） |
+
+## 三、隔离 Prefix 行为矩阵（实际安装态证据）
+
+`mktemp -d` 一次性 prefix `npm install -g --prefix <tmp> <候选 tarball>`，入口 realpath 位于隔离 prefix 内、无 workspace link，`--version` = 0.15.16。
+
+| 类别 | 结果 |
+|---|---|
+| candidate identity / 事故形态前移 / 拆块闭环 | **通过**——以隔离入口运行 `scripts/smoke-after-state-test-id-duplicate-0-15-16.js`（注入入口、结果写一次性账本）：SMOKE-core-211 pass——事故形态 `change-lint --format json` exit 2 报 `delta_test_id_duplicate`（path 指向 delta、含合并后态行号标注 / delta 内行号 / 疑似整篇改写提示、fix_hint 含拆块指引、公开键集合 code/path/message/fix_hint），真实 `merge` 于「change-lint 未通过」出口非零退出、无 `SPEC_MERGED`、目标字节不变；拆块后 lint PASS、merge 成功、ID 集合不变 |
+| 合法下沉边界 / 整文件纳入 | **通过**——SMOKE-core-212 pass：跨父链同名 H3、同父链同名不同 ID、序数锚 `[1]` 下重复根标题三者 lint PASS 且 merge 成功（层级与 ID 核对符合）；整文件 CREATE 内重复报本码（两处 delta 内行号、无疑似提示）；封装不合法只报 `non_markdown_delta_invalid` |
+| Skill 分发 | **通过**——隔离入口 `openlogos init` 产出的 `logos/skills/change-writer/SKILL.md` 与随包 Skill SHA-256 一致（`74d919e9…`） |
+| 全局零触碰 | **通过**——矩阵前后 `command -v openlogos` 仍为 `/opt/homebrew/bin/openlogos`、`--version` 仍为 0.15.15 |
+| 回滚演练 | **通过**——同一隔离 prefix 回装 `cli/rollback/miniidealab-openlogos-0.15.15.tgz` 后 `--version` = 0.15.15；**对照**：旧版对事故形态 `change-lint` exit 0 / pass（零违规），真实 `merge` exit 1 且 stderr 首行为 `Error: merge 失败（test-change-set-duplicate-id）：test-change-set-duplicate-id：UT-S09-01`——即缺陷报告中的硬停形态，证明差异确由候选引入 |
+
+隔离 prefix 与全部临时项目已删除。
+
+## 四、本机全局部署（执行命令摘要）
+
+1. `npm install -g logos/resources/verify/deployment-artifacts/release-0-15-16-local/miniidealab-openlogos-0.15.16.tgz`（同一制品，SHA-256 `4c77046c…`）。
+2. 新 shell（`/bin/zsh -lc`）复核：`command -v openlogos` = `/opt/homebrew/bin/openlogos`；realpath = `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；`openlogos --version` = **0.15.16**；全局包 `package.json` 版本 0.15.16；全局包 `asset-manifest.json` 自洽（payloadHash `1625a957f3b17417…`）且逐文件 hash 与安装字节一致；`dist/lib/change-lint.js` 登记新码；随包 Skill SHA-256 `74d919e9…` 与分发源一致。
+3. 本仓以新全局 CLI 执行 `openlogos sync`（exit 0）：17 个 Skills 同步到 `logos/skills/`、24 specs 同步到 `logos/spec/`、`CLAUDE.md` 与 `.gitattributes` managed block 更新、`.claude/openlogos/bin/guard-check` 与 `.claude/settings.json` 更新；`logos/skills/change-writer/SKILL.md` 由 `043b44e4…` 更新为 `74d919e9…`，与随包 Skill 逐字节一致，含「整节」的边界说明。
+
+## 五、迁移与服务
+
+无数据迁移、无服务进程；CLI 为本地命令行工具。
+
+## 六、回滚预案
+
+- 回滚命令：`npm install -g cli/rollback/miniidealab-openlogos-0.15.15.tgz`（SHA-256 `c068103050781ec802afe877090573aa789620a5effbbf9ac8da50a4e4a2b244`），随后在本仓以回装的 0.15.15 执行 `openlogos sync` 恢复托管副本。
+- 已在隔离 prefix 演练：回装后 `--version` 回到 0.15.15。
+- 不以手改本仓托管 Skill 或 `asset-manifest.json` 作为修复或回滚手段。
+
+## 七、证据口径
+
+- **源码回归证据**：升版后 `npm test` 2368/2368、`npm run build`。
+- **实际安装态证据**：隔离 prefix 矩阵（两条 smoke runner pass、Skill 分发、全局零触碰、回滚演练与旧版对照）与全局安装后的新 shell 身份复核。
+- 本阶段**未**运行 `openlogos smoke`（下一阶段）；矩阵中 runner 结果写入一次性账本，未写 `logos/resources/verify/smoke-results.jsonl`。
+
+## 八、未解决风险
+
+- 插件内 `plugin/skills/change-writer/SKILL.md` 为独立维护的精简变体，本次未同步「整节」边界说明（不在本提案 delta 目标内）。
+- 本仓 `.claude/commands/openlogos/` 已有文件，sync 跳过 Claude Code 插件部署（既有行为）。
+
+## 九、结论
+
+本机全局部署**成功**：0.15.16 已升版、构建、真实打包、隔离安装验证并覆盖全局；入口 realpath / `--version` / `package.json` / `asset-manifest` 四源一致，安装态判据行为经隔离矩阵证明生效，回滚制品 0.15.15 已冻结并演练。公开发布保留为人类确认点。
+部署时间（UTC）：2026-10-02T16:50:36Z

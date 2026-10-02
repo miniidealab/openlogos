@@ -8,11 +8,19 @@
             "command": "node \".claude/openlogos/bin/openlogos-phase-launcher.cjs\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/openlogos/bin/openlogos-phase"
+          }
+        ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|Bash",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
         "hooks": [
           {
             "type": "command",

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.16] - 2026-10-02
+
+### Fixed
+
+- `change-lint` L4 新增 `delta_test_id_duplicate`：对触及的 test 目标集合以同一合成器求后态、调用同一 `buildTestChangeSet`，把合成期的 `test-change-set-duplicate-id` 判据同源前移到 write-delta 节点（功能规格 §2.85）。整篇改写型 MODIFIED 吞并兄弟章节导致后态测试 ID 重复的形态，不再在评审 PASS、spec-exit 放行后于 `openlogos merge` 合成期硬停，而在 lint 阶段给出 delta 内行号与逐章节拆块的 fix_hint。合法的相对子标题下沉写法（跨父链同名、同父链同名不同 ID、序数锚下重复根标题）零误报；合法 Markdown 整文件 CREATE 一并纳入 ID 检查集合。
+
+### Changed
+
+- `spec/change-management.md` 与 `skills/change-writer/SKILL.md` 补「MODIFIED 的替换范围止于下一个同级或更高级标题，不是整份文档；整篇改写多章节文档须每个章节各写一个 MODIFIED 块」的写作规范与示例。
+- 本地候选版本升级为 `0.15.16`，固定 `0.15.15` 回滚，新增安装态 smoke runner（SMOKE-core-211、SMOKE-core-212）；不包含公开发布、远程标签或 git push。
+
 ## [0.14.2] - 2026-08-30
 
 ### Fixed
