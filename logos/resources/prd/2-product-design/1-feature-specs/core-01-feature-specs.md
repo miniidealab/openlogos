@@ -3708,12 +3708,12 @@ change-writer 的 GUI 判定**唯一依据 = `logos-project.yaml` 的 `product_t
 
 ### 2.84.5 一致性锁（防再分裂）
 
-新增元测试断言：**凡 `test-change-set` 会以 `test-change-set-ambiguous-table` 在合并后态拒绝的 delta 形态，`change-lint` 必先报出对应违规**。
+新增元测试断言：**凡 `test-change-set` 会以 `test-change-set-ambiguous-table` 或 `test-change-set-duplicate-id` 在合并后态拒绝的 delta 形态，`change-lint` 必先报出对应违规**。
 
-- **锁的边界按错误码定义（可穷举）**：覆盖 `test-change-set-ambiguous-table` 的**全部**触发形态——数据行列数不一致、表头重复；对应前移侧 `delta_test_table_column_mismatch` 与 `delta_test_table_duplicate_header`（§2.84.2）。按码定义而非按「形态族」描述，边界无模糊地带。
-- **明确不在锁内（有正当理由，非遗漏）**：`test-change-set-duplicate-id` / `-target-duplicate` / `-overlap` 属**需要合并后态全局视角**的身份类判定——同一 ID 是否重复、目标是否交叠，在单个 delta 片段上不可判定，强行前移只会产生假阳性。锁只覆盖在 delta 片段上**可判定**的表级 / 行级形态类。
-- **双向比对**：合成夹具集合对每个形态同时构造 delta 形态与其合并后态，一侧喂 `change-lint`、一侧喂 `buildTestChangeSet`，断言两侧结论逐夹具一致；**任一侧单独收紧即失败**。夹具须含 §2.84.1 三处对齐点各自的反例（非 `TEST_ID_HEADER_RE` 表头、数据行不含管道符导致提前收束、表头重复）。
-- **落点**：这是 S35 不变量 5（门禁可满足性）在**表级 / 行级形态族**上的具体落点——不再允许出现「预检全绿而 merge 必炸」的组合。
+- **锁的边界按错误码定义（可穷举）**：覆盖 `test-change-set-ambiguous-table` 的**全部**触发形态——数据行列数不一致、表头重复，对应前移侧 `delta_test_table_column_mismatch` 与 `delta_test_table_duplicate_header`（§2.84.2）；以及 `test-change-set-duplicate-id` 的**全部**触发形态——单目标内重复、触及目标间重复，对应前移侧 `delta_test_id_duplicate`（§2.85，lint-modified-sibling-section-collision 扩入）。按码定义而非按「形态族」描述，边界无模糊地带。
+- **明确不在锁内（有正当理由，非遗漏）**：`test-change-set-target-duplicate` / `-overlap` 属目标集合层面的身份类判定，不由单个 delta 的后态决定。`test-change-set-duplicate-id` 此前亦以「需合并后态全局视角、在单个 delta 片段上不可判定」为由排除——该理由已被 §2.85 证伪：lint 侧对**同一目标集合**以同一合成器可求得与 merge 逐字相同的后态，判据同源调用即可判定，不存在假阳性来源。
+- **双向比对**：合成夹具集合对每个形态同时构造 delta 形态与其合并后态，一侧喂 `change-lint`、一侧喂 `buildTestChangeSet`，断言两侧结论逐夹具一致；**任一侧单独收紧即失败**。夹具须含 §2.84.1 三处对齐点各自的反例（非 `TEST_ID_HEADER_RE` 表头、数据行不含管道符导致提前收束、表头重复），以及 §2.85 的两类 duplicate-id 形态（单目标内：整篇吞并兄弟章节、同一目标两章节各自新增同 ID、新增 ID 与保留章节既有 ID 重复；触及目标间：两个 test delta 各自新增同 ID、章节 CREATE 目标与 MODIFY 目标同 ID、**Markdown 整文件 CREATE 的 payload 内自身重复**、**整文件 CREATE 与章节 MODIFY 跨目标重复**）和 §2.85.4 的合法下沉反例（必须两侧均通过）。
+- **落点**：这是 S35 不变量 5（门禁可满足性）在**表级 / 行级形态族与后态 ID 身份族**上的具体落点——不再允许出现「预检全绿而 merge 必炸」的组合。
 - **不得放宽断言本身**：发现漂移时的修复方向是把两侧判据与枚举口径重新收敛到单点，**不得**靠收窄后态扫描或削弱锁来消红。
 
 ### 2.84.6 非目标与零回归边界
@@ -3739,3 +3739,95 @@ change-writer 的 GUI 判定**唯一依据 = `logos-project.yaml` 的 `product_t
 - 测试：UT-S35-153～UT-S35-158、ST-S35-30；UT-S09-351～UT-S09-354、ST-S09-145。
 - 代码（以合并后规格为准）：`cli/src/lib/change-lint.ts`（L4 行级列数检查与闭合码表）、`cli/src/lib/test-change-set.ts`（后态判据同源派生与行号口径标注）、`cli/src/commands/merge.ts`（`runDirectMerge` 默认兜底映射、状态档派生与 delta 侧归属）、`cli/src/lib/merge-direct.ts`（`MERGE_APPLY_FAILED` 硬编码状态断言订正）、`cli/src/lib/baseline-apply.ts`（仅结构化返回的阶段事实读取，时序不改）、`cli/src/commands/change-lint.ts`（新码的 L 层映射）、`cli/src/commands/lint-specs.ts`（列数判据同源派生）。
 - 发布：判据只在安装态对宿主生效，本提案归档后须另立 `release-0-15-9` 发版提案按 §2.81 升版（发布动作不在本提案内执行）。
+
+## 2.85 后态测试 ID 重复判据的同源前移
+
+### 2.85.0 问题：合法下沉 + 兄弟章节保留 = 后态 ID 必然重复，而 lint 零信号
+
+本仓外部实测缺陷（RunLogos · 全自动 driver · 2026-10-02 · token-agent 项目 · 安装态 0.15.15；缺陷报告 `logos/resources/reference/BUGREPORT-merge-modified-sibling-section-collision-untriaged.md`）：提案 `model-import-native-rust` 评审第 3 轮 PASS、`spec-exit` 门自动放行，driver 执行 `openlogos merge` 在合成期抛 `test-change-set-duplicate-id：UT-S09-01` 退 1（audit run `drv-muqfnr6p-fola`，blocked `merge-failed`）。`change-lint` 此前 **PASS（10/10）**。
+
+触发 delta 的形态：`deltas/test/core-S09-test-cases.md` 只有一个 `## MODIFIED — S09: 模型导入 — 测试用例` 块，正文把整份文档抄了一遍——正文内含 `## 一、单元测试用例` … `## 四、追溯` 四个与锚**同级**的标题，而 canonical 文档正是由这五个并列 H2 组成。写 delta 的 agent 把「S09 章节」理解成了「整份文档」。
+
+合成器对该 delta 的每一步都是**正确的**：
+
+| 步骤 | 合成器行为 | 依据 |
+|---|---|---|
+| 切块 | 只在 `## ADDED / MODIFIED / REMOVED / REMOVED-ITEMS / RENAMED` 控制行处切块，正文里的 `## 一、` 不结束块——整份 delta 是一个块 | `parseDeltaBlocks` |
+| 定位 | 锚 `S09: …` 的替换范围 = 自该标题起到下一个 `level <= 2` 的标题止，即仅导言节 | `parseMarkdownHeadings` 的章节范围定义 |
+| 下沉 | 正文最浅标题层级 2 不深于锚层级 2，整体下沉一级：`## 一、` → `### 一、`，`### 1.1` → `####` | `rebaseDeltaBodyHeadings`（相对子标题写法，有实现与测试支持） |
+| 替换 | 导言节被「整份文档的降级副本」替换；原 `## 一、…## 四、` 原样保留 | MODIFIED 整节替换语义 |
+
+于是合成后态里 42 个 UT/ST 用例各出现两次，`scanTestDefinitionCandidates` 扫到第二条 `UT-S09-01` 即 fail-closed。**错的是 delta，不是合成器**——「替换范围止于下一个同级标题」与「相对子标题下沉」都是被依赖的合法语义。
+
+lint 侧为什么零信号：L8 守恒按锚章节范围对账，导言节本身无 ID，自然 PASS；L4 行级 / 表级形态只看 delta 自身的表格形状，每一行都合法；`ADDED` 锚唯一性只管 ADDED。整条前移链上没有任何判据看过「合成后态的 ID 集合」。这与 §2.84.0 记载的事故同族：**被宣告「需后态视角、不可前移」的判据，在 merge 内部构成一道没有预检的硬门**，且停在 agent 已出写权限范围的节点——S35 不变量 5「不允许存在 `change-lint` 全绿而 `merge` 必然失败的组合」被违反。
+
+**标题形态不是判据（proposal r1 评审修正）**。本节初版拟以「MODIFIED 正文含与锚同级标题、且目标范围外存在同层级同名标题」为硬违规。评审以两个已运行反例证伪：① **跨父链同名**——锚 `模块甲 > 行为`（H3）正文含 `### 事件与最终态交互`，目标 `模块乙` 下恰有同名 H3，合成器正确生成 H4 子节、后态 ID 无重复；② **同父链同名但不同 ID**——目标含 `## 导言` 与 `## 单元测试`（定义 `UT-S09-01`），MODIFIED 导言正文合法新增 `## 单元测试` 相对子节（定义 `UT-S09-02`），合成器下沉为 `### 单元测试`，后态两 ID 唯一、merge 成功。二者与事故形态只差「新增 ID 是否与保留章节重复」——标题同名不等于内容误吞，更不等于后态 ID 重复。以标题形态为硬判据会新增「后态接受、预检拒绝」的组合，违反 §2.84.1「前移侧集合只扩大、扩大部分恰为后态已拒形态」。**真实失败只有一个：合成后态的测试 ID 重复。前移的必须是它本身。**
+
+### 2.85.1 判据：lint 侧同输入、同合成器、同 `buildTestChangeSet`
+
+`change-lint` 在 L4 对本提案触及的 **test 目标集合**重放 merge 的后态判据，结论必然与 merge 逐字一致：
+
+| 要素 | 内容 | 同源依据 |
+|---|---|---|
+| 目标集合 | 本提案全部 `deltas/test/**` 的 `.md` delta 所映射的 canonical 目标——**章节路由**（MODIFY / CREATE）与**合法的 Markdown 整文件 CREATE** 均纳入；封装不合法的整文件 delta 归其自有判据（`non_markdown_delta_invalid`）、不纳入 | 与 `merge-direct` 送入 `buildTestChangeSet` 的集合同一口径（`category === 'test'` 或路径前缀 `logos/resources/test/`；merge 侧 Markdown 整文件经封装校验剥离后同样推入 tests，**整文件与章节目标互相查重**） |
+| before | 目标存在 → 合并前字节；不存在 → `null` | 与 merge 逐字同 |
+| after（章节路由） | `composeOpenLogosMarkdown(before ?? '', delta, exists ? 'MODIFY' : 'CREATE')` | 与 merge 同一合成器、同一 mode 判定（ADDED 锚唯一性前移已用此路径，§2.84.1 同源原则） |
+| after（整文件 CREATE） | 以既有封装校验器 `validateAndStripNonMarkdownDelta` 剥离首行控制行后的 payload 为后态字节 | 与 merge 同一校验与剥离实现；整文件协议本身零改动 |
+| 判据 | 对集合调用**同一** `buildTestChangeSet`（纯函数、无 IO），捕获其 `TestChangeSetBuildError` | 后态判据**零改动**，lint 只是多了一个调用方 |
+| 认领 | `code === 'test-change-set-duplicate-id'` → 对涉事 delta 各报一条 `delta_test_id_duplicate`；其余码不认领（见 §2.85.3） | 「只认领自身失败」（ADDED 锚先例） |
+
+- **按集合、不逐目标**：`test-change-set-duplicate-id` 有两种触发形态——单目标内重复（`scanTestDefinitionCandidates`）与**触及目标间**重复（`collectAfter`）。逐目标单独调用会漏掉后者，使一致性锁无法按码整族定义。
+- **合成因他因失败的目标不纳入集合、归各自判据**：锚不可解析、RENAMED 形态非法等已由既有码报出，本判据对该目标跳过；集合中其余目标照常判定。
+- **CREATE 目标纳入，整文件不从 ID 检查集合排除**：新建的 test 规格（章节 ADDED 或 Markdown 整文件 CREATE）与既有目标同 ID、或整文件 payload 内自身重复，同样会在 merge 后态被拒——整文件通道只校验封装、路径、类别与 payload 形态，**没有**内容层的 ID 判据；前移侧若按通道排除整文件，目标集合就小于 merge，锁按码整族的承诺落空。通道闸只作用于需要章节锚与 `hit` 的**诊断信号**（§2.85.3）。
+- **不另写标题解析、不另造 ID 身份规则**：ID 身份、表格枚举、manual 标记剥离全部沿用 `test-change-set` 既有单点；本节不定义任何新的「什么算一个 ID」。
+
+### 2.85.2 违规码登记与诊断契约
+
+新增 L4 族违规码 `delta_test_id_duplicate`，按 §2.84.2 同一方式进入 `change-lint` 闭合码表（`CHANGE_LINT_VIOLATION_CODES` L4 组，与 `delta_test_table_column_mismatch` / `delta_test_table_duplicate_header` 并列）；不新增独立命令、不新增 L 层、不改检查项标识集合与总数。层归属由 `pushViolation` 当场登记（S35「违规层归属单点」），不从 code 反推。
+
+**为什么是新码而非复用**：后态 ID 重复既不是锚定位失败（复用 `delta_section_anchor_unresolvable` 会让同一码横跨三种语义、fix_hint 无法稳定），也不是表级 / 行级形态（`delta_test_table_*` 三码各有精确触发形态，§2.84.5 的锁按码定边界）。runlogos 对 lint 违规码不做白名单（错误码原样保真进 `canonicalReason`），新码无下游契约风险。
+
+**message 可归因**（四项缺一不可）：
+
+| 项 | 内容 |
+|---|---|
+| 后态目标与行号 | canonical 目标路径 + 重复 ID 在后态中的两处行号，**标注「合并后态行号」**（§2.84.4 口径）；触及目标间重复则点名两个目标路径 |
+| 重复 ID | 裸 ID（剥离 manual 标记后的身份） |
+| delta 侧归属 | 该 ID 在涉事 delta 内的行号；delta 内多次出现时逐行列出，不臆造。**写入 message 文本**，不新增公开 JSON 字段——`violations[]` 的公开键集合（`code` / `path` / `message` / `fix_hint` + 可选 `flow_reason`）逐字不变，验收从 message 解析行号 |
+| 诊断信号（可选项） | 涉事 delta 存在 MODIFIED 块、其正文含与锚**同父链同级同名**的标题时，追加：「疑似整篇改写吞并兄弟章节「X」——MODIFIED 的替换范围止于下一个同级标题，正文已被下沉嵌入锚章节、原章节保留」 |
+
+诊断信号的判定（**只丰富 message，不参与判定、不单独构成违规、不产 warning**）：涉事 delta 的 MODIFIED 块正文 ATX 标题 h（围栏感知，复用 `authorityScan` / `parseMarkdownHeadings`）满足 `h.level <= hit.level`，且目标存在标题 t 使 `t.text === h.text`、`t.path.slice(0, -1)` 深等于 `hit.path.slice(0, h.level - 1)`、t 位于 `[hit.line, hit.endLine)` 之外；RENAMED 折算复用既有 `mapAnchorText` 单点。评审反例①（跨父链）不命中信号但违规照报（若后态确有重复）；反例②（同父链不同 ID）命中信号但后态无重复、不报——信号与判定正交。
+
+**fix_hint 固定两条修复路径**：① 为每个被改写的同级章节各写一个 `## MODIFIED — <章节标题>` 块，只携带该章节自己的正文（整篇改写多章节文档的正确写法）；② 若确为新增条目，删去或改名重复 ID。
+
+### 2.85.3 三条边界（沿 ADDED 锚唯一性先例逐条适用）
+
+| 边界 | 规则 | 理由 |
+|---|---|---|
+| 通道闸 | **只作用于诊断信号与章节合成，不作用于 ID 检查集合**：合法 Markdown 整文件 CREATE 的 payload 与章节目标的合成后态一起交同一 `buildTestChangeSet`；整文件 delta 没有章节锚与 `hit`，故不参与「同父链同级同名」诊断信号的判定；封装不合法的整文件 delta 归 `non_markdown_delta_invalid`、不纳入集合 | 整文件通道只校验封装与 payload 形态、无内容层 ID 判据，其 ID 重复在 merge 侧同样由 `buildTestChangeSet` 拒绝——前移集合必须与之同一口径（§2.85.1） |
+| 阶段边界 | **只在 `SPEC_MERGED` 之前执行，合并完成后不重放**；判别口径取既有 spec-complete 完成标记（含 legacy 形态），不得以「目标是否已含该 ID」自行推断阶段 | 合并后目标已含新 ID、原 delta 仍在场，拿当前文件当 before 重合成必然重复，一次成功的合并被倒挂成失败——与 L8 守恒、ADDED 锚判据的 post-merge 处理同型、取同一个完成标记判据 |
+| 只认领自身失败、不双报 | `buildTestChangeSet` 抛 `test-change-set-ambiguous-table` 时本码**不报**（已由 `delta_test_table_column_mismatch` / `_duplicate_header` 在同一轮 L4 覆盖）；`-overlap` / `-target-duplicate` / `-invalid-utf8` 不认领；合成因锚不可解析等他因失败归各自判据 | 同一事实不由两个判据双报；锁边界按码定义，本码只对应 `duplicate-id` |
+
+### 2.85.4 零回归边界
+
+**明确非目标：不改合成语义、不放宽后态判据、不以标题形态设门。**
+
+| 保持不变 |
+|---|
+| `composeOpenLogosMarkdown` / `composeSections` 的替换范围定义（止于下一个同级或更高级标题）、`rebaseDeltaBodyHeadings` 的相对子标题下沉与 `verifyAgentMaterialOutcome` 的 MODIFIED 锚唯一性复验——逐字不改；评审反例①②、「正文仅含更深子标题」与「序数锚 `[n]` 下正文重复根标题」等合法写法在 lint 侧零该码、merge 侧照常成功。**普通锚下正文重复根标题不是合法写法**：下沉后同名 H2/H3 并存，合成器既有复验以「MODIFIED 章节身份不守恒」拒绝——该失败归合成器自有出口，本码不报、不为让其通过而放宽复验 |
+| `test-change-set` 后态判据的强度、扫描口径、ID 身份规则与拒绝形态（fail-closed，逐字不变）；`allowDuplicateIds` / `allowAmbiguousRows` 等历史基线兼容开关语义零改动。前移侧向后态**对齐**，不反向改动后态 |
+| `SPEC_MERGED.test_change_set` 的 schema 与内容口径逐字不变；`verify` / `test-slice-manifest` 消费行为零改动 |
+| `change-lint` 检查项标识集合与总数、`--format json` 字段集合与排序、`PASS` / `FAIL` 文案、warning 通道、既有全部违规码的触发形态 |
+| `openlogos merge` 的准入判定仍等于 `runChangeLint` 完整结论（§2.51.2）——本码进 violations 即预检拒绝，merge 侧不另写判据；merge 成功路径 stdout、`SPEC_MERGED` 内容、`--format json` 契约逐字节不变 |
+| 既有被接纳的 delta 形态零收紧：前移侧集合只**扩大**，扩大部分恰为此前已被后态以 `test-change-set-duplicate-id` 拒绝的形态；不新增任何「后态接纳而预检拒绝」的组合（UT-S35-198 / UT-S35-199 双向比对锁定） |
+| 非 test 目标的整篇改写（如 skills / 场景文档被降级嵌套）：无稳定 ID、merge 不失败，不属「前移既有失败」，不在本判据内；由 change-writer 写作规范承担（残差如实记录） |
+
+### 2.85.5 追溯
+
+- 来源变更：lint-modified-sibling-section-collision（缺陷报告 `logos/resources/reference/BUGREPORT-merge-modified-sibling-section-collision-untriaged.md`；RunLogos audit run `drv-muqfnr6p-fola`，blocked `merge-failed`；proposal r1 评审 F1 修正判据方向）。
+- 场景：S35「后态测试 ID 重复判据的同源前移」。
+- 功能规格关联：§2.84（同族前一半：表级 / 行级形态前移与一致性锁，§2.84.5 锁边界据本节扩展）、§2.84.4（后态行号口径）、§2.82.2（判据前移到 write-delta 节点的先例）、§2.51（merge 准入判定单点）、§2.73（L8 守恒降级后 lint 侧的违规 / 警告分层）。
+- 写作规范：`spec/change-management.md` `deltas/ 目录`、`skills/change-writer/SKILL.md` 守恒写作规范（MODIFIED 替换范围定义与逐章节拆块写法）。
+- 测试：UT-S35-196～UT-S35-201、ST-S35-36。
+- 代码（以合并后规格为准）：`cli/src/lib/change-lint.ts`（L4 分支新增目标集合收集、同源合成与 `buildTestChangeSet` 调用、新码登记、诊断信号）、`cli/src/lib/test-change-set.ts`（零改动，仅新增调用方）、`cli/src/lib/markdown-section-authority.ts`（零改动）。
+- 发布：判据只在安装态对宿主生效，本提案归档后须另立发版提案按 §2.81 升版（发布动作不在本提案内执行）。

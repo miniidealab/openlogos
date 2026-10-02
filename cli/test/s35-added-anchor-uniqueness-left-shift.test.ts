@@ -227,16 +227,18 @@ describe('S35 ADDED 锚合成后唯一性的 L4 前移', () => {
       expect(out.violations, name).toEqual([]);
       // **哨兵**：本判据未被调用。仅断言「L4 通过」不算覆盖——按 `.md` 扫描但判定恰好通过的
       // 实现同样能满足那个弱断言。缺省补齐的测试 delta 是章节写法，会合法地调用一次本判据，
-      // 故哨兵断言的是「整文件那份没有把调用次数抬高」：章节 delta 恰 1 次，整文件 0 次。
+      // 故哨兵断言的是「整文件那份没有把调用次数抬高」：章节 delta 恰 2 次，整文件 0 次。
+      // （§2.85 起，test 章节 delta 还会经同一 composeOpenLogosMarkdown（含身份复验）求后态以前移
+      //   duplicate-id 判据，该复验再调一次本判据——仍是章节 delta 自己的调用；整文件仍为 0 次。）
       const anchors = spied.mock.calls.map(c => c[0]);
-      expect(anchors, name).toEqual(['S99 夹具']);
+      expect(anchors, name).toEqual(['S99 夹具', 'S99 夹具']);
     }
-    // ③ 普通章节 ADDED 正常进入本判据。
+    // ③ 普通章节 ADDED 正常进入本判据（场景 delta 非 test 目标，不经 §2.85 后态合成，恰 1 次）。
     spied.mockClear();
     const section = setup({ [SCENARIO_DELTA]: CLEAN_DELTA }, { [SCENARIO_TARGET]: BEFORE_DOC });
     lint(section);
     expect(spied.mock.calls.map(c => c[0]).sort())
-      .toEqual(['S81：WorkBuddy Agent 类型全生命周期', 'S99 夹具']);
+      .toEqual(['S81：WorkBuddy Agent 类型全生命周期', 'S99 夹具', 'S99 夹具']);
   });
 
   it('UT-S35-189: 阶段边界——SPEC_MERGED 之后不重放本判据', () => {
@@ -270,7 +272,9 @@ describe('S35 ADDED 锚合成后唯一性的 L4 前移', () => {
     expect(out.violations).toEqual([]);
     // 现行 `parseDeltaBlocks` 会把该首行解析成 anchor 为「路径 + 后缀」的 ADDED 块；若章节预检
     // 按 `.md` 或语义类别补集划定扫描范围而不按共享分流结果排除，该合法输入会被判违规。
-    expect(spied.mock.calls.map(c => c[0])).toEqual(['S99 夹具']);
+    // （缺省补齐的 test 章节 delta 自 §2.85 起经同一合成器（含身份复验）求后态，故出现 2 次；
+    //   整文件那份仍为 0 次——下一行的 `（新文件，整文件）` 断言即其哨兵。）
+    expect(spied.mock.calls.map(c => c[0])).toEqual(['S99 夹具', 'S99 夹具']);
     expect(spied.mock.calls.some(c => c[0].includes('（新文件，整文件）'))).toBe(false);
     // 合法新建能力本身不受影响：真实 merge 成功、H1 逐字保留。
     expect(merge(f).status).toBe(0);

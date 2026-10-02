@@ -8,6 +8,7 @@
     "delta_removed_unknown_id",
     "delta_section_anchor_unresolvable",
     "delta_template_skeleton",
+    "delta_test_id_duplicate",
     "delta_test_table_column_mismatch",
     "delta_test_table_duplicate_header",
     "delta_test_table_id_unextractable",

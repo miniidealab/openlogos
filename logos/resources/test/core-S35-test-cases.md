@@ -566,3 +566,43 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - UT-S35-193、UT-S35-194、UT-S35-195 的「逐字/逐字节相同」对照必须以**本刀实现之前**的实测输出为基准夹具，**禁止在测试内复述期望文案、禁止硬编码 `10/10` 之类字面量**。
 - ST-S35-35 必须跑**真实 `openlogos change-lint` 进程**并读其 stdout；夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。
 - 「零回归」的边界（本族统一口径）：本刀对判定链**不作任何有意变更**，故检查项标识集合、总数、违规码注册表、退出码、`PASS` / `FAIL` 文案与 `--format json` 输出**全部为不变量**；唯一允许变化的是人类可读 stdout 中**违规条目的出现与否**——由「整行消失」变为「逐条打印」，这正是本刀的交付内容。
+
+## S35 后态测试 ID 重复判据同源前移测试
+
+> 覆盖后态 `test-change-set-duplicate-id` 全部触发形态（单目标内重复、触及目标间重复）在 change-lint L4 族的同源前移（新码 `delta_test_id_duplicate`：lint 侧对触及 test 目标集合以同一 `composeOpenLogosMarkdown` 求后态、调用同一 `buildTestChangeSet`），以及「凡后态以该码拒的集合、预检必先报」的一致性锁扩展（功能规格 §2.85、§2.84.5；场景 S35「后态测试 ID 重复判据的同源前移」；来源变更 lint-modified-sibling-section-collision）。夹具用一次性隔离项目与合成 delta 构造，不依赖本仓自身的提案内容。**合法下沉反例臂是本组测试的核心**——proposal r1 评审以两个已运行反例证明「标题形态」不能作判据，只验证事故形态必红而不验证这些形态必绿，会把一个行为回归锁进预期。测试实现必须写入 OpenLogos reporter。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-196 | 事故形态必红（修复前 PASS） | 合成目标 `logos/resources/test/core-S09-test-cases.md`：五个并列 H2（`S09: … — 测试用例` 导言、`一、单元测试用例`、`二、场景测试用例`、`三、覆盖度校验`、`四、追溯`），ID 表含 `UT-S09-01`～`UT-S09-03` 与 `ST-S09-01`；delta 只有一个 `## MODIFIED — S09: … — 测试用例` 块，正文把整份文档抄一遍（正文内含四个与锚同级的 `##` 标题） | 求 `runChangeLint` 结论 | `delta_test_id_duplicate` 进 `violations`、exit 2、L 层归属为 L4；`path` 为该 **delta 文件**相对路径；`message` 同时含：后态目标路径与重复 ID 的两处后态行号（带「合并后态行号」标注）、重复裸 ID、该 ID 在 delta 内的行号、诊断信号文本「疑似整篇改写吞并兄弟章节「一、单元测试用例」」；`fix_hint` 含「为每个被改写的同级章节各写一个 `## MODIFIED — <章节标题>` 块」。**修复前该形态 change-lint 报 PASS 而 merge 在 `buildTestChangeSet` 抛 `test-change-set-duplicate-id`——本用例即该「预检全绿 / merge 必炸」组合的回归锁** |
+| UT-S35-197 | 拆块版本必绿 | 同 UT-S35-196 的目标；delta 改为五个同锚 MODIFIED 块（`## MODIFIED — S09: … — 测试用例`、`## MODIFIED — 一、单元测试用例`……各只携带该章节自己的正文，锚文本与目标标题逐字一致） | 求 `runChangeLint` 结论；并以同一合成器求后态、调用 `buildTestChangeSet` | 零 `delta_test_id_duplicate`；后态 ID 集合 == 前态 ID 集合（逐一比对，不只比数量）；`buildTestChangeSet` 通过——证明 fix_hint 指向的写法足以在本节点自修闭环 |
+| UT-S35-198 | 合法下沉反例必绿（前移集合未扩大到后态接受的形态） | 四个独立夹具（各含目标 + delta）：① **跨父链同名**——目标 `## 模块甲 > ### 行为` 与 `## 模块乙 > ### 事件与最终态交互`（后者定义 `UT-S09-01`），delta `## MODIFIED — 模块甲 > 行为` 正文含 `### 事件与最终态交互` 定义 `UT-S09-02`；② **同父链同名不同 ID**——目标 `## 导言` 与 `## 单元测试`（定义 `UT-S09-01`），delta `## MODIFIED — 导言` 正文含 `## 单元测试` 定义 `UT-S09-02`；③ **序数锚下正文重复锚自身根标题**——delta 为 `## MODIFIED — 一、单元测试用例 [1]`，正文首行重复 `## 一、单元测试用例` 后接该节全量表格（ID 不变；既有序数锚使合成后同名 H2/H3 并存时 MODIFIED 身份复验仍唯一）；④ **正文仅含更深子标题**——锚 H2、正文只有 `###` / `####` 小节与原 ID 表 | 对四夹具分别求 `runChangeLint` 结论，并与同夹具合并后态的 `buildTestChangeSet` 结论对照；读回合成后态 | 四者**零** `delta_test_id_duplicate`，且 `composeOpenLogosMarkdown` 合成成功、后态 `buildTestChangeSet` **通过**；① 合成后 `事件与最终态交互` 在 `模块甲 > 行为` 下为 H4、`模块乙` 原 H3 与 `UT-S09-01` 保留；② 合成后 `单元测试` 在 `导言` 下为 H3、原 `## 单元测试` 与 `UT-S09-01` 保留；③ 合成后 `一、单元测试用例` 为 H2 且其下有同名 H3、ID 集合不变。**本用例是 proposal r1 评审两反例的回归锁**：任何以「正文含与锚同级标题且目标范围外存在同名标题」为判据的实现（含补同父链的收窄版）都会在 ①② 上误红 |
+| UT-S35-199 | 一致性锁按码整族双向比对（任一侧单独收紧即失败） | 夹具集合覆盖 `test-change-set-duplicate-id` **全部**触发形态——单目标内：整篇吞并兄弟章节（UT-S35-196 形态）、同一目标两个章节各自新增同 ID、新增 ID 与保留章节既有 ID 重复；触及目标间：两个 `deltas/test/` delta 各自新增同 ID、章节 CREATE 目标（新文件 ADDED）与 MODIFY 目标同 ID、**Markdown 整文件 CREATE（首行 `## ADDED — <target>（新文件，整文件）`）的 payload 内两条同 ID 行**、**整文件 CREATE 与章节 MODIFY 跨目标同 ID**；另备各夹具「已修正」版本（拆块 / 改名）；并纳入 UT-S35-198 四个合法下沉夹具与 §2.84.1 三处对齐点反例 | 逐夹具双向比对：一侧喂 `runChangeLint`（delta 形态），一侧以同一合成器求后态后喂 `buildTestChangeSet`（历史兼容开关关闭的正常路径） | 两侧结论逐夹具一致——后态以 `duplicate-id` 拒的夹具预检必报 `delta_test_id_duplicate`（触及目标间形态对涉事 delta **各报一条**；整文件两臂的后态侧按 merge 口径以既有封装校验器剥离 payload 后送入 `buildTestChangeSet`），反之亦然；**已修正版本与合法下沉夹具两侧均通过**（证明前移不是无差别收紧）。**注入式反证臂**：单独把预检侧改为逐目标调用（不按集合）时，触及目标间两夹具必红，证明锁覆盖的是集合口径。**边界断言**：`test-change-set-target-duplicate` / `-overlap` 夹具**不纳入**比对且不因此判红（§2.84.5 仍排除）；`allowDuplicateIds` 等历史基线兼容路径不纳入 |
+| UT-S35-200 | 阶段边界、通道闸与不双报 | 四夹具：① UT-S35-196 形态的提案已完成真实合并（`SPEC_MERGED` 在场、目标已为合并后字节、原 delta 仍在场）；② 集合中一个 delta 锚不可解析（`## MODIFIED — 不存在的章节`）、另一个 delta 为 UT-S35-196 形态；③ UT-S35-196 形态且其 ID 表某行少写一个管道符（后态同时 ambiguous-table）；④ 封装合法的 Markdown 整文件 CREATE delta（首行 `## ADDED — <target>（新文件，整文件）`）payload 内含两条同 ID 行；⑤ 封装不合法的整文件 delta（如 target 与 canonical 不一致）payload 内含两条同 ID 行；⑥ 普通锚 `## MODIFIED — 一、单元测试用例` 正文首行重复该根标题（合成器既有复验拒绝的形态） | 对六夹具分别求 `runChangeLint` 结论 | ① **零**该码（不重放，与 ADDED 锚判据、L8 守恒同一完成标记判据；且判别不以「目标是否已含该 ID」推断）；② 锚不可解析的 delta 只报 `delta_section_anchor_unresolvable`，集合中另一 delta 照常报 `delta_test_id_duplicate`（因他因失败的目标不纳入集合、其余目标照判）；③ 只报 `delta_test_table_column_mismatch`、**不报**本码（不双报）；④ **本码必报**——ID 检查集合不按通道排除整文件，payload 经与 merge 同一的封装校验器剥离后送入 `buildTestChangeSet`（修复前整文件通道对内容层 ID 零判据，本用例锁定前移集合与 merge 同口径）；⑤ 只报 `non_markdown_delta_invalid`、**不报**本码（不纳入集合）；⑥ 该目标合成失败（`MODIFIED 章节身份不守恒`）不纳入集合、**不报**本码，且**不得**为此放宽合成器锚唯一性复验（同夹具 `composeOpenLogosMarkdown` 仍抛该错） |
+| UT-S35-201 | 诊断信号与判定正交、delta 侧归属精确 | 三夹具：① UT-S35-196 形态（同父链同级同名命中）；② 跨父链同名且新增 ID 恰与目标既有 ID 重复（如 UT-S35-198 ① 把新增 ID 改为 `UT-S09-01`）；③ UT-S35-196 形态但目标兄弟标题被同 delta `## RENAMED` 改名，正文使用新名 | 取各违规的 `message`，并取 `toPublicViolation` 投影后的公开键集合 | ① message 含「疑似整篇改写吞并兄弟章节」与碰撞标题文本；② **违规照报**但 message **不含**该提示（信号未命中不影响判定）；③ 按 RENAMED 折算后文本命中信号；三者 message 中的 delta 侧归属均为该 ID 在 **delta 内的 1 基行号**（从 message 解析，按夹具已知值精确断言，不得只断言「含数字」），ID 在 delta 内多次出现时逐行列出，并同时含「合并后态行号」标注；**公开 violation 键集合恒为 `code` / `path` / `message` / `fix_hint`（+ 可选 `flow_reason`），不得新增 `line` 等字段** |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-36 | 事故端到端复现：整篇改写型 MODIFIED 在 write-delta 节点即闭环 | 真实 CLI，一次性隔离 launched 项目复刻 token-agent 现场（五 H2 测试用例目标 + 单块整篇 MODIFIED delta，其余 delta 与 tasks 全部合法）。① `openlogos change-lint --slug <slug> --format json`：exit 2、`data.pass=false`、`violations` 含 `delta_test_id_duplicate`，其 `path` 指向该 delta 文件、`message` 含该 ID 的 delta 内行号与「合并后态行号」标注、`fix_hint` 含拆块指引，且每条 violation 的键集合与上线前逐字相同（**修复前此步为 PASS——即事故的盲点**）；② 续跑**真实 `openlogos merge <slug>`**：非零退出、stderr 首行为「change-lint 未通过（N 项违规），拒绝 merge」预检出口并逐条打印该违规，结束后**无** `SPEC_MERGED`、目标保持合并前字节（**修复前此步退出于合成期 `Error: merge 失败（test-change-set-duplicate-id）`，即 audit run `drv-muqfnr6p-fola` 的停点**）；③ 按 fix_hint 拆块后重跑 `change-lint`：exit 0、PASS；续跑真实 `openlogos merge`：退出码 0、生成 `SPEC_MERGED`，合并后目标 ID 集合与合并前逐一一致、无重复；④ **合法下沉臂**：另取同构提案，其 delta 为 UT-S35-198 ① 形态（跨父链同名 H3 相对子节、不同 ID），`change-lint` PASS 且真实 `openlogos merge` 成功、合并后该标题为 H4 子节——证明前移未拒合法写法；⑤ 全程 `change-lint` 项目级零写入（运行前后项目根字节快照相等） |
+
+### 追溯与覆盖
+
+- 主修·后态判据同源前移（事故形态旧实现必红）：UT-S35-196、ST-S35-36 步骤①②。
+- 主修·fix_hint 写法足以自修闭环：UT-S35-197、ST-S35-36 步骤③。
+- 防伪臂·**合法下沉写法零误报**（评审两反例 + 归档旧写法）：UT-S35-198、UT-S35-199 合法夹具、ST-S35-36 步骤④。
+- 一致性锁·按码整族（单目标内 / 触及目标间，含注入式反证臂与排除断言）：UT-S35-199。
+- 边界·阶段 / 通道闸 / 不双报 / 他因失败不纳入：UT-S35-200。
+- 主修·诊断可归因（delta 内行号、诊断信号正交、RENAMED 折算）：UT-S35-201、ST-S35-36 步骤①。
+- 功能规格：§2.85.1～§2.85.4、§2.84.5、§2.84.4；场景：S35「后态测试 ID 重复判据的同源前移」；来源变更：lint-modified-sibling-section-collision。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- UT-S35-198 与 UT-S35-199 的双向比对必须调用两侧**真实实现**（`runChangeLint` 与 `composeOpenLogosMarkdown` + `buildTestChangeSet`），不得以复述期望的表驱动替代；UT-S35-198 必须同时断言「后态确实接受」，证明前移集合的扩大部分**恰为后态已拒形态**、未新拒后态接纳的形态。
+- UT-S35-199 的注入式反证臂须证明**单独改为逐目标调用**会让触及目标间夹具变红，证明锁覆盖的是集合口径而非仅单目标扫描。
+- UT-S35-201 的行号断言必须对**夹具已知的精确 delta 内行号**比对——可归因正是本变更的语义本体；行号**从 message 文本解析**，不得通过新增公开 JSON 字段满足（`--format json` 字段集合与排序逐字不变，与 §2.85.4 零回归边界一致）。
+- UT-S35-199 / UT-S35-200 的整文件臂，后态侧必须按 merge 口径调用既有封装校验器剥离 payload 后再送入 `buildTestChangeSet`，不得以手工拼接的 payload 替代。
+- ST-S35-36 步骤②③④ 必须跑**真实 `openlogos merge`** 进程并断言退出码、stderr 出口形态与 `SPEC_MERGED` 在场性，不得以库内函数调用替代。

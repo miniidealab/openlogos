@@ -51,12 +51,16 @@ import {
   listBaselineSeedModuleIds,
   withRecoveredReadLocks,
 } from './baseline-seed-txn.js';
-import { readTestChangeSet, type TestChangeSetReadResult } from './test-change-set.js';
+import {
+  AFTER_STATE_LINE_NOTE, buildTestChangeSet, readTestChangeSet, TestChangeSetBuildError,
+  type TestChangeSetInputTarget, type TestChangeSetReadResult,
+} from './test-change-set.js';
 import { deriveSliceVerificationState } from './test-slice-manifest.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import { type PlanPackageEvaluation, type ChangeTypeLevel, resolveProposalChangeType } from './plan-package-contract.js';
 import {
   buildRenameMaps,
+  composeOpenLogosMarkdown,
   evaluateAddedAnchorUniqueness,
   mapAnchorText,
   parseDeltaBlocks,
@@ -69,7 +73,7 @@ import { ADDED_ANCHOR_FIX_HINT } from './added-anchor-outcome.js';
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
 export type { DeltaEntryClassification, MergeDisposition, LintValidity };
 
-// ── violation code 闭合注册表（45 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
+// ── violation code 闭合注册表（46 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
 
 export const CHANGE_LINT_VIOLATION_CODES = [
   // L0 Plan Package 统一完成合同
@@ -95,6 +99,9 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   // 二者合起来覆盖后态 `test-change-set-ambiguous-table` 的全部触发形态。
   'delta_test_table_column_mismatch',
   'delta_test_table_duplicate_header',
+  // §2.85（lint-modified-sibling-section-collision）：后态 `test-change-set-duplicate-id` 判据同源前移（L4 族）。
+  // lint 侧对触及的 test 目标集合以同一合成器求后态、调用同一 buildTestChangeSet，其结论即违规。
+  'delta_test_id_duplicate',
   'deployment_decision_conflict',
   'delta_path_invalid',
   // L7 既有 checker 13 码
@@ -645,6 +652,85 @@ function resolveAnchorWithRenames(
   if (folded === anchor) return direct;
   const second = resolveSectionAnchor(headings, folded);
   return second.status === 'ok' ? second : direct;
+}
+
+// ── §2.85：后态测试 ID 重复判据的同源前移（L4 族）────────────────────────────────────────
+
+/** `delta_test_id_duplicate` 的固定 fix_hint：两条修复路径（功能规格 §2.85.2）。 */
+export const DELTA_TEST_ID_DUPLICATE_FIX_HINT =
+  '两条修复路径：① 整篇改写多章节文档时，为每个被改写的同级章节各写一个 `## MODIFIED — <章节标题>` 块、'
+  + '只携带该章节自己的正文——MODIFIED 的替换范围止于下一个同级标题，正文内同级或更浅的标题会被下沉嵌入锚章节而非替换兄弟章节；'
+  + '② 若确为新增条目，删去或改名重复的测试 ID。'
+  + '该形态在 merge 内部 buildTestChangeSet 阶段同样被拒（test-change-set-duplicate-id），此处前移以便当场修正';
+
+/** 与 merge-direct 送入 buildTestChangeSet 的目标口径同一：语义类别 test，或路径前缀 logos/resources/test/。 */
+function isTestChangeSetTarget(targetPath: string, category: ReturnType<typeof classifyCanonicalTargetCategory>): boolean {
+  return category === 'test' || targetPath.replace(/\\/g, '/').startsWith('logos/resources/test/');
+}
+
+/** 文本中首格身份等于 `id` 的测试定义行（1 基行号）；枚举口径复用后态同一单点。 */
+function testIdRowLines(text: string, id: string): number[] {
+  const lines = text.split('\n');
+  const out: number[] = [];
+  for (const table of enumerateTestDefinitionTables(lines)) {
+    for (const row of table.rows) {
+      if (testDefinitionRowId(row.cells) === id) out.push(row.line + 1);
+    }
+  }
+  return out;
+}
+
+/** 从 `test-change-set-duplicate-id：<id>` / `…：after:<id>` 取重复 ID；取不到返回 null，不臆造。 */
+function duplicateTestIdOf(message: string): string | null {
+  const m = /：(?:after:)?(\S+)\s*$/.exec(message);
+  return m ? m[1] : null;
+}
+
+/**
+ * 诊断信号（§2.85.2，只丰富 message、不参与判定）：MODIFIED 正文含与锚**同父链同级同名**的标题——
+ * 正文标题 h（围栏感知）满足 `h.level <= hit.level`，且目标存在 t 使 `t.text === h.text`、
+ * t 与 hit 在 h.level 深度上同父链、t 位于锚章节范围之外。RENAMED 折算复用 `mapAnchorText` 单点。
+ * 命中即说明作者把「章节」理解成了「整份文档」：正文已被合成器合法下沉嵌入锚章节、原章节保留。
+ */
+function siblingCollisionHints(deltaText: string, beforeContent: string): Array<{ anchor: string; title: string }> {
+  const blocks = parseDeltaBlocks(deltaText);
+  const maps = buildRenameMaps(blocks);
+  if (maps.error) return [];
+  const headings = parseMarkdownHeadings(beforeContent);
+  const out: Array<{ anchor: string; title: string }> = [];
+  for (const b of blocks) {
+    if (b.op !== 'MODIFIED' || !b.anchor) continue;
+    const r = resolveAnchorWithRenames(headings, b.anchor, maps.reverse);
+    if (r.status !== 'ok') continue;
+    const hit = r.hit!;
+    for (const h of parseMarkdownHeadings(b.lines.join('\n'))) {
+      if (h.level > hit.level) continue;
+      // hit 在 h.level 深度上的父链：同级即 hit 自己的父链；更浅则再向上回退（层级连续时等于
+      // `hit.path.slice(0, h.level - 1)`）。
+      const parentDepth = hit.path.length - 1 - (hit.level - h.level);
+      if (parentDepth < 0) continue;
+      const parent = hit.path.slice(0, parentDepth);
+      const folded = mapAnchorText(h.text, maps.reverse);
+      const collided = headings.some(t => t.level === h.level
+        && (t.text === h.text || t.text === folded)
+        && (t.line < hit.line || t.line >= hit.endLine)
+        && t.path.length === parent.length + 1
+        && parent.every((seg, i) => t.path[i] === seg));
+      if (collided && !out.some(x => x.anchor === b.anchor && x.title === h.text)) {
+        out.push({ anchor: b.anchor, title: h.text });
+      }
+    }
+  }
+  return out;
+}
+
+/** 前移侧收集的单个 test 目标后态（与 merge 同输入）。 */
+interface TestAfterState {
+  relPath: string;
+  deltaText: string;
+  /** 章节路由下的合并前字节（供诊断信号解析锚）；整文件 CREATE 或目标不存在时为 null。 */
+  beforeContent: string | null;
+  target: TestChangeSetInputTarget;
 }
 
 export function evaluateDeltaConservation(deltaContent: string, targetContent: string | null): DeltaConservationViolation[] {
@@ -1203,6 +1289,12 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   const nonMarkdownDegradations: Array<{ path: string; degradation: SqlValidationDegradation }> = [];
   /** L4 已就 RENAMED 块形态报过违规的 delta——L8 不再对其重复求守恒（映射表本就不可信）。 */
   const renamedFormBroken = new Set<string>();
+  /**
+   * §2.85：触及的 test 目标后态集合——章节路由经同一合成器、合法 Markdown 整文件 CREATE 经同一封装
+   * 校验器剥离 payload；集合口径与 merge-direct 送入 buildTestChangeSet 的 tests 逐字一致。
+   * 合成 / 封装因他因失败的目标不纳入（归各自判据）。循环结束后对集合**一次**调用同一判据。
+   */
+  const testAfterStates: TestAfterState[] = [];
   for (const entry of deltaEntries) {
     const relPath = `logos/changes/${slug}/${entry.relativePath}`;
     if (entry.lintValidity === 'invalid') {
@@ -1329,6 +1421,25 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
             fix_hint: ADDED_ANCHOR_FIX_HINT,
           });
         }
+        // §2.85.1：章节路由的 test 目标——以同一 composeOpenLogosMarkdown（含身份复验）求后态。
+        // 合成因他因失败（锚不可解析 / MODIFIED 身份不守恒等）→ 不纳入集合，归各自判据、本码不报。
+        if (readable && isTestChangeSetTarget(entryTargetPath, entryCategory)) {
+          try {
+            const after = composeOpenLogosMarkdown(beforeContent, deltaText, exists ? 'MODIFY' : 'CREATE');
+            testAfterStates.push({
+              relPath,
+              deltaText,
+              beforeContent: exists ? beforeContent : null,
+              target: {
+                targetPath: entryTargetPath,
+                beforeBytes: exists ? Buffer.from(beforeContent, 'utf8') : null,
+                afterBytes: Buffer.from(after, 'utf8'),
+              },
+            });
+          } catch {
+            // 归各自判据（§2.85.3「只认领自身失败」）。
+          }
+        }
       }
       const v = validateMarkdownDelta(deltaText);
       if (v.missingSectionMarker) {
@@ -1405,6 +1516,53 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
         });
       }
       if (checked.degradation) nonMarkdownDegradations.push({ path: relPath, degradation: checked.degradation });
+      // §2.85.1：封装合法的 Markdown 整文件 CREATE 的 test 目标——payload 即后态（与 merge-direct 同一
+      // 校验与剥离）。整文件通道没有内容层 ID 判据，**不得按通道把它排除出 ID 检查集合**。
+      if (checked.ok && typeof checked.payload === 'string' && mode === 'CREATE'
+        && entryRoute.kind === 'whole-file' && entryRoute.channel === 'markdown'
+        && isTestChangeSetTarget(targetPath, entryCategory)) {
+        testAfterStates.push({
+          relPath,
+          deltaText: deltaContents.get(entry.relativePath) ?? '',
+          beforeContent: null,
+          target: { targetPath, beforeBytes: null, afterBytes: Buffer.from(checked.payload, 'utf8') },
+        });
+      }
+    }
+  }
+
+  // §2.85：对触及的 test 目标集合**一次**调用同一 buildTestChangeSet（纯函数、零改动、仅新增调用方），
+  // 只认领 `test-change-set-duplicate-id`；`-ambiguous-table` 已由上方 L4 行级 / 表级码覆盖（不双报），
+  // 其余码不认领。阶段边界：SPEC_MERGED 之后不重放（取既有完成标记判据，不以「目标是否已含该 ID」推断）。
+  if (testAfterStates.length > 0 && !hasSpecCompleteMarker(proposalDir)) {
+    try {
+      buildTestChangeSet({ change: slug, module: moduleCtx.moduleId, targets: testAfterStates.map(s => s.target) });
+    } catch (error) {
+      if (error instanceof TestChangeSetBuildError && error.code === 'test-change-set-duplicate-id') {
+        const id = duplicateTestIdOf(error.message);
+        const involved = testAfterStates.filter(s => error.targetPaths.includes(s.target.targetPath));
+        const afterLocation = involved.map(s => {
+          const lines = id ? testIdRowLines(s.target.afterBytes.toString('utf8'), id) : [];
+          return `${s.target.targetPath}:${lines.length > 0 ? lines.map(l => `第 ${l} 行`).join('、') : '（未定位到行）'}`;
+        }).join('；');
+        for (const s of involved) {
+          const deltaLines = id ? testIdRowLines(s.deltaText, id) : [];
+          const attribution = deltaLines.length > 0
+            ? `delta 侧归属：本 delta 第 ${deltaLines.map(String).join('、')} 行`
+            : 'delta 侧归属：本 delta 内未出现该 ID 行（重复来自目标既有内容或另一 delta）';
+          const hints = s.beforeContent !== null ? siblingCollisionHints(s.deltaText, s.beforeContent) : [];
+          const signal = hints.length > 0
+            ? `；疑似整篇改写吞并兄弟章节「${hints.map(h => h.title).join('」「')}」——MODIFIED 的替换范围止于下一个同级标题，`
+              + `正文已被下沉嵌入锚章节「${hints[0].anchor}」、原章节保留`
+            : '';
+          pushViolation(acc, 4, {
+            code: 'delta_test_id_duplicate',
+            path: s.relPath,
+            message: `合成后态中测试 ID ${id ?? '（未知）'} 重复：${afterLocation}${AFTER_STATE_LINE_NOTE}；${attribution}${signal}`,
+            fix_hint: DELTA_TEST_ID_DUPLICATE_FIX_HINT,
+          });
+        }
+      }
     }
   }
 

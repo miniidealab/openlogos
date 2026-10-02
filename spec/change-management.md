@@ -112,6 +112,7 @@ Section 标记规则：
 **条目守恒契约（S37，merge-conservation-archive-audit）**：
 
 - `MODIFIED` 是**整章节替换**——块内容必须携带该章节**全量**应保留正文；目标章节根标题由章节锚唯一解析后原位保留，正文不得为满足守恒而重复根标题；**不得隐式删除既有条目**。
+- **`MODIFIED` 的替换范围（lint-modified-sibling-section-collision）**：自锚标题起，到目标文档中**下一个同级或更高级标题**止——**不是整份文档**。正文内与锚同级或更浅的标题不会替换兄弟章节，而是被合成器**合法下沉**为锚章节的子节（相对子标题写法）；原兄弟章节原样保留。整篇改写含多个同级章节的文档时，**每个章节各写一个 `MODIFIED` 块**，只携带该章节自己的正文。凡因此导致合成后态**测试 ID 重复**，由 `openlogos change-lint` L4 以 `delta_test_id_duplicate` fail-closed 拒绝——lint 侧对本提案触及的 test 目标集合以同一合成器求后态、调用同一 `buildTestChangeSet`，与 merge 合成期的 `test-change-set-duplicate-id` **逐字同判据**（merge 准入预检同源）；标题同名本身不是违规。
 - **最终章节结构是 retained 的计算对象**：目标侧 existing 从命中的根标题开始抽取；MODIFIED 侧 retained 必须用目标命中的真实 heading level/text 重建同一根标题，再拼接块正文抽取。对于 `## S10 ...`、`## D12：...`、`## 2.3 ...`，控制锚已保留根标题身份，不得误报根 ID 被删除。
 - **安全重建边界**：只有锚唯一命中后才可使用目标 `hit.level` / `hit.text`；禁止从 anchor 字符串扫描 ID，因为标题路径父级或散文 token 可能形成保留伪证。锚 0 命中或多命中继续 fail-closed，不构造 retained 根标题。
 - **最小豁免**：根标题重建只证明该根标题自身仍在最终文档中。原章节内嵌标题、测试表 ID、场景表行及其表身份仍须逐结构位置保留；真正缺失时照常报 `delta_implicit_id_removal`。

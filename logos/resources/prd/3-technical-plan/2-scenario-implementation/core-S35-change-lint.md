@@ -1121,3 +1121,130 @@ sequenceDiagram
 - 规格关联：`spec/change-management.md` §2.51.5（merge 准入输出的逐条可归因，本节与其同口径）。
 - 实证：20260921，0.15.12 对 runlogos 提案 `add-workbuddy-agent-type`——判定正确而 L4 整行消失、只剩 `FAIL（9/10，1 项违规，1 warning）`，全程不报错、不影响 exit code；同次 L8 无违规，其 `✓` 行本身正确。
 - 测试：UT-S35-190～UT-S35-195、ST-S35-35。
+
+## S35 后态测试 ID 重复判据的同源前移
+
+### 场景目标
+
+把 merge 合成期的后态判据 `test-change-set-duplicate-id` **同源前移**到 `change-lint` L4：lint 侧对本提案触及的 test 目标集合，用同一合成器求合成后态、调用同一 `buildTestChangeSet`，其 duplicate-id 结论直接成为违规 `delta_test_id_duplicate`——让「整篇改写型 MODIFIED 吞并兄弟章节、正文被合法下沉嵌入、原章节保留、后态 ID 必然重复」这一此前 lint 零信号、评审 PASS、spec-exit 自动放行、合成期才硬停的形态，在 **write-delta 节点**即被暴露闭环（功能规格 §2.85）。
+
+**本节的定性（前置声明，不可省）**：前移的是**后态判据本身**，不是标题形态。MODIFIED 正文含与锚同级标题、目标范围外存在同名标题，是合成器支持的合法相对子标题写法（跨父链同名、同父链同名但不同 ID 两反例均合成成功、后态 ID 唯一）；标题碰撞在本节只作**诊断信号**丰富 message，不判定、不 warning。
+
+### 用户价值
+
+一个把「章节」理解成「整份文档」的 delta 写法，不再需要烧掉一整轮全自动 run 才停在 `openlogos merge` 的合成期、且停在 agent 已出写权限范围的节点。write-delta 节点下 delta 文件在 agent 写权限范围内、`change-lint` 在其命令白名单内——错误在此暴露即由 agent 按 fix_hint（逐章节拆块）当场修正，runlogos 经既有 `preflight-violation → spec-lint-violation` 回流通道在环内自愈，**不产生停点、不需要人**（audit run `drv-muqfnr6p-fola` 的 `blocked:merge-failed` 硬停形态从此不发生）。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| A | write-delta agent | 产出 `deltas/test/**` 章节 delta 并自查 `change-lint` |
+| L | `change-lint` L4 族 | 前移点：收集触及 test 目标集合、求后态、调用后态判据、登记违规 |
+| C | `composeOpenLogosMarkdown` | 单目标后态合成器（与 merge 同一实现、同一 mode 判定） |
+| B | `buildTestChangeSet` | 后态判据单点（纯函数）：单目标内重复 / 触及目标间重复均以 `test-change-set-duplicate-id` fail-closed |
+| M | `openlogos merge` | 准入判定 = `runChangeLint` 完整结论；合成期同一 C + B 为后备出口 |
+| K | 预检-门一致性锁 | 元测试：凡 B 以 duplicate-id 拒的 delta 集合，L 必先报 `delta_test_id_duplicate`；反之亦然 |
+
+前置条件：提案含至少一个 `deltas/test/**` 的 `.md` delta（章节路由，或封装合法的 Markdown 整文件 CREATE）；`SPEC_MERGED` 尚不在场；目标集合中每个目标的后态可求得——章节目标合成因他因（锚不可解析、RENAMED 形态非法、MODIFIED 身份复验不守恒）失败、或整文件封装不合法的目标，归各自判据、不进本集合。
+
+### 判据前移时序
+
+```mermaid
+sequenceDiagram
+    participant A as write-delta agent
+    participant L as change-lint L4
+    participant C as 合成器（与 merge 同一）
+    participant B as buildTestChangeSet（与 merge 同一）
+    participant M as openlogos merge
+
+    A->>L: Step 1: 产出 deltas/test/**.md 后自查 change-lint
+    L->>L: Step 2: 收集本提案全部 test delta → 目标集合（章节路由 + 合法整文件 CREATE，与 merge 同口径）
+    loop 每个目标
+        alt 章节路由
+            L->>C: Step 3a: compose(before ?? '', delta, exists ? MODIFY : CREATE)
+        else 整文件 CREATE
+            L->>L: Step 3b: 既有封装校验器剥离控制行 → payload 即后态
+        end
+        alt 合成 / 封装因他因失败（锚不可解析 / RENAMED 形态 / 身份复验 / 封装不合法）
+            C-->>L: Step 4a: 结构化失败 → 该目标不纳入集合，归各自判据
+        else 后态可求得
+            C-->>L: Step 4b: 后态字节
+        end
+    end
+    L->>B: Step 5: buildTestChangeSet({ targets: 集合 })
+    alt 抛 test-change-set-duplicate-id
+        B-->>L: Step 6a: 重复 ID + 涉事目标
+        L->>L: Step 7a: 求 delta 内行号；判定诊断信号（同父链同级同名标题）
+        L-->>A: Step 8a: delta_test_id_duplicate（exit 2，L4）——message 四项 + fix_hint 两条路径
+        A->>A: Step 9a: 逐章节拆块 / 改名重复 ID，重跑，闭环不出环
+    else 抛 test-change-set-ambiguous-table
+        B-->>L: Step 6b: 不报本码（已由 delta_test_table_* 覆盖，不双报）
+    else 通过
+        B-->>L: Step 6c: 本判据通过
+    end
+    A->>M: Step 10: change-lint 全绿后调 merge
+    M->>M: Step 11: 准入 = runChangeLint 完整结论（同源，必然一致）
+    M->>C: Step 12: 合成（后备出口，口径逐字不变）
+    M->>B: Step 13: buildTestChangeSet（后备出口，口径逐字不变）
+    Note over L,B: 一致性锁 K：凡 Step 13 以 duplicate-id 拒的集合，Step 8a 必先报——任一侧单独收紧即元测试失败
+```
+
+### 步骤说明
+
+1-2. `change-lint` 在 L4 分支收集本提案全部 `deltas/test/**` 的 `.md` delta，映射为 canonical 目标集合——与 `merge-direct` 送入 `buildTestChangeSet` 的集合同一口径（`category === 'test'` 或路径前缀 `logos/resources/test/`）：**章节路由**（含目标尚不存在的 CREATE）与**封装合法的 Markdown 整文件 CREATE** 均纳入。整文件通道只校验封装、路径、类别与 payload 形态、没有内容层 ID 判据，merge 侧照样把其 payload 推入 tests 与章节目标互相查重——前移集合若按通道排除整文件，就小于 merge，锁按码整族的承诺落空。按集合而非逐目标：`duplicate-id` 的「触及目标间重复」形态只有在集合上才可判定。
+3-4. 章节目标以同一合成器求后态，mode 由目标是否存在决定（与 merge 逐字同）；整文件 CREATE 以既有封装校验器剥离控制行后的 payload 为后态（与 merge 同一校验与剥离）。合成或封装因他因失败的目标**不纳入集合**，其失败由既有出口（`delta_section_anchor_unresolvable`、`non_markdown_delta_invalid`、合成器身份复验等）报出，本判据不认领、不双报。
+5-6. 对集合调用**同一** `buildTestChangeSet`（纯函数、无 IO）。只认领 `test-change-set-duplicate-id`；`-ambiguous-table` 已由 L4 行级 / 表级码在同一轮覆盖，本码不报；`-overlap` / `-target-duplicate` / `-invalid-utf8` 不认领。
+7-8. 违规进 violations（exit 2），层归属由 `pushViolation` 当场登记为 L4。message 四项：后态目标与行号（标注「合并后态行号」）、重复裸 ID、该 ID 在涉事 delta 内的行号（多次出现逐行列出，不臆造）、诊断信号（命中时追加「疑似整篇改写吞并兄弟章节「X」……」）。fix_hint 固定两条路径：逐章节拆成多个同锚 `## MODIFIED` 块 / 删去或改名重复 ID。
+9. 前移的全部价值在此：agent 在本节点即可改、即可重跑，不进入无法自修的下游节点。
+10-13. merge 的准入判定就是 `runChangeLint` 完整结论，本码进 violations 即预检拒绝；合成期的 C + B 仍为后备出口，**口径与强度逐字不变**——本场景是前移侧向后态对齐，不反向改动后态。
+
+### 与既有判据的分工
+
+| 判据 | 作用对象 | 问的问题 | 本节关系 |
+|---|---|---|---|
+| L4 行级 / 表级形态（§2.84.2） | delta 自身的 ID 表 | 表格形状是否合法 | 正交；后态同时 ambiguous-table 时只报形态码、不报本码 |
+| L4 ADDED 锚唯一性 | 合成后文档的 ADDED 锚 | 新章节是否唯一地长出来 | 同一合成路径、同一通道闸与阶段边界；各认领各的失败 |
+| L8 条目守恒 | 锚章节范围内的既有 ID | 旧的有没有丢 | 正交；守恒按锚范围对账，看不到范围外的重复——正是本节补的盲区 |
+| 合成器相对子标题下沉 | MODIFIED 正文标题 | 正文标题相对锚应处何层 | **逐字不改**；下沉是合法语义，不是错误 |
+| 本节 `delta_test_id_duplicate` | 触及 test 目标集合的合成后态 | 后态 ID 是否唯一 | 与 merge 同输入、同合成器、同判据 |
+
+### 诊断信号的定位
+
+诊断信号「MODIFIED 正文含与锚**同父链同级同名**的标题」的判定：正文 ATX 标题 h（围栏感知）满足 `h.level <= hit.level`，且目标存在标题 t 使 `t.text === h.text`、`t.path.slice(0, -1)` 深等于 `hit.path.slice(0, h.level - 1)`、t 位于 `[hit.line, hit.endLine)` 之外；RENAMED 折算复用既有 `mapAnchorText` 单点。它**只在本码已成立时**追加到 message，用于把「为什么后态重复了」翻译成作者能直接改的事实（「正文已被下沉嵌入锚章节、原章节保留」）。信号与判定正交：跨父链同名（反例①）不命中信号但若后态确有重复违规照报；同父链同名但不同 ID（反例②）命中信号但后态无重复、不报。信号不单独构成违规、不产 warning。
+
+### 阶段边界与通道闸
+
+- **只在 `SPEC_MERGED` 之前执行，合并完成后不重放**。合并成功后目标已含新 ID、原 delta 仍在场，拿当前文件当 before 重合成必然得到重复——一次成功的合并被倒挂成失败。判别口径取既有 spec-complete 完成标记（含 legacy 形态），**不得**以「目标是否已含该 ID」自行推断阶段；与 L8 守恒、ADDED 锚判据的 post-merge 处理同型、取同一个完成标记判据。
+- **通道闸只作用于诊断信号与章节合成，不作用于 ID 检查集合**：整文件 delta 没有章节锚与 `hit`，不参与「同父链同级同名」诊断信号的判定；但其 payload 照常进入 ID 检查集合。封装不合法的整文件 delta 归 `non_markdown_delta_invalid`、不纳入集合。
+
+### 异常与边界
+
+- **事故形态**（单块整篇 MODIFIED 覆盖多 H2 文档）：后态每个 ID 出现两次 → 本码必报，message 含诊断信号与拆块指引；**修复前该形态 change-lint PASS**，本用例即回归锁。
+- **拆块版本**（每个 H2 各一个同锚 MODIFIED）：零该码；后态 ID 集合 == 前态。
+- **评审反例①跨父链同名**：锚 `模块甲 > 行为` 正文 `### 事件与最终态交互` 新增不同 ID，目标 `模块乙` 下同名 H3 保留——合成为 H4 子节，后态无重复，**零该码**。
+- **评审反例②同父链同名不同 ID**：MODIFIED `导言` 正文含 `## 单元测试` 相对子节定义 `UT-S09-02`，目标 `## 单元测试` 定义 `UT-S09-01` 保留——下沉为 `### 单元测试`，后态无重复，**零该码**（诊断信号命中但不构成违规）。
+- **正文仅含更深子标题**：零该码。
+- **序数锚 `[n]` 下正文重复锚自身根标题**（如 `## MODIFIED — 一、单元测试用例 [1]`，正文首行再写 `## 一、单元测试用例`）：合成后同名 H2/H3 并存、序数锚使 MODIFIED 身份复验唯一，后态 ID 不变，**零该码**。**普通锚下同一写法**由合成器既有复验以「MODIFIED 章节身份不守恒」拒绝——该目标不纳入集合、本码不报，失败归合成器自有出口；不为让其通过而放宽锚唯一性复验（该形态的 lint 侧前移不在本提案范围，残差如实记录）。
+- **Markdown 整文件 CREATE 的 payload 内两条同 ID 行**：本码必报（整文件通道无内容层 ID 判据，merge 侧同样由 `buildTestChangeSet` 拒绝）。
+- **整文件 CREATE 与章节 MODIFY 跨目标同 ID**：触及目标间重复，本码必报、对涉事 delta 各报一条。
+- **封装不合法的整文件 delta**（`non_markdown_delta_invalid`）：不纳入集合、只报其自有码。
+- **同一目标两个章节各自新增同 ID**、**新增 ID 与保留章节既有 ID 重复**：单目标内重复，本码必报（此前被 §2.84.5 以「不可判定」排除，现纳入锁）。
+- **两个 test delta 各自新增同 ID**、**CREATE 目标与 MODIFY 目标同 ID**：触及目标间重复，按集合判定，本码必报、对涉事 delta 各报一条。
+- **合成因锚不可解析失败**：该目标不纳入集合、只报既有锚码；集合中其余目标照常判定。
+- **后态同时 ambiguous-table**：只报 `delta_test_table_column_mismatch` / `_duplicate_header`，不报本码。
+- **`SPEC_MERGED` 在场**：不重放，零该码。
+- **非 test 目标的整篇改写**：无稳定 ID、merge 不失败，不在本判据内，由写作规范承担（残差）。
+
+### 不变量
+
+1. **前移侧集合只扩大、扩大部分恰为后态已拒形态**：不新增任何「后态接纳而预检拒绝」的组合——四种合法下沉写法两侧均通过（UT-S35-198）。
+2. **判据恰有一处实现**：lint 侧不写第二份 ID 身份规则、表格枚举或标题解析，只调用 `composeOpenLogosMarkdown` 与 `buildTestChangeSet`。
+3. **后态判据逐字不变**：`test-change-set` 的强度、扫描口径、兼容开关零改动。
+4. **锁按码整族**：§2.84.5 的锁覆盖 `ambiguous-table` 与 `duplicate-id` 全部触发形态；`-target-duplicate` / `-overlap` 仍明确不在锁内。
+
+### 追溯
+
+- 来源变更：lint-modified-sibling-section-collision（缺陷报告 `logos/resources/reference/BUGREPORT-merge-modified-sibling-section-collision-untriaged.md`；RunLogos audit run `drv-muqfnr6p-fola`；proposal r1 评审 F1 修正判据方向——标题形态降为诊断信号、后态判据同源前移）。
+- 功能规格：§2.85（判据、新码、三条边界、零回归边界）、§2.84.5（锁边界扩展）、§2.84.4（后态行号口径）、§2.84.1（同源原则）。
+- 场景关联：本文档「S35 行级形态判据前移与预检-门一致性锁」（同族前一半）、「S35 ADDED 锚合成后唯一性的 L4 前移」（同一合成路径与阶段边界先例）、「S35 违规层归属单点与人类可读输出的逐条可归因」。
+- 测试：UT-S35-196～UT-S35-201、ST-S35-36。

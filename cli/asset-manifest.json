@@ -9,7 +9,7 @@
     },
     {
       "path": "skills/change-writer/SKILL.md",
-      "sha256": "043b44e469a90a848a9a9f7314da2f130e0b87704662b539450431a5363a5b16"
+      "sha256": "74d919e9c9717894d9726b01cd91a476858c6608b6fef7fe87163ac5cd563e39"
     },
     {
       "path": "skills/change-writer/SKILL.en.md",
@@ -102,5 +102,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "fb71f5a3df03aa14877bab604005bff09330d682f770b474a1ca3dae283348ba"
+  "payloadHash": "5e746e444bee8c5aaa2b87f0cbfbc6c29afa4fd5144f11e4d72948bd0528acf6"
 }
