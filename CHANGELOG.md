@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.17] - 2026-10-06
+
+### Fixed
+
+- 目标测试规格中**原样继承**的既有欠债——列数不一致的 ID 表数据行、同文件或跨目标的重复测试 ID——不再阻断与之无关的提案（功能规格 §2.86）。`buildTestChangeSet` 后态扫描与 `change-lint` L4 `delta_test_table_column_mismatch` 共用唯一的继承判定：列数不一致行按（目标路径、表头、行单元格）计次，后态次数不超过前态即原样继承；重复 ID 按前后态全部记录字节多重集相等判定。纯 ADDED 或 MODIFIED 原样携带欠债行的提案 change-lint 通过、merge 成功；本提案新增或改动的欠债（含新增同字节副本）仍被拒。L4 列数检查以 spec-complete 完成标记为阶段边界，合并后不重放。
+
+### Changed
+
+- 本地候选版本升级为 `0.15.17`，固定 `0.15.16` 回滚，新增安装态 smoke runner（SMOKE-core-213、SMOKE-core-214）；不包含公开发布、远程标签或 git push。
+
 ## [0.15.16] - 2026-10-02
 
 ### Fixed

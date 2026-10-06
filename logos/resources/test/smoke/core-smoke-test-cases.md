@@ -1769,3 +1769,35 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`）；**失败不得写 pass**。
 - runner **不得**以「安装态版本号等于候选」替代行为断言；Skill 字节一致性以 SHA-256 比对，不得以「文件存在」代替；lint 结论以 `--format json` 的 `violations[].code` 判定，不解析人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-211、SMOKE-core-212 均被 runner 覆盖。
+
+## OpenLogos 0.15.17 目标既有测试欠债继承口径安装态 smoke（SMOKE-core-213～214）
+
+> 覆盖「§2.86 的继承口径真的进了本机全局安装态」。判据只在安装态对宿主生效：仓内源码修好、全局 CLI 未更新，RunLogos 驱动的宿主项目仍会因目标文件既有欠债在 merge 合成期硬停。用例在 `mktemp -d` 一次性隔离项目内执行，**只读**本机全局安装态（不做安装 / 卸载），不触碰本仓活跃提案与用户其他仓库。判据用**行为断言**：版本号相等只证明装了新包，不证明判据生效。版本号为计划值 `0.15.17`，实际以部署记录的候选版本为准（关系断言：全局 `--version` == 部署记录版本）。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-213 | 安装态身份与事故形态放行 | 本机全局已安装本次候选；`mktemp -d` 一次性临时项目，经全局 `openlogos init` 建立并置 launched；以全局 `openlogos change <slug>` 创建提案，proposal.md 与 tasks.md 填为可合并最小形态；目标 `logos/resources/test/core-S68-test-cases.md` 场景测试表表头 4 列、`ST-S68-05` / `ST-S68-06` 两行 5 列；目标 `logos/resources/test/core-S37-test-cases.md` 含同一 ID `UT-S37-01` 的两条记录 | ① 读取全局入口 realpath、`openlogos --version`、全局包内 `asset-manifest.json`，并确认包内 `dist/lib/test-change-set.js` 导出 `inheritedAmbiguousRowKeys`；② 对两目标各写一个合规纯 ADDED 块，执行全局 `openlogos change-lint --slug <slug> --format json`；③ 续跑全局真实 `openlogos merge <slug>`；④ 读回 `SPEC_MERGED` 与两个合并后目标 | ① `--version` 等于部署记录版本；包内 asset-manifest `payloadHash` 自洽；判据导出在场；② exit 0、`data.pass=true`；③ 退出码 0、stderr **不**含「merge 失败（test-change-set-ambiguous-table）」或「merge 失败（test-change-set-duplicate-id）」；④ `SPEC_MERGED` 在场，`test_change_set.changed_test_ids` 恰为两个 ADDED 块新增的 ID，合并后两条欠债行与两条重复记录逐字节保留 | 保留隔离项目、delta、lint JSON 与 merge stderr；① 不成立或 ②③④ 任一不符 → 停止后续流程，按部署方案以 `cli/rollback/` 的 `0.15.16` 制品回装全局；不得以「仓内源码已修」了事 |
+| SMOKE-core-214 | 原样携带放行、合并后不重放、新增欠债仍拒 | 本机全局已安装本次候选；两个 `mktemp -d` 一次性临时 launched 项目（同 SMOKE-core-213 的提案脚手架与 S68 目标）：P1、P2 | ① P1 写 `## MODIFIED — <场景测试章节>` 整节替换：只改 `ST-S68-01` 的一个单元格、`ST-S68-05` / `ST-S68-06` 逐字节原样携带，并附一个合规 `## ADDED` 章节；执行全局 `change-lint --format json` → 真实 `openlogos merge` → 再次 `change-lint --format json`；② P2 写同一 MODIFIED，但在表末再追加一条与 `ST-S68-05` 逐字节相同的行；执行 `change-lint --format json` 与真实 `openlogos merge`；③ 全程前后读取 `command -v openlogos` 与 `--version` | ① 首次 lint exit 0；merge 退出码 0 且生成 `SPEC_MERGED`；合并后再次 lint exit 0、`violations` 不含 `delta_test_table_column_mismatch`、stderr 不含「ADDED 章节已存在或不唯一」；② lint exit 2 且 `violations` 含 `delta_test_table_column_mismatch`；merge 非零退出、stderr 含「change-lint 未通过」、无 `SPEC_MERGED`、目标字节不变；③ 入口路径与版本逐字一致 | 同上；另保留两个项目的合并后目标字节与 lint JSON；① 任一误红即表示候选仍把原样携带的欠债判为违规，② 放行即表示宽容外溢到本提案引入的欠债，均属行为回归，必须回装旧版并回流来源提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目内；结束即删除。**不得**触碰本仓活跃提案、`logos/resources/`、用户其他仓库或本机全局 prefix（本节只读全局安装态）。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`——本次为本地全局部署。
+- 临时项目的 merge 以 `OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY=0` 走直接合并，使 `SPEC_MERGED` 在场性与目标字节成为可断言事实；不在断言中硬编码主机路径、墙上时钟或本机全局安装现值（通则第 1 条）。
+- 夹具 ID 一律使用临时项目私有的 `ST-S68-xx` / `UT-S37-xx` / `UT-S68-xx`，与本仓规格 ID 无交集；runner 不读本仓 `logos/changes/`。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.86.1～§2.86.4（继承判据、变更集结论不变、实现单点与阶段边界、零回归边界）、§2.84.2（L4 列数检查过滤）。
+- 场景：S09「test-change-set 的捕获集变化」、S35「后态测试 ID 重复判据的同源前移」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.15.17 发布方案（目标既有测试欠债继承口径，本地全局）」。
+- 仓库内对应用例：UT-S35-202（事故形态）、UT-S35-203（既有重复 ID）、UT-S35-207（MODIFIED 原样携带）、UT-S35-208（同字节副本拒绝）、UT-S35-215（合并后阶段边界）、ST-S35-37、ST-S09-151（真实 CLI 端到端）；版本身份 `UT-S19-46` / `UT-S19-49`。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-inherited-test-debt-0-15-17.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行；记录全局入口 realpath、安装态版本、每个隔离项目路径、每次 lint 的 JSON 摘要（code / path / message 前 200 字）、每次 merge 的退出码与 stderr 首行、合并后 `changed_test_ids`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`）；**失败不得写 pass**。
+- runner **不得**以「安装态版本号等于候选」替代行为断言；lint 结论以 `--format json` 的 `violations[].code` 判定，不解析人类可读文案；欠债行保留以逐字节包含判定。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-213、SMOKE-core-214 均被 runner 覆盖。

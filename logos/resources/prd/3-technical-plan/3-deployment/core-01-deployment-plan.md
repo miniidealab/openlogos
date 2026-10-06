@@ -3435,3 +3435,58 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 测试：UT-S35-196～UT-S35-201、ST-S35-36、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-211、SMOKE-core-212。
 - 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
 - 来源提案：release-0-15-16-local（上游 lint-modified-sibling-section-collision）。
+
+## OpenLogos 0.15.17 发布方案（目标既有测试欠债继承口径，本地全局）
+
+### 部署目标与授权边界
+
+把功能规格 §2.86「后态对目标既有测试欠债的继承口径」送进本机安装态：`buildTestChangeSet` 后态扫描对原样继承的目标既有欠债（按三元组计次预算判定的列数不一致行、按字节多重集判定的重复 ID）与前态同等宽容，`change-lint` L4 `delta_test_table_column_mismatch` 复用同一继承判定并以 spec-complete 完成标记为阶段边界；本提案引入或改动的欠债仍严格拒绝。判据只在安装态对宿主生效：仓内源码修好而全局 CLI 不更新，RunLogos 驱动的宿主项目仍会因目标文件既有欠债在 merge 合成期硬停于 `test-change-set-ambiguous-table` / `test-change-set-duplicate-id`（缺陷报告 `runlogos/logos/resources/reference/BUGREPORT-merge-legacy-table-debt-blocks-unrelated-proposal.md`，run `drv-muuiqcpr-8jmu`）。
+
+授权来源：用户 2026-10-06 明确要求「生成新版本并且部署本机全局」（proposal 决策 C01，`category: deployment`）。本方案为**本地全局安装**（`npm install -g <tarball>`），**不含** `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`；不批量修改用户其他仓库。merge、verify、部署执行、smoke、archive 仍按项目执行门。本次随包 Skill 与根规范无改动，不需要额外的托管副本同步验收。
+
+### 部署前置与冻结事实
+
+1. 来源提案 fix-inherited-test-debt-merge-block 已归档（`d2e4636`；§2.86、§2.84.2 / §2.84.5 / §2.84.6 / §2.85.3 / §2.85.4 订正、S09 / S35 场景与测试已合入主文档；`cli/src/lib/test-change-set.ts`、`cli/src/lib/change-lint.ts` 实现与 UT-S35-202～UT-S35-215、ST-S35-37、UT-S09-382～UT-S09-384、ST-S09-151 已 verify PASS）；本提案 `[code]` 切片（升版、CHANGELOG、smoke runner）实现完成、`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本；计划时为 `0.15.16`，候选为其下一 patch `0.15.17`。若实施前已被其它提案升版，则候选改为「当时版本的下一 patch」、回滚版本改为「当时版本」，并在部署记录中写明实际值——本节版本号为计划值，不是钉死值。
+3. 冻结当前本机全局：`command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`；计划时实测为 Homebrew 全局 prefix 下的 `0.15.16`。实际 prefix 与入口在部署前读取，不在测试或脚本中硬编码主机路径。
+4. 固定回滚制品：当前全局版本（预期 `0.15.16`）的可回装 tarball 保存于 `cli/rollback/`，记录其 SHA-256；若该目录尚无 `0.15.16` 制品，则在冻结步骤从当前全局安装态（或同版本源码 `npm pack`）生成后再记录——**先有回滚制品，再动版本号**。
+
+### 0.15.17 版本与制品身份
+
+**经升版脚本 `cli/scripts/bump-version.mjs` 一次完成**（通则第 4 条）：`cli/package.json` 与 lockfile 根包、全部随包 plugin manifest（`plugin/`、`plugin-codex/`、`plugin-qoder/`、`plugin-workbuddy/`、`plugin-zcode/`）、`cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION`（→ `0.15.17`）/ `LOCAL_RELEASE_ROLLBACK_VERSION`（→ `0.15.16`），并由既有生成器重算 `cli/asset-manifest.json`。**禁止手改** `asset-manifest.json` 与派生 hash。任一身份载体残留旧版本即判失败（`UT-S19-46`）；manifest 自洽由 `UT-S19-49` 守。在 `CHANGELOG.md` 既有位置补充 `0.15.17` 发布说明（Fixed：目标测试规格中原样继承的既有欠债——列数不一致行、同文件 / 跨目标重复 ID——不再阻断无关提案的 change-lint 与 merge；本提案引入或改动的欠债仍被拒；change-lint L4 列数检查合并后不重放），不改既有条目。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm test` 必须为绿（通则第 6 条），含 UT-S35-202～UT-S35-215、ST-S35-37、UT-S09-382～UT-S09-384、ST-S09-151 与 `UT-S19-46` / `UT-S19-49`；`npm run build` 通过。
+2. 真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256；解包核对 CLI entry、`--version`、asset-manifest 自洽，以及包内 `dist/lib/test-change-set.js` 导出 `inheritedAmbiguousRowKeys`（证明制品含本次判据，而非仅版本号变化）。
+
+### 隔离 Prefix 行为矩阵
+
+`mktemp -d` 一次性 npm prefix 安装固定 tarball，从新 shell / 绝对入口执行；全部项目态在一次性临时项目内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**：
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| 事故形态放行 | 临时 launched 项目的测试规格目标含既有列数不一致行（表头 4 列、两行 5 列）与另一目标的同文件重复 ID，提案对两目标各写合规纯 ADDED：候选 CLI `openlogos change-lint --format json` exit 0；真实 `openlogos merge` 退出码 0、生成 `SPEC_MERGED`，合并后欠债行与重复记录逐字节保留 |
+| MODIFIED 原样携带 | 整节替换只改同表合法行、原样携带欠债行：`change-lint` PASS、真实 merge 成功；合并后再次 `change-lint` 仍 PASS 且零 `delta_test_table_column_mismatch` |
+| 新增欠债仍拒 | 在原样携带基础上追加一条与既有欠债行逐字节相同的行：`change-lint` exit 2 且 `violations` 含 `delta_test_table_column_mismatch`；真实 merge 于「change-lint 未通过」预检出口非零退出、无 `SPEC_MERGED`、目标字节不变 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径且 version 逐字一致 |
+| 回滚演练 | 在隔离 prefix 以 `cli/rollback/` 旧制品回装，`--version` 回到旧版本；旧版对「事故形态放行」夹具的真实 merge 非零退出于 `test-change-set-ambiguous-table`（对照：证明差异确由候选引入） |
+
+### 本机全局部署
+
+矩阵与回滚演练通过后，以**同一** tarball 执行 `npm install -g <tarball>` 覆盖本机全局；新 shell 复核 identity 全同源候选版本（entry realpath / `--version` / package.json / asset-manifest）。记录部署身份（版本、tarball SHA-256、入口 realpath）与回滚入口（`cli/rollback/` 制品路径与 SHA-256），再按流程写 `DEPLOY_DONE` 并进入 smoke（SMOKE-core-213、SMOKE-core-214）。部署记录必须区分**源码回归证据**（`npm test`）与**实际安装态证据**（隔离矩阵与全局复核）。
+
+### 失败处置与回滚边界
+
+- 发布前检查、构建、隔离矩阵或回滚演练任一失败 → 不安装全局、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即回滚隔离环境。
+- 已全局安装后发现问题 → 以 `cli/rollback/` 的 `0.15.16` 制品 `npm install -g` 回装。无数据迁移、无其它状态文件需清理。
+- 不以手改资产 manifest 作为修复或回滚手段；不以放宽 `change-lint` 或 `test-change-set` 判据「让矩阵变绿」。
+
+### 追溯
+
+- 功能规格：§2.86（后态对目标既有测试欠债的继承口径）、§2.84.2 / §2.84.5（L4 列数检查过滤与一致性锁边界）、§2.81（升版确定性动作）。
+- 场景：S09「test-change-set 的捕获集变化」、S35「后态测试 ID 重复判据的同源前移」；S19 发布与安装验证。
+- 测试：UT-S35-202～UT-S35-215、ST-S35-37、UT-S09-382～UT-S09-384、ST-S09-151、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-213、SMOKE-core-214。
+- 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
+- 来源提案：release-0-15-17-local（上游 fix-inherited-test-debt-merge-block）。

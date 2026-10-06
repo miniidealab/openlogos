@@ -1883,3 +1883,60 @@ staging 部署与正式 smoke 均已完成。`DEPLOY_DONE`、`SMOKE_PASS` 在场
 
 本机全局部署**成功**：0.15.16 已升版、构建、真实打包、隔离安装验证并覆盖全局；入口 realpath / `--version` / `package.json` / `asset-manifest` 四源一致，安装态判据行为经隔离矩阵证明生效，回滚制品 0.15.15 已冻结并演练。公开发布保留为人类确认点。
 部署时间（UTC）：2026-10-02T16:50:36Z
+
+---
+
+# OpenLogos 0.15.17 本地全局部署报告（release-0-15-17-local）
+
+> 部署方案：`core-01-deployment-plan.md`「OpenLogos 0.15.17 发布方案（目标既有测试欠债继承口径，本地全局）」。授权依据：用户 2026-10-06「请帮忙生成新版本并且部署本机全局」（proposal 决策 C01）与 `openlogos next --auto` 对 deliver 门的本次放行（`gate_auto_passed=true`）。目标环境：**本机 npm 全局 prefix**（`/opt/homebrew`），不含 `npm publish` / dist-tag / Git tag / GitHub Release / `git push`。
+
+## 一、部署结论
+
+- 发布内容：功能规格 §2.86——目标测试规格中原样继承的既有欠债（列数不一致行、同文件 / 跨目标重复 ID）不再阻断无关提案的 change-lint 与 merge；本提案引入或改动的欠债仍被拒；L4 列数检查合并后不重放（上游 fix-inherited-test-debt-merge-block）。
+- 结论：**部署成功**。新 shell 复核 `openlogos --version` = `0.15.17`，入口 realpath、包内 package.json、asset-manifest 同源；`VERIFY_PASS` 在场。
+- 数据迁移 / 服务启动：无 / 不适用。公开副作用：零。
+
+## 二、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| 部署前全局 | `/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；npm prefix `/opt/homebrew`；`openlogos --version` = `0.15.16` |
+| 回滚 tarball | `cli/rollback/miniidealab-openlogos-0.15.16.tgz`（`npm pack --ignore-scripts` 从本机全局目录抓取）；2,500,018 字节 |
+| 回滚 SHA-256 | `4c77046c6b256bb931d19bb973d12e2e392162dc472d351c213008f9d90952bd` |
+| 候选 tarball | `logos/resources/verify/deployment-artifacts/release-0-15-17-local/miniidealab-openlogos-0.15.17.tgz`（真实 `npm pack`，847 文件，2,502,854 字节） |
+| 候选 SHA-256 | `64ccc0e9f4c4d7b243890579d34604fa0eeac76267495141d69b6fea0729a508` |
+| 解包核对 | `package.json` 0.15.17、bin `dist/index.js`；`asset-manifest.json` 0.15.17；`dist/lib/test-change-set.js` 导出 `inheritedAmbiguousRowKeys`；`dist/lib/local-release-candidate.js` 候选 0.15.17 / 回滚 0.15.16 |
+
+可复制回滚命令：
+
+```bash
+npm install -g cli/rollback/miniidealab-openlogos-0.15.16.tgz
+openlogos --version   # 期望 0.15.16
+```
+
+## 三、升版与发布前检查（源码回归证据）
+
+- `node cli/scripts/bump-version.mjs 0.15.17`：8 处身份载体 0.15.16 → 0.15.17，候选 / 回滚常量 0.15.17 / 0.15.16，`cli/asset-manifest.json` payloadHash 由生成器重算（未手改）。
+- 升版后 `cd cli && npm run build && npx vitest run`：155 文件 / 2387 用例全绿；canonical `openlogos verify` PASS（含 loop 1 修复 ST-S13-22 共享沙箱根并发误判）。
+
+## 四、隔离 prefix 行为矩阵（实际安装态证据）
+
+隔离 prefix（`mktemp -d`）安装同一候选 tarball，包目录为实体目录（无 workspace link），`--version` = 0.15.17。以已合并 runner `scripts/smoke-inherited-test-debt-0-15-17.js` 注入隔离入口执行，结果 `matrix-new.jsonl` 入库：
+
+| 矩阵项 | 结果 |
+|---|---|
+| candidate identity | 隔离入口 realpath 指向隔离 prefix 包；package / asset-manifest 0.15.17，manifest 自洽，判据导出在场 |
+| 事故形态放行（SMOKE-core-213 夹具） | S68 两行 5 列欠债 + S37 同 ID 两条记录，各纯 ADDED：lint exit 0、真实 merge 退 0、`changed_test_ids` 恰为新增 ID、欠债逐字节保留 —— pass |
+| MODIFIED 原样携带 / 合并后不重放 / 新增欠债仍拒（SMOKE-core-214 夹具） | 携带 + ADDED：lint 0 → merge 0 → 再次 lint 0 且无列数码；追加同字节副本：lint exit 2 含 `delta_test_table_column_mismatch`、merge 预检拒绝、无 SPEC_MERGED、目标不变 —— pass |
+| 全局零触碰 | 矩阵前后 `/opt/homebrew/bin/openlogos` 均为 0.15.16 |
+| 回滚演练 + 旧版对照臂 | 隔离 prefix 回装 `cli/rollback/` 制品 `--version` = 0.15.16；同一事故夹具旧版 lint exit 0 而 merge 退 1：`Error: merge 失败（test-change-set-ambiguous-table）：…core-S68-test-cases.md:8（合并后态行号）`，新版同夹具 merge 退 0 且 SPEC_MERGED 在场（`contrast-0.15.16.json` / `contrast-0.15.17.json` 入库）——差异确由候选引入 |
+
+## 五、本机全局安装与复核
+
+- `npm install -g <候选 tarball>` 成功。
+- 新 shell（`zsh -lc`）复核：`command -v openlogos` = `/opt/homebrew/bin/openlogos`；realpath = `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；`--version` = `0.15.17`；包内 package.json 0.15.17、asset-manifest 0.15.17、payloadHash `32202eb866370d391d5c9b70da3a695015cb1dd09a5cb6db1732c121fcad8174` 与仓库 `cli/asset-manifest.json` 逐字一致；全局包为实体目录。
+
+## 六、说明
+
+- 本工作单元只执行部署，不执行 `openlogos smoke` / `archive`；正式安装态 smoke（SMOKE-core-213、SMOKE-core-214）由后续 smoke 节点执行。
+- 随包 Skill 与根规范本次无改动，无需 `openlogos sync` 验收。

@@ -219,10 +219,12 @@ describe('S13 沙箱默认根三入口与清理跨平台', () => {
         expect(sandboxBase.toLowerCase(), variant).not.toContain('\\private\\tmp');
       }
       expect(parsed.data.gate.result, variant).toBe('PASS');
-      // 沙箱目录已清理（或清理失败时仅有告警、验收结论不变）
-      const leftovers = readdirSync(expectedBase)
-        .filter(n => n.startsWith('openlogos-cli-sandbox-') && !before.has(n));
-      if (leftovers.length > 0) {
+      // 沙箱目录已清理（或清理失败时仅有告警、验收结论不变）。只认**本次** verify 的沙箱目录：
+      // 默认根是共享目录，并行测试 worker 与外层 canonical verify 也在此创建 openlogos-cli-sandbox-*，
+      // 以「前后新增的同前缀目录」判残留会把它们误算为本次残留（并发假红）。
+      const ownSandbox = parsed.data.sandbox.root as string;
+      expect(before.has(basename(ownSandbox)), variant).toBe(false);
+      if (existsSync(ownSandbox)) {
         expect(parsed.data.sandbox.diagnostics.join('\n'), variant).toContain('沙箱目录清理失败');
       }
     }
