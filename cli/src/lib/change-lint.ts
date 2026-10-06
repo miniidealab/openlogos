@@ -52,7 +52,8 @@ import {
   withRecoveredReadLocks,
 } from './baseline-seed-txn.js';
 import {
-  AFTER_STATE_LINE_NOTE, buildTestChangeSet, readTestChangeSet, TestChangeSetBuildError,
+  AFTER_STATE_LINE_NOTE, buildTestChangeSet, inheritedAmbiguousRowKeys, isInheritedAmbiguousRow,
+  readTestChangeSet, TestChangeSetBuildError,
   type TestChangeSetInputTarget, type TestChangeSetReadResult,
 } from './test-change-set.js';
 import { deriveSliceVerificationState } from './test-slice-manifest.js';
@@ -299,7 +300,14 @@ export interface TestTableShapeViolation {
  * 与 §2.82.2 首格可提取性检查正交：后者的适用集合（`TEST_ID_HEADER_RE` 表头族）逐字不变，
  * 首格非法的行不构成 ID 行、在此不再判列数，同一行不重复报两码。
  */
-export function findTestTableShapeViolations(deltaContent: string): TestTableShapeViolation[] {
+export function findTestTableShapeViolations(
+  deltaContent: string,
+  /**
+   * §2.86.3：对有前态的目标，由调用方注入同一继承判定（`isInheritedAmbiguousRow`）——判为原样继承的
+   * 列数不一致行不报。缺省（CREATE 目标 / 未能求得后态）行为逐字不变。只作用于列数形态，表头重复不受影响。
+   */
+  isInheritedRow?: (headers: string[], cells: string[]) => boolean,
+): TestTableShapeViolation[] {
   const out: TestTableShapeViolation[] = [];
   for (const block of parseDeltaBlocks(deltaContent)) {
     if (block.op !== 'ADDED' && block.op !== 'MODIFIED') continue;
@@ -321,6 +329,7 @@ export function findTestTableShapeViolations(deltaContent: string): TestTableSha
         // 首格非法 → 该行不构成 ID 行，列数判定对其无意义（§2.82.2 各管各的）。
         if (testDefinitionRowId(cells) === null) continue;
         if (rowColumnsMatchHeader(table.headers.length, cells.length)) continue;
+        if (isInheritedRow?.(table.headers, cells)) continue;
         out.push({
           kind: 'column-mismatch',
           line: toFileLine(line),
@@ -1330,6 +1339,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     // 在 post-merge lint 上炸掉。整文件协议的核心语义是「正文即最终字节」，正文里出现什么标题
     // 都不该被读成指令；修复方向是保留身份、跳过章节解析，**不是**回头去限制正文标题。
     const specComplete = hasSpecCompleteMarker(proposalDir);
+    /** 本 delta 的 test 目标后态（仅合并前、合成成功时可得）——§2.86 L4 列数检查的继承判定输入。 */
+    let entryTestAfterState: TestAfterState | null = null;
     let entryRoute: DeltaRoute = { kind: 'section' };
     /** post-merge 冻结：整文件身份保留，但受理判定与内容校验不重放。 */
     let wholeFileFrozen = false;
@@ -1426,7 +1437,7 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
         if (readable && isTestChangeSetTarget(entryTargetPath, entryCategory)) {
           try {
             const after = composeOpenLogosMarkdown(beforeContent, deltaText, exists ? 'MODIFY' : 'CREATE');
-            testAfterStates.push({
+            entryTestAfterState = {
               relPath,
               deltaText,
               beforeContent: exists ? beforeContent : null,
@@ -1435,7 +1446,8 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
                 beforeBytes: exists ? Buffer.from(beforeContent, 'utf8') : null,
                 afterBytes: Buffer.from(after, 'utf8'),
               },
-            });
+            };
+            testAfterStates.push(entryTestAfterState);
           } catch {
             // 归各自判据（§2.85.3「只认领自身失败」）。
           }
@@ -1470,8 +1482,22 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
         }
         // §2.84.2：行级 / 表级形态前移——枚举口径与后态 buildTestChangeSet 同源，
         // 覆盖 `test-change-set-ambiguous-table` 的全部触发形态。
-        for (const bad of findTestTableShapeViolations(deltaContents.get(entry.relativePath) ?? '')) {
+        // §2.86.3：列数检查依赖合并前态——对有前态目标以同一合成后态调用同一继承判定过滤原样继承行；
+        // 阶段边界复用完成标记：`SPEC_MERGED` 在场时不重放，也不回退到只扫 delta 片段的严格扫描
+        // （合并后已无合并前快照，回退会让原样携带的欠债被重新报出）。表头重复不依赖前态，照常检查。
+        const inheritedTarget = entryTestAfterState?.target.beforeBytes ? entryTestAfterState.target : null;
+        const inheritedKeys = inheritedTarget
+          ? inheritedAmbiguousRowKeys(inheritedTarget.targetPath, inheritedTarget.beforeBytes, inheritedTarget.afterBytes)
+          : null;
+        const shapeViolations = findTestTableShapeViolations(
+          deltaContents.get(entry.relativePath) ?? '',
+          inheritedKeys && inheritedTarget
+            ? (headers, cells) => isInheritedAmbiguousRow(inheritedKeys, inheritedTarget.targetPath, headers, cells)
+            : undefined,
+        );
+        for (const bad of shapeViolations) {
           if (bad.kind === 'column-mismatch') {
+            if (specComplete) continue;
             pushViolation(acc, 4, {
               code: 'delta_test_table_column_mismatch',
               path: relPath,

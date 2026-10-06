@@ -3669,6 +3669,7 @@ change-writer 的 GUI 判定**唯一依据 = `logos-project.yaml` 的 `product_t
 - **归入 L4（delta 形态类）**：与段标记 / 模板骨架 / §2.82.2 首格可提取性同族——都是「delta 形态是否合法」；两个违规码进入 change-lint 闭合码表（注册表单点，闭合断言以权威码表为源），不新增独立命令、不新增 L 层。
 - **message 可归因**：`delta_test_table_column_mismatch` 点名 **delta 文件路径**、**delta 内行号**、**表头列数**与**本行列数**，并附首格 ID；`delta_test_table_duplicate_header` 点名 delta 文件路径、**表头行的 delta 内行号**与重复出现的表头文本——足以直接定位到要改的那一处。
 - **与首格检查的关系**：三检查同族但正交——首格非法走 `delta_test_table_id_unextractable`（§2.82.2，适用集合逐字不变），首格合法而列数不一致走 `delta_test_table_column_mismatch`，表头重复走 `delta_test_table_duplicate_header`。**同一行不重复报列数码与首格码**（首格非法时该行不再判列数，因其根本不构成 ID 行）；表头重复与行级列数可同表并存，各自点名各自的行。
+- **对目标既有欠债按 §2.86 继承判定过滤**（fix-inherited-test-debt-merge-block）：`delta_test_table_column_mismatch` 对有前态的目标，以与 merge 同一合成器求得的后态调用 §2.86.3 的同一继承判定——delta 中列数不一致行的三元组在后态被判原样继承（含 MODIFIED 整节替换原样携带的欠债行）则不报，超出前态次数的同字节副本与任何新增或改动的列数不一致行照报；错误码、message、delta 内行号定位与 fix_hint 不变，CREATE 目标（无前态）行为不变。**阶段边界**：本检查因依赖合并前态，复用 `hasSpecCompleteMarker` 完成标记闸——`SPEC_MERGED` 在场时不重放、不回退到旧的只扫 delta 片段的严格扫描（§2.86.3，delta-r1 F1）。`delta_test_table_duplicate_header` 不在宽容范围、不依赖前态，逐字不变（含阶段行为）。
 - **价值（错误前移到可自修节点）**：write-delta 节点下 delta 文件在 agent 写权限范围内、`change-lint` 在其命令白名单内——本类形态在该节点暴露即由 agent 当场修正闭环，**不产生停点、不需要人**。此前它要烧掉一整轮全自动 run 才停在 merge，且停在 agent 已出写权限范围的节点。
 
 ### 2.84.3 merge 失败出口改为默认兜底（绝不裸抛）
@@ -3710,19 +3711,23 @@ change-writer 的 GUI 判定**唯一依据 = `logos-project.yaml` 的 `product_t
 
 新增元测试断言：**凡 `test-change-set` 会以 `test-change-set-ambiguous-table` 或 `test-change-set-duplicate-id` 在合并后态拒绝的 delta 形态，`change-lint` 必先报出对应违规**。
 
+**锁的后态拒绝集合限定为本提案引入或改动的歧义 / 重复**（§2.86，fix-inherited-test-debt-merge-block）：目标文件中原样继承的既有欠债（按 §2.86.1 计次预算判定的列数不一致行、多重集相等的重复 ID）两侧均放行——后态不拒、预检不报；本提案引入或改动的欠债两侧均拒绝。两侧调用同一继承判定，锁的「两侧结论逐夹具一致」在新边界上照常成立。**唯一已知例外**：目标既有表头重复 + 纯 ADDED（§2.86.1 已知残差）——预检不报而后态拒绝；该形态不纳入双向比对夹具集合、单列为残差回归臂（断言后态仍拒绝），不得借此放宽锁的其余部分。
+
 - **锁的边界按错误码定义（可穷举）**：覆盖 `test-change-set-ambiguous-table` 的**全部**触发形态——数据行列数不一致、表头重复，对应前移侧 `delta_test_table_column_mismatch` 与 `delta_test_table_duplicate_header`（§2.84.2）；以及 `test-change-set-duplicate-id` 的**全部**触发形态——单目标内重复、触及目标间重复，对应前移侧 `delta_test_id_duplicate`（§2.85，lint-modified-sibling-section-collision 扩入）。按码定义而非按「形态族」描述，边界无模糊地带。
 - **明确不在锁内（有正当理由，非遗漏）**：`test-change-set-target-duplicate` / `-overlap` 属目标集合层面的身份类判定，不由单个 delta 的后态决定。`test-change-set-duplicate-id` 此前亦以「需合并后态全局视角、在单个 delta 片段上不可判定」为由排除——该理由已被 §2.85 证伪：lint 侧对**同一目标集合**以同一合成器可求得与 merge 逐字相同的后态，判据同源调用即可判定，不存在假阳性来源。
-- **双向比对**：合成夹具集合对每个形态同时构造 delta 形态与其合并后态，一侧喂 `change-lint`、一侧喂 `buildTestChangeSet`，断言两侧结论逐夹具一致；**任一侧单独收紧即失败**。夹具须含 §2.84.1 三处对齐点各自的反例（非 `TEST_ID_HEADER_RE` 表头、数据行不含管道符导致提前收束、表头重复），以及 §2.85 的两类 duplicate-id 形态（单目标内：整篇吞并兄弟章节、同一目标两章节各自新增同 ID、新增 ID 与保留章节既有 ID 重复；触及目标间：两个 test delta 各自新增同 ID、章节 CREATE 目标与 MODIFY 目标同 ID、**Markdown 整文件 CREATE 的 payload 内自身重复**、**整文件 CREATE 与章节 MODIFY 跨目标重复**）和 §2.85.4 的合法下沉反例（必须两侧均通过）。
+- **双向比对**：合成夹具集合对每个形态同时构造 delta 形态与其合并后态，一侧喂 `change-lint`、一侧喂 `buildTestChangeSet`，断言两侧结论逐夹具一致；**任一侧单独收紧即失败**。夹具须含 §2.84.1 三处对齐点各自的反例（非 `TEST_ID_HEADER_RE` 表头、数据行不含管道符导致提前收束、表头重复），以及 §2.85 的两类 duplicate-id 形态（单目标内：整篇吞并兄弟章节、同一目标两章节各自新增同 ID、新增 ID 与保留章节既有 ID 重复；触及目标间：两个 test delta 各自新增同 ID、章节 CREATE 目标与 MODIFY 目标同 ID、**Markdown 整文件 CREATE 的 payload 内自身重复**、**整文件 CREATE 与章节 MODIFY 跨目标重复**）和 §2.85.4 的合法下沉反例（必须两侧均通过），以及 §2.86 的继承形态——**两侧均通过**：目标既有列数不一致行 + 纯 ADDED、目标既有重复 ID + 纯 ADDED、同表 MODIFIED 只改合法行并原样携带欠债行（整节替换携带）、前态多份相同欠债数量不变或减少；**两侧均拒绝**：改动欠债行本身、新增同字节副本使次数超出前态、新增与既有 ID 重复、改动既有重复 ID 中的一条。
 - **落点**：这是 S35 不变量 5（门禁可满足性）在**表级 / 行级形态族与后态 ID 身份族**上的具体落点——不再允许出现「预检全绿而 merge 必炸」的组合。
-- **不得放宽断言本身**：发现漂移时的修复方向是把两侧判据与枚举口径重新收敛到单点，**不得**靠收窄后态扫描或削弱锁来消红。
+- **不得放宽断言本身**：发现漂移时的修复方向是把两侧判据与枚举口径重新收敛到单点，**不得**收窄对本提案引入或改动内容的扫描、也不得削弱锁来消红。§2.86 对原样继承欠债的宽容不是收窄：它由唯一继承判定定义、两侧共用，且被判原样继承的内容在前态本就被同口径跳过或照收。
 
 ### 2.84.6 非目标与零回归边界
 
-**明确非目标：不放宽 `test-change-set` 的后态判据。** 不把列数不一致降级为「告警跳行」——跳行会让该行的测试 ID 静默掉出 `changed_test_ids`，下游切片归属对账将误报「owned_test_ids 含非本提案变更 ID」，与 §2.82.0 记载的事故同族。正确处置是**把错误前移到可自修节点**，而不是放宽后态。
+**明确非目标：不放宽 `test-change-set` 对本提案引入或改动内容的后态判据。** 不把本提案写入的列数不一致行降级为「告警跳行」——跳行会让该行的测试 ID 静默掉出 `changed_test_ids`，下游切片归属对账将误报「owned_test_ids 含非本提案变更 ID」，与 §2.82.0 记载的事故同族。正确处置是**把错误前移到可自修节点**，而不是放宽后态。
+
+**边界订正（§2.86，fix-inherited-test-debt-merge-block）**：目标文件中**原样继承**的既有欠债不属本条非目标——该行在前态本就被 `allowAmbiguousRows` 同口径跳过、从未进入 before 映射，后态同样跳过不会让任何 ID 掉出 `changed_test_ids`（§2.86.2）。判定由 §2.86 唯一继承判定承担，计次预算保证新增同字节副本不能借用既有豁免。
 
 | 保持不变 |
 |---|
-| `test-change-set` 后态判据的强度、扫描口径与拒绝形态（fail-closed，逐字不变）；`allowAmbiguousRows` 等既有历史基线兼容开关语义零改动。前移侧向后态**对齐**，不反向改动后态 |
+| `test-change-set` 后态判据对本提案引入或改动内容的强度、扫描口径与拒绝形态（fail-closed，逐字不变）；`allowAmbiguousRows` 等既有历史基线兼容开关语义零改动。前移侧向后态**对齐**，不反向改动后态；对原样继承欠债的宽容见 §2.86，由唯一继承判定两侧共用 |
 | `SPEC_MERGED.test_change_set` 的 schema 与内容口径逐字不变；`verify` / `change-lint` / `test-slice-manifest` 三处消费行为零改动（§2.69.2） |
 | `lint-specs` 的扫描集合（全部表格、递归含 `smoke/`）、`table_column_mismatch` 的诊断文案与「不参与任何门」定位（§2.70.1） |
 | §2.82.1 首格唯一语义、§2.82.2 首格可提取性前移检查**及其适用集合**（`TEST_ID_HEADER_RE` 表头族，不随列数检查扩大）、§2.82.4 verify 的 manual 排除语义 |
@@ -3806,7 +3811,7 @@ lint 侧为什么零信号：L8 守恒按锚章节范围对账，导言节本身
 |---|---|---|
 | 通道闸 | **只作用于诊断信号与章节合成，不作用于 ID 检查集合**：合法 Markdown 整文件 CREATE 的 payload 与章节目标的合成后态一起交同一 `buildTestChangeSet`；整文件 delta 没有章节锚与 `hit`，故不参与「同父链同级同名」诊断信号的判定；封装不合法的整文件 delta 归 `non_markdown_delta_invalid`、不纳入集合 | 整文件通道只校验封装与 payload 形态、无内容层 ID 判据，其 ID 重复在 merge 侧同样由 `buildTestChangeSet` 拒绝——前移集合必须与之同一口径（§2.85.1） |
 | 阶段边界 | **只在 `SPEC_MERGED` 之前执行，合并完成后不重放**；判别口径取既有 spec-complete 完成标记（含 legacy 形态），不得以「目标是否已含该 ID」自行推断阶段 | 合并后目标已含新 ID、原 delta 仍在场，拿当前文件当 before 重合成必然重复，一次成功的合并被倒挂成失败——与 L8 守恒、ADDED 锚判据的 post-merge 处理同型、取同一个完成标记判据 |
-| 只认领自身失败、不双报 | `buildTestChangeSet` 抛 `test-change-set-ambiguous-table` 时本码**不报**（已由 `delta_test_table_column_mismatch` / `_duplicate_header` 在同一轮 L4 覆盖）；`-overlap` / `-target-duplicate` / `-invalid-utf8` 不认领；合成因锚不可解析等他因失败归各自判据 | 同一事实不由两个判据双报；锁边界按码定义，本码只对应 `duplicate-id` |
+| 只认领自身失败、不双报 | `buildTestChangeSet` 抛 `test-change-set-ambiguous-table` 时本码**不报**（已由按 §2.86 同一继承判定过滤后的 `delta_test_table_column_mismatch` / `_duplicate_header` 在同一轮 L4 覆盖）；`-overlap` / `-target-duplicate` / `-invalid-utf8` 不认领；合成因锚不可解析等他因失败归各自判据 | 同一事实不由两个判据双报；锁边界按码定义，本码只对应 `duplicate-id`。§2.86 之后后态只剩本提案引入或改动的歧义行，它们均落在 delta 片段内，必被同轮 L4 行级 / 表级码报出——不认领的前提对目标既有欠债同样成立 |
 
 ### 2.85.4 零回归边界
 
@@ -3815,7 +3820,7 @@ lint 侧为什么零信号：L8 守恒按锚章节范围对账，导言节本身
 | 保持不变 |
 |---|
 | `composeOpenLogosMarkdown` / `composeSections` 的替换范围定义（止于下一个同级或更高级标题）、`rebaseDeltaBodyHeadings` 的相对子标题下沉与 `verifyAgentMaterialOutcome` 的 MODIFIED 锚唯一性复验——逐字不改；评审反例①②、「正文仅含更深子标题」与「序数锚 `[n]` 下正文重复根标题」等合法写法在 lint 侧零该码、merge 侧照常成功。**普通锚下正文重复根标题不是合法写法**：下沉后同名 H2/H3 并存，合成器既有复验以「MODIFIED 章节身份不守恒」拒绝——该失败归合成器自有出口，本码不报、不为让其通过而放宽复验 |
-| `test-change-set` 后态判据的强度、扫描口径、ID 身份规则与拒绝形态（fail-closed，逐字不变）；`allowDuplicateIds` / `allowAmbiguousRows` 等历史基线兼容开关语义零改动。前移侧向后态**对齐**，不反向改动后态 |
+| `test-change-set` 后态判据对本提案引入或改动内容的强度、扫描口径、ID 身份规则与拒绝形态（fail-closed，逐字不变）；`allowDuplicateIds` / `allowAmbiguousRows` 等历史基线兼容开关语义零改动。前移侧向后态**对齐**，不反向改动后态；目标既有、原样继承的重复 ID 按 §2.86 多重集判据放行，本码不再为之报出 |
 | `SPEC_MERGED.test_change_set` 的 schema 与内容口径逐字不变；`verify` / `test-slice-manifest` 消费行为零改动 |
 | `change-lint` 检查项标识集合与总数、`--format json` 字段集合与排序、`PASS` / `FAIL` 文案、warning 通道、既有全部违规码的触发形态 |
 | `openlogos merge` 的准入判定仍等于 `runChangeLint` 完整结论（§2.51.2）——本码进 violations 即预检拒绝，merge 侧不另写判据；merge 成功路径 stdout、`SPEC_MERGED` 内容、`--format json` 契约逐字节不变 |
@@ -3830,4 +3835,90 @@ lint 侧为什么零信号：L8 守恒按锚章节范围对账，导言节本身
 - 写作规范：`spec/change-management.md` `deltas/ 目录`、`skills/change-writer/SKILL.md` 守恒写作规范（MODIFIED 替换范围定义与逐章节拆块写法）。
 - 测试：UT-S35-196～UT-S35-201、ST-S35-36。
 - 代码（以合并后规格为准）：`cli/src/lib/change-lint.ts`（L4 分支新增目标集合收集、同源合成与 `buildTestChangeSet` 调用、新码登记、诊断信号）、`cli/src/lib/test-change-set.ts`（零改动，仅新增调用方）、`cli/src/lib/markdown-section-authority.ts`（零改动）。
+- 发布：判据只在安装态对宿主生效，本提案归档后须另立发版提案按 §2.81 升版（发布动作不在本提案内执行）。
+
+## 2.86 后态对目标既有测试欠债的继承口径
+
+### 2.86.0 问题：前态宽松、后态整文件严格——欠债被「继承」给碰到该文件的提案
+
+本仓外部实测缺陷（RunLogos · 全自动 driver · 2026-10-05 · 安装态 0.15.15，2026-10-05 以 0.15.16 复核仍复现；缺陷报告 `runlogos/logos/resources/reference/BUGREPORT-merge-legacy-table-debt-blocks-unrelated-proposal.md`，run `drv-muuiqcpr-8jmu`）：提案 `fix-baseline-scenario-doc-replenish-dispatch` 对 `core-S68-test-cases.md` 只有一个**纯 ADDED** 块、自身表格全部合规，`change-lint` PASS（10/10）、评审 PASS、`spec-exit` 自动放行，`openlogos merge` 却在合成期退 1：
+
+```
+Error: merge 失败（test-change-set-ambiguous-table）：test-change-set-ambiguous-table：logos/resources/test/core-S68-test-cases.md:82（合并后态行号）
+  delta 侧归属：未能确定（logos/resources/test/core-S68-test-cases.md）——不臆造行号；请按上述合并后态行号在对应 delta 中人工比对
+```
+
+合并后态第 82 行**不是 delta 内容，而是目标文件原文**：该表表头 4 列，ST-S68-05 / ST-S68-06 两行 5 列，由宿主仓一次未经 merge 的「补录」提交直接写入 canonical。宿主全库 `openlogos lint-specs` 另有同类既有欠债：列数不一致 8 处、同文件重复 ID 16 个。任何提案只要给这些文件写 delta——哪怕只是纯 ADDED——都会复现。
+
+病灶是同一函数内两侧口径不对称：
+
+| 侧 | 扫描调用 | 列数不一致行 | 同文件 / 跨目标重复 ID |
+|---|---|---|---|
+| 前态（`collectBefore`） | `scanTestDefinitionCandidates(..., allowDuplicateIds=true, allowAmbiguousRows=true)` | 跳过 | 照收（多条记录） |
+| 后态（`collectAfter` / `scanTestDefinitions`） | `(false, false)`，扫描**整个目标文件** | 抛 `test-change-set-ambiguous-table` | 抛 `test-change-set-duplicate-id` |
+
+前态宽松说明设计上已承认既有欠债存在，后态却没有对等口径，且不区分哪些行由本提案写入。lint 侧同样失守：§2.84.2 的 L4 列数检查只扫 delta 片段（看不到目标既有行，纯 ADDED 时 PASS），而 MODIFIED 整节替换必须原样携带的欠债行又会被它拦下——两种形态下预检与 merge 都不一致，§2.84.5「凡后态以 ambiguous-table 拒绝、预检必先报」对既有欠债不成立。merge 失败报告的 delta 侧归属只在 delta 内找违规行，违规行在目标原文中，恒为「未能确定」。
+
+### 2.86.1 判据：原样继承的欠债与本提案引入的欠债
+
+**原样继承**定义为「合并后态中、与合并前态逐字节可一一对应的欠债」，以字节为准，不看位置、不看语义：
+
+| 欠债形态 | 身份键 | 原样继承判据 | 否则 |
+|---|---|---|---|
+| 列数不一致的 ID 表数据行（首格剥离 manual 标记后为合法测试 ID，列数 ≠ 表头列数） | 三元组（目标路径、表头单元格序列、行单元格序列） | 以前态同键出现次数为**匹配预算**，后态同键记录一对一消费：后态同键次数 **≤** 前态同键次数 → 该键全部记录为原样继承（允许欠债减少） | 后态同键次数超出前态 → 该键**全部**记为本提案引入（同字节副本之间不可区分，不臆断哪一条是新增） |
+| 重复测试 ID（单目标内或触及目标间） | 裸 ID | 该 ID 在后态的全部记录（目标路径、列身份、单元格语义）与前态全部记录**按字节多重集相等** → 原样继承 | 任何一条不同、多一条或少一条 → 按本提案改动处理 |
+
+- **原样继承的列数不一致行**：后态与前态同口径**跳过**——不进 ID 映射、不参与重复 ID 判定与变更集计算。
+- **原样继承的重复 ID**：取首条记录参与变更集比较（多重集相等保证首条必在前态记录中，该 ID 不进 `changed_test_ids`）。
+- **跨目标重复 ID** 同样按多重集判定：前态记录取本次目标集合全部目标的合并前字节，两处（或多处）记录均原样继承才放行。
+- **本提案引入或改动的一切欠债照旧严格**：新增列数不一致行、改动既有欠债行的任一单元格、新增同字节副本使次数超出、新增与既有 ID 重复的行、改动既有重复 ID 中的任一条——均按原码 fail-closed。
+- **作用范围按码限定**：只作用于 `test-change-set-ambiguous-table` 的**列数不一致形态**与 `test-change-set-duplicate-id`。表头重复（`ambiguous-table` 的表头形态）不在宽容范围、照旧严格——宿主 `lint-specs` 实测欠债只有列数不一致与重复 ID 两类，未观测到既有表头重复，不预先造机制；`-target-duplicate` / `-overlap` / `-invalid-utf8` 不变。**已知残差（如实记录）**：目标既有表头重复的表 + 本提案纯 ADDED 时，L4 `delta_test_table_duplicate_header` 只扫 delta 片段、看不到目标表头，预检通过而后态仍以 `ambiguous-table` 拒绝——与本节修复前的列数形态同构。该形态在宿主未观测到，本提案不处理；一旦出现，按本节同一方式（以表身份键计次、两侧共用）另立提案扩入。
+- **CREATE 目标**（无前态）：匹配预算为零、前态记录为空，行为与现状逐字相同。
+
+### 2.86.2 变更集结论不变
+
+宽容不改变 `changed_test_ids` / `removed_test_ids` 对任何原样继承形态的结论：
+
+- 列数不一致行在前态本就被跳过、不进 before 映射；后态同口径跳过后也不进 after 映射——该行 ID 既不 changed 也不 removed，与「本提案没碰它」的事实一致。
+- 若本提案把欠债行**修正**为合规行：前态无该记录、后态有合规记录 → 进 `changed_test_ids`，与现状一致（修正本就是变更）。
+- 原样继承的重复 ID：多重集相等 ⇒ 后态首条与某条前态记录逐字节相同 ⇒ 不进 `changed_test_ids`；ID 在后态仍在场 ⇒ 不进 `removed_test_ids`。
+- 不会把与本提案无关的欠债 ID 拉进 `changed_test_ids`、迫使切片去跑这些测试（C01 否决方案 A 的核心代价）。
+
+`SPEC_MERGED.test_change_set` 的 schema 与字段逐字不变。
+
+### 2.86.3 实现单点：一处继承判定，后态构建器与 L4 共用
+
+继承判定在 `cli/src/lib/test-change-set.ts` **只实现一处**（纯函数、无 IO）：输入同一目标的前态与后态字节，返回后态中各列数不一致行的继承归属（按 §2.86.1 计次预算），并提供重复 ID 的多重集比较。两个消费方共用，**禁止第二份判定**：
+
+| 消费方 | 接入方式 | 结论 |
+|---|---|---|
+| 后态构建器 `buildTestChangeSet`（`collectAfter` / 后态扫描） | 后态扫描调用继承判定：原样继承的列数不一致行跳过、原样继承的重复 ID 取首条；其余照旧抛原码 | merge 合成期与 §2.85 lint 同源调用自动一致；`merge-direct` 与 `:422` 复核路径不改调用形态 |
+| change-lint L4 `delta_test_table_column_mismatch`（§2.84.2） | 对有前态的目标，以与 merge 同一合成器求得的后态调用继承判定：delta 中列数不一致行的三元组在后态被判原样继承则**不报**，否则照报 | 错误码、message、delta 内行号定位与 fix_hint 逐字不变；CREATE 目标预算为零、行为不变 |
+| change-lint §2.85 `delta_test_id_duplicate` | 不改——经同一 `buildTestChangeSet` 自动生效 | 只剩本提案引入或改动的重复 |
+
+**阶段边界（delta-r1 F1）**：L4 列数检查接入继承判定后，首次**依赖合并前态**。合并前态只在 `SPEC_MERGED` 之前可得（lint 侧前态读取与后态合成本就位于 spec-complete 完成标记闸内），合并完成后目标已是合并后字节、再拿它当 before 重合成会撞上「ADDED 章节已存在或不唯一」。因此 `delta_test_table_column_mismatch` 复用既有 `hasSpecCompleteMarker` 阶段边界（含 legacy 形态，与 §2.85.3 阶段边界、L8 守恒、ADDED 锚判据取同一完成标记判据）：**合并完成后不重放，也不回退到旧的只扫 delta 片段的严格列数扫描**——否则同一提案成功合并后再次 lint，原样携带的欠债会因失去继承判定结果而被重新报出，无关欠债重新成为本提案的阻断项。判据不得以「目标是否已含该行」自行推断阶段；不新增持久化快照、不改合成器。仍独立于前态的 L4 检查（`delta_test_table_duplicate_header`、`delta_test_table_id_unextractable`）保持原合同、不受此闸影响。
+
+L4 此前「只扫 delta 片段」的设计在本节下暴露两类误判：纯 ADDED 时看不到目标欠债（预检 PASS、merge 必炸），MODIFIED 整节替换时把必须原样携带的欠债行当作本提案引入（预检误拦）。接入继承判定后两类均消失，且所需前态与合成后态在 lint 侧已就绪（ADDED 锚唯一性与 §2.85 已用同一路径），不新增 IO。
+
+### 2.86.4 零回归边界
+
+| 保持不变 |
+|---|
+| `openlogos lint-specs` 的扫描集合、输出与退出码——继续只读报出全部既有欠债（可观测性不因宽容而丢失） |
+| `SPEC_MERGED.test_change_set` 的 schema、字段与内容口径；`verify` / `test-slice-manifest` 消费行为 |
+| 合成器 `composeOpenLogosMarkdown` / `composeSections` / `rebaseDeltaBodyHeadings` 逐字不改——欠债与合成无关 |
+| 违规码集合、`change-lint` 检查项标识集合与总数、`--format json` 字段集合；`delta_test_table_duplicate_header` 与 `delta_test_table_id_unextractable` 的触发形态 |
+| 任何本提案引入或改动的欠债形态：两侧仍以原码拒绝（零放宽） |
+| 无既有欠债的目标：前态无歧义行、无重复 ID，匹配预算为零，两侧结论逐字节等于现状 |
+| merge 失败报告（`merge-failure-report`）的归因逻辑：本节之后原样继承的欠债不再导致失败，失败只剩本提案引入的形态、其 delta 侧归属照常可得 |
+
+**明确非目标**：① 不在 `lint-specs`、verify 或 archive 门上对既有欠债 fail-closed；② 不一次性清理宿主全库欠债（宿主仓另立提案）；③ 不改 runlogos 侧行为。
+
+### 2.86.5 追溯
+
+- 来源变更：fix-inherited-test-debt-merge-block（缺陷报告 `runlogos/logos/resources/reference/BUGREPORT-merge-legacy-table-debt-blocks-unrelated-proposal.md`；RunLogos run `drv-muuiqcpr-8jmu`；决策 C01 用户选择方案 B；proposal r1 评审 F1 补 L4 接入、F2 补计次预算）。
+- 场景：S09「test-change-set 的捕获集变化」、S35「后态测试 ID 重复判据的同源前移」。
+- 功能规格关联：§2.84.2（L4 列数检查按本节过滤）、§2.84.5（锁的拒绝集合限定为本提案引入或改动的内容）、§2.84.6 与 §2.85.4（「不放宽后态判据」限定为不放宽对本提案引入或改动内容的判据）、§2.85.3（不双报理由）、§2.37.1～§2.37.3（变更集与切片归属）、§2.70.1（lint-specs 定位）。
+- 测试：S35 与 S09 测试规格「继承口径」新增节（UT-S35-202～UT-S35-215、ST-S35-37；UT-S09-382～UT-S09-384、ST-S09-151）。
+- 代码（以合并后规格为准）：`cli/src/lib/test-change-set.ts`（新增继承判定单点并接入后态扫描）、`cli/src/lib/change-lint.ts`（L4 列数检查复用同一判定）；`cli/src/lib/merge-direct.ts`、`cli/src/commands/lint-specs.ts` 零改动。
 - 发布：判据只在安装态对宿主生效，本提案归档后须另立发版提案按 §2.81 升版（发布动作不在本提案内执行）。

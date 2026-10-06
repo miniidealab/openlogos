@@ -110,7 +110,7 @@ describe('canonical test change set', () => {
     expect(() => scanTestDefinitions('logos/resources/test/a.md', ambiguous)).toThrow('test-change-set-ambiguous-table');
   });
 
-  it('UT-S09-232: 历史 before 重复、after 唯一时单向收敛，after 重复仍拒绝', () => {
+  it('UT-S09-232: 历史 before 重复、after 唯一时单向收敛，after 新增或改动的重复仍拒绝', () => {
     const before = Buffer.from([
       '| ID | 描述 |', '|---|---|',
       '| UT-S09-62 | 保留定义 |', '| UT-S09-62 | 待重编号定义 |',
@@ -124,8 +124,14 @@ describe('canonical test change set', () => {
     });
     expect(changeSet.changed_test_ids).toEqual(['UT-S09-110a-neg', 'UT-S09-231']);
     expect(changeSet.removed_test_ids).toEqual([]);
-    expect(() => buildTestChangeSet({
+    // §2.86（fix-inherited-test-debt-merge-block）：after 与 before 逐字节相同 = 原样继承的历史重复与歧义行，放行；
+    // 重复记录被改动（多重集不等）仍拒绝。
+    expect(buildTestChangeSet({
       change: 'fixture', module: 'core', targets: [target('logos/resources/test/core-S09-test-cases.md', before, before)],
+    }).changed_test_ids).toEqual([]);
+    const touched = Buffer.from(before.toString('utf8').replace('| UT-S09-62 | 待重编号定义 |', '| UT-S09-62 | 改动后定义 |'));
+    expect(() => buildTestChangeSet({
+      change: 'fixture', module: 'core', targets: [target('logos/resources/test/core-S09-test-cases.md', before, touched)],
     })).toThrow('test-change-set-duplicate-id：UT-S09-62');
   });
 

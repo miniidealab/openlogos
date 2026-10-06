@@ -1232,6 +1232,11 @@ sequenceDiagram
 - **两个 test delta 各自新增同 ID**、**CREATE 目标与 MODIFY 目标同 ID**：触及目标间重复，按集合判定，本码必报、对涉事 delta 各报一条。
 - **合成因锚不可解析失败**：该目标不纳入集合、只报既有锚码；集合中其余目标照常判定。
 - **后态同时 ambiguous-table**：只报 `delta_test_table_column_mismatch` / `_duplicate_header`，不报本码。
+- **目标既有、原样继承的重复 ID**（fix-inherited-test-debt-merge-block，功能规格 §2.86）：目标文件本就含同文件重复 ID（如宿主 S37 形态），本提案只写纯 ADDED 或原样携带这些记录——该 ID 后态全部记录与前态全部记录按字节多重集相等，`buildTestChangeSet` 不抛错，**零该码**；本码只剩本提案引入或改动的重复（新增与既有 ID 重复、改动既有重复 ID 中的一条，照报）。
+- **目标既有、原样继承的列数不一致行**（§2.86）：同轮 L4 `delta_test_table_column_mismatch` 对有前态的目标按同一继承判定过滤——纯 ADDED 时目标欠债不在 delta 片段内、后态按三元组计次判为原样继承，两侧均通过；MODIFIED 整节替换原样携带欠债行（只改同表合法行）时，该行三元组后态次数不超过前态次数，**不报**；改动欠债行本身或新增同字节副本使次数超出前态，**照报**且 merge 侧以 `ambiguous-table` 拒绝。
+- **同一提案合并完成后再次 lint**（`SPEC_MERGED` 在场，§2.86.3 阶段边界）：L4 `delta_test_table_column_mismatch` 因依赖合并前态，复用同一 spec-complete 完成标记闸**不重放**，也不回退到只扫 delta 片段的旧严格扫描——原样携带欠债的 MODIFIED 成功合并后再跑 `change-lint`，**零该码**、不重合成、不写项目；`delta_test_table_duplicate_header` / `delta_test_table_id_unextractable` 不依赖前态，保持原合同。
+- **目标既有表头重复 + 纯 ADDED（已知残差，§2.86.1）**：表头形态不在宽容范围，后态仍以 `ambiguous-table` 拒绝，而 L4 `delta_test_table_duplicate_header` 只扫 delta 片段、预检不报——宿主未观测到该形态，本提案不处理，出现时按同一继承判定方式另案扩入。
+- **既有欠债的可观测性**：宽容只作用于预检与 merge 的阻断结论；`openlogos lint-specs` 继续只读报出全部既有欠债（输出与退出码不变），存量由宿主另案清理。
 - **`SPEC_MERGED` 在场**：不重放，零该码。
 - **非 test 目标的整篇改写**：无稳定 ID、merge 不失败，不在本判据内，由写作规范承担（残差）。
 
@@ -1239,8 +1244,9 @@ sequenceDiagram
 
 1. **前移侧集合只扩大、扩大部分恰为后态已拒形态**：不新增任何「后态接纳而预检拒绝」的组合——四种合法下沉写法两侧均通过（UT-S35-198）。
 2. **判据恰有一处实现**：lint 侧不写第二份 ID 身份规则、表格枚举或标题解析，只调用 `composeOpenLogosMarkdown` 与 `buildTestChangeSet`。
-3. **后态判据逐字不变**：`test-change-set` 的强度、扫描口径、兼容开关零改动。
+3. **后态判据对本提案引入或改动内容逐字不变**：`test-change-set` 对这类内容的强度、扫描口径、兼容开关零改动；对原样继承欠债的宽容见不变量 5。
 4. **锁按码整族**：§2.84.5 的锁覆盖 `ambiguous-table` 与 `duplicate-id` 全部触发形态；`-target-duplicate` / `-overlap` 仍明确不在锁内。
+5. **继承判定恰有一处实现**（§2.86.3）：原样继承的判定只在 `test-change-set` 实现一次，后态构建器与 L4 列数检查共用；锁的后态拒绝集合限定为本提案引入或改动的歧义 / 重复，原样继承的目标既有欠债两侧均放行、本提案引入或改动的两侧均拒绝。
 
 ### 追溯
 

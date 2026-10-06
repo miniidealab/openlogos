@@ -1122,3 +1122,37 @@
 - ST-S09-149 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中运行；POSIX 结果不计入其覆盖。
 - 函数层用例必须加载分发源中的真实实现，不得另写规则副本。
 - 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。
+
+## S09 merge 对目标既有测试欠债的继承口径测试
+
+> 覆盖功能规格 §2.86（合并后态对原样继承的目标既有欠债不再失败；变更集结论不变）、§2.84.3 / §2.84.4（失败出口稳定形态与 delta 侧归属，对本提案引入的欠债口径不变）；场景 S09「test-change-set 的捕获集变化」；来源变更 fix-inherited-test-debt-merge-block（缺陷报告 `runlogos/logos/resources/reference/BUGREPORT-merge-legacy-table-debt-blocks-unrelated-proposal.md`）。
+>
+> **夹具口径**：一律在 `mktemp -d` 一次性隔离 launched 项目内构造目标测试规格、活跃提案与 delta，不依赖本仓或宿主仓自身内容。「欠债行」指首格为合法测试 ID、列数与表头不一致的数据行（表头 4 列、该行 5 列）。判定口径与 S35 继承口径测试（UT-S35-202～UT-S35-214）同源，本节只覆盖 merge 侧的落盘结果与失败出口。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-382 | merge 合成期放行原样继承的欠债且 `SPEC_MERGED.test_change_set` 口径不变 | 目标 A 含欠债行 `ST-S68-05` / `ST-S68-06`；目标 B 含同文件重复 ID `UT-S37-01` 两条；提案对 A、B 各写一个合规纯 ADDED 块，新增 ID 已知 | 调用 merge 的直接合并路径（`mergeDirect`），读回 `SPEC_MERGED` | 合并成功；`test_change_set` 字段集合与 schema 与本变更前逐字一致；`changed_test_ids` 恰为两个 ADDED 块新增的 ID（ASCII 排序），不含 `ST-S68-05` / `ST-S68-06` / `UT-S37-01`；`removed_test_ids` 为空；A、B 合并后字节中欠债行与两条重复记录逐字节保留、顺序不变 |
+| UT-S09-383 | 本提案引入的欠债 merge 仍以原码失败、失败出口口径不变 | 三夹具：① 目标 A 同上，delta 追加一条与 `ST-S68-05` 逐字节相同的行；② delta 新增一条与既有 ID 重复的行；③ delta 改动 `ST-S68-05` 的一个单元格 | 以跳过预检的内部路径调用合成与 `buildTestChangeSet`，再经 `runDirectMerge` 失败出口映射（模拟预检漏判时的后备出口） | ①③ 以 `test-change-set-ambiguous-table`、② 以 `test-change-set-duplicate-id` 失败；stderr 为 `Error: merge 失败（<code>）：…` 稳定形态，状态档为 A·未提交（`logos/resources/` 保持合并前字节、无 `SPEC_MERGED`）；行号带「合并后态行号」标注；delta 侧归属点名该 delta 文件与 delta 内行号（违规行在 delta 内，可归因） |
+| UT-S09-384 | 修正欠债行进入捕获集 | 目标 A 同上；delta `## MODIFIED` 整节替换，把 `ST-S68-05` 修正为 4 列合规行，`ST-S68-06` 原样携带 | 调用 `mergeDirect`，读回 `SPEC_MERGED` | 合并成功；`ST-S68-05` 进 `changed_test_ids`（前态无合规记录、后态有）；`ST-S68-06` 不进任何集合 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-151 | 缺陷报告事故形态：目标既有欠债 + 纯 ADDED 真实 merge 退 0 | S09 merge 准入判定与 change-lint 同源；test-change-set 的捕获集变化 | 一次性隔离 launched 项目，复刻宿主现场：`logos/resources/test/core-S68-test-cases.md` 场景测试表表头 4 列、`ST-S68-05` / `ST-S68-06` 两行 5 列；活跃提案对该文件只有一个合规纯 ADDED 块，其余 delta 与 tasks 全部合法 | ① 运行真实 `openlogos change-lint --slug <slug> --format json`；② 运行真实 `openlogos merge <slug>`；③ 读回 `SPEC_MERGED` 与合并后目标文件；④ 合并前后各运行一次真实 `openlogos lint-specs` | ① exit 0、`data.pass=true`；② 退出码 0、无 `Error: merge 失败` 输出（**修复前此步退 1：`Error: merge 失败（test-change-set-ambiguous-table）：…core-S68-test-cases.md:82（合并后态行号）`，delta 侧归属「未能确定」**）；③ `SPEC_MERGED` 在场，`test_change_set.changed_test_ids` 恰为 ADDED 新增 ID，合并后目标中两条欠债行逐字节保留；④ 两次 `lint-specs` 对该欠债的报出结论与退出码逐字一致（可观测性不丢） |
+
+### 追溯与覆盖
+
+- 主修·merge 合成期放行原样继承欠债、捕获集口径不变：UT-S09-382、ST-S09-151。
+- 防伪臂·本提案引入的欠债仍失败、失败出口与归因口径不变：UT-S09-383。
+- 修正欠债属于变更：UT-S09-384。
+- lint-specs 可观测性不丢：ST-S09-151 步骤④。
+- 功能规格：§2.86.1～§2.86.4、§2.84.3、§2.84.4；场景：S09「test-change-set 的捕获集变化」；来源变更：fix-inherited-test-debt-merge-block。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+- UT-S09-382 / UT-S09-384 必须读回真实落盘的 `SPEC_MERGED` 与目标字节断言，不得只断言函数返回值。
+- ST-S09-151 必须跑**真实 `openlogos change-lint` / `openlogos merge` / `openlogos lint-specs`** 进程并断言退出码与输出，不得以库内函数调用替代。

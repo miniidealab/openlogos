@@ -606,3 +606,57 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - UT-S35-201 的行号断言必须对**夹具已知的精确 delta 内行号**比对——可归因正是本变更的语义本体；行号**从 message 文本解析**，不得通过新增公开 JSON 字段满足（`--format json` 字段集合与排序逐字不变，与 §2.85.4 零回归边界一致）。
 - UT-S35-199 / UT-S35-200 的整文件臂，后态侧必须按 merge 口径调用既有封装校验器剥离 payload 后再送入 `buildTestChangeSet`，不得以手工拼接的 payload 替代。
 - ST-S35-36 步骤②③④ 必须跑**真实 `openlogos merge`** 进程并断言退出码、stderr 出口形态与 `SPEC_MERGED` 在场性，不得以库内函数调用替代。
+
+## S35 后态对目标既有测试欠债的继承口径测试
+
+> 覆盖功能规格 §2.86（原样继承判据：列数不一致行按三元组计次预算、重复 ID 按字节多重集；唯一继承判定由后态构建器与 L4 列数检查共用）、§2.84.2 / §2.84.5 / §2.85.3 的边界订正；场景 S35「后态测试 ID 重复判据的同源前移」异常与边界、不变量 5；来源变更 fix-inherited-test-debt-merge-block（缺陷报告 `runlogos/logos/resources/reference/BUGREPORT-merge-legacy-table-debt-blocks-unrelated-proposal.md`）。
+>
+> **夹具口径**：一律在一次性隔离项目内构造目标测试规格与 delta，不依赖本仓或宿主仓自身内容。「欠债行」指首格为合法测试 ID、列数与表头不一致的数据行（夹具统一用表头 4 列、该行 5 列）；「欠债表」指含欠债行的测试定义表。**每条用例必须同时断言两侧**：一侧求 `runChangeLint` 结论（delta 形态），一侧以与 merge 同一合成器 `composeOpenLogosMarkdown` 求后态后调用 `buildTestChangeSet`（正常路径，非历史兼容开关）。测试实现必须写入 OpenLogos reporter，`scenario_id="S35"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-202 | 事故形态：目标既有欠债行 + 纯 ADDED 两侧均通过 | 目标 `logos/resources/test/core-S68-test-cases.md` 的场景测试表表头 4 列，`ST-S68-05`、`ST-S68-06` 两行各 5 列（复刻宿主现场）；delta 只有一个 `## ADDED` 块，新增章节内的表格全部合规 | 求两侧结论 | `change-lint` 零 `delta_test_table_column_mismatch`、零 `delta_test_id_duplicate`；`buildTestChangeSet` 不抛错；`changed_test_ids` 恰为 ADDED 块新增的 ID 集合（不含 `ST-S68-05` / `ST-S68-06`）。**修复前该形态 change-lint PASS 而后态抛 `test-change-set-ambiguous-table`——本用例即缺陷报告主问题的回归锁** |
+| UT-S35-203 | 目标既有同文件重复 ID + 纯 ADDED 两侧均通过 | 目标含同一 ID `UT-S37-01` 的两条记录（单元格内容不同，复刻宿主 S37 形态）；delta 只有一个合规的 `## ADDED` 块 | 求两侧结论 | 零 `delta_test_id_duplicate`；`buildTestChangeSet` 不抛错；`UT-S37-01` 不进 `changed_test_ids`、不进 `removed_test_ids`。**修复前 change-lint 报 `delta_test_id_duplicate`（message 写「重复来自目标既有内容或另一 delta」）而 fix_hint 只指向 delta 写错——本用例锁定该误报消失** |
+| UT-S35-204 | 本提案新增的列数不一致行两侧均拒绝 | 目标无欠债；delta `## ADDED` 块的表格中一行列数比表头多 1 | 求两侧结论 | `change-lint` 报 `delta_test_table_column_mismatch`，message 中 delta 内行号、表头列数、本行列数与修复前逐字一致；后态抛 `test-change-set-ambiguous-table`。另备「目标含无关欠债行」变体：结论相同（宽容不外溢到新增行） |
+| UT-S35-205 | 本提案新增 ID 与目标既有 ID 重复两侧均拒绝 | 目标含 `UT-S68-01`（单条、合规）；delta `## ADDED` 块新增一行同为 `UT-S68-01`；另备变体：目标本就含 `UT-S37-01` 两条，delta 再新增第三条 `UT-S37-01` | 求两侧结论 | 两夹具均报 `delta_test_id_duplicate`、后态均抛 `test-change-set-duplicate-id`（变体中后态记录多一条，多重集不等） |
+| UT-S35-206 | 改动欠债行本身两侧均拒绝 | 目标欠债表含欠债行 `ST-S68-05`；delta `## MODIFIED` 整节替换该章节，把 `ST-S68-05` 的某个单元格文字改动（列数仍不一致） | 求两侧结论 | `change-lint` 报 `delta_test_table_column_mismatch` 且行号指向 delta 内该行；后态抛 `test-change-set-ambiguous-table`（新三元组前态预算为零） |
+| UT-S35-207 | 同表 MODIFIED 只改合法行、原样携带欠债行两侧均通过（评审 F1 夹具） | 目标某章节表头 3 列：`UT-S01-01` 一行 4 列（欠债），`UT-S01-02` 一行 3 列、描述为「旧描述」；delta `## MODIFIED` 整节替换该章节，只把 `UT-S01-02` 的描述改为「新描述」，`UT-S01-01` 逐字节原样携带 | 求两侧结论 | `change-lint` **零** `delta_test_table_column_mismatch`（修复前此处必报——即 F1 反例）；后态不抛；`changed_test_ids` 恰为 `UT-S01-02`，不含 `UT-S01-01`。断言过滤由共享继承判定完成：把 L4 侧替换为不接入继承判定的旧实现时本用例必红 |
+| UT-S35-208 | 新增同字节副本不得复用既有豁免（评审 F2 夹具） | 目标欠债表含 1 条欠债行 r；delta `## MODIFIED` 整节替换该章节，保留 r 并在同表再追加一条与 r 逐字节相同的行 | 求两侧结论 | 两侧均拒绝：`change-lint` 报 `delta_test_table_column_mismatch`（该键全部按本提案引入，两条行号均列出或逐行各报，不臆断哪条是新增）；后态抛 `test-change-set-ambiguous-table`。另备「副本追加到同目标另一张同表头表」变体：结论相同（计次键不含位置） |
+| UT-S35-209 | 前态多份相同欠债：数量不变与减少两侧均通过 | 目标欠债表含 2 条逐字节相同的欠债行 r；两个 delta 变体：① `## MODIFIED` 整节替换、r 仍为 2 条，同时改动同表一条合法行；② `## MODIFIED` 整节替换、删去一条 r（保留 1 条） | 对两变体分别求两侧结论 | 两变体均零 `delta_test_table_column_mismatch`、后态不抛；变体 ② 证明计次规则为「后态次数 ≤ 前态次数」而非「必须相等」（允许欠债减少） |
+| UT-S35-210 | 既有重复 ID 中一条被改动两侧均拒绝 | 目标含 `UT-S37-01` 两条记录 a、b；delta `## MODIFIED` 整节替换所在章节，a 原样、b 的一个单元格被改动 | 求两侧结论 | 报 `delta_test_id_duplicate`；后态抛 `test-change-set-duplicate-id`（后态多重集 {a, b'} 与前态 {a, b} 不等）。对照臂：a、b 均原样携带时两侧均通过 |
+| UT-S35-211 | 跨目标重复 ID 按多重集判定 | 两个目标 T1、T2 各含一条 `UT-S70-01`（前态即跨目标重复）；四个 delta 变体：① 只给 T1 写合规纯 ADDED；② 给 T1、T2 各写合规纯 ADDED；③ 在 ② 的双目标 delta 基础上，保留 T1 的合规 ADDED，同时以 `## MODIFIED` 改动 T2 中 `UT-S70-01` 的一个单元格（两目标均被实际触及）；④ **只**给 T2 写 `## MODIFIED` 改动其 `UT-S70-01` 的一个单元格（T1 未触及，不在本次目标集合） | 对四变体分别求两侧结论（目标集合按 merge 口径收集：只含本次 delta 触及的目标） | ①② 两侧均通过、`UT-S70-01` 不进 `changed_test_ids`；③ 两侧均拒绝（`delta_test_id_duplicate` / `test-change-set-duplicate-id`：前态 {T1 记录, T2 记录} 与后态 {T1 记录, T2 改动后记录} 多重集不等）；④ **放行对照臂**——两侧均通过、`UT-S70-01` 进 `changed_test_ids`（目标集合内前后态各只有一条记录，属合法修改），并断言 T1 未被读取或送入 `buildTestChangeSet`，防止实现扫描未触及的目标。断言前态记录只取本次目标集合内目标的合并前字节 |
+| UT-S35-212 | 一致性锁新边界双向比对（任一侧单独收紧或放宽即失败） | 夹具集合 = UT-S35-202～UT-S35-211 全部夹具与变体；另备残差臂夹具：表头重复的既有表（目标某表表头两列同名）+ 纯 ADDED | 逐夹具双向比对：一侧 `runChangeLint`，一侧同一合成器 + `buildTestChangeSet` | 夹具集合内两侧结论逐夹具一致（§2.84.5 锁在新边界上成立）。**残差臂单列、不纳入比对**（§2.86.1 已知残差）：表头重复夹具后态仍抛 `test-change-set-ambiguous-table`（表头形态不在宽容范围），预检侧结论如实记录为通过——本臂锁定「宽容未外溢到表头形态」，并在残差被另案修复时随之翻转。**注入式反证臂**：① 把后态侧的继承判定改为「存在匹配」（不计次）时 UT-S35-208 必红；② 把 L4 侧改为不接入继承判定时 UT-S35-207 必红——证明两侧共用同一判定、计次规则在位 |
+| UT-S35-213 | 原样继承场景下变更集结论与无欠债基线一致 | 两组对照夹具：A 组目标含欠债（欠债行与重复 ID 各若干），B 组为 A 组目标去掉全部欠债记录后的同构文件；两组施加同一个合规 delta（含 ADDED、MODIFIED 改合法行、删除一条合法 ID） | 分别求 `buildTestChangeSet`，取 `changed_test_ids` / `removed_test_ids` | 两组的 `changed_test_ids` 与 `removed_test_ids` 逐项相等（欠债 ID 不出现在任何一组的集合里）；`SPEC_MERGED.test_change_set` 字段集合与 schema 不变。修正臂：delta 把一条欠债行改为合规行 → 该 ID 进 `changed_test_ids` |
+| UT-S35-214 | 零回归：其余码与 lint-specs 不变 | 四夹具：① `test-change-set-target-duplicate` 形态；② `-overlap` 形态；③ 非 UTF-8 目标（`-invalid-utf8`）；④ 含欠债行与重复 ID 的已合并基线（无活跃提案） | ①②③ 调用 `buildTestChangeSet`；④ 运行 `lint-specs` 实现 | ①②③ 抛出的错误码与 message 与本变更前逐字一致；④ `lint-specs` 仍报出该欠债（`table_column_mismatch` 等既有诊断），输出与退出码与本变更前逐字一致——宽容只作用于预检与 merge 的阻断结论，可观测性不丢 |
+| UT-S35-215 | L4 列数检查的合并后阶段边界（delta-r1 F1） | 提案含一个测试 delta：`## MODIFIED` 整节替换欠债表所在章节（只改同表合法行、原样携带欠债行 `ST-S68-05`）+ 一个合规 `## ADDED` 章节；已完成真实合并（`SPEC_MERGED` 在场、目标为合并后字节、原 delta 仍在场）；对照夹具：同一提案 `SPEC_MERGED` 不在场 | 对两夹具分别求 `runChangeLint` 结论；对已合并夹具记录合成器调用次数与项目根字节快照 | 已合并夹具：**零** `delta_test_table_column_mismatch`（不重放、不回退到只扫 delta 片段的严格扫描）、零 `delta_test_id_duplicate`、合成器调用 0 次（不以当前目标为 before 重合成，不报「ADDED 章节已存在或不唯一」）、项目根字节快照前后相等；`delta_test_table_duplicate_header` / `delta_test_table_id_unextractable` 对注入的对应形态照常报出（不依赖前态的检查保持原合同）；未合并对照夹具：零 `delta_test_table_column_mismatch`（继承判定生效）。**注入式反证臂**：去掉 L4 列数检查的完成标记闸时已合并夹具必红 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-37 | 事故端到端：目标既有欠债不再阻断无关提案，新增欠债仍被拒 | 真实 CLI，一次性隔离 launched 项目复刻宿主现场（`core-S68-test-cases.md` 含 5 列欠债行 `ST-S68-05` / `ST-S68-06`、`core-S37-test-cases.md` 含同文件重复 ID）。① 提案 P1 对两文件各写一个合规纯 ADDED 块：`openlogos change-lint --slug P1 --format json` exit 0、`data.pass=true`；续跑**真实 `openlogos merge P1`** 退出码 0、生成 `SPEC_MERGED`，合并后两文件中欠债行与重复记录逐字节保留（**修复前此步在合成期退 1：`Error: merge 失败（test-change-set-ambiguous-table）`，即 run `drv-muuiqcpr-8jmu` 的停点**）；② 提案 P2 对 S68 写 `## MODIFIED` 整节替换，只改同表一条合法行、原样携带欠债行：`change-lint` exit 0，真实 `openlogos merge` 退 0；③ 提案 P3 在 P2 基础上再追加一条与 `ST-S68-05` 逐字节相同的行：`change-lint` exit 2 且 violations 含 `delta_test_table_column_mismatch`；真实 `openlogos merge` 非零退出于预检出口，结束后无 `SPEC_MERGED`、目标保持合并前字节；④ 全程 `openlogos lint-specs` 对两文件的既有欠债报出结论与运行前逐字一致；⑤ `change-lint` 项目级零写入（运行前后项目根字节快照相等）；⑥ **合并后再次 lint**（delta-r1 F1）：提案 P4 含 S68 的 `## MODIFIED` 整节替换（原样携带欠债行）+ 一个合规 `## ADDED` 章节，`change-lint` exit 0 → 真实 `openlogos merge P4` 退 0 → 再次运行真实 `openlogos change-lint --slug P4 --format json`：exit 0、`violations` 不含 `delta_test_table_column_mismatch`、stderr 无「ADDED 章节已存在或不唯一」，运行前后项目根字节快照相等 |
+
+### 追溯与覆盖
+
+- 主修·事故形态两侧放行（纯 ADDED、既有列数欠债 / 既有重复 ID）：UT-S35-202、UT-S35-203、ST-S35-37 步骤①。
+- 主修·L4 接入共享继承判定（MODIFIED 整节替换原样携带，评审 F1）：UT-S35-207、ST-S35-37 步骤②。
+- 防伪臂·计次预算（新增同字节副本拒绝、数量不变与减少放行，评审 F2）：UT-S35-208、UT-S35-209、ST-S35-37 步骤③。
+- 防伪臂·本提案引入或改动的欠债照旧严格：UT-S35-204、UT-S35-205、UT-S35-206、UT-S35-210。
+- 跨目标重复的多重集口径：UT-S35-211。
+- 一致性锁新边界（双向比对 + 注入式反证 + 表头重复不在宽容范围）：UT-S35-212。
+- 变更集结论不变：UT-S35-213。
+- 零回归（其余码、lint-specs 可观测性）：UT-S35-214、ST-S35-37 步骤④⑤。
+- 阶段边界·合并完成后 L4 列数检查不重放、不回退严格扫描（delta-r1 F1）：UT-S35-215、ST-S35-37 步骤⑥。
+- 目标集合口径·只按本次触及目标判跨目标重复（delta-r1 F2）：UT-S35-211 变体 ③④。
+- 功能规格：§2.86.1～§2.86.4（含 §2.86.3 阶段边界）、§2.84.2、§2.84.5、§2.85.3；场景：S35「后态测试 ID 重复判据的同源前移」；来源变更：fix-inherited-test-debt-merge-block。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- 每条 UT 的两侧必须调用**真实实现**（`runChangeLint` 与 `composeOpenLogosMarkdown` + `buildTestChangeSet`），不得以复述期望的表驱动替代。
+- UT-S35-212 的注入式反证臂必须对真实实现做最小注入（替换继承判定的计次规则或 L4 的过滤接入），证明对应夹具变红；不得以断言「判定函数被调用」替代结论比对。
+- UT-S35-208 中同字节副本的行号断言须对夹具已知的精确 delta 内行号比对。
+- UT-S35-215 的合成器调用计数须对真实 `composeOpenLogosMarkdown` 做计数包装取得，不得以断言阶段标记被读取替代。
+- ST-S35-37 步骤①②③⑥必须跑**真实 `openlogos merge`** 进程并断言退出码、出口形态与 `SPEC_MERGED` 在场性，不得以库内函数调用替代。

@@ -127,6 +127,7 @@ function scanTestDefinitionCandidates(
   bytes: Buffer,
   allowDuplicateIds: boolean,
   allowAmbiguousRows: boolean,
+  inheritedAmbiguousRows: ReadonlySet<string> = new Set(),
 ): Map<string, TestDefinitionRecord[]> {
   const text = strictUtf8(bytes, targetPath);
   const lines = text.split('\n');
@@ -157,6 +158,8 @@ function scanTestDefinitionCandidates(
       if (candidate === null) continue;
       if (!rowColumnsMatchHeader(headers.length, cells.length)) {
         if (allowAmbiguousRows) continue;
+        // §2.86：原样继承的目标既有欠债行与前态同口径跳过（判定见 inheritedAmbiguousRowKeys）。
+        if (inheritedAmbiguousRows.has(ambiguousRowKey(targetPath, headers, cells))) continue;
         throw new TestChangeSetBuildError(
           'test-change-set-ambiguous-table',
           `test-change-set-ambiguous-table：${afterStateLocation(targetPath, line)}`,
@@ -198,22 +201,94 @@ function collectBefore(targets: TestChangeSetInputTarget[]): Map<string, TestDef
   return all;
 }
 
-function collectAfter(targets: TestChangeSetInputTarget[]): Map<string, TestDefinitionRecord> {
-  const all = new Map<string, TestDefinitionRecord>();
+/**
+ * §2.86 继承口径：后态扫描对**原样继承**的目标既有欠债与前态同等宽容，本提案引入或改动的欠债照旧严格。
+ * - 列数不一致行：按 `inheritedAmbiguousRowKeys` 的计次预算跳过，其余抛 `test-change-set-ambiguous-table`；
+ * - 重复 ID（单目标内或触及目标间）：该 ID 后态全部记录与前态全部记录（只取本次目标集合）按字节
+ *   多重集相等 → 原样继承、取首条参与比较；否则抛 `test-change-set-duplicate-id`。
+ * 无既有欠债的目标：预算为零、前态无重复记录，结论逐字节等于此前的严格扫描。
+ */
+function collectAfter(
+  targets: TestChangeSetInputTarget[],
+  before: Map<string, TestDefinitionRecord[]>,
+): Map<string, TestDefinitionRecord> {
+  const all = new Map<string, TestDefinitionRecord[]>();
   for (const target of targets) {
-    for (const [id, record] of scanTestDefinitions(target.targetPath, target.afterBytes)) {
-      const previous = all.get(id);
-      if (previous) {
-        throw new TestChangeSetBuildError(
-          'test-change-set-duplicate-id',
-          `test-change-set-duplicate-id：after:${id}`,
-          [previous.target_path, target.targetPath],
-        );
-      }
-      all.set(id, record);
+    const inherited = inheritedAmbiguousRowKeys(target.targetPath, target.beforeBytes, target.afterBytes);
+    for (const [id, records] of scanTestDefinitionCandidates(target.targetPath, target.afterBytes, true, false, inherited)) {
+      all.set(id, [...(all.get(id) ?? []), ...records]);
     }
   }
-  return all;
+  const out = new Map<string, TestDefinitionRecord>();
+  for (const [id, records] of all) {
+    if (records.length > 1 && !sameRecordMultiset(records, before.get(id) ?? [])) {
+      const paths = asciiSort(records.map(record => record.target_path));
+      throw new TestChangeSetBuildError(
+        'test-change-set-duplicate-id',
+        paths.length === 1 ? `test-change-set-duplicate-id：${id}` : `test-change-set-duplicate-id：after:${id}`,
+        paths,
+      );
+    }
+    out.set(id, records[0]);
+  }
+  return out;
+}
+
+function sameRecordMultiset(a: TestDefinitionRecord[], b: TestDefinitionRecord[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = a.map(recordBytes).sort();
+  const right = b.map(recordBytes).sort();
+  return left.every((value, index) => value === right[index]);
+}
+
+/** §2.86.1 列数不一致行的身份键：（目标路径、表头单元格序列、行单元格序列）。 */
+function ambiguousRowKey(targetPath: string, headers: string[], cells: string[]): string {
+  return JSON.stringify([targetPath, headers, cells]);
+}
+
+function countAmbiguousRows(targetPath: string, bytes: Buffer): Map<string, number> {
+  const lines = strictUtf8(bytes, targetPath).split('\n');
+  const counts = new Map<string, number>();
+  for (const table of enumerateTestDefinitionTables(lines, authorityScan(lines))) {
+    for (const { cells } of table.rows) {
+      if (testDefinitionRowId(cells) === null) continue;
+      if (rowColumnsMatchHeader(table.headers.length, cells.length)) continue;
+      const key = ambiguousRowKey(targetPath, table.headers, cells);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * §2.86.3 **唯一**继承判定（纯函数、无 IO）：返回后态中属原样继承的列数不一致行身份键集合。
+ * 前态同键出现次数为匹配预算，后态同键记录一对一消费：后态次数 ≤ 前态次数 → 该键全部原样继承
+ * （允许欠债减少）；超出 → 该键全部按本提案引入（同字节副本不可区分，不臆断哪一条是新增）。
+ * CREATE 目标（无前态）预算为零。后态构建器与 change-lint L4 列数检查共用本函数，禁止第二份判定。
+ */
+export function inheritedAmbiguousRowKeys(
+  targetPath: string,
+  beforeBytes: Buffer | null,
+  afterBytes: Buffer,
+): Set<string> {
+  const inherited = new Set<string>();
+  if (beforeBytes === null) return inherited;
+  const budget = countAmbiguousRows(targetPath, beforeBytes);
+  if (budget.size === 0) return inherited;
+  for (const [key, count] of countAmbiguousRows(targetPath, afterBytes)) {
+    if (count <= (budget.get(key) ?? 0)) inherited.add(key);
+  }
+  return inherited;
+}
+
+/** 供 change-lint 以同一身份键查询某个 delta 行是否属原样继承。 */
+export function isInheritedAmbiguousRow(
+  inherited: ReadonlySet<string>,
+  targetPath: string,
+  headers: string[],
+  cells: string[],
+): boolean {
+  return inherited.has(ambiguousRowKey(targetPath, headers, cells));
 }
 
 function recordBytes(record: TestDefinitionRecord): string {
@@ -294,7 +369,7 @@ export function buildTestChangeSet(input: {
     );
   }
   const before = collectBefore(sortedTargets);
-  const after = collectAfter(sortedTargets);
+  const after = collectAfter(sortedTargets, before);
   const changed: string[] = [];
   const removed: string[] = [];
   for (const [id, record] of after) {

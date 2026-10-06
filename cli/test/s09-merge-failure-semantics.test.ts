@@ -141,15 +141,19 @@ const LEGAL_BASELINE = [
   '| UT-S99-01 | 既有 |',
 ].join('\n');
 
-/** 事故形态：基线表内已存在列数不一致的数据行（delta 侧看不见 ⇒ 天然绕过前移预检）。 */
+/**
+ * 绕过预检直达后态抛点的基线形态：基线表**表头重复**（delta 侧看不见 ⇒ 天然绕过前移预检）。
+ * 20260914 事故原为「基线既有列数不一致行」，fix-inherited-test-debt-merge-block（§2.86）起该形态
+ * 属原样继承、合并成功；表头重复不在宽容范围、仍由后态以 ambiguous-table 拒绝（§2.86.1 已知残差），
+ * 故改用它承载本用例的失败出口断言。
+ */
 const MALFORMED_BASELINE = [
-  '| ID | 用例 |',
+  '| ID | ID |',
   '|---|---|',
   '| UT-S99-01 | 既有 |',
-  '| UT-S99-02 |',
 ].join('\n');
 
-const MALFORMED_BASELINE_FIXED = MALFORMED_BASELINE.replace('| UT-S99-02 |', '| UT-S99-02 | 既有二 |');
+const MALFORMED_BASELINE_FIXED = MALFORMED_BASELINE.replace('| ID | ID |', '| ID | 用例 |');
 
 const CLEAN_DELTA = [
   '## ADDED — 二、新增用例', '',
