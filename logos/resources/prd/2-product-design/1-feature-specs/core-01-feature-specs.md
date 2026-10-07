@@ -2518,7 +2518,7 @@ proposal 明确无需部署（`deployment_required=false`）时，deployment/smo
 
 本功能在既有 `AiToolAdapterRegistry`、托管资产事务、会话上下文服务和 guard 决策服务之上，把 Cursor 从降级档（`assets: ['agents']`，`.cursor/rules/*.mdc` 转换）补齐为三件套宿主。共享层拥有宿主选择、资产事务和 OpenLogos 方法论事实；Cursor Adapter 只映射 Cursor 原生 Agent Skills 布局、`.cursor/hooks.json` 协议字段、事件名与退出码。
 
-功能仅涉及本地 CLI、文件资产和 hook 子进程协议，不新增远程 API、数据库或后台服务。Cursor IDE 专属行为（如 `preToolUse` 完整硬拦）不由 OpenLogos 单独维护配置——IDE 与 CLI 共享同一 `.cursor/hooks.json`，按宿主自身能力自然生效。
+功能仅涉及本地 CLI、文件资产和 hook 子进程协议，不新增远程 API、数据库或后台服务。OpenLogos 不接入 Cursor `preToolUse`：IDE 与 CLI 共享同一 `.cursor/hooks.json`，实际部署的事件只有 `CURSOR_HOOK_EVENTS` 列出的几种，文件编辑在 IDE 与 CLI 上都只有 `afterFileEdit` 事后报告，不承诺事前阻断（guard-versioned-content-scope C11 更正；IDE preToolUse 接线另行立案）。
 
 ### 2.59.2 Cursor capability 与 Registry 语义
 
@@ -2558,7 +2558,7 @@ cursor-plugin-template/
 3. 文件不可解析时 fail loud，报告精确路径，不覆盖、不清空。
 4. 幂等：重复 `init`/`sync`/`launch` 不产生重复条目；卸载/回滚只移除托管条目。
 
-托管条目：`sessionStart`（阶段上下文注入）、`beforeShellExecution`（shell 写入门禁）、`afterFileEdit`（编辑事后检测）。
+托管条目：`sessionStart`（阶段上下文注入）、`beforeShellExecution`（shell 写入门禁与 Bash 事后检查拍快照）、`afterShellExecution`（Bash 事后检查对比，见 §2.87.11）、`afterFileEdit`（编辑事后检测）。实际部署哪些事件由 `cli/src/lib/cursor-adapter.ts` 的 `CURSOR_HOOK_EVENTS` 决定，模板 `plugin-cursor/hooks/hooks.json` 必须与之同步；只改模板不会部署新事件。
 
 ### 2.59.5 sessionStart 上下文注入
 
@@ -2568,10 +2568,11 @@ cursor-plugin-template/
 
 ### 2.59.6 部分强度写入门禁
 
-- `beforeShellExecution`：每次调用重新读取 guard 与提案状态，复用共享 GuardDecisionService 的同一决策逻辑；deny 时输出 `permission: "deny"` 与非空原因并阻断。
-- `afterFileEdit`：对越界编辑产出事后检测报告（提示违反变更管理的路径与当前提案范围），不能预先阻断宿主原生编辑——这是 cursor CLI 无 `preToolUse` 的既定边界，不视为缺陷。
+- `beforeShellExecution`：每次调用重新读取 guard 与提案状态，复用共享 GuardDecisionService 的同一决策逻辑；deny 时输出 `permission: "deny"` 与非空原因并阻断。git 判据生效时，同时调用事后检查引擎 `snapshot` 拍快照（§2.87.11）；对保护范围变更命令返回 `permission: "ask"`（§2.88.6）。
+- `afterShellExecution`：调用事后检查引擎 `check` 对比快照，发现未立案的受保护变化时反馈；反馈渠道以真实宿主实测为准（§2.87.11）。
+- `afterFileEdit`：对越界编辑产出事后检测报告（提示违反变更管理的路径与当前提案范围），不能预先阻断宿主原生编辑——这是 OpenLogos 未接入 Cursor `preToolUse` 的既定边界，IDE 与 CLI 相同，不视为缺陷。
 - 异常 fail-closed：无 guard 文件、越界路径、输入解析失败、决策服务异常时，shell 路径一律 deny，编辑路径一律产出报告。
-- 用户可观察输出（CLI 反馈、根规范、AGENTS.md 托管段）必须如实表述「CLI 侧部分强度、IDE 侧完整强度」。
+- 用户可观察输出（CLI 反馈、根规范、AGENTS.md 托管段）必须如实表述「Cursor 侧（IDE 与 CLI）均为部分强度：shell 事前判定 + 事后检查，文件编辑事后报告」，不得声称 IDE 侧经 `preToolUse` 完整硬拦。
 
 ### 2.59.7 托管 .mdc → Skills 迁移
 
@@ -3922,3 +3923,621 @@ L4 此前「只扫 delta 片段」的设计在本节下暴露两类误判：纯 
 - 测试：S35 与 S09 测试规格「继承口径」新增节（UT-S35-202～UT-S35-215、ST-S35-37；UT-S09-382～UT-S09-384、ST-S09-151）。
 - 代码（以合并后规格为准）：`cli/src/lib/test-change-set.ts`（新增继承判定单点并接入后态扫描）、`cli/src/lib/change-lint.ts`（L4 列数检查复用同一判定）；`cli/src/lib/merge-direct.ts`、`cli/src/commands/lint-specs.ts` 零改动。
 - 发布：判据只在安装态对宿主生效，本提案归档后须另立发版提案按 §2.81 升版（发布动作不在本提案内执行）。
+
+## 2.87 guard 以版本控制内容为保护对象
+
+### 2.87.0 问题：按命令文字猜测写入目标，两头失准
+
+修改前 guard 对 Bash 的判定依据是命令文字（`BASH_SAFE_PATTERNS` 先判放行、`BASH_WRITE_PATTERNS` 命中预备拦截、解析不出即阻断）。runlogos（launched、无提案）只读复现：`npm ci`、`mkdir -p dist/x` 被阻断；`cd <根> && sed -i … src/a.js`、`echo x > src/a.js`、`node -e` 写源码、`find src -delete`、`python3 x.py`、`git stash pop` 被放行。每补一条模式就多一处误拦或漏拦。
+
+立案的目的是让「会进入版本控制的代码与规格」的变更可追溯。本节把判据改为「是否改动了受保护内容」：Edit / Write 事前按路径判定，Bash / PowerShell 以执行前后的内容对比为准。
+
+术语：
+
+| 术语 | 含义 |
+|---|---|
+| 受保护内容 | launched、无活跃提案时，写入需要立案的内容（§2.87.2） |
+| 执行记录 | 一次 Bash / PowerShell 调用的快照与生命周期状态 |
+| 待报告项 | 已发现、尚未送达 AI 的变化 |
+| 宿主审批 | 保护范围变更命令经宿主对这一次实际工具调用弹出的原生审批、由用户批准（§2.88.6） |
+| 不可豁免项 | guard 自有状态、保护范围来源、git 元数据；先于白名单与 exempt 判定（§2.87.2） |
+
+### 2.87.1 适用前提与回落
+
+新判据（以 git 为基准的保护对象 + Bash 事后检查）同时满足以下条件才生效：
+
+1. `logos/logos-project.yaml` 中至少一个模块为 launched；
+2. 不存在 `logos/.openlogos-guard`（无活跃提案）；
+3. 项目根位于 git 工作树内（`git rev-parse --is-inside-work-tree` 为 `true`），且 git 可执行。
+
+条件 1 或 2 不满足时，guard 行为与修改前一致（无 launched 模块不拦截；有活跃提案时按 `proposal_step` 收窄、plan 阶段原型 allowlist 逻辑不变）；保护范围变更命令的宿主审批（§2.88.6）在任何提案状态下都生效。
+
+条件 3 不满足（非 git 仓库、git 不可用、git 调用失败）时**回落**：沿用修改前的 Bash 判定顺序（`BASH_SAFE_PATTERNS` 安全白名单先判、`BASH_WRITE_PATTERNS` 写入模式与路径提取、解析不出即阻断）与 Edit / Write 的白名单判定；回落时不拍快照、不做事后检查。以下四处保守修改在**两种模式**（git 判据与回落）下都生效：
+
+| # | 保守修改 | 依据 |
+|---|---|---|
+| 1 | `.gitignore` 不在硬编码白名单内 | C14 |
+| 2 | 不可豁免项（`logos/.openlogos-runtime/`、保护范围来源、git 元数据）受保护，先于白名单与 exempt 判定 | §2.87.2 第 2～4 步 |
+| 3 | exempt 从配置读取（字段缺省用内置默认，配置损坏视为 `[]`），取代 R-REF / R-STAGING 硬编码 | §2.88.1 |
+| 4 | 保护范围变更命令按宿主审批处理 | §2.88.6 |
+
+四处修改只会让判定更保守（或与旧硬编码等价），回落不会因 git 异常而放宽。
+
+### 2.87.2 受保护判定顺序
+
+`is_protected(rel_path)` 对路径按下表顺序判定，先命中先返回。第 2～4 步是**不可豁免项**，先于硬编码白名单与 exempt：位于白名单目录或 exempt 目录内也照样受保护。
+
+| 序 | 规则 | 结论 | 来源 |
+|---|---|---|---|
+| 1 | 路径归一化后位于项目根之外 | 不保护 | 既有管辖边界（§2.64） |
+| 2 | guard 自有状态：位于 `logos/.openlogos-runtime/` 下 | 保护（Edit / Write 恒阻断；Bash 能确定目标时恒阻断） | 防止篡改执行记录与待报告项 |
+| 3 | 保护范围来源：任意层级 `.gitignore`；git 目录下的 `info/exclude`；位于项目根内的 `core.excludesFile` 指向的文件；`logos/logos.config.json`（即使被 git 忽略） | 保护 | C14 |
+| 4 | git 元数据：git 目录（`.git/`，以及 `git rev-parse --absolute-git-dir` / `--git-common-dir` 位于项目根内时的对应目录）下的路径 | 保护 | 防止改写 git 配置、钩子绕过 |
+| 5 | 命中硬编码白名单 `WHITELIST_PREFIXES`（`logos/changes/`、`.claude/` 等；`.gitignore` 已移出） | 不保护 | 既有白名单 |
+| 6 | 命中 `guard.exempt`（字段缺省为内置默认；配置损坏视为 `[]`） | 不保护 | C02、§2.88.1 |
+| 7 | 位于 `logos/resources/` 下 | 保护（无论是否被 git 忽略） | C07 |
+| 8 | 已被 git 跟踪（`git ls-files --error-unmatch -- <path>` 成功） | 保护 | C01 |
+| 9 | 被 git 忽略（`git check-ignore -q -- <path>` 成功）且未跟踪 | 不保护 | C01 |
+| 10 | 其余（未跟踪、未被忽略的新文件 / 新目录） | 保护 | C01 |
+
+`logos/logos.config.json` 承载 `guard.exempt` / `guard.unversioned`，若可被直接改写，AI 可先把 `src/` 加进 exempt 再写代码，因此与忽略规则来源同等保护；CLI 受限子命令经宿主审批（§2.88.6）后写入它，按独立 openlogos 调用更新基线（§2.87.5）。exempt 的语法同样拒绝第 2～4 步的路径（§2.88.2）。
+
+路径归一化、管辖边界与符号链接防逃逸复用既有 `is_whitelisted_path` 的实现，不另建归一化。目录目标（如 `mkdir` 的实参）按目录路径本身判定：目录不存在时，第 9 步以 `git check-ignore` 对该路径的结论为准。非 git 回落时第 4 步只按 `.git/` 前缀判定，第 7～10 步不适用（§2.87.1）。
+
+边界示例（项目 `.gitignore` 含 `/logos/*`、`dist/`，`dist/app.dmg` 已被强制入库）：
+
+| 路径 | `guard.exempt` | 命中 | 结论 |
+|---|---|---|---|
+| `/tmp/x.log` | 缺省 | 1 | 不保护 |
+| `logos/.openlogos-runtime/guard-records/a.json` | 缺省 | 2 | 保护 |
+| `.gitignore`、`packages/web/.gitignore` | 缺省 | 3 | 保护 |
+| `docs/.gitignore` | `["docs/"]` | 3 | 保护（exempt 目录内仍受保护） |
+| `.claude/.gitignore` | 缺省 | 3 | 保护（白名单目录内仍受保护） |
+| `logos/logos.config.json`（被 `/logos/*` 忽略） | `["logos/"]` | 3 | 保护（exempt 目录内仍受保护） |
+| `.git/info/exclude` | 缺省 | 3 | 保护 |
+| `.git/config`、`.git/hooks/pre-commit` | 缺省 | 4 | 保护 |
+| `logos/changes/foo/proposal.md` | 缺省 | 5 | 不保护 |
+| `.claude/settings.json` | 缺省 | 5 | 不保护 |
+| `logos/resources/reference/note.md` | 缺省 | 6 | 不保护 |
+| `logos/resources/reference/note.md` | 显式 `[]` 后配置损坏 | 7 | 保护（损坏视为 `[]`） |
+| `logos/resources/verify/baseline-seed-runs/r1/staging/a.md` | 缺省 | 6 | 不保护 |
+| `logos/resources/prd/x.md`（被 `/logos/*` 忽略） | 缺省 | 7 | 保护 |
+| `dist/app.dmg`（被忽略但已跟踪） | 缺省 | 8 | 保护 |
+| `src/a.ts`（已跟踪） | 缺省 | 8 | 保护 |
+| `dist/a.txt`（被忽略、未跟踪） | 缺省 | 9 | 不保护 |
+| `src/new.ts`（未跟踪、未被忽略） | 缺省 | 10 | 保护 |
+
+### 2.87.3 Edit / Write / MultiEdit / NotebookEdit：事前判定
+
+- 新判据生效时，按目标路径调用 `is_protected`：保护 → exit 2，stderr 与 stdout JSON 双通道输出变更管理指引（既有 `block()` 合同）；不保护 → exit 0。
+- 有活跃提案时的 `proposal_step` 收窄、plan 阶段原型 allowlist 不变。
+- 目标路径解析失败（`file_path` / `notebook_path` 缺失）维持既有 fail-closed。
+
+### 2.87.4 Bash / PowerShell：事前轻判
+
+事前只保留「一眼可判」的拦截，其余交给事后检查：
+
+| 形态 | 事前结论 |
+|---|---|
+| 保护范围变更命令（`openlogos exempt add|remove`、`openlogos ignore add|remove`） | 按 §2.88.6：`permission_mode` 为 `default` / `acceptEdits` 时返回 `permissionDecision: ask` 交宿主审批，其他情况 exit 2 |
+| 能从命令中确定写入目标：既有重定向目标提取（`>`、`>>`），`rm` / `cp` / `mv` / `mkdir` / `touch` / `chmod` / `chown` 的路径实参提取（§2.66.2 规则） | 任一目标 `is_protected` 为真 → exit 2；全部不保护 → 放行并照常拍快照 |
+| 可识别的独立 git / openlogos 调用（§2.87.5） | 放行，按 §2.87.5 处理基线 |
+| 解析不出写入目标（变量展开、命令替换、管道、复合形态、脚本、`node -e` 等） | 放行，由事后检查兜底 |
+| 命中只读命令清单（`ls`、`cat`、`grep`、`git status` 等）且无重定向、无复合形态 | 放行，可跳过拍快照（仅性能优化，不改变判定结果） |
+
+`BASH_SAFE_PATTERNS` 在新判据下只保留为「不需要拍快照的只读命令」清单，不再作为放行依据；「解析不出即阻断」不再生效。回落时两者恢复原语义（§2.87.1）。
+
+### 2.87.5 豁免的独立调用（git / openlogos）
+
+**切段规则**（C10、C13 共用）：
+
+1. 在引号外按 `&&`、`||`、`;` 切段；
+2. 任一处出现引号外的 `|`、`>`、`<`、`$(`、反引号、`(`、`)`、单独的 `&`、`<<` → 不是独立调用；
+3. 每段首词只能是 `git`、`openlogos` 或 `cd`，且 `cd` 段之外至少有一段 `git` 或 `openlogos`；git 与 openlogos 混合也算独立调用。
+
+**处理**：
+
+- 独立调用不报告变化。
+- 没有未关闭执行记录时，不拍快照、不做对比。
+- 存在未关闭执行记录时，调用前执行 `snapshot --rebase-only`、调用后执行 `check --rebase-only`：求出本次调用改动的路径，只把这些路径在**所有**未关闭记录中的基线更新为调用后内容，其余路径的基线不动。
+- 不满足切段规则的调用不享受豁免，按普通 Bash 拍快照并对比；git / openlogos 段造成的变化无法与其他段分开，反馈附加提示「请把 git / openlogos 操作拆成单独的调用后重试」。
+- 保护范围变更命令（§2.88.6）先经宿主审批，再按本节处理。
+
+**引擎 `restore` 的独立调用**（R9a，与 C13 同等对待）：
+
+- 形态：允许 `cd <目录> &&` 前缀，`node "<引擎路径>" restore <record_id> -- <path>` 必须是唯一的非 `cd` 段，且引擎路径须等于已部署的托管路径（Claude Code 下 `$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs` 及其展开后的绝对路径，Cursor 下 `.cursor/hooks/openlogos-guard-post.cjs`）。
+- 处理：不报告变化；只把被恢复路径在所有未关闭记录中的基线改回被恢复记录中的执行前状态，并清除该路径的去重条目；其他路径不受影响。
+- 与其他命令组成复合调用（如 `node "…/guard-post-check.cjs" restore r1 -- src/a.js && echo x > other`）、或引擎路径不是托管路径时，不享受此豁免，按普通 Bash 拍快照并对比。
+
+示例：
+
+| 命令 | 结论 |
+|---|---|
+| `git checkout feature-x` | 独立调用：放行，不报告 |
+| `cd /repo && git pull --rebase` | 独立调用：放行，不报告 |
+| `git add -A && git commit -m "x"` | 独立调用：放行，不报告 |
+| `openlogos sync` | 独立调用：放行，不报告（托管区块、`.gitattributes` 的写入不计为未立案改动） |
+| `git status && node modify-source.js` | 非独立：拍快照对比，`src/` 变化被报告并提示拆分 |
+| `git diff > src/a.ts` | 非独立（引号外 `>`）：事前即可确定目标 `src/a.ts` 受保护 → exit 2 |
+| `git apply $(cat p.txt)` | 非独立（`$(`）：拍快照对比 |
+| `openlogos sync && node modify-source.js` | 非独立：拍快照对比 |
+| `git stash pop &` | 非独立（单独 `&`）：拍快照对比 |
+| `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" restore toolu_01AbC -- src/new.ts` | 独立 restore 调用：不报告，`src/new.ts` 基线改回执行前状态 |
+| `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" restore toolu_01AbC -- src/a.js && echo x > other` | 非独立：拍快照对比 |
+| `node /tmp/guard-post-check.cjs restore toolu_01AbC -- src/a.js` | 非托管引擎路径：拍快照对比 |
+
+### 2.87.6 执行记录与内容级快照（C09）
+
+**执行记录**存放在 `logos/.openlogos-runtime/guard-records/<record_id>.json`，`record_id` 为宿主调用标识（`tool_use_id`）；缺失时为 `anon-<时间戳>-<随机>` 并标记 `anonymous: true`。字段：
+
+| 字段 | 含义 |
+|---|---|
+| `id`、`anonymous` | 记录标识；是否缺少调用标识 |
+| `generation` | 记录代际，每次更新加一（§2.87.10a） |
+| `host`、`session_id` | 宿主（`claude-code` / `cursor`）与创建会话 |
+| `command` | 调用的命令原文 |
+| `background`、`background_task_id` | 是否后台调用；后台任务标识（由 PostToolUse 返回） |
+| `created_at` | 创建时刻 |
+| `head`、`index_tree` | 执行前 `HEAD` 提交与索引树的 oid（辅助信息） |
+| `tracked_baseline` | 执行前每个已跟踪文件引用的原始字节基线 `raw_oid`（来自原始字节基线缓存） |
+| `entries` | 其余快照条目 `{path: {exists, type, mode, digest, raw_oid?, recoverable}}`，`type` 取 `file` / `symlink` / `dir`；`digest` 为原始字节摘要，`mode` 为权限位 |
+| `closed` | 是否已关闭 |
+
+**快照覆盖范围**：
+
+| 类别 | 内容 |
+|---|---|
+| 已跟踪文件 | 全部已跟踪文件，干净与否都有原始字节基线（经原始字节基线缓存，见下） |
+| 工作区其余 | 未跟踪且未被忽略的文件、`logos/resources/` 下被忽略且非 exempt 的文件 |
+| 保护范围来源 | 任意层级 `.gitignore`、git 目录 `info/exclude`、项目根内的 `core.excludesFile`、`logos/logos.config.json`（每次必录） |
+| git 元数据 | git 目录（`git rev-parse --absolute-git-dir`，以及位于项目根内的 `--git-common-dir`）中的 `config`、`info/` 下全部文件、`hooks/` 下全部文件；`core.hooksPath` 指向项目根内且未跟踪的目录同样纳入 |
+
+git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`objects/`、`refs/`、`logs/`、`index`、`HEAD`、`ORIG_HEAD`、`FETCH_HEAD`、`MERGE_*`、`packed-refs`、`*.lock`、`modules/` 下的对象库。引擎的 `git hash-object -w` 只写 `objects/`，因此不会自报。独立 git 调用（如 `git config …`）造成的元数据变化按 §2.87.5 只更新基线。
+
+**原始字节基线缓存**（`logos/.openlogos-runtime/raw-baseline.json`）：
+
+- 每个已跟踪文件对应 `{stat: {size, mtime_ns, ino, ctime_ns}, raw_oid}`，另记缓存写入时刻。
+- 首次建立时全量计算：`git hash-object -w --no-filters --stdin-paths`。没有内容转换的文件，其 `raw_oid` 与索引中的 blob 相同，不额外占用对象库。
+- 之后只对 stat 签名变化的文件重算；mtime 不早于缓存记录时刻的条目一律重算（racy 规避）。
+- 快照为每个已跟踪文件引用缓存中的 `raw_oid`，作为执行前基线。
+- 合法写入（提案期间、独立 git / openlogos 调用、提案边界）之后，按 §2.87.5 / §2.87.8 / §2.87.9 更新缓存与基线。
+
+**按原始字节摘要与留存**：
+
+- 摘要一律取原始字节：`git hash-object --no-filters`，不经过 `core.autocrlf`、clean filter 等过滤。
+- 快照条目（脏文件、未跟踪文件、被忽略规格、保护范围来源、git 元数据）用 `git hash-object -w --no-filters --stdin-paths` 批量写入对象库，得到 `raw_oid`，`recoverable: true`。
+- 单文件上限 5 MiB；超限或无法读取的条目只记摘要，`recoverable: false`。
+- 允许按 stat 签名（size、mtime_ns、ino、ctime_ns）复用上一份记录的摘要；mtime 不早于该签名记录时刻的条目必须重算，防止同一时间粒度内的二次写入漏检。
+
+不比较 `git status` 文本：同一脏文件被再次覆盖后 `git status` 输出不变，只比状态列表会漏检，也无法回滚。不按过滤后内容留存或比较：`core.autocrlf=true` 的 CRLF 文件或配置了 clean filter 的文件，过滤后的 blob 既无法逐字节还原执行前内容，也可能掩盖变化（clean filter `tr a-z A-Z` 下 `hello` 改为 `HELLO`，过滤后 diff 为空）。
+
+### 2.87.7 变化判定与反馈内容
+
+**变化判定**：以原始字节为准，以下均计为变化——新增、删除、类型变化（如普通文件换成符号链接）、原始字节摘要变化。
+
+- 快照条目：执行后取原始字节摘要与执行前比较。
+- 已跟踪文件：执行后对 stat 签名变化的已跟踪文件重算原始字节摘要，与执行前的 `tracked_baseline` 比较；不依赖过滤后的 `git diff` / `git status` 决定是否检查，过滤后的比较只作为「是否脏」的辅助信息。
+- 只有落在受保护内容（§2.87.2）内的变化才计入报告。
+
+**「执行前已有」的判定**：只要存在未关闭记录，以最早一个未关闭记录为基线；之后出现的受保护变化不会被新快照吸收为既有改动。执行前已存在、本次未再改动的受保护改动不计入。
+
+**去重（只针对同一变化事件）**：
+
+- 去重键为 `(path, raw_digest, 事件签名)`，存于 `logos/.openlogos-runtime/reported.jsonl`。事件签名取变化被观测时文件的 `(ino, ctime_ns)`；文件已删除时取 `"absent"` 加观测序号。
+- 同一事件只报一次；反复检查同一未变化的状态不重复报告。
+- 以下情况清除该路径的去重条目，使同一内容再次出现时能重新报告：
+  1. 检查点观测到该路径回到基线（已恢复）；
+  2. 该路径基线被合法更新（独立 git / openlogos 调用的 rebase、提案边界）；
+  3. 该路径出现新的事件签名（再次被写入，即使内容相同，ctime 也会变）。
+
+| 序列 | 报告次数 |
+|---|---|
+| 修改为 X → 检查 → 不恢复 → 再检查三次 | 1 |
+| 修改为 X → 报告 → 恢复 → 检查 → 再次修改为 X → 检查 | 2 |
+| 修改为 X → 报告 → 再次写入相同内容 X（ctime 变化）→ 检查 | 2 |
+| 修改为 X → 报告 → 独立 `git restore src/a.js` → 再次修改为 X | 2 |
+
+**反馈**（exit 2；stderr 为可读文本，Claude Code 宿主同时在 stdout 输出 `{"reason": "..."}`）包含：
+
+1. 变化文件列表，每项标注变化类型（新增 / 删除 / 修改 / 类型变化）；
+2. 归因：本次调用；或未结束的后台调用（列出命令原文）；或无法归因；
+3. 可恢复条目的恢复命令：统一为 `node "<引擎路径>" restore <record_id> -- <path>`（§2.87.7a），不给出 shell 重定向或 git 检出命令；`recoverable: false` 或执行前后形态不支持自动恢复的条目标明「不可自动恢复」；
+4. 下一步：回滚上述变化，或运行 `openlogos change <slug>` 立案后再修改；
+5. 无法归因时写明「可能来自未结束的后台调用或用户手动修改，需向用户确认，请勿自行回滚」，且不给出「请回滚」的要求。
+
+引擎路径：Claude Code 下为 `$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs`，Cursor 下为 `.cursor/hooks/openlogos-guard-post.cjs`。
+
+反馈模板（Claude Code，归因到本次调用）：
+
+```
+⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案，本次命令改动了受版本控制保护的内容。
+
+变化文件：
+  修改  src/a.js
+  新增  src/new.ts
+
+恢复命令（恢复前会校验文件仍为本次命令执行后的状态，不一致则拒绝恢复）：
+  node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" restore toolu_01AbC -- src/a.js
+  node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" restore toolu_01AbC -- src/new.ts
+
+请回滚上述变化，或先运行 `openlogos change <slug>` 创建变更提案后再修改。
+```
+
+guard 不自动执行恢复。
+
+### 2.87.7a 恢复（引擎 `restore` 子命令）
+
+`restore <record_id> -- <path>` 把一个路径恢复为该记录的执行前状态（执行前状态取该记录中的基线：快照条目或 `tracked_baseline`）。
+
+**前置校验**：当前状态（是否存在、文件类型、原始字节摘要）必须与该报告记录的「执行后状态」完全一致；不一致（例如之后又被用户修改）→ 拒绝恢复，只报告差异，退出码 1。
+
+**恢复动作**（按执行前状态与当前状态区分）：
+
+| 执行前 | 当前 | 动作 |
+|---|---|---|
+| 普通文件 | 普通文件 / 符号链接 / 不存在 | 在同一目录写临时文件 `.<name>.openlogos-restore-<pid>`，写入 `raw_oid` 的原始字节、设置原权限位、fsync，再 `rename` 替换目录项；目录项本身被替换，当前是符号链接时不会沿链接写入，链接目标不被改写 |
+| 普通文件 | 目录 | 拒绝自动恢复，只报告 |
+| 符号链接 | 任意非目录 | 在同一目录创建指向原目标的临时链接，再 `rename` 替换目录项 |
+| 不存在 | 普通文件 / 符号链接 | 删除目录项 |
+| 不存在 | 目录 | 拒绝自动恢复，只报告 |
+| 任意 | `recoverable: false` | 拒绝自动恢复，只报告 |
+
+- 干净的已跟踪文件同样以原始字节基线 `raw_oid` 恢复，不使用 git 检出：smudge 不保证还原原始字节。
+- 恢复本身不产生新报告：独立调用形态的 `restore` 按 §2.87.5 豁免（R9a），不报告变化，只把被恢复路径在所有未关闭记录中的基线改回被恢复记录中的执行前状态，并清除该路径的去重条目；即使被恢复的是未跟踪文件（`restore` 调用自己的快照记下的是违规后内容），这次调用本身与之后的检查都不报告。与其他命令组成的复合调用不享受此豁免。
+- 输出：成功时 `✓ restored <path>`，退出 0；拒绝时说明原因（当前状态与执行后状态不一致 / 形态不支持），退出 1。
+
+### 2.87.8 执行记录生命周期（C12）
+
+| 事件 | 动作 |
+|---|---|
+| PreToolUse（Bash / PowerShell，非豁免、非只读） | `snapshot`：创建执行记录 |
+| PreToolUse（任意工具） | 补查：对所有未关闭记录做对比，新发现写入待报告项；**不阻断当前工具调用本身** |
+| PostToolUse / PostToolUseFailure（同一标识、非后台调用） | 最终对比 → 送达 → 关闭记录 |
+| PostToolUse（后台调用，返回后台任务标识） | 对比 → 送达；记录 `background_task_id`，保持打开 |
+| 宿主工具结果确认后台任务已结束（查询输出显示已完成、失败或被终止，或终止工具成功） | 最终对比 → 送达 → 关闭记录 |
+| Stop | 对所有未关闭记录对比并送达待报告项；**不关闭记录** |
+| SessionStart | 接管所有未关闭记录继续对比，待报告项注入会话上下文；**不关闭记录** |
+| 会话结束（含 `/clear`、切换会话） | 不做任何清理（不注册 SessionEnd） |
+| 无调用标识的结束事件 | 只触发对比，不关闭任何记录 |
+
+规则：
+
+- **关闭只凭宿主给出的执行结束证据**。补查时暂未发现变化、Stop、会话结束都不是结束证据。
+- **迟到的结束事件**：照常做最终对比后关闭，已报告的变化不重复报。
+- **匿名记录**不按「最近一次」猜测关联，无法被任何结束事件关闭，长期保留并持续参与对比。
+- **基线只在两种情况下更新**：独立 git / openlogos 调用（只更新它改动的路径，§2.87.5）；提案结束边界（§2.87.9）。
+- 关闭记录时写入墓碑 `guard-records/<id>.closed` 并删除记录（§2.87.10a）；被它独占引用的对象库条目由 git 自身的 gc 回收，不另建清理。
+- 有活跃提案时，各检查点只维护记录（关闭、去重），不报告变化。
+
+### 2.87.9 提案边界（C12）
+
+提案起止边界由 CLI 在写入和删除 guard 文件时固定，不推迟到之后的检查：
+
+| 时刻 | 引擎调用 | 效果 |
+|---|---|---|
+| `openlogos change` 写入 `logos/.openlogos-guard` 之前 | `boundary-start` | 对所有未关闭记录做一次对比，尚未报告的变化写入 `pending-reports.jsonl`；提案期间不丢弃，之后的检查照常送达 |
+| `openlogos archive` 删除 `logos/.openlogos-guard` 之前 | `boundary-end` | 所有未关闭记录的基线整体更新为当时内容；提案期间的写入不报告，也不会在归档后被误报 |
+| 归档之后 | 无 | 检查只做对比、不再更新基线；归档后、首次检查前的后台写入照样被发现 |
+
+- 引擎不存在（未部署 Claude / Cursor 资产的项目）时跳过，不阻断 change / archive。
+- guard 文件不经 CLI 被创建或删除（如手动删除）时边界缺失：不补做基线更新，按原基线对比，提案期间的改动以「需向用户确认」各报告一次，宁可多报，不静默吸收。
+
+### 2.87.10 送达渠道（Claude Code）
+
+| 发现时机 | 送达方式 |
+|---|---|
+| 归因到本次调用（该调用的 PostToolUse / PostToolUseFailure） | 该结束事件以 exit 2 直接反馈 |
+| 补查（PreToolUse、Stop、SessionStart）发现 | 写入 `pending-reports.jsonl`；在下一次 Bash / PowerShell 的 PostToolUse / PostToolUseFailure 或 Stop 时以 exit 2 送达；SessionStart 把待报告项注入会话上下文 |
+| Stop 送达后无新的未送达项 | exit 0；`stop_hook_active` 不导致重复送达 |
+
+hook 注册（`.claude/settings.json`，`"$CLAUDE_PROJECT_DIR"` 形态，幂等合并）：
+
+| 事件 | matcher | 命令 |
+|---|---|---|
+| PreToolUse | 既有条目不变 | `guard-check`（内部对 Bash / PowerShell 调用 `snapshot`，对任意工具做补查） |
+| PostToolUse | `Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check` |
+| PostToolUseFailure | `Bash|PowerShell` | 同上 `check` |
+| Stop | — | 同上 `check --stop` |
+| SessionStart | 既有 phase launcher | 内部调用 `check --session-start` 并把待报告项并入注入上下文 |
+
+后台任务相关的工具名与 tool_response 中后台任务标识、结束状态字段以实施时 Claude Code 真实 hook 输入核实；matcher 中写入不存在的工具名无副作用。
+
+事后检查引擎为单一实现 `plugin/bin/guard-post-check.cjs`（Node，CommonJS），子命令 `snapshot`、`check`、`restore`、`boundary-start`、`boundary-end`；由 guard-check、Claude hooks、Cursor runtime 与 CLI 的 change / archive 共用，随资产 manifest 分发到 `.claude/openlogos/bin/guard-post-check.cjs`，Cursor 侧以同一份字节分发到 `.cursor/hooks/openlogos-guard-post.cjs`。运行时目录 `logos/.openlogos-runtime/` 下：
+
+| 路径 | 内容 |
+|---|---|
+| `state.lock` | 项目级锁（§2.87.10a） |
+| `guard-records/<id>.json`、`guard-records/<id>.closed` | 执行记录；关闭墓碑 |
+| `raw-baseline.json` | 已跟踪文件的原始字节基线缓存（§2.87.6） |
+| `pending-reports.jsonl` | 待报告项 |
+| `pending-spill/<pid>-<时间戳>.json` | 拿不到锁时溢写的待报告项 |
+| `reported.jsonl` | 同一变化事件的去重表（§2.87.7） |
+| `untrack-<时间戳>.lst` | `ignore add` 生成的待移出文件清单（§2.88.5） |
+
+该目录由 `.gitignore` 托管区块固定忽略（§2.88.3），且属于不可豁免项（§2.87.2 第 2 步）。
+
+### 2.87.10a 共享状态的并发与中断合同
+
+多个 hook 进程（并发的 PostToolUse、后台调用的补查、CLI 的 change / archive）共享运行时目录，须满足：
+
+| 机制 | 规则 |
+|---|---|
+| 项目级锁 | `logos/.openlogos-runtime/state.lock`，以 `O_CREAT|O_EXCL` 创建，内容 `{pid, host, acquired_at}`。执行记录、待报告项、去重表、原始字节基线缓存、基线更新等一切状态变更都在锁内进行。等锁最多 5 秒；持锁超过 30 秒且持有进程已不存在视为过期锁，可以打破 |
+| 原子落盘 | 每个状态文件先写同目录临时文件 `*.tmp-<pid>-<rand>`，再 `rename` 覆盖；读取时忽略 `*.tmp-*`，过期临时文件在下次持锁时清理 |
+| 记录代际 | 每个执行记录带 `generation`，更新时在锁内比对，代际落后的写入丢弃 |
+| 墓碑 | 关闭记录时写入 `guard-records/<id>.closed`（保留到下一次会话开始后清理）；之后对该 id 的迟到写入看到墓碑即丢弃，已关闭的记录不会被复活 |
+| PreToolUse 拿不到锁 | 本次调用按「整体状态采集失败」处理，即按非 git 回落判定（更保守，§2.87.1） |
+| PostToolUse / PostToolUseFailure / Stop 拿不到锁 | 把待报告项以 `O_EXCL` 写入 `pending-spill/<pid>-<时间戳>.json`；下次持锁时合并进 `pending-reports.jsonl` 后删除，报告不丢失 |
+| 中断 | 多文件更新（如对多个记录做 rebase）中途中断，只会留下部分记录仍是旧基线，结果是**多报而不是漏报** |
+
+方向性保证：任何锁超时、进程被 kill、写入中断，都只会导致多报、延迟送达或更保守的判定，不会导致受保护变化被静默吸收。
+
+| 场景 | 预期 |
+|---|---|
+| 8 个并发 PostToolUse 写入不同变化 | 全部送达，无丢失、无重复 |
+| 记录关闭后，持有旧代际的进程迟到写入 | 被墓碑拦下，记录不复活 |
+| 写状态文件途中被 kill | 残留 `*.tmp-*` 被忽略，状态文件仍可读 |
+| 持锁进程已退出且锁超过 30 秒 | 锁被打破，后续操作正常 |
+| Stop 时锁被长期占用 | 报告进入 `pending-spill/`，之后合并送达 |
+
+### 2.87.11 Cursor 分层能力（C11）
+
+分两层声明，不宣称与 Claude Code 完全一致：
+
+| 层 | 承诺 |
+|---|---|
+| 保护对象 | 与 Claude Code 一致：同一路径、同一 git 状态给出相同的「是否受保护」结论，两侧使用同一组测试向量（路径 + git 状态 → 是否受保护） |
+| 文件编辑 | IDE 与 CLI 均为 `afterFileEdit` 事后报告，不承诺事前阻断 |
+| Shell 事前 | `beforeShellExecution`：能事前确定的受保护写入 deny；保护范围变更命令返回 `permission: "ask"`（§2.88.6）；同时调用引擎 `snapshot` |
+| Shell 事后 | 新增 `afterShellExecution`：runtime 新模式 `shell-after` 调用引擎 `check` |
+| 反馈渠道 | 能否注入 agent、能否以退出码阻断后续，以真实宿主实测为准；测不出即降级为事后报告，并在 `spec/cursor-plugin.md` 中声明 |
+
+接线：`cli/src/lib/cursor-adapter.ts` 的 `CURSOR_HOOK_EVENTS` 增加 `afterShellExecution`；模板 `plugin-cursor/hooks/hooks.json` 新增 `"afterShellExecution": [{ "type": "command", "command": "node .cursor/hooks/openlogos-runtime.cjs shell-after" }]`。快照用宿主输入中的调用标识关联（以实测为准，候选为 `generation_id` + 命令文本哈希）；拿不到可靠标识时创建匿名记录，不猜测关联，生命周期同 §2.87.8。
+
+更正：删除「Cursor IDE 经同一 hooks.json 获得完整 preToolUse 硬拦」的说法（`cli/src/lib/cursor-adapter.ts` 托管文案、`spec/pretooluse-guard.md` Cursor 适配合同表格的 preToolUse 行、`spec/cursor-plugin.md` 相应表述、§2.59.1 / §2.59.6）。
+
+### 2.87.12 其他宿主
+
+- qoder / workbuddy / zcode：沿用各自按 `proposal_step` 收窄的保守模型，本案不改；若其现有判定会放行保护范围变更命令，在 `spec/pretooluse-guard.md`「已知限制」中如实写明。
+- codex / opencode：无写入拦截，不涉及。
+
+### 2.87.13 已知覆盖限制与残余风险
+
+| 限制 | 表现 | 处理 |
+|---|---|---|
+| 宿主始终不报告结束的后台任务（脱离会话的守护进程、缺少调用标识的调用） | 记录长期保留 | 期间的受保护变化以「需向用户确认」各报告一次，不静默放过 |
+| git 自身触发的钩子（如 pre-commit 改写文件） | 改动归属该 git 调用 | 作为残余风险写入规范，不报告 |
+| 独立 git / openlogos 调用执行期间，后台对同一路径的并发写入 | 随基线更新一起被吸收 | 作为残余风险写入规范 |
+| 事后检查发现的是已发生的写入 | 写入已落盘 | 内容级快照保证可恢复；超限或不可读条目标明不可自动恢复 |
+| 手动创建 / 删除 guard 文件 | 提案边界缺失 | 宁可多报，按「需向用户确认」报告 |
+| 有意对抗的 agent（如修改白名单内 `.claude/` 的 hook 注册或 guard 脚本） | guard 可被绕过 | 威胁模型声明：guard 防的是 AI 无意或惯性越界，不防有意对抗；C14 的保证范围是「在宿主会弹出审批的模式下，保护范围变更必须经用户在宿主界面批准」 |
+| 宿主在 `bypassPermissions` / `dontAsk` 下对 `ask` 静默放行、非交互模式按 `defer` 处理 | `ask` 不能证明用户批准 | 这些模式下受限命令直接 exit 2（§2.88.6） |
+
+### 2.87.14 与既有规格的关系
+
+| 既有规格 | git 判据下 | 回落下 |
+|---|---|---|
+| §2.66.2「解析不出 fail-closed（保守臂）」与「`BASH_SAFE_PATTERNS` 先于写模式判定」 | 取代：解析不出事前放行、事后兜底；只读清单仅用于跳过快照。路径提取规则保留，用于事前轻判（§2.87.4） | 原样生效 |
+| §2.64 管辖边界与阻断 reason 双通道输出 | 保留，为判定顺序第 1 步 | 原样生效 |
+| R-REF / R-STAGING 硬编码豁免 | **取代**：迁入 `guard.exempt` 内置默认值（§2.88.1） | **同样取代**（四处保守修改之 3） |
+| 硬编码白名单中的 `.gitignore` | **取代**：移出白名单，按保护范围来源保护 | **同样取代**（四处保守修改之 1） |
+| 白名单 / exempt 先于一切项目内判定 | **取代**：不可豁免项先判（§2.87.2 第 2～4 步） | **同样取代**（四处保守修改之 2） |
+
+断言「`.gitignore` 白名单放行」「R-REF / R-STAGING 硬编码」的旧用例在两种模式下结论都已改变，须改写断言，不再作为回落回归锚；其余旧用例仍作为回落回归锚。
+
+### 2.87.15 追溯
+
+- 来源变更：guard-versioned-content-scope（决策 C01、C05、C06、C07、C09、C10、C11、C12、C13）。
+- 需求：「guard 以版本控制内容为保护对象需求」。
+- 场景：S09 变更管理（launched 无提案时的判定时序）、S08 同步（hook 注册、Cursor `afterShellExecution`、引擎分发）。
+- 根规范：`spec/pretooluse-guard.md`、`spec/cursor-plugin.md`。
+- 代码（以合并后规格为准）：`plugin/bin/guard-check`、`plugin/bin/guard-post-check.cjs`、`cli/src/commands/change.ts`、`cli/src/commands/archive.ts`、`cli/src/commands/init.ts`、`plugin-cursor/hooks/runtime.cjs`、`plugin-cursor/hooks/hooks.json`、`cli/src/lib/cursor-adapter.ts`。
+
+## 2.88 版本管理范围配置：两张清单、托管区块与人类确认
+
+### 2.88.0 问题：「不需要立案」的路径没有用户入口，且两种语义被混在一起
+
+修改前，「哪些路径不需要立案」散落在 guard 硬编码白名单与内置豁免（R-REF / R-STAGING）中，用户无法调整；init 从不维护 `.gitignore`。以 git 为基准后，依赖与产物目录未被忽略时仍会被拦截。同时「不入库」与「入库但不需立案」语义不同：`logos/resources/reference/` 在 runlogos 与本仓都有已入库、跨会话共享的文件，若靠 `.gitignore` 放行会让它们从仓库消失。
+
+### 2.88.1 两张清单与配置
+
+单一事实源为 `logos/logos.config.json`：
+
+```json
+"guard": {
+  "unversioned": ["node_modules/", "dist/"],
+  "exempt": ["logos/resources/reference/", "logos/resources/verify/baseline-seed-runs/*/staging/"]
+}
+```
+
+| 字段 | 语义 | 对 guard 的作用 | 渲染 |
+|---|---|---|---|
+| `guard.unversioned` | 不入库的忽略模式 | 间接：经 `.gitignore` 托管区块使路径被 git 忽略，按 §2.87.2 第 9 步不保护 | 渲染进 `.gitignore` 托管区块 |
+| `guard.exempt` | 入库但写入不需立案的路径 | 直接：§2.87.2 第 6 步 | 不渲染 |
+
+guard 读取 `guard.exempt` 时区分两种情况：
+
+| 情况 | 判定 | exempt 取值 |
+|---|---|---|
+| **字段缺省**：`guard` 或 `guard.exempt` 不存在 | 正常 | 内置默认（上例两条，与原 R-REF / R-STAGING 等价） |
+| **显式写出**（包括空数组 `[]`） | 正常 | 以写出内容为准，用户可删除默认项 |
+| **配置损坏**：`logos.config.json` 无法解析，或 `guard` 不是对象、`guard.exempt` 不是字符串数组 | stderr 警告 | 视为 `[]`，不豁免任何路径 |
+| 单个条目非法（§2.88.2） | stderr 警告 | 跳过该条目，其余照常 |
+
+- 配置损坏不回落为内置默认：显式 `guard.exempt: []` 之后配置损坏，`logos/resources/reference/x.md` 仍受保护。
+- `guard.exempt` 缺省时，`exempt add` 与 `exempt remove` 都先把内置默认物化为显式数组再修改；条目被删光后写入显式 `[]`，不回落内置默认。
+- `guard.unversioned` 缺省等同空数组。
+- 两份清单内去重、保持插入顺序。
+
+### 2.88.2 条目语法与校验
+
+| 清单 | 合法形式 | 拒绝 |
+|---|---|---|
+| `exempt` | 项目根相对路径，`/` 分隔；以 `/` 结尾表示目录及其全部后代（按完整路径段匹配），否则为单个文件；`*` 只匹配**一个**路径段，且被匹配的段须满足 `^[A-Za-z0-9][A-Za-z0-9._-]*$` | 绝对路径；含 `..`、`.` 或空段；含 `\`；空串；`/`；单独 `*`；以 `logos/.openlogos-runtime/` 开头；指向忽略规则来源（任意层级 `.gitignore`、`.git/info/exclude`）；位于 `.git/` 下或等于 `.git/`；等于 `logos/logos.config.json`——exempt 不能把它们移出保护 |
+| `unversioned` | 单行 gitignore 模式 | 空串；含换行；以 `#` 或 `!` 开头；含 `..` 段 |
+
+匹配示例（`exempt`）：
+
+| 条目 | 路径 | 是否命中 |
+|---|---|---|
+| `logos/resources/reference/` | `logos/resources/reference/a/b.md` | 命中 |
+| `logos/resources/reference/` | `logos/resources/reference-old/a.md` | 不命中（完整段匹配） |
+| `logos/resources/verify/baseline-seed-runs/*/staging/` | `logos/resources/verify/baseline-seed-runs/r-01/staging/x.md` | 命中 |
+| `logos/resources/verify/baseline-seed-runs/*/staging/` | `logos/resources/verify/baseline-seed-runs/a/b/staging/x.md` | 不命中（`*` 只匹配一段） |
+| `logos/resources/verify/baseline-seed-runs/*/staging/` | `logos/resources/verify/baseline-seed-runs/.hidden/staging/x.md` | 不命中（段须以字母或数字开头） |
+| `docs/CHANGELOG.md` | `docs/CHANGELOG.md` | 命中 |
+| `docs/CHANGELOG.md` | `docs/CHANGELOG.md.bak` | 不命中 |
+
+配置文件中已存在的非法条目：guard 判定时跳过该条目并警告（不扩大豁免，§2.88.1）；CLI 子命令读取时以退出码 1 报告并零写入，提示用户手工修正。
+
+### 2.88.3 `.gitignore` 托管区块
+
+区块格式：
+
+```
+# >>> openlogos managed >>>
+# 由 openlogos 维护，请用 `openlogos ignore` 修改；区块外内容不会被改动
+logos/.openlogos-runtime/
+<guard.unversioned 条目，每行一条，按配置顺序>
+# <<< openlogos managed <<<
+```
+
+| 规则 | 说明 |
+|---|---|
+| 固定条目 | 只有 `logos/.openlogos-runtime/`；`logos/.openlogos-guard` 是否入库保持各项目现状，不纳入托管区块 |
+| 位置 | 只处理项目根 `.gitignore`；无区块时追加到文件末尾（前面补一个空行）；文件不存在时新建仅含区块的文件 |
+| 区块外 | 逐字节不变 |
+| 行尾 | 沿用文件现有风格：首个换行为 CRLF 则整个区块用 CRLF，否则用 LF |
+| 损坏 | 出现多个起始标记、多个结束标记、或只有起始没有结束标记 → fail loud（exit 1），零写入，提示用户手工修复 |
+| 幂等 | 渲染结果与现有内容相同 → 不写盘 |
+| 写入方 | 只有经宿主审批的 `openlogos ignore add|remove`、按配置重渲染的 `openlogos sync`、以及 init / adopt（§2.88.7）；AI 直接用 Edit / Bash 修改 `.gitignore` 或 `logos/logos.config.json` 属于受保护写入 |
+
+### 2.88.4 `ignore` / `exempt` 子命令行为
+
+```
+openlogos ignore add <pattern...>     openlogos exempt add <path...>
+openlogos ignore remove <pattern...>  openlogos exempt remove <path...>
+openlogos ignore list [--format json] openlogos exempt list [--format json]
+```
+
+| 情形 | 行为 | 退出码 |
+|---|---|---|
+| 参数全部合法，含新条目 | 追加新条目、写盘 | 0 |
+| `add` 的条目已存在 | 提示「已存在」，该条目不写 | 0 |
+| `remove` 的条目不存在 | 提示「不存在」 | 0 |
+| 任一参数非法 | 逐个点名非法参数与原因，**整批**不写 | 1 |
+| 缺少参数 / 未知动作 | 输出用法 | 1 |
+| `logos.config.json` 缺失或不可解析 | 报错 | 1 |
+| 托管区块损坏（仅 `ignore` add / remove） | 报错，配置与 `.gitignore` 均不写 | 1 |
+
+- `guard.exempt` 缺省时，`exempt add` 与 `exempt remove` 都先把内置默认物化为显式数组再修改；删光后写显式 `[]`，不回落内置默认。
+- 固定运行时条目 `logos/.openlogos-runtime/`：`ignore add` 它 → 提示「已固定在托管区块中」，不写盘，退出 0；`ignore remove` 它 → 按参数非法处理，退出 1、零写入；`ignore list` 只列 `guard.unversioned`，不列固定条目。
+- `ignore` add / remove 同时写 `logos.config.json` 与托管区块：先写配置，后写区块；区块写失败时把配置回滚为写入前的字节，整体表现为零写入。
+- `list --format json` 的数据部分为 `{"entries":[{"value":"dist/","source":"config"}]}`；`exempt` 的内置默认项 `source` 为 `default`，显式写出后为 `config`。
+- 非 git 仓库：命令照常读写配置与托管区块；`ignore add` 跳过已跟踪统计，并提示「当前目录不在 git 仓库中，guard 新判据不生效」。
+- CLI 本身不做审批：用户在终端自行执行（含 Claude Code 中的 `! <命令>`）时直接生效；AI 发起时由 guard 交宿主审批（§2.88.6）。
+
+### 2.88.5 已跟踪文件提示
+
+`ignore add` 写入成功后，对每个新增模式在 git 仓库内按 gitignore 语义列出被该模式命中的已跟踪文件：`git ls-files -z -ci --exclude=<pattern>`。
+
+数量 > 0 时，输出数量、至多 5 个示例路径，以及**按实际匹配文件生成**的移出命令（不把模式本身放进 pathspec，避免 gitignore 语义与 pathspec 语义不一致，如 `/build/`、`*.pyc`）：
+
+| 匹配文件数 | 提示命令 |
+|---|---|
+| ≤ 20 | `git --literal-pathspecs rm --cached -- <路径1> <路径2> …`，每个路径按 POSIX 单引号转义（`'` 写作 `'\''`） |
+| > 20 | CLI 把 NUL 分隔的文件列表写入 `logos/.openlogos-runtime/untrack-<时间戳>.lst`，提示 `git --literal-pathspecs rm --cached --pathspec-file-nul --pathspec-from-file=logos/.openlogos-runtime/untrack-<时间戳>.lst` |
+
+- **不代为执行**；这些文件在移出版本控制前继续受保护（§2.87.2 第 8 步先于第 9 步）。
+- `--literal-pathspecs` 保证含空格、`*`、`?`、`[` 的文件名按字面匹配；执行提示命令后恰好移出匹配文件，其他文件不变。
+- 示例：模式 `*.pyc` 命中 `a/x.pyc`、`b c/y.pyc`、`lit*.pyc` 三个已跟踪文件时，提示 `git --literal-pathspecs rm --cached -- 'a/x.pyc' 'b c/y.pyc' 'lit*.pyc'`。
+- 统计失败（git 调用异常）不影响本次写入结果，只输出「无法统计已跟踪文件」的警告，退出码仍为 0。
+
+### 2.88.6 保护范围变更的人类确认（C14）
+
+**受限命令**：`openlogos exempt add|remove`、`openlogos ignore add|remove`（`list` 不受限）。在任何提案状态下都受限（有活跃提案时同样需要审批），git 判据与回落两种模式下都生效。
+
+**原则**：确认必须来自宿主对**这一次实际工具调用**的原生审批。guard 不采信 AI 在对话中的自述，也不使用任何可被普通工具调用伪造的本地授权文件。
+
+**形态约束**：受限命令必须是独立调用，只允许 `cd <目录> &&` 段前缀，且一条调用中只能有一个受限 openlogos 段；与其他命令组成的复合形态一律 exit 2。
+
+**Claude Code**（PreToolUse，按 hook 输入的 `permission_mode`）：
+
+| `permission_mode` | 处理 |
+|---|---|
+| `default`、`acceptEdits` | stdout 输出 `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"该命令会改变 guard 的保护范围（<命令原文>），需要您确认后执行"}}`，exit 0；宿主弹出审批，用户批准则执行，拒绝则不执行 |
+| `bypassPermissions`、`dontAsk`、`auto`、`plan` | exit 2 阻断 |
+| 字段缺失、未知值、非交互运行 | exit 2 阻断 |
+
+依据：Claude Code 官方 hooks 文档说明 `ask` 在 `bypassPermissions` / `dontAsk` 下静默放行、在非交互模式下按 `defer` 处理，这些情况下 `ask` 不能证明用户批准；实施时以真实宿主再核实。
+
+阻断 reason（stderr 与 stdout JSON 双通道）：「当前权限模式（<mode>）下宿主不会弹出确认，无法证明由用户批准。请让用户在终端用 `! <命令原文>` 自行执行，或切换到默认权限模式后重试；不要用对话中的口头同意替代。」复合形态的 reason 见 CLI 交互设计「S40: 版本管理范围配置 — 交互规格」S40-3。
+
+| 情形 | 结论 |
+|---|---|
+| `default` 模式下 AI 执行 `openlogos exempt add src/` | 返回 `ask`，宿主弹出审批 |
+| 用户在审批中批准 | 命令执行，按独立 openlogos 调用处理（§2.87.5） |
+| 用户在审批中拒绝 | 命令不执行 |
+| `bypassPermissions` / `auto` 模式下同一命令 | exit 2，提示用户用 `!` 自行执行或切换模式 |
+| `permission_mode` 字段缺失 | exit 2 |
+| AI 在对话中自述「用户已同意」 | 不影响判定 |
+| 伪造的本地文件或 hook 输入片段 | 不起作用（guard 不读取任何授权文件） |
+| `cd /repo && openlogos exempt add x/ && npm test` | exit 2（复合形态） |
+| 用户在终端执行或 Claude Code 中用 `! openlogos exempt add x/` | 不经 guard，直接生效 |
+
+**`--auto` / 无人值守**：通常运行在 `bypassPermissions` / `auto` / 非交互模式下，受限命令被阻断，不另设机制。
+
+**Cursor**：`beforeShellExecution` 对受限命令返回 `{"permission":"ask","user_message":"…","agent_message":"…"}`。宿主在自动运行模式下是否仍弹出审批以真实宿主实测为准；实测不能保证弹出时改为 deny，并在 `spec/cursor-plugin.md` 写明。
+
+**其他宿主**：不能保证人机审批的一律阻断。qoder / workbuddy / zcode 本案不改，其现有判定若放行受限命令，在 `spec/pretooluse-guard.md`「已知限制」中如实写明。
+
+### 2.88.7 init / adopt 技术栈建议忽略（C04）
+
+| 技术栈 | 识别依据（复用 init 项目探测） | 建议条目 |
+|---|---|---|
+| Node | 项目根存在 `package.json` | `node_modules/`、`dist/`、`build/`、`coverage/` |
+| Python | 项目根存在 `pyproject.toml`、`requirements.txt` 或 `setup.py` | `__pycache__/`、`.venv/`、`*.pyc` |
+| Rust | 项目根存在 `Cargo.toml` | `target/` |
+
+规则：
+
+- 只建议尚未被忽略的条目：在 git 仓库内以 `git check-ignore -q -- <代表路径>` 判断（目录条目以其目录路径、`*.pyc` 以 `x.pyc` 为代表路径），已被忽略的不列出；非 git 仓库时以条目是否已出现在 `.gitignore` 中为准。
+- 多个技术栈同时命中时合并去重，按上表顺序列出。
+- 交互环境（stdin 为 TTY）：列出整份建议清单，一次性确认 `[Y/n]`，直接回车算接受；接受则整份写入 `guard.unversioned` 与托管区块，拒绝则一条都不写。`--locale` / `--ai-tool` 参数不跳过此问。
+- 非交互环境（无 TTY）：不写入建议条目，只输出可复制的 `openlogos ignore add <条目...>` 命令。
+- `logos/.openlogos-runtime/` 不经询问直接写入托管区块并告知（无论交互与否）。
+- 托管区块损坏时：init / adopt 在首次写入任何文件之前失败（exit 1），点名 `.gitignore` 与损坏原因，提示手工修复后重试；不留下半套初始化产物。
+
+### 2.88.8 sync 重渲染
+
+- `openlogos sync` 读取 `guard.unversioned`，按 §2.88.3 重渲染托管区块；结果相同则不写盘。
+- 托管区块损坏（或配置中存在非法 `guard.unversioned` 条目）时：`.gitignore` 零写入并点名报错，其余同步步骤照常完成，最终退出码 1，并提示「sync 部分完成」。
+- sync 只按配置当前内容渲染，不改写 `logos/logos.config.json`。
+- sync 是独立 openlogos 调用，事后检查不报告其写入（§2.87.5）。
+
+### 2.88.8a 托管指令中的非方法论文件例外
+
+`init` / `sync` / `launch` 生成的 AGENTS.md / CLAUDE.md 托管指令（「变更管理」段的行为约束）中，「唯一例外：纯 typo 修复、`.gitignore`/`README.md` 等非方法论文件」改为不再包含 `.gitignore`：
+
+zh：
+
+```
+- 唯一例外：纯 typo 修复、`README.md` 等非方法论文件；`.gitignore` 与 `logos/logos.config.json` 属于 guard 保护范围配置，需调整忽略或免立案路径时，使用 `openlogos ignore` / `openlogos exempt`：宿主会弹出审批，由用户批准；宿主不弹审批的权限模式下，请用户在终端用 `! <命令>` 自行执行
+```
+
+en：
+
+```
+- Only exception: pure typo fixes, `README.md` and other non-methodology files; `.gitignore` and `logos/logos.config.json` define guard's protection scope — to change ignored or exempt paths, use `openlogos ignore` / `openlogos exempt`: the host asks the user to approve the call; in permission modes where the host does not prompt, ask the user to run `! <command>` in the terminal
+```
+
+指令文本与 guard 判定保持一致：指令不得把 guard 会阻断的写入描述为可直接修改。
+
+### 2.88.9 追溯
+
+- 来源变更：guard-versioned-content-scope（决策 C02、C03、C04、C13、C14；defaults）。
+- 需求：「版本管理范围配置（ignore / exempt 与 init 建议忽略）需求」。
+- CLI 交互设计：「S40: 版本管理范围配置 — 交互规格」「S01 / S20: 技术栈建议忽略 — 交互规格」。
+- 场景：S40 版本管理范围配置（新增）、S01 初始化、S20 存量接入、S08 同步。
+- 根规范：`spec/logos.config.schema.json`（`guard.unversioned` / `guard.exempt`）、`spec/pretooluse-guard.md`（保护范围变更的宿主审批）。
+- 代码（以合并后规格为准）：新增 `ignore` / `exempt` 命令、`cli/src/index.ts` 注册与帮助、`cli/src/commands/init.ts`、`cli/src/commands/adopt.ts`、sync 链路。

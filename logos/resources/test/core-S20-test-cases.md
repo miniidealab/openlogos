@@ -225,3 +225,34 @@
 
 - fixture 覆盖「历史 .mdc + 用户自有 rules + 用户 hooks 条目 + 既有项目指令」组合。
 - 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S20"`；失败不得写 pass。
+
+## adopt 技术栈建议忽略确认测试用例
+
+> 覆盖场景 S20「S20 adopt 技术栈建议忽略确认时序」；来源变更 guard-versioned-content-scope（决策 C04）。探测、判定与渲染与 init 共用实现，本节只验证存量项目特有的边界：既有 `.gitignore` 规则、区块外不动、已跟踪产物目录。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S20-49 | 存量 .gitignore 下只建议未被忽略的条目 | 真实 git 仓库：根 `.gitignore` 含 `node_modules/` 与 `/dist`、子目录 `packages/a/.gitignore` 含 `coverage/`（不影响根级探测）、`.git/info/exclude` 含 `build/` → 建议清单只含 `coverage/`；全部候选已命中时不提问、配置无 `guard.unversioned`、区块只含 `logos/.openlogos-runtime/` |
+| UT-S20-50 | 接受 / 拒绝与区块外逐字节不变 | 预置含用户规则、注释、CRLF 行尾、区块外已有 `dist/` 行的 `.gitignore`：接受 → 区块追加在末尾、使用 CRLF、区块外字节（含区块外的 `dist/` 行）不变，`guard.unversioned` 等于建议清单；拒绝 → 配置无 `guard.unversioned`，区块只含运行时目录条目，报告含 `openlogos ignore add` 提示；已有完整区块时原地替换不重复；区块损坏（两个起始标记）→ exit 1，未创建 `logos/`，`.gitignore` 字节不变 |
+| UT-S20-51 | 已跟踪产物目录的提示与非交互默认 | `dist/` 未被忽略且已跟踪 3 个文件：问题中该条目附「含 3 个已跟踪文件」；接受后报告含数量、示例与按实际文件生成的 `git --literal-pathspecs rm --cached -- <3 个单引号转义路径>`（夹具含一个带空格的文件名），夹具内 `git ls-files dist/` 前后不变（CLI 未执行）；在夹具副本中实际执行该命令后恰好移出这 3 个文件、其他已跟踪文件不变；stdin 非 TTY 时不写建议条目、报告含建议清单与 `openlogos ignore add …` 提示命令，adopt 退出码 0 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S20-26 | 真实 adopt 存量 Node 项目的建议忽略 | 真实 git 存量夹具（`package.json` + 已含 `node_modules/` 的 `.gitignore` + 已提交的 `dist/`），伪 TTY 驱动真实 `openlogos adopt` 并接受：只建议 `dist/`、`build/`、`coverage/`；`git check-ignore` 对三者与 `logos/.openlogos-runtime/x` 返回已忽略；`dist/` 下已跟踪文件仍在 `git ls-files` 中；区块外字节不变；随后再次 `openlogos sync`，`.gitignore` 字节零变化 |
+
+### 自动化与证据要求
+
+- 使用真实 `git` 一次性仓库，保存 `.gitignore` 前后字节与 `git ls-files` 前后清单作为证据。
+- 交互用例通过伪 TTY 或注入问答函数驱动真实 adopt 流程；非交互用例断言 stdin 非 TTY。
+- 夹具一律在一次性隔离目录内构造，运行前后本仓项目根字节快照相等。
+- 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S20"`，含 `test_id`、`status`、`duration_ms`、`evidence`；失败不得写 pass。
+
+### 覆盖度校验
+
+- [x] 只建议未被忽略的条目：UT-S20-49、ST-S20-26。
+- [x] 确认后写入、拒绝不写、区块外不动：UT-S20-50、ST-S20-26。
+- [x] 已跟踪文件提示与非交互默认：UT-S20-51。

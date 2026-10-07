@@ -401,3 +401,66 @@ sequenceDiagram
 - 需求：S20 Cursor 存量接入验收。
 - 架构：46.2 资产模型与 owner、46.5 生命周期与事务顺序。
 - 测试：UT-S20-43～UT-S20-48、ST-S20-23～ST-S20-25。
+
+## S20 adopt 技术栈建议忽略确认时序
+
+### 场景目标
+
+`openlogos adopt` 接入存量项目时，与 init 使用同一套技术栈探测与建议忽略逻辑（见 S01「S01 技术栈建议忽略与 .gitignore 托管区块时序」），只建议**尚未被忽略**的条目，经用户确认后写入 `guard.unversioned` 并渲染 `.gitignore` 托管区块；OpenLogos 运行时目录 `logos/.openlogos-runtime/` 直接写入并告知（决策 C04）。存量项目通常已有自己维护的 `.gitignore`，adopt 对托管区块之外的内容一字不动，也不迁移、去重或改写用户已有的忽略规则。
+
+### 前置与后置条件
+
+- 前置：未触发 EX-2.1；S20 主时序 Step 4 已确认项目名、locale 与 aiTool。
+- 成功后置（接受）：`logos.config.json` 含 `guard.unversioned`（被接受的建议条目，按建议顺序）；`.gitignore` 托管区块含 `logos/.openlogos-runtime/` 与这些条目；区块外字节不变。
+- 成功后置（拒绝、无建议或非交互）：配置不写 `guard.unversioned`；托管区块只含运行时目录条目；区块外字节不变。
+- 失败后置：托管区块损坏时首写前失败，不留下半接入状态。
+
+### 主时序
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI (adopt)
+    participant G as git
+    participant F as .gitignore
+    C->>C: Step 5a: 技术栈探测（与 init 同一函数；package.json / pyproject.toml / requirements.txt / Cargo.toml）
+    C->>F: Step 5b: 预检托管区块标记
+    alt 区块损坏
+        C-->>U: EX-GV-S20-1：exit 1，首写前失败
+    else 区块完好或不存在
+        C->>G: Step 5c: git check-ignore -q --no-index 逐条判定；git ls-files 统计已跟踪文件
+        G-->>C: 已忽略 / 未忽略；已跟踪文件数
+        C->>C: Step 5d: 过滤得到建议清单（附已跟踪文件数）
+        alt 交互终端且清单非空
+            C->>U: Step 5e: 列出建议条目，询问是否写入
+            U-->>C: 接受 / 拒绝
+        else 非交互且清单非空
+            C->>C: Step 5e': 不写建议条目，记录提示命令
+        end
+        C->>C: Step 8: 写入 logos.config.json（接受时含 guard.unversioned）
+        C->>F: Step 8a: 渲染托管区块，区块外逐字节保留
+        C-->>U: Step 10: 接入报告附托管区块条目、运行时目录告知、已跟踪文件提示或提示命令
+    end
+```
+
+### 步骤与不变量
+
+1. **复用 init 逻辑**：探测、候选条目、已忽略判定（git 仓库用 `git check-ignore -q --no-index`，非 git 仓库按根 `.gitignore` 文本近似判定）、交互语义（整份清单一次确认，直接回车视为接受）、非交互默认（不写建议条目，输出 `openlogos ignore add <条目...>` 提示命令）与区块渲染规则，均与 S01 同名时序一致，adopt 不另起一套实现。
+2. **只建议未被忽略的条目**：存量 `.gitignore`、子目录 `.gitignore`、`.git/info/exclude`、`core.excludesFile` 任一已命中的条目不出现在问题中；全部已命中时不提问。
+3. **区块外不动**：用户已有的同名规则（如区块外已有 `dist/`）不被移动、删除或复制进区块；托管区块只追加在文件末尾（无区块时）或在原位置原地替换（已有完整区块时），行尾风格沿用文件现有风格。
+4. **已跟踪文件提示**：未被忽略、但其下已有被跟踪文件的建议条目，在问题中附注「含 N 个已跟踪文件」；用户接受后，接入报告给出数量、至多 5 个示例与按实际匹配文件生成的移出命令（用 `git ls-files -z -ci --exclude=<条目>` 列举实际匹配的已跟踪文件；不超过 20 个时为 `git --literal-pathspecs rm --cached -- <逐个 POSIX 单引号转义的路径>`，超过 20 个时 CLI 把 NUL 分隔的列表写入 `logos/.openlogos-runtime/untrack-<时间戳>.lst` 并提示 `git --literal-pathspecs rm --cached --pathspec-file-nul --pathspec-from-file=logos/.openlogos-runtime/untrack-<时间戳>.lst`），CLI 不代为执行。这些文件在用户自行移出版本控制之前仍按受保护内容对待——这是存量项目曾有意提交产物目录时的兜底（如 runlogos 曾提交安装包）。
+5. **写入顺序**：建议问答发生在写配置之前；`guard.unversioned` 与托管区块在 Step 8 写配置之后渲染，与 adopt 既有「全部成功后才打印接入完成」的顺序一致。
+6. **guard 接线**：Claude Code 的 PostToolUse / PostToolUseFailure / Stop 注册与引擎部署、Cursor 的 `afterShellExecution` 接线，adopt 与 init 共用部署函数族（见 S01「S01 guard 事后检查 hook 注册与引擎部署时序」与本文档「S20 存量项目 Cursor 三件套接入与 .mdc 迁移时序」），重复 adopt 收敛为零变化。
+7. **接入报告**：在既有「首个 change 引导」之外，增加托管区块条目清单与一行「已在 .gitignore 托管区块写入 OpenLogos 运行时目录 logos/.openlogos-runtime/」；非交互环境下附建议清单与提示命令，并说明 AI 代为执行时由宿主原生审批（仅 Claude Code `default` / `acceptEdits` 模式），其他模式由用户用 `! <命令>` 自行执行（C14）。
+
+### 异常
+
+- `EX-GV-S20-1`：存量 `.gitignore` 托管区块损坏（多个起始标记，或有起无止）→ adopt exit 1，点名 `.gitignore` 并提示手工修复后重试；首个项目写入前失败，不创建 `logos/`、不改 `.gitignore`。
+- `EX-GV-S20-2`：git 判定命令返回非 0/1 的退出码（如仓库损坏）→ 该条目按「未被忽略」保留为建议，adopt 继续，不因此失败。
+- `EX-GV-S20-3`：用户拒绝 → 不写建议条目；接入报告说明可稍后用 `openlogos ignore add` 添加，不重复提问。
+
+### 追溯
+
+- 决策：C04；defaults「技术栈建议首批覆盖」「托管区块标记」「ignore add 遇到已跟踪文件时提示移出命令」（按第六轮裁定改为按实际匹配文件生成）。
+- 关联场景：S01「S01 技术栈建议忽略与 .gitignore 托管区块时序」；S40「ignore / exempt 子命令与托管区块」。
+- 测试：UT-S20-49～UT-S20-51、ST-S20-26。

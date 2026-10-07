@@ -281,3 +281,48 @@
     }
   ]
 }
+
+## guard 配置
+
+在根对象 `properties` 中新增可选属性 `guard`，位置在 `flow` 之后、`sourceRoots` 之前；`required`、其余属性、`definitions` 与 `examples` 逐字保留不变。`guard` 对象及其子字段均可选，缺省时按内置默认处理，存量配置无需迁移。
+
+```json
+"guard": {
+  "type": "object",
+  "description": "guard 保护范围配置（可选）。guard 在 launched 且无活跃提案时只保护会进入版本控制的内容（已被 git 跟踪的文件、未被 git 忽略的新文件，以及 logos/resources/ 下的规格，无论是否被忽略）。本对象由 openlogos ignore / openlogos exempt 子命令维护；AI 发起的 add / remove 须经宿主对该次命令的原生审批、由用户批准后执行（见 spec/pretooluse-guard.md「保护范围变更的宿主原生审批」）。本对象所在的 logos/logos.config.json 属于保护范围配置来源：即使被 git 忽略也受保护，Edit / Write / Bash 直接修改须立案，受限子命令经宿主审批后由 CLI 写入。非 git 仓库或 git 不可用时 git 判据不生效，guard 沿用修改前的判定顺序，但 exempt 读配置、.gitignore 移出白名单、不可豁免项与受限命令审批仍生效。",
+  "properties": {
+    "unversioned": {
+      "type": "array",
+      "uniqueItems": true,
+      "default": [],
+      "description": "不入库的路径模式清单（如依赖与构建产物目录）。每项为单行 gitignore 模式，由 openlogos ignore 渲染进 .gitignore 托管区块（# >>> openlogos managed >>> 与 # <<< openlogos managed <<< 之间，区块内另固定包含 logos/.openlogos-runtime/）；guard 不直接读取本字段，而是通过 git 忽略状态间接生效。拒绝空串、含换行、以 # 或 ! 开头、含 .. 段的条目；清单内去重并保持插入顺序。目标下已被 git 跟踪的文件不因加入本清单而失去保护，需用户自行 git rm --cached。",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?![#!])(?!(?:.*/)?\\.\\.(?:/|$))[^\\r\\n]+$"
+      }
+    },
+    "exempt": {
+      "type": "array",
+      "uniqueItems": true,
+      "default": [
+        "logos/resources/reference/",
+        "logos/resources/verify/baseline-seed-runs/*/staging/"
+      ],
+      "description": "入库但写入不需要立案的路径清单。缺省（不写本字段）时使用内置默认 [\"logos/resources/reference/\", \"logos/resources/verify/baseline-seed-runs/*/staging/\"]，与原 R-REF / R-STAGING 豁免语义一致；显式写出时以写出内容为准，显式 [] 表示不豁免任何路径、不回落内置默认；配置损坏（logos.config.json 无法解析，或 guard / guard.exempt 类型不符）时 exempt 视为 []，不豁免任何路径。缺省时 openlogos exempt add / remove 都先把内置默认物化为显式数组再修改。条目语法：项目根相对路径，/ 分隔；以 / 结尾表示该目录本身及其全部后代（完整段匹配），否则只匹配单个文件；* 只能独占一个路径段并恰好匹配一个段，被匹配的实际段须满足 ^[A-Za-z0-9][A-Za-z0-9._-]*$。拒绝：绝对路径、含 .. / . / 空段、含反斜杠、空串、/、单独 *、以 logos/.openlogos-runtime/ 开头、忽略规则来源（任意层级的 .gitignore、.git/info/exclude）、.git 本身或 .git/ 下路径、保护范围配置来源 logos/logos.config.json（exempt 不能把忽略规则来源、git 元数据与本配置文件移出保护）。清单内去重并保持插入顺序。",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!\\*/?$)(?!.*\\\\)(?!(?:.*/)?\\.{1,2}(?:/|$))(?!.*//)(?!logos/\\.openlogos-runtime/)(?!(?:.*/)?\\.gitignore$)(?!\\.git(?:/|$))(?!logos/logos\\.config\\.json$)[^\\r\\n]+$"
+      }
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+字段语义：
+
+- `guard.unversioned`：不入库的路径模式（单行 gitignore 模式），由 `openlogos ignore` 维护并渲染进 `.gitignore` 托管区块；guard 通过 git 忽略状态间接使用它。schema `pattern` 拒绝以 `#` 或 `!` 开头、含换行或含 `..` 段的条目。
+- `guard.exempt`：入库但写入不需立案的路径，由 `openlogos exempt` 维护；缺省时使用内置默认（与原 R-REF / R-STAGING 豁免一致），显式 `[]` 表示不豁免任何路径。schema `pattern` 覆盖可由正则表达的拒绝项（绝对路径、盘符、单独 `*`、反斜杠、`.` / `..` / 空段、运行时目录、`.gitignore`、`.git` 与 `.git/`、`logos/logos.config.json`）；`*` 只能独占一个路径段、被匹配段须满足标识符约束、`.git/info/exclude` 等语义约束由 CLI 与 guard 在读取时校验，非法条目跳过并警告。
+- 两个数组均 `uniqueItems`，`guard` 对象 `additionalProperties: false`（沿用同文件 `flow` 对象的写法）。

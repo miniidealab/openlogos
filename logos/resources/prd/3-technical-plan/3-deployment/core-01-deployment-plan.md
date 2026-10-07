@@ -3490,3 +3490,135 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 测试：UT-S35-202～UT-S35-215、ST-S35-37、UT-S09-382～UT-S09-384、ST-S09-151、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-213、SMOKE-core-214。
 - 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
 - 来源提案：release-0-15-17-local（上游 fix-inherited-test-debt-merge-block）。
+
+## OpenLogos 0.15.18 发布方案（guard 以版本控制内容为保护对象，本地全局）
+
+### 部署目标与授权边界
+
+把 guard 新判据送进本机安装态和本仓托管副本。新判据包括：受保护内容判据、`guard.exempt` / `guard.unversioned` 两张清单、`.gitignore` 托管区块、Bash 事前轻判加事后检查、执行记录生命周期、保护范围变更须经人类确认、Cursor `afterShellExecution` 事后检查，另有 `openlogos ignore` / `openlogos exempt` 两个子命令（根规范 `spec/pretooluse-guard.md`、`spec/cursor-plugin.md`；功能规格「guard 以版本控制内容为保护对象」）。guard、事后检查引擎与 hook 注册都是随安装包和 sync 分发的托管资产。仓内源码修好以后，只要全局 CLI 和项目托管副本没有更新，用户现场仍会碰到 `npm ci` 被误拦、复合命令绕过写入门禁的问题。新子命令也必须装进全局 CLI 才能用。
+
+授权来源：用户在本提案中明确回答「需要的」（proposal 决策 C08，`category: deployment`）。本方案为**本地全局安装**（`npm install -g <tarball>`），**不含** `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。本方案也**不改写其他仓库的托管 guard**，包括引发本提案的 runlogos：其他仓库在用户自行执行新全局 CLI 的 `openlogos sync` 后才获得新判据，本方案不代为执行。merge、verify、部署执行、smoke、archive 仍按项目执行门。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 的当前版本。计划时（2026-10-07）为 `0.15.17`，候选为下一 patch `0.15.18`。如果实施前已有其他提案升版，候选改为「当时版本的下一 patch」，回滚版本改为「当时版本」，并在部署记录中写明实际值。本节版本号是计划值，不是钉死值。
+3. **冻结当前本机全局**：记录 `command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`。计划时实测为 Homebrew 全局 prefix（`/opt/homebrew`）下的 `0.15.17`。实际 prefix 与入口在部署前重新读取，不在测试或脚本中硬编码主机路径。
+4. **固定回滚制品**：当前全局版本（预期 `0.15.17`）的可回装 tarball 保存为 `cli/rollback/miniidealab-openlogos-0.15.17.tgz`，并把其 SHA-256 写入部署记录。计划时 `cli/rollback/` 只有 `0.15.16` 及更早的制品，**尚无 `0.15.17`**。冻结步骤先从当前全局安装态（或 `0.15.17` 同版本源码 `npm pack`）生成该制品，再计算并记录 SHA-256。**先有回滚制品，再动版本号。**
+5. **冻结本仓托管态**：记录本仓 `.claude/settings.json` 中 hook 注册的 SHA-256 与内容摘要、`.claude/openlogos/bin/guard-check` 的 SHA-256、`.gitignore` 的 SHA-256，并记录 `logos/.openlogos-runtime/` 当前是否存在。这些是回滚后的比对基准。
+
+### 0.15.18 版本与制品身份
+
+**经升版脚本 `cli/scripts/bump-version.mjs` 一次完成**（通则第 4 条）：
+
+- 更新 `cli/package.json` 与 lockfile 根包；
+- 更新全部随包 plugin manifest（`plugin/`、`plugin-codex/`、`plugin-qoder/`、`plugin-workbuddy/`、`plugin-zcode/`，以升版脚本既有清单为准）；
+- 更新 `cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION`（→ `0.15.18`）和 `LOCAL_RELEASE_ROLLBACK_VERSION`（→ `0.15.17`）；
+- 由既有生成器重算 `cli/asset-manifest.json`。
+
+本次 asset-manifest 预期有以下变化，只能由生成器写出：
+
+| 资产 | 变化 |
+|---|---|
+| `claude-plugin-template/bin/guard-check` | hash 变化（新判据、事前轻判、受限命令按权限模式请求宿主审批、补查与快照调用） |
+| `claude-plugin-template/bin/guard-post-check.cjs` | **新增**条目（事后检查引擎，部署到 `.claude/openlogos/bin/guard-post-check.cjs`） |
+| 随包 Skill / spec 副本 | 随来源规格 merge 变化的条目重算 hash |
+
+计划时 asset-manifest 不含 `cursor-plugin-template/` 条目。Cursor 侧资产由 `cli/scripts/build-cursor-template.mjs` 生成并随包分发，包括 `hooks/hooks.json`（新增 `afterShellExecution` 条目）、`hooks/runtime.cjs`（新增 `shell-after` 模式与同口径规则表），以及部署为 `.cursor/hooks/openlogos-guard-post.cjs` 的引擎副本。这些资产的身份不靠 manifest，而在构建与 tarball 冻结步骤中逐字节核对。如果实施时生成器已把 Cursor 模板纳入 manifest，以生成器输出为准，不手工补写。
+
+**禁止手改** `asset-manifest.json` 与派生 hash。任一身份载体残留旧版本即判失败（`UT-S19-46`）；manifest 自洽由 `UT-S19-49` 守。
+
+在 `CHANGELOG.md` 既有位置补充 `0.15.18` 发布说明，不改既有条目：
+
+- Changed：launched 且无活跃提案时，guard 以「会进入版本控制的代码与规格」为保护对象，依赖与产物写入不再需要立案。
+- Added：`openlogos ignore` / `openlogos exempt` 子命令；`.gitignore` 托管区块；Bash 事后检查（PostToolUse / PostToolUseFailure / Stop）；Cursor `afterShellExecution`。
+- Fixed：复合命令、重定向、`node -e`、脚本、`find -delete`、`git stash pop` 等写法绕过写入门禁的问题。
+- Security：保护范围变更须经用户在宿主界面审批；`.gitignore`、`logos/logos.config.json`、git 元数据与 guard 自有状态不可豁免。
+- Docs：更正 Cursor IDE preToolUse 强度声明。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm test`，必须全绿（通则第 6 条）。范围包括本提案在 `core-S40`、`core-S09`、`core-S01`、`core-S08`、`core-S20` 测试用例文件中新增的全部 UT/ST，以及 `UT-S19-46` / `UT-S19-49`；`npm run build` 也必须通过。
+2. 执行真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256，并在部署记录中把它标为本次**唯一候选制品**。之后的隔离验证、全局安装与回滚演练都只用这个文件，不再重新打包。
+3. 解包核对以下各项，证明制品确实带有本次判据，而不只是版本号变化：
+   - CLI entry、`--version`、asset-manifest 自洽；
+   - 包内 `claude-plugin-template/bin/guard-check` 与仓内 `plugin/bin/guard-check` 逐字节一致；
+   - 包内 `claude-plugin-template/bin/guard-post-check.cjs` 与仓内 `plugin/bin/guard-post-check.cjs` 逐字节一致，且两者 SHA-256 等于 asset-manifest 中对应条目；
+   - 包内引擎唯一源为 `plugin/bin/guard-post-check.cjs`（Cursor 不另存副本）；隔离 prefix 中 cursor-adapter 部署出的 `.cursor/hooks/openlogos-guard-post.cjs` 与其逐字节一致；
+   - Cursor 模板 `hooks/hooks.json` 含 `afterShellExecution`；
+   - 包内 `dist/` 中 `CURSOR_HOOK_EVENTS` 含 `afterShellExecution`；
+   - `openlogos --help` 列出 `ignore` 与 `exempt`。
+
+### 隔离 Prefix 行为矩阵
+
+用 `mktemp -d` 建一次性 npm prefix，安装固定 tarball，从新 shell 或绝对入口执行。全部项目态都在一次性临时 git 仓库内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**。hook 一律以宿主真实 stdin 形态驱动安装态托管脚本：`PreToolUse` → 执行命令 → `PostToolUse` 或 `PostToolUseFailure`，输入含 `hook_event_name`、`tool_name`、`tool_input`、`tool_use_id`、`cwd`；`PostToolUse` 另带 `tool_response`。
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| 新建项目 init | 候选 CLI `openlogos init`（Claude Code 与 Cursor 各一个临时项目）满足下列各项：托管 `.claude/openlogos/bin/guard-check`、`.claude/openlogos/bin/guard-post-check.cjs` 与随包字节一致；`.claude/settings.json` 含 PreToolUse 既有条目，PostToolUse（matcher `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop`）、PostToolUseFailure（matcher `Bash\|PowerShell`）、Stop 条目指向 `guard-post-check.cjs`，且未注册 SessionEnd；`.cursor/hooks.json` 含 `afterShellExecution` 托管条目；`.cursor/hooks/openlogos-guard-post.cjs` 与引擎字节一致；`.gitignore` 托管区块含 `logos/.openlogos-runtime/` |
+| 存量项目 sync | 临时项目预置 `0.15.17` 回滚制品产出的托管资产，以及用户自有 hook 条目和 `.gitignore` 用户内容。执行候选 `openlogos sync` 后：托管资产更新为随包字节；新 hook 条目注册；用户条目与 `.gitignore` 区块外内容逐字节不变；连续第二次 sync 不再改动 `.claude/settings.json`、`.cursor/hooks.json` 与 `.gitignore` 的字节 |
+| 放行矩阵 | launched、无提案时以下调用全部 exit 0，且事后检查不报告：零依赖 `package.json` + lockfile 的真实 `npm ci`；`mkdir -p dist/x`；`cmd > dist/build.log`；Edit/Write 被忽略且未跟踪的 `dist/a.txt`；`guard.exempt` 默认路径；独立 `git checkout <分支>`；独立 `openlogos sync` |
+| 阻断与事后检查 | 以下情况 exit 2 并列出变化文件与恢复命令（引擎 `restore` 子命令）：Edit/Write 已跟踪文件；`cd <根> && sed -i … src/a.js`、`node -e` 写 `src/` 的 PostToolUse；先改 `src/a.js` 再非零退出的 PostToolUseFailure；Write 被忽略的 `logos/resources/` 下非 exempt 规格；Edit `.gitignore`；exempt `docs/` 时 Edit `docs/.gitignore`；`node -e` 追加 `.git/config`；clean filter 下改写干净的已跟踪文件（过滤后 diff 为空）。另外，执行反馈给出的恢复命令后，`src/a.js`、`core.autocrlf=true` 下的 CRLF 文件与 clean filter 文件都与执行前逐字节一致；恢复后再次做相同修改会再次被报告 |
+| 保护范围变更审批 | 以真实 hook 输入驱动 PreToolUse：独立调用 `openlogos exempt add src/` 在 `permission_mode` 为 `default` 时 exit 0，stdout 为 `permissionDecision: ask`；为 `bypassPermissions`、`dontAsk`、`auto` 或字段缺失时 exit 2；复合形态 exit 2 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径，version 逐字一致 |
+| 回滚演练 | 在隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.15.17.tgz` 回装，`--version` 回到 `0.15.17`。对「存量项目 sync」夹具执行旧版 sync，再执行下文「失败处置与回滚边界」第 3 条的残留清理，之后满足：托管 `guard-check` 恢复为旧字节；`.claude/settings.json` 与 `.cursor/hooks.json` 不再含指向 `guard-post-check.cjs` / `openlogos-guard-post.cjs` 的条目；旧 guard 对 `mkdir -p dist/x` 恢复为 exit 2（对照：证明差异确由候选引入）；用户条目逐字节不变 |
+
+### 本机全局部署
+
+隔离矩阵与回滚演练通过后，按以下顺序执行：
+
+1. 用**同一** tarball 执行 `npm install -g <tarball>` 覆盖本机全局。在新 shell 中复核 identity 全部同源于候选版本：entry realpath、`--version`、package.json、asset-manifest。
+2. 先写部署记录 `logos/resources/verify/deployment-report.md`，内容包括：
+   - 部署身份：版本、tarball 路径与 SHA-256、入口 realpath；
+   - 回滚入口：`cli/rollback/miniidealab-openlogos-0.15.17.tgz` 的路径与 SHA-256；
+   - 冻结的本仓托管态 SHA-256；
+   - 源码回归证据（`npm test`）与实际安装态证据（隔离矩阵与全局复核），两者分开写。
+3. 在本仓用新全局 CLI 执行 `openlogos sync`，作为**当前会话的最后一次 Bash 调用**。然后核对：
+   - `.claude/openlogos/bin/guard-check`、`.claude/openlogos/bin/guard-post-check.cjs` 与随包字节一致；
+   - `.claude/settings.json` 含上文矩阵列出的全部 hook 条目；
+   - `.gitignore` 新增托管区块，区块外内容逐字节不变。
+
+   以上读回结果追加到部署记录。sync 写入的 `.gitignore` 托管区块是本提案范围内的预期产物，在部署记录中列出其 diff，随本提案后续提交入库。
+4. 结束当前会话，在新会话中继续，原因见下文「本仓切换风险与应对」。在新会话中确认 SessionStart 注入正常、`logos/.openlogos-runtime/` 下无异常待报告项，再按流程写 `DEPLOY_DONE` 并进入 smoke（SMOKE-core-215～SMOKE-core-222）。
+
+### 本仓切换风险与应对
+
+本仓 sync 完成后，新的托管 guard 立即对**当前会话**生效。PreToolUse 的命令路径不变，下一次工具调用就会执行新字节。风险与应对如下：
+
+| 风险 | 影响与应对 |
+|---|---|
+| 新判据误拦后续部署步骤 | 部署发生在本提案归档前，`logos/.openlogos-guard` 仍在，guard 走「有活跃提案」分支：提案范围收窄逻辑不变，各检查点只维护执行记录（关闭、去重），不报告变化。「launched、无提案」的新判据要到 archive 删除 guard 文件后才生效，影响可控。部署期间不得手动删除 guard 文件；手动删除会造成 C12 所说的边界缺失 |
+| 当前会话 hook 注册不同步 | 宿主可能只在会话启动时读取 `.claude/settings.json` 的 hook 注册，是否热加载以实测为准。如果不热加载，sync 后的当前会话里新 PreToolUse 会拍快照，但新注册的 PostToolUse / PostToolUseFailure / Stop 不会触发，执行记录拿不到结束证据，会长期保持打开（C12）。应对：sync 作为当前会话最后一次 Bash 调用，sync 本身由旧 guard 判定，不产生记录；sync 后立即结束会话，在新会话中执行 `deploy-done`、smoke、archive。如果切换前仍产生了未关闭记录，在部署记录中列出其 `record_id`；它们产生于提案期间，archive 的 `boundary-end` 会把基线更新为当时内容，不会把提案期间的改动误报为未立案修改 |
+| 运行时目录出现在工作区 | 新 guard 首次拍快照时创建 `logos/.openlogos-runtime/`，包括 `guard-records/`（含关闭墓碑 `<id>.closed`）、`pending-reports.jsonl`、`reported.jsonl`、原始字节基线缓存 `raw-baseline.json`、项目级锁 `state.lock`、拿不到锁时的溢出目录 `pending-spill/`。首次建立 `raw-baseline.json` 时会对全部已跟踪文件做一次 `git hash-object -w --no-filters`，本仓文件较多，首次检查耗时会明显高于后续检查，属预期，耗时写入部署记录。本仓 `.gitignore` 的 `/logos/*` 已忽略该目录，sync 写入的托管区块也固定包含 `logos/.openlogos-runtime/`，因此它不会进入 `git status` 的未跟踪列表。该目录是 guard 自有状态，属于不可豁免项：AI 的 Edit/Write 与可确定目标的 Bash 写入一律被阻断，只由引擎写入。部署后用 `git check-ignore -v logos/.openlogos-runtime/x` 读回确认，并写入部署记录 |
+| `.gitignore` 变成受保护内容 | `.gitignore` 已移出硬编码白名单。sync 对托管区块的写入按 C13 视为独立 openlogos 调用，不报告；归档后，AI 直接编辑 `.gitignore` 需要立案，托管条目的增删需要走 `openlogos ignore`（由宿主弹出审批，用户批准后执行） |
+
+### 失败处置与回滚边界
+
+1. 发布前检查、构建、隔离矩阵或回滚演练任一失败：不安装全局、不 sync 本仓、不写 `DEPLOY_DONE`，输出失败点与修复建议。删除隔离 prefix 即可回滚隔离环境。
+2. 已全局安装、本仓尚未 sync 时发现问题：用 `cli/rollback/miniidealab-openlogos-0.15.17.tgz` 执行 `npm install -g` 回装，新 shell 复核 `--version` 为 `0.15.17`。
+3. 本仓已 sync 后发现问题，按以下步骤回滚：
+   1. 先完成第 2 条的全局回装。
+   2. 在本仓用旧版 CLI 执行 `openlogos sync`，恢复托管 `guard-check`。
+   3. 旧版不认识新注册，要清理残留：从 `.claude/settings.json` 中删除 command 含 `guard-post-check.cjs` 的 PostToolUse / PostToolUseFailure / Stop 条目；如果本仓部署了 Cursor 托管资产，从 `.cursor/hooks.json` 中删除含 `openlogos-runtime.cjs shell-after` 的 `afterShellExecution` 条目；删除 `.claude/openlogos/bin/guard-post-check.cjs` 与 `.cursor/hooks/openlogos-guard-post.cjs`。不清理会导致「旧 guard 加新引擎」的混装状态。
+   4. 删除 `logos/.openlogos-runtime/`。
+   5. `.gitignore` 托管区块只包含忽略条目，对旧版无副作用，可以保留；如需还原，用冻结时的 SHA-256 比对后以 `git checkout -- .gitignore` 恢复。
+   6. 回滚后读回 `.claude/settings.json` 与托管 `guard-check` 的 SHA-256，与「冻结本仓托管态」的记录一致即完成。
+4. 本次无数据迁移。`logos.config.json` 新增的 `guard.unversioned` / `guard.exempt` 是可选字段，旧版忽略未知字段，无需回退。
+5. 回滚只删除第 3 条点名的残留注册与文件，不以手改托管 `guard-check` 或资产 manifest 作为修复手段，也不以放宽判据「让矩阵变绿」。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`。push 仍是 archive 之后的人类确认点。
+- 不改写其他仓库（包括 runlogos）的托管 guard、`.claude/settings.json`、`.cursor/hooks.json` 或 `.gitignore`。
+- 不在部署步骤中修改 `logos/logos.config.json` 的 `guard` 字段，本仓沿用内置默认清单。
+- 不执行 `git rm --cached`。
+
+### 追溯
+
+- 根规范：`spec/pretooluse-guard.md`（受保护内容判据、事前轻判与事后检查、执行记录生命周期、保护范围变更的宿主审批）；`spec/cursor-plugin.md`（`afterShellExecution` 接线与能力声明）；`spec/logos.config.schema.json`（`guard.unversioned` / `guard.exempt`）。
+- 功能规格：「guard 以版本控制内容为保护对象」及版本管理范围配置相关章节；CLI 交互设计中的 `ignore` / `exempt` 子命令。
+- 场景：S40 版本管理范围配置；S09 launched 无提案时按版本控制内容判定；S08 sync 注册 hook 与分发新 guard；S01 / S20 建议忽略确认；S19 发布与安装验证。
+- 测试：`core-S40`、`core-S09`、`core-S01`、`core-S08`、`core-S20` 测试用例文件中本提案新增的 UT/ST，以及 `UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-215～SMOKE-core-222。
+- 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
+- 来源提案：guard-versioned-content-scope（决策 C08；验收标准 10）。

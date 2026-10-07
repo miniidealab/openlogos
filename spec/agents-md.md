@@ -77,7 +77,7 @@ Deployment rules:
 - `skills/product-designer` — `.cursor/skills/product-designer/SKILL.md`
 - ...（共 13 项，另含 `disable-model-invocation: true` 的 OpenLogos 显式命令 Skills 与 change-reviewer subagent）
 
-生成内容必须包含固定的 guard 强度说明行：cursor-agent CLI 下写入门禁为部分强度（shell 写入硬拦 + 编辑事后检测，CLI 无 preToolUse）；Cursor IDE 经同一 `.cursor/hooks.json` 获得完整 preToolUse 硬拦。历史 `.cursor/rules/*.mdc` 托管清单已由 Skills 取代，不再生成。
+生成内容必须包含固定的 guard 强度说明行：Cursor 下写入门禁为部分强度（`beforeShellExecution` 事前判定 shell 写入 + `afterShellExecution` 事后检查 shell 写入 + `afterFileEdit` 编辑事后检测）；OpenLogos 未接入 `preToolUse`，cursor-agent CLI 与 Cursor IDE 的文件编辑均为事后报告，不得声称 IDE 获得 preToolUse 硬拦（guard-versioned-content-scope C11）。历史 `.cursor/rules/*.mdc` 托管清单已由 Skills 取代，不再生成。
 
 当 aiTool = "claude-code" 或 "other" 时，列出 `logos/skills/` 下部署的 OpenLogos 方法论 `SKILL.md` 文件：
 - `skills/prd-writer` — `logos/skills/prd-writer/SKILL.md`
@@ -354,7 +354,16 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 当 `aiTool` 含 `cursor` 时，`init` / `adopt` / `sync` / `launch` 除生成 `AGENTS.md` managed block 外，还托管以下资产（完整契约见 `spec/cursor-plugin.md`）：
 
 1. **原生 Agent Skills**：`.cursor/skills/<skill>/SKILL.md`，frontmatter `name` 与目录名一致、`description` 非空；OpenLogos 显式命令 Skills 额外携带 `disable-model-invocation: true`；change-reviewer 以 Cursor subagent 部署。
-2. **hooks 托管条目**：向 `.cursor/hooks.json` 合并写入 `sessionStart`、`beforeShellExecution`、`afterFileEdit` 三条 OpenLogos 托管条目；只增改托管条目、保留用户条目与未知字段；文件不可解析时 fail loud 零写入。
+2. **hooks 托管条目**：向 `.cursor/hooks.json` 合并写入 `sessionStart`、`beforeShellExecution`、`afterShellExecution`、`afterFileEdit` 四条 OpenLogos 托管条目（以 `cli/src/lib/cursor-adapter.ts` 的 `CURSOR_HOOK_EVENTS` 为准）；只增改托管条目、保留用户条目与未知字段；文件不可解析时 fail loud 零写入。
 3. **托管 `.mdc` 迁移**：历史 `.cursor/rules/<skill>.mdc` 与 `openlogos-policy.mdc` 在 Skills 部署成功后同次执行内清理；清理清单由 OpenLogos Skill 名单静态派生，用户自有 rules 一律保留。
-4. **guard 强度如实呈现**：AGENTS.md 托管段与 CLI 反馈必须声明 cursor-agent CLI 下写入门禁为部分强度（`beforeShellExecution` 硬拦 shell 写入 + `afterFileEdit` 事后检测，CLI 无 `preToolUse`）；Cursor IDE 经同一 `hooks.json` 获得完整 `preToolUse` 硬拦。不得把 CLI 侧表述成与 claude-code 等价（capability honesty，D09）。
+4. **guard 强度如实呈现**：AGENTS.md 托管段与 CLI 反馈必须声明 Cursor 下写入门禁为部分强度（`beforeShellExecution` 事前判定 shell 写入 + `afterShellExecution` 事后检查 shell 写入 + `afterFileEdit` 编辑事后检测）；OpenLogos 未接入 `preToolUse`，IDE 与 CLI 的文件编辑均只承诺事后报告，不得声称 Cursor IDE 获得完整 `preToolUse` 硬拦，也不得把 Cursor 表述成与 claude-code 等价（capability honesty，D09；guard-versioned-content-scope C11）。
 5. **边界**：OpenLogos 只拥有自身托管 Skills 目录、subagent 文件与 hooks 托管条目；用户 `.cursor/**` 其余内容在任何入口下不读改删。
+
+## 变更管理例外文件清单与保护范围配置（guard-versioned-content-scope）
+
+生成的指令文件（AGENTS.md / CLAUDE.md 托管段，以及各宿主等价的托管指令）中「⛔ 变更管理 → 行为约束 → 唯一例外」一条，必须与 guard 的保护判定保持一致（`spec/pretooluse-guard.md`「版本控制内容保护与事后检查（规范性）」，决策 C14）：
+
+1. 「可不经提案直接修改的非方法论文件」示例**不再包含 `.gitignore`**；示例保留 `README.md` 等仍在硬编码白名单内的文件。
+2. 同一段追加一行：`.gitignore`、`.git/info/exclude` 与 `logos/logos.config.json` 决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 `openlogos ignore add|remove …` 或 `openlogos exempt add|remove …`（`list` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 `! <命令原文>` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。
+3. 中英文模板同口径；en 文案：`` `.gitignore`, `.git/info/exclude` and `logos/logos.config.json` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run `openlogos ignore add|remove …` or `openlogos exempt add|remove …` directly (`list` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run `! <command>` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval. ``
+4. 生成时机与托管片段合并规则沿用本规范既有「托管片段合并规则」「生成时机」，`openlogos sync` 后存量项目的托管段同步更新，用户段外内容不动。

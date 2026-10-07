@@ -412,13 +412,13 @@ sequenceDiagram
 
 ### 场景目标
 
-通过 `init --ai-tool cursor|all` 部署 Cursor 原生 Agent Skills（含 commands 形式）、change-reviewer subagent 与 `.cursor/hooks.json` 托管 hook 条目，同时保护用户自有 rules、skills、hooks 条目与项目资产。
+通过 `init --ai-tool cursor|all` 部署 Cursor 原生 Agent Skills（含 commands 形式）、change-reviewer subagent、`.cursor/hooks.json` 托管 hook 条目与 guard 事后检查引擎副本，同时保护用户自有 rules、skills、hooks 条目与项目资产。
 
 ### 前置与后置条件
 
-- 前置：项目未初始化；选择值可由 Registry 解析；随包 cursor-plugin-template 完整。
-- 成功后置：配置持久化规范 id，托管指令、Skills、subagent 与 hooks 托管条目全部读回成功，用户资产不变。
-- 失败后置：不留下半初始化目录、部分 Skills 或残缺 hooks 条目，不打印总成功。
+- 前置：项目未初始化；选择值可由 Registry 解析；随包 cursor-plugin-template 与 `plugin/bin/guard-post-check.cjs` 完整。
+- 成功后置：配置持久化规范 id，托管指令、Skills、subagent、hooks 托管条目（`sessionStart` / `beforeShellExecution` / `afterShellExecution` / `afterFileEdit` 四个事件）与 `.cursor/hooks/openlogos-guard-post.cjs` 全部读回成功，用户资产不变。
+- 失败后置：不留下半初始化目录、部分 Skills、残缺 hooks 条目或孤立的引擎副本，不打印总成功。
 
 ### 主时序
 
@@ -434,16 +434,16 @@ sequenceDiagram
     C->>R: parse + expand
     R-->>C: 稳定列表（含 cursor，capability preToolUse=false）
     C->>A: planAssets(initial)
-    A-->>T: 指令、Skills、commands 形式 Skills、subagent
-    A-->>H: sessionStart / beforeShellExecution / afterFileEdit 托管条目
+    A-->>T: 指令、Skills、commands 形式 Skills、subagent、openlogos-runtime.cjs、openlogos-guard-post.cjs
+    A-->>H: CURSOR_HOOK_EVENTS 派生的托管条目（sessionStart / beforeShellExecution / afterShellExecution / afterFileEdit）
     T->>T: 校验模板 / frontmatter / owner 并暂存
     alt 全部合法
         T->>T: 原子提交并读回
         H->>H: 解析既有 hooks.json，仅合并托管条目，读回校验用户条目不变
-        T-->>C: DeployResult
-        C-->>U: 逐资产结果、guard 部分强度提示、新 session 提示
+        T-->>C: DeployResult（hookEvents 含 afterShellExecution）
+        C-->>U: 逐资产结果、guard 能力声明提示、新 session 提示
     else 冲突或缺失
-        T->>T: 回滚（hooks.json 零写入）
+        T->>T: 回滚（hooks.json 零写入、引擎副本不落盘）
         T-->>C: blocked + 精确路径
         C-->>U: 非零退出
     end
@@ -452,22 +452,23 @@ sequenceDiagram
 ### 步骤与不变量
 
 1. Registry 负责 `cursor` 能力声明与 `all` 展开，CLI 不维护 cursor 专属分支；生命周期入口只消费 capability。
-2. Adapter 规划 `.cursor/skills/<name>/SKILL.md`（frontmatter `name` 与目录一致，commands 形式携带 `disable-model-invocation: true`）、change-reviewer subagent 与 hooks 托管条目。
+2. Adapter 规划 `.cursor/skills/<name>/SKILL.md`（frontmatter `name` 与目录一致，commands 形式携带 `disable-model-invocation: true`）、change-reviewer subagent、`.cursor/hooks/openlogos-runtime.cjs`、`.cursor/hooks/openlogos-guard-post.cjs`（与 `plugin/bin/guard-post-check.cjs` 同一份随包字节）与 hooks 托管条目。托管条目的事件集合**只**由 `cli/src/lib/cursor-adapter.ts` 的 `CURSOR_HOOK_EVENTS` 派生，模板 `plugin-cursor/hooks/hooks.json` 与之同步；新增的 `afterShellExecution` 条目为 `{ "type": "command", "command": "node .cursor/hooks/openlogos-runtime.cjs shell-after" }`。只改模板而不改 `CURSOR_HOOK_EVENTS` 不会部署该事件。
 3. 事务层在首个写入前验证模板、SKILL.md frontmatter、owner 和所有目标可写性；hooks.json 不可解析即 fail loud、零写入。
-4. 用户自有 `.cursor/rules/`、`.cursor/skills/` 非托管目录、hooks 非托管条目和项目未知文件只做边界证明，不进入写计划。
-5. 全部资产提交并读回后才写配置和打印成功（成功输出含固定的 guard 部分强度提示行）；重复初始化规划必须幂等。
+4. 用户自有 `.cursor/rules/`、`.cursor/skills/` 非托管目录、hooks 非托管条目（含用户自己注册的 `afterShellExecution` 条目）和项目未知文件只做边界证明，不进入写计划。
+5. 全部资产提交并读回后才写配置和打印成功；重复初始化规划必须幂等。
+6. 成功输出含固定的 guard 能力声明提示行，按 C11 分层表述：保护对象与 Claude Code 一致；shell 写入为 `beforeShellExecution` 事前轻判 + `afterShellExecution` 事后检查；文件编辑（IDE 与 cursor-agent CLI）均为 `afterFileEdit` 事后报告，不承诺事前阻断。提示行与 `cursor-adapter.ts` 写入的托管指令文案都不得再出现「Cursor IDE 经同一 hooks.json 获得完整 preToolUse 硬拦」一类说法。
 
 ### 异常
 
-- `EX-CU-S01-1`：tarball 缺任一声明资产时，首个项目写入前失败。
+- `EX-CU-S01-1`：tarball 缺任一声明资产（含 `guard-post-check.cjs`）时，首个项目写入前失败。
 - `EX-CU-S01-2`：`.cursor/hooks.json` 不可解析或托管条目将覆盖用户条目时 blocked，文件字节不变。
 - `EX-CU-S01-3`：SKILL.md frontmatter 非法（缺 name/description 或 name 与目录不一致）时总事务不提交。
 
 ### 追溯
 
-- 需求：S01 Cursor 初始化验收（P02 Cursor 增补）。
+- 需求：S01 Cursor 初始化验收（P02 Cursor 增补）；guard-versioned-content-scope 验收 9「多端一致（按 C11 分层）」。
 - 架构：46.2 资产模型、46.3 hooks.json 合并写入、46.5 生命周期与事务顺序。
-- 测试：UT-S01-129～UT-S01-136、ST-S01-27～ST-S01-29。
+- 测试：UT-S01-129～UT-S01-136、ST-S01-27～ST-S01-29；UT-S01-146、ST-S01-33。
 
 ## S01 Claude hook 项目根形态注册与幂等迁移时序
 
@@ -534,3 +535,162 @@ sequenceDiagram
 
 - 需求：Claude guard hook 项目根定位与 sync 补齐需求「hook 注册形态要求」。
 - 测试：UT-S01-137～138、ST-S01-30。
+
+## S01 技术栈建议忽略与 .gitignore 托管区块时序
+
+### 场景目标
+
+`openlogos init` 在写入配置前探测项目技术栈，只列出**尚未被 git 忽略**的建议条目，经用户确认后写入 `logos.config.json` 的 `guard.unversioned` 并渲染进 `.gitignore` 托管区块；用户拒绝则不写任何建议条目。OpenLogos 自身的运行时目录 `logos/.openlogos-runtime/` 不询问，直接写入托管区块并在输出中告知（决策 C04）。
+
+### 参与者
+
+- **用户**：在终端回答建议忽略问题。
+- **OpenLogos CLI（init）**：探测技术栈、计算建议条目、写配置、渲染托管区块。
+- **git**：以 `git check-ignore` 判定条目是否已被忽略（含各级 `.gitignore`、`.git/info/exclude`、`core.excludesFile`）。
+- **`.gitignore`**：用户文件；CLI 只改写托管区块内部。
+
+### 前置条件
+
+- 未触发 EX-2.1 / EX-2.2（项目未初始化）。
+- 已确定 locale 与 aiTool（S01 主时序 Step 3）。
+
+### 成功后置条件
+
+- 接受：`logos.config.json` 含 `guard.unversioned`（按建议顺序，即被接受的全部条目）；`.gitignore` 托管区块依次含 `logos/.openlogos-runtime/` 与这些条目。
+- 拒绝或无建议：`logos.config.json` 不写 `guard.unversioned` 字段；托管区块只含 `logos/.openlogos-runtime/`。
+- 任何情况下，托管区块外的 `.gitignore` 内容逐字节不变。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    actor U as 用户
+    participant C as OpenLogos CLI (init)
+    participant G as git
+    participant F as .gitignore
+    C->>C: Step 5a: 探测技术栈（package.json → Node；pyproject.toml / requirements.txt → Python；Cargo.toml → Rust）
+    C->>C: Step 5b: 合并各栈候选条目（按 Node → Python → Rust 顺序去重）
+    C->>F: Step 5c: 预检托管区块标记（多个起始标记 / 有起无止 → EX-GV-S01-1）
+    alt 项目根在 git 工作树内
+        C->>G: Step 5d: git check-ignore -q --no-index -- <探测路径>（逐条）
+        G-->>C: 已忽略 / 未忽略
+    else 非 git 仓库
+        C->>F: Step 5d': 按根 .gitignore 文本逐行比对
+    end
+    C->>C: Step 5e: 过滤已忽略条目，得到建议清单
+    alt 建议清单非空且处于交互终端
+        C->>U: Step 5f: 列出建议条目，询问是否写入
+        U-->>C: 接受 / 拒绝
+    else 建议清单非空且为非交互环境
+        C->>C: Step 5f': 不写建议条目，记录提示命令 openlogos ignore add <条目...>
+    end
+    C->>C: Step 6: 写入 logos.config.json（接受时含 guard.unversioned）
+    C->>F: Step 6a: 渲染托管区块（logos/.openlogos-runtime/ + guard.unversioned）
+    C-->>U: Step 11: 输出已写入的托管区块条目、运行时目录告知、（非交互时）提示命令
+```
+
+### 步骤说明
+
+1. **Step 5a 技术栈探测**：与 `readConfigName` 同源的项目清单探测，只看项目根：`package.json` → Node；`pyproject.toml` 或 `requirements.txt` → Python；`Cargo.toml` → Rust。可同时命中多个栈；一个都未命中时不提问（新建空目录即属此类）。
+2. **Step 5b 候选条目**：Node → `node_modules/`、`dist/`、`build/`、`coverage/`；Python → `__pycache__/`、`.venv/`、`*.pyc`；Rust → `target/`。多栈按 Node → Python → Rust 顺序合并并去重。
+3. **Step 5c 区块预检**：在首个项目写入之前检查根 `.gitignore` 的托管区块标记（`# >>> openlogos managed >>>` / `# <<< openlogos managed <<<`）。区块损坏即 EX-GV-S01-1，与指令文件 marker 不完整（EX-8.1）同为首写前失败。
+4. **Step 5d 已忽略判定（git 仓库）**：每个候选条目取一个探测路径：目录条目用条目本身（如 `node_modules/`），通配条目用代表性样例路径（`*.pyc` → `openlogos-probe.pyc`）。执行 `git check-ignore -q --no-index -- <探测路径>`：退出码 0 表示已被任一忽略来源命中，该条目不再建议；退出码 1 表示未被忽略，保留为建议；其他退出码视为无法判定，按「未被忽略」保留并继续（宁可多问，不漏问）。`--no-index` 保证判定只看忽略规则，不受该路径是否已被跟踪影响。
+5. **Step 5d' 已忽略判定（非 git 仓库）**：git 不可用或项目根不在 git 工作树内时，读取根 `.gitignore` 文本，去掉首尾空白后逐行比对；目录条目与去掉末尾 `/` 的同名行视为等价（`node_modules` 与 `node_modules/` 互认）。注释行、`!` 取反行不参与比对。此路径只是近似判定，输出会附一行提示「当前目录不在 git 仓库中，guard 新判据不生效」。
+6. **Step 5e 过滤**：建议清单 = 候选条目 − 已忽略条目，保持顺序。清单为空时跳过提问。
+7. **Step 5f 交互确认**：交互终端下输出建议条目（每行一个）并询问一次，接受或拒绝针对整份清单；直接回车视为接受。想只忽略其中一部分的用户选择拒绝，之后用 `openlogos ignore add <条目>` 逐个添加。用 `--locale`、`--ai-tool`、项目名参数跳过的只是对应问题，**不**跳过本问题。
+8. **Step 5f' 非交互默认**：标准输入不是 TTY（包括 AI 在 Bash 中执行 `openlogos init --locale zh`）时，不写任何建议条目，也不写 `guard.unversioned`；init 照常成功，在 Step 11 输出建议清单与一条可直接复制的命令 `openlogos ignore add <条目...>`（条目按建议顺序，含通配的条目加引号）。由 AI 代为执行该命令时，适用保护范围变更的人类确认（C14）：Claude Code 在 `default` / `acceptEdits` 权限模式下由宿主对这次实际调用弹出原生审批，用户批准才执行；其他权限模式下 guard 阻断该命令，由用户在终端用 `! <命令>` 自行执行。
+9. **Step 6 写配置**：接受时把建议清单原样写入 `guard.unversioned`；拒绝、无建议或非交互时不写该字段。`guard.exempt` 不写（缺省即使用内置默认）。
+10. **Step 6a 渲染托管区块**：区块固定内容为说明注释行 + `logos/.openlogos-runtime/`，其后按配置顺序写 `guard.unversioned` 条目。根 `.gitignore` 不存在时新建只含区块的文件；存在且无区块时在文件末尾追加（前面补一个空行）；行尾风格沿用文件现有风格。运行时目录条目不经询问写入，因为它只承载 guard 执行记录、待报告项等 guard 自有状态，从不需要入库。`logos/.openlogos-guard` 是否入库保持项目现状，不进入托管区块。
+11. **Step 11 输出**：列出写入托管区块的条目，并单独一行告知「已在 .gitignore 托管区块写入 OpenLogos 运行时目录 logos/.openlogos-runtime/」；拒绝时说明「未写入建议条目，可稍后用 openlogos ignore add 添加」；非交互时输出 Step 5f' 的提示命令。
+
+### 异常与边界
+
+#### EX-GV-S01-1：.gitignore 托管区块损坏
+- **触发条件**：根 `.gitignore` 含多个起始标记，或只有起始标记没有结束标记。
+- **期望响应**：init 失败（exit 1），提示用户手工修复或删除损坏的标记后重试，并点名 `.gitignore` 路径。
+- **副作用**：首个项目写入之前失败，不创建 `logos/`、不写配置、不改 `.gitignore`。
+
+#### EX-GV-S01-2：建议目录下已有被跟踪的文件
+- **触发条件**：git 仓库中某建议条目未被忽略，但其下已有被跟踪的文件（如曾提交过 `dist/`）。
+- **期望响应**：建议清单中该条目附注「含 N 个已跟踪文件」；用户接受后，Step 11 输出数量、至多 5 个示例与按实际匹配文件生成的移出命令（用 `git ls-files -z -ci --exclude=<条目>` 列举实际匹配的已跟踪文件；不超过 20 个时为 `git --literal-pathspecs rm --cached -- <逐个 POSIX 单引号转义的路径>`，超过 20 个时 CLI 把 NUL 分隔的列表写入 `logos/.openlogos-runtime/untrack-<时间戳>.lst` 并提示 `git --literal-pathspecs rm --cached --pathspec-file-nul --pathspec-from-file=logos/.openlogos-runtime/untrack-<时间戳>.lst`），CLI 不代为执行。
+- **副作用**：这些已跟踪文件仍按受保护内容对待，直到用户自行移出版本控制。
+
+#### EX-GV-S01-3：所有候选条目都已被忽略
+- **触发条件**：探测到技术栈，但全部候选条目已被忽略（如既有 `.gitignore` 已含 `node_modules/`、`dist/`、`build/`、`coverage/`）。
+- **期望响应**：不提问，不写 `guard.unversioned`；托管区块只写运行时目录条目并告知。
+- **副作用**：区块外内容不变。
+
+### 追溯
+
+- 决策：C04（方式 A：确认后写入，运行时文件直接写入）；defaults「技术栈建议首批覆盖」「托管区块标记」「执行记录运行时目录写入托管区块」。
+- 关联场景：S40「ignore / exempt 子命令与托管区块」（区块渲染规则同源）；S20「adopt 技术栈建议忽略确认时序」。
+- 测试：UT-S01-139～UT-S01-144、ST-S01-31、ST-S01-32。
+
+## S01 guard 事后检查 hook 注册与引擎部署时序
+
+### 场景目标
+
+`openlogos init` 为 Claude Code 部署 guard 事后检查引擎并注册 PostToolUse / PostToolUseFailure / Stop hook，使 Bash / PowerShell 调用（含后台调用的结束确认）在结束后按受保护内容对比（C06、C12）。保护范围变更命令的确认走宿主原生审批，由 PreToolUse 的 guard-check 处理，不经本节注册的 hook。Cursor 侧的对应接线见本文档「S01 Cursor 三件套原子初始化时序」。
+
+### 参与者
+
+- **OpenLogos CLI（init / adopt）**：部署 guard bin 与引擎、合并 `settings.json`（与「S01 Claude hook 项目根形态注册与幂等迁移时序」共用同一部署函数族）。
+- **`.claude/settings.json`**：hook 注册载体，用户自有条目必须字节保真。
+
+### 前置条件
+
+项目选择 Claude Code 适配（ai-tool 含 claude-code）。
+
+### 成功后置条件
+
+- `.claude/openlogos/bin/guard-post-check.cjs` 在盘，字节与随包 `plugin/bin/guard-post-check.cjs` 一致，并登记在 asset-manifest。
+- `settings.json` 含以下 OpenLogos 托管条目，各一条、无重复：
+
+| 事件 | matcher | command |
+|------|---------|---------|
+| PostToolUse | `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check` |
+| PostToolUseFailure | `Bash\|PowerShell` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check` |
+| Stop | （无 matcher） | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check --stop` |
+
+- 既有 PreToolUse（guard-check）与 SessionStart（phase launcher）条目形态不变；SessionStart 由 phase launcher 内部调用引擎 `check --session-start` 接管执行记录，不另注册条目。不注册 SessionEnd。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant C as OpenLogos CLI
+    participant B as .claude/openlogos/bin/
+    participant S as .claude/settings.json
+    U->>C: Step 1: openlogos init（ai-tool 含 claude-code）
+    C->>B: Step 2: 落盘 guard-check、openlogos-phase、guard-post-check.cjs（随包字节）
+    C->>S: Step 3: 读取既有 hooks（缺失则创建骨架）
+    C->>C: Step 4: 以 command 含 .claude/openlogos/bin/guard-post-check.cjs 识别托管条目
+    C->>S: Step 5: PostToolUse / PostToolUseFailure / Stop——无则追加；有则就地校正 matcher 与 command；已一致则不动
+    C-->>U: Step 6: 注册完成
+```
+
+### 步骤说明
+
+1. **Step 2**：引擎与 guard-check、openlogos-phase 一起作为托管资产落盘；随包缺少 `guard-post-check.cjs` 时在首个项目写入前失败。
+2. **Step 4 身份识别**：托管条目身份只看 command 是否包含 `.claude/openlogos/bin/guard-post-check.cjs`，不看 matcher，以便旧版本留下的条目能被就地校正。
+3. **Step 5 幂等合并**：PostToolUse、PostToolUseFailure、Stop 三个事件各自独立合并；同一事件下多于一条托管条目时收敛为唯一一条。用户自有条目（含用户自己在这三个事件上注册的 hook）字节不变、相对顺序不变。
+4. matcher 中列出的后台任务工具名（`BashOutput` / `TaskOutput` / `KillShell` / `TaskStop`）以实施时 Claude Code 真实 hook 输入核实；写入宿主不存在的工具名无副作用。
+
+### 异常与边界
+
+#### EX-GV-S01-4：settings.json 不可解析
+- **触发条件**：既有 `.claude/settings.json` 不是合法 JSON。
+- **期望响应**：沿用既有 hook 注册的处理（fail loud、点名路径），不猜测修复。
+- **副作用**：settings.json 字节不变。
+
+#### EX-GV-S01-5：重复 init / adopt
+- **触发条件**：已注册三个托管条目的项目再次执行。
+- **期望响应**：settings.json 零变化。
+- **副作用**：无。
+
+### 追溯
+
+- 决策：C06（PostToolUse / PostToolUseFailure 共用检查）、C12（Stop 与 SessionStart 检查点、不注册 SessionEnd）。
+- 关联场景：S08「sync 事后检查 hook 注册与 guard 引擎分发时序」（存量项目补齐走同一合并函数）。
+- 测试：UT-S01-145、ST-S01-33。

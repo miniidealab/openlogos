@@ -54,7 +54,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-32 个场景（编号跳号、最高至 S39，`scenario_counter.next_id=40`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+33 个场景（编号跳号、最高至 S40，`scenario_counter.next_id=41`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -81,6 +81,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S37 | delta 条目守恒门（条目级隐式删除拦截） | 提案 delta 触及带稳定 ID 条目的规格时（lint 产出点 / merge 消费点） | P01/P06/P07 | P1 |
 | S38 | 决策记录沉淀能力（决策理由入 resources） | 提案含「已确定的设计决策」章节、需把拍板理由沉淀为可检索活文档时 | P01/P03/P07 | P1 |
 | S39 | 提案规划时按触达目标形成规格闭包 | launched change 触达某个功能/场景、需规划 delta 目标时 | P04/P01/P03 | P0 |
+| S40 | 版本管理范围配置（ignore / exempt 与 .gitignore 托管区块） | launched 项目需调整「哪些路径不入库 / 入库但不需立案」，或 init / adopt 检测到技术栈需引导忽略依赖与产物目录时 | P01/P03 | P1 |
 
 ### ③ 验收与部署门禁
 用可追溯的验收报告与部署 / smoke 门禁守住交付质量（回应 P01/P03/P05）。
@@ -2175,10 +2176,10 @@ OpenLogos 使用者应能在 `init`、`adopt`、`sync` 与 `launch` 中选择 Cu
 1. Skills 以 Cursor 原生 Agent Skills 布局部署：`.cursor/skills/<name>/SKILL.md`（frontmatter `name` 与目录名一致），取代历史 `.cursor/rules/*.mdc` 转换产物。
 2. OpenLogos commands 以 `disable-model-invocation: true` 的 Skills 形式部署，用户可用 `/<name>` 显式触发；change-reviewer 以 Cursor subagent 形式部署。
 3. `sync` / `launch` 幂等清理 OpenLogos 托管的历史 `.cursor/rules/*.mdc`（含 `openlogos-policy.mdc`）；用户自有 rules、skills、hooks 与其它文件必须原样保留。
-4. Hook 接线写入 `.cursor/hooks.json`（`version: 1`），采用合并写入：只增改 OpenLogos 托管条目，保留用户既有 hooks；卸载或回滚只移除托管条目。
+4. Hook 接线写入 `.cursor/hooks.json`（`version: 1`），采用合并写入：只增改 OpenLogos 托管条目，保留用户既有 hooks；卸载或回滚只移除托管条目。托管事件以 `cli/src/lib/cursor-adapter.ts` 的 `CURSOR_HOOK_EVENTS` 为准（`sessionStart`、`beforeShellExecution`、`afterShellExecution`、`afterFileEdit`），模板 `hooks.json` 与之同步。
 5. `sessionStart` hook 只从项目磁盘事实生成 module、active change、`proposal_step`、可写范围和下一确认点，输出不构成授权。
-6. 写入门禁为部分强度组合：`beforeShellExecution` 每次调用重读 guard 与提案状态，deny 时以非空原因阻断 shell 写入；`afterFileEdit` 对越界编辑产出事后检测报告（不能预先阻断宿主原生编辑）。IDE 侧共享同一 `hooks.json` 时按宿主能力自然获得 `preToolUse` 完整硬拦，OpenLogos 不为此维护第二份配置。
-7. 面向用户的输出（init/sync/launch 反馈、根规范、AGENTS.md 托管段）必须如实呈现 CLI 侧 guard 为部分强度，不得声称与 claude-code 等价。
+6. 写入门禁为部分强度组合：`beforeShellExecution` 每次调用重读 guard 与提案状态，deny 时以非空原因阻断能事前确定的 shell 写入，并为 Bash 事后检查拍快照；`afterShellExecution` 对比快照，发现未立案的受保护变化时反馈（反馈能否注入 agent、能否阻断后续以真实宿主实测为准，测不出即按事后报告声明）；`afterFileEdit` 对越界编辑产出事后检测报告（不能预先阻断宿主原生编辑）。本案不接入 Cursor preToolUse：IDE 与 CLI 的文件编辑都按 `afterFileEdit` 事后报告声明，不承诺事前阻断；IDE preToolUse 接线另行立案。
+7. 面向用户的输出（init/sync/launch 反馈、根规范、AGENTS.md 托管段）必须如实呈现 Cursor 侧 guard（IDE 与 CLI）为部分强度，不得声称与 claude-code 等价，也不得声称 IDE 经同一 `hooks.json` 获得 preToolUse 完整硬拦。
 
 ### 场景验收条件
 
@@ -2826,3 +2827,155 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 1. 上述四个点在 envelope 写出后**不得立即调用 `process.exit`**；改为设置 `process.exitCode = <原退出码>` 并从命令函数返回，由进程在 stdout 排空后自然结束。
 2. 退出码**数值与语义不变**；envelope 结构、字段、marker 写入与结果文件**不变**——消费方只会多拿到此前被截掉的尾部字节。
 3. 非目标：人类可读（text）输出路径的 `process.exit`、`check-ui-hash-match` 等输出很小且为 exit 0 成功路径的命令、统一「输出并退出」helper，均不在本要求范围内。
+
+## guard 以版本控制内容为保护对象需求
+
+### 用户问题与价值
+
+launched 项目在无活跃提案时，用户反馈「改啥都需要立案，非常低效」。用户在 runlogos 准备 1.0.3 正式包时，`npm ci && … && npm run release:mac:local` 被 guard 拦截，最终只能手动执行。用户原话：「guard 更应该关心代码，而不是打包这种事情」；讨论中进一步明确：「只要不动代码/spec，都不应该阻拦」，以及「我认为以git为base，这个逻辑是站得住的」。
+
+根因是 guard 对 Bash 的判定依据是**命令文字**，而不是**命令实际写到了哪里**，结果两头失准（runlogos 托管 guard，launched、无提案，只读复现）：
+
+| 命令 | 修改前结论 | 问题 |
+|---|---|---|
+| `npm ci`、`mkdir -p dist/x` | 阻断 | 只写不入库的依赖与产物，拦截没有追溯价值 |
+| `cd <根> && sed -i … src/a.js`、`ls && rm -rf src`、`echo x > src/a.js` | 放行 | 安全前缀对整条命令匹配，复合命令和重定向绕过写入门禁 |
+| `node -e "…writeFileSync('src/a.js')"`、`find src -delete`、`curl -o src/x`、`python3 x.py` | 放行 | 安全前缀先判，或未知命令默认放行 |
+| `git stash pop` | 放行 | 被安全前缀截胡，写入模式永远轮不到 |
+
+立案的目的是保证「会进入版本控制的代码与规格」的变更可追溯。git 已经精确记录了哪些内容入库、哪些被改动，guard 应以它为判定基准：不入库的依赖、产物、日志、缓存不再需要立案；原先漏网的复合命令、脚本写源码则必须被发现。
+
+### 核心需求
+
+1. **保护对象**：launched、无活跃提案（无 `logos/.openlogos-guard`）、项目根位于 git 工作树内且 git 可用时，「受保护内容」为：已被 git 跟踪的文件；未被 git 忽略的新文件与新目录；`logos/resources/` 下未被 `guard.exempt` 命中的文件（无论是否被 git 忽略，C07）。此外有三类**不可豁免项**，先于硬编码白名单与 `guard.exempt` 判定，位于任何白名单或 exempt 目录之下都受保护：guard 自有状态 `logos/.openlogos-runtime/`；保护范围来源（任意层级 `.gitignore`、git 目录 `info/exclude`、项目根内的 `core.excludesFile`、`logos/logos.config.json`——即使被 git 忽略，C14）；git 元数据（git 目录下的路径）。写入受保护内容需要先立案。
+2. **不保护的内容**（不可豁免项除外）：项目根之外的路径；现有硬编码白名单（`logos/changes/`、`.claude/` 等，唯一变化是 `.gitignore` 移出白名单）；`guard.exempt` 清单内的路径（字段缺省时为 `logos/resources/reference/` 与基线 staging 目录；配置损坏时视为空清单，不豁免任何路径）；被 git 忽略且未被跟踪的路径（`logos/resources/` 下的除外）。
+3. **判定顺序固定**：以上规则按固定顺序判定，先命中先返回；被忽略目录下强制入库的已跟踪文件仍受保护，被忽略的规格文件仍受保护。完整顺序以功能规格「2.87 guard 以版本控制内容为保护对象」为准。
+4. **Edit / Write / MultiEdit / NotebookEdit 事前判定**：按目标路径判定，受保护即阻断（exit 2，附变更管理指引），否则放行。
+5. **Bash / PowerShell 以事后检查为主要防线（C06）**：调用前记录受保护内容的内容级快照，调用结束后对比；成功结束（PostToolUse）与失败结束（PostToolUseFailure）共用同一检查逻辑，命令先写后报错同样被发现。出现新的受保护变化时以 exit 2 反馈给 AI，列出变化文件、归因与恢复命令，要求回滚或先立案。事前只保留能从命令中直接确定写入目标且目标受保护的形态，以及保护范围变更命令的确认核验；解析不出写入目标的命令事前放行，由事后检查兜底。
+6. **内容级快照与可恢复（C09）**：快照比较内容而非 `git status` 文本，覆盖全部已跟踪文件（干净文件经项目级原始字节基线缓存获得基线）、未被忽略的未跟踪文件、`logos/resources/` 下被忽略但受保护的规格文件、保护范围来源，以及 git 元数据（git 目录中的 `config`、`info/`、`hooks/`，和项目根内未跟踪的 `core.hooksPath` 目录）；记录存在性、文件类型与**原始字节**摘要（不经 `core.autocrlf`、clean filter 等过滤），变化判定也以原始字节为准。执行前内容按原始字节写入 git 对象库；反馈给出由事后检查引擎执行的恢复命令（`restore` 子命令），它先校验文件当前状态仍等于本次执行后的状态，不一致则拒绝恢复、只报告；恢复按目录项原子替换，不会沿符号链接写入；独立调用形态的 `restore` 不被事后检查报告（复合形态不享受）。guard 不自动执行恢复。
+7. **执行记录生命周期（C12）**：快照按调用标识持久化为执行记录，只凭宿主给出的执行结束证据关闭（同一标识的非后台调用结束事件；或后台任务被宿主工具结果确认已结束），关闭前做最终对比。会话结束（含 `/clear`、切换会话）不清理记录，由下一会话接管并继续对比。未关闭的记录在之后的每个检查点都参与对比；判断「执行前已有改动」时以最早一个未关闭记录为基线，延迟写入不会被新快照吸收为既有改动。缺少调用标识时不按「最近一次」猜测关联。
+8. **提案边界由 CLI 固定（C12）**：`openlogos change` 写入 guard 文件之前，先把所有未关闭记录中尚未报告的变化存为待报告项，提案开始前的后台写入不会混进提案期；`openlogos archive` 删除 guard 文件之前，把所有未关闭记录的基线整体更新为当时内容，提案期间的合法改动不会在归档后被误报。guard 文件被手动创建或删除时边界缺失，按原基线对比，提案期间的改动以「需向用户确认」各报告一次，宁可多报，不静默吸收。
+9. **无法归因的变化与去重**：不能唯一归因到某次调用的变化，反馈标明「可能来自未结束的后台调用或用户手动修改，需向用户确认」并列出相关调用；AI 不得自行回滚这类变化。去重只针对同一变化事件：反复检查同一未变化状态只报一次；恢复后再次改为相同内容、或再次写入（即使内容相同），都会重新报告。
+10. **git 命令放行（C05）与豁免边界（C10）**：无提案时 git 命令一律放行，包括 `checkout`、`merge`、`rebase`、`stash pop`、`reset --hard`、`checkout -- <文件>`、`restore`；防误删交给宿主权限系统。豁免只适用于可识别的独立 git 调用（各段只能是 git 调用或 `cd`，段间只用 `&&` / `||` / `;` 连接，不含重定向、管道、命令替换、子 shell、后台符、here-doc）；独立 git 调用不报告变化，存在未关闭记录时只把它改动的路径的基线更新为调用后内容。复合调用（如 `git status && node modify-source.js`、`git diff > src/a.ts`）不享受豁免，按普通 Bash 检查，反馈提示把 git 操作拆成单独调用。
+11. **CLI 自身写入不误报（C13）**：可识别的独立 openlogos 调用与独立 git 调用同等对待；`openlogos sync` 重渲染托管区块与 `.gitattributes` 不被报告。openlogos 与其他命令组成的复合调用不享受豁免；保护范围变更子命令先经宿主审批（见「版本管理范围配置（ignore / exempt 与 init 建议忽略）需求」）。
+12. **保护范围来源与 git 元数据受保护（C14）**：Edit / Write 直接修改 `.gitignore`、`logos/logos.config.json`、`.git/` 下文件被事前阻断；Bash 修改任意层级 `.gitignore`、`.git/info/exclude`、`.git/config`、`.git/hooks/*`、`core.excludesFile` 指向的项目内文件或 `logos/logos.config.json` 被事后检查发现；白名单与 `guard.exempt` 都不能豁免这些路径。`.gitignore` 托管区块只由经宿主审批的 `openlogos ignore` 与按配置重渲染的 `openlogos sync` 写入。
+13. **非 git 回落**：项目根不在 git 工作树内或 git 不可用时，沿用修改前的 Bash 判定顺序（安全白名单先判、写入模式、解析不出即阻断）与 Edit / Write 白名单判定，不拍快照、不做事后检查；只有四处保守修改在两种模式下都生效：`.gitignore` 不在白名单内；不可豁免项受保护；exempt 从配置读取（字段缺省用与 R-REF / R-STAGING 等价的默认值，配置损坏时不豁免）；保护范围变更须宿主审批（C14）。
+14. **多宿主分层一致（C11）**：保护对象一致——Cursor 与 Claude Code 对同一路径、同一 git 状态给出相同的「是否受保护」结论，共享同一组测试向量。阻断能力只按已接入且实测的事件声明：Cursor 文件编辑（IDE 与 CLI）为 `afterFileEdit` 事后报告，不承诺事前阻断；Bash 经新接入的 `afterShellExecution` 事后检查，反馈渠道以真实宿主实测为准。qoder / workbuddy / zcode 行为不变。
+15. **分发**：guard、事后检查引擎与 hook 注册随安装包与 `openlogos sync` 分发；新建项目（init / adopt）与存量项目（sync）都获得新判据。
+16. **共享状态可靠**：多个 hook 进程并发更新运行时状态时不丢失、不重复报告；已关闭的记录不会被迟到写入复活；锁超时、进程中断只会导致多报、延迟送达或更保守的判定，不会漏报。
+
+### 已知覆盖限制
+
+- 宿主始终不报告结束的后台任务（脱离会话的守护进程、缺少调用标识的调用），其执行记录长期保留；期间的受保护变化以「需向用户确认」形式各报告一次，不会静默放过。
+- git 自身触发的钩子（如 pre-commit 改写文件）归属该 git 调用；独立 git 调用执行期间，后台对同一路径的并发写入会随基线更新一起被吸收。
+- 事后检查发现的是已经发生的写入；可恢复性由内容级快照保证，超过大小上限或无法读取的条目只记摘要，反馈中标明不可自动恢复。
+- 威胁模型：guard 防的是 AI 无意或惯性越界，不防有意对抗的 agent（例如它可以修改白名单内 `.claude/` 的 hook 注册）。C14 的保证范围是：在宿主会弹出审批的模式下，保护范围变更必须经用户在宿主界面批准。
+
+### 与既有需求的关系
+
+| 既有需求 | 被取代的条款 | git 判据下 | 回落下 |
+|---|---|---|---|
+| 「guard-check Bash 写命令路径级管辖判定需求」 | 要求 3「解析不出 fail-closed，维持现行无条件拦截」；`BASH_SAFE_PATTERNS` 先判优先级 | 取代：解析不出事前放行、事后检查兜底；只读清单只用于跳过快照 | 原样生效 |
+| 「Claude guard hook 管辖边界与阻断可见性需求」 | 管辖边界要求 3「项目根之内的判定语义逐项不变（白名单前缀表、Bash 安全/写入模式）」 | 取代：项目根之内按本需求的保护对象判定；管辖边界与阻断双通道输出保留 | 部分取代：`.gitignore` 移出白名单、不可豁免项先判、exempt 读配置（取代 R-REF / R-STAGING 硬编码）、保护范围变更须宿主审批；其余原样生效 |
+| 「Cursor 完整宿主集成（三件套补齐）需求」 | 「IDE 侧共享同一 `hooks.json` 时按宿主能力自然获得 `preToolUse` 完整硬拦」 | 已在该需求的「Cursor 资产、迁移与 Hook 要求」中更正：本案不接入 Cursor preToolUse，IDE 与 CLI 的文件编辑都按 `afterFileEdit` 事后报告声明 | 同左 |
+
+### 验收条件
+
+以下除 AC-GUARD-VCS-16 外，均在 launched、git 仓库、无 `logos/.openlogos-guard` 的条件下，用真实 hook 输入（PreToolUse + PostToolUse / PostToolUseFailure）验证。
+
+| ID | 验收条件 |
+|---|---|
+| AC-GUARD-VCS-01 | 放行：`npm ci`、`npm run release:*`、`mkdir -p dist/x`、`cmd > dist/build.log`，以及 Edit / Write 写被忽略且未跟踪的 `dist/a.txt`，均不阻断、事后不报告 |
+| AC-GUARD-VCS-02 | 放行：`guard.exempt` 内路径（字段缺省时的 `logos/resources/reference/` 与基线 staging；不可豁免项除外）、项目根之外路径、全部 git 命令（含 `checkout`、`merge`、`rebase`、`stash pop`、`reset --hard`） |
+| AC-GUARD-VCS-03 | 阻断：Edit / Write 写已跟踪文件或未被忽略的新文件，事前 exit 2 且 stderr 含变更管理指引 |
+| AC-GUARD-VCS-04 | 阻断：能从命令中确定写入目标且目标受保护的写法（如 `echo x > src/a.js`、`rm src/a.js`）在 PreToolUse 事前以 exit 2 阻断，不执行；其余写法（`cd <根> && sed -i … src/a.js`、`node -e` 写 `src/`、`python3` 脚本改源码、`find src -delete`）由事后检查以 exit 2 反馈并列出变化文件 |
+| AC-GUARD-VCS-05 | 写入后失败：命令先改 `src/a.js` 再以非零退出，经 PostToolUseFailure 同样被发现 |
+| AC-GUARD-VCS-06 | 未闭合与延迟写入：PreToolUse 后无结束事件时，下一次 PreToolUse 或 Stop 补查出变化；后台调用在首次补查之后才改 `src/a.js`，记录未被删除，后续检查点仍发现，且不被新快照当作执行前已有改动 |
+| AC-GUARD-VCS-07 | 迟到结束事件照常做最终对比后关闭记录，已反馈的变化不重复报；缺少调用标识的结束事件不关闭任何记录 |
+| AC-GUARD-VCS-08 | 跨会话：后台调用启动后会话结束（含 `/clear`），记录保留；新会话中后台任务再改 `src/a.js`，新会话的检查仍发现。宿主工具结果确认后台任务结束后关闭记录，之后的手动修改不再归到该记录 |
+| AC-GUARD-VCS-09 | 后台 `npm run dev` 运行中独立执行 `git checkout <分支>` / `git pull`，之后的检查不报告分支切换带来的变化；后台随后再改 `src/a.js`（含 checkout 改过的路径）仍被发现 |
+| AC-GUARD-VCS-10 | 提案边界：存在未关闭记录时创建提案、修改代码、归档，归档后的检查不把提案期间的改动报为未立案修改；归档后、首次检查前的后台写入仍被发现；提案开始前未经检查的后台写入存为待报告项，之后仍会反馈，归档不吸收；手动删除 guard 文件时，提案期间的改动以「需向用户确认」各报告一次 |
+| AC-GUARD-VCS-11 | 无法归因：未关闭记录期间的用户手动修改，反馈标明需向用户确认、同一变化事件只报一次，不要求 AI 回滚 |
+| AC-GUARD-VCS-12 | git 豁免边界：`git status && node modify-source.js`、`git diff > src/a.ts` 不享受豁免——前者由事后检查发现并提示拆分调用，后者因重定向目标可确定且受保护而事前阻断；目标经变量给出（如 `T=src/a.ts; git diff > $T`）时由事后检查发现并提示拆分调用；`cd <根> && git checkout <分支>` 放行且不报变化 |
+| AC-GUARD-VCS-13 | 被忽略的规格仍受保护：`logos/resources/` 被 `.gitignore` 忽略时，写入其中非 exempt 文件仍阻断；被忽略目录下已被跟踪的文件写入仍阻断 |
+| AC-GUARD-VCS-14 | 内容级对比：执行前已有的受保护改动不因本次命令被计入；本次命令再次修改同一脏文件（`git status` 不变）、删除被忽略的规格文件、把文件换成符号链接，都被发现 |
+| AC-GUARD-VCS-15 | 可恢复：反馈中的 `restore` 恢复命令能把脏文件、未跟踪文件、被忽略规格、干净的已跟踪文件逐字节还原为执行前内容（含 `core.autocrlf=true` 下的 CRLF 文件与配置了 clean filter 的文件）；恢复前文件已被后续修改时拒绝恢复、只报告，退出码 1 |
+| AC-GUARD-VCS-16 | 回落：非 git 仓库或 git 不可用时，同一组输入的判定结论与修改前一致，仅四处保守修改例外（`.gitignore` 不在白名单、不可豁免项受保护、exempt 读配置、保护范围变更须宿主审批）；回落时不拍快照 |
+| AC-GUARD-VCS-17 | CLI 自身写入：无提案时 `openlogos sync` 重渲染托管区块与 `.gitattributes`，事后检查不报告；`openlogos sync && node modify-source.js` 不享受豁免 |
+| AC-GUARD-VCS-18 | 保护范围来源受保护：Edit 修改 `.gitignore` 或 `logos/logos.config.json`（含被 git 忽略时）被事前阻断；Bash 向 `.git/info/exclude` 追加条目、用 `node -e` 改写 `logos/logos.config.json` 被事后发现 |
+| AC-GUARD-VCS-21 | 不可豁免项先于白名单与 exempt：exempt `docs/` 时 `docs/.gitignore` 受保护；exempt `logos/` 时 `logos/logos.config.json` 受保护；白名单 `.claude/` 下的 `.claude/.gitignore` 受保护；`logos/.openlogos-runtime/` 下文件的 Edit / Write 恒阻断 |
+| AC-GUARD-VCS-22 | git 元数据受保护：用 `node -e` 追加 `.git/config`、写入 `.git/hooks/pre-commit`、追加 `.git/info/exclude`，都被事后检查发现；独立 `git config …` 调用不报告 |
+| AC-GUARD-VCS-23 | 配置损坏保守处理：显式 `guard.exempt: []` 之后 `logos.config.json` 损坏，`logos/resources/reference/x.md` 仍受保护，stderr 有警告；单个非法条目被跳过并警告 |
+| AC-GUARD-VCS-24 | 去重只针对同一变化事件：「修改为 X → 报告 → 恢复 → 再次修改为 X」报告两次；「修改为 X → 不恢复 → 多次检查」只报一次 |
+| AC-GUARD-VCS-25 | 干净文件原始字节基线：clean filter（`tr a-z A-Z`）下，执行前干净的 `hello` 被改为 `HELLO`，过滤后 diff 为空，事后检查仍发现；恢复后原始字节为 `hello` |
+| AC-GUARD-VCS-26 | 安全恢复：普通文件被换成符号链接后恢复，链接被替换为原文件、链接目标不被改写；删除后恢复还原原文件与权限位；执行前不存在、被新建的文件恢复即删除；普通文件变成目录时拒绝自动恢复；恢复后不产生新报告 |
+| AC-GUARD-VCS-27 | 并发与中断：8 个并发 PostToolUse 写入不同变化，全部送达、无丢失、无重复；关闭记录后迟到的旧写入不复活记录；写入途中被 kill，临时文件被忽略、状态可读；过期锁被打破；锁超时时报告进入溢写目录并在之后合并送达 |
+| AC-GUARD-VCS-28 | restore 不自报：未跟踪文件被改写后，以独立调用形态执行引擎 `restore`，这次调用本身不产生报告、之后的检查也不报告；`restore … && echo x > other` 等复合形态不享受豁免，按普通 Bash 检查 |
+| AC-GUARD-VCS-19 | 多宿主分层：Cursor 与 Claude Code 对共享测试向量的「是否受保护」结论相同；`CURSOR_HOOK_EVENTS` 与部署后的 `.cursor/hooks.json` 都包含 `afterShellExecution`；托管文案与 `cursor-adapter.ts` 不再宣称 IDE preToolUse 硬拦；qoder / workbuddy / zcode 行为不变 |
+| AC-GUARD-VCS-20 | 分发：固定新版本 tarball 的随包 guard、事后检查引擎与 hook，经 init 新建项目与 sync 存量项目均通过上述矩阵；安装态 smoke 通过，并保留部署前可回装制品 |
+
+### 非目标
+
+- 不做完整 Shell 解析器：Bash 写入的最终判定交给事后对比，不在命令文字上继续堆规则。
+- 不做「轻量提案通道」，不新增「本次跳过 guard」类放行开关：确实改动代码 / 规格的小修改仍需立案。
+- 不承担防误删职责：丢弃未提交改动的 git 操作由宿主权限系统把关。
+- 本案不接入 Cursor IDE preToolUse，不修改 qoder / workbuddy / zcode 适配层的判定模型。
+
+### 追溯
+
+- 来源变更：guard-versioned-content-scope（决策 C01、C05、C06、C07、C09、C10、C11、C12、C13、C14）。
+- 功能规格：「2.87 guard 以版本控制内容为保护对象」。
+- 场景：S09 变更管理（launched 无提案时的放行与阻断时序）、S08 同步（hook 注册与资产分发）。
+- 根规范：`spec/pretooluse-guard.md`、`spec/cursor-plugin.md`。
+
+## 版本管理范围配置（ignore / exempt 与 init 建议忽略）需求
+
+### 用户问题与价值
+
+修改前，「哪些路径不需要立案」散落在 guard 硬编码的白名单与内置豁免（R-REF / R-STAGING）中，用户无法自行调整；init 也从不帮用户维护 `.gitignore`。在以 git 为基准的新判据下，依赖与产物目录未被忽略时同样会被拦截。
+
+「不需要立案」有两种互不相同的语义：
+
+- **不入库**：依赖、构建产物、缓存，本就不该进仓库，应写进 `.gitignore`。
+- **入库但不需立案**：如 `logos/resources/reference/` 下跨会话共享的参考资料，必须留在仓库里，若靠 `.gitignore` 放行会让它们从仓库消失，并诱导用户为绕过 guard 随手忽略。
+
+用户决策：认可拆成两张清单（C02）；「先做子命令吧，后续再去runlogos做入口」（C03）；init / adopt 检测到技术栈后列出建议忽略的目录，用户确认后才写入（C04，方式 A）；保护范围的变更「可以AI问人类是否加，如果人类确认之后AI来执行命令加吗，就不要让人类去执行命令了」（C14）。
+
+### 核心需求
+
+1. **两张清单，单一事实源在 `logos/logos.config.json`**：`guard.unversioned` 为不入库的忽略模式，渲染进 `.gitignore` 托管区块；`guard.exempt` 为入库但写入不需立案的路径。两字段均可选；`guard.exempt` 缺省时使用内置默认（`logos/resources/reference/` 与 `logos/resources/verify/baseline-seed-runs/*/staging/`，即原 R-REF / R-STAGING 语义），显式写出时以写出内容为准，用户可删除默认项。
+2. **配置子命令**：OpenLogos 运行时目录为固定条目，不能经 `ignore remove` 移除；新增 `openlogos ignore add|remove|list` 与 `openlogos exempt add|remove|list`。`ignore` 同时维护 `guard.unversioned` 与 `.gitignore` 托管区块，两处写入保持原子（区块写失败时回滚配置）；`exempt` 只维护 `guard.exempt`。条目语法非法、配置不可解析或托管区块损坏时以退出码 1 失败且零写入。
+3. **`.gitignore` 托管区块**：以 `# >>> openlogos managed >>>` / `# <<< openlogos managed <<<` 为起止标记；区块内固定包含 OpenLogos 运行时目录 `logos/.openlogos-runtime/`，其后按配置顺序列出 `guard.unversioned` 条目。CLI 只改写标记之间的内容，区块外逐字节不变；重复执行幂等；标记重复或残缺时 fail loud，提示用户手工修复。
+4. **已跟踪文件只提示、不代为移出**：`ignore add` 的模式按 gitignore 语义命中已被 git 跟踪的文件时，输出数量、示例，以及按实际匹配文件生成、可直接执行的移出命令（≤ 20 个文件时逐个列出单引号转义的路径并加 `--literal-pathspecs`；更多时写入文件清单并用 `--pathspec-from-file`），由用户自行决定是否执行；这些文件在移出版本控制前继续受保护。
+5. **init / adopt 建议忽略（C04）**：检测到技术栈后，列出尚未被忽略的建议条目，对整份清单一次性确认（`[Y/n]`，回车为接受，`--locale` / `--ai-tool` 不跳过此问），确认后才写入 `guard.unversioned` 与托管区块，拒绝则不写；已被忽略的条目不再建议。首批覆盖 Node（`node_modules/`、`dist/`、`build/`、`coverage/`）、Python（`__pycache__/`、`.venv/`、`*.pyc`）、Rust（`target/`）。OpenLogos 自身运行时目录不经询问直接写入托管区块并告知用户。非交互环境不写入技术栈建议条目，只输出可复制的 `openlogos ignore add <条目...>` 命令。托管区块损坏时 init / adopt 在首次写入前失败。
+6. **sync 按配置重渲染**：`openlogos sync` 按 `guard.unversioned` 重渲染托管区块，不改写配置；渲染结果与现有内容相同时不写盘。托管区块损坏时 `.gitignore` 零写入并点名报错，其余同步照常完成，最终退出码 1 并提示「sync 部分完成」。
+7. **保护范围变更须人类确认，确认后由 AI 执行（C14）**：`openlogos exempt add|remove`、`openlogos ignore add|remove`（`list` 不受限）由 AI 发起时，在任何提案状态下都须经宿主对这一次实际工具调用的原生审批；guard 不采信 AI 在对话中的自述，也不使用可被伪造的本地授权文件。Claude Code 下，`permission_mode` 为 `default` / `acceptEdits` 时 guard 返回 `permissionDecision: ask`，由宿主弹出审批，用户批准即由 AI 执行；`bypassPermissions`、`dontAsk`、`auto`、`plan`、字段缺失或非交互运行时宿主不会弹出审批，一律阻断，并提示用户在终端用 `! <命令>` 自行执行或切换到默认权限模式。复合形态一律阻断。Cursor 下返回 `permission: ask`，能否保证弹出以真实宿主实测为准，不能保证则阻断；其他宿主一律阻断。`--auto` 无人值守通常处于不弹审批的模式，受限命令照常被阻断。用户在终端中自行执行这些命令不受影响。
+8. **不另建配置入口**：本案只提供 CLI 子命令；RunLogos 图形化管理入口另行立案。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-GUARD-SCOPE-01 | `openlogos ignore` / `openlogos exempt` 的 add / remove / list 正确读写 `logos.config.json`；add 已存在条目、remove 不存在条目提示后退出 0 且不写盘 |
+| AC-GUARD-SCOPE-02 | `ignore` add / remove 只改写 `.gitignore` 托管区块，区块外内容逐字节不变；无区块时追加到文件末尾，无 `.gitignore` 时新建；重复执行幂等 |
+| AC-GUARD-SCOPE-03 | 非法条目（绝对路径、含 `..`、空串、`exempt` 中的反斜杠或单独 `*`、`exempt` 指向 `.gitignore` / `.git/info/exclude` / `logos/logos.config.json` / `logos/.openlogos-runtime/` 或 `.git/` 下路径、`ignore` 中以 `#` / `!` 开头或含换行、`ignore remove logos/.openlogos-runtime/`）以退出码 1 拒绝，配置与 `.gitignore` 零写入；托管区块标记重复或残缺时同样退出 1 且零写入 |
+| AC-GUARD-SCOPE-04 | `guard.exempt` 缺省时，`exempt add` / `exempt remove` 都先把内置默认物化为显式数组再修改；删除默认项后该路径的写入受保护；删光后写显式 `[]`，不回落内置默认 |
+| AC-GUARD-SCOPE-05 | `ignore add` 的模式命中已跟踪文件时，输出数量、至多 5 个示例与按实际匹配文件生成的移出命令，不代为执行；在临时仓库实际执行该命令，恰好移出匹配文件、其他文件不变（覆盖 `/build/`、`*.pyc`、含空格的文件名、含 `*` 的文件名、超过 20 个文件）；移出前这些文件写入仍被阻断 |
+| AC-GUARD-SCOPE-06 | `list --format json` 输出每个条目的值与来源（`config` / `default`） |
+| AC-GUARD-SCOPE-07 | init / adopt 检测到技术栈时列出尚未被忽略的建议条目，整份一次性确认（回车接受）后写入、拒绝则不写；已被忽略的条目不再建议；无 TTY 时不写、只输出 `openlogos ignore add` 命令；`logos/.openlogos-runtime/` 直接写入托管区块并告知；托管区块损坏时在首次写入前失败 |
+| AC-GUARD-SCOPE-08 | `openlogos sync` 按配置重渲染托管区块，内容不变时不写盘，事后检查不报告；托管区块损坏时 `.gitignore` 零写入、其余同步完成、退出码 1 并提示「sync 部分完成」 |
+| AC-GUARD-SCOPE-09 | `permission_mode` 为 `default` / `acceptEdits` 时，AI 执行 `openlogos exempt add src/`、`openlogos ignore add src/`，PreToolUse 返回 `permissionDecision: ask`；`bypassPermissions` / `dontAsk` / `auto` / `plan` / 字段缺失时 exit 2 并提示用户用 `!` 自行执行或切换模式；复合形态一律 exit 2；伪造的本地文件不起作用；Cursor 下返回 `permission: ask`（能否弹出以实测为准，不能保证则 deny） |
+| AC-GUARD-SCOPE-10 | 非 git 仓库中子命令照常读写配置与托管区块，`ignore add` 跳过已跟踪统计并提示 guard 新判据不生效 |
+
+### 非目标
+
+- 不自动执行 `git rm --cached`；不静默改写用户 `.gitignore` 中技术栈相关的条目或区块外内容。
+- 不做 RunLogos 管理界面；不提供绕过宿主审批的保护范围变更方式。
+- `logos/.openlogos-guard` 是否入库保持各项目现状，不纳入托管区块。
+
+### 追溯
+
+- 来源变更：guard-versioned-content-scope（决策 C02、C03、C04、C13、C14；defaults 中的托管区块标记、技术栈首批清单、内置 exempt 默认值）。
+- 功能规格：「2.88 版本管理范围配置：两张清单、托管区块与人类确认」。
+- CLI 交互设计：「S40: 版本管理范围配置 — 交互规格」「S01 / S20: 技术栈建议忽略 — 交互规格」。
+- 场景：S40 版本管理范围配置（新增）、S01 初始化、S20 存量接入、S08 同步。

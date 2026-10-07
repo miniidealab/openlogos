@@ -385,3 +385,40 @@
 - ST-S08-38、ST-S08-39 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中运行；POSIX 结果不计入其覆盖。
 - UT-S08-63～UT-S08-65 必须用真实 `git` 仓库与真实 index，不得以手写 blob 代替。
 - 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。
+
+## sync 托管区块重渲染与事后检查接线测试用例
+
+> 覆盖场景 S08「S08 .gitignore 托管区块按配置重渲染时序」「S08 sync 事后检查 hook 注册与 guard 引擎分发时序」；来源变更 guard-versioned-content-scope（决策 C02、C06、C11、C12、C13、C14）。独立 `openlogos sync` 调用不被事后检查误报（C13）属于 guard 判定行为，由 `core-S09-test-cases.md` 覆盖，本节不重复。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S08-73 | 托管区块按配置重渲染且幂等 | ① 存量项目 `.gitignore` 无区块、配置无 `guard.unversioned` → 末尾追加仅含说明注释与 `logos/.openlogos-runtime/` 的区块（前补空行）；② 配置 `guard.unversioned=["dist/","*.log"]` → 区块按配置顺序含两条；③ 区块内部被手工改动（删行、加行）→ 恢复为配置描述的内容；④ 区块外含 CRLF 行尾与用户规则 → 区块外字节不变、区块使用 CRLF；⑤ 无 `.gitignore` → 新建仅含区块的文件；⑥ 配置未变时第二次 sync → `.gitignore` 字节与 mtime 不变；区块内容与 `openlogos ignore` 渲染结果逐字节相同；sync 不改写 `guard.unversioned` / `guard.exempt` |
+| UT-S08-74 | 区块损坏 fail loud 但不阻断其他同步 | ① `.gitignore` 含两个起始标记；② 只有起始标记；③ 配置 `guard.unversioned` 含以 `!` 开头的条目：三者 `.gitignore` 字节不变、stderr 点名路径（③点名条目）；同一次 sync 中 AGENTS.md / CLAUDE.md、托管资产、hook 注册、`.gitattributes` 照常更新，版本戳刷新；输出含「sync 部分完成：.gitignore 托管区块未更新」；退出码 1；修复后再次 sync 退出码 0 且区块写入 |
+| UT-S08-75 | Claude PostToolUse / PostToolUseFailure / Stop 注册幂等 | 0.15.17 形态 settings.json（只有 PreToolUse + SessionStart）→ sync 后新增三条托管条目：PostToolUse matcher `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop`、PostToolUseFailure matcher `Bash\|PowerShell`、Stop 无 matcher，command 为 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）；预置 matcher 与当前版本不一致（多出或缺少工具名）的托管条目被就地校正为当前 matcher；同一事件两条托管条目收敛为一条；用户自有 PostToolUse / Stop 条目字节与相对顺序不变；第二次 sync settings.json 零变化；无 SessionEnd 条目；非 Claude 宿主项目不触碰 settings.json |
+| UT-S08-76 | 新 guard 与引擎随 manifest 分发 | asset-manifest 含 `guard-post-check.cjs` 条目（版本化哈希）且与 guard-check、openlogos-phase 同列；`.claude/openlogos/bin/guard-post-check.cjs` 缺失或被改动时 sync 以随包字节重写，guard-check 同理刷新为新版本字节；`managedAssetsHash` 随引擎变化；随包缺少引擎时 sync fail loud 点名资产路径、不注册指向缺失文件的 hook |
+| UT-S08-77 | Cursor hooks.json 含 afterShellExecution 且合并幂等 | `CURSOR_HOOK_EVENTS` 含 `afterShellExecution`，模板 hooks.json 事件集合与之相等；只有三事件的存量 `.cursor/hooks.json` 经 sync 后含 `afterShellExecution` 托管条目（command `node .cursor/hooks/openlogos-runtime.cjs shell-after`）；用户自有 `afterShellExecution` 条目与未知字段字节不变；第二次 sync 零 diff；`.cursor/hooks/openlogos-guard-post.cjs` 与 `plugin/bin/guard-post-check.cjs` 字节一致；hooks.json 不可解析时零写入并回滚 |
+| UT-S08-78 | Cursor 托管文案不再宣称 IDE preToolUse 硬拦 | 存量项目托管指令片段含旧文案「Cursor IDE 经同一 .cursor/hooks.json 获得完整 preToolUse 硬拦」→ sync 后托管片段与 `CURSOR_GUARD_STRENGTH_NOTICE_ZH` 均不含「完整 preToolUse 硬拦」/ `Full pre-edit blocking`，并声明文件编辑（IDE 与 CLI）为 `afterFileEdit` 事后报告、shell 为事前轻判 + `afterShellExecution` 事后检查；托管片段外用户内容不变 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S08-40 | 真实 sync 重渲染托管区块 | 真实 git 存量夹具（含用户规则的 `.gitignore`、配置 `guard.unversioned=["dist/"]`）执行真实 `openlogos sync`：`git check-ignore` 对 `dist/x` 与 `logos/.openlogos-runtime/x` 返回已忽略；区块外字节不变；再跑一次 sync `.gitignore` 零变化；随后人为破坏区块再 sync，退出码 1、`.gitignore` 字节不变、其他托管资产仍为新版本 |
+| ST-S08-41 | 存量项目升级 sync 补齐事后检查接线 | 以 0.15.17 形态夹具（Claude + Cursor，含用户自有 hooks 条目）执行真实候选 CLI 的 `openlogos sync`：两份引擎副本在盘且哈希与 manifest 一致；settings.json 三条托管 hook 与 `.cursor/hooks.json` 四个托管事件齐备；Cursor 托管文案已更正；用户条目前后哈希一致；再次 sync 两份配置文件、引擎与 guard-check 字节零变化 |
+
+### 自动化与证据要求
+
+- 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等；git 相关断言使用真实 `git`。
+- ST-S08-41 使用固定候选 tarball 安装到隔离 prefix 后的真实 CLI 入口，记录 tarball SHA-256 与 CLI 入口类别。
+- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S08"`，含 `test_id`、`status`、`duration_ms`、`evidence`；失败不得写 pass。
+
+### 覆盖度校验
+
+- [x] 重渲染托管区块幂等、区块外不动：UT-S08-73、ST-S08-40。
+- [x] 区块损坏 fail loud 不阻断其他同步：UT-S08-74、ST-S08-40。
+- [x] PostToolUse / PostToolUseFailure / Stop hook 注册幂等：UT-S08-75、ST-S08-41。
+- [x] 新 guard 与引擎分发：UT-S08-76、ST-S08-41。
+- [x] Cursor 部署后 `.cursor/hooks.json` 含 `afterShellExecution` 且合并幂等：UT-S08-77、ST-S08-41。
+- [x] 托管文案不再宣称 IDE preToolUse 硬拦：UT-S08-78、ST-S08-41。

@@ -24,7 +24,7 @@ tech_stack:
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
 scenario_counter:
-  next_id: 40
+  next_id: 41
 feature_counter:
   next_id: 9
 decision_counter:
@@ -189,6 +189,10 @@ scenarios:
     feature: F04
   - id: S39
     name: 提案规划时按触达目标形成规格闭包
+    module: core
+    feature: F04
+  - id: S40
+    name: 版本管理范围配置（ignore / exempt 与 .gitignore 托管区块）
     module: core
     feature: F04
 release_workflows:
@@ -621,6 +625,10 @@ resource_index:
     desc: fix-reopen-test-change-set-forward-merge 创建的 decision 基线
   - path: logos/resources/decisions/core-D12-lifecycle-failclosed-reconciliation.md
     desc: fix-deploy-done-leak-failclosed-selfheal 创建的 decision 基线
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S40-versioned-scope-config.md
+    desc: guard-versioned-content-scope 创建的 scenario 基线
+  - path: logos/resources/test/core-S40-test-cases.md
+    desc: guard-versioned-content-scope 创建的 test 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

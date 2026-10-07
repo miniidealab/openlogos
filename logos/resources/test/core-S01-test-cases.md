@@ -251,3 +251,44 @@
 ### 自动化与证据要求
 
 - 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S01"`；失败不得写 pass。
+
+## init 技术栈建议忽略与 guard 事后检查接线测试用例
+
+> 覆盖场景 S01「S01 技术栈建议忽略与 .gitignore 托管区块时序」「S01 guard 事后检查 hook 注册与引擎部署时序」与「S01 Cursor 三件套原子初始化时序」中 `afterShellExecution` / 能力声明的改动；来源变更 guard-versioned-content-scope（决策 C04、C06、C11、C12、C14）。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S01-139 | 技术栈探测与候选合并 | 只有 `package.json` → 候选为 `node_modules/`、`dist/`、`build/`、`coverage/`；只有 `requirements.txt` 或 `pyproject.toml` → `__pycache__/`、`.venv/`、`*.pyc`；只有 `Cargo.toml` → `target/`；Node + Python 同时存在 → 按 Node → Python 顺序合并且无重复；空目录 → 无候选、不提问 |
+| UT-S01-140 | 已忽略条目不再建议（git 仓库） | 真实 git 仓库：`.gitignore` 含 `node_modules/`、`.git/info/exclude` 含 `dist/`、子目录无关规则 → 建议清单只剩 `build/`、`coverage/`；`*.pyc` 以样例路径 `openlogos-probe.pyc` 探测；判定调用为 `git check-ignore -q --no-index`；`dist/` 下已有被跟踪文件且未被忽略时条目保留并附「含 N 个已跟踪文件」 |
+| UT-S01-141 | 非 git 仓库按 .gitignore 文本判定 | 无 `.git` 的目录，根 `.gitignore` 含 `node_modules`（无尾斜杠）与 `# dist/` 注释行 → `node_modules/` 视为已忽略，`dist/` 仍建议；输出含「当前目录不在 git 仓库中，guard 新判据不生效」 |
+| UT-S01-142 | 接受写入、拒绝不写 | 注入交互回答「接受」（含直接回车）→ `logos.config.json` 的 `guard.unversioned` 等于建议清单且顺序一致，托管区块依次为说明注释、`logos/.openlogos-runtime/`、建议条目；回答「拒绝」→ 配置无 `guard.unversioned` 字段，区块只含运行时目录条目，输出提示可用 `openlogos ignore add` 添加 |
+| UT-S01-143 | 运行时目录条目直接写入与区块边界 | ① 无 `.gitignore` → 新建仅含托管区块的文件；② 已有用户内容（CRLF 行尾）→ 区块追加在末尾且前置一个空行，区块使用 CRLF，区块外字节不变；③ 全部候选已被忽略 → 不提问、区块仍写 `logos/.openlogos-runtime/` 并输出告知行；④ `.gitignore` 含两个起始标记或有起无止 → exit 1，项目内零写入（无 `logos/`、`.gitignore` 字节不变）；区块内不含 `logos/.openlogos-guard` |
+| UT-S01-144 | 非交互默认不写建议条目 | stdin 非 TTY、传 `--locale zh`：不提问、配置无 `guard.unversioned`、区块只含运行时目录条目；stdout 含建议清单与可直接执行的 `openlogos ignore add node_modules/ dist/ build/ coverage/`（含通配条目时加引号，如 `'*.pyc'`）；init 退出码 0 |
+| UT-S01-145 | Claude 事后检查 hook 注册幂等 | init 后 `.claude/openlogos/bin/guard-post-check.cjs` 与随包字节一致；settings.json 中 PostToolUse matcher 为 `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop`、PostToolUseFailure matcher 为 `Bash\|PowerShell`、Stop 无 matcher，command 均为 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）；预置用户自有 PostToolUse / Stop 条目字节与顺序不变；预置 matcher 与当前版本不一致（多出或缺少工具名）的托管条目被就地校正而非新增；重复执行零变化；无 SessionEnd 条目；PreToolUse / SessionStart 条目不变 |
+| UT-S01-146 | Cursor 新增 afterShellExecution 与能力声明更正 | `CURSOR_HOOK_EVENTS` 含 `afterShellExecution`；模板 `plugin-cursor/hooks/hooks.json` 事件集合与之相等；init 后 `.cursor/hooks.json` 含 `afterShellExecution` 托管条目（command `node .cursor/hooks/openlogos-runtime.cjs shell-after`）且用户条目不变；`.cursor/hooks/openlogos-guard-post.cjs` 与 `plugin/bin/guard-post-check.cjs` 字节一致；成功输出的能力提示行与托管指令文案均不含「完整 preToolUse 硬拦」/ `Full pre-edit blocking` 一类表述，并说明文件编辑为 `afterFileEdit` 事后报告 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S01-31 | 交互 init：接受、拒绝与已忽略不再建议 | 真实 git 仓库 + `package.json` + 已含 `node_modules/` 的 `.gitignore`，伪 TTY 驱动真实 `openlogos init`：问题只列出 `dist/`、`build/`、`coverage/`；接受后 `git check-ignore` 对三者与 `logos/.openlogos-runtime/x` 均返回已忽略，区块外字节不变；另一份同构夹具回答拒绝，配置无 `guard.unversioned`、区块只含运行时目录条目 |
+| ST-S01-32 | 非交互 init 输出提示命令 | 无 TTY 执行真实 `openlogos init --locale zh --ai-tool claude-code`（Node + Python 夹具）：退出码 0；未写建议条目；stdout 的提示命令原样执行（夹具内以人工确认后的同一命令模拟）后，托管区块与配置结果等于交互接受的结果 |
+| ST-S01-33 | init 端到端事后检查接线 | 真实 `openlogos init --ai-tool all`：Claude settings.json 含三条托管 hook 且引擎在盘；`.cursor/hooks.json` 含四个托管事件；再次 `init --ai-tool all` 后 settings.json、hooks.json、两份引擎副本字节零变化；用户自有 hooks 条目前后哈希一致 |
+
+### 自动化与证据要求
+
+- 涉及 git 判定的用例使用真实 `git` 创建一次性仓库，不得以手写结果替代 `git check-ignore`；非 git 用例须断言夹具目录确实不在任何 git 工作树内。
+- 交互用例通过伪 TTY 或注入问答函数驱动真实 init 流程；非交互用例必须在 stdin 非 TTY 条件下运行并断言该条件。
+- 夹具一律在一次性隔离目录内构造，运行前后本仓项目根字节快照相等。
+- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，至少包含 `test_id`、`scenario_id="S01"`、`status`、`duration_ms`、`evidence`；失败不得写 pass。
+
+### 覆盖度校验
+
+- [x] 接受 / 拒绝：UT-S01-142、ST-S01-31。
+- [x] 已忽略不再建议：UT-S01-140、UT-S01-141、ST-S01-31。
+- [x] 运行时条目直接写入与区块边界：UT-S01-143、ST-S01-31。
+- [x] 非交互默认：UT-S01-144、ST-S01-32。
+- [x] Claude PostToolUse / PostToolUseFailure / Stop 注册与引擎部署：UT-S01-145、ST-S01-33。
+- [x] Cursor `afterShellExecution` 与能力声明更正：UT-S01-146、ST-S01-33。
