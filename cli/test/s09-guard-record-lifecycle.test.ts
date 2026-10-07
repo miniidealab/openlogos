@@ -436,6 +436,52 @@ describe('S09-F 执行记录生命周期 — 单元', () => {
     writeLock(root, deadPid(), 10_000);
     expect(engine.acquireLock(root, 300), '⑤').toBeNull();
     expect(existsSync(lock)).toBe(true);
+    // ⑥ 回收互斥 state.lock.reclaim 被存活进程持有：不回收过期锁（锁与互斥均不变）
+    const mutex = `${lock}.reclaim`;
+    writeLock(root, deadPid(), 31_000);
+    const staleText = readFileSync(lock, 'utf-8');
+    writeFileSync(mutex, JSON.stringify({ pid: process.pid, host: 'h', acquired_at: new Date().toISOString(), token: 'live' }));
+    expect(engine.acquireLock(root, 300), '⑥ 互斥存活').toBeNull();
+    expect(readFileSync(lock, 'utf-8')).toBe(staleText);
+    expect(JSON.parse(readFileSync(mutex, 'utf-8')).token).toBe('live');
+    // ⑦ 回收互斥的持有者已不存在（回收中途崩溃）：打破互斥后回收过期锁
+    writeFileSync(mutex, JSON.stringify({ pid: deadPid(), host: 'h', acquired_at: new Date().toISOString(), token: 'dead' }));
+    const rel7 = engine.acquireLock(root, 2000);
+    expect(rel7, '⑦').not.toBeNull();
+    expect(JSON.parse(readFileSync(lock, 'utf-8')).pid).toBe(process.pid);
+    expect(existsSync(mutex), '回收互斥已释放').toBe(false);
+    rel7();
+    // ⑧ 并发回收：多个进程同时发现同一把过期锁，在「判定过期」与「替换锁文件」之间注入停顿放大竞态窗口；
+    //    断言只有一个进程回收成功、任意时刻至多一个持有者、持锁期间锁文件始终是自己的
+    writeLock(root, deadPid(), 31_000);
+    const staleIno = engine.lockIdentity(lock).ino;
+    const trace = join(tempRoot(), 'reclaim-trace.jsonl');
+    const holds = join(tempRoot(), 'holds.jsonl');
+    const script = `const e=require(${JSON.stringify(ENGINE_SRC)});const fs=require('fs');
+const lock=${JSON.stringify(lock)};const sleep=ms=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms);
+const r=e.acquireLock(${JSON.stringify(root)},30000);if(!r)process.exit(3);
+const t0=Date.now();const own=()=>{try{return JSON.parse(fs.readFileSync(lock,'utf-8')).pid===process.pid}catch{return false}};
+const o1=own();sleep(150);const o2=own();
+fs.appendFileSync(${JSON.stringify(holds)},JSON.stringify({pid:process.pid,t0,t1:Date.now(),o1,o2})+'\\n');r();`;
+    const env = { ...process.env, OPENLOGOS_GUARD_TEST_FAULT: 'pause-reclaim:300', OPENLOGOS_GUARD_TRACE: trace };
+    const N = 5;
+    const runs = await Promise.all(Array.from({ length: N }, () => new Promise<number>(res => {
+      const c = spawn('node', ['-e', script], { env, stdio: 'ignore' });
+      cleanups.push(() => { try { c.kill('SIGKILL'); } catch { /* 已退出 */ } });
+      c.on('exit', code => res(code ?? -1));
+    })));
+    expect(runs, '全部进程最终获得锁').toEqual(Array(N).fill(0));
+    const ev = readFileSync(trace, 'utf-8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+    const judged = new Set(ev.filter(e => e.op === 'lock-stale-judged' && e.ino === staleIno).map(e => e.pid));
+    expect(judged.size, '多个进程同时判定同一把锁过期').toBeGreaterThanOrEqual(2);
+    expect(ev.filter(e => e.op === 'lock-broken'), '只有一个进程回收成功').toHaveLength(1);
+    const hs = readFileSync(holds, 'utf-8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      .sort((a: { t0: number }, b: { t0: number }) => a.t0 - b.t0);
+    expect(hs).toHaveLength(N);
+    for (const h of hs) expect([h.o1, h.o2], `pid ${h.pid} 持锁期间锁文件是自己的`).toEqual([true, true]);
+    for (let i = 1; i < hs.length; i++) expect(hs[i].t0, '任意时刻至多一个持有者').toBeGreaterThanOrEqual(hs[i - 1].t1);
+    expect(existsSync(lock)).toBe(false);
+    expect(existsSync(mutex)).toBe(false);
   }, TIMEOUT);
 
   it('UT-S09-417: 原子落盘与临时文件处理', () => {
@@ -948,6 +994,38 @@ rel();process.stdout.write(JSON.stringify([a,b]));`;
     expect(acquired, '锁文件被替换为当前进程').toBeDefined();
     expect(acquired!.pid).toBe(ev[broken].pid);
     expect(existsSync(join(root, RUNTIME, 'state.lock')), '之后释放').toBe(false);
+  }, TIMEOUT);
+
+  it('ST-S09-189: 过期锁被打破（并发回收：多个 hook 进程同时发现同一把过期锁）', async () => {
+    const root = fixture();
+    writeLock(root, deadPid(), 31_000);
+    const staleIno = engine.lockIdentity(join(root, RUNTIME, 'state.lock')).ino;
+    const trace = join(tempRoot(), 'trace.jsonl');
+    // 在「判定过期」与「替换锁文件」之间注入停顿，使各进程的判定都落在第一次回收之前
+    const env = cleanEnv({
+      CLAUDE_PROJECT_DIR: root, OPENLOGOS_GUARD_TRACE: trace, OPENLOGOS_GUARD_TEST_FAULT: 'pause-reclaim:300',
+      OPENLOGOS_GUARD_TEST_LOCK_WAIT_MS: '30000',
+    });
+    const ids = ['C1', 'C2', 'C3', 'C4'];
+    const runs = await Promise.all(ids.map(id => runAsync('node', [ENGINE_SRC, 'snapshot'], JSON.stringify({
+      session_id: 's09-life', cwd: root, hook_event_name: 'PreToolUse', tool_name: 'Bash',
+      tool_input: { command: NODE_WRITE('src/a.js', id) }, tool_use_id: id,
+    }), root, env)));
+    for (const r of runs) expect(r.exitCode, r.stderr).toBe(0);
+    for (const id of ids) expect(recFile(root, id), `${id} 拍快照（未回落）`).toBe(true);
+    const ev = traceEvents(trace) as Array<{ op: string; pid: number; t: number; ino?: string }>;
+    const judged = new Set(ev.filter(e => e.op === 'lock-stale-judged' && e.ino === staleIno).map(e => e.pid));
+    expect(judged.size, '多个 hook 进程同时判定同一把锁过期').toBeGreaterThanOrEqual(2);
+    expect(ev.filter(e => e.op === 'lock-broken'), '只有一个进程回收成功').toHaveLength(1);
+    // 任意时刻至多一个持有者：按 trace 的获得 / 释放时刻，每段持锁区间互不重叠
+    const spans = ev.filter(e => e.op === 'lock-acquired').map(a => ({
+      pid: a.pid, t0: a.t, t1: ev.find(e => e.op === 'lock-released' && e.pid === a.pid && e.t >= a.t)?.t ?? -1,
+    })).sort((a, b) => a.t0 - b.t0);
+    expect(spans).toHaveLength(ids.length);
+    for (const sp of spans) expect(sp.t1, `pid ${sp.pid} 释放`).toBeGreaterThanOrEqual(sp.t0);
+    for (let i = 1; i < spans.length; i++) expect(spans[i].t0, '持锁区间不重叠').toBeGreaterThanOrEqual(spans[i - 1].t1);
+    expect(existsSync(join(root, RUNTIME, 'state.lock')), '之后释放').toBe(false);
+    expect(existsSync(join(root, RUNTIME, 'state.lock.reclaim')), '回收互斥已释放').toBe(false);
   }, TIMEOUT);
 
   it('ST-S09-190: 锁超时时报告进入 spill 并在之后合并送达', async () => {

@@ -877,6 +877,7 @@ PS_DOTNET_WRITE_RE='\[(system\.)?io\.file\]::write'
 PS_PATH_FLAG_RE='^-(path|filepath|literalpath|destination|newname)$'
 PS_VALUE_FLAG_RE='^-(itemtype|value|encoding|inputobject|type|name)$'
 PS_BASH_PATH_CMD_RE='^(rm|cp|mv|mkdir|touch|chmod|chown)$'
+PS_COPY_WORD_RE='^(copy-item|cp|copy)$'
 
 ci_match() {
   # ci_match <text> <ERE> — 大小写不敏感匹配
@@ -1046,12 +1047,70 @@ ps_git_targets() {
     ps_git_target_check "$target" "$cmd"
   done
   for seg in ${WS_WRITE_SEGMENTS[@]+"${WS_WRITE_SEGMENTS[@]}"}; do
-    targets="$(ws_segment_targets "$seg")" || continue
+    if ci_match "${seg%%[[:space:]]*}" "$PS_COPY_WORD_RE"; then
+      targets="$(ws_copy_git_targets "$seg")"
+    else
+      targets="$(ws_segment_targets "$seg")" || continue
+    fi
+    [ -n "$targets" ] || continue
     while IFS= read -r target; do
       ps_git_target_check "$target" "$cmd"
     done <<< "$targets"
   done
   return 0
+}
+
+# ws_copy_git_targets <segment> — git 判据下 PowerShell 复制段（Copy-Item / cp / copy）的写入目标（与引擎 cpTargets、
+# Cursor runtime wsCopyGitTargets 同口径）：源只被读取，不算写入目标；目标取 -Destination，或位置实参中的目标
+# （未以 -Path / -LiteralPath 命名源时为第二个位置实参，否则为第一个）。目标是目录（以 / 或 \ 结尾，或判定时已存在
+# 的目录）时写入 目标/<源末段>，否则目标本身即写入路径。目标或源无法确定时不输出，交给事后检查。
+# 非 git 回落仍按 ws_segment_targets 的全量实参口径。
+ws_copy_git_targets() {
+  local seg="$1" tok next="" dest="" named_src=0 i src leaf d
+  local -a toks=() pos=() srcs=()
+  set -f
+  # shellcheck disable=SC2206
+  toks=($seg)
+  set +f
+  for ((i = 1; i < ${#toks[@]}; i++)); do
+    tok="${toks[$i]}"
+    case "$next" in
+      dest) dest="$tok"; next=""; continue ;;
+      src) srcs+=("$tok"); next=""; continue ;;
+      value) next=""; continue ;;
+    esac
+    if ci_match "$tok" '^-destination$'; then next=dest; continue; fi
+    if ci_match "$tok" '^-(path|literalpath)$'; then next=src; named_src=1; continue; fi
+    if ci_match "$tok" '^-(filter|include|exclude|credential|fromsession|tosession)$'; then next=value; continue; fi
+    case "$tok" in -*) continue ;; esac
+    pos+=("$tok")
+  done
+  if [ -z "$dest" ]; then
+    if [ "$named_src" -eq 1 ]; then
+      dest="${pos[0]:-}"
+    else
+      [ "${#pos[@]}" -gt 0 ] && srcs+=("${pos[0]}")
+      dest="${pos[1]:-}"
+    fi
+  fi
+  dest="${dest#\"}"; dest="${dest%\"}"; dest="${dest#\'}"; dest="${dest%\'}"
+  [ -n "$dest" ] || return 0
+  case "$dest" in *'$'*|*'('*|*')'*|*'`'*|*'*'*|*'?'*|*'@'*|*'{'*|*','*) return 0 ;; esac
+  d="${dest//\\//}"
+  if [[ "$d" == */ ]] || [ -d "$d" ]; then
+    d="${d%/}"
+    for src in ${srcs[@]+"${srcs[@]}"}; do
+      src="${src#\"}"; src="${src%\"}"; src="${src#\'}"; src="${src%\'}"
+      case "$src" in ''|*'$'*|*'('*|*')'*|*'`'*|*'*'*|*'?'*|*'@'*|*'{'*|*','*) continue ;; esac
+      src="${src//\\//}"
+      src="${src%/}"
+      leaf="${src##*/}"
+      case "$leaf" in ''|.|..) continue ;; esac
+      printf '%s\n' "$d/$leaf"
+    done
+    return 0
+  fi
+  printf '%s\n' "$dest"
 }
 
 ps_git_target_check() {

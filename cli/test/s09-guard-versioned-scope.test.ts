@@ -510,6 +510,21 @@ describe('S09-F 受保护判定 — 场景', () => {
     expect(c.pre.exitCode).toBe(0);
     expect(c.post!.exitCode).toBe(2);
     expect(c.post!.stderr).toContain('docs/.gitignore');
+    // 被忽略目录（dist/）之内的 .gitignore：exempt dist/ 也不可豁免；可确定目标事前 exit 2（第 3 步先于「被忽略」），
+    // node -e 间接改写事前放行、事后 exit 2（快照独立收集任意层级的 .gitignore）
+    setGuardConfig(root, { exempt: ['docs/', 'dist/'] });
+    expect(git(root, ['commit', '-qam', 'exempt dist']).status).toBe(0);
+    mkdirSync(join(root, 'dist'), { recursive: true });
+    writeFileSync(join(root, 'dist/.gitignore'), 'keep\n');
+    expect(git(root, ['check-ignore', '-q', 'dist/.gitignore']).status).toBe(0);
+    expect(hookedWrite(root, 'Write', 'dist/.gitignore', '*\n'), 'Write dist/.gitignore').toBe(2);
+    expectBlockedRun(runGuard(GUARD_SRC, root, 'Bash', { command: 'echo x >> dist/.gitignore' }), 'Bash echo >> dist/.gitignore');
+    expect(readFileSync(join(root, 'dist/.gitignore'), 'utf-8')).toBe('keep\n');
+    const d = chain(root, "node -e \"require('fs').writeFileSync('dist/.gitignore','*\\n')\"");
+    expect(d.pre.exitCode).toBe(0);
+    expect(d.post!.exitCode).toBe(2);
+    expect(d.post!.stderr).toContain('dist/.gitignore（内容变化）');
+    expect(hookedWrite(root, 'Write', 'dist/a.txt', 'a\n'), '对照：被忽略目录下普通文件').toBe(0);
     // guard 自有状态：Bash 可确定目标的写入在 initial 与有活跃提案时同样恒阻断
     writeFileSync(join(root, 'logos/.openlogos-guard'), JSON.stringify({ activeChange: 'x', module: 'core' }));
     expectRuntimeBlocked(runGuard(GUARD_SRC, root, 'Bash', { command: 'rm logos/.openlogos-runtime/pending-reports.jsonl' }), '有提案');

@@ -18,6 +18,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { makeTempRoot } from './helpers.js';
 import { GUARD_SRC, REPO_ROOT, buildProject, callIsProtected, cleanEnv, git, loadGuardRegion, type FixtureKind } from './s09-guard-vcs-fixtures.js';
 import {
@@ -29,6 +30,12 @@ const TIMEOUT = 180_000;
 const CLI = join(REPO_ROOT, 'cli', 'dist', 'index.js');
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
+
+/** Cursor runtime 分发源（plugin-cursor/hooks/runtime.cjs；git 判据下回落到 plugin/bin 引擎分发源）。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cursorRuntime(): any {
+  return createRequire(import.meta.url)(join(REPO_ROOT, 'plugin-cursor', 'hooks', 'runtime.cjs'));
+}
 
 function tempRoot(): string {
   const { root, cleanup } = makeTempRoot();
@@ -143,6 +150,39 @@ describe('S09-F 事后检查引擎 — 单元', () => {
     const fbw = spawnSync('bash', [bare], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'src/new.js', content: 'x' } }), cwd: root, encoding: 'utf-8', env });
     expect(fbw.status).toBe(2);
     expect(fbw.stderr).toContain('事后检查引擎缺失');
+    // cp：git 判据下源只被读取，不算写入目标；只判定目标（目录目标按「目标/源末段」判定）。mv 的源会被移除，仍计入
+    mkdirSync(join(root, 'dist'), { recursive: true });
+    writeFileSync(join(root, 'dist/x.js'), 'x');
+    const tp = (cmd: string) => engine.writeTargets(cmd, root).map((t: { path: string }) => t.path.slice(root.length + 1));
+    expect(tp('cp src/a.js dist/a.js'), '只取目标').toEqual(['dist/a.js']);
+    expect(tp('cp -r src/a.js src/b.js dist'), '多源：目录目标').toEqual(['dist/a.js', 'dist/b.js']);
+    expect(tp('cp src/a.js dist/'), '以 / 结尾的目录目标').toEqual(['dist/a.js']);
+    expect(tp('cp -t dist src/a.js src/b.js'), '-t').toEqual(['dist/a.js', 'dist/b.js']);
+    expect(tp('cp --target-directory=src dist/x.js'), '--target-directory=').toEqual(['src/x.js']);
+    expect(tp('cp -T dist/x.js src/y'), '-T 按文件处理').toEqual(['src/y']);
+    expect(tp('cp src/a.js $D'), '目标不可确定 → 交给事后检查').toEqual([]);
+    expect(tp('cp $S dist/'), '源不可确定且目标为目录 → 交给事后检查').toEqual([]);
+    expect(tp('mv src/a.js dist/a.js'), 'mv 源与目标都计入').toEqual(['src/a.js', 'dist/a.js']);
+    for (const cmd of ['cp src/a.js dist/a.js', 'cp src/a.js src/b.js dist/', 'cp -t dist src/a.js', 'cp src/a.js $D']) {
+      const v = verdict(cmd);
+      expect([v.exit, v.snap], `${cmd} 源不算写入目标`).toEqual([0, true]);
+    }
+    for (const cmd of ['cp dist/x.js src/', 'cp -t src dist/x.js', 'cp dist/x.js src/x2.js', 'mv src/a.js dist/a.js']) {
+      expect(verdict(cmd).exit, `${cmd} 目标受保护`).toBe(2);
+    }
+    // PowerShell 复制段同口径（guard-check ws_copy_git_targets）
+    for (const cmd of ['Copy-Item src\\a.js dist\\a.js', 'cp src\\a.js dist\\', 'Copy-Item -Path src\\a.js -Destination dist\\a.js']) {
+      expect(verdict(cmd, 'PowerShell').exit, `PowerShell ${cmd}`).toBe(0);
+    }
+    for (const cmd of ['Copy-Item dist\\x.js src\\x2.js', 'Copy-Item dist\\x.js src\\', 'Copy-Item -Destination src\\x2.js -Path dist\\x.js']) {
+      expect(verdict(cmd, 'PowerShell').exit, `PowerShell ${cmd}`).toBe(2);
+    }
+    // Cursor runtime 同口径（POSIX 经引擎 writeTargets；win32 经 wsCopyGitTargets）
+    const cursor = cursorRuntime();
+    expect(cursor.decideShell(root, 'cp src/a.js dist/a.js', 'darwin').decision, 'Cursor darwin cp 源').toBe('allow');
+    expect(cursor.decideShell(root, 'cp dist/x.js src/x2.js', 'darwin').decision, 'Cursor darwin cp 目标').toBe('deny');
+    expect(cursor.decideShell(root, 'Copy-Item src\\a.js dist\\a.js', 'win32').decision, 'Cursor win32 Copy-Item 源').toBe('allow');
+    expect(cursor.decideShell(root, 'Copy-Item dist\\x.js src\\', 'win32').decision, 'Cursor win32 Copy-Item 目标').toBe('deny');
   }, TIMEOUT);
 
   it('UT-S09-393: 快照覆盖范围与原始字节留存', () => {
@@ -230,6 +270,40 @@ describe('S09-F 事后检查引擎 — 单元', () => {
       .filter(e => e.op === 'git' && e.args.includes('hash-object')).flatMap(e => e.paths ?? []);
     expect(hashed, 'mtime 不早于记录时刻 → 重算').toContain('src/c.js');
     expect(hashed, '更早的条目复用缓存').not.toContain('logos/resources/prd/x.md');
+    // 权限变化：git 记录的执行位变化（100644 → 100755）计为类型变化并在反馈中标明「执行位变化」；
+    // git 不记录的其他权限位（0644 → 0600）不计入
+    writeAt(root, 'src/m1.js', 'm1\n');
+    writeAt(root, 'src/m2.js', 'm2\n');
+    chmodSync(join(root, 'src/m1.js'), 0o644);
+    chmodSync(join(root, 'src/m2.js'), 0o644);
+    expect(git(root, ['add', 'src/m1.js', 'src/m2.js']).status).toBe(0);
+    expect(git(root, ['commit', '-qm', 'modes']).status).toBe(0);
+    const s4 = engine.scanProject(pctx, s3.cache);
+    const base4 = Object.fromEntries([...s4.states].map(([p, s]: [string, unknown]) => [p, engine.entryOf(s)]));
+    chmodSync(join(root, 'src/m1.js'), 0o755);
+    chmodSync(join(root, 'src/m2.js'), 0o600);
+    expect(git(root, ['diff', '--raw', '--', 'src/m1.js']).stdout, 'git 记录执行位变化').toContain(':100644 100755');
+    expect(git(root, ['diff', '--raw', '--', 'src/m2.js']).stdout, 'git 不记录 0600').toBe('');
+    const s5 = engine.scanProject(pctx, s4.cache);
+    const modeChanges = engine.diffStates(root, base4, s5.states);
+    expect(modeChanges.map((c: { path: string; change: string }) => [c.path, c.change])).toEqual([['src/m1.js', 'type']]);
+    expect(modeChanges[0].exec_change).toEqual({ from: '100644', to: '100755' });
+    const modeText = engine.renderFeedback([{ ...modeChanges[0], record_id: 'm1', attribution: { kind: 'self', command: 'chmod' } }]);
+    expect(modeText).toContain('src/m1.js（类型变化：执行位变化 100644 → 100755）');
+    expect(modeText).toContain(engine.restoreCommand('claude', 'm1', 'src/m1.js'));
+    // 内容与执行位同时变化：内容变化并标明执行位变化
+    writeAt(root, 'src/m1.js', 'm1-changed\n');
+    chmodSync(join(root, 'src/m1.js'), 0o755);
+    const both = engine.diffStates(root, base4, engine.scanProject(pctx, s5.cache).states)
+      .find((c: { path: string }) => c.path === 'src/m1.js');
+    expect(both.change).toBe('modified');
+    expect(engine.renderFeedback([{ ...both, record_id: 'm1', attribution: { kind: 'self', command: 'x' } }]))
+      .toContain('src/m1.js（内容变化，执行位变化 100644 → 100755）');
+    // 执行位回到基线：与基线状态一致（去重条目据此清除）
+    writeAt(root, 'src/m1.js', 'm1\n');
+    chmodSync(join(root, 'src/m1.js'), 0o644);
+    expect(engine.diffStates(root, base4, engine.scanProject(pctx).states).filter((c: { path: string }) => c.path.startsWith('src/m'))).toEqual([]);
+    expect(engine.sameState(engine.statePath(root, 'src/m1.js'), { ...base4['src/m1.js'], mode: 0o755 }, root), '执行位不同不算一致').toBe(false);
   }, TIMEOUT);
 
   it('UT-S09-398: 事件级去重 (path, raw_digest, 事件签名)', () => {
@@ -567,9 +641,43 @@ describe('S09-F 事后检查引擎 — 单元', () => {
     expect(restore('u10', 'src/s.sh').status).toBe(0);
     expect(statSync(join(root, 'src/s.sh')).mode & 0o777).toBe(0o755);
     expect(readFileSync(join(root, 'src/s.sh'), 'utf-8')).toBe(orig('src/s.sh'));
+    // ⑪ 执行前普通文件 → 执行后指向另一个受保护文件的项目内符号链接：按报告路径定位目录项（不跟随链接到 src/b.js），
+    //    链接被替换为原文件，链接目标内容不变
+    const bBefore = readFileSync(join(root, 'src/b.js'));
+    const r11 = report('u11', () => { unlinkSync(join(root, 'src/a.js')); symlinkSync('b.js', join(root, 'src/a.js')); });
+    expect(r11).toContain('src/a.js（类型变化）');
+    const x11 = restore('u11', 'src/a.js');
+    expect(x11.status, x11.stderr).toBe(0);
+    expect(lstatSync(join(root, 'src/a.js')).isFile()).toBe(true);
+    expect(readFileSync(join(root, 'src/a.js'), 'utf-8')).toBe(orig('src/a.js'));
+    expect(lstatSync(join(root, 'src/b.js')).isFile()).toBe(true);
+    expect(readFileSync(join(root, 'src/b.js')).equals(bBefore), '链接目标内容不变').toBe(true);
+    // 父目录经项目内符号链接给出：父目录 realpath 后定位到同一目录项；父目录逃逸到项目外：拒绝 exit 1
+    expect(engine.entryRelOfRoot(root, 'src/a.js')).toBe('src/a.js');
+    symlinkSync('src', join(root, 'lnk'));
+    expect(engine.entryRelOfRoot(root, 'lnk/a.js'), '项目内父目录链接').toBe('src/a.js');
+    symlinkSync('b.js', join(root, 'src/l3.js'));
+    expect(engine.entryRelOfRoot(root, 'src/l3.js'), '最后一级不解析').toBe('src/l3.js');
+    unlinkSync(join(root, 'src/l3.js'));
+    const outDir = tempRoot();
+    writeFileSync(join(outDir, 'x.js'), 'OUT\n');
+    symlinkSync(outDir, join(root, 'src/out'));
+    expect(engine.entryRelOfRoot(root, 'src/out/x.js'), '父目录逃逸').toBeNull();
+    const x11b = restore('u11', 'src/out/x.js');
+    expect(x11b.status).toBe(1);
+    expect(x11b.stderr).toContain('不在项目根之内');
+    expect(readFileSync(join(outDir, 'x.js'), 'utf-8')).toBe('OUT\n');
+    unlinkSync(join(root, 'src/out'));
+    unlinkSync(join(root, 'lnk'));
+    // ⑫ 只改执行位（0755 → 0644，git 记录为 100755 → 100644）：报告为执行位变化，restore 恢复执行位
+    const r12 = report('u12', () => chmodSync(join(root, 'src/s.sh'), 0o644));
+    expect(r12).toContain('src/s.sh（类型变化：执行位变化 100755 → 100644）');
+    expect(restore('u12', 'src/s.sh').status).toBe(0);
+    expect(statSync(join(root, 'src/s.sh')).mode & 0o777).toBe(0o755);
+    expect(readFileSync(join(root, 'src/s.sh'), 'utf-8')).toBe(orig('src/s.sh'));
     // 成功恢复不产生新报告
-    expect(snapshot(root, 'ls', 'u11').exitCode).toBe(0);
-    expectQuiet(postToolUse(root, 'ls', 'u11'), '恢复后检查');
+    expect(snapshot(root, 'ls', 'u13').exitCode).toBe(0);
+    expectQuiet(postToolUse(root, 'ls', 'u13'), '恢复后检查');
   }, TIMEOUT);
 });
 
@@ -802,6 +910,27 @@ describe('S09-F 事后检查引擎 — 场景', () => {
         expect(runRestore(root, restoreFor(reason, rel)!).status, `${kind} restore ${rel}`).toBe(0);
       }
       expect(callIsProtected(loadGuardRegion(tempRoot()).file, root, 'src/a.js').protected, `${kind} src/a.js 仍受保护`).toBe(true);
+      // 被忽略目录（dist/）之内的 .gitignore 同样是忽略规则来源（C14 任意层级）：进入快照，间接改写 / 新建被事后发现
+      writeAt(root, 'dist/.gitignore', 'keep\n');
+      expect(git(root, ['check-ignore', '-q', 'dist/.gitignore']).status, `${kind} dist/.gitignore 被忽略`).toBe(0);
+      const distRules: Array<[string, string, string]> = [
+        ["node -e \"require('fs').writeFileSync('dist/.gitignore','*\\n')\"", 'dist/.gitignore', '内容变化'],
+        ["node -e \"require('fs').mkdirSync('dist/sub',{recursive:true});require('fs').writeFileSync('dist/sub/.gitignore','x')\"", 'dist/sub/.gitignore', '新增'],
+      ];
+      for (const [cmd, rel, label] of distRules) {
+        const c = chain(root, cmd);
+        expect(c.pre.exitCode, `${kind} ${cmd}`).toBe(0);
+        const reason = expectReported(c.post, `${kind} ${cmd}`);
+        expect(reason).toContain(`${rel}（${label}）`);
+        expect(runRestore(root, restoreFor(reason, rel)!).status, `${kind} restore ${rel}`).toBe(0);
+      }
+      expect(readFileSync(join(root, 'dist/.gitignore'), 'utf-8')).toBe('keep\n');
+      expect(existsSync(join(root, 'dist/sub/.gitignore'))).toBe(false);
+      // 可确定目标的写入在事前即被阻断：is_protected 第 3 步先于「被忽略」判定
+      const pre = preToolUse(root, 'Bash', { command: 'echo x >> dist/.gitignore' }, nextId());
+      expect(pre.exitCode, `${kind} echo >> dist/.gitignore`).toBe(2);
+      expect(pre.stderr).toContain('dist/.gitignore');
+      expect(readFileSync(join(root, 'dist/.gitignore'), 'utf-8')).toBe('keep\n');
       if (kind === 'G-ignored-spec') {
         // logos.config.json 被 git 忽略（未跟踪）时结论相同
         writeFileSync(join(root, '.gitignore'), readFileSync(join(root, '.gitignore'), 'utf-8').replace('!/logos/logos.config.json\n', ''));
@@ -910,6 +1039,18 @@ describe('S09-F 事后检查引擎 — 场景', () => {
     writeFileSync(join(root, 'src/a.js'), 'manual');
     expect(runRestore(root, r5).status).toBe(1);
     expect(readFileSync(join(root, 'src/a.js'), 'utf-8')).toBe('manual');
+    writeFileSync(join(root, 'src/a.js'), orig.a);
+    expectQuiet(chain(root, 'npm ci').post, '⑤ 复位');
+    // ⑥ 执行前普通文件 → 执行后指向另一个受保护文件（src/b.js）的项目内符号链接：按报告路径恢复，
+    //    链接被替换为原文件，链接目标内容不变
+    const r6 = run("node -e \"const fs=require('fs');fs.unlinkSync('src/a.js');fs.symlinkSync('b.js','src/a.js')\"", 'src/a.js');
+    const x6 = runRestore(root, r6);
+    expect(x6.status, x6.stderr).toBe(0);
+    expect(lstatSync(join(root, 'src/a.js')).isFile()).toBe(true);
+    expect(readFileSync(join(root, 'src/a.js')).equals(orig.a)).toBe(true);
+    expect(lstatSync(join(root, 'src/b.js')).isFile()).toBe(true);
+    expect(readFileSync(join(root, 'src/b.js')).equals(orig.b), '链接目标内容不变').toBe(true);
+    expectQuiet(chain(root, 'ls').post, '⑥ 恢复后不再报告');
   }, TIMEOUT);
 
   it('ST-S09-191: 独立调用形态的 restore 不被误报', () => {

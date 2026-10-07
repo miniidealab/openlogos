@@ -350,6 +350,7 @@ const WS_DOTNET_WRITE = /\[(system\.)?io\.file\]::write/i;
 const WS_PATH_FLAG = /^-(path|filepath|literalpath|destination|newname)$/i;
 const WS_VALUE_FLAG = /^-(itemtype|value|encoding|inputobject|type|name)$/i;
 const WS_POSIX_PATH_CMD = /^(rm|cp|mv|mkdir|touch|chmod|chown)$/i;
+const WS_COPY_WORD = /^(copy-item|cp|copy)$/i;
 // 逗号为 PowerShell 数组分隔：未实现有界数组解析前按不可解析拒绝，避免白名单首目标掩盖后续受保护目标
 const WS_UNPARSEABLE = /[$()`*?@{,]/;
 
@@ -770,7 +771,7 @@ function gitDenyFacts(state, verdict, command) {
 }
 
 /** win32（PowerShell）可确定写入目标：重定向与写入段的结构化目标；变量 / 子表达式 / 通配 / 数组目标交给事后检查。 */
-function windowsDeterminableTargets(trimmed) {
+function windowsDeterminableTargets(trimmed, root = process.cwd()) {
   const stripped = trimmed.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
   const merged = stripped.replace(/[0-9*]?>&[0-9]/g, '');
   const raw = [];
@@ -779,10 +780,61 @@ function windowsDeterminableTargets(trimmed) {
   }
   const segments = merged.split(/&&|\|\||;|\||&/).map(segment => segment.trim().split('>')[0].trim()).filter(Boolean);
   for (const segment of segments.filter(wsSegmentIsWrite)) {
-    const extracted = wsSegmentTargets(segment);
+    const extracted = WS_COPY_WORD.test(segment.split(/\s+/)[0] || '') ? wsCopyGitTargets(segment, root) : wsSegmentTargets(segment);
     if (extracted) raw.push(...extracted);
   }
   return raw.map(target => target.replace(/^["']|["']$/g, '')).filter(target => target !== '' && !WS_UNPARSEABLE.test(target));
+}
+
+/**
+ * git 判据下 PowerShell 复制段（Copy-Item / cp / copy）的写入目标（与引擎 cpTargets、guard-check ws_copy_git_targets
+ * 同口径）：源只被读取，不算写入目标；目标取 -Destination，或位置实参中的目标（未以 -Path / -LiteralPath 命名源时为
+ * 第二个位置实参，否则为第一个）。目标是目录（以 / 或 \ 结尾，或判定时已存在的目录）时写入 目标/<源末段>，
+ * 否则目标本身即写入路径。目标或源无法确定时不输出，交给事后检查。非 git 回落仍按 wsSegmentTargets 的全量实参口径。
+ */
+function wsCopyGitTargets(segment, root = process.cwd()) {
+  const tokens = segment.split(/\s+/).filter(Boolean).slice(1);
+  const unquote = token => token.replace(/^["']|["']$/g, '');
+  let next = null;
+  let dest = null;
+  let namedSource = false;
+  const positional = [];
+  const sources = [];
+  for (const token of tokens) {
+    if (next === 'dest') { dest = token; next = null; continue; }
+    if (next === 'src') { sources.push(token); next = null; continue; }
+    if (next === 'value') { next = null; continue; }
+    if (/^-destination$/i.test(token)) { next = 'dest'; continue; }
+    if (/^-(path|literalpath)$/i.test(token)) { next = 'src'; namedSource = true; continue; }
+    if (/^-(filter|include|exclude|credential|fromsession|tosession)$/i.test(token)) { next = 'value'; continue; }
+    if (token.startsWith('-')) continue;
+    positional.push(token);
+  }
+  if (dest === null) {
+    if (namedSource) dest = positional[0] ?? null;
+    else {
+      if (positional.length) sources.push(positional[0]);
+      dest = positional[1] ?? null;
+    }
+  }
+  if (dest === null) return [];
+  dest = unquote(dest);
+  if (dest === '' || WS_UNPARSEABLE.test(dest)) return [];
+  const dir = dest.replace(/\\/g, '/');
+  let isDir = dir.endsWith('/');
+  if (!isDir) {
+    try { isDir = fs.statSync(path.resolve(root, dir)).isDirectory(); } catch { isDir = false; }
+  }
+  if (!isDir) return [dest];
+  const out = [];
+  for (const raw of sources) {
+    const source = unquote(raw);
+    if (source === '' || WS_UNPARSEABLE.test(source)) continue;
+    const leaf = source.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop();
+    if (!leaf || leaf === '.' || leaf === '..') continue;
+    out.push(`${dir.replace(/\/+$/, '')}/${leaf}`);
+  }
+  return out;
 }
 
 /**
@@ -803,7 +855,7 @@ function decideShellGit(root, trimmed, platform, guardMode, state, event) {
     return { decision: 'allow', reason: '独立形态的引擎 restore 调用' };
   }
   const targets = platform === 'win32'
-    ? windowsDeterminableTargets(trimmed)
+    ? windowsDeterminableTargets(trimmed, root)
     : engine.writeTargets(trimmed, root).map(target => target.path);
   for (const target of targets) {
     const verdict = protectedVerdictFor(guardMode, target);

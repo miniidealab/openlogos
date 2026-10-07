@@ -16,7 +16,8 @@
  * 状态目录 logos/.openlogos-runtime/（.gitignore 托管区块固定忽略）：
  *   guard-records/<id>.json   执行记录          pending-reports.jsonl  待报告项
  *   reported.jsonl            已报告去重表      raw-baseline.json      原始字节基线缓存
- *   state.lock                项目级状态锁      pending-spill/<pid>-<时间戳>.json  拿不到锁时溢出的待报告项
+ *   state.lock                项目级状态锁      state.lock.reclaim      回收过期锁的互斥
+ *   pending-spill/<pid>-<时间戳>.json  拿不到锁时溢出的待报告项
  *   guard-records/<id>.closed 已关闭记录的墓碑（下一次会话开始后清理）
  * 本文件同时导出纯函数（module.exports），供测试在函数层调用真实实现。
  *
@@ -25,6 +26,7 @@
  *   OPENLOGOS_GUARD_TEST_FAULT=pause-before-rename          同一位置挂起（供测试 kill -9）
  *   OPENLOGOS_GUARD_TEST_FAULT=kill-after-record-writes:<n> 本进程第 n 次执行记录落盘后以 SIGKILL 自终止
  *   OPENLOGOS_GUARD_TEST_FAULT=kill-after-emit              反馈写出后、去重表与送达状态落盘前以 SIGKILL 自终止
+ *   OPENLOGOS_GUARD_TEST_FAULT=pause-reclaim:<ms>           回收过期锁时在「判定过期」与「替换锁文件」之间停顿
  *   OPENLOGOS_GUARD_TEST_LOCK_WAIT_MS=<ms>                  覆盖等锁上限（默认 5000）
  */
 
@@ -43,6 +45,7 @@ const CURSOR_ENGINE_REL = '.cursor/hooks/openlogos-guard-post.cjs';
 const LOCK_WAIT_MS = 5000;
 const SPILL_DIR = 'pending-spill';
 const LOCK_STALE_MS = 30000;
+const RECLAIM_ORPHAN_MS = 10 * 60 * 1000;
 
 // 与 plugin/bin/guard-check 的 WHITELIST_PREFIXES 逐项一致（受保护判定第 5 步；已去掉 .gitignore）
 const WHITELIST_PREFIXES = [
@@ -197,6 +200,30 @@ function relOfRoot(root, p) {
   if (path.isAbsolute(rel)) rel = `../${rel}`;
   rel = toPosix(rel);
   return rel === '' ? '.' : rel;
+}
+
+/**
+ * 按目录项定位的项目根相对路径（restore 等以报告路径定位目录项的场合）：只归一化父目录（最深已存在祖先 realpath），
+ * 最后一级目录项本身不解析——它被换成符号链接时仍指向报告中的那个路径。父目录 realpath 后须位于项目根之内，
+ * 父目录含逃逸到项目外的符号链接时返回 null（不做词法回退）。
+ */
+function entryRelOfRoot(root, p) {
+  const abs = path.resolve(root, p);
+  if (abs === path.parse(abs).root) return null;
+  const base = path.basename(abs);
+  let anc = path.dirname(abs);
+  const tail = [];
+  while (!fs.existsSync(anc)) {
+    if (anc === path.parse(anc).root) break;
+    tail.push(path.basename(anc));
+    anc = path.dirname(anc);
+  }
+  let realAnc;
+  try { realAnc = fs.realpathSync(anc); } catch { return null; }
+  const parent = tail.length ? path.join(realAnc, ...tail.reverse()) : realAnc;
+  const prel = toPosix(path.relative(realpathSafe(root), parent));
+  if (prel === '..' || prel.startsWith('../') || path.isAbsolute(prel)) return null;
+  return prel === '' ? base : `${prel}/${base}`;
 }
 
 /** 位于项目根之内时返回相对路径，否则 null。 */
@@ -658,8 +685,69 @@ function determinable(w) {
 }
 
 /**
+ * git 判据下 cp 的写入目标（源只被读取，不算写入目标；非 git 回落由 guard-check / Cursor 既有判定保持全量实参口径）：
+ * - `-t DIR` / `--target-directory[=]DIR`：全部位置实参都是源，写入 DIR/<源的末段>；
+ * - 否则最后一个位置实参是目标：它是目录（以 / 结尾、判定时已存在的目录，或有多个源）时写入 目标/<源的末段>，
+ *   否则目标本身就是写入路径（`-T` 强制按文件处理）。
+ * 按「目标目录/源末段」逐一判定而不是判定目录本身：只判定真正被写入的目录项，不会因目录已跟踪而误拦
+ * 写入被忽略文件的复制（如 `cp a.log src/`，*.log 被忽略）。目标或某个源无法确定时，对应写入交给事后检查。
+ */
+function cpTargets(args, resolve) {
+  let afterDD = false;
+  let skipNext = false;
+  let tdirWord = null;
+  let tdirSeen = false;
+  let noTargetDir = false;
+  const pos = [];
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (skipNext) { skipNext = false; continue; }
+    if (!afterDD && !w.dynamic && w.text === '--') { afterDD = true; continue; }
+    if (!afterDD && !w.dynamic && w.text.length > 1 && w.text.startsWith('-')) {
+      if (w.text === '-t' || w.text === '--target-directory') { tdirSeen = true; tdirWord = args[i + 1] || null; skipNext = true; }
+      else if (w.text.startsWith('--target-directory=')) { tdirSeen = true; tdirWord = { ...w, text: w.text.slice('--target-directory='.length) }; }
+      else if (/^-[A-Za-z]*t./.test(w.text) && !w.text.startsWith('--')) {
+        // 组合短选项中 t 之后的剩余部分即目录（如 -rtDIR）；无法可靠拆分时视为目标不可确定
+        tdirSeen = true;
+        const m = /^-[A-Za-z]*?t(.+)$/.exec(w.text);
+        tdirWord = m ? { ...w, text: m[1] } : null;
+      } else if (/^-[A-Za-z]*t$/.test(w.text)) { tdirSeen = true; tdirWord = args[i + 1] || null; skipNext = true; }
+      else if (w.text === '-S' || w.text === '--suffix') skipNext = true;
+      else if (w.text === '-T' || w.text === '--no-target-directory' || (/^-[A-Za-z]+$/.test(w.text) && w.text.includes('T'))) noTargetDir = true;
+      continue;
+    }
+    pos.push(w);
+  }
+  const out = [];
+  const into = (dirWord, sources) => {
+    const dir = dirWord ? resolve(dirWord) : null;
+    if (!dir) return; // 目标目录不可确定：交给事后检查
+    for (const src of sources) {
+      if (!determinable(src)) continue; // 源不可确定 → 写入的目录项不可确定：交给事后检查
+      const leaf = path.basename(src.text.replace(/\/+$/, ''));
+      if (!leaf || leaf === '.' || leaf === '..') continue;
+      out.push(path.join(dir, leaf));
+    }
+  };
+  if (tdirSeen) { into(tdirWord, pos); return out; }
+  if (pos.length < 2) return out; // 缺少目标实参：cp 自身会报错，不写入
+  const dest = pos[pos.length - 1];
+  const sources = pos.slice(0, -1);
+  const destAbs = resolve(dest);
+  if (!destAbs) return out;
+  let isDir = false;
+  if (!noTargetDir) {
+    isDir = sources.length > 1 || /\/$/.test(dest.text);
+    if (!isDir) { try { isDir = fs.statSync(destAbs).isDirectory(); } catch { isDir = false; } }
+  }
+  if (isDir) into(dest, sources);
+  else out.push(destAbs);
+  return out;
+}
+
+/**
  * 事前可确定的写入目标（spec「Bash / PowerShell 判定顺序」第 6 步）：重定向目标与
- * rm / cp / mv / mkdir / touch / chmod / chown 的路径实参；cd 段改变后续相对路径的基准，
+ * rm / mv / mkdir / touch / chmod / chown 的路径实参、cp 的目标（见 cpTargets，源不算写入目标）；cd 段改变后续相对路径的基准，
  * 基准不可确定时后续相对目标视为不可确定。返回 [{ path（绝对）, op }]。
  */
 function writeTargets(cmd, root) {
@@ -693,6 +781,8 @@ function writeTargets(cmd, root) {
         if (!arg) effective = os.homedir();
         else if (!determinable(arg) || arg.text === '-') effective = null;
         else effective = path.isAbsolute(arg.text) ? arg.text : (cur === null ? null : path.resolve(cur, arg.text));
+      } else if (name === 'cp') {
+        for (const t of cpTargets(words.slice(1), w => resolveT(w, cur))) targets.push({ path: t, op: 'cp' });
       } else if (PATH_COMMANDS.has(name)) {
         let afterDD = false;
         let skipFirst = name === 'chmod' || name === 'chown';
@@ -704,8 +794,11 @@ function writeTargets(cmd, root) {
           if (!afterDD && !w.dynamic && w.text === '--') { afterDD = true; continue; }
           if (!afterDD && !w.dynamic && w.text.length > 1 && w.text.startsWith('-')) {
             if (name === 'mkdir' && (w.text === '-m' || w.text === '--mode')) skipNext = true;
-            else if ((name === 'cp' || name === 'mv') && (w.text === '-t' || w.text === '--target-directory')) nextIsPath = true;
-            else if ((name === 'cp' || name === 'mv') && (w.text === '-S' || w.text === '--suffix')) skipNext = true;
+            else if (name === 'mv' && (w.text === '-t' || w.text === '--target-directory')) nextIsPath = true;
+            else if (name === 'mv' && w.text.startsWith('--target-directory=')) {
+              const t = resolveT({ ...w, text: w.text.slice('--target-directory='.length) }, cur);
+              if (t) targets.push({ path: t, op: name });
+            } else if (name === 'mv' && (w.text === '-S' || w.text === '--suffix')) skipNext = true;
             continue;
           }
           if (skipFirst) { skipFirst = false; continue; }
@@ -810,7 +903,7 @@ function walkFiles(root, absDir, out) {
 
 /**
  * 候选路径与已知 git 状态：全部已跟踪文件（原始字节基线缓存覆盖全部已跟踪文件）、未跟踪未忽略文件、
- * logos/resources/ 下被忽略的文件、自身被忽略的 .gitignore、logos/logos.config.json、项目内 core.excludesFile、
+ * logos/resources/ 下被忽略的文件、任意层级被忽略的 .gitignore（含被忽略目录之内的）、logos/logos.config.json、项目内 core.excludesFile、
  * git 元数据（git 目录与项目内 common dir 下的 config、info/**、hooks/**，项目内 core.hooksPath）。
  * 运行时目录一律排除。
  */
@@ -840,8 +933,15 @@ function collectCandidates(gctx) {
       continue;
     }
     if (p.startsWith(`${RESOURCES_REL}/`)) resourcesIgnored = true;
-    if (p.split('/').pop() === '.gitignore') add(p, 'ignored');
   }
+  // 任意层级的忽略规则来源（C14）：被忽略的 .gitignore 独立收集，包括被忽略目录（dist/、node_modules/ 等）之内的。
+  // 用 git 自身的遍历（glob pathspec）而不是 find：口径与 git 一致（不进入嵌套仓库 / 子模块），只输出 .gitignore，
+  // 不把被忽略目录的全部内容展开进候选。
+  const globEnv = { ...process.env };
+  delete globEnv.GIT_LITERAL_PATHSPECS; // 字面 pathspec 模式会让 :(glob) 失效
+  const ignoredRules = runGit(root, ['ls-files', '-z', '-o', '-i', '--exclude-standard', '--', ':(glob)**/.gitignore'], { env: globEnv });
+  if (ignoredRules.status !== 0) throw new Error(`git ls-files 忽略规则来源失败：${ignoredRules.stderr}`);
+  for (const p of splitZ(ignoredRules.stdout)) if (p.split('/').pop() === '.gitignore') add(p, 'ignored');
   if (resourcesIgnored) {
     const res = runGit(root, ['ls-files', '-z', '-o', '-i', '--exclude-standard', '--', RESOURCES_REL]);
     if (res.status !== 0) throw new Error(`git ls-files 规格目录失败：${res.stderr}`);
@@ -972,7 +1072,8 @@ function entryOf(s) {
 }
 
 /**
- * 变化判定（原始字节）：基线条目 vs 当前状态；新增 / 删除 / 类型变化 / 摘要变化。
+ * 变化判定（原始字节）：基线条目 vs 当前状态；新增 / 删除 / 类型变化 / 摘要变化。类型变化按 git 文件模式理解：
+ * 普通文件的执行位变化（100644 ↔ 100755）摘要不变时记为 type 并附 exec_change；git 不记录的其他权限位变化不计入。
  * 基线中有、当前覆盖范围中没有的路径（被忽略、被移出覆盖）按磁盘实况单独计算。
  */
 function diffStates(root, baseEntries, states, memo) {
@@ -990,9 +1091,38 @@ function diffStates(root, baseEntries, states, memo) {
     if (b && !c) { changes.push({ path: p, change: 'deleted', before: b, after: { exists: false } }); continue; }
     if (!b && c) { changes.push({ path: p, change: 'added', before: { exists: false }, after: c }); continue; }
     if (b.type !== c.type) { changes.push({ path: p, change: 'type', before: b, after: c }); continue; }
-    if (b.digest !== c.digest) changes.push({ path: p, change: 'modified', before: b, after: c });
+    const ex = execChange(root, b, c);
+    if (b.digest !== c.digest) changes.push({ path: p, change: 'modified', before: b, after: c, ...(ex ? { exec_change: ex } : {}) });
+    else if (ex) changes.push({ path: p, change: 'type', before: b, after: c, exec_change: ex });
   }
   return changes;
+}
+
+/**
+ * git 文件模式（100644 / 100755）：普通文件按属主执行位区分，与 git 记录口径一致；其他权限位（如 0600）git 不记录。
+ * 非普通文件或缺少 mode 返回 null。
+ */
+function gitFileMode(s) {
+  if (!s || !s.exists || s.type !== 'file' || typeof s.mode !== 'number') return null;
+  return s.mode & 0o100 ? '100755' : '100644';
+}
+
+const fileModeMemo = new Map();
+/** 仓库是否记录执行位（core.fileMode，缺省 true）。 */
+function trackFileMode(root) {
+  if (!fileModeMemo.has(root)) {
+    const v = gitText(root, ['config', '--bool', '--get', 'core.fileMode']);
+    fileModeMemo.set(root, !(v !== null && v.trim() === 'false'));
+  }
+  return fileModeMemo.get(root);
+}
+
+/** 执行位变化（spec「类型变化」按 git 文件模式理解）：返回 { from, to } 或 null。 */
+function execChange(root, b, c) {
+  const from = gitFileMode(b);
+  const to = gitFileMode(c);
+  if (!from || !to || from === to || !trackFileMode(root)) return null;
+  return { from, to };
 }
 
 /* ─────────────────────────── 运行时状态：锁、记录、待报告与去重 ─────────────────────────── */
@@ -1009,48 +1139,161 @@ function lockWaitMs() {
   return v && /^\d+$/.test(v) ? Number(v) : LOCK_WAIT_MS;
 }
 
-/** 锁文件是否过期：持锁超过 30 秒且持有进程已不存在；内容无法解析时按文件 mtime 判定时长。 */
-function lockStale(file) {
+/** 锁文件身份：经同一 fd 取 inode 与内容（两者对应同一个文件）；不存在或读取失败返回 null。 */
+function lockIdentity(file) {
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return null; }
   try {
-    const cur = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    const at = Date.parse(cur.acquired_at);
-    return Number.isFinite(at) && Date.now() - at > LOCK_STALE_MS && !pidAlive(cur.pid);
-  } catch {
-    try { return Date.now() - fs.statSync(file).mtimeMs > LOCK_STALE_MS; } catch { return false; }
+    const st = fs.fstatSync(fd, { bigint: true });
+    const text = fs.readFileSync(fd, 'utf-8');
+    return { ino: String(st.ino), text, mtimeMs: Number(st.mtimeMs) };
+  } catch { return null; } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
   }
 }
 
-/** 项目级锁 state.lock（O_CREAT|O_EXCL；等锁最多 5 秒；持锁超过 30 秒且进程已不存在视为过期）。返回释放函数或 null。 */
+function sameIdentity(a, b) {
+  return !!a && !!b && a.ino === b.ino && a.text === b.text;
+}
+
+/** 按身份判定过期：持锁超过 30 秒且持有进程已不存在；内容无法解析时按文件 mtime 判定时长。 */
+function identityStale(id) {
+  try {
+    const cur = JSON.parse(id.text);
+    const at = Date.parse(cur.acquired_at);
+    return Number.isFinite(at) && Date.now() - at > LOCK_STALE_MS && !pidAlive(cur.pid);
+  } catch {
+    return Date.now() - id.mtimeMs > LOCK_STALE_MS;
+  }
+}
+
+/** 锁文件是否过期（spec「共享状态的并发与中断」）。 */
+function lockStale(file) {
+  const id = lockIdentity(file);
+  return !!id && identityStale(id);
+}
+
+/**
+ * 回收互斥 state.lock.reclaim 的过期判定：持有者进程已不存在（回收临界区只有毫秒级），或内容无法解析且超过 30 秒
+ * （创建后、写入前崩溃），或存在超过 10 分钟（pid 被复用时的兜底）。
+ */
+function reclaimMutexStale(id) {
+  try {
+    const cur = JSON.parse(id.text);
+    const at = Date.parse(cur.acquired_at);
+    if (!Number.isFinite(at)) return Date.now() - id.mtimeMs > LOCK_STALE_MS;
+    return !pidAlive(cur.pid) || Date.now() - at > RECLAIM_ORPHAN_MS;
+  } catch {
+    return Date.now() - id.mtimeMs > LOCK_STALE_MS;
+  }
+}
+
+/**
+ * 打破崩溃回收者遗留的回收互斥：改名到墓碑后核对身份，确认改走的正是判定过期的那一个才删除；改走的是别人
+ * 刚建的互斥时尽量放回（放不回时，被改走的持有者在替换锁文件前核对自己的互斥会发现并放弃）。
+ */
+function breakReclaimMutex(mfile, judged) {
+  const grave = `${mfile}.stale-${process.pid}-${randTag()}`;
+  try { fs.renameSync(mfile, grave); } catch { return; }
+  if (sameIdentity(lockIdentity(grave), judged)) {
+    trace({ op: 'reclaim-mutex-broken' });
+    try { fs.unlinkSync(grave); } catch { /* ignore */ }
+    return;
+  }
+  try { fs.linkSync(grave, mfile); } catch { /* 已有新的回收互斥 */ }
+  try { fs.unlinkSync(grave); } catch { /* ignore */ }
+}
+
+/** 测试故障注入 pause-reclaim:<ms>：在「判定过期」与「替换锁文件」之间停顿，放大并发回收的竞态窗口。 */
+function reclaimPause() {
+  const f = testFault();
+  if (f && f.kind === 'pause-reclaim') sleepMs(Number(f.arg) || 200);
+}
+
+function lockContent() {
+  return JSON.stringify({ pid: process.pid, host: os.hostname(), acquired_at: new Date().toISOString() });
+}
+
+/**
+ * 串行化回收过期锁：以 O_EXCL 创建回收互斥后，重新读取锁文件并核对身份（inode + 内容）仍是之前判定过期的那一把，
+ * 才以「同目录临时文件 + rename」把锁文件原子替换为本进程的锁——锁文件名任何时刻都不空出，第三方无从趁机创建；
+ * 身份不一致（已被别人回收并重建）则放弃，回到正常竞争。成功返回 true（本进程已持锁）。
+ */
+function reclaimStaleLock(file, judged) {
+  const mfile = `${file}.reclaim`;
+  const token = JSON.stringify({ pid: process.pid, host: os.hostname(), acquired_at: new Date().toISOString(), token: randTag() });
+  let mine;
+  try {
+    const fd = fs.openSync(mfile, 'wx');
+    try {
+      fs.writeSync(fd, token);
+      mine = { ino: String(fs.fstatSync(fd, { bigint: true }).ino), text: token };
+    } finally { fs.closeSync(fd); }
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      const m = lockIdentity(mfile);
+      if (m && reclaimMutexStale(m)) breakReclaimMutex(mfile, m);
+    }
+    return false;
+  }
+  let tmp = null;
+  try {
+    reclaimPause();
+    const cur = lockIdentity(file);
+    if (!sameIdentity(cur, judged) || !identityStale(cur)) { trace({ op: 'reclaim-abort', why: 'identity' }); return false; }
+    tmp = `${file}.tmp-${process.pid}-${randTag()}`;
+    fs.writeFileSync(tmp, lockContent(), { flag: 'wx' });
+    if (!sameIdentity(lockIdentity(mfile), mine)) { trace({ op: 'reclaim-abort', why: 'mutex-lost' }); return false; }
+    fs.renameSync(tmp, file);
+    tmp = null;
+    trace({ op: 'lock-broken' });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (tmp) { try { fs.unlinkSync(tmp); } catch { /* ignore */ } }
+    if (sameIdentity(lockIdentity(mfile), mine)) { try { fs.unlinkSync(mfile); } catch { /* ignore */ } }
+  }
+}
+
+/**
+ * 项目级锁 state.lock（O_CREAT|O_EXCL；等锁最多 5 秒；持锁超过 30 秒且进程已不存在视为过期，经回收互斥串行回收）。
+ * 返回释放函数或 null。
+ */
 function acquireLock(root, waitMs = lockWaitMs()) {
   const file = rtPath(root, 'state.lock');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const deadline = Date.now() + waitMs;
+  const release = () => {
+    try {
+      const cur = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (cur.pid === process.pid) {
+        trace({ op: 'lock-released', t: Date.now() });
+        fs.unlinkSync(file);
+      }
+    } catch { /* 已被打破 */ }
+  };
   for (;;) {
+    let got = false;
     try {
       const fd = fs.openSync(file, 'wx');
-      fs.writeSync(fd, JSON.stringify({ pid: process.pid, host: os.hostname(), acquired_at: new Date().toISOString() }));
+      fs.writeSync(fd, lockContent());
       fs.closeSync(fd);
-      trace({ op: 'lock-acquired' });
-      return () => {
-        try {
-          const cur = JSON.parse(fs.readFileSync(file, 'utf-8'));
-          if (cur.pid === process.pid) fs.unlinkSync(file);
-        } catch { /* 已被打破 */ }
-      };
+      got = true;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
     }
-    if (lockStale(file)) {
-      // 打破过期锁：先改名再删除，避免两个进程同时判定过期后误删对方新建的锁
-      const grave = `${file}.stale-${process.pid}-${randTag()}`;
-      try {
-        fs.renameSync(file, grave);
-        if (lockStale(grave)) { trace({ op: 'lock-broken' }); fs.unlinkSync(grave); continue; }
-        // 改名期间锁已被别人重新创建（改走的不是过期锁）：放回
-        try { fs.linkSync(grave, file); } catch { /* 已有新锁 */ }
-        fs.unlinkSync(grave);
-      } catch { /* 并发打破，重试 */ }
-      continue;
+    if (!got) {
+      const judged = lockIdentity(file);
+      if (judged && identityStale(judged)) {
+        trace({ op: 'lock-stale-judged', ino: judged.ino });
+        reclaimPause();
+        got = reclaimStaleLock(file, judged);
+      }
+    }
+    if (got) {
+      trace({ op: 'lock-acquired', t: Date.now() });
+      return release;
     }
     if (Date.now() >= deadline) return null;
     sleepMs(50);
@@ -1247,6 +1490,15 @@ function dedupeEntry(f, reported) {
 
 const CHANGE_LABEL = { added: '新增', deleted: '删除', type: '类型变化', modified: '内容变化' };
 
+/** 变化标签：执行位变化逐项标明 git 文件模式的前后值。 */
+function changeLabel(f) {
+  const base = CHANGE_LABEL[f.change] || f.change;
+  const ex = f.exec_change;
+  if (!ex) return base;
+  const detail = `执行位变化 ${ex.from} → ${ex.to}`;
+  return f.change === 'type' ? `${base}：${detail}` : `${base}，${detail}`;
+}
+
 function shellQuote(s) {
   return /^[A-Za-z0-9._/@%+=:,-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
 }
@@ -1279,7 +1531,7 @@ function renderFeedback(findings, opts = {}) {
   ];
   const listBlock = (items) => {
     lines.push('变化文件：');
-    for (const f of items) lines.push(`  - ${f.path}（${CHANGE_LABEL[f.change] || f.change}）`);
+    for (const f of items) lines.push(`  - ${f.path}（${changeLabel(f)}）`);
     const rec = items.filter(restorable);
     const non = items.filter(f => !restorable(f));
     return { rec, non };
@@ -1368,7 +1620,7 @@ function findNew(ctx, normal, cur, states, reported, pending) {
     if (!e.before) continue;
     let now = states.get(p);
     if (!now) { now = memo.has(p) ? memo.get(p) : statePath(ctx.root, p); }
-    if (sameState(now, e.before)) reported.delete(p);
+    if (sameState(now, e.before, ctx.root)) reported.delete(p);
   }
   const selfOnly = !!cur && normal.length === 1 && normal[0].id === cur.id;
   const others = normal.filter(r => !cur || r.id !== cur.id);
@@ -1793,9 +2045,14 @@ function cmdBoundary(name) {
   }
 }
 
-function sameState(a, b) {
+/** 状态一致：存在性、类型、原始摘要与 git 文件模式（执行位；仓库 core.fileMode=false 时不比较）都相同。 */
+function sameState(a, b, root) {
   if (!a.exists || !b.exists) return a.exists === b.exists;
-  return a.type === b.type && a.digest === b.digest;
+  if (a.type !== b.type || a.digest !== b.digest) return false;
+  if (root && !trackFileMode(root)) return true;
+  const ma = gitFileMode(a);
+  const mb = gitFileMode(b);
+  return !ma || !mb || ma === mb;
 }
 
 function blobBytes(root, oid) {
@@ -1835,8 +2092,12 @@ function cmdRestore(argv) {
   }
   const root = findRoot();
   if (!root) { process.stderr.write('openlogos guard restore：找不到 OpenLogos 项目根。\n'); return 1; }
-  const rel = relOfRoot(root, target);
-  if (rel === '.' || rel === '..' || rel.startsWith('../')) { process.stderr.write(`openlogos guard restore：路径不在项目根之内：${target}\n`); return 1; }
+  // 只归一化父目录、不解析最后一级目录项：被换成符号链接的路径仍按报告路径恢复（不跟随链接定位到链接目标）
+  const rel = entryRelOfRoot(root, target);
+  if (rel === null || rel === '.' || rel === '..' || rel.startsWith('../')) {
+    process.stderr.write(`openlogos guard restore：路径不在项目根之内（或父目录含逃逸到项目外的符号链接）：${target}\n`);
+    return 1;
+  }
   const release = acquireLock(root);
   if (!release) { process.stderr.write('openlogos guard restore：状态锁被占用，请稍后重试。\n'); return 1; }
   try {
@@ -1849,7 +2110,7 @@ function cmdRestore(argv) {
     }
     const abs = path.join(root, rel);
     const now = statePath(root, rel);
-    if (!sameState(now, entry.after)) {
+    if (!sameState(now, entry.after, root)) {
       process.stderr.write(`openlogos guard restore：${rel} 的当前状态与报告记录的执行后状态不一致（报告之后又被修改过），拒绝恢复以免覆盖之后的修改。\n`);
       return 1;
     }
@@ -1940,12 +2201,12 @@ function main(argv) {
 }
 
 module.exports = {
-  RUNTIME_REL, WHITELIST_PREFIXES, BUILTIN_EXEMPT, MAX_RETAIN_BYTES,
+  RUNTIME_REL, WHITELIST_PREFIXES, BUILTIN_EXEMPT, MAX_RETAIN_BYTES, entryRelOfRoot, cpTargets, sameState,
   parseShell, independentCall, restoreCall, readOnlyCall, writeTargets, runtimeHits, compoundGitOrOpenlogos,
   loadExempt, exemptMatches, exemptInvalidReason, protectVerdict, makeProtectCtx, gitContext, relOfRoot,
   collectCandidates, scanProject, statePath, diffStates, entryOf, eventKey, isDuplicate, dedupeEntry,
   renderFeedback, restoreCommand, findNew, rebaseFrom, applyRebase, loadCache, main,
-  acquireLock, lockStale, housekeep, writeAtomic, writeJsonl, readJsonl, writeSpill, readSpills, mergeSpills,
+  acquireLock, lockStale, lockIdentity, housekeep, writeAtomic, writeJsonl, readJsonl, writeSpill, readSpills, mergeSpills,
   saveRecord, updateRecord, closeRecord, loadRecord, loadOpenRecords, isClosed, loadReported,
   backgroundTaskIdOf, backgroundEndOf, taskStatusOf,
 };
