@@ -1,5 +1,6 @@
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { readLocale, t, type Locale } from '../i18n.js';
+import { runGuardBoundary } from '../lib/guard-boundary.js';
 import { evaluateArchiveChain, readLifecycleFactsAt } from '../lib/lifecycle-gate.js';
 import {
   ARCHIVE_WATCH_ERROR_CODES,
@@ -42,15 +43,18 @@ function removeMatchingGuard(
   log = true,
 ): void {
   if (!fs.exists(guardPath)) return;
+  // 提案终点边界：删 guard 文件之前把全部未关闭执行记录的基线整体更新为当时内容（引擎缺失时跳过）
+  let activeChange: unknown;
+  let parsed = true;
   try {
-    const guard = JSON.parse(fs.readText(guardPath));
-    if (guard.activeChange === slug) {
-      fs.unlink(guardPath);
-      if (log) console.log('  ✓ logos/.openlogos-guard removed');
-    }
+    activeChange = JSON.parse(fs.readText(guardPath)).activeChange;
   } catch {
-    fs.unlink(guardPath);
+    parsed = false;
   }
+  if (parsed && activeChange !== slug) return;
+  runGuardBoundary(dirname(dirname(guardPath)), 'boundary-end');
+  fs.unlink(guardPath);
+  if (parsed && log) console.log('  ✓ logos/.openlogos-guard removed');
 }
 
 function exitArchiveWatchError(locale: Locale, error: ArchiveWatchError): never {

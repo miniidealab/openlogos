@@ -15,6 +15,7 @@ import {
 import { dirname } from 'node:path';
 import { ensureManagedGitattributes } from '../lib/gitattributes.js';
 import { formatCrlfRecoveryReport, recoverCrlfWorkspace } from '../lib/crlf-recovery.js';
+import { syncManagedGitignoreBlock } from '../lib/gitignore-sync.js';
 
 export function syncLogosProjectName(root: string, projectName: string) {
   const yamlPath = join(root, 'logos', 'logos-project.yaml');
@@ -116,6 +117,7 @@ export function sync() {
   // 并把「迁移 → 扫描 → 索引 → 部署」全程置于同一锁区间（杜绝门检查与实际写/读之间 writer 插入的 TOCTOU）。
   // 提交进行中（锁被占用、无法恢复）→ 回调**不执行**、**零写副作用**（不迁移 lifecycle/config、不索引/部署），
   // 随后非零退出报 baseline_commit_in_progress。
+  let gitignorePartial: string | null = null;
   const syncInterval = withRecoveredReadLocks(root, new Date().toISOString(), listProjectModuleIds(root), () => {
   // Run migration for old projects (config.lifecycle === 'active' → mark module launched)
   const migration = migrateProjectLifecycle(root);
@@ -218,6 +220,15 @@ export function sync() {
     else console.log(line);
   }
 
+  // guard-versioned-content-scope（S08 Step G1–G4）：按 guard.unversioned 重渲染 .gitignore 托管区块。
+  // 区块损坏 / 配置条目非法 → .gitignore 零写入并点名，其余同步照常，结尾报「sync 部分完成」并以 1 退出。
+  const gitignoreSync = syncManagedGitignoreBlock(root, locale, config);
+  if (gitignoreSync.status === 'updated') console.log(gitignoreSync.message);
+  else if (gitignoreSync.status === 'failed') {
+    for (const line of gitignoreSync.errors) console.error(line);
+    gitignorePartial = gitignoreSync.partialLine;
+  }
+
   // ========== proposal-ui-ux-first 切片1：GUI overlay 幂等对齐 + 缺 product_type 诊断 ==========
   // overlay 注入只依据已写入的 modules[].product_type（缺字段 = 非 GUI，不注入）——安全默认非 GUI。
   const overlaySync = syncGuiOverlay(root);
@@ -238,6 +249,7 @@ export function sync() {
     }
   }
 
+  if (gitignorePartial) console.error(`\n${gitignorePartial}`);
   console.log('\nSync complete.\n');
   });
   if (!syncInterval.ok) {
@@ -248,4 +260,6 @@ export function sync() {
   // S08 版本戳（EX-11.1）：仅成功路径落盘——失败退出（配置缺失 / baseline_commit_in_progress）零写副作用，
   // 避免失败的 sync 刷新版本戳造成「看似已同步」的假象。幂等覆盖，始终反映最近一次成功 sync。
   writeSyncStamp(join(root, 'logos', '.openlogos-sync.json'), assetManifest);
+  // 区块未更新：版本戳照常刷新（它只证明托管资产 manifest 已同步），但以退出码 1 让 driver / CI 察觉
+  if (gitignorePartial) process.exit(1);
 }

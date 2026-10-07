@@ -1,0 +1,28 @@
+{
+  "description": "受保护判定（is_protected）共享测试向量：路径 + git 状态 + 配置 → 结论与命中序号（spec/pretooluse-guard.md §受保护判定）。Claude（plugin/bin/guard-check）与 Cursor（plugin-cursor/hooks/runtime.cjs）共用。",
+  "fixtures": {
+    "G-repo": "git init + 初始提交；core lifecycle: launched，无 logos/.openlogos-guard；.gitignore 含 node_modules/、dist/、logos/.openlogos-runtime/；已跟踪 src/a.js、src/b.js、package.json、package-lock.json、logos/resources/prd/x.md",
+    "G-ignored-spec": "G-repo + .gitignore 追加 /logos/* 与 !/logos/logos.config.json；logos/resources/test/t.md 被忽略且未跟踪",
+    "G-forced": "G-repo + git add -f dist/app.dmg 强制入库"
+  },
+  "config": { "guard.exempt": "缺省（内置默认）" },
+  "vectors": [
+    { "fixture": "G-repo", "path": "<OUTSIDE>/x.md", "protected": false, "step": 1 },
+    { "fixture": "G-repo", "path": "logos/.openlogos-runtime/guard-records/x.json", "protected": true, "step": 2 },
+    { "fixture": "G-repo", "path": ".gitignore", "protected": true, "step": 3 },
+    { "fixture": "G-repo", "path": "sub/.gitignore", "protected": true, "step": 3 },
+    { "fixture": "G-ignored-spec", "path": "logos/logos.config.json", "protected": true, "step": 3 },
+    { "fixture": "G-repo", "path": ".git/config", "protected": true, "step": 4 },
+    { "fixture": "G-repo", "path": "logos/changes/x/proposal.md", "protected": false, "step": 5 },
+    { "fixture": "G-repo", "path": "CLAUDE.md", "protected": false, "step": 5 },
+    { "fixture": "G-repo", "path": "logos/resources/reference/a.md", "protected": false, "step": 6 },
+    { "fixture": "G-repo", "path": "logos/resources/verify/baseline-seed-runs/core-20260928-001/staging/a.md", "protected": false, "step": 6 },
+    { "fixture": "G-ignored-spec", "path": "logos/resources/test/t.md", "protected": true, "step": 7 },
+    { "fixture": "G-repo", "path": "src/a.js", "protected": true, "step": 8 },
+    { "fixture": "G-forced", "path": "dist/app.dmg", "protected": true, "step": 8 },
+    { "fixture": "G-repo", "path": "dist/x/a.txt", "protected": false, "step": 9 },
+    { "fixture": "G-repo", "path": "node_modules/p/i.js", "protected": false, "step": 9 },
+    { "fixture": "G-repo", "path": "src/new.js", "protected": true, "step": 10 },
+    { "fixture": "G-repo", "path": "newdir/", "protected": true, "step": 10 }
+  ]
+}

@@ -112,13 +112,14 @@ describe('Cursor Adapter — S01 三件套初始化', () => {
     expect(result.skillCount).toBeGreaterThanOrEqual(13);
     expect(result.commandCount).toBeGreaterThan(0);
     expect(result.agentCount).toBe(1);
-    expect(result.hookEvents).toEqual(['sessionStart', 'beforeShellExecution', 'afterFileEdit']);
+    // guard-versioned-content-scope：托管事件按 spec/cursor-plugin.md §7 增至四条（含 afterShellExecution）
+    expect(result.hookEvents).toEqual(['sessionStart', 'beforeShellExecution', 'afterShellExecution', 'afterFileEdit']);
     expect(existsSync(join(root, '.cursor/skills/prd-writer/SKILL.md'))).toBe(true);
     const command = readFileSync(join(root, '.cursor/skills/openlogos-next/SKILL.md'), 'utf8');
     expect(command).toContain('disable-model-invocation: true');
     expect(existsSync(join(root, '.cursor/agents/change-reviewer.md'))).toBe(true);
     const hooks = JSON.parse(readFileSync(join(root, '.cursor/hooks.json'), 'utf8'));
-    expect(Object.keys(hooks.hooks).sort()).toEqual(['afterFileEdit', 'beforeShellExecution', 'sessionStart']);
+    expect(Object.keys(hooks.hooks).sort()).toEqual(['afterFileEdit', 'afterShellExecution', 'beforeShellExecution', 'sessionStart']);
     expect(existsSync(join(root, '.cursor/rules'))).toBe(false);
   });
 

@@ -20,6 +20,8 @@ export default defineConfig({
     testTimeout: 10_000,
     // r4 F12：worker 启动前串行构建一次 dist——真实 CLI/真实进程测试只读既有 dist，杜绝并发 tsc 竞态
     globalSetup: ['./test/global-setup.ts'],
+    // 同步重度测试文件累计超过 60s 时 worker RPC（onTaskUpdate）应答被饿死：每条用例后让出一次宏任务
+    setupFiles: ['./test/setup-yield-event-loop.ts'],
     reporters: ['default', './test/openlogos-reporter.ts'],
     testNamePattern: eligibleTestPattern(),
     env: {

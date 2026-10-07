@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
+import { isNotGitWorkTree } from './s09-guard-vcs-fixtures.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GUARD_CHECK_SRC = join(repoRoot, 'plugin', 'bin', 'guard-check');
@@ -98,6 +99,7 @@ describe('guard-check Bash 写命令路径提取与逐路径管辖判定 — S09
   // 与 ST-S19-22 / ST-S37-01..03 同族（重进程用例显式给超时），不放宽任何断言。
   it('UT-S09-318: 任一路径在内拦截 + 解析不出保守臂 + 三运行时一致（安全面零放宽）', { timeout: 120_000 }, () => {
     launchedProject(root);
+    expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-391 / ST-S09-156 等）').toBe(true);
     const { root: outside, cleanup: outsideCleanup } = makeTempRoot();
     try {
       // ① 任一路径在项目内非白名单 → exit 2 双通道拦截（stdout JSON 结构不变 + stderr 指引）
@@ -151,6 +153,7 @@ describe('guard-check Bash 写命令路径提取与逐路径管辖判定 — S09
 
   it('ST-S09-122: 端到端——全外 rm/cp 放行且写入可落盘；项目内拦截语义一致；保守臂维持；创建提案后放行', () => {
     launchedProject(root);
+    expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-391 / ST-S09-156 等）').toBe(true);
     const { root: fakeHome, cleanup: homeCleanup } = makeTempRoot();
     try {
       // ① launched 无提案：临时 HOME 下 ~/.claude 形态路径与临时 scratchpad 目录的 rm/cp → exit 0，后续写入可落盘

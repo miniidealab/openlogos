@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { removeTree } from './fs-remove.js';
 import { renameWithRetry } from './fs-retry.js';
 
@@ -21,23 +22,29 @@ import { renameWithRetry } from './fs-retry.js';
  * - hooks 托管条目 → .cursor/hooks.json 合并写入（仅增改托管条目，用户条目字节不变）
  * - 托管 .mdc 迁移清理（Skill 名单精确匹配，用户 rules 保留）
  * 顺序不变量：Skills/subagent → hooks 合并 → .mdc 清理；任一步失败回滚且 .mdc 不提前删除。
- * capability honesty（D09）：cursor-agent CLI 无 preToolUse，写入门禁为部分强度。
+ * - 事后检查引擎 → .cursor/hooks/openlogos-guard-post.cjs（包内唯一源 plugin/bin/guard-post-check.cjs，同一份字节）
+ * capability honesty（D09；guard-versioned-content-scope C11）：OpenLogos 未接入 Cursor preToolUse，IDE 与
+ * cursor-agent CLI 下写入门禁均为部分强度——shell 事前轻判 + afterShellExecution 事后检查，文件编辑仅 afterFileEdit 事后报告。
  */
 
 export const CURSOR_SKILLS_REL_DIR = '.cursor/skills';
 export const CURSOR_AGENTS_REL_DIR = '.cursor/agents';
 export const CURSOR_HOOKS_REL_FILE = '.cursor/hooks.json';
 export const CURSOR_RUNTIME_REL_FILE = '.cursor/hooks/openlogos-runtime.cjs';
+/** 事后检查引擎部署副本：资产身份以与 plugin/bin/guard-post-check.cjs 的字节（哈希）一致为准，缺失或漂移即刷新。 */
+export const CURSOR_ENGINE_REL_FILE = '.cursor/hooks/openlogos-guard-post.cjs';
 export const CURSOR_LEGACY_RULES_REL_DIR = '.cursor/rules';
 /** 备份目录建在 `.cursor/` 下（目标同级、同卷），不建在 os.tmpdir()——项目不在系统盘时 rename 会 EXDEV（架构 §五十二 52.3）。 */
 export const CURSOR_BACKUP_DIR_PREFIX = '.openlogos-cursor-backup-';
 export const CURSOR_COMMAND_SKILL_PREFIX = 'openlogos-';
 /** 托管 hooks 条目的身份锚：command 含此片段即视为 OpenLogos 托管。 */
 export const CURSOR_MANAGED_HOOK_ANCHOR = 'openlogos-runtime.cjs';
-export const CURSOR_HOOK_EVENTS = ['sessionStart', 'beforeShellExecution', 'afterFileEdit'] as const;
+/** 实际部署的事件集合（spec/cursor-plugin.md §7）；模板 plugin-cursor/hooks/hooks.json 必须与之同步。 */
+export const CURSOR_HOOK_EVENTS = ['sessionStart', 'beforeShellExecution', 'afterShellExecution', 'afterFileEdit'] as const;
 
+/** guard 部分强度提示行（固定必显，不随 locale 翻译协议表述；不得把 Cursor 表述为与 claude-code 等价）。 */
 export const CURSOR_GUARD_STRENGTH_NOTICE_ZH =
-  'Guard strength on cursor-agent CLI: shell writes hard-blocked; file edits post-checked (no preToolUse in CLI). Full pre-edit blocking applies in Cursor IDE via the same hooks.json.';
+  'Guard strength on Cursor (IDE and cursor-agent CLI) is partial: shell commands get a light pre-check via beforeShellExecution (guard-scope changes need host approval) plus an afterShellExecution post-check; file edits are only reported after the fact via afterFileEdit and are never blocked beforehand. OpenLogos does not wire preToolUse, so Cursor is not equivalent to claude-code.';
 
 export interface CursorDeploymentResult {
   target: string;
@@ -226,11 +233,27 @@ export function stripManagedCursorHooks(raw: string): string {
   return `${JSON.stringify(document, null, 2)}\n`;
 }
 
-function atomicWrite(target: string, content: string): void {
+function atomicWrite(target: string, content: string | Buffer): void {
   mkdirSync(dirname(target), { recursive: true });
   const temp = join(dirname(target), `.openlogos-cursor-tmp-${process.pid}-${Date.now()}`);
   writeFileSync(temp, content);
   renameWithRetry(temp, target);
+}
+
+/**
+ * 事后检查引擎源：显式传入优先；否则按模板相对位置查找包内唯一源
+ * （仓库布局 plugin-cursor → plugin/bin；npm 包布局 cursor-plugin-template → claude-plugin-template/bin）。
+ */
+export function findCursorEngineSource(source: string, explicit?: string | null): string | null {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = explicit ? [explicit] : [
+    join(source, '..', 'plugin', 'bin', 'guard-post-check.cjs'),
+    join(source, '..', 'claude-plugin-template', 'bin', 'guard-post-check.cjs'),
+    // 按本模块位置回退（与 init 的 findClaudePluginTemplateSource 同口径：npm 包 dist/lib → 包根，仓库 cli/dist/lib → 仓库根）
+    join(moduleDir, '..', '..', 'claude-plugin-template', 'bin', 'guard-post-check.cjs'),
+    join(moduleDir, '..', '..', '..', 'plugin', 'bin', 'guard-post-check.cjs'),
+  ];
+  return candidates.find(candidate => existsSync(candidate)) ?? null;
 }
 
 interface RollbackStep {
@@ -292,7 +315,7 @@ export function preflightCursorTarget(
 export function deployCursorAssets(
   root: string,
   source: string,
-  sharedAssets: { skills?: string | null; commands?: string | null },
+  sharedAssets: { skills?: string | null; commands?: string | null; engine?: string | null },
   managedSkillNames: readonly string[],
   locale: 'zh' | 'en' = 'zh',
 ): CursorDeploymentResult {
@@ -333,6 +356,13 @@ export function deployCursorAssets(
       }
     }
     validateCursorPrepared(prepared);
+    // 随包缺少事后检查引擎：部署预检失败（首个写入前，fail loud 点名资产路径）
+    const engineSource = findCursorEngineSource(source, sharedAssets.engine);
+    if (!engineSource) {
+      throw new CursorDeployError(
+        `随包资产缺失：plugin/bin/guard-post-check.cjs（guard 事后检查引擎），无法部署 ${CURSOR_ENGINE_REL_FILE}；请重新安装 openlogos 后再运行 openlogos sync`,
+        CURSOR_ENGINE_REL_FILE);
+    }
 
     // ── 预检：hooks.json 可解析、目标无非托管冲突（首个写入前完成） ──
     const hooksPath = join(root, ...CURSOR_HOOKS_REL_FILE.split('/'));
@@ -438,6 +468,19 @@ export function deployCursorAssets(
         changed = true;
       }
 
+      // 事后检查引擎：与包内唯一源同一份字节（哈希一致即视为同一资产，缺失或漂移即刷新）
+      const engineTarget = join(root, ...CURSOR_ENGINE_REL_FILE.split('/'));
+      const engineBytes = readFileSync(engineSource);
+      if (!existsSync(engineTarget) || !readFileSync(engineTarget).equals(engineBytes)) {
+        const engineBefore = existsSync(engineTarget) ? readFileSync(engineTarget) : null;
+        rollback.push({ undo: () => {
+          if (engineBefore === null) rmSync(engineTarget, { force: true });
+          else writeFileSync(engineTarget, engineBefore);
+        } });
+        atomicWrite(engineTarget, engineBytes);
+        changed = true;
+      }
+
       if (hooksBefore !== merged.content) {
         rollback.push({ undo: () => {
           if (hooksBefore === null) rmSync(hooksPath, { force: true });
@@ -536,6 +579,6 @@ export function localizedCursorResult(
 /** AGENTS.md 的 Cursor 宿主指令段（guard 强度必显行，capability honesty）。 */
 export function createCursorAgentsInstruction(locale: 'zh' | 'en', lifecycle: string): string {
   return locale === 'zh'
-    ? `OpenLogos Cursor 指令：当前 lifecycle=${lifecycle}。OpenLogos Skills 部署于 .cursor/skills/（显式命令以 /openlogos-<command> 触发），change-reviewer subagent 部署于 .cursor/agents/。写入门禁在 cursor-agent CLI 下为部分强度：beforeShellExecution 硬拦 shell 写入 + afterFileEdit 编辑事后检测（CLI 无 preToolUse）；Cursor IDE 经同一 .cursor/hooks.json 获得完整 preToolUse 硬拦。sessionStart 注入的上下文不构成写入授权。`
-    : `OpenLogos Cursor instructions: lifecycle=${lifecycle}. OpenLogos Skills live in .cursor/skills/ (explicit commands via /openlogos-<command>); the change-reviewer subagent lives in .cursor/agents/. Write guard on cursor-agent CLI is partial-strength: beforeShellExecution hard-blocks shell writes + afterFileEdit post-checks edits (no preToolUse in CLI); Cursor IDE gets full preToolUse blocking via the same .cursor/hooks.json. sessionStart context never grants write authorization.`;
+    ? `OpenLogos Cursor 指令：当前 lifecycle=${lifecycle}。OpenLogos Skills 部署于 .cursor/skills/（显式命令以 /openlogos-<command> 触发），change-reviewer subagent 部署于 .cursor/agents/。写入门禁在 Cursor（IDE 与 cursor-agent CLI）下为部分强度：shell 命令经 beforeShellExecution 事前轻判（保护范围变更命令需宿主审批）并经 afterShellExecution 事后检查；文件编辑经 afterFileEdit 事后报告，不被事前阻断。OpenLogos 未接入 preToolUse，与 claude-code 不等价。sessionStart 注入的上下文不构成写入授权。`
+    : `OpenLogos Cursor instructions: lifecycle=${lifecycle}. OpenLogos Skills live in .cursor/skills/ (explicit commands via /openlogos-<command>); the change-reviewer subagent lives in .cursor/agents/. Write guard on Cursor (IDE and cursor-agent CLI) is partial-strength: shell commands get a light pre-check via beforeShellExecution (guard-scope changes need host approval) plus an afterShellExecution post-check; file edits are only reported after the fact via afterFileEdit and are never blocked beforehand. OpenLogos does not wire preToolUse, so Cursor is not equivalent to claude-code. sessionStart context never grants write authorization.`;
 }

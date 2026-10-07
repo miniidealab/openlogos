@@ -1,0 +1,186 @@
+{
+  "description": "修改前分发源 plugin/bin/guard-check 对非 git 回落输入集的实测退出码（guard-versioned-content-scope 回落回归锚）",
+  "generated_from": "plugin/bin/guard-check@7d855ca",
+  "cases": [
+    {
+      "fixture": "N-repo",
+      "key": "Write src/a.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash sed -i src/a.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash npm ci",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash npm run release:local",
+      "exit": 0
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash mkdir -p dist/x",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash node -e > dist/build.log",
+      "exit": 0
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Edit dist/a.txt",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Edit src/a.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Write src/new.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Write newdir/x.txt",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "MultiEdit logos/resources/prd/x.md",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash cd root && sed -i",
+      "exit": 0
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash node -e writeFileSync",
+      "exit": 0
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash python3 tools/mod.py",
+      "exit": 0
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash find -delete",
+      "exit": 0
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash T=; echo > $T",
+      "exit": 2
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash echo > src/a.js",
+      "exit": 0
+    },
+    {
+      "fixture": "N-repo",
+      "key": "Bash rm $VAR",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Write src/a.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash sed -i src/a.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash npm ci",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash npm run release:local",
+      "exit": 0
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash mkdir -p dist/x",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash node -e > dist/build.log",
+      "exit": 0
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Edit dist/a.txt",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Edit src/a.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Write src/new.js",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Write newdir/x.txt",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "MultiEdit logos/resources/prd/x.md",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash cd root && sed -i",
+      "exit": 0
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash node -e writeFileSync",
+      "exit": 0
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash python3 tools/mod.py",
+      "exit": 0
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash find -delete",
+      "exit": 0
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash T=; echo > $T",
+      "exit": 2
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash echo > src/a.js",
+      "exit": 0
+    },
+    {
+      "fixture": "N-nogit",
+      "key": "Bash rm $VAR",
+      "exit": 2
+    }
+  ]
+}

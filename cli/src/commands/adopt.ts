@@ -19,6 +19,7 @@ import {
   writeInstructionFiles,
 } from './init.js';
 import type { Locale } from '../i18n.js';
+import { acceptedEntries, applyIgnoreBlock, managedBlockPrecheck, planIgnoreSuggestions } from '../lib/ignore-suggest.js';
 
 function isTTY(): boolean {
   return Boolean(process.stdin.isTTY);
@@ -36,6 +37,16 @@ async function chooseLocale(): Promise<Locale> {
     rl.question('Your choice [1/2] (default: 1): ', (answer) => {
       rl.close();
       resolve(answer === '2' ? 'en' : 'zh');
+    });
+  });
+}
+
+function askQuestion(prompt: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer.trim());
     });
   });
 }
@@ -100,6 +111,13 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
     process.exit(1);
     return;
   }
+  // guard-versioned-content-scope Step 5b：托管区块损坏 → 首写前失败，不留半接入状态（EX-GV-S20-1）
+  const blockError = managedBlockPrecheck(root, locale);
+  if (blockError) {
+    console.error(blockError);
+    process.exit(1);
+    return;
+  }
 
   console.log('\n$ openlogos adopt\n');
   console.log(`? 检测到已有项目：${projectName}（来自 ${sourceLabel}）`);
@@ -107,14 +125,26 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   console.log(`? AI 工具：${aiTool}\n`);
   console.log('✓ 读取项目信息完成\n');
 
+  // Step 5a–5e：与 init 同一套技术栈建议忽略（问答在写配置之前）
+  const ignorePlan = await planIgnoreSuggestions(root, locale, {
+    interactive: isTTY(),
+    ask: askQuestion,
+    log: line => console.log(line),
+  });
+  const unversioned = acceptedEntries(ignorePlan);
+
   ensureDirectories(root);
   console.log('✓ 创建 logos/ 标准目录结构');
 
   const config = JSON.parse(createLogosConfig(projectName, locale, aiTool)) as Record<string, unknown>;
+  // Step 8：接受时含 guard.unversioned
+  if (unversioned) config.guard = { unversioned };
   const verifyBackfill = ensureVerifyPreRunConfig(root, config);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   console.log('✓ 写入 logos.config.json');
   printVerifyPreRunBackfillResult(locale, verifyBackfill, '');
+  // Step 8a / 10：渲染托管区块，区块外逐字节保留
+  applyIgnoreBlock(root, locale, ignorePlan, { log: line => console.log(line), warn: line => console.warn(line) });
 
   writeFileSync(yamlPath, createAdoptLogosProject(projectName, locale));
   console.log('✓ 写入 logos-project.yaml（bootstrap: adopted, lifecycle: launched）');

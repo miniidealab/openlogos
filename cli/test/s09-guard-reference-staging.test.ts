@@ -7,6 +7,8 @@
  *   （hook 读入与 lifecycle 解析依赖二者之一，既有行为）。
  * - UT-S09-372 在函数层验证：从分发源按函数边界加载真实的 `WHITELIST_PREFIXES` / `is_default_exempt_path` /
  *   `is_whitelisted_path`，受控 PATH 下直接调用，不另写规则副本、不调用完整 hook。
+ * - guard-versioned-content-scope（UT-S09-372 MODIFIED）：reference / staging 豁免改由 `guard.exempt` 字段缺省时的
+ *   内置默认提供（不再硬编码）；显式 `guard.exempt: []` 后三环境均不再命中。
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -16,6 +18,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
+import { isNotGitWorkTree } from './s09-guard-vcs-fixtures.js';
 import { candidateKey } from '../src/lib/baseline-provenance.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -222,6 +225,7 @@ describe('S09 guard 资料目录与基线 staging 默认豁免 — 完整 hook',
   it('UT-S09-371: Bash 写入复用新规则、安全白名单优先级与解析能力不变', () => {
     assertHookRuntime();
     const root = launchedProject(tempRoot());
+    expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-391 / ST-S09-156 等）').toBe(true);
     const allowed = [
       'mkdir -p logos/resources/reference/temp',
       'touch logos/resources/reference/todo.md',
@@ -292,7 +296,7 @@ function fnVerdict(bash: string, fnFile: string, root: string, pathEnv: string |
 }
 
 describe('S09 guard 默认豁免 — is_whitelisted_path 函数层', () => {
-  it('UT-S09-372: python3 / node / bash 兜底三分支同判，含点段输入兜底只可更保守', () => {
+  it('UT-S09-372: python3 / node / bash 兜底三分支同判（豁免来自 guard.exempt 内置默认），含点段输入兜底只可更保守', () => {
     // bash 兜底按 `$(pwd)/` 前缀判管辖、不解析符号链接（既有行为）；macOS 临时目录 /var → /private/var，
     // 故以项目根真实路径构造绝对输入，使三分支比较的只是本案规则本身。
     const root = realpathSync(launchedProject(tempRoot()));
@@ -333,6 +337,19 @@ describe('S09 guard 默认豁免 — is_whitelisted_path 函数层', () => {
         expect(fnVerdict(bash, file, root, envs[runtime], join(root, rel)), `${runtime} 悬空链接不应命中（绝对）：${rel}`).not.toBe(0);
       }
     }
+    // 豁免来自配置而非硬编码：显式 guard.exempt: [] 后，reference / staging 正向输入三环境均不命中
+    const cfgPath = join(root, 'logos/logos.config.json');
+    const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8')) as Record<string, unknown>;
+    writeFileSync(cfgPath, JSON.stringify({ ...cfg, guard: { exempt: [] } }, null, 2));
+    for (const runtime of Object.keys(envs) as Runtime[]) {
+      for (const rel of [...REF_ALLOWED, ...STAGING_ALLOWED, STAGING, 'logos/resources/reference']) {
+        expect(fnVerdict(bash, file, root, envs[runtime], rel), `${runtime} exempt [] 不应命中：${rel}`).not.toBe(0);
+        expect(fnVerdict(bash, file, root, envs[runtime], join(root, rel)), `${runtime} exempt [] 不应命中（绝对）：${rel}`).not.toBe(0);
+      }
+      // 既有白名单不受 exempt 影响
+      expect(fnVerdict(bash, file, root, envs[runtime], 'logos/changes/x/proposal.md'), runtime).toBe(0);
+    }
+    writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
     // 含点段输入：bash 兜底一律不命中；逃逸输入在任一环境都不得命中
     expect(fnVerdict(bash, file, root, envs['bash-only'], 'logos/resources/reference/a/../b.md')).not.toBe(0);
     for (const runtime of Object.keys(envs) as Runtime[]) {

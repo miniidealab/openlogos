@@ -109,13 +109,18 @@ describe('Cursor hooks runtime — S09 sessionStart 与部分强度门禁', () =
     expect(output.agent_message).toBe(output.user_message);
   });
 
-  it('UT-S09-297: afterFileEdit 越界产出含固定「未被阻断」声明的报告；范围内编辑静默', () => {
+  it('UT-S09-297: afterFileEdit 越界报告含编辑路径、允许范围与固定「未被阻断（IDE 与 CLI 均无事前阻断）」声明；范围内静默', () => {
     buildProject('delta-writing');
     const outside = runtime.run('edit', JSON.stringify(editEvent('cli/src/lib/ai-tool-adapter.ts')), root);
     expect(outside.exitCode).toBe(0);
-    expect(outside.output.agent_message).toContain('outside allowed scope');
-    expect(outside.output.agent_message).toContain('cli/src/lib/ai-tool-adapter.ts');
-    expect(outside.output.agent_message).toContain(runtime.EDIT_NOT_BLOCKED_LINE);
+    const report = outside.output.agent_message as string;
+    expect(report).toContain('outside allowed scope');
+    expect(report).toContain('cli/src/lib/ai-tool-adapter.ts');
+    expect(report).toContain('Allowed scope: logos/changes/cursor-adapter-parity/deltas/**');
+    expect(report).toContain(runtime.EDIT_NOT_BLOCKED_LINE);
+    expect(report).toContain('未被阻断（Cursor 文件编辑仅经 afterFileEdit 事后报告，IDE 与 CLI 均无事前阻断');
+    // guard-versioned-content-scope C11：不得出现 preToolUse 硬拦或暗示 IDE 可事前阻断的表述
+    expect(report).not.toMatch(/preToolUse 硬拦|Full pre-edit blocking|IDE.{0,20}(硬拦|blocking)|cursor-agent CLI has no preToolUse/);
     const inside = runtime.run('edit', JSON.stringify(editEvent('logos/changes/cursor-adapter-parity/deltas/spec/x.md')), root);
     expect(inside.output).toEqual({});
     // afterFileEdit 为 observe-only（真实宿主实测）：报告必须落盘审计，且下次 sessionStart 注入未处理提示
@@ -124,6 +129,7 @@ describe('Cursor hooks runtime — S09 sessionStart 与部分强度门禁', () =
     expect(readFileSync(auditLog, 'utf8')).toContain('cli/src/lib/ai-tool-adapter.ts');
     const session = runtime.run('session', JSON.stringify({ hook_event_name: 'sessionStart', cwd: root }), root);
     expect(session.output.additional_context).toContain('openlogos-guard-reports.log');
+    expect(session.output.additional_context).not.toMatch(/获得完整 preToolUse 硬拦/);
   });
 
   it('UT-S09-298: 每次调用重读磁盘状态——proposal_step 变化后判定立即反映，无缓存', () => {
@@ -165,15 +171,36 @@ describe('Cursor hooks runtime — S09 sessionStart 与部分强度门禁', () =
     expect(JSON.parse(edit.stdout).agent_message).toContain('无法安全判断');
   });
 
-  it('UT-S09-302: cursor 协议字段转换——permission 输出契约、事件名核验、snake/camel 别名冲突拒绝', () => {
+  it('UT-S09-302: cursor 协议字段转换——四事件名、permission（allow/deny/ask）输出与退出码契约、snake/camel 别名冲突拒绝', () => {
     buildProject('coding');
     expect(runtime.shellOutput({ decision: 'allow', reason: 'x' })).toEqual({ permission: 'allow' });
     const deny = runtime.shellOutput({ decision: 'deny', reason: 'because' });
     expect(deny).toEqual({ permission: 'deny', user_message: 'because', agent_message: 'because' });
-    expect(() => runtime.run('shell', JSON.stringify({ hook_event_name: 'sessionStart', command: 'ls', cwd: root }), root))
-      .toThrow(/hook_event_name 必须为 beforeShellExecution/);
+    expect(runtime.shellOutput({ decision: 'ask', userMessage: 'u', agentMessage: 'a' }))
+      .toEqual({ permission: 'ask', user_message: 'u', agent_message: 'a' });
+    // 四种模式各自只接受对应的 hook_event_name
+    const modes: Array<[string, string]> = [
+      ['session', 'sessionStart'], ['shell', 'beforeShellExecution'],
+      ['shell-after', 'afterShellExecution'], ['edit', 'afterFileEdit'],
+    ];
+    for (const [mode, eventName] of modes) {
+      const wrong = eventName === 'sessionStart' ? 'afterFileEdit' : 'sessionStart';
+      expect(() => runtime.run(mode, JSON.stringify({ hook_event_name: wrong, command: 'ls', file_path: 'a', cwd: root }), root), mode)
+        .toThrow(new RegExp(`hook_event_name 必须为 ${eventName}`));
+    }
     expect(() => runtime.normalizeCursorEvent({ hook_event_name: 'afterFileEdit', file_path: 'a', filePath: 'b' }))
       .toThrow(/别名冲突/);
+    expect(() => runtime.normalizeCursorEvent({ hook_event_name: 'afterShellExecution', generation_id: 'g1', generationId: 'g2' }))
+      .toThrow(/别名冲突/);
+    // 退出码：allow / ask → 0，deny → 2；afterShellExecution 无变化静默 0
+    expect(runtime.run('shell', JSON.stringify(shellEvent('npm test')), root).exitCode).toBe(0);
+    const ask = runtime.run('shell', JSON.stringify(shellEvent('openlogos exempt add src/')), root);
+    expect([ask.output.permission, ask.exitCode]).toEqual(['ask', 0]);
+    const after = runtime.run('shell-after', JSON.stringify({ hook_event_name: 'afterShellExecution', command: 'npm test', cwd: root }), root);
+    expect(after).toEqual({ output: {}, exitCode: 0 });
+    const unknownMode = spawnHook('bogus', shellEvent('ls'), root);
+    expect(unknownMode.status).toBe(2);
+    expect(JSON.parse(unknownMode.stdout).permission).toBe('deny');
     // 三接线共用同一路径判定：shell 重定向目标与原生编辑同源
     rmSync(join(root, 'logos'), { recursive: true, force: true });
     buildProject('delta-writing');

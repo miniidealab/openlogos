@@ -26,6 +26,9 @@ const sources = [
   { group: 'plugins', path: 'claude-plugin-template/.claude-plugin/plugin.json', sourcePath: source('claude-plugin-template/.claude-plugin/plugin.json', 'plugin/.claude-plugin/plugin.json') },
   // fix-claude-guard-hook-project-dir-and-sync-deploy：guard-check 纳入托管资产面（版本化哈希）
   { group: 'plugins', path: 'claude-plugin-template/bin/guard-check', sourcePath: source('claude-plugin-template/bin/guard-check', 'plugin/bin/guard-check') },
+  // guard-versioned-content-scope：事后检查引擎与 SessionStart phase 脚本同列登记（版本化哈希）
+  { group: 'plugins', path: 'claude-plugin-template/bin/guard-post-check.cjs', sourcePath: source('claude-plugin-template/bin/guard-post-check.cjs', 'plugin/bin/guard-post-check.cjs') },
+  { group: 'plugins', path: 'claude-plugin-template/bin/openlogos-phase', sourcePath: source('claude-plugin-template/bin/openlogos-phase', 'plugin/bin/openlogos-phase') },
   { group: 'plugins', path: 'claude-plugin-template/skills/change-writer/SKILL.md', sourcePath: source('claude-plugin-template/skills/change-writer/SKILL.md', 'plugin/skills/change-writer/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/architecture-designer/SKILL.md', sourcePath: source('claude-plugin-template/skills/architecture-designer/SKILL.md', 'plugin/skills/architecture-designer/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/scenario-architect/SKILL.md', sourcePath: source('claude-plugin-template/skills/scenario-architect/SKILL.md', 'plugin/skills/scenario-architect/SKILL.md') },

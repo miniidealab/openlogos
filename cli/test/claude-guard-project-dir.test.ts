@@ -20,6 +20,7 @@ import {
   findClaudePluginTemplateSource,
 } from '../src/commands/init.js';
 import { captureConsole, makeTempRoot, mockCwd, scaffoldProject } from './helpers.js';
+import { isNotGitWorkTree } from './s09-guard-vcs-fixtures.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GUARD_CHECK_SRC = join(repoRoot, 'plugin', 'bin', 'guard-check');
@@ -229,6 +230,7 @@ describe('guard-check 工作目录收敛与 fail-closed — S09', () => {
 
   it('UT-S09-314: 子目录 cwd + 变量在场——阻断/放行/白名单/绝对路径归一化与项目根 cwd 逐项一致', () => {
     launchedProject(root);
+    expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-391 / ST-S09-156 等）').toBe(true);
     mkdirSync(join(root, 'src'), { recursive: true });
     const sub = join(root, 'src');
     const cases: Array<[string, Record<string, unknown>]> = [

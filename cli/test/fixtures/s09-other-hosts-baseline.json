@@ -1,0 +1,951 @@
+{
+  "description": "修改前 qoder / workbuddy / zcode hook 入口对 UT-S09-407 输入集的实测退出码与 stdout（guard-versioned-content-scope：三宿主行为不变的回归锚）",
+  "generated_from": "97ad143",
+  "cases": [
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: none\\nproposal_step: none\\n允许范围：无活跃提案，不允许修改源码\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：创建变更提案后再修改源码\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Write delta",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Edit tasks.md",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "no-guard",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Hook 输入为空或超过 1 MiB 限制\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: demo\\nproposal_step: delta-writing\\n允许范围：仅限活跃提案 demo 与当前阶段允许的文件范围\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：完成 delta 后等待 openlogos merge 人类确认\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Write delta",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"当前 OpenLogos 阶段允许此操作\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Edit tasks.md",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"当前 OpenLogos 阶段允许此操作\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"目标属于其他提案，超出当前 guard 范围\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：写入目标必须是项目根相对路径且不得包含 ..\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "delta-writing",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Hook 输入为空或超过 1 MiB 限制\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: demo\\nproposal_step: ready-to-merge\\n允许范围：仅限活跃提案 demo 与当前阶段允许的文件范围\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：等待 openlogos merge 人类确认\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Write delta",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Edit tasks.md",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"目标属于其他提案，超出当前 guard 范围\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：写入目标必须是项目根相对路径且不得包含 ..\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "qoder",
+      "state": "ready-to-merge",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Hook 输入为空或超过 1 MiB 限制\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: none\\nproposal_step: none\\n允许范围：无活跃提案，不允许修改源码\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：创建变更提案后再修改源码\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Write delta",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Edit tasks.md",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"continue\":true,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "no-guard",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Hook 输入为空或超过 1 MiB 限制\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: demo\\nproposal_step: delta-writing\\n允许范围：仅限活跃提案 demo 与当前阶段允许的文件范围\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：完成 delta 后等待 openlogos merge 人类确认\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Write delta",
+      "exit": 0,
+      "stdout": "{\"continue\":true,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"当前 OpenLogos 阶段允许此操作\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Edit tasks.md",
+      "exit": 0,
+      "stdout": "{\"continue\":true,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"当前 OpenLogos 阶段允许此操作\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"目标属于其他提案，超出当前 guard 范围\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：写入目标必须是项目根相对路径且不得包含 ..\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"continue\":true,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "delta-writing",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Hook 输入为空或超过 1 MiB 限制\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: demo\\nproposal_step: ready-to-merge\\n允许范围：仅限活跃提案 demo 与当前阶段允许的文件范围\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：等待 openlogos merge 人类确认\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Write delta",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Edit tasks.md",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"目标属于其他提案，超出当前 guard 范围\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：写入目标必须是项目根相对路径且不得包含 ..\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"continue\":true,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "workbuddy",
+      "state": "ready-to-merge",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"continue\":false,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Hook 输入为空或超过 1 MiB 限制\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: none\\nproposal_step: none\\n允许范围：无活跃提案，不允许修改源码\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：创建变更提案后再修改源码\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Write delta",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Edit tasks.md",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"launched 项目没有 guard；请先运行 openlogos change <slug>\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "no-guard",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Unexpected end of JSON input\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: demo\\nproposal_step: delta-writing\\n允许范围：仅限活跃提案 demo 与当前阶段允许的文件范围\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：完成 delta 后等待 openlogos merge 人类确认\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Write delta",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"当前 OpenLogos 阶段允许此操作\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Edit tasks.md",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"当前 OpenLogos 阶段允许此操作\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"目标属于其他提案，超出当前 guard 范围\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：写入目标越出项目根目录\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta-writing 仅允许当前提案 deltas/** 与 tasks.md\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "delta-writing",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Unexpected end of JSON input\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "SessionStart",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"OpenLogos lifecycle: launched\\nactive change: demo\\nproposal_step: ready-to-merge\\n允许范围：仅限活跃提案 demo 与当前阶段允许的文件范围\\n禁止动作：未经明确授权不得 merge、verify、deploy、smoke、archive 或 git push\\n下一确认点：等待 openlogos merge 人类确认\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Write delta",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Edit tasks.md",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Write src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Write other proposal",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"目标属于其他提案，超出当前 guard 范围\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Write escape",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：写入目标越出项目根目录\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Write .gitignore",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Write reference",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"delta 已完成；请等待 openlogos merge 人类确认，不得继续写入\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Bash npm ci",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Bash openlogos exempt add src/",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Bash git status",
+      "exit": 0,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"只读命令\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Bash echo > src/a.js",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "Bash rm -rf src",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"无法可靠证明 Bash 命令只读，按 fail-closed 阻断\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "broken JSON",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Expected property name or '}' in JSON at position 2 (line 1 column 3)\"}}"
+    },
+    {
+      "host": "zcode",
+      "state": "ready-to-merge",
+      "key": "empty input",
+      "exit": 2,
+      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"OpenLogos Hook fail-closed：Unexpected end of JSON input\"}}"
+    }
+  ]
+}

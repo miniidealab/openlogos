@@ -566,6 +566,17 @@ if [ -f "$CAP_FILE" ]; then
   fi
 fi
 
+# guard-versioned-content-scope：SessionStart 调用事后检查引擎 `check --session-start`（与本脚本同目录：托管副本
+# .claude/openlogos/bin/guard-post-check.cjs，或插件 bin/），接管未关闭执行记录继续对比、清理墓碑，
+# 并把待报告项并入注入上下文。只在 hook（JSON）模式运行；引擎缺失、node 不可用或失败时静默跳过。
+GUARD_PENDING=""
+if [ "$MODE" = "json" ] && [ "$NODE_OK" -eq 1 ]; then
+  _GUARD_ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/guard-post-check.cjs"
+  if [ -f "$_GUARD_ENGINE" ]; then
+    GUARD_PENDING="$(node "$_GUARD_ENGINE" check --session-start </dev/null 2>/dev/null || true)"
+  fi
+fi
+
 # Build full context for additionalContext (Claude-visible)
 CONTEXT="=== OpenLogos Project Context ===
 Project: $PROJECT_NAME
@@ -581,7 +592,8 @@ fi
 CONTEXT="$CONTEXT
 $LANG_POLICY${CAPABILITIES:+
 $CAPABILITIES}
-$CHANGE_MGMT
+$CHANGE_MGMT${GUARD_PENDING:+
+$GUARD_PENDING}
 === End OpenLogos Context ==="
 
 if [ "$MODE" = "json" ]; then

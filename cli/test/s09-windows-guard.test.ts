@@ -25,6 +25,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isNotGitWorkTree } from './s09-guard-vcs-fixtures.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_ROOT = resolve(HERE, '..');
@@ -326,6 +327,7 @@ describe('S09 guard 跨平台可移植性与输入 fail-closed', () => {
 
   it('UT-S09-378: PowerShell 工具写入模式与 Windows shell 判定顺序', () => {
     const root = launchedProject();
+    expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-391 / ST-S09-156 等）').toBe(true);
     assertPathCondition('P-real', ENVS.real);
     mkdirSync(join(root, 'logos', 'resources', 'reference'), { recursive: true });
     for (const command of [...PS_BLOCK, ...PS_CASE_VARIANTS, ...PS_MULTI_TARGET]) {
@@ -344,6 +346,7 @@ describe('S09 guard 跨平台可移植性与输入 fail-closed', () => {
 
   it('UT-S09-381: 判定顺序例外的作用范围：Cursor win32 同判、Bash 工具零回归', () => {
     const root = launchedProject();
+    expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-404 / UT-S09-408 / ST-S09-178 等）').toBe(true);
     const current = requireCjs(CURSOR_RUNTIME_SRC) as { decideShell: (r: string, c: string, p?: string) => { decision: string } };
     const prefix = requireCjs(join(PREFIX_DIR, 'cursor-runtime.cjs')) as { decideShell: (r: string, c: string) => { decision: string } };
     // ① Cursor win32 与 UT-S09-378 逐条同判

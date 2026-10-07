@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { readLocale, t, proposalTemplate, tasksTemplate } from '../i18n.js';
 import { listProjectModuleIds, withRecoveredReadLocks } from '../lib/baseline-seed-txn.js';
+import { runGuardBoundary } from '../lib/guard-boundary.js';
 
 interface ModuleEntry {
   id: string;
@@ -94,6 +95,10 @@ export function change(slug?: string, moduleArg?: string) {
   // `change` 也是 adopted 项目的 resources 读取入口：在解析模块、创建提案或写 guard 前，
   // 与 status/next/index/sync 共用 seed journal 恢复硬门，并把锁持有到全部提案写入结束。
   // 无模块注册时仍锁 core；findUnfinalizedJournal 会严格扫描所有 journal，损坏记录不能被静默跳过。
+  // 提案起点边界：写 guard 文件之前把未关闭执行记录中尚未报告的受保护变化存为待报告项（引擎缺失时跳过）。
+  // 放在 seed journal 读锁之前：读锁文件（logos/resources/verify/baseline-seed-runs/*.commit.lock）是本命令自身的
+  // 临时写入，不得被当作提案开始前的变化存入待报告项。
+  runGuardBoundary(root, 'boundary-start');
   const projectModules = listProjectModuleIds(root);
   const at = new Date().toISOString();
   const locked = withRecoveredReadLocks(root, at, projectModules.length > 0 ? projectModules : ['core'], () => {

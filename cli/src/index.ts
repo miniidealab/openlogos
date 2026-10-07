@@ -94,11 +94,13 @@ Commands:
                        --base <rev> --head <rev>   Git range mode (safe revision resolution)
                        --stdin                      Read \`git diff --no-relative --name-status -z\` bytes from stdin
                        --prefix <dir/>              Project prefix for --stdin mode (monorepo)
+  ignore <add|remove|list> [pattern...]   Manage paths kept out of version control (.gitignore managed block)
+  exempt <add|remove|list> [path...]      Manage committed paths that do not require a change proposal
 
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill, change-lint, impact)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list)
 
 Examples:
   openlogos init my-saas-project
@@ -115,6 +117,8 @@ Examples:
   openlogos merge add-remember-me
   openlogos lint-specs
   openlogos archive add-remember-me
+  openlogos ignore add dist/
+  openlogos exempt list --format json
 
 Learn more: https://openlogos.ai
 `;
@@ -345,6 +349,13 @@ async function main() {
     }
     case 'impact': {
       impact(args.slice(1), format);
+      break;
+    }
+    case 'ignore':
+    case 'exempt': {
+      // 版本管理范围配置（S40，功能规格 §2.88.4）：AI 发起的 add / remove 由 guard 交宿主原生审批。
+      const { scopeCommand } = await import('./commands/scope.js');
+      scopeCommand(command, args.slice(1));
       break;
     }
     case 'check-ui-prototype': {

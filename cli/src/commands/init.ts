@@ -42,6 +42,7 @@ import {
   preflightCursorTarget,
 } from '../lib/cursor-adapter.js';
 import { removeTree } from '../lib/fs-remove.js';
+import { acceptedEntries, applyIgnoreBlock, managedBlockPrecheck, planIgnoreSuggestions } from '../lib/ignore-suggest.js';
 
 export type { AiTool } from '../lib/ai-tool-adapter.js';
 
@@ -1082,6 +1083,82 @@ function mergeClaudePreToolUseGuard(root: string): boolean {
 }
 
 /**
+ * guard-versioned-content-scope：事后检查引擎 hook（spec/pretooluse-guard.md「Claude Code hook 注册与引擎分发」）。
+ * 托管身份以 command 含 `.claude/openlogos/bin/guard-post-check.cjs` 识别；Stop 无 matcher。
+ */
+export const CLAUDE_ENGINE_REL = '.claude/openlogos/bin/guard-post-check.cjs';
+export const CLAUDE_POST_CHECK_COMMAND = `node "$CLAUDE_PROJECT_DIR/${CLAUDE_ENGINE_REL}" check`;
+export const CLAUDE_STOP_CHECK_COMMAND = `${CLAUDE_POST_CHECK_COMMAND} --stop`;
+export const CLAUDE_POST_HOOKS: ReadonlyArray<{ event: string; matcher: string | null; command: string }> = [
+  { event: 'PostToolUse', matcher: 'Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop', command: CLAUDE_POST_CHECK_COMMAND },
+  { event: 'PostToolUseFailure', matcher: 'Bash|PowerShell', command: CLAUDE_POST_CHECK_COMMAND },
+  { event: 'Stop', matcher: null, command: CLAUDE_STOP_CHECK_COMMAND },
+];
+
+function isManagedEngineHook(item: unknown): boolean {
+  return typeof item === 'object' && item !== null
+    && typeof (item as Record<string, unknown>)['command'] === 'string'
+    && ((item as Record<string, unknown>)['command'] as string).includes(CLAUDE_ENGINE_REL);
+}
+
+/**
+ * 幂等合并 PostToolUse / PostToolUseFailure / Stop 托管条目：缺失则追加；matcher 或 command 与当前版本不一致则
+ * 就地校正；同一事件多条托管条目收敛为一条（因收敛变空的托管 group 移除）；用户自有条目与相对顺序不变。
+ * settings.json 不存在或不可解析时不写。返回是否发生变更。
+ */
+export function mergeClaudePostCheckHooks(root: string): boolean {
+  const settingsPath = join(root, '.claude', 'settings.json');
+  if (!existsSync(settingsPath)) return false;
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+  } catch {
+    return false;
+  }
+  if (!data['hooks'] || typeof data['hooks'] !== 'object') data['hooks'] = {};
+  const hooksObj = data['hooks'] as Record<string, unknown>;
+  let changed = false;
+  for (const spec of CLAUDE_POST_HOOKS) {
+    if (!Array.isArray(hooksObj[spec.event])) { hooksObj[spec.event] = []; changed = true; }
+    const groups = hooksObj[spec.event] as unknown[];
+    let seen = false;
+    for (let gi = 0; gi < groups.length; gi++) {
+      const g = groups[gi];
+      if (typeof g !== 'object' || g === null || !Array.isArray((g as Record<string, unknown>)['hooks'])) continue;
+      const group = g as Record<string, unknown>;
+      const items = group['hooks'] as unknown[];
+      if (!items.some(isManagedEngineHook)) continue;
+      const kept: unknown[] = [];
+      for (const item of items) {
+        if (!isManagedEngineHook(item)) { kept.push(item); continue; }
+        if (seen) { changed = true; continue; }
+        seen = true;
+        const h = item as Record<string, unknown>;
+        if (h['command'] !== spec.command) { h['command'] = spec.command; changed = true; }
+        if (h['type'] !== 'command') { h['type'] = 'command'; changed = true; }
+        kept.push(item);
+        if (spec.matcher === null) {
+          if ('matcher' in group) { delete group['matcher']; changed = true; }
+        } else if (group['matcher'] !== spec.matcher) {
+          group['matcher'] = spec.matcher;
+          changed = true;
+        }
+      }
+      if (kept.length !== items.length) group['hooks'] = kept;
+      if (kept.length === 0) { groups.splice(gi, 1); gi -= 1; changed = true; }
+    }
+    if (!seen) {
+      groups.push(spec.matcher === null
+        ? { hooks: [{ type: 'command', command: spec.command }] }
+        : { matcher: spec.matcher, hooks: [{ type: 'command', command: spec.command }] });
+      changed = true;
+    }
+  }
+  if (changed) writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+  return changed;
+}
+
+/**
  * Merges the openlogos SessionStart hook into .claude/settings.json.
  * Idempotent: only appends if the hook command is not already present.
  * Returns whether the file was created or updated.
@@ -1195,7 +1272,7 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
  * （init/adopt/sync 共用）——bin 以随包字节刷新（版本化哈希由 asset-manifest 登记），
  * hook 注册走幂等迁移语义。返回 settings.json 是否发生变更。
  */
-function deployClaudeGuardAssets(root: string, source: string): boolean {
+export function deployClaudeGuardAssets(root: string, source: string): boolean {
   const binTargetDir = join(root, '.claude', 'openlogos', 'bin');
 
   // Deploy bin: plugin/bin/openlogos-phase → .claude/openlogos/bin/openlogos-phase
@@ -1216,13 +1293,30 @@ function deployClaudeGuardAssets(root: string, source: string): boolean {
     try { chmodSync(guardDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
   }
 
+  // Deploy bin: plugin/bin/guard-post-check.cjs → .claude/openlogos/bin/guard-post-check.cjs（事后检查引擎）。
+  // 随包缺少引擎：fail loud 点名资产路径，且不注册指向缺失文件的 PostToolUse / PostToolUseFailure / Stop hook。
+  const engineSrc = join(source, 'bin', 'guard-post-check.cjs');
+  const engineAvailable = existsSync(engineSrc);
+  if (engineAvailable) {
+    mkdirSync(binTargetDir, { recursive: true });
+    const engineDest = join(binTargetDir, 'guard-post-check.cjs');
+    copyFileSync(engineSrc, engineDest);
+    try { chmodSync(engineDest, 0o755); } catch { /* ignore on platforms that don't support chmod */ }
+  } else {
+    console.error(`Error: 随包资产缺失：${engineSrc}（guard 事后检查引擎）；未注册事后检查 hook，请重新安装 openlogos 后再运行 openlogos sync。`);
+    process.exitCode = 1;
+  }
+
   // Merge SessionStart hook into .claude/settings.json（创建骨架先行）
   const settingsResult = mergeClaudeSettings(root);
 
   // Merge PreToolUse guard hook into .claude/settings.json
   const guardUpdated = mergeClaudePreToolUseGuard(root);
 
-  return settingsResult.updated || guardUpdated;
+  // Merge PostToolUse / PostToolUseFailure / Stop 事后检查 hook（引擎在盘才注册）
+  const postUpdated = engineAvailable ? mergeClaudePostCheckHooks(root) : false;
+
+  return settingsResult.updated || guardUpdated || postUpdated;
 }
 
 export function deployOpenCodePlugin(root: string, locale: Locale = 'en'): { target: string; config: { created: boolean; updated: boolean }; commandCount: number } | null {
@@ -1316,6 +1410,8 @@ export function deployAiToolAssets(
     const result = deployCursorAssets(root, source, {
       skills: findSkillsSource(),
       commands: claudeTemplate ? join(claudeTemplate, 'commands') : null,
+      // 事后检查引擎包内唯一源（与 .claude/openlogos/bin/guard-post-check.cjs 同一份字节）
+      engine: claudeTemplate ? join(claudeTemplate, 'bin', 'guard-post-check.cjs') : null,
     }, SKILL_NAMES, locale);
     console.log(`  ✓ ${localizedCursorResult(locale, result)}`);
     // guard 部分强度提示行（capability honesty，固定必显，不随 locale 翻译协议表述）
@@ -1524,7 +1620,8 @@ Violating this rule will render the output unusable.`;
 ### 行为约束
 - 发现 bug/问题时：只输出分析和方案，**禁止直接修改代码**
 - 修改代码前：先确认 guard 文件存在且修改在提案范围内
-- 唯一例外：纯 typo 修复、\`.gitignore\`/\`README.md\` 等非方法论文件`
+- 唯一例外：纯 typo 修复、\`README.md\` 等非方法论文件
+- 保护范围配置：\`.gitignore\`、\`.git/info/exclude\` 与 \`logos/logos.config.json\` 决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 \`openlogos ignore add|remove …\` 或 \`openlogos exempt add|remove …\`（\`list\` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 \`! <命令原文>\` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。`
       : `## ⛔ Change Management (Enforced)
 
 This project uses \`logos/.openlogos-guard\` lock file to track active changes.
@@ -1534,7 +1631,8 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 ### Behavioral Constraints
 - When you discover a bug/issue: only output analysis and proposed fix — do NOT modify code directly
 - Before modifying code: verify the guard file exists and changes are within the proposal scope
-- Only exception: pure typo fixes, \`.gitignore\`/\`README.md\` and other non-methodology files`)
+- Only exception: pure typo fixes, \`README.md\` and other non-methodology files
+- Protection scope: \`.gitignore\`, \`.git/info/exclude\` and \`logos/logos.config.json\` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run \`openlogos ignore add|remove …\` or \`openlogos exempt add|remove …\` directly (\`list\` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run \`! <command>\` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval.`)
     : (locale === 'zh'
       ? `## 变更管理（自动判断）
 
@@ -2177,7 +2275,8 @@ ${generateActiveSkillsSection(locale, aiTool, target)}`;
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
 - **修改代码前**：先确认 guard 文件存在且当前修改在提案范围内
-- **唯一例外**：纯 typo 修复（不改变语义）、\`.gitignore\`/\`README.md\` 等非方法论文件
+- **唯一例外**：纯 typo 修复（不改变语义）、\`README.md\` 等非方法论文件
+- **保护范围配置**：\`.gitignore\`、\`.git/info/exclude\` 与 \`logos/logos.config.json\` 决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 \`openlogos ignore add|remove …\` 或 \`openlogos exempt add|remove …\`（\`list\` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 \`! <命令原文>\` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。
 
 **违反此规则将破坏项目的变更可追溯性。**
 `
@@ -2210,7 +2309,8 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 ### Behavioral Constraints
 - **When you discover a bug/issue**: only output analysis and proposed fix — **do NOT modify code directly** — wait for the user to decide whether to create a change proposal
 - **Before modifying code**: verify the guard file exists and your changes are within the proposal scope
-- **Only exception**: pure typo fixes (no semantic change), \`.gitignore\`/\`README.md\` and other non-methodology files
+- **Only exception**: pure typo fixes (no semantic change), \`README.md\` and other non-methodology files
+- **Protection scope**: \`.gitignore\`, \`.git/info/exclude\` and \`logos/logos.config.json\` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run \`openlogos ignore add|remove …\` or \`openlogos exempt add|remove …\` directly (\`list\` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run \`! <command>\` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval.
 
 **Violating this rule will break the project's change traceability.**
 `)
@@ -2356,6 +2456,20 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
     process.exit(1);
     return;
   }
+  // guard-versioned-content-scope Step 5c：托管区块损坏 → 首写前失败，不留半套初始化产物（EX-GV-S01-1）
+  const blockError = managedBlockPrecheck(root, locale);
+  if (blockError) {
+    console.error(blockError);
+    process.exit(1);
+    return;
+  }
+  // Step 5a–5f：技术栈建议忽略（问答在写配置之前；--locale / --ai-tool 不跳过本问）
+  const ignorePlan = await planIgnoreSuggestions(root, locale, {
+    interactive: isTTY(),
+    ask: askQuestion,
+    log: line => console.log(line),
+  });
+  const unversioned = acceptedEntries(ignorePlan);
 
   const sourceLabel: Record<NameSource, string> = {
     'argument': '',
@@ -2375,10 +2489,14 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
   }
 
   const initialConfig = JSON.parse(createLogosConfig(projectName, locale, aiTool)) as Record<string, unknown>;
+  // Step 6：接受时写入 guard.unversioned；拒绝 / 无建议 / 非交互不写该字段，guard.exempt 缺省即内置默认
+  if (unversioned) initialConfig.guard = { unversioned };
   const verifyBackfill = ensureVerifyPreRunConfig(root, initialConfig);
   writeFileSync(join(root, 'logos', 'logos.config.json'), JSON.stringify(initialConfig, null, 2));
   console.log(`  ✓ logos/logos.config.json`);
   printVerifyPreRunBackfillResult(locale, verifyBackfill);
+  // Step 6a / 11：渲染 .gitignore 托管区块（运行时目录直接写入并告知）
+  applyIgnoreBlock(root, locale, ignorePlan, { log: line => console.log(line), warn: line => console.warn(line) });
 
   writeFileSync(join(root, 'logos', 'logos-project.yaml'), createLogosProject(projectName, locale));
   console.log(`  ✓ logos/logos-project.yaml`);

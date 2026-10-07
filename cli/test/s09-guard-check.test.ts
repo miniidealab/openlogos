@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
+import { isNotGitWorkTree } from './s09-guard-vcs-fixtures.js';
 import { deployClaudeCodePlugin, findClaudePluginTemplateSource } from '../src/commands/init.js';
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -108,6 +109,7 @@ describe('S09 Unit Tests — guard-check script', () => {
 
   it('UT-S09-16: Bash sed -i on source file → block without guard', () => {
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), makeYaml('launched'));
+    expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-391 / ST-S09-156 等）').toBe(true);
 
     const result = runGuardCheck(root, 'Bash', {
       command: "sed -i 's/foo/bar/' src/foo.ts",

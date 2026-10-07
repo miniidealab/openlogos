@@ -532,7 +532,8 @@ describe('S01 Unit Tests — findSkillsSource / deploySkills', () => {
       deployCursorForTest(root, 'en');
       expect(existsSync(join(root, '.cursor', 'rules', 'openlogos-policy.mdc'))).toBe(false);
       const hooks = JSON.parse(readFileSync(join(root, '.cursor', 'hooks.json'), 'utf-8'));
-      expect(Object.keys(hooks.hooks).sort()).toEqual(['afterFileEdit', 'beforeShellExecution', 'sessionStart']);
+      // guard-versioned-content-scope：托管事件按 spec/cursor-plugin.md §7 含 afterShellExecution
+      expect(Object.keys(hooks.hooks).sort()).toEqual(['afterFileEdit', 'afterShellExecution', 'beforeShellExecution', 'sessionStart']);
       const agents = createAgentsMd('en', 'cursor', 'agents', false);
       expect(agents).toContain('Language Policy (Highest Priority)');
     } finally {
@@ -920,7 +921,8 @@ describe('S01 Scenario Tests — init command', () => {
     expect(allLogs).toContain('✓');
     expect(allLogs).toContain('specs deployed');
     expect(allLogs).toContain('Next steps');
-    expect(allLogs).toContain('Guard strength on cursor-agent CLI');
+    // guard-versioned-content-scope C11：提示行改为 Cursor（IDE 与 CLI）部分强度声明
+    expect(allLogs).toContain('Guard strength on Cursor (IDE and cursor-agent CLI) is partial');
   });
 
   it('ST-S01-02: auto-detect project name from directory', async () => {
