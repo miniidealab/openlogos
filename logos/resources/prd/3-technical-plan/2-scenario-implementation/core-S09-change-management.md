@@ -1038,7 +1038,7 @@ sequenceDiagram
 ### 不变量
 
 - 有活跃提案时：proposal_step 收窄、plan 阶段原型 allowlist、既有放行语义不变；各检查点只维护执行记录（关闭、去重），不报告新变化，boundary-start 存下的待报告项照常送达。不可豁免项与 C14 在有提案时同样生效。
-- 执行记录只凭宿主给出的执行结束证据关闭：非后台调用同一标识的 PostToolUse / PostToolUseFailure；后台调用的任务结束确认。SessionEnd、Stop、补查无变化都不关闭记录。
+- 执行记录只凭宿主给出的执行结束证据关闭：非后台调用同一标识的 PostToolUse / PostToolUseFailure；后台调用的任务结束确认；Stop 时关闭全部非后台记录（Stop 表明本回合前台调用已全部结束，含被拒绝或被其他 hook 拦下的调用）。SessionEnd、补查无变化都不关闭记录，Stop 不关闭后台记录。
 - 基线只在两种情况下更新：独立 git / openlogos 调用（只更新其改动的路径）、`openlogos archive` 删除 guard 文件之前（boundary-end）。归档后的检查只对比、不更新基线。
 - 每个变化事件按 `(path, raw_digest, 事件签名)` 只报一次；恢复、合法基线更新或再次写入会清除该路径的去重条目。guard 不自动执行恢复。
 - 所有状态变更在 `state.lock` 内进行并原子落盘；多文件更新中途中断只会让部分记录仍是旧基线，方向是多报而不是漏报。

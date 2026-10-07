@@ -963,7 +963,8 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 - **关闭条件**（只以宿主给出的执行结束证据为准，关闭前都做一次最终对比）：
   1. 收到同一 `record_id` 的 PostToolUse / PostToolUseFailure（Cursor 为 `afterShellExecution`），且该调用不是后台调用；
   2. 后台调用的 PostToolUse 返回了后台任务标识，之后宿主的工具结果确认该任务已结束：查询类工具（`BashOutput` / `TaskOutput`）输出显示已完成、失败或被终止，或终止类工具（`KillShell` / `TaskStop`）成功。工具名与 tool_response 中后台任务标识、结束状态字段以实施时 Claude Code 真实 hook 输入核实。
-- **不算结束证据**：SessionEnd、Stop、补查时暂未发现变化、会话结束（含 `/clear`、切换会话）。不注册 SessionEnd；会话结束时记录保留，下一会话由 SessionStart 接管并继续对比，SessionStart 不关闭记录。
+  3. **前台记录在 Stop 时关闭**：Stop 表明本回合的前台工具调用已全部结束（含被用户在权限确认中拒绝、被其他 hook 拦下、执行出错的调用）。Stop 时对全部**非后台**记录（`background:false`，含匿名的非后台记录）做最终对比后关闭；后台记录不受影响。用户中断（宿主不触发 Stop）时，前台记录保留到下一次 Stop 再关闭，被中断的前台进程已由宿主终止。
+- **不算结束证据**：SessionEnd、补查时暂未发现变化、会话结束（含 `/clear`、切换会话）；Stop 对后台记录不算结束证据。不注册 SessionEnd；会话结束时记录保留，下一会话由 SessionStart 接管并继续对比，SessionStart 不关闭记录。
 - **未关闭记录持续对比**：之后每个 PreToolUse、PostToolUse、PostToolUseFailure、Stop、SessionStart 都对全部未关闭记录做对比，发现变化即进入反馈，记录仍保持打开。
 - **基线**：只要存在未关闭记录，判断某处改动是否「执行前已有」时，以最早一个未关闭记录为基线；之后建立的新记录不得把期间出现的受保护变化吸收为既有改动。基线只在两种情况下更新：独立 git / openlogos 调用（只更新它改动的路径）与提案边界（见「提案边界」）。
 - **归因**：
