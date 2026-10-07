@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.18] - 2026-10-07
+
+### Changed
+
+- launched 且无活跃提案时，guard 以「会进入版本控制的代码与规格」为保护对象（`spec/pretooluse-guard.md`「版本控制内容保护与事后检查」）：已跟踪文件、未被忽略的新文件与 `logos/resources/` 下的规格受保护，被 git 忽略且未跟踪的依赖、产物、日志与缓存写入不再需要立案。`guard.exempt` 取代 reference / 基线 staging 的硬编码豁免（默认值不变）。
+- Bash / PowerShell 改为「事前轻判 + 执行后内容级对比」：能确定写入目标且目标受保护时事前阻断，其余事后以原始字节比较受保护内容，发现未立案改动即以 exit 2 反馈变化文件与 `restore` 恢复命令；独立 git / openlogos 调用不报告。
+- 本地候选版本升级为 `0.15.18`，固定 `0.15.17` 回滚，新增安装态 smoke runner（SMOKE-core-215～SMOKE-core-222）；不包含公开发布、远程标签或 git push。
+
+### Added
+
+- `openlogos ignore add|remove|list` 与 `openlogos exempt add|remove|list`；`.gitignore` 托管区块（`# >>> openlogos managed >>>`），init / adopt 按技术栈建议忽略目录（用户确认后写入），sync 按配置重渲染。
+- 事后检查引擎 `guard-post-check.cjs` 与 PostToolUse / PostToolUseFailure / Stop hook：执行记录生命周期（后台调用、跨会话接管、Stop 关闭前台记录）、提案起止边界、事件级去重、安全 restore、项目级锁与中断只多报。
+- Cursor 接入 `afterShellExecution` 事后检查，部署引擎副本 `.cursor/hooks/openlogos-guard-post.cjs`。
+
+### Fixed
+
+- 复合命令、重定向、`node -e`、脚本、`find -delete`、`git stash pop` 等写法绕过写入门禁的问题；`npm ci`、`mkdir -p dist/x` 等依赖与产物写入被误拦的问题。
+
+### Security
+
+- 保护范围变更（`openlogos exempt|ignore add|remove`）须经用户在宿主界面审批：Claude Code 仅在 `default` / `acceptEdits` 权限模式下返回 `permissionDecision: ask`，其他模式阻断。
+- `.gitignore` 移出硬编码白名单；各级 `.gitignore`、`.git/info/exclude`、`logos/logos.config.json`、git 元数据与 guard 自有状态 `logos/.openlogos-runtime/` 不可豁免。
+
+### Docs
+
+- 更正 Cursor 强度声明：OpenLogos 未接入 `preToolUse`，IDE 与 CLI 的文件编辑均为事后报告。
+
 ## [0.15.17] - 2026-10-06
 
 ### Fixed
