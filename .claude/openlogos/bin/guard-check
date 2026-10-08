@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+# 事后检查引擎（guard-versioned-content-scope）：与本脚本同目录的 guard-post-check.cjs（托管副本
+# .claude/openlogos/bin/guard-post-check.cjs；分发源 plugin/bin/guard-post-check.cjs）。须在 Step 0 cd 之前解析。
+GUARD_ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/guard-post-check.cjs" || GUARD_ENGINE=""
+
 # ── Read stdin ────────────────────────────────────────────────────────────────
 INPUT="$(cat)"
 
@@ -123,17 +127,18 @@ if [ -f "$YAML_FILE" ]; then
   done < "$YAML_FILE"
 fi
 
-if [ "$IS_LAUNCHED" -eq 0 ]; then
-  # All modules are initial — allow everything
-  exit 0
-fi
+# 全部 initial：放行一切，唯一例外是 guard 自有状态（logos/.openlogos-runtime/）的文件工具写入
+# （spec/pretooluse-guard.md §受保护判定 第 2 步，任何 lifecycle 与提案状态下恒阻断）；该检查在下方
+# 函数定义之后执行，initial 下输入不可解析仍按既有语义放行。
 
 # ── Step 2.5: Parse hook input（fail-closed）────────────────────────────────────
 # stdin 非空但无法解析出 tool_name（JSON 非法、解析器全部不可用、字段缺失）：写入门禁已失明，
 # 放行等于关闭门禁——exit 2 双通道，与 ZCode / Qoder / Cursor 适配层同口径。
 detect_python
 TOOL_NAME=""
-if [ -n "$INPUT" ]; then
+if [ "$IS_LAUNCHED" -eq 0 ]; then
+  TOOL_NAME="$(json_field "$INPUT" "tool_name" 2>/dev/null || true)"
+elif [ -n "$INPUT" ]; then
   if ! TOOL_NAME="$(json_field "$INPUT" "tool_name")" || [ -z "$TOOL_NAME" ]; then
     block "⛔ openlogos guard: 无法解析 hook 输入（tool_name 缺失或 JSON 不可解析），写入门禁无法判定，fail-closed。\\n\\n请检查 node 是否可用（node 是 OpenLogos 运行前提）。"
   fi
@@ -149,7 +154,9 @@ hook_target_path() {
 
 # ── Whitelist & path normalization（Step 3 plan 收窄与 Step 4 共用）──────────────────
 
-# Whitelist: path prefixes always allowed regardless of guard
+# Whitelist: path prefixes always allowed regardless of guard（受保护判定第 5 步）。
+# .gitignore 已移出（guard-versioned-content-scope C14：它是保护范围来源，两种模式下均受保护）；
+# 不可豁免项（guard 自有状态、保护范围来源、git 元数据）先于本表判定，位于白名单目录下同样受保护。
 WHITELIST_PREFIXES=(
   "logos/changes/"
   "logos/.openlogos-guard"
@@ -160,7 +167,6 @@ WHITELIST_PREFIXES=(
   ".cursor/"
   "logos/skills/"
   "logos/spec/"
-  ".gitignore"
   "README"
   "CLAUDE.md"
   "AGENTS.md"
@@ -341,15 +347,203 @@ rel_of_cwd() {
 }
 
 
-# Built-in default exemptions (fix-guard-reference-baseline-staging-whitelist):
-#   R-REF     logos/resources/reference and its descendants (reference material,
-#             not a spec artifact);
-#   R-STAGING logos/resources/verify/baseline-seed-runs/<run_id>/staging and its
-#             descendants — the run-private staging written after
-#             `openlogos baseline-seed begin`; formal baselines still go through
-#             `baseline-seed commit`. <run_id> is exactly one segment matching the
-#             CLI run_id rule. run.json / commit-journal.json / resolved/ / backup/
-#             / locks stay protected.
+# ── guard.exempt 读取（guard-versioned-content-scope，spec/pretooluse-guard.md §guard.exempt 与内置默认）──
+# 取代 R-REF / R-STAGING 硬编码：豁免条目一律来自 logos/logos.config.json 的 guard.exempt。
+#   字段缺省（guard 或 guard.exempt 不存在）→ 内置默认两条（与原 R-REF / R-STAGING 命中集合逐项一致）；
+#   显式数组（含 []）→ 按原样，不回落内置默认；
+#   配置损坏（无法解析、guard / guard.exempt 类型不符）→ 视为 []，stderr 警告；
+#   单条非法条目 → 跳过并 stderr 警告，其余照常生效。
+# git 判据生效与非 git 回落两种模式同一实现；node → python → 纯 bash 依次尝试，纯 bash 无法解析 JSON，
+# 只能区分「文本中不含 guard 键（字段缺省）」与「含 guard 键（按 [] 保守处理）」，只会更保守。
+GUARD_CONFIG_REL="logos/logos.config.json"
+GUARD_RUNTIME_REL="logos/.openlogos-runtime"
+GUARD_BUILTIN_EXEMPT=(
+  "logos/resources/reference/"
+  "logos/resources/verify/baseline-seed-runs/*/staging/"
+)
+GUARD_EXEMPT_LOADED=0
+GUARD_EXEMPT_ENTRIES=()
+
+guard_warn() {
+  printf 'openlogos guard 警告：%s\n' "$1" >&2
+}
+
+# exempt_entry_invalid_reason <entry> — 条目合法时无输出并返回 1；非法时输出原因并返回 0。
+exempt_entry_invalid_reason() {
+  local e="$1" body seg
+  local -a segs=()
+  case "$e" in
+    ''|'/'|'*') printf '空串、/ 或单独 *'; return 0 ;;
+  esac
+  case "$e" in
+    *\\*) printf '含反斜杠'; return 0 ;;
+    /*) printf '绝对路径'; return 0 ;;
+  esac
+  local drive_re='^[A-Za-z]:'
+  if [[ "$e" =~ $drive_re ]]; then printf '绝对路径'; return 0; fi
+  body="${e%/}"
+  [ -n "$body" ] || { printf '空路径'; return 0; }
+  IFS='/' read -r -a segs <<< "$body"
+  [ "${#segs[@]}" -gt 0 ] || { printf '空路径'; return 0; }
+  case "/$body/" in
+    *//*) printf '含空段'; return 0 ;;
+  esac
+  for seg in "${segs[@]}"; do
+    case "$seg" in
+      ''|.|..) printf '含 . / .. / 空段'; return 0 ;;
+      '*') ;;
+      *'*'*) printf '* 须独占一个路径段'; return 0 ;;
+      .gitignore) printf '忽略规则来源（.gitignore）不可豁免'; return 0 ;;
+    esac
+  done
+  if [ "$body" = '*' ]; then printf '单独 *'; return 0; fi
+  if [ "${segs[0]}" = ".git" ]; then printf 'git 元数据（.git）不可豁免'; return 0; fi
+  if [[ "$body" == "$GUARD_RUNTIME_REL" || "$body" == "$GUARD_RUNTIME_REL"/* ]]; then
+    printf 'guard 自有状态（%s/）不可豁免' "$GUARD_RUNTIME_REL"; return 0
+  fi
+  if [ "$body" = "$GUARD_CONFIG_REL" ]; then printf '%s 不可豁免' "$GUARD_CONFIG_REL"; return 0; fi
+  return 1
+}
+
+# load_guard_exempt — 读取 guard.exempt 到 GUARD_EXEMPT_ENTRIES（每次进程只读一次）。
+load_guard_exempt() {
+  [ "$GUARD_EXEMPT_LOADED" = "1" ] && return 0
+  GUARD_EXEMPT_LOADED=1
+  GUARD_EXEMPT_ENTRIES=()
+  local cfg="$GUARD_CONFIG_REL" out="" status="" line kind val why
+  if [ ! -f "$cfg" ]; then
+    GUARD_EXEMPT_ENTRIES=(${GUARD_BUILTIN_EXEMPT[@]+"${GUARD_BUILTIN_EXEMPT[@]}"})
+    return 0
+  fi
+  # 输出协议：首行 default | explicit | corrupt:<原因>；其后每行 E<TAB><条目> 或 X<TAB><非字符串条目描述>
+  if command -v node >/dev/null 2>&1; then
+    out="$(node -e '
+const fs = require("fs");
+let d;
+try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8")); } catch { process.stdout.write("corrupt:无法解析\n"); process.exit(0); }
+if (!d || typeof d !== "object" || Array.isArray(d)) { process.stdout.write("corrupt:顶层不是对象\n"); process.exit(0); }
+if (!Object.prototype.hasOwnProperty.call(d, "guard")) { process.stdout.write("default\n"); process.exit(0); }
+const g = d.guard;
+if (!g || typeof g !== "object" || Array.isArray(g)) { process.stdout.write("corrupt:guard 类型不符\n"); process.exit(0); }
+if (!Object.prototype.hasOwnProperty.call(g, "exempt")) { process.stdout.write("default\n"); process.exit(0); }
+const e = g.exempt;
+if (!Array.isArray(e)) { process.stdout.write("corrupt:guard.exempt 类型不符\n"); process.exit(0); }
+let o = "explicit\n";
+for (const it of e) {
+  if (typeof it === "string" && !/[\n\r\t\0]/.test(it)) o += "E\t" + it + "\n";
+  else o += "X\t" + String(JSON.stringify(it)).replace(/[\n\r\t]/g, " ") + "\n";
+}
+process.stdout.write(o);
+' "$cfg" 2>/dev/null)" || out=""
+  fi
+  if [ -z "$out" ] && declare -F has_python >/dev/null && has_python; then
+    out="$(run_python -c '
+import sys, json
+try:
+    d = json.loads(open(sys.argv[1], "rb").read().decode("utf-8"))
+except Exception:
+    sys.stdout.write("corrupt:无法解析\n"); sys.exit(0)
+if not isinstance(d, dict):
+    sys.stdout.write("corrupt:顶层不是对象\n"); sys.exit(0)
+if "guard" not in d:
+    sys.stdout.write("default\n"); sys.exit(0)
+g = d["guard"]
+if not isinstance(g, dict):
+    sys.stdout.write("corrupt:guard 类型不符\n"); sys.exit(0)
+if "exempt" not in g:
+    sys.stdout.write("default\n"); sys.exit(0)
+e = g["exempt"]
+if not isinstance(e, list):
+    sys.stdout.write("corrupt:guard.exempt 类型不符\n"); sys.exit(0)
+o = "explicit\n"
+for it in e:
+    if isinstance(it, str) and not any(c in it for c in "\n\r\t\0"):
+        o += "E\t" + it + "\n"
+    else:
+        o += "X\t" + json.dumps(it, ensure_ascii=False).replace("\n", " ") + "\n"
+sys.stdout.buffer.write(o.encode("utf-8"))
+' "$cfg" 2>/dev/null)" || out=""
+  fi
+  if [ -z "$out" ]; then
+    # 纯 bash：不含 guard 键视为字段缺省；含 guard 键而无法解析 → 按 [] 保守处理
+    local content=""
+    content="$(<"$cfg")" 2>/dev/null || content=""
+    if [[ "$content" == *'"guard"'* ]]; then
+      out="corrupt:node / python 均不可用，无法解析 guard 配置"
+    else
+      out="default"
+    fi
+  fi
+  status="${out%%$'\n'*}"
+  case "$status" in
+    default)
+      GUARD_EXEMPT_ENTRIES=(${GUARD_BUILTIN_EXEMPT[@]+"${GUARD_BUILTIN_EXEMPT[@]}"})
+      return 0
+      ;;
+    corrupt:*)
+      guard_warn "$GUARD_CONFIG_REL 配置异常（${status#corrupt:}），guard.exempt 视为 []，不豁免任何路径"
+      return 0
+      ;;
+  esac
+  local rest=""
+  [[ "$out" == *$'\n'* ]] && rest="${out#*$'\n'}"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    kind="${line%%$'\t'*}"
+    val="${line#*$'\t'}"
+    if [ "$kind" = "E" ]; then
+      if why="$(exempt_entry_invalid_reason "$val")"; then
+        guard_warn "guard.exempt 非法条目已跳过：${val}（${why}）"
+        continue
+      fi
+      GUARD_EXEMPT_ENTRIES+=("$val")
+    elif [ "$kind" = "X" ]; then
+      guard_warn "guard.exempt 非法条目已跳过：${val}（不是字符串）"
+    fi
+  done <<< "$rest"
+  return 0
+}
+
+# exempt_entry_matches <entry> <rel> — 完整段匹配；以 / 结尾匹配目录本身及后代，否则只匹配单个文件；
+# `*` 恰好匹配一个满足 run_id 标识符约束（且不含 ..）的路径段。
+exempt_entry_matches() {
+  local e="$1" rel="$2" is_dir=0 body i
+  local -a es=() rs=()
+  [[ "$e" == */ ]] && is_dir=1
+  body="${e%/}"
+  IFS='/' read -r -a es <<< "$body"
+  IFS='/' read -r -a rs <<< "$rel"
+  if [ "$is_dir" -eq 1 ]; then
+    [ "${#rs[@]}" -ge "${#es[@]}" ] || return 1
+  else
+    [ "${#rs[@]}" -eq "${#es[@]}" ] || return 1
+  fi
+  local id_re='^[A-Za-z0-9][A-Za-z0-9._-]*$'
+  for ((i = 0; i < ${#es[@]}; i++)); do
+    if [ "${es[$i]}" = '*' ]; then
+      [[ "${rs[$i]}" =~ $id_re ]] || return 1
+      [[ "${rs[$i]}" == *..* ]] && return 1
+    elif [ "${es[$i]}" != "${rs[$i]}" ]; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+# whitelist_prefix_hit <rel> — 命中硬编码白名单前缀（已去掉 .gitignore）返回 0
+whitelist_prefix_hit() {
+  local rel="$1" prefix
+  for prefix in "${WHITELIST_PREFIXES[@]}"; do
+    if [[ "$rel" == "$prefix"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Built-in default exemptions → guard.exempt (guard-versioned-content-scope):
+#   原 R-REF / R-STAGING 不再硬编码，改由 guard.exempt 表达（字段缺省时为内置默认两条，
+#   logos/resources/reference/ 与 logos/resources/verify/baseline-seed-runs/*/staging/）。
 # Full-segment matching only; any ".", ".." or empty segment never matches (the
 # bash fallback does not normalize, so it may only be more conservative).
 # Symlinks never match either: the normalizers only resolve the deepest
@@ -371,22 +565,13 @@ is_default_exempt_path() {
       return 1
     fi
   done
-  if [[ "$rel" == "logos/resources/reference" || "$rel" == logos/resources/reference/* ]]; then
-    return 0
-  fi
-  local runs="logos/resources/verify/baseline-seed-runs/"
-  if [[ "$rel" == "$runs"* ]]; then
-    local rest="${rel#"$runs"}"
-    [[ "$rest" == */* ]] || return 1
-    local run_id="${rest%%/*}"
-    local after="${rest#*/}"
-    local run_id_re='^[A-Za-z0-9][A-Za-z0-9._-]*$'
-    [[ "$run_id" =~ $run_id_re ]] || return 1
-    [[ "$run_id" == *..* ]] && return 1
-    if [[ "$after" == "staging" || "$after" == staging/* ]]; then
+  load_guard_exempt
+  local entry
+  for entry in ${GUARD_EXEMPT_ENTRIES[@]+"${GUARD_EXEMPT_ENTRIES[@]}"}; do
+    if exempt_entry_matches "$entry" "$rel"; then
       return 0
     fi
-  fi
+  done
   return 1
 }
 
@@ -410,16 +595,190 @@ is_whitelisted_path() {
     return 1
   fi
 
-  for prefix in "${WHITELIST_PREFIXES[@]}"; do
-    if [[ "$rel_path" == "$prefix"* ]]; then
-      return 0
-    fi
-  done
+  if whitelist_prefix_hit "$rel_path"; then
+    return 0
+  fi
   if is_default_exempt_path "$rel_path"; then
     return 0
   fi
   return 1
 }
+
+# ── 受保护判定（guard-versioned-content-scope，spec/pretooluse-guard.md §受保护判定（is_protected））──
+# GUARD_MODE：git（git 判据生效）| fallback（非 git 回落）。判据：项目根位于 git 工作树内、git 可执行、
+# node 可执行、事后检查引擎（GUARD_ENGINE）存在（launched 由主流程保证）。
+GUARD_ENGINE="${GUARD_ENGINE:-}"
+GUARD_MODE=""
+GUARD_FALLBACK_WHY=""
+GUARD_GIT_DIRS_REL=()
+GUARD_EXCLUDES_REL=""
+PROTECT_STEP=""
+PROTECT_REASON=""
+PROTECT_REL=""
+
+# _rel_inside_root <abs-path> — 位于项目根之内时输出相对路径并返回 0
+_rel_inside_root() {
+  local r
+  r="$(rel_of_cwd "$1")"
+  [ -n "$r" ] || return 1
+  [[ "$r" == ".." || "$r" == ../* ]] && return 1
+  printf '%s\n' "$r"
+}
+
+detect_guard_mode() {
+  [ -n "${GUARD_MODE:-}" ] && return 0
+  GUARD_MODE="fallback"
+  GUARD_GIT_DIRS_REL=()
+  GUARD_EXCLUDES_REL=""
+  if ! command -v git >/dev/null 2>&1; then GUARD_FALLBACK_WHY="git 不可执行"; return 0; fi
+  if ! command -v node >/dev/null 2>&1 || ! node -e "" >/dev/null 2>&1; then
+    GUARD_FALLBACK_WHY="node 不可执行"; return 0
+  fi
+  if [ "$(git -C . rev-parse --is-inside-work-tree 2>/dev/null || true)" != "true" ]; then
+    GUARD_FALLBACK_WHY="项目根不在 git 工作树内"; return 0
+  fi
+  if [ -z "${GUARD_ENGINE:-}" ] || [ ! -f "$GUARD_ENGINE" ]; then
+    GUARD_FALLBACK_WHY="事后检查引擎缺失"; return 0
+  fi
+  local d r ex top
+  for d in "$(git -C . rev-parse --absolute-git-dir 2>/dev/null || true)" \
+           "$(git -C . rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"; do
+    [ -n "$d" ] || continue
+    if r="$(_rel_inside_root "$d")" && [ "$r" != "." ]; then GUARD_GIT_DIRS_REL+=("$r"); fi
+  done
+  # git 版本过旧取不到绝对 git 目录时，按字面 .git 保守识别
+  [ "${#GUARD_GIT_DIRS_REL[@]}" -gt 0 ] || GUARD_GIT_DIRS_REL=(".git")
+  ex="$(git -C . config --path --get core.excludesFile 2>/dev/null || true)"
+  if [ -n "$ex" ]; then
+    if [[ "$ex" != /* ]]; then
+      top="$(git -C . rev-parse --show-toplevel 2>/dev/null || pwd)"
+      ex="$top/$ex"
+    fi
+    if r="$(_rel_inside_root "$ex")"; then GUARD_EXCLUDES_REL="$r"; fi
+  fi
+  GUARD_MODE="git"
+  return 0
+}
+
+# _has_symlink_component <rel> — 项目根相对路径的任一已存在分量为符号链接返回 0
+_has_symlink_component() {
+  local walk="" seg
+  local -a segs=()
+  IFS='/' read -r -a segs <<< "$1"
+  for seg in "${segs[@]}"; do
+    walk="${walk:+$walk/}$seg"
+    [ -L "$walk" ] && return 0
+  done
+  return 1
+}
+
+_protect() { PROTECT_STEP="$1"; PROTECT_REASON="$2"; return 0; }
+_unprotect() { PROTECT_STEP="$1"; PROTECT_REASON="$2"; return 0; }
+
+# is_protected <path> — 返回 0 = 受保护（launched 无提案时写入须立案），1 = 不保护；
+# 置 PROTECT_STEP（命中序号 1–10，非 git 回落未命中放行规则时为 fallback）与 PROTECT_REASON。先命中先返回。
+is_protected() {
+  local path="$1" tagged rel lexical seg rc base
+  local -a segs=()
+  detect_guard_mode
+  tagged="$(_rel_of_cwd_tagged "$path")"
+  rel="${tagged#? }"
+  lexical="${tagged:0:1}"
+  PROTECT_REL="$rel"
+  # 1 管辖边界
+  if [[ "$rel" == ".." || "$rel" == ../* ]]; then _unprotect 1 "项目根之外"; return 1; fi
+  # 2 guard 自有状态
+  if [[ "$rel" == "$GUARD_RUNTIME_REL" || "$rel" == "$GUARD_RUNTIME_REL"/* ]]; then
+    _protect 2 "guard 自有状态（$GUARD_RUNTIME_REL/）"; return 0
+  fi
+  # 3 保护范围来源
+  base="${rel##*/}"
+  if [ "$base" = ".gitignore" ]; then _protect 3 "忽略规则来源（.gitignore）"; return 0; fi
+  if [ "$rel" = "$GUARD_CONFIG_REL" ]; then _protect 3 "保护范围来源（$GUARD_CONFIG_REL）"; return 0; fi
+  IFS='/' read -r -a segs <<< "$rel"
+  if [ "$GUARD_MODE" = "git" ]; then
+    local gd
+    for gd in "${GUARD_GIT_DIRS_REL[@]}"; do
+      if [ "$rel" = "$gd/info/exclude" ]; then _protect 3 "忽略规则来源（info/exclude）"; return 0; fi
+    done
+    if [ -n "$GUARD_EXCLUDES_REL" ] && [ "$rel" = "$GUARD_EXCLUDES_REL" ]; then
+      _protect 3 "忽略规则来源（core.excludesFile）"; return 0
+    fi
+    # 4 git 元数据
+    for gd in "${GUARD_GIT_DIRS_REL[@]}"; do
+      if [[ "$rel" == "$gd" || "$rel" == "$gd"/* ]]; then _protect 4 "git 元数据"; return 0; fi
+    done
+  else
+    # 非 git 回落：不读 core.excludesFile；git 元数据按字面 .git 路径段识别（均不调用 git）
+    if [[ "$rel" == ".git/info/exclude" || "$rel" == */.git/info/exclude ]]; then
+      _protect 3 "忽略规则来源（info/exclude）"; return 0
+    fi
+    for seg in "${segs[@]}"; do
+      if [ "$seg" = ".git" ]; then _protect 4 "git 元数据"; return 0; fi
+    done
+  fi
+  # 5 硬编码白名单 / 6 guard.exempt：两种模式都沿用既有 is_whitelisted_path（同一归一化、点段与符号链接约束；
+  # 词法点段得出的目标不享受放行，只可更保守）
+  if is_whitelisted_path "$path"; then
+    if [ "$lexical" != "1" ] && whitelist_prefix_hit "$rel"; then _unprotect 5 "白名单"; return 1; fi
+    _unprotect 6 "guard.exempt"; return 1
+  fi
+  if [ "$GUARD_MODE" != "git" ]; then
+    _protect fallback "非 git 回落：不在白名单与 guard.exempt 内"; return 0
+  fi
+  # 7 规格目录
+  if [[ "$rel" == "logos/resources" || "$rel" == logos/resources/* ]]; then
+    _protect 7 "规格目录（logos/resources/）"; return 0
+  fi
+  # 8 已跟踪（目录下存在任一已跟踪文件同样成立）；查询失败按受保护处理
+  rc=0
+  git -c core.quotePath=false --literal-pathspecs ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then _protect 8 "已跟踪"; return 0; fi
+  if [ "$rc" -ne 1 ]; then _protect 8 "git 查询失败（ls-files），按受保护处理"; return 0; fi
+  # 9 被忽略且未跟踪（符号链接分量与点段目标不享受忽略放行）
+  if [ "$lexical" != "1" ] && ! _has_symlink_component "$rel"; then
+    rc=0
+    git -c core.quotePath=false check-ignore -q -- "$rel" >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ]; then _unprotect 9 "被 git 忽略且未跟踪"; return 1; fi
+    if [ "$rc" -ne 1 ]; then _protect 9 "git 查询失败（check-ignore），按受保护处理"; return 0; fi
+  fi
+  # 10 其余
+  _protect 10 "未被忽略的新文件"
+  return 0
+}
+
+# path_write_allowed <raw-path> — Bash / PowerShell 已确定写入目标的逐路径判定（两种模式共用 is_protected）
+path_write_allowed() {
+  ! is_protected "$1"
+}
+
+# protect_block_detail — 阻断 reason 中的命中原因与提示
+protect_block_detail() {
+  local d="命中原因：${PROTECT_REASON}"
+  if [ "$PROTECT_STEP" = "10" ]; then
+    local first="${PROTECT_REL%%/*}"
+    case "$first" in
+      node_modules|dist|build|out|target|coverage|.next|.nuxt|vendor|.venv|venv|__pycache__|.cache|tmp)
+        d="${d}\\n\\n如该目录不应入库，可执行 \`openlogos ignore add <pattern>\`；该命令会改变保护范围，须经宿主原生审批由用户批准。"
+        ;;
+    esac
+  fi
+  d="${d}$(fallback_engine_hint)"
+  printf '%s' "$d"
+}
+
+# fallback_engine_hint — 引擎缺失或 node 不可用导致非 git 回落时，阻断 reason 附带补齐提示（其余回落原因无输出）
+fallback_engine_hint() {
+  if [ "$GUARD_MODE" = "fallback" ]; then
+    case "$GUARD_FALLBACK_WHY" in
+      "node 不可执行"|"事后检查引擎缺失")
+        printf '%s' "\\n\\n（当前为非 git 回落：${GUARD_FALLBACK_WHY}；运行 \`openlogos sync\` 补齐事后检查引擎）"
+        ;;
+    esac
+  fi
+  return 0
+}
+
 
 # Whitelist: Bash command patterns that are always safe (read-only or openlogos CLI)
 BASH_SAFE_PATTERNS=(
@@ -518,6 +877,7 @@ PS_DOTNET_WRITE_RE='\[(system\.)?io\.file\]::write'
 PS_PATH_FLAG_RE='^-(path|filepath|literalpath|destination|newname)$'
 PS_VALUE_FLAG_RE='^-(itemtype|value|encoding|inputobject|type|name)$'
 PS_BASH_PATH_CMD_RE='^(rm|cp|mv|mkdir|touch|chmod|chown)$'
+PS_COPY_WORD_RE='^(copy-item|cp|copy)$'
 
 ci_match() {
   # ci_match <text> <ERE> — 大小写不敏感匹配
@@ -592,16 +952,22 @@ ws_target_allowed() {
   case "$t" in
     *'$'*|*'('*|*')'*|*'`'*|*'*'*|*'?'*|*'@'*|*'{'*|*','*) return 1 ;;
   esac
-  is_whitelisted_path "$t"
+  path_write_allowed "$t"
 }
 
 windows_shell_block() {
-  block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(printf '%s' "$1" | head -c 120)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
+  block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(printf '%s' "$1" | head -c 120)$(fallback_engine_hint)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
 }
 
-windows_shell_verdict() {
-  local cmd="$1" stripped merged rest target signal=0 pattern
-  local -a redirect_targets=() segments=() write_segments=()
+# ws_scan <command> — 写入信号扫描（两种模式共用）：置 WS_SIGNAL、WS_REDIRECTS（重定向目标）、
+# WS_SEGMENTS（全部段）、WS_WRITE_SEGMENTS（命中写入模式的段）
+WS_SIGNAL=0
+WS_REDIRECTS=()
+WS_SEGMENTS=()
+WS_WRITE_SEGMENTS=()
+ws_scan() {
+  local cmd="$1" stripped merged rest target
+  WS_SIGNAL=0; WS_REDIRECTS=(); WS_SEGMENTS=(); WS_WRITE_SEGMENTS=()
   # ① 剥离单 / 双引号字面量后扫描写入信号；流合并（2>&1）先移除
   stripped="$(printf '%s' "$cmd" | sed -E "s/'[^']*'/''/g; s/\"[^\"]*\"/\"\"/g")"
   merged="$(printf '%s' "$stripped" | sed -E 's/[0-9*]?>&[0-9]//g')"
@@ -613,8 +979,8 @@ windows_shell_verdict() {
     if ci_match "$target" '^(\$null|nul)$'; then
       continue
     fi
-    redirect_targets+=("$target")
-    signal=1
+    WS_REDIRECTS+=("$target")
+    WS_SIGNAL=1
   done
   local split="$merged"
   split="${split//&&/$'\n'}"
@@ -629,30 +995,36 @@ windows_shell_verdict() {
     seg="${seg%%>*}"
     seg="${seg%"${seg##*[![:space:]]}"}"
     [ -n "$seg" ] || continue
-    segments+=("$seg")
-    if ws_segment_is_write "$seg"; then write_segments+=("$seg"); fi
+    WS_SEGMENTS+=("$seg")
+    if ws_segment_is_write "$seg"; then WS_WRITE_SEGMENTS+=("$seg"); fi
   done <<< "$split"
-  if [ "${#segments[@]}" -gt 1 ] && [ "${#write_segments[@]}" -gt 0 ]; then
-    signal=1
+  if [ "${#WS_SEGMENTS[@]}" -gt 1 ] && [ "${#WS_WRITE_SEGMENTS[@]}" -gt 0 ]; then
+    WS_SIGNAL=1
   fi
+  return 0
+}
+
+windows_shell_verdict() {
+  local cmd="$1" target pattern seg
+  ws_scan "$cmd"
 
   # ③ 无写入信号：按既有顺序先判安全白名单，再判写入模式
-  if [ "$signal" -eq 0 ]; then
+  if [ "$WS_SIGNAL" -eq 0 ]; then
     for pattern in "${BASH_SAFE_PATTERNS[@]}"; do
       if printf '%s\n' "$cmd" | grep -qE -- "$pattern" 2>/dev/null; then
         exit 0
       fi
     done
-    [ "${#write_segments[@]}" -gt 0 ] || exit 0
+    [ "${#WS_WRITE_SEGMENTS[@]}" -gt 0 ] || exit 0
   fi
 
   # ② 有写入信号（或无信号但命中写入模式）：安全白名单不适用，逐目标判定
   local any=0
-  for target in ${redirect_targets[@]+"${redirect_targets[@]}"}; do
+  for target in ${WS_REDIRECTS[@]+"${WS_REDIRECTS[@]}"}; do
     any=1
     ws_target_allowed "$target" || windows_shell_block "$cmd"
   done
-  for seg in ${write_segments[@]+"${write_segments[@]}"}; do
+  for seg in ${WS_WRITE_SEGMENTS[@]+"${WS_WRITE_SEGMENTS[@]}"}; do
     local targets
     if ! targets="$(ws_segment_targets "$seg")" || [ -z "$targets" ]; then
       windows_shell_block "$cmd"
@@ -666,9 +1038,471 @@ windows_shell_verdict() {
   exit 0
 }
 
+# ps_git_targets <command> — git 判据生效时 PowerShell 的事前目标判定：可提取且受保护 → exit 2；
+# 目标经变量 / 子表达式 / 通配 / 数组给出或无法结构化提取 → 不阻断，交给事后检查
+ps_git_targets() {
+  local cmd="$1" target seg targets
+  ws_scan "$cmd"
+  for target in ${WS_REDIRECTS[@]+"${WS_REDIRECTS[@]}"}; do
+    ps_git_target_check "$target" "$cmd"
+  done
+  for seg in ${WS_WRITE_SEGMENTS[@]+"${WS_WRITE_SEGMENTS[@]}"}; do
+    if ci_match "${seg%%[[:space:]]*}" "$PS_COPY_WORD_RE"; then
+      targets="$(ws_copy_git_targets "$seg")"
+    else
+      targets="$(ws_segment_targets "$seg")" || continue
+    fi
+    [ -n "$targets" ] || continue
+    while IFS= read -r target; do
+      ps_git_target_check "$target" "$cmd"
+    done <<< "$targets"
+  done
+  return 0
+}
+
+# ws_copy_git_targets <segment> — git 判据下 PowerShell 复制段（Copy-Item / cp / copy）的写入目标（与引擎 cpTargets、
+# Cursor runtime wsCopyGitTargets 同口径）：源只被读取，不算写入目标；目标取 -Destination，或位置实参中的目标
+# （未以 -Path / -LiteralPath 命名源时为第二个位置实参，否则为第一个）。目标是目录（以 / 或 \ 结尾，或判定时已存在
+# 的目录）时写入 目标/<源末段>，否则目标本身即写入路径。目标或源无法确定时不输出，交给事后检查。
+# 非 git 回落仍按 ws_segment_targets 的全量实参口径。
+ws_copy_git_targets() {
+  local seg="$1" tok next="" dest="" named_src=0 i src leaf d
+  local -a toks=() pos=() srcs=()
+  set -f
+  # shellcheck disable=SC2206
+  toks=($seg)
+  set +f
+  for ((i = 1; i < ${#toks[@]}; i++)); do
+    tok="${toks[$i]}"
+    case "$next" in
+      dest) dest="$tok"; next=""; continue ;;
+      src) srcs+=("$tok"); next=""; continue ;;
+      value) next=""; continue ;;
+    esac
+    if ci_match "$tok" '^-destination$'; then next=dest; continue; fi
+    if ci_match "$tok" '^-(path|literalpath)$'; then next=src; named_src=1; continue; fi
+    if ci_match "$tok" '^-(filter|include|exclude|credential|fromsession|tosession)$'; then next=value; continue; fi
+    case "$tok" in -*) continue ;; esac
+    pos+=("$tok")
+  done
+  if [ -z "$dest" ]; then
+    if [ "$named_src" -eq 1 ]; then
+      dest="${pos[0]:-}"
+    else
+      [ "${#pos[@]}" -gt 0 ] && srcs+=("${pos[0]}")
+      dest="${pos[1]:-}"
+    fi
+  fi
+  dest="${dest#\"}"; dest="${dest%\"}"; dest="${dest#\'}"; dest="${dest%\'}"
+  [ -n "$dest" ] || return 0
+  case "$dest" in *'$'*|*'('*|*')'*|*'`'*|*'*'*|*'?'*|*'@'*|*'{'*|*','*) return 0 ;; esac
+  d="${dest//\\//}"
+  if [[ "$d" == */ ]] || [ -d "$d" ]; then
+    d="${d%/}"
+    for src in ${srcs[@]+"${srcs[@]}"}; do
+      src="${src#\"}"; src="${src%\"}"; src="${src#\'}"; src="${src%\'}"
+      case "$src" in ''|*'$'*|*'('*|*')'*|*'`'*|*'*'*|*'?'*|*'@'*|*'{'*|*','*) continue ;; esac
+      src="${src//\\//}"
+      src="${src%/}"
+      leaf="${src##*/}"
+      case "$leaf" in ''|.|..) continue ;; esac
+      printf '%s\n' "$d/$leaf"
+    done
+    return 0
+  fi
+  printf '%s\n' "$dest"
+}
+
+ps_git_target_check() {
+  local t="$1"
+  t="${t#\"}"; t="${t%\"}"; t="${t#\'}"; t="${t%\'}"
+  [ -n "$t" ] || return 0
+  case "$t" in
+    *'$'*|*'('*|*')'*|*'`'*|*'*'*|*'?'*|*'@'*|*'{'*|*','*) return 0 ;;
+  esac
+  if is_protected "$t"; then shell_target_block "$2" "$t"; fi
+  return 0
+}
+
+# ── 保护范围变更受限命令（guard-versioned-content-scope C14，spec/pretooluse-guard.md
+#    「保护范围变更的宿主原生审批（C14）」）──────────────────────────────────────────────
+# 受限命令：openlogos exempt add|remove、openlogos ignore add|remove（list 不受限）。任何 lifecycle、任何提案
+# 状态、git 判据与非 git 回落两种模式下都先于安全白名单与其他判定识别：
+#   独立调用（只允许 `cd <目录> &&` 前缀段）→ 按 hook 输入 permission_mode：default / acceptEdits 输出
+#     permissionDecision: ask（exit 0，由宿主对这一次调用弹出原生审批）；其他值、字段缺失、未知值 → exit 2；
+#   复合形态（与其他命令组合、管道 / 重定向 / 命令替换 / 子 shell / 后台 / 换行等）→ 任何模式下 exit 2。
+# guard 不读写任何授权文件，也不采信对话中的口头同意；每次调用独立判定、不留状态。
+
+# _json_str <text> — 输出 JSON 字符串字面量（纯 bash，回落环境下也可用）
+_json_str() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
+}
+
+# scope_block <text> — 双通道阻断（stderr 原样文本；stdout {"reason":...}），exit 2
+scope_block() {
+  printf '{"reason":%s}' "$(_json_str "$1")"
+  printf '%s\n' "$1" >&2
+  exit 2
+}
+
+# classify_scope_command <command> — 输出 none | standalone | compound。
+# node 主路径：引号感知切分（单 / 双引号内的字面量不参与识别；双引号内的 $( ) 与反引号按代码处理）；
+# node 不可用时退化为纯 bash 正则：文本中出现受限命令字样即按复合形态处理（只会多拦）。
+classify_scope_command() {
+  local cmd="$1" out=""
+  if command -v node >/dev/null 2>&1; then
+    out="$(node -e 'const cmd = process.argv[1];
+// 引号感知切分：segs 为按 && / || / ; / 换行 以及其他运算符切开的词序列；forbidden 记录引号外出现的复合信号
+const segs = [[]]; const seps = []; let forbidden = false;
+let word = null; const stack = ['\''n'\''];
+const top = () => stack[stack.length - 1];
+const flush = () => { if (word !== null) { segs[segs.length - 1].push(word); word = null; } };
+const brk = (sep) => { flush(); seps.push(sep); segs.push([]); };
+for (let i = 0; i < cmd.length; i++) {
+  const c = cmd[i], d = cmd[i + 1], m = top();
+  if (m === '\''s'\'') { if (c === "'\''") stack.pop(); else word += c; continue; }
+  if (m === '\''d'\'') {
+    if (c === '\''"'\'') { stack.pop(); continue; }
+    if (c === '\''\\'\'' && i + 1 < cmd.length) { word += d; i++; continue; }
+    if (c === '\''$'\'' && d === '\''('\'') { forbidden = true; stack.push('\''p'\''); brk('\''$('\''); i++; continue; }
+    if (c === '\''`'\'') { forbidden = true; stack.push('\''b'\''); brk('\''`'\''); continue; }
+    word += c; continue;
+  }
+  // 代码上下文：n（顶层）/ p（$( 或 ( 内）/ b（反引号内）
+  if (c === "'\''") { if (word === null) word = '\'''\''; stack.push('\''s'\''); continue; }
+  if (c === '\''"'\'') { if (word === null) word = '\'''\''; stack.push('\''d'\''); continue; }
+  if (c === '\''\\'\'' && i + 1 < cmd.length) { if (d === '\''\n'\'') { i++; continue; } word = (word ?? '\'''\'') + d; i++; continue; }
+  if (c === '\'' '\'' || c === '\''\t'\'') { flush(); continue; }
+  if (c === '\''\n'\'') { forbidden = true; brk('\''\n'\''); continue; }
+  if (c === '\''&'\'' && d === '\''&'\'') { brk('\''&&'\''); i++; continue; }
+  if (c === '\''|'\'' && d === '\''|'\'') { brk('\''||'\''); i++; continue; }
+  if (c === '\'';'\'') { brk('\'';'\''); continue; }
+  if (c === '\''$'\'' && d === '\''('\'') { forbidden = true; stack.push('\''p'\''); brk('\''$('\''); i++; continue; }
+  if (c === '\''`'\'') { forbidden = true; if (m === '\''b'\'') stack.pop(); else stack.push('\''b'\''); brk('\''`'\''); continue; }
+  if (c === '\''('\'') { forbidden = true; stack.push('\''p'\''); brk('\''('\''); continue; }
+  if (c === '\'')'\'') { forbidden = true; if (m === '\''p'\'') stack.pop(); brk('\'')'\''); continue; }
+  if (c === '\''|'\'' || c === '\''&'\'' || c === '\''<'\'' || c === '\''>'\'') { forbidden = true; brk(c); continue; }
+  word = (word ?? '\'''\'') + c;
+}
+flush();
+const isRestricted = (ws) => {
+  for (let i = 0; i < ws.length; i++) {
+    const w = ws[i];
+    if (w !== '\''openlogos'\'' && !/[\\/]openlogos(\.(c?js|cmd|exe|ps1))?$/i.test(w)) continue;
+    const rest = ws.slice(i + 1).filter(x => !x.startsWith('\''-'\''));
+    if ((rest[0] === '\''exempt'\'' || rest[0] === '\''ignore'\'') && (rest[1] === '\''add'\'' || rest[1] === '\''remove'\'')) return true;
+  }
+  return false;
+};
+const nonEmpty = segs.map((ws, i) => ({ ws, i })).filter(s => s.ws.length > 0);
+const hits = nonEmpty.filter(s => isRestricted(s.ws));
+if (hits.length === 0) { process.stdout.write('\''none'\''); process.exit(0); }
+const last = nonEmpty[nonEmpty.length - 1];
+const standalone = !forbidden && hits.length === 1 && hits[0] === last && last.ws[0] === '\''openlogos'\''
+  && seps.every(s => s === '\''&&'\'') && segs.every(ws => ws.length > 0)
+  && nonEmpty.slice(0, -1).every(s => s.ws[0] === '\''cd'\'' && s.ws.length <= 2);
+process.stdout.write(standalone ? '\''standalone'\'' : '\''compound'\'');' "$cmd" 2>/dev/null)" || out=""
+  fi
+  case "$out" in
+    none|standalone|compound) printf '%s' "$out"; return 0 ;;
+  esac
+  local re='openlogos[^;&|]*[[:space:]](exempt|ignore)[[:space:]]+[^;&|]*(add|remove)'
+  if [[ "$cmd" =~ $re ]]; then printf 'compound'; else printf 'none'; fi
+}
+
+scope_change_check() {
+  case "$TOOL_NAME" in
+    Bash|PowerShell) ;;
+    *) return 0 ;;
+  esac
+  local cmd kind mode mode_label
+  cmd="$(json_field "$INPUT" "tool_input.command" 2>/dev/null || true)"
+  cmd="${cmd#"${cmd%%[![:space:]]*}"}"
+  cmd="${cmd%"${cmd##*[![:space:]]}"}"
+  [ -n "$cmd" ] || return 0
+  # 快速路径：不含 openlogos 字样的命令与本检查无关
+  [[ "$cmd" == *openlogos* ]] || return 0
+  kind="$(classify_scope_command "$cmd")"
+  case "$kind" in
+    standalone) ;;
+    compound)
+      scope_block "⛔ 保护范围变更命令必须单独执行：一次调用只能包含一条 openlogos exempt / ignore 的 add / remove，只允许 \`cd <目录> &&\` 前缀，不能与其他命令组合。
+
+命令：${cmd}
+
+请拆成单独的调用后重试。"
+      ;;
+    *) return 0 ;;
+  esac
+  mode="$(json_field "$INPUT" "permission_mode" 2>/dev/null || true)"
+  case "$mode" in
+    default|acceptEdits)
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":%s}}\n' \
+        "$(_json_str "该命令会改变 guard 的保护范围（${cmd}），需要您确认后执行")"
+      exit 0
+      ;;
+  esac
+  if [ -z "$mode" ]; then mode_label="未知：hook 输入缺少 permission_mode 字段"; else mode_label="$mode"; fi
+  scope_block "⛔ 保护范围变更需要用户在宿主界面批准：该命令会修改 guard 的保护范围（exempt / ignore 清单与 .gitignore 托管区块）。
+
+命令：${cmd}
+
+当前权限模式（${mode_label}）下宿主不会弹出确认，无法证明由用户批准。请让用户在终端用 \`! ${cmd}\` 自行执行，或切换到默认权限模式后重试；不要用对话中的口头同意替代。"
+}
+
+# runtime_dir_file_write_check — 文件工具写入 guard 自有状态时阻断（任何 lifecycle 与提案状态）
+runtime_dir_file_write_check() {
+  case "$TOOL_NAME" in
+    Edit|Write|MultiEdit|NotebookEdit) ;;
+    *) return 0 ;;
+  esac
+  local fp rel
+  fp="$(hook_target_path)"
+  [ -n "$fp" ] || return 0
+  rel="$(rel_of_cwd "$fp")"
+  if [[ "$rel" == "$GUARD_RUNTIME_REL" || "$rel" == "$GUARD_RUNTIME_REL"/* ]]; then
+    block "⛔ 变更管理拦截：$GUARD_RUNTIME_REL/ 是 guard 自有状态（执行记录与待报告项），任何状态下都不允许经 $TOOL_NAME 直接写入。\\n\\n目标文件：$fp\\n\\n如需立案修改受保护内容，请运行 \`openlogos change <slug>\`。"
+  fi
+  return 0
+}
+
+# ── 事后检查引擎接线（guard-versioned-content-scope，spec/pretooluse-guard.md
+#    「Bash / PowerShell 判定顺序（事前轻判 + 事后检查）」）──────────────────────────────────
+# 引擎 classify 给出：kind（independent 独立 git / openlogos 调用 | restore 独立形态的引擎 restore 调用（R9a）|
+# readonly 只读命令 | other）、可确定的写入目标（target=）与命中 guard 自有状态的目标（runtime=）。
+
+# block_text <text> — 双通道阻断（text 含真实换行；stdout JSON 经转义，命令原文含引号也可解析）
+block_text() {
+  printf '{"reason":%s}' "$(_json_str "$1")"
+  printf '%s\n' "$1" >&2
+  exit 2
+}
+
+has_open_records() {
+  compgen -G "$GUARD_RUNTIME_REL/guard-records/*.json" >/dev/null 2>&1
+}
+
+engine_available() {
+  [ -n "${GUARD_ENGINE:-}" ] && [ -f "$GUARD_ENGINE" ] && command -v node >/dev/null 2>&1
+}
+
+# engine_run <subcommand...> — 以 hook 输入为 stdin 调用引擎（stderr 静默）
+engine_run() {
+  printf '%s' "$INPUT" | node "$GUARD_ENGINE" "$@" 2>/dev/null
+}
+
+# engine_recheck — PreToolUse 补查：对全部未关闭执行记录做一次对比，新发现写入待报告项；不影响当前调用的结论
+engine_recheck() {
+  if engine_available && has_open_records; then
+    engine_run check --pre-tool-use >/dev/null || true
+  fi
+  return 0
+}
+
+SHELL_KIND=""
+SHELL_TARGETS=()
+SHELL_RUNTIME=()
+# engine_classify <bash|powershell> — 置 SHELL_KIND / SHELL_TARGETS / SHELL_RUNTIME；引擎不可用或失败返回 1
+engine_classify() {
+  local out line
+  SHELL_KIND=""; SHELL_TARGETS=(); SHELL_RUNTIME=()
+  engine_available || return 1
+  out="$(engine_run classify --host claude --shell "$1")" || return 1
+  while IFS= read -r line; do
+    case "$line" in
+      kind=*) SHELL_KIND="${line#kind=}" ;;
+      target=*) SHELL_TARGETS+=("${line#target=}") ;;
+      runtime=*) SHELL_RUNTIME+=("${line#runtime=}") ;;
+    esac
+  done <<< "$out"
+  [ -n "$SHELL_KIND" ]
+}
+
+runtime_shell_block() {
+  block_text "⛔ 变更管理拦截：$GUARD_RUNTIME_REL/ 是 guard 自有状态（执行记录与待报告项），任何状态下都不允许经 $TOOL_NAME 直接写入。
+
+检测到写入目标：$2
+命令：$(printf '%s' "$1" | head -c 200)
+
+如需立案修改受保护内容，请运行 \`openlogos change <slug>\`。"
+}
+
+# runtime_shell_write_check — Bash / PowerShell 可确定目标写入 guard 自有状态时阻断（任何 lifecycle 与提案状态）。
+# 引擎可用时按 classify 的 runtime= 结论；PowerShell 或引擎不可用时按文本保守识别（只会多拦）。
+runtime_shell_write_check() {
+  case "$TOOL_NAME" in
+    Bash|PowerShell) ;;
+    *) return 0 ;;
+  esac
+  local cmd
+  cmd="$(json_field "$INPUT" "tool_input.command" 2>/dev/null || true)"
+  [[ "$cmd" == *logos* ]] || return 0
+  if [ "$TOOL_NAME" = "Bash" ] && engine_classify bash; then
+    if [ "${#SHELL_RUNTIME[@]}" -gt 0 ]; then runtime_shell_block "$cmd" "${SHELL_RUNTIME[0]}"; fi
+    return 0
+  fi
+  if [[ "$cmd" == *.openlogos-runtime* ]] \
+    && printf '%s\n' "$cmd" | grep -qiE '(^|[;&|(`[:space:]])(rm|mv|cp|touch|mkdir|chmod|chown|tee|sed|remove-item|set-content|add-content|out-file|new-item|copy-item|move-item|ri|del|erase|sc|ac|ni)([[:space:]]|$)|>' 2>/dev/null; then
+    runtime_shell_block "$cmd" "$GUARD_RUNTIME_REL/"
+  fi
+  return 0
+}
+
+shell_target_block() {
+  local detail
+  detail="$(protect_block_detail)"
+  detail="${detail//\\n/$'\n'}"
+  block_text "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。
+
+检测到写入目标：${PROTECT_REL:-$2}
+${detail}
+
+命令：$(printf '%s' "$1" | head -c 200)
+
+请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
+}
+
+# shell_git_verdict <command> — git 判据生效、launched、无活跃提案时的 Bash / PowerShell 事前轻判：
+#   独立 git / openlogos 调用 → 放行（存在未关闭记录时 snapshot --rebase-only）；
+#   独立形态的引擎 restore 调用 → 放行且不拍快照；
+#   可确定写入目标受保护 → exit 2；只读命令 → 放行不拍快照；其余 → 放行并拍快照。
+# 引擎不可用、classify 失败或快照失败（整体采集失败）返回 1，由调用方按非 git 回落判定。
+shell_git_verdict() {
+  local cmd="$1" shell=bash t
+  [ "$TOOL_NAME" = "PowerShell" ] && shell=powershell
+  engine_classify "$shell" || return 1
+  if [ "${#SHELL_RUNTIME[@]}" -gt 0 ]; then runtime_shell_block "$cmd" "${SHELL_RUNTIME[0]}"; fi
+  case "$SHELL_KIND" in
+    independent)
+      if has_open_records; then engine_run snapshot --rebase-only >/dev/null || return 1; fi
+      exit 0
+      ;;
+    restore)
+      engine_recheck
+      exit 0
+      ;;
+  esac
+  if [ "$shell" = "powershell" ]; then
+    ps_git_targets "$cmd"
+  else
+    for t in ${SHELL_TARGETS[@]+"${SHELL_TARGETS[@]}"}; do
+      if is_protected "$t"; then shell_target_block "$cmd" "$t"; fi
+    done
+  fi
+  if [ "$SHELL_KIND" = "readonly" ]; then
+    engine_recheck
+    exit 0
+  fi
+  engine_run snapshot >/dev/null || return 1
+  exit 0
+}
+
+# bash_fallback_verdict <command> — 非 git 回落（或整体采集失败）时 Bash 沿用修改前的判定顺序：
+# 安全白名单先判 → 写入模式 → 路径提取与逐路径管辖判定 → 解析不出即阻断
+bash_fallback_verdict() {
+  local COMMAND_TRIMMED="$1" pattern NEEDS_BLOCK WRITE_TARGET ANY_PATH ALL_ALLOWED FIRST_WORD ARG
+
+  # Check safe patterns first
+  for pattern in "${BASH_SAFE_PATTERNS[@]}"; do
+    if echo "$COMMAND_TRIMMED" | grep -qE "$pattern" 2>/dev/null; then
+      exit 0
+    fi
+  done
+
+  # Check write patterns
+  NEEDS_BLOCK=0
+  for pattern in "${BASH_WRITE_PATTERNS[@]}"; do
+    if echo "$COMMAND_TRIMMED" | grep -qE "$pattern" 2>/dev/null; then
+      NEEDS_BLOCK=1
+      break
+    fi
+  done
+
+  if [ "$NEEDS_BLOCK" -eq 1 ]; then
+    # Check if the write target is whitelisted
+    # Extract potential file path from common patterns
+    WRITE_TARGET=""
+    if echo "$COMMAND_TRIMMED" | grep -qE " > |>> " 2>/dev/null; then
+      WRITE_TARGET="$(echo "$COMMAND_TRIMMED" | sed -E 's/.*[>]{1,2} *([^ ]+).*/\1/' 2>/dev/null || echo "")"
+    fi
+    if [ -n "$WRITE_TARGET" ] && path_write_allowed "$WRITE_TARGET"; then
+      exit 0
+    fi
+
+    # Path-argument jurisdiction (fix-guard-check-bash-write-target-jurisdiction):
+    # structured single-command write forms extract every path argument (skipping
+    # leading "-" option flags; cp/mv include source and destination) and run each
+    # through is_whitelisted_path — all outside the project root or whitelisted →
+    # allow; any inside and non-whitelisted → keep blocking. Unparseable forms
+    # (variable expansion, command substitution, backticks, pipes, compound
+    # commands, redirects) stay unconditionally blocked (fail-closed).
+    if [ -z "$WRITE_TARGET" ] \
+      && echo "$COMMAND_TRIMMED" | grep -qE '^(rm|cp|mv|mkdir|touch|chmod|chown) ' 2>/dev/null \
+      && ! echo "$COMMAND_TRIMMED" | grep -qE '[$`|;&<>]' 2>/dev/null; then
+      ANY_PATH=0
+      ALL_ALLOWED=1
+      FIRST_WORD=1
+      set -f
+      for ARG in $COMMAND_TRIMMED; do
+        if [ "$FIRST_WORD" -eq 1 ]; then FIRST_WORD=0; continue; fi
+        case "$ARG" in
+          -*) continue ;;
+        esac
+        # Strip simple surrounding quotes; a quoted path with spaces word-splits
+        # into fragments that resolve inside the project → conservative block.
+        ARG="${ARG#\"}"; ARG="${ARG%\"}"; ARG="${ARG#\'}"; ARG="${ARG%\'}"
+        [ -n "$ARG" ] || continue
+        ANY_PATH=1
+        if ! path_write_allowed "$ARG"; then
+          ALL_ALLOWED=0
+          break
+        fi
+      done
+      set +f
+      if [ "$ANY_PATH" -eq 1 ] && [ "$ALL_ALLOWED" -eq 1 ]; then
+        exit 0
+      fi
+    fi
+
+    block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(echo "$COMMAND_TRIMMED" | head -c 120)$(fallback_engine_hint)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
+  fi
+
+  # Default: allow (unknown commands pass through)
+  exit 0
+}
+
+# 保护范围变更受限命令：先于 lifecycle、提案状态与安全白名单（C14）
+scope_change_check
+
+if [ "$IS_LAUNCHED" -eq 0 ]; then
+  runtime_dir_file_write_check
+  runtime_shell_write_check
+  # All modules are initial — allow everything
+  exit 0
+fi
+
 # ── Step 3: Check guard file ──────────────────────────────────────────────────
 GUARD_FILE="logos/.openlogos-guard"
 if [ -f "$GUARD_FILE" ]; then
+  runtime_dir_file_write_check
+  # 有活跃提案：Bash / PowerShell 沿用提案期判定放行；git 判据生效时照常拍快照建立执行记录
+  # （各检查点只维护记录、不报告新变化），guard 自有状态的可确定目标写入恒阻断。
+  case "$TOOL_NAME" in
+    Bash|PowerShell)
+      runtime_shell_write_check
+      detect_guard_mode
+      if [ "$GUARD_MODE" = "git" ] && [ "$SHELL_KIND" != "readonly" ]; then
+        engine_run snapshot >/dev/null || true
+      fi
+      exit 0
+      ;;
+  esac
   # Active change proposal exists. Normally allow everything within scope, but
   # while the proposal is still in the plan stage (before plan-exit, i.e. the
   # PLAN_APPROVED marker does not yet exist) we narrow delta writes: only the
@@ -729,97 +1563,40 @@ case "$TOOL_NAME" in
       # 文件路径类工具解析不出目标路径：fail-closed（不放行）
       block "⛔ openlogos guard: 无法从 $TOOL_NAME 输入解析目标路径（file_path / notebook_path 缺失），写入门禁无法判定，fail-closed。"
     fi
-    if is_whitelisted_path "$FILE_PATH"; then
+    # 补查（git 判据生效时）：对未关闭执行记录做一次对比，结果不影响本次放行结论
+    detect_guard_mode
+    if [ "$GUARD_MODE" = "git" ]; then engine_recheck; fi
+    # 受保护判定（git 判据生效时十步判定；非 git 回落时不可豁免项 + 既有白名单 / guard.exempt）
+    if ! is_protected "$FILE_PATH"; then
       exit 0
     fi
-    block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：$FILE_PATH\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再修改代码。"
+    # 非 git 回落且未命中不可豁免项时，拦截文案与修改前逐字一致（回落回归锚）
+    _DETAIL=""
+    if [ "$PROTECT_STEP" != "fallback" ] || [ -n "$(fallback_engine_hint)" ]; then
+      _DETAIL="\\n$(protect_block_detail)"
+    fi
+    block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：$FILE_PATH${_DETAIL}\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再修改代码。"
     ;;
 
-  PowerShell)
+  Bash|PowerShell)
     COMMAND="$(json_field "$INPUT" "tool_input.command" || true)"
     if [ -z "$COMMAND" ]; then
       exit 0
     fi
-    COMMAND_TRIMMED="${COMMAND#"${COMMAND%%[![:space:]]*}"}"
-    windows_shell_verdict "$COMMAND_TRIMMED"
-    ;;
-
-  Bash)
-    COMMAND="$(json_field "$INPUT" "tool_input.command" || true)"
-    if [ -z "$COMMAND" ]; then
-      exit 0
-    fi
-
     # Trim leading whitespace
     COMMAND_TRIMMED="${COMMAND#"${COMMAND%%[![:space:]]*}"}"
 
-    # Check safe patterns first
-    for pattern in "${BASH_SAFE_PATTERNS[@]}"; do
-      if echo "$COMMAND_TRIMMED" | grep -qE "$pattern" 2>/dev/null; then
-        exit 0
-      fi
-    done
-
-    # Check write patterns
-    NEEDS_BLOCK=0
-    for pattern in "${BASH_WRITE_PATTERNS[@]}"; do
-      if echo "$COMMAND_TRIMMED" | grep -qE "$pattern" 2>/dev/null; then
-        NEEDS_BLOCK=1
-        break
-      fi
-    done
-
-    if [ "$NEEDS_BLOCK" -eq 1 ]; then
-      # Check if the write target is whitelisted
-      # Extract potential file path from common patterns
-      WRITE_TARGET=""
-      if echo "$COMMAND_TRIMMED" | grep -qE " > |>> " 2>/dev/null; then
-        WRITE_TARGET="$(echo "$COMMAND_TRIMMED" | sed -E 's/.*[>]{1,2} *([^ ]+).*/\1/' 2>/dev/null || echo "")"
-      fi
-      if [ -n "$WRITE_TARGET" ] && is_whitelisted_path "$WRITE_TARGET"; then
-        exit 0
-      fi
-
-      # Path-argument jurisdiction (fix-guard-check-bash-write-target-jurisdiction):
-      # structured single-command write forms extract every path argument (skipping
-      # leading "-" option flags; cp/mv include source and destination) and run each
-      # through is_whitelisted_path — all outside the project root or whitelisted →
-      # allow; any inside and non-whitelisted → keep blocking. Unparseable forms
-      # (variable expansion, command substitution, backticks, pipes, compound
-      # commands, redirects) stay unconditionally blocked (fail-closed).
-      if [ -z "$WRITE_TARGET" ] \
-        && echo "$COMMAND_TRIMMED" | grep -qE '^(rm|cp|mv|mkdir|touch|chmod|chown) ' 2>/dev/null \
-        && ! echo "$COMMAND_TRIMMED" | grep -qE '[$`|;&<>]' 2>/dev/null; then
-        ANY_PATH=0
-        ALL_ALLOWED=1
-        FIRST_WORD=1
-        set -f
-        for ARG in $COMMAND_TRIMMED; do
-          if [ "$FIRST_WORD" -eq 1 ]; then FIRST_WORD=0; continue; fi
-          case "$ARG" in
-            -*) continue ;;
-          esac
-          # Strip simple surrounding quotes; a quoted path with spaces word-splits
-          # into fragments that resolve inside the project → conservative block.
-          ARG="${ARG#\"}"; ARG="${ARG%\"}"; ARG="${ARG#\'}"; ARG="${ARG%\'}"
-          [ -n "$ARG" ] || continue
-          ANY_PATH=1
-          if ! is_whitelisted_path "$ARG"; then
-            ALL_ALLOWED=0
-            break
-          fi
-        done
-        set +f
-        if [ "$ANY_PATH" -eq 1 ] && [ "$ALL_ALLOWED" -eq 1 ]; then
-          exit 0
-        fi
-      fi
-
-      block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(echo "$COMMAND_TRIMMED" | head -c 120)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
+    # git 判据生效：事前轻判 + 快照（成功即退出）；整体采集失败时本次调用按非 git 回落判定
+    detect_guard_mode
+    if [ "$GUARD_MODE" = "git" ]; then
+      shell_git_verdict "$COMMAND_TRIMMED" || true
+      GUARD_MODE="fallback"
+      GUARD_FALLBACK_WHY="快照采集失败"
     fi
-
-    # Default: allow (unknown commands pass through)
-    exit 0
+    if [ "$TOOL_NAME" = "PowerShell" ]; then
+      windows_shell_verdict "$COMMAND_TRIMMED"
+    fi
+    bash_fallback_verdict "$COMMAND_TRIMMED"
     ;;
 
   *)

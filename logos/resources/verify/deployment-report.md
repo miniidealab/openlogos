@@ -1940,3 +1940,115 @@ openlogos --version   # 期望 0.15.16
 
 - 本工作单元只执行部署，不执行 `openlogos smoke` / `archive`；正式安装态 smoke（SMOKE-core-213、SMOKE-core-214）由后续 smoke 节点执行。
 - 随包 Skill 与根规范本次无改动，无需 `openlogos sync` 验收。
+
+# OpenLogos 0.15.18 本地全局部署报告（guard-versioned-content-scope）
+
+> 部署方案：`core-01-deployment-plan.md`「OpenLogos 0.15.18 发布方案（guard 以版本控制内容为保护对象，本地全局）」。授权依据：proposal 决策 C08（用户回答「需要的」），以及用户 2026-10-07「验收通过，请打开任务列表并执行 guard-versioned-content-scope 的部署任务」的明确授权（半自动模式，非 `--auto`）。目标环境：**本机 npm 全局 prefix**（`/opt/homebrew`），不含 `npm publish`、dist-tag、Git tag、GitHub Release、`git push`，不改写其他仓库。
+
+## 一、部署结论
+
+- 结论：**全局安装成功**。新 shell 复核 `openlogos --version` = `0.15.18`，入口 realpath、包内 `package.json`、asset-manifest 同源；`VERIFY_PASS` 在场（final verify 2156 用例，2146 通过、0 失败、10 跳过，覆盖度 100%）。
+- 数据迁移 / 服务启动：无 / 不适用。`logos.config.json` 新增字段可选，未改本仓配置。
+- 公开副作用：零。
+- 本仓 `openlogos sync` 读回结果见第五节；之后结束当前会话，在新会话中执行 `deploy-done` 与 smoke（见第六节）。
+
+## 二、部署前冻结（2026-10-07T15:15:50Z）
+
+| 项 | 值 |
+|---|---|
+| 全局入口 | `/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| npm prefix -g | `/opt/homebrew` |
+| 部署前全局版本 | `0.15.17`（仓内 `cli/package.json` 同为 `0.15.17`，候选取下一 patch `0.15.18`） |
+| 本仓 `.claude/settings.json` SHA-256 | `851633cacb6cd7457606eaca30abcbc8a0766e4d868462b22ac7cf391a4b1a73` |
+| 本仓 `.claude/openlogos/bin/guard-check` SHA-256 | `da3e668830945cc96bf1214a9ae8c255fa6ce10e84b8f4ff2aae351ee93d4bd7` |
+| 本仓 `.gitignore` SHA-256 | `ada46dc85fa4e207c0face493c266c871644ae947d5382b020eb81c1a8f45a94` |
+| `logos/.openlogos-runtime/` | 部署前不存在 |
+
+## 三、固定制品与回滚点
+
+| 检查项 | 结果 |
+|---|---|
+| 回滚 tarball | `cli/rollback/miniidealab-openlogos-0.15.17.tgz`，2,388,764 字节 |
+| 回滚 SHA-256 | `fb7e5e3f2950599d0d6a2d47587cd0a3c4acacfc117ff5e079bca8f34be302ad` |
+| 回滚制品来源 | 0.15.17 同版本源码（提交 `42d2aeb`）独立 worktree，`npm ci` + 真实 `npm pack`。其中 `dist/lib/authority-closure.js` 取自全局 0.15.17 安装态（SHA-256 `cb2ae804…` 与 0.15.17 asset-manifest 登记一致，见第七节遗留风险 1）。制品 800 个文件与全局安装逐字节一致；全局安装另含 47 个历史残留编译产物 |
+| 升版 | `node cli/scripts/bump-version.mjs 0.15.18`：package / lockfile / 5 个 plugin manifest / `LOCAL_RELEASE_CANDIDATE_VERSION`=0.15.18 / `LOCAL_RELEASE_ROLLBACK_VERSION`=0.15.17，asset-manifest payloadHash 由生成器重算；CHANGELOG 补 `0.15.18`。提交 `444f15f` |
+| 升版后源码回归 | `npm run build` 通过；`cd cli && npm test` 165 文件 / 2542 用例全过，退出码 0 |
+| candidate tarball | `miniidealab-openlogos-0.15.18.tgz`（真实 `npm pack`，会话 scratchpad），2,614,325 字节 |
+| candidate SHA-256 | `0434d57c265e2b5f933f29b57150b6f5f684c9915bf3e324ab72d7307ebdf309` |
+| 解包核对 | package / asset-manifest 版本 `0.15.18`；`claude-plugin-template/bin/guard-check`、`guard-post-check.cjs` 与仓内源逐字节一致且等于 manifest 登记；Cursor 模板 `hooks.json` 含 `afterShellExecution`，`runtime.cjs` 与仓内源一致；`dist/lib/cursor-adapter.js` 的 `CURSOR_HOOK_EVENTS` 含 `afterShellExecution` |
+
+可复制回滚命令：
+
+```bash
+npm install -g cli/rollback/miniidealab-openlogos-0.15.17.tgz
+openlogos --version   # 期望 0.15.17
+```
+
+本仓已 sync 后的回滚另需按部署方案「失败处置与回滚边界」第 3 条清理残留注册（已在第四节演练）。
+
+## 四、隔离安装态证据（与源码回归分开）
+
+| 类别 | 结果 |
+|---|---|
+| candidate identity | 一次性 prefix 安装固定 tarball：`--version` = `0.15.18`，入口 realpath 位于隔离 prefix，无 workspace 符号链接；`--help` 列出 `ignore`、`exempt` |
+| 行为矩阵（安装态 smoke runner 驱动隔离 prefix） | `OPENLOGOS_GUARD_VERSIONED_SMOKE_ENTRY` 指向隔离入口、结果写临时账本：SMOKE-core-215～221 全部 pass；222 skip（Cursor 真实宿主人工实测项，缺证据） |
+| 全局零触碰 | 矩阵前后 `command -v openlogos` 均为 `/opt/homebrew/bin/openlogos`，版本均为 `0.15.17` |
+| 回滚演练 | 另一隔离 prefix 安装回滚 tarball（`0.15.17`）：旧版 init 的项目加入用户 hook（`PostToolUse` / `Write`）与 `.gitignore` 用户内容 → 新版 sync（新增 `guard-post-check.cjs`、PostToolUse / PostToolUseFailure / Stop 注册与托管区块）→ 旧版 sync：托管 `guard-check` 恢复为旧字节；**旧版 sync 不清理新注册**（与方案预期一致）→ 按方案第 3 条清理后不再含 `guard-post-check` 引用，用户 hook 与 `.gitignore` 用户内容保留；对照：旧 guard 对 `mkdir -p dist/x` exit 2（新版放行），差异确由候选引入 |
+
+## 五、本机全局部署与本仓 sync
+
+| 项 | 结果 |
+|---|---|
+| 全局安装 | `npm install -g <同一 candidate tarball>`，rc=0 |
+| 新 shell 复核 | 入口 `/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`；`--version` / package.json / asset-manifest 均为 `0.15.18`；安装态 `guard-check`、`guard-post-check.cjs` 与仓内源逐字节一致；`--help` 含 `ignore`、`exempt` |
+| 本仓 `openlogos sync` | 新全局 CLI 执行，rc=0（当前会话最后一次 Bash 调用） |
+| 托管 `guard-check` 与随包字节 | 一致（SHA-256 `87505766c566becc232d60acce4bc5ef8ab24820908eabf553ce874959610a06`） |
+| 托管 `guard-post-check.cjs` 与随包字节 | 一致（SHA-256 `bdeab4341c935fa9678c34bc36961a0dc579b7b2198da9b92d73b4ee2c88e18c`） |
+| `.claude/settings.json` hook 注册 | SessionStart: None, None；PreToolUse: Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell；PostToolUse: Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop；PostToolUseFailure: Bash|PowerShell；Stop: None；指向 `guard-post-check.cjs` 的条目 3 条；SessionEnd 注册：False |
+| `.gitignore` | 区块外与 HEAD 逐字节一致；SHA-256 `3dfea0bf45dfd82fe78ba6c4a8405a08fb0654b52e3a63d16780ef2485257014` |
+| 运行时目录忽略 | `.gitignore:65:logos/.openlogos-runtime/ logos/.openlogos-runtime/x` |
+
+`.gitignore` 托管区块 diff：
+
+```diff
+@@ -59,3 +59,8 @@ Thumbs.db
+ # Python 编译产物（ui-ux-pro-max scripts/ 运行后生成）
+ __pycache__/
+ *.py[cod]
++
++# >>> openlogos managed >>>
++# 由 openlogos 维护，请用 `openlogos ignore` 修改；区块外内容不会被改动
++logos/.openlogos-runtime/
++# <<< openlogos managed <<<
+```
+
+## 六、会话切换与后续步骤
+
+- 本仓 sync 是当前会话最后一次 Bash 调用：sync 本身由旧托管 guard 判定（`openlogos` 安全白名单），不产生执行记录。部署期间 `logos/.openlogos-guard` 仍在，新 guard 走「有活跃提案」分支，只维护记录、不报告变化。
+- Claude Code 可能不热加载 `.claude/settings.json` 中新注册的 PostToolUse / PostToolUseFailure / Stop。因此 sync 后结束当前会话，在**新会话**中：
+  1. 确认 SessionStart 注入正常、`logos/.openlogos-runtime/` 下无异常待报告项；
+  2. 执行 `openlogos deploy-done`（勾选 `[deploy]`、写 `DEPLOY_DONE`）；
+  3. 经用户明确授权执行 `openlogos smoke`（SMOKE-core-215～222；222 需先提供 Cursor 真实宿主人工实测证据 `logos/resources/verify/smoke-evidence/SMOKE-core-222.json`，缺失时为 skip，有 skip 不能写 `SMOKE_PASS`）；
+  4. smoke 通过后经用户授权 archive。
+- `.gitignore` 托管区块是 sync 产生的预期产物（diff 见第五节），随本提案后续提交入库。
+
+## 七、遗留风险
+
+1. **构建可复现性（存量问题，非本提案引入）**：`cli/scripts/build-asset-manifest.mjs` 仍登记 `dist/lib/authority-closure.js`，其源文件已在 `lite-cut2a-remove-authority-closure` 删除；主仓能打包只因 `cli/dist/` 残留旧编译产物。干净 checkout 中 `npm pack`（prepack 的生成 manifest 步骤）必然失败。同理，`cli/dist/` 中其他源已删除的旧产物（如 `dist/commands/merge-apply.*`）也被打进了 0.15.18 包。功能上无影响（不被现行代码引用），但发布产物不可从源码纯净复现。建议另立提案：清理 manifest 登记与 `dist/` 残留，并在 prepack 前清空 `dist/`。
+2. **Cursor 匿名执行记录累积**：见 `logos/resources/reference/openlogos-cursor-anonymous-record-accumulation-issue.md`，待 SMOKE-core-222 实测后处理。
+3. **待真实宿主核实**：Claude Code 后台任务工具（BashOutput / TaskOutput / KillShell / TaskStop）的 tool_response 字段（引擎当前容错解析）；Cursor 调用标识字段名、`afterShellExecution` 反馈渠道、`permission: ask` 是否弹出。
+4. **首次检查耗时**：新 guard 首次建立 `raw-baseline.json` 需对全部已跟踪文件计算原始字节摘要，首次检查明显慢于后续（切片 3 实测本仓规模约 1.3s）。
+
+## 八、部署完成与 smoke 结果（2026-10-07）
+
+- `openlogos deploy-done`：`[deploy]` 3/3 勾选，写入 `DEPLOY_DONE`。执行前检查 `logos/.openlogos-runtime/`：无待报告项。
+- **hook 热加载实测**：sync 之后同一会话内的 Bash 调用留下了关闭墓碑 `guard-records/<id>.closed`，说明新注册的 PostToolUse 在当前会话已触发并按规则关闭记录——Claude Code 热加载了 `.claude/settings.json` 中新增的 hook。第六节「可能不热加载」的应对为保守预案，实际未触发该风险。
+- `openlogos smoke`（用户明确授权）：exit 0，Gate 3.8 PASS，写入 `SMOKE_PASS`。全量 Defined 179 / Executed 184 / Passed 76 / Failed 0 / Skipped 108（多数为历史版本 runner 不在各自适用窗口内的正常 skip）。
+- 本提案：SMOKE-core-215～221 在本机全局 0.15.18 安装态全部 pass；**SMOKE-core-222 skip**（缺 Cursor 真实宿主人工实测证据 `logos/resources/verify/smoke-evidence/SMOKE-core-222.json`）。
+
+### 已知遗留（用户 2026-10-07 决定接受现状并归档）
+
+1. **SMOKE-core-222 未实测**：Cursor 真实宿主的 `afterShellExecution` 反馈渠道、调用标识字段、`permission: ask` 是否弹出、sessionStart 待报告项注入、引擎副本哈希等结论尚未取得。`CURSOR_ASK_POLICY` 保持规范默认 `ask`，`GENERATION_KEY_VERIFIED` 保持 `false`。后续实测后补充证据并重跑 smoke；结论回填 `spec/cursor-plugin.md` §8。相关风险见 `logos/resources/reference/openlogos-cursor-anonymous-record-accumulation-issue.md`。
+2. **`SMOKE_PASS` 与提案级 smoke 规格不一致**：`core-smoke-test-cases.md` 规定 SMOKE-core-222「有 skip 时不得写 `SMOKE_PASS`」，但 Gate 3.8 按全局口径（失败数与覆盖度）判定，不识别提案级「不得 skip」规则，runner 也无法阻止 CLI 写标记。此缺口在既往提案（如 SMOKE-core-100～107 的同类规则）中已存在。本次 `SMOKE_PASS` 按用户决定保留，**不代表 SMOKE-core-222 已通过**。建议另立提案：让 smoke 门识别提案声明的必需用例，必需用例 skip 时不写 `SMOKE_PASS`。
+3. 第七节遗留风险 1（构建可复现性：asset-manifest 登记已删除源文件的 `dist/lib/authority-closure.js`，`dist/` 残留旧产物入包）仍待另立提案处理。
+4. 测试规格勘误待另立小提案统一修正：UT-S09-387 命中序号仍为旧编号；ST-S09-158 ④、SMOKE-core-218 ⑤ 与「Stop 关闭前台记录」冲突；UT-S09-400 关于 SessionStart 是否算送达与场景不一致；UT-S01-131 仍写三托管事件；SMOKE-core-217 ⑨⑩ 步骤顺序；`cp` 源路径与执行位变化的规范措辞澄清。

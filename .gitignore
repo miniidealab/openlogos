@@ -59,3 +59,8 @@ Thumbs.db
 # Python 编译产物（ui-ux-pro-max scripts/ 运行后生成）
 __pycache__/
 *.py[cod]
+
+# >>> openlogos managed >>>
+# 由 openlogos 维护，请用 `openlogos ignore` 修改；区块外内容不会被改动
+logos/.openlogos-runtime/
+# <<< openlogos managed <<<
