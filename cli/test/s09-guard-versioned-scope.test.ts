@@ -137,6 +137,16 @@ describe('S09-F 受保护判定 is_protected — 函数层', () => {
         expect([abs.protected, abs.step], `${v.fixture} 绝对 ${v.path}`).toEqual([v.protected, String(v.step)]);
       }
     }
+    // 显式覆盖字符类别，防止默认 C 环境掩盖 Bash 对变量后中文括号的解析错误。
+    const configRoot = roots.get('G-ignored-spec')!;
+    const utf8Locale = process.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8';
+    for (const LC_CTYPE of ['C', utf8Locale]) {
+      for (const configPath of ['logos/logos.config.json', join(configRoot, 'logos/logos.config.json')]) {
+        const got = callIsProtected(file, configRoot, configPath, undefined, { LANG: undefined, LC_ALL: undefined, LC_CTYPE });
+        expect([got.protected, got.step, got.reason], LC_CTYPE).toEqual([true, '3', '保护范围来源（logos/logos.config.json）']);
+        expect(got.stderr, LC_CTYPE).not.toContain('unbound variable');
+      }
+    }
     // 先命中先返回：被忽略的 logos.config.json 仍命中序 3（不落到序 9）；被忽略目录下已跟踪文件命中序 8（不落到序 9）
     const ignored = roots.get('G-ignored-spec')!;
     expect(git(ignored, ['check-ignore', '-q', 'logos/resources/test/t.md']).status).toBe(0);

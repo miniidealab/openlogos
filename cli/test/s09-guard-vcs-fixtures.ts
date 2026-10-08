@@ -184,11 +184,11 @@ export function loadGuardRegion(dir: string): { file: string; body: string } {
 export interface ProtectVerdict { protected: boolean; step: string; reason: string; stderr: string }
 
 /** 在 root 下调用真实 is_protected（每次新进程，guard.exempt 与模式探测各自重读）。 */
-export function callIsProtected(regionFile: string, root: string, path: string, pathEnv?: string): ProtectVerdict {
+export function callIsProtected(regionFile: string, root: string, path: string, pathEnv?: string, environment: Record<string, string | undefined> = {}): ProtectVerdict {
   const r = spawnSync('bash', ['-c',
     'set -u; source "$1"; detect_python; if is_protected "$2"; then rc=0; else rc=1; fi; printf "rc=%s\\nstep=%s\\nreason=%s\\nmode=%s\\n" "$rc" "$PROTECT_STEP" "$PROTECT_REASON" "$GUARD_MODE"',
     'fn', regionFile, path], {
-    cwd: root, encoding: 'utf-8', timeout: 20_000, env: cleanEnv(pathEnv !== undefined ? { PATH: pathEnv } : {}),
+    cwd: root, encoding: 'utf-8', timeout: 20_000, env: cleanEnv({ ...environment, ...(pathEnv !== undefined ? { PATH: pathEnv } : {}) }),
   });
   const out = r.stdout ?? '';
   const m = /rc=(\d)\nstep=([^\n]*)\nreason=([^\n]*)\n/.exec(out);
