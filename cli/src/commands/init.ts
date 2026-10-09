@@ -1037,6 +1037,11 @@ function migrateClaudeHookEntries(
 export const CLAUDE_GUARD_HOOK_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell';
 const CLAUDE_GUARD_HOOK_LEGACY_MATCHER = 'Edit|Write|Bash';
 
+/** settings.json 顶层必须是 JSON 对象；数组 / 标量与非法 JSON 同样按损坏处理（sync-claude-response-language C03）。 */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function mergeClaudePreToolUseGuard(root: string): boolean {
   const settingsPath = join(root, '.claude', 'settings.json');
   if (!existsSync(settingsPath)) return false; // SessionStart merge creates it first
@@ -1047,6 +1052,7 @@ function mergeClaudePreToolUseGuard(root: string): boolean {
   } catch {
     return false; // Malformed JSON — skip
   }
+  if (!isJsonObject(data)) return false; // 顶层非对象按损坏处理，原样保留
 
   if (!data['hooks'] || typeof data['hooks'] !== 'object') {
     data['hooks'] = {};
@@ -1115,6 +1121,7 @@ export function mergeClaudePostCheckHooks(root: string): boolean {
   } catch {
     return false;
   }
+  if (!isJsonObject(data)) return false;
   if (!data['hooks'] || typeof data['hooks'] !== 'object') data['hooks'] = {};
   const hooksObj = data['hooks'] as Record<string, unknown>;
   let changed = false;
@@ -1190,6 +1197,7 @@ function mergeClaudeSettings(root: string): { created: boolean; updated: boolean
     // Malformed JSON — leave file intact, skip merge
     return { created: false, updated: false };
   }
+  if (!isJsonObject(data)) return { created: false, updated: false };
 
   if (!data['hooks'] || typeof data['hooks'] !== 'object') {
     data['hooks'] = {};
@@ -1211,6 +1219,40 @@ function mergeClaudeSettings(root: string): { created: boolean; updated: boolean
   return { created: false, updated };
 }
 
+/**
+ * sync-claude-response-language（功能规格 §2.89）：项目 locale → Claude Code `language` 设置的托管值。
+ * 托管值集合即本表取值，按字符串精确比较；不在集合内的值一律视为用户自定义值。
+ */
+export const CLAUDE_LANGUAGE_BY_LOCALE: Readonly<Record<Locale, string>> = { zh: 'chinese', en: 'english' };
+
+/**
+ * 按 locale 合并项目 `.claude/settings.json` 顶层 `language`（§2.89.2）：缺失写入、托管值跟随 locale、
+ * 自定义值保留（由调用方提示）、非法 JSON / 顶层非对象原样保留。只在变更时重写，其它字段值与顺序不变。
+ */
+export function mergeClaudeLanguageSetting(root: string, locale: Locale): { updated: boolean; customValue?: unknown } {
+  const settingsPath = join(root, '.claude', 'settings.json');
+  if (!existsSync(settingsPath)) return { updated: false };
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+  } catch {
+    return { updated: false }; // Malformed JSON — leave file intact, skip merge
+  }
+  if (!isJsonObject(data)) return { updated: false };
+  const obj = data;
+  const target = CLAUDE_LANGUAGE_BY_LOCALE[locale];
+  if (Object.prototype.hasOwnProperty.call(obj, 'language')) {
+    const current = obj['language'];
+    if (current === target) return { updated: false };
+    if (typeof current !== 'string' || !Object.values(CLAUDE_LANGUAGE_BY_LOCALE).includes(current)) {
+      return { updated: false, customValue: current };
+    }
+  }
+  obj['language'] = target;
+  writeFileSync(settingsPath, JSON.stringify(obj, null, 2));
+  return { updated: true };
+}
+
 export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
   commandCount: number;
   agentCount: number;
@@ -1222,7 +1264,14 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
 
   // fix-claude-guard-hook-project-dir-and-sync-deploy（缺陷③）：guard 资产（bin + hook 注册/迁移）
   // 是 sync 托管资产面成员，**恒部署**——不得被 commands 幂等 skip 一并跳过，否则存量项目永远补不齐硬闸。
-  const guardHooksUpdated = deployClaudeGuardAssets(root, source);
+  const guardAssetsUpdated = deployClaudeGuardAssets(root, source);
+  // sync-claude-response-language：language 合并紧随 hooks 合并（骨架已由 SessionStart 合并创建），
+  // 同属恒部署路径（§2.89.3）。
+  const languageResult = mergeClaudeLanguageSetting(root, locale);
+  if ('customValue' in languageResult) {
+    console.log(`  ℹ ${t(locale, 'init.claudeLanguageCustom', { value: JSON.stringify(languageResult.customValue) })}`);
+  }
+  const guardHooksUpdated = guardAssetsUpdated || languageResult.updated;
 
   // Idempotency check: if commands dir already has files, skip commands/agents deployment
   const commandsTargetDir = join(root, '.claude', 'commands', 'openlogos');
@@ -1258,7 +1307,6 @@ export function deployClaudeCodePlugin(root: string, locale: Locale = 'en'): {
     }
   }
 
-  void locale; // locale reserved for future use
   return {
     commandCount,
     agentCount,

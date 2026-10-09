@@ -47,7 +47,7 @@
     },
     {
       "path": "dist/i18n.js",
-      "sha256": "151216bacbf074746df9f43d65ce3a7b059b51333c293323aabbf3ae587d367d"
+      "sha256": "a0c1653db36716f8816c5df6bedfa3b815676268db69d21362f42d3ede1af551"
     }
   ],
   "schemas": [
@@ -110,5 +110,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "eed2e86c069c2992929df5538af884dc2101ed57e0ff328da8c4b5d853255fc0"
+  "payloadHash": "132b53ab5bbb3bcdb51438cc1efecc2b1ae61b5a583c600d2881f11fab2684f4"
 }
