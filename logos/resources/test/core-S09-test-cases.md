@@ -1318,3 +1318,51 @@
 - 后台调用用夹具脚本以「信号文件」控制写入时机，不依赖 sleep 竞态；ST 中「后台任务结束」以按真实 hook 输入采集的 tool_response 夹具驱动。
 - 「与修改前实测基准逐条相同」类断言（UT-S09-389、UT-S09-407、ST-S09-173）的基准由修改前分发源对同一输入集实测生成并入库为夹具，不在测试代码中手写期望。
 - 运行时目录断言以磁盘事实取证（`guard-records/` 与墓碑、`pending-reports.jsonl`、`pending-spill/`、`reported.jsonl`、`raw-baseline.json`、`state.lock` 的文件与内容），不以日志文本代替。
+
+## S09 原型任务勾选不越过 plan 批准门测试
+
+> 覆盖功能规格 §2.26.4「原型任务勾选不构成离开 plan」；根规范 `spec/flow-spec.md` §12.4「GUI 原型门前例外优先于 `[delta]` 勾选进度」与「ordering 例外与 flow-derive 判据」中「例外与 `[delta]` 勾选数无关」；场景 S09-G；来源变更 fix-prototype-plan-approval-state（决策 C03、C04；proposal r1 评审 F1）。
+>
+> **夹具口径**：一律在 `mktemp -d` 一次性隔离 launched 项目内构造，不依赖本仓或 token-agent 现场。「GUI 夹具」指模块 `product_type: web`、提案 UI/UX 变更声明 `ui_impact:true`、proposal / tasks 已脱模板（plan 就绪）、`deltas/prd/2-product-design/2-page-design/` 下有原型 html；「仅原型」指 `deltas/` 下除原型 html 外无任何可合并 delta。「部分勾选」复刻事故形态：`[delta]` 7 条只勾原型 1 条；「全部勾选」指 `[delta]` 只规划原型（1 条或多条）且全部勾选。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-421 | 零勾选、仅原型、无批准仍驻留 plan（回归） | GUI 夹具、仅原型、`[delta]` 零勾选、无 `PLAN_APPROVED` | 派生 `proposal_step` 并投影 `plan_state` | `proposal_step=="ready-to-delta"`；`plan_ready=true`、`plan_gate_pending=true`、`plan_approved=false` |
+| UT-S09-422 | 部分勾选、仅原型、无批准不进入 delta-writing | GUI 夹具、仅原型、`[delta]` 7 条只勾原型 1 条、无 `PLAN_APPROVED` | 同上 | `proposal_step=="ready-to-delta"`、`plan_gate_pending=true`、`plan_approved=false`（**修复前派生为 `delta-writing`、`plan_approved=true`**） |
+| UT-S09-423 | 全部勾选、仅原型、无批准不进入 ready-to-merge | GUI 夹具、仅原型、两臂：① `[delta]` 仅一条原型且已勾；② `[delta]` 两条原型均已勾、对应两个 html；均无 `PLAN_APPROVED` | 同上 | 两臂均 `proposal_step=="ready-to-delta"`、`plan_gate_pending=true`、`plan_approved=false`（**修复前派生为 `ready-to-merge`、`plan_approved=true`**） |
+| UT-S09-424 | 已批准后沿用既有完成语义 | GUI 夹具、仅原型；`PLAN_APPROVED` 两臂（前置阶段直接构造，见「自动化与证据要求」批准文件来源规则）：空文件、带合法 provenance body（`ui_prototype_rendered` + `pages` + `hashes`）；每臂再分部分勾选与全部勾选 | 同上 | 部分勾选为 `delta-writing`，全部勾选为 `ready-to-merge`；四种组合均 `plan_approved=true`、`plan_gate_pending=false`；派生前后 `PLAN_APPROVED` 的 SHA-256 一致 |
+| UT-S09-425 | 混合非原型 delta 照常进入 spec | GUI 夹具；`deltas/` 含原型 html 与 `1-feature-specs/*.md`；无 `PLAN_APPROVED`；两臂：部分勾选、全部勾选 | 同上 | 部分勾选为 `delta-writing`，全部勾选为 `ready-to-merge`，与修复前逐字一致（门前例外仅限仅原型） |
+| UT-S09-426 | 非 GUI 与 `ui_impact:false` 判据逐字节不变 | 三臂：① `product_type: cli`、`[delta]` 已勾但零 delta 文件、无批准；② 同 ① 但零勾选；③ `product_type: web`、`ui_impact:false`、仅原型 html、已勾、无批准 | 同上；与修复前实现对同一夹具的派生结果比对 | ① `delta-writing`；② `ready-to-delta`；③ `delta-writing`；三臂 `proposal_step` 与 `plan_state` 全部字段与修复前逐字一致 |
+| UT-S09-427 | 其余阶段与更高优先级出口不受影响 | 四臂：① 无 `[delta]`、含空 `[code]` 的纯代码提案；② proposal 未脱模板；③ GUI 仅原型、部分勾选且存在合并事务或 `SPEC_MERGED`；④ GUI 仅原型、存在 `VERIFY_PASS` | 同上 | ① `spec-complete-required`；② `writing`；③④ 与修复前派生结果逐字一致，不被拉回 `ready-to-delta`；任一臂均不依据历史 `GATE_AUTO_PASSED` 推断批准 |
+| UT-S09-428 | status 只读 | UT-S09-421～UT-S09-423 的三个无批准夹具 | 对每个夹具连续运行两次真实 `openlogos status --format json`，前后计算提案目录全部文件 SHA-256 | 两次输出的 `proposal_step` 与 `plan_state` 一致；提案目录字节零变化，不生成 `PLAN_APPROVED` 或 `GATE_AUTO_PASSED` |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-193 | 零勾选与部分勾选两臂端到端：批准先于非原型写入 | S09-G Step 4～15（零勾选臂、部分勾选臂） | 两个独立夹具，均为 GUI 夹具、仅原型、无 `PLAN_APPROVED`，安装态托管 guard 已部署到临时项目：臂 a 为 `[delta]` 零勾选；臂 b 为 `[delta]` 7 条只勾原型 1 条（事故形态） | 两臂各自完整执行：① 真实 `openlogos status --format json`；② 真实 `openlogos next --format json`；③ 以真实 PreToolUse stdin 驱动托管 guard，Write `deltas/prd/2-product-design/1-feature-specs/x.md`；④ 真实 `openlogos next --auto --format json`；⑤ 读回 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED`；⑥ 重复步骤 ③；⑦ 真实 `openlogos status --format json` | 两臂：① `proposal_step=="ready-to-delta"`、`plan_gate_pending=true`、`plan_approved=false`（**臂 b 修复前为 `delta-writing`、`plan_approved=true`；臂 a 修复前后一致，为回归臂**）；② `proposal_step=="ready-to-delta"`、`step_meta.kind=="gate"`、`plan_gate_pending=true`、`plan_approved=false`，未自动放行（`gate_auto_passed` 不为 true），且 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED` 均不存在；`next_node` 沿用既有契约可提示门后的 write-delta，不代表批准或执行派发；③ exit 2，拦截原因为 plan 阶段仅放行原型；④ `gate_auto_passed=true`、`next_node.id=="write-delta"`；⑤ `PLAN_APPROVED` 存在，`GATE_AUTO_PASSED` 恰有一行 `gate_id=="plan-exit"`、`proposal_step=="ready-to-delta"`，且两者写入均早于步骤 ⑥；⑥ exit 0；⑦ `proposal_step=="delta-writing"`、`plan_approved=true` |
+| ST-S09-194 | 全部勾选形态端到端：批准前后 guard 一致，批准后重新派生为 ready-to-merge | S09-G Step 4～15（全部勾选臂） | GUI 夹具、仅原型、`[delta]` 仅一条原型且已勾、无 `PLAN_APPROVED`；安装态托管 guard 已部署到临时项目 | ① 真实 `openlogos status --format json`；② 真实 `openlogos next --format json`；③ 以真实 PreToolUse stdin 驱动托管 guard，Write `deltas/prd/2-product-design/1-feature-specs/x.md`；④ 真实 `openlogos next --auto --format json`；⑤ 读回 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED`；⑥ 重复步骤 ③；⑦ 真实 `openlogos status --format json`；⑧ 真实 `openlogos next --format json` | ① `proposal_step=="ready-to-delta"`、`plan_gate_pending=true`、`plan_approved=false`（**修复前为 `ready-to-merge`、`plan_approved=true`**）；② `proposal_step=="ready-to-delta"`、`step_meta.kind=="gate"`、`plan_gate_pending=true`、`plan_approved=false`，未自动放行（`gate_auto_passed` 不为 true），且 `PLAN_APPROVED` 与 `GATE_AUTO_PASSED` 均不存在；`next_node` 沿用既有契约可提示门后的 write-delta，不代表批准或执行派发（**修复前阶段为 ready-to-merge、前沿为 spec 出口门**）；③ exit 2，拦截原因为 plan 阶段仅放行原型；④ `gate_auto_passed=true`，本次响应按 R4 窄例外 `next_node.id=="write-delta"`；⑤ `PLAN_APPROVED` 存在，`GATE_AUTO_PASSED` 恰有一行 `gate_id=="plan-exit"`、`proposal_step=="ready-to-delta"`，且两者写入均早于步骤 ⑥；⑥ exit 0；⑦ `proposal_step=="ready-to-merge"`、`plan_approved=true`；⑧ 前沿为 spec 出口门，不再返回 write-delta |
+| ST-S09-195 | auto 消费幂等且不覆盖合法 provenance body | S09-G Step 8b～10、EX-9G.3 | 两个夹具：A 为 GUI 仅原型部分勾选、无 `PLAN_APPROVED`；B 同 A 但已有带合法 provenance body 的 `PLAN_APPROVED` | A：连续两次真实 `openlogos next --auto --format json`，读回 `GATE_AUTO_PASSED`；B：记录 `PLAN_APPROVED` SHA-256 后连续两次 `next --auto`，再次计算 SHA-256 | A：`GATE_AUTO_PASSED` 中 `plan-exit` 行恰为 1 条，第二次响应不再 `gate_auto_passed`；B：`PLAN_APPROVED` 字节不变，`GATE_AUTO_PASSED` 不新增 `plan-exit` 行，两次均派生 `delta-writing` |
+
+### 追溯与覆盖
+
+- 主修·部分勾选不进入 delta-writing：UT-S09-422、ST-S09-193 臂 b（旧实现必红）。
+- 主修·全部勾选不进入 ready-to-merge（proposal 评审 F1）：UT-S09-423、ST-S09-194（旧实现必红）。
+- 零勾选回归：UT-S09-421（派生与投影）、ST-S09-193 臂 a（真实 status / 默认 next / auto / guard 命令链）；既有原型例外用例 UT-S09-70、UT-S09-71 保持不变。
+- 批准后完成语义与 provenance body：UT-S09-424、ST-S09-195。
+- 不受影响范围：UT-S09-425（混合非原型）、UT-S09-426（非 GUI 与 `ui_impact:false`）、UT-S09-427（纯代码、未就绪、更高阶段）。
+- 只读约束：UT-S09-428。
+- 验收标准 2 的三臂真实命令链（默认 next 等待、批准前 guard 拒绝、auto 先落盘批准与审计、批准后 guard 放行、重新派生）：零勾选与部分勾选为 ST-S09-193 臂 a、臂 b，全部勾选为 ST-S09-194，均为步骤 ①～⑦。批准先于首次非原型写入的 CLI 侧契约即各臂步骤 ③～⑥。宿主侧（driver 评审后重读前沿、消费批准门）由关联 RunLogos 提案 `fix-review-plan-gate-handoff` 覆盖。
+- 功能规格：§2.26.4；根规范：`spec/flow-spec.md` §12.4、「ordering 例外与 flow-derive 判据」、§12.3 R4；场景：S09-G；来源变更：fix-prototype-plan-approval-state。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+- UT-S09-422、UT-S09-423 必须断言最终 `proposal_step` 与 `plan_state`，不得只断言 `isPrototypeOnlyDelta` / `shouldEnterSpec` 的返回值。
+- UT-S09-426 的「与修复前逐字一致」以固定期望值断言（期望值取自修复前实现对同一夹具的派生结果并写入测试），不在测试运行时依赖旧版本二进制。
+- ST-S09-193～ST-S09-195 必须运行**真实 `openlogos status` / `openlogos next` / `openlogos next --auto`** 进程并断言退出码与 JSON 输出；ST-S09-193（两臂）与 ST-S09-194 的 guard 步骤必须以宿主真实 PreToolUse stdin 驱动临时项目的托管 `guard-check`，不得以库内函数调用替代；ST-S09-193 两臂须使用各自独立的一次性夹具，不得共享提案目录。
+- **批准文件的来源规则按用例类型区分**：
+  - **验证批准消费与顺序的场景测试**（ST-S09-193 两臂、ST-S09-194、ST-S09-195 夹具 A）：`next --auto` 执行前不得预置 `PLAN_APPROVED` 或 `GATE_AUTO_PASSED`，两者只能由被测的 `next --auto` 生成，不得手工伪造批准来使断言通过。
+  - **以「已批准」为前置状态的用例**（UT-S09-424 四种组合、ST-S09-195 夹具 B）：允许在前置阶段直接构造空 `PLAN_APPROVED` 与带合法 provenance body（`ui_prototype_rendered` + `pages` + `hashes`）的 `PLAN_APPROVED`。本仓 auto 路径只写空 marker（`next.ts` 的 `writePlanApproved`），合法 body 的 writer 属于宿主渲染面板，不在本提案范围，因此该前置不依赖外部宿主，也不新增批准命令或修改业务 writer。测试操作阶段不得改写这些预置文件，并以操作前后 SHA-256 一致为断言之一。
