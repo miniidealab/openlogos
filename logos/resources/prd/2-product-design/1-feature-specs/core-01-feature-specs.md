@@ -4545,3 +4545,94 @@ en：
 - 场景：S40 版本管理范围配置（新增）、S01 初始化、S20 存量接入、S08 同步。
 - 根规范：`spec/logos.config.schema.json`（`guard.unversioned` / `guard.exempt`）、`spec/pretooluse-guard.md`（保护范围变更的宿主审批）。
 - 代码（以合并后规格为准）：新增 `ignore` / `exempt` 命令、`cli/src/index.ts` 注册与帮助、`cli/src/commands/init.ts`、`cli/src/commands/adopt.ts`、sync 链路。
+
+## 2.89 Claude Code 项目回复语言设置托管
+
+### 2.89.0 问题：语言约束只停留在会话上下文里
+
+OpenLogos 约束 AI 输出语言的两处机制——`generatePolicyMdc` 按 `locale` 生成的 CLAUDE.md / AGENTS.md「语言策略」段、SessionStart hook 输出的 `Language Policy` 一行——都是会话上下文中的普通文字。长会话发生上下文压缩后，压缩摘要不一定保留这条规则，回复语言随之漂移（runlogos 实测：一次压缩后英文回复占多数，每轮注入的 CLAUDE.md 没能拉回）。
+
+Claude Code 的官方设置 `language` 会在每轮系统提示词中生成 `# Language` 一节，不进对话历史、不受压缩影响。OpenLogos 已在 `deployClaudeCodePlugin(root, locale)` 链路里幂等合并项目 `.claude/settings.json` 的 hooks，`locale` 在该处已可用，但从未写入 `language`。
+
+### 2.89.1 取值映射与事实源
+
+| 项目 `locale`（`logos/logos.config.json`） | 写入 `.claude/settings.json` 顶层 `language` |
+|---|---|
+| `zh` | `"chinese"` |
+| `en` | `"english"` |
+
+- 项目 `locale` 是唯一事实源，与 CLAUDE.md 语言策略段、SessionStart 语言提示同源；不读取用户系统区域。
+- OpenLogos **托管值集合**固定为 `{"chinese", "english"}`，按字符串精确比较（区分大小写）；`"Chinese"` 等不在集合内的写法一律视为自定义值。
+- 两种 locale 都写（决策 C01）：语言策略对 zh / en 对称，只写 zh 会让 en 项目里用中文提问的开发者得到中文回复。
+
+### 2.89.2 合并规则
+
+在合并项目 `.claude/settings.json` 的同一处按下表处理顶层键 `language`（决策 C02、C03）：
+
+| # | 现状 | 处理 | 是否写盘 |
+|---|---|---|---|
+| 1 | 文件不存在 | 随既有骨架一起创建：SessionStart hook 骨架创建之后，同一轮合并写入 `language` | 是 |
+| 2 | 文件合法、无 `language` 键 | 写入当前 locale 的映射值（追加为顶层末尾键） | 是 |
+| 3 | `language` 等于当前 locale 的映射值 | 不动 | 否 |
+| 4 | `language` 是托管值集合中的另一个值 | 按当前 locale 更新（覆盖 `logos.config.json` 改了 locale 的情况） | 是 |
+| 5 | `language` 是其它值（含不在集合内的字符串、非字符串值如数字或 `null`） | 保留不动，并输出一行自定义值提示（见 §2.89.4） | 否 |
+| 6 | 文件不是合法 JSON，或顶层不是对象 | 沿用 `mergeClaudeSettings` 既有容错：原样保留文件、跳过合并，不抛错，其余同步步骤照常 | 否 |
+
+保真与幂等口径：
+
+- 只在发生变更时重写文件，序列化形态与既有 hooks 合并一致（`JSON.stringify(data, null, 2)`）；不为保留原始缩进引入文本级编辑机制。
+- 写入 `language` 不改变其它 JSON 字段的值、不改变用户 hook 条目及其相对顺序；既有托管 hook（SessionStart / PreToolUse / PostToolUse / PostToolUseFailure / Stop）仍按 §2.62.2 与既有事后检查 hook 合并规则维护。
+- 首次写入时，若原文件格式不是 2 空格缩进，其它键的文本字节会随整体重写而变化，这与既有 hooks 合并的行为一致；保证的是值与顺序，而非原始缩进。
+- 没有其它待同步变化时，重复运行 `init` / `sync` 不写盘，`.claude/settings.json` 字节不变。
+
+### 2.89.3 部署位置：恒部署路径
+
+- `language` 合并必须位于 Claude 资产的**恒部署路径**内，与 `deployClaudeGuardAssets` 中 SessionStart / PreToolUse / 事后检查 hook 的合并同属一轮，**不得**放在 commands 幂等 skip（`.claude/commands/openlogos/` 已有文件即提前返回）之后——否则存量项目的 `sync` 永远走不到这一步。
+- 执行顺序：SessionStart 合并（负责创建骨架）→ PreToolUse 合并 → 事后检查 hook 合并 → `language` 合并。实现可新增 `mergeClaudeLanguageSetting(root, locale)`，或扩展既有合并函数接收 `locale`；以本节语义为准。
+- 适用命令与 Claude 资产部署一致：`init`、`adopt`、`sync`、`launch` 以及 `init` 追加 AI 工具目标，全部经 `deployAiToolAssets` → `deployClaudeCodePlugin(root, locale)` 生效；仅当 AI 工具包含 `claude-code` 时执行，非 Claude 宿主项目不触碰 `.claude/settings.json`。
+- 只写项目共享设置 `.claude/settings.json`；不读写 `.claude/settings.local.json`，不写用户级 `~/.claude/settings.json`。
+
+### 2.89.4 输出
+
+- 规则 1～4、6 不新增输出行；写入或更新是否发生，计入既有 Claude hooks 更新结果（`hooksUpdated`）。
+- 规则 5 每次运行输出一行提示（按项目 locale，`<值>` 为该值的 JSON 序列化）：
+
+zh：
+
+```
+  ℹ 项目 .claude/settings.json 的 language 为自定义值 <值>，未改动
+```
+
+en：
+
+```
+  ℹ Project .claude/settings.json language is a custom value <value>; left unchanged
+```
+
+- 该提示不受 commands 幂等 skip 影响，也不改变退出码。
+
+### 2.89.5 生效边界
+
+- Claude Code 的设置优先级中，项目本地设置、命令行参数与托管策略设置可以覆盖项目共享设置。OpenLogos 只写项目共享设置、不覆盖更高优先级配置；效果限定于未被更高优先级配置覆盖的情形。
+- 「已写入项目默认值」与「宿主当前采用该值」是两件事：单元 / 场景测试证明前者；后者在发布确认时于没有更高优先级语言覆盖的隔离项目中，经已安装 CLI 执行 sync 后人工确认一次（中文、英文分支各一次），记录 Claude Code 版本。
+- `language` 设置大大加强约束但不能保证百分之百遵守；长会话仍建议定期 `/clear` 或新开会话。
+
+### 2.89.6 零回归边界
+
+- CLAUDE.md / AGENTS.md 的「语言策略」段（`generatePolicyMdc`）与 SessionStart hook 的 `Language Policy` 提示保持不变。
+- 既有 hooks 合并语义（新旧 command 迁移、matcher 校正、用户条目保真、损坏 JSON 跳过）保持不变。
+- guard 对 `.claude/settings.json` 的保护口径不变（§2.87.2 受保护判定表中该文件仍为「不保护」）。
+- 其它 AI 工具（Codex、OpenCode、Cursor、ZCode、Qoder、WorkBuddy）的资产部署不受影响。
+
+### 2.89.7 验收
+
+- UT-S08-79～UT-S08-83（写入与骨架创建、托管值跟随、自定义值保留并提示、损坏容错、幂等与恒部署路径）。
+- ST-S08-42～ST-S08-43（zh 存量项目真实 sync 端到端、locale 切换后 sync 跟随与自定义值保留）。
+
+### 2.89.8 追溯
+
+- 来源变更：sync-claude-response-language（决策 C01、C02、C03）。
+- 需求：「Claude Code 项目回复语言设置托管需求」。
+- 场景：S08「S08 sync 合并 Claude Code 项目回复语言设置时序」；init / adopt / launch 经同一部署链路生效。
+- 关联规格：§2.62（Claude hook 注册形态与 sync 托管 guard 资产）、§2.87（guard 受保护判定）。
+- 代码（以合并后规格为准）：`cli/src/commands/init.ts`（`deployClaudeCodePlugin` / `deployClaudeGuardAssets` 链路、i18n 提示文案）。

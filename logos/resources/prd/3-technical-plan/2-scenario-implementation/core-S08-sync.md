@@ -195,3 +195,107 @@ sequenceDiagram
 - 决策：C06、C11、C12、C13、C14；defaults「Cursor 适配层按 C11 分层同步」「不注册 SessionEnd」。
 - 关联场景：S01「S01 guard 事后检查 hook 注册与引擎部署时序」「S01 Cursor 三件套原子初始化时序」；S09 launched 无提案时 guard 按版本控制内容判定的时序（检查逻辑本身）。
 - 测试：UT-S08-75～UT-S08-78、ST-S08-41。
+
+## S08 sync 合并 Claude Code 项目回复语言设置时序
+
+### 场景目标
+
+`openlogos sync` 部署 Claude Code 资产时，在合并 hooks 的同一轮里按项目 `locale` 往项目 `.claude/settings.json` 写入顶层键 `language`（`zh` → `"chinese"`，`en` → `"english"`），让回复语言由 Claude Code 系统提示词中的 `# Language` 节约束，长会话压缩后不再漂移。托管值随 locale 跟随，用户自定义值保留并提示，损坏文件原样保留，重复运行幂等（决策 C01、C02、C03）。`init` / `adopt` / `launch` 经同一部署链路获得相同行为。
+
+### 参与方
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| U | 用户终端 | 执行 `openlogos sync` |
+| CLI | openlogos CLI | `cli/src/commands/sync.ts` → `deployAiToolAssets` → `deployClaudeCodePlugin(root, locale)` |
+| CFG | `logos/logos.config.json` | `locale` 与 `aiTool` 的事实源 |
+| CS | `.claude/settings.json` | 项目共享 Claude Code 设置 |
+
+### 前置条件
+
+- 项目已初始化（`logos/logos.config.json` 存在），AI 工具配置包含 `claude-code`。
+- 随包 Claude 插件模板可定位（`findClaudePluginTemplateSource()` 非空）。
+
+### 成功后置条件
+
+- `.claude/settings.json` 为合法 JSON 时：顶层 `language` 等于当前 locale 的映射值，或为调用前即存在的自定义值（未改动）。
+- 其它 JSON 字段的值与用户 hook 条目顺序不变；托管 hooks 按既有规则维护。
+- 没有其它待同步变化时，第二次 sync 不写盘。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户终端
+    participant CLI as openlogos CLI
+    participant CFG as logos/logos.config.json
+    participant CS as .claude/settings.json
+
+    U->>CLI: Step L1: openlogos sync
+    CLI->>CFG: Step L2: 读取 locale 与 aiTool
+    CFG-->>CLI: locale（zh / en）、aiTool
+    opt aiTool 含 claude-code
+        CLI->>CS: Step L3: 合并 SessionStart / PreToolUse / 事后检查 hooks（不存在则先建骨架）
+        CLI->>CS: Step L4: 读取并解析 settings.json
+        alt 非法 JSON 或顶层非对象
+            CLI->>CLI: EX-LANG-S08-1：原样保留、跳过合并
+        else 无 language 键
+            CLI->>CS: Step L5a: 写入映射值（chinese / english）
+        else language 等于当前映射值
+            CLI->>CLI: Step L5b: 不写盘
+        else language 为另一托管值
+            CLI->>CS: Step L5c: 按当前 locale 更新
+        else language 为其它值
+            CLI-->>U: Step L5d: 输出一行自定义值提示，不改动（EX-LANG-S08-2）
+        end
+    end
+    CLI-->>U: Step L6: 其余同步步骤照常完成，输出 Sync complete.
+```
+
+### 步骤说明
+
+1. **Step L1**：用户在项目根执行 `openlogos sync`。
+2. **Step L2**：CLI 读取 `logos/logos.config.json` 的 `locale` 与 `aiTool`；AI 工具不含 `claude-code` 时跳过 Step L3～L5，不触碰 `.claude/settings.json`。
+3. **Step L3**：沿用既有恒部署路径（`deployClaudeGuardAssets`）合并 SessionStart（文件不存在时创建骨架）、PreToolUse、PostToolUse / PostToolUseFailure / Stop 托管条目。`language` 合并紧随其后、属同一轮，**不受** `.claude/commands/openlogos/` 已有文件时 commands 幂等 skip 的影响。
+4. **Step L4**：读取并解析 `.claude/settings.json`；非法 JSON 或顶层非对象见 EX-LANG-S08-1。
+5. **Step L5**：按功能规格 §2.89.2 合并规则处理 `language`：
+   - L5a 键缺失 → 写入当前 locale 的映射值（追加为顶层末尾键）；
+   - L5b 已等于当前映射值 → 不写盘；
+   - L5c 为托管值集合 `{"chinese","english"}` 中的另一个值（locale 改过）→ 更新为当前映射值；
+   - L5d 为其它值（含大小写不同的写法与非字符串值）→ 保留并提示，见 EX-LANG-S08-2。
+   只有发生变更时才以 `JSON.stringify(data, null, 2)` 重写；其它字段的值与用户 hook 条目顺序不变。
+6. **Step L6**：其余同步步骤（AGENTS.md / CLAUDE.md、specs、`.gitignore` 托管区块、版本戳等）照常；`language` 合并结果不改变退出码。
+
+### 异常与边界
+
+#### EX-LANG-S08-1：settings.json 不是合法 JSON
+
+- **触发条件**：`.claude/settings.json` 解析失败，或解析结果顶层不是对象。
+- **期望响应**：沿用既有 hooks 合并容错，原样保留文件、跳过 `language` 合并，不抛错。
+- **副作用**：`.claude/settings.json` 字节不变；其余同步步骤照常完成。
+
+#### EX-LANG-S08-2：language 已是自定义值
+
+- **触发条件**：`language` 已存在且不在托管值集合内（如 `"japanese"`、`"Chinese"`、`123`、`null`）。
+- **期望响应**：保留原值；输出一行提示——zh：`ℹ 项目 .claude/settings.json 的 language 为自定义值 <值>，未改动`；en：`ℹ Project .claude/settings.json language is a custom value <value>; left unchanged`（`<值>` 为 JSON 序列化）。
+- **副作用**：`language` 不改动；同一轮的托管 hooks 合并照常进行。
+
+#### EX-LANG-S08-3：存在更高优先级的语言设置
+
+- **触发条件**：`.claude/settings.local.json`、命令行参数或托管策略设置中另有 `language`。
+- **期望响应**：OpenLogos 不读写这些设置，只维护项目共享设置；宿主按其优先级规则采用更高优先级的值。
+- **副作用**：无。
+
+#### EX-LANG-S08-4：非 Claude 宿主项目
+
+- **触发条件**：`aiTool` 不含 `claude-code`。
+- **期望响应**：不部署 Claude 资产，不创建、不读写 `.claude/settings.json`。
+- **副作用**：无。
+
+### 追溯
+
+- 决策：C01（zh / en 都写）、C02（托管值跟随、自定义值保留并提示）、C03（损坏 JSON 原样保留）。
+- 需求：「Claude Code 项目回复语言设置托管需求」。
+- 功能规格：「2.89 Claude Code 项目回复语言设置托管」。
+- 关联时序：本文件「S08 sync 事后检查 hook 注册与 guard 引擎分发时序」（同一轮 hooks 合并）；S01 / S20 经同一 `deployAiToolAssets` 链路生效。
+- 测试：UT-S08-79～UT-S08-83、ST-S08-42～ST-S08-43。

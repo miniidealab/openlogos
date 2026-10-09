@@ -2979,3 +2979,54 @@ launched 项目在无活跃提案时，用户反馈「改啥都需要立案，�
 - 功能规格：「2.88 版本管理范围配置：两张清单、托管区块与人类确认」。
 - CLI 交互设计：「S40: 版本管理范围配置 — 交互规格」「S01 / S20: 技术栈建议忽略 — 交互规格」。
 - 场景：S40 版本管理范围配置（新增）、S01 初始化、S20 存量接入、S08 同步。
+
+## Claude Code 项目回复语言设置托管需求
+
+### 用户问题与价值
+
+OpenLogos 目前用两处文字约束 AI 的输出语言：CLAUDE.md / AGENTS.md 中按 `locale` 生成的「语言策略（最高优先级）」段，以及 SessionStart hook 注入的 `Language Policy` 一行。两者都是会话上下文里的普通文字，长会话经上下文压缩后会被稀释甚至丢失。
+
+runlogos 项目（`locale: "zh"`）实测：同一个 Claude Code 会话约 69 万 token、发生 3 次上下文压缩，压缩摘要都没有保留「必须用中文」这条规则；其中一次压缩之后，助手英文回复占多数（如某小时中文 5 条 / 英文 25 条），每轮注入的 CLAUDE.md 也没能拉回来。用户为此反复截图追问，一度误判为显示层翻译问题。
+
+Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。设置后，每轮系统提示词都会带一节 `# Language`，它不进对话历史、不会被压缩丢掉，约束力强于上下文文字。但 OpenLogos 目前只托管项目 `.claude/settings.json` 里的 hooks，没有写这个设置——每个中文项目的用户都得自己发现问题并手动配置，大多数人只会觉得「AI 突然不听话了」。
+
+价值：所有由 OpenLogos 管理的 Claude Code 项目，回复语言默认由宿主原生设置约束，与 CLAUDE.md 语言策略、SessionStart 语言提示三者同源于项目 `locale`。
+
+### 核心需求
+
+1. **按 `locale` 写入项目设置**：`openlogos init` / `adopt` / `sync`（以及复用同一部署链路的 `launch`）部署 Claude Code 资产时，往项目 `.claude/settings.json` 写入顶层键 `language`：`locale: zh` → `"chinese"`，`locale: en` → `"english"`。两种 locale 都写（决策 C01）。
+2. **托管值跟随、自定义值保留**：键不存在时写入；已存在且等于 OpenLogos 托管值之一（`"chinese"` / `"english"`）时按当前 `locale` 更新；已存在且是其它值时保留不动，并在命令输出中提示一行「项目 language 为自定义值，未改动」（决策 C02）。
+3. **容错沿用既有口径**：`.claude/settings.json` 不是合法 JSON 时原样保留文件、跳过合并，与既有 hooks 合并的容错语义一致（决策 C03）。
+4. **复用既有合并链路、幂等**：在合并 hooks 的同一条项目设置合并链路内完成，不新建机制；其它 JSON 字段的值与用户 hook 条目顺序保持不变；没有其它待同步变化时重复运行文件字节不变。
+5. **只写项目级、只管 Claude Code**：不写用户级 `~/.claude/settings.json`，不读写 `.claude/settings.local.json`；非 Claude Code 适配项目不触碰任何 Claude 设置文件。
+
+### 验收条件
+
+| ID | 验收条件 |
+|---|---|
+| AC-CLAUDE-LANG-01 | `locale: zh` 项目运行 `openlogos sync` 后，`.claude/settings.json` 含 `"language": "chinese"`；`locale: en` 项目得到 `"english"`；init / adopt 新建的设置文件同样含该键 |
+| AC-CLAUDE-LANG-02 | 新增 `language` 时其它 JSON 字段的值及用户 hook 条目顺序不变；既有托管 hook 仍按现行 sync 规则维护 |
+| AC-CLAUDE-LANG-03 | 已有 `"language": "japanese"` 时保持不变，命令输出含一行自定义值提示 |
+| AC-CLAUDE-LANG-04 | `logos.config.json` 的 locale 从 zh 改为 en 后再 `sync`，`"chinese"` 更新为 `"english"` |
+| AC-CLAUDE-LANG-05 | 损坏的 `.claude/settings.json` 原样保留，sync 其余步骤照常完成 |
+| AC-CLAUDE-LANG-06 | 没有其它待同步变化时，连续两次 `sync` 第二次 `.claude/settings.json` 字节不变 |
+
+### 生效边界（如实记录）
+
+- 写入的是项目共享设置。Claude Code 的设置优先级中，项目本地设置（`.claude/settings.local.json`）、命令行参数与托管策略设置可以覆盖项目共享设置；OpenLogos 不覆盖这些更高优先级的配置，本需求的效果限定于未被更高优先级配置覆盖的情形。
+- 宿主是否实际采用项目级 `language`，在发布确认时于隔离项目中经已安装 CLI 执行 sync 后人工确认一次（中文、英文分支各一次），并记录 Claude Code 版本；不建设新的自动化宿主测试框架。
+- `language` 设置大大加强约束，但不能保证百分之百：runlogos 实测加上用户级设置后，同一个超长会话里仍出现过一次英文回复。长会话建议定期 `/clear` 或新开会话。
+
+### 非目标
+
+- 不为 Codex、OpenCode、Cursor、ZCode、Qoder 等其它 AI 工具写入回复语言设置（未确认存在等价设置，有需要另立提案）。
+- 不根据用户系统区域推断语言；项目 `locale` 是唯一事实源。
+- 不改动 CLAUDE.md 语言策略段与 SessionStart hook 的语言提示；不干预 Claude Code 的上下文压缩。
+- 不改变 guard 对 `.claude/settings.json` 的保护口径（该文件仍不在保护范围内）。
+
+### 追溯
+
+- 来源变更：sync-claude-response-language（决策 C01、C02、C03）。
+- 功能规格：「2.89 Claude Code 项目回复语言设置托管」。
+- 场景：S08「S08 sync 合并 Claude Code 项目回复语言设置时序」；init / adopt 经同一部署链路生效。
+- 测试：UT-S08-79～UT-S08-83、ST-S08-42～ST-S08-43。

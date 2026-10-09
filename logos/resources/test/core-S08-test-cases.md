@@ -422,3 +422,39 @@
 - [x] 新 guard 与引擎分发：UT-S08-76、ST-S08-41。
 - [x] Cursor 部署后 `.cursor/hooks.json` 含 `afterShellExecution` 且合并幂等：UT-S08-77、ST-S08-41。
 - [x] 托管文案不再宣称 IDE preToolUse 硬拦：UT-S08-78、ST-S08-41。
+
+## sync 托管 Claude Code 回复语言设置测试用例
+
+> 覆盖场景 S08「S08 sync 合并 Claude Code 项目回复语言设置时序」；来源变更 sync-claude-response-language（决策 C01、C02、C03）。init / adopt / launch 与 sync 共用 `deployAiToolAssets` → `deployClaudeCodePlugin(root, locale)` 链路，本节以 sync 入口为主、UT 直接驱动部署函数覆盖 init 新建分支。「宿主是否实际采用项目级 `language`」不在自动化范围内，按功能规格 §2.89.5 在发布确认时人工确认。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S08-79 | 按 locale 写入与骨架创建 | ① `.claude/settings.json` 不存在、locale `zh` → 部署后文件含 SessionStart 托管条目与顶层 `"language": "chinese"`；② 同上 locale `en` → `"english"`；③ 存量合法 settings.json 无 `language`（含用户自有 PreToolUse 条目与 `permissions` 等其它顶层键）→ 写入映射值且为顶层末尾键，其它字段的值深度相等、用户 hook 条目相对顺序不变 |
+| UT-S08-80 | 托管值按当前 locale 跟随 | ① 预置 `"language": "chinese"`、locale `en` → 更新为 `"english"`；② 预置 `"english"`、locale `zh` → 更新为 `"chinese"`；③ 预置值已等于当前映射值 → 不写盘（文件字节与 mtime 不变）；三种情况其它字段的值不变 |
+| UT-S08-81 | 自定义值保留并提示 | 预置 `language` 分别为 `"japanese"`、`"Chinese"`、`123`、`null`：值逐一保持不变；每次输出恰好一行自定义值提示，zh 项目含「language 为自定义值」与 JSON 序列化后的值，en 项目含 `custom value`；同一轮托管 hooks 合并照常（缺失的 PreToolUse 条目被补齐）；退出码不受影响 |
+| UT-S08-82 | 损坏 settings.json 原样保留 | ① 非法 JSON；② 合法 JSON 但顶层为数组：部署后 `.claude/settings.json` 字节不变、不抛错；同一次 sync 的 AGENTS.md / CLAUDE.md 与托管 bin 照常更新 |
+| UT-S08-83 | 恒部署路径、幂等与作用边界 | ① `.claude/commands/openlogos/` 已有 `.md`（commands 幂等 skip 分支）的存量项目，sync 仍写入 `language`；② 自定义值提示在 skip 分支下照常输出；③ 写入后第二次 sync `.claude/settings.json` 字节不变；④ 预置 `.claude/settings.local.json` 含 `"language": "japanese"` → 该文件字节不变，项目 `.claude/settings.json` 仍按 locale 写入；⑤ aiTool 不含 `claude-code` 的项目 sync 后不存在 `.claude/settings.json`（或既有文件字节不变） |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S08-42 | zh 存量项目真实 sync 端到端 | 在一次性隔离项目内构造 `locale: zh`、aiTool 含 `claude-code` 的存量夹具，`.claude/settings.json` 含当前版本全部托管 hooks、用户自有 hook 条目与 `permissions` 顶层键、无 `language`；执行真实 `openlogos sync`：退出码 0，文件含 `"language": "chinese"`，其它字段的值与用户条目顺序与运行前一致；再跑一次 sync，`.claude/settings.json` 字节不变 |
+| ST-S08-43 | locale 切换后 sync 跟随与自定义值保留 | 接 ST-S08-42 夹具：把 `logos/logos.config.json` 的 `locale` 改为 `en` 后执行真实 `openlogos sync` → `language` 变为 `"english"`；再把 `language` 手工改为 `"japanese"` 后执行 sync → 值保持 `"japanese"`、stdout 含一行 `custom value` 提示、退出码 0 |
+
+### 自动化与证据要求
+
+- 夹具一律在一次性隔离项目内构造，运行前后本仓项目根字节快照相等；不读写用户级 `~/.claude/settings.json`。
+- ST 用例经真实 CLI 入口执行，记录 CLI 入口类别。
+- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S08"`，含 `test_id`、`status`、`duration_ms`、`evidence`；失败不得写 pass。
+
+### 覆盖度校验
+
+- [x] 按 locale 写入（zh / en）与骨架创建：UT-S08-79、ST-S08-42。
+- [x] 托管值随 locale 更新：UT-S08-80、ST-S08-43。
+- [x] 自定义值保留并提示一行：UT-S08-81、ST-S08-43。
+- [x] 损坏 JSON 原样保留：UT-S08-82。
+- [x] 其它键值与用户条目顺序不变、重复运行幂等：UT-S08-79、UT-S08-83、ST-S08-42。
+- [x] 不受 commands 幂等 skip 影响、不触碰 settings.local.json 与非 Claude 项目：UT-S08-83。
