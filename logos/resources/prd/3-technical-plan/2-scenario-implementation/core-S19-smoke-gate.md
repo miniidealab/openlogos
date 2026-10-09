@@ -172,23 +172,54 @@ sequenceDiagram
 
 `openlogos smoke` 读取 `smoke-results.jsonl` 时，`status:"skip"` 表示 smoke runner 已显式处理该用例，但当前环境缺少部署目标、外部依赖或平台能力，无法执行真实断言。
 
-统计规则：
+结果记录字段（skip 时）：`{ "id": "SMOKE-...", "status": "skip", "detail": "<机器可读的不适用原因>", "reason_code": "<可选原因码>" }`。`detail` 给出缺失项（具体 env 名、制品名或所需平台）；`reason_code` 可选，当前唯一被门禁识别的取值为 `platform-unavailable`（当前平台不能执行该用例，如只能在 Windows 上运行的用例在 macOS 上执行）。
+
+统计规则（全部 skip 适用）：
 
 - skip 计入 `executed_count` 和 `skipped_count`；
 - skip 对应的 `SMOKE-*` 不再计入 uncovered；
-- skip 不计入 `failed_count`，不得单独导致 smoke Gate FAIL；
+- skip 不计入 `failed_count`；
 - `pass_rate_pct` 按有效通过数计算：`round((passed_count + skipped_count) / executed_count * 100)`；
 - `skipped_cases` 必须继续在 JSON 和 `smoke-report.md` 中展示，供用户审计环境性跳过。
 
-Gate 判定边界不变：
+**必要用例的 skip（本提案变更用例）**：当前活跃提案新增或修改的 `SMOKE-*` 用例（`changed_cases`）是本次交付的必要证据，它们以 skip 结束即证据缺失：
+
+- 默认判 Gate FAIL，`gate.reason` 为 `required_cases_skipped`，JSON `required_skipped_cases` 与 `smoke-report.md` 逐条列出 `{id, detail}`。缺回滚制品、缺必需 env 等可补齐的环境缺口不能冒充通过（0.15.19 code 评审修复引入，本节补入规格）。
+- **平台不可执行例外**：skip 记录同时满足 `reason_code === "platform-unavailable"` 且 `detail` 为非空字符串时，按有效跳过放行，不计入 `required_skipped_cases`，改列入 JSON `platform_skipped_cases` 与 `smoke-report.md` 的「平台不可执行」独立小节（用户 2026-09-09 裁定：当前平台跑不了的用例 skip 即终态）。是否不可执行由 runner 声明，CLI 只核对声明是否完整。
+- 非本提案用例（不在 `changed_cases` 内）的 skip 口径不变：不得单独导致 smoke Gate FAIL，有无 `reason_code` 均不影响。
+
+Gate 判定边界：
 
 - 只要存在 `fail`，smoke Gate 必须 FAIL；
 - 只要存在 uncovered，smoke Gate 必须 FAIL；
 - runner / reporter / dispatcher 覆盖诊断仍可使 Gate FAIL；
+- 本提案变更用例存在非平台不可执行的 skip，smoke Gate 必须 FAIL；
 - sandbox failure 仍可使 Gate FAIL；
 - `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾和 `smoke_required=true` 等前置门禁不因 skip 语义而放松。
 
-该口径与 verify 保持一致：skip 是可见的有效通过，不是未覆盖，也不是失败。
+`gate.reason` 优先级：`failed_cases` → 覆盖预检诊断码（`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`）→ `required_cases_skipped` → `incomplete_coverage`。
+
+该口径与 verify 对非必要用例保持一致：skip 是可见的有效通过，不是未覆盖，也不是失败；本提案的必要用例只在平台不可执行时允许以 skip 收尾。
+
+### EX-19.7: 本提案用例因平台不可执行而 skip
+- **触发条件**：`changed_cases` 内的用例结果为 `status:"skip"`，`reason_code:"platform-unavailable"`，`detail` 非空（如 `requires win32`）。
+- **期望响应**：该用例不导致 FAIL；出现在 `platform_skipped_cases` 与报告的「平台不可执行」小节；其余判据全部满足时 Gate PASS。
+- **副作用**：无。
+
+### EX-19.8: 本提案用例 skip 缺原因码或 detail 为空
+- **触发条件**：`changed_cases` 内的用例结果为 skip，且 `reason_code` 缺失，或 `reason_code` 为 `platform-unavailable` 但 `detail` 缺失 / 为空字符串。
+- **期望响应**：Gate FAIL，`gate.reason` 为 `required_cases_skipped`（无更高优先级原因时），该用例列入 `required_skipped_cases`。
+- **副作用**：无。
+
+### EX-19.9: 本提案用例 skip 携带其他原因码
+- **触发条件**：`changed_cases` 内的用例结果为 skip，`reason_code` 为 `platform-unavailable` 以外的任意值（如 `missing-artifact`）。
+- **期望响应**：同 EX-19.8，判 `required_cases_skipped`；未知原因码不被视为平台不可执行。
+- **副作用**：无。
+
+### EX-19.10: 平台不可执行与环境缺口并存
+- **触发条件**：同一次 smoke 中，一条本提案用例以 `platform-unavailable` skip，另一条以缺制品 skip。
+- **期望响应**：Gate FAIL（`required_cases_skipped`）；`required_skipped_cases` 只含缺制品那条，`platform_skipped_cases` 只含平台不可执行那条，两者互不混入。
+- **副作用**：无。
 
 ## auto_execute：`--auto` 下 ready-to-smoke 的自动执行信号（auto-execute-redline-steps）
 

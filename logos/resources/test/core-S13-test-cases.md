@@ -337,3 +337,44 @@
 - 默认根三入口（52.6）：UT-S13-76（init 生成）、UT-S13-78（sync 补默认值与历史值）、UT-S13-77（读取）、ST-S13-22。
 - 递归删除内置重试与清理降级（52.3、52.6）：UT-S13-79、UT-S13-80。
 - ST-S13-22 属 Windows 回归集，必须在 CI `windows-latest` 阻断 job 中运行；夹具在一次性隔离项目内构造，运行前后本仓项目根字节快照相等。
+
+## S13 预跑命令失败纳入门禁与输出尾部测试
+
+> 覆盖功能规格 §2.7「预跑命令失败进入门禁」「预跑命令输出尾部」、§2.75.1 四项判据与 `gate.reason` 优先级；场景 S13 步骤 9 与 EX-9.1～EX-9.6；根规范 `spec/cli-json-output.md` §4.4 `pre_run_failed`、§4.5 `stdout_tail` / `stderr_tail`；来源变更 verify-smoke-guard-fixes-0-15-20（决策 C01、C02）。
+>
+> **夹具口径**：一律在 `mktemp -d` 下构造一次性项目（`logos/logos.config.json` + `logos/resources/test/` 中声明若干 UT 用例），不依赖本仓结果账本。「回滚型运行器」指一个真实可执行脚本：先写入一份**完整且全部 pass** 的旧账本备份，运行时向结果路径写入半份结果后以非零码退出，退出前把结果文件回滚为备份（复刻 RunLogos `scripts/run-vitest.js` 的失败处理）。CLI 用例以真实 `openlogos verify` 子进程执行，`--format json` 时解析 stdout envelope。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S13"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S13-81 | 单阶段预跑失败且账本被回滚为旧的完整结果 | `verify.pre_run_command` 为回滚型运行器；规格用例全部在旧账本中且旧账本存在一处计数不自洽 | `openlogos verify --format json` | `gate.result=="FAIL"`、`gate.reason=="pre_run_failed"`；`pre_run.commands[0].status=="fail"` 且 `exit_code` 为运行器退出码；`consistency` 诊断照常输出。**修改前实现报 `result_ledger_inconsistent`，本用例必红** |
+| UT-S13-82 | 预跑失败但账本完整且全部通过 | 回滚型运行器的旧账本完整、自洽、全部 pass，覆盖全部规格用例 | 同上 | `gate.result=="FAIL"`、`gate.reason=="pre_run_failed"`；不写 `VERIFY_PASS`。**修改前实现直接 PASS，本用例必红** |
+| UT-S13-83 | 预跑失败时失败用例优先于 pre_run_failed | 两臂：① 运行器写入含 1 条 `status:"fail"` 的完整自洽账本后以非零码退出；② 同 ① 但账本另含 1 条未定义 ID（账本不自洽） | 每臂 `openlogos verify --format json` | 两臂均 `gate.reason=="failed_cases"`，`failed_cases` 列出该用例，`pre_run.commands[0].status=="fail"`；臂 ② 的 `consistency` 照常输出不自洽诊断 |
+| UT-S13-84 | 两阶段任一段失败即 FAIL | 两臂：① `regression_command` 非零退出、`incremental_command` 成功；② 反之；两阶段结果路径各自独立且合并后账本完整全部 pass | 每臂 `openlogos verify --format json` | 两臂均 `gate.result=="FAIL"`、`gate.reason=="pre_run_failed"`；失败段 `status=="fail"`、成功段 `status=="pass"`；合并后的 `result_path` 照常生成 |
+| UT-S13-85 | 预跑成功或未配置时判定与输出逐字不变 | 四臂（预跑命令均以 0 退出）：账本全部 pass；含失败用例；存在未覆盖；**含失败用例且账本不自洽（含未定义 ID）**。另以「未配置任何预跑命令」的旧项目重复第四臂 | 新旧实现对同一夹具各执行 `openlogos verify --format json`，剔除 `timestamp`、`duration_ms` 与新增的 `stdout_tail` / `stderr_tail` 后比对 | 各臂 `gate` 与其余字段逐字一致（PASS / `failed_cases` / `incomplete_coverage` / `result_ledger_inconsistent`）；第四臂及其无预跑版本的 `gate.reason` 均为 `result_ledger_inconsistent`，**全局采用新优先级的实现在第四臂上取 `failed_cases`，本用例必红** |
+| UT-S13-86 | 输出尾部有界且去除 ANSI | 预跑命令输出 300 行（每行含 ANSI 颜色序列与中文字符），stderr 另输出 20 行 | `openlogos verify --format json` | `stdout_tail` 为末尾不超过 80 行且 UTF-8 字节数不超过 8192，截断落在完整字符边界，不含任何 `\x1b[` 序列；`stderr_tail` 为 20 行原文去 ANSI；文本模式执行同一夹具时输出实时打到终端，JSON 之外不出现这两个字段 |
+| UT-S13-87 | 大输出不中断子进程、退出码如实 | 预跑命令向 stdout 写出 50 MiB 后在最后一行写入标记文件，再以退出码 3 结束 | `openlogos verify --format json` | 标记文件存在（子进程完整运行至结束）；`pre_run.commands[0].exit_code==3`；`stdout_tail` 末行为最后输出行；沙箱 `auto` 与 `off` 两种模式同一口径 |
+| UT-S13-88 | 验收报告不落命令输出 | UT-S13-81 夹具，运行器在 stdout / stderr 输出包含唯一哨兵字符串的若干行 | `openlogos verify --format json` 后读取 `acceptance-report.md` | 报告含失败阶段 `pre_run` 与退出码，不含哨兵字符串与任何 `stdout_tail` / `stderr_tail` 内容；JSON 的 `stdout_tail` 含哨兵 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-23 | 回滚型运行器的事故复刻端到端 | S13 Step 1～9、EX-9.1、EX-9.5 | 一次性项目：`pre_run_command` 为回滚型运行器，旧账本完整全部 pass；沙箱 `auto` | ① `openlogos verify --format json`；② 读取 `acceptance-report.md`；③ 把运行器改为正常运行（退出码 0、写入新的完整全 pass 账本）后再次 `openlogos verify --format json` | ① `gate.reason=="pre_run_failed"`，`pre_run.commands[0]` 带非空 `stderr_tail`，可从中读到运行器的失败输出；② 报告只记阶段与退出码，不含输出内容；③ `gate.result=="PASS"`，`gate.reason==null`。**修改前 ① 为 `result_ledger_inconsistent` 或 PASS，本用例必红** |
+| ST-S13-24 | 两阶段与诊断不被隐藏 | S13 Step 3a～9、EX-9.2、EX-9.3 | 两阶段配置，`incremental_command` 非零退出且其结果含 1 条未覆盖规格用例；`regression_command` 成功 | ① `openlogos verify --format json`；② 把增量结果补齐为含 1 条 fail 后重跑 | ① `gate.reason=="pre_run_failed"`，`uncovered_cases` 照常列出该用例，`pre_run.commands` 两条状态分别为 `pass` / `fail`；② `gate.reason=="failed_cases"` |
+
+### 追溯与覆盖
+
+- 预跑失败进入门禁（§2.75.1、EX-9.1）：UT-S13-81、UT-S13-82、ST-S13-23（修改前实现必红）。
+- 原因优先级与诊断不隐藏（EX-9.2）：UT-S13-83、ST-S13-24。
+- 新优先级只在预跑失败时生效（EX-9.6）：UT-S13-85 第四臂及其无预跑版本、UT-S13-83 臂 ②。
+- 两阶段任一段失败（EX-9.3）：UT-S13-84、ST-S13-24。
+- 预跑成功或未配置零回归：UT-S13-85。
+- 输出尾部有界、去 ANSI、不中断子进程（EX-9.4）：UT-S13-86、UT-S13-87。
+- 报告不落输出（EX-9.5）：UT-S13-88、ST-S13-23。
+
+### 自动化与证据要求
+
+- 回滚型运行器以真实脚本实现并由真实 `openlogos verify` 子进程调用，不以桩替代命令执行器；断言基于 `--format json` 的结构化字段，不解析人类可读文案。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

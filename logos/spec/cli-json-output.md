@@ -1121,9 +1121,13 @@ openlogos verify --format json  # JSON 格式
 |----|------|
 | `null` | 门禁通过 |
 | `"failed_cases"` | 存在失败的测试用例 |
+| `"pre_run_failed"` | 预跑命令（`pre_run_command`，或两阶段 `regression` / `incremental` 任一段）以非零状态退出，且账本中无失败用例（verify-smoke-guard-fixes-0-15-20） |
+| `"result_ledger_inconsistent"` | 结果账本不自洽（见 `consistency`） |
 | `"incomplete_coverage"` | 存在未覆盖的测试用例 |
 | `"checklist_incomplete"` | 设计时覆盖度校验未完全确认 |
 | `"ac_trace_incomplete"` | 验收条件追溯未完全通过 |
+
+**优先级**（FAIL 时取第一个命中者，功能规格 §2.75.1，按预跑命令是否失败分两支）：预跑命令任一段非零退出时为 `failed_cases` → `pre_run_failed`（有失败用例取前者，否则一律取后者）；预跑命令全部成功或未配置时保持既有顺序 `result_ledger_inconsistent` → `failed_cases` → `incomplete_coverage`，与修改前逐字一致。`pre_run_failed` 命中时，`consistency` 与 `uncovered_cases` 等诊断照常输出，不作为主原因。`checklist_incomplete` / `ac_trace_incomplete` 为历史取值，§2.75 收敛后不再产生，消费方遇到时按 FAIL 处理即可。
 
 ### 4.5 预跑状态兼容规则
 
@@ -1135,8 +1139,9 @@ openlogos verify --format json  # JSON 格式
 - `sandbox_mode="always"` 时，若无法隔离、沙箱副本存在逃逸 symlink 或无法启用运行期写保护则必须失败。
 - 沙箱写入审计豁免沙箱内一次性依赖目录（规范化后存在完整路径段严格等于 `node_modules`）；豁免生效时以 `sandbox.infos` 输出一条信息级说明，`sandbox.status` 不因此改变。
 - 覆盖不足且 `pre_run.mode="none"` 时，必须输出局部测试诊断和配置建议。
-
----
+- **预跑命令失败**：单阶段或两阶段任一段非零退出时，对应 `pre_run.commands[]` 条目 `status="fail"`、`exit_code` 如实记录，门禁 FAIL（`gate.reason` 见 §4.4 优先级）。
+- **输出尾部字段**（additive，仅 `--format json`）：`pre_run.commands[]` 每个实际执行的条目增加 `stdout_tail: string` 与 `stderr_tail: string`——各为该段命令输出的末尾最多 80 行且不超过 8 KiB（截断落在完整 UTF-8 字符边界），已去除 ANSI 控制序列，不做内容脱敏；无输出时为空字符串；`status="skipped"` 的条目不出现这两个字段。截获不得提前终止子进程或改变其退出码；沙箱与非沙箱执行同一口径。文本模式不截获、不出现这两个字段。
+- 输出尾部只出现在 JSON 输出中，**不写入** `acceptance-report.md`（报告只记失败阶段与退出码）。
 
 ## 5. `openlogos smoke --format json`
 
@@ -1198,12 +1203,15 @@ openlogos smoke --env production --format json
 | `summary.defined_count` | number | 是 | smoke 用例规格中定义的用例数 |
 | `summary.executed_count` | number | 是 | smoke 结果中实际执行的用例数 |
 | `gate.result` | string | 是 | `PASS` 或 `FAIL` |
-| `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` / `smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered` |
+| `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` / `smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered` / `required_cases_skipped`；优先级 `failed_cases` → 覆盖预检诊断码 → `required_cases_skipped` → `incomplete_coverage` |
 | `changed_cases` | string[] | 是 | 当前活跃提案新增或修改的 `SMOKE-*` 用例 ID；无活跃提案或无 smoke 变更时为空 |
 | `diagnostics` | array | 是 | smoke 覆盖预检诊断；每项包含 `code`、`message`、可选 `case_ids` / `runner_paths` / `result_path` |
 | `runners` | string[] | 是 | 静态发现的 `scripts/smoke-*` runner 路径 |
 | `failed_cases` | array | 是 | 失败 smoke 用例 |
 | `uncovered_cases` | array | 是 | 未覆盖 smoke 用例 ID |
+| `skipped_cases` | string[] | 是 | 全部以 `skip` 结束的 smoke 用例 ID |
+| `required_skipped_cases` | array | 否 | 本提案变更用例（`changed_cases`）中非平台不可执行的 skip，每项 `{id, detail}`；非空时 `gate.reason` 为 `required_cases_skipped`（无更高优先级原因时）；为空时不出现 |
+| `platform_skipped_cases` | array | 否 | 本提案变更用例中以 `reason_code:"platform-unavailable"` 且 `detail` 非空放行的 skip，每项 `{id, detail}`，供审计；为空时不出现（verify-smoke-guard-fixes-0-15-20） |
 | `sandbox.mode` | string | 是 | smoke 沙箱模式：`"off"`、`"auto"` 或 `"always"` |
 | `sandbox.root` | string | 是 | 沙箱根目录 |
 | `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
@@ -1224,8 +1232,8 @@ openlogos smoke --env production --format json
 - 当沙箱失败时，`smoke` 仍应写入结果报告，但 JSON 输出必须明确失败原因。
 - 当活跃提案新增或修改 `SMOKE-*` 用例时，`openlogos smoke` 必须额外执行 smoke 覆盖预检：缺少可达 runner 时输出 `smoke_runner_missing`，发现 runner 但没有有效结果时输出 `smoke_reporter_missing`，新增 ID 没有执行结果时输出 `smoke_cases_uncovered`。
 - 推荐 `smoke.command` 指向 `node scripts/run-smoke.js` 统一 dispatcher；dispatcher 自动发现并执行 `scripts/smoke-*` runner。
-
----
+- **smoke 结果记录**（`smoke.result_path` 每行）：`{ "id", "status": "pass"|"fail"|"skip", "detail"?: string, "reason_code"?: string, "error"?: string }`。skip 记录必须携带机器可读的不适用原因 `detail`；`reason_code` 可选，当前门禁唯一识别的取值为 `"platform-unavailable"`。
+- **必要用例 skip**：本提案变更用例以 skip 结束时 Gate FAIL（`required_cases_skipped`），例外是 `reason_code === "platform-unavailable"` 且 `detail` 非空，该类放行并列入 `platform_skipped_cases`。非本提案用例的 skip 口径不变，不得单独导致 FAIL。
 
 ## 6. 错误处理
 
@@ -2690,35 +2698,75 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 
 ## openlogos merge 直接合并输出合同
 
-`openlogos merge <slug> [--format json]` 一次调用完成合并。
+`openlogos merge <slug> [--format json]` 一次调用完成合并；提案已合并时，同一条命令按 delta 摘要执行幂等返回或增量修正（功能规格 §2.69.1、§2.69.4）。
 
 ### 成功输出
 
-stdout 输出标准 envelope，`data` 至少含 `slug`、`target_count`、`targets`（canonical target 路径数组）、`spec_merged_path`、`test_change_set`（结构化，与 `SPEC_MERGED` 中同源）。
+stdout 输出标准 envelope，`data` 至少含：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `slug` | string | 提案 slug |
+| `result` | `"merged"` \| `"amended"` \| `"already-merged"` | 首次合并 / 增量修正 / 幂等（当前 delta 摘要等于已合并摘要）；闭合枚举，消费方遇未知值按保守分支处理 |
+| `delta_digest` | string | 本次所用 delta 的摘要（`sha256:<hex>`，算法见功能规格 §2.69.4.1）；`already-merged` 时即已合并摘要 |
+| `target_count` | number | 本次实际写入的 canonical target 数；`already-merged` 为 0 |
+| `targets` | string[] | 本次实际写入的 canonical target 路径（升序）；`already-merged` 为 `[]` |
+| `spec_merged_path` | string | `SPEC_MERGED` 相对路径 |
+| `test_change_set` | object | 结构化，与 `SPEC_MERGED` 中同源；`amended` 时为整体重算后的结果 |
+| `invalidated_markers` | string[] | 本次清除的验收 / 交付标记文件名（升序，取自 `VERIFY_PASS` / `VERIFY_FAIL` / `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`）；`merged` 与 `already-merged` 恒为 `[]` |
+| `amend` | object \| null | 仅 `amended` 时非 null：`{ "targets_recomposed": string[], "targets_added": string[], "targets_restored": string[] }`，三类互不相交、并集等于 `targets` |
+
+宿主据 `result` 区分「首次合并完成 / 修正已应用 / 已是最新无需修正」，**不得**自行比较 delta 与主文档字节。
 
 ### 稳定错误码
 
 | 错误码 | 触发 |
 |---|---|
-| `MERGE_NO_ACTIVE_CHANGE` | 无活跃提案或提案目录缺失 |
+| `MERGE_NO_ACTIVE_CHANGE` | 无活跃提案或提案目录缺失（含已归档提案） |
 | `MERGE_DELTA_INVALID` | delta 段标记缺失、章节锚解析到 0 或多处、物质结果复验不通过 |
 | `MERGE_TARGET_MISMATCH` | P==T==D 不成立（proposal / tasks / deltas 目标集不等） |
-| `MERGE_ALREADY_COMPLETE` | `SPEC_MERGED` 已在场（重新合并须先 `git checkout logos/resources/` 回滚） |
-| `MERGE_APPLY_FAILED` | 落盘中途失败（已整批回滚） |
+| `MERGE_ALREADY_COMPLETE` | 内部防御码：首次合并路径在 `SPEC_MERGED` 已在场时被调用。命令层对已合并提案改走幂等或增量修正，正常流程不再对外产生 |
+| `MERGE_AMEND_BASELINE_MISSING` | 已合并、delta 已修改，但 `SPEC_MERGED` 无 `merge_baseline`（旧标记或 legacy `MERGED`）；不从 git 历史回推 |
+| `MERGE_AMEND_BASELINE_UNREADABLE` | 需读回的合并前字节 `git_blob` 为 null、对象不可读或 sha256 不匹配 |
+| `MERGE_AMEND_DRIFT` | 上次已应用目标的当前 sha256 ≠ `after_sha256`；message 点名全部漂移文件 |
+| `MERGE_AMEND_CREATE_WITHDRAW` | 首次以 CREATE 新建的目标在当前 delta 中已不再涉及 |
+| `MERGE_AMEND_PROTOTYPE_UNSUPPORTED` | 原型资产相对上次合并有变化 |
+| `MERGE_APPLY_FAILED` | 落盘失败。是否已整批回滚以原语结构化返回 `rolled_back` 为准（功能规格 §2.84.3 档 B / 档 C）；增量修正时**仅** `rolled_back === true` 才恢复被清除的验收 / 交付标记，否则标记保持缺失 |
 
-**零副作用（强制）**：除 `MERGE_APPLY_FAILED`（已回滚）外，任一错误码触发时 `logos/resources/` 与 `SPEC_MERGED` 均未被触碰。错误 message 附 `git checkout logos/resources/` 作为兜底回滚提示。
+**零副作用（强制）**：除 `MERGE_APPLY_FAILED` 外，任一错误码触发时 `logos/resources/`、`SPEC_MERGED` 与提案目录内全部标记均未被触碰；`MERGE_AMEND_*` 全部在写入与清除标记之前判定。`MERGE_APPLY_FAILED` 时状态声明按功能规格 §2.84.3 三档如实报告，不得以错误码本身推断已回滚；增量修正下档 B 恢复标记失败须点名未恢复的标记，档 C 不恢复标记并如实报告规格可能已是修正后字节。错误 message 附 `git checkout logos/resources/` 作为兜底回滚提示；`MERGE_AMEND_*` 另附手工处理指引（另立新提案或人工处理）。
 
 ### SPEC_MERGED 结构（结构化事实源）
 
 ```jsonc
 {
   "type": "merge_complete",
-  "completed_at": "<ISO 时间戳>",
-  "test_change_set": { /* schema 与内容口径与事务时代逐字段一致 */ }
+  "completed_at": "<ISO 时间戳>",              // 首次合并时间，增量修正不改写
+  "test_change_set": { /* schema 与内容口径与事务时代逐字段一致；增量修正时整体重算 */ },
+  "merge_baseline": {
+    "schema": "openlogos/merge-baseline@1",
+    "delta_digest": "sha256:<hex>",
+    "targets": [
+      {
+        "path": "<canonical target>",
+        "mode": "CREATE" | "MODIFY",            // 首次触及时的模式
+        "before": null | { "sha256": "<hex>", "git_blob": "<hex>" | null },
+        "after_sha256": "<hex>"
+      }
+    ]
+  },
+  "amendments": [
+    {
+      "amended_at": "<ISO 时间戳>",
+      "previous_delta_digest": "sha256:<hex>",
+      "delta_digest": "sha256:<hex>",
+      "targets_recomposed": [], "targets_added": [], "targets_restored": [],
+      "invalidated_markers": []
+    }
+  ]
 }
 ```
 
-`test_change_set` 被 `verify`、`change-lint`、`test-slice-manifest` 三处消费——**流程判断使用结构化数据**，消费方读取行为零改动。
+`test_change_set` 被 `verify`、`change-lint`、`test-slice-manifest` 三处消费——**流程判断使用结构化数据**，消费方读取行为零改动；`merge_baseline` / `amendments` 为新增字段，旧消费方忽略即可。本版之前写入的 `SPEC_MERGED` 不含这两个字段，读取方必须容忍缺失（视为无基线）。
 
 ## openlogos lint-specs 输出合同
 
@@ -2727,3 +2775,47 @@ stdout 输出标准 envelope，`data` 至少含 `slug`、`target_count`、`targe
 成功时 stdout 输出 envelope，`data` 含 `checked_files`、`issues`（每项含 `code` / `path` / `line` / `message`）。发现问题时非零退出。
 
 **不参与任何门（强制）**：`merge` / `verify` / `archive` / `change-lint` 均不读取本命令结论、不因其结果阻断——它承接的是 seal preflight 删除后的结构检查能力，但以诊断工具而非门的形态提供。
+
+## modules[].active_change.spec_amend 增量修正只读投影
+
+> 来源变更：merge-amend-merged-change。场景 S11「S11 已合并提案的增量修正只读投影」；功能规格 §2.69.4。
+
+### 挂载位置
+
+- `openlogos status --format json` 的 `modules[].active_change.spec_amend`；`watch` 事件 `data` 与 `status` 同构，随之出现。
+- **仅当活跃提案已完成规格阶段**（`SPEC_MERGED` 或 legacy `MERGED` 在场）时出现；未合并提案、无活跃提案时不出现该键，既有 golden 不漂移。
+
+### Schema
+
+```jsonc
+{
+  "spec_amend": {
+    "merged_delta_digest": "sha256:<hex>" | null,
+    "current_delta_digest": "sha256:<hex>",
+    "pending": true | false | null,
+    "blocked_reason": null | "baseline-missing" | "baseline-unreadable" | "drift" | "create-withdraw" | "prototype-changed",
+    "amend_count": 0
+  }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `merged_delta_digest` | string \| null | 是 | `SPEC_MERGED.merge_baseline.delta_digest`；无基线或标记不可解析时为 null |
+| `current_delta_digest` | string | 是 | 按功能规格 §2.69.4.1 算法对当前 `deltas/` 计算的摘要（与 merge 同一实现） |
+| `pending` | boolean \| null | 是 | 有修正待应用：`current ≠ merged`；`merged_delta_digest` 为 null 时为 null（不可判定） |
+| `blocked_reason` | string \| null | 是 | `pending == true` 时按 merge 同一顺序只读检查拒绝边界的首个命中，取值与 merge 错误码一一对应（`baseline-unreadable` ↔ `MERGE_AMEND_BASELINE_UNREADABLE` 等）；`pending == false` 时为 null；无基线时为 `"baseline-missing"`。闭合枚举，遇未知值按受阻处理 |
+| `amend_count` | number | 是 | `SPEC_MERGED.amendments` 长度；无该字段时为 0 |
+
+### 派生规则
+
+- `baseline-unreadable` 在 status 中只以 `git cat-file -e` 探测对象存在性；sha256 复核在 merge 执行时完成，故 status 未报受阻时 merge 仍可能以 `MERGE_AMEND_BASELINE_UNREADABLE` 拒绝（对象损坏），反之不成立。
+- 投影只读：不写任何文件、不写 git 对象、不清除或生成标记、不改变 `proposal_step` 派生。
+- `pending` 不改变 `proposal_step`：已合并提案的前沿仍由既有派生决定；修正成功后因验收标记被清除，前沿按既有规则回到待 verify 一侧。
+
+### 消费方契约
+
+- `pending == true && blocked_reason == null`：修正入口可用，宿主可在获授权后执行 `openlogos merge <slug>`（半自动下仍是人类确认点）。
+- `pending == false`：修正已应用或从未修改，不需要再次 merge。
+- `pending == null`：不可判定（旧标记），宿主**不得**按 false 处理、**不得**自行比较字节；如需修正，按 `blocked_reason: "baseline-missing"` 的指引另立新提案。
+- `blocked_reason` 非 null：执行 merge 必然以对应错误码拒绝，宿主应转人工处理。

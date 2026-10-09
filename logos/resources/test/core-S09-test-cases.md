@@ -1424,3 +1424,70 @@
 - 全部用例以真实 CLI 子进程在临时 git 项目中执行；UT-S09-446、UT-S09-447 的落盘失败、回滚未完成、提交后清理失败、标记清除与恢复失败均通过仅测试环境生效的故障注入钩子触发（沿用 `applyBaselineClosureBatch` 既有 `afterWrite` 钩子形态与 EX-9.24 / UT-S09-351～UT-S09-354 既有的提交后清理失败注入方式），生产路径零影响；断言以原语结构化返回 `rolled_back` 区分档 B 与档 C。
 - UT-S09-434 与 ST-S09-196 须保留旧实现对照：以「删除 `SPEC_MERGED` 后首次合并路径重合并」复现旧行为，断言其 `changed_test_ids` 逐轮缩小，证明用例对旧实现必红。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S09 guard 非 git 回落的复合命令逐段判定测试
+
+> 覆盖根规范 `spec/pretooluse-guard.md`「Bash 非 git 回落的复合命令逐段判定（规范性）」（拆段、逐段判定、有效工作目录及其条件链作用域）与「适用条件与非 git 回落」第 5 条；场景 S09-F EX-9F.1、EX-9F.32～EX-9F.38；来源变更 verify-smoke-guard-fixes-0-15-20（决策 C04，proposal r1 F1）。
+>
+> **夹具口径**：`mktemp -d` 下的一次性项目，**不是** git 工作树；`logos/logos-project.yaml` 含 launched 模块，`logos/.openlogos-guard` 不存在；项目根下有 `src/a.ts`、`src/x`。以真实 `plugin/bin/guard-check` 脚本为被测对象，cwd 为项目根，向 stdin 喂 PreToolUse hook JSON（`tool_name:"Bash"`，`tool_input.command` 为待测命令），以退出码判定（0 放行、2 阻断）。「项目外绝对路径」取另一个 `mktemp -d` 目录下的文件。旧实现对照取修改前的 guard-check 副本。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-448 | 以安全命令开头的复合写入被阻断 | 非 git 夹具 | 逐条喂 `ls && rm -rf src`、`true; rm src/x`、`cd <项目根绝对路径> && sed -i 's/a/b/' src/x`、`pwd \| tee src/x` | 四条均 exit 2，stderr 含阻断说明。**旧实现前三条 exit 0，本用例必红** |
+| UT-S09-449 | 命令替换类结构中出现写入即阻断 | 同上 | `echo $(rm src/x)`、`` echo `rm src/x` ``、`cat <(rm src/x)`、`cat <<EOF > src/x` 加 heredoc 正文 | 均 exit 2（按解析不出处理） |
+| UT-S09-450 | 只读复合命令与引号内分隔符放行 | 同上 | `ls && cat src/x`、`git status \| head`、`echo "a && rm b"`、`echo 'x; rm src/x'` | 均 exit 0 |
+| UT-S09-451 | cd 后的相对写入按有效工作目录解析 | 同上 | `cd src && rm ../src/a.ts`；`cd src && cat a.ts`；`cd src && cat a.ts; cat x`；`cd src && rm <项目外绝对路径>` | 第一条 exit 2（`rm` 在 `cd src` 之后的连续 `&&` 链内，有效目录推进为 `<项目根>/src`，目标为受保护的 `src/a.ts`）；第二、三条 exit 0（只读段）；第四条 exit 0（绝对目标在项目外）。**按 guard 原 cwd 逐段套用的实现在第一条上 exit 0，本用例必红** |
+| UT-S09-452 | 目录切换不可确定后的写入一律阻断 | 同上 | `cd src; rm ../src/a.ts`、`cd "$D" && rm a.ts`、`cd - && rm a.ts`、`cd a \|\| cd b && rm x`、`popd && rm x`、`cd && rm x`；条件链被结束的形态：`cd /dev/null && true; rm src/a.ts`、`cd /dev/null && true` 换行 `rm src/a.ts`、`cd src && true \|\| rm ../src/a.ts`、`cd src && ls & rm ../src/a.ts` | 均 exit 2；条件链形态各条执行后 `src/a.ts` 字节不变。**只按「cd 段与下一段以 && 相连」推进有效目录的实现在 `cd /dev/null && true; rm src/a.ts` 上 exit 0，本用例必红** |
+| UT-S09-453 | 单条命令判定逐字不变 | 同上 | 对一组单条命令（`ls`、`cat src/x`、`rm src/x`、`rm <项目外绝对路径>`、`mkdir -p <项目外绝对路径>/d`、`echo hi > src/x`、`echo hi > <项目外绝对路径>/f`、`openlogos status`、`git push`、`npm test`、`rm $X`）分别用新旧 guard-check 判定 | 每条命令新旧退出码与 stderr 逐字一致 |
+| UT-S09-454 | git 判据生效时路径不变 | 同一夹具执行 `git init` 并提交，使 git 判据生效 | 对 `ls && rm -rf src`、`cd src && rm ../src/a.ts` 与一条普通单条写入，用新旧 guard-check 判定并比对引擎调用 | 两版退出码与事前轻判 / 快照行为一致（git 判据路径不受本修复影响） |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-202 | 非 git 回落逐段判定的端到端矩阵 | EX-9F.1、EX-9F.32～EX-9F.38 | 非 git 夹具；经 `openlogos sync` 部署的托管 guard-check 副本与 `plugin/bin/guard-check` 源模板逐字节一致 | 以托管副本对根规范「验收矩阵」全部命令逐条喂 hook JSON，并在每条阻断后检查 `src/a.ts`、`src/x` 字节 | 阻断类全部 exit 2、放行类全部 exit 0；全程 `src/` 下文件字节不变（guard 只判定不执行）。**旧实现在 `ls && rm -rf src`、`true; rm src/x`、`cd src && rm ../src/a.ts` 上放行，本用例必红** |
+
+### 追溯与覆盖
+
+- 安全前缀复合写入（EX-9F.32）：UT-S09-448、ST-S09-202。
+- 命令替换类结构（EX-9F.33）：UT-S09-449。
+- 只读与引号内分隔符（EX-9F.34）：UT-S09-450。
+- 有效工作目录（EX-9F.35～EX-9F.38）：UT-S09-451、UT-S09-452、ST-S09-202；条件链作用域（EX-9F.38）由 UT-S09-452 的条件链形态覆盖。
+- 单条命令与 git 判据零回归：UT-S09-453、UT-S09-454。
+
+## S09 merge 增量修正失败的报告文案测试
+
+> 覆盖功能规格 §2.84.3「增量修正路径的状态声明」；场景 S09「已合并提案的增量修正时序」EX-9.47～EX-9.50；来源变更 verify-smoke-guard-fixes-0-15-20（决策 C05，proposal r1 F2）。
+>
+> **夹具口径**：沿用「S09 已合并提案的增量修正测试」的已合并 git 夹具（首次合并后提交），按用例修改 delta。档 B / C 的故障通过仅测试环境生效的既有注入方式触发（`OPENLOGOS_TEST_MERGE_FAIL_AFTER` 触发整批回滚；`OPENLOGOS_TEST_APPLY_CLEANUP_FAIL=1` 复刻「全部目标与 `SPEC_MERGED` 已提交、journal 已 committed 后清理失败」）。「确定性未变断言」指「已合并状态未变」「未执行修正」「已恢复修正前状态」「保持合并前字节」四个短语。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-455 | 前置拒绝（档 A）使用修正文案且无 git checkout | 三臂：主文档漂移、旧标记无基线、撤回首次 CREATE 目标 | 真实 `openlogos merge <slug>` 与 `--format json` 各执行一次 | 退出码非零，错误码分别为 `MERGE_AMEND_DRIFT` / `MERGE_AMEND_BASELINE_MISSING` / `MERGE_AMEND_CREATE_WITHDRAW`；stderr 含「未进入修正写入」与「保持本次修正前的状态」及按错误码的核对指引；stderr 与 JSON 错误 envelope 的 message 均不含 `git checkout logos/resources/`，也不含「保持合并前字节，未写 SPEC_MERGED」 |
+| UT-S09-456 | 落盘失败且已确认回滚（档 B） | 修改 delta 并放置 `VERIFY_PASS`；以 `OPENLOGOS_TEST_MERGE_FAIL_AFTER` 使第二个目标写入后失败 | 执行 merge | 错误码 `MERGE_APPLY_FAILED`；stderr 含「已确认整批回滚」「`SPEC_MERGED` 原记录保留」与标记已恢复的说明；不含 `git checkout logos/resources/`；`VERIFY_PASS` 字节恢复 |
+| UT-S09-457 | 已提交后清理失败与原语抛错逃逸（档 C） | 两臂：① `OPENLOGOS_TEST_APPLY_CLEANUP_FAIL=1`（已提交后清理失败的反例）；② 以测试注入使落盘原语返回 `ok:false`、`rolled_back:false`；均放置 `VERIFY_PASS` | 执行 merge 并读取 stderr、JSON 错误 envelope 与磁盘 | 两臂 stderr 与 JSON message 均含「可能已提交本次修正或状态不可确认」「`SPEC_MERGED` 可能已改写」「须重新 verify」与 `git status` / `git diff logos/resources/` 核对指引，保留原始错误码；**不含**任一确定性未变断言，也不含 `git checkout logos/resources/`；`VERIFY_PASS` 不在场；臂 ① 中 `SPEC_MERGED` 实际已含新的修正记录（证明「未变」断言与磁盘相反） |
+| UT-S09-458 | 首次合并失败文案逐字不变 | 三臂：首次合并的准备阶段失败、`rolled_back:true`、清理失败逃逸 | 新旧实现分别执行 merge，比对 stderr | 三臂 stderr 逐字一致，档 A / B 仍含「回滚点：git checkout logos/resources/」 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-203 | 漂移被拒后按指引核对不丢未提交改动 | EX-9.40、EX-9.47 | 已合并夹具；修改 delta；对一个已应用目标做一处未提交的手工修改 | ① 真实 `openlogos merge <slug> --format json`；② 读取 stderr 与 envelope；③ 读取被手工修改的目标 | ① 非零退出，`MERGE_AMEND_DRIFT`；② 文案为档 A 修正文案，点名漂移文件，不含 `git checkout logos/resources/`；③ 手工修改仍在（报告没有引导执行会抹掉它的命令）。**修改前实现的 message 含该回滚建议，本用例必红** |
+| ST-S09-204 | 档 C 端到端：已提交后清理失败 | EX-9.45 第三支、EX-9.49 | 已合并夹具，`VERIFY_PASS` 在场；修改 delta；`OPENLOGOS_TEST_APPLY_CLEANUP_FAIL=1` | ① 真实 `openlogos merge <slug> --format json`；② 读取 `SPEC_MERGED`、目标文件与标记；③ `openlogos archive <slug>` | ① 非零退出，stderr / envelope 为档 C 修正文案且不含确定性未变断言与 `git checkout`；② `SPEC_MERGED` 的 `amendments` 已新增一条、目标为修正后字节、`VERIFY_PASS` 不在场；③ 以 `ARCHIVE_VERIFY_NOT_PASSED` 拒绝 |
+
+### 追溯与覆盖
+
+- 档 A 修正文案与去掉 git checkout（EX-9.47）：UT-S09-455、ST-S09-203（修改前实现必红）。
+- 档 B（EX-9.48）：UT-S09-456。
+- 档 C 不得确定性断言（EX-9.49）：UT-S09-457、ST-S09-204。
+- 首次合并零回归（EX-9.50）：UT-S09-458。
+
+### 自动化与证据要求
+
+- guard 用例以真实 `plugin/bin/guard-check` 与 sync 部署副本执行，不以函数级桩替代；merge 用例以真实 CLI 子进程执行，文案断言针对固定短语与错误码，不依赖整段措辞。
+- 故障注入仅在 `NODE_ENV=test` 下生效，生产路径零影响。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

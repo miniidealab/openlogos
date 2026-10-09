@@ -127,6 +127,8 @@ hook 从 stdin 接收 JSON：
 | `cd` / `pwd` / `echo`（无重定向） | 无副作用命令 |
 | `node -e` / `python3 -c`（无文件写入） | 计算命令 |
 
+**按段匹配（verify-smoke-guard-fixes-0-15-20，决策 C04）**：本表是**逐段**匹配的模式——非 git 回落时，复合命令先按顶层分隔符拆段（见 §Bash 非 git 回落的复合命令逐段判定），只有**每一段**都命中本表才凭白名单放行。`cd` 在本表内只表示「该段无副作用」，它改变的工作目录会影响后续写入段相对目标的解析（同节「有效工作目录」）。单条命令的匹配结果不变。
+
 ### Bash 写入操作检测模式
 
 以下模式被视为文件写入操作，在无 guard 时阻断：
@@ -142,6 +144,8 @@ hook 从 stdin 接收 JSON：
 | ~~`git push`~~ | ~~远程推送~~（过时：见下方澄清，`git push` 实际已在 Bash 命令安全白名单内、guard 始终放行，不属被阻断写操作） |
 
 **例外**：命中写入模式不直接等于阻断——写入目标经路径提取后逐一走文件路径白名单与管辖边界判定（见 §Bash 写命令路径提取与逐路径管辖判定）：全部目标在项目根之外或白名单内仍然放行；解析不出目标的形态维持无条件阻断（fail-closed）。
+
+**按段匹配**：非 git 回落时本表同样逐段匹配，模式不再只锚定整条命令的开头——`true; rm src/x` 的第二段命中 `rm`，按该段做路径提取与逐路径管辖判定。命令替换、反引号、进程替换与 heredoc 中出现本表模式时按解析不出阻断（见 §Bash 非 git 回落的复合命令逐段判定）。
 
 **澄清（`git push` 始终放行）**：`git push` 实际已在 guard-check 的 Bash 命令安全白名单内（`BASH_SAFE_PATTERNS` 含 `^git push`），guard **从不拦截 `git push`**——上表把 `git push` 列为被阻断写操作属过时描述，已划除。因此全自动 / 无人值守模式**无需任何 marker 或 guard 例外**即可自动 `git push`；是否自动推送的唯一约束来自生成的指令文本（AGENTS.md/CLAUDE.md）：全自动下指令文本授权 AI 自动 push，半自动 / 手动下要求人工确认。
 
@@ -839,7 +843,7 @@ Windows 上 guard-check 读取 `tool_name` 的两条路径同时失效：`python
 2. **无活跃提案（无 `logos/.openlogos-guard`）**：按本节全部规则判定。
 3. **有活跃提案**：Edit / Write 的 proposal_step 收窄与 plan 阶段原型 allowlist 逻辑不变；Bash / PowerShell 照常拍快照建立执行记录（用于识别提案结束后仍在运行的后台调用），但各检查点只维护记录（最终对比、关闭、去重），不报告新变化；`openlogos change` 固定提案起点时存入的待报告项照常送达。
 4. **initial 生命周期**：沿用既有「全部放行」，唯一例外是「保护范围变更的人类确认」在 lifecycle 判定之前生效（保护范围配置会延续到 launch 之后）。
-5. **非 git 回落（fail-closed）**：git 判据生效条件任一不满足时，沿用修改前的 Bash / PowerShell 判定顺序（安全白名单先判 → 写入模式 → 路径提取与逐路径管辖判定 → 解析不出即阻断）与 Edit / Write 白名单判定，不拍快照、不做事后检查。以下四处保守修改在两种模式下都生效：
+5. **非 git 回落（fail-closed）**：git 判据生效条件任一不满足时，沿用修改前的 Bash / PowerShell 判定要素（安全白名单 → 写入模式 → 路径提取与逐路径管辖判定 → 解析不出即阻断）与 Edit / Write 白名单判定，不拍快照、不做事后检查。Bash 一侧改为**逐段**套用上述要素，写入段的相对目标按有效工作目录解析，规则见 §Bash 非 git 回落的复合命令逐段判定（规范性）；PowerShell 一侧沿用既有 `ws_scan` 拆段判定。以下四处保守修改在两种模式下都生效：
    1. `.gitignore` 不在硬编码白名单内（§白名单规则「文件路径白名单（Edit/Write 工具）」）；
    2. 不可豁免项（guard 自有状态、保护范围来源、git 元数据，见「受保护判定」第 2–4 步）受保护，且先于白名单与 exempt 判定；
    3. reference 与基线 staging 豁免从 `guard.exempt` 读取，缺省与损坏按「guard.exempt 与内置默认」处理；
@@ -1143,3 +1147,59 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 - `cli/src/commands/init.ts` 与 sync 链路：PostToolUse / PostToolUseFailure / Stop hook 幂等注册、引擎资产分发与 asset-manifest 登记；`cli/src/commands/change.ts` / `archive.ts`：`boundary-start` / `boundary-end`。
 - `plugin-cursor/hooks/runtime.cjs`、`plugin-cursor/hooks/hooks.json`、`cli/src/lib/cursor-adapter.ts`：见 `spec/cursor-plugin.md`。
 - 托管副本经 sync 分发，不手改。
+
+## Bash 非 git 回落的复合命令逐段判定（规范性）
+
+> 来源变更：verify-smoke-guard-fixes-0-15-20（决策 C04，proposal r1 F1）。适用于 §版本控制内容保护与事后检查「适用条件与非 git 回落」第 5 条的 Bash 判定，以及引擎缺失 / node 不可用 / 整体状态采集失败导致的回落。git 判据生效时的事前轻判与事后检查**不受影响**。
+
+### 缺陷形态
+
+修改前回落路径 `bash_fallback_verdict` 拿**整条命令**匹配 `BASH_SAFE_PATTERNS`，命中即放行；写入模式也只锚定整条命令开头。于是 `ls && rm -rf src`、`cd <项目根> && sed -i … src/x`、`true; rm src/x` 在 launched 且无活跃提案时都被放行。PowerShell 一侧的 `ws_scan` 已按顶层分隔符拆段判定，Bash 一侧没有。
+
+### 拆段
+
+1. 先剥离单引号与双引号字面量（引号内的 `&&`、`;` 等不作分隔符；`echo "a && rm b"` 是一段）。
+2. 再按顶层 `&&`、`||`、`;`、`|`、`&` 与换行拆段；空段忽略。
+3. 命令含 `$( … )`、反引号、`<( … )` / `>( … )` 或 heredoc（`<<`）时，只要整条命令任意位置出现写入模式，即按解析不出阻断；不解析其内部命令。
+
+### 逐段判定
+
+1. **安全白名单**：只有**每一段**都命中 `BASH_SAFE_PATTERNS` 才凭白名单放行。
+2. **写入模式**：任一段命中 `BASH_WRITE_PATTERNS`，即对**该段**做既有的路径提取（§Bash 写命令路径提取与逐路径管辖判定「路径提取规则」）与逐路径管辖判定；该段解析不出目标时阻断。
+3. **整条结论**：任一段不放行，整条命令阻断（exit 2，`block()` 双通道保持）；全部段放行才放行。
+4. 未命中任何模式的段按既有规则（未知命令默认放行）处理。
+
+### 有效工作目录（路径基准合同）
+
+逐段套用既有判据时，既有路径解析以 guard 进程自身的 cwd 为基准，而白名单放行 `cd`——若不规定基准，`cd src && rm ../src/a.ts` 中的 `../src/a.ts` 会按 guard cwd 解析为项目外而被误放行，实际写入的却是 `<项目根>/src/a.ts`。因此：
+
+1. 各段按出现顺序维护「有效工作目录」，初值为 guard 自身 cwd。
+2. 写入段的**相对**目标先按当时的有效工作目录解析为绝对路径，再对项目根做既有管辖判定；**绝对**目标按其本身判定，不受前序目录切换影响。
+3. **可确定的推进及其作用域**：目录切换段是 `cd` 或 `pushd` 后跟**单个**字面量参数（不含 `$` 变量、通配符 `*` `?` `[`、波浪号 `~`、命令替换）时，有效工作目录推进为该参数解析出的目录（相对参数按当前有效目录解析）。该推进**只在从该段起以 `&&` 连续相连的条件链内有效**：链内后续段只有在目录切换成功时才会执行，因而必然使用新目录。目录参数形态合法并不证明切换会成功（如目标不是目录），所以不能把新目录带出这条链（delta r1 F2）。
+4. **不确定**：以下任一情形使有效工作目录变为不确定，此后整条命令中**任一写入段**按解析不出阻断，**绝不**以 guard 原 cwd 或假定的新目录的解析结果作为项目外放行依据；不确定一经产生即持续到命令结束：
+   1. 非字面量的目录切换——无参数 `cd`、`cd -`、`popd`、参数含变量或通配、位于子 shell 或条件分支内；
+   2. 字面量目录切换所在的 `&&` 条件链被 `;`、换行、`||`、`|` 或 `&` 结束——无论这个边界紧跟在切换段之后（`cd src; rm ../src/a.ts`），还是链中又经过若干段之后才出现（`cd /dev/null && true; rm src/a.ts`：`cd` 失败时 `true` 被跳过，`;` 之后的 `rm` 仍在原目录执行）。边界之后的段可能在新目录、也可能在原目录执行，基准不唯一。
+5. 只读段（命中安全白名单或未命中写入模式）不受有效工作目录影响。
+
+### 验收矩阵（非 git、launched、无活跃提案）
+
+| 命令 | 结论 |
+|---|---|
+| `ls && rm -rf src`、`true; rm src/x`、`cd <项目根> && sed -i 's/a/b/' src/x`、`echo $(rm src/x)` | 阻断（修改前放行） |
+| `cd src && rm ../src/a.ts` | 阻断（有效目录推进后目标为受保护源码） |
+| `cd src; rm ../src/a.ts`、`cd "$D" && rm a.ts`、`cd - && rm a.ts`、`cd a \|\| cd b && rm x` | 阻断（有效目录不确定） |
+| `cd /dev/null && true; rm src/a.ts`、`cd /dev/null && true` 换行 `rm src/a.ts`、`cd src && true \|\| rm ../src/a.ts`、`cd src && ls & rm ../src/a.ts` | 阻断（条件链被结束后有效目录不确定；按假定新目录解析会把受保护源码误算到项目外） |
+| `cd src && cat a.ts; cat b` | 放行（只读段不受有效目录影响） |
+| `ls && cat x`、`git status \| head`、`echo "a && rm b"`、`cd src && cat a.ts` | 放行 |
+| `cd src && rm /项目外绝对路径/x` | 按真实目标判定：项目外 → 放行 |
+| 任意单条命令 | 判定结果与修改前逐字一致 |
+
+### 不变量
+
+- 单条命令（拆段后只有一段）的判定结果逐字不变；`WHITELIST_PREFIXES`、`BASH_SAFE_PATTERNS` / `BASH_WRITE_PATTERNS` 模式表、拦截文案、exit 2 合同与 plan 阶段原型 allowlist 不变。
+- 收紧只影响复合命令；解析能力之外一律保守阻断，guard 不实现完整 shell 解释器。
+- git 判据生效时的事前轻判、快照与事后检查不受影响。
+
+### [code] 触点（本 delta 只定契约）
+
+- `plugin/bin/guard-check` 的 `bash_fallback_verdict` 落实拆段、逐段判定与有效工作目录；sync 部署副本 `.claude/openlogos/bin/guard-check` 经 `openlogos sync` 分发（guard-check 为 asset-manifest 托管资产，随 0.15.20 发布刷新）。

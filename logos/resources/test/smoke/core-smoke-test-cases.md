@@ -1883,3 +1883,42 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
 - runner **不得**以「安装态版本号等于候选」替代行为断言。lint 结论以 `--format json` 的 `violations[].code` 与退出码判定，不解析人类可读文案；`language` 以解析后的 JSON 值判定，字节不变以 SHA-256 比对。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-223～SMOKE-core-225 均被 runner 覆盖。
+
+## OpenLogos 0.15.20 verify / smoke / guard 修复与 merge 增量修正安装态 smoke（SMOKE-core-226～230）
+
+> 这组用例验证五项行为确实进入了本机全局安装态：verify 预跑失败进入门禁（功能规格 §2.7、§2.75.1）、smoke 平台不可执行例外（§2.48.5）、guard 非 git 回落逐段判定（根规范 `spec/pretooluse-guard.md`）、merge 增量修正失败文案（§2.84.3）与 merge 增量修正本身（§2.69.4）。它们都只有装进全局 CLI（guard 还需经 sync 分发）才对用户生效。
+>
+> 用例在 `mktemp -d` 一次性隔离项目内执行。runner **只读**本机全局安装态，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/` 与用户其他仓库（包括 runlogos）。判据用**行为断言**：版本号相等只证明装了新包，不证明行为生效。版本号以计划值 `0.15.20` 为准，实际以部署记录的候选版本为准，断言写成关系式：全局 `--version` == 部署记录版本。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-226 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内 `dist/lib/merge-amend.js`、`dist/lib/merge-baseline.js` 存在，`dist/commands/verify.js` 含 `pre_run_failed`，`dist/commands/smoke.js` 含 `platform-unavailable`，随包 guard 模板的 SHA-256 等于 manifest 条目 | ① `--version` 等于部署记录版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立 | 保留读取结果。任一不符 → 停止后续流程，按部署方案用 `cli/rollback/miniidealab-openlogos-0.15.19.tgz` 回装全局，并按「失败处置与回滚边界」恢复本仓托管态；不得以「仓内源码已修」了事 |
+| SMOKE-core-227 | 安装态 verify 预跑失败判 `pre_run_failed` | 本机全局已安装本次候选；临时项目经全局 `openlogos init` 建立，`verify.pre_run_command` 为「写半份结果后非零退出、退出前把结果文件回滚为完整全 pass 旧账本」的运行器，并在 stderr 输出唯一哨兵字符串 | ① 全局 `openlogos verify --format json`；② 读取 `acceptance-report.md`；③ 把运行器改为正常退出并写入完整全 pass 账本后再执行 ① | ① 退出码非零，`gate.result=="FAIL"`、`gate.reason=="pre_run_failed"`，`pre_run.commands[0].stderr_tail` 含哨兵；② 报告不含哨兵；③ `gate.result=="PASS"` | 同上；保留每次 JSON 摘要。① 为 `result_ledger_inconsistent` 或 PASS 表示安装态仍是旧判据，必须回装旧版并回流来源提案 |
+| SMOKE-core-228 | 安装态 smoke 平台不可执行例外 | 本机全局已安装本次候选；临时 launched 项目按 S19 夹具口径构造活跃提案的新增 smoke 用例与前置标记；`smoke.command` 指向写入指定结果的 runner | ① runner 为新增用例写 `{status:"skip", reason_code:"platform-unavailable", detail:"requires win32"}`，执行全局 `openlogos smoke --format json`；② 改为不写 `reason_code` 后重跑 | ① `gate.result=="PASS"`，`platform_skipped_cases` 含该用例；② `gate.result=="FAIL"`、`gate.reason=="required_cases_skipped"` | 同上；① FAIL 表示平台不可执行例外未进入安装态 |
+| SMOKE-core-229 | 安装态 guard 非 git 回落逐段判定 | 本机全局已安装本次候选；非 git 临时项目经全局 `openlogos init --ai-tool claude-code`、置 launched、全局 `openlogos sync` 部署托管 guard；项目内有 `src/a.ts`、`src/x`；无活跃提案 | 以托管 `.claude/openlogos/bin/guard-check`（cwd 为项目根）逐条喂 PreToolUse hook JSON：`ls && rm -rf src`、`true; rm src/x`、`cd src && rm ../src/a.ts`、`cd "$D" && rm a.ts`、`cd /dev/null && true; rm src/a.ts`、`ls && cat src/x`、`cd src && cat a.ts` | 前五条 exit 2，后两条 exit 0；托管副本与全局包内随包 guard 模板 SHA-256 一致；`src/` 下文件字节不变 | 同上；前三条任一 exit 0 表示安装态 guard 仍按整条命令前缀放行或未推进有效工作目录 |
+| SMOKE-core-230 | 安装态 merge 增量修正与修正被拒文案 | 本机全局已安装本次候选；临时 git 项目经全局 `openlogos init`、置 launched、全局 `openlogos change <slug>` 创建含一个 MODIFY 测试规格 delta 的提案，plan 已批准 | ① 全局 `openlogos merge <slug> --format json` 并提交；② 再次执行；③ 修改 delta 后执行全局 `openlogos status --format json` 与 `openlogos merge <slug> --format json`；④ 再修改 delta，并手工改动一个已应用目标，执行 merge | ① `result=="merged"`；② `result=="already-merged"`；③ `spec_amend.pending==true` 后 merge `result=="amended"`；④ 非零退出 `MERGE_AMEND_DRIFT`，stderr 含「未进入修正写入」，stderr 与 JSON 错误 message 均不含 `git checkout logos/resources/` | 同上；保留每步 stdout / stderr 与 `SPEC_MERGED`。③ 返回 `already-merged` 或 ④ 含回滚建议表示行为未进入安装态 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目内进行，结束即删除。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、用户其他仓库（包括 runlogos）或本机全局 prefix；本节对全局安装态只读。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`，本次为本地全局部署。
+- 断言中不硬编码主机路径、墙上时钟或本机全局安装现值（通则第 1 条）。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.7、§2.75.1、§2.48.5、§2.84.3「增量修正路径的状态声明」、§2.69.4。
+- 根规范：`spec/pretooluse-guard.md`「Bash 非 git 回落的复合命令逐段判定」。
+- 场景：S13 EX-9.1、S19 EX-19.7 / EX-19.8、S09-F EX-9F.32～EX-9F.38、S09 EX-9.47、S11「已合并提案的增量修正只读投影」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.15.20 发布方案（verify / smoke / guard 修复与 merge 增量修正，本地全局）」。
+- 验收标准映射（来源提案 verify-smoke-guard-fixes-0-15-20）：1、2 → SMOKE-core-227；4 → SMOKE-core-228；5 → SMOKE-core-229；6 → SMOKE-core-230 ④；7 → SMOKE-core-226。merge 增量修正 → SMOKE-core-230 ①～③。
+- 仓库内对应用例：UT-S13-81～UT-S13-88、ST-S13-23～ST-S13-24、UT-S19-51～UT-S19-56、ST-S19-23～ST-S19-24、UT-S09-448～UT-S09-458、ST-S09-202～ST-S09-204；版本身份 `UT-S19-46` / `UT-S19-49`。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-verify-smoke-guard-0-15-20.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-226～SMOKE-core-230，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次命令的退出码与 JSON 摘要，以及相关文件前后的 SHA-256。
+- 环境不具备时（缺候选或回滚 tarball、缺 git）写显式 `skip` 记录并携带缺失项，禁止静默零记录退出；这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
+- 判据以 `--format json` 的结构化字段、退出码与 SHA-256 为准，不解析人类可读文案（SMOKE-core-230 ④ 的文案断言只针对固定短语与「不含回滚建议」）。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-226～SMOKE-core-230 均被 runner 覆盖。

@@ -3737,3 +3737,119 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 测试：UT-S08-79～UT-S08-83、ST-S08-42～ST-S08-43、UT-S35-216～UT-S35-224、ST-S35-38～ST-S35-39、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-223～SMOKE-core-225。
 - 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
 - 来源提案：deploy-plan-gate-release-0-15-19（决策 C01、C02、C03）；sync-claude-response-language（已归档，决策 C01～C03）。
+
+## OpenLogos 0.15.20 发布方案（verify / smoke / guard 修复与 merge 增量修正，本地全局）
+
+### 部署目标与授权边界
+
+把五项已实现的 CLI 行为装进本机全局安装态，并刷新本仓托管资产：
+
+1. **verify 预跑失败进入门禁**（来源提案 `verify-smoke-guard-fixes-0-15-20`，功能规格 §2.7、§2.75.1）：预跑命令任一段非零退出即 FAIL（`pre_run_failed`），JSON 给出有界输出尾部。
+2. **smoke 平台不可执行例外**（同上，§2.48.5）：本提案必要用例的 skip 默认判 `required_cases_skipped`，`reason_code:"platform-unavailable"` 且 `detail` 非空时放行并单独列出。
+3. **guard 非 git 回落逐段判定**（同上，根规范 `spec/pretooluse-guard.md`「Bash 非 git 回落的复合命令逐段判定」）：复合命令拆段判定，写入段相对目标按有效工作目录解析。
+4. **merge 增量修正失败文案**（同上，§2.84.3「增量修正路径的状态声明」）：三档如实措辞，修正路径不再建议 `git checkout logos/resources/`。
+5. **merge 增量修正与 status `spec_amend` 投影**（来源提案 `merge-amend-merged-change`，已归档；§2.69.4）：已合并提案修改 delta 后同一条 `openlogos merge` 执行增量修正。
+
+五项都只有装进全局 CLI（guard 还需经本仓 `openlogos sync` 分发）才对用户生效。RunLogos 的 `adapt-upstream-merge-amend` 依赖第 5 项。
+
+授权来源：用户 2026-10-09 裁定（本提案决策 C06：「后面这个提案再部署，第一个不部署，部署的时候，打包新版本部署本地全局，不推送」），发布形态沿用 0.15.18 / 0.15.19 的本机全局安装（`npm install -g <tarball>`）。本方案**不含** `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。merge、verify、部署执行、smoke、archive 仍按项目执行门；`--auto` 下由本次 deliver 门 `gate_auto_passed=true` 放行部署执行。
+
+**不改写其他仓库**，包括 runlogos：不在其项目根运行任何命令（含 `openlogos sync`）；部署记录中写明「runlogos 需由用户授权后自行 sync 才能获得新 guard」。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS；`merge-amend-merged-change` 已归档（提交 `9b7746a`）。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本。计划时（2026-10-09）为 `0.15.19`，候选为下一 patch `0.15.20`。若实施前已有其他提案升版，候选改为「当时版本的下一 patch」、回滚版本改为「当时版本」，并在部署记录写明实际值。本节版本号是计划值，不是钉死值。
+3. **冻结当前本机全局**：记录 `command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`。计划时为 `/opt/homebrew/bin/openlogos`、`0.15.19`。实际值在部署前重新读取，不在测试或脚本中硬编码主机路径。
+4. **先有回滚制品，再动版本号**：计划时 `cli/rollback/` 最新只有 `0.15.18`，**尚无 `0.15.19`**。回滚制品必须能恢复**本次发布前实际装在全局的内容**，而不只是同一个版本号——仓内源码版本号同为 `0.15.19`，但已包含 merge 增量修正与本提案修复，全局安装的 `0.15.19` 都没有。因此：
+   1. **来源**：只从当前全局安装目录冻结，即在 `$(npm prefix -g)/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，产出 `cli/rollback/miniidealab-openlogos-0.15.19.tgz`。**禁止**从当前工作树打包，也禁止仅凭版本号相同认定可用。全局安装目录不可用时，只能改用与该安装包逐字节一致的已有固定制品或已发布提交；无法证明一致即停止部署。
+   2. **内容身份**：解包后逐文件计算 SHA-256，与全局安装目录中同名文件比对，`dist/` 下全部文件必须一致；另确认包内不存在 `dist/lib/merge-amend.js`，`dist/commands/verify.js` 不含 `pre_run_failed`。
+   3. **旧行为验证**：在一次性隔离 prefix 中试装该制品：`--version` 为 `0.15.19`；对「verify 预跑失败」夹具（见下文隔离矩阵）`gate.reason` 不为 `pre_run_failed`。
+   4. **记录**：来源安装路径（或固定制品路径 / 提交号）、制品字节数与 SHA-256、内容比对结果与旧行为证据，写入部署记录。第 1～3 项任一不满足即判发布前检查失败，不得进入升版。
+5. **冻结本仓托管态**：记录本仓 `.claude/openlogos/bin/` 下托管脚本（含 `guard-check`）与 `.claude/settings.json` 的 SHA-256，作为回滚后的比对基准。
+
+### 0.15.20 版本与制品身份
+
+**经升版脚本一次完成**（通则第 4 条）：执行 `node cli/scripts/bump-version.mjs 0.15.20`，由脚本一次更新 `cli/package.json` 与 lockfile 根包、全部随包 plugin manifest（以脚本 `VERSION_CARRIERS` 清单为准）、`cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION`（→ `0.15.20`）与 `LOCAL_RELEASE_ROLLBACK_VERSION`（→ `0.15.19`），并调用既有生成器重算 `cli/asset-manifest.json`。
+
+本次 asset-manifest 预期变化只能由生成器写出：
+
+| 资产 | 变化 |
+|---|---|
+| `plugin/bin/guard-check`（随包 guard 模板） | hash 变化（逐段判定与有效工作目录） |
+| `dist/i18n.js` | hash 变化（修正路径失败文案等新增 i18n 键，若有） |
+| payload `version` 与 `payloadHash` | 随升版重算 |
+
+**禁止手改** `asset-manifest.json` 与派生 hash。任一身份载体残留旧版本即判失败（`UT-S19-46`）；manifest 自洽由 `UT-S19-49` 守。
+
+在 `CHANGELOG.md` 既有位置补充 `0.15.20` 发布说明，不改既有条目：
+
+- Added：已合并提案修改 delta 后，同一条 `openlogos merge` 执行增量修正；`status` 投影 `spec_amend`（merge-amend-merged-change）。
+- Fixed：verify 预跑命令失败不再沿用旧结果判定，门禁 FAIL（`pre_run_failed`），JSON 给出命令输出尾部。
+- Fixed：smoke 门对平台不可执行的必要用例 skip（`reason_code:"platform-unavailable"`）放行并单独列出；其余必要用例 skip 仍拦截。
+- Fixed：非 git 项目 guard 回落判定按段判定复合命令，`cd` 后的相对写入按有效工作目录解析。
+- Fixed：merge 增量修正失败时按三档如实报告，不再建议 `git checkout logos/resources/`。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm test`，必须全绿（通则第 6 条），范围包括 UT-S13-81～UT-S13-88、ST-S13-23～ST-S13-24、UT-S19-51～UT-S19-56、ST-S19-23～ST-S19-24、UT-S09-448～UT-S09-458、ST-S09-202～ST-S09-204，merge 增量修正的 UT-S09-429～UT-S09-447、ST-S09-196～ST-S09-201、UT-S11-91～UT-S11-95、ST-S11-50～ST-S11-51，以及 `UT-S19-46` / `UT-S19-49`；`npm run build` 通过。
+2. 执行真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256，并在部署记录中标为本次**唯一候选制品**。之后的隔离验证、全局安装与回滚演练都只用这个文件，不再重新打包。
+3. 解包核对，证明制品带有本次行为，而不只是版本号变化：
+   - CLI entry、`--version` 为候选版本，包内 asset-manifest 自洽；
+   - 包内存在 `dist/lib/merge-amend.js` 与 `dist/lib/merge-baseline.js`；
+   - 包内 `dist/commands/verify.js` 含 `pre_run_failed`，`dist/commands/smoke.js` 含 `platform-unavailable`；
+   - 包内随包 guard 模板与 asset-manifest 对应条目的 SHA-256 一致。
+
+### 隔离 Prefix 行为矩阵
+
+用 `mktemp -d` 建一次性 npm prefix，安装固定 tarball，从新 shell 或绝对入口执行。全部项目态都在一次性临时目录内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**。
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| verify 预跑失败 | 临时项目的 `pre_run_command` 为「失败后回滚账本」的运行器（S13 夹具口径）：候选 `openlogos verify --format json` 的 `gate.reason=="pre_run_failed"`，`pre_run.commands[0]` 带非空 `stderr_tail`；`acceptance-report.md` 不含命令输出 |
+| smoke 平台不可执行 | 临时项目按 S19 夹具口径：本提案用例以 `platform-unavailable` + 非空 detail skip → PASS 且列入 `platform_skipped_cases`；去掉 `reason_code` → FAIL `required_cases_skipped` |
+| guard 逐段判定 | 非 git 临时项目经候选 `openlogos init` + 置 launched + `openlogos sync` 部署 guard：对 `ls && rm -rf src`、`true; rm src/x`、`cd src && rm ../src/a.ts`、`cd "$D" && rm a.ts` 喂 hook JSON 均 exit 2；`ls && cat x`、`cd src && cat a.ts` exit 0 |
+| merge 增量修正 | 临时 git 项目：首次 `merge --format json` 为 `merged` → 未改 delta 再次为 `already-merged` → 改 delta 后为 `amended`，`status --format json` 的 `spec_amend.pending` 依次为 false / true / false；再手工改动一个已应用目标并改 delta → 非零退出 `MERGE_AMEND_DRIFT`，message 为修正路径档 A 文案且不含 `git checkout logos/resources/` |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径，`--version` 逐字一致 |
+| 回滚演练 | 在隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.15.19.tgz` 回装（SHA-256 与冻结记录一致），`--version` 回到 `0.15.19`；「verify 预跑失败」夹具在回滚版本上 `gate.reason` 不为 `pre_run_failed`（对照：证明差异确由候选引入） |
+
+### 本机全局部署
+
+隔离矩阵与回滚演练通过后，按以下顺序执行：
+
+1. 用**同一** tarball 执行 `npm install -g <tarball>` 覆盖本机全局，在新 shell 中复核 entry realpath、`--version`、package.json、asset-manifest 全部同源于候选版本。
+2. 写部署记录 `logos/resources/verify/deployment-report.md`：部署身份（版本、tarball 路径与 SHA-256、入口 realpath）；回滚入口（`cli/rollback/miniidealab-openlogos-0.15.19.tgz` 的路径与 SHA-256）；冻结的本仓托管态 SHA-256；源码回归证据（`npm test`）与安装态证据（隔离矩阵与全局复核），两者分开写。
+3. 在本仓项目根用新全局 CLI 执行 `openlogos sync`，读回核对：本仓 `.claude/openlogos/bin/guard-check` 与全局安装包内随包 guard 模板逐字节一致（SHA-256 相同）；其余托管脚本与冻结值的差异逐项写入部署记录并说明来源。
+4. 部署记录末尾写明 runlogos 提醒：「runlogos 需由用户授权后在其项目根执行 `openlogos sync`，才会获得新 guard」。随后经 `openlogos deploy-done` 受控落标，再按流程进入 smoke（SMOKE-core-226～SMOKE-core-230）。
+
+### 本仓切换风险与应对
+
+| 风险 | 影响与应对 |
+|---|---|
+| 新 guard 在本仓生效 | 本仓位于 git 工作树内，git 判据生效，逐段判定只影响非 git 回落路径；本仓日常命令不受影响。若引擎缺失导致回落，以安全命令开头的复合写入会被阻断，按提示拆成单独调用 |
+| 本仓 verify 行为收紧 | 本仓 `pre_run_command` 失败时 verify 由「沿用旧结果」变为 FAIL `pre_run_failed`；这是本次要修的行为。遇到时按 `stderr_tail` 定位失败测试，不回退部署 |
+| 本仓其它进行中提案 | 计划时 `logos/changes/` 下除本提案外只有 `archive/`；如实施时出现新的进行中提案，其 smoke 必要用例 skip 需补 `reason_code` 或补齐环境，不回退本次部署 |
+
+### 失败处置与回滚边界
+
+1. 发布前检查、构建、隔离矩阵或回滚演练任一失败：不安装全局、不 sync 本仓、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即可回滚隔离环境。
+2. 已全局安装、本仓尚未 sync 时发现问题：用 `cli/rollback/miniidealab-openlogos-0.15.19.tgz` 执行 `npm install -g` 回装，新 shell 复核 `--version` 为 `0.15.19`。
+3. 本仓已 sync 后发现问题：先按第 2 条回装全局；再在本仓用旧版 CLI 执行 `openlogos sync` 恢复托管 guard；回滚后读回 `.claude/openlogos/bin/` 下托管脚本的 SHA-256，与冻结值一致即完成。
+4. 本次无数据迁移；`logos.config.json` 无新增必填字段，无需回退。已用候选版本写入的 `SPEC_MERGED`（含 `merge_baseline`）对旧版无害：旧版只读其既有字段。
+5. 回滚不以手改托管资产或 asset-manifest 作为修复手段，也不以放宽 verify / smoke / guard 判定「让矩阵变绿」。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`；push 仍是 archive 之后的人类确认点。
+- 不改写其他仓库（包括 runlogos）的任何文件，不在其项目根运行任何命令（含 `openlogos sync`）。
+- 不在部署步骤中修改 `logos/logos.config.json`。
+
+### 追溯
+
+- 功能规格：§2.7、§2.75.1、§2.48.5、§2.84.3「增量修正路径的状态声明」、§2.69.4。
+- 根规范：`spec/pretooluse-guard.md`「Bash 非 git 回落的复合命令逐段判定」；`spec/cli-json-output.md` §4.4、§4.5、§5.3、§5.4 与 merge / status 合同。
+- 场景：S13 步骤 9 与 EX-9.1～EX-9.6；S19「smoke skip 统计口径」EX-19.7～EX-19.10；S09-F EX-9F.1、EX-9F.32～EX-9F.38；S09「已合并提案的增量修正时序」EX-9.37～EX-9.50；S11「已合并提案的增量修正只读投影」。
+- 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-226～SMOKE-core-230。
+- 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
+- 来源提案：verify-smoke-guard-fixes-0-15-20（决策 C01～C06）；merge-amend-merged-change（已归档）。

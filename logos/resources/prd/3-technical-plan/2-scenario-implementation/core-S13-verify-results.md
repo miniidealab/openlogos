@@ -35,6 +35,7 @@ sequenceDiagram
 ```
 
 ## 步骤说明
+
 1. **用户**执行 `openlogos verify`。
 2. **CLI** 读取 `logos.config.json` 的 `verify` 配置，包括预跑命令、结果路径与 `sandbox_mode`。
 3. **CLI** 若检测到 `regression_command` 或 `incremental_command`，进入两阶段模型；若仅检测到 `pre_run_command`，走旧兼容路径；若都不存在，直接读取现有结果。
@@ -48,7 +49,7 @@ sequenceDiagram
 6. **Sandbox Executor** 只回收配置声明的结果文件，回收采用**定点采集**（对每个白名单路径在沙箱副本内存在即拷回，不依赖快照 diff），白名单路径位于豁免目录下亦照常回收；并返回沙箱诊断，依赖目录豁免生效时向 `sandbox.infos` 附一条信息级说明，不改变 `sandbox.status`、不进入 `pre_run.diagnostics`。
 7. **结果合并器**将回归与增量结果合并到 `result_path`。同一用例 ID 多次出现时，按最新 `timestamp` 去重后生效（完整全序规则见「verify 结果账本一致性预检 → 规则」第 3 条；该 ID 存在任一缺失/非法时间戳时，整组退回文件行序 last-wins，等价旧行为）。
 8. **CLI** 读取测试规格和合并后的结果。
-9. **CLI** 计算验收指标，输出 PASS/FAIL，并在覆盖不足、预跑失败或沙箱失败时输出诊断。
+9. **CLI** 计算验收指标，输出 PASS/FAIL，并在覆盖不足、预跑失败或沙箱失败时输出诊断。Gate 判据为四项（功能规格 §2.75.1）：**预跑命令全部成功**、账本一致、零失败、零未覆盖。单阶段 `pre_run_command` 或两阶段任一段非零退出时一律 FAIL，`gate.reason` 在账本含失败用例时取 `failed_cases`、否则取 `pre_run_failed`；预跑命令全部成功或未配置时保持既有顺序「`result_ledger_inconsistent` → `failed_cases` → `incomplete_coverage`」逐字不变。主原因之外的诊断照常输出（EX-9.1～EX-9.3、EX-9.6）。不再提示「Continuing verify with existing results.」。`--format json` 时 `pre_run.commands[]` 各条目附有界输出尾部 `stdout_tail` / `stderr_tail`（末尾最多 80 行、不超过 8 KiB、去除 ANSI 控制序列；截获不中断子进程、不改退出码，EX-9.4）；文本模式保持实时输出、不截获；`acceptance-report.md` 只记失败阶段与退出码，不写命令输出（EX-9.5）。
 
 ## 异常用例
 ### EX-4.1: 缺少测试结果
@@ -84,6 +85,42 @@ sequenceDiagram
 ### EX-8.1: 覆盖不足且无预跑配置
 - **触发条件**：未配置任何预跑命令，且存在未覆盖用例。
 - **期望响应**：verify FAIL，输出覆盖不足列表，同时提示可能只运行了局部测试，并建议配置 `verify.pre_run_command`、`verify.regression_command` 或启用 verify 沙箱以隔离完整测试执行。
+
+### EX-9.1: 单阶段预跑命令失败且账本被回滚为旧的完整结果
+
+- **触发条件**：`verify.pre_run_command` 以非零状态退出；测试运行器在失败后把 `result_path` 回滚为上一份完好账本（RunLogos `scripts/run-vitest.js` 的既有行为，2026-10-06、2026-10-09 两次事故形态），或账本恰好完整、全部通过。
+- **期望响应**：Gate FAIL，`gate.reason` 为 `pre_run_failed`（修改前分别误报为 `result_ledger_inconsistent` 或直接 PASS）；`pre_run.commands[0]` 如实记录 `status:"fail"` 与 `exit_code`；账本一致性与未覆盖诊断照常输出，不作为主原因。
+- **副作用**：`acceptance-report.md` 记录失败阶段 `pre_run` 与退出码，不写命令输出；不写 `VERIFY_PASS`。
+
+### EX-9.2: 预跑命令失败且账本含失败用例
+
+- **触发条件**：预跑命令非零退出，结果账本中存在 `status:"fail"` 的用例。
+- **期望响应**：Gate FAIL，`gate.reason` 仍为 `failed_cases`（更具体、可直接定位），`failed_cases` 照常列出；`pre_run.commands[]` 如实记录该段失败。账本同时不自洽时仍取 `failed_cases`（预跑失败分支），`consistency` 照常输出。
+- **副作用**：同 EX-9.1。
+
+### EX-9.3: 两阶段中任一段失败
+
+- **触发条件**：`regression_command` 或 `incremental_command` 任一段以非零状态退出（另一段成功或未配置）。
+- **期望响应**：与单阶段同一判据——Gate FAIL，原因按 §2.75.1 优先级取值；`pre_run.commands[]` 中失败段 `status:"fail"`、成功段 `status:"pass"`，两段结果照常合并到 `result_path`。
+- **副作用**：报告记录失败的阶段名（`regression` / `incremental`）与退出码。
+
+### EX-9.4: 预跑命令输出超过截获上限
+
+- **触发条件**：`--format json` 下预跑命令输出远超 80 行或 8 KiB（含 ANSI 控制序列），或在沙箱中执行。
+- **期望响应**：子进程完整运行至自然结束，不因输出量被提前终止；退出码如实记录；`stdout_tail` / `stderr_tail` 只保留末尾最多 80 行且不超过 8 KiB，截断落在完整 UTF-8 字符边界，ANSI 控制序列被去除。沙箱与非沙箱执行同一口径。
+- **副作用**：无；输出全文不落盘。
+
+### EX-9.5: 命令输出不进入验收报告
+
+- **触发条件**：任一预跑命令失败，或 `--format json` 截获了输出尾部。
+- **期望响应**：`acceptance-report.md` 只含失败阶段与退出码，不含 `stdout_tail` / `stderr_tail` 或任何命令输出片段；文本模式下命令输出实时打到终端，不被截获。
+- **副作用**：无。
+
+### EX-9.6: 预跑成功时失败用例与账本不一致并存
+
+- **触发条件**：预跑命令全部以零状态退出（或未配置任何预跑命令），结果账本既含 `status:"fail"` 的规格用例，又不自洽（如含未知 ID 或计数不符）。
+- **期望响应**：保持既有优先级，`gate.reason` 为 `result_ledger_inconsistent`（与修改前逐字一致），`failed_cases` 与 `consistency` 照常输出；本提案的新优先级只在预跑命令失败时生效。
+- **副作用**：无。
 
 ## verify 结果账本一致性预检
 

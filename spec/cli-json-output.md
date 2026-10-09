@@ -1121,9 +1121,13 @@ openlogos verify --format json  # JSON 格式
 |----|------|
 | `null` | 门禁通过 |
 | `"failed_cases"` | 存在失败的测试用例 |
+| `"pre_run_failed"` | 预跑命令（`pre_run_command`，或两阶段 `regression` / `incremental` 任一段）以非零状态退出，且账本中无失败用例（verify-smoke-guard-fixes-0-15-20） |
+| `"result_ledger_inconsistent"` | 结果账本不自洽（见 `consistency`） |
 | `"incomplete_coverage"` | 存在未覆盖的测试用例 |
 | `"checklist_incomplete"` | 设计时覆盖度校验未完全确认 |
 | `"ac_trace_incomplete"` | 验收条件追溯未完全通过 |
+
+**优先级**（FAIL 时取第一个命中者，功能规格 §2.75.1，按预跑命令是否失败分两支）：预跑命令任一段非零退出时为 `failed_cases` → `pre_run_failed`（有失败用例取前者，否则一律取后者）；预跑命令全部成功或未配置时保持既有顺序 `result_ledger_inconsistent` → `failed_cases` → `incomplete_coverage`，与修改前逐字一致。`pre_run_failed` 命中时，`consistency` 与 `uncovered_cases` 等诊断照常输出，不作为主原因。`checklist_incomplete` / `ac_trace_incomplete` 为历史取值，§2.75 收敛后不再产生，消费方遇到时按 FAIL 处理即可。
 
 ### 4.5 预跑状态兼容规则
 
@@ -1135,8 +1139,9 @@ openlogos verify --format json  # JSON 格式
 - `sandbox_mode="always"` 时，若无法隔离、沙箱副本存在逃逸 symlink 或无法启用运行期写保护则必须失败。
 - 沙箱写入审计豁免沙箱内一次性依赖目录（规范化后存在完整路径段严格等于 `node_modules`）；豁免生效时以 `sandbox.infos` 输出一条信息级说明，`sandbox.status` 不因此改变。
 - 覆盖不足且 `pre_run.mode="none"` 时，必须输出局部测试诊断和配置建议。
-
----
+- **预跑命令失败**：单阶段或两阶段任一段非零退出时，对应 `pre_run.commands[]` 条目 `status="fail"`、`exit_code` 如实记录，门禁 FAIL（`gate.reason` 见 §4.4 优先级）。
+- **输出尾部字段**（additive，仅 `--format json`）：`pre_run.commands[]` 每个实际执行的条目增加 `stdout_tail: string` 与 `stderr_tail: string`——各为该段命令输出的末尾最多 80 行且不超过 8 KiB（截断落在完整 UTF-8 字符边界），已去除 ANSI 控制序列，不做内容脱敏；无输出时为空字符串；`status="skipped"` 的条目不出现这两个字段。截获不得提前终止子进程或改变其退出码；沙箱与非沙箱执行同一口径。文本模式不截获、不出现这两个字段。
+- 输出尾部只出现在 JSON 输出中，**不写入** `acceptance-report.md`（报告只记失败阶段与退出码）。
 
 ## 5. `openlogos smoke --format json`
 
@@ -1198,12 +1203,15 @@ openlogos smoke --env production --format json
 | `summary.defined_count` | number | 是 | smoke 用例规格中定义的用例数 |
 | `summary.executed_count` | number | 是 | smoke 结果中实际执行的用例数 |
 | `gate.result` | string | 是 | `PASS` 或 `FAIL` |
-| `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` / `smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered` |
+| `gate.reason` | string \| null | 是 | 失败原因，如 `failed_cases` / `incomplete_coverage` / `smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered` / `required_cases_skipped`；优先级 `failed_cases` → 覆盖预检诊断码 → `required_cases_skipped` → `incomplete_coverage` |
 | `changed_cases` | string[] | 是 | 当前活跃提案新增或修改的 `SMOKE-*` 用例 ID；无活跃提案或无 smoke 变更时为空 |
 | `diagnostics` | array | 是 | smoke 覆盖预检诊断；每项包含 `code`、`message`、可选 `case_ids` / `runner_paths` / `result_path` |
 | `runners` | string[] | 是 | 静态发现的 `scripts/smoke-*` runner 路径 |
 | `failed_cases` | array | 是 | 失败 smoke 用例 |
 | `uncovered_cases` | array | 是 | 未覆盖 smoke 用例 ID |
+| `skipped_cases` | string[] | 是 | 全部以 `skip` 结束的 smoke 用例 ID |
+| `required_skipped_cases` | array | 否 | 本提案变更用例（`changed_cases`）中非平台不可执行的 skip，每项 `{id, detail}`；非空时 `gate.reason` 为 `required_cases_skipped`（无更高优先级原因时）；为空时不出现 |
+| `platform_skipped_cases` | array | 否 | 本提案变更用例中以 `reason_code:"platform-unavailable"` 且 `detail` 非空放行的 skip，每项 `{id, detail}`，供审计；为空时不出现（verify-smoke-guard-fixes-0-15-20） |
 | `sandbox.mode` | string | 是 | smoke 沙箱模式：`"off"`、`"auto"` 或 `"always"` |
 | `sandbox.root` | string | 是 | 沙箱根目录 |
 | `sandbox.isolated` | boolean | 是 | 本次执行是否实际隔离 |
@@ -1224,8 +1232,8 @@ openlogos smoke --env production --format json
 - 当沙箱失败时，`smoke` 仍应写入结果报告，但 JSON 输出必须明确失败原因。
 - 当活跃提案新增或修改 `SMOKE-*` 用例时，`openlogos smoke` 必须额外执行 smoke 覆盖预检：缺少可达 runner 时输出 `smoke_runner_missing`，发现 runner 但没有有效结果时输出 `smoke_reporter_missing`，新增 ID 没有执行结果时输出 `smoke_cases_uncovered`。
 - 推荐 `smoke.command` 指向 `node scripts/run-smoke.js` 统一 dispatcher；dispatcher 自动发现并执行 `scripts/smoke-*` runner。
-
----
+- **smoke 结果记录**（`smoke.result_path` 每行）：`{ "id", "status": "pass"|"fail"|"skip", "detail"?: string, "reason_code"?: string, "error"?: string }`。skip 记录必须携带机器可读的不适用原因 `detail`；`reason_code` 可选，当前门禁唯一识别的取值为 `"platform-unavailable"`。
+- **必要用例 skip**：本提案变更用例以 skip 结束时 Gate FAIL（`required_cases_skipped`），例外是 `reason_code === "platform-unavailable"` 且 `detail` 非空，该类放行并列入 `platform_skipped_cases`。非本提案用例的 skip 口径不变，不得单独导致 FAIL。
 
 ## 6. 错误处理
 

@@ -1702,6 +1702,30 @@ sequenceDiagram
 - **期望响应**：首次合并照常成功，MODIFY 目标的 `before.git_blob` 记 `null`；日后增量修正按 EX-9.39 拒绝。
 - **副作用**：无额外副作用。
 
+#### EX-9.47：修正路径前置拒绝的报告文案（档 A）
+
+- **触发条件**：增量修正在任何写入前失败——拒绝边界 `MERGE_AMEND_BASELINE_MISSING` / `_BASELINE_UNREADABLE` / `_DRIFT` / `_CREATE_WITHDRAW` / `_PROTOTYPE_UNSUPPORTED`（EX-9.38～EX-9.40、EX-9.42、EX-9.43）、合成或准入失败（EX-9.44），或清除验收标记阶段失败且已按备份恢复（EX-9.45 第一支）。
+- **期望响应**：稳定前缀 `Error: merge 失败（<code>）：<message>` 与错误码位保持；状态声明改用修正专用文案「未进入修正写入，已合并的规格与 `SPEC_MERGED` 保持本次修正前的状态」，并按错误码给出核对指引（如漂移：人工核对点名文件后另立新提案；基线缺失 / 不可读：另立新提案承载修正）。stderr 与 `--format json` 错误 envelope 的 message **均不含** `git checkout logos/resources/`，也不含首次合并文案「保持合并前字节，未写 SPEC_MERGED」（verify-smoke-guard-fixes-0-15-20，决策 C05）。
+- **副作用**：无；`logos/resources/`、`SPEC_MERGED` 与验收标记零变化。
+
+#### EX-9.48：修正落盘失败且已确认整批回滚的报告文案（档 B）
+
+- **触发条件**：Step 15～16 落盘原语返回 `ok:false` 且 `rolled_back === true`。
+- **期望响应**：状态声明为「修正落盘失败，已确认整批回滚，规格恢复为修正前状态，`SPEC_MERGED` 原记录保留」，并如实说明被清除的验收 / 交付标记已按备份恢复，或点名恢复失败的标记并提示重新 verify；不含 `git checkout logos/resources/`。
+- **副作用**：同 EX-9.45 第二支。
+
+#### EX-9.49：修正落盘已提交或状态不可确认的报告文案（档 C）
+
+- **触发条件**：Step 15～16 落盘原语返回 `ok:false` 且 `rolled_back !== true`（典型反例：全部目标与 `SPEC_MERGED` 已写为修正后字节、journal 已 committed，随后私有材料清理失败），或错误自落盘原语内部逃出。
+- **期望响应**：状态声明为「可能已提交本次修正或状态不可确认：主文档可能已是修正后字节，`SPEC_MERGED` 可能已改写（含新的 delta 摘要与修正记录），被清除的验收 / 交付标记未恢复，须重新 verify」，并要求先以 `git status`、`git diff logos/resources/` 与 `SPEC_MERGED` 的 `amendments` 核对再决定是否重跑，保留恢复材料与原始诊断。**不得**出现「已合并状态未变」「未执行修正」「已恢复修正前状态」「保持合并前字节」等确定性断言，也不含 `git checkout logos/resources/`。
+- **副作用**：同 EX-9.45 第三支；未重新验收前 archive 被既有归档门拒绝。
+
+#### EX-9.50：首次合并失败文案不变
+
+- **触发条件**：`SPEC_MERGED` 不在场时的首次合并在准备阶段或落盘阶段失败。
+- **期望响应**：沿用「S09 merge 内部错误的稳定失败语义」三档文案逐字不变（含档 A / B 的「回滚点：git checkout logos/resources/」）；修正专用文案只在增量修正路径生效，判据为修正路径附于错误对象的结构化事实，不从 message 文本或磁盘 marker 反推。
+- **副作用**：无。
+
 ### 追溯
 
 - 需求：merge 直接合并与规格结构检查要求 › 验收条件 › S09 已合并提案的增量修正、增量修正的合并基线证据、拒绝边界、与 change-lint 同判、使旧验收事实失效、宿主可读的增量修正事实。

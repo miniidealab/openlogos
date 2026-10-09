@@ -460,3 +460,40 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S19"`；失败不得写 pass。
 - `UT-S19-50` 必须在**一次性临时副本**内执行升版脚本——在本仓真实升版会污染工作区，且升版是 `[deploy]` 阶段的动作，不得由 verify 期用例代劳。
 - `UT-S19-49` 的 canonical 序列化必须**复用生产实现**（`asset-manifest.ts` 的同一函数），不得在测试内复述一份序列化规则——那会让守卫与被守对象各算各的。
+
+## S19 必要用例 skip 与平台不可执行例外测试
+
+> 覆盖功能规格 §2.48.5「本提案变更用例的 skip 是必要证据缺失」「平台不可执行例外」；场景 S19「smoke skip 统计口径」与 EX-19.7～EX-19.10；根规范 `spec/cli-json-output.md` §5.3 `required_skipped_cases` / `platform_skipped_cases`、§5.4 结果记录 `reason_code`；来源变更 verify-smoke-guard-fixes-0-15-20（决策 C03）。
+>
+> **夹具口径**：一次性 launched 项目，活跃提案的 `deltas/test/smoke/` 新增两条用例 `SMOKE-core-901`、`SMOKE-core-902`（即 `changed_cases`），已合并的 smoke 规格另有一条非本提案用例 `SMOKE-core-900`；前置标记（`VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾、`smoke_required=true`）齐备；`smoke.command` 指向一个真实 runner 脚本，按用例参数写入指定的结果记录。CLI 用例以真实 `openlogos smoke --format json` 子进程执行。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S19"`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S19-51 | 平台不可执行的必要用例 skip 放行 | runner 写入 `SMOKE-core-900`、`SMOKE-core-901` 为 pass，`SMOKE-core-902` 为 `{status:"skip", reason_code:"platform-unavailable", detail:"requires win32"}` | `openlogos smoke --format json` | `gate.result=="PASS"`；`platform_skipped_cases==[{id:"SMOKE-core-902", detail:"requires win32"}]`；不出现 `required_skipped_cases`；`skipped_cases` 含 `SMOKE-core-902` |
+| UT-S19-52 | 必要用例 skip 缺原因码判 FAIL | 同上，但 `SMOKE-core-902` 为 `{status:"skip", detail:"缺 OPENLOGOS_ROLLBACK_TGZ"}`，无 `reason_code` | 同上 | `gate.result=="FAIL"`、`gate.reason=="required_cases_skipped"`；`required_skipped_cases` 恰含 `SMOKE-core-902` 与其 detail；不出现 `platform_skipped_cases` |
+| UT-S19-53 | 平台不可执行但 detail 为空判 FAIL | 两臂：`SMOKE-core-902` 为 `{status:"skip", reason_code:"platform-unavailable", detail:""}`；或缺 `detail` 字段 | 同上 | 两臂均 `gate.reason=="required_cases_skipped"`，该用例在 `required_skipped_cases` 中 |
+| UT-S19-54 | 其他原因码不视为平台不可执行 | `SMOKE-core-902` 为 `{status:"skip", reason_code:"missing-artifact", detail:"缺回滚制品"}` | 同上 | `gate.reason=="required_cases_skipped"`；不出现 `platform_skipped_cases` |
+| UT-S19-55 | 非本提案用例 skip 口径不变 | `SMOKE-core-900` 为 `{status:"skip", detail:"缺宿主客户端"}`（无原因码），`SMOKE-core-901`、`SMOKE-core-902` 均 pass | 同上；并与修改前实现对同一夹具比对 | `gate.result=="PASS"`；`required_skipped_cases` 与 `platform_skipped_cases` 均不出现；`summary` 与 `gate` 与修改前逐字一致 |
+| UT-S19-56 | 原因优先级与报告独立小节 | 三臂：① `SMOKE-core-901` fail 且 `SMOKE-core-902` 缺原因码 skip；② 新增用例无结果（覆盖预检报 `smoke_cases_uncovered`）且另一条缺原因码 skip；③ UT-S19-51 夹具 | 每臂执行后读取 JSON 与 `smoke-report.md` | ① `gate.reason=="failed_cases"`；② `gate.reason=="smoke_cases_uncovered"`；两臂 `required_skipped_cases` 仍列出 skip 用例；③ 报告含「平台不可执行」独立小节，列出 `SMOKE-core-902` 与 detail，且不出现在必要证据缺失小节 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-23 | 真实 runner 的平台不可执行放行与缺口拦截 | S19 Step 4a～9、EX-19.7、EX-19.8 | 夹具 runner 按 `process.platform` 判断：非 win32 时为 `SMOKE-core-902` 写 `platform-unavailable` skip | ① `openlogos smoke --format json`；② 把 runner 改为不写 `reason_code`；③ 再次执行 | ① PASS，`platform_skipped_cases` 含 `SMOKE-core-902`（在 win32 上执行时该用例为真实 pass，断言改为 `platform_skipped_cases` 不出现）；③ FAIL，`gate.reason=="required_cases_skipped"`。**修改前实现 ① 为 FAIL，本用例必红** |
+| ST-S19-24 | 平台不可执行与环境缺口并存 | EX-19.10 | runner 为 `SMOKE-core-901` 写缺制品 skip、为 `SMOKE-core-902` 写 `platform-unavailable` skip | ① `openlogos smoke --format json`；② 读取 `smoke-report.md` | ① FAIL，`gate.reason=="required_cases_skipped"`；`required_skipped_cases` 只含 `SMOKE-core-901`，`platform_skipped_cases` 只含 `SMOKE-core-902`；② 两个小节分别列出，互不混入 |
+
+### 追溯与覆盖
+
+- 平台不可执行例外（EX-19.7）：UT-S19-51、ST-S19-23（修改前实现必红）。
+- 必要用例 skip 仍拦截（EX-19.8、EX-19.9）：UT-S19-52、UT-S19-53、UT-S19-54、ST-S19-23。
+- 非本提案用例零回归：UT-S19-55。
+- 原因优先级与报告：UT-S19-56。
+- 并存场景（EX-19.10）：ST-S19-24。
+
+### 自动化与证据要求
+
+- runner 为真实脚本，由真实 `openlogos smoke` 子进程经 `smoke.command` 调用；断言基于 `--format json` 的结构化字段与报告的小节标题。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

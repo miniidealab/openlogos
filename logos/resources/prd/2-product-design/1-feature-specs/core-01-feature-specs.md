@@ -106,6 +106,7 @@
 - provenance 继续由文档 `## 逆向基线来源` 承载，缺章节的旧文档保守标 `unknown|legacy-unclassified`；S39 不写 `verified:true`/confirmed_*，不产 JIT advisory 或 baseline warning。
 
 ### 2.7 verify 预执行模型
+
 - `openlogos verify` 必须在读取 JSONL 前处理 verify 预执行配置。
 - 旧字段 `verify.pre_run_command` 保持兼容：配置后按单阶段全量测试执行。
 - 新字段 `verify.regression_command` 与 `verify.incremental_command` 用于两阶段模型：回归测试先执行，增量测试后执行。
@@ -113,6 +114,8 @@
 - `verify.result_path` 表示最终合并结果路径；`verify.regression_result_path` 和 `verify.incremental_result_path` 可用于阶段化结果文件，避免第二阶段 reporter 清空第一阶段结果。
 - 若配置 `verify.sandbox_mode` 且存在预跑命令，预跑命令必须通过统一沙箱执行器运行。
 - 未配置任何预跑命令时，verify 仍保持兼容可执行，但覆盖不足时必须输出清晰诊断和修复建议。
+- **预跑命令失败进入门禁**（verify-smoke-guard-fixes-0-15-20，决策 C01）：单阶段 `pre_run_command`，或两阶段中任一段命令，以非零状态退出时，本次 verify 门禁一律 FAIL（判据与原因优先级见 §2.75.1）。不再输出「Continuing verify with existing results.」之类继续沿用旧结果的提示——命令异常退出后，结果文件可能是运行器回滚出的上一份完好账本，也可能恰好完整全通过，两者都不能证明本次测试跑通。账本一致性、未覆盖等既有诊断照常计算与输出，不因预跑失败被隐藏。
+- **预跑命令输出尾部**（决策 C02）：仅 `--format json` 时截获每段预跑命令的 stdout / stderr，在 `pre_run.commands[]` 对应条目给出 `stdout_tail` / `stderr_tail`：各取末尾最多 80 行且不超过 8 KiB（先按行截取再按字节截断，截断落在完整 UTF-8 字符边界），去除 ANSI 控制序列，不做内容脱敏。截获不得因输出量大而提前终止子进程，不得改变子进程退出码；沙箱执行与非沙箱执行同一口径。文本模式保持把输出实时打到终端，不截获。`acceptance-report.md` 只记录失败阶段与退出码，**不写入**任何命令输出内容（报告会进 git，测试输出可能含任意内容）。
 
 ### 2.8 init / sync / adopt 预跑配置补齐
 - `openlogos init` 与 `openlogos adopt` 应识别常见测试栈并写入合理的 verify 预跑配置。
@@ -2169,7 +2172,15 @@ runner 判定自身无法执行真实断言时（缺第三方宿主客户端、�
 
 ### 2.48.5 门禁判定不放宽
 
-`isPass` 的公式不变——存在 fail 即 FAIL，存在 uncovered 即 FAIL，runner / reporter / dispatcher 诊断与 sandbox 失败仍可致 FAIL。本功能不为容忍环境缺口而修改任何判据；它改变的是**账本的完整性**：不适用的用例从「没有记录」变成「有 skip 记录且带原因」，于是 uncovered 只剩下真正该跑而没跑的那些。
+`isPass` 的既有判据不放宽——存在 fail 即 FAIL，存在 uncovered 即 FAIL，runner / reporter / dispatcher 诊断与 sandbox 失败仍可致 FAIL。本功能不为容忍环境缺口而修改这些判据；它改变的是**账本的完整性**：不适用的用例从「没有记录」变成「有 skip 记录且带原因」，于是 uncovered 只剩下真正该跑而没跑的那些。
+
+**本提案变更用例的 skip 是必要证据缺失**（0.15.19 `deploy-plan-gate-release-0-15-19` 的 code 评审修复引入，verify-smoke-guard-fixes-0-15-20 补入规格）：当前活跃提案新增或修改的 `SMOKE-*` 用例（`changed_cases`）以 `status:"skip"` 结束时，smoke 门禁 FAIL，`gate.reason` 为 `required_cases_skipped`，并在 JSON `required_skipped_cases` 与 `smoke-report.md` 中逐条列出 `{id, detail}`。缺回滚制品、缺必需 env 之类可补齐的环境缺口不能冒充通过。
+
+**平台不可执行例外**（决策 C03，用户 2026-09-09 裁定「在 mac 平台肯定跑不了 windows 的用例，这块直接 skip 就好了」）：结果记录可携带机器可读的 `reason_code`。本提案变更用例的 skip 同时满足 `reason_code === "platform-unavailable"` 且 `detail` 为非空字符串（说明需要的平台，如 `requires win32`）时，按有效跳过放行，不计入 `required_skipped_cases`，而在 JSON `platform_skipped_cases` 与 `smoke-report.md` 的独立小节中单独列出 `{id, detail}`，供人审计。其余 skip（无 `reason_code`、`reason_code` 为其他值、`detail` 缺失或为空）仍判 `required_cases_skipped`。是否「当前平台不可执行」由 runner 声明，CLI 只核对声明是否完整，不自行推断。
+
+**原因优先级**：`failed_cases` → 覆盖预检诊断码（`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`）→ `required_cases_skipped` → `incomplete_coverage`。
+
+**不受影响的范围**：非本提案用例的 skip 口径不变（计入 `executed_count` 与有效通过，不计入 failed / uncovered，不得单独导致 FAIL）；无活跃提案或提案无 smoke 变更时，`required_skipped_cases` 与 `platform_skipped_cases` 均不出现。
 
 ### 2.48.6 兼容、失败与发布边界
 
@@ -3311,15 +3322,27 @@ Layer1 与 Layer3 都是「人声称覆盖了」，Layer2 与 ID 覆盖检查是
 
 ### 2.75.1 收敛后的 Gate 判据
 
-Gate 通过当且仅当三项同时成立：
+Gate 通过当且仅当四项同时成立：
 
 | 判据 | 含义 |
 |---|---|
+| **预跑命令全部成功** | 配置了预跑命令时，单阶段 `pre_run_command` 或两阶段每一段均以零状态退出；未配置任何预跑命令时本项恒成立（verify-smoke-guard-fixes-0-15-20，决策 C01） |
 | 账本一致性 | 结果账本自洽（无重复记录、计数与集合相符） |
 | 零失败 | 无 `status:"fail"` 的用例 |
 | **零未覆盖** | **规格声明的 ID 集合 ⊆ 测试结果中出现的 ID 集合** |
 
-第三项即方案 §11 B 类第一项要保住的能力，**完整保留**：规格声明 10 个用例、只实现 3 个、那 3 个绿了——仍判 FAIL 并逐个点名未覆盖 ID。规格驱动的核心价值由它承载。
+第四项即方案 §11 B 类第一项要保住的能力，**完整保留**：规格声明 10 个用例、只实现 3 个、那 3 个绿了——仍判 FAIL 并逐个点名未覆盖 ID。规格驱动的核心价值由它承载。
+
+第一项补的是「测试真的跑通」这条前提：预跑命令异常退出时，结果文件可能是运行器回滚出的上一份完好账本（RunLogos `scripts/run-vitest.js` 的既有行为），也可能恰好完整全通过——前者被误报为 `result_ledger_inconsistent`，后者直接 PASS，两者都把真实失败藏了起来。
+
+**`gate.reason` 取值优先级**（FAIL 时取第一个命中者），**按预跑命令是否失败分两支**（delta r1 F1）：
+
+- **预跑命令（任一段）非零退出时**：
+  1. `failed_cases`——账本中存在失败用例（比命令失败更具体、可直接定位）；
+  2. `pre_run_failed`——否则一律取此值；此时 `result_ledger_inconsistent` 与 `incomplete_coverage` 通常是命令失败的后果，不作为主原因。
+- **预跑命令全部成功或未配置任何预跑命令时**：保持修改前的既有顺序逐字不变——`result_ledger_inconsistent` → `failed_cases` → `incomplete_coverage`。账本不自洽时账本本身不可信，既有实现以它为主原因，本提案不改变这一点。
+
+主原因之外的诊断（`consistency`、`uncovered_cases`、`pre_run.commands[]` 的退出码与输出尾部）照常输出，不被隐藏。预跑命令成功或未配置时，判定与输出（含 `gate.reason`）与修改前逐字一致——包括「失败用例与账本不一致并存」这一组合仍取 `result_ledger_inconsistent`。
 
 ### 2.75.2 随之移除
 
@@ -3821,6 +3844,23 @@ change-writer 的 GUI 判定**唯一依据 = `logos-project.yaml` 的 `product_t
 - **这是补齐而非新增语义**：§2.69.1 早已明文「任一步失败即整批回滚……错误信息附 `git checkout logos/resources/` 作为回滚点提示」。本节让该合同对**整个 merge 出口**成立，而非只对已登记的一个错误类成立；同时把该合同中「整批回滚」这一**事实前提**从隐含假设改为**逐次确认**。
 - **不改落盘原语行为**：本节不重做原子落盘机制——`applyBaselineClosureBatch` 的准备、提交、回滚与清理时序逐行不变；改的只是失败出口**如何描述已经发生的事**，不得把未知或已提交状态包装成已确认零残留。
 - **不吞诊断**：兜底映射后进程以非零码退出，stderr 承载全部可归因信息——CLI 的 stderr 是下游自动化唯一可得的病灶来源，裸堆栈 + 无错误码 = 下游零诊断。
+
+#### 增量修正路径的状态声明（verify-smoke-guard-fixes-0-15-20）
+
+上表三档的声明与指引是按**首次合并**措辞的（「保持合并前字节，未写 SPEC_MERGED」「回滚点：git checkout logos/resources/」）。增量修正（§2.69.4）发生在 `SPEC_MERGED` 已在场、合并后规格通常已提交之后，套用首次合并文案会给出错误且危险的指引：此时规格是上次合并后的样子，照着执行 `git checkout logos/resources/` 会丢掉所有未提交的规格改动，在主文档漂移被拒的场景下正好抹掉需要人工核对的那份修改（决策 C05）。
+
+失败报告据「本次是增量修正」这一结构化事实（由修正路径在抛出前附于错误对象，不从 message 文本或磁盘 marker 反推）改用修正专用文案。**分档判据与上表完全相同**（阶段戳 + 落盘原语 `rolled_back`），只换措辞：
+
+| 状态档 | 结构化判据 | 修正路径的状态声明与指引 |
+|---|---|---|
+| A · 未进入修正写入 | `prepare` 阶段：拒绝边界 `MERGE_AMEND_*`、合成 / 准入 / `buildTestChangeSet` 失败、清除验收标记阶段失败且已按备份恢复 | 「未进入修正写入，已合并的规格与 `SPEC_MERGED` 保持本次修正前的状态。」+ 按错误码的核对指引（如漂移：人工核对点名文件后另立新提案；基线缺失：另立新提案） |
+| B · 已确认整批回滚 | 落盘原语返回 `ok:false` **且** `rolled_back === true` | 「修正落盘失败，已确认整批回滚，规格恢复为修正前状态，`SPEC_MERGED` 原记录保留。」+ 如实说明被清除的验收 / 交付标记已按备份恢复，或点名恢复失败的标记并提示重新 verify |
+| C · 可能已提交或不可确认 | `rolled_back !== true`，或错误自原语内部逃出（含 journal 已 committed 后清理失败） | 「可能已提交本次修正或状态不可确认：主文档可能已是修正后字节，`SPEC_MERGED` 可能已改写（含新的 delta 摘要与修正记录），被清除的验收 / 交付标记未恢复，须重新 verify。」+ 要求先以 `git status`、`git diff logos/resources/` 与 `SPEC_MERGED` 的 `amendments` 核对，再决定是否重跑；保留恢复材料 |
+
+- **档 C 禁止确定性断言**：不得出现「已合并状态未变」「未执行修正」「已恢复修正前状态」「保持合并前字节」之类与磁盘可能相反的表述。
+- **任何修正路径都不再附 `git checkout logos/resources/`**：包括错误 message 末尾的回滚点提示与状态声明后的指引。
+- **原始诊断不降级**：稳定前缀 `Error: merge 失败（<code>）：<message>`、错误码位（含 `MERGE_AMEND_*`）、非零退出与 `--format json` 的错误 envelope 保持；修正专用文案只替换状态声明与后续动作指引。
+- **首次合并的文案逐字不变**（上表三档）。
 
 ### 2.84.4 诊断可归因：后态行号口径标注与 delta 侧归属
 
