@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2217 |
+| Defined cases | 2249 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2217 |
-| Passed | 2207 |
+| Executed cases | 2249 |
+| Passed | 2239 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-merge-amend`, `slice-02-status-spec-amend`
-- Eligible tests: 2217
+- Confirmed slices: `slice-01-verify-pre-run-gate`, `slice-02-smoke-platform-skip`, `slice-03-guard-segmented-fallback`, `slice-04-merge-amend-failure-text`
+- Eligible tests: 2249
 - Pending tests: 0
 - Final: true
 
