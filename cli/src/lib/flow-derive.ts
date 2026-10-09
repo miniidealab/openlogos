@@ -561,6 +561,18 @@ function detectProposalStepViaFlowRaw(
       if (!exists(SLICES_APPROVED_MARKER)) return 'ready-to-implement';
       return 'coding';
     }
+    // fix-prototype-plan-approval-state：GUI 仅原型 delta 且 plan-exit 未放行时，原型任务被勾选不构成离开 plan——
+    // checkbox 只是执行进度，不是批准。必须先于下方「全部勾选 → ready-to-merge」判断，否则 [delta] 只规划原型且已全勾的
+    // 合法计划会被截到 spec 出口；部分勾选则会落到 delta-writing（next 派 write-delta、guard 因缺 PLAN_APPROVED 必拦）。
+    // checked===0 仍走下方 shouldEnterSpec 分支；ui_impact 为假（含非 GUI）不进入本判断，派生逐字节不变。
+    if (
+      delta.checked > 0
+      && !exists(PLAN_APPROVED_MARKER)
+      && isPrototypeOnlyDelta(proposalDir)
+      && deriveUiImpactFlag(root, activeModuleId(root), proposalDir)
+    ) {
+      return 'ready-to-delta';
+    }
     if (delta.total > 0 && delta.checked === delta.total) return 'ready-to-merge';
     // change-flow-redesign：delta 尚未启动且 plan 门未消费 → ready-to-delta（plan 出口驻留态）。
     // PLAN_APPROVED 是 plan-exit 被 --auto 消费后的状态源；GATE_AUTO_PASSED 仅为审计，不参与派生。

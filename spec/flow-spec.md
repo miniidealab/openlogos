@@ -626,6 +626,7 @@ flow node**，**默认 = 当前前沿节点**，下列为例外：
   1. 向 `GATE_AUTO_PASSED` 追加 `{gate_id:"plan-exit", proposal_step:"ready-to-delta", timestamp}` 审计行；
   2. 写入活跃提案目录的 `PLAN_APPROVED` marker（内容可为空，存在性为准）。
 - **`PLAN_APPROVED` 的派生语义**：**仅当 `tasks.md` 存在 `## [delta]` section 时适用**——存在 `PLAN_APPROVED` 且 `[delta]` section 尚未全部完成时，`proposal_step` 派生为 `delta-writing`，即使还没有任何 delta 文件或 `[delta]` 勾选；此时 `next` / `next --auto` 的前沿是 `spec.write-delta`，`next_node.id == "write-delta"`。**无 `[delta]` section 的纯代码提案（`delta_required==false`）不适用本条、绝不派生 `delta-writing`**：但它仍需按 §12.6 完成 no-delta spec-complete；缺少 `SPEC_MERGED` / `MERGED` 时停在 `spec-complete-required`，不得直连 `plan-slices`。
+- **GUI 原型门前例外优先于 `[delta]` 勾选进度（fix-prototype-plan-approval-state）**：`ui_impact` 为真、可合并 delta **仅**为 `2-page-design/*.html` 原型、且 `PLAN_APPROVED` 不存在时，`[delta]` 无论零勾选、部分勾选还是全部勾选，`proposal_step` 均为 `ready-to-delta`；该判定**先于**「`[delta]` 全部完成 → `ready-to-merge`」与「已勾 → `delta-writing`」两个出口生效。checkbox 只是执行进度，不构成「实际 delta 产出」，更不构成批准。判据细节与不受影响范围见「ordering 例外与 flow-derive 判据」。
 - **审计与授权边界**：`GATE_AUTO_PASSED` 仍是审计日志，默认 `next` 与 `status` 不因历史审计行越过 gate；状态推进只认 `PLAN_APPROVED` 或实际 delta 产出。重复 `next --auto` 不应在同一个 `plan-exit` 固定点追加多条审计，因为第一次放行后前沿已经离开 `ready-to-delta`。
 
 ### 12.5 切片规划子流程派生（split-slice-planner-stage）
@@ -1122,6 +1123,10 @@ agent dispatch 的完成校验不得只输出 pass/fail。OpenLogos / driver 至
 - **例外仅限 `2-page-design/*.html`**：不涉及 `[code]` 切片与 spec-merge 依赖；其它任何 `deltas/**` 出现即照常判进入 spec。
 - **[code] 触点**：`flow-derive.ts` 识别 plan subflow 新增的 `write-ui-prototype` 节点、不因原型 delta 误判进入 spec
   （与 §8 `ui_impact` 派生逻辑同批落地）。
+- **例外与 `[delta]` 勾选数无关（fix-prototype-plan-approval-state）**：主检测器在 `[delta]` 分支内、**先于**「全部勾选 → `ready-to-merge`」判断，对「`[delta]` 已勾（`checked > 0`）、`ui_impact` 为真、`isPrototypeOnlyDelta` 为真、`PLAN_APPROVED` 不存在」返回 `ready-to-delta`；零勾选仍走既有 `shouldEnterSpec` 分支。由此零勾选、部分勾选、全部勾选（含 `[delta]` 只规划原型且已全部勾选的合法计划）三态一致，原型任务被勾选**不会**把提案送入 `delta-writing` 或 spec 出口 `ready-to-merge`。
+  - **auto 消费顺序**：`next --auto` 只在 `ready-to-delta` 消费 `plan-exit`，**先**写 `GATE_AUTO_PASSED` 审计行与 `PLAN_APPROVED`，**再**离开 plan；批准落盘前不得派发任何非原型 delta 写入（与 guard「`PLAN_APPROVED` 不存在即仅放行原型」同口径）。
+  - **批准后沿用既有完成语义**：`[delta]` 未全部完成为 `delta-writing`，全部完成为 `ready-to-merge`。全部勾选形态被 auto 消费的**那一次**响应仍按 §12.3 R4 窄例外输出 `next_node.id == "write-delta"`（本条不改 R4）；`write-delta` 的 `done_when: section_complete:delta` 此时已满足，下一次 `status` / `next` 重新派生即为 `ready-to-merge`。
+  - **不受影响**：`ui_impact` 为假（含非 GUI 模块）时判据逐字节不变——「`[delta]` 已勾但零 delta 文件」仍为 `delta-writing`；含任何非原型 delta 的提案照常进入 spec；位于 `[delta]` 判定之前的合并 / 验收 / 部署等出口不变；`plan_state.plan_approved` 投影口径（`spec/cli-json-output.md`）不变。
 
 ## baseline-seed 节点（brownfield-adopter S33，command-driven，非 builtin gate）
 

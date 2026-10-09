@@ -714,6 +714,10 @@ dispatcher 至少应支持：
   - **渲染面板**：用户批准提案 / 启动全自动 / 让 driver 进下一步，即构成 **UI 视觉确认**；面板在批准时记录「已展示原型」provenance（`ui_prototype_rendered` + `pages` + `hashes`）。
   - **旧面板（不渲染，仅把 `.html` 按文本列出）**：该批准**只是普通方案批准、不构成 UI 视觉确认**；方法论**不宣称 UI 已确认**，给出 **advisory 提示但不阻断**（延续「不阻断」立场）。这是既有批准事件上的溯源属性，**不是新门 / 新确认标记文件**。
 - **过渡期指引**：建议 runlogos 渲染升级**先于** GUI 团队依赖本前移价值发布；未升级前用户可直接打开原型 `.html` 自行确认。
+- **原型任务勾选不构成离开 plan（fix-prototype-plan-approval-state）**：`tasks.md` 的 `[delta]` checkbox 只表示执行进度，**不是批准记录**。GUI 模块 `ui_impact:true`、`deltas/` 下**仅有** `2-page-design/*.html` 原型、且 `PLAN_APPROVED` 不存在时，无论原型任务是零勾选、部分勾选还是全部勾选（含 `[delta]` 只规划原型且已全部勾选的合法计划），`proposal_step` 均为 `ready-to-delta`（plan 出口门前），**不得**派生为 `delta-writing` 或 `ready-to-merge`；`plan_state` 按 `spec/cli-json-output.md` 既有派生规则输出 `plan_approved=false`、`plan_gate_pending=true`。
+  - **离开 plan 只有两条途径**：plan-exit 被消费并写入 `PLAN_APPROVED`（`next --auto` 自动消费，或渲染面板批准），或出现非原型规格 delta（既有 ordering 例外，见 `spec/flow-spec.md`「ordering 例外与 flow-derive 判据」）。
+  - **批准之后沿用既有完成语义**：`[delta]` 未全部完成为 `delta-writing`，全部完成为 `ready-to-merge`。
+  - **不受影响的范围**：非 GUI 模块或 `ui_impact:false`（判据逐字节不变，含「`[delta]` 已勾但零 delta 文件」仍为 `delta-writing`）；`[delta]` 零勾选分支；含非原型 delta 的提案；位于 `[delta]` 判定之前的合并 / 验收 / 部署等阶段。`plan_approved` 的投影口径（`PLAN_APPROVED` 存在或已离开 `ready-to-delta`）不变。
 
 #### 2.26.5 plan 阶段写入 allowlist（仅放行原型路径）
 

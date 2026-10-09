@@ -1061,3 +1061,100 @@ sequenceDiagram
 - 决策：C01、C05、C06、C07、C09、C10、C11、C12、C13、C14；defaults（非 git 回落、`guard.exempt` 内置默认、执行记录运行时目录、已知覆盖限制）。
 - 相关场景：S09-A（change 写入 guard 前 boundary-start）、S09-C（archive 删除 guard 前 boundary-end）、S40（ignore / exempt 子命令与托管区块）、S08（hook 注册与引擎分发）。
 - 测试：`core-S09-test-cases.md`「S09 guard 按版本控制内容判定测试」UT-S09-385～UT-S09-420、ST-S09-152～ST-S09-192；「S09 guard 资料目录与基线 staging 默认豁免测试」UT-S09-372（MODIFIED）。
+
+## S09-G GUI 原型任务勾选与 plan-exit 批准门派生时序
+
+> 来源变更：fix-prototype-plan-approval-state（决策 C03、C04；proposal r1 评审 F1）。承接「S09-A: openlogos change」的 plan 阶段与功能规格 §2.26「GUI 项目提案阶段前置 UI/UX 原型确认」。事故：token-agent 提案 `price-version-duplicate-fix`、run `drv-muzl3glb-jo25`，原型任务勾选 1/7 后被派生为 `delta-writing`，write-delta 三次被 guard 以缺少 `PLAN_APPROVED` 拦截后 `retry-exhausted`。
+
+### 场景目标
+
+GUI 模块（`product_type ∈ {web, desktop, mobile}`）中 `ui_impact:true` 的提案，在 plan-exit 门前产出并勾选原型任务之后：
+
+- 阶段仍停在 plan 出口门 `ready-to-delta`，**不会**因为原型任务被勾选而进入 `delta-writing` 或 spec 出口 `ready-to-merge`；
+- `status` / `next` / guard 三方对「是否已批准」的判断一致：只有 `PLAN_APPROVED` 落盘之后，才派发非原型 delta 写入；
+- 半自动下默认 `next` 等待人工批准；全自动下 `next --auto` 经既有通道写入批准后再离开 plan，不再出现「派 write-delta → guard 拦截 → 重试耗尽」的死锁。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| D | AI driver / 宿主 | 读取 `next` 前沿并派发节点；全自动时以 `next --auto` 消费可跳门 |
+| W | change-writer（producer） | plan 阶段产出原型并勾选对应 `[delta]` 任务；spec 阶段产出非原型 delta |
+| CLI | `openlogos status` / `next` | 经 `flow-derive` 主检测器派生 `proposal_step`，经 `derivePlanState` 投影 `plan_state` |
+| G | guard-check（PreToolUse） | `PLAN_APPROVED` 不存在时只放行 `deltas/prd/2-product-design/2-page-design/*.html` |
+| FS | 提案目录 | `tasks.md`、`deltas/`、`PLAN_APPROVED`、`GATE_AUTO_PASSED` |
+
+前置条件：模块 launched；活跃提案的 proposal / tasks 已脱模板（plan 就绪）；UI/UX 变更声明 `ui_impact:true`；`tasks.md` 含 `## [delta]`，其中至少一条为原型任务；`deltas/` 下仅有 `2-page-design/*.html` 原型；`PLAN_APPROVED` 不存在。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant D as AI driver
+    participant W as change-writer
+    participant CLI as openlogos status 或 next
+    participant G as guard-check
+    participant FS as 提案目录
+
+    W->>FS: Step 1: 写原型 2-page-design 下的 html 文件
+    G-->>W: Step 2: PLAN_APPROVED 不存在，原型路径放行
+    W->>FS: Step 3: 勾选 tasks.md 中的原型任务（部分或全部勾选）
+    D->>CLI: Step 4: 读取前沿
+    CLI->>FS: Step 5: 读 tasks.md、deltas、PLAN_APPROVED
+    CLI->>CLI: Step 6: 已勾且 ui_impact 为真且仅原型且无批准，先于全勾判断返回 ready-to-delta
+    CLI-->>D: Step 7: proposal_step=ready-to-delta，plan_gate_pending=true，plan_approved=false
+    alt 半自动：默认 next
+        D-->>D: Step 8a: 停在 plan-exit，等待人工批准，不派发 write-delta
+    else 全自动：next --auto
+        D->>CLI: Step 8b: next --auto
+        CLI->>FS: Step 9: 追加 GATE_AUTO_PASSED 审计行并写入 PLAN_APPROVED
+        CLI-->>D: Step 10: gate_auto_passed=true，next_node=write-delta（R4 窄例外）
+        D->>W: Step 11: 派发 write-delta
+        W->>FS: Step 12: 写非原型规格 delta
+        G-->>W: Step 13: PLAN_APPROVED 已存在，放行
+    end
+    D->>CLI: Step 14: 再次读取前沿
+    CLI-->>D: Step 15: 部分完成为 delta-writing，全部完成为 ready-to-merge
+```
+
+### 步骤说明
+
+1. **Step 1～2**：plan 阶段 guard 的原型 allowlist 不变，原型 html 可以在 plan-exit 门前写入。
+2. **Step 3**：producer 按「每完成一个 delta 文件立即勾选」的约定勾选原型任务。checkbox 只是执行进度，不是批准记录。
+3. **Step 5～6**：主检测器在 `[delta]` 分支内、**先于**「`[delta]` 全部完成 → `ready-to-merge`」判断，对「`checked > 0`、`ui_impact` 为真、`isPrototypeOnlyDelta` 为真、`PLAN_APPROVED` 不存在」返回 `ready-to-delta`；零勾选仍走既有 `shouldEnterSpec` 分支。部分勾选（事故形态 1/7）与全部勾选（`[delta]` 只规划原型且已全勾）两条出口由这一处同时堵住。
+4. **Step 7**：`plan_state` 按 `spec/cli-json-output.md` 既有派生规则输出，投影口径不变；阶段正确后 `plan_approved` 自然为 false。
+5. **Step 8a**：半自动下 plan-exit 是人类确认点，driver 不得在批准前派发 write-delta。
+6. **Step 8b～10**：`next --auto` 只在 `ready-to-delta` 消费 plan-exit，**先**落盘审计行与 `PLAN_APPROVED`，再按 `spec/flow-spec.md` §12.3 R4 窄例外返回 `next_node.id == "write-delta"`。重复 `--auto` 不在同一固定点追加审计；`PLAN_APPROVED` 已有合法 provenance body 时不被空写覆盖。
+7. **Step 11～13**：批准落盘后，guard 放行非原型 delta，与派生阶段一致。
+8. **Step 14～15**：批准后沿用既有完成语义。全部勾选形态在 Step 10 那一次响应仍为 write-delta；由于 `write-delta` 的 `done_when: section_complete:delta` 已满足，重新派生即为 `ready-to-merge`。
+
+### 异常与边界
+
+#### EX-9G.1：非 GUI 或 `ui_impact:false`
+
+判据逐字节不变：「`[delta]` 已勾但零 delta 文件」仍为 `delta-writing`，零勾选零文件且无批准仍为 `ready-to-delta`。
+
+#### EX-9G.2：出现非原型规格 delta
+
+既有 ordering 例外照常生效：含任何非原型 delta 即视为进入 spec，本场景的门前判定不适用。
+
+#### EX-9G.3：已有 `PLAN_APPROVED`
+
+批准文件为空或带合法 body，均视为已批准：未全部完成为 `delta-writing`，全部完成为 `ready-to-merge`，`plan_approved=true`。
+
+#### EX-9G.4：更高优先级阶段
+
+已合并、已验收、已部署等位于 `[delta]` 判定之前的出口不变，存量提案不被拉回 plan；不依据历史 `GATE_AUTO_PASSED` 推断批准。
+
+### 不变量
+
+- 离开 plan 只有两条途径：`PLAN_APPROVED` 落盘，或出现非原型规格 delta。`[delta]` checkbox 不构成其中任何一条。
+- `status` 只读：重复执行不改提案目录字节。
+- 不新增 gate、marker、状态源或批准补账；guard 判据、`plan_state` 投影口径、`next --auto` 消费通道均不变。
+
+### 追溯
+
+- 功能规格：`core-01-feature-specs.md` §2.26.4。
+- 根规范：`spec/flow-spec.md` §12.4（plan 门派生）、「ordering 例外与 flow-derive 判据」、§12.3 R4；`spec/cli-json-output.md` plan_state 派生规则（不改）。
+- 决策：C03（不改 `plan_approved` 投影口径）、C04（窄判断置于全勾判断之前、不删除零勾选条件）。
+- 测试：`core-S09-test-cases.md`「S09 原型任务勾选不越过 plan 批准门测试」。
