@@ -10,6 +10,7 @@
  * logos/resources/verify/test-results.jsonl。
  */
 import { describe, it, expect, afterEach } from 'vitest';
+import { withDeployPlanCoverageCodes } from './deploy-plan-coverage-codes.js';
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -312,7 +313,8 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
 
   it('UT-S35-171 零回归锚：违规码全集、检查项集合与失败结论对齐上线前实测基线', () => {
     // ① 违规码**全集**逐字相同——新增任一其它码同样会红，不只是「新 warning 不在其中」。
-    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(BASELINE.violationCodes);
+    // deploy-plan-gate-release-0-15-19（§2.90）有意新增四码，并入基线后对照。
+    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(withDeployPlanCoverageCodes(BASELINE.violationCodes).sort());
     expect(CHANGE_LINT_VIOLATION_CODES).not.toContain(WARN);
 
     // ② 逐场景对齐基线：检查项集合（id + label + violations）、violations 完整字段、pass 结论。

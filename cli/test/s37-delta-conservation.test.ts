@@ -605,15 +605,17 @@ describe('S37 — 契约、同源与零漂移', () => {
     }
   });
 
-  it('UT-S37-31: 零回归——枚举 46 码闭合；合法 delta 零 L8 违规、既有判据不受影响', () => {
+  it('UT-S37-31: 零回归——枚举 50 码闭合；合法 delta 零 L8 违规、既有判据不受影响', () => {
     // 37 → 42：§2.79 的 L9 接入 5 条 slice/marker 类阻塞理由（码即 ProposalBlockReason）。
     // 42 → 43：§2.82.2（fix-table-test-id-manual-marker）L4 族新增 delta_test_table_id_unextractable。
     // 43 → 45：§2.84.2（fix-merge-preflight-parity-and-bare-throw）L4 族新增
     //          delta_test_table_column_mismatch 与 delta_test_table_duplicate_header。
     // 45 → 46：§2.85（lint-modified-sibling-section-collision）L4 族新增 delta_test_id_duplicate
     //          （后态 test-change-set-duplicate-id 判据同源前移）。
-    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(46);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(46);
+    // 46 → 50：§2.90（deploy-plan-gate-release-0-15-19）L5 新增 deployment_plan_missing、
+    //          deployment_plan_reference_unresolved，L0 新增其 Plan Package 投影两码。
+    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(50);
+    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(50);
     // 合法形态全过：纯 ADDED / 全量 MODIFIED / 整节 REMOVED / 成对部分删除
     const legalDeltas = [
       delta('ADDED', '新章节', table('SMOKE-core-99')),

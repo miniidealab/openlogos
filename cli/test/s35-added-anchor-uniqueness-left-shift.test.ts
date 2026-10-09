@@ -4,6 +4,7 @@
  * 逐条 ID 由全局 OpenLogos reporter 写入 test-results.jsonl。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withDeployPlanCoverageCodes } from './deploy-plan-coverage-codes.js';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -200,7 +201,8 @@ describe('S35 ADDED 锚合成后唯一性的 L4 前移', () => {
     expect(goldenOut.checks.map(c => ({ id: c.id, label: c.label }))).toEqual(GOLDEN.changeLintChecks);
     expect(goldenOut.violations.map(v => v.code)).toEqual(GOLDEN.changeLintViolationsOnCleanFixture);
     // 违规码注册表：**完整数组**逐项对照改动前基线——本刀复用既有码，不增不减不改序。
-    expect([...CHANGE_LINT_VIOLATION_CODES]).toEqual(GOLDEN.changeLintViolationCodes);
+    // deploy-plan-gate-release-0-15-19（§2.90）有意新增四码，按登记位置插入后对照。
+    expect([...CHANGE_LINT_VIOLATION_CODES]).toEqual(withDeployPlanCoverageCodes(GOLDEN.changeLintViolationCodes));
 
     const f = setup({ [SCENARIO_DELTA]: CLEAN_DELTA }, { [SCENARIO_TARGET]: BEFORE_DOC });
     // L8 守恒：ADDED / RENAMED 仍被排除在守恒物质块之外，结论与本刀无关。

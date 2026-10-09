@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, appendFileSync, linkSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, appendFileSync, linkSync, unlinkSync, readdirSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parseStrictTimestampMs } from './timestamp.js';
 import {
@@ -10,9 +10,9 @@ import { detectMintedStepViaFlow } from './flow-derive.js';
 import { join, resolve } from 'node:path';
 import { listFiles } from './list-files.js';
 import {
-  authorityScan, extractUniqueAuthoritySection, isTableDelimiterRow, tableRowCells,
+  authorityScan, extractUniqueAuthoritySection, isTableDelimiterRow, tableRowCells, scanHeadingRecords,
 } from './markdown-scan.js';
-import { listEvidenceTestDeltaFiles } from './delta-classify.js';
+import { classifyProposalDeltas, listEvidenceTestDeltaFiles } from './delta-classify.js';
 // ModuleInfo 仅作类型使用，type-only 引入不构成运行时循环依赖。
 import type { ModuleInfo } from '../commands/status.js';
 import { deriveSliceVerificationState } from './test-slice-manifest.js';
@@ -1086,6 +1086,117 @@ export function resolveProposalDeploymentDecision(
       deployment_warnings: [],
     };
   }
+
+// ── 部署方案覆盖（deploy-plan-gate-release-0-15-19，功能规格 §2.90）──────────────────
+
+/** (a) 部署方案 delta 的提案内目录（任务文字与 delta 文件两种证据共用同一路径片段）。 */
+export const DEPLOYMENT_PLAN_DELTA_DIR = 'deltas/prd/3-technical-plan/3-deployment/';
+/** (b) 「部署方案依据」逐字定位的已合并部署方案目录（项目根相对，不递归）。 */
+export const DEPLOYMENT_PLAN_RESOURCE_DIR = 'logos/resources/prd/3-technical-plan/3-deployment';
+const DEPLOYMENT_PLAN_REFERENCE_LABEL = '部署方案依据';
+
+export type DeploymentPlanCoverageStatus =
+  | 'not_applicable' | 'covered_by_delta' | 'covered_by_reference' | 'reference_unresolved' | 'missing';
+export type DeploymentPlanReferenceProblem = 'not_found' | 'ambiguous' | 'duplicate';
+
+export interface DeploymentPlanCoverage {
+  status: DeploymentPlanCoverageStatus;
+  /** 去包裹后的引用值；未解析引用时为 null。duplicate 时取第一处的值。 */
+  reference: string | null;
+  reference_problem: DeploymentPlanReferenceProblem | null;
+  /** 引用逐字命中的标题数（duplicate 时为字段出现次数）；未解析引用时为 0。 */
+  hits: number;
+}
+
+/** 已合并部署方案文件不可读：消费方映射为操作错误 `artifact_unreadable`（§2.90.4），不得降级为 not_found。 */
+export class DeploymentPlanUnreadableError extends Error {
+  constructor(public readonly relativePath: string) {
+    super(`无法读取 ${relativePath}`);
+    this.name = 'DeploymentPlanUnreadableError';
+  }
+}
+
+function unwrapDeploymentPlanReference(value: string): string {
+  const trimmed = value.trim();
+  const wrapped = /^「(.*)」$/.exec(trimmed) ?? /^`(.*)`$/.exec(trimmed);
+  return wrapped ? wrapped[1].trim() : trimmed;
+}
+
+function countDeploymentPlanHeadingHits(root: string, reference: string): number {
+  const dir = join(root, DEPLOYMENT_PLAN_RESOURCE_DIR);
+  if (!existsSync(dir)) return 0;
+  let hits = 0;
+  for (const name of readdirSync(dir).filter(f => f.endsWith('.md')).sort()) {
+    const path = join(dir, name);
+    if (!statSync(path).isFile()) continue;
+    let content: string;
+    try {
+      content = readFileSync(path, 'utf-8');
+    } catch {
+      throw new DeploymentPlanUnreadableError(`${DEPLOYMENT_PLAN_RESOURCE_DIR}/${name}`);
+    }
+    // 共享 fence-aware 标题扫描（与 delta 锚解析同一实现）：围栏内的 `#` 行不算标题；逐字比对原始标题文本。
+    hits += scanHeadingRecords(content.split(/\r?\n/)).filter(h => h.rawText === reference).length;
+  }
+  return hits;
+}
+
+/**
+ * 部署方案覆盖的**唯一判定**（§2.90）：change-lint L5 与 Plan Package 都只经此求值，不各自解析。
+ * 仅 proposal 明确声明需要部署时适用；先判 (a) 本提案更新部署方案（[delta] 任务或 mergeable 部署方案 delta），
+ * (a) 成立即不再解析「部署方案依据」；否则按 (b) 在已合并部署方案中逐字唯一定位。只读。
+ */
+export function evaluateDeploymentPlanCoverage(
+  root: string,
+  proposalDir: string,
+  decision: ProposalDeploymentDecision = resolveProposalDeploymentDecision(proposalDir),
+): DeploymentPlanCoverage {
+  const result = (status: DeploymentPlanCoverageStatus, reference: string | null = null,
+    problem: DeploymentPlanReferenceProblem | null = null, hits = 0): DeploymentPlanCoverage =>
+    ({ status, reference, reference_problem: problem, hits });
+  if (decision.deployment_decision_source !== 'proposal' || decision.deployment_required !== true) {
+    return result('not_applicable');
+  }
+
+  const tasksPath = join(proposalDir, 'tasks.md');
+  const tasksContent = existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '';
+  const hasPlanTask = extractTaskSectionItems(tasksContent, 'delta').some(item => item.text.includes(DEPLOYMENT_PLAN_DELTA_DIR));
+  // 与 L6 同一分类器：既要被 merge 消费（mergeable），也要通过 L6（valid）——逃逸提案目录的文件 symlink
+  // 仍会被 merge 跟随（mergeable），但 L6 判 invalid，按 §2.90.2 不算覆盖。
+  const hasPlanDelta = classifyProposalDeltas(proposalDir).some(entry =>
+    entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid'
+    && entry.relativePath.startsWith(DEPLOYMENT_PLAN_DELTA_DIR));
+  if (hasPlanTask || hasPlanDelta) return result('covered_by_delta');
+
+  const proposalPath = join(proposalDir, 'proposal.md');
+  const section = existsSync(proposalPath) ? extractUniqueAuthoritySection(readFileSync(proposalPath, 'utf-8'), '部署影响') : null;
+  const values = section && section.status === 'unique' && section.content !== null
+    ? parseChineseFieldValues(section.content, DEPLOYMENT_PLAN_REFERENCE_LABEL)
+    : [];
+  if (values.length === 0) return result('missing');
+  if (values.length > 1) {
+    const first = values.find((v): v is string => v !== null);
+    return result('reference_unresolved', first ? unwrapDeploymentPlanReference(first) : null, 'duplicate', values.length);
+  }
+  if (values[0] === null) return result('missing');
+  const reference = unwrapDeploymentPlanReference(values[0]);
+  if (!reference) return result('missing');
+  const hits = countDeploymentPlanHeadingHits(root, reference);
+  if (hits === 1) return result('covered_by_reference', reference, null, 1);
+  return result('reference_unresolved', reference, hits === 0 ? 'not_found' : 'ambiguous', hits);
+}
+
+/** `deployment_plan_reference_unresolved` / `proposal_deployment_plan_reference_unresolved` 共用的说明（§2.90.3）。 */
+export function describeUnresolvedDeploymentPlanReference(coverage: DeploymentPlanCoverage): string {
+  const value = `部署方案依据「${coverage.reference ?? ''}」`;
+  if (coverage.reference_problem === 'duplicate') return `${value}在部署影响段出现了 ${coverage.hits} 次`;
+  if (coverage.reference_problem === 'ambiguous') return `${value}命中 ${coverage.hits} 处标题，无法确定指哪一节`;
+  return `${value}在 ${DEPLOYMENT_PLAN_RESOURCE_DIR}/ 中找不到同名标题`;
+}
+
+export const DEPLOYMENT_PLAN_MISSING_MESSAGE = 'proposal.md 声明需要部署，但本提案既未更新部署方案，也未说明沿用哪一节已合并部署方案';
+export const DEPLOYMENT_PLAN_MISSING_FIX_HINT = '二选一：在 tasks.md 的 [delta] 增加一条部署方案任务，如「- [ ] 产出 delta 文件到 `deltas/prd/3-technical-plan/3-deployment/<模块>-01-deployment-plan.md` — 新增本次发布章节」；或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」';
+export const DEPLOYMENT_PLAN_REFERENCE_UNRESOLVED_FIX_HINT = '把「部署方案依据」改为已合并部署方案中逐字存在且唯一的章节标题（通常是版本发布章节的 ## 标题），只写一行；或删除该行，改为在 [delta] 增加部署方案任务';
 
 function getSectionSummary(
   sections: Record<string, { checked: number; total: number }> | null,

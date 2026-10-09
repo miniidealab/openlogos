@@ -1,0 +1,55 @@
+{
+  "no-deploy": {
+    "status": 0,
+    "violations": [],
+    "text": "change-lint: feat\n  ✓ L0 Plan Package 完成合同\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L4 delta 段标记与脱模板（0 个 .md delta）\n  ✓ L5 部署决策一致\n  ✓ L6 delta 路径合法（0 mergeable / 0 invalid）\n  ✓ L8 条目守恒（ID 隐式删除拦截）\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nPASS（9/9）\n"
+  },
+  "section-missing-with-deploy": {
+    "status": 2,
+    "violations": [
+      {
+        "code": "proposal_required_section_missing",
+        "path": "logos/changes/feat/proposal.md",
+        "message": "缺少 canonical 章节：部署影响",
+        "fix_hint": "补充且仅保留一个 `## 部署影响` 章节。"
+      }
+    ],
+    "text": "change-lint: feat\n  ✗ L0 [proposal_required_section_missing]\n      缺什么：缺少 canonical 章节：部署影响\n      在哪补：logos/changes/feat/proposal.md\n      补成什么样：补充且仅保留一个 `## 部署影响` 章节。\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L4 delta 段标记与脱模板（0 个 .md delta）\n  ✓ L5 部署决策一致\n  ✓ L6 delta 路径合法（0 mergeable / 0 invalid）\n  ✓ L8 条目守恒（ID 隐式删除拦截）\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nFAIL（8/9，1 项违规）\n"
+  },
+  "section-missing-no-deploy": {
+    "status": 2,
+    "violations": [
+      {
+        "code": "proposal_required_section_missing",
+        "path": "logos/changes/feat/proposal.md",
+        "message": "缺少 canonical 章节：部署影响",
+        "fix_hint": "补充且仅保留一个 `## 部署影响` 章节。"
+      }
+    ],
+    "text": "change-lint: feat\n  ✗ L0 [proposal_required_section_missing]\n      缺什么：缺少 canonical 章节：部署影响\n      在哪补：logos/changes/feat/proposal.md\n      补成什么样：补充且仅保留一个 `## 部署影响` 章节。\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L4 delta 段标记与脱模板（0 个 .md delta）\n  ✓ L5 部署决策一致\n  ✓ L6 delta 路径合法（0 mergeable / 0 invalid）\n  ✓ L8 条目守恒（ID 隐式删除拦截）\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nFAIL（8/9，1 项违规）\n"
+  },
+  "conflict-no-but-deploy": {
+    "status": 2,
+    "violations": [
+      {
+        "code": "tasks_deployment_conflict",
+        "path": "logos/changes/feat/tasks.md",
+        "message": "部署决策冲突：proposal.md 声明无需部署，但 tasks.md 存在 [deploy] section。请先修正 proposal / tasks。",
+        "fix_hint": "使 proposal 部署声明与 tasks.md [deploy] 是否在场一致。"
+      },
+      {
+        "code": "deployment_decision_conflict",
+        "path": "logos/changes/feat/proposal.md",
+        "message": "部署决策冲突：proposal.md 声明无需部署，但 tasks.md 存在 [deploy] section。请先修正 proposal / tasks。",
+        "fix_hint": "需要部署 → tasks.md 增加 [deploy] section；无需部署 → 删除 [deploy] section 或把 proposal.md 部署影响改为「否」",
+        "flow_reason": "deployment_decision_conflict"
+      }
+    ],
+    "text": "change-lint: feat\n  ✗ L0 [tasks_deployment_conflict]\n      缺什么：部署决策冲突：proposal.md 声明无需部署，但 tasks.md 存在 [deploy] section。请先修正 proposal / tasks。\n      在哪补：logos/changes/feat/tasks.md\n      补成什么样：使 proposal 部署声明与 tasks.md [deploy] 是否在场一致。\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L4 delta 段标记与脱模板（0 个 .md delta）\n  ✗ L5 [deployment_decision_conflict]\n      缺什么：部署决策冲突：proposal.md 声明无需部署，但 tasks.md 存在 [deploy] section。请先修正 proposal / tasks。\n      在哪补：logos/changes/feat/proposal.md\n      补成什么样：需要部署 → tasks.md 增加 [deploy] section；无需部署 → 删除 [deploy] section 或把 proposal.md 部署影响改为「否」\n  ✓ L6 delta 路径合法（0 mergeable / 0 invalid）\n  ✓ L8 条目守恒（ID 隐式删除拦截）\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nFAIL（7/9，2 项违规）\n"
+  },
+  "incident-repaired": {
+    "status": 0,
+    "violations": [],
+    "text": "change-lint: sync-claude-response-language\n  ✓ L0 Plan Package 完成合同\n  ✓ L1 tasks.md 结构可解析\n  ✓ L2 [code] 标题在场（空段占位合法）\n  ✓ L3 测试证据在场（分阶段证据模型）\n  ✓ L4 delta 段标记与脱模板（0 个 .md delta）\n  ✓ L5 部署决策一致\n  ✓ L6 delta 路径合法（0 mergeable / 0 invalid）\n  ✓ L8 条目守恒（ID 隐式删除拦截）\n  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）\nPASS（9/9）\n"
+  }
+}

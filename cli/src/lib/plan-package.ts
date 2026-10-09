@@ -3,7 +3,8 @@ import { join, relative } from 'node:path';
 import {
   extractTaskSectionItems, isCodeRequiredForProposal, isTasksCodeFilled,
   isTasksTemplateFilled, parseTaskSections, resolveProposalDeploymentDecision, countMergeableDeltaFiles,
-  hasSpecCompleteMarker,
+  hasSpecCompleteMarker, evaluateDeploymentPlanCoverage, describeUnresolvedDeploymentPlanReference,
+  DEPLOYMENT_PLAN_REFERENCE_UNRESOLVED_FIX_HINT,
 } from './proposal-lifecycle.js';
 import { HISTORICAL_MARKERS } from './proposal-markers.js';
 import {
@@ -33,6 +34,13 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
   const tasksRel = projectRelative(root, tasksPath);
   const proposalIssues = historical ? [] : evaluateProposalStructure(proposalContent, proposalRel, locale);
   const deployment = resolveProposalDeploymentDecision(proposalDir);
+  // §2.90.4：部署方案覆盖与 change-lint L5 同一判定；历史提案不追加问题、不回退前沿（S35 EX-10.1）。
+  const planCoverage = historical ? null : evaluateDeploymentPlanCoverage(root, proposalDir, deployment);
+  if (planCoverage?.status === 'reference_unresolved') {
+    proposalIssues.push(taskIssue('proposal_deployment_plan_reference_unresolved', proposalRel,
+      describeUnresolvedDeploymentPlanReference(planCoverage), DEPLOYMENT_PLAN_REFERENCE_UNRESOLVED_FIX_HINT,
+      { section_id: 'deployment', actual: planCoverage.reference ?? '' }));
+  }
   // §2.74.1：决策澄清自 0.15.0 起是纯文档——模板继续生成、change-writer 继续填写，
   // 但不再被解析、不再参与 plan 完成度判定。「作者是否想清楚了」不是机器判得了的事。
   const sections = parseTaskSections(tasksContent);
@@ -57,6 +65,11 @@ export function evaluatePlanPackage(root: string, proposalDir: string, locale?: 
   }
   if (!historical && deployment.deployment_decision_conflict) {
     taskIssues.push(taskIssue('tasks_deployment_conflict', tasksRel, deployment.deployment_decision_conflict_reason ?? '部署决策冲突。', '使 proposal 部署声明与 tasks.md [deploy] 是否在场一致。', { section_id: 'deploy', expected: deployment.deployment_required ? '非空 [deploy]' : '无 [deploy]' }));
+  }
+  if (planCoverage?.status === 'missing') {
+    taskIssues.push(taskIssue('tasks_deployment_plan_missing', tasksRel, '需要部署的提案没有说明按哪份部署方案部署。',
+      '在 [delta] 增加部署方案任务，或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」。',
+      { section_id: 'delta', expected: '部署方案 delta 任务或部署方案依据' }));
   }
   const proposalSorted = sortCompletionIssues(proposalIssues);
   const taskSorted = sortCompletionIssues(taskIssues);

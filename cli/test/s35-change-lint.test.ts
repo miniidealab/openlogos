@@ -1000,7 +1000,9 @@ describe('S35 — 同源锚与契约', () => {
     // delta_test_table_column_mismatch 与 delta_test_table_duplicate_header。
     // 45 → 46：§2.85（lint-modified-sibling-section-collision）L4 族新增 delta_test_id_duplicate
     // （后态 test-change-set-duplicate-id 判据同源前移）。
-    expect(registry.size).toBe(46);
+    // 46 → 50：§2.90（deploy-plan-gate-release-0-15-19）L5 新增 deployment_plan_missing、
+    // deployment_plan_reference_unresolved，L0 新增其 Plan Package 投影两码。
+    expect(registry.size).toBe(50);
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');
@@ -1447,14 +1449,17 @@ describe('S35 — ST 场景测试', () => {
     const f2 = build();
     expect(seqOf(f2.root)).toEqual(s1); // 同输入必得同序列
     // 全序：L2（tasks.md）→ L3 proposal.md 三条按源位置出现序 → L3 tasks.md 无证据 → L5 proposal.md
+    // 夹具声明需要部署且缺 [deploy]，同时未覆盖部署方案：按 §2.90 EX-L5D-1，L0 与 L5 各追加一条部署方案覆盖违规。
     const violations = violationsVia(f1.root);
     expect(violations.map((v: any) => v.code)).toEqual([
       'tasks_code_section_missing',
       'tasks_deployment_conflict',
+      'tasks_deployment_plan_missing',
       'tasks_code_header_missing',
       'code_change_requires_real_test_ids', 'code_change_requires_real_test_ids', 'code_change_requires_real_test_ids',
       'code_change_requires_real_test_ids',
       'deployment_decision_conflict',
+      'deployment_plan_missing',
     ]);
     const l3 = violations.filter((v: any) => v.code === 'code_change_requires_real_test_ids' && v.path.endsWith('proposal.md'));
     expect(l3.map((v: any) => v.message.includes('UT-S99-91') ? 1 : v.message.includes('UT-S99-92') ? 2 : 3)).toEqual([1, 2, 3]);

@@ -11,6 +11,7 @@
  * 逐条 ID 由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { withDeployPlanCoverageCodes } from './deploy-plan-coverage-codes.js';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -247,8 +248,10 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
 
   it('UT-S35-194: 零回归锚——检查项、违规码集合、exit code 与结论文案零改动', () => {
     // ② 违规码注册表：断言集合本身（被意外扩充同样是回归）。
-    expect([...CHANGE_LINT_VIOLATION_CODES]).toEqual(GOLDEN._violation_codes as string[]);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe((GOLDEN._violation_codes as string[]).length);
+    // deploy-plan-gate-release-0-15-19（§2.90）有意新增四码，按登记位置插入后对照。
+    const expectedCodes = withDeployPlanCoverageCodes(GOLDEN._violation_codes as string[]);
+    expect([...CHANGE_LINT_VIOLATION_CODES]).toEqual(expectedCodes);
+    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(expectedCodes.length);
 
     for (const kind of ['l4-only', 'l4-and-l8', 'clean'] as LintRenderFixtureKind[]) {
       const f = fixture(kind);

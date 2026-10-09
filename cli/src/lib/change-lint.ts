@@ -14,6 +14,12 @@ import {
   parseTaskSections,
   isCodeRequiredForProposal,
   resolveProposalDeploymentDecision,
+  evaluateDeploymentPlanCoverage,
+  describeUnresolvedDeploymentPlanReference,
+  DeploymentPlanUnreadableError,
+  DEPLOYMENT_PLAN_MISSING_MESSAGE,
+  DEPLOYMENT_PLAN_MISSING_FIX_HINT,
+  DEPLOYMENT_PLAN_REFERENCE_UNRESOLVED_FIX_HINT,
   evaluateTestIdEvidence,
   extractStructuredTestIds,
   extractTaskSectionItems,
@@ -74,7 +80,7 @@ import { ADDED_ANCHOR_FIX_HINT } from './added-anchor-outcome.js';
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
 export type { DeltaEntryClassification, MergeDisposition, LintValidity };
 
-// ── violation code 闭合注册表（46 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
+// ── violation code 闭合注册表（50 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
 
 export const CHANGE_LINT_VIOLATION_CODES = [
   // L0 Plan Package 统一完成合同
@@ -88,6 +94,9 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'tasks_code_entry_before_spec_complete',
   'tasks_code_section_missing',
   'tasks_deployment_conflict',
+  // §2.90.4（deploy-plan-gate-release-0-15-19）：部署方案覆盖的 Plan Package 投影
+  'proposal_deployment_plan_reference_unresolved',
+  'tasks_deployment_plan_missing',
   // L1–L6（8 码）
   'tasks_sections_unparsable',
   'tasks_code_header_missing',
@@ -104,6 +113,9 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   // lint 侧对触及的 test 目标集合以同一合成器求后态、调用同一 buildTestChangeSet，其结论即违规。
   'delta_test_id_duplicate',
   'deployment_decision_conflict',
+  // §2.90.3（deploy-plan-gate-release-0-15-19）：L5 部署方案覆盖
+  'deployment_plan_missing',
+  'deployment_plan_reference_unresolved',
   'delta_path_invalid',
   // L7 既有 checker 13 码
   'design_system_mode_invalid',
@@ -1179,6 +1191,18 @@ export function runChangeLint(root: string, proposalDir: string, slug: string): 
 }
 
 function runChangeLintLocked(root: string, proposalDir: string, slug: string): ChangeLintRunResult {
+  try {
+    return runChangeLintChecks(root, proposalDir, slug);
+  } catch (e) {
+    // §2.90.4：已合并部署方案不可读是操作错误，不得降级为 not_found（EX-L5D-3）。
+    if (e instanceof DeploymentPlanUnreadableError) {
+      return { ok: false, errorCode: 'artifact_unreadable', message: e.message };
+    }
+    throw e;
+  }
+}
+
+function runChangeLintChecks(root: string, proposalDir: string, slug: string): ChangeLintRunResult {
   let proposalContent = '';
   let tasksContent = '';
   const proposalPath = join(proposalDir, 'proposal.md');
@@ -1600,6 +1624,23 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
       path: relProposal,
       message: deployment.deployment_decision_conflict_reason ?? 'proposal 部署声明与 tasks.md [deploy] section 冲突',
       fix_hint: '需要部署 → tasks.md 增加 [deploy] section；无需部署 → 删除 [deploy] section 或把 proposal.md 部署影响改为「否」',
+    });
+  }
+  // L5：部署方案覆盖（§2.90）——与 Plan Package 同一判定，不自行解析 tasks / delta / 部署方案；与冲突判定互相独立。
+  const planCoverage = evaluateDeploymentPlanCoverage(root, proposalDir, deployment);
+  if (planCoverage.status === 'missing') {
+    pushViolation(acc, 5, {
+      code: 'deployment_plan_missing',
+      path: relProposal,
+      message: DEPLOYMENT_PLAN_MISSING_MESSAGE,
+      fix_hint: DEPLOYMENT_PLAN_MISSING_FIX_HINT,
+    });
+  } else if (planCoverage.status === 'reference_unresolved') {
+    pushViolation(acc, 5, {
+      code: 'deployment_plan_reference_unresolved',
+      path: relProposal,
+      message: describeUnresolvedDeploymentPlanReference(planCoverage),
+      fix_hint: DEPLOYMENT_PLAN_REFERENCE_UNRESOLVED_FIX_HINT,
     });
   }
 

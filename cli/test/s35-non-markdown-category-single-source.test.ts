@@ -8,6 +8,7 @@
  * 禁止在测试里再抄一份文案——复述即构成第三份副本，正是本变更要消除的形态。
  */
 import { afterAll, describe, expect, it } from 'vitest';
+import { withDeployPlanCoverageCodes } from './deploy-plan-coverage-codes.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -91,7 +92,8 @@ describe('S35 单元测试——non-Markdown 类别集合单点与 fix_hint 协�
 
   it('UT-S35-174: 零回归锚——检查项标识集合、总数与违规码注册表对上线前逐字同形', () => {
     // 违规码注册表：断言**成员集合本身**，集合被意外扩充同样是回归
-    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(BASELINE.violationCodes);
+    // deploy-plan-gate-release-0-15-19（§2.90）有意新增四码，并入基线后对照。
+    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(withDeployPlanCoverageCodes(BASELINE.violationCodes).sort());
 
     // 三组均为「行为不受本次修改影响」的回归夹具——此类夹具的通过数同样须与上线前逐字相同。
     // 预期行为改变的输入（裸 JSON）不进本用例，其断言见 ST-S35-32。
@@ -273,7 +275,7 @@ describe('S35 场景测试——准入先于合成，且门禁结论零漂移', 
     expect(fixedLive.checkIds).toEqual(baseline.checkIds);
     expect(bareLive.total).toBe(baseline.total);               // 总数
     expect(fixedLive.total).toBe(baseline.total);
-    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(BASELINE.violationCodes);  // 注册表
+    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(withDeployPlanCoverageCodes(BASELINE.violationCodes).sort());  // 注册表（含 §2.90 有意新增四码）
     expect(bareLive.passed).toBeLessThan(bareLive.total);      // 预期新增拒绝分支
     expect(bareLive.checkViolations['4']).toBeGreaterThan(0);
     expect(fixedLive.passed).toBe(fixedLive.total);            // 修复后的合法分支

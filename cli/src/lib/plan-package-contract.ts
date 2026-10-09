@@ -24,7 +24,10 @@ export type PlanPackageIssueCode =
   | 'tasks_template_remaining'
   | 'tasks_code_entry_before_spec_complete'
   | 'tasks_code_section_missing'
-  | 'tasks_deployment_conflict';
+  | 'tasks_deployment_conflict'
+  // §2.90.4：部署方案覆盖的 Plan Package 投影（与 change-lint L5 同一判定）。
+  | 'proposal_deployment_plan_reference_unresolved'
+  | 'tasks_deployment_plan_missing';
 
 export interface CompletionIssue {
   code: PlanPackageIssueCode;
@@ -64,9 +67,10 @@ const ISSUE_ORDER: PlanPackageIssueCode[] = [
   'proposal_required_section_missing', 'proposal_required_section_duplicate',
   'proposal_required_section_empty', 'proposal_placeholder_remaining',
   'proposal_change_type_invalid', 'proposal_deployment_fields_invalid',
+  'proposal_deployment_plan_reference_unresolved',
   'tasks_template_remaining',
   'tasks_code_entry_before_spec_complete', 'tasks_code_section_missing',
-  'tasks_deployment_conflict',
+  'tasks_deployment_conflict', 'tasks_deployment_plan_missing',
 ];
 
 export function detectPlanLocale(content: string): 'zh' | 'en' {

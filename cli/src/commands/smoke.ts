@@ -40,6 +40,11 @@ export interface SmokeData {
   failed_cases: Array<{ id: string; error: string }>;
   uncovered_cases: string[];
   skipped_cases: string[];
+  /**
+   * 本提案新增 / 修改的 smoke 用例中以 skip 结束者（携带 runner 写入的缺失项说明）。这些用例是本次部署的必要证据，
+   * skip 只说明未取得证据，门禁据此 FAIL（各提案 smoke 规格「有 skip 时不得写 SMOKE_PASS」）。仅非空时出现。
+   */
+  required_skipped_cases?: Array<{ id: string; detail: string }>;
   sandbox: SandboxData;
   report_path: string;
   result_path: string;
@@ -107,6 +112,14 @@ function generateSmokeReport(data: SmokeData): string {
     md += '\n';
   }
 
+  if (data.required_skipped_cases && data.required_skipped_cases.length > 0) {
+    md += '## Required Cases Without Evidence\n\n| ID | Detail |\n|----|--------|\n';
+    for (const item of data.required_skipped_cases) {
+      md += `| ${item.id} | ${item.detail.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`;
+    }
+    md += '\n';
+  }
+
   if (data.skipped_cases.length > 0) {
     md += '## Skipped Cases\n\n';
     for (const id of data.skipped_cases) md += `- ${id}\n`;
@@ -144,11 +157,18 @@ export function collectSmokeData(
 
   const coveragePct = defined.length > 0 ? Math.round((coveredCount / defined.length) * 100) : 0;
   const passRatePct = results.length > 0 ? Math.round(((passed.length + skipped.length) / results.length) * 100) : 0;
-  const isPass = failed.length === 0 && uncovered.length === 0 && check.diagnostics.length === 0;
+  // 必要证据缺失：本提案新增 / 修改的 smoke 用例以 skip 结束。历史 runner 的「不适用」skip 不在本提案变更集合内，
+  // 统计口径不变（计入 executed、不计入 failed / uncovered）。
+  const changedSet = new Set(check.changed_case_ids);
+  const requiredSkipped = skipped.filter(r => changedSet.has(r.id))
+    .map(r => ({ id: r.id, detail: String((r as { detail?: unknown }).detail ?? r.error ?? '') }));
+  const isPass = failed.length === 0 && uncovered.length === 0 && check.diagnostics.length === 0
+    && requiredSkipped.length === 0;
   let reason: string | null = null;
   if (!isPass) {
     if (failed.length > 0) reason = 'failed_cases';
     else if (check.diagnostics.length > 0) reason = check.diagnostics[0].code;
+    else if (requiredSkipped.length > 0) reason = 'required_cases_skipped';
     else reason = 'incomplete_coverage';
   }
 
@@ -174,6 +194,7 @@ export function collectSmokeData(
     failed_cases: failed.map(r => ({ id: r.id, error: r.error ?? 'unknown' })),
     uncovered_cases: uncovered,
     skipped_cases: skipped.map(r => r.id),
+    ...(requiredSkipped.length > 0 ? { required_skipped_cases: requiredSkipped } : {}),
     sandbox: sandbox ?? buildInitialSandboxData(normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: reportPath,
     result_path: resultPath,
@@ -382,6 +403,11 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
   if (data.uncovered_cases.length > 0) {
     console.log('\nUncovered smoke cases:');
     for (const id of data.uncovered_cases) console.log(`  ${id}`);
+  }
+
+  if (data.required_skipped_cases && data.required_skipped_cases.length > 0) {
+    console.log('\nRequired smoke cases without evidence (skip):');
+    for (const item of data.required_skipped_cases) console.log(`  ${item.id}: ${item.detail}`);
   }
 
   if (data.diagnostics.length > 0) {
