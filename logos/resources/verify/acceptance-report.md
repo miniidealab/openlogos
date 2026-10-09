@@ -6,16 +6,25 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2185 |
+| Defined cases | 2217 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2185 |
-| Passed | 2175 |
+| Executed cases | 2217 |
+| Passed | 2207 |
 | Failed | 0 |
 | Skipped | 10 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
+
+## Slice Verification
+
+- Mode: `final`
+- Attempted slice: `null`
+- Confirmed slices: `slice-01-merge-amend`, `slice-02-status-spec-amend`
+- Eligible tests: 2217
+- Pending tests: 0
+- Final: true
 
 ## Skipped Cases
 

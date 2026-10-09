@@ -1293,9 +1293,10 @@ sequenceDiagram
 - **副作用**：无半新半旧的主文档。
 
 #### EX-9.22：重新合并
-- **触发条件**：已合并后发现 delta 有误。
-- **期望响应**：`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `openlogos merge`——不存在 reopen 通道，也不需要（无中间态可恢复）。
-- **副作用**：无。
+
+- **触发条件**：已合并后发现 delta 有误，修正 delta 后再次执行 `openlogos merge <slug>`。
+- **期望响应**：同一条命令按「S09 已合并提案的增量修正时序」执行增量修正——从合并基线重新合成、整体重算 `test_change_set`、一次原子落盘、改写 `SPEC_MERGED` 并清除旧验收事实；delta 未变时幂等返回 `already-merged`（EX-9.37）。不再使用 `git checkout logos/resources/` 回到合并前（合并后规格通常已被提交，该命令恢复不了任何内容），也不删除 `SPEC_MERGED` 重合并（会把 `test_change_set` 缩小为只剩新一轮，2026-09-19 事故 27 → 2 → 0 → 0）。不存在 reopen 通道，也不需要。
+- **副作用**：见增量修正时序；任一拒绝路径（EX-9.38～EX-9.40、EX-9.42～EX-9.44）零副作用。
 
 ### 追溯
 
@@ -1558,3 +1559,152 @@ sequenceDiagram
   与「S09 merge 内部错误的稳定失败语义」的状态三档（A/B/C）在原型侧对应 P0/P1/P2，不得互相覆盖。
 - 测试：UT-S09-355、UT-S09-356、UT-S09-357、UT-S09-358、UT-S09-359、ST-S09-146。
 - 来源变更：fix-merge-prototype-commit-and-phase-module-prefix。
+
+## S09 已合并提案的增量修正时序
+
+> 来源变更：merge-amend-merged-change。功能规格 §2.69.1「已合并后再次调用」、§2.69.2 合并基线、§2.69.4 增量修正；§2.85.3 阶段边界例外。
+
+### 场景目标
+
+已合并、尚未归档的活跃提案发现规格写错时，作者修正 delta 后重跑同一条 `openlogos merge <slug>`，CLI 从首次合并记录的合并基线重新合成全部目标，经与首次合并同等的准入后一次原子落盘；测试变更集覆盖各轮改动；依赖旧规格的验收与交付事实失效，提案回到待 verify。
+
+### 参与者
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| W | change-writer（AI）或人 | 修正 `deltas/` 下的文件，运行 change-lint |
+| L | `openlogos change-lint` | 修正待应用时以合并基线为 before 执行依赖前态检查 |
+| M | `openlogos merge` | 增量修正的唯一执行者与写入者 |
+| G | git 对象库 | 保存合并前实际字节的 blob（`git hash-object -w` 写入、`git cat-file blob` 读回） |
+| E | `composeOpenLogosMarkdown` + `buildTestChangeSet` | 从合成起点合成最终字节、整体重算测试变更集 |
+| A | `applyBaselineClosureBatch` | 原子落盘原语（零改动） |
+| FS | `logos/resources/` 与提案目录 | canonical target、`SPEC_MERGED`、验收与交付标记 |
+
+### 前置条件
+
+- 提案处于活跃目录，`SPEC_MERGED` 在场且含 `merge_baseline`（本版及之后首次合并）。
+- 作者已修改 `deltas/` 下的文件，当前 delta 摘要 ≠ `merge_baseline.delta_digest`。
+- 半自动下用户已明确授权执行 merge（增量修正同属 merge，不新增确认点）。
+
+### 成功后置条件
+
+- 全部重修、新增、撤回目标为修正后字节；`SPEC_MERGED` 的 `merge_baseline` 指向本次 delta 摘要与已应用目标集，`test_change_set` 为「合并前 → 修正后」整体结果，`amendments` 追加一条记录，`completed_at` 不变。
+- `VERIFY_PASS` / `VERIFY_FAIL` / `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL` 均不在场；`tasks.md` 的 `[code]` 段与切片相关文件原样保留。
+- `merge --format json` 返回 `result: "amended"`。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant W as change-writer
+    participant L as change-lint
+    participant M as openlogos merge
+    participant G as git 对象库
+    participant E as 合成引擎与测试变更集
+    participant A as 原子落盘原语
+    participant FS as resources 与提案目录
+
+    W->>FS: Step 1: 修正 deltas 下的文件
+    W->>L: Step 2: 运行 change-lint
+    L->>FS: Step 3: 读 SPEC_MERGED，摘要不同且有基线，进入待应用修正上下文
+    L-->>W: Step 4: 以基线为 before 执行依赖前态检查，与 merge 同判
+    W->>M: Step 5: openlogos merge slug
+    M->>FS: Step 6: 读 SPEC_MERGED 并计算当前 delta 摘要
+    alt 摘要相同
+        M-->>W: Step 7a: result=already-merged，零写入、零事实变化
+    else 摘要不同
+        M->>M: Step 7b: 目标集分为重修、新增、撤回，检查拒绝边界
+        M->>FS: Step 8: 漂移核对，上次目标当前 sha256 等于 after_sha256
+        M->>G: Step 9: 按 git_blob 读回合并前字节
+        G-->>M: Step 10: 返回字节，以 before.sha256 复核
+        M->>M: Step 11: 待应用修正上下文准入，与 change-lint 同一 evaluator
+        M->>E: Step 12: 从合成起点合成并复验，整体重算 test_change_set
+        E-->>M: Step 13: 返回最终字节与测试变更集
+        M->>FS: Step 14: 内存备份后清除验收与交付标记
+        M->>A: Step 15: 目标、metadata 与改写后的 SPEC_MERGED 一次提交
+        A->>FS: Step 16: temp、fsync、rename，失败整批回滚
+        M-->>W: Step 17: result=amended，附 delta_digest、targets、invalidated_markers
+    end
+```
+
+### 步骤说明
+
+1. 作者修正 `deltas/` 下的文件（改写、新增或删除 delta）。
+2. 作者按既有交付门运行 `openlogos change-lint`。
+3. change-lint 读 `SPEC_MERGED`：含 `merge_baseline` 且当前 delta 摘要不同，判定为「修正待应用」。
+4. change-lint 以合并基线为可信 before 执行整文件路由受理、ADDED 锚唯一性、测试后态重复 ID、列数欠债继承与 L8 条目守恒；摘要相同时保持「合并完成后不重放」。
+5. 作者（半自动下经用户授权）执行 `openlogos merge <slug>`。
+6. merge 读 `SPEC_MERGED`，按 §2.69.4.1 算法计算当前 delta 摘要。
+7. 摘要相同即返回 `already-merged`（Step 7a）；不同则把当前目标集 `C` 与已应用目标集 `P` 分为重修 `P∩C`、新增 `C−P`、撤回 `P−C`，并按 ① → ④ → ⑤ 检查拒绝边界（Step 7b）。
+8. 对 `P` 中每个目标核对当前字节 sha256 等于 `after_sha256`，不等即漂移拒绝。
+9. 对重修与撤回中的首次 MODIFY 目标，按 `git_blob` 读回合并前字节。
+10. 以 `before.sha256` 复核读回字节，读不到或不匹配即拒绝。
+11. 以「待应用修正」上下文执行与 change-lint 同源的准入，结论与 Step 4 一致；失败即拒绝、零写入。
+12. 重修与新增目标从各自起点合成并做物质结果复验，撤回目标取基线 before；`buildTestChangeSet` 对 `P ∪ C` 中全部测试目标按「基线 before → 修正后」整体重算。
+13. 合成结果返回 merge；新增目标的基线在此采集（`git hash-object -w`）。
+14. 读取并在内存备份失效集合中在场的标记，然后清除。
+15. 全部目标（重修与撤回按 `MODIFY`，新增按磁盘事实）、必要的 metadata 与改写后的 `SPEC_MERGED`（`MODIFY`）交原子落盘原语一次提交。
+16. 原语按既有 temp + fsync + rename 提交；失败时仅当返回 `rolled_back === true`（已确认整批回滚）才恢复 Step 14 清除的标记，`rolled_back !== true` 或原语抛错时标记保持缺失、按档 C 报告（EX-9.45）。
+17. 返回 `result: "amended"` 与本次 `delta_digest`、`targets`、`invalidated_markers`；提案回到待 verify。
+
+### 异常与边界
+
+#### EX-9.37：delta 未变（幂等）
+- **触发条件**：`SPEC_MERGED` 在场，当前 delta 摘要等于 `merge_baseline.delta_digest`。
+- **期望响应**：返回 `already-merged`（JSON `result: "already-merged"`），exit 0。
+- **副作用**：零写入；`VERIFY_PASS` 等标记全部保留；`[code]` 不被重置。
+
+#### EX-9.38：旧标记无合并基线
+- **触发条件**：`SPEC_MERGED`（或 legacy `MERGED`）不含 `merge_baseline`，且 delta 已修改（摘要无从比较）。
+- **期望响应**：写入前拒绝，错误码 `MERGE_AMEND_BASELINE_MISSING`，说明不从 git 历史回推（父提交既可能已含合并结果，也可能早于脏工作区的真实 before；曾删标记重合并时还原不出最后一次目标集），指引另立新提案承载修正。
+- **副作用**：无。
+
+#### EX-9.39：合并基线不可读或不匹配
+- **触发条件**：重修或撤回的首次 MODIFY 目标 `git_blob` 为 null（首次合并在非 git 仓库，见 EX-9.46）、对象已被清理，或读回字节 sha256 ≠ `before.sha256`。
+- **期望响应**：写入前拒绝，错误码 `MERGE_AMEND_BASELINE_UNREADABLE`，点名目标与原因。
+- **副作用**：无。
+
+#### EX-9.40：主文档漂移
+- **触发条件**：上次已应用目标在主文档中的当前 sha256 ≠ `after_sha256`（被其他提案合并或手工修改过）。
+- **期望响应**：写入前拒绝，错误码 `MERGE_AMEND_DRIFT`，点名全部漂移文件；不做三方合并，由人处理。
+- **副作用**：无。
+
+#### EX-9.41：首次 MODIFY 目标的 delta 已删除（撤回）
+- **触发条件**：上次合并涉及、首次模式为 MODIFY 的目标在当前 delta 中已不再涉及。
+- **期望响应**：该目标写回合并前字节（经 EX-9.39 同一复核），从已应用目标集移除；其测试 ID 因 before == after 不再出现在 `test_change_set` 中。
+- **副作用**：随本次增量修正一起原子落盘。
+
+#### EX-9.42：首次 CREATE 目标的 delta 已删除
+- **触发条件**：上次合并以 CREATE 新建的目标在当前 delta 中已不再涉及。
+- **期望响应**：在任何写入前拒绝，错误码 `MERGE_AMEND_CREATE_WITHDRAW`，点名目标并说明「恢复需删除文件与 `resource_index` 条目，超出落盘原语能力」，指引另立提案删除或人工处理。
+- **副作用**：无；`logos/resources/`、`SPEC_MERGED`、验收标记字节零变化。
+
+#### EX-9.43：原型资产变化
+- **触发条件**：`deltas/prd/2-product-design/2-page-design/` 下原型资产相对上次合并有变化。
+- **期望响应**：写入前拒绝，错误码 `MERGE_AMEND_PROTOTYPE_UNSUPPORTED`；原型落盘走 `commitVerifiedPrototypes` 与 provenance 校验，不在增量修正能力内。
+- **副作用**：无。
+
+#### EX-9.44：待应用修正准入失败
+- **触发条件**：修正后的 delta 在待应用修正上下文中引入条目丢失、重复测试 ID、非法整文件封装等问题。
+- **期望响应**：merge 以既有准入拒绝出口拒绝，结论与同时刻 change-lint 一致（同一 evaluator）；合法修正（含首次 CREATE 目标的重修）两者同判通过。
+- **副作用**：无；未进入 Step 14，标记未被清除。
+
+#### EX-9.45：落盘失败
+- **触发条件**：Step 14 清除标记自身失败；或 Step 15～16 原子落盘返回 `ok:false`；或错误从落盘原语内部直接逃出。
+- **期望响应**：按结构化事实分三支，禁止从「返回失败」本身推断旧态：
+  - **Step 14 自身失败**（规格尚未写入）：恢复已清除的标记，按档 A 报告。
+  - **`ok:false` 且 `rolled_back === true`**（档 B，已确认规格与 `SPEC_MERGED` 整批回到修正前字节）：按内存备份恢复 Step 14 清除的标记；恢复失败时如实点名未恢复的标记，提示重新 verify。
+  - **`ok:false` 且 `rolled_back !== true`，或原语抛错逃逸**（档 C：journal 已 committed 后清理失败而恢复判为 `committed`、回滚未完成、状态不可确认）：**不恢复**任何被清标记，按档 C 如实报告「主文档可能已是修正后字节、`SPEC_MERGED` 可能已改写」，不得声称规格为旧字节，保留恢复材料并指引 `git status` / `git diff logos/resources/` 核对；提案须重新 verify。
+- **副作用**：档 A / 档 B 下主文档与 `SPEC_MERGED` 为修正前字节、标记恢复原状（恢复失败时仅缺少验收事实）；档 C 下标记保持缺失，未重新验收前 archive 被既有归档门拒绝。任一分支都不会出现新规格或状态不可确认的规格配旧通过事实。
+
+#### EX-9.46：首次合并时不在 git 仓库
+- **触发条件**：首次合并时 `git hash-object -w` 不可用或失败。
+- **期望响应**：首次合并照常成功，MODIFY 目标的 `before.git_blob` 记 `null`；日后增量修正按 EX-9.39 拒绝。
+- **副作用**：无额外副作用。
+
+### 追溯
+
+- 需求：merge 直接合并与规格结构检查要求 › 验收条件 › S09 已合并提案的增量修正、增量修正的合并基线证据、拒绝边界、与 change-lint 同判、使旧验收事实失效、宿主可读的增量修正事实。
+- 功能规格：§2.69.1、§2.69.2、§2.69.4、§2.85.3。
+- 场景关联：本文档「S09 merge 直接合并时序」（EX-9.22 改写）、「S09 merge 内部错误的稳定失败语义」（档位沿用）；S11「已合并提案的增量修正只读投影」。
+- 测试：UT-S09-429～UT-S09-447、ST-S09-196～ST-S09-201。

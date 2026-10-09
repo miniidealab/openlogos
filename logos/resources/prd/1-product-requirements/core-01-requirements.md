@@ -2591,6 +2591,54 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 - **THEN** 命令报出重复 ID 与结构问题并非零退出
 - **AND** 该命令**不参与任何门**——merge / verify / archive 均不因其结论而阻断；它是用户主动运行的诊断工具
 
+#### S09 已合并提案的增量修正
+
+> 来源变更：merge-amend-merged-change。已合并提案发现规格写错后，原「`git checkout logos/resources/` 回到合并前再重跑」在规格已提交后走不通，「删标记再合并」又会把测试变更集缩小到只剩新一轮（2026-09-19 事故：`changed_test_ids` 27 → 2 → 0 → 0）。本组验收条件定义唯一的正式修正路径。
+
+- **GIVEN** 活跃提案已合并（`SPEC_MERGED` 在场且含合并基线记录），随后修改了 `deltas/` 下的文件
+- **WHEN** 执行 `openlogos merge <slug>`
+- **THEN** 同一条命令执行**增量修正**，不需要新参数、新子命令或新标记文件：上次合并涉及的目标从「合并前字节」重新合成当前 delta，新增目标以当前主文档为起点，上次涉及、这次已删 delta 的首次 MODIFY 目标恢复为合并前字节
+- **AND** 修正后的 `test_change_set` 按「合并前 → 修正后」整体重算，覆盖各轮改动的全部测试 ID，不会缩小为只剩最近一轮
+- **AND** 全部目标与改写后的 `SPEC_MERGED` 一次原子落盘，失败整批回滚，状态声明沿用既有三档
+- **AND** 不调用 `resetCodeSection`，`tasks.md` 的 `[code]` 段原样保留
+- **AND** 当前 delta 与上次合并的 delta 摘要相同时如实返回 `already-merged`（幂等），不改动任何文件、不清除任何事实
+
+#### S09 增量修正的合并基线证据
+
+- **GIVEN** 任一提案首次合并成功
+- **THEN** `SPEC_MERGED` 为每个 canonical target 记录可独立校验的合并前证据：首次模式（CREATE / MODIFY）；CREATE 记「不存在」，MODIFY 记合并前**实际字节**的 sha256 与写入 git 对象库的 blob id（合并前工作区有未提交修改时也是真实 before）；以及合并后 sha256 和已应用目标集
+- **AND** 增量修正读回合并前字节时以 sha256 复核；读不到（非 git 仓库、对象已被清理）或不匹配即拒绝，不降级为任何推断
+
+#### S09 增量修正的拒绝边界
+
+- **GIVEN** 已合并提案的 delta 已修改，且满足以下任一条件：① `SPEC_MERGED` 没有合并基线记录（本版之前合并的旧标记）；② 合并基线不可读或 sha256 不匹配；③ 上次合并涉及的目标在主文档中已不等于上次记录的合并后 sha256（被其他提案或手工修改过）；④ 首次以 CREATE 新建的目标在当前 delta 中已不再涉及；⑤ 原型资产发生变化
+- **WHEN** 执行 `openlogos merge <slug>`
+- **THEN** 在任何写入前拒绝，以稳定错误码点名原因与涉及文件，并给出手工处理方式；`logos/resources/`、`SPEC_MERGED` 与提案目录内全部标记零改动
+- **AND** 旧标记**一律拒绝**，不从 git 历史回推合并前字节（父提交既可能已含合并结果，也可能早于脏工作区的真实 before）；主文档漂移不做三方合并
+
+#### S09 增量修正与 change-lint 同判
+
+- **GIVEN** 已合并提案的 delta 已修改且合并基线可用（修正待应用）
+- **WHEN** 分别执行 `openlogos change-lint` 与 `openlogos merge <slug>`
+- **THEN** 两者以合并基线为可信 before，执行与首次合并同等口径的依赖前态检查（整文件封装、ADDED 合成唯一性、测试后态重复 ID、列数欠债继承、条目守恒），结论一致：修正引入条目丢失、重复测试 ID 或非法整文件封装时同判拒绝，合法修正（含首次 CREATE 目标的重修）同判通过
+- **AND** delta 摘要与已合并摘要相同时，change-lint 保持既有「合并完成后不重放」语义
+
+#### S09 增量修正使旧验收事实失效
+
+- **GIVEN** 已合并提案已有验收或交付完成事实（`VERIFY_PASS`、`VERIFY_FAIL`、`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL` 任一在场）
+- **WHEN** 增量修正成功
+- **THEN** 上述标记全部清除，提案回到待 verify；未重新 verify 即执行 `openlogos archive` 被既有归档门拒绝
+- **AND** 仅当已确认规格与 `SPEC_MERGED` 整批回到修正前字节（落盘原语返回 `rolled_back === true`，或标记清除阶段失败、规格尚未写入）时，被清除的标记恢复原状；回滚未完成、已提交后清理失败或状态不可确认时标记保持缺失、如实报告不可确认状态；任何中断态只会偏向「需要重新验收」，不会出现新规格或状态不可确认的规格配旧通过事实
+- **AND** 幂等 `already-merged` 不清除任何标记
+
+#### S09 宿主可读的增量修正事实
+
+- **GIVEN** 已合并的活跃提案
+- **WHEN** 执行 `openlogos status --format json`
+- **THEN** `modules[].active_change.spec_amend` 只读投影已合并 delta 摘要、当前 delta 摘要、是否有待应用修正及修正受阻原因；未合并提案不出现该对象
+- **AND** `openlogos merge --format json` 以 `result: merged | amended | already-merged` 区分首次合并、增量修正与幂等，并返回本次 delta 摘要、目标清单与被清除的标记
+- **AND** 宿主据此判断，不再自行比较 delta 与主文档字节
+
 ### 非目标
 
 - 不触及 change-lint 的 L8 / L9 / L10（归后续提案）。

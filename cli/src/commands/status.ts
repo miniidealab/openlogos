@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
+import { deriveSpecAmend, type SpecAmendProjection } from '../lib/merge-amend.js';
 import { readLocale, t, PHASE_KEYS, SUGGEST_KEYS } from '../i18n.js';
 import { buildInitialPhasePlan, deriveModulePhaseProgressViaFlow, flowExplicitSkipPhaseKeys, detectProposalStepViaFlow,
   detectMintedStepViaFlow, deriveLaunchedCmdGate, type CmdGateEval } from '../lib/flow-derive.js';
@@ -208,6 +209,8 @@ export interface ModuleStatusItem {
     code_planning_diagnostic?: CodePlanningDiagnostic;
     // §2.67.3：矛盾事实只读对账投影（仅命中时出现，一致状态下该键不存在——不是 null）。
     state_inconsistency?: StateInconsistency;
+    // merge-amend-merged-change：已完成规格阶段时的增量修正只读投影（未合并时该键不存在）。
+    spec_amend?: SpecAmendProjection;
   } | null;
   suggestion: string;
   // M2 切片 1a：overlay 驱动派生（仅存在已到达 overlay-added 节点 / 当前为 overlay-added 时输出）
@@ -509,6 +512,11 @@ function buildModuleStatusItem(
             minted.proposal_step,
           );
           return inconsistency ? { state_inconsistency: inconsistency } : {};
+        })()),
+        // S11「已合并提案的增量修正只读投影」：宿主据此区分修正可用 / 已应用 / 待应用，不自行比较字节。
+        ...((() => {
+          const specAmend = existsSync(proposalDir) ? deriveSpecAmend(root, proposalDir) : null;
+          return specAmend ? { spec_amend: specAmend } : {};
         })()),
       };
     }

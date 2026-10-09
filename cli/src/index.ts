@@ -100,7 +100,7 @@ Commands:
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list)
 
 Examples:
   openlogos init my-saas-project
@@ -253,7 +253,7 @@ async function main() {
     case 'merge': {
       // 一次调用完成合并（功能规格 §2.69）：无 slot / seal / apply 子命令，无中间相位。
       const { merge } = await import('./commands/merge.js');
-      merge(args[1]);
+      merge(args[1], format);
       break;
     }
     case 'lint-specs': {

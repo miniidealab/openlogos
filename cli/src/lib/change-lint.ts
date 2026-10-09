@@ -75,6 +75,7 @@ import {
   resolveSectionAnchor,
 } from './markdown-section-authority.js';
 import { ADDED_ANCHOR_FIX_HINT } from './added-anchor-outcome.js';
+import { resolvePendingAmendContext } from './merge-baseline.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
@@ -1202,6 +1203,11 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
   }
 }
 
+/** 依赖前态检查的输入（§2.69.4.4）：`frozen` = 合并完成后不重放。 */
+type PriorTargetState =
+  | { frozen: true }
+  | { frozen: false; mode: 'CREATE' | 'MODIFY'; content: string | null; readable: boolean };
+
 function runChangeLintChecks(root: string, proposalDir: string, slug: string): ChangeLintRunResult {
   let proposalContent = '';
   let tasksContent = '';
@@ -1328,6 +1334,24 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
    * 合成 / 封装因他因失败的目标不纳入（归各自判据）。循环结束后对集合**一次**调用同一判据。
    */
   const testAfterStates: TestAfterState[] = [];
+  // §2.69.4.4「待应用修正」上下文：已合并、有合并基线且 delta 摘要 ≠ 已合并摘要时，依赖前态的检查
+  // 以合并基线为可信 before **照常执行**（与 merge 同一 evaluator、同判同拒）；摘要相同或无基线时
+  // amendCtx 为 null，下列阶段闸保持「合并完成后不重放」语义逐字不变（§2.85.3 阶段边界唯一例外）。
+  const specCompleteRaw = hasSpecCompleteMarker(proposalDir);
+  const amendCtx = specCompleteRaw ? resolvePendingAmendContext(root, proposalDir) : null;
+  /** 依赖前态检查的输入：未合并 → 磁盘事实；修正待应用 → 合并基线；其余 post-merge（含基线不可读）→ 冻结。 */
+  const priorStateOf = (targetPath: string): PriorTargetState => {
+    if (!specCompleteRaw) {
+      const abs = join(root, ...targetPath.split('/'));
+      if (!existsSync(abs)) return { frozen: false, mode: 'CREATE', content: null, readable: true };
+      try { return { frozen: false, mode: 'MODIFY', content: readFileSync(abs, 'utf-8'), readable: true }; }
+      catch { return { frozen: false, mode: 'MODIFY', content: null, readable: false }; }
+    }
+    if (!amendCtx) return { frozen: true };
+    const state = amendCtx.beforeOf(targetPath);
+    if (state === 'unknown') return { frozen: true };
+    return { frozen: false, mode: state.mode, content: state.content, readable: true };
+  };
   for (const entry of deltaEntries) {
     const relPath = `logos/changes/${slug}/${entry.relativePath}`;
     if (entry.lintValidity === 'invalid') {
@@ -1362,7 +1386,8 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     // `buildRenameMaps(parseDeltaBlocks(...))` 判成「RENAMED 块正文有 2 行」，一次成功的合并
     // 在 post-merge lint 上炸掉。整文件协议的核心语义是「正文即最终字节」，正文里出现什么标题
     // 都不该被读成指令；修复方向是保留身份、跳过章节解析，**不是**回头去限制正文标题。
-    const specComplete = hasSpecCompleteMarker(proposalDir);
+    const entryPrior = entryTargetPath !== null ? priorStateOf(entryTargetPath) : null;
+    const specComplete = entryPrior !== null ? entryPrior.frozen : (specCompleteRaw && !amendCtx);
     /** 本 delta 的 test 目标后态（仅合并前、合成成功时可得）——§2.86 L4 列数检查的继承判定输入。 */
     let entryTestAfterState: TestAfterState | null = null;
     let entryRoute: DeltaRoute = { kind: 'section' };
@@ -1373,7 +1398,9 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
         firstLine: firstLineOf(deltaContents.get(entry.relativePath) ?? ''),
         targetPath: entryTargetPath,
         semanticCategory: entryCategory,
-        mode: existsSync(join(root, ...entryTargetPath.split('/'))) ? 'MODIFY' : 'CREATE',
+        mode: entryPrior && !entryPrior.frozen
+          ? entryPrior.mode
+          : (existsSync(join(root, ...entryTargetPath.split('/'))) ? 'MODIFY' : 'CREATE'),
       });
       // 既有三类按语义类别进入整文件通道，与合并前后无关，行为逐字不变；只有 Markdown 整文件
       // 这条**新增**的、依赖合并前事实的路由受阶段边界约束。
@@ -1437,14 +1464,12 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
       //    倒挂成失败。与 L8 条目守恒的 post-merge 处理同型，取同一个完成标记判据。
       // ③ **复用既有违规码** `delta_section_anchor_unresolvable`（与「空锚 fail-closed」「非法
       //    RENAMED 块」同族：控制块畸形 → 定位失败），不新增违规码、不改 L4 检查项计数。
-      if (!specComplete && entryTargetPath !== null && !renamedFormBroken.has(entry.relativePath)) {
-        const targetAbs = join(root, ...entryTargetPath.split('/'));
-        const exists = existsSync(targetAbs);
-        let beforeContent = '';
-        let readable = true;
-        if (exists) {
-          try { beforeContent = readFileSync(targetAbs, 'utf-8'); } catch { readable = false; }
-        }
+      if (!specComplete && entryTargetPath !== null && entryPrior && !entryPrior.frozen
+        && !renamedFormBroken.has(entry.relativePath)) {
+        // 前态取 priorStateOf：未合并为磁盘事实，修正待应用为合并基线（§2.69.4.4）。
+        const exists = entryPrior.mode === 'MODIFY';
+        const beforeContent = entryPrior.content ?? '';
+        const readable = entryPrior.readable;
         const added = readable
           ? evaluateAddedAnchorUniqueness(beforeContent, deltaText, exists ? 'MODIFY' : 'CREATE')
           : { ok: true };
@@ -1550,7 +1575,10 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     if (materialEntry && entryIsWholeFile && !wholeFileFrozen) {
       const targetPath = entryTargetPath!;
       const targetAbs = join(root, ...targetPath.split('/'));
-      const mode = existsSync(targetAbs) ? 'MODIFY' : 'CREATE';
+      // 修正待应用时受理模式取基线首次模式（目标此刻已存在，按磁盘重判会倒挂首次 CREATE 的封装声明）。
+      const mode = amendCtx && entryPrior && !entryPrior.frozen
+        ? entryPrior.mode
+        : (existsSync(targetAbs) ? 'MODIFY' : 'CREATE');
       const checked = validateAndStripNonMarkdownDelta(
         deltaContents.get(entry.relativePath) ?? '', mode, targetPath, { root });
       if (!checked.ok) {
@@ -1584,7 +1612,7 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
   // §2.85：对触及的 test 目标集合**一次**调用同一 buildTestChangeSet（纯函数、零改动、仅新增调用方），
   // 只认领 `test-change-set-duplicate-id`；`-ambiguous-table` 已由上方 L4 行级 / 表级码覆盖（不双报），
   // 其余码不认领。阶段边界：SPEC_MERGED 之后不重放（取既有完成标记判据，不以「目标是否已含该 ID」推断）。
-  if (testAfterStates.length > 0 && !hasSpecCompleteMarker(proposalDir)) {
+  if (testAfterStates.length > 0 && (!specCompleteRaw || amendCtx !== null)) {
     try {
       buildTestChangeSet({ change: slug, module: moduleCtx.moduleId, targets: testAfterStates.map(s => s.target) });
     } catch (error) {
@@ -1691,26 +1719,36 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
   const sectionWriters = new Map<string, string[]>(); // `${targetRel}#${sectionLine}` → 写者 delta relPath 列表（code-r1 F1 跨文件单写者）
   // §2.50.7 A：改用权威判据——持 legacy MERGED 的提案此前被误判为「未 merge」并被重放 L8（假阳性）。
   const postMerge = hasSpecCompleteMarker(proposalDir);
-  for (const entry of postMerge ? [] : deltaEntries) {
+  // 修正待应用（§2.69.4.4）时以合并基线为守恒前态照常执行；其余 post-merge 不重放。
+  for (const entry of (postMerge && !amendCtx) ? [] : deltaEntries) {
     if (!(entry.mergeDisposition === 'mergeable' && entry.lintValidity === 'valid' && entry.relativePath.endsWith('.md'))) continue;
     // L4 已就 RENAMED 块形态报过违规：映射表不可信，再算守恒只会输出派生症状并与 L4 重复报同一码。
     if (renamedFormBroken.has(entry.relativePath)) continue;
     const targetRel = deltaTargetProjectPath(entry.relativePath);
     if (!targetRel) continue;
     const targetAbs = join(root, targetRel);
-    if (!existsSync(targetAbs)) continue; // 新文件无守恒义务
     let targetContent: string;
-    try {
-      targetContent = readFileSync(targetAbs, 'utf-8');
-    } catch {
-      return { ok: false, errorCode: 'artifact_unreadable', message: `无法读取守恒目标主文档 ${targetRel}` };
+    if (amendCtx) {
+      const prior = priorStateOf(targetRel);
+      if (prior.frozen || prior.mode === 'CREATE' || prior.content === null) continue; // 基线不可读 / 新文件无守恒义务
+      targetContent = prior.content;
+    } else {
+      if (!existsSync(targetAbs)) continue; // 新文件无守恒义务
+      try {
+        targetContent = readFileSync(targetAbs, 'utf-8');
+      } catch {
+        return { ok: false, errorCode: 'artifact_unreadable', message: `无法读取守恒目标主文档 ${targetRel}` };
+      }
     }
     const relPath = `logos/changes/${slug}/${entry.relativePath}`;
     const content = deltaContents.get(entry.relativePath) ?? '';
     for (const v of evaluateDeltaConservation(content, targetContent)) {
       // §2.73：守恒两码降级为警告；锚不可解析是**定位失败**而非守恒判断，保持违规——
       // 否则用户只会更晚在 merge 合成阶段看到同一个错误。
-      if (v.code === 'delta_section_anchor_unresolvable') {
+      // 例外（code-r1 F3）：修正待应用（§2.69.4.4）时，已合并需求「S09 增量修正与 change-lint 同判」与
+      // UT-S09-443 要求「修正引入条目丢失」同判**拒绝**——以合并基线为前态的隐式删除升为违规，merge 准入
+      // 据此拒绝。§2.73 的警告口径对首次合并逐字不变；`delta_removed_unknown_id` 不属条目丢失，仍为警告。
+      if (v.code === 'delta_section_anchor_unresolvable' || (amendCtx && v.code === 'delta_implicit_id_removal')) {
         pushViolation(acc, 8, { code: v.code, path: relPath, message: v.message, fix_hint: v.fix_hint });
       } else {
         conservationWarnings.push({ code: v.code, message: `${relPath}：${v.message}`, fix_hint: v.fix_hint });

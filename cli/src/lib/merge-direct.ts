@@ -24,6 +24,9 @@ import { validateAndStripNonMarkdownDelta } from './non-markdown-delta.js';
 import { firstLineOf } from './whole-file-marker.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 import { buildTestChangeSet, forwardMergeTestChangeSets, type TestChangeSetV1 } from './test-change-set.js';
+import {
+  captureBaselineTarget, collectPrototypeIdentities, computeDeltaDigest, MERGE_BASELINE_SCHEMA, type MergeBaselineTarget,
+} from './merge-baseline.js';
 
 export type MergeDirectErrorCode =
   | 'MERGE_NO_ACTIVE_CHANGE'
@@ -31,7 +34,13 @@ export type MergeDirectErrorCode =
   | 'MERGE_TARGET_MISMATCH'
   | 'MERGE_ALREADY_COMPLETE'
   | 'MERGE_APPLY_FAILED'
-  | 'MERGE_PROTOTYPE_COMMIT_UNCONFIRMED';
+  | 'MERGE_PROTOTYPE_COMMIT_UNCONFIRMED'
+  // 增量修正拒绝边界（§2.69.4.6）：全部在写入与清除标记之前判定，零副作用（档 A）。
+  | 'MERGE_AMEND_BASELINE_MISSING'
+  | 'MERGE_AMEND_BASELINE_UNREADABLE'
+  | 'MERGE_AMEND_DRIFT'
+  | 'MERGE_AMEND_CREATE_WITHDRAW'
+  | 'MERGE_AMEND_PROTOTYPE_UNSUPPORTED';
 
 /** §2.69.1 失败语义：git 工作区就是回滚点，故每条错误都自带回滚提示，不依赖命令层补。 */
 const ROLLBACK_HINT = '回滚点：git checkout logos/resources/';
@@ -106,16 +115,18 @@ export interface MergeDirectResult {
   targets: string[];
   spec_merged_path: string;
   test_change_set: TestChangeSetV1;
+  /** 本次所用 delta 的摘要（§2.69.4.1）。 */
+  delta_digest: string;
 }
 
-interface PlannedTarget {
+export interface PlannedTarget {
   deltaPath: string;
   targetPath: string;
   mode: 'CREATE' | 'MODIFY';
   category: string;
 }
 
-function moduleFromGuard(root: string, slug: string): string {
+export function moduleFromGuard(root: string, slug: string): string {
   try {
     const guard = JSON.parse(readFileSync(join(root, 'logos', '.openlogos-guard'), 'utf8')) as Record<string, unknown>;
     if (guard.activeChange === slug && typeof guard.module === 'string' && guard.module.trim()) return guard.module.trim();
@@ -173,7 +184,7 @@ export function planDirectTargets(root: string, proposalDir: string): PlannedTar
 }
 
 /** CREATE 目标须登记进 resource_index；无 CREATE 时返回 null（不触碰 metadata）。 */
-function metadataBytes(root: string, slug: string, targets: PlannedTarget[]): Buffer | null {
+export function metadataBytes(root: string, slug: string, targets: PlannedTarget[]): Buffer | null {
   const created = targets.filter(t => t.mode === 'CREATE');
   if (created.length === 0) return null;
   const path = join(root, 'logos', 'logos-project.yaml');
@@ -198,6 +209,104 @@ interface DirectMergePreparation {
   inputs: BaselineClosureApplyInput[];
   markerPath: string;
   testChangeSet: TestChangeSetV1;
+  deltaDigest: string;
+}
+
+export function isTestTarget(target: { category: string; targetPath: string }): boolean {
+  return target.category === 'test' || target.targetPath.startsWith('logos/resources/test/');
+}
+
+export type ComposedTarget =
+  | { kind: 'non-markdown'; rawDelta: Buffer; afterBytes: Buffer }
+  | { kind: 'prepared'; afterBytes: Buffer };
+
+/**
+ * 单目标合成（首次合并与增量修正共用，§2.69.4.2「换合成起点、不换引擎」）。
+ *
+ * `composeMode` 是**合成语义**的模式（首次合并 = 磁盘事实；增量修正 = 基线首次模式），
+ * `beforeBytes` 是合成起点（CREATE 时为 null）。`forcePrepared` 为 true 时 non-Markdown 整文件
+ * 也在此校验剥离并以最终字节返回——增量修正下目标此刻已存在，交原语 non-markdown 入口会按
+ * 磁盘事实重判模式而拒绝首次 CREATE 的封装声明。首次合并传 false，行为逐字不变。
+ */
+export function composeTargetBytes(
+  root: string,
+  proposalDir: string,
+  target: { deltaPath: string; targetPath: string },
+  composeMode: 'CREATE' | 'MODIFY',
+  beforeBytes: Buffer | null,
+  forcePrepared: boolean,
+): ComposedTarget {
+  const deltaAbs = join(proposalDir, ...target.deltaPath.split('/'));
+  const rawDelta = readFileSync(deltaAbs);
+  // **分流判定取 `classifyDeltaRoute` 单点**（见 canonical-target.ts）——此处**禁止**重写等价条件：
+  // change-lint L4 与本处曾各写一份 `'api' || 'database'`，正是 toolstop 事故「lint 全绿而 merge 必炸」的成因。
+  // 判定返回三值：`section`（章节合成）/ `whole-file`（整文件）/ `invalid-envelope`（已声明封装但受理
+  // 不合法）。**`invalid-envelope` 绝不降级为 `section`**：回退成章节锚正是既有标题残渣的产生机制。
+  const route = classifyDeltaRoute({
+    firstLine: firstLineOf(rawDelta.toString('utf8')),
+    targetPath: target.targetPath,
+    semanticCategory: classifyCanonicalTargetCategory(target.targetPath),
+    mode: composeMode,
+  });
+  if (route.kind === 'invalid-envelope') {
+    throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：${route.reason}`);
+  }
+  // API / DB / 编排 canonical target 不是 Markdown 章节文档：其 delta 首行为控制标记、正文即最终字节。
+  // 首次合并交 baseline-apply 的 non-markdown 入口做标记校验与剥离（与 0.13.x apply 同一判据）。
+  if (route.kind === 'whole-file' && route.channel === 'non-markdown') {
+    const newline = rawDelta.indexOf(0x0a);
+    if (!forcePrepared) {
+      // 首次合并：校验与剥离留给原语的 non-markdown 入口（逐字不变）；基线 after 取同一剥离口径。
+      return { kind: 'non-markdown', rawDelta, afterBytes: newline < 0 ? rawDelta : rawDelta.subarray(newline + 1) };
+    }
+    const decoded = rawDelta.toString('utf8');
+    const checked = validateAndStripNonMarkdownDelta(decoded, composeMode, target.targetPath, { root });
+    if (!checked.ok || checked.payload === undefined || newline < 0) {
+      throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：${checked.message ?? '缺首行行结束符'}`);
+    }
+    const payload = rawDelta.subarray(newline + 1);
+    if (checked.payload !== payload.toString('utf8')) {
+      throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：payload 剥离结果不确定`);
+    }
+    return { kind: 'prepared', afterBytes: payload };
+  }
+  let bytes: Buffer;
+  if (route.kind === 'whole-file') {
+    // **Markdown 整文件走 prepared 最终字节通道，不进 `non-markdown` 分支**（S39 C04）。
+    // 理由是该分支并非「只换一个字节来源」：它在推入 inputs 后立即 `continue`，会跳过下方的
+    // 测试目标 before/after 收集，使新建的 `logos/resources/test/*.md` 不进 `buildTestChangeSet`，
+    // `SPEC_MERGED.test_change_set` 的 targets 与 changed_test_ids 双双为空；且 apply 侧仍按语义
+    // 类别拒绝非 API/DB/编排的 non-markdown 输入，落盘准备阶段即失败。就地校验剥离后以 prepared
+    // 入列，既闭合账本、又让 apply 侧的类别闸零改动。
+    const decoded = rawDelta.toString('utf8');
+    if (!Buffer.from(decoded, 'utf8').equals(rawDelta)) {
+      throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：delta 不是合法 UTF-8`);
+    }
+    const checked = validateAndStripNonMarkdownDelta(decoded, composeMode, target.targetPath, { root });
+    if (!checked.ok || checked.payload === undefined) {
+      throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：${checked.message}`);
+    }
+    const newline = rawDelta.indexOf(0x0a);
+    if (newline < 0) throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：缺首行行结束符`);
+    // validator 只删除首行及唯一换行；直接切原 Buffer，保证 payload 字节零格式化（与 apply 侧同一手法），
+    // 并与 validator 返回的 payload 字符串**交叉核对**以确保剥离结果确定。
+    bytes = rawDelta.subarray(newline + 1);
+    if (checked.payload !== bytes.toString('utf8')) {
+      throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：payload 剥离结果不确定`);
+    }
+  } else {
+    const before = beforeBytes ? beforeBytes.toString('utf8') : '';
+    let finalText: string;
+    try {
+      // 引擎内部完成锚唯一定位、标题层级 rebase 与 verifyAgentMaterialOutcome 物质结果复验
+      finalText = composeOpenLogosMarkdown(before, rawDelta.toString('utf8'), composeMode);
+    } catch (error) {
+      throw new MergeDirectError('MERGE_DELTA_INVALID',
+        `${target.targetPath}：${error instanceof Error ? error.message : String(error)}`);
+    }
+    bytes = Buffer.from(finalText, 'utf8');
+  }
+  return { kind: 'prepared', afterBytes: bytes };
 }
 
 /**
@@ -210,73 +319,33 @@ function prepareDirectMerge(root: string, proposalDir: string, slug: string): Di
   const targets = planDirectTargets(root, proposalDir);
   const inputs: BaselineClosureApplyInput[] = [];
   const tests: Array<{ targetPath: string; beforeBytes: Buffer | null; afterBytes: Buffer }> = [];
+  const pendingBaseline: Array<{ index: number; beforeBytes: Buffer | null; afterBytes: Buffer }> = [];
+  const deltaDigest = computeDeltaDigest(proposalDir);
 
+  const baselineTargets: MergeBaselineTarget[] = [];
   // —— 阶段一：全部目标在内存中合成并复验，任一失败即整体中止（零写入）——
   for (const target of targets) {
-    const deltaAbs = join(proposalDir, ...target.deltaPath.split('/'));
     const targetAbs = join(root, ...target.targetPath.split('/'));
     // 模式在 planDirectTargets 中按同一磁盘事实判定，此处只需读取当前字节。
     const exists = target.mode === 'MODIFY';
-    const rawDelta = readFileSync(deltaAbs);
-    // **分流判定取 `classifyDeltaRoute` 单点**（见 canonical-target.ts）——此处**禁止**重写等价条件：
-    // change-lint L4 与本处曾各写一份 `'api' || 'database'`，正是 toolstop 事故「lint 全绿而 merge 必炸」的成因。
-    // 判定返回三值：`section`（章节合成）/ `whole-file`（整文件）/ `invalid-envelope`（已声明封装但受理
-    // 不合法）。**`invalid-envelope` 绝不降级为 `section`**：回退成章节锚正是既有标题残渣的产生机制。
-    const route = classifyDeltaRoute({
-      firstLine: firstLineOf(rawDelta.toString('utf8')),
-      targetPath: target.targetPath,
-      semanticCategory: classifyCanonicalTargetCategory(target.targetPath),
-      mode: target.mode,
-    });
-    if (route.kind === 'invalid-envelope') {
-      throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：${route.reason}`);
-    }
-    // API / DB / 编排 canonical target 不是 Markdown 章节文档：其 delta 首行为控制标记、正文即最终字节，
-    // 交 baseline-apply 的 non-markdown 入口做标记校验与剥离（与 0.13.x apply 同一判据）。
-    if (route.kind === 'whole-file' && route.channel === 'non-markdown') {
-      inputs.push({ kind: 'non-markdown', deltaPath: target.deltaPath, mode: target.mode, deltaBytes: rawDelta });
+    const beforeBytes = exists ? readFileSync(targetAbs) : null;
+    const composed = composeTargetBytes(root, proposalDir, target, target.mode, beforeBytes, false);
+    baselineTargets.push({ path: target.targetPath, mode: target.mode, before: null, after_sha256: '' });
+    pendingBaseline.push({ index: baselineTargets.length - 1, beforeBytes, afterBytes: composed.afterBytes });
+    if (composed.kind === 'non-markdown') {
+      inputs.push({ kind: 'non-markdown', deltaPath: target.deltaPath, mode: target.mode, deltaBytes: composed.rawDelta });
       continue;
     }
-    let bytes: Buffer;
-    if (route.kind === 'whole-file') {
-      // **Markdown 整文件走 prepared 最终字节通道，不进 `non-markdown` 分支**（S39 C04）。
-      // 理由是该分支并非「只换一个字节来源」：它在推入 inputs 后立即 `continue`，会跳过下方的
-      // 测试目标 before/after 收集，使新建的 `logos/resources/test/*.md` 不进 `buildTestChangeSet`，
-      // `SPEC_MERGED.test_change_set` 的 targets 与 changed_test_ids 双双为空；且 apply 侧仍按语义
-      // 类别拒绝非 API/DB/编排的 non-markdown 输入，落盘准备阶段即失败。就地校验剥离后以 prepared
-      // 入列，既闭合账本、又让 apply 侧的类别闸零改动。
-      const decoded = rawDelta.toString('utf8');
-      if (!Buffer.from(decoded, 'utf8').equals(rawDelta)) {
-        throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：delta 不是合法 UTF-8`);
-      }
-      const checked = validateAndStripNonMarkdownDelta(decoded, target.mode, target.targetPath, { root });
-      if (!checked.ok || checked.payload === undefined) {
-        throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：${checked.message}`);
-      }
-      const newline = rawDelta.indexOf(0x0a);
-      if (newline < 0) throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：缺首行行结束符`);
-      // validator 只删除首行及唯一换行；直接切原 Buffer，保证 payload 字节零格式化（与 apply 侧同一手法），
-      // 并与 validator 返回的 payload 字符串**交叉核对**以确保剥离结果确定。
-      bytes = rawDelta.subarray(newline + 1);
-      if (checked.payload !== bytes.toString('utf8')) {
-        throw new MergeDirectError('MERGE_DELTA_INVALID', `${target.targetPath}：payload 剥离结果不确定`);
-      }
-    } else {
-      const before = exists ? readFileSync(targetAbs, 'utf8') : '';
-      let finalText: string;
-      try {
-        // 引擎内部完成锚唯一定位、标题层级 rebase 与 verifyAgentMaterialOutcome 物质结果复验
-        finalText = composeOpenLogosMarkdown(before, rawDelta.toString('utf8'), target.mode);
-      } catch (error) {
-        throw new MergeDirectError('MERGE_DELTA_INVALID',
-          `${target.targetPath}：${error instanceof Error ? error.message : String(error)}`);
-      }
-      bytes = Buffer.from(finalText, 'utf8');
-    }
+    const bytes = composed.afterBytes;
     inputs.push({ kind: 'prepared', targetPath: target.targetPath, mode: target.mode, bytes });
-    if (target.category === 'test' || target.targetPath.startsWith('logos/resources/test/')) {
-      tests.push({ targetPath: target.targetPath, beforeBytes: exists ? readFileSync(targetAbs) : null, afterBytes: bytes });
+    if (isTestTarget(target)) {
+      tests.push({ targetPath: target.targetPath, beforeBytes, afterBytes: bytes });
     }
+  }
+  // 合并基线在全部合成成功之后才采集（`git hash-object -w` 是对象库写入，合成失败时不必发生）。
+  for (const pending of pendingBaseline) {
+    const t = baselineTargets[pending.index];
+    baselineTargets[pending.index] = captureBaselineTarget(root, t.path, t.mode, pending.beforeBytes, pending.afterBytes);
   }
 
   const metadata = metadataBytes(root, slug, targets);
@@ -296,9 +365,14 @@ function prepareDirectMerge(root: string, proposalDir: string, slug: string): Di
     type: 'merge_complete',
     completed_at: new Date().toISOString(),
     test_change_set: testChangeSet,
+    merge_baseline: {
+      schema: MERGE_BASELINE_SCHEMA, delta_digest: deltaDigest, targets: baselineTargets,
+      prototypes: collectPrototypeIdentities(proposalDir),
+    },
+    amendments: [],
   }, null, 2)}\n`, 'utf8');
   inputs.push({ kind: 'prepared', targetPath: markerPath, mode: 'CREATE', bytes: markerBytes });
-  return { targets, inputs, markerPath, testChangeSet };
+  return { targets, inputs, markerPath, testChangeSet, deltaDigest };
 }
 
 /**
@@ -389,11 +463,41 @@ export function mergeDirect(
   }
 
   // —— 阶段二：一次性原子落盘，失败整批回滚 ——
+  applyPreparedInputs(root, proposalDir, inputs, hooks);
+
+  hooks.afterCommit?.();
+
+  return {
+    slug,
+    target_count: targets.length,
+    targets: targets.map(t => t.targetPath),
+    spec_merged_path: markerPath,
+    test_change_set: testChangeSet,
+    delta_digest: prepared.deltaDigest,
+  };
+}
+
+/** 落盘原语签名（仅测试注入用；生产恒为 `applyBaselineClosureBatch`）。 */
+export type ApplyBatchFn = typeof applyBaselineClosureBatch;
+
+/**
+ * 阶段二（首次合并与增量修正共用）：一次性原子落盘，失败按原语结构化返回打阶段戳后抛出。
+ *
+ * 成功即返回；失败时**不**返回——抛出的错误带 `apply-rolled-back` / `apply-unconfirmed` 等阶段戳，
+ * 调用方据戳决定后续动作（增量修正仅在 `apply-rolled-back` 时恢复被清除的验收标记，§2.69.4.3 第 9 步）。
+ */
+export function applyPreparedInputs(
+  root: string,
+  proposalDir: string,
+  inputs: BaselineClosureApplyInput[],
+  hooks: MergeDirectHooks = {},
+  apply: ApplyBatchFn = applyBaselineClosureBatch,
+): void {
   // 故障注入仅在 NODE_ENV=test 下生效（与被删除的事务实现同一形态），用于验收「末段故障整批回滚」。
   const failAfter = process.env.NODE_ENV === 'test' ? process.env.OPENLOGOS_TEST_MERGE_FAIL_AFTER : undefined;
   let result;
   try {
-    result = applyBaselineClosureBatch(root, proposalDir, inputs, {
+    result = apply(root, proposalDir, inputs, {
       afterWrite(path) { if (failAfter === path) throw new Error(`test fault after ${path}`); },
     });
   } catch (error) {
@@ -436,13 +540,4 @@ export function mergeDirect(
     throw new MergeDirectError('MERGE_APPLY_FAILED', parts.join('；'), stage);
   }
 
-  hooks.afterCommit?.();
-
-  return {
-    slug,
-    target_count: targets.length,
-    targets: targets.map(t => t.targetPath),
-    spec_merged_path: markerPath,
-    test_change_set: testChangeSet,
-  };
 }

@@ -464,6 +464,13 @@
                     "requires_session_restart": true
                   },
                   "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                },
+                "spec_amend": {
+                  "merged_delta_digest": null,
+                  "current_delta_digest": "sha256:989946c5b82fcd43d060a21a2e7e5f788ed13298435524c731d1ebc18a8d24bc",
+                  "pending": null,
+                  "blocked_reason": "baseline-missing",
+                  "amend_count": 0
                 }
               },
               "suggestion": "按已合并规格实现代码，完成后勾选 [code] section 所有任务",

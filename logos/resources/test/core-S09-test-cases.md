@@ -1366,3 +1366,61 @@
 - **批准文件的来源规则按用例类型区分**：
   - **验证批准消费与顺序的场景测试**（ST-S09-193 两臂、ST-S09-194、ST-S09-195 夹具 A）：`next --auto` 执行前不得预置 `PLAN_APPROVED` 或 `GATE_AUTO_PASSED`，两者只能由被测的 `next --auto` 生成，不得手工伪造批准来使断言通过。
   - **以「已批准」为前置状态的用例**（UT-S09-424 四种组合、ST-S09-195 夹具 B）：允许在前置阶段直接构造空 `PLAN_APPROVED` 与带合法 provenance body（`ui_prototype_rendered` + `pages` + `hashes`）的 `PLAN_APPROVED`。本仓 auto 路径只写空 marker（`next.ts` 的 `writePlanApproved`），合法 body 的 writer 属于宿主渲染面板，不在本提案范围，因此该前置不依赖外部宿主，也不新增批准命令或修改业务 writer。测试操作阶段不得改写这些预置文件，并以操作前后 SHA-256 一致为断言之一。
+
+## S09 已合并提案的增量修正测试
+
+> 覆盖功能规格 §2.69.1「已合并后再次调用」、§2.69.2 合并基线、§2.69.4 增量修正、§2.85.3 阶段边界例外；根规范 `spec/cli-json-output.md`「openlogos merge 直接合并输出合同」、`spec/change-management.md`「已合并后发现 delta 有误」；场景 S09「S09 已合并提案的增量修正时序」（EX-9.22、EX-9.37～EX-9.46）；来源变更 merge-amend-merged-change。
+>
+> **夹具口径**：一律在 `mktemp -d` 下 `git init` 的一次性隔离 launched 项目内构造，配置本地 `user.name` / `user.email`，不依赖本仓现场。「已合并夹具」指：活跃提案含至少一个首次 MODIFY 的功能规格目标、一个首次 MODIFY 的测试规格目标（含多个测试 ID）与一个首次 CREATE 的场景目标；以真实 `openlogos merge <slug>` 首次合并后 `git add -A && git commit`（模拟「merge 后 AI 自动 commit 规格」）。「旧标记」指手工写入只含 `type` / `completed_at` / `test_change_set` 的 `SPEC_MERGED`（或 legacy `MERGED`），不含 `merge_baseline`。CLI 用例均以真实 `openlogos` 子进程执行（`--format json` 时解析 stdout envelope），字节零变化断言对 `logos/resources/`、`logos/logos-project.yaml` 与提案目录逐文件计算 SHA-256。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-429 | 首次合并写入逐目标合并基线 | 未合并的提案：一个 MODIFY 目标、一个 CREATE 目标 | 执行 `openlogos merge <slug>`，解析 `SPEC_MERGED` | 含 `merge_baseline.schema=="openlogos/merge-baseline@1"`、`delta_digest`、按 path 升序的 `targets`；MODIFY 目标 `before.sha256` 等于合并前文件 SHA-256，`before.git_blob` 经 `git cat-file blob` 读回字节与合并前逐字节相同；CREATE 目标 `before==null`；两目标 `after_sha256` 等于合并后文件 SHA-256；`amendments==[]`；`test_change_set` 与修改前实现逐字段一致 |
+| UT-S09-430 | 合并前工作区脏时基线为真实 before | 同 UT-S09-429，但 MODIFY 目标在合并前有未提交修改（与 HEAD 版本不同） | 执行首次合并 | `before.sha256` 等于**工作区**合并前字节的 SHA-256，而非 HEAD 版本；`git_blob` 读回字节与工作区合并前字节相同；`git status` 显示 merge 未改动索引与引用 |
+| UT-S09-431 | delta 摘要算法确定性 | 构造 `deltas/` 含嵌套目录、`.gitkeep`、文件名排序敏感的若干文件 | 以不同创建顺序构造两份内容相同的 `deltas/` 计算摘要；再分别增删 `.gitkeep`、改一个字节、清空目录 | 创建顺序不同摘要相同；增删 `.gitkeep` 摘要不变；改一个字节摘要改变；空目录摘要等于空字节串 SHA-256 的 `sha256:<hex>` 形态；与按 §2.69.4.1 手算的参考值一致 |
+| UT-S09-432 | delta 未变时幂等返回 already-merged | 已合并夹具；放置 `VERIFY_PASS` 与 `DEPLOY_DONE` | 不改 delta，执行 `openlogos merge <slug> --format json` | exit 0；`result=="already-merged"`、`targets==[]`、`target_count==0`、`invalidated_markers==[]`；全部文件 SHA-256 零变化，两标记仍在场，`[code]` 段字节不变 |
+| UT-S09-433 | 重修从合并基线合成，不重复追加、可撤回上一轮内容 | 已合并夹具；功能规格 delta 含 ADDED 章节与 MODIFIED 章节 | 改写 MODIFIED 正文、ADDED 正文后执行 merge | `result=="amended"`；目标中 ADDED 章节恰出现一次且为新正文；MODIFIED 章节为新正文，上一轮写错的内容不残留；结果与「对合并前字节直接首次合并当前 delta」逐字节相同 |
+| UT-S09-434 | 测试变更集按合并前到修正后整体重算（事故复刻） | 已合并夹具：测试 delta 首轮新增 27 个测试 ID；随后两轮修正分别只改动其中 2 个、0 个 ID 的描述 | 每轮修正后执行 merge 并读取 `SPEC_MERGED.test_change_set.changed_test_ids` | 三轮均覆盖全部 27 个 ID 及被改动 ID，不随轮次缩小；**旧实现（删标记重合并）依次为 27、2、0，本用例旧实现必红** |
+| UT-S09-435 | 首次 CREATE 目标重修通过 | 已合并夹具；改写首次 CREATE 场景目标的 ADDED 正文 | 执行 merge | `result=="amended"`；该目标位于 `amend.targets_recomposed`，内容等于从「不存在」合成当前 delta 的结果；`logos-project.yaml` 中该目标的 `resource_index` 条目恰一条、字节零变化；`merge_baseline` 中该目标 `mode=="CREATE"`、`before==null` 不变 |
+| UT-S09-436 | 新增目标以当前主文档为起点并采集基线 | 已合并夹具；新增一个触及另一既有文件的 delta | 执行 merge | 该目标位于 `amend.targets_added`，内容为当前主文档合成新 delta 的结果；`merge_baseline.targets` 新增该目标，`before.sha256` 等于修正前文件 SHA-256、`git_blob` 可读回；原有目标的 `mode` 与 `before` 不变 |
+| UT-S09-437 | 撤回首次 MODIFY 目标恢复为合并前字节 | 已合并夹具；删除首次 MODIFY 功能规格目标的 delta 文件 | 执行 merge | 该目标位于 `amend.targets_restored`，文件字节与首次合并前逐字节相同；从 `merge_baseline.targets` 移除；若为测试目标，其 ID 不再出现在 `test_change_set` |
+| UT-S09-438 | 撤回首次 CREATE 目标写入前拒绝且零写入 | 已合并夹具；删除首次 CREATE 场景目标的 delta 文件；放置 `VERIFY_PASS` | 执行 `merge --format json` | 非零退出，错误码 `MERGE_AMEND_CREATE_WITHDRAW`，message 点名该目标并给出另立提案指引；全部文件 SHA-256 零变化，`VERIFY_PASS` 仍在场 |
+| UT-S09-439 | 旧标记一律拒绝而非回推 | 四臂，均修改 delta 后执行 merge：① 规格先提交、标记后单独提交的旧标记；② 合并前工作区有未提交规格修改、合并后一起提交的旧标记；③ 曾删标记重合并、git 历史含两次合并提交的旧标记；④ legacy `MERGED` | 执行 `merge --format json` | 四臂均非零退出，错误码 `MERGE_AMEND_BASELINE_MISSING`，message 说明不从 git 历史回推并给出另立提案指引；不调用任何 git 历史读取（以 PATH 首位的 git 包装器记录调用参数，断言无 `log` / `rev-list` / `show` 调用）；全部文件 SHA-256 零变化 |
+| UT-S09-440 | 合并基线不可读或不匹配时拒绝 | 已合并夹具三臂并修改 delta：① 将某 MODIFY 目标 `git_blob` 改为 null；② 删除该 blob 对象文件并 `git prune`；③ 将 `before.sha256` 改为其它值 | 执行 `merge --format json` | 三臂均非零退出，错误码 `MERGE_AMEND_BASELINE_UNREADABLE`，点名目标；全部文件 SHA-256 零变化 |
+| UT-S09-441 | 主文档漂移时拒绝 | 已合并夹具；修改 delta，并手工改动某已应用目标一行 | 执行 `merge --format json` | 非零退出，错误码 `MERGE_AMEND_DRIFT`，message 点名该漂移文件；不做三方合并；全部文件 SHA-256 零变化 |
+| UT-S09-442 | 原型资产变化时拒绝 | 已合并的 GUI 夹具（`ui_impact:true`，含 `2-page-design/*.html` 原型）；修改原型 html | 执行 `merge --format json` | 非零退出，错误码 `MERGE_AMEND_PROTOTYPE_UNSUPPORTED`；全部文件 SHA-256 零变化 |
+| UT-S09-443 | 修正待应用时 change-lint 与 merge 同判拒绝 | 已合并夹具三臂：① MODIFIED 块漏抄一个既有测试 ID（条目丢失）；② 新增与既有重复的测试 ID；③ 首行整文件封装控制行与目标模式不符 | 每臂依次执行 `openlogos change-lint --format json` 与 `openlogos merge <slug> --format json` | 三臂 change-lint 均报出与首次合并前同一违规码（含 `delta_test_id_duplicate` 等），merge 均以既有准入拒绝出口拒绝且引用同一判据；全部文件 SHA-256 零变化，验收标记未被清除 |
+| UT-S09-444 | 合法修正同判通过与摘要相同不重放 | 两臂：① 已合并夹具中合法重修首次 CREATE 目标；② 已合并夹具不改 delta | 每臂执行 `change-lint --format json`；臂 ① 再执行 merge | 臂 ① lint `pass==true` 且 merge `result=="amended"`；臂 ② lint 结论与修改前实现对同一夹具逐字一致（合并完成后不重放 ADDED 合成、测试后态重复 ID、L8 守恒） |
+| UT-S09-445 | 增量修正清除验收与交付事实且不重置 [code] | 三臂已合并夹具，均放置 `VERIFY_PASS`、`VERIFY_FAIL`、`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL`，`[code]` 已填切片且部分勾选：① 单切片提案改测试 delta；② 只改功能规格 delta（不涉测试规格）；③ 多切片提案（含 `TEST_SLICE_MANIFEST.json` 与 `SLICES_APPROVED`）改测试 delta | 每臂执行 `merge --format json` | 三臂均 `result=="amended"`，`invalidated_markers` 为五个标记名升序，五个文件均不在场；`tasks.md` 的 `[code]` 段字节不变，`SLICES_APPROVED` 与 manifest 字节不变；`amendments` 末条 `invalidated_markers` 与 JSON 一致 |
+| UT-S09-446 | 已确认旧规格时恢复被清除的事实（档 A / 档 B） | 已合并夹具，放置 `VERIFY_PASS`、`DEPLOY_DONE` 与 `SMOKE_PASS`；修改 delta；三臂：① 以故障注入钩子使原子落盘在第二个目标 rename 时失败且回滚成功（原语返回 `ok:false`、`rolled_back==true`）；② 同臂 ① 但再使标记恢复写入失败；③ 使标记清除阶段在删除第二个标记时失败（尚未调用落盘原语） | 执行 merge 并读取 stderr、各文件 SHA-256 | 臂 ① 非零退出，错误码 `MERGE_APPLY_FAILED`，状态声明为档 B；全部目标与 `SPEC_MERGED` 字节与修正前相同；三个标记字节逐一恢复原状。臂 ② 状态声明为档 B，输出点名未恢复的标记并提示重新 verify，主文档仍为修正前字节。臂 ③ 状态声明为档 A，`logos/resources/` 与 `SPEC_MERGED` 字节零变化，已删除的标记按备份恢复，三个标记全部在场 |
+| UT-S09-447 | 回滚未确认时不恢复旧验收事实（档 C） | 无部署提案的已合并夹具，`[code]` 全勾、`VERIFY_PASS` 在场；另放 `DEPLOY_DONE`、`SMOKE_PASS`；修改测试 delta；三臂：① 全部新字节已提交、journal 置 committed 后使私有材料清理首次失败而恢复清理成功（原语返回 `ok:false`、`rolled_back==false`，恢复判为 `committed`）；② 中途写入失败且使 backup 不可用，回滚未完成（`ok:false`、`rolled_back==false`）；③ 沿用 EX-9.24 形态使错误从原语内部直接逃出。每臂随后执行 `openlogos archive <slug>` | 执行 merge，读取 stderr、标记在场性与各文件 SHA-256；再执行 archive | 三臂 merge 均非零退出，状态声明为档 C：stderr **不含**「保持合并前字节」「已整批回滚」「标记已恢复」类表述，含「主文档可能已是修正后字节」与 `git status` / `git diff logos/resources/` 核对指引；`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 均**不在场**（不被恢复）；臂 ① 主文档与 `SPEC_MERGED` 为修正后字节；三臂 archive 均以 `ARCHIVE_VERIFY_NOT_PASSED` 拒绝，提案目录未移动。**修正前实现（任意 `ok:false` 即恢复标记）在臂 ①② 必红** |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-196 | 事故复刻端到端：合并、提交、多轮修正后切片可重建 | S09 增量修正时序 Step 1～17 | 已合并夹具，测试 delta 首轮新增 27 个 ID，`[code]` 需要多切片 | ① 首次 merge 并 commit；② `openlogos slice plan` 生成 manifest；③ 修改测试 delta 中 2 个 ID 的描述，`change-lint`；④ `merge --format json` 并 commit；⑤ 再做一轮只改功能规格的修正并 merge；⑥ 重新 `openlogos slice plan`；⑦ `change-lint` | ③ `pass==true`；④ `result=="amended"`，`changed_test_ids` 覆盖 27 个 ID；⑤ 同上不缩小；⑥ 成功重建 manifest，无 `test-slice-test-id-unknown`；⑦ 无 `test-slice-manifest-invalid` |
+| ST-S09-197 | 修正后未重新 verify 即 archive 必拒绝 | Step 14～17、EX-9.22 | 无部署提案：已合并、`[code]` 全勾、测试结果全绿并 `openlogos verify` 通过（`VERIFY_PASS` 在场） | ① 修改测试 delta 后 merge；② `openlogos archive <slug>`；③ `openlogos verify`；④ `openlogos archive <slug>` | ① `invalidated_markers` 含 `VERIFY_PASS`；② 非零退出，错误码 `ARCHIVE_VERIFY_NOT_PASSED`，提案目录未移动、guard 未删除；③ 按新规格重新判定，通过后写回 `VERIFY_PASS`；④ 成功归档 |
+| ST-S09-198 | merge JSON 的 result 三值与 status 投影联动 | Step 5～7、Step 17、EX-9.37 | 未合并提案 | ① `merge --format json`；② 再次 `merge --format json`；③ 修改 delta 后 `status --format json`；④ `merge --format json`；⑤ `status --format json` | ① `result=="merged"`；② `result=="already-merged"`；③ `spec_amend.pending==true`、`blocked_reason==null`；④ `result=="amended"`、`delta_digest` 等于 ③ 的 `current_delta_digest`；⑤ `pending==false`、`amend_count==1` |
+| ST-S09-199 | 拒绝路径端到端零副作用 | EX-9.38、EX-9.40、EX-9.42 | 三个独立夹具：旧标记且已提交；已合并后手工改动主文档；已合并后删除首次 CREATE 目标的 delta；均放置 `VERIFY_PASS` | 每个夹具：① `status --format json`；② `merge --format json`；③ `git status --porcelain` | ① `blocked_reason` 依次为 `baseline-missing`、`drift`、`create-withdraw`；② 依次以 `MERGE_AMEND_BASELINE_MISSING`、`MERGE_AMEND_DRIFT`、`MERGE_AMEND_CREATE_WITHDRAW` 非零退出；③ 与 ② 之前一致，`VERIFY_PASS` 仍在场 |
+| ST-S09-200 | change-lint 与 merge 在修正待应用时同判 | Step 2～4、Step 11、EX-9.44 | 已合并夹具 | ① 在测试 delta 中引入与既有重复的 ID，依次 `change-lint` 与 `merge`；② 修复为合法修正后依次 `change-lint` 与 `merge` | ① 两者同判拒绝（同一违规码），文件零变化；② 两者同判通过，merge `result=="amended"` |
+| ST-S09-201 | 需要部署的提案修正后须重新部署与 smoke | Step 14～17 | 需部署且需 smoke 的提案：已合并、verify 通过、`DEPLOY_DONE` 与 `SMOKE_PASS` 在场 | ① 修改 delta 后 merge；② `status --format json`；③ `openlogos archive <slug>` | ① `invalidated_markers` 含 `DEPLOY_DONE`、`SMOKE_PASS`、`VERIFY_PASS`；② 前沿回到待 verify 一侧，不再处于交付态；③ 非零退出，提案未归档 |
+
+### 追溯与覆盖
+
+- 合并基线采集与真实 before（§2.69.2、EX-9.46）：UT-S09-429、UT-S09-430、UT-S09-440 臂 ①。
+- delta 摘要与幂等（§2.69.4.1、EX-9.37）：UT-S09-431、UT-S09-432、ST-S09-198。
+- 目标集三类与合成起点（§2.69.4.2、EX-9.41）：UT-S09-433、UT-S09-435、UT-S09-436、UT-S09-437。
+- 测试变更集覆盖各轮（事故复刻，旧实现必红）：UT-S09-434、ST-S09-196。
+- 拒绝边界 ①～⑤（§2.69.4.6、EX-9.38～EX-9.40、EX-9.42、EX-9.43）：UT-S09-438～UT-S09-442、ST-S09-199。
+- 待应用修正准入与 change-lint 同判（§2.69.4.4、§2.85.3、EX-9.44）：UT-S09-443、UT-S09-444、ST-S09-200。
+- 验收与交付事实失效、[code] 不重置（§2.69.4.5、EX-9.45）：UT-S09-445、UT-S09-446、ST-S09-197、ST-S09-201。
+- 标记恢复仅限已确认旧规格，档 C 不恢复（§2.69.4.3 第 9 步、EX-9.45）：UT-S09-446（档 A / 档 B 恢复）、UT-S09-447（档 C 三臂不恢复且 archive 拒绝）。
+
+### 自动化与证据要求
+
+- 全部用例以真实 CLI 子进程在临时 git 项目中执行；UT-S09-446、UT-S09-447 的落盘失败、回滚未完成、提交后清理失败、标记清除与恢复失败均通过仅测试环境生效的故障注入钩子触发（沿用 `applyBaselineClosureBatch` 既有 `afterWrite` 钩子形态与 EX-9.24 / UT-S09-351～UT-S09-354 既有的提交后清理失败注入方式），生产路径零影响；断言以原语结构化返回 `rolled_back` 区分档 B 与档 C。
+- UT-S09-434 与 ST-S09-196 须保留旧实现对照：以「删除 `SPEC_MERGED` 后首次合并路径重合并」复现旧行为，断言其 `changed_test_ids` 逐轮缩小，证明用例对旧实现必红。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

@@ -398,3 +398,34 @@
 - 端到端·复用会话跨提案评审不再被横幅劝退（EX-11.13）：ST-S11-48。
 - 边界·未知 step 兜底非排他（EX-11.14）：UT-S11-88。
 - 不变式·命令契约与射程外文案零回归（EX-11.15）：UT-S11-90、ST-S11-49；既有 ST-S11-31 预期结果同步改为非排他口径。
+
+## S11 已合并提案的增量修正只读投影测试
+
+> 覆盖场景 S11「S11 已合并提案的增量修正只读投影」（EX-11.16～EX-11.20）；根规范 `spec/cli-json-output.md`「modules[].active_change.spec_amend 增量修正只读投影」；功能规格 §2.69.4.1、§2.69.4.6；来源变更 merge-amend-merged-change。
+>
+> **夹具口径**：在 `mktemp -d` 下 `git init` 的一次性隔离 launched 项目内构造，配置本地 git 身份。「已合并夹具」指活跃提案以真实 `openlogos merge <slug>` 首次合并（`SPEC_MERGED` 含 `merge_baseline`）并 commit；「旧标记」指不含 `merge_baseline` 的 `SPEC_MERGED`。全部用例以真实 `openlogos status --format json` 子进程执行并解析 `modules[].active_change`。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S11"`。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|---|
+| UT-S11-91 | 未合并提案不挂 spec_amend | EX-11.16 | 两臂：① 活跃提案处于 `delta-writing`；② 无活跃提案 | 运行 `status --format json` | 臂 ① `active_change` 不含 `spec_amend` 键，其余字段与修改前实现对同一夹具逐字一致；臂 ② 输出与修改前 golden 逐字一致 |
+| UT-S11-92 | 合并后未修改 delta 时 pending 为 false | EX-11.20 | 已合并夹具 | 运行 `status --format json` | `spec_amend.merged_delta_digest == current_delta_digest`，且等于 `SPEC_MERGED.merge_baseline.delta_digest`；`pending==false`、`blocked_reason==null`、`amend_count==0` |
+| UT-S11-93 | 修改 delta 后 pending 为 true 及受阻原因各取值 | EX-11.18 | 已合并夹具五臂：① 合法改写 delta；② 删除首次 CREATE 目标的 delta；③ 修改原型 html（GUI 夹具）；④ 修改 delta 并手工改动已应用目标；⑤ 修改 delta 并删除某 MODIFY 目标的基线 blob 对象 | 每臂运行 `status --format json` | 五臂 `pending==true`，`current_delta_digest` 与按 §2.69.4.1 手算值一致；`blocked_reason` 依次为 `null`、`create-withdraw`、`prototype-changed`、`drift`、`baseline-unreadable`；每臂随后执行 `merge --format json` 的错误码与 `blocked_reason` 一一对应（臂 ① 为 `result=="amended"`） |
+| UT-S11-94 | 旧标记、legacy MERGED 与不可解析标记不可判定 | EX-11.17 | 三臂：① 旧标记；② legacy `MERGED`；③ `SPEC_MERGED` 内容为非法 JSON；三臂均修改过 delta | 运行 `status --format json` | 三臂 exit 0；`merged_delta_digest==null`、`pending==null`、`blocked_reason=="baseline-missing"`、`amend_count==0`；`current_delta_digest` 照常输出 |
+| UT-S11-95 | status 只读 | EX-11.19 | UT-S11-93 臂 ④、⑤ 与 UT-S11-94 臂 ① 的夹具 | 每个夹具连续运行两次 `status --format json`，前后计算提案目录、`logos/resources/` 全部文件 SHA-256 与 `git count-objects -v` 输出 | 两次 `spec_amend` 逐字一致；文件字节零变化；git 对象数零变化；不生成、不删除任何标记 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|---|---|---|---|---|---|
+| ST-S11-50 | 合并、修改、修正、归位的投影全过程 | S11 增量修正只读投影 Step 1～8、EX-11.20 | 未合并的活跃提案 | ① `status --format json`；② `merge`；③ `status --format json`；④ 修改 delta；⑤ `status --format json`；⑥ `merge --format json`；⑦ `status --format json` | ① 无 `spec_amend`；③ `pending==false`；⑤ `pending==true`、`blocked_reason==null`、`current_delta_digest ≠ merged_delta_digest`；⑥ `result=="amended"`、`delta_digest` 等于 ⑤ 的 `current_delta_digest`；⑦ `pending==false`、两摘要相等、`amend_count==1` |
+| ST-S11-51 | 投影不改变 proposal_step 派生且 watch 同构 | Step 8、EX-11.19 | 已合并夹具，`[code]` 有未勾切片 | ① 记录 `status --format json` 的 `proposal_step` 与 `plan_state`；② 修改 delta；③ 再次 `status --format json`；④ 启动 `openlogos watch --format json` 读取首条事件后终止 | ③ 的 `proposal_step` 与 `plan_state` 与 ① 逐字一致，仅 `spec_amend.pending` 由 false 变 true；④ 首条事件 `data` 中对应模块的 `spec_amend` 与 ③ 逐字一致 |
+
+### 追溯与覆盖
+
+- 未合并不挂、零漂移（EX-11.16）：UT-S11-91。
+- 已合并与修正后归位（EX-11.20）：UT-S11-92、ST-S11-50。
+- 待应用与受阻原因、与 merge 错误码一一对应（EX-11.18）：UT-S11-93。
+- 旧标记不可判定（EX-11.17）：UT-S11-94。
+- 只读与派生不受影响（EX-11.19）：UT-S11-95、ST-S11-51。

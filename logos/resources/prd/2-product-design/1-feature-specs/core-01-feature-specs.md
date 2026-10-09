@@ -2976,29 +2976,145 @@ openlogos merge <slug> [--format json]
 1. 解析提案的 `[delta]` 目标集与 canonical target 映射，做既有的 P==T==D 与路径合法性校验。
 2. 逐目标读取 delta 与当前主文档，调 `composeOpenLogosMarkdown` 合成最终字节——该引擎内部执行章节锚唯一定位、标题层级 rebase 与 `verifyAgentMaterialOutcome` 物质结果复验，任一不符即在写入任何文件前失败。
 3. 全部目标合成完毕后，交 `applyBaselineClosureBatch` **一次性原子落盘**（temp + fsync + rename，失败整批回滚）。
-4. 末步写 `SPEC_MERGED`，含结构化 `test_change_set` 字段（由 `buildTestChangeSet` + `forwardMergeTestChangeSets` 构建）。
+4. 末步写 `SPEC_MERGED`，含结构化 `test_change_set` 字段（由 `buildTestChangeSet` + `forwardMergeTestChangeSets` 构建）与合并基线 `merge_baseline`（§2.69.2）。合并基线在第 2 步合成时逐目标采集，与 `SPEC_MERGED` 同批落盘。
 
 **失败语义**：任一步失败即整批回滚，主文档保持合并前字节；错误信息附 `git checkout logos/resources/` 作为回滚点提示。**该合同对整个 merge 出口成立——任一内部错误（含 `test-change-set` 族及任何未来新增的内部错误类）均映射为稳定错误码 + 状态声明 + 后续动作指引 + 非零退出，绝不裸抛 Node 未捕获异常堆栈**：失败出口为**默认兜底**（catch-all）而非默认放行，错误类自带的 `code` 原样进入错误码位、诊断不降级（§2.84.3）。
 
 **状态声明按已确认阶段分档，不是固定文案**：上述「保持合并前字节」适用于**准备阶段失败**与**已确认整批回滚**两档；提交完成后的失败（如 `committed` 之后的私有材料清理异常）、回滚未完成、或阶段无法从结构化事实确定时，**不得**声明保持旧字节或未写 `SPEC_MERGED`，须如实报告可能已提交并指引核对实际状态（§2.84.3 三档表）。判据只认控制流位置与落盘原语的结构化返回，禁止从 message 文本反推。不再有 `recover` / `abort` / `reopen` 出路——**因为不再有需要出路的中间态**。
 
-**重新合并**：`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `openlogos merge`。
+**已合并后再次调用**（merge-amend-merged-change 改写原「重新合并」段）：`SPEC_MERGED` 在场时，命令先计算当前 delta 摘要（§2.69.4 摘要算法）并与 `merge_baseline.delta_digest` 比较：
+
+- **相同** → 如实返回 `already-merged`，零写入、零事实变化（幂等）；
+- **不同** → 执行**增量修正**（§2.69.4），仍是同一次调用、同一道准入、同一个原子落盘原语；
+- **`SPEC_MERGED` 无 `merge_baseline`**（本版之前合并的旧标记，含 legacy `MERGED`）且 delta 有变化无从判定 → 拒绝（`MERGE_AMEND_BASELINE_MISSING`），不从 git 历史回推。
+
+原「`git checkout logos/resources/` 回到合并前、修正 delta 后重跑」的指引作废：合并后规格通常已被提交，`git checkout` 恢复不了任何内容；删除 `SPEC_MERGED` 再合并属于手工改流程事实，并会把 `test_change_set` 缩小为只剩新一轮。增量修正是已合并提案修正规格的**唯一正式路径**。
 
 ### 2.69.2 SPEC_MERGED 结构（结构化事实源，零回归）
 
-marker 去掉三个事务字段（`transaction_id` / `seal_sha256` / `receipt_sha256`），保留：
+marker 去掉三个事务字段（`transaction_id` / `seal_sha256` / `receipt_sha256`），保留并扩展：
 
 | 字段 | 说明 |
 |---|---|
 | `type` | `merge_complete` |
-| `completed_at` | ISO 时间戳 |
-| `test_change_set` | **结构化事实源**，schema 与内容口径逐字段不变 |
+| `completed_at` | ISO 时间戳；首次合并时间，增量修正不改写 |
+| `test_change_set` | **结构化事实源**，schema 与内容口径逐字段不变；增量修正时按「合并前 → 修正后」整体重算后替换（§2.69.4） |
+| `merge_baseline` | 合并基线（merge-amend-merged-change 新增），增量修正的唯一可信 before 来源，结构见下 |
+| `amendments` | 增量修正记录数组，首次合并为 `[]`，每次成功修正追加一条 |
 
-`test_change_set` 被 `verify`（eligible 与覆盖判定）、`change-lint`、`test-slice-manifest`（切片验证状态）三处消费——**流程判断使用结构化数据**，故它不随事务删除，消费方读取行为零改动。
+`merge_baseline` 结构：
+
+```jsonc
+{
+  "schema": "openlogos/merge-baseline@1",
+  "delta_digest": "sha256:<hex>",          // 最后一次成功合并/修正所用 delta 的摘要（§2.69.4 算法）
+  "targets": [                              // 已应用目标集：最后一次成功合并/修正实际写入的 canonical target，按 path 升序
+    {
+      "path": "logos/resources/test/core-S09-test-cases.md",
+      "mode": "MODIFY",                     // 该目标被本提案**首次**触及时的模式，此后修正不改写
+      "before": {                           // mode=CREATE 时为 null（合并前不存在）
+        "sha256": "<hex>",                  // 合并前实际字节的 sha256
+        "git_blob": "<hex>" | null          // 合并前实际字节经 `git hash-object -w` 写入对象库所得 id；非 git 仓库或写入失败为 null
+      },
+      "after_sha256": "<hex>"               // 最后一次成功合并/修正后的字节 sha256
+    }
+  ]
+}
+```
+
+`amendments[]` 每项：`{ amended_at, previous_delta_digest, delta_digest, targets_recomposed[], targets_added[], targets_restored[], invalidated_markers[] }`（路径数组按升序；`invalidated_markers` 为本次实际清除的标记文件名）。
+
+**采集口径**：
+
+- `before` 取**合并时实际读到的字节**，而不是任何提交中的版本——合并前工作区有未提交规格修改时，blob 仍是真实 before。`git hash-object -w` 写入的是内容寻址对象，不改工作区、索引与引用；失败（非 git 仓库、对象库不可写）时 `git_blob` 记 `null`，**首次合并照常成功**，只是该提案日后无法增量修正。
+- 已应用目标集只含 canonical target，不含 `logos/logos-project.yaml` 等 metadata 与原型资产（原型由 `commitVerifiedPrototypes` 落盘，§2.69.4 边界）。
+- no-delta `SPEC_MERGED` 同样写 `merge_baseline`（`targets: []`，`delta_digest` 为空集摘要）。
+
+`test_change_set` 被 `verify`（eligible 与覆盖判定）、`change-lint`、`test-slice-manifest`（切片验证状态）三处消费——**流程判断使用结构化数据**，故它不随事务删除，消费方读取行为零改动；新增字段对既有消费方透明。
 
 ### 2.69.3 保留不变
 
 `lib/markdown-section-authority.ts`（合并引擎与物质结果复验）、`lib/test-change-set.ts`、`lib/baseline-apply.ts` 的 `applyBaselineClosureBatch`（原子落盘原语）逐行保留——删的是外壳，不是引擎与原语。
+
+### 2.69.4 已合并提案的增量修正
+
+> 来源变更：merge-amend-merged-change（proposal r1 评审 F1–F4 修订后版本）。实证：2026-09-19 runlogos 提案 `degate-driver-block-sites-with-observation` 删标记重合并后 `changed_test_ids` 27 → 2 → 0 → 0；2026-10-08 OpenLogos 提案 `fix-prototype-plan-approval-state` 因已合并、无处落盘，五轮评审空转后 review-blocked。
+
+#### 2.69.4.1 触发与 delta 摘要
+
+增量修正由 `openlogos merge <slug>` 在 `SPEC_MERGED` 在场且「当前 delta 摘要 ≠ `merge_baseline.delta_digest`」时自动执行，无新参数、无新子命令、无新标记文件（决策 C01 默认）。semi 下 merge 仍是人类确认点，增量修正同属 merge，不新增确认点。
+
+**delta 摘要算法**（OpenLogos 唯一定义，宿主只消费、不自算）：枚举提案 `deltas/` 下全部常规文件（递归，排除 `.gitkeep`），取相对 `deltas/` 的 POSIX 路径，按 UTF-16 码元升序排序；对每个文件拼接 `<路径>\0<内容 sha256 小写 hex>\n`，对拼接结果求 sha256，记为 `sha256:<hex>`。空集摘要即空字节串的 sha256。
+
+#### 2.69.4.2 目标集三类与合成起点
+
+当前 delta 按首次合并同一派生（§2.71 目标集由 delta 文件派生）得到当前目标集 `C`；`merge_baseline.targets` 为上次已应用目标集 `P`。
+
+| 类别 | 判定 | 合成起点 | 落盘模式 |
+|---|---|---|---|
+| 重修 | `P ∩ C` | 基线 before：首次 MODIFY 取 `before` 字节；首次 CREATE 取「不存在」（按 CREATE 语义合成） | `MODIFY`（目标此刻存在） |
+| 新增 | `C − P` | 当前主文档字节（存在即 MODIFY 语义）或「不存在」（CREATE 语义） | 按磁盘事实 `MODIFY` / `CREATE` |
+| 撤回 | `P − C` | 首次 MODIFY：直接写回基线 before 字节；首次 CREATE：**不支持**，见边界 ④ | `MODIFY` |
+
+新增目标在本次修正中采集基线（同 §2.69.2 采集口径）；撤回目标从已应用目标集移除；重修目标的 `mode` 与 `before` 永远保持首次触及时的值。CREATE 目标重修不改 `resource_index`（已登记），新增 CREATE 目标按既有 metadata 规则登记。
+
+#### 2.69.4.3 执行顺序（校验全部前置于事实变化与写入）
+
+1. 读 `SPEC_MERGED`，计算当前 delta 摘要；相同即返回 `already-merged`。
+2. 校验基线在场；按上表分类 `C` / `P`；检查边界 ①～⑤，任一命中即拒绝。
+3. **漂移核对**：`P` 中每个目标当前字节 sha256 必须等于 `after_sha256`。
+4. **基线读回**：对重修与撤回的首次 MODIFY 目标，经 `git cat-file blob <git_blob>` 读回字节并以 `before.sha256` 复核。
+5. **准入**：以「待应用修正」上下文执行与 change-lint 同源的 preflight（§2.69.4.4）。
+6. **合成**：重修与新增目标经 `composeOpenLogosMarkdown` 从各自起点合成并做物质结果复验；撤回目标字节即基线 before。`test_change_set` 以 `buildTestChangeSet` 对 `P ∪ C` 中全部测试目标按「基线 before（新增目标取当前字节，CREATE 取不存在）→ 修正后字节」整体重算，`forwardMergeTestChangeSets` 祖先保持为空——各轮改动天然包含在整体 diff 中，不需要前滚。
+7. **验收事实失效**：读取并在内存备份后清除失效集合中在场的标记（§2.69.4.5）。本步自身失败（部分标记删除失败）时规格尚未写入、确属修正前字节，按备份恢复已清除的标记后以档 A 失败退出。
+8. **原子落盘**：全部重修 / 新增 / 撤回目标、必要的 metadata 与改写后的 `SPEC_MERGED`（`MODIFY`）交 `applyBaselineClosureBatch` 一次提交。原语零改动，只使用其既有 prepared `CREATE` / `MODIFY` 写入。
+9. 第 8 步失败时，**只有**原语返回 `ok:false` 且 `rolled_back === true`（档 B：已确认规格与 `SPEC_MERGED` 整批回到修正前字节）才按备份恢复第 7 步清除的标记；`ok:false` 且 `rolled_back !== true`（含 journal 已 committed 后清理失败、恢复判为 `committed`，以及回滚未完成），或错误从原语内部直接逃出（档 C），**一律保持标记缺失**、不恢复，按 §2.84.3 档 C 如实报告——禁止以「返回失败」本身推断旧态，禁止声称规格为旧字节，保留既有恢复材料与人工核对指引。
+
+第 1～6 步失败时零写入、零事实变化（档 A）。不调用 `resetCodeSection`，不改 `tasks.md` 的 `[code]` 段。
+
+#### 2.69.4.4 准入：「待应用修正」上下文（merge 与 change-lint 同判）
+
+既有 change-lint 以 `hasSpecCompleteMarker` 为阶段闸，在 `SPEC_MERGED` 在场时冻结整文件路由的受理与内容校验、跳过 ADDED 锚合成后唯一性、测试后态重复 ID（§2.85.3）、列数欠债继承（§2.86.3）与 L8 条目守恒——这对「成功合并后不拿 after 重放 delta」是正确的，但增量修正必须对新的 delta 重新执行这些依赖前态的检查。
+
+共享准入 evaluator 新增**待应用修正上下文**：输入每个目标的可信 before（即 §2.69.4.2 的合成起点）、目标模式与拟合成 after，按首次合并同等口径执行上述检查。
+
+- **判定条件**：`SPEC_MERGED` 在场、含 `merge_baseline`、当前 delta 摘要 ≠ `merge_baseline.delta_digest`。此时 change-lint 与 merge 都进入该上下文，结论逐项一致（同一 evaluator、同一合成器、同一 `buildTestChangeSet`）。
+- **摘要相同或无基线**：change-lint 保持既有「合并完成后不重放」语义，逐字不变。
+- 边界 ①～⑤ 与漂移、基线可读性属于 merge 执行前提而非 delta 内容合法性，不进入 change-lint violations；宿主经 `status` 的 `spec_amend.blocked_reason`（§2.69.4.6）提前读取。
+- 不另抄一套检查，不临时删除或改写完成标记。
+
+#### 2.69.4.5 验收与交付事实失效
+
+非幂等修正改变了已验收的规格，依赖旧规格的完成事实随之失效。失效集合复用 verify 失败时的既有清除集合（`VERIFY_PASS` / `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`），另加 `VERIFY_FAIL`：
+
+- 修正成功后提案回到待 verify；归档门（§2.67.2）与 flow 推导读取标记存在性的逻辑不改，标记缺失即自然拒绝归档、回退前沿。需要部署的提案须重新部署与 smoke。
+- **顺序「先清后写」**：清除发生在全部校验与合成之后、原子落盘之前。**恢复的唯一条件是「已确认旧规格」**：第 7 步自身失败（尚未写规格），或落盘原语返回 `ok:false` 且 `rolled_back === true`。档 C（`rolled_back !== true`、原语抛错逃逸、状态无法确认）时规格可能已是修正后字节或半新半旧，被清标记**保持缺失**，提案须重新验收。若恢复本身失败，如实点名未恢复的标记——此时规格已确认为旧字节、标记缺失，只多出一次重新验收。任一路径都不会出现「新规格（或状态不可确认的规格）配旧通过事实」。
+- 幂等 `already-merged` 与任何拒绝路径不清除标记。
+- `[code]` 段、`SLICES_APPROVED`、`TEST_SLICE_MANIFEST.json` 与切片 checkpoint 不在失效集合内；切片清单是否失效交给既有 `spec_fingerprint` 新鲜度判据。保留代码任务不等于保留验收结论。
+
+#### 2.69.4.6 拒绝边界（写入前、零副作用）
+
+| # | 条件 | 错误码 | `spec_amend.blocked_reason` | 手工处理指引 |
+|---|---|---|---|---|
+| ① | `SPEC_MERGED` 无 `merge_baseline`（旧标记，含 legacy `MERGED`） | `MERGE_AMEND_BASELINE_MISSING` | `baseline-missing` | 另立新提案承载修正；不从 git 历史回推（决策 C02 默认） |
+| ② | `git_blob` 为 null、对象不可读或读回 sha256 ≠ `before.sha256` | `MERGE_AMEND_BASELINE_UNREADABLE` | `baseline-unreadable` | 点名目标；另立新提案或人工恢复后另立提案 |
+| ③ | `P` 中目标当前 sha256 ≠ `after_sha256` | `MERGE_AMEND_DRIFT` | `drift` | 点名漂移文件；不做三方合并（决策 C03 默认），由人处理 |
+| ④ | 撤回类中存在首次 CREATE 的目标 | `MERGE_AMEND_CREATE_WITHDRAW` | `create-withdraw` | 点名目标；删除文件与 `resource_index` 条目需另立提案 |
+| ⑤ | `deltas/prd/2-product-design/2-page-design/` 下原型资产相对上次合并有变化 | `MERGE_AMEND_PROTOTYPE_UNSUPPORTED` | `prototype-changed` | 原型落盘走 `commitVerifiedPrototypes` 与 provenance 校验，不在增量修正能力内 |
+
+检查顺序 ① → ④ → ⑤ → ③ → ②，命中即停。已归档提案不在活跃目录，沿用 `MERGE_NO_ACTIVE_CHANGE`，归档后的修改照旧另立新提案。
+
+#### 2.69.4.7 输出与修正记录
+
+成功后 `SPEC_MERGED` 更新 `merge_baseline`（`delta_digest`、已应用目标集、各目标 `after_sha256`）、替换 `test_change_set`，并向 `amendments` 追加一条记录；`completed_at` 不变。`merge --format json` 的 `result` 取 `merged`（首次）/ `amended`（增量修正）/ `already-merged`（幂等），附 `delta_digest`、`targets` 与 `invalidated_markers`（契约见 `spec/cli-json-output.md`「openlogos merge 直接合并输出合同」）。
+
+#### 2.69.4.8 非目标
+
+- 不做三方合并，不自动解决主文档漂移。
+- 不新增 `reopen` / `amend` 子命令或新标记文件，不恢复已删除的事务外壳。
+- 不支持撤回首次 CREATE 的目标，不扩展落盘原语的删除能力。
+- 不对旧标记做自动修正或迁移。
+- 不处理已归档提案。
 
 ## 2.70 lint-specs 独立规格结构检查
 
@@ -3815,7 +3931,7 @@ lint 侧为什么零信号：L8 守恒按锚章节范围对账，导言节本身
 | 边界 | 规则 | 理由 |
 |---|---|---|
 | 通道闸 | **只作用于诊断信号与章节合成，不作用于 ID 检查集合**：合法 Markdown 整文件 CREATE 的 payload 与章节目标的合成后态一起交同一 `buildTestChangeSet`；整文件 delta 没有章节锚与 `hit`，故不参与「同父链同级同名」诊断信号的判定；封装不合法的整文件 delta 归 `non_markdown_delta_invalid`、不纳入集合 | 整文件通道只校验封装与 payload 形态、无内容层 ID 判据，其 ID 重复在 merge 侧同样由 `buildTestChangeSet` 拒绝——前移集合必须与之同一口径（§2.85.1） |
-| 阶段边界 | **只在 `SPEC_MERGED` 之前执行，合并完成后不重放**；判别口径取既有 spec-complete 完成标记（含 legacy 形态），不得以「目标是否已含该 ID」自行推断阶段 | 合并后目标已含新 ID、原 delta 仍在场，拿当前文件当 before 重合成必然重复，一次成功的合并被倒挂成失败——与 L8 守恒、ADDED 锚判据的 post-merge 处理同型、取同一个完成标记判据 |
+| 阶段边界 | **只在 `SPEC_MERGED` 之前执行，合并完成后不重放**；判别口径取既有 spec-complete 完成标记（含 legacy 形态），不得以「目标是否已含该 ID」自行推断阶段。**唯一例外：修正待应用**（`SPEC_MERGED` 含 `merge_baseline` 且当前 delta 摘要 ≠ 已合并摘要，§2.69.4.4）时，以合并基线为可信 before 照常执行——该例外对 ADDED 锚唯一性、整文件路由受理、§2.86.3 列数欠债继承与 L8 条目守恒等全部同型阶段闸统一适用 | 合并后目标已含新 ID、原 delta 仍在场，拿当前文件当 before 重合成必然重复，一次成功的合并被倒挂成失败——与 L8 守恒、ADDED 锚判据的 post-merge 处理同型、取同一个完成标记判据。修正待应用时 before 取自合并基线而非当前文件，不存在该倒挂；不执行则修正会跳过首次合并同等的准入 |
 | 只认领自身失败、不双报 | `buildTestChangeSet` 抛 `test-change-set-ambiguous-table` 时本码**不报**（已由按 §2.86 同一继承判定过滤后的 `delta_test_table_column_mismatch` / `_duplicate_header` 在同一轮 L4 覆盖）；`-overlap` / `-target-duplicate` / `-invalid-utf8` 不认领；合成因锚不可解析等他因失败归各自判据 | 同一事实不由两个判据双报；锁边界按码定义，本码只对应 `duplicate-id`。§2.86 之后后态只剩本提案引入或改动的歧义行，它们均落在 delta 片段内，必被同轮 L4 行级 / 表级码报出——不认领的前提对目标既有欠债同样成立 |
 
 ### 2.85.4 零回归边界

@@ -1,20 +1,22 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { readLocale, t, mergePromptTemplate } from '../i18n.js';
+import { readLocale, t, mergePromptTemplate, type Locale } from '../i18n.js';
 import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 // S35 前置重构②③⑤：段标记/模板骨架校验、delta 分类、模块归属解析改为共享判据打包调用（严禁第二份判据）。
 import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
 import { mergeDirect, type MergeDirectHooks } from '../lib/merge-direct.js';
-import { describeMergeFailure } from '../lib/merge-failure-report.js';
+import { describeMergeFailure, extractMergeFailureDiagnostics } from '../lib/merge-failure-report.js';
+import { checkMergedProposal, executeAmend } from '../lib/merge-amend.js';
+import { makeEnvelope, makeErrorEnvelope, type OutputFormat } from '../lib/json-output.js';
 import {
   checkUiHashMatch, commitVerifiedPrototypes, recoverCommitJournal,
   finalizePrototypeCommit, rollbackPrototypeCommit,
   readPlanApproved, classifyProvenance, PROTOTYPE_DELTA_SUBPATH, PROTOTYPE_RESOURCE_SUBPATH,
   type CommitResult,
 } from '../lib/ui-provenance.js';
-import { SPEC_MERGED_MARKER } from '../lib/proposal-markers.js';
+import { hasSpecCompleteMarker, SPEC_MERGED_MARKER } from '../lib/proposal-markers.js';
 
 /**
  * `spec/proposal-ui-ux-first.md` §12.3.2 原型落盘失败分档。
@@ -217,6 +219,14 @@ export interface RunDirectMergeDeps {
   exit?: (code: number) => never;
   /** §12.3.3 阶段钩子：原型事务的提交点 / 清理点 / 回滚点，透传给 `mergeDirect`。 */
   hooks?: MergeDirectHooks;
+  /** `--format json`：失败报告之后追加 stderr 错误 envelope（最后一行）。 */
+  json?: boolean;
+}
+
+/** `--format json` 的失败出口：错误 envelope 恒为 stderr 最后一行（宿主据此取稳定错误码）。 */
+function emitJsonFailure(error: unknown, writeErr: (line: string) => void): void {
+  const diag = extractMergeFailureDiagnostics(error);
+  writeErr(JSON.stringify(makeErrorEnvelope('merge', diag.code, diag.message)));
 }
 
 /**
@@ -238,11 +248,106 @@ export function runDirectMerge(root: string, changePath: string, slug: string, d
     return runMerge(root, changePath, slug, deps.hooks ?? {});
   } catch (e) {
     for (const line of describeMergeFailure(changePath, slug, e).lines) writeErr(line);
+    if (deps.json) emitJsonFailure(e, writeErr);
     return exit(1);
   }
 }
 
-export function merge(slug?: string) {
+/**
+ * 已合并提案的再次调用（功能规格 §2.69.1「已合并后再次调用」、§2.69.4）：
+ * delta 摘要未变 → 幂等 `already-merged`；有变化 → 拒绝边界 → 待应用修正准入（change-lint 同判）
+ * → 增量修正。**不调用 `resetCodeSection`**——修正发生在实现之后，`[code]` 原样保留。
+ */
+function runMergedProposal(
+  root: string, changePath: string, slug: string, locale: Locale, json: boolean, out: (line: string) => void,
+): void {
+  const fail = (error: unknown): never => {
+    for (const line of describeMergeFailure(changePath, slug, error).lines) console.error(line);
+    if (json) emitJsonFailure(error, line => console.error(line));
+    return process.exit(1);
+  };
+  let check: ReturnType<typeof checkMergedProposal>;
+  try {
+    check = checkMergedProposal(root, changePath);
+  } catch (e) {
+    return fail(e);
+  }
+  const specMergedPath = `logos/changes/${slug}/${SPEC_MERGED_MARKER}`;
+  if (check.kind === 'already-merged') {
+    if (json) {
+      console.log(JSON.stringify(makeEnvelope('merge', {
+        slug, result: 'already-merged', delta_digest: check.digest, target_count: 0, targets: [],
+        spec_merged_path: specMergedPath, test_change_set: check.record.test_change_set ?? null,
+        invalidated_markers: [], amend: null,
+      })));
+    } else {
+      out(`\n✓ ${t(locale, 'merge.alreadyMerged', { slug })}`);
+    }
+    return;
+  }
+
+  // 准入 = change-lint 完整结论；修正待应用时 lint 自动进入以合并基线为 before 的上下文（§2.69.4.4）。
+  admitOrExit(root, changePath, slug, json);
+
+  let result: ReturnType<typeof executeAmend>;
+  try {
+    result = executeAmend(root, changePath, slug, check.plan);
+  } catch (e) {
+    return fail(e);
+  }
+  if (json) {
+    console.log(JSON.stringify(makeEnvelope('merge', result)));
+    return;
+  }
+  out(`\n📋 ${t(locale, 'merge.summary')}`);
+  out(t(locale, 'merge.proposal', { slug }));
+  out(`  增量修正：重修 ${result.amend.targets_recomposed.length} / 新增 ${result.amend.targets_added.length} / 撤回 ${result.amend.targets_restored.length}`);
+  for (const target of result.targets) out(`    → ${target}`);
+  out(`\n  ✓ ${specMergedPath}（增量修正，${result.target_count} 个 canonical target 一次性原子落盘）`);
+  out(`  test_change_set: C=${result.test_change_set.changed_test_ids.length} R=${result.test_change_set.removed_test_ids.length}`);
+  if (result.invalidated_markers.length > 0) {
+    out(`  已清除验收/交付标记：${result.invalidated_markers.join('、')}——须对修正后的规格重新 verify（需部署的提案重新部署与 smoke）。`);
+  }
+}
+
+/** §2.51.2：merge 的准入判定**等于** change-lint 的完整结论（首次合并与增量修正共用）。 */
+function admitOrExit(root: string, changePath: string, slug: string, json: boolean): void {
+  // 此前这里有两处缩水：① 用 hasBaselineClosureSignal 决定要不要预检——没有 baseline_closure
+  // 声明或 [MODIFY]/[CREATE] 标记的提案整道预检不做；② 即使做了，也只保留
+  // BASELINE_CLOSURE_VIOLATION_CODES 共 9 个码，L10 的 authority 违规与 L0～L7 全部被丢弃。
+  // 于是 change-lint 判 FAIL 并点名具体测试 ID 的提案，在这里被照常放行。
+  //
+  // 此前另有一条 apply 路径对同一提案给出不同结论，正是「消费方自建缩水副本」这一分裂形态。
+  // 0.15.0 删除该路径后，merge 的准入判定就是 change-lint 的完整结论，唯一一份。
+  const preflight = runChangeLint(root, changePath, slug);
+  if (!preflight.ok) {
+    const prefix = preflight.errorCode === 'module_unresolved' ? '模块归属无法解析；' : '';
+    console.error(`Error: ${prefix}merge 前合规预检无法完成（${preflight.errorCode}）：${preflight.message}`);
+    console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+    if (json) console.error(JSON.stringify(makeErrorEnvelope('merge', preflight.errorCode, preflight.message)));
+    process.exit(1);
+  }
+  if (preflight.violations.length > 0) {
+    console.error(`Error: change-lint 未通过（${preflight.violations.length} 项违规），拒绝 merge：`);
+    // §2.51.5：逐条可归因——每条单独输出 code / 路径 / 具体字段 / fix_hint，禁止只给聚合结论。
+    for (const v of preflight.violations) {
+      console.error(`  - [${v.code}] ${v.path}：${v.message}`);
+      if (v.fix_hint) console.error(`      修复：${v.fix_hint}`);
+    }
+    console.error('  未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+    console.error('  自查命令：openlogos change-lint --slug ' + slug + '（其结论与本准入判定同源）');
+    if (json) {
+      console.error(JSON.stringify(makeErrorEnvelope('merge', 'MERGE_ADMISSION_REJECTED',
+        preflight.violations.map(v => `[${v.code}] ${v.path}`).join('；'))));
+    }
+    process.exit(1);
+  }
+}
+
+export function merge(slug?: string, format: OutputFormat = 'text') {
+  const json = format === 'json';
+  // JSON 模式下 stdout 只留 envelope：人读进度行改走 stderr。
+  const out = json ? (line: string) => console.error(line) : (line: string) => console.log(line);
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
 
@@ -286,9 +391,9 @@ export function merge(slug?: string) {
     process.exit(1);
   }
   if (closureApplyRecovery.recovered === 'rolled_back') {
-    console.log('  ↺ 检测到残留 baseline closure apply journal，已回滚至全旧一致态。');
+    out('  ↺ 检测到残留 baseline closure apply journal，已回滚至全旧一致态。');
   } else if (closureApplyRecovery.recovered === 'committed') {
-    console.log('  ↺ 检测到已提交 baseline closure apply journal，后置状态完整，已清理恢复材料。');
+    out('  ↺ 检测到已提交 baseline closure apply journal，后置状态完整，已清理恢复材料。');
   }
 
   // F1：崩溃恢复——在扫描 delta / 任何新校验或写入之前，先检测并消化残留 commit journal
@@ -301,11 +406,18 @@ export function merge(slug?: string) {
     process.exit(1);
   }
   if (recovered !== 'none') {
-    console.log(`  ↺ 检测到残留原型事务 journal，已${recovered === 'rolled_forward' ? '前滚补完' : '回滚'}至一致态。`);
+    out(`  ↺ 检测到残留原型事务 journal，已${recovered === 'rolled_forward' ? '前滚补完' : '回滚'}至一致态。`);
   }
 
-  if (existsSync(join(changePath, SPEC_MERGED_MARKER))) {
-    console.log(`\n✓ ${t(locale, 'merge.alreadyMerged', { slug })}`);
+  // 已完成规格阶段（含 legacy MERGED）：幂等或增量修正（§2.69.4），不进入首次合并路径。
+  if (hasSpecCompleteMarker(changePath)) {
+    // 历史 MERGE_PROMPT 回归模式（仅 0.13.x 测试、安装态永不启用）写的是无基线的旧形态 marker，
+    // 该模式下保持原「已合并即返回」语义；增量修正只存在于生产合并路径。
+    if (legacyMergeTestMode()) {
+      out(`\n✓ ${t(locale, 'merge.alreadyMerged', { slug })}`);
+      return;
+    }
+    runMergedProposal(root, changePath, slug, locale, json, out);
     return;
   }
 
@@ -317,33 +429,7 @@ export function merge(slug?: string) {
   resetCodeSection(changePath, 'merge', locale);
 
   // §2.51.2 / 架构 §四十一.6.1：merge 的准入判定**等于** change-lint 的完整结论。
-  //
-  // 此前这里有两处缩水：① 用 hasBaselineClosureSignal 决定要不要预检——没有 baseline_closure
-  // 声明或 [MODIFY]/[CREATE] 标记的提案整道预检不做；② 即使做了，也只保留
-  // BASELINE_CLOSURE_VIOLATION_CODES 共 9 个码，L10 的 authority 违规与 L0～L7 全部被丢弃。
-  // 于是 change-lint 判 FAIL 并点名具体测试 ID 的提案，在这里被照常放行。
-  //
-  // 此前另有一条 apply 路径对同一提案给出不同结论，正是「消费方自建缩水副本」这一分裂形态。
-  // 0.15.0 删除该路径后，merge 的准入判定就是 change-lint 的完整结论，唯一一份。
-  const preflight = runChangeLint(root, changePath, slug);
-  if (!preflight.ok) {
-    const prefix = preflight.errorCode === 'module_unresolved' ? '模块归属无法解析；' : '';
-    console.error(`Error: ${prefix}merge 前合规预检无法完成（${preflight.errorCode}）：${preflight.message}`);
-    console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
-    process.exit(1);
-  }
-  if (preflight.violations.length > 0) {
-    console.error(`Error: change-lint 未通过（${preflight.violations.length} 项违规），拒绝 merge：`);
-    // §2.51.5：逐条可归因——每条单独输出 code / 路径 / 具体字段 / fix_hint，禁止只给聚合结论。
-    for (const v of preflight.violations) {
-      console.error(`  - [${v.code}] ${v.path}：${v.message}`);
-      if (v.fix_hint) console.error(`      修复：${v.fix_hint}`);
-    }
-    console.error('  未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
-    console.error('  自查命令：openlogos change-lint --slug ' + slug + '（其结论与本准入判定同源）');
-    process.exit(1);
-  }
-
+  admitOrExit(root, changePath, slug, json);
 
   const deltasDir = join(changePath, 'deltas');
   let deltas: DeltaFile[];
@@ -381,8 +467,8 @@ export function merge(slug?: string) {
   const looksUiFirst = decl.ui_impact === true || hasPrototypeHtml;
   if (looksUiFirst && !hasUiProvenanceEvidence && !moduleCtx.ok) {
     // §2.74.2：同属 provenance 观察面，降为告警——模块归属无法解析不影响合并本身的正确性。
-    console.log(`  ⚠️  提案声明 ui_impact:true 或存在 page-design 原型，但模块归属无法解析（${moduleCtx.detail}）。`);
-    console.log('      建议补 proposal.md 的 `> module:` 头（并确保模块已在 logos-project.yaml 注册）。');
+    out(`  ⚠️  提案声明 ui_impact:true 或存在 page-design 原型，但模块归属无法解析（${moduleCtx.detail}）。`);
+    out('      建议补 proposal.md 的 `> module:` 头（并确保模块已在 logos-project.yaml 注册）。');
   }
 
   const uiImpact = hasUiProvenanceEvidence
@@ -393,8 +479,8 @@ export function merge(slug?: string) {
     // 条件里，故降为告警。诊断能力不减——`openlogos check-ui-hash-match` 单独运行仍如实报失配并非零退出。
     const hm = checkUiHashMatch(changePath);
     if (!hm.ok) {
-      console.log(`  ⚠️  UI provenance 校验失败（${hm.cls}/${hm.code}）：${hm.detail ?? '批准后原型漂移或 provenance 不完整'}`);
-      console.log('      如需修复：显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑 `openlogos check-ui-hash-match` 复核。');
+      out(`  ⚠️  UI provenance 校验失败（${hm.cls}/${hm.code}）：${hm.detail ?? '批准后原型漂移或 provenance 不完整'}`);
+      out('      如需修复：显式重入 plan 刷新 PLAN_APPROVED.hashes 后重跑 `openlogos check-ui-hash-match` 复核。');
     }
     // ② 原型正式字节由 commitVerifiedPrototypes 落盘。
     //    §12.3.1 约束 A：**正常分支**的调用点在下方 `prototypeHooks.afterPrepare`——安装态
@@ -403,7 +489,7 @@ export function merge(slug?: string) {
     if (legacyMergeTestMode()) {
       const commit = commitVerifiedPrototypes(changePath, root);
       if (!commit.ok) {
-        for (const line of renderPrototypeSummary(gradePrototypeCommit(commit))) console.log(line);
+        for (const line of renderPrototypeSummary(gradePrototypeCommit(commit))) out(line);
       }
     }
   }
@@ -419,12 +505,16 @@ export function merge(slug?: string) {
   if (deltas.length === 0) {
     if (legacyMergeTestMode()) {
       writeFileSync(join(changePath, SPEC_MERGED_MARKER), noDeltaSpecMergedMarker());
-      console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+      out(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
       return;
     }
-    runDirectMerge(root, changePath, slug, { hooks: prototypeHooks });
-    for (const line of renderPrototypeSummary(prototypeOutcome)) console.log(line);
-    console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+    const noDelta = runDirectMerge(root, changePath, slug, { hooks: prototypeHooks, json });
+    for (const line of renderPrototypeSummary(prototypeOutcome)) out(line);
+    if (json) {
+      console.log(JSON.stringify(makeEnvelope('merge', { ...noDelta, result: 'merged', invalidated_markers: [], amend: null })));
+      return;
+    }
+    out(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
     return;
   }
 
@@ -458,7 +548,7 @@ export function merge(slug?: string) {
           // 静默删除由 `openlogos verify` 的孤儿结果检查兜住（规格删了 ID 而测试还在跑即判不一致）。
           // 例外：锚不可解析是定位失败，`composeOpenLogosMarkdown` 在合成阶段仍会 fail-closed。
           for (const cv of evaluateDeltaConservation(content, targetContent)) {
-            console.log(`  ⚠️  [${cv.code}] ${d.relativePath}：${cv.message}`);
+            out(`  ⚠️  [${cv.code}] ${d.relativePath}：${cv.message}`);
           }
           // code-r1 F1：跨 delta 文件的同一目标章节多写者 fail-closed（与 lint 共享同一解析辅助）
           for (const key of resolveModifiedSectionKeys(content, targetContent)) {
@@ -471,7 +561,7 @@ export function merge(slug?: string) {
   }
   for (const [k, writers] of conservationSectionWriters) {
     if (writers.length < 2) continue;
-    console.log(`  ⚠️  [delta_implicit_id_removal] 目标 ${k.split('#')[0]} 的同一章节被 ${writers.length} 个 delta 文件的 MODIFIED 写入（${writers.join('、')}）`
+    out(`  ⚠️  [delta_implicit_id_removal] 目标 ${k.split('#')[0]} 的同一章节被 ${writers.length} 个 delta 文件的 MODIFIED 写入（${writers.join('、')}）`
       + '——顺序应用下后写覆盖前写；每章节仅允许一个 MODIFIED 写者');
   }
 
@@ -481,7 +571,7 @@ export function merge(slug?: string) {
     const promptDeltas = uiImpact ? deltas.filter(d => !isPrototypeAsset(d.relativePath)) : deltas;
     if (promptDeltas.length === 0) {
       writeFileSync(join(changePath, SPEC_MERGED_MARKER), noDeltaSpecMergedMarker());
-      console.log(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
+      out(`\n✓ ${t(locale, 'merge.noDelta', { slug })}`);
       return;
     }
     const promptContent = mergePromptTemplate(locale, slug, proposalContent, promptDeltas.map(d => ({
@@ -489,23 +579,29 @@ export function merge(slug?: string) {
     })));
     writeFileSync(join(changePath, 'MERGE_PROMPT.md'), promptContent);
     writeFileSync(join(changePath, 'MERGE_PROMPT_GENERATED'), '');
-    console.log(`\n  ✓ logos/changes/${slug}/MERGE_PROMPT.md`);
+    out(`\n  ✓ logos/changes/${slug}/MERGE_PROMPT.md`);
     return;
   }
 
-  const result = runDirectMerge(root, changePath, slug, { hooks: prototypeHooks });
+  const result = runDirectMerge(root, changePath, slug, { hooks: prototypeHooks, json });
+  if (json) {
+    console.log(JSON.stringify(makeEnvelope('merge', {
+      ...result, result: 'merged', invalidated_markers: [], amend: null,
+    })));
+    return;
+  }
 
-  console.log(`\n📋 ${t(locale, 'merge.summary')}`);
-  console.log(t(locale, 'merge.proposal', { slug }));
-  console.log(t(locale, 'merge.deltaCount', { count: String(deltas.length) }));
+  out(`\n📋 ${t(locale, 'merge.summary')}`);
+  out(t(locale, 'merge.proposal', { slug }));
+  out(t(locale, 'merge.deltaCount', { count: String(deltas.length) }));
   for (const target of result.targets) {
-    console.log(`    → ${target}`);
+    out(`    → ${target}`);
   }
   // §12.3.1 约束 B：原型落盘结果与 canonical target 同级可见，禁止静默。
-  for (const line of renderPrototypeSummary(prototypeOutcome)) console.log(line);
+  for (const line of renderPrototypeSummary(prototypeOutcome)) out(line);
 
-  console.log(`\n  ✓ logos/changes/${slug}/${SPEC_MERGED_MARKER}（${result.target_count} 个 canonical target 一次性原子落盘）`);
-  console.log(`  test_change_set: C=${result.test_change_set.changed_test_ids.length} R=${result.test_change_set.removed_test_ids.length}`);
+  out(`\n  ✓ logos/changes/${slug}/${SPEC_MERGED_MARKER}（${result.target_count} 个 canonical target 一次性原子落盘）`);
+  out(`  test_change_set: C=${result.test_change_set.changed_test_ids.length} R=${result.test_change_set.removed_test_ids.length}`);
 
-  console.log(`\n${t(locale, 'merge.archiveHint', { slug })}\n`);
+  out(`\n${t(locale, 'merge.archiveHint', { slug })}\n`);
 }

@@ -818,11 +818,34 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 1. 解析 `[delta]` 目标集并做 P==T==D 与路径合法性校验（校验全部前置于写入）；
 2. 逐 canonical target 经合并引擎合成最终字节，引擎内含章节锚唯一定位与物质结果复验；
 3. 全部目标经原子落盘原语一次提交，失败整批回滚；
-4. 末步写 `SPEC_MERGED`（含 `test_change_set`）。
+4. 末步写 `SPEC_MERGED`（含 `test_change_set` 与逐目标合并基线 `merge_baseline`）。
 
 **完成谓词**：`SPEC_MERGED` 在场即 spec-complete。不存在事务相位、receipt 或第二事实源参与该判定——**任何审计产物都不得出现在流程分支的条件里**。
 
-**失败与重来**：合并失败即整批回滚，主文档保持合并前字节；已合并后发现 delta 有误时，`git checkout logos/resources/` 回到合并前，修正 delta 后重跑 `merge`。不提供 reopen / abort / recover——不存在需要出路的中间态。
+**失败与重来**：合并失败即整批回滚，主文档保持合并前字节，修正 delta 后重跑 `merge`。不提供 reopen / abort / recover——不存在需要出路的中间态。
+
+### 已合并后发现 delta 有误（merge-amend-merged-change）
+
+已合并、尚未归档的提案发现规格写错时，唯一正式路径是**增量修正**：
+
+1. 直接修正本提案 `deltas/` 下的文件（改写、新增或删除 delta），运行 `openlogos change-lint`——修正待应用时 lint 以合并基线为 before 执行与首次合并同等的依赖前态检查，与 merge 同判；
+2. 获用户明确授权后重跑 `openlogos merge <slug>`（半自动下 merge 仍是人类确认点；`--auto` 下属 standing 授权范围）。命令比较 delta 摘要：未变则幂等返回 `already-merged`；有变化则从合并基线重新合成、整体重算 `test_change_set`、一次原子落盘并在 `SPEC_MERGED` 追加修正记录；
+3. 增量修正成功会清除 `VERIFY_PASS` / `VERIFY_FAIL` / `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`：须按 `[code]` 实现与新规格对齐后**重新 verify**；需要部署的提案重新部署与 smoke，再进入 archive。`[code]` 段不被重置；
+4. merge 完成后照常由 AI 自动 commit 规格文档。
+
+**禁止的旧做法**：不再使用 `git checkout logos/resources/` 回到合并前（规格合并后通常已被提交，该命令恢复不了任何内容）；不得手工删除 `SPEC_MERGED` 再合并（属于手工改流程事实，且会把测试变更集缩小为只剩新一轮）。
+
+**增量修正拒绝时的手工处理**（均在写入前拒绝、零副作用）：
+
+| 拒绝原因 | 处理方式 |
+|---|---|
+| 旧标记无合并基线（本版之前合并，`MERGE_AMEND_BASELINE_MISSING`） | 不从 git 历史回推；保持本提案现状，另立新提案承载修正 |
+| 合并基线不可读或不匹配（`MERGE_AMEND_BASELINE_UNREADABLE`） | 另立新提案承载修正 |
+| 主文档已被其他提案或手工修改（`MERGE_AMEND_DRIFT`） | 不做三方合并；由人核对漂移文件后另立新提案 |
+| 撤回首次 CREATE 新建的目标（`MERGE_AMEND_CREATE_WITHDRAW`） | 恢复本提案对应 delta 以通过修正，或另立新提案删除该文件及其 `resource_index` 条目 |
+| 原型资产变化（`MERGE_AMEND_PROTOTYPE_UNSUPPORTED`） | 原型走 `commitVerifiedPrototypes` 与 provenance 校验，另立新提案 |
+
+已归档提案不支持增量修正，归档后的修改照旧另立新提案。宿主可读 `openlogos status --format json` 的 `modules[].active_change.spec_amend`（`pending` / `blocked_reason`）提前判断，契约见 `spec/cli-json-output.md`。
 
 ## Delta RENAMED op：章节标题更名
 
