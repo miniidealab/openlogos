@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.20] - 2026-10-09
+
+### Added
+
+- 已合并提案修改 delta 后，同一条 `openlogos merge` 执行增量修正（`result:"amended"`）；`status` 投影 `spec_amend`（merge-amend-merged-change）。
+- 本地候选版本升级为 `0.15.20`，固定 `0.15.19` 回滚，新增安装态 smoke runner（SMOKE-core-226～SMOKE-core-230）；不包含公开发布、远程标签或 git push。
+
+### Fixed
+
+- verify 预跑命令失败不再沿用旧结果判定，门禁 FAIL（`pre_run_failed`），JSON 给出命令输出尾部（有界、不落盘）。
+- smoke 门对平台不可执行的必要用例 skip（`reason_code:"platform-unavailable"` 且 `detail` 非空）放行并单独列出；其余必要用例 skip 仍拦截。
+- 非 git 项目 guard 回落判定按段判定复合命令，`cd` 后的相对写入按有效工作目录解析，重定向写入不再凭安全白名单前缀放行。
+- merge 增量修正失败时按三档如实报告，不再建议 `git checkout logos/resources/`。
+
 ## [0.15.19] - 2026-10-09
 
 ### Added
