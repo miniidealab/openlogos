@@ -694,7 +694,7 @@ is_protected() {
   # 3 保护范围来源
   base="${rel##*/}"
   if [ "$base" = ".gitignore" ]; then _protect 3 "忽略规则来源（.gitignore）"; return 0; fi
-  if [ "$rel" = "$GUARD_CONFIG_REL" ]; then _protect 3 "保护范围来源（$GUARD_CONFIG_REL）"; return 0; fi
+  if [ "$rel" = "$GUARD_CONFIG_REL" ]; then _protect 3 "保护范围来源（${GUARD_CONFIG_REL}）"; return 0; fi
   IFS='/' read -r -a segs <<< "$rel"
   if [ "$GUARD_MODE" = "git" ]; then
     local gd

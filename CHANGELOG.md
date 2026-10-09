@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.19] - 2026-10-09
+
+### Added
+
+- `init` / `adopt` / `sync` 按项目 `locale` 往 `.claude/settings.json` 写入 `language`（`zh` → `chinese`、`en` → `english`）：托管值随 locale 跟随，自定义值保留并提示一行，损坏的 JSON 原样保留。回复语言由 Claude Code 系统提示词约束，长会话压缩后不再漂移。
+- change-lint L5 对声明需要部署的提案检查部署方案覆盖：本提案须更新部署方案（`[delta]` 部署方案任务或部署方案 delta），或在部署影响写「部署方案依据」引用一节已合并部署方案；缺失报 `deployment_plan_missing`，引用无法唯一定位报 `deployment_plan_reference_unresolved`，Plan Package 同步投影。
+- 本地候选版本升级为 `0.15.19`，固定 `0.15.18` 回滚，新增安装态 smoke runner（SMOKE-core-223～SMOKE-core-225）；不包含公开发布、远程标签或 git push。
+
+### Fixed
+
+- 顶层不是 JSON 对象的 `.claude/settings.json` 在 hooks 合并时不再被改写。
+- smoke 门：本提案新增的 smoke 用例以 skip 结束时门禁 FAIL（`required_cases_skipped`），不再写 `SMOKE_PASS`。
+
 ## [0.15.18] - 2026-10-07
 
 ### Changed
