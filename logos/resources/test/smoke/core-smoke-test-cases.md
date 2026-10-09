@@ -1846,3 +1846,40 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
 - runner **不得**以「安装态版本号等于候选」替代行为断言。放行或阻断以 hook 退出码与 stdout 拦截 JSON 判定；字节一致性以 SHA-256 比对，不以「文件存在」代替；事后检查的变化列表以反馈中的路径判定，不解析其余人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-215～SMOKE-core-222 均被 runner 覆盖。
+
+## OpenLogos 0.15.19 提案阶段部署方案检查与 Claude Code 回复语言设置安装态 smoke（SMOKE-core-223～225）
+
+> 这组用例验证两项行为确实进入了本机全局安装态：change-lint L5 的部署方案覆盖判定（功能规格 §2.90），以及 `init` / `sync` 按 `locale` 写入项目 `.claude/settings.json` 的 `language`（功能规格 §2.89）。两项都只有装进全局 CLI 才对用户生效。
+>
+> 用例在 `mktemp -d` 一次性隔离项目内执行。runner **只读**本机全局安装态，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/`、用户其他仓库（包括 runlogos）与用户级 `~/.claude/settings.json`。判据用**行为断言**：版本号相等只证明装了新包，不证明行为生效。版本号以计划值 `0.15.19` 为准，实际以部署记录的候选版本为准，断言写成关系式：全局 `--version` == 部署记录版本。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-223 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 在全局包目录中以 Node 动态导入 `dist/commands/init.js` 与 `dist/lib/proposal-lifecycle.js`，读取 `dist/i18n.js` | ① `--version` 等于部署记录版本，入口无 workspace link；② `payloadHash` 自洽，`dist/i18n.js` 的 SHA-256 等于 manifest 对应条目；③ `init.js` 导出 `mergeClaudeLanguageSetting` 与 `CLAUDE_LANGUAGE_BY_LOCALE`（值为 `{ zh: 'chinese', en: 'english' }`），`proposal-lifecycle.js` 导出 `evaluateDeploymentPlanCoverage`，`i18n.js` 含 `init.claudeLanguageCustom` | 保留读取结果。任一不符 → 停止后续流程，按部署方案用 `cli/rollback/miniidealab-openlogos-0.15.18.tgz` 回装全局，并按「失败处置与回滚边界」恢复本仓托管态；不得以「仓内源码已修」了事 |
+| SMOKE-core-224 | 安装态 change-lint L5 部署方案覆盖 | 本机全局已安装本次候选；`mktemp -d` 临时目录经全局 `openlogos init --locale zh --ai-tool claude-code` 建立并置 launched；以全局 `openlogos change <slug>` 创建提案，proposal.md 与 tasks.md 填为可通过 L0～L4、L6、L7 的最小形态，「部署影响」为「是否需要部署：是」，`[deploy]` 非空；临时项目 `logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md` 含唯一的 `## OpenLogos 9.9.1 发布方案（夹具）` 与两处 `### 本机全局部署` | 每步后执行全局 `openlogos change-lint --slug <slug> --format json`：① 初始形态（无部署方案任务、无 delta、无依据）；② 在 `[delta]` 追加一条含 `deltas/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md` 的任务；③ 撤回 ②，在部署影响段写「- 部署方案依据：OpenLogos 9.9.1 发布方案（夹具）」；④ 把依据改为「本机全局部署」；⑤ 把「是否需要部署」改为「否」并删除 `[deploy]` 与依据；⑥ 在 ① 的形态下执行全局 `openlogos next --format json`；⑦ 全程前后读取 `command -v openlogos` 与 `--version` | ① exit 2，`violations[].code` 含 `deployment_plan_missing`；② exit 0；③ exit 0；④ exit 2，`violations[].code` 含 `deployment_plan_reference_unresolved`；⑤ exit 0，`violations` 无任何部署相关码；⑥ `proposal_step` 不为 `ready-to-delta`；⑦ 入口路径与版本逐字一致 | 同上；另保留每步的 proposal / tasks 字节与 lint JSON。① 通过（exit 0）表示安装态仍是旧 L5，部署方案缺失仍会拖到部署节点才暴露；④ 通过表示引用未逐字唯一定位；均属行为回归，必须回装旧版并回流来源提案 |
+| SMOKE-core-225 | 安装态 `init` / `sync` 写入 `language` | 本机全局已安装本次候选；三个 `mktemp -d` 临时目录：P1、P2 空目录；P3 经 `cli/rollback/miniidealab-openlogos-0.15.18.tgz`（部署记录中冻结自全局安装目录、已通过内容身份与旧行为验证的那一份，SHA-256 与记录一致）在一次性隔离 prefix 中以 `--locale zh --ai-tool claude-code` init，得到无 `language` 的旧版设置文件，再加入用户自有 PreToolUse 条目与顶层 `permissions` 键，并预置 `.claude/settings.local.json` 为 `{"language":"japanese"}` | ① P1 执行全局 `openlogos init --locale zh --ai-tool claude-code`；② P2 执行全局 `openlogos init --locale en --ai-tool claude-code`；③ P3 执行全局 `openlogos sync`；④ P3 连续第二次 `openlogos sync`；⑤ P3 把 `.claude/settings.json` 的 `language` 改为 `"japanese"` 后执行 `openlogos sync`；⑥ P3 把 `logos/logos.config.json` 的 `locale` 改为 `en`、`language` 改回 `"chinese"` 后执行 `openlogos sync`；⑦ P3 把 `.claude/settings.json` 改为非法 JSON 后执行 `openlogos sync` | ① `.claude/settings.json` 含 `"language": "chinese"`；② 含 `"language": "english"`；③ 退出码 0，含 `"language": "chinese"`，其它字段的值与用户条目顺序与 sync 前一致；④ `.claude/settings.json` 字节不变；⑤ 值保持 `"japanese"`，stdout 恰有一行含「language 为自定义值」的提示，退出码 0；⑥ 值变为 `"english"`；⑦ 文件字节不变、退出码 0；全程 `.claude/settings.local.json` 字节不变 | 同上；另保留 P1～P3 每步前后 `.claude/settings.json` 与 `.claude/settings.local.json` 的 SHA-256。③ 未写入表示安装态仍为旧版或写入落在 commands 跳过分支之后；⑤ 被覆盖表示自定义值未受保护；均属行为回归，必须回装旧版并回流来源提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与隔离 prefix 内进行，结束即删除。SMOKE-core-225 中 P3 的旧版资产来自隔离 prefix，不改动本机全局。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、用户其他仓库（包括 runlogos）、用户级 `~/.claude/settings.json` 或本机全局 prefix；本节对全局安装态只读。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`，本次为本地全局部署。
+- 断言中不硬编码主机路径、墙上时钟或本机全局安装现值（通则第 1 条）；夹具部署方案的版本号 `9.9.1` 只是临时项目内的标题文字，与真实版本无关。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.89「Claude Code 项目回复语言设置托管」、§2.90「change-lint L5 部署方案覆盖」。
+- CLI 交互设计：§2.42「change-lint L5 部署方案覆盖违规体验」。
+- 场景：S08「S08 sync 合并 Claude Code 项目回复语言设置时序」、S35「L5 部署方案覆盖判定」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.15.19 发布方案（提案阶段部署方案检查与 Claude Code 回复语言设置，本地全局）」。
+- 验收标准映射（来源提案 deploy-plan-gate-release-0-15-19）：1、2、3 → SMOKE-core-224 ①～④；4 → SMOKE-core-224 ⑤；6 → SMOKE-core-223、SMOKE-core-225。
+- 仓库内对应用例：UT-S35-216～UT-S35-224、ST-S35-38～ST-S35-39、UT-S08-79～UT-S08-83、ST-S08-42～ST-S08-43；版本身份 `UT-S19-46` / `UT-S19-49`。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-deploy-plan-gate-0-15-19.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-223～SMOKE-core-225，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次 lint 的 JSON 摘要（`violations[].code`、`path`、`message` 前 200 字）与退出码、每次 sync 的退出码与 stdout 摘要，以及相关文件前后的 SHA-256。
+- 环境不具备时（缺候选或回滚 tarball）写显式 `skip` 记录并携带缺失项，禁止静默零记录退出；skip 不计为通过，有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
+- runner **不得**以「安装态版本号等于候选」替代行为断言。lint 结论以 `--format json` 的 `violations[].code` 与退出码判定，不解析人类可读文案；`language` 以解析后的 JSON 值判定，字节不变以 SHA-256 比对。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-223～SMOKE-core-225 均被 runner 覆盖。

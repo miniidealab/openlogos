@@ -3622,3 +3622,118 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 测试：`core-S40`、`core-S09`、`core-S01`、`core-S08`、`core-S20` 测试用例文件中本提案新增的 UT/ST，以及 `UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-215～SMOKE-core-222。
 - 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
 - 来源提案：guard-versioned-content-scope（决策 C08；验收标准 10）。
+
+## OpenLogos 0.15.19 发布方案（提案阶段部署方案检查与 Claude Code 回复语言设置，本地全局）
+
+### 部署目标与授权边界
+
+把两项已实现的 CLI 行为装进本机全局安装态，并刷新本仓托管资产：
+
+1. **提案阶段部署方案检查**（来源提案 `deploy-plan-gate-release-0-15-19`，功能规格 §2.90）：change-lint L5 对声明需要部署的提案判定部署方案覆盖，缺失报 `deployment_plan_missing`、引用无法解析报 `deployment_plan_reference_unresolved`，Plan Package 同步投影。
+2. **Claude Code 项目回复语言设置**（来源提案 `sync-claude-response-language`，已归档；功能规格 §2.89）：`init` / `adopt` / `sync` 按项目 `locale` 往 `.claude/settings.json` 写入顶层 `language`。
+
+两项都只有装进全局 CLI 才对用户生效：仓内源码修好以后，用户运行的仍是全局 `openlogos`。
+
+授权来源：用户 2026-10-09 裁定（本提案决策 C01：「原提案现在收尾把，新提案把部署写清楚」），发布形态沿用 0.15.17 / 0.15.18 的本机全局安装（`npm install -g <tarball>`）。本方案**不含** `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`。merge、verify、部署执行、smoke、archive 仍按项目执行门；`--auto` 下由本次 deliver 门 `gate_auto_passed=true` 放行部署执行。
+
+**不改写其他仓库**，包括 runlogos。runlogos 的项目 `.claude/settings.json` 要在用户另行授权后，由用户（或经用户明确授权的 AI）在 runlogos 项目根执行新全局 CLI 的 `openlogos sync` 才会写入 `language`；本方案不代为执行，部署记录中只写出该提醒。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS；`sync-claude-response-language` 的规格与代码已入库（提交 `f356c2a`、`5fafadc`）。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本。计划时（2026-10-09）为 `0.15.18`，候选为下一 patch `0.15.19`。若实施前已有其他提案升版，候选改为「当时版本的下一 patch」、回滚版本改为「当时版本」，并在部署记录写明实际值。本节版本号是计划值，不是钉死值。
+3. **冻结当前本机全局**：记录 `command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`。计划时实测为 `/opt/homebrew/bin/openlogos`、`0.15.18`。实际值在部署前重新读取，不在测试或脚本中硬编码主机路径。
+4. **先有回滚制品，再动版本号**：计划时 `cli/rollback/` 最新只有 `0.15.17`，**尚无 `0.15.18`**。回滚制品必须能恢复**本次发布前实际装在全局的内容**，而不只是同一个版本号——计划时仓内源码版本号同为 `0.15.18`，但已包含 `sync-claude-response-language` 的 `language` 写入，本提案实现后还会包含新 L5，而全局安装的 `0.15.18` 两者都没有。因此：
+   1. **来源**：只从当前全局安装目录冻结，即在 `$(npm prefix -g)/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，产出 `cli/rollback/miniidealab-openlogos-0.15.18.tgz`。**禁止**从当前工作树打包，也禁止仅凭 `package.json` 版本号相同就认定可用。全局安装目录不可用时，只能改用与该安装包逐字节一致的已有固定制品或已发布提交；无法证明一致即停止部署，不另找来源。
+   2. **内容身份**：解包后逐文件计算 SHA-256，与全局安装目录中同名文件比对，`dist/` 下全部文件必须一致；另确认包内 `dist/commands/init.js` 不含 `mergeClaudeLanguageSetting`，`dist/lib/proposal-lifecycle.js` 不含 `evaluateDeploymentPlanCoverage`。
+   3. **旧行为验证**：在一次性隔离 prefix 中试装该制品：`--version` 为 `0.15.18`；`openlogos init --locale zh --ai-tool claude-code` 生成的 `.claude/settings.json` **不含** `language`；对「L5 缺部署方案」夹具（见下文隔离矩阵）运行 `openlogos change-lint` 结果为 exit 0。
+   4. **记录**：来源安装路径（或固定制品路径 / 提交号）、制品字节数与 SHA-256、上述内容比对结果与两条旧行为证据，写入部署记录。第 1～3 项任一不满足即判发布前检查失败，不得进入升版。
+5. **冻结本仓托管态**：记录本仓 `.claude/settings.json`（已入库；计划时只有顶层 `hooks`，无 `language`）与 `.claude/settings.local.json`（未入库）的 SHA-256，以及 `.claude/openlogos/bin/` 下托管脚本的 SHA-256。这些是回滚后的比对基准。
+
+### 0.15.19 版本与制品身份
+
+**经升版脚本一次完成**（通则第 4 条）：执行 `node cli/scripts/bump-version.mjs 0.15.19`，由脚本一次更新 `cli/package.json` 与 lockfile 根包、全部随包 plugin manifest（以脚本 `VERSION_CARRIERS` 清单为准）、`cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION`（→ `0.15.19`）与 `LOCAL_RELEASE_ROLLBACK_VERSION`（→ `0.15.18`），并调用既有生成器重算 `cli/asset-manifest.json`。
+
+本次 asset-manifest 预期变化只能由生成器写出：
+
+| 资产 | 变化 |
+|---|---|
+| `dist/i18n.js` | hash 变化（新增 `init.claudeLanguageCustom` 中英文提示；若 L5 新文案进入 i18n，同样体现在此） |
+| payload `version` 与 `payloadHash` | 随升版重算 |
+
+**禁止手改** `asset-manifest.json` 与派生 hash。任一身份载体残留旧版本即判失败（`UT-S19-46`）；manifest 自洽由 `UT-S19-49` 守。
+
+在 `CHANGELOG.md` 既有位置补充 `0.15.19` 发布说明，不改既有条目：
+
+- Added：`init` / `adopt` / `sync` 按项目 `locale` 往 `.claude/settings.json` 写入 `language`（`zh` → `chinese`、`en` → `english`）；托管值随 locale 跟随，自定义值保留并提示，损坏的 JSON 原样保留。
+- Added：change-lint L5 对声明需要部署的提案检查部署方案覆盖（`deployment_plan_missing` / `deployment_plan_reference_unresolved`），Plan Package 同步投影。
+- Fixed：顶层不是 JSON 对象的 `.claude/settings.json` 在 hooks 合并时不再被改写。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm test`，必须全绿（通则第 6 条），范围包括 UT-S08-79～UT-S08-83、ST-S08-42～ST-S08-43、UT-S35-216～UT-S35-224、ST-S35-38～ST-S35-39 与 `UT-S19-46` / `UT-S19-49`；`npm run build` 通过。
+2. 执行真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256，并在部署记录中标为本次**唯一候选制品**。之后的隔离验证、全局安装与回滚演练都只用这个文件，不再重新打包。
+3. 解包核对，证明制品带有本次两项行为，而不只是版本号变化：
+   - CLI entry、`--version` 为候选版本，包内 asset-manifest 自洽；
+   - 包内 `dist/commands/init.js` 导出 `mergeClaudeLanguageSetting` 与 `CLAUDE_LANGUAGE_BY_LOCALE`；
+   - 包内 `dist/lib/proposal-lifecycle.js` 导出 `evaluateDeploymentPlanCoverage`；
+   - 包内 `dist/i18n.js` 含 `init.claudeLanguageCustom` 的中英文文案。
+
+### 隔离 Prefix 行为矩阵
+
+用 `mktemp -d` 建一次性 npm prefix，安装固定 tarball，从新 shell 或绝对入口执行。全部项目态都在一次性临时目录内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**，也不读写用户级 `~/.claude/settings.json`。
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| L5 缺部署方案 | 临时 launched 项目中按 S35「L5 部署方案覆盖判定」构造需要部署提案（无部署方案任务、无 delta、无依据）：候选 `openlogos change-lint --format json` exit 2，`violations` 含 `deployment_plan_missing` |
+| L5 delta 覆盖 | 同一提案在 `[delta]` 追加 `deltas/prd/3-technical-plan/3-deployment/` 任务：exit 0 |
+| L5 引用覆盖 | 改为在部署影响段写一行「部署方案依据：<临时部署方案中唯一的版本章节标题>」：exit 0；改成不存在的标题：exit 2，`violations` 含 `deployment_plan_reference_unresolved` |
+| L5 不适用回归 | 「是否需要部署：否」且无 `[deploy]` 的提案：exit 0，L5 行与 `0.15.18` 回滚制品在同一夹具上的输出逐字一致 |
+| `language` 新建 | 候选 `openlogos init --locale zh --ai-tool claude-code`：`.claude/settings.json` 含 `"language": "chinese"`；`--locale en` 的另一项目得到 `"english"` |
+| `language` 存量 sync | 用冻结时已通过内容身份与旧行为验证的 `0.15.18` 回滚制品，在另一隔离 prefix 中 init 的 zh 项目（无 `language`），另加用户自有 hook 条目与 `permissions` 键：候选 `openlogos sync` 后含 `"language": "chinese"`，其它字段的值与用户条目顺序不变；连续第二次 sync `.claude/settings.json` 字节不变 |
+| `language` 边界 | 预置 `"language": "japanese"`：sync 后保持不变，stdout 恰有一行自定义值提示；把 locale 改为 en 后托管值 `"chinese"` 更新为 `"english"`；非法 JSON 的 `.claude/settings.json` 字节不变；预置的 `.claude/settings.local.json` 字节不变 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径，`--version` 逐字一致 |
+| 回滚演练 | 在隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.15.18.tgz` 回装（SHA-256 与冻结记录一致），`--version` 回到 `0.15.18`；「L5 缺部署方案」夹具在回滚版本上 exit 0（对照：证明差异确由候选引入）；「`language` 存量 sync」夹具用回滚版本再 sync 一次，退出码 0，`language` 键保留不动（旧版不认识也不删除该键，属预期） |
+
+### 本机全局部署
+
+隔离矩阵与回滚演练通过后，按以下顺序执行：
+
+1. 用**同一** tarball 执行 `npm install -g <tarball>` 覆盖本机全局，在新 shell 中复核 entry realpath、`--version`、package.json、asset-manifest 全部同源于候选版本。
+2. 写部署记录 `logos/resources/verify/deployment-report.md`，内容包括：部署身份（版本、tarball 路径与 SHA-256、入口 realpath）；回滚入口（`cli/rollback/miniidealab-openlogos-0.15.18.tgz` 的路径与 SHA-256）；冻结的本仓托管态 SHA-256；源码回归证据（`npm test`）与安装态证据（隔离矩阵与全局复核），两者分开写。
+3. 在本仓项目根用新全局 CLI 执行 `openlogos sync`，然后读回核对：`.claude/settings.json` 含 `"language": "chinese"`，`hooks` 的值与冻结时相同；`.claude/settings.local.json` 字节不变。读回结果与 `.claude/settings.json` 的 diff（只新增 `language` 一行）追加到部署记录；该文件已入库，变更随本提案后续提交入库。
+4. 在本仓对本提案运行新全局 CLI 的 `openlogos change-lint --slug deploy-plan-gate-release-0-15-19`：本提案 `[delta]` 含部署方案任务，L5 应通过、exit 0。结果写入部署记录，作为新判定在真实项目上的自检。
+5. 部署记录末尾写明 runlogos 提醒：「runlogos 项目需由用户授权后在其项目根执行 `openlogos sync`，才会写入 `language`」。随后经 `openlogos deploy-done` 受控落标，再按流程进入 smoke（SMOKE-core-223～SMOKE-core-225）。
+
+### 本仓切换风险与应对
+
+| 风险 | 影响与应对 |
+|---|---|
+| 当前会话语言设置变化 | 本仓 sync 写入 `"language": "chinese"`，与本仓 `locale: zh` 一致；Claude Code 可能在下一次会话才读取。只影响回复语言，不影响任何流程判定，无需特别处置 |
+| 本仓其它未归档提案在新 L5 下变红 | 计划时 `logos/changes/` 下除本提案外只有 `archive/`，无其它进行中提案；如实施时出现新的进行中提案且声明需要部署，按 fix_hint 补部署方案任务或「部署方案依据」，不回退本次部署 |
+| sync 改写其它托管资产 | 沿用既有 sync 规则；本次随包资产只有 `dist/i18n.js` 与版本号变化，托管 bin 预期不变。读回时比对 `.claude/openlogos/bin/` 下 SHA-256 与冻结值，不一致写入部署记录并说明来源 |
+
+### 失败处置与回滚边界
+
+1. 发布前检查、构建、隔离矩阵或回滚演练任一失败：不安装全局、不 sync 本仓、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即可回滚隔离环境。
+2. 已全局安装、本仓尚未 sync 时发现问题：用 `cli/rollback/miniidealab-openlogos-0.15.18.tgz` 执行 `npm install -g` 回装，新 shell 复核 `--version` 为 `0.15.18`。
+3. 本仓已 sync 后发现问题：先按第 2 条回装全局；再在本仓用旧版 CLI 执行 `openlogos sync` 恢复托管资产；`.claude/settings.json` 中的 `language` 旧版不会删除，如需还原，用冻结时的 SHA-256 比对后以 `git checkout -- .claude/settings.json` 恢复。回滚后读回 `.claude/settings.json` 与托管脚本的 SHA-256，与冻结值一致即完成。
+4. 本次无数据迁移；`logos.config.json` 无新增字段，无需回退。
+5. 回滚不以手改托管资产或 asset-manifest 作为修复手段，也不以放宽 L5 判定「让矩阵变绿」。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`；push 仍是 archive 之后的人类确认点。
+- 不改写其他仓库（包括 runlogos）的任何文件，不在其项目根运行任何命令。
+- 不改写用户级 `~/.claude/settings.json` 与本仓 `.claude/settings.local.json`。
+- 不在部署步骤中修改 `logos/logos.config.json`。
+
+### 追溯
+
+- 功能规格：§2.89「Claude Code 项目回复语言设置托管」、§2.90「change-lint L5 部署方案覆盖」。
+- CLI 交互设计：§2.42「change-lint L5 部署方案覆盖违规体验」。
+- 场景：S08「S08 sync 合并 Claude Code 项目回复语言设置时序」、S35「L5 部署方案覆盖判定」、S19 发布与安装验证。
+- 测试：UT-S08-79～UT-S08-83、ST-S08-42～ST-S08-43、UT-S35-216～UT-S35-224、ST-S35-38～ST-S35-39、`UT-S19-46`、`UT-S19-49`；安装态 smoke：SMOKE-core-223～SMOKE-core-225。
+- 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
+- 来源提案：deploy-plan-gate-release-0-15-19（决策 C01、C02、C03）；sync-claude-response-language（已归档，决策 C01～C03）。

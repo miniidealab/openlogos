@@ -973,7 +973,7 @@ effectiveBaselineSeedState(root, moduleId, explicit) → { state, legacy }
 | L2 | 需代码的提案有 `## [code]` 标题（空段占位合法） | `isCodeRequiredForProposal` × section 在场判定 | 恒生效 |
 | L3 | 分阶段测试证据模型 | 共享结构化 test-id evaluator | 恒生效（仅 code_required 提案） |
 | L4 | `.md` delta 含 ADDED/MODIFIED/REMOVED 段标记且脱模板骨架 | 共享 `validateMarkdownDelta` | 仅对已存在 delta 文件 |
-| L5 | 部署决策一致性（proposal × tasks `[deploy]` 互证） | `resolveProposalDeploymentDecision` conflict 判定 | 恒生效 |
+| L5 | 部署决策一致性（proposal × tasks `[deploy]` 互证）+ 部署方案覆盖（声明需要部署的提案须更新部署方案或引用已合并章节，§2.90） | `resolveProposalDeploymentDecision` conflict 判定 + `evaluateDeploymentPlanCoverage` | 恒生效 |
 | L6 | delta 路径合法性（正交双结论） | 共享 delta 分类器（lint 读 `lintValidity`） | 仅对已存在 delta 文件 |
 | L7 | GUI 项目 ui_impact 声明结构合法 + `ui_impact:true` 逐页对账。**强度分级（§2.83）**：缺段（`ui_declaration_missing`）为**警告** + 派生 `ui_impact:false` 安全默认；段在场但损坏（`ui_declaration_unparsable`）与 `ui_impact` 非布尔（`ui_impact_not_boolean`）仍 fail-closed 违规 | `evaluateUiPrototype` 纯 evaluator；模块经 proposal-context resolver 解析，`product_type ∈ {web,desktop,mobile}` 激活 | 仅 GUI 项目 |
 
@@ -4636,3 +4636,104 @@ en：
 - 场景：S08「S08 sync 合并 Claude Code 项目回复语言设置时序」；init / adopt / launch 经同一部署链路生效。
 - 关联规格：§2.62（Claude hook 注册形态与 sync 托管 guard 资产）、§2.87（guard 受保护判定）。
 - 代码（以合并后规格为准）：`cli/src/commands/init.ts`（`deployClaudeCodePlugin` / `deployClaudeGuardAssets` 链路、i18n 提示文案）。
+
+## 2.90 change-lint L5 部署方案覆盖
+
+### 2.90.0 问题：部署方案缺失到部署节点才暴露
+
+L5 原先只核对「proposal 部署声明 × tasks `[deploy]` 段在场」。提案 `sync-claude-response-language` 声明「是否需要部署：是」、`[deploy]` 段非空，但 `[delta]` 里没有更新部署方案的任务，已合并部署方案 `core-01-deployment-plan.md` 也没有对应发布章节。L5 照常通过，规格、代码、验收一路走完，直到 RunLogos run `drv-mv0catr7-71m7` 的 deploy 节点，部署 Agent 才因「部署方案未声明版本、制品、隔离验证与回滚步骤」三次拒绝执行。此时规格已合并，OpenLogos 没有重开已合并提案的入口，只能收尾归档、另立发布提案。
+
+部署方案写清楚和需求写清楚是同等的提案义务：需要部署的提案，必须在提案阶段说明按哪份部署方案部署。本节把这条义务变成 L5 的机器判定，在提案阶段由写提案的一方补齐。
+
+### 2.90.1 适用范围
+
+- 判定只在 `resolveProposalDeploymentDecision` 返回 `deployment_decision_source = 'proposal'` 且 `deployment_required = true` 时进行，即 `proposal.md`「部署影响」段明确写了「是否需要部署：是」。
+- 其余情形一律判为「不适用」，不产生新违规：proposal 声明无需部署；部署影响段缺失或无法解析，按 `tasks` / `module-default` / `legacy-fallback` 回退得出的决策（历史提案）。
+- 「部署决策冲突」（`deployment_decision_conflict`）的判定、message 与 fix_hint 逐字不变（决策 C03）。两项判定互相独立：声明需要部署但缺 `[deploy]` 段的提案，冲突与覆盖问题各报一条。
+- 部署影响段字段解析沿用既有中文字段解析器（`- <字段>：<值>`，全角或半角冒号）。它只识别中文字段名，因此 en 模板提案的部署决策本就走回退路径，本判定同样不适用，与既有部署决策解析的覆盖面一致。
+
+### 2.90.2 两种满足方式
+
+满足以下任一即为「已覆盖」（决策 C02）：
+
+**(a) 本提案更新部署方案（delta 覆盖）**，满足其一即可：
+
+1. `tasks.md` 的 `[delta]` section 中至少有一条 checkbox 条目（勾选与否不限），文字含路径片段 `deltas/prd/3-technical-plan/3-deployment/`。其它 section（如 `[deploy]`）出现该路径不算。
+2. 提案目录 `deltas/prd/3-technical-plan/3-deployment/` 下至少有一个被共享 delta 分类器判为 `mergeable` 的文件。判定复用 L6 的同一分类器：越界、symlink 逃逸、非常规文件等不算。
+
+**(b) 引用已合并部署章节（引用覆盖）**：`proposal.md`「部署影响」段写一行
+
+```markdown
+- 部署方案依据：<已合并部署方案中的章节标题>
+```
+
+解析与定位规则：
+
+- 值先去首尾空白；若整体被一对 `「」` 或一对反引号包裹，去掉这一层包裹。值为空视为未声明。
+- 在 `logos/resources/prd/3-technical-plan/3-deployment/` 下全部 `.md` 文件（不递归子目录）中查找标题，标题收集复用既有共享标题扫描（与 delta 锚解析同一实现，代码围栏内的 `#` 行不算标题）。标题文字（去掉 `#` 前缀与首尾空白）与值**逐字相等**才算命中，大小写与全半角都不做归一。
+- 恰好命中 1 处 → 引用已解析；命中 0 处 → `not_found`；命中 2 处及以上 → `ambiguous`（例如「回滚策略」这类在多个版本章节中重复的小标题，应改写为所在版本章节的标题）；字段在部署影响段出现 2 次及以上 → `duplicate`。
+- 部署方案目录不存在时，任何引用都按 `not_found` 处理，不报操作错误。
+
+### 2.90.3 结论与违规码
+
+`evaluateDeploymentPlanCoverage` 的结论（`status`）只有以下取值：
+
+| status | 条件 | L5 违规 |
+|---|---|---|
+| `not_applicable` | 不满足 §2.90.1 的适用条件 | 无 |
+| `covered_by_delta` | 满足 (a)（此时不再解析「部署方案依据」，该行可写任意说明文字） | 无 |
+| `covered_by_reference` | 不满足 (a)，声明了「部署方案依据」且引用已解析 | 无 |
+| `reference_unresolved` | 不满足 (a)，声明了「部署方案依据」但未解析（`not_found` / `ambiguous` / `duplicate`） | `deployment_plan_reference_unresolved` |
+| `missing` | 不满足 (a)，且未声明「部署方案依据」 | `deployment_plan_missing` |
+
+判定顺序固定为先 (a) 后 (b)：本提案自己更新了部署方案时，部署方案以本提案的 delta 为准，「部署方案依据」一行只是给人看的说明，不参与判定（本提案 `deploy-plan-gate-release-0-15-19` 即此形态）。只有不更新部署方案、靠引用沿用已合并章节时，引用才必须逐字解析。两个违规码互斥，同一提案最多报其中一个。
+
+L5 推送的违规（`path` 均为提案的 `proposal.md` 相对路径）：
+
+| code | message | fix_hint |
+|---|---|---|
+| `deployment_plan_missing` | `proposal.md 声明需要部署，但本提案既未更新部署方案，也未说明沿用哪一节已合并部署方案` | `二选一：在 tasks.md 的 [delta] 增加一条部署方案任务，如「- [ ] 产出 delta 文件到 \`deltas/prd/3-technical-plan/3-deployment/<模块>-01-deployment-plan.md\` — 新增本次发布章节」；或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」` |
+| `deployment_plan_reference_unresolved` | `部署方案依据「<值>」<原因>`；原因为 `在 logos/resources/prd/3-technical-plan/3-deployment/ 中找不到同名标题`、`命中 <N> 处标题，无法确定指哪一节` 或 `在部署影响段出现了 <N> 次` | `把「部署方案依据」改为已合并部署方案中逐字存在且唯一的章节标题（通常是版本发布章节的 ## 标题），只写一行；或删除该行，改为在 [delta] 增加部署方案任务` |
+
+人读输出中，L5 通过时的 ✓ 行文字保持不变；违规时按既有三段式（缺什么 / 在哪补 / 补成什么样）展开，示例见 CLI 交互设计 §2.42。
+
+### 2.90.4 实现单点与消费方
+
+- **唯一判定**：`cli/src/lib/proposal-lifecycle.ts` 新增 `evaluateDeploymentPlanCoverage(root, proposalDir, decision)`，与既有部署决策解析放在一处，返回 `{ status, reference, reference_problem, hits }`。它只读，不写任何文件；部署方案文件不可读时按既有口径报操作错误 `artifact_unreadable`（exit 1）。
+- **L5（change-lint）**：调用上述判定并按 §2.90.3 推送违规，不自行解析 tasks、delta 或部署方案。
+- **Plan Package（status / next / flow）**：`evaluatePlanPackage` 对**非历史提案**（无 `PLAN_APPROVED` / `SPEC_MERGED` / `MERGED` / `VERIFY_PASS` 等历史 marker）消费同一判定，与既有 `tasks_deployment_conflict` 的投影方式同构：
+  - `missing` → tasks 问题 `tasks_deployment_plan_missing`：`path` 为 `tasks.md`，`section_id: delta`，`expected: 部署方案 delta 任务或部署方案依据`，message 为「需要部署的提案没有说明按哪份部署方案部署。」，fix_hint 为「在 [delta] 增加部署方案任务，或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」。」；
+  - `reference_unresolved` → proposal 问题 `proposal_deployment_plan_reference_unresolved`：`path` 为 `proposal.md`，`section_id: deployment`，`actual` 为引用值，message 与 fix_hint 同 §2.90.3 中 `deployment_plan_reference_unresolved` 的对应文字。
+  
+  因此对非历史提案，change-lint 的 L5 违规与 `plan_package.ready=false` 同时成立，`next` 不会在 lint 失败时给出 `ready-to-delta`（评审 F1）。
+- **change-lint 中的聚合口径（delta 评审 F5）**：change-lint 的 L0 沿用既有规则，把 Plan Package 的全部 issues 逐条推为 L0 违规，**不对上述两个新问题码做过滤或去重**。因此非历史提案的同一缺口在 change-lint 中出现两条违规：L0（Plan Package 投影）与 L5（覆盖判定），`violations.length` 与人读末行「N 项违规」都按两条计。这与既有部署冲突同时报 L0 `tasks_deployment_conflict` 与 L5 `deployment_decision_conflict` 的方式相同。两条都来自同一个 `evaluateDeploymentPlanCoverage` 结论，不存在一条报、一条不报的情形；历史提案只有 L5 一条（见下条）。
+- **历史提案**：Plan Package 按既有规则对历史提案不追加问题、不回退前沿（S35 EX-10.1）；change-lint 的 L5 恒生效，仍会报出。这与既有 `deployment_decision_conflict` 的投影边界一致。已越过 plan 的进行中提案可在部署影响段补「部署方案依据」或（merge 前）补部署方案 delta 来消除违规。
+
+### 2.90.5 零回归边界
+
+- 无需部署的提案、按回退路径得出部署决策的历史提案：L5 输出与退出码逐字不变。
+- `deployment_decision_conflict` 的判定条件、message 与 fix_hint 逐字不变。
+- L5 通过时人读 ✓ 行文字与 JSON 中的既有字段不变；只在违规时新增两个违规码与两个 Plan Package 问题码（均为新增，不改既有码语义）。
+- 其它检查项（L1～L4、L6～L8 及 warning）不受影响；change-lint 只读红线不变（运行前后项目根零写入）。
+
+### 2.90.6 已知边界（如实记录）
+
+- **生产方规则尚未同步（评审 F2）**：`skills/change-writer/SKILL.md` 与 `spec/tasks-spec.md` 仍写着「需要部署时必须产出部署方案 delta」，没有提到 (b)。本提案不改这两处，(b) 目前只由 L5 的 fix_hint 告知写提案的一方。两条路径对 L5 都合格；生产方规则与根规范的口径统一，以及提案模板是否增加「部署方案依据」字段，另立提案处理。在此之前，评审方不应以「未产出部署方案 delta」为由否决一个引用已解析的提案。
+- **只判「有没有说明」，不判「说明得对不对」**：引用的章节是否真的适用于本次发布，仍由提案评审与部署执行方确认。
+- **不检测 `[deploy]` 任务中的跨仓库操作**：通用判定困难、误报风险高；部署方案通则写明「不改写其他仓库」，由评审把关。
+- **en 模板提案不覆盖**：原因见 §2.90.1 最后一条。
+
+### 2.90.7 验收
+
+- UT-S35-216～UT-S35-224（缺方案报违规、delta 任务与 delta 文件两种覆盖、引用解析与三种未解析形态、不适用与冲突回归、Plan Package 投影一致、历史提案边界、只读与操作错误、判定单点）。
+- ST-S35-38～ST-S35-39（以 `sync-claude-response-language` 原始提案为夹具的事故端到端、CLI 人读与 JSON 输出及 next 投影）。
+- 安装态：SMOKE-core-224。
+
+### 2.90.8 追溯
+
+- 来源变更：deploy-plan-gate-release-0-15-19（决策 C02、C03；评审 F1、F2）。
+- 事故：RunLogos run `drv-mv0catr7-71m7` deploy 节点三次拒绝；来源提案 `sync-claude-response-language`。
+- 相关节：§2.30（change-lint 检查项矩阵与输出契约）、§2.43（Plan Package 统一完成合同）。
+- CLI 交互设计：§2.42「change-lint L5 部署方案覆盖违规体验」。
+- 场景：S35「L5 部署方案覆盖判定」。
+- 代码（以合并后规格为准）：`cli/src/lib/proposal-lifecycle.ts`、`cli/src/lib/change-lint.ts`、`cli/src/lib/plan-package.ts`。

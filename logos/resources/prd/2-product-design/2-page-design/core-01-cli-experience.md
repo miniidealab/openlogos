@@ -2116,3 +2116,91 @@ Error [merge_transaction_contract_unsupported]: 存量事务合同与当前 CLI 
 ### 2.41.4 非目标
 
 - 本节是 CLI 文本体验，不改变事务动作语义与人类确认点；路径、ID、命令、协议字段、版本和错误码不翻译。
+
+## 2.42 change-lint L5 部署方案覆盖违规体验
+
+> 来源变更：deploy-plan-gate-release-0-15-19。判定规则见功能规格 §2.90；本节只描述用户与 Agent 看到的输出。输出形态完全沿用 §2.25 与现行实现：检查项行与标签、`✗ L<n> [<code>]` 加「缺什么 / 在哪补 / 补成什么样」三行、`PASS（通过数/总数）` / `FAIL（通过数/总数，N 项违规）` 末行、退出码、JSON 信封及违规对象字段集合（`code` / `path` / `message` / `fix_hint`，不含层号）都不变。本次只新增违规码与 Plan Package 问题码。
+>
+> 下列示例取非 GUI 项目，检查项为 L0～L6、L8、L9 共 9 项。
+
+### 2.42.1 缺部署方案（exit 2）
+
+提案声明「是否需要部署：是」，`tasks.md` 的 `[delta]` 没有部署方案任务、`deltas/prd/3-technical-plan/3-deployment/` 下没有 delta 文件，「部署影响」段也没有「部署方案依据」。同一缺口同时以两条违规出现：L0 是 Plan Package 问题 `tasks_deployment_plan_missing`，L5 是 `deployment_plan_missing`。这与既有部署冲突同时报 L0 `tasks_deployment_conflict` 和 L5 `deployment_decision_conflict` 的聚合方式一致（功能规格 §2.90.4）：
+
+```
+$ openlogos change-lint
+change-lint: sync-claude-response-language
+  ✗ L0 [tasks_deployment_plan_missing]
+      缺什么：需要部署的提案没有说明按哪份部署方案部署。
+      在哪补：logos/changes/sync-claude-response-language/tasks.md
+      补成什么样：在 [delta] 增加部署方案任务，或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」。
+  ✓ L1 tasks.md 结构可解析
+  ✓ L2 [code] 标题在场（空段占位合法）
+  ✓ L3 测试证据在场（分阶段证据模型）
+  ✓ L4 delta 段标记与脱模板（4 个 .md delta）
+  ✗ L5 [deployment_plan_missing]
+      缺什么：proposal.md 声明需要部署，但本提案既未更新部署方案，也未说明沿用哪一节已合并部署方案
+      在哪补：logos/changes/sync-claude-response-language/proposal.md
+      补成什么样：二选一：在 tasks.md 的 [delta] 增加一条部署方案任务，如「- [ ] 产出 delta 文件到 `deltas/prd/3-technical-plan/3-deployment/<模块>-01-deployment-plan.md` — 新增本次发布章节」；或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」
+  ✓ L6 delta 路径合法（4 mergeable / 0 invalid）
+  ✓ L8 条目守恒（ID 隐式删除拦截）
+  ✓ L9 下游阻塞理由预检（ProposalBlockReason 全覆盖）
+FAIL（7/9，2 项违规）
+```
+
+已越过 plan 的历史提案（有 `PLAN_APPROVED` 等 marker）不追加 L0 问题，只出现 L5 一条，末行为 `FAIL（8/9，1 项违规）`。
+
+### 2.42.2 引用无法解析（exit 2）
+
+本提案不更新部署方案，靠「部署方案依据」沿用已合并章节，但写的标题找不到、命中多处，或这一行写了两次。下例引用的「本机全局部署」是各版本发布章节下都有的同名小节，无法唯一定位（`<N>` 为实际命中数）。L0 问题码为 `proposal_deployment_plan_reference_unresolved`，L5 违规码为 `deployment_plan_reference_unresolved`：
+
+```
+  ✗ L5 [deployment_plan_reference_unresolved]
+      缺什么：部署方案依据「本机全局部署」命中 <N> 处标题，无法确定指哪一节
+      在哪补：logos/changes/<slug>/proposal.md
+      补成什么样：把「部署方案依据」改为已合并部署方案中逐字存在且唯一的章节标题（通常是版本发布章节的 ## 标题），只写一行；或删除该行，改为在 [delta] 增加部署方案任务
+```
+
+找不到时，「缺什么」为 `部署方案依据「<值>」在 logos/resources/prd/3-technical-plan/3-deployment/ 中找不到同名标题`；写了两次时为 `部署方案依据「<值>」在部署影响段出现了 2 次`。
+
+### 2.42.3 通过（exit 0）
+
+满足任一覆盖方式时，L0 与 L5 行与改动前完全相同：
+
+```
+  ✓ L0 Plan Package 完成合同
+  ...
+  ✓ L5 部署决策一致
+```
+
+L5 行不说明是靠 delta 还是引用通过。本提案自己更新了部署方案（`[delta]` 有部署方案任务或已有部署方案 delta）时，「部署方案依据」一行只作说明，写什么都不影响判定。
+
+### 2.42.4 JSON 输出
+
+`--format json` 沿用 §2.25 的通用信封与现行公开投影：违规对象只含 `code`、`path`、`message`、`fix_hint`，层号是呈现层内部字段，不出现在公开 JSON 中。缺部署方案时 `data.violations[]` 含以下两项（其余字段略）：
+
+```json
+[
+  {
+    "code": "tasks_deployment_plan_missing",
+    "path": "logos/changes/sync-claude-response-language/tasks.md",
+    "message": "需要部署的提案没有说明按哪份部署方案部署。",
+    "fix_hint": "在 [delta] 增加部署方案任务，或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」。"
+  },
+  {
+    "code": "deployment_plan_missing",
+    "path": "logos/changes/sync-claude-response-language/proposal.md",
+    "message": "proposal.md 声明需要部署，但本提案既未更新部署方案，也未说明沿用哪一节已合并部署方案",
+    "fix_hint": "二选一：在 tasks.md 的 [delta] 增加一条部署方案任务……；或在 proposal.md「部署影响」写「- 部署方案依据：<已合并部署方案中的章节标题>」"
+  }
+]
+```
+
+同一提案在 `status --format json` / `next --format json` 中：非历史提案 `plan_package.ready=false`，`plan_package.issues[]` 含 `tasks_deployment_plan_missing` 或 `proposal_deployment_plan_reference_unresolved`，`next` 不给出 `ready-to-delta`。Agent 据此回到 proposal / tasks 补齐，不需要等到部署节点。
+
+### 2.42.5 非目标
+
+- 不改变任何检查项标签（包括 L5 的「部署决策一致」）、`deployment_decision_conflict` 的输出、违规对象字段集合与其它检查项的输出。
+- 不对 L0 与 L5 的同源问题去重；两条分别是 Plan Package 投影与 L5 判定，与既有部署冲突的聚合方式一致。
+- 不在输出中判断引用的章节是否真的适用于本次发布，这由评审与部署执行方确认。
+- 不提示 `[deploy]` 任务中的跨仓库操作。

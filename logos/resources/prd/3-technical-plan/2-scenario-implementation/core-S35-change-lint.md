@@ -1254,3 +1254,136 @@ sequenceDiagram
 - 功能规格：§2.85（判据、新码、三条边界、零回归边界）、§2.84.5（锁边界扩展）、§2.84.4（后态行号口径）、§2.84.1（同源原则）。
 - 场景关联：本文档「S35 行级形态判据前移与预检-门一致性锁」（同族前一半）、「S35 ADDED 锚合成后唯一性的 L4 前移」（同一合成路径与阶段边界先例）、「S35 违规层归属单点与人类可读输出的逐条可归因」。
 - 测试：UT-S35-196～UT-S35-201、ST-S35-36。
+
+## S35 L5 部署方案覆盖判定
+
+### 场景目标
+
+需要部署的提案，在提案阶段就必须说明按哪份部署方案部署：要么本提案更新部署方案（`[delta]` 有部署方案任务，或已有部署方案 delta 文件），要么在「部署影响」段用「部署方案依据」引用一节已合并部署方案。change-lint 的 L5 在既有「部署决策一致性」之外判定这一项，缺失时报 `deployment_plan_missing`、引用无法解析时报 `deployment_plan_reference_unresolved`；status / next / flow 通过 Plan Package 消费同一判定，与 lint 结论收敛。由此把「部署方案缺失」从部署节点前移到提案阶段，由写提案的一方补齐（决策 C02、C03；功能规格 §2.90）。
+
+### 参与者
+
+| 别名 | 组件 | 说明 |
+|------|------|------|
+| W | change-writer / 用户 | 写 proposal / tasks，按违规修复 |
+| L | change-lint | 命令入口、L5 违规与退出码 |
+| D | `resolveProposalDeploymentDecision` | 既有部署决策解析（proposal × tasks `[deploy]`） |
+| C | `evaluateDeploymentPlanCoverage` | 部署方案覆盖的唯一判定 |
+| K | 共享 delta 分类器 / 共享标题扫描 | 判定 delta 文件可合并性、收集部署方案标题 |
+| P | Plan Package（status / next / flow） | 消费同一判定的投影方 |
+| FS | 提案目录与 `logos/resources/prd/3-technical-plan/3-deployment/` | 只读 |
+
+### 前置条件
+
+- 项目已初始化，提案目录含 `proposal.md` 与 `tasks.md`，模块可解析（S35 既有前置）。
+- 「部署影响」段按 canonical scaffold 填写；本判定只在其中写明「是否需要部署：是」时生效。
+
+### 成功后置条件
+
+- 需要部署的提案已覆盖（delta 或已解析引用）：L5 通过，✓ 行文字与改动前相同；Plan Package 不因本判定追加问题。
+- 需要部署但未覆盖：L5 报且只报一个新违规码，exit 2；非历史提案的 `plan_package.ready=false`，next 不给出 `ready-to-delta`。
+- 不适用的提案（无需部署、回退路径）：输出与退出码逐字不变。
+- 运行前后项目根零写入。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant W as change-writer 或用户
+    participant L as change-lint
+    participant D as 部署决策解析
+    participant C as 部署方案覆盖判定
+    participant K as 共享分类器与标题扫描
+    participant FS as 提案目录与部署方案目录
+    participant P as Plan Package
+
+    W->>L: Step 1: openlogos change-lint
+    L->>D: Step 2: 解析部署决策（proposal 部署影响 × tasks [deploy]）
+    D-->>L: Step 3: deployment_required、source、conflict
+    opt conflict
+        L-->>W: Step 4: L5 deployment_decision_conflict（既有，逐字不变）
+    end
+    L->>C: Step 5: 求部署方案覆盖
+    alt source 非 proposal 或无需部署
+        C-->>L: Step 6a: not_applicable
+    else 需要部署
+        C->>FS: Step 6: 读 tasks.md [delta] 条目与 deltas/prd/3-technical-plan/3-deployment/
+        C->>K: Step 7: 分类 delta 文件
+        alt 有部署方案任务或 mergeable 部署方案 delta
+            C-->>L: Step 8a: covered_by_delta
+        else 无 delta 覆盖
+            C->>FS: Step 8: 读部署影响段「部署方案依据」
+            alt 未声明
+                C-->>L: Step 9a: missing
+            else 已声明
+                C->>K: Step 9: 扫描已合并部署方案标题并逐字比对
+                C-->>L: Step 10: covered_by_reference 或 reference_unresolved
+            end
+        end
+    end
+    alt missing 或 reference_unresolved
+        L-->>W: Step 11: L5 违规与三段式 fix_hint，exit 2
+        W->>W: Step 12: 在 [delta] 补部署方案任务，或写可解析的部署方案依据，回到 Step 1
+    else 覆盖或不适用
+        L-->>W: Step 11: L5 通过
+    end
+    P->>C: Step 13: status / next / flow 求 Plan Package 时调用同一判定（非历史提案）
+    C-->>P: Step 14: 同一结论，投影为 plan_package issue
+```
+
+### 步骤说明
+
+1. **W** 运行 `openlogos change-lint`（或 driver 在提案评审与 plan 门之前运行）。
+2. **L** 调用既有部署决策解析，读取 `proposal.md`「部署影响」与 `tasks.md` `[deploy]`。
+3. **D** 返回 `deployment_required`、`deployment_decision_source` 与冲突结论。
+4. 冲突时按既有规则报 `deployment_decision_conflict`，message 与 fix_hint 逐字不变；冲突不妨碍下一步覆盖判定，两者独立。
+5. **L** 调用唯一判定 `evaluateDeploymentPlanCoverage`，不自行解析 tasks、delta 或部署方案。
+6. 只有 `source = proposal` 且 `deployment_required = true` 时继续判定，否则 Step 6a 返回 `not_applicable`。判定先看 (a)：读 `tasks.md` `[delta]` section 的 checkbox 条目，文字含 `deltas/prd/3-technical-plan/3-deployment/` 即命中；再列出提案目录 `deltas/prd/3-technical-plan/3-deployment/` 下的文件。
+7. 文件经共享 delta 分类器判定，只有 `mergeable` 的才算（越界、symlink 逃逸、非常规文件不算）。
+8. (a) 命中即 Step 8a 返回 `covered_by_delta`，此时不解析「部署方案依据」。否则读取部署影响段的「部署方案依据」字段（`- 部署方案依据：<值>`），值去首尾空白与一层 `「」` 或反引号包裹。
+9. 未声明或值为空 → Step 9a `missing`。已声明 → 经共享标题扫描收集 `logos/resources/prd/3-technical-plan/3-deployment/*.md`（不递归）中围栏外的全部标题，与值逐字比对。
+10. 恰好 1 处命中 → `covered_by_reference`；0 处 → `reference_unresolved`（`not_found`）；≥2 处 → `reference_unresolved`（`ambiguous`）；字段写了 ≥2 次 → `reference_unresolved`（`duplicate`）。部署方案目录不存在按 `not_found`。
+11. `missing` 报 `deployment_plan_missing`，`reference_unresolved` 报 `deployment_plan_reference_unresolved`（两者互斥），按既有三段式输出并 exit 2；其它情况 L5 通过，✓ 行文字（`部署决策一致`）不变。非历史提案的同一缺口另以 Plan Package 问题出现在 L0（Step 14），change-lint 不去重，违规按两条计。
+12. **W** 按 fix_hint 二选一补齐：在 `[delta]` 增加部署方案任务（随后产出部署方案 delta），或写一行能唯一定位的「部署方案依据」，然后重跑。
+13. status / next / flow 求 Plan Package 时，对非历史提案调用同一判定。
+14. `missing` 投影为 `tasks_deployment_plan_missing`，`reference_unresolved` 投影为 `proposal_deployment_plan_reference_unresolved`，`plan_package.ready=false`；与 L5 结论一致。
+
+### 异常与边界
+
+#### EX-L5D-1：声明需要部署但缺 `[deploy]` 段
+
+- **触发条件**：部署影响「是否需要部署：是」，`tasks.md` 无 `[deploy]` section，也无部署方案覆盖。
+- **期望响应**：L5 同时报 `deployment_decision_conflict`（既有）与 `deployment_plan_missing`，两条独立；非历史提案的 L0 另有对应的 Plan Package 问题 `tasks_deployment_conflict` 与 `tasks_deployment_plan_missing`，共四条（L0 不去重，功能规格 §2.90.4）。
+- **副作用**：无写入。
+
+#### EX-L5D-2：已越过 plan 的历史提案
+
+- **触发条件**：提案目录已有 `PLAN_APPROVED` / `SPEC_MERGED` / `MERGED` / `VERIFY_PASS`，声明需要部署但未覆盖。
+- **期望响应**：change-lint 的 L5 恒生效，照样报违规；Plan Package 按 S35 EX-10.1 不追加问题、不回退前沿。可在部署影响段补「部署方案依据」消除违规（merge 前也可补部署方案 delta）。
+- **副作用**：不回退、不改写历史 marker。
+
+#### EX-L5D-3：部署方案文件不可读
+
+- **触发条件**：`logos/resources/prd/3-technical-plan/3-deployment/` 下某个 `.md` 存在但读取失败。
+- **期望响应**：按 S35 操作错误口径报 `artifact_unreadable`，exit 1，不降级为 `not_found`。
+- **副作用**：后续检查停止，项目零写入。
+
+#### EX-L5D-4：部署方案目录不存在
+
+- **触发条件**：项目没有 `3-deployment/` 目录，提案靠「部署方案依据」引用。
+- **期望响应**：`reference_unresolved`（`not_found`），exit 2；不报操作错误。
+- **副作用**：无写入。
+
+#### EX-L5D-5：引用落在代码围栏内
+
+- **触发条件**：「部署方案依据」的值只在部署方案的代码围栏中以 `#` 开头的行出现。
+- **期望响应**：围栏内的行不算标题，按 `not_found` 处理。
+- **副作用**：无写入。
+
+### 追溯
+
+- 来源变更：deploy-plan-gate-release-0-15-19（决策 C02、C03；评审 F1）；事故：RunLogos run `drv-mv0catr7-71m7` deploy 节点三次拒绝，来源提案 `sync-claude-response-language`。
+- 功能规格：§2.90「change-lint L5 部署方案覆盖」、§2.30 检查项矩阵、§2.43 Plan Package 统一完成合同。
+- CLI 交互设计：§2.42「change-lint L5 部署方案覆盖违规体验」。
+- 关联时序：本文件主时序（Plan Package 与 change-lint 收敛）、EX-10.1（历史提案不回退前沿）。
+- 测试：UT-S35-216～UT-S35-224、ST-S35-38～ST-S35-39；安装态 SMOKE-core-224。

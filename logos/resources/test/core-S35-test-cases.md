@@ -660,3 +660,49 @@ UT-S35-09 反例（同一小节，逐项判定）：
 - UT-S35-208 中同字节副本的行号断言须对夹具已知的精确 delta 内行号比对。
 - UT-S35-215 的合成器调用计数须对真实 `composeOpenLogosMarkdown` 做计数包装取得，不得以断言阶段标记被读取替代。
 - ST-S35-37 步骤①②③⑥必须跑**真实 `openlogos merge`** 进程并断言退出码、出口形态与 `SPEC_MERGED` 在场性，不得以库内函数调用替代。
+
+## S35 L5 部署方案覆盖判定测试
+
+> 覆盖功能规格 §2.90（适用范围、两种满足方式、结论与违规码、实现单点与 Plan Package 投影、零回归边界）、CLI 交互设计 §2.42、场景 S35「L5 部署方案覆盖判定」全部步骤与 EX-L5D-1～EX-L5D-5；来源变更 deploy-plan-gate-release-0-15-19（决策 C02、C03；评审 F1）。
+>
+> **夹具口径**：一律在一次性隔离 launched 项目内构造提案目录与 `logos/resources/prd/3-technical-plan/3-deployment/`，不读本仓 `logos/changes/` 与本仓部署方案。「需要部署提案」指 `proposal.md`「部署影响」段六个字段齐全、`是否需要部署：是`、`tasks.md` 有非空 `[deploy]` section 的提案；其余字段与章节按 canonical scaffold 填写为可通过 L0～L4、L6、L7 的最小形态，使 L5 成为唯一变量。部署方案夹具 `core-01-deployment-plan.md` 含唯一的 `## OpenLogos 9.9.1 发布方案（夹具）`、两个版本章节下各一个 `### 本机全局部署`，以及一个代码围栏内的 `## 围栏内标题`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S35-216 | 缺部署方案报 `deployment_plan_missing` | 需要部署提案；`[delta]` 只有测试规格任务；无 `deltas/prd/3-technical-plan/3-deployment/` 目录；部署影响段无「部署方案依据」 | 运行 `runChangeLint`（JSON） | `pass=false`；`violations` 恰有两条：一条 `check_layer=5`、`code=deployment_plan_missing`，另一条 `check_layer=0`、`code=tasks_deployment_plan_missing`（同一缺口的 Plan Package 投影，L0 不去重）；L5 那条`path` 为提案 `proposal.md` 的项目相对路径，message 与 fix_hint 与功能规格 §2.90.3 逐字一致（fix_hint 同时给出 `[delta]` 任务示例与「部署方案依据」示例）；无 `deployment_plan_reference_unresolved`；退出码 2 |
+| UT-S35-217 | (a) `[delta]` 部署方案任务即覆盖 | 同 UT-S35-216，四个变体：① `[delta]` 增加未勾选条目，文字含 `deltas/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`；② 同一条目已勾选；③ 该路径只出现在 `[deploy]` 条目中；④ 该路径只出现在 `[delta]` 下的非 checkbox 说明文字中 | 对四个变体分别运行 `runChangeLint` 与 `evaluateDeploymentPlanCoverage` | ①② `status=covered_by_delta`，L5 无新违规；③④ `status=missing`，报 `deployment_plan_missing` |
+| UT-S35-218 | (a) 已有部署方案 delta 文件即覆盖，且复用 L6 分类器 | 同 UT-S35-216，`[delta]` 无部署方案任务，四个变体：① `deltas/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md` 为合规普通文件；② 该目录只有一个指向项目根外的 symlink；③ 该目录为空；④ 该目录下只有一个子目录 | 分别求 `evaluateDeploymentPlanCoverage`，并对同一文件求共享 delta 分类器结论 | ① `covered_by_delta`；②③④ `missing`；每个变体中「是否算覆盖」与分类器对该文件的 `mergeable` 结论一致（②的 symlink 分类为非 mergeable） |
+| UT-S35-219 | (b) 引用逐字唯一命中即覆盖 | 同 UT-S35-216，部署影响段增加「部署方案依据」，四个变体：① `OpenLogos 9.9.1 发布方案（夹具）`；② `「OpenLogos 9.9.1 发布方案（夹具）」`；③ 用反引号包裹同一标题；④ 值前后带空格 | 分别求 `evaluateDeploymentPlanCoverage` 与 `runChangeLint` | 四个变体均 `status=covered_by_reference`，`reference` 为去包裹后的标题，`hits=1`；L5 无新违规，退出码 0 |
+| UT-S35-220 | (b) 引用无法解析的三种形态与围栏、目录边界 | 同 UT-S35-216，「部署方案依据」五个变体：① `OpenLogos 9.9.2 发布方案`（不存在）；② `本机全局部署`（命中 2 处）；③ 同一字段写两行，值都是可唯一命中的标题；④ `围栏内标题`（只在代码围栏中出现）；⑤ 删除整个 `3-deployment/` 目录后引用 ① 的唯一标题 | 分别运行 `runChangeLint` 与 `evaluateDeploymentPlanCoverage` | 五个变体均 `status=reference_unresolved`，L5 恰报一条 `deployment_plan_reference_unresolved`、无 `deployment_plan_missing`；`reference_problem` 依次为 `not_found`、`ambiguous`（message 含「命中 2 处标题」）、`duplicate`（message 含「出现了 2 次」）、`not_found`、`not_found`；⑤ 不报操作错误、退出码 2 |
+| UT-S35-221 | 先 (a) 后 (b)：delta 覆盖时不解析引用 | 同 UT-S35-217 变体 ①（`[delta]` 有部署方案任务），部署影响段另写「部署方案依据：本提案 `[delta]` 新增「OpenLogos 0.15.19 发布方案」章节」（说明文字，不是标题） | 运行 `evaluateDeploymentPlanCoverage` 与 `runChangeLint`，并统计判定期间对部署方案目录的读取次数 | `status=covered_by_delta`；无 `deployment_plan_reference_unresolved`；部署方案目录读取 0 次（不解析引用）。对照臂：删除部署方案任务后同一提案 `status=reference_unresolved`（`not_found`） |
+| UT-S35-222 | 不适用与冲突判定回归 | 五个夹具：① `是否需要部署：否`、无 `[deploy]`；② 部署影响段缺失、`tasks.md` 有非空 `[deploy]`（回退 source=tasks）；③ 部署影响段缺失、无 `[deploy]`（legacy-fallback）；④ `是否需要部署：否` 但有 `[deploy]`（既有冲突）；⑤ `是否需要部署：是`、无 `[deploy]`、无部署方案覆盖（EX-L5D-1） | 运行 `runChangeLint`，并与本变更前实现在同一夹具上的输出逐字比对（①～④） | ①②③ `status=not_applicable`，L5 输出、`violations` 与退出码与本变更前逐字一致；④ 只报 `deployment_decision_conflict`，message 与 fix_hint 逐字不变；⑤ L5 同时报 `deployment_decision_conflict` 与 `deployment_plan_missing` 两条，L0 另有 `tasks_deployment_conflict` 与 `tasks_deployment_plan_missing` 两条；全部夹具 L5 通过时人读行恰为 `✓ L5 部署决策一致`，与本变更前相同 |
+| UT-S35-223 | Plan Package 投影与 change-lint 收敛，历史提案边界 | 四个夹具：① UT-S35-216 形态（非历史）；② UT-S35-220 变体 ① 形态（非历史）；③ UT-S35-219 变体 ① 形态（覆盖）；④ 夹具 ① 加 `PLAN_APPROVED` marker（历史） | 对每个夹具求 `evaluatePlanPackage`、`runChangeLint`，并以真实入口求 `next --format json` 的 `proposal_step` | ① `plan_package.ready=false`，`tasks.issues` 含 `tasks_deployment_plan_missing`（`section_id=delta`），next 不为 `ready-to-delta`；② `proposal.issues` 含 `proposal_deployment_plan_reference_unresolved`（`section_id=deployment`，`actual` 为引用值），`ready=false`；③ 不追加任何部署方案问题，`ready` 与去掉本判定时相同；④ Plan Package 不追加问题、前沿不回退，change-lint 仍报 `deployment_plan_missing`（EX-L5D-2）。①②③ 中「lint 是否有新违规」与「Plan Package 是否有对应问题」两两一致 |
+| UT-S35-224 | 判定单点、只读与操作错误 | UT-S35-216～UT-S35-223 的全部夹具；另备部署方案目录中一个 `.md` 设为不可读（EX-L5D-3） | ① 对每个夹具分别求 change-lint L5 结论与 Plan Package 结论，并把 `evaluateDeploymentPlanCoverage` 替换为恒返回 `covered_by_delta` 的注入实现后重求；② 每次运行前后取项目根字节快照；③ 对不可读夹具运行 `runChangeLint` | ① 注入后两个消费方对 UT-S35-216 夹具同时转为无部署方案问题，证明两者都只经同一判定，不各自解析；② 快照前后相等（零写入）；③ 操作错误 `artifact_unreadable`、exit 1，不降级为 `not_found` |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S35-38 | 事故端到端：`sync-claude-response-language` 原始提案在提案阶段被拦下 | 真实 CLI，一次性隔离 launched 项目，复刻事故提案在部署节点被拒前的计划产物（仓库内固定夹具，由本提案的实现切片按原始文本落盘）：`proposal.md`「部署影响」为「是否需要部署：是」「影响环境：npm 发布 / 本机全局安装」「是否需要 smoke：否」，无「部署方案依据」；`tasks.md` 的 `[delta]` 为 4 条（`core-01-requirements.md`、`core-01-feature-specs.md`、`core-S08-sync.md`、`core-S08-test-cases.md`），`[deploy]` 为 1 条「随下一个 openlogos 版本发布并本机全局安装……」；夹具部署方案只含其它版本章节。① `openlogos change-lint --slug <slug> --format json` exit 2，`violations` 含 `deployment_plan_missing`。本用例在未实现新判定的代码上必红（旧 L5 对该夹具通过、exit 0）；② 在 `[delta]` 追加部署方案任务后重跑 exit 0；③ 撤回 ②，改为在部署影响段写夹具部署方案中唯一存在的版本章节标题作为「部署方案依据」，重跑 exit 0；④ 再把依据改为不存在的标题，重跑 exit 2、`violations` 含 `deployment_plan_reference_unresolved`；⑤ 每次运行前后项目根字节快照相等 |
+| ST-S35-39 | 真实 CLI 人读输出、JSON 信封与 next 投影（沿用既有输出合同） | 同 ST-S35-38 步骤 ① 的夹具（非历史、非 GUI 项目）。① 默认人读输出依次含 `✗ L0 [tasks_deployment_plan_missing]` 与 `✗ L5 [deployment_plan_missing]`，每条其下依次为「缺什么：」「在哪补：」「补成什么样：」三行，L5 那条的三行分别为功能规格 §2.90.3 的 message、提案 `proposal.md` 相对路径与 fix_hint；末行为 `FAIL（7/9，2 项违规）`；② `--format json` 的 stdout 为 success envelope，`data.pass=false`，`data.violations` 恰两项，`code` 分别为 `tasks_deployment_plan_missing` 与 `deployment_plan_missing`，每个违规对象的键集合恰为 `code`、`path`、`message`、`fix_hint`，**不含** `check_layer`（与 UT-S35-193 的公开字段合同一致）；③ 真实 `openlogos next --format json` 的 `proposal_step` 不为 `ready-to-delta`，`status --format json` 中 `plan_package.ready=false` 且 issues 含 `tasks_deployment_plan_missing`；④ 按 ST-S35-38 ② 修复后，人读输出中 L0 行恰为 `✓ L0 Plan Package 完成合同`、L5 行恰为 `✓ L5 部署决策一致`，末行为 `PASS（9/9）`，next 进入 `ready-to-delta`；⑤ 对照：同一修复后夹具在本变更前实现上的人读输出与 ④ 逐字相同（以仓库内固定快照比对，快照取自本变更前实现的实际输出） |
+
+### 追溯与覆盖
+
+- 缺方案报违规与 fix_hint：UT-S35-216、ST-S35-38 ①、ST-S35-39 ①②。
+- (a) delta 覆盖（任务 / 文件，复用 L6 分类器）：UT-S35-217、UT-S35-218、ST-S35-38 ②。
+- (b) 引用覆盖与三种未解析形态、围栏与目录边界（EX-L5D-4、EX-L5D-5）：UT-S35-219、UT-S35-220、ST-S35-38 ③④。
+- 先 (a) 后 (b)：UT-S35-221。
+- 不适用与冲突回归（C03、EX-L5D-1）：UT-S35-222。
+- Plan Package 投影收敛与历史提案边界（评审 F1、EX-L5D-2）：UT-S35-223、ST-S35-39 ③④。
+- 判定单点、只读、操作错误（EX-L5D-3）：UT-S35-224、ST-S35-38 ⑤。
+- 安装态：SMOKE-core-224。
+- 功能规格：§2.90；CLI 交互设计：§2.42；场景：S35「L5 部署方案覆盖判定」；来源变更：deploy-plan-gate-release-0-15-19。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S35"`；失败不得写 pass。
+- UT 一律调用真实实现（`runChangeLint`、`evaluateDeploymentPlanCoverage`、`evaluatePlanPackage`），不得以复述期望的表驱动替代；UT-S35-222 的「与本变更前逐字一致」以仓库内固定的预期输出快照比对，快照内容取自本变更前实现对同一夹具的实际输出。
+- UT-S35-224 的注入式反证必须对真实消费方做最小注入（替换判定函数），证明结论随之变化；不得以断言「判定函数被调用」替代结论比对。
+- ST-S35-38、ST-S35-39 必须以 `cli/dist` 真实 CLI 进程执行并断言退出码与 stdout；夹具文件提交入库，断言中不硬编码主机路径与墙上时钟。
