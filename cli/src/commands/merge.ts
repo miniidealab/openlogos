@@ -6,7 +6,7 @@ import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
-import { mergeDirect, type MergeDirectHooks } from '../lib/merge-direct.js';
+import { markAmendContext, mergeDirect, type MergeDirectHooks } from '../lib/merge-direct.js';
 import { describeMergeFailure, extractMergeFailureDiagnostics } from '../lib/merge-failure-report.js';
 import { checkMergedProposal, executeAmend } from '../lib/merge-amend.js';
 import { makeEnvelope, makeErrorEnvelope, type OutputFormat } from '../lib/json-output.js';
@@ -223,10 +223,15 @@ export interface RunDirectMergeDeps {
   json?: boolean;
 }
 
-/** `--format json` 的失败出口：错误 envelope 恒为 stderr 最后一行（宿主据此取稳定错误码）。 */
-function emitJsonFailure(error: unknown, writeErr: (line: string) => void): void {
+/**
+ * `--format json` 的失败出口：错误 envelope 恒为 stderr 最后一行（宿主据此取稳定错误码）。
+ * 增量修正路径（§2.84.3「增量修正路径的状态声明」）把状态声明与核对指引并入 message，宿主无需解析人读 stderr；
+ * 首次合并的 envelope 逐字不变。
+ */
+function emitJsonFailure(error: unknown, writeErr: (line: string) => void, statement: string[] = []): void {
   const diag = extractMergeFailureDiagnostics(error);
-  writeErr(JSON.stringify(makeErrorEnvelope('merge', diag.code, diag.message)));
+  const message = statement.length > 0 ? [diag.message, ...statement.map(line => line.trim())].join('\n') : diag.message;
+  writeErr(JSON.stringify(makeErrorEnvelope('merge', diag.code, message)));
 }
 
 /**
@@ -262,8 +267,11 @@ function runMergedProposal(
   root: string, changePath: string, slug: string, locale: Locale, json: boolean, out: (line: string) => void,
 ): void {
   const fail = (error: unknown): never => {
-    for (const line of describeMergeFailure(changePath, slug, error).lines) console.error(line);
-    if (json) emitJsonFailure(error, line => console.error(line));
+    // 修正路径的一切失败都带「本次是增量修正」事实，报告改用修正专用文案（§2.84.3）。
+    markAmendContext(error);
+    const report = describeMergeFailure(changePath, slug, error);
+    for (const line of report.lines) console.error(line);
+    if (json) emitJsonFailure(error, line => console.error(line), report.statement);
     return process.exit(1);
   };
   let check: ReturnType<typeof checkMergedProposal>;
@@ -287,7 +295,7 @@ function runMergedProposal(
   }
 
   // 准入 = change-lint 完整结论；修正待应用时 lint 自动进入以合并基线为 before 的上下文（§2.69.4.4）。
-  admitOrExit(root, changePath, slug, json);
+  admitOrExit(root, changePath, slug, json, true);
 
   let result: ReturnType<typeof executeAmend>;
   try {
@@ -311,7 +319,11 @@ function runMergedProposal(
 }
 
 /** §2.51.2：merge 的准入判定**等于** change-lint 的完整结论（首次合并与增量修正共用）。 */
-function admitOrExit(root: string, changePath: string, slug: string, json: boolean): void {
+function admitOrExit(root: string, changePath: string, slug: string, json: boolean, amend = false): void {
+  // 增量修正路径的准入拒绝属档 A：规格与 SPEC_MERGED 保持本次修正前的状态（§2.84.3 增量修正路径的状态声明）。
+  const untouched = amend
+    ? '  未进入修正写入，已合并的规格与 SPEC_MERGED 保持本次修正前的状态。'
+    : '  未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。';
   // 此前这里有两处缩水：① 用 hasBaselineClosureSignal 决定要不要预检——没有 baseline_closure
   // 声明或 [MODIFY]/[CREATE] 标记的提案整道预检不做；② 即使做了，也只保留
   // BASELINE_CLOSURE_VIOLATION_CODES 共 9 个码，L10 的 authority 违规与 L0～L7 全部被丢弃。
@@ -323,7 +335,7 @@ function admitOrExit(root: string, changePath: string, slug: string, json: boole
   if (!preflight.ok) {
     const prefix = preflight.errorCode === 'module_unresolved' ? '模块归属无法解析；' : '';
     console.error(`Error: ${prefix}merge 前合规预检无法完成（${preflight.errorCode}）：${preflight.message}`);
-    console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+    console.error(amend ? `  拒绝 merge：${untouched.trim()}` : '  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
     if (json) console.error(JSON.stringify(makeErrorEnvelope('merge', preflight.errorCode, preflight.message)));
     process.exit(1);
   }
@@ -334,7 +346,7 @@ function admitOrExit(root: string, changePath: string, slug: string, json: boole
       console.error(`  - [${v.code}] ${v.path}：${v.message}`);
       if (v.fix_hint) console.error(`      修复：${v.fix_hint}`);
     }
-    console.error('  未生成 MERGE_PROMPT、未写 SPEC_MERGED、counter 或 index。');
+    console.error(untouched);
     console.error('  自查命令：openlogos change-lint --slug ' + slug + '（其结论与本准入判定同源）');
     if (json) {
       console.error(JSON.stringify(makeErrorEnvelope('merge', 'MERGE_ADMISSION_REJECTED',

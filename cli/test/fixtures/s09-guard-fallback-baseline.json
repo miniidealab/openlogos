@@ -1,5 +1,5 @@
 {
-  "description": "修改前分发源 plugin/bin/guard-check 对非 git 回落输入集的实测退出码（guard-versioned-content-scope 回落回归锚）",
+  "description": "修改前分发源 plugin/bin/guard-check 对非 git 回落输入集的实测退出码（guard-versioned-content-scope 回落回归锚）；verify-smoke-guard-fixes-0-15-20（决策 C04、EX-9F.32）起复合命令逐段判定：「cd <根> && sed -i … src/a.js」由放行改为阻断（N-repo / N-nogit 两条），其余输入的实测退出码不变",
   "generated_from": "plugin/bin/guard-check@7d855ca",
   "cases": [
     {
@@ -60,7 +60,7 @@
     {
       "fixture": "N-repo",
       "key": "Bash cd root && sed -i",
-      "exit": 0
+      "exit": 2
     },
     {
       "fixture": "N-repo",
@@ -150,7 +150,7 @@
     {
       "fixture": "N-nogit",
       "key": "Bash cd root && sed -i",
-      "exit": 0
+      "exit": 2
     },
     {
       "fixture": "N-nogit",

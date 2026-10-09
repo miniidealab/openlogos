@@ -91,6 +91,37 @@ export function readMergeFailureStage(error: unknown): MergeFailureStage | null 
     ? stage : null;
 }
 
+/**
+ * 「本次是增量修正」的结构化事实（verify-smoke-guard-fixes-0-15-20，决策 C05；功能规格 §2.84.3「增量修正路径的
+ * 状态声明」）：修正路径在抛出前附于错误对象，失败报告据此改用修正专用文案。不从 message 文本或磁盘 marker 反推。
+ */
+export const MERGE_AMEND_CONTEXT = Symbol.for('openlogos.mergeAmendContext');
+
+/**
+ * 标记修正路径的错误并订正首次合并措辞：去掉 message 末尾的「回滚点：git checkout logos/resources/」——
+ * 修正发生在合并后规格通常已提交之后，照做会丢掉未提交的规格改动；「已回滚至合并前字节」订正为「修正前字节」。
+ */
+export function markAmendContext<T>(error: T): T {
+  if (error === null || typeof error !== 'object') return error;
+  const record = error as Record<symbol, unknown>;
+  if (record[MERGE_AMEND_CONTEXT] === true) return error;
+  try {
+    Object.defineProperty(error, MERGE_AMEND_CONTEXT, { value: true, enumerable: false, configurable: true });
+  } catch { return error; }
+  if (error instanceof Error) {
+    const hint = `（${ROLLBACK_HINT}）`;
+    let message = error.message;
+    if (message.endsWith(hint)) message = message.slice(0, -hint.length);
+    message = message.split(hint).join('').replace('主文档已回滚至合并前字节', '主文档已回滚至修正前字节');
+    try { error.message = message; } catch { /* 冻结对象：保留原文 */ }
+  }
+  return error;
+}
+
+export function isAmendContext(error: unknown): boolean {
+  return error !== null && typeof error === 'object' && (error as Record<symbol, unknown>)[MERGE_AMEND_CONTEXT] === true;
+}
+
 export class MergeDirectError extends Error {
   readonly stage: MergeFailureStage;
 

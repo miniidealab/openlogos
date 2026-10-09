@@ -119,18 +119,21 @@ describe('guard-check Bash 写命令路径提取与逐路径管辖判定 — S09
       }
       // ② 白名单目标放行
       expect(runGuard(root, 'Bash', { command: `touch ${join(root, 'logos', 'changes', 'x', 'a.md')}` }, root).exitCode).toBe(0);
-      // ③ 解析不出保守臂：变量展开/命令替换/反引号/管道/复合形态 → 维持无条件拦截（即使路径看似全外）
+      // ③ 解析不出保守臂：变量展开/命令替换/反引号/管道到不可提取写入 → 维持无条件拦截（即使路径看似全外）
       const conservativeCommands = [
         'rm $SCRATCH_DIR/file.txt',
         `rm $(cat ${join(outside, 'list.txt')})`,
         'rm `cat list.txt`',
-        `rm ${join(outside, 'a.txt')} && rm ${join(outside, 'b.txt')}`,
         `rm ${join(outside, 'a.txt')} | tee log.txt`,
         'rm -rf',
       ];
       for (const command of conservativeCommands) {
         expect(runGuard(root, 'Bash', { command }, root).exitCode, command).toBe(2);
       }
+      // ③' 复合形态逐段判定（verify-smoke-guard-fixes-0-15-20，决策 C04）：每段走同一路径提取与逐路径管辖判定——
+      // 全部目标在项目外 → 放行；任一段目标在项目内 → 阻断
+      expect(runGuard(root, 'Bash', { command: `rm ${join(outside, 'a.txt')} && rm ${join(outside, 'b.txt')}` }, root).exitCode).toBe(0);
+      expect(runGuard(root, 'Bash', { command: `rm ${join(outside, 'a.txt')} && rm ${join(root, 'src', 'index.ts')}` }, root).exitCode).toBe(2);
       // ④ BASH_SAFE_PATTERNS 优先级不变（含 git push）
       expect(runGuard(root, 'Bash', { command: 'git push origin master' }, root).exitCode).toBe(0);
       expect(runGuard(root, 'Bash', { command: 'git status' }, root).exitCode).toBe(0);
@@ -173,9 +176,11 @@ describe('guard-check Bash 写命令路径提取与逐路径管辖判定 — S09
       expect(parsed.reason).toContain('变更管理拦截');
       expect(blocked.stderr).toContain('变更管理拦截');
       expect(blocked.stderr).toContain('openlogos change');
-      // ③ 解析不出（$VAR 与 && 复合）→ exit 2
+      // ③ 解析不出（$VAR）→ exit 2；&& 复合逐段判定（verify-smoke-guard-fixes-0-15-20，决策 C04）：
+      // 全部目标在项目外放行，任一段目标在项目内阻断
       expect(runGuard(root, 'Bash', { command: 'rm -rf $TMP_SCRATCH/x' }, root).exitCode).toBe(2);
-      expect(runGuard(root, 'Bash', { command: `rm ${join(fakeHome, 'a')} && rm ${join(fakeHome, 'b')}` }, root).exitCode).toBe(2);
+      expect(runGuard(root, 'Bash', { command: `rm ${join(fakeHome, 'a')} && rm ${join(fakeHome, 'b')}` }, root).exitCode).toBe(0);
+      expect(runGuard(root, 'Bash', { command: `rm ${join(fakeHome, 'a')} && rm ${join(root, 'src', 'app.ts')}` }, root).exitCode).toBe(2);
       // ④ 创建提案（guard 文件在场）后重放② → exit 0 放行
       writeFileSync(join(root, 'logos', '.openlogos-guard'), JSON.stringify({ activeChange: 'fix-z', module: 'core' }));
       expect(runGuard(root, 'Bash', { command: `rm ${join(root, 'src', 'app.ts')}` }, root).exitCode).toBe(0);

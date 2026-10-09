@@ -1403,9 +1403,9 @@ shell_git_verdict() {
   exit 0
 }
 
-# bash_fallback_verdict <command> — 非 git 回落（或整体采集失败）时 Bash 沿用修改前的判定顺序：
-# 安全白名单先判 → 写入模式 → 路径提取与逐路径管辖判定 → 解析不出即阻断
-bash_fallback_verdict() {
+# _bash_single_verdict <command> — 单条命令（或拆段后只有一段）的回落判定，沿用修改前的判定顺序逐字不变：
+# 安全白名单先判 → 写入模式 → 路径提取与逐路径管辖判定 → 解析不出即阻断。复合命令见 bash_fallback_verdict。
+_bash_single_verdict() {
   local COMMAND_TRIMMED="$1" pattern NEEDS_BLOCK WRITE_TARGET ANY_PATH ALL_ALLOWED FIRST_WORD ARG
 
   # Check safe patterns first
@@ -1474,6 +1474,337 @@ bash_fallback_verdict() {
   fi
 
   # Default: allow (unknown commands pass through)
+  exit 0
+}
+
+# ── 非 git 回落的复合命令逐段判定（verify-smoke-guard-fixes-0-15-20，决策 C04；
+#    根规范 spec/pretooluse-guard.md「Bash 非 git 回落的复合命令逐段判定（规范性）」）──
+# 修改前回落路径拿**整条命令**匹配安全白名单前缀、写入模式也只锚定开头，`ls && rm -rf src`、
+# `true; rm src/x`、`cd <根> && sed -i … src/x` 均被放行。现按顶层分隔符拆段逐段判定，并维护有效工作目录。
+
+_bash_fallback_block() {
+  block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n检测到写入操作：$(echo "$1" | head -c 120)$(fallback_engine_hint)\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再执行此命令。"
+}
+
+_bash_safe_hit() {
+  local p
+  for p in "${BASH_SAFE_PATTERNS[@]}"; do
+    if echo "$1" | grep -qE "$p" 2>/dev/null; then return 0; fi
+  done
+  return 1
+}
+
+_bash_write_hit() {
+  local p
+  for p in "${BASH_WRITE_PATTERNS[@]}"; do
+    if echo "$1" | grep -qE "$p" 2>/dev/null; then return 0; fi
+  done
+  return 1
+}
+
+# 写入模式出现在命令任意位置（含命令替换 / 反引号 / 进程替换 / heredoc 内部）：锚定开头的模式放宽为
+# 「行首或空白、反引号、括号、分隔符之后」——命令替换内部的命令不解析，只要出现写入即 fail-closed。
+_bash_write_anywhere() {
+  local p re
+  for p in "${BASH_WRITE_PATTERNS[@]}"; do
+    if [ "${p:0:1}" = "^" ]; then re="(^|[[:space:]\`(;&|])${p:1}"; else re="$p"; fi
+    if echo "$1" | grep -qE "$re" 2>/dev/null; then return 0; fi
+  done
+  return 1
+}
+
+# _bash_has_substitution <command> — 引号感知识别会执行的替换结构（review r1 F2）：单引号内与反斜杠转义的字符
+# 是字面量；`$(` 与反引号在双引号内仍会执行；`<(` `>(` `<<` 只在引号外才是结构。超长或引号未闭合时按原文保守识别。
+_bash_has_substitution() {
+  local LC_ALL=C s="$1" n i=0 c next q=""
+  n=${#s}
+  if [ "$n" -gt 16384 ]; then
+    case "$s" in *'$('*|*'`'*|*'<('*|*'>('*|*'<<'*) return 0 ;; esac
+    return 1
+  fi
+  while [ "$i" -lt "$n" ]; do
+    c="${s:$i:1}"; next="${s:$((i + 1)):1}"
+    if [ "$q" = "'" ]; then
+      [ "$c" = "'" ] && q=""
+      i=$((i + 1)); continue
+    fi
+    if [ "$c" = "\\" ]; then i=$((i + 2)); continue; fi
+    if [ "$c" = '`' ]; then return 0; fi
+    if [ "$c" = '$' ] && [ "$next" = '(' ]; then return 0; fi
+    if [ "$q" = '"' ]; then
+      [ "$c" = '"' ] && q=""
+      i=$((i + 1)); continue
+    fi
+    case "$c" in
+      "'"|'"') q="$c" ;;
+      '<'|'>')
+        if [ "$next" = '(' ]; then return 0; fi
+        if [ "$c" = '<' ] && [ "$next" = '<' ]; then return 0; fi ;;
+    esac
+    i=$((i + 1))
+  done
+  if [ -n "$q" ]; then
+    case "$s" in *'$('*|*'`'*|*'<('*|*'>('*|*'<<'*) return 0 ;; esac
+  fi
+  return 1
+}
+
+# _bash_redirect_scan <segment> — 引号感知提取段内引号外的输出重定向（review r1 F1）：置 BRS_TARGETS（目标数组）、
+# BRS_BAD（目标解析不出：空、含变量 / 通配 / 命令替换）与 BRS_REST（去掉重定向后的段文本，供命令形态判定）。
+# `>&N` / `>&-` 是描述符复制而非写文件；`<` 输入重定向不是写入。
+_bash_redirect_scan() {
+  local LC_ALL=C s="$1" n i=0 c next q="" rest="" word wq
+  n=${#s}
+  BRS_TARGETS=(); BRS_BAD=0; BRS_REST=""
+  while [ "$i" -lt "$n" ]; do
+    c="${s:$i:1}"; next="${s:$((i + 1)):1}"
+    if [ -n "$q" ]; then
+      rest="$rest$c"
+      if [ "$q" = "'" ]; then
+        [ "$c" = "'" ] && q=""
+      elif [ "$c" = "\\" ]; then
+        rest="$rest$next"; i=$((i + 2)); continue
+      elif [ "$c" = '"' ]; then
+        q=""
+      fi
+      i=$((i + 1)); continue
+    fi
+    case "$c" in
+      "'"|'"') q="$c"; rest="$rest$c"; i=$((i + 1)); continue ;;
+      "\\") rest="$rest$c$next"; i=$((i + 2)); continue ;;
+      ">") ;;
+      *) rest="$rest$c"; i=$((i + 1)); continue ;;
+    esac
+    # 输出重定向：吃掉紧邻的描述符数字 / &（2> &> 1>>）
+    while [ -n "$rest" ] && case "${rest: -1}" in [0-9]|"&") true ;; *) false ;; esac; do rest="${rest%?}"; done
+    i=$((i + 1))
+    case "${s:$i:1}" in ">"|"|") i=$((i + 1)) ;; esac
+    if [ "${s:$i:1}" = "&" ]; then
+      # 描述符复制：>&2 >&- 不写文件；>&file 等同写文件
+      word="${s:$((i + 1))}"; word="${word%%[!0-9-]*}"
+      if [ -n "$word" ]; then i=$((i + 1 + ${#word})); rest="$rest "; continue; fi
+      i=$((i + 1))
+    fi
+    while [ "${s:$i:1}" = " " ] || [ "${s:$i:1}" = $'\t' ]; do i=$((i + 1)); done
+    word=""; wq=""
+    while [ "$i" -lt "$n" ]; do
+      c="${s:$i:1}"
+      if [ -n "$wq" ]; then
+        if [ "$c" = "$wq" ]; then wq=""; else word="$word$c"; fi
+        i=$((i + 1)); continue
+      fi
+      case "$c" in
+        "'"|'"') wq="$c" ;;
+        " "|$'\t'|";"|"|"|"&"|"<"|">") break ;;
+        *) word="$word$c" ;;
+      esac
+      i=$((i + 1))
+    done
+    case "$word" in
+      ""|*'$'*|*'`'*|*'*'*|*'?'*|*'['*|*'~'*) BRS_BAD=1 ;;
+      *) BRS_TARGETS[${#BRS_TARGETS[@]}]="$word" ;;
+    esac
+    rest="$rest "
+  done
+  BRS_REST="$rest"
+}
+
+# 文件写入信号（review r1 F1）：重定向之外、已识别的文件写入命令与写入 API。命中时安全白名单前缀不构成豁免。
+_bash_file_write_hit() {
+  local t="$1"
+  t="${t#"${t%%[![:space:]]*}"}"
+  echo "$t" | grep -qE '^(rm|cp|mv|mkdir|touch|chmod|chown|tee)( |$)|sed -i|writeFileSync|mkdirSync' 2>/dev/null
+}
+
+# _bash_segment_redirects_allowed <segment> <base> <uncertain> — 复合命令中**每一段**（含 cd / pushd / popd 目录切换段，
+# review r2 F1）的引号外输出重定向目标逐一做管辖判定，0 放行 / 1 阻断（/dev/null 恒非写入）。重定向在该段命令执行前
+# 就已打开目标，故按**该段执行前**的有效目录解析；有效目录不确定时阻断。置 BSEG_REST 为去掉重定向后的段文本。
+_bash_segment_redirects_allowed() {
+  local seg="$1" base="$2" uncertain="$3" t
+  _bash_redirect_scan "$seg"
+  BSEG_REST="${BRS_REST#"${BRS_REST%%[![:space:]]*}"}"; BSEG_REST="${BSEG_REST%"${BSEG_REST##*[![:space:]]}"}"
+  [ "$BRS_BAD" -eq 1 ] && return 1
+  for t in ${BRS_TARGETS[@]+"${BRS_TARGETS[@]}"}; do
+    [ "$t" = "/dev/null" ] && continue
+    [ "$uncertain" -eq 1 ] && return 1
+    path_write_allowed "$(_bash_abs_target "$t" "$base")" || return 1
+  done
+  return 0
+}
+
+# _bash_compound_segment_allowed <rest> <base> <uncertain> — 复合命令中非目录切换段（已去掉重定向）的命令判定
+# （review r1 F1），0 放行 / 1 阻断：① 已识别的文件写入命令 / API 做路径提取判定；② 没有时才凭安全白名单放行
+# （保留 git push 等既有豁免）；③ 其余写入模式（git reset、npm install …）沿用路径判定、解析不出即阻断。
+# 有效目录不确定时，任何需要路径判定的写入一律阻断。
+_bash_compound_segment_allowed() {
+  local t="$1" base="$2" uncertain="$3"
+  if _bash_file_write_hit "$t"; then
+    [ "$uncertain" -eq 1 ] && return 1
+    _bash_segment_write_allowed "$t" "$base"
+    return $?
+  fi
+  _bash_safe_hit "$t" && return 0
+  if _bash_write_hit "$t"; then
+    [ "$uncertain" -eq 1 ] && return 1
+    _bash_segment_write_allowed "$t" "$base"
+    return $?
+  fi
+  return 0
+}
+
+# _bash_split_records <command> — 引号感知的顶层拆段（单 / 双引号字面量内的分隔符不拆；`>&` `&>` 不是后台符）。
+# 输出记录：<段文本>\x1f<其后分隔符：&& || ; NL | & 或空>\x1e。在子 shell 中以 C locale 逐字节扫描。
+_bash_split_records() {
+  local LC_ALL=C s="$1" n i=0 c next cur="" q="" US=$'\x1f' RS=$'\x1e'
+  n=${#s}
+  _emit() { local t="$1"; t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"; printf '%s%s%s%s' "$t" "$US" "$2" "$RS"; }
+  while [ "$i" -lt "$n" ]; do
+    c="${s:$i:1}"; next="${s:$((i + 1)):1}"
+    if [ -n "$q" ]; then
+      cur="$cur$c"
+      if [ "$q" = "'" ]; then
+        [ "$c" = "'" ] && q=""
+      elif [ "$c" = "\\" ]; then
+        cur="$cur$next"; i=$((i + 2)); continue
+      elif [ "$c" = '"' ]; then
+        q=""
+      fi
+      i=$((i + 1)); continue
+    fi
+    case "$c" in
+      "'"|'"') q="$c"; cur="$cur$c" ;;
+      "\\") cur="$cur$c$next"; i=$((i + 2)); continue ;;
+      ";") _emit "$cur" ";"; cur="" ;;
+      $'\n') _emit "$cur" "NL"; cur="" ;;
+      "&")
+        if [ "$next" = "&" ]; then _emit "$cur" "&&"; cur=""; i=$((i + 2)); continue
+        elif [ "${cur: -1}" = ">" ] || [ "${cur: -1}" = "<" ] || [ "$next" = ">" ]; then cur="$cur$c"
+        else _emit "$cur" "&"; cur=""
+        fi ;;
+      "|")
+        if [ "$next" = "|" ]; then _emit "$cur" "||"; cur=""; i=$((i + 2)); continue
+        else _emit "$cur" "|"; cur=""
+        fi ;;
+      *) cur="$cur$c" ;;
+    esac
+    i=$((i + 1))
+  done
+  _emit "$cur" ""
+}
+
+# _bash_dir_change <segment> — 置 BDC_KIND（none / literal / uncertain）与 BDC_ARG。
+# 只有 cd / pushd 后跟**单个**字面量参数（无变量、通配、波浪号、命令替换、选项、引号内空白）才是 literal。
+_bash_dir_change() {
+  local -a words=()
+  local arg
+  BDC_KIND="none"; BDC_ARG=""
+  read -r -a words <<< "$1"
+  case "${words[0]:-}" in
+    cd|pushd) ;;
+    popd) BDC_KIND="uncertain"; return 0 ;;
+    *) return 0 ;;
+  esac
+  if [ "${#words[@]}" -ne 2 ]; then BDC_KIND="uncertain"; return 0; fi
+  arg="${words[1]}"
+  if [ "${#arg}" -ge 2 ] && { { [ "${arg:0:1}" = '"' ] && [ "${arg: -1}" = '"' ]; } || { [ "${arg:0:1}" = "'" ] && [ "${arg: -1}" = "'" ]; }; }; then
+    arg="${arg:1:$((${#arg} - 2))}"
+  fi
+  case "$arg" in
+    ""|-*|*'$'*|*'*'*|*'?'*|*'['*|*'~'*|*'`'*|*'"'*|*"'"*) BDC_KIND="uncertain"; return 0 ;;
+  esac
+  BDC_KIND="literal"; BDC_ARG="$arg"
+}
+
+# _bash_abs_target <path> <base> — base 非空时把相对目标按 base 解析为绝对路径；绝对目标原样。
+_bash_abs_target() {
+  case "$1" in
+    /*|[A-Za-z]:[/\\]*) printf '%s' "$1" ;;
+    *) if [ -n "$2" ]; then printf '%s/%s' "$2" "$1"; else printf '%s' "$1"; fi ;;
+  esac
+}
+
+# _bash_segment_write_allowed <segment> <base> — 命中写入模式的单段：沿用既有路径提取与逐路径管辖判定
+# （重定向目标 / rm cp mv mkdir touch chmod chown 的全量路径实参）。0 = 放行，1 = 阻断；解析不出一律阻断。
+_bash_segment_write_allowed() {
+  local seg="$1" base="$2" target="" arg any=0 first=1
+  if echo "$seg" | grep -qE " > |>> " 2>/dev/null; then
+    target="$(echo "$seg" | sed -E 's/.*[>]{1,2} *([^ ]+).*/\1/' 2>/dev/null || echo "")"
+  fi
+  if [ -n "$target" ]; then
+    path_write_allowed "$(_bash_abs_target "$target" "$base")" && return 0
+    return 1
+  fi
+  if echo "$seg" | grep -qE '^(rm|cp|mv|mkdir|touch|chmod|chown) ' 2>/dev/null \
+    && ! echo "$seg" | grep -qE '[$`|;&<>]' 2>/dev/null; then
+    set -f
+    for arg in $seg; do
+      if [ "$first" -eq 1 ]; then first=0; continue; fi
+      case "$arg" in -*) continue ;; esac
+      arg="${arg#\"}"; arg="${arg%\"}"; arg="${arg#\'}"; arg="${arg%\'}"
+      [ -n "$arg" ] || continue
+      any=1
+      if ! path_write_allowed "$(_bash_abs_target "$arg" "$base")"; then set +f; return 1; fi
+    done
+    set +f
+    [ "$any" -eq 1 ] && return 0
+  fi
+  return 1
+}
+
+# bash_fallback_verdict <command> — 非 git 回落（或整体采集失败）时的 Bash 判定入口。
+bash_fallback_verdict() {
+  local cmd="$1" text sep eff="" uncertain=0 chain=0 i n
+  local -a seg_text=() seg_sep=()
+  # ① 命令替换 / 反引号 / 进程替换 / heredoc：任意位置出现写入模式即按解析不出阻断；否则沿用单条判定。
+  if _bash_has_substitution "$cmd"; then
+    if _bash_write_anywhere "$cmd"; then _bash_fallback_block "$cmd"; fi
+    _bash_single_verdict "$cmd"
+  fi
+  # 超长命令不逐字节扫描：出现写入即保守阻断，否则放行（与单条判定的「未命中模式放行」同向）。
+  if [ "${#cmd}" -gt 16384 ]; then
+    if _bash_write_anywhere "$cmd"; then _bash_fallback_block "$cmd"; fi
+    exit 0
+  fi
+  # ② 引号感知拆段
+  while IFS=$'\x1f' read -r -d $'\x1e' text sep; do
+    if [ -z "$text" ]; then
+      # 空段：把分隔符并入前一段（任何非 && 边界都更保守）
+      if [ "${#seg_text[@]}" -gt 0 ] && [ -n "$sep" ] && [ "$sep" != "&&" ]; then
+        seg_sep[$((${#seg_sep[@]} - 1))]="$sep"
+      fi
+      continue
+    fi
+    seg_text[${#seg_text[@]}]="$text"
+    seg_sep[${#seg_sep[@]}]="$sep"
+  done < <(_bash_split_records "$cmd")
+  n=${#seg_text[@]}
+  # ③ 只有一段：判定结果与修改前逐字一致
+  if [ "$n" -le 1 ]; then _bash_single_verdict "$cmd"; fi
+  # ④ 逐段：维护有效工作目录；每段先判重定向与文件写入，再凭白名单放行（review r1 F1：不设整组白名单早退——
+  #    `^echo ` `^cat ` 等前缀不排除重定向，早退会让写入判定与不确定目录检查不可达）。
+  #    review r2 F1：重定向检查先于目录切换分支、对每一段都执行，并以该段执行前的有效目录为基准；
+  #    目录切换由去掉重定向后的段文本判定，之后才推进或失效有效目录。
+  for ((i = 0; i < n; i++)); do
+    text="${seg_text[$i]}"; sep="${seg_sep[$i]}"
+    _bash_segment_redirects_allowed "$text" "$eff" "$uncertain" || _bash_fallback_block "$cmd"
+    text="$BSEG_REST"
+    _bash_dir_change "$text"
+    if [ "$BDC_KIND" = "literal" ]; then
+      if [ "$uncertain" -eq 0 ]; then
+        case "$BDC_ARG" in
+          /*|[A-Za-z]:[/\\]*) eff="$BDC_ARG" ;;
+          *) eff="${eff:-$(pwd)}/$BDC_ARG" ;;
+        esac
+        chain=1
+      fi
+    elif [ "$BDC_KIND" = "uncertain" ]; then
+      uncertain=1
+    else
+      _bash_compound_segment_allowed "$text" "$eff" "$uncertain" || _bash_fallback_block "$cmd"
+    fi
+    # 有效目录的推进只在其后连续 && 条件链内有效：链被 ; 换行 || | & 结束后基准不唯一
+    if [ "$chain" -eq 1 ] && [ "$sep" != "&&" ]; then uncertain=1; fi
+  done
   exit 0
 }
 

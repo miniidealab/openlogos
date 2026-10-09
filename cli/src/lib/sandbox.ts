@@ -1,7 +1,7 @@
 import { closeSync, constants as fsConstants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { renameWithRetry } from './fs-retry.js';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import type { OutputFormat } from './json-output.js';
@@ -33,6 +33,89 @@ export interface SandboxCommandResult {
   exit_code?: number;
   duration_ms?: number;
   error?: string;
+  /** 仅 `--format json`：命令 stdout / stderr 的有界尾部（功能规格 §2.7，决策 C02）。 */
+  stdout_tail?: string;
+  stderr_tail?: string;
+}
+
+/** 输出尾部上限：末尾最多 80 行且不超过 8 KiB（功能规格 §2.7）。 */
+export const OUTPUT_TAIL_MAX_LINES = 80;
+export const OUTPUT_TAIL_MAX_BYTES = 8 * 1024;
+/** 截获时每条输出流在内存中只保留的末尾窗口：足够容纳 80 行 + ANSI，又不随命令输出量增长。 */
+const OUTPUT_TAIL_READ_WINDOW = 1024 * 1024;
+
+// CSI / OSC / 两字符转义序列（颜色、光标、标题等）。
+const ANSI_PATTERN = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
+
+/** 从 UTF-8 字节缓冲的起点跳过续字节，使截断落在完整字符边界。 */
+function alignUtf8Start(buf: Buffer): Buffer {
+  let i = 0;
+  while (i < buf.length && i < 4 && (buf[i] & 0xc0) === 0x80) i++;
+  return i > 0 ? buf.subarray(i) : buf;
+}
+
+/**
+ * 有界输出尾部（纯函数，可单测）：去除 ANSI 控制序列后，先取末尾最多 80 行，再按字节截到不超过
+ * 8 KiB，截断落在完整 UTF-8 字符边界。`headTruncated` 表示传入字节不是输出开头（已按窗口截取）。
+ */
+export function boundedOutputTail(bytes: Buffer, headTruncated = false): string {
+  const start = headTruncated ? alignUtf8Start(bytes) : bytes;
+  const text = start.toString('utf8').replace(ANSI_PATTERN, '');
+  const lines = text.split('\n');
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  let tail = lines.slice(-OUTPUT_TAIL_MAX_LINES).join('\n');
+  const encoded = Buffer.from(tail, 'utf8');
+  if (encoded.length > OUTPUT_TAIL_MAX_BYTES) {
+    tail = alignUtf8Start(encoded.subarray(encoded.length - OUTPUT_TAIL_MAX_BYTES)).toString('utf8');
+  }
+  return tail;
+}
+
+/**
+ * 截获助手（在独立 node 进程中执行）：以管道流式消费命令的 stdout / stderr，每条流只在内存中保留末尾
+ * 窗口（超出即丢弃开头），命令结束后把退出码、信号与两段窗口一次性写回。输出全文既不落盘，也不进入
+ * 父进程的 `maxBuffer`——父进程收到的始终是有界的窗口。
+ */
+const CAPTURE_HELPER = `
+const { spawn } = require('node:child_process');
+const WINDOW = Number(process.argv[1]);
+const command = process.argv[2];
+const sink = () => ({ chunks: [], size: 0, truncated: false });
+function push(s, chunk) {
+  s.chunks.push(chunk); s.size += chunk.length;
+  while (s.size > WINDOW) {
+    const over = s.size - WINDOW; const first = s.chunks[0];
+    if (first.length <= over) { s.chunks.shift(); s.size -= first.length; }
+    else { s.chunks[0] = Buffer.from(first.subarray(over)); s.size -= over; }
+    s.truncated = true;
+  }
+}
+const out = sink(); const err = sink(); let finished = false;
+function finish(r) {
+  if (finished) return; finished = true;
+  process.stdout.write(JSON.stringify({ ...r,
+    out: Buffer.concat(out.chunks).toString('base64'), outTruncated: out.truncated,
+    err: Buffer.concat(err.chunks).toString('base64'), errTruncated: err.truncated }));
+}
+let child;
+try { child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] }); }
+catch (e) { finish({ status: null, signal: null, error: String((e && e.message) || e) }); }
+if (child) {
+  child.stdout.on('data', c => push(out, c));
+  child.stderr.on('data', c => push(err, c));
+  child.on('error', e => finish({ status: null, signal: null, error: String((e && e.message) || e) }));
+  child.on('close', (status, signal) => finish({ status, signal }));
+}
+`;
+
+interface CaptureReport {
+  status: number | null;
+  signal: string | null;
+  error?: string;
+  out: string;
+  outTruncated: boolean;
+  err: string;
+  errTruncated: boolean;
 }
 
 export interface SandboxExecutionResult {
@@ -421,10 +504,50 @@ function buildWriteProtection(
   };
 }
 
+/**
+ * JSON 模式的命令执行（功能规格 §2.7「预跑命令输出尾部」、场景 S13 EX-9.4「输出全文不落盘」）：
+ * 经截获助手以管道流式消费 stdout / stderr，内存中只保留有界末尾窗口，子进程不会因输出过大被
+ * `maxBuffer` 提前终止，退出码如实保留，输出全文不写入任何临时文件。此前用 `execSync` + `pipe`，
+ * 输出被丢弃，超过默认 1 MiB 还会杀掉子进程。
+ */
+function executeCommandCapturing(cwd: string, command: string): SandboxCommandResult {
+  const start = Date.now();
+  const helper = spawnSync(process.execPath, ['-e', CAPTURE_HELPER, String(OUTPUT_TAIL_READ_WINDOW), command], {
+    cwd, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 8 * OUTPUT_TAIL_READ_WINDOW,
+  });
+  let report: CaptureReport | null = null;
+  if (!helper.error) {
+    try { report = JSON.parse(helper.stdout) as CaptureReport; } catch { report = null; }
+  }
+  const duration_ms = Date.now() - start;
+  if (!report) {
+    const reason = helper.error ? commandErrorMessage(helper.error) : `输出截获失败：${(helper.stderr || '').trim()}`;
+    return { status: 'fail', duration_ms, error: `${reason ?? 'Command failed'}`.slice(0, 500), stdout_tail: '', stderr_tail: '' };
+  }
+  const stdout_tail = boundedOutputTail(Buffer.from(report.out, 'base64'), report.outTruncated);
+  const stderr_tail = boundedOutputTail(Buffer.from(report.err, 'base64'), report.errTruncated);
+  if (!report.error && report.status === 0) {
+    return { status: 'pass', exit_code: 0, duration_ms, stdout_tail, stderr_tail };
+  }
+  const reason = report.error
+    ? report.error
+    : (report.signal ? `Command failed (signal ${report.signal}): ${command}` : `Command failed: ${command}`);
+  return {
+    status: 'fail',
+    exit_code: typeof report.status === 'number' ? report.status : undefined,
+    duration_ms,
+    error: `${reason ?? 'Command failed'}${stderr_tail ? `\n${stderr_tail}` : ''}`.slice(0, 500),
+    stdout_tail,
+    stderr_tail,
+  };
+}
+
 function executeCommand(cwd: string, command: string, format: OutputFormat): SandboxCommandResult {
+  if (format === 'json') return executeCommandCapturing(cwd, command);
   const start = Date.now();
   try {
-    execSync(command, { cwd, stdio: format === 'json' ? 'pipe' : 'inherit' });
+    // 文本模式：输出实时打到终端，不截获（功能规格 §2.7）。
+    execSync(command, { cwd, stdio: 'inherit' });
     return {
       status: 'pass',
       exit_code: 0,

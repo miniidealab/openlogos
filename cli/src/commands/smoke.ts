@@ -45,6 +45,11 @@ export interface SmokeData {
    * skip 只说明未取得证据，门禁据此 FAIL（各提案 smoke 规格「有 skip 时不得写 SMOKE_PASS」）。仅非空时出现。
    */
   required_skipped_cases?: Array<{ id: string; detail: string }>;
+  /**
+   * 本提案变更用例中以 `reason_code:"platform-unavailable"` 且 `detail` 非空放行的 skip（功能规格 §2.48.5「平台不可执行
+   * 例外」，verify-smoke-guard-fixes-0-15-20 决策 C03）：当前平台不能执行该用例，skip 即终态；单独列出供审计。仅非空时出现。
+   */
+  platform_skipped_cases?: Array<{ id: string; detail: string }>;
   sandbox: SandboxData;
   report_path: string;
   result_path: string;
@@ -112,6 +117,14 @@ function generateSmokeReport(data: SmokeData): string {
     md += '\n';
   }
 
+  if (data.platform_skipped_cases && data.platform_skipped_cases.length > 0) {
+    md += '## Platform-Unavailable Skips（平台不可执行）\n\n| ID | Detail |\n|----|--------|\n';
+    for (const item of data.platform_skipped_cases) {
+      md += `| ${item.id} | ${item.detail.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`;
+    }
+    md += '\n';
+  }
+
   if (data.required_skipped_cases && data.required_skipped_cases.length > 0) {
     md += '## Required Cases Without Evidence\n\n| ID | Detail |\n|----|--------|\n';
     for (const item of data.required_skipped_cases) {
@@ -160,7 +173,14 @@ export function collectSmokeData(
   // 必要证据缺失：本提案新增 / 修改的 smoke 用例以 skip 结束。历史 runner 的「不适用」skip 不在本提案变更集合内，
   // 统计口径不变（计入 executed、不计入 failed / uncovered）。
   const changedSet = new Set(check.changed_case_ids);
-  const requiredSkipped = skipped.filter(r => changedSet.has(r.id))
+  // 平台不可执行例外（§2.48.5，决策 C03）：runner 声明 reason_code==="platform-unavailable" 且 detail 非空时放行；
+  // 是否「不可执行」由 runner 声明，CLI 只核对声明完整。缺原因码、其他原因码或 detail 为空仍属必要证据缺失。
+  const isPlatformSkip = (r: { reason_code?: unknown; detail?: unknown }) =>
+    r.reason_code === 'platform-unavailable' && typeof r.detail === 'string' && r.detail.trim() !== '';
+  const changedSkipped = skipped.filter(r => changedSet.has(r.id));
+  const platformSkipped = changedSkipped.filter(r => isPlatformSkip(r as { reason_code?: unknown; detail?: unknown }))
+    .map(r => ({ id: r.id, detail: String((r as { detail?: unknown }).detail) }));
+  const requiredSkipped = changedSkipped.filter(r => !isPlatformSkip(r as { reason_code?: unknown; detail?: unknown }))
     .map(r => ({ id: r.id, detail: String((r as { detail?: unknown }).detail ?? r.error ?? '') }));
   const isPass = failed.length === 0 && uncovered.length === 0 && check.diagnostics.length === 0
     && requiredSkipped.length === 0;
@@ -195,6 +215,7 @@ export function collectSmokeData(
     uncovered_cases: uncovered,
     skipped_cases: skipped.map(r => r.id),
     ...(requiredSkipped.length > 0 ? { required_skipped_cases: requiredSkipped } : {}),
+    ...(platformSkipped.length > 0 ? { platform_skipped_cases: platformSkipped } : {}),
     sandbox: sandbox ?? buildInitialSandboxData(normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: reportPath,
     result_path: resultPath,
@@ -403,6 +424,11 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
   if (data.uncovered_cases.length > 0) {
     console.log('\nUncovered smoke cases:');
     for (const id of data.uncovered_cases) console.log(`  ${id}`);
+  }
+
+  if (data.platform_skipped_cases && data.platform_skipped_cases.length > 0) {
+    console.log('\nPlatform-unavailable smoke cases (skip accepted):');
+    for (const item of data.platform_skipped_cases) console.log(`  ${item.id}: ${item.detail}`);
   }
 
   if (data.required_skipped_cases && data.required_skipped_cases.length > 0) {

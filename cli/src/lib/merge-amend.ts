@@ -13,7 +13,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { BaselineClosureApplyInput } from './baseline-apply.js';
 import {
-  applyPreparedInputs, composeTargetBytes, isTestTarget, MergeDirectError, metadataBytes, moduleFromGuard,
+  applyPreparedInputs, composeTargetBytes, isTestTarget, markAmendContext, MergeDirectError, metadataBytes, moduleFromGuard,
   planDirectTargets, readMergeFailureStage, stampMergeFailureStage,
   type ApplyBatchFn, type PlannedTarget,
 } from './merge-direct.js';
@@ -70,6 +70,11 @@ function amendError(code: ConstructorParameters<typeof MergeDirectError>[0], mes
  * 不读 git 历史，只按基线证据读回 blob。
  */
 export function checkMergedProposal(root: string, proposalDir: string): MergedProposalCheck {
+  // 修正路径的一切逃出者都带「本次是增量修正」事实（§2.84.3 增量修正路径的状态声明）。
+  try { return checkMergedProposalInner(root, proposalDir); } catch (error) { throw markAmendContext(error); }
+}
+
+function checkMergedProposalInner(root: string, proposalDir: string): MergedProposalCheck {
   const { record, baseline, amendments } = readSpecMergedRecord(proposalDir);
   // ① 旧标记（含 legacy MERGED、非法 JSON）：无基线即无从判定，一律拒绝，不从 git 历史回推。
   if (!record || !baseline) {
@@ -167,6 +172,10 @@ export interface AmendDeps {
  * 原语 `ok:false` 不等于已回滚（delta r1 F1）。
  */
 export function executeAmend(root: string, proposalDir: string, slug: string, plan: AmendPlan, deps: AmendDeps = {}): AmendResult {
+  try { return executeAmendInner(root, proposalDir, slug, plan, deps); } catch (error) { throw markAmendContext(error); }
+}
+
+function executeAmendInner(root: string, proposalDir: string, slug: string, plan: AmendPlan, deps: AmendDeps): AmendResult {
   const inputs: BaselineClosureApplyInput[] = [];
   const tests: Array<{ targetPath: string; beforeBytes: Buffer | null; afterBytes: Buffer }> = [];
   const nextTargets: MergeBaselineTarget[] = [];

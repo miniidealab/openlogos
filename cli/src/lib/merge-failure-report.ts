@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BASELINE_CLOSURE_APPLY_JOURNAL, APPLY_TXN_DIR } from './baseline-apply.js';
-import { readMergeFailureStage, type MergeFailureStage } from './merge-direct.js';
+import { isAmendContext, readMergeFailureStage, type MergeFailureStage } from './merge-direct.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 import { COMMIT_JOURNAL } from './ui-provenance.js';
 import { classifyProposalDeltas } from './delta-classify.js';
@@ -170,6 +170,49 @@ function findShapeViolationLines(content: string): Array<{ line: number; detail:
   return out;
 }
 
+/** 修正路径档 A 的核对指引：按错误码给出，不附任何会覆盖未提交改动的回滚命令。 */
+function amendGuidance(code: string, slug: string): string {
+  switch (code) {
+    case 'MERGE_AMEND_DRIFT':
+      return '  核对指引：人工核对上方点名的漂移文件（git diff），确认保留哪份修改后另立新提案承载修正；不要用 checkout 类命令覆盖未提交的改动。';
+    case 'MERGE_AMEND_BASELINE_MISSING':
+    case 'MERGE_AMEND_BASELINE_UNREADABLE':
+      return '  核对指引：本提案缺少可用的合并基线，无法增量修正；请保持现状并另立新提案承载修正。';
+    case 'MERGE_AMEND_CREATE_WITHDRAW':
+      return '  核对指引：恢复本提案对应的 delta 以通过修正，或另立新提案删除该文件及其 resource_index 条目。';
+    case 'MERGE_AMEND_PROTOTYPE_UNSUPPORTED':
+      return '  核对指引：原型资产变化走 commitVerifiedPrototypes 与 provenance 校验，不在增量修正能力内，请另立新提案。';
+    default:
+      return '  核对指引：按上方错误修正 delta 后重跑 `openlogos merge ' + slug + '`。';
+  }
+}
+
+/**
+ * 增量修正路径的状态声明与指引（功能规格 §2.84.3「增量修正路径的状态声明」，决策 C05）。分档判据与首次合并相同，
+ * 只换措辞：修正发生在 SPEC_MERGED 已在场、规格通常已提交之后，首次合并的「保持合并前字节，未写 SPEC_MERGED」与
+ * 「回滚点：git checkout logos/resources/」都不成立，后者照做还会丢掉未提交的规格改动。
+ */
+function amendTierLines(tier: MergeFailureTier, slug: string, facts: MergeFailureDiskFacts, code: string): string[] {
+  if (tier === 'A') {
+    return ['  未进入修正写入，已合并的规格与 SPEC_MERGED 保持本次修正前的状态。', amendGuidance(code, slug)];
+  }
+  if (tier === 'B') {
+    return [
+      '  修正落盘失败，已确认整批回滚：规格恢复为修正前状态，SPEC_MERGED 原记录保留。',
+      '  被清除的验收 / 交付标记的恢复情况见上方错误信息；如有标记恢复失败，提案须重新 verify。',
+      '  修正 delta 后可重跑 `openlogos merge ' + slug + '`。',
+    ];
+  }
+  return [
+    '  可能已提交本次修正或状态不可确认：主文档可能已是修正后字节，SPEC_MERGED 可能已改写（含新的 delta 摘要与修正记录），'
+      + '被清除的验收 / 交付标记未恢复，须重新 verify。',
+    '  请先核对实际状态：git status；git diff logos/resources/；'
+      + `并查看 logos/changes/${slug}/${SPEC_MERGED_MARKER} 的 amendments`
+      + (facts.txnDirPresent || facts.journalPresent ? `，残留的 ${APPLY_TXN_DIR} / ${BASELINE_CLOSURE_APPLY_JOURNAL} 是恢复材料，核对前请保留` : '')
+      + '。核对前不要直接重跑 merge。',
+  ];
+}
+
 /** 状态声明与后续动作指引：四要素中的第二、三项，按档派生（§2.84.3 状态档表）。 */
 function tierLines(
   tier: MergeFailureTier,
@@ -226,6 +269,10 @@ export interface MergeFailureReport {
   tier: MergeFailureTier;
   diagnostics: MergeFailureDiagnostics;
   lines: string[];
+  /** 状态声明与后续动作指引（lines 的末尾若干行）；增量修正路径的 JSON 错误 envelope 一并携带。 */
+  statement: string[];
+  /** 是否增量修正路径（错误对象带 MERGE_AMEND_CONTEXT 结构化事实）。 */
+  amend: boolean;
 }
 
 /**
@@ -256,6 +303,10 @@ export function describeMergeFailure(
     }
     lines.push(`  涉及 canonical target：${diagnostics.targetPaths.join('、')}`);
   }
-  lines.push(...tierLines(tier, slug, facts, readMergeFailureStage(error)));
-  return { tier, diagnostics, lines };
+  const amend = isAmendContext(error);
+  const statement = amend
+    ? amendTierLines(tier, slug, facts, diagnostics.code)
+    : tierLines(tier, slug, facts, readMergeFailureStage(error));
+  lines.push(...statement);
+  return { tier, diagnostics, lines, statement, amend };
 }

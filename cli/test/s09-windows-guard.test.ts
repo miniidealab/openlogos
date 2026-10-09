@@ -363,11 +363,13 @@ describe('S09 guard 跨平台可移植性与输入 fail-closed', () => {
       expect(current.decideShell(root, command, 'darwin').decision, `Cursor darwin：${command}`)
         .toBe(prefix.decideShell(root, command).decision);
     }
-    // ③ Bash 工具：与修复前 guard-check 逐条相同
-    for (const command of ['echo x > src/a.ts', 'echo x | tee src/a.ts', 'touch src/a.ts', 'echo x']) {
+    // ③ Bash 工具：单条命令与修复前 guard-check 逐条相同
+    for (const command of ['echo x > src/a.ts', 'touch src/a.ts', 'echo x']) {
       expect(guard(root, 'Bash', { command }).exit, `Bash：${command}`)
         .toBe(guard(root, 'Bash', { command }, ENVS.real, join(PREFIX_DIR, 'guard-check')).exit);
     }
+    // 复合命令按段判定（verify-smoke-guard-fixes-0-15-20，决策 C04）：`tee` 段不可提取目标 → 阻断
+    expect(guard(root, 'Bash', { command: 'echo x | tee src/a.ts' }).exit, 'Bash：echo x | tee src/a.ts').toBe(2);
   }, TIMEOUT);
 
   it('UT-S09-379: 反斜杠与盘符路径的白名单与管辖判定', () => {

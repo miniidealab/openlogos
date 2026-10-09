@@ -241,10 +241,12 @@ describe('S09 guard 资料目录与基线 staging 默认豁免 — 完整 hook',
       'tee logos/resources/reference/a.md',
       'touch $D/a.md',
       'mkdir x && touch logos/resources/reference/a.md',
+      // verify-smoke-guard-fixes-0-15-20（决策 C04）：复合命令不再凭首段安全白名单整条放行；
+      // `tee` 段不在路径提取范围内，按解析不出阻断
+      'echo x | tee logos/resources/reference/a.md',
     ];
     const safe = [
       'openlogos baseline-seed begin --module core --manifest logos/resources/reference/temp/m.json',
-      'echo x | tee logos/resources/reference/a.md',
     ];
     for (const c of allowed) expect(bashVerdict(GUARD_SRC, root, c), `应放行：${c}`).toBe(0);
     for (const c of blocked) expect(bashVerdict(GUARD_SRC, root, c), `应阻断：${c}`).toBe(2);
