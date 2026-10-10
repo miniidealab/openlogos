@@ -6,7 +6,7 @@
  * 测试结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,18 @@ describe('S19 — 升版确定性与 manifest 自洽守卫', () => {
     try { validateAssetManifest(tampered, CLI_ROOT); } catch (e) { error = e; }
     expect(error, '手改 version 未重算 hash 必须失败').toBeInstanceOf(Error);
     expect(String((error as Error).message)).toContain('payload hash 不匹配');
+
+    // release-0-16-0：登记的 dist/ 资产必须由 cli/src 现有源码构建而来。源码删除后 dist 残留旧产物，
+    // 本机构建仍能通过自洽校验，干净构建却缺这个文件，sync 全线失败（authority-closure.js 实证）。
+    const distEntries = (['skills', 'templates', 'schemas', 'plugins'] as const)
+      .flatMap(group => manifest[group])
+      .map(entry => entry.path)
+      .filter(path => path.startsWith('dist/') && path.endsWith('.js'));
+    expect(distEntries.length, 'manifest 至少登记一个 dist 资产').toBeGreaterThan(0);
+    for (const path of distEntries) {
+      const sourcePath = join(CLI_ROOT, 'src', path.slice('dist/'.length).replace(/\.js$/, '.ts'));
+      expect(existsSync(sourcePath), `${path} 在 cli/src 下无对应源文件`).toBe(true);
+    }
   });
 
   it('UT-S19-50: 升版脚本一次写全载体、派生值重算、非法零改写、重复幂等', () => {

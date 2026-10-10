@@ -4,7 +4,7 @@
  * 覆盖 UT-S09-448～UT-S09-454、ST-S09-202，对应根规范 `spec/pretooluse-guard.md`「Bash 非 git 回落的复合命令逐段判定
  * （规范性）」（拆段、逐段判定、有效工作目录及其条件链作用域）与场景 S09-F EX-9F.1、EX-9F.32～EX-9F.38。
  * 夹具：mkdtemp 下的非 git 项目（launched、无活跃提案，含 src/a.ts、src/x）；以真实 guard-check 脚本喂 PreToolUse
- * hook JSON，按退出码判定（0 放行、2 阻断）。旧实现对照取 `git show HEAD:plugin/bin/guard-check`。
+ * hook JSON，按退出码判定（0 放行、2 阻断）。旧实现对照取留存副本 `fixtures/s09-guard-pre-segmented.sh`。
  * 结果由 OpenLogos reporter 依 it 标题中的 ID 写入 logos/resources/verify/test-results.jsonl。
  */
 import { afterAll, describe, expect, it } from 'vitest';
@@ -45,12 +45,15 @@ function runGuard(guard: string, root: string, command: string) {
   return { exitCode: r.status ?? 1, stderr: r.stderr ?? '' };
 }
 
-/** 修改前的 guard-check（HEAD 版本），与引擎放在同一目录，保证 git 判据路径可用。 */
+/**
+ * 修改前的 guard-check 留存副本（取自 9b7746a:plugin/bin/guard-check，SHA-256 d5235589…5102），与引擎放在同一目录，
+ * 保证 git 判据路径可用。release-0-16-0：不再用 `git show HEAD:` 取对照实现——本修复提交后 HEAD 即新实现，
+ * 对照臂随之失效；CI 的浅克隆也取不到历史提交。
+ */
+const OLD_GUARD_FIXTURE = join(REPO_ROOT, 'cli', 'test', 'fixtures', 's09-guard-pre-segmented.sh');
 function oldGuard(): string {
   const dir = temp('old');
-  const r = spawnSync('git', ['show', 'HEAD:plugin/bin/guard-check'], { cwd: REPO_ROOT, encoding: 'utf-8', env: cleanEnv() });
-  expect(r.status, r.stderr).toBe(0);
-  writeFileSync(join(dir, 'guard-check'), r.stdout);
+  copyFileSync(OLD_GUARD_FIXTURE, join(dir, 'guard-check'));
   copyFileSync(ENGINE_SRC, join(dir, 'guard-post-check.cjs'));
   return join(dir, 'guard-check');
 }

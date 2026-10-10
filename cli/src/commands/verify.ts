@@ -27,7 +27,7 @@ import {
 } from '../lib/test-slice-manifest.js';
 import { contractVersion } from '../lib/step-registry.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
-import { TABLE_CELL_ID_RE, VERIFICATION_ID_RE, MANUAL_MARKER_RE } from '../lib/test-id.js';
+import { TABLE_CELL_ID_RE, MANUAL_MARKER_RE } from '../lib/test-id.js';
 
 export interface TestResult {
   id: string;
@@ -61,9 +61,6 @@ const TEST_CASES_DIR = 'logos/resources/test';
 const REPORT_DIR = 'logos/resources/verify';
 // 标记语法取自 test-id.ts 的唯一权威（`[manual]` / `[manual/<平台>]`），不在此另写一份。
 const MANUAL_SUFFIX = MANUAL_MARKER_RE;
-const CHECKLIST_PATTERN = /^- \[([ x])\] (.+)$/gm;
-const AC_TABLE_HEADER = /^## 四、验收条件追溯$/m;
-const AC_ROW_PATTERN = /^\|\s*(S\d{2}-AC-\d{2,3})\s*\|([^|]*)\|([^|]*)\|/gm;
 
 const LINE = '─'.repeat(50);
 

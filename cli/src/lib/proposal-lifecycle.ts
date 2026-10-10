@@ -20,7 +20,7 @@ import { evaluateProposalStructure } from './plan-package-contract.js';
 import type { CompletionIssue, PlanPackageEvaluation } from './plan-package-contract.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import { deriveManagedAssetsDiagnostic, readBundledAssetManifest, type ManagedAssetsDiagnostic } from './asset-manifest.js';
-import { TEST_ID_ANCHORED_RE, isAcceptedTestId, stripFirstCellManualMarker, testIdScanRe } from './test-id.js';
+import { isAcceptedTestId, stripFirstCellManualMarker, testIdScanRe } from './test-id.js';
 
 export type ProposalStep =
   | 'writing'
@@ -824,9 +824,7 @@ export function derivePlanState(
   deploymentDecision: Pick<ProposalDeploymentDecision, 'deployment_decision_conflict' | 'deployment_decision_conflict_reason'>,
   tasksContent?: string,
 ): PlanState {
-  const proposalPath = join(proposalDir, 'proposal.md');
   const tasksPath = join(proposalDir, 'tasks.md');
-  const proposalContent = existsSync(proposalPath) ? readFileSync(proposalPath, 'utf-8') : '';
   const taskText = tasksContent ?? (existsSync(tasksPath) ? readFileSync(tasksPath, 'utf-8') : '');
   const sections = parseTaskSections(taskText);
   const execution = resolveTasksExecution(sections);

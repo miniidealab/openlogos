@@ -204,8 +204,9 @@ export type PublicChangeLintViolation = ChangeLintViolationDraft;
  * 故投影结果与本刀之前的 violation 对象**逐字节相同**。
  */
 export function toPublicViolation(v: ChangeLintViolation): PublicChangeLintViolation {
-  const { [VIOLATION_CHECK_LAYER_KEY]: _internal, ...rest } = v;
-  return rest;
+  const rest: Partial<ChangeLintViolation> = { ...v };
+  delete rest[VIOLATION_CHECK_LAYER_KEY];
+  return rest as PublicChangeLintViolation;
 }
 
 /**

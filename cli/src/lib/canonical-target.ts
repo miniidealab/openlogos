@@ -241,12 +241,6 @@ export function canonicalTargetFromDeltaPath(rawDeltaPath: string): string | nul
   return mapped ? posix.join(mapped, ...segs.slice(2)) : null;
 }
 
-interface ExtractedClosureYaml { present: boolean; yaml?: string; error?: string }
-
-const TASK_CLOSURE_MODE_PREFIX_RE = /^\[(?:MODIFY|CREATE)\](?:\s|$)/;
-
-/** 只认围栏/注释外的准确二级标题，且该节必须恰有一个 YAML fenced block。 */
-
 export function projectRelativePath(root: string, path: string): string {
   return relative(root, path).replace(/\\/g, '/');
 }

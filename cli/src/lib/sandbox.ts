@@ -44,7 +44,8 @@ export const OUTPUT_TAIL_MAX_BYTES = 8 * 1024;
 /** 截获时每条输出流在内存中只保留的末尾窗口：足够容纳 80 行 + ANSI，又不随命令输出量增长。 */
 const OUTPUT_TAIL_READ_WINDOW = 1024 * 1024;
 
-// CSI / OSC / 两字符转义序列（颜色、光标、标题等）。
+// CSI / OSC / 两字符转义序列（颜色、光标、标题等）。正则有意匹配 ESC / BEL 控制字符。
+// eslint-disable-next-line no-control-regex
 const ANSI_PATTERN = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
 
 /** 从 UTF-8 字节缓冲的起点跳过续字节，使截断落在完整字符边界。 */

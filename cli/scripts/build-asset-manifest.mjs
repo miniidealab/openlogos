@@ -9,7 +9,6 @@ const source = (packaged, repository) => packagePath(packaged) ?? join(repoRoot,
 const packageJson = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf8'));
 const sources = [
   { group: 'schemas', path: 'spec/authority-closure.md', sourcePath: source('spec/authority-closure.md', 'spec/authority-closure.md') },
-  { group: 'templates', path: 'dist/lib/authority-closure.js', sourcePath: join(cliRoot, 'dist/lib/authority-closure.js') },
   { group: 'skills', path: 'skills/architecture-designer/SKILL.md', sourcePath: source('skills/architecture-designer/SKILL.md', 'skills/architecture-designer/SKILL.md') },
   { group: 'skills', path: 'skills/change-writer/SKILL.md', sourcePath: source('skills/change-writer/SKILL.md', 'skills/change-writer/SKILL.md') },
   { group: 'skills', path: 'skills/change-writer/SKILL.en.md', sourcePath: source('skills/change-writer/SKILL.en.md', 'skills/change-writer/SKILL.en.md') },

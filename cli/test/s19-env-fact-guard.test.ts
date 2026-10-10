@@ -106,7 +106,8 @@ describe('S19 — 环境事实守卫元测试', () => {
     // 夹具复刻 0.15.3 上的真实形态：当前包版本 vB，快照里钉着上一个版本 vA。
     const [major, minor, patch] = PKG_VERSION.split('.').map(Number);
     const vB = PKG_VERSION;
-    const vA = `${major}.${minor}.${Math.max(0, patch - 1)}`;
+    // 构造一个确定不等于当前包版本的旧版本：x.y.0 时退到上一个 minor（release-0-16-0：Math.max(0, patch - 1) 在 0.16.0 上与 vB 相同）
+    const vA = patch > 0 ? `${major}.${minor}.${patch - 1}` : minor > 0 ? `${major}.${minor - 1}.99` : `${Math.max(0, major - 1)}.99.99`;
     expect(vA, '夹具必须构造出与当前包版本不同的旧版本').not.toBe(vB);
 
     const stale: GuardSource = {
