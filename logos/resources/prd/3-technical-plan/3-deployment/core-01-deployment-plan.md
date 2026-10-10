@@ -3973,9 +3973,9 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 **档 C 受控补做。** `publish.yml` 只有一个 job，npm publish、Release 与官网部署都在其中，且没有「已发布即跳过」的条件；GitHub 重跑也只能从头执行该 job，会对同号再次 npm publish 并必然失败。因此：
 
 1. **核对 registry 上 V 的身份**：
-   - `npm view @miniidealab/openlogos@<V> version gitHead dist.integrity dist.tarball --json` 中，`gitHead` 必须等于 `v<V>` 指向的提交；
-   - `npm pack @miniidealab/openlogos@<V>` 取得 registry tarball，记录 SHA-256；
-   - provenance 可查（`npm view … dist.attestations` 存在）。
+   - `npm view @miniidealab/openlogos@<V> version gitHead dist.integrity dist.attestations --json` 中 `version` 等于 V；
+   - **来源提交以 provenance 为准**：读取 `dist.attestations.url` 指向的证明，其中 SLSA provenance（predicate `https://slsa.dev/provenance/v1`）的 `buildDefinition.resolvedDependencies[0]` 必须满足：`uri` 指向 `miniidealab/openlogos` 的 `refs/tags/v<V>`，`digest.gitCommit` 等于 `v<V>` 指向的提交。`publish.yml` 以 `npm publish <tarball>` 发布，registry 不写 `gitHead`（2026-10-10 演练实证：0.13.24 无 `gitHead`，provenance 的 `gitCommit` 与 tag 提交一致）；`gitHead` 存在时须同样等于该提交；
+   - `npm pack @miniidealab/openlogos@<V>` 取得 registry tarball，记录 SHA-256。
 
    任一不符即停止，按档 D 处置。
 2. 在 `v<V>` 提交的干净 checkout 中，按 `publish.yml` 同序补做缺失步骤：
@@ -3999,7 +3999,7 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 
 以已公开的 `0.13.24` 为对象，只执行读取与判支，不执行任何写操作：
 
-1. **身份核对**：`npm view @miniidealab/openlogos@0.13.24 version gitHead dist.integrity --json`，`gitHead` 等于 `v0.13.24` 指向的提交；`npm pack @miniidealab/openlogos@0.13.24` 取得 tarball，记录 SHA-256，随后删除。
+1. **身份核对**：按上文档 C 第 1 步的判据核对 0.13.24——provenance 的 `resolvedDependencies[0]` 指向 `refs/tags/v0.13.24`，`digest.gitCommit` 等于 `v0.13.24` 指向的提交；`npm pack @miniidealab/openlogos@0.13.24` 取得 tarball，记录 SHA-256，随后删除。
 2. **情形「Release 已存在、官网失败」**：`gh release view v0.13.24` 成功，判支结果为「跳过 create，只核对正文与附件」。
 3. **情形「npm 已发布、Release 与官网都缺失」**：对一个确定不存在的 tag（如 `v0.0.0-drill`）执行 `gh release view`，失败即判支结果为「create」，但不执行 create。
 4. **官网补做**：在满足官网构建环境前提的本地环境执行 `generate:releases -- --strict` 与 build，做到「校验 latestVersion 等于 registry `dist-tags.latest`」为止，不 deploy；演练后用 `git checkout -- website/src/data/releases.json` 丢弃生成变更。
