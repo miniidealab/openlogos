@@ -1922,3 +1922,57 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
 - 判据以 `--format json` 的结构化字段、退出码与 SHA-256 为准，不解析人类可读文案（SMOKE-core-230 ④ 的文案断言只针对固定短语与「不含回滚建议」）。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-226～SMOKE-core-230 均被 runner 覆盖。
+
+## OpenLogos 0.16.0 公开发布 smoke（SMOKE-core-231～234）
+
+> 这组用例验证首次公开发布的三处公网制品——npm registry、GitHub Release、Cloudflare Pages 官网——确实同源于本次实际发布版本 V，并且从公网安装的包可以正常使用。在案用例（SMOKE-core-01 / 02 / 04 / 07 / 08 / 15）面向本地 tarball 或本地预览，都不能证明 registry 上的包可装可用，所以本组只补这一层，其余复用在案用例。
+>
+> **版本口径**：V 为部署记录中实际成功发布的版本，初始为 `0.16.0`；按部署方案档 B2 前滚时，V 为前滚后的 patch。断言一律写成关系式（如「registry `dist-tags.latest` == V」「Release 附件 SHA-256 == registry tarball SHA-256」），不硬编码 `0.16.0`。V 与 `v<V>` 指向的提交从部署记录读取；缺失即 skip 并写明缺失项。
+>
+> **执行边界**：runner 对公网**只读**——只用 `npm view`、`npm pack <spec>`（下载到临时目录）、`gh release view` / `gh release download`、`gh api`、HTTP GET。不执行 `npm publish`、`npm dist-tag`、`npm deprecate`、`git tag`、`git push`、`gh release create/edit/upload` 或 `wrangler`。安装态用例只装到 `mktemp -d` 一次性 prefix，不触碰本机全局 prefix、本仓活跃提案与用户其他仓库（包括 runlogos）。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-231 | registry 发布身份与 provenance | `v<V>` 的 publish run 中 `Publish` 步骤 success（原 run 全绿，或部署方案档 C 已完成补做）；部署记录有 V 与 tag 提交号 | ① `npm view @miniidealab/openlogos dist-tags --json`；② `npm view @miniidealab/openlogos@<V> version gitHead dist.integrity dist.attestations --json`；③ `npm pack @miniidealab/openlogos@<V>` 到临时目录并解包；④ 对照 tag 提交的 `cli/src/` 文件清单（`git ls-tree -r v<V> -- cli/src`）检查包内 `dist/**/*.js` | ① `latest` == V，`old` 不变；② `version` == V，`gitHead` == `v<V>` 提交，`dist.attestations` 存在（provenance 可查）；③ 包内 `package.json` 版本 == V，asset-manifest 版本 == V 且 `payloadHash` 自洽、全部条目经 `validateAssetManifest` 校验通过，随包 guard 模板 SHA-256 == manifest 条目；④ 每个 `dist/**/*.js` 都有同名 `cli/src/**/*.ts`，不含 `dist/lib/authority-closure.js` 等已删除源码的产物 | 保留读取结果与 tarball SHA-256。①② 不符 → 按部署方案档 D 回退（`dist-tag latest` 回指 0.13.24、`npm deprecate <V>`）；③④ 不符表示公网制品与预演不同源，同样按档 D 处置并另立修复提案前滚 |
+| SMOKE-core-232 | registry 隔离安装态可用 | SMOKE-core-231 通过；本机有 node、npm、git | ① `npm install -g --prefix <tmp> @miniidealab/openlogos@<V>`（从 registry 安装）；② `<tmp>/bin/openlogos --version`；③ 临时目录执行 `openlogos init smoke --locale zh --ai-tool all`；④ 在 ③ 项目内执行 `openlogos sync`；⑤ 另建临时项目 `init --locale en --ai-tool claude-code` 后 `sync`，比对托管 `.claude/openlogos/bin/guard-check` 与包内随包模板；⑥ `openlogos status --format json` | ① 退出码 0，入口 realpath 在 `<tmp>` 包目录内且非链接；② == V；③ 退出码 0，生成 `logos/` 与各工具资产（SMOKE-core-02 口径）；④ 退出码 0，输出不含 `asset hash 不匹配`；⑤ 两者 SHA-256 一致；⑥ 输出合法 JSON envelope，`version` == V | 保留各步 stdout / stderr。任一失败 → 按档 D 回退，并另立修复提案前滚；④ 失败表示 asset-manifest 与公网包不一致（干净构建缺陷复发） |
+| SMOKE-core-233 | GitHub Release 与 registry 同源 | SMOKE-core-231 通过；`gh` 已认证 | ① `gh release view v<V> --json tagName,isDraft,isPrerelease,body,assets`（`gh release view` 没有 latest 字段，latest 身份由 ② 的 latest endpoint 判定）；② `gh api repos/{owner}/{repo}/releases/latest --jq .tag_name`；③ `gh release download v<V> --pattern 'miniidealab-openlogos-*.tgz'` 到临时目录；④ 按 `publish.yml`「Prepare release notes」同规则，从 `v<V>` 提交的 `CHANGELOG.md` 提取 `## [V]` 节 | ① 存在，非 draft、非 prerelease；② == `v<V>`（非 latest 的有效 Release 在此失败，不得归为缺 Release）；③ 恰一个附件 `miniidealab-openlogos-<V>.tgz`，SHA-256 == SMOKE-core-231 记录的 registry tarball SHA-256；④ Release 正文与提取结果去首尾空白后逐字一致，且含「从 0.13.x 升级」与 `openlogos sync` 指引 | 保留 Release JSON 与附件 SHA-256。缺 Release 或缺附件 → 按部署方案档 C 受控补做（不重复 create）；附件与 registry 不同源 → 以 registry 制品为准替换附件并在部署记录说明 |
+| SMOKE-core-234 | 官网 latest 等于 V、英文摘要在场、改名资源可访问 | 官网已由 publish run 或档 C 补做部署到 Cloudflare Pages | ① GET `https://openlogos.ai/releases` 与 `https://openlogos.ai/zh/releases`；② GET 首页 `https://openlogos.ai/`，取最近发布入口；③ GET `https://openlogos.ai/runlogos` 与 `https://openlogos.ai/zh/runlogos`，提取数据库编辑器面板 `<img>` 的 `src`；④ GET ③ 中的图片 URL；⑤ GET 旧路径 `/runlogos/4.db-editor(sqllite:postgresql:mysql).jpg` | ① 均为 200，页面 latest 版本 == V（SMOKE-core-15 口径），V 条目展示英文价值摘要（不是固定回退提示）及中文原文次级内容（SMOKE-core-07 口径）；② 入口指向 `/releases` 且非 404（SMOKE-core-08 口径）；③ 两页 `src` 均为改名后的 `/runlogos/4.db-editor.sqlite-postgresql-mysql.jpg`，不含 `:`；④ 200 且 `content-type` 为 `image/jpeg`；⑤ 不要求可访问（旧路径仅作记录） | 保留 HTTP 状态码与页面摘录。① latest 不等于 V 时，先确认 registry `dist-tags.latest` 已是 V；若是，则按档 C 重新生成并部署官网，不得手改 `releases.json`。③④ 失败 → 修复引用后经官网部署前滚（不涉及 npm） |
+
+### 二、复用的在案用例
+
+以下在案用例沿用其原定义，本次只规定执行对象（定义不在本节重复登记）：
+
+- 版本用例 SMOKE-core-01：以 SMOKE-core-232 的隔离 prefix 入口执行，`openlogos --version` == V。
+- init 资产用例 SMOKE-core-02：以 SMOKE-core-232 ③ 的 `init smoke --locale zh --ai-tool all` 结果核对 `logos/resources/reference/` 六个子目录。
+- 插件模板用例 SMOKE-core-04：以 SMOKE-core-231 ③ 解包的 registry tarball 核对 Claude Code、OpenCode、Codex 插件模板在场。
+- 发布动态双语摘要用例 SMOKE-core-07：以 SMOKE-core-234 ① 的 `/releases` 页面执行。
+- 首页入口用例 SMOKE-core-08：以 SMOKE-core-234 ② 执行。
+- tag 与官网一致用例 SMOKE-core-15：以 SMOKE-core-234 ① 的 latest 版本断言执行，tag 版本取 V。
+
+### 三、执行边界
+
+- 公网只读（见本节导言）；命令图中不得出现发布写操作。
+- 安装态只装到 `mktemp -d` 一次性 prefix，结束即删除；本机全局切换属部署方案「发布后同步」，不在 smoke 内执行。
+- 断言不硬编码主机路径、墙上时钟、本机全局安装现值或 `0.16.0` 字面量（发布前检查通则第 1 条）；V、tag 提交号与 registry tarball SHA-256 运行时读取并在用例间传递。
+- 网络不可达、`gh` 未认证、部署记录缺 V 时写显式 `skip` 并携带缺失项。这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`；有 skip 时不得写 `SMOKE_PASS`。
+
+### 四、追溯与覆盖
+
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.0 公开发布方案（npm / GitHub Release / 官网）」，以及 §一、§七、§十一。
+- 来源提案：release-0-16-0（决策 C01～C07）。
+- 覆盖关系：
+  - registry 身份 → SMOKE-core-231；
+  - 公网安装可用、干净构建缺陷不复发 → SMOKE-core-232；
+  - GitHub Release 同源 → SMOKE-core-233；
+  - 官网 latest、英文摘要与 Windows 非法文件名改名 → SMOKE-core-234；
+  - 版本、init 资产、插件模板、官网入口 → 复用的 SMOKE-core-01 / 02 / 04 / 07 / 08 / 15。
+
+### 五、自动化与证据要求
+
+- 新增 runner `scripts/smoke-public-release-0-16-0.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-231～SMOKE-core-234 及上表复用用例，不得依靠通配发现后无条件 PASS。
+- runner 提供自测模式：注入本地 tarball 替代 registry 规格、注入本地预览 URL 替代官网域名，并把结果写入独立账本。自测结果不得写入项目正式 smoke 账本。正式模式拒绝注入。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；evidence 记录 V、tag 提交号、registry tarball SHA-256、Release 附件 SHA-256、HTTP 状态码与隔离 prefix 路径。**失败不得写 pass**。
+- 判据以 JSON 字段、退出码、SHA-256 与 HTTP 状态码为准；页面断言只针对版本号、固定路径与是否为回退提示，不解析其余人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-231～SMOKE-core-234 均被 runner 覆盖。
