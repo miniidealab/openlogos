@@ -67,6 +67,15 @@ interface PathEnvs { none: string; noneNoNode: string; stub: string; real: strin
 let ENVS: PathEnvs;
 let BASH: string;
 
+/**
+ * 用例内部让出一次事件循环（release-0-16-0：GitHub Windows runner 实证）。UT-S09-378 / UT-S09-381 在 Windows 上单条耗时
+ * 约 70s，全程同步 spawnSync 使 worker 事件循环不轮转，vitest 的 onTaskUpdate RPC（固定 60s 超时）应答被饿死，
+ * 报 `Timeout calling "onTaskUpdate"` 而用例全过、退出码却为 1。每条命令判定后让出一次，断言与执行顺序不变。
+ * setup-yield-event-loop.ts 只在用例之间让出，覆盖不到单条用例内部。
+ */
+const realSetTimeout = globalThis.setTimeout;
+const yieldEventLoop = () => new Promise<void>(resolve => { realSetTimeout(resolve, 0); });
+
 function buildEnvs(): PathEnvs {
   const base = tempDir('openlogos-s09w-path-');
   const nodeDir = join(base, 'node-bin');
@@ -327,7 +336,7 @@ describe('S09 guard 跨平台可移植性与输入 fail-closed', () => {
     expect(missing.stderr).toContain('无法');
   }, TIMEOUT);
 
-  it('UT-S09-378: PowerShell 工具写入模式与 Windows shell 判定顺序', () => {
+  it('UT-S09-378: PowerShell 工具写入模式与 Windows shell 判定顺序', async () => {
     const root = launchedProject();
     expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-391 / ST-S09-156 等）').toBe(true);
     assertPathCondition('P-real', ENVS.real);
@@ -336,17 +345,20 @@ describe('S09 guard 跨平台可移植性与输入 fail-closed', () => {
       const run = guard(root, 'PowerShell', { command });
       expect(run.exit, `应阻断：${command}`).toBe(2);
       expect(run.stderr, command).not.toBe('');
+      await yieldEventLoop();
     }
     for (const command of [...PS_EXEMPT, ...PS_SAFE]) {
       expect(guard(root, 'PowerShell', { command }).exit, `应放行：${command}`).toBe(0);
+      await yieldEventLoop();
     }
     // 安全白名单对有写入信号的 Windows shell 输入不适用：同一命令在 Bash 工具下按既有顺序放行
     for (const command of ['echo x>src/a.ts', 'echo x > src\\a.ts', 'git log > src\\log.txt']) {
       expect(guard(root, 'Bash', { command }).exit, `Bash 既有顺序：${command}`).toBe(0);
+      await yieldEventLoop();
     }
   }, TIMEOUT);
 
-  it('UT-S09-381: 判定顺序例外的作用范围：Cursor win32 同判、Bash 工具零回归', () => {
+  it('UT-S09-381: 判定顺序例外的作用范围：Cursor win32 同判、Bash 工具零回归', async () => {
     const root = launchedProject();
     expect(isNotGitWorkTree(root), 'N-repo 口径：非 git 回落回归锚（git 判据下的新结论见 UT-S09-404 / UT-S09-408 / ST-S09-178 等）').toBe(true);
     const current = requireCjs(CURSOR_RUNTIME_SRC) as { decideShell: (r: string, c: string, p?: string) => { decision: string } };
@@ -359,6 +371,7 @@ describe('S09 guard 跨平台可移植性与输入 fail-closed', () => {
     for (const command of [...PS_BLOCK, ...PS_CASE_VARIANTS, ...PS_MULTI_TARGET, ...PS_EXEMPT, ...PS_SAFE]) {
       const cursor = current.decideShell(root, command, 'win32').decision === 'deny' ? 2 : 0;
       expect(cursor, `Cursor win32 ↔ guard PowerShell：${command}`).toBe(guard(root, 'PowerShell', { command }).exit);
+      await yieldEventLoop();
     }
     // ② 非 win32 Cursor：与修复前实现逐条相同（基准为修复前实现实测）
     for (const command of ['echo x>src/a.ts', 'echo x']) {
@@ -369,6 +382,7 @@ describe('S09 guard 跨平台可移植性与输入 fail-closed', () => {
     for (const command of ['echo x > src/a.ts', 'touch src/a.ts', 'echo x']) {
       expect(guard(root, 'Bash', { command }).exit, `Bash：${command}`)
         .toBe(guard(root, 'Bash', { command }, ENVS.real, join(PREFIX_DIR, 'guard-check')).exit);
+      await yieldEventLoop();
     }
     // 复合命令按段判定（verify-smoke-guard-fixes-0-15-20，决策 C04）：`tee` 段不可提取目标 → 阻断
     expect(guard(root, 'Bash', { command: 'echo x | tee src/a.ts' }).exit, 'Bash：echo x | tee src/a.ts').toBe(2);

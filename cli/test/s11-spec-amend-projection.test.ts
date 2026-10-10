@@ -199,7 +199,7 @@ describe('S11 spec_amend 只读投影 — 单元测试', () => {
         expect(r.error?.code, `${label}：blocked_reason 与 merge 错误码一一对应`).toBe(mergeOutcome);
       }
     }
-  });
+  }, 60_000); // 五臂各起真实 CLI 子进程；CI 慢机器上 10s 默认超时不足（release-0-16-0：GitHub Linux runner 实证）
 
   it('UT-S11-94: 旧标记、legacy MERGED 与不可解析标记不可判定', () => {
     const arms: Array<[string, (f: Fixture) => void]> = [
