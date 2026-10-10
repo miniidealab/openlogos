@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-10
+
+0.13.24 之后的首个公开版本，汇总 0.13.25～0.15.20 期间 120 余个提案的成果。这些中间版本只在本地安装，从未发布到 npm；从 0.13.24 升级的用户直接看本节即可，下方各版本条目保留作开发记录。
+
+### 从 0.13.x 升级
+
+1. 更新全局 CLI：`npm install -g @miniidealab/openlogos@latest`，确认 `openlogos --version` 为 `0.16.0`。
+2. **在每个已有项目的根目录执行 `openlogos sync`**。它会刷新托管的 guard 脚本与事后检查引擎、Claude Code hooks（新增 PostToolUse / PostToolUseFailure / Stop）、Skills、`.gitignore` 托管区块，以及 `.claude/settings.json` 的 `language`。不执行 sync，项目仍运行旧版 guard。
+3. Cursor 项目：sync 把 OpenLogos 托管的 `.cursor/rules/*.mdc` 迁移为 `.cursor/skills/<name>/SKILL.md`，用户自有 rules 不动。
+4. 进行中的提案：0.14.x 的 merge / 切片事务命令（`merge transaction *`、`merge-apply`、切片事务）已在 0.15.0 移除。改用 `openlogos merge <slug>` 一次完成合并，用 `openlogos slice plan --file <slices.json>` 规划 `[code]` 切片。
+5. 读取 `--format json` 的外部工具，请以 `data.contract.version` 与随包 `spec/schema/*.schema.json` 为准，核对 verify 门禁字段与已移除的投影（见下文 Changed）。
+
+### Added
+
+- **提案阶段决策澄清**：`clarification@1` 结构统一表达数据、兼容、安全、公开发布、外部承诺五类影响与用户决定；部署与公开发布分别决策。
+- **切片化实现**：merge 后由 slice-planner 规划 `[code]` 切片，`openlogos slice plan --file` 写出 `tasks.md` 的 `[code]` 段与 `TEST_SLICE_MANIFEST.json`；verify 支持切片增量 checkpoint 与最终全量验收。
+- **已合并提案的增量修正**：修改已合并提案的 delta 后再次执行 `openlogos merge`，即按记录的合并基线增量修正（`result:"amended"`），`status` 投影 `spec_amend`；目标被手改时拒绝修正并给出核对指引。
+- **新宿主适配**：ZCode、Qoder、WorkBuddy 纳入 `init` / `sync` / `launch`；Cursor 改用 Skills 并接入 `afterShellExecution` 事后检查。
+- **guard 以版本控制内容为保护对象**：launched 且无活跃提案时，只保护会进入版本控制的代码与规格，被忽略的依赖、产物、日志与缓存写入不再需要立案。Bash / PowerShell 改为「事前轻判 + 执行后内容级比对」，发现未立案改动即反馈变化文件与恢复命令。
+- **保护范围命令**：`openlogos ignore add|remove|list` 与 `openlogos exempt add|remove|list`；`init` / `adopt` 按技术栈建议忽略目录。
+- **回复语言**：`init` / `adopt` / `sync` 按项目 `locale` 写入 `.claude/settings.json` 的 `language`，长会话压缩后回复语言不再漂移。
+- **change-lint 新检查**：部署方案覆盖（L5）、后态测试 ID 重复、改动规模观测提示等，问题在写 delta 阶段即暴露，而不是等到 merge 失败。
+- **Markdown 整文件新建协议**与提案阶段 UI 原型确认（GUI 项目）。
+
+### Changed
+
+- **流程减法（0.15.0，破坏性）**：移除切片事务、merge 事务、Authority Closure 与 Baseline Closure；`change-lint` 收敛为 L0～L9 十项；决策澄清与 UI 原型不再作为硬门。
+- **verify 门禁**收敛为三项：结果账本一致、零失败、零未覆盖；Layer1 覆盖度清单与 Layer3 验收条件追溯矩阵从判定、报告与 JSON 中移除。
+- SessionStart 阶段横幅改为信息性说明，不再表述为写入白名单；实际写入范围以 guard 判定为准。
+
+### Fixed
+
+- verify 预跑命令失败时门禁 FAIL（`pre_run_failed`），不再沿用旧结果判定；JSON 带有界输出尾部，输出全文不落盘。
+- smoke 门：本提案必要用例的 skip 默认拦截；当前平台确实无法执行的用例以 `reason_code:"platform-unavailable"` 加说明放行，并在报告中单独列出。
+- guard 在非 git 项目中按段判定复合命令，`cd` 后的相对写入按有效工作目录解析，命中白名单前缀的重定向写入不再放行；修复复合命令、`node -e`、脚本、`find -delete` 等绕过写入门禁的问题，以及 `npm ci`、构建产物写入被误拦的问题。
+- merge 失败报告按三档如实说明状态（未写入 / 已整批回滚 / 可能已提交），增量修正路径不再建议 `git checkout logos/resources/`。
+- 测试变更集改由 merge 时的语义差异驱动，不再把 delta 中原样携带的基线测试 ID 误判为变更；目标规格中原样继承的既有欠债不再阻断无关提案。
+- `--format json` 在进程退出前完整刷出输出；修复 Windows 下的路径、换行与重命名重试问题。
+- 打包产物不再夹带已删除源码的旧构建文件；asset manifest 与干净构建一致，从 CI 或干净克隆构建的包 `sync` 正常。
+
+### Security
+
+- 修改保护范围（`openlogos exempt|ignore add|remove`）须经用户在宿主界面审批；各级 `.gitignore`、`.git/info/exclude`、`logos/logos.config.json`、git 元数据与 guard 自有状态不可豁免。
+- 顶层不是 JSON 对象的 `.claude/settings.json` 在 hooks 合并时不再被改写。
+
 ## [0.15.20] - 2026-10-09
 
 ### Added

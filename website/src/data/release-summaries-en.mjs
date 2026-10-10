@@ -1,4 +1,18 @@
 export const RELEASE_SUMMARIES_EN = {
+  '0.16.0': {
+    valueSummaryEn: [
+      'First public release since 0.13.24, bundling 120+ proposals. After upgrading, run `openlogos sync` in every existing project to refresh the managed guard, hooks, Skills, the `.gitignore` managed block and the Claude Code `language` setting.',
+      'Proposal-time decision clarification (`clarification@1`), slice-based implementation planned after merge (`openlogos slice plan`), and incremental amendment of already-merged proposals: edit a delta and run `openlogos merge` again (`result: "amended"`).',
+      'The guard now protects version-controlled code and specs: ignored dependencies, build output, logs and caches no longer require a proposal, and shell commands are checked by content after execution. New `openlogos ignore` / `openlogos exempt` commands, plus ZCode, Qoder and WorkBuddy hosts and Skills-based Cursor support.',
+      'Breaking (since 0.15.0): the slice / merge transaction commands, Authority Closure and Baseline Closure are removed; `change-lint` runs ten checks (L0–L9) and the `verify` gate has three criteria — consistent result ledger, zero failures, zero uncovered cases.',
+    ],
+    fixSummaryEn: [
+      '`openlogos verify` fails with `pre_run_failed` when the pre-run command fails instead of judging stale results; JSON output includes a bounded output tail and the full output is never written to disk.',
+      'The smoke gate blocks skipped required cases by default; cases that cannot run on the current platform pass only with `reason_code: "platform-unavailable"` and a detail, and are listed separately.',
+      'Guard fallback in non-git projects judges compound commands segment by segment (including `cd` and redirects), closing bypasses via chained commands, `node -e`, scripts and `find -delete`; merge failures report their real state in three tiers.',
+      'Clean builds now match local builds: the asset manifest no longer references deleted build output, so packages built in CI or from a fresh clone run `sync` correctly.',
+    ],
+  },
   '0.13.1': {
     valueSummaryEn: [],
     fixSummaryEn: [
