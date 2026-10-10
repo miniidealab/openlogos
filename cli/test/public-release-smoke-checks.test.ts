@@ -10,7 +10,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  entryCommand, entryIdentityProblems, installedLayout, processProblem, statusEnvelopeProblems,
+  entryCommand, entryIdentityProblems, installedLayout, processProblem, provenanceSourceProblems, statusEnvelopeProblems,
 } from '../../scripts/lib/public-release-checks.mjs';
 
 const roots: string[] = [];
@@ -139,5 +139,40 @@ describe('公开发布 smoke — status 成功判据（code 评审 r1 F2）', ()
     expect(statusEnvelopeProblems(result(0, 'not json'), V).join('；')).toContain('不是合法 JSON');
     expect(statusEnvelopeProblems(result(null, '', { signal: 'SIGKILL' }), V).join('；')).toContain('SIGKILL');
     expect(statusEnvelopeProblems(result(null, '', { error: new Error('spawn EACCES') }), V).join('；')).toContain('启动失败');
+  });
+});
+
+describe('公开发布 smoke — registry 来源提交判据（release-0-16-0 增量修正：tarball 发布不写 gitHead）', () => {
+  const REPO = 'miniidealab/openlogos';
+  const COMMIT = '99c8fb91d01a241e7a93a4a8be63f7eeb7018e29';
+  /** 与 registry `dist.attestations.url` 返回结构同形（0.13.24 实测形态：publish 证明 + SLSA provenance v1）。 */
+  const attestations = (dep: { uri: string; gitCommit: string } | null, predicateType = 'https://slsa.dev/provenance/v1') => ({
+    attestations: [
+      { predicateType: 'https://github.com/npm/attestation/tree/main/specs/publish/v0.1', bundle: { dsseEnvelope: { payload: Buffer.from('{}').toString('base64') } } },
+      {
+        predicateType,
+        bundle: { dsseEnvelope: { payload: Buffer.from(JSON.stringify({
+          predicate: { buildDefinition: { resolvedDependencies: dep ? [{ uri: dep.uri, digest: { gitCommit: dep.gitCommit } }] : [] } },
+        })).toString('base64') } },
+      },
+    ],
+  });
+  const tagUri = (v: string) => `git+https://github.com/${REPO}@refs/tags/v${v}`;
+
+  it('provenance 指向 refs/tags/v<V> 且 gitCommit 等于 tag 提交 → 通过', () => {
+    expect(provenanceSourceProblems(attestations({ uri: tagUri('0.13.24'), gitCommit: COMMIT }), { repo: REPO, version: '0.13.24', commit: COMMIT })).toEqual([]);
+  });
+
+  it('提交号不符、tag ref 不符均失败', () => {
+    expect(provenanceSourceProblems(attestations({ uri: tagUri('0.13.24'), gitCommit: 'deadbeef' }), { repo: REPO, version: '0.13.24', commit: COMMIT }).join('；')).toContain('gitCommit');
+    expect(provenanceSourceProblems(attestations({ uri: tagUri('0.13.23'), gitCommit: COMMIT }), { repo: REPO, version: '0.13.24', commit: COMMIT }).join('；')).toContain('uri');
+    expect(provenanceSourceProblems(attestations({ uri: `git+https://github.com/${REPO}@refs/heads/master`, gitCommit: COMMIT }), { repo: REPO, version: '0.13.24', commit: COMMIT }).join('；')).toContain('uri');
+  });
+
+  it('缺 SLSA provenance、缺来源依赖、载荷损坏均失败', () => {
+    expect(provenanceSourceProblems(attestations(null, 'https://example.invalid/other'), { repo: REPO, version: '0.13.24', commit: COMMIT }).join('；')).toContain('缺少 SLSA provenance');
+    expect(provenanceSourceProblems(attestations(null), { repo: REPO, version: '0.13.24', commit: COMMIT }).join('；')).toContain('resolvedDependencies');
+    expect(provenanceSourceProblems({ attestations: [{ predicateType: 'https://slsa.dev/provenance/v1', bundle: { dsseEnvelope: { payload: '%%%' } } }] }, { repo: REPO, version: '0.13.24', commit: COMMIT }).join('；')).toMatch(/无法解析|resolvedDependencies/);
+    expect(provenanceSourceProblems({}, { repo: REPO, version: '0.13.24', commit: COMMIT }).join('；')).toContain('缺少 SLSA provenance');
   });
 });

@@ -107,3 +107,30 @@ export function statusEnvelopeProblems(result, version) {
   if (!isPlainObject(envelope.data)) problems.push(`envelope.data 缺失或不是 JSON 对象（${Array.isArray(envelope.data) ? '数组' : typeof envelope.data}）`);
   return problems;
 }
+
+const SLSA_PROVENANCE_V1 = 'https://slsa.dev/provenance/v1';
+
+/**
+ * registry 包的来源提交判据（release-0-16-0 增量修正：tarball 发布不写 gitHead，来源提交以 provenance 为准）。
+ * `attestations` 为 `dist.attestations.url` 返回的 JSON（`{ attestations: [{ predicateType, bundle: { dsseEnvelope: { payload } } }] }`）。
+ * SLSA provenance v1 的 `buildDefinition.resolvedDependencies[0]` 须满足：uri 指向 `<repo>` 的 `refs/tags/v<version>`，
+ * `digest.gitCommit` 等于 `commit`。返回问题列表（空即通过）。
+ */
+export function provenanceSourceProblems(attestations, { repo, version, commit }) {
+  const list = Array.isArray(attestations?.attestations) ? attestations.attestations : [];
+  const slsa = list.find(a => a?.predicateType === SLSA_PROVENANCE_V1);
+  if (!slsa) return [`缺少 SLSA provenance（${SLSA_PROVENANCE_V1}）`];
+  let statement;
+  try {
+    statement = JSON.parse(Buffer.from(String(slsa.bundle?.dsseEnvelope?.payload ?? ''), 'base64').toString('utf8'));
+  } catch {
+    return ['SLSA provenance 载荷无法解析'];
+  }
+  const dep = statement?.predicate?.buildDefinition?.resolvedDependencies?.[0];
+  if (!dep) return ['SLSA provenance 缺少 resolvedDependencies[0]'];
+  const problems = [];
+  const expectedUri = `git+https://github.com/${repo}@refs/tags/v${version}`;
+  if (dep.uri !== expectedUri) problems.push(`provenance 来源 uri=${dep.uri}，应为 ${expectedUri}`);
+  if (dep.digest?.gitCommit !== commit) problems.push(`provenance gitCommit=${dep.digest?.gitCommit}，应为 v${version} 提交 ${commit}`);
+  return problems;
+}

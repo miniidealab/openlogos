@@ -27,7 +27,7 @@
  * OPENLOGOS_PUBLIC_RELEASE_FIXTURE=<夹具目录>、OPENLOGOS_PUBLIC_RELEASE_SITE=<本地预览 URL>，且
  * OPENLOGOS_SMOKE_RESULT_PATH 指向独立账本。夹具目录以本地文件替代公网读取：
  *   release.json（{ version, commit }；commit 为 "WORKTREE" 时 CHANGELOG 与源码清单取工作区）、
- *   npm-dist-tags.json、npm-view.json、package.tgz（替代 registry tarball 与安装规格）、
+ *   npm-dist-tags.json、npm-view.json、npm-attestations.json（provenance 证明）、package.tgz（替代 registry tarball 与安装规格）、
  *   gh-release.json、gh-latest.txt、gh-assets/（Release 附件）。
  * 正式模式拒绝上述注入；结果以 environment=self-test-fixture 写入。
  */
@@ -42,7 +42,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { exitNotApplicable } from './lib/smoke-not-applicable.mjs';
 import {
-  entryCommand, entryIdentityProblems, installedLayout, processProblem, statusEnvelopeProblems,
+  entryCommand, entryIdentityProblems, installedLayout, processProblem, provenanceSourceProblems, statusEnvelopeProblems,
 } from './lib/public-release-checks.mjs';
 
 const SLUG = 'release-0-16-0';
@@ -178,6 +178,20 @@ function npmDistTags() {
 function npmVersionView(version) {
   if (SELF_TEST) return readJsonFile(fixturePath('npm-view.json'));
   return npmJson(['view', `${PKG}@${version}`, 'version', 'gitHead', 'dist.integrity', 'dist.attestations', '--json']);
+}
+
+/** `dist.attestations.url` 指向的证明 JSON（自测：夹具 npm-attestations.json）。 */
+async function npmAttestations(view) {
+  if (SELF_TEST) return readJsonFile(fixturePath('npm-attestations.json'));
+  const url = view['dist.attestations']?.url;
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    throw new EnvGap(`provenance 证明不可达：${url}（${error instanceof Error ? error.message : String(error)}）`, ['network:npm-attestations']);
+  }
 }
 
 /** 取得 registry tarball 到 dir，返回路径。 */
@@ -333,8 +347,11 @@ const CASES = {
     if (tags.old === version) problems.push('① old dist-tag 被移到了 V');
     const view = npmVersionView(version);
     if (view.version !== version) problems.push(`② version=${view.version}，应为 ${version}`);
-    if (commit !== 'WORKTREE' && view.gitHead !== commit) problems.push(`② gitHead=${view.gitHead}，应为 v${version} 提交 ${commit}`);
-    if (!view['dist.attestations']) problems.push('② dist.attestations 缺失（provenance 不可查）');
+    // 来源提交以 SLSA provenance 为准：tarball 发布不写 gitHead；gitHead 存在时须同样相等（release-0-16-0 增量修正）
+    if (view.gitHead && view.gitHead !== commit) problems.push(`② gitHead=${view.gitHead}，应为 v${version} 提交 ${commit}`);
+    const attestations = await npmAttestations(view);
+    if (!attestations) problems.push('② dist.attestations 缺失（provenance 不可查）');
+    else for (const p of provenanceSourceProblems(attestations, { repo: REPO, version, commit })) problems.push(`② ${p}`);
     const reg = registryTarball();
     const pkg = reg.pkgDir;
     const pkgJson = readJsonFile(join(pkg, 'package.json'));
@@ -360,7 +377,7 @@ const CASES = {
     if (missingTemplates.length > 0) problems.push(`SMOKE-core-04 口径：缺插件模板 ${missingTemplates.join(', ')}`);
     if (problems.length > 0) throw new Error(problems.join('；'));
     return {
-      detail: `registry ${PKG}@${version}：latest 指向 V，gitHead 等于 tag 提交，provenance 在场；包内版本与 manifest 自洽，无孤儿 dist 产物，插件模板随包`,
+      detail: `registry ${PKG}@${version}：latest 指向 V，SLSA provenance 来源为 refs/tags/v${version} 且 gitCommit 等于 tag 提交；包内版本与 manifest 自洽，无孤儿 dist 产物，插件模板随包`,
       evidence: [`V=${version}`, `commit=${commit}`, `registry_tarball_sha256=${reg.sha256}`, `dist_tags=${JSON.stringify(tags)}`,
         `integrity=${view['dist.integrity'] ?? ''}`, 'reused=SMOKE-core-04'],
     };
