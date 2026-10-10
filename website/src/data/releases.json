@@ -1,17 +1,64 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.13.24",
-  "updatedAt": "2026-08-05T03:38:12.771Z",
-  "generatedAt": "2026-08-05T03:38:12.771Z",
-  "versionCount": 83,
+  "latestVersion": "0.16.0",
+  "updatedAt": "2026-10-10T08:00:05.045Z",
+  "generatedAt": "2026-10-10T08:00:05.045Z",
+  "versionCount": 84,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.13.24"
+    "latest": "0.16.0"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.16.0",
+      "publishedAt": "2026-10-10T08:00:04.412Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.16.0",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.16.0",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.16.0.tgz",
+      "gitHead": null,
+      "size": 2571016,
+      "sizeLabel": "2.5 MB",
+      "unpackedSize": 10119147,
+      "unpackedSizeLabel": "9.7 MB",
+      "fileCount": 833,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3",
+        "pg-query-emscripten": "5.1.0",
+        "@hyperjump/json-schema": "1.17.7"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "提案阶段决策澄清：clarification@1 结构统一表达数据、兼容、安全、公开发布、外部承诺五类影响与用户决定；部署与公开发布分别决策。",
+        "切片化实现：merge 后由 slice-planner 规划 [code] 切片，openlogos slice plan --file 写出 tasks.md 的 [code] 段与 TEST_SLICE_MANIFEST.json；verify 支持切片增量 checkpoint 与最终全量验收。",
+        "已合并提案的增量修正：修改已合并提案的 delta 后再次执行 openlogos merge，即按记录的合并基线增量修正（result:\"amended\"），status 投影 spec_amend；目标被手改时拒绝修正并给出核对指引。"
+      ],
+      "fixSummary": [
+        "verify 预跑命令失败时门禁 FAIL（pre_run_failed），不再沿用旧结果判定；JSON 带有界输出尾部，输出全文不落盘。",
+        "smoke 门：本提案必要用例的 skip 默认拦截；当前平台确实无法执行的用例以 reason_code:\"platform-unavailable\" 加说明放行，并在报告中单独列出。",
+        "guard 在非 git 项目中按段判定复合命令，cd 后的相对写入按有效工作目录解析，命中白名单前缀的重定向写入不再放行；修复复合命令、node -e、脚本、find -delete 等绕过写入门禁的问题，以及 npm ci、构建产物写入被误拦的问题。"
+      ],
+      "valueSummaryEn": [
+        "First public release since 0.13.24, bundling 120+ proposals. After upgrading, run `openlogos sync` in every existing project to refresh the managed guard, hooks, Skills, the `.gitignore` managed block and the Claude Code `language` setting.",
+        "Proposal-time decision clarification (`clarification@1`), slice-based implementation planned after merge (`openlogos slice plan`), and incremental amendment of already-merged proposals: edit a delta and run `openlogos merge` again (`result: \"amended\"`).",
+        "The guard now protects version-controlled code and specs: ignored dependencies, build output, logs and caches no longer require a proposal, and shell commands are checked by content after execution. New `openlogos ignore` / `openlogos exempt` commands, plus ZCode, Qoder and WorkBuddy hosts and Skills-based Cursor support."
+      ],
+      "fixSummaryEn": [
+        "`openlogos verify` fails with `pre_run_failed` when the pre-run command fails instead of judging stale results; JSON output includes a bounded output tail and the full output is never written to disk.",
+        "The smoke gate blocks skipped required cases by default; cases that cannot run on the current platform pass only with `reason_code: \"platform-unavailable\"` and a detail, and are listed separately.",
+        "Guard fallback in non-git projects judges compound commands segment by segment (including `cd` and redirects), closing bypasses via chained commands, `node -e`, scripts and `find -delete`; merge failures report their real state in three tiers."
+      ],
+      "summarySource": "bilingual",
+      "summaryFallbackReason": null
+    },
     {
       "version": "0.13.24",
       "publishedAt": "2026-08-05T03:38:12.348Z",
@@ -31,9 +78,7 @@
       "dependencies": {
         "yaml": "^2.8.3"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "决策记录沉淀能力（S38，decision-record-capability） — issue #12 补充观察（设计决策理由只沉淀在 archive 的 proposal 里，归档即失联、检索率最低）的承诺跟进：为「为什么这样设计」在 logos/resources/ 中安排正式沉淀位置，使决策理由成为当前有效规格的一部分、可被 AI 与人直接检索。"
       ],
