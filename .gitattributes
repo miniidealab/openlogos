@@ -7,3 +7,12 @@ logos/** -text
 .qoder/plugins/openlogos/** -text
 .workbuddy/plugins/openlogos/** -text
 # <<< OpenLogos managed <<<
+
+# OpenLogos 仓库自有（release-0-16-0）：以下源目录的字节由 cli/asset-manifest.json 的 SHA-256 绑定，
+# 或被测试按字节 / 按行解析。为使 Windows checkout 与仓库字节一致，不做换行转换（core.autocrlf 不生效）。
+skills/** -text
+spec/** -text
+plugin/** -text
+plugin-*/** -text
+cli/** -text
+scripts/** -text

@@ -39,7 +39,7 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 const {
-  chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync,
+  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync,
   writeFileSync,
 } = await import('node:fs');
 const { spawnSync } = await import('node:child_process');
@@ -242,9 +242,10 @@ function pythonPathFixtures() {
   const stub = join(base, 'stub');
   mkdirSync(stub);
   if (process.platform === 'win32') {
-    // 可被发现但执行即非零退出：以 node.exe 冒充 python3.exe（`-c "import sys"` 对 node 为非法用法）
-    const stubExe = join(stub, 'python3.exe');
-    try { linkSync(process.execPath, stubExe); } catch { copyFileSync(process.execPath, stubExe); }
+    // 可被发现但执行即非零退出：以 node.exe 冒充 python3.exe（`-c "import sys"` 对 node 为非法用法）。
+    // 必须复制而非硬链接：硬链接与正在运行的 node.exe 共享同一文件，Windows 拒绝删除，夹具清理以 EPERM 失败
+    // （release-0-16-0：GitHub Windows runner 实证）。
+    copyFileSync(process.execPath, join(stub, 'python3.exe'));
   } else {
     writeFileSync(join(stub, 'python3'), '#!/bin/sh\nexit 9\n');
     chmodSync(join(stub, 'python3'), 0o755);
