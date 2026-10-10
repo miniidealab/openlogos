@@ -843,7 +843,7 @@ BASH_WRITE_PATTERNS=(
   "sed -i"
   " > "
   " >> "
-  "| tee "
+  "\\| tee "
   "^tee "
   "^mv "
   "^cp "

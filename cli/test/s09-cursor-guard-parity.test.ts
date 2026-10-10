@@ -215,7 +215,10 @@ describe('S09 Cursor 分层能力（guard-versioned-content-scope C11 / C14）',
           const got = runHost(join(REPO_ROOT, rel), root, item);
           const want = expected.get(`${host}|${state}|${item.key}`)!;
           expect(want, `${host}|${state}|${item.key} 基准缺失`).toBeDefined();
-          expect({ exit: got.exit, stdout: got.stdout }, `${host}|${state}|${item.key}`).toEqual({ exit: want.exit, stdout: want.stdout });
+          // JSON.parse 报错文案的「(line N column M)」后缀随 Node 版本出现（本机新版 Node 有、CI 的 Node 20 无），
+          // 不属于宿主结论；比较前两侧同样剔除（fix-guard-tee-pattern-linux：Linux 干净克隆暴露）
+          const normalize = (s: string) => s.replace(/ \(line \d+ column \d+\)/g, '');
+          expect({ exit: got.exit, stdout: normalize(got.stdout) }, `${host}|${state}|${item.key}`).toEqual({ exit: want.exit, stdout: normalize(want.stdout) });
         }
       }
       // 三宿主不调用事后检查引擎：不建立执行记录

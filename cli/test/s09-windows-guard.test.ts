@@ -87,7 +87,9 @@ function buildEnvs(): PathEnvs {
       }
     }
     sysDirs = [farm];
-    symlinkSync(process.execPath, join(nodeDir, 'node'));
+    // fix-guard-tee-pattern-linux：写转发到 process.execPath 的包装脚本（与 Windows 分支同形），而不是链接系统 node——
+    // 下方 chmod 会穿透链接改系统二进制，node 不属当前用户时（如容器内属 root）整文件以 EPERM 失败。
+    writeFileSync(join(nodeDir, 'node'), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`);
   }
   const stubDir = join(base, 'stub');
   mkdirSync(stubDir);

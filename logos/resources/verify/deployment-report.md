@@ -1,116 +1,81 @@
-# 部署报告：verify-smoke-guard-fixes-0-15-20 / OpenLogos 0.15.20（2026-10-09，本机全局部署）
+# 部署报告：release-0-16-0 / OpenLogos 0.16.0 公开发布（2026-10-10，**部署失败：推 tag 前门 ② 未通过**）
 
-## 一、部署结论
+## 一、结论
 
-- **模块 / 提案**：core / `verify-smoke-guard-fixes-0-15-20`。本次发布五项 CLI 行为：
-  1. verify 预跑失败进入门禁（`pre_run_failed`），JSON 带有界输出尾部，输出全文不落盘（§2.7、§2.75.1）。
-  2. smoke 门的平台不可执行例外（`reason_code:"platform-unavailable"`，§2.48.5）。
-  3. guard 非 git 回落按段判定复合命令（根规范 `spec/pretooluse-guard.md`）。
-  4. merge 增量修正失败的三档文案（§2.84.3）。
-  5. merge 增量修正与 status `spec_amend` 投影（来源提案 `merge-amend-merged-change`，已归档；§2.69.4）。
-- **部署方案依据**：`core-01-deployment-plan.md`「OpenLogos 0.15.20 发布方案（verify / smoke / guard 修复与 merge 增量修正，本地全局）」。
-- **授权与门禁**：
-  - 本次 RunLogos `--auto` 响应中，deliver 门 `gate_auto_passed=true`；`GATE_AUTO_PASSED` 审计行为 `deliver-entry`，时间 2026-10-09T17:34:03.513Z。
-  - 用户决策 C06：打包新版本部署本地全局，不推送。
-  - `VERIFY_PASS` 在场，见第八节风险 1。
-- **目标环境**：本机 npm 全局 prefix `/opt/homebrew`。入口 `/opt/homebrew/bin/openlogos` 指向 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，全局包目录是普通目录，不是链接。
-- **公开副作用**：无。未执行 npm publish、dist-tag、git tag、GitHub Release、官网部署或 git push；未改写其他仓库，包括 runlogos。
-- **数据迁移 / 服务启动**：无 / 不适用。
+- **结果**：失败，属部署方案档 A（推 tag 前失败）。未执行任何不可逆动作：未 `git push`、未创建或推送 tag、未 `npm publish`、未创建 GitHub Release、未部署官网，本机全局仍为 `0.15.20`。未执行 `openlogos deploy-done`，未写 `DEPLOY_DONE`。
+- **失败点**：门 ② Linux 干净克隆预演，阶段一（docker `node:20`）的 `npm test` 未全绿。
+- **主因**：`plugin/bin/guard-check` 的 `BASH_WRITE_PATTERNS` 含 `"| tee "`。在 `grep -E` 中，开头的 `|` 是**空分支**：
+  - GNU grep（Linux / CI）上，它匹配任何输入，非 git 回落模式下所有不在安全白名单内的命令都被判为写入；
+  - BSD grep（macOS）上，它什么都不匹配，连真正的 `cat x | tee y` 也识别不出。
+  - 该模式自 `8e4bfb8`（2026-06-01）起存在，已公开的 0.13.24 同样包含，不是本提案引入。它在 macOS 本机测试中不可见，只在 Linux 上让 guard 回落类测试失败。
+- **判定依据**：按提案默认约定「推 tag 前若 Linux 预演暴露的失败属运行时行为缺陷，停止发布并另立修复提案，修复归档后再回到本提案」，本次停止发布。
 
-## 二、部署前代码状态
+## 二、授权与目标
 
-- 基线提交：`9b7746a`（merge-amend-merged-change 归档）。
-- 本提案的 merge 产物、四个 `[code]` 切片、code review r1/r2 修复以及本次升版，**均在工作树中，尚未提交**。候选制品由该工作树真实 `npm pack` 生成，制品身份以第四节的 SHA-256 为准。
+- 授权：本次 RunLogos `--auto` 响应中 deliver 门 `gate_auto_passed=true`（`GATE_AUTO_PASSED` 审计行 `deliver-entry` 2026-10-10T01:42:12.742Z）；部署方案「OpenLogos 0.16.0 公开发布方案（npm / GitHub Release / 官网）」。
+- 目标：npm registry `@miniidealab/openlogos`、GitHub Release、Cloudflare Pages 官网；本机 npm 全局。本次均未触达。
 
-## 三、冻结事实与回滚点
+## 三、冻结事实
 
 | 项 | 值 |
 |---|---|
-| 部署前全局入口 | `/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
-| 部署前 `npm prefix -g` | `/opt/homebrew` |
-| 部署前 `openlogos --version` | `0.15.19` |
-| 部署前 `cli/package.json` | `0.15.19`（候选为下一 patch `0.15.20`，与计划值一致） |
-| 回滚制品 | `cli/rollback/miniidealab-openlogos-0.15.19.tgz`，2,623,843 字节 |
-| 回滚制品 SHA-256 | `9ad8d40b29e02ea94c4b61e301dda65018869446c21afa3ca26df0c20eb02de7` |
-| 回滚制品来源 | 在全局安装目录 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，未从工作树打包。其 SHA-256 与 0.15.19 部署记录中的唯一候选制品相同 |
-| 内容身份 | 解包后 873 个文件，与全局安装逐文件比对 SHA-256，0 差异；全局 `dist/` 的 404 个文件在包内齐全。包内**不含** `dist/lib/merge-amend.js`，`dist/commands/verify.js` **不含** `pre_run_failed` |
-| 旧行为验证 | 隔离 prefix 试装：`--version` 为 `0.15.19`；verify 预跑失败夹具 `gate={"result":"PASS","reason":null}`，不为 `pre_run_failed`；smoke 平台例外、guard 逐段判定、merge 增量修正与身份检查均不具备新行为 |
+| npm dist-tags | `{"old":"0.9.8","latest":"0.13.24"}` |
+| 本地 HEAD（部署前） | `344f2e279baa338dc27f3c81a2df21582fc7b4ae` |
+| 本次提交后 HEAD | `80faa9cde3531a7330767b372504698ab5e64c15`（`478b5f5` 规格、`204d918` 代码、`80faa9c` 版本与发布说明，均仅在本地） |
+| `origin/master` | `42d2aeb13f483b75dcfe332d088a2401dcb895e7`，本地超前 22 个提交（未推送） |
+| 本机全局 | `/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，`0.15.20` |
+| 回滚制品 | `cli/rollback/miniidealab-openlogos-0.15.20.tgz`，2,665,195 字节，SHA-256 `2511632038e8e324f761533b55e7f8b314e9badf26b45f6de1d956db14055093`。在全局安装目录 `npm pack --ignore-scripts` 产出，881 个文件与全局安装逐文件一致，与 0.15.20 原始候选制品逐字节相同（未提交入库） |
 
-冻结的本仓托管态（回滚比对基准）：
+## 四、各门执行结果
 
-| 文件 | SHA-256 |
-|---|---|
-| `.claude/openlogos/bin/guard-check`（部署前工作树） | `83705ad9af7417dec0cbb14e0183a45120d6777511bea9b43c6e1189c419f76e` |
-| `.claude/openlogos/bin/guard-check`（`HEAD`，即本提案前） | `d5235589e3cde6edcaba1b52fccf98ce3d6f857c810c7972229b03ce182f5102` |
-| `.claude/openlogos/bin/guard-post-check.cjs` | `bdeab4341c935fa9678c34bc36961a0dc579b7b2198da9b92d73b4ee2c88e18c` |
-| `.claude/openlogos/bin/openlogos-phase` | `bbdf9a13b475d857a60f52fbfde23242e470de7c2a3a01d63f04e6ea22df5fb9` |
-| `.claude/openlogos/bin/openlogos-phase-launcher.cjs` | `679f3a6f2b5b0f96400d0692c8f9c5f2ed330cf7dd380733011042e52915db9a` |
-| `.claude/settings.json` | `b5e093dab768a81c212a6eb992a3670ffbc9f2011480e2f9e9663a4ef3ad3358` |
+**门 ①：本地全绿——通过。**
+- `cd cli`：`npm run lint` 0 error、`npx tsc --noEmit` 通过、`npm test` 177 个文件 / 2652 条通过（macOS，与提交内容一致的工作区）。
+- 官网：在 `80faa9c` 的临时克隆中执行 `npm ci && npm run build` 通过。环境为 Node v23.10.0，Python 3.14.7 venv 内装 fonttools 4.66.1 与 brotli，未改动系统 Python。
 
-说明：切片 3 与 code review r1/r2 实现时，托管 guard 已按源模板逐字节复制到工作树（当时禁止调用 `openlogos`），所以部署前工作树值已是新 guard。回滚时以 `HEAD` 值为本提案前基准。
+**门 ②：Linux 干净克隆预演——未通过。**
 
-## 四、版本与制品身份
+阶段一第一次运行：docker `node:20`（镜像 `node@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5`，Node v20.20.2），提交 `80faa9c`，以 root 运行。
+- `npm ci` 0、`npm run build` 0、版本一致性 ok（0.16.0 / plugin 0.16.0 / Release 正文 3001 字符）、`npm pack` 0（SHA-256 `34c94c43ba5bbd0561a027ebb69ca6b9e997426928ac17fe71b717275242c8ba`）。
+- 包内 `dist` js 91 个，无源文件的产物 0 个；manifest 自洽；随包 guard 与 manifest 一致；`lint` 0、`tsc` 0。
+- **`npm test` 失败**：13 个文件 / 19 条。
 
-- 升版命令 `node cli/scripts/bump-version.mjs 0.15.20` 一次更新了：
-  - `cli/package.json`、`cli/package-lock.json`；
-  - `cli/asset-manifest.json`（生成器重算 `payloadHash`，未手改）；
-  - 5 个 plugin manifest；
-  - `local-release-candidate.ts`：CANDIDATE → `0.15.20`，ROLLBACK → `0.15.19`。
-- `CHANGELOG.md` 新增 `[0.15.20] - 2026-10-09` 条目，既有条目未改。
-- 唯一候选制品：`cli/miniidealab-openlogos-0.15.20.tgz`。由真实 `npm pack` 生成（含 prepack），2,665,195 字节，SHA-256 `2511632038e8e324f761533b55e7f8b314e9badf26b45f6de1d956db14055093`。隔离验证、全局安装与回滚演练都只使用这一个文件。
-- 解包核对：
-  - `package.json` 与 asset-manifest 版本均为 `0.15.20`；`validateAssetManifest` 重算 `payloadHash`，结果为 `d9dbf2e01ed429894204ee3b9e30c30fc3c26cf1ce4f616cff715e005466b5f5`，自洽。
-  - 存在 `dist/lib/merge-amend.js` 与 `dist/lib/merge-baseline.js`。
-  - `dist/commands/verify.js` 含 `pre_run_failed`；`dist/commands/smoke.js` 含 `platform-unavailable`；`dist/lib/merge-failure-report.js` 含「未进入修正写入」；`dist/lib/sandbox.js` 含流式截获助手。
-  - 随包 guard 模板 SHA-256 `83705ad9…f76e` 与 manifest 条目一致。
+阶段一第二次运行：为贴近 GitHub Actions，改为非 root 用户 `node`，并安装 sqlite3 3.40.1。
+- **`npm test` 仍失败**：5 个文件 / 6 条，另有 1 个文件级错误。其余各步结果同上。
 
-## 五、源码回归证据
+第二次运行剩余失败归因：
 
-- 升版后 `cd cli && npm run build` 通过。
-- `npm test`（即 `vitest run`）：176 个测试文件、2640 个用例全部通过。覆盖 UT-S13-81～88、ST-S13-23～24、UT-S19-51～56、ST-S19-23～24、UT-S09-448～458、ST-S09-202～204、merge 增量修正 UT-S09-429～447 / ST-S09-196～201 / UT-S11-91～95 / ST-S11-50～51，以及 `UT-S19-46`、`UT-S19-49`。reporter 账本 0 条 fail。
+| 失败 | 归因 | 处置建议 |
+|---|---|---|
+| UT-S09-448、UT-S09-450、ST-S09-202、ST-S09-173、UT-S09-407 | `"| tee "` 空分支在 GNU grep 下匹配一切，非 git 回落把 `git status \| head`、`npm run release:local` 等判为写入；旧实现对照（`true; rm src/x`）在 Linux 上同样被拦 | **运行时缺陷**：另立修复提案。把该模式改为字面量（如 `\| tee ` 或 `[|] tee `），并审查模式表中其它 ERE 元字符；同步托管副本与 asset-manifest；补 Linux 与 macOS 同判的回归测试 |
+| `deploy-plan-gate-smoke.test.ts` 正式模式用例 | 断言假定本机 `npm prefix -g` 下已全局安装 openlogos；无全局安装的 CI 上 runner 报「全局 npm prefix 下没有安装包目录」 | 测试环境依赖：断言改为接受两种「不在全局包目录」诊断，或在夹具中构造全局 prefix |
+| `s09-windows-guard.test.ts` 文件级 `EPERM chmod …/node-bin/node` | 测试对链接到系统 node 的路径 chmod；容器内 node 属 root，非 root 用户无权改 | 容器假象的可能性大：GitHub runner 上 node 属 runner 用户。建议同修，改为复制 node 或包装脚本，不对系统二进制 chmod |
 
-## 六、安装态证据
+第一次运行另有 13 条失败，第二次已消失。它们源于 root 运行使权限注入失效，以及镜像缺 sqlite3，属预演环境差异。
 
-**隔离 prefix 行为矩阵**：在一次性 prefix 中安装固定候选 tarball（绝对路径），入口 realpath 位于该 prefix 包目录内，非 workspace link。用 `scripts/smoke-verify-smoke-guard-0-15-20.js` 的自测模式，把入口指向隔离 prefix、结果写临时账本，跑 SMOKE-core-226～230 的同一组判据。全部通过：
+阶段二（docker `node:22.12.0` 官网构建）：阶段一已失败，未执行。
 
-| 类别 | 结果 |
-|---|---|
-| candidate identity（226） | `--version` = `0.15.20` = `LOCAL_RELEASE_CANDIDATE_VERSION`；包内 asset-manifest 经 `validateAssetManifest` 自洽；四项行为制品在场；随包 guard 与 manifest 条目一致 |
-| verify 预跑失败（227） | 回滚型运行器：exit 1，`gate=FAIL/pre_run_failed`，`stderr_tail` 含哨兵，`acceptance-report.md` 不含命令输出；运行器正常时 PASS（exit 0） |
-| smoke 平台不可执行（228） | `platform-unavailable` + 非空 detail 的 skip：PASS（exit 0），列入 `platform_skipped_cases`；去掉 `reason_code`：FAIL `required_cases_skipped`（exit 1） |
-| guard 逐段判定（229） | 非 git 临时项目经候选 init、置 launched、sync 部署 guard。以下均 exit 2：`ls && rm -rf src`、`true; rm src/x`、`cd src && rm ../src/a.ts`、`cd "$D" && rm a.ts`、`cd /dev/null && true; rm src/a.ts`、`ls && echo 内容 > src/a.ts`、`cd "$D" && echo 内容 > src/a.ts`、`cd src > src/a.ts && pwd`、`cd "$D" > src/a.ts && pwd`。以下均 exit 0：`ls && cat src/x`、`cd src && cat a.ts`、`echo '$(rm src/a.ts)'`、`ls 2>/dev/null && cat src/x`、`cd src >/dev/null && cat a.ts`。托管副本与随包模板一致 |
-| merge 增量修正（230 + 补测） | 依次 `merged` → `already-merged` → `amended`。`status --format json` 的 `spec_amend.pending` 依次为 false（merge 后）→ true（改 delta 后）→ false（amended 后）。再改 delta 并手改已应用目标 → exit 1 `MERGE_AMEND_DRIFT`；stderr 含「未进入修正写入」，stderr 与 JSON message 均不含 `git checkout logos/resources/` |
-| 全局零触碰 | 矩阵前后均为 `/opt/homebrew/bin/openlogos` 与 `0.15.19`，逐字一致 |
-| 回滚演练 | 在同一隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.15.19.tgz`（SHA-256 与冻结值一致）覆盖回装：`--version` 为 `0.15.19`；verify 预跑失败夹具 `gate={"result":"PASS","reason":null}`，不为 `pre_run_failed`，作为对照，证明差异由候选引入。演练后两个隔离 prefix 已删除 |
+**门 ③ / ④：未执行。**
 
-**本机全局安装**：执行 `npm install -g <同一 tarball 的绝对路径>`。新 shell 复核：
+**第二次派发（2026-10-10，dispatch `drv-drv-mv1o2epe-h7ww-deploy-e0cd85`）**：门 ② 的阻断项未变化——`plugin/bin/guard-check:846` 仍为 `"| tee "`，修复提案尚未建立或归档。因此不重跑预演，仍按档 A 失败。
 
-| 项 | 值 |
-|---|---|
-| `command -v openlogos` | `/opt/homebrew/bin/openlogos` |
-| 入口 realpath | `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`（普通目录，非链接） |
-| `openlogos --version` | `0.15.20` |
-| 包 `package.json` / asset-manifest | `0.15.20` / `0.15.20`，`payloadHash` `d9dbf2e0…b5f5` |
-| 与候选 tarball 同源 | tarball 881 个文件与全局安装逐文件比对 SHA-256，0 差异 |
-| 随包 guard 模板 | `83705ad9af7417dec0cbb14e0183a45120d6777511bea9b43c6e1189c419f76e` |
+本次补充核实门 ④：本机 gh 另登录有账号 `miniidealab`（未激活，本次未切换激活账号，也未输出 token）。以它只读查询的结果：
+- 对 `miniidealab/openlogos` 权限为 `admin:true`、`push:true`；
+- `gh secret list` 列出 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN`、`NPM_TOKEN`，三项均存在，只查名称不读值。
 
-## 七、本仓 sync 读回
+门 ④ 的凭据存在性条件可以满足；推送须使用该账号的凭据。
 
-在本仓项目根用新全局 CLI 执行 `openlogos sync`，退出码 0（`openlogos v0.15.20`，输出「Sync complete.」）。读回结果：
+**第三次派发（2026-10-10，dispatch `drv-drv-mv1o2epe-h7ww-deploy-1b48be`）**：状态与第二次相同——HEAD 仍为 `80faa9c`，`guard-check:846` 仍为 `"| tee "`，没有修复提案。按档 A 直接失败，未重跑预演，无任何写入。重复派发部署不会改变结论，需先完成修复提案。
+- 未推送 master，未等待 CI。
+- 门 ④ 的提前检查发现：本机 `gh` 账号 `bergkampzhang` 对仓库权限为 `push:false`、`admin:false`，`gh secret list` 返回 HTTP 403，无法确认 `NPM_TOKEN`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 的存在性。即使门 ② 通过，门 ④ 也需要有仓库管理权限的账号确认，或由用户在 GitHub 仓库设置中确认。
 
-| 项 | 结果 |
-|---|---|
-| `.claude/openlogos/bin/guard-check` | `83705ad9…f76e`，与全局包 `claude-plugin-template/bin/guard-check` 逐字节一致。相对 `HEAD`（`d5235589…5102`）的变化来自本提案切片 3 与 code review r1/r2 |
-| `.claude/openlogos/bin/` 其余三个脚本 | SHA-256 与冻结值相同 |
-| `.claude/settings.json` | SHA-256 与冻结值相同（`b5e093da…3358`） |
-| 其它 sync 写入 | `AGENTS.md` / `CLAUDE.md` 重渲染后字节不变；17 个 Skills 同步到 `logos/skills/`，无差异；`logos/spec/` 中只有 `cli-json-output.md` 产生差异，即本提案对根规范 `spec/cli-json-output.md` 的修改同步到项目副本。Claude Code 插件已存在，sync 跳过 |
+## 五、回滚与现场
 
-## 八、未解决风险与提醒
+- 无需回滚：没有任何公网或全局写入。
+- 本地新增的三个提交保留，便于修复后继续。未推送，如需撤销可直接在本地处理。
+- 部署前的预演产物都在一次性目录中，本仓工作区仅新增未跟踪的 `cli/rollback/miniidealab-openlogos-0.15.20.tgz`。
 
-1. **VERIFY_PASS 早于 code review 修复**：`VERIFY_PASS` 与 `acceptance-report.md` 生成于 2026-10-09 10:01（本地时间）。之后 code review r1/r2 修改了 `plugin/bin/guard-check`（逐段重定向判定、引号感知替换识别）与 `cli/src/lib/sandbox.ts`（流式有界截获）。修复后及升版后各跑过一次全量 `npm test`，均为 2640/2640 通过，安装态矩阵也覆盖了修复后的行为；但 `openlogos verify` 没有在修复后重跑（本工作单元只授权部署）。如需验收报告与代码同步，可由用户授权重跑 `openlogos verify`。
-2. **代码尚未提交**：本提案全部实现与升版仍在工作树中，见第二节。按流程应由后续环节提交。
-3. **runlogos 未处理**：按部署方案「不改写其他仓库」，**runlogos 需由用户授权后在其项目根执行 `openlogos sync`，才会获得新 guard**。RunLogos 的 `adapt-upstream-merge-amend` 依赖本次第 5 项，现已随全局 CLI 生效。
-4. **smoke 尚未执行**：SMOKE-core-226～230 按流程在 `openlogos deploy-done` 之后另行运行。
-5. **回滚入口**：
-   - 只需回滚全局：`npm install -g <绝对路径>/cli/rollback/miniidealab-openlogos-0.15.19.tgz`，新 shell 复核 `--version` 为 `0.15.19`。
-   - 本仓托管 guard 也需回滚：用旧版 CLI 执行 `openlogos sync`，再按第三节冻结值读回核对。
+## 六、后续建议
+
+1. 另立修复提案，修复 guard `"| tee "` 的 ERE 空分支缺陷：Linux 过度拦截、macOS 漏判 `| tee` 写入。顺带修复上表两个测试环境依赖。修复提案按流程验收、本机部署、归档。
+2. 回到本提案，按修复后的版本刷新事实（回滚基线、CHANGELOG 聚合条目写入该修复），重新执行四道门。门 ② 阶段一必须以非 root 用户、具备 sqlite3 的环境全绿。
+3. 门 ④：已用 `miniidealab` 账号核实三项 secrets 存在、该账号有 push 权限。重试时 `git push` 与 `gh` 操作须使用该账号，当前激活账号 `bergkampzhang` 无 push 权限。是否切换激活账号由用户决定。

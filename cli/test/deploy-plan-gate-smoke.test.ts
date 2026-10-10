@@ -90,7 +90,9 @@ describe('deploy-plan-gate smoke runner：正式与自测隔离（code 评审 F2
     expect(out.map(x => [x.id, x.status])).toEqual(IDS.map(id => [id, 'fail']));
     for (const x of out) {
       expect(x.environment).toBe('local-global-temp-project');
-      expect(x.detail).toContain('不在全局 npm prefix 的包目录');
+      // 入口不在全局包目录内的两种诊断都成立：本机全局装有 openlogos 时报「不在…包目录」，CI 等未全局安装时报
+      // 「…下没有安装包目录」（fix-guard-tee-pattern-linux：不再假定本机全局装有 openlogos）
+      expect(x.detail).toMatch(/不在全局 npm prefix 的包目录|全局 npm prefix 下没有安装包目录/);
     }
   }, TIMEOUT);
 });

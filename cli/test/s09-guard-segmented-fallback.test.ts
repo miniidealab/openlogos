@@ -53,7 +53,13 @@ function runGuard(guard: string, root: string, command: string) {
 const OLD_GUARD_FIXTURE = join(REPO_ROOT, 'cli', 'test', 'fixtures', 's09-guard-pre-segmented.sh');
 function oldGuard(): string {
   const dir = temp('old');
-  copyFileSync(OLD_GUARD_FIXTURE, join(dir, 'guard-check'));
+  // fix-guard-tee-pattern-linux：留存副本含 `"| tee "` 空分支缺陷，GNU grep（Linux / CI）下它把任意命令判为写入，
+  // 使「旧实现放行」的必红前提只在 macOS 上成立。对照组只剔除这一个无关缺陷（与 plugin/bin/guard-check 同样转义），
+  // 对照的仍是逐段判定改动本身；留存副本文件保持原样，供 UT-S09-459 检出该缺陷。
+  const source = readFileSync(OLD_GUARD_FIXTURE, 'utf-8');
+  const isolated = source.replace(/^ {2}"\| tee "$/m, '  "\\\\| tee "');
+  expect(isolated, '留存副本中应恰有一处 "| tee " 待转义').not.toBe(source);
+  writeFileSync(join(dir, 'guard-check'), isolated);
   copyFileSync(ENGINE_SRC, join(dir, 'guard-post-check.cjs'));
   return join(dir, 'guard-check');
 }

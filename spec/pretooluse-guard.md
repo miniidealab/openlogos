@@ -1203,3 +1203,43 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 ### [code] 触点（本 delta 只定契约）
 
 - `plugin/bin/guard-check` 的 `bash_fallback_verdict` 落实拆段、逐段判定与有效工作目录；sync 部署副本 `.claude/openlogos/bin/guard-check` 经 `openlogos sync` 分发（guard-check 为 asset-manifest 托管资产，随 0.15.20 发布刷新）。
+
+## Bash 模式表的 ERE 解释与跨平台同判（规范性）
+
+> 来源变更：fix-guard-tee-pattern-linux（决策 C01；由 release-0-16-0 部署门② Linux 干净克隆预演暴露）。适用于 `plugin/bin/guard-check` 中的 `BASH_SAFE_PATTERNS` 与 `BASH_WRITE_PATTERNS`，以及经 sync 分发的托管副本。
+
+### 缺陷形态
+
+guard 用 `grep -qE` 对模式表逐条匹配，条目因此按 POSIX 扩展正则（ERE）解释，而不是按字面串解释。修改前，`BASH_WRITE_PATTERNS` 含条目 `"| tee "`：开头的 `|` 在 ERE 里是交替符，该条目的实际含义是「空串，或 ` tee `」。不同 grep 对空分支的处理不同：
+
+| 平台 | grep | `"| tee "` 的实际行为 | 后果 |
+|---|---|---|---|
+| Linux / CI | GNU grep | 空分支匹配任意输入 | 非 git 回落时，所有不在 `BASH_SAFE_PATTERNS` 里的命令都被判为写入：`make build`、`git status \| head` 被阻断；git 判据下的事前轻判也对任意命令进入目标提取 |
+| macOS | BSD grep | 整条不匹配任何输入 | `… \| tee 文件` 不被识别为写入 |
+
+Cursor 侧同一张表写作 `/\| tee /`（`plugin-cursor/hooks/runtime.cjs`），本意为字面量「管道接 tee」，只有 Bash 侧漏了转义。
+
+### 规则
+
+1. **按 ERE 书写**：模式表每一条都是 POSIX ERE，由 `grep -E` 解释。需要字面量含义的元字符必须转义：`|` 写作 `\|`（bash 双引号字符串内写作 `"\\| …"`），`[`、`(`、`.`、`*`、`+`、`?` 等同理。
+2. **禁止空分支**：任一条目都不得产生空的交替选项。具体为：不得以未转义的 `|` 开头或结尾，不得出现相邻的未转义 `||`，也不得在分组内出现 `(|`、`|)`。有意的交替（如 `"^ls |^ls$"`，两侧都非空）合法。
+3. **`| tee ` 的语义**：`BASH_WRITE_PATTERNS` 中该条目写作 `"\\| tee "`，语义为字面量「管道接 tee」，与 Cursor 侧 `/\| tee /` 一致。
+4. **跨平台同判**：对同一输入，guard 在 GNU grep 与 BSD grep 下必须给出相同的退出码与阻断文案。模式表条目只能使用两者语义一致的 ERE 子集，不得依赖任一实现的扩展或未定义行为（空分支、`\d`、`\s`、反向引用等）。
+
+### 修复后的判定
+
+| 输入（非 git 回落、launched、无活跃提案） | Linux | macOS |
+|---|---|---|
+| `make build`、`npm run release:local`（未知单条命令） | exit 0（修改前 exit 2） | exit 0 |
+| `git status \| head`、`ls \| head` | exit 0（修改前 exit 2） | exit 0 |
+| `cat src/x \| tee src/a.ts` | exit 2 | exit 2 |
+
+### 不变量
+
+- 模式表的条目集合、判定顺序（`BASH_SAFE_PATTERNS` 先判）、逐段判定、有效工作目录、路径提取与逐路径管辖判定、拦截文案、exit 2 合同、git 判据下的事前轻判与事后检查均不变。本节只修正一条模式的写法，使其回到既有本意，并约束今后的写法。
+- 各「不变量」小节中「`BASH_SAFE_PATTERNS` / `BASH_WRITE_PATTERNS` 模式表不变」的含义是**语义不变**；本节对 `| tee ` 的转义属于语义修正，不构成对这些不变量的违反。
+
+### [code] 触点（本 delta 只定契约）
+
+- `plugin/bin/guard-check`：`"| tee "` 改为 `"\\| tee "`；托管副本 `.claude/openlogos/bin/guard-check` 与源模板逐字节一致；`cli/asset-manifest.json` 由生成器重算。
+- 测试：UT-S09-459（模式表无空分支的静态守卫）、UT-S09-460（非 git 回落的跨平台同判行为矩阵），见 `logos/resources/test/core-S09-test-cases.md`。

@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 测试变更集改由 merge 时的语义差异驱动，不再把 delta 中原样携带的基线测试 ID 误判为变更；目标规格中原样继承的既有欠债不再阻断无关提案。
 - `--format json` 在进程退出前完整刷出输出；修复 Windows 下的路径、换行与重命名重试问题。
 - 打包产物不再夹带已删除源码的旧构建文件；asset manifest 与干净构建一致，从 CI 或干净克隆构建的包 `sync` 正常。
+- guard 写入模式 `| tee` 的正则漏了转义：在 Linux（GNU grep）上会误拦任意命令，在 macOS 上会漏判管道写入。修复后两个平台判定一致。
 
 ### Security
 

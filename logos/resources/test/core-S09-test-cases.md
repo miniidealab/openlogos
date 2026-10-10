@@ -1491,3 +1491,26 @@
 - guard 用例以真实 `plugin/bin/guard-check` 与 sync 部署副本执行，不以函数级桩替代；merge 用例以真实 CLI 子进程执行，文案断言针对固定短语与错误码，不依赖整段措辞。
 - 故障注入仅在 `NODE_ENV=test` 下生效，生产路径零影响。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S09 guard 模式表的 ERE 解释与跨平台同判测试
+
+> 覆盖根规范 `spec/pretooluse-guard.md`「Bash 模式表的 ERE 解释与跨平台同判（规范性）」；来源变更 fix-guard-tee-pattern-linux（决策 C01；release-0-16-0 部署门② Linux 干净克隆预演暴露）。
+>
+> **夹具口径**：
+> - UT-S09-459 读取 `plugin/bin/guard-check` 源码中 `BASH_SAFE_PATTERNS` 与 `BASH_WRITE_PATTERNS` 两个数组的全部条目，做静态判定，不执行 guard。旧实现对照取既有留存副本 `cli/test/fixtures/s09-guard-pre-segmented.sh`。
+> - UT-S09-460 使用与 S09 逐段判定测试相同的非 git 夹具：`mktemp -d` 下的一次性项目，不是 git 工作树，launched，`logos/.openlogos-guard` 不存在，项目根下有 `src/a.ts`、`src/x`。以真实 `plugin/bin/guard-check` 为被测对象，向 stdin 喂 PreToolUse hook JSON（`tool_name:"Bash"`），以退出码判定（0 放行、2 阻断）。
+> - 「项目外绝对路径」取另一个 `mktemp -d` 目录下的文件。
+> - 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-459 | 模式表无空分支（与平台无关的静态守卫） | 读取 guard-check 源码 | 解析 `BASH_SAFE_PATTERNS`、`BASH_WRITE_PATTERNS` 两个数组的每个条目，检查未转义的 `\|`：是否位于开头或结尾、是否与另一个未转义的 `\|` 相邻、是否紧邻 `(` 之后或 `)` 之前；同时确认 `BASH_WRITE_PATTERNS` 含字面量写法 `\\| tee `。再对旧实现留存副本执行同一检查 | 当前实现：零违规，字面量 `\| tee ` 条目在场；有意的交替（如 `^ls \|^ls$`）不计为违规。旧实现：检出 `"\| tee "` 一条违规（以未转义 `\|` 开头）。**本用例在 macOS 上同样能拦截此类写法，对旧实现必红** |
+| UT-S09-460 | 非 git 回落的跨平台同判行为矩阵 | 非 git 夹具 | 逐条喂：① 未知单条命令 `make build`、`npm run release:local`、`python3 tools/x.py`；② 只读复合命令 `git status \| head`、`ls \| head`；③ 管道写入 `cat src/x \| tee src/a.ts`、`echo x \| tee src/x`；④ 管道写项目外 `ls \| tee <项目外绝对路径>` | ① ② 均 exit 0；③ 均 exit 2，stderr 含阻断说明；④ exit 0。**修改前的实现在 GNU grep（Linux / CI）上对 ① ② 全部 exit 2，本用例在 Linux 上必红**；macOS 上修改前后结论相同，由 UT-S09-459 补足平台无关的拦截 |
+
+### 追溯与覆盖
+
+- 根规范：`spec/pretooluse-guard.md`「Bash 模式表的 ERE 解释与跨平台同判（规范性）」规则 1～4 与「修复后的判定」表。
+- 规则 2（禁止空分支）与规则 3（`| tee ` 字面量）→ UT-S09-459；规则 4（跨平台同判）与「修复后的判定」表 → UT-S09-460。
+- 跨平台证据：UT-S09-460 须在 Linux（GNU grep）上执行通过。来源提案的完成标准要求同一提交在 docker `node:20` 干净克隆中 `npm test` 全绿，GitHub CI 的 `Lint & Test` job 同样在 Linux 上执行本用例。
