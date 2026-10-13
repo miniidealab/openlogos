@@ -4213,3 +4213,82 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-239～SMOKE-core-241。
 - 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
 - 来源提案：verify-sandbox-reuse-0-16-1（决策 C01～C06）。
+
+## OpenLogos 0.16.1 公开发布方案（npm / GitHub Release / 官网）
+
+### 部署目标与授权边界
+
+把已在本机全局验收的 **0.16.1**（核心能力：verify / smoke 沙箱复用，来源提案 `verify-sandbox-reuse-0-16-1`）公开发布：用户执行 `npm install -g @miniidealab/openlogos` 时拿到这一版，GitHub Release 与官网 `/releases` 同步展示同一版本。
+
+- **目标环境（生产）**：npm registry 公网包 `@miniidealab/openlogos`（`dist-tags.latest`）；GitHub Release；Cloudflare Pages 官网（`/releases`）。
+- **目标环境（本地）**：本机 npm 全局，从本地构建的 0.16.1 切换为 registry 上实际发布的版本。
+- **发布链路**：与「OpenLogos 0.16.0 公开发布方案」相同——推送 `v<V>` tag 后由 `.github/workflows/publish.yml` 依次执行测试构建、版本与 CHANGELOG 一致性校验并提取 Release 正文、`npm pack` → `npm publish --provenance`、`gh release create --latest`、官网 `generate:releases --strict` → build → 校验 latest → `wrangler pages deploy`。本方案**不修改** `publish.yml` 与 `ci.yml`。
+- **授权来源**：用户 2026-10-13「请帮我正式发布到github/官网/npm」（来源提案 `release-0-16-1` 决策 C01）。
+- **人类确认点**（部署执行授权不自动覆盖；全自动 `--auto` 模式下按 standing 授权执行）：`git push origin master`；`git push origin v<V>`；档 C 中用本机 Cloudflare 凭据执行的 `wrangler pages deploy`；档 D 中的 `npm dist-tag` / `npm deprecate`。
+
+**实际发布版本 V**：初始为 `0.16.1`。按下文档 B2 前滚时，V 改为前滚后的新 patch（如 `0.16.2`）。凡涉及安装、smoke、CHANGELOG 标题、英文摘要键、deprecate 与前滚目标的命令，一律以 V 为准；本节写成 `0.16.1` 的地方均是 V=0.16.1 时的取值。**回滚目标**为已公开的 `0.16.0`。
+
+**本方案不做的事**：不再升版（全部版本载体已在 `verify-sandbox-reuse-0-16-1` 中升到 0.16.1）；不调整 npm `old` dist-tag；不改写其他仓库（包括 runlogos）。
+
+### 发布前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS。代码切片须已兑现：CHANGELOG `## [0.16.1]` 改为公开发布说明（去掉「本机全局发布（未发布到 npm）」、补「从 0.16.0 升级」指引、日期为实际发布日）；`website/src/data/release-summaries-en.mjs` 新增 `'0.16.1'` 英文摘要；新增 `scripts/smoke-public-release-0-16-1.js`。
+2. **冻结公网与本地现状**，写入部署记录（实际值在部署前重新读取，不在脚本中硬编码）：
+   - npm：`npm view @miniidealab/openlogos dist-tags --json`，计划时 `latest=0.16.0`、`old=0.9.8`；
+   - git：`git rev-parse HEAD` 与 `origin/master`，以及超前提交数（计划时超前 2 个：`3858fce` 归档、`bf61f6f` sync 托管产物，另加本提案的提交）；
+   - 本机全局：`command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`，计划时为本地构建的 `0.16.1`。
+3. **本机回滚制品**：沿用已冻结的 `cli/rollback/miniidealab-openlogos-0.16.0.tgz`（SHA-256 `2aa52d6e7327d52df2a9765e52f1b59fd6193741249450d2f65b88b0b443480b`，来源为 0.16.0 全局安装目录，见部署记录「verify-sandbox-reuse-0-16-1」第三节）。部署前复核文件存在且 SHA-256 一致；不一致即停止。
+4. **版本身份复核**：`cli/package.json`、lockfile 根包、`cli/asset-manifest.json`、5 份 plugin manifest 与 `local-release-candidate.ts` 候选常量均为 V；若需前滚（档 B2），只用 `node cli/scripts/bump-version.mjs <V>`，禁止手改 manifest。
+
+### 推 tag 前的四道门（依次全过才可推 tag）
+
+**官网构建环境前提**：与「OpenLogos 0.16.0 公开发布方案」相同——凡执行官网 `generate:releases` / `build` 的环境须 Node `>=22.12.0`，并具备 Python 3 与 `fonttools`、`brotli`；CLI 测试、构建与打包按 `publish.yml` 在 Node 20 执行。不满足前提时停止并如实报告，不得跳过官网步骤。
+
+**门 ①：本地全绿。** `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build` 全绿；`cd website && npm ci && npm run build` 可构建（记录 `node --version` 与 `python3 -c "import fontTools, brotli"` 结果）。
+
+**门 ②：Linux 干净克隆预演。** 对同一待发布提交 `git clone`（只含已跟踪文件），分两个容器阶段按 `publish.yml` 同序复跑，两阶段使用同一提交号：
+
+- 阶段一（docker `node:20`）：`cd cli && npm ci && npm test && npm run build`；版本一致性校验（`cli/package.json`、`plugin/.claude-plugin/plugin.json` 与 `CHANGELOG.md` 的 `## [V]` 一致，按 `publish.yml` 同规则提取的 Release 正文非空且不含「未发布到 npm」）；`npm pack` 并核对包内 `dist/**/*.js` 均有同名 `cli/src/**/*.ts` 源文件、asset-manifest 经 `validateAssetManifest` 自洽、包内含 `dist/lib/sandbox-reuse.js`；`npm run lint` 与 `npx tsc --noEmit`。
+- 阶段二（docker `node:22.12.0`）：安装 Python 3 与 `fonttools`、`brotli`；`cd website && npm ci && npm run build`。无法使用该容器时可在满足前提的宿主机补跑，并在部署记录写明原因。
+
+本次需特别关注沙箱复用测试在 Linux 上的行为：`cli/test/s13-sandbox-reuse.test.ts` / `s19-sandbox-reuse.test.ts` 在 Linux 走 `/proc/<pid>/environ` 运行标记扫描，容器内若不具备该能力应按既有 `skipIf` 跳过而非失败。任一失败即不推送。预演证据写入部署记录（镜像摘要或宿主机说明、`node --version`、提交号、各步退出码；阶段一另记 `npm pack` 文件清单与 SHA-256）。
+
+**门 ③：GitHub CI 双 job 全绿。** `git push origin master`（人类确认点）后，等待 `ci.yml` 的 `Lint & Test` 与 `Windows regression` 两个 job 均为 success，记录 run id。任一失败不推 tag。
+
+**门 ④：发布凭据。** `gh secret list` 确认 `NPM_TOKEN`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 均已配置（只查存在性，不读值）。档 C 恢复路径已在 0.16.0 发布中演练并实际执行过（部署记录「release-0-16-0」第十一节），本次不重复演练；如 0.16.0 之后 `publish.yml` 有改动，则须按 0.16.0 方案「档 C 恢复演练」重做。
+
+### tag 驱动发布与监视
+
+1. 在门 ③ 通过的同一提交上创建 annotated tag `v<V>` 并推送（人类确认点，不可逆）。
+2. 用 `gh run watch` 监视 `publish.yml` 的本次 run，记录 run id 与各步结论。
+3. **成功判据（二选一）**：原 run 全步骤 success；或原 run 的 `Publish` 步骤 success 记录 + 档 C 受控补做的逐步证据（不得把补做后的状态描述为原 run 全绿）。两种情况都必须满足下文 smoke（SMOKE-core-242～245 与复用用例）全部通过，且 npm、GitHub Release、官网三处同源于 V。
+
+### 失败处置与回滚（按发布阶段分档）
+
+沿用「OpenLogos 0.16.0 公开发布方案」的分档与判据（registry 是否已有 V 以 `npm view @miniidealab/openlogos@<V> version` 是否返回 E404 为准；已推送的 tag 一律保留，不删除、不重打），差异仅在版本与回滚目标：
+
+| 档 | 时点 | 处置 |
+|---|---|---|
+| A | 推 tag 前任一门失败 | 不推 tag；修复后重走全部四道门 |
+| B1 | 已推 `v<V>`、registry 无 V；同一冻结提交上的外部瞬态失败 | 只允许 `gh run rerun <run-id>`；重跑前再次确认 registry 无 V |
+| B2 | 已推 `v<V>`、registry 无 V；修复需要改文件 | 保留失败 tag；`bump-version.mjs` 递增 patch 作为新 V，CHANGELOG 节标题、英文摘要键、smoke 与安装目标跟随新 V，并在该节注明「v0.16.1 tag 发布失败，未发布到 npm」；重新通过四道门后推新 tag |
+| C | registry 已有 V，后续步骤失败 | 按 0.16.0 方案「档 C 受控补做」执行：先以 provenance 核对 registry 身份（`resolvedDependencies[0]` 指向 `refs/tags/v<V>`，`digest.gitCommit` 等于 tag 提交）并取得 registry tarball；Release 先 view 后 create / upload；官网 `npm ci` → `generate:releases -- --strict` → build → 校验 latest=V → `wrangler pages deploy`（人类确认点）。**禁止**重跑原 run 或其 job |
+| D | 发布完成后发现严重缺陷 | `npm dist-tag add @miniidealab/openlogos@0.16.0 latest`；`npm deprecate @miniidealab/openlogos@<V> "<原因>"`；`gh release edit v<V> --latest=false`；Cloudflare Pages 控制台回滚到上一部署；本机全局回装 `cli/rollback/miniidealab-openlogos-0.16.0.tgz`（绝对路径）；另立修复提案后前滚下一 patch |
+
+### 发布后同步
+
+1. 在满足官网构建环境前提的本地环境执行 `cd website && npm run generate:releases -- --strict`，更新 `website/src/data/releases.json`（`latestVersion` 等于 V），作为「同步官网发布资源」提交入库；推送该提交属于 `git push origin master` 人类确认点。registry 刚发布后若 `latestVersion` 尚未等于 V，等待后重试生成，不得手改。
+2. **本机全局切换**：`npm install -g @miniidealab/openlogos@<V>`（从 registry 安装，不得安装未进入 registry 的版本号）。新 shell 复核：入口 realpath 在全局包目录内且非链接；`openlogos --version` 等于 V；包内 asset-manifest 版本等于 V 且自洽；全局包与 `npm pack @miniidealab/openlogos@<V>` 所得 tarball 逐文件一致。失败即以绝对路径回装 `cli/rollback/miniidealab-openlogos-0.16.0.tgz`。
+3. 本次 guard / hook / Skill 托管资产相对已安装的本地 0.16.1 无变化，不在本仓执行 `openlogos sync`；如复核发现随包 guard 模板与本仓托管副本 SHA-256 不一致，再执行 sync 并读回核对。
+4. 写部署记录 `logos/resources/verify/deployment-report.md` 新一节，开头给出供 smoke runner 读取的两行：`public_release_version: <V>` 与 `public_release_commit: <tag 提交完整 SHA>`；正文分开记录预演证据（门 ①②）、CI 证据（门 ③）、凭据证据（门 ④）、公网制品证据（publish run、registry 身份与 tarball SHA-256、Release、官网）与本机切换证据。之后经 `openlogos deploy-done` 受控落标，再进入 smoke。
+
+### 数据与兼容
+
+- 无数据迁移。
+- 从 0.16.0 升级的用户：更新全局 CLI 即可；沙箱复用默认开启，既有项目无需改配置，编译型项目可按需声明 `sandbox_cache_paths`；在 Seatbelt 等嵌套沙箱内复用自动退回一次性沙箱。该说明写入 CHANGELOG `## [V]`。
+
+### 追溯
+
+- 来源提案：release-0-16-1（决策 C01～C05）；能力来源 verify-sandbox-reuse-0-16-1。
+- 本文件：「OpenLogos 0.16.0 公开发布方案（npm / GitHub Release / 官网）」（链路、官网构建环境前提、档 C 受控补做细则）；「发布前检查通则：环境事实不入 verify 期断言」。
+- smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.1 公开发布 smoke（SMOKE-core-242～245）」，并复用 SMOKE-core-01 / 02 / 04 / 07 / 08 / 15。
