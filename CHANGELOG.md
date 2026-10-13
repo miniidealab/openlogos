@@ -7,17 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.16.1] - 2026-10-13
+## [0.16.2] - 2026-10-13
 
-verify / smoke 沙箱复用：同一项目的验收不再每次全量复制工作区、从零编译，构建工具的增量编译跨运行生效。
+0.16.0 之后的首个公开版本：verify / smoke 沙箱复用——同一项目的验收不再每次全量复制工作区、从零编译，构建工具的增量编译跨运行生效；并修复了沙箱复用在 Linux 上因存活检查误判而基本失效的问题。0.16.1 只在本机安装过，其内容全部包含在本版中，从 0.16.0 升级的用户直接看本节即可。
 
 ### 从 0.16.0 升级
 
-1. 更新全局 CLI：`npm install -g @miniidealab/openlogos@latest`，确认 `openlogos --version` 为 `0.16.1`。
+1. 更新全局 CLI：`npm install -g @miniidealab/openlogos@latest`，确认 `openlogos --version` 为 `0.16.2`。
 2. 既有项目**无需修改配置**：`sandbox_mode` 为 `auto` / `always` 时沙箱复用默认开启；如需回到每次新建的一次性沙箱，在 `verify` / `smoke` 配置中设 `sandbox_reuse: false`。
 3. 编译型项目可在 `verify` / `smoke` 配置中声明 `sandbox_cache_paths`（如 `["src-tauri/target"]`），让构建产物跨运行留存；该目录不得与结果文件路径重叠。
 4. 持久沙箱常驻在 `sandbox_root` 下（每个项目一份工作区副本），磁盘紧张时可把 `sandbox_root` 指向空间充足的磁盘。
 5. 在 Seatbelt 等嵌套沙箱内运行（如 Claude Code 沙箱模式、Codex）时，CLI 无法完成旧写入者存活检查，复用自动退回一次性沙箱（`sandbox.reuse.state` 为 `unsupported`），结果正确性不受影响。
+6. Linux 上存在 Chromium / Electron 沙箱渲染进程等不可转储进程时，复用照常生效；0.16.1 本机构建写下的旧释放记录只在下一轮按保守口径复查一次，之后自动恢复复用。
+
+### Added
+
+- **verify / smoke 沙箱复用**（verify-sandbox-reuse-0-16-1）：`sandbox_mode` 为 `auto` / `always` 时默认每项目使用一份持久沙箱，运行前按同步清单增量同步工作区（两侧 ctime 指纹，指纹变化或处于 2 秒 racy 窗口的文件判定内容；保留 mtime 与权限），运行后保留，构建工具的增量编译跨运行生效。
+- 新增配置 `sandbox_reuse`（默认 `true`；`false` 时回到一次性临时沙箱）与 `sandbox_cache_paths`（声明归沙箱所有、跨运行留存的构建产物目录，如 `src-tauri/target`）。
+- 新增参数 `openlogos verify --fresh-sandbox` / `openlogos smoke --fresh-sandbox`：新建空的工作区世代重建沙箱。
+- JSON `sandbox.reuse`：复用状态（`created` / `reused` / `recovered` / `fresh` / `busy-fallback` / `unsupported` / `disabled`）、世代、复制 / 删除 / 内容比较计数、同步耗时与被弃用世代。
+
+### Changed
+
+- 被强杀的 verify / smoke 不再在 `sandbox_root` 下每次累积一次性目录；上一轮命令进程组仍有成员或带运行标记的后代仍存活时，下一轮新建工作区世代，旧世代列入 `sandbox.reuse.abandoned`，由用户确认无进程使用后手动清理。
+- 在 Seatbelt 等嵌套沙箱内（setuid 的 `/bin/ps` 不可执行）无法完成旧写入者存活检查，此时 `reuse.state=unsupported` 并退回一次性沙箱。
+
+### Fixed
+
+- **Linux 上沙箱复用基本失效**（fix-sandbox-reuse-linux-liveness）：Linux 通过 `/proc/<pid>/environ` 检查旧写入者，同用户的不可转储进程（如 Chromium / Electron 沙箱渲染进程）的 environ 不可读，此前被一律判为「无法完成扫描」，导致每次释放都写 `tainted`、下一轮新建工作区世代并累积被弃用世代。现在对这类进程按启动时刻判定：启动早于本次命令启动时刻（留 1 秒容差）的进程不可能是该命令的后代，直接跳过；仍无法确认的进程照旧不复用。
+- 释放记录新增 `command_started_uptime`（仅 Linux 写入），下一轮复查与 `--fresh-sandbox` 删除判定使用它；旧记录缺该字段时按保守口径处理一轮。系统重启后旧世代的后代不可能存活，判定随之正确。macOS 判定与 `sandbox.reuse` JSON 输出不变。
+
+## [0.16.1] - 2026-10-13
+
+本机全局发布（未发布到 npm），内容并入 0.16.2 公开发布。
 
 ### Added
 

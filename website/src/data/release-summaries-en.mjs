@@ -1,13 +1,14 @@
 export const RELEASE_SUMMARIES_EN = {
-  '0.16.1': {
+  '0.16.2': {
     valueSummaryEn: [
-      'Sandbox reuse for `openlogos verify` and `openlogos smoke`: each project now keeps one persistent sandbox and only syncs what changed, so your build tool\'s incremental compilation works across runs instead of rebuilding everything from scratch. Enabled by default whenever `sandbox_mode` is `auto` or `always` — no configuration change needed.',
+      'First public release since 0.16.0 (0.16.1 was only installed locally; everything in it is included here). Sandbox reuse for `openlogos verify` and `openlogos smoke`: each project now keeps one persistent sandbox and only syncs what changed, so your build tool\'s incremental compilation works across runs instead of rebuilding everything from scratch. Enabled by default whenever `sandbox_mode` is `auto` or `always` — no configuration change needed.',
       'Declare build output directories with `sandbox_cache_paths` (for example `src-tauri/target`) to keep them across runs; set `sandbox_reuse: false` to go back to a fresh one-off sandbox every time.',
       'New `--fresh-sandbox` flag for `verify` and `smoke` rebuilds the persistent sandbox from scratch, and the JSON output adds `sandbox.reuse` (state, generation, copied / removed / content-compared counts, sync time and abandoned generations).',
     ],
     fixSummaryEn: [
       'Reuse never trades correctness for speed: unchanged files are skipped only when kernel change times prove it, otherwise contents are compared byte by byte; leftover processes from an earlier run (including detached background writers) force a new sandbox generation, so stale results can never be collected as current ones.',
       'Killed verify / smoke runs no longer pile up one-off sandbox copies; inside nested sandboxes such as Seatbelt the CLI falls back to a one-off sandbox automatically.',
+      'Fixed sandbox reuse on Linux: same-user non-dumpable processes (such as Chromium / Electron sandboxed renderers) have unreadable `/proc/<pid>/environ` and used to make every run fall back to a new sandbox generation. Processes that started before the current command are now provably unrelated and skipped, so reuse works on Linux desktops and CI; anything still unprovable keeps the safe fallback.',
     ],
   },
   '0.16.0': {
