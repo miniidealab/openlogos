@@ -289,3 +289,30 @@
 - 被弃用世代（`sandbox.reuse.abandoned`）需确认无进程使用后手动清理。
 - 在 Seatbelt 等嵌套沙箱内（如 `openlogos smoke` 以 sandbox-exec 包裹 runner、Claude Code 沙箱模式、Codex）无法执行 setuid 的 `/bin/ps`，复用按规格判 `unsupported` 并退回一次性沙箱。因此正式 `openlogos smoke` 中 SMOKE-core-240 / 241 预计记为 `skip` + `reason_code:"platform-unavailable"`；真实复用证据见第七、八节。
 - runlogos 的 `sandbox_root` 仍为 `/private/tmp`（内置盘）；持久沙箱会常驻一份工作区副本（约 8 GB），是否改到外置盘由用户决定。
+
+# 部署报告：release-0-16-1 / OpenLogos 0.16.1 公开发布（2026-10-13，**门② 未通过：未推送、未发布**）
+
+## 一、结论
+
+- 推 tag 前门 ② 的 Linux 干净克隆预演暴露 0.16.1 的**运行时行为缺陷**（见第三节），按部署方案档 A 与本提案 defaults「属运行时行为缺陷的，停止发布并另立修复提案」处置：**未推送 master、未推送 tag、未执行 npm publish / GitHub Release / 官网部署，未写 DEPLOY_DONE**。
+- npm `dist-tags` 保持 `latest=0.16.0`、`old=0.9.8`；GitHub Release 与官网不变；本机全局保持本地构建的 0.16.1。无需回滚任何公网制品。
+- 本地新增两个未推送提交：`1704446`（docs: merge spec deltas）、`329c511`（feat: 发布说明、英文摘要与公网 smoke runner）。`origin/master` 仍为 `e2b7ac0`，本地领先 4 个提交。
+
+## 二、已通过的门
+
+- **门 ①（本地，macOS，Node v23.10.0）**：`npm run lint` 0 error；`tsc --noEmit` 通过；`npm test` 2675 passed；`npm run build` 通过；`cd website && npm ci && npm run build` 通过（Python 字体工具取自独立 venv：fonttools + brotli），构建后工作区无变化。
+- **门 ② 阶段二（docker `node:22.12.0`，`node@sha256:0e910f435308c36ea60b4cfd7b80208044d77a074d16b768a81901ce938a62dc`）**：提交 `329c5119a7e893e80e324750e339f0e98f3abcdf`，官网 `npm ci` 0、`npm run build` 0。
+- **门 ② 阶段一的非测试项（docker `node:20`，`node@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5`，Node v20.20.2）**：版本与 CHANGELOG 一致性校验通过（Release 正文 1464 字符，不含「未发布到 npm」）；`npm pack` 837 个文件，SHA-256 `6d2b92ea6cb9ecf648bc6825504dda152aca612ed7e98ee84ca1edce56fae9ce`；无孤儿 dist 产物；包内含 `dist/lib/sandbox-reuse.js`；asset-manifest 自洽（0.16.1）；lint 0、tsc 0。
+- **门 ④**：当前 gh 账号 `bergkampzhang` 读取仓库 secrets 返回 HTTP 403，无法直接确认存在性。间接证据：v0.16.0 publish run（38027722547）的 `Publish` 步骤 success（`NPM_TOKEN` 可用）；Cloudflare 两项凭据当时因「Verify website latest version matches tag」失败而未被校验。重试前需以有权限的账号（如 `gh auth switch --user miniidealab`）复核。
+
+## 三、门 ② 阶段一失败：Linux 上沙箱复用的旧写入者存活检查误判
+
+- 第一次以 root 运行：13 个失败，均为权限注入与缺 sqlite3 的预演环境差异（与 0.16.0 预演第一次运行同型），按 0.16.0 口径改为非 root 用户 `node` + sqlite3 3.40.1 重跑。
+- 非 root 重跑：**9 个失败，全部是沙箱复用用例**——UT-S13-89 / 92 / 93 / 95 / 96 / 97 / 99、ST-S13-25、UT-S19-57（另一次运行为 11 个，含 UT-S13-91 / 94）。单独运行这些用例、或在容器内直接用执行器 / 真实 CLI 连续 verify 均正常（`created` → `reused`），只在全量并发时失败。
+- 在容器临时克隆中给释放逻辑加日志后跑全量，51 次 tainted 中 **44 次原因为「同用户存活进程 N 的环境不可读（EACCES）」**（另 6 次为测试进程内 `/bin/ps` 不可用，1 次为进程组仍有成员）。
+- **根因**：code-r1 F2 的修复把「同用户、仍存活但 `/proc/<pid>/environ` 不可读」一律判为无法完成扫描。Linux 上不可转储（non-dumpable）进程的 environ 对同用户也不可读（如 Chromium / Electron 的沙箱渲染进程、exec 过不可读二进制的进程），机器上只要存在一个这样的同用户进程，每次释放都会写 `tainted`、下一轮新建世代全量同步并累积被弃用世代——**Linux 上复用基本失效**，且对运行 Electron 应用（如 RunLogos）的桌面几乎必然触发。macOS 经 setuid 的 `/bin/ps` 读取，不受影响。
+- **修复方向（建议另立提案，例如 `fix-sandbox-reuse-linux-liveness`）**：对 environ 不可读的同用户进程，读取 `/proc/<pid>/stat` 的启动时刻（不受 dumpable 限制），与命令启动时刻比较——早于命令启动的进程不可能是其后代，跳过；晚于（或无法读取启动时刻）的仍判无法完成扫描。命令启动时刻随 `released` / `tainted` 记录，供下一轮复查使用。这样既保留 code-r1 F2「不得把无法确认当作不存在」的语义，又不误伤与本轮无关的长寿进程。
+
+## 四、重试条件
+
+修复提案归档后回到本提案：如修复改动了 CLI 行为，CHANGELOG `## [0.16.1]` 需补该修复（版本号不变，0.16.1 尚未进入 registry），重新执行四道门；门 ② 阶段一必须以非 root 用户、具备 sqlite3 的环境全绿。
