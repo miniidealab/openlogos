@@ -4034,3 +4034,83 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 本文件：§一、§四、§六、§十、§十一；「发布前检查通则：环境事实不入 verify 期断言」。
 - 资源索引：`logos/logos-project.yaml` 标准发布流程 failure_diagnostics。
 - smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.0 公开发布 smoke（SMOKE-core-231～234）」，并复用 SMOKE-core-01 / 02 / 04 / 07 / 08 / 15。
+
+## OpenLogos 0.16.0 官网文档补齐发布检查
+
+本提案 `website-docs-0-16-0` 把官网文档站（中英文）补齐到 0.16.0 的实际行为。改动只在 `website/` 源码与新增的 smoke runner，不改 CLI 运行时行为，不发 npm 包。按 §十五「仅部署官网文档」的口径，只走 `website_release_sync` 的构建与部署链路，不走 §一的 tag 驱动发布。
+
+### 部署目标与授权边界
+
+- **目标环境（生产）**：Cloudflare Pages 项目 `openlogos`，生产域名 `https://openlogos.ai`。
+- **部署方式**（来源提案决策 C01）：在本机 `master` 工作树执行官网构建与部署，使用用户本机的 Cloudflare 凭据。
+- **不做**（来源提案决策 C02）：不升版本号，不改 `CHANGELOG.md`，不打 tag，不执行 `npm publish` / `npm dist-tag`，不创建或编辑 GitHub Release。
+- **人类确认点**：
+  - 部署执行需要用户明确授权；
+  - `git push master` 是独立的人类确认点，在 archive 之后再询问，部署授权不连带覆盖它；
+  - 全自动 `--auto` 模式下按 standing 授权执行。
+
+### 发布前检查
+
+依次全部通过才可部署：
+
+1. **页面齐备**：提案「变更范围」列出的修正页与新增页，中英文两份都已落盘，slug 一致，并在 `website/astro.config.mjs` 侧边栏登记。新增页包括：
+   - CLI：`cli/slice`、`cli/change-lint`、`cli/lint-specs`、`cli/ignore-exempt`、`cli/impact`、`cli/feature`
+   - 规格：`specs/zcode-plugin`、`specs/qoder-plugin`、`specs/workbuddy-plugin`、`specs/cursor-plugin`、`specs/pretooluse-guard`、`specs/test-slice-manifest`
+   - Skill：`skills/brownfield-adopter`
+   - 指南：`getting-started/upgrade-from-0-13`
+2. **旧指引残留检索**：在项目根执行
+   ```bash
+   grep -rnE "MERGE_PROMPT|merge-apply|merge transaction|\.cursor/rules|Layer ?1|Layer ?3|Design-time Coverage|Acceptance Criteria Traceability|git checkout logos/resources" website/src/content website/src/pages
+   ```
+   每条命中只能属于两类允许保留的情况，否则视为未通过：
+   - **历史迁移说明**：位于升级指南全文，或位于 `cli/sync`、`cli/merge` 页固定标题小节「从旧版迁移」（英文 "Migrating from earlier versions"）内，且写成「已移除 / 旧路径 → 新路径」的形式；
+   - **同名不同义**：`pages/deep-dive/engineering-foundation.astro` 中的 `Layer 1` / `Layer 3`。
+
+   本检索只覆盖 `website/src/content` 与 `website/src/pages` 源码。发布历史数据（`website/src/data/releases.json`、`release-summaries-en.mjs`）是带版本标识的历史记录，不在检索范围内，也不得为通过检查而删改。线上 `/releases` 页的历史摘要由 SMOKE-core-236 的「发布历史」例外按版本卡片边界处理。
+3. **事实核对点**：提案「事实冲突取舍与旧指引残留检索」一节的 K1～K4 已逐条核实，官网写法与现行依据一致；写作中发现的新冲突已记入交付说明。
+4. **构建与测试**：`cd website && npm ci && npm run build` 通过（含 releases 数据生成、字体抓取与子集化），`cd website && npm test` 全绿。
+5. **发布动态不回退**：构建后 `website/src/data/releases.json` 的 `latestVersion` 仍为 `0.16.0`。生成脚本失败时会回退到已提交缓存，因此必须核对这个值，不得把旧版本当作 latest 部署出去。
+6. **smoke runner 自测**：`scripts/smoke-website-docs-0-16-0.js` 以自测模式指向本地预览（`cd website && npm run preview`），对 SMOKE-core-235～238 与复用的 SMOKE-core-07 / 08 / 21 / 23 全部 pass。自测结果写独立账本，不进项目正式 smoke 账本。另需同时满足：
+   - sitemap 与页面中的生产绝对 URL 已按 smoke 规格「URL 重定位」改写到预览 origin，evidence 的实际请求 URL 清单中没有任何一条去往 `https://openlogos.ai` 或其他 origin；
+   - SMOKE-core-236 的判据对照夹具结果符合预期：带版本卡片的历史摘要含旧词判通过，当前操作页含旧指引判失败。
+7. **记录回滚目标**：执行只读命令 `npx wrangler pages deployment list --project-name openlogos`，记下当前生产部署的 ID 与来源提交，作为回滚目标。它应是 v0.16.0 publish.yml 发布的那次部署。
+
+### 部署执行
+
+- 前提：当前分支为 `master`，工作树干净，待部署提交已包含本提案全部 `website/` 改动。
+- 命令：
+  ```bash
+  cd website && npm run build && npx wrangler pages deploy dist --project-name openlogos --branch master
+  ```
+  这与 `npm run deploy` 等价。显式写出 `--branch master` 是为了和 `publish.yml` 一致，避免 wrangler 按当前 git 分支推断时落到预览环境。
+- 记录 wrangler 输出的部署 URL 与部署 ID，以及部署对应的 git 提交号。
+
+### 部署后检查
+
+- 对生产域名 `https://openlogos.ai` 执行 smoke runner 正式模式，SMOKE-core-235～238 与复用的 SMOKE-core-07 / 08 / 21 / 23 全部 pass。
+- 部署记录写入 `logos/resources/verify/deployment-report.md`，内容包括：
+  - 部署 URL、部署 ID、提交号；
+  - 回滚目标部署 ID；
+  - 发布前检查第 2、4、5、6 项的结果摘要。
+
+### 失败处置与回滚
+
+- **部署前任一检查失败**：不部署，修复后重走全部发布前检查。不产生公网痕迹。
+- **wrangler 部署失败**（凭据、网络、配额）：生产仍是原部署，不需要回滚。修复环境后重新执行部署命令。
+- **部署成功但 smoke 失败，或发现内容错误**：
+  1. 在 Cloudflare Pages 控制台把生产回滚到「发布前检查第 7 项」记录的部署；
+  2. 修复 `website/` 源码后重走发布前检查并重新部署；
+  3. 不涉及 npm、tag 或 GitHub Release。
+- **回滚范围**：只影响官网静态内容。`releases.json` 数据随回滚的那次部署一起恢复，不手改。
+
+### 数据与兼容
+
+- 无数据库，无数据迁移。
+- 文档 URL 只增不删，既有页面 slug 全部保留，外部链接不失效。
+- CLI 包与 npm registry 不变；`/releases` 的 latest 仍为 0.16.0。
+
+### 追溯
+
+- 来源提案：website-docs-0-16-0（决策 C01 部署方式、C02 不发版且 push 单独确认）。
+- 沿用：本文件 §四「官网部署」、§六「官网回滚」、§十一「官网发布动态构建策略」、§十五「仅部署官网文档」口径。
+- smoke：`core-smoke-test-cases.md`「官网文档 0.16.0 补齐发布后 smoke（SMOKE-core-235～238）」。

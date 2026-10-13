@@ -1976,3 +1976,78 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；evidence 记录 V、tag 提交号、registry tarball SHA-256、Release 附件 SHA-256、HTTP 状态码与隔离 prefix 路径。**失败不得写 pass**。
 - 判据以 JSON 字段、退出码、SHA-256 与 HTTP 状态码为准；页面断言只针对版本号、固定路径与是否为回退提示，不解析其余人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-231～SMOKE-core-234 均被 runner 覆盖。
+
+## 官网文档 0.16.0 补齐发布后 smoke（SMOKE-core-235～238）
+
+> 这组用例验证官网文档站（中英文）在生产环境已经反映 0.16.0 的实际行为，分四个层面：
+> - 新增页面与 CLI 参考覆盖 0.16.0 命令面（235）；
+> - 全站不再以现行操作的口吻呈现旧指引（236）；
+> - 宿主适配内容与 CLI 枚举一致（237）；
+> - 升级指南内容完整（238）。
+>
+> 发布动态、中文路由与字体用复用的在案用例确认不受影响。
+>
+> **执行对象**：正式模式固定为生产域名 `https://openlogos.ai`。下文 `<base>` 指该域名。自测模式下 `<base>` 为本地预览 URL（`cd website && npm run preview`）。
+>
+> **URL 重定位**：站点 `site` 固定为 `https://openlogos.ai`（`website/astro.config.mjs`），所以 sitemap 索引、子 sitemap 与页面 `<loc>` 都是生产绝对 URL。runner 读取这些 URL 和页面内的站内链接时：
+> - 凡 origin 为 `https://openlogos.ai` 的，保留 pathname 与 query，把 origin 改写为 `<base>` 的 origin 后再请求；
+> - 其他 origin 的 URL 不请求，只记入 evidence。
+>
+> 正式模式下 `<base>` 就是生产 origin，改写不改变任何地址。两种模式都要逐条记录实际请求 URL，并断言每条的 origin 都等于 `<base>` 的 origin。出现任何一条去往其他 origin 的实际请求，当次所有用例判 fail，不得把生产内容当作候选构建的自测结果。
+>
+> **命令面口径**：命令集合不硬编码，运行时从已安装 CLI 的 `openlogos --help` 的 Commands 段解析顶层命令。另外补入 `slice`：help 漏列 `slice` 是已知 CLI 缺陷（来源提案 K4），但 `cli/src/index.ts` 实际分派该命令。
+>
+> **执行边界**：runner 对公网**只读**，只发 HTTP GET 并在本机执行 `openlogos --help`。不执行 `wrangler`、`npm publish`、`git tag`、`git push` 或任何写操作。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-235 | 新增页面与 CLI 参考覆盖 0.16.0 命令面 | 官网已按部署方案「OpenLogos 0.16.0 官网文档补齐发布检查」部署；本机已安装 0.16.0 CLI | ① 解析 `openlogos --help` 得到顶层命令集合 C，补入 `slice`，去掉 `baseline-seed`（由 Skill 页承载，见 ④），并按固定映射得到页面 slug：`index`→`index-command`、`flow show`→`flow-show`、`feature list` 与 `feature-backfill`→`feature`、`ignore` 与 `exempt`→`ignore-exempt`，其余同名；② 对每个 slug GET `<base>/cli/<slug>` 与 `<base>/zh/cli/<slug>`；③ GET `<base>/cli` 与 `<base>/zh/cli`，提取侧边栏与命令表中的 `/cli/…` 链接；④ GET 新增的非 CLI 页面：`/specs/pretooluse-guard`、`/specs/test-slice-manifest`、`/skills/brownfield-adopter`，以及各自的 `/zh/` 版本；⑤ 从 `<base>/cli`、`<base>/cli/verify`、`<base>/cli/smoke`、`<base>/cli/deploy-done` 及其中文页提取「Gate x.y」编号 | ① C 非空且包含 `change-lint`、`lint-specs`、`ignore`、`exempt`、`impact`、`slice`；② 每个页面均返回 200，正文包含 `openlogos <命令名>`（`ignore-exempt` 页同时包含 `openlogos ignore` 与 `openlogos exempt`；`feature` 页同时包含 `feature list` 与 `feature-backfill`）；③ 中英文概览页的侧边栏与命令表都链接到 ② 中的全部 slug，没有遗漏；④ 全部返回 200，`skills/brownfield-adopter` 中英文页正文包含 `openlogos baseline-seed`；⑤ 对同一命令，概览页与命令页标注的 Gate 编号一致，中英文一致 | 保留每个 URL 的状态码与缺失项清单。缺页或缺链接时补写 `website/` 源码，重走部署方案发布前检查后重新部署；页面出现异常内容时，先按部署方案在 Cloudflare Pages 回滚 |
+| SMOKE-core-236 | 中英文全站不再以现行操作呈现旧指引 | 同 SMOKE-core-235 | ① GET `<base>/sitemap-index.xml` 及其引用的子 sitemap，按本节「URL 重定位」规则得到全站页面 URL 集合 P；② 对 P 中每个页面 GET，先解析 DOM，记录每段文本所属的 `article.release-card` 容器及其版本标题（`.release-title h3`），再去掉 `<script>` 与 `<style>`，按 h2 / h3 标题切成小节；③ 在正文中检索关键词集合 K = `MERGE_PROMPT`、`merge-apply`、`merge transaction`、`.cursor/rules`、`Layer 1`、`Layer1`、`Layer 3`、`Layer3`、`Design-time Coverage`、`Acceptance Criteria Traceability`、`git checkout logos/resources`；④ 正向断言：GET `/skills/code-implementor`、`/cli/merge` 及其中文页 | ③ 每条命中只属于以下允许情况：<br>• 位于升级指南页（`/getting-started/upgrade-from-0-13` 及中文页）；<br>• 位于 `/cli/sync`、`/cli/merge` 及其中文页标题为「从旧版迁移」/ "Migrating from earlier versions" 的小节内；<br>• 位于 `/deep-dive/engineering-foundation` 及中文页，且关键词为 `Layer 1` / `Layer 3`；<br>• **发布历史**：位于 `/releases` 或 `/zh/releases`（路径比较忽略末尾 `/`），且命中文本在某个 `article.release-card` 容器内，该容器的 `.release-title h3` 文本匹配 `^v\d+\.\d+\.\d+`。这些是带版本标识的历史记录，不是当前使用指引。同一页面中位于任何版本卡片之外的命中（页首、安装说明、侧栏等）仍判 fail。<br>其余任何命中都判 fail。④ `code-implementor` 中英文页都包含「initial」与「launched」两种情形的说明，并写明 launched 下逐行消费 `[code]` 切片、不自行分批（中文含「不得自行」或「不自行」，英文含 "must not re-batch" 或 "not re-split"），英文页同时包含 `slice-planner`；`cli/merge` 中英文页都包含增量修正标识 `amended`，并写明一次调用完成合并（中文含「一次」，英文含 "single call" 或 "one call"） | 保留命中清单（URL、小节标题、关键词、上下文 80 字符）。命中不在允许范围内时，修正对应页面后重新部署；不得通过扩大允许范围来让用例通过，扩大范围须另立变更；也不得为了通过本用例删改发布历史摘要（`website/src/data/releases.json`、`release-summaries-en.mjs`、`CHANGELOG.md` 历史条目） |
+| SMOKE-core-237 | 宿主适配内容与 CLI 枚举一致 | 同 SMOKE-core-235 | ① 从 `openlogos --help` 的 `init` 段解析 `--ai-tool <…>` 的取值集合 A；② GET `<base>/cli/init` 与 `<base>/zh/cli/init`；③ GET `/specs/zcode-plugin`、`/specs/qoder-plugin`、`/specs/workbuddy-plugin`、`/specs/cursor-plugin` 及其中文页；④ GET `<base>/`、`<base>/zh/`、`<base>/about`、`<base>/zh/about`；⑤ GET `/cli/sync` 与 `/zh/cli/sync` | ① A 包含 `claude-code`、`opencode`、`codex`、`cursor`、`zcode`、`qoder`、`workbuddy`、`other`、`all`；② 两页都包含 A 中的每一个取值；③ 全部返回 200，`cursor-plugin` 中英文页包含 `.cursor/skills/` 与 `afterShellExecution`；④ 四个页面都包含 Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder、WorkBuddy 七个工具名；⑤ 两页都包含 `.cursor/skills/` 与 `language` | 保留缺失的取值或工具名清单。补写页面后重新部署 |
+| SMOKE-core-238 | 中英文升级指南可达且内容完整 | 同 SMOKE-core-235 | ① GET `<base>/getting-started/upgrade-from-0-13` 与 `<base>/zh/getting-started/upgrade-from-0-13`；② GET `<base>/getting-started` 与 `<base>/zh/getting-started`，提取侧边栏链接；③ 在 ① 两页正文中逐项检索 CHANGELOG 0.16.0「从 0.13.x 升级」各步的判据标记 | ① 均返回 200；② 两种语言的「快速开始」侧边栏分组都链接到对应语言的升级指南；③ 两页**各自**包含全部判据，缺任一项即 fail：<br>• 全局更新 CLI：`npm install -g @miniidealab/openlogos@latest`；<br>• 确认版本：`openlogos --version` 与 `0.16.0`；<br>• 逐项目 sync：`openlogos sync`，且写明在每个已有项目根目录执行（中文含「每个已有项目」，英文含 "each existing project"），并写明不执行的后果（中文含「旧版 guard」，英文含 "old guard"）；<br>• Cursor 迁移：同时包含 `.cursor/rules/` 与 `.cursor/skills/`；<br>• 事务命令移除：包含 `openlogos merge`、`openlogos slice plan`，以及 `merge transaction` 或 `merge-apply` 之一；<br>• JSON 消费方：包含 `data.contract.version` | 保留每种语言缺失的判据清单。补写升级指南后重新部署。判据标记与 CHANGELOG 0.16.0「从 0.13.x 升级」节逐项对应；该节变化时同步更新本用例 |
+
+### 二、复用的在案用例
+
+以下在案用例沿用其原定义，本次只规定执行对象（定义不在本节重复登记）：
+
+- 发布动态双语摘要用例 SMOKE-core-07：对 `<base>/releases` 执行，并确认 latest 仍为 0.16.0。
+- 首页入口用例 SMOKE-core-08：对 `<base>/` 执行。
+- 中文路由与语言切换用例 SMOKE-core-21：对 `<base>/zh`、`<base>/zh/getting-started`、`<base>/zh/cli` 及新增的 `<base>/zh/cli/slice` 执行。
+- 中文字体用例 SMOKE-core-23：对已部署站点执行。从中文营销页与中文文档页的 CSS 提取 `NotoSansSC-*.subset.woff2` 引用，逐个 GET，确认返回 200 且体积非空。
+
+### 三、执行边界
+
+- 公网只读（见本节导言）；命令图中不得出现部署或发布写操作。
+- 断言不硬编码主机路径、墙上时钟或部署 ID。命令集合与 `--ai-tool` 取值从已安装 CLI 运行时读取。部署 URL 与部署 ID 从 `logos/resources/verify/deployment-report.md` 读取，只写入 evidence，不参与判定。
+- 判据以 HTTP 状态码、链接集合与固定判据标记的出现与否为准，不解析其余人类可读文案。
+- 网络不可达、本机未安装 CLI、部署记录缺失时写显式 `skip` 并带缺失项。这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`；有 skip 时不得写 `SMOKE_PASS`。
+
+### 四、追溯与覆盖
+
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.0 官网文档补齐发布检查」，以及 §十一、§十五。
+- 来源提案：website-docs-0-16-0（决策 C01、C02；事实核对点 K1～K4；旧指引残留检索规则）。
+- 覆盖关系：
+  - 新增页面、CLI 命令面、Gate 编号一致 → SMOKE-core-235；
+  - 旧合并流程、Cursor 旧路径、verify 旧判据、launched 下自行分批的残留 → SMOKE-core-236；
+  - 七个宿主、`--ai-tool` 枚举、Cursor Skills 迁移 → SMOKE-core-237；
+  - 升级指南五步 → SMOKE-core-238；
+  - 发布动态、首页入口、中文路由、中文字体不受影响 → 复用的 SMOKE-core-07 / 08 / 21 / 23。
+
+### 五、自动化与证据要求
+
+- 新增 runner `scripts/smoke-website-docs-0-16-0.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行。runner 显式分派 SMOKE-core-235～SMOKE-core-238 及上表复用用例，不得依靠通配发现后无条件 PASS。
+- **自测模式**：runner 可注入本地预览 URL 替代 `https://openlogos.ai`，结果写入独立账本，不得写入项目正式 smoke 账本。正式模式拒绝注入。
+- **重定位自证**：自测模式的 evidence 必须包含实际请求 URL 清单，且清单中每条的 origin 都等于注入的预览 origin（见导言「URL 重定位」）。
+- **判据对照夹具**：runner 自带三份 HTML 夹具，自测时先跑判据对照，再跑真实页面：
+  - 夹具 A：`/releases` 页，`MERGE_PROMPT.md` 与 `.cursor/rules/` 只出现在 `<article class="release-card">` 内，且该卡片标题为 `<h3>v0.9.19</h3>`。预期 SMOKE-core-236 判据**通过**。
+  - 夹具 B：当前使用指引页（如 `/cli/merge`），在「从旧版迁移」小节之外以操作步骤写出「读取 `MERGE_PROMPT.md` 并执行合并」。预期判据**失败**。
+  - 夹具 C：同样的旧词出现在 `/releases` 页、但位于任何版本卡片之外，也预期失败。
+  - 任一夹具结果与预期不符，runner 自身即判 fail，不进入真实页面检查。
+- **结果记录**：结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`。evidence 记录：
+  - `<base>`、部署 URL / 部署 ID（取自部署记录）；
+  - 每个检查 URL 的状态码；
+  - 缺失项或命中清单。
+- **失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-235～SMOKE-core-238 均被 runner 覆盖。
