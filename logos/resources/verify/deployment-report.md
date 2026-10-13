@@ -175,3 +175,44 @@
 - 提醒：runlogos 项目需由用户授权后在其项目根执行 `openlogos sync`，才会获得新 guard（含 `| tee` 修复）。
 - gh 当前账号仍为 `miniidealab`（用户选择方案 A）。如需切回，执行 `gh auth switch --user bergkampzhang`。本机 `~/.npmrc` 中的 npm 令牌已失效（`npm whoami` 返回 401），不影响 CI 发布；本机如需发布权限，执行 `npm login`。
 - 待办：`openlogos deploy-done` 受控落标；之后由用户授权运行 `openlogos smoke`（SMOKE-core-231～234）；`website/src/data/releases.json` 与本部署记录的提交及推送待确认。
+
+---
+
+# 部署报告：website-docs-0-16-0 / 官网文档补齐 0.16.0（2026-10-12，**已部署：Cloudflare Pages 生产**）
+
+## 一、授权与目标
+
+- 授权：runlogos `--auto` standing 授权对 deliver 门放行（`gate_auto_passed=true`），依据提案决策 C01（本机部署生产）与 C02（不发 npm / tag / Release，`git push` 单独确认）。
+- 目标：Cloudflare Pages 项目 `openlogos`，生产域名 `https://openlogos.ai`。不涉及 npm、tag 与 GitHub Release，本次未执行 `git push`。
+
+## 二、部署记录（正式 smoke runner 读取）
+
+- website_docs_deploy_url: https://30b99722.openlogos.pages.dev
+- website_docs_deploy_id: 30b99722-e575-4f9f-9ddb-db5d62fd789d
+- 部署提交：`ebb7e0e`（master，工作树干净；规格合并提交 `df2e469`）
+- 回滚目标：`cc30952f-dc6f-4c51-8f96-2852c82c670c`（来源 `45e9648` = `v0.16.0`，即 v0.16.0 那次 publish 的官网部署，`https://cc30952f.openlogos.pages.dev`）
+
+## 三、发布前检查（部署方案「OpenLogos 0.16.0 官网文档补齐发布检查」）
+
+1. 页面齐备：14 个新页面中英文均已落盘，并在 `website/astro.config.mjs` 侧边栏登记。
+2. 旧指引残留检索：命中只出现在 `cli/merge`、`cli/sync` 的「从旧版迁移」小节、升级指南，以及 `deep-dive/engineering-foundation` 的 Layer 1 / 3，均属允许情况。
+3. 事实核对点 K1～K4 已逐条核实；写作中新发现的冲突见实现交付说明（另行报告，未改根文件）。
+4. `npm ci && npm run build` 通过：178 页，releases 84 个版本，字体子集完成；`npm test` 3/3 通过。
+5. 构建后 `releases.json` 的 `latestVersion=0.16.0`。
+6. smoke runner 自测（本地预览 `http://127.0.0.1:4329`）：SMOKE-core-235～238 与复用 07 / 08 / 21 / 23 全部 pass，夹具 A 通过、B / C 失败（符合预期），共 189 次请求、站外请求 0；结果写入独立账本，未进入正式账本。
+7. 回滚目标已用只读命令 `wrangler pages deployment list` 记录（见第二节）。
+
+## 四、部署执行
+
+- 命令：`cd website && npm run build && npx wrangler pages deploy dist --project-name openlogos --branch master`
+- 结果：`Deployment complete`。`wrangler pages deployment list --environment production` 显示最新生产部署为 `30b99722-e575-4f9f-9ddb-db5d62fd789d`（Production / master / `ebb7e0e`）。
+- 线上抽查：`https://openlogos.ai/cli/slice/` 与 `https://openlogos.ai/zh/getting-started/upgrade-from-0-13/` 均返回 200。
+
+## 五、回滚
+
+在 Cloudflare Pages 控制台把生产回滚到 `cc30952f-dc6f-4c51-8f96-2852c82c670c`，或执行 `npx wrangler pages deployment rollback`（指定该部署）。只影响官网静态内容，不涉及 npm / tag / Release。
+
+## 六、待办
+
+- 由 driver 或用户授权运行 `openlogos smoke`：正式模式对 `https://openlogos.ai` 执行 SMOKE-core-235～238 与复用 07 / 08 / 21 / 23。
+- `git push` 为独立人类确认点，在 archive 之后询问。
