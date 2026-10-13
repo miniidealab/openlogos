@@ -2819,3 +2819,54 @@ stdout 输出标准 envelope，`data` 至少含：
 - `pending == false`：修正已应用或从未修改，不需要再次 merge。
 - `pending == null`：不可判定（旧标记），宿主**不得**按 false 处理、**不得**自行比较字节；如需修正，按 `blocked_reason: "baseline-missing"` 的指引另立新提案。
 - `blocked_reason` 非 null：执行 merge 必然以对应错误码拒绝，宿主应转人工处理。
+
+## verify / smoke `sandbox.reuse` 沙箱复用字段
+
+> 归属 `## 4. openlogos verify --format json`（§4.3 字段说明）与 `## 5. openlogos smoke --format json`（§5.3 字段说明）；来源变更 verify-sandbox-reuse-0-16-1（决策 C05），功能规格 §2.91。**采用 ADDED 子节而非 MODIFIED §4.3 / §5.3**：本节只新增 `sandbox.reuse` 的定义，不改两节既有字段与兼容规则。
+
+### 字段
+
+`sandbox` 对象新增**可选**字段 `reuse`（additive、向后兼容）。`sandbox.mode` 为 `"off"` 时不出现；为 `"auto"` / `"always"` 时恒出现。
+
+```jsonc
+"sandbox": {
+  "mode": "auto",
+  "root": "/Volumes/BuildWork/openlogos-sandbox/openlogos-cli-sandbox-reuse-3f2a9c0d1e4b5a6c/ws-000000000007",
+  "isolated": true,
+  "workspace_write_denied": true,
+  "status": "pass",
+  "diagnostics": [],
+  "suggestions": [],
+  "infos": ["沙箱复用：reused（世代 ws-000000000007；复制 3、删除 1、内容比较 5；同步 412 ms）"],
+  "reuse": {
+    "enabled": true,
+    "state": "reused",           // "created" | "reused" | "recovered" | "fresh" | "busy-fallback" | "unsupported" | "disabled"
+    "dir": "/Volumes/BuildWork/openlogos-sandbox/openlogos-cli-sandbox-reuse-3f2a9c0d1e4b5a6c",
+    "generation": "ws-000000000007",
+    "copied": 3,
+    "removed": 1,
+    "content_compared": 5,
+    "sync_ms": 412,
+    "abandoned": []
+  }
+}
+```
+
+| 字段 | 类型 | 必填（reuse 出现时） | 说明 |
+|---|---|---|---|
+| `reuse.enabled` | boolean | 是 | 配置是否启用复用（`sandbox_reuse` 读取后的值）；`false` 时 `state` 为 `disabled` |
+| `reuse.state` | string | 是 | `created`：首次创建项目目录与工作区世代；`reused`：沿用上一正常释放世代；`recovered`：上一持有者非正常退出、上一轮释放为 `tainted`（旧写入者存活检查未通过：命令进程组仍有成员、存在带该世代运行标记的存活进程，或无法完成检查）或发布前复查不通过，新建世代；`fresh`：`--fresh-sandbox` 新建世代；`busy-fallback`：锁被占用或无法确认，本次退回一次性临时沙箱；`unsupported`：文件系统不支持 `link()` 或平台不具备进程组探测或运行标记扫描能力，本次退回一次性临时沙箱；`disabled`：`sandbox_reuse=false` |
+| `reuse.dir` | string \| null | 是 | 持久沙箱项目目录绝对路径；`disabled` 时为 `null` |
+| `reuse.generation` | string \| null | 是 | 本次使用的工作区世代目录名，恒等于本次发布的锁记录 `ws`；`busy-fallback` / `unsupported` / `disabled` 时为 `null` |
+| `reuse.copied` | number | 是 | 本次同步复制（新建或覆盖字节）的普通文件与 symlink 数，含白名单结果文件等一切参与镜像的路径；仅原位整定 `mode` / `mtime` 而未重写字节的文件不计入；`busy-fallback` / `unsupported` / `disabled` 时为 `0` |
+| `reuse.removed` | number | 是 | 本次同步删除的条目数（按顶层被删条目计） |
+| `reuse.content_compared` | number | 是 | 本次两侧均存在、未能凭同步清单指纹跳过而判定内容的普通文件数（大小不同直接判为不同、大小相同逐字节比较；含判定后相同而未复制的） |
+| `reuse.sync_ms` | number | 是 | 本次同步耗时（毫秒）；`busy-fallback` / `unsupported` / `disabled` 时为 `0` |
+| `reuse.abandoned` | string[] | 是 | 被弃用、需用户确认无进程使用后手动清理的工作区世代绝对路径；无则为空数组 |
+
+### 规则
+
+- `sandbox.root` 在 `created` / `reused` / `recovered` / `fresh` 时为当前工作区世代目录，`busy-fallback` / `unsupported` / `disabled` 时为一次性临时目录（既有语义）。
+- verify 多阶段（回归 + 增量）时，`sandbox.reuse` 取最后一次执行阶段的值；`infos` 照既有规则去重合并。
+- 复用摘要只进 `sandbox.infos`，不得进入 `sandbox.diagnostics` 或 verify 的 `pre_run.diagnostics`；`reuse` 的任何取值都不改变 `sandbox.status` 与门禁结论。非法缓存路径的诊断属于问题诊断，进 `sandbox.diagnostics`。
+- 消费方（RunLogos / CI）判断是否命中复用应读 `reuse.state`，不得解析 `infos` 文案。
