@@ -17,15 +17,6 @@
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
 
-## Slice Verification
-
-- Mode: `final`
-- Attempted slice: `null`
-- Confirmed slices: `slice-01-verify-sandbox-reuse`, `slice-02-smoke-sandbox-reuse`
-- Eligible tests: 2265
-- Pending tests: 0
-- Final: true
-
 ## Skipped Cases
 
 - UT-S13-89

@@ -1,4 +1,15 @@
 export const RELEASE_SUMMARIES_EN = {
+  '0.16.1': {
+    valueSummaryEn: [
+      'Sandbox reuse for `openlogos verify` and `openlogos smoke`: each project now keeps one persistent sandbox and only syncs what changed, so your build tool\'s incremental compilation works across runs instead of rebuilding everything from scratch. Enabled by default whenever `sandbox_mode` is `auto` or `always` — no configuration change needed.',
+      'Declare build output directories with `sandbox_cache_paths` (for example `src-tauri/target`) to keep them across runs; set `sandbox_reuse: false` to go back to a fresh one-off sandbox every time.',
+      'New `--fresh-sandbox` flag for `verify` and `smoke` rebuilds the persistent sandbox from scratch, and the JSON output adds `sandbox.reuse` (state, generation, copied / removed / content-compared counts, sync time and abandoned generations).',
+    ],
+    fixSummaryEn: [
+      'Reuse never trades correctness for speed: unchanged files are skipped only when kernel change times prove it, otherwise contents are compared byte by byte; leftover processes from an earlier run (including detached background writers) force a new sandbox generation, so stale results can never be collected as current ones.',
+      'Killed verify / smoke runs no longer pile up one-off sandbox copies; inside nested sandboxes such as Seatbelt the CLI falls back to a one-off sandbox automatically.',
+    ],
+  },
   '0.16.0': {
     valueSummaryEn: [
       'First public release since 0.13.24, bundling 120+ proposals. After upgrading, run `openlogos sync` in every existing project to refresh the managed guard, hooks, Skills, the `.gitignore` managed block and the Claude Code `language` setting.',

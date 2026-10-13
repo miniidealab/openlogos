@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.1] - 2026-10-13
 
-本机全局发布（未发布到 npm）。
+verify / smoke 沙箱复用：同一项目的验收不再每次全量复制工作区、从零编译，构建工具的增量编译跨运行生效。
+
+### 从 0.16.0 升级
+
+1. 更新全局 CLI：`npm install -g @miniidealab/openlogos@latest`，确认 `openlogos --version` 为 `0.16.1`。
+2. 既有项目**无需修改配置**：`sandbox_mode` 为 `auto` / `always` 时沙箱复用默认开启；如需回到每次新建的一次性沙箱，在 `verify` / `smoke` 配置中设 `sandbox_reuse: false`。
+3. 编译型项目可在 `verify` / `smoke` 配置中声明 `sandbox_cache_paths`（如 `["src-tauri/target"]`），让构建产物跨运行留存；该目录不得与结果文件路径重叠。
+4. 持久沙箱常驻在 `sandbox_root` 下（每个项目一份工作区副本），磁盘紧张时可把 `sandbox_root` 指向空间充足的磁盘。
+5. 在 Seatbelt 等嵌套沙箱内运行（如 Claude Code 沙箱模式、Codex）时，CLI 无法完成旧写入者存活检查，复用自动退回一次性沙箱（`sandbox.reuse.state` 为 `unsupported`），结果正确性不受影响。
 
 ### Added
 
