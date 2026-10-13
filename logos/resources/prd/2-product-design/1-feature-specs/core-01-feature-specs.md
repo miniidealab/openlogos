@@ -5009,3 +5009,55 @@ L5 推送的违规（`path` 均为提案的 `proposal.md` 相对路径）：
 - 场景：S13「S13 沙箱复用与增量同步时序」EX-3.5～EX-3.12；S19「smoke 沙箱复用」。
 - 测试：UT-S13-89～UT-S13-100、ST-S13-25、UT-S19-57；安装态 SMOKE-core-239～SMOKE-core-241。
 - 根规范：`spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」；`spec/test-results.md`「沙箱复用配置」。
+
+## 2.92 Linux 运行标记扫描中环境不可读进程的判定
+
+> 来源变更：fix-sandbox-reuse-linux-liveness（决策 C01、C02）。本节补充 §2.91.6「旧写入者存活检查」第 2 项（运行标记扫描）在 Linux 上的判据；§2.91 既有条款不改，macOS 判定不变。
+
+### 2.92.1 背景
+
+Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-dumpable）进程的 environ 对同用户也不可读（EACCES），典型来源是 Chromium / Electron 的沙箱渲染进程（主动 `PR_SET_DUMPABLE=0`）、exec 过不可读（如仅可执行权限）二进制的进程。若把这类进程一律判为「无法完成扫描」，机器上只要存在一个，每次释放都写 `tainted`，复用在 Linux 上基本失效，且每轮累积一份被弃用世代。0.16.1 公开发布的 Linux 干净克隆预演实测：51 次 `tainted` 中 44 次为此原因。
+
+### 2.92.2 判据
+
+扫描范围仍为**与 CLI 同用户**的进程。对每个进程：
+
+1. 读取 environ 成功：按 §2.91.6 匹配完整的 `OPENLOGOS_SANDBOX_RUN=<run_tag>` 片段。
+2. 读取 environ 报 ENOENT / ESRCH（进程已退出）：跳过。
+3. 进程属主不是 CLI 用户：跳过；属主读取报 ENOENT / ESRCH 视为已退出跳过，其他错误判**无法完成扫描**。
+4. 同用户、仍存活但 environ 不可读（EACCES / EPERM 等）：读取 `/proc/<pid>/stat` 第 22 字段（`starttime`，系统启动以来的时钟滴答），换算为秒（除以 `USER_HZ`，Linux 用户态 ABI 固定为 100）：
+   - 启动时刻 **早于**「本世代命令启动时刻 − 1 秒」→ 不可能是本世代命令的后代（任一后代必在命令启动之后创建），**跳过**；
+   - 启动时刻不早于该阈值 → 判**无法完成扫描**；
+   - stat 读取报 ENOENT / ESRCH → 视为已退出，跳过；
+   - stat 其他读取失败、字段缺失或无法解析 → 判**无法完成扫描**。
+   - 没有可用的命令启动时刻（见 2.92.4）→ 判**无法完成扫描**（与修复前一致）。
+
+「无法完成扫描」的后果不变：释放写 `tainted`，或发布前复查不通过、`--fresh-sandbox` 不删除旧世代（§2.91.6、§2.91.7）。本判据只排除可证明无关的进程，不放宽「无法确认即不复用」的语义。1 秒容差覆盖时钟滴答粒度与读取先后顺序。
+
+### 2.92.3 命令启动时刻
+
+- 执行器在启动命令**之前**读取 `/proc/uptime` 第一个字段（秒，系统启动以来），作为本世代命令启动时刻；读取失败时该次运行视为没有可用的命令启动时刻。
+- 只在 Linux 记录；其他平台不读取、不记录。
+
+### 2.92.4 随释放记录传递
+
+- 释放记录（`gen-<N>.released` / `gen-<N>.tainted`）新增字段 `command_started_uptime`（数字，秒；仅 Linux 写入）。
+- 命令结束后的存活检查使用本次记录的命令启动时刻；下一轮发布前对 `released` 世代的复查、`--fresh-sandbox` 的删除条件，使用该世代释放记录中的 `command_started_uptime`。
+- 记录缺该字段（旧版写入，或非 Linux 写入）时，没有可用的命令启动时刻，environ 不可读的同用户进程按无法完成扫描处理。该保守口径只影响旧记录对应的那一轮复查，下一次释放即写入新字段。
+- 系统重启后 uptime 归零：此后所有存活进程的启动时刻都小于重启前写入的 `command_started_uptime`，按 2.92.2 第 4 条会被跳过。这是正确的——旧世代命令的后代不可能跨越重启存活，重启后不存在旧写入者。
+
+### 2.92.5 零回归边界
+
+- macOS：仍经 setuid 的 `/bin/ps -E` 读取同用户进程初始环境，判定不变。
+- Linux 上 environ 可读的进程、其他用户的进程、已退出竞态：判定不变。
+- 释放记录新增字段只在持久沙箱内部使用，不属 `spec/cli-json-output.md` 的 JSON 合同；`sandbox.reuse` 输出不变。
+
+### 2.92.6 实现映射与追溯
+
+| 能力 | 主要代码路径 | 主要测试路径 |
+|---|---|---|
+| Linux 扫描的启动时刻判据 | `cli/src/lib/sandbox-reuse.ts`（`scanProcEnvironment`、`checkOldWriters`） | `cli/test/s13-sandbox-reuse.test.ts` |
+| 命令启动时刻记录与随释放记录传递 | `cli/src/lib/sandbox.ts`、`cli/src/lib/sandbox-reuse.ts`（`releaseGeneration`、`acquireGeneration`） | `cli/test/s13-sandbox-reuse.test.ts` |
+
+- 场景：S13 EX-3.13（情形 ① 跳过；② 容差内或启动时刻不可读按保守口径；③ 脱组后代；④ 旧记录）。
+- 测试：UT-S13-101、UT-S13-102、ST-S13-26。

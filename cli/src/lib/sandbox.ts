@@ -8,7 +8,7 @@ import type { OutputFormat } from './json-output.js';
 import { removeTree } from './fs-remove.js';
 import {
   acquireGeneration, checkOldWriters, detectLivenessCapability, emptyReuseData, ensureProjectMeta, ensureRealDir, listAbandoned,
-  projectDirInsideRoot, projectDirName, releaseGeneration, resolveCachePaths, RUN_TAG_ENV, syncWorkspace,
+  projectDirInsideRoot, projectDirName, readCommandStartUptime, releaseGeneration, resolveCachePaths, RUN_TAG_ENV, syncWorkspace,
   type LivenessResult, type SandboxLease, type SandboxReuseData,
 } from './sandbox-reuse.js';
 
@@ -1037,10 +1037,11 @@ function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot:
   let pgid: number | null = null;
   let commandRan = false;
   let released = false;
+  let commandStartedUptime: number | null = null;
   const release = (liveness: LivenessResult) => {
     if (released) return;
     released = true;
-    releaseGeneration(lease, { pgid, liveness });
+    releaseGeneration(lease, { pgid, liveness, commandStartedUptime });
   };
 
   try {
@@ -1067,11 +1068,13 @@ function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot:
     }
 
     const group: GroupExec = { env: { ...process.env, [RUN_TAG_ENV]: lease.runTag }, reportDir: lease.wsDir };
+    // §2.92.3：命令启动之前记录启动时刻（Linux），供存活检查排除早于命令启动的长寿进程
+    commandStartedUptime = readCommandStartUptime();
     const prepared = runPreparedSandbox(options, normalizedRoot, lease.wsDir, join(lease.wsDir, 'workspace'), group);
     commandRan = prepared.commandRan;
     pgid = prepared.pgid;
 
-    const liveness = commandRan ? checkOldWriters(pgid, lease.runTag) : { ok: true };
+    const liveness = commandRan ? checkOldWriters(pgid, lease.runTag, commandStartedUptime) : { ok: true };
     release(liveness);
 
     const reuse: SandboxReuseData = {
@@ -1105,7 +1108,7 @@ function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot:
     if (!released) {
       // 异常路径：命令已执行则仍按存活检查结论释放；未执行则无旧写入者
       try {
-        release(commandRan ? checkOldWriters(pgid, lease.runTag) : { ok: true });
+        release(commandRan ? checkOldWriters(pgid, lease.runTag, commandStartedUptime) : { ok: true });
       } catch {
         // 释放失败：锁保持未释放，下次按「持有者已不存在」新建世代
       }

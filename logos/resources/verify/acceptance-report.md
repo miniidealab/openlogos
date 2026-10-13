@@ -6,12 +6,12 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2265 |
+| Defined cases | 2268 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2265 |
-| Passed | 2242 |
+| Executed cases | 2268 |
+| Passed | 2243 |
 | Failed | 0 |
-| Skipped | 23 |
+| Skipped | 25 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
@@ -30,7 +30,9 @@
 - UT-S13-97
 - UT-S13-98
 - UT-S13-99
+- UT-S13-102
 - ST-S13-25
+- ST-S13-26
 - UT-S13-47
 - UT-S13-48
 - UT-S13-49

@@ -164,6 +164,110 @@ export interface ProcFs {
   readEnviron: (pid: string) => string;
   ownerUid: (pid: string) => number;
   currentUid: () => number;
+  /** 读取 /proc/<pid>/stat 的状态与启动时刻；读取失败按原错误抛出，无法解析抛普通 Error。 */
+  procStat: (pid: string) => ProcStat;
+  /** 列出 /proc/<pid>/task 下的线程 id；读取失败按原错误抛出。 */
+  listThreads: (pid: string) => string[];
+  /** 读取 /proc/<pid>/task/<tid>/stat；读取失败按原错误抛出，无法解析抛普通 Error。 */
+  threadStat: (pid: string, tid: string) => ProcStat;
+  /** 同步等待（线程组退出确认的复读间隔）。 */
+  sleep: (ms: number) => void;
+}
+
+export interface ProcStat {
+  /** 第 3 字段进程状态（R / S / D / Z / X 等）。 */
+  state: string;
+  /** 第 9 字段 flags 是否带 PF_EXITING（该 task——线程组 leader——已进入 do_exit）。 */
+  exiting: boolean;
+  /** 第 20 字段 num_threads：线程组内尚未释放的线程数（leader 退出后其余线程仍可继续运行）。 */
+  threads: number;
+  /** 第 22 字段启动时刻，换算为系统启动以来的秒。 */
+  startSeconds: number;
+}
+
+/** Linux 用户态 ABI 固定的时钟滴答频率（/proc/<pid>/stat 第 22 字段的单位）。 */
+const USER_HZ = 100;
+/** 命令启动时刻的容差（§2.92.2）：覆盖时钟滴答粒度与读取先后。 */
+const START_TOLERANCE_SECONDS = 1;
+
+/** 解析 /proc/<pid>/stat：comm 可含空格与括号，从最后一个 ')' 之后计字段（第 3 字段起）。 */
+export function parseProcStat(stat: string): ProcStat {
+  const close = stat.lastIndexOf(')');
+  if (close < 0) throw new Error('stat 格式无法解析');
+  const fields = stat.slice(close + 2).trim().split(/\s+/);
+  const ticks = Number(fields[22 - 3]);
+  const flags = Number(fields[9 - 3]);
+  const threads = Number(fields[20 - 3]);
+  if (!fields[0] || !Number.isFinite(ticks) || ticks < 0 || !Number.isInteger(flags) || !Number.isInteger(threads) || threads < 1) {
+    throw new Error('stat 启动时刻字段无法解析');
+  }
+  return { state: fields[0], exiting: (flags & PF_EXITING) !== 0, threads, startSeconds: ticks / USER_HZ };
+}
+
+export function parseProcStatStartSeconds(stat: string): number {
+  return parseProcStat(stat).startSeconds;
+}
+
+/**
+ * 整个线程组已退出（§2.92.2 第 4 条）：/proc/<pid>/stat 的状态与 flags 只描述线程组 leader，leader 可
+ * pthread_exit 而其余线程继续运行并写文件，故须证明**每个线程**都已实际进入退出——已退出未回收（Z）、正在
+ * 销毁（X）或已进入 do_exit（flags 带 PF_EXITING；此时其在途系统调用已返回）。待处理的 SIGKILL 不算：线程
+ * 可带着它完成在途的内核写入后才终止。
+ * - num_threads 为 1（只剩 leader 自身）且 leader 已退出；或
+ * - leader 已退出，逐个读取 /proc/<pid>/task/<tid> 均已退出（读取时已消失的线程忽略），且复读线程清单未出现
+ *   首次未见的线程——已退出的线程不能再创建线程，复读覆盖「读取期间被尚未退出的线程新建」的竞态。
+ *   整体退出中的多线程进程（如并发测试 / 构建中退出的 node）其余线程会在极短时间内进入退出，故存在未退出线程
+ *   时按固定间隔有界复读，直至某一轮全部满足；到期仍有未退出线程则不认定。
+ * 线程清单或线程 stat 读取失败（已消失除外）、无法解析，均立即不认定，回到启动时刻判据。
+ */
+const EXITED_STATES = new Set(['Z', 'X', 'x']);
+const PF_EXITING = 0x4;
+/** 有界复读（§2.92.2）：最多 EXIT_POLL_ROUNDS 轮，轮间等待 EXIT_POLL_INTERVAL_MS 毫秒（合计约 0.5 秒）。 */
+export const EXIT_POLL_ROUNDS = 11;
+const EXIT_POLL_INTERVAL_MS = 50;
+
+function taskExited(stat: ProcStat): boolean {
+  return stat.exiting || EXITED_STATES.has(stat.state);
+}
+
+type GroupProbe = 'exited' | 'pending' | 'unknown';
+
+function probeThreadGroup(pid: string, fsApi: ProcFs): GroupProbe {
+  const gone = (error: unknown) => GONE_CODES.has((error as NodeJS.ErrnoException).code ?? '');
+  let first: string[];
+  try {
+    first = fsApi.listThreads(pid);
+  } catch (error) {
+    return gone(error) ? 'exited' : 'unknown'; // 线程清单已消失 = 整个进程已消失
+  }
+  let pending = false;
+  for (const tid of first) {
+    try {
+      if (!taskExited(fsApi.threadStat(pid, tid))) pending = true;
+    } catch (error) {
+      if (!gone(error)) return 'unknown';
+    }
+  }
+  let again: string[];
+  try {
+    again = fsApi.listThreads(pid);
+  } catch (error) {
+    return gone(error) ? 'exited' : 'unknown';
+  }
+  const seen = new Set(first);
+  if (again.some(tid => !seen.has(tid))) pending = true;
+  return pending ? 'pending' : 'exited';
+}
+
+function threadGroupExited(pid: string, leader: ProcStat, fsApi: ProcFs): boolean {
+  if (!taskExited(leader)) return false;
+  if (leader.threads === 1) return true;
+  for (let round = 0; round < EXIT_POLL_ROUNDS; round++) {
+    if (round > 0) fsApi.sleep(EXIT_POLL_INTERVAL_MS);
+    const probe = probeThreadGroup(pid, fsApi);
+    if (probe !== 'pending') return probe === 'exited';
+  }
+  return false;
 }
 
 const realProcFs: ProcFs = {
@@ -171,7 +275,37 @@ const realProcFs: ProcFs = {
   readEnviron: pid => readFileSync(`/proc/${pid}/environ`, 'utf8'),
   ownerUid: pid => lstatSync(`/proc/${pid}`).uid,
   currentUid: () => (typeof process.getuid === 'function' ? process.getuid() : -1),
+  procStat: pid => parseProcStat(readFileSync(`/proc/${pid}/stat`, 'utf8')),
+  listThreads: pid => readdirSync(`/proc/${pid}/task`),
+  threadStat: (pid, tid) => parseProcStat(readFileSync(`/proc/${pid}/task/${tid}/stat`, 'utf8')),
+  sleep: ms => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); },
 };
+
+/** 测试接缝：注入 /proc 依赖与平台 / uptime（只供测试调用，生产路径不设置）。 */
+interface LivenessOverrides { procFs?: ProcFs; platform?: NodeJS.Platform; uptime?: number | null }
+let livenessOverrides: LivenessOverrides = {};
+export function setLivenessTestOverrides(overrides: LivenessOverrides): void {
+  livenessOverrides = { ...overrides };
+}
+
+function livenessPlatform(): NodeJS.Platform {
+  return livenessOverrides.platform ?? process.platform;
+}
+
+/**
+ * 命令启动时刻（§2.92.3）：仅 Linux，在启动命令之前读取 /proc/uptime 第一个字段（系统启动以来的秒）；
+ * 读取失败或非 Linux 返回 null（无可用的命令启动时刻）。
+ */
+export function readCommandStartUptime(): number | null {
+  if ('uptime' in livenessOverrides) return livenessOverrides.uptime ?? null;
+  if (livenessPlatform() !== 'linux') return null;
+  try {
+    const value = Number(readFileSync('/proc/uptime', 'utf8').trim().split(/\s+/)[0]);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 const GONE_CODES = new Set(['ENOENT', 'ESRCH']);
 
@@ -179,10 +313,13 @@ const GONE_CODES = new Set(['ENOENT', 'ESRCH']);
  * Linux 运行标记扫描。检查范围是**与 CLI 同用户**的进程（只有它们能写入同用户拥有的沙箱世代）：
  * - 读取 environ 时进程已退出（ENOENT / ESRCH）→ 跳过，不构成旧写入者；
  * - 其他用户的进程 → 跳过；
- * - 同用户、仍存活但 environ 不可读（EACCES / EPERM 等，如不可转储进程）→ 抛出，即「无法完成扫描」，
- *   由调用方判 tainted；不得静默当作不存在而放行复用或 fresh 删除。
+ * - 同用户但 environ 不可读（EACCES / EPERM 等）→ 读取其 stat：报 ENOENT / ESRCH，或整个线程组已退出（每个
+ *   线程均为 Z / X 或带 PF_EXITING，见 threadGroupExited），视为已退出，跳过；仍存活的（如
+ *   Electron 沙箱渲染进程等不可转储进程，或 leader 已退出但仍有其他线程的进程）按 §2.92.2 比较启动时刻：早于「命令启动时刻 − 1 秒」的不可能是本世代命令的后代，跳过；
+ *   其余（含无命令启动时刻、stat 读取失败或无法解析）抛出，即「无法完成扫描」，由调用方判 tainted。
+ *   不得把无法确认当作不存在而放行复用或 fresh 删除。
  */
-export function scanProcEnvironment(tag: string, fsApi: ProcFs = realProcFs): number[] {
+export function scanProcEnvironment(tag: string, commandStartedUptime: number | null = null, fsApi: ProcFs = realProcFs): number[] {
   const needle = `${RUN_TAG_ENV}=${tag}`;
   const hits: number[] = [];
   const me = fsApi.currentUid();
@@ -202,7 +339,21 @@ export function scanProcEnvironment(tag: string, fsApi: ProcFs = realProcFs): nu
         throw new Error(`无法确认进程 ${entry} 的属主（${(statError as NodeJS.ErrnoException).code ?? 'unknown'}）`);
       }
       if (owner !== me) continue;
-      throw new Error(`同用户存活进程 ${entry} 的环境不可读（${code || 'unknown'}）`);
+      let stat: ProcStat;
+      try {
+        stat = fsApi.procStat(entry);
+      } catch (startError) {
+        const startCode = (startError as NodeJS.ErrnoException).code ?? '';
+        if (GONE_CODES.has(startCode)) continue;
+        throw new Error(`同用户存活进程 ${entry} 的环境不可读（${code || 'unknown'}），且启动时刻无法确认（${startCode || (startError as Error).message}）`);
+      }
+      // 早于命令启动：不可能是其后代。先于线程组退出确认判定，免去对早已存在的进程做有界复读
+      if (commandStartedUptime !== null && stat.startSeconds < commandStartedUptime - START_TOLERANCE_SECONDS) continue;
+      if (threadGroupExited(entry, stat, fsApi)) continue;
+      if (commandStartedUptime === null) {
+        throw new Error(`同用户存活进程 ${entry} 的环境不可读（${code || 'unknown'}），且无命令启动时刻可供排除`);
+      }
+      throw new Error(`同用户存活进程 ${entry} 的环境不可读（${code || 'unknown'}），且启动于命令启动之后或容差内`);
     }
     if (env.split('\0').includes(needle)) hits.push(Number(entry));
   }
@@ -210,13 +361,13 @@ export function scanProcEnvironment(tag: string, fsApi: ProcFs = realProcFs): nu
 }
 
 /** 返回初始环境含 `OPENLOGOS_SANDBOX_RUN=<tag>` 的存活进程 pid；扫描无法完成时抛出。 */
-export function scanRunTag(tag: string): number[] {
+export function scanRunTag(tag: string, commandStartedUptime: number | null = null): number[] {
   if (process.env.OPENLOGOS_SANDBOX_TEST_SCAN_ERROR === '1') {
     throw new Error('测试接缝已模拟运行标记扫描无法完成');
   }
   const hits: number[] = [];
   const needle = `${RUN_TAG_ENV}=${tag}`;
-  if (process.platform === 'linux') return scanProcEnvironment(tag);
+  if (livenessPlatform() === 'linux') return scanProcEnvironment(tag, commandStartedUptime, livenessOverrides.procFs ?? realProcFs);
   const out = execFileSync('/bin/ps', ['-E', '-ww', '-A', '-o', 'pid=,command='], {
     encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
   });
@@ -232,14 +383,14 @@ export function scanRunTag(tag: string): number[] {
 }
 
 /** 某世代的旧写入者存活检查：进程组已空，且扫描不到带该世代运行标记的存活进程。 */
-export function checkOldWriters(pgid: number | null, runTag: string): LivenessResult {
+export function checkOldWriters(pgid: number | null, runTag: string, commandStartedUptime: number | null = null): LivenessResult {
   if (pgid !== null && pgid > 0) {
     const group = probeProcessGroup(pgid);
     if (!group.ok) return group;
   }
   let hits: number[];
   try {
-    hits = scanRunTag(runTag);
+    hits = scanRunTag(runTag, commandStartedUptime);
   } catch (error) {
     return { ok: false, reason: `运行标记扫描失败（${(error as Error).message?.slice(0, 200) ?? 'unknown'}）` };
   }
@@ -265,7 +416,11 @@ export function ensureRealDir(path: string): void {
 // ───────────────────────── 世代锁 ─────────────────────────
 
 interface LockRecord { token: string; pid: number; ws: string }
-interface ReleaseRecord { token: string; ws: string; pgid: number | null; run_tag: string; reason?: string }
+interface ReleaseRecord {
+  token: string; ws: string; pgid: number | null; run_tag: string; reason?: string;
+  /** §2.92.4：本世代命令启动时刻（系统启动以来的秒，仅 Linux 写入）。 */
+  command_started_uptime?: number;
+}
 
 interface LockSnapshot {
   max: number;
@@ -356,7 +511,8 @@ export function acquireGeneration(projectDir: string, fresh: boolean): AcquireOu
   } else if (snap.released) {
     const oldWs = snap.record.ws;
     const tag = snap.released.run_tag || runTagFor(join(projectDir, oldWs));
-    const recheck = checkOldWriters(typeof snap.released.pgid === 'number' ? snap.released.pgid : null, tag);
+    const started = typeof snap.released.command_started_uptime === 'number' ? snap.released.command_started_uptime : null;
+    const recheck = checkOldWriters(typeof snap.released.pgid === 'number' ? snap.released.pgid : null, tag, started);
     if (!recheck.ok) {
       state = fresh ? 'fresh' : 'recovered';
       targetWs = wsName(next);
@@ -411,9 +567,13 @@ export function acquireGeneration(projectDir: string, fresh: boolean): AcquireOu
 }
 
 /** 释放：排他创建 `released` 或 `tainted`，二者互斥；从不删除任何锁记录。 */
-export function releaseGeneration(lease: SandboxLease, outcome: { pgid: number | null; liveness: LivenessResult }): void {
+export function releaseGeneration(
+  lease: SandboxLease,
+  outcome: { pgid: number | null; liveness: LivenessResult; commandStartedUptime?: number | null },
+): void {
   const base = join(lease.lockDir, genName(lease.generation));
   const body: ReleaseRecord = { token: lease.token, ws: lease.wsName, pgid: outcome.pgid, run_tag: lease.runTag };
+  if (typeof outcome.commandStartedUptime === 'number') body.command_started_uptime = outcome.commandStartedUptime;
   const target = outcome.liveness.ok ? `${base}.released` : `${base}.tainted`;
   if (!outcome.liveness.ok) body.reason = outcome.liveness.reason ?? 'unknown';
   const fd = openSync(target, 'wx');

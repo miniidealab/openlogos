@@ -428,3 +428,29 @@
 - 断言基于 `--format json` 的结构化字段、命令实际输出与文件系统事实（inode、mtime、目录存在性、锁记录），不解析 `sandbox.infos` 的人类可读文案。
 - 涉及子进程与孤儿进程的用例必须在 `finally` 中终止其启动的全部进程并删除一次性目录；不得在本仓 `sandbox_root`（`/Volumes/BuildWork/openlogos-sandbox`）下创建项目目录。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S13 Linux 运行标记扫描中环境不可读进程的判定测试
+
+> 覆盖功能规格 §2.92「Linux 运行标记扫描中环境不可读进程的判定」；场景 S13「S13 Linux 运行标记扫描与环境不可读进程」EX-3.13；来源变更 fix-sandbox-reuse-linux-liveness（决策 C01、C02）。
+>
+> **夹具口径**：UT 以注入的 `/proc` 访问依赖（进程清单、environ、属主、stat 启动时刻、当前用户）驱动 `scanProcEnvironment` / 存活检查，任何平台均可运行；ST 仅在 Linux 运行（其他平台显式 skip），以「exec 一份去掉读权限、仅保留执行权限的 `sleep` 副本」构造真实的不可转储同用户进程（同用户读取其 environ 得 EACCES），一次性项目与一次性 `sandbox_root` 在 `mktemp -d` 下构造，构造的进程在 finally 中终止。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S13"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S13-101 | 环境不可读的同用户进程按启动时刻判定 | 注入 `/proc`：当前用户 501，命令启动时刻 1000.00 秒；进程 a：同用户、environ EACCES、启动 500.00 秒；b：同用户、environ EACCES、启动 1000.50 秒；c：同用户、environ EACCES、启动 999.50 秒（容差内）；d：同用户、environ EACCES、stat 报 ENOENT；e：同用户、environ EACCES、stat 报 EACCES；f：同用户、environ EACCES、stat 第 22 字段无法解析；g：他用户、environ EACCES；h：environ 可读且含 `OPENLOGOS_SANDBOX_RUN=tag` | 以不同组合调用扫描：① 仅 a、d、g；② 加入 b；③ 加入 c；④ 加入 e；⑤ 加入 f；⑥ 仅 a 但不提供命令启动时刻；⑦ 加入 h | ① 返回无命中、不抛出；② ③ ④ ⑤ ⑥ 均判无法完成扫描（抛出且原因点名对应 pid）；⑦ 命中 h。**修改前实现在 ① 上抛出（a 被判无法完成），本用例必红** |
+| UT-S13-102 | 命令启动时刻随释放记录传递与旧记录保守口径 | 执行器级，Linux 上运行；其他平台以注入的 `/proc` 依赖与平台判定接缝运行 | ① 运行一次复用命令后读取释放记录；② 在注入的 `/proc` 中放一个启动时刻早于「① 记录值 − 1 秒」（如早 5 秒）、environ 不可读的同用户进程后再运行一次；③ 把释放记录中的 `command_started_uptime` 删除（模拟旧版记录）后再运行一次；④ 再运行一次 | ① `released` 记录含数字型 `command_started_uptime`；② `reuse.state=="reused"`；③ `reuse.state=="recovered"`，新释放记录重新带 `command_started_uptime`；④ `reuse.state=="reused"` |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-26 | Linux 真实不可转储进程下的复用 | S13 R9～R12、EX-3.13 ①② | 仅 Linux；一次性项目（verify 预跑写全部 pass 账本）与一次性 `sandbox_root`；`sleep` 的副本权限为 0111 | ① 先在测试中启动一个不可转储进程（exec 0111 的 `sleep` 副本，长时间运行），确认同用户读取其 environ 得 EACCES、`/proc/<pid>/stat` 可读；随后等待并以实际读数校验「`/proc/uptime` − 该进程 starttime 秒数」大于 2 秒（即首轮命令启动时该进程必然早于「命令启动时刻 − 1 秒」）；② 连续两次 `openlogos verify --format json`；③ 把预跑命令改为在命令内以 `setsid` / Node `spawn(..., {detached:true, stdio:"ignore"})` 启动一个不可转储后台进程（同样 exec 0111 副本，脱离命令进程组并关闭继承 stdio）后退出，执行一次 verify；④ 再执行一次 verify | ② 两次 `gate.result=="PASS"`，`reuse.state` 依次为 `created` / `reused`；③ 先断言该后台进程仍存活、原命令进程组已空（以释放记录中的 `pgid` 做 `kill(-pgid, 0)` 得 ESRCH）、同用户读取其 environ 得 EACCES、stat 可读且启动时刻不早于「命令启动时刻 − 1 秒」；最新释放标记为 `tainted`，原因来自运行标记扫描并点名该后台进程的 pid（而非进程组仍有成员）；④ `reuse.state=="recovered"`，旧世代列入 `abandoned`。**修改前实现 ② 第二次为 `recovered`，本用例必红** |
+
+### 追溯与覆盖
+
+- 启动时刻判据与各异常分支（§2.92.2）：UT-S13-101。
+- 命令启动时刻记录、随释放记录传递与旧记录保守口径（§2.92.3、§2.92.4、EX-3.13 ③）：UT-S13-102。
+- Linux 真实不可转储进程（EX-3.13 ①③）：ST-S13-26（仅 Linux）；容差内与启动时刻不可读（EX-3.13 ②）：UT-S13-101 的进程 c、e、f。
+- 既有 UT-S13-89～UT-S13-100、ST-S13-25、UT-S19-57 作为零回归守护，须在 Linux（非 root、具备 sqlite3）与 macOS 全量回归中保持绿。

@@ -22,7 +22,10 @@ import { fileURLToPath } from 'node:url';
 import { cli, cleanupFixtureRoots, fixtureRoots, put } from './frontier-fixture.js';
 import { scaffoldProject } from './helpers.js';
 import { runSandboxedCommand, type NormalizedSandboxConfig } from '../src/lib/sandbox.js';
-import { detectLivenessCapability, projectDirName, scanProcEnvironment, SYNC_MANIFEST_SCHEMA } from '../src/lib/sandbox-reuse.js';
+import {
+  detectLivenessCapability, EXIT_POLL_ROUNDS, parseProcStat, parseProcStatStartSeconds, projectDirName, scanProcEnvironment, setLivenessTestOverrides, SYNC_MANIFEST_SCHEMA,
+  type ProcFs,
+} from '../src/lib/sandbox-reuse.js';
 
 const SANDBOX_DIST = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'lib', 'sandbox.js');
 const RESULT = 'logos/resources/verify/test-results.jsonl';
@@ -640,12 +643,16 @@ while (!fs.existsSync(${JSON.stringify(join(barrier, 'receipt'))}) && Date.now()
         readEnviron: (pid: string) => { const v = envs[pid]; if (typeof v !== 'string') throw v; return v; },
         ownerUid: (pid: string) => { const v = owners[pid]; if (typeof v !== 'number') throw v; return v; },
         currentUid: () => 501,
+        procStat: () => { throw Object.assign(new Error('not injected'), { code: 'EACCES' }); },
+        listThreads: () => { throw Object.assign(new Error('not injected'), { code: 'EACCES' }); },
+        threadStat: () => { throw Object.assign(new Error('not injected'), { code: 'EACCES' }); },
+        sleep: () => undefined,
       });
       const err = (code: string) => Object.assign(new Error(code), { code });
       // 同用户、仍存活但环境不可读 → 无法完成扫描
-      expect(() => scanProcEnvironment('tag', fake({ 100: err('EACCES') }, { 100: 501 }))).toThrow(/环境不可读/);
+      expect(() => scanProcEnvironment('tag', null, fake({ 100: err('EACCES') }, { 100: 501 }))).toThrow(/环境不可读/);
       // 读取时已退出的竞态 → 跳过；其他用户进程不可读 → 跳过；可读且带标记 → 命中
-      expect(scanProcEnvironment('tag', fake(
+      expect(scanProcEnvironment('tag', null, fake(
         { 100: err('ENOENT'), 101: err('EACCES'), 102: `A=1\0${'OPENLOGOS_SANDBOX_RUN'}=tag\0`, 103: err('EACCES') },
         { 101: 0, 103: err('ENOENT') },
       ))).toEqual([102]);
@@ -818,6 +825,197 @@ process.stdout.write(JSON.stringify(out));
   }, 60_000);
 });
 
+describe('S13 Linux 运行标记扫描中环境不可读进程的判定 — 单元测试', () => {
+  /** stat 一律以原始 /proc/<pid>/stat 文本注入，经真实 parseProcStat 解析（含 flags 与 num_threads）。 */
+  type Proc = {
+    env?: string | NodeJS.ErrnoException; owner?: number | NodeJS.ErrnoException; stat?: string | NodeJS.ErrnoException;
+    /**
+     * /proc/<pid>/task：tid → 原始 stat 文本；给数组时按复读轮次（已发生的 sleep 次数）取对应一轮，超出取最后一轮。
+     * `relist` 为同一轮内第二次列出时的线程清单（模拟读取期间新建线程）。
+     */
+    tasks?: Record<string, string | NodeJS.ErrnoException> | Array<Record<string, string | NodeJS.ErrnoException>>;
+    relist?: string[];
+  };
+  const err = (code: string) => Object.assign(new Error(code), { code });
+  const PF_EXITING_FLAGS = 0x40014c; // 实测退出中 bash 的 flags，带 PF_EXITING（0x4）
+  const rawStat = (start: number, o: { state?: string; flags?: number; threads?: number } = {}) =>
+    `1 (proc) ${o.state ?? 'S'} 1 1 1 0 -1 ${o.flags ?? 0x400100} 0 0 0 0 0 0 0 0 20 0 ${o.threads ?? 1} 0 ${Math.round(start * 100)} 1000 10`;
+  let sleeps = 0;
+  const procFs = (procs: Record<string, Proc>): ProcFs => {
+    sleeps = 0;
+    const roundOf = (p: Proc) => (Array.isArray(p.tasks) ? p.tasks[Math.min(sleeps, p.tasks.length - 1)] : p.tasks);
+    return {
+      list: () => Object.keys(procs),
+      readEnviron: pid => { const v = procs[pid].env; if (typeof v !== 'string') throw v ?? err('EACCES'); return v; },
+      ownerUid: pid => { const v = procs[pid].owner; if (typeof v !== 'number') throw v ?? err('ENOENT'); return v; },
+      currentUid: () => 501,
+      procStat: pid => { const v = procs[pid].stat; if (typeof v !== 'string') throw v ?? err('EIO'); return parseProcStat(v); },
+      listThreads: (() => {
+        const listed = new Set<string>();
+        return (pid: string) => {
+          const p = procs[pid];
+          const tasks = roundOf(p);
+          if (!tasks) throw err('EACCES');
+          if (listed.has(pid) && p.relist) return p.relist;
+          listed.add(pid);
+          return Object.keys(tasks);
+        };
+      })(),
+      threadStat: (pid, tid) => { const v = roundOf(procs[pid])?.[tid]; if (typeof v !== 'string') throw v ?? err('ENOENT'); return parseProcStat(v); },
+      sleep: () => { sleeps++; },
+    };
+  };
+
+  it('UT-S13-101: 环境不可读的同用户进程按启动时刻判定', () => {
+    const P: Record<string, Proc> = {
+      a: { env: err('EACCES'), owner: 501, stat: rawStat(500) },
+      b: { env: err('EACCES'), owner: 501, stat: rawStat(1000.5) },
+      c: { env: err('EACCES'), owner: 501, stat: rawStat(999.5) },
+      d: { env: err('EACCES'), owner: 501, stat: err('ENOENT') },
+      e: { env: err('EACCES'), owner: 501, stat: err('EACCES') },
+      f: { env: err('EACCES'), owner: 501, stat: '1 (proc) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 not-a-number' },
+      g: { env: err('EACCES'), owner: 0 },
+      h: { env: 'A=1\0OPENLOGOS_SANDBOX_RUN=tag\0' },
+      // 整个线程组已退出：只剩 leader 一个线程，且其已退出未回收（Z）或已进入 do_exit（PF_EXITING）
+      z: { env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: PF_EXITING_FLAGS, threads: 1 }) },
+      x: { env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'R', flags: PF_EXITING_FLAGS, threads: 1 }) },
+      // leader 已 pthread_exit（Z + PF_EXITING）但仍有工作线程（num_threads=2，Linux 实测形态）：不得按已退出跳过
+      t: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 2 }),
+        tasks: { 21: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 121: rawStat(1000.5, { state: 'S', flags: 0x400040 }) },
+      },
+      u: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'S', flags: PF_EXITING_FLAGS, threads: 3 }),
+        tasks: { 22: rawStat(1000.5, { state: 'S', flags: PF_EXITING_FLAGS }), 122: rawStat(1000.5, { flags: PF_EXITING_FLAGS }), 222: rawStat(1000.5, { state: 'R', flags: 0x400040 }) },
+      },
+      v: {
+        env: err('EACCES'), owner: 501, stat: rawStat(500, { state: 'Z', flags: 0x40810c, threads: 2 }),
+        tasks: { 23: rawStat(500, { state: 'Z', flags: 0x40810c }), 123: rawStat(500, { state: 'S', flags: 0x400040 }) },
+      },
+      // 整体退出中的多线程进程（实测 node 退出形态）：leader Z、num_threads=2，其余线程亦已进入 do_exit 或已消失
+      w: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 3 }),
+        tasks: { 24: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 124: rawStat(1000.5, { state: 'R', flags: 0x40814c }), 224: err('ENOENT') },
+      },
+      // 尚未进入退出流程的线程（D 状态、无 PF_EXITING，即便已有待处理 SIGKILL 也可能正完成在途写入）：
+      // 有界复读期间始终未退出 → 不认定
+      q: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 2 }),
+        tasks: { 28: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 128: rawStat(1000.5, { state: 'D', flags: 0x400040 }) },
+      },
+      // 整体退出中的多线程进程（实测 node 退出形态）：首轮另一线程仍为 R、无 PF_EXITING，复读时已进入退出 / 已消失
+      p: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 3 }),
+        tasks: [
+          { 29: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 129: rawStat(1000.5, { state: 'R', flags: 0x400040 }), 229: rawStat(1000.5, { state: 'R', flags: 0x400040 }) },
+          { 29: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 129: rawStat(1000.5, { state: 'R', flags: 0x40814c }), 229: rawStat(1000.5, { state: 'R', flags: 0x400040 }) },
+          { 29: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 129: err('ENOENT'), 229: rawStat(1000.5, { state: 'X', flags: 0x40810c }) },
+        ],
+      },
+      // 线程清单不可读、线程 stat 无法解析、复读时出现首次未见的线程：均不认定已退出
+      k: { env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 2 }) },
+      m: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 2 }),
+        tasks: { 26: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 126: 'garbage' },
+      },
+      n: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 2 }),
+        tasks: {
+          27: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 127: rawStat(1000.5, { state: 'X', flags: 0x40810c }),
+          227: rawStat(1000.5, { state: 'S', flags: 0x400040 }),
+        },
+        relist: ['27', '127', '227'],
+      },
+    };
+    // 以数字 pid 作为键，保持与 /proc 一致
+    const ids: Record<string, string> = {
+      a: '11', b: '12', c: '13', d: '14', e: '15', f: '16', g: '17', h: '18', z: '19', x: '20', t: '21', u: '22', v: '23',
+      w: '24', k: '25', m: '26', n: '27', q: '28', p: '29',
+    };
+    const pick = (...names: string[]) => Object.fromEntries(names.map(n => [ids[n], P[n]]));
+    const scan = (names: string[], started: number | null = 1000) => scanProcEnvironment('tag', started, procFs(pick(...names)));
+    expect(scan(['a', 'd', 'g']), '① 早于命令启动 − 1 秒、已退出竞态、他用户：均跳过').toEqual([]);
+    expect(() => scan(['a', 'b'])).toThrow(/12.*启动于命令启动之后或容差内/);
+    expect(() => scan(['a', 'c']), '③ 容差内').toThrow(/13.*启动于命令启动之后或容差内/);
+    expect(() => scan(['a', 'e'])).toThrow(/15.*启动时刻无法确认/);
+    expect(() => scan(['a', 'f'])).toThrow(/16.*启动时刻无法确认/);
+    expect(() => scan(['a'], null), '⑥ 无命令启动时刻').toThrow(/11.*无命令启动时刻/);
+    expect(scan(['a', 'd', 'g', 'h'])).toEqual([18]);
+    // 已退出竞态的另一形态：整个线程组已退出（num_threads=1 且 Z 或 PF_EXITING）的进程 environ 同样不可读，
+    // 与 ENOENT 同口径跳过（已退出的进程不再执行用户态代码，与有无命令启动时刻无关）
+    expect(scan(['a', 'z', 'x'])).toEqual([]);
+    expect(scan(['z', 'x'], null)).toEqual([]);
+    // leader 退出但仍有其他线程：按启动时刻与保守口径判定，不因 leader 的 Z / PF_EXITING 放行
+    expect(() => scan(['a', 't']), 'leader Z + 工作线程存活、晚于命令启动').toThrow(/21.*启动于命令启动之后或容差内/);
+    expect(() => scan(['a', 'u']), 'leader PF_EXITING + 工作线程存活').toThrow(/22.*启动于命令启动之后或容差内/);
+    expect(() => scan(['t'], null), '旧记录无命令启动时刻').toThrow(/21.*无命令启动时刻/);
+    expect(() => scan(['u'], null)).toThrow(/22.*无命令启动时刻/);
+    expect(scan(['a', 'v']), '早于命令启动 − 1 秒的多线程进程仍按启动时刻排除').toEqual([]);
+    expect(sleeps, '早于命令启动者不做有界复读').toBe(0);
+    // 逐线程确认：每个线程均已退出（含读取时已消失的线程）才视为整个线程组已退出
+    expect(scan(['a', 'w']), '整体退出中的多线程进程').toEqual([]);
+    expect(scan(['w'], null)).toEqual([]);
+    expect(() => scan(['a', 'k']), '线程清单不可读').toThrow(/25.*启动于命令启动之后或容差内/);
+    expect(() => scan(['a', 'm']), '线程 stat 无法解析').toThrow(/26.*启动于命令启动之后或容差内/);
+    expect(() => scan(['a', 'n']), '复读线程清单出现新线程').toThrow(/27.*启动于命令启动之后或容差内/);
+    expect(() => scan(['a', 'q']), '工作线程 D 状态、未进入退出').toThrow(/28.*启动于命令启动之后或容差内/);
+    expect(sleeps, '有界复读：到期即止').toBe(EXIT_POLL_ROUNDS - 1);
+    expect(() => scan(['q'], null)).toThrow(/28.*无命令启动时刻/);
+    expect(scan(['a', 'p']), '复读时其余线程已实际进入退出 / 已消失').toEqual([]);
+    expect(sleeps).toBe(2);
+    expect(scan(['p'], null)).toEqual([]);
+    // /proc/<pid>/stat 解析：comm 含空格与括号，第 22 字段为启动滴答数（USER_HZ=100）
+    const stat = `4242 (my (odd) proc) S 1 4242 4242 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 1 0 123456 1000 10 ...`;
+    expect(parseProcStatStartSeconds(stat)).toBe(1234.56);
+    expect(parseProcStat(stat)).toEqual({ state: 'S', exiting: false, threads: 1, startSeconds: 1234.56 });
+    expect(parseProcStat(stat.replace(' 4194560 ', ' 4194380 ')).exiting, 'flags 0x40014C 带 PF_EXITING').toBe(true);
+    expect(parseProcStat(stat.replace(' 20 0 1 0 ', ' 20 0 2 0 ')).threads).toBe(2);
+    expect(() => parseProcStat(stat.replace(' 20 0 1 0 ', ' 20 0 x 0 ')), 'num_threads 无法解析').toThrow();
+    expect(() => parseProcStatStartSeconds('garbage')).toThrow();
+  });
+
+  itReuse('UT-S13-102: 命令启动时刻随释放记录传递与旧记录保守口径', () => {
+    const f = execFixture({ 'src/a.txt': 'a' });
+    // 平台接缝：以 Linux 判定运行，注入命令启动时刻 1000 秒与一个早 5 秒启动、环境不可读的同用户进程
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 501;
+    const fake: ProcFs = {
+      list: () => ['77'],
+      readEnviron: () => { throw err('EACCES'); },
+      ownerUid: () => uid,
+      currentUid: () => uid,
+      procStat: () => parseProcStat('77 (renderer) S 1 77 77 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 99500 1000 10'),
+      listThreads: () => ['77'],
+      threadStat: () => parseProcStat('77 (renderer) S 1 77 77 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 99500 1000 10'),
+      sleep: () => undefined,
+    };
+    setLivenessTestOverrides({ procFs: fake, platform: 'linux', uptime: 1000 });
+    try {
+      const first = exec(f, 'true');
+      expect(first.sandbox.reuse?.state).toBe('created');
+      const projectDir = projectDirOf(f);
+      const lockDir = join(projectDir, 'lock');
+      const releasedPath = join(lockDir, 'gen-000000000001.released');
+      const rec = JSON.parse(readFileSync(releasedPath, 'utf8'));
+      expect(rec.command_started_uptime, '① 释放记录带命令启动时刻').toBe(1000);
+      const second = exec(f, 'true');
+      expect(second.sandbox.reuse?.state, '② 早于命令启动的不可读进程被排除').toBe('reused');
+      // ③ 模拟旧版记录：删除最新释放记录中的命令启动时刻
+      const latest = join(lockDir, 'gen-000000000002.released');
+      const old = JSON.parse(readFileSync(latest, 'utf8'));
+      delete old.command_started_uptime;
+      writeFileSync(latest, JSON.stringify(old));
+      const third = exec(f, 'true');
+      expect(third.sandbox.reuse?.state, '③ 旧记录按保守口径').toBe('recovered');
+      const newRec = JSON.parse(readFileSync(join(lockDir, 'gen-000000000003.released'), 'utf8'));
+      expect(newRec.command_started_uptime).toBe(1000);
+      const fourth = exec(f, 'true');
+      expect(fourth.sandbox.reuse?.state, '④ 新记录写入后恢复复用').toBe('reused');
+    } finally {
+      setLivenessTestOverrides({});
+    }
+  }, 30_000);
+});
+
 // ───────────────────────── 场景测试 ─────────────────────────
 
 describe('S13 沙箱复用与增量同步 — 场景测试', () => {
@@ -850,5 +1048,125 @@ fs.writeFileSync(${JSON.stringify(RESULT)}, ${JSON.stringify(PASS_LEDGER)});
     const compiled = runs.map(r => /compiled=(\d+)/.exec(r.data.pre_run.commands[0].stdout_tail)?.[1]);
     expect(compiled, '修改前实现每次都是 compiled=20').toEqual(['20', '1', '0', '20']);
     expect(runs.map(r => r.data.sandbox.reuse.state)).toEqual(['created', 'reused', 'reused', 'fresh']);
+  }, 120_000);
+
+  const linuxNonRoot = process.platform === 'linux' && typeof process.getuid === 'function' && process.getuid() !== 0;
+  // 臂 ⑤ 需编译一个 leader pthread_exit、工作线程继续运行的原生程序（Node / shell 无法构造该线程形态）
+  const hasCc = linuxNonRoot && spawnSync('cc', ['--version'], { stdio: 'ignore' }).status === 0;
+  it.skipIf(!(REUSE_CAPABLE && linuxNonRoot && hasCc))('ST-S13-26: Linux 真实不可转储进程下的复用', async () => {
+    // 构造不可转储进程：exec 一份去掉读权限、仅保留执行权限的 sleep 副本
+    const binDir = tmp('openlogos-s13-nodump-');
+    const sleepBin = join(binDir, 'sleep-xonly');
+    writeFileSync(sleepBin, readFileSync(execFileSync('sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).trim()));
+    chmodSync(sleepBin, 0o111);
+    const statStart = (pid: number) => parseProcStatStartSeconds(readFileSync(`/proc/${pid}/stat`, 'utf8'));
+    const uptime = () => Number(readFileSync('/proc/uptime', 'utf8').split(/\s+/)[0]);
+    const environCode = (pid: number) => { try { readFileSync(`/proc/${pid}/environ`); return 'readable'; } catch (e) { return (e as NodeJS.ErrnoException).code; } };
+    const pre = spawn(sleepBin, ['600'], { stdio: 'ignore' });
+    pids.push(pre.pid!);
+    try {
+      await waitFor(() => existsSync(`/proc/${pre.pid}/stat`), 5_000, 'pre process');
+      expect(environCode(pre.pid!), '① 同用户读取其 environ 得 EACCES').toBe('EACCES');
+      await waitFor(() => uptime() - statStart(pre.pid!) > 2, 10_000, 'pre process age > 2s');
+
+      // ② 存在早于命令启动 1 秒以上的不可转储进程：连续两次 verify 为 created / reused
+      const f = cliProject();
+      setVerify(f.root, { pre_run_command: passRunner(f.root, 'pass') });
+      const r1 = verifyJson(f.root);
+      const r2 = verifyJson(f.root);
+      expect([r1.data.gate.result, r2.data.gate.result]).toEqual(['PASS', 'PASS']);
+      expect([r1.data.sandbox.reuse.state, r2.data.sandbox.reuse.state], '修改前实现第二次为 recovered').toEqual(['created', 'reused']);
+
+      // ③ 命令以 detached 启动脱组的不可转储后代后退出
+      const pidFile = join(binDir, 'child.pid');
+      setVerify(f.root, { pre_run_command: passRunner(f.root, 'spawn', `
+const { spawn } = require('child_process');
+const c = spawn(${JSON.stringify(sleepBin)}, ['600'], { detached: true, stdio: 'ignore' });
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(c.pid));
+c.unref();
+`) });
+      const r3 = verifyJson(f.root);
+      const child = Number(readFileSync(pidFile, 'utf8'));
+      pids.push(child);
+      const projectDir = projectDirOf(f);
+      const lockDir = join(projectDir, 'lock');
+      const names = readdirSync(lockDir).filter(n => /^gen-\d{12}$/.test(n)).sort();
+      const latest = names[names.length - 1];
+      expect(existsSync(join(lockDir, `${latest}.released`))).toBe(false);
+      const tainted = JSON.parse(readFileSync(join(lockDir, `${latest}.tainted`), 'utf8'));
+      let groupCode: string | undefined;
+      try { process.kill(-tainted.pgid, 0); } catch (e) { groupCode = (e as NodeJS.ErrnoException).code; }
+      expect(groupCode, '原命令进程组已空').toBe('ESRCH');
+      expect(() => process.kill(child, 0), '后代仍存活').not.toThrow();
+      expect(environCode(child)).toBe('EACCES');
+      expect(statStart(child)).toBeGreaterThanOrEqual(tainted.command_started_uptime - 1);
+      expect(tainted.reason).toContain('运行标记扫描');
+      expect(tainted.reason).toContain(String(child));
+      expect(tainted.reason).not.toContain('进程组');
+      expect(r3.data.gate.result).toBe('PASS');
+
+      // ④ 下一轮新建世代，旧世代列入 abandoned（预跑命令还原为普通运行器，不再启动后代）
+      setVerify(f.root, { pre_run_command: passRunner(f.root, 'pass') });
+      const r4 = verifyJson(f.root);
+      expect(r4.data.sandbox.reuse.state).toBe('recovered');
+      expect(r4.data.sandbox.reuse.abandoned).toContain(join(projectDir, r3.data.sandbox.reuse.generation));
+
+      // ⑤ 脱组后代的 leader 已 pthread_exit（stat 为 Z、带 PF_EXITING）而工作线程仍存活并稍后写入旧世代：
+      //    不得因 leader 状态按已退出跳过——释放为 tainted，--fresh-sandbox 不删除旧世代，旧线程的写入不进入新世代
+      process.kill(child, 'SIGKILL');
+      put(binDir, 'lt.c', `#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+static char *marker; static int delay;
+static void *worker(void *a) { (void)a; sleep(delay); FILE *f = fopen(marker, "w"); if (f) { fputs("stale\\n", f); fclose(f); } sleep(600); return 0; }
+int main(int argc, char **argv) { pthread_t t; if (argc < 3) return 2; marker = argv[1]; delay = atoi(argv[2]);
+  pthread_create(&t, 0, worker, 0); pthread_exit(0); }
+`);
+      const ltBin = join(binDir, 'lt');
+      execFileSync('cc', ['-O0', '-pthread', '-o', ltBin, join(binDir, 'lt.c')]);
+      chmodSync(ltBin, 0o111);
+      const ltPidFile = join(binDir, 'lt.pid');
+      const ltCwdFile = join(binDir, 'lt.cwd');
+      setVerify(f.root, { pre_run_command: passRunner(f.root, 'threads', `
+const { spawn } = require('child_process');
+const marker = path.resolve('stale-marker.txt');
+const c = spawn(${JSON.stringify(ltBin)}, [marker, '3'], { detached: true, stdio: 'ignore' });
+fs.writeFileSync(${JSON.stringify(ltPidFile)}, String(c.pid));
+fs.writeFileSync(${JSON.stringify(ltCwdFile)}, process.cwd());
+c.unref();
+`) });
+      const r5 = verifyJson(f.root);
+      const leader = Number(readFileSync(ltPidFile, 'utf8'));
+      pids.push(leader);
+      const oldWorkspace = readFileSync(ltCwdFile, 'utf8');
+      expect(r5.data.gate.result).toBe('PASS');
+      const leaderStat = parseProcStat(readFileSync(`/proc/${leader}/stat`, 'utf8'));
+      expect(leaderStat.state, 'leader 已退出未回收').toBe('Z');
+      expect(leaderStat.exiting).toBe(true);
+      expect(leaderStat.threads, '工作线程仍存活').toBeGreaterThan(1);
+      expect(environCode(leader)).toBe('EACCES');
+      const gen5 = r5.data.sandbox.reuse.generation as string;
+      const lock5 = readdirSync(lockDir).filter(n => /^gen-\d{12}$/.test(n)).sort().pop()!;
+      expect(existsSync(join(lockDir, `${lock5}.released`))).toBe(false);
+      const tainted5 = JSON.parse(readFileSync(join(lockDir, `${lock5}.tainted`), 'utf8'));
+      expect(tainted5.ws).toBe(gen5);
+      expect(tainted5.reason).toContain('运行标记扫描');
+      const named = /进程 (\d+)/.exec(tainted5.reason)?.[1];
+      const namedStat = named ? (() => { try { return readFileSync(`/proc/${named}/stat`, 'utf8'); } catch (e) { return String(e); } })() : '';
+      expect(tainted5.reason, `原因点名的进程 stat：${namedStat}`).toContain(String(leader));
+
+      setVerify(f.root, { pre_run_command: passRunner(f.root, 'pass') }); // 不再启动后代
+      const r6 = verifyJson(f.root, ['--fresh-sandbox']);
+      expect(r6.data.gate.result).toBe('PASS');
+      expect(r6.data.sandbox.reuse.state).toBe('fresh');
+      expect(r6.data.sandbox.reuse.generation).not.toBe(gen5);
+      await waitFor(() => existsSync(join(oldWorkspace, 'stale-marker.txt')), 15_000, 'worker thread write');
+      expect(existsSync(join(projectDir, gen5)), 'fresh 不删除仍被旧线程使用的世代').toBe(true);
+      expect(existsSync(join(projectDir, r6.data.sandbox.reuse.generation, 'workspace', 'stale-marker.txt')), '旧线程写入不进入新世代').toBe(false);
+      expect(existsSync(join(f.root, 'stale-marker.txt'))).toBe(false);
+    } finally {
+      for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* 已退出 */ } }
+    }
   }, 120_000);
 });
