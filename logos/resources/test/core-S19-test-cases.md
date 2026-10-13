@@ -497,3 +497,27 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 
 - runner 为真实脚本，由真实 `openlogos smoke` 子进程经 `smoke.command` 调用；断言基于 `--format json` 的结构化字段与报告的小节标题。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S19 smoke 沙箱复用测试
+
+> 覆盖功能规格 §2.91；场景 S19「smoke 沙箱复用」规则 1～6；根规范 `spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」；来源变更 verify-sandbox-reuse-0-16-1（决策 C01、C05）。
+>
+> **夹具口径**：一次性 launched 项目与一次性 `sandbox_root`；smoke 前置标记（`VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾、`smoke_required=true`）齐备；`smoke.command` 指向真实 runner 脚本，为全部用例写 pass 结果并在 stdout 输出 `workspace/` 内一个哨兵文件的存在性。CLI 用例以真实 `openlogos smoke --format json` 与 `openlogos verify --format json` 子进程执行。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S19"`。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S19-57 | smoke 与 verify 共用持久沙箱并支持 `--fresh-sandbox` | `verify` 与 `smoke` 均为 `sandbox_mode=auto`、`sandbox_cache_paths=["build-cache"]`；verify 预跑命令向 `build-cache/sentinel` 写入哨兵并写 pass 结果 | ① `openlogos verify --format json`；② `openlogos smoke --format json`；③ `openlogos smoke --fresh-sandbox --format json`；④ 再次 `openlogos smoke --format json`；⑤ `smoke.sandbox_mode=off` 时 `openlogos smoke --format json` | ② smoke 的 `sandbox.reuse.dir` 与 ① 相同，`state=="reused"`，runner 输出哨兵存在；③ `state=="fresh"`，runner 输出哨兵不存在，① 的世代目录已删除，最新锁记录的 `ws` 等于 ③ 的 `reuse.generation`；④ `state=="reused"`，`generation` 等于 ③ 的世代，① 的旧世代目录未被重新创建；①～④ `gate.result=="PASS"`，`SMOKE_PASS` 写入规则与修改前一致；⑤ 不出现 `sandbox.reuse`。**修改前实现 smoke JSON 无 `reuse`、② 中哨兵不存在，本用例必红** |
+
+### 追溯与覆盖
+
+- smoke 与 verify 共用持久沙箱（S19「smoke 沙箱复用」规则 1、2）：UT-S19-57 ①②。
+- smoke `--fresh-sandbox`（规则 4）：UT-S19-57 ③④。
+- smoke `reuse` 字段与门禁不变（规则 5）：UT-S19-57 ①～⑤。
+- 锁交错、非正常退出、零回归等执行器级行为与 verify 共用实现，由 UT-S13-89～UT-S13-100 覆盖。
+
+### 自动化与证据要求
+
+- 断言基于 `--format json` 的结构化字段与 runner 的实际输出，不解析 `sandbox.infos` 文案。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

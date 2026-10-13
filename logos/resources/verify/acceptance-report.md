@@ -6,19 +6,40 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2251 |
+| Defined cases | 2265 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2251 |
-| Passed | 2241 |
+| Executed cases | 2265 |
+| Passed | 2242 |
 | Failed | 0 |
-| Skipped | 10 |
+| Skipped | 23 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
 
+## Slice Verification
+
+- Mode: `final`
+- Attempted slice: `null`
+- Confirmed slices: `slice-01-verify-sandbox-reuse`, `slice-02-smoke-sandbox-reuse`
+- Eligible tests: 2265
+- Pending tests: 0
+- Final: true
+
 ## Skipped Cases
 
+- UT-S13-89
+- UT-S13-90
+- UT-S13-91
+- UT-S13-92
+- UT-S13-93
+- UT-S13-94
+- UT-S13-95
+- UT-S13-96
+- UT-S13-97
+- UT-S13-98
+- UT-S13-99
+- ST-S13-25
 - UT-S13-47
 - UT-S13-48
 - UT-S13-49
@@ -27,6 +48,7 @@
 - UT-S13-53
 - UT-S13-54
 - ST-S13-14
+- UT-S19-57
 - UT-S19-08
 - UT-S19-09
 

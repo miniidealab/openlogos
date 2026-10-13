@@ -134,7 +134,8 @@ describe('S13 沙箱默认根三入口与清理跨平台', () => {
     rmState.calls = [];
     const res = runSandboxedCommand({
       root: origin, command: 'node ok.js', format: 'json',
-      sandbox: { mode: 'auto', root: base, denyWorkspaceWrite: false }, allowedWritePaths: [],
+      // 本用例测一次性沙箱的收尾清理；沙箱复用（§2.91）默认开启，此处显式关闭
+      sandbox: { mode: 'auto', root: base, denyWorkspaceWrite: false, reuse: false }, allowedWritePaths: [],
     });
     expect(res.command.status).toBe('pass');
     const recursive = rmState.calls.filter(c => c.options?.recursive === true && c.path.startsWith(base));
@@ -171,7 +172,8 @@ describe('S13 沙箱默认根三入口与清理跨平台', () => {
     expect(() => {
       res = runSandboxedCommand({
         root: origin, command: 'node ok.js', format: 'json',
-        sandbox: { mode: 'auto', root: base, denyWorkspaceWrite: false }, allowedWritePaths: [],
+        // 本用例测一次性沙箱的收尾清理；沙箱复用（§2.91）默认开启，此处显式关闭
+        sandbox: { mode: 'auto', root: base, denyWorkspaceWrite: false, reuse: false }, allowedWritePaths: [],
       });
     }).not.toThrow();
     expect(res!.command.status).toBe('pass');
@@ -197,7 +199,8 @@ describe('S13 沙箱默认根三入口与清理跨平台', () => {
       ].join('\n'));
       const configPath = join(root, 'logos', 'logos.config.json');
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
-      config.verify = { ...config.verify, sandbox_mode: 'auto', sandbox_deny_workspace_write: false, pre_run_command: 'node prerun.js' };
+      // 本用例测一次性沙箱的默认根与清理；沙箱复用（§2.91）默认开启，此处显式关闭
+      config.verify = { ...config.verify, sandbox_mode: 'auto', sandbox_deny_workspace_write: false, sandbox_reuse: false, pre_run_command: 'node prerun.js' };
       if (variant === 'legacy') config.verify.sandbox_root = '/private/tmp';
       else delete config.verify.sandbox_root;
       writeFileSync(configPath, JSON.stringify(config, null, 2));

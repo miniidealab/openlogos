@@ -546,3 +546,34 @@ coverage = |covered| / |eligible|
 - checkpoint 不降低非法状态、unknown ID、重复结果和 100% eligible coverage 硬门。
 - final 不允许 pending，不接受部分结果。
 - manifest 恢复态不读取旧 JSONL 计算 Gate，不生成验收报告假失败。
+
+## 沙箱复用配置
+
+> 归属「`verify.sandbox_mode` / `smoke.sandbox_mode`」；来源变更 verify-sandbox-reuse-0-16-1（决策 C01、C02），功能规格 §2.91。本节为 `verify` / `smoke` 两个新增可选配置字段的权威定义；`spec/logos.config.schema.json` 的 `verify` / `smoke` 节点未限制额外属性，新字段不会被拒绝，schema 补录另案处理。
+
+### 字段
+
+| 字段 | 所在节点 | 类型 | 默认 | 说明 |
+|---|---|---|---|---|
+| `sandbox_reuse` | `verify`、`smoke` | boolean | `true` | 仅在 `sandbox_mode` 为 `auto` / `always` 时生效。`true`：每项目一份持久沙箱，跨运行留存并增量同步；`false`：一次性临时沙箱（引入复用前的行为） |
+| `sandbox_cache_paths` | `verify`、`smoke` | string[] | `[]` | 工作区相对路径。命中的路径归沙箱所有：同步时不从工作区复制、不删除，跨运行留存（如 Rust 的 `target`、`src-tauri/target`） |
+
+```json
+{
+  "verify": {
+    "pre_run_command": "cargo test && node scripts/report.js",
+    "sandbox_mode": "auto",
+    "sandbox_root": "/Volumes/BuildWork/openlogos-sandbox",
+    "sandbox_reuse": true,
+    "sandbox_cache_paths": ["src-tauri/target"]
+  }
+}
+```
+
+### 约束
+
+- 默认值在读取时补齐；`openlogos init` / `sync` 不向配置写入这两个字段。
+- `sandbox_cache_paths` 的非法项（绝对路径、规范化后含 `..`、为空或项目根、与任一白名单结果路径相同 / 为其祖先 / 为其后代）被忽略并在 `sandbox.diagnostics` 中给出诊断，按普通镜像路径处理。**结果文件不得放在缓存路径内**——reporter 写入的结果文件必须随每次同步被工作区状态覆盖，才能保证回收的是本次结果。
+- 缓存路径**不豁免**写入审计：`sandbox_deny_workspace_write=true` 时，命令对缓存路径的写入与其他非白名单写入同口径（`auto` 告警、`always` 失败）。需要在 `always` 下使用缓存路径的项目，应让构建产物写到工作区之外（如 cargo 的 `CARGO_TARGET_DIR`）。
+- reporter 不需要感知复用：清空策略不变，每次完整测试运行前仍应清空对应阶段的结果文件。verify 在执行预跑命令前清空结果文件，清空后的状态经同步进入沙箱。
+- 复用不改变 `test-results.jsonl` 的 schema 与门禁判据。

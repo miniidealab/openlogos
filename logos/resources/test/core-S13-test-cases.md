@@ -378,3 +378,53 @@
 
 - 回滚型运行器以真实脚本实现并由真实 `openlogos verify` 子进程调用，不以桩替代命令执行器；断言基于 `--format json` 的结构化字段，不解析人类可读文案。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S13 沙箱复用与增量同步测试
+
+> 覆盖功能规格 §2.91「verify / smoke 沙箱复用与增量同步」；场景 S13「S13 沙箱复用与增量同步时序」Step R1～R13 与 EX-3.5～EX-3.12；根规范 `spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」、`spec/test-results.md`「沙箱复用配置」；来源变更 verify-sandbox-reuse-0-16-1（决策 C01～C05）。
+>
+> **夹具口径**：一律在 `mktemp -d` 下构造一次性项目（`logos/logos.config.json` + `logos/resources/test/` 声明若干 UT 用例）与一次性 `sandbox_root`，不使用本仓配置的沙箱根，不依赖本仓结果账本。CLI 用例以真实 `openlogos verify` 子进程执行，`--format json` 时解析 stdout envelope；执行器级用例直接调用 `runSandboxedCommand`。**racy 窗口**：同步中刚复制的副本在下一次同步时处于 racy 窗口（ctime 距上次清单写入不足 2 秒）而必然进入内容比较，凡断言「未变文件不比较内容」的用例须先做一次预热运行，并让相邻两次运行间隔超过 2 秒。锁交错用例经执行器暴露的测试钩子（如 `beforeLockLink`）在 `link()` 前设置屏障，不以修改锁文件字节代替真实竞争。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S13"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S13-89 | 持久目录身份与 created / reused | 一次性项目，`sandbox_mode=auto`，未配置 `sandbox_reuse`；预跑命令写入全部 pass 结果 | 连续两次 `openlogos verify --format json` | `reuse.dir` 两次相同，且等于 `<sandbox_root>/openlogos-cli-sandbox-reuse-<项目根 realpath 的 SHA-256 前 16 位>`；`reuse.state` 依次为 `created` / `reused`，`reuse.generation` 两次相同，`sandbox.root` 为该世代目录；运行后世代目录仍在；`lock/` 下 `gen-000000000001`、`gen-000000000001.released`、`gen-000000000002`、`gen-000000000002.released` 均存在。**修改前实现无 `reuse` 且每次 `sandbox.root` 不同，本用例必红** |
+| UT-S13-90 | 增量同步只动变化项、mtime 保真（执行器级计数） | **执行器级**：直接调用 `runSandboxedCommand`，`allowedWritePaths` 为空，命令为只读命令（如 `true`），不创建或改写任何文件，参与同步的文件集合固定为 `src/` 下 10 个文件；完成一次预热运行并等待超过 2 秒，再运行一次并等待超过 2 秒 | 改写 1 个已有文件（内容与长度均变）、新增 1 个文件、删除 1 个文件，再运行 | `reuse.copied==2`、`reuse.removed==1`、`reuse.content_compared==1`（仅被改写的文件）；未改动文件在沙箱中的 inode 与 mtime 均与前一次运行后相同；新复制文件在沙箱中的 mtime（毫秒）与 mode 与工作区一致。真实 CLI 路径下的结果文件清空与回收由 UT-S13-94 以逐路径文件事实验证，本用例不对 CLI 总计数做精确断言 |
+| UT-S13-91 | 镜像还原上轮的沙箱改动（含元数据整定） | 同上（执行器级夹具，可写命令）；首轮命令在 `workspace/` 中新建 `src/leak.txt`、改写 `src/a.ts`（长度变化）、`chmod +x src/b.sh`（字节不变）、`touch -t` 把 `src/c.txt` 的 mtime 改为一年前（字节不变）、把目录 `src/dir` 替换为指向 `../src` 的 symlink；工作区另有相对 symlink `link -> src/a.ts`；记录 `src/b.sh`、`src/c.txt` 副本的 inode | 第二轮命令打印 `src/` 清单、`src/a.ts` 内容、`src/b.sh` 的 mode、`src/c.txt` 的 mtime、`src/b.sh` 与 `src/c.txt` 的 inode 与 `src/dir` 的类型 | 第二轮输出全部等于工作区状态：`src/leak.txt` 不存在，`src/a.ts` 为工作区内容，`src/b.sh` mode 与工作区一致，`src/c.txt` mtime（毫秒）与工作区一致，`src/dir` 为目录；`src/b.sh`、`src/c.txt` 的 inode 与首轮记录相同（原位整定、未重写字节），二者不计入 `reuse.copied`；第三轮（无改动）二者仍可能因 racy 判定进入内容判定——第二轮整定把副本 ctime 更新到第二轮运行时刻，距第二轮清单写入时刻不足 2 秒——此轮只断言字节未重写、inode 不变、mode / mtime 与工作区一致且二者不计入 `reuse.copied`；第三轮须在第二轮清单写入时刻 2 秒之后开始，第四轮（无改动）时第三轮清单写入时刻已晚于二者 ctime 超过 2 秒，断言二者不再计入 `reuse.content_compared`；`link` 的目标字面量仍为 `src/a.ts`（未被改写为绝对路径）；工作区字节全程不变。**「内容相同只刷新清单」的实现 `src/b.sh` 仍为可执行、`src/c.txt` 仍为一年前，本用例必红** |
+| UT-S13-92 | 等长改写且 mtime 被保留（EX-3.5） | 同上；源文件 `src/flag.js` 内容为 `exports.flag = 0;` 并已完成预热与一次间隔超过 2 秒的运行；预跑命令打印 `src/flag.js` 内容 | 臂 ①：工作区把该文件等长改为 `exports.flag = 1;` 后以 `utimes` 恢复原 mtime、mode 不变，运行；臂 ②：本轮预跑命令先在 `workspace/` 中把副本等长改为 `exports.flag = 9;` 并恢复其 mtime，下一轮再运行 | 臂 ① 本轮输出为 `exports.flag = 1;`；臂 ② 下一轮输出为工作区内容；两臂该文件均计入 `reuse.content_compared` 与 `reuse.copied`。**仅凭大小 + mtime 判定的实现两臂均输出旧内容，本用例必红** |
+| UT-S13-93 | 缓存路径留存与非法项 | `sandbox_cache_paths` 为 `["build-cache", "/abs", "../out", "", ".", "logos/resources/verify", "logos/resources/verify/test-results.jsonl"]`；工作区 `build-cache/` 下有 `ws-only.o`；首轮预跑命令写 `build-cache/x.o` | 连续两次 `openlogos verify --format json`，第二轮预跑命令列出 `build-cache/` | 第二轮列出 `x.o`、不含 `ws-only.o`；`sandbox.diagnostics` 逐项点名 6 个非法项及原因（绝对路径 / 含 `..` / 空 / 项目根 / 白名单祖先 / 白名单本身），`sandbox.status` 至少为 `warn`；`logos/resources/verify` 按普通镜像路径同步；对 `build-cache/x.o` 的写入在非白名单写入诊断中出现（审计不豁免）；`sandbox_mode=always` 臂对同一写入判命令失败 |
+| UT-S13-94 | 上轮结果文件不跨运行回收（EX-3.8） | 首轮预跑命令写入完整全 pass 账本；第二轮预跑命令不写结果并以 0 退出 | 第二次 `openlogos verify --format json` | 回收后工作区 `result_path` 为空，`gate.result=="FAIL"`（`incomplete_coverage`），不出现 PASS；`reuse.state=="reused"` |
+| UT-S13-95 | 隔离不变量在复用下同口径 | 一次性项目；三臂：① 预跑命令写非白名单路径 `src/out.txt`；② 首轮预跑命令在缓存路径 `build-cache/` 中新建指向项目根之外的 symlink；③ 预跑命令写结果文件 | 臂 ①、② 各在 `auto` 与 `always` 下运行两轮，臂 ③ 在 `auto` 下运行 | ① `auto` 告警、`always` 判命令失败，工作区不出现 `src/out.txt`；② 第二轮按「无法隔离」处理：`auto` 降级为非隔离执行并 `status=warn`、`always` 失败，诊断点名该链接；该世代目录仍存在且 `gen-<本号>.released` 已写；③ 结果文件被定点回收且内容为本轮写入；三臂的 `sandbox.status`、诊断文本与一次性沙箱（`sandbox_reuse:false`）同一夹具一致 |
+| UT-S13-96 | 世代锁竞争与延迟申请者（EX-3.6） | 执行器级；`lock/` 下预置：臂 ① 未释放的 `gen-N`，记录 pid 为已退出进程；臂 ② 已释放的 `gen-N` | 臂 ①：两个子进程经测试钩子在 `link()` 前汇合后同时放行；臂 ②：A 读到 `gen-N` 后在钩子处暂停，B 完整运行并释放 `gen-<N+1>`，C 取得 `gen-<N+2>` 并在命令中阻塞，然后放行 A | 臂 ① 恰一方 `state=="recovered"`，另一方 `busy-fallback` 且其一次性临时目录已清理；臂 ② A 的 `link(gen-<N+1>)` 失败，A 为 `busy-fallback`，A 的命令在一次性临时目录中执行，C 的世代 `workspace/` 中无 A 的写入；两臂运行过程中以文件探针记录持有者，任意时刻同一世代至多一个持有者；结束后 `lock/` 下所有已用编号记录仍在；C 释放后其 `gen-<N+2>.released` 存在，A 的任何操作未删除或改写 `gen-<N+2>` |
+| UT-S13-97 | 旧写入者跨轮残留（EX-3.7） | 一次性项目；三臂：① 预跑命令启动一个与 CLI 脱离 stdio 的子进程，每 50 ms 向 `workspace/` 内 `orphan.log` 追加一行，然后阻塞；② 首轮预跑命令写入完整全 pass 账本后启动后台写入者并以 0 退出，后台写入者在测试屏障文件出现后才把首轮全 pass 账本写回结果路径（按绝对路径，cwd 留在旧 workspace）；第二轮预跑命令不写结果，先创建屏障文件、等待后台写入者写完的回执文件后以 0 退出。臂 ② 分两支：②a 后台写入者关闭继承 stdio、仍在命令进程组内；②b 后台写入者以 Node `spawn(..., {detached:true, stdio:"ignore"})` 启动并 `unref`，脱离命令进程组（用例先断言首轮结束时 `kill(-pgid, 0)` 报 ESRCH，确认组已空）；②b 另跑一支 fresh 变体：第二轮改为 `openlogos verify --fresh-sandbox --format json`；③ 经测试钩子在锁记录发布之后、目标世代同步完成之前令 CLI 进程退出 | 臂 ①：真实 `openlogos verify` 启动后以 SIGKILL 只杀 CLI 进程，子进程仍在写时立即执行普通 `openlogos verify --format json` 与 `openlogos verify --fresh-sandbox --format json`；臂 ②：两轮真实 `openlogos verify --format json`；臂 ③：钩子退出后执行一次普通 `openlogos verify --format json` | 臂 ①：普通运行 `reuse.state=="recovered"`、`generation` 为新世代、`abandoned` 含旧世代；fresh 运行 `state=="fresh"` 且 `abandoned` 仍含旧世代；两次运行前后旧世代目录均存在、`orphan.log` 持续增长（未被同步、改写或删除）。臂 ②（②a、②b 同一断言）：首轮释放标记为 `gen-<首轮号>.tainted`（无 `.released`），②b 的 `tainted.reason` 指明运行标记扫描命中；第二轮 `state=="recovered"`、`generation` 不等于首轮世代，`gate.result=="FAIL"`（结果为空），后台写入者写回的旧账本只出现在首轮世代内、不出现在工作区结果路径；②b fresh 变体 `state=="fresh"`，首轮世代目录仍存在并列入 `abandoned`，未被删除。臂 ③：下一轮 `state=="recovered"`，最新锁记录 `ws` 等于 `reuse.generation`，半成品世代（若存在）列入 `abandoned`。三臂回收的结果均来自本轮命令；执行器未终止任何残留进程（测试结束时由用例自行终止并清理）。**修改前「正常释放即复用」的实现臂 ②a、②b 第二轮 PASS，仅以进程组判定的实现臂 ②b 第二轮 PASS 且 fresh 变体删除了仍被使用的首轮世代，本用例必红** |
+| UT-S13-98 | 锁被占用、无法确认与无法复用时退回 | 执行器级；四臂：① 最大世代未释放、记录 pid 为当前测试进程；② 最大世代记录不可解析；③ 经测试钩子令 `link()` 抛出 `EPERM`（模拟不支持硬链接的文件系统）；④ 经测试钩子令平台进程组探测与运行标记扫描能力报告不可用（模拟 Windows） | 各运行一次带结果写入的命令 | 臂 ①② `reuse.state=="busy-fallback"`，臂 ③④ `reuse.state=="unsupported"`；四臂命令均在一次性临时目录中执行并回收结果，临时目录运行后被删除；持久世代与 `lock/` 记录字节不变；臂 ③④ `sandbox.infos` 含无法复用的信息级说明，四臂 `sandbox.status` 均不因此改变 |
+| UT-S13-99 | `--fresh-sandbox` 重建与锁记录绑定（EX-3.9 锁已释放分支） | 一次性项目，`sandbox_cache_paths=["build-cache"]`；已运行两轮（缓存中有产物，最新释放为 `released`） | ① `openlogos verify --fresh-sandbox --format json`；② 再次普通运行；③ `sandbox_reuse:false` 下带 `--fresh-sandbox` 运行 | ① `state=="fresh"`，`generation` 为新世代，最新锁记录（最大世代号）的 `ws` 等于该 `generation`，其 `.released` 的 `ws` 亦相同；`build-cache/` 为空；被替换的旧世代目录已删除，`abandoned` 为空；② `state=="reused"`，`generation` 等于 ① 的世代，被删除的旧世代目录未被重新创建；③ 退出码与无参数时相同，`state=="disabled"`，不报错 |
+| UT-S13-100 | 关闭复用、关闭沙箱与无法复用环境的零回归（EX-3.10、EX-3.12） | 一次性项目；四臂：① `sandbox_reuse:false`；② `sandbox_mode:off`；③ `sandbox_root` 指向项目根内子目录；④ 工作区含一个 FIFO | 修改前、后实现各对同一夹具执行 `openlogos verify --format json`，剔除 `timestamp`、`duration_ms`、`sandbox.root` 中的随机目录名与新增的 `sandbox.reuse` 后比对 | ① 新实现 `reuse=={enabled:false,state:"disabled",dir:null,generation:null,copied:0,removed:0,content_compared:0,sync_ms:0,abandoned:[]}`，其余字段与修改前逐字一致，一次性临时目录运行后已删除；② 不出现 `sandbox.reuse`，其余逐字一致；③、④ `auto` 下按「无法创建沙箱」降级为非隔离执行并告警、`always` 下失败，`gate` 与诊断类别与修改前一致 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-25 | 模拟增量编译器端到端 | S13 Step 1～9、R1～R13 | 一次性项目：`src/` 下 N=20 个源文件；`sandbox_cache_paths=["build-cache"]`；`pre_run_command` 为真实「增量编译器」脚本：对每个源文件，若 `build-cache/<名>.o` 存在且记录的源内容哈希与当前一致则跳过，否则「编译」（写 `.o` 并更新哈希）并计数，最后在 stdout 输出 `compiled=<数量>` 并写入全部 pass 的结果 | ① `openlogos verify --format json`；② 改 1 个源文件后再执行；③ 不改动再执行；④ `openlogos verify --fresh-sandbox --format json` | 四次 `gate.result=="PASS"`；`pre_run.commands[0].stdout_tail` 依次含 `compiled=20`、`compiled=1`、`compiled=0`、`compiled=20`；`reuse.state` 依次为 `created`、`reused`、`reused`、`fresh`。**修改前实现每次都输出 `compiled=20`，本用例必红** |
+
+### 追溯与覆盖
+
+- 持久目录身份与世代（§2.91.3、Step R2）：UT-S13-89。
+- 镜像同步、mtime 保真与元数据整定（§2.91.4、Step R6～R7）：UT-S13-90（执行器级精确计数）、UT-S13-91（chmod / touch 臂原位还原）。
+- 等长改写不漏同步（EX-3.5）：UT-S13-92（仅凭大小 + mtime 必红）。
+- 缓存路径与非法项（§2.91.5、EX-3.11）：UT-S13-93。
+- 旧结果不回收（EX-3.8）：UT-S13-94。
+- 隔离不变量同口径（§2.9、EX-3.4、Step R8～R11）：UT-S13-95。
+- 世代锁互斥与已用编号永久占位（§2.91.6、EX-3.6）：UT-S13-96。
+- 旧写入者跨轮残留（§2.91.6「旧写入者存活检查」、EX-3.7：强杀、正常退出后组内 / 脱组后台写入、发布后中断）：UT-S13-97（臂 ②a、②b 修改前实现必红，②b 仅进程组判定的实现必红）。
+- 退回一次性沙箱（Step R4c / R4d、EX-3.10 ②）：UT-S13-98。
+- `--fresh-sandbox` 与锁记录目标世代绑定（§2.91.6「先定目标、再发布」、§2.91.7、EX-3.9）：UT-S13-97 臂 ①、UT-S13-99。
+- 零回归（§2.91.9、EX-3.10 ①③、EX-3.12）：UT-S13-100。
+- 端到端增量收益：ST-S13-25（修改前实现必红）。
+
+### 自动化与证据要求
+
+- 断言基于 `--format json` 的结构化字段、命令实际输出与文件系统事实（inode、mtime、目录存在性、锁记录），不解析 `sandbox.infos` 的人类可读文案。
+- 涉及子进程与孤儿进程的用例必须在 `finally` 中终止其启动的全部进程并删除一次性目录；不得在本仓 `sandbox_root`（`/Volumes/BuildWork/openlogos-sandbox`）下创建项目目录。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

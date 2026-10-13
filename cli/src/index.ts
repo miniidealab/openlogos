@@ -100,6 +100,7 @@ Commands:
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
+  --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
   --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list)
 
 Examples:
@@ -110,7 +111,9 @@ Examples:
   openlogos status --format json
   openlogos verify
   openlogos verify --format json
+  openlogos verify --fresh-sandbox
   openlogos smoke --env staging
+  openlogos smoke --fresh-sandbox
   openlogos deploy-done --env staging
   openlogos detect --format json
   openlogos change add-remember-me
@@ -215,11 +218,11 @@ async function main() {
       break;
     }
     case 'verify':
-      verify(format);
+      verify(format, { freshSandbox: args.includes('--fresh-sandbox') });
       break;
     case 'smoke': {
       const envArg = args.includes('--env') ? args[args.indexOf('--env') + 1] : undefined;
-      smoke(format, envArg);
+      smoke(format, envArg, { freshSandbox: args.includes('--fresh-sandbox') });
       break;
     }
     case 'deploy-done': {

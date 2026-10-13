@@ -2051,3 +2051,40 @@
   - 缺失项或命中清单。
 - **失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-235～SMOKE-core-238 均被 runner 覆盖。
+
+## OpenLogos 0.16.1 沙箱复用安装态 smoke（SMOKE-core-239～241）
+
+> 这组用例验证 verify / smoke 沙箱复用（功能规格 §2.91）确实进入了本机全局安装态。沙箱复用是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目生效。
+>
+> 用例在 `mktemp -d` 一次性隔离项目与一次性 `sandbox_root` 内执行。runner **只读**本机全局安装态，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/`、本仓配置的沙箱根与用户其他仓库（包括 runlogos）。判据用**行为断言**：版本号相等只证明装了新包，不证明行为生效。版本号以计划值 `0.16.1` 为准，实际以部署记录的候选版本为准，断言写成关系式：全局 `--version` == 部署记录版本。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-239 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内 `dist/lib/sandbox.js` 含 `openlogos-cli-sandbox-reuse-` 与 `sync-manifest.json`，`dist/index.js` 注册 `--fresh-sandbox` | ① `--version` 等于部署记录版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立 | 保留读取结果。任一不符 → 停止后续流程，按部署方案用 `cli/rollback/miniidealab-openlogos-0.16.0.tgz` 回装全局；不得以「仓内源码已修」了事 |
+| SMOKE-core-240 | 安装态 verify 复用沙箱的增量收益与内容正确性 | 本机全局已安装本次候选；临时项目经全局 `openlogos init` 建立，按 ST-S13-25 夹具口径配置模拟增量编译器（N=20 个源文件）、`sandbox_mode=auto`、`sandbox_root` 为一次性目录、`sandbox_cache_paths=["build-cache"]` | ① 全局 `openlogos verify --format json`；② 改 1 个源文件后再执行；③ 不改动再执行；④ 把另一个源文件等长改写并以 `utimes` 恢复原 mtime 后再执行，编译器同时输出该文件内容 | 四次 `gate.result=="PASS"`；① `compiled=20`、`reuse.state=="created"`；② `compiled=1`、`reused`；③ `compiled=0`、`reused`，四次 `reuse.dir` 相同；④ `compiled=1` 且输出的是等长改写后的新内容 | 同上；保留每次 JSON 摘要。② ③ 为 `compiled=20` 表示安装态仍是一次性沙箱；④ 输出旧内容表示同步漏判，必须回装旧版并回流来源提案 |
+| SMOKE-core-241 | 安装态 `--fresh-sandbox`、关闭复用与 smoke 共用 | 本机全局已安装本次候选；沿用 SMOKE-core-240 的临时项目，另按 S19 夹具口径补齐 smoke 前置标记与 runner | ① 全局 `openlogos verify --fresh-sandbox --format json`；② 全局 `openlogos smoke --format json`；③ 置 `verify.sandbox_reuse=false` 后执行 verify；④ 置 `verify.sandbox_mode=off` 后执行 verify | ① `reuse.state=="fresh"`、`compiled=20`；② smoke `reuse.dir` 与 ① 相同、`state=="reused"`；③ `state=="disabled"`、`compiled=20`，`sandbox.root` 指向的一次性目录运行后不存在；④ 不出现 `sandbox.reuse`；各步门禁结论与对应输入一致 | 同上；③ ④ 行为偏离表示零回归被破坏，回装旧版并回流来源提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与一次性 `sandbox_root` 内进行，结束即删除（含持久沙箱项目目录）。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓配置的沙箱根 `/Volumes/BuildWork/openlogos-sandbox`、用户其他仓库（包括 runlogos）或本机全局 prefix；本节对全局安装态只读。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`，本次为本地全局部署。
+- 断言中不硬编码主机路径、墙上时钟或本机全局安装现值（通则第 1 条）。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.91。
+- 根规范：`spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」。
+- 场景：S13「S13 沙箱复用与增量同步时序」EX-3.5、EX-3.9、EX-3.12；S19「smoke 沙箱复用」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.1 发布方案（verify / smoke 沙箱复用，本地全局）」。
+- 验收标准映射（来源提案 verify-sandbox-reuse-0-16-1）：1、3 → SMOKE-core-240 ①～③；2 → SMOKE-core-240 ④；6、7 → SMOKE-core-241；8 → SMOKE-core-239。验收标准 4、5（隔离不变量、锁交错与非正常退出）依赖测试钩子与进程注入，由仓库内 UT-S13-95～UT-S13-98 覆盖，不在安装态重复。
+- 仓库内对应用例：UT-S13-89～UT-S13-100、ST-S13-25、UT-S19-57；版本身份 `UT-S19-46` / `UT-S19-49`。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-sandbox-reuse-0-16-1.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-239～SMOKE-core-241，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次命令的退出码与 JSON 摘要（含 `sandbox.reuse`）。
+- 环境不具备时（缺候选 tarball 或部署记录）写显式 `skip` 记录并携带缺失项，禁止静默零记录退出；这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
+- 判据以 `--format json` 的结构化字段、退出码与命令实际输出为准，不解析人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-239～SMOKE-core-241 均被 runner 覆盖。

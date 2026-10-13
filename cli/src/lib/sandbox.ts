@@ -6,6 +6,11 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import type { OutputFormat } from './json-output.js';
 import { removeTree } from './fs-remove.js';
+import {
+  acquireGeneration, checkOldWriters, detectLivenessCapability, emptyReuseData, ensureProjectMeta, ensureRealDir, listAbandoned,
+  projectDirInsideRoot, projectDirName, releaseGeneration, resolveCachePaths, RUN_TAG_ENV, syncWorkspace,
+  type LivenessResult, type SandboxLease, type SandboxReuseData,
+} from './sandbox-reuse.js';
 
 export type SandboxMode = 'off' | 'auto' | 'always';
 export type SandboxStatus = 'pass' | 'warn' | 'fail' | 'skipped';
@@ -14,6 +19,10 @@ export interface NormalizedSandboxConfig {
   mode: SandboxMode;
   root: string;
   denyWorkspaceWrite: boolean;
+  /** §2.91：`sandbox_reuse`（默认 true，读取时补）；仅在 mode 为 auto / always 时生效。 */
+  reuse?: boolean;
+  /** §2.91.5：`sandbox_cache_paths`（默认 []），工作区相对路径，合法性在执行时按白名单判定。 */
+  cachePaths?: string[];
 }
 
 export interface SandboxData {
@@ -26,6 +35,8 @@ export interface SandboxData {
   suggestions: string[];
   /** 信息级说明通道（additive、可选）：仅承载不影响 status 的说明，如依赖目录豁免提示。 */
   infos?: string[];
+  /** §2.91.8：沙箱复用状态（additive、可选）；sandbox_mode=off 时不出现。 */
+  reuse?: SandboxReuseData;
 }
 
 export interface SandboxCommandResult {
@@ -98,20 +109,43 @@ function finish(r) {
     out: Buffer.concat(out.chunks).toString('base64'), outTruncated: out.truncated,
     err: Buffer.concat(err.chunks).toString('base64'), errTruncated: err.truncated }));
 }
+const detached = process.argv[3] === 'group';
 let child;
-try { child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] }); }
+try { child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], detached }); }
 catch (e) { finish({ status: null, signal: null, error: String((e && e.message) || e) }); }
+if (child && detached) {
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { process.kill(-child.pid, sig); } catch {} });
+}
 if (child) {
   child.stdout.on('data', c => push(out, c));
   child.stderr.on('data', c => push(err, c));
   child.on('error', e => finish({ status: null, signal: null, error: String((e && e.message) || e) }));
-  child.on('close', (status, signal) => finish({ status, signal }));
+  child.on('close', (status, signal) => finish({ status, signal, pgid: detached ? child.pid : null }));
 }
+`;
+
+/**
+ * 文本模式的进程组助手（§2.91.6「旧写入者存活检查」）：输出实时继承到终端，命令置于独立进程组，
+ * 转发中断信号，结束后把退出码、信号与 pgid 写入报告文件。
+ */
+const GROUP_TEXT_HELPER = `
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const reportPath = process.argv[1];
+const command = process.argv[2];
+let child;
+const done = (r) => { try { fs.writeFileSync(reportPath, JSON.stringify(r)); } catch {} };
+try { child = spawn(command, { shell: true, stdio: 'inherit', detached: true }); }
+catch (e) { done({ status: null, signal: null, error: String((e && e.message) || e), pgid: null }); process.exit(1); }
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { process.kill(-child.pid, sig); } catch {} });
+child.on('error', e => { done({ status: null, signal: null, error: String((e && e.message) || e), pgid: child.pid }); });
+child.on('exit', (status, signal) => { done({ status, signal, pgid: child.pid }); process.exit(status === null ? 1 : status); });
 `;
 
 interface CaptureReport {
   status: number | null;
   signal: string | null;
+  pgid?: number | null;
   error?: string;
   out: string;
   outTruncated: boolean;
@@ -130,6 +164,8 @@ export interface RunSandboxedCommandOptions {
   format: OutputFormat;
   sandbox: NormalizedSandboxConfig;
   allowedWritePaths: string[];
+  /** §2.91.7：`--fresh-sandbox`，成功获取锁后新建空的工作区世代。 */
+  freshSandbox?: boolean;
 }
 
 export interface RuntimeWriteProtection {
@@ -511,10 +547,17 @@ function buildWriteProtection(
  * `maxBuffer` 提前终止，退出码如实保留，输出全文不写入任何临时文件。此前用 `execSync` + `pipe`，
  * 输出被丢弃，超过默认 1 MiB 还会杀掉子进程。
  */
-function executeCommandCapturing(cwd: string, command: string): SandboxCommandResult {
+/** 复用模式下命令的进程组执行参数：注入运行标记，命令置于独立进程组以便事后探测旧写入者。 */
+interface GroupExec { env: NodeJS.ProcessEnv; reportDir: string }
+type GroupedCommandResult = SandboxCommandResult & { pgid?: number | null };
+
+function executeCommandCapturing(cwd: string, command: string, group?: GroupExec): GroupedCommandResult {
   const start = Date.now();
-  const helper = spawnSync(process.execPath, ['-e', CAPTURE_HELPER, String(OUTPUT_TAIL_READ_WINDOW), command], {
+  const helperArgs = ['-e', CAPTURE_HELPER, String(OUTPUT_TAIL_READ_WINDOW), command];
+  if (group) helperArgs.push('group');
+  const helper = spawnSync(process.execPath, helperArgs, {
     cwd, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 8 * OUTPUT_TAIL_READ_WINDOW,
+    ...(group ? { env: group.env } : {}),
   });
   let report: CaptureReport | null = null;
   if (!helper.error) {
@@ -527,8 +570,9 @@ function executeCommandCapturing(cwd: string, command: string): SandboxCommandRe
   }
   const stdout_tail = boundedOutputTail(Buffer.from(report.out, 'base64'), report.outTruncated);
   const stderr_tail = boundedOutputTail(Buffer.from(report.err, 'base64'), report.errTruncated);
+  const pgid = group ? (report.pgid ?? null) : undefined;
   if (!report.error && report.status === 0) {
-    return { status: 'pass', exit_code: 0, duration_ms, stdout_tail, stderr_tail };
+    return { status: 'pass', exit_code: 0, duration_ms, stdout_tail, stderr_tail, ...(group ? { pgid } : {}) };
   }
   const reason = report.error
     ? report.error
@@ -540,10 +584,36 @@ function executeCommandCapturing(cwd: string, command: string): SandboxCommandRe
     error: `${reason ?? 'Command failed'}${stderr_tail ? `\n${stderr_tail}` : ''}`.slice(0, 500),
     stdout_tail,
     stderr_tail,
+    ...(group ? { pgid } : {}),
   };
 }
 
-function executeCommand(cwd: string, command: string, format: OutputFormat): SandboxCommandResult {
+function executeGroupedText(cwd: string, command: string, group: GroupExec): GroupedCommandResult {
+  const start = Date.now();
+  const reportPath = join(group.reportDir, `.olexec-${randomBytes(6).toString('hex')}.json`);
+  const helper = spawnSync(process.execPath, ['-e', GROUP_TEXT_HELPER, reportPath, command], {
+    cwd, stdio: 'inherit', env: group.env,
+  });
+  let report: { status: number | null; signal: string | null; error?: string; pgid: number | null } | null = null;
+  try { report = JSON.parse(readFileSync(reportPath, 'utf8')); } catch { report = null; }
+  rmSync(reportPath, { force: true });
+  const duration_ms = Date.now() - start;
+  if (!report) {
+    const reason = helper.error ? commandErrorMessage(helper.error) : 'Command failed';
+    return { status: 'fail', exit_code: typeof helper.status === 'number' ? helper.status : undefined, duration_ms, error: reason, pgid: null };
+  }
+  if (!report.error && report.status === 0) return { status: 'pass', exit_code: 0, duration_ms, pgid: report.pgid };
+  return {
+    status: 'fail',
+    exit_code: typeof report.status === 'number' ? report.status : undefined,
+    duration_ms,
+    error: (report.error ?? (report.signal ? `Command failed (signal ${report.signal}): ${command}` : `Command failed: ${command}`)).slice(0, 500),
+    pgid: report.pgid,
+  };
+}
+
+function executeCommand(cwd: string, command: string, format: OutputFormat, group?: GroupExec): GroupedCommandResult {
+  if (group) return format === 'json' ? executeCommandCapturing(cwd, command, group) : executeGroupedText(cwd, command, group);
   if (format === 'json') return executeCommandCapturing(cwd, command);
   const start = Date.now();
   try {
@@ -623,7 +693,12 @@ export function normalizeSandboxConfig(
   const denyWorkspaceWrite = typeof record.sandbox_deny_workspace_write === 'boolean'
     ? record.sandbox_deny_workspace_write
     : true;
-  return { mode, root, denyWorkspaceWrite };
+  // §2.91.2：默认值在读取时补齐，不回写配置
+  const reuse = typeof record.sandbox_reuse === 'boolean' ? record.sandbox_reuse : true;
+  const cachePaths = Array.isArray(record.sandbox_cache_paths)
+    ? record.sandbox_cache_paths.map(item => (typeof item === 'string' ? item : String(item)))
+    : [];
+  return { mode, root, denyWorkspaceWrite, reuse, cachePaths };
 }
 
 export function buildInitialSandboxData(config: NormalizedSandboxConfig): SandboxData {
@@ -639,7 +714,7 @@ export function buildInitialSandboxData(config: NormalizedSandboxConfig): Sandbo
 }
 
 export function runSandboxedCommand(options: RunSandboxedCommandOptions): SandboxExecutionResult {
-  const { root, command, format, sandbox, allowedWritePaths } = options;
+  const { root, command, format, sandbox } = options;
   const normalizedRoot = resolve(root);
 
   if (sandbox.mode === 'off') {
@@ -651,13 +726,28 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
     };
   }
 
-  // sandbox_root 统一解析为绝对路径（相对值相对项目根解析），
-  // 后续临时目录、containment 根、profile 路径与 cwd 全程只使用绝对路径
+  // §2.91.9：sandbox_reuse=false 走一次性临时沙箱，行为逐字不变，仅附 reuse.disabled
+  if (sandbox.reuse === false) {
+    return withReuse(runOneOffSandbox(options, normalizedRoot), emptyReuseData('disabled', false));
+  }
+  return runReusableSandbox(options, normalizedRoot);
+}
+
+/** 解析沙箱根为绝对路径（相对值相对项目根解析）。 */
+function resolveSandboxBase(normalizedRoot: string, sandbox: NormalizedSandboxConfig): string {
   let sandboxBase = sandbox.root;
   if (!sandboxBase || sandboxBase.trim().length === 0) {
     sandboxBase = resolveDefaultSandboxRoot();
   }
-  sandboxBase = resolve(normalizedRoot, sandboxBase);
+  return resolve(normalizedRoot, sandboxBase);
+}
+
+/** 一次性临时沙箱：每次 mkdtemp + 全量复制，执行后删除（引入复用前的行为）。 */
+function runOneOffSandbox(options: RunSandboxedCommandOptions, normalizedRoot: string): SandboxExecutionResult {
+  const { command, format, sandbox } = options;
+  // sandbox_root 统一解析为绝对路径（相对值相对项目根解析），
+  // 后续临时目录、containment 根、profile 路径与 cwd 全程只使用绝对路径
+  const sandboxBase = resolveSandboxBase(normalizedRoot, sandbox);
 
   let sandboxDir = '';
   let sandboxProjectRoot = '';
@@ -674,15 +764,40 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
     return makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error);
   }
 
+  return runPreparedSandbox(options, normalizedRoot, sandboxDir, sandboxProjectRoot).result;
+}
+
+interface PreparedRun {
+  result: SandboxExecutionResult;
+  /** 命令是否实际在沙箱内执行（未执行时无旧写入者需检查）。 */
+  commandRan: boolean;
+  pgid: number | null;
+}
+
+/**
+ * 沙箱目录已就绪后的共用流程：逃逸 symlink 扫描 → 运行期写保护 → 基线快照 → 执行 → 写入审计 → 白名单定点回收。
+ * `group` 缺省为一次性沙箱（结束时删除 sandboxDir，行为与引入复用前逐字一致）；给出时为持久沙箱
+ * （不删除目录，命令置于独立进程组并注入运行标记，由调用方做旧写入者存活检查与释放）。
+ */
+function runPreparedSandbox(
+  options: RunSandboxedCommandOptions,
+  normalizedRoot: string,
+  sandboxDir: string,
+  sandboxProjectRoot: string,
+  group?: GroupExec,
+): PreparedRun {
+  const { command, format, sandbox, allowedWritePaths } = options;
+  const persistent = Boolean(group);
+
   // 启动前 realpath containment 校验：逃逸链接按「无法隔离」处理，不进入依赖目录豁免
   const escapingLinks = findEscapingSymlinks(sandboxProjectRoot);
   if (escapingLinks.length > 0) {
-    removeTree(sandboxDir);
+    if (!persistent) removeTree(sandboxDir);
     const preview = escapingLinks.slice(0, 5).join(', ');
     const suffix = escapingLinks.length > 5 ? ' ...' : '';
     const diagnostics = [`沙箱副本存在解析目标逃逸沙箱的 symlink：${preview}${suffix}`];
     if (sandbox.mode === 'always') {
-      return {
+      return { commandRan: false, pgid: null, result: {
         command: {
           status: 'fail',
           error: `sandbox_mode=always requires isolation, but sandbox copy contains escaping symlinks: ${preview}${suffix}`,
@@ -696,10 +811,10 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
           diagnostics,
           suggestions: ['修复或移除逃逸 symlink 后重试；内部相对链接应保持相对语义。'],
         },
-      };
+      } };
     }
     const plain = executeCommand(normalizedRoot, command, format);
-    return {
+    return { commandRan: false, pgid: null, result: {
       command: plain,
       sandbox: {
         mode: sandbox.mode,
@@ -710,7 +825,7 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
         diagnostics: [...diagnostics, '已降级为非隔离执行。'],
         suggestions: ['修复逃逸 symlink 以恢复隔离执行；若需强制隔离，请将 sandbox_mode 设为 always。'],
       },
-    };
+    } };
   }
 
   // 运行期写保护（运行期不可逃逸不变量）：在写入发生前于文件系统层阻断对原 workspace 的写入，
@@ -743,8 +858,8 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
 
     if (protectionFailure) {
       if (sandbox.mode === 'always') {
-        removeTree(sandboxDir);
-        return {
+        if (!persistent) removeTree(sandboxDir);
+        return { commandRan: false, pgid: null, result: {
           command: {
             status: 'fail',
             error: `sandbox_mode=always requires runtime write protection, but it is unavailable: ${protectionFailure}`,
@@ -758,7 +873,7 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
             diagnostics: [protectionFailure],
             suggestions: ['安装或启用 OS 级写保护机制（macOS sandbox-exec / Linux bubblewrap），或将 sandbox_mode 降为 auto。'],
           },
-        };
+        } };
       }
       writeProtectionDegraded = true;
       preDiagnostics.push(`${protectionFailure}；运行期动态 symlink 逃逸不可阻断（残留风险）`);
@@ -767,7 +882,10 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
   }
 
   const baseline = listFileSnapshots(sandboxProjectRoot);
-  const commandResult = executeCommand(sandboxProjectRoot, effectiveCommand, format);
+  const executed = executeCommand(sandboxProjectRoot, effectiveCommand, format, group);
+  const pgid = executed.pgid ?? null;
+  delete executed.pgid;
+  const commandResult: SandboxCommandResult = executed;
   const afterRun = listFileSnapshots(sandboxProjectRoot);
   const changedPaths = collectChangedPaths(baseline.snapshots, afterRun.snapshots);
   const { allowed: allowedSet, violations: allowlistViolations } = buildAllowedWriteSet(allowedWritePaths);
@@ -839,11 +957,158 @@ export function runSandboxedCommand(options: RunSandboxedCommandOptions): Sandbo
   }
 
   // 收尾清理失败降级为告警：测试已跑完、结论已得出，清理失败不得覆盖命令结果（架构 §五十二 52.6）。
-  try {
-    removeTree(sandboxDir);
-  } catch (error) {
-    sandboxData.diagnostics.push(`沙箱目录清理失败（${commandErrorMessage(error) ?? 'unknown'}）：${sandboxDir}`);
-    if (sandboxData.status === 'pass') sandboxData.status = 'warn';
+  if (!persistent) {
+    try {
+      removeTree(sandboxDir);
+    } catch (error) {
+      sandboxData.diagnostics.push(`沙箱目录清理失败（${commandErrorMessage(error) ?? 'unknown'}）：${sandboxDir}`);
+      if (sandboxData.status === 'pass') sandboxData.status = 'warn';
+    }
   }
-  return { command: commandResult, sandbox: sandboxData };
+  return { commandRan: true, pgid, result: { command: commandResult, sandbox: sandboxData } };
+}
+
+function withReuse(result: SandboxExecutionResult, reuse: SandboxReuseData, info?: string): SandboxExecutionResult {
+  result.sandbox.reuse = reuse;
+  if (info) result.sandbox.infos = Array.from(new Set([...(result.sandbox.infos ?? []), info]));
+  return result;
+}
+
+/** 一次性退回（busy-fallback / unsupported）：走一次性临时沙箱的全部既有行为，附 reuse 状态与信息级说明。 */
+function fallbackOneOff(
+  options: RunSandboxedCommandOptions,
+  normalizedRoot: string,
+  state: 'busy-fallback' | 'unsupported',
+  dir: string | null,
+  reason: string,
+): SandboxExecutionResult {
+  const label = state === 'busy-fallback' ? '持久沙箱被占用或无法确认' : '当前环境无法复用沙箱';
+  return withReuse(
+    runOneOffSandbox(options, normalizedRoot),
+    emptyReuseData(state, true, dir),
+    `沙箱复用：${state}（${label}：${reason}），本次退回一次性临时沙箱。`,
+  );
+}
+
+function reuseSummary(reuse: SandboxReuseData): string {
+  return `沙箱复用：${reuse.state}（世代 ${reuse.generation}；复制 ${reuse.copied}、删除 ${reuse.removed}、内容比较 ${reuse.content_compared}；同步 ${reuse.sync_ms} ms）`;
+}
+
+/**
+ * 持久沙箱（功能规格 §2.91）：获取世代锁 → 建立目标世代 → 镜像同步 → 共用执行流程 →
+ * 旧写入者存活检查 → 释放（released / tainted）。锁被占用 / 无法确认 / 环境不支持时退回一次性沙箱。
+ */
+function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot: string): SandboxExecutionResult {
+  const { command, format, sandbox, allowedWritePaths } = options;
+
+  const capability = detectLivenessCapability();
+  if (!capability.available) {
+    return fallbackOneOff(options, normalizedRoot, 'unsupported', null, capability.reason ?? 'unknown');
+  }
+
+  const sandboxBase = resolveSandboxBase(normalizedRoot, sandbox);
+  let projectDir = '';
+  try {
+    mkdirSync(sandboxBase, { recursive: true });
+    projectDir = join(sandboxBase, projectDirName(normalizedRoot));
+    ensureRealDir(projectDir);
+    if (projectDirInsideRoot(projectDir, normalizedRoot)) {
+      throw new Error(`持久沙箱项目目录位于项目根之内：${projectDir}`);
+    }
+    ensureProjectMeta(projectDir, normalizedRoot);
+  } catch (error) {
+    return withReuse(
+      makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error),
+      emptyReuseData('unsupported', true, projectDir || null),
+    );
+  }
+
+  let outcome;
+  try {
+    outcome = acquireGeneration(projectDir, options.freshSandbox === true);
+  } catch (error) {
+    return fallbackOneOff(options, normalizedRoot, 'busy-fallback', projectDir, commandErrorMessage(error) ?? 'unknown');
+  }
+  if (outcome.kind === 'busy') return fallbackOneOff(options, normalizedRoot, 'busy-fallback', projectDir, outcome.reason);
+  if (outcome.kind === 'unsupported') return fallbackOneOff(options, normalizedRoot, 'unsupported', projectDir, outcome.reason);
+
+  const lease: SandboxLease = outcome.lease;
+  let state = lease.state;
+  let pgid: number | null = null;
+  let commandRan = false;
+  let released = false;
+  const release = (liveness: LivenessResult) => {
+    if (released) return;
+    released = true;
+    releaseGeneration(lease, { pgid, liveness });
+  };
+
+  try {
+    // 目录操作只在锁记录发布成功之后进行（§2.91.6「先定目标、再发布」）
+    if (lease.deleteAfterPublish) removeTree(join(projectDir, lease.deleteAfterPublish));
+    // 世代目录 no-follow：被换成链接或非目录时只删除链接本身并按空世代全量同步，绝不进入其目标
+    const wsStat = (() => { try { return lstatSync(lease.wsDir); } catch { return null; } })();
+    if (state === 'reused' && !(wsStat && wsStat.isDirectory())) state = 'created';
+    if (state !== 'reused' && wsStat) removeTree(lease.wsDir);
+    ensureRealDir(lease.wsDir);
+    // 写保护 profile 由执行器写在世代目录内：先删除可能被预置为链接的旧文件，避免写入跟随链接
+    rmSync(join(lease.wsDir, 'write-protect.sb'), { force: true });
+
+    const cache = resolveCachePaths(sandbox.cachePaths ?? [], allowedWritePaths);
+    let stats;
+    try {
+      stats = syncWorkspace(normalizedRoot, lease.wsDir, cache.valid);
+    } catch (error) {
+      release({ ok: true });
+      return withReuse(
+        makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error),
+        { ...emptyReuseData(state, true, projectDir), generation: lease.wsName },
+      );
+    }
+
+    const group: GroupExec = { env: { ...process.env, [RUN_TAG_ENV]: lease.runTag }, reportDir: lease.wsDir };
+    const prepared = runPreparedSandbox(options, normalizedRoot, lease.wsDir, join(lease.wsDir, 'workspace'), group);
+    commandRan = prepared.commandRan;
+    pgid = prepared.pgid;
+
+    const liveness = commandRan ? checkOldWriters(pgid, lease.runTag) : { ok: true };
+    release(liveness);
+
+    const reuse: SandboxReuseData = {
+      enabled: true,
+      state,
+      dir: projectDir,
+      generation: lease.wsName,
+      copied: stats.copied,
+      removed: stats.removed,
+      content_compared: stats.content_compared,
+      sync_ms: stats.sync_ms,
+      abandoned: listAbandoned(projectDir, lease.wsName, null),
+    };
+    const result = prepared.result;
+    if (cache.diagnostics.length > 0) {
+      result.sandbox.diagnostics.push(...cache.diagnostics);
+      if (result.sandbox.status === 'pass') result.sandbox.status = 'warn';
+      result.sandbox.suggestions.push('修正 sandbox_cache_paths：只能声明工作区相对路径，且不得与结果文件路径重叠。');
+    }
+    const infos = [reuseSummary(reuse)];
+    if (!liveness.ok) {
+      infos.push(`本轮命令留下仍在运行的进程或无法确认其已退出（${liveness.reason ?? 'unknown'}），下次运行将新建工作区世代。`);
+    }
+    if (reuse.abandoned.length > 0) {
+      infos.push(`存在被弃用的沙箱工作区世代，确认无进程使用后可手动删除：${reuse.abandoned.join('、')}`);
+    }
+    result.sandbox.reuse = reuse;
+    result.sandbox.infos = Array.from(new Set([...(result.sandbox.infos ?? []), ...infos]));
+    return result;
+  } finally {
+    if (!released) {
+      // 异常路径：命令已执行则仍按存活检查结论释放；未执行则无旧写入者
+      try {
+        release(commandRan ? checkOldWriters(pgid, lease.runTag) : { ok: true });
+      } catch {
+        // 释放失败：锁保持未释放，下次按「持有者已不存在」新建世代
+      }
+    }
+  }
 }

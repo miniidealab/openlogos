@@ -249,7 +249,12 @@ function readSmokeConfig(root: string): {
   return { command: resolveSmokeCommand(root, command) ?? undefined, resultPath, reportPath, sandbox };
 }
 
-export function smoke(format: OutputFormat = 'text', environment?: string) {
+/** smoke 侧运行选项（功能规格 §2.91.7，S19「smoke 沙箱复用」规则 4）。 */
+export interface SmokeRunOptions {
+  freshSandbox?: boolean;
+}
+
+export function smoke(format: OutputFormat = 'text', environment?: string, runOptions: SmokeRunOptions = {}) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
 
@@ -301,6 +306,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string) {
       format,
       sandbox,
       allowedWritePaths,
+      freshSandbox: runOptions.freshSandbox === true,
     });
     sandboxData = result.sandbox;
     if (result.command.status === 'fail') {

@@ -1024,3 +1024,21 @@ sequenceDiagram
 - 需求：OpenLogos 0.14.25 候选发布需求。
 - 功能规格：§2.67.5。
 - 测试：UT-S19-45；smoke：SMOKE-core-196。
+
+## smoke 沙箱复用
+
+> 来源变更：verify-sandbox-reuse-0-16-1（决策 C01～C05）；功能规格 §2.91。
+
+### 规则
+
+1. `smoke.command` 经与 verify 同一个沙箱执行器运行，`smoke.sandbox_mode` 为 `auto` / `always` 且 `smoke.sandbox_reuse` 未设为 `false` 时，按 S13「S13 沙箱复用与增量同步时序」Step R1～R13 执行；世代锁、镜像同步、缓存路径、隔离不变量与 verify 完全相同。
+2. smoke 与 verify 使用**同一个**持久沙箱项目目录（按项目根 realpath 定位），共享工作区世代与构建产物；二者并发时由世代锁互斥，后到者 `busy-fallback`。
+3. `smoke.sandbox_cache_paths` 独立于 `verify.sandbox_cache_paths` 读取；非法项判定中的白名单结果路径取 smoke 的 `result_path`。两份配置不一致时，各自在本次运行中按自己的清单同步——被一方声明为缓存、另一方未声明的路径，在未声明方运行时按普通镜像路径同步（会被工作区覆盖或删除），因此建议两边保持一致。
+4. `openlogos smoke --fresh-sandbox` 语义与 verify 相同（S13 EX-3.9）。
+5. smoke JSON 的 `sandbox` 对象带 `reuse` 字段（`sandbox_mode=off` 时不出现），文本输出经 `sandbox.infos` 以 `ℹ️` 输出一行复用摘要；smoke 门禁定义、必要用例 skip 判定与 `SMOKE_PASS` / `SMOKE_FAIL` 写入规则不变。
+6. 被超时强杀的 smoke 不释放世代锁；下次 verify / smoke 按 S13 EX-3.7 新建世代，旧世代列入 `abandoned`，不再在 `sandbox_root` 下每次累积新的一次性目录。
+
+### 追溯
+
+- 功能规格：§2.91；场景：S13「S13 沙箱复用与增量同步时序」EX-3.5～EX-3.12。
+- 测试：UT-S19-57。

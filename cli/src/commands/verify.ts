@@ -200,6 +200,7 @@ function executeVerifyCommand(
   format: OutputFormat,
   sandboxConfig: NormalizedVerifyConfig['sandbox'],
   allowedWritePaths: string[],
+  freshSandbox = false,
 ): { command: SandboxCommandResult; sandbox: SandboxData } {
   if (format !== 'json') {
     console.log(`\n⚙️  Running verify.${stage === 'pre_run' ? 'pre_run_command' : `${stage}_command`}: ${command}`);
@@ -210,6 +211,7 @@ function executeVerifyCommand(
     format,
     sandbox: sandboxConfig,
     allowedWritePaths,
+    freshSandbox,
   });
 }
 
@@ -253,10 +255,30 @@ function mergeSandboxStatus(current: SandboxData, next: SandboxData): SandboxDat
     suggestions,
   };
   if (infos.length > 0) merged.infos = infos;
+  // §2.91.8：多阶段时 reuse 取最后一次执行阶段的值
+  const reuse = next.reuse ?? current.reuse;
+  if (reuse) merged.reuse = reuse;
   return merged;
 }
 
-export function runVerifyPreRunWithSandbox(root: string, config: NormalizedVerifyConfig, format: OutputFormat): RunVerifyPreRunResult {
+/** verify 侧运行选项（§2.91.7）。 */
+export interface VerifyRunOptions {
+  freshSandbox?: boolean;
+}
+
+export function runVerifyPreRunWithSandbox(
+  root: string,
+  config: NormalizedVerifyConfig,
+  format: OutputFormat,
+  runOptions: VerifyRunOptions = {},
+): RunVerifyPreRunResult {
+  // --fresh-sandbox 只作用于第一个实际执行的阶段，后续阶段复用其新建的世代
+  let freshPending = runOptions.freshSandbox === true;
+  const takeFresh = (): boolean => {
+    const value = freshPending;
+    freshPending = false;
+    return value;
+  };
   const preRun = buildInitialPreRunData(config);
   const sandboxConfig = config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' });
   let sandbox = buildInitialSandboxData(sandboxConfig);
@@ -276,7 +298,7 @@ export function runVerifyPreRunWithSandbox(root: string, config: NormalizedVerif
     const resultPath = join(root, config.resultPath);
     mkdirSync(dirname(resultPath), { recursive: true });
     writeFileSync(resultPath, '');
-    const stageResult = executeVerifyCommand(root, 'pre_run', config.preRunCommand, format, sandboxConfig, allowedWritePaths);
+    const stageResult = executeVerifyCommand(root, 'pre_run', config.preRunCommand, format, sandboxConfig, allowedWritePaths, takeFresh());
     const normalized = toPreRunCommandResult('pre_run', config.preRunCommand, stageResult.command, stageResult.sandbox);
     preRun.commands.push(normalized);
     sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
@@ -305,7 +327,7 @@ export function runVerifyPreRunWithSandbox(root: string, config: NormalizedVerif
     const fullStagePath = join(root, effectiveStagePath);
     mkdirSync(dirname(fullStagePath), { recursive: true });
     writeFileSync(fullStagePath, '');
-    const stageResult = executeVerifyCommand(root, stage, command, format, sandboxConfig, allowedWritePaths);
+    const stageResult = executeVerifyCommand(root, stage, command, format, sandboxConfig, allowedWritePaths, takeFresh());
     const normalized = toPreRunCommandResult(stage, command, stageResult.command, stageResult.sandbox);
     preRun.commands.push(normalized);
     sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
@@ -1052,7 +1074,7 @@ function stopForSliceManifestState(
   process.exit(code);
 }
 
-export function verify(format: OutputFormat = 'text') {
+export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptions = {}) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
 
@@ -1100,7 +1122,7 @@ export function verify(format: OutputFormat = 'text') {
   }
   let preRunResult: RunVerifyPreRunResult;
   try {
-    preRunResult = runVerifyPreRunWithSandbox(root, config, format);
+    preRunResult = runVerifyPreRunWithSandbox(root, config, format, runOptions);
   } finally {
     if (previousEligible === undefined) delete process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
     else process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS = previousEligible;

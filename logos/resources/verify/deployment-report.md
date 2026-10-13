@@ -216,3 +216,76 @@
 
 - 由 driver 或用户授权运行 `openlogos smoke`：正式模式对 `https://openlogos.ai` 执行 SMOKE-core-235～238 与复用 07 / 08 / 21 / 23。
 - `git push` 为独立人类确认点，在 archive 之后询问。
+
+# 部署报告：verify-sandbox-reuse-0-16-1 / OpenLogos 0.16.1 本机全局发布（2026-10-13，**已部署：本机全局**）
+
+## 一、授权与目标
+
+- 依据：部署方案「OpenLogos 0.16.1 发布方案（verify / smoke 沙箱复用，本地全局）」；提案决策 C06（用户 2026-10-13：「然后生成新版本0.16.1，先发布本地全局吧」）；本次 `openlogos next --auto` 的 deliver-entry 门 `gate_auto_passed=true`（`GATE_AUTO_PASSED` 2026-10-13T10:36:20.980Z）。
+- 范围：只做本机全局安装。未执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`；未在本仓执行 `openlogos sync`；未改写其他仓库（含 runlogos）；未修改 `logos/logos.config.json`。
+
+## 二、冻结事实（部署前）
+
+| 项 | 值 |
+|---|---|
+| `command -v openlogos` | `/opt/homebrew/bin/openlogos` |
+| 入口 realpath | `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| `npm prefix -g` | `/opt/homebrew` |
+| 全局 `--version` | `0.16.0` |
+| 仓内 `cli/package.json` | `0.16.0`（升版前） |
+
+## 三、回滚制品（先于升版冻结）
+
+- 来源：在全局安装目录 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`。
+- 产物：`cli/rollback/miniidealab-openlogos-0.16.0.tgz`，2,545,365 字节，SHA-256 `2aa52d6e7327d52df2a9765e52f1b59fd6193741249450d2f65b88b0b443480b`。
+- 内容身份：解包后 `dist/` 下 364 个文件与全局安装目录同名文件逐个比对 SHA-256，**0 个不一致**；包内无 `dist/lib/sandbox-reuse.js`，`dist/lib/sandbox.js` 不含 `openlogos-cli-sandbox-reuse-`。
+- 旧行为：一次性隔离 prefix 试装后 `--version` 为 `0.16.0`；复用增量夹具（20 个源文件、`sandbox_cache_paths=["build-cache"]`）连续两次 verify 均为 `compiled=20`，`sandbox.reuse` 不出现。
+
+## 四、版本与制品身份
+
+- 升版：`node cli/scripts/bump-version.mjs 0.16.1` 一次写全 8 个版本载体（`cli/package.json`、lockfile 根包、`cli/asset-manifest.json`、5 份 plugin manifest），`local-release-candidate.ts` 候选 `0.16.0 → 0.16.1`、回滚 `0.15.20 → 0.16.0`，asset-manifest 由生成器重算。
+- `CHANGELOG.md` 新增 `## [0.16.1] - 2026-10-13`（Added / Changed），既有条目未改。
+
+## 五、源码回归证据
+
+- 升版后 `cd cli && npm test`：**180 个文件、2675 个用例全部通过**；`npm run build` 通过。
+- 覆盖本提案 UT-S13-89～UT-S13-100、ST-S13-25、UT-S19-57，以及 `UT-S19-46` / `UT-S19-49`（版本身份与 manifest 自洽）。
+
+## 六、构建与 Tarball 冻结（唯一候选制品）
+
+- `cli/miniidealab-openlogos-0.16.1.tgz`，2,569,849 字节，SHA-256 `1408433624eff96a210d917dcc46459988dd596c63392b1399f6250c6b364faa`（真实 `npm pack`，837 个文件）。
+- 解包核对：`package.json` 版本 `0.16.1`；asset-manifest 自洽（version `0.16.1`，payloadHash `5b08c6e1a36666f4494959f8d16d1607199451431d5a6434a4521811afac3e9e`）；`dist/lib/sandbox.js` 引入 `./sandbox-reuse.js`，后者含 `openlogos-cli-sandbox-reuse-` 与 `sync-manifest.json`；`dist/index.js` 注册 `--fresh-sandbox`。
+- 之后的隔离验证、全局安装均只使用此文件（安装前复核 SHA-256 一致）。
+
+## 七、隔离 Prefix 行为矩阵（安装态证据）
+
+| 类别 | 结果 |
+|---|---|
+| candidate identity | 一次性 prefix 安装成功；`--version` 为 `0.16.1`；入口位于该 prefix 内，包目录为真实目录（无 workspace link） |
+| 复用增量 / 等长改写 | runner 自测模式（注入该 prefix 入口）SMOKE-core-240 **pass**：`compiled` 依次 20 → 1 → 0，等长改写并恢复 mtime 的源文件第 ④ 次为 `compiled=1` 且读到新内容，四次 `reuse.dir` 相同 |
+| 版本与制品身份 | SMOKE-core-239 **pass**：版本 `0.16.1` 与 `local-release-candidate.ts` 候选一致，manifest 自洽 |
+| 回退与兜底 / smoke 共用 | SMOKE-core-241 **pass**：`--fresh-sandbox` 为 `fresh` 且 `compiled=20`；smoke 与 verify 共用同一持久沙箱（`reused`）；`sandbox_reuse:false` 为 `disabled`、`compiled=20` 且一次性目录运行后不存在；`sandbox_mode:off` 不出现 `reuse` |
+| 增量探针 | 两次 verify：`created`/`compiled=20` → `reused`/`compiled=0` |
+| 全局零触碰 | 矩阵前后 `command -v openlogos` 与 `--version` 均为 `/opt/homebrew/bin/openlogos` / `0.16.0` |
+| 回滚演练 | 回滚制品 SHA-256 与冻结记录一致；隔离 prefix 回装后 `--version` 为 `0.16.0`，同一夹具两次均 `compiled=20` 且无 `sandbox.reuse`（对照：差异确由候选引入） |
+
+> 首次矩阵执行时以相对路径 `cli/miniidealab-openlogos-0.16.1.tgz` 调用 `npm install -g`，被 npm 解析为 GitHub 简写 `cli/<repo>` 而失败（exit 128，未安装任何内容，全局未受影响）；改用绝对路径后重跑，结果如上。
+
+## 八、本机全局部署
+
+- 执行：`npm install -g <绝对路径>/cli/miniidealab-openlogos-0.16.1.tgz`（同一候选文件）。
+- 新 shell 复核：`command -v openlogos` = `/opt/homebrew/bin/openlogos`；入口 realpath = `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`（真实目录，非链接）；`--version` = `0.16.1`；全局包 `package.json` 与 asset-manifest 版本均为 `0.16.1`，payloadHash `5b08c6e1…3e9e` 与候选一致；包内含 `dist/lib/sandbox-reuse.js`。
+- 补充安装态证据（非 `openlogos smoke`，沙箱外以 runner 正式模式对全局安装运行，结果写独立账本、未写正式 smoke 账本）：SMOKE-core-239 / 240 / 241 均 **pass**（environment `local-global-temp-project`）。
+
+## 九、回滚入口
+
+- 回滚制品：`cli/rollback/miniidealab-openlogos-0.16.0.tgz`，SHA-256 `2aa52d6e7327d52df2a9765e52f1b59fd6193741249450d2f65b88b0b443480b`。
+- 回滚命令：`npm install -g <绝对路径>/cli/rollback/miniidealab-openlogos-0.16.0.tgz`，新 shell 复核 `--version` 为 `0.16.0`。注意必须使用绝对路径（见第七节说明）。
+- 回装后 `sandbox_root` 下遗留的 `openlogos-cli-sandbox-reuse-*` 持久项目目录不被旧版读取，可确认无进程使用后手动删除。
+
+## 十、提示与后续
+
+- 已有项目无需修改配置即默认启用复用；编译型项目可按需声明 `sandbox_cache_paths`（如 `src-tauri/target`）。
+- 被弃用世代（`sandbox.reuse.abandoned`）需确认无进程使用后手动清理。
+- 在 Seatbelt 等嵌套沙箱内（如 `openlogos smoke` 以 sandbox-exec 包裹 runner、Claude Code 沙箱模式、Codex）无法执行 setuid 的 `/bin/ps`，复用按规格判 `unsupported` 并退回一次性沙箱。因此正式 `openlogos smoke` 中 SMOKE-core-240 / 241 预计记为 `skip` + `reason_code:"platform-unavailable"`；真实复用证据见第七、八节。
+- runlogos 的 `sandbox_root` 仍为 `/private/tmp`（内置盘）；持久沙箱会常驻一份工作区副本（约 8 GB），是否改到外置盘由用户决定。

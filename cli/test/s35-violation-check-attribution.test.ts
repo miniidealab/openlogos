@@ -314,5 +314,8 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
     // ④ 零写入：运行前后夹具与本仓项目根字节快照均不变。
     expect(snapshotTree(bad.root)).toEqual(beforeFixture);
     expect(repoState()).toBe(beforeRepo);
-  });
+  // 断言前后各读一次仓库 git 状态：在一次性沙箱副本（全量复制、mtime 被重置、可能位于外置盘）里首次
+  // `git status` 需重建索引统计信息，实测约 50 秒（CPU 不足 1 秒，主要是 I/O），默认 10 秒必然超时；
+  // 断言本身不变，只放宽本用例的时限。
+  }, 180_000);
 });

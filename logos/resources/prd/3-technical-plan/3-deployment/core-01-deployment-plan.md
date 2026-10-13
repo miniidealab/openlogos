@@ -4114,3 +4114,102 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 来源提案：website-docs-0-16-0（决策 C01 部署方式、C02 不发版且 push 单独确认）。
 - 沿用：本文件 §四「官网部署」、§六「官网回滚」、§十一「官网发布动态构建策略」、§十五「仅部署官网文档」口径。
 - smoke：`core-smoke-test-cases.md`「官网文档 0.16.0 补齐发布后 smoke（SMOKE-core-235～238）」。
+
+## OpenLogos 0.16.1 发布方案（verify / smoke 沙箱复用，本地全局）
+
+### 部署目标与授权边界
+
+把 verify / smoke 沙箱复用与增量同步（来源提案 `verify-sandbox-reuse-0-16-1`，功能规格 §2.91）装进本机全局安装态。沙箱复用是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目（含 RunLogos）生效。
+
+授权来源：用户 2026-10-13 裁定（本提案决策 C06：「然后生成新版本0.16.1，先发布本地全局吧」）。发布形态沿用 0.15.19 / 0.15.20 的本机全局安装（`npm install -g <tarball>`）。本方案**不含** `npm publish`、dist-tag、Git tag、GitHub Release、官网部署或 `git push`；merge、verify、部署执行、smoke、archive 仍按项目执行门。
+
+本次不改托管 guard、hook 与 Skill，**不在本仓执行 `openlogos sync`**；**不改写其他仓库**（包括 runlogos），不在其项目根运行任何命令，也不修改其 `logos/logos.config.json`（如需把 runlogos 的 `sandbox_root` 移到外置盘或声明 `sandbox_cache_paths`，由用户另行决定）。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本。计划时（2026-10-13）为 `0.16.0`，候选为下一 patch `0.16.1`。若实施前已有其他提案升版，候选改为「当时版本的下一 patch」、回滚版本改为「当时版本」，并在部署记录写明实际值。本节版本号是计划值，不是钉死值。
+3. **冻结当前本机全局**：记录 `command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`。计划时为 `/opt/homebrew/bin/openlogos`、`0.16.0`（自 npm registry 安装）。实际值在部署前重新读取，不在测试或脚本中硬编码主机路径。
+4. **先有回滚制品，再动版本号**：
+   1. **来源**：在 `$(npm prefix -g)/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，产出 `cli/rollback/miniidealab-openlogos-0.16.0.tgz`。**禁止**从当前工作树打包。
+   2. **内容身份**：解包后逐文件计算 SHA-256，与全局安装目录中同名文件比对，`dist/` 下全部文件必须一致；另确认包内 `dist/lib/sandbox.js` 不含 `openlogos-cli-sandbox-reuse-`。
+   3. **旧行为验证**：在一次性隔离 prefix 中试装该制品：`--version` 为 `0.16.0`；对「复用增量」夹具（见下文隔离矩阵）`sandbox.reuse` 不出现。
+   4. **记录**：来源安装路径、制品字节数与 SHA-256、内容比对结果与旧行为证据写入部署记录。第 1～3 项任一不满足即判发布前检查失败，不得进入升版。0.16.0 已发布到 npm registry，registry 包可作为第二回滚来源，但以本条冻结制品为准。
+
+### 0.16.1 版本与制品身份
+
+**经升版脚本一次完成**：执行 `node cli/scripts/bump-version.mjs 0.16.1`，由脚本一次更新 `cli/package.json` 与 lockfile 根包、全部随包 plugin manifest（以脚本 `VERSION_CARRIERS` 清单为准）、`cli/src/lib/local-release-candidate.ts` 的 `LOCAL_RELEASE_CANDIDATE_VERSION`（→ `0.16.1`）与 `LOCAL_RELEASE_ROLLBACK_VERSION`（→ `0.16.0`），并调用既有生成器重算 `cli/asset-manifest.json`。
+
+本次 asset-manifest 预期变化只能由生成器写出：
+
+| 资产 | 变化 |
+|---|---|
+| `dist/lib/sandbox.js`、`dist/lib/verify-config.js`、`dist/commands/verify.js`、`dist/commands/smoke.js`、`dist/index.js`、`dist/i18n.js` | hash 变化（沙箱复用、配置字段、`--fresh-sandbox`、文案） |
+| payload `version` 与 `payloadHash` | 随升版重算 |
+
+**禁止手改** `asset-manifest.json` 与派生 hash。任一身份载体残留旧版本即判失败（`UT-S19-46`）；manifest 自洽由 `UT-S19-49` 守。
+
+在 `CHANGELOG.md` 既有位置补充 `0.16.1` 发布说明，不改既有条目：
+
+- Added：verify / smoke 沙箱复用——每项目一份持久沙箱，按同步清单增量同步工作区（ctime 指纹 + 内容判定，保留 mtime），构建工具的增量编译跨运行生效；新增配置 `sandbox_reuse`（默认开启）、`sandbox_cache_paths`，新增参数 `--fresh-sandbox`，JSON `sandbox.reuse`。
+- Changed：被强杀的 verify / smoke 不再在 `sandbox_root` 下每次累积一次性目录；非正常退出后新建工作区世代，旧世代列入 `sandbox.reuse.abandoned` 由用户确认后清理。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm test`，必须全绿，范围包括 UT-S13-89～UT-S13-100、ST-S13-25、UT-S19-57，以及 `UT-S19-46` / `UT-S19-49`；`npm run build` 通过。
+2. 执行真实 `npm pack`，记录 tarball 路径、字节数与 SHA-256，并在部署记录中标为本次**唯一候选制品**。之后的隔离验证、全局安装与回滚演练都只用这个文件，不再重新打包。
+3. 解包核对，证明制品带有本次行为，而不只是版本号变化：
+   - CLI entry、`--version` 为候选版本，包内 asset-manifest 自洽；
+   - 包内 `dist/lib/sandbox.js` 含 `openlogos-cli-sandbox-reuse-` 与 `sync-manifest.json`；`dist/index.js` 注册 `--fresh-sandbox`。
+
+### 隔离 Prefix 行为矩阵
+
+用 `mktemp -d` 建一次性 npm prefix，安装固定 tarball，从新 shell 或绝对入口执行。全部项目态与 `sandbox_root` 都在一次性临时目录内构造，**不得触碰本机全局 prefix、本仓活跃提案、本仓配置的沙箱根与用户其他仓库**。
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| 复用增量 | 临时项目按 ST-S13-25 夹具口径（模拟增量编译器 + `sandbox_cache_paths=["build-cache"]`）：候选连续执行 `openlogos verify --format json` 三次（中间改 1 个源文件），`stdout_tail` 依次含 `compiled=20` / `compiled=1` / `compiled=0`，`sandbox.reuse.state` 依次为 `created` / `reused` / `reused`，三次 `gate.result=="PASS"` |
+| 等长改写 | 按 UT-S13-92 臂 ① 夹具：工作区等长改写并恢复 mtime 后，候选 verify 的命令输出为工作区新内容 |
+| 回退与兜底 | `--fresh-sandbox` 后 `state=="fresh"` 且 `compiled=20`；`sandbox_reuse:false` 时 `state=="disabled"`、一次性目录运行后被删除；`sandbox_mode:off` 时不出现 `reuse` |
+| smoke 共用 | 按 UT-S19-57 ①② 夹具：smoke 的 `reuse.dir` 与 verify 相同、`state=="reused"` |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径，`--version` 逐字一致 |
+| 回滚演练 | 在隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.16.0.tgz` 回装（SHA-256 与冻结记录一致），`--version` 回到 `0.16.0`；「复用增量」夹具在回滚版本上不出现 `sandbox.reuse` 且三次均为 `compiled=20`（对照：证明差异确由候选引入） |
+
+### 本机全局部署
+
+隔离矩阵与回滚演练通过后，按以下顺序执行：
+
+1. 用**同一** tarball 执行 `npm install -g <tarball>` 覆盖本机全局，在新 shell 中复核 entry realpath、`--version`、package.json、asset-manifest 全部同源于候选版本。
+2. 写部署记录 `logos/resources/verify/deployment-report.md`：部署身份（版本、tarball 路径与 SHA-256、入口 realpath）；回滚入口（`cli/rollback/miniidealab-openlogos-0.16.0.tgz` 的路径与 SHA-256）；源码回归证据（`npm test`）与安装态证据（隔离矩阵与全局复核），两者分开写；末尾提示：已有项目无需修改配置即默认启用复用，编译型项目可按需声明 `sandbox_cache_paths`，被弃用世代需确认无进程使用后手动清理。
+3. 经 `openlogos deploy-done` 受控落标，再按流程进入 smoke（SMOKE-core-239～SMOKE-core-241）。
+
+### 本仓切换风险与应对
+
+| 风险 | 影响与应对 |
+|---|---|
+| 本仓 verify / smoke 默认改为复用 | 本仓配置 `sandbox_mode=auto`、`sandbox_root=/Volumes/BuildWork/openlogos-sandbox`，升级后首次运行创建持久项目目录（一次全量复制），之后增量同步。外置盘未挂载时与升级前一样按「无法创建沙箱」降级 |
+| 持久目录占用磁盘 | 每个项目常驻一份工作区副本；被强杀后另留一份被弃用世代，需用户确认后手动清理。需要回到一次性行为时配置 `sandbox_reuse:false`（修改 `logos/logos.config.json` 需按项目规则由用户执行） |
+| 本仓其它进行中提案 | 计划时 `logos/changes/` 下除本提案外只有 `archive/`；复用不改变门禁判据，不影响其他提案的 verify 结论 |
+
+### 失败处置与回滚边界
+
+1. 发布前检查、构建、隔离矩阵或回滚演练任一失败：不安装全局、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即可回滚隔离环境。
+2. 已全局安装后发现问题：用 `cli/rollback/miniidealab-openlogos-0.16.0.tgz` 执行 `npm install -g` 回装，新 shell 复核 `--version` 为 `0.16.0`。
+3. 本次无数据迁移；`logos.config.json` 无新增必填字段，无需回退。回装 0.16.0 后，`sandbox_root` 下遗留的持久项目目录不被旧版读取，可由用户确认后手动删除。
+4. 回滚不以手改 asset-manifest 作为修复手段，也不以放宽 verify / smoke 判定「让矩阵变绿」。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`；push 仍是 archive 之后的人类确认点。
+- 不在本仓执行 `openlogos sync`；不改写其他仓库（包括 runlogos）的任何文件，不在其项目根运行任何命令。
+- 不在部署步骤中修改 `logos/logos.config.json`。
+
+### 追溯
+
+- 功能规格：§2.91、§2.9。
+- 根规范：`spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」；`spec/test-results.md`「沙箱复用配置」。
+- 场景：S13「S13 沙箱复用与增量同步时序」EX-3.5～EX-3.12；S19「smoke 沙箱复用」。
+- 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-239～SMOKE-core-241。
+- 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
+- 来源提案：verify-sandbox-reuse-0-16-1（决策 C01～C06）。

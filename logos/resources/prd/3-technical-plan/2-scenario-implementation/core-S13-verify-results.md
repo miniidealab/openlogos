@@ -538,3 +538,112 @@ sequenceDiagram
   >「S13 权威测试 ID 语法放宽后的 defined 集合与覆盖度口径」。
 - 测试：`core-S13-test-cases.md`（UT-S13-69 起、ST-S13-20 起）；
   部署后 smoke：`core-smoke-test-cases.md`（SMOKE-core-208 起）。
+
+## S13 沙箱复用与增量同步时序
+
+> 来源变更：verify-sandbox-reuse-0-16-1（决策 C01～C05）；功能规格 §2.91。本节细化 S13 主时序 Step 3～6 中「Sandbox Executor」在 `sandbox_reuse` 生效时的内部步骤；主时序其余步骤、门禁判据与 EX-3.1～EX-3.4、EX-9.x 不变。
+
+### 场景目标
+
+`verify.sandbox_mode` 为 `auto` / `always` 且 `verify.sandbox_reuse` 未设为 `false` 时，预跑命令在**每项目一份的持久沙箱**中执行：路径稳定、mtime 保真、构建产物留存，让项目构建工具的增量编译生效；隔离不变量与一次性沙箱逐条相同。
+
+### 参与者
+
+- **CLI**：`openlogos verify`。
+- **Sandbox Executor**：`runSandboxedCommand`。
+- **Lock**：持久沙箱项目目录下的 `lock/` 世代锁记录。
+- **Workspace Generation**：当前工作区世代 `ws-<世代号>/`（`workspace/` + `sync-manifest.json`）。
+- **Test Runner**：项目的预跑命令及其构建工具。
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant C as OpenLogos CLI
+    participant X as Sandbox Executor
+    participant L as Lock (lock/gen-*)
+    participant W as Workspace Generation
+    participant T as Test Runner
+
+    C->>X: Step R1: 执行预跑命令（sandbox_reuse 生效，可带 --fresh-sandbox）
+    X->>X: Step R2: 定位项目目录 <sandbox_root>/openlogos-cli-sandbox-reuse-<hash16>/，校验其不在项目根内
+    X->>L: Step R3: 读最大世代 N 并判定分支，在发布前确定本轮目标世代 ws
+    alt N 已 released 且旧写入者存活检查复查通过，且未带 --fresh-sandbox
+        X->>L: Step R4a: 记录 {token,pid,ws=gen-N.ws} 经 link() 排他创建 gen-<N+1>（reused）
+    else 无记录 / N 未释放且 pid 确认不存在 / N 已 tainted / 复查不通过 / 带 --fresh-sandbox
+        X->>L: Step R4b: 记录 {token,pid,ws=ws-<N+1>} 经 link() 排他创建 gen-<N+1>（created / recovered / fresh）
+    else N 未释放且 pid 存活 / 无法确认，或 link() 失败
+        X-->>C: Step R4c: 退回一次性临时沙箱（busy-fallback），按既有一次性流程执行
+    else 文件系统不支持 link() / 平台无进程组探测或运行标记扫描
+        X-->>C: Step R4d: 退回一次性临时沙箱（unsupported）
+    end
+    X->>W: Step R5: 发布成功后建立目标世代：新名则新建空目录；fresh 且旧世代 released 并复查通过才删除旧世代，否则列入 abandoned
+    X->>W: Step R6: 镜像同步（ctime 指纹 + racy 判定，否则逐字节比较；跳过缓存路径；删除多余）
+    X->>W: Step R7: 原子写入 sync-manifest.json
+    X->>W: Step R8: 逃逸 symlink 扫描（含缓存路径）、建立运行期写保护、拍基线快照
+    X->>T: Step R9: 在 workspace/ 中以独立进程组（pgid）并注入运行标记 OPENLOGOS_SANDBOX_RUN 执行命令，转发中断信号
+    T-->>X: Step R10: 写入结果文件与构建产物；主进程退出
+    X->>X: Step R10a: 旧写入者存活检查——kill(-pgid, 0) 探测进程组 + 扫描带本世代运行标记的存活进程
+    X->>W: Step R11: 写入审计、白名单定点回收到原工作区
+    X->>L: Step R12: 检查通过 → 排他创建 gen-<本号>.released；不通过 / 无法完成 → 排他创建 gen-<本号>.tainted
+    X-->>C: Step R13: 返回命令结果与 sandbox（含 reuse）
+```
+
+### 步骤说明
+
+1. **R1**：两阶段模型下回归、增量两段各走一次本时序；第二段命中第一段刚释放的世代（`reused`）。
+2. **R2**：项目目录名取项目根 realpath 的 SHA-256 前 16 位十六进制；位于项目根内时按「无法创建沙箱」处理（EX-3.10）。
+3. **R3～R4**：世代锁规则见功能规格 §2.91.6。目标世代在发布前确定并随锁记录一起原子发布，`gen-<N+1>.ws` 即本轮实际使用的世代；发布后不再改写锁记录。已用世代号永久占位，锁记录在 CLI 中从不删除、不复用、不压缩；获取以 `link()` 排他创建成功为准。
+4. **R5**：目录操作只在发布成功后进行。`--fresh-sandbox` 删除旧世代的条件与 `reused` 判定同一（`released` 且旧写入者存活检查复查通过），否则保留并列入 `abandoned`（EX-3.9）。发布后、同步完成前中断时，下次按「未释放且 pid 确认不存在」新建世代（EX-3.7）。
+5. **R6～R7**：同步规则见功能规格 §2.91.4，内容同步后对 `mode`、`mtime` 不一致的副本原位整定（不重写字节、不换 inode），整定后才记录指纹。verify 已在 R1 之前清空结果文件，清空状态经同步进入沙箱；只复用旧写入者存活检查通过（进程组已空且无带该世代运行标记的存活进程）的世代，上次运行及其后代写出的结果不会被回收为本次结果（EX-3.7、EX-3.8）。
+6. **R8～R11**：与一次性沙箱完全相同——逃逸 symlink 按「无法隔离」处理（EX-3.4，持久世代内残留的同样适用），运行期写保护按能力分层，非白名单写入（含缓存路径内的写入）`auto` 告警、`always` 失败，依赖目录豁免不变，白名单定点回收不变。
+7. **R9～R12**：命令置于独立进程组并注入运行标记，CLI 收到的 SIGINT / SIGTERM / SIGHUP 转发给该组。主进程退出后做旧写入者存活检查：通过写 `released`；进程组仍有成员（如关闭继承 stdio 的后台进程）、扫描到带运行标记的存活进程（如 `setsid` / `detached` 脱组的后台进程）或无法完成检查写 `tainted`，不杀进程、不删目录，下一轮新建世代（EX-3.7）。命令失败、审计失败也照此释放；CLI 被强杀则不释放，下次运行按「未释放且 pid 确认不存在」新建世代。
+8. **R13**：`sandbox.reuse` 字段见 `spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」；复用摘要经 `sandbox.infos` 以 `ℹ️` 输出一行，不影响 `sandbox.status`。
+
+### 异常用例
+
+#### EX-3.5: 等长改写且 mtime 被保留
+
+- **触发条件**：① 工作区源文件被等长改写，mtime 与权限保持不变（如保留时间戳的恢复 / 复制）；② 上轮命令在沙箱副本中等长改写源文件并恢复其 mtime。
+- **期望响应**：两种情形下该文件的 `ctime` 均已变化，与同步清单不符，必然进入逐字节内容比较并以工作区内容覆盖；本轮命令读到的是工作区的实际内容。仅凭大小 + mtime 跳过复制的实现在此必红。
+
+#### EX-3.6: 两个进程竞争同一世代
+
+- **触发条件**：① 两个进程同时读到同一个「未释放且持有者已死」的最大世代 N 并交错获取；② 三方交错：A 读到已释放的世代 N 后暂停于 `link()` 前，B 取得并释放 N+1，C 取得 N+2 并运行，随后恢复 A。
+- **期望响应**：① 至多一方 `link(gen-<N+1>)` 成功，另一方 `busy-fallback`；② A 的 `link(gen-<N+1>)` 命中已存在编号而失败，按占用退回一次性沙箱；任何时刻同一工作区世代至多一个持有者；`lock/` 下已用编号的记录全部保留；旧持有者的释放不能使新持有者的锁失效。
+
+#### EX-3.7: 旧写入者跨轮残留
+
+- **触发条件**：① 上一轮 CLI 被超时强杀或单独终止，其测试 / 编译子进程仍在旧世代内写入，锁未释放、持有者 pid 已不存在；② 上一轮命令主进程正常退出，但启动了后台进程——②a 关闭继承 stdio、仍在命令进程组内；②b 以 `setsid` / Node `spawn(..., {detached:true, stdio:"ignore"})` 并 `unref` 脱离进程组——该进程在下一轮清空结果之后、回收之前向结果路径写入旧的全 pass 账本；③ 发布锁记录后、目标世代同步完成前 CLI 被杀。
+- **期望响应**：① 上一世代未释放且 pid 确认不存在；② 上一轮主进程退出后的旧写入者存活检查不通过——②a 进程组仍有成员，②b 进程组已空但运行标记扫描命中脱组后代——释放写为 `tainted`；若后代在释放时尚未被调度、释放后才出现，下一轮发布前的复查同样命中；③ 同 ①。三者本轮均以新世代号获取锁，锁记录 `ws` 即新建的空工作区世代，全量同步（`recovered`），对旧世代不同步、不改写、不删除；旧世代（③ 中若半成品目录已存在）列入 `sandbox.reuse.abandoned` 并在文本输出提示确认无进程使用后手动清理；旧写入者写出的结果只落在旧世代，不会被回收为本轮结果——② 中本轮命令不写结果时，门禁必须 FAIL。执行器不终止残留进程。
+
+#### EX-3.8: 上轮结果文件残留在沙箱
+
+- **触发条件**：上一轮命令在沙箱中写过结果文件；本轮命令异常，未写任何结果。
+- **期望响应**：verify 预先清空的结果文件经同步覆盖沙箱副本，回收得到的是空结果；门禁按空结果判定（如 `pre_run_failed` / `incomplete_coverage`），不会因旧结果而 PASS。
+
+#### EX-3.9: `--fresh-sandbox` 与占用 / 非正常退出
+
+- **触发条件**：带 `--fresh-sandbox` 执行 verify，分别处于：锁已释放；锁被存活进程持有；上一轮非正常退出且后代仍在写。
+- **期望响应**：锁已释放（`released` 且旧写入者存活检查复查通过）→ 锁记录 `ws` 写为新世代名后发布，新建空世代全量同步，发布成功后删除被替换的旧世代，`state=fresh`，下一轮普通运行读到的锁记录 `ws` 即该新世代并 `reused`；锁被占用 → `busy-fallback`，不删除任何世代；非正常退出、`tainted` 或复查不通过 → 新建空世代，旧世代保留并列入 `abandoned`。
+
+#### EX-3.10: 无法复用的环境
+
+- **触发条件**：① 持久沙箱项目目录位于项目根之内；② `sandbox_root` 所在文件系统不支持 `link()`（如 exFAT），或当前平台不具备进程组探测或运行标记扫描能力（如 Windows）；③ 工作区含 socket / FIFO 等特殊文件。
+- **期望响应**：① 与 ③ 按「无法创建沙箱」处理（`auto` 降级为非隔离执行并告警，`always` 失败），与一次性沙箱口径一致；② 退回一次性临时沙箱（`state=unsupported`）并在 `sandbox.infos` 给出信息级说明，`sandbox.status` 不因此改变。
+
+#### EX-3.11: 非法缓存路径
+
+- **触发条件**：`verify.sandbox_cache_paths` 含绝对路径、含 `..`、为空或项目根，或与任一白名单结果路径相同 / 为其祖先 / 为其后代（如 `logos/resources/verify`）。
+- **期望响应**：该项被忽略，`sandbox.diagnostics` 点名该项与原因，`sandbox.status` 至少为 `warn`；该路径按普通镜像路径同步，结果文件不会跨运行留存。合法缓存路径照常生效。
+
+#### EX-3.12: 关闭复用与关闭沙箱
+
+- **触发条件**：① `verify.sandbox_reuse=false`；② `verify.sandbox_mode=off`。
+- **期望响应**：① 走一次性临时沙箱，行为与引入复用前逐字一致，仅 `sandbox.reuse` 为 `{enabled:false, state:"disabled", …}`；② 行为与输出逐字不变，不出现 `sandbox.reuse`；两者下 `--fresh-sandbox` 无效果、不报错。
+
+### 追溯
+
+- 功能规格：§2.91（复用）、§2.9（隔离不变量）、§2.7（结果文件清空与预跑失败判定）。
+- 测试：UT-S13-89～UT-S13-100、ST-S13-25。
+- 根规范：`spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」；`spec/test-results.md`「沙箱复用配置」。

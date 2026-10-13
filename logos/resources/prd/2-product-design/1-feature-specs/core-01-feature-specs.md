@@ -4893,3 +4893,119 @@ L5 推送的违规（`path` 均为提案的 `proposal.md` 相对路径）：
 - CLI 交互设计：§2.42「change-lint L5 部署方案覆盖违规体验」。
 - 场景：S35「L5 部署方案覆盖判定」。
 - 代码（以合并后规格为准）：`cli/src/lib/proposal-lifecycle.ts`、`cli/src/lib/change-lint.ts`、`cli/src/lib/plan-package.ts`。
+
+## 2.91 verify / smoke 沙箱复用与增量同步
+
+> 来源变更：verify-sandbox-reuse-0-16-1（决策 C01～C05）。本节在 §2.9「verify / smoke 沙箱执行策略」之上新增**复用模式**；§2.9 的隔离不变量（symlink 拓扑与 realpath containment、运行期 OS 写保护与能力分层、非白名单写入审计、白名单定点回收、依赖目录豁免、`sandbox.infos` 信息通道）在复用模式下**逐条照旧生效**，本节只替换「建沙箱 → 复制工作区 → 删沙箱」三步。
+
+### 2.91.1 背景与目标
+
+一次性沙箱每次执行都 `mkdtemp` 随机目录、`cpSync` 全量复制工作区（默认不保留 mtime）、执行后 `removeTree`。构建工具（cargo fingerprint / dep-info、tsc `.tsbuildinfo`、vite 等）的增量机制依赖「路径稳定、mtime 保真、产物留存」三个条件，一次性沙箱三者全破，导致每次 verify / smoke 都全量重编；8 GB 级工作区还要每次整份复制再整份删除。
+
+复用模式的目标是**恢复构建工具自身的增量条件**，而不是由 CLI 或 AI 判断哪些包需要重编：是否重编始终由项目自己的构建工具按其依赖图决定，verify 门禁的判定逻辑不变。
+
+### 2.91.2 配置
+
+`verify` 与 `smoke` 节点各新增两个可选字段（字段定义的权威文本见 `spec/test-results.md`「沙箱复用配置」）：
+
+| 字段 | 类型 | 默认 | 语义 |
+|---|---|---|---|
+| `sandbox_reuse` | boolean | `true` | 仅在 `sandbox_mode` 为 `auto` / `always` 时生效；`false` 时走一次性临时沙箱，行为与引入本节前逐字一致 |
+| `sandbox_cache_paths` | string[] | `[]` | 工作区相对路径；声明的路径归沙箱所有，跨运行留存，同步时既不从工作区复制也不删除 |
+
+- 默认值在**读取时**补齐；`openlogos sync` / `init` **不**向配置写入这两个字段。
+- `sandbox_mode=off` 时两个字段不起作用，行为不变。
+
+### 2.91.3 持久沙箱身份与工作区世代
+
+- **项目目录**：`<sandbox_root>/openlogos-cli-sandbox-reuse-<项目根 realpath 的 SHA-256 前 16 位十六进制>/`。同一项目的 verify 各阶段与 smoke 共用；不同项目互不相干。
+- 项目目录下：
+  - `lock/`：世代锁记录（§2.91.6）。
+  - `ws-<世代号>/`：工作区世代，含 `workspace/`（工作区镜像，命令的 cwd）与 `sync-manifest.json`（同步清单，§2.91.4）。运行写保护 profile 等执行器私有文件写在世代目录内、`workspace/` 之外。
+- 运行结束**不删除**当前世代。项目目录位于项目根之内时按「无法创建沙箱」处理（`auto` 降级为非隔离执行并告警，`always` 失败），与一次性沙箱复制进自身子目录失败的口径一致。
+
+### 2.91.4 镜像同步规则
+
+每次命令执行前，把工作区镜像同步到当前世代的 `workspace/`：
+
+1. **遍历**：对工作区逐项 `lstat`（不跟随 symlink），跳过 `sandbox_cache_paths` 命中的路径（§2.91.5）。
+2. **普通文件——跳过复制必须有内容一致性依据，元数据只作快速筛选**：
+   - 每次同步完成后，以「临时文件 + 原子 rename」写入 `sync-manifest.json`：`schema` 版本、清单写入时刻，以及逐个普通文件的**两侧 stat 指纹**——工作区源文件与沙箱副本各一份，均含 `dev`、`ino`、`size`、`mtime`（纳秒）、`ctime`（纳秒）、`mode`。
+   - 下次同步时，某文件**仅当**两侧当前指纹都与清单记录逐项相等，**且**两侧 `ctime` 均早于「清单写入时刻 − 2 秒」（racy 判定，排除粗粒度时间戳文件系统上的同刻改写），才视为未变并跳过。
+   - 其余情况——任一侧指纹不同、处于 racy 窗口、清单缺失 / 损坏 / `schema` 不符 / 不含该文件——两侧均存在时一律**判定内容**：大小不同直接判为不同，大小相同则**逐字节比较**；不同才复制，相同则不重写字节（见下「元数据整定」）。沙箱侧不存在时直接复制。`reuse.content_compared` 计入的正是「两侧均存在、未能凭指纹跳过而判定内容」的文件数。
+   - 依据：`ctime` 由内核在内容写入与元数据写入（含 `utimes` 恢复 mtime）时更新，用户态无法回设。「工作区等长改写并保留 mtime」与「上轮命令在沙箱副本中等长改写并恢复 mtime」两种情形都会改变 `ctime`，必然进入内容比较。
+   - 复制：先写同目录临时文件，再原子 rename 到目标。
+   - **元数据整定（内容同步之后、对每个参与判定或复制的普通文件执行）**：内容相同的文件不重写字节、不更换 inode；但只要副本的 `mode` 或 `mtime` 与源文件不同，就对已 `lstat` 确认为普通文件的副本**原位**恢复（`chmod` 设为源 `mode`、`utimes` 设为源 `mtime`），不经由 symlink。整定完成后才采集副本的最终 stat 指纹写入清单。只有内容与应镜像的元数据（`mode`、`mtime`）都已一致时才完全不动。因此上轮命令只改权限（如 `chmod +x`）或只改 mtime（如 `touch`）的副本，下一轮都被还原为工作区的权限与 mtime，且 inode 不变、字节不重写。
+3. **symlink**：按原始目标字面量重建（与 `cpSync` 的 `verbatimSymlinks` 同语义）；目标字面量相同则不动。
+4. **目录**：缺失则创建；权限位与工作区一致。
+5. **删除多余**：沙箱中存在而工作区没有的条目（不在缓存路径内）一律删除。
+6. **类型不一致**（文件 / 目录 / symlink 互变）：先删除沙箱侧条目再按工作区类型创建。
+7. **不跟随 symlink**：同步自上而下处理，每一级先 `lstat` 校验；删除与写入都不经由沙箱侧既有 symlink 到达别处，递归删除不跟随链接。
+8. **特殊文件**（socket、FIFO、设备）：与一次性沙箱 `cpSync` 的失败口径一致，按「无法创建沙箱」处理。
+9. 同步中途失败：按「无法创建沙箱」处理；由于清单只在同步完成后写入，下次同步对不一致的条目自然进入内容比较，同步自愈。
+
+同步只对命令可见的输入负责，不改变任何门禁判据。verify 在执行前把结果文件清空（§2.7），清空后的状态经同步进入沙箱；结合 §2.91.6 的「旧写入者存活检查」（只有确认上一轮命令进程组已空、且不存在带该世代运行标记的存活进程的世代才可复用），上次运行及其后代写出的结果不会被回收为本次结果。
+
+### 2.91.5 缓存路径
+
+- `sandbox_cache_paths` 每项是工作区相对路径，规范化后命中的条目及其子树**归沙箱所有**：同步时不从工作区复制、不删除，跨运行留存；首次运行时从空开始（不从工作区复制初值）。典型取值：Rust 项目的 `target`、`src-tauri/target`。
+- **非法项被忽略并输出诊断**（写入 `sandbox.diagnostics`，`sandbox.status` 至少为 `warn`），该路径按普通镜像路径处理：绝对路径；规范化后含 `..`；为空或等于项目根；与任一白名单结果路径（verify：`result_path`、`regression_result_path`、`incremental_result_path`、`logos/resources/verify/acceptance-report.md`；smoke：`result_path`）**相同、为其祖先或为其后代**——防止旧结果文件跨运行留存后被回收。
+- **缓存路径不豁免写入审计**：命令对缓存路径的写入按非白名单写入审计（`auto` 告警、`always` 失败），与一次性沙箱同口径；不开放项目级通用 allow-path（沿用 §2.9 依赖目录豁免的既有决策）。
+- 缓存路径内的内容同样参与启动前逃逸 symlink 扫描。
+
+### 2.91.6 世代锁与并发
+
+- **记录**：`lock/gen-<12 位补零世代号>`，内容为 JSON `{token, pid, ws}`，`ws` 是**本世代实际使用的工作区世代目录名**；释放标记为 `lock/gen-<世代号>.released`（内容 `{token, ws, pgid, run_tag}`）或 `lock/gen-<世代号>.tainted`（内容 `{token, ws, pgid, run_tag, reason}`）。当前锁 = 最大世代号的记录。
+- **先定目标、再发布（目标世代与锁记录原子绑定）**：读出最大世代号 N 并按下文判定得出本轮分支后，**在发布锁记录之前**确定本轮目标工作区世代：`reused` 取 `gen-N` 记录的 `ws`；`created` / `recovered` / `fresh` 取新名 `ws-<N+1 的 12 位补零号>`。把含该目标 `ws` 的完整记录写入临时文件，再以 `link()` 原子创建 `gen-<N+1>`——目标已存在即失败，内容与排他创建同时生效，不存在「已创建未写完」窗口。同号竞争只有一方成功；失败方重读后按占用处理。**只有发布成功后**才创建 / 清空 / 同步目标世代目录，或删除被 fresh 替换的旧世代；发布后不再改写锁记录，`released` / `tainted` 标记中的 `ws` 必须等于记录的 `ws`。
+- **目标世代目录缺失**（`reused` 时目录已被用户删除）：按空目录全量同步，`state` 记为 `created`，锁记录 `ws` 不变。
+- **发布后、同步完成前中断**（CLI 被杀）：该世代未释放、持有者 pid 不存在，下次按判定 4 处理——新建世代，半成品目标世代若已存在则列入 `abandoned`，不会从不一致的记录恢复错误目标。
+- **已用世代号永久占位**：任何锁记录（`gen-<N>`、`gen-<N>.released` 与 `gen-<N>.tainted`）在 CLI 中都不删除、不复用、不压缩。持有过期观察的延迟申请者只能命中已存在的编号而失败，不会凭旧观察进入持久工作区。只有用户确认无进程使用后手动删除整个项目目录，锁记录才随之清除。
+- **判定**（以最大世代 N 为准）：
+  1. 不存在任何记录 → 获取 `gen-1`，新建工作区世代（`created`）。
+  2. `gen-N.released` 存在，且发布前对其目标世代复查「旧写入者存活检查」通过（见下）→ 获取 `gen-<N+1>`，沿用 `gen-N` 记录的工作区世代（`reused`）。复查不通过或无法完成 → 按判定 5 处理。
+  3. 未释放，且记录不可解析、`pid` 存活或 `pid` 探测报错（无法确认）→ **不同步、不删除**，本次退回一次性临时沙箱（`busy-fallback`）。
+  4. 未释放，且 `pid` 确认不存在（持有者非正常退出）→ 获取 `gen-<N+1>`，**新建空的工作区世代全量同步**（`recovered`）。旧世代中可能仍有父进程退出后存活的测试 / 编译后代在写，CLI 绝不对旧世代同步、改写或删除；旧世代列入 `sandbox.reuse.abandoned`，由用户确认无进程使用后手动清理。旧后代只会写进被弃用的世代，不会进入本轮的基线、审计与回收。
+  5. `gen-N.tainted` 存在（上一轮命令正常结束，但旧写入者存活检查未通过或无法完成），或判定 2 的复查不通过 → 获取 `gen-<N+1>`，新建空的工作区世代全量同步（`recovered`），旧世代列入 `abandoned`，处理与判定 4 相同。
+- **旧写入者存活检查（进程组 + 运行标记，复用与删除的唯一安全事实）**：复用模式下，执行器把命令置于**独立进程组**（POSIX `setsid` / `detached` 语义，`pgid` 即命令 shell 的 pid），并把 CLI 收到的 SIGINT / SIGTERM / SIGHUP 转发给该进程组，终端中断行为与一次性沙箱一致；同时向命令环境注入**运行标记** `OPENLOGOS_SANDBOX_RUN=<目标世代目录绝对路径的 SHA-256 前 16 位>`（`run_tag`）。进程的初始环境块由子进程继承，脱离进程组（`setsid`、Node `spawn(..., {detached:true})`、double-fork 守护化）不会去掉它。某世代的检查**通过**当且仅当两项同时成立：
+  1. `kill(-pgid, 0)` 报告该进程组已无成员；
+  2. 运行标记扫描找不到任何仍存活、初始环境含该世代 `run_tag` 的进程——macOS 以 `ps -E -ww -A -o pid=,command=` 读取同用户进程的初始环境，Linux 读取 `/proc/<pid>/environ`；扫描只匹配完整的 `OPENLOGOS_SANDBOX_RUN=<run_tag>` 片段。
+  - 命令主进程退出、写入审计与回收完成后执行检查：通过 → 写 `released`（记录 `pgid`、`run_tag`）；不通过或任一项无法完成（探测 / 扫描报错）→ **不杀进程、不删除目录**，写 `tainted`；本轮结果照常按本轮规则回收（写入者均属本轮命令），下一轮按判定 5 新建世代，旧世代保留并列入 `abandoned`。
+  - 下一轮在发布锁记录前对 `released` 世代**复查同一检查**（判定 2），覆盖「释放后才启动或才被调度」的旧后代；`--fresh-sandbox` 删除旧世代也以同一复查为唯一条件（§2.91.7）。
+  - 执行器不终止命令留下的后台进程，避免改变用户命令的运行语义；需要它们退出的项目应在测试脚本内自行清理。
+- **释放**：只由持有者在命令结束、写入审计、白名单定点回收与旧写入者存活检查**全部完成后**，以排他创建 `gen-<本世代号>.released` 或 `gen-<本世代号>.tainted` 标记（二者互斥，只写其一）。释放从不删除任何锁记录，旧持有者因此无法使新持有者的锁失效。持有者被强杀则不释放，下次按判定 4 处理。
+- **无法复用的环境**（`state=unsupported`，退回一次性临时沙箱，`sandbox.infos` 给出一条信息级说明，不影响 `sandbox.status`）：`sandbox_root` 所在文件系统不支持 `link()`（如 exFAT）；当前平台不具备进程组探测或运行标记扫描能力（如 Windows）——此时无法完成旧写入者存活检查，为避免每轮都弃用世代累积磁盘，直接不复用。
+- **威胁模型边界**：检查覆盖命令的全部后代，包括脱离进程组的后台进程与守护进程——它们仍带着继承来的运行标记。唯一不覆盖的是**以清空或改写后的环境重新 exec、刻意隐藏来源**的同用户进程；这类进程同样可以在任何沙箱模式下直接改写真实工作区的结果文件，verify 从未、也无法以文件系统手段防御，属于验收器之外的威胁模型。普通测试与构建工具启动的后台进程都在检查范围内，验收结论不依赖用户事后关闭复用。
+
+### 2.91.7 `--fresh-sandbox`
+
+- `openlogos verify` 与 `openlogos smoke` 新增参数 `--fresh-sandbox`。目标世代按「先定目标、再发布」取新名 `ws-<N+1>` 并写入锁记录，发布成功后**新建空的工作区世代**并全量同步（缓存路径从空开始），`reuse.state=fresh`；下一轮普通运行读到的 `gen-<N+1>.ws` 即该新世代，直接复用。
+- 被替换的上一世代**仅当**其最后一次释放为 `released` 且发布前复查「旧写入者存活检查」通过（与判定 2 同一安全事实：进程组已空且无带该世代运行标记的存活进程）时才删除，删除发生在新锁记录发布成功之后；`tainted`、未释放（判定 4、5）或复查不通过时保留并列入 `abandoned`。锁被占用或无法确认时与普通运行一样退回一次性沙箱，绝不删除他人或旧写入者正在使用的世代。
+- `sandbox_reuse=false` 或 `sandbox_mode=off` 时该参数无效果，不报错。
+
+### 2.91.8 可观测性
+
+- JSON 的 `sandbox` 对象新增可选字段 `reuse`（`sandbox_mode=off` 时不出现），字段定义见 `spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」：`{ enabled, state, dir, generation, copied, removed, content_compared, sync_ms, abandoned }`，`state ∈ created | reused | recovered | fresh | busy-fallback | unsupported | disabled`。
+- verify 多阶段（回归 + 增量）时，`sandbox.reuse` 取最后一次执行阶段的值。
+- 文本输出在沙箱摘要下经 `sandbox.infos` 通道以 `ℹ️` 输出一行复用摘要（状态、世代目录、复制 / 删除 / 内容比较数、同步耗时）；存在 `abandoned` 时另起一行列出路径并提示确认无进程使用后手动清理。复用摘要不影响 `sandbox.status`，不进入 `sandbox.diagnostics` 与 `pre_run.diagnostics`。
+- `sandbox.root` 在复用模式下为当前世代目录。
+
+### 2.91.9 零回归边界
+
+- `sandbox_mode=off`：行为与输出逐字不变，不出现 `reuse`。
+- `sandbox_reuse=false`：走一次性临时沙箱，除新增 `reuse: {enabled:false, state:"disabled", …}` 外，行为与输出逐字不变。
+- `busy-fallback` / `unsupported`：一次性临时沙箱的全部行为（含收尾清理与清理失败降级告警）照旧。
+- 门禁判据、结果账本一致性、预跑失败判定、smoke 门禁定义均不变。
+
+### 2.91.10 实现映射
+
+| 能力 | 主要代码路径 | 主要测试路径 |
+|---|---|---|
+| 持久沙箱、镜像同步、世代锁、`reuse` 数据 | `cli/src/lib/sandbox.ts` | `cli/test/s13-sandbox-reuse.test.ts` |
+| 新配置字段归一化 | `cli/src/lib/verify-config.ts` | `cli/test/s13-sandbox-reuse.test.ts` |
+| `--fresh-sandbox` 透传、`reuse` 合并与文本渲染 | `cli/src/commands/verify.ts`、`cli/src/commands/smoke.ts`、`cli/src/index.ts`、`cli/src/i18n.ts` | `cli/test/s13-sandbox-reuse.test.ts`、`cli/test/s19-sandbox-reuse.test.ts` |
+
+### 2.91.11 验收与追溯
+
+- 场景：S13「S13 沙箱复用与增量同步时序」EX-3.5～EX-3.12；S19「smoke 沙箱复用」。
+- 测试：UT-S13-89～UT-S13-100、ST-S13-25、UT-S19-57；安装态 SMOKE-core-239～SMOKE-core-241。
+- 根规范：`spec/cli-json-output.md`「verify / smoke `sandbox.reuse` 沙箱复用字段」；`spec/test-results.md`「沙箱复用配置」。

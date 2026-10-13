@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-13
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **verify / smoke 沙箱复用**（verify-sandbox-reuse-0-16-1）：`sandbox_mode` 为 `auto` / `always` 时默认每项目使用一份持久沙箱，运行前按同步清单增量同步工作区（两侧 ctime 指纹，指纹变化或处于 2 秒 racy 窗口的文件判定内容；保留 mtime 与权限），运行后保留，构建工具的增量编译跨运行生效。
+- 新增配置 `sandbox_reuse`（默认 `true`；`false` 时回到一次性临时沙箱）与 `sandbox_cache_paths`（声明归沙箱所有、跨运行留存的构建产物目录，如 `src-tauri/target`）。
+- 新增参数 `openlogos verify --fresh-sandbox` / `openlogos smoke --fresh-sandbox`：新建空的工作区世代重建沙箱。
+- JSON `sandbox.reuse`：复用状态（`created` / `reused` / `recovered` / `fresh` / `busy-fallback` / `unsupported` / `disabled`）、世代、复制 / 删除 / 内容比较计数、同步耗时与被弃用世代。
+
+### Changed
+
+- 被强杀的 verify / smoke 不再在 `sandbox_root` 下每次累积一次性目录；上一轮命令进程组仍有成员或带运行标记的后代仍存活时，下一轮新建工作区世代，旧世代列入 `sandbox.reuse.abandoned`，由用户确认无进程使用后手动清理。
+- 在 Seatbelt 等嵌套沙箱内（setuid 的 `/bin/ps` 不可执行）无法完成旧写入者存活检查，此时 `reuse.state=unsupported` 并退回一次性沙箱。
+
 ## [0.16.0] - 2026-10-10
 
 0.13.24 之后的首个公开版本，汇总 0.13.25～0.15.20 期间 120 余个提案的成果。这些中间版本只在本地安装，从未发布到 npm；从 0.13.24 升级的用户直接看本节即可，下方各版本条目保留作开发记录。
