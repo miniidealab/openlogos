@@ -11,14 +11,14 @@ Skill 是一个存放在项目 `skills/` 目录下的 Markdown 文件（`SKILL.m
 
 关键特性：
 
-- **与平台无关**：适用于 Claude Code、OpenCode、Codex、Cursor 或任何能读取项目文件的工具
+- **与平台无关**：适用于 Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder、WorkBuddy 或任何能读取项目文件的工具
 - **阶段感知**：每个 Skill 都知道自己属于哪个阶段、期望什么输入
 - **带护栏**：Skill 会强制执行方法论规则（例如「没有测试用例就不要生成代码」）
 - **自包含**：每个 Skill 都包含自己的指令、输出模板和质量检查
 
 ## 内置 Skills
 
-OpenLogos 包含 17 个 Skill，覆盖整个生命周期：
+OpenLogos 包含 18 个 Skill，覆盖整个生命周期。下面按阶段列出主要的 Skill，完整列表见 [Skills 参考](/zh/skills)。
 
 ### Phase 1 —— WHY
 
@@ -54,6 +54,12 @@ OpenLogos 包含 17 个 Skill，覆盖整个生命周期：
 | [`slice-planner`](/zh/skills/slice-planner) | 基于已合并规格与真实测试 ID 规划 spec-complete 后的 `[code]` 切片 |
 | [`merge-executor`](/zh/skills/merge-executor) | 将 delta 文件合并进主文档 |
 
+### 存量项目
+
+| Skill | 用途 |
+|-------|---------|
+| [`brownfield-adopter`](/zh/skills/brownfield-adopter) | 可选：从已有代码库逆向建立可验证的现状基线种子，仅在你明确要求时使用 |
+
 ## Skill 如何被加载
 
 1. 开发者要求 AI 执行某项任务（例如「写需求」）
@@ -65,11 +71,14 @@ OpenLogos 包含 17 个 Skill，覆盖整个生命周期：
 
 | 平台 | 机制 |
 |----------|-----------|
-| Claude Code | 原生 `.claude/` 插件系统 |
-| OpenCode | `hooks/` 与命令集成 |
-| Codex | `.agents/skills/` 加上 `.codex-plugin/` 钩子集成 |
-| Cursor | `.cursor/rules/` 自动附加的、引用 Skill 的规则 |
-| 其他工具 | 以 `AGENTS.md` 作为通用入口 |
+| Claude Code | 原生 `.claude/` 插件系统；Skills 位于 `logos/skills/` |
+| OpenCode | `.opencode/plugins/` 插件与命令集成 |
+| Codex | repo marketplace 插件 `.agents/plugins/openlogos/`，提供 `$openlogos:<skill>` Skills 与 SessionStart hook |
+| Cursor | `.cursor/skills/<name>/SKILL.md` 原生 Agent Skills，外加 `.cursor/hooks.json` 托管条目 |
+| ZCode | `.zcode/plugins/openlogos/` 原生插件（Skills、命令、agents、hooks） |
+| Qoder | `.qoder/plugins/openlogos/` 原生插件（Skills、命令、agents、hooks） |
+| WorkBuddy | `.workbuddy/plugins/openlogos/` 原生插件（Skills、命令、agents、hooks） |
+| 其他工具 | 以 `AGENTS.md` 作为通用入口；Skills 位于 `logos/skills/` |
 
 ## Skill 剖析
 

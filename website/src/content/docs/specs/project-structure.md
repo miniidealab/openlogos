@@ -15,6 +15,9 @@ project-root/
 ├── logos/                      # OpenLogos methodology assets (isolated namespace)
 │   ├── logos.config.json       # Project configuration
 │   ├── logos-project.yaml      # AI collaboration index
+│   ├── .openlogos-guard        # Active change lock (present while a proposal is active)
+│   ├── .openlogos-sync.json    # Stamp written by a successful `openlogos sync`
+│   ├── .openlogos-runtime/     # Guard runtime state (ignored via the .gitignore managed block)
 │   │
 │   ├── resources/              # Development resource documents (current "source of truth")
 │   │   ├── prd/                # Product documents
@@ -33,9 +36,9 @@ project-root/
 │   │   ├── scenario/                      # Phase 3: API orchestration tests (JSON)
 │   │   ├── implementation/                # Phase 3: Implementation manifest
 │   │   ├── verify/                        # Phase 3: Test results + reports (JSONL + Markdown)
-│   │   └── reference/                     # Reference materials (images, context)
+│   │   └── reference/                     # Reference materials: requirement/, todolist/, code/, image/, temp/, note/
 │   │
-│   ├── skills/                 # AI Skills (SKILL.md per skill, 16 built-in)
+│   ├── skills/                 # OpenLogos methodology Skills (Claude Code / OpenCode / Other targets)
 │   │   ├── prd-writer/
 │   │   ├── product-designer/
 │   │   ├── code-implementor/
@@ -47,6 +50,7 @@ project-root/
 │       ├── {change-name}/      # Active change proposal
 │       │   ├── proposal.md
 │       │   ├── tasks.md
+│       │   ├── TEST_SLICE_MANIFEST.json   # Written by `openlogos slice plan`
 │       │   └── deltas/
 │       └── archive/            # Completed change history
 │
@@ -87,7 +91,7 @@ Change proposal workspace. Each feature iteration or bug fix starts with a chang
 
 ### logos/skills/
 
-AI Skill files deployed by `openlogos init` or `openlogos sync`. Each skill is a subdirectory containing a `SKILL.md` file. For Cursor projects, skills are deployed to `.cursor/rules/` instead.
+AI Skill files deployed by `openlogos init` or `openlogos sync` for Claude Code, OpenCode, and Other. Each skill is a subdirectory containing a `SKILL.md` file. Other hosts keep their Skills in their own locations: `.cursor/skills/<name>/SKILL.md` for Cursor, `.agents/plugins/openlogos/skills/` for Codex, and the `skills/` folder of the OpenLogos plugin under `.zcode/plugins/openlogos/`, `.qoder/plugins/openlogos/`, or `.workbuddy/plugins/openlogos/`. Multi-file Skill assets (such as `ui-ux-pro-max`) always live here.
 
 ### logos/spec/
 
@@ -104,7 +108,6 @@ Project configuration file defining document module paths and matching patterns:
   "name": "my-project",
   "locale": "en",
   "aiTool": "claude-code",
-  "lifecycle": "initial",
   "description": "",
   "documents": {
     "prd": { "label": { "en": "Product Docs" }, "path": "./resources/prd", "pattern": "**/*.{md,html,htm,pdf}" },
@@ -115,8 +118,12 @@ Project configuration file defining document module paths and matching patterns:
     "verify": { "label": { "en": "Verify Reports" }, "path": "./resources/verify", "pattern": "**/*.{jsonl,md}" },
     "changes": { "label": { "en": "Change Proposals" }, "path": "./changes", "pattern": "**/*.{md,json}" }
   },
+  "sourceRoots": { "src": ["src"], "test": ["test"] },
   "verify": {
     "result_path": "logos/resources/verify/test-results.jsonl"
+  },
+  "guard": {
+    "unversioned": ["node_modules/", "dist/"]
   }
 }
 ```
@@ -125,10 +132,13 @@ Project configuration file defining document module paths and matching patterns:
 |-------|------|-------------|
 | `name` | string | Project name |
 | `locale` | `"en"` \| `"zh"` | Document language |
-| `aiTool` | string | Primary AI tool (`claude-code`, `opencode`, `cursor`, `other`) |
-| `lifecycle` | `"initial"` \| `"launched"` | Project lifecycle state (deprecated at project level; now per-module in logos-project.yaml) |
+| `aiTool` | string \| string[] | AI tool(s): `claude-code`, `opencode`, `codex`, `cursor`, `zcode`, `qoder`, `workbuddy`, `other`, or `all` |
+| `lifecycle` | `"initial"` \| `"launched"` | Legacy project-level field, no longer written. Lifecycle is per module in `logos-project.yaml`; `openlogos sync` migrates old values |
+| `sourceRoots` | object | Source and test roots (`src`, `test`) |
 | `documents` | object | Document module definitions (path + glob pattern) |
 | `verify.result_path` | string | Custom path for test results JSONL |
+| `guard.unversioned` | string[] | Paths kept out of version control. They are rendered into the `.gitignore` managed block and are outside guard protection. Manage them with [`openlogos ignore`](/cli/ignore-exempt) |
+| `guard.exempt` | string[] | Committed paths that can be written without a proposal. Defaults to `logos/resources/reference/` and baseline-seed staging when omitted. Manage them with [`openlogos exempt`](/cli/ignore-exempt) |
 
 ### logos-project.yaml
 
@@ -177,6 +187,7 @@ All design documents follow the `<module>-<number-or-name>.<ext>` naming pattern
 
 - Test results: `test-results.jsonl` (JSONL format, one case result per line)
 - Acceptance report: `acceptance-report.md` (auto-generated by `openlogos verify`)
+- Slice manifest: `logos/changes/<slug>/TEST_SLICE_MANIFEST.json`, written by `openlogos slice plan`; see [TEST_SLICE_MANIFEST](/specs/test-slice-manifest)
 - See [Test Results Format](/specs/test-results) for the detailed format specification
 
 ## Optional Directories

@@ -8,15 +8,17 @@ description: OpenLogos 命令行接口的参考文档。
 ## 安装
 
 ```bash
-npm install -g @miniidealab/openlogos
+npm install -g @miniidealab/openlogos@latest
 ```
 
 验证：
 
 ```bash
 openlogos --version
-# 0.12.9
+# 0.16.0
 ```
+
+升级 CLI 后，请在每个已有项目中运行 `openlogos sync`，刷新 guard、hooks 与 Skills。
 
 ## 全局选项
 
@@ -24,23 +26,27 @@ openlogos --version
 |--------|-------------|
 | `--help`, `-h` | 显示帮助信息 |
 | `--version`, `-v` | 显示版本号 |
+| `--format json` | 结构化 JSON 输出（多数读取类与门禁类命令支持，如 `status`、`next`、`verify`、`merge`、`change-lint`、`impact`） |
+
+除 `init`（以及在任意目录都可运行的 `detect`）外，命令都必须在项目根目录（`logos/logos.config.json` 所在目录）下运行。
 
 ## 命令参考
 
-### 项目搭建
+### 项目搭建与导航
 
 | 命令 | 说明 |
 |---------|-------------|
 | [`init`](/zh/cli/init) | 初始化一个新的 OpenLogos 项目结构 |
 | [`adopt`](/zh/cli/adopt) | 接入现有项目（bootstrap: adopted） |
-| [`sync`](/zh/cli/sync) | 重新生成 AI 指令文件和 Skills |
-| [`status`](/zh/cli/status) | 显示项目阶段并建议下一步 |
-| [`next`](/zh/cli/next) | 显示最值得执行的单条下一步 |
+| [`sync`](/zh/cli/sync) | 按当前配置重新生成 AI 指令文件、guard、hooks 与 Skills |
+| [`status`](/zh/cli/status) | 显示项目阶段、活跃提案步骤与建议 |
+| [`next`](/zh/cli/next) | 显示最值得执行的单条下一步（`--auto` 为全自动） |
 | [`watch`](/zh/cli/watch) | 实时流式输出派生的 dev-flow 状态（只读） |
-| [`flow show`](/zh/cli/flow-show) | 展示解析后的 dev-flow 编排 |
+| [`flow show`](/zh/cli/flow-show) | 展示内置或应用 overlay 后的 dev-flow 编排 |
 | [`detect`](/zh/cli/detect) | 显示 CLI 版本和项目检测信息 |
 | [`index`](/zh/cli/index-command) | 生成用于重建 `logos-project.yaml` 资源索引的 AI 提示词 |
-| [`module`](/zh/cli/module) | 管理项目模块（list / add / rename / remove） |
+| [`module`](/zh/cli/module) | 管理项目模块（list / add / rename / remove / set-product-type） |
+| [`feature list` / `feature-backfill`](/zh/cli/feature) | 列出功能分组；生成回填功能分组的提示词 |
 
 ### 验证与发布
 
@@ -55,9 +61,19 @@ openlogos --version
 
 | 命令 | 说明 |
 |---------|-------------|
-| [`change`](/zh/cli/change) | 创建变更提案 |
-| [`merge`](/zh/cli/merge) | 为 AI 生成 merge 指令 |
-| [`archive`](/zh/cli/archive) | 归档已完成的变更提案 |
+| [`change`](/zh/cli/change) | 创建变更提案并设置活跃提案 guard |
+| [`change-lint`](/zh/cli/change-lint) | 只读检查提案、tasks 与 delta 是否交付合格（L0～L9） |
+| [`merge`](/zh/cli/merge) | 一次原子调用把规格 delta 合并进主文档；已合并提案可增量修正 |
+| [`slice plan`](/zh/cli/slice) | 依据 `slices.json` 写入 `[code]` 切片与 `TEST_SLICE_MANIFEST.json` |
+| [`archive`](/zh/cli/archive) | 归档已完成的变更提案并释放 guard |
+
+### 规格检查、CI 与保护范围
+
+| 命令 | 说明 |
+|---------|-------------|
+| [`lint-specs`](/zh/cli/lint-specs) | 只读检查测试规格结构（重复 ID / 表格列数 / ID 格式） |
+| [`impact`](/zh/cli/impact) | 判断 git 变更区间是否只是生命周期记账（供 CI 使用） |
+| [`ignore` / `exempt`](/zh/cli/ignore-exempt) | 管理不入版本控制的路径，以及无需立案的已入库路径（`add` / `remove` 须经宿主审批） |
 
 ## 项目生命周期
 
@@ -133,8 +149,13 @@ openlogos launch
 
 # 6. For future changes, use the Delta workflow
 openlogos change fix-redirect-bug
-# ... AI fills proposal + creates deltas ...
-openlogos merge fix-redirect-bug
-# ... AI executes merge ...
+# ... AI 填写提案与 tasks，再编写 delta ...
+openlogos change-lint                      # 交付前必须 exit 0
+openlogos merge fix-redirect-bug           # 一次原子调用，写入 SPEC_MERGED
+openlogos slice plan --file slices.json    # slice-planner 写入 [code] 切片
+# ... AI 实现代码与测试 ...
+openlogos verify                           # Gate 3.6
 openlogos archive fix-redirect-bug
 ```
+
+半自动模式下，`merge`、`verify`、部署、`smoke`、`archive` 与 `git push` 只在你明确授权后执行；`openlogos next --auto` 对整条链路给出 standing 授权（见 [`next`](/zh/cli/next)）。

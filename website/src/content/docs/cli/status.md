@@ -3,7 +3,7 @@ title: "openlogos status"
 description: Display current project phase, deliverables, active change proposals, and suggested next steps.
 ---
 
-Show a dashboard of all 9 phases with completion status, list active change proposals, and suggest the next action. In multi-module projects, also shows per-module phase progress.
+Show a dashboard of every phase with its completion status, list active change proposals, and suggest the next action. In multi-module projects, also shows per-module phase progress.
 
 ## Synopsis
 
@@ -62,10 +62,11 @@ It also scans `logos/changes/` for active change proposals (excluding `archive/`
 🔲  Phase 3-1 · Scenario Modeling
 🔲  Phase 3-2 · API Design
 🔲  Phase 3-2 · Database Design
-🔲  Phase 3-3a · Test Case Design (Unit + Scenario)
-🔲  Phase 3-3b · API Orchestration Tests
-🔲  Phase 3-4 · Code Implementation + Test Code
-🔲  Phase 3-5 · Test Acceptance (verify)
+🔲  Phase 3-3 · Deployment Plan
+🔲  Phase 3-4a · Test Case Design (Unit + Scenario)
+🔲  Phase 3-4b · API Orchestration Tests
+🔲  Phase 3-5 · Code Implementation
+🔲  Phase 3-6 · Test Acceptance (verify)
 ──────────────────────────────────────────────────
 
 🧩 Modules
@@ -130,13 +131,15 @@ openlogos status --module admin
      └─ openapi.yaml
 ✅  Phase 3-2 · Database Design
      └─ schema.sql
-✅  Phase 3-3a · Test Case Design
+✅  Phase 3-3 · Deployment Plan
      └─ ...
-✅  Phase 3-3b · API Orchestration Tests
+✅  Phase 3-4a · Test Case Design (Unit + Scenario)
      └─ ...
-✅  Phase 3-4 · Code Implementation + Test Code
-     └─ (validated via Phase 3-5)
-✅  Phase 3-5 · Test Acceptance (verify)
+✅  Phase 3-4b · API Orchestration Tests
+     └─ ...
+✅  Phase 3-5 · Code Implementation
+     └─ (validated via Phase 3-6)
+✅  Phase 3-6 · Test Acceptance (verify)
      └─ acceptance-report.md
 ──────────────────────────────────────────────────
 
@@ -160,14 +163,37 @@ The proposal step tracks where a change proposal is in its lifecycle:
 
 | Step | Meaning |
 |------|---------|
-| `writing` | `proposal.md` or `tasks.md` still contains template placeholders |
-| `delta-writing` | Proposal filled in; `[delta]` section tasks not yet all checked |
-| `ready-to-merge` | All `[delta]` section tasks checked (or no `[delta]` section) |
-| `merge-generated` | `openlogos merge` has run; `MERGE_PROMPT.md` generated |
-| `coding` | Specs merged (`SPEC_MERGED` exists); `[code]` section tasks not yet all checked |
-| `ready-to-verify` | All `[code]` section tasks checked (or no `[code]` section) |
-| `verify-passed` | `openlogos verify` passed; `VERIFY_PASS` marker written |
-| `verify-failed` | `openlogos verify` failed; `VERIFY_FAIL` marker written |
+| `writing` | `proposal.md` or `tasks.md` is missing, or still fails the plan-package check (template placeholders, missing sections) |
+| `ready-to-delta` | Plan complete; waiting at the `plan-exit` gate (approve the plan before writing deltas) |
+| `delta-writing` | Plan approved; `[delta]` section tasks not yet all checked |
+| `ready-to-merge` | All `[delta]` tasks checked; waiting at `spec-exit` — explicitly request `openlogos merge <slug>` |
+| `spec-complete-required` | No `[delta]` but code is required — run the no-delta `openlogos merge <slug>` to write `SPEC_MERGED` first |
+| `test-id-required` | Specs merged, but no real `UT-*` / `ST-*` / `SMOKE-*` IDs to slice against yet |
+| `ready-to-implement` | Specs merged; `[code]` slices not planned yet, or planned but waiting at `slice-exit` for approval |
+| `coding` | Slices approved (`SLICES_APPROVED`); `[code]` tasks not yet all checked |
+| `ready-to-verify` | All `[code]` tasks checked (or no `[code]` section) — explicitly request `openlogos verify` |
+| `verify-passed` | `openlogos verify` passed (`VERIFY_PASS`) and no deployment is required |
+| `verify-failed` | `openlogos verify` failed (`VERIFY_FAIL`) |
+| `ready-to-deploy` | Verify passed and the proposal requires deployment — deployment needs explicit human authorization |
+| `deploy-done` | Deployment recorded with `openlogos deploy-done`; no smoke required |
+| `ready-to-smoke` | Deployed; explicitly request `openlogos smoke` |
+| `smoke-passed` / `smoke-failed` | `openlogos smoke` result (`SMOKE_PASS` / `SMOKE_FAIL`) |
+| `merge-generated` | Legacy only: shown when a proposal directory still carries a pre-0.15 merge marker and `SPEC_MERGED` is absent. Current `openlogos merge` never produces this step; run `openlogos merge <slug>` to finish the merge |
+
+`merge` is a single atomic call, so there is no intermediate "merge in progress" step: a proposal goes straight from `ready-to-merge` (or `spec-complete-required`) to `test-id-required` / `ready-to-implement` once `SPEC_MERGED` exists.
+
+### Incremental amendment projection (`spec_amend`)
+
+Once a proposal has `SPEC_MERGED`, `openlogos status --format json` adds a read-only `modules[].active_change.spec_amend` object (absent before merge):
+
+| Field | Meaning |
+|-------|---------|
+| `merged_delta_digest` / `current_delta_digest` | Digest of the deltas at the last merge vs. now |
+| `pending` | `true` when the deltas changed since the last merge — rerunning `openlogos merge <slug>` will amend (`result:"amended"`). `null` when no merge baseline exists, which is "cannot tell", not `false` |
+| `blocked_reason` | Why an amendment would be refused: `drift`, `baseline-missing`, `baseline-unreadable`, `create-withdraw`, `prototype-changed`; otherwise `null` |
+| `amend_count` | How many amendments have been applied |
+
+The projection never writes files and does not change `proposal_step`. See [`openlogos merge`](/cli/merge#amending-an-already-merged-proposal).
 
 ## Errors
 
@@ -181,4 +207,4 @@ The proposal step tracks where a change proposal is in its lifecycle:
 - [`init`](/cli/init) — Create the project structure that `status` checks
 - [`module`](/cli/module) — Manage modules (list / add / rename / remove)
 - [`launch`](/cli/launch) — Activate change management (suggested when all phases are done)
-- [`verify`](/cli/verify) — Run the Phase 3-5 verification check
+- [`verify`](/cli/verify) — Run Gate 3.6 acceptance (Phase 3-6)

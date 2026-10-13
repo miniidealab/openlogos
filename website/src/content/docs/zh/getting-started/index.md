@@ -3,7 +3,7 @@ title: 简介
 description: OpenLogos 是什么、它解决什么问题、如何运作，以及包含哪些内容。
 ---
 
-**OpenLogos** 是一套面向 AI 时代的开源软件工程方法论。它通过在开发的每个阶段提供结构化、明确的上下文，把 AI 编码工具——Claude Code、OpenCode、Codex、Cursor 等——从"猜测机器"转变为精密工具。
+**OpenLogos** 是一套面向 AI 时代的开源软件工程方法论。它通过在开发的每个阶段提供结构化、明确的上下文，把 AI 编码工具——Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder、WorkBuddy 等——从"猜测机器"转变为精密工具。
 
 ## 问题所在：凭感觉编码（Vibe Coding）
 
@@ -65,15 +65,15 @@ OpenLogos 为 AI 提供完整的全貌——需求、设计、API 规格、测�
 ```
 
 1. 你运行 `openlogos init` 创建项目结构
-2. 在你的 AI 编码工具中打开项目（Claude Code、OpenCode、Codex、Cursor 等）
+2. 在你的 AI 编码工具中打开项目（Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder、WorkBuddy 等）
 3. AI 读取 `AGENTS.md`，检测当前阶段，并加载合适的 Skill
 4. 你与 AI 一起逐阶段协作——它会遵循 Skill 定义的结构化流程
 5. 每个阶段产出的制品成为下一阶段的上下文
-6. `openlogos verify` 依据验收标准校验最终结果
+6. `openlogos verify` 依据你设计的测试用例核对测试结果（Gate 3.6）
 
 ## AI Skills
 
-Skills 是与平台无关的 Markdown 文件（`SKILL.md`），为 AI 提供每项任务的操作指令。OpenLogos 内置 **16 个 Skill**：
+Skills 是与平台无关的 Markdown 文件（`SKILL.md`），为 AI 提供每项任务的操作指令。OpenLogos 内置以下 Skill：
 
 | 阶段 | Skills |
 |-------|--------|
@@ -81,13 +81,14 @@ Skills 是与平台无关的 Markdown 文件（`SKILL.md`），为 AI 提供每�
 | **WHAT**（设计） | `product-designer`、`ui-ux-pro-max` |
 | **HOW**（实现） | `architecture-designer`、`scenario-architect`、`api-designer`、`db-designer`、`deployment-designer`、`test-writer`、`test-orchestrator`、`code-implementor`、`code-reviewer` |
 | **部署** | `deployment-executor` |
-| **跨阶段** | `change-writer`、`merge-executor` |
+| **跨阶段** | `change-writer`、`merge-executor`、`slice-planner` |
+| **已有项目（可选）** | `brownfield-adopter` |
 
 Skills 可与任何能读取项目文件的 AI 工具配合使用。没有厂商锁定。[完整 Skills 参考 →](/zh/skills)
 
 ## CLI
 
-`openlogos` CLI 提供 14 个顶层命令，用于项目生命周期管理：
+`openlogos` CLI 提供一组顶层命令，用于项目生命周期管理。最常用的有：
 
 | 命令 | 用途 |
 |---------|---------|
@@ -96,12 +97,16 @@ Skills 可与任何能读取项目文件的 AI 工具配合使用。没有厂商
 | `sync` | 同步指令文件、Skills、规格和工具集成 |
 | `status` | 显示当前阶段和进度 |
 | `next` | 显示最值得执行的单一下一步 |
-| `verify` | 依据验收标准校验测试结果（Gate 3.6） |
+| `verify` | 依据设计好的测试用例核对测试结果（Gate 3.6） |
+| `deploy-done` | 标记活跃提案的部署已完成（Gate 3.7） |
 | `smoke` | 校验部署后的健康状况（Gate 3.8） |
 | `launch` | 在验证通过后激活变更管理 |
 | `change` | 创建变更提案（delta） |
-| `merge` | 将已批准的变更合并到主制品 |
+| `change-lint` | 只读检查活跃提案的 proposal / tasks / delta |
+| `merge` | 一次调用、原子地把规格 delta 合并进基线 |
+| `slice plan` | 把已合并提案的 `[code]` 切片写入 `tasks.md` |
 | `archive` | 归档已完成的变更提案 |
+| `ignore` / `exempt` | 管理哪些路径不进版本控制、哪些路径无需立案 |
 | `detect` | 显示 CLI 版本和项目检测信息 |
 | `index` | 生成可供 AI 使用的提示词以重建资源索引 |
 | `module` | 管理项目模块 |
@@ -114,10 +119,11 @@ Skills 可与任何能读取项目文件的 AI 工具配合使用。没有厂商
 
 1. `openlogos change <slug>` —— 创建一个带影响分析的提案
 2. 编写 `proposal.md`（改了什么、为什么改）和 `tasks.md`（基于阶段的清单）
-3. 为受影响的制品产出 delta 文件
-4. `openlogos merge` —— 将 delta 应用到主制品
-5. 实现代码 + 运行测试
-6. `openlogos archive` —— 关闭提案
+3. 为受影响的制品产出 delta 文件（写作过程中用 `openlogos change-lint` 检查）
+4. `openlogos merge <slug>` —— 一次调用、原子地把全部 delta 应用到主制品
+5. 规划 `[code]` 切片（`openlogos slice plan --file <slices.json>`），再逐片实现代码 + 测试
+6. `openlogos verify` —— 验收门禁（Gate 3.6）
+7. `openlogos archive <slug>` —— 关闭提案
 
 关键洞见：**影响分析会评估整个制品链上的连锁反应**——需求、设计、API、DB、测试、代码。没有任何制品会失去同步。这正是结构化迭代区别于"改完代码就把文档抛在脑后"的地方。
 
@@ -147,14 +153,20 @@ OpenLogos 与工具无关。内置对以下平台的集成支持：
 
 | 平台 | 集成机制 |
 |----------|----------------------|
-| **Claude Code** | 原生 `.claude/` 插件系统 |
-| **OpenCode** | `hooks/` 和命令集成 |
+| **Claude Code** | 原生 `.claude/` 命令、agent 与 hooks（SessionStart 上下文、PreToolUse 写入门禁、执行后检查） |
+| **OpenCode** | `.opencode/plugins/` 插件与 `.opencode/commands/` 斜杠命令 |
 | **Codex** | `.agents/skills/` 加 `.codex-plugin/` 钩子集成 |
-| **Cursor** | `.cursor/rules/` 自动附加规则 |
+| **Cursor** | `.cursor/skills/` Agent Skills、`.cursor/agents/` subagent、`.cursor/hooks.json`（部分强度门禁：`beforeShellExecution` / `afterShellExecution` / `afterFileEdit`） |
+| **ZCode** | 项目插件 `.zcode/plugins/openlogos/`（Skills、命令、agent、SessionStart + PreToolUse hooks） |
+| **Qoder** | 项目插件 `.qoder/plugins/openlogos/`（Skills、命令、agent、SessionStart + PreToolUse hooks） |
+| **WorkBuddy** | 项目插件 `.workbuddy/plugins/openlogos/`（Skills、命令、agent、SessionStart + PreToolUse hooks） |
 | **其他工具** | `AGENTS.md` 作为通用入口 |
+
+各宿主写入门禁的行为差异见 [PreToolUse Guard](/zh/specs/pretooluse-guard)。
 
 ## 后续步骤
 
 - **[快速开始](/zh/getting-started/quick-start)** —— 10 分钟内安装并创建你的第一个项目
+- **[从 0.13.x 升级](/zh/getting-started/upgrade-from-0-13)** —— 已在用 0.13.x？按升级指南迁移到 0.16.0
 - **[首次 AI 协作](/zh/getting-started/first-collaboration)** —— 完整走一遍开发流程
 - **[导览](/zh/tour)** —— 看看 OpenLogos 在真实项目中的应用（FlowTask + Money-Log）

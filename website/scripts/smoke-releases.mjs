@@ -27,6 +27,21 @@ const WEBSITE_SMOKE_IDS = new Set([
   'SMOKE-core-37',
 ]);
 
+// website-docs-0-16-0（code 评审 r1 F3）：本案验收窗口内，SMOKE-core-07 / 08 / 21 / 23 由
+// scripts/smoke-website-docs-0-16-0.js 按生产站点执行并以各自 ID 记账。此时本脚本仍按本地构建做断言，
+// 但不为这四个 ID 写结果、也不删除生产 runner 已写的记录，保证正式账本每个 ID 只有一条来自生产的结果。
+// 窗口：活跃提案为 website-docs-0-16-0，或 OPENLOGOS_WEBSITE_DOCS_SMOKE=1（logos/ 不入库，CI 永不在窗口内）。
+const PRODUCTION_DEFERRED_IDS = new Set(['SMOKE-core-07', 'SMOKE-core-08', 'SMOKE-core-21', 'SMOKE-core-23']);
+function productionDocsWindow() {
+  if (process.env.OPENLOGOS_WEBSITE_DOCS_SMOKE === '1') return true;
+  try {
+    return JSON.parse(readFileSync(resolve(ROOT, '../logos/.openlogos-guard'), 'utf-8')).activeChange === 'website-docs-0-16-0';
+  } catch {
+    return false;
+  }
+}
+const DEFERRED_IDS = productionDocsWindow() ? PRODUCTION_DEFERRED_IDS : new Set();
+
 function removePreviousWebsiteResults() {
   mkdirSync(dirname(RESULT_PATH), { recursive: true });
   if (!existsSync(RESULT_PATH)) {
@@ -39,7 +54,7 @@ function removePreviousWebsiteResults() {
       if (!line.trim()) return false;
       try {
         const item = JSON.parse(line);
-        return !WEBSITE_SMOKE_IDS.has(item.id);
+        return !WEBSITE_SMOKE_IDS.has(item.id) || DEFERRED_IDS.has(item.id);
       } catch {
         return true;
       }
@@ -48,6 +63,10 @@ function removePreviousWebsiteResults() {
 }
 
 function report(id, status, scenario, error) {
+  if (DEFERRED_IDS.has(id)) {
+    console.log(`${id}: 本地构建判定 ${status}（不记账：本案窗口内由 scripts/smoke-website-docs-0-16-0.js 按生产站点记录）`);
+    return;
+  }
   mkdirSync(dirname(RESULT_PATH), { recursive: true });
   const line = {
     id,

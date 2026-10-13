@@ -17,6 +17,7 @@ import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
   - [OpenCode](https://opencode.ai)（基于终端）
   - [Codex CLI](https://help.openai.com/en/collections/13193998-codex-cli)（基于终端）
   - [Cursor](https://cursor.sh)（内置 AI 的 IDE）
+  - ZCode、Qoder CLI 或 WorkBuddy（以项目插件形式接入）
 
 ## 第 1 步：安装
 
@@ -24,17 +25,29 @@ import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
 npm install -g @miniidealab/openlogos
 ```
 
-验证安装：
+验证安装——本指南基于 `0.16.0` 编写：
 
 ```bash
 openlogos --version
 ```
 
+:::note[升级已有安装？]
+如果你已经在用 OpenLogos 0.13.x，请改看[从 0.13.x 升级](/zh/getting-started/upgrade-from-0-13)——每个已有项目还需要执行一次 `openlogos sync`。
+:::
+
 ## 第 2 步：初始化项目
 
 运行 init 命令——它会让你选择语言和 AI 工具：
 
-当你希望一个项目同时部署 Claude Code、OpenCode、Codex 和 Cursor 的目标时，选择 **All**。
+选项 7～9 分别对应 ZCode、Qoder 和 WorkBuddy。当你希望一个项目同时部署所有支持的目标（Claude Code、OpenCode、Codex、Cursor、ZCode、Qoder、WorkBuddy）时，选择 **All**。下面的输出有删节；另外几行（例如检测到技术栈时的忽略目录建议、`verify.pre_run_command` 提醒）是否出现取决于你的目录。
+
+如需跳过交互（例如在脚本或 CI 中），同时传入两个参数：
+
+```bash
+openlogos init my-project --locale zh --ai-tool cursor
+```
+
+`--ai-tool` 可取 `claude-code`、`opencode`、`codex`、`cursor`、`zcode`、`qoder`、`workbuddy`、`other` 或 `all`。非交互模式下必须提供 `--locale`。
 
 <Tabs>
 <TabItem label="Claude Code">
@@ -54,6 +67,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   4. Cursor
   5. Other
   6. All (deploy for all tools)
+
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
 
 Your choice [1/2/3/4/5/6] (default: 1): 1
 
@@ -75,18 +92,17 @@ Creating OpenLogos project structure for "my-project"...
   ✓ logos/logos-project.yaml
   ✓ AGENTS.md
   ✓ CLAUDE.md
-  ✓ 16 skills deployed to logos/skills/
-  ✓ 13 specs deployed to logos/spec/
+  ✓ 17 skills deployed to logos/skills/
+  ✓ Claude Code plugin deployed: 10 commands, 1 agents → .claude/
+  ✓ 24 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
   2. Start with Phase 1: tell AI "Help me write requirements"
   3. Run `openlogos status` to check progress at any time
-
-💡 Claude Code users: install the native plugin for the best experience:
-  /plugin marketplace add miniidealab/openlogos
-  /plugin install openlogos@miniidealab-openlogos
 ```
+
+`init` 会把 Claude Code 命令、`change-reviewer` agent 和 hooks（SessionStart 上下文、PreToolUse 写入门禁、执行后检查）直接写入项目的 `.claude/` 目录，无需另行安装插件。
 </TabItem>
 <TabItem label="OpenCode">
 ```
@@ -105,6 +121,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   4. Cursor
   5. Other
   6. All (deploy for all tools)
+
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
 
 Your choice [1/2/3/4/5/6] (default: 1): 2
 
@@ -126,11 +146,11 @@ Creating OpenLogos project structure for "my-project"...
   ✓ logos/logos-project.yaml
   ✓ AGENTS.md
   ✓ CLAUDE.md
-  ✓ 16 skills deployed to logos/skills/
+  ✓ 17 skills deployed to logos/skills/
   ✓ OpenCode plugin deployed to .opencode/plugins/openlogos.js + opencode.json
   ✓ opencode.json created with recommended permission defaults
   ✓ OpenCode slash commands deployed to .opencode/commands/ (10 files)
-  ✓ 13 specs deployed to logos/spec/
+  ✓ 24 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
@@ -156,6 +176,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   5. Other
   6. All (deploy for all tools)
 
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
+
 Your choice [1/2/3/4/5/6] (default: 1): 4
 
 Creating OpenLogos project structure for "my-project"...
@@ -176,8 +200,9 @@ Creating OpenLogos project structure for "my-project"...
   ✓ logos/logos-project.yaml
   ✓ AGENTS.md
   ✓ CLAUDE.md
-  ✓ 16 skills deployed to .cursor/rules/
-  ✓ 13 specs deployed to logos/spec/
+  ✓ Cursor assets installed: <N> skills + <N> commands + 1 subagent, hooks (sessionStart, beforeShellExecution, afterShellExecution, afterFileEdit); start a new Cursor session to load refreshed skills and hooks
+  ℹ Guard strength on Cursor (IDE and cursor-agent CLI) is partial: shell commands get a light pre-check via beforeShellExecution (guard-scope changes need host approval) plus an afterShellExecution post-check; file edits are only reported after the fact via afterFileEdit and are never blocked beforehand. OpenLogos does not wire preToolUse, so Cursor is not equivalent to claude-code.
+  ✓ 24 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
@@ -186,6 +211,8 @@ Project initialized. Next steps:
 ```
 </TabItem>
 </Tabs>
+
+Cursor 输出中的 `<N>` 表示实际部署到 `.cursor/skills/` 的 Skill 与命令 Skill 数量（中文 locale 下这一行为「Cursor 三件套已安装：……」）。选择 ZCode、Qoder 或 WorkBuddy 时，OpenLogos 插件分别安装到 `.zcode/plugins/openlogos/`、`.qoder/plugins/openlogos/` 或 `.workbuddy/plugins/openlogos/`；之后请在对应工具中新建 session，使插件快照生效。
 
 现在进入项目并查看状态：
 
@@ -204,10 +231,13 @@ openlogos status
 🔲  Phase 3-1 · Scenario Modeling
 🔲  Phase 3-2 · API Design
 🔲  Phase 3-2 · Database Design
-🔲  Phase 3-3a · Test Case Design (Unit + Scenario)
-🔲  Phase 3-3b · API Orchestration Tests
-🔲  Phase 3-4 · Code Implementation + Test Code
-🔲  Phase 3-5 · Test Acceptance (verify)
+🔲  Phase 3-3 · Deployment Plan
+🔲  Phase 3-4a · Test Case Design (Unit + Scenario)
+🔲  Phase 3-4b · API Orchestration Tests
+🔲  Phase 3-5 · Code Implementation
+🔲  Phase 3-6 · Test Acceptance (verify)
+🔲  Phase 3-7 · Deployment Execution
+🔲  Phase 3-8 · Deployment Smoke Test
 ──────────────────────────────────────────────────
 
 💡 Suggested next step: Phase 1 · Requirements (WHY)
@@ -250,13 +280,20 @@ OpenCode 读取项目配置并显示一份详细的概览：
 它会展示项目结构、检测当前阶段，甚至准确告诉你需要回答哪些问题才能开始。
 </TabItem>
 <TabItem label="Cursor">
-在 Cursor 中打开 `my-project` 文件夹。12 条 OpenLogos 规则会从 `.cursor/rules/` 自动加载——无需手动配置。
+在 Cursor 中打开 `my-project` 文件夹（或在其中运行 `cursor-agent`）。OpenLogos Skills 从 `.cursor/skills/` 加载（显式命令以 `/openlogos-<command>` 触发），`change-reviewer` subagent 从 `.cursor/agents/` 加载，hooks 从 `.cursor/hooks.json` 加载——无需手动配置。如果 Cursor 已经打开，请在 `init` 或 `sync` 之后新建 session。
+
+Cursor 下的写入门禁为部分强度：shell 命令有事前轻判（`beforeShellExecution`）和执行后检查（`afterShellExecution`）；文件编辑只在事后报告（`afterFileEdit`）。详见 [PreToolUse Guard](/zh/specs/pretooluse-guard)。
 
 让 AI 审阅项目，它就会向你展示完整的阶段推进：
 
 ![Cursor 检测到 OpenLogos 项目](/docs/quickstart/cursor-overview.jpg)
 
 AI 检测出所有阶段，展示每一步对应的目录，并建议从 Phase 1 开始。
+</TabItem>
+<TabItem label="ZCode / Qoder / WorkBuddy">
+在 `my-project` 目录中新建该工具的 session。`.zcode/plugins/openlogos/`、`.qoder/plugins/openlogos/` 或 `.workbuddy/plugins/openlogos/` 下的 OpenLogos 插件提供 Skills、命令和 agent；它的 SessionStart hook 注入当前阶段，PreToolUse hook 执行写入门禁。`init` 还会把宿主专属指令写入根 `AGENTS.md` 的 OpenLogos 托管区块。
+
+让 AI 审阅项目，它会展示阶段推进并建议从 Phase 1 开始。
 </TabItem>
 </Tabs>
 
@@ -317,8 +354,8 @@ Phase 1 被标记为 **Done**。AI 确认：
 
 - **理解核心概念** —— 阅读[核心概念](/zh/concepts/three-layer-model)，理解 WHY → WHAT → HOW 模型、场景驱动开发和测试先行方法论。
 
-- **探索工具链** —— 查看 [CLI 参考](/zh/cli) 了解全部 14 个顶层命令，以及 [Skills 参考](/zh/skills) 了解全部 16 个 AI Skill。
+- **探索工具链** —— 查看 [CLI 参考](/zh/cli) 了解全部顶层命令，以及 [Skills 参考](/zh/skills) 了解全部内置 AI Skill。
 
 :::tip[更进一步：首次 AI 协作]
-准备好超越 Phase 1 了吗？[首次 AI 协作](/zh/getting-started/first-collaboration)指南会带你走完**完整旅程**——从需求到架构、API 设计、测试用例、代码生成，再到 Gate 3.5 验证——端到端构建一个真实的短链接服务。
+准备好超越 Phase 1 了吗？[首次 AI 协作](/zh/getting-started/first-collaboration)指南会带你走完**完整旅程**——从需求到架构、API 设计、测试用例、代码生成，再到 Gate 3.6 验证——端到端构建一个真实的短链接服务。
 :::

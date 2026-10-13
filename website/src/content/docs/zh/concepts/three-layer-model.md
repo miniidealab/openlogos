@@ -37,18 +37,19 @@ description: "WHY → WHAT → HOW：消除 AI 辅助开发中模糊性的结构
 
 ## Phase 3 —— HOW（实现）
 
-用 6 个精确步骤构建解决方案。场景驱动、测试先行。AI 在完整上下文下生成代码。
+用 7 个精确步骤构建解决方案。场景驱动、测试先行。AI 在完整上下文下生成代码。
 
 | Step | 活动 | Skill |
 |------|----------|-------|
 | 0 | 架构总览与技术选型 | [`architecture-designer`](/zh/skills/architecture-designer) |
 | 1 | 场景 → 时序图 → API 浮现 | [`scenario-architect`](/zh/skills/scenario-architect) |
 | 2 | API 规格（OpenAPI YAML）+ DB schema | [`api-designer`](/zh/skills/api-designer)、[`db-designer`](/zh/skills/db-designer) |
-| 3 | 测试用例设计（先于代码！） | [`test-writer`](/zh/skills/test-writer)、[`test-orchestrator`](/zh/skills/test-orchestrator) |
-| 4 | 业务代码 + 测试代码生成 | [`code-implementor`](/zh/skills/code-implementor)、[`code-reviewer`](/zh/skills/code-reviewer)（事后审查） |
-| 5 | `openlogos verify` → 自动化验收 | — |
+| 3 | 部署方案与 smoke 策略 | [`deployment-designer`](/zh/skills/deployment-designer) |
+| 4 | 测试用例设计（先于代码！） | [`test-writer`](/zh/skills/test-writer)、[`test-orchestrator`](/zh/skills/test-orchestrator) |
+| 5 | 业务代码 + 测试代码生成 | [`code-implementor`](/zh/skills/code-implementor)、[`code-reviewer`](/zh/skills/code-reviewer)（事后审查） |
+| 6 | `openlogos verify` → 自动化验收 | — |
 
-**质量关卡（Gate 3.5）：** 全部测试通过、设计时覆盖率 100%、验收标准可追溯。
+**质量关卡（Gate 3.6）：** `openlogos verify` 通过——结果账本一致、零失败、零未覆盖用例。
 
 ## 阶段检测
 
@@ -57,9 +58,11 @@ OpenLogos CLI 和 `AGENTS.md` 通过扫描 `logos/resources/` 目录自动检测
 ```
 logos/resources/prd/1-product-requirements/  → empty? → Phase 1
 logos/resources/prd/2-product-design/        → empty? → Phase 2
-logos/resources/prd/3-technical-plan/        → empty? → Phase 3 Step 0
-logos/resources/api/                         → empty? → Phase 3 Step 2
-logos/resources/test/                        → empty? → Phase 3 Step 3
+logos/resources/prd/3-technical-plan/1-architecture/            → empty? → Phase 3 Step 0
+logos/resources/prd/3-technical-plan/2-scenario-implementation/ → empty? → Phase 3 Step 1
+logos/resources/api/                                            → empty? → Phase 3 Step 2
+logos/resources/prd/3-technical-plan/3-deployment/              → empty? → Phase 3 Step 3
+logos/resources/test/                                           → empty? → Phase 3 Step 4
 ```
 
 当开发者问 AI「我接下来该做什么？」时，AI 会读取 `AGENTS.md`，检测当前阶段，并给出具体的下一步建议。

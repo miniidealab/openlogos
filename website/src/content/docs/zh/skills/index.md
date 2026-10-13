@@ -1,9 +1,9 @@
 ---
 title: Skills 总览
-description: 全部 17 个 OpenLogos 内置 AI Skill 的参考文档。
+description: 全部 18 个 OpenLogos 内置 AI Skill 的参考文档。
 ---
 
-OpenLogos 内置 **17 个 AI Skill** —— 它们是结构化的 Markdown 指令文件（`SKILL.md`），引导 AI 编码工具走完开发生命周期的每个阶段。Skill 在 `openlogos init` 时自动部署，并通过 `openlogos sync` 同步。
+OpenLogos 内置 **18 个 AI Skill** —— 它们是结构化的 Markdown 指令文件（`SKILL.md`），引导 AI 编码工具走完开发生命周期的每个阶段。Skill 在 `openlogos init` 时自动部署，并通过 `openlogos sync` 同步。
 
 ## Skill 的工作方式
 
@@ -52,6 +52,12 @@ Skill 的组织遵循 OpenLogos 的**三层推进模型**（WHY → WHAT → HOW
 | [`slice-planner`](/zh/skills/slice-planner) | 基于已合并规格与真实测试 ID 规划 spec-complete 后的 `[code]` 切片 | merge / no-delta spec-complete 之后、代码实现之前 |
 | [`merge-executor`](/zh/skills/merge-executor) | 将 delta 文件合并进主文档 | `openlogos merge <slug>` 之后 |
 
+## 存量项目
+
+| Skill | 用途 | 触发条件 |
+|-------|---------|---------|
+| [`brownfield-adopter`](/zh/skills/brownfield-adopter) | 可选：从已有代码库逆向建立可验证的现状基线种子（系统地图 + 场景候选），经 `openlogos baseline-seed` 提交 | 仅在你明确要求预先扫描全库时使用；不会因为 `openlogos adopt` 完成而自动触发 |
+
 ## 设计智能
 
 | Skill | 用途 | 触发条件 |
@@ -66,7 +72,11 @@ Skill 的组织遵循 OpenLogos 的**三层推进模型**（WHY → WHAT → HOW
 |---------|---------------|
 | Claude Code | `logos/skills/`（原生插件） |
 | OpenCode | `logos/skills/`（hooks 集成） |
-| Codex | `.agents/skills/`（原生 Codex Skills） |
-| Cursor | `.cursor/rules/`（规则文件） |
+| Codex | `.agents/plugins/openlogos/skills/`（`$openlogos:<skill>` 原生 Codex Skills） |
+| Cursor | `.cursor/skills/<name>/SKILL.md`（原生 Agent Skills） |
+| ZCode | `.zcode/plugins/openlogos/skills/`（原生插件） |
+| Qoder | `.qoder/plugins/openlogos/skills/`（原生插件） |
+| WorkBuddy | `.workbuddy/plugins/openlogos/skills/`（原生插件） |
+| Other | `logos/skills/` |
 
-更新后运行 `openlogos sync` 可重新部署 Skill。
+多文件 Skill 的附属资产（如 `ui-ux-pro-max`）始终放在 `logos/skills/` 下。更新后运行 `openlogos sync` 可重新部署 Skill。各宿主收到的完整文件清单见 [`init`](/zh/cli/init#skills-部署)。

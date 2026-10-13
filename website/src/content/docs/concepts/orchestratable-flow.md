@@ -29,13 +29,13 @@ Once a project is launched, every change proposal flows through seven subflows:
 |---|---------|--------------|------|
 | 1 | **plan** | Write `proposal.md` + split `tasks.md` into `[delta]` / `[deploy]` | human, skippable (`plan-exit`) |
 | 2 | **spec** | Write the `[delta]` spec change (`when: delta_required`) | human, skippable (`spec-exit`) |
-| 3 | **merge** | Generate `MERGE_PROMPT` and apply the delta (`when: delta_required`) | none |
+| 3 | **merge** | One `openlogos merge` call composes and writes the deltas atomically and writes `SPEC_MERGED` (`when: delta_required`; nodes `generate-merge-prompt` — a historical id — and `apply-merge`) | none |
 | 4 | **slice** | Plan `[code]` slices from the merged spec (`when: code_required`) | human, skippable (`slice-exit`) |
 | 5 | **implement** | `code` + `verify`, default slice loop until all slices green | none |
 | 6 | **deliver** | `deploy` + `smoke` (each guarded by its own `when`) | human, entry, skippable (`deliver-entry`) |
 | 7 | **close** | `archive` | none |
 
-Pure-code proposals (no `[delta]`) skip **spec** and **merge**; pure-docs proposals (no `[code]`) skip **slice**. The stages that don't apply to a given proposal drop out via their subflow-level `when`.
+Pure-code proposals (no `[delta]`) skip the **spec** and **merge** subflows, but still run a no-delta `openlogos merge <slug>` to write `SPEC_MERGED` (spec-complete) before slicing — until then the step is `spec-complete-required`. Pure-docs proposals (no `[code]`) skip **slice**. The stages that don't apply to a given proposal drop out via their subflow-level `when`. Run [`openlogos flow show`](/cli/flow-show) to see the exact node list of your version.
 
 ## Gates
 
@@ -82,7 +82,7 @@ The same flow supports two authorization tiers, chosen by the host at runtime.
 
 **Semi-automatic (default, no `--auto`).** `merge`, `verify`, deployment, `smoke`, `archive`, and `git push` are **human confirmation points**. AI does not run them without explicit authorization. Every human gate behaves exactly as declared.
 
-**Full-automatic / unattended (`openlogos next --auto`).** Choosing `--auto` is a one-time, **standing, run-scoped authorization** to run the proposal end-to-end. Beyond auto-passing `skippable: true` flow gates, the standing authorization also lets AI **automatically execute the CLI seal/publish steps that come *after code is green*** — `verify`, `smoke`, `archive`, and `git push`. (`git push` needs no marker: the PreToolUse guard's safety allowlist already permits it.) Each auto-pass **appends an append-only audit line** to `GATE_AUTO_PASSED` in the proposal directory — an audit trail, not a state source.
+**Full-automatic / unattended (`openlogos next --auto`).** Choosing `--auto` is a one-time, **standing, run-scoped authorization** to run the proposal end-to-end. Beyond auto-passing `skippable: true` flow gates (`plan-exit`; `spec-exit`, after which the driver runs the merge; `slice-exit`; and `deliver-entry`, after which it deploys), the standing authorization also lets AI **automatically execute the CLI seal/publish steps that come *after code is green*** — `verify`, `smoke`, `archive`, and `git push`. (`git push` needs no marker: standalone `git` invocations are not treated as protected writes by the guard.) The standing authorization never covers changing the guard's protection scope (`openlogos ignore|exempt add|remove`), which always needs the host's own approval prompt. Each auto-pass **appends an append-only audit line** to `GATE_AUTO_PASSED` in the proposal directory — an audit trail, not a state source.
 
 **Hard red line (both tiers):** `loop-exhausted` — unconverged code that hit the iteration limit without passing tests — **blocks in every mode, including `--auto`.** Full-auto ships verified results; it never ships untested code.
 

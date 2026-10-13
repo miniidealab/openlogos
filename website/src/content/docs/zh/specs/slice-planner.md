@@ -1,6 +1,6 @@
 ---
 title: 切片规划（Slice Planner）
-description: merge 之后如何规划 [code] 切片——六维打分、垂直/横向判别器、删后续证伪门。
+description: merge 之后如何规划 [code] 切片——六维打分、垂直/横向判别器、删后续证伪门，并用 openlogos slice plan 落盘。
 ---
 
 切片规划规范定义了变更提案的 `[code]` 实现工作在规格 merge 之后如何被拆成**良构切片**。在 launched 变更下，这是 `[code]` 切片的**唯一事实源**——切几片、每片做什么，**只在此处用六维打分 + 删后续证伪门决定一次**。下游 `code-implementor` 只逐行消费，绝不重复打分、不再自行分批。
@@ -22,7 +22,13 @@ description: merge 之后如何规划 [code] 切片——六维打分、垂直/�
 
 ## 唯一交付物
 
-`tasks.md` 的 `## [code]` section——一组**过了删后续证伪门**的良构切片，每条末尾标注其覆盖的真实 `UT-Sxx-..` / `ST-Sxx-..`。切片规划**不**产 `proposal.md`、`[delta]`、`[deploy]`（那是 `change-writer` 的职责），**不**写业务代码（那是 `code-implementor` 的职责）。
+结构化的 **`slices.json`**：一组**过了删后续证伪门**的良构切片。每片含 `slice_id`、`task_text`（末尾标注覆盖的真实 `UT-Sxx-..` / `ST-Sxx-..`）、`owned_test_ids`、`runner_selectors`、`spec_targets`。
+
+切片规划是切片内容的**生产者**，不是正式产物的**写入者**。`tasks.md` 的 `## [code]` 段与 `TEST_SLICE_MANIFEST.json` 由 `openlogos slice plan --file <slices.json>` 在一次受校验的调用内写出（见 [`openlogos slice`](/zh/cli/slice)）。不要手工编辑 `[code]` 或 manifest：`owned_test_ids` 决定 verify 的验收范围，只能来自 CLI 写出的 manifest，不能从正文推断。
+
+**不存在切片事务**：没有 content slot，没有 seal / apply / recover / abort / reopen 等步骤，也没有相位。看到指向这些命令的指引，按过期文档处理。
+
+切片规划**不**产 `proposal.md`、`[delta]`、`[deploy]`（那是 `change-writer` 的职责），**不**写业务代码（那是 `code-implementor` 的职责）。
 
 ## Step 1 — 读已合并规格 + 真实测试 ID
 
@@ -53,20 +59,20 @@ description: merge 之后如何规划 [code] 切片——六维打分、垂直/�
 
 拟好 N 片后，**逐片**自问两题：
 
-- **(a) 删后续能否独立过全量 verify**：把切片 i+1..N 全部删掉、只做切片 i，`openlogos verify`（永远全量回归）能绿吗？
+- **(a) 删后续能否独立过 verify**：把切片 i+1..N 全部删掉、只完成切片 1..i，`openlogos verify` 能绿吗？verify 始终包含基线回归测试；切片 checkpoint 时再加上切片 1..i 拥有的测试，最终验收则检查全部测试。
 - **(b) 是否端到端可观察**：切片 i 做完是否产生了一条端到端、可观察的能力，而不只是给后续片铺管道 / 接线？
 
 任一题答「否」 → 切片 i **不自闭环** → **向前合并**进依赖它的那一片，重跑本门。
 
-> **为什么是这道门**：切片只 scope `code` 的上下文注入、**不 scope verify**。一个「地基片」（铺好没人用，(b) 否）或「前向依赖片」（逻辑依赖还没落地的后续片，(a) 否）做完跑全量 verify 必然飘红，循环无法出环，会死锁在 `verify-failed`。删后续门就是在切片阶段**提前证伪**这种横切。
+> **为什么是这道门**：切片收窄的是 `code` 的上下文注入，而 verify 在每个 checkpoint 上仍会跑基线回归。一个「地基片」（铺好没人用，(b) 否）或「前向依赖片」（逻辑依赖还没落地的后续片，(a) 否）做完跑 verify 必然飘红，循环无法出环，会死锁在 `verify-failed`。删后续门就是在切片阶段**提前证伪**这种横切。
 
-这一轮逐片自问的结论**必须写进 `[code]` section 开头**（哪几片合并、为何合并），作为切片决策的留痕。
+这一轮逐片自问的结论（哪几片合并、为何合并）要作为切片决策的留痕：写进切片的 `task_text`，或随命令输出向用户说明。`openlogos slice plan` 会依据 `slices.json` 渲染整个 `[code]` 正文，所以不要手工往 `[code]` 里加说明。
 
 ## Step 5 — 逃生口（大任务但拆不开 → 显式单切）
 
 评分 ≥8 但**任何垂直切法都过不了 Step 4 的删后续门**（典型：能力原子、各部分互相咬死，如「三信号互相依赖的完成判定」）→ **保留 1 条切片**，并在任务里写明「评分达大任务，但 `<原因>` 不可安全垂直拆分，故单片」。这是**合规结果，不是偷懒**。不确定两片能否各自闭环时，一律合并。
 
-## Step 6 — 写 `[code]` section
+## Step 6 — 确定每个 `[code]` 切片
 
 1. **每条 = 一个自闭环切片**：业务代码 + 该片 UT/ST + OpenLogos reporter + 必要 golden baseline，**不依赖同批后续切片**。
 2. **有序、无前向依赖**：从上到下串行实现（v1 不建模 DAG）；被依赖的片排前。
@@ -76,13 +82,50 @@ description: merge 之后如何规划 [code] 切片——六维打分、垂直/�
 
 **Smoke 用例变更的强制闭环**：当本提案新增/修改 `logos/resources/test/smoke/*.md`，`[code]` 切片文本必须列出新增 `SMOKE-*` ID，要求实现/更新 runner、写 `smoke-results.jsonl` reporter、接入配置，并要求完成后跑 smoke 覆盖预检。
 
-写完后**从磁盘读回 `[code]` section** 向用户展示原文确认落盘。
+## Step 7 — 用 `openlogos slice plan` 落盘
+
+把切片写成 `slices.json`，然后执行：
+
+```bash
+openlogos slice plan --file slices.json
+```
+
+```json
+{
+  "slices": [
+    {
+      "slice_id": "slice-01-capability",
+      "task_text": "端到端能力切片：实现 X 并同步 UT/ST + reporter（覆盖 UT-S01-01、ST-S01-01）",
+      "owned_test_ids": ["UT-S01-01", "ST-S01-01"],
+      "runner_selectors": ["UT-S01-01", "ST-S01-01"],
+      "spec_targets": ["logos/resources/test/core-S01-test-cases.md"]
+    }
+  ]
+}
+```
+
+- `slice_id`：稳定、kebab-case、唯一（推荐 `slice-<两位序号>-<短名>`）；输入不变时，重跑结果逐字节相同。
+- `owned_test_ids`：本变更新增或修改的每个测试 ID **恰好**归属一片；共享的基线回归测试不归属。
+- `runner_selectors`：非空，能执行该片所属测试。
+- `spec_targets`：`logos/resources/test/` 下的已合并测试规格文件。
+- 不要提供指纹、`schema`、`change`、`module`、`generated_at`，这些由 CLI 写入。
+
+命令在写入**之前**完成全部校验。失败时逐条列出违规的 `code`、`path` 与 `fix_hint`，`tasks.md` 与 manifest 保持不变，修改 `slices.json` 后重跑即可。成功后**从磁盘读回 `[code]` 段**，向用户展示原文。
+
+## 恢复与重新划分
+
+- **manifest 缺失、非法或过期**（`next_node.id == "plan-slices"` 且原因为 `test-slice-manifest-*`）：**不要**重新打分或重新切片。用**同一份** `slices.json`（相同的 `slice_id` / `task_text`）重跑 `openlogos slice plan`。命令会保留未改动切片的勾选，已有 checkpoint 继续有效。
+- **切片划分本身有误**：修改 `slices.json` 后重跑同一命令。`task_text` 被改写的切片重置为未勾选，旧划分的 checkpoint 不再采信。
+- 不要删除或改名 `TEST_SLICE_MANIFEST.json`，不要手工补回 `[x]`，也不要编辑 `SLICE_CHECKPOINTS.jsonl`。
+
+manifest 格式与 verify 行为见 [测试切片清单](/zh/specs/test-slice-manifest)。
 
 ## 与 `tasks.md` 及 CLI 派生的关系
 
 - `write-tasks`（plan 段、merge **之前**）**不再产 `[code]`**。其完成判定由 `tasks_filled` 收窄为 `tasks_delta_filled`——`[delta]`/`[deploy]` 脱模板即算完成；切片留待 merge 后由 `plan-slices` 产出。无 delta 的纯代码提案仍须保留空 `## [code]` 标题。
 - 对纯代码提案，空 `## [code]` 标题只是 `code_required` 的结构锚点，不表示可以立即切片；必须先由 `openlogos merge <slug>` 写入 no-delta `SPEC_MERGED` marker。
 - `plan-slices` 在 `tasks_code_filled` 满足时完成（`[code]` section 写出真实切片、此时全部未勾）。这与 `implement.code` 的 `section_complete:code`（全勾=实现完成）是两个不同判定：前者判「切片已划定」，后者判「切片已实现」。
+- `plan-slices` 完成后，提案停在 `ready-to-implement`，等待 `slice-exit` 门批准。此时 `next_node` 带 `id: "plan-slices"` 与 `gate_id: "slice-exit"`，宿主不得重派 slice-planner。`openlogos next --auto` 只有在 `[code]` 确实已填写后才会放行该门并写入 `SLICES_APPROVED`；批准后步骤进入 `coding`。
 - `CODE_AUTORESET` 保护守序：若 `[code]` 被提前填充（在 `plan-slices` 合法进入前由 `write-tasks` 填），CLI 会在进入切片阶段的确定性动作上把它 auto-reset 回模板占位，并把旧原文备份（append-only JSONL）。这样即便 `[code]` 曾被越序提前填，slice-planner 仍是唯一事实源。
 
 机器契约（`slice_state`、`next_node.slice`、`ready-to-implement`、`slice-exit`、`SLICES_APPROVED`）见 [CLI JSON 输出](/zh/specs/cli-json-output)。

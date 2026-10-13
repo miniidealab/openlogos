@@ -15,6 +15,9 @@ project-root/
 ├── logos/                      # OpenLogos methodology assets (isolated namespace)
 │   ├── logos.config.json       # Project configuration
 │   ├── logos-project.yaml      # AI collaboration index
+│   ├── .openlogos-guard        # 活跃变更锁（有活跃提案时存在）
+│   ├── .openlogos-sync.json    # openlogos sync 成功后写入的版本戳
+│   ├── .openlogos-runtime/     # guard 运行时状态（经 .gitignore 托管区块忽略）
 │   │
 │   ├── resources/              # Development resource documents (current "source of truth")
 │   │   ├── prd/                # Product documents
@@ -33,9 +36,9 @@ project-root/
 │   │   ├── scenario/                      # Phase 3: API orchestration tests (JSON)
 │   │   ├── implementation/                # Phase 3: Implementation manifest
 │   │   ├── verify/                        # Phase 3: Test results + reports (JSONL + Markdown)
-│   │   └── reference/                     # Reference materials (images, context)
+│   │   └── reference/                     # 参考资料：requirement/、todolist/、code/、image/、temp/、note/
 │   │
-│   ├── skills/                 # AI Skills (SKILL.md per skill, 16 built-in)
+│   ├── skills/                 # OpenLogos 方法论 Skills（Claude Code / OpenCode / Other 目标）
 │   │   ├── prd-writer/
 │   │   ├── product-designer/
 │   │   ├── code-implementor/
@@ -47,6 +50,7 @@ project-root/
 │       ├── {change-name}/      # Active change proposal
 │       │   ├── proposal.md
 │       │   ├── tasks.md
+│       │   ├── TEST_SLICE_MANIFEST.json   # 由 openlogos slice plan 写入
 │       │   └── deltas/
 │       └── archive/            # Completed change history
 │
@@ -87,7 +91,7 @@ project-root/
 
 ### logos/skills/
 
-由 `openlogos init` 或 `openlogos sync` 部署的 AI Skill 文件。每个 skill 是一个子目录，包含一个 `SKILL.md` 文件。对于 Cursor 项目，skill 改为部署到 `.cursor/rules/`。
+由 `openlogos init` 或 `openlogos sync` 为 Claude Code、OpenCode 和 Other 部署的 AI Skill 文件。每个 skill 是一个子目录，包含一个 `SKILL.md` 文件。其他宿主的 Skills 放在各自的位置：Cursor 为 `.cursor/skills/<name>/SKILL.md`，Codex 为 `.agents/plugins/openlogos/skills/`，ZCode / Qoder / WorkBuddy 为 `.zcode/plugins/openlogos/`、`.qoder/plugins/openlogos/`、`.workbuddy/plugins/openlogos/` 插件内的 `skills/`。多文件 Skill 的附属资产（如 `ui-ux-pro-max`）始终放在这里。
 
 ### logos/spec/
 
@@ -104,7 +108,6 @@ project-root/
   "name": "my-project",
   "locale": "en",
   "aiTool": "claude-code",
-  "lifecycle": "initial",
   "description": "",
   "documents": {
     "prd": { "label": { "en": "Product Docs" }, "path": "./resources/prd", "pattern": "**/*.{md,html,htm,pdf}" },
@@ -115,8 +118,12 @@ project-root/
     "verify": { "label": { "en": "Verify Reports" }, "path": "./resources/verify", "pattern": "**/*.{jsonl,md}" },
     "changes": { "label": { "en": "Change Proposals" }, "path": "./changes", "pattern": "**/*.{md,json}" }
   },
+  "sourceRoots": { "src": ["src"], "test": ["test"] },
   "verify": {
     "result_path": "logos/resources/verify/test-results.jsonl"
+  },
+  "guard": {
+    "unversioned": ["node_modules/", "dist/"]
   }
 }
 ```
@@ -125,10 +132,13 @@ project-root/
 |-------|------|-------------|
 | `name` | string | 项目名称 |
 | `locale` | `"en"` \| `"zh"` | 文档语言 |
-| `aiTool` | string | 主要 AI 工具（`claude-code`、`opencode`、`cursor`、`other`） |
-| `lifecycle` | `"initial"` \| `"launched"` | 项目生命周期状态（项目级已弃用；现改为 logos-project.yaml 中的每模块级别） |
+| `aiTool` | string \| string[] | AI 工具：`claude-code`、`opencode`、`codex`、`cursor`、`zcode`、`qoder`、`workbuddy`、`other` 或 `all` |
+| `lifecycle` | `"initial"` \| `"launched"` | 旧的项目级字段，已不再写入；lifecycle 现为 `logos-project.yaml` 中的模块级字段，`openlogos sync` 会迁移旧值 |
+| `sourceRoots` | object | 源码与测试根目录（`src`、`test`） |
 | `documents` | object | 文档模块定义（路径 + glob 模式） |
 | `verify.result_path` | string | 测试结果 JSONL 的自定义路径 |
+| `guard.unversioned` | string[] | 不进入版本控制的路径：渲染进 `.gitignore` 托管区块，不在 guard 保护范围内；用 [`openlogos ignore`](/zh/cli/ignore-exempt) 管理 |
+| `guard.exempt` | string[] | 会入库、但写入不需要立案的路径；缺省时为 `logos/resources/reference/` 与 baseline-seed staging；用 [`openlogos exempt`](/zh/cli/ignore-exempt) 管理 |
 
 ### logos-project.yaml
 
@@ -177,6 +187,7 @@ AI 协作索引文件——完整细节见 [logos-project.yaml 规格](/zh/specs
 
 - 测试结果：`test-results.jsonl`（JSONL 格式，每行一个用例结果）
 - 验收报告：`acceptance-report.md`（由 `openlogos verify` 自动生成）
+- 切片清单：`logos/changes/<slug>/TEST_SLICE_MANIFEST.json`，由 `openlogos slice plan` 写入；见 [TEST_SLICE_MANIFEST](/zh/specs/test-slice-manifest)
 - 详细格式规格见[测试结果格式](/zh/specs/test-results)
 
 ## 可选目录

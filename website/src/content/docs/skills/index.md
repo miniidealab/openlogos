@@ -1,9 +1,9 @@
 ---
 title: Skills Overview
-description: Reference documentation for all 17 built-in OpenLogos AI Skills.
+description: Reference documentation for all 18 built-in OpenLogos AI Skills.
 ---
 
-OpenLogos ships with **17 AI Skills** — structured Markdown instruction files (`SKILL.md`) that guide AI coding tools through each phase of the development lifecycle. Skills are deployed automatically during `openlogos init` and synchronized via `openlogos sync`.
+OpenLogos ships with **18 AI Skills** — structured Markdown instruction files (`SKILL.md`) that guide AI coding tools through each phase of the development lifecycle. Skills are deployed automatically during `openlogos init` and synchronized via `openlogos sync`.
 
 ## How Skills Work
 
@@ -52,6 +52,12 @@ Skills are organized to follow the OpenLogos **three-layer progression model** (
 | [`slice-planner`](/skills/slice-planner) | Plan post-spec-complete `[code]` slices from merged specs and real test IDs | After merge / no-delta spec-complete, before code implementation |
 | [`merge-executor`](/skills/merge-executor) | Merge delta files into main documents | After `openlogos merge <slug>` |
 
+## Existing Projects
+
+| Skill | Purpose | Trigger |
+|-------|---------|---------|
+| [`brownfield-adopter`](/skills/brownfield-adopter) | Optional: reverse-engineer a verifiable baseline seed (system map + scenario candidates) from an existing codebase and commit it with `openlogos baseline-seed` | Only when you explicitly ask for an up-front full-codebase scan; never triggered just because `openlogos adopt` finished |
+
 ## Design Intelligence
 
 | Skill | Purpose | Trigger |
@@ -66,7 +72,11 @@ After `openlogos init`, Skills are deployed to platform-specific locations:
 |---------|---------------|
 | Claude Code | `logos/skills/` (native plugin) |
 | OpenCode | `logos/skills/` (hooks integration) |
-| Codex | `.agents/skills/` (native Codex Skills) |
-| Cursor | `.cursor/rules/` (rule files) |
+| Codex | `.agents/plugins/openlogos/skills/` (`$openlogos:<skill>` native Codex Skills) |
+| Cursor | `.cursor/skills/<name>/SKILL.md` (native Agent Skills) |
+| ZCode | `.zcode/plugins/openlogos/skills/` (native plugin) |
+| Qoder | `.qoder/plugins/openlogos/skills/` (native plugin) |
+| WorkBuddy | `.workbuddy/plugins/openlogos/skills/` (native plugin) |
+| Other | `logos/skills/` |
 
-Run `openlogos sync` to re-deploy Skills after updates.
+Multi-file Skill assets (such as `ui-ux-pro-max`) always stay under `logos/skills/`. Run `openlogos sync` to re-deploy Skills after updates. See [`init`](/cli/init#skills-deployment) for the full list of files each host receives.

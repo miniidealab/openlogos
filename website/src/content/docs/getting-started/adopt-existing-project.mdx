@@ -23,7 +23,7 @@ When you adopt an existing project:
 | Module lifecycle | `initial` (Phase-driven) | `launched` (Change-driven) |
 | Phase 1–3 documents | Required before coding | Optional — fill in gradually |
 | Change management | Activates after `launch` | **Active immediately** |
-| First suggested action | Write requirements | Create a baseline-docs proposal |
+| First suggested action | Write requirements | Create your first change proposal (`openlogos change <slug>`) |
 
 The key difference: `adopt` sets your module to `lifecycle: launched` with `bootstrap: adopted` right away. You skip the initial document baseline requirement and jump straight into the iteration workflow.
 
@@ -63,6 +63,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   5. Other
   6. All (deploy for all tools)
 
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
+
 Your choice [1/2/3/4/5/6] (default: 1): 1
 ```
 
@@ -72,12 +76,18 @@ Or pass flags to skip the prompts:
 openlogos adopt --locale en --ai-tool claude-code
 ```
 
+`--ai-tool` accepts `claude-code`, `opencode`, `codex`, `cursor`, `zcode`, `qoder`, `workbuddy`, `other`, or `all`.
+
+If `adopt` detects your tech stack, it also lists paths that git does not ignore yet (for example dependency or build output directories) and asks whether to add them to the OpenLogos managed block in `.gitignore`. You can change this later with [`openlogos ignore`](/cli/ignore-exempt).
+
 ### What it creates
 
 ```
 your-project/
 ├── AGENTS.md                    ← AI instruction file (auto-generated)
 ├── CLAUDE.md                    ← Claude Code instruction file
+├── .gitignore                   ← OpenLogos managed block (logos/.openlogos-runtime/ + accepted suggestions)
+├── .claude/ (or .cursor/, ...)  ← Host integration for the AI tool you chose
 │
 └── logos/
     ├── logos.config.json        ← Project configuration
@@ -89,7 +99,7 @@ your-project/
     │   ├── database/
     │   ├── test/
     │   └── verify/
-    ├── skills/                  ← 16 AI Skills deployed
+    ├── skills/                  ← AI Skills (Codex, Cursor, ZCode, Qoder, WorkBuddy load theirs from the host directory)
     ├── spec/                    ← Methodology specifications
     └── changes/                 ← Change proposal workspace
 ```
@@ -180,48 +190,38 @@ You'll see something like:
 ```
 📊 OpenLogos Project Status
 
-⏭️  Phase 1 · Requirements — Document baseline skipped (existing project onboarding)
-⏭️  Phase 2 · Product Design — Document baseline skipped (existing project onboarding)
-⏭️  Phase 3-0 · Architecture — Document baseline skipped (existing project onboarding)
+⏭️  Phase 1 · Requirements (WHY) — Documentation baseline skipped (adopted access mode)
+⏭️  Phase 2 · Product Design (WHAT) — Documentation baseline skipped (adopted access mode)
+⏭️  Phase 3-0 · Architecture — Documentation baseline skipped (adopted access mode)
+...
 
 🧩 Modules
-  ✅  core  [launched]
-       💡 Fill in baseline docs first (openlogos change add-baseline-docs)
+  ✅  core (Core)  [launched]
+       💡 No standalone baseline is required; run openlogos change <slug> (baseline-seed begin is an explicit optional accelerator)
 ```
 
 The `⏭️` phases are skipped — that's expected. Your project is in `launched` lifecycle, which means **change management is active immediately**. Every code change from here on needs a change proposal.
 
 ---
 
-## Step 6: Start with a baseline-docs proposal
+## Step 6: Start with your first change proposal
 
-You don't need to write all your documentation at once. The recommended approach is to create a baseline proposal and fill in docs incrementally as you work on features.
+You don't need a standalone baseline proposal before real work. Create a proposal for the first change you actually want to make:
 
 ```bash
-openlogos change add-baseline-docs
+openlogos change my-first-change
 ```
 
-This creates `logos/changes/add-baseline-docs/` with `proposal.md` and `tasks.md`. Tell AI:
+This creates `logos/changes/my-first-change/` with `proposal.md` and `tasks.md`. Tell AI:
 
 ```
-Read logos/changes/add-baseline-docs/proposal.md and help me fill it in.
-The goal is to document what already exists in this project.
+Read logos/changes/my-first-change/proposal.md and help me fill it in.
 ```
 
-### What to document first
-
-Prioritize by what AI needs most to help you effectively:
-
-| Priority | Document | Why |
-|----------|----------|-----|
-| High | Architecture overview | Tech stack, system boundaries, key decisions |
-| High | Core scenario sequence diagrams | How the main flows actually work |
-| Medium | API spec (if applicable) | Existing endpoints and contracts |
-| Medium | Test case specs | What's already tested and how |
-| Low | Requirements doc | Business context, useful but not urgent |
+While planning, the `change-writer` Skill closes over the features and scenarios the change touches: a target spec that already exists is **modified**; a missing one is **created in full**, documenting how the touched area works today. Your `logos/resources/` grows with each proposal, starting with the areas you actually change.
 
 <Aside type="tip">
-You don't need to complete the baseline proposal before starting feature work. It's fine to have an open `add-baseline-docs` proposal running in parallel with feature proposals — just keep them scoped separately.
+Want a code-derived map of the whole codebase up front? The optional [`brownfield-adopter`](/skills/brownfield-adopter) Skill reverse-scans the code and commits a `verified: false` system map and scenario candidates through `openlogos baseline-seed`. It is an explicit accelerator only: `status` may show `baseline_seed_state: required`, but that never blocks creating a change.
 </Aside>
 
 ---
@@ -288,7 +288,7 @@ Once adopted, every change follows the Delta workflow:
    Read logos/changes/my-feature/proposal.md and help me fill it in.
    ```
 
-3. **Produce delta files** — updated specs, API changes, new test cases
+3. **Produce delta files** — updated specs, API changes, new test cases. `openlogos change-lint` checks the proposal, tasks, and deltas while they are written, so problems surface before merge.
 
 4. **Merge** (human confirmation point)
 
@@ -296,15 +296,19 @@ Once adopted, every change follows the Delta workflow:
    openlogos merge my-feature
    ```
 
-5. **Implement code + tests** — AI generates code based on merged specs
+   All deltas are applied in a single atomic call — either everything is written or nothing is.
 
-6. **Verify** (human confirmation point)
+5. **Plan code slices** — the `slice-planner` Skill writes the `[code]` section of `tasks.md` with `openlogos slice plan --file <slices.json>`
+
+6. **Implement code + tests** — AI implements slice by slice against the merged specs
+
+7. **Verify** (human confirmation point)
 
    ```bash
    openlogos verify
    ```
 
-7. **Archive**
+8. **Archive** (human confirmation point; after deployment and smoke if the proposal has a `[deploy]` section)
 
    ```bash
    openlogos archive my-feature
@@ -336,7 +340,7 @@ No — `adopt` exits with an error if `logos/logos.config.json` already exists. 
 
 It tells OpenLogos that this project skipped the initial document baseline. The effects:
 - `openlogos status` shows Phase 1–3 as `⏭️` (skipped) instead of ❌ (missing)
-- `openlogos next` suggests `openlogos change add-baseline-docs` instead of "write requirements"
+- `openlogos next` suggests creating a change directly (`openlogos change <slug>`) instead of "write requirements"
 - `openlogos launch` doesn't require Phase 1–3 docs to be present
 
 **My test command is complex — how do I configure it?**

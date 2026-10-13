@@ -41,7 +41,23 @@ description: 变更提案任务文件的结构化格式规格——章节标记�
 
 - 无 `[delta]` 的纯代码提案仍须**保留空的 `## [code]` 标题**。这令 `parseTaskSections` 非 null、`code_required` 为真，但不代表可以立刻切片：提案必须先执行 no-delta `openlogos merge <slug>` 并获得 `SPEC_MERGED` marker。
 - `SPEC_MERGED` 存在后，只有能从 `proposal.md`、`tasks.md` 或已合并测试 delta 中解析出真实 `UT-*` / `ST-*` / `SMOKE-*` ID，才允许进入 `plan-slices`。缺 ID 时返回 `test-id-required`，不得写占位切片。
-- 若 `[code]` 被提前填充（在 `write-tasks` 阶段、切片阶段合法进入之前），CLI 会在进入切片阶段的确定性动作上把它 auto-reset 回模板占位（旧原文备份到 `CODE_AUTORESET`），使 `slice-planner` 始终是切片的唯一事实源。
+- 若 `[code]` 被提前填充（在 `write-tasks` 阶段、切片阶段合法进入之前），`openlogos merge` 会在进入 spec-complete 之前把它 auto-reset 回空标题（旧原文备份到 `CODE_AUTORESET`），使 `slice-planner` 始终是切片的唯一事实源。
+
+### `[code]` 切片如何写入：`openlogos slice plan`
+
+切片不是手工敲进 `tasks.md` 的。`slice-planner` 产出结构化的 `slices.json`——每个切片一项，含 `slice_id`、`task_text`、`owned_test_ids`、`runner_selectors`、`spec_targets`——交给 CLI：
+
+```bash
+openlogos slice plan --file slices.json [--slug <slug>] [--format json]
+```
+
+一次调用内，命令校验输入、把 `## [code]` 的正文替换为每个切片一个复选框、写出 `logos/changes/<slug>/TEST_SLICE_MANIFEST.json`，并依据刚写出的 `tasks.md` 计算 manifest 的 `task_fingerprint`。两个文件都先写临时文件并校验通过后才替换，输入被拒时两者都保持原样。`[delta]` / `[deploy]` 分节及其勾选状态逐字节保留；同一输入重复执行是幂等的（已有勾选状态保留）。
+
+- `TEST_SLICE_MANIFEST.json` 记录每个切片**拥有**哪些测试 ID。`openlogos verify` 只从该清单读取归属——绝不从 `[code]` 散文中解析——据此运行切片 checkpoint 与最终全量验收。
+- 切片写出后，由 `slice-exit` 门批准（`SLICES_APPROVED`），提案才进入 `coding`。
+- 若之后已合并规格发生变化（例如 `openlogos merge` 增量修正后），用相同或更新后的 `slices.json` 重跑 `openlogos slice plan` 重建清单。
+
+详见 [`openlogos slice`](/zh/cli/slice) 与 [切片规划](/zh/specs/slice-planner)。
 
 ## 任务格式
 
@@ -114,3 +130,4 @@ description: 变更提案任务文件的结构化格式规格——章节标记�
 - [变更管理](/zh/specs/change-management)——完整提案生命周期
 - [`openlogos status`](/zh/cli/status)——读取 tasks.md 进行提案步骤检测
 - [`openlogos change`](/zh/cli/change)——创建初始 tasks.md 模板
+- [`openlogos slice plan`](/zh/cli/slice)——写入 `[code]` 切片与 `TEST_SLICE_MANIFEST.json`

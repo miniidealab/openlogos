@@ -41,7 +41,23 @@ Under the redesigned launched flow (see [Change Management](/specs/change-manage
 
 - A pure-code proposal (no `[delta]`) must still **keep an empty `## [code]` heading**. This keeps `parseTaskSections` non-null and `code_required` true, but it is not permission to slice immediately: the proposal must first run no-delta `openlogos merge <slug>` and receive a `SPEC_MERGED` marker.
 - Once `SPEC_MERGED` exists, the proposal may enter `plan-slices` only when real `UT-*` / `ST-*` / `SMOKE-*` IDs can be parsed from `proposal.md`, `tasks.md`, or merged test deltas. Missing IDs produce `test-id-required`, not a placeholder slice.
-- If `[code]` is filled early (during `write-tasks`, before the slice stage legitimately enters), the CLI auto-resets it to a template placeholder on the deterministic slice-stage entry (backing the old text up to `CODE_AUTORESET`), so `slice-planner` remains the single source of truth for slices.
+- If `[code]` is filled early (during `write-tasks`, before the slice stage legitimately enters), `openlogos merge` auto-resets it to an empty heading before spec-complete (backing the old text up to `CODE_AUTORESET`), so `slice-planner` remains the single source of truth for slices.
+
+### How `[code]` slices are written: `openlogos slice plan`
+
+Slices are not typed into `tasks.md` by hand. `slice-planner` produces a structured `slices.json` — one entry per slice with `slice_id`, `task_text`, `owned_test_ids`, `runner_selectors` and `spec_targets` — and hands it to the CLI:
+
+```bash
+openlogos slice plan --file slices.json [--slug <slug>] [--format json]
+```
+
+In one call the command validates the input, replaces the body of `## [code]` with one checkbox per slice, writes `logos/changes/<slug>/TEST_SLICE_MANIFEST.json`, and computes the manifest's `task_fingerprint` from the `tasks.md` it just wrote. Both files are staged and validated before either is replaced, so a rejected input leaves both untouched. `[delta]` / `[deploy]` sections and their checkboxes are preserved byte for byte, and re-running with the same input is idempotent (existing check states are kept).
+
+- `TEST_SLICE_MANIFEST.json` records which test IDs each slice **owns**. `openlogos verify` reads ownership only from this manifest — never from the prose in `[code]` — to run slice checkpoints and the final full verify.
+- After slicing, the `slice-exit` gate approves the plan (`SLICES_APPROVED`); only then does the proposal move to `coding`.
+- If the merged spec changes later (for example after an incremental `openlogos merge` amendment), rerun `openlogos slice plan` with the same or updated `slices.json` to rebuild the manifest.
+
+See [`openlogos slice`](/cli/slice) and [Slice Planner](/specs/slice-planner).
 
 ## Task Format
 
@@ -114,3 +130,4 @@ If `proposal.md` says "no deployment needed" but `tasks.md` has a `[deploy]` sec
 - [Change Management](/specs/change-management) — Full proposal lifecycle
 - [`openlogos status`](/cli/status) — Reads tasks.md for proposal step detection
 - [`openlogos change`](/cli/change) — Creates the initial tasks.md template
+- [`openlogos slice plan`](/cli/slice) — Writes the `[code]` slices and `TEST_SLICE_MANIFEST.json`

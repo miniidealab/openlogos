@@ -17,6 +17,7 @@ Get your first OpenLogos project up and running — from install to your first A
   - [OpenCode](https://opencode.ai) (terminal-based)
   - [Codex CLI](https://help.openai.com/en/collections/13193998-codex-cli) (terminal-based)
   - [Cursor](https://cursor.sh) (IDE with built-in AI)
+  - ZCode, Qoder CLI, or WorkBuddy (installed as a project plugin)
 
 ## Step 1: Install
 
@@ -24,17 +25,29 @@ Get your first OpenLogos project up and running — from install to your first A
 npm install -g @miniidealab/openlogos
 ```
 
-Verify the installation:
+Verify the installation — this guide is written for `0.16.0`:
 
 ```bash
 openlogos --version
 ```
 
+:::note[Upgrading an existing installation?]
+If you already use OpenLogos 0.13.x, follow [Upgrading from 0.13.x](/getting-started/upgrade-from-0-13) instead — every existing project also needs `openlogos sync`.
+:::
+
 ## Step 2: Initialize a project
 
 Run the init command — it will ask you to choose a language and AI tool:
 
-Choose **All** when you want one project to deploy Claude Code, OpenCode, Codex, and Cursor targets together.
+Options 7–9 select ZCode, Qoder, and WorkBuddy. Choose **All** when you want one project to deploy every supported target together (Claude Code, OpenCode, Codex, Cursor, ZCode, Qoder, WorkBuddy). The output below is abbreviated; extra lines (for example ignore suggestions for a detected tech stack, or a `verify.pre_run_command` reminder) depend on your directory.
+
+To skip the prompts (for example in scripts or CI), pass both flags:
+
+```bash
+openlogos init my-project --locale en --ai-tool cursor
+```
+
+`--ai-tool` accepts `claude-code`, `opencode`, `codex`, `cursor`, `zcode`, `qoder`, `workbuddy`, `other`, or `all`. In non-interactive mode `--locale` is required.
 
 <Tabs>
 <TabItem label="Claude Code">
@@ -54,6 +67,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   4. Cursor
   5. Other
   6. All (deploy for all tools)
+
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
 
 Your choice [1/2/3/4/5/6] (default: 1): 1
 
@@ -75,18 +92,17 @@ Creating OpenLogos project structure for "my-project"...
   ✓ logos/logos-project.yaml
   ✓ AGENTS.md
   ✓ CLAUDE.md
-  ✓ 16 skills deployed to logos/skills/
-  ✓ 13 specs deployed to logos/spec/
+  ✓ 17 skills deployed to logos/skills/
+  ✓ Claude Code plugin deployed: 10 commands, 1 agents → .claude/
+  ✓ 24 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
   2. Start with Phase 1: tell AI "Help me write requirements"
   3. Run `openlogos status` to check progress at any time
-
-💡 Claude Code users: install the native plugin for the best experience:
-  /plugin marketplace add miniidealab/openlogos
-  /plugin install openlogos@miniidealab-openlogos
 ```
+
+`init` writes the Claude Code commands, the `change-reviewer` agent, and the hooks (SessionStart context, PreToolUse write guard, post-execution checks) into the project's `.claude/` directly — no separate plugin install is needed.
 </TabItem>
 <TabItem label="OpenCode">
 ```
@@ -105,6 +121,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   4. Cursor
   5. Other
   6. All (deploy for all tools)
+
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
 
 Your choice [1/2/3/4/5/6] (default: 1): 2
 
@@ -126,11 +146,11 @@ Creating OpenLogos project structure for "my-project"...
   ✓ logos/logos-project.yaml
   ✓ AGENTS.md
   ✓ CLAUDE.md
-  ✓ 16 skills deployed to logos/skills/
+  ✓ 17 skills deployed to logos/skills/
   ✓ OpenCode plugin deployed to .opencode/plugins/openlogos.js + opencode.json
   ✓ opencode.json created with recommended permission defaults
   ✓ OpenCode slash commands deployed to .opencode/commands/ (10 files)
-  ✓ 13 specs deployed to logos/spec/
+  ✓ 24 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
@@ -156,6 +176,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   5. Other
   6. All (deploy for all tools)
 
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
+
 Your choice [1/2/3/4/5/6] (default: 1): 4
 
 Creating OpenLogos project structure for "my-project"...
@@ -176,8 +200,9 @@ Creating OpenLogos project structure for "my-project"...
   ✓ logos/logos-project.yaml
   ✓ AGENTS.md
   ✓ CLAUDE.md
-  ✓ 16 skills deployed to .cursor/rules/
-  ✓ 13 specs deployed to logos/spec/
+  ✓ Cursor assets installed: <N> skills + <N> commands + 1 subagent, hooks (sessionStart, beforeShellExecution, afterShellExecution, afterFileEdit); start a new Cursor session to load refreshed skills and hooks
+  ℹ Guard strength on Cursor (IDE and cursor-agent CLI) is partial: shell commands get a light pre-check via beforeShellExecution (guard-scope changes need host approval) plus an afterShellExecution post-check; file edits are only reported after the fact via afterFileEdit and are never blocked beforehand. OpenLogos does not wire preToolUse, so Cursor is not equivalent to claude-code.
+  ✓ 24 specs deployed to logos/spec/
 
 Project initialized. Next steps:
   1. Review logos/logos.config.json to verify project settings
@@ -186,6 +211,8 @@ Project initialized. Next steps:
 ```
 </TabItem>
 </Tabs>
+
+In the Cursor output, `<N>` stands for the number of Skills and command Skills actually deployed to `.cursor/skills/`. Choosing ZCode, Qoder, or WorkBuddy installs the OpenLogos plugin into `.zcode/plugins/openlogos/`, `.qoder/plugins/openlogos/`, or `.workbuddy/plugins/openlogos/` respectively; start a new session in that tool afterwards so it loads the plugin snapshot.
 
 Now enter the project and check its status:
 
@@ -204,10 +231,13 @@ openlogos status
 🔲  Phase 3-1 · Scenario Modeling
 🔲  Phase 3-2 · API Design
 🔲  Phase 3-2 · Database Design
-🔲  Phase 3-3a · Test Case Design (Unit + Scenario)
-🔲  Phase 3-3b · API Orchestration Tests
-🔲  Phase 3-4 · Code Implementation + Test Code
-🔲  Phase 3-5 · Test Acceptance (verify)
+🔲  Phase 3-3 · Deployment Plan
+🔲  Phase 3-4a · Test Case Design (Unit + Scenario)
+🔲  Phase 3-4b · API Orchestration Tests
+🔲  Phase 3-5 · Code Implementation
+🔲  Phase 3-6 · Test Acceptance (verify)
+🔲  Phase 3-7 · Deployment Execution
+🔲  Phase 3-8 · Deployment Smoke Test
 ──────────────────────────────────────────────────
 
 💡 Suggested next step: Phase 1 · Requirements (WHY)
@@ -250,13 +280,20 @@ OpenCode reads the project configuration and displays a detailed overview:
 It shows the project structure, detects the current phase, and even tells you exactly what questions it needs answered to begin.
 </TabItem>
 <TabItem label="Cursor">
-Open the `my-project` folder in Cursor. The 12 OpenLogos rules are auto-loaded from `.cursor/rules/` — no manual configuration needed.
+Open the `my-project` folder in Cursor (or run `cursor-agent` in it). OpenLogos Skills are loaded from `.cursor/skills/` (explicit commands are available as `/openlogos-<command>`), the `change-reviewer` subagent from `.cursor/agents/`, and the hooks from `.cursor/hooks.json` — no manual configuration needed. If Cursor was already open, start a new session after `init` or `sync`.
+
+On Cursor the write guard is partial-strength: shell commands get a light pre-check (`beforeShellExecution`) and a post-execution check (`afterShellExecution`); file edits are only reported afterwards (`afterFileEdit`). See [PreToolUse Guard](/specs/pretooluse-guard).
 
 Ask the AI to review the project, and it will show you the full phase progression:
 
 ![Cursor detecting OpenLogos project](/docs/quickstart/cursor-overview.jpg)
 
 The AI detects all phases, shows which directories map to each step, and suggests starting with Phase 1.
+</TabItem>
+<TabItem label="ZCode / Qoder / WorkBuddy">
+Start a new session of the tool in the `my-project` directory. The OpenLogos plugin under `.zcode/plugins/openlogos/`, `.qoder/plugins/openlogos/`, or `.workbuddy/plugins/openlogos/` provides the Skills, commands, and agents; its SessionStart hook injects the current phase, and its PreToolUse hook enforces the write guard. `init` also writes host-specific instructions into the OpenLogos managed block of the root `AGENTS.md`.
+
+Ask the AI to review the project, and it will show the phase progression and suggest starting with Phase 1.
 </TabItem>
 </Tabs>
 
@@ -317,8 +354,8 @@ You now have a working OpenLogos project with a complete requirements document. 
 
 - **Understand the concepts** — Read the [Core Concepts](/concepts/three-layer-model) to understand the WHY → WHAT → HOW model, scenario-driven development, and test-first methodology.
 
-- **Explore the toolchain** — Check the [CLI Reference](/cli) for all 14 top-level commands and the [Skills Reference](/skills) for all 16 AI Skills.
+- **Explore the toolchain** — Check the [CLI Reference](/cli) for every top-level command and the [Skills Reference](/skills) for all built-in AI Skills.
 
 :::tip[Go deeper: First AI Collaboration]
-Ready to go beyond Phase 1? The [First AI Collaboration](/getting-started/first-collaboration) guide walks you through the **complete journey** — from requirements to architecture, API design, test cases, code generation, and Gate 3.5 verification — building a real Short-Link service end-to-end.
+Ready to go beyond Phase 1? The [First AI Collaboration](/getting-started/first-collaboration) guide walks you through the **complete journey** — from requirements to architecture, API design, test cases, code generation, and Gate 3.6 verification — building a real Short-Link service end-to-end.
 :::

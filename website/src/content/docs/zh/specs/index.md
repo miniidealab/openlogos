@@ -15,6 +15,9 @@ OpenLogos 规格是所有 Skill、CLI 命令和 AI 指令文件都必须遵循�
 |---------------|-------------|
 | [工作流](/zh/specs/workflow) | 三层推进模型（WHY → WHAT → HOW）、场景串联、阶段检测、质量关卡 |
 | [变更管理](/zh/specs/change-management) | Delta 变更提案、影响分析、合并工作流与归档 |
+| [Flow 规范](/zh/specs/flow-spec) | 可编排研发流程的数据模型：子流程、节点、门禁、循环、overlay |
+| [切片规划](/zh/specs/slice-planner) | merge 之后如何规划 `[code]` 切片 |
+| [PreToolUse Guard](/zh/specs/pretooluse-guard) | 写入门禁：保护对象（版本控制内容）、事前判定、执行后检查与保护范围命令 |
 
 ## 文件格式与结构
 
@@ -29,6 +32,7 @@ OpenLogos 规格是所有 Skill、CLI 命令和 AI 指令文件都必须遵循�
 | [AGENTS.md](/zh/specs/agents-md) | AI 指令文件——内容结构、生成规则、多平台适配 |
 | [测试结果格式](/zh/specs/test-results) | 跨框架测试结果上报的 JSONL 格式、reporter 代码模板 |
 | [tasks.md 格式](/zh/specs/tasks-spec) | 变更提案任务文件的结构化格式——章节标记与状态检测 |
+| [TEST_SLICE_MANIFEST](/zh/specs/test-slice-manifest) | 由 `openlogos slice plan` 写出、供 verify 读取的 `[code]` 切片机读清单 |
 | [SQL 注释约定](/zh/specs/sql-comment-convention) | SQLite DDL 元数据注解的结构化注释格式 |
 | [CLI JSON 输出](/zh/specs/cli-json-output) | CLI 命令的结构化 JSON 输出规格（status、verify、smoke、detect） |
 
@@ -40,3 +44,7 @@ OpenLogos 规格是所有 Skill、CLI 命令和 AI 指令文件都必须遵循�
 |---------------|-------------|
 | [OpenCode 插件](/zh/specs/opencode-plugin) | OpenCode 原生插件——命令桥接、hook 注入、双模式架构 |
 | [Codex 插件](/zh/specs/codex-plugin) | Codex CLI 原生插件——SessionStart hook、阶段上下文注入、双模式架构 |
+| [Cursor 插件](/zh/specs/cursor-plugin) | Cursor 集成：`.cursor/skills/` 原生 Skills、`.cursor/hooks.json` 托管条目、带 `afterShellExecution` 事后检查的部分强度 guard |
+| [ZCode 插件](/zh/specs/zcode-plugin) | 位于 `.zcode/plugins/openlogos/` 的 ZCode 原生插件：Skills、命令、agents、SessionStart 与 PreToolUse hooks |
+| [Qoder 插件](/zh/specs/qoder-plugin) | 位于 `.qoder/plugins/openlogos/` 的 Qoder CLI 原生插件：Skills、命令、agents、SessionStart 与 PreToolUse hooks |
+| [WorkBuddy 插件](/zh/specs/workbuddy-plugin) | 位于 `.workbuddy/plugins/openlogos/` 的 WorkBuddy 原生插件：Skills、命令、agents、SessionStart 与 PreToolUse hooks；不触碰原生记忆 |

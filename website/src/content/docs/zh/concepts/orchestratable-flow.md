@@ -29,13 +29,13 @@ OpenLogos 把**研发全流程**建模为一台声明式状态机——它不是
 |---|--------|--------|----------|
 | 1 | **plan（方案）** | 写 `proposal.md` + 把 `tasks.md` 划分为 `[delta]` / `[deploy]` | human，可跳（`plan-exit`） |
 | 2 | **spec（规格）** | 编写 `[delta]` 规格变更（`when: delta_required`） | human，可跳（`spec-exit`） |
-| 3 | **merge（合并）** | 生成 `MERGE_PROMPT` 并应用 delta（`when: delta_required`） | none |
+| 3 | **merge（合并）** | 一次 `openlogos merge` 调用合成并原子落盘全部 delta，写入 `SPEC_MERGED`（`when: delta_required`；节点 `generate-merge-prompt`——历史沿用的 id——与 `apply-merge`） | none |
 | 4 | **slice（切片）** | 对已合并规格划分 `[code]` 切片（`when: code_required`） | human，可跳（`slice-exit`） |
 | 5 | **implement（实现）** | `code` + `verify`，默认切片循环至全部切片绿 | none |
 | 6 | **deliver（交付）** | `deploy` + `smoke`（各由自己的 `when` 把关） | human，entry，可跳（`deliver-entry`） |
 | 7 | **close（收尾）** | `archive` 归档 | none |
 
-纯代码提案（无 `[delta]`）跳过 **spec** 与 **merge**；纯文档提案（无 `[code]`）跳过 **slice**。不适用某提案的段落经其 subflow 级 `when` 整段跳过。
+纯代码提案（无 `[delta]`）跳过 **spec** 与 **merge** 子流程，但在切片前仍要执行 no-delta `openlogos merge <slug>` 写入 `SPEC_MERGED`（spec-complete）——在此之前步骤为 `spec-complete-required`。纯文档提案（无 `[code]`）跳过 **slice**。不适用某提案的段落经其 subflow 级 `when` 整段跳过。运行 [`openlogos flow show`](/zh/cli/flow-show) 可查看当前版本的确切节点清单。
 
 ## 门(gate)
 
@@ -82,7 +82,7 @@ loop: { until: code_slices_green, max_iters: 30 }
 
 **半自动（默认，无 `--auto`）。** `merge`、`verify`、部署、`smoke`、`archive`、`git push` 都是**人类确认点**。AI 未经明确授权不得自行执行。每个人类确认点行为完全按声明。
 
-**全自动 / 无人值守（`openlogos next --auto`）。** 选 `--auto` 即一次性、**standing、run-scoped 的授权**——授权该提案全链路自动跑到底。除自动放行 `skippable: true` 的 flow 门外，standing 授权还让 AI **自动执行「代码已绿之后」由 CLI 驱动的盖章/发布步骤**——`verify`、`smoke`、`archive`、`git push`。（`git push` 无需 marker：PreToolUse guard 的安全白名单本就放行它。）每次自动放行都向提案目录的 `GATE_AUTO_PASSED` **追加一行 append-only 审计记录**——是审计轨迹，不是状态源。
+**全自动 / 无人值守（`openlogos next --auto`）。** 选 `--auto` 即一次性、**standing、run-scoped 的授权**——授权该提案全链路自动跑到底。除自动放行 `skippable: true` 的 flow 门（`plan-exit`；`spec-exit`，之后 driver 执行合并；`slice-exit`；以及 `deliver-entry`，之后执行部署）外，standing 授权还让 AI **自动执行「代码已绿之后」由 CLI 驱动的盖章/发布步骤**——`verify`、`smoke`、`archive`、`git push`。（`git push` 无需 marker：guard 不把独立的 `git` 调用当作受保护写入。）standing 授权从不覆盖修改 guard 保护范围（`openlogos ignore|exempt add|remove`），这类命令始终需要宿主自身的审批弹窗。每次自动放行都向提案目录的 `GATE_AUTO_PASSED` **追加一行 append-only 审计记录**——是审计轨迹，不是状态源。
 
 **硬红线（两档都不放行）：** `loop-exhausted`——达迭代上限仍未过测试的未收敛代码——**在任何模式（含 `--auto`）都阻塞。** 全自动发布的是已验证成果，绝不发布未测代码。
 

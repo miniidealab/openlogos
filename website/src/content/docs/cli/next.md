@@ -1,6 +1,6 @@
 ---
 title: "openlogos next"
-description: Show the single most actionable next step for the current OpenLogos project.
+description: Show the single most actionable next step for the current OpenLogos project, in semi-auto (default) or full-auto (--auto) mode.
 ---
 
 Return the next action a developer or AI assistant should take. It uses the same phase and proposal-state detection as `status`, but compresses the result into one actionable instruction.
@@ -18,30 +18,41 @@ Must be run from the project root.
 | Option | Description |
 |--------|-------------|
 | `--module <id>` | Focus the recommendation on one module. |
-| `--auto` | Full-auto / unattended mode: standing run-scoped authorization for the whole proposal chain. See below. |
+| `--auto` | Full-auto / unattended mode: a standing, run-scoped authorization for the whole proposal chain. See below. |
 | `--format json` | Output structured JSON for tools such as RunLogos. |
 
 ## What it does
 
-- Suggests the next phase prompt for initial modules
-- Suggests `openlogos change <slug>` for launched modules without an active proposal
-- Tracks active proposal steps: fill proposal, write deltas, merge, code, verify, archive
-- Reports blocked modules when another module has the active guard
+- Suggests the next phase prompt for `initial` modules
+- Suggests `openlogos change <slug>` for `launched` modules without an active proposal
+- Tracks active proposal steps: fill the proposal → approve the plan → write deltas → merge → plan `[code]` slices → implement → verify → deploy / smoke → archive
+- Reports blocked modules when another module holds the active guard
+- In multi-module projects, lists one suggestion per module (in-progress first); with no in-progress module it suggests `openlogos module add`
 
-## Full-auto mode (--auto)
+## Two authorization tiers
 
-`openlogos next --auto` is **full-auto / unattended mode**. Passing `--auto` grants a **standing, run-scoped authorization** for the entire proposal chain — one authorization lets the proposal run to completion without step-by-step human confirmation. Without `--auto` (semi-auto / manual), every human confirmation point behaves exactly as before.
+### Semi-auto (default, no `--auto`)
 
-In `--auto` mode, `next`:
+`openlogos merge`, `openlogos verify`, deployment, `openlogos smoke`, `openlogos archive` and `git push` are **human confirmation points**. The AI must not run them on its own; it runs them only when you explicitly ask (including through the matching slash command). Implicit phrases such as "just finish the flow" do not count as authorization. Every human gate behaves exactly as declared in the flow.
 
-- **Auto-passes skippable human gates.** When the flow reaches a gate boundary whose gate is `skippable: true`, it is treated as passed. A gate with `skippable: false` still blocks.
-- **Auto-executes CLI stamp/release steps once the code is green.** As a standing authorization it runs the four "after code is green" red-line steps — `verify`, `smoke`, `archive` and `git push` — directly, with no human confirmation (`auto_execute: true` in the JSON output). `git push` needs no marker or guard change: the PreToolUse guard safelist already allows it.
-- **Writes an append-only `GATE_AUTO_PASSED` audit.** Every auto-pass appends one line (gate id + timestamp) to `logos/changes/<slug>/GATE_AUTO_PASSED`. It is an audit trail, not a state source.
-- **Respects the R2 safety latch.** If the flow is still stuck on an unfinished node (including an overlay-added `active`/`failed` node), no gate is auto-passed.
+### Full-auto (`--auto`)
+
+`openlogos next --auto` is **full-auto / unattended mode**. Choosing `--auto` grants a **standing, run-scoped authorization** for the whole proposal chain — one authorization lets the proposal run to completion without step-by-step confirmation. In this mode `next`:
+
+- **Auto-passes skippable flow gates** — `plan-exit`, `spec-exit`, `slice-exit` and `deliver-entry` are `skippable: true`, so the driver may continue past them (including into merge and deployment). A gate with `skippable: false` still blocks.
+- **Auto-executes the CLI steps that come after code is green** — when the proposal is `ready-to-verify`, `ready-to-smoke`, or verified/deployed/smoke-passed, `next` returns the command (`openlogos verify`, `openlogos smoke`, `openlogos archive <slug>`) with `auto_execute: true`. `git push` is covered by the same standing authorization and needs no marker.
+- **Writes an append-only `GATE_AUTO_PASSED` audit** — every auto-pass appends one line (gate id + timestamp) to `logos/changes/<slug>/GATE_AUTO_PASSED`. It is an audit trail, not a state source.
+- **Respects the safety latch** — if the flow is still stuck on an unfinished node (including an overlay-added `active` / `failed` node), a blocking loop, or a slice-manifest problem, nothing is auto-passed or auto-executed.
+
+The standing authorization does **not** cover changing the guard's protection scope (`openlogos ignore|exempt add|remove`); those always need approval in the host's own permission prompt.
 
 ### Hard red line — loop-exhausted
 
-The one exit gate that **any mode (including `--auto`) never auto-passes** is loop-exhausted: code that hit the iteration ceiling (`max_iters`) without passing tests (`gate:<subflow>:loop-exhausted`, default `skippable: false`). It stays blocked so that full-auto only ever ships verified work. Full-auto **never releases code that did not pass tests.** The only opt-in is an explicit overlay `set-loop` with `set.exhausted_gate.skippable: true` (high-risk, off by default).
+The one exit gate that **no mode, including `--auto`, ever auto-passes** is `gate:implement:loop-exhausted`: code that hit the iteration ceiling (`max_iters`) without passing tests. It stays blocked so that full-auto only ever ships verified work — **code that did not pass tests is never released**. The only opt-in is an explicit overlay `set-loop` with `set.exhausted_gate.skippable: true` (high-risk, off by default).
+
+## JSON fields
+
+With `--format json`, the envelope carries `action`, `command`, `detail`, `active_change` and `proposal_step`. With `--auto` it adds `auto: true`, `gate_id`, `skippable` and `gate_auto_passed`, and `auto_execute: true` when a post-green command should be run directly. `gate_auto_passed` (a flow gate) and `auto_execute` (a command step) are never both true in the same response.
 
 ## Example
 
@@ -59,4 +70,5 @@ Next Step
 
 - [`status`](/cli/status) — Full dashboard view
 - [`change`](/cli/change) — Create a change proposal
-- [`verify`](/cli/verify) — Run Gate 3.5 acceptance
+- [`verify`](/cli/verify) — Run Gate 3.6 acceptance
+- [Orchestratable flow](/concepts/orchestratable-flow) — Gates, loops and the two authorization tiers

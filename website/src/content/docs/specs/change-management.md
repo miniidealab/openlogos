@@ -1,25 +1,27 @@
 ---
 title: Change Management
-description: The Delta change management mechanism — change proposals, impact analysis, delta merging, and archival.
+description: The Delta change management mechanism — change proposals, impact analysis, the delivery gate, one-call atomic merge, incremental amendment, slicing, and archival.
 ---
 
-The Delta change management specification defines how OpenLogos projects handle feature iterations and bug fixes after the initial development cycle. Every change starts as a proposal, gets reviewed, then merges back into main documents — ensuring traceability, auditability, and rollback capability.
+The Delta change management specification defines how OpenLogos projects handle feature iterations and bug fixes after the initial development cycle. Every change starts as a proposal, gets reviewed, then merges back into the main documents — ensuring traceability, auditability, and rollback capability.
 
 ## Core Principles
 
 1. **Never modify main documents directly** — every change starts as a proposal in `logos/changes/`
-2. **Impact analysis first** — the `proposal.md` must clearly scope the change's blast radius
+2. **Impact analysis first** — `proposal.md` must clearly scope the change and its deployment impact
 3. **Propagate on demand** — not every change requires a full-chain update; only affected layers are updated
-4. **Archive for history** — completed changes are archived, preserving a full audit trail
+4. **Traceable deployment** — a proposal that needs deployment carries a deployment task and smoke plan
+5. **Archive for history** — completed changes are archived, preserving a full audit trail
+6. **One active proposal at a time** — while an unarchived proposal holds the guard, `openlogos change` refuses to create another
 
 ## Lifecycle States
 
-Change management is activated when the project transitions from `initial` to `launched` lifecycle (via `openlogos launch`). During the initial development phase, changes flow through the Phase progression without proposals.
+Change management is activated when a module transitions from `initial` to `launched` (via `openlogos launch`). During the initial development cycle, changes flow through the phase progression without proposals.
 
 | Lifecycle | Behavior |
 |-----------|----------|
 | `initial` | Follow Phase 1 → 2 → 3 progression freely, no proposals needed |
-| `launched` | All changes require a proposal via `openlogos change <slug>` before modifying code |
+| `launched` | Changes to version-controlled code and specs require a proposal via `openlogos change <slug>` |
 
 ## Directory Structure
 
@@ -30,52 +32,66 @@ logos/
 └── changes/                      # Change proposal workspace
     ├── add-remember-me/          # An active change proposal
     │   ├── proposal.md           # Change description + impact analysis
-    │   ├── tasks.md              # Implementation task checklist
-    │   └── deltas/               # Delta files (incremental modifications)
-    │       ├── prd/
-    │       ├── api/
-    │       ├── database/
-    │       └── scenario/
+    │   ├── tasks.md              # Task checklist ([delta] / [code] / [deploy])
+    │   ├── deltas/               # Delta files (incremental modifications)
+    │   │   ├── prd/
+    │   │   ├── api/
+    │   │   ├── database/
+    │   │   └── scenario/
+    │   ├── SPEC_MERGED           # Written by openlogos merge (last step)
+    │   └── TEST_SLICE_MANIFEST.json  # Written by openlogos slice plan
     │
-    └── archive/                  # Completed change history
-        └── add-remember-me/
+    └── archive/                  # Completed change history (audit only)
+        └── 20261012-1430-add-remember-me/
 ```
 
 ## Guard Mechanism
 
-When a change proposal is active, OpenLogos writes a `logos/.openlogos-guard` lock file to track the active change. This file:
+`openlogos change` writes `logos/.openlogos-guard`, which names the active proposal; `openlogos archive` removes it.
 
-- **Exists** → AI may modify code, but only within the proposal's scope
-- **Does not exist** → modifying source code is forbidden; run `openlogos change <slug>` first
+- **Guard exists** → the AI may modify code and specs, but only within the proposal's scope
+- **No guard** → in a launched project, writing protected content is refused; run `openlogos change <slug>` first
 
-The guard file is created by `openlogos change` and removed by `openlogos archive`.
+### What the guard protects
+
+Since 0.16.0 the guard protects **content that goes into version control**, not a list of command words. In a launched git project with no active proposal:
+
+- **Protected**: tracked files, new files that are not git-ignored, and everything under `logos/resources/` (even if ignored). Ignore-rule sources (every `.gitignore`, `.git/info/exclude`), `logos/logos.config.json`, git metadata and the guard's own state can never be exempted.
+- **Not protected**: untracked files that git ignores — dependencies, build output, logs and caches — and paths listed in `guard.exempt`. Writing them needs no proposal.
+- **Edit / Write tools** are judged before they run. **Bash / PowerShell** get a light pre-check (blocked only when the write target is known and protected) and an **after-execution content comparison**: if protected content changed without a proposal, the guard reports the changed files and a restore command.
+- Standalone `git` and `openlogos` invocations are not reported.
+
+The full contract, including host-specific behavior, is in [PreToolUse Guard](/specs/pretooluse-guard).
+
+### Changing the protection scope
+
+Use the scope commands instead of editing `.gitignore` or `logos/logos.config.json` by hand:
+
+```bash
+openlogos ignore add|remove|list <pattern>   # managed block in .gitignore
+openlogos exempt add|remove|list <path>      # guard.exempt: committed paths that need no proposal
+```
+
+`add` / `remove` change what the guard protects, so they **must be approved by the user in the host's native permission prompt** (`list` is unrestricted). A verbal "yes" in the conversation is not approval. If the current permission mode cannot show a prompt, run the command yourself in the terminal (`! <command>` in Claude Code) or switch to the default permission mode. The standing authorization of `--auto` does not cover these commands. See [`openlogos ignore` / `openlogos exempt`](/cli/ignore-exempt).
+
+## Two-tier Authorization
+
+- **Semi-auto (default)** — `openlogos merge`, `openlogos verify`, deployment, `openlogos smoke`, `openlogos archive` and `git push` are human confirmation points. The AI runs them only when the user explicitly asks; "finish the flow" style phrasing is not authorization.
+- **Full-auto (`openlogos next --auto`)** — choosing `--auto` is a standing authorization for the whole proposal: skippable flow gates are auto-passed and verify, deployment, smoke, archive and `git push` run without step-by-step confirmation. Every auto-pass is appended to `GATE_AUTO_PASSED`.
+- **Hard red line (every mode)** — `gate:implement:loop-exhausted`: code that hit the iteration limit without passing tests is never released, even under `--auto`.
+
+The AI commits automatically (and tells the user) after merge, after code, and after archive. See [`openlogos next`](/cli/next).
 
 ## File Specifications
 
 ### proposal.md
 
-The change description document. Must include:
+`openlogos change` writes the full template; fill it in place, section by section, rather than rewriting it. The required sections are checked by `openlogos change-lint` (L0): Reason, Change Type, Scope, Deployment Impact, Summary and Decision Clarification. The template also has an optional Minimal Implementation Rationale and a UI/UX Change Declaration block (checked by L7 in GUI projects).
 
-```markdown
-# Change Proposal: [Change Name]
-
-## Reason for Change
-[Why is this change needed? What requirement/feedback/bug triggered it?]
-
-## Change Scope
-- Affected requirements documents: [list]
-- Affected feature specs: [list]
-- Affected scenarios: [list]
-- Affected APIs: [list]
-- Affected DB tables: [list]
-
-## Change Summary
-[1-3 paragraphs describing what specifically changes]
-```
+- **Deployment Impact** is the proposal-level deployment decision. "No deployment" means no `[deploy]` section; "deployment required" means a `[deploy]` section and a deployment-plan update (or a citation of a merged plan).
+- **Decision Clarification** holds an `openlogos/clarification@1` block covering five impacts — `data`, `compatibility`, `security_privacy`, `public_release`, `external_commitment` — and the decisions the user made. Deployment and public release are decided separately. The block is a record for people, not a hard gate. See [`openlogos change`](/cli/change#decision-clarification-clarification1).
 
 ### tasks.md
-
-Implementation task checklist using structured section tags:
 
 ```markdown
 # Implementation Tasks
@@ -85,35 +101,39 @@ Implementation task checklist using structured section tags:
 - [ ] Output delta file to deltas/api/ — Update API YAML
 
 ## [code] Code Implementation
-- [ ] Implement business logic in src/xxx
-- [ ] Write corresponding tests
+
+## [deploy] Deployment
+- [ ] Deploy to staging
 ```
 
-Section tag rules:
-- `## [delta]` — delta document output tasks only. All checked → `ready-to-merge`
-- `## [code]` — code implementation tasks only. All checked → `ready-to-verify`
-- Both sections are optional: code-only proposals have only `[code]`, spec-only proposals have only `[delta]`
-- No `[delta]` section → proposal skips directly to `ready-to-merge`
-- Old format (no section tags) → falls back to global all-checked logic for backward compatibility
+- `## [delta]` — one task per delta file. All checked → `ready-to-merge`
+- `## [code]` — **left empty during planning**. After merge, `slice-planner` writes the slices through `openlogos slice plan --file <slices.json>`, together with `TEST_SLICE_MANIFEST.json`
+- `## [deploy]` — only when the proposal requires deployment
+- A code-only proposal has no `[delta]` but keeps the empty `## [code]` heading, and still runs a no-delta `openlogos merge`
+- Do not add verify/acceptance tasks — `openlogos verify` is a separate CLI step
 
-> **Note**: `openlogos verify` is a separate CLI step. Do not add verify/acceptance tasks to `tasks.md`.
+See [tasks.md Format](/specs/tasks-spec).
 
 ### deltas/ Directory
 
-Delta files use a tagged format to describe incremental modifications:
+Delta files use tagged sections:
 
 ```markdown
 ## ADDED — [New Content Title]
 [Complete new content]
 
-## MODIFIED — [Modified Content Title]
-[Complete modified content, replaces the same-named section in the main document]
+## MODIFIED — [Existing Section Title]
+[Complete content of the whole section]
 
-## REMOVED — [Removed Content Title]
+## REMOVED — [Removed Section Title]
 [Reason for removal]
 ```
 
-The delta directory structure mirrors the main document directory. `openlogos merge` recursively scans subdirectories, preserving nested paths:
+- The heading is the **section anchor** and must match exactly one section in the target; use `Parent > Child` or `Title [2]` when a heading repeats.
+- `MODIFIED` replaces the section up to the next heading of the same or higher level — write one block per section when rewriting several.
+- Unchanged structured IDs in a `MODIFIED` section must be carried over; partial removal is `MODIFIED` (remaining content) + `REMOVED-ITEMS` (naming removed IDs).
+
+The delta tree mirrors the main documents and nested paths are preserved:
 
 | Delta path | Corresponds to |
 |-----------|----------------|
@@ -123,87 +143,78 @@ The delta directory structure mirrors the main document directory. `openlogos me
 | `deltas/scenario/` | `logos/resources/scenario/` |
 | `deltas/test/` | `logos/resources/test/` |
 
-`prd/` subdirectories map directly:
-
-| Delta path | Corresponds to |
-|-----------|----------------|
-| `deltas/prd/1-product-requirements/` | `logos/resources/prd/1-product-requirements/` |
-| `deltas/prd/2-product-design/1-feature-specs/` | `logos/resources/prd/2-product-design/1-feature-specs/` |
-| `deltas/prd/3-technical-plan/1-architecture/` | `logos/resources/prd/3-technical-plan/1-architecture/` |
-| `deltas/prd/3-technical-plan/2-scenario-implementation/` | `logos/resources/prd/3-technical-plan/2-scenario-implementation/` |
-
 ## Change Workflow
 
 ```
-1. Create change proposal (CLI)
-   └── openlogos change {slug}
-   └── Generates logos/changes/{slug}/proposal.md + tasks.md + deltas/
-   └── Writes logos/.openlogos-guard
+1. Create the proposal (CLI)
+   └── openlogos change <slug>  → proposal.md + tasks.md + deltas/, writes the guard
 
-2. AI-assisted proposal writing (change-writer Skill)
-   └── AI analyzes impact scope, fills in proposal.md and tasks.md
-   └── [delta] section: delta output tasks | [code] section: code tasks
+2. Write the plan (change-writer)
+   └── Fill proposal.md (incl. decision clarification) and tasks.md ([delta] / [deploy], empty [code])
+   └── GUI projects: produce UI prototypes now, so the plan is approved with the UI in view
+   └── openlogos change-lint → must exit 0
+   └── plan-exit gate: the user approves the plan
 
-3. Produce delta files per [delta] task
-   └── For each completed task, write incremental changes to deltas/ subdirectories
-   └── Check off each [delta] task when done → proposal_step: ready-to-merge
+3. Write deltas (change-writer)
+   └── One delta per [delta] task, check each off → ready-to-merge
+   └── openlogos change-lint → must exit 0
+   └── spec-exit gate: review deltas, authorize the merge
 
-4. Generate merge instructions (CLI) [human confirmation point]
-   └── openlogos merge {slug}
-   └── Recursively scans deltas/, generates MERGE_PROMPT.md
-   └── Writes MERGE_PROMPT_GENERATED marker → proposal_step: merge-generated
+4. Merge (CLI, human confirmation point)
+   └── openlogos merge <slug>
+   └── One call: admission (= change-lint) → compose by section anchor → atomic write
+       → SPEC_MERGED (with test_change_set) written last. All or nothing.
+   └── AI commits the spec changes
 
-5. AI executes merge (merge-executor Skill)
-   └── AI reads MERGE_PROMPT.md, merges each delta into logos/resources/
-   └── Commits spec documents, then writes SPEC_MERGED marker
-   └── proposal_step: coding
+5. Plan slices (slice-planner)
+   └── slices.json → openlogos slice plan --file slices.json
+   └── Writes [code] + TEST_SLICE_MANIFEST.json
+   └── slice-exit gate: the user approves the slicing
 
-6. Implement code per [code] tasks
-   └── Check off each [code] task when done → proposal_step: ready-to-verify
+6. Implement (code-implementor)
+   └── Slice by slice: business code + tests + OpenLogos reporter; AI commits code
 
-7. Run verification (CLI) [human confirmation point]
-   └── openlogos verify
-   └── Writes VERIFY_PASS or VERIFY_FAIL to proposal directory
-   └── proposal_step: verify-passed or verify-failed
+7. Verify (CLI, human confirmation point) — Gate 3.6
+   └── openlogos verify → VERIFY_PASS / VERIFY_FAIL
 
-8. Archive change (CLI) [human confirmation point]
-   └── openlogos archive {slug}
-   └── Moves logos/changes/{slug}/ to logos/changes/archive/
+8. Deliver (only when the proposal requires deployment)
+   └── Deploy per the deployment plan (human confirmation point)
+   └── openlogos deploy-done (Gate 3.7) → openlogos smoke (Gate 3.8)
+
+9. Archive (CLI, human confirmation point)
+   └── openlogos archive <slug> → moves to archive/, removes the guard; AI commits
+   └── git push (human confirmation point)
 ```
 
-**Human confirmation points**: `openlogos merge`, `openlogos verify`, `openlogos archive`, and `git push`. AI must not execute these without explicit user authorization.
+### Amending a merged proposal
 
-## The Launched Change Flow (Redesigned)
+If the deltas need to change after step 4, edit them and run `openlogos merge <slug>` again. The command amends incrementally from the recorded merge baseline (`result:"amended"`), clears `VERIFY_*` / `DEPLOY_DONE` / `SMOKE_*` so the amended spec is verified again, and leaves `[code]` and the slice approval alone. `openlogos status --format json` shows the pending state as `spec_amend`. If a merged target was edited by hand, the amendment is refused with review instructions — carry such corrections in a new proposal. See [`openlogos merge`](/cli/merge).
 
-The eight-step outline above is the historical single-segment `propose` view. Under the current launched flow (see the [Flow Specification](/specs/flow-spec)), the change lifecycle is a seven-subflow pipeline:
+## The Launched Flow
+
+Under the launched flow (see the [Flow Specification](/specs/flow-spec)), the lifecycle is a seven-subflow pipeline:
 
 ```
 plan → spec → merge → slice → implement → deliver → close
 ```
 
-The old `propose` segment split into three, each ending in its own gate:
-
-| Subflow | Nodes | Exit gate | What changed |
-|---------|-------|-----------|--------------|
-| **plan** | `write-proposal`, `write-tasks` | `plan-exit` (human, skippable) | New "approve the plan" gate. `write-tasks` produces `[delta]`/`[deploy]` only — **no `[code]`** |
+| Subflow | Nodes | Exit gate | Notes |
+|---------|-------|-----------|-------|
+| **plan** | `write-proposal`, `write-tasks` | `plan-exit` (human, skippable) | `write-tasks` produces `[delta]` / `[deploy]` only — **no `[code]`** |
 | **spec** | `write-delta` | `spec-exit` (human, skippable) | `when: delta_required`; review deltas + authorize merge |
-| **merge** | `generate-merge-prompt`, `apply-merge` | — | Delta proposals generate/apply merge prompts; pure-code proposals run no-delta `openlogos merge` to write `SPEC_MERGED` |
-| **slice** | `plan-slices` (slice-planner) | `slice-exit` (human, skippable) | New segment; `when: code_required`; cuts `[code]` slices against the **merged** spec + real test IDs (see [Slice Planner](/specs/slice-planner)) |
-| **implement** | `code`, `verify` | — | Slice loop active by default (`until: code_slices_green`) |
+| **merge** | `generate-merge-prompt`, `apply-merge` | — | One `openlogos merge` call completes the subflow by writing `SPEC_MERGED` (the first node id is historical). Pure-code proposals run a no-delta merge |
+| **slice** | `plan-slices` (slice-planner) | `slice-exit` (human, skippable) | `when: code_required`; slices against the **merged** spec + real test IDs |
+| **implement** | `code`, `verify` | — | Slice loop active by default (`until: code_slices_green`, `max_iters: 30`) |
 | **deliver** | `deploy`, `smoke` | `deliver-entry` (human, skippable) | Deployment decided at the **proposal level** |
 | **close** | `archive` | — | — |
 
-Two structural consequences:
+- **`[code]` slicing happens after merge.** It is cut against real merged specs and fixed test IDs, not guessed against a draft. Slices filled in early are reset by `openlogos merge` (backed up to `CODE_AUTORESET`).
+- **No-delta still has spec-complete.** A pure-code proposal runs `openlogos merge <slug>`, which writes `SPEC_MERGED` with `type:"no_delta_spec_complete"`. Until then `next` / `status` report `spec-complete-required`; afterwards, missing real test IDs report `test-id-required`.
+- **Deployment is a proposal-level decision.** `deployment_required` / `smoke_required` come from the proposal's Deployment Impact plus the `[deploy]` section, never from module defaults.
 
-- **`[code]` slicing moved from plan to slice.** It no longer happens while writing tasks (a guess against a draft); it happens after merge, against real merged specs and fixed test IDs. `write-tasks` completes on `tasks_delta_filled`; `plan-slices` completes on `tasks_code_filled`.
-- **No-delta still has spec-complete.** A pure-code proposal has no delta files, but `openlogos merge <slug>` still performs a no-op merge and writes `SPEC_MERGED` with `type:"no_delta_spec_complete"`. Until that marker exists, `next/status` must return `spec-complete-required`; after it exists, missing real test IDs must return `test-id-required` instead of dispatching `slice-planner`.
-- **Deployment is a proposal-level decision, not a module default.** The launched flow resolves `deployment_required` / `smoke_required` from the proposal's declared deployment impact plus the `[deploy]` section (`resolveProposalDeploymentDecision()`), never from module defaults — so a proposal declaring "no deployment" does not wrongly enter deploy. The `deliver-entry` gate is `skippable: true`, so an unattended `--auto` run can release it while manual mode still stops for confirmation.
-
-New `proposal_step` residency states `ready-to-delta` (at `plan-exit`) and `ready-to-implement` (at `slice-exit`) express the two new gates; see [CLI JSON Output](/specs/cli-json-output).
+The residency states `ready-to-delta` (at `plan-exit`), `ready-to-merge` (at `spec-exit`) and `ready-to-implement` (at `slice-exit`) express where the flow waits; see [`openlogos status`](/cli/status#proposal-steps).
 
 ## Change Propagation Rules
-
-Not every change requires a full-chain update. The affected scope depends on the change type:
 
 | Change Type | Minimum Update Scope | Description |
 |------------|---------------------|-------------|
@@ -212,56 +223,29 @@ Not every change requires a full-chain update. The affected scope depends on the
 | Interface-level | API/DB + orchestration + code | Design unchanged, interface details adjusted |
 | Code-level fix | Code + re-verification | Bug fix, no design changes involved |
 
-## MERGE_PROMPT.md Format
-
-Auto-generated by `openlogos merge`, this instruction file tells AI how to apply deltas:
-
-```markdown
-# Merge Instruction
-
-## Change Proposal
-- Name: {slug}
-- Directory: logos/changes/{slug}/
-
-## Proposal Content
-[Full content from proposal.md]
-
-## Delta Files to Merge
-
-### 1. {delta-relative-path}
-- Delta file: `logos/changes/{slug}/deltas/{category}/{file}`
-- Target directory: `logos/resources/{category}/`
-- Action: Read ADDED / MODIFIED / REMOVED tags, merge into target main documents
-
-## Execution Requirements
-1. Process each delta file sequentially, report summary after each
-2. For ADDED tags: Insert new content at the specified location
-3. For MODIFIED tags: Replace the same-named section's content
-4. For REMOVED tags: Delete the corresponding section
-5. Maintain original formatting and style of main documents
-6. Update "last updated" timestamps if present
-7. After all changes, list the modification summary
-8. Remind user to run `openlogos archive {slug}`
-```
-
 ## Git Integration
 
 - Each change proposal maps to a Git branch: `change/{change-name}`
-- On branch merge, `logos/changes/{change-name}/` is moved to `logos/changes/archive/`
-- Major changes are noted in the document header's "last updated" timestamp
-- `logos/changes/archive/` provides complete change history
+- Spec commits after merge, code commits after implementation, and the archive commit are made by the AI automatically; `git push` is a human confirmation point
+- `logos/changes/archive/` provides the change history; it is audit-only and never used to reconstruct main documents
+- CI can recognise archive-only commits as lifecycle bookkeeping with [`openlogos impact`](/cli/impact)
 
 ## CLI Commands
 
 ```bash
-openlogos change add-remember-me   # Create change proposal
-openlogos merge add-remember-me    # Generate merge instructions
-openlogos archive add-remember-me  # Archive completed change
+openlogos change add-remember-me            # Create change proposal + guard
+openlogos change-lint                       # Delivery check (exit 0 required)
+openlogos merge add-remember-me             # One-call atomic merge / incremental amendment
+openlogos slice plan --file slices.json     # Write [code] slices + TEST_SLICE_MANIFEST.json
+openlogos verify                            # Gate 3.6
+openlogos archive add-remember-me           # Archive completed change
 ```
 
 ## Related Skills
 
 | Skill | Role |
 |-------|------|
-| [`change-writer`](/skills/change-writer) | Used after `openlogos change` to fill in proposal.md and tasks.md |
-| [`merge-executor`](/skills/merge-executor) | Used after `openlogos merge` to read MERGE_PROMPT.md and execute merges |
+| [`change-writer`](/skills/change-writer) | Fills `proposal.md` and `tasks.md`, writes deltas, and must pass `openlogos change-lint` before reporting completion |
+| [`merge-executor`](/skills/merge-executor) | Read-only review before the merge is authorized, failure diagnosis and delta repair, post-merge ID count and commit handoff |
+| [`slice-planner`](/skills/slice-planner) | Plans `[code]` slices after merge and writes them via `openlogos slice plan` |
+| [`code-implementor`](/skills/code-implementor) | Implements the approved slices with tests and the OpenLogos reporter |

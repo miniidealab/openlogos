@@ -8,15 +8,17 @@ The `openlogos` CLI manages the project lifecycle — from initialization throug
 ## Installation
 
 ```bash
-npm install -g @miniidealab/openlogos
+npm install -g @miniidealab/openlogos@latest
 ```
 
 Verify:
 
 ```bash
 openlogos --version
-# 0.12.9
+# 0.16.0
 ```
+
+After upgrading the CLI, run `openlogos sync` in each existing project to refresh its guard, hooks and Skills.
 
 ## Global options
 
@@ -24,25 +26,29 @@ openlogos --version
 |--------|-------------|
 | `--help`, `-h` | Show the help message |
 | `--version`, `-v` | Show the version number |
+| `--format json` | Structured JSON output (supported by most read and gate commands, e.g. `status`, `next`, `verify`, `merge`, `change-lint`, `impact`) |
+
+Apart from `init` (and `detect`, which also works elsewhere), commands must be run from the project root (the directory containing `logos/logos.config.json`).
 
 ## Command reference
 
-### Project setup
+### Project setup & navigation
 
 | Command | Description |
 |---------|-------------|
 | [`init`](/cli/init) | Initialize a new OpenLogos project structure |
 | [`adopt`](/cli/adopt) | Onboard an existing project (bootstrap: adopted) |
-| [`sync`](/cli/sync) | Regenerate AI instruction files and Skills |
-| [`status`](/cli/status) | Show project phase and suggest next steps |
-| [`next`](/cli/next) | Show the single most actionable next step |
+| [`sync`](/cli/sync) | Regenerate AI instruction files, guard, hooks and Skills from the current config |
+| [`status`](/cli/status) | Show project phase, active proposal step and suggestions |
+| [`next`](/cli/next) | Show the single most actionable next step (`--auto` for full-auto) |
 | [`watch`](/cli/watch) | Stream live derived dev-flow state (read-only) |
-| [`flow show`](/cli/flow-show) | Show the resolved dev-flow orchestration |
+| [`flow show`](/cli/flow-show) | Show the built-in or overlay-resolved dev-flow orchestration |
 | [`detect`](/cli/detect) | Show CLI version and project detection information |
-| [`index`](/cli/index-command) | Generate an AI-ready prompt to rebuild `logos-project.yaml` resource index |
-| [`module`](/cli/module) | Manage project modules (list / add / rename / remove) |
+| [`index`](/cli/index-command) | Generate an AI-ready prompt to rebuild the `logos-project.yaml` resource index |
+| [`module`](/cli/module) | Manage project modules (list / add / rename / remove / set-product-type) |
+| [`feature list` / `feature-backfill`](/cli/feature) | List feature groups; generate a prompt to backfill them |
 
-### Verification & Launch
+### Verification & launch
 
 | Command | Description |
 |---------|-------------|
@@ -55,9 +61,19 @@ openlogos --version
 
 | Command | Description |
 |---------|-------------|
-| [`change`](/cli/change) | Create a change proposal |
-| [`merge`](/cli/merge) | Generate merge instructions for AI |
-| [`archive`](/cli/archive) | Archive a completed change proposal |
+| [`change`](/cli/change) | Create a change proposal and set the active-change guard |
+| [`change-lint`](/cli/change-lint) | Read-only delivery check of proposal, tasks and deltas (L0–L9) |
+| [`merge`](/cli/merge) | Merge spec deltas into the main documents in one atomic call; amend an already-merged proposal |
+| [`slice plan`](/cli/slice) | Write `[code]` slices and `TEST_SLICE_MANIFEST.json` from `slices.json` |
+| [`archive`](/cli/archive) | Archive a completed change proposal and release the guard |
+
+### Spec checks, CI & protection scope
+
+| Command | Description |
+|---------|-------------|
+| [`lint-specs`](/cli/lint-specs) | Read-only structural check of test specs (duplicate IDs / table columns / ID format) |
+| [`impact`](/cli/impact) | Classify a git change range as lifecycle-only bookkeeping (for CI) |
+| [`ignore` / `exempt`](/cli/ignore-exempt) | Manage paths kept out of version control, and committed paths that do not need a proposal (`add` / `remove` need host approval) |
 
 ## Project lifecycle
 
@@ -133,8 +149,13 @@ openlogos launch
 
 # 6. For future changes, use the Delta workflow
 openlogos change fix-redirect-bug
-# ... AI fills proposal + creates deltas ...
-openlogos merge fix-redirect-bug
-# ... AI executes merge ...
+# ... AI fills proposal + tasks, then writes deltas ...
+openlogos change-lint                      # must exit 0 before handing over
+openlogos merge fix-redirect-bug           # one atomic call, writes SPEC_MERGED
+openlogos slice plan --file slices.json    # slice-planner writes [code] slices
+# ... AI implements code + tests ...
+openlogos verify                           # Gate 3.6
 openlogos archive fix-redirect-bug
 ```
+
+In semi-auto mode, `merge`, `verify`, deployment, `smoke`, `archive` and `git push` are run only after you explicitly authorize them; `openlogos next --auto` grants a standing authorization for the whole chain (see [`next`](/cli/next)).

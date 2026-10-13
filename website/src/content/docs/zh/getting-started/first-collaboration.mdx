@@ -8,7 +8,7 @@ import { Steps, Aside, Badge } from '@astrojs/starlight/components';
 在[快速开始](/zh/getting-started/quick-start)中，你搭建了一个项目并生成了一份需求文档。现在让我们一路走到底——从一句话的想法到一套经过完整测试、可投入生产的代码库。
 
 **项目：** Short-Link —— 一个面向公众的 URL 缩短服务（类似 bit.ly）
-**AI 工具：** Claude Code（同样的工作流也适用于 Cursor 和 OpenCode）
+**AI 工具：** Claude Code（同样的工作流也适用于 OpenCode、Codex、Cursor、ZCode、Qoder 和 WorkBuddy）
 **时间：** 各阶段合计约 60 分钟
 
 ---
@@ -24,9 +24,14 @@ OpenLogos 遵循严格的 **WHY → WHAT → HOW** 推进模型。每个阶段�
 | 3-0 | 架构 | `architecture-designer` | 技术栈 + 系统图 |
 | 3-1 | 场景建模 | `scenario-architect` | 每个场景的时序图 |
 | 3-2 | API + DB 设计 | `api-designer` + `db-designer` | OpenAPI 规格 + SQL schema |
-| 3-3 | 测试用例设计 | `test-writer` | 单元测试 + 场景测试 |
-| 3-4 | 代码生成 | — | 业务代码 + 测试代码 |
-| 3-5 | 验证 | `openlogos verify` | Gate 3.5 PASS / FAIL |
+| 3-3 | 部署方案 | `deployment-designer` | 部署方案 + smoke 策略 |
+| 3-4 | 测试用例设计 | `test-writer`（API 项目另加 `test-orchestrator`） | 单元测试 + 场景测试 |
+| 3-5 | 代码生成 | `code-implementor` | 业务代码 + 测试代码 |
+| 3-6 | 验证 | `openlogos verify` | Gate 3.6 PASS / FAIL |
+
+<Aside type="note">
+本演练录制于较早的 OpenLogos 版本，部分截图中的阶段与门禁编号是旧的（例如「Gate 3.5」）。正文统一使用现行编号：验证为 Phase 3-6 / Gate 3.6。现行版本还在测试设计之前加入了 Phase 3-3 · 部署方案（本次录制中未展示），项目需要部署时还有 Phase 3-7 / 3-8（部署与 smoke）。
+</Aside>
 
 让我们逐一走一遍。
 
@@ -218,7 +223,7 @@ AI 依次加载 `api-designer` 和 `db-designer` Skill，读取场景时序图�
 
 ---
 
-## Phase 3-3：测试用例设计
+## Phase 3-4：测试用例设计
 
 **提示词：** `Help me design test cases`
 
@@ -243,11 +248,11 @@ AI 加载 `test-writer` Skill，产出两个层级的测试规格：
 - **异常路径** —— slug 未找到（404）、链接已停用（410）、Redis 不可用（回退到 DB）、点击插入失败（重定向仍然送达）
 - **覆盖率校验** —— 每条验收标准、时序图中的每个异常情况都映射到至少一个测试
 
-测试规格确保在写下任何代码之前，对设计文档达到 **100% 覆盖**。
+把每条验收标准、每个异常情况都映射到至少一个测试，是 `test-writer` 在写代码之前编写测试规格的方式。之后由 `openlogos verify` 依据这些已定义的用例核对测试结果。
 
 ---
 
-## Phase 3-4：代码生成
+## Phase 3-5：代码生成
 
 **提示词：** `Help me implement S01`
 
@@ -283,13 +288,13 @@ AI 不靠猜——它在编写每个文件时都引用具体的文档：
 
 ---
 
-## Phase 3-5：验证
+## Phase 3-6：验证
 
 **提示词：** `/openlogos:verify`
 
-最后一个阶段运行所有测试，并依据设计文档校验覆盖率：
+最后一个阶段运行所有测试，并依据 `logos/resources/test/` 中定义的测试用例核对结果。结果账本一致、零失败、没有任何已定义用例缺少结果时，门禁通过：
 
-![openlogos verify 显示 Gate 3.5 PASS——111 个用例，100% 覆盖](/docs/first-collab/c3.5.openlogos.verify.jpg)
+![openlogos verify 显示 PASS——111 个用例，100% 覆盖（较早版本的截图）](/docs/first-collab/c3.5.openlogos.verify.jpg)
 
 | 指标 | 数值 |
 |--------|-------|
@@ -303,7 +308,7 @@ AI 不靠猜——它在编写每个文件时都引用具体的文档：
 
 那 25 个被跳过的用例是场景测试（ST-S01 到 ST-S04），它们需要一个运行中的 Next.js 服务器 + 数据库 + Redis——它们被有意标记为 `skip`，并由 `logos/resources/scenario/` 中的编排 JSON 文件覆盖。
 
-**Gate 3.5: PASS** —— 所有测试用例均被覆盖。
+**Gate 3.6: PASS** —— 每个已定义的测试用例都有结果，且没有失败。
 
 ### 最终状态
 
@@ -317,10 +322,10 @@ Phase 2 · Product Design     ✅  Feature specs + 4 HTML prototypes
 Phase 3-0 · Architecture     ✅  Architecture overview
 Phase 3-1 · Scenario Modeling ✅  Sequence diagrams for S01–S04
 Phase 3-2 · API + DB Design  ✅  OpenAPI YAML + SQL schema
-Phase 3-3a · Test Case Design ✅  Test specs for S01–S04
-Phase 3-3b · Orchestration    ✅  JSON orchestration for S01–S04
-Phase 3-4 · Code + Test Code  ✅  Business code + test code with reporter
-Phase 3-5 · Test Acceptance  ✅  100% coverage, Gate 3.5 PASS
+Phase 3-4a · Test Case Design ✅  Test specs for S01–S04
+Phase 3-4b · Orchestration    ✅  JSON orchestration for S01–S04
+Phase 3-5 · Code + Test Code  ✅  Business code + test code with reporter
+Phase 3-6 · Test Acceptance  ✅  Gate 3.6 PASS
 ```
 
 ---
@@ -338,7 +343,7 @@ Phase 3-5 · Test Acceptance  ✅  100% coverage, Gate 3.5 PASS
 - **数据库 schema**，含 2 张表、索引和约束
 - **111 个测试用例**（79 单元 + 32 场景），具备完整的来源可追溯性
 - **可投入生产的代码** —— 搭好脚手架的 Next.js 项目，含全部路由处理器、DB 层和测试
-- **Gate 3.5 PASS** —— 对设计文档 100% 覆盖
+- **Gate 3.6 PASS** —— 每个设计好的测试用例都有结果，零失败
 
 每个制品都是 `logos/resources/` 中的纯文本文件。每个决策都有记录。每行代码都能回溯到某个场景步骤。如果明天有新开发者加入，他们可以阅读完整的设计链路，理解每段代码*为什么*存在。
 

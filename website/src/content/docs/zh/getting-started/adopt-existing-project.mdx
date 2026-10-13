@@ -23,7 +23,7 @@ import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 | 模块生命周期 | `initial`（阶段驱动） | `launched`（变更驱动） |
 | Phase 1–3 文档 | 编码前必需 | 可选——逐步补全 |
 | 变更管理 | `launch` 之后激活 | **立即激活** |
-| 首个建议动作 | 编写需求 | 创建一份 baseline-docs 提案 |
+| 首个建议动作 | 编写需求 | 直接创建第一个变更提案（`openlogos change <slug>`） |
 
 关键区别：`adopt` 会立即把你的模块设为 `lifecycle: launched`、`bootstrap: adopted`。你跳过了初始文档基线的要求，直接进入迭代工作流。
 
@@ -63,6 +63,10 @@ Choose AI coding tool / 选择 AI 编码工具:
   5. Other
   6. All (deploy for all tools)
 
+  7. ZCode
+  8. Qoder
+  9. WorkBuddy
+
 Your choice [1/2/3/4/5/6] (default: 1): 1
 ```
 
@@ -72,12 +76,18 @@ Your choice [1/2/3/4/5/6] (default: 1): 1
 openlogos adopt --locale en --ai-tool claude-code
 ```
 
+`--ai-tool` 可取 `claude-code`、`opencode`、`codex`、`cursor`、`zcode`、`qoder`、`workbuddy`、`other` 或 `all`。
+
+如果 `adopt` 检测到你的技术栈，还会列出尚未被 git 忽略的路径（例如依赖目录、构建产物目录），询问是否加入 `.gitignore` 的 OpenLogos 托管区块。之后可以用 [`openlogos ignore`](/zh/cli/ignore-exempt) 调整。
+
 ### 它会创建什么
 
 ```
 your-project/
 ├── AGENTS.md                    ← AI 指令文件（自动生成）
 ├── CLAUDE.md                    ← Claude Code 指令文件
+├── .gitignore                   ← OpenLogos 托管区块（logos/.openlogos-runtime/ + 已接受的建议）
+├── .claude/（或 .cursor/ 等）     ← 所选 AI 工具的宿主集成
 │
 └── logos/
     ├── logos.config.json        ← 项目配置
@@ -89,7 +99,7 @@ your-project/
     │   ├── database/
     │   ├── test/
     │   └── verify/
-    ├── skills/                  ← 部署了 16 个 AI Skill
+    ├── skills/                  ← AI Skills（Codex、Cursor、ZCode、Qoder、WorkBuddy 从各自宿主目录加载）
     ├── spec/                    ← 方法论规格
     └── changes/                 ← 变更提案工作区
 ```
@@ -180,48 +190,38 @@ openlogos status
 ```
 📊 OpenLogos Project Status
 
-⏭️  Phase 1 · Requirements — Document baseline skipped (existing project onboarding)
-⏭️  Phase 2 · Product Design — Document baseline skipped (existing project onboarding)
-⏭️  Phase 3-0 · Architecture — Document baseline skipped (existing project onboarding)
+⏭️  Phase 1 · 需求文档 (WHY) — 文档基线已跳过（存量项目接入）
+⏭️  Phase 2 · 产品设计 (WHAT) — 文档基线已跳过（存量项目接入）
+⏭️  Phase 3-0 · 技术架构 — 文档基线已跳过（存量项目接入）
+...
 
-🧩 Modules
-  ✅  core  [launched]
-       💡 Fill in baseline docs first (openlogos change add-baseline-docs)
+🧩 模块
+  ✅  core (Core)  [launched]
+       💡 无需先单独建立基线；运行 openlogos change <slug> 直接创建新提案（baseline-seed begin 仅为显式可选加速器）
 ```
 
 带 `⏭️` 的阶段被跳过了——这是预期的。你的项目处于 `launched` 生命周期，这意味着**变更管理已立即激活**。从这里开始，每次代码改动都需要一份变更提案。
 
 ---
 
-## 第 6 步：从一份 baseline-docs 提案开始
+## 第 6 步：从第一个变更提案开始
 
-你不必一次写完所有文档。推荐的做法是创建一份基线提案，并在开发功能的过程中逐步补全文档。
+开始真正的工作之前，不需要先单独做一份基线提案。直接为你第一个想做的改动创建提案：
 
 ```bash
-openlogos change add-baseline-docs
+openlogos change my-first-change
 ```
 
-这会创建 `logos/changes/add-baseline-docs/`，内含 `proposal.md` 和 `tasks.md`。告诉 AI：
+这会创建 `logos/changes/my-first-change/`，内含 `proposal.md` 和 `tasks.md`。告诉 AI：
 
 ```
-Read logos/changes/add-baseline-docs/proposal.md and help me fill it in.
-The goal is to document what already exists in this project.
+请阅读 logos/changes/my-first-change/proposal.md 并帮我填写。
 ```
 
-### 先记录什么
-
-按 AI 最需要哪些信息来有效帮你的顺序来排优先级：
-
-| 优先级 | 文档 | 原因 |
-|----------|----------|-----|
-| 高 | 架构概览 | 技术栈、系统边界、关键决策 |
-| 高 | 核心场景时序图 | 主要流程实际如何运作 |
-| 中 | API 规格（如适用） | 现有的端点和契约 |
-| 中 | 测试用例规格 | 已经测了什么、怎么测的 |
-| 低 | 需求文档 | 业务背景，有用但不紧急 |
+规划提案时，`change-writer` Skill 会按本次改动触达的功能与场景自动闭包：目标规格已存在则**修改**；缺失则**完整新建**，记录被触达部分当前的实际行为。`logos/resources/` 就这样随每个提案增长，从你真正改动的部分开始。
 
 <Aside type="tip">
-你不必在开始功能开发之前完成基线提案。让一份开放的 `add-baseline-docs` 提案与功能提案并行进行是完全可以的——只要把它们各自的范围分开即可。
+想先拿到一份由代码推导的全库地图？可选的 [`brownfield-adopter`](/zh/skills/brownfield-adopter) Skill 会逆向扫描代码，通过 `openlogos baseline-seed` 提交 `verified: false` 的系统地图与场景候选。它只是显式可选的加速器：`status` 可能显示 `baseline_seed_state: required`，但这从不阻止你创建变更。
 </Aside>
 
 ---
@@ -288,7 +288,7 @@ it('ST-S01-01: full registration flow', () => { ... });
    Read logos/changes/my-feature/proposal.md and help me fill it in.
    ```
 
-3. **产出 delta 文件** —— 更新的规格、API 变更、新的测试用例
+3. **产出 delta 文件** —— 更新的规格、API 变更、新的测试用例。写作过程中用 `openlogos change-lint` 检查 proposal、tasks 与 delta，问题在合并前就暴露出来。
 
 4. **合并**（人类确认点）
 
@@ -296,15 +296,19 @@ it('ST-S01-01: full registration flow', () => { ... });
    openlogos merge my-feature
    ```
 
-5. **实现代码 + 测试** —— AI 基于合并后的规格生成代码
+   一次调用、原子地应用全部 delta——要么全部写入，要么一项都不写。
 
-6. **验证**（人类确认点）
+5. **规划代码切片** —— `slice-planner` Skill 通过 `openlogos slice plan --file <slices.json>` 写出 `tasks.md` 的 `[code]` 段
+
+6. **实现代码 + 测试** —— AI 按已合并的规格逐片实现
+
+7. **验证**（人类确认点）
 
    ```bash
    openlogos verify
    ```
 
-7. **归档**
+8. **归档**（人类确认点；若提案含 `[deploy]` 段，则在部署与 smoke 之后）
 
    ```bash
    openlogos archive my-feature
@@ -336,7 +340,7 @@ openlogos module add admin
 
 它告诉 OpenLogos 这个项目跳过了初始文档基线。效果如下：
 - `openlogos status` 把 Phase 1–3 显示为 `⏭️`（跳过）而非 ❌（缺失）
-- `openlogos next` 建议 `openlogos change add-baseline-docs` 而非"编写需求"
+- `openlogos next` 建议直接创建变更（`openlogos change <slug>`），而非"编写需求"
 - `openlogos launch` 不再要求 Phase 1–3 文档必须存在
 
 **我的测试命令很复杂——怎么配置？**

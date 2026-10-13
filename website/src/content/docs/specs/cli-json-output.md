@@ -1,9 +1,9 @@
 ---
 title: CLI JSON Output
-description: Structured JSON output specification for OpenLogos CLI commands (status, next, verify, smoke, detect, module list).
+description: Structured JSON output specification for OpenLogos CLI commands (status, next, verify, smoke, merge, slice plan, detect, module list), including the contract version handshake.
 ---
 
-OpenLogos CLI supports `--format json` on five command families — `status`, `next`, `verify`, `smoke`, `detect`, and `module list` — producing structured JSON for programmatic consumption by external tools like RunLogos.
+OpenLogos CLI supports `--format json` on its machine-facing commands — including `status`, `next`, `watch`, `verify`, `smoke`, `deploy-done`, `merge`, `slice plan`, `detect`, `flow show`, `change-lint` and `module list` — producing structured JSON for programmatic consumption by external tools like RunLogos.
 
 ## Common Conventions
 
@@ -27,7 +27,30 @@ All commands share a common envelope:
 }
 ```
 
-Where `command` is one of: `"status"`, `"next"`, `"verify"`, `"smoke"`, `"detect"`, `"module list"`.
+`command` is the command name, for example `"status"`, `"next"`, `"verify"`, `"smoke"`, `"merge"`, `"slice plan"`, `"detect"` or `"module list"`. The top-level `version` is the **CLI version**. It is not the contract version (see below).
+
+## Contract version (`data.contract.version`)
+
+`status`, `next` and `verify` include a machine contract version in `data`:
+
+```json
+{ "command": "verify", "version": "0.16.0", "timestamp": "…", "data": { "contract": { "version": "1.1.0" }, … } }
+```
+
+- `data.contract.version` follows SemVer independently of the CLI version. A **major** bump means a required field was removed or changed meaning, or a closed enum lost a value. A **minor** bump adds optional fields or enum values. A **patch** clarifies without changing shape.
+- Values currently emitted: `status` / `next` emit `1.0.0`, `1.1.0` (feature groups or slice-verification fields present) or `1.3.0` (plan-package fields present). `verify` emits `1.0.0`, or `1.1.0` when slice-aware fields are present.
+- The npm package ships JSON Schemas for these contracts under `spec/schema/`: `status.schema.json`, `next.schema.json` and `verify.schema.json`. Each schema embeds its version (`x-contract-version`) and validates `envelope.data`. The schemas are backward-compatible supersets, so older responses still validate.
+- **Consumers**: validate `data` against the bundled schema. If `contract` is missing or its major version is unknown, fall back to a conservative mode (follow `next` only, and treat heuristics as observations). Treat any unknown enum value conservatively. Ignore unknown fields.
+
+### Projections removed in 0.15.0
+
+The 0.15.0 flow reduction removed several projections. Tools that read `--format json` should no longer expect them:
+
+| Command | Removed | Notes |
+|---------|---------|-------|
+| `verify` | `checklist`, `ac_trace` | The verify gate now has only three criteria: consistent result ledger, zero failed, zero uncovered. `gate.reason` no longer produces `checklist_incomplete` or `ac_trace_incomplete`. If an old response contains them, read it as FAIL. |
+| `status` / `next` | `plan_state.clarification` | Decision clarification is no longer a hard gate. Contract `1.2.0` is no longer emitted. |
+| `status` / `next` | Merge-transaction and slice-transaction projections | Merging is a single `openlogos merge <slug>` call, and slices are written by `openlogos slice plan`. Contract `1.4.0` is no longer emitted. |
 
 ## detect
 
@@ -87,7 +110,7 @@ The `proposal_step` field tracks change proposal lifecycle:
 | `ready-to-delta` | Proposal + tasks filled, no delta yet, `PLAN_APPROVED` absent — the `plan-exit` "approve plan" gate |
 | `delta-writing` | Proposal filled; delta tasks not all checked |
 | `ready-to-merge` | All delta tasks checked (the `spec-exit` gate) |
-| `merge-generated` | `openlogos merge` has run |
+| `merge-generated` | Legacy value from the pre-0.15 two-step merge. The single-call `openlogos merge` goes straight to the spec-complete steps. |
 | `spec-complete-required` | Code proposal has no spec-complete marker; run no-delta `openlogos merge <slug>` or finish merge before planning slices |
 | `test-id-required` | Spec-complete is done, but no real `UT-*` / `ST-*` / `SMOKE-*` IDs are available for slice planning |
 | `ready-to-implement` | Specs merged, `code_required`, `[code]` slices not yet written by slice-planner — the `slice-exit` "approve slices" gate |
@@ -164,17 +187,20 @@ These fields drive external orchestrators. All follow the same **mount + omit** 
 openlogos verify --format json
 ```
 
-Returns test verification results with three-layer validation:
+Returns the Gate 3.6 result. The gate has three criteria: consistent result ledger, zero failed cases, zero uncovered cases. A failing pre-run command also fails the gate.
 
 | Key field | Description |
 |-----------|-------------|
-| `summary` | Defined/executed/passed/failed/skipped/uncovered counts and percentages |
-| `gate` | `result` ("PASS"/"FAIL") and `reason` |
-| `failed_cases[]` | ID and error for each failure |
-| `checklist` | Design-time coverage validation status |
-| `ac_trace` | Acceptance criteria traceability status |
-| `pre_run` | Pre-run execution mode, commands, result paths, diagnostics |
-| `sandbox` | Sandbox isolation mode, status, diagnostics |
+| `contract.version` | `1.0.0`, or `1.1.0` when slice-aware fields are present |
+| `summary` | Defined / manual / executed / passed / failed / skipped / uncovered counts, coverage and pass rate |
+| `gate` | `result` (`"PASS"` / `"FAIL"`) and `reason` |
+| `failed_cases[]`, `uncovered_cases[]`, `skipped_cases[]` | Case lists |
+| `consistency` | `ok`, `reasons`, `unknown_result_ids`, `manual_result_ids`, `outside_eligible_result_ids`, `invalid_results`, `count_mismatches`, `count_mismatch_details` |
+| `pre_run` | Mode, per-stage `status` / `exit_code` / `duration_ms`, result paths, diagnostics and suggestions |
+| `sandbox` | Sandbox mode, isolation, status, diagnostics, optional `infos` |
+| `smoke_precheck` | Smoke coverage precheck for the active proposal's changed `SMOKE-*` cases |
+| `report_path` | Acceptance report path |
+| `verify_mode`, `attempted_slice_id`, `eligible_test_ids`, `pending_test_ids`, `manifest`, `checkpoint`, `test_change_set` | Only in slice-aware runs (`verify_mode`: `slice-checkpoint` or `final`) |
 
 ### Pre-run modes
 
@@ -184,14 +210,25 @@ Returns test verification results with three-layer validation:
 | `pre_run_command` | Single `verify.pre_run_command` executed |
 | `two_phase` | `regression_command` + `incremental_command` with last-write-wins merge |
 
+Each executed `pre_run.commands[]` entry carries `stdout_tail` and `stderr_tail`: the last 80 lines and at most 8 KiB of the command's output, cut at a UTF-8 character boundary, with ANSI control codes removed. These fields exist only in JSON output. They are not written to `acceptance-report.md` and the full output is never saved to disk. Skipped entries have no tails.
+
 ### Gate failure reasons
 
 | Reason | Description |
 |--------|-------------|
+| `pre_run_failed` | A pre-run stage (`pre_run`, `regression` or `incremental`) exited non-zero and the ledger has no failed cases. The stale results file is not used to pass the gate. |
+| `result_ledger_inconsistent` | The result ledger is inconsistent (see `consistency`) |
 | `failed_cases` | One or more test cases failed |
 | `incomplete_coverage` | Some defined cases have no result |
-| `checklist_incomplete` | Design-time coverage checklist not fully checked |
-| `ac_trace_incomplete` | Acceptance criteria traceability not fully passed |
+| `smoke_runner_missing` / `smoke_reporter_missing` | The smoke coverage precheck blocked: the proposal changed `SMOKE-*` cases but no runner or reporter is wired up |
+
+Priority: if a pre-run stage failed, the reason is `failed_cases` when there are failed cases, otherwise `pre_run_failed`. If all pre-run stages passed or none is configured, the order is `result_ledger_inconsistent` → `failed_cases` → `incomplete_coverage`.
+
+### Slice manifest pause
+
+In a multi-slice launched change, if `TEST_SLICE_MANIFEST.json` is missing, invalid or stale, verify does not run any tests. It prints an envelope whose `data` has `reason` (for example `test-slice-manifest-missing`) and `slice_verification_state`, and exits with `2`. For `test-slice-manifest-unsupported` and `test-slice-assignment-ambiguous` it exits with `1`. The recovery is to re-run `openlogos slice plan --file <slices.json>`. See [Test Slice Manifest](/specs/test-slice-manifest).
+
+`status` and `next` expose the same `slice_verification_state` (`manifest_status`, `verify_mode`, `attempted_slice_id`, `confirmed_slice_ids`, `eligible_test_ids`, `pending_test_ids`). When recovery is possible, `next` returns `next_node.id: "plan-slices"` with `skill: "slice-planner"` and `dispatch.idempotent: true`.
 
 ## smoke
 
@@ -207,9 +244,43 @@ Returns post-deployment smoke verification results:
 | `environment` | Target environment (from `--env` flag, or `null`) |
 | `summary` | Same structure as verify summary |
 | `gate` | Gate 3.8 result and reason |
+| `changed_cases`, `diagnostics`, `runners` | The active proposal's changed `SMOKE-*` IDs, precheck diagnostics, and the runners that were found |
+| `required_skipped_cases` | Only when non-empty. `[{id, detail}]` for skips of the proposal's changed cases, which block the gate (`required_cases_skipped`). |
+| `platform_skipped_cases` | Only when non-empty. `[{id, detail}]` for skips accepted because the result carries `reason_code: "platform-unavailable"` and a non-empty `detail`. |
 | `sandbox` | Sandbox execution status |
 | `report_path` | Generated smoke report path |
 | `result_path` | Smoke results JSONL path |
+
+`gate.reason` priority: `failed_cases` → precheck diagnostic code (`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`) → `required_cases_skipped` → `incomplete_coverage`.
+
+## merge
+
+```bash
+openlogos merge <slug> --format json
+```
+
+`openlogos merge` applies all deltas in a single call. The write is atomic: either everything lands or nothing does. On success, `data` contains:
+
+| Field | Description |
+|-------|-------------|
+| `slug` | Proposal slug |
+| `result` | `"merged"` (first merge, including no-delta spec-complete), `"already-merged"` (nothing changed since the recorded merge), or `"amended"` (an already-merged proposal's deltas changed and were re-applied incrementally from the recorded merge baseline) |
+| `delta_digest` | Digest of the deltas that were applied |
+| `target_count`, `targets` | Spec files written |
+| `spec_merged_path` | Path of `SPEC_MERGED` |
+| `test_change_set` | Test IDs added/modified/removed by the proposal |
+| `invalidated_markers` | For `amended`: the acceptance markers cleared because the spec changed (`VERIFY_PASS`, `VERIFY_FAIL`, `DEPLOY_DONE`, `SMOKE_PASS`, `SMOKE_FAIL`, whichever were present) |
+| `amend` | `null`, or for `amended`: `{targets_recomposed, targets_added, targets_restored}` |
+
+`status` projects pending amendments at `modules[].active_change.spec_amend`: `merged_delta_digest`, `current_delta_digest`, `pending` (`null` when there is no baseline, which means it cannot be determined), `blocked_reason` (`baseline-missing`, `baseline-unreadable`, `drift`, `create-withdraw` or `prototype-changed`) and `amend_count`. If a merge target was edited by hand after the merge (`drift`), `merge` refuses to amend (`MERGE_AMEND_DRIFT`) and explains what to check. Errors use the error envelope below.
+
+## slice plan
+
+```bash
+openlogos slice plan --file <slices.json> --format json
+```
+
+On success, `command` is `"slice plan"` and `data` contains `slug`, `slice_count`, `slice_ids`, `task_fingerprint`, `spec_fingerprint` and `manifest_path`. On failure, the error envelope goes to stderr with `error.code` (`SLICE_PLAN_*`). When the validator rejected the input, a top-level `violations` array lists each item with `code`, `path`, `message` and `fix_hint`. See [`openlogos slice`](/cli/slice).
 
 ## module list
 

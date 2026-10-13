@@ -38,7 +38,7 @@ test-writer writes no code; code-implementor designs no test cases; code-reviewe
 ## What It Does
 
 1. Load full specification context (7 document types) to establish an implementation baseline
-2. Plan batch execution strategy — split by scenario or module
+2. Decide the batches: in the `initial` phase, plan them by scenario or module; under a `launched` change, consume the `[code]` slices written by `slice-planner`
 3. Generate business code strictly consistent with API YAML (routes, status codes, error codes, fields)
 4. Generate data access code strictly aligned with DB DDL (table names, column names, types, constraints)
 5. Generate test code with IDs exactly matching test-cases.md
@@ -61,14 +61,26 @@ Before writing any code, read these documents to establish full context:
 | Orchestration tests | `logos/resources/scenario/*.json` | E2E targets (API projects) |
 | Project config | `logos/logos-project.yaml` | Tech stack, dependencies |
 
-### Step 2: Plan Batch Strategy
+### Step 2: Plan Batch Strategy (`initial` only)
 
-Large tasks must be batched, but each batch must be **closed-loop**:
+> **Scope:** this step applies **only to the `initial` phase**, the first 0-to-1 development cycle. There is no change proposal and no `tasks.md` yet, so the implementer plans the batches.
+>
+> **Under a `launched` change this step does not apply.** After merge, [`slice-planner`](/skills/slice-planner) has already decided the slices with six-dimension scoring, the vertical/horizontal discriminator and the delete-the-rest gate. `openlogos slice plan` wrote them into the `[code]` section of `tasks.md`, one unchecked line per slice. That section is the single source of truth. code-implementor **must not re-score and must not re-batch**. It consumes the `[code]` slices line by line, in order. Which slice to do, and how many slices there are, always comes from `[code]`. If the slicing looks wrong, stop and ask for re-planning with `slice-planner` instead of splitting or merging slices yourself.
+
+In the `initial` phase, batch only big tasks: a task scoring 8 or more on the six dimensions (blast radius, behavioral complexity, contract change, test size, risk, uncertainty). Each batch must be **closed-loop**:
 
 1. **Split dimension**: By scenario (S01, S02) or by module (auth, projects)
 2. **Pre-batch declaration**: List UT/ST case IDs covered, ensuring traceability to `logos/resources/test/*.md`
 3. **Closed-loop requirement**: Each batch delivers business code + test code + reporter
 4. **No deferred testing**: "Write all business code first, add tests later" is forbidden
+
+#### Consuming `[code]` slices (`launched`)
+
+- Each unchecked `[code]` line is one slice. Its business code, its UT/ST tests (the IDs at the end of the line) and the reporter are delivered together.
+- **When the host injects one slice at a time** (`openlogos next` returns `next_node.slice`), implement only that slice in this round.
+- **When nothing injects slices** (manual run, no driver), implement **all** unchecked slices in this session, each still closed-loop, before you hand over to verify. Do not stop after the first line and wait for a next round that will never come.
+- When the change has two or more slices with a `TEST_SLICE_MANIFEST.json`, `openlogos verify` runs a **slice checkpoint**: baseline regression + tests of the slices already confirmed + tests of the current slice. Tests of later slices are pending. After the last slice, verify runs full final acceptance. See [Test Slice Manifest](/specs/test-slice-manifest).
+- Tick a slice only after its tests and the regression are green. Never edit `[code]` text or the manifest.
 
 ### Step 3: Generate Business Code
 
@@ -101,7 +113,7 @@ After each batch, verify:
 
 1. Prompt user to run tests (e.g., `npm test`, `pytest`)
 2. Confirm `test-results.jsonl` was generated
-3. After all batches: guide user to run `openlogos verify` (Gate 3.5)
+3. After all batches or slices: guide the user to run `openlogos verify` (Gate 3.6)
 4. If code quality audit needed: suggest [`code-reviewer`](/skills/code-reviewer)
 
 ## Outputs

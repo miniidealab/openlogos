@@ -8,7 +8,7 @@ import { Steps, Aside, Badge } from '@astrojs/starlight/components';
 In the [Quick Start](/getting-started/quick-start), you set up a project and generated a requirements document. Now let's go all the way — from a one-sentence idea to a fully tested, production-ready codebase.
 
 **Project:** Short-Link — a public URL shortening service (like bit.ly)
-**AI Tool:** Claude Code (the same workflow applies to Cursor and OpenCode)
+**AI Tool:** Claude Code (the same workflow applies to OpenCode, Codex, Cursor, ZCode, Qoder, and WorkBuddy)
 **Time:** ~60 minutes across all phases
 
 ---
@@ -24,9 +24,14 @@ OpenLogos follows a strict **WHY → WHAT → HOW** progression. Each phase read
 | 3-0 | Architecture | `architecture-designer` | Tech stack + system diagram |
 | 3-1 | Scenario Modeling | `scenario-architect` | Sequence diagrams per scenario |
 | 3-2 | API + DB Design | `api-designer` + `db-designer` | OpenAPI spec + SQL schema |
-| 3-3 | Test Case Design | `test-writer` | Unit tests + scenario tests |
-| 3-4 | Code Generation | — | Business code + test code |
-| 3-5 | Verification | `openlogos verify` | Gate 3.5 PASS / FAIL |
+| 3-3 | Deployment Plan | `deployment-designer` | Deployment plan + smoke strategy |
+| 3-4 | Test Case Design | `test-writer` (+ `test-orchestrator` for APIs) | Unit tests + scenario tests |
+| 3-5 | Code Generation | `code-implementor` | Business code + test code |
+| 3-6 | Verification | `openlogos verify` | Gate 3.6 PASS / FAIL |
+
+<Aside type="note">
+This walkthrough was recorded with an earlier OpenLogos version, so some screenshots show older phase and gate numbers (for example "Gate 3.5"). The text uses the current numbering: verification is Phase 3-6 / Gate 3.6. Current versions also include Phase 3-3 · Deployment Plan before test design (not shown in this recording), and Phases 3-7 / 3-8 (deployment and smoke) when the project needs deployment.
+</Aside>
 
 Let's walk through each one.
 
@@ -218,7 +223,7 @@ A separate `clicks` table tracks analytics with `referrer`, `country`, and `user
 
 ---
 
-## Phase 3-3: Test Case Design
+## Phase 3-4: Test Case Design
 
 **Prompt:** `Help me design test cases`
 
@@ -243,11 +248,11 @@ Scenario tests cover end-to-end flows:
 - **Exception paths** — slug not found (404), inactive link (410), Redis unavailable (fallback to DB), click insert failure (redirect still delivered)
 - **Coverage validation** — every acceptance criterion, every exception case in the sequence diagrams is mapped to at least one test
 
-The test spec ensures **100% coverage** of design documents before any code is written.
+Mapping every acceptance criterion and exception case to at least one test is how `test-writer` writes the spec — before any code exists. Later, `openlogos verify` checks the test results against these defined cases.
 
 ---
 
-## Phase 3-4: Code Generation
+## Phase 3-5: Code Generation
 
 **Prompt:** `Help me implement S01`
 
@@ -283,13 +288,13 @@ This is the opposite of "vibe coding" — every function exists because a scenar
 
 ---
 
-## Phase 3-5: Verification
+## Phase 3-6: Verification
 
 **Prompt:** `/openlogos:verify`
 
-The final phase runs all tests and validates coverage against the design documents:
+The final phase runs all tests and checks the results against the test cases defined in `logos/resources/test/`. The gate passes when the result ledger is consistent, nothing failed, and no defined case is left without a result:
 
-![openlogos verify shows Gate 3.5 PASS — 111 cases, 100% coverage](/docs/first-collab/c3.5.openlogos.verify.jpg)
+![openlogos verify shows PASS — 111 cases, 100% coverage (screenshot from an earlier version)](/docs/first-collab/c3.5.openlogos.verify.jpg)
 
 | Metric | Value |
 |--------|-------|
@@ -303,7 +308,7 @@ The final phase runs all tests and validates coverage against the design documen
 
 The 25 skipped cases are scenario tests (ST-S01 through ST-S04) that require a live Next.js server + database + Redis — they're intentionally marked `skip` and covered by the orchestration JSON files in `logos/resources/scenario/`.
 
-**Gate 3.5: PASS** — all test cases are covered.
+**Gate 3.6: PASS** — every defined test case has a result, and none failed.
 
 ### Final Status
 
@@ -317,10 +322,10 @@ Phase 2 · Product Design     ✅  Feature specs + 4 HTML prototypes
 Phase 3-0 · Architecture     ✅  Architecture overview
 Phase 3-1 · Scenario Modeling ✅  Sequence diagrams for S01–S04
 Phase 3-2 · API + DB Design  ✅  OpenAPI YAML + SQL schema
-Phase 3-3a · Test Case Design ✅  Test specs for S01–S04
-Phase 3-3b · Orchestration    ✅  JSON orchestration for S01–S04
-Phase 3-4 · Code + Test Code  ✅  Business code + test code with reporter
-Phase 3-5 · Test Acceptance  ✅  100% coverage, Gate 3.5 PASS
+Phase 3-4a · Test Case Design ✅  Test specs for S01–S04
+Phase 3-4b · Orchestration    ✅  JSON orchestration for S01–S04
+Phase 3-5 · Code + Test Code  ✅  Business code + test code with reporter
+Phase 3-6 · Test Acceptance  ✅  Gate 3.6 PASS
 ```
 
 ---
@@ -338,7 +343,7 @@ In about 60 minutes of human involvement (mostly answering questions), you went 
 - **Database schema** with 2 tables, indexes, and constraints
 - **111 test cases** (79 unit + 32 scenario) with full source traceability
 - **Production-ready code** — scaffolded Next.js project with all route handlers, DB layer, and tests
-- **Gate 3.5 PASS** — 100% coverage of design documents
+- **Gate 3.6 PASS** — every designed test case has a result, zero failures
 
 Every artifact is a plain text file in `logos/resources/`. Every decision is documented. Every line of code traces back to a scenario step. If a new developer joins tomorrow, they can read the full design chain and understand *why* every piece of code exists.
 

@@ -1,9 +1,11 @@
 ---
 title: "openlogos verify"
-description: 针对测试用例规格验证测试结果并生成验收报告（Gate 3.5）。
+description: 对照已合并的测试用例规格验证测试结果，并生成验收报告（Gate 3.6）。
 ---
 
-从 JSONL 文件读取测试结果，与 `logos/resources/test/` 中定义的测试用例 ID 对比，验证三层覆盖度，并生成验收报告。这是 **Gate 3.5** 质量检查。
+`openlogos verify` 读取测试结果账本（JSONL），与 `logos/resources/test/` 中定义的测试用例 ID 对比，并生成验收报告。这是 **Gate 3.6** 质量检查。
+
+门禁判定只有三项：结果账本一致、零失败、零未覆盖。此外，配置了预跑命令时，预跑命令非零退出同样判 FAIL。
 
 ## 命令格式
 
@@ -12,17 +14,42 @@ openlogos verify
 openlogos verify --format json
 ```
 
-必须在项目根目录下运行。
+在项目根目录下运行。
 
 ## 选项
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--format json` | 输出机器可读的 JSON 信封（包含 `pre_run` 和 `sandbox` 诊断信息）。 |
+| `--format json` | 输出机器可读的 JSON 信封，见下文 [JSON 输出](#json-输出)。 |
 
-## 沙箱执行（verify / smoke 标准化）
+## Gate 3.6 通过标准
 
-`openlogos verify` 支持通过 `logos/logos.config.json` 进行沙箱化的 pre-run 执行：
+| 判定项 | 含义 |
+|-----------|-------------|
+| 结果账本一致 | 结果文件每行合法；每个结果 ID 都在已合并测试规格中定义；`[manual]` 用例没有结果行；各计数相互吻合（`passed + failed + skipped = executed` 等）。 |
+| 零失败 | 没有任何有效结果的 `status` 为 `"fail"`。 |
+| 零未覆盖 | 测试规格中定义的每个自动化 UT/ST ID 都有对应结果。 |
+
+另外，配置了 `verify.pre_run_command`（或两阶段的 `regression_command` / `incremental_command`）时，**每一段都必须以退出码 0 结束**。任一段非零退出即门禁 FAIL（`pre_run_failed`），即使结果文件看起来完整且全绿也一样。这时的结果文件可能是运行器回滚出的旧账本，verify 不会沿用旧结果判定。
+
+门禁 FAIL 时命令以退出码 `1` 退出。
+
+`*-test-cases.md` 里的覆盖度自查清单和验收条件追溯表仍是有用的写作实践（见 [test-writer](/zh/skills/test-writer)），但 verify 不解析它们，它们不影响门禁、报告和 JSON 输出。
+
+### FAIL 原因
+
+JSON 输出中的 `gate.reason` 取第一个命中的值：
+
+| 情形 | 原因优先级 |
+|------|-----------|
+| 预跑命令有一段非零退出 | 有失败用例时为 `failed_cases`，否则为 `pre_run_failed` |
+| 预跑全部成功或未配置 | `result_ledger_inconsistent` → `failed_cases` → `incomplete_coverage` |
+
+沙箱失败，或 smoke 覆盖预检命中阻断项（见下文），也会把结果变成 FAIL。
+
+## 预跑命令与沙箱
+
+在 `logos/logos.config.json` 中配置：
 
 ```json
 {
@@ -36,65 +63,54 @@ openlogos verify --format json
 }
 ```
 
-行为：
+- **单阶段**：执行一次 `pre_run_command`。执行前 verify 会清空结果文件，避免旧结果混入本轮。
+- **两阶段**：依次执行 `regression_command` 与 `incremental_command`，结果按「后写胜出」合并进 `result_path`。配置了两阶段时，`pre_run_command` 作为兼容配置保留，但不执行。
+- **未配置**：直接读取 `result_path` 中已有的结果。覆盖不足时，verify 会建议配置预跑命令，因为常见原因是本地只跑了部分测试。
 
-- `sandbox_mode: "off"`：保持历史行为，无隔离。
-- `sandbox_mode: "auto"`：优先隔离；如果隔离不可用，则降级并发出警告，保持命令兼容性。
-- `sandbox_mode: "always"`：强制隔离；如果设置失败、沙箱副本存在逃逸 symlink、无法启用运行期写保护，或检测到非白名单写入，verify 失败。
+沙箱模式：
 
-启用沙箱后，pre-run 命令仅允许结果文件的写回（`verify.result_path`、可选的 `regression_result_path`、`incremental_result_path`）以及报告输出。写回采用定点采集：白名单结果文件即使位于 `node_modules` 下也照常回收。
+- `sandbox_mode: "off"`：不隔离（历史行为）。
+- `sandbox_mode: "auto"`：能隔离就隔离；隔离不可用时降级并告警。
+- `sandbox_mode: "always"`：强制隔离。以下任一情况 verify 都会失败：设置失败、沙箱副本含逃逸 symlink、运行期写保护不可用、检测到白名单之外的写入。
 
-依赖目录豁免：规范化后存在完整路径段严格等于 `node_modules` 的路径（含 monorepo 嵌套形态如 `packages/a/node_modules/**`）视为沙箱内一次性依赖目录——不参与写入审计、从不回收。这消除了 pnpm 11 `verifyDepsBeforeRun=install` 自动修复 `node_modules/.bin/*` 造成的固定误报；`node_modules-cache` 等近似名称不豁免。豁免生效时通过可选 JSON 字段 `sandbox.infos` 输出一条信息级说明（文本输出以 `ℹ️` 渲染一次），不影响 `sandbox.status`。
+沙箱内的预跑命令只能写回结果文件（`verify.result_path`，以及已配置的 `regression_result_path` / `incremental_result_path`）和报告。白名单内的结果文件即使位于 `node_modules` 下也会照常回收。
 
-symlink 隔离与运行期写保护：复制保持 symlink 目标字面量并校验逃逸链接；命令执行期间由 OS 级写保护（macOS `sandbox-exec` / Linux bubblewrap）在写入发生前阻断对原 workspace 的写入——覆盖运行期新建或改写的 symlink。写保护机制不可用时，`always` 失败并说明原因，`auto` 继续沙箱执行但告警披露残留风险。
+规范化后存在完整路径段严格等于 `node_modules` 的路径（含 `packages/a/node_modules/**` 这类嵌套形态），视为沙箱副本内的一次性依赖目录：不参与写入审计，也不回收。`node_modules-cache` 等近似名称不豁免。豁免生效时会在 `sandbox.infos` 输出一条信息级说明（文本输出以 `ℹ️` 显示一次），`sandbox.status` 不变。
 
-## 检查内容
+复制时 symlink 目标按字面量保留，并检查是否有逃逸出沙箱的链接。命令执行期间，由 OS 级写保护（macOS `sandbox-exec`、Linux bubblewrap）在写入发生前阻断对原 workspace 的写入。没有可用的写保护机制时，`always` 失败并说明原因；`auto` 继续执行，但告警说明残留风险。
 
-验证会运行三层校验：
+## 切片增量 checkpoint 与最终全量验收
 
-### 第 1 层：运行时测试结果
+在 launched 变更中，如果 `[code]` 段由 [`openlogos slice plan`](/zh/cli/slice) 规划出两片及以上、且每片都标注了真实测试 ID，verify 会依据 `TEST_SLICE_MANIFEST.json`（见 [测试切片清单](/zh/specs/test-slice-manifest)）进入**切片感知**模式：
 
-读取 `logos/resources/verify/test-results.jsonl`（或来自 `logos.config.json` 的自定义路径），并统计 pass/fail/skip/uncovered。
+- **切片 checkpoint**（`verify_mode: "slice-checkpoint"`）：还有切片未确认时，verify 的验收范围是：基线回归测试 + 已通过切片拥有的测试 + 当前切片拥有的测试。后续切片拥有的测试是 **pending**：不参与本次门禁，也不计入未覆盖。运行器如果输出了 pending ID，账本判为不一致（`result_outside_eligible_scope`）。
+  - PASS：向 `SLICE_CHECKPOINTS.jsonl` 追加一行，**不写** `VERIFY_PASS`。
+  - FAIL：写 `VERIFY_FAIL`，并计入 implement 循环的修复预算。
+- **最终验收**（`verify_mode: "final"`）：全部切片勾选并确认后，verify 对所有已定义测试做全量验收。只有 final PASS 才写 `VERIFY_PASS`。
 
-### 第 2 层：设计阶段覆盖度 checklist
+单切片、纯文档提案，以及没有 manifest 的旧提案，照常走全量 verify。
 
-解析 `*-test-cases.md` 文件中的 "覆盖度校验" checklist。这些是 AI 在测试设计阶段做出的断言 —— 例如 "All S02 exception cases are covered."
-
-### 第 3 层：验收条件追溯
-
-解析测试用例文件中的 "验收条件追溯" 表格。每条验收条件（例如 `S01-AC-01`）都关联到具体的测试用例 ID，并检查运行结果以确认它们通过。
-
-## Gate 3.5 通过标准
-
-四个条件必须全部满足：
-
-| 条件 | 说明 |
-|-----------|-------------|
-| 零失败测试 | 没有任何测试结果的 `status` 为 `"fail"` |
-| 100% 覆盖率 | 测试规格中定义的每个 ID 都有对应的结果 |
-| Checklist 完整 | 设计阶段 checklist 中所有 `- [x]` 项都已勾选 |
-| AC 可追溯 | 所有验收条件都有关联且通过的测试用例 |
-
-如果任一条件失败，命令以退出码 `1` 退出。
+manifest 缺失、非法或过期（stale）时，verify 在执行任何测试命令**之前**暂停：打印 `verify 暂停：<reason>` 并逐条列出违规；JSON 模式输出 `data.reason` 与 `data.slice_verification_state`。退出码为 `2`，`test-slice-manifest-unsupported` / `test-slice-assignment-ambiguous` 为 `1`。这种情况下不写任何 marker，也不写循环账本。恢复方法：用同一份输入重跑 `openlogos slice plan --file <slices.json>`（见 [`slice`](/zh/cli/slice)）。
 
 ## 提案生命周期集成
 
-当存在活跃的变更提案（`.openlogos-guard` 存在）时，`openlogos verify` 会在门禁结果确定后自动向提案目录写入一个标记文件：
+存在活跃变更提案（`logos/.openlogos-guard`）时，门禁结果确定后，verify 会向提案目录写入标记：
 
-| 门禁结果 | 写入的标记 |
-|-------------|---------------|
-| PASS | `logos/changes/<slug>/VERIFY_PASS` |
-| FAIL | `logos/changes/<slug>/VERIFY_FAIL` |
+| 结果 | 标记 |
+|------|------|
+| PASS（全量或 final） | 写 `VERIFY_PASS`，删除 `VERIFY_FAIL` |
+| PASS（切片 checkpoint） | 追加 checkpoint 行，删除 `VERIFY_FAIL`，不写 `VERIFY_PASS` |
+| FAIL | 写 `VERIFY_FAIL`，删除 `VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL` |
 
-这些标记会推进提案步骤：
-- `VERIFY_PASS` → 提案步骤变为 `verify-passed`（可以归档）
-- `VERIFY_FAIL` → 提案步骤变为 `verify-failed`（修复后重新运行 verify）
+`openlogos status` / `openlogos next` 读取这些标记来给出下一步。PASS 后如果提案有 `[deploy]` 任务，verify 会列出这些任务，并提醒部署是人类确认点。
 
-`openlogos status` 会读取这些标记以显示正确的下一步操作。
+### smoke 覆盖预检
+
+活跃提案新增或修改了 `SMOKE-*` 用例时，verify 会顺带检查 smoke runner 与 reporter 是否已接好（`smoke_runner_missing`、`smoke_reporter_missing`）。缺 runner 时 verify 直接 FAIL，问题在部署前就会暴露，不必等到 `openlogos smoke`。切片 checkpoint 期间，属于后续切片的 smoke 用例不阻断本次预检。
 
 ## 测试结果格式（JSONL）
 
-`test-results.jsonl` 中的每一行都是一个 JSON 对象：
+结果文件每行一个 JSON 对象：
 
 ```json
 {"id":"UT-S01-01","status":"pass","duration_ms":12,"timestamp":"2026-04-10T10:00:00Z"}
@@ -104,132 +120,144 @@ symlink 隔离与运行期写保护：复制保持 symlink 目标字面量并校
 
 | 字段 | 必填 | 取值 | 说明 |
 |-------|----------|--------|-------------|
-| `id` | Yes | `UT-SXX-XX` 或 `ST-SXX-XX` | 与测试规格匹配的测试用例 ID |
-| `status` | Yes | `pass`, `fail`, `skip` | 测试结果 |
-| `duration_ms` | No | number | 执行时间 |
-| `timestamp` | No | ISO 8601 | 测试运行的时间 |
-| `error` | No | string | 错误信息（用于失败的测试） |
-| `scenario` | No | string | 场景标识符 |
+| `id` | 是 | UT/ST ID，如 `UT-S01-01` | 必须是测试规格中定义的 ID |
+| `status` | 是 | `pass`、`fail`、`skip` | 其他取值会导致账本不一致 |
+| `error` | `fail` 时必填 | string | `fail` 记录缺少非空 `error` 视为非法行 |
+| `duration_ms` | 否 | number | 执行时长 |
+| `timestamp` | 否 | ISO 8601 | 运行时间 |
+| `scenario` | 否 | string | 场景标识 |
 
-如果同一个 `id` 出现多次（例如来自重跑），以**最后一次出现**为准。
+同一 `id` 出现多次时：如果该 ID 的所有记录时间戳都合法，取时间最新的一条；只要有一条缺失或非法，就退回取文件中最后一行。非法 JSON 行、缺 `id` / `status` 的行会记为非法行，账本判为不一致，不会被静默跳过。
 
-## 测试用例 ID 检测
+## 测试用例 ID 识别
 
-命令会扫描 `logos/resources/test/` 中所有 `*-test-cases.md` 文件，查找匹配以下模式的 ID：
+verify 扫描 `logos/resources/test/` 下所有 `*-test-cases.md`，只读取 **Markdown 表格行的首列**中的 UT/ST ID：
 
 ```
-UT-S01-01    (Unit Test, Scenario 01, Case 01)
-ST-S02-03    (Scenario Test, Scenario 02, Case 03)
+| UT-S01-01 | ... |        → 自动化用例
+| ST-S02-03 | ... |        → 自动化用例
+| ST-S02-04 [manual] | ... | → 人工用例（不计入 verify）
 ```
 
-正则表达式：`/\b(UT|ST)-S\d{2}-\d{2,3}\b/`
+只在正文、其他列或代码块里出现的 ID 不算定义。`SMOKE-*` 用例由 [`smoke`](/zh/cli/smoke)（Gate 3.8）统计，不进入 verify。
 
 ## 输出示例（通过）
 
+项目 `locale` 为 `zh` 时输出中文：
+
 ```
-🔍 OpenLogos Test Verification
+⚙️  Running verify.pre_run_command: npm test
+...
 
-Reading test results: logos/resources/verify/test-results.jsonl
-Reading test cases: logos/resources/test/
+🔍 OpenLogos 测试验收
+
+读取测试结果：logos/resources/verify/test-results.jsonl
+读取测试用例：logos/resources/test/
 
 ──────────────────────────────────────────────────
-📊 Results Summary
+📊 结果摘要
 ──────────────────────────────────────────────────
-  Total defined:  111 cases (79 UT + 32 ST)
-  Total executed: 111 cases
-  ✅ Passed:      86
-  ❌ Failed:       0
-  ⏭️  Skipped:     25
+  定义用例：  111 个（79 UT + 32 ST）
+  执行用例：  111 个
+  ✅ 通过：    86
+  ❌ 失败：     0
+  ⏭️  跳过：     25
 ──────────────────────────────────────────────────
-  Coverage:  100%  (111/111)
-  Pass rate: 77%  (86/111)
+  覆盖度：100%（111/111）
+  通过率：100%（111/111）
 ──────────────────────────────────────────────────
 
-📋 Design-time Coverage (Layer 1)
-  Checklist: 8/8 assertions confirmed
+✅ Gate 3.6：PASS
 
-🔗 Acceptance Criteria Traceability (Layer 3)
-  AC traceability: 16/16 criteria passed
+📄 报告：logos/resources/verify/acceptance-report.md
 
-✅ Gate 3.5: PASS
+⚙️  verify 预跑模式：单阶段
+  [pass] pre_run：npm test（exit=0，duration=8123ms）
 
-📄 Report: logos/resources/verify/acceptance-report.md
+🧪 verify sandbox
+  verify 沙箱：mode=auto，status=pass，isolated=true，write_denied=true
 ```
+
+通过率把跳过计为通过：`(passed + skipped) / executed`。
 
 ## 输出示例（失败）
 
 ```
-🔍 OpenLogos Test Verification
+🔍 OpenLogos 测试验收
 
-Reading test results: logos/resources/verify/test-results.jsonl
-Reading test cases: logos/resources/test/
+读取测试结果：logos/resources/verify/test-results.jsonl
+读取测试用例：logos/resources/test/
 
 ──────────────────────────────────────────────────
-📊 Results Summary
+📊 结果摘要
 ──────────────────────────────────────────────────
-  Total defined:  111 cases (79 UT + 32 ST)
-  Total executed: 109 cases
-  ✅ Passed:      84
-  ❌ Failed:       2
-  ⏭️  Skipped:     23
+  定义用例：  111 个（79 UT + 32 ST）
+  执行用例：  109 个
+  ✅ 通过：    84
+  ❌ 失败：     2
+  ⏭️  跳过：     23
 ──────────────────────────────────────────────────
-  Coverage:  98%  (109/111)
-  Pass rate: 77%  (84/109)
+  覆盖度：98%（109/111）
+  通过率：98%（107/109）
 ──────────────────────────────────────────────────
 
-❌ Failed cases:
+❌ 失败用例：
   UT-S02-04  Expected HTTP 302, got 301
   UT-S04-12  Token verification returned false for valid token
 
-⚠️  Uncovered cases (2):
+⚠️  未覆盖用例（2）：
   ST-S03-05
   ST-S03-06
 
-❌ Gate 3.5: FAIL
+❌ Gate 3.6：FAIL
 
-📄 Report: logos/resources/verify/acceptance-report.md
+📄 报告：logos/resources/verify/acceptance-report.md
 ```
+
+账本不一致时，verify 会打印 `verify result ledger is inconsistent`，列出原因（如 `unknown_test_result_id`、`invalid_test_result_json`、`result_count_mismatch`）、相关 ID 或行号；计数矛盾会点名相互矛盾的两个计数。
 
 ## 验收报告
 
-命令会生成 `logos/resources/verify/acceptance-report.md`，包含：
+verify 生成 `logos/resources/verify/acceptance-report.md`，包含：
 
-- **汇总表** —— 定义/执行/通过/失败/跳过/未覆盖/覆盖率/通过率/门禁结果
-- **失败用例** —— 每个用例的 ID 和错误信息
-- **未覆盖用例** —— 在测试结果中找不到的 ID
-- **跳过用例** —— `status` 为 `"skip"` 的 ID
-- **设计阶段覆盖度** —— 带 ✅/❌ 的 checklist 断言表
-- **AC 可追溯性** —— 验收条件 → 关联测试用例 → 运行状态
+- **汇总**：定义、人工（已排除）、执行、通过、失败、跳过、未覆盖、覆盖率、通过率与门禁结果
+- **预跑命令失败**：只记失败阶段与退出码。报告会进 git，所以命令输出不写入报告。
+- **切片验收**（仅切片感知模式）：模式、本次尝试的切片、已确认切片、可验收与 pending 测试数
+- **失败用例**、**未覆盖用例**、**跳过用例**
 
-## JSON 输出要点
+## JSON 输出
 
-使用 `--format json` 时，`data` 包含：
+使用 `--format json` 时，信封的 `data` 包含：
 
-- `pre_run`：执行模式（`none` / `pre_run_command` / `two_phase`）、命令状态、结果路径、诊断信息和建议。
-- `sandbox`：沙箱模式、是否进行了隔离执行、工作区写入策略、状态（`pass` / `warn` / `fail` / `skipped`）、诊断信息和建议。
+| 字段 | 说明 |
+|------|------|
+| `contract.version` | 机器契约版本（`1.0.0`；带切片感知字段时为 `1.1.0`） |
+| `summary` | 定义 / 人工 / 执行 / 通过 / 失败 / 跳过 / 未覆盖计数、覆盖率与通过率 |
+| `gate` | `result`（`PASS` / `FAIL`）与 `reason` |
+| `failed_cases`、`uncovered_cases`、`skipped_cases` | 用例清单 |
+| `consistency` | 账本一致性：`ok`、`reasons`、未知 / 人工 / 越界 ID、非法行、计数矛盾及明细 |
+| `pre_run` | 模式（`none` / `pre_run_command` / `two_phase`）、每段 `status` 与 `exit_code`、结果路径、诊断与建议。每个实际执行的阶段还带 `stdout_tail` / `stderr_tail`：末尾最多 80 行、不超过 8 KiB、已去除 ANSI 控制序列。输出尾部只出现在 JSON 中，不落盘。 |
+| `sandbox` | 沙箱模式、是否隔离、写入策略、`status`（`pass` / `warn` / `fail` / `skipped`）、诊断、建议、可选 `infos` |
+| `smoke_precheck` | smoke 覆盖预检结果 |
+| `verify_mode`、`attempted_slice_id`、`eligible_test_ids`、`pending_test_ids`、`manifest`、`checkpoint`、`test_change_set` | 仅切片感知模式出现 |
+| `report_path` | 验收报告路径 |
 
-## 自定义结果路径
-
-在 `logos.config.json` 中覆盖默认的 JSONL 路径：
-
-```json
-{
-  "verify": {
-    "result_path": "test-output/results.jsonl"
-  }
-}
-```
+契约细节见 [CLI JSON 输出](/zh/specs/cli-json-output)。
 
 ## 错误
 
 | 错误 | 原因 | 解决方法 |
 |-------|-------|-----|
-| `No test results found at ...` | JSONL 文件不存在 | 先运行你的测试（它们应当输出到 `test-results.jsonl`） |
-| `No test case specs found` | `logos/resources/test/` 为空 | 先进行测试设计（Phase 3-3a） |
-| `logos/logos.config.json not found` | 不在项目根目录 | `cd` 到项目根目录 |
-| 退出码 `1` | Gate 3.5 FAIL | 修复失败的测试、补齐缺失的覆盖，或完成 checklist |
+| `No test results found at ...`（`NO_TEST_RESULTS`） | 结果文件不存在，预跑也没有生成 | 先运行带 OpenLogos reporter 的测试，或配置 `verify.pre_run_command` |
+| `No test case specs found`（`NO_TEST_CASES`） | `logos/resources/test/` 中没有定义 UT/ST ID | 先做测试设计（test-writer） |
+| `logos/logos.config.json not found`（`PROJECT_NOT_INITIALIZED`） | 不在项目根目录 | `cd` 到项目根目录 |
+| `verify 暂停：test-slice-manifest-*` | 切片 manifest 缺失、非法或过期 | 重跑 `openlogos slice plan --file <slices.json>` |
+| 退出码 `1` | Gate 3.6 FAIL | 修复失败用例、补齐缺失结果、修正账本，或让预跑命令成功后重跑 verify |
 
-## 相关命令
+## 相关
 
-- [`status`](/zh/cli/status) — 检查 Phase 3-5（验证）是否完成
-- [`launch`](/zh/cli/launch) — 通常在 `verify` 通过后运行，以激活变更管理
+- [`slice`](/zh/cli/slice)：规划 `[code]` 切片并写出 `TEST_SLICE_MANIFEST.json`
+- [`deploy-done`](/zh/cli/deploy-done)：verify 通过后记录部署完成（Gate 3.7）
+- [`smoke`](/zh/cli/smoke)：部署后冒烟验收（Gate 3.8）
+- [`status`](/zh/cli/status)：查看提案当前所处位置
+- [`launch`](/zh/cli/launch)：通常在首轮 verify 通过后运行，以启用变更管理

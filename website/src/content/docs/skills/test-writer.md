@@ -30,7 +30,7 @@ Based on sequence diagrams, API specifications, and DB constraints, design unit 
 4. Extract scenario test cases from sequence diagram Step sequences (happy path)
 5. Extract scenario test cases from EX exception cases (exception paths)
 6. Reverse-validate coverage against Phase 1/2 acceptance criteria
-7. Build acceptance criteria traceability table
+7. Build a table that traces each acceptance criterion to its test cases
 
 ## Test Case ID Convention
 
@@ -76,7 +76,9 @@ Each EX exception case expanded into a scenario test: which Step triggers the ex
 - [ ] Each `required` API field → at least 1 UT case
 - [ ] Each `UNIQUE`/`CHECK` DB constraint → at least 1 UT case
 
-## Acceptance Criteria Traceability
+This checklist is a self-check for the test designer. `openlogos verify` does not parse it, and it does not affect Gate 3.6.
+
+## Tracing acceptance criteria to test cases
 
 ```markdown
 | AC ID | Acceptance Criterion | Covered By |
@@ -85,7 +87,7 @@ Each EX exception case expanded into a scenario test: which Step triggers the ex
 | S01-AC-02 | Exception: Already initialized — display error | ST-S01-03, UT-S01-05 |
 ```
 
-`openlogos verify` parses this table and links AC → test case ID → execution result to generate the acceptance report.
+This table is a writing practice: it shows that every acceptance criterion has at least one test case. `openlogos verify` does not parse it. The Gate 3.6 verdict depends only on the test case IDs in the first column of the test tables and their results: the result ledger must be consistent, with zero failed and zero uncovered cases (see [`verify`](/cli/verify)).
 
 ## Outputs
 

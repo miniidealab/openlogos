@@ -38,7 +38,7 @@ test-writer 不写代码；code-implementor 不设计测试用例；code-reviewe
 ## 它做了什么
 
 1. 加载完整规格上下文（7 类文档）以建立实现基线
-2. 规划分批执行策略 —— 按场景或模块拆分
+2. 确定分批：`initial` 阶段按场景或模块自行规划；`launched` 变更下逐行消费 `slice-planner` 写进 `[code]` 的切片
 3. 生成与 API YAML 严格一致的业务代码（路由、状态码、错误码、字段）
 4. 生成与 DB DDL 严格对齐的数据访问代码（表名、列名、类型、约束）
 5. 生成 ID 与 test-cases.md 完全匹配的测试代码
@@ -61,14 +61,26 @@ test-writer 不写代码；code-implementor 不设计测试用例；code-reviewe
 | 编排测试 | `logos/resources/scenario/*.json` | 端到端目标（API 项目） |
 | 项目配置 | `logos/logos-project.yaml` | 技术栈、依赖 |
 
-### Step 2：规划分批策略
+### Step 2：规划分批策略（仅 `initial`）
 
-大任务必须分批，但每批都必须**闭环**：
+> **适用范围**：本步骤**只适用于 `initial` 阶段**，即首轮从 0 到 1 的开发。此时还没有变更提案和 `tasks.md`，需要由实现者自行分批。
+>
+> **`launched` 变更下本步骤不适用。** merge 之后，[`slice-planner`](/zh/skills/slice-planner) 已经用六维打分、垂直/横向判别器与删后续证伪门确定了切片，并由 `openlogos slice plan` 写进 `tasks.md` 的 `[code]` 段，每个未勾行就是一片。这一段是唯一事实源。code-implementor **不得重新打分，也不得自行重新分批**，必须按顺序逐行消费 `[code]` 切片：做哪一片、一共几片，一律以 `[code]` 为准。如果觉得切片划分有问题，应停下来请求用 `slice-planner` 重新规划，而不是自己拆分或合并切片。
+
+`initial` 阶段只有大任务才分批：六维（影响范围、行为复杂度、契约变化、测试规模、风险等级、不确定性）评分 8 分及以上。每批都必须**闭环**：
 
 1. **拆分维度**：按场景（S01、S02）或按模块（auth、projects）
 2. **批前声明**：列出本批覆盖的 UT/ST 用例 ID，确保可追溯到 `logos/resources/test/*.md`
 3. **闭环要求**：每批交付业务代码 + 测试代码 + reporter
 4. **禁止延后测试**：禁止「先写完所有业务代码，之后再补测试」
+
+#### 消费 `[code]` 切片（`launched`）
+
+- 每个未勾选的 `[code]` 行是一片：该片的业务代码、UT/ST 测试（行尾标注的 ID）与 reporter 一并交付。
+- **宿主逐片注入时**（`openlogos next` 返回 `next_node.slice`），本轮只实现这一片。
+- **没有逐片注入时**（手动执行、没有 driver），在本次会话内把**全部**未勾切片实现完（每片仍各自闭环），再交给 verify。不要做完第一行就停下等待一个不会到来的下一轮。
+- 变更有两片及以上且存在 `TEST_SLICE_MANIFEST.json` 时，`openlogos verify` 执行**切片 checkpoint**：基线回归 + 已确认切片的测试 + 当前切片的测试，后续切片的测试为 pending；最后一片完成后执行全量最终验收。详见 [测试切片清单](/zh/specs/test-slice-manifest)。
+- 该片测试与回归都通过后才勾选该片。不要改写 `[code]` 文本或 manifest。
 
 ### Step 3：生成业务代码
 
@@ -101,7 +113,7 @@ test-writer 不写代码；code-implementor 不设计测试用例；code-reviewe
 
 1. 提示用户运行测试（如 `npm test`、`pytest`）
 2. 确认 `test-results.jsonl` 已生成
-3. 所有批次完成后：引导用户运行 `openlogos verify`（Gate 3.5）
+3. 所有批次或切片完成后：引导用户运行 `openlogos verify`（Gate 3.6）
 4. 如需代码质量审查：建议使用 [`code-reviewer`](/zh/skills/code-reviewer)
 
 ## 产出

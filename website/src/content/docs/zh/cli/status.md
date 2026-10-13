@@ -3,7 +3,7 @@ title: "openlogos status"
 description: 显示当前项目阶段、交付物、活跃的变更提案以及建议的下一步操作。
 ---
 
-展示全部 9 个阶段的完成状态仪表盘，列出活跃的变更提案，并建议下一步操作。在多模块项目中，还会显示每个模块各自的阶段进度。
+展示每个阶段完成状态的仪表盘，列出活跃的变更提案，并建议下一步操作。在多模块项目中，还会显示每个模块各自的阶段进度。
 
 ## 命令格式
 
@@ -62,10 +62,11 @@ openlogos status [--module <id>] [--format json]
 🔲  Phase 3-1 · Scenario Modeling
 🔲  Phase 3-2 · API Design
 🔲  Phase 3-2 · Database Design
-🔲  Phase 3-3a · Test Case Design (Unit + Scenario)
-🔲  Phase 3-3b · API Orchestration Tests
-🔲  Phase 3-4 · Code Implementation + Test Code
-🔲  Phase 3-5 · Test Acceptance (verify)
+🔲  Phase 3-3 · Deployment Plan
+🔲  Phase 3-4a · Test Case Design (Unit + Scenario)
+🔲  Phase 3-4b · API Orchestration Tests
+🔲  Phase 3-5 · Code Implementation
+🔲  Phase 3-6 · Test Acceptance (verify)
 ──────────────────────────────────────────────────
 
 🧩 Modules
@@ -130,13 +131,15 @@ openlogos status --module admin
      └─ openapi.yaml
 ✅  Phase 3-2 · Database Design
      └─ schema.sql
-✅  Phase 3-3a · Test Case Design
+✅  Phase 3-3 · Deployment Plan
      └─ ...
-✅  Phase 3-3b · API Orchestration Tests
+✅  Phase 3-4a · Test Case Design (Unit + Scenario)
      └─ ...
-✅  Phase 3-4 · Code Implementation + Test Code
-     └─ (validated via Phase 3-5)
-✅  Phase 3-5 · Test Acceptance (verify)
+✅  Phase 3-4b · API Orchestration Tests
+     └─ ...
+✅  Phase 3-5 · Code Implementation
+     └─ (validated via Phase 3-6)
+✅  Phase 3-6 · Test Acceptance (verify)
      └─ acceptance-report.md
 ──────────────────────────────────────────────────
 
@@ -160,14 +163,37 @@ openlogos status --module admin
 
 | 步骤 | 含义 |
 |------|---------|
-| `writing` | `proposal.md` 或 `tasks.md` 仍包含模板占位符 |
-| `delta-writing` | 提案已填写；`[delta]` 分节任务尚未全部勾选 |
-| `ready-to-merge` | 所有 `[delta]` 分节任务已勾选（或没有 `[delta]` 分节） |
-| `merge-generated` | `openlogos merge` 已运行；`MERGE_PROMPT.md` 已生成 |
-| `coding` | specs 已合并（`SPEC_MERGED` 存在）；`[code]` 分节任务尚未全部勾选 |
-| `ready-to-verify` | 所有 `[code]` 分节任务已勾选（或没有 `[code]` 分节） |
-| `verify-passed` | `openlogos verify` 通过；已写入 `VERIFY_PASS` 标记 |
-| `verify-failed` | `openlogos verify` 失败；已写入 `VERIFY_FAIL` 标记 |
+| `writing` | `proposal.md` 或 `tasks.md` 缺失，或尚未通过计划包检查（模板占位、缺章节） |
+| `ready-to-delta` | 方案已完成，停在 `plan-exit` 门（批准方案后再写 delta） |
+| `delta-writing` | 方案已批准；`[delta]` 分节任务尚未全部勾选 |
+| `ready-to-merge` | `[delta]` 任务已全部勾选，停在 `spec-exit` 门——明确授权执行 `openlogos merge <slug>` |
+| `spec-complete-required` | 没有 `[delta]` 但需要代码——先执行 no-delta `openlogos merge <slug>` 写入 `SPEC_MERGED` |
+| `test-id-required` | 规格已合并，但还没有可供切片的真实 `UT-*` / `ST-*` / `SMOKE-*` ID |
+| `ready-to-implement` | 规格已合并；`[code]` 切片尚未规划，或已规划、停在 `slice-exit` 门等待批准 |
+| `coding` | 切片已批准（`SLICES_APPROVED`）；`[code]` 任务尚未全部勾选 |
+| `ready-to-verify` | `[code]` 任务已全部勾选（或没有 `[code]` 分节）——明确授权执行 `openlogos verify` |
+| `verify-passed` | `openlogos verify` 通过（`VERIFY_PASS`），且无需部署 |
+| `verify-failed` | `openlogos verify` 失败（`VERIFY_FAIL`） |
+| `ready-to-deploy` | 验收通过且提案需要部署——部署须由人类明确授权 |
+| `deploy-done` | 已用 `openlogos deploy-done` 记录部署完成，且无需 smoke |
+| `ready-to-smoke` | 已部署；明确授权执行 `openlogos smoke` |
+| `smoke-passed` / `smoke-failed` | `openlogos smoke` 的结果（`SMOKE_PASS` / `SMOKE_FAIL`） |
+| `merge-generated` | 仅历史遗留：提案目录中仍带有 0.15 之前的合并标记且 `SPEC_MERGED` 不存在时出现。现行 `openlogos merge` 不会产生该步骤；直接运行 `openlogos merge <slug>` 完成合并即可 |
+
+`merge` 是一次原子调用，因此没有「合并进行中」的中间步骤：`SPEC_MERGED` 写入后，提案直接从 `ready-to-merge`（或 `spec-complete-required`）进入 `test-id-required` / `ready-to-implement`。
+
+### 增量修正投影（`spec_amend`）
+
+提案写入 `SPEC_MERGED` 后，`openlogos status --format json` 会增加只读对象 `modules[].active_change.spec_amend`（合并之前不出现）：
+
+| 字段 | 含义 |
+|------|------|
+| `merged_delta_digest` / `current_delta_digest` | 上次合并时与当前的 delta 摘要 |
+| `pending` | delta 自上次合并后有变化时为 `true`——重跑 `openlogos merge <slug>` 即做增量修正（`result:"amended"`）。没有合并基线时为 `null`，表示「无法判断」，不能当作 `false` |
+| `blocked_reason` | 修正会被拒绝的原因：`drift`、`baseline-missing`、`baseline-unreadable`、`create-withdraw`、`prototype-changed`；否则为 `null` |
+| `amend_count` | 已应用的修正次数 |
+
+该投影不写任何文件，也不改变 `proposal_step`。详见 [`openlogos merge`](/zh/cli/merge)。
 
 ## 错误
 
@@ -181,4 +207,4 @@ openlogos status --module admin
 - [`init`](/zh/cli/init) — 创建 `status` 所检查的项目结构
 - [`module`](/zh/cli/module) — 管理模块（list / add / rename / remove）
 - [`launch`](/zh/cli/launch) — 激活变更管理（所有阶段完成时建议）
-- [`verify`](/zh/cli/verify) — 运行 Phase 3-5 验证检查
+- [`verify`](/zh/cli/verify) — 运行 Gate 3.6 验收（Phase 3-6）

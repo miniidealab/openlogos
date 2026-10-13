@@ -11,14 +11,14 @@ A Skill is a Markdown file (`SKILL.md`) stored in the project's `skills/` direct
 
 Key properties:
 
-- **Platform-agnostic**: Works with Claude Code, OpenCode, Codex, Cursor, or any tool that reads project files
+- **Platform-agnostic**: Works with Claude Code, OpenCode, Codex, Cursor, ZCode, Qoder, WorkBuddy, or any tool that reads project files
 - **Phase-aware**: Each Skill knows which phase it belongs to and what inputs it expects
 - **Guardrailed**: Skills enforce methodology rules (e.g., "do not generate code without test cases")
 - **Self-contained**: Each Skill includes its own instructions, output templates, and quality checks
 
 ## Built-in Skills
 
-OpenLogos includes 17 Skills covering the entire lifecycle:
+OpenLogos includes 18 Skills covering the entire lifecycle. The main ones by phase are listed below; see the [Skills reference](/skills) for the full list.
 
 ### Phase 1 — WHY
 
@@ -54,6 +54,12 @@ OpenLogos includes 17 Skills covering the entire lifecycle:
 | [`slice-planner`](/skills/slice-planner) | Plan post-spec-complete `[code]` slices from merged specs and real test IDs |
 | [`merge-executor`](/skills/merge-executor) | Merge delta files into main documents |
 
+### Existing projects
+
+| Skill | Purpose |
+|-------|---------|
+| [`brownfield-adopter`](/skills/brownfield-adopter) | Optional: reverse-engineer a verifiable baseline seed from an existing codebase, only when you explicitly ask for it |
+
 ## How Skills are loaded
 
 1. Developer asks AI to perform a task (e.g., "write the requirements")
@@ -65,11 +71,14 @@ The loading mechanism varies by platform:
 
 | Platform | Mechanism |
 |----------|-----------|
-| Claude Code | Native `.claude/` plugin system |
-| OpenCode | `hooks/` and command integration |
-| Codex | `.agents/skills/` plus `.codex-plugin/` hook integration |
-| Cursor | `.cursor/rules/` auto-attached rules that reference Skills |
-| Other tools | `AGENTS.md` as the universal entry point |
+| Claude Code | Native `.claude/` plugin system; Skills in `logos/skills/` |
+| OpenCode | `.opencode/plugins/` plugin and command integration |
+| Codex | Repo marketplace plugin `.agents/plugins/openlogos/` with `$openlogos:<skill>` Skills and a SessionStart hook |
+| Cursor | Native Agent Skills in `.cursor/skills/<name>/SKILL.md`, plus managed `.cursor/hooks.json` entries |
+| ZCode | Native plugin in `.zcode/plugins/openlogos/` (Skills, commands, agents, hooks) |
+| Qoder | Native plugin in `.qoder/plugins/openlogos/` (Skills, commands, agents, hooks) |
+| WorkBuddy | Native plugin in `.workbuddy/plugins/openlogos/` (Skills, commands, agents, hooks) |
+| Other tools | `AGENTS.md` as the universal entry point; Skills in `logos/skills/` |
 
 ## Skill anatomy
 

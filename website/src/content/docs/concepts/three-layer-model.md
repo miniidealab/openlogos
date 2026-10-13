@@ -37,18 +37,19 @@ Design the solution. For each scenario, define what users see, how they interact
 
 ## Phase 3 — HOW (Implementation)
 
-Build the solution in 6 precise steps. Scenario-driven, test-first. AI generates code with full context.
+Build the solution in 7 precise steps. Scenario-driven, test-first. AI generates code with full context.
 
 | Step | Activity | Skill |
 |------|----------|-------|
 | 0 | Architecture overview & tech stack | [`architecture-designer`](/skills/architecture-designer) |
 | 1 | Scenario → Sequence diagram → APIs emerge | [`scenario-architect`](/skills/scenario-architect) |
 | 2 | API specs (OpenAPI YAML) + DB schema | [`api-designer`](/skills/api-designer), [`db-designer`](/skills/db-designer) |
-| 3 | Test case design (before code!) | [`test-writer`](/skills/test-writer), [`test-orchestrator`](/skills/test-orchestrator) |
-| 4 | Business code + test code generation | [`code-implementor`](/skills/code-implementor), [`code-reviewer`](/skills/code-reviewer) (post-review) |
-| 5 | `openlogos verify` → automated acceptance | — |
+| 3 | Deployment plan & smoke strategy | [`deployment-designer`](/skills/deployment-designer) |
+| 4 | Test case design (before code!) | [`test-writer`](/skills/test-writer), [`test-orchestrator`](/skills/test-orchestrator) |
+| 5 | Business code + test code generation | [`code-implementor`](/skills/code-implementor), [`code-reviewer`](/skills/code-reviewer) (post-review) |
+| 6 | `openlogos verify` → automated acceptance | — |
 
-**Quality gate (Gate 3.5):** All tests pass, 100% design-time coverage, acceptance criteria traced.
+**Quality gate (Gate 3.6):** `openlogos verify` passes — the result ledger is consistent, zero failures, and zero uncovered test cases.
 
 ## Phase detection
 
@@ -57,9 +58,11 @@ OpenLogos CLI and `AGENTS.md` automatically detect the current phase by scanning
 ```
 logos/resources/prd/1-product-requirements/  → empty? → Phase 1
 logos/resources/prd/2-product-design/        → empty? → Phase 2
-logos/resources/prd/3-technical-plan/        → empty? → Phase 3 Step 0
-logos/resources/api/                         → empty? → Phase 3 Step 2
-logos/resources/test/                        → empty? → Phase 3 Step 3
+logos/resources/prd/3-technical-plan/1-architecture/            → empty? → Phase 3 Step 0
+logos/resources/prd/3-technical-plan/2-scenario-implementation/ → empty? → Phase 3 Step 1
+logos/resources/api/                                            → empty? → Phase 3 Step 2
+logos/resources/prd/3-technical-plan/3-deployment/              → empty? → Phase 3 Step 3
+logos/resources/test/                                           → empty? → Phase 3 Step 4
 ```
 
 When a developer asks AI "what should I do next?", the AI reads `AGENTS.md`, detects the phase, and suggests the specific next step.

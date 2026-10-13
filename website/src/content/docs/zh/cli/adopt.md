@@ -8,7 +8,7 @@ description: 以 bootstrap=adopted 模式将现有项目接入 OpenLogos，跳�
 ## 命令格式
 
 ```bash
-openlogos adopt [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|codex|cursor|other|all>]
+openlogos adopt [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|codex|cursor|zcode|qoder|workbuddy|other|all>]
 ```
 
 必须在项目根目录下运行（即存在 `package.json`、`Cargo.toml` 或类似文件的位置）。
@@ -23,17 +23,22 @@ openlogos adopt [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|codex
 
 | 选项 | 取值 | 默认值 | 说明 |
 |--------|--------|---------|-------------|
-| `--locale` | `en`, `zh` | 交互式提示 | 设置文档语言 |
-| `--ai-tool` | `claude-code`, `opencode`, `codex`, `cursor`, `other`, `all` | 交互式提示 | 设置 AI 编码工具 |
+| `--locale` | `en`, `zh` | 交互式提示（默认 `zh`）；非交互环境为 `zh` | 设置文档语言 |
+| `--ai-tool` | `claude-code`, `opencode`, `codex`, `cursor`, `zcode`, `qoder`, `workbuddy`, `other`, `all` | 交互式提示；非交互环境按环境变量识别 | 设置 AI 编码工具 |
+| `--aitool` | 同 `--ai-tool` | 同 `--ai-tool` | `--ai-tool` 的等价别名 |
+
+AI 工具菜单与非交互环境下的宿主识别规则与 [`init`](/zh/cli/init#交互模式) 相同。与 `init` 不同的是，`adopt` 在非交互环境下不强制要求 `--locale`，缺省为 `zh`。
 
 ## 功能说明
 
-1. 创建完整的 `logos/` 目录结构（与 `init` 相同）
-2. 写入带项目配置的 `logos/logos.config.json`
-3. 写入带 `bootstrap: adopted` 和 `lifecycle: launched` 的 `logos/logos-project.yaml`
-4. 生成已激活变更管理规则的 `AGENTS.md` 和 `CLAUDE.md`
-5. 部署 Skills、specs 以及工具专属的插件资源
-6. 根据项目类型自动检测并配置 `verify.pre_run_command`
+1. 先预检目标目录、宿主插件位置与 `.gitignore` 托管区块能否安全写入；任一项失败即在创建任何文件之前停止
+2. 在写入任何文件之前，按识别到的技术栈建议忽略目录（规则与 [`init`](/zh/cli/init#按技术栈建议忽略目录) 相同）
+3. 创建完整的 `logos/` 目录结构（与 `init` 相同）
+4. 写入 `logos/logos.config.json`：接受的忽略条目写入 `guard.unversioned`，并根据项目类型自动配置 `verify.pre_run_command`
+5. 渲染 `.gitignore` 托管区块（固定包含 `logos/.openlogos-runtime/`）
+6. 写入带 `bootstrap: adopted`、`lifecycle: launched` 与 `baseline_seed_state: required` 的 `logos/logos-project.yaml`
+7. 在 `AGENTS.md` 和 `CLAUDE.md` 中生成已激活变更管理规则的 OpenLogos 托管片段；文件中已有的内容保留
+8. 部署 Skills、specs 以及宿主插件资产；对 Claude Code 还包括 guard 与事后检查 hooks，以及按 locale 写入 `.claude/settings.json` 的 `language`（`"chinese"` / `"english"`）
 
 ## 与 `init` 的区别
 
@@ -49,10 +54,16 @@ openlogos adopt [name] [--locale <en|zh>] [--ai-tool <claude-code|opencode|codex
 
 当设置了 `bootstrap: adopted` 时：
 
-- **`status`**：Phase 1、Phase 2 和 Phase 3-0 缺失的文档不会报告为错误 —— 显示 "Document baseline skipped (existing project onboarding)"
-- **`next`**：当没有活跃提案时，建议运行 `openlogos change add-baseline-docs` 来回填文档
+- **`status`**：Phase 1、Phase 2 和 Phase 3-0 缺失的文档不会报告为错误，而是显示文档基线已跳过（adopted 接入模式）
+- **`next`**：没有活跃提案时，直接建议 `openlogos change <slug>`，无需先单独建立基线
 - **`launch`**：豁免初始文档门禁检查（已经 launched）
 - **`detect --format json`**：在模块数据中输出 `bootstrap: "adopted"`
+
+第一次变更之前不必补齐整套文档基线。创建变更时，提案规划会按这次变更触达的功能 / 场景自动补齐：目标文档存在就修改（MODIFY），缺失就创建完整文档（CREATE）。
+
+### 可选：逆向建立现状基线
+
+`baseline_seed_state: required` 只作为可选的证据状态保留，**不会**阻断任何变更。如果你明确希望 AI 先扫描整个代码库，记录可验证的系统地图与场景候选清单，请使用 [brownfield-adopter](/zh/skills/brownfield-adopter) Skill，它通过 `openlogos baseline-seed begin` / `commit` 提交结果。完全跳过也没有问题，change-writer 仍会在每次变更中补齐触达部分的正式规格。
 
 ## 输出示例
 
@@ -65,36 +76,38 @@ $ openlogos adopt
 
 ✓ 读取项目信息完成
 
+检测到 Node 项目，以下路径尚未被 git 忽略：
+  node_modules/
+  dist/
+是否加入 .gitignore（openlogos 托管区块）？[Y/n]：
 ✓ 创建 logos/ 标准目录结构
 ✓ 写入 logos.config.json
-  ✓ verify.pre_run_command auto-configured: cd cli && npm test
+✓ 已检测到并写入 verify 预跑配置：npm test
+  ✓ 已在 .gitignore 托管区块写入 logos/.openlogos-runtime/（OpenLogos 运行时文件）
+  ✓ 已加入 .gitignore 托管区块：node_modules/、dist/
 ✓ 写入 logos-project.yaml（bootstrap: adopted, lifecycle: launched）
+✓ 标记待建现状基线（baseline_seed_state: required）
 ✓ 写入 AGENTS.md / CLAUDE.md
-✓ 16 skills deployed to logos/skills/
-✓ 13 specs deployed to logos/spec/
-
+...
 🎉 已有项目接入完成！
 
-项目已进入存量项目接入模式（bootstrap: adopted）：
-  · OpenLogos 基础设施已完整初始化
-  · Initial 文档基线已跳过，不强制要求
-  · 模块生命周期直接设为 launched
-
-建议的下一步：先补充项目基线文档
-  → openlogos change add-baseline-docs
-  在变更提案中逐步补写需求、架构、场景、测试用例，
-  把 TDD 思想贯彻到每一次迭代中。
+建议的下一步：直接运行 openlogos change <slug> 创建第一个变更提案。
 ```
+
+Skills / specs 部署相关的行随所选工具而不同。
 
 ## 错误
 
 | 错误 | 原因 | 解决方法 |
 |-------|-------|-----|
-| `该项目已初始化（logos/logos.config.json 已存在）` | 项目已经接入 OpenLogos | 使用 `openlogos sync` 刷新，或删除 `logos/` 重新开始 |
+| `该项目已初始化（logos/logos.config.json 已存在）` | 项目已经接入 OpenLogos | 用 `openlogos sync` 刷新，用 `openlogos init --ai-tool <tool>` 补齐工具，或备份并删除 `logos/` 后重新开始 |
+| `unsupported AI tool "<value>"` | `--ai-tool` 取值不受支持 | 使用上文 9 个取值之一 |
+| `.gitignore` 托管区块已损坏 | 托管区块标记重复或缺失 | 手工修复标记后重试；此时没有写入任何内容 |
 
 ## 相关命令
 
-- [`init`](/zh/cli/init) — 初始化一个全新项目（从 Phase 1 开始）
-- [`sync`](/zh/cli/sync) — 为现有 OpenLogos 项目刷新 AI 指令和 Skills
-- [`change`](/zh/cli/change) — 创建变更提案（adopt 之后建议的首个操作）
-- [`status`](/zh/cli/status) — 检查项目阶段和 bootstrap 状态
+- [`init`](/zh/cli/init)：初始化一个全新项目（从 Phase 1 开始）
+- [`sync`](/zh/cli/sync)：为现有 OpenLogos 项目刷新 AI 指令、Skills 和 hooks
+- [`change`](/zh/cli/change)：创建变更提案（adopt 之后建议的首个操作）
+- [`ignore` / `exempt`](/zh/cli/ignore-exempt)：调整 guard 不保护的路径
+- [`status`](/zh/cli/status)：检查项目阶段和 bootstrap 状态

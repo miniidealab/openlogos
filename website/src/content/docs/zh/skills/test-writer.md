@@ -30,7 +30,7 @@ description: 在代码生成前设计单元测试与场景测试用例。
 4. 从时序图 Step 序列提取场景测试用例（正常路径）
 5. 从 EX 异常情况提取场景测试用例（异常路径）
 6. 对照 Phase 1/2 验收标准反向验证覆盖度
-7. 构建验收标准可追溯性表格
+7. 构建验收条件到测试用例的追溯表
 
 ## 测试用例 ID 约定
 
@@ -76,7 +76,9 @@ description: 在代码生成前设计单元测试与场景测试用例。
 - [ ] 每个 `required` API 字段 → 至少 1 个 UT 用例
 - [ ] 每个 `UNIQUE`/`CHECK` DB 约束 → 至少 1 个 UT 用例
 
-## 验收标准可追溯性
+这份清单是测试设计者的自查工具。`openlogos verify` 不解析它，它也不影响 Gate 3.6。
+
+## 验收条件追溯
 
 ```markdown
 | AC ID | Acceptance Criterion | Covered By |
@@ -85,7 +87,7 @@ description: 在代码生成前设计单元测试与场景测试用例。
 | S01-AC-02 | Exception: Already initialized — display error | ST-S01-03, UT-S01-05 |
 ```
 
-`openlogos verify` 会解析此表，并将 AC → 测试用例 ID → 执行结果关联起来，生成验收报告。
+这张表是写作实践，用来说明每条验收条件至少有一个测试用例覆盖。`openlogos verify` 不解析它。Gate 3.6 的判定只取决于测试表格首列的用例 ID 及其运行结果：结果账本一致、零失败、零未覆盖（见 [`verify`](/zh/cli/verify)）。
 
 ## 产出
 
