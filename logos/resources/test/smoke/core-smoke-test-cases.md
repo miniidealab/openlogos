@@ -2137,3 +2137,62 @@
 - runner 提供自测模式：注入本地 tarball 替代 registry 规格、注入本地预览 URL 替代官网域名，并把结果写入独立账本。自测结果不得写入项目正式 smoke 账本；正式模式拒绝注入。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；evidence 记录 V、tag 提交号、registry tarball SHA-256、Release 附件 SHA-256、HTTP 状态码、隔离 prefix 路径与 `sandbox.reuse` 摘要。**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-242～SMOKE-core-245 均被 runner 覆盖。
+
+## OpenLogos 0.16.2 公开发布 smoke（SMOKE-core-246～250）
+
+> 这组用例验证 0.16.2 公开发布的三处公网制品——npm registry、GitHub Release、Cloudflare Pages 官网——同源于本次实际发布版本 V；从公网安装的包可以正常使用，并在 macOS 与 Linux 上都能复用沙箱。Linux 用例（SMOKE-core-248）是本次修复（功能规格 §2.92）进入公网包的直接证据：在存在同用户不可转储进程的 Linux 容器内，registry 安装的 CLI 第二次 verify 仍得 `reused`。判据沿用「OpenLogos 0.16.1 公开发布 smoke（SMOKE-core-242～245）」的口径，只替换版本、发布说明与官网资源的断言对象，并新增 Linux 用例。
+>
+> **与 SMOKE-core-242～245 的关系**：SMOKE-core-242～245 绑定的发布提案 `release-0-16-1` 已撤销（门 ② 未通过，未推 tag、未发布），这组用例**保留不执行**，`scripts/smoke-public-release-0-16-1.js` 的适用窗口不会再打开；本组不复用其 ID，也不改写其定义。
+>
+> **版本口径**：V 为部署记录中实际成功发布的版本，初始为 `0.16.2`；按部署方案档 B2 前滚时为前滚后的 patch。V 与 tag 提交号从部署记录 `logos/resources/verify/deployment-report.md` 中**标题行含 `release-0-16-2` 的那一节**的 `public_release_version: <V>` / `public_release_commit: <sha>` 两行读取（同文件内 0.16.0 等其他节的同名行不得被误读）；提交号缺省时取 `git rev-parse v<V>^{commit}`。断言一律写成关系式，不硬编码 `0.16.2`；缺 V 或缺提交号时写显式 skip 并带缺失项。
+>
+> **执行边界**：runner 对公网**只读**——只用 `npm view`、`npm pack <spec>`（下载到临时目录）、`gh release view` / `gh release download`、`gh api`、HTTP GET。不执行 `npm publish`、`npm dist-tag`、`npm deprecate`、`git tag`、`git push`、`gh release create/edit/upload` 或 `wrangler`。安装态用例只装到 `mktemp -d` 一次性 prefix 与一次性 `sandbox_root`，或 `docker run --rm` 的一次性容器内，不触碰本机全局 prefix、本仓活跃提案、本仓配置的沙箱根与用户其他仓库（包括 runlogos）。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-246 | registry 发布身份与 provenance | `v<V>` 的 publish run 中 `Publish` 步骤 success（原 run 全绿，或部署方案档 C 已完成补做）；部署记录有 V 与 tag 提交号 | ① `npm view @miniidealab/openlogos dist-tags --json`；② `npm view @miniidealab/openlogos@<V> version gitHead dist.integrity dist.attestations --json`，并读取 `dist.attestations.url` 指向的证明；③ `npm pack @miniidealab/openlogos@<V>` 到临时目录并解包；④ 对照 tag 提交的 `cli/src/` 文件清单（`git ls-tree -r v<V> -- cli/src`）检查包内 `dist/**/*.js`；⑤ `npm view @miniidealab/openlogos@0.16.1 version` | ① `latest` == V，`old` 不变；② `version` == V；SLSA provenance（predicate `https://slsa.dev/provenance/v1`）的 `resolvedDependencies[0].uri` 指向 `refs/tags/v<V>`，`digest.gitCommit` == `v<V>` 提交（`gitHead` 存在时须同样相等）；③ 包内 `package.json` 版本 == V，asset-manifest 版本 == V 且经 `validateAssetManifest` 校验通过；包内含 `dist/lib/sandbox-reuse.js` 且其中含 `command_started_uptime`，`dist/lib/sandbox.js` 引入它，`dist/index.js` 注册 `--fresh-sandbox`；④ 每个 `dist/**/*.js` 都有同名 `cli/src/**/*.ts`；⑤ 返回 E404（0.16.1 从未进入 registry） | 保留读取结果与 tarball SHA-256。①② 不符 → 按部署方案档 D 回退（`dist-tag latest` 回指 0.16.0、`npm deprecate <V>`）；③④ 不符表示公网制品与预演不同源，同样按档 D 处置并另立修复提案前滚；⑤ 返回版本号表示 0.16.1 被意外发布，停止后续流程并在部署记录说明，由用户决定是否 `npm deprecate` 该版本 |
+| SMOKE-core-247 | 宿主机（macOS）registry 隔离安装态可用与沙箱复用 | SMOKE-core-246 通过；宿主机有 node、npm、git | ① `npm install -g --prefix <tmp> @miniidealab/openlogos@<V>`（从 registry 安装）；② `<tmp>` 入口 `--version`；③ 临时目录执行 `openlogos init smoke --locale zh --ai-tool all` 后 `sync`；④ `openlogos status --format json`；⑤ 另建临时项目，按 SMOKE-core-240 夹具口径（模拟增量编译器、N=20 个源文件、一次性 `sandbox_root`、`sandbox_cache_paths=["build-cache"]`）连续执行 `openlogos verify --format json` 两次，中间改 1 个源文件 | ① 退出码 0，入口 realpath 在 `<tmp>` 包目录内且非链接；② == V；③ 均退出码 0，生成 `logos/` 与各工具资产，`sync` 输出不含 `asset hash 不匹配`；④ 合法 JSON envelope，`version` == V；⑤ 两次 `gate.result=="PASS"`，`sandbox.reuse.state` 依次为 `created` / `reused`，`compiled` 依次为 20 / 1。若首次 `reuse.state=="unsupported"`（Seatbelt 等嵌套沙箱内 setuid `/bin/ps` 不可执行，属规格 §2.91.6 的正确行为），⑤ 不计失败，整条用例按 `skip` + `reason_code:"platform-unavailable"` + 非空 detail 记录，且 ①～④ 已通过 | 保留各步 stdout / stderr。①～④ 失败 → 按档 D 回退并另立修复提案前滚；⑤ 在可复用环境中失败表示沙箱复用未进入公网包，同样按档 D 处置 |
+| SMOKE-core-248 | Linux 容器内 registry 安装态与不可转储进程下的沙箱复用 | SMOKE-core-246 通过；宿主机 docker 可用且可拉取 `node:20` | ① `docker run --rm node:20`（记录镜像摘要），容器内以**非 root 用户**执行后续全部步骤，读取 `id -u` 非 0；② `npm install -g --prefix <tmp> @miniidealab/openlogos@<V>` 后执行 `<tmp>` 入口 `--version`；③ 构造不可转储进程：把 `sleep` 复制为权限 0111 的副本并以该用户 exec 长时间运行；读取其 `/proc/<pid>/environ` 与 `/proc/<pid>/stat`，并等待到以实际读数校验「`/proc/uptime` − 该进程 starttime 秒数」大于 2 秒；④ 容器内另建临时项目，按 SMOKE-core-240 夹具口径（模拟增量编译器、N=20 个源文件、一次性 `sandbox_root`、`sandbox_cache_paths=["build-cache"]`）连续执行 `openlogos verify --format json` 两次，中间改 1 个源文件；⑤ 读取持久沙箱中最新世代的释放记录 | ① 容器启动成功，uid 非 0；② 安装退出码 0，`--version` == V；③ 进程存活，environ 读取得 EACCES，stat 可读，等待后差值 > 2 秒（即首轮命令启动时该进程必然早于「命令启动时刻 − 1 秒」）；④ 两次 `gate.result=="PASS"`，`sandbox.reuse.state` 依次为 `created` / `reused`，`compiled` 依次为 20 / 1（Linux 容器内运行标记扫描应可用，`unsupported` 计失败，不按 platform-unavailable 处理）；⑤ 最新释放记录为 `released` 而非 `tainted`，且含数字型 `command_started_uptime` | 保留镜像摘要、uid、各步退出码、environ / stat 读数与每次 JSON 摘要。①③ 环境构造失败（docker 不可用、无法得到 EACCES 进程）→ 显式 `skip` 并携带缺失项，不得标 platform-unavailable，不得写 `SMOKE_PASS`；② 失败 → 按档 D 处置；④⑤ 第二次为 `recovered` 或释放记录为 `tainted` → Linux 修复未进入公网包，按档 D 回退并另立修复提案前滚 |
+| SMOKE-core-249 | GitHub Release 与 registry 同源，0.16.1 无 Release | SMOKE-core-246 通过；`gh` 已认证 | ① `gh release view v<V> --json tagName,isDraft,isPrerelease,body,assets`；② `gh api repos/{owner}/{repo}/releases/latest --jq .tag_name`；③ `gh release download v<V> --pattern 'miniidealab-openlogos-*.tgz'` 到临时目录；④ 按 `publish.yml`「Prepare release notes」同规则，从 `v<V>` 提交的 `CHANGELOG.md` 提取 `## [V]` 节；⑤ `gh api repos/{owner}/{repo}/releases/tags/v0.16.1` | ① 存在，非 draft、非 prerelease；② == `v<V>`；③ 恰一个附件 `miniidealab-openlogos-<V>.tgz`，SHA-256 == SMOKE-core-246 记录的 registry tarball SHA-256；④ Release 正文与提取结果去首尾空白后逐字一致，含「沙箱复用」、「Linux」与「从 0.16.0 升级」，且**不含**「未发布到 npm」；⑤ 返回 404 | 保留 Release JSON 与附件 SHA-256。缺 Release 或缺附件 → 按部署方案档 C 受控补做（不重复 create）；附件与 registry 不同源 → 以 registry 制品为准替换附件并在部署记录说明；⑤ 返回 Release 表示 0.16.1 被意外发布，停止并由用户决定处置 |
+| SMOKE-core-250 | 官网 latest 等于 V、V 英文摘要在场且无 0.16.1 摘要 | 官网已由 publish run 或档 C 补做部署到 Cloudflare Pages | ① GET `https://openlogos.ai/releases` 与 `https://openlogos.ai/zh/releases`；② GET 首页 `https://openlogos.ai/`，取最近发布入口；③ `git show v<V>:website/src/data/release-summaries-en.mjs` | ① 均为 200，页面 latest 版本 == V（SMOKE-core-15 口径），V 条目展示英文价值摘要（不是固定回退提示）及中文原文次级内容（SMOKE-core-07 口径）；② 入口指向 `/releases` 且非 404（SMOKE-core-08 口径）；③ 含键 `'<V>'`，不含键 `'0.16.1'` | 保留 HTTP 状态码与页面摘录。① latest 不等于 V 时，先确认 registry `dist-tags.latest` 已是 V；若是，则按档 C 重新生成并部署官网，不得手改 `releases.json`；英文摘要缺失或 ③ 不符 → 修正 `release-summaries-en.mjs` 后经官网部署前滚（不涉及 npm） |
+
+### 二、复用的在案用例
+
+以下在案用例沿用其原定义，本次只规定执行对象（定义不在本节重复登记）：
+
+- 版本用例 SMOKE-core-01：以 SMOKE-core-247 的隔离 prefix 入口执行，`openlogos --version` == V。
+- init 资产用例 SMOKE-core-02：以 SMOKE-core-247 ③ 的 `init smoke --locale zh --ai-tool all` 结果核对 `logos/resources/reference/` 六个子目录。
+- 插件模板用例 SMOKE-core-04：以 SMOKE-core-246 ③ 解包的 registry tarball 核对 Claude Code、OpenCode、Codex 插件模板在场。
+- 发布动态双语摘要用例 SMOKE-core-07：以 SMOKE-core-250 ① 的 `/releases` 页面执行。
+- 首页入口用例 SMOKE-core-08：以 SMOKE-core-250 ② 执行。
+- tag 与官网一致用例 SMOKE-core-15：以 SMOKE-core-250 ① 的 latest 版本断言执行，tag 版本取 V。
+
+### 三、执行边界
+
+- 公网只读（见本节导言）；命令图中不得出现发布写操作。
+- 宿主机安装态只装到 `mktemp -d` 一次性 prefix，结束即删除（含一次性 `sandbox_root` 下的持久沙箱项目目录）；Linux 安装态只在 `docker run --rm` 的一次性容器内进行，结束时终止 ③ 构造的进程并移除容器；本机全局切换属部署方案「发布后同步」，不在 smoke 内执行。
+- 断言不硬编码主机路径、墙上时钟、本机全局安装现值或 `0.16.2` 字面量；V、tag 提交号与 registry tarball SHA-256 运行时读取并在用例间传递。`0.16.1` 只作为「从未公开」的反向断言对象出现（SMOKE-core-246 ⑤、SMOKE-core-249 ⑤、SMOKE-core-250 ③）。
+- 网络不可达、`gh` 未认证、部署记录缺 V、docker 不可用时写显式 `skip` 并携带缺失项。这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`；`platform-unavailable` 只用于 SMOKE-core-247 ⑤ 的嵌套沙箱情形。有非 platform-unavailable 的 skip 时不得写 `SMOKE_PASS`。
+
+### 四、追溯与覆盖
+
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.2 公开发布方案（npm / GitHub Release / 官网）」。
+- 来源提案：release-0-16-2（决策 C01～C07）；能力来源 verify-sandbox-reuse-0-16-1（功能规格 §2.91）与 fix-sandbox-reuse-linux-liveness（功能规格 §2.92）。
+- 覆盖关系：
+  - registry 身份、Linux 修复进入构建产物、0.16.1 未进入 registry → SMOKE-core-246；
+  - 宿主机公网安装可用与沙箱复用 → SMOKE-core-247；
+  - Linux 公网安装态与不可转储进程下的复用（本次修复的公网验证，对应仓库内 ST-S13-26 与 S13 EX-3.13 ①）→ SMOKE-core-248；
+  - GitHub Release 同源、发布说明正确、0.16.1 无 Release → SMOKE-core-249；
+  - 官网 latest 与英文摘要 → SMOKE-core-250；
+  - 版本、init 资产、插件模板、官网入口 → 复用的 SMOKE-core-01 / 02 / 04 / 07 / 08 / 15。
+
+### 五、自动化与证据要求
+
+- 新增 runner `scripts/smoke-public-release-0-16-2.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-246～SMOKE-core-250 及上表复用用例，不得依靠通配发现后无条件 PASS；可参照 `scripts/smoke-public-release-0-16-1.js` 的判据实现，但不修改该 runner，也不抽取两者共用库。
+- runner 适用窗口：活跃变更为 `release-0-16-2`，或 `OPENLOGOS_PR162_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip。环境变量一律使用 `OPENLOGOS_PR162_` 前缀，不得复用 `OPENLOGOS_PR161_` 前缀。
+- runner 提供自测模式：注入本地 tarball 替代 registry 规格（SMOKE-core-248 以只读挂载把 tarball 传入容器）、注入本地预览 URL 替代官网域名，并把结果写入独立账本。自测结果不得写入项目正式 smoke 账本；正式模式拒绝注入。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；evidence 记录 V、tag 提交号、registry tarball SHA-256、Release 附件 SHA-256、HTTP 状态码、隔离 prefix 路径、`sandbox.reuse` 摘要，SMOKE-core-248 另记镜像摘要、容器内 uid、不可转储进程的 environ / stat 读数与释放记录摘要。**失败不得写 pass**。
+- 判据以 JSON 字段、退出码、SHA-256、HTTP 状态码与释放记录字段为准；页面与发布说明断言只针对版本号、固定路径、是否为回退提示与上表列出的关键字，不解析其余人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-246～SMOKE-core-250 均被 runner 覆盖。
