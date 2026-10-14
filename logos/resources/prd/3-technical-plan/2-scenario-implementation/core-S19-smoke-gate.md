@@ -1042,3 +1042,99 @@ sequenceDiagram
 
 - 功能规格：§2.91；场景：S13「S13 沙箱复用与增量同步时序」EX-3.5～EX-3.12。
 - 测试：UT-S19-57。
+
+## smoke 环境一致性、环境证据与部署账本（environment-registry）
+
+> 来源变更：environment-registry（决策 C04、C05、C06）。格式权威：`spec/environments.md` §3、§4.2、§5、§6。本节落实需求「S19 本地部署后负向 Smoke 要求」中已有的「smoke 只能在存在同环境 `DEPLOY_DONE` 后执行」，并补上「smoke 实际验证了该环境」的证据链。既有前置（「smoke 前置依赖 deploy-done」）、沙箱、覆盖检查与 skip 口径不变，本节判定排在它们之后。
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant U as 用户或 deployment-executor
+    participant C as OpenLogos CLI
+    participant F as environments.yaml
+    participant M as DEPLOY_DONE
+    participant S as 沙箱执行器
+    participant R as smoke runner
+    participant L as deployments.jsonl
+
+    U->>C: Step S1: openlogos smoke --env prod
+    C->>C: Step S2: 既有前置（smoke 需求、部署决策、DEPLOY_DONE 存在、[deploy] 全勾）
+    C->>F: Step S3: 登记表存在则校验并解析 --env
+    C->>M: Step S4: 读取 DEPLOY_DONE 并分三类
+    C->>S: Step S5: 运行 smoke.command（注入 OPENLOGOS_SMOKE_ENV=prod）
+    S->>R: Step S6: 执行 runner
+    R-->>C: Step S7: 结果行（target_environment）
+    C->>C: Step S8: 既有门禁判据 + 环境证据判定
+    C->>C: Step S9: 写 SMOKE_PASS 或 SMOKE_FAIL
+    C->>L: Step S10: 传入 --env 时追加 smoke 记录（ref 继承 DEPLOY_DONE）
+    C-->>U: Step S11: 输出门禁结论与环境证据
+```
+
+### 步骤说明
+
+1. **用户或 deployment-executor** 经授权执行 `openlogos smoke --env <id|alias>`。
+2. **CLI** 先执行既有前置：存在活跃提案时做既有 fail-closed 提案前置；没有活跃提案时（既有行为允许）跳过提案前置，后续不读 `DEPLOY_DONE`、`deploy_env_confirmed=false`、不写账本。
+3. **CLI** 登记表存在时：非法报 `ENV_REGISTRY_INVALID`；未传 `--env` 报 `ENV_REQUIRED`；解析不到报 `ENV_UNKNOWN`。
+4. **CLI** 存在活跃提案时读取 `DEPLOY_DONE`：0 字节或只含空白 → 旧空格式，放行且 `deploy_env_confirmed=false`；合法 JSON 对象 → 环境一致则 `deploy_env_confirmed=true`，不一致时**登记表存在**报 `SMOKE_ENV_MISMATCH`、登记表不存在则放行且未确认，`environment` 为 null 则放行且未确认；非空损坏 → `SMOKE_DEPLOY_MARKER_INVALID`（点名问题字段，无论有无登记表）。拒绝路径不运行命令、不写 smoke marker、不写账本。
+5. **CLI** 配置了 `smoke.command`（或默认 dispatcher）时先清空结果文件再运行（既有行为），本次 `fresh_results=true`；登记表存在且传入 `--env` 时把 `OPENLOGOS_SMOKE_ENV=<id>` 传入子进程，沙箱内执行同样可读到。未运行命令时既有门禁直接汇总结果文件中已有的行，`fresh_results=false`。
+6. **smoke runner** 执行用例。
+7. **smoke runner** 在结果行写 `target_environment`，声明实际验证的环境 id。
+8. **CLI** 先按既有判据得出门禁结论，再判定环境证据：任一行声明不一致 → `env_evidence=mismatch`，登记表存在时门禁 FAIL、原因 `SMOKE_ENV_EVIDENCE_MISMATCH`；全部声明一致 → `declared`；存在缺失或无结果行 → `missing`（门禁不变，兼容旧 runner）。
+9. **CLI** 写 `SMOKE_PASS` 或 `SMOKE_FAIL`（仍为空文件）。
+10. **CLI** 存在活跃提案且传入 `--env` 时追加 smoke 记录：`deploy_id`、`ref` 取自 `DEPLOY_DONE`（旧空格式为 null），不读 HEAD；`verified` 仅在 `result=pass`、`env_evidence=declared`、`fresh_results=true`、`deploy_env_confirmed=true`、`ref` 非 null 时为 true。无活跃提案时不写账本。
+11. **CLI** 输出门禁结论；登记表存在时 JSON 输出含 `environment_evidence` 对象。
+
+### 异常与边界
+
+#### EX-19.11：部署环境与 smoke 环境不一致
+- **触发条件**：登记表存在，`DEPLOY_DONE.environment=test`，本次 `--env prod`。
+- **期望响应**：`SMOKE_ENV_MISMATCH`，退出码 1。无登记表时同样的标签不一致不拒绝，门禁与退出码不变，仅 `deploy_env_confirmed=false`（见 EX-19.17）。
+- **副作用**：登记表存在时无（不运行命令、不写 marker、不写账本）。
+
+#### EX-19.12：`DEPLOY_DONE` 非空损坏
+- **触发条件**：内容被截断为非法 JSON、不是对象、缺字段或字段类型非法。
+- **期望响应**：`SMOKE_DEPLOY_MARKER_INVALID`，点名问题字段；恢复须重新执行 `deploy-done --env <id> [--ref <revision>]`。
+- **副作用**：无；CLI 不按存在性猜测、不自愈。
+
+#### EX-19.13：旧空 `DEPLOY_DONE` 或 `environment` 为 null
+- **触发条件**：marker 为旧版写出的空文件，或合法 JSON 但未记录环境。
+- **期望响应**：放行，门禁按既有判据；账本 `deploy_env_confirmed=false`、`verified=false`。
+- **副作用**：正常写 smoke marker 与账本。
+
+#### EX-19.14：结果声明的环境与目标不一致
+- **触发条件**：参数与 marker 都为 prod，runner 结果行声明 `target_environment: test`。
+- **期望响应**：门禁 FAIL（`SMOKE_ENV_EVIDENCE_MISMATCH`），写 `SMOKE_FAIL`，账本 `env_evidence=mismatch`、`verified=false`。
+- **副作用**：写 `SMOKE_FAIL` 与账本。
+
+#### EX-19.15：旧 runner 不声明环境
+- **触发条件**：结果行不含 `target_environment`。
+- **期望响应**：门禁按既有判据（可写 `SMOKE_PASS`）；账本 `env_evidence=missing`、`verified=false`。
+- **副作用**：正常写 marker 与账本。
+
+#### EX-19.16：部署后 HEAD 改变或部署版本未知
+- **触发条件**：部署时 `--ref R1`，smoke 时 HEAD 已为 R2；或部署时未传 `--ref`。
+- **期望响应**：smoke 记录 `ref=R1`（`observed_head=R2` 仅观察）；部署未传 `--ref` 时 `ref=null`、`verified=false`。
+- **副作用**：无额外副作用。
+
+#### EX-19.17：无登记表
+- **触发条件**：项目不存在 `logos/environments.yaml`。
+- **期望响应**：不注入 `OPENLOGOS_SMOKE_ENV`，输出与退出码不变；合法 marker 的环境标签与 `--env` 不一致时不拒绝，只记 `deploy_env_confirmed=false`；`env_evidence` 仍以原始标签计算并写入账本（存在活跃提案且传入 `--env` 时），但 `mismatch` 不改变门禁。唯一行为差异是非空损坏 marker 被拒绝（EX-19.12）。
+- **副作用**：仅文件层面新增（账本）。
+
+#### EX-19.18：未运行 smoke 命令、只汇总已有结果
+- **触发条件**：未配置 `smoke.command` 且无默认 dispatcher；结果文件中留有上一代部署（如 R1）的通过结果且 `target_environment` 与本次一致；当前 `DEPLOY_DONE` 为重新部署的 R2。
+- **期望响应**：门禁按既有判据汇总（可写 `SMOKE_PASS`）；账本 smoke 记录 `fresh_results=false`、`verified=false`，`ref=R2` 但不构成「R2 已在该环境验证」。
+- **副作用**：正常写 smoke marker 与账本。
+
+#### EX-19.19：无活跃提案
+- **触发条件**：没有 `logos/.openlogos-guard`，执行 `smoke --env <x>`。
+- **期望响应**：既有流程照常执行，输出与退出码与引入前一致（登记表存在时环境解析规则照常生效）；不读 `DEPLOY_DONE`，`deploy_env_confirmed=false`，`verified=false`。
+- **副作用**：不写账本，不伪造 `slug`、`deploy_id`、`ref`。
+
+### 追溯
+
+- 需求：S19 验收条件（environment-registry 新增项）、「S19 本地部署后负向 Smoke 要求」同环境要求。
+- 功能规格：§2.93.4、§2.93.5；规范：`spec/environments.md` §4.2、§5、§6；`spec/test-results.md`「Smoke 结果与覆盖预检」。
+- 测试：UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27。

@@ -166,6 +166,11 @@ export interface RunSandboxedCommandOptions {
   allowedWritePaths: string[];
   /** §2.91.7：`--fresh-sandbox`，成功获取锁后新建空的工作区世代。 */
   freshSandbox?: boolean;
+  /**
+   * 注入命令进程的附加环境变量（environment-registry：smoke 注入 OPENLOGOS_SMOKE_ENV，spec/environments.md §6）。
+   * 各执行路径（含沙箱内、复用模式进程组）都继承调用期间的 process.env，故在本次调用期间临时设置、结束后还原。
+   */
+  extraEnv?: Record<string, string>;
 }
 
 export interface RuntimeWriteProtection {
@@ -714,6 +719,23 @@ export function buildInitialSandboxData(config: NormalizedSandboxConfig): Sandbo
 }
 
 export function runSandboxedCommand(options: RunSandboxedCommandOptions): SandboxExecutionResult {
+  const extra = options.extraEnv ?? {};
+  const saved = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(extra)) {
+    saved.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  try {
+    return runSandboxedCommandInner(options);
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function runSandboxedCommandInner(options: RunSandboxedCommandOptions): SandboxExecutionResult {
   const { root, command, format, sandbox } = options;
   const normalizedRoot = resolve(root);
 

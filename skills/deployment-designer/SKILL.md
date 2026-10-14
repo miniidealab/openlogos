@@ -123,9 +123,34 @@ deployment_gates:
 
 并将部署方案加入 `resource_index`。
 
+#### Step 5.1: 产出环境登记表 `logos/environments.yaml`（environment-registry）
+
+部署方案涉及具体环境（测试、预发、生产等）时，按方案「一、部署目标」「三、环境变量与密钥」产出或更新 `logos/environments.yaml`（格式权威：`spec/environments.md` §2）：
+
+```yaml
+schema_version: 1
+environments:
+  - id: staging
+    name: 预发环境
+    tier: staging
+    aliases: [预发]
+    health: https://staging.example.com/healthz
+    version: https://staging.example.com/version
+    secrets: [STAGING_DEPLOY_TOKEN]
+```
+
+规则：
+
+- `id` 用小写字母、数字与连字符；`tier` 取 `dev | test | staging | prod`；id 与 alias 不区分大小写全局唯一。
+- `secrets` **只写环境变量名，不得写值**；方案中出现的真实密钥一律不进登记表。
+- `deployment_gates.<module>.environments` 中的每一项必须能按 id 或别名解析到登记表中的环境。
+- 只登记部署方案确实涉及的环境，不臆造；部署方案没有环境划分时不产出登记表（登记表是 opt-in）。
+- 产出后提示用户运行 `openlogos env check` 校验（只读命令）；登记表属于 `guard.exempt` 内置默认，修改不需立案。
+
 ## 输出规范
 
 - 部署方案：`logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`
+- 环境登记表（部署方案涉及具体环境时）：`logos/environments.yaml`，格式见 `spec/environments.md`
 - 文档语言遵循项目 locale
 - Mermaid 可用于部署拓扑图，且必须遵循上述节点标签与子图命名安全规则
 - 不执行任何部署命令

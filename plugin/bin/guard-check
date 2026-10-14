@@ -349,7 +349,8 @@ rel_of_cwd() {
 
 # ── guard.exempt 读取（guard-versioned-content-scope，spec/pretooluse-guard.md §guard.exempt 与内置默认）──
 # 取代 R-REF / R-STAGING 硬编码：豁免条目一律来自 logos/logos.config.json 的 guard.exempt。
-#   字段缺省（guard 或 guard.exempt 不存在）→ 内置默认两条（与原 R-REF / R-STAGING 命中集合逐项一致）；
+#   字段缺省（guard 或 guard.exempt 不存在）→ 内置默认三条（前两条与原 R-REF / R-STAGING 命中集合逐项一致，
+#   第三条为环境登记表 logos/environments.yaml，environment-registry 决策 C07）；
 #   显式数组（含 []）→ 按原样，不回落内置默认；
 #   配置损坏（无法解析、guard / guard.exempt 类型不符）→ 视为 []，stderr 警告；
 #   单条非法条目 → 跳过并 stderr 警告，其余照常生效。
@@ -360,6 +361,7 @@ GUARD_RUNTIME_REL="logos/.openlogos-runtime"
 GUARD_BUILTIN_EXEMPT=(
   "logos/resources/reference/"
   "logos/resources/verify/baseline-seed-runs/*/staging/"
+  "logos/environments.yaml"
 )
 GUARD_EXEMPT_LOADED=0
 GUARD_EXEMPT_ENTRIES=()

@@ -29,7 +29,7 @@
     },
     {
       "path": "skills/deployment-designer/SKILL.md",
-      "sha256": "9315d1a93f0562c1ab9b54fc331a4b343945a410c3f287db881e579df0aa70d3"
+      "sha256": "9693326267d03801c01ada72ce95aa2628ef1ba191aef232036842265fc3455b"
     },
     {
       "path": "skills/test-writer/SKILL.md",
@@ -43,7 +43,7 @@
   "templates": [
     {
       "path": "dist/i18n.js",
-      "sha256": "a0c1653db36716f8816c5df6bedfa3b815676268db69d21362f42d3ede1af551"
+      "sha256": "f5e9af63c04a0168065c2f29efcc83b67e295713da617605efe89b67abd1af43"
     }
   ],
   "schemas": [
@@ -71,11 +71,11 @@
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
-      "sha256": "bd4ebdd9ef7e3d268657675b2f89183672e316f140f98f97afcc10d4b6e5f259"
+      "sha256": "a3e7c28865df2d220567f5ba577591fd63f2d4ed93aef9e3542e9fb66ff1f902"
     },
     {
       "path": "claude-plugin-template/bin/guard-post-check.cjs",
-      "sha256": "bdeab4341c935fa9678c34bc36961a0dc579b7b2198da9b92d73b4ee2c88e18c"
+      "sha256": "37afb529b8d814d4183e61df69b255b3201f9e2c0f389d73907011ba6ef96b63"
     },
     {
       "path": "claude-plugin-template/bin/openlogos-phase",
@@ -106,5 +106,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "c06dc25e8f646001fb65246b9a18e12acd11a9cd366887ca57aef479c12ff075"
+  "payloadHash": "85246deb986122bf7d8f2f74718b5e1498a9c8af4dd9a1a0b3d0bdf2be986e3c"
 }

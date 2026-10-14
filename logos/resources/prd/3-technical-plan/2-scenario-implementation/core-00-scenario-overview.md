@@ -179,3 +179,46 @@ flowchart LR
 ### 场景索引增量
 
 - [S35：提案计划产物左移硬检查](./core-S35-change-lint.md)
+
+## S41 场景登记与依赖关系（environment-registry）
+
+### 场景地图增量
+
+| 编号 | 场景名称 | 主要实现 | 测试规格 | 状态 |
+|---|---|---|---|---|
+| S41 | 环境登记与查询 | `lib/environments.ts` / `commands/env.ts`（并扩展 `deploy-done.ts`、`smoke.ts`、`lifecycle-gate.ts`、`sandbox.ts`、`status.ts`） | `core-S41-test-cases.md` | 进行中 |
+
+### 依赖关系
+
+```mermaid
+flowchart LR
+    DSN["deployment-designer 产出 environments.yaml"] --> S41["S41 环境登记与查询"]
+    S41 --> S21["S21 deploy-done --env --ref"]
+    S21 --> S19["S19 smoke --env 环境一致性与证据"]
+    S21 --> LED["本机部署账本"]
+    S19 --> LED
+    LED --> S41
+    LED --> S11["S11 status environments 视图"]
+    S41 --> RL["RunLogos 环境面板（只消费 JSON）"]
+    S11 --> RL
+```
+
+### 依赖说明
+
+1. S41 定义登记表与 `--env` 解析；S21、S19 消费解析结果，写 `DEPLOY_DONE` 内容与账本。
+2. S21 写入的 `DEPLOY_DONE`（含 `deploy_id`、`environment`、`ref`）是 S19 环境一致性判定与 smoke 记录版本继承的唯一依据。
+3. S41 的 `env list / show` 与 S11 的 `environments` 视图共用同一账本读取实现，结论逐字段一致。
+4. 登记表不存在时 S21、S19、S11 的既有行为不变；S41 的 `env list` 返回空数组。
+5. 后续提案 B（部署执行）与 C（晋级审批）在本场景的登记表与账本之上扩展，不改本场景的事实来源。
+
+### 场景索引增量
+
+- [S41：环境登记与查询](./core-S41-environment-registry.md)
+- `core-S21-deploy-done-marker.md`：新增「环境校验、版本声明与部署账本（environment-registry）」一节；对应测试 UT-S21-12～UT-S21-19、ST-S21-05。
+- `core-S19-smoke-gate.md`：新增「smoke 环境一致性、环境证据与部署账本（environment-registry）」一节；对应测试 UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27。
+- `core-S11-status-progress.md`：新增「status 环境视图（environment-registry）」一节；对应测试 UT-S11-96～UT-S11-100、ST-S11-52。
+- 对应测试：`logos/resources/test/core-S41-test-cases.md`。
+
+### 元数据 apply
+
+merge 时把 S41 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F05` 验收与部署门禁），将 `scenario_counter.next_id` 从 41 推进到 42，并把 `core-S41-environment-registry.md`、`core-S41-test-cases.md` 与 `spec/environments.md` 纳入 `resource_index`。

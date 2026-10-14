@@ -2856,3 +2856,77 @@ Windows 上杀毒软件、搜索索引器、IDE 文件监听会短暂持有文�
 - 硬链接锁（`baseline-seed-txn.ts`）在 FAT / exFAT / 部分网络盘不可用：需要新的锁机制，另案。
 - Windows 上沙箱 OS 级写保护：无受支持机制，按既有能力分层降级（`auto` 降级执行、`always` 明确失败），不变。
 - MAX_PATH：staging 为扁平路径、Node fs 支持长路径，不设约束。
+
+## 五十三、环境登记表与部署账本
+
+> 来源变更：environment-registry（决策 C01～C08）。格式权威：`spec/environments.md`；功能规格：§2.93；场景：S41、S21、S19、S11。
+
+### 53.1 目标与边界
+
+把「环境」从回显的字符串标签变成可定义、可校验、可查询的实体，并给出跨提案、按环境的「当前部署版本 / 最近 smoke 是否已验证」本机事实，作为 RunLogos 环境面板的唯一数据源以及后续提案 B（部署执行、版本通道、回滚）与 C（晋级、审批）的基础。本提案不执行部署、不做团队共享状态（决策 C02）。
+
+### 53.2 组件
+
+| 组件 | 职责 | 读 / 写 |
+|---|---|---|
+| `cli/src/lib/environments.ts`（新增） | 登记表加载与校验、`--env` 解析、`DEPLOY_DONE` 内容编解码与三类分类、账本追加与流式读取、环境视图投影、`verified` 判定 | 读 `logos/environments.yaml`、`logos/logos-project.yaml`；写 `logos/.openlogos-runtime/deployments.jsonl` |
+| `cli/src/commands/env.ts`（新增） | `env list / show / check [--probe]`，只读 | 只读；`--probe` 发 HTTP GET |
+| `cli/src/commands/deploy-done.ts` | `--env` 解析、`--ref` 解析、写 JSON `DEPLOY_DONE`、追加 deploy 记录 | 写 marker、tasks、账本 |
+| `cli/src/lib/lifecycle-gate.ts` | smoke 前置：在既有 fail-closed 判定之后，按 `DEPLOY_DONE` 三类分类与环境一致性拒绝 | 只读 |
+| `cli/src/commands/smoke.ts` | 环境解析、注入 `OPENLOGOS_SMOKE_ENV`、按结果行 `target_environment` 判定环境证据、追加 smoke 记录 | 写 smoke marker、账本 |
+| `cli/src/lib/sandbox.ts` | 运行 `smoke.command` 时把调用方提供的附加环境变量传入子进程（含沙箱内执行） | — |
+| `cli/src/commands/status.ts` | 有登记表时投影 `environments` / `environment_ledger` / `environment_registry_error`，不联网 | 只读 |
+| `cli/src/lib/guard-scope-config.ts` 与 guard hook 运行时 | 内置默认豁免追加 `logos/environments.yaml`（决策 C07） | — |
+
+### 53.3 数据与事实来源
+
+```mermaid
+flowchart LR
+    REG["logos/environments.yaml（进仓库，可编辑）"] --> RES["环境解析"]
+    RES --> DD["deploy-done --env --ref"]
+    DD --> MK["DEPLOY_DONE（提案内，单行 JSON）"]
+    DD --> LED["deployments.jsonl（本机，只追加）"]
+    MK --> SM["smoke --env"]
+    RES --> SM
+    SM --> RUN["smoke.command（注入 OPENLOGOS_SMOKE_ENV）"]
+    RUN --> RS["smoke 结果行（target_environment）"]
+    RS --> SM
+    SM --> LED
+    LED --> VIEW["环境视图（env list/show、status）"]
+    REG --> VIEW
+```
+
+- **定义与状态分离**：环境定义进仓库，状态只在本机运行态目录；后续团队版只替换状态层。
+- **版本事实只来自显式声明**：`deploy-done --ref` 解析的 commit 是唯一部署版本来源；调用时 HEAD 只作 `observed_head` 观察；smoke 记录继承所依据部署记录的 `ref`，不再读 HEAD。
+- **环境事实需要两端证据**：参数与 marker 一致（`deploy_env_confirmed`）只证明「标的环境一致」，runner 在结果行声明 `target_environment` 才证明「实际验证了该环境」，本次实际运行 smoke 命令（`fresh_results`）才证明结果属于这次部署而不是上一代残留；`verified` 同时要求三者、结果通过与版本已知。
+- **活跃提案是 smoke 的可选上下文**：既有 smoke 允许无活跃提案运行；此时不读 marker、不写账本、不产生已验证事实。
+- **账本只由 CLI 写**：位于 `logos/.openlogos-runtime/`，对 AI 编辑工具恒阻断；不进 git。
+
+### 53.4 读取算法
+
+- 顺序流式逐行扫描完整账本，按环境维护三个槽位：最近 deploy、最近 smoke、最近 20 条历史（环形缓冲）；时间复杂度 O(行数)，内存 O(环境数 × 20)。
+- 不设全局行数窗口：低频环境的记录即使被其他环境的大量记录隔开也不会丢失。
+- 每行按 kind 校验必需字段、类型、枚举与 `verified` 一致性；不合格行整行跳过并计数，不更新最近槽位与历史，之前的有效记录仍是最近状态；未知额外字段保留兼容；账本缺失视为空。`env list`、`env show`、`status` 共用同一实现，结论逐字段一致。
+- 需要性能优化时再引入可从账本完整重建的投影，投影不是事实来源。
+
+### 53.5 门禁与兼容不变量
+
+1. 无 `logos/environments.yaml` 时，`deploy-done`、`smoke`、`status` 的输出与退出码不变；唯一例外是非空损坏的 `DEPLOY_DONE` 拒绝 smoke（`SMOKE_ENV_MISMATCH` 只在登记表存在时产生）。
+2. 登记表存在但非法时 fail-closed，不回落为「未启用」。
+3. 所有拒绝路径在任何写入之前完成判定：不勾选 `[deploy]`、不写 marker、不写账本、不运行 `smoke.command`。
+4. `DEPLOY_DONE` 的存在性语义不变，flow `done_when: marker:DEPLOY_DONE` 与 RunLogos completion-judge 不改；`DEPLOY_DONE` 的唯一 writer 仍是 `deploy-done`（§2.11.1）。
+5. `SMOKE_PASS` / `SMOKE_FAIL` 仍为空文件，环境信息只进账本。
+6. `status` 与 `env list / show` 不发起网络请求；只有 `env check --probe` 联网。
+7. 密钥只登记变量名；`env check` 只报告变量名与是否存在，任何输出不含密钥值。
+
+### 53.6 与后续提案的接口
+
+- B：`openlogos deploy` 执行成功后经 `deploy-done --env --ref` 写入同一账本；回滚即重新部署某环境最近一条 `verified` 的 ref。
+- C：晋级判断读取「同一 ref 在上一环境存在 `verified=true` 的 smoke 记录」；登记表的未知字段宽容策略允许 C 新增 `promote_from`、`require_approval` 而无需迁移。
+- RunLogos：只消费 `env list / show / check` 与 `status` 的 JSON，不解析 YAML 或 JSONL。
+
+### 53.7 追溯
+
+- 规范：`spec/environments.md`、`spec/cli-json-output.md`、`spec/test-results.md`、`spec/pretooluse-guard.md`、`spec/logos-project.md`。
+- 功能规格：§2.93、§2.11。
+- 场景：`core-S41-environment-registry.md`、`core-S21-deploy-done-marker.md`、`core-S19-smoke-gate.md`、`core-S11-status-progress.md`。

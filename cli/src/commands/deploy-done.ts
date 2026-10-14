@@ -1,4 +1,6 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
@@ -13,6 +15,9 @@ import {
   type ModuleInfo,
 } from './status.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
+import { DEPLOY_LEDGER_REL, ENV_REGISTRY_REL, loadEnvironmentRegistry, resolveEnvironment } from '../lib/environments.js';
+import type { DeployLedgerRecord } from '../lib/environments.js';
+import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 
 const DEPLOYMENT_REPORT_PATH = 'logos/resources/verify/deployment-report.md';
 
@@ -94,6 +99,86 @@ export interface DeployDoneData {
   deploy_tasks_total: number;
   cleared_smoke_markers: string[];
   next_step: 'ready-to-smoke' | 'deploy-done';
+  /** environment-registry：仅在项目存在 logos/environments.yaml 时输出（spec/cli-json-output.md）。 */
+  deployment?: {
+    deploy_id: string;
+    environment: string;
+    ref: string | null;
+    ref_source: 'explicit' | 'unknown';
+    observed_head: string | null;
+    ledger_written: boolean;
+  };
+}
+
+/** DEPLOY_DONE 单行 JSON 内容（spec/environments.md §4.1）。 */
+export interface DeployDoneMarker {
+  deploy_id: string;
+  environment: string | null;
+  ref: string | null;
+  ref_source: 'explicit' | 'unknown';
+  recorded_at: string;
+}
+
+interface ResolvedDeployTarget {
+  registryPresent: boolean;
+  environment: string | null;
+  ref: string | null;
+  refSource: 'explicit' | 'unknown';
+}
+
+function git(root: string, args: string[]): { ok: boolean; stdout: string } {
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf-8', timeout: 30_000 });
+  return { ok: !r.error && r.status === 0, stdout: (r.stdout ?? '').trim() };
+}
+
+/**
+ * environment-registry：环境与版本判定（spec/environments.md §3、§4.1）。纯读，必须在任何写入之前完成；
+ * 失败经 fail 退出（零副作用）。登记表不存在时 --env 为原始标签、行为与引入前一致。
+ */
+function resolveDeployTarget(
+  root: string, environment: string | undefined, refInput: string | undefined, format: OutputFormat, locale: Locale,
+): ResolvedDeployTarget {
+  const reg = loadEnvironmentRegistry(root);
+  let resolvedEnv: string | null = environment ?? null;
+  if (reg.state !== 'absent') {
+    if (reg.state === 'unloadable' || reg.errors.length > 0) {
+      const reason = reg.state === 'unloadable'
+        ? reg.error.reason
+        : reg.errors.map(e => `${e.environment ?? ''}.${e.field ?? ''}: ${e.reason}`).join('; ');
+      fail(format, locale, 'ENV_REGISTRY_INVALID', 'deployDone.error.registryInvalid', { path: ENV_REGISTRY_REL, reason });
+    }
+    const available = reg.environments.map(e => e.id).join(', ');
+    if (environment === undefined || environment.trim() === '') {
+      fail(format, locale, 'ENV_REQUIRED', 'deployDone.error.envRequired', { available });
+    }
+    const resolved = resolveEnvironment(reg.environments, environment);
+    if (!resolved.ok) {
+      fail(format, locale, 'ENV_UNKNOWN', 'deployDone.error.envUnknown', { input: environment, available });
+    }
+    resolvedEnv = resolved.id;
+  }
+
+  if (refInput === undefined) {
+    return { registryPresent: reg.state !== 'absent', environment: resolvedEnv, ref: null, refSource: 'unknown' };
+  }
+  // 拒绝空值与以 - 开头的值（不让 --ref 的值被 git 当作选项解析）
+  const parsed = refInput.trim() === '' || refInput.startsWith('-')
+    ? { ok: false, stdout: '' }
+    : git(root, ['rev-parse', '--verify', '--quiet', `${refInput}^{commit}`]);
+  if (!parsed.ok || !/^[0-9a-f]{40}$/.test(parsed.stdout)) {
+    fail(format, locale, 'ENV_REF_UNRESOLVED', 'deployDone.error.refUnresolved', { ref: refInput });
+  }
+  return { registryPresent: reg.state !== 'absent', environment: resolvedEnv, ref: parsed.stdout, refSource: 'explicit' };
+}
+
+/** 调用时 HEAD 与工作区状态：只作观察信息（spec/environments.md §5.2），不作为部署版本。 */
+function observeWorkspace(root: string): { head: string | null; dirty: boolean | null } {
+  const head = git(root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+  const status = git(root, ['status', '--porcelain']);
+  return {
+    head: head.ok && /^[0-9a-f]{40}$/.test(head.stdout) ? head.stdout : null,
+    dirty: status.ok ? status.stdout.length > 0 : null,
+  };
 }
 
 interface SectionCheckResult {
@@ -200,6 +285,69 @@ function clearSmokeMarkers(proposalDir: string): string[] {
   return cleared;
 }
 
+/**
+ * 落标写入前的现场快照（code-r1 F2）：tasks.md、旧 smoke marker、旧 DEPLOY_DONE 与账本是否存在。
+ * 任一写入失败时据此恢复，保证「命令失败时不得产生部分状态更新」（功能规格 §2.11）。
+ * 账本不按长度快照：smoke 等其他 writer 可能在此期间追加，补偿只移除本次自己的那一行（code-r2 F2）。
+ */
+export interface WriteSnapshot {
+  tasksPath: string;
+  tasks: string;
+  smokeMarkers: Array<{ path: string; content: Buffer }>;
+  markerPath: string;
+  marker: Buffer | null;
+  root: string;
+  ledgerExisted: boolean;
+}
+
+export function takeWriteSnapshot(root: string, proposalDir: string, markerPath: string, ledgerPath: string): WriteSnapshot {
+  const tasksPath = join(proposalDir, 'tasks.md');
+  return {
+    tasksPath,
+    tasks: readFileSync(tasksPath, 'utf-8'),
+    smokeMarkers: ['SMOKE_PASS', 'SMOKE_FAIL']
+      .map(name => join(proposalDir, name))
+      .filter(path => existsSync(path))
+      .map(path => ({ path, content: readFileSync(path) })),
+    markerPath,
+    marker: existsSync(markerPath) ? readFileSync(markerPath) : null,
+    root,
+    ledgerExisted: existsSync(ledgerPath),
+  };
+}
+
+/**
+ * 按快照恢复；返回未能恢复的条目（为空即已回到写入前状态）。只回退本次命令写过的位置：
+ * ownLedgerLine 为本次已成功追加的账本行（未追加为 null，此时不触碰账本）。
+ */
+export function restoreWriteSnapshot(snap: WriteSnapshot, ownLedgerLine: string | null): string[] {
+  const problems: string[] = [];
+  const attempt = (label: string, fn: () => void) => {
+    try { fn(); } catch (error) { problems.push(`${label}: ${(error as Error).message}`); }
+  };
+  attempt('tasks.md', () => {
+    if (readFileSync(snap.tasksPath, 'utf-8') !== snap.tasks) writeFileSync(snap.tasksPath, snap.tasks);
+  });
+  for (const m of snap.smokeMarkers) {
+    attempt(m.path, () => {
+      if (!existsSync(m.path) || !readFileSync(m.path).equals(m.content)) writeFileSync(m.path, m.content);
+    });
+  }
+  attempt('DEPLOY_DONE', () => {
+    if (snap.marker === null) {
+      if (existsSync(snap.markerPath)) rmSync(snap.markerPath, { force: true });
+    } else if (!existsSync(snap.markerPath) || !readFileSync(snap.markerPath).equals(snap.marker)) {
+      writeFileSync(snap.markerPath, snap.marker);
+    }
+  });
+  if (ownLedgerLine !== null) {
+    attempt('deployments.jsonl', () => {
+      removeOwnLedgerLine(snap.root, ownLedgerLine, !snap.ledgerExisted);
+    });
+  }
+  return problems;
+}
+
 function normalizeNextStep(step: string): DeployDoneData['next_step'] {
   return step === 'ready-to-smoke' ? 'ready-to-smoke' : 'deploy-done';
 }
@@ -235,7 +383,7 @@ async function verifyOrFail(root: string, proposalDir: string, format: OutputFor
   return verifyResult;
 }
 
-export async function deployDone(format: OutputFormat = 'text', environment?: string) {
+export async function deployDone(format: OutputFormat = 'text', environment?: string, refInput?: string) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
   const locale = readLocale(root);
@@ -293,24 +441,82 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
     });
   }
 
+  // environment-registry：环境与 --ref 判定是纯读前置，排在 cmd-gate verify 与任何写入之前
+  const target = resolveDeployTarget(root, environment, refInput, format, locale);
+
   if (verifyIsCmdGate) {
     verifyResult = await verifyOrFail(root, active.proposalDir, format, locale); // cmd-gate：纯读前置之后执行 cmd
   }
 
-  const tasksPath = join(active.proposalDir, 'tasks.md');
-  const checkedTasks = checkTaskSection(readFileSync(tasksPath, 'utf-8'), 'deploy');
-  writeFileSync(tasksPath, checkedTasks.content);
+  const observed = observeWorkspace(root);
+  const marker: DeployDoneMarker = {
+    deploy_id: randomUUID(),
+    environment: target.environment,
+    ref: target.ref,
+    ref_source: target.refSource,
+    recorded_at: new Date().toISOString(),
+  };
 
   const markerRelativePath = `logos/changes/${active.slug}/DEPLOY_DONE`;
-  writeFileSync(join(root, markerRelativePath), '');
-  const clearedSmokeMarkers = clearSmokeMarkers(active.proposalDir);
+  const ledgerPath = join(root, DEPLOY_LEDGER_REL);
+  let snapshot: WriteSnapshot;
+  try {
+    snapshot = takeWriteSnapshot(root, active.proposalDir, join(root, markerRelativePath), ledgerPath);
+  } catch (error) {
+    // 快照读取失败（如 DEPLOY_DONE 被目录替代）：尚未写入任何文件，直接失败
+    failRaw(format, 'DEPLOY_DONE_WRITE_FAILED', t(locale, 'deployDone.error.writeFailed', {
+      reason: (error as Error).message, rollback: t(locale, 'deployDone.error.writeFailedNothingWritten'),
+    }));
+  }
+
+  const tasksPath = snapshot.tasksPath;
+  const checkedTasks = checkTaskSection(snapshot.tasks, 'deploy');
+  let clearedSmokeMarkers: string[] = [];
+  let ledgerWritten = false;
+  let ownLedgerLine: string | null = null;
+  try {
+    writeFileSync(tasksPath, checkedTasks.content);
+    clearedSmokeMarkers = clearSmokeMarkers(active.proposalDir);
+
+    // 传入 --env 时追加账本 deploy 记录（spec/environments.md §5.1、§5.2）
+    if (target.environment !== null) {
+      const record: DeployLedgerRecord = {
+        kind: 'deploy',
+        environment: target.environment,
+        slug: active.slug,
+        recorded_at: marker.recorded_at,
+        observed_head: observed.head,
+        observed_dirty: observed.dirty,
+        deploy_id: marker.deploy_id,
+        ref: marker.ref,
+        ref_source: marker.ref_source,
+        result: 'done',
+      };
+      const line = `${JSON.stringify(record)}\n`;
+      appendLedgerLine(root, line); // 锁内追加；失败时自身残片已清理
+      ownLedgerLine = line;
+      ledgerWritten = true;
+    }
+
+    // DEPLOY_DONE 最后写：成功时它在场即蕴含勾选、清理与账本记录均已完成；重跑整体重写
+    writeFileSync(join(root, markerRelativePath), `${JSON.stringify(marker)}\n`);
+  } catch (error) {
+    // 任一写入失败：按快照恢复 tasks.md、旧 smoke marker、旧 DEPLOY_DONE 与账本，不留部分状态（code-r1 F2）
+    const problems = restoreWriteSnapshot(snapshot, ownLedgerLine);
+    failRaw(format, 'DEPLOY_DONE_WRITE_FAILED', t(locale, 'deployDone.error.writeFailed', {
+      reason: (error as Error).message,
+      rollback: problems.length === 0
+        ? t(locale, 'deployDone.error.writeFailedRolledBack')
+        : t(locale, 'deployDone.error.writeFailedRollbackIncomplete', { problems: problems.join('; ') }),
+    }));
+  }
   // S30·#1：cmd-gate verify 通过后磁盘无 VERIFY_PASS，必须把 cmdEval 回灌 detect，否则会误判停在 ready-to-verify
   //（→ 错误地把需 smoke 的提案报成可归档）。marker verify 时 cmdEval 为空、行为不变。
   const nextStep = normalizeNextStep(detectProposalStepViaFlow(active.proposalDir, moduleDefaults, verifyResult?.cmdEval));
 
   const data: DeployDoneData = {
     slug: active.slug,
-    environment: environment ?? null,
+    environment: target.environment,
     marker_path: markerRelativePath,
     deployment_report_path: DEPLOYMENT_REPORT_PATH,
     deploy_tasks_checked: checkedTasks.checked,
@@ -318,6 +524,16 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
     cleared_smoke_markers: clearedSmokeMarkers,
     next_step: nextStep,
   };
+  if (target.registryPresent && target.environment !== null) {
+    data.deployment = {
+      deploy_id: marker.deploy_id,
+      environment: target.environment,
+      ref: marker.ref,
+      ref_source: marker.ref_source,
+      observed_head: observed.head,
+      ledger_written: ledgerWritten,
+    };
+  }
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('deploy-done', data)));
@@ -327,6 +543,11 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
   console.log(`\n${t(locale, 'deployDone.title')}\n`);
   console.log(`  ${t(locale, 'deployDone.proposal', { slug: data.slug })}`);
   if (data.environment) console.log(`  ${t(locale, 'deployDone.environment', { environment: data.environment })}`);
+  if (data.deployment) {
+    console.log(`  ${data.deployment.ref
+      ? t(locale, 'deployDone.ref', { ref: data.deployment.ref })
+      : t(locale, 'deployDone.refUnknown')}`);
+  }
   console.log(`  ${t(locale, 'deployDone.marker', { path: data.marker_path })}`);
   console.log(`  ${t(locale, 'deployDone.deployTasks', {
     checked: String(data.deploy_tasks_checked),

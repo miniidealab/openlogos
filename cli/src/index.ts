@@ -67,7 +67,8 @@ Commands:
   smoke              Verify deployed environment against smoke test specs
                        --env <name>                 Target environment label
   deploy-done        Mark the active change deployment as completed
-                       --env <name>                 Target environment label
+                       --env <name>                 Target environment label (id or alias when logos/environments.yaml exists)
+                       --ref <git revision>         Version actually deployed (recorded in DEPLOY_DONE and the local ledger)
   baseline-seed      Commit reverse-engineered baseline seed state (brownfield-adopter)
                        begin  --module <id> --manifest <path>   Freeze logical plan + create staging
                        commit --module <id> --run-id <id>       Validate staged bytes + atomic commit
@@ -96,12 +97,15 @@ Commands:
                        --prefix <dir/>              Project prefix for --stdin mode (monorepo)
   ignore <add|remove|list> [pattern...]   Manage paths kept out of version control (.gitignore managed block)
   exempt <add|remove|list> [path...]      Manage committed paths that do not require a change proposal
+  env list                                 List registered environments with current ref and last deploy / smoke
+  env show <id|alias>                      Show one environment's configuration and recent history
+  env check [<id|alias>] [--probe]         Validate logos/environments.yaml (and probe health / version URLs with --probe)
 
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
   --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
 
 Examples:
   openlogos init my-saas-project
@@ -134,7 +138,7 @@ Learn more: https://openlogos.ai
 const VALUE_OPTIONS = new Set([
   '--locale', '--ai-tool', '--aitool', '--module', '--interval', '--env',
   '--manifest', '--run-id', '--slug', '--lifecycle', '--format',
-  '--base', '--head', '--prefix',
+  '--base', '--head', '--prefix', '--ref',
 ]);
 
 /** 剔除取值选项的值位 token，仅保留可参与全局选项判定的 token。 */
@@ -227,7 +231,9 @@ async function main() {
     }
     case 'deploy-done': {
       const envArg = args.includes('--env') ? args[args.indexOf('--env') + 1] : undefined;
-      await deployDone(format, envArg);
+      // --ref 出现但缺值时传空串，由命令按 ENV_REF_UNRESOLVED 拒绝，不折叠成「未传」
+      const refArg = args.includes('--ref') ? (args[args.indexOf('--ref') + 1] ?? '') : undefined;
+      await deployDone(format, envArg, refArg);
       break;
     }
     case 'change': {
@@ -359,6 +365,12 @@ async function main() {
       // 版本管理范围配置（S40，功能规格 §2.88.4）：AI 发起的 add / remove 由 guard 交宿主原生审批。
       const { scopeCommand } = await import('./commands/scope.js');
       scopeCommand(command, args.slice(1));
+      break;
+    }
+    case 'env': {
+      // 环境登记表只读查询（environment-registry，spec/environments.md §7.2）
+      const { envCommand } = await import('./commands/env.js');
+      await envCommand(args.slice(1), format);
       break;
     }
     case 'check-ui-prototype': {

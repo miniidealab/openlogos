@@ -629,6 +629,12 @@ resource_index:
     desc: guard-versioned-content-scope 创建的 scenario 基线
   - path: logos/resources/test/core-S40-test-cases.md
     desc: guard-versioned-content-scope 创建的 test 基线
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S41-environment-registry.md
+    desc: environment-registry 创建的 scenario 基线
+  - path: logos/resources/test/core-S41-test-cases.md
+    desc: environment-registry 创建的 test 基线
+  - path: spec/environments.md
+    desc: environment-registry 创建的 spec 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

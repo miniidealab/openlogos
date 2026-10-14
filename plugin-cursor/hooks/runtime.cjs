@@ -55,7 +55,8 @@ const PATH_WHITELIST_PREFIXES = [
 
 const RUNTIME_REL = 'logos/.openlogos-runtime';
 const CONFIG_REL = 'logos/logos.config.json';
-const BUILTIN_EXEMPT = ['logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/'];
+// 第三项：环境登记表（environment-registry 决策 C07），只匹配该单个文件
+const BUILTIN_EXEMPT = ['logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/', 'logos/environments.yaml'];
 /** 事后检查引擎的 Cursor 部署副本（与 plugin/bin/guard-post-check.cjs 字节一致）。 */
 const ENGINE_REL = '.cursor/hooks/openlogos-guard-post.cjs';
 const ENGINE_FILE = 'openlogos-guard-post.cjs';

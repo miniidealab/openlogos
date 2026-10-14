@@ -138,3 +138,76 @@ sequenceDiagram
 - 关联场景：S13（verify）、S19（smoke 门禁）、S09（archive 链条）、S11（status 投影）、S05（next 引导）。
 - 决策记录：D12 — 生命周期命令 fail-closed 与显式对账不变量。
 - 测试：既有 `UT-S21-*` 与 `cli/test/s21-deploy-done.test.ts` 覆盖校验、勾选同步与 smoke 标记清理。
+
+## 环境校验、版本声明与部署账本（environment-registry）
+
+> 来源变更：environment-registry（决策 C04、C05、C06）。格式权威：`spec/environments.md` §3～§5。本节扩展主时序 Step 4～Step 9 之间的环境与版本处理，既有六项前置校验、`[deploy]` 勾选、旧 smoke marker 清理与「唯一 writer」不变量不变。
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant U as 用户或 deployment-executor
+    participant C as OpenLogos CLI
+    participant F as environments.yaml
+    participant G as git
+    participant M as DEPLOY_DONE
+    participant L as deployments.jsonl
+
+    U->>C: Step E1: openlogos deploy-done --env 测试 --ref R1
+    C->>C: Step E2: 既有前置校验（guard、VERIFY_PASS、部署决策、[deploy]、部署报告）
+    C->>F: Step E3: 登记表存在则加载并校验，解析 --env 为 id
+    C->>G: Step E4: git rev-parse R1^{commit}
+    C->>G: Step E5: 读取调用时 HEAD 与工作区状态（仅观察）
+    C->>C: Step E6: 勾选 [deploy]、清理旧 smoke marker
+    C->>L: Step E7: 传入 --env 时追加 deploy 记录
+    C->>M: Step E8: 写单行 JSON（最后写 marker）
+    C-->>U: Step E9: 输出下一步（含 deployment 对象）
+```
+
+### 步骤说明
+
+1. **用户或 deployment-executor** 在部署成功并写入部署报告后执行 `openlogos deploy-done --env <id|alias> [--ref <revision>]`。
+2. **CLI** 先完成既有前置校验（§2.11）。
+3. **CLI** 登记表存在时加载并校验（非法报 `ENV_REGISTRY_INVALID`）；未传 `--env` 报 `ENV_REQUIRED`；按 id、再按 alias 不区分大小写解析，解析不到报 `ENV_UNKNOWN`。登记表不存在时 `--env` 为原始标签。
+4. **CLI** 传入 `--ref` 时解析为 40 位 commit，失败报 `ENV_REF_UNRESOLVED`；未传时 `ref=null`、`ref_source=unknown`。
+5. **CLI** 读取调用时 HEAD 与工作区是否有未提交改动，只写入账本的 `observed_head` / `observed_dirty`，不作为部署版本。
+6. **CLI** 勾选 `[deploy]` 任务并清理旧 `SMOKE_PASS` / `SMOKE_FAIL`（既有行为）。
+7. **CLI** 传入 `--env` 时向 `logos/.openlogos-runtime/deployments.jsonl` 追加 deploy 记录（`deploy_id`、`environment`、`slug`、`ref`、`ref_source`、`result=done`、`observed_head`、`observed_dirty`、`recorded_at`）。
+8. **CLI** 最后写 `DEPLOY_DONE` 单行 JSON `{deploy_id, environment, ref, ref_source, recorded_at}`，重跑时整体重写。
+9. **CLI** 输出下一步建议；登记表存在时 JSON 输出含 `deployment` 对象。
+
+步骤 3～5 的全部判定在步骤 6 之前完成；任一失败均不勾选、不写 marker、不写账本。
+
+### 异常与边界
+
+#### EX-21.8：登记表存在但环境缺失或未登记
+- **触发条件**：登记表存在，未传 `--env`，或 `--env` 既不是 id 也不是 alias。
+- **期望响应**：`ENV_REQUIRED` / `ENV_UNKNOWN`，退出码 1，列出可用 id。
+- **副作用**：无。
+
+#### EX-21.9：登记表非法
+- **触发条件**：`logos/environments.yaml` 存在但无法解析或字段非法。
+- **期望响应**：`ENV_REGISTRY_INVALID`，退出码 1；不回落为「未启用」。
+- **副作用**：无。
+
+#### EX-21.10：`--ref` 无法解析
+- **触发条件**：提交不存在、不是 git 仓库或解析结果不是 commit。
+- **期望响应**：`ENV_REF_UNRESOLVED`，退出码 1。
+- **副作用**：无。
+
+#### EX-21.11：未传 `--ref`
+- **触发条件**：部署版本未声明。
+- **期望响应**：成功落标，`ref=null`、`ref_source=unknown`；基于该部署的 smoke 记录 `verified=false`；不以 HEAD 代替。
+- **副作用**：正常写 marker 与账本。
+
+#### EX-21.12：无登记表
+- **触发条件**：项目不存在 `logos/environments.yaml`。
+- **期望响应**：输出与退出码与引入环境登记前一致；`DEPLOY_DONE` 写单行 JSON（`environment` 为原始标签或 null）；传入 `--env` 时追加账本。
+- **副作用**：仅文件层面新增（marker 内容、账本）。
+
+### 追溯
+
+- 需求：S21 验收条件（environment-registry 新增项）。
+- 功能规格：§2.11、§2.93.2、§2.93.3、§2.93.5；规范：`spec/environments.md` §3～§5。
+- 测试：UT-S21-12～UT-S21-19、ST-S21-05。

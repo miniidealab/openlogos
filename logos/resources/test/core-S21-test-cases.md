@@ -63,3 +63,38 @@
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S21"`；失败不得写 pass。
 - 「无命令写 marker」断言以调用前后提案目录 marker 文件集合比对取证，不得只断言命令退出码。
 - 全部断言在一次性临时项目中构造，不得触碰本仓或用户其它项目的活跃提案与 guard。
+
+## S21 环境校验、版本声明与部署账本测试（environment-registry）
+
+> 覆盖场景 `core-S21-deploy-done-marker.md`「环境校验、版本声明与部署账本（environment-registry）」、功能规格 §2.11 / §2.93.2 / §2.93.3、`spec/environments.md` §3～§5。既有 UT-S21-01～UT-S21-11、ST-S21-01～ST-S21-04 不变，作为零回归守护。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S21"`；全部在一次性临时 git 仓库中构造。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S21-12 | 登记表存在时环境未登记拒绝 | EX-21.8 | 登记表含 test、prod；deploy-done 既有前置全满足 | `deploy-done --env staging` | `ENV_UNKNOWN`、退出码 1、消息列出 test 与 prod；`[deploy]` 未勾、`DEPLOY_DONE` 不存在、账本不存在 |
+| UT-S21-13 | 登记表存在时未传 `--env` 拒绝 | EX-21.8 | 同上 | `deploy-done` | `ENV_REQUIRED`、退出码 1；零副作用（同上） |
+| UT-S21-14 | 别名解析为 id 并写入 marker 与账本 | S21 环境节 Step 3、7、8 | test 的 aliases 含「测试」 | `deploy-done --env 测试 --ref HEAD` | `DEPLOY_DONE` 为单行 JSON，`environment="test"`；账本新增 1 行 `kind=deploy`、`environment="test"`、`result="done"`、`slug` 为活跃提案；`deploy_id` 与 marker 相同 |
+| UT-S21-15 | 部署版本只来自 `--ref` | S21 环境节 Step 4、5 | 仓库有提交 R0、R1，HEAD 为 R1 | `deploy-done --env test --ref R0` | marker 与账本 `ref` 为 R0 的完整 commit、`ref_source="explicit"`；账本 `observed_head` 为 R1 的完整 commit；`observed_dirty` 与工作区状态一致 |
+| UT-S21-16 | 未传 `--ref` 时版本未知 | EX-21.11 | HEAD 为 R1 | `deploy-done --env test` | marker 与账本 `ref=null`、`ref_source="unknown"`；`observed_head` 为 R1；不以 HEAD 填充 `ref` |
+| UT-S21-17 | `--ref` 无法解析拒绝 | EX-21.10 | ① 提交不存在；② 当前项目不是 git 仓库 | `deploy-done --env test --ref deadbeef` | 两种情形均 `ENV_REF_UNRESOLVED`、退出码 1；`[deploy]` 未勾、`DEPLOY_DONE` 不存在、账本无新增 |
+| UT-S21-18 | 无登记表时输出逐字不变 | EX-21.12 | 无 `logos/environments.yaml`；既有前置满足 | 分别执行 `deploy-done`、`deploy-done --env staging`、`deploy-done --format json` 并与引入前的基线输出比对 | 文本与 JSON 输出、退出码与基线逐字一致（JSON 无 `deployment` 对象）；marker 为单行 JSON，`environment` 依次为 null、`"staging"`；仅带 `--env` 的一次追加账本 |
+| UT-S21-19 | 重跑整体重写 marker | §2.11 成功后写入 | 已成功执行一次 `deploy-done --env test --ref R0` | 再执行 `deploy-done --env test --ref R1` | marker 只有一行，`deploy_id` 变化、`ref` 为 R1；账本共 2 行 deploy 记录且顺序为 R0、R1 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S21-05 | 真实 CLI 下的环境与版本落标 | S21 环境节 Step E1～E9 | 真实 CLI；一次性 git 仓库；登记表含 test（alias「测试」）；活跃提案满足既有前置 | ① `deploy-done --env 测试 --ref HEAD --format json`；② 读取 `DEPLOY_DONE` 与账本；③ `openlogos env show test --format json` | ① 成功，JSON 含 `deployment`（`deploy_id`、`environment="test"`、`ref`、`ref_source="explicit"`、`ledger_written=true`）；② marker 五字段齐全且与 JSON 一致，账本末行为对应 deploy 记录；③ `current_ref` 等于该 ref |
+
+### 追溯与覆盖
+
+- 环境未登记 / 缺失 / 登记表非法零副作用：UT-S21-12、UT-S21-13（登记表非法由 UT-S41-11 覆盖）。
+- 别名解析与写入：UT-S21-14、ST-S21-05。
+- 版本来源（`--ref`、未传、无法解析、HEAD 仅观察）：UT-S21-15、UT-S21-16、UT-S21-17。
+- 无登记表零回归：UT-S21-18；重跑重写：UT-S21-19。
+
+### 自动化与证据要求
+
+- 「零副作用」断言以调用前后提案目录文件集合、`tasks.md` 字节与账本字节比对取证，不得只断言退出码。
+- 「逐字不变」断言以引入前实现生成的基线输出为对照。

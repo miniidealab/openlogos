@@ -645,10 +645,14 @@ async function case215() {
   const ex = cliRaw(entry, project, ['exempt', 'list', '--format', 'json']);
   let defaults = [];
   try { defaults = (JSON.parse(ex.stdout).data?.entries || []).filter(e => e.source === 'default'); } catch { /* 下方断言 */ }
-  c.expect(ex.status === 0 && defaults.length === 2, `exempt list --format json 应含两条 source=default，实际 exit ${ex.status}：${trunc(ex.stdout)}`);
+  // 0.15.18 引入的两条内置默认须在场；后续版本可追加内置默认（environment-registry 加入 logos/environments.yaml），不以总数判定
+  const ORIGINAL_DEFAULTS = ['logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/'];
+  const defaultValues = defaults.map(d => d.value);
+  c.expect(ex.status === 0 && ORIGINAL_DEFAULTS.every(v => defaultValues.includes(v)),
+    `exempt list --format json 应含 0.15.18 的两条 source=default 内置默认，实际 exit ${ex.status}：${trunc(ex.stdout)}`);
   ev.push(`project=${project}`, `exempt_defaults=${JSON.stringify(defaults.map(d => d.value))}`);
   c.done(ev);
-  return { detail: `安装态身份同源（${globalVersion}，manifest 自洽，guard / 引擎 hash 与 manifest 及本仓分发源一致，Cursor 引擎副本同字节，help 列出 ignore / exempt，exempt 内置默认两项）`, evidence: ev };
+  return { detail: `安装态身份同源（${globalVersion}，manifest 自洽，guard / 引擎 hash 与 manifest 及本仓分发源一致，Cursor 引擎副本同字节，help 列出 ignore / exempt，exempt 内置默认含 0.15.18 两项）`, evidence: ev };
 }
 
 async function case216() {

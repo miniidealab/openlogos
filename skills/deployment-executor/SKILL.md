@@ -76,10 +76,11 @@
 
 - 当前是否 `VERIFY_PASS`
 - 是否存在未完成代码任务
-- 部署目标环境是否明确
+- 部署目标环境是否明确：项目存在 `logos/environments.yaml` 时，把用户所说的目标（如「发布到测试环境」）按 id 或别名解析为登记表中的环境 id（可先运行只读命令 `openlogos env show <别名>` 确认）；解析不到时停止并请用户确认，不得自行猜测或默认选一个环境
 - 回滚策略是否可执行
 - 必要环境变量和密钥是否已由用户确认
 - smoke 测试命令是否配置或已有替代说明
+- 实际要部署的版本（git revision）是否明确：部署 CI 指定提交或既有制品时，以该提交为准，而不是当前工作区 HEAD
 
 ### Step 4: 执行部署
 
@@ -126,10 +127,20 @@ openlogos deploy-done
 openlogos deploy-done --env staging
 ```
 
+项目存在 `logos/environments.yaml` 时**必须**传入解析后的环境 id，并用 `--ref` 声明这次实际部署的版本（environment-registry，见 `spec/environments.md` §4）：
+
+```bash
+openlogos deploy-done --env staging --ref <实际部署的 git revision>
+```
+
+- `--ref` 取实际部署的提交（CI 指定提交、制品对应提交），不要默认填当前 HEAD；确实无法确认实际版本时不传 `--ref`，版本记为未知，基于该部署的 smoke 不会被视为「已验证」。
+- 遇到 `ENV_UNKNOWN` / `ENV_REQUIRED` / `ENV_REF_UNRESOLVED` 时停止并向用户报告，不得改用其他环境或其他 revision 重试。
+
 `openlogos deploy-done` 负责：
 
 - 勾选当前提案 `tasks.md` 中的 `[deploy]` 任务
-- 写入 `logos/changes/<slug>/DEPLOY_DONE`
+- 写入 `logos/changes/<slug>/DEPLOY_DONE`（单行 JSON，含环境与版本）
+- 传入 `--env` 时向本机账本 `logos/.openlogos-runtime/deployments.jsonl` 追加部署记录
 - 清理过期的 `SMOKE_PASS` / `SMOKE_FAIL`
 - 输出下一步 smoke 或 archive 建议
 
@@ -153,6 +164,8 @@ openlogos smoke
 ```bash
 openlogos smoke --env staging
 ```
+
+项目存在 `logos/environments.yaml` 时必须传入与 `deploy-done` 相同的环境；CLI 会把目标环境以 `OPENLOGOS_SMOKE_ENV` 注入 smoke 命令。smoke runner 应在结果行写入 `target_environment`（其实际验证的环境 id，见 `spec/test-results.md`「Smoke 结果与覆盖预检」）；结果声明不一致时门禁 FAIL，缺少声明时该次结果不算「已在该环境验证」。遇到 `SMOKE_ENV_MISMATCH` 或 `SMOKE_DEPLOY_MARKER_INVALID` 时停止并报告：前者说明部署与 smoke 的目标不一致，后者需确认真实部署环境与版本后重新执行 `openlogos deploy-done`，不得手写或修补 `DEPLOY_DONE`。
 
 **半自动 / 手动模式**：AI 不得自动运行 `openlogos smoke`，除非用户明确授权。
 

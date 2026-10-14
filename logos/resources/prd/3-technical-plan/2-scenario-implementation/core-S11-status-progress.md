@@ -818,3 +818,59 @@ D1 选定「同口径的独立实现」而非「调用唯一实现」，因此�
 - 关联章节：本文「SessionStart 消费 status 结构化状态」（读取来源与顺序）、「automation_diagnostic 在 status 中的前沿边界 > 消费方约束」（宿主以结构化字段为准）。
 - 实现位置：`plugin/bin/openlogos-phase` 的 `change_management_message`。
 - 测试：UT-S11-86、UT-S11-87、UT-S11-88、UT-S11-89、UT-S11-90、ST-S11-48、ST-S11-49；既有 ST-S11-31 预期结果同步改为非排他口径。
+
+## status 环境视图（environment-registry）
+
+> 来源变更：environment-registry（决策 C04、C08）。格式权威：`spec/environments.md` §5.4、§7。本节为 `status --format json` 增加只读环境视图；既有派生、`deploy-done 对 status 的影响` 与对账投影不变。
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant U as 用户或 RunLogos
+    participant C as OpenLogos CLI
+    participant F as environments.yaml
+    participant L as deployments.jsonl
+
+    U->>C: Step V1: openlogos status --format json
+    C->>C: Step V2: 既有阶段与提案派生
+    C->>F: Step V3: 登记表存在则加载并校验
+    C->>L: Step V4: 顺序扫描完整账本，按环境聚合
+    C-->>U: Step V5: 输出 environments 与 environment_ledger
+```
+
+### 步骤说明
+
+1. **用户或 RunLogos** 执行 `openlogos status --format json`。
+2. **CLI** 完成既有派生，结果不受环境视图影响。
+3. **CLI** 登记表不存在时跳过后续步骤，不输出新字段；登记表非法时 `environments` 为空数组并输出 `environment_registry_error`（`code`、`message`），不改变退出码。
+4. **CLI** 与 `env list` 共用同一读取实现：顺序扫描完整账本，按环境保留最近 deploy、最近 smoke（与最近 20 条历史），损坏行跳过并计数；不设全局行数窗口。
+5. **CLI** 输出 `environments`（每项 `id`、`name`、`tier`、`current_ref`、`last_deploy`、`last_smoke`，`last_smoke` 含 `verified`、`env_evidence`、`deploy_env_confirmed`、`ref`）与 `environment_ledger`（`path`、`corrupt_lines`）。全程不发起网络请求。
+
+### 异常与边界
+
+#### EX-11.16：登记表不存在
+- **触发条件**：项目不存在 `logos/environments.yaml`。
+- **期望响应**：输出与退出码与引入环境登记前逐字一致，不出现 `environments`、`environment_ledger`、`environment_registry_error`。
+- **副作用**：无。
+
+#### EX-11.17：登记表非法
+- **触发条件**：登记表无法解析或字段非法。
+- **期望响应**：命令正常完成，`environments: []`，输出 `environment_registry_error`。
+- **副作用**：无。
+
+#### EX-11.18：账本损坏行或低频环境被大量记录隔开
+- **触发条件**：账本含损坏行；或 prod 记录之后其他环境追加超过 1000 条记录。
+- **期望响应**：损坏行计入 `environment_ledger.corrupt_lines`；prod 的 `current_ref`、`last_deploy`、`last_smoke` 仍正确。
+- **副作用**：无。
+
+#### EX-11.19：登记表声明了 health / version 地址
+- **触发条件**：环境项含 `health` 或 `version`。
+- **期望响应**：`status` 不探测、不发起网络请求；探测只由 `env check --probe` 显式执行。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：S11 验收条件（environment-registry 新增项）。
+- 功能规格：§2.93.6；规范：`spec/environments.md` §7.3、`spec/cli-json-output.md`「deploy-done / smoke / status 环境字段」。
+- 测试：UT-S11-96～UT-S11-100、ST-S11-52。

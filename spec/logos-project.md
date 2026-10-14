@@ -177,9 +177,11 @@ deployment_gates:
 |------|------|------|------|
 | `deployment_required` | boolean | 是 | 是否需要部署执行 |
 | `smoke_required` | boolean | 是 | 是否需要部署后冒烟测试 |
-| `environments` | array | 否 | 需要覆盖的部署环境 |
+| `environments` | array | 否 | 需要覆盖的部署环境；项目存在 `logos/environments.yaml` 时，每项须能按 id 或别名解析到登记环境（由 `openlogos env check` 校验，见 `spec/environments.md` §2.3） |
 
 若未声明 `deployment_gates`，软件模块默认需要部署方案；部署执行和 smoke 门禁由模块的 `deployment_required` 与部署方案内容共同决定。
+
+**与环境登记表的关系（environment-registry）**：`environments` 只表达「本模块需要覆盖哪些环境」，不承载环境定义。环境的显示名、类型、别名、健康检查与版本地址、所需密钥变量名登记在独立文件 `logos/environments.yaml`（格式见 `spec/environments.md`），不写入 `logos-project.yaml`：前者由 RunLogos 界面或人直接编辑，后者是 AI 维护的资源索引，分开存放可避免并发写与保护范围冲突。登记表不存在时，`environments` 仍为自由标签，不做校验。
 
 ### resource_index
 

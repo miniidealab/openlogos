@@ -198,6 +198,7 @@
 - 命令必须支持：
   - `openlogos deploy-done`
   - `openlogos deploy-done --env staging`
+  - `openlogos deploy-done --env staging --ref <git revision>`（environment-registry：声明这次已完成部署的实际版本）
   - `openlogos deploy-done --format json`
 - 命令成功前必须校验：
   - 当前目录存在 `logos/logos.config.json`
@@ -206,12 +207,16 @@
   - 提案部署决策无冲突，且 `deployment_required=true`
   - `tasks.md` 存在 `[deploy]` section 且至少有一个部署任务
   - `logos/resources/verify/deployment-report.md` 已存在
+  - （environment-registry）存在 `logos/environments.yaml` 时：登记表合法（否则 `ENV_REGISTRY_INVALID`）；必须传 `--env`（否则 `ENV_REQUIRED`）且能按 id / alias 解析（否则 `ENV_UNKNOWN`）
+  - （environment-registry）传入 `--ref` 时可经 `git rev-parse <revision>^{commit}` 解析为 commit（否则 `ENV_REF_UNRESOLVED`）
 - 命令成功后必须：
   - 将当前提案 `tasks.md` 的 `[deploy]` section 任务勾选为 `[x]`
-  - 写入 `logos/changes/<slug>/DEPLOY_DONE`
+  - 写入 `logos/changes/<slug>/DEPLOY_DONE`：内容为单行 JSON `{deploy_id, environment, ref, ref_source, recorded_at}`（格式见 `spec/environments.md` §4.1；未传 `--env` 时 `environment` 为 null，未传 `--ref` 时 `ref` 为 null、`ref_source` 为 `unknown`）；重跑时整体重写
+  - 传入 `--env` 时向本机账本 `logos/.openlogos-runtime/deployments.jsonl` 追加一行 deploy 记录（`spec/environments.md` §5）；调用时 HEAD 只作为 `observed_head` 观察信息，不作为部署版本
   - 清理同一提案中旧的 `SMOKE_PASS` 和 `SMOKE_FAIL`
   - 根据 `smoke_required` 输出下一步：需要 smoke 时提示 `openlogos smoke --env <env>`，无需 smoke 时提示 `openlogos archive <slug>`
-- 命令失败时不得产生部分状态更新；特别是不得只写 marker 而未勾选 `[deploy]` 任务。
+- 命令失败时不得产生部分状态更新；特别是不得只写 marker 而未勾选 `[deploy]` 任务。环境解析与 `--ref` 解析在任何写入之前完成，失败时不勾选、不写 marker、不写账本。
+- 没有 `logos/environments.yaml` 的项目，命令输出与退出码与引入环境登记前逐字一致（`DEPLOY_DONE` 内容格式与账本是文件层面的新增）；有登记表时 JSON 输出新增 `deployment` 对象（见 `spec/cli-json-output.md`「deploy-done / smoke / status 环境字段」）。
 
 #### 2.11.1 消费侧收口（`DEPLOY_DONE` 的唯一 writer 与全部读者）
 
@@ -5065,3 +5070,67 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 - 场景：S13 EX-3.13（情形 ① 跳过；② 容差内或启动时刻不可读按保守口径；③ 脱组后代；④ 旧记录）。
 - 测试：UT-S13-101、UT-S13-102、UT-S13-103、ST-S13-26。
+
+## 2.93 环境登记表与部署账本
+
+> 来源变更：environment-registry（决策 C01～C08）。权威格式与判据见 `spec/environments.md`；本节描述用户可见行为。场景：S41（新增）、S21、S19、S11。
+
+### 2.93.1 登记表
+
+- 项目可在 `logos/environments.yaml` 登记环境：`schema_version: 1` 与 `environments` 数组，每项含 `id`（必填，`^[a-z0-9][a-z0-9-]*$`）、`name`（必填）、`tier`（必填，`dev | test | staging | prod`）、`aliases`、`description`、`health`、`version`、`secrets`（只写环境变量名）。id 与 alias 不区分大小写全局唯一。
+- 文件不存在表示未启用环境管理，全部既有行为不变；文件存在但非法时相关命令 fail-closed（`ENV_REGISTRY_INVALID`），`status` 不崩溃并输出 `environment_registry_error`。
+- 未知字段只警告（`ENV_UNKNOWN_FIELD`），为后续 B / C 提案预留。
+- 登记表由 deployment-designer 按部署方案产出，RunLogos 或人可直接编辑；它属于 `guard.exempt` 内置默认，修改不需立案（决策 C07）。`openlogos init` 不默认生成该文件。
+- `deployment_gates.<module>.environments` 保留原语义，登记表存在时由 `env check` 校验其引用均已登记。
+
+### 2.93.2 `--env` 解析
+
+- 无登记表：`--env` 为自由标签，行为不变。
+- 有登记表：先按 id、再按 alias 不区分大小写解析为 id；解析不到报 `ENV_UNKNOWN`；`deploy-done` / `smoke` 未传 `--env` 报 `ENV_REQUIRED`；两者都列出可用 id、退出码 1、零副作用。不做单环境默认推断。
+
+### 2.93.3 部署版本与 `DEPLOY_DONE`
+
+- `deploy-done --ref <revision>` 声明本次部署的实际版本，CLI 解析为完整 commit；未传则版本未知（`ref=null`），不以调用时 HEAD 代替；无法解析报 `ENV_REF_UNRESOLVED`。
+- `DEPLOY_DONE` 改为单行 JSON `{deploy_id, environment, ref, ref_source, recorded_at}`，存在即部署完成的语义不变。
+
+### 2.93.4 smoke 环境一致性与证据
+
+- 存在活跃提案时，前置检查按 `DEPLOY_DONE` 内容分三类：旧空格式放行但 `deploy_env_confirmed=false`；合法新格式与本次 `--env` 不一致时，**登记表存在**报 `SMOKE_ENV_MISMATCH`，登记表不存在则不拒绝、只记 `deploy_env_confirmed=false`；非空损坏报 `SMOKE_DEPLOY_MARKER_INVALID`（无论有无登记表），恢复须重新执行 `deploy-done`。拒绝时不运行 `smoke.command`、不写 smoke marker、不写账本。
+- 没有活跃提案时 smoke 照常执行既有流程（既有行为），不读 `DEPLOY_DONE`、不写账本、不产生已验证事实。
+- 有登记表且传入 `--env` 时，`smoke.command` 进程（含沙箱内）可读到 `OPENLOGOS_SMOKE_ENV=<id>`；runner 在结果行写 `target_environment` 声明实际验证的环境。声明不一致 → 门禁 FAIL（`SMOKE_ENV_EVIDENCE_MISMATCH`）、写 `SMOKE_FAIL`；缺少声明 → 门禁按既有判据，但该次结果不算已验证。
+
+### 2.93.5 本机部署账本与已验证判据
+
+- 账本 `logos/.openlogos-runtime/deployments.jsonl` 只追加，只由 `deploy-done --env` 与 `smoke --env` 写入；不进 git、不同步（单机，决策 C02）。
+- smoke 记录的 `ref` 继承所依据的部署记录；`verified=true` 当且仅当结果通过、环境证据为 declared、本次实际运行了 `smoke.command` 产生新结果（`fresh_results=true`）、部署环境已确认、ref 非 null。未运行命令而只汇总已有结果文件时（结果可能属于上一代部署）不算已验证。环境视图与后续晋级判断只认 `verified=true`。
+- 读取时顺序扫描完整账本，按环境保留最近 deploy、最近 smoke 与最近 20 条历史；按 kind 校验必需字段、类型、枚举与 `verified` 一致性，不合格的行整行跳过并计数，不覆盖之前的有效状态。
+
+### 2.93.6 查询命令与 status 视图
+
+- `openlogos env list`：全部环境与 `current_ref`、`last_deploy`、`last_smoke`；无登记表返回空数组。
+- `openlogos env show <id|alias>`：单个环境配置与最近 20 条历史。
+- `openlogos env check [<id|alias>] [--probe]`：校验格式、冲突、`deployment_gates` 引用、密钥变量名是否存在（只报名字）；`--probe` 时 GET `health` / `version`（超时 5 秒）。
+- 三个命令只读、不要求活跃提案、支持 `--format json`；无登记表时 `show` / `check` 报 `ENV_REGISTRY_NOT_FOUND`。
+- `status --format json` 在有登记表时新增 `environments` 与 `environment_ledger`；`status` 不发起网络请求。RunLogos 环境面板只消费这些 JSON 字段。
+- 命令文案走 i18n，中英文都要提供。
+
+### 2.93.7 兼容性
+
+- 无登记表项目：`deploy-done`、`smoke`、`status` 输出与退出码逐字不变；唯一例外是非空损坏的 `DEPLOY_DONE` 改为拒绝 smoke（旧版 CLI 只写空文件，不受影响）。合法 marker 记录的环境标签与 smoke `--env` 不一致时不拒绝。
+- 旧空 `DEPLOY_DONE` 与不写 `target_environment` 的旧 runner 继续可用，只是不产出已验证事实。
+- 已显式配置 `guard.exempt` 的项目不自动获得登记表豁免，需经保护范围命令手动添加。
+
+### 2.93.8 实现映射与追溯
+
+| 能力 | 主要代码路径 | 主要测试路径 |
+|---|---|---|
+| 登记表解析、校验与 `--env` 解析 | `cli/src/lib/environments.ts` | `cli/test/s41-environments.test.ts` |
+| 账本读写与视图投影 | `cli/src/lib/environments.ts` | `cli/test/s41-environments.test.ts`、`cli/test/s11-*.test.ts` |
+| `env list / show / check` | `cli/src/commands/env.ts`、`cli/src/index.ts` | `cli/test/s41-env-command.test.ts` |
+| `deploy-done --env / --ref` 与 marker 内容 | `cli/src/commands/deploy-done.ts` | `cli/test/s21-deploy-done.test.ts` |
+| smoke 前置分类、环境注入与证据判定 | `cli/src/lib/lifecycle-gate.ts`、`cli/src/commands/smoke.ts`、`cli/src/lib/sandbox.ts` | `cli/test/s19-*.test.ts` |
+| status 环境视图 | `cli/src/commands/status.ts` | `cli/test/s11-*.test.ts` |
+| guard 内置默认豁免 | `cli/src/lib/guard-scope-config.ts` 与 guard hook 运行时 | `cli/test/s41-*.test.ts`、guard 既有测试 |
+
+- 场景：S41（新增）、S21、S19、S11。
+- 测试：UT-S41-01～UT-S41-11、ST-S41-01～ST-S41-03；UT-S21-12～UT-S21-19、ST-S21-05；UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27；UT-S11-96～UT-S11-100、ST-S11-52。

@@ -429,3 +429,30 @@
 - 待应用与受阻原因、与 merge 错误码一一对应（EX-11.18）：UT-S11-93。
 - 旧标记不可判定（EX-11.17）：UT-S11-94。
 - 只读与派生不受影响（EX-11.19）：UT-S11-95、ST-S11-51。
+
+## S11 status 环境视图测试（environment-registry）
+
+> 覆盖场景 `core-S11-status-progress.md`「status 环境视图（environment-registry）」、功能规格 §2.93.6、`spec/environments.md` §5.4、§7.3。既有 S11 用例不变，作为零回归守护。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S11"`；全部在一次性临时项目中构造。
+
+### 单元测试
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|---------|----------|---------|
+| UT-S11-96 | 有登记表时输出环境视图 | 登记表含 test、prod；账本含 test 的 deploy（`ref=R1`）与 smoke（`verified=true`），prod 无记录 | `status --format json` | 顶层 `environments` 两项：test 的 `current_ref=R1`、`last_deploy`、`last_smoke`（含 `verified`、`env_evidence`、`deploy_env_confirmed`、`ref`）与账本一致；prod 的 `current_ref`、`last_deploy`、`last_smoke` 均为 null；`environment_ledger` 含 `path` 与 `corrupt_lines=0` |
+| UT-S11-97 | 无登记表时输出逐字不变 | 无 `logos/environments.yaml`；本机账本存在若干记录 | `status` 与 `status --format json`，与引入前基线比对 | 输出与退出码逐字一致；JSON 不含 `environments`、`environment_ledger`、`environment_registry_error` |
+| UT-S11-98 | 低频环境不被大量记录隔开 | 账本第 1、2 行为 prod 的 deploy（`ref=R0`）与 smoke；之后 1001 条 test 记录 | `status --format json` | prod 的 `current_ref=R0`，`last_deploy`、`last_smoke` 为第 1、2 行 |
+| UT-S11-99 | 登记表非法与账本非法行不崩溃、不覆盖有效状态 | ① 登记表为非法 YAML；② 登记表合法，账本为 prod 合法 deploy（R1）后跟 3 条非法行：非 JSON、`{"kind":"deploy","environment":"prod"}`（缺字段）、smoke 行 `verified` 与 §5.3 计算值不符 | `status --format json` | ① 正常完成、退出码与无登记表时相同，`environments: []`，`environment_registry_error.code="ENV_REGISTRY_INVALID"`；② `environment_ledger.corrupt_lines=3`，prod 的 `current_ref` 为字符串 R1、`last_deploy` 为 R1 那行、`last_smoke` 为 null，字段类型均合法 |
+| UT-S11-100 | status 不发起网络请求 | 登记表的 health / version 指向本地测试服务并记录请求数 | `status --format json` | 测试服务收到 0 个请求 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-52 | status 与 env list 同源一致 | S11 环境视图 Step V1～V5 | 真实 CLI；登记表含 test、prod；账本含两环境的 deploy 与 smoke 及 1 条损坏行 | ① `status --format json`；② `env list --format json` | 两者每个环境的 `current_ref`、`last_deploy`、`last_smoke` 逐字段相等，损坏行计数相等 |
+
+### 追溯与覆盖
+
+- 环境视图字段与账本一致：UT-S11-96、ST-S11-52。
+- 无登记表零回归：UT-S11-97。
+- 完整扫描、低频环境：UT-S11-98。
+- 非法登记表与损坏行：UT-S11-99；不联网：UT-S11-100。

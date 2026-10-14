@@ -230,3 +230,66 @@ export function deriveStateInconsistency(
     remediation: 'openlogos deploy-done',
   };
 }
+
+/**
+ * DEPLOY_DONE 内容分类（environment-registry，spec/environments.md §4.2）。纯函数：
+ * - legacy：0 字节或只含空白（仅旧版 CLI 写出），环境未知；
+ * - valid：一个 JSON 对象且 deploy_id / environment / ref / ref_source / recorded_at 五个字段齐全、类型与取值合法；
+ * - invalid：非空且不属上两类，problems 点名问题字段（调用方报 SMOKE_DEPLOY_MARKER_INVALID）。
+ */
+export interface DeployDoneMarkerContent {
+  deploy_id: string;
+  environment: string | null;
+  ref: string | null;
+  ref_source: 'explicit' | 'unknown';
+  recorded_at: string;
+}
+
+export type DeployDoneMarkerClass =
+  | { kind: 'legacy' }
+  | { kind: 'valid'; marker: DeployDoneMarkerContent }
+  | { kind: 'invalid'; problems: string[] };
+
+/**
+ * 读取并分类 DEPLOY_DONE（code-r1 F1）：只有**成功读到**的空内容才是旧空格式；读取失败（EACCES、EISDIR、
+ * 检查后被删除等）返回 unreadable 并保留 I/O 原因，调用方必须零副作用拒绝，不得降级为「环境未知」放行。
+ */
+export type DeployDoneMarkerRead = DeployDoneMarkerClass | { kind: 'unreadable'; reason: string };
+
+export function readDeployDoneMarker(
+  proposalDir: string,
+  read: (path: string) => string = path => readFileSync(path, 'utf-8'),
+): DeployDoneMarkerRead {
+  let text: string;
+  try {
+    text = read(join(proposalDir, DEPLOY_DONE_MARKER));
+  } catch (error) {
+    const e = error as NodeJS.ErrnoException;
+    return { kind: 'unreadable', reason: `${e.code ?? 'unknown'}: ${e.message}` };
+  }
+  return classifyDeployDoneMarker(text);
+}
+
+export function classifyDeployDoneMarker(text: string): DeployDoneMarkerClass {
+  if (text.trim() === '') return { kind: 'legacy' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { kind: 'invalid', problems: ['not valid JSON'] };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { kind: 'invalid', problems: ['not a JSON object'] };
+  }
+  const o = parsed as Record<string, unknown>;
+  const problems: string[] = [];
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(o, k);
+  if (typeof o.deploy_id !== 'string' || o.deploy_id === '') problems.push('deploy_id');
+  if (!has('environment') || !(o.environment === null || (typeof o.environment === 'string' && o.environment !== ''))) problems.push('environment');
+  if (!has('ref') || !(o.ref === null || (typeof o.ref === 'string' && /^[0-9a-f]{40}$/.test(o.ref)))) problems.push('ref');
+  if (o.ref_source !== 'explicit' && o.ref_source !== 'unknown') problems.push('ref_source');
+  else if ((o.ref_source === 'explicit') !== (o.ref !== null && o.ref !== undefined)) problems.push('ref_source');
+  if (typeof o.recorded_at !== 'string' || o.recorded_at === '') problems.push('recorded_at');
+  if (problems.length > 0) return { kind: 'invalid', problems };
+  return { kind: 'valid', marker: o as unknown as DeployDoneMarkerContent };
+}

@@ -11,6 +11,7 @@ import type { LoopState, SliceState } from '../lib/flow-loop-derive.js';
 import { FlowError } from '../lib/flow.js';
 import { listFiles } from '../lib/list-files.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
+import { collectStatusEnvironmentFields } from '../lib/environments.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { readProjectYaml, isAdoptedBootstrap, formatYamlDegradedLines } from '../lib/project-yaml.js';
 import type { BootstrapMode, YamlDiagnostics, ProjectYamlScenario } from '../lib/project-yaml.js';
@@ -1369,7 +1370,9 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
   }
 
   if (format === 'json') {
-    console.log(JSON.stringify(makeEnvelope('status', data)));
+    // environment-registry（S11 环境视图，spec/environments.md §7.3）：登记表不存在时不追加任何字段，输出逐字不变
+    const environmentFields = collectStatusEnvironmentFields(root);
+    console.log(JSON.stringify(makeEnvelope('status', environmentFields ? { ...data, ...environmentFields } : data)));
     return;
   }
 

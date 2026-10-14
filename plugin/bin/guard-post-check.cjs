@@ -52,7 +52,8 @@ const WHITELIST_PREFIXES = [
   'logos/changes/', 'logos/.openlogos-guard', 'logos/logos-project.yaml', '.claude/', '.opencode/', '.codex-plugin/',
   '.cursor/', 'logos/skills/', 'logos/spec/', 'README', 'CLAUDE.md', 'AGENTS.md', 'opencode.json', '.openlogos',
 ];
-const BUILTIN_EXEMPT = ['logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/'];
+// 第三项：环境登记表（environment-registry 决策 C07），只匹配该单个文件
+const BUILTIN_EXEMPT = ['logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/', 'logos/environments.yaml'];
 
 /* ─────────────────────────── 基础工具 ─────────────────────────── */
 

@@ -11,10 +11,14 @@ import { readFileSync } from 'node:fs';
 export const GUARD_CONFIG_REL = 'logos/logos.config.json';
 export const GUARD_RUNTIME_REL = 'logos/.openlogos-runtime';
 
-/** `guard.exempt` 缺省时的内置默认（与原 R-REF / R-STAGING 等价）。 */
+/**
+ * `guard.exempt` 缺省时的内置默认：前两项与原 R-REF / R-STAGING 等价；第三项为环境登记表
+ * （environment-registry 决策 C07：运维配置而非业务逻辑，修改不需立案；只匹配该单个文件）。
+ */
 export const BUILTIN_EXEMPT: readonly string[] = Object.freeze([
   'logos/resources/reference/',
   'logos/resources/verify/baseline-seed-runs/*/staging/',
+  'logos/environments.yaml',
 ]);
 
 export interface InvalidReason { en: string; zh: string }

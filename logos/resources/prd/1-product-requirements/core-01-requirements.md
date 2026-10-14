@@ -54,7 +54,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-33 个场景（编号跳号、最高至 S40，`scenario_counter.next_id=41`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+34 个场景（编号跳号、最高至 S41，`scenario_counter.next_id=42`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -91,6 +91,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S13 | 运行测试验收并生成报告 | 代码实现完成后 | P01/P03 | P0 |
 | S19 | 执行部署后 smoke 门禁 | 已部署到目标环境后 | P01/P03 | P0 |
 | S21 | 标记部署完成 | 外部部署已成功，需要推进提案状态 | P03/P05 | P0 |
+| S41 | 环境登记与查询 | 项目需要登记研发环境（测试 / 预发 / 生产等）、按环境标记部署与 smoke，或查询「某环境当前跑的是哪个版本」时 | P03/P05/P07 | P1 |
 
 ### ④ AI 资产、资源索引与元数据
 维护跨工具一致的 AI 指令资产、可发现的资源索引与结构化元数据（回应 P02/P03）。
@@ -328,6 +329,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **主路径**：CLI 汇总阶段进度、活跃提案、提案级部署决策、部署进度摘要与下一步建议。
 
 #### 验收条件
+
 ##### 正常：显示活跃提案部署决策
 - **GIVEN** 存在活跃提案
 - **WHEN** 用户执行 `openlogos status`
@@ -347,6 +349,26 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **GIVEN** 活跃提案的 `proposal.md` 与 `tasks.md` 部署结论不一致
 - **WHEN** 用户执行 `openlogos status`
 - **THEN** 状态面板显示冲突警告，`active_change` 包含 `deployment_decision_conflict=true`，并且不把 deploy / smoke 作为主动作
+
+##### 正常：有环境登记表时输出环境视图（environment-registry）
+- **GIVEN** 项目存在合法的 `logos/environments.yaml`，本机账本 `logos/.openlogos-runtime/deployments.jsonl` 记录了各环境的部署与 smoke
+- **WHEN** 用户执行 `openlogos status --format json`
+- **THEN** 输出顶层 `environments` 数组，每项含 `id`、`name`、`tier`、`current_ref`、`last_deploy`、`last_smoke`，值与账本中该环境的最近记录一致；同时输出 `environment_ledger`（`path`、`corrupt_lines`）；`status` 不发起任何网络请求
+
+##### 正常：低频环境的状态不因其他环境的大量记录而丢失
+- **GIVEN** 账本前两行是 prod 的 deploy 与 smoke，之后 test 追加超过 1000 条记录
+- **WHEN** 用户执行 `openlogos status --format json`
+- **THEN** prod 的 `current_ref`、`last_deploy`、`last_smoke` 仍与其最近记录一致（账本按完整文件顺序扫描，不设全局行数窗口）
+
+##### 正常：没有登记表时输出逐字不变
+- **GIVEN** 项目不存在 `logos/environments.yaml`
+- **WHEN** 用户执行 `openlogos status` 或 `openlogos status --format json`
+- **THEN** 输出与退出码与引入环境登记前逐字一致，不出现 `environments`、`environment_ledger`、`environment_registry_error`
+
+##### 异常：登记表非法或账本有损坏行时不崩溃
+- **GIVEN** `logos/environments.yaml` 无法解析或字段非法，或账本存在损坏行
+- **WHEN** 用户执行 `openlogos status --format json`
+- **THEN** 命令正常完成：登记表非法时 `environments` 为空数组并输出 `environment_registry_error`；账本损坏行被跳过并计入 `environment_ledger.corrupt_lines`
 
 ### S13: 运行测试验收并生成报告
 - **触发条件**：实现和测试代码完成后需要验收。
@@ -424,6 +446,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **主路径**：读取提案级 smoke 决策、smoke 用例和结果；当配置 `smoke.sandbox_mode` 且存在 `smoke.command` 时，通过沙箱执行器运行命令，仅回收声明的 smoke 结果文件；生成 smoke 报告并判断是否可继续归档。
 
 #### 验收条件
+
 ##### 正常：需要 smoke 时进入 smoke 门禁
 - **GIVEN** 活跃提案声明需要部署和 smoke，且部署已完成
 - **WHEN** 用户执行 `openlogos status` 或 `openlogos next`
@@ -444,6 +467,60 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **WHEN** 当前环境无法创建沙箱、无法启用运行期写保护、沙箱副本存在解析目标逃逸沙箱的 symlink，或 `smoke.command` 尝试写入仓库非白名单路径（沙箱内一次性依赖目录豁免：规范化后存在完整路径段严格等于 `node_modules` 的写入不参与非白名单判定，见功能规格 §2.9）
 - **THEN** `openlogos smoke` 失败，输出失败原因、沙箱路径和修复建议，不得写入通过标记
 
+##### 异常：smoke 与部署环境不一致时拒绝（environment-registry）
+- **GIVEN** 项目存在环境登记表，`openlogos deploy-done --env test` 已写入 `DEPLOY_DONE`
+- **WHEN** 用户执行 `openlogos smoke --env prod`
+- **THEN** CLI 报 `SMOKE_ENV_MISMATCH` 并以退出码 1 结束，不运行 `smoke.command`，不写 `SMOKE_PASS` / `SMOKE_FAIL`，不写账本
+
+##### 异常：DEPLOY_DONE 非空损坏时拒绝
+- **GIVEN** `DEPLOY_DONE` 被截断为非空非法 JSON，或字段缺失、类型非法
+- **WHEN** 用户执行 `openlogos smoke --env prod`
+- **THEN** CLI 报 `SMOKE_DEPLOY_MARKER_INVALID` 并点名问题字段，不运行 `smoke.command`，不写 `SMOKE_PASS` / `SMOKE_FAIL`，不写账本；重新执行 `openlogos deploy-done --env prod` 后恢复正常（无论有无登记表）
+
+##### 正常：旧空 DEPLOY_DONE 兼容放行但不产出已验证事实
+- **GIVEN** `DEPLOY_DONE` 为旧版 CLI 写出的空文件，或合法 JSON 且 `environment` 为 null
+- **WHEN** 用户执行 `openlogos smoke --env prod`
+- **THEN** 不触发环境一致性拒绝，按既有判据得出门禁结论；账本 smoke 记录 `deploy_env_confirmed=false`、`verified=false`
+
+##### 正常：smoke 向 runner 注入目标环境并以结果声明作为证据
+- **GIVEN** 项目存在环境登记表，`openlogos deploy-done --env prod --ref <可解析的实际部署版本>` 已完成
+- **WHEN** 用户执行 `openlogos smoke --env prod`
+- **THEN** `smoke.command` 进程（含沙箱内执行）可读到 `OPENLOGOS_SMOKE_ENV=prod`；结果行全部声明 `target_environment: prod` 且通过时写 `SMOKE_PASS`，账本记录 `env_evidence=declared`、`verified=true`，`ref` 等于部署记录的 ref
+
+##### 异常：结果声明的环境与目标不一致
+- **GIVEN** 参数与 `DEPLOY_DONE` 都为 prod，runner 结果行声明 `target_environment: test`
+- **WHEN** 用户执行 `openlogos smoke --env prod`
+- **THEN** 门禁 FAIL，原因 `SMOKE_ENV_EVIDENCE_MISMATCH`，写 `SMOKE_FAIL`，账本 `env_evidence=mismatch`、`verified=false`
+
+##### 正常：旧 runner 未声明环境时兼容但不算已验证
+- **GIVEN** runner 结果行不含 `target_environment`
+- **WHEN** 用户执行 `openlogos smoke --env prod`
+- **THEN** 门禁按既有判据计算（可写 `SMOKE_PASS`），账本 `env_evidence=missing`、`verified=false`
+
+##### 正常：smoke 记录的版本继承所依据的部署记录
+- **GIVEN** HEAD 为 R1 时执行 `openlogos deploy-done --env test --ref R1`，随后 HEAD 变为 R2
+- **WHEN** 用户执行 `openlogos smoke --env test`
+- **THEN** 账本 smoke 记录 `ref=R1`（`observed_head` 为 R2，仅作观察）；部署未传 `--ref` 时 smoke 记录 `ref=null`、`verified=false`
+
+##### 异常：有登记表时 smoke 环境缺失或未登记
+- **GIVEN** 项目存在环境登记表
+- **WHEN** 用户执行 `openlogos smoke`（未传 `--env`）或 `openlogos smoke --env <未登记>`
+- **THEN** 分别报 `ENV_REQUIRED` / `ENV_UNKNOWN`（退出码 1，列出可用 id），零副作用
+
+##### 正常：没有登记表时 smoke 行为逐字不变
+- **GIVEN** 项目不存在 `logos/environments.yaml`，`DEPLOY_DONE` 为空文件或合法 JSON（包括记录的环境标签为 test、本次传入 `--env prod` 的情形）
+- **WHEN** 用户执行 `openlogos smoke` 或 `openlogos smoke --env <任意标签>`
+- **THEN** 输出与退出码与引入环境登记前一致，不注入 `OPENLOGOS_SMOKE_ENV`；标签不一致不拒绝，账本只记 `deploy_env_confirmed=false`
+
+##### 正常：未运行 smoke 命令时旧结果不能证明新部署已验证
+- **GIVEN** 未配置 `smoke.command` 且无默认 dispatcher，结果文件中留有 R1 部署时 `target_environment: prod` 的通过结果；随后执行 `openlogos deploy-done --env prod --ref R2`
+- **WHEN** 用户执行 `openlogos smoke --env prod`
+- **THEN** 门禁按既有判据汇总已有结果；账本 smoke 记录 `fresh_results=false`、`verified=false`，不形成「R2 已在 prod 验证」的事实
+
+##### 正常：没有活跃提案时 smoke 照常执行
+- **GIVEN** 没有 `logos/.openlogos-guard`，项目已有 smoke 用例与结果
+- **WHEN** 用户执行 `openlogos smoke --env production`
+- **THEN** 输出与退出码与引入环境登记前一致；不读取 `DEPLOY_DONE`、不写账本，不伪造提案或版本信息
 
 ### S20: 已有项目接入 OpenLogos
 
@@ -480,6 +557,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **主路径**：用户或 deployment-executor 在部署成功并写入部署报告后执行 `openlogos deploy-done --env <name>`；CLI 校验 guard、`VERIFY_PASS`、部署决策、`[deploy]` section 和部署报告，成功后勾选 `[deploy]` 任务、写入 `DEPLOY_DONE`、清理过期 `SMOKE_PASS/SMOKE_FAIL`，并提示下一步 smoke 或 archive。
 
 #### 验收条件
+
 ##### 正常：部署完成后写入受控 marker
 - **GIVEN** 活跃提案已存在 `VERIFY_PASS`，`proposal.md` 声明需要部署，`tasks.md` 存在 `[deploy]` section，部署报告已写入
 - **WHEN** 用户执行 `openlogos deploy-done --env staging`
@@ -514,6 +592,31 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 - **GIVEN** 部署报告 `logos/resources/verify/deployment-report.md` 缺失
 - **WHEN** 用户执行 `openlogos deploy-done`
 - **THEN** CLI 必须提示先生成部署报告，不得写入 `DEPLOY_DONE`
+
+##### 异常：有登记表时环境未登记或缺失（environment-registry）
+- **GIVEN** 项目存在环境登记表
+- **WHEN** 用户执行 `openlogos deploy-done --env <未登记>` 或 `openlogos deploy-done`（未传 `--env`）
+- **THEN** 分别报 `ENV_UNKNOWN` / `ENV_REQUIRED`（退出码 1，列出可用 id），不勾选 `[deploy]`、不写 `DEPLOY_DONE`、不写账本
+
+##### 正常：别名解析为 id 并写入 marker 与账本
+- **GIVEN** 登记表中 `test` 环境的 `aliases` 含「测试」
+- **WHEN** 用户执行 `openlogos deploy-done --env 测试 --ref <revision>`
+- **THEN** `DEPLOY_DONE` 写入单行 JSON（`deploy_id`、`environment: "test"`、`ref`、`ref_source`、`recorded_at`），并向 `logos/.openlogos-runtime/deployments.jsonl` 追加一行 deploy 记录
+
+##### 正常：部署版本只来自显式声明
+- **GIVEN** 当前 HEAD 为 R1
+- **WHEN** 用户执行 `openlogos deploy-done --env test --ref R0`（R0 可解析且不同于 HEAD）
+- **THEN** `DEPLOY_DONE` 与账本记录 `ref=R0`、`ref_source=explicit`，`observed_head=R1` 仅作观察；未传 `--ref` 时 `ref=null`、`ref_source=unknown`，不以 HEAD 代替
+
+##### 异常：`--ref` 无法解析
+- **GIVEN** `--ref` 指向不存在的提交或当前目录不是 git 仓库
+- **WHEN** 用户执行 `openlogos deploy-done --env test --ref <revision>`
+- **THEN** CLI 报 `ENV_REF_UNRESOLVED`（退出码 1），不勾选 `[deploy]`、不写 `DEPLOY_DONE`、不写账本
+
+##### 正常：没有登记表时输出逐字不变
+- **GIVEN** 项目不存在 `logos/environments.yaml`
+- **WHEN** 用户执行 `openlogos deploy-done` 或 `openlogos deploy-done --env <任意标签>`
+- **THEN** 输出与退出码与引入环境登记前一致；`DEPLOY_DONE` 内容为单行 JSON（`environment` 为原始标签或 null），传入 `--env` 时追加账本
 
 ### S22: 查看与解析 flow 编排
 - **触发条件**：用户需要查看 OpenLogos 内置的研发流程模板（initial / launched），或查看项目 overlay 合并后的生效流程，以确认编排是否符合预期。
@@ -3078,3 +3181,70 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：「2.89 Claude Code 项目回复语言设置托管」。
 - 场景：S08「S08 sync 合并 Claude Code 项目回复语言设置时序」；init / adopt 经同一部署链路生效。
 - 测试：UT-S08-79～UT-S08-83、ST-S08-42～ST-S08-43。
+
+## S41: 环境登记与查询
+
+> 来源变更：environment-registry（决策 C01～C08）。格式与判据的权威定义见 `spec/environments.md`。
+
+### 场景定义
+
+- **触发条件**：项目需要把研发环境（测试、预发、生产等）作为可定义、可校验、可查询的实体来管理——按环境标记部署与 smoke，查询「某个环境当前跑的是哪个版本、上次 smoke 是否在该环境通过」，或为 RunLogos 环境面板提供数据。
+- **用户价值**：环境不再只是一个回显的字符串标签；部署与 smoke 的环境和版本有可信的本机事实，后续 B（部署执行、版本通道、回滚）与 C（晋级与审批）可以在其上判断，RunLogos 只消费 CLI JSON 即可展示环境面板。
+- **优先级**：P1
+- **主路径**：deployment-designer 按部署方案产出 `logos/environments.yaml`；`deploy-done --env` / `smoke --env` 校验并解析环境、写入 `DEPLOY_DONE` 内容与本机账本；`env list | show | check` 与 `status --json` 只读展示登记表与账本派生的环境视图。
+
+### 验收条件
+
+#### 正常：登记表合法时列出环境与最近状态
+- **GIVEN** `logos/environments.yaml` 合法，账本记录了 test 的部署与 smoke
+- **WHEN** 用户执行 `openlogos env list --format json`
+- **THEN** 输出全部环境（`id`、`name`、`tier`、`aliases`、`current_ref`、`last_deploy`、`last_smoke`）与账本损坏行计数，字段符合 `spec/cli-json-output.md`
+
+#### 正常：按 id 或别名查看单个环境
+- **GIVEN** 登记表中 prod 的 `aliases` 含「生产」
+- **WHEN** 用户执行 `openlogos env show 生产 --format json`
+- **THEN** 输出 prod 的登记表配置、`current_ref`、`last_deploy`、`last_smoke` 与最近 20 条历史（新到旧）
+
+#### 正常：校验登记表并报告问题
+- **GIVEN** 登记表存在重复的 id / alias（不区分大小写）、`deployment_gates.<module>.environments` 引用了未登记环境、`secrets` 声明的变量名在当前进程环境中缺失
+- **WHEN** 用户执行 `openlogos env check --format json`
+- **THEN** 逐条报出 `ENV_DUPLICATE_ID_OR_ALIAS`、`ENV_GATE_REFERENCE_UNKNOWN`、`ENV_SECRET_MISSING` 并以退出码 1 结束；输出只含变量名与是否存在，不含任何密钥值
+
+#### 正常：显式探测健康与版本地址
+- **GIVEN** 环境声明了 `health` 与 `version`
+- **WHEN** 用户执行 `openlogos env check prod --probe --format json`
+- **THEN** CLI 对两个地址发 GET（超时 5 秒），输出状态码与结果；失败或超时报 `ENV_PROBE_FAILED`；不加 `--probe` 时不发起任何网络请求
+
+#### 正常：未知字段只警告
+- **GIVEN** 登记表含未定义字段（如后续提案的 `promote_from`）
+- **WHEN** 用户执行 `openlogos env check`
+- **THEN** 输出 warning `ENV_UNKNOWN_FIELD`，不视为错误
+
+#### 正常：没有登记表
+- **GIVEN** 项目不存在 `logos/environments.yaml`
+- **WHEN** 用户执行 `openlogos env list` / `env show <x>` / `env check`
+- **THEN** `list` 返回空数组（退出码 0）；`show` 与 `check` 报 `ENV_REGISTRY_NOT_FOUND`（退出码 1）
+
+#### 异常：登记表非法
+- **GIVEN** `logos/environments.yaml` 无法解析、`schema_version` 不为 1 或必填字段缺失
+- **WHEN** 用户执行 `env` 命令、`deploy-done --env` 或 `smoke --env`
+- **THEN** 报 `ENV_REGISTRY_INVALID`（退出码 1）；`deploy-done` 与 `smoke` 零副作用，不回落为「未启用登记表」
+
+#### 正常：登记表修改不需立案
+- **GIVEN** 项目的 `logos.config.json` 未显式配置 `guard.exempt`
+- **WHEN** AI 或 RunLogos 界面 Edit / Write `logos/environments.yaml`
+- **THEN** guard 不阻断、事后检查不报警（内置默认豁免，决策 C07）；已显式配置 `guard.exempt` 的项目需经保护范围命令手动添加该路径后才获得同等行为
+
+### 非目标
+
+- 不执行部署（`openlogos deploy`）、不提供版本通道与回滚（提案 B）；不做晋级顺序与审批门禁（提案 C）。
+- 不提供 `env add` / `env remove` 写命令：登记表由 RunLogos 或人直接编辑，CLI 只读取与校验。
+- 不存储或注入密钥值；不做团队共享的部署状态（决策 C02）。
+- `openlogos init` 不默认生成 `logos/environments.yaml`。
+
+### 追溯
+
+- 规范：`spec/environments.md`、`spec/cli-json-output.md`「`openlogos env list|show|check --format json`」。
+- 功能规格：§2.93；架构：「五十三、环境登记表与部署账本」。
+- 场景：`core-S41-environment-registry.md`；相关场景 S21、S19、S11。
+- 测试：`core-S41-test-cases.md`。

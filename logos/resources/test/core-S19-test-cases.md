@@ -521,3 +521,43 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 
 - 断言基于 `--format json` 的结构化字段与 runner 的实际输出，不解析 `sandbox.infos` 文案。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S19 smoke 环境一致性、环境证据与部署账本测试（environment-registry）
+
+> 覆盖场景 `core-S19-smoke-gate.md`「smoke 环境一致性、环境证据与部署账本（environment-registry）」、功能规格 §2.93.4 / §2.93.5、`spec/environments.md` §4.2、§5、§6 与 `spec/test-results.md`「Smoke 结果与覆盖预检」。既有 S19 用例不变，作为零回归守护。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S19"`；全部在一次性临时 git 仓库与一次性 `sandbox_root` 中构造，smoke runner 为测试夹具。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-58 | `DEPLOY_DONE` 三类分类 | §4.2 | 构造 marker：0 字节；只含空白与换行；合法五字段 JSON；`environment=null` 的合法 JSON；`{"environment":"test"`（截断）；`[]`；`"x"`；缺 `deploy_id`；`ref` 为 39 位；`ref_source` 为 `guess`；`recorded_at` 为数字 | 调用分类函数 | 前两者为旧空格式；两份合法 JSON 为合法新格式；其余全部为非空损坏，且诊断点名问题字段 |
+| UT-S19-59 | 环境不一致拒绝 | EX-19.11 | 登记表含 test、prod；`DEPLOY_DONE.environment="test"`；既有前置满足 | `smoke --env prod` | `SMOKE_ENV_MISMATCH`、退出码 1；`smoke.command` 未运行（夹具未留下运行痕迹）；无 `SMOKE_PASS` / `SMOKE_FAIL`；账本无新增 |
+| UT-S19-60 | 非空损坏 marker 拒绝（有 / 无登记表） | EX-19.12 | ① 有登记表；② 无登记表；`DEPLOY_DONE` 为截断 JSON | `smoke --env prod` / `smoke` | 两种情形均 `SMOKE_DEPLOY_MARKER_INVALID`、退出码 1、点名问题；命令未运行、无 smoke marker、账本无新增 |
+| UT-S19-61 | 旧空 marker 与未记录环境放行但未确认 | EX-19.13 | 有登记表；① marker 0 字节；② 合法 JSON 且 `environment=null`；runner 全部声明 prod 并通过 | `smoke --env prod` | 两种情形都运行命令并写 `SMOKE_PASS`；账本 smoke 记录 `deploy_env_confirmed=false`、`verified=false` |
+| UT-S19-62 | 环境证据判定 | §6 | 有登记表；marker 为 prod、`ref` 已知；runner 结果行分别为：① 全部 `target_environment: prod`；② 一行缺该字段；③ 一行为 `test`；④ 无结果行 | `smoke --env prod` | ① `env_evidence=declared`；② `missing`，门禁按既有判据；③ `mismatch`，门禁 FAIL、原因 `SMOKE_ENV_EVIDENCE_MISMATCH`、写 `SMOKE_FAIL`；④ `missing`；结果行既有 `environment` 字段取任意值都不影响判定 |
+| UT-S19-63 | smoke 记录继承部署 ref | EX-19.16 | marker `ref=R1`；smoke 时 HEAD 为 R2；② 另一用例 marker `ref=null` | `smoke --env prod`（runner 全部声明 prod 并通过） | 账本 smoke 记录 `ref=R1`、`deploy_id` 等于 marker、`observed_head=R2`、`verified=true`；② `ref=null`、`verified=false` |
+| UT-S19-64 | `OPENLOGOS_SMOKE_ENV` 注入 | §6 注入 | runner 把读到的 `OPENLOGOS_SMOKE_ENV` 写入结果行；分别以 `smoke.sandbox_mode=off` 与沙箱模式执行；另一用例无登记表 | `smoke --env 生产`（prod 的 alias） | 两种执行方式下 runner 均读到 `prod`；无登记表时 runner 读不到该变量 |
+| UT-S19-65 | 有登记表时 smoke 环境缺失或未登记 | §3 | 有登记表；既有前置满足 | ① `smoke`；② `smoke --env staging` | ① `ENV_REQUIRED`；② `ENV_UNKNOWN`；均退出码 1、命令未运行、无 smoke marker、账本无新增 |
+| UT-S19-66 | 无登记表时 smoke 行为逐字不变 | EX-19.17、EX-19.19 | 无登记表；① 有活跃提案，marker 为空文件；② 有活跃提案，marker 为合法 JSON 且 `environment="test"`；③ 无 `logos/.openlogos-guard`（既有 ST-S19-03 夹具形态）；runner 结果行声明 `target_environment: other` | ① ② 执行 `smoke`、`smoke --env prod`、`smoke --format json`；③ 执行 `smoke --env production --format json`；均与引入前基线比对 | 文本与 JSON 输出、退出码与基线一致（JSON 无 `environment_evidence`）；② 中 `--env prod` 与 marker 的 test 不一致**不拒绝**，账本该行 `deploy_env_confirmed=false`、`env_evidence=mismatch`；`target_environment` 不改变门禁；③ 门禁 PASS，账本无新增，无伪造的 `slug` / `deploy_id` / `ref` |
+| UT-S19-67 | 未运行 smoke 命令时旧结果不得提升为新部署的已验证事实 | EX-19.18 | 有登记表；未配置 `smoke.command` 且无默认 dispatcher；结果文件留有 R1 部署时全部 `target_environment: prod` 的通过结果；随后 `deploy-done --env prod --ref R2` | `smoke --env prod --format json`，再执行 `env show prod --format json` | 门禁按既有判据汇总（PASS）；`environment_evidence.fresh_results=false`、`env_evidence=declared`、`verified=false`；账本 smoke 行 `ref=R2`、`fresh_results=false`、`verified=false`；`env show` 的 `last_smoke.verified=false` |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-25 | 部署后 HEAD 改变仍记录实际部署版本并得到已验证事实 | S19 环境节 Step S1～S11；EX-19.16 | 真实 CLI；登记表含 prod；活跃提案需部署需 smoke；runner 读 `OPENLOGOS_SMOKE_ENV` 并按读到的值写 `target_environment` | ① HEAD=R1 时 `deploy-done --env prod --ref R1`；② 提交 R2；③ `smoke --env prod --format json` | ③ 写 `SMOKE_PASS`；JSON `environment_evidence` 为 `env_evidence=declared`、`deploy_env_confirmed=true`、`ref`=R1、`verified=true`；账本末行 smoke 记录 `ref=R1`、`observed_head=R2` |
+| ST-S19-26 | 参数与 marker 都为 prod、runner 实际验证 test | EX-19.14 | 同上，但 runner 固定写 `target_environment: test` | ① `deploy-done --env prod --ref HEAD`；② `smoke --env prod` | 门禁 FAIL、原因 `SMOKE_ENV_EVIDENCE_MISMATCH`、写 `SMOKE_FAIL`、退出码 1；账本 `env_evidence=mismatch`、`verified=false`；`env show prod` 的 `last_smoke.verified=false` |
+| ST-S19-27 | 截断 marker 拒绝与重新落标恢复 | EX-19.12 | 同 ST-S19-25 的环境 | ① `deploy-done --env prod --ref HEAD`；② 把 `DEPLOY_DONE` 截断为前 10 字节；③ `smoke --env prod`；④ 再次 `deploy-done --env prod --ref HEAD`；⑤ `smoke --env prod` | ③ `SMOKE_DEPLOY_MARKER_INVALID`、命令未运行、无 smoke marker、账本无 smoke 行；⑤ 正常运行并写 `SMOKE_PASS`、`verified=true` |
+
+### 追溯与覆盖
+
+- `DEPLOY_DONE` 分类与拒绝：UT-S19-58、UT-S19-59、UT-S19-60、UT-S19-61、ST-S19-27。
+- 环境证据与注入：UT-S19-62、UT-S19-64、ST-S19-26。
+- 版本继承与已验证：UT-S19-63、ST-S19-25。
+- 环境解析失败：UT-S19-65；无登记表与无活跃提案零回归：UT-S19-66。
+- 结果新鲜度（旧结果不得嫁接到新部署）：UT-S19-67。
+
+### 自动化与证据要求
+
+- 「命令未运行」以 runner 夹具的运行痕迹文件不存在取证；「零副作用」以提案目录 marker 集合与账本字节前后比对取证。
+- 沙箱模式用例沿用既有沙箱测试的一次性 `sandbox_root` 口径，在嵌套沙箱等不具备能力的环境中按既有 skip 口径处理并写明原因。

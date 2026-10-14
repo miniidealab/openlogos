@@ -279,8 +279,9 @@ describe('S40 清单语法与增删查 — 单元', () => {
     const r = runScopeCommand('exempt', ['add', 'docs/handbook/'], root);
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain('Built-in defaults written to guard.exempt');
+    // 内置默认三项（第三项为环境登记表，environment-registry 决策 C07）
     expect(readCfg(root).guard.exempt).toEqual([
-      'logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/', 'docs/handbook/',
+      'logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/', 'logos/environments.yaml', 'docs/handbook/',
     ]);
     const s = sentinel();
     const again = runScopeCommand('exempt', ['add', 'logos/resources/reference/'], root, s.io);
@@ -292,8 +293,10 @@ describe('S40 清单语法与增删查 — 单元', () => {
   it('UT-S40-08: 删除内置默认项与清空为显式 []（不回落内置默认）', () => {
     const root = project();
     expect(runScopeCommand('exempt', ['remove', 'logos/resources/reference/'], root).exitCode).toBe(0);
-    expect(readCfg(root).guard.exempt).toEqual(['logos/resources/verify/baseline-seed-runs/*/staging/']);
-    const r = runScopeCommand('exempt', ['remove', 'logos/resources/verify/baseline-seed-runs/*/staging/'], root);
+    expect(readCfg(root).guard.exempt).toEqual(['logos/resources/verify/baseline-seed-runs/*/staging/', 'logos/environments.yaml']);
+    expect(runScopeCommand('exempt', ['remove', 'logos/resources/verify/baseline-seed-runs/*/staging/'], root).exitCode).toBe(0);
+    expect(readCfg(root).guard.exempt).toEqual(['logos/environments.yaml']);
+    const r = runScopeCommand('exempt', ['remove', 'logos/environments.yaml'], root);
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain('guard.exempt is now empty; built-in defaults no longer apply');
     expect(readCfg(root).guard.exempt).toEqual([]);
@@ -311,6 +314,7 @@ describe('S40 清单语法与增删查 — 单元', () => {
     expect(exAJ.data.entries).toEqual([
       { value: 'logos/resources/reference/', source: 'default' },
       { value: 'logos/resources/verify/baseline-seed-runs/*/staging/', source: 'default' },
+      { value: 'logos/environments.yaml', source: 'default' },
     ]);
     const igAJ = JSON.parse(igA.stdout) as Record<string, any>;
     expect(Object.keys(igAJ).sort()).toEqual(['command', 'data', 'timestamp', 'version']);
@@ -803,13 +807,16 @@ describe('S40 ignore / exempt 与宿主审批 — 场景', () => {
     const root = trackedRepo({ 'src/a.js': 'a' }, 'node_modules/\n');
     const gi = fileState(root, '.gitignore');
     const l1 = JSON.parse(runCli(root, ['exempt', 'list', '--format', 'json']).stdout) as Record<string, any>;
-    expect(l1.data.entries.map((e: { source: string }) => e.source)).toEqual(['default', 'default']);
+    expect(l1.data.entries.map((e: { source: string }) => e.source)).toEqual(['default', 'default', 'default']);
     expect(runCli(root, ['exempt', 'add', 'docs/handbook/']).exitCode).toBe(0);
-    expect(readCfg(root).guard.exempt).toEqual(['logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/', 'docs/handbook/']);
+    expect(readCfg(root).guard.exempt).toEqual([
+      'logos/resources/reference/', 'logos/resources/verify/baseline-seed-runs/*/staging/', 'logos/environments.yaml', 'docs/handbook/',
+    ]);
     expect(runCli(root, ['exempt', 'remove', 'logos/resources/reference/']).exitCode).toBe(0);
     const l2 = JSON.parse(runCli(root, ['exempt', 'list', '--format', 'json']).stdout) as Record<string, any>;
     expect(l2.data.entries).toEqual([
       { value: 'logos/resources/verify/baseline-seed-runs/*/staging/', source: 'config' },
+      { value: 'logos/environments.yaml', source: 'config' },
       { value: 'docs/handbook/', source: 'config' },
     ]);
     const l3 = JSON.parse(runCli(root, ['ignore', 'list', '--format', 'json']).stdout) as Record<string, any>;

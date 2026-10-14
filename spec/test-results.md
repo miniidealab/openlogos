@@ -406,6 +406,19 @@ logos/resources/verify/smoke-results.jsonl
 
 `scripts/run-smoke.js` 负责发现并顺序运行 `scripts/smoke-*.sh` / `scripts/smoke-*.js`。runner 可通过 `OPENLOGOS_SMOKE_RESULT_PATH` 读取目标结果路径，避免硬编码。
 
+### 目标环境注入与 `target_environment`（environment-registry）
+
+- 项目存在 `logos/environments.yaml` 且执行 `openlogos smoke --env <id|alias>` 时，CLI 以环境变量 `OPENLOGOS_SMOKE_ENV=<解析后的 id>` 运行 `smoke.command`（含沙箱内执行）。登记表不存在时不注入。
+- smoke 结果行新增**可选**字段 `target_environment`（string）：runner 写入其**实际验证的**环境 id，通常取自 `OPENLOGOS_SMOKE_ENV`，但必须是 runner 真正访问的目标，不得在访问了其他环境时照抄注入值。
+
+```json
+{ "id": "SMOKE-core-01", "status": "pass", "timestamp": "2026-10-14T08:00:00.000Z", "target_environment": "prod" }
+```
+
+- 既有字段 `environment`（若 runner 写入）是 runner 自定义的执行环境标签，语义不变，不参与环境证据判定。
+- CLI 只就计入门禁的结果行判定环境证据：任一行声明与本次环境不一致 → 登记表存在时门禁 FAIL，原因 `SMOKE_ENV_EVIDENCE_MISMATCH`；全部声明一致 → 记为已声明；存在缺少声明的行 → 门禁按既有判据计算（兼容旧 runner），但本次结果不算「已在该环境验证」。判定细节与账本记录见 `spec/environments.md` §5、§6。
+- 本字段不改变 `id` / `status` / `reason_code` / `detail` 的既有语义，也不改变覆盖预检与 skip 统计口径。
+
 ## JSONL 结果账本一致性与 Gate 判据
 
 `openlogos verify` 读取 `test-results.jsonl` 时，必须把“结果格式合法”和“统计自洽”作为 Gate PASS 的前置条件。

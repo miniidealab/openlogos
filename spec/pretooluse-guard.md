@@ -878,9 +878,10 @@ Windows 上 guard-check 读取 `tool_name` 的两条路径同时失效：`python
 ### guard.exempt 与内置默认（取代 R-REF / R-STAGING 硬编码）
 
 - 配置位置：`logos/logos.config.json` 的可选字段 `guard.exempt`（字符串数组）；字段定义见 `spec/logos.config.schema.json`。另一可选字段 `guard.unversioned` 只用于渲染 `.gitignore` 托管区块，guard 不直接读取它（它通过 git 忽略状态间接生效）。
-- **内置默认**：`guard.exempt` 缺省时等价于 `["logos/resources/reference/", "logos/resources/verify/baseline-seed-runs/*/staging/"]`；显式写出时以写出内容为准，包括显式空数组 `[]`（表示不豁免任何路径，不回落内置默认）。`guard.exempt` 缺省时，`openlogos exempt add` 与 `openlogos exempt remove` 都先把内置默认物化为显式数组再修改；删光全部条目后写入显式 `[]`。
+- **内置默认**：`guard.exempt` 缺省时等价于 `["logos/resources/reference/", "logos/resources/verify/baseline-seed-runs/*/staging/", "logos/environments.yaml"]`；显式写出时以写出内容为准，包括显式空数组 `[]`（表示不豁免任何路径，不回落内置默认）。`guard.exempt` 缺省时，`openlogos exempt add` 与 `openlogos exempt remove` 都先把内置默认物化为显式数组再修改；删光全部条目后写入显式 `[]`。
 - **条目语法**：项目根相对路径，`/` 分隔；以 `/` 结尾表示该目录本身及其全部后代（完整段匹配），否则只匹配该单个文件；`*` 只能独占一个路径段，匹配恰好一个路径段，且被匹配的实际段须满足 `^[A-Za-z0-9][A-Za-z0-9._-]*$`。拒绝：绝对路径、含 `..` / `.` / 空段、含 `\`、空串、`/`、单独 `*`、以 `logos/.openlogos-runtime/` 开头、忽略规则来源（任意层级的 `.gitignore`、`.git/info/exclude`）、`.git` 本身或 `.git/` 下路径，以及 `logos/logos.config.json`——exempt 不能把保护范围来源与 git 元数据移出保护。手工写入配置的此类条目按非法条目跳过。
 - **与原规则的等价性**：内置默认第一项与原 R-REF 命中集合相同（`logos/resources/reference` 本身及其后代，`reference-evil`、`references` 不命中）；第二项与原 R-STAGING 相同（第 5 段为单层 run_id 且满足标识符约束、第 6 段恰为 `staging`、其后 0 个或多个后代段；`staging-backup`、多层伪 run 路径不命中）。§资料目录与基线 staging 默认路径豁免（规范性）「仍受保护的相邻路径」表继续有效。
+- **环境登记表（environment-registry，决策 C07）**：内置默认第三项 `logos/environments.yaml` 只匹配该单个文件（不以 `/` 结尾）。它是运维配置而非业务逻辑——环境定义、别名、健康检查与版本地址、密钥**变量名**——修改不需立案；真正执行部署的脚本仍在受保护的源码目录。同目录的 `logos/environments.yml`、`logos/environments.yaml.bak` 等不命中。已显式写出 `guard.exempt` 的项目不自动获得该项，需由用户经保护范围命令手动添加。
 - **字段缺省**（`guard` 或 `guard.exempt` 不存在）→ 使用内置默认。
 - **配置损坏**（`logos.config.json` 无法解析，或 `guard` / `guard.exempt` 类型不符）→ exempt 视为 `[]`，不豁免任何路径，并在 stderr 输出警告；不回落内置默认（例如显式 `guard.exempt: []` 之后配置损坏，`logos/resources/reference/x.md` 仍受保护）。单个非法条目跳过并警告，其余条目照常生效。
 - 两种模式（git 判据生效 / 非 git 回落）都从 `guard.exempt` 读取豁免；`is_whitelisted_path` 不再硬编码 R-REF / R-STAGING 两条规则。

@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2269 |
+| Defined cases | 2311 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2269 |
-| Passed | 2244 |
+| Executed cases | 2311 |
+| Passed | 2286 |
 | Failed | 0 |
 | Skipped | 25 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-public-release-0-16-2`, `slice-02-reaped-process-liveness`
-- Eligible tests: 2269
+- Confirmed slices: `slice-01-registry-and-env-commands`, `slice-02-status-environment-view`, `slice-03-deploy-done-env-and-ref`, `slice-04-smoke-env-consistency-and-evidence`
+- Eligible tests: 2311
 - Pending tests: 0
 - Final: true
 

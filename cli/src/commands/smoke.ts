@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
@@ -12,7 +13,14 @@ import {
   type SmokeCoverageCheck,
   type SmokeCoverageDiagnostic,
 } from '../lib/smoke-coverage.js';
-import { evaluateSmokePrecondition, readLifecycleFacts } from '../lib/lifecycle-gate.js';
+import { evaluateSmokePrecondition, readDeployDoneMarker, readLifecycleFacts } from '../lib/lifecycle-gate.js';
+import type { LifecycleFacts } from '../lib/lifecycle-gate.js';
+import {
+  ENV_REGISTRY_REL, computeVerified, loadEnvironmentRegistry, resolveEnvironment,
+} from '../lib/environments.js';
+import type { EnvEvidence, SmokeLedgerRecord } from '../lib/environments.js';
+import { appendLedgerLine } from '../lib/deployment-ledger.js';
+import type { Locale } from '../i18n.js';
 
 const DEFAULT_SMOKE_RESULT_PATH = 'logos/resources/verify/smoke-results.jsonl';
 const DEFAULT_SMOKE_REPORT_PATH = 'logos/resources/verify/smoke-report.md';
@@ -53,6 +61,122 @@ export interface SmokeData {
   sandbox: SandboxData;
   report_path: string;
   result_path: string;
+  /** environment-registry：仅在项目存在 logos/environments.yaml 时输出（spec/cli-json-output.md）。 */
+  environment_evidence?: SmokeEnvironmentEvidence;
+}
+
+/** smoke 环境证据（spec/environments.md §5.2、§6）。 */
+export interface SmokeEnvironmentEvidence {
+  target: string;
+  deploy_id: string | null;
+  ref: string | null;
+  deploy_env_confirmed: boolean;
+  env_evidence: EnvEvidence;
+  mismatched_case_ids: string[];
+  missing_case_ids: string[];
+  fresh_results: boolean;
+  verified: boolean;
+  ledger_written: boolean;
+}
+
+/** smoke 的环境上下文：环境解析结果与所依据的 DEPLOY_DONE（无活跃提案时 deploy 信息为空、未确认）。 */
+interface SmokeEnvContext {
+  registryPresent: boolean;
+  target: string | null;
+  slug: string | null;
+  deployId: string | null;
+  ref: string | null;
+  deployEnvConfirmed: boolean;
+}
+
+function smokeReject(format: OutputFormat, code: string, message: string): never {
+  if (format === 'json') {
+    console.error(JSON.stringify(makeErrorEnvelope('smoke', code, message)));
+  } else {
+    console.error(`Error: [${code}] ${message}`);
+  }
+  process.exit(1);
+}
+
+/**
+ * environment-registry：环境解析（spec/environments.md §3）与 DEPLOY_DONE 分类（§4.2）。
+ * 在既有 fail-closed 前置之后、运行 smoke.command 之前执行；任一拒绝零副作用。
+ * 无活跃提案（facts 为 null）时沿用既有行为：不读 marker、部署环境未确认。
+ */
+function resolveSmokeEnvironment(
+  root: string, environment: string | undefined, facts: LifecycleFacts | null, format: OutputFormat, locale: Locale,
+): SmokeEnvContext {
+  const reg = loadEnvironmentRegistry(root);
+  let target: string | null = environment ?? null;
+  if (reg.state !== 'absent') {
+    if (reg.state === 'unloadable' || reg.errors.length > 0) {
+      const reason = reg.state === 'unloadable'
+        ? reg.error.reason
+        : reg.errors.map(e => `${e.environment ?? ''}.${e.field ?? ''}: ${e.reason}`).join('; ');
+      smokeReject(format, 'ENV_REGISTRY_INVALID', t(locale, 'smoke.env.registryInvalid', { path: ENV_REGISTRY_REL, reason }));
+    }
+    const available = reg.environments.map(e => e.id).join(', ');
+    if (environment === undefined || environment.trim() === '') {
+      smokeReject(format, 'ENV_REQUIRED', t(locale, 'smoke.env.required', { available }));
+    }
+    const resolved = resolveEnvironment(reg.environments, environment);
+    if (!resolved.ok) smokeReject(format, 'ENV_UNKNOWN', t(locale, 'smoke.env.unknown', { input: environment, available }));
+    target = resolved.id;
+  }
+
+  const ctx: SmokeEnvContext = {
+    registryPresent: reg.state !== 'absent', target, slug: facts?.slug ?? null, deployId: null, ref: null, deployEnvConfirmed: false,
+  };
+  if (!facts) return ctx;
+  const cls = readDeployDoneMarker(facts.proposalDir);
+  if (cls.kind === 'unreadable') {
+    // 读取失败不能证明文件属于旧空格式：零副作用拒绝并保留 I/O 原因（code-r1 F1）
+    smokeReject(format, 'SMOKE_DEPLOY_MARKER_INVALID', t(locale, 'smoke.env.markerUnreadable', { reason: cls.reason }));
+  }
+  if (cls.kind === 'invalid') {
+    smokeReject(format, 'SMOKE_DEPLOY_MARKER_INVALID', t(locale, 'smoke.env.markerInvalid', { problems: cls.problems.join(', ') }));
+  }
+  if (cls.kind === 'valid') {
+    ctx.deployId = cls.marker.deploy_id;
+    ctx.ref = cls.marker.ref;
+    if (cls.marker.environment !== null && target !== null) {
+      if (cls.marker.environment === target) {
+        ctx.deployEnvConfirmed = true;
+      } else if (ctx.registryPresent) {
+        smokeReject(format, 'SMOKE_ENV_MISMATCH', t(locale, 'smoke.env.mismatch', { deployed: cls.marker.environment, target }));
+      }
+    }
+  }
+  return ctx;
+}
+
+/** 按计入门禁的结果行判定环境证据（spec/environments.md §6）。 */
+function evaluateEnvEvidence(rows: Array<Record<string, unknown>>, target: string): {
+  env_evidence: EnvEvidence; mismatched: string[]; missing: string[];
+} {
+  const mismatched: string[] = [];
+  const missing: string[] = [];
+  for (const row of rows) {
+    const id = String(row.id);
+    if (!Object.prototype.hasOwnProperty.call(row, 'target_environment') || row.target_environment === undefined) missing.push(id);
+    else if (row.target_environment !== target) mismatched.push(id);
+  }
+  const env_evidence: EnvEvidence = mismatched.length > 0
+    ? 'mismatch'
+    : (rows.length > 0 && missing.length === 0 ? 'declared' : 'missing');
+  return { env_evidence, mismatched, missing };
+}
+
+/** 调用时 HEAD 与工作区状态：只作观察信息，不作为 smoke 记录的版本（版本继承 DEPLOY_DONE）。 */
+function observeWorkspace(root: string): { head: string | null; dirty: boolean | null } {
+  const run = (args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf-8', timeout: 30_000 });
+  const head = run(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+  const status = run(['status', '--porcelain']);
+  const headOut = (head.stdout ?? '').trim();
+  return {
+    head: !head.error && head.status === 0 && /^[0-9a-f]{40}$/.test(headOut) ? headOut : null,
+    dirty: !status.error && status.status === 0 ? (status.stdout ?? '').trim().length > 0 : null,
+  };
 }
 
 export function extractSmokeDefinedIds(root: string): string[] {
@@ -288,9 +412,16 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     }
   }
 
+  // environment-registry：环境解析与 DEPLOY_DONE 分类（拒绝时零副作用，排在运行 smoke.command 之前）
+  const envCtx = resolveSmokeEnvironment(root, environment, facts, format, locale);
+  // 有登记表时 JSON / 报告中的 environment 为解析后的 id；无登记表时为原始标签（逐字不变）
+  const reportedEnvironment = envCtx.target ?? undefined;
+
   const { command, resultPath, reportPath, sandbox } = readSmokeConfig(root);
   const allowedWritePaths = [resultPath, reportPath, 'logos/resources/verify/smoke-report.md'];
   let sandboxData = buildInitialSandboxData(sandbox);
+  // 只有本次实际运行 smoke.command（运行前清空结果文件）时，结果才属于这次部署
+  const freshResults = Boolean(command);
 
   if (command) {
     // 每次执行已配置的 smoke.command 都必须从空账本开始。
@@ -307,6 +438,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
       sandbox,
       allowedWritePaths,
       freshSandbox: runOptions.freshSandbox === true,
+      ...(envCtx.registryPresent && envCtx.target !== null ? { extraEnv: { OPENLOGOS_SMOKE_ENV: envCtx.target } } : {}),
     });
     sandboxData = result.sandbox;
     if (result.command.status === 'fail') {
@@ -318,9 +450,91 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
 
   const coverageCheck = checkSmokeCoverage(root, { command, resultPath });
 
+  /**
+   * 门禁结论的统一收尾（code-r1 F3）：环境证据（spec/environments.md §6）→ smoke marker → 账本 smoke 行（§5.1）。
+   * 所有已形成 PASS / FAIL 结论的路径都必须经过这里，不得在输出前提前返回而遗漏证据与账本。
+   */
+  const finalizeVerdict = (data: SmokeData): void => {
+    let evidence: SmokeEnvironmentEvidence | null = null;
+    if (envCtx.target !== null) {
+      const rows = readSmokeResults(root, resultPath) as unknown as Array<Record<string, unknown>>;
+      const judged = evaluateEnvEvidence(rows, envCtx.target);
+      if (envCtx.registryPresent && judged.env_evidence === 'mismatch' && data.gate.result === 'PASS') {
+        data.gate.result = 'FAIL';
+        data.gate.reason = 'SMOKE_ENV_EVIDENCE_MISMATCH';
+      }
+      const result: 'pass' | 'fail' = data.gate.result === 'PASS' ? 'pass' : 'fail';
+      evidence = {
+        target: envCtx.target,
+        deploy_id: envCtx.deployId,
+        ref: envCtx.ref,
+        deploy_env_confirmed: envCtx.deployEnvConfirmed,
+        env_evidence: judged.env_evidence,
+        mismatched_case_ids: judged.mismatched,
+        missing_case_ids: judged.missing,
+        fresh_results: freshResults,
+        verified: computeVerified({
+          result, env_evidence: judged.env_evidence, fresh_results: freshResults,
+          deploy_env_confirmed: envCtx.deployEnvConfirmed, ref: envCtx.ref,
+        }),
+        ledger_written: false,
+      };
+      if (envCtx.registryPresent) {
+        data.environment_evidence = evidence;
+        // 门禁结论可能被环境证据改写：按最终 data 重写报告
+        writeFileSync(join(root, data.report_path), generateSmokeReport(data));
+      }
+    }
+
+    const guardPath = join(root, 'logos', '.openlogos-guard');
+    if (existsSync(guardPath)) {
+      try {
+        const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
+        const slug = guard.activeChange;
+        if (slug) {
+          const proposalDir = join(root, 'logos', 'changes', slug);
+          if (existsSync(proposalDir)) {
+            if (data.gate.result === 'PASS') {
+              writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
+              const failPath = join(proposalDir, 'SMOKE_FAIL');
+              if (existsSync(failPath)) rmSync(failPath, { force: true });
+            } else {
+              writeFileSync(join(proposalDir, 'SMOKE_FAIL'), '');
+              const passPath = join(proposalDir, 'SMOKE_PASS');
+              if (existsSync(passPath)) rmSync(passPath, { force: true });
+            }
+          }
+        }
+      } catch { /* guard 文件读取失败时静默跳过 */ }
+    }
+
+    // 存在活跃提案且传入 --env 时追加账本 smoke 行（spec/environments.md §5.1）；无活跃提案不写、不伪造上下文
+    if (evidence && envCtx.slug !== null) {
+      const observed = observeWorkspace(root);
+      const record: SmokeLedgerRecord = {
+        kind: 'smoke',
+        environment: evidence.target,
+        slug: envCtx.slug,
+        recorded_at: new Date().toISOString(),
+        observed_head: observed.head,
+        observed_dirty: observed.dirty,
+        deploy_id: evidence.deploy_id,
+        ref: evidence.ref,
+        result: data.gate.result === 'PASS' ? 'pass' : 'fail',
+        env_evidence: evidence.env_evidence,
+        fresh_results: evidence.fresh_results,
+        deploy_env_confirmed: evidence.deploy_env_confirmed,
+        verified: evidence.verified,
+      };
+      appendLedgerLine(root, `${JSON.stringify(record)}\n`); // 与 deploy-done 共用账本锁（code-r2 F2）
+      evidence.ledger_written = true;
+    }
+  };
+
   if (!existsSync(join(root, resultPath))) {
     if (coverageCheck.changed_case_ids.length > 0) {
-      const data = collectSmokeData(root, environment, sandboxData, coverageCheck);
+      const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck);
+      finalizeVerdict(data);
       if (format === 'json') {
         console.log(JSON.stringify(makeEnvelope('smoke', data)));
         // 设 exitCode 后返回，保证管道消费方读到完整 envelope（S16 EX-2.6）
@@ -355,7 +569,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     process.exit(1);
   }
 
-  const data = collectSmokeData(root, environment, sandboxData, coverageCheck);
+  const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck);
   if (sandboxData.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
     data.gate.reason = 'failed_cases';
@@ -367,27 +581,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     }
   }
 
-  const guardPath = join(root, 'logos', '.openlogos-guard');
-  if (existsSync(guardPath)) {
-    try {
-      const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
-      const slug = guard.activeChange;
-      if (slug) {
-        const proposalDir = join(root, 'logos', 'changes', slug);
-        if (existsSync(proposalDir)) {
-          if (data.gate.result === 'PASS') {
-            writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
-            const failPath = join(proposalDir, 'SMOKE_FAIL');
-            if (existsSync(failPath)) rmSync(failPath, { force: true });
-          } else {
-            writeFileSync(join(proposalDir, 'SMOKE_FAIL'), '');
-            const passPath = join(proposalDir, 'SMOKE_PASS');
-            if (existsSync(passPath)) rmSync(passPath, { force: true });
-          }
-        }
-      }
-    } catch { /* guard 文件读取失败时静默跳过 */ }
-  }
+  finalizeVerdict(data);
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('smoke', data)));
@@ -398,6 +592,14 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
 
   console.log('\n🔎 OpenLogos Smoke Verification\n');
   if (data.environment) console.log(`  Environment: ${data.environment}`);
+  if (data.environment_evidence) {
+    const ev = data.environment_evidence;
+    console.log(`  ${t(locale, 'smoke.env.evidence', {
+      evidence: ev.env_evidence,
+      ref: ev.ref ?? t(locale, 'smoke.env.refUnknown'),
+      verified: t(locale, ev.verified ? 'smoke.env.verified' : 'smoke.env.notVerified'),
+    })}`);
+  }
   console.log(`  Defined:  ${data.summary.defined_count}`);
   console.log(`  Executed: ${data.summary.executed_count}`);
   console.log(`  Passed:   ${data.summary.passed_count}`);
