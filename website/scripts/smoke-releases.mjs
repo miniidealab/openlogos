@@ -86,6 +86,20 @@ function readHtml(path) {
   return readFileSync(resolve(DIST_DIR, path), 'utf-8');
 }
 
+// 发布数据中的文本渲染进页面时会被 HTML 转义（如摘要中的撇号输出为 &#39;），故原文或转义形式任一在场即视为已渲染（release-0-16-2 决策 C09）。
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function htmlIncludesText(html, text) {
+  return html.includes(text) || html.includes(escapeHtml(text));
+}
+
 // 递归收集指定扩展名的文件（用于扫描打包后的 CSS 产物）。
 function walkByExt(dir, ext, files = []) {
   for (const entry of readdirSync(dir)) {
@@ -173,9 +187,9 @@ async function run() {
     assert(releases.includes('What changed'), 'Release page missing value summary heading');
     assert(releases.includes('What got fixed'), 'Release page missing fix summary heading');
     assert(releases.includes('Chinese original'), 'Release page missing Chinese original disclosure');
-    assert(releases.includes(versionsWithEnglishValue[0].valueSummaryEn[0]), 'Release page missing rendered English value summary');
-    assert(releases.includes(versionsWithEnglishFix[0].fixSummaryEn[0]), 'Release page missing rendered English fix summary');
-    assert(releases.includes(RELEASE_SUMMARY_FALLBACK_MESSAGE), 'Release page missing fixed fallback summary text');
+    assert(htmlIncludesText(releases, versionsWithEnglishValue[0].valueSummaryEn[0]), 'Release page missing rendered English value summary');
+    assert(htmlIncludesText(releases, versionsWithEnglishFix[0].fixSummaryEn[0]), 'Release page missing rendered English fix summary');
+    assert(htmlIncludesText(releases, RELEASE_SUMMARY_FALLBACK_MESSAGE), 'Release page missing fixed fallback summary text');
     assert(releases.includes('CHANGELOG'), 'Release page missing changelog links');
     report('SMOKE-core-07', 'pass', 'release page shows bilingual version summaries');
   } catch (error) {
