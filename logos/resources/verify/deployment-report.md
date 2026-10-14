@@ -316,3 +316,39 @@
 ## 四、重试条件
 
 修复提案归档后回到本提案：如修复改动了 CLI 行为，CHANGELOG `## [0.16.1]` 需补该修复（版本号不变，0.16.1 尚未进入 registry），重新执行四道门；门 ② 阶段一必须以非 root 用户、具备 sqlite3 的环境全绿。
+
+# 部署报告：release-0-16-2 / OpenLogos 0.16.2 公开发布（2026-10-13，**门③ 未通过：已推送 master、未推 tag、未发布**）
+
+## 一、结论
+
+- 推 tag 前门 ③（GitHub CI）的 `Lint & Test` 失败，其中 **UT-S13-97（沙箱复用）失败**。按本提案决策澄清 defaults「沙箱复用相关用例失败一律停止发布并另立修复提案」与部署方案档 A 处置：**未推送 `v0.16.2` tag，未执行 npm publish / GitHub Release / 官网部署，未切换本机全局，未写 DEPLOY_DONE**。
+- 已发生的对外动作只有门 ③ 的 `git push origin master`：`origin/master` 由 `e2b7ac0` 前进到 `1bd7588`（含 0.16.0 之后的 8 个提交：两个已归档提案、已撤销的 release-0-16-1 记录，以及本提案的 `0eec6fd` 规格合并与 `1bd7588` 升版 / 发布说明 / smoke runner）。master 只触发 `ci.yml`，不触发发布；仓库中版本号已是 0.16.2，但没有对应 tag。
+- npm `dist-tags` 保持 `latest=0.16.0`、`old=0.9.8`，`@0.16.1` / `@0.16.2` 均 E404；GitHub Release 与官网不变；本机全局保持本地构建的 0.16.1。**无需回滚任何公网制品。**
+
+## 二、冻结事实（2026-10-13T23:42:30Z）
+
+- npm：`latest=0.16.0`、`old=0.9.8`；`@0.16.1`、`@0.16.2` 均 E404。
+- git：发布候选 `1bd758805af0d540c992be3507f863346e8b2f52`；冻结时 `origin/master=e2b7ac0`，本地领先 8 个提交；远端 tag 只有 `v0.16.0`。
+- 本机全局：`/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，`npm prefix -g=/opt/homebrew`，`--version=0.16.1`（本地构建，修复前）。
+- 回滚制品 `cli/rollback/miniidealab-openlogos-0.16.0.tgz`：2545365 字节，SHA-256 `2aa52d6e7327d52df2a9765e52f1b59fd6193741249450d2f65b88b0b443480b`，与已冻结值一致。
+- `git log v0.16.0..HEAD -- .github/workflows/publish.yml` 为空：0.16.0 之后 publish.yml 无改动，档 C 恢复演练无需重做。
+
+## 三、已通过的门
+
+- **门 ①（本地，macOS，Node v23.10.0）**：`npm run lint` 0；`tsc --noEmit` 0；`npm test` 2677 passed / 1 skipped；`npm run build` 0；`cd website && npm ci && npm run build` 0（宿主 python3 缺 fontTools，第一次官网构建在字体子集化步骤失败；按 0.16.0 口径改用独立 venv：Python 3.14.7、fonttools 4.66.1 + brotli 重跑通过，未改动系统 Python），构建后工作区无变化。
+- **门 ② 阶段一（docker `node:20`，基础镜像 `node@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5`，其上仅加装 sqlite3 的本地镜像 `sha256:4ef106618500c5819bee0a49eea485ee5caaf482e4dec7689d09efac31b770e0`）**：用户 `node`（uid 1000）、Node v20.20.2、sqlite3 3.40.1、cc（Debian 12.2.0）；容器内 `git clone` 提交 `1bd7588`（5566 个跟踪文件）。`npm ci` 0、`npm test` 0（2659 passed / 19 skipped）、`npm run build` 0；版本 / plugin / CHANGELOG 一致性通过（Release 正文 3912 字节，不含「未发布到 npm」）；`npm pack` 837 个文件，SHA-256 `a8a3df22764f621af138b0b42c1fcca1bff646aeaf48cbebc67aa9a79d9eca80`，无孤儿 dist 产物、asset-manifest 自洽（0.16.2）、`dist/lib/sandbox-reuse.js` 含 `command_started_uptime`；lint 0、tsc 0。**沙箱复用用例 UT-S13-89～UT-S13-102、ST-S13-25、ST-S13-26、UT-S19-57 在 reporter 账本中全部为 `pass`**；账本中 skip 的 10 个为既有能力探测用例（UT-S13-47～50 / 52～54、ST-S13-14、UT-S19-08 / 09），与沙箱复用无关。
+- **门 ② 阶段二（docker `node:22.12.0`，基础镜像 `node@sha256:0e910f435308c36ea60b4cfd7b80208044d77a074d16b768a81901ce938a62dc`，加装 python3-fonttools 4.38.0 与 python3-brotli）**：uid 1000，提交 `1bd7588`，官网 `npm ci` 0、`npm run build` 0。
+- **门 ④**：以 `miniidealab` 账号执行 `gh secret list`，`NPM_TOKEN`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 均已配置（只查存在性）。
+
+## 四、门 ③ 失败：CI run 38486602622
+
+- 推送：`bergkampzhang` 账号推送被拒（HTTP 403），切换到 `miniidealab` 后推送成功（`e2b7ac0..1bd7588`）。
+- `Windows regression`：success。`Lint & Test`：failure，2 failed / 2657 passed / 19 skipped：
+  1. **ST-S36-06**：`Test timed out in 10000ms`，属已知的全量负载下 10 秒用例偶发超时，与本次改动无关。
+  2. **UT-S13-97（旧写入者跨轮残留，EX-3.7）**：断言首轮释放原因含「运行标记扫描命中」，实际为「运行标记扫描失败（同用户存活进程 13261 的环境不可读（EACCES），且启动时刻无法确认（stat 启动时刻字段无法解析））」。门 ② 的 docker 全量运行中该用例通过，GitHub ubuntu runner 上失败。
+- **初步分析（待修复提案确认）**：`parseProcStat`（`cli/src/lib/sandbox-reuse.ts`）在 `num_threads < 1`、启动时刻或 flags 字段无法解析时抛出「stat 启动时刻字段无法解析」，按 §2.92.2 第 4 条判无法完成扫描。这与 §2.92.2 的字面判据一致，但存在一个缺口：一个 environ 不可读的同用户进程如果在 environ 读取与 stat 读取之间退出、成为尚未回收的僵尸，其 stat 的 `num_threads` 可能为 0，于是被判「无法解析」而不是「已退出」，导致释放误写 `tainted`。并发负载下（CI 并行执行多个测试文件、不断有短命子进程退出）这个竞态可以被触发。该失败属于沙箱复用的运行时判定，不是测试超时。
+- **修复方向（建议另立提案）**：在 §2.92.2 中把「stat 可读、状态为 Z / X 或 `num_threads` 为 0」明确为已退出并跳过（与 §2.92.2 现有的线程组退出判定口径对齐），并补一条在并发进程退出竞态下仍得 `released` 的用例；同时确认 UT-S13-97 的断言在 Linux 并发环境下的稳健性。
+
+## 五、重试条件
+
+修复提案归档后回到本提案：修复改动了 CLI 行为，需在 CHANGELOG `## [0.16.2]` 补该修复（版本号不变，0.16.2 尚未进入 registry，`v0.16.2` tag 从未推送），重新执行四道门。门 ③ 必须两个 job 在同一提交上 success；ST-S36-06 若再次单独超时，可按 defaults 对同一提交重跑一次 CI 并在此记录。
