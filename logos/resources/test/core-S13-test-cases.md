@@ -441,6 +441,7 @@
 |---|---|---|---|---|
 | UT-S13-101 | 环境不可读的同用户进程按启动时刻判定 | 注入 `/proc`：当前用户 501，命令启动时刻 1000.00 秒；进程 a：同用户、environ EACCES、启动 500.00 秒；b：同用户、environ EACCES、启动 1000.50 秒；c：同用户、environ EACCES、启动 999.50 秒（容差内）；d：同用户、environ EACCES、stat 报 ENOENT；e：同用户、environ EACCES、stat 报 EACCES；f：同用户、environ EACCES、stat 第 22 字段无法解析；g：他用户、environ EACCES；h：environ 可读且含 `OPENLOGOS_SANDBOX_RUN=tag` | 以不同组合调用扫描：① 仅 a、d、g；② 加入 b；③ 加入 c；④ 加入 e；⑤ 加入 f；⑥ 仅 a 但不提供命令启动时刻；⑦ 加入 h | ① 返回无命中、不抛出；② ③ ④ ⑤ ⑥ 均判无法完成扫描（抛出且原因点名对应 pid）；⑦ 命中 h。**修改前实现在 ① 上抛出（a 被判无法完成），本用例必红** |
 | UT-S13-102 | 命令启动时刻随释放记录传递与旧记录保守口径 | 执行器级，Linux 上运行；其他平台以注入的 `/proc` 依赖与平台判定接缝运行 | ① 运行一次复用命令后读取释放记录；② 在注入的 `/proc` 中放一个启动时刻早于「① 记录值 − 1 秒」（如早 5 秒）、environ 不可读的同用户进程后再运行一次；③ 把释放记录中的 `command_started_uptime` 删除（模拟旧版记录）后再运行一次；④ 再运行一次 | ① `released` 记录含数字型 `command_started_uptime`；② `reuse.state=="reused"`；③ `reuse.state=="recovered"`，新释放记录重新带 `command_started_uptime`；④ `reuse.state=="reused"` |
+| UT-S13-103 | 已被回收的进程（stat `num_threads` 为 0）视为已退出 | 注入 `/proc`：当前用户 501，命令启动时刻 1000.00 秒；进程 r：同用户、environ EACCES、stat 启动 1000.50 秒（晚于命令启动）且 `num_threads` 为 0；s：同用户、environ EACCES、`num_threads` 为 0 但第 22 字段无法解析；t：同用户、environ EACCES、leader 已退出（Z + PF_EXITING）且 `num_threads` 为 2，线程清单中 leader 为 Z、工作线程的 stat `num_threads` 为 0；h：environ 可读且含 `OPENLOGOS_SANDBOX_RUN=tag` | ① 仅 r 调用扫描；② r 与 h；③ 仅 s；④ 仅 t；⑤ 以 `parseProcStat` 直接解析 `num_threads` 为 0 的原始 stat | ① 返回无命中、不抛出；② 命中 h（r 不中断扫描）；③ 判无法完成扫描（抛出且原因点名 s 的 pid——启动时刻字段仍须可解析）；④ 返回无命中、不抛出（线程组按已退出认定）；⑤ 不抛出，结果标识为已回收。**修改前实现在 ① ② ④ ⑤ 上抛出「stat 启动时刻字段无法解析」，本用例必红** |
 
 ### 场景测试
 
@@ -451,6 +452,7 @@
 ### 追溯与覆盖
 
 - 启动时刻判据与各异常分支（§2.92.2）：UT-S13-101。
+- 已被回收进程（stat `num_threads` 为 0，读取与回收竞态）视为已退出，含线程级 stat（§2.92.2，来源变更 release-0-16-2 决策 C08）：UT-S13-103。
 - 命令启动时刻记录、随释放记录传递与旧记录保守口径（§2.92.3、§2.92.4、EX-3.13 ③）：UT-S13-102。
 - Linux 真实不可转储进程（EX-3.13 ①③）：ST-S13-26（仅 Linux）；容差内与启动时刻不可读（EX-3.13 ②）：UT-S13-101 的进程 c、e、f。
 - 既有 UT-S13-89～UT-S13-100、ST-S13-25、UT-S19-57 作为零回归守护，须在 Linux（非 root、具备 sqlite3）与 macOS 全量回归中保持绿。

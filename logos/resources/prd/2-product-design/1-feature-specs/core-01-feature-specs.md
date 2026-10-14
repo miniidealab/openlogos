@@ -5029,10 +5029,13 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
    - 启动时刻 **早于**「本世代命令启动时刻 − 1 秒」→ 不可能是本世代命令的后代（任一后代必在命令启动之后创建），**跳过**；
    - 启动时刻不早于该阈值 → 判**无法完成扫描**；
    - stat 读取报 ENOENT / ESRCH → 视为已退出，跳过；
+   - stat 可读但第 20 字段 `num_threads` 为 0 → 进程已被回收（见下文），视为已退出，跳过；
    - stat 其他读取失败、字段缺失或无法解析 → 判**无法完成扫描**。
    - 没有可用的命令启动时刻（见 2.92.4）→ 判**无法完成扫描**（与修复前一致）。
 
 「无法完成扫描」的后果不变：释放写 `tainted`，或发布前复查不通过、`--fresh-sandbox` 不删除旧世代（§2.91.6、§2.91.7）。本判据只排除可证明无关的进程，不放宽「无法确认即不复用」的语义。1 秒容差覆盖时钟滴答粒度与读取先后顺序。
+
+**`num_threads` 为 0 即已被回收**（来源变更 release-0-16-2 决策 C08）：内核生成 `/proc/<pid>/stat` 时，`num_threads` 只有在锁住进程的 sighand 后才填入实际值，否则保持 0；进程被父进程回收（release_task）时 sighand 被置空。读取方在回收前已取得该进程、回收后才生成 stat，就会得到启动时刻正常而 `num_threads` 为 0 的内容。存活进程至少有 1 个线程，未回收的僵尸进程同样为 1（实测），因此 0 只出现在「已被回收」的瞬间，与 ENOENT / ESRCH 同属已退出——它不再有线程，不可能继续写入沙箱世代。线程级 stat（`/proc/<pid>/task/<tid>/stat`，用于线程组退出确认）读到 `num_threads` 为 0 时同样视为该线程已退出。并发负载下（全量测试、构建中大量短命子进程）此竞态可稳定触发：docker `node:20` 非 root 紧循环 40 秒内约 71.7 万次成功读取中 991 次为 0；把它判为「无法解析」会让释放误写 `tainted`（release-0-16-2 门 ③ CI 中 UT-S13-97 即因此失败）。
 
 ### 2.92.3 命令启动时刻
 
@@ -5058,6 +5061,7 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 |---|---|---|
 | Linux 扫描的启动时刻判据 | `cli/src/lib/sandbox-reuse.ts`（`scanProcEnvironment`、`checkOldWriters`） | `cli/test/s13-sandbox-reuse.test.ts` |
 | 命令启动时刻记录与随释放记录传递 | `cli/src/lib/sandbox.ts`、`cli/src/lib/sandbox-reuse.ts`（`releaseGeneration`、`acquireGeneration`） | `cli/test/s13-sandbox-reuse.test.ts` |
+| 已被回收进程（stat `num_threads` 为 0）视为已退出 | `cli/src/lib/sandbox-reuse.ts`（`parseProcStat`、`scanProcEnvironment`、线程组退出确认） | `cli/test/s13-sandbox-reuse.test.ts` |
 
 - 场景：S13 EX-3.13（情形 ① 跳过；② 容差内或启动时刻不可读按保守口径；③ 脱组后代；④ 旧记录）。
-- 测试：UT-S13-101、UT-S13-102、ST-S13-26。
+- 测试：UT-S13-101、UT-S13-102、UT-S13-103、ST-S13-26。
