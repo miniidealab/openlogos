@@ -967,11 +967,31 @@ describe('S13 Linux 运行标记扫描中环境不可读进程的判定 — 单�
     // /proc/<pid>/stat 解析：comm 含空格与括号，第 22 字段为启动滴答数（USER_HZ=100）
     const stat = `4242 (my (odd) proc) S 1 4242 4242 0 -1 4194560 100 0 0 0 0 0 0 0 20 0 1 0 123456 1000 10 ...`;
     expect(parseProcStatStartSeconds(stat)).toBe(1234.56);
-    expect(parseProcStat(stat)).toEqual({ state: 'S', exiting: false, threads: 1, startSeconds: 1234.56 });
+    expect(parseProcStat(stat)).toEqual({ state: 'S', exiting: false, threads: 1, reaped: false, startSeconds: 1234.56 });
     expect(parseProcStat(stat.replace(' 4194560 ', ' 4194380 ')).exiting, 'flags 0x40014C 带 PF_EXITING').toBe(true);
     expect(parseProcStat(stat.replace(' 20 0 1 0 ', ' 20 0 2 0 ')).threads).toBe(2);
     expect(() => parseProcStat(stat.replace(' 20 0 1 0 ', ' 20 0 x 0 ')), 'num_threads 无法解析').toThrow();
     expect(() => parseProcStatStartSeconds('garbage')).toThrow();
+  });
+
+  it('UT-S13-103: 已被回收的进程（stat num_threads 为 0）视为已退出', () => {
+    // 读取与回收竞态：内核只在锁住 sighand 后才填入实际线程数，回收时 sighand 已置空，stat 可读而 num_threads 为 0
+    const procs: Record<string, Proc> = {
+      31: { env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { threads: 0 }) },
+      32: { env: err('EACCES'), owner: 501, stat: '1 (proc) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 0 0 not-a-number' },
+      33: {
+        env: err('EACCES'), owner: 501, stat: rawStat(1000.5, { state: 'Z', flags: 0x40810c, threads: 2 }),
+        tasks: { 33: rawStat(1000.5, { state: 'Z', flags: 0x40810c }), 133: rawStat(1000.5, { state: 'S', flags: 0x400040, threads: 0 }) },
+      },
+      34: { env: 'A=1\0OPENLOGOS_SANDBOX_RUN=tag\0' },
+    };
+    const scan = (pids: string[]) => scanProcEnvironment('tag', 1000, procFs(Object.fromEntries(pids.map(pid => [pid, procs[pid]]))));
+    expect(scan(['31']), '① 已被回收：与 ENOENT / ESRCH 同口径跳过，不判无法完成扫描').toEqual([]);
+    expect(scan(['31', '34']), '② 已被回收的进程不中断扫描').toEqual([34]);
+    expect(() => scan(['32']), '③ 启动时刻字段仍须可解析').toThrow(/32.*启动时刻无法确认/);
+    expect(scan(['33']), '④ 线程级 stat 已被回收同样视为该线程已退出').toEqual([]);
+    const reaped = parseProcStat(rawStat(1000.5, { threads: 0 }));
+    expect(reaped, '⑤ 解析不抛出并标识为已回收').toEqual({ state: 'S', exiting: false, threads: 0, reaped: true, startSeconds: 1000.5 });
   });
 
   itReuse('UT-S13-102: 命令启动时刻随释放记录传递与旧记录保守口径', () => {

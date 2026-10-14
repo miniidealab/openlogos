@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Linux 上沙箱复用基本失效**（fix-sandbox-reuse-linux-liveness）：Linux 通过 `/proc/<pid>/environ` 检查旧写入者，同用户的不可转储进程（如 Chromium / Electron 沙箱渲染进程）的 environ 不可读，此前被一律判为「无法完成扫描」，导致每次释放都写 `tainted`、下一轮新建工作区世代并累积被弃用世代。现在对这类进程按启动时刻判定：启动早于本次命令启动时刻（留 1 秒容差）的进程不可能是该命令的后代，直接跳过；仍无法确认的进程照旧不复用。
 - 释放记录新增 `command_started_uptime`（仅 Linux 写入），下一轮复查与 `--fresh-sandbox` 删除判定使用它；旧记录缺该字段时按保守口径处理一轮。系统重启后旧世代的后代不可能存活，判定随之正确。macOS 判定与 `sandbox.reuse` JSON 输出不变。
+- Linux 上正被回收的进程不再导致误判：读取 `/proc/<pid>/stat` 恰逢该进程被父进程回收时，内核给出的线程数为 0，此前被当作「字段无法解析」而判为无法完成扫描、释放误写 `tainted`；构建或测试中大量短命子进程时容易触发。现在把线程数为 0 视为已退出。
 
 ## [0.16.1] - 2026-10-13
 

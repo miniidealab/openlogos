@@ -181,6 +181,11 @@ export interface ProcStat {
   exiting: boolean;
   /** 第 20 字段 num_threads：线程组内尚未释放的线程数（leader 退出后其余线程仍可继续运行）。 */
   threads: number;
+  /**
+   * num_threads 为 0：该 task 已被回收（§2.92.2）。内核只在锁住 sighand 后才填入实际线程数，回收时 sighand 被置空，
+   * 读取与回收竞态时得到 0；存活进程与未回收的僵尸至少为 1。
+   */
+  reaped: boolean;
   /** 第 22 字段启动时刻，换算为系统启动以来的秒。 */
   startSeconds: number;
 }
@@ -198,10 +203,10 @@ export function parseProcStat(stat: string): ProcStat {
   const ticks = Number(fields[22 - 3]);
   const flags = Number(fields[9 - 3]);
   const threads = Number(fields[20 - 3]);
-  if (!fields[0] || !Number.isFinite(ticks) || ticks < 0 || !Number.isInteger(flags) || !Number.isInteger(threads) || threads < 1) {
+  if (!fields[0] || !Number.isFinite(ticks) || ticks < 0 || !Number.isInteger(flags) || !Number.isInteger(threads) || threads < 0) {
     throw new Error('stat 启动时刻字段无法解析');
   }
-  return { state: fields[0], exiting: (flags & PF_EXITING) !== 0, threads, startSeconds: ticks / USER_HZ };
+  return { state: fields[0], exiting: (flags & PF_EXITING) !== 0, threads, reaped: threads === 0, startSeconds: ticks / USER_HZ };
 }
 
 export function parseProcStatStartSeconds(stat: string): number {
@@ -227,7 +232,7 @@ export const EXIT_POLL_ROUNDS = 11;
 const EXIT_POLL_INTERVAL_MS = 50;
 
 function taskExited(stat: ProcStat): boolean {
-  return stat.exiting || EXITED_STATES.has(stat.state);
+  return stat.reaped || stat.exiting || EXITED_STATES.has(stat.state);
 }
 
 type GroupProbe = 'exited' | 'pending' | 'unknown';
@@ -261,7 +266,7 @@ function probeThreadGroup(pid: string, fsApi: ProcFs): GroupProbe {
 
 function threadGroupExited(pid: string, leader: ProcStat, fsApi: ProcFs): boolean {
   if (!taskExited(leader)) return false;
-  if (leader.threads === 1) return true;
+  if (leader.threads <= 1) return true;
   for (let round = 0; round < EXIT_POLL_ROUNDS; round++) {
     if (round > 0) fsApi.sleep(EXIT_POLL_INTERVAL_MS);
     const probe = probeThreadGroup(pid, fsApi);
@@ -313,7 +318,7 @@ const GONE_CODES = new Set(['ENOENT', 'ESRCH']);
  * Linux 运行标记扫描。检查范围是**与 CLI 同用户**的进程（只有它们能写入同用户拥有的沙箱世代）：
  * - 读取 environ 时进程已退出（ENOENT / ESRCH）→ 跳过，不构成旧写入者；
  * - 其他用户的进程 → 跳过；
- * - 同用户但 environ 不可读（EACCES / EPERM 等）→ 读取其 stat：报 ENOENT / ESRCH，或整个线程组已退出（每个
+ * - 同用户但 environ 不可读（EACCES / EPERM 等）→ 读取其 stat：报 ENOENT / ESRCH、已被回收（num_threads 为 0），或整个线程组已退出（每个
  *   线程均为 Z / X 或带 PF_EXITING，见 threadGroupExited），视为已退出，跳过；仍存活的（如
  *   Electron 沙箱渲染进程等不可转储进程，或 leader 已退出但仍有其他线程的进程）按 §2.92.2 比较启动时刻：早于「命令启动时刻 − 1 秒」的不可能是本世代命令的后代，跳过；
  *   其余（含无命令启动时刻、stat 读取失败或无法解析）抛出，即「无法完成扫描」，由调用方判 tainted。
@@ -347,6 +352,8 @@ export function scanProcEnvironment(tag: string, commandStartedUptime: number | 
         if (GONE_CODES.has(startCode)) continue;
         throw new Error(`同用户存活进程 ${entry} 的环境不可读（${code || 'unknown'}），且启动时刻无法确认（${startCode || (startError as Error).message}）`);
       }
+      // 读取与回收竞态：stat 可读但已被回收（num_threads 为 0），与 ENOENT / ESRCH 同属已退出
+      if (stat.reaped) continue;
       // 早于命令启动：不可能是其后代。先于线程组退出确认判定，免去对早已存在的进程做有界复读
       if (commandStartedUptime !== null && stat.startSeconds < commandStartedUptime - START_TOLERANCE_SECONDS) continue;
       if (threadGroupExited(entry, stat, fsApi)) continue;
