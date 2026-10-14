@@ -317,38 +317,78 @@
 
 修复提案归档后回到本提案：如修复改动了 CLI 行为，CHANGELOG `## [0.16.1]` 需补该修复（版本号不变，0.16.1 尚未进入 registry），重新执行四道门；门 ② 阶段一必须以非 root 用户、具备 sqlite3 的环境全绿。
 
-# 部署报告：release-0-16-2 / OpenLogos 0.16.2 公开发布（2026-10-13，**门③ 未通过：已推送 master、未推 tag、未发布**）
+# 部署报告：release-0-16-2 / OpenLogos 0.16.2 公开发布（2026-10-14 UTC，**已发布**；原 publish run 官网校验因 registry 处理延迟失败，按档 C 受控补做）
+
+public_release_version: 0.16.2
+public_release_commit: 236f5a2c116f5c31c272fd2d49cbf75d21d90369
 
 ## 一、结论
 
-- 推 tag 前门 ③（GitHub CI）的 `Lint & Test` 失败，其中 **UT-S13-97（沙箱复用）失败**。按本提案决策澄清 defaults「沙箱复用相关用例失败一律停止发布并另立修复提案」与部署方案档 A 处置：**未推送 `v0.16.2` tag，未执行 npm publish / GitHub Release / 官网部署，未切换本机全局，未写 DEPLOY_DONE**。
-- 已发生的对外动作只有门 ③ 的 `git push origin master`：`origin/master` 由 `e2b7ac0` 前进到 `1bd7588`（含 0.16.0 之后的 8 个提交：两个已归档提案、已撤销的 release-0-16-1 记录，以及本提案的 `0eec6fd` 规格合并与 `1bd7588` 升版 / 发布说明 / smoke runner）。master 只触发 `ci.yml`，不触发发布；仓库中版本号已是 0.16.2，但没有对应 tag。
-- npm `dist-tags` 保持 `latest=0.16.0`、`old=0.9.8`，`@0.16.1` / `@0.16.2` 均 E404；GitHub Release 与官网不变；本机全局保持本地构建的 0.16.1。**无需回滚任何公网制品。**
+- 0.16.2 已公开发布：npm `dist-tags.latest=0.16.2`（`old=0.9.8` 不变），GitHub Release `v0.16.2` 为 latest，官网 `/releases` 与 `/zh/releases` latest 为 v0.16.2；三处同源于 tag 提交 `236f5a2c116f5c31c272fd2d49cbf75d21d90369`。0.16.1 未进入 registry、无 Release、官网无条目。
+- 成功判据取方案第二种：publish run 38493425289 的 `Publish` 与 `Create GitHub Release` 步骤 success，「Verify website latest version matches tag」失败（registry 处理延迟），官网按档 C 受控补做。**原 run 不是全绿**，未重跑原 run 或其 job。
+- 过程中第一次尝试（候选 `1bd7588`）在门 ③ 暴露沙箱复用运行时缺陷，按用户决定（决策 C08）在本提案内修复（增量修正 merge → 切片 2 → verify），在新候选 `236f5a2` 上重走四道门后发布。
+- 本机全局已从 registry 切换到 0.16.2。
 
-## 二、冻结事实（2026-10-13T23:42:30Z）
+## 二、冻结事实
 
 - npm：`latest=0.16.0`、`old=0.9.8`；`@0.16.1`、`@0.16.2` 均 E404。
 - git：发布候选 `1bd758805af0d540c992be3507f863346e8b2f52`；冻结时 `origin/master=e2b7ac0`，本地领先 8 个提交；远端 tag 只有 `v0.16.0`。
 - 本机全局：`/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，`npm prefix -g=/opt/homebrew`，`--version=0.16.1`（本地构建，修复前）。
 - 回滚制品 `cli/rollback/miniidealab-openlogos-0.16.0.tgz`：2545365 字节，SHA-256 `2aa52d6e7327d52df2a9765e52f1b59fd6193741249450d2f65b88b0b443480b`，与已冻结值一致。
 - `git log v0.16.0..HEAD -- .github/workflows/publish.yml` 为空：0.16.0 之后 publish.yml 无改动，档 C 恢复演练无需重做。
+- 第二次尝试前复核：npm 仍 `latest=0.16.0`、`@0.16.1` / `@0.16.2` E404；远端 tag 仍只有 `v0.16.0`；回滚制品 SHA-256 不变。
 
-## 三、已通过的门
+## 三、第一次尝试（候选 `1bd7588`）：门 ①②④ 通过、门 ③ 未通过
 
 - **门 ①（本地，macOS，Node v23.10.0）**：`npm run lint` 0；`tsc --noEmit` 0；`npm test` 2677 passed / 1 skipped；`npm run build` 0；`cd website && npm ci && npm run build` 0（宿主 python3 缺 fontTools，第一次官网构建在字体子集化步骤失败；按 0.16.0 口径改用独立 venv：Python 3.14.7、fonttools 4.66.1 + brotli 重跑通过，未改动系统 Python），构建后工作区无变化。
 - **门 ② 阶段一（docker `node:20`，基础镜像 `node@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5`，其上仅加装 sqlite3 的本地镜像 `sha256:4ef106618500c5819bee0a49eea485ee5caaf482e4dec7689d09efac31b770e0`）**：用户 `node`（uid 1000）、Node v20.20.2、sqlite3 3.40.1、cc（Debian 12.2.0）；容器内 `git clone` 提交 `1bd7588`（5566 个跟踪文件）。`npm ci` 0、`npm test` 0（2659 passed / 19 skipped）、`npm run build` 0；版本 / plugin / CHANGELOG 一致性通过（Release 正文 3912 字节，不含「未发布到 npm」）；`npm pack` 837 个文件，SHA-256 `a8a3df22764f621af138b0b42c1fcca1bff646aeaf48cbebc67aa9a79d9eca80`，无孤儿 dist 产物、asset-manifest 自洽（0.16.2）、`dist/lib/sandbox-reuse.js` 含 `command_started_uptime`；lint 0、tsc 0。**沙箱复用用例 UT-S13-89～UT-S13-102、ST-S13-25、ST-S13-26、UT-S19-57 在 reporter 账本中全部为 `pass`**；账本中 skip 的 10 个为既有能力探测用例（UT-S13-47～50 / 52～54、ST-S13-14、UT-S19-08 / 09），与沙箱复用无关。
 - **门 ② 阶段二（docker `node:22.12.0`，基础镜像 `node@sha256:0e910f435308c36ea60b4cfd7b80208044d77a074d16b768a81901ce938a62dc`，加装 python3-fonttools 4.38.0 与 python3-brotli）**：uid 1000，提交 `1bd7588`，官网 `npm ci` 0、`npm run build` 0。
 - **门 ④**：以 `miniidealab` 账号执行 `gh secret list`，`NPM_TOKEN`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 均已配置（只查存在性）。
 
-## 四、门 ③ 失败：CI run 38486602622
+### 门 ③ 失败：CI run 38486602622
 
 - 推送：`bergkampzhang` 账号推送被拒（HTTP 403），切换到 `miniidealab` 后推送成功（`e2b7ac0..1bd7588`）。
 - `Windows regression`：success。`Lint & Test`：failure，2 failed / 2657 passed / 19 skipped：
   1. **ST-S36-06**：`Test timed out in 10000ms`，属已知的全量负载下 10 秒用例偶发超时，与本次改动无关。
   2. **UT-S13-97（旧写入者跨轮残留，EX-3.7）**：断言首轮释放原因含「运行标记扫描命中」，实际为「运行标记扫描失败（同用户存活进程 13261 的环境不可读（EACCES），且启动时刻无法确认（stat 启动时刻字段无法解析））」。门 ② 的 docker 全量运行中该用例通过，GitHub ubuntu runner 上失败。
-- **初步分析（待修复提案确认）**：`parseProcStat`（`cli/src/lib/sandbox-reuse.ts`）在 `num_threads < 1`、启动时刻或 flags 字段无法解析时抛出「stat 启动时刻字段无法解析」，按 §2.92.2 第 4 条判无法完成扫描。这与 §2.92.2 的字面判据一致，但存在一个缺口：一个 environ 不可读的同用户进程如果在 environ 读取与 stat 读取之间退出、成为尚未回收的僵尸，其 stat 的 `num_threads` 可能为 0，于是被判「无法解析」而不是「已退出」，导致释放误写 `tainted`。并发负载下（CI 并行执行多个测试文件、不断有短命子进程退出）这个竞态可以被触发。该失败属于沙箱复用的运行时判定，不是测试超时。
+- **当时的初步分析（已被实测推翻，见第五节）**：`parseProcStat`（`cli/src/lib/sandbox-reuse.ts`）在 `num_threads < 1`、启动时刻或 flags 字段无法解析时抛出「stat 启动时刻字段无法解析」，按 §2.92.2 第 4 条判无法完成扫描。这与 §2.92.2 的字面判据一致，但存在一个缺口：一个 environ 不可读的同用户进程如果在 environ 读取与 stat 读取之间退出、成为尚未回收的僵尸，其 stat 的 `num_threads` 可能为 0，于是被判「无法解析」而不是「已退出」，导致释放误写 `tainted`。并发负载下（CI 并行执行多个测试文件、不断有短命子进程退出）这个竞态可以被触发。该失败属于沙箱复用的运行时判定，不是测试超时。
 - **修复方向（建议另立提案）**：在 §2.92.2 中把「stat 可读、状态为 Z / X 或 `num_threads` 为 0」明确为已退出并跳过（与 §2.92.2 现有的线程组退出判定口径对齐），并补一条在并发进程退出竞态下仍得 `released` 的用例；同时确认 UT-S13-97 的断言在 Linux 并发环境下的稳健性。
 
-## 五、重试条件
+处置：未推 tag、未发布、未写 DEPLOY_DONE（记录提交 `5bdfba4`）。`origin/master` 已前进到 `1bd7588`，无公网制品需要回滚。
 
-修复提案归档后回到本提案：修复改动了 CLI 行为，需在 CHANGELOG `## [0.16.2]` 补该修复（版本号不变，0.16.2 尚未进入 registry，`v0.16.2` tag 从未推送），重新执行四道门。门 ③ 必须两个 job 在同一提交上 success；ST-S36-06 若再次单独超时，可按 defaults 对同一提交重跑一次 CI 并在此记录。
+## 四、根因确认
+
+- 僵尸假设被实测推翻：docker `node:20` 非 root 下，不可转储进程退出后未回收时 environ 仍 EACCES，stat `state=Z`、`num_threads=1`、启动时刻可解析。
+- 真实根因：内核生成 `/proc/<pid>/stat` 时，`num_threads` 只有锁住进程 sighand 后才填入实际值，否则为 0；进程被回收（release_task）时 sighand 被置空。读取与回收竞态时得到启动时刻正常、`num_threads` 为 0 的 stat，旧实现 `parseProcStat` 以 `threads < 1` 抛出「stat 启动时刻字段无法解析」→ 无法完成扫描 → 释放误写 `tainted`。
+- 实证一（C 紧循环，docker `node:20` 非 root，40 秒）：约 71.7 万次成功读取中 991 次 `num_threads=0`（子进程 `_exit` 后立即被回收，僵尸态为 1，故 0 只出现在回收瞬间）。
+- 实证二（新旧实现对比，docker `node:20` 非 root，各 30 秒，持续 exec 0111 的 `true` 副本制造不可转储短命进程，命令启动时刻设在远未来以排除启动时刻分支）：旧实现（第一次门 ② 打出的 0.16.2 包）42.05 万次扫描失败 4992 次，原因全部为「…启动时刻无法确认（stat 启动时刻字段无法解析）」，与 CI 报错一致；新实现 43.79 万次扫描 0 失败。
+
+## 五、本提案内修复（决策 C08）
+
+- 规格增量修正（`1017fe4`）：§2.92.2 第 4 条补「stat 可读但 `num_threads` 为 0 → 已被回收，视为已退出跳过」（线程级 stat 同口径；启动时刻字段仍须可解析）；§2.92.6 追溯与 `core-S13-test-cases.md` 新增 UT-S13-103。merge 结果：增量修正 重修 2 / 新增 2，`test_change_set` = SMOKE-core-246～250 + UT-S13-103，VERIFY_PASS 随之清除。
+- 代码（`b706f5a`）：`parseProcStat` 接受 `num_threads` 为 0 并标识 `reaped`；`scanProcEnvironment` 对已回收进程按已退出跳过；线程组退出确认把已回收线程视为已退出；新增 UT-S13-103（修改前实现上必红，报错与 CI 逐字一致）；CHANGELOG `## [0.16.2]` Fixed 补该修复。
+- 验收：`openlogos verify` 依次确认切片 1、切片 2 的 checkpoint，最终全量 PASS（executed 2269 / failed 0 / uncovered 0 / skipped 25），验收报告 `236f5a2`。
+
+## 六、第二次尝试（候选 `236f5a2`）：四道门
+
+- **门 ①**：本地 `npm run lint` 0、`tsc --noEmit` 0、`npm test` 2678 passed / 1 skipped、`npm run build` 0；官网（venv：Python 3.14.7、fonttools 4.66.1 + brotli）`npm run build` 0，构建后工作区无变化。
+- **门 ② 阶段一**（同一预演镜像，基础 `node@sha256:8f693eaa7e0a8e71560c9a82b55fd54c2ae920a2ba5d2cde28bac7d1c01c9ba5` + sqlite3）：uid 1000、Node v20.20.2、sqlite3 3.40.1、cc 12.2.0；提交 `236f5a2`；`npm ci` / `npm test`（2660 passed / 19 skipped）/ build / 版本一致性（Release 正文 4256 字节，不含「未发布到 npm」）/ `npm pack`（837 个文件，SHA-256 `c27269920a994264e815ca46642a6e7a59e81d8ba2316bfff0eb1d11043eafe0`，无孤儿产物、manifest 自洽、含 `command_started_uptime`）/ lint / tsc 全为 0；UT-S13-89～UT-S13-103、ST-S13-25、ST-S13-26、UT-S19-57 在 reporter 账本中全部 `pass`，skip 仍为同样 10 个既有能力探测用例。
+- **门 ② 阶段二**（`node@sha256:0e910f435308c36ea60b4cfd7b80208044d77a074d16b768a81901ce938a62dc` + python3-fonttools 4.38.0 / python3-brotli）：官网 `npm ci` 0、`npm run build` 0。
+- **门 ③**：以 `miniidealab` 推送 `1bd7588..236f5a2`；CI run 38492640788 的 `Lint & Test` 与 `Windows regression` 均 success。
+- **门 ④**：`NPM_TOKEN`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 均在（只查存在性）；0.16.0 之后 publish.yml 无改动，档 C 演练不重做。
+
+## 七、tag 驱动发布与档 C 受控补做
+
+- 在 `236f5a2` 上创建 annotated tag `v0.16.2` 并推送；publish run 38493425289：checkout → `npm ci` → 测试 → build → 版本校验 → Release 正文 → pack → **Publish success**（`+ @miniidealab/openlogos@0.16.2`，provenance 已写入 sigstore 透明日志 logIndex 3247631734；npm 提示「Your package is being processed and may take a few minutes to become available」）→ **Create GitHub Release success** → 官网环境 / strict 生成 / build success → **Verify website latest version matches tag failure**（`latestVersion=0.16.0 与 tag=0.16.2 不一致`：生成时 registry 仍在处理新版本，packument 为 84 个版本）→ Cloudflare 两步 skipped。
+- 档 C 第 1 步（registry 身份）：registry 于 01:09:40Z 可见；`dist-tags.latest=0.16.2`、`version=0.16.2`、`dist.integrity=sha512-q3I1DaqFV0hewRL2x8Wi5lrdYGAydbWDSaNfoze24grgWn/OX7tHZlykRB9oNvN4cjJnjvoGxf/ZNVEXOpr+4g==`；无 `gitHead`（tarball 发布）；SLSA provenance `resolvedDependencies[0]` 指向 `refs/tags/v0.16.2`、`gitCommit` 等于 tag 提交（`provenanceSourceProblems` 无问题项）；`npm pack @miniidealab/openlogos@0.16.2` SHA-256 `c27269920a994264e815ca46642a6e7a59e81d8ba2316bfff0eb1d11043eafe0`，**与门 ② Linux 干净克隆打出的包逐字节相同**。
+- 档 C 第 2 步（Release）：`gh release view v0.16.2` 已存在，非 draft / prerelease，releases/latest 为 `v0.16.2`，正文与 `v0.16.2:CHANGELOG.md` 的 `## [0.16.2]` 一致，唯一附件 `miniidealab-openlogos-0.16.2.tgz` SHA-256 与 registry tarball 相同——跳过 create，未 upload。
+- 档 C 第 3 步（官网）：在 `v0.16.2` 的干净克隆中（Node v23.10.0 + 字体 venv）`npm ci` 0 → `generate:releases -- --strict` 0 → `npm run build` 0，`latestVersion=0.16.2`、0.16.2 摘要为 bilingual、无 0.16.1 条目；以本机 Cloudflare 凭据（OAuth，账号 b9168242…）执行 `wrangler pages deploy dist --project-name openlogos --branch master` 成功（预览 `https://1bfaa52e.openlogos.pages.dev`）。线上 `https://openlogos.ai/releases/` 与 `/zh/releases/` 200，latest 均为 v0.16.2，有 v0.16.2 卡片、无 v0.16.1 卡片。
+
+## 八、发布后同步与本机全局切换
+
+- 本地 `cd website && npm run generate:releases -- --strict`：`releases.json` 更新为 85 个版本、`latestVersion=0.16.2`，作为「同步官网发布资源」提交入库。
+- 本机全局：`npm install -g @miniidealab/openlogos@0.16.2`（registry）。新 shell 复核：`/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，包目录非链接；`openlogos --version=0.16.2`；包内 asset-manifest 版本 0.16.2 且经 `validateAssetManifest` 自洽；全局包与 registry tarball 解包后逐文件比对 0 差异（837 个文件）。
+- 随包 guard 模板与本仓 `.claude/openlogos/bin/guard-check` SHA-256 一致（`bd4ebdd9…`），未执行 `openlogos sync`。
+- 回滚入口不变：`cli/rollback/miniidealab-openlogos-0.16.0.tgz`（SHA-256 `2aa52d6e…480b`）；公网回退按方案档 D（`dist-tag latest` 回指 0.16.0 + `npm deprecate 0.16.2` + 前滚 0.16.3）。
+- runlogos 调用本机全局 `openlogos`，随本机切换即获得 Linux 修复；其仓库内的托管 guard 等资产如需刷新，需用户授权后在该仓库自行 `openlogos sync`。
+- 之后经 `openlogos deploy-done` 受控落标，再进入 smoke（SMOKE-core-246～250 与复用的 SMOKE-core-01 / 02 / 04 / 07 / 08 / 15）。

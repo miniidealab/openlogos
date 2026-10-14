@@ -1,17 +1,64 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.16.0",
-  "updatedAt": "2026-10-10T08:00:05.045Z",
-  "generatedAt": "2026-10-10T08:00:05.045Z",
-  "versionCount": 84,
+  "latestVersion": "0.16.2",
+  "updatedAt": "2026-10-14T01:09:31.583Z",
+  "generatedAt": "2026-10-14T01:09:31.583Z",
+  "versionCount": 85,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.16.0"
+    "latest": "0.16.2"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.16.2",
+      "publishedAt": "2026-10-14T01:09:31.190Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.16.2",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.16.2",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.16.2.tgz",
+      "gitHead": null,
+      "size": 2600530,
+      "sizeLabel": "2.5 MB",
+      "unpackedSize": 10231448,
+      "unpackedSizeLabel": "9.8 MB",
+      "fileCount": 837,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3",
+        "pg-query-emscripten": "5.1.0",
+        "@hyperjump/json-schema": "1.17.7"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "verify / smoke 沙箱复用（verify-sandbox-reuse-0-16-1）：sandbox_mode 为 auto / always 时默认每项目使用一份持久沙箱，运行前按同步清单增量同步工作区（两侧 ctime 指纹，指纹变化或处于 2 秒 racy 窗口的文件判定内容；保留 mtime 与权限），运行后保留，构建工具的增量编译跨运行生效。",
+        "新增配置 sandbox_reuse（默认 true；false 时回到一次性临时沙箱）与 sandbox_cache_paths（声明归沙箱所有、跨运行留存的构建产物目录，如 src-tauri/target）。",
+        "新增参数 openlogos verify --fresh-sandbox / openlogos smoke --fresh-sandbox：新建空的工作区世代重建沙箱。"
+      ],
+      "fixSummary": [
+        "Linux 上沙箱复用基本失效（fix-sandbox-reuse-linux-liveness）：Linux 通过 /proc/<pid>/environ 检查旧写入者，同用户的不可转储进程（如 Chromium / Electron 沙箱渲染进程）的 environ 不可读，此前被一律判为「无法完成扫描」，导致每次释放都写 tainted、下一轮新建工作区世代并累积被弃用世代。现在对这类进程按启动时刻判定：启动早于本次命令启动时刻（留 1 秒容差）的进程不可能是该命令的后代，直接跳过；仍无法确认的进程照旧不复用。",
+        "释放记录新增 command_started_uptime（仅 Linux 写入），下一轮复查与 --fresh-sandbox 删除判定使用它；旧记录缺该字段时按保守口径处理一轮。系统重启后旧世代的后代不可能存活，判定随之正确。macOS 判定与 sandbox.reuse JSON 输出不变。",
+        "Linux 上正被回收的进程不再导致误判：读取 /proc/<pid>/stat 恰逢该进程被父进程回收时，内核给出的线程数为 0，此前被当作「字段无法解析」而判为无法完成扫描、释放误写 tainted；构建或测试中大量短命子进程时容易触发。现在把线程数为 0 视为已退出。"
+      ],
+      "valueSummaryEn": [
+        "First public release since 0.16.0 (0.16.1 was only installed locally; everything in it is included here). Sandbox reuse for `openlogos verify` and `openlogos smoke`: each project now keeps one persistent sandbox and only syncs what changed, so your build tool's incremental compilation works across runs instead of rebuilding everything from scratch. Enabled by default whenever `sandbox_mode` is `auto` or `always` — no configuration change needed.",
+        "Declare build output directories with `sandbox_cache_paths` (for example `src-tauri/target`) to keep them across runs; set `sandbox_reuse: false` to go back to a fresh one-off sandbox every time.",
+        "New `--fresh-sandbox` flag for `verify` and `smoke` rebuilds the persistent sandbox from scratch, and the JSON output adds `sandbox.reuse` (state, generation, copied / removed / content-compared counts, sync time and abandoned generations)."
+      ],
+      "fixSummaryEn": [
+        "Reuse never trades correctness for speed: unchanged files are skipped only when kernel change times prove it, otherwise contents are compared byte by byte; leftover processes from an earlier run (including detached background writers) force a new sandbox generation, so stale results can never be collected as current ones.",
+        "Killed verify / smoke runs no longer pile up one-off sandbox copies; inside nested sandboxes such as Seatbelt the CLI falls back to a one-off sandbox automatically.",
+        "Fixed sandbox reuse on Linux: same-user non-dumpable processes (such as Chromium / Electron sandboxed renderers) have unreadable `/proc/<pid>/environ` and used to make every run fall back to a new sandbox generation. Processes that started before the current command are now provably unrelated and skipped, so reuse works on Linux desktops and CI; anything still unprovable keeps the safe fallback."
+      ],
+      "summarySource": "bilingual",
+      "summaryFallbackReason": null
+    },
     {
       "version": "0.16.0",
       "publishedAt": "2026-10-10T08:00:04.412Z",
@@ -33,9 +80,7 @@
         "pg-query-emscripten": "5.1.0",
         "@hyperjump/json-schema": "1.17.7"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "提案阶段决策澄清：clarification@1 结构统一表达数据、兼容、安全、公开发布、外部承诺五类影响与用户决定；部署与公开发布分别决策。",
         "切片化实现：merge 后由 slice-planner 规划 [code] 切片，openlogos slice plan --file 写出 tasks.md 的 [code] 段与 TEST_SLICE_MANIFEST.json；verify 支持切片增量 checkpoint 与最终全量验收。",
