@@ -392,3 +392,9 @@ public_release_commit: 236f5a2c116f5c31c272fd2d49cbf75d21d90369
 - 回滚入口不变：`cli/rollback/miniidealab-openlogos-0.16.0.tgz`（SHA-256 `2aa52d6e…480b`）；公网回退按方案档 D（`dist-tag latest` 回指 0.16.0 + `npm deprecate 0.16.2` + 前滚 0.16.3）。
 - runlogos 调用本机全局 `openlogos`，随本机切换即获得 Linux 修复；其仓库内的托管 guard 等资产如需刷新，需用户授权后在该仓库自行 `openlogos sync`。
 - 之后经 `openlogos deploy-done` 受控落标，再进入 smoke（SMOKE-core-246～250 与复用的 SMOKE-core-01 / 02 / 04 / 07 / 08 / 15）。
+
+## 九、smoke
+
+- 第一次 `openlogos smoke`：门 FAIL。本提案 SMOKE-core-246 / 248 / 249 / 250 pass，SMOKE-core-247 ①～④ 通过、⑤ 在 Seatbelt 嵌套沙箱内为 `unsupported`（skip + `platform-unavailable`，规格允许）；失败项为复用的 SMOKE-core-07：`website/scripts/smoke-releases.mjs` 以未转义原文比对页面 HTML，0.16.2 英文摘要中的撇号渲染为 `&#39;` 导致误报，runner 随即中止，SMOKE-core-03 / 15 / 21～24 / 34～37 因此未覆盖。线上页面渲染正确。
+- 按用户决定（决策 C09）并入切片 1 修正 runner（`df0cb39`）：发布数据文本与页面比对时原文或 HTML 转义形式任一在场即可；在 0.16.2 发布数据的干净克隆中，修改前 runner 07 fail 并中止，修改后 12 个官网用例全部 pass。补跑 verify 最终全量 PASS（executed 2269 / failed 0 / uncovered 0）。未改英文摘要，未重新部署官网。
+- 第二次 `openlogos smoke`：门 PASS（executed 212 / failed 0 / uncovered 0；platform-unavailable 仅 SMOKE-core-247），SMOKE-core-01 / 02 / 03 / 04 / 07 / 08 / 15、246 / 248 / 249 / 250 均 pass，写入 SMOKE_PASS。
