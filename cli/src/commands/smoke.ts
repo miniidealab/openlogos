@@ -18,8 +18,9 @@ import type { LifecycleFacts } from '../lib/lifecycle-gate.js';
 import {
   ENV_REGISTRY_REL, computeVerified, loadEnvironmentRegistry, resolveEnvironment,
 } from '../lib/environments.js';
+import { DEPLOY_LEDGER_REL } from '../lib/environments.js';
 import type { EnvEvidence, SmokeLedgerRecord } from '../lib/environments.js';
-import { appendLedgerLine } from '../lib/deployment-ledger.js';
+import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 import type { Locale } from '../i18n.js';
 
 const DEFAULT_SMOKE_RESULT_PATH = 'logos/resources/verify/smoke-results.jsonl';
@@ -89,9 +90,9 @@ interface SmokeEnvContext {
   deployEnvConfirmed: boolean;
 }
 
-function smokeReject(format: OutputFormat, code: string, message: string): never {
+function smokeReject(format: OutputFormat, code: string, message: string, extra?: Record<string, unknown>): never {
   if (format === 'json') {
-    console.error(JSON.stringify(makeErrorEnvelope('smoke', code, message)));
+    console.error(JSON.stringify(makeErrorEnvelope('smoke', code, message, extra)));
   } else {
     console.error(`Error: [${code}] ${message}`);
   }
@@ -131,10 +132,12 @@ function resolveSmokeEnvironment(
   const cls = readDeployDoneMarker(facts.proposalDir);
   if (cls.kind === 'unreadable') {
     // 读取失败不能证明文件属于旧空格式：零副作用拒绝并保留 I/O 原因（code-r1 F1）
-    smokeReject(format, 'SMOKE_DEPLOY_MARKER_INVALID', t(locale, 'smoke.env.markerUnreadable', { reason: cls.reason }));
+    smokeReject(format, 'SMOKE_DEPLOY_MARKER_INVALID', t(locale, 'smoke.env.markerUnreadable', { reason: cls.reason }),
+      { details: { problems: ['unreadable'], reason: cls.reason } });
   }
   if (cls.kind === 'invalid') {
-    smokeReject(format, 'SMOKE_DEPLOY_MARKER_INVALID', t(locale, 'smoke.env.markerInvalid', { problems: cls.problems.join(', ') }));
+    smokeReject(format, 'SMOKE_DEPLOY_MARKER_INVALID', t(locale, 'smoke.env.markerInvalid', { problems: cls.problems.join(', ') }),
+      { details: { problems: cls.problems } }); // spec/cli-json-output.md：error.details.problems 点名问题字段
   }
   if (cls.kind === 'valid') {
     ctx.deployId = cls.marker.deploy_id;
@@ -373,9 +376,39 @@ function readSmokeConfig(root: string): {
   return { command: resolveSmokeCommand(root, command) ?? undefined, resultPath, reportPath, sandbox };
 }
 
+/**
+ * 写账本路径上 smoke marker 与账本的写入口（fix-environment-registry-review-gaps 决策 C02）。
+ * 缺省为真实文件系统与账本锁；测试据此注入失败以构造标记阶段失败与恢复失败（UT-S19-69～UT-S19-71）。
+ */
+export interface SmokeWriteIo {
+  writeMarker(path: string, content: string | Buffer): void;
+  removeMarker(path: string): void;
+  appendLedger(root: string, line: string): void;
+  removeOwnLedger(root: string, line: string, removeIfEmpty: boolean): 'removed' | 'absent';
+}
+
+export const defaultSmokeWriteIo: SmokeWriteIo = {
+  writeMarker: (path, content) => writeFileSync(path, content),
+  removeMarker: path => rmSync(path, { force: true }),
+  appendLedger: (root, line) => appendLedgerLine(root, line),
+  removeOwnLedger: (root, line, removeIfEmpty) => removeOwnLedgerLine(root, line, removeIfEmpty),
+};
+
+/** 标记阶段失败后未能恢复的位置及原因（`error.details.rollback_problems` 的元素）。 */
+export interface SmokeRollbackProblem {
+  path: string;
+  reason: string;
+}
+
 /** smoke 侧运行选项（功能规格 §2.91.7，S19「smoke 沙箱复用」规则 4）。 */
 export interface SmokeRunOptions {
   freshSandbox?: boolean;
+  /** 仅供测试注入：写账本路径上的标记与账本写入口（未给出的项用缺省实现）。 */
+  writeIo?: Partial<SmokeWriteIo>;
+}
+
+function errorReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function smoke(format: OutputFormat = 'text', environment?: string, runOptions: SmokeRunOptions = {}) {
@@ -449,9 +482,10 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   }
 
   const coverageCheck = checkSmokeCoverage(root, { command, resultPath });
+  const io: SmokeWriteIo = { ...defaultSmokeWriteIo, ...runOptions.writeIo };
 
   /**
-   * 门禁结论的统一收尾（code-r1 F3）：环境证据（spec/environments.md §6）→ smoke marker → 账本 smoke 行（§5.1）。
+   * 门禁结论的统一收尾（code-r1 F3）：环境证据（spec/environments.md §6）→ 账本 smoke 行（§5.1）→ smoke marker。
    * 所有已形成 PASS / FAIL 结论的路径都必须经过这里，不得在输出前提前返回而遗漏证据与账本。
    */
   const finalizeVerdict = (data: SmokeData): void => {
@@ -486,6 +520,13 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
       }
     }
 
+    // 存在活跃提案且传入 --env 时先追加账本 smoke 行、再写 smoke marker（spec/environments.md §5.1，决策 C02）
+    if (evidence && envCtx.slug !== null) {
+      writeLedgerThenMarkers(data, evidence, envCtx.slug);
+      return;
+    }
+
+    // 不写账本时（未传 --env 或无活跃提案）沿用既有行为：按 guard 写 marker，失败静默跳过
     const guardPath = join(root, 'logos', '.openlogos-guard');
     if (existsSync(guardPath)) {
       try {
@@ -507,28 +548,97 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
         }
       } catch { /* guard 文件读取失败时静默跳过 */ }
     }
+  };
 
-    // 存在活跃提案且传入 --env 时追加账本 smoke 行（spec/environments.md §5.1）；无活跃提案不写、不伪造上下文
-    if (evidence && envCtx.slug !== null) {
-      const observed = observeWorkspace(root);
-      const record: SmokeLedgerRecord = {
-        kind: 'smoke',
-        environment: evidence.target,
-        slug: envCtx.slug,
-        recorded_at: new Date().toISOString(),
-        observed_head: observed.head,
-        observed_dirty: observed.dirty,
-        deploy_id: evidence.deploy_id,
-        ref: evidence.ref,
-        result: data.gate.result === 'PASS' ? 'pass' : 'fail',
-        env_evidence: evidence.env_evidence,
-        fresh_results: evidence.fresh_results,
-        deploy_env_confirmed: evidence.deploy_env_confirmed,
-        verified: evidence.verified,
-      };
-      appendLedgerLine(root, `${JSON.stringify(record)}\n`); // 与 deploy-done 共用账本锁（code-r2 F2）
-      evidence.ledger_written = true;
+  /**
+   * 账本先写、标记后写（EX-19.20、EX-19.21）：账本追加失败不碰任何 marker；账本已写后标记阶段任一步失败，
+   * 按变更前快照恢复两种 marker 并撤销本次账本行。失败以 SMOKE_LEDGER_WRITE_FAILED 结束，恢复动作逐项捕获。
+   */
+  const writeLedgerThenMarkers = (data: SmokeData, evidence: SmokeEnvironmentEvidence, slug: string): void => {
+    const gateResult = data.gate.result;
+    const ledgerFailure = (stage: 'ledger' | 'marker', message: string, details: Record<string, unknown>): never =>
+      smokeReject(format, 'SMOKE_LEDGER_WRITE_FAILED', message, { details: { stage, ...details, gate_result: gateResult } });
+
+    const observed = observeWorkspace(root);
+    const record: SmokeLedgerRecord = {
+      kind: 'smoke',
+      environment: evidence.target,
+      slug,
+      recorded_at: new Date().toISOString(),
+      observed_head: observed.head,
+      observed_dirty: observed.dirty,
+      deploy_id: evidence.deploy_id,
+      ref: evidence.ref,
+      result: gateResult === 'PASS' ? 'pass' : 'fail',
+      env_evidence: evidence.env_evidence,
+      fresh_results: evidence.fresh_results,
+      deploy_env_confirmed: evidence.deploy_env_confirmed,
+      verified: evidence.verified,
+    };
+    const line = `${JSON.stringify(record)}\n`;
+    const ledgerExisted = existsSync(join(root, DEPLOY_LEDGER_REL));
+    let appendError: unknown = null;
+    try {
+      // 与 deploy-done 共用账本锁（code-r2 F2）。抛错即账本保持调用前字节：末行缺换行时原样拒绝，追加经临时文件
+      // 原子替换、失败不留残片；释放锁失败不算追加失败（code-r1 F1、F2，code-r2 F1）
+      io.appendLedger(root, line);
+    } catch (error) {
+      appendError = error;
     }
+    if (appendError !== null) {
+      const reason = errorReason(appendError);
+      ledgerFailure('ledger', t(locale, 'smoke.ledger.appendFailed', { reason, gate: gateResult }), { reason });
+    }
+    evidence.ledger_written = true;
+
+    const proposalRel = `logos/changes/${slug}`;
+    const proposalDir = join(root, proposalRel);
+    if (!existsSync(proposalDir)) return;
+    const names = ['SMOKE_PASS', 'SMOKE_FAIL'] as const;
+    const target = gateResult === 'PASS' ? 'SMOKE_PASS' : 'SMOKE_FAIL';
+    const other = gateResult === 'PASS' ? 'SMOKE_FAIL' : 'SMOKE_PASS';
+    let snapshot: Map<string, Buffer | null> | null = null;
+    let markerError: unknown = null;
+    try {
+      // 变更 marker 前快照两种 marker 的存在性与原始字节
+      snapshot = new Map(names.map(name => {
+        const path = join(proposalDir, name);
+        return [name, existsSync(path) ? readFileSync(path) : null] as [string, Buffer | null];
+      }));
+      io.writeMarker(join(proposalDir, target), '');
+      const otherPath = join(proposalDir, other);
+      if (existsSync(otherPath)) io.removeMarker(otherPath);
+    } catch (error) {
+      markerError = error;
+    }
+    if (markerError === null) return;
+
+    const problems: SmokeRollbackProblem[] = [];
+    const attempt = (path: string, fn: () => void) => {
+      try { fn(); } catch (error) { problems.push({ path, reason: errorReason(error) }); }
+    };
+    // 快照未取得时 marker 尚未被改动，只需撤销账本行
+    for (const [name, before] of snapshot ?? []) {
+      const path = join(proposalDir, name);
+      attempt(`${proposalRel}/${name}`, () => {
+        if (before === null) {
+          if (existsSync(path)) io.removeMarker(path);
+        } else if (!existsSync(path) || !readFileSync(path).equals(before)) {
+          io.writeMarker(path, before);
+        }
+      });
+    }
+    attempt(DEPLOY_LEDGER_REL, () => { io.removeOwnLedger(root, line, !ledgerExisted); });
+
+    const reason = errorReason(markerError);
+    const rollback = problems.length === 0 ? 'complete' : 'incomplete';
+    ledgerFailure('marker', t(locale, 'smoke.ledger.markerFailed', {
+      reason,
+      gate: gateResult,
+      rollback: problems.length === 0
+        ? t(locale, 'smoke.ledger.rollbackComplete')
+        : t(locale, 'smoke.ledger.rollbackIncomplete', { problems: problems.map(p => `${p.path}: ${p.reason}`).join('; ') }),
+    }), { reason, rollback, rollback_problems: problems });
   };
 
   if (!existsSync(join(root, resultPath))) {

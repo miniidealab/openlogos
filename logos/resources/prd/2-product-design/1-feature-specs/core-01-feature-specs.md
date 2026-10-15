@@ -5096,12 +5096,18 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 ### 2.93.4 smoke 环境一致性与证据
 
 - 存在活跃提案时，前置检查按 `DEPLOY_DONE` 内容分三类：旧空格式放行但 `deploy_env_confirmed=false`；合法新格式与本次 `--env` 不一致时，**登记表存在**报 `SMOKE_ENV_MISMATCH`，登记表不存在则不拒绝、只记 `deploy_env_confirmed=false`；非空损坏报 `SMOKE_DEPLOY_MARKER_INVALID`（无论有无登记表），恢复须重新执行 `deploy-done`。拒绝时不运行 `smoke.command`、不写 smoke marker、不写账本。
+- `SMOKE_DEPLOY_MARKER_INVALID` 在 `--format json` 下除 `code`、`message` 外带结构化问题列表（来源变更 fix-environment-registry-review-gaps，决策 C01）：内容非法时 `error.details.problems` 为问题字段名数组；`DEPLOY_DONE` 无法读取（如被目录替代、权限不足）时 `problems` 为 `["unreadable"]`，并以 `error.details.reason` 给出 I/O 原因。`message` 文本与文本模式输出不变。
 - 没有活跃提案时 smoke 照常执行既有流程（既有行为），不读 `DEPLOY_DONE`、不写账本、不产生已验证事实。
 - 有登记表且传入 `--env` 时，`smoke.command` 进程（含沙箱内）可读到 `OPENLOGOS_SMOKE_ENV=<id>`；runner 在结果行写 `target_environment` 声明实际验证的环境。声明不一致 → 门禁 FAIL（`SMOKE_ENV_EVIDENCE_MISMATCH`）、写 `SMOKE_FAIL`；缺少声明 → 门禁按既有判据，但该次结果不算已验证。
 
 ### 2.93.5 本机部署账本与已验证判据
 
-- 账本 `logos/.openlogos-runtime/deployments.jsonl` 只追加，只由 `deploy-done --env` 与 `smoke --env` 写入；不进 git、不同步（单机，决策 C02）。
+- 账本 `logos/.openlogos-runtime/deployments.jsonl` 只由 `deploy-done --env` 与 `smoke --env` 写入；不进 git、不同步（单机，决策 C02）。**正常路径只追加**：两个写入方共用同一把账本锁（运行态目录下的锁文件），每次在锁内追加一整行。**写入失败时只撤销本次写入**：追加中途失败只截掉本次写出的残片；本次已追加、后续步骤失败时，按整行原文移除本次那一行，其他记录逐字节保留（来源变更 fix-environment-registry-review-gaps，决策 C02、C03）。
+- **写入顺序**：`deploy-done` 与 `smoke` 都是先追加账本、最后写提案标记（`DEPLOY_DONE`；`SMOKE_PASS` / `SMOKE_FAIL`），因此标记在场即蕴含对应账本记录已写入。
+  - `smoke` 账本追加失败（含账本锁等待超时）时：不写、不改任何 smoke 标记，以错误 `SMOKE_LEDGER_WRITE_FAILED`（退出码 1）结束，不以未捕获异常退出。
+  - `smoke` 账本已写、随后标记阶段失败（写目标标记失败，或目标标记已写成、删除对侧标记失败）时：按执行前快照把 `SMOKE_PASS` / `SMOKE_FAIL` 恢复到原有存在性与原始内容，撤销本次账本行，同样以 `SMOKE_LEDGER_WRITE_FAILED` 结束；恢复动作本身失败时如实报告恢复未完成及未恢复的位置，不声称已完整恢复。
+  - `deploy-done` 写入失败时按快照恢复 tasks.md、旧 smoke 标记、旧 `DEPLOY_DONE`，本次追加过账本时再撤销本次账本行，以 `DEPLOY_DONE_WRITE_FAILED` 结束；未传 `--env`（不写账本）时同样执行快照与恢复。
+  - smoke 未传 `--env` 或无活跃提案时不写账本，也不做本次新增的 smoke 标记快照与恢复，行为不变。`deploy-done` 不受此例外影响：无论是否传入 `--env`、有无登记表，都保留既有的 tasks.md / 旧 smoke 标记 / 旧 `DEPLOY_DONE` 快照与失败恢复，只在本次没有追加账本时跳过账本补偿。
 - smoke 记录的 `ref` 继承所依据的部署记录；`verified=true` 当且仅当结果通过、环境证据为 declared、本次实际运行了 `smoke.command` 产生新结果（`fresh_results=true`）、部署环境已确认、ref 非 null。未运行命令而只汇总已有结果文件时（结果可能属于上一代部署）不算已验证。环境视图与后续晋级判断只认 `verified=true`。
 - 读取时顺序扫描完整账本，按环境保留最近 deploy、最近 smoke 与最近 20 条历史；按 kind 校验必需字段、类型、枚举与 `verified` 一致性，不合格的行整行跳过并计数，不覆盖之前的有效状态。
 

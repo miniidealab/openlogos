@@ -2986,7 +2986,9 @@ openlogos env check [<id|alias>] [--probe] [--format json]
 
 ## deploy-done / smoke / status 环境字段（environment-registry）
 
-> 来源变更：environment-registry（决策 C04～C06、C08）。**没有 `logos/environments.yaml` 的项目，本节新增的字段与错误码一律不出现**（`deploy-done --ref` 的 `ENV_REF_UNRESOLVED` 除外——它只在使用新参数时产生），既有字段语义不变。
+> 来源变更：environment-registry（决策 C04～C06、C08）。**没有 `logos/environments.yaml` 的项目，本节新增的字段与错误码一律不出现**（例外：`deploy-done --ref` 的 `ENV_REF_UNRESOLVED` 只在使用新参数时产生；`SMOKE_DEPLOY_MARKER_INVALID`、`DEPLOY_DONE_WRITE_FAILED` 与 `SMOKE_LEDGER_WRITE_FAILED` 见下文各自的产生条件），既有字段语义不变。
+
+**错误 envelope 的附加字段（来源变更 fix-environment-registry-review-gaps，决策 C01）**：本节的错误码沿用 §6 通用错误 envelope；个别错误码在 `error` 对象中额外携带结构化字段（目前只有 `details`，各错误码的形态见下文）。附加字段只做新增，不得覆盖 `code` 与 `message`；未列出附加字段的错误码，其 `error` 对象与 §6 逐字一致。CLI 实现上由共用的错误 envelope 构造入口接受可选附加字段，未传时输出逐字不变。
 
 ### `openlogos deploy-done`
 
@@ -3006,6 +3008,7 @@ openlogos env check [<id|alias>] [--probe] [--format json]
 ```
 
 - 新增错误码：`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`ENV_REF_UNRESOLVED`。全部在任何写入之前判定；错误分支不得写入 `DEPLOY_DONE`、不得勾选 `[deploy]`、不得清理 smoke marker、不得写账本。
+- 写入阶段错误码 `DEPLOY_DONE_WRITE_FAILED`（错误 envelope，退出码 1；有无登记表都可能产生）：写入前快照读取失败（此时尚未写入任何文件），或勾选 `[deploy]`、清理旧 smoke marker、追加账本、最后写 `DEPLOY_DONE` 任一步失败。后一种情形按快照恢复 tasks.md、旧 `SMOKE_PASS` / `SMOKE_FAIL`、旧 `DEPLOY_DONE`，并只撤销本次追加的账本行；`message` 说明已完整恢复，或列出未能恢复的条目（`spec/environments.md` §5.1）。
 
 ### `openlogos smoke`
 
@@ -3028,7 +3031,42 @@ openlogos env check [<id|alias>] [--probe] [--format json]
 ```
 
 - 门禁新增失败原因 `gate.reason = "SMOKE_ENV_EVIDENCE_MISMATCH"`（登记表存在且任一结果行 `target_environment` 与 `target` 不一致），此时写 `SMOKE_FAIL`、退出码 1。
-- 前置新增错误码（错误 envelope，退出码 1，不运行 `smoke.command`、不写 smoke marker、不写账本）：`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`SMOKE_ENV_MISMATCH`（以上只在登记表存在时产生），以及**无论有无登记表**都可能出现的 `SMOKE_DEPLOY_MARKER_INVALID`（存在活跃提案且 `DEPLOY_DONE` 非空损坏；`error.details.problems` 点名问题字段）。无登记表时合法 marker 的环境标签与 `--env` 不一致不报错。
+- 前置新增错误码（错误 envelope，退出码 1，不运行 `smoke.command`、不写 smoke marker、不写账本）：`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`SMOKE_ENV_MISMATCH`（以上只在登记表存在时产生），以及**无论有无登记表**都可能出现的 `SMOKE_DEPLOY_MARKER_INVALID`（存在活跃提案且 `DEPLOY_DONE` 非空损坏或无法读取）。无登记表时合法 marker 的环境标签与 `--env` 不一致不报错。
+- `SMOKE_DEPLOY_MARKER_INVALID` 的 `error.details`（来源变更 fix-environment-registry-review-gaps，决策 C01）：
+
+```jsonc
+// DEPLOY_DONE 内容非法（非空损坏）
+"error": {
+  "code": "SMOKE_DEPLOY_MARKER_INVALID",
+  "message": "…",                     // 文本不变，仍列出问题
+  "details": { "problems": ["ref", "recorded_at"] }   // 问题字段名或诊断项，非空数组
+}
+// DEPLOY_DONE 存在但无法读取（被目录替代、权限不足、检查后消失）
+"error": {
+  "code": "SMOKE_DEPLOY_MARKER_INVALID",
+  "message": "…",
+  "details": { "problems": ["unreadable"], "reason": "EACCES: permission denied, open '…/DEPLOY_DONE'" }
+}
+```
+
+- 写入阶段错误码 `SMOKE_LEDGER_WRITE_FAILED`（错误 envelope，退出码 1；只在存在活跃提案且传入 `--env`、需要追加账本时产生，与有无登记表无关；来源变更 fix-environment-registry-review-gaps，决策 C02）。smoke 先追加账本、后写 smoke marker（`spec/environments.md` §5.1）：
+  - 账本追加失败（含账本锁等待超时）：不写、不改任何 smoke marker，账本无本次的行或残片；
+  - 账本已写、随后标记阶段失败（写目标 marker 失败，或目标 marker 已写成、删除对侧 marker 失败）：按执行前快照恢复 `SMOKE_PASS` / `SMOKE_FAIL` 并撤销本次账本行；恢复动作逐项捕获，恢复失败不抛未捕获异常，以 `rollback` 如实报告。
+  - `smoke-report.md` 可能已按本次门禁结论写出，保留，`message` 说明这一点。
+
+```jsonc
+"error": {
+  "code": "SMOKE_LEDGER_WRITE_FAILED",
+  "message": "…",
+  "details": {
+    "stage": "ledger",                // "ledger"：账本追加失败；"marker"：账本已写、标记阶段失败
+    "reason": "deployment ledger is locked by another openlogos process (…)",
+    "gate_result": "PASS",            // 本次门禁结论，"PASS" | "FAIL"
+    "rollback": "complete",           // 仅 stage=marker 时出现："complete" | "incomplete"
+    "rollback_problems": []           // 仅 stage=marker 时出现：未能恢复的位置及原因；rollback=complete 时为 []
+  }
+}
+```
 
 ### `openlogos status`
 

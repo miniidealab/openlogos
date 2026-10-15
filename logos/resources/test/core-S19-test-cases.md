@@ -540,6 +540,10 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 | UT-S19-65 | 有登记表时 smoke 环境缺失或未登记 | §3 | 有登记表；既有前置满足 | ① `smoke`；② `smoke --env staging` | ① `ENV_REQUIRED`；② `ENV_UNKNOWN`；均退出码 1、命令未运行、无 smoke marker、账本无新增 |
 | UT-S19-66 | 无登记表时 smoke 行为逐字不变 | EX-19.17、EX-19.19 | 无登记表；① 有活跃提案，marker 为空文件；② 有活跃提案，marker 为合法 JSON 且 `environment="test"`；③ 无 `logos/.openlogos-guard`（既有 ST-S19-03 夹具形态）；runner 结果行声明 `target_environment: other` | ① ② 执行 `smoke`、`smoke --env prod`、`smoke --format json`；③ 执行 `smoke --env production --format json`；均与引入前基线比对 | 文本与 JSON 输出、退出码与基线一致（JSON 无 `environment_evidence`）；② 中 `--env prod` 与 marker 的 test 不一致**不拒绝**，账本该行 `deploy_env_confirmed=false`、`env_evidence=mismatch`；`target_environment` 不改变门禁；③ 门禁 PASS，账本无新增，无伪造的 `slug` / `deploy_id` / `ref` |
 | UT-S19-67 | 未运行 smoke 命令时旧结果不得提升为新部署的已验证事实 | EX-19.18 | 有登记表；未配置 `smoke.command` 且无默认 dispatcher；结果文件留有 R1 部署时全部 `target_environment: prod` 的通过结果；随后 `deploy-done --env prod --ref R2` | `smoke --env prod --format json`，再执行 `env show prod --format json` | 门禁按既有判据汇总（PASS）；`environment_evidence.fresh_results=false`、`env_evidence=declared`、`verified=false`；账本 smoke 行 `ref=R2`、`fresh_results=false`、`verified=false`；`env show` 的 `last_smoke.verified=false` |
+| UT-S19-68 | `SMOKE_DEPLOY_MARKER_INVALID` 的 `error.details` | EX-19.12；`spec/cli-json-output.md`「`openlogos smoke`」 | 存在活跃提案、既有前置满足；① marker 截断为非法 JSON；② marker 为合法 JSON 但 `ref` 为 39 位；③ `DEPLOY_DONE` 被同名目录替代；④ 非 root 环境下合法 marker 权限置 000；另取一条既有错误路径（未初始化目录执行 `status --format json`） | `smoke --env prod --format json`；同样输入的文本模式；既有错误路径 | ①② `error.details.problems` 为非空数组（② 含 `ref`），`code` 与 `message` 与修复前一致；③④ `problems` 为 `["unreadable"]`，`error.details.reason` 含 errno（`EISDIR` / `EACCES`）；均不运行命令、无 smoke marker、账本无新增；文本模式输出与修复前逐字一致；既有错误 envelope 的 `error` 只含 `code`、`message`，无 `details` 键 |
+| UT-S19-69 | 账本追加失败不改 smoke 标记 | EX-19.20 | 有登记表、合法 prod marker、runner 全部声明 prod 并通过；分别准备「无旧标记」「旧 `SMOKE_FAIL`（非空内容）」「旧 `SMOKE_PASS`」三种现场；① 运行态目录预置新鲜账本锁文件（等锁上限由测试注入缩短）；② 账本路径被同名目录占据；③ 预置锁文件但不传 `--env`；④ 预置锁文件且无活跃提案 | `smoke --env prod --format json`（③ 为 `smoke --format json`，④ 去掉 `logos/.openlogos-guard`） | ①② 退出码 1、`SMOKE_LEDGER_WRITE_FAILED`、`details.stage=="ledger"`、`details.gate_result` 为本次门禁结论、`details.reason` 非空；两种 smoke 标记的存在性与字节、账本字节均与执行前一致；stderr 只有一份 JSON envelope（无未捕获异常）。③④ 不需要写账本，输出、退出码与标记行为与修复前一致，锁文件与账本均未被触碰 |
+| UT-S19-70 | 账本已写、标记阶段失败按快照恢复 | EX-19.21 | 有登记表、合法 prod marker；账本预置一条他人 smoke 记录；① 旧 `SMOKE_FAIL`（非空内容）、本次 PASS，注入「写 `SMOKE_PASS` 成功、删除 `SMOKE_FAIL` 抛 `EACCES`」；② 旧 `SMOKE_PASS`（非空内容）、本次 FAIL，注入「写 `SMOKE_FAIL` 成功、删除 `SMOKE_PASS` 抛错」；③ 写目标标记本身失败（提案目录置为只读，非 root） | `smoke --env prod --format json` | 三种情形均退出码 1、`SMOKE_LEDGER_WRITE_FAILED`、`details.stage=="marker"`、`details.rollback=="complete"`、`details.rollback_problems` 为 `[]`；两种标记的存在性与字节与执行前逐字一致（不存在两种标记并存）；账本字节与执行前一致——本次行已撤销，预置的他人记录逐字节保留 |
+| UT-S19-71 | 恢复失败如实报告、不让二次异常逃逸 | EX-19.21 | 在 UT-S19-70 ① 的现场上再注入恢复动作失败：Ⓐ 写回旧 `SMOKE_FAIL` 失败；Ⓑ 撤销本次账本行时账本锁等待超时 | `smoke --env prod --format json` | 仍只输出一份结构化错误 `SMOKE_LEDGER_WRITE_FAILED`、退出码 1；`details.rollback=="incomplete"`，`details.rollback_problems` 点名未恢复的位置（Ⓐ 为 `SMOKE_FAIL` 路径，Ⓑ 为 `deployments.jsonl`）及原因；能恢复的其余项已恢复；进程不以未捕获异常退出 |
 
 ### 场景测试
 
@@ -548,6 +552,7 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 | ST-S19-25 | 部署后 HEAD 改变仍记录实际部署版本并得到已验证事实 | S19 环境节 Step S1～S11；EX-19.16 | 真实 CLI；登记表含 prod；活跃提案需部署需 smoke；runner 读 `OPENLOGOS_SMOKE_ENV` 并按读到的值写 `target_environment` | ① HEAD=R1 时 `deploy-done --env prod --ref R1`；② 提交 R2；③ `smoke --env prod --format json` | ③ 写 `SMOKE_PASS`；JSON `environment_evidence` 为 `env_evidence=declared`、`deploy_env_confirmed=true`、`ref`=R1、`verified=true`；账本末行 smoke 记录 `ref=R1`、`observed_head=R2` |
 | ST-S19-26 | 参数与 marker 都为 prod、runner 实际验证 test | EX-19.14 | 同上，但 runner 固定写 `target_environment: test` | ① `deploy-done --env prod --ref HEAD`；② `smoke --env prod` | 门禁 FAIL、原因 `SMOKE_ENV_EVIDENCE_MISMATCH`、写 `SMOKE_FAIL`、退出码 1；账本 `env_evidence=mismatch`、`verified=false`；`env show prod` 的 `last_smoke.verified=false` |
 | ST-S19-27 | 截断 marker 拒绝与重新落标恢复 | EX-19.12 | 同 ST-S19-25 的环境 | ① `deploy-done --env prod --ref HEAD`；② 把 `DEPLOY_DONE` 截断为前 10 字节；③ `smoke --env prod`；④ 再次 `deploy-done --env prod --ref HEAD`；⑤ `smoke --env prod` | ③ `SMOKE_DEPLOY_MARKER_INVALID`、命令未运行、无 smoke marker、账本无 smoke 行；⑤ 正常运行并写 `SMOKE_PASS`、`verified=true` |
+| ST-S19-28 | 真实 CLI 下账本锁占用导致的写入失败与恢复后重跑 | S19 环境节 Step S9～S11；EX-19.20 | 同 ST-S19-25 的环境 | ① `deploy-done --env prod --ref HEAD`；② 在运行态目录预置新鲜账本锁文件后 `smoke --env prod --format json`；③ 删除锁文件后再次 `smoke --env prod --format json`；④ `env show prod --format json` | ② 退出码 1、`SMOKE_LEDGER_WRITE_FAILED`、`stage=="ledger"`，提案目录无 `SMOKE_PASS` / `SMOKE_FAIL`，账本只有 ① 的 deploy 行；③ 门禁 PASS、写 `SMOKE_PASS`，账本新增一行 smoke 记录且 `verified=true`；④ `last_smoke` 为 ③ 的记录 |
 
 ### 追溯与覆盖
 
@@ -556,8 +561,10 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 版本继承与已验证：UT-S19-63、ST-S19-25。
 - 环境解析失败：UT-S19-65；无登记表与无活跃提案零回归：UT-S19-66。
 - 结果新鲜度（旧结果不得嫁接到新部署）：UT-S19-67。
+- 增量修正（来源变更 fix-environment-registry-review-gaps，决策 C01、C02）：错误 `details`：UT-S19-68；账本先写、标记后写与失败补偿：UT-S19-69、UT-S19-70、UT-S19-71、ST-S19-28。
 
 ### 自动化与证据要求
 
+- 「标记阶段失败」与「恢复失败」通过对 smoke 标记写入、删除与账本撤销的依赖注入构造，不依赖宿主权限；只读目录、权限 000 两类夹具在 root 下按既有口径 skip 并写明原因。
 - 「命令未运行」以 runner 夹具的运行痕迹文件不存在取证；「零副作用」以提案目录 marker 集合与账本字节前后比对取证。
 - 沙箱模式用例沿用既有沙箱测试的一次性 `sandbox_root` 口径，在嵌套沙箱等不具备能力的环境中按既有 skip 口径处理并写明原因。

@@ -2196,3 +2196,40 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；evidence 记录 V、tag 提交号、registry tarball SHA-256、Release 附件 SHA-256、HTTP 状态码、隔离 prefix 路径、`sandbox.reuse` 摘要，SMOKE-core-248 另记镜像摘要、容器内 uid、不可转储进程的 environ / stat 读数与释放记录摘要。**失败不得写 pass**。
 - 判据以 JSON 字段、退出码、SHA-256、HTTP 状态码与释放记录字段为准；页面与发布说明断言只针对版本号、固定路径、是否为回退提示与上表列出的关键字，不解析其余人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-246～SMOKE-core-250 均被 runner 覆盖。
+
+## OpenLogos 0.16.3 环境登记表安装态 smoke（SMOKE-core-251～253）
+
+> 这组用例验证环境登记表与部署账本（来源提案 environment-registry，功能规格 §2.93）及其复核修复（来源提案 fix-environment-registry-review-gaps，决策 C01～C04）确实进入了本机全局安装态。两者都是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目（含 RunLogos 环境面板）生效。
+>
+> 用例在 `mktemp -d` 一次性隔离项目内执行（临时项目经全局 `openlogos init` 建立，并按 S19 夹具口径补齐活跃提案、`[deploy]` 全勾、`VERIFY_PASS` 等 smoke 前置）。runner 对全局安装态**只读**，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）；唯一读取本仓的是 SMOKE-core-251 ④ 对本仓托管 guard 副本的只读比对。判据用**行为断言**：版本号相等只证明装了新包，不证明行为生效。版本号以计划值 `0.16.3` 为准，实际以部署记录的候选版本为准，断言写成关系式：全局 `--version` == 部署记录版本。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-251 | 安装态版本、制品身份与本仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256；本仓已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内存在 `dist/commands/env.js` 与 `dist/lib/deployment-ledger.js`，`claude-plugin-template/bin/guard-check` 的内置默认豁免含 `logos/environments.yaml`，包内 `spec/logos.config.schema.json` 可按 JSON 解析且 `guard.exempt.default` 为 3 条；④ 逐字节比对本仓 `.claude/openlogos/bin/guard-check` 与全局包内 `claude-plugin-template/bin/guard-check` | ① `--version` 等于部署记录版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立；④ 字节一致 | 保留读取结果。①～③ 任一不符 → 停止后续流程，按部署方案用 `cli/rollback/miniidealab-openlogos-0.16.2.tgz` 回装全局；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案；不得以「仓内源码已修」了事 |
+| SMOKE-core-252 | 安装态环境登记全链路（登记 → 部署 → smoke → 已验证） | 本机全局已安装本次候选；临时 git 项目写入含 `test`、`prod`（`prod` 带 alias `生产`）的 `logos/environments.yaml`；smoke runner 夹具读取 `OPENLOGOS_SMOKE_ENV` 并按读到的值写入结果行 `target_environment` | ① 全局 `openlogos env check --format json`；② `openlogos deploy-done --env 生产 --ref HEAD --format json`；③ `openlogos smoke --env prod --format json`；④ `openlogos env show prod --format json`；⑤ `openlogos status --format json` | ① 通过、无 error 级问题；② `DEPLOY_DONE` 为单行 JSON 且 `environment=="prod"`、`ref` 为当时 HEAD 的 40 位 commit，账本新增一行 deploy 记录；③ 门禁 PASS，`environment_evidence.env_evidence=="declared"`、`verified==true`、`ledger_written==true`，runner 读到 `prod`；④ `last_smoke.verified==true`，`current_ref` 等于 ② 的 `ref`；⑤ `environments` 中 prod 与 ④ 一致 | 同上；保留每步 JSON 摘要。任一环节不成立表示环境登记能力未进入安装态，回装旧版并回流来源提案 environment-registry |
+| SMOKE-core-253 | 安装态复核修复：错误 `details` 与账本 / 标记一致性 | 本机全局已安装本次候选；沿用 SMOKE-core-252 的临时项目（已有合法 prod 部署） | ① 把 `DEPLOY_DONE` 截断为前 10 字节后 `openlogos smoke --env prod --format json`，随后重新 `deploy-done --env prod --ref HEAD`；② 在临时项目运行态目录预置新鲜账本锁文件 `logos/.openlogos-runtime/deployments.jsonl.lock`，记录执行前两种 smoke 标记与账本字节，执行 `openlogos smoke --env prod --format json`，结束后删除锁文件；③ 在提案目录放置旧 `SMOKE_FAIL`、删除 `SMOKE_PASS`，把提案目录置为只读（root 下按既有口径 skip），执行一次 runner 全部通过的 `openlogos smoke --env prod --format json`，结束后恢复目录权限 | ① 错误 `SMOKE_DEPLOY_MARKER_INVALID`、退出码 1，`error.details.problems` 为非空数组，命令未运行；② 错误 `SMOKE_LEDGER_WRITE_FAILED`、退出码 1，`error.details.stage=="ledger"`，两种 smoke 标记与账本字节与执行前一致，stderr 只有一份 JSON envelope；③ 错误 `SMOKE_LEDGER_WRITE_FAILED`，`error.details.stage=="marker"`、`rollback=="complete"`，旧 `SMOKE_FAIL` 仍在、无 `SMOKE_PASS`，账本无本次 smoke 行 | 同上；任一不成立表示复核修复未进入安装态或回滚语义被破坏，回装旧版并回流本提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目内进行，结束即删除（含运行态账本与锁文件）。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录 `logos/.openlogos-runtime/`、用户其他仓库（包括 runlogos）或本机全局 prefix；本节对全局安装态只读，对本仓只做 SMOKE-core-251 ④ 的只读比对。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`，本次为本地全局部署。
+- 断言中不硬编码主机路径、墙上时钟或本机全局安装现值（通则第 1 条）；commit 以临时仓库内 `git rev-parse HEAD` 的实际值比较。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.93（环境登记表与部署账本）、§2.11（deploy-done 受控落标命令）。
+- 根规范：`spec/environments.md` §3、§4、§5、§6、§8；`spec/cli-json-output.md`「deploy-done / smoke / status 环境字段（environment-registry）」「`openlogos env list|show|check --format json`」；`spec/logos.config.schema.json` `guard.exempt`。
+- 场景：S41；S21；S19「smoke 环境一致性、环境证据与部署账本（environment-registry）」EX-19.12、EX-19.20、EX-19.21；S11。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.3 发布方案（环境登记表与评审缺口修复，本地全局）」。
+- 验收标准映射（来源提案 fix-environment-registry-review-gaps）：1 → SMOKE-core-253 ①；2 → SMOKE-core-253 ②；3 → SMOKE-core-253 ③（恢复失败分支依赖注入，由仓库内 UT-S19-71 覆盖，不在安装态重复）；5 → SMOKE-core-251 ③；6 → SMOKE-core-251、SMOKE-core-252。验收标准 4（未传 `--env` / 无活跃提案零回归）由仓库内 UT-S19-69 ③④ 覆盖。
+- 仓库内对应用例：UT-S41-01～UT-S41-11、ST-S41-01～ST-S41-03、UT-S21-11～UT-S21-19、ST-S21-05、UT-S19-58～UT-S19-71、ST-S19-25～ST-S19-28、UT-S11-96～UT-S11-100、ST-S11-52、UT-S40-29；版本身份 `UT-S19-46` / `UT-S19-49`。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-environment-registry-0-16-3.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-251～SMOKE-core-253，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次命令的退出码与 JSON 摘要（含 `environment_evidence` 与 `error.details`）。
+- 环境不具备时（缺候选 tarball、部署记录或本仓 sync 未执行）写显式 `skip` 记录并携带缺失项，禁止静默零记录退出；这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`。SMOKE-core-253 ③ 在 root 下无法构造只读目录时按既有口径写 `skip` 并说明原因。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
+- 判据以 `--format json` 的结构化字段、退出码与命令实际输出为准，不解析人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-251～SMOKE-core-253 均被 runner 覆盖。

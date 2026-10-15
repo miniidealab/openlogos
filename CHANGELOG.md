@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-10-15
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **环境登记表与部署账本**（environment-registry）：项目可在 `logos/environments.yaml` 登记部署环境，新增 `openlogos env list | show | check`。
+- `openlogos deploy-done --env <id> --ref <revision>` 记录部署环境与版本。
+- `openlogos smoke --env` 校验部署环境一致性，向 runner 注入 `OPENLOGOS_SMOKE_ENV`，并按结果行的 `target_environment` 判定环境证据。
+- 本机部署账本 `logos/.openlogos-runtime/deployments.jsonl`；`status --format json` 新增 `environments` 视图。
+- `logos/environments.yaml` 加入 guard 内置默认豁免。
+
+### Fixed
+
+- smoke 的 `SMOKE_DEPLOY_MARKER_INVALID` 在 JSON 下带 `error.details.problems`（无法读取时为 `["unreadable"]` 并附 `details.reason`）。
+- smoke 先写账本、后写标记：账本写入失败报 `SMOKE_LEDGER_WRITE_FAILED`，两种 smoke 标记与账本保持一致；标记阶段失败时按快照恢复标记并撤销本次账本行。
+- 账本追加改为临时文件加原子替换：追加失败不留残片；账本末行缺少换行时拒绝追加，避免与末行粘连。
+- `spec/logos.config.schema.json` 恢复为合法 JSON，`guard.exempt` 默认值同步为 3 条。
+
+### 升级提示
+
+- 已显式配置 `guard.exempt` 的项目不会自动获得新的内置默认豁免。如需免立案编辑 `logos/environments.yaml`，执行 `openlogos exempt add logos/environments.yaml`。
+
 ## [0.16.2] - 2026-10-13
 
 0.16.0 之后的首个公开版本：verify / smoke 沙箱复用——同一项目的验收不再每次全量复制工作区、从零编译，构建工具的增量编译跨运行生效；并修复了沙箱复用在 Linux 上因存活检查误判而基本失效的问题。0.16.1 只在本机安装过，其内容全部包含在本版中，从 0.16.0 升级的用户直接看本节即可。

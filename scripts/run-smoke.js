@@ -110,6 +110,11 @@ function environmentFor(runner) {
       tarball: process.env.OPENLOGOS_PLAN_CONVERGENCE_TARBALL,
       previousTarball: process.env.OPENLOGOS_PLAN_CONVERGENCE_ROLLBACK_TARBALL,
     },
+    // 0.16.3 本机全局安装态取证：只传候选 tarball 供身份核对，不登记 globalCandidateRunners / globalMutatingRunners
+    // （runner 对全局安装态只读，不得由 run-smoke 安装或回装全局包）
+    'scripts/smoke-environment-registry-0-16-3.js': {
+      tarball: process.env.OPENLOGOS_ENVREG_TARBALL,
+    },
     'scripts/smoke-merge-transaction-candidate.js': {
       tarball: process.env.OPENLOGOS_MERGE_TRANSACTION_TARBALL,
       previousTarball: process.env.OPENLOGOS_MERGE_TRANSACTION_ROLLBACK_TARBALL,

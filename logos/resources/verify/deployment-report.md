@@ -398,3 +398,121 @@ public_release_commit: 236f5a2c116f5c31c272fd2d49cbf75d21d90369
 - 第一次 `openlogos smoke`：门 FAIL。本提案 SMOKE-core-246 / 248 / 249 / 250 pass，SMOKE-core-247 ①～④ 通过、⑤ 在 Seatbelt 嵌套沙箱内为 `unsupported`（skip + `platform-unavailable`，规格允许）；失败项为复用的 SMOKE-core-07：`website/scripts/smoke-releases.mjs` 以未转义原文比对页面 HTML，0.16.2 英文摘要中的撇号渲染为 `&#39;` 导致误报，runner 随即中止，SMOKE-core-03 / 15 / 21～24 / 34～37 因此未覆盖。线上页面渲染正确。
 - 按用户决定（决策 C09）并入切片 1 修正 runner（`df0cb39`）：发布数据文本与页面比对时原文或 HTML 转义形式任一在场即可；在 0.16.2 发布数据的干净克隆中，修改前 runner 07 fail 并中止，修改后 12 个官网用例全部 pass。补跑 verify 最终全量 PASS（executed 2269 / failed 0 / uncovered 0）。未改英文摘要，未重新部署官网。
 - 第二次 `openlogos smoke`：门 PASS（executed 212 / failed 0 / uncovered 0；platform-unavailable 仅 SMOKE-core-247），SMOKE-core-01 / 02 / 03 / 04 / 07 / 08 / 15、246 / 248 / 249 / 250 均 pass，写入 SMOKE_PASS。
+
+# 部署报告：fix-environment-registry-review-gaps / OpenLogos 0.16.3 本机全局发布（2026-10-15，**已部署：本机全局**）
+
+## 一、授权与目标
+
+- 依据：
+  - 部署方案「OpenLogos 0.16.3 发布方案（环境登记表与评审缺口修复，本地全局）」；
+  - 提案决策 C04（用户 2026-10-14：「本版本需要部署本机全局」）；
+  - 本次 `openlogos next --auto` 的 deliver-entry 门 `gate_auto_passed=true`（`GATE_AUTO_PASSED` 2026-10-15T06:39:58.848Z）。
+- 内容：环境登记表与部署账本（已归档的 environment-registry）连同本提案的复核修复，一并装进本机全局安装。
+- 范围：只做本机全局安装与本仓 `openlogos sync`。
+  - 未执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`。
+  - 未改写其他仓库（含 runlogos）；未修改 `logos/logos.config.json`。
+
+## 二、冻结事实（部署前）
+
+| 项 | 值 |
+|---|---|
+| `command -v openlogos` | `/opt/homebrew/bin/openlogos` |
+| 入口 realpath | `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| `npm prefix -g` | `/opt/homebrew` |
+| 全局 `--version` | `0.16.2` |
+| 仓内 `cli/package.json` | `0.16.2`（升版前） |
+| registry 版本复核 | `npm view @miniidealab/openlogos@0.16.3 version` 返回 E404；registry 已有版本最高为 `0.16.2`。候选版本 `0.16.3`、回滚版本 `0.16.2`，均与计划值一致 |
+
+## 三、回滚制品（先于升版冻结）
+
+- 来源：在全局安装目录 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，未从工作树打包。
+- 产物：`cli/rollback/miniidealab-openlogos-0.16.2.tgz`，2,574,234 字节，SHA-256 `ceb8c0403cbdfbbe4764ad79f405a1d7bb884a930665478957ec1ef77008f3b5`。
+- 内容身份：
+  - 解包后 837 个文件（其中 `dist/` 下 368 个）与全局安装目录同名文件逐个比对 SHA-256，**0 个不一致、0 个缺失**；
+  - 包内不含 `dist/commands/env.js` 与 `dist/lib/deployment-ledger.js`。
+- 旧行为：一次性隔离 prefix 试装后，`--version` 为 `0.16.2`，`openlogos env list` 报 `Unknown command: env`（exit 1）。
+
+## 四、版本与制品身份
+
+- 升版：`node cli/scripts/bump-version.mjs 0.16.3` 一次写全 8 个版本载体：
+  - `cli/package.json`、lockfile 根包、`cli/asset-manifest.json`、5 份 plugin manifest；
+  - `local-release-candidate.ts`：候选 `0.16.2 → 0.16.3`，回滚 `0.16.0 → 0.16.2`；
+  - asset-manifest 由生成器重算，未手改。
+- `CHANGELOG.md` 新增 `## [0.16.3] - 2026-10-15`（Added / Fixed / 升级提示），注明「本机全局发布（未发布到 npm）」，既有条目未改。
+
+## 五、源码回归证据
+
+- 升版后依次执行，全部通过：
+  - `cd cli && npm run lint`：0 error；
+  - `npx tsc --noEmit`：通过；
+  - `npm test`：**186 个文件、2738 个用例通过、1 个 skipped**；
+  - `npm run build`：通过。
+- 覆盖范围：
+  - environment-registry 的 S41 / S11 / S21 / S19 用例；
+  - 本提案的 UT-S19-68～UT-S19-71、ST-S19-28、UT-S40-29；
+  - `UT-S19-46` / `UT-S19-49`（版本身份与 manifest 自洽，账本中均为 pass）。
+
+## 六、构建与 Tarball 冻结（唯一候选制品）
+
+- 产物：`cli/miniidealab-openlogos-0.16.3.tgz`，2,630,203 字节，SHA-256 `ab1abe367bd385c2a94ae9561a9854fa890ebeecf0d415a558a11cf492002ff6`（真实 `npm pack`，850 个文件）。
+- 解包核对：
+  - `package.json` 与 asset-manifest 版本均为 `0.16.3`；manifest 自洽，payloadHash `95d0caf50fd99e4f22c4a20d046b13212f1af3136b7ee44400d310e4cb029110`；
+  - 包内存在 `dist/commands/env.js`、`dist/lib/deployment-ledger.js`；`dist/index.js` 注册 `env` 命令与 `--ref`；
+  - `claude-plugin-template/bin/guard-check` 的内置默认豁免含 `logos/environments.yaml`；
+  - 包内 `spec/logos.config.schema.json` 可按 JSON 解析，`guard.exempt.default` 为 3 条；
+  - `dist/lib/deployment-ledger.js` 采用临时文件原子替换追加；`dist/commands/smoke.js` 含 `SMOKE_LEDGER_WRITE_FAILED`。
+- 之后的隔离验证与全局安装只使用这一个文件。
+
+## 七、隔离 Prefix 行为矩阵（安装态证据）
+
+| 类别 | 结果 |
+|---|---|
+| candidate identity | 一次性 prefix 安装成功；`--version` 为 `0.16.3`；入口位于该 prefix 的包目录内（真实目录，无 workspace link）；安装后 850 个文件与 tarball 解包内容逐字节一致 |
+| 环境登记全链路 | runner 自测模式（注入该 prefix 入口）SMOKE-core-252 **pass**：<br>① `env check` 通过；<br>② `deploy-done --env 生产 --ref HEAD` 写出单行 JSON `DEPLOY_DONE`（`environment=prod`、`ref` 为当时 HEAD），账本新增 1 行 deploy；<br>③ `smoke --env prod` 门禁 PASS，`env_evidence=declared`、`verified=true`、`ledger_written=true`，runner 读到 `OPENLOGOS_SMOKE_ENV=prod`；<br>④ `env show prod` 的 `last_smoke.verified=true`，`current_ref` 等于部署 ref；<br>⑤ `status` 中 prod 视图与 ④ 一致 |
+| 本次修复 | SMOKE-core-253 **pass**：<br>① 截断 `DEPLOY_DONE` 后报 `SMOKE_DEPLOY_MARKER_INVALID`，`error.details.problems=["not valid JSON"]`，smoke 命令未运行；<br>② 预置新鲜账本锁后报 `SMOKE_LEDGER_WRITE_FAILED`（`stage=ledger`），stderr 只有一份 JSON，两种标记与账本逐字节不变；<br>③ 旧 `SMOKE_FAIL` 加只读提案目录时报 `SMOKE_LEDGER_WRITE_FAILED`（`stage=marker`、`rollback=complete`），旧 `SMOKE_FAIL` 原样保留、无 `SMOKE_PASS`、账本无本次 smoke 行 |
+| 版本与制品身份 | SMOKE-core-251 **pass**：版本 `0.16.3` 与 `local-release-candidate.ts` 候选一致；manifest 自洽；包内行为载体齐全；本仓 `.claude/openlogos/bin/guard-check` 与包内模板 SHA-256 一致（`a3e7c288…f902`） |
+| 无登记表零回归 | 同一无登记表夹具分别以候选与 0.16.2 回滚制品执行 `deploy-done` / `smoke` / `status --format json`：退出码、`deploy-done` 关键字段（slug / environment=null / 勾选数 / next_step、无 `deployment`）、smoke 门禁与 summary（无 `environment_evidence`）、标记与账本存在性（均不写账本）、`status` 无 `environments` / `environment_ledger`，**两侧完全一致** |
+| 全局零触碰 | 矩阵前后 `command -v openlogos` 与 `--version` 均为 `/opt/homebrew/bin/openlogos` / `0.16.2` |
+| 回滚演练 | 回滚制品 SHA-256 与冻结记录一致；在隔离 prefix 回装后 `--version` 为 `0.16.2`，`env list` 报未知命令（对照：差异确由候选引入） |
+
+## 八、本机全局部署与本仓 sync
+
+- 安装：`npm install -g <绝对路径>/cli/miniidealab-openlogos-0.16.3.tgz`（同一候选文件），exit 0。
+- 新 shell 复核：
+  - `command -v openlogos` = `/opt/homebrew/bin/openlogos`；
+  - 入口 realpath = `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`（真实目录，非链接）；
+  - `--version` = `0.16.3`；全局包 `package.json` 与 asset-manifest 版本均为 `0.16.3`，manifest 自洽，payloadHash 与候选一致；
+  - 全局包 850 个文件与 tarball 逐字节一致。
+- 本仓 sync：在项目根执行 `openlogos sync`（v0.16.3），exit 0。之后逐字节比对：
+  - `.claude/openlogos/bin/guard-check`、`.claude/openlogos/bin/guard-post-check.cjs` 与全局包 `claude-plugin-template/bin/` 同名文件**一致**；
+  - `logos/skills/deployment-designer/SKILL.md`、`logos/skills/deployment-executor/SKILL.md` 与全局包内同名 Skill **一致**。
+- sync 产生的托管文件变化：
+  - `logos/spec/cli-json-output.md` 刷新为当前根规范（保留）；
+  - `.claude/settings.json` 被重复加入一条 SessionStart `openlogos-phase` hook，并去掉了文件末尾换行。这与提交 `bf61f6f`（「`.claude/settings.json` 去除重复的 SessionStart hook」）记载的现象相同，按该先例还原为 HEAD 内容，不保留重复 hook。
+- 补充安装态证据：沙箱外以 runner 正式模式对全局安装运行 SMOKE-core-251～253，结果写入独立文件，未写正式 smoke 账本。结果见第十一节。
+
+## 九、回滚入口
+
+- 回滚制品：`cli/rollback/miniidealab-openlogos-0.16.2.tgz`，SHA-256 `ceb8c0403cbdfbbe4764ad79f405a1d7bb884a930665478957ec1ef77008f3b5`。
+- 回滚命令：`npm install -g <绝对路径>/cli/rollback/miniidealab-openlogos-0.16.2.tgz`，新 shell 复核 `--version` 为 `0.16.2`；必须使用绝对路径（相对路径会被 npm 解析为 GitHub 简写）。
+- 若已在本仓执行 sync：用回装后的 0.16.2 再执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+- 无数据迁移。回装后项目中的 `logos/environments.yaml` 与运行态账本不被旧版读取，保留不影响旧版行为。
+
+## 十、提示与后续
+
+- 已显式配置 `guard.exempt` 的项目不会自动获得新的内置默认豁免。如需免立案编辑 `logos/environments.yaml`，由用户执行 `openlogos exempt add logos/environments.yaml`。
+- 本仓未登记环境（无 `logos/environments.yaml`），本次 `openlogos deploy-done` 不带 `--env`，不写部署账本。
+- 下一步按流程运行 `openlogos smoke`（SMOKE-core-251～253 由 `scripts/smoke-environment-registry-0-16-3.js` 执行）。runner 需要通过 `OPENLOGOS_ENVREG_TARBALL` 取得候选 tarball 路径，缺失时三条用例写显式 skip。
+
+## 十一、全局安装后的补充安装态证据
+
+runner `scripts/smoke-environment-registry-0-16-3.js` 以正式模式运行：
+- 前置条件全部满足：候选 tarball 由 `OPENLOGOS_ENVREG_TARBALL` 给出；本记录已写明候选版本与 tarball SHA-256；本仓托管副本在场。
+- 入口为 PATH 中、位于 `npm prefix -g` 包目录内的 `openlogos`。
+- 结果写入独立文件，未写正式 smoke 账本，不代替 `openlogos smoke`。
+
+| 用例 | 结果 | environment |
+|---|---|---|
+| SMOKE-core-251 | **pass**：安装态身份同源（0.16.3），manifest 自洽，包内行为载体齐全，本仓托管 guard 与全局包一致 | `local-global-temp-project` |
+| SMOKE-core-252 | **pass**：登记 → 部署（alias `生产` 解析为 `prod`、ref 为当时 HEAD）→ smoke 已验证 → `env show` / `status` 一致 | `local-global-temp-project` |
+| SMOKE-core-253 | **pass**：截断 `DEPLOY_DONE` 带 `details.problems`；账本锁占用与标记阶段失败均以 `SMOKE_LEDGER_WRITE_FAILED` 结束，现场一致 | `local-global-temp-project` |

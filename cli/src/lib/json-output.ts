@@ -23,6 +23,7 @@ export interface JsonEnvelope {
   error?: {
     code: string;
     message: string;
+    [key: string]: unknown;
   };
 }
 
@@ -35,13 +36,24 @@ export function makeEnvelope(command: string, data: unknown): JsonEnvelope {
   };
 }
 
-export function makeErrorEnvelope(command: string, code: string, message: string): JsonEnvelope {
+/**
+ * 通用错误 envelope（spec/cli-json-output.md §6）。`extra` 为个别错误码在 `error` 对象中额外携带的
+ * 结构化字段（如 smoke 的 `details`），只做新增、不得覆盖 `code` 与 `message`；不传时输出逐字不变。
+ */
+export function makeErrorEnvelope(
+  command: string, code: string, message: string, extra?: Record<string, unknown>,
+): JsonEnvelope {
   return {
     command,
     version: VERSION,
     timestamp: new Date().toISOString(),
-    error: { code, message },
+    error: { code, message, ...withoutCodeMessage(extra) },
   };
+}
+
+function withoutCodeMessage(extra: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!extra) return {};
+  return Object.fromEntries(Object.entries(extra).filter(([key]) => key !== 'code' && key !== 'message'));
 }
 
 /**

@@ -1046,6 +1046,8 @@ sequenceDiagram
 ## smoke 环境一致性、环境证据与部署账本（environment-registry）
 
 > 来源变更：environment-registry（决策 C04、C05、C06）。格式权威：`spec/environments.md` §3、§4.2、§5、§6。本节落实需求「S19 本地部署后负向 Smoke 要求」中已有的「smoke 只能在存在同环境 `DEPLOY_DONE` 后执行」，并补上「smoke 实际验证了该环境」的证据链。既有前置（「smoke 前置依赖 deploy-done」）、沙箱、覆盖检查与 skip 口径不变，本节判定排在它们之后。
+>
+> 增量修正（来源变更 fix-environment-registry-review-gaps，决策 C01、C02）：`SMOKE_DEPLOY_MARKER_INVALID` 在 JSON 下带 `error.details`；写入顺序改为与 `deploy-done` 一致的「先追加账本、后写 smoke 标记」，新增账本追加失败（EX-19.20）与标记阶段失败（EX-19.21）两条异常分支。
 
 ### 时序
 
@@ -1067,8 +1069,8 @@ sequenceDiagram
     S->>R: Step S6: 执行 runner
     R-->>C: Step S7: 结果行（target_environment）
     C->>C: Step S8: 既有门禁判据 + 环境证据判定
-    C->>C: Step S9: 写 SMOKE_PASS 或 SMOKE_FAIL
-    C->>L: Step S10: 传入 --env 时追加 smoke 记录（ref 继承 DEPLOY_DONE）
+    C->>L: Step S9: 存在活跃提案且传入 --env 时先追加 smoke 记录（ref 继承 DEPLOY_DONE）
+    C->>C: Step S10: 再写 SMOKE_PASS 或 SMOKE_FAIL（账本已写时先快照两种标记，失败按快照恢复）
     C-->>U: Step S11: 输出门禁结论与环境证据
 ```
 
@@ -1077,13 +1079,13 @@ sequenceDiagram
 1. **用户或 deployment-executor** 经授权执行 `openlogos smoke --env <id|alias>`。
 2. **CLI** 先执行既有前置：存在活跃提案时做既有 fail-closed 提案前置；没有活跃提案时（既有行为允许）跳过提案前置，后续不读 `DEPLOY_DONE`、`deploy_env_confirmed=false`、不写账本。
 3. **CLI** 登记表存在时：非法报 `ENV_REGISTRY_INVALID`；未传 `--env` 报 `ENV_REQUIRED`；解析不到报 `ENV_UNKNOWN`。
-4. **CLI** 存在活跃提案时读取 `DEPLOY_DONE`：0 字节或只含空白 → 旧空格式，放行且 `deploy_env_confirmed=false`；合法 JSON 对象 → 环境一致则 `deploy_env_confirmed=true`，不一致时**登记表存在**报 `SMOKE_ENV_MISMATCH`、登记表不存在则放行且未确认，`environment` 为 null 则放行且未确认；非空损坏 → `SMOKE_DEPLOY_MARKER_INVALID`（点名问题字段，无论有无登记表）。拒绝路径不运行命令、不写 smoke marker、不写账本。
+4. **CLI** 存在活跃提案时读取 `DEPLOY_DONE`：0 字节或只含空白 → 旧空格式，放行且 `deploy_env_confirmed=false`；合法 JSON 对象 → 环境一致则 `deploy_env_confirmed=true`，不一致时**登记表存在**报 `SMOKE_ENV_MISMATCH`、登记表不存在则放行且未确认，`environment` 为 null 则放行且未确认；非空损坏 → `SMOKE_DEPLOY_MARKER_INVALID`（点名问题字段，无论有无登记表；JSON 下 `error.details.problems` 为问题字段名数组）；文件存在但无法读取 → 同一错误码，`error.details.problems` 为 `["unreadable"]` 并带 `error.details.reason`（I/O 原因），不按旧空格式放行。拒绝路径不运行命令、不写 smoke marker、不写账本。
 5. **CLI** 配置了 `smoke.command`（或默认 dispatcher）时先清空结果文件再运行（既有行为），本次 `fresh_results=true`；登记表存在且传入 `--env` 时把 `OPENLOGOS_SMOKE_ENV=<id>` 传入子进程，沙箱内执行同样可读到。未运行命令时既有门禁直接汇总结果文件中已有的行，`fresh_results=false`。
 6. **smoke runner** 执行用例。
 7. **smoke runner** 在结果行写 `target_environment`，声明实际验证的环境 id。
 8. **CLI** 先按既有判据得出门禁结论，再判定环境证据：任一行声明不一致 → `env_evidence=mismatch`，登记表存在时门禁 FAIL、原因 `SMOKE_ENV_EVIDENCE_MISMATCH`；全部声明一致 → `declared`；存在缺失或无结果行 → `missing`（门禁不变，兼容旧 runner）。
-9. **CLI** 写 `SMOKE_PASS` 或 `SMOKE_FAIL`（仍为空文件）。
-10. **CLI** 存在活跃提案且传入 `--env` 时追加 smoke 记录：`deploy_id`、`ref` 取自 `DEPLOY_DONE`（旧空格式为 null），不读 HEAD；`verified` 仅在 `result=pass`、`env_evidence=declared`、`fresh_results=true`、`deploy_env_confirmed=true`、`ref` 非 null 时为 true。无活跃提案时不写账本。
+9. **CLI** 存在活跃提案且传入 `--env` 时先追加 smoke 记录：`deploy_id`、`ref` 取自 `DEPLOY_DONE`（旧空格式为 null），不读 HEAD；`verified` 仅在 `result=pass`、`env_evidence=declared`、`fresh_results=true`、`deploy_env_confirmed=true`、`ref` 非 null 时为 true。无活跃提案时不写账本。 账本追加在两个写入方共用的账本锁内进行；追加失败（含锁等待超时）时不写、不改任何 smoke 标记，以 `SMOKE_LEDGER_WRITE_FAILED` 结束（EX-19.20）。
+10. **CLI** 再写 `SMOKE_PASS` 或 `SMOKE_FAIL`（仍为空文件），并删除对侧旧标记。本次已写账本时，变更标记前先快照两种标记的存在性与原始内容；标记阶段任一步失败按快照恢复并撤销本次账本行（EX-19.21）。未写账本时标记写入失败仍按既有行为静默跳过。
 11. **CLI** 输出门禁结论；登记表存在时 JSON 输出含 `environment_evidence` 对象。
 
 ### 异常与边界
@@ -1095,7 +1097,7 @@ sequenceDiagram
 
 #### EX-19.12：`DEPLOY_DONE` 非空损坏
 - **触发条件**：内容被截断为非法 JSON、不是对象、缺字段或字段类型非法。
-- **期望响应**：`SMOKE_DEPLOY_MARKER_INVALID`，点名问题字段；恢复须重新执行 `deploy-done --env <id> [--ref <revision>]`。
+- **期望响应**：`SMOKE_DEPLOY_MARKER_INVALID`，点名问题字段：message 文本列出问题，`--format json` 下另带 `error.details.problems`（问题字段名数组）；恢复须重新执行 `deploy-done --env <id> [--ref <revision>]`。`DEPLOY_DONE` 存在但无法读取（被目录替代、权限不足、检查后消失）时同样拒绝，`error.details.problems` 为 `["unreadable"]`，`error.details.reason` 为 I/O 原因。
 - **副作用**：无；CLI 不按存在性猜测、不自愈。
 
 #### EX-19.13：旧空 `DEPLOY_DONE` 或 `environment` 为 null
@@ -1133,8 +1135,18 @@ sequenceDiagram
 - **期望响应**：既有流程照常执行，输出与退出码与引入前一致（登记表存在时环境解析规则照常生效）；不读 `DEPLOY_DONE`，`deploy_env_confirmed=false`，`verified=false`。
 - **副作用**：不写账本，不伪造 `slug`、`deploy_id`、`ref`。
 
+#### EX-19.20：账本追加失败
+- **触发条件**：存在活跃提案且传入 `--env`，门禁已得出结论；追加账本 smoke 行失败——账本锁被其他进程占用超过等待上限（5 秒），或账本文件不可写、被目录占据等。
+- **期望响应**：错误 envelope `SMOKE_LEDGER_WRITE_FAILED`，退出码 1；`error.details` 含 `reason`（失败原因）与 `gate_result`（本次门禁结论），`message` 说明已按门禁结论写出的 `smoke-report.md` 仍保留；不以未捕获异常退出。
+- **副作用**：`SMOKE_PASS` / `SMOKE_FAIL` 与执行前逐字一致（不写、不删）；账本无本次的行或残片（追加中途失败的残片在锁内截掉）；`smoke-report.md` 可能已按本次结论写出。
+
+#### EX-19.21：账本已写、标记阶段失败
+- **触发条件**：本次 smoke 行已追加；随后写目标标记失败，或目标标记已写成、删除对侧旧标记失败（例如运行前有旧 `SMOKE_FAIL`、本次 PASS，`SMOKE_PASS` 写成但删除 `SMOKE_FAIL` 遇 EACCES；反向同理）。
+- **期望响应**：按执行前快照恢复两种标记——删除本次新建的标记、写回被删或被改的旧标记——并按整行原文撤销本次账本行，以 `SMOKE_LEDGER_WRITE_FAILED`（退出码 1）结束，`error.details.rollback` 为 `complete`。恢复动作逐项捕获：任一项恢复失败时仍输出同一结构化错误，`rollback` 为 `incomplete`，`rollback_problems` 点名未恢复的位置及原因，不让二次异常逃逸、不声称已完整恢复。
+- **副作用**：恢复完成时两种标记的存在性与内容和执行前逐字一致，账本中其他记录（含其他写入方在此期间追加的记录）逐字节保留；恢复未完成时现场以 `rollback_problems` 为准，需人工处理。
+
 ### 追溯
 
 - 需求：S19 验收条件（environment-registry 新增项）、「S19 本地部署后负向 Smoke 要求」同环境要求。
-- 功能规格：§2.93.4、§2.93.5；规范：`spec/environments.md` §4.2、§5、§6；`spec/test-results.md`「Smoke 结果与覆盖预检」。
-- 测试：UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27。
+- 功能规格：§2.93.4、§2.93.5；规范：`spec/environments.md` §4.2、§5、§6、§8，`spec/cli-json-output.md`「`openlogos smoke`」；`spec/test-results.md`「Smoke 结果与覆盖预检」。
+- 测试：UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27；增量修正（fix-environment-registry-review-gaps）：UT-S19-68～UT-S19-71、ST-S19-28。

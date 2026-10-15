@@ -15,11 +15,12 @@
 | UT-S40-04 | 混合合法与非法条目整体拒绝 | Step 3、Step 15 | 同上 | 执行 `ignore add dist/ !keep` 与 `exempt add docs/ ../x` | 两条命令均 exit 1；合法条目 `dist/`、`docs/` 也未写入，不发生部分写入 |
 | UT-S40-05 | add 去重、保持插入顺序、已存在不写盘 | Step 5–6、EX-40.2 | `guard.unversioned` 为 `["node_modules/"]` | 依次执行 `ignore add dist/ dist/ build/`、再执行 `ignore add dist/` | 第一次后清单为 `["node_modules/","dist/","build/"]`；第二次提示「已存在」、exit 0，配置与 `.gitignore` 字节与 mtime 不变 |
 | UT-S40-06 | remove 不存在条目 | Step 20、EX-40.2 | `guard.unversioned` 为 `["dist/"]` | 执行 `ignore remove build/`、`exempt remove docs/` | 均提示「不存在」、exit 0，零写入 |
-| UT-S40-07 | exempt 缺省时 add 物化内置默认 | Step 16 | 配置无 `guard.exempt` | 执行 `exempt add docs/handbook/` | `guard.exempt` 写为 `["logos/resources/reference/","logos/resources/verify/baseline-seed-runs/*/staging/","docs/handbook/"]`；再 `exempt add logos/resources/reference/` 提示「已存在」不写盘 |
-| UT-S40-08 | 删除内置默认项与清空 | Step 20–21、EX-40.3 | 配置无 `guard.exempt` | 执行 `exempt remove logos/resources/reference/`，再执行 `exempt remove logos/resources/verify/baseline-seed-runs/*/staging/` | 第一次后为仅含 staging 的显式数组；第二次后为显式空数组 `[]`，读取时不回落到内置默认 |
-| UT-S40-09 | list 文本与 JSON 输出 | Step 23–25 | 配置 A：无 `guard.exempt`、`guard.unversioned` 为 `["dist/"]`；配置 B：`guard.exempt` 为 `["docs/"]` | 分别执行 `exempt list --format json`、`ignore list --format json` 与文本模式 | A：exempt 输出两条 `source:"default"`；ignore 输出 envelope，`command` 为 `ignore list`，`data` 为 `{"entries":[{"value":"dist/","source":"config"}]}`；B：exempt 仅一条 `source:"config"`；JSON 可严格解析；不写盘、不调用 git |
+| UT-S40-07 | exempt 缺省时 add 物化内置默认 | Step 16 | 配置无 `guard.exempt` | 执行 `exempt add docs/handbook/` | `guard.exempt` 写为 `["logos/resources/reference/","logos/resources/verify/baseline-seed-runs/*/staging/","logos/environments.yaml","docs/handbook/"]`（内置默认 3 条在前，按 `BUILTIN_EXEMPT` 顺序）；再 `exempt add logos/resources/reference/` 提示「已存在」不写盘 |
+| UT-S40-08 | 删除内置默认项与清空 | Step 20–21、EX-40.3 | 配置无 `guard.exempt` | 依次执行 `exempt remove logos/resources/reference/`、`exempt remove logos/resources/verify/baseline-seed-runs/*/staging/`、`exempt remove logos/environments.yaml` | 第一次后为 `[staging, logos/environments.yaml]` 的显式数组；第二次后为 `["logos/environments.yaml"]`；第三次后为显式空数组 `[]`，提示内置默认不再生效，`exempt list` 输出空清单，读取时不回落到内置默认 |
+| UT-S40-09 | list 文本与 JSON 输出 | Step 23–25 | 配置 A：无 `guard.exempt`、`guard.unversioned` 为 `["dist/"]`；配置 B：`guard.exempt` 为 `["docs/"]` | 分别执行 `exempt list --format json`、`ignore list --format json` 与文本模式 | A：exempt 输出三条 `source:"default"`（reference、staging、`logos/environments.yaml`，按 `BUILTIN_EXEMPT` 顺序）；ignore 输出 envelope，`command` 为 `ignore list`，`data` 为 `{"entries":[{"value":"dist/","source":"config"}]}`；B：exempt 仅一条 `source:"config"`；JSON 可严格解析；不写盘、不调用 git |
 | UT-S40-10 | 配置不可解析或字段类型错误 | Step 2、EX-40.9 | 参数化：配置非法 JSON；`guard.exempt` 为字符串；`guard.unversioned` 含数字 | 执行 `add` / `remove` / `list` | 全部 exit 1，指出配置位置与错误；零写入；`list` 不输出猜测清单 |
 | UT-S40-11 | 固定运行时条目不可增删 | EX-40.4 | 已有托管区块 | 执行 `ignore add logos/.openlogos-runtime/`、`ignore remove logos/.openlogos-runtime/` | add 提示已由 openlogos 固定写入，exit 0，零写入；remove 提示固定条目不可移除，exit 1，零写入 |
+| UT-S40-29 | schema 中 `guard.exempt` 默认值与内置默认常量一致 | Step 16、EX-40.3 | 仓库内 `spec/logos.config.schema.json` 与 `cli/src/lib/guard-scope-config.ts` 的 `BUILTIN_EXEMPT` | 读取 schema 文件并按 JSON 严格解析；取根 `properties.guard.properties.exempt` | 文件可解析为单个 JSON 对象（末尾无多余内容）；`guard` 位于根 `properties`；`exempt.default` 与 `BUILTIN_EXEMPT` 逐项相等（含顺序）；`exempt.description` 中列出的内置默认与 `BUILTIN_EXEMPT` 一致。用于防止新增内置默认时 schema 再次漂移（来源变更 fix-environment-registry-review-gaps，决策 C03） |
 
 ### 1.2 托管区块渲染、幂等与原子性（`.gitignore` 托管区块渲染器）
 
@@ -61,7 +62,7 @@
 |---|---|---|---|---|---|
 | ST-S40-01 | ignore add 正常路径含已跟踪提示 | Step 1→12 | `.gitignore` 含用户条目与注释、无托管区块；`dist/` 下 3 个已跟踪文件 | ① `openlogos ignore add dist/ coverage/`；② 读取配置与 `.gitignore`；③ `git status --porcelain` | ① exit 0，输出 `dist/` 下 3 个已跟踪文件、3 个示例与逐个列出这 3 个路径的 `git --literal-pathspecs rm --cached -- '…'` 命令；② `guard.unversioned` 为 `["dist/","coverage/"]`，区块含 `logos/.openlogos-runtime/`、`dist/`、`coverage/`，区块外逐字节不变；③ 3 个文件仍被跟踪（CLI 未执行 `git rm`） |
 | ST-S40-02 | ignore remove 与幂等 | Step 1→7、EX-40.2 | 承接 ST-S40-01 后态 | ① `openlogos ignore remove coverage/`；② 再执行一次 ①；③ 再执行 `openlogos ignore add dist/` | ① exit 0，配置与区块均去掉 `coverage/`，区块外不变；② 提示「不存在」，exit 0，全项目快照不变；③ 提示「已存在」，exit 0，全项目快照不变 |
-| ST-S40-03 | exempt add / remove / list 端到端 | Step 13→25、EX-40.3 | 配置无 `guard.exempt` | ① `openlogos exempt list --format json`；② `openlogos exempt add docs/handbook/`；③ `openlogos exempt remove logos/resources/reference/`；④ `openlogos exempt list --format json`；⑤ `openlogos ignore list --format json` | ① 两条内置默认，`source:"default"`；② exit 0，显式数组为两条默认 + `docs/handbook/`；③ exit 0，仅移除 reference；④ 两条 `source:"config"`；⑤ 合法 JSON；全程 `.gitignore` 未变化 |
+| ST-S40-03 | exempt add / remove / list 端到端 | Step 13→25、EX-40.3 | 配置无 `guard.exempt` | ① `openlogos exempt list --format json`；② `openlogos exempt add docs/handbook/`；③ `openlogos exempt remove logos/resources/reference/`；④ `openlogos exempt list --format json`；⑤ `openlogos ignore list --format json` | ① 三条内置默认（含 `logos/environments.yaml`），`source:"default"`；② exit 0，显式数组为三条默认 + `docs/handbook/`；③ exit 0，仅移除 reference；④ 三条 `source:"config"`（staging、`logos/environments.yaml`、`docs/handbook/`）；⑤ 合法 JSON；全程 `.gitignore` 未变化 |
 | ST-S40-04 | 非法路径拒绝零写入 | EX-40.1 | 全项目快照 | 依次执行 `openlogos exempt add ../outside/`、`openlogos exempt add /abs/`、`openlogos exempt add logos/.openlogos-runtime/x`、`openlogos exempt add .gitignore`、`openlogos exempt add .git/info/exclude`、`openlogos ignore add '!dist/'` | 每条 exit 1 并点名原因；全项目快照与执行前完全一致 |
 | ST-S40-05 | 托管区块损坏 fail loud | Step 35→38、EX-40.7 | `.gitignore` 只有起始标记没有结束标记 | ① `openlogos ignore add .venv/`；② 手工补上结束标记后重试 ① | ① exit 1，输出起始标记行号与修复提示，全项目快照不变；② exit 0，区块被正确渲染 |
 | ST-S40-06 | 非 git 仓库提示 | Step 8、EX-40.5 | 隔离项目不是 git 仓库 | ① `openlogos ignore add dist/`；② `openlogos exempt add docs/` | ① exit 0，配置与区块写入，输出「当前目录不在 git 仓库中，guard 新判据不生效」；② exit 0，配置写入 |
@@ -81,7 +82,7 @@
 - 区块外逐字节不变的断言比较区块前、区块后两段原始字节，不得先做换行归一化再比较。
 - 审批相关用例必须使用 Claude Code Bash PreToolUse / PostToolUse 与 Cursor `beforeShellExecution` 的真实 hook 输入形态，`permission_mode` 取值按真实字段名构造；断言 `ask` 输出时须严格解析 JSON，不得只做子串匹配。
 - 已跟踪统计用例必须对进程调用层设哨兵，证明 CLI 从未执行 `git rm`；提示命令的执行由测试本身在临时仓库中完成，并以 `git ls-files -z` 前后差集断言「恰好移出」。
-- reporter 必须逐条产生 UT-S40-01～UT-S40-28、ST-S40-01～ST-S40-15 的 PASS/FAIL 记录，`scenario_id="S40"`；失败不得写 pass。
+- reporter 必须逐条产生 UT-S40-01～UT-S40-29、ST-S40-01～ST-S40-15 的 PASS/FAIL 记录，`scenario_id="S40"`；失败不得写 pass。
 
 ## 四、覆盖度校验
 
@@ -92,6 +93,7 @@
 - [x] 托管区块损坏与写入原子性：UT-S40-16、UT-S40-17、ST-S40-05
 - [x] 已跟踪文件提示、可执行命令与非 git 仓库：UT-S40-18～UT-S40-20、UT-S40-25、UT-S40-26、ST-S40-01、ST-S40-06、ST-S40-15
 - [x] list --format json：UT-S40-09、ST-S40-03
+- [x] schema 默认值与内置默认一致：UT-S40-29
 - [x] C14 宿主原生审批（ask / 阻断 / 批准 / 拒绝 / 每次独立）：UT-S40-21、UT-S40-22、UT-S40-28、ST-S40-08～ST-S40-10
 - [x] C14 复合命令、间接调用、伪造文件与 hook 输入：UT-S40-23、UT-S40-24、ST-S40-11、ST-S40-14
 - [x] C14 `--auto`、有活跃提案、Cursor：ST-S40-12、ST-S40-13

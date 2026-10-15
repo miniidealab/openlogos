@@ -100,9 +100,16 @@ environments:
 
 ### 5.1 位置与写入者
 
-- 路径：`logos/.openlogos-runtime/deployments.jsonl`（该目录已在 init 托管的 `.gitignore` 区块中，对 AI 编辑工具恒阻断，见 `spec/pretooluse-guard.md`），只追加、不改写、不截断。
+- 路径：`logos/.openlogos-runtime/deployments.jsonl`（该目录已在 init 托管的 `.gitignore` 区块中，对 AI 编辑工具恒阻断，见 `spec/pretooluse-guard.md`）。**正常路径只追加**，不改写他人记录；写入失败时的补偿只撤销本次写入（见下文「写入顺序与失败补偿」）。
 - 写入者只有两条 CLI 路径：`openlogos deploy-done --env <…>` 成功时追加一行 deploy 记录（`deploy-done` 恒要求活跃提案）；`openlogos smoke --env <…>` 在**存在活跃提案**且产生门禁结论（PASS 或 FAIL）时追加一行 smoke 记录。未传 `--env` 时不写；任何拒绝路径不写；smoke 无活跃提案时照常执行既有流程、不写账本（不伪造 `slug`、`deploy_id`、`ref`）。
 - 每条记录以一次追加写入一整行 JSON 加换行；目录不存在时先创建。
+- **账本锁**：两个写入方的追加与失败补偿都在同一把短临界区锁内进行。锁以独占创建 `logos/.openlogos-runtime/deployments.jsonl.lock` 实现，操作结束即删除；等锁上限 5 秒，超时报错且不写入；锁文件超过 30 秒未更新视为异常退出遗留，可回收。读取账本（§5.4）不取锁。
+- **写入顺序与失败补偿**（来源变更 fix-environment-registry-review-gaps，决策 C02、C03）：两个写入方都是**先追加账本、最后写提案标记**，因此标记在场即蕴含对应账本记录已写入。
+  - 追加中途失败：在锁内截掉本次写出的残片（本次新建的账本文件则删除），其他记录不受影响。
+  - 本次已追加、后续步骤失败：按本次追加的**整行原文**在锁内定位并移除该行，其余行原样保留后原子写回；同一原文出现多次无法确认归属时不改账本并报告。**不按文件长度推断归属**，其他写入方在此期间成功追加的记录逐字节保留。
+  - `deploy-done`：写入前快照 tasks.md、旧 `SMOKE_PASS` / `SMOKE_FAIL`、旧 `DEPLOY_DONE`；勾选 `[deploy]` → 清理旧 smoke marker → 追加账本 → 最后写 `DEPLOY_DONE`，任一步失败按快照恢复，本次追加过账本时再撤销本次账本行，以 `DEPLOY_DONE_WRITE_FAILED` 结束（§8）；该快照与恢复在未传 `--env`（不写账本）时同样执行。
+  - `smoke`：账本追加失败（含锁等待超时）时不写、不改任何 smoke marker，以 `SMOKE_LEDGER_WRITE_FAILED` 结束；账本已写时，变更 marker 前先快照两种 marker 的存在性与原始内容，标记阶段任一步失败（写目标 marker 失败，或目标 marker 已写成、删除对侧 marker 失败）按快照恢复两种 marker 并撤销本次账本行，同样以 `SMOKE_LEDGER_WRITE_FAILED` 结束。恢复动作逐项捕获，恢复未完成时如实报告未恢复的位置，不声称已完整恢复。
+  - smoke 未传 `--env` 或无活跃提案时不写账本，也不做本次新增的 smoke 标记快照与恢复，行为不变。`deploy-done` 不受此例外影响：无论是否传入 `--env`、有无登记表，都保留既有的 tasks.md / 旧 smoke 标记 / 旧 `DEPLOY_DONE` 快照与失败恢复，只在本次没有追加账本时跳过账本补偿。
 
 ### 5.2 记录字段
 
@@ -194,7 +201,9 @@ smoke 记录的 `verified` 为 `true` 当且仅当同时满足：`result=pass`�
 | `ENV_REQUIRED` | error | 登记表存在时 `deploy-done` / `smoke` 未传 `--env` | 1 |
 | `ENV_REF_UNRESOLVED` | error | `deploy-done --ref` 无法解析为 commit | 1 |
 | `SMOKE_ENV_MISMATCH` | error | 登记表存在时 `DEPLOY_DONE.environment` 与本次 `--env` 解析结果不一致（无登记表时不产生） | 1 |
-| `SMOKE_DEPLOY_MARKER_INVALID` | error | `DEPLOY_DONE` 非空损坏 | 1 |
+| `SMOKE_DEPLOY_MARKER_INVALID` | error | `DEPLOY_DONE` 非空损坏或存在但无法读取；JSON 下 `error.details.problems` 为问题字段名数组，无法读取时为 `["unreadable"]` 并带 `error.details.reason`（`spec/cli-json-output.md`「`openlogos smoke`」） | 1 |
+| `SMOKE_LEDGER_WRITE_FAILED` | error | smoke 追加账本失败（含账本锁等待超时），或账本已写、随后标记阶段失败；按 §5.1 恢复，`error.details` 报告阶段、原因与恢复结果 | 1 |
+| `DEPLOY_DONE_WRITE_FAILED` | error | deploy-done 写入阶段失败（快照读取、勾选 `[deploy]`、清理旧 smoke marker、追加账本或最后写 `DEPLOY_DONE`）；按 §5.1 恢复，`message` 说明恢复结果 | 1 |
 | `SMOKE_ENV_EVIDENCE_MISMATCH` | gate reason | 结果行声明的 `target_environment` 与本次环境不一致（登记表存在时） | 1（门禁 FAIL） |
 
 所有面向人的文案走 i18n，中英文都要提供。

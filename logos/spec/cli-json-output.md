@@ -2870,3 +2870,206 @@ stdout 输出标准 envelope，`data` 至少含：
 - verify 多阶段（回归 + 增量）时，`sandbox.reuse` 取最后一次执行阶段的值；`infos` 照既有规则去重合并。
 - 复用摘要只进 `sandbox.infos`，不得进入 `sandbox.diagnostics` 或 verify 的 `pre_run.diagnostics`；`reuse` 的任何取值都不改变 `sandbox.status` 与门禁结论。非法缓存路径的诊断属于问题诊断，进 `sandbox.diagnostics`。
 - 消费方（RunLogos / CI）判断是否命中复用应读 `reuse.state`，不得解析 `infos` 文案。
+
+## `openlogos env list|show|check --format json`（environment-registry）
+
+> 来源变更：environment-registry（决策 C04、C08）。格式与判据权威：`spec/environments.md`。三个命令只读、不要求活跃提案，使用通用成功 / 错误 envelope；面向人的文案走 i18n。
+
+### 用法
+
+```bash
+openlogos env list [--format json]
+openlogos env show <id|alias> [--format json]
+openlogos env check [<id|alias>] [--probe] [--format json]
+```
+
+### 公共对象
+
+**DeployRecord**（账本 deploy 记录投影）：
+
+```jsonc
+{
+  "deploy_id": "6f1c…",                // string
+  "slug": "add-login",                 // string
+  "ref": "<40 位 commit>",             // string | null（null = 版本未知）
+  "ref_source": "explicit",            // "explicit" | "unknown"
+  "observed_head": "<40 位 commit>",   // string | null，仅观察信息
+  "observed_dirty": false,             // boolean | null，仅观察信息
+  "recorded_at": "2026-10-14T08:00:00.000Z"
+}
+```
+
+**SmokeRecord**（账本 smoke 记录投影）：
+
+```jsonc
+{
+  "deploy_id": "6f1c…",                // string | null（依据旧空 DEPLOY_DONE 时为 null）
+  "slug": "add-login",
+  "ref": "<40 位 commit>",             // string | null，继承所依据的部署记录
+  "result": "pass",                    // "pass" | "fail"
+  "env_evidence": "declared",          // "declared" | "missing" | "mismatch"
+  "fresh_results": true,               // boolean，本次是否实际运行 smoke.command 产生新结果
+  "deploy_env_confirmed": true,        // boolean
+  "verified": true,                    // boolean，判据见 spec/environments.md §5.3
+  "observed_head": "<40 位 commit>",
+  "recorded_at": "2026-10-14T08:05:00.000Z"
+}
+```
+
+**EnvView**：`{ id, name, tier, current_ref, last_deploy: DeployRecord | null, last_smoke: SmokeRecord | null }`；`current_ref` 为 `last_deploy.ref`（无部署记录时为 null）。
+
+**Ledger**：`{ path: "logos/.openlogos-runtime/deployments.jsonl", corrupt_lines: number }`。
+
+### `env list`（data）
+
+```jsonc
+{
+  "registry_path": "logos/environments.yaml",
+  "registry_present": true,            // 登记表不存在时为 false，environments 为 []
+  "environments": [
+    { "id": "test", "name": "测试环境", "tier": "test", "aliases": ["测试", "qa"],
+      "current_ref": "…", "last_deploy": { /* DeployRecord */ }, "last_smoke": { /* SmokeRecord */ } }
+  ],
+  "ledger": { "path": "logos/.openlogos-runtime/deployments.jsonl", "corrupt_lines": 0 },
+  "warnings": [ { "code": "ENV_UNKNOWN_FIELD", "message": "…", "environment": "prod", "field": "promote_from" } ]
+}
+```
+
+### `env show`（data）
+
+```jsonc
+{
+  "environment": {                     // 登记表中该环境的配置（只含规范字段；secrets 只有变量名）
+    "id": "prod", "name": "生产环境", "tier": "prod", "aliases": ["生产"],
+    "description": null, "health": "https://…", "version": "https://…", "secrets": ["PROD_TOKEN"]
+  },
+  "current_ref": "…",
+  "last_deploy": { /* DeployRecord */ },
+  "last_smoke": { /* SmokeRecord */ },
+  "history": [ { "kind": "smoke", /* SmokeRecord 字段 */ }, { "kind": "deploy", /* DeployRecord 字段 */ } ],  // 最多 20 条，新到旧
+  "ledger": { "path": "…", "corrupt_lines": 0 },
+  "warnings": []
+}
+```
+
+### `env check`（data）
+
+```jsonc
+{
+  "scope": "prod",                     // 传入 <id|alias> 时为解析后的 id，否则为 null（全部环境）
+  "ok": false,                         // errors 为空时为 true
+  "errors": [
+    { "code": "ENV_DUPLICATE_ID_OR_ALIAS", "message": "…", "environment": "prod", "field": "aliases" },
+    { "code": "ENV_GATE_REFERENCE_UNKNOWN", "message": "…", "module": "core", "value": "staging" },
+    { "code": "ENV_SECRET_MISSING", "message": "…", "environment": "prod", "name": "PROD_TOKEN" },
+    { "code": "ENV_PROBE_FAILED", "message": "…", "environment": "prod", "kind": "health", "url": "https://…" }
+  ],
+  "warnings": [ { "code": "ENV_UNKNOWN_FIELD", "message": "…" } ],
+  "secrets": [ { "environment": "prod", "name": "PROD_TOKEN", "present": false } ],   // 只有变量名与是否存在，永不含值
+  "probes": [                          // 未加 --probe 时为 []
+    { "environment": "prod", "kind": "health", "url": "https://…", "status": 200, "ok": true, "duration_ms": 120, "error": null },
+    { "environment": "prod", "kind": "version", "url": "https://…", "status": 200, "ok": true, "duration_ms": 98, "error": null, "body_excerpt": "1.4.2" }
+  ]
+}
+```
+
+- `body_excerpt` 只在 `kind=version` 时出现，为响应正文前 200 个字符（去除首尾空白）。
+- 存在任一 error 时退出码 1，仍输出完整 data（成功 envelope 之外以 `ok=false` 表达）；登记表不存在或无法加载时使用错误 envelope（`ENV_REGISTRY_NOT_FOUND` / `ENV_REGISTRY_INVALID`），退出码 1。
+
+### 错误语义
+
+| 命令 | 错误码 | 退出码 |
+|---|---|---|
+| `env list` | `ENV_REGISTRY_INVALID`（登记表存在但非法） | 1 |
+| `env show` | `ENV_REGISTRY_NOT_FOUND`、`ENV_REGISTRY_INVALID`、`ENV_UNKNOWN` | 1 |
+| `env check` | `ENV_REGISTRY_NOT_FOUND`、`ENV_REGISTRY_INVALID`、`ENV_UNKNOWN`（scope 解析失败）；以及 data.errors 中的 `ENV_FIELD_INVALID`、`ENV_DUPLICATE_ID_OR_ALIAS`、`ENV_GATE_REFERENCE_UNKNOWN`、`ENV_SECRET_MISSING`、`ENV_PROBE_FAILED` | 1 |
+
+## deploy-done / smoke / status 环境字段（environment-registry）
+
+> 来源变更：environment-registry（决策 C04～C06、C08）。**没有 `logos/environments.yaml` 的项目，本节新增的字段与错误码一律不出现**（例外：`deploy-done --ref` 的 `ENV_REF_UNRESOLVED` 只在使用新参数时产生；`SMOKE_DEPLOY_MARKER_INVALID`、`DEPLOY_DONE_WRITE_FAILED` 与 `SMOKE_LEDGER_WRITE_FAILED` 见下文各自的产生条件），既有字段语义不变。
+
+**错误 envelope 的附加字段（来源变更 fix-environment-registry-review-gaps，决策 C01）**：本节的错误码沿用 §6 通用错误 envelope；个别错误码在 `error` 对象中额外携带结构化字段（目前只有 `details`，各错误码的形态见下文）。附加字段只做新增，不得覆盖 `code` 与 `message`；未列出附加字段的错误码，其 `error` 对象与 §6 逐字一致。CLI 实现上由共用的错误 envelope 构造入口接受可选附加字段，未传时输出逐字不变。
+
+### `openlogos deploy-done`
+
+- 用法新增：`openlogos deploy-done --env <id|alias> [--ref <git revision>] [--format json]`。
+- 有登记表时，既有字段 `environment` 为**解析后的 id**（无登记表时仍为原始标签或 null）。
+- 有登记表时 data 新增：
+
+```jsonc
+"deployment": {
+  "deploy_id": "6f1c…",
+  "environment": "test",              // 解析后的 id
+  "ref": "<40 位 commit>",            // string | null
+  "ref_source": "explicit",           // "explicit" | "unknown"
+  "observed_head": "<40 位 commit>",  // string | null，仅观察
+  "ledger_written": true              // 传入 --env 时为 true
+}
+```
+
+- 新增错误码：`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`ENV_REF_UNRESOLVED`。全部在任何写入之前判定；错误分支不得写入 `DEPLOY_DONE`、不得勾选 `[deploy]`、不得清理 smoke marker、不得写账本。
+- 写入阶段错误码 `DEPLOY_DONE_WRITE_FAILED`（错误 envelope，退出码 1；有无登记表都可能产生）：写入前快照读取失败（此时尚未写入任何文件），或勾选 `[deploy]`、清理旧 smoke marker、追加账本、最后写 `DEPLOY_DONE` 任一步失败。后一种情形按快照恢复 tasks.md、旧 `SMOKE_PASS` / `SMOKE_FAIL`、旧 `DEPLOY_DONE`，并只撤销本次追加的账本行；`message` 说明已完整恢复，或列出未能恢复的条目（`spec/environments.md` §5.1）。
+
+### `openlogos smoke`
+
+- 有登记表时，既有字段 `environment` 为解析后的 id。
+- 有登记表时 data 新增：
+
+```jsonc
+"environment_evidence": {
+  "target": "prod",                   // 本次解析后的 id，也是注入的 OPENLOGOS_SMOKE_ENV
+  "deploy_id": "6f1c…",               // string | null
+  "ref": "<40 位 commit>",            // string | null，继承 DEPLOY_DONE
+  "deploy_env_confirmed": true,
+  "env_evidence": "declared",         // "declared" | "missing" | "mismatch"
+  "mismatched_case_ids": [],          // env_evidence=mismatch 时列出声明不一致的结果行 id
+  "missing_case_ids": [],             // env_evidence=missing 时列出缺少声明的结果行 id
+  "fresh_results": true,              // 未运行 smoke.command、只汇总已有结果时为 false
+  "verified": true,
+  "ledger_written": true              // 无活跃提案时为 false（不写账本），deploy_id / ref 为 null、deploy_env_confirmed 为 false
+}
+```
+
+- 门禁新增失败原因 `gate.reason = "SMOKE_ENV_EVIDENCE_MISMATCH"`（登记表存在且任一结果行 `target_environment` 与 `target` 不一致），此时写 `SMOKE_FAIL`、退出码 1。
+- 前置新增错误码（错误 envelope，退出码 1，不运行 `smoke.command`、不写 smoke marker、不写账本）：`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`SMOKE_ENV_MISMATCH`（以上只在登记表存在时产生），以及**无论有无登记表**都可能出现的 `SMOKE_DEPLOY_MARKER_INVALID`（存在活跃提案且 `DEPLOY_DONE` 非空损坏或无法读取）。无登记表时合法 marker 的环境标签与 `--env` 不一致不报错。
+- `SMOKE_DEPLOY_MARKER_INVALID` 的 `error.details`（来源变更 fix-environment-registry-review-gaps，决策 C01）：
+
+```jsonc
+// DEPLOY_DONE 内容非法（非空损坏）
+"error": {
+  "code": "SMOKE_DEPLOY_MARKER_INVALID",
+  "message": "…",                     // 文本不变，仍列出问题
+  "details": { "problems": ["ref", "recorded_at"] }   // 问题字段名或诊断项，非空数组
+}
+// DEPLOY_DONE 存在但无法读取（被目录替代、权限不足、检查后消失）
+"error": {
+  "code": "SMOKE_DEPLOY_MARKER_INVALID",
+  "message": "…",
+  "details": { "problems": ["unreadable"], "reason": "EACCES: permission denied, open '…/DEPLOY_DONE'" }
+}
+```
+
+- 写入阶段错误码 `SMOKE_LEDGER_WRITE_FAILED`（错误 envelope，退出码 1；只在存在活跃提案且传入 `--env`、需要追加账本时产生，与有无登记表无关；来源变更 fix-environment-registry-review-gaps，决策 C02）。smoke 先追加账本、后写 smoke marker（`spec/environments.md` §5.1）：
+  - 账本追加失败（含账本锁等待超时）：不写、不改任何 smoke marker，账本无本次的行或残片；
+  - 账本已写、随后标记阶段失败（写目标 marker 失败，或目标 marker 已写成、删除对侧 marker 失败）：按执行前快照恢复 `SMOKE_PASS` / `SMOKE_FAIL` 并撤销本次账本行；恢复动作逐项捕获，恢复失败不抛未捕获异常，以 `rollback` 如实报告。
+  - `smoke-report.md` 可能已按本次门禁结论写出，保留，`message` 说明这一点。
+
+```jsonc
+"error": {
+  "code": "SMOKE_LEDGER_WRITE_FAILED",
+  "message": "…",
+  "details": {
+    "stage": "ledger",                // "ledger"：账本追加失败；"marker"：账本已写、标记阶段失败
+    "reason": "deployment ledger is locked by another openlogos process (…)",
+    "gate_result": "PASS",            // 本次门禁结论，"PASS" | "FAIL"
+    "rollback": "complete",           // 仅 stage=marker 时出现："complete" | "incomplete"
+    "rollback_problems": []           // 仅 stage=marker 时出现：未能恢复的位置及原因；rollback=complete 时为 []
+  }
+}
+```
+
+### `openlogos status`
+
+- 有登记表时顶层新增 `environments`（EnvView 数组，见「`openlogos env list|show|check --format json`」公共对象）与 `environment_ledger`（Ledger 对象）。
+- 登记表存在但非法时 `environments` 为 `[]`，并新增 `environment_registry_error`：`{ "code": "ENV_REGISTRY_INVALID", "message": "…" }`；退出码不因此改变。
+- 登记表不存在时以上三个字段都不出现。`status` 不发起任何网络请求。

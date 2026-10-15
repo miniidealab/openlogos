@@ -1,7 +1,7 @@
 /**
  * guard-versioned-content-scope [code] 切片 2：版本管理范围配置（S40）。
  *
- * 覆盖 UT-S40-01～UT-S40-28、ST-S40-01～ST-S40-15（与 logos/resources/test/core-S40-test-cases.md 对齐）。
+ * 覆盖 UT-S40-01～UT-S40-29、ST-S40-01～ST-S40-15（与 logos/resources/test/core-S40-test-cases.md 对齐）。
  * - UT 直接调用命令核心 `runScopeCommand`（文件写入口与进程调用层注入哨兵），或以函数层 / stdin JSON 调用分发源 guard-check；
  * - ST 走真实 CLI 入口（cli/dist/index.js）与真实 hook 脚本（plugin/bin/guard-check），隔离临时项目，执行前后做全项目 SHA-256 快照。
  * - 事后检查引擎（切片 3，PostToolUse `check`）相关断言以分发源引擎真实执行；Cursor 分层能力（切片 5）的断言不在本文件伪造。
@@ -19,7 +19,7 @@ import { GUARD_SRC, REPO_ROOT, buildProject, callIsProtected, cleanEnv, git, loa
 import { chain, postToolUse } from './s09-guard-post-check-helpers.js';
 import { defaultScopeIo, runScopeCommand, type ScopeExecResult, type ScopeIo } from '../src/commands/scope.js';
 import {
-  exemptEntryInvalidReason, exemptEntryMatches, parseExemptEntry,
+  BUILTIN_EXEMPT, exemptEntryInvalidReason, exemptEntryMatches, parseExemptEntry,
 } from '../src/lib/guard-scope-config.js';
 import { MANAGED_END, MANAGED_NOTE, MANAGED_START } from '../src/lib/gitignore-managed-block.js';
 
@@ -370,6 +370,25 @@ describe('S40 清单语法与增删查 — 单元', () => {
     expect(rm.stderr).toContain('is a fixed entry of the managed block and cannot be removed');
     expect(s.writes).toEqual([]);
     expect(snapshot(root)).toEqual(before);
+  });
+
+  it('UT-S40-29: schema 中 guard.exempt 默认值与内置默认常量一致', () => {
+    // 严格解析：末尾有多余内容（如追加的 Markdown）时 JSON.parse 直接抛错
+    const schema = JSON.parse(readFileSync(join(REPO_ROOT, 'spec', 'logos.config.schema.json'), 'utf-8')) as Record<string, any>;
+    expect(schema.type).toBe('object');
+    const keys = Object.keys(schema.properties);
+    expect(keys).toContain('guard');
+    expect(keys.indexOf('guard')).toBe(keys.indexOf('flow') + 1);
+    expect(keys.indexOf('sourceRoots')).toBe(keys.indexOf('guard') + 1);
+    const guard = schema.properties.guard;
+    expect(guard.additionalProperties).toBe(false);
+    expect(Object.keys(guard.properties)).toEqual(['unversioned', 'exempt']);
+    const exempt = guard.properties.exempt;
+    expect(exempt.default).toEqual([...BUILTIN_EXEMPT]);
+    // description 中「内置默认 [...]」列出的条目与常量逐项一致
+    const listed = /内置默认 (\[[^\]]*\])/.exec(exempt.description as string);
+    expect(listed, 'description 列出内置默认').not.toBeNull();
+    expect(JSON.parse(listed![1])).toEqual([...BUILTIN_EXEMPT]);
   });
 });
 

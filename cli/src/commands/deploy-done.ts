@@ -493,7 +493,7 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
         result: 'done',
       };
       const line = `${JSON.stringify(record)}\n`;
-      appendLedgerLine(root, line); // 锁内追加；失败时自身残片已清理
+      appendLedgerLine(root, line); // 锁内经临时文件原子替换追加；抛错时账本保持调用前字节
       ownLedgerLine = line;
       ledgerWritten = true;
     }
